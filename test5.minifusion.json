@@ -1,0 +1,1318 @@
+{
+  "app": "MiniFusion",
+  "v": 1,
+  "name": "test4",
+  "tint": 0,
+  "originVis": {
+    "XY": false,
+    "XZ": false,
+    "YZ": false
+  },
+  "view": {
+    "edges": "on",
+    "mirror": true,
+    "axes": false,
+    "zoomInv": true,
+    "clipOn": false,
+    "clipPos": 0,
+    "clipFlip": false
+  },
+  "bodyVis": {},
+  "sel": {
+    "kind": "feature",
+    "id": "xf_19_mufacx9x"
+  },
+  "sketches": [
+    {
+      "id": "sk_1_muf870a3",
+      "name": "Esquisse 1",
+      "plane": "XY",
+      "entities": [
+        {
+          "id": "e5",
+          "t": "line",
+          "p1": "p1",
+          "p2": "p2"
+        },
+        {
+          "id": "e6",
+          "t": "line",
+          "p1": "p2",
+          "p2": "p3"
+        },
+        {
+          "id": "e7",
+          "t": "line",
+          "p1": "p3",
+          "p2": "p4"
+        },
+        {
+          "id": "e8",
+          "t": "line",
+          "p1": "p4",
+          "p2": "p1"
+        }
+      ],
+      "points": {
+        "O": {
+          "x": 0,
+          "y": 0
+        },
+        "p1": {
+          "x": -35,
+          "y": 30
+        },
+        "p2": {
+          "x": 40,
+          "y": 30
+        },
+        "p3": {
+          "x": 40,
+          "y": -30
+        },
+        "p4": {
+          "x": -35,
+          "y": -30
+        }
+      },
+      "constraints": [
+        {
+          "id": "e9",
+          "type": "h",
+          "line": "e5"
+        },
+        {
+          "id": "e10",
+          "type": "h",
+          "line": "e7"
+        },
+        {
+          "id": "e11",
+          "type": "v",
+          "line": "e6"
+        },
+        {
+          "id": "e12",
+          "type": "v",
+          "line": "e8"
+        }
+      ],
+      "dims": [],
+      "seq": 13,
+      "visible": false,
+      "origin": [
+        0,
+        0,
+        0
+      ],
+      "axU": [
+        1,
+        0,
+        0
+      ],
+      "axV": [
+        0,
+        1,
+        0
+      ],
+      "axN": [
+        0,
+        0,
+        1
+      ],
+      "_refNote": "référence : solide fini (esquisse non consommée)",
+      "_health": {
+        "loops": 1,
+        "holes": 0,
+        "opens": [],
+        "gapPair": null,
+        "gapD": 1000000000,
+        "dupes": [],
+        "degen": [],
+        "selfints": []
+      },
+      "_audit": {
+        "residual": 0,
+        "all": [
+          {
+            "id": "e9",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e10",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e11",
+            "desc": "v",
+            "viol": 0
+          },
+          {
+            "id": "e12",
+            "desc": "v",
+            "viol": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "sk_3_muf87b8j",
+      "name": "Esquisse 2 (face)",
+      "plane": "FACE",
+      "entities": [
+        {
+          "id": "e5",
+          "t": "line",
+          "p1": "p1",
+          "p2": "p2"
+        },
+        {
+          "id": "e6",
+          "t": "line",
+          "p1": "p2",
+          "p2": "p3"
+        },
+        {
+          "id": "e7",
+          "t": "line",
+          "p1": "p3",
+          "p2": "p4"
+        },
+        {
+          "id": "e8",
+          "t": "line",
+          "p1": "p4",
+          "p2": "p1"
+        }
+      ],
+      "points": {
+        "O": {
+          "x": 0,
+          "y": 0
+        },
+        "p1": {
+          "x": -16,
+          "y": 42
+        },
+        "p2": {
+          "x": 20,
+          "y": 42
+        },
+        "p3": {
+          "x": 20,
+          "y": 12
+        },
+        "p4": {
+          "x": -16,
+          "y": 12
+        }
+      },
+      "constraints": [
+        {
+          "id": "e9",
+          "type": "h",
+          "line": "e5"
+        },
+        {
+          "id": "e10",
+          "type": "h",
+          "line": "e7"
+        },
+        {
+          "id": "e11",
+          "type": "v",
+          "line": "e6"
+        },
+        {
+          "id": "e12",
+          "type": "v",
+          "line": "e8"
+        }
+      ],
+      "dims": [],
+      "seq": 13,
+      "visible": false,
+      "origin": [
+        0,
+        -30,
+        0
+      ],
+      "axU": [
+        1,
+        0,
+        0
+      ],
+      "axV": [
+        0,
+        0,
+        1
+      ],
+      "axN": [
+        0,
+        -1,
+        0
+      ],
+      "host": null,
+      "_refNote": "référence : solide fini (esquisse non consommée)",
+      "_health": {
+        "loops": 1,
+        "holes": 0,
+        "opens": [],
+        "gapPair": null,
+        "gapD": 1000000000,
+        "dupes": [],
+        "degen": [],
+        "selfints": []
+      },
+      "_audit": {
+        "residual": 0,
+        "all": [
+          {
+            "id": "e9",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e10",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e11",
+            "desc": "v",
+            "viol": 0
+          },
+          {
+            "id": "e12",
+            "desc": "v",
+            "viol": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "sk_7_muf885v1",
+      "name": "Esquisse 3 (face)",
+      "plane": "FACE",
+      "entities": [
+        {
+          "id": "e2",
+          "t": "circle",
+          "pc": "p1",
+          "r": 10
+        }
+      ],
+      "points": {
+        "O": {
+          "x": 0,
+          "y": 0
+        },
+        "p1": {
+          "x": 18,
+          "y": 14
+        }
+      },
+      "constraints": [],
+      "dims": [],
+      "seq": 3,
+      "visible": false,
+      "origin": [
+        0,
+        0,
+        50
+      ],
+      "axU": [
+        1,
+        0,
+        0
+      ],
+      "axV": [
+        0,
+        1,
+        0
+      ],
+      "axN": [
+        0,
+        0,
+        1
+      ],
+      "host": {
+        "feat": "ex_2_muf876k4",
+        "tag": "TOP",
+        "x": 0,
+        "y": 0
+      },
+      "_refNote": "référence : solide fini (esquisse non consommée)",
+      "_health": {
+        "loops": 1,
+        "holes": 0,
+        "opens": [],
+        "gapPair": null,
+        "gapD": 1000000000,
+        "dupes": [],
+        "degen": [],
+        "selfints": []
+      },
+      "_audit": {
+        "residual": 0,
+        "all": []
+      }
+    },
+    {
+      "id": "sk_15_muf9br9q",
+      "name": "Esquisse 4 (face)",
+      "plane": "FACE",
+      "entities": [
+        {
+          "id": "e5",
+          "t": "line",
+          "p1": "p1",
+          "p2": "p2"
+        },
+        {
+          "id": "e6",
+          "t": "line",
+          "p1": "p2",
+          "p2": "p3"
+        },
+        {
+          "id": "e7",
+          "t": "line",
+          "p1": "p3",
+          "p2": "p4"
+        },
+        {
+          "id": "e8",
+          "t": "line",
+          "p1": "p4",
+          "p2": "p1"
+        }
+      ],
+      "points": {
+        "O": {
+          "x": 0,
+          "y": 0
+        },
+        "p1": {
+          "x": -19.672778795441584,
+          "y": -2.3547154023325447
+        },
+        "p2": {
+          "x": 6.327771054292018,
+          "y": -2.3547154023325447
+        },
+        "p3": {
+          "x": 6.327771054292018,
+          "y": -22.55858986725798
+        },
+        "p4": {
+          "x": -19.672778795441584,
+          "y": -22.55858986725798
+        }
+      },
+      "constraints": [
+        {
+          "id": "e9",
+          "type": "h",
+          "line": "e5"
+        },
+        {
+          "id": "e10",
+          "type": "h",
+          "line": "e7"
+        },
+        {
+          "id": "e11",
+          "type": "v",
+          "line": "e6"
+        },
+        {
+          "id": "e12",
+          "type": "v",
+          "line": "e8"
+        }
+      ],
+      "dims": [],
+      "seq": 13,
+      "visible": false,
+      "origin": [
+        0,
+        0,
+        50
+      ],
+      "axU": [
+        1,
+        0,
+        0
+      ],
+      "axV": [
+        0,
+        1,
+        0
+      ],
+      "axN": [
+        0,
+        0,
+        1
+      ],
+      "host": {
+        "feat": "ex_2_muf876k4",
+        "tag": "TOP",
+        "x": 0,
+        "y": 0
+      },
+      "_refNote": "référence : état avant « Découpe Esquisse 4 (face) -5mm »",
+      "_health": {
+        "loops": 1,
+        "holes": 0,
+        "opens": [],
+        "gapPair": null,
+        "gapD": 1000000000,
+        "dupes": [],
+        "degen": [],
+        "selfints": []
+      },
+      "_audit": {
+        "residual": 0,
+        "all": [
+          {
+            "id": "e9",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e10",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e11",
+            "desc": "v",
+            "viol": 0
+          },
+          {
+            "id": "e12",
+            "desc": "v",
+            "viol": 0
+          }
+        ]
+      }
+    }
+  ],
+  "features": [
+    {
+      "id": "ex_2_muf876k4",
+      "type": "extrude",
+      "name": "Extrusion Esquisse 1 50mm",
+      "sketchId": "sk_1_muf870a3",
+      "distance": 50,
+      "op": "add",
+      "visible": true
+    },
+    {
+      "id": "ex_4_muf87jqr",
+      "type": "extrude",
+      "name": "Découpe Esquisse 2 (face) -15mm",
+      "sketchId": "sk_3_muf87b8j",
+      "distance": -15,
+      "op": "cut",
+      "visible": true
+    },
+    {
+      "id": "xf_5_muf87wft",
+      "type": "xfillet",
+      "name": "Congé exact (4 arête(s))",
+      "edges": [
+        {
+          "pos": [
+            -16,
+            -22.5,
+            12
+          ],
+          "r": 6,
+          "len": 15,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_3_muf87b8j",
+            "id": "p4"
+          }
+        },
+        {
+          "pos": [
+            20,
+            -22.5,
+            12
+          ],
+          "r": 6,
+          "len": 15,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_3_muf87b8j",
+            "id": "p3"
+          }
+        },
+        {
+          "pos": [
+            20,
+            -22.5,
+            42
+          ],
+          "r": 6,
+          "len": 15,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_3_muf87b8j",
+            "id": "p2"
+          }
+        },
+        {
+          "pos": [
+            -16,
+            -22.5,
+            42
+          ],
+          "r": 6,
+          "len": 15,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_3_muf87b8j",
+            "id": "p1"
+          }
+        }
+      ],
+      "visible": true
+    },
+    {
+      "id": "xf_6_muf883cj",
+      "type": "xfillet",
+      "name": "Congé exact (8 arête(s))",
+      "edges": [
+        {
+          "pos": [
+            2,
+            -15,
+            42
+          ],
+          "r": 3,
+          "len": 24,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_3_muf87b8j",
+            "id": "e5",
+            "z": -15,
+            "side": 0,
+            "dist": -15
+          }
+        },
+        {
+          "pos": [
+            18.242640687119284,
+            -15,
+            40.242640687119284
+          ],
+          "r": 3,
+          "len": 9.415,
+          "anchor": null
+        },
+        {
+          "pos": [
+            -14.242640687119286,
+            -15,
+            40.242640687119284
+          ],
+          "r": 3,
+          "len": 9.415,
+          "anchor": null
+        },
+        {
+          "pos": [
+            20,
+            -15,
+            27
+          ],
+          "r": 3,
+          "len": 18,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_3_muf87b8j",
+            "id": "e6",
+            "z": -15,
+            "side": 0,
+            "dist": -15
+          }
+        },
+        {
+          "pos": [
+            -16,
+            -15,
+            27
+          ],
+          "r": 3,
+          "len": 18,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_3_muf87b8j",
+            "id": "e8",
+            "z": -15,
+            "side": 0,
+            "dist": -15
+          }
+        },
+        {
+          "pos": [
+            18.242640687119284,
+            -15,
+            40.242640687119284
+          ],
+          "r": 3,
+          "len": 9.415,
+          "anchor": null
+        },
+        {
+          "pos": [
+            -14.242640687119286,
+            -15,
+            40.242640687119284
+          ],
+          "r": 3,
+          "len": 9.415,
+          "anchor": null
+        },
+        {
+          "pos": [
+            2,
+            -15,
+            12
+          ],
+          "r": 3,
+          "len": 24,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_3_muf87b8j",
+            "id": "e7",
+            "z": -15,
+            "side": 0,
+            "dist": -15
+          }
+        }
+      ],
+      "visible": true
+    },
+    {
+      "id": "ex_8_muf88i9y",
+      "type": "extrude",
+      "name": "Découpe Esquisse 3 (face) -10mm",
+      "sketchId": "sk_7_muf885v1",
+      "distance": -10,
+      "op": "cut",
+      "visible": true
+    },
+    {
+      "id": "xf_9_muf894zd",
+      "type": "xfillet",
+      "name": "Congé exact (2 arête(s))",
+      "edges": [
+        {
+          "pos": [
+            17.999999999999996,
+            4,
+            40
+          ],
+          "r": 3,
+          "len": 31.287,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_7_muf885v1",
+            "id": "e2",
+            "z": -10,
+            "side": 0,
+            "dist": -10
+          }
+        },
+        {
+          "pos": [
+            17.999999999999996,
+            4,
+            40
+          ],
+          "r": 3,
+          "len": 31.287,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_7_muf885v1",
+            "id": "e2",
+            "z": -10,
+            "side": 0,
+            "dist": -10
+          }
+        }
+      ],
+      "visible": true
+    },
+    {
+      "id": "xf_10_muf89a5n",
+      "type": "xfillet",
+      "name": "Congé exact (2 arête(s))",
+      "edges": [
+        {
+          "pos": [
+            17.999999999999996,
+            4,
+            50
+          ],
+          "r": 2,
+          "len": 31.287,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_7_muf885v1",
+            "id": "e2",
+            "z": 0,
+            "side": 1,
+            "dist": -10
+          }
+        },
+        {
+          "pos": [
+            17.999999999999996,
+            4,
+            50
+          ],
+          "r": 2,
+          "len": 31.287,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_7_muf885v1",
+            "id": "e2",
+            "z": 0,
+            "side": 1,
+            "dist": -10
+          }
+        }
+      ],
+      "visible": true
+    },
+    {
+      "id": "xf_12_muf8tu4h",
+      "type": "xfillet",
+      "name": "Congé exact (4 arête(s))",
+      "edges": [
+        {
+          "pos": [
+            40,
+            30,
+            25
+          ],
+          "r": 8,
+          "len": 50,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_1_muf870a3",
+            "id": "p2"
+          }
+        },
+        {
+          "pos": [
+            40,
+            -30,
+            25
+          ],
+          "r": 8,
+          "len": 50,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_1_muf870a3",
+            "id": "p3"
+          }
+        },
+        {
+          "pos": [
+            -35,
+            30,
+            25
+          ],
+          "r": 8,
+          "len": 50,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_1_muf870a3",
+            "id": "p1"
+          }
+        },
+        {
+          "pos": [
+            -35,
+            -30,
+            25
+          ],
+          "r": 8,
+          "len": 50,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_1_muf870a3",
+            "id": "p4"
+          }
+        }
+      ],
+      "visible": true
+    },
+    {
+      "id": "xf_13_muf8ud1j",
+      "type": "xfillet",
+      "name": "Congé exact (16 arête(s))",
+      "edges": [
+        {
+          "pos": [
+            40,
+            0,
+            50
+          ],
+          "r": 2,
+          "len": 44,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_1_muf870a3",
+            "id": "e6",
+            "z": 50,
+            "side": 1,
+            "dist": 50
+          }
+        },
+        {
+          "pos": [
+            37.65685424949238,
+            -27.65685424949238,
+            50
+          ],
+          "r": 2,
+          "len": 12.553,
+          "anchor": null
+        },
+        {
+          "pos": [
+            37.65685424949238,
+            27.656854249492383,
+            50
+          ],
+          "r": 2,
+          "len": 12.553,
+          "anchor": null
+        },
+        {
+          "pos": [
+            2.5,
+            -30,
+            50
+          ],
+          "r": 2,
+          "len": 59,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_1_muf870a3",
+            "id": "e7",
+            "z": 50,
+            "side": 1,
+            "dist": 50
+          }
+        },
+        {
+          "pos": [
+            2.5,
+            30,
+            50
+          ],
+          "r": 2,
+          "len": 59,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_1_muf870a3",
+            "id": "e5",
+            "z": 50,
+            "side": 1,
+            "dist": 50
+          }
+        },
+        {
+          "pos": [
+            -32.65685424949238,
+            -27.65685424949238,
+            50
+          ],
+          "r": 2,
+          "len": 12.553,
+          "anchor": null
+        },
+        {
+          "pos": [
+            -32.65685424949238,
+            27.656854249492383,
+            50
+          ],
+          "r": 2,
+          "len": 12.553,
+          "anchor": null
+        },
+        {
+          "pos": [
+            -35,
+            0,
+            50
+          ],
+          "r": 2,
+          "len": 44,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_1_muf870a3",
+            "id": "e8",
+            "z": 50,
+            "side": 1,
+            "dist": 50
+          }
+        },
+        {
+          "pos": [
+            40,
+            0,
+            0
+          ],
+          "r": 2,
+          "len": 44,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_1_muf870a3",
+            "id": "e6",
+            "z": 0,
+            "side": 0,
+            "dist": 50
+          }
+        },
+        {
+          "pos": [
+            37.65685424949238,
+            -27.65685424949238,
+            0
+          ],
+          "r": 2,
+          "len": 12.553,
+          "anchor": null
+        },
+        {
+          "pos": [
+            37.65685424949238,
+            27.656854249492383,
+            0
+          ],
+          "r": 2,
+          "len": 12.553,
+          "anchor": null
+        },
+        {
+          "pos": [
+            2.5,
+            -30,
+            0
+          ],
+          "r": 2,
+          "len": 59,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_1_muf870a3",
+            "id": "e7",
+            "z": 0,
+            "side": 0,
+            "dist": 50
+          }
+        },
+        {
+          "pos": [
+            2.5,
+            30,
+            0
+          ],
+          "r": 2,
+          "len": 59,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_1_muf870a3",
+            "id": "e5",
+            "z": 0,
+            "side": 0,
+            "dist": 50
+          }
+        },
+        {
+          "pos": [
+            -32.65685424949238,
+            -27.65685424949238,
+            0
+          ],
+          "r": 2,
+          "len": 12.553,
+          "anchor": null
+        },
+        {
+          "pos": [
+            -32.65685424949238,
+            27.656854249492383,
+            0
+          ],
+          "r": 2,
+          "len": 12.553,
+          "anchor": null
+        },
+        {
+          "pos": [
+            -35,
+            0,
+            0
+          ],
+          "r": 2,
+          "len": 44,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_1_muf870a3",
+            "id": "e8",
+            "z": 0,
+            "side": 0,
+            "dist": 50
+          }
+        }
+      ],
+      "visible": true
+    },
+    {
+      "id": "ex_16_muf9c58x",
+      "type": "extrude",
+      "name": "Découpe Esquisse 4 (face) -5mm",
+      "sketchId": "sk_15_muf9br9q",
+      "distance": -5,
+      "op": "cut",
+      "visible": true
+    },
+    {
+      "id": "xf_17_mufackxz",
+      "type": "xfillet",
+      "name": "Congé exact (4 arête(s))",
+      "edges": [
+        {
+          "pos": [
+            -19.672778795441584,
+            -2.3547154023325447,
+            47.5
+          ],
+          "r": 4.5,
+          "len": 5,
+          "anchor": null
+        },
+        {
+          "pos": [
+            6.327771054292018,
+            -2.3547154023325447,
+            47.5
+          ],
+          "r": 4.5,
+          "len": 5,
+          "anchor": null
+        },
+        {
+          "pos": [
+            6.327771054292018,
+            -22.55858986725798,
+            47.5
+          ],
+          "r": 4.5,
+          "len": 5,
+          "anchor": null
+        },
+        {
+          "pos": [
+            -19.672778795441584,
+            -22.55858986725798,
+            47.5
+          ],
+          "r": 4.5,
+          "len": 5,
+          "anchor": null
+        }
+      ],
+      "visible": true
+    },
+    {
+      "id": "xf_18_mufacrlr",
+      "type": "xfillet",
+      "name": "Congé exact (8 arête(s))",
+      "edges": [
+        {
+          "pos": [
+            -6.672503870574783,
+            -2.3547154023325447,
+            45
+          ],
+          "r": 2,
+          "len": 17.001,
+          "anchor": null
+        },
+        {
+          "pos": [
+            5.009751569631483,
+            -3.67273488699308,
+            45
+          ],
+          "r": 2,
+          "len": 7.061,
+          "anchor": null
+        },
+        {
+          "pos": [
+            -18.35475931078105,
+            -3.6727348869930796,
+            45
+          ],
+          "r": 2,
+          "len": 7.061,
+          "anchor": null
+        },
+        {
+          "pos": [
+            6.327771054292018,
+            -12.456652634795262,
+            45
+          ],
+          "r": 2,
+          "len": 11.204,
+          "anchor": null
+        },
+        {
+          "pos": [
+            -19.672778795441584,
+            -12.456652634795262,
+            45
+          ],
+          "r": 2,
+          "len": 11.204,
+          "anchor": null
+        },
+        {
+          "pos": [
+            5.009751569631483,
+            -21.240570382597443,
+            45
+          ],
+          "r": 2,
+          "len": 7.061,
+          "anchor": null
+        },
+        {
+          "pos": [
+            -18.35475931078105,
+            -21.240570382597443,
+            45
+          ],
+          "r": 2,
+          "len": 7.061,
+          "anchor": null
+        },
+        {
+          "pos": [
+            -6.672503870574783,
+            -22.55858986725798,
+            45
+          ],
+          "r": 2,
+          "len": 17.001,
+          "anchor": null
+        }
+      ],
+      "visible": true
+    },
+    {
+      "id": "xf_19_mufacx9x",
+      "type": "xfillet",
+      "name": "Congé exact (8 arête(s))",
+      "edges": [
+        {
+          "pos": [
+            -6.672503870574783,
+            -2.3547154023325447,
+            50
+          ],
+          "r": 1,
+          "len": 17.001,
+          "anchor": null
+        },
+        {
+          "pos": [
+            5.009751569631483,
+            -3.67273488699308,
+            50
+          ],
+          "r": 1,
+          "len": 7.061,
+          "anchor": null
+        },
+        {
+          "pos": [
+            -18.35475931078105,
+            -3.6727348869930796,
+            50
+          ],
+          "r": 1,
+          "len": 7.061,
+          "anchor": null
+        },
+        {
+          "pos": [
+            6.327771054292018,
+            -12.456652634795262,
+            50
+          ],
+          "r": 1,
+          "len": 11.204,
+          "anchor": null
+        },
+        {
+          "pos": [
+            -19.672778795441584,
+            -12.456652634795262,
+            50
+          ],
+          "r": 1,
+          "len": 11.204,
+          "anchor": null
+        },
+        {
+          "pos": [
+            5.009751569631483,
+            -21.240570382597443,
+            50
+          ],
+          "r": 1,
+          "len": 7.061,
+          "anchor": null
+        },
+        {
+          "pos": [
+            -18.35475931078105,
+            -21.240570382597443,
+            50
+          ],
+          "r": 1,
+          "len": 7.061,
+          "anchor": null
+        },
+        {
+          "pos": [
+            -6.672503870574783,
+            -22.55858986725798,
+            50
+          ],
+          "r": 1,
+          "len": 17.001,
+          "anchor": null
+        }
+      ],
+      "visible": true
+    }
+  ]
+}

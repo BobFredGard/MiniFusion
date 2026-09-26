@@ -1,0 +1,743 @@
+{
+  "app": "MiniFusion",
+  "v": 1,
+  "name": "Solid 1",
+  "tint": 16753930,
+  "originVis": {
+    "XY": false,
+    "XZ": false,
+    "YZ": false
+  },
+  "view": {
+    "edges": "on",
+    "mirror": true,
+    "axes": false,
+    "zoomInv": true,
+    "clipOn": false,
+    "clipPos": 0,
+    "clipFlip": false
+  },
+  "bodyVis": {
+    "occ_result": true
+  },
+  "sel": {
+    "kind": "feature",
+    "id": "ex_9_muf3xhgw"
+  },
+  "sketches": [
+    {
+      "id": "sk_2_muen4eoh",
+      "name": "Esquisse 1",
+      "plane": "XY",
+      "entities": [
+        {
+          "id": "e5",
+          "t": "line",
+          "p1": "p1",
+          "p2": "p2"
+        },
+        {
+          "id": "e6",
+          "t": "line",
+          "p1": "p2",
+          "p2": "p3"
+        },
+        {
+          "id": "e7",
+          "t": "line",
+          "p1": "p3",
+          "p2": "p4"
+        },
+        {
+          "id": "e8",
+          "t": "line",
+          "p1": "p4",
+          "p2": "p1"
+        }
+      ],
+      "points": {
+        "O": {
+          "x": 0,
+          "y": 0
+        },
+        "p1": {
+          "x": -49.999999999319144,
+          "y": 37.50000000070125
+        },
+        "p2": {
+          "x": 50.000000000680856,
+          "y": 37.50000000070125
+        },
+        "p3": {
+          "x": 50.000000000680856,
+          "y": -37.49999999929874
+        },
+        "p4": {
+          "x": -49.999999999319144,
+          "y": -37.49999999929874
+        }
+      },
+      "constraints": [
+        {
+          "id": "e9",
+          "type": "h",
+          "line": "e5"
+        },
+        {
+          "id": "e10",
+          "type": "h",
+          "line": "e7"
+        },
+        {
+          "id": "e11",
+          "type": "v",
+          "line": "e6"
+        },
+        {
+          "id": "e12",
+          "type": "v",
+          "line": "e8"
+        }
+      ],
+      "dims": [
+        {
+          "id": "e13",
+          "type": "length",
+          "line": "e5",
+          "value": 100,
+          "w": 24.41129511052911,
+          "ox": 0,
+          "oy": 0
+        },
+        {
+          "id": "e14",
+          "type": "length",
+          "line": "e6",
+          "value": 75,
+          "w": 32.98453591086647,
+          "ox": 0,
+          "oy": 0
+        },
+        {
+          "id": "e18",
+          "type": "distline",
+          "line": "e6",
+          "value": 50,
+          "p": "O",
+          "w": -15.257575163424725,
+          "ox": 0,
+          "oy": 0
+        },
+        {
+          "id": "e19",
+          "type": "distline",
+          "line": "e5",
+          "value": 37.5,
+          "p": "O",
+          "w": 23.009700298709735,
+          "ox": 0,
+          "oy": 0
+        }
+      ],
+      "seq": 20,
+      "visible": false,
+      "origin": [
+        0,
+        0,
+        0
+      ],
+      "axU": [
+        1,
+        0,
+        0
+      ],
+      "axV": [
+        0,
+        1,
+        0
+      ],
+      "axN": [
+        0,
+        0,
+        1
+      ],
+      "_refNote": "référence : état avant « Extrusion Esquisse 1 20mm »",
+      "_health": {
+        "loops": 1,
+        "holes": 0,
+        "opens": [],
+        "gapPair": null,
+        "gapD": 1000000000,
+        "dupes": [],
+        "degen": [],
+        "selfints": []
+      },
+      "_audit": {
+        "residual": 7.012488367763581e-10,
+        "all": [
+          {
+            "id": "e19",
+            "desc": "⟂ centre↔ligne",
+            "viol": 7.012488367763581e-10
+          },
+          {
+            "id": "e18",
+            "desc": "⟂ centre↔ligne",
+            "viol": 6.808562602600432e-10
+          },
+          {
+            "id": "e14",
+            "desc": "longueur",
+            "viol": 1.4210854715202004e-14
+          },
+          {
+            "id": "e13",
+            "desc": "longueur",
+            "viol": 0
+          },
+          {
+            "id": "e9",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e10",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e11",
+            "desc": "v",
+            "viol": 0
+          },
+          {
+            "id": "e12",
+            "desc": "v",
+            "viol": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "sk_6_muf218a1",
+      "name": "Esquisse 2 (face)",
+      "plane": "FACE",
+      "entities": [
+        {
+          "id": "e1",
+          "t": "circle",
+          "pc": "O",
+          "r": 20
+        }
+      ],
+      "points": {
+        "O": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      "constraints": [],
+      "dims": [
+        {
+          "id": "e2",
+          "type": "diameter",
+          "ent": "e1",
+          "value": 40,
+          "ox": 10.134206540385254,
+          "oy": 9.952456255093185
+        }
+      ],
+      "seq": 3,
+      "visible": false,
+      "origin": [
+        0,
+        0,
+        20
+      ],
+      "axU": [
+        1,
+        0,
+        0
+      ],
+      "axV": [
+        0,
+        1,
+        0
+      ],
+      "axN": [
+        0,
+        0,
+        1
+      ],
+      "_refNote": "référence : état avant « Découpe Esquisse 2 (face) -20mm »",
+      "_health": {
+        "loops": 1,
+        "holes": 0,
+        "opens": [],
+        "gapPair": null,
+        "gapD": 1000000000,
+        "dupes": [],
+        "degen": [],
+        "selfints": []
+      },
+      "_audit": {
+        "residual": 0,
+        "all": [
+          {
+            "id": "e2",
+            "desc": "diameter",
+            "viol": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "sk_8_muf3ua8u",
+      "name": "Esquisse 3 (face)",
+      "plane": "FACE",
+      "entities": [
+        {
+          "id": "e6",
+          "t": "line",
+          "p1": "p18",
+          "p2": "p24",
+          "construction": true
+        },
+        {
+          "id": "e7",
+          "t": "line",
+          "p1": "p24",
+          "p2": "p22",
+          "construction": true
+        },
+        {
+          "id": "e8",
+          "t": "line",
+          "p1": "p22",
+          "p2": "p20",
+          "construction": true
+        },
+        {
+          "id": "e9",
+          "t": "line",
+          "p1": "p20",
+          "p2": "p18",
+          "construction": true
+        },
+        {
+          "id": "e19",
+          "t": "circle",
+          "pc": "p18",
+          "r": 3.250000000000001
+        },
+        {
+          "id": "e21",
+          "t": "circle",
+          "pc": "p20",
+          "r": 3.2500000000000013
+        },
+        {
+          "id": "e23",
+          "t": "circle",
+          "pc": "p22",
+          "r": 3.2500000000000018
+        },
+        {
+          "id": "e25",
+          "t": "circle",
+          "pc": "p24",
+          "r": 3.2500000000000018
+        }
+      ],
+      "points": {
+        "O": {
+          "x": 0,
+          "y": 0
+        },
+        "p18": {
+          "x": -35.000000000548894,
+          "y": 24.999999999467157
+        },
+        "p20": {
+          "x": -35.000000000548894,
+          "y": -25.000000000532843
+        },
+        "p22": {
+          "x": 34.999999999451106,
+          "y": -25.000000000532843
+        },
+        "p24": {
+          "x": 34.999999999451106,
+          "y": 24.999999999467157
+        }
+      },
+      "constraints": [
+        {
+          "id": "e10",
+          "type": "h",
+          "line": "e6"
+        },
+        {
+          "id": "e11",
+          "type": "h",
+          "line": "e8"
+        },
+        {
+          "id": "e12",
+          "type": "v",
+          "line": "e7"
+        },
+        {
+          "id": "e13",
+          "type": "v",
+          "line": "e9"
+        },
+        {
+          "id": "e26",
+          "type": "equal",
+          "a": "e19",
+          "b": "e21"
+        },
+        {
+          "id": "e27",
+          "type": "equal",
+          "a": "e21",
+          "b": "e23"
+        },
+        {
+          "id": "e28",
+          "type": "equal",
+          "a": "e25",
+          "b": "e23"
+        }
+      ],
+      "dims": [
+        {
+          "id": "e14",
+          "type": "length",
+          "line": "e6",
+          "value": 70,
+          "w": 28.40701500513849,
+          "ox": 0,
+          "oy": 0
+        },
+        {
+          "id": "e15",
+          "type": "length",
+          "line": "e7",
+          "value": 50,
+          "w": 24.46330104494504,
+          "ox": 0,
+          "oy": 0
+        },
+        {
+          "id": "e16",
+          "type": "distline",
+          "line": "e7",
+          "value": 35,
+          "p": "O",
+          "w": 44.99064673256905,
+          "ox": 0,
+          "oy": 0
+        },
+        {
+          "id": "e17",
+          "type": "distline",
+          "line": "e6",
+          "value": 25,
+          "p": "O",
+          "w": -53.77352052830232,
+          "ox": 0,
+          "oy": 0
+        },
+        {
+          "id": "e29",
+          "type": "diameter",
+          "ent": "e19",
+          "value": 6.5,
+          "ox": -19.91162290736952,
+          "oy": 12.021123668945812
+        }
+      ],
+      "seq": 30,
+      "visible": false,
+      "origin": [
+        0,
+        0,
+        20
+      ],
+      "axU": [
+        1,
+        0,
+        0
+      ],
+      "axV": [
+        0,
+        1,
+        0
+      ],
+      "axN": [
+        0,
+        0,
+        1
+      ],
+      "_refNote": "référence : solide fini (esquisse non consommée)",
+      "_health": {
+        "loops": 4,
+        "holes": 0,
+        "opens": [],
+        "gapPair": null,
+        "gapD": 1000000000,
+        "dupes": [],
+        "degen": [],
+        "selfints": []
+      },
+      "_audit": {
+        "residual": 5.488942633746774e-10,
+        "all": [
+          {
+            "id": "e16",
+            "desc": "⟂ centre↔ligne",
+            "viol": 5.488942633746774e-10
+          },
+          {
+            "id": "e17",
+            "desc": "⟂ centre↔ligne",
+            "viol": 5.328431029738567e-10
+          },
+          {
+            "id": "e29",
+            "desc": "diameter",
+            "viol": 9.666933920016163e-12
+          },
+          {
+            "id": "e26",
+            "desc": "égal",
+            "viol": 3.417710559006082e-12
+          },
+          {
+            "id": "e27",
+            "desc": "égal",
+            "viol": 1.708855279503041e-12
+          },
+          {
+            "id": "e14",
+            "desc": "longueur",
+            "viol": 0
+          },
+          {
+            "id": "e15",
+            "desc": "longueur",
+            "viol": 0
+          },
+          {
+            "id": "e10",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e11",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e12",
+            "desc": "v",
+            "viol": 0
+          },
+          {
+            "id": "e13",
+            "desc": "v",
+            "viol": 0
+          },
+          {
+            "id": "e28",
+            "desc": "égal",
+            "viol": 0
+          }
+        ]
+      }
+    }
+  ],
+  "features": [
+    {
+      "id": "ex_3_muen5a45",
+      "type": "extrude",
+      "name": "Extrusion Esquisse 1 20mm",
+      "sketchId": "sk_2_muen4eoh",
+      "distance": 20,
+      "op": "add",
+      "visible": true
+    },
+    {
+      "id": "xf_4_muen5nea",
+      "type": "xfillet",
+      "name": "Congé exact (4 arête(s))",
+      "edges": [
+        {
+          "pos": [
+            -49.999999999319144,
+            37.50000000070125,
+            10
+          ],
+          "r": 15,
+          "len": 20,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_2_muen4eoh",
+            "id": "p1"
+          }
+        },
+        {
+          "pos": [
+            -49.999999999319144,
+            -37.49999999929874,
+            10
+          ],
+          "r": 15,
+          "len": 20,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_2_muen4eoh",
+            "id": "p4"
+          }
+        },
+        {
+          "pos": [
+            50.000000000680856,
+            -37.49999999929874,
+            10
+          ],
+          "r": 15,
+          "len": 20,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_2_muen4eoh",
+            "id": "p3"
+          }
+        },
+        {
+          "pos": [
+            50.000000000680856,
+            37.50000000070125,
+            10
+          ],
+          "r": 15,
+          "len": 20,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_2_muen4eoh",
+            "id": "p2"
+          }
+        }
+      ],
+      "visible": true
+    },
+    {
+      "id": "ex_7_muf23tx8",
+      "type": "extrude",
+      "name": "Découpe Esquisse 2 (face) -20mm",
+      "sketchId": "sk_6_muf218a1",
+      "distance": -20,
+      "op": "cut",
+      "visible": true
+    },
+    {
+      "id": "xf_9_muf3dhke",
+      "type": "xfillet",
+      "name": "Congé exact (8 arête(s))",
+      "edges": [
+        {
+          "pos": [
+            6.808562602600432e-10,
+            37.50000000070125,
+            20
+          ],
+          "r": 4,
+          "len": 70,
+          "anchor": null
+        },
+        {
+          "pos": [
+            45.60660171847907,
+            33.10660171849947,
+            20
+          ],
+          "r": 4,
+          "len": 23.538,
+          "anchor": null
+        },
+        {
+          "pos": [
+            -45.60660171711736,
+            33.10660171849947,
+            20
+          ],
+          "r": 4,
+          "len": 23.538,
+          "anchor": null
+        },
+        {
+          "pos": [
+            50.000000000680856,
+            7.012559422037157e-10,
+            20
+          ],
+          "r": 4,
+          "len": 45,
+          "anchor": null
+        },
+        {
+          "pos": [
+            -49.999999999319144,
+            7.012559422037157e-10,
+            20
+          ],
+          "r": 4,
+          "len": 45,
+          "anchor": null
+        },
+        {
+          "pos": [
+            45.60660171847907,
+            -33.10660171709695,
+            20
+          ],
+          "r": 4,
+          "len": 23.538,
+          "anchor": null
+        },
+        {
+          "pos": [
+            -45.60660171711736,
+            -33.10660171709695,
+            20
+          ],
+          "r": 4,
+          "len": 23.538,
+          "anchor": null
+        },
+        {
+          "pos": [
+            6.808562602600432e-10,
+            -37.49999999929874,
+            20
+          ],
+          "r": 4,
+          "len": 70,
+          "anchor": null
+        }
+      ],
+      "visible": true
+    },
+    {
+      "id": "ex_9_muf3xhgw",
+      "type": "extrude",
+      "name": "Découpe Esquisse 3 (face) -20mm",
+      "sketchId": "sk_8_muf3ua8u",
+      "distance": -20,
+      "op": "cut",
+      "visible": true
+    }
+  ]
+}
