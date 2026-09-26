@@ -24,7 +24,6 @@ MiniFusion est un MVP de CAO historique (paramétrique, esprit Fusion 360) qui t
 ### Mesure & échange
 - Import **STEP / STL**, export **STEP / STL / OBJ**.
 - Projets `.minifusion.json` (paramétriques) + sauvegarde locale automatique (autosave).
-- Échantillons fournis : `test*.minifusion.json`, `Solid *.step` — à ouvrir via 📂.
 
 ## Démarrage
 
@@ -51,7 +50,6 @@ python -m http.server 3000
 | `occt/` | Noyau OpenCascade WebAssembly (~111 Mo) + ses `.bak` locaux (non suivis) |
 | `threejs/` | Rendu 3D (three.js), OrbitControls, CSG |
 | `Backup/` | Snapshots des versions vertes (`2026-09-28n` → `v`) |
-| `*.minifusion.json`, `*.step` | Échantillons de projets |
 | `Server.bat` | Lancement local (npx serve, port 3000) |
 
 Pas de build : du HTML+JS commenté, versionné par `APP_VER` en tête de fichier avec changelog complet dans l'en-tête du code.
