@@ -5,7 +5,7 @@ Zéro build, zéro framework : tu ouvres la page, tu dessines.
 
 MiniFusion est un MVP de CAO historique (paramétrique, esprit Fusion 360) qui tourne dans le navigateur : esquisses 2D contraintes et cotées, solides générés par extrusion avec historique rejouable, congés, mesures, import/export STEP. Le kernel géométrique exact s'appuie sur **OpenCascade compilé en WebAssembly**, avec repli automatique en mode maillage (CSG) quand le noyau n'est pas disponible.
 
-## Image de l'interface
+## L'interface Graphique
 <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/b066f7e6-5170-4a59-b83a-301ff77b9692" />
 
 ## Fonctionnalités
