@@ -292,7 +292,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
        verticales ; occRimFillets = MakeFillet par arête, échec isolé non destructif + warning),
        pastilles incluses ; le message « périmètre ignoré en mode exact » est supprimé (il ne
        l'est plus). Persistance fillet/xfillet vérifiée (round-trip) + doc de test 4 esquisses /
-        host SIDE / proj srcMid chargé — test_fillet_rim, régression 26/26.
+       host SIDE / proj srcMid chargé — test_fillet_rim, régression 26/26. */
         2026-09-28y : Projections associatives qui SUIVENT enfin l'édition de l'esquisse source.
         Cause racine : findClosestProjectedEdge / projectEdgeAt appelaient occCleanup(FR,null)
         (qui supprime FR.shape) avant occListEdges → forme morte → throw silencieux → aucune MAJ.

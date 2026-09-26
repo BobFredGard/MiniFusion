@@ -292,18 +292,9 @@ input[type=range]{accent-color:var(--primary);width:100%}
        verticales ; occRimFillets = MakeFillet par arête, échec isolé non destructif + warning),
        pastilles incluses ; le message « périmètre ignoré en mode exact » est supprimé (il ne
        l'est plus). Persistance fillet/xfillet vérifiée (round-trip) + doc de test 4 esquisses /
-        host SIDE / proj srcMid chargé — test_fillet_rim, régression 26/26.
-        2026-09-28y : Projections associatives qui SUIVENT enfin l'édition de l'esquisse source.
-        Cause racine : findClosestProjectedEdge / projectEdgeAt appelaient occCleanup(FR,null)
-        (qui supprime FR.shape) avant occListEdges → forme morte → throw silencieux → aucune MAJ.
-        Nettoyage différé (try/finally), scoring d'identité dominant (sc=dm*1000+d) + wantType
-        (line/circle/arc) pour ne jamais perdre la nature d'une arête, updateAllProjections
-        isole chaque esquisse et retourne « changed » → projRefreshRerun rejoue UNE passe le
-        solide après écriture des coordonnées (closeSketch compris), autosave si 2ᵉ passe.
-        r changé détecté (|Δr|>0.02). Test test_proj_follow (doc 1.json : centre e7 → p3,
-        srcMid rafraîchi, idempotence, gros déplacement +40, rebuild ×2) — régression 27/27. */
+       host SIDE / proj srcMid chargé — test_fillet_rim, régression 26/26. */
 'use strict';
-const APP_VER='2026-09-28y';
+const APP_VER='2026-09-28x';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 const $=id=>document.getElementById(id);
@@ -2123,18 +2114,7 @@ function occRebuild(){
 function hasDisplaySolid(list){
   return (list||[]).some(b=>!b.ghost&&b.mesh&&b.mesh.geometry&&b.mesh.geometry.attributes.position&&b.mesh.geometry.attributes.position.count>0);
 }
-function projRefreshRerun(pass){
-  // Projections associatives : si une esquisse a bougé après rejeu, le solide est rejoué
-  // aussitôt (garde : une seule passe imbriquée — jamais de récursion infinie).
-  let ch=false;
-  try{ch=updateAllProjections();}catch(e){}
-  if(!ch)return false;
-  if(!(pass>=1)){ try{rebuild(pass+1);}catch(e){} return true; }
-  try{autosave();}catch(e){} // coordonnées déjà écrites : au moins les persister
-  return false;
-}
-function rebuild(projPass){
-  projPass=projPass||0;
+function rebuild(){
   (doc.sketches||[]).forEach(migrateSketch); // compat anciens brouillons + verrouille le modèle points
   try{resolveAllSketchHosts();}catch(e){}
   // Snapshot du dernier état valide : commit si le rebuild aboutit, rollback sinon.
@@ -2165,7 +2145,7 @@ function rebuild(projPass){
   (doc.features||[]).forEach(f=>{if(f.type==='extrude'&&!f.op)f.op='add';});
   // Voie exacte OCCT (prioritaire) : prismes BRep + Fuse/Cut + tessellation.
   if(occHas()){
-    if(occRebuild()){occEngineMsg='exact OCCT';occStatus();refreshParts();renderTree();renderTimeline();autosave();applyClip();if(filMode)buildFilletOverlay();else if(filModeX){if(occLive&&occLive.shape){try{filModeX.edges=occSharpEdges(occLive.shape).filter(e=>e.sharp);}catch(e){}}buildExactOverlay();}buildEdgeOverlay();refreshMirror();commitPrev();builtHash=docHash();builtEngine='exact';saveViewCache();projRefreshRerun(projPass);return;}
+    if(occRebuild()){occEngineMsg='exact OCCT';occStatus();refreshParts();renderTree();renderTimeline();autosave();applyClip();if(filMode)buildFilletOverlay();else if(filModeX){if(occLive&&occLive.shape){try{filModeX.edges=occSharpEdges(occLive.shape).filter(e=>e.sharp);}catch(e){}}buildExactOverlay();}buildEdgeOverlay();refreshMirror();commitPrev();builtHash=docHash();builtEngine='exact';saveViewCache();try{updateAllProjections();}catch(e){}return;}
     occEngineMsg='maillage (repli exact impossible — voir Mesure)';
     faceEl.textContent+=(faceEl.textContent?'\n':'')+'OCCT : repli sur le moteur maillage pour ce rebuild.';
     if(bodies.length)clearBodies(); // sécurité : un repli partiel ne doit jamais doubler l'affichage
@@ -2267,7 +2247,7 @@ function rebuild(projPass){
   if(filMode)buildFilletOverlay();
   else if(filModeX){if(occLive&&occLive.shape){try{filModeX.edges=occSharpEdges(occLive.shape).filter(e=>e.sharp);}catch(e){}}buildExactOverlay();}
   buildEdgeOverlay();refreshMirror();
-  commitPrev();builtHash=docHash();builtEngine='mesh';saveViewCache();projRefreshRerun(projPass);
+  commitPrev();builtHash=docHash();builtEngine='mesh';saveViewCache();try{updateAllProjections();}catch(e){}
   }catch(err){
     try{rollbackPrev(String((err&&err.message)||err));}catch(e2){faceEl.textContent+='\n[Rebuild] échec critique.';
       try{refreshParts();renderTree();renderTimeline();applyClip();occStatus();}catch(e3){}}
@@ -2676,27 +2656,22 @@ function skGhost2DRefs(shape){
     return out.length?out:null;
   }catch(e){return null;}
 }
-function findClosestProjectedEdge(sk,x,y,preferMid,wantType){
+function findClosestProjectedEdge(sk,x,y,preferMid){
   // sans tolérance, cherche l'arête projetée la plus proche (antériorité).
   // preferMid : milieu 3D mémorisé à la projection — l'arête source d'origine prime
   // (si le solide bouge, on reste sur LA bonne arête et on rafraîchit le lien).
-  // wantType : 'line'|'circle'|'arc' — la nature de l'entité projetée ne change jamais :
-  // si le meilleur voisin général est d'un autre type, on prend le meilleur du type voulu.
-  let best=null,bd=1e9, srcMid=null;
-  let bTy=null,bTyd=1e9,bTySrc=null; // meilleur candidat EXIGÉ par le type de l'entité
+  let best=null,bd=1e9, bestPr=null,srcMid=null;
   const basis=sketchBasis(sk),u=basis.u,v=basis.v,o=basis.o;
-  let candShapes=[],FRk=null;
+  let candShapes=[];
   try{
     const feats=(doc.features||[]).filter(f=>f.visible!==false);
     const idx=feats.findIndex(f=>f.type==='extrude'&&f.sketchId===sk.id);
     if(idx>=0&&occHas()){
       const FR=occFinalShape(idx);
-      // Nettoyage DIFFÉRÉ (finally plus bas) : occCleanup(FR,null) supprime FR.shape —
-      // le lire après = use-after-free → occListEdges échoue → projection jamais mise à jour.
-      if(FR&&FR.shape){candShapes.push(FR.shape);FRk=FR;}
+      if(FR&&FR.shape) candShapes.push(FR.shape);
+      try{occCleanup(FR,null);}catch(e){}
     } else if(occHas()&&occLive&&occLive.shape) candShapes.push(occLive.shape);
   }catch(e){}
-  try{
   for(const sh of candShapes){
     try{
       const edges=occListEdges(sh);
@@ -2705,11 +2680,10 @@ function findClosestProjectedEdge(sk,x,y,preferMid,wantType){
         let d=1e9;
         for(let i=0;i<pts2.length-1;i++) d=Math.min(d, (function(ax,ay,bx,by){ const apx=x-ax,apy=y-ay,abx=bx-ax,aby=by-ay; const t=Math.max(0,Math.min(1,(apx*abx+apy*aby)/(abx*abx+aby*aby||1))); const cx=ax+abx*t,cy=ay+aby*t; return Math.hypot(x-cx,y-cy);})(pts2[i][0],pts2[i][1],pts2[i+1][0],pts2[i+1][1]));
         let sc=d;
-        // Identité dominante : le milieu mémorisé retrouve LA source même après un gros
-        // déplacement (la simple distance au vieux point désignait le mauvais voisin).
-        if(preferMid&&e.mid){const dm=Math.hypot(e.mid[0]-preferMid[0],e.mid[1]-preferMid[1],e.mid[2]-preferMid[2]);sc=dm*1000+d;}
-        if(sc>bd&&(!wantType||sc>bTyd))continue;
-        if(sc<bd||(wantType&&sc<bTyd)){
+        if(preferMid&&e.mid){const dm=Math.hypot(e.mid[0]-preferMid[0],e.mid[1]-preferMid[1],e.mid[2]-preferMid[2]);sc=d+Math.min(6,dm*4);}
+        if(sc<bd){
+          bd=sc;
+          srcMid=e.mid?e.mid.slice():null;
           // reconstruit pr comme projectEdgeAt mais sans tol
           let isCirc=false,cx=0,cy=0,r=0;
           if(pts2.length>=6){
@@ -2723,26 +2697,21 @@ function findClosestProjectedEdge(sk,x,y,preferMid,wantType){
               if(r>0.5){ let dev=0; for(const p of pts2){const dd=Math.abs(Math.hypot(p[0]-cx,p[1]-cy)-r); if(dd>dev)dev=dd;} if(dev<0.4) isCirc=true; }
             }
           }
-          let pr;
           if(isCirc){
             const isFull=Math.hypot(pts2[0][0]-pts2[pts2.length-1][0],pts2[0][1]-pts2[pts2.length-1][1])<0.5;
-            if(isFull) pr={type:'circle',cx,cy,r};
-            else pr={type:'arc',cx,cy,r,x1:pts2[0][0],y1:pts2[0][1],x2:pts2[pts2.length-1][0],y2:pts2[pts2.length-1][1]};
-          } else pr={type:'line',x1:pts2[0][0],y1:pts2[0][1],x2:pts2[pts2.length-1][0],y2:pts2[pts2.length-1][1]};
-          if(sc<bd){bd=sc;best=pr;srcMid=e.mid?e.mid.slice():null;}
-          if(wantType&&pr.type===wantType&&sc<bTyd){bTyd=sc;bTy=pr;bTySrc=e.mid?e.mid.slice():null;}
+            if(isFull) bestPr={type:'circle',cx,cy,r};
+            else bestPr={type:'arc',cx,cy,r,x1:pts2[0][0],y1:pts2[0][1],x2:pts2[pts2.length-1][0],y2:pts2[pts2.length-1][1]};
+          } else bestPr={type:'line',x1:pts2[0][0],y1:pts2[0][1],x2:pts2[pts2.length-1][0],y2:pts2[pts2.length-1][1]};
+          best=bestPr;
         }
       }
     }catch(e){}
   }
-  }finally{ if(FRk){try{occCleanup(FRk,null);}catch(e){} } }
-  let res=best,resSrc=srcMid;
-  if(wantType&&best&&best.type!==wantType&&bTy){res=bTy;resSrc=bTySrc;}
-  if(res&&resSrc)res.srcMid=resSrc;
-  return res;
+  if(best&&srcMid)best.srcMid=srcMid;
+  return best;
 }
 function updateAssociativeProjections(sk){
-  if(!sk||!sk.entities) return false;
+  if(!sk||!sk.entities) return;
   let changed=false;
   for(const e of sk.entities){
     if(!e.construction) continue;
@@ -2751,7 +2720,7 @@ function updateAssociativeProjections(sk){
     if(e.t==='line'){
       const A=sk.points[e.p1], B=sk.points[e.p2]; if(!A||!B) continue;
       const mx=(A.x+B.x)/2, my=(A.y+B.y)/2;
-      const pr=findClosestProjectedEdge(sk,mx,my,e.srcMid,'line');
+      const pr=findClosestProjectedEdge(sk,mx,my,e.srcMid);
       if(!pr||pr.type!=='line') continue;
       if(pr.srcMid)e.srcMid=pr.srcMid;
       const d1=Math.hypot(A.x-pr.x1,A.y-pr.y1)+Math.hypot(B.x-pr.x2,B.y-pr.y2);
@@ -2762,31 +2731,27 @@ function updateAssociativeProjections(sk){
       }
     } else if(e.t==='circle'){
       const C=sk.points[e.pc]; if(!C) continue;
-      const pr=findClosestProjectedEdge(sk,C.x,C.y,e.srcMid,'circle');
+      const pr=findClosestProjectedEdge(sk,C.x,C.y,e.srcMid);
       if(!pr||pr.type!=='circle') continue;
       if(pr.srcMid)e.srcMid=pr.srcMid;
       if(Math.hypot(C.x-pr.cx,C.y-pr.cy)>0.02 || Math.abs(e.r-pr.r)>0.02){ C.x=pr.cx; C.y=pr.cy; e.r=pr.r; changed=true; }
     } else if(e.t==='arc'){
       const C=sk.points[e.pc], A=sk.points[e.pa], B=sk.points[e.pb]; if(!C||!A||!B) continue;
       const mx=(A.x+B.x)/2, my=(A.y+B.y)/2;
-      const pr=findClosestProjectedEdge(sk,mx,my,e.srcMid,'arc');
+      const pr=findClosestProjectedEdge(sk,mx,my,e.srcMid);
       if(!pr||pr.type!=='arc') continue;
       if(pr.srcMid)e.srcMid=pr.srcMid;
-      if(Math.hypot(C.x-pr.cx,C.y-pr.cy)>0.02 || Math.hypot(A.x-pr.x1,A.y-pr.y1)>0.02 || Math.hypot(B.x-pr.x2,B.y-pr.y2)>0.02 || Math.abs(e.r-pr.r)>0.02){
+      if(Math.hypot(C.x-pr.cx,C.y-pr.cy)>0.02 || Math.hypot(A.x-pr.x1,A.y-pr.y1)>0.02 || Math.hypot(B.x-pr.x2,B.y-pr.y2)>0.02){
         C.x=pr.cx; C.y=pr.cy; A.x=pr.x1; A.y=pr.y1; B.x=pr.x2; B.y=pr.y2; e.r=pr.r; changed=true;
       }
     }
   }
   if(changed) try{solveSketch(sk);}catch(e){}
-  return changed;
 }
 function updateAllProjections(){
-  // true = au moins une esquisse a bougé → le solide doit être rejoué (projRefreshRerun).
-  let changed=false;
   try{
-    (doc.sketches||[]).forEach(sk=>{ if(sk.id===skEdit?.id)return; try{ if(updateAssociativeProjections(sk))changed=true; }catch(e){} });
+    (doc.sketches||[]).forEach(sk=>{ if(sk.id!==skEdit?.id) updateAssociativeProjections(sk); });
   }catch(e){}
-  return changed;
 }
 function projectEdgeAt(sk,x,y){
   // Arête 3D la plus proche du clic, projetée dans le plan d'esquisse (antériorité).
@@ -2794,20 +2759,18 @@ function projectEdgeAt(sk,x,y){
   const tol=Math.max(4, 8/Math.max(1,skView.s));
   let best=null,bd=1e9,srcMid=null;
   const basis=sketchBasis(sk),u=basis.u,v=basis.v,n=basis.n,o=basis.o;
-  const candShapes=[];let FRk=null;
+  const candShapes=[];
   // 1) solide antérieur exact si esquisse consommée, sinon solide fini
   try{
     const feats=(doc.features||[]).filter(f=>f.visible!==false);
     const idx=feats.findIndex(f=>f.type==='extrude'&&f.sketchId===sk.id);
     if(idx>=0&&occHas()){
       const FR=occFinalShape(idx);
-      // Nettoyage DIFFÉRÉ (try/finally en fin de fonction) : occCleanup(FR,null) supprime
-      // FR.shape — le lire après = use-after-free → aucune arête détectée sur esquisse consommée.
-      if(FR&&FR.shape){candShapes.push(FR.shape);FRk=FR;}
+      if(FR&&FR.shape) candShapes.push(FR.shape);
+      try{occCleanup(FR,null);}catch(e){}
     }else if(occHas()&&occLive&&occLive.shape) candShapes.push(occLive.shape);
   }catch(e){}
   // 2) BRep exact : teste chaque arête sur le plan
-  try{
   for(const sh of candShapes){
     try{
       const edges=occListEdges(sh);
@@ -2867,7 +2830,6 @@ function projectEdgeAt(sk,x,y){
   }
   if(best&&srcMid)best.srcMid=srcMid;
   return best;
-  }finally{ if(FRk){try{occCleanup(FRk,null);}catch(e){} } }
 }
 function projNames(pr){
   // Noms persistants d'une projection : « Projetée N » + « Arête M » (arête source 3D
@@ -3015,7 +2977,7 @@ function closeSketch(save){
     if(!b.ghost) b.mesh.visible=true;
     if(b._savedOpacity!=null&&b.mesh&&b.mesh.material){ b.mesh.material.opacity=b._savedOpacity; b.mesh.material.transparent=b._savedTransparent; delete b._savedOpacity; delete b._savedTransparent; }
   });
-  if(save&&skEdit){solveSketch(skEdit);cleanupSk(skEdit);markDirty();rebuild();projRefreshRerun(0);sel={kind:'sketch',id:skEdit.id};renderTree();renderProps();}
+  if(save&&skEdit){solveSketch(skEdit);cleanupSk(skEdit);markDirty();rebuild();try{updateAllProjections();}catch(e){}sel={kind:'sketch',id:skEdit.id};renderTree();renderProps();}
   skEdit=null;skSel=null;skSelX=[];skChain=null;skArcC=null;skArcPa=null;skDraft=null;skDown=null;skDrag=null;skDimDrag=null;skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
 }
 const svg=$('skSvg');

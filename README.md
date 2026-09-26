@@ -46,10 +46,10 @@ python -m http.server 3000
 
 | Chemin | Rôle |
 |---|---|
-| `fusion_mvp.html` | L'intégralité de l'app (~7 600 lignes : UI, solveur de contraintes, kernel, rendu, historique) |
+| `fusion_mvp.html` | L'intégralité de l'app (~7 800 lignes : UI, solveur de contraintes, kernel, rendu, historique) |
 | `occt/` | Noyau OpenCascade WebAssembly (~111 Mo) + ses `.bak` locaux (non suivis) |
 | `threejs/` | Rendu 3D (three.js), OrbitControls, CSG |
-| `Backup/` | Snapshots des versions vertes (`2026-09-28n` → `v`) |
+| `Backup/` | Snapshots des versions vertes (`2026-09-28n` → `y`) |
 | `Server.bat` | Lancement local (npx serve, port 3000) |
 
 Pas de build : du HTML+JS commenté, versionné par `APP_VER` en tête de fichier avec changelog complet dans l'en-tête du code.
@@ -57,13 +57,22 @@ Pas de build : du HTML+JS commenté, versionné par `APP_VER` en tête de fichie
 ## Tests
 
 - **In-app** : 🧪 Auto-tests (non-régression esquisse, contraintes, cotes) — lançables depuis le panneau latéral.
-- **Dev** : harnais Node hors navigateur (24 scénarios : solveur, cotation orientée, suivi de faces, références…) ; la version est vérifiée (`APP_VER`) avant chaque sauvegarde dans `Backup/`.
+- **Dev** : harnais Node hors navigateur (27 scénarios : solveur, cotation orientée, suivi de faces, références, projections associatives…) ; la version est vérifiée (`APP_VER`) avant chaque sauvegarde dans `Backup/`.
+
+## Journal des modifications
+
+Résumé des derniers push (changelog complet dans l'en-tête de `fusion_mvp.html`) :
+
+| Version | Objet |
+|---|---|
+| `2026-09-28x` | Congé du périmètre (rims haut/bas) en voie exacte OCCT : `rimEdgeJobs` + `occRimFillets`, échec isolé non destructif — `test_fillet_rim` |
+| `2026-09-28y` | Projections associatives qui suivent l'édition de la source : nettoyage `occCleanup` différé (use-after-free), scoring d'identité + `wantType`, `projRefreshRerun` rejoue le solide après MAJ — `test_proj_follow` |
 
 ## Où en est le projet
 
-MVP fonctionnel — version **2026-09-28v**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
+MVP fonctionnel — version **2026-09-28y**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), menu d'extrusion enrichi (miroir, vers un objet, flèche interactive), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
 
-> **Note contributeurs** : les anciennes zones gelées (sketch, contraintes, congés, antériorité) sont **dégelées depuis le 2026-09-29** — modification libre sous la discipline projet (régression 24/24 → bump `APP_VER` → snapshot `Backup/` → push). Seul le noyau exact OCCT (`occApplyXFillets`, `occFinalShape`) reste sous **accord systématique** : il n'est pas couvert par le harnais, toute modification exige une validation navigateur.
+> **Note contributeurs** : les anciennes zones gelées (sketch, contraintes, congés, antériorité) sont **dégelées depuis le 2026-09-29** — modification libre sous la discipline projet : régression 27/27 → bump `APP_VER` → snapshot `Backup/` → **entrée dans « Journal des modifications » de ce README** → push. Seul le noyau exact OCCT (`occApplyXFillets`, `occFinalShape`) reste sous **accord systématique** : il n'est pas couvert par le harnais, toute modification exige une validation navigateur.
 
 ## Licences
 
