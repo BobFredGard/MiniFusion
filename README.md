@@ -17,7 +17,7 @@ MiniFusion est un MVP de CAO historique (paramétrique, esprit Fusion 360) qui t
 ### Du plan au solide
 - Extrusions **additives (➕) et soustractives (➖)**, arborescence avec historique rejouable à chaque modification.
 - **Esquisses sur face** : posées sur n'importe quelle orientation, elles **suivent leur face d'attache** quand le modèle change (épaisseur réduite, profil élargi, face latérale qui bouge).
-- **Congés exacts OCCT** : toutes les arêtes sont cliquables, rayon par arête, ancrages persistants qui retrouvent leurs arêtes après édition (repli maillage sans noyau).
+- **Congés exacts OCCT** : toutes les arêtes sont cliquables, rayon par arête, **sélection éditable** (ajout/retrait d'arêtes sur un congé existant, double-clic dans l'arbre), ancrages persistants qui retrouvent leurs arêtes après édition (repli maillage sans noyau).
 - **Références nommées** : chaque arête de congé, face porteuse et projection reçoit un nom persistant (`Arête 1`, `Face 2`, `Projetée 3`) — visible dans les panneaux, conservé à la sauvegarde.
 - Cotes de cotations, mesures 3D (face→face, Ø, entraxe), coupe par plan, vues standard, sol miroir.
 
@@ -49,7 +49,7 @@ python -m http.server 3000
 | `fusion_mvp.html` | L'intégralité de l'app (~7 800 lignes : UI, solveur de contraintes, kernel, rendu, historique) |
 | `occt/` | Noyau OpenCascade WebAssembly (~111 Mo) + ses `.bak` locaux (non suivis) |
 | `threejs/` | Rendu 3D (three.js), OrbitControls, CSG |
-| `Backup/` | Snapshots des versions vertes (`2026-09-28n` → `z`) |
+| `Backup/` | Snapshots des versions vertes (`2026-09-28n` → `2026-09-29a`) |
 | `Server.bat` | Lancement local (npx serve, port 3000) |
 
 Pas de build : du HTML+JS commenté, versionné par `APP_VER` en tête de fichier avec changelog complet dans l'en-tête du code.
@@ -57,7 +57,7 @@ Pas de build : du HTML+JS commenté, versionné par `APP_VER` en tête de fichie
 ## Tests
 
 - **In-app** : 🧪 Auto-tests (non-régression esquisse, contraintes, cotes) — lançables depuis le panneau latéral.
-- **Dev** : harnais Node hors navigateur (28 scénarios : solveur, cotation orientée, suivi de faces, références, projections associatives, congés exacts…) ; la version est vérifiée (`APP_VER`) avant chaque sauvegarde dans `Backup/`.
+- **Dev** : harnais Node hors navigateur (29 scénarios : solveur, cotation orientée, suivi de faces, références, projections associatives, congés exacts…) ; la version est vérifiée (`APP_VER`) avant chaque sauvegarde dans `Backup/`.
 
 ## Journal des modifications
 
@@ -68,12 +68,13 @@ Résumé des derniers push (changelog complet dans l'en-tête de `fusion_mvp.htm
 | `2026-09-28x` | Congé du périmètre (rims haut/bas) en voie exacte OCCT : `rimEdgeJobs` + `occRimFillets`, échec isolé non destructif — `test_fillet_rim` |
 | `2026-09-28y` | Projections associatives qui suivent l'édition de la source : nettoyage `occCleanup` différé (use-after-free), scoring d'identité + `wantType`, `projRefreshRerun` rejoue le solide après MAJ — `test_proj_follow` |
 | `2026-09-28z` | Congés ∥ X/Y fiables : repli position côté opposé corrigé (`zref`), `occFilletRun` lot → arête par arête (une arête ne fait plus tomber le lot) pour `occApplyXFillets` + rims — `test_xfillet_flow` |
+| `2026-09-29a` | Congé exact : correspondance sélection→arête fiabilisée (`xAnchorFor` voit les esquisses masquées, passe 2 et `xAnchorMatch` en meilleur candidat unique, dédoublonnage des docs corrompus) + **édition de congé** (bouton ✏️ / double-clic → rejeu sans la fonction `occSkipFeat`, mise à jour en place) + transparence esquisse 0.75 — `test_xmatch_n`, régression 29/29 |
 
 ## Où en est le projet
 
-MVP fonctionnel — version **2026-09-28z**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), menu d'extrusion enrichi (miroir, vers un objet, flèche interactive), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
+MVP fonctionnel — version **2026-09-29a**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), menu d'extrusion enrichi (miroir, vers un objet, flèche interactive), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
 
-> **Note contributeurs** : les anciennes zones gelées (sketch, contraintes, congés, antériorité) sont **dégelées depuis le 2026-09-29** — modification libre sous la discipline projet : régression 28/28 → bump `APP_VER` → snapshot `Backup/` → **entrée dans « Journal des modifications » de ce README** → push. Seul le noyau exact OCCT (`occApplyXFillets`, `occFinalShape`) reste sous **accord systématique** : il n'est pas couvert par le harnais, toute modification exige une validation navigateur.
+> **Note contributeurs** : les anciennes zones gelées (sketch, contraintes, congés, antériorité) sont **dégelées depuis le 2026-09-29** — modification libre sous la discipline projet : régression 29/29 → bump `APP_VER` → snapshot `Backup/` → **entrée dans « Journal des modifications » de ce README** → push. Seul le noyau exact OCCT (`occApplyXFillets`, `occFinalShape`) reste sous **accord systématique** : il n'est pas couvert par le harnais, toute modification exige une validation navigateur.
 
 ## Licences
 
