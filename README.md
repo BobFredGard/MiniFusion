@@ -63,7 +63,7 @@ Pas de build : du HTML+JS commenté, versionné par `APP_VER` en tête de fichie
 
 MVP fonctionnel — version **2026-09-28v**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
 
-> **Note contributeurs** : le code comporte des zones gelées signalées en tête de fichier (« Ne pas toucher sans accord ») — les demandes explicites du mainteneur font foi.
+> **Note contributeurs** : les anciennes zones gelées (sketch, contraintes, congés, antériorité) sont **dégelées depuis le 2026-09-29** — modification libre sous la discipline projet (régression 24/24 → bump `APP_VER` → snapshot `Backup/` → push). Seul le noyau exact OCCT (`occApplyXFillets`, `occFinalShape`) reste sous **accord systématique** : il n'est pas couvert par le harnais, toute modification exige une validation navigateur.
 
 ## Licences
 

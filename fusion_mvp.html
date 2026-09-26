@@ -197,10 +197,14 @@ input[type=range]{accent-color:var(--primary);width:100%}
 
 <script>
 /* ============ MiniFusion MVP — paramétrique + viewer-like ============ */
-/* GEL 2026-09-25 - sketch (skLoopTrace→solveSketch, contraintes), congés (xfillet/occApplyXFillets) et antériorité (occFinalShape/findHost) FIGÉS sur accord.
+/* DÉGEL 2026-09-29 — anciennes zones GEL 2026-09-25 (sketch skLoopTrace→solveSketch + contraintes,
+   congés xfillet/occApplyXFillets, antériorité occFinalShape/findHost) : désormais MODIFICATION LIBRE,
+   sous la discipline projet — régression 24/24 verts → bump APP_VER → snapshot Backup/ → push GitHub.
+   GARDE-FOU : le noyau exact OCCT (occApplyXFillets, occFinalShape) n'est PAS couvert par le harnais
+   (OCCT ne se charge pas en node) — ne le modifier qu'après validation navigateur ET accord explicite.
    2026-09-28b : solveSketch(anchor) — pendant le glisser, les pids déplacés sont ancrés (fixes temporaires)
    pour que les contraintes (tangence, coïncidence, h/v, parallèle…) fassent SUIVRE l'entité liée au lieu de
-   ramener la glissée. Indice : sketch=v25e, antériorité=v25e, congés=v25d, mesures=v25f. Ne pas toucher sans accord.
+   ramener la glissée. Indice des dernières versions stables avant dégel : sketch=v25e, antériorité=v25e, congés=v25d, mesures=v25f.
    2026-09-28c : glisser en CORPS RIGIDE de la composante connexe (skDragComp) — points partagés, coïncidences,
    tangences, symétries, parallélismes) : l'oblong/rectangle saisi se déplace d'un bloc comme une boucle fermée,
    dans toutes les directions ; relâchement résolu avec la même ancre pour garder le groupe solidaire.
