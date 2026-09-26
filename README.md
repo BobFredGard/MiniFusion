@@ -52,7 +52,7 @@ python -m http.server 3000
 | `fusion_mvp.html` | L'intégralité de l'app (~7 800 lignes : UI, solveur de contraintes, kernel, rendu, historique) |
 | `occt/` | Noyau OpenCascade WebAssembly (~111 Mo) + ses `.bak` locaux (non suivis) |
 | `threejs/` | Rendu 3D (three.js), OrbitControls, CSG |
-| `Backup/` | Snapshots des versions vertes (`2026-09-28n` → `2026-09-29b`) |
+| `Backup/` | Snapshots des versions vertes (`2026-09-28n` → `2026-09-29c`) |
 | `Server.bat` | Lancement local (npx serve, port 3000) |
 
 Pas de build : du HTML+JS commenté, versionné par `APP_VER` en tête de fichier avec changelog complet dans l'en-tête du code.
@@ -73,10 +73,11 @@ Résumé des derniers push (changelog complet dans l'en-tête de `fusion_mvp.htm
 | `2026-09-28z` | Congés ∥ X/Y fiables : repli position côté opposé corrigé (`zref`), `occFilletRun` lot → arête par arête (une arête ne fait plus tomber le lot) pour `occApplyXFillets` + rims — `test_xfillet_flow` |
 | `2026-09-29a` | Congé exact : correspondance sélection→arête fiabilisée (`xAnchorFor` voit les esquisses masquées, passe 2 et `xAnchorMatch` en meilleur candidat unique, dédoublonnage des docs corrompus) + **édition de congé** (bouton ✏️ / double-clic → rejeu sans la fonction `occSkipFeat`, mise à jour en place) + transparence esquisse 0.75 — `test_xmatch_n`, régression 29/29 |
 | `2026-09-29b` | **Menu d'extrusion** refondu (Sens un côté/symétrique, Étendue distance ou **vers un objet** avec antériorité + visée ±n, 🎯 sens via face cliquée, flèche 3D avec commit distance, renommage auto) + **faces verticales UNE seule face** : `occSpanPrism`/`occDiskPrism` en **prisme unique** au plan décalé `z=lo` (fin de la fusion 0→hi + 0→lo = couture au plan médian — 6 faces au lieu de 10) + `occUnify` (`ShapeUpgrade_UnifySameDomain`, fallback sans exception) après chaque union additive → mode **Uni par Additif** sans couture — `test_extmenu_n`, `test_mirror_uni_n`, régression 31/31 |
+| `2026-09-29c` | **Chanfrein** (clone du Congé exact) : bouton `⟋ Chanfrein`, même architecture de sélection (face/arêtes/chaîne tangente) et édition en place ; flag `f.chamfer` sur type `xfillet` ; libellés `D`/`Distance` ; probe noyau réel `MakeChamfer(shape)`+`Add_2(distance, edge)` validé (lot et fallback arête-par-arête). **Bouton Esquisse unique** : face sélectionnée → esquisse sur face, plan sélectionné → ce plan, sinon XY sans prompt. **Outil Répétition** `🔁` : `Ctrl+clic` arborescence pour sélectionner extrusion/découpe/congé/chanfrein ; modes linéaire (axes/arêtes/faces), circulaire (axe/edge/sketch line/cylindre 3D), symétrie (plan système ou face solide, bouton face sélectionnée) ; clonage transformé des bases d'esquisse et features, `xfillet` sans anchors pour re-match. — `test_sketchbtn_n`, `test_chamfer_n`, `test_rep_n`, régression 34/34 |
 
 ## Où en est le projet
 
-MVP fonctionnel — version **2026-09-29b**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
+MVP fonctionnel — version **2026-09-29c**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
 
 > **Note contributeurs** : les anciennes zones gelées (sketch, contraintes, congés, antériorité) sont **dégelées depuis le 2026-09-29** — modification libre sous la discipline projet : régression 29/29 → bump `APP_VER` → snapshot `Backup/` → **entrée dans « Journal des modifications » de ce README** → push. Seul le noyau exact OCCT (`occApplyXFillets`, `occFinalShape`) reste sous **accord systématique** : il n'est pas couvert par le harnais, toute modification exige une validation navigateur.
 
