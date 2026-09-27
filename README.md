@@ -52,7 +52,7 @@ python -m http.server 3000
 | `fusion_mvp.html` | L'intégralité de l'app (~7 800 lignes : UI, solveur de contraintes, kernel, rendu, historique) |
 | `occt/` | Noyau OpenCascade WebAssembly (~111 Mo) + ses `.bak` locaux (non suivis) |
 | `threejs/` | Rendu 3D (three.js), OrbitControls, CSG |
-| `Backup/` | Snapshots des versions vertes (`2026-09-28n` → `2026-09-29m`) |
+| `Backup/` | Snapshots des versions vertes (`2026-09-28n` → `2026-09-29n`) |
 | `Server.bat` | Lancement local (npx serve, port 3000) |
 
 Pas de build : du HTML+JS commenté, versionné par `APP_VER` en tête de fichier avec changelog complet dans l'en-tête du code.
@@ -60,7 +60,7 @@ Pas de build : du HTML+JS commenté, versionné par `APP_VER` en tête de fichie
 ## Tests
 
 - **In-app** : 🧪 Auto-tests (non-régression esquisse, contraintes, cotes) — lançables depuis le panneau latéral.
-- **Dev** : harnais Node hors navigateur (31 scénarios : solveur, cotation orientée, suivi de faces, références, projections associatives, congés exacts, menu d'extrusion, prismes miroir… ; 3 exigent le noyau OCCT du navigateur) ; la version est vérifiée (`APP_VER`) avant chaque sauvegarde dans `Backup/`.
+- **Dev** : harnais Node hors navigateur (32 scénarios : solveur, cotation orientée, suivi de faces, références, projections associatives, congés exacts, menu d'extrusion, prismes miroir, marqueur temps… ; 3 exigent le noyau OCCT du navigateur) ; la version est vérifiée (`APP_VER`) avant chaque sauvegarde dans `Backup/`.
 
 ## Journal des modifications
 
@@ -82,10 +82,11 @@ Résumé des derniers push (changelog complet dans l'en-tête de `fusion_mvp.htm
 | `2026-09-29j` | **Chargement AUTOMATIQUE du noyau OCCT exact en mode `file://`** : après la première désignation manuelle du `.wasm` (**«⚙ Noyau .wasm… »**), le binaire est mis en cache dans **IndexedDB** (`occCacheSave`/`occCacheLoad`) — aux lancements suivants la page démarre le noyau d'elle-même depuis ce cache (`factory({wasmBinary})`), **sans serveur ni clic**, le `fetch` du `.wasm` restant interdit par CORS sur `file://`. Cache absent (1er lancement) ou IndexedDB indisponible → repli inchangé (bouton ⚙ + moteur maillage). Plomberie de chargement seulement (noyau géométrique intact) — à valider au navigateur |
 | `2026-09-29l` | **VUE COMPLÈTE — F5 et « Iso » cadrent toute la pièce** : `viewFit()`. F5 est désormais capté (plus de rechargement navigateur) et déclenche la même vue complète isométrique que le bouton « Iso ». Encadrement des corps visibles + esquisses, recentrage sur la boîte englobante, distance caméra réglée sur le plus contraignant des angles FOV (vertical/horizontal, marge 25 %) — plus jamais de pièce coupée ou trop petite. Dessus / Face / Droite inchangés |
 | `2026-09-29m` | **Nettoyage + correction** : `idbOpen()` défini 2× (la version OCCT écrasait celle de la sauvegarde `minifusion`/store `kv` et cassait silencieusement le cache « pièce finie » `saveViewCache`/`restoreViewCache`) → renommée `occIdbOpen()`, le « lastGood » ré-affiche à nouveau la pièce finie au rechargement si rien n'a changé. Suppression de ~111 lignes **obsolètes** jamais appelées (`basisFromNormal`, `hasDisplaySolid`, `pushBody`, `planes`, `skGhost2DRefs`, `dst`, `cloneArcLinks`, `extrudeName`, `xEdgeKey`, `meshShown`, `shapeToMeshes`). **Doublons** de helpers fusionnés en module : `rot`→`rotP`, `key`→`pairKey`. Régression harnais verte (selftest 14/14 + tous tests exit 0) |
+| `2026-09-29n` | **MARQUEUR TEMPS (timeline 360)** — clique droit sur une fonction → **« ⏱ Bloquer le temps à ce point »** : le rejeu s'arrête AVANT cette fonction (les suivantes sont **exclues**, grisées dans l'arborescence + bandeau « ⏱ marqueur ici » / « ↗ Rejouer tout »). Les **nouvelles** fonctions (extrusion, découpe, congé/chanfrein exact, répétition, import STL/STEP) sont insérées **au niveau du marqueur** via `addFeature()` (Fusion360 : à la position du curseur de lecture). Édition d'une fonction exclue → **levée automatique** du marqueur. Non persisté (éphémère par session). — `test_tlPtr_n`, régression verte |
 
 ## Où en est le projet
 
-MVP fonctionnel — version **2026-09-29m**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
+MVP fonctionnel — version **2026-09-29n**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
 
 > **Note contributeurs** : les anciennes zones gelées (sketch, contraintes, congés, antériorité) sont **dégelées depuis le 2026-09-29** — modification libre sous la discipline projet : régression 29/29 → bump `APP_VER` → snapshot `Backup/` → **entrée dans « Journal des modifications » de ce README** → push. Seul le noyau exact OCCT (`occApplyXFillets`, `occFinalShape`) reste sous **accord systématique** : il n'est pas couvert par le harnais, toute modification exige une validation navigateur.
 
