@@ -6648,13 +6648,8 @@ function extName(f){
   return base+' '+d+'mm';
 }
 function resolveExtrudeUpto(f){
-  // « Vers un objet » (antériorité stricte) : réécrit f.distance pour que le prisme s'arrête
-  // sur une FACE spécifique du corps cible (pas seulement le plan de l'esquisse cible).
-  // La face est cherchée dans le maillage du corps cible (rebuild précédent) — la face
-  // la plus alignée avec la direction de coupe est sélectionnée.
-  // Cela fonctionne quel que soit l'angle entre les plans source et cible (face perpendiculaire,
-  // latérale, etc.) car on projette sur la face réelle cliquée/reconnue.
-  // Suivi d'identité : si f.upto.faceProps existe, on retrouve la face par ses propriétés géométriques.
+  // « Vers un objet » : l'extrusion s'arrête sur la FACE CLICKEE (triangle fi stocké).
+  // Si le maillage a changé, fallback sur matching géométrique (faceProps) puis alignement.
   if(!f||f.type!=='extrude'||!f.upto)return false;
   const tgt=doc.features.find(x=>x.id===f.upto.ex);
   const fi=doc.features.indexOf(f),ti=tgt?doc.features.indexOf(tgt):-1;
@@ -6662,7 +6657,6 @@ function resolveExtrudeUpto(f){
   const sk=doc.sketches.find(s=>s.id===f.sketchId);
   if(!sk)return false;
   let B;try{B=sketchBasis(sk);}catch(e){return false;}
-  // Cherche le corps cible dans le maillage du rebuild précédent
   const tgtBody=bodies.find(b=>(b.ref===f.upto.ex||b.id===f.upto.ex)&&b.mesh);
   if(!tgtBody||!tgtBody.mesh)return false;
   const mesh=tgtBody.mesh;
@@ -6673,32 +6667,37 @@ function resolveExtrudeUpto(f){
   // Direction de coupe le long de l'axe source
   const dir=(f.upto.side!==undefined&&f.upto.side!==0)?(f.upto.side>0?1:-1):(f.distance>=0?1:-1);
   const cutDir={x:B.n.x*dir,y:B.n.y*dir,z:B.n.z*dir};
-  // Si on a des propriétés de face stockées, on essaie de retrouver la même face
-  let bestFn=null,bestFi=-1,bestP=null,bestDot=-2;
-  const storedProps=f.upto.faceProps;
+  // 1) Priorité absolue : utiliser le triangle cliqué (faceId.fi) s'il est valide
+  let bestFn=null,bestFi=-1,bestP=null;
   const faceCount=g.index?Math.floor(g.index.count/3):Math.floor(pos.count/3);
-  if(storedProps&&storedProps.center){
-    // Recherche par correspondance de propriétés géométriques (centre, normale, aire)
+  const storedFi=f.upto.faceId?.fi;
+  if(typeof storedFi==='number' && storedFi>=0 && storedFi<faceCount){
+    const n=faceNormalWorld(mesh,storedFi);
+    if(n){
+      bestFn=n;bestFi=storedFi;
+      if(g.index){const idx=g.index.getX(storedFi*3);bestP=[pos.getX(idx),pos.getY(idx),pos.getZ(idx)];}
+      else{const idx=storedFi*3;bestP=[pos.getX(idx),pos.getY(idx),pos.getZ(idx)];}
+    }
+  }
+  // 2) Fallback : matching géométrique (faceProps : centre, normale, aire)
+  if(!bestFn && f.upto.faceProps?.center){
     let bestScore=-1;
     for(let i=0;i<faceCount;i++){
       const n=faceNormalWorld(mesh,i);
       if(!n)continue;
       const props=getFaceProps(mesh,i);
       if(!props)continue;
-      // Score basé sur la distance du centre, l'alignement de la normale, et l'aire
-      const dCenter=storedProps.center.distanceTo(props.center);
-      const dotNormal=storedProps.normal.dot(props.normal);
-      const areaRatio=Math.min(storedProps.area,props.area)/Math.max(storedProps.area,props.area);
-      const score=dotNormal*0.6 + areaRatio*0.3 - Math.min(dCenter/10,1)*0.1; // dCenter en mm
+      const dCenter=f.upto.faceProps.center.distanceTo(props.center);
+      const dotNormal=f.upto.faceProps.normal.dot(props.normal);
+      const areaRatio=Math.min(f.upto.faceProps.area,props.area)/Math.max(f.upto.faceProps.area,props.area);
+      const score=dotNormal*0.6 + areaRatio*0.3 - Math.min(dCenter/10,1)*0.1;
       if(score>bestScore){bestScore=score;bestFn=n;bestFi=i;bestP=props.center;}
     }
-    if(bestFn && bestScore>0.5){
-      // Face retrouvée par identité géométrique
-      f.upto.faceId={fi:bestFi,bid:tgtBody.id};
-    }
+    if(!(bestFn && bestScore>0.5)) bestFn=null; // matching échoué
   }
-  // Repli : recherche de la face la plus alignée avec cutDir (comportement précédent)
+  // 3) Repli : face la plus alignée avec cutDir
   if(!bestFn){
+    let bestDot=-2;
     for(let i=0;i<faceCount;i++){
       const n=faceNormalWorld(mesh,i);
       if(!n)continue;
@@ -6709,16 +6708,15 @@ function resolveExtrudeUpto(f){
       }
     }
   }
-  if(!bestFn||bestDot<0.3 && bestScore<0.5)return false; // aucune face face à la direction de coupe
-  // Mémorise la face pour le suivi dynamique (la cible bouge → la face bouge)
+  if(!bestFn)return false;
+  // Mémorise le triangle utilisé pour le suivi dynamique
   f.upto.faceId={fi:bestFi,bid:tgtBody.id};
-  // Distance signée le long de B.n de O (origine esquisse) au plan de la face sélectionnée
+  // Distance signée le long de B.n de O (origine esquisse) au plan de la face
   const dotBn=bestFn.x*B.n.x+bestFn.y*B.n.y+bestFn.z*B.n.z;
-  if(Math.abs(dotBn)<1e-9)return false; // face perpendiculaire à l'axe — pas d'intersection directe
+  if(Math.abs(dotBn)<1e-9)return false;
   const num=bestFn.x*(bestP[0]-B.o.x)+bestFn.y*(bestP[1]-B.o.y)+bestFn.z*(bestP[2]-B.o.z);
   const t=num/dotBn;
   if(Math.abs(t)<1e-6)return false;
-  // Vérifie que la face est dans le bon sens
   if(dir>0&&t<0.05)return false;
   if(dir<0&&t>-0.05)return false;
   const prev=f.distance;
