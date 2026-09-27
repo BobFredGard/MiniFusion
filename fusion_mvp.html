@@ -2927,6 +2927,25 @@ function faceNormalWorld(mesh,fi){
     return nl;
   }catch(e){return null;}
 }
+
+// Calcule les propriétés géométriques d'une face (centre, normale, aire) pour le suivi d'identité
+function getFaceProps(mesh,fi){
+  try{
+    const g=mesh.geometry;if(!g||!g.attributes.position)return null;
+    const p=g.attributes.position,a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3();
+    if(g.index&&fi!==undefined){a.fromBufferAttribute(p,g.index.getX(fi*3));b.fromBufferAttribute(p,g.index.getX(fi*3+1));c.fromBufferAttribute(p,g.index.getX(fi*3+2));}
+    else{const t=(fi||0)*3;a.fromBufferAttribute(p,t);b.fromBufferAttribute(p,t+1);c.fromBufferAttribute(p,t+2);}
+    const e1=new THREE.Vector3().subVectors(b,a),e2=new THREE.Vector3().subVectors(c,a);
+    const nl=new THREE.Vector3().crossVectors(e1,e2);
+    const area=nl.length()*0.5;if(area<1e-12)return null;
+    nl.normalize();
+    const nm=new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+    nl.applyMatrix3(nm).normalize();
+    const center=new THREE.Vector3().addVectors(a,b).add(c).multiplyScalar(1/3);
+    const centerWorld=center.clone().applyMatrix4(mesh.matrixWorld);
+    return{center:centerWorld,normal:nl,area};
+  }catch(e){return null;}
+}
 let skShowRefs=false; // B : violet masqué par défaut — fantôme gris 2D suffit (⧉ projette ce que tu veux)
 function skBRepPlanarRefs(shape){
   // Vrais contours sur le plan (lignes + arcs/cercles) — pas de polyligne 12 pts
@@ -6633,6 +6652,7 @@ function resolveExtrudeUpto(f){
   // la plus alignée avec la direction de coupe est sélectionnée.
   // Cela fonctionne quel que soit l'angle entre les plans source et cible (face perpendiculaire,
   // latérale, etc.) car on projette sur la face réelle cliquée/reconnue.
+  // Suivi d'identité : si f.upto.faceProps existe, on retrouve la face par ses propriétés géométriques.
   if(!f||f.type!=='extrude'||!f.upto)return false;
   const tgt=doc.features.find(x=>x.id===f.upto.ex);
   const fi=doc.features.indexOf(f),ti=tgt?doc.features.indexOf(tgt):-1;
@@ -6651,19 +6671,43 @@ function resolveExtrudeUpto(f){
   // Direction de coupe le long de l'axe source
   const dir=(f.upto.side!==undefined&&f.upto.side!==0)?(f.upto.side>0?1:-1):(f.distance>=0?1:-1);
   const cutDir={x:B.n.x*dir,y:B.n.y*dir,z:B.n.z*dir};
-  // Parcourt les faces du maillage cible pour trouver la plus alignée avec cutDir
+  // Si on a des propriétés de face stockées, on essaie de retrouver la même face
+  let bestFn=null,bestFi=-1,bestP=null,bestDot=-2;
+  const storedProps=f.upto.faceProps;
   const faceCount=g.index?Math.floor(g.index.count/3):Math.floor(pos.count/3);
-  let bestDot=-2,bestFn=null,bestFi=-1,bestP=null;
-  for(let i=0;i<faceCount;i++){
-    const n=faceNormalWorld(mesh,i);
-    if(!n)continue;
-    const dot=n.x*cutDir.x+n.y*cutDir.y+n.z*cutDir.z;
-    if(dot>bestDot){bestDot=dot;bestFn=n;bestFi=i;
-      if(g.index){const idx=g.index.getX(i*3);bestP=[pos.getX(idx),pos.getY(idx),pos.getZ(idx)];}
-      else{const idx=i*3;bestP=[pos.getX(idx),pos.getY(idx),pos.getZ(idx)];}
+  if(storedProps&&storedProps.center){
+    // Recherche par correspondance de propriétés géométriques (centre, normale, aire)
+    let bestScore=-1;
+    for(let i=0;i<faceCount;i++){
+      const n=faceNormalWorld(mesh,i);
+      if(!n)continue;
+      const props=getFaceProps(mesh,i);
+      if(!props)continue;
+      // Score basé sur la distance du centre, l'alignement de la normale, et l'aire
+      const dCenter=storedProps.center.distanceTo(props.center);
+      const dotNormal=storedProps.normal.dot(props.normal);
+      const areaRatio=Math.min(storedProps.area,props.area)/Math.max(storedProps.area,props.area);
+      const score=dotNormal*0.6 + areaRatio*0.3 - Math.min(dCenter/10,1)*0.1; // dCenter en mm
+      if(score>bestScore){bestScore=score;bestFn=n;bestFi=i;bestP=props.center;}
+    }
+    if(bestFn && bestScore>0.5){
+      // Face retrouvée par identité géométrique
+      f.upto.faceId={fi:bestFi,bid:tgtBody.id};
     }
   }
-  if(!bestFn||bestDot<0.3)return false; // aucune face face à la direction de coupe
+  // Repli : recherche de la face la plus alignée avec cutDir (comportement précédent)
+  if(!bestFn){
+    for(let i=0;i<faceCount;i++){
+      const n=faceNormalWorld(mesh,i);
+      if(!n)continue;
+      const dot=n.x*cutDir.x+n.y*cutDir.y+n.z*cutDir.z;
+      if(dot>bestDot){bestDot=dot;bestFn=n;bestFi=i;
+        if(g.index){const idx=g.index.getX(i*3);bestP=[pos.getX(idx),pos.getY(idx),pos.getZ(idx)];}
+        else{const idx=i*3;bestP=[pos.getX(idx),pos.getY(idx),pos.getZ(idx)];}
+      }
+    }
+  }
+  if(!bestFn||bestDot<0.3 && bestScore<0.5)return false; // aucune face face à la direction de coupe
   // Mémorise la face pour le suivi dynamique (la cible bouge → la face bouge)
   f.upto.faceId={fi:bestFi,bid:tgtBody.id};
   // Distance signée le long de B.n de O (origine esquisse) au plan de la face sélectionnée
@@ -6761,7 +6805,8 @@ function extPickFaceCommit(e){
    // Stocke la face cliquée pour le suivi dynamique (faceId bouge avec la géométrie)
    // Par défaut : soustraction (poche)
    f.op='cut';
-   f.upto={ex:tgt.id,side,faceId:{fi:picked.fi,bid}};
+   const faceProps=picked.props||getFaceProps(picked.mesh,picked.fi);
+   f.upto={ex:tgt.id,side,faceId:{fi:picked.fi,bid},faceProps};
    try{resolveExtrudeUpto(f);}catch(err){}
    f.name=extName(f);
    markDirty();rebuild();renderProps();
@@ -7320,7 +7365,9 @@ function pickFace(e){
   if(!hits.length)return null;
   const mesh=hits[0].object;const bid=mesh.userData.bid;
   if(!bid)return null;
-  return{bid,mesh,fi:hits[0].faceIndex};
+  const fi=hits[0].faceIndex;
+  const props=getFaceProps(mesh,fi);
+  return{bid,mesh,fi,props};
 }
 function renderFilletPanel(){
   if(!filMode)return;
