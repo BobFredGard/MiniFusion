@@ -2517,11 +2517,62 @@ function createAngleDim(sk,A,B){ // cote d'angle depuis le secteur RÉEL |delta|
   return id;
 }
 function lineGap(sk,A,B){
-  const P=sk.points,A1=P[A.p1],A2=P[A.p2],B1=P[B.p1];
+  const P=sk.points,A1=P[A.p1],A2=P[A.p2],B1=P[B.p1],B2=P[B.p2];
   if(!A1||!A2||!B1)return 0;
   const dx=A2.x-A1.x,dy=A2.y-A1.y,L=Math.hypot(dx,dy)||1e-9;
-  return Math.abs((B1.x-A1.x)*(-dy/L)+(B1.y-A1.y)*(dx/L));
+  // Distance perpendiculaire moyenne : identique de part et d'autre pour deux droites
+  // exactement parallèles, et bien plus juste que le seul point B1 quand elles ne le sont
+  // qu'approximativement (esquisse sous-contrainte).
+  if(!B2)return Math.abs((B1.x-A1.x)*(-dy/L)+(B1.y-A1.y)*(dx/L));
+  const d1=Math.abs((B1.x-A1.x)*(-dy/L)+(B1.y-A1.y)*(dx/L));
+  const d2=Math.abs((B2.x-A1.x)*(-dy/L)+(B2.y-A1.y)*(dx/L));
+  return (d1+d2)/2;
 }
+// Angle entre les DEUX DROITES, en radians ∈ [0, π/2] — calculé sur les VECTEURS DE
+// DIRECTION, donc exact, indépendant de l'ordre des extrémités et surtout indépendant de
+// l'existence d'un sommet commun.
+// POURQUOI : le test « parallèles ? » se faisait sur angleFrame(), qui part d'un SOMMET.
+// Or deux lignes parallèles distinctes (côté d'une rainure, deux lignes de construction
+// distantes) n'ont AUCUN sommet commun : angleVertex() renvoie alors un pseudo-sommet
+// (milieu du segment joignant les milieux des deux lignes) et l'angle mesuré est alors
+// ARBITRAIRE. Constaté sur le fichier réel de l'utilisateur (Esquisse 5) : deux lignes
+// horizontales avec une contrainte « parallel » entre elles, écartées de 3.037 mm, étaient
+// classées « angle » à 175,74° — parce que |π − 175.74°| = 4.26° dépassait la tolérance de
+// 1.7°. Le même coup par chance marchait pour deux lignes verticales (179.81° ≤ 1.7° de
+// π). Le comportement dépendait donc de l'orientation, pas de la géométrie.
+function skLinesAngle(sk,A,B){
+  const P=sk.points,A1=P[A.p1],A2=P[A.p2],B1=P[B.p1],B2=P[B.p2];
+  if(!A1||!A2||!B1||!B2)return null;
+  const ax=A2.x-A1.x,ay=A2.y-A1.y,bx=B2.x-B1.x,by=B2.y-B1.y;
+  const la=Math.hypot(ax,ay),lb=Math.hypot(bx,by);
+  if(la<1e-9||lb<1e-9)return null;               // ligne dégénérée
+  return Math.atan2(Math.abs(ax*by-ay*bx)/(la*lb),Math.abs(ax*bx+ay*by)/(la*lb));
+}
+// Partagent-elles un sommet commun (donc un angle réellement interprétable) ?
+function skShareVertex(sk,A,B){
+  return !!(A&&B&&(A.p1===B.p1||A.p1===B.p2||A.p2===B.p1||A.p2===B.p2));
+}
+// Angle à afficher pour une cote d'angle : sommet commun → secteur réel (angleFrame) ;
+// lignes disjointes → angle entre les directions, seul sens défini (le pseudo-sommet
+// d'angleFrame donnerait un nombre arbitraire).
+function skAngleForDim(sk,A,B){
+  if(skShareVertex(sk,A,B)){
+    const fr=angleFrame(sk,{a:A.id,b:B.id});
+    if(fr)return Math.abs(fr.delta);
+  }
+  const v=skLinesAngle(sk,A,B);
+  if(v===null)return 0;
+  if(skShareVertex(sk,A,B))return v;
+  // disjointes : le sens est celui des extrémités p1→p2 (le seul dessinable)
+  const P=sk.points,A1=P[A.p1],A2=P[A.p2],B1=P[B.p1],B2=P[B.p2];
+  const ax=A2.x-A1.x,ay=A2.y-A1.y,bx=B2.x-B1.x,by=B2.y-B1.y;
+  const cr=ax*by-ay*bx,dt=ax*bx+ay*by;
+  return Math.abs(Math.atan2(cr,dt));            // |δ| ∈ [0, π]
+}
+// Tolérance de parallélisme : 3°. Un angle entre deux droites inférieur à 3° est un cas
+// dégénéré, alors que des lignes « parallel » sous-contraintes peuvent traîner à 1-2°.
+// Au-dessus, on bascule en entraxe — le sens le plus utile, et jamais un angle de 0,05°.
+const SK_PARALLEL_TOL=3*Math.PI/180;
 function tryExtendDim(dd,ent,pid){ // pose type Fusion : pendant qu'une cote vit, cliquer une 2ᵉ entité la convertit
   const sk=skEdit;if(!sk||!dd)return false;
   const toDistLine=(ptId,lineId)=>{
@@ -2540,15 +2591,22 @@ function tryExtendDim(dd,ent,pid){ // pose type Fusion : pendant qu'une cote vit
     const src=entById(sk,dd.line);if(!src)return false;
     if(ent&&ent.t==='line'&&ent.id!==dd.line){ // 2ᵉ ligne → entraxe (//) ou angle (sécantes)
       skPushUndo();
-      const fr=angleFrame(sk,{a:src.id,b:ent.id});
-      const ad=fr?Math.abs(fr.delta):0;
-      if(!fr||ad<0.03||Math.PI-ad<0.03){
+      // Parallélisme décidé sur les VECTEURS DE DIRECTION (skLinesAngle), pas sur un
+      // sommet : voir le commentaire de skLinesAngle — avec le sommet, deux lignes
+      // parallèles sans sommet commun étaient classées « angle » (Esquisse 5 : 175.74°
+      // au lieu d'un entraxe de 3.037 mm).
+      const va=skLinesAngle(sk,src,ent);
+      const par=(va!==null&&va<SK_PARALLEL_TOL);
+      if(par){
         dd.type='gap';dd.a=src.id;dd.b=ent.id;delete dd.line;delete dd.w;
         dd.value=+lineGap(sk,src,ent).toFixed(2);
-        afterEdit();skStatus('Converti en entraxe ⇔ '+dd.value.toFixed(2)+' — cliquez pour poser.');
+        afterEdit();skStatus('Converti en entraxe ⇔ '+dd.value.toFixed(2)+' (lignes '+
+          (va*180/Math.PI).toFixed(2)+'° d\'écart) — cliquez pour poser.');
       }else{
+        const ad=skAngleForDim(sk,src,ent);
         dd.type='angle';dd.a=src.id;dd.b=ent.id;delete dd.line;delete dd.w;
-        dd.value=+ad.toFixed(4);dd.ccw=fr.delta>0?1:0; // secteur RÉEL (pas l'angle aigu) + sens figé
+        dd.value=+ad.toFixed(4);
+        dd.ccw=skShareVertex(sk,src,ent)?(angleFrame(sk,{a:src.id,b:ent.id})||{delta:0}).delta>0?1:0:0;
         afterEdit();skStatus('Converti en angle ∠'+(ad*180/Math.PI).toFixed(1)+'° — déplacez (rayon) puis cliquez.');
       }
       return true;
@@ -2621,10 +2679,12 @@ function dimClick(x,y,shift){
         B=entById(sk,tmpId); bIsRef=true;
       } else B=ent0;
       if(A&&B){
-        const fr=angleFrame(sk,{a:A.id,b:B.id});
-        const ad=fr?Math.abs(fr.delta):0;
+        // même règle qu'au clic simple : parallélisme sur les DIRECTIONS, angle sur le
+        // secteur réel quand les lignes partagent un sommet.
+        const va=skLinesAngle(sk,A,B);
+        const par=(va!==null&&va<SK_PARALLEL_TOL);
         let newId=null;
-        if(!fr||ad<0.03||Math.PI-ad<0.03){
+        if(par){
           const dup=findDupDim(sk,{type:'gap',a:A.id,b:B.id});
           if(dup){skDimLine=null;skDimRef=null;reuseDim(dup);return;}
           skPushUndo();
@@ -2633,7 +2693,8 @@ function dimClick(x,y,shift){
           sk.dims.push({id:newId,type:'gap',a:A.id,b:B.id,value:+g.toFixed(2),ox:0,oy:0});
           skStatus('Cote entraxe créée'+(aIsRef||bIsRef?' (dont 3D)':'')+' — déplacez puis cliquez pour poser.');
         }else{
-          const ccw=fr.delta>0?1:0;
+          const ad=skAngleForDim(sk,A,B);
+          const ccw=skShareVertex(sk,A,B)?((angleFrame(sk,{a:A.id,b:B.id})||{delta:0}).delta>0?1:0):0;
           const dup=findDupDim(sk,{type:'angle',a:A.id,b:B.id});
           if(dup){skDimLine=null;skDimRef=null;reuseDim(dup);return;}
           skPushUndo();

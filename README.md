@@ -23,7 +23,7 @@ MiniFusion est un MVP de CAO historique (paramétrique, esprit Fusion 360) qui t
 ### Esquisse — contraintes & solveur
 - **12 contraintes** : horizontal, vertical, parallèle, perpendiculaire, égal, symétrie, tangence, coaxiale, milieu, fixe, construction — avec **auto-inférence** (perpendiculaire/tangente détectées à la création).
 - **Solveur maison** : Levenberg-Marquardt + relaxation, avec panneau « Santé » (degrés de liberté, résidus), convergence mesurée.
-- **Cotes pilotées** : longueur, Ø, rayon, distance, angle, entraxe. Elles se posent en **H, V ou aligné selon la position du curseur**, avec gestion des angles complémentaires (secteur obtus respecté).
+- **Cotes pilotées** : longueur, Ø, rayon, distance, angle, entraxe. Elles se posent en **H, V ou aligné selon la position du curseur**, avec gestion des angles complémentaires (secteur obtus respecté). **Shift+clic sur 2 lignes** : entraxe si elles sont **parallèles** (à 3° près), angle sinon — la parallèle est décidée sur les **vecteurs de direction**, donc deux lignes parallèles sans sommet commun sont bien reconnues.
 
 ### Cotation, mesures & annotations
 - **Projections associatives** : projeter une arête 3D du solide dans l'esquisse (⧉, ligne ou cercle + centre) pour la coter — **l'entité suit les changements du modèle**.
@@ -153,7 +153,7 @@ fichier unique (voir « Travailler sur le code »).
 
 ## Où en est le projet
 
-MVP fonctionnel — version **2026-09-30j**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
+MVP fonctionnel — version **2026-09-30k**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
 
 > **Note contributeurs** : les anciennes zones gelées (sketch, contraintes, congés, antériorité) sont **dégelées depuis le 2026-09-29** — modification libre sous la discipline projet : on édite **`src/*.js`** (jamais `fusion_mvp.html`, qui est généré) → `node build.js` → régression verte → bump `APP_VER` + **entrée dans [`CHANGELOG.md`](CHANGELOG.md)** → `node build.js --check` → snapshot `Backup/` → push. `node build.js --check` échoue si le livrable est périmé : impossible d'oublier de reconstruire. Seul le noyau exact OCCT (`occApplyXFillets`, `occFinalShape`) demande une validation navigateur : il n'est pas entièrement couvert par le harnais.
 

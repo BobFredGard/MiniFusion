@@ -759,3 +759,46 @@ lever le moindre doute (le `--check` compare src→html, pas src→git). Détect
 comparaison « le code après APP_VER est-il identique à l'original ? », puis restauré
 depuis la copie de sauvegarde. C'est exactement le genre d'erreur que le harnais de
 régression attrape : les 12 tests repassent sur le livrable reconstruit.
+### `2026-09-30k`
+
+**UNE COTE « DISTANCE ENTRE DEUX LIGNES PARALLÈLES » DEVENAIT UN ANGLE** —
+signalé par l'utilisateur sur l'Esquisse 5 de son fichier `esquisse.json`.
+
+Le test « parallèles ou sécantes ? » se faisait sur `angleFrame()`, qui part d'un SOMMET.
+Deux lignes parallèles **distinctes** (côté d'une rainure, deux lignes de construction
+éloignées) n'ont **aucun sommet commun** : `angleVertex()` renvoie alors un
+**pseudo-sommet** (milieu du segment joignant les milieux des deux lignes) et l'angle
+mesuré entre deux rayons vers ce point fictif est **arbitraire**. La tolérance de 0,03 rad
+(1,7°) ne le ratait pas toujours.
+
+Mesuré sur le fichier réel, Esquisse 5 : `e8` (construction horizontale, « Projetée 2 ») et
+`e17` (horizontale) portent une contrainte **`parallel`** explicite et sont écartées de
+**3,037 mm**. Le code concluait **« angle » à 175,74°**. Le même cas avec deux lignes
+*verticales* passait, mais par chance (179,81°, à 0,19° de π) : **le comportement dépendait
+de l'orientation, pas de la géométrie**.
+
+**Correction** — la classification se fait désormais sur les **vecteurs de direction**,
+exacts, indépendants de l'ordre des extrémités et de l'existence d'un sommet :
+
+- `skLinesAngle(sk,A,B)` : angle ∈ [0, π/2] entre les deux droites ;
+- `SK_PARALLEL_TOL` = 3° — un angle sous 3° entre deux droites est dégénéré, alors que
+  des lignes `parallel` sous-contraintes traînent à 1-2° ;
+- `skShareVertex(sk,A,B)` : le secteur réel d'`angleFrame` n'est conservé que si les
+  deux lignes partagent un sommet ; sinon l'angle vient des directions, seul sens
+  définissable pour deux segments disjoints (le pseudo-sommet n'a pas de sens) ;
+- `lineGap` moyenne désormais la distance perpendiculaire des **deux** extrémités de B
+  (identique pour deux droites exactement parallèles, bien plus juste sinon).
+
+Appliqué aux **deux** chemins de création (cote simple après une ligne, et cote paire
+Shift+clic), avec le nombre d'écart dans le message : « Converti en entraxe ⇔ 3.04
+(lignes 0.00° d'écart) ». Plus jamais de silence.
+
+**Résultat sur le fichier réel** : les 10 paires de lignes de l'Esquisse 5 sont classées
+correctement — `e8`/`e17` donne un **entraxe de 3,037 mm**, `e13`/`e17` reste un **angle de
+40°**, `e15`/`e17` un angle de 90°. Neuf cas synthétiques également (parallèles de même
+sens ou de sens opposés, obliques, croisées à 90°, sécantes à 40°, quasi-parallèles à 2°).
+
+Échecs de tests **antérieurs et inchangés** (vérifié sur HEAD) : `test_tangarc`,
+`test_anchor_n` (harnais : le DOM du harnais est minimal), et `test_perimetre_poche`
+(4 échecs constants — ce test re-congère un périmètre DÉJÀ congeré, configuration
+dégénérée ; le fichier est couvert proprement par `audit_conge_geo` et `audit_idempotence`).

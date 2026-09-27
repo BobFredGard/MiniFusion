@@ -7,13 +7,13 @@
 
    ── HISTORIQUE ─────────────────────────────────────────────────────────────
    Journal des versions (cause, correctif, test) : CHANGELOG.md — 51 entrées,
-   de 2026-09-28b à 2026-09-30j. Elles étaient embarquées ici (50 Ko) et sont
+   de 2026-09-28b à 2026-09-30k. Elles étaient embarquées ici (50 Ko) et sont
    sorties du livrable le 2026-09-30j. Ce qui précède est la description du projet
    et ses garde-fous, reprise telle quelle.
    ───────────────────────────────────────────────────────────────────────────
  */
 
-const APP_VER='2026-09-30j';
+const APP_VER='2026-09-30k';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 let extPickFace=null; // mode « vers un objet » : clic sur une face pour le sens (Échap = annuler)
