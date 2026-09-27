@@ -117,7 +117,7 @@ Le détail des versions est conservé dans deux endroits, sans tableau de journa
 
 ## Où en est le projet
 
-MVP fonctionnel — version **2026-09-30f**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
+MVP fonctionnel — version **2026-09-30h**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
 
 > **Note contributeurs** : les anciennes zones gelées (sketch, contraintes, congés, antériorité) sont **dégelées depuis le 2026-09-29** — modification libre sous la discipline projet : régression verte → bump `APP_VER` + **entrée dans le changelog de l'en-tête de `fusion_mvp.html`** → snapshot `Backup/` → push. Seul le noyau exact OCCT (`occApplyXFillets`, `occFinalShape`) demande une validation navigateur : il n'est pas entièrement couvert par le harnais.
 
