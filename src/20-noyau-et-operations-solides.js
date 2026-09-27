@@ -1088,9 +1088,10 @@ function featSig(f){
   // pourrait réutiliser un solide périmé.(paramètres d'extrusion, à travers tout, congés
   // et rims 2D rattachés, arêtes et rayon des chanfreins/congés exacts, répétitions).
   let s=f.type+'|'+(f.op||'add')+'|'+(+f.distance||0)+'|'+(f.mid?1:0)+'|'+(f.visible!==false?1:0)+'|'+(f.through?1:0)+'|'+(f.upto?JSON.stringify(f.upto):'');
-  if(f.type==='extrude'){
+  if(f.type==='extrude'||f.type==='revolve'){
     s+='|'+f.sketchId;
     const sk=doc.sketches.find(x=>x.id===f.sketchId);s+='|'+(sk?skSig(sk):'?');
+    if(f.type==='revolve')s+='|ax'+JSON.stringify(f.axis||null)+'|an'+(+f.angle||360);
     // Congés 2D et rims rattachés à CETTE extrusion (ils modifient son prisme)
     (doc.features||[]).forEach(x=>{
       if(x.type!=='fillet'||x.target!==f.id||x.visible===false)return;
@@ -1134,13 +1135,13 @@ function occFinalShape(upto){
       occCkPut(ckKey,occShapeCopy(result));
       return;
     }
-    if(f.type!=='extrude')return;
+    if(f.type!=='extrude'&&f.type!=='revolve')return;
     // Pour une découpe « à travers tout », l'étendue se mesure sur le solide DÉJÀ reconstruit
     // (tout ce qui précède dans la timeline) — jamais sur l'affichage de l'édition précédente.
-    occThroughBase=(f.through&&result)?result:null;
+    occThroughBase=(f.type==='extrude'&&f.through&&result)?result:null;
     let shape=null;
     try{
-      const r=occShapeOfExtrude(f);
+      const r=(f.type==='revolve')?occShapeOfRevolve(f):occShapeOfExtrude(f);
       bin.push(...r.bins);itemShapes.push(r.shape);
       if(r.warnings.length)msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       shape=r.shape;items.push({f,shape});
@@ -1148,8 +1149,9 @@ function occFinalShape(upto){
       // Isolation : UNE esquisse fautive ne fait plus basculer tout le solide en maillage.
       msgs.push(`${f.name} : exclu de l'exact (${err.message})`);
       try{
-        legacyPrismGeos(f,msgs).forEach(g=>ghostShapes.push({geo:g,orphan:true,inexact:f.name,fid:f.id}));
-      }catch(e2){msgs.push(`${f.name} : même le maillage échoue`);}
+        const gl=(f.type==='revolve')?legacyRevolveGeos(f,msgs):legacyPrismGeos(f,msgs);
+        gl.forEach(g=>ghostShapes.push({geo:g,orphan:true,inexact:f.name,fid:f.id}));
+      }catch(e2){msgs.push(`${f.name} : même le maillage échoue (${e2.message})`);}
       return;
     }
     const op=f.op||'add';

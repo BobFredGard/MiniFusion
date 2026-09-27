@@ -109,12 +109,13 @@ function rebuildInner(projPass){
   // Phase 1 : construit chaque prisme en coordonnées monde (sans l'afficher encore)
   const jobs=[]; // {f, geos:[BufferGeometry monde], ghost?:false}
   tlActiveList().filter(f=>f.visible!==false).forEach(f=>{
-    if(f.type==='extrude'){
+    if(f.type==='extrude'||f.type==='revolve'){
       try{
-        const geos=legacyPrismGeos(f,filWarn);
+        const geos=(f.type==='revolve')?legacyRevolveGeos(f,filWarn):legacyPrismGeos(f,filWarn);
         if(geos.length)jobs.push({f,geos});
       }catch(e){
-        let msg=`${f.name} : extrusion impossible — ${e.message}. Ouvrez l'esquisse : les bouts ouverts sont en rouge, bouton « Refermer ».`;
+        const quoi=(f.type==='revolve')?'révolution impossible':'extrusion impossible';
+        let msg=`${f.name} : ${quoi} — ${e.message}. Ouvrez l'esquisse : les bouts ouverts sont en rouge, bouton « Refermer ».`;
         faceEl.textContent+=(faceEl.textContent?'\n':'')+msg;
       }
     }

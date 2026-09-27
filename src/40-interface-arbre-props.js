@@ -65,6 +65,7 @@ function renderTree(){
   // visibilité — l'overlay « Pièces » ayant disparu, il n'y a plus de doublon.
   const featIcon=f=>{
     if(f.type==='extrude')return (f.op||'add')==='cut'?'▾':'▤';
+    if(f.type==='revolve')return (f.op||'add')==='cut'?'◔':'◍'; // révolution / gorge
     if(f.type==='xfillet')return xIcon(xKindOf(f))+(f._m&&f._m.m<f._m.t?'⚠':'');
     if(f.type==='fillet')return xIcon(xKindOf(f));
     if(f.type==='repeat')return '🔁';
@@ -387,6 +388,7 @@ function renderRepPanel(){
 }
 function renderProps(){
   if(typeof extNew!=='undefined'&&extNew)extNew=null; // une sélection annule le formulaire en cours
+  if(typeof revNew!=='undefined'&&revNew)revNew=null; // idem pour le formulaire de révolution
   const p=$('props');p.innerHTML='';
   const nm=document.createElement('div');nm.innerHTML=`<label>Nom du document<input type="text" id="docNameIn" value="${doc.name}"></label>`;
   p.appendChild(nm);$('docNameIn').onchange=e=>{doc.name=e.target.value;$('docName').textContent=doc.name;markDirty();};
@@ -473,6 +475,51 @@ p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.fea
       });
       p.appendChild(lst);
       p.appendChild(btn('✏️ Modifier la sélection (ajout / retrait)',()=>enterExactFilletMode(f)));
+    }
+    if(f.type==='revolve'){
+      // ── Opération (comme l'extrusion) ──
+      const lo=document.createElement('label');lo.textContent='Opération';
+      const so=document.createElement('select');
+      so.innerHTML=`<option value="add">➕ Plot (ajoute de la matière)</option><option value="cut">➖ Poche (retire de la matière)</option>`;
+      so.value=f.op||'add';
+      so.onchange=()=>{f.op=so.value;f.name=revolveName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();};
+      lo.appendChild(so);p.appendChild(lo);
+      // ── Axe : lignes de l'esquisse + axes système ──
+      const skR=doc.sketches.find(x=>x.id===f.sketchId);
+      const la=document.createElement('label');la.textContent='Axe de révolution';
+      const sa=document.createElement('select');
+      const lns=(skR&&skR.entities||[]).filter(e=>e.t==='line');
+      sa.innerHTML=lns.map(e=>`<option value="L:${e.id}">${e.construction?'ligne de construction ':'ligne '}${e.id}</option>`).join('')+
+        `<option value="S:X">axe système X</option><option value="S:Y">axe système Y</option><option value="S:Z">axe système Z</option>`;
+      const curv=(f.axis&&f.axis.k==='line')?'L:'+f.axis.id:'S:'+(f.axis?f.axis.d:'X');
+      sa.value=lns.some(e=>'L:'+e.id===curv)?curv:'S:X';
+      sa.onchange=()=>{const v=sa.value;
+        f.axis=(v[0]==='L')?{k:'line',id:v.slice(2)}:{k:'sys',d:v.slice(2)};
+        f.name=revolveName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();};
+      la.appendChild(sa);p.appendChild(la);
+      // ── Angle ──
+      const lan=document.createElement('label');lan.textContent='Angle (°)';
+      const ian=document.createElement('input');ian.type='text';ian.inputMode='decimal';ian.value=revolveAngle(f);ian.style.width='80px';
+      const cn=()=>{const v=parseFloat(String(ian.value).replace(',','.'));
+        if(isFinite(v)&&v>0){f.angle=Math.min(360,v);f.name=revolveName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();}};
+      ian.addEventListener('change',cn);ian.addEventListener('blur',cn);
+      ian.addEventListener('keydown',e=>{if(e.key==='Enter'){cn();ian.blur();}e.stopPropagation();});
+      ian.addEventListener('click',e=>e.stopPropagation());
+      lan.appendChild(ian);p.appendChild(lan);
+      // ── diagnostic : l'axe et le profil sont-ils utilisables ? ──
+      if(skR){
+        const axR=revolveAxis2D(skR,f);
+        const trR=skLoopTrace(skR);
+        const msgR=[]; // note
+        if(axR.err)msgR.push('⚠ '+axR.err);
+        else if(!trR.solids.length&&!trR.circlesOut.length)msgR.push('⚠ profil non fermé (bouts ouverts en rouge)');
+        else{const sd=revolveSideCheck(skR,trR,axR);
+          msgR.push(sd.ok?('✓ axe « '+axR.label+' » — profil d\'un seul côté, rayon '+sd.rMin.toFixed(1)+' à '+sd.rMax.toFixed(1)+' mm'):('⚠ '+sd.msg));}
+        const nR=document.createElement('span');nR.className='note';nR.style.marginTop='6px';nR.textContent=msgR.join(' ');
+        p.appendChild(nR);
+      }
+      p.appendChild(btn('🔧 Changer d\'esquisse',()=>askRevokePanel(f)));
+      p.appendChild(btn('🗑 Supprimer',()=>{if(confirm('Supprimer ?')){delFeature(f);sel={kind:null,id:null};markDirty();rebuild();renderProps();}}));
     }
     if(f.type==='extrude'){
       // ── Sens : un côté (classique) ou symétrique/miroir (f.mid = course totale, prisme ±|d|/2)

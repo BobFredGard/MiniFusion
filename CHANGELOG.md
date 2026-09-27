@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**51 versions**, de `2026-09-28b` à `2026-09-30i` — la plus récente en bas,
+**54 versions**, de `2026-09-28b` à `2026-09-30l` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -802,3 +802,68 @@ sens ou de sens opposés, obliques, croisées à 90°, sécantes à 40°, quasi-
 `test_anchor_n` (harnais : le DOM du harnais est minimal), et `test_perimetre_poche`
 (4 échecs constants — ce test re-congère un périmètre DÉJÀ congeré, configuration
 dégénérée ; le fichier est couvert proprement par `audit_conge_geo` et `audit_idempotence`).
+---
+
+### `2026-09-30l`
+
+**RÉVOLUTION 360°** — le module demandé : le profil d'une esquisse pivote autour d'un
+axe, en **Plot** ou en **Poche**. Symétrique de l'extrusion, mais à 360°.
+
+Le bouton 🔄 de la barre d'outils ouvre le formulaire (esquisse, axe, opération, angle).
+L'axe est soit une **ligne de l'esquisse** — la ligne de construction d'axe est proposée
+par défaut — soit un **axe système X/Y/Z**. La propriété de la fonction permet de changer
+d'esquisse, d'axe, d'angle et de sens sans la recréer, et de la supprimer.
+
+**Le profil doit être d'UN SEUL CÔTÉ de son axe** : à 360°, un profil qui le franchit
+s'auto-intersecte. Le refus est explicite, pas silencieux :
+
+- `revolveSideCheck()` échantillonne les points, les **arcs (9 points)** et les **cercles
+  (12 points)** — le centre seul ne suffit pas, un arc peut traverser l'axe en son milieu ;
+- refus : « le profil est de part et d'autre de son axe — une révolution à 360°
+  s'auto-intersecte. Décalez le profil d'un seul côté, ou changez d'axe. » ;
+- profil sur l'axe (aire nulle) : « le profil est sur son axe — rien à révolutionner ».
+
+**Trois pièges du noyau, trouvés et corrigés par exécution** (chacun donnait un résultat
+faux ou une exception, jamais un message clair) :
+
+1. `BRepPrimAPI_MakeRevol_2(S, Ax, angle)` **ignore l'angle dans cette build** : 90° et
+   360° produisent exactement le même solide. Seule la surcharge à 4 arguments
+   `MakeRevol_1(S, Ax, angle, copy)` applique réellement l'angle, **en radians**.
+   Vérifié : 30° → arcs 2,62/7,85 · 90° → 7,85/23,56 · 180° → 15,71/47,12 · 360° →
+   tour complet. Sans ce correctif, le champ « angle » aurait été un mensonge.
+2. `MakeRevol` exige un **`gp_Ax1`**, pas un `gp_Ax2` (« Expected null or instance of
+   gp_Ax1 »), et le bon constructeur est `gp_Ax1_2(P,D)` : `gp_Ax1_1()` ne prend aucun
+   argument, `gp_Ax1_3/4` n'existent pas.
+3. Cette build n'expose **ni `GC_MakeCirc`, ni `gp_Trsf`**. La pastille d'un profil
+   circulaire se construit donc **dans le plan de l'esquisse**, avec la recette déjà
+   éprouvée de `occDiskPrism` : deux demi-arcs sur une `gp_Circ_2`, puis
+   `BRepBuilderAPI_MakeFace_15`.
+
+`occW(sk, x, y)` renvoie un **tableau** et attend **deux coordonnées** : lui passer un
+point `{x,y}` produisait `Cannot convert "undefined" to double`. Et l'axe en 3D est la
+**différence** des deux extrémités normalisée, pas le second point.
+
+**Bonus** : `skLoopTrace` peut renvoyer **deux fois la même boucle** (sens CW puis CCW) sur
+un profil mixte ligne+arc — on ne révolutionne plus le même solide deux fois.
+
+**Test `test_revolve.cjs`, 19/19 sur le noyau réel** (mesures géométriques : rayons lus
+au `BRepAdaptor_Curve` — les points échantillonnés sous-estiment de 5 %) :
+
+- tube Ø10 h20 → 4 faces, rayons 5/15, 4 génératrices de 20 ;
+- profil adossé à l'axe → cylindre **plein** (3 faces, rayon 20) ;
+- profil traversant l'axe, et cercle centré sur l'axe → **refusés** ;
+- profil + trou → 8 faces, rayons 8/10/18/20, alésage de 4 droites de 8 ;
+- profil circulaire → **tore** (r 15/25) ; profil en arc → **« C »** (cylindre r20 +
+  demi-tore r8) ;
+- **Poche** : gorge annulaire creusée dans un bloc → 6 → 10 faces, rayons 16/20 ;
+- axe **système Z** dans un plan XZ → opérationnel ;
+- angle 90° → 6 faces et génératrices au quart de tour (7,85 / 23,56) ;
+- repli maillage `LatheGeometry` (angle respecté) ; noms « Révolution S 360° »,
+  « Révolution (découpe) S 360° », « … 180° ».
+
+Régression complète au vert : `selftest` 11/11, `test_cotes_paralleles`, `test_panneaux`,
+`test_new_extrude`, `test_germes_apercu`, `test_revolve`, `audit_conge_geo`,
+`audit_idempotence`, `test_cham_ref`, `test_through2`, `test_apercu_diff`.
+
+Échecs **antérieurs et inchangés** : `test_tangarc`, `test_anchor_n` (harnais),
+`test_perimetre_poche` (4 échecs constants, configuration dégénérée préexistante).

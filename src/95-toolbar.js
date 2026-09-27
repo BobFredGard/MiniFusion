@@ -1,4 +1,21 @@
 /* ---------- toolbar ---------- */
+// Bouton « Révolution » : la coque HTML (boutons, CSS) vit dans le livrable GÉNÉRÉ, qu'on
+// n'édite jamais à la main — le bouton est donc créé ici, dans les sources, juste avant
+// l'Extrusion. Idempotent : rien n'est ajouté s'il existe déjà.
+(function(){
+  if(!document.getElementById('btnRevolve')){
+    const b=document.getElementById('btnExtrude');
+    if(b&&b.parentNode){
+      const n=document.createElement('button');
+      n.id='btnRevolve';
+      n.textContent='🔄 Révolution';
+      n.title='Révolution 360° : le profil de l\'esquisse pivote autour d\'un axe (ligne de construction de l\'esquisse ou axe système X/Y/Z).';
+      b.parentNode.insertBefore(n,b);
+    }
+  }
+})();
+const btnRevolve=$('btnRevolve');
+if(btnRevolve)btnRevolve.onclick=()=>askRevolve(sel.kind==='sketch'?sel.id:null);
 $('btnSketch').onclick=()=>{
   if(skEdit)return;
   if(selFaces&&selFaces.length){newSketchOnFace();return;}

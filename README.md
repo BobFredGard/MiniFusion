@@ -37,6 +37,13 @@ MiniFusion est un MVP de CAO historique (paramétrique, esprit Fusion 360) qui t
 - Boutons **Inverser le sens**, **Changer d'esquisse**, **Changer la face cliquée**, **🔧 Éditer l'esquisse** (clic droit sur la fonction).
 - **Esquisses sur face** : posées sur n'importe quelle orientation, elles **suivent leur face d'attache** quand le modèle change (épaisseur réduite, profil élargi, face latérale déplacée).
 
+### 🔄 Révolution
+- **Révolution 360°** (➕ Plot / ➖ Poche), symétrique de l'extrusion : le profil d'une esquisse **pivote autour d'un axe**, avec historique rejouable comme toute autre fonction.
+- **Axe** : une **ligne de l'esquisse** — la ligne de construction d'axe est proposée par défaut — ou un **axe système X/Y/Z**. Modifiable à tout moment depuis le panneau de la fonction, avec changement d'esquisse et suppression.
+- **Angle** de 1° à 360° (360° par défaut) : le champ angle est réellement appliqué au solide.
+- **Le profil doit être d'un seul côté de son axe** : à 360°, un profil qui le franchit s'auto-intersecte. Le refus est explicite (« le profil est de part et d'autre de son axe… »), jamais un résultat faux. Les arcs et les cercles sont échantillonnés, pas seulement leur centre.
+- Profils acceptés : **lignes, arcs, cercles**, contours percés (le trou suit), un ou plusieurs contours par esquisse. Solide exact OCCT, avec repli maillage `LatheGeometry` si le noyau échoue.
+
 ### Congés & chanfreins
 - **Congé 2D** (maillage) sur les verticales d'une extrusion, rayon unique, plus **congé de périmètre** (rims haut et/ou bas).
 - **Congés/chanfreins exacts OCCT** : toutes les arêtes du solide sont cliquables, **rayon ou distance par arête**, sélection d'une arête ou d'une boucle de face. **Un clic = une arête** ; l'option « 🔗 arêtes tangentes » (cochée par défaut) y ajoute automatiquement la chaîne tangente — les arêtes cliquées sont en jaune, celles déduites en rouge.
@@ -153,7 +160,7 @@ fichier unique (voir « Travailler sur le code »).
 
 ## Où en est le projet
 
-MVP fonctionnel — version **2026-09-30k**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
+MVP fonctionnel — version **2026-09-30l**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
 
 > **Note contributeurs** : les anciennes zones gelées (sketch, contraintes, congés, antériorité) sont **dégelées depuis le 2026-09-29** — modification libre sous la discipline projet : on édite **`src/*.js`** (jamais `fusion_mvp.html`, qui est généré) → `node build.js` → régression verte → bump `APP_VER` + **entrée dans [`CHANGELOG.md`](CHANGELOG.md)** → `node build.js --check` → snapshot `Backup/` → push. `node build.js --check` échoue si le livrable est périmé : impossible d'oublier de reconstruire. Seul le noyau exact OCCT (`occApplyXFillets`, `occFinalShape`) demande une validation navigateur : il n'est pas entièrement couvert par le harnais.
 
