@@ -395,13 +395,13 @@ de garder silencieusement l'ancienne distance. test_upto_n (cas 5 : corps occ_re
          d'un document). La flèche 3D reflète désormais la course réelle ; une poche d'un seul
          côté produit un outil asymétrique strictement borné au volume. test_upto_n (cas 6 :
          bornage, repli, un seul côté) — régression verte.
-         2026-09-29g : Répétition — le corps créé porte le NOM DE LA RÉPÉTITION (et non celui de
-         la fonction de base) : champ « Nom » dans le panneau 🔁 (placeholder automatique
-         « Répétition linéaire / circulaire / symétrie », laissé vide → nom par défaut), chaque
-         clone nommé « <nom> (i) » dès qu'il y a plus d'une copie (simple « <nom> » en symétrie) ;
-         repCloneFeature reçoit le nom (repli « (rép i) » de l'ancien comportement si vide),
-         message de fin « Répétition : n fonction(s) copiée(s) — « Nom » ». test_rep_n (cas F :
-         nom par défaut, personnalisé, miroir sans index) — régression verte. */
+         2026-09-29g : Répétition — le corps créé porte le nom du TYPE de répétition (et non
+         celui de la fonction de base) : chaque clone est nommé « Linéaire / Circulaire /
+         Symétrie », indexé « (i) » dès qu'il y a plusieurs copies (simple « Symétrie » pour le
+         miroir) — aucun nom à saisir, le libellé vient du mode choisi dans le panneau 🔁 ;
+         repCloneFeature reçoit ce nom (repli « (rép i) » si absent), message de fin
+         « Répétition : n fonction(s) copiée(s) — « Linéaire » ». test_rep_n (cas F : linéaire,
+         circulaire, miroir sans index) — régression verte. */
 'use strict';
 const APP_VER='2026-09-29g';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
@@ -2626,7 +2626,7 @@ function repCanFeature(id){const f=doc.features.find(x=>x.id===id);return !!(f&&
 function enterRepMode(){
   if(skEdit)return;
   if(filMode||filModeX)exitFilletMode(true);
-  repMode={type:'lin',copies:2,dist:20,angle:360,axis:'X',plane:'YZ',name:'',feats:[]};
+  repMode={type:'lin',copies:2,dist:20,angle:360,axis:'X',plane:'YZ',feats:[]};
   if(sel.kind==='feature'&&repCanFeature(sel.id))repMode.feats.push(sel.id);
   renderTree();renderRepPanel();
   faceEl.textContent='Répétition : Ctrl+clic dans l’arborescence pour choisir extrusion/découpe/congé/chanfrein, puis Appliquer.';
@@ -2695,20 +2695,22 @@ function repCloneFeature(f,i,skMap,featMap,repName,nTotal){
   else nf.name=(f.type==='extrude'?extName(nf):(f.name||'Fonction'))+' (rép '+i+')';
   doc.features.push(nf);featMap[f.id]=nf.id;return nf;
 }
-function repDefaultName(){return 'Répétition '+(repMode&&repMode.type==='mir'?'symétrie':repMode&&repMode.type==='circ'?'circulaire':'linéaire');}
+function repDefaultName(){return repMode&&repMode.type==='mir'?'Symétrie':repMode&&repMode.type==='circ'?'Circulaire':'Linéaire';}
 function applyRepPattern(){
   if(!repMode)return;
   const ids=(repMode.feats||[]).filter(repCanFeature);
   if(!ids.length){faceEl.textContent='Répétition : Ctrl+clic dans l’arbre pour choisir au moins une fonction.';return;}
   const base=ids.map(id=>doc.features.find(f=>f.id===id)).filter(Boolean).sort((a,b)=>doc.features.indexOf(a)-doc.features.indexOf(b));
   const n=repMode.type==='mir'?1:Math.max(1,Math.floor(+repMode.copies||1));
-  const repName=(repMode.name||'').trim()||repDefaultName();
+  // Le corps/clone porte le nom du type de répétition : Linéaire / Circulaire / Symétrie.
+  const repName=repDefaultName();
   const created=[];
   for(let i=1;i<=n;i++){
     const skMap={},featMap={};
     base.forEach(f=>{const nf=repCloneFeature(f,i,skMap,featMap,repName,n);if(nf)created.push(nf.id);});
   }
-  markDirty();rebuild();sel=created.length?{kind:'feature',id:created[created.length-1]}:sel;const msg='Répétition : '+created.length+' fonction(s) copiée(s)'+(repName?' — « '+repName+' »':'.')+'.';exitRepMode();faceEl.textContent=msg;
+  markDirty();rebuild();sel=created.length?{kind:'feature',id:created[created.length-1]}:sel;const msg='Répétition : '+created.length+' fonction(s) copiée(s) — « '+repName+' ».';
+  exitRepMode();faceEl.textContent=msg;
 }
 function repUseSelectedFace(){
   if(!repMode||!selFaces||!selFaces.length)return;
@@ -2720,11 +2722,6 @@ function repUseSelectedFace(){
 function renderRepPanel(){
   const p=$('props');p.innerHTML='';if(!repMode)return;
   const h=document.createElement('div');h.innerHTML='<b>🔁 Répétition</b><br><span class="note">Ctrl+clic dans l’arborescence : extrusion, découpe, congé exact, chanfrein.</span>';p.appendChild(h);
-  const nrow=document.createElement('div');nrow.className='row';
-  const nl=document.createElement('label');nl.textContent='Nom ';
-  const nin=document.createElement('input');nin.type='text';nin.value=repMode.name||'';nin.placeholder=repDefaultName();nin.style.width='180px';nin.title='Nom donné aux corps créés (laissez vide pour un nom automatique)';
-  nin.onchange=()=>{repMode.name=nin.value.trim();};
-  nl.appendChild(nin);nrow.appendChild(nl);p.appendChild(nrow);
   const row=document.createElement('div');row.className='row';
   const typ=document.createElement('select');[['lin','Linéaire'],['circ','Circulaire'],['mir','Symétrie']].forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];typ.appendChild(op);});typ.value=repMode.type;typ.onchange=()=>{repMode.type=typ.value;renderRepPanel();};row.appendChild(typ);
   const cnt=document.createElement('input');cnt.type='number';cnt.min='1';cnt.value=repMode.copies;cnt.style.width='64px';cnt.title='Nombre de copies';cnt.onchange=()=>{repMode.copies=Math.max(1,Math.floor(+cnt.value||1));};row.appendChild(cnt);p.appendChild(row);
