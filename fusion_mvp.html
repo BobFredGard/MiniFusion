@@ -2742,20 +2742,13 @@ function renderProps(){
         faceDiv.innerHTML=`<span class="note">${faceName}</span>`;
         labF.appendChild(faceDiv);p.appendChild(labF);
         p.appendChild(btn('🎯 Changer la face cliquée',()=>{extPickFace={f};try{renderer.domElement.style.cursor='crosshair';}catch(e){}faceEl.textContent='Cliquez une face du corps cible pour changer la cible (Échap annule).';}));
-        const labS=document.createElement('label');labS.textContent='Visée';
-        const selS=document.createElement('select');
-        selS.innerHTML=`<option value="1">Face de dessus (+n)</option><option value="-1">Face de dessous (−n)</option>`;
-        selS.value=(f.upto.side||1)>0?'1':'-1';
-        selS.onchange=()=>{f.upto.side=parseInt(selS.value,10)||1;try{resolveExtrudeUpto(f);}catch(e){}f.name=extName(f);markDirty();rebuild();renderProps();};
-        labS.appendChild(selS);p.appendChild(labS);
-        p.appendChild(btn('🎯 Sens via face cliquée',()=>{extPickFace={f};try{renderer.domElement.style.cursor='crosshair';}catch(e){}faceEl.textContent='Cliquez une face du corps cible pour fixer le sens (Échap annule).';}));
-        p.appendChild(info(`Course résolue : ${f.distance} mm${f.mid?' (symétrique)':''}`));
+        p.appendChild(info(`Cible : ${doc.features.find(x=>x.id===f.upto.ex)?.name||f.upto.ex} — ${Math.abs(f.distance)} mm — ${(f.op==='cut')?'Soustraction':'Addition'}`));
       }else{
         const lab=document.createElement('label');lab.textContent=f.mid?'Course totale (mm)':'Distance (mm)';
-        const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=f.distance;inp.style.width='80px';
+        const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=Math.abs(f.distance);inp.style.width='80px';
         const cd=()=>{
           const v=parseFloat(String(inp.value).replace(',','.'));
-          if(isFinite(v)&&v!==0){extArrowSet(f,v);markDirty();rebuild();renderProps();}
+          if(isFinite(v)&&v!==0){extArrowSet(f,Math.abs(v)*((f.op==='cut')?-1:1));markDirty();rebuild();renderProps();}
         };
         inp.addEventListener('change',cd);
         inp.addEventListener('blur',cd);
@@ -6747,13 +6740,15 @@ function extPickFaceCommit(e){
   if(!prevs.length){faceEl.textContent='Vers un objet : aucune extrusion additive ANTÉRIEURE (antériorité).';renderProps();return;}
   const tgt=(f.upto&&f.upto.ex&&prevs.some(p=>p.id===f.upto.ex))?prevs.find(p=>p.id===f.upto.ex):prevs[prevs.length-1];
   const bid=picked.mesh.userData.bid;
-  // Stocke la face cliquée pour le suivi dynamique (faceId bouge avec la géométrie)
-  f.upto={ex:tgt.id,side,faceId:{fi:picked.fi,bid}};
-  try{resolveExtrudeUpto(f);}catch(err){}
-  f.name=extName(f);
-  markDirty();rebuild();renderProps();
-  const bName=bodies.find(b=>b.id===bid)?.name||tgt.name;
-  faceEl.textContent='Vers un objet : '+tgt.name+' — face '+(side>0?'+n':'−n')+' (≈'+f.distance+' mm).';
+   // Stocke la face cliquée pour le suivi dynamique (faceId bouge avec la géométrie)
+   // Par défaut : soustraction (poche)
+   f.op='cut';
+   f.upto={ex:tgt.id,side,faceId:{fi:picked.fi,bid}};
+   try{resolveExtrudeUpto(f);}catch(err){}
+   f.name=extName(f);
+   markDirty();rebuild();renderProps();
+   const bName=bodies.find(b=>b.id===bid)?.name||tgt.name;
+   faceEl.textContent='Vers un objet : '+tgt.name+' — face '+(side>0?'+n':'−n')+' — '+Math.abs(f.distance)+' mm — Soustraction';
 }
 function extArrowWire(){
   // Drag de la flèche : projection écran → plan caméra via l'origine → distance le long de n.
