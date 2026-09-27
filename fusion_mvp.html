@@ -2742,11 +2742,13 @@ function renderProps(){
         faceDiv.innerHTML=`<span class="note">${faceName}</span>`;
         labF.appendChild(faceDiv);p.appendChild(labF);
         p.appendChild(btn('🎯 Changer la face cliquée',()=>{extPickFace={f};try{renderer.domElement.style.cursor='crosshair';}catch(e){}faceEl.textContent='Cliquez une face du corps cible pour changer la cible (Échap annule).';}));
-        p.appendChild(info(`Cible : ${doc.features.find(x=>x.id===f.upto.ex)?.name||f.upto.ex} — ${Math.abs(f.distance)} mm — ${(f.op==='cut')?'Soustraction':'Addition'}`));
+        p.appendChild(btn('🔄 Inverser le sens',()=>{if(f.upto){f.upto.side=(f.upto.side||1)*-1;try{resolveExtrudeUpto(f);}catch(e){}f.name=extName(f);markDirty();rebuild();renderProps();}}));
+        p.appendChild(info(`Cible : ${doc.features.find(x=>x.id===f.upto.ex)?.name||f.upto.ex} — ${Math.abs(f.distance)} mm — ${(f.op==='cut')?'Soustraction':'Addition'} — sens ${(f.upto.side||1)>0?'+n':'−n'}`));
       }else{
         const lab=document.createElement('label');lab.textContent=f.mid?'Course totale (mm)':'Distance (mm)';
         const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=Math.abs(f.distance);inp.style.width='80px';
         const cd=()=>{
+          if(f.upto){/* clic flèche bleue ou changement opération gère le sens — distance affichée seule */return}
           const v=parseFloat(String(inp.value).replace(',','.'));
           if(isFinite(v)&&v!==0){extArrowSet(f,Math.abs(v)*((f.op==='cut')?-1:1));markDirty();rebuild();renderProps();}
         };
@@ -2760,7 +2762,15 @@ function renderProps(){
       const sel2=document.createElement('select');
       sel2.innerHTML=`<option value="add">➕ Additif (ajoute du volume)</option><option value="cut">➖ Soustractif (découpe)</option>`;
       sel2.value=f.op||'add';
-      sel2.onchange=()=>{f.op=sel2.value;f.name=extName(f);markDirty();rebuild();renderProps();};
+      sel2.onchange=()=>{
+        f.op=sel2.value;
+        if(f.upto){
+          // Inverser le sens quand on change d'opération en mode « vers un objet »
+          f.upto.side=(f.upto.side||1)*-1;
+          try{resolveExtrudeUpto(f);}catch(e){}
+        }
+        f.name=extName(f);markDirty();rebuild();renderProps();
+      };
       lab2.appendChild(sel2);p.appendChild(lab2);
       if((f.op||'add')!=='cut'){p.appendChild(colorField(f));p.appendChild(opacityField(f));}
       p.appendChild(btn('🔧 Changer d\'esquisse',()=>askExtrude(null,f)));
@@ -6668,11 +6678,18 @@ function resolveExtrudeUpto(f){
   f.distance=+t.toFixed(4);
   return Math.abs((+prev||0)-f.distance)>1e-6;
 }
-function extArrowSet(f,v){
+ function extArrowSet(f,v){
   // Écriture commune (flèche 3D + champ Distance) : v = course signée le long de n.
+  // Si mode « vers un objet » (f.upto actif), clic sur la flèche inverse le sens au lieu de quitter le mode.
   if(!f||!isFinite(v))return;
+  if(f.upto){
+    f.upto.side=(f.upto.side||1)*-1;
+    try{resolveExtrudeUpto(f);}catch(e){}
+    f.name=extName(f);
+    markDirty();rebuild();renderProps();
+    return;
+  }
   f.distance=+v.toFixed(3);
-  if(f.upto)f.upto=null; // saisie manuelle → repasse en mode Distance
   f.name=extName(f);
 }
 function extArrowRefresh(){
