@@ -1466,6 +1466,9 @@ function extrudeSpan(f){
   // (distance = course TOTALE, prisme de -|d|/2 à +|d|/2) ; sinon distance signée classique.
   // far = sens de la flèche d'extrusion (1 = +n). Toute la géométrie (prismes, rims,
   // plans d'ancrage, hôtes de faces) passe par cette fonction.
+  // A travers tout : course très grande pour traverser tout le modèle
+  const THROUGH=1e4;
+  if(f&&f.through){const h=THROUGH/2;return{lo:-h,hi:h,far:1};}
   const raw=(f&&f.distance!==undefined&&f.distance!==null&&isFinite(+f.distance))?+f.distance:10;
   if(f&&f.mid){const h=Math.abs(raw)/2;return{lo:-h,hi:h,far:raw<0?-1:1};}
   return{lo:Math.min(0,raw),hi:Math.max(0,raw),far:raw<0?-1:1};
@@ -2706,26 +2709,34 @@ function renderProps(){
       selM.value=f.mid?'1':'0';
       selM.onchange=()=>{f.mid=(selM.value==='1');f.name=extName(f);markDirty();rebuild();renderProps();};
       labM.appendChild(selM);p.appendChild(labM);
-      // ── Étendue : distance pilotée, ou « vers un objet » avec antériorité stricte
+      // ── Étendue : Distance / Jusqu'à la face / A travers tout
       const labU=document.createElement('label');labU.textContent='Étendue';
       const selU=document.createElement('select');
-      selU.innerHTML=`<option value="dist">📏 Distance</option><option value="upto">🎯 Vers un objet</option>`;
-      selU.value=f.upto?'upto':'dist';
+      selU.innerHTML=`<option value="dist">📏 Distance</option><option value="upto">🎯 Jusqu'à la face...</option><option value="through">⤴ A travers tout</option>`;
+      selU.value=f.upto?'upto':(f.through?'through':'dist');
       selU.onchange=()=>{
         if(selU.value==='upto'){
           if(!f.upto){
             const me=doc.features.indexOf(f);
             const prevs=doc.features.slice(0,me).filter(x=>x.type==='extrude'&&(x.op||'add')==='add');
-            if(!prevs.length){faceEl.textContent='Vers un objet : aucune extrusion additive ANTÉRIEURE — ajoutez d\u2019abord un volume avant cette fonction.';selU.value='dist';return;}
+            if(!prevs.length){faceEl.textContent='Jusqu\'à la face : aucune extrusion additive ANTÉRIEURE — ajoutez d\'abord un volume avant cette fonction.';selU.value='dist';return;}
             f.upto={ex:prevs[prevs.length-1].id,side:1};
           }
-          try{resolveExtrudeUpto(f);}catch(e){}
-        }else{f.upto=null;}
-        f.name=extName(f);markDirty();rebuild();renderProps();
+          // Active le mode clic-face immédiatement
+          extPickFace={f};
+          try{renderer.domElement.style.cursor='crosshair';}catch(e){}
+          faceEl.textContent='Cliquez une face du corps cible pour définir la limite (Échap annule).';
+        }else if(selU.value==='through'){
+          f.upto=null;f.through=true;f.distance=null;
+          f.name=extName(f);markDirty();rebuild();renderProps();
+        }else{
+          f.upto=null;f.through=false;
+          f.name=extName(f);markDirty();rebuild();renderProps();
+        }
       };
       labU.appendChild(selU);p.appendChild(labU);
       if(f.upto){
-        // Mode « vers un objet » : clic face uniquement, l'extrusion va jusqu'à cette face
+        // Mode « jusqu'à la face » : clic face uniquement, l'extrusion va jusqu'à cette face
         const faceInfo=f.upto.faceId;
         const faceName=faceInfo&&faceInfo.bid?`face #${faceInfo.fi} (${bodies.find(b=>b.id===faceInfo.bid)?.name||'?'})`:'(non définie)';
         const labF=document.createElement('label');labF.textContent='Face cible';
@@ -2734,6 +2745,9 @@ function renderProps(){
         labF.appendChild(faceDiv);p.appendChild(labF);
         p.appendChild(btn('🎯 Changer la face cliquée',()=>{extPickFace={f};try{renderer.domElement.style.cursor='crosshair';}catch(e){}faceEl.textContent='Cliquez une face du corps cible pour changer la cible (Échap annule).';}));
         p.appendChild(info(`Face : ${faceName} — ${Math.abs(f.distance)} mm — ${(f.op==='cut')?'Poche (soustraction)':'Plot (addition)'}`));
+      }else if(f.through){
+        // Mode « A travers tout » : pas de distance, traverse tout le modèle
+        p.appendChild(info(`A travers tout — ${(f.op==='cut')?'Poche (soustraction)':'Plot (addition)'}`));
       }else{
         const lab=document.createElement('label');lab.textContent=f.mid?'Course totale (mm)':'Distance (mm)';
         const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=Math.abs(f.distance);inp.style.width='80px';
@@ -2754,7 +2768,7 @@ function renderProps(){
       sel2.value=f.op||'add';
       sel2.onchange=()=>{
         f.op=sel2.value;
-        if(!f.upto){
+        if(!f.upto && !f.through){
           // Mode Distance : le signe suit l'opération (Add = +, Cut = -)
           f.distance=Math.abs(f.distance)*(f.op==='cut'?-1:1);
         }
