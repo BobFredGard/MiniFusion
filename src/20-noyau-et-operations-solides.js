@@ -594,6 +594,58 @@ function occListEdges(shape){
   out.forEach(o=>{const k=o.mid.map(v=>v.toFixed(2)).join(',');if(!seen.has(k)){seen.add(k);dedup.push(o);}});
   return dedup;
 }
+// ── affinage de la POLYLIGNE d'une arête (affichage seulement) ──────────────
+// Les arêtes étaient échantillonnées à 12 points fixes : un cercle devenait un
+// 12-gone, très lisible sur la silhouette d'une révolution (le polygone se voit).
+// Ici on subdivise chaque intervalle tant que la COURBE ne s'écarte pas de sa
+// corde de plus de EDGE_TOL : une droite tombe à 2 points, un cercle s'affine tout
+// seul. L'IDENTITÉ des arêtes (mid + len) reste calculée à 12 points fixes — inchangée,
+// donc aucun effet sur l'appariement des congés, les signatures ni le rejeu.
+const EDGE_TOL=0.02; // mm — écart maximal entre la courbe et sa polyligne
+function occCurvePts(ad,u0,u1,tol,cap){
+  tol=tol>0?tol:EDGE_TOL;cap=cap||600;
+  const at=u=>{
+    const p=ad.Value(u);
+    const q=[p.X(),p.Y(),p.Z()];
+    try{p.delete();}catch(e){} // handle jetable : ad.Value en alloue un à chaque appel
+    return q;
+  };
+  const sweep=u1-u0;
+  // ── 1) cercle ou arc : le nombre de segments se CALCULE, pas subdivise à l'aveugle
+  //    flèche d'une corde = R(1−cos(Δθ/2)) ≤ tol  ⇒  Δθ = 2·acos(1−tol/R)
+  let R=-1;
+  try{
+    const c=ad.Circle(),ax=c.Axis().Direction();
+    if(isFinite(ax.X())&&isFinite(ax.Y())&&isFinite(ax.Z()))R=c.Radius();
+  }catch(e){}
+  if(R>1e-6){
+    let dth=2*Math.acos(Math.max(-1,Math.min(1,1-tol/R)));
+    if(!(dth>1e-3))dth=1e-3;
+    let n=Math.ceil(Math.abs(sweep)/dth);
+    n=Math.max(4,Math.min(cap,Math.round(n)));
+    const out=[];
+    for(let i=0;i<=n;i++)out.push(at(u0+sweep*i/n));
+    return out;
+  }
+  // ── 2) autres courbes (droites, B-splines…) : on subdivise tant que la courbe
+  //    s'écarte de sa corde de plus de tol. Une droite tombe à 2 points du premier coup.
+  const cache={};
+  const atc=u=>{const k=u.toFixed(9);if(cache[k])return cache[k];return cache[k]=at(u);};
+  const dev=(a,b)=>{
+    const A=atc(a),B=atc(b),M=atc((a+b)/2);
+    return Math.hypot(M[0]-(A[0]+B[0])/2,M[1]-(A[1]+B[1])/2,M[2]-(A[2]+B[2])/2);
+  };
+  const stack=[[u0,u1]],leaves=[];
+  while(stack.length&&leaves.length<cap){
+    const s=stack.pop();
+    if(dev(s[0],s[1])>tol){const m=(s[0]+s[1])/2;stack.push([m,s[1]]);stack.push([s[0],m]);}
+    else leaves.push(s);
+  }
+  leaves.sort((a,b)=>a[0]-b[0]);
+  const us=[u0];
+  leaves.forEach(l=>{const e=l[1];if(e>us[us.length-1]+1e-12)us.push(e);});
+  return us.map(atc);
+}
 function occSharpEdges(shape){
   // Arêtes uniques classées : sharp (noire, C0) vs tangente (grise, G1+). Validé par exécution.
   const out=[],bin=[];
@@ -655,7 +707,7 @@ function occSharpEdges(shape){
                 try{sharp=(occt.BRep_Tool.Continuity_1(e,faces[fl[0]],faces[fl[1]])===occt.GeomAbs_Shape.GeomAbs_C0);}
                 catch(err){sharp=true;}
               }else sharp=false;
-              out.push({mid,pts:s.pts,len:s.len,sharp});
+              out.push({mid,pts:occCurvePts(ad,u0,u1),len:s.len,sharp});
             }
           }
         }

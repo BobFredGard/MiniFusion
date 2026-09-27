@@ -66,6 +66,7 @@ MiniFusion est un MVP de CAO historique (paramétrique, esprit Fusion 360) qui t
 - **Vue 3D sans sidebar** : l'arborescence est une superposition semi-transparente à gauche, avec onglet de repli. Les corps se pilotent par l'œil de la fonction, le clic droit, ou **🎯 Isoler / ✅ Tout afficher**.
 - **Vues** : Iso, Dessus, Face, Droite + **Tout afficher** (F5), qui cadre toute la pièce (corps + esquisses) — jamais de pièce coupée.
 - **Menu ⚙** : vues, sol miroir,repère (axes XYZ), inversion du zoom, mode d'affichage des arêtes, **rafraîchissement dur**, **coupe par plan** (hauteur + côté inversé).
+- **Affichage des arêtes** (vives en noir, coutures lisses en gris) : les contours sont **tracés à la courbe**, pas à 12 points fixes — un cercle est découpé en autant de segments que nécessaire pour que l'écart reste sous **0,02 mm** (37 segments pour R5, 61 pour R15), et une droite tient en 2 points. Un revolution ne se lit plus comme un polygone, même en fort zoom.
 - Couleur et opacité par corps, outils translucides masqués après l'opération (aperçu explicite au clic sur la découpe), repère d'origine avec plans visibility par défaut.
 - **Raccourcis** en esquisse : `L C R B P T D` (ligne, cercle, rectangle, oblong, projection, trim, cote), `F5` vue complète, `Ctrl+Maj+R` rafraîchissement dur.
 
@@ -136,6 +137,7 @@ node build.js --check
 | `50-esquisse-2d-solveur.js` | esquisse 2D, solveur de contraintes, cotes, SVG, santé |
 | `60-trim-et-souris.js` | ajuster (trim), toutes les interactions souris |
 | `70-extrusion.js` | extrusion : menu, étendue, « jusqu'à la face », visée |
+| `75-revolve.js` | révolution 360° : axe (ligne d'esquisse ou X/Y/Z), Plot/Poche, angle, noyau exact + repli maillage |
 | `80-conges-chanfreins.js` | congés maillage + **mode exact**, références durables, aperçu rouge |
 | `90-picking-mesure-import.js` | sélection 3D, mesures, F5, menus contextuels, coupe, import/export, sauvegarde |
 | `95-toolbar.js` | barre d'outils et raccourcis |

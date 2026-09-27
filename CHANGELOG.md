@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**54 versions**, de `2026-09-28b` à `2026-09-30l` — la plus récente en bas,
+**55 versions**, de `2026-09-28b` à `2026-09-30m` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -867,3 +867,56 @@ Régression complète au vert : `selftest` 11/11, `test_cotes_paralleles`, `test
 
 Échecs **antérieurs et inchangés** : `test_tangarc`, `test_anchor_n` (harnais),
 `test_perimetre_poche` (4 échecs constants, configuration dégénérée préexistante).
+---
+
+### `2026-09-30m`
+
+**LES ARÊTES VISIBLES ÉTAIENT DES POLYGONES** — signalé par l'utilisateur sur la vue
+d'une pièce en révolution : le contour se lisait comme un polygone, pas comme un cercle.
+
+Cause : `occSharpEdges()` échantillonnait **12 points fixes** par arête, quel que soit le
+rayon. Un cercle de R15 s'affichait donc en 12-gone, avec une **flèche de 0,128 mm au
+milieu des côtés** — visible de loin sur la silhouette d'un révolution. Pire : une droite
+recevait 13 points pour 2 utiles, et un cercle de R2 en recevait 13 pour aucun gain visible.
+
+**Correction** — `occCurvePts(ad,u0,u1,tol)` : la polyligne d'affichage est échantillonnée
+en adaptant le nombre de points à la courbe réelle, avec la garantie
+**flèche ≤ `EDGE_TOL` = 0,02 mm** :
+
+- **cercle / arc** : le nombre de segments se **calcule** — flèche d'une corde
+  `R(1−cos(Δθ/2)) ≤ tol` ⇒ `Δθ = 2·acos(1−tol/R)`, `n = ⌈balayage/Δθ⌉`. 35 segments pour
+  R5, 61 pour R15 ;
+- **droite** : la subdivision s'arrête au premier test (déviation nulle) → **2 points** ;
+- **B-splines et autres** : bisection adaptative sur l'écart courbe/corde, plafonnée à 600.
+
+Une seule constante à réglée : `EDGE_TOL`, en tête de la fonction.
+
+**Mesuré sur le noyau réel** (écart réel = distance de la courbe aux segments dessinés,
+échantillonnage dense à 600 points — et non une relecture de la formule) :
+
+| arête | avant | après | écart mesuré |
+|---|---|---|---|
+| cercle R5 | 12 pts | **37 pts** | 0,0428 → **0,0190 mm** |
+| cercle R15 | 12 pts | **62 pts** | 0,1283 → **0,0199 mm** |
+| droite | 13 pts | **2 pts** | 0 |
+
+Soit **6× plus fin** sur la silhouette, et **zéro** sur les arêtes rectilignes.
+
+**L'identité des arêtes est intacte** — c'est le point qui mattered. `mid` et `len`
+continuent d'être calculés à l'échantillonnage fixe de 12 points : l'appariement des
+congés, les références durables, les signatures de rejeu et l'enregistrement du congé
+dépendent de ces deux nombres. Le test recalcule le jeu de clés `mid+len` indépendamment
+et vérifie qu'il est **identique** (6 clés, 0 écart). Seul `pts` a changé, et `pts`
+n'alimente que de l'affichage : le contour, le survol du mode congé exact, les germes.
+
+**Coût** mesuré sur 30 cylindres (90 arêtes, 29 points max) : l'échantillonnage adaptatif
+coûte ×2 l'échantillonnage minimal, soit ~5 ms par appel d'`occSharpEdges` (~42 ms au
+total). Une première version purely itérative (bisection) coûtait ×13, soit ~29 ms :
+d'où le calcul analytique du nombre de segments pour les cercles, qui donne en plus
+**moins** de points que la bisection (37 au lieu de 65 pour R5).
+
+Échecs **antérieurs et inchangés** : `test_tangarc`, `test_anchor_n` (harnais),
+`test_perimetre_poche` (configuration dégénérée préexistante).
+
+Au passage, `README.md` ne listait pas `75-revolve.js` dans « Travailler sur le code » :
+corrigé.
