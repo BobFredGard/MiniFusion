@@ -95,11 +95,45 @@ python -m http.server 3000
 
 | Chemin | Rôle |
 |---|---|
-| `fusion_mvp.html` | L'intégralité de l'app (~9 400 lignes : UI, solveur de contraintes, kernel, rendu, historique) |
+| `fusion_mvp.html` | **Fichier généré** — l'application complète en un seul HTML (~9 700 lignes). Ne pas l'éditer à la main : il est reconstruit par `node build.js` |
+| `src/*.js` | **Les sources**, découpées par opération (14 fichiers, du bandeau d'en-tête à l'init). C'est ici qu'on travaille |
+| `build.js` | Assemble `src/*.js` → `fusion_mvp.html`. `node build.js --check` échoue si le livrable est périmé |
 | `occt/` | Noyau OpenCascade WebAssembly (~111 Mo) + ses `.bak` locaux (non suivis) |
 | `threejs/` | Rendu 3D (three.js), OrbitControls, CSG |
 | `Backup/` | Snapshots des versions vertes |
 | `Server.bat` | Lancement local (npx serve, port 3000) |
+
+Le découpage en `src/` est une **partition contiguë** du script : l'ordre d'exécution est
+conservé, et **le livrable reste un seul fichier HTML** — le double-clic et le mode `file://`
+(functionnement) continuent exactement comme avant. L'utilisateur ne voit rien, l'endroit
+n'a qu'un fichier à ouvrir.
+
+### Travailler sur le code
+
+```bash
+# 1. éditer un fichier de src/ (jamais fusion_mvp.html)
+# 2. reconstruire le livrable
+node build.js
+# 3. vérifier que le livrable est à jour (à mettre en CI)
+node build.js --check
+```
+
+| Fichier de `src/` | Contenu |
+|---|---|
+| `00-entete-et-outils.js` | bandeau de version, changelog, constantes et utilitaires |
+| `10-scene-3d.js` | scène, caméra, couleurs, repli par maillage, plans d'origine |
+| `20-noyau-et-operations-solides.js` | noyau exact OCCT : prismes, fusions, découpes, application des congés |
+| `30-marqueur-temps.js` | blocage du rejeu à une position (timeline 360) |
+| `40-interface-arbre-props.js` | arborescence, timeline, panneaux de propriétés |
+| `50-esquisse-2d-solveur.js` | esquisse 2D, solveur de contraintes, cotes, SVG, santé |
+| `60-trim-et-souris.js` | ajuster (trim), toutes les interactions souris |
+| `70-extrusion.js` | extrusion : menu, étendue, « jusqu'à la face », visée |
+| `80-conges-chanfreins.js` | congés maillage + **mode exact**, références durables, aperçu rouge |
+| `90-picking-mesure-import.js` | sélection 3D, mesures, F5, menus contextuels, coupe, import/export, sauvegarde |
+| `95-toolbar.js` | barre d'outils et raccourcis |
+| `96-noyau-occt-tiers-lgpl.js` | **code tiers** (OpenCascade 1.1.4, LGPL) — laissé intact |
+| `97-auto-tests.js` | auto-tests embarqués |
+| `99-init.js` | amorçage |
 
 Pas de build : du HTML+JS commenté, versionné par `APP_VER` en tête de fichier.
 
@@ -119,7 +153,7 @@ Le détail des versions est conservé dans deux endroits, sans tableau de journa
 
 MVP fonctionnel — version **2026-09-30h**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
 
-> **Note contributeurs** : les anciennes zones gelées (sketch, contraintes, congés, antériorité) sont **dégelées depuis le 2026-09-29** — modification libre sous la discipline projet : régression verte → bump `APP_VER` + **entrée dans le changelog de l'en-tête de `fusion_mvp.html`** → snapshot `Backup/` → push. Seul le noyau exact OCCT (`occApplyXFillets`, `occFinalShape`) demande une validation navigateur : il n'est pas entièrement couvert par le harnais.
+> **Note contributeurs** : les anciennes zones gelées (sketch, contraintes, congés, antériorité) sont **dégelées depuis le 2026-09-29** — modification libre sous la discipline projet : on édite **`src/*.js`** (jamais `fusion_mvp.html`, qui est généré) → `node build.js` → régression verte → bump `APP_VER` + **entrée dans le changelog de l'en-tête** → `node build.js --check` → snapshot `Backup/` → push. `node build.js --check` échoue si le livrable est périmé : impossible d'oublier de reconstruire. Seul le noyau exact OCCT (`occApplyXFillets`, `occFinalShape`) demande une validation navigateur : il n'est pas entièrement couvert par le harnais.
 
 ## Licences
 

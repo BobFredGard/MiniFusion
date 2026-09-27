@@ -1,0 +1,914 @@
+/* ---------- picking / mesure façon viewer ---------- */
+function wirePick(){
+  const el=renderer.domElement;let dx=0,dy=0;
+  el.addEventListener('pointerdown',e=>{dx=e.clientX;dy=e.clientY;});
+  el.addEventListener('pointerup',e=>{
+    if(extPickFace){if(e.button===0)extPickFaceCommit(e);return;} // mode « vers un objet »
+    if(Math.hypot(e.clientX-dx,e.clientY-dy)>6)return;
+    if(filMode){if(e.button===0&&!e.ctrlKey)filletToggle(e);return;}
+    if(filModeX){if(e.button===0&&!e.ctrlKey)exactToggle(e);return;}
+    if(e.altKey)return;
+    if(e.shiftKey&&e.button===0){shiftMeasure(e);return;}
+    if(e.button===0&&!e.ctrlKey)faceSelect(e,false);
+    else if(e.ctrlKey&&e.button===0)faceSelect(e,true);
+    else if(e.ctrlKey&&e.button===2)recenter(e);
+  });
+   el.addEventListener('pointermove',hoverMove);
+   el.addEventListener('pointerleave',()=>clearHover());
+   el.addEventListener('pointermove',e=>{
+     if(extPickFace){renderer.domElement.style.cursor='crosshair';return;}
+     if(filModeX){
+       const i=exactPick(e);
+       if(i!==xHover){xHover=i;paintExact();}
+       renderer.domElement.style.cursor=(i===null||i===undefined)?'default':'pointer';
+       return;
+     }
+     if(!filMode)return;
+     const ed=filletPick(e);
+     // survol = simple indication visuelle (jaune)
+     const k=filEdgeHoverKey(ed);
+     if(k!==filHover){filHover=k;paintFilletEdges();}
+     const fc=pickFace(e);
+     if(fc&&fc.bid===filMode.target)renderer.domElement.style.cursor='pointer';
+     else if(!ed)renderer.domElement.style.cursor='default';
+   });
+  el.addEventListener('contextmenu',e=>{
+    if(filMode||filModeX){e.preventDefault();return;}
+    if(e.ctrlKey){e.preventDefault();return;}
+    if(Math.hypot(e.clientX-dx,e.clientY-dy)>6)return;
+    e.preventDefault();hideCtx();
+    const h=pick(e);if(!h)return;
+    const b=bodies.find(x=>x.mesh===h.object);
+    showCtx3D(e.clientX,e.clientY,b?b.id:null);
+  });
+  el.addEventListener('dblclick',e=>{
+    if(filModeX){
+      // Plus de sélection par double-clic : un clic = une arête. La propagation tangente
+      // passe par l'option « arêtes tangentes » du panneau (visible, donc prévisible).
+      e.preventDefault();
+      return;
+    }
+    if(filMode){
+      e.preventDefault();
+      const ed=filletPick(e);
+      if(ed&&ed.kind==='v'&&ed.corner){
+        // chaîne 2D tangente (esquisse) : lignes/arcs tangents au coin
+        const F=doc.features.find(x=>x.id===filMode.target);
+        const sk=doc.sketches.find(s=>s.id===(F?F.sketchId:filMode.sketchId)); if(sk) filletTangentChain(sk, ed.corner);
+      }
+      return;
+    }
+    if(!e.altKey)return;e.preventDefault();
+    const h=pick(e);if(!h)return;
+    const b=bodies.find(x=>x.mesh===h.object);if(b)isolate(b.id);
+  });
+function filletTangentChain(sk, startCorner){
+  // 2D : suit les entités tangentes (angle < 8°) autour du profil
+  const tr=skLoopTrace(sk); if(!tr.loops.length) return;
+  const chain=tr.loops[0].chain;
+  // map coin -> index dans nodes
+  const nodes=chainNodesOf(chain);
+  const idx=nodes.findIndex(pid=>{const p=sk.points[pid]; return p && Math.hypot(p.x-startCorner.x,p.y-startCorner.y)<0.5;});
+  if(idx<0) return;
+  const addCorner=(pid)=>{
+    const q=sk.points[pid]; if(!q) return;
+    const k=q.x.toFixed(2)+','+q.y.toFixed(2);
+    if(!filMode.sel.some(s=>filEdgeKey(s)===k)) filMode.sel.push({x:+q.x.toFixed(2),y:+q.y.toFixed(2),pid});
+  };
+  // marche avant/arrière tant que tangent (G1)
+  const isTangentAt=(i)=>{
+    const n=nodes.length-1;
+    const pid=nodes[i], pPrev=nodes[(i-1+n)%n], pNext=nodes[(i+1)%n];
+    // angle entre les deux arêtes incidentes
+    const A=sk.points[pPrev], V=sk.points[pid], B=sk.points[pNext];
+    if(!A||!V||!B) return false;
+    const ux=(A.x-V.x)/Math.hypot(A.x-V.x,A.y-V.y), uy=(A.y-V.y)/Math.hypot(A.x-V.x,A.y-V.y);
+    const wx=(B.x-V.x)/Math.hypot(B.x-V.x,B.y-V.y), wy=(B.y-V.y)/Math.hypot(B.x-V.x,B.y-V.y);
+    const dot=ux*wx+uy*wy;
+    return Math.abs(dot) > 0.99;
+  };
+  const visited=new Set([idx]);
+  let cur=idx;
+  // avant
+  for(let s=0;s<20;s++){
+    const nxt=(cur-1+nodes.length-1)%(nodes.length-1);
+    if(visited.has(nxt)) break;
+    if(!isTangentAt(nxt)) break;
+    visited.add(nxt); addCorner(nodes[nxt]); cur=nxt;
+  }
+  cur=idx;
+  for(let s=0;s<20;s++){
+    const nxt=(cur+1)%(nodes.length-1);
+    if(visited.has(nxt)) break;
+    if(!isTangentAt(cur)) break;
+    visited.add(nxt); addCorner(nodes[nxt]); cur=nxt;
+  }
+  addCorner(nodes[idx]);
+  paintFilletEdges(); renderFilletPanel();
+  faceEl.textContent=`Congé : chaîne tangente 2D ${visited.size} coin(s) sélectionnée.`;
+}
+  window.addEventListener('keydown',e=>{if(e.key==='Escape'){
+    if(extPickFace){extPickFace=null;try{renderer.domElement.style.cursor='default';}catch(e2){}faceEl.textContent='Vers un objet : annulé.';return;}
+    if(filMode||filModeX){exitFilletMode();return;}clearMeasure();clearHover();hideCtx();hideCtx3D();}});
+}
+/* F5 = Vue complète isométrique (au lieu du rechargement navigateur) : on voit la pièce entièrement. */
+window.addEventListener('keydown',e=>{
+  if(e.key==='F5'){e.preventDefault();setView('iso');return;}
+});
+/* raccourci E : ouvrir l'extrusion (Fusion360) — au niveau module pour être armé dès le chargement,
+   jamais pendant la saisie (input/textarea/select), une esquisse ouverte ou un mode congé. */
+window.addEventListener('keydown',e=>{
+  if((e.key==='e'||e.key==='E')&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&!e.repeat){
+    const t=e.target;if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT'||t.isContentEditable))return;
+    if(skEdit||filMode||filModeX||extPickFace)return;
+    const ov=$('sketchOverlay');if(ov&&ov.classList.contains('open'))return;
+    e.preventDefault();
+    const b=$('btnExtrude');if(b&&!b.disabled)b.click();
+  }
+});
+function pick(e){
+  const r=renderer.domElement.getBoundingClientRect();
+  const ndc=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
+  rayc.setFromCamera(ndc,camera);
+  const hits=rayc.intersectObjects(bodies.filter(b=>b.visible).map(b=>b.mesh),false);
+  return hits[0]||null;
+}
+function faceSelect(e,second){
+  const h=pick(e);
+  if(!h){
+    if(!second){
+      const pl=pickPlane(e);
+      if(pl){sel={kind:'plane',id:pl};renderTree();renderProps();refreshParts();faceEl.textContent=`Plan ${pl} — ${PLANES[pl].label}\nBouton « Esquisse » (ou double-clic dans l'arbre) pour dessiner dessus.`;return;}
+      clearMeasure();faceEl.textContent='Aucune face — cliquez sur un corps.';
+    }return;}
+  clearHover();
+  if(!second){clearMeasure();selFaces=[{mesh:h.object,faceIndex:h.faceIndex,point:h.point.clone(),geom:occFaceGeom(h.object,h.faceIndex)}];highlightTris(h.object,faceTrisFor(h.object,h.faceIndex),0xff9f0a,0.55);
+    const G=selFaces[0].geom;
+    faceEl.textContent=`Face 1 : ${bodyName(h.object)}${G?(G.kind==='cyl'?` · CYLINDRE Ø${(G.r*2).toFixed(2)}`:' · PLAN'):''}\nAire ≈ ${faceArea(h.object,h.faceIndex)}\nCtrl+clic une 2e face (entraxe auto si cylindres) · Bouton « Esquisse » pour esquisser dessus.`;}
+  else{
+    if(!selFaces.length){faceSelect(e,false);return;}
+    const NB={mesh:h.object,faceIndex:h.faceIndex,point:h.point.clone(),geom:occFaceGeom(h.object,h.faceIndex)};
+    selFaces.push(NB);highlightTris(h.object,faceTrisFor(h.object,h.faceIndex),0xff9f0a,0.55);
+    if(!measurePair(selFaces[0],NB)){
+      const[a,b]=selFaces;const d=a.point.distanceTo(b.point);
+      dimPair(a.point,b.point,d.toFixed(2)+' mm');
+      faceEl.textContent=`Face 1 : ${bodyName(a.mesh)}\nFace 2 : ${bodyName(b.mesh)}\nDistance points ≈ ${d.toFixed(2)} mm${occHas()?'':'\n(Entraxe/Ø exacts : noyau OCCT requis — page en http://)'}`;
+    }
+  }
+}
+function measurePair(A,B){
+  // Mesures exactes entre 2 faces classées (plans / cylindres BRep). True si traité.
+  const GA=A.geom,GB=B.geom;
+  if(!GA||!GB)return false;
+  if(GA.kind==='cyl'&&GB.kind==='cyl'){
+    const en=entraxePts(GA.center,GA.axis,GB.center,GB.axis);
+    const ang=Math.asin(Math.min(1,GA.axis.clone().cross(GB.axis).length()))*180/Math.PI;
+    dimPair(en.q1,en.q2,'entraxe '+en.d.toFixed(2));
+    tagAt('Ø '+(GA.r*2).toFixed(2),en.q1);tagAt('Ø '+(GB.r*2).toFixed(2),en.q2);
+    drawAxis(GA.center,GA.axis,axisLen());drawAxis(GB.center,GB.axis,axisLen());
+    faceEl.textContent=`Entraxe : ${en.d.toFixed(2)} mm${en.par?' (axes quasi-parallèles)':''}\nØ1=${(GA.r*2).toFixed(2)} · Ø2=${(GB.r*2).toFixed(2)} · angle axes=${ang.toFixed(2)}°`;
+    return true;
+  }
+  const C=GA.kind==='cyl'?GA:(GB.kind==='cyl'?GB:null);
+  const P=GA.kind==='plan'?GA:(GB.kind==='plan'?GB:null);
+  if(C&&P){
+    const a2p=Math.asin(Math.min(1,Math.abs(C.axis.dot(P.n))))*180/Math.PI;
+    const dAx=(C.center.clone().sub(P.p)).dot(P.n);
+    const qf=C.center.clone().addScaledVector(P.n,-dAx);
+    dimPair(C.center,qf,Math.abs(dAx).toFixed(2));
+    tagAt('Ø '+(C.r*2).toFixed(2),(GA.kind==='cyl'?A:B).point.clone());
+    drawAxis(C.center,C.axis,axisLen());
+    faceEl.textContent=`Axe↔face : ${Math.abs(dAx).toFixed(2)} mm${a2p>89?' (axe ⊥ face)':` (angle axe/plan=${a2p.toFixed(1)}°)`}\nØ=${(C.r*2).toFixed(2)}`;
+    return true;
+  }
+  if(GA.kind==='plan'&&GB.kind==='plan'){
+    const ang=Math.acos(Math.min(1,Math.abs(GA.n.dot(GB.n))))*180/Math.PI;
+    if(ang<0.5){
+      const signed=(B.point.clone().sub(A.point)).dot(GA.n);
+      dimPair(A.point,A.point.clone().addScaledVector(GA.n,signed),Math.abs(signed).toFixed(2));
+      faceEl.textContent=`Faces parallèles : ${Math.abs(signed).toFixed(2)} mm (angle ${ang.toFixed(2)}°)`;
+    }else{
+      const d=A.point.distanceTo(B.point);
+      dimPair(A.point,B.point,d.toFixed(2)+' mm');
+      faceEl.textContent=`Faces non parallèles : angle=${ang.toFixed(2)}° · dist. points=${d.toFixed(2)} mm`;
+    }
+    return true;
+  }
+  return false;
+}
+function occFaceAt(shape,ord){
+  const SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE;
+  const ex=new occt.TopExp_Explorer_2(shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,SH);
+  let k=0;
+  while(ex.More()){if(k===ord){const f=occt.TopoDS.Face_1(ex.Current());try{ex.delete();}catch(e){}return f;}k++;ex.Next();}
+  try{ex.delete();}catch(e){}
+  return null;
+}
+function occFaceGeom(mesh,fi){
+  // Géométrie exacte d'une face cliquée (plan / cylindre) via le BRep. Null sinon.
+  if(!occHas()||!occLive||!occLive.shape||!mesh||mesh.userData.bid!=='occ_result'||fi===undefined)return null;
+  try{
+    const groups=mesh.geometry.userData.occGroups||[];
+    const g=groups.find(g=>fi>=g.start&&fi<g.start+g.count);
+    if(!g)return null;
+    const f=occFaceAt(occLive.shape,g.f);
+    if(!f)return null;
+    const ad=new occt.BRepAdaptor_Surface_2(f,true);
+    const gt=ad.GetType();
+    const isCyl=gt===occt.GeomAbs_SurfaceType.GeomAbs_Cylinder;
+    const isPl=gt===occt.GeomAbs_SurfaceType.GeomAbs_Plane;
+    if(!isCyl&&!isPl){try{ad.delete();}catch(e){}try{f.delete();}catch(e){}return null;}
+    let out=null;
+    if(isCyl){
+      const a=ad.Cylinder().Axis();
+      out={kind:'cyl',axis:new THREE.Vector3(a.Direction().X(),a.Direction().Y(),a.Direction().Z()).normalize(),
+        center:new THREE.Vector3(a.Location().X(),a.Location().Y(),a.Location().Z()),r:ad.Cylinder().Radius()};
+    }else{
+      const p=ad.Plane();
+      const a=p.Axis();
+      out={kind:'plan',n:new THREE.Vector3(a.Direction().X(),a.Direction().Y(),a.Direction().Z()).normalize(),
+        p:new THREE.Vector3(a.Location().X(),a.Location().Y(),a.Location().Z())};
+    }
+    try{ad.delete();}catch(e){}
+    return out;
+  }catch(e){return null;}
+}
+function closestAxisPoints(c1,a1,c2,a2){
+  const w0=c1.clone().sub(c2),b=a1.dot(a2),den=1-b*b;
+  if(Math.abs(den)<1e-9){
+    const q=c1.clone().addScaledVector(a1,c2.clone().sub(c1).dot(a1));
+    return[q,c2.clone()];
+  }
+  const d=a1.dot(w0),e=a2.dot(w0);
+  const sc=(b*e-d)/den,tc=(e-b*d)/den;
+  return[c1.clone().addScaledVector(a1,sc),c2.clone().addScaledVector(a2,tc)];
+}
+function entraxePts(c1,a1,c2,a2){
+  // Pieds anti-explosion : si quasi-parallèles (< 5°), mesure locale au point médian.
+  if(Math.abs(a1.dot(a2))>Math.cos(5*Math.PI/180)){
+    const m=c1.clone().add(c2).multiplyScalar(0.5);
+    const q1=c1.clone().addScaledVector(a1,m.clone().sub(c1).dot(a1));
+    const q2=c2.clone().addScaledVector(a2,m.clone().sub(c2).dot(a2));
+    return{q1,q2,d:q1.distanceTo(q2),par:true};
+  }
+  const[q1,q2]=closestAxisPoints(c1,a1,c2,a2);
+  return{q1,q2,d:q1.distanceTo(q2),par:false};
+}
+function drawAxis(center,axis,len){
+  if(!selGroup){selGroup=new THREE.Group();scene.add(selGroup);}
+  const a=center.clone().addScaledVector(axis,-len/2),b=center.clone().addScaledVector(axis,len/2);
+  const l=new THREE.Line(new THREE.BufferGeometry().setFromPoints([a,b]),
+    new THREE.LineDashedMaterial({color:0xff9f0a,dashSize:len/20,gapSize:len/25,depthTest:false}));
+  l.computeLineDistances();l.renderOrder=997;l.raycast=()=>{};selGroup.add(l);
+}
+function axisLen(){
+  try{return Math.max(20,camera.position.distanceTo(controls.target)*0.4);}catch(e){return 40;}
+}
+function shiftMeasure(e){
+  const h=pick(e);if(!h)return;
+  const G=occFaceGeom(h.object,h.faceIndex);
+  if(G&&G.kind==='cyl'){
+    drawAxis(G.center,G.axis,axisLen());
+    const q=G.center.clone().addScaledVector(G.axis,h.point.clone().sub(G.center).dot(G.axis));
+    dimPair(q,h.point.clone(),'R '+G.r.toFixed(2));
+    tagAt('Ø '+(G.r*2).toFixed(2),h.point.clone());
+    faceEl.textContent=`Cylindre exact : Ø ${G.r.toFixed(2)} mm (R ${G.r.toFixed(2)})\nAxe=${G.axis.x.toFixed(3)}, ${G.axis.y.toFixed(3)}, ${G.axis.z.toFixed(3)} · centre=(${G.center.x.toFixed(1)}, ${G.center.y.toFixed(1)}, ${G.center.z.toFixed(1)})\nCtrl+clic un 2e cylindre = entraxe · Ctrl+clic un plan = cote axe↔face.`;
+    return;
+  }
+  const box=new THREE.Box3().setFromObject(h.object);const s=box.getSize(new THREE.Vector3());
+  const d=Math.min(s.x,s.y,s.z)||Math.max(s.x,s.y,s.z);
+  dimPair(h.point.clone(),h.point.clone().add(new THREE.Vector3(0,0,d/2)),'Ø≈'+d.toFixed(1));
+  faceEl.textContent=`Arête/solide : ${bodyName(h.object)}\nØ approx (boîte englobante) ≈ ${d.toFixed(2)} mm\n${occHas()?'(Cliquez une face cylindrique pour l\u2019Ø exact.)':'(Ø exact et entraxes : noyau OCCT requis — page en http://)'}`;
+}
+const bodyName=m=>(bodies.find(b=>b.mesh===m)||{name:m.name||'solide'}).name;
+function faceArea(mesh,fi){
+  try{const g=mesh.geometry;if(!g.index||fi===undefined)return 'n/a';
+    const p=g.attributes.position,a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3();
+    a.fromBufferAttribute(p,g.index.getX(fi*3));b.fromBufferAttribute(p,g.index.getX(fi*3+1));c.fromBufferAttribute(p,g.index.getX(fi*3+2));
+    return (new THREE.Triangle(a,b,c).getArea()).toFixed(1)+' mm²';}catch(e){return 'n/a';}
+}
+function highlight(mesh,fi){
+  if(!selGroup){selGroup=new THREE.Group();scene.add(selGroup);}
+  const m=new THREE.Mesh(mesh.geometry,new THREE.MeshBasicMaterial({color:0xff9f0a,transparent:true,opacity:.35,depthTest:false}));
+  m.applyMatrix4(mesh.matrixWorld);m.raycast=()=>{};selGroup.add(m);
+}
+const growCache=new WeakMap(); // géométrie -> {adj,fn,nTri} (surlignage + survol)
+function growData(mesh){
+  let d=growCache.get(mesh.geometry);
+  if(d)return d;
+  const g=mesh.geometry,pos=g.attributes.position;
+  const idOf=new Map();let nid=0;
+  const vid=i=>{const k=pos.getX(i).toFixed(4)+','+pos.getY(i).toFixed(4)+','+pos.getZ(i).toFixed(4);let id=idOf.get(k);if(id===undefined){id=nid++;idOf.set(k,id);}return id;};
+  const idx=g.index,nTri=idx?idx.count/3:pos.count/3;
+  if(!nTri||nTri>150000)return null;
+  const T=new Array(nTri);
+  for(let t=0;t<nTri;t++)T[t]=[vid(idx?idx.getX(3*t):3*t),vid(idx?idx.getX(3*t+1):3*t+1),vid(idx?idx.getX(3*t+2):3*t+2)];
+  const adj=new Map();
+  T.forEach((vs,t)=>{[[0,1],[1,2],[2,0]].forEach(([p,q])=>{const k=pairKey(vs[p],vs[q]);let a=adj.get(k);if(!a){a=[];adj.set(k,a);}if(a.length<2)a.push(t);});});
+  d={adj,T,nTri};growCache.set(mesh.geometry,d);
+  return d;
+}
+function growTris(mesh,tri0){
+  // Région de même surface par propagation dièdre (10/20/30°), comme le viewer. Null si échec/trop gros.
+  const d=growData(mesh);
+  if(!d||tri0<0||tri0>=d.nTri)return null;
+  const g=mesh.geometry,pos=g.attributes.position,idx=g.index;
+  const A=new THREE.Vector3(),B=new THREE.Vector3(),C=new THREE.Vector3(),U=new THREE.Vector3(),V=new THREE.Vector3(),N=new THREE.Vector3();
+  const fn=new Float32Array(d.nTri*3);
+  for(let t=0;t<d.nTri;t++){
+    A.fromBufferAttribute(pos,idx?idx.getX(3*t):3*t);B.fromBufferAttribute(pos,idx?idx.getX(3*t+1):3*t+1);C.fromBufferAttribute(pos,idx?idx.getX(3*t+2):3*t+2);
+    U.subVectors(B,A);V.subVectors(C,A);N.crossVectors(U,V);
+    const l=N.length()||1;fn[3*t]=N.x/l;fn[3*t+1]=N.y/l;fn[3*t+2]=N.z/l;
+  }
+  const neigh=t=>{
+    const vs=d.T[t],res=[];
+    [[vs[0],vs[1]],[vs[1],vs[2]],[vs[2],vs[0]]].forEach(([a,b])=>{
+      (d.adj.get(pairKey(a,b))||[]).forEach(u=>{if(u!==t&&!res.includes(u))res.push(u);});
+    });
+    return res;
+  };
+  let best=[];
+  for(const maxDeg of [10,20,30]){
+    const cosMax=Math.cos(maxDeg*Math.PI/180);
+    const seen=new Uint8Array(d.nTri);seen[tri0]=1;
+    const stack=[tri0],out=[];
+    while(stack.length&&out.length<20000){
+      const t=stack.pop();out.push(t);
+      neigh(t).forEach(u=>{
+        if(seen[u])return;
+        if(fn[3*t]*fn[3*u]+fn[3*t+1]*fn[3*u+1]+fn[3*t+2]*fn[3*u+2]>=cosMax){seen[u]=1;stack.push(u);}
+      });
+    }
+    if(out.length>best.length)best=out;
+    if(out.length>=25)break; // région large : comme le viewer, on s'arrête
+  }
+  return best.length?best:null;
+}
+function faceTrisFor(mesh,fi){
+  // Triangles à surligner pour un triangle cliqué : face BRep exacte si dispo, sinon région propagée, sinon le triangle.
+  try{
+    const groups=mesh.geometry.userData.occGroups||[];
+    const g=groups.find(g=>fi>=g.start&&fi<g.start+g.count);
+    if(g){const out=[];for(let t=g.start;t<g.start+g.count;t++)out.push(t);return out;}
+  }catch(e){}
+  try{
+    const grown=growTris(mesh,fi);
+    if(grown&&grown.length)return grown;
+  }catch(e){}
+  return(fi>=0)?[fi]:null;
+}
+function highlightTris(mesh,tris,color,opacity,target){
+  if(!tris||!tris.length)return;
+  const grp=target||(()=>{if(!selGroup){selGroup=new THREE.Group();scene.add(selGroup);}return selGroup;})();
+  mesh.updateMatrixWorld(true);
+  const g=mesh.geometry,pos=g.attributes.position,idx=g.index;
+  const arr=[],v=new THREE.Vector3();
+  tris.forEach(t=>{
+    for(let k=0;k<3;k++){
+      const vi=idx?idx.getX(3*t+k):3*t+k;
+      if(vi<0||vi>=pos.count)return;
+      v.fromBufferAttribute(pos,vi).applyMatrix4(mesh.matrixWorld);
+      arr.push(v.x,v.y,v.z);
+    }
+  });
+  if(!arr.length)return;
+  const hg=new THREE.BufferGeometry();
+  hg.setAttribute('position',new THREE.Float32BufferAttribute(arr,3));
+  hg.computeVertexNormals();
+  const hm=new THREE.Mesh(hg,new THREE.MeshBasicMaterial({color,transparent:true,opacity,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2,depthTest:false}));
+  hm.renderOrder=996;hm.raycast=()=>{};grp.add(hm);
+}
+let hoverGroup=null,hoverKey='',lastHoverT=0;
+function clearHover(){
+  hoverKey='';
+  if(hoverGroup){scene.remove(hoverGroup);hoverGroup.traverse(o=>{o.geometry&&o.geometry.dispose();o.material&&(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.dispose&&m.dispose());});hoverGroup=null;}
+}
+function hoverMove(e){
+  // Pré-sélection lumineuse au survol (comme le viewer), ~15 Hz max, jamais en orbite/clic.
+  if(filMode||filModeX||skEdit)return;
+  if(e.buttons!==0)return;
+  const now=performance.now();if(now-lastHoverT<65)return;lastHoverT=now;
+  try{
+    const h=pick(e);
+    if(!h||h.faceIndex===undefined||h.faceIndex===null){if(hoverKey)clearHover();return;}
+    const groups=(h.object.geometry.userData.occGroups||[]);
+    const g=groups.find(g=>h.faceIndex>=g.start&&h.faceIndex<g.start+g.count);
+    const key=h.object.uuid+':'+(g?('g'+g.f):('t'+h.faceIndex));
+    if(key===hoverKey)return;
+    clearHover();hoverKey=key;
+    if(!hoverGroup){hoverGroup=new THREE.Group();scene.add(hoverGroup);}
+    const tris=g?null:growTris(h.object,h.faceIndex);
+    if(g){const out=[];for(let t=g.start;t<g.start+g.count&&out.length<4000;t++)out.push(t);highlightTris(h.object,out,0x0a84ff,0.35,hoverGroup);}
+    else if(tris&&tris.length)highlightTris(h.object,tris.slice(0,4000),0x0a84ff,0.35,hoverGroup);
+    else highlightTris(h.object,[h.faceIndex],0x0a84ff,0.35,hoverGroup);
+  }catch(err){}
+}
+function clearMeasure(){
+  selFaces=[];selLabels=[];labelsDiv.innerHTML='';clearHover();
+  if(selGroup){scene.remove(selGroup);selGroup=null;}
+  if(measureGroup){scene.remove(measureGroup);measureGroup=null;}
+}
+function tagAt(text,pos){
+  if(!measureGroup){measureGroup=new THREE.Group();scene.add(measureGroup);}
+  const dot=new THREE.Mesh(new THREE.SphereGeometry(0.9,10,10),new THREE.MeshBasicMaterial({color:0x30d158,depthTest:false,depthWrite:false,transparent:true}));dot.position.copy(pos);dot.renderOrder=999;dot.raycast=()=>{};measureGroup.add(dot);
+  const el=document.createElement('div');el.className='mlabel';el.textContent=text;labelsDiv.appendChild(el);
+  selLabels.push({el,getPos:()=>pos.clone()});
+}
+function dimPair(p1,p2,text){
+  if(!measureGroup){measureGroup=new THREE.Group();scene.add(measureGroup);}
+  const ml=new THREE.Line(new THREE.BufferGeometry().setFromPoints([p1,p2]),new THREE.LineBasicMaterial({color:0x30d158,depthTest:false,depthWrite:false,transparent:true}));ml.renderOrder=999;ml.raycast=()=>{};measureGroup.add(ml);
+  [p1,p2].forEach(p=>{const s=new THREE.Mesh(new THREE.SphereGeometry(1,10,10),new THREE.MeshBasicMaterial({color:0x30d158,depthTest:false,depthWrite:false,transparent:true}));s.position.copy(p);s.renderOrder=999;s.raycast=()=>{};measureGroup.add(s);});
+  const el=document.createElement('div');el.className='mlabel';el.textContent=text;labelsDiv.appendChild(el);
+  selLabels.push({el,getPos:()=>p1.clone().add(p2).multiplyScalar(.5)});
+}
+function updateLabels(){
+  if(!selLabels.length)return;
+  const r=renderer.domElement.getBoundingClientRect();
+  selLabels.forEach(o=>{const p=o.getPos().clone().project(camera);o.el.style.left=((p.x*.5+.5)*r.width)+'px';o.el.style.top=((-p.y*.5+.5)*r.height)+'px';});
+}
+function recenter(e){
+  const h=pick(e);if(!h||!controls)return;
+  const p=h.point.clone(),off=camera.position.clone().sub(controls.target);
+  controls.target.copy(p);camera.position.copy(p).add(off);controls.update();
+}
+function isolate(id){
+  bodies.forEach(b=>{const on=(b.id===id);b.visible=on;b.mesh.visible=on;
+    const f=doc.features.find(x=>x.id===b.ref);});
+  doc.bodyVis={};bodies.forEach(b=>{doc.bodyVis[b.id]=b.visible;});markDirty();
+  refreshParts();buildEdgeOverlay();refreshMirror();
+}
+function showAll2(){bodies.forEach(b=>{b.visible=true;b.mesh.visible=true;});doc.bodyVis={};doc.features.forEach(f=>f.visible=true);doc.sketches.forEach(s=>s.visible=true);markDirty();refreshParts();showAll();rebuild();}
+
+/* ---------- menus contextuels ---------- */
+let ctxTarget=null;
+function showCtx(x,y,t){ctxTarget=t;$('ctxMenu').style.display='block';$('ctxMenu').style.left=x+'px';$('ctxMenu').style.top=y+'px';}
+function hideCtx(){$('ctxMenu').style.display='none';}
+function showCtx3D(x,y,bid){ctxTarget={kind:'body',id:bid};const _bd=bodies.find(b=>b.id===bid)||{name:'Pièce'};$('ctx3DTitle').textContent=_bd.name||'Pièce';
+  try{
+    const _m=_bd.mesh&&_bd.mesh.material;
+    $('ctxColor').value=_m&&_m.color?cssHex(_m.color.getHex()):'#0a84ff';
+    const _op=_m?(_m.transparent?_m.opacity:1):1;
+    $('ctxOp').value=Math.round(_op*100);$('ctxOpV').textContent=Math.round(_op*100)+'%';
+  }catch(e){}
+  $('ctxMenu3D').style.display='block';$('ctxMenu3D').style.left=x+'px';$('ctxMenu3D').style.top=y+'px';}
+function hideCtx3D(){$('ctxMenu3D').style.display='none';}
+function ctxFeat(){
+  const t=ctxTarget;if(!t)return{};
+  const bd=bodies.find(x=>x.id===t.id);if(!bd)return{};
+  const ff=bd.ref?doc.features.find(x=>x.id===bd.ref):null;
+  return{bd,ff};
+}
+document.querySelectorAll('#ctxMenu button').forEach(b=>b.onclick=()=>{
+  const t=ctxTarget;hideCtx();if(!t)return;
+  if(b.dataset.act==='rename'){
+    const n=prompt('Nouveau nom :',curName(t));if(!n)return;
+    if(t.kind==='sketch')doc.sketches.find(s=>s.id===t.id).name=n;
+    if(t.kind==='feature')doc.features.find(f=>f.id===t.id).name=n;
+    if(t.kind==='body'){const bd=bodies.find(x=>x.id===t.id);if(bd)bd.name=n;}
+    markDirty();rebuild();renderProps();
+  }
+  if(b.dataset.act==='toggle'){
+    if(t.kind==='plane'){setOriginVis(t.id,!originVis[t.id]);return;}
+    if(t.kind==='sketch'){const s=doc.sketches.find(x=>x.id===t.id);s.visible=!(s.visible!==false);}
+    if(t.kind==='feature'){const f=doc.features.find(x=>x.id===t.id);f.visible=!(f.visible!==false);}
+    if(t.kind==='body'){const bd=bodies.find(x=>x.id===t.id);if(bd){bd.visible=!bd.visible;bd.mesh.visible=bd.visible;}}
+    markDirty();rebuild();
+  }
+  if(b.dataset.act==='tl'){
+    if(t.kind==='feature'){const f=doc.features.find(x=>x.id===t.id);if(f){tlSetPtr(f);markDirty();rebuild();renderTree();renderProps();}}
+    return;
+  }
+  if(b.dataset.act==='tlclear'){
+    if(tlMark!=null){tlSetPtr(null);markDirty();rebuild();renderTree();renderProps();}
+    return;
+  }
+  if(b.dataset.act==='edit'){
+    if(t.kind==='sketch')openSketch(t.id);
+    if(t.kind==='feature'){const f=doc.features.find(x=>x.id===t.id);if(f&&tlLocked(f)){tlSetPtr(null);markDirty();rebuild();}if(f&&f.sketchId)openSketch(f.sketchId);}
+  }
+  if(b.dataset.act==='del'){
+    if(!confirm('Supprimer ?'))return;
+    if(t.kind==='sketch'){doc.sketches=doc.sketches.filter(s=>s.id!==t.id);doc.features=doc.features.filter(f=>f.sketchId!==t.id);}
+    if(t.kind==='feature'){delFeature(doc.features.find(x=>x.id===t.id));}
+    sel={kind:null,id:null};markDirty();rebuild();renderProps();
+  }
+});
+document.querySelectorAll('#ctxMenu3D button').forEach(b=>b.onclick=()=>{
+  const t=ctxTarget;hideCtx3D();if(!t)return;const bd=bodies.find(x=>x.id===t.id);if(!bd)return;
+  if(b.dataset.act==='hide'){bd.visible=false;bd.mesh.visible=false;refreshParts();buildEdgeOverlay();}
+  if(b.dataset.act==='ghost'){bd.mesh.material.transparent=true;bd.mesh.material.opacity=.25;bd.mesh.material.needsUpdate=true;}
+  if(b.dataset.act==='isolate')isolate(bd.id);
+  if(b.dataset.act==='showall')showAll2();
+});
+$('ctxColor').addEventListener('input',()=>{
+  const{bd,ff}=ctxFeat();if(!bd||!bd.mesh||!bd.mesh.material||!bd.mesh.material.color)return;
+  const m=/^#?([0-9a-fA-F]{6})$/.exec($('ctxColor').value.trim());if(!m)return;
+  bd.mesh.material.color.setHex(parseInt(m[1],16));
+  try{
+    if(ff&&sel.kind==='feature'&&sel.id===ff.id){
+      const rp=document.querySelector('#props input[type=color]'); if(rp) rp.value=$('ctxColor').value;
+    } else if(!ff){
+      const pt=document.querySelector('#props input[type=color]'); if(pt) pt.value=$('ctxColor').value;
+    }
+  }catch(e){}
+});
+$('ctxColor').addEventListener('change',()=>{
+  const{bd,ff}=ctxFeat();if(!bd)return;
+  const m=/^#?([0-9a-fA-F]{6})$/.exec($('ctxColor').value.trim());if(!m)return;
+  const c=parseInt(m[1],16);
+  if(ff&&colorable(ff)){ff.color=c;markDirty();hideCtx3D();rebuild();renderProps();refreshParts();}
+  else{doc.tint=c;markDirty();hideCtx3D();rebuild();renderProps();refreshParts();}
+});
+$('ctxColorAuto').onclick=()=>{
+  const{ff}=ctxFeat();hideCtx3D();
+  if(ff&&colorable(ff))delete ff.color;else delete doc.tint;
+  markDirty();rebuild();renderProps();refreshParts();
+};
+$('ctxOp').addEventListener('input',()=>{
+  const{bd,ff}=ctxFeat();if(!bd||!bd.mesh||!bd.mesh.material)return;
+  const o=$('ctxOp').value/100;$('ctxOpV').textContent=$('ctxOp').value+'%';
+  bd.mesh.material.transparent=o<1;bd.mesh.material.opacity=o;bd.mesh.material.needsUpdate=true;
+  try{
+    if(ff&&sel.kind==='feature'&&sel.id===ff.id){
+      const rp=document.querySelector('#props input[type=range][min="15"]');
+      if(rp){ rp.value=$('ctxOp').value; const sp=rp.parentElement.querySelector('span'); if(sp) sp.textContent=$('ctxOp').value+'%';}
+    }
+  }catch(e){}
+});
+$('ctxOp').addEventListener('change',()=>{
+  const{bd,ff}=ctxFeat();if(!bd)return;
+  const o=$('ctxOp').value/100;
+  if(ff&&colorable(ff)){ff.opacity=o>=1?undefined:o;markDirty();hideCtx3D();rebuild();renderProps();refreshParts();}
+});
+const curName=t=>{if(t.kind==='plane')return 'Plan '+t.id;if(t.kind==='sketch')return(doc.sketches.find(s=>s.id===t.id)||{}).name;if(t.kind==='feature')return(doc.features.find(f=>f.id===t.id)||{}).name;if(t.kind==='body')return(bodies.find(b=>b.id===t.id)||{}).name;return'';};
+
+/* ---------- coupe ---------- */
+function applyClip(){
+  const on=$('clipOn').checked;
+  if(on){const pos=parseFloat($('clipPos').value)||0;
+    const flip=$('clipFlip').checked?-1:1;
+    clipPlane=new THREE.Plane(new THREE.Vector3(0,0,-flip),flip*pos); // Z = hauteur
+  }else clipPlane=null;
+  bodies.forEach(b=>{b.mesh.material.clippingPlanes=clipPlane?[clipPlane]:null;b.mesh.material.needsUpdate=true;});
+}
+
+/* ---------- import / export ---------- */
+$('btnImport').onclick=()=>$('fileImport').click();
+$('fileImport').addEventListener('change',async e=>{
+  const f=e.target.files[0];if(!f)return;
+  if(/\.stou?l$/i.test(f.name)){await importSTL(f);}
+  else{await importSTEP(f);}
+  e.target.value='';
+});
+async function importSTL(file){
+  const buf=await file.arrayBuffer();
+  const geo=parseSTL(buf);
+  if(!geo){alert('STL illisible.');return;}
+  const mesh=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0x0a84ff}));
+  const id=uid('im');
+  const feat={id,type:'import',name:file.name.replace(/\.[^.]+$/,''),visible:true,_mesh:mesh};
+  // centre la pièce
+  geo.computeBoundingBox();const c=geo.boundingBox.getCenter(new THREE.Vector3());geo.translate(-c.x,-c.y,-c.z);
+  addFeature(feat);sel={kind:'feature',id};markDirty();rebuild();showAll();
+}
+function parseSTL(buf){
+  try{
+    const dv=new DataView(buf);let off=0;
+    const txt=new TextDecoder().decode(buf.slice(0,80));
+    if(txt.trim().startsWith('solid')){
+      const s=new TextDecoder().decode(buf);const vs=[];
+      const re=/vertex\s+([-\d.e+]+)\s+([-\d.e+]+)\s+([-\d.e+]+)/gi;let m;
+      while((m=re.exec(s))){vs.push(parseFloat(m[1]),parseFloat(m[2]),parseFloat(m[3]));}
+      if(vs.length>=9){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(vs,3));g.computeVertexNormals();return g;}
+    }
+    const n=dv.getUint32(80,true);const pos=new Float32Array(n*9);
+    for(let i=0;i<n;i++){const b=84+i*50;
+      pos[i*9]=dv.getFloat32(b,true);pos[i*9+1]=dv.getFloat32(b+4,true);pos[i*9+2]=dv.getFloat32(b+8,true);
+      pos[i*9+3]=dv.getFloat32(b+12,true);pos[i*9+4]=dv.getFloat32(b+16,true);pos[i*9+5]=dv.getFloat32(b+20,true);
+      pos[i*9+6]=dv.getFloat32(b+24,true);pos[i*9+7]=dv.getFloat32(b+28,true);pos[i*9+8]=dv.getFloat32(b+32,true);}
+    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.computeVertexNormals();return g;
+  }catch(e){return null;}
+}
+async function importSTEP(file){
+  if(!occHas()){alert('Moteur STEP (OCCT) pas encore chargé — réessayez dans quelques secondes (page servie en http:// de préférence).\nEn attendant : import STL OK, extrusions OK.');return;}
+  try{
+    const buf=await file.arrayBuffer();
+    const path='/i.stp'; // chemin court fixe (cf. export)
+    try{occt.FS.unlink(path);}catch(e){}
+    occt.FS.writeFile(path,new Uint8Array(buf));
+    const reader=new occt.STEPControl_Reader_1();
+    reader.ReadFile(path); // statut passé en revue via NbRootsForTransfer
+    if(reader.NbRootsForTransfer()<1)throw new Error('aucun solide transférable');
+    reader.TransferRoots();const shape=reader.OneShape();
+    const g=occTessellate(shape,0.5);
+    if(!g.attributes.position.count)throw new Error('tessellation vide');
+    const mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0x0a84ff}));
+    addFeature({id:uid('im'),type:'import',name:file.name.replace(/\.[^.]+$/,''),visible:true,_mesh:mesh});
+    try{reader.delete();}catch(e){}
+    try{shape.delete();}catch(e){}
+    try{occt.FS.unlink(path);}catch(e){}
+    markDirty();rebuild();showAll();
+    faceEl.textContent='STEP importé : '+file.name;
+  }catch(e){alert('Import STEP impossible : '+e.message);}
+}
+function occFsDiag(){
+  // Photo du FS interne pour diagnostiquer (console F12).
+  try{
+    const L={cwd:'?',root:[],wrk:'?'};
+    try{L.cwd=occt.FS.cwd();}catch(e){L.cwd='ERR '+e.message;}
+    try{L.root=occt.FS.readdir('/').slice(0,20);}catch(e){L.root=['ERR '+e.message];}
+    try{L.wrk=occt.FS.readdir(L.cwd).slice(0,20);}catch(e){L.wrk=['ERR '+e.message];}
+    try{console.log('[OCCT-FS]',JSON.stringify(L));}catch(e){}
+    return L;
+  }catch(e){return null;}
+}
+function occWriteStep(shapes,path){
+  // shapes : liste de TopoDS_Shape -> octets STEP via le FS OCCT. Chaque étape est vérifiée.
+  const RD=occt.IFSelect_ReturnStatus;
+  const wr=new occt.STEPControl_Writer_1();
+  const AsIs=occt.STEPControl_StepModelType.STEPControl_AsIs;
+  shapes.forEach((s,i)=>{
+    let st=null;
+    try{st=wr.Transfer(s,AsIs,true);}catch(e){throw new Error(`transfert ${i} impossible (${e.message||e})`);}
+    if(st!==RD.IFSelect_RetDone)throw new Error(`transfert ${i} refusé par le noyau`);
+  });
+  let wst=null;
+  try{wst=wr.Write(path);}catch(e){occFsDiag();throw new Error(`écriture impossible (${e.message||e}) — voir console F12 [OCCT-FS]`);}
+  let bytes=null;
+  try{bytes=occt.FS.readFile(path);}catch(e){bytes=null;} // lecture AVANT toute libération
+  try{wr.delete();}catch(e){}
+  if(wst!==RD.IFSelect_RetDone){occFsDiag();throw new Error(`écriture refusée par le noyau — voir console F12 [OCCT-FS]`);}
+  let ok=false;
+  try{ok=!!occt.FS.analyzePath(path).exists;}catch(e){ok=false;}
+  if(bytes&&bytes.length>1000)return bytes;
+  if(!ok){
+    // Ultime recours : balaye le FS pour retrouver le fichier (CWD inattendu ?).
+    let seen='';
+    try{
+      const walk=(d)=>{
+        for(const n of occt.FS.readdir(d)){
+          if(n==='.'||n==='..')continue;
+          const p=(d==='/'?'':d)+'/'+n;
+          try{
+            const st=occt.FS.stat(p);
+            if(st&&st.size>0&&/\.stp$/i.test(p)){seen=p;return true;}
+            if(occt.FS.isDir&&occt.FS.isDir(st.mode)){if(walk(p))return true;}
+          }catch(e){}
+        }
+        return false;
+      };
+      walk('/');
+    }catch(e){}
+    try{console.log('[OCCT-FS] fichier cherché : '+path+' · autre .stp trouvé : '+(seen||'aucun'));}catch(e){}
+    if(seen){
+      try{return occt.FS.readFile(seen);}
+      catch(e){throw new Error(`fichier retrouvé ailleurs (${seen}) mais illisible`);}
+    }
+    throw new Error('fichier non créé ('+path+') — console F12 : [OCCT-FS]');
+  }
+  try{return occt.FS.readFile(path);}
+  catch(e){throw new Error(`lecture du fichier interne impossible (${e.message||e})`);}
+}
+async function occExportPreflight(){
+  // 1) FS JS, 2) écriture C++ d'une boîte témoin. Retourne [ok, détail].
+  try{occt.FS.writeFile('/pre_t.txt','hello');}
+  catch(e){return[false,'FS interne inscriptible ? NON ('+e.message+')'];}
+  let rd=null;
+  try{rd=occt.FS.readFile('/pre_t.txt');}catch(e){return[false,'FS lecture impossible ('+e.message+')'];}
+  if(!rd||rd.length!==5)return[false,'FS lecture incohérente'];
+  try{occt.FS.unlink('/pre_t.txt');}catch(e){}
+  try{
+    const RD=occt.IFSelect_ReturnStatus;
+    const b=new occt.BRepPrimAPI_MakeBox_2(new occt.gp_Pnt_3(0,0,0),10,10,10);
+    b.Build();
+    const wr=new occt.STEPControl_Writer_1();
+    wr.Transfer(b.Shape(),occt.STEPControl_StepModelType.STEPControl_AsIs,true);
+    const st=wr.Write('/pre_b.stp');
+    try{b.delete();}catch(e){}try{wr.delete();}catch(e){}
+    if(st!==RD.IFSelect_RetDone)return[false,'Write boîte refusé par le noyau'];
+    let ex=false;try{ex=!!occt.FS.analyzePath('/pre_b.stp').exists;}catch(e){}
+    if(!ex)return[false,'Write boîte OK mais fichier absent (traversée des noms rompue — rechargez la page)'];
+    let n=0;try{n=occt.FS.readFile('/pre_b.stp').length;}catch(e){}
+    try{occt.FS.unlink('/pre_b.stp');}catch(e){}
+    if(!(n>1000))return[false,'boîte écrite mais vide'];
+    return[true,'pré-test OK'];
+  }catch(e){return[false,'boîte témoin : '+(e.message||e)];}
+}
+$('btnExportStep').onclick=async()=>{
+  if(!occHas()){alert('Export STEP exact nécessite OCCT (chargement en cours ou échec — servez la page en http://). Export STL/OBJ dispo.');return;}
+  faceEl.textContent='Export STEP : pré-test…';
+  const[pok,pdetail]=await occExportPreflight();
+  try{console.log('[STEP-OUT] pré-test : '+pdetail);}catch(e){}
+  if(!pok){alert('Export STEP impossible : '+pdetail+'.');faceEl.textContent='Export STEP : '+pdetail;return;}
+  try{
+    // Exporte le solide exact : même pipeline que l'affichage (prismes + booléens + congés exacts).
+    const FR=occFinalShape();
+    if(!FR.shape){alert('Solide vide, rien à exporter.');return;}
+    const path='/o.stp'; // chemin court fixe (les chemins longs échouent dans certains onglets)
+    try{occt.FS.unlink(path);}catch(e){}
+    try{console.log('[STEP-OUT] path='+JSON.stringify(path)+' typeof='+(typeof path)+' cwd='+occt.FS.cwd()+' avant='+occt.FS.readdir('/').slice(0,12).join(','));}catch(e){}
+    const bytes=occWriteStep([FR.shape],path);
+    try{console.log('[STEP-OUT] après='+occt.FS.readdir('/').slice(0,12).join(','));}catch(e){}
+    const blob=new Blob([bytes],{type:'application/step'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(doc.name||'piece')+'.step';a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+    try{occt.FS.unlink(path);}catch(e){}
+    occCleanup(FR,null);
+    faceEl.textContent='STEP exact exporté ('+(bytes.length/1024).toFixed(1)+' Ko).';
+  }catch(e){alert('Export STEP impossible : '+e.message);}
+};
+$('btnExportStl').onclick=()=>downloadMesh('stl');
+$('btnExportObj').onclick=()=>downloadMesh('obj');
+function downloadMesh(fmt){
+  const vis=bodies.filter(b=>b.visible&&!b.ghost);if(!vis.length){alert('Rien à exporter (que des outils de découpe ?).');return;}
+  let blob;
+  if(fmt==='stl')blob=new Blob([meshesToSTL(vis.map(b=>b.mesh))],{type:'model/stl'});
+  else blob=new Blob([meshesToOBJ(vis.map(b=>b.mesh))],{type:'text/plain'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(doc.name||'piece')+'.'+fmt;a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+function meshesToSTL(meshes){
+  let count=0;meshes.forEach(m=>{const g=m.geometry;count+= (g.index?g.index.count:g.attributes.position.count)/3;});
+  const buf=new ArrayBuffer(84+count*50);const dv=new DataView(buf);
+  dv.setUint32(80,count,true);let off=84;
+  const a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3(),n=new THREE.Vector3(),e1=new THREE.Vector3(),e2=new THREE.Vector3();
+  meshes.forEach(m=>{m.updateMatrixWorld(true);const g=m.geometry;const p=g.attributes.position;const idx=g.index;
+    const triN=(idx?idx.count:p.count)/3;
+    for(let i=0;i<triN;i++){
+      const ia=idx?idx.getX(i*3):i*3,ib=idx?idx.getX(i*3+1):i*3+1,ic=idx?idx.getX(i*3+2):i*3+2;
+      a.fromBufferAttribute(p,ia).applyMatrix4(m.matrixWorld);b.fromBufferAttribute(p,ib).applyMatrix4(m.matrixWorld);c.fromBufferAttribute(p,ic).applyMatrix4(m.matrixWorld);
+      e1.subVectors(b,a);e2.subVectors(c,a);n.crossVectors(e1,e2).normalize();
+      dv.setFloat32(off,n.x,true);dv.setFloat32(off+4,n.y,true);dv.setFloat32(off+8,n.z,true);
+      [a,b,c].forEach((v,k)=>{dv.setFloat32(off+12+k*12,v.x,true);dv.setFloat32(off+16+k*12,v.y,true);dv.setFloat32(off+20+k*12,v.z,true);});
+      dv.setUint16(off+48,0,true);off+=50;
+    }});
+  return buf;
+}
+function meshesToOBJ(meshes){
+  let s='# MiniFusion\n',vo=1;
+  meshes.forEach(m=>{m.updateMatrixWorld(true);s+=`o ${m.name||'part'}\n`;const p=m.geometry.attributes.position;const v=new THREE.Vector3();
+    for(let i=0;i<p.count;i++){v.fromBufferAttribute(p,i).applyMatrix4(m.matrixWorld);s+=`v ${v.x} ${v.y} ${v.z}\n`;}
+    const idx=m.geometry.index;const n=(idx?idx.count:p.count)/3;
+    for(let i=0;i<n;i++){const a=(idx?idx.getX(i*3):i*3)+vo,b=(idx?idx.getX(i*3+1):i*3+1)+vo,c=(idx?idx.getX(i*3+2):i*3+2)+vo;s+=`f ${a} ${b} ${c}\n`;}
+    vo+=p.count;});
+  return s;
+}
+
+/* ---------- sauvegarde locale + fichier dédié ---------- */
+function serialise(pretty){
+  // pretty=1 (défaut) pour l'export fichier lisible ; compact pour l'autosave local
+  // (~40 % de volume en moins à sérialiser et à écrire à chaque sauvegarde).
+  return JSON.stringify({app:'MiniFusion',v:1,name:doc.name,tint:doc.tint||0,entNames:doc.entNames||null,originVis,view:collectView(),bodyVis:doc.bodyVis||{},sel:{kind:sel.kind,id:sel.id},sketches:doc.sketches.map(s=>{const c=Object.assign({},s);delete c._refs;return c;}),features:doc.features.map(({_mesh,_m,...r})=>r)},null,pretty===false?null:2);
+}
+function docHash(){
+  // Empreinte du paramétrique rejouable (imports éphémères exclus : non persistés).
+  // Normalisée comme serialise : AUCUN champ transitoire (_m, _refs, _health, _audit),
+  // sinon le cache raterait à chaque F5 (c'était le bug de l'éventail).
+  try{
+    const stripSketch=sk=>{const c=Object.assign({},sk);delete c._refs;delete c._health;delete c._audit;return c;};
+    const stripFeat=({_mesh,_m,...r})=>r;
+    if(_hashMemo&&_hashVer===_docVersion)return _hashMemo; // même version → empreinte déjà calculée
+    const s=JSON.stringify({s:doc.sketches.map(stripSketch),f:(doc.features||[]).filter(f=>f.type!=='import').map(stripFeat),t:doc.tint||0});
+    let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}
+    _hashMemo=(h>>>0).toString(36)+'_'+s.length;_hashVer=_docVersion;return _hashMemo;
+  }catch(e){return 'x';}
+}
+function idbOpen(){
+  return new Promise((res,rej)=>{
+    try{
+      const rq=indexedDB.open('minifusion',1);
+      rq.onupgradeneeded=()=>{rq.result.createObjectStore('kv');};
+      rq.onsuccess=()=>res(rq.result);
+      rq.onerror=()=>rej(rq.error);
+    }catch(e){rej(e);}
+  });
+}
+async function idbSet(k,v){
+  const db=await idbOpen();
+  return new Promise((res,rej)=>{
+    const tx=db.transaction('kv','readwrite');tx.objectStore('kv').put(v,k);
+    tx.oncomplete=()=>{try{db.close();}catch(e){}res();};
+    tx.onerror=()=>{try{db.close();}catch(e){}rej(tx.error);};
+  });
+}
+async function idbGet(k){
+  const db=await idbOpen();
+  return new Promise((res,rej)=>{
+    const rq=db.transaction('kv').objectStore('kv').get(k);
+    rq.onsuccess=()=>{try{db.close();}catch(e){}res(rq.result);};
+    rq.onerror=()=>{try{db.close();}catch(e){}rej(rq.error);};
+  });
+}
+function saveViewCache(){
+  // Mémorise le dernier affichage valide (hors ligne = retour instantané au rechargement).
+  try{
+    const items=[];let verts=0;
+    for(const b of bodies){
+      if(b.ghost||b.cached||!b.mesh||!b.mesh.visible)continue;
+      if(b.kind==='import')continue; // éphémères : non persistés, non cachés
+      const g=b.mesh.geometry;if(!g||!g.attributes.position||!g.attributes.position.count)continue;
+      const p=g.attributes.position.array,n=g.attributes.normal?g.attributes.normal.array:null;
+      verts+=g.attributes.position.count;if(verts>1500000)return; // trop gros : pas de cache
+      items.push({id:b.id,name:b.name,color:b.color,kind:b.kind||'mesh',ref:b.ref||null,
+        op:(b.mesh.material&&b.mesh.material.transparent)?b.mesh.material.opacity:1,
+        pos:ArrayBuffer.isView(p)?p.slice():p.slice(),nor:n?(ArrayBuffer.isView(n)?n.slice():n.slice()):null});
+    }
+    if(!items.length)return;
+    idbSet('lastGood',{v:1,at:Date.now(),hash:docHash(),engine:occEngineMsg,exact:builtEngine==='exact',items}).catch(()=>{});
+  }catch(e){}
+}
+async function restoreViewCache(){
+  // Affiche le cache pendant que le noyau exact recalcul en fond. Retourne true si appliqué.
+  try{
+    if(typeof indexedDB==='undefined')return false;
+    const c=await idbGet('lastGood');
+    if(!c||c.v!==1||!c.items||!c.items.length)return false;
+    if(c.hash!==docHash())return false; // doc différent : recalcul direct
+    clearBodies();
+    c.items.forEach(it=>{
+      const g=new THREE.BufferGeometry();
+      g.setAttribute('position',new THREE.Float32BufferAttribute(it.pos,3));
+      if(it.nor&&it.nor.length===it.pos.length)g.setAttribute('normal',new THREE.Float32BufferAttribute(it.nor,3));
+      else g.computeVertexNormals();
+      const mat=new THREE.MeshStandardMaterial({color:it.color,metalness:.35,roughness:.4});
+      if(it.op>0&&it.op<1){mat.transparent=true;mat.opacity=it.op;}
+      const mesh=new THREE.Mesh(g,mat);mesh.userData.bid=it.id;scene.add(mesh);
+      bodies.push({id:it.id,name:it.name,mesh,color:it.color,visible:true,kind:it.kind,ref:it.ref,cached:true});
+    });
+    if(!bodies.length)return false;
+    builtHash=c.hash;builtEngine=c.exact?'exact':'mesh'; // l'affichage correspond au doc : aucun recalcul auto
+    occEngineMsg='cache — pièce finie à jour ('+(c.engine||'?')+')';occStatus();
+    refreshParts();renderTree();showAll();applyClip();buildEdgeOverlay();refreshMirror();
+    faceEl.textContent='Pièce finie restaurée — aucun recalcul (modifiez pour rejouer).';
+    return true;
+  }catch(e){return false;}
+}
+function markDirty(){dirty=true;_docVersion++;refreshParts();}
+function autosave(){
+  // Différé : une rafale de reconstructions n'écrit plus le document local à chaque fois
+  // (sérialisation + écriture synchrone qui bloquaient le fil principal). Le contenu
+  // reste identique ; l'indicateur « non sauvegardé » reste honnête jusqu'à l'écriture.
+  refreshParts();
+  if(_autoT)clearTimeout(_autoT);
+  _autoT=setTimeout(()=>{_autoT=null;try{localStorage.setItem('minifusion_auto',serialise(false));dirty=false;}catch(e){}refreshParts();},600);
+}
+function autosaveFlush(){ // fermeture d'onglet : plus aucune perte possible
+  if(!dirty)return;
+  try{localStorage.setItem('minifusion_auto',serialise(false));dirty=false;}catch(e){}
+}
+addEventListener('beforeunload',()=>{autosaveFlush();});
+addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')autosaveFlush();});
+async function deserialise(json,opts){
+  const o=JSON.parse(json);doc={name:o.name||'Sans titre',tint:o.tint||0,entNames:o.entNames||null,sketches:o.sketches||[],features:o.features||[],bodyVis:o.bodyVis||{}};
+  try{
+    (doc.sketches||[]).forEach(migrateSketch);
+    try{resolveAllSketchHosts();}catch(e){}
+  }catch(e){}
+  try{applyView(o.view);}catch(e){}
+  if(o.originVis)originVis={XY:o.originVis.XY!==false,XZ:o.originVis.XZ!==false,YZ:o.originVis.YZ!==false};
+  sel={kind:null,id:null}; // restaure la sélection si elle désigne encore quelque chose
+  if(o.sel&&o.sel.id){
+    if(o.sel.kind==='plane'&&PLANES[o.sel.id])sel={kind:'plane',id:o.sel.id};
+    else if(o.sel.kind==='sketch'&&doc.sketches.some(s=>s.id===o.sel.id))sel={kind:'sketch',id:o.sel.id};
+    else if(o.sel.kind==='feature'&&doc.features.some(f=>f.id===o.sel.id))sel={kind:'feature',id:o.sel.id};
+  }
+  // les imports STEP/STL ne sont pas persistés en géométrie dans ce MVP (seuls esquisses+extrusions rejouent) — on l'indique
+  const nImp=doc.features.filter(f=>f.type==='import').length;
+  doc.features=doc.features.filter(f=>f.type!=='import');
+  occCkClear(); // document remplacé : les points de contrôle ne valent plus rien
+  const rep=docSanitise();
+  if(rep.dup||rep.orph||rep.sk||rep.cap){try{log('Document réparé : '+rep.dup+' instance(s) en double, '+rep.orph+' instance(s) orpheline(s), '+rep.sk+' esquisse(s) d’instance abandonnée(s), '+rep.cap+' répétition(s) plafonnée(s) à '+REPEAT_MAX+' copies.');}catch(e){}}
+  if(rep.ren){try{log('Nom de congé/chanfrein réaligné sur la géométrie réelle : '+rep.ren+' fonction(s) (des arêtes avaient été perdues).');}catch(e){}}
+  if(rep.dup||rep.orph){try{doc.features.filter(f=>f.type==='repeat').forEach(f=>repGenChildren(f));}catch(e){}}
+  sel={kind:null,id:null};uidN=doc.sketches.length+doc.features.length+1;
+  if(!opts||opts.rebuild!==false){rebuild();renderProps();showAll();}
+  else renderProps();
+  if(nImp)alert(nImp+' corps importé(s) non rejoués (géométrie non persistée dans ce MVP) — réimportez le STEP/STL. Sauvegarde paramétrique complète à l\'étape suivante.');
+}
+$('btnSave').onclick=async()=>{
+  const data=serialise();
+  try{
+    if(window.showSaveFilePicker&&fileHandle){const w=await fileHandle.createWritable();await w.write(data);await w.close();autosave();alert('Sauvé dans '+fileHandle.name);return;}
+  }catch(e){}
+  try{localStorage.setItem('minifusion_auto',data);localStorage.setItem('minifusion_named_'+doc.name,data);dirty=false;refreshParts();alert('Sauvé en local (navigateur) sous « '+doc.name+' ». Utilisez « Sous… » pour un fichier dédié.');}catch(e){alert('Sauvegarde impossible : '+e.message);}
+};
+$('btnSaveAs').onclick=async()=>{
+  const data=serialise();const fname=(doc.name||'piece').replace(/[\\/:*?"<>|]/g,'_')+'.minifusion.json';
+  try{
+    if(window.showSaveFilePicker){
+      fileHandle=await window.showSaveFilePicker({suggestedName:fname,types:[{description:'MiniFusion',accept:{'application/json':['.json']}}]});
+      const w=await fileHandle.createWritable();await w.write(data);await w.close();autosave();alert('Sauvé sous '+fileHandle.name);return;
+    }
+    throw new Error('no picker');
+  }catch(e){
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'application/json'}));a.download=fname;a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  }
+};
+$('btnLoad').onclick=()=>$('fileProj').click();
+$('fileProj').addEventListener('change',async e=>{
+  const f=e.target.files[0];if(!f)return;
+  try{await deserialise(await f.text());doc.name=f.name.replace(/\.minifusion\.json$|\.json$/,'');rebuild();renderProps();}catch(err){alert('Projet illisible : '+err.message);}
+  e.target.value='';
+});
+
