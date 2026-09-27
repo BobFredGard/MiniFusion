@@ -39,9 +39,10 @@ MiniFusion est un MVP de CAO historique (paramétrique, esprit Fusion 360) qui t
 
 ### Congés & chanfreins
 - **Congé 2D** (maillage) sur les verticales d'une extrusion, rayon unique, plus **congé de périmètre** (rims haut et/ou bas).
-- **Congés/chanfreins exacts OCCT** : toutes les arêtes du solide sont cliquables, **rayon ou distance par arête**, sélection d'une arête ou d'une boucle de face, chaîne tangente au double-clic.
+- **Congés/chanfreins exacts OCCT** : toutes les arêtes du solide sont cliquables, **rayon ou distance par arête**, sélection d'une arête ou d'une boucle de face. **Un clic = une arête** ; l'option « 🔗 arêtes tangentes » (cochée par défaut) y ajoute automatiquement la chaîne tangente — les arêtes cliquées sont en jaune, celles déduites en rouge.
 - **Références durables** : chaque arête sélectionnée est ancrée sur la géométrie qui l'a produite (point, entité, niveau haut/bas de l'épaisseur) et **retrouve sa place** après n'importe quelle modification du modèle, y compris sur les arêtes nées d'un autre congé. La position d'origine est figée : une sélection = **une** arête, jamais deux.
 - **Édition en place** : ✏️ *Modifier la sélection* (ou double-clic dans l'arbre) ajoute/retrait des arêtes, ajuste les rayons arête par arête, sans créer de seconde fonction. L'appariement est reporté en direct : `✅ n/n arêtes retrouvées` ou `⚠ n/n`.
+- **Aperçu avant validation** : dès qu'une arête est sélectionnée, le résultat s'affiche **en rouge translucide** (la pièce s'estompe derrière) et se recalcule à chaque changement de rayon — congé comme chanfrein. L'aperçu disparaît en quittant le mode ou après application.
 - Repli maillage complet si le noyau exact n'est pas disponible.
 
 ### Répétitions
@@ -116,7 +117,7 @@ Le détail des versions est conservé dans deux endroits, sans tableau de journa
 
 ## Où en est le projet
 
-MVP fonctionnel — version **2026-09-30d**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
+MVP fonctionnel — version **2026-09-30e**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
 
 > **Note contributeurs** : les anciennes zones gelées (sketch, contraintes, congés, antériorité) sont **dégelées depuis le 2026-09-29** — modification libre sous la discipline projet : régression verte → bump `APP_VER` + **entrée dans le changelog de l'en-tête de `fusion_mvp.html`** → snapshot `Backup/` → push. Seul le noyau exact OCCT (`occApplyXFillets`, `occFinalShape`) demande une validation navigateur : il n'est pas entièrement couvert par le harnais.
 
