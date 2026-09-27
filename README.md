@@ -97,6 +97,7 @@ python -m http.server 3000
 |---|---|
 | `fusion_mvp.html` | **Fichier généré** — l'application complète en un seul HTML (~9 700 lignes). Ne pas l'éditer à la main : il est reconstruit par `node build.js` |
 | `src/*.js` | **Les sources**, découpées par opération (14 fichiers, du bandeau d'en-tête à l'init). C'est ici qu'on travaille |
+| `CHANGELOG.md` | **Le journal des modifications** : une entrée par version (cause, correctif, test) |
 | `build.js` | Assemble `src/*.js` → `fusion_mvp.html`. `node build.js --check` échoue si le livrable est périmé |
 | `occt/` | Noyau OpenCascade WebAssembly (~111 Mo) + ses `.bak` locaux (non suivis) |
 | `threejs/` | Rendu 3D (three.js), OrbitControls, CSG |
@@ -135,7 +136,9 @@ node build.js --check
 | `97-auto-tests.js` | auto-tests embarqués |
 | `99-init.js` | amorçage |
 
-Pas de build : du HTML+JS commenté, versionné par `APP_VER` en tête de fichier.
+Pas de build côté utilisateur : le livrable est du HTML+JS commenté, versionné par `APP_VER`
+en tête de `src/00-entete-et-outils.js`. Le seul build est l'assemblage des sources en un
+fichier unique (voir « Travailler sur le code »).
 
 ## Tests
 
@@ -144,16 +147,15 @@ Pas de build : du HTML+JS commenté, versionné par `APP_VER` en tête de fichie
 
 ## Historique
 
-Le détail des versions est conservé dans deux endroits, sans tableau de journal dans ce README :
-
-- **l'en-tête de `fusion_mvp.html`** : commentaire de `APP_VER`, une entrée par version (cause, correctif, test) ;
-- **`git log`** : l'historique complet des commits.
+- **[`CHANGELOG.md`](CHANGELOG.md)** — une entrée par version (cause, correctif, test). C'est là qu'il est, **pas** dans ce README et **pas** dans le fichier généré.
+- **`git log`** — l'historique des commits.
+- `src/00-entete-et-outils.js` ne garde que la description du projet et ses garde-fous, avec un renvoi vers `CHANGELOG.md`.
 
 ## Où en est le projet
 
-MVP fonctionnel — version **2026-09-30h**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
+MVP fonctionnel — version **2026-09-30j**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
 
-> **Note contributeurs** : les anciennes zones gelées (sketch, contraintes, congés, antériorité) sont **dégelées depuis le 2026-09-29** — modification libre sous la discipline projet : on édite **`src/*.js`** (jamais `fusion_mvp.html`, qui est généré) → `node build.js` → régression verte → bump `APP_VER` + **entrée dans le changelog de l'en-tête** → `node build.js --check` → snapshot `Backup/` → push. `node build.js --check` échoue si le livrable est périmé : impossible d'oublier de reconstruire. Seul le noyau exact OCCT (`occApplyXFillets`, `occFinalShape`) demande une validation navigateur : il n'est pas entièrement couvert par le harnais.
+> **Note contributeurs** : les anciennes zones gelées (sketch, contraintes, congés, antériorité) sont **dégelées depuis le 2026-09-29** — modification libre sous la discipline projet : on édite **`src/*.js`** (jamais `fusion_mvp.html`, qui est généré) → `node build.js` → régression verte → bump `APP_VER` + **entrée dans [`CHANGELOG.md`](CHANGELOG.md)** → `node build.js --check` → snapshot `Backup/` → push. `node build.js --check` échoue si le livrable est périmé : impossible d'oublier de reconstruire. Seul le noyau exact OCCT (`occApplyXFillets`, `occFinalShape`) demande une validation navigateur : il n'est pas entièrement couvert par le harnais.
 
 ## Licences
 
