@@ -2731,6 +2731,7 @@ function renderProps(){
           f.name=extName(f);markDirty();rebuild();renderProps();
         }else{
           f.upto=null;f.through=false;
+          if(!isFinite(f.distance))f.distance=10;
           f.name=extName(f);markDirty();rebuild();renderProps();
         }
       };
@@ -6789,11 +6790,18 @@ function extPickFaceCommit(e){
   if(!picked){faceEl.textContent='Vers un objet : aucune face cliquée — réessayez.';renderProps();return;}
   const sk=doc.sketches.find(s=>s.id===f.sketchId);
   let B=null;try{B=sk?sketchBasis(sk):null;}catch(err){}
-  let fn=null;try{fn=faceNormalWorld(picked.mesh,picked.fi);}catch(err){}
-  const side=(B&&fn)?(fn.dot(B.n)>0?1:-1):1;
+  // Côté déterminé par la POSITION de la face par rapport au plan d'esquisse (pas la normale)
+  let side=1;
+  if(B){
+    const props=getFaceProps(picked.mesh,picked.fi);
+    if(props){
+      const dot=(props.center.x-B.o.x)*B.n.x+(props.center.y-B.o.y)*B.n.y+(props.center.z-B.o.z)*B.n.z;
+      side=dot>=0?1:-1;
+    }
+  }
   const me=doc.features.indexOf(f);
   const prevs=doc.features.slice(0,me).filter(x=>x.type==='extrude'&&(x.op||'add')==='add');
-  if(!prevs.length){faceEl.textContent='Vers un objet : aucune extrusion additive ANTÉRIEURE (antériorité).';renderProps();return;}
+  if(!prevs.length){faceEl.textContent='Jusqu\'à la face : aucune extrusion additive ANTÉRIEURE — ajoutez d\'abord un volume avant cette fonction.';renderProps();return;}
   const tgt=(f.upto&&f.upto.ex&&prevs.some(p=>p.id===f.upto.ex))?prevs.find(p=>p.id===f.upto.ex):prevs[prevs.length-1];
   const bid=picked.mesh.userData.bid;
    // Stocke la face cliquée pour le suivi dynamique (faceId bouge avec la géométrie)
@@ -6805,7 +6813,7 @@ function extPickFaceCommit(e){
    f.name=extName(f);
    markDirty();rebuild();renderProps();
    const bName=bodies.find(b=>b.id===bid)?.name||tgt.name;
-   faceEl.textContent='Vers un objet : '+tgt.name+' — face '+(side>0?'+n':'−n')+' — '+Math.abs(f.distance)+' mm — Soustraction';
+   faceEl.textContent='Jusqu\'à la face : '+tgt.name+' — face '+(side>0?'+n':'−n')+' — '+Math.abs(f.distance)+' mm — Poche';
 }
 function extArrowWire(){
   // Drag de la flèche : projection écran → plan caméra via l'origine → distance le long de n.
