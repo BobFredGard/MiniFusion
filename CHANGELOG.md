@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**64 versions**, de `2026-09-28b` à `2026-09-30v` — la plus récente en bas,
+**65 versions**, de `2026-09-28b` à `2026-09-30w` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1341,5 +1341,37 @@ Rappel de méthode : le `test_fichier_reel.cjs` a été étendu pour (a) mesurer
 OCCT séparément de THREE, (b) rejouer la timeline en excluant le congé, (c) rejouer des
 variantes de sélection. C'est la variante (c) qui a désigné le sous-ensemble sain et
 remis en cause le diagnostic de la 30u. Mesurer avant de conclure.
+
+Régression : **16/16 suites vertes**.
+---
+
+### `2026-09-30w`
+
+**« F5 N'AFFICHE RIEN, IL FAUT CLIQUER RECALCULER. »**
+
+Ce n'était ni la géométrie, ni le maillage, ni le cache navigateur : c'était **notre
+propre cache d'affichage**, en IndexedDB.
+
+**Le mécanisme.** Au démarrage (`99-init.js`), le document est rechargé **sans**
+reconstruction — `deserialise(auto,{rebuild:false})` — puis `restoreViewCache()` applique un
+rendu figé enregistré à la volée, et **ne reconstruit que si ce cache manque** :
+`if(ok){log(…)}else{rebuild();}`. Un F5 n'affiche donc que l'image mise en cache, jamais le
+résultat d'un calcul. Ouvrir un fichier depuis le disque, lui, reconstruit — d'où la
+différence entre « ouvrir » et « F5 ».
+
+**Le défaut.** La validité du cache portait sur le **hash du document seul**, jamais sur la
+version du code. Le document n'ayant pas bougé, le hash collait : un rendu produit par une
+version **buguée** restait restauré indéfiniment, même après le correctif. Le cache se
+réécrivait ensuite avec sa propre sortie, se validait à nouveau, et la boucle ne se
+cassait jamais. C'est exactement le symptôme observé — et `Ctrl+F5` ne pouvait rien y
+faire : le cache est dans IndexedDB, pas dans le cache du navigateur.
+
+**Le correctif.** `APP_VER` est désormais écrit dans l'entrée `lastGood` et exigé à la
+restauration : `if(c.ver!==APP_VER)return false;`. Toute évolution du moteur de géométrie
+invalide le cache, donc le premier F5 suivant une mise à jour reconstruit réellement la
+pièce. Le cache reste un simple accélérateur : il ne peut plus mentir sur l'état du code.
+
+**Suite de la 30v** (le triangle du congé) : 6/8 → 8/8, clone miroir 8/8, 0 triangle,
+0 erreur sur le fichier réel.
 
 Régression : **16/16 suites vertes**.

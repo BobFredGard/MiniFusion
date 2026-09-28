@@ -814,7 +814,7 @@ function saveViewCache(){
         pos:ArrayBuffer.isView(p)?p.slice():p.slice(),nor:n?(ArrayBuffer.isView(n)?n.slice():n.slice()):null});
     }
     if(!items.length)return;
-    idbSet('lastGood',{v:1,at:Date.now(),hash:docHash(),engine:occEngineMsg,exact:builtEngine==='exact',items}).catch(()=>{});
+    idbSet('lastGood',{v:1,ver:APP_VER,at:Date.now(),hash:docHash(),engine:occEngineMsg,exact:builtEngine==='exact',items}).catch(()=>{});
   }catch(e){}
 }
 async function restoreViewCache(){
@@ -823,6 +823,12 @@ async function restoreViewCache(){
     if(typeof indexedDB==='undefined')return false;
     const c=await idbGet('lastGood');
     if(!c||c.v!==1||!c.items||!c.items.length)return false;
+    // La VALIDITÉ du cache dépend du hash du document ET de la VERSION DU CODE. Sans ce
+    // second critère, un rendu produit par une version buguée est restauré indéfiniment :
+    // le document n'a pas bougé, donc le hash colle, et l'affichage reste celui de l'ancien
+    // code — même après le correctif. Symptôme exact : « F5 n'affiche rien, il faut cliquer
+    // sur Recalculer ». Toute évolution du moteur de géométrie invalide donc le cache.
+    if(c.ver!==APP_VER)return false;
     if(c.hash!==docHash())return false; // doc différent : recalcul direct
     clearBodies();
     c.items.forEach(it=>{

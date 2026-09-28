@@ -243,14 +243,14 @@ input[type=range]{accent-color:var(--primary);width:100%}
    (OCCT ne se charge pas en node) — ne le modifier qu'après validation navigateur ET accord explicite.
 
    ── HISTORIQUE ─────────────────────────────────────────────────────────────
-   Journal des versions (cause, correctif, test) : CHANGELOG.md — 64 entrées,
-   de 2026-09-28b à 2026-09-30v. Elles étaient embarquées ici (50 Ko) et sont
+   Journal des versions (cause, correctif, test) : CHANGELOG.md — 65 entrées,
+   de 2026-09-28b à 2026-09-30w. Elles étaient embarquées ici (50 Ko) et sont
    sorties du livrable le 2026-09-30j. Ce qui précède est la description du projet
    et ses garde-fous, reprise telle quelle.
    ───────────────────────────────────────────────────────────────────────────
  */
 
-const APP_VER='2026-09-30v';
+const APP_VER='2026-09-30w';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 let extPickFace=null; // mode « vers un objet » : clic sur une face pour le sens (Échap = annuler)
@@ -9940,7 +9940,7 @@ function saveViewCache(){
         pos:ArrayBuffer.isView(p)?p.slice():p.slice(),nor:n?(ArrayBuffer.isView(n)?n.slice():n.slice()):null});
     }
     if(!items.length)return;
-    idbSet('lastGood',{v:1,at:Date.now(),hash:docHash(),engine:occEngineMsg,exact:builtEngine==='exact',items}).catch(()=>{});
+    idbSet('lastGood',{v:1,ver:APP_VER,at:Date.now(),hash:docHash(),engine:occEngineMsg,exact:builtEngine==='exact',items}).catch(()=>{});
   }catch(e){}
 }
 async function restoreViewCache(){
@@ -9949,6 +9949,12 @@ async function restoreViewCache(){
     if(typeof indexedDB==='undefined')return false;
     const c=await idbGet('lastGood');
     if(!c||c.v!==1||!c.items||!c.items.length)return false;
+    // La VALIDITÉ du cache dépend du hash du document ET de la VERSION DU CODE. Sans ce
+    // second critère, un rendu produit par une version buguée est restauré indéfiniment :
+    // le document n'a pas bougé, donc le hash colle, et l'affichage reste celui de l'ancien
+    // code — même après le correctif. Symptôme exact : « F5 n'affiche rien, il faut cliquer
+    // sur Recalculer ». Toute évolution du moteur de géométrie invalide donc le cache.
+    if(c.ver!==APP_VER)return false;
     if(c.hash!==docHash())return false; // doc différent : recalcul direct
     clearBodies();
     c.items.forEach(it=>{
