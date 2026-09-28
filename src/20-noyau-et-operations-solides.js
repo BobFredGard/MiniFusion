@@ -571,6 +571,122 @@ function occTessellate(shape,defl,ang){
 }
 let occLive=null; // solide BRep affiché conservé pour le picking d'arêtes exact
 function occDropLive(){if(occLive){try{occLive.shape.delete();}catch(e){}occLive=null;}}
+/* ---------- déplacement d'une face (push/pull) ----------
+   Principe retenu après mesure : on ne cherche pas la primitive « déplacement » du noyau
+   (BRepFeat_MakeDPrism existe mais sa signature Web est ambiguë et son résultat peut être
+   vide), on fait ce que fait l'utilisateur avec deux opérations que le moteur maîtrise déjà
+   et qui sont vérifiées : extruder la face le long de sa normale SORTANTE, puis FUSIONNER
+   (la face sort) ou SOUSTRAIRE (la face rentre). Mesuré sur une boîte 100x60x40 :
+   +10 sur +X -> 110x60x40, -10 -> 90x60x40, +15 sur +Y -> 100x75x40. */
+
+function occFaceOutNormal(f){
+  // Normale SORTANTE d'une face d'un solide. La normale géométrique de BRepAdaptor ne suffit
+  // pas : sur une boîte, les deux faces opposées ont la MÊME normale géométrique, et c'est
+  // l'orientation de la face qui dit laquelle pointe dehors. Orientation_1() renvoie un objet
+  // enum : la comparaison doit être une identité stricte, pas une comparaison de texte.
+  try{
+    const ad=new occt.BRepAdaptor_Surface_2(f,true);
+    let n=null;
+    try{
+      const gt=ad.GetType();
+      if(gt===occt.GeomAbs_SurfaceType.GeomAbs_Plane){
+        const d=ad.Plane().Axis().Direction();n=[d.X(),d.Y(),d.Z()];
+      }else if(gt===occt.GeomAbs_SurfaceType.GeomAbs_Cylinder){
+        const d=ad.Cylinder().Axis().Direction();n=[d.X(),d.Y(),d.Z()];
+      }
+    }catch(e){}
+    if(!n){try{ad.delete();}catch(e){}return null;}
+    let rev=false;
+    try{rev=(f.Orientation_1()===occt.TopAbs_Orientation.TopAbs_REVERSED);}catch(e){}
+    try{ad.delete();}catch(e){}
+    const s=rev?-1:1;
+    const L=Math.hypot(n[0],n[1],n[2]);
+    if(!(L>1e-9))return null;
+    return [n[0]*s/L,n[1]*s/L,n[2]*s/L];
+  }catch(e){return null;}
+}
+function occFaceBox(f){
+  // Centre et dimensions d'une face : la signature qui permet de la retrouver au rejeu.
+  try{
+    const b=new occt.Bnd_Box_1();
+    occt.BRepBndLib.Add(f,b,true);
+    const a=b.CornerMin(),z=b.CornerMax();
+    const out={pos:[(a.X()+z.X())/2,(a.Y()+z.Y())/2,(a.Z()+z.Z())/2],dim:[z.X()-a.X(),z.Y()-a.Y(),z.Z()-a.Z()]};
+    b.delete();return out;
+  }catch(e){return null;}
+}
+function occFaceRef(f){
+  const n=occFaceOutNormal(f),b=occFaceBox(f);
+  if(!n||!b)return null;
+  return {pos:b.pos.map(v=>+v.toFixed(3)),dim:b.dim.map(v=>+v.toFixed(3)),n:n.map(v=>+v.toFixed(4))};
+}
+function occFindFace(shape,ref){
+  // Retrouve sur le solide courant la face décrite par ref (centre + normale + dimensions).
+  // Une sélection d'une seule face se fait d'un clic : 2 mm suffisent à la délimiter, et la
+  // normale doit rester compatible (sinon on déplacerait la face d'en face).
+  if(!shape||!ref)return null;
+  const SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE;
+  const ex=new occt.TopExp_Explorer_2(shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,SH);
+  let best=null,bn=-2;
+  while(ex.More()){
+    const f=occt.TopoDS.Face_1(ex.Current());
+    const b=occFaceBox(f),n=occFaceOutNormal(f);
+    if(b&&n){
+      const d=Math.hypot(b.pos[0]-ref.pos[0],b.pos[1]-ref.pos[1],b.pos[2]-ref.pos[2]);
+      const dot=n[0]*ref.n[0]+n[1]*ref.n[1]+n[2]*ref.n[2];
+      const dd=Math.abs(b.dim[0]-ref.dim[0])+Math.abs(b.dim[1]-ref.dim[1])+Math.abs(b.dim[2]-ref.dim[2]);
+      // pénalité de dimension : deux faces de même centre et même normale mais de tailles
+      // différentes sont deux faces distinctes (un bossage, un méplat).
+      const sc=dot>=0.9?d+0.1*dd:1e6+d;
+      if(sc<bn||best===null){if(sc<1e5){bn=sc;best=f;}}
+    }
+    ex.Next();
+  }
+  try{ex.delete();}catch(e){}
+  if(best&&bn>2.5)return null; // trop loin : on préfère échouer que viser une autre face
+  return best;
+}
+function occMoveFaceOnce(shape,face,dist){
+  // Déplace UNE face de `dist` mm le long de sa normale sortante.
+  // dist > 0 : la matière est ajoutée au-delà (la face avance). dist < 0 : retirée en dessous.
+  const n=occFaceOutNormal(face);
+  if(!n)throw new Error('face non plane/cylindrique');
+  const L=Math.abs(dist);
+  if(!(L>1e-9))return occShapeCopy(shape);
+  const bin=[];
+  // Le prisme part du CÔTÉ DE LA DISTANCE : vers l'extérieur si la face avance, vers
+  // l'intérieur si elle rentre. Extruder toujours vers l'extérieur et soustraire ne retire
+  // aucune matière (le prisme est alors dans le vide) : le solide restait inchangé.
+  const vec=new occt.gp_Vec_4(n[0]*dist,n[1]*dist,n[2]*dist);
+  const pr=occBinPush(bin,new occt.BRepPrimAPI_MakePrism_1(face,vec,false,true));
+  const ps=occBinPush(bin,pr.Shape());
+  const out=dist>0?occFuse(shape,ps):occCut(shape,ps);
+  // Un déplacement doit laisser UN corps, comme une addition : sans unification, la
+  // fusion conserve les faces coplanaires du prisme et de la pièce d'origine (10 faces au
+  // lieu de 6 sur une simple boîte), ce qui se voit : coutures, arêtes parasites, impression
+  // de plusieurs morceaux. occUnify recolle les faces coplanaires — c'est déjà ce que fait
+  // le chemin « add » d'une extrusion.
+  let res=out;
+  try{res=occUnify(out);}catch(e){}
+  bin.forEach(b=>{try{b.delete();}catch(e){}});
+  if(!res||res.IsNull())throw new Error('opération de déplacement impossible');
+  return res;
+}
+function occApplyMoveFace(result,f){
+  // Rejoue le déplacement d'une face. Retourne {shape,warnings} comme occApplyXFillets.
+  const warnings=[];
+  const dist=+f.dist||0;
+  const face=occFindFace(result,f.ref);
+  if(!face){return {shape:result,warnings:[`face introuvable près de (${(f.ref.pos||[]).map(v=>(+v).toFixed(1)).join(', ')}) — la pièce a changé`]};}
+  if(!dist){return {shape:result,warnings:['distance nulle — aucun déplacement']};}
+  try{
+    const s=occMoveFaceOnce(result,face,dist);
+    try{result.delete();}catch(e){}
+    return {shape:s,warnings};
+  }catch(e){
+    return {shape:result,warnings:[`déplacement impossible (${(e&&e.message)||e})`],fatal:true};
+  }
+}
 function occListEdges(shape){
   // Données pures par arête (pas de handles conservés) : mid, polyline pts, longueur, src (rang explorateur).
   const out=[],bin=[];
@@ -1249,6 +1365,11 @@ function featSig(f){
     s+='|'+(f.chamfer?1:0)+'|'+((f.edges||[]).map(e=>
       (+e.r||0)+'/'+(+e.len||0)+'@'+(e.pos||[]).map(x=>(+x).toFixed(3)).join(',')
       +((e.anchor)?('#'+e.anchor.t+(e.anchor.sk||'')+(e.anchor.id||'')+'z'+(e.anchor.z||0)+'s'+(e.anchor.side||0)+'d'+(e.anchor.dist||0)+'f'+(e.anchor.far||0)):'')).join(';'));
+  }else if(f.type==='xmove'){
+    // La DISTANCE fait partie de la géométrie, et la face visée par sa référence durable
+    // (centre + normale + dimensions) : sans elle, changer la distance d'un déplacement
+    // laisserait la signature inchangée et le point de contrôle réappliquerait l'ancien.
+    s+='|d'+(+f.dist||0)+'@'+JSON.stringify(f.ref||null);
   }else if(f.type==='repeat'){
     s+='|'+(f.base||[]).join(',')+'|'+(+f.copies||1)+'|'+(+f.dist||0)+'|'+(+f.angle||0)+'|'+(f.axis||f.plane||'');
   }
@@ -1299,6 +1420,21 @@ function occFinalShape(upto){
         return;
       }
       const r=occApplyXFillets(result,[f]);
+      result=r.shape;msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
+      if(r.warnings.length)occCkWarn[ckKey]=r.warnings.slice();else delete occCkWarn[ckKey];
+      occCkPut(ckKey,occShapeCopy(result));
+      return;
+    }
+    if(f.type==='xmove'){
+      if(!result){msgs.push(`${f.name} : aucun volume à déformer — ignoré`);return;}
+      const ckM=occCkGet(ckKey);
+      const cpM=ckM?occShapeCopy(ckM):null;
+      if(cpM){
+        try{result.delete();}catch(e){}result=cpM;
+        const w=occCkWarn[ckKey];if(w&&w.length)msgs.push(...w.map(x=>`${f.name} : ${x}`));
+        return;
+      }
+      const r=occApplyMoveFace(result,f);
       result=r.shape;msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       if(r.warnings.length)occCkWarn[ckKey]=r.warnings.slice();else delete occCkWarn[ckKey];
       occCkPut(ckKey,occShapeCopy(result));

@@ -7,6 +7,7 @@ function wirePick(){
     if(Math.hypot(e.clientX-dx,e.clientY-dy)>6)return;
     if(filMode){if(e.button===0&&!e.ctrlKey)filletToggle(e);return;}
     if(filModeX){if(e.button===0&&!e.ctrlKey)exactToggle(e);return;}
+    if(mvMode){if(e.button===0&&!e.ctrlKey)mvFaceCommit(e);return;}
     if(e.altKey)return;
     if(e.shiftKey&&e.button===0){shiftMeasure(e);return;}
     if(e.button===0&&!e.ctrlKey)faceSelect(e,false);
@@ -17,6 +18,7 @@ function wirePick(){
    el.addEventListener('pointerleave',()=>clearHover());
    el.addEventListener('pointermove',e=>{
      if(extPickFace){renderer.domElement.style.cursor='crosshair';return;}
+    if(mvMode){mvFaceHover(e);renderer.domElement.style.cursor='pointer';return;}
      if(filModeX){
        const i=exactPick(e);
        if(i!==xHover){xHover=i;paintExact();}
@@ -109,7 +111,8 @@ function filletTangentChain(sk, startCorner){
 }
   window.addEventListener('keydown',e=>{if(e.key==='Escape'){
     if(extPickFace){extPickFace=null;try{renderer.domElement.style.cursor='default';}catch(e2){}faceEl.textContent='Vers un objet : annulé.';return;}
-    if(filMode||filModeX){exitFilletMode();return;}clearMeasure();clearHover();hideCtx();hideCtx3D();}});
+    if(filMode||filModeX){exitFilletMode();return;}
+    if(mvMode){exitMoveFaceMode();return;}clearMeasure();clearHover();hideCtx();hideCtx3D();}});
 }
 /* F5 = Vue complète isométrique (au lieu du rechargement navigateur) : on voit la pièce entièrement. */
 window.addEventListener('keydown',e=>{

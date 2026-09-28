@@ -113,6 +113,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
     <button id="btnFillet" title="Congé exact OCCT : toutes les arêtes cliquables, rayon par arête (repli maillage si noyau indisponible)">⤢ Congé</button>
     <button id="btnChamfer" title="Chanfrein exact OCCT : toutes les arêtes cliquables, distance par arête">⟋ Chanfrein</button>
     <button id="btnRepeat" title="Répétition linéaire/circulaire/symétrie : Ctrl+clic dans l'arbre pour choisir les fonctions">🔁 Répétition</button>
+<button id="btnMoveFace" title="Déplacer une face le long de sa normale sortante : distance positive, la face avance ; négative, elle rentre">📐 Déplacer une face</button>
     <div class="sep"></div>
     <button id="btnImport" title="Importer STEP / STL">📥 Importer</button>
     <button id="btnExportStep" title="Exporter STEP (OCCT si dispo)">📤 STEP</button>
@@ -243,14 +244,14 @@ input[type=range]{accent-color:var(--primary);width:100%}
    (OCCT ne se charge pas en node) — ne le modifier qu'après validation navigateur ET accord explicite.
 
    ── HISTORIQUE ─────────────────────────────────────────────────────────────
-   Journal des versions (cause, correctif, test) : CHANGELOG.md — 65 entrées,
-   de 2026-09-28b à 2026-09-30w. Elles étaient embarquées ici (50 Ko) et sont
+   Journal des versions (cause, correctif, test) : CHANGELOG.md — 66 entrées,
+   de 2026-09-28b à 2026-09-30x. Elles étaient embarquées ici (50 Ko) et sont
    sorties du livrable le 2026-09-30j. Ce qui précède est la description du projet
    et ses garde-fous, reprise telle quelle.
    ───────────────────────────────────────────────────────────────────────────
  */
 
-const APP_VER='2026-09-30w';
+const APP_VER='2026-09-30x';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 let extPickFace=null; // mode « vers un objet » : clic sur une face pour le sens (Échap = annuler)
@@ -1785,6 +1786,122 @@ function occTessellate(shape,defl,ang){
 }
 let occLive=null; // solide BRep affiché conservé pour le picking d'arêtes exact
 function occDropLive(){if(occLive){try{occLive.shape.delete();}catch(e){}occLive=null;}}
+/* ---------- déplacement d'une face (push/pull) ----------
+   Principe retenu après mesure : on ne cherche pas la primitive « déplacement » du noyau
+   (BRepFeat_MakeDPrism existe mais sa signature Web est ambiguë et son résultat peut être
+   vide), on fait ce que fait l'utilisateur avec deux opérations que le moteur maîtrise déjà
+   et qui sont vérifiées : extruder la face le long de sa normale SORTANTE, puis FUSIONNER
+   (la face sort) ou SOUSTRAIRE (la face rentre). Mesuré sur une boîte 100x60x40 :
+   +10 sur +X -> 110x60x40, -10 -> 90x60x40, +15 sur +Y -> 100x75x40. */
+
+function occFaceOutNormal(f){
+  // Normale SORTANTE d'une face d'un solide. La normale géométrique de BRepAdaptor ne suffit
+  // pas : sur une boîte, les deux faces opposées ont la MÊME normale géométrique, et c'est
+  // l'orientation de la face qui dit laquelle pointe dehors. Orientation_1() renvoie un objet
+  // enum : la comparaison doit être une identité stricte, pas une comparaison de texte.
+  try{
+    const ad=new occt.BRepAdaptor_Surface_2(f,true);
+    let n=null;
+    try{
+      const gt=ad.GetType();
+      if(gt===occt.GeomAbs_SurfaceType.GeomAbs_Plane){
+        const d=ad.Plane().Axis().Direction();n=[d.X(),d.Y(),d.Z()];
+      }else if(gt===occt.GeomAbs_SurfaceType.GeomAbs_Cylinder){
+        const d=ad.Cylinder().Axis().Direction();n=[d.X(),d.Y(),d.Z()];
+      }
+    }catch(e){}
+    if(!n){try{ad.delete();}catch(e){}return null;}
+    let rev=false;
+    try{rev=(f.Orientation_1()===occt.TopAbs_Orientation.TopAbs_REVERSED);}catch(e){}
+    try{ad.delete();}catch(e){}
+    const s=rev?-1:1;
+    const L=Math.hypot(n[0],n[1],n[2]);
+    if(!(L>1e-9))return null;
+    return [n[0]*s/L,n[1]*s/L,n[2]*s/L];
+  }catch(e){return null;}
+}
+function occFaceBox(f){
+  // Centre et dimensions d'une face : la signature qui permet de la retrouver au rejeu.
+  try{
+    const b=new occt.Bnd_Box_1();
+    occt.BRepBndLib.Add(f,b,true);
+    const a=b.CornerMin(),z=b.CornerMax();
+    const out={pos:[(a.X()+z.X())/2,(a.Y()+z.Y())/2,(a.Z()+z.Z())/2],dim:[z.X()-a.X(),z.Y()-a.Y(),z.Z()-a.Z()]};
+    b.delete();return out;
+  }catch(e){return null;}
+}
+function occFaceRef(f){
+  const n=occFaceOutNormal(f),b=occFaceBox(f);
+  if(!n||!b)return null;
+  return {pos:b.pos.map(v=>+v.toFixed(3)),dim:b.dim.map(v=>+v.toFixed(3)),n:n.map(v=>+v.toFixed(4))};
+}
+function occFindFace(shape,ref){
+  // Retrouve sur le solide courant la face décrite par ref (centre + normale + dimensions).
+  // Une sélection d'une seule face se fait d'un clic : 2 mm suffisent à la délimiter, et la
+  // normale doit rester compatible (sinon on déplacerait la face d'en face).
+  if(!shape||!ref)return null;
+  const SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE;
+  const ex=new occt.TopExp_Explorer_2(shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,SH);
+  let best=null,bn=-2;
+  while(ex.More()){
+    const f=occt.TopoDS.Face_1(ex.Current());
+    const b=occFaceBox(f),n=occFaceOutNormal(f);
+    if(b&&n){
+      const d=Math.hypot(b.pos[0]-ref.pos[0],b.pos[1]-ref.pos[1],b.pos[2]-ref.pos[2]);
+      const dot=n[0]*ref.n[0]+n[1]*ref.n[1]+n[2]*ref.n[2];
+      const dd=Math.abs(b.dim[0]-ref.dim[0])+Math.abs(b.dim[1]-ref.dim[1])+Math.abs(b.dim[2]-ref.dim[2]);
+      // pénalité de dimension : deux faces de même centre et même normale mais de tailles
+      // différentes sont deux faces distinctes (un bossage, un méplat).
+      const sc=dot>=0.9?d+0.1*dd:1e6+d;
+      if(sc<bn||best===null){if(sc<1e5){bn=sc;best=f;}}
+    }
+    ex.Next();
+  }
+  try{ex.delete();}catch(e){}
+  if(best&&bn>2.5)return null; // trop loin : on préfère échouer que viser une autre face
+  return best;
+}
+function occMoveFaceOnce(shape,face,dist){
+  // Déplace UNE face de `dist` mm le long de sa normale sortante.
+  // dist > 0 : la matière est ajoutée au-delà (la face avance). dist < 0 : retirée en dessous.
+  const n=occFaceOutNormal(face);
+  if(!n)throw new Error('face non plane/cylindrique');
+  const L=Math.abs(dist);
+  if(!(L>1e-9))return occShapeCopy(shape);
+  const bin=[];
+  // Le prisme part du CÔTÉ DE LA DISTANCE : vers l'extérieur si la face avance, vers
+  // l'intérieur si elle rentre. Extruder toujours vers l'extérieur et soustraire ne retire
+  // aucune matière (le prisme est alors dans le vide) : le solide restait inchangé.
+  const vec=new occt.gp_Vec_4(n[0]*dist,n[1]*dist,n[2]*dist);
+  const pr=occBinPush(bin,new occt.BRepPrimAPI_MakePrism_1(face,vec,false,true));
+  const ps=occBinPush(bin,pr.Shape());
+  const out=dist>0?occFuse(shape,ps):occCut(shape,ps);
+  // Un déplacement doit laisser UN corps, comme une addition : sans unification, la
+  // fusion conserve les faces coplanaires du prisme et de la pièce d'origine (10 faces au
+  // lieu de 6 sur une simple boîte), ce qui se voit : coutures, arêtes parasites, impression
+  // de plusieurs morceaux. occUnify recolle les faces coplanaires — c'est déjà ce que fait
+  // le chemin « add » d'une extrusion.
+  let res=out;
+  try{res=occUnify(out);}catch(e){}
+  bin.forEach(b=>{try{b.delete();}catch(e){}});
+  if(!res||res.IsNull())throw new Error('opération de déplacement impossible');
+  return res;
+}
+function occApplyMoveFace(result,f){
+  // Rejoue le déplacement d'une face. Retourne {shape,warnings} comme occApplyXFillets.
+  const warnings=[];
+  const dist=+f.dist||0;
+  const face=occFindFace(result,f.ref);
+  if(!face){return {shape:result,warnings:[`face introuvable près de (${(f.ref.pos||[]).map(v=>(+v).toFixed(1)).join(', ')}) — la pièce a changé`]};}
+  if(!dist){return {shape:result,warnings:['distance nulle — aucun déplacement']};}
+  try{
+    const s=occMoveFaceOnce(result,face,dist);
+    try{result.delete();}catch(e){}
+    return {shape:s,warnings};
+  }catch(e){
+    return {shape:result,warnings:[`déplacement impossible (${(e&&e.message)||e})`],fatal:true};
+  }
+}
 function occListEdges(shape){
   // Données pures par arête (pas de handles conservés) : mid, polyline pts, longueur, src (rang explorateur).
   const out=[],bin=[];
@@ -2463,6 +2580,11 @@ function featSig(f){
     s+='|'+(f.chamfer?1:0)+'|'+((f.edges||[]).map(e=>
       (+e.r||0)+'/'+(+e.len||0)+'@'+(e.pos||[]).map(x=>(+x).toFixed(3)).join(',')
       +((e.anchor)?('#'+e.anchor.t+(e.anchor.sk||'')+(e.anchor.id||'')+'z'+(e.anchor.z||0)+'s'+(e.anchor.side||0)+'d'+(e.anchor.dist||0)+'f'+(e.anchor.far||0)):'')).join(';'));
+  }else if(f.type==='xmove'){
+    // La DISTANCE fait partie de la géométrie, et la face visée par sa référence durable
+    // (centre + normale + dimensions) : sans elle, changer la distance d'un déplacement
+    // laisserait la signature inchangée et le point de contrôle réappliquerait l'ancien.
+    s+='|d'+(+f.dist||0)+'@'+JSON.stringify(f.ref||null);
   }else if(f.type==='repeat'){
     s+='|'+(f.base||[]).join(',')+'|'+(+f.copies||1)+'|'+(+f.dist||0)+'|'+(+f.angle||0)+'|'+(f.axis||f.plane||'');
   }
@@ -2513,6 +2635,21 @@ function occFinalShape(upto){
         return;
       }
       const r=occApplyXFillets(result,[f]);
+      result=r.shape;msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
+      if(r.warnings.length)occCkWarn[ckKey]=r.warnings.slice();else delete occCkWarn[ckKey];
+      occCkPut(ckKey,occShapeCopy(result));
+      return;
+    }
+    if(f.type==='xmove'){
+      if(!result){msgs.push(`${f.name} : aucun volume à déformer — ignoré`);return;}
+      const ckM=occCkGet(ckKey);
+      const cpM=ckM?occShapeCopy(ckM):null;
+      if(cpM){
+        try{result.delete();}catch(e){}result=cpM;
+        const w=occCkWarn[ckKey];if(w&&w.length)msgs.push(...w.map(x=>`${f.name} : ${x}`));
+        return;
+      }
+      const r=occApplyMoveFace(result,f);
       result=r.shape;msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       if(r.warnings.length)occCkWarn[ckKey]=r.warnings.slice();else delete occCkWarn[ckKey];
       occCkPut(ckKey,occShapeCopy(result));
@@ -2933,6 +3070,7 @@ function featIconOf(f){
   if(f.type==='fillet')return xIcon(xKindOf(f));
   if(f.type==='repeat')return '🔁';
   if(f.type==='revolve')return (f.op||'add')==='cut'?'◔':'◍';
+  if(f.type==='xmove')return '📐';
   return '◧';
 }
 function renderTree(){
@@ -3093,6 +3231,7 @@ function repCanFeatureHint(f){
   if(!f)return'';
   if(f.type==='extrude')return((f.op||'add')==='cut'?'Découpe':'Plot')+' · '+(+f.distance||0).toFixed(2)+' mm';
   if(f.type==='xfillet')return xLabel(xKindOf(f))+' · '+(f.edges||[]).length+' arête(s)';
+  if(f.type==='xmove')return 'Déplacement de face · '+(+f.dist||0)+' mm';
   return '';
 }
 // Liste des fonctions répétables, en CASES À COCHER.
@@ -3489,6 +3628,35 @@ function renderProps(){
       p.appendChild(btn('🔓 Lever le marqueur & éditer',()=>{tlSetPtr(null);markDirty();rebuild();renderTree();renderProps();}));
       p.appendChild(btn('🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}));
       p.appendChild(btn('👁 Afficher / masquer',()=>{f.visible=!(f.visible!==false);markDirty();rebuild();renderTree();renderProps();}));
+      return;
+    }
+    if(f.type==='xmove'){
+      p.appendChild(info(`<b>${f.name}</b> · 📐 Déplacement d'une face`));
+      if(f.ref){
+        p.appendChild(note('Face visée : centre ('+f.ref.pos.map(v=>(+v).toFixed(1)).join(' ; ')+') mm, normale ('+
+          f.ref.n.map(v=>(+v).toFixed(2)).join(' ; ')+'). La face est retrouvée à chaque rejeu par sa '+
+          'position et sa normale, pas par son numéro — celui-ci change dès qu\'une opération ajoute une face.'));
+      }
+      const d=document.createElement('input');
+      d.type='text';d.inputMode='decimal';
+      d.value=String(+f.dist||0).replace('.',',');
+      d.style.width='90px';
+      d.addEventListener('change',()=>{
+        const v=parseFloat(String(d.value).replace(',','.').replace(/\s/g,''));
+        if(!isFinite(v)){d.value=String(+f.dist||0).replace('.',',');return;}
+        if(v===+f.dist)return;
+        f.dist=Math.abs(v)<1e-9?0:v;f.name=mvName(f);
+        markDirty();rebuild();renderTree();renderProps();
+        faceEl.textContent=v===0?'Distance nulle : la fonction ne déforme rien.':
+          ('Distance '+f.name.replace('Déplacement de face ','')+' appliquée le long de la normale sortante de la face.');
+      });
+      const lab=document.createElement('span');
+      lab.textContent=' Distance (mm) : ';lab.style.marginLeft='8px';
+      p.appendChild(lab);p.appendChild(d);
+      p.appendChild(note('Positif : la face avance. Négatif : elle rentre. 0 : la fonction ne fait rien.'));
+      p.appendChild(btn('📐 Re-sélectionner la face',()=>{exitMoveFaceMode(true);try{if(filMode||filModeX)exitFilletMode(true);}catch(e){}enterMoveFaceMode();}));
+      p.appendChild(btn('👁 Afficher / masquer',()=>{f.visible=!(f.visible!==false);markDirty();rebuild();renderTree();renderProps();}));
+      p.appendChild(btn('🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}));
       return;
     }
     const filRims=f.rims||((f.rimTop||f.rimBot)?{top:!!f.rimTop,bottom:!!f.rimBot}:null);
@@ -9123,6 +9291,91 @@ function renderFilletPanel(){
    exitFilletMode(true);markDirty();rebuild();renderProps();
  }
 
+/* ═══════════════ 85-deplacement-face.js — deplacement face ═══════════════ */
+/* ---------- déplacement d'une face (push/pull) ----------
+   Le calcul est dans 20-noyau (occMoveFaceOnce). Ici : le mode de sélection au clic, la
+   création de la fonction et les réglages. Le déplacement se fait le long de la normale
+   SORTANTE de la face cliquée : distance positive = la face avance, négative = elle rentre.
+   La face est mémorisée par une référence durable (centre + normale + dimensions), pas par
+   son numéro : le numéro d'une face change dès qu'une opération en ajoute une autre, alors
+   que la face visée, elle, reste la même. */
+let mvMode=null; // null | {hover:faceRef|null}
+
+function mvName(f){
+  const d=+f.dist||0;
+  return `Déplacement de face ${d>0?'+':''}${String(d).replace('.',',')} mm`;
+}
+function enterMoveFaceMode(){
+  if(!occHas()||!occLive||!occLive.shape){
+    faceEl.textContent='Déplacement de face : solide exact indisponible (OCCT non chargé ou aucun volume).';
+    return;
+  }
+  mvMode={hover:null};
+  faceEl.innerHTML='<b>📐 Déplacement de face</b><br><span class="note">Cliquez une face du solide '+
+    'exact. Elle sera déplacée de 5 mm vers l\'extérieur (modifiez la distance ensuite dans '+
+    'ses propriétés). <b>Échap</b> ou clic droit pour annuler.</span>';
+  try{buildEdgeOverlay();}catch(e){}
+  try{applyClip();}catch(e){}
+}
+function exitMoveFaceMode(silent){
+  if(!mvMode)return;
+  mvMode=null;
+  try{clearHover();}catch(e){}
+  if(!silent)try{faceEl.textContent='Déplacement de face : annulé.';}catch(e){}
+}
+// Face exacte sous le curseur (le groupe de triangles donne l'index BRep de la face).
+function mvFaceUnder(e){
+  if(!occHas()||!occLive||!occLive.shape)return null;
+  try{
+    const h=pick(e);
+    if(!h||!h.object||!h.object.geometry)return null;
+    if(h.object.userData.bid!=='occ_result')return null;
+    if(h.faceIndex===undefined||h.faceIndex===null)return null;
+    const groups=h.object.geometry.userData.occGroups||[];
+    const g=groups.find(g=>h.faceIndex>=g.start&&h.faceIndex<g.start+g.count);
+    if(!g)return null;
+    const f=occFaceAt(occLive.shape,g.f);
+    if(!f)return null;
+    const ref=occFaceRef(f);
+    return ref?{ref:ref,ord:g.f}:null;
+  }catch(e){return null;}
+}
+function mvFaceHover(e){
+  if(!mvMode)return;
+  if(e.buttons!==0)return;
+  const hit=mvFaceUnder(e);
+  const key=hit?hit.ref.pos.join(','):null;
+  if(key===mvMode.hover)return;
+  mvMode.hover=key;
+  try{
+    clearHover();
+    if(hit&&selGroup===null){
+      // on ne fait PAS de surbrillance : la face est déjà visible et l'utilisateur
+      // choisit ce qu'il veut. On se contente du curseur + d'un rappel de position.
+      faceEl.innerHTML='<b>📐 Déplacement de face</b><br><span class="note">Face visée : centre ('+
+        hit.ref.pos.map(v=>(+v).toFixed(1)).join(' ; ')+') mm — cliquez pour la déplacer.</span>';
+    }
+  }catch(e){}
+}
+function mvFaceCommit(e){
+  if(!mvMode)return;
+  const hit=mvFaceUnder(e);
+  if(!hit){
+    faceEl.textContent='Déplacement de face : cliquez une face du solide exact (les faces lisses ou hors du solide Highlighté sont ignorées).';
+    return;
+  }
+  // On attaque le solide SANS cette nouvelle fonction, pour la viser sur la forme courante.
+  occSkipFeat=null;
+  const f={id:uid('mv'),type:'xmove',name:mvName({dist:5}),ref:hit.ref,dist:5};
+  doc.features.push(f);
+  const id=f.id;
+  exitMoveFaceMode(true);
+  markDirty();rebuild();renderTree();renderProps();
+  const ap=doc.features.find(x=>x.id===id);
+  faceEl.textContent='Déplacement de face créé (5 mm vers l\'extérieur). Réglez la distance dans ses propriétés — une distance négative fait rentrer la face.';
+  if(ap)try{sel={kind:'feature',id:ap.id};renderProps();}catch(e){}
+}
+
 /* ═══════════════ 90-picking-mesure-import.js — picking mesure import ═══════════════ */
 /* ---------- picking / mesure façon viewer ---------- */
 function wirePick(){
@@ -9133,6 +9386,7 @@ function wirePick(){
     if(Math.hypot(e.clientX-dx,e.clientY-dy)>6)return;
     if(filMode){if(e.button===0&&!e.ctrlKey)filletToggle(e);return;}
     if(filModeX){if(e.button===0&&!e.ctrlKey)exactToggle(e);return;}
+    if(mvMode){if(e.button===0&&!e.ctrlKey)mvFaceCommit(e);return;}
     if(e.altKey)return;
     if(e.shiftKey&&e.button===0){shiftMeasure(e);return;}
     if(e.button===0&&!e.ctrlKey)faceSelect(e,false);
@@ -9143,6 +9397,7 @@ function wirePick(){
    el.addEventListener('pointerleave',()=>clearHover());
    el.addEventListener('pointermove',e=>{
      if(extPickFace){renderer.domElement.style.cursor='crosshair';return;}
+    if(mvMode){mvFaceHover(e);renderer.domElement.style.cursor='pointer';return;}
      if(filModeX){
        const i=exactPick(e);
        if(i!==xHover){xHover=i;paintExact();}
@@ -9235,7 +9490,8 @@ function filletTangentChain(sk, startCorner){
 }
   window.addEventListener('keydown',e=>{if(e.key==='Escape'){
     if(extPickFace){extPickFace=null;try{renderer.domElement.style.cursor='default';}catch(e2){}faceEl.textContent='Vers un objet : annulé.';return;}
-    if(filMode||filModeX){exitFilletMode();return;}clearMeasure();clearHover();hideCtx();hideCtx3D();}});
+    if(filMode||filModeX){exitFilletMode();return;}
+    if(mvMode){exitMoveFaceMode();return;}clearMeasure();clearHover();hideCtx();hideCtx3D();}});
 }
 /* F5 = Vue complète isométrique (au lieu du rechargement navigateur) : on voit la pièce entièrement. */
 window.addEventListener('keydown',e=>{
@@ -10081,6 +10337,7 @@ $('btnExtrude').onclick=()=>askExtrude(sel.kind==='sketch'?sel.id:null);
 $('btnFillet').onclick=()=>{if(filMode||filModeX)exitFilletMode();else enterFilletMode();};
 $('btnChamfer').onclick=()=>{if(filModeX&&filModeX.kind==='chamfer'){exitFilletMode();return;}if(filMode||filModeX)exitFilletMode(true);enterExactFilletMode(null,'chamfer');};
 $('btnRepeat').onclick=()=>{if(repMode)exitRepMode();else enterRepMode();};
+if($('btnMoveFace'))$('btnMoveFace').onclick=()=>{if(mvMode)exitMoveFaceMode();else{if(filMode||filModeX)exitFilletMode(true);enterMoveFaceMode();}};
 $('btnFit').onclick=showAll;
 $('btnSelfTest').onclick=runSelfTests;
 if($('btnRebuild'))$('btnRebuild').onclick=()=>{

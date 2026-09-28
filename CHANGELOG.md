@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**65 versions**, de `2026-09-28b` à `2026-09-30w` — la plus récente en bas,
+**66 versions**, de `2026-09-28b` à `2026-09-30x` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1375,3 +1375,54 @@ pièce. Le cache reste un simple accélérateur : il ne peut plus mentir sur l'�
 0 erreur sur le fichier réel.
 
 Régression : **16/16 suites vertes**.
+---
+
+### `2026-09-30x`
+
+**DÉPLACEMENT D'UNE FACE (push/pull) — première fonction 3D de la série.**
+Bouton 📐 dans la barre d'outils : on clique une face du solide exact, elle est déplacée de
+5 mm, et la distance se règle ensuite dans ses propriétés. Une distance **positive** fait
+avancer la face, une distance **négative** la fait rentrer.
+
+**La primitive du noyau a été écartée, et c'est mesuré.** OCCT expose bien
+`BRepFeat_MakeDPrism` (avec `PerformThruAll`), la classe « évidente » pour un push/pull. Sa
+signature Web est sans ambiguïté seulement par tâtonnement — le binding embind ne la publie
+pas — et une fois la signature trouvée (`shape, face, faceRéf, int, tol, longueur`),
+l'opération renvoie `IsDone() = true` sur un **solide vide** (0 face). Une primitive qui
+annonce avoir réussi et ne produit rien est pire qu'une primitive absente : elle fait
+disparaître la pièce en silence.
+
+**L'algorithme retenu utilise deux opérations que le moteur maîtrise déjà et qui sont
+vérifiées** : extruder la face le long de sa normale **sortante** (`BRepPrimAPI_MakePrism_1`),
+puis FUSIONNER si la face avance, SOUSTRAIRE si elle rentre. Même principe que l'addition de
+corps. Mesuré sur une boîte 100x60x40 : +10 sur +X donne 110x60x40, -10 donne 90x60x40,
++15 sur +Y donne 100x75x40.
+
+**La normale doit être SORTANTE, et la normale géométrique ne suffit pas.** Sur une boîte,
+les deux faces opposées ont la MÊME normale géométrique : c'est l'orientation de la face
+qui dit laquelle pointe dehors. `Orientation_1()` renvoyant un objet enum, la comparaison
+est une identité stricte. Vérifié sur les 6 faces : 6/6 pointent vers l'extérieur.
+
+**Un déplacement doit laisser UN corps — comme une addition.** Deux défauts trouvés en
+mesurant, et corrigés :
+
+- extruder toujours vers l'extérieur ne retirait **aucune matière** pour une distance
+  négative (le prisme était dans le vide, le solide restait inchangé) : le prisme part
+  désormais du côté de la distance ;
+- la fusion conservait les faces coplanaires du prisme et de la pièce d'origine — **10
+  faces au lieu de 6** sur une simple boîte, soit des coutures, des arêtes parasites et
+  l'impression de plusieurs morceaux. `occUnify` (déjà utilisé par le chemin « add » des
+  extrusions) recolle les faces coplanaires. Résultat mesuré : **1 coque, 1 solide,
+  6 faces** dans les deux sens.
+
+**La face est mémorisée par sa géométrie, pas par son numéro.** Centre, dimensions et
+normale sortante : le numéro d'une face change dès qu'une opération en ajoute une autre,
+alors que la face visée reste la même. Le test rejoue le document **sérialisé** pour le
+prouver — c'est le seul contrôle qui vaille, un numéro de face ne survivrait pas.
+
+**Si la face a disparu**, la fonction le dit (`face introuvable près de (...) — la pièce a
+changé`) et **laisse le solide intact** : on préfère un message à une pièce en moins.
+
+**Test `test_xmove.cjs`** : parcours complet sur le moteur de l'application (pas une sonde
+isolée) — extrusion, repérage de la face, déplacement dans les deux sens, rechargement du
+document, face introuvable ; avec code de sortie bloquant. Régression : **18/18 vertes**.

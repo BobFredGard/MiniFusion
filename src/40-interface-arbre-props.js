@@ -29,6 +29,7 @@ function featIconOf(f){
   if(f.type==='fillet')return xIcon(xKindOf(f));
   if(f.type==='repeat')return '🔁';
   if(f.type==='revolve')return (f.op||'add')==='cut'?'◔':'◍';
+  if(f.type==='xmove')return '📐';
   return '◧';
 }
 function renderTree(){
@@ -189,6 +190,7 @@ function repCanFeatureHint(f){
   if(!f)return'';
   if(f.type==='extrude')return((f.op||'add')==='cut'?'Découpe':'Plot')+' · '+(+f.distance||0).toFixed(2)+' mm';
   if(f.type==='xfillet')return xLabel(xKindOf(f))+' · '+(f.edges||[]).length+' arête(s)';
+  if(f.type==='xmove')return 'Déplacement de face · '+(+f.dist||0)+' mm';
   return '';
 }
 // Liste des fonctions répétables, en CASES À COCHER.
@@ -585,6 +587,35 @@ function renderProps(){
       p.appendChild(btn('🔓 Lever le marqueur & éditer',()=>{tlSetPtr(null);markDirty();rebuild();renderTree();renderProps();}));
       p.appendChild(btn('🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}));
       p.appendChild(btn('👁 Afficher / masquer',()=>{f.visible=!(f.visible!==false);markDirty();rebuild();renderTree();renderProps();}));
+      return;
+    }
+    if(f.type==='xmove'){
+      p.appendChild(info(`<b>${f.name}</b> · 📐 Déplacement d'une face`));
+      if(f.ref){
+        p.appendChild(note('Face visée : centre ('+f.ref.pos.map(v=>(+v).toFixed(1)).join(' ; ')+') mm, normale ('+
+          f.ref.n.map(v=>(+v).toFixed(2)).join(' ; ')+'). La face est retrouvée à chaque rejeu par sa '+
+          'position et sa normale, pas par son numéro — celui-ci change dès qu\'une opération ajoute une face.'));
+      }
+      const d=document.createElement('input');
+      d.type='text';d.inputMode='decimal';
+      d.value=String(+f.dist||0).replace('.',',');
+      d.style.width='90px';
+      d.addEventListener('change',()=>{
+        const v=parseFloat(String(d.value).replace(',','.').replace(/\s/g,''));
+        if(!isFinite(v)){d.value=String(+f.dist||0).replace('.',',');return;}
+        if(v===+f.dist)return;
+        f.dist=Math.abs(v)<1e-9?0:v;f.name=mvName(f);
+        markDirty();rebuild();renderTree();renderProps();
+        faceEl.textContent=v===0?'Distance nulle : la fonction ne déforme rien.':
+          ('Distance '+f.name.replace('Déplacement de face ','')+' appliquée le long de la normale sortante de la face.');
+      });
+      const lab=document.createElement('span');
+      lab.textContent=' Distance (mm) : ';lab.style.marginLeft='8px';
+      p.appendChild(lab);p.appendChild(d);
+      p.appendChild(note('Positif : la face avance. Négatif : elle rentre. 0 : la fonction ne fait rien.'));
+      p.appendChild(btn('📐 Re-sélectionner la face',()=>{exitMoveFaceMode(true);try{if(filMode||filModeX)exitFilletMode(true);}catch(e){}enterMoveFaceMode();}));
+      p.appendChild(btn('👁 Afficher / masquer',()=>{f.visible=!(f.visible!==false);markDirty();rebuild();renderTree();renderProps();}));
+      p.appendChild(btn('🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}));
       return;
     }
     const filRims=f.rims||((f.rimTop||f.rimBot)?{top:!!f.rimTop,bottom:!!f.rimBot}:null);
