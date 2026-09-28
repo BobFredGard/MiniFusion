@@ -225,9 +225,10 @@ function xPreviewUpdate(){
     const old=scene.getObjectByName('filEdges');
     if(old)scene.remove(old);
     if(!filModeX)return;
-    // une seule LineSegments pour toutes les arêtes : 1 draw-call, couleur par sommet.
-    // chaque arête est une POLYLIGNE (13 points échantillonnés) : on émet TOUS ses
-    // segments (sinon on ne dessine que le 1/12e de l'arête) + table seg→arête.
+     // une seule LineSegments pour toutes les arêtes : 1 draw-call, couleur par sommet.
+     // chaque arête est une POLYLIGNE à NOMBRE DE POINTS VARIABLE (affinage 30m : 2 points
+     // pour une droite, ~40-60 pour un cercle) : on émet TOUS ses segments (sinon on ne
+     // dessine qu'une fraction de l'arête et les arcs sont amputés) + table seg→arête.
     const positions=[];
     const colors=[];
     const segEdge=[];

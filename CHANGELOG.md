@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**58 versions**, de `2026-09-28b` à `2026-09-30p` — la plus récente en bas,
+**59 versions**, de `2026-09-28b` à `2026-09-30q` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1069,3 +1069,27 @@ réelle de l'ancre **17,56 mm** dans le message, R5 passe, R16 refuse.
 `diag_mirror2.cjs` - 0/30/1/0/1 comme en 30o. `diag_err.cjs` - refus chaud 62 ms, `_err` effacé
 au rayon valide. `bench_final.cjs` (Pièce 3) : **692/498 ms** (848/640 ms avant cette série),
 auto-tests **14/14 OK**, `build.js --check` OK.
+---
+
+### `2026-09-30q`
+
+**AUCUN CHANGEMENT DE COMPORTEMENT** — un commentaire de `80-conges-chanfreins.js`
+était devenu faux, et un livrable qui diffère de son snapshot doit porter sa version.
+
+La 30p-1 corrigeait l'overlay du mode congé exact (une seule `LineSegments` qui
+n'émettait que `pts[0]→pts[1]` de chaque arête, donc 1/12e de sa longueur) et corrigeait
+ça en écrivant : « chaque arête est une POLYLIGNE (**13 points échantillonnés**) ». C'était
+vrai avant la 30m, plus après : l'affinage a rendu le nombre de points **variable** (2
+pour une droite, ~40-60 pour un cercle).
+
+Le code, lui, était déjà correct et générique — `buildExactOverlay` parcourt
+`for(k=0;k+1<p.length;k++)` et `paintExact` colore par la table `segEdge`, donc aucune
+longueur n'est supposée. Seule la phrase mentait, et c'est exactement le genre de
+raison pour laquelle on repasse un an plus tard. Commentaire rectifié, rien d'autre.
+
+Vérifié que les deux correctifs se cumulent : l'overlay des arêtes en mode congé exact
+émet bien **tous** les segments de polylignes désormais lisses (30p) au lieu de fragments
+tronqués sur des 12-gones (avant 30m).
+
+Régression : 13/13 vertes, dont `test_aretes_affinage` (écart de polyligne ≤ 0,02 mm,
+identité `mid+len` inchangée).
