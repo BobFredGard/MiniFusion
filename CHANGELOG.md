@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**60 versions**, de `2026-09-28b` à `2026-09-30r` — la plus récente en bas,
+**61 versions**, de `2026-09-28b` à `2026-09-30s` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1158,3 +1158,64 @@ comportement (états, solides, piles, dépendances, refus), pas par une simple p
 de symboles.
 
 Régression : **15/15 suites vertes** (les 13 précédentes + les 2 nouvelles).
+---
+
+### `2026-09-30s`
+
+**SÉLECTION DANS L'ARBORESCENCE : TROIS CORRECTIFS DEMANDÉS PAR L'UTILISATEUR** —
+retour navigateur, sur la 30r.
+
+**1. `Ctrl+clic` ouvrait le panneau Répétition.** Deux chemins y.aboutissaient : sur la
+ligne d'une répétition (`if(!repMode)enterRepMode()`), et dans `node()` dès qu'une
+répétition était la sélection courante. Résultat : vouloir choisir deux fonctions à
+supprimer faisait apparaître la Répétition, qui captait le clic et **empêchait de les
+supprimer**. Le geste est désormais univoque :
+
+- `Ctrl+clic` = **uniquement** ajouter/retirer du lot à supprimer ;
+- le choix des sources d'une répétition passe dans **son panneau**, sous forme de
+  **cases à cocher** listant les fonctions répétables — visible, sans modificateur
+  caché, et l'on voit d'un coup d'œil ce qui est source et ce qui ne l'est pas ;
+- `repToggleFeat` et `repToggleBase`, devenus sans appel, ont été **supprimés** plutôt
+  que laissés en place ;
+- le bouton 🔁 de la barre d'outils reste le point d'entrée du mode répétition ;
+- la répétition est maintenant **dépliée automatiquement quand elle est sélectionnée**
+  (avant : il fallait viser le triangle), et le message de Face/État ne parle plus de
+  Ctrl+clic.
+
+**2. Sélection fantôme.** Un clic simple sur une répétition — ou sur une de ses
+instances — laissait le lot précédent allumé : ces deux lignes ont leur propre
+gestionnaire, qui ne vidait pas `treeSel`. Les deux le font maintenant, comme le clic
+simple ordinaire. `treeSel` n'est jamais modifié ailleurs que par `treeSelToggle` et
+ces affectations explicites.
+
+**3. Quelles fonctions alimentent cette répétition ?** Demandé explicitement. Quand une
+répétition est sélectionnée, ses **sources portent un repère ◀** dans l'arbre, et la
+ligne de la répétition affiche un badge **◀ n** (n = nombre de sources, en orange si 0 —
+une répétition sans source ne produit rien, autant le voir). Les repères disparaissent
+dès qu'une autre fonction est sélectionnée. Styles injectés depuis le code
+(`cssRepSrc`), la coque HTML n'étant jamais éditée à la main.
+
+**Défaut trouvé au passage** : `repCanFeature()` acceptait les **instances** de
+répétition (une instance est une extrusion). La liste à cocher proposait donc de
+répéter une instance — des clones empilés sans sens. Elle exclut maintenant les
+instances et les répétitions.
+
+`featIcon` était une `const` locale à `renderTree()`, inutilisable depuis le panneau ;
+elle est devenue `featIconOf()`, globale, la locale délègue — sans duplication.
+
+**Test `test_arbre_selection.cjs`, 17/17.** Il ne teste pas une réimplémentation : il
+pilote les **vrais gestionnaires de clic** posés par `renderTree()` (lisibles dans le
+DOM du harnais) avec de faux événements, et lit le HTML réellement rendu.
+
+Trois enseignements de ce test, sur les limitations du harnais :
+
+- le DOM minimal **n'efface pas `children`** quand `innerHTML=''` : une fen^tre
+  calculée naïvement mélange plusieurs rendus (les gestionnaires de clic rejouent
+  `renderTree()` eux-mêmes). On cherche donc la **dernière** occurrence, et les
+  comptages sont des « au moins un » ;
+- il ne construit pas `innerHTML` à partir des nœuds : pour compter les cases à cocher
+  du panneau, on parcourt les nœuds ;
+- une infobulle (`title`) contenant un nom de fonction rend la recherche par nom
+  ambiguë : on cible le `<span class="nm">`, c'est-à-dire ce que l'utilisateur voit.
+
+Régression : **16/16 suites vertes** (les 15 précédentes + celle-ci).

@@ -1,11 +1,36 @@
 /* ---------- arbre + timeline + props ---------- */
 let repMode=null;
+// Marques « source de la répétition » : styles injectés depuis le code, la coque
+// HTML/CSS du livrable généré n'étant jamais éditée à la main (même règle que le
+// bouton Révolution, 30h).
+(function(){
+  try{
+    if(typeof document==='undefined'||document.getElementById('cssRepSrc'))return;
+    const st=document.createElement('style');st.id='cssRepSrc';
+    st.textContent='.repsrc{font-size:.72rem;font-weight:700;margin-left:4px;color:#7ee0c0;}'+
+      '.repsrc.vide{color:#ff9f6e;}'+
+      '.srcmark{color:#7ee0c0;font-weight:700;margin-right:2px;}';
+    (document.head||document.body||document.documentElement).appendChild(st);
+  }catch(e){}
+})();
 // Sélection MULTIPLE de fonctions (Ctrl+clic) + suppression au clavier (Suppr).
 // `sel` reste le modèle simple utilisé partout ailleurs (panneau, outils) : la
 // multi-sélection est un état parallèle, jamais une refonte de `sel`.
 // L'annulation, elle, est celle du DOCUMENT (voir 45-annuler-document.js) : pas
 // de pile locale ici, sinon deux historiques qui se désynchronisent.
 let treeSel=[];   // ids de fonctions, dans l'ordre de clic
+// Un glyphe par TYPE de fonction ; l'œil (👁/🙈) reste, lui, exclusivement la
+// visibilité. Fonction globale : servant aussi à la liste de sources de la
+// répétition, qui vit hors de renderTree.
+function featIconOf(f){
+  if(!f)return '◧';
+  if(f.type==='extrude')return (f.op||'add')==='cut'?'▾':'▤';
+  if(f.type==='xfillet')return xIcon(xKindOf(f))+((f._m&&f._m.m<f._m.t)||f._err?'⚠':'');
+  if(f.type==='fillet')return xIcon(xKindOf(f));
+  if(f.type==='repeat')return '🔁';
+  if(f.type==='revolve')return (f.op||'add')==='cut'?'◔':'◍';
+  return '◧';
+}
 function renderTree(){
   const t=$('tree');t.innerHTML='';
   const g=(s)=>{const d=document.createElement('div');d.className='tgroup';d.textContent=s;t.appendChild(d);};
@@ -29,13 +54,11 @@ function renderTree(){
         return;
       }
       if(kind==='feature'&&ev.ctrlKey){
-        // Ctrl+clic a DEUX sens, sans jamais s'opposer à l'existant :
-        //  · si une RÉPÉTITION est sélectionnée (ou le mode répétition ouvert), Ctrl+clic
-        //    choisit ses sources — comportement d'origine, prioritaire ;
-        //  · sinon Ctrl+clic MULTI-SÉLECTIONNE : le lot est supprimé d'un Suppr.
-        const rp=repMode?repMode:(sel.kind==='feature'?doc.features.find(x=>x.id===sel.id&&x.type==='repeat'):null);
-        if(rp&&rp.id!==id){repToggleBase(rp,id);return;}
-        if(repMode){repToggleFeat(id);return;}
+        // Ctrl+clic n'a QU'UN sens : ajouter/retirer du lot de fonctions à supprimer.
+        // Le choix des sources d'une RÉPÉTITION se fait dans SON panneau (cases à
+        // cocher) — plus de conflicto : avant, un Ctrl+clic sur une répétition
+        // ouvrait le panneau Répétition et_CCicl sur une autre fonction y ajoutait la
+        // source, ce qui rendait la multi-suppression inutilisable.
         treeSelToggle(id);return;
       }
       if(kind==='feature'&&ghostHide===id)ghostHide=null;
@@ -76,14 +99,8 @@ function renderTree(){
   }
   // Un glyphe par TYPE de fonction ; l'œil (👁/🙈) reste, lui, exclusivement la
   // visibilité — l'overlay « Pièces » ayant disparu, il n'y a plus de doublon.
-  const featIcon=f=>{
-    if(f.type==='extrude')return (f.op||'add')==='cut'?'▾':'▤';
-    if(f.type==='revolve')return (f.op||'add')==='cut'?'◔':'◍'; // révolution / gorge
-    if(f.type==='xfillet')return xIcon(xKindOf(f))+((f._m&&f._m.m<f._m.t)||f._err?'⚠':'');
-    if(f.type==='fillet')return xIcon(xKindOf(f));
-    if(f.type==='repeat')return '🔁';
-    return '◧';
-  };
+  // glyphe par type : délégué à featIconOf (partagé avec le panneau de répétition)
+  const featIcon=f=>featIconOf(f);
   doc.features.forEach(f=>{
     if(tlMark!=null&&f.id===tlMark){
       const dm=document.createElement('div');dm.className='tnode';dm.style.cursor='default';
@@ -94,38 +111,54 @@ function renderTree(){
     if(f.repeatId)return; // instance : affichée sous sa répétition
     if(f.type==='repeat'){
       const kids=doc.features.filter(c=>c.repeatId===f.id);
-      const open=f.open===true; // arborescence repliée PAR DÉFAUT, dépliée si le triangle a été ouvert
+      // les SOURCES de la répétition sélectionnée : marquées dans l'arbre, pour voir
+      // d'un coup d'œil ce qui l'alimente et ce qui ne lui appartient pas.
+      const srcs=(f.base||[]);
+      // répétition dépliée si elle est sélectionnée (ou dans le lot) : on voit ses
+      // instances sans avoir à cliquer le triangle
+      const estChoisie=(sel.kind==='feature'&&sel.id===f.id)||treeSel.indexOf(f.id)>=0;
+      const open=f.open===true||estChoisie;
       const d=document.createElement('div');
-      d.className='tnode'+(sel.kind==='feature'&&sel.id===f.id?' sel':'')+(f.visible===false?' hidden':'')+(tlLocked(f)?' locked':'');
-      d.innerHTML=`<span class="tri" title="Déplier / replier les fonctions copiées">${open?'▼':'▶'}</span><span>🔁</span><span class="nm">${f.name} · ${repTypeName(f.mode)} · ${kids.length} instance(s)</span><span class="eye" title="Afficher / masquer">`+(f.visible===false?'🙈':'👁')+`</span>`;
-      d.title='Clic = menu de la répétition · ▶/▼ = montrer/masquer les fonctions copiées · Ctrl+clic sur une autre fonction = l’ajouter/retirer';
+      d.className='tnode'+((sel.kind==='feature'&&sel.id===f.id)||treeSel.indexOf(f.id)>=0?' sel':'')+(f.visible===false?' hidden':'')+(tlLocked(f)?' locked':'');
+      const srcNames=srcs.map(id=>{const b=doc.features.find(x=>x.id===id);return b?b.name:'?';});
+      d.innerHTML=`<span class="tri" title="Déplier / replier les fonctions copiées">${open?'▼':'▶'}</span><span>🔁</span><span class="nm">${f.name} · ${repTypeName(f.mode)} · ${kids.length} instance(s)`+
+        (srcs.length?` <span class="repsrc" title="Sources : ${srcNames.join(', ')}">◀ ${srcs.length}</span>`:' <span class="repsrc vide" title="Aucune source choisie">◀ 0</span>')+
+        `</span><span class="eye" title="Afficher / masquer">`+(f.visible===false?'🙈':'👁')+`</span>`;
+      d.title='Clic = sélectionner · ▶/▼ = montrer/masquer les fonctions copiées'+
+        (srcs.length?(' · sources : '+srcNames.join(', ')):' · AUCUNE source : la répétition ne produit rien');
       d.onclick=ev=>{
         if(ev.target&&ev.target.classList&&ev.target.classList.contains('tri')){f.open=!f.open;renderTree();renderProps();return;}
         if(ev.target&&ev.target.classList&&ev.target.classList.contains('eye')){f.visible=!(f.visible!==false);doc.features.forEach(k=>{if(k.repeatId===f.id)k.visible=f.visible;});markDirty();rebuild();renderTree();return;}
-        if(ev.ctrlKey){if(!repMode)enterRepMode();repToggleFeat(f.id);return;}
+        if(ev.ctrlKey){treeSelToggle(f.id);return;}
+        treeSel=[f.id]; // un clic simple remet le lot à zéro : plus de sélection fantôme
         sel={kind:'feature',id:f.id};renderTree();renderProps();refreshParts();
       };
       d.oncontextmenu=e=>{e.preventDefault();showCtx(e.clientX,e.clientY,{kind:'feature',id:f.id});};
       t.appendChild(d);
       if(!open)return;
       kids.forEach(k=>{
-        const d=document.createElement('div');d.className='tnode repchild'+(sel.kind==='feature'&&sel.id===f.id?' sel':'')+(k.visible===false?' hidden':'');
+        const d=document.createElement('div');d.className='tnode repchild'+((sel.kind==='feature'&&sel.id===f.id)||treeSel.indexOf(k.id)>=0?' sel':'')+(k.visible===false?' hidden':'');
         d.innerHTML=`<span>${featIcon(k)}</span><span class="nm">${k.name}</span><span class="eye" title="Afficher / masquer">`+(k.visible===false?'🙈':'👁')+`</span>`;
         d.style.paddingLeft='22px';
-        d.title='Instance n°'+k.repIndex+' de la répétition — clic = ouvrir le menu de la répétition · Ctrl+clic = nouvelle répétition';
+        d.title='Instance n°'+k.repIndex+' de la répétition — clic = sélectionner la répétition · Ctrl+clic = ajouter au lot à supprimer';
         d.onclick=ev=>{
           if(ev.target&&ev.target.classList&&ev.target.classList.contains('eye')){k.visible=!(k.visible!==false);markDirty();rebuild();renderTree();return;}
-          if(ev.ctrlKey){const rp=doc.features.find(x=>x.id===f.id);if(rp)repToggleBase(rp,k.id);return;}
+          if(ev.ctrlKey){treeSelToggle(k.id);return;}
+          treeSel=[f.id]; // idem : pas de résidu du lot précédent
           sel={kind:'feature',id:f.id};renderTree();renderProps();refreshParts();
         };
-        d.ondblclick=()=>{if(k.type==='xfillet'){sel={kind:'feature',id:k.id};enterExactFilletMode(k);}};
+        d.ondblclick=()=>{if(k.type==='xfillet'){sel={kind:'feature',id:k.id};treeSel=[];enterExactFilletMode(k);}};
         d.oncontextmenu=e=>{e.preventDefault();showCtx(e.clientX,e.clientY,{kind:'feature',id:f.id});};
         t.appendChild(d);
       });
       return;
     }
+    // While a REPETITION is selected, its source features carry a visible mark:
+    // the question "is this function part of it ?" gets an answer in the tree itself.
+    const repF=sel.kind==='feature'?doc.features.find(x=>x.id===sel.id&&x.type==='repeat'):null;
+    const estSrc=!!(repF&&(repF.base||[]).indexOf(f.id)>=0);
     const ri=repMode&&repMode.feats&&repMode.feats.includes(f.id)?'✓ ':'';
-    node(ri+featIcon(f),f.name,'feature',f.id,f.visible,f.type==='xfillet'?()=>{sel={kind:'feature',id:f.id};enterExactFilletMode(f);}:null);
+    node(ri+(estSrc?'<span class="srcmark" title="Source de la répétition sélectionnée">◀</span>':'')+featIcon(f),f.name,'feature',f.id,f.visible,f.type==='xfillet'?()=>{sel={kind:'feature',id:f.id};treeSel=[];enterExactFilletMode(f);}:null);
   });
   updateOriginPlanes();
 }
@@ -140,21 +173,33 @@ function renderTimeline(){
   });
   if(!doc.features.length)tl.innerHTML='<span class="note">Vide — créez une esquisse puis une extrusion.</span>';
 }
-function repCanFeature(id){const f=doc.features.find(x=>x.id===id);return !!(f&&(f.type==='extrude'||f.type==='xfillet'));}
+// Fonction répétable : extrusion ou congé/chanfrein exact. NI une répétition, NI une
+// instance de répétition (une instance est déjà générée : la répéter empilerait des
+// clones sans sens, et la liste à cocher la proposait).
+function repCanFeature(id){
+  const f=doc.features.find(x=>x.id===id);
+  if(!f)return false;
+  if(f.repeatId)return false;
+  if(f.type==='repeat')return false;
+  return f.type==='extrude'||f.type==='xfillet';
+}
+// Ce qu'une fonction apporte comme source de répétition — sert d'infobulle dans la
+// liste à cocher, pour qu'on sache ce qu'on coche.
+function repCanFeatureHint(f){
+  if(!f)return'';
+  if(f.type==='extrude')return((f.op||'add')==='cut'?'Découpe':'Plot')+' · '+(+f.distance||0).toFixed(2)+' mm';
+  if(f.type==='xfillet')return xLabel(xKindOf(f))+' · '+(f.edges||[]).length+' arête(s)';
+  return '';
+}
 function enterRepMode(){
   if(skEdit)return;
   if(filMode||filModeX)exitFilletMode(true);
   repMode={type:'lin',copies:2,dist:20,angle:360,axis:'X',plane:'YZ',feats:[]};
   if(sel.kind==='feature'&&repCanFeature(sel.id))repMode.feats.push(sel.id);
   renderTree();renderRepPanel();
-  faceEl.textContent='Répétition : Ctrl+clic dans l’arborescence pour choisir extrusion/découpe/congé/chanfrein, puis Appliquer.';
+  faceEl.textContent='Répétition : cochez les fonctions à répéter dans la liste ci-dessus, puis Appliquer. Astuce : la repetition est depliee dans l arbre et ses sources sont marquees ◀.';
 }
 function exitRepMode(){repMode=null;renderTree();renderProps();}
-function repToggleFeat(id){
-  if(!repMode||!repCanFeature(id))return;
-  const i=repMode.feats.indexOf(id);if(i>=0)repMode.feats.splice(i,1);else repMode.feats.push(id);
-  renderTree();renderRepPanel();
-}
 function repTypeName(m){return m==='mir'?'Symétrie':m==='circ'?'Circulaire':'Linéaire';}
 function repAxisVec(cfg){const c=cfg||repMode;const a=c&&c.axis;if(c&&c.dir)return repNorm(c.dir);if(a==='Y')return[0,1,0];if(a==='Z')return[0,0,1];return[1,0,0];}
 function repPlaneN(cfg){const c=cfg||repMode;if(c&&c.planeN)return repNorm(c.planeN);const p=c&&c.plane;if(p==='XY')return[0,0,1];if(p==='XZ')return[0,1,0];return[1,0,0];}
@@ -403,14 +448,6 @@ function treeDeleteSel(){
   try{refreshMirror();}catch(e){}
   faceEl.textContent='🗑 Supprimé : '+tous.map(noms).join(', ')+'  —  Ctrl+Z pour annuler.';
 }
-function repToggleBase(rp,id){
-  if(!rp||rp.type!=='repeat')return;
-  const f=doc.features.find(x=>x.id===id);
-  if(!f||f.type==='repeat'||f.repeatId)return; // une autre répétition ou une instance : non
-  const i=rp.base.indexOf(id);
-  if(i>=0)rp.base.splice(i,1);else rp.base.push(id);
-  repGenChildren(rp);markDirty();rebuild();renderTree();renderProps();refreshParts();
-}
 function repUseFaceFor(rp){
   if(!selFaces||!selFaces.length)return;
   const s=selFaces[0],n=faceNormalWorld(s.mesh,s.faceIndex);if(!n)return;
@@ -445,7 +482,7 @@ function repUseSelectedFace(){
 }
 function renderRepPanel(){
   const p=$('props');p.innerHTML='';if(!repMode)return;
-  const h=document.createElement('div');h.innerHTML='<b>🔁 Répétition</b><br><span class="note">Ctrl+clic dans l’arborescence : extrusion, découpe, congé exact, chanfrein.</span>';p.appendChild(h);
+  const h=document.createElement('div');h.innerHTML='<b>🔁 Répétition</b><br><span class="note">Choisissez les fonctions à répéter ci-dessous (cases à cocher). Dans l\'arbre, un <b>Ctrl+clic</b> sert désormais à la multi-suppression.</span>';p.appendChild(h);
   const row=document.createElement('div');row.className='row';
   const typ=document.createElement('select');[['lin','Linéaire'],['circ','Circulaire'],['mir','Symétrie']].forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];typ.appendChild(op);});typ.value=repMode.type;typ.onchange=()=>{repMode.type=typ.value;renderRepPanel();};row.appendChild(typ);
   const cnt=document.createElement('input');cnt.type='number';cnt.min='1';cnt.value=repMode.copies;cnt.style.width='64px';cnt.title='Nombre de copies';cnt.onchange=()=>{repMode.copies=repMaxCopies(cnt.value);};row.appendChild(cnt);p.appendChild(row);
@@ -455,9 +492,31 @@ function renderRepPanel(){
   if(repMode.type==='lin'){const l=document.createElement('label');l.textContent=' Distance (mm)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.dist;inp.style.width='80px';inp.onchange=()=>{repMode.dist=parseFloat(String(inp.value).replace(',','.'))||0;};l.appendChild(inp);p.appendChild(l);}
   if(repMode.type==='circ'){const l=document.createElement('label');l.textContent=' Angle total (°)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.angle;inp.style.width='80px';inp.onchange=()=>{repMode.angle=parseFloat(String(inp.value).replace(',','.'))||360;};l.appendChild(inp);p.appendChild(l);}
   const bf=document.createElement('button');bf.textContent='Utiliser la face sélectionnée';bf.onclick=repUseSelectedFace;p.appendChild(bf);
+  // ── FONCTIONS RÉPÉTABLES : cases à cocher.
+  // Elles vivaient dans un Ctrl+clic dans l'arbre, ce qui entrait en conflit avec la
+  // multi-suppression : la liste est donc ici, explicite, et l'on voit d'un coup d'œil
+  // ce qui est SOURCE et ce qui ne l'est pas (l'utilisateur le demande explicitement).
   const list=document.createElement('div');list.className='col';list.style.marginTop='8px';
-  const names=(repMode.feats||[]).map(id=>doc.features.find(f=>f.id===id)).filter(Boolean).map(f=>'✓ '+f.name);
-  list.innerHTML=names.length?names.map(n=>'<span class="note">'+n+'</span>').join(''):'<span class="note">Aucune fonction — Ctrl+clic dans l’arbre.</span>';
+  const cand=doc.features.filter(f=>repCanFeature(f.id));
+  if(!cand.length){
+    list.innerHTML='<span class="note">Aucune fonction répétable pour l\'instant (extrusion, découpe, congé ou chanfrein).</span>';
+  }else{
+    const t=document.createElement('div');t.className='note';t.style.marginBottom='2px';
+    t.textContent='Fonctions à répéter — '+(repMode.feats||[]).length+' cochée(s) sur '+cand.length;
+    list.appendChild(t);
+    cand.forEach(f=>{
+      const on=(repMode.feats||[]).indexOf(f.id)>=0;
+      const l=document.createElement('label');
+      l.style.display='flex';l.style.alignItems='center';l.style.gap='6px';l.style.cursor='pointer';
+      const c=document.createElement('input');c.type='checkbox';c.checked=on;
+      c.onchange=()=>{if(c.checked){if(repMode.feats.indexOf(f.id)<0)repMode.feats.push(f.id);}
+        else repMode.feats=repMode.feats.filter(x=>x!==f.id);renderTree();renderRepPanel();};
+      const s=document.createElement('span');s.textContent=featIconOf(f)+' '+f.name;
+      s.title=repCanFeatureHint(f);
+      l.appendChild(c);l.appendChild(s);
+      list.appendChild(l);
+    });
+  }
   p.appendChild(list);
   const r=document.createElement('div');r.className='row';r.style.marginTop='8px';const ok=document.createElement('button');ok.className='primary';ok.textContent='✔ Appliquer';ok.onclick=applyRepPattern;r.appendChild(ok);const q=document.createElement('button');q.textContent='Quitter';q.onclick=exitRepMode;r.appendChild(q);p.appendChild(r);
 }
