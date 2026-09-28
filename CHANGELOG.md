@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**59 versions**, de `2026-09-28b` à `2026-09-30q` — la plus récente en bas,
+**60 versions**, de `2026-09-28b` à `2026-09-30r` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1093,3 +1093,68 @@ tronqués sur des 12-gones (avant 30m).
 
 Régression : 13/13 vertes, dont `test_aretes_affinage` (écart de polyligne ≤ 0,02 mm,
 identité `mid+len` inchangée).
+---
+
+### `2026-09-30r`
+
+**ANNULER / RÉTABLIR AU NIVEAU DU DOCUMENT + SUPPRESSION MULTIPLE AU CLAVIER** —
+première des quatre fonctions 3D demandées (déplacement de face, suppression de face,
+dépouille). Celle-ci d'abord parce que les trois autres créent et suppriment des
+fonctions : sans elle, chaque nouvelle opération serait irréversible.
+
+**Le trou de départ** : l'undo existant (`skUndoStack`) ne couvre QUE le tracé d'une
+esquisse. Créer une extrusion, une révolution, un congé, répéter, supprimer une
+fonction : rien à annuler. Les quatre boutons 🗑 de l'arborescence n'appelaient même
+pas `confirm()` (deux sur quatre).
+
+**L'instantané** est le JSON du document — exactement celui de la sauvegarde. Ce n'est
+pas un choix esthétique mais une propriété vérifiée : `test_undo_aller_retour.cjs`
+prouve qu'un aller-retour `JSON.parse(JSON.stringify(doc))` est **bit à bit identique**
+et rejoue **le même solide** (10 faces / 27 arêtes avant et après), avec l'hôte
+d'esquisse (antériorité), les références entre fonctions (`xfillet.target`,
+`repeat.base`), la visibilité, les contraintes et les cotes. Aucune valeur non
+sérialisable (`undefined`/`NaN`) dans le document.
+
+Deux enseignements de ce test, tous deux évitables seulement parce qu'on les a faits :
+
+- **`rebuild()` MUTE le document** : `migrateSketch` ajoute le point d'origine d'une
+  esquisse. Une première version de l'instantané, prise avant le premier rebuild,
+  différait donc du document restauré. Sans conséquence (la migration est idempotente et
+  refaite à chaque rebuild), mais l'instantané doit être pris sur un document déjà
+  normalisé — c'est le cas puisqu'on empile juste avant de muter ;
+- le document de test a d'abord été comparé à lui-même au mauvais moment, et sa
+  première version ne construisait aucun solide (l'extrusion était masquée, la
+  révolution avait un axe Z perpendiculaire à son plan). Le message du modèle
+  — « axe Z : il ne passe pas par le plan de l'esquisse » — a confirmé d'ailleurs que
+  le refus de la 30l fonctionne sur les deux voies (exact et maillage).
+
+**Ce qui est couvert** : création (extrusion, révolution, congé/chanfrein exact,
+répétition), suppression, et toute création future — le crochet est dans
+`addFeature()`, point d'insertion **unique**, donc rien ne peut l'oublier. Pile de 40
+étapes, un instantané identique au précédent est ignoré (rien n'empile « rien a
+changé »), `Ctrl+Z` / `Ctrl+Y`, et une ligne **↩ Annuler / ↪ Rétablir** dans le panneau
+ÉTAT qui affiche le nombre d'étapes et l'étiquette de la prochaine.
+
+**Suppr + Ctrl+clic** (`test_undo_document.cjs`, 15/15) :
+
+- `Ctrl+clic` multi-sélectionne les fonctions. Il **garde** son sens d'origine quand
+  une répétition est sélectionnée ou que le mode répétition est ouvert (choix des
+  sources) : les deux gestes cohabitent, la répétition reste accessible par son bouton
+  de barre d'outils ;
+- `Suppr` supprime le lot, **avec confirmation** nommant chaque fonction ;
+- **cascade** : un congé dont la cible est supprimée, ou une répétition dont une source
+  disparaît, est emporté — sinon il resterait suspendu dans le vide. La dépendance est
+  calculée en cascade (jusqu'à 4 tours) ;
+- les esquisses posées sur une face de la fonction supprimée ne sont **pas** détruites
+  (trop violent) : l'avertissement dit qu'elles restent sans hôte ;
+- `Échap` vide le lot, `Ctrl+Z` annule la suppression et restaure le solide à l'identique
+  (12 faces) ;
+- les quatre boutons 🗑 de l'arborescence passent maintenant par le même chemin :
+  même libellé, même cascade, et surtout annulables.
+
+Un raccourci au clavier qui supprime est destructif par nature : d'où la confirmation
+n'aussitôt que Ctrl+Z juste après. L'ensemble est couvert par 15 assertions de
+comportement (états, solides, piles, dépendances, refus), pas par une simple présence
+de symboles.
+
+Régression : **15/15 suites vertes** (les 13 précédentes + les 2 nouvelles).

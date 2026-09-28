@@ -19,6 +19,10 @@ function tlSetPtr(f){ // bloque le temps juste AVANT la fonction f (null = rejou
 function tlLockedByIndex(i){const m=tlIdx();return m>=0&&i>=m;}
 function tlLocked(f){return f&&tlLockedByIndex(doc.features.indexOf(f));}
 function addFeature(f){ // insertion au niveau du marqueur si actif (nouveautés rejouées)
+  // Point d'insertion UNIQUE de toute création de fonction (extrusion, révolution,
+  // congé/chanfrein exact, répétition, et les fonctions 3D à venir) : c'est donc
+  // ici que se prend l'instantané d'annulation. Une seule étape par création.
+  docPushUndo('création de « '+(f.name||f.type)+' »');
   const i=tlIdx();
   if(i<0)doc.features.push(f);else doc.features.splice(i,0,f);
   return f;

@@ -67,6 +67,8 @@ MiniFusion est un MVP de CAO historique (paramétrique, esprit Fusion 360) qui t
 - **Vues** : Iso, Dessus, Face, Droite + **Tout afficher** (F5), qui cadre toute la pièce (corps + esquisses) — jamais de pièce coupée.
 - **Menu ⚙** : vues, sol miroir,repère (axes XYZ), inversion du zoom, mode d'affichage des arêtes, **rafraîchissement dur**, **coupe par plan** (hauteur + côté inversé).
 - **Affichage des arêtes** (vives en noir, coutures lisses en gris) : les contours sont **tracés à la courbe**, pas à 12 points fixes — un cercle est découpé en autant de segments que nécessaire pour que l'écart reste sous **0,02 mm** (37 segments pour R5, 61 pour R15), et une droite tient en 2 points. Un revolution ne se lit plus comme un polygone, même en fort zoom.
+- **Annuler / rétablir** : `Ctrl+Z` / `Ctrl+Y`, ou les boutons **↩ Annuler / ↪ Rétablir** du panneau *État* qui affichent le nombre d'étapes disponibles. Couvre **toute** modification du modèle : création d'extrusion, de révolution, de congé/chanfrein, de répétition, suppression, changement de paramètre. 40 étapes d'historique.
+- **Suppression au clavier** : `Suppr` supprime la (ou les) fonction(s) sélectionnée(s) dans l'arbre, après confirmation nommant chacune. **Ctrl+clic** construit le lot, **Échap** le vide. Les fonctions qui en dépendent (congé sans sa cible, répétition sans une source) sont **emportées** et annoncées ; les esquisses posées sur les faces disparues sont conservées, avec un avertissement.
 - Couleur et opacité par corps, outils translucides masqués après l'opération (aperçu explicite au clic sur la découpe), repère d'origine avec plans visibility par défaut.
 - **Raccourcis** en esquisse : `L C R B P T D` (ligne, cercle, rectangle, oblong, projection, trim, cote), `F5` vue complète, `Ctrl+Maj+R` rafraîchissement dur.
 
@@ -134,6 +136,7 @@ node build.js --check
 | `20-noyau-et-operations-solides.js` | noyau exact OCCT : prismes, fusions, découpes, application des congés |
 | `30-marqueur-temps.js` | blocage du rejeu à une position (timeline 360) |
 | `40-interface-arbre-props.js` | arborescence, timeline, panneaux de propriétés |
+| `45-annuler-document.js` | annuler/rétablir du **document** (pile d'instantanés JSON), boutons et raccourcis |
 | `50-esquisse-2d-solveur.js` | esquisse 2D, solveur de contraintes, cotes, SVG, santé |
 | `60-trim-et-souris.js` | ajuster (trim), toutes les interactions souris |
 | `70-extrusion.js` | extrusion : menu, étendue, « jusqu'à la face », visée |

@@ -1,11 +1,20 @@
 /* ---------- arbre + timeline + props ---------- */
 let repMode=null;
+// Sélection MULTIPLE de fonctions (Ctrl+clic) + suppression au clavier (Suppr).
+// `sel` reste le modèle simple utilisé partout ailleurs (panneau, outils) : la
+// multi-sélection est un état parallèle, jamais une refonte de `sel`.
+// L'annulation, elle, est celle du DOCUMENT (voir 45-annuler-document.js) : pas
+// de pile locale ici, sinon deux historiques qui se désynchronisent.
+let treeSel=[];   // ids de fonctions, dans l'ordre de clic
 function renderTree(){
   const t=$('tree');t.innerHTML='';
   const g=(s)=>{const d=document.createElement('div');d.className='tgroup';d.textContent=s;t.appendChild(d);};
   const node=(icon,name,kind,id,visible,dbl)=>{
     const _tlLk=(tlMark!=null&&kind==='feature'?(function(){const mi=tlIdx();return mi>=0&&doc.features.findIndex(x=>x.id===id)>=mi;})():false);
-    const d=document.createElement('div');d.className='tnode'+(sel.kind===kind&&sel.id===id?' sel':'')+(visible===false?' hidden':'')+(_tlLk?' locked':'');
+    const d=document.createElement('div');
+    // une fonction est « sel » si elle est la sélection courante OU membre du lot Ctrl+clic
+    const estSel=(sel.kind===kind&&sel.id===id)||(kind==='feature'&&treeSel.indexOf(id)>=0);
+    d.className='tnode'+(estSel?' sel':'')+(visible===false?' hidden':'')+(_tlLk?' locked':'');
     d.innerHTML=`<span>${icon}</span><span class="nm">${name}</span><span class="eye" title="Afficher / masquer">`+(visible===false?'🙈':'👁')+`</span>`;
     d.onclick=ev=>{
       if(ev.target&&ev.target.classList&&ev.target.classList.contains('eye')){
@@ -20,13 +29,17 @@ function renderTree(){
         return;
       }
       if(kind==='feature'&&ev.ctrlKey){
-        // Répétition sélectionnée → ajoute/retire la fonction cliquée à ses sources ; sinon
-        // Ctrl+clic = sélection de fonction pour créer une NOUVELLE répétition.
-        const rp=sel.kind==='feature'?doc.features.find(x=>x.id===sel.id&&x.type==='repeat'):null;
+        // Ctrl+clic a DEUX sens, sans jamais s'opposer à l'existant :
+        //  · si une RÉPÉTITION est sélectionnée (ou le mode répétition ouvert), Ctrl+clic
+        //    choisit ses sources — comportement d'origine, prioritaire ;
+        //  · sinon Ctrl+clic MULTI-SÉLECTIONNE : le lot est supprimé d'un Suppr.
+        const rp=repMode?repMode:(sel.kind==='feature'?doc.features.find(x=>x.id===sel.id&&x.type==='repeat'):null);
         if(rp&&rp.id!==id){repToggleBase(rp,id);return;}
-        if(!repMode)enterRepMode();repToggleFeat(id);return;
+        if(repMode){repToggleFeat(id);return;}
+        treeSelToggle(id);return;
       }
-      if(kind==='feature'&&ghostHide===id)ghostHide=null; // clic dans l'arbre = voir l'outil
+      if(kind==='feature'&&ghostHide===id)ghostHide=null;
+      treeSel=kind==='feature'?[id]:[];
       sel={kind,id};renderTree();renderProps();refreshParts();
     };
     if(kind==='sketch')d.title='Clic = sélectionner · double-clic = modifier l’esquisse · 👁 = afficher/masquer';
@@ -328,6 +341,68 @@ function delFeature(f){
   doc.features.forEach(rp=>{if(rp.type==='repeat')rp.base=rp.base.filter(id=>id!==f.id);});
   if(tlMark===f.id)tlMark=null;
 }
+
+// ── sélection multiple + suppression ─────────────────────────────────────────
+function treeSelToggle(id){
+  const i=treeSel.indexOf(id);
+  if(i>=0){if(treeSel.length===1)treeSel=[];else treeSel.splice(i,1);}
+  else treeSel.push(id);
+  // `sel` suit le dernier clic : le panneau de propriétés reste cohérent
+  sel={kind:'feature',id};
+  renderTree();renderProps();refreshParts();
+  const n=treeSel.length;
+  faceEl.textContent=n?(n+' fonction(s) sélectionnée(s) — Suppr pour supprimer, Échap pour désélectionner.')
+                    :'Sélection vidée.';
+}
+function treeSelIds(){
+  if(treeSel&&treeSel.length)return treeSel.slice();
+  if(sel&&sel.kind==='feature')return [sel.id];
+  return [];
+}
+// Ce qui DÉPEND des fonctions visées et qu'il faut donc emporter avec elles :
+// congé/chanfrein exact (target), répétition (base), et — en cascade de suppression
+//elles-mêmes — les dépendances de dépendances (boucle bornée à quelques tours).
+function treeSelDeps(ids){
+  const set=new Set(ids),out=[];
+  const ajouter=id=>{if(id&&!set.has(id)){set.add(id);out.push(id);}};
+  for(let tour=0;tour<4;tour++){
+    let trouve=false;
+    doc.features.forEach(f=>{
+      if(set.has(f.id))return;
+      if((f.type==='xfillet'||f.type==='fillet')&&set.has(f.target)){ajouter(f.id);trouve=true;}
+      if(f.type==='repeat'&&(f.base||[]).some(b=>set.has(b))){ajouter(f.id);trouve=true;}
+    });
+    if(!trouve)break;
+  }
+  return out;
+}
+function treeDeleteSel(){
+  const ids=treeSelIds().filter(id=>doc.features.some(f=>f.id===id));
+  if(!ids.length)return;
+  const noms=id=>{const f=doc.features.find(x=>x.id===id);return f?f.name:id;};
+  const deps=treeSelDeps(ids);
+  const tous=ids.concat(deps);
+  let msg;
+  if(tous.length===1)msg='Supprimer « '+noms(tous[0])+' » ?';
+  else msg='Supprimer '+tous.length+' fonction(s) ?\n\n· '+tous.map(noms).join('\n· ');
+  if(deps.length)msg+='\n\n'+deps.length+' fonction(s) en dépendent : elles seront supprimées aussi.';
+  // les esquisses posées sur une face de la fonction supprimée ne sont PAS
+  // détruites (trop destructif) : on prévient qu'elles perdent leur hôte.
+  const skDep=(doc.sketches||[]).filter(s=>s.host&&ids.indexOf(s.host.feat)>=0);
+  if(skDep.length)msg+='\n'+skDep.length+' esquisse(s) sont posées sur ses faces : elles resteront, sans hôte.';
+  if(!confirm(msg))return;
+  docPushUndo('suppression de '+tous.length+' fonction(s)');
+  tous.slice().forEach(id=>{
+    const f=doc.features.find(x=>x.id===id);
+    if(f)delFeature(f);
+  });
+  treeSel=[];sel={kind:null,id:null};
+  markDirty();rebuild();
+  renderTree();renderProps();refreshParts();
+  try{buildEdgeOverlay();}catch(e){}
+  try{refreshMirror();}catch(e){}
+  faceEl.textContent='🗑 Supprimé : '+tous.map(noms).join(', ')+'  —  Ctrl+Z pour annuler.';
+}
 function repToggleBase(rp,id){
   if(!rp||rp.type!=='repeat')return;
   const f=doc.features.find(x=>x.id===id);
@@ -404,7 +479,7 @@ function renderProps(){
     if(tlLocked(f)){
       p.appendChild(info(`⏱ <b>${f.name}</b> est exclue du rejeu : le marqueur temps s'arrête avant elle, elle n'apparaît pas dans la pièce.`));
       p.appendChild(btn('🔓 Lever le marqueur & éditer',()=>{tlSetPtr(null);markDirty();rebuild();renderTree();renderProps();}));
-      p.appendChild(btn('🗑 Supprimer',()=>{if(confirm('Supprimer ?')){delFeature(f);markDirty();rebuild();renderTree();renderProps();}}));
+      p.appendChild(btn('🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}));
       p.appendChild(btn('👁 Afficher / masquer',()=>{f.visible=!(f.visible!==false);markDirty();rebuild();renderTree();renderProps();}));
       return;
     }
@@ -436,7 +511,7 @@ function renderProps(){
       if(f.mode==='circ'){const l=document.createElement('label');l.textContent=' Angle total (°)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=f.angle;inp.style.width='80px';inp.addEventListener('change',()=>{f.angle=parseFloat(String(inp.value).replace(',','.'))||360;applyCfg();});l.appendChild(inp);p.appendChild(l);}
       p.appendChild(btn('🎯 Utiliser la face sélectionnée',()=>repUseFaceFor(f)));
 p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.features.forEach(k=>{if(k.repeatId===f.id)k.visible=v;});markDirty();rebuild();}));
-      p.appendChild(btn('🗑 Supprimer',()=>{delFeature(f);sel={kind:null,id:null};markDirty();rebuild();renderTree();renderProps();}));
+      p.appendChild(btn('🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}));
       return;
     }
     if(f.type==='fillet'){
@@ -522,7 +597,7 @@ p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.fea
         p.appendChild(nR);
       }
       p.appendChild(btn('🔧 Changer d\'esquisse',()=>askRevokePanel(f)));
-      p.appendChild(btn('🗑 Supprimer',()=>{if(confirm('Supprimer ?')){delFeature(f);sel={kind:null,id:null};markDirty();rebuild();renderProps();}}));
+      p.appendChild(btn('🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}));
     }
     if(f.type==='extrude'){
       // ── Sens : un côté (classique) ou symétrique/miroir (f.mid = course totale, prisme ±|d|/2)
@@ -604,7 +679,7 @@ p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.fea
     }
     if(f.type==='import'){p.appendChild(colorField(f));p.appendChild(opacityField(f));}
     p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;markDirty();rebuild();}));
-    p.appendChild(btn('🗑 Supprimer',()=>{delFeature(f);sel={kind:null,id:null};markDirty();rebuild();renderProps();}));
+    p.appendChild(btn('🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}));
   }else if(sel.kind==='body'){
     const b=bodies.find(x=>x.id===sel.id);
     p.appendChild(info(b?`<b>${b.name}</b> · corps affiché`:'Corps non reconstruit.'));
