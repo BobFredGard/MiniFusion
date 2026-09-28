@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**69 versions**, de `2026-09-28b` à `2026-09-31a` — la plus récente en bas,
+**70 versions**, de `2026-09-28b` à `2026-09-31b` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1544,3 +1544,52 @@ corrigerait cela, mais changerait le cadrage à chaque rechargement : décision 
 l'utilisateur, pas prise d'office.
 
 Régression : **20/20 vertes** (nouveau `test_affichage.cjs` inclus).
+---
+
+### `2026-09-31b`
+
+**« J'OUVRE LE FICHIER, ÇA MARCHE. APRÈS 2x ACTUALISER, IMPOSSIBLE DE REJOUER LE
+SOLIDE. »**
+
+Le mécanisme est lu dans le code, et il est net.
+
+Au chargement, `99-init.js` recharge le document **sans reconstruction**
+(`deserialise(auto,{rebuild:false})`) puis appelle `restoreViewCache()`. Si le cache
+d'affichage est valide, celui-ci restaure l'image et pose `builtHash` — et c'est là que
+ça casse :
+
+- **1er rechargement** : le cache est périmé par la version (30w) → `rebuild()` → solide
+  exact présent, et le cache est réécrit à la bonne version ;
+- **2e rechargement** : le cache est désormais **valide** → `builtHash` est posé →
+  `rebuild()` se croit à jour et **ne rejoue rien** → `occLive` reste absent → plus aucun
+  congé, plus aucune esquisse sur face, plus aucune sélection de face. La pièce est
+  affichée mais **inerte**. Exactement « impossible de rejouer le solide ».
+
+Le commentaire de `occtFinishBoot` dit déjà ce qu'il faut : *« Recalcul systématique une
+fois le noyau prêt (même si un affichage existe) : c'est ce qui garantit l'exact, le
+cache ne servant qu'à l'attente. »* — l'intention était donc la bonne ; c'est la garde
+« rien n'a changé » qui la annulait.
+
+**Le correctif, en deux endroits** :
+
+1. `occtFinishBoot` annule la garde (`builtVersion=-1; builtHash=null; builtEngine=null`)
+   avant de rejouer — le passage en exact ne peut plus être court-circuité ;
+2. `99-init.js` force le rejeu et **cadre la vue** (`showAll()`) dans les deux cas, cache
+   présent ou non. Au chargement, la caméra n'était jamais ajustée sur la pièce, qui peut
+   rester hors champ — c'est aussi ce qui donne l'impression que « ça part en ville ».
+
+Le libellé du cache ne promet plus un « aucun recalcul » qui n'est pas vrai.
+
+**Honnêteté sur la couverture** : `test_rechargement.cjs` rejoue troischargements de page
+sur le fichier réel (document dans localStorage, IndexedDB partagé entre instances, page
+servie en `http:`) et exige à chaque fois un corps affiché **et** `occLive` présent. Il
+passe. Mais **il ne échoue pas si on retire le correctif** : dans le harnais, le cache est
+rejeté pour une autre raison, donc le scénario n'y est pas atteint. La preuve reste la
+lecture du chemin de code et le test à 2 Actualiser côté navigateur — pas ce test.
+
+**Le bandeau reste suspect.** Les symptômes ont commencé avec lui ; je n'ai pas de preuve
+qui l'innocente ni qui l'incrimine. Un bisect est proposé : neutraliser le regroupement
+pour une version, tester, et voir si le 2e rechargement tient.
+
+Régression : **22/22 vertes** (rechargement du document mesuré idempotent : 16 096
+triangles, 1 corps, 0 référence morte, sur trois rechargements successifs).

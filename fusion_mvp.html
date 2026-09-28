@@ -244,14 +244,14 @@ input[type=range]{accent-color:var(--primary);width:100%}
    (OCCT ne se charge pas en node) — ne le modifier qu'après validation navigateur ET accord explicite.
 
    ── HISTORIQUE ─────────────────────────────────────────────────────────────
-   Journal des versions (cause, correctif, test) : CHANGELOG.md — 69 entrées,
-   de 2026-09-28b à 2026-09-31a. Elles étaient embarquées ici (50 Ko) et sont
+   Journal des versions (cause, correctif, test) : CHANGELOG.md — 70 entrées,
+   de 2026-09-28b à 2026-09-31b. Elles étaient embarquées ici (50 Ko) et sont
    sorties du livrable le 2026-09-30j. Ce qui précède est la description du projet
    et ses garde-fous, reprise telle quelle.
    ───────────────────────────────────────────────────────────────────────────
  */
 
-const APP_VER='2026-09-31a';
+const APP_VER='2026-09-31b';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 let extPickFace=null; // mode « vers un objet » : clic sur une face pour le sens (Échap = annuler)
@@ -319,7 +319,11 @@ async function occtFinishBoot(){
   if(occtReady){
     // Recalcul systématique une fois le noyau prêt (même si un affichage existe) :
     // c'est ce qui garantit l'exact, le cache ne servant qu'à l'attente.
-    try{faceEl.textContent='Noyau prêt — recalcul exact…';rebuild();}catch(e){}
+    // On ANNULE la garde « rien n'a changé » avant : restoreViewCache pose builtHash, donc
+    // rebuild() se croyait à jour et ne rejouait rien. Résultat mesuré : au 2e
+    // rechargement de la page, le cache était valide, le rejeu sauté, occLive absent —
+    // plus aucun congé, plus aucune esquisse sur face, plus aucune sélection de face.
+    try{faceEl.textContent='Noyau prêt — recalcul exact…';builtVersion=-1;builtHash=null;builtEngine=null;rebuild();}catch(e){}
     try{if(filMode&&occLive&&occLive.shape){exitFilletMode(true);enterExactFilletMode();}}catch(e){}}
 }
 async function bootWasmBinary(buf){
@@ -10240,9 +10244,9 @@ async function restoreViewCache(){
     });
     if(!bodies.length)return false;
     builtHash=c.hash;builtEngine=c.exact?'exact':'mesh'; // l'affichage correspond au doc : aucun recalcul auto
-    occEngineMsg='cache — pièce finie à jour ('+(c.engine||'?')+')';occStatus();
+    occEngineMsg='cache — image affichée, rejeu exact en cours ('+(c.engine||'?')+')';occStatus();
     refreshParts();renderTree();showAll();applyClip();buildEdgeOverlay();refreshMirror();
-    faceEl.textContent='Pièce finie restaurée — aucun recalcul (modifiez pour rejouer).';
+    faceEl.textContent='Pièce affichée depuis le cache local — le solide exact est rejoué juste après (nécessaire pour les congés, les esquisses sur face et la sélection de faces).';
     return true;
   }catch(e){return false;}
 }
@@ -10801,7 +10805,22 @@ window.addEventListener('error',e=>{try{statsEl.textContent+='\n[ERREUR] '+(e.me
 try{$('appVerLive').textContent=APP_VER;}catch(e){}
 buildScene();renderTree();renderTimeline();renderProps();refreshParts();
 try{const auto=localStorage.getItem('minifusion_auto');if(auto){deserialise(auto,{rebuild:false});renderProps();faceEl.textContent='Brouillon local restauré.';}}catch(e){}
-try{restoreViewCache().then(ok=>{if(ok){log('Pièce finie restaurée — aucun recalcul.');}else{rebuild();}});}catch(e){rebuild();}
+// Le cache d'affichage n'est qu'un DÉCOR : il redonne une image, pas un modèle. Sans rejeu,
+// il n'y a pas de solide exact (occLive) — donc ni congé, ni esquisse sur face, ni sélection
+// de face : « impossible de rejouer le solide ». Symptôme mesuré : le PREMIER F5 rejouait
+// (cache périmé par la version), le SECOND ne rejouait plus (cache valide) et la pièce
+// devenait inerte. On force donc le rejeu dans les DEUX cas, et on cadre la vue : au
+// chargement, la caméra n'est jamais ajustée sur la pièce, qui peut rester hors champ.
+try{
+  restoreViewCache().then(ok=>{
+    if(ok)log('Affichage restauré depuis le cache — rejeu exact en cours…');
+    // builtVersion=-1 : la garde « rien n'a changé » court-circuterait sinon le rejeu,
+    // puisque restoreViewCache vient de poser builtHash.
+    builtVersion=-1;builtHash=null;builtEngine=null;
+    try{rebuild();}catch(e){}
+    try{showAll();}catch(e){}
+  });
+}catch(e){try{builtVersion=-1;builtHash=null;builtEngine=null;rebuild();showAll();}catch(e2){}}
 log('Prêt. Esquisse → Extrusion → Export. Même navigation que le viewer.');
 </script>
 <script src="shortcuts.js"></script>

@@ -846,9 +846,9 @@ async function restoreViewCache(){
     });
     if(!bodies.length)return false;
     builtHash=c.hash;builtEngine=c.exact?'exact':'mesh'; // l'affichage correspond au doc : aucun recalcul auto
-    occEngineMsg='cache — pièce finie à jour ('+(c.engine||'?')+')';occStatus();
+    occEngineMsg='cache — image affichée, rejeu exact en cours ('+(c.engine||'?')+')';occStatus();
     refreshParts();renderTree();showAll();applyClip();buildEdgeOverlay();refreshMirror();
-    faceEl.textContent='Pièce finie restaurée — aucun recalcul (modifiez pour rejouer).';
+    faceEl.textContent='Pièce affichée depuis le cache local — le solide exact est rejoué juste après (nécessaire pour les congés, les esquisses sur face et la sélection de faces).';
     return true;
   }catch(e){return false;}
 }

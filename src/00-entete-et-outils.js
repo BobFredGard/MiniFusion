@@ -6,14 +6,14 @@
    (OCCT ne se charge pas en node) — ne le modifier qu'après validation navigateur ET accord explicite.
 
    ── HISTORIQUE ─────────────────────────────────────────────────────────────
-   Journal des versions (cause, correctif, test) : CHANGELOG.md — 69 entrées,
-   de 2026-09-28b à 2026-09-31a. Elles étaient embarquées ici (50 Ko) et sont
+   Journal des versions (cause, correctif, test) : CHANGELOG.md — 70 entrées,
+   de 2026-09-28b à 2026-09-31b. Elles étaient embarquées ici (50 Ko) et sont
    sorties du livrable le 2026-09-30j. Ce qui précède est la description du projet
    et ses garde-fous, reprise telle quelle.
    ───────────────────────────────────────────────────────────────────────────
  */
 
-const APP_VER='2026-09-31a';
+const APP_VER='2026-09-31b';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 let extPickFace=null; // mode « vers un objet » : clic sur une face pour le sens (Échap = annuler)
@@ -81,7 +81,11 @@ async function occtFinishBoot(){
   if(occtReady){
     // Recalcul systématique une fois le noyau prêt (même si un affichage existe) :
     // c'est ce qui garantit l'exact, le cache ne servant qu'à l'attente.
-    try{faceEl.textContent='Noyau prêt — recalcul exact…';rebuild();}catch(e){}
+    // On ANNULE la garde « rien n'a changé » avant : restoreViewCache pose builtHash, donc
+    // rebuild() se croyait à jour et ne rejouait rien. Résultat mesuré : au 2e
+    // rechargement de la page, le cache était valide, le rejeu sauté, occLive absent —
+    // plus aucun congé, plus aucune esquisse sur face, plus aucune sélection de face.
+    try{faceEl.textContent='Noyau prêt — recalcul exact…';builtVersion=-1;builtHash=null;builtEngine=null;rebuild();}catch(e){}
     try{if(filMode&&occLive&&occLive.shape){exitFilletMode(true);enterExactFilletMode();}}catch(e){}}
 }
 async function bootWasmBinary(buf){
