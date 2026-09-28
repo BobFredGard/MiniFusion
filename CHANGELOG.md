@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**66 versions**, de `2026-09-28b` à `2026-09-30x` — la plus récente en bas,
+**67 versions**, de `2026-09-28b` à `2026-09-30y` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1426,3 +1426,45 @@ changé`) et **laisse le solide intact** : on préfère un message à une pièce
 **Test `test_xmove.cjs`** : parcours complet sur le moteur de l'application (pas une sonde
 isolée) — extrusion, repérage de la face, déplacement dans les deux sens, rechargement du
 document, face introuvable ; avec code de sortie bloquant. Régression : **18/18 vertes**.
+---
+
+### `2026-09-30y`
+
+**LE BANDEAU ÉTAIT ALIGNÉ À PLAT : QUATRE BOUTONS SUR QUINZE ÉTAIENT DES EXPORTS.**
+Sur une pièce, on passe son temps à créer, modifier et occasionalement exporter —
+le bandeau le monetrait tout de même à largeur égale, en hilant les trois premiers
+boutons d'écran.
+
+Les **actions primaires restent en direct** (Esquisse, Extrusion, Révolution, et le
+raccourci `E` inchangé). Tout le reste est regroupé dans un menu déroulant **par type** :
+
+- **🔧 Modifier le solide** — *Arêtes* (Congé, Chanfrein) / *Faces* (Déplacer une face) /
+  *Ensembles* (Répétition) ; la dépouille et la suppression de face viendront
+  s'y ranger sans élargir la barre ;
+- **💾 Fichier** — *Importer* (une seule entrée) puis *Exporter* (STEP géométrie exacte,
+  STL et OBJ maillage), avec la distinction exacte/maillage écrite dans le libellé ;
+- **📁 Projet** — Nouveau, Sauvegarder, Sauvegarder sous, Ouvrir.
+
+**Les identifiants des boutons sont conservés à l'identique.** La réorganisation déplace
+les boutons EXISTANTS dans leur groupe au lieu d'en créer des doublons : leurs
+gestionnaires déjà branchés dans `95-toolbar.js` et le raccourci clavier continuent de
+cible exactement le même élément. Un seul menu reste ouvert à la fois, fermeture au clic
+dehors et à Échap.
+
+**Où est écrit ce code, et pourquoi.** La coque HTML étant générée et jamais éditée à la
+main, tout est fait depuis les sources : le bandeau est réorganisé **et** son style est
+injecté par `96-bandeau-groupes.js`, sur le modèle du bouton Révolution. Une première
+tentative avait réécrit la coquille HTML à la main — annulée, `fusion_mvp.html` revenu
+intact par `git checkout`. Idempotent : si le regroupement a déjà été fait, le module ne
+touche à rien.
+
+**Test `test_bandeau.cjs`** : la réorganisation est du code d'interface, et le harnais a un
+DOM trop grossier pour la voir (`classList.contains()` y renvoie toujours `false`,
+`querySelectorAll()` y renvoie `[]`). Le test exécute donc le module sur un DOM minimal
+qui, lui, sait répondre, et vérifie qu'aucun bouton n'est perdu, que chaque fonction est
+bien dans son menu de TYPE, que les trois actions primaires restent dans la barre, et
+qu'un seul menu s'ouvre à la fois. **Deux bugs réels ont été trouvés ainsi** : les
+boutons étaient retirés du menu que l'on venait de construire, et le groupe était indexé
+sur l'icône au lieu de l'identifiant (`$('◔')` au lieu de `$('btnFillet')`).
+
+Régression : **19/19 vertes**.
