@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**57 versions**, de `2026-09-28b` à `2026-09-30o` — la plus récente en bas,
+**58 versions**, de `2026-09-28b` à `2026-09-30p` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1030,4 +1030,42 @@ signalée) et **R16 s'applique** ; le conseil d'échec disparaît bien quand le 
 Régression complète `bench_final.cjs` (Pièce 3) : **848/640 ms** (914/689 avant cette série,
 même budget), 7 appels `occFinalShape`, hits 34/47, corps **inchangé** (3 904 tris + 2 outils),
 auto-tests **14/14 OK**, `build.js --check` OK.
-sur une autre arête.*
+
+### `2026-09-30p`
+
+Correctifs d'affichage et de robustesse du mode **Congé/Chanfrein** (retours navigateur) :
+
+1. **traits coupés en mode Congé/Chanfrein** : l'overlay avait été regroupé en une seule
+   `LineSegments` (1 draw-call) mais n'émettait que `pts[0]→pts[1]` de chaque arête — or
+   `occSharpEdges` renvoie une **polyligne de 13 points** : chaque arête n'apparaissait que par
+   fragments (1/12e de sa longueur) et les arcs étaient amputés. Correctif : tous les segments
+   de la polyligne sont émis avec une table `segEdge` seg→arête ; le clic (`exactPick`)
+   retombe sur la bonne arête via l'index rendu (`index/2`, pas de 0,2,4…), et `paintExact`
+   colore par ARÊTE depuis cette table.
+2. **les arêtes du versant caché se dessinaient par-dessus la pièce** : l'overlay était en
+   `depthTest:false` — en bleu sur bleu cela ne se voyait pas, en noir c'était criant
+   (« les arêtes invisibles sont visibles en noir »). Les deux overlays de congé
+   (`buildExactOverlay`, `buildFilletOverlay`) sont passés en `depthTest:true` : seules les
+   arêtes visibles de face restent dessinées. Seules les lignes : les 7 autres
+   `depthTest:false` (cotes, mesures, points, surbrillance de face) sont inchangés.
+3. **le script plantait au chargement — plus rien dans l'arborescence ni de modèle** : des
+   lignes orphelines de `paintFilletEdges` étaient restées en top-level du fichier source →
+   `ReferenceError` à l'évaluation du livrable, donc aucune initialisation. Supprimées.
+4. **l'aperçu rouge du congé ne s'affichait plus** : la création du maillage avait été retirée
+   alors que `xPrevBody` référençait encore `mesh` → `ReferenceError` intercepté au bout du
+   `try`, repli silencieux (pièce transparente sans patch). Bloc `mat`/`mesh` restauré.
+5. **le calcul de distance au clic de l'ancre avait disparu** (`bd` restait à `1e9`) : la branche
+   « ancre saine » était devenue morte et le journal affichait `pointait 1000000000 mm du clic`.
+   La boucle `dRef` d'origine est restaurée : message réel (`17,56 mm`), ancre saine reprise.
+6. **texte du panneau obsolète** : « Cliquez des arêtes bleues en 3D » → « Cliquez une arête en
+   3D (noir · jaune au survol) », en cohérence avec la palette (défaut noir, survol jaune
+   `0xffd60a`, arête retenue rouge `0xff453a`).
+
+**Test** : `diag_overlay.cjs` (nouveau) - 317 segments = sommets des **76** polylignes complètes
+(attendus 317), table seg→arête croissante couvrant 76 arêtes, tous les sommets à `(0,0,0)`,
+survol de l'arête 3 = jaune sur ses segments uniquement, remis à noir ensuite.
+`diag_anchor.cjs` (Pièce 2) - arête cliquée conservée (20 mm, distance **0 mm**), distance
+réelle de l'ancre **17,56 mm** dans le message, R5 passe, R16 refuse.
+`diag_mirror2.cjs` - 0/30/1/0/1 comme en 30o. `diag_err.cjs` - refus chaud 62 ms, `_err` effacé
+au rayon valide. `bench_final.cjs` (Pièce 3) : **692/498 ms** (848/640 ms avant cette série),
+auto-tests **14/14 OK**, `build.js --check` OK.

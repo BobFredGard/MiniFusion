@@ -6,14 +6,14 @@
    (OCCT ne se charge pas en node) — ne le modifier qu'après validation navigateur ET accord explicite.
 
    ── HISTORIQUE ─────────────────────────────────────────────────────────────
-   Journal des versions (cause, correctif, test) : CHANGELOG.md — 57 entrées,
-   de 2026-09-28b à 2026-09-30o. Elles étaient embarquées ici (50 Ko) et sont
+   Journal des versions (cause, correctif, test) : CHANGELOG.md — 58 entrées,
+   de 2026-09-28b à 2026-09-30p. Elles étaient embarquées ici (50 Ko) et sont
    sorties du livrable le 2026-09-30j. Ce qui précède est la description du projet
    et ses garde-fous, reprise telle quelle.
    ───────────────────────────────────────────────────────────────────────────
  */
 
-const APP_VER='2026-09-30o';
+const APP_VER='2026-09-30p';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 let extPickFace=null; // mode « vers un objet » : clic sur une face pour le sens (Échap = annuler)

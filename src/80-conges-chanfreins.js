@@ -144,7 +144,7 @@ function xSelSync(){
 let xPrevBody=null;
 function xPrevRemove(){
   if(xPrevBody){
-    try{scene.remove(xPrevBody.mesh);try{xPrevBody.mesh.geometry.dispose();}catch(e){}}catch(e){}
+    if(xPrevBody.mesh){try{scene.remove(xPrevBody.mesh);xPrevBody.mesh.geometry.dispose();}catch(e){}}
     bodies=bodies.filter(b=>b!==xPrevBody);
     xPrevBody=null;
   }
@@ -220,28 +220,56 @@ function xPreviewUpdate(){
     try{refreshParts();}catch(e){}
   }catch(e){xPrevRemove();}
 }
-function buildExactOverlay(){
-  try{
-    const old=scene.getObjectByName('filEdges');if(old)scene.remove(old);
+  function buildExactOverlay(){
+    try{
+    const old=scene.getObjectByName('filEdges');
+    if(old)scene.remove(old);
     if(!filModeX)return;
-    const grp=new THREE.Group();grp.name='filEdges';
+    // une seule LineSegments pour toutes les arêtes : 1 draw-call, couleur par sommet.
+    // chaque arête est une POLYLIGNE (13 points échantillonnés) : on émet TOUS ses
+    // segments (sinon on ne dessine que le 1/12e de l'arête) + table seg→arête.
+    const positions=[];
+    const colors=[];
+    const segEdge=[];
     filModeX.edges.forEach((e,i)=>{
-      const pts=e.pts.map(p=>new THREE.Vector3(p[0],p[1],p[2]));
-      const l=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
-        new THREE.LineBasicMaterial({color:0x64d2ff,transparent:true,opacity:0.95,depthTest:false}));
-      l.renderOrder=999;l.userData.xEdge=i;grp.add(l);
+      const p=e.pts;
+      for(let k=0;k+1<p.length;k++){
+        positions.push(p[k][0],p[k][1],p[k][2],p[k+1][0],p[k+1][1],p[k+1][2]);
+        colors.push(0,0,0,0,0,0);
+        segEdge.push(i);
+      }
     });
-    scene.add(grp);paintExact();
-  }catch(e){faceEl.textContent=xLabel(filModeX&&filModeX.kind)+' : affichage impossible ('+e.message+').';}
-}
-function paintExact(){
-  const grp=scene.getObjectByName('filEdges');if(!grp||!filModeX)return;
-  grp.children.forEach(l=>{
-    const i=l.userData.xEdge;
-    // germe (cliqué) = jaune · tangente déduite = rouge · survol = blanc · disponible = bleu
-    l.material.color.setHex(xIsSeed(i)?0xffd60a:(xIsSel(i)?0xff453a:(xHover===i?0xffffff:0x64d2ff)));
-  });
-}
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+    geo.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
+    const mat=new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:0.95,depthTest:true});
+    const l=new THREE.LineSegments(geo,mat);
+    l.renderOrder=999;
+    l.userData.segEdge=segEdge;
+    const grp=new THREE.Group();grp.name='filEdges';grp.add(l);
+    scene.add(grp);
+    paintExact();
+    }catch(e){faceEl.textContent=xLabel(filModeX&&filModeX.kind)+' : affichage impossible ('+e.message+').';}
+  }
+
+  function paintExact(){
+    const grp=scene.getObjectByName('filEdges');if(!grp||!filModeX)return;
+    const l=grp.children[0];if(!l||!l.geometry||!l.geometry.attributes.color)return;
+    const col=l.geometry.attributes.color;
+    const segEdge=l.userData.segEdge;if(!segEdge)return;
+    const c=new THREE.Color(),cache={};
+    // défaut = noir · survol = jaune · germe = jaune · arête retenue = rouge (par ARÊTE)
+    for(let k=0;k<segEdge.length;k++){
+      const i=segEdge[k];
+      let hex=cache[i];
+      if(hex===undefined)hex=cache[i]=xIsSeed(i)?0xffd60a:(xIsSel(i)?0xff453a:(xHover===i?0xffd60a:0x000000));
+      c.setHex(hex);
+      col.setXYZ(k*2,c.r,c.g,c.b);
+      col.setXYZ(k*2+1,c.r,c.g,c.b);
+    }
+    col.needsUpdate=true;
+  }
+
 function exactPick(e){
   const grp=scene.getObjectByName('filEdges');if(!grp)return null;
   const r=renderer.domElement.getBoundingClientRect();
@@ -249,7 +277,12 @@ function exactPick(e){
   rayc.setFromCamera(ndc,camera);
   rayc.params.Line.threshold=2;
   const hits=rayc.intersectObjects(grp.children,false);
-  return hits.length?hits[0].object.userData.xEdge:null;
+  if(!hits.length)return null;
+  const segEdge=hits[0].object.userData.segEdge;
+  if(!segEdge)return null;
+  // LineSegments non indexé : l'index rendu est le sommet de départ (0,2,4…) → seg = index/2
+  const i=segEdge[Math.round(hits[0].index/2)];
+  return (i!==undefined&&i>=0&&filModeX&&i<filModeX.edges.length)?i:null;
 }
 function occFaceEdges(faceOrd){
   // Milieux des arêtes d'une face BRep (par rang, même ordre que la tessellation).
@@ -419,7 +452,7 @@ function renderExactPanel(){
   const h=document.createElement('div');h.style.fontSize='.83rem';
   h.innerHTML=ed
     ?`<b>✏️ Édition — ${ed.name||xLabel(k)}</b><br><span class="note">${filModeX.sel.length} arête(s) retenue(s) · ${filModeX.edges.length} arêtes vivides · ✕ ou clic d'une ligne = retirer, arête/face 3D = ajouter.</span>`
-    :`<b>${xIcon(k)} ${xLabel(k)} OCCT</b> <span class="note">(surfaces analytiques, lisses)</span><br><span class="note">${filModeX.sel.length?filModeX.sel.length+' arête(s) ✅':'Cliquez des arêtes bleues en 3D.'} · ${filModeX.edges.length} arêtes détectées.</span>`;
+    :`<b>${xIcon(k)} ${xLabel(k)} OCCT</b> <span class="note">(surfaces analytiques, lisses)</span><br><span class="note">${filModeX.sel.length?filModeX.sel.length+' arête(s) ✅':'Cliquez une arête en 3D (noir · jaune au survol).'} · ${filModeX.edges.length} arêtes détectées.</span>`;
   p.appendChild(h);
   const lab=document.createElement('label');lab.textContent=(xIsChamfer(k)?'Distance':'Rayon')+' par défaut (mm)';
   const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=filModeX.radius;inp.style.width='80px';
@@ -524,7 +557,7 @@ function applyExactFillet(){
   const toW=(x,y,z)=>new THREE.Vector3(x,y,z).applyMatrix4(m);
   const addSeg=(a,b,edge)=>{
     const l=new THREE.Line(new THREE.BufferGeometry().setFromPoints([a,b]),
-      new THREE.LineBasicMaterial({color:0x8a8f99,transparent:true,opacity:0.95,depthTest:false}));
+      new THREE.LineBasicMaterial({color:0x8a8f99,transparent:true,opacity:0.95,depthTest:true}));
     l.renderOrder=999;l.userData.edge=edge;grp.add(l);
   };
   // Toutes les arêtes analytiques du prisme : verticales (coins) + périmètres haut/bas.
@@ -573,19 +606,19 @@ function filEdgeHoverKey(ed){
   if(ed.kind==='rim-bot')return 'rim-bot';
   return null;
 }
-function paintFilletEdges(){
-  const grp=scene.getObjectByName('filEdges');if(!grp||!filMode)return;
-  grp.children.forEach(l=>{
-    const e=l.userData.edge;let c=0x3a3a40;
-    if(e){
-      if(filEdgeSelected(e))c=0xff453a;
-      else if(filHover&&filHover===filEdgeHoverKey(e))c=0xffd60a;
-      else if(e.kind&&e.kind.indexOf('rim')===0)c=0x64d2ff; // périmètres en bleu = cliquables
-      else c=0x8a8f99;
-    }
-    l.material.color.setHex(c);
-  });
-}
+  function paintFilletEdges(){
+    const grp=scene.getObjectByName('filEdges');if(!grp||!filMode)return;
+    grp.children.forEach(l=>{
+      const e=l.userData.edge;let c=0x3a3a40;
+      if(e){
+        if(filEdgeSelected(e))c=0xff453a;
+        else if(filHover&&filHover===filEdgeHoverKey(e))c=0xffd60a;
+        else if(e.kind&&e.kind.indexOf('rim')===0)c=0x64d2ff; // périmètres en bleu = cliquables
+        else c=0x8a8f99;
+      }
+      l.material.color.setHex(c);
+    });
+  }
 function filletPick(e){
   const grp=scene.getObjectByName('filEdges');if(!grp)return null;
   const r=renderer.domElement.getBoundingClientRect();

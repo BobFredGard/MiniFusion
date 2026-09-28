@@ -1049,7 +1049,7 @@ function occApplyXFillets(base,xfils){
             warns.push(`congé ${dp}${xNum(se.r)} : ancre d'esquisse divergente ignorée (pointait ${xNum(bd)} mm du clic) — arête sélectionnée rétablie`);}
           return;
         }
-        anchored.forEach(i=>take(i,se.r,se));return;
+        anchored.forEach(bi=>take(bi,se.r,se));return;
       }
       // Passe 2 : MEILLEUR candidat unique (une sélection = UNE arête ; hit multiples →
       // positions réécrites en doublons + arêtes étrangères dans le lot d'arrondi).
