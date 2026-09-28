@@ -880,6 +880,14 @@ async function deserialise(json,opts){
   if(rep.dup||rep.orph||rep.sk||rep.cap){try{log('Document réparé : '+rep.dup+' instance(s) en double, '+rep.orph+' instance(s) orpheline(s), '+rep.sk+' esquisse(s) d’instance abandonnée(s), '+rep.cap+' répétition(s) plafonnée(s) à '+REPEAT_MAX+' copies.');}catch(e){}}
   if(rep.ren){try{log('Nom de congé/chanfrein réaligné sur la géométrie réelle : '+rep.ren+' fonction(s) (des arêtes avaient été perdues).');}catch(e){}}
   if(rep.dup||rep.orph){try{doc.features.filter(f=>f.type==='repeat').forEach(f=>repGenChildren(f));}catch(e){}}
+  // Les instances d'une répétition sont DÉRIVÉES : on les régénère à l'ouverture, toujours.
+  // Sans cela, un fichier enregistré par une version qui miroirait mal les congés
+  // conservait des clones à 80-100 mm du mauvais côté, et le triangle ⚠ revenait à
+  // chaque chargement alors même que le code était corrigé. Coût : une régénération
+  // déterministe, sans effet sur les sources.
+  try{
+    doc.features.filter(f=>f.type==='repeat').forEach(f=>{try{repGenChildren(f);}catch(e){}});
+  }catch(e){}
   sel={kind:null,id:null};uidN=doc.sketches.length+doc.features.length+1;
   if(!opts||opts.rebuild!==false){rebuild();renderProps();showAll();}
   else renderProps();

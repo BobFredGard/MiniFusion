@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**62 versions**, de `2026-09-28b` à `2026-09-30t` — la plus récente en bas,
+**63 versions**, de `2026-09-28b` à `2026-09-30u` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1253,5 +1253,56 @@ d'édition propose la même liste, les sources actuelles sont cochées, décoche
 la source et régénère les instances (1 → 0), le re-rendu reflète la nouvelle liste, et
 aucun bouton ne mentionne `Ctrl+clic` — ce qui est vérifié en parcourant les
 boutons réellement créés, pas en cherchant une chaîne dans le source.
+
+Régression : **16/16 suites vertes**.
+---
+
+### `2026-09-30u`
+
+**LE MIROIR NE SYMÉTRISAIT PAS LES CONGÉS** — trois défauts, trouvés en rejouant le
+fichier réel de l'utilisateur (`Sans titre.minifusion.json`) sur le noyau exact.
+
+**1. Le clone d'un congé n'était pas le miroir de la sélection.** Dans `repCloneFeat`,
+seul `pos` était transformé : `pos0` (la position au moment du clic) était recopié tel
+quel, et `anchor` mis à `null`. Or c'est **`pos0` qui sert de référence à l'appariement
+des arêtes** au rejeu. Conséquence mesurée : chaque instance cherchait son arête de 78 à
+**100 mm** du mauvais côté de la pièce, s'accrochait à l'arête d'origine, et le congé
+se terminait en `_err` — c'étaient les triangles ⚠.
+
+**Correction** : `pos` **et** `pos0` sont transformés, et `_div` (divergence héritée de la
+source) est effacé. Après régénération, l'écart source↔instance est de **0** sur les
+quatre instances, et les **2 erreurs du fichier sont tombées à 0**.
+
+**2. Les instances sont PERSISTÉES : le correctif ne suffisait pas.** Un clone écrit par
+une version buguée restait dans le fichier, et `repGenChildren` n'était appelé qu'aux
+éditions — le triangle revenait donc à chaque ouverture, code corrigé ou non. Les clones
+d'une répétition étant **dérivés**, ils sont désormais régénérés à la **chaque
+chargement**. Mesuré sur le fichier réel : au simple chargement, 2 erreurs → **0** et
+symétrie exacte.
+
+**3. Un ⚠ muet ne sert à rien.** Le panneau d'un congé partiel affiche maintenant
+`⚠ 6/8 arêtes retrouvées — 2 perdue(s)`, la **position** des arêtes introuvables, et la
+cause. Deux causes distinctes, qu'il ne faut pas confondre :
+
+- `_err` = OCCT a refusé (arête trop courte, faces déjà consommées) ;
+- sinon = **arête introuvable** : la pièce a bougé depuis la sélection.
+
+Le message précédent (ajouté à la 30p) affirmait la première cause dans tous les cas :
+c'était faux, et il fallait le dire. `_m.m` compte les arêtes **retrouvées**, pas celles
+qui ont « pris » le congé — d'où la correction, et le nouveau `xf._miss` (positions des
+arêtes perdues) qui permet de les nommer.
+
+**Ce qui reste, et pourquoi.** Sur le fichier réel, un seul congé est partiel (6/8) et
+son clone hérite du même 6/8. Les deux arêtes perdues ne sont **pas** les arcs : ce sont
+les deux **lignes de 60 mm** (les rims haut et bas, près de (50 ; 0 ; 45) et (50 ; 0 ; 5)).
+Les congés R10 et R6 appliqués entre-temps ont **découpé ces rims** : une arête de 60 mm
+n'existe plus. Ce n'est donc pas un défaut d'appariement mais une conséquence de
+l'historique de la pièce — la sélection est périmée, et c'est re-sélectionnable.
+
+**Test `test_fichier_reel.cjs`** : rejoue le fichier de l'utilisateur sur le noyau
+exact et mesure congruences, triangles, erreurs et écart de symétrie — avant/après
+changements geometry, sur le vrai modèle plutôt que sur un cas synthétique. Il note au
+passage l'arrêt du script sur `camera.up` (limite du stub THREE, sans effet : le document
+est chargé avant le cadrage de vue).
 
 Régression : **16/16 suites vertes**.

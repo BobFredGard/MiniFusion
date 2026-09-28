@@ -1115,6 +1115,11 @@ function occApplyXFillets(base,xfils){
   xfils.forEach(xf=>{
     const es=(xf.edges||[]).filter(se=>se.r>0);
     xf._m={m:es.filter(se=>matchedSe.has(se)).length,t:es.length};
+    // position des arêtes PERDUES (non retrouvées dans la géométrie actuelle) : sans
+    //elles, le panneau ne pouvait dire que « 6/8 » sans indiquer lesquelles.
+    const manque=es.filter(se=>!matchedSe.has(se));
+    if(manque.length)xf._miss=manque.map(se=>se.pos.map(v=>+v.toFixed(2)));
+    else delete xf._miss;
   });
   if(!jobs.length)return{shape:base,warnings:warns};
   const js=jobs.map(j=>({src:edges[j.bi].src,r:j.r,mid:edges[j.bi].mid.slice()}));

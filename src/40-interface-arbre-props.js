@@ -195,11 +195,22 @@ function repCanFeatureHint(f){
 // PARTAGÉE par la création (repMode) et l'édition d'une répétition déjà construite :
 // les deux offrent exactement les mêmes choix, la ticked = sources actuelles. Extraite
 // en une seule fonction pour que les deux panneaux ne puissent pas diverger.
-function repSourceList(base,onChange){
+//
+// RÈGLE ABSOLUE : cette liste ne se reconstruit JAMAIS depuis le `onchange` d'une de ses
+// cases. Reconstruire le panneau (p.innerHTML='') pendant le clic DÉTRUIT le nœud que
+// l'utilisateur vient de cocher : le navigateur achève alors l'activation sur un nœud
+// détaché et l'état visuel retombe — d'où le symptôme « je peux décocher mais pas
+// cocher » (décocher « marche » seulement parce que l'image est déjà celle attendue).
+// On met donc à jour le compteur SUR PLACE, et on ne rafraîchit que le modèle et la 3D.
+function repSourceList(base,onChange,onTick){
   const box=document.createElement('div');box.className='col';box.style.marginTop='6px';
   const cand=doc.features.filter(f=>repCanFeature(f.id));
   const t=document.createElement('div');t.className='note';t.style.marginBottom='2px';
-  t.textContent='Fonctions à répéter — '+(base||[]).length+' cochée(s) sur '+cand.length;
+  const estDedans=id=>cand.some(f=>f.id===id);
+  const majCompteur=()=>{
+    t.textContent='Fonctions à répéter — '+(base||[]).filter(estDedans).length+' cochée(s) sur '+cand.length;
+  };
+  majCompteur();
   box.appendChild(t);
   if(!cand.length){
     const w=document.createElement('span');w.className='note';
@@ -208,16 +219,24 @@ function repSourceList(base,onChange){
     return box;
   }
   cand.forEach(f=>{
-    const on=(base||[]).indexOf(f.id)>=0;
     const l=document.createElement('label');
     l.style.display='flex';l.style.alignItems='center';l.style.gap='6px';l.style.cursor='pointer';
-    const c=document.createElement('input');c.type='checkbox';c.checked=on;
+    const c=document.createElement('input');c.type='checkbox';c.checked=(base||[]).indexOf(f.id)>=0;
     c.className='repsrcchk'; // identifie les cases de sources (la case « Visible » du panneau en est une autre)
     c.onchange=()=>{
       const b=(base||[]).slice();
       const i=b.indexOf(f.id);
       if(c.checked){if(i<0)b.push(f.id);}else if(i>=0)b.splice(i,1);
-      onChange(b,f);
+      // la case garde son propre état : on ne la remplace pas, on met à jour autour
+      let ko=null;
+      try{onChange(b,f);}catch(err){ko=err;}
+      base=b; // l'état fait foi, même si la reconstruction a échoué : l'interface reste cohérente
+      majCompteur();
+      if(ko){
+        try{faceEl.textContent='Répétition : mise à jour impossible ('+(ko.message||ko)+').';}catch(e){}
+      }else if(onTick){
+        try{onTick();}catch(e){}
+      }
     };
     const s=document.createElement('span');
     s.textContent=featIconOf(f)+' '+f.name;
@@ -298,7 +317,19 @@ function repCloneFeature(f,i,skMap,featMap,cfg,reuse){
     if(nf.upto&&nf.upto.ex){if(featMap[nf.upto.ex])nf.upto.ex=featMap[nf.upto.ex];else nf.upto=null;}
   }else{
     featMap[f.id]=target;
-    if(f.type==='xfillet')nf.edges=(nf.edges||[]).map(s=>Object.assign({},s,{pos:repTransformPoint(s.pos,i,cfg).map(v=>+v.toFixed(6)),anchor:null}));
+    if(f.type==='xfillet')nf.edges=(nf.edges||[]).map(s=>{
+      // Le clone d'un congé doit être le MIROIR de la sélection — donc `pos` ET `pos0`
+      // (la position au moment du clic, qui sert de référence à l'appariement) sont
+      // transformés. Ne transformer que `pos` laissait `pos0` sur la source : le
+      // congruence cherchait alors l'arête du mauvais côté de la pièce, s'accrochait à
+      // celle d'origine (d'où « ancre divergente ignorée (pointait 37,9 mm du clic) »)
+      // et finissait en `_err` — le triangle ⚠ de l'arbre.
+      const o=Object.assign({},s,{anchor:null});
+      o.pos=repTransformPoint(s.pos,i,cfg).map(v=>+v.toFixed(6));
+      o.pos0=repTransformPoint(s.pos0||s.pos,i,cfg).map(v=>+v.toFixed(6));
+      delete o._div; // divergence herdée de la source : sans rapport avec le clone
+      return o;
+    });
   }
   // Le NOM de la FONCTION COPIÉE est conservé tel quel dans la sous-arborescence (c'est la
   // répétition elle-même qui porte le nom du TYPE : Linéaire / Circulaire / Symétrie).
@@ -528,9 +559,10 @@ function renderRepPanel(){
   if(repMode.type==='lin'){const l=document.createElement('label');l.textContent=' Distance (mm)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.dist;inp.style.width='80px';inp.onchange=()=>{repMode.dist=parseFloat(String(inp.value).replace(',','.'))||0;};l.appendChild(inp);p.appendChild(l);}
   if(repMode.type==='circ'){const l=document.createElement('label');l.textContent=' Angle total (°)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.angle;inp.style.width='80px';inp.onchange=()=>{repMode.angle=parseFloat(String(inp.value).replace(',','.'))||360;};l.appendChild(inp);p.appendChild(l);}
   const bf=document.createElement('button');bf.textContent='Utiliser la face sélectionnée';bf.onclick=repUseSelectedFace;p.appendChild(bf);
-  // ── FONCTIONS RÉPÉTABLES : la MÊME liste à cocher qu'à la création (voir
-  // repSourceList). Cocher/décocher met la répétition à jour immédiatement.
-  p.appendChild(repSourceList(repMode.feats,function(b){repMode.feats=b;renderTree();renderRepPanel();}));
+  // ── FONCTIONS RÉPÉTABLES : la MÊME liste à cocher qu'à l'édition (voir
+  // repSourceList). Aucun re-rendu ici : la case garde son état, seul l'arbre se
+  // rafraîchit (le compteur se met à jour sur place, dans la liste).
+  p.appendChild(repSourceList(repMode.feats,function(b){repMode.feats=b;},function(){renderTree();}));
   const r=document.createElement('div');r.className='row';r.style.marginTop='8px';const ok=document.createElement('button');ok.className='primary';ok.textContent='✔ Appliquer';ok.onclick=applyRepPattern;r.appendChild(ok);const q=document.createElement('button');q.textContent='Quitter';q.onclick=exitRepMode;r.appendChild(q);p.appendChild(r);
 }
 function renderProps(){
@@ -557,17 +589,36 @@ function renderProps(){
     }
     const filRims=f.rims||((f.rimTop||f.rimBot)?{top:!!f.rimTop,bottom:!!f.rimBot}:null);
     p.appendChild(info(`<b>${f.name}</b> · ${f.type==='extrude'?((f.op||'add')==='cut'?'➖ ':'➕ ')+extName(f):((f.type==='fillet')?'Congé R'+f.radius+' · '+(f.corners||[]).length+' verticale(s)'+(filRims&&(filRims.top||filRims.bottom)?' + périmètre '+(filRims.top&&filRims.bottom?'haut+bas':(filRims.top?'haut':'bas')):'')+' sur '+exName(f.target):((f.type==='xfillet')?`${xIcon(xKindOf(f))} ${xLabel(xKindOf(f))} · ${(f.edges||[]).length} arête(s)`:(f.type==='repeat'?'🔁 Répétition':'Import')))}`));
+    // Un congé PARTIEL (le triangle ⚠ de l'arbre) doit s'expliquer ici : combien
+    // d'arêtes ont été retrouvées, lesquelles manquent, et pourquoi.
+    if(f.type==='xfillet'&&f._m&&f._m.t&&f._m.m<f._m.t){
+      const manquant=f._m.t-f._m.m;
+      p.appendChild(info(`<span style="color:var(--warn)">⚠ <b>${f._m.m}/${f._m.t}</b> arêtes retrouvées — ${manquant} perdue(s).</span>`));
+      if(f._miss&&f._miss.length){
+        p.appendChild(note('Introuvables, près de : '+f._miss.map(q=>'('+q.join(', ')+')').join('  ')));
+      }
+      // deux causes distinctes, à ne pas confondre :
+      if(f._err)p.appendChild(note(f._err));
+      else p.appendChild(note('La pièce a bougé depuis la sélection : l\'arête n\'existe plus à cet endroit. Re-sélectionnez-la (clic sur l\'arête, ou la boucle entière).'));
+      const div=(f.edges||[]).filter(e=>e._div!==undefined).length;
+      if(div)p.appendChild(note(`${div} arête(s) à ancre divergente : l\'ancre d\'esquisse pointait ailleurs, l\'arête cliquée a été conservée.`));
+    }
     if(f.type==='repeat'){
       // Menu de la RÉPÉTITION : paramètres éditables + la MÊME liste de fonctions
       // répétables qu'à la création, cochée sur les sources actuelles. Cocher ou
       // décocher régénère les instances puis rejoue (et c'est annulable, Ctrl+Z).
-      const kids=doc.features.filter(c=>c.repeatId===f.id);
-      p.appendChild(info(`<b>${f.name}</b> · ${repTypeName(f.mode)} · ${f.copies||1} copie(s) · ${kids.length} instance(s)`));
+      // AUCUN re-rendu du panneau ici : la ligne d'en-tête se met à jour sur place,
+      // sinon on détruirait la case en cours de clic (symptôme « je ne peux pas cocher »).
+      const majEntete=()=>{
+        const k=doc.features.filter(c=>c.repeatId===f.id).length;
+        entete.innerHTML=`<b>${f.name}</b> · ${repTypeName(f.mode)} · ${f.copies||1} copie(s) · ${k} instance(s)`;
+      };
+      const entete=document.createElement('div');p.appendChild(entete);majEntete();
       p.appendChild(repSourceList(f.base,function(b){
         docPushUndo('sources de « '+f.name+' »');
         f.base=b;
-        repGenChildren(f);markDirty();rebuild();renderTree();renderProps();refreshParts();
-      }));
+        repGenChildren(f);markDirty();rebuild();renderTree();refreshParts();
+      },function(){majEntete();}));
       const row=document.createElement('div');row.className='row';
       const typ=document.createElement('select');[['lin','Linéaire'],['circ','Circulaire'],['mir','Symétrie']].forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];typ.appendChild(op);});typ.value=f.mode||'lin';
       const applyCfg=()=>{repGenChildren(f);markDirty();rebuild();renderTree();renderProps();refreshParts();};
