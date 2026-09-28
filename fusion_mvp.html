@@ -244,14 +244,14 @@ input[type=range]{accent-color:var(--primary);width:100%}
    (OCCT ne se charge pas en node) — ne le modifier qu'après validation navigateur ET accord explicite.
 
    ── HISTORIQUE ─────────────────────────────────────────────────────────────
-   Journal des versions (cause, correctif, test) : CHANGELOG.md — 67 entrées,
-   de 2026-09-28b à 2026-09-30y. Elles étaient embarquées ici (50 Ko) et sont
+   Journal des versions (cause, correctif, test) : CHANGELOG.md — 68 entrées,
+   de 2026-09-28b à 2026-09-30z. Elles étaient embarquées ici (50 Ko) et sont
    sorties du livrable le 2026-09-30j. Ce qui précède est la description du projet
    et ses garde-fous, reprise telle quelle.
    ───────────────────────────────────────────────────────────────────────────
  */
 
-const APP_VER='2026-09-30y';
+const APP_VER='2026-09-30z';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 let extPickFace=null; // mode « vers un objet » : clic sur une face pour le sens (Échap = annuler)
@@ -9301,6 +9301,21 @@ function renderFilletPanel(){
    que la face visée, elle, reste la même. */
 let mvMode=null; // null | {hover:faceRef|null}
 
+// Bouton « Déplacer une face » : la coque HTML étant générée et jamais éditée à la main,
+// il est créé ICI, dans les sources, comme le bouton Révolution. Idempotent. Il est placé
+// juste après l'Extrusion ; le regroupement par type (96-bandeau-groupes.js) le rangera
+// ensuite dans le menu « Modifier le solide ».
+(function(){
+  if(document.getElementById('btnMoveFace'))return;
+  const after=document.getElementById('btnExtrude');
+  if(!after||!after.parentNode)return;
+  const b=document.createElement('button');
+  b.id='btnMoveFace';
+  b.textContent='\u{1F4D0} Déplacer une face';
+  b.title='Déplacer une face le long de sa normale sortante : distance positive, la face avance ; négative, elle rentre';
+  after.parentNode.insertBefore(b,after.nextSibling);
+})();
+
 function mvName(f){
   const d=+f.dist||0;
   return `Déplacement de face ${d>0?'+':''}${String(d).replace('.',',')} mm`;
@@ -10561,22 +10576,27 @@ window.addEventListener('pointerdown',e=>{if(!$('ctxMenu').contains(e.target))hi
   ],'\u{1F4C1}');
 
   // Réunion : à la construction des groupes, chaque bouton a DÉJÀ quitté la barre pour
-  // rejoindre son menu (appendChild déplace un nœud). Il ne reste donc qu'à poser les
-  // groupes là où étaient les séparateurs, qui n'ont plus de sens : les fonctions
-  // qu'ils encadraient sont désormais dans des menus.
+  // rejoindre son menu (appendChild déplace un nœud). Il ne reste qu'à insérer les groupes
+  // là où étaient les séparateurs, qui n'ont plus de sens : les fonctions qu'ils encadraient
+  // sont désormais dans des menus.
+  //
+  // ORDRE IMPÉRATIF : on insère ENCORE dans la barre, puis on retire les vieux séparateurs.
+  // L'inverse (retirer d'abord, puis insérer « avant le séparateur ») fait planter le
+  // navigateur : `insertBefore` refuse une référence qui n'est plus enfant de son parent
+  // (NotFoundError). Ce n'est pas un détail : l'exception tuait le script au chargement,
+  // donc 99-init.js ne tournait plus et la vue 3D restait vide — sans modèle, sans arbre.
   const seps=Array.from(bar.children).filter(c=>c.classList&&c.classList.contains('sep'));
-  const hadSep=seps.length>0;
-  const before=seps[0]||inputs[0]||null;
-  seps.forEach(s=>{if(s.parentNode)bar.removeChild(s);});
-  if(before){
-    if(hadSep)bar.insertBefore(el('div','sep'),before);
-    bar.insertBefore(gMod,before);
-    bar.insertBefore(gFile,before);
-    bar.insertBefore(gProj,before);
+  const ref=seps[0]||inputs[0]||null;
+  if(ref){
+    if(seps.length)bar.insertBefore(el('div','sep'),ref);
+    bar.insertBefore(gMod,ref);
+    bar.insertBefore(gFile,ref);
+    bar.insertBefore(gProj,ref);
   }else{
     bar.appendChild(el('div','sep'));
     bar.appendChild(gMod);bar.appendChild(gFile);bar.appendChild(gProj);
   }
+  seps.forEach(s=>{if(s.parentNode===bar)bar.removeChild(s);});
   inputs.forEach(n=>bar.appendChild(n));
 
   // Ouverture : un seul menu à la fois, fermeture au clic dehors et à Échap.

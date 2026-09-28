@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**67 versions**, de `2026-09-28b` à `2026-09-30y` — la plus récente en bas,
+**68 versions**, de `2026-09-28b` à `2026-09-30z` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1468,3 +1468,33 @@ boutons étaient retirés du menu que l'on venait de construire, et le groupe é
 sur l'icône au lieu de l'identifiant (`$('◔')` au lieu de `$('btnFillet')`).
 
 Régression : **19/19 vertes**.
+---
+
+### `2026-09-30z`
+
+**LA 30y AVAIT VIDÉ LA VUE 3D — ET RIEN NE L'AVAIT VU.**
+
+Erreur console : `Uncaught NotFoundError: Failed to execute 'insertBefore' on 'Node':
+the node before which the new node is to be inserted is not a child of this node.`
+au chargement, donc **ni modèle dans la vue 3D, ni arbre des fonctions**.
+
+**La cause, c'est moi.** Le regroupement des séparateurs se faisait dans le mauvais
+sens : on retirait les `.sep` de la barre, puis on insérait les groupes « avant le
+séparateur » — une référence qui n'était plus enfant de son parent. Le navigateur refuse
+(`NotFoundError`), et l'exception tuant le script **au chargement**, plus rien ne
+s'exécutait : ni `buildScene`, ni chargement du document, ni rejeu. Correction : insérer
+ENCORE dans la barre, puis retirer les vieux séparateurs.
+
+**Pourquoi aucun test ne l'avait vu : mon DOM de test était trop gentil.**
+`insertBefore` y acceptait silencieusement une référence invalide — le vrai DOM, lui,
+valide. Le stub a été durci pour lever exactement cette exception, et `test_bandeau`
+rejoue désormais la chaîne complète (`85` crée le bouton, puis `96` le range) au lieu
+d'un seul module isolé. Une suite qui laisse passer l'erreur qu'elle est censée voir
+vaut moins que pas de suite.
+
+**Et au passage, le bouton « Déplacer une face » avait disparu.** Il vivait dans la coque
+HTML que j'avais réécrite puis annulée (30y) : la fonction de la 30x n'était plus
+accessible. Il est désormais créé par `85-deplacement-face.js` lui-même, comme le bouton
+Révolution — donc dans les sources, et non dans une coque générée.
+
+Vérifié : `test_bandeau` conforme, `test_xmove` conforme, **19/19 vertes**.

@@ -88,22 +88,27 @@
   ],'\u{1F4C1}');
 
   // Réunion : à la construction des groupes, chaque bouton a DÉJÀ quitté la barre pour
-  // rejoindre son menu (appendChild déplace un nœud). Il ne reste donc qu'à poser les
-  // groupes là où étaient les séparateurs, qui n'ont plus de sens : les fonctions
-  // qu'ils encadraient sont désormais dans des menus.
+  // rejoindre son menu (appendChild déplace un nœud). Il ne reste qu'à insérer les groupes
+  // là où étaient les séparateurs, qui n'ont plus de sens : les fonctions qu'ils encadraient
+  // sont désormais dans des menus.
+  //
+  // ORDRE IMPÉRATIF : on insère ENCORE dans la barre, puis on retire les vieux séparateurs.
+  // L'inverse (retirer d'abord, puis insérer « avant le séparateur ») fait planter le
+  // navigateur : `insertBefore` refuse une référence qui n'est plus enfant de son parent
+  // (NotFoundError). Ce n'est pas un détail : l'exception tuait le script au chargement,
+  // donc 99-init.js ne tournait plus et la vue 3D restait vide — sans modèle, sans arbre.
   const seps=Array.from(bar.children).filter(c=>c.classList&&c.classList.contains('sep'));
-  const hadSep=seps.length>0;
-  const before=seps[0]||inputs[0]||null;
-  seps.forEach(s=>{if(s.parentNode)bar.removeChild(s);});
-  if(before){
-    if(hadSep)bar.insertBefore(el('div','sep'),before);
-    bar.insertBefore(gMod,before);
-    bar.insertBefore(gFile,before);
-    bar.insertBefore(gProj,before);
+  const ref=seps[0]||inputs[0]||null;
+  if(ref){
+    if(seps.length)bar.insertBefore(el('div','sep'),ref);
+    bar.insertBefore(gMod,ref);
+    bar.insertBefore(gFile,ref);
+    bar.insertBefore(gProj,ref);
   }else{
     bar.appendChild(el('div','sep'));
     bar.appendChild(gMod);bar.appendChild(gFile);bar.appendChild(gProj);
   }
+  seps.forEach(s=>{if(s.parentNode===bar)bar.removeChild(s);});
   inputs.forEach(n=>bar.appendChild(n));
 
   // Ouverture : un seul menu à la fois, fermeture au clic dehors et à Échap.

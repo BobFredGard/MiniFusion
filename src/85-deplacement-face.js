@@ -7,6 +7,21 @@
    que la face visée, elle, reste la même. */
 let mvMode=null; // null | {hover:faceRef|null}
 
+// Bouton « Déplacer une face » : la coque HTML étant générée et jamais éditée à la main,
+// il est créé ICI, dans les sources, comme le bouton Révolution. Idempotent. Il est placé
+// juste après l'Extrusion ; le regroupement par type (96-bandeau-groupes.js) le rangera
+// ensuite dans le menu « Modifier le solide ».
+(function(){
+  if(document.getElementById('btnMoveFace'))return;
+  const after=document.getElementById('btnExtrude');
+  if(!after||!after.parentNode)return;
+  const b=document.createElement('button');
+  b.id='btnMoveFace';
+  b.textContent='\u{1F4D0} Déplacer une face';
+  b.title='Déplacer une face le long de sa normale sortante : distance positive, la face avance ; négative, elle rentre';
+  after.parentNode.insertBefore(b,after.nextSibling);
+})();
+
 function mvName(f){
   const d=+f.dist||0;
   return `Déplacement de face ${d>0?'+':''}${String(d).replace('.',',')} mm`;
