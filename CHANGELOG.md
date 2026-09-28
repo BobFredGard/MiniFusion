@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**61 versions**, de `2026-09-28b` à `2026-09-30s` — la plus récente en bas,
+**62 versions**, de `2026-09-28b` à `2026-09-30t` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1219,3 +1219,39 @@ Trois enseignements de ce test, sur les limitations du harnais :
   ambiguë : on cible le `<span class="nm">`, c'est-à-dire ce que l'utilisateur voit.
 
 Régression : **16/16 suites vertes** (les 15 précédentes + celle-ci).
+---
+
+### `2026-09-30t`
+
+**ÉDITION D'UNE RÉPÉTITION : la même liste à cocher qu'à la création.**
+
+La 30s avait déplacé le choix des sources dans le panneau du mode répétition —
+mais **seulement à la création**. Éditer une répétition déjà construite}
+laissait l'ancien texte : « Fonctions répétées : … » et un bouton
+**➕ Ajouter / retirer par Ctrl+clic** qui n'affichait qu'un message d'aide, sans
+rien de plus. Deux gestes pour la même chose, et le second ne fonctionnait plus.
+
+**Correction** — la liste à cocher est extraite en `repSourceList(base, onChange)`,
+**partagée** par les deux panneaux :
+
+- **création** : cases décochées, on choisit ce qu'on veut répéter ;
+- **édition** : cases **déjà cochées sur les sources actuelles** — on ajoute ou on
+  retire, et la répétition se met à jour aussitôt (instances régénérées, modèle
+  rejoué).
+
+Une seule fonction pour les deux : les panneaux ne peuvent plus diverger, ce qui était
+précisément le défaut. Le changement de source est **annulable** (`docPushUndo`), comme
+toute modification du document depuis la 30r. Les deux boutons d'aide et les deux
+messages de la zone d'état qui parlaient encore de `Ctrl+clic` ont disparu.
+
+Les cases portent la classe `repsrcchk` : le panneau affiche aussi une case « Visible »,
+et les distinguer par le seul `type` rendait le comptage ambigu (constaté en écrivant le
+test — 3 cases pour 2 fonctions).
+
+**Test `test_arbre_selection.cjs`, 23/23** (6 nouvelles assertions) : le panneau
+d'édition propose la même liste, les sources actuelles sont cochées, décocher retire
+la source et régénère les instances (1 → 0), le re-rendu reflète la nouvelle liste, et
+aucun bouton ne mentionne `Ctrl+clic` — ce qui est vérifié en parcourant les
+boutons réellement créés, pas en cherchant une chaîne dans le source.
+
+Régression : **16/16 suites vertes**.
