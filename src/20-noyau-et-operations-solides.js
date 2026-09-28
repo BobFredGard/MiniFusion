@@ -886,6 +886,21 @@ function xAnchorMatch(se,edges){
       if(!best||sc<best.sc)best={i,sc};
     });
     if(best)out.push(best.i);
+    // Repli : aucune verticale ne convient → on accepte la meilleure arête QUELCONQUE passant
+    // par le point d'esquisse. Cas réel : les lignes de 60 mm d'un bord de découpe sont
+    // ancrées sur un point mais sont HORIZONTALES ; le filtre « verticale » les écartait,
+    // la passe 2 saute les arêtes à ancre point, et le congé partait en « arête introuvable »
+    // alors que l'arête était toujours là. Le repli ne s'active qu'à défaut de verticale.
+    if(best)return out;
+    let bestH=null;
+    edges.forEach((e,i)=>{
+      const q=proj(e.mid);
+      const d2=Math.hypot(q[0]-p.x,q[1]-p.y);
+      if(d2>5.0)return;
+      const sc=d2+0.3*dzPref(q[2]);
+      if(!bestH||sc<bestH.sc)bestH={i,sc};
+    });
+    if(bestH)out.push(bestH.i);
     return out;
   }
   const e=(s.entities||[]).find(k=>k.id===a.id);if(!e)return out;

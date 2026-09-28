@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**63 versions**, de `2026-09-28b` à `2026-09-30u` — la plus récente en bas,
+**64 versions**, de `2026-09-28b` à `2026-09-30v` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1304,5 +1304,42 @@ exact et mesure congruences, triangles, erreurs et écart de symétrie — avant
 changements geometry, sur le vrai modèle plutôt que sur un cas synthétique. Il note au
 passage l'arrêt du script sur `camera.up` (limite du stub THREE, sans effet : le document
 est chargé avant le cadrage de vue).
+
+Régression : **16/16 suites vertes**.
+---
+
+### `2026-09-30v`
+
+**LE TRIANGLE DU CONGÉ PARTAIT D'UN FILTRE D'APPARIEMENT, PAS D'UNE PIÈCE MODIFIÉE.**
+Sur le fichier de l'utilisateur, un congé de 8 arêtes en retrouvait 6 — et son clone
+miroir héritait du même 6/8. La 30u concluait « les rims de 60 mm n'existent plus,
+re-sélectionne ». **C'était faux** : les arêtes sont bien là, c'est le code qui
+refusait de les voir.
+
+**La cause.** `xAnchorMatch` filtre les arêtes à ancre de point sur un seul critère :
+« verticale » (`if(Math.max(du,dv)>0.1) return;` — *pas verticale : pas notre coin*).
+C'est le cas des arêtes de chant d'un corps. Mais les deux arêtes perdues sont les
+**lignes de 60 mm** du bord d'une découpe : elles sont **horizontales** et leur point
+d'ancre est le milieu de la ligne. Rejetées à la passe 1, elles ne pouvaient plus être
+reprises ensuite : la passe 2 saute explicitement les arêtes à ancre point
+(`else if(se.anchor && se.anchor.t==='p'){ return; }`), et la passe 3 ne les retrouvait
+que par signature de groupe. Résultat : `arête introuvable` sur une arête qui existait,
+et ⚠ dès la **création** du congé — ce qui est exactement ce que l'utilisateur voyait.
+
+**Le correctif** : quand aucune verticale ne convient, on retient la meilleure arête
+**quelconque** passant à moins de 5 mm du point d'ancre, en conservant le tri par hauteur
+(`dzPref`) et l'unicité de la sélection (une sélection = une arête). Le repli ne sert
+que si la passe verticale n'a rien donné : les ancrages « coin » existants ne changent
+pas de comportement.
+
+**Mesuré sur le fichier réel** : 6/8 → **8/8**, et le clone miroir **8/8** également.
+Le solid exact reste stable : **74 faces, 172 arêtes**, maillage **2 316 triangles** sans
+erreur. Le test rejoue aussi des sous-ensembles (4 lignes, 2 lignes longues, 4 arcs,
+2 verticales) : tous à 0 perdue. **0 triangle, 0 erreur** au total.
+
+Rappel de méthode : le `test_fichier_reel.cjs` a été étendu pour (a) mesurer le maillage
+OCCT séparément de THREE, (b) rejouer la timeline en excluant le congé, (c) rejouer des
+variantes de sélection. C'est la variante (c) qui a désigné le sous-ensemble sain et
+remis en cause le diagnostic de la 30u. Mesurer avant de conclure.
 
 Régression : **16/16 suites vertes**.

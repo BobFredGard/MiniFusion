@@ -243,14 +243,14 @@ input[type=range]{accent-color:var(--primary);width:100%}
    (OCCT ne se charge pas en node) — ne le modifier qu'après validation navigateur ET accord explicite.
 
    ── HISTORIQUE ─────────────────────────────────────────────────────────────
-   Journal des versions (cause, correctif, test) : CHANGELOG.md — 63 entrées,
-   de 2026-09-28b à 2026-09-30u. Elles étaient embarquées ici (50 Ko) et sont
+   Journal des versions (cause, correctif, test) : CHANGELOG.md — 64 entrées,
+   de 2026-09-28b à 2026-09-30v. Elles étaient embarquées ici (50 Ko) et sont
    sorties du livrable le 2026-09-30j. Ce qui précède est la description du projet
    et ses garde-fous, reprise telle quelle.
    ───────────────────────────────────────────────────────────────────────────
  */
 
-const APP_VER='2026-09-30u';
+const APP_VER='2026-09-30v';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 let extPickFace=null; // mode « vers un objet » : clic sur une face pour le sens (Échap = annuler)
@@ -2100,6 +2100,21 @@ function xAnchorMatch(se,edges){
       if(!best||sc<best.sc)best={i,sc};
     });
     if(best)out.push(best.i);
+    // Repli : aucune verticale ne convient → on accepte la meilleure arête QUELCONQUE passant
+    // par le point d'esquisse. Cas réel : les lignes de 60 mm d'un bord de découpe sont
+    // ancrées sur un point mais sont HORIZONTALES ; le filtre « verticale » les écartait,
+    // la passe 2 saute les arêtes à ancre point, et le congé partait en « arête introuvable »
+    // alors que l'arête était toujours là. Le repli ne s'active qu'à défaut de verticale.
+    if(best)return out;
+    let bestH=null;
+    edges.forEach((e,i)=>{
+      const q=proj(e.mid);
+      const d2=Math.hypot(q[0]-p.x,q[1]-p.y);
+      if(d2>5.0)return;
+      const sc=d2+0.3*dzPref(q[2]);
+      if(!bestH||sc<bestH.sc)bestH={i,sc};
+    });
+    if(bestH)out.push(bestH.i);
     return out;
   }
   const e=(s.entities||[]).find(k=>k.id===a.id);if(!e)return out;
