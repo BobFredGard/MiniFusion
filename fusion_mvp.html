@@ -244,14 +244,14 @@ input[type=range]{accent-color:var(--primary);width:100%}
    (OCCT ne se charge pas en node) — ne le modifier qu'après validation navigateur ET accord explicite.
 
    ── HISTORIQUE ─────────────────────────────────────────────────────────────
-   Journal des versions (cause, correctif, test) : CHANGELOG.md — 68 entrées,
-   de 2026-09-28b à 2026-09-30z. Elles étaient embarquées ici (50 Ko) et sont
+   Journal des versions (cause, correctif, test) : CHANGELOG.md — 69 entrées,
+   de 2026-09-28b à 2026-09-31a. Elles étaient embarquées ici (50 Ko) et sont
    sorties du livrable le 2026-09-30j. Ce qui précède est la description du projet
    et ses garde-fous, reprise telle quelle.
    ───────────────────────────────────────────────────────────────────────────
  */
 
-const APP_VER='2026-09-30z';
+const APP_VER='2026-09-31a';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 let extPickFace=null; // mode « vers un objet » : clic sur une face pour le sens (Échap = annuler)
@@ -588,7 +588,7 @@ function refreshParts(){
   // La liste « Pièces » a été retirée de l'interface : les corps se pilotent depuis
   // l'arborescence (œil sur la fonction) ou par le clic droit dans la vue 3D.
   const vis=bodies.filter(b=>b.visible);
-  let tris=0;scene.traverse(o=>{if(o.isMesh&&o.geometry&&o.visible)tris+=(o.geometry.index?o.geometry.index.count:o.geometry.attributes.position.count)/3;});
+  let tris=0;scene.traverse(o=>{if(o.isMesh&&o.visible&&o.geometry&&o.geometry.attributes&&o.geometry.attributes.position)tris+=(o.geometry.index?o.geometry.index.count:o.geometry.attributes.position.count)/3;});
   log(`Corps: ${bodies.length} (${vis.length} visibles) · Tris≈${Math.round(tris).toLocaleString('fr')} · ${dirty?'● non sauvé':'✓ sauvé'}`);
 }
 

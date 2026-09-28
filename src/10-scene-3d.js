@@ -212,7 +212,7 @@ function refreshParts(){
   // La liste « Pièces » a été retirée de l'interface : les corps se pilotent depuis
   // l'arborescence (œil sur la fonction) ou par le clic droit dans la vue 3D.
   const vis=bodies.filter(b=>b.visible);
-  let tris=0;scene.traverse(o=>{if(o.isMesh&&o.geometry&&o.visible)tris+=(o.geometry.index?o.geometry.index.count:o.geometry.attributes.position.count)/3;});
+  let tris=0;scene.traverse(o=>{if(o.isMesh&&o.visible&&o.geometry&&o.geometry.attributes&&o.geometry.attributes.position)tris+=(o.geometry.index?o.geometry.index.count:o.geometry.attributes.position.count)/3;});
   log(`Corps: ${bodies.length} (${vis.length} visibles) · Tris≈${Math.round(tris).toLocaleString('fr')} · ${dirty?'● non sauvé':'✓ sauvé'}`);
 }
 

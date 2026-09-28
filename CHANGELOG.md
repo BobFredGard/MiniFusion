@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**68 versions**, de `2026-09-28b` à `2026-09-30z` — la plus récente en bas,
+**69 versions**, de `2026-09-28b` à `2026-09-31a` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1498,3 +1498,49 @@ accessible. Il est désormais créé par `85-deplacement-face.js` lui-même, com
 Révolution — donc dans les sources, et non dans une coque générée.
 
 Vérifié : `test_bandeau` conforme, `test_xmove` conforme, **19/19 vertes**.
+---
+
+### `2026-09-31a`
+
+**LE HARNAIS DE TEST NE POUVAIT PAS VOIR L'AFFICHAGE — ET C'EST POUR ÇA QUE DEUX
+RÉGRESSIONS ONT PASSÉ.**
+
+Le harnais exécutait l'application avec un DOM et un THREE de mensonge. Trois mensonges,
+chacun capable de masquer une régression :
+
+1. `document.querySelector()` renvoyait `null` et `classList.contains()` renvoyait
+   toujours `false` — **le code d'interface ne s'exécutait donc jamais**. Le bandeau
+   déroulant de la 30y, qui plantait au chargement, n'avait pas pu être vu ;
+2. `insertBefore()` n'insérait rien et ne validait pas sa référence. Le vrai DOM lève une
+   `NotFoundError` ; ici, rien. C'est exactement le bug de la 30y, invisible ;
+3. `scene.add()` ne faisait rien et `attributes.position.count` était un `Proxy`. Dans
+   `occRebuild`, `tris=(g.attributes.position.count/3)|0` valait donc **0**, et **aucun corps
+   n'était jamais créé**. Une régression « la vue 3D est vide » était structurellement
+   invisible.
+
+Un `Proxy` répond « truthy » à n'importe quelle propriété : les maillages des classes
+non listées passaient le test `isMesh` avec une géométrie qui n'avait pas d'attributs. Le
+nouveau harnais sert de vraies classes pour les familles `*Geometry`, `*Material`,
+`*Helper` et `*Light`, et donne à toute géométrie un attribut `position` (vide mais réel) —
+comme three le fait toujours.
+
+**Ce que le harnais sait désormais mesurer**, et que rien ne mesurait avant : le nombre de
+corps réellement affichés, leurs triangles, et le contenu effectif de la scène 3D. Sur le
+fichier réel de l'utilisateur : **1 corps, « Solide exact OCCT (1➕ 4➖ 48⤢ · 6 732 tris) »,
+6 732 triangles dans la scène**, moteur `exact OCCT`.
+
+**Et un vrai défaut de l'application, trouvé par là** : le décompte des triangles de la
+ligne d'état (`refreshParts`) lisait `geometry.attributes.position.count` sans vérifier que
+l'attribut existe — à la différence de sa jumelle dans `95-toolbar.js` qui, elle, se
+protège. Un seul maillage sans positions suffisait à faire tomber tout le rafraîchissement,
+donc l'affichage. Garde ajoutée.
+
+**Fragilité repérée, NON corrigée** (signalée, car c'est un choix qui appartient à
+l'utilisateur) : au chargement, `99-init.js` recharge le document **sans reconstruction**
+puis, si le cache est invalide, appelle `rebuild()` — et `rebuildInner` ne cadre jamais la
+vue. Le modèle est donc construit sans que la caméra soit ajustée dessus ; selon la
+position de la pièce, elle peut rester hors champ. Ajouter un `showAll()` au démarrage
+corrigerait cela, mais changerait le cadrage à chaque rechargement : décision laissée à
+l'utilisateur, pas prise d'office.
+
+Régression : **20/20 vertes** (nouveau `test_affichage.cjs` inclus).
