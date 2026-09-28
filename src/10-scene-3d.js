@@ -1,5 +1,5 @@
 /* ---------- scène façon viewer ---------- */
-let mirrorOn=true,mirrorRT=null,mirrorCam=null,mirrorTexMat=null,mirrorU=null,floorMesh=null,axHelper=null;
+let mirrorOn=true,mirrorRT=null,mirrorCam=null,mirrorTexMat=null,mirrorU=null,floorMesh=null,axHelper=null,mirrorDirty=true;
 let zoomInv=false;
 try{const _zi=localStorage.getItem('minifusion_zoominv');if(_zi==='on')zoomInv=true;}catch(e){}
 try{const _mo=localStorage.getItem('minifusion_mirror');if(_mo==='off')mirrorOn=false;}catch(e){}
@@ -37,7 +37,7 @@ function buildScene(){
     textureMatrix:{value:mirrorTexMat},uCenter:{value:new THREE.Vector3()},uRadius:{value:1}};
   const fm=new THREE.ShaderMaterial({uniforms:mirrorU,
     vertexShader:'uniform mat4 textureMatrix; varying vec4 vUv; varying vec3 vWorld;\nvoid main(){ vec4 wp = modelMatrix * vec4(position, 1.0); vWorld = wp.xyz; vUv = textureMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader:'uniform vec3 color; uniform sampler2D tDiffuse; uniform vec3 uCenter; uniform float uRadius; varying vec4 vUv; varying vec3 vWorld;\nvoid main(){ vec2 uv = vUv.xy / max(vUv.w, 1e-4); vec3 refl = texture2D(tDiffuse, uv).rgb; float d = distance(vWorld.xy, uCenter.xy); float f = exp(-pow(d / max(uRadius * 1.15, 1e-3), 2.0) * 2.0) * 0.85; gl_FragColor = vec4(mix(color, refl * 0.62, clamp(f, 0.0, 0.85)), 1.0); }'});
+    fragmentShader:'uniform vec3 color; uniform sampler2D tDiffuse; uniform vec3 uCenter; uniform float uRadius; varying vec4 vUv; varying vec3 vWorld;\nvoid main(){ if(vUv.w<=1e-4){ gl_FragColor=vec4(color,1.0); return; } vec2 uv = vUv.xy / vUv.w; vec3 refl = texture2D(tDiffuse, uv).rgb; float d = distance(vWorld.xy, uCenter.xy); float f = exp(-pow(d / max(uRadius * 1.15, 1e-3), 2.0) * 2.0) * 0.85; gl_FragColor = vec4(mix(color, refl * 0.62, clamp(f, 0.0, 0.85)), 1.0); }'});
   floorMesh=new THREE.Mesh(new THREE.CircleGeometry(400,48),fm);
   floorMesh.name='floor';floorMesh.position.z=-0.5;scene.add(floorMesh);
   buildOriginPlanes();
@@ -53,6 +53,14 @@ function buildScene(){
 function fit(){
   const w=$('vpwrap'); const W=Math.max(320,w.clientWidth),H=Math.max(240,w.clientHeight);
   camera.aspect=W/H; camera.updateProjectionMatrix(); renderer.setSize(W,H);
+  // La cible de reflet suit l'aspect du canvas (1024 de large max) : c'est la SEULE
+  // combinaison cohérente avec la projection de la caméra miroir. Cible carrée + projection
+  // carrée = les bords de l'écran sortent de la texture, et le ClampToEdge de three y étire
+  // les pixels du bord en traits déformés.
+  if(mirrorRT){
+    const rw=Math.min(1024,W),rh=Math.max(2,Math.round(rw*H/Math.max(W,1)));
+    if(mirrorRT.width!==rw||mirrorRT.height!==rh){mirrorRT.setSize(rw,rh);mirrorDirty=true;}
+  }
 }
 const _mn=new THREE.Vector3(0,0,1),_mrwp=new THREE.Vector3(),_mcwp=new THREE.Vector3(),_mview=new THREE.Vector3();
 const _mrot=new THREE.Matrix4(),_mlook=new THREE.Vector3(),_mtgt=new THREE.Vector3(),_mcu=new THREE.Vector3();
@@ -73,9 +81,12 @@ function updateMirror(){
   mirrorCam.position.copy(_mview);
   mirrorCam.up.set(0,0,1).applyMatrix4(_mrot).reflect(_mn);
   mirrorCam.lookAt(_mtgt);
-  mirrorCam.far=camera.far;
-  mirrorCam.updateMatrixWorld();
+  // La cible de rendu a l'aspect du canvas (cf. fit()) : on recopie la projection de la
+  // caméra, seule combinaison qui garde les UV dans [0,1] sur toute la surface visible.
+  mirrorCam.near=camera.near;mirrorCam.far=camera.far;
   mirrorCam.projectionMatrix.copy(camera.projectionMatrix);
+  mirrorCam.updateMatrixWorld();
+  floorMesh.updateMatrixWorld(); // le sol vient d'être déplacé : matrixWorld périmée d'une image
   mirrorTexMat.set(0.5,0,0,0.5, 0,0.5,0,0.5, 0,0,0.5,0.5, 0,0,0,1);
   mirrorTexMat.multiply(mirrorCam.projectionMatrix);
   mirrorTexMat.multiply(mirrorCam.matrixWorldInverse);
@@ -85,6 +96,7 @@ function updateMirror(){
 function refreshMirror(){
   // Sol sous les corps visibles + halo centré (comme le viewer).
   if(!floorMesh)return;
+  mirrorDirty=true; // la cible de reflet est à refaire (position du sol, halo, visibilité)
   floorMesh.visible=mirrorOn;
   if(!mirrorOn)return;
   const box=new THREE.Box3();let n=0;
@@ -95,13 +107,37 @@ function refreshMirror(){
   mirrorU.uCenter.value.copy(_mcu);
   mirrorU.uRadius.value=Math.max(box.getSize(new THREE.Vector3()).length()/2,1);
 }
+const _msig={x:NaN,y:NaN,z:NaN,qx:NaN,qy:NaN,qz:NaN,qw:NaN,fov:NaN,aspect:NaN,zoom:NaN};
+function mirrorViewMoved(){
+  // La vue a-t-elle bougé (orbite, zoom, recadrage, resize) ? Le reflet n'est recalculé que
+  // dans ce cas — avant, la scène entière était re-rendue dans la cible À CHAQUE image
+  // (double coût GPU en continu, même à l'arrêt). NaN au premier appel → un rendu est forcé.
+  // (Un rendu PRINCIPAL « à la demande » a été essayé puis écarté : le survol des faces, la
+  // sélection et le glissement des points de contrôle changent l'image sans toucher à la
+  // caméra — il aurait fallu invalider partout, donc risqué de figer l'affichage.)
+  const q=camera.quaternion;
+  const moved=_msig.x!==camera.position.x||_msig.y!==camera.position.y||_msig.z!==camera.position.z
+    ||_msig.qx!==q.x||_msig.qy!==q.y||_msig.qz!==q.z||_msig.qw!==q.w
+    ||_msig.fov!==camera.fov||_msig.aspect!==camera.aspect||_msig.zoom!==camera.zoom;
+  _msig.x=camera.position.x;_msig.y=camera.position.y;_msig.z=camera.position.z;
+  _msig.qx=q.x;_msig.qy=q.y;_msig.qz=q.z;_msig.qw=q.w;
+  _msig.fov=camera.fov;_msig.aspect=camera.aspect;_msig.zoom=camera.zoom;
+  if(moved)mirrorDirty=true; // la vue a changé : le reflet devient obsolète
+  return moved;
+}
 function animate(){
-  requestAnimationFrame(animate);controls.update();updateLabels();
-  if(mirrorOn&&floorMesh&&updateMirror()){
-    floorMesh.visible=false;
-    renderer.setRenderTarget(mirrorRT);renderer.clear();renderer.render(scene,mirrorCam);
-    renderer.setRenderTarget(null);
-    floorMesh.visible=true;
+  requestAnimationFrame(animate);
+  controls.update();updateLabels();
+  if(mirrorOn&&floorMesh&&mirrorCam){
+    const vu=updateMirror();
+    mirrorViewMoved();
+    if(vu&&mirrorDirty){
+      floorMesh.visible=false;
+      renderer.setRenderTarget(mirrorRT);renderer.clear();renderer.render(scene,mirrorCam);
+      renderer.setRenderTarget(null);
+      floorMesh.visible=true;
+      mirrorDirty=false;
+    }
   }
   renderer.render(scene,camera);
 }
@@ -383,6 +419,7 @@ function resolveSketchHost(sk){
   const hs=doc.sketches.find(s=>s.id===hf.sketchId);if(!hs)return false;
   const B=sketchBasis(hs);
   const spH=extrudeSpan(hf);
+  if(spH.unres)return false; // étendue « à travers tout » non mesurable (aucun solide) : origine inchangée
   const nx=B.n.x,ny=B.n.y,nz=B.n.z;
   const ox=B.o.x,oy=B.o.y,oz=B.o.z;
   const ux=B.u.x,uy=B.u.y,uz=B.u.z,vx=B.v.x,vy=B.v.y,vz=B.v.z;

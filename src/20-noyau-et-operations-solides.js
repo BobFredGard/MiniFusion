@@ -200,7 +200,11 @@ function extrudeSpan(f){
       if(sk){try{const B=sketchBasis(sk);r=throughPartRange(B);}catch(e){}}
     }
     if(r)return{lo:r.lo,hi:r.hi,far:1};
-    const h=THROUGH/2;return{lo:-h,hi:h,far:1};
+    const h=THROUGH/2;
+    // unres : aucun solide disponible pour mesurer l'étendue réelle — les appelants qui
+    // ANCRENT une géométrie (hôtes de faces) doivent alors NE PAS bouger (sinon l'origine
+    // part à ±5000mm et le rejeu suivant la « répare » → rejeu imbriqué inutile).
+    return{lo:-h,hi:h,far:1,unres:true};
   }
   const raw=(f&&f.distance!==undefined&&f.distance!==null&&isFinite(+f.distance))?+f.distance:10;
   if(f&&f.mid){const h=Math.abs(raw)/2;return{lo:-h,hi:h,far:raw<0?-1:1};}
@@ -996,6 +1000,7 @@ function occApplyXFillets(base,xfils){
     if(nd){xf.edges=uniq;warns.push(`${xf.name||lab} : ${nd} doublon(s) fusionné(s)`);}
   });
   const near=(a,b,tol)=>Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2])<tol;
+  const xNum=v=>String(+(+v).toFixed(2)).replace('.',','); // rayon/longueur : 16 et non 16,0
   const jobs=[],matchedSe=new Set();
   const take=(bi,r,se)=>{
     if(se){matchedSe.add(se);if(!se.pos0)se.pos0=se.pos.slice(); // POSITION D'ORIGINE figée : c'est elle la référence durable
@@ -1011,8 +1016,41 @@ function occApplyXFillets(base,xfils){
       if(!se.anchor){try{const a0=xAnchorFor(se.pos);if(a0)se.anchor=a0;}catch(e){}}
       // Passe 1 : ancre esquisse (test géométrique en 2D : suit points/lignes/cercles
       // déplacés + arêtes scindées en hauteur par les découpes).
+      // La POSITION D'ORIGINE (pos0 = point cliqué) est la référence la plus fiable : une
+      // sélection d'arête se fait d'un clic, donc à 0,75 mm près. On s'en sert pour RECADRER
+      // les candidats de l'ancre : sans ce contrôle, une ancre d'esquisse qui dérive (mauvaise
+      // entité, sketch rejoué sur un autre corps) fait Applying un congé sur une arête à
+      // 15+ mm du clic, en silence (constaté : arête de 20 mm sélectionnée → arrondi tenté
+      // sur une arête de 28,9 mm à 17,6 mm, le R demandé refusé à tort). On garde
+      // l'ANCRAGE quand même (une arête peut légitimement s'être déplacée avec son sketch :
+      // c'est tout l'intérêt de l'ancre), mais on refuse un candidat d'ancre qui est à plus de
+      // 2 mm du clic ET dont la longueur s'écarte — sauf si c'est le SEUL candidat.
       const anchored=xAnchorMatch(se,edges);
-      if(anchored.length){anchored.forEach(bi=>take(bi,se.r,se));return;}
+      if(anchored.length){
+        const ref=se.pos0&&se.pos0.length===3?se.pos0:se.pos;
+        const dRef=i=>{const e=edges[i];return Math.hypot(e.mid[0]-ref[0],e.mid[1]-ref[1],e.mid[2]-ref[2]);};
+        let best=-1,bd=1e9;
+        anchored.forEach(i=>{const d=dRef(i);if(d<bd){bd=d;best=i;}});
+        // Ancre « saine » : le meilleur candidat est au droit du clic.
+        if(bd<=2.0){anchored.forEach(i=>take(i,se.r,se));return;}
+        // Ancre « divergente » : l'arête est-elle encore là où l'utilisateur a cliqué ?
+        // (On ne se fie PAS à se.len : ce champ est réécrit à chaque réappariement, il a donc
+        //  pu hériter de la longueur d'une mauvaise arête — le critère fiable est la distance
+        //  au clic, une sélection d'arête se fait à 0,75 mm près.)
+        const born=[];
+        edges.forEach((e,i)=>{if(dRef(i)<=2.0)born.push(i);});
+        if(born.length){ // l'arête sélectionnée existe toujours → l'ancre a divergé, on l'ignore
+          born.sort((a,b)=>dRef(a)-dRef(b));
+          take(born[0],se.r,se);
+          // Une seule ligne par divergence (le rejeu passe à chaque édition : inutile de
+          // répéter le même avertissement 20 fois dans le journal).
+          const clef=+bd.toFixed(1);
+          if(se._div!==clef){se._div=clef;
+            warns.push(`congé ${dp}${xNum(se.r)} : ancre d'esquisse divergente ignorée (pointait ${xNum(bd)} mm du clic) — arête sélectionnée rétablie`);}
+          return;
+        }
+        anchored.forEach(i=>take(i,se.r,se));return;
+      }
       // Passe 2 : MEILLEUR candidat unique (une sélection = UNE arête ; hit multiples →
       // positions réécrites en doublons + arêtes étrangères dans le lot d'arrondi).
       // Verticale : MÊME coin en XY (tol 3 mm — ignore Z/longueur : suit épaisseur).
@@ -1081,7 +1119,28 @@ function occApplyXFillets(base,xfils){
   if(!jobs.length)return{shape:base,warnings:warns};
   const js=jobs.map(j=>({src:edges[j.bi].src,r:j.r,mid:edges[j.bi].mid.slice()}));
   const s=occFilletRun(base,js,warns,chamfer);
-  if(!s){warns.push(lab+' impossible sur '+js.length+' arête(s) — '+(chamfer?'distance trop grande':'rayon trop grand')+' ou arêtes trop courtes ?');return{shape:base,warnings:warns};}
+  if(!s){
+    // ÉCHEC : l'appli ne peut pas appliquer la fonction, mais « rouge + refus muet » est le
+    // pire des messages. On cherche le plus grand rayon qui MARCHE (échelle descendante, chemin
+    // d'échec rare) pour proposer une correction VÉRIFIÉE au lieu d'un « rayon trop grand ? ».
+    const rMax=Math.min.apply(null,js.map(j=>j.r));
+    const lMin=Math.min.apply(null,jobs.map(j=>edges[j.bi].len||0));
+    const dl=lMin>0?` sur une arête de ${xNum(lMin)} mm`:'';
+    let ok=null;
+    for(const k of [0.7,0.5,0.4,0.3,0.2]){
+      const r2=Math.max(0.5,+(rMax*k).toFixed(2));
+      const w2=[];
+      const t=occFilletRun(occShapeCopy(base),js.map(j=>({src:j.src,r:r2,mid:j.mid.slice()})),w2,chamfer);
+      if(t){ok=r2;try{t.delete();}catch(e){}break;}
+    }
+    const why=chamfer?'distance trop grande':'rayon trop grand';
+    warns.push(`${lab} ${dp}${xNum(rMax)} impossible sur ${js.length} arête(s)${dl} — ${why} ou faces déjà consommées par un autre congé ?`+(ok?` ESSAYEZ ${dp}${xNum(ok)} (vérifié)`:' — arête trop courte, aucun rayon testé ne passe'));
+    const conseil=ok?`${dp}${xNum(rMax)} impossible${dl} — essayez ${dp}${xNum(ok)} (vérifié)`
+      :`${dp}${xNum(rMax)} impossible${dl} — arête trop courte ou faces déjà consommées par un autre congé`;
+    xfils.forEach(xf=>{xf._err=conseil;});
+    return{shape:base,warnings:warns};
+  }
+  xfils.forEach(xf=>{delete xf._err;}); // plus d'erreur : le rayon courant passe
   try{base.delete();}catch(e){}
   return{shape:s,warnings:warns};
 }
@@ -1107,13 +1166,20 @@ function occCleanup(FR,keepShape){
    Les cles sont des signatures de prefixe cumulatives : un seul octet de difference
    invalide tout ce qui suit, donc aucune geometrie perimee ne peut etre reutilisee. */
 let occCk=[]; // [{key,shape}] du plus ancien au plus recent
-const OCC_CK_MAX=8;
+let occCkWarn={}; // avertissements de congé par point de contrôle (mêmes entrées = mêmes messages)
+// Limite adaptative : 8 points de contrôle sur une timeline de 13 fonctions évacuaient les
+// prÉfixes (les projections upto<13 ne trouvaient JAMAIS leur point de contrôle → rejeu
+// complet 4 fois par reconstruction). On couvre toute la timeline, bornée pour la mémoire.
+function occCkMax(){
+  const n=(((typeof doc!=='undefined')&&doc&&doc.features)?doc.features.length:0)+2;
+  return n<8?8:(n>48?48:n);
+}
 function occShapeCopy(sh){
   try{return new occt.BRepBuilderAPI_Copy_2(sh,true,true).Shape();}catch(e){return null;}
 }
 function occCkClear(){
   for(const c of occCk){try{c.shape.delete();}catch(e){}}
-  occCk=[];
+  occCk=[];occCkWarn={};
 }
 function skSig(sk){
   // Signature numerique d'une esquisse : base (position + axes), points, entites,
@@ -1123,9 +1189,14 @@ function skSig(sk){
   mix(sk.seq);
   const u=sk.axU||[1,0,0],v=sk.axV||[0,1,0],w=sk.axN||[0,0,1],o=sk.origin||[0,0,0];
   for(let i=0;i<3;i++){mix((+u[i]*1e6)|0);mix((+v[i]*1e6)|0);mix((+w[i]*1e6)|0);mix((+o[i]*1e6)|0);}
-  const E=sk.entities||[],C=sk.constraints||[],D=sk.dims||[],P=sk.points||{};
+  // Seul le PROFIL compte : construction et références 3D ne participent jamais au solide
+  // (extrusion, ancrages) — les projeter ne doit donc pas invalider les points de contrôle.
+  const C=sk.constraints||[],D=sk.dims||[],P=sk.points||{};
+  const E=(sk.entities||[]).filter(e=>!e.construction&&!e.ref);
+  const used=new Set();
+  for(const e of E){used.add(e.p1);used.add(e.p2);used.add(e.pc);used.add(e.pa);used.add(e.pb);used.add(e.p);}
   mix(E.length);mix(C.length);mix(D.length);
-  const K=Object.keys(P);mix(K.length);
+  const K=Object.keys(P).filter(k=>used.has(k));mix(K.length);
   for(const k of K){
     for(let i=0;i<k.length;i++)mix(k.charCodeAt(i));
     const p=P[k]||{};mix((+p.x*1000)|0);mix((+p.y*1000)|0);
@@ -1150,7 +1221,14 @@ function featSig(f){
       s+=';fill'+(+x.radius||0)+(x.rimTop?1:0)+(x.rimBot?1:0)+JSON.stringify(x.rims||null);
     });
   }else if(f.type==='xfillet'){
-    s+='|'+(f.chamfer?1:0)+'|'+((f.edges||[]).map(e=>(e.pos||[]).map(x=>(+x).toFixed(3)).join(',')).join(';'));
+    // Le RAYON et l'ANCRE font partie de la géométrie : sans eux, changer le rayon d'un
+    // congé laissait la signature inchangée et le point de contrôle réappliquait l'ancien
+    // solide (le congé nouveau n'apparaissait pas). `pos`/`len` sont rafraîchis par
+    // occApplyXFillets à chaque appariage réussi, donc ils décrivent l'arête réellement
+    // résolue ; l'ancre décrit le ciblage (même position, arête voisine possible).
+    s+='|'+(f.chamfer?1:0)+'|'+((f.edges||[]).map(e=>
+      (+e.r||0)+'/'+(+e.len||0)+'@'+(e.pos||[]).map(x=>(+x).toFixed(3)).join(',')
+      +((e.anchor)?('#'+e.anchor.t+(e.anchor.sk||'')+(e.anchor.id||'')+'z'+(e.anchor.z||0)+'s'+(e.anchor.side||0)+'d'+(e.anchor.dist||0)+'f'+(e.anchor.far||0)):'')).join(';'));
   }else if(f.type==='repeat'){
     s+='|'+(f.base||[]).join(',')+'|'+(+f.copies||1)+'|'+(+f.dist||0)+'|'+(+f.angle||0)+'|'+(f.axis||f.plane||'');
   }
@@ -1162,10 +1240,17 @@ function occCkGet(key){
 }
 function occCkPut(key,shape){
   if(!shape)return;
-  const last=occCk[occCk.length-1];
-  if(last&&last.key===key)return; // deja memorise (evite les chaines de copies)
+  const i=occCk.findIndex(c=>c.key===key);
+  if(i>=0){
+    // Déjà mémorisé : on GARDE l'existant, on remonte sa fraîcheur (fin de file = à évacuer
+    // en dernier) et on jette la copie surnuméraire. (Ne comparer qu'à la dernière clé
+    // laissait les doublons gonfler la file et évacuer les vrais points de contrôle.)
+    const old=occCk[i];occCk.splice(i,1);occCk.push(old);
+    try{shape.delete();}catch(e){}
+    return;
+  }
   occCk.push({key,shape});
-  while(occCk.length>OCC_CK_MAX){const old=occCk.shift();try{old.shape.delete();}catch(e){}}
+  while(occCk.length>occCkMax()){const old=occCk.shift();try{old.shape.delete();}catch(e){}}
 }
 function occFinalShape(upto){
   // Rejeu STRICT dans l'ordre timeline (antériorité) : extrudes add/cut ET congés exacts
@@ -1174,7 +1259,9 @@ function occFinalShape(upto){
   // upto = indice exclusif (rejeu partiel pour références d'esquisse) ; null = tout.
   // Retourne {shape, ghostShapes, msgs, bin, itemShapes, items} — l'appelant nettoie sauf shape conservée.
   const bin=[],itemShapes=[];let result=null;const msgs=[],ghostShapes=[];
-  let ckKey=(upto==null?'ALL':'UP'+upto)+'|'+(occSkipFeat||'')+'|'; // signature cumulee du prefixe
+  let ckKey=(occSkipFeat||'')+'|'; // signature cumulée du préfixe — SANS marqueur upto :
+  // ALL et UPn parcourent les MÊMES préfixes cumulatifs ; un marqueur dans la clé privait
+  // les projections (upto<n) de tous les points de contrôle posés par le rejeu complet.
   const items=[]; // extrudes réussies, dans l'ordre (affichage nA/nC)
   const feats=doc.features.filter(f=>f.visible!==false);
   (upto==null?feats:feats.slice(0,upto)).forEach(f=>{
@@ -1182,8 +1269,18 @@ function occFinalShape(upto){
     ckKey+=featSig(f)+';';
     if(f.type==='xfillet'){
       if(!result){msgs.push(`${f.name} : aucun volume à congédier — ignoré`);return;}
+      // Préfixe inchangé : ce congé exact est déjà appliqué dans la copie mémorisée —
+      // solide ET avertissements réutilisés sans rejouer l'opération (6 congés ≈ 30 ms/pièce).
+      const ckX=occCkGet(ckKey);
+      const cpX=ckX?occShapeCopy(ckX):null;
+      if(cpX){
+        try{result.delete();}catch(e){}result=cpX;
+        const w=occCkWarn[ckKey];if(w&&w.length)msgs.push(...w.map(x=>`${f.name} : ${x}`));
+        return;
+      }
       const r=occApplyXFillets(result,[f]);
       result=r.shape;msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
+      if(r.warnings.length)occCkWarn[ckKey]=r.warnings.slice();else delete occCkWarn[ckKey];
       occCkPut(ckKey,occShapeCopy(result));
       return;
     }
@@ -1321,9 +1418,21 @@ function occRebuild(){
 function projRefreshRerun(pass){
   // Projections associatives : si une esquisse a bougé après rejeu, le solide est rejoué
   // aussitôt (garde : une seule passe imbriquée — jamais de récursion infinie).
+  // AVANT de rejouer : les projections ne déplacent que des entités de CONSTRUCTION (hors
+  // profil) — on compare donc les entrées du solide. Signature identique = le second rejeu
+  // reconstruirait exactement le même volume : c'était ~la moitié du temps de rebuild.
+  const sigOf=()=>{let s='';const F=(doc&&doc.features)||[];for(let i=0;i<F.length;i++){if(F[i].visible!==false)s+=featSig(F[i])+';';}return s;};
+  const s0=sigOf();
   let ch=false;
   try{ch=updateAllProjections();}catch(e){}
   if(!ch)return false;
+  if(sigOf()===s0){
+    // Projeté recalé sans effet sur le profil : on ne rejoue pas, mais on persiste les
+    // nouvelles coordonnées et on redessine l'esquisse ouverte (tracé 2D non rafraîchi).
+    try{autosave();}catch(e){}
+    try{if(typeof skEdit!=='undefined'&&skEdit)drawSketch2D();}catch(e){}
+    return false;
+  }
   if(!(pass>=1)){ try{rebuild(pass+1);}catch(e){} return true; }
   try{autosave();}catch(e){} // coordonnées déjà écrites : au moins les persister
   return false;

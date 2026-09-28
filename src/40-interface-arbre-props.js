@@ -66,7 +66,7 @@ function renderTree(){
   const featIcon=f=>{
     if(f.type==='extrude')return (f.op||'add')==='cut'?'▾':'▤';
     if(f.type==='revolve')return (f.op||'add')==='cut'?'◔':'◍'; // révolution / gorge
-    if(f.type==='xfillet')return xIcon(xKindOf(f))+(f._m&&f._m.m<f._m.t?'⚠':'');
+    if(f.type==='xfillet')return xIcon(xKindOf(f))+((f._m&&f._m.m<f._m.t)||f._err?'⚠':'');
     if(f.type==='fillet')return xIcon(xKindOf(f));
     if(f.type==='repeat')return '🔁';
     return '◧';
@@ -454,6 +454,9 @@ p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.fea
     }
     if(f.type==='xfillet'){
       if(f._m)p.appendChild(info(f._m.m>=f._m.t?`✅ ${f._m.m}/${f._m.t} arêtes retrouvées`:`⚠ ${f._m.m}/${f._m.t} arêtes retrouvées — cliquez « Modifier la sélection » (✏️)`));
+      // Échec géométrique (pas d'arête introuvable, mais le rayon refusé par OCCT) : on dit
+      // POURQUOI et QUOI faire, sinon la fonction est simplement « en rouge » sans explication.
+      if(f._err){const e=document.createElement('div');e.style.cssText='font-size:.83rem;color:#ff6b60;background:rgba(255,69,58,.09);border:1px solid rgba(255,69,58,.3);border-radius:6px;padding:5px 7px;margin-top:6px';e.textContent='⚠ '+f._err;p.appendChild(e);}
       const lst=document.createElement('div');lst.className='col';lst.style.marginTop='6px';lst.style.maxHeight='180px';lst.style.overflow='auto';
       (f.edges||[]).forEach((s,i)=>{
         const r=document.createElement('div');r.className='tnode';

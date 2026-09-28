@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**55 versions**, de `2026-09-28b` à `2026-09-30m` — la plus récente en bas,
+**57 versions**, de `2026-09-28b` à `2026-09-30o` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -920,3 +920,114 @@ d'où le calcul analytique du nombre de segments pour les cercles, qui donne en 
 
 Au passage, `README.md` ne listait pas `75-revolve.js` dans « Travailler sur le code » :
 corrigé.
+
+### `2026-09-30n`
+
+temps de régénération divisé (« rafraîchissement dur » navigateur : **5305 → 1153 ms**,
+Ctrl+F5 ; banc noyau réel, `Pièce 3.json` 14 fonctions, même pièce avant/après :
+**4277 → 1000 ms au froid, 3931 → 727 ms à chaud**) — causes mesurées au profileur,
+quatre correctifs :
+
+1. **rejeu imbriqué inutile (−1857 ms)** : `extrudeSpan` d'une coupe « à travers tout »
+   sans solide à mesurer renvoyait l'étendue de repli ±5000 mm → `resolveSketchHost`
+   corrompait l'origine de l'esquisse hôte (21 → 5021 → 10021 → 15021 en 3 tours de la
+   boucle d'ancrage) → signature d'esquisse faussée → second rejeu complet qui « réparait »
+   le dégât (solide final identique dans les deux passes). Correctif : `extrudeSpan` marque
+   ce repli `unres:true` et `resolveSketchHost` **ne déplace rien** tant que l'étendue n'est
+   pas mesurable (le fichier garde l'origine juste ; la passe suivante, corps présents,
+   la recalculera si elle est périmée). C'était précisément le cas du bouton *Hard* qui
+   vide `bodies` avant le rejeu.
+2. **points de contrôle jamais trouvés (0 hit / 24)** : `OCC_CK_MAX=8` évince les
+   préfixes précoces sur une timeline de 13-14 fonctions — les 6 appels `occFinalShape(upto)`
+   des projections rejouaient chacun toute la chaîne (4 × ~300 ms par passe). Correctifs :
+   `occCkMax()` adaptatif = `min(48, fonctions+2)` (toute la timeline tient en mémoire,
+   plafond fixé pour les grandes pièces) ; clé de checkpoint **sans marqueur `upto`** —
+   ALL et UP9 parcourent les mêmes préfixes cumulatifs, mais l'ancienne clé `ALL|…`/`UP9|…`
+   rendait les points de contrôle du rejeu complet **inaccessibles** aux projections ;
+   déduplication dans `occCkPut` (on garde l'existant au lieu d'empiler des doublons qui
+   gonflaient la file et évacuaient les vraies entrées — motif alterné 0/2 puis 2/2 avant
+   correctif) ; enfin chaque **congé exact** a son propre checkpoint (+ ses avertissements
+   mémorisés) : les 9 congés de la pièce ne sont plus rejoués (~30 ms/pièce évités à chaque
+   rejeu de projection).
+3. **second rejeu fondé sur une fausse alerte** : `updateAllProjections` ne déplace que
+   des entités de **construction** (hors profil), or `skSig`/signature solide mélangeait
+   tous les points → toute convergence de projection invalidait la signature. Correctifs :
+   `skSig` ne signe plus que le **profil** (entités `construction`/`ref` et leurs points
+   exclus — l'extraction de profil les exclut déjà), et `projRefreshRerun` ne rejoue que
+   si les **entrées du solide** ont réellement changé (`featSig` avant/après) ; sinon :
+   `autosave()` + redessin de l'esquisse ouverte, sans rejeu.
+
+**Test** : banc `bench_final.cjs` (harnais vm + noyau OCCT réel en Node, `Pièce 3.json`,
+même pièce avant/après) — 14 → 7 appels `occFinalShape` (la double passe imbriquée a
+disparu), hits cache 0/24 → 34/47, appels de projection `upto=9` : 313 → 21 ms, corps
+strictement identiques (3 904 tris + 2 outils), origines de tous les hôtes inchangées,
+zéro erreur `occShapeOfExtrude`, moteur « exact OCCT » ; auto-tests `runSelfTests()`
+**14/14 OK**, `build.js --check` OK.
+
+### `2026-09-30o`
+
+le miroir ne bouffait plus le GPU pour rien, et un congé.show en rouge ne l'est plus en silence -
+six défauts trouvés enarrant le plan miroir, puis le ciblage des arêtes de congé.
+
+1. **un rendu de la scène entière À CHAQUE image** : `animate()` repassait la scène dans la
+   cible 1024² (pleine résolution, ombres comprises) même à l'arrêt, alors que le reflet est
+   quasi statique - soit le double du coût GPU en continu, pour une image qui ne changeait pas.
+   Correctif : le reflet n'est recalculé que s'il est **périmé** - vue déplacée (position,
+   quaternion, fov, aspect, zoom comparés image par image) ou scène reconstruite
+   (`refreshMirror` marque le sol, le halo et la visibilité). Le nombre de passes est
+   mesurable : harnais, `setRenderTarget` compté.
+2. **réflexion déformée** : quatre défauts cumulés, tous visibles pendant l'orbite.
+   (a) `mirrorTexMat` multipliait par `floorMesh.matrixWorld` **avant** que le moteur ne la
+   recalcule - le sol venait d'être déplacé par `refreshMirror`, la réflexion lagged d'une
+   image (décalage fantôme) ; `floorMesh.updateMatrixWorld()` est désormais forcé avant usage.
+   (b) la cible de rendu était un **carré** alors que la caméra miroir recopiait la projection
+   du canvas (aspect ≠ 1) : deux défauts symétriques. Forcer `aspect = 1` et garder la cible
+   carrée fait tomber les bords de l'écran **hors de la texture**, et le `ClampToEdge` de
+   three y étire les pixels du bord en traits déformés (glitches de bord). La cible suit
+   désormais l'aspect du canvas (1024 de large max, recalculée au redimensionnement) et
+   recopiait la projection - la seule combinaison qui garde les UV dans [0,1] partout.
+   (c) le shader divisait `vUv.xy` par `max(vUv.w, 1e-4)` : pour un point **derrière** la
+   caméra miroir (`w = 0`) cela produisait des UV aberrants - traînées déformées qui bougeaient
+   en continu avec la vue. Ces fragments sont maintenant peints en teinte de sol (pas de
+   division).
+   (d) Rendu principal « à la demande » essayé puis **écarté** : le survol des faces, la
+   sélection et le glisser des points de contrôle changent l'image sans toucher la caméra -
+   il aurait fallu invalider partout, donc risqué de figer l'affichage. Le GPU fait donc
+   toujours 1 rendu de scène par image (c'est une visionneuse), mais plus 1 passe de reflet
+   par image.
+3. **le rayon d'un congé ne faisait pas partie de sa signature** : `featSig` ne décrivait que la
+   *position* des arêtes. Conséquence découverte en testant Pièce 2 : changer le rayon d'un congé
+   laissait la clé inchangée, et le point de contrôle (nouveau, cf. `2026-09-30n`) réappliquait le
+   **solide au rayon précédent** - le congé nouveau n'apparaissait pas, sans un seul avertissement.
+   `featSig` décrit maintenant rayon, longueur résolue et ancre de ciblage de chaque arête.
+4. **l'ancre d'esquisse pouvait viser une AUTRE arête que celle cliquée** - le pire des défauts,
+   trouvé par le signalement « l'arête sélectionnée n'est pas celle retenue en finalité ». Sur
+   Pièce 2, le clic portait sur l'arête de **20 mm** en (65 ; 0 ; 19,58) (`pos0`, distance 0),
+   mais l'ancre `e13` du croquis renvoyait l'arête de **28,9 mm** en (52,5 ; -10 ; 26,8), à
+   **17,6 mm** : l'appli arrondissait donc la mauvaise arête, en silence. Conséquence pratique :
+   le R16 demandé était **refusé à tort** (impossible sur 28,9 mm) alors qu'il **passe** sur
+   l'arête de 20 mm réellement sélectionnée. Correctif : l'ancre reste prioritaire (c'est elle
+   qui suit les éditions du croquis), mais un candidat d'ancre situé à plus de 2 mm du point
+   cliqué n'est plus suivi si une arête existe encore à la place voulue - et le journal le dit
+   (`ancre d'esquisse divergente ignorée ... arête sélectionnée rétablie`, une seule fois par
+   divergence). On ne se fie pas à `se.len` pour ce contrôle : ce champ est réécrit à chaque
+   réappariement, il avait donc hérité de la longueur de la mauvaise arête.
+5. **un refus de congé ne disait rien d'utile** : la fonction passait en rouge, sans application,
+   avec pour seule information `rayon trop grand ou arêtes trop courtes ?`. Le chemin d'échec
+   cherche maintenant (5 essais, cas rare) le **plus grand rayon qui passe** et le propose,
+   vérifié : `R16 impossible sur 1 arête de 28,9 mm - ESSAYEZ R4,8 (vérifié)`. Le conseil est
+   porté par la fonction (`_err`), affiché en rouge dans ses propriétés, et effacé dès que le
+   rayon courant passe.
+6. **le drapeau `_err` ne s'effaçait pas** quand le rayon redevenait valide après un échec (cas
+   des rejeux à checkpoints) : le conseil restait affiché sur une fonction désormais appliquée.
+
+**Test** : `diag_mirror2.cjs` (miroir) - 30 images vue immobile : **0** passe de reflet (1 par
+image avant), 30 images en orbite : 1 passe par image (nécessaire), reconstruction : 1 passe puis
+0, miroir éteint : 0, rallumage : 1 ; aucune exception. `diag_anchor.cjs` (Pièce 2) - arête
+retenue = arête cliquée (20 mm, distance au clic **0 mm**, l'ancre divergente est ignorée et
+signalée) et **R16 s'applique** ; le conseil d'échec disparaît bien quand le rayon passe.
+`diag_fillet2.cjs` - changement de rayon appliqué en rejeu **soft** avec cache conservé.
+Régression complète `bench_final.cjs` (Pièce 3) : **848/640 ms** (914/689 avant cette série,
+même budget), 7 appels `occFinalShape`, hits 34/47, corps **inchangé** (3 904 tris + 2 outils),
+auto-tests **14/14 OK**, `build.js --check` OK.
+sur une autre arête.*
