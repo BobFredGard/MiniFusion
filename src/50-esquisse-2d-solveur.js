@@ -456,6 +456,10 @@ function openSketch(id){
   skEdit=doc.sketches.find(s=>s.id===id);if(!skEdit)return;
   migrateSketch(skEdit);
   skBuildRefs();
+  // Verrouille l'arbre sur la fonction propriétaire : pendant l'édition on ne voit
+  // que les opérations qui la précèdent (arbre + solide). Esquisse libre : rien à bloquer.
+  const host=tlHostFeatureOfSketch(skEdit);
+  if(host){tlEditLock(host);try{rebuild();}catch(e){}}
   skTool='select';skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skPendPt=null;skCoinA=null;skDraft=null;skDown=null;skDrag=null;skDragPushed=false;skDimDrag=null;skSel=null;skSelX=[];skMsg='';skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
   skUndoStack=[];skRedoStack=[];
   document.querySelectorAll('#skToolbar .tool').forEach(x=>x.classList.toggle('on',x.dataset.tool==='select'));
@@ -472,7 +476,12 @@ function closeSketch(save){
     if(!b.ghost) b.mesh.visible=true;
     if(b._savedOpacity!=null&&b.mesh&&b.mesh.material){ b.mesh.material.opacity=b._savedOpacity; b.mesh.material.transparent=b._savedTransparent; delete b._savedOpacity; delete b._savedTransparent; }
   });
+  // Sortie : le verrou est TOUJOURS levé (validation comme annulation) pour régénérer
+  // la fonction modifiée et celles qui suivent ; sans rebuild de sortie, un verrou posé
+  // à l'ouverture laisserait l'arbre bloqué.
+  if(skEdit)tlEditUnlock();
   if(save&&skEdit){solveSketch(skEdit);cleanupSk(skEdit);repSyncForSketch(skEdit.id);markDirty();rebuild();projRefreshRerun(0);sel={kind:'sketch',id:skEdit.id};renderTree();renderProps();}
+  else if(skEdit){markDirty();try{rebuild();}catch(e){}renderTree();renderProps();}
   skEdit=null;skSel=null;skSelX=[];skChain=null;skArcC=null;skArcPa=null;skDraft=null;skDown=null;skDrag=null;skDimDrag=null;skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
 }
 const svg=$('skSvg');

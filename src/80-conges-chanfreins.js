@@ -58,8 +58,9 @@ function enterExactFilletMode(editF,kind){
     });
     const rr=filModeX.sel.find(s=>s.r>0);if(rr)filModeX.radius=rr.r;
     occSkipFeat=editing.id;
+    tlEditLock(editing); // arbre bloqué sur le congé : seules les opérations précédentes rejouées
     try{rebuild();}catch(e){}
-    if(!occLive||!occLive.shape){occSkipFeat=null;filModeX=null;faceEl.textContent=label+' : recalcul impossible.';return;}
+    if(!occLive||!occLive.shape){occSkipFeat=null;filModeX=null;if(tlMark===editing.id)tlSetPtr(null);faceEl.textContent=label+' : recalcul impossible.';return;}
   }
   try{filModeX.edges=occSharpEdges(occLive.shape).filter(e=>e.sharp);}
   catch(e){
@@ -90,7 +91,7 @@ function exitExactFilletMode(silent){
   filModeX=null;xHover=null;
   try{xPrevRemove();}catch(e){}
   const o=scene.getObjectByName('filEdges');if(o)scene.remove(o);
-  if(wasEditing){markDirty();try{rebuild();}catch(e){}} // restaure la fonction (apply a déjà écrit les nouvelles arêtes)
+  if(wasEditing){tlEditUnlock();markDirty();try{rebuild();}catch(e){}} // lève le verrou : la fonction modifiée ET celles qui suivent sont régénérées
   if(!silent)renderProps();
 }
 function xIsSel(i){

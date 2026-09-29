@@ -201,8 +201,9 @@ function enterCoqueMode(editF){
     coqueMode._ecartees=avant-coqueMode.faces.length;
     coqueMode.thick=(+editing.thick>0)?+editing.thick:2;
     occSkipFeat=editing.id;
+    tlEditLock(editing); // arbre bloqué sur la coque : seules les opérations précédentes rejouées
     try{rebuild();}catch(e){}
-    if(!occLive||!occLive.shape){occSkipFeat=null;coqueMode=null;faceEl.textContent='Coque : recalcul impossible.';return;}
+    if(!occLive||!occLive.shape){occSkipFeat=null;coqueMode=null;if(tlMark===editing.id)tlSetPtr(null);faceEl.textContent='Coque : recalcul impossible.';return;}
     coqueMode._stats=coqueMarkByPosition();
   }
   coquePaint();coquePreviewUpdate();renderCoquePanel();
@@ -217,7 +218,7 @@ function exitCoqueMode(silent){
   if(!coqueMode)return;
   const wasEditing=!!coqueMode.editing;
   coqueMode=null;coqueClearHl();coquePreviewRemove();
-  if(wasEditing){occSkipFeat=null;markDirty();try{rebuild();}catch(e){}}
+  if(wasEditing){occSkipFeat=null;tlEditUnlock();markDirty();try{rebuild();}catch(e){}}
   if(!silent)renderProps();
 }
 function coqueToggle(e){

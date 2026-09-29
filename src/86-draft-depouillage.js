@@ -293,8 +293,9 @@ function enterDraftMode(editF){
     draftMode.phase=draftMode.ref?'faces':'ref';
     draftMode.angle=(+editing.angle>0&&+editing.angle<90)?+editing.angle:5;
     occSkipFeat=editing.id;
+    tlEditLock(editing); // arbre bloqué sur la dépouille : seules les opérations précédentes rejouées
     try{rebuild();}catch(e){}
-    if(!occLive||!occLive.shape){occSkipFeat=null;draftMode=null;faceEl.textContent='Dépouillage : recalcul impossible.';return;}
+    if(!occLive||!occLive.shape){occSkipFeat=null;draftMode=null;if(tlMark===editing.id)tlSetPtr(null);faceEl.textContent='Dépouillage : recalcul impossible.';return;}
     draftMode._stats=draftMarkByPosition();
   }
   draftPaint();draftPreviewUpdate();renderDraftPanel();
@@ -309,7 +310,7 @@ function exitDraftMode(silent){
   if(!draftMode)return;
   const wasEditing=!!draftMode.editing;
   draftMode=null;draftClearHl();draftPreviewRemove();
-  if(wasEditing){occSkipFeat=null;markDirty();try{rebuild();}catch(e){}}
+  if(wasEditing){occSkipFeat=null;tlEditUnlock();markDirty();try{rebuild();}catch(e){}}
   if(!silent)renderProps();
 }
 function draftToggle(e){

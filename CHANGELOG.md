@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**82 versions**, de `2026-09-28b` à `2026-09-31n` — la plus récente en bas,
+**83 versions**, de `2026-09-28b` à `2026-09-31o` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1880,4 +1880,30 @@ Tests : nouveau `test_apercu_edition.cjs` — rejoue le calcul d’entrée en é
 sur Ma Pièce (base SANS le congé via `occSkipFeat`, comme `enterExactFilletMode`) :
 4/4 arêtes mémorisées retrouvées, aperçu = solide complet 110×90×50 (écart 0,0),
 221 arêtes — TOUT PASSE. Régression 11/11.
+---
+
+### `2026-09-31o`
+
+**ÉDITION : l’arbre se bloque sur la fonction éditée, puis tout est régénéré.**
+
+En éditant une fonction (esquisse, congé/chanfrein, dépouille, coque), l’arbre
+affiche désormais uniquement les opérations qui la précèdent — avec le solide
+correspondant — puis, à la sortie (validation comme annulation), la fonction
+modifiée ET celles qui suivent sont régénérées. Le marqueur de temps existait mais
+n’était posé par AUCUNE entrée en édition (que à la main).
+
+Détails : `tlEditLock(f)` / `tlEditUnlock()` + `tlHostFeatureOfSketch(sk)` dans
+`30-marqueur-temps.js`, branchés sur les 4 sessions modales (esquisse : hôte = 1ʳᵉ
+extrusion/révolution utilisatrice, sinon hôte de face, sinon libre = pas de verrou ;
+congé/dépouille/coque : sur la fonction éditée, cumulé avec `occSkipFeat`).
+Sortie en échec d’entrée : pas de verrou résiduel. `closeSketch` sans sauvegarde
+reconstruit désormais (restaure la vue complète après déverrouillage).
+
+Hors périmètre (éditions directes sans session de pointage) : paramètres
+d’extrusion, sources de répétition, rayons — inchangés.
+
+Tests : nouveau `test_tl_edit_lock.cjs` sur noyau réel — hôte, gardes, liste active
+[ex_1], rejeu verrouillé xmax≈100 puis complet xmax≈140 via `tlReplayCount()`
+(le chemin réel d’`occRebuild`, pas `occFinalShape(null)`) — TOUT EST CONFORME.
+Régression 12/12.
 

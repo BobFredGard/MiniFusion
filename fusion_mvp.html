@@ -245,7 +245,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
    (OCCT ne se charge pas en node) — ne le modifier qu'après validation navigateur ET accord explicite.
 
    ── HISTORIQUE ─────────────────────────────────────────────────────────────
-    Journal des versions (cause, correctif, test) : CHANGELOG.md — 81 entrées,
+    Journal des versions (cause, correctif, test) : CHANGELOG.md — 82 entrées,
     de 2026-09-28b à 2026-09-31e. Elles étaient embarquées ici (50 Ko) et sont
    sorties du livrable le 2026-09-30j. Ce qui précède est la description du projet
    et ses garde-fous, reprise telle quelle.
@@ -262,7 +262,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-09-31n';
+const APP_VER='2026-09-31o';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 let extPickFace=null; // mode « vers un objet » : clic sur une face pour le sens (Échap = annuler)
@@ -3141,6 +3141,30 @@ function tlReplayCount(){ // nb de fonctions VISIBLES avant le marqueur (upto po
 function tlSetPtr(f){ // bloque le temps juste AVANT la fonction f (null = rejouer tout)
   tlMark=f&&doc.features.some(x=>x.id===f.id)?f.id:null;
 }
+function tlEditLock(f){
+  // Verrouille l'arbre sur la fonction en cours d'édition : seules les opérations qui
+  // la précèdent restent visibles et rejouées. À appeler à l'entrée de chaque session
+  // d'édition (esquisse, congé, dépouille, coque), avant son rebuild.
+  if(!f||!doc.features.some(x=>x.id===f.id))return false;
+  if(tlMark!==f.id){tlSetPtr(f);markDirty();}
+  return true;
+}
+function tlEditUnlock(){
+  // Lève le verrou : la fonction modifiée ET celles qui suivent sont régénérées au
+  // rebuild suivant. À appeler à TOUTE sortie de session (validation comme annulation).
+  if(tlMark==null)return false;
+  tlSetPtr(null);markDirty();
+  return true;
+}
+function tlHostFeatureOfSketch(sk){
+  // Fonction « propriétaire » d'une esquisse : la première extrusion/révolution qui
+  // l'utilise (ordre timeline), sinon l'hôte de face (esquisse posée sur face).
+  if(!sk)return null;
+  const users=doc.features.filter(f=>(f.type==='extrude'||f.type==='revolve')&&f.sketchId===sk.id);
+  if(users.length)return users.sort((a,b)=>doc.features.indexOf(a)-doc.features.indexOf(b))[0];
+  if(sk.host&&sk.host.feat){const h=doc.features.find(f=>f.id===sk.host.feat);if(h)return h;}
+  return null;
+}
 function tlLockedByIndex(i){const m=tlIdx();return m>=0&&i>=m;}
 function tlLocked(f){return f&&tlLockedByIndex(doc.features.indexOf(f));}
 function addFeature(f){ // insertion au niveau du marqueur si actif (nouveautés rejouées)
@@ -5156,6 +5180,10 @@ function openSketch(id){
   skEdit=doc.sketches.find(s=>s.id===id);if(!skEdit)return;
   migrateSketch(skEdit);
   skBuildRefs();
+  // Verrouille l'arbre sur la fonction propriétaire : pendant l'édition on ne voit
+  // que les opérations qui la précèdent (arbre + solide). Esquisse libre : rien à bloquer.
+  const host=tlHostFeatureOfSketch(skEdit);
+  if(host){tlEditLock(host);try{rebuild();}catch(e){}}
   skTool='select';skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skPendPt=null;skCoinA=null;skDraft=null;skDown=null;skDrag=null;skDragPushed=false;skDimDrag=null;skSel=null;skSelX=[];skMsg='';skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
   skUndoStack=[];skRedoStack=[];
   document.querySelectorAll('#skToolbar .tool').forEach(x=>x.classList.toggle('on',x.dataset.tool==='select'));
@@ -5172,7 +5200,12 @@ function closeSketch(save){
     if(!b.ghost) b.mesh.visible=true;
     if(b._savedOpacity!=null&&b.mesh&&b.mesh.material){ b.mesh.material.opacity=b._savedOpacity; b.mesh.material.transparent=b._savedTransparent; delete b._savedOpacity; delete b._savedTransparent; }
   });
+  // Sortie : le verrou est TOUJOURS levé (validation comme annulation) pour régénérer
+  // la fonction modifiée et celles qui suivent ; sans rebuild de sortie, un verrou posé
+  // à l'ouverture laisserait l'arbre bloqué.
+  if(skEdit)tlEditUnlock();
   if(save&&skEdit){solveSketch(skEdit);cleanupSk(skEdit);repSyncForSketch(skEdit.id);markDirty();rebuild();projRefreshRerun(0);sel={kind:'sketch',id:skEdit.id};renderTree();renderProps();}
+  else if(skEdit){markDirty();try{rebuild();}catch(e){}renderTree();renderProps();}
   skEdit=null;skSel=null;skSelX=[];skChain=null;skArcC=null;skArcPa=null;skDraft=null;skDown=null;skDrag=null;skDimDrag=null;skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
 }
 const svg=$('skSvg');
@@ -9575,8 +9608,9 @@ function enterExactFilletMode(editF,kind){
     });
     const rr=filModeX.sel.find(s=>s.r>0);if(rr)filModeX.radius=rr.r;
     occSkipFeat=editing.id;
+    tlEditLock(editing); // arbre bloqué sur le congé : seules les opérations précédentes rejouées
     try{rebuild();}catch(e){}
-    if(!occLive||!occLive.shape){occSkipFeat=null;filModeX=null;faceEl.textContent=label+' : recalcul impossible.';return;}
+    if(!occLive||!occLive.shape){occSkipFeat=null;filModeX=null;if(tlMark===editing.id)tlSetPtr(null);faceEl.textContent=label+' : recalcul impossible.';return;}
   }
   try{filModeX.edges=occSharpEdges(occLive.shape).filter(e=>e.sharp);}
   catch(e){
@@ -9607,7 +9641,7 @@ function exitExactFilletMode(silent){
   filModeX=null;xHover=null;
   try{xPrevRemove();}catch(e){}
   const o=scene.getObjectByName('filEdges');if(o)scene.remove(o);
-  if(wasEditing){markDirty();try{rebuild();}catch(e){}} // restaure la fonction (apply a déjà écrit les nouvelles arêtes)
+  if(wasEditing){tlEditUnlock();markDirty();try{rebuild();}catch(e){}} // lève le verrou : la fonction modifiée ET celles qui suivent sont régénérées
   if(!silent)renderProps();
 }
 function xIsSel(i){
@@ -10663,8 +10697,9 @@ function enterDraftMode(editF){
     draftMode.phase=draftMode.ref?'faces':'ref';
     draftMode.angle=(+editing.angle>0&&+editing.angle<90)?+editing.angle:5;
     occSkipFeat=editing.id;
+    tlEditLock(editing); // arbre bloqué sur la dépouille : seules les opérations précédentes rejouées
     try{rebuild();}catch(e){}
-    if(!occLive||!occLive.shape){occSkipFeat=null;draftMode=null;faceEl.textContent='Dépouillage : recalcul impossible.';return;}
+    if(!occLive||!occLive.shape){occSkipFeat=null;draftMode=null;if(tlMark===editing.id)tlSetPtr(null);faceEl.textContent='Dépouillage : recalcul impossible.';return;}
     draftMode._stats=draftMarkByPosition();
   }
   draftPaint();draftPreviewUpdate();renderDraftPanel();
@@ -10679,7 +10714,7 @@ function exitDraftMode(silent){
   if(!draftMode)return;
   const wasEditing=!!draftMode.editing;
   draftMode=null;draftClearHl();draftPreviewRemove();
-  if(wasEditing){occSkipFeat=null;markDirty();try{rebuild();}catch(e){}}
+  if(wasEditing){occSkipFeat=null;tlEditUnlock();markDirty();try{rebuild();}catch(e){}}
   if(!silent)renderProps();
 }
 function draftToggle(e){
@@ -11066,8 +11101,9 @@ function enterCoqueMode(editF){
     coqueMode._ecartees=avant-coqueMode.faces.length;
     coqueMode.thick=(+editing.thick>0)?+editing.thick:2;
     occSkipFeat=editing.id;
+    tlEditLock(editing); // arbre bloqué sur la coque : seules les opérations précédentes rejouées
     try{rebuild();}catch(e){}
-    if(!occLive||!occLive.shape){occSkipFeat=null;coqueMode=null;faceEl.textContent='Coque : recalcul impossible.';return;}
+    if(!occLive||!occLive.shape){occSkipFeat=null;coqueMode=null;if(tlMark===editing.id)tlSetPtr(null);faceEl.textContent='Coque : recalcul impossible.';return;}
     coqueMode._stats=coqueMarkByPosition();
   }
   coquePaint();coquePreviewUpdate();renderCoquePanel();
@@ -11082,7 +11118,7 @@ function exitCoqueMode(silent){
   if(!coqueMode)return;
   const wasEditing=!!coqueMode.editing;
   coqueMode=null;coqueClearHl();coquePreviewRemove();
-  if(wasEditing){occSkipFeat=null;markDirty();try{rebuild();}catch(e){}}
+  if(wasEditing){occSkipFeat=null;tlEditUnlock();markDirty();try{rebuild();}catch(e){}}
   if(!silent)renderProps();
 }
 function coqueToggle(e){

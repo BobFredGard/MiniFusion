@@ -16,6 +16,30 @@ function tlReplayCount(){ // nb de fonctions VISIBLES avant le marqueur (upto po
 function tlSetPtr(f){ // bloque le temps juste AVANT la fonction f (null = rejouer tout)
   tlMark=f&&doc.features.some(x=>x.id===f.id)?f.id:null;
 }
+function tlEditLock(f){
+  // Verrouille l'arbre sur la fonction en cours d'édition : seules les opérations qui
+  // la précèdent restent visibles et rejouées. À appeler à l'entrée de chaque session
+  // d'édition (esquisse, congé, dépouille, coque), avant son rebuild.
+  if(!f||!doc.features.some(x=>x.id===f.id))return false;
+  if(tlMark!==f.id){tlSetPtr(f);markDirty();}
+  return true;
+}
+function tlEditUnlock(){
+  // Lève le verrou : la fonction modifiée ET celles qui suivent sont régénérées au
+  // rebuild suivant. À appeler à TOUTE sortie de session (validation comme annulation).
+  if(tlMark==null)return false;
+  tlSetPtr(null);markDirty();
+  return true;
+}
+function tlHostFeatureOfSketch(sk){
+  // Fonction « propriétaire » d'une esquisse : la première extrusion/révolution qui
+  // l'utilise (ordre timeline), sinon l'hôte de face (esquisse posée sur face).
+  if(!sk)return null;
+  const users=doc.features.filter(f=>(f.type==='extrude'||f.type==='revolve')&&f.sketchId===sk.id);
+  if(users.length)return users.sort((a,b)=>doc.features.indexOf(a)-doc.features.indexOf(b))[0];
+  if(sk.host&&sk.host.feat){const h=doc.features.find(f=>f.id===sk.host.feat);if(h)return h;}
+  return null;
+}
 function tlLockedByIndex(i){const m=tlIdx();return m>=0&&i>=m;}
 function tlLocked(f){return f&&tlLockedByIndex(doc.features.indexOf(f));}
 function addFeature(f){ // insertion au niveau du marqueur si actif (nouveautés rejouées)
