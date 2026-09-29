@@ -7,6 +7,7 @@ MiniFusion est un MVP de CAO historique (paramétrique, esprit Fusion 360) qui t
 
 ## L'interface Graphique
 <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/fb209e0f-b424-4b6e-a7de-71ccb580213f" />
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/08af6ef9-c3dd-4a52-8f9e-8bec83e9d1c7" />
 
 ## Fonctionnalités
 
