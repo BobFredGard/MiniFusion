@@ -70,7 +70,7 @@ function coquePaint(){
   g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
   g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
   const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.55,depthTest:false,side:THREE.DoubleSide}));
-  m.raycast=()=>{};m.renderOrder=996;
+  m.raycast=()=>{};m.renderOrder=1002;
   coqueGroup=new THREE.Group();coqueGroup.name='coqueFaces';coqueGroup.add(m);
   scene.add(coqueGroup);
 }

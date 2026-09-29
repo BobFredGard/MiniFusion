@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**84 versions**, de `2026-09-28b` à `2026-09-31p` — la plus récente en bas,
+**85 versions**, de `2026-09-28b` à `2026-09-31q` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1932,4 +1932,19 @@ Tests : `test_draft_sel.cjs` étendu — passe 1b (dessus sans ancre, 40→50, �
 passe 1a (mur ancré, 40→70, suivi à z=35), bout en bout (dépouille 4/4 à 40 ET à 55,
 0 fatal) — TOUT EST CONFORME. Régression 12/12 + verif_31cdef conforme (`test_fichier_reel`
 sur autre modèle : crash préexistant du script, pas de l’app).
+---
+
+### `2026-09-31q`
+
+**SÉLECTION DÉPOUILLE/COQUE : la surbrillance repasse AU-DESSUS de l’aperçu.**
+
+Constat sur captures : l’aperçu translucide (`renderOrder 1000`) était dessiné APRÈS
+les surbrillances (`996`) et les recouvrait — référence verte devenue bleue uniforme,
+coque en bouillie verte/rouge avec traînée parasite. Désormais : overlays à `1002`,
+flèche à `1003`, preview à `1000`, pièce estompée en dessous. La sélection reste
+lisible en permanence (vert = neutre, bleu = dépouiller, rouge = retirer).
+
+Tests : nouveau `test_highlight_order.cjs` — fige l’ordre overlay > preview > base
+pour les deux modes + flèche (aurait échoué avant : 996 < 1000) — TOUT PASSE.
+Régression 12/12.
 

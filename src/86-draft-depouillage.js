@@ -77,7 +77,7 @@ function draftPaint(){
   g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
   g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
   const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.55,depthTest:false,side:THREE.DoubleSide}));
-  m.raycast=()=>{};m.renderOrder=996;
+  m.raycast=()=>{};m.renderOrder=1002;
   draftGroup=new THREE.Group();draftGroup.name='draftFaces';draftGroup.add(m);
   // Flèche du sens de démoulage (direction de dépouille = normale de la référence),
   // plantée au centre de la face de référence — comme la flèche blanche de Fusion.
@@ -90,7 +90,7 @@ function draftPaint(){
       if(isFinite(d)&&d>0)len=Math.max(8,d/5);
     }catch(e){}
     const ar=new THREE.ArrowHelper(new THREE.Vector3(rn[0],rn[1],rn[2]).normalize(),new THREE.Vector3(rp[0],rp[1],rp[2]),len,0xffe14d,len*0.28,len*0.14);
-    ar.traverse(o=>{o.raycast=()=>{};});
+    ar.traverse(o=>{o.raycast=()=>{};o.renderOrder=1003;});
     draftGroup.add(ar);
   }catch(e){}
   scene.add(draftGroup);
