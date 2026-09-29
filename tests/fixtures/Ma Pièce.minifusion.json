@@ -1,0 +1,2027 @@
+{
+  "app": "MiniFusion",
+  "v": 1,
+  "name": "Ma Pièce",
+  "tint": 0,
+  "entNames": {
+    "face": 4,
+    "edge": 256
+  },
+  "originVis": {
+    "XY": false,
+    "XZ": false,
+    "YZ": false
+  },
+  "view": {
+    "edges": "on",
+    "mirror": true,
+    "axes": false,
+    "zoomInv": true,
+    "clipOn": false,
+    "clipPos": 0,
+    "clipFlip": false
+  },
+  "bodyVis": {},
+  "sel": {
+    "kind": null,
+    "id": null
+  },
+  "sketches": [
+    {
+      "id": "sk_1_mujw5zfu",
+      "name": "Esquisse 1",
+      "plane": "XY",
+      "entities": [
+        {
+          "id": "e5",
+          "t": "line",
+          "p1": "p1",
+          "p2": "p2"
+        },
+        {
+          "id": "e6",
+          "t": "line",
+          "p1": "p2",
+          "p2": "p3"
+        },
+        {
+          "id": "e7",
+          "t": "line",
+          "p1": "p3",
+          "p2": "p4"
+        },
+        {
+          "id": "e8",
+          "t": "line",
+          "p1": "p4",
+          "p2": "p1"
+        },
+        {
+          "id": "e15",
+          "t": "line",
+          "p1": "O",
+          "p2": "p13",
+          "construction": true
+        },
+        {
+          "id": "e16",
+          "t": "line",
+          "p1": "O",
+          "p2": "p14",
+          "construction": true
+        }
+      ],
+      "points": {
+        "O": {
+          "x": 0,
+          "y": 0
+        },
+        "p1": {
+          "x": -55,
+          "y": -45
+        },
+        "p2": {
+          "x": 55,
+          "y": -45
+        },
+        "p3": {
+          "x": 55,
+          "y": 45
+        },
+        "p4": {
+          "x": -55,
+          "y": 45
+        },
+        "p13": {
+          "x": 110,
+          "y": 0
+        },
+        "p14": {
+          "x": 0,
+          "y": 90
+        }
+      },
+      "constraints": [
+        {
+          "id": "e9",
+          "type": "h",
+          "line": "e5"
+        },
+        {
+          "id": "e10",
+          "type": "h",
+          "line": "e7"
+        },
+        {
+          "id": "e11",
+          "type": "v",
+          "line": "e6"
+        },
+        {
+          "id": "e12",
+          "type": "v",
+          "line": "e8"
+        },
+        {
+          "id": "e17",
+          "type": "h",
+          "line": "e15"
+        },
+        {
+          "id": "e18",
+          "type": "v",
+          "line": "e16"
+        },
+        {
+          "id": "e19",
+          "type": "fix",
+          "p": "O"
+        },
+        {
+          "id": "e20",
+          "type": "symmetric",
+          "a": "e8",
+          "b": "e6",
+          "mid": "e16"
+        },
+        {
+          "id": "e21",
+          "type": "symmetric",
+          "a": "e5",
+          "b": "e7",
+          "mid": "e15"
+        }
+      ],
+      "dims": [
+        {
+          "id": "e22",
+          "type": "length",
+          "line": "e5",
+          "value": 110,
+          "ox": 0,
+          "oy": 6
+        },
+        {
+          "id": "e23",
+          "type": "length",
+          "line": "e6",
+          "value": 90,
+          "ox": 6,
+          "oy": 0
+        }
+      ],
+      "seq": 24,
+      "visible": false,
+      "origin": [
+        0,
+        0,
+        0
+      ],
+      "axU": [
+        1,
+        0,
+        0
+      ],
+      "axV": [
+        0,
+        1,
+        0
+      ],
+      "axN": [
+        0,
+        0,
+        1
+      ],
+      "_ghost": [],
+      "_refNote": "référence : solide fini (esquisse non consommée)",
+      "_health": {
+        "loops": 1,
+        "holes": 0,
+        "opens": [],
+        "gapPair": null,
+        "gapD": 1000000000,
+        "dupes": [],
+        "degen": [],
+        "selfints": []
+      },
+      "_audit": {
+        "residual": 0,
+        "all": [
+          {
+            "id": "e22",
+            "desc": "longueur",
+            "viol": 0
+          },
+          {
+            "id": "e23",
+            "desc": "longueur",
+            "viol": 0
+          },
+          {
+            "id": "e9",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e10",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e11",
+            "desc": "v",
+            "viol": 0
+          },
+          {
+            "id": "e12",
+            "desc": "v",
+            "viol": 0
+          },
+          {
+            "id": "e17",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e18",
+            "desc": "v",
+            "viol": 0
+          },
+          {
+            "id": "e20",
+            "desc": "symétrie",
+            "viol": 0
+          },
+          {
+            "id": "e21",
+            "desc": "symétrie",
+            "viol": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "sk_3_mujw6hq8",
+      "name": "Esquisse 2 (face)",
+      "plane": "FACE",
+      "entities": [
+        {
+          "id": "e18",
+          "t": "line",
+          "p1": "p14",
+          "p2": "p15"
+        },
+        {
+          "id": "e19",
+          "t": "line",
+          "p1": "p15",
+          "p2": "p16"
+        },
+        {
+          "id": "e20",
+          "t": "line",
+          "p1": "p16",
+          "p2": "p17"
+        },
+        {
+          "id": "e21",
+          "t": "line",
+          "p1": "p17",
+          "p2": "p14"
+        },
+        {
+          "id": "e28",
+          "t": "line",
+          "p1": "O",
+          "p2": "p26",
+          "construction": true
+        },
+        {
+          "id": "e29",
+          "t": "line",
+          "p1": "O",
+          "p2": "p27",
+          "construction": true
+        }
+      ],
+      "points": {
+        "O": {
+          "x": 0,
+          "y": 0
+        },
+        "p14": {
+          "x": -34,
+          "y": -26
+        },
+        "p15": {
+          "x": 34,
+          "y": -26
+        },
+        "p16": {
+          "x": 34,
+          "y": 26
+        },
+        "p17": {
+          "x": -34,
+          "y": 26
+        },
+        "p26": {
+          "x": 68,
+          "y": 0
+        },
+        "p27": {
+          "x": 0,
+          "y": 52
+        }
+      },
+      "constraints": [
+        {
+          "id": "e22",
+          "type": "h",
+          "line": "e18"
+        },
+        {
+          "id": "e23",
+          "type": "h",
+          "line": "e20"
+        },
+        {
+          "id": "e24",
+          "type": "v",
+          "line": "e19"
+        },
+        {
+          "id": "e25",
+          "type": "v",
+          "line": "e21"
+        },
+        {
+          "id": "e30",
+          "type": "h",
+          "line": "e28"
+        },
+        {
+          "id": "e31",
+          "type": "v",
+          "line": "e29"
+        },
+        {
+          "id": "e32",
+          "type": "fix",
+          "p": "O"
+        },
+        {
+          "id": "e33",
+          "type": "symmetric",
+          "a": "e21",
+          "b": "e19",
+          "mid": "e29"
+        },
+        {
+          "id": "e34",
+          "type": "symmetric",
+          "a": "e18",
+          "b": "e20",
+          "mid": "e28"
+        }
+      ],
+      "dims": [
+        {
+          "id": "e35",
+          "type": "length",
+          "line": "e18",
+          "value": 68,
+          "ox": 0,
+          "oy": 6
+        },
+        {
+          "id": "e36",
+          "type": "length",
+          "line": "e19",
+          "value": 52,
+          "ox": 6,
+          "oy": 0
+        }
+      ],
+      "seq": 37,
+      "visible": false,
+      "origin": [
+        0,
+        0,
+        50
+      ],
+      "axU": [
+        1,
+        0,
+        0
+      ],
+      "axV": [
+        0,
+        1,
+        0
+      ],
+      "axN": [
+        0,
+        0,
+        1
+      ],
+      "host": {
+        "feat": "ex_2_mujw64fc",
+        "tag": "TOP",
+        "x": 0,
+        "y": 0,
+        "name": "Face 1"
+      },
+      "_ghost": [],
+      "_refNote": "référence : solide fini (esquisse non consommée)",
+      "_health": {
+        "loops": 1,
+        "holes": 0,
+        "opens": [],
+        "gapPair": null,
+        "gapD": 1000000000,
+        "dupes": [],
+        "degen": [],
+        "selfints": []
+      },
+      "_audit": {
+        "residual": 0,
+        "all": [
+          {
+            "id": "e35",
+            "desc": "longueur",
+            "viol": 0
+          },
+          {
+            "id": "e36",
+            "desc": "longueur",
+            "viol": 0
+          },
+          {
+            "id": "e22",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e23",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e24",
+            "desc": "v",
+            "viol": 0
+          },
+          {
+            "id": "e25",
+            "desc": "v",
+            "viol": 0
+          },
+          {
+            "id": "e30",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e31",
+            "desc": "v",
+            "viol": 0
+          },
+          {
+            "id": "e33",
+            "desc": "symétrie",
+            "viol": 0
+          },
+          {
+            "id": "e34",
+            "desc": "symétrie",
+            "viol": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "sk_11_muk2njpe",
+      "name": "Esquisse 3 (face)",
+      "plane": "FACE",
+      "entities": [
+        {
+          "id": "e8",
+          "t": "line",
+          "p1": "p2",
+          "p2": "p3"
+        },
+        {
+          "id": "e9",
+          "t": "line",
+          "p1": "p4",
+          "p2": "p5"
+        },
+        {
+          "id": "e10",
+          "t": "arc",
+          "pc": "p6",
+          "pa": "p2",
+          "pb": "p4",
+          "r": 10,
+          "_ei": 2
+        },
+        {
+          "id": "e11",
+          "t": "arc",
+          "pc": "p7",
+          "pa": "p5",
+          "pb": "p3",
+          "r": 9.999999999383599,
+          "_ei": 3
+        },
+        {
+          "id": "e12",
+          "t": "line",
+          "p1": "p6",
+          "p2": "p7",
+          "construction": true
+        },
+        {
+          "id": "e25",
+          "t": "line",
+          "p1": "O",
+          "p2": "p23",
+          "construction": true
+        }
+      ],
+      "points": {
+        "O": {
+          "x": 0,
+          "y": 0
+        },
+        "p2": {
+          "x": -20.999803831491445,
+          "y": 37.999999998625995
+        },
+        "p3": {
+          "x": 21.000021858550383,
+          "y": 37.99999999862366
+        },
+        "p4": {
+          "x": -21.00011492324366,
+          "y": 17.99999999989307
+        },
+        "p5": {
+          "x": 21.000114923019943,
+          "y": 18.00000000011602
+        },
+        "p6": {
+          "x": -21.000004362728593,
+          "y": 27.999999999476604
+        },
+        "p7": {
+          "x": 20.999995637271397,
+          "y": 27.999999999255962
+        },
+        "p23": {
+          "x": -8.388423457787885e-11,
+          "y": 18.000000000002263
+        }
+      },
+      "constraints": [
+        {
+          "id": "e13",
+          "type": "h",
+          "line": "e8"
+        },
+        {
+          "id": "e14",
+          "type": "h",
+          "line": "e9"
+        },
+        {
+          "id": "e15",
+          "type": "h",
+          "line": "e12"
+        },
+        {
+          "id": "e16",
+          "type": "tangent",
+          "line": "e8",
+          "ent": "e10"
+        },
+        {
+          "id": "e17",
+          "type": "tangent",
+          "line": "e8",
+          "ent": "e11"
+        },
+        {
+          "id": "e18",
+          "type": "tangent",
+          "line": "e9",
+          "ent": "e10"
+        },
+        {
+          "id": "e19",
+          "type": "tangent",
+          "line": "e9",
+          "ent": "e11"
+        },
+        {
+          "id": "e20",
+          "type": "equal",
+          "a": "e10",
+          "b": "e11"
+        },
+        {
+          "id": "e24",
+          "type": "midpoint",
+          "p": "p23",
+          "line": "e9"
+        },
+        {
+          "id": "e26",
+          "type": "v",
+          "line": "e25"
+        },
+        {
+          "id": "e27",
+          "type": "perpendicular",
+          "a": "e25",
+          "b": "e9"
+        }
+      ],
+      "dims": [
+        {
+          "id": "e21",
+          "type": "length",
+          "line": "e12",
+          "value": 42,
+          "ox": 0,
+          "oy": 0
+        },
+        {
+          "id": "e22",
+          "type": "radius",
+          "ent": "e10",
+          "value": 10,
+          "ox": 0,
+          "oy": 0
+        },
+        {
+          "id": "e28",
+          "type": "length",
+          "line": "e25",
+          "value": 18,
+          "orient": "a",
+          "w": -7.9163792701744855,
+          "ox": 0,
+          "oy": 0
+        }
+      ],
+      "seq": 29,
+      "visible": false,
+      "origin": [
+        0,
+        -45,
+        0
+      ],
+      "axU": [
+        1,
+        0,
+        0
+      ],
+      "axV": [
+        0,
+        0,
+        1
+      ],
+      "axN": [
+        0,
+        -1,
+        0
+      ],
+      "host": {
+        "feat": "ex_2_mujw64fc",
+        "tag": "SIDE",
+        "x": 0,
+        "y": -45,
+        "name": "Face 2",
+        "edge": "e5",
+        "h": 0
+      },
+      "_ghost": [],
+      "_refNote": "référence : solide fini (esquisse non consommée)",
+      "_health": {
+        "loops": 1,
+        "holes": 0,
+        "opens": [],
+        "gapPair": null,
+        "gapD": 1000000000,
+        "dupes": [],
+        "degen": [],
+        "selfints": []
+      },
+      "_audit": {
+        "residual": 0,
+        "all": [
+          {
+            "id": "e21",
+            "desc": "longueur",
+            "viol": 0
+          },
+          {
+            "id": "e22",
+            "desc": "radius",
+            "viol": 0
+          },
+          {
+            "id": "e28",
+            "desc": "longueur",
+            "viol": 0
+          },
+          {
+            "id": "e13",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e14",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e15",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e16",
+            "desc": "tangence",
+            "viol": 0
+          },
+          {
+            "id": "e17",
+            "desc": "tangence",
+            "viol": 0
+          },
+          {
+            "id": "e18",
+            "desc": "tangence",
+            "viol": 0
+          },
+          {
+            "id": "e19",
+            "desc": "tangence",
+            "viol": 0
+          },
+          {
+            "id": "e20",
+            "desc": "égal",
+            "viol": 0
+          },
+          {
+            "id": "e24",
+            "desc": "milieu",
+            "viol": 0
+          },
+          {
+            "id": "e26",
+            "desc": "v",
+            "viol": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "sk_13_muk2tx3h",
+      "name": "Esquisse 4 (face)",
+      "plane": "FACE",
+      "entities": [
+        {
+          "id": "e5",
+          "t": "line",
+          "p1": "p1",
+          "p2": "p2"
+        },
+        {
+          "id": "e6",
+          "t": "line",
+          "p1": "p2",
+          "p2": "p3"
+        },
+        {
+          "id": "e7",
+          "t": "line",
+          "p1": "p3",
+          "p2": "p4"
+        },
+        {
+          "id": "e8",
+          "t": "line",
+          "p1": "p4",
+          "p2": "p1"
+        },
+        {
+          "id": "e17",
+          "t": "line",
+          "p1": "O",
+          "p2": "p15",
+          "construction": true
+        }
+      ],
+      "points": {
+        "O": {
+          "x": 0,
+          "y": 0
+        },
+        "p1": {
+          "x": -17.50000004947527,
+          "y": 37.0000000000006
+        },
+        "p2": {
+          "x": 17.49999995052473,
+          "y": 37.0000000000006
+        },
+        "p3": {
+          "x": 17.49999995052473,
+          "y": 14.000000000000597
+        },
+        "p4": {
+          "x": -17.50000004947527,
+          "y": 14.000000000000597
+        },
+        "p15": {
+          "x": 0,
+          "y": 14.000000000000298
+        }
+      },
+      "constraints": [
+        {
+          "id": "e9",
+          "type": "h",
+          "line": "e5"
+        },
+        {
+          "id": "e10",
+          "type": "h",
+          "line": "e7"
+        },
+        {
+          "id": "e11",
+          "type": "v",
+          "line": "e6"
+        },
+        {
+          "id": "e12",
+          "type": "v",
+          "line": "e8"
+        },
+        {
+          "id": "e16",
+          "type": "midpoint",
+          "p": "p15",
+          "line": "e7"
+        },
+        {
+          "id": "e18",
+          "type": "v",
+          "line": "e17"
+        }
+      ],
+      "dims": [
+        {
+          "id": "e13",
+          "type": "length",
+          "line": "e5",
+          "value": 35,
+          "ox": 0,
+          "oy": 6
+        },
+        {
+          "id": "e14",
+          "type": "length",
+          "line": "e6",
+          "value": 23,
+          "ox": 6,
+          "oy": 0
+        },
+        {
+          "id": "e19",
+          "type": "length",
+          "line": "e17",
+          "value": 14,
+          "orient": "v",
+          "w": -10.102649038192382,
+          "ox": 0,
+          "oy": 0
+        }
+      ],
+      "seq": 20,
+      "visible": false,
+      "origin": [
+        55,
+        0,
+        0
+      ],
+      "axU": [
+        0,
+        1,
+        0
+      ],
+      "axV": [
+        0,
+        0,
+        1
+      ],
+      "axN": [
+        1,
+        0,
+        0
+      ],
+      "host": {
+        "feat": "ex_2_mujw64fc",
+        "tag": "SIDE",
+        "x": 55,
+        "y": 0,
+        "name": "Face 3",
+        "edge": "e6",
+        "h": 0
+      },
+      "_ghost": [],
+      "_refNote": "référence : solide fini (esquisse non consommée)",
+      "_health": {
+        "loops": 1,
+        "holes": 0,
+        "opens": [],
+        "gapPair": null,
+        "gapD": 1000000000,
+        "dupes": [],
+        "degen": [],
+        "selfints": []
+      },
+      "_audit": {
+        "residual": 4.9475268327559755e-8,
+        "all": [
+          {
+            "id": "e16",
+            "desc": "milieu",
+            "viol": 4.9475268327559755e-8
+          },
+          {
+            "id": "e19",
+            "desc": "longueur",
+            "viol": 2.984279490192421e-13
+          },
+          {
+            "id": "e13",
+            "desc": "longueur",
+            "viol": 0
+          },
+          {
+            "id": "e14",
+            "desc": "longueur",
+            "viol": 0
+          },
+          {
+            "id": "e9",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e10",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e11",
+            "desc": "v",
+            "viol": 0
+          },
+          {
+            "id": "e12",
+            "desc": "v",
+            "viol": 0
+          },
+          {
+            "id": "e18",
+            "desc": "v",
+            "viol": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "sk_18_muk2w60e",
+      "name": "Esquisse 4 (face) (rép 1)",
+      "plane": "FACE",
+      "entities": [
+        {
+          "id": "e5",
+          "t": "line",
+          "p1": "p1",
+          "p2": "p2"
+        },
+        {
+          "id": "e6",
+          "t": "line",
+          "p1": "p2",
+          "p2": "p3"
+        },
+        {
+          "id": "e7",
+          "t": "line",
+          "p1": "p3",
+          "p2": "p4"
+        },
+        {
+          "id": "e8",
+          "t": "line",
+          "p1": "p4",
+          "p2": "p1"
+        },
+        {
+          "id": "e17",
+          "t": "line",
+          "p1": "O",
+          "p2": "p15",
+          "construction": true
+        }
+      ],
+      "points": {
+        "O": {
+          "x": 0,
+          "y": 0
+        },
+        "p1": {
+          "x": -17.50000004947527,
+          "y": 37.0000000000006
+        },
+        "p2": {
+          "x": 17.49999995052473,
+          "y": 37.0000000000006
+        },
+        "p3": {
+          "x": 17.49999995052473,
+          "y": 14.000000000000597
+        },
+        "p4": {
+          "x": -17.50000004947527,
+          "y": 14.000000000000597
+        },
+        "p15": {
+          "x": 0,
+          "y": 14.000000000000298
+        }
+      },
+      "constraints": [
+        {
+          "id": "e9",
+          "type": "h",
+          "line": "e5"
+        },
+        {
+          "id": "e10",
+          "type": "h",
+          "line": "e7"
+        },
+        {
+          "id": "e11",
+          "type": "v",
+          "line": "e6"
+        },
+        {
+          "id": "e12",
+          "type": "v",
+          "line": "e8"
+        },
+        {
+          "id": "e16",
+          "type": "midpoint",
+          "p": "p15",
+          "line": "e7"
+        },
+        {
+          "id": "e18",
+          "type": "v",
+          "line": "e17"
+        }
+      ],
+      "dims": [
+        {
+          "id": "e13",
+          "type": "length",
+          "line": "e5",
+          "value": 35,
+          "ox": 0,
+          "oy": 6
+        },
+        {
+          "id": "e14",
+          "type": "length",
+          "line": "e6",
+          "value": 23,
+          "ox": 6,
+          "oy": 0
+        },
+        {
+          "id": "e19",
+          "type": "length",
+          "line": "e17",
+          "value": 14,
+          "orient": "v",
+          "w": -10.102649038192382,
+          "ox": 0,
+          "oy": 0
+        }
+      ],
+      "seq": 20,
+      "visible": false,
+      "origin": [
+        -55,
+        0,
+        0
+      ],
+      "axU": [
+        0,
+        1,
+        0
+      ],
+      "axV": [
+        0,
+        0,
+        1
+      ],
+      "axN": [
+        -1,
+        0,
+        0
+      ],
+      "_ghost": [],
+      "_refNote": "référence : solide fini (esquisse non consommée)",
+      "_health": {
+        "loops": 1,
+        "holes": 0,
+        "opens": [],
+        "gapPair": null,
+        "gapD": 1000000000,
+        "dupes": [],
+        "degen": [],
+        "selfints": []
+      },
+      "_audit": {
+        "residual": 4.9475268327559755e-8,
+        "all": [
+          {
+            "id": "e16",
+            "desc": "milieu",
+            "viol": 4.9475268327559755e-8
+          },
+          {
+            "id": "e19",
+            "desc": "longueur",
+            "viol": 2.984279490192421e-13
+          },
+          {
+            "id": "e13",
+            "desc": "longueur",
+            "viol": 0
+          },
+          {
+            "id": "e14",
+            "desc": "longueur",
+            "viol": 0
+          },
+          {
+            "id": "e9",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e10",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e11",
+            "desc": "v",
+            "viol": 0
+          },
+          {
+            "id": "e12",
+            "desc": "v",
+            "viol": 0
+          },
+          {
+            "id": "e18",
+            "desc": "v",
+            "viol": 0
+          }
+        ]
+      },
+      "host": {
+        "feat": "ex_2_mujw64fc",
+        "tag": "SIDE",
+        "x": -55,
+        "y": 0,
+        "name": "Face 4",
+        "edge": "e8",
+        "h": 0
+      }
+    }
+  ],
+  "features": [
+    {
+      "id": "ex_2_mujw64fc",
+      "type": "extrude",
+      "name": "Extrusion Esquisse 1 50mm",
+      "sketchId": "sk_1_mujw5zfu",
+      "distance": 50,
+      "op": "add",
+      "visible": true,
+      "mid": false,
+      "upto": null,
+      "color": 16766474
+    },
+    {
+      "id": "ex_4_mujw6qwj",
+      "type": "extrude",
+      "name": "Découpe Esquisse 2 (face) 0mm",
+      "sketchId": "sk_3_mujw6hq8",
+      "distance": null,
+      "op": "cut",
+      "visible": true,
+      "mid": false,
+      "upto": null,
+      "through": true
+    },
+    {
+      "id": "xf_7_muk22sf1",
+      "type": "xfillet",
+      "name": "Congé exact (4 arête(s))",
+      "edges": [
+        {
+          "pos": [
+            -34,
+            26,
+            25
+          ],
+          "r": 10,
+          "len": 50,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_3_mujw6hq8",
+            "id": "p17"
+          },
+          "name": "Arête 7",
+          "pos0": [
+            -34,
+            26,
+            30
+          ]
+        },
+        {
+          "pos": [
+            -34,
+            -26,
+            25
+          ],
+          "r": 10,
+          "len": 50,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_3_mujw6hq8",
+            "id": "p14"
+          },
+          "name": "Arête 8",
+          "pos0": [
+            -34,
+            -26,
+            30
+          ]
+        },
+        {
+          "pos": [
+            34,
+            -26,
+            25
+          ],
+          "r": 10,
+          "len": 50,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_3_mujw6hq8",
+            "id": "p15"
+          },
+          "name": "Arête 9",
+          "pos0": [
+            34,
+            -26,
+            30
+          ]
+        },
+        {
+          "pos": [
+            34,
+            26,
+            25
+          ],
+          "r": 10,
+          "len": 50,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_3_mujw6hq8",
+            "id": "p16"
+          },
+          "name": "Arête 10",
+          "pos0": [
+            34,
+            26,
+            30
+          ]
+        }
+      ],
+      "visible": true
+    },
+    {
+      "id": "xf_8_muk2l4dl",
+      "type": "xfillet",
+      "name": "Chanfrein exact (4 arête(s))",
+      "edges": [
+        {
+          "pos": [
+            55,
+            45,
+            25
+          ],
+          "r": 15,
+          "len": 50,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_1_mujw5zfu",
+            "id": "p3"
+          },
+          "name": "Arête 83",
+          "pos0": [
+            55,
+            45,
+            20
+          ]
+        },
+        {
+          "pos": [
+            -55,
+            45,
+            25
+          ],
+          "r": 15,
+          "len": 50,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_1_mujw5zfu",
+            "id": "p4"
+          },
+          "name": "Arête 84",
+          "pos0": [
+            -55,
+            45,
+            20
+          ]
+        },
+        {
+          "pos": [
+            -55,
+            -45,
+            25
+          ],
+          "r": 15,
+          "len": 50,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_1_mujw5zfu",
+            "id": "p1"
+          },
+          "name": "Arête 85",
+          "pos0": [
+            -55,
+            -45,
+            20
+          ]
+        },
+        {
+          "pos": [
+            55,
+            -45,
+            25
+          ],
+          "r": 15,
+          "len": 50,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_1_mujw5zfu",
+            "id": "p2"
+          },
+          "name": "Arête 86",
+          "pos0": [
+            55,
+            -45,
+            20
+          ]
+        }
+      ],
+      "visible": true,
+      "chamfer": true
+    },
+    {
+      "id": "ex_12_muk2o5f4",
+      "type": "extrude",
+      "name": "Découpe Esquisse 3 (face) 0mm",
+      "sketchId": "sk_11_muk2njpe",
+      "distance": null,
+      "op": "cut",
+      "visible": true,
+      "mid": false,
+      "upto": null,
+      "through": true
+    },
+    {
+      "id": "ex_14_muk2uhsl",
+      "type": "extrude",
+      "name": "Découpe Esquisse 4 (face) -5mm",
+      "sketchId": "sk_13_muk2tx3h",
+      "distance": -5,
+      "op": "cut",
+      "visible": true,
+      "mid": false,
+      "upto": null
+    },
+    {
+      "id": "xf_15_muk2vgdh",
+      "type": "xfillet",
+      "name": "Congé exact (4 arête(s))",
+      "edges": [
+        {
+          "pos": [
+            52.5,
+            17.49999995052473,
+            14.000000000000597
+          ],
+          "r": 8,
+          "len": 5,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_13_muk2tx3h",
+            "id": "p3"
+          },
+          "name": "Arête 128",
+          "pos0": [
+            52.5,
+            17.49999995052473,
+            14.000000000000597
+          ]
+        },
+        {
+          "pos": [
+            52.5,
+            17.49999995052473,
+            37.0000000000006
+          ],
+          "r": 8,
+          "len": 5,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_13_muk2tx3h",
+            "id": "p2"
+          },
+          "name": "Arête 130",
+          "pos0": [
+            52.5,
+            17.49999995052473,
+            37.0000000000006
+          ]
+        },
+        {
+          "pos": [
+            52.5,
+            -17.50000004947527,
+            14.000000000000597
+          ],
+          "r": 8,
+          "len": 5,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_13_muk2tx3h",
+            "id": "p4"
+          },
+          "name": "Arête 132",
+          "pos0": [
+            52.5,
+            -17.50000004947527,
+            14.000000000000597
+          ]
+        },
+        {
+          "pos": [
+            52.5,
+            -17.50000004947527,
+            37.0000000000006
+          ],
+          "r": 8,
+          "len": 5,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_13_muk2tx3h",
+            "id": "p1"
+          },
+          "name": "Arête 133",
+          "pos0": [
+            52.5,
+            -17.50000004947527,
+            37.0000000000006
+          ]
+        }
+      ],
+      "visible": true
+    },
+    {
+      "id": "rp_16_muk2w60d",
+      "type": "repeat",
+      "name": "Symétrie",
+      "mode": "mir",
+      "copies": 2,
+      "dist": 20,
+      "angle": 360,
+      "axis": "X",
+      "plane": "YZ",
+      "base": [
+        "ex_14_muk2uhsl",
+        "xf_15_muk2vgdh"
+      ],
+      "children": [
+        "ex_17_muk2w60d",
+        "xf_19_muk2w60e"
+      ],
+      "visible": true
+    },
+    {
+      "id": "ex_17_muk2w60d",
+      "type": "extrude",
+      "name": "Découpe Esquisse 4 (face) -5mm",
+      "sketchId": "sk_18_muk2w60e",
+      "distance": -5,
+      "op": "cut",
+      "visible": true,
+      "mid": false,
+      "upto": null,
+      "_src": "ex_14_muk2uhsl",
+      "repeatId": "rp_16_muk2w60d",
+      "repIndex": 1
+    },
+    {
+      "id": "xf_19_muk2w60e",
+      "type": "xfillet",
+      "name": "Congé exact (4 arête(s))",
+      "edges": [
+        {
+          "pos": [
+            -52.5,
+            17.49999995052473,
+            14.000000000000597
+          ],
+          "r": 8,
+          "len": 5,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_18_muk2w60e",
+            "id": "p3"
+          },
+          "name": "Arête 128",
+          "pos0": [
+            52.5,
+            17.49999995052473,
+            14.000000000000597
+          ]
+        },
+        {
+          "pos": [
+            -52.5,
+            17.49999995052473,
+            37.0000000000006
+          ],
+          "r": 8,
+          "len": 5,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_18_muk2w60e",
+            "id": "p2"
+          },
+          "name": "Arête 130",
+          "pos0": [
+            52.5,
+            17.49999995052473,
+            37.0000000000006
+          ]
+        },
+        {
+          "pos": [
+            -52.5,
+            -17.50000004947527,
+            14.000000000000597
+          ],
+          "r": 8,
+          "len": 5,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_18_muk2w60e",
+            "id": "p4"
+          },
+          "name": "Arête 132",
+          "pos0": [
+            52.5,
+            -17.50000004947527,
+            14.000000000000597
+          ]
+        },
+        {
+          "pos": [
+            -52.5,
+            -17.50000004947527,
+            37.0000000000006
+          ],
+          "r": 8,
+          "len": 5,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_18_muk2w60e",
+            "id": "p1"
+          },
+          "name": "Arête 133",
+          "pos0": [
+            52.5,
+            -17.50000004947527,
+            37.0000000000006
+          ]
+        }
+      ],
+      "visible": true,
+      "_src": "xf_15_muk2vgdh",
+      "repeatId": "rp_16_muk2w60d",
+      "repIndex": 1
+    },
+    {
+      "id": "xf_22_muk2xjbd",
+      "type": "xfillet",
+      "name": "Congé exact (4 arête(s))",
+      "edges": [
+        {
+          "pos": [
+            0,
+            45,
+            50
+          ],
+          "r": 4,
+          "len": 80,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_1_mujw5zfu",
+            "id": "e7",
+            "z": 50,
+            "side": 1,
+            "dist": 50
+          },
+          "name": "Arête 142",
+          "pos0": [
+            0,
+            45,
+            50
+          ]
+        },
+        {
+          "pos": [
+            55,
+            0,
+            50
+          ],
+          "r": 4,
+          "len": 60,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_1_mujw5zfu",
+            "id": "e6",
+            "z": 50,
+            "side": 1,
+            "dist": 50
+          },
+          "name": "Arête 143",
+          "pos0": [
+            55,
+            0,
+            50
+          ]
+        },
+        {
+          "pos": [
+            0,
+            -45,
+            50
+          ],
+          "r": 4,
+          "len": 80,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_1_mujw5zfu",
+            "id": "e5",
+            "z": 50,
+            "side": 1,
+            "dist": 50
+          },
+          "name": "Arête 144",
+          "pos0": [
+            0,
+            -45,
+            50
+          ]
+        },
+        {
+          "pos": [
+            -55,
+            0,
+            50
+          ],
+          "r": 4,
+          "len": 60,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_1_mujw5zfu",
+            "id": "e8",
+            "z": 50,
+            "side": 1,
+            "dist": 50
+          },
+          "name": "Arête 145",
+          "pos0": [
+            -55,
+            0,
+            50
+          ]
+        }
+      ],
+      "visible": true
+    },
+    {
+      "id": "xf_28_muk38qn7",
+      "type": "xfillet",
+      "name": "Congé exact (1 arête(s))",
+      "edges": [
+        {
+          "pos": [
+            0,
+            26,
+            50
+          ],
+          "r": 2,
+          "len": 48,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_3_mujw6hq8",
+            "id": "e20",
+            "z": 0,
+            "side": 1,
+            "dist": 1
+          },
+          "name": "Arête 169",
+          "pos0": [
+            0,
+            26,
+            50
+          ]
+        }
+      ],
+      "visible": true
+    },
+    {
+      "id": "xf_31_muk39ui7",
+      "type": "xfillet",
+      "name": "Congé exact (1 arête(s))",
+      "edges": [
+        {
+          "pos": [
+            0.0001090135294639083,
+            -45,
+            37.99999999862483
+          ],
+          "r": 2,
+          "len": 42,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_11_muk2njpe",
+            "id": "e8",
+            "z": 0,
+            "side": 1,
+            "dist": 1
+          },
+          "name": "Arête 181",
+          "pos0": [
+            0.0001090135294639083,
+            -45,
+            37.99999999862483
+          ]
+        }
+      ],
+      "visible": true
+    },
+    {
+      "id": "xf_35_muk3cucw",
+      "type": "xfillet",
+      "name": "Congé exact (16 arête(s))",
+      "edges": [
+        {
+          "pos": [
+            41.1715728752538,
+            -43.828427124746185,
+            48.82842712474619
+          ],
+          "r": 3,
+          "len": 7.633,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_1_mujw5zfu",
+            "id": "e5",
+            "z": 23,
+            "side": 1,
+            "dist": 50
+          },
+          "name": "Arête 228",
+          "pos0": [
+            40,
+            -45,
+            23
+          ]
+        },
+        {
+          "pos": [
+            47.49999999999999,
+            -37.49999999999999,
+            49.99999999999999
+          ],
+          "r": 3,
+          "len": 9.899,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_1_mujw5zfu",
+            "id": "e5",
+            "z": 48.828,
+            "side": 1,
+            "dist": 50,
+            "far": 1
+          },
+          "name": "Arête 229",
+          "pos0": [
+            41.1715728752538,
+            -43.828427124746185,
+            48.82842712474619
+          ]
+        },
+        {
+          "pos": [
+            53.828427124746185,
+            -31.171572875253805,
+            48.82842712474619
+          ],
+          "r": 3,
+          "len": 7.633,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_1_mujw5zfu",
+            "id": "e6",
+            "z": 23,
+            "side": 1,
+            "dist": 50
+          },
+          "name": "Arête 232",
+          "pos0": [
+            55,
+            -30,
+            23
+          ]
+        },
+        {
+          "pos": [
+            -47.49999999999999,
+            -37.49999999999999,
+            49.99999999999999
+          ],
+          "r": 3,
+          "len": 9.899,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_1_mujw5zfu",
+            "id": "e5",
+            "z": 48.828,
+            "side": 1,
+            "dist": 50,
+            "far": 1
+          },
+          "name": "Arête 235",
+          "pos0": [
+            -41.17157287525381,
+            -43.828427124746185,
+            48.82842712474619
+          ]
+        },
+        {
+          "pos": [
+            -53.828427124746185,
+            -31.17157287525379,
+            48.82842712474619
+          ],
+          "r": 3,
+          "len": 7.633,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_1_mujw5zfu",
+            "id": "e8",
+            "z": 23,
+            "side": 1,
+            "dist": 50
+          },
+          "name": "Arête 238",
+          "pos0": [
+            -55,
+            -30,
+            23
+          ]
+        },
+        {
+          "pos": [
+            41.17157287525381,
+            43.828427124746185,
+            48.82842712474619
+          ],
+          "r": 3,
+          "len": 7.633,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_1_mujw5zfu",
+            "id": "e7",
+            "z": 23,
+            "side": 1,
+            "dist": 50
+          },
+          "name": "Arête 240",
+          "pos0": [
+            40,
+            45,
+            23
+          ]
+        },
+        {
+          "pos": [
+            47.49999999999999,
+            37.49999999999999,
+            49.99999999999999
+          ],
+          "r": 3,
+          "len": 9.899,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_1_mujw5zfu",
+            "id": "e7",
+            "z": 48.828,
+            "side": 1,
+            "dist": 50,
+            "far": 1
+          },
+          "name": "Arête 241",
+          "pos0": [
+            41.17157287525381,
+            43.828427124746185,
+            48.82842712474619
+          ]
+        },
+        {
+          "pos": [
+            -47.49999999999999,
+            37.49999999999999,
+            49.99999999999999
+          ],
+          "r": 3,
+          "len": 9.899,
+          "anchor": {
+            "t": "e",
+            "sk": "sk_1_mujw5zfu",
+            "id": "e7",
+            "z": 48.828,
+            "side": 1,
+            "dist": 50,
+            "far": 1
+          },
+          "name": "Arête 247",
+          "pos0": [
+            -41.1715728752538,
+            43.828427124746185,
+            48.82842712474619
+          ]
+        }
+      ],
+      "visible": true
+    }
+  ]
+}
