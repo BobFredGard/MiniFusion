@@ -14,7 +14,8 @@ const SUITES = [
   "test_arbre_selection",
   "test_undo_document",
   "test_undo_aller_retour",
-  "test_revolve"
+  "test_revolve",
+  "test_skctxmenu"
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {

@@ -323,6 +323,7 @@ svg.addEventListener('contextmenu',e=>{
   skCancelDraft();if(skEdit)skStatus('Action annulée.');
 });
 document.addEventListener('click',e=>{
+  if(e.button!==undefined&&e.button!==0)return; // le relâchement du clic droit (button 2, Chrome le fait suivre d'un click) ne doit jamais refermer le menu qu'il vient d'ouvrir
   const m=$('skCtxMenu'); if(!m||m.style.display==='none') return;
   if(!m.contains(e.target) && e.target!==svg) hideSkCtx();
 });

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**85 versions**, de `2026-09-28b` à `2026-09-31q` — la plus récente en bas,
+**86 versions**, de `2026-09-28b` à `2026-09-31r` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1947,4 +1947,26 @@ lisible en permanence (vert = neutre, bleu = dépouiller, rouge = retirer).
 Tests : nouveau `test_highlight_order.cjs` — fige l’ordre overlay > preview > base
 pour les deux modes + flèche (aurait échoué avant : 996 < 1000) — TOUT PASSE.
 Régression 12/12.
+---
+
+### `2026-09-31r`
+
+**ESQUISSE : le menu contextuel 2 droites s’ouvre partout, sans Décaler préalable.**
+
+Constat : avec 2 droites sélectionnées, le menu n’apparaissait que par hasard.
+Cause prouvée par exécution : `skOffsetD` (distance « auto » du menu ⇄ Décaler)
+n’était jamais déclaré — le menu levait `ReferenceError` avant `display=block`,
+tant que l’outil Décaler n’avait pas servi une fois dans la session. De plus, le
+gestionnaire document `click` refermait le menu sur le `click` bouton-2 que Chrome
+fait suivre au relâchement du clic droit.
+
+Correctifs : `let skOffsetD=5` déclaré (défaut cohérent avec l’offset), et le
+dismiss ignore les clics non-gauches (`e.button!==0`). Le clic droit ne touche
+jamais à la sélection (déjà le cas) : le menu reflète toujours l’état réel.
+
+Tests : nouveau `test_skctxmenu.cjs` — sélection 2 lignes rejouée au pixel (clic +
+Shift+clic), menu affiché DANS LE VIDE sans Décaler préalable, entrées Parallèle
+présentes, relâchement droit ne referme pas, clic gauche referme — TOUT EST CONFORME
+(échoue sans les correctifs : T1+T3). Régression esquisses 5/6 (test_trimarc : pin
+de version 28g + limite stub caméra, préexistant).
 
