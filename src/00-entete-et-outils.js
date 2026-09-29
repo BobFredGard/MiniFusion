@@ -11,6 +11,16 @@
    sorties du livrable le 2026-09-30j. Ce qui précède est la description du projet
    et ses garde-fous, reprise telle quelle.
    ───────────────────────────────────────────────────────────────────────────
+ *
+ * ── VERSIONS ──
+ * Avant le 2026-10-01 : `2026-09-30l`…`2026-09-31i` (date indicative + lettre).
+ * Depuis le 2026-10-01 : `AAAA-MM-JJ-NNN` — date RÉELLE du jour + compteur quotidien
+ * démarrant à 001, NNN sur 3 chiffres (`2026-10-01-001`, puis `-002`, …).
+ * Le compteur repart à 001 chaque jour : avant de bumper, regarder la dernière version
+ * du jour (`git log --oneline`, tags). Même règle pour les snapshots
+ * (`Backup/fusion_mvp_AAAA-MM-JJ-NNN.html`) et les entrées `### …` du CHANGELOG.
+ * APP_VER n’est comparé qu’à égalité stricte (anti-cache) et affiché : le format
+ * peut changer sans rien casser.
  */
 
 const APP_VER='2026-09-31i';
