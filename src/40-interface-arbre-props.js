@@ -124,7 +124,7 @@ function renderTree(){
       const d=document.createElement('div');
       d.className='tnode'+((sel.kind==='feature'&&sel.id===f.id)||treeSel.indexOf(f.id)>=0?' sel':'')+(f.visible===false?' hidden':'')+(tlLocked(f)?' locked':'');
       const srcNames=srcs.map(id=>{const b=doc.features.find(x=>x.id===id);return b?b.name:'?';});
-      d.innerHTML=`<span class="tri" title="Déplier / replier les fonctions copiées">${open?'▼':'▶'}</span><span>🔁</span><span class="nm">${f.name} · ${repTypeName(f.mode)} · ${kids.length} instance(s)`+
+      d.innerHTML=`<span class="tri" title="Déplier / replier les fonctions copiées">${open?'▼':'▶'}</span><span>🔁</span><span class="nm">${f.name} · ${repTypeName(f.mode,f)} · ${kids.length} instance(s)`+
         (srcs.length?` <span class="repsrc" title="Sources : ${srcNames.join(', ')}">◀ ${srcs.length}</span>`:' <span class="repsrc vide" title="Aucune source choisie">◀ 0</span>')+
         `</span><span class="eye" title="Afficher / masquer">`+(f.visible===false?'🙈':'👁')+`</span>`;
       d.title='Clic = sélectionner · ▶/▼ = montrer/masquer les fonctions copiées'+
@@ -261,7 +261,7 @@ function enterRepMode(){
   faceEl.textContent='Répétition : cochez les fonctions à répéter dans la liste ci-dessus, puis Appliquer. Astuce : la repetition est depliee dans l arbre et ses sources sont marquees ◀.';
 }
 function exitRepMode(){repMode=null;renderTree();renderProps();}
-function repTypeName(m){return m==='mir'?'Symétrie':m==='circ'?'Circulaire':'Linéaire';}
+function repTypeName(m,f){if(m==='mir'&&f&&f.plane2)return 'Symétrie double';return m==='mir'?'Symétrie':m==='circ'?'Circulaire':'Linéaire';}
 function repAxisVec(cfg){const c=cfg||repMode;const a=c&&c.axis;if(c&&c.dir)return repNorm(c.dir);if(a==='Y')return[0,1,0];if(a==='Z')return[0,0,1];return[1,0,0];}
 function repPlaneN(cfg){const c=cfg||repMode;if(c&&c.planeN)return repNorm(c.planeN);const p=c&&c.plane;if(p==='XY')return[0,0,1];if(p==='XZ')return[0,1,0];return[1,0,0];}
 function repNorm(a){const l=Math.hypot(a[0],a[1],a[2])||1;return[a[0]/l,a[1]/l,a[2]/l];}
@@ -365,6 +365,22 @@ function repGenChildren(rp){
   rp.base=rp.base.filter(id=>{const b=doc.features.find(x=>x.id===id);return b&&b.type!=='repeat'&&!b.repeatId;});
   const n=rp.mode==='mir'?1:repMaxCopies(rp.copies);
   const base=rp.base.map(id=>doc.features.find(f=>f.id===id)).filter(Boolean).sort((a,b)=>doc.features.indexOf(a)-doc.features.indexOf(b));
+  // Symétrie DOUBLE : un 2ᵉ plan (rp.plane2) ajoute une 2ᵉ passe qui miroite la BASE et
+  // les instances de la 1ʳᵉ passe — « la 1ère symétrie est comprise dans la seconde,
+  // ainsi que l'opération initiale ». Chaque passe applique UN SEUL miroir via la
+  // machinerie existante (pas de transformée composée, pas d'imbrication — celle-ci
+  // reste exclue par le filtre ci-dessus et la garde repGenBusy).
+  const mir2=rp.mode==='mir'&&!!rp.plane2;
+  const cfg2=mir2?Object.assign({},rp,{plane:rp.plane2,planeN:rp.planeN2}):null;
+  if(mir2){
+    // Deux plans identiques (n et −n = même plan) : la 2ᵉ passe remettrait tout en place.
+    try{
+      const n1=repPlaneN(rp);
+      const n2=rp.planeN2?repNorm(rp.planeN2):repPlaneN({plane:rp.plane2});
+      const d=Math.abs(n1[0]*n2[0]+n1[1]*n2[1]+n1[2]*n2[2]);
+      rp._samePlane=!(d<0.999);
+    }catch(e){rp._samePlane=false;}
+  }else delete rp._samePlane;
   // Recyclage : pour (index, type), on reprend les instances existantes dans l'ordre de la
   // timeline (priorité à celle dont la source _src correspond).
   const g=new Map();
@@ -376,21 +392,47 @@ function repGenChildren(rp){
     if(c)arr.splice(arr.indexOf(c),1);
     return c;
   };
-  // 1) Recyclage : une instance existante par (index, fonction source)
-  const reuse=new Map(); // 'index|srcId' -> instance existante
-  for(let i=1;i<=n;i++)base.forEach(f=>{const c=take(i,f.type,f.id);if(c)reuse.set(i+'|'+f.id,c);});
-  // 2) Purge : instances hors bornes ou dont la source a disparu (+ esquisses orphelines)
-  olds.forEach(c=>{if(![...reuse.values()].includes(c))dropSketch(c.id);});
+  // 1) Recyclage : voir buildPass ci-dessous — chaque passe recycle ses propres
+  // instances via take() (clé 'index|type', préférence _src), ids stables d'un rejeu
+  // à l'autre. Pour la 2ᵉ passe, la source est l'instance de 1ʳᵉ passe (id stable).
+  const reuse=new Map(); // 'index|srcId' -> instance existante (toutes passes)
+  // 2) Purge : instances hors bornes ou dont la source a disparu (+ esquisses orphelines).
+  // Pour le miroir double, les instances de 2ᵉ passe sont recyclées à partir des instances
+  // de 1ʳᵉ passe (ids stables) : la passe 1 est donc reconstruite D'ABORD, puis la passe 2
+  // recycle et reconstruit à partir des instances de passe 1 déjà à jour.
+  const buildPass=(sources,cfg,idx)=>{
+    const skMap={},featMap={};
+    const kids=[];
+    sources.forEach(f=>{
+      const c=take(idx,f.type,f.id);
+      const nf=repCloneFeature(f,idx,skMap,featMap,cfg,c||null);
+      if(nf){nf.repeatId=rp.id;nf.repIndex=idx;if(c)reuse.set(idx+'|'+f.id,c);kids.push(nf);}
+    });
+    return kids;
+  };
+  const kids1=(rp.mode==='mir')?buildPass(base,rp,1):[];
+  let kids2=[];
+  if(mir2&&!rp._samePlane){
+    const sources2=[];
+    base.forEach(f=>{sources2.push(f);const k1=kids1.find(k=>k._src===f.id);if(k1)sources2.push(k1);});
+    kids2=buildPass(sources2,cfg2,2);
+  }
+  const kept=new Set([...reuse.values()]);
+  olds.forEach(c=>{if(!kept.has(c))dropSketch(c.id);});
   doc.features=doc.features.filter(f=>f.repeatId!==rp.id);
   rp.children=[];
-  // 3) Reconstruction : les instances réutilisées sont rafraîchies, les nouvelles créées
-  const kids=[];
-  for(let i=1;i<=n;i++){
-    const skMap={},featMap={};
-    base.forEach(f=>{
-      const nf=repCloneFeature(f,i,skMap,featMap,rp,reuse.get(i+'|'+f.id)||null);
-      if(nf){nf.repeatId=rp.id;nf.repIndex=i;rp.children.push(nf.id);kids.push(nf);}
-    });
+  const kids=(rp.mode==='mir')?kids1.concat(kids2):[];
+  if(rp.mode!=='mir'){
+    for(let i=1;i<=n;i++){
+      const skMap={},featMap={};
+      base.forEach(f=>{
+        const c=take(i,f.type,f.id);
+        const nf=repCloneFeature(f,i,skMap,featMap,rp,c||null);
+        if(nf){nf.repeatId=rp.id;nf.repIndex=i;if(c)reuse.set(i+'|'+f.id,c);rp.children.push(nf.id);kids.push(nf);}
+      });
+    }
+  }else{
+    kids.forEach(nf=>rp.children.push(nf.id));
   }
   const at=doc.features.indexOf(rp);
   if(at<0)doc.features=doc.features.concat(kids);else doc.features.splice(at+1,0,...kids);
@@ -526,11 +568,14 @@ function treeDeleteSel(){
   try{refreshMirror();}catch(e){}
   faceEl.textContent='🗑 Supprimé : '+tous.map(noms).join(', ')+'  —  Ctrl+Z pour annuler.';
 }
-function repUseFaceFor(rp){
+function repUseFaceFor(rp,which){
   if(!selFaces||!selFaces.length)return;
   const s=selFaces[0],n=faceNormalWorld(s.mesh,s.faceIndex);if(!n)return;
   const a=[n.x,n.y,n.z];
-  if(rp.mode==='mir'){rp.plane='Face';rp.planeN=a;}else{rp.axis='Face';rp.dir=a;}
+  if(rp.mode==='mir'){
+    if(which===2){rp.plane2='Face';rp.planeN2=a;}
+    else{rp.plane='Face';rp.planeN=a;}
+  }else{rp.axis='Face';rp.dir=a;}
   repGenChildren(rp);markDirty();rebuild();renderTree();renderProps();refreshParts();
 }
 function applyRepPattern(){
@@ -540,9 +585,10 @@ function applyRepPattern(){
   const base=ids.map(id=>doc.features.find(f=>f.id===id)).filter(Boolean).sort((a,b)=>doc.features.indexOf(a)-doc.features.indexOf(b));
   // La répétition devient une FONCTION réelle (type 'repeat') : elle garde ses paramètres,
   // ses fonctions sources (base) et ses instances (children, créées par repGenChildren).
-  const rp={id:uid('rp'),type:'repeat',name:repTypeName(repMode.type),mode:repMode.type,
+  const rp={id:uid('rp'),type:'repeat',name:repTypeName(repMode.type,repMode),mode:repMode.type,
     copies:repMaxCopies(repMode.copies),dist:repMode.dist,angle:repMode.angle,
     axis:repMode.axis,plane:repMode.plane,dir:repMode.dir,planeN:repMode.planeN,
+    plane2:repMode.plane2||undefined,planeN2:repMode.planeN2||undefined,
     base:base.map(f=>f.id),children:[],visible:true};
   addFeature(rp);
   const nb=repGenChildren(rp);
@@ -558,6 +604,12 @@ function repUseSelectedFace(){
   if(repMode.type==='mir'){repMode.plane='Face';repMode.planeN=a;}else{repMode.axis='Face';repMode.dir=a;}
   renderRepPanel();
 }
+function repUseSelectedFace2(){
+  if(!repMode||repMode.type!=='mir'||!selFaces||!selFaces.length)return;
+  const s=selFaces[0],n=faceNormalWorld(s.mesh,s.faceIndex);if(!n)return;
+  repMode.plane2='Face';repMode.planeN2=[n.x,n.y,n.z];
+  renderRepPanel();
+}
 function renderRepPanel(){
   const p=$('props');p.innerHTML='';if(!repMode)return;
   const h=document.createElement('div');h.innerHTML='<b>🔁 Répétition</b><br><span class="note">Choisissez les fonctions à répéter ci-dessous (cases à cocher). Dans l\'arbre, un <b>Ctrl+clic</b> sert désormais à la multi-suppression.</span>';p.appendChild(h);
@@ -567,6 +619,30 @@ function renderRepPanel(){
   const ax=document.createElement('select');['X','Y','Z','Face'].forEach(v=>{const op=document.createElement('option');op.value=v;op.textContent=(repMode.type==='mir'?(v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v):v);ax.appendChild(op);});
   ax.value=repMode.type==='mir'?(repMode.plane==='XY'?'Z':repMode.plane==='XZ'?'Y':repMode.plane==='Face'?'Face':'X'):(repMode.axis||'X');
   ax.onchange=()=>{if(repMode.type==='mir'){repMode.plane=ax.value==='X'?'YZ':ax.value==='Y'?'XZ':ax.value==='Z'?'XY':'Face';delete repMode.planeN;}else{repMode.axis=ax.value;delete repMode.dir;}renderRepPanel();};p.appendChild(ax);
+  if(repMode.type==='mir'){
+    // Symétrie DOUBLE : un 2ᵉ plan dont la passe englobe la base ET la 1ʳᵉ symétrie.
+    // Absent par défaut (compatibilité : une symétrie existante reste simple).
+    const r2=document.createElement('div');r2.className='row';
+    const t2=document.createElement('input');t2.type='checkbox';t2.checked=!!repMode.plane2;
+    t2.title='Ajouter un 2ᵉ plan : la 1ʳᵉ symétrie est comprise dans la 2ᵉ, ainsi que l\u2019opération initiale';
+    const l2=document.createElement('span');l2.textContent=' 2ᵉ plan (symétrie double)';
+    r2.appendChild(t2);r2.appendChild(l2);p.appendChild(r2);
+    t2.onchange=()=>{
+      if(t2.checked){if(!repMode.plane2)repMode.plane2=(repMode.plane||'YZ')==='XZ'?'YZ':'XZ';}
+      else{delete repMode.plane2;delete repMode.planeN2;}
+      renderRepPanel();
+    };
+    if(repMode.plane2){
+      const ax2=document.createElement('select');
+      ['X','Y','Z','Face'].forEach(v=>{const op=document.createElement('option');op.value=v;op.textContent=(v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v);ax2.appendChild(op);});
+      ax2.value=repMode.plane2==='XY'?'Z':repMode.plane2==='XZ'?'Y':repMode.plane2==='Face'?'Face':'X';
+      ax2.title='2ᵉ plan de symétrie';
+      ax2.onchange=()=>{repMode.plane2=ax2.value==='X'?'YZ':ax2.value==='Y'?'XZ':ax2.value==='Z'?'XY':'Face';delete repMode.planeN2;renderRepPanel();};
+      p.appendChild(ax2);
+      const bf2=document.createElement('button');bf2.textContent='🎯 Face → 2ᵉ plan';bf2.title='Prend la normale de la face sélectionnée comme 2ᵉ plan';
+      bf2.onclick=()=>{repUseSelectedFace2();};p.appendChild(bf2);
+    }
+  }
   if(repMode.type==='lin'){const l=document.createElement('label');l.textContent=' Distance (mm)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.dist;inp.style.width='80px';inp.onchange=()=>{repMode.dist=parseFloat(String(inp.value).replace(',','.'))||0;};l.appendChild(inp);p.appendChild(l);}
   if(repMode.type==='circ'){const l=document.createElement('label');l.textContent=' Angle total (°)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.angle;inp.style.width='80px';inp.onchange=()=>{repMode.angle=parseFloat(String(inp.value).replace(',','.'))||360;};l.appendChild(inp);p.appendChild(l);}
   const bf=document.createElement('button');bf.textContent='Utiliser la face sélectionnée';bf.onclick=repUseSelectedFace;p.appendChild(bf);
@@ -733,7 +809,7 @@ function renderProps(){
       // sinon on détruirait la case en cours de clic (symptôme « je ne peux pas cocher »).
       const majEntete=()=>{
         const k=doc.features.filter(c=>c.repeatId===f.id).length;
-        entete.innerHTML=`<b>${f.name}</b> · ${repTypeName(f.mode)} · ${f.copies||1} copie(s) · ${k} instance(s)`;
+        entete.innerHTML=`<b>${f.name}</b> · ${repTypeName(f.mode,f)} · ${f.copies||1} copie(s) · ${k} instance(s)`;
       };
       const entete=document.createElement('div');p.appendChild(entete);majEntete();
       p.appendChild(repSourceList(f.base,function(b){
@@ -744,7 +820,7 @@ function renderProps(){
       const row=document.createElement('div');row.className='row';
       const typ=document.createElement('select');[['lin','Linéaire'],['circ','Circulaire'],['mir','Symétrie']].forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];typ.appendChild(op);});typ.value=f.mode||'lin';
       const applyCfg=()=>{repGenChildren(f);markDirty();rebuild();renderTree();renderProps();refreshParts();};
-      typ.onchange=()=>{f.mode=typ.value;f.name=repTypeName(f.mode);applyCfg();};
+      typ.onchange=()=>{f.mode=typ.value;f.name=repTypeName(f.mode,f);applyCfg();};
       row.appendChild(typ);
       const cnt=document.createElement('input');cnt.type='number';cnt.min='1';cnt.value=f.copies||1;cnt.style.width='64px';cnt.title='Nombre de copies';
       cnt.onchange=()=>{f.copies=repMaxCopies(cnt.value);applyCfg();};
@@ -754,6 +830,30 @@ function renderProps(){
       ax.value=f.mode==='mir'?(f.plane==='XY'?'Z':f.plane==='XZ'?'Y':f.plane==='Face'?'Face':'X'):(f.axis||'X');
       ax.onchange=()=>{if(f.mode==='mir'){f.plane=ax.value==='X'?'YZ':ax.value==='Y'?'XZ':ax.value==='Z'?'XY':'Face';delete f.planeN;}else{f.axis=ax.value;delete f.dir;}applyCfg();};
       p.appendChild(ax);
+      if(f.mode==='mir'){
+        // 2ᵉ plan : la passe englobe la base ET la 1ʳᵉ symétrie (symétrie double).
+        const r2=document.createElement('div');r2.className='row';
+        const t2=document.createElement('input');t2.type='checkbox';t2.checked=!!f.plane2;
+        t2.title='Ajouter un 2ᵉ plan : la 1ʳᵉ symétrie est comprise dans la 2ᵉ, ainsi que l\u2019opération initiale';
+        const l2=document.createElement('span');l2.textContent=' 2ᵉ plan (symétrie double)';
+        r2.appendChild(t2);r2.appendChild(l2);p.appendChild(r2);
+        t2.onchange=()=>{
+          docPushUndo('2ᵉ plan de « '+f.name+' »');
+          if(t2.checked){if(!f.plane2)f.plane2=(f.plane||'YZ')==='XZ'?'YZ':'XZ';}
+          else{delete f.plane2;delete f.planeN2;}
+          f.name=repTypeName(f.mode,f);applyCfg();
+        };
+        if(f.plane2){
+          const ax2=document.createElement('select');
+          ['X','Y','Z','Face'].forEach(v=>{const op=document.createElement('option');op.value=v;op.textContent=(v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v);ax2.appendChild(op);});
+          ax2.value=f.plane2==='XY'?'Z':f.plane2==='XZ'?'Y':f.plane2==='Face'?'Face':'X';
+          ax2.title='2ᵉ plan de symétrie';
+          ax2.onchange=()=>{docPushUndo('2ᵉ plan de « '+f.name+' »');f.plane2=ax2.value==='X'?'YZ':ax2.value==='Y'?'XZ':ax2.value==='Z'?'XY':'Face';delete f.planeN2;applyCfg();};
+          p.appendChild(ax2);
+          p.appendChild(btn('🎯 Face → 2ᵉ plan',()=>repUseFaceFor(f,2)));
+        }
+        if(f._samePlane)p.appendChild(note('⚠ Les deux plans sont identiques : la 2ᵉ passe est sans effet.'));
+      }
       if(f.mode==='lin'){const l=document.createElement('label');l.textContent=' Distance (mm)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=f.dist;inp.style.width='80px';inp.addEventListener('change',()=>{f.dist=parseFloat(String(inp.value).replace(',','.'))||0;applyCfg();});l.appendChild(inp);p.appendChild(l);}
       if(f.mode==='circ'){const l=document.createElement('label');l.textContent=' Angle total (°)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=f.angle;inp.style.width='80px';inp.addEventListener('change',()=>{f.angle=parseFloat(String(inp.value).replace(',','.'))||360;applyCfg();});l.appendChild(inp);p.appendChild(l);}
       p.appendChild(btn('🎯 Utiliser la face sélectionnée',()=>repUseFaceFor(f)));

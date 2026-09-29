@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**75 versions**, de `2026-09-28b` à `2026-09-31g` — la plus récente en bas,
+**76 versions**, de `2026-09-28b` à `2026-09-31h` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1741,4 +1741,28 @@ exacte ; la boîte « tri » ne sert qu’au constat.
 Tests : `test_extrude_flip_draft.cjs` (miroir, poche, ±dépouille, 0, flip+dépouille,
 80°, signatures) — TOUT EST CONFORME. Régression 17/18 (seul `test_fichier_reel` :
 fixture `Sans titre.minifusion.json` supprimée du disque — ENOENT, sans rapport).
+---
+
+### `2026-09-31h`
+
+**RÉPÉTITION : symétrie DOUBLE à 2 plans (la 1ʳᵉ symétrie comprise dans la 2ᵉ).**
+
+Une Symétrie accepte désormais un 2ᵉ plan (X/Y/Z/Face, comme le 1ᵉʳ) : la 1ʳᵉ passe
+miroite la base sur le plan 1, la 2ᵉ passe miroite la base ET les instances de 1ʳᵉ
+passe sur le plan 2 — exactement « la 1ère symétrie comprise dans la 2ᵉ, ainsi que
+l’opération initiale ». Chaque passe applique UN SEUL miroir via la machinerie
+existante : pas de transformée composée, et l’imbrication reste exclue (filtre
+`type!==repeat` + garde `repGenBusy` inchangés).
+
+Détails : instances `repIndex` 1 puis 2, recyclage en place (ids + esquisses stables,
+y compris en repassant de double à simple) ; `_src` de passe 2 = instance de passe 1 ;
+`plane2`/`planeN2` dans `featSig` (le cache se ré-invalide — vérifié) ainsi que
+`planeN`, qui y manquait ; plans identiques (n et −n = même plan) → 2ᵉ passe sautée
++ drapeau `_samePlane` expliqué dans le panneau ; nom « Symétrie double ».
+
+Tests : `test_repeat_mir2.cjs` — 3 instances [1,2,2], passe 1 x −30..−10, passe 2
+x 10..30 / y −15..−5 ET x −30..−10 / y −15..−5, final 4 solides x ±30 / y ±15,
+stabilité des ids, compatibilité mono-miroir, garde, signatures, rechargement —
+TOUT EST CONFORME. Régression 19/19 exécutables (4 KO = fixtures utilisateur
+supprimées du disque, ENOENT préexistant, sans rapport).
 
