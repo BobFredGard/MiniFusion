@@ -29,24 +29,12 @@ function insertSketchFillet(data,fx,fy,r,fxPid){
       const eIn=ch[(i-1+m)%m].ed,eOut=ch[i].ed;
       if(eIn.kind!=='line'||eOut.kind!=='line')return{ok:false,warn:'coin sur arc : ignoré'};
       const A=data.points[pPrev],B=data.points[pNext];
-      const lIn=Math.hypot(V.x-A.x,V.y-A.y),lOut=Math.hypot(B.x-V.x,B.y-V.y);
-      if(lIn<1e-9||lOut<1e-9)return{ok:false,warn:'coin dégénéré'};
-      const ux=(A.x-V.x)/lIn,uy=(A.y-V.y)/lIn,wx=(B.x-V.x)/lOut,wy=(B.y-V.y)/lOut;
-      const cos=Math.min(1,Math.max(-1,ux*wx+uy*wy));
-      const sinH=Math.sqrt(Math.max((1-cos)/2,1e-12)),cosH=Math.sqrt(Math.max((1+cos)/2,1e-12));
-      // Coins presque tangentes (cos→1) : le rayon est plafonné pour tenir dans l'espace
-      // au lieu d'être rejeté. Le rayon appliqué (rEff) peut être < r demandé.
-      const rEff=Math.min(r,0.49*Math.min(lIn,lOut)*sinH/Math.max(cosH,1e-12));
-      if(rEff<1e-3)return{ok:false,warn:'coin trop tangent — pas de place pour le rayon'};
-      const t=rEff*cosH/Math.max(sinH,1e-12);
-      if(!(t>1e-9))return{ok:false,warn:'rayon invalide'};
-      let bx=ux+wx,by=uy+wy;const bl=Math.hypot(bx,by);
-      if(bl<1e-9)return{ok:false,warn:'coin droit'};
-      bx/=bl;by/=bl;
-      const off=rEff/Math.max(sinH,1e-12);
-      const C1=[V.x+bx*off,V.y+by*off],C2=[V.x-bx*off,V.y-by*off];
-      const T1x=V.x+ux*(rEff*cosH/Math.max(sinH,1e-12)),T1y=V.y+uy*(rEff*cosH/Math.max(sinH,1e-12));
-      const T2x=V.x+wx*(rEff*cosH/Math.max(sinH,1e-12)),T2y=V.y+wy*(rEff*cosH/Math.max(sinH,1e-12));
+      // Même math que l'outil interactif (filletCornerGeom, 50) : un seul calcul de coin.
+      const g=filletCornerGeom(A,V,B,r);
+      if(!g.ok)return{ok:false,warn:g.warn};
+      const rEff=g.rEff;
+      const T1x=g.T1.x,T1y=g.T1.y,T2x=g.T2.x,T2y=g.T2.y;
+      const C1=[g.C1.x,g.C1.y],C2=[g.C2.x,g.C2.y];
       const rings=tr.loops.map(c2=>chainNodesOf(c2.chain).slice(0,-1).map(p=>{const q=data.points[p];return[q.x,q.y];}));
       const in1=rings.reduce((s,rg)=>s+(pip(C1,rg)?1:0),0)%2===1;
       const in2=rings.reduce((s,rg)=>s+(pip(C2,rg)?1:0),0)%2===1;

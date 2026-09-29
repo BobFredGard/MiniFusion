@@ -16,12 +16,12 @@ MiniFusion est un MVP de CAO historique (paramétrique, esprit Fusion 360) qui t
 - Opérations solides : union, soustraction, **coalescence des surfaces** (`ShapeUpgrade_UnifySameDomain`) pour supprimer les coutures internes, prismes, disques, plans de coupe.
 
 ### Esquisse — dessin
-- Outils : **sélection/déplacement de points**, ligne, rectangle, oblong/rainure, cercle, arc, point de construction, coïncidence (fusionner 2 extrémités), **ajuster (trim)**.
+- Outils : **sélection/déplacement de points**, ligne, rectangle, oblong/rainure, cercle, arc, point de construction, coïncidence (fusionner 2 extrémités), **congé 2D sur 2 arêtes (arc tangent + R pilotée, `F`)**, **chanfrein 2D (coupe + cote, `H`)**, **ajuster (trim)**.
 - **Grille magnétique 1 mm**, zoom+/−/ajuster, annuler/rétablir, vider, valider, exporter l'esquisse en SVG.
 - Rectangle et oblong posés en **2 clics** (1ᵉʳ coin → 2ᵉ coin, `Shift` = centré) avec **cotes automatiques**.
 
 ### Esquisse — contraintes & solveur
-- **12 contraintes** : horizontal, vertical, parallèle, perpendiculaire, égal, symétrie, tangence, coaxiale, milieu, fixe, construction — avec **auto-inférence** (perpendiculaire/tangente détectées à la création).
+- **12 contraintes** : horizontal, vertical, parallèle, perpendiculaire, égal, symétrie, tangence, coaxiale, milieu, fixe, construction — avec **auto-inférence** (perpendiculaire/tangente détectées à la création, **─/│ prioritaire sur ⟂ implicite**, doublons purgés).
 - **Solveur maison** : Levenberg-Marquardt + relaxation, avec panneau « Santé » (degrés de liberté, résidus), convergence mesurée.
 - **Cotes pilotées** : longueur, Ø, rayon, distance, angle, entraxe. Elles se posent en **H, V ou aligné selon la position du curseur**, avec gestion des angles complémentaires (secteur obtus respecté). **Shift+clic sur 2 lignes** : entraxe si elles sont **parallèles** (à 3° près), angle sinon — la parallèle est décidée sur les **vecteurs de direction**, donc deux lignes parallèles sans sommet commun sont bien reconnues.
 
@@ -71,7 +71,7 @@ MiniFusion est un MVP de CAO historique (paramétrique, esprit Fusion 360) qui t
 - **Suppression au clavier** : `Suppr` supprime la (ou les) fonction(s) sélectionnée(s) dans l'arbre, après confirmation nommant chacune. **Ctrl+clic** construit le lot, **Échap** le vide. Les fonctions qui en dépendent (congé sans sa cible, répétition sans une source) sont **emportées** et annoncées ; les esquisses posées sur les faces disparues sont conservées, avec un avertissement. Un clic simple remplace le lot : plus de sélection fantôme.
 - **Répétition** : le bouton 🔁 ouvre son panneau, où les fonctions à répéter se choisissent par **cases à cocher** (et non plus par `Ctrl+clic`, réservé à la multi-suppression). **À la création comme à l'édition**, la même liste s'affiche — cochée sur les sources actuelles, et cocher/décocher met la répétition à jour immédiatement (annulable par `Ctrl+Z`). Une répétition affichée dans l'arbre montre ses instances ; ses **sources portent un repère ◀** et sa ligne affiche **◀ n** (en orange si aucune : elle ne produirait rien).
 - Couleur et opacité par corps, outils translucides masqués après l'opération (aperçu explicite au clic sur la découpe), repère d'origine avec plans visibility par défaut.
-- **Raccourcis** en esquisse : `L C R B P T D` (ligne, cercle, rectangle, oblong, projection, trim, cote), `F5` vue complète, `Ctrl+Maj+R` rafraîchissement dur.
+- **Raccourcis** en esquisse : `L C R B P T D F H` (ligne, cercle, rectangle, oblong, projection, trim, cote, congé, chanfrein), `F5` vue complète, `Ctrl+Maj+R` rafraîchissement dur.
 
 ### Import, export & persistance
 - Import **STEP / STL**, export **STEP / STL / OBJ**.

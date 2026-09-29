@@ -519,7 +519,7 @@ let skTool='select',skDraft=null,skMsg='';
 let skDown=null,skChain=null,skInfer=null,skSnapMk=null,skSel=null,skSelX=[],skDrag=null,skDragMoved=false,skDragPushed=false,skDimDrag=null,skPan=null;
 let skBox=null,skDragEnt=null,skDyn=null; // sélection rect · déplacement d'entité · saisie dynamique (longueur/angle)
 let skDimPlace=null; // placement de cote : {id} → la cote suit le curseur jusqu'au clic
-let skPendPt=null,skCoinA=null,skArcC=null,skArcA1=null,skArcPa=null;
+let skPendPt=null,skCoinA=null,skCornA=null,skArcC=null,skArcA1=null,skArcPa=null;
 let skProjectHover=null; // ⧉ : arête projetable sous le curseur (preview orange)
 
 /* ----- modèle points partagés (coïncidence structurelle) ----- */
@@ -581,6 +581,7 @@ function cleanupSk(sk){
     if(c.mid&&!eids.has(c.mid))return false;
     return true;
   });
+  sk.constraints=skDedupConstraints(sk); // doublons exacts + ⟂ implicite par ─/│ : ne sert à rien, on purge
   // cotes : distance/distline référencent des POINTS · gap/angle référencent des ENTITÉS (ligne)
   sk.dims=(sk.dims||[]).filter(d=>{
     if(d.line&&!eids.has(d.line))return false;
@@ -598,6 +599,48 @@ function cleanupSk(sk){
   });
 }
 function hasHV(sk,lineId,t){return (sk.constraints||[]).some(c=>c.type===t&&c.line===lineId);}
+function skHasPerp(sk,aId,bId){return (sk.constraints||[]).some(c=>c.type==='perpendicular'&&((c.a===aId&&c.b===bId)||(c.a===bId&&c.b===aId)));}
+function skHasParallel(sk,aId,bId){return (sk.constraints||[]).some(c=>c.type==='parallel'&&((c.a===aId&&c.b===bId)||(c.a===bId&&c.b===aId)));}
+function skPerpImplied(sk,aId,bId){
+  // ⟂ IMPLICITE par ─/│ : une droite H et une droite V sont perpendiculaires par
+  // construction — ajouter ⟂ ne sert à rien (que du sur-contrainte et du bruit).
+  // Ne s'applique que si les deux directions sont explicites (contraintes posées),
+  // jamais sur une simple proximité géométrique (qui, elle, doit rester pilotée).
+  return (hasHV(sk,aId,'h')&&hasHV(sk,bId,'v'))||(hasHV(sk,aId,'v')&&hasHV(sk,bId,'h'));
+}
+function skConKey(c){
+  // Clé canonique d'une contrainte (paires a/b triées) : deux contraintes de même
+  // clé sont interchangeables — la seconde est un doublon. Type inconnu : jamais
+  // dédupliqué (clé = id, conservatrice).
+  if(!c||!c.type)return '';
+  const pair=(x,y)=>[String(x),String(y)].sort().join('|');
+  switch(c.type){
+    case 'h': case 'v': return c.type+'@'+c.line;
+    case 'fix': return 'fix@'+(c.p!=null?('p:'+c.p):('ent:'+c.ent));
+    case 'tangent': return 'tangent@'+c.line+'|'+c.ent;
+    case 'tangent2': return 'tangent2@'+pair(c.a,c.b);
+    case 'parallel': case 'perpendicular': case 'equal': return c.type+'@'+pair(c.a,c.b);
+    case 'symmetric': return 'symmetric@'+pair(c.a,c.b)+'|'+c.mid;
+    case 'coaxial': return 'coaxial@'+pair(c.a,c.b);
+    case 'coincident': return 'coincident@'+pair(c.a,c.b);
+    case 'midpoint': return c.p!=null?('midpoint@'+c.p+'|'+c.line):('midpoint@@'+pair(c.a,c.b));
+    case 'online': return 'online@'+c.p+'|'+c.line;
+    case 'oncircle': return 'oncircle@'+c.p+'|'+c.ent;
+    default: return c.type+'@'+(c.id||'');
+  }
+}
+function skDedupConstraints(sk){
+  // Purge les doublons exacts + les ⟂ implicites par ─/│ (même règle qu'à la
+  // création). Appelée par cleanupSk : toute édition ré-équilibre la liste.
+  const seen=new Set(),out=[];
+  (sk.constraints||[]).forEach(c=>{
+    if(c.type==='perpendicular'&&skPerpImplied(sk,c.a,c.b))return;
+    const k=skConKey(c);
+    if(seen.has(k))return;
+    seen.add(k);out.push(c);
+  });
+  return out;
+}
 
 /* ----- solveur par relaxation (contraintes + cotes pilotantes) ----- */
 function skFixed(sk){
@@ -1430,7 +1473,9 @@ function skCommitLine(sk,fromPid,snap,ex,ey,dimVal){
   sk.entities.push(nl);
   if(skInfer&&skInfer.h&&!hasHV(sk,nl.id,'h'))sk.constraints.push({id:skNewEid(sk),type:'h',line:nl.id});
   if(skInfer&&skInfer.v&&!hasHV(sk,nl.id,'v'))sk.constraints.push({id:skNewEid(sk),type:'v',line:nl.id});
-  if(skInfer&&skInfer.perp&&!(sk.constraints||[]).some(c=>c.type==='perpendicular'&&((c.a===nl.id&&c.b===skInfer.perp)||(c.b===nl.id&&c.a===skInfer.perp))))
+  // ─/│ prime sur ⟂ : si la nouvelle droite est H (resp. V) et la cible V (resp. H),
+  // la perpendicularité est déjà acquise — on ne l'ajoute pas (cf. skPerpImplied).
+  if(skInfer&&skInfer.perp&&!skHasPerp(sk,nl.id,skInfer.perp)&&!skPerpImplied(sk,nl.id,skInfer.perp))
     sk.constraints.push({id:skNewEid(sk),type:'perpendicular',a:nl.id,b:skInfer.perp});
   if(skInfer&&skInfer.tan&&!(sk.constraints||[]).some(c=>c.type==='tangent'&&c.line===nl.id&&c.ent===skInfer.tan)){
     sk.constraints.push({id:skNewEid(sk),type:'tangent',line:nl.id,ent:skInfer.tan});
@@ -1459,6 +1504,124 @@ function skDynCommit(){
   skDyn=null;skDraft=null;skDown=null;skInfer=null;skSnapMk=null;
   if(nl){solveSketch(sk);cleanupSk(sk);drawSketch2D();renderSkPanel();skStatus('Ligne '+dimVal.toFixed(2)+' mm créée (cote dynamique).');}
   else{drawSketch2D();}
+}
+/* ----- congé / chanfrein d'angle 2D : 2 arêtes, tangences respectées ----- */
+let skFilletR=5, skChamferD=5; // dernier rayon / retrait (session) — la cote créée reste l'éditeur durable
+function filletCornerGeom(A,V,B,r){
+  // Géométrie pure du congé entre 2 droites se coupant en V (A et B : un point
+  // sur chaque côté, du côté matière). EXTRAITE de insertSketchFillet (20) pour
+  // être partagée : outil interactif + congés d'extrusion — une seule math.
+  const lIn=Math.hypot(V.x-A.x,V.y-A.y),lOut=Math.hypot(B.x-V.x,B.y-V.y);
+  if(!(lIn>1e-9)||!(lOut>1e-9))return{ok:false,warn:'coin dégénéré'};
+  const ux=(A.x-V.x)/lIn,uy=(A.y-V.y)/lIn,wx=(B.x-V.x)/lOut,wy=(B.y-V.y)/lOut;
+  const cos=Math.min(1,Math.max(-1,ux*wx+uy*wy));
+  const sinH=Math.sqrt(Math.max((1-cos)/2,1e-12)),cosH=Math.sqrt(Math.max((1+cos)/2,1e-12));
+  const rEff=Math.min(r,0.49*Math.min(lIn,lOut)*sinH/Math.max(cosH,1e-12));
+  if(!(rEff>1e-3))return{ok:false,warn:'coin trop tangent — pas de place pour le rayon'};
+  const t=rEff*cosH/Math.max(sinH,1e-12);
+  if(!(t>1e-9))return{ok:false,warn:'rayon invalide'};
+  let bx=ux+wx,by=uy+wy;const bl=Math.hypot(bx,by);
+  if(!(bl>1e-9))return{ok:false,warn:'coin droit (180°) — rien à arrondir'};
+  bx/=bl;by/=bl;
+  const off=rEff/Math.max(sinH,1e-12);
+  return{ok:true,rEff,t,
+    T1:{x:V.x+ux*t,y:V.y+uy*t},T2:{x:V.x+wx*t,y:V.y+wy*t},
+    C1:{x:V.x+bx*off,y:V.y+by*off},C2:{x:V.x-bx*off,y:V.y-by*off}};
+}
+function filletCenterFor(T1,T2,V,C1,C2){
+  // Quel centre ? Celui qui remplace la pointe : de l'autre côté de la corde
+  // T1T2 par rapport à V (vaut aussi pour un profil ouvert, sans test d'inclusion).
+  const sV=(T2.x-T1.x)*(V.y-T1.y)-(T2.y-T1.y)*(V.x-T1.x);
+  const s1=(T2.x-T1.x)*(C1.y-T1.y)-(T2.y-T1.y)*(C1.x-T1.x);
+  return (sV!==0&&s1*sV>=0)?C2:C1;
+}
+function skSharedCorner(sk,idA,idB){
+  // Coin commun à 2 lignes : un pid partagé, référencé par ces 2 lignes seules
+  // (hors construction/points) — sinon le congé casserait un joint existant.
+  const A=entById(sk,idA),B=entById(sk,idB);
+  if(!A||!B||A.t!=='line'||B.t!=='line')return{error:'Congé/chanfrein : sélectionnez 2 lignes droites.'};
+  if(idA===idB)return{error:'Sélectionnez 2 lignes distinctes.'};
+  const pid=[A.p1,A.p2].find(p=>p===B.p1||p===B.p2);
+  if(!pid)return{error:'Les 2 lignes doivent se toucher (coin commun).'};
+  const joint=(sk.entities||[]).some(e=>e!==A&&e!==B&&!e.construction&&e.t!=='cpoint'&&
+    (e.p1===pid||e.p2===pid||e.pa===pid||e.pb===pid||e.p===pid));
+  if(joint)return{error:'Coin partagé avec une autre entité — congé/chanfrein impossible ici.'};
+  return{pid,A,B};
+}
+function skFilletCorner(sk,idA,idB,r){
+  // Congé interactif : rogne les 2 lignes aux points de tangence, insère l'arc +
+  // 2 contraintes de TANGENCE (ligne↔arc, respectées par le solveur) + cote R pilotée.
+  // Pur (pas d'undo/dessin : l'appelant gère) — testable tel quel.
+  const sc=skSharedCorner(sk,idA,idB);
+  if(sc.error)return{ok:false,msg:sc.error};
+  const P=sk.points,V=P[sc.pid];
+  const Ao=P[sc.A.p1===sc.pid?sc.A.p2:sc.A.p1],Bo=P[sc.B.p1===sc.pid?sc.B.p2:sc.B.p1];
+  if(!V||!Ao||!Bo)return{ok:false,msg:'Congé : coin illisible.'};
+  const g=filletCornerGeom(Ao,V,Bo,r);
+  if(!g.ok)return{ok:false,msg:'Congé : '+g.warn+(g.warn.indexOf('place')>=0?' — essayez un rayon plus petit.':'.')};
+  const capped=g.rEff<r-1e-6;
+  const C=filletCenterFor(g.T1,g.T2,V,g.C1,g.C2);
+  const idT1=addPoint(sk,g.T1.x,g.T1.y),idT2=addPoint(sk,g.T2.x,g.T2.y),idC=addPoint(sk,C.x,C.y);
+  if(sc.A.p1===sc.pid)sc.A.p1=idT1;else sc.A.p2=idT1;
+  if(sc.B.p1===sc.pid)sc.B.p1=idT2;else sc.B.p2=idT2;
+  // petit arc face au coin (même convention que insertSketchFillet : CCW pa→pb < 180°)
+  let pa=idT1,pb=idT2;
+  {
+    const b1=Math.atan2(g.T1.y-C.y,g.T1.x-C.x),b2=Math.atan2(g.T2.y-C.y,g.T2.x-C.x);
+    let d=(b2-b1)%(Math.PI*2);if(d<=0)d+=Math.PI*2;
+    if(d>Math.PI){pa=idT2;pb=idT1;}
+  }
+  const arcId=skNewEid(sk);
+  sk.entities.push({id:arcId,t:'arc',pc:idC,pa,pb,r:g.rEff});
+  if(!(sk.constraints||[]).some(c=>c.type==='tangent'&&c.line===sc.A.id&&c.ent===arcId))
+    sk.constraints.push({id:skNewEid(sk),type:'tangent',line:sc.A.id,ent:arcId});
+  if(!(sk.constraints||[]).some(c=>c.type==='tangent'&&c.line===sc.B.id&&c.ent===arcId))
+    sk.constraints.push({id:skNewEid(sk),type:'tangent',line:sc.B.id,ent:arcId});
+  skPinTangent(sk,sc.A.id,arcId);skPinTangent(sk,sc.B.id,arcId); // épinglage des points de contact (Fusion360)
+  sk.dims.push({id:skNewEid(sk),type:'radius',ent:arcId,value:+g.rEff.toFixed(3),ox:0,oy:0});
+  return{ok:true,arcId,msg:'Congé R'+g.rEff.toFixed(2)+(capped?' (plafonné pour tenir)':'')};
+}
+function skChamferCorner(sk,idA,idB,d){
+  // Chanfrein interactif : rogne les 2 lignes à d mm du coin, relie par un segment
+  // + cote de longueur pilotée (éditable). Joint structurel par points partagés.
+  const sc=skSharedCorner(sk,idA,idB);
+  if(sc.error)return{ok:false,msg:sc.error};
+  const P=sk.points,V=P[sc.pid];
+  const Ao=P[sc.A.p1===sc.pid?sc.A.p2:sc.A.p1],Bo=P[sc.B.p1===sc.pid?sc.B.p2:sc.B.p1];
+  if(!V||!Ao||!Bo)return{ok:false,msg:'Chanfrein : coin illisible.'};
+  const lA=Math.hypot(Ao.x-V.x,Ao.y-V.y),lB=Math.hypot(Bo.x-V.x,Bo.y-V.y);
+  if(!(Math.min(lA,lB)>1))return{ok:false,msg:'Chanfrein : segment trop court.'};
+  const dd=Math.min(d,0.95*Math.min(lA,lB));
+  const capped=dd<d-1e-9;
+  const P1={x:V.x+(Ao.x-V.x)/lA*dd,y:V.y+(Ao.y-V.y)/lA*dd};
+  const P2={x:V.x+(Bo.x-V.x)/lB*dd,y:V.y+(Bo.y-V.y)/lB*dd};
+  const idP1=addPoint(sk,P1.x,P1.y),idP2=addPoint(sk,P2.x,P2.y);
+  if(sc.A.p1===sc.pid)sc.A.p1=idP1;else sc.A.p2=idP1;
+  if(sc.B.p1===sc.pid)sc.B.p1=idP2;else sc.B.p2=idP2;
+  const segId=skNewEid(sk);
+  sk.entities.push({id:segId,t:'line',p1:idP1,p2:idP2});
+  sk.dims.push({id:skNewEid(sk),type:'length',line:segId,value:+Math.hypot(P2.x-P1.x,P2.y-P1.y).toFixed(3),ox:0,oy:0});
+  return{ok:true,segId,msg:'Chanfrein '+dd.toFixed(2)+' mm'+(capped?' (plafonné au segment)':'')};
+}
+function skApplyFilletSel(){
+  // Depuis le menu contextuel : 2 lignes sélectionnées → congé au rayon courant.
+  if(!skEdit)return;const sk=skEdit;
+  const ls=skSelectedEnts().filter(e=>e.t==='line');
+  if(ls.length!==2){skStatus('Congé : sélectionnez exactement 2 lignes.');return;}
+  skPushUndo();
+  const r=skFilletCorner(sk,ls[0].id,ls[1].id,skFilletR);
+  if(!r.ok){skUndoStack.pop();skUndoBtn();skStatus(r.msg);drawSketch2D();return;}
+  afterEdit();skStatus(r.msg+' — R modifiable (double-clic la cote).');
+}
+function skApplyChamferSel(){
+  // Depuis le menu contextuel : 2 lignes sélectionnées → chanfrein au retrait courant.
+  if(!skEdit)return;const sk=skEdit;
+  const ls=skSelectedEnts().filter(e=>e.t==='line');
+  if(ls.length!==2){skStatus('Chanfrein : sélectionnez exactement 2 lignes.');return;}
+  skPushUndo();
+  const r=skChamferCorner(sk,ls[0].id,ls[1].id,skChamferD);
+  if(!r.ok){skUndoStack.pop();skUndoBtn();skStatus(r.msg);drawSketch2D();return;}
+  afterEdit();skStatus(r.msg+' — retrait modifiable (double-clic la cote).');
 }
 function segSegHit(a,b,c,d){
   const o=(p,q,r)=>Math.sign((q.x-p.x)*(r.y-p.y)-(q.y-p.y)*(r.x-p.x));
@@ -2261,6 +2424,12 @@ function applyCon(type){
   }
   if(type==='parallel' || type==='perpendicular'){
     if(lines.length!==2){skStatus((type==='parallel'?'Parallèle':'Perpendiculaire')+' : sélectionnez exactement 2 lignes.');return;}
+    const[a,b]=[lines[0].id,lines[1].id];
+    // Doublon exact : déjà posée (dans un sens ou dans l'autre) → rien à faire.
+    if(type==='parallel'&&skHasParallel(sk,a,b)){skStatus('Parallèle déjà posée ∥.');return;}
+    if(type==='perpendicular'&&skHasPerp(sk,a,b)){skStatus('Perpendiculaire déjà posée ⟂.');return;}
+    // ─/│ prime sur ⟂ (comme à la création) : H×V implique ⟂, l'ajouter ne sert à rien.
+    if(type==='perpendicular'&&skPerpImplied(sk,a,b)){skStatus('⟂ implicite par ─/│ : non ajoutée (déjà acquise).');return;}
     skPushUndo();
     sk.constraints.push({id:skNewEid(sk),type:type,a:lines[0].id,b:lines[1].id});
   }

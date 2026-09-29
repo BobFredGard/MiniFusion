@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**72 versions**, de `2026-09-28b` à `2026-09-31d` — la plus récente en bas,
+**73 versions**, de `2026-09-28b` à `2026-09-31e` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1660,3 +1660,32 @@ tel quel en Node) sur boîte 100×70×20, dessus retiré, paroi 2 : **0 warning*
 
 Régression : **syntaxe 20/20 OK**, `node build.js --check` vert.
 **Anti-cache** : bump 31c → 31d — Ctrl+Maj+R et vérifier « Code en mémoire ».
+---
+
+### `2026-09-31e`
+
+**ESQUISSE : « LES 2 CONTRAINTES SONT MISES ET CELA NE SERT À RIEN » + congé/chanfrein 2D.**
+
+1. **─/│ prioritaire sur ⟂** (`50`, `skPerpImplied`) : à la création (`skCommitLine`)
+   comme à la pose manuelle (`applyCon`), une ⟂ entre une droite H et une droite V
+   n'est plus ajoutée — elle est déjà acquise. Gardes anti-doublons aussi sur
+   `parallel`/`perpendicular` manuels (poussés à l'aveugle avant).
+2. **Persistance vérifiée** : audit du cycle complet (création → undo → `cleanupSk`
+   → `serialise` → `deserialise`+`migrateSketch`) — aucun type perdu ; ajouté un
+   test round-trip JSON couvrant les 14 types + cotes, et `skDedupConstraints`
+   (branchée sur `cleanupSk`) qui purge doublons exacts + ⟂ implicites des vieux
+   documents à la prochaine édition.
+3. **Congé 2D sur 2 arêtes (`F`) + chanfrein (`H`)** (`50`, `60`, `shortcuts.js`) :
+   clic-clic sur 2 lignes en coin (ou menu contextuel 2 lignes) → le congé rogne
+   aux points de tangence et pose **arc + 2 tangences ligne↔arc + cote R pilotée**
+   (donc respect total des tangences 2D, modifiable au double-clic) ; le chanfrein
+   coupe + cote de longueur. Math de coin extraite en `filletCornerGeom`, partagée
+   avec `insertSketchFillet` (comportement extrusion inchangé).
+
+**Tests** : harnais Node sur le code LIVRÉ (10+20+50+60 évalués, stubs DOM) —
+**6/6 verts** (refactor R5×4 identique, congé : 2 tangences ±0, R=5, contour fermé ;
+chanfrein : cote ±0, contour fermé ; dedup ; H-seule-vs-H+⟂ ; round-trip 14 types).
+In-app : 6 nouveaux auto-tests 🧪 (mêmes scénarios).
+
+Régression : **syntaxe 20/20 OK**, `node build.js --check` vert.
+**Anti-cache** : bump 31d → 31e — Ctrl+Maj+R et vérifier « Code en mémoire ».

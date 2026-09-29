@@ -504,6 +504,21 @@ svg.addEventListener('pointerdown',e=>{
     if(mergePoints(sk,pid,skCoinA))skStatus('Points fusionnés ⌖.');
     skCoinA=null;afterEdit();return;
   }
+  if(skTool==='fillet'||skTool==='chamfer'){
+    // Congé / chanfrein : 2 clics sur 2 lignes en coin (même geste que coïncidence).
+    const isF=skTool==='fillet';
+    const ent=nearestEntity(sk,wx,wy,SK_PICK+3,false);
+    if(!ent||ent.t!=='line'){skStatus((isF?'Congé ⦾':'Chanfrein ◣')+' : cliquez une ligne droite.');return;}
+    if(!skCornA||skCornA.tool!==skTool){skCornA={tool:skTool,id:ent.id};skStatus((isF?'Congé ⦾ : 1ʳᵉ arête ✓ — cliquez la 2ᵉ (coin commun).':'Chanfrein ◣ : 1ʳᵉ arête ✓ — cliquez la 2ᵉ (coin commun).'));drawSketch2D();return;}
+    if(ent.id===skCornA.id){skStatus('Même ligne — cliquez une autre ligne.');return;}
+    skPushUndo();
+    const r=isF?skFilletCorner(sk,skCornA.id,ent.id,skFilletR):skChamferCorner(sk,skCornA.id,ent.id,skChamferD);
+    skCornA=null;
+    if(!r.ok){skUndoStack.pop();skUndoBtn();skStatus(r.msg);drawSketch2D();return;}
+    afterEdit();
+    skStatus(r.msg+(isF?' — R modifiable (double-clic la cote).':' — retrait modifiable (double-clic la cote).'));
+    return;
+  }
   if(skTool==='project'){
     if(!occHas()||!occLive||!occLive.shape){skStatus('Projeter : noyau OCCT requis et solide visible.');return;}
     const pr=projectEdgeAt(sk,wx,wy);
@@ -845,7 +860,7 @@ function skEscapeToSelect(){
 }
 function skCancelDraft(){
   if(skDimPlace&&skEdit){skEdit.dims=skEdit.dims.filter(x=>x.id!==skDimPlace.id);skDimPlace=null;} // Échap pendant le placement annule la cote
-  skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skPendPt=null;skCoinA=null;skDraft=null;skDown=null;skDrag=null;skDragEnt=null;skBox=null;skDyn=null;skDimDrag=null;skPan=null;skInfer=null;skMsg='';skDimLine=null;skDimRef=null;skProjectHover=null;hideSkCtx();if(skEdit){cleanupSk(skEdit);drawSketch2D();renderSkPanel();}}
+  skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skPendPt=null;skCoinA=null;skCornA=null;skDraft=null;skDown=null;skDrag=null;skDragEnt=null;skBox=null;skDyn=null;skDimDrag=null;skPan=null;skInfer=null;skMsg='';skDimLine=null;skDimRef=null;skProjectHover=null;hideSkCtx();if(skEdit){cleanupSk(skEdit);drawSketch2D();renderSkPanel();}}
 function hideSkCtx(){ const m=$('skCtxMenu'); if(m) m.style.display='none'; }
 function showSkCtx(x,y){
   if(!skEdit) return;
@@ -907,6 +922,7 @@ function showSkCtx(x,y){
     });
     add('∥ Parallèle',()=>applyCon('parallel')); add('⟂ Perpendiculaire',()=>applyCon('perpendicular'));
     add('＝ Égal',()=>applyCon('equal')); add('─ Horizontal',()=>applyCon('h')); add('│ Vertical',()=>applyCon('v')); add('⊕ Milieux égaux (2 lignes)',()=>applyCon('midpoint')); has=true;
+    add('⦾ Congé (arc tangent + R)',()=>skApplyFilletSel()); add('◣ Chanfrein (coupe + cote)',()=>skApplyChamferSel());
   }
   // 2 points
   if(pts.length===2){
@@ -994,4 +1010,19 @@ window.addEventListener('keydown',e=>{
     skDyn={mode:'len',buf:''};e.preventDefault();drawSketch2D();return;
   }
 });
+/* ----- boutons Congé / Chanfrein : créés ici (coque HTML générée, jamais éditée),
+   APRES la liaison générique des .tool (ci-dessus) → handler dédié uniquement.
+   Même pattern que btnDraft/btnCoque côté 3D. Raccourcis F/H dans shortcuts.js. */
+(function(){
+  const bar=document.getElementById('skToolbar');if(!bar)return;
+  const mk=(tool,icon,title)=>{
+    if(bar.querySelector('[data-tool="'+tool+'"]'))return;
+    const b=document.createElement('button');b.className='tool';b.dataset.tool=tool;b.textContent=icon;b.title=title;
+    b.onclick=()=>{skCancelDraft();skTool=tool;document.querySelectorAll('#skToolbar .tool').forEach(x=>x.classList.toggle('on',x===b));if(skEdit)skStatus(title);};
+    const trim=bar.querySelector('[data-tool="trim"]');
+    if(trim&&trim.parentNode)trim.parentNode.insertBefore(b,trim.nextSibling);else bar.appendChild(b);
+  };
+  mk('fillet','⦾','Congé (F) : cliquez 2 lignes en coin → arc tangent + cote R (double-clic pour modifier)');
+  mk('chamfer','◣','Chanfrein (H) : cliquez 2 lignes en coin → coupe + cote (double-clic pour modifier)');
+})();
 
