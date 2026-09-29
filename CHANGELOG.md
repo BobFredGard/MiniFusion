@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**78 versions**, de `2026-09-28b` à `2026-09-31j` — la plus récente en bas,
+**79 versions**, de `2026-09-28b` à `2026-09-31k` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1802,4 +1802,25 @@ Appliquer, un clic par face, direction invisible. Désormais :
 Tests : `test_draft_sel.cjs` sur noyau réel — boîte pure : chaînes singletons ;
 boîte + congé R10 : chaîne mur+congé+voisin (3) ; dessus : singleton ; calcul
 d’aperçu : 3/3 faces résolues, 0 refusée, solide à 15 arêtes — TOUT EST CONFORME.
+---
+
+### `2026-09-31k`
+
+**DÉPOUILLE : « Re-sélectionner les faces » montre les faces en transparence.**
+
+En édition, l’entrée en mode pouvait avorter en silence (état à moitié initialisé,
+aucun retour visuel) et les faces non retrouvées effaçaient toute la surbrillance.
+Désormais :
+
+- **Chargement validé** (`draftCleanRef`) : pos/n/dim complets ou rien — `dim`
+  manquant refusé car `occFindFace` lève au lieu de dégrader ; malformées écartées
+  et comptées, jamais d’exception ;
+- **Re-match une par une** (`draftMarkByPosition` retourne le bilan) : une face
+  illisible n’efface plus les autres ;
+- **Aperçu dès l’entrée** en édition, comme à la création ;
+- **Statut par face dans le panneau** (✅ retrouvée / ⚠ introuvable + positions),
+  bilan `n/n retrouvée(s)`, avertissement si la référence elle-même est perdue.
+
+Tests : `test_draft_sel.cjs` étendu (6 cas `draftCleanRef` : valide, `_ord`, dim/pos
+manquants, null, copie profonde) — TOUT EST CONFORME. Régression 9/9.
 

@@ -131,10 +131,29 @@ function draftOrdOf(ref){
   }
   return -1;
 }
+function draftCleanRef(r){
+  // Copie validée d'une référence de face mémorisée (édition) : pos/n/dim complets ou rien.
+  // Un `dim` manquant n'est PAS tolérable (occFindFace lève au lieu de dégrader), et une
+  // exception ici faisait avorter toute l'entrée en mode édition.
+  return ((r&&Array.isArray(r.pos)&&r.pos.length>=3&&Array.isArray(r.n)&&r.n.length>=3&&Array.isArray(r.dim)&&r.dim.length>=3)
+    ?{pos:r.pos.slice(),n:r.n.slice(),dim:r.dim.slice(),_ord:-1}:null);
+}
 function draftMarkByPosition(){
-  if(!draftMode||!occLive||!occLive.shape)return;
-  if(draftMode.ref)draftMode.ref._ord=draftOrdOf(draftMode.ref);
-  (draftMode.faces||[]).forEach(r=>{r._ord=draftOrdOf(r);});
+  // Re-fait correspondre chaque face mémorisée au solide courant, UNE PAR UNE : une face
+  // illisible ou malformée ne doit pas empêcher les autres d'être retrouvées — sinon, en
+  // édition, une seule face problématique effaçait toute la surbrillance (« on ne voit
+  // plus rien »). Retourne le bilan pour l'afficher dans le panneau.
+  const st={refOk:false,ok:0,ko:0};
+  if(!draftMode||!occLive||!occLive.shape)return st;
+  if(draftMode.ref){
+    try{draftMode.ref._ord=draftOrdOf(draftMode.ref);}catch(e){draftMode.ref._ord=-1;}
+    st.refOk=draftMode.ref._ord>=0;
+  }
+  (draftMode.faces||[]).forEach(r=>{
+    try{r._ord=draftOrdOf(r);}catch(e){r._ord=-1;}
+    if(r._ord>=0)st.ok++;else st.ko++;
+  });
+  return st;
 }
 function occTangentFaces(shape,ord){
   // Ordinaux des faces reliées à `ord` par des arêtes LISSES (G1+), en fermeture transitive.
@@ -264,16 +283,21 @@ function enterDraftMode(editF){
   if(editing){
     // Édition : rejeu SANS la fonction (occSkipFeat) → les faces à dépouiller redeviennent
     // celles d'origine, cliquables. Exactement la stratégie de l'édition d'un congé exact.
-    draftMode.ref=editing.ref?{pos:editing.ref.pos.slice(),n:editing.ref.n.slice(),dim:editing.ref.dim.slice(),_ord:-1}:null;
-    draftMode.faces=(editing.faces||[]).map(r=>({pos:r.pos.slice(),n:r.n.slice(),dim:r.dim.slice(),_ord:-1}));
+    // Chargement VALIDÉ (draftCleanRef) : une référence malformée est écartée et comptée
+    // au lieu de faire avorter toute l'entrée en mode (état à moitié initialisé, aucun
+    // retour visuel).
+    draftMode.ref=editing.ref?draftCleanRef(editing.ref):null;
+    const avant=(editing.faces||[]).length;
+    draftMode.faces=(editing.faces||[]).map(draftCleanRef).filter(Boolean);
+    draftMode._ecartees=avant-draftMode.faces.length;
     draftMode.phase=draftMode.ref?'faces':'ref';
-    draftMode.angle=+editing.angle||5;
+    draftMode.angle=(+editing.angle>0&&+editing.angle<90)?+editing.angle:5;
     occSkipFeat=editing.id;
     try{rebuild();}catch(e){}
     if(!occLive||!occLive.shape){occSkipFeat=null;draftMode=null;faceEl.textContent='Dépouillage : recalcul impossible.';return;}
-    draftMarkByPosition(); // le solide vient d'être reconstruit : les index ont bougé
+    draftMode._stats=draftMarkByPosition();
   }
-  draftPaint();renderDraftPanel();
+  draftPaint();draftPreviewUpdate();renderDraftPanel();
   faceEl.innerHTML=editing
     ?'<b>📐 Édition « '+draftName(editing)+' »</b><br><span class="note">Re-cliquez les faces à '+
      'dépouiller pour en ajouter ou en retirer, puis <b>Enregistrer</b>. <b>Échap</b> annule.</span>'
@@ -368,18 +392,32 @@ function renderDraftPanel(){
   const r=draftMode.ref;
   if(r){
     const n=document.createElement('span');n.className='note';
+    const refOk=!draftMode._stats||draftMode._stats.refOk;
     n.textContent='Plan neutre (face de référence) : centre ('+r.pos.map(v=>(+v).toFixed(1)).join(' ; ')+
-      ') mm, normale ('+r.n.map(v=>(+v).toFixed(2)).join(' ; ')+').';
+      ') mm, normale ('+r.n.map(v=>(+v).toFixed(2)).join(' ; ')+').'+
+      (refOk?'':' ⚠ Introuvable sur le solide actuel — re-cliquez-la.');
+    p.appendChild(n);
+  }
+  if(draftMode._ecartees>0){
+    const n=document.createElement('span');n.className='note';
+    n.textContent='⚠ '+draftMode._ecartees+' face(s) mémorisée(s) illisible(s) écartée(s) au chargement.';
     p.appendChild(n);
   }
   // Liste des faces retenues : les voir, et pouvoir en retirer une sans la re-cliquer.
+  // Le préfixe dit lesquelles sont effectivement retrouvées sur le solide actuel.
   const nf=(draftMode.faces||[]).length;
   if(nf){
+    const st=draftMode._stats;
+    if(st&&(st.ko>0||!st.refOk)){
+      const n=document.createElement('span');n.className='note';
+      n.textContent=`⚠ ${st.ok}/${st.ok+st.ko} face(s) retrouvée(s) sur le solide actuel — les ⚠ ci-dessous n'y sont plus, re-cliquez-les.`;
+      p.appendChild(n);
+    }
     const lst=document.createElement('div');lst.className='lst';
     draftMode.faces.forEach((fr,i)=>{
       const r2=document.createElement('div');r2.className='item';
       const s=document.createElement('span');
-      s.textContent='▸ centre ('+fr.pos.map(v=>(+v).toFixed(1)).join(' ; ')+') mm';
+      s.textContent=(fr._ord>=0?'✅ ':'⚠ ')+'▸ centre ('+fr.pos.map(v=>(+v).toFixed(1)).join(' ; ')+') mm';
       r2.appendChild(s);
       const x=document.createElement('button');x.textContent='✕';x.title='Retirer cette face';
       x.onclick=()=>{draftMode.faces.splice(i,1);draftPaint();renderDraftPanel();};
