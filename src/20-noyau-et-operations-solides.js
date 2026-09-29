@@ -716,31 +716,103 @@ function occFaceRef(f){
   if(!n||!b)return null;
   return {pos:b.pos.map(v=>+v.toFixed(3)),dim:b.dim.map(v=>+v.toFixed(3)),n:n.map(v=>+v.toFixed(4))};
 }
+function faceAnchorScore(c,ref){
+  // Cohérence d'une face candidate avec l'ancre d'esquisse mémorisée : la face est-elle
+  // (encore) celle que l'ancre désigne ? Test en 2D esquisse (insensible aux découpes
+  // qui scindent en hauteur), comme xAnchorMatch — mais pour un CENTRE DE FACE, pas un
+  // milieu d'arête. Score (plus petit = mieux) ou null si incohérent.
+  try{
+    const a=ref.anchor;if(!a)return null;
+    const s=doc.sketches.find(k=>k.id===a.sk);if(!s)return null;
+    let B;try{B=sketchBasis(s);}catch(e){return null;}
+    const dx=c.b.pos[0]-B.o.x,dy=c.b.pos[1]-B.o.y,dz=c.b.pos[2]-B.o.z;
+    const q=[dx*B.u.x+dy*B.u.y+dz*B.u.z,dx*B.v.x+dy*B.v.y+dz*B.v.z,dx*B.n.x+dy*B.n.y+dz*B.n.z];
+    // Antériorité : la face doit appartenir à la tranche COURANTE de son extrusion
+    // (suit les changements de hauteur — c'est tout l'objet de cette passe).
+    const spans=(doc.features||[]).filter(f=>f.type==='extrude'&&f.sketchId===a.sk&&f.visible!==false).map(f=>extrudeSpan(f));
+    if(spans.length&&!spans.some(d=>q[2]>=d.lo-1.5&&q[2]<=d.hi+1.5))return null;
+    const P=s.points||{};
+    if(a.t==='p'){
+      const p=P[a.id];if(!p)return null;
+      if(Math.hypot(q[0]-p.x,q[1]-p.y)>5.0)return null;
+    }else{
+      const e=(s.entities||[]).find(k=>k.id===a.id);
+      if(!e||e.construction||e.ref)return null;
+      let d2=1e18;
+      if(e.t==='line'){const A0=P[e.p1],B0=P[e.p2];if(!A0||!B0)return null;d2=distSeg2(q[0],q[1],A0.x,A0.y,B0.x,B0.y);}
+      else if(e.t==='circle'||e.t==='arc'){
+        const C=P[e.pc];if(!C||!(e.r>0))return null;
+        if(e.t==='arc'){const an=arcAngles(s,e);if(!an)return null;
+          const TAU=Math.PI*2,rel=((Math.atan2(q[1]-C.y,q[0]-C.x)-an.a1)%TAU+TAU)%TAU;
+          if(rel>an.a2-an.a1+0.05)return null;}
+        d2=Math.abs(Math.hypot(q[0]-C.x,q[1]-C.y)-e.r);
+      }else return null;
+      if(d2>5.0)return null;
+    }
+    const dd=Math.abs(c.b.dim[0]-ref.dim[0])+Math.abs(c.b.dim[1]-ref.dim[1])+Math.abs(c.b.dim[2]-ref.dim[2]);
+    if(dd>Math.max(2.0,0.35*(Math.abs(ref.dim[0])+Math.abs(ref.dim[1])+Math.abs(ref.dim[2]))))return null;
+    const d=Math.hypot(c.b.pos[0]-ref.pos[0],c.b.pos[1]-ref.pos[1],c.b.pos[2]-ref.pos[2]);
+    return 0.15*dd+0.02*d;
+  }catch(e){return null;}
+}
 function occFindFace(shape,ref){
   // Retrouve sur le solide courant la face décrite par ref (centre + normale + dimensions).
   // Une sélection d'une seule face se fait d'un clic : 2 mm suffisent à la délimiter, et la
   // normale doit rester compatible (sinon on déplacerait la face d'en face).
+  // Comme les congés : 2 passes avant de conclure (le triangle ⚠ n'arrive qu'après).
+  // Passe 0 : ancre absente (anciens projets) → recalée sur ref.pos, comme les congés.
+  // Passe 1 (antériorité/suivi) : cohérence d'ancre, puis identité normale+dims sans
+  //   ambiguïté — suit les éditions amont (ex. hauteur d'extrusion changée) même quand
+  //   le centre a bougé de loin.
+  // Passe 2 (proximité) : comportement historique, couperet 2,5 mm.
   if(!shape||!ref)return null;
+  if(!ref.anchor){try{const a0=xAnchorFor(ref.pos);if(a0)ref.anchor=a0;}catch(e){}}
   const SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE;
   const ex=new occt.TopExp_Explorer_2(shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,SH);
-  let best=null,bn=-2;
+  const cands=[];
   while(ex.More()){
     const f=occt.TopoDS.Face_1(ex.Current());
     const b=occFaceBox(f),n=occFaceOutNormal(f);
     if(b&&n){
-      const d=Math.hypot(b.pos[0]-ref.pos[0],b.pos[1]-ref.pos[1],b.pos[2]-ref.pos[2]);
       const dot=n[0]*ref.n[0]+n[1]*ref.n[1]+n[2]*ref.n[2];
-      const dd=Math.abs(b.dim[0]-ref.dim[0])+Math.abs(b.dim[1]-ref.dim[1])+Math.abs(b.dim[2]-ref.dim[2]);
-      // pénalité de dimension : deux faces de même centre et même normale mais de tailles
-      // différentes sont deux faces distinctes (un bossage, un méplat).
-      const sc=dot>=0.9?d+0.1*dd:1e6+d;
-      if(sc<bn||best===null){if(sc<1e5){bn=sc;best=f;}}
+      if(dot>=0.9)cands.push({f,b,n});
+      else{try{f.delete();}catch(e){}}
     }
     ex.Next();
   }
   try{ex.delete();}catch(e){}
-  if(best&&bn>2.5)return null; // trop loin : on préfère échouer que viser une autre face
-  return best;
+  const drop=c=>{try{c.f.delete();}catch(e){}};
+  const ddOf=c=>Math.abs(c.b.dim[0]-ref.dim[0])+Math.abs(c.b.dim[1]-ref.dim[1])+Math.abs(c.b.dim[2]-ref.dim[2]);
+  // Passe 1a : cohérence d'ancre (précis, suit les esquisses).
+  if(ref.anchor){
+    let best=null,bs=1e18;
+    for(const c of cands){
+      const s=faceAnchorScore(c,ref);
+      if(s==null)continue;
+      if(s<bs){bs=s;best=c;}
+    }
+    if(best){cands.forEach(c=>{if(c!==best)drop(c);});return best.f;}
+  }
+  // Passe 1b : identité sans ambiguïté (normale déjà filtrée + dims proches + un seul
+  // candidat) — couvre les grandes faces loin de toute entité d'esquisse, dont l'ancre
+  // est introuvable, après de gros déplacements.
+  {
+    const uniq=cands.filter(c=>{
+      for(let i=0;i<3;i++){if(Math.abs(c.b.dim[i]-ref.dim[i])>Math.max(1.5,0.25*Math.abs(ref.dim[i])))return false;}
+      return true;
+    });
+    if(uniq.length===1){const w=uniq[0];cands.forEach(c=>{if(c!==w)drop(c);});return w.f;}
+  }
+  // Passe 2 (proximité, comportement historique inchangé).
+  let best=null,bn=-2;
+  for(const c of cands){
+    const d=Math.hypot(c.b.pos[0]-ref.pos[0],c.b.pos[1]-ref.pos[1],c.b.pos[2]-ref.pos[2]);
+    const sc=d+0.1*ddOf(c);
+    if(sc<bn||best===null){if(sc<1e5){bn=sc;best=c;}}
+  }
+  cands.forEach(c=>{if(!best||c!==best)drop(c);});
+  if(best&&bn>2.5){drop(best);return null;} // trop loin : on préfère échouer que viser une autre face
+  return best?best.f:null;
 }
 function occMoveFaceOnce(shape,face,dist){
   // Déplace UNE face de `dist` mm le long de sa normale sortante.
@@ -1018,7 +1090,7 @@ function occApplyDraft(result,f){
   if(!(Math.abs(ang)>1e-9))return{shape:result,warnings:['angle nul — aucune dépouille']};
   if(!f.ref||!(f.faces||[]).length)return{shape:result,warnings:['face de référence ou faces à dépouiller manquantes']};
   const ref=occFindFace(result,f.ref);
-  if(!ref){f._m={m:0,t:f.faces.length};return{shape:result,warnings:[`face de référence introuvable près de (${(f.ref.pos||[]).map(v=>(+v).toFixed(1)).join(', ')}) — la pièce a changé`]} };
+  if(!ref){f._m={m:0,t:f.faces.length};return{shape:result,warnings:[`face de référence introuvable près de (${(f.ref.pos||[]).map(v=>(+v).toFixed(1)).join(', ')}) — ni suivi d'ancre, ni proximité : re-sélectionnez-la (bouton « Changer la référence »)`]} };
   const rn=occFaceOutNormal(ref);
   if(!rn){try{ref.delete();}catch(e){}return{shape:result,warnings:['face de référence non plane/cylindrique']}};
   const rb=occFaceBox(ref);

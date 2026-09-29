@@ -110,6 +110,11 @@ function draftFaceUnder(e){
     if(!f)return null;
     const ref=occFaceRef(f);
     if(!ref)return null;
+    // Ancre d'esquisse mémorisée dès le clic : au rejeu, la passe 1 (antériorité) suit
+    // les éditions amont via l'esquisse au lieu de la seule proximité (comme les congés).
+    // Peut être null (grande face loin de toute entité) : le rejeu retombe alors sur
+    // l'identité (passe 1b) puis la proximité (passe 2).
+    try{const a=xAnchorFor(ref.pos);if(a)ref.anchor=a;}catch(e){}
     // `_ord` n'est PAS stockée dans le document : c'est l'index BRep de la session, utile
     // uniquement pour repeindre la surbrillance. occFaceRef reste pur (pos/dim/n).
     return{ref:ref,ord:g.f};
@@ -132,11 +137,13 @@ function draftOrdOf(ref){
   return -1;
 }
 function draftCleanRef(r){
-  // Copie validée d'une référence de face mémorisée (édition) : pos/n/dim complets ou rien.
-  // Un `dim` manquant n'est PAS tolérable (occFindFace lève au lieu de dégrader), et une
-  // exception ici faisait avorter toute l'entrée en mode édition.
-  return ((r&&Array.isArray(r.pos)&&r.pos.length>=3&&Array.isArray(r.n)&&r.n.length>=3&&Array.isArray(r.dim)&&r.dim.length>=3)
-    ?{pos:r.pos.slice(),n:r.n.slice(),dim:r.dim.slice(),_ord:-1}:null);
+  // Copie validée d'une référence de face mémorisée (édition) : pos/n/dim complets ou
+  // rien — plus l'ancre d'esquisse si présente (passe 1 du rejeu). Sans elle, une face
+  // qui a suivi une édition amont retombe en « introuvable ».
+  if(!(r&&Array.isArray(r.pos)&&r.pos.length>=3&&Array.isArray(r.n)&&r.n.length>=3&&Array.isArray(r.dim)&&r.dim.length>=3))return null;
+  const o={pos:r.pos.slice(),n:r.n.slice(),dim:r.dim.slice(),_ord:-1};
+  if(r.anchor)o.anchor=Object.assign({},r.anchor);
+  return o;
 }
 function draftMarkByPosition(){
   // Re-fait correspondre chaque face mémorisée au solide courant, UNE PAR UNE : une face
@@ -320,8 +327,15 @@ function draftToggle(e){
   hit.ref._ord=hit.ord;
   if(draftMode.phase==='ref'){
     draftMode.ref=hit.ref;draftMode.phase='faces';
-    draftPaint();renderDraftPanel();
-    faceEl.innerHTML='<b>📐 Dépouillage</b> : face de référence posée. Cliquez maintenant les <b>faces à '+
+    // La nouvelle référence ne peut pas rester dans les faces à dépouiller (pivot
+    // dégénéré) : on l'en retire en le disant.
+    const kr=draftKey(hit.ref);
+    const avant=(draftMode.faces||[]).length;
+    draftMode.faces=(draftMode.faces||[]).filter(r=>draftKey(r)!==kr);
+    const ecartee=avant-draftMode.faces.length;
+    draftMode._stats=draftMarkByPosition();
+    draftPaint();draftPreviewUpdate();renderDraftPanel();
+    faceEl.innerHTML='<b>📐 Dépouillage</b> : face de référence posée'+(ecartee?' ('+ecartee+' face(s) identique(s) retirée(s) des faces à dépouiller)':'')+'. Cliquez maintenant les <b>faces à '+
       'dépouiller</b> (re-clic = retirer) · <b>Entrée</b> = appliquer · <b>Échap</b> annule.';
     return;
   }
@@ -398,6 +412,11 @@ function renderDraftPanel(){
       ') mm, normale ('+r.n.map(v=>(+v).toFixed(2)).join(' ; ')+').'+
       (refOk?'':' ⚠ Introuvable sur le solide actuel — re-cliquez-la.');
     p.appendChild(n);
+    // La référence se re-sélectionne comme le reste, en création comme en édition :
+    // retour en phase 'ref', les faces déjà retenues sont conservées.
+    const br=document.createElement('button');br.textContent='🎯 Changer la référence';br.title='Re-cliquer la face de référence (plan neutre) dans la vue 3D';
+    br.onclick=()=>{draftMode.phase='ref';renderDraftPanel();faceEl.textContent='Dépouillage : cliquez la nouvelle face de référence (les faces déjà retenues sont conservées).';};
+    p.appendChild(br);
   }
   if(draftMode._ecartees>0){
     const n=document.createElement('span');n.className='note';
@@ -467,8 +486,9 @@ function draftApply(){
   const a=+draftMode.angle||0;
   if(!(a>0&&a<90)){faceEl.textContent='Dépouillage : angle hors bornes (0 ; 90).';return;}
   // On retire `_ord` (index BRep de la session) : il n'a de sens que pour la surbrillance et
-  // il ferait grossir le document sans rien apporter au rejeu.
-  const clean=r=>({pos:r.pos.slice(),dim:r.dim.slice(),n:r.n.slice()});
+  // il ferait grossir le document sans rien apporter au rejeu. L'ancre, elle, est gardée :
+  // c'est elle qui permet au rejeu de suivre les éditions amont (passe 1).
+  const clean=r=>{const o={pos:r.pos.slice(),dim:r.dim.slice(),n:r.n.slice()};if(r.anchor)o.anchor=Object.assign({},r.anchor);return o;};
   const ref=clean(draftMode.ref);
   const faces=draftMode.faces.map(clean);
   if(draftMode.editing){

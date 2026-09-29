@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**83 versions**, de `2026-09-28b` à `2026-09-31o` — la plus récente en bas,
+**84 versions**, de `2026-09-28b` à `2026-09-31p` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1906,4 +1906,30 @@ Tests : nouveau `test_tl_edit_lock.cjs` sur noyau réel — hôte, gardes, liste
 [ex_1], rejeu verrouillé xmax≈100 puis complet xmax≈140 via `tlReplayCount()`
 (le chemin réel d’`occRebuild`, pas `occFinalShape(null)`) — TOUT EST CONFORME.
 Régression 12/12.
+---
+
+### `2026-09-31p`
+
+**DÉPOUILLE : la référence se re-sélectionne + le rejeu suit les éditions amont (2 passes, comme les congés).**
+
+Constat : après modification d’une extrusion juste avant elle, la dépouille perdait
+ses références — les faces se réattribuaient, mais pas la face de référence. Et le
+matching faces n’avait qu’une passe (proximité, couperet 2,5 mm).
+
+- **Référence re-sélectionnable et indiquée, en création comme en édition** : bouton
+  « 🎯 Changer la référence » (les faces déjà retenues sont conservées, la sélection
+  identique est retirée des faces avec message, stats recalculées, aperçu à jour) ;
+  surbrillance verte + ligne panneau inchangées et toujours présentes ;
+- **Ancre mémorisée dès le clic** (`xAnchorFor`, persistée via `clean()`/`draftCleanRef`) ;
+- **Matching en 2 passes avant le triangle** (`occFindFace`) : passe 0 recale l’ancre
+  absente ; passe 1a cohérence d’ancre (2D esquisse + tranche courante = antériorité) ;
+  passe 1b identité normale+dims sans ambiguïté (grandes faces) ; passe 2 proximité
+  historique inchangée. Les handles perdants sont libérés (fuite préexistante corrigée) ;
+- Coque et xmove partagent le matcher : sans ancre, seule la passe 1b s’ajoute
+  (identité sans ambiguïté), couverte par leurs suites.
+
+Tests : `test_draft_sel.cjs` étendu — passe 1b (dessus sans ancre, 40→50, écart 10 mm),
+passe 1a (mur ancré, 40→70, suivi à z=35), bout en bout (dépouille 4/4 à 40 ET à 55,
+0 fatal) — TOUT EST CONFORME. Régression 12/12 + verif_31cdef conforme (`test_fichier_reel`
+sur autre modèle : crash préexistant du script, pas de l’app).
 
