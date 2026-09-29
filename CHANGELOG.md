@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**79 versions**, de `2026-09-28b` à `2026-09-31k` — la plus récente en bas,
+**80 versions**, de `2026-09-28b` à `2026-09-31l` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1823,4 +1823,24 @@ Désormais :
 
 Tests : `test_draft_sel.cjs` étendu (6 cas `draftCleanRef` : valide, `_ord`, dim/pos
 manquants, null, copie profonde) — TOUT EST CONFORME. Régression 9/9.
+---
+
+### `2026-09-31l`
+
+**COQUE : on voit enfin quelle surface part (aperçu + statut, comme la dépouille).**
+
+Même famille de défauts que la dépouille avant correctif : chargement non validé en
+édition (une référence malformée avortait le mode en silence), re-match global (une
+face illisible effaçait tout), aucun aperçu, aucun statut. Même remède :
+
+- **Chargement validé** (`coqueCleanRef`) : pos/n/dim complets ou rien, écartées
+  comptées, jamais d’exception ;
+- **Re-match une par une** avec bilan ; **aperçu vert translucide du solide évidé**
+  dès l’entrée comme à chaque clic/épaisseur (`_c*` distinct de `_d*`/`_x*`) ;
+- **Panneau : ✅/⚠ par face** (« sera retirée (ouverture) »), bilan `n/n retrouvée(s)`,
+  note si des faces ont été écartées ; épaisseur validée comme avant (0 refusé).
+
+Tests : nouveau `test_coque_sel.cjs` sur noyau réel — 6 cas `coqueCleanRef`, boîte
+moins son dessus paroi 2 : 11 faces (5 ext. + 5 int. + rebord), 24 arêtes —
+TOUT EST CONFORME. Régression 10/10.
 

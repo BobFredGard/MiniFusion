@@ -9,6 +9,15 @@
    dépouillage (xdraft, 86) et le déplacement d'une face (xmove, 85). */
 let coqueMode=null; // null | {faces:[ref], thick, editing:id|null}
 let coqueGroup=null; // surbrillance 3D (faces à retirer en rouge)
+let coquePrevBody=null; // aperçu translucide du solide évidé (non validé)
+function coqueCleanRef(r){
+  // Copie validée d'une référence de face mémorisée (édition) : pos/n/dim complets ou
+  // rien. Un `dim` manquant fait lever occFindFace au lieu de dégrader, et une exception
+  // ici faisait avorter toute l'entrée en mode (état à moitié initialisé, aucun retour
+  // visuel) — même cause, même remède que la dépouille (86).
+  return ((r&&Array.isArray(r.pos)&&r.pos.length>=3&&Array.isArray(r.n)&&r.n.length>=3&&Array.isArray(r.dim)&&r.dim.length>=3)
+    ?{pos:r.pos.slice(),n:r.n.slice(),dim:r.dim.slice(),_ord:-1}:null);
+}
 
 // Le bouton est créé ICI, dans les sources : la coque HTML est générée, jamais
 // éditée à la main. Idempotent. Le regroupement par type (96-bandeau-groupes.js)
@@ -97,8 +106,75 @@ function coqueOrdOf(ref){
   return -1;
 }
 function coqueMarkByPosition(){
-  if(!coqueMode||!occLive||!occLive.shape)return;
-  (coqueMode.faces||[]).forEach(r=>{r._ord=coqueOrdOf(r);});
+  // Re-fait correspondre chaque face mémorisée au solide courant, UNE PAR UNE : une face
+  // illisible ne doit pas empêcher les autres d'être retrouvées — sinon, en édition,
+  // une seule face problématique effaçait toute la surbrillance. Retourne le bilan.
+  const st={ok:0,ko:0};
+  if(!coqueMode||!occLive||!occLive.shape)return st;
+  (coqueMode.faces||[]).forEach(r=>{
+    try{r._ord=coqueOrdOf(r);}catch(e){r._ord=-1;}
+    if(r._ord>=0)st.ok++;else st.ko++;
+  });
+  return st;
+}
+/* ---------- aperçu vert translucide du solide évidé AVANT validation ----------
+   Même pattern que les aperçus dépouille (bleu) et congé (rouge) : on rejoue l'évidage
+   sur une copie du solide courant, on affiche le résultat en vert translucide et la
+   pièce réelle s'estompe — on VOIT l'ouverture et la paroi avant d'appliquer.
+   Noms de sauvegarde `_c*` distincts de `_d*`/`_x*` pour que les aperçus ne se
+   marchent jamais dessus (les modes s'excluent déjà, ceinture + bretelles). */
+function coquePreviewRemove(){
+  if(coquePrevBody){
+    if(coquePrevBody.mesh){try{scene.remove(coquePrevBody.mesh);coquePrevBody.mesh.geometry.dispose();}catch(e){}}
+    bodies=bodies.filter(b=>b!==coquePrevBody);
+    coquePrevBody=null;
+  }
+  bodies.forEach(b=>{
+    if(b._cSaved==null||!b.mesh||!b.mesh.material)return;
+    b.mesh.material.opacity=b._cSaved;b.mesh.material.transparent=b._cTrans;
+    if(b._cDW!==undefined)b.mesh.material.depthWrite=b._cDW;
+    delete b._cSaved;delete b._cTrans;delete b._cDW;
+  });
+  try{refreshParts();}catch(e){}
+}
+function coquePreviewUpdate(){
+  try{
+    if(!coqueMode){coquePreviewRemove();return;}
+    const faces=coqueMode.faces||[];
+    const t=+coqueMode.thick||0;
+    if(!faces.length||!(t>0)||!occLive||!occLive.shape){coquePreviewRemove();return;}
+    // rien à recalculer si la sélection et l'épaisseur n'ont pas bougé
+    const sig=faces.map(coqueKey).join(';')+'|'+t;
+    if(coqueMode._prevSig===sig)return;
+    coqueMode._prevSig=sig;
+    const got=[];
+    faces.forEach(r=>{try{const h=occFindFace(occLive.shape,r);if(h)got.push(h);}catch(e){}});
+    if(!got.length){coquePreviewRemove();return;}
+    let r=null;
+    try{r=occCoqueOnce(occLive.shape,got,t);}
+    finally{got.forEach(g=>{try{g.delete();}catch(e){}});}
+    if(!r||!r.shape){coquePreviewRemove();return;}
+    const sh=r.shape;
+    let g=null;
+    try{g=occTessellate(sh,0.5);}catch(e){g=null;}
+    try{sh.delete();}catch(e){}
+    if(!g){coquePreviewRemove();return;}
+    coquePreviewRemove();
+    bodies.forEach(b=>{
+      if(b.ghost||!b.mesh||!b.mesh.material)return;
+      b._cSaved=b.mesh.material.opacity;b._cTrans=b.mesh.material.transparent;
+      b.mesh.material.opacity=0.28;b.mesh.material.transparent=true;
+      b._cDW=b.mesh.material.depthWrite;b.mesh.material.depthWrite=false;
+    });
+    const mat=new THREE.MeshStandardMaterial({color:0x30d158,transparent:true,opacity:0.45,depthWrite:false,side:THREE.DoubleSide,roughness:0.4,metalness:0.05});
+    const mesh=new THREE.Mesh(g,mat);mesh.name='coquePreview';
+    mesh.renderOrder=1000;
+    mesh.userData.bid='coque_preview';mesh.raycast=()=>{};
+    scene.add(mesh);
+    coquePrevBody={id:'coque_preview',name:'🟢 Aperçu coque (non validé)',mesh,color:0x30d158,visible:true,kind:'ghost',ref:null,ghost:true,preview:true};
+    bodies.push(coquePrevBody);
+    try{refreshParts();}catch(e){}
+  }catch(e){coquePreviewRemove();}
 }
 function enterCoqueMode(editF){
   if(skEdit)return;
@@ -118,14 +194,18 @@ function enterCoqueMode(editF){
   if(editing){
     // Édition : rejeu SANS la fonction (occSkipFeat) → les faces d'origine
     // redeviennent cliquables. Même stratégie que congé/dépouillage.
-    coqueMode.faces=(editing.faces||[]).map(r=>({pos:r.pos.slice(),n:r.n.slice(),dim:r.dim.slice(),_ord:-1}));
-    coqueMode.thick=+editing.thick||2;
+    // Chargement VALIDÉ (coqueCleanRef) : une référence malformée est écartée et
+    // comptée au lieu de faire avorter toute l'entrée en mode.
+    const avant=(editing.faces||[]).length;
+    coqueMode.faces=(editing.faces||[]).map(coqueCleanRef).filter(Boolean);
+    coqueMode._ecartees=avant-coqueMode.faces.length;
+    coqueMode.thick=(+editing.thick>0)?+editing.thick:2;
     occSkipFeat=editing.id;
     try{rebuild();}catch(e){}
     if(!occLive||!occLive.shape){occSkipFeat=null;coqueMode=null;faceEl.textContent='Coque : recalcul impossible.';return;}
-    coqueMarkByPosition();
+    coqueMode._stats=coqueMarkByPosition();
   }
-  coquePaint();renderCoquePanel();
+  coquePaint();coquePreviewUpdate();renderCoquePanel();
   faceEl.innerHTML=editing
     ?'<b>⚙ Édition « '+shellName(editing)+' »</b><br><span class="note">Re-cliquez les faces à '+
      'retirer pour en ajouter ou en retirer, ajustez l\'épaisseur, puis <b>Enregistrer</b>. <b>Échap</b> annule.</span>'
@@ -136,7 +216,7 @@ function enterCoqueMode(editF){
 function exitCoqueMode(silent){
   if(!coqueMode)return;
   const wasEditing=!!coqueMode.editing;
-  coqueMode=null;coqueClearHl();
+  coqueMode=null;coqueClearHl();coquePreviewRemove();
   if(wasEditing){occSkipFeat=null;markDirty();try{rebuild();}catch(e){}}
   if(!silent)renderProps();
 }
@@ -149,7 +229,9 @@ function coqueToggle(e){
   const i=coqueMode.faces.findIndex(r=>coqueKey(r)===k);
   if(i>=0){coqueMode.faces.splice(i,1);}
   else coqueMode.faces.push(hit.ref);
-  coquePaint();renderCoquePanel();
+  // _ord des nouvelles venues : position connue (clic), pas besoin de re-match global.
+  // L'aperçu se recalcule (signature : sélection + épaisseur).
+  coquePaint();coquePreviewUpdate();renderCoquePanel();
   const nf=coqueMode.faces.length;
   faceEl.textContent=nf?`${nf} face(s) à retirer retenue(s) — saisissez l'épaisseur puis Appliquer.`
     :'Aucune face retenue : cliquez les faces à retirer (les ouvertures), ou Échap pour annuler.';
@@ -168,20 +250,31 @@ function renderCoquePanel(){
   p.appendChild(h);
   const nf=(coqueMode.faces||[]).length;
   if(nf){
+    const st=coqueMode._stats;
+    if(st&&st.ko>0){
+      const n=document.createElement('span');n.className='note';
+      n.textContent=`⚠ ${st.ok}/${st.ok+st.ko} face(s) retrouvée(s) sur le solide actuel — les ⚠ ci-dessous n'y sont plus, re-cliquez-les.`;
+      p.appendChild(n);
+    }
     const lst=document.createElement('div');lst.className='lst';
     coqueMode.faces.forEach((fr,i)=>{
       const r2=document.createElement('div');r2.className='item';
       const s=document.createElement('span');
-      s.textContent='▸ centre ('+fr.pos.map(v=>(+v).toFixed(1)).join(' ; ')+') mm';
+      s.textContent=(fr._ord>=0?'✅ ':'⚠ ')+'▸ centre ('+fr.pos.map(v=>(+v).toFixed(1)).join(' ; ')+') mm — sera retirée (ouverture)';
       r2.appendChild(s);
       const x=document.createElement('button');x.textContent='✕';x.title='Retirer cette face';
-      x.onclick=()=>{coqueMode.faces.splice(i,1);coquePaint();renderCoquePanel();};
+      x.onclick=()=>{coqueMode.faces.splice(i,1);coquePaint();coquePreviewUpdate();renderCoquePanel();};
       r2.appendChild(x);lst.appendChild(r2);
     });
     p.appendChild(lst);
   }else{
     const n=document.createElement('span');n.className='note';
     n.textContent='Cliquez les faces à retirer dans la vue 3D : ce sont les ouvertures du bac/boîtier.';
+    p.appendChild(n);
+  }
+  if(coqueMode._ecartees>0){
+    const n=document.createElement('span');n.className='note';
+    n.textContent='⚠ '+coqueMode._ecartees+' face(s) mémorisée(s) illisible(s) écartée(s) au chargement.';
     p.appendChild(n);
   }
   // Épaisseur : > 0, et inférieure à la plus petite dimension utile (le moteur refuse sinon).
@@ -194,9 +287,11 @@ function renderCoquePanel(){
     if(!isFinite(v)||v<=0){
       inp.value=String(coqueMode.thick).replace('.',',');
       faceEl.textContent='Épaisseur invalide : strictement positive (ex. 2).';
+      coquePreviewRemove();
       return;
     }
     coqueMode.thick=v;inp.value=String(v).replace('.',',');
+    coquePreviewUpdate();
   };
   row.appendChild(lab);row.appendChild(inp);
   const ok=document.createElement('button');ok.className='primary';
