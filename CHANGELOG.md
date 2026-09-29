@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**86 versions**, de `2026-09-28b` à `2026-09-31r` — la plus récente en bas,
+**87 versions**, de `2026-09-28b` à `2026-09-31s` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1969,4 +1969,27 @@ Shift+clic), menu affiché DANS LE VIDE sans Décaler préalable, entrées Paral
 présentes, relâchement droit ne referme pas, clic gauche referme — TOUT EST CONFORME
 (échoue sans les correctifs : T1+T3). Régression esquisses 5/6 (test_trimarc : pin
 de version 28g + limite stub caméra, préexistant).
+---
+
+### `2026-09-31s`
+
+**MIROIR : les arcs suivent le sens du repère (esquisse miroir = repère gaucher).**
+
+Constat sur fichier réel (dernière symétrie, slot 52 + R4 miroir XZ) : la poche
+miroir sortait amputée de ses arcs (outil large de 52 au lieu de 60, fond de poche
+53 au lieu de 61) alors que les droites étaient exactes.
+Cause prouvée par exécution : `occWireFromChain` construisait `gp_Circ` autour de
++n dans tous les cas. Or en repère gaucher le sens trigo 2D tourne à l’envers
+autour de +n : `MakeEdge(circ,P1,P2)` prenait alors le mauvais demi-cercle
+(intérieur au lieu d’extérieur). Vérifié par le calcul : source −90°→+90° (dehors),
+miroir +90°→270° (dedans).
+
+Correctif : le cercle est orienté selon le repère (`-n` si gaucher, détecté par le
+signe de `(axU×axV)·n`). Les repères droits sont bit-identiques à avant (même
+branche de code) : aucun changement pour l’existant. Cercles complets et
+droites insensibles (vérifié par construction).
+
+Tests : nouveau `test_mirror_arc.cjs` — slot lignes+arcs + miroir XZ simple : outil
+miroir = miroir exact de l’outil source (bbox symétrique, 6 faces). Échoue sans
+le correctif (miroir x −20..20 tronqué), passe avec. Régression 15/15.
 

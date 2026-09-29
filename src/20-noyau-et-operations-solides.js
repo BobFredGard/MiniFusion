@@ -104,6 +104,14 @@ function occWireFromChain(sk,tr,chain,bin,z0){
   // z0 = décalage du plan de construction le long de n (prisme décalé : plage [lo,hi]).
   const TAU=Math.PI*2,norm=t=>((t%TAU)+TAU)%TAU;
   const{u,v,n}=sketchBasis(sk);
+  // Repère droit ou MIRROIR (gaucher) ? Une esquisse miroir (symétrie) garde les mêmes
+  // coords 2D mais son repère est gaucher : axU×axV opposé à +n. Le sens trigo 2D y
+  // tourne alors à l'envers autour de +n — il faut en tenir compte pour les arcs.
+  let gaucher=false;
+  try{
+    const cx=u.y*v.z-u.z*v.y,cy=u.z*v.x-u.x*v.z,cz=u.x*v.y-u.y*v.x;
+    gaucher=(cx*n.x+cy*n.y+cz*n.z)<0;
+  }catch(e){}
   const dz=z0||0;
   const OP=w=>dz?[w[0]+n.x*dz,w[1]+n.y*dz,w[2]+n.z*dz]:w;
   const dir=occBinPush(bin,new occt.gp_Dir_4(n.x,n.y,n.z));
@@ -124,7 +132,12 @@ function occWireFromChain(sk,tr,chain,bin,z0){
       const a=ed.e,Cc=tr.pts[a.pc];
       const an=arcAngles(sk,a);if(!an||!Cc)throw new Error('arc invalide');
       const Cw=OP(occW(sk,Cc.x,Cc.y));
-      const ax=occBinPush(bin,new occt.gp_Ax2_3(occBinPush(bin,new occt.gp_Pnt_3(Cw[0],Cw[1],Cw[2])),dir));
+      // Sens du cercle : en repère gaucher (esquisse miroir), le trigo 2D tourne à
+      // l'envers autour de +n. Construire le cercle autour de +n y faisait passer les
+      // arcs du mauvais côté (constaté : slot miroir amputé de ses extrémités R4 —
+      // outil large de 52 au lieu de 60). On oriente donc le cercle selon le repère.
+      const dirC=gaucher?occBinPush(bin,new occt.gp_Dir_4(-n.x,-n.y,-n.z)):dir;
+      const ax=occBinPush(bin,new occt.gp_Ax2_3(occBinPush(bin,new occt.gp_Pnt_3(Cw[0],Cw[1],Cw[2])),dirC));
       const circ=occBinPush(bin,new occt.gp_Circ_2(ax,a.r));
       const Pf=tr.pts[st.from],Pt=tr.pts[toId];
       const aF=Math.atan2(Pf.y-Cc.y,Pf.x-Cc.x),aT=Math.atan2(Pt.y-Cc.y,Pt.x-Cc.x);
