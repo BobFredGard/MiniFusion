@@ -78,7 +78,7 @@ function enterExactFilletMode(editF,kind){
     filModeX.tangent=prevT;
   }
   buildExactOverlay();renderExactPanel();paintExact();
-  if(!editing)xPreviewUpdate();
+  xPreviewUpdate(); // création comme édition : l'aperçu part dès l'entrée, sur la sélection chargée
   faceEl.textContent=editing
     ?`Édition « ${editing.name} » : ✕ ou clic sur une ligne de la liste = retirer · arête/face 3D = ajouter · ${filModeX.edges.length} arêtes · « Enregistrer » valide, Échap/Annuler restitue.`
     :`${label} : cliquez des arêtes vives (${filModeX.edges.length}, coutures lisses exclues) ou une face (toute sa boucle) · ${xIsChamfer(k)?'distance':'rayon'} par arête · aperçu rouge avant de valider · Échap = quitter.`;
@@ -203,7 +203,7 @@ function xPreviewUpdate(){
       b.mesh.material.opacity=0.28;b.mesh.material.transparent=true;b.mesh.material.depthWrite=false;
       b._xDW=b.mesh.material.depthWrite;
     });
-    const mat=new THREE.MeshStandardMaterial({color:0xff453a,transparent:true,opacity:0.85,depthWrite:false,side:THREE.DoubleSide,roughness:0.35,metalness:0.05});
+    const mat=new THREE.MeshStandardMaterial({color:0xff453a,transparent:true,opacity:0.6,depthWrite:false,side:THREE.DoubleSide,roughness:0.35,metalness:0.05});
     const mesh=new THREE.Mesh(g,mat);mesh.name='xPreview';
     mesh.renderOrder=1000;
     mesh.userData.bid='x_preview';mesh.raycast=()=>{};

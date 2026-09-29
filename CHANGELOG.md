@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**81 versions**, de `2026-09-28b` à `2026-09-31m` — la plus récente en bas,
+**82 versions**, de `2026-09-28b` à `2026-09-31n` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1862,4 +1862,22 @@ supprimé ; note du panneau mise à jour. Couleur rouge conservée (identité co
 Tests : `test_apercu_diff.cjs` réécrit — vise la vraie fonction, sans dépendance au
 fixture disparu : congé R4 + chanfrein D6 = solide complet 100×60×40 (écart 0,0),
 15 arêtes, cas vides → null — TOUT PASSE. Régression 10/10.
+---
+
+### `2026-09-31n`
+
+**CONGÉS/CHANFREINS : l’édition revient comme en création + rouge adouci.**
+
+À l’entrée en édition, l’aperçu était sauté (`if(!editing)`) : pas de retour
+visuel avant le premier changement, contrairement à la création. Désormais
+`xPreviewUpdate()` tourne dans les deux cas, sur la sélection chargée — parité
+création/édition (panneau, germes, tangentes et rayons par arête déjà partagés).
+
+Rouge adouci : l’aperçu passe de 0,85 à 0,6 d’opacité — le solide complet
+en rouge restait trop massif, la pièce estompée doit rester lisible derrière.
+
+Tests : nouveau `test_apercu_edition.cjs` — rejoue le calcul d’entrée en édition
+sur Ma Pièce (base SANS le congé via `occSkipFeat`, comme `enterExactFilletMode`) :
+4/4 arêtes mémorisées retrouvées, aperçu = solide complet 110×90×50 (écart 0,0),
+221 arêtes — TOUT PASSE. Régression 11/11.
 
