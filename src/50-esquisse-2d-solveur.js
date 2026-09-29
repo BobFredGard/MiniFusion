@@ -1632,6 +1632,195 @@ function segSegHit(a,b,c,d){
   if(o3===0&&on(a,c,d))return true;if(o4===0&&on(b,c,d))return true;
   return false;
 }
+function skLeftNormal(A,B){const dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy)||1e-9;return{x:-dy/L,y:dx/L};}
+function segInter(P1,P2,P3,P4){
+  const dx1=P2.x-P1.x,dy1=P2.y-P1.y,dx2=P4.x-P3.x,dy2=P4.y-P3.y;
+  const den=dx1*dy2-dy1*dx2;
+  if(Math.abs(den)<1e-12)return null;
+  const t=((P3.x-P1.x)*dy2-(P3.y-P1.y)*dx2)/den;
+  return{x:P1.x+dx1*t,y:P1.y+dy1*t};
+}
+function lineCircleInt(P,D,C,r){
+  const fx=P.x-C.x,fy=P.y-C.y;
+  const b=fx*D.x+fy*D.y,cc=fx*fx+fy*fy-r*r,disc=b*b-cc;
+  if(disc<-1e-9)return[];
+  const s=Math.sqrt(Math.max(disc,0));
+  return[{x:P.x+D.x*(-b+s),y:P.y+D.y*(-b+s)},{x:P.x+D.x*(-b-s),y:P.y+D.y*(-b-s)}];
+}
+function circleCircleInt(C0,r0,C1,r1){
+  const dx=C1.x-C0.x,dy=C1.y-C0.y,d=Math.hypot(dx,dy);
+  if(!(d>1e-9)||d>r0+r1+1e-9||d<Math.abs(r0-r1)-1e-9)return[];
+  const a=(r0*r0-r1*r1+d*d)/(2*d),h=Math.sqrt(Math.max(r0*r0-a*a,0));
+  const xm=C0.x+dx*a/d,ym=C0.y+dy*a/d;
+  return[{x:xm-dy*h/d,y:ym+dx*h/d},{x:xm+dy*h/d,y:ym-dx*h/d}];
+}
+function skEdgeEnds(e,fwd){
+  if(e.t==='line')return fwd?[e.p1,e.p2]:[e.p2,e.p1];
+  return fwd?[e.pa,e.pb]:[e.pb,e.pa];
+}
+function skOffsetChains(sk,ids){
+  const set=new Set(ids);
+  const ends=e=>e.t==='line'?[e.p1,e.p2]:(e.t==='arc'?[e.pa,e.pb]:[]);
+  const cand=(sk.entities||[]).filter(e=>set.has(e.id)&&(e.t==='line'||e.t==='arc')&&!e.ref);
+  const used=new Set(),chains=[];
+  while(true){
+    const start=cand.find(e=>!used.has(e.id));
+    if(!start)break;
+    const deg=p=>cand.filter(e=>!used.has(e.id)&&ends(e).includes(p)).length;
+    const[ss1,ss2]=ends(start);
+    let entry=deg(ss1)<=1?ss1:ss2;
+    const order=[{e:start,fwd:ends(start)[0]===entry}];
+    used.add(start.id);
+    let exit=ends(start)[order[0].fwd?1:0],closed=false;
+    while(true){
+      const nx=cand.find(e=>!used.has(e.id)&&ends(e).includes(exit));
+      if(!nx)break;
+      const fwd=ends(nx)[0]===exit;
+      order.push({e:nx,fwd});used.add(nx.id);
+      exit=ends(nx)[fwd?1:0];
+      if(exit===entry){closed=true;break;}
+    }
+    chains.push({order,closed});
+  }
+  return chains;
+}
+function skOffsetDistToSel(sk,ents,S){
+  let best=1e9;const P=sk.points;
+  ents.forEach(e=>{
+    if(e.t==='line'){const A=P[e.p1],B=P[e.p2];if(A&&B)best=Math.min(best,distSeg(S.x,S.y,A,B));}
+    else if(e.t==='circle'||e.t==='arc'){const C=P[e.pc];if(C&&e.r>0)best=Math.min(best,Math.abs(Math.hypot(S.x-C.x,S.y-C.y)-e.r));}
+  });
+  return best;
+}
+function skOffsetApply(sk,ids,D,S){
+  ids=[...new Set(ids||[])];
+  if(!(D>=0.5))return{ok:false,msg:'Décalage : distance ≥ 0,5 mm requise.'};
+  const P=sk.points;
+  const ents=ids.map(id=>entById(sk,id)).filter(e=>e&&(e.t==='line'||e.t==='circle'||e.t==='arc')&&!e.ref);
+  if(!ents.length)return{ok:false,msg:'Décalage : sélectionnez lignes, cercles ou arcs.'};
+  const chains=skOffsetChains(sk,ents.map(e=>e.id));
+  const solo=ents.filter(e=>e.t==='circle');
+  const copies=[];let jointsBad=0,doneChains=0;
+  const near=(pts,C)=>{let b=null,bd=1e9;pts.forEach(p=>{const d=Math.hypot(p.x-C.x,p.y-C.y);if(d<bd){bd=d;b=p;}});return b;};
+  const offLine=(A,B,s)=>{const n=skLeftNormal(A,B);return[{x:A.x+s*D*n.x,y:A.y+s*D*n.y},{x:B.x+s*D*n.x,y:B.y+s*D*n.y}];};
+  for(const ch of chains){
+    const n=ch.order.length;
+    let s=1,order=ch.order;
+    const entryPid=skEdgeEnds(order[0].e,order[0].fwd)[0];
+    if(ch.closed){
+      const ring=ch.order.map(o=>{const[_,b]=skEdgeEnds(o.e,o.fwd);const q=P[b];return q?[q.x,q.y]:null;}).filter(Boolean);
+      const area=ring.reduce((a,p,i)=>a+(p[0]*ring[(i+1)%ring.length][1]-ring[(i+1)%ring.length][0]*p[1]),0)/2;
+      const inside=S?pip([S.x,S.y],ring):false;
+      const ext=S?!inside:true;
+      s=((area>0)===(ext?false:true))?1:-1;
+    }else if(S){
+      const e1=order[0].e,[pA,pB]=skEdgeEnds(e1,order[0].fwd);
+      const U=P[pA],W=P[pB];
+      if(U&&W){
+        const cr=(W.x-U.x)*(S.y-U.y)-(W.y-U.y)*(S.x-U.x);
+        if(cr<0)order=[...order].reverse().map(o=>({e:o.e,fwd:!o.fwd}));
+      }
+      s=1;
+    }
+    const joints=ch.order.map((o,i)=>{const nx=ch.order[(i+1)%n];if(i===n-1&&!ch.closed)return null;
+      const a=new Set(skEdgeEnds(o.e,o.fwd)),b=new Set(skEdgeEnds(nx.e,nx.fwd));
+      for(const p of a)if(b.has(p))return p;return null;});
+    const offLine=(A,B,s)=>{const n=skLeftNormal(A,B);return[{x:A.x+s*D*n.x,y:A.y+s*D*n.y},{x:B.x+s*D*n.x,y:B.y+s*D*n.y}];};
+    const offs=[];let bad=false;
+    for(const o of order){
+      const[aPid,bPid]=skEdgeEnds(o.e,o.fwd);
+      const A=P[aPid],B=P[bPid];
+      if(!A||!B){bad=true;break;}
+      if(o.e.t==='line'){const[Q1,Q2]=offLine(A,B,s);offs.push({o,A:Q1,B:Q2});}
+      else{
+        const C=P[o.e.pc];
+        if(!C){bad=true;break;}
+        const rr=o.e.r+s*D*(o.fwd?-1:1);
+        if(!(rr>0.5)){bad=true;break;}
+        offs.push({o,C:{x:C.x,y:C.y},r:rr});
+      }
+    }
+    if(bad)continue;
+    const newEnds=new Array(n);
+    for(let i=0;i<n;i++){
+      if(i===n-1&&!ch.closed)break;
+      const nx=(i+1)%n,C0=P[joints[i]];
+      const oi=offs[i],oj=offs[nx];
+      let M=null;
+      const lineOf=o=>{const d={x:o.B.x-o.A.x,y:o.B.y-o.A.y},L=Math.hypot(d.x,d.y)||1e-9;return{P:o.A,D:{x:d.x/L,y:d.y/L}};};
+      if(oi.o.e.t==='line'&&oj.o.e.t==='line'){
+        const a=lineOf(oi),b=lineOf(oj);
+        M=segInter(a.P,{x:a.P.x+a.D.x,y:a.P.y+a.D.y},b.P,{x:b.P.x+b.D.x,y:b.P.y+b.D.y});
+        if(!M&&C0){const n1=skLeftNormal(oi.A,oi.B);M={x:C0.x+s*D*n1.x,y:C0.y+s*D*n1.y};}
+      }else if(oi.o.e.t==='line'||oj.o.e.t==='line'){
+        const li=oi.o.e.t==='line'?oi:oj,ci=oi.o.e.t==='line'?oj:oi;
+        const a=lineOf(li);
+        const hit=near(lineCircleInt(a.P,a.D,ci.C,ci.r),C0||{x:0,y:0});
+        M=hit;
+      }else{
+        const hit=near(circleCircleInt(oi.C,oi.r,oj.C,oj.r),C0||{x:0,y:0});
+        M=hit;
+      }
+      if(!M){jointsBad++;newEnds[i]={solo:true};continue;}
+      const pid=addPoint(sk,M.x,M.y);
+      newEnds[i]={pid};
+    }
+    for(let i=0;i<n;i++){
+      const o=order[i],off=offs[i];
+      const prevJ=ch.closed?newEnds[(i-1+n)%n]:(i===0?null:newEnds[i-1]);
+      const nextJ=ch.closed?newEnds[i]:(i===n-1?null:newEnds[i]);
+      const endFor=(side,endOff)=>{
+        const J=side==='prev'?prevJ:nextJ;
+        if(J&&J.pid)return J.pid;
+        return addPoint(sk,endOff.x,endOff.y);
+      };
+      if(o.e.t==='line'){
+        const p1=endFor('prev',off.A),p2=endFor('next',off.B);
+        const nid=skNewEid(sk);
+        const cp={id:nid,t:'line',p1,p2};if(o.e.construction)cp.construction=true;
+        sk.entities.push(cp);
+        if(!skHasParallel(sk,o.e.id,nid))sk.constraints.push({id:skNewEid(sk),type:'parallel',a:o.e.id,b:nid});
+        sk.dims.push({id:skNewEid(sk),type:'gap',a:o.e.id,b:nid,value:+D.toFixed(3),ox:0,oy:0});
+        copies.push(nid);
+      }else{
+        const pA=endFor('prev',{x:off.C.x,y:off.C.y}),pB=endFor('next',{x:off.C.x,y:off.C.y});
+        const angOf=pt=>Math.atan2(pt.y-off.C.y,pt.x-off.C.x);
+        const soloPrev=!prevJ||!prevJ.pid,soloNext=!nextJ||!nextJ.pid;
+        if(soloPrev||soloNext){
+          const A0=P[skEdgeEnds(o.e,o.fwd)[0]],B0=P[skEdgeEnds(o.e,o.fwd)[1]];
+          const C0c=off.C;
+          const put=(wantPid,ref)=>{
+            const a=angOf(ref);
+            const q={x:C0c.x+off.r*Math.cos(a),y:C0c.y+off.r*Math.sin(a)};
+            const ex=P[wantPid];if(ex){ex.x=q.x;ex.y=q.y;}
+          };
+          if(soloPrev&&A0)put(pA,A0);
+          if(soloNext&&B0)put(pB,B0);
+        }
+        const nid=skNewEid(sk);
+        const cp={id:nid,t:'arc',pc:o.e.pc,pa:pA,pb:pB,r:off.r};if(o.e.construction)cp.construction=true;
+        sk.entities.push(cp);
+        sk.dims.push({id:skNewEid(sk),type:'radius',ent:nid,value:+off.r.toFixed(3),ox:0,oy:0});
+        copies.push(nid);
+      }
+    }
+    doneChains++;
+  }
+  for(const e of solo){
+    const C=P[e.pc];if(!C)continue;
+    let s=1;
+    if(S)s=(Math.hypot(S.x-C.x,S.y-C.y)>=e.r)?1:-1;
+    const rr=e.r+s*D;
+    if(!(rr>0.5)){jointsBad++;continue;}
+    const nid=skNewEid(sk);
+    const cp={id:nid,t:'circle',pc:e.pc,r:rr};if(e.construction)cp.construction=true;
+    sk.entities.push(cp);
+    sk.dims.push({id:skNewEid(sk),type:'radius',ent:nid,value:+rr.toFixed(3),ox:0,oy:0});
+    copies.push(nid);
+  }
+  if(!copies.length)return{ok:false,msg:'Décalage impossible (arcs trop petits ou joints non résolus).'};
+  return{ok:true,copies,jointsBad,msg:'Décalage ±'+D.toFixed(2)+' mm : '+copies.length+' copiée(s)'+(doneChains>1?' en '+doneChains+' chaîne(s)':'')+(jointsBad?' — '+jointsBad+' joint(s) non raccordé(s)':'')+'.'};
+}
 function skBoxHits(box){
   const sk=skEdit,P=sk.points;
   const x0=Math.min(box.x0,box.x1),x1=Math.max(box.x0,box.x1),y0=Math.min(box.y0,box.y1),y1=Math.max(box.y0,box.y1);

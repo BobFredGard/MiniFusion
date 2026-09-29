@@ -13,7 +13,7 @@
    ───────────────────────────────────────────────────────────────────────────
  */
 
-const APP_VER='2026-09-31e';
+const APP_VER='2026-09-31f';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 let extPickFace=null; // mode « vers un objet » : clic sur une face pour le sens (Échap = annuler)

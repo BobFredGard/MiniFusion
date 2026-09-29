@@ -555,6 +555,20 @@ svg.addEventListener('pointerdown',e=>{
     if(!ent){skStatus('Ajuster : cliquez un tronçon de ligne, d’arc ou de cercle près d’une intersection.');return;}
     skPushUndo();skStatus(trimEntity(sk,ent,wx,wy));afterEdit();return;
   }
+  if(skTool==='offset'){
+    // Décalage : sélection (Shift = lot) PUIS clic du côté — la distance suit le curseur.
+    const sel=skSelectedEnts().filter(e=>(e.t==='line'||e.t==='circle'||e.t==='arc')&&!e.ref);
+    if(!sel.length){skStatus('Décalage ⇄ : sélectionnez d’abord 1+ lignes/cercles/arcs (Shift = lot).');return;}
+    if(!skOffArm){skOffArm=true;skStatus('Décalage ⇄ : cliquez le CÔTÉ (distance = curseur, cotes créées pour ajuster). Échap annule.');drawSketch2D();return;}
+    const D=skOffsetDistToSel(sk,sel,{x:wx,y:wy});
+    skOffArm=false;
+    if(!(D>=0.5)){skStatus('Décalage : cliquez plus loin (≥ 0,5 mm).');drawSketch2D();return;}
+    skPushUndo();
+    const r=skOffsetApply(sk,sel.map(e=>e.id),D,{x:wx,y:wy});
+    if(!r.ok){skUndoStack.pop();skUndoBtn();skStatus(r.msg);drawSketch2D();return;}
+    skOffsetD=D;afterEdit();skStatus(r.msg+' — cotes modifiables (double-clic).');
+    return;
+  }
 });
 svg.addEventListener('pointermove',e=>{
   if(!skEdit)return;const sk=skEdit;const[wx,wy]=evXY(e);
@@ -565,6 +579,12 @@ svg.addEventListener('pointermove',e=>{
     if(k!==ko){ skProjectHover=pr; drawSketch2D(); }
     if(pr) skStatus('⧉ '+(pr.type==='circle'?'Cercle':pr.type==='arc'?'Arc':'Arête')+' — clic pour projeter en construction.');
     else skStatus('⧉ Survolez une arête 3D (même hors plan) — elle s\'illumine en orange.');
+    return;
+  }
+  if(skTool==='offset'&&skOffArm){
+    // Distance vivante pendant le placement (sans aperçu géométrique : le clic fige).
+    const sel=skSelectedEnts().filter(e=>(e.t==='line'||e.t==='circle'||e.t==='arc')&&!e.ref);
+    if(sel.length)skStatus('Décalage ⇄ : '+skOffsetDistToSel(sk,sel,{x:wx,y:wy}).toFixed(2)+' mm — clic pour appliquer, Échap annule.');
     return;
   }
   if(skDrag){
@@ -860,7 +880,7 @@ function skEscapeToSelect(){
 }
 function skCancelDraft(){
   if(skDimPlace&&skEdit){skEdit.dims=skEdit.dims.filter(x=>x.id!==skDimPlace.id);skDimPlace=null;} // Échap pendant le placement annule la cote
-  skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skPendPt=null;skCoinA=null;skCornA=null;skDraft=null;skDown=null;skDrag=null;skDragEnt=null;skBox=null;skDyn=null;skDimDrag=null;skPan=null;skInfer=null;skMsg='';skDimLine=null;skDimRef=null;skProjectHover=null;hideSkCtx();if(skEdit){cleanupSk(skEdit);drawSketch2D();renderSkPanel();}}
+  skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skPendPt=null;skCoinA=null;skCornA=null;skOffArm=null;skDraft=null;skDown=null;skDrag=null;skDragEnt=null;skBox=null;skDyn=null;skDimDrag=null;skPan=null;skInfer=null;skMsg='';skDimLine=null;skDimRef=null;skProjectHover=null;hideSkCtx();if(skEdit){cleanupSk(skEdit);drawSketch2D();renderSkPanel();}}
 function hideSkCtx(){ const m=$('skCtxMenu'); if(m) m.style.display='none'; }
 function showSkCtx(x,y){
   if(!skEdit) return;
@@ -923,6 +943,12 @@ function showSkCtx(x,y){
     add('∥ Parallèle',()=>applyCon('parallel')); add('⟂ Perpendiculaire',()=>applyCon('perpendicular'));
     add('＝ Égal',()=>applyCon('equal')); add('─ Horizontal',()=>applyCon('h')); add('│ Vertical',()=>applyCon('v')); add('⊕ Milieux égaux (2 lignes)',()=>applyCon('midpoint')); has=true;
     add('⦾ Congé (arc tangent + R)',()=>skApplyFilletSel()); add('◣ Chanfrein (coupe + cote)',()=>skApplyChamferSel());
+    const offEl=selEnts.filter(e=>(e.t==='line'||e.t==='circle'||e.t==='arc')&&!e.ref);
+    if(offEl.length)add('⇄ Décaler ('+skOffsetD.toFixed(1).replace('.',',')+' mm, auto)',()=>{
+      skPushUndo();
+      const r=skOffsetApply(skEdit,offEl.map(e=>e.id),skOffsetD,null);
+      if(!r.ok){skUndoStack.pop();skUndoBtn();skStatus(r.msg);return;}
+      afterEdit();skStatus(r.msg+' — cotes modifiables (double-clic).');});
   }
   // 2 points
   if(pts.length===2){
@@ -1024,5 +1050,6 @@ window.addEventListener('keydown',e=>{
   };
   mk('fillet','⦾','Congé (F) : cliquez 2 lignes en coin → arc tangent + cote R (double-clic pour modifier)');
   mk('chamfer','◣','Chanfrein (H) : cliquez 2 lignes en coin → coupe + cote (double-clic pour modifier)');
+  mk('offset','⇄','Décalage (O) : sélectionnez lignes/cercles/arcs, cliquez le CÔTÉ → copies // et cotes');
 })();
 

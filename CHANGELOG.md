@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**73 versions**, de `2026-09-28b` à `2026-09-31e` — la plus récente en bas,
+**74 versions**, de `2026-09-28b` à `2026-09-31f` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1689,3 +1689,22 @@ In-app : 6 nouveaux auto-tests 🧪 (mêmes scénarios).
 
 Régression : **syntaxe 20/20 OK**, `node build.js --check` vert.
 **Anti-cache** : bump 31d → 31e — Ctrl+Maj+R et vérifier « Code en mémoire ».
+---
+
+### `2026-09-31f`
+
+**ESQUISSE : décalage (offset) interactif — lignes, cercles, arcs, chaînes raccordées.**
+
+Nouvel outil `O` (⇄) : sélectionnez 1+ lignes/cercles/arcs (Shift = lot), puis cliquez le côté désiré → copies parallèles/concentriques avec cotes `gap` (lignes) / `radius` (cercles/arcs) pilotées.
+
+- **Chaînes raccordées** : lignes + arcs connectés forment un contour continu (mitre aux coins), cotes `gap`/`radius` sur chaque copie, contraintes `parallel` vis-à-vis des originaux.
+- **Boucles fermées** : détection auto du côté (clic = côté cliqué, sinon extérieur par défaut), joints mitrés.
+- **Cercles isolés** : copies concentriques (centre partagé), rayon piloté.
+- **Paramétrique** : cotes créées restent l'éditeur durable (double-clic pour modifier).
+
+Math partagée (`skLeftNormal`, `segInter`, `lineCircleInt`, `circleCircleInt`, `skOffsetChains`, `skOffsetApply`) — 170 lignes pures, testables en Node.
+
+**Tests** : harnais Node (10+20+50+60) — **4/6 verts** (ligne seule, chaîne L, cercle, R5×4 inchangé). 2 restants : trou boucle fermée (dépend trace 3D) + joint ligne-arc (chaîne mixte). In-app : 2 auto-tests 🧪 (ligne seule, chaîne L).
+
+Régression : **syntaxe 20/20 OK**, `node build.js --check` vert.
+**Anti-cache** : bump 31e → 31f — Ctrl+Maj+R et vérifier « Code en mémoire ».
