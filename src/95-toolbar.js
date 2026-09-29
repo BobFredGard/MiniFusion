@@ -26,7 +26,9 @@ $('btnExtrude').onclick=()=>askExtrude(sel.kind==='sketch'?sel.id:null);
 $('btnFillet').onclick=()=>{if(filMode||filModeX)exitFilletMode();else enterFilletMode();};
 $('btnChamfer').onclick=()=>{if(filModeX&&filModeX.kind==='chamfer'){exitFilletMode();return;}if(filMode||filModeX)exitFilletMode(true);enterExactFilletMode(null,'chamfer');};
 $('btnRepeat').onclick=()=>{if(repMode)exitRepMode();else enterRepMode();};
-if($('btnMoveFace'))$('btnMoveFace').onclick=()=>{if(mvMode)exitMoveFaceMode();else{if(filMode||filModeX)exitFilletMode(true);enterMoveFaceMode();}};
+if($('btnMoveFace'))$('btnMoveFace').onclick=()=>{if(mvMode)exitMoveFaceMode();else{if(filMode||filModeX)exitFilletMode(true);}enterMoveFaceMode();};
+if($('btnDraft'))$('btnDraft').onclick=()=>{if(draftMode)exitDraftMode();else{if(filMode||filModeX)exitFilletMode(true);}enterDraftMode();};
+if($('btnCoque'))$('btnCoque').onclick=askCoque;
 $('btnFit').onclick=showAll;
 $('btnSelfTest').onclick=runSelfTests;
 if($('btnRebuild'))$('btnRebuild').onclick=()=>{

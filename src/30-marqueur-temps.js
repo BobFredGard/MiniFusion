@@ -123,12 +123,19 @@ function rebuildInner(projPass){
         faceEl.textContent+=(faceEl.textContent?'\n':'')+msg;
       }
     }
-    if(f.type==='import'&&f._mesh){
-      try{
-        f._mesh.updateMatrixWorld(true);
-        const g=f._mesh.geometry.clone();g.applyMatrix4(f._mesh.matrixWorld);
-        jobs.push({f,geos:[g],isImport:true});
-      }catch(e){faceEl.textContent='Import illisible : '+e.message;}
+    if(f.type==='import'){
+      // La géométrie d'un import n'est PAS persistée (comme serialise) : un retour
+      // d'annulation peut donc remettre une fonction import sans _mesh vivant. On
+      // l'ignore proprement au lieu de planter le rejeu (régression 30y/30z).
+      if(f._mesh&&typeof f._mesh.updateMatrixWorld==='function'){
+        try{
+          f._mesh.updateMatrixWorld(true);
+          const g=f._mesh.geometry.clone();g.applyMatrix4(f._mesh.matrixWorld);
+          jobs.push({f,geos:[g],isImport:true});
+        }catch(e){faceEl.textContent='Import illisible : '+e.message;}
+      }else{
+        faceEl.textContent+=(faceEl.textContent?'\n':'')+'Un corps importé a perdu sa géométrie au retour d\'annulation — réimportez le fichier.';
+      }
     }
   });
   const hasCut=jobs.some(j=>(j.f.op||'add')==='cut'&&!j.isImport);

@@ -30,6 +30,7 @@ function featIconOf(f){
   if(f.type==='repeat')return '🔁';
   if(f.type==='revolve')return (f.op||'add')==='cut'?'◔':'◍';
   if(f.type==='xmove')return '📐';
+  if(f.type==='xdraft')return ((f._m&&f._m.m<f._m.t)||f._err)?'⚠':'📐';
   return '◧';
 }
 function renderTree(){
@@ -148,7 +149,7 @@ function renderTree(){
           treeSel=[f.id]; // idem : pas de résidu du lot précédent
           sel={kind:'feature',id:f.id};renderTree();renderProps();refreshParts();
         };
-        d.ondblclick=()=>{if(k.type==='xfillet'){sel={kind:'feature',id:k.id};treeSel=[];enterExactFilletMode(k);}};
+        d.ondblclick=()=>{if(k.type==='xfillet'){sel={kind:'feature',id:k.id};treeSel=[];enterExactFilletMode(k);}else if(k.type==='xdraft'){sel={kind:'feature',id:k.id};treeSel=[];enterDraftMode(k);}};
         d.oncontextmenu=e=>{e.preventDefault();showCtx(e.clientX,e.clientY,{kind:'feature',id:f.id});};
         t.appendChild(d);
       });
@@ -159,7 +160,7 @@ function renderTree(){
     const repF=sel.kind==='feature'?doc.features.find(x=>x.id===sel.id&&x.type==='repeat'):null;
     const estSrc=!!(repF&&(repF.base||[]).indexOf(f.id)>=0);
     const ri=repMode&&repMode.feats&&repMode.feats.includes(f.id)?'✓ ':'';
-    node(ri+(estSrc?'<span class="srcmark" title="Source de la répétition sélectionnée">◀</span>':'')+featIcon(f),f.name,'feature',f.id,f.visible,f.type==='xfillet'?()=>{sel={kind:'feature',id:f.id};treeSel=[];enterExactFilletMode(f);}:null);
+    node(ri+(estSrc?'<span class="srcmark" title="Source de la répétition sélectionnée">◀</span>':'')+featIcon(f),f.name,'feature',f.id,f.visible,(f.type==='xfillet'||f.type==='xdraft')?()=>{sel={kind:'feature',id:f.id};treeSel=[];(f.type==='xfillet'?enterExactFilletMode(f):enterDraftMode(f));}:null);
   });
   updateOriginPlanes();
 }
@@ -191,6 +192,7 @@ function repCanFeatureHint(f){
   if(f.type==='extrude')return((f.op||'add')==='cut'?'Découpe':'Plot')+' · '+(+f.distance||0).toFixed(2)+' mm';
   if(f.type==='xfillet')return xLabel(xKindOf(f))+' · '+(f.edges||[]).length+' arête(s)';
   if(f.type==='xmove')return 'Déplacement de face · '+(+f.dist||0)+' mm';
+  if(f.type==='xdraft')return 'Dépouillage · '+(+f.angle||0).toFixed(1).replace('.',',')+'° · '+(f.faces||[]).length+' face(s)';
   return '';
 }
 // Liste des fonctions répétables, en CASES À COCHER.
@@ -446,6 +448,9 @@ function docSanitise(){
   // géométrie réelle au chargement. Les noms de fonctions ne sont pas éditables à la main.
   let ren=0;
   doc.features.forEach(f=>{if(f.type==='xfillet'){const n=xFeatName(f);if(f.name!==n){f.name=n;ren++;}}});
+  // Même raison pour le dépouillage : un nom qui annonce « 3 face(s) » quand il en reste 1
+  // (faces disparues après une modification en amont) doit être remis d'aplomb au chargement.
+  doc.features.forEach(f=>{if(f.type==='xdraft'){const n=draftName(f);if(f.name!==n){f.name=n;ren++;}}});
   return {dup,orph,sk,cap,ren};
 }
 function delFeature(f){
@@ -614,6 +619,49 @@ function renderProps(){
       p.appendChild(lab);p.appendChild(d);
       p.appendChild(note('Positif : la face avance. Négatif : elle rentre. 0 : la fonction ne fait rien.'));
       p.appendChild(btn('📐 Re-sélectionner la face',()=>{exitMoveFaceMode(true);try{if(filMode||filModeX)exitFilletMode(true);}catch(e){}enterMoveFaceMode();}));
+      p.appendChild(btn('👁 Afficher / masquer',()=>{f.visible=!(f.visible!==false);markDirty();rebuild();renderTree();renderProps();}));
+      p.appendChild(btn('🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}));
+      return;
+    }
+    if(f.type==='xdraft'){
+      p.appendChild(info(`<b>${f.name}</b> · 📐 Dépouillage · ${(f.faces||[]).length} face(s)`));
+      // Un dépouillage PARTIEL (⚠ dans l'arbre) doit s'expliquer comme un congé partiel :
+      // combien de faces ont été retrouvées sur la pièce courante, lesquelles manquent.
+      if(f._m&&f._m.t&&f._m.m<f._m.t){
+        const manquant=f._m.t-f._m.m;
+        p.appendChild(info(`<span style="color:var(--warn)">⚠ <b>${f._m.m}/${f._m.t}</b> face(s) retrouvée(s) — ${manquant} perdue(s).</span>`));
+        p.appendChild(note('Les faces sont retrouvées à chaque rejeu par leur position et leur normale. '+
+          'Si la pièce a changé en amont, re-sélectionnez les faces avec le bouton ci-dessous.'));
+      }
+      if(f.ref){
+        p.appendChild(note('Face de référence (plan neutre, elle reste fixe) : centre ('+
+          f.ref.pos.map(v=>(+v).toFixed(1)).join(' ; ')+') mm, normale ('+
+          f.ref.n.map(v=>(+v).toFixed(2)).join(' ; ')+').'));
+      }
+      const d=document.createElement('input');
+      d.type='text';d.inputMode='decimal';
+      d.value=String(+f.angle||0).replace('.',',');
+      d.style.width='90px';
+      d.addEventListener('change',()=>{
+        const v=parseFloat(String(d.value).replace(',','.').replace(/\s/g,''));
+        if(!isFinite(v)){d.value=String(+f.angle||0).replace('.',',');return;}
+        // 0 < a < 90 : au-delà, la dépouille n'a plus de sens géométrique.
+        if(v<=0||v>=90){d.value=String(+f.angle||0).replace('.',',');faceEl.textContent='Angle hors bornes : le dépouillage doit être compris entre 0 et 90° (exclus).';return;}
+        if(v===+f.angle)return;
+        // Poussé dans l'historique AVANT la modification : l'undo doit ramener l'ancien
+        // angle, sinon le point de contrôle rejoue la mauvaise géométrie.
+        docPushUndo();
+        f.angle=v;f.name=draftName(f);
+        markDirty();rebuild();renderTree();renderProps();
+        faceEl.textContent='Dépouillage à '+v.toFixed(1).replace('.',',')+'° appliqué.';
+      });
+      const lab=document.createElement('span');
+      lab.textContent=' Angle (°) : ';lab.style.marginLeft='8px';
+      p.appendChild(lab);p.appendChild(d);
+      p.appendChild(note('Angle de démoulage : chaque face retenue pivote de cet angle autour de sa '+
+        'ligne d\'intersection avec le plan neutre, de façon à ce qu\'elle ne coince plus au démontage. '+
+        'Une face doit toucher le plan neutre ; une face qui lui est parallèle est refusée (pivot dégénéré).'));
+      p.appendChild(btn('📐 Re-sélectionner les faces',()=>{exitDraftMode(true);try{if(filMode||filModeX)exitFilletMode(true);}catch(e){}enterDraftMode(f);}));
       p.appendChild(btn('👁 Afficher / masquer',()=>{f.visible=!(f.visible!==false);markDirty();rebuild();renderTree();renderProps();}));
       p.appendChild(btn('🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}));
       return;

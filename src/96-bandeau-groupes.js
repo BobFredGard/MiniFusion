@@ -67,6 +67,8 @@
     '#',
     [null,'Faces'],
     ['btnMoveFace','\u{1F4D0}','Déplacer une face'],
+    ['btnDraft','\u{1F6E1}','Dépouillage (angle de démoulage)'],
+      ['btnCoque','⚙','Coque'],
     '#',
     [null,'Ensembles'],
     ['btnRepeat','\u{1F501}','Répétition (linéaire, circulaire, symétrie)']

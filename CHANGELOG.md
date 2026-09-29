@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**70 versions**, de `2026-09-28b` à `2026-09-31b` — la plus récente en bas,
+**71 versions**, de `2026-09-28b` à `2026-09-31c` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1593,3 +1593,39 @@ pour une version, tester, et voir si le 2e rechargement tient.
 
 Régression : **22/22 vertes** (rechargement du document mesuré idempotent : 16 096
 triangles, 1 corps, 0 référence morte, sur trois rechargements successifs).
+---
+
+### `2026-09-31c`
+
+**« LE MODÈLE A DES DÉPOUILLES VALIDES, MAIS INVISIBLES EN 3D » (Pièce 7).**
+
+Trois causes empilées, toutes dans `20-noyau-et-operations-solides.js` :
+
+1. `occFinalShape` n'avait **aucune branche `xdraft`** (`xfillet` et `xmove` oui) :
+   la dépouille tombait dans le `return` générique « ni extrude ni revolve » —
+   l'arbre l'affichait « valide » (4 faces, pas d'erreur) mais le solide restait
+   inchangé. Branche ajoutée sur le pattern `xmove` (cache par point de contrôle
+   + warnings remontés dans Mesure).
+2. `occDraftOnce` appelait **`occt.TopoDS_Face_1`** (underscore) pour le DownCast —
+   ce binding **n'existe pas** dans ce build (vérifié sur le noyau réel : 19 909
+   clés, `TopoDS_Face_1` absent, `TopoDS.Face_1` présent). Chaque `Add` levait donc
+   un TypeError → dépouille systématiquement « impossible », même une fois
+   branchée. Corrigé en `occt.TopoDS.Face_1` (la seule occurrence ; tout le reste
+   du code utilisait déjà la forme namespace — c'est pourquoi seuls les
+   dépouillages étaient cassés).
+3. Latents, corrigés au passage : `featSig` ignorait `xdraft` (le cache aurait
+   réutilisé le solide pré-dépouille) ; `occApplyDraft` **écrasait `f.faces`**
+   (refs durables `pos/n/dim`) par des handles OCCT — document insérialisable
+   et rejeux suivants cassés (`occFindFace` recevant un handle → `NaN`).
+   Résolution désormais locale (`got`), `f._m` transitoire seul (déjà exclu de
+   `docSnap`/`serialise`).
+
+**Test sur le noyau réel** (`occt/opencascade.wasm.wasm`, 65 Mo, en Node) —
+scénario dépouille n°1 de Pièce 7 : boîte 100×70×20, plan neutre = dessus
+(0,0,20, +Z), 4 faces latérales, 20° : 4/4 `Add` acceptés, `IsDone`, bbox
+±57,28 / ±42,28 (20·tan20° = 7,28 en bas), haut `z=20` fixe. Avant le correctif
+n°2 : `TopoDS_Face_1` undefined confirmé, `Add` impossible.
+
+Régression : **syntaxe 20/20 sources OK**, `node build.js --check` vert.
+**Anti-cache** : bump `APP_VER` 31b → 31c (version affichée en permanence) —
+recharger au Ctrl+F5 et vérifier la version avant de conclure.

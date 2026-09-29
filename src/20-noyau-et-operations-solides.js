@@ -314,6 +314,49 @@ function occUnify(s){
     try{if(u)u.delete();}catch(e){}
   }
 }
+
+// New shell (Coque) helper
+function occCoque(shape, tol){
+  const bin=[];
+  try{
+    const maker = occBinPush(bin,
+      typeof tol==="number"
+        ? new occt.BRepBuilderAPI_MakeShell_3(shape, tol)
+        : new occt.BRepBuilderAPI_MakeShell_2(shape)
+    );
+    maker.Build();
+    if(!maker.IsDone()) throw new Error('Coque impossible');
+    const s=maker.Shape();
+    if(!s) throw new Error('Coque sans forme');
+    return s;
+  }catch(e){
+    occDispose(bin);
+    throw e;
+  }
+}
+
+function askCoque(){
+  if(!occHas()||!occLive||!occLive.shape){
+    faceEl.textContent='Coque : solide exact indisponible (OCCT non chargé ou aucun volume).';
+    return;
+  }
+  try{
+    const newShape=occCoque(occLive.shape);
+    if(!newShape){faceEl.textContent='Coque impossible.';return;}
+    // Replace existing body
+    bodies.forEach(b=>{if(b.id==='occ_result'){scene.remove(b.mesh);b.mesh.geometry.dispose();}});
+    bodies=[];
+    try{occLive.shape.delete();}catch(e){}
+    occLive.shape=newShape;
+    const g=occTessellate(newShape,0.5,0.5);
+    const col=partTint()||autoCol(0);
+    const mat=new THREE.MeshStandardMaterial({color:col,metalness:.35,roughness:.4,clippingPlanes:clipPlane?[clipPlane]:null});
+    const mesh=new THREE.Mesh(g,applyFeatOp(mat,null));
+    scene.add(mesh);
+    bodies.push({id:'occ_result',name:'Coque',mesh,visible:true,kind:'boolean',ref:null});
+    faceEl.textContent='Coque créé.';
+  }catch(e){faceEl.textContent='Coque : '+e.message;}
+}
 function occDiskPrism(sk,Cx,Cy,r,sp){
   // Pastille pleine (cercles isolés) : 2 demi-arcs -> wire -> face -> UN prisme.
   // sp = plage {lo,hi} (ou nombre pour compat) : cercle construit au plan décalé z0=lo,
@@ -766,6 +809,39 @@ function occCurvePts(ad,u0,u1,tol,cap){
   leaves.forEach(l=>{const e=l[1];if(e>us[us.length-1]+1e-12)us.push(e);});
   return us.map(atc);
 }
+function occDraftOnce(result,refFace,faces,angle){
+  const bin=[];
+  try{
+    const dir=occBinPush(bin,new occt.gp_Dir_4(refFace.n[0],refFace.n[1],refFace.n[2]));
+    const P=occBinPush(bin,new occt.gp_Pnt_3(refFace.pos[0],refFace.pos[1],refFace.pos[2]));
+    const pln=occBinPush(bin,new occt.gp_Pln_3(P,dir));
+    const da=occBinPush(bin,new occt.BRepOffsetAPI_DraftAngle_2(result));
+    const refused=[];
+    let ok=0;
+    for(const f of faces){
+      // DownCast via le namespace TopoDS (TopoDS.Face_1) : la forme `TopoDS_Face_1`
+      // avec underscore N'EXISTE PAS dans ce build (undefined → TypeError à chaque
+      // Add → dépouille systématiquement « impossible », Pièce 7). Toutes les autres
+      // fonctions utilisent déjà TopoDS.Face_1 / Edge_1.
+      const fc=occBinPush(bin,occt.TopoDS.Face_1(f));
+      try{da.Add(fc,dir,angle,pln,false);ok++;}
+      catch(e){
+        const b=occFaceBox(f);
+        refused.push(b?b.pos.map(v=>+v.toFixed(1)):null);
+      }
+    }
+    if(!ok)throw new Error(refused.length
+      ?`aucune des ${faces.length} face(s) ne touche le plan neutre`
+      :'aucune face à dépouiller');
+    da.Build();
+    let done=false;
+    try{done=!!da.IsDone();}catch(e){}
+    if(!done)throw new Error('dépouille refusée par le moteur');
+    const out=occShapeCopy(da.Shape());
+    if(!out||out.IsNull())throw new Error('solide dépouillé vide');
+    return {shape:out,refused:refused};
+  }finally{occDispose(bin);} // toujours : un `throw` en cours de boucle ne doit pas fuir de handles
+}
 function occSharpEdges(shape){
   // Arêtes uniques classées : sharp (noire, C0) vs tangente (grise, G1+). Validé par exécution.
   const out=[],bin=[];
@@ -837,6 +913,79 @@ function occSharpEdges(shape){
   }catch(e){}
   occDispose(bin);
   return out;
+}
+function occApplyDraft(result,f){
+  const warnings=[];
+  const ang=(+f.angle||0)*Math.PI/180;
+  if(!(Math.abs(ang)>1e-9))return{shape:result,warnings:['angle nul — aucune dépouille']};
+  if(!f.ref||!(f.faces||[]).length)return{shape:result,warnings:['face de référence ou faces à dépouiller manquantes']};
+  const ref=occFindFace(result,f.ref);
+  if(!ref){f._m={m:0,t:f.faces.length};return{shape:result,warnings:[`face de référence introuvable près de (${(f.ref.pos||[]).map(v=>(+v).toFixed(1)).join(', ')}) — la pièce a changé`]} };
+  const rn=occFaceOutNormal(ref);
+  if(!rn){try{ref.delete();}catch(e){}return{shape:result,warnings:['face de référence non plane/cylindrique']}};
+  const rb=occFaceBox(ref);
+  if(!rb){try{ref.delete();}catch(e){}return{shape:result,warnings:['face de référence illisible']}};
+  // Résolution LOCALE : les handles OCCT retrouvés restent dans `got`, les références
+  // durables `f.ref` / `f.faces` (pos/n/dim) ne sont JAMAIS écrasées. Les écraser avec
+  // des handles rendait le document insérialisable et cassait tous les rejeux suivants
+  // (occFindFace recevait un handle au lieu d'une ref → NaN → aucune face retrouvée).
+  const total=(f.faces||[]).length;
+  const hsAll=(f.faces||[]).map(fr=>{try{return occFindFace(result,fr)||null;}catch(e){return null;}});
+  const got=hsAll.filter(Boolean);
+  const miss=total-got.length;
+  if(!got.length){
+    try{ref.delete();}catch(e){}
+    f._m={m:0,t:total};
+    return{shape:result,warnings:[`aucune des ${total} face(s) visée(s) n'est retrouvée`]};
+  }
+  if(miss)warnings.push(`${miss} face(s) visée(s) introuvable(s) sur la pièce courante`);
+  f._m={m:got.length,t:total};
+  // `run` prend des handles DÉJÀ résolus (pas de double occFindFace) et ne les détruit
+  // pas : c'est l'appelant qui libère `got`/`ref` une fois le solide de sortie construit.
+  const run=list=>{
+    if(!list.length)throw new Error('aucune face retrouvable');
+    return occDraftOnce(result,{pos:rb.pos,n:rn},list,ang);
+  };
+  const dropShape=s=>{try{if(s&&s.shape)s.shape.delete();}catch(e){}};
+  let r=null,echec=null;
+  try{r=run(got);}catch(e){echec=e;}
+  if(!r){
+    const garde=[];
+    for(const h of got){
+      try{const t=run(garde.concat([h]));dropShape(t);garde.push(h);}catch(e2){/* cette face-là est écartée */}
+    }
+    if(!garde.length){
+      got.forEach(g=>{try{g.delete();}catch(e){}});
+      try{ref.delete();}catch(e2){}
+      const m=echec&&echec.message||echec;
+      const lisible=/^\d+$/.test(String(m))
+        ?`le moteur de dépouille a refusé la géométrie (code ${m})`
+        :m;
+      return{shape:result,warnings:[`dépouille impossible — ${lisible}. Vérifiez que chaque face retenue touche encore le plan neutre.`],fatal:true};
+    }
+    r=run(garde);
+    f._m={m:garde.length,t:total};
+    warnings.push(`dépouillage partiel : ${garde.length}/${total} face(s) appliquée(s), `+
+      `${total-garde.length} écartée(s) par le moteur`);
+  }
+  try{
+    const s=r.shape;
+    if(r.refused&&r.refused.length){
+      const ou=r.refused.map(p=>p?'('+p.map(v=>v.toFixed(1)).join(' ; ')+') mm':'inconnue');
+      warnings.push(`${r.refused.length} face(s) non dépouillée(s) — elle(s) ne touche(nt) pas le plan neutre : ${ou.slice(0,3).join(', ')}${r.refused.length>3?'…':''}`);
+    }
+    let out=s;
+    try{out=occUnify(s);}catch(e){}
+    if(out!==s){try{s.delete();}catch(e){} }
+    got.forEach(g=>{try{g.delete();}catch(e){} });
+    try{ref.delete();}catch(e){}
+    try{result.delete();}catch(e){}
+    return{shape:out,warnings};
+  }catch(e){
+    got.forEach(g=>{try{g.delete();}catch(e2){}});
+    try{ref.delete();}catch(e2){}
+    return{shape:result,warnings:[`dépouille impossible (${(e&&e.message)||e})`],fatal:true};
+  }
 }
 let edgeMode='off'; // 'off' | 'on' : surlignage vives noires / tangentes grises
 try{const em=localStorage.getItem('minifusion_edges');if(em==='on'||em==='off')edgeMode=em;}catch(e){}
@@ -1370,6 +1519,13 @@ function featSig(f){
     // (centre + normale + dimensions) : sans elle, changer la distance d'un déplacement
     // laisserait la signature inchangée et le point de contrôle réappliquerait l'ancien.
     s+='|d'+(+f.dist||0)+'@'+JSON.stringify(f.ref||null);
+  }else if(f.type==='xdraft'){
+    // L'ANGLE fait partie de la géométrie, ainsi que la face de référence (plan neutre)
+    // et les faces visées (références durables pos/n/dim). Sans elles, changer l'angle
+    // laissait la signature inchangée et le point de contrôle réappliquait l'ancien
+    // solide — la dépouille semblait « valide » mais restait invisible (Pièce 7).
+    const q=r=>r?((r.pos||[]).map(v=>(+v).toFixed(2)).join(',')+'/'+(r.n||[]).map(v=>(+v).toFixed(3)).join(',')+'/'+(r.dim||[]).map(v=>(+v).toFixed(2)).join(',')):'?';
+    s+='|a'+(+f.angle||0)+'@'+q(f.ref)+'|'+((f.faces||[]).map(q).join(';'));
   }else if(f.type==='repeat'){
     s+='|'+(f.base||[]).join(',')+'|'+(+f.copies||1)+'|'+(+f.dist||0)+'|'+(+f.angle||0)+'|'+(f.axis||f.plane||'');
   }
@@ -1435,6 +1591,25 @@ function occFinalShape(upto){
         return;
       }
       const r=occApplyMoveFace(result,f);
+      result=r.shape;msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
+      if(r.warnings.length)occCkWarn[ckKey]=r.warnings.slice();else delete occCkWarn[ckKey];
+      occCkPut(ckKey,occShapeCopy(result));
+      return;
+    }
+    if(f.type==='xdraft'){
+      // Dépouillage (angle de démoulage) : sans cette branche la fonction était
+      // silencieusement SAUTÉE par le `return` générique ci-dessous — l'arbre
+      // l'affichait « valide » (4 faces, pas d'erreur) mais le solide restait
+      // inchangé (Pièce 7). Même pattern que xmove : cache + warnings.
+      if(!result){msgs.push(`${f.name} : aucun volume à dépouiller — ignoré`);return;}
+      const ckD=occCkGet(ckKey);
+      const cpD=ckD?occShapeCopy(ckD):null;
+      if(cpD){
+        try{result.delete();}catch(e){}result=cpD;
+        const w=occCkWarn[ckKey];if(w&&w.length)msgs.push(...w.map(x=>`${f.name} : ${x}`));
+        return;
+      }
+      const r=occApplyDraft(result,f);
       result=r.shape;msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       if(r.warnings.length)occCkWarn[ckKey]=r.warnings.slice();else delete occCkWarn[ckKey];
       occCkPut(ckKey,occShapeCopy(result));

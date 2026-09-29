@@ -88,7 +88,7 @@ function mvFaceCommit(e){
   // On attaque le solide SANS cette nouvelle fonction, pour la viser sur la forme courante.
   occSkipFeat=null;
   const f={id:uid('mv'),type:'xmove',name:mvName({dist:5}),ref:hit.ref,dist:5};
-  doc.features.push(f);
+  addFeature(f); // instantané d'annulation + insertion au marqueur temps (comme extrusion/révolution/congé)
   const id=f.id;
   exitMoveFaceMode(true);
   markDirty();rebuild();renderTree();renderProps();

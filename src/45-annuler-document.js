@@ -19,7 +19,17 @@ let docUndoStack=[],docRedoStack=[];
 const DOC_UNDO_MAX=40; // au-delà, on oublie les plus anciennes étapes
 
 function docSnap(){
-  try{return JSON.stringify(doc);}catch(e){return null;}
+  try{
+    // Même normalisation que serialise : on ne stocke JAMAIS les transitoires
+    // (_mesh/_m sur les fonctions, _refs sur les esquisses). Sans cela un import
+    // STEP/STL gonflait chaque instantané d'un Mesh three.js complet (jusqu'à 40),
+    // et au retour JSON.parse produisait un objet plat sans updateMatrixWorld :
+    // crash au rejeu suivant (f._mesh.updateMatrixWorld dans 30).
+    const c=Object.assign({},doc);
+    c.sketches=(doc.sketches||[]).map(s=>{const o=Object.assign({},s);delete o._refs;return o;});
+    c.features=(doc.features||[]).map(({_mesh,_m,...r})=>r);
+    return JSON.stringify(c);
+  }catch(e){return null;}
 }
 
 // À appeler AVANT de muter le document. Un instantané identique au précédent est
@@ -49,6 +59,9 @@ function docApplySnap(snap){
   if(typeof treeSel!=='undefined')treeSel=[];
   try{if(filMode)exitFilletMode(true);}catch(e){}
   try{if(filModeX)exitExactFilletMode(true);}catch(e){}
+  // Un dépouillage en cours d'édition joue sur occSkipFeat (rejeu sans la fonction) : le
+  // quitter sans le remettre à null laisserait le solide amputé de cette fonction.
+  try{if(typeof draftMode!=='undefined'&&draftMode)exitDraftMode(true);}catch(e){}
   try{if(typeof repMode!=='undefined'&&repMode)exitRepMode();}catch(e){}
   try{if(typeof extNew!=='undefined'&&extNew)extNew=null;}catch(e){}
   try{if(typeof revNew!=='undefined'&&revNew)revNew=null;}catch(e){}
