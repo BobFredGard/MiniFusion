@@ -921,6 +921,44 @@ p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.fea
         f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();
       };
       lab2.appendChild(sel2);p.appendChild(lab2);
+      // ── Direction : inversion du sens SANS changer l'opération (Plot reste un ajout,
+      // Poche reste un retrait — seul le côté du plan d'esquisse change). Miroir pur de
+      // la course : tout ce qui dépend d'extrudeSpan suit ensemble.
+      {
+        let cote='±';
+        try{
+          const sp=extrudeSpan(f);
+          if(!(f.mid))cote=(sp.hi>0&&sp.lo>=-1e-9)?'+n':((sp.lo<0&&sp.hi<=1e-9)?'−n':'±');
+        }catch(e){}
+        const row=document.createElement('div');row.className='row';row.style.marginTop='6px';
+        const bf=document.createElement('button');bf.textContent='⇄ Inverser le sens';
+        bf.title='Miroir de la course par rapport au plan d\u2019esquisse. Plot reste Plot, Poche reste Poche.';
+        bf.onclick=()=>{f.flip=!f.flip;f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();};
+        row.appendChild(bf);
+        const tag=document.createElement('span');tag.className='note';
+        tag.textContent='Côté actuel : '+cote+(f.mid?' (symétrique — sans effet)':'')+(f.flip?' (inversé)':'');
+        row.appendChild(tag);p.appendChild(row);
+      }
+      // ── Dépouille : angle signé par rapport au plan d'esquisse (profil exact au plan,
+      // évasé ou rétréci selon le signe). 0 = parois droites.
+      {
+        const labD=document.createElement('label');labD.textContent='Dépouille (°)';
+        const inpD=document.createElement('input');inpD.type='text';inpD.inputMode='decimal';
+        inpD.value=String(+f.draft||0).replace('.',',');inpD.style.width='70px';
+        inpD.title='Angle signé / plan d\u2019esquisse — le signe donne le sens. 0 = parois droites.';
+        const cdD=()=>{
+          const v=parseFloat(String(inpD.value).replace(',','.').replace(/\s/g,''));
+          if(!isFinite(v)){inpD.value=String(+f.draft||0).replace('.',',');return;}
+          if(v===(+f.draft||0))return;
+          f.draft=Math.abs(v)<1e-9?0:+v.toFixed(3);
+          f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();
+        };
+        inpD.addEventListener('change',cdD);
+        inpD.addEventListener('blur',cdD);
+        inpD.addEventListener('keydown',e=>{if(e.key==='Enter'){cdD();inpD.blur();}e.stopPropagation();});
+        inpD.addEventListener('click',e=>e.stopPropagation());
+        labD.appendChild(inpD);p.appendChild(labD);
+      }
       if((f.op||'add')!=='cut'){p.appendChild(colorField(f));p.appendChild(opacityField(f));}
       p.appendChild(btn('🔧 Changer d\'esquisse',()=>askExtrude(null,f)));
     }

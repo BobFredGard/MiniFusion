@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**74 versions**, de `2026-09-28b` à `2026-09-31f` — la plus récente en bas,
+**75 versions**, de `2026-09-28b` à `2026-09-31g` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1708,3 +1708,37 @@ Math partagée (`skLeftNormal`, `segInter`, `lineCircleInt`, `circleCircleInt`, 
 
 Régression : **syntaxe 20/20 OK**, `node build.js --check` vert.
 **Anti-cache** : bump 31e → 31f — Ctrl+Maj+R et vérifier « Code en mémoire ».
+---
+
+### `2026-09-31g`
+
+**EXTRUSION : inversion du sens (⇄) sans changer Plot/Poche + dépouille signée (°).**
+
+**1. Inverser le sens.** Nouveau `f.flip` : miroir géométrique pur de la course par
+rapport au plan d’esquisse, appliqué dans `extrudeSpan` — donc prismes, rims,
+ancrages et hôtes suivent ensemble. Plot reste un ajout, Poche reste un retrait ;
+seul le côté change. Bouton « ⇄ Inverser le sens » dans les propriétés, avec rappel
+du côté actuel (+n / −n / ±). Mesuré : plot 40 → [-40, 0] au lieu de [0, 40] ; poche
+−10 inversée : fond 40×20 à z=10, dessus intact. `mid` + flip = sans effet (symétrique).
+
+**2. Dépouille d’extrusion.** Nouveau `f.draft` (degrés signés, 0 = parois droites),
+champ « Dépouille (°) » dans les propriétés. L’outil complet (trous percés, contours
+fusionnés) est incliné via `occDraftOnce` (même primitive que la dépouille 31c), plan
+neutre = plan d’esquisse — le profil y est exact. Le signe donne le sens : +10° →
+dessus 85,9×45,9 (rétréci, ≈86×46 prédits), −10° → 114,1×74,1 (évasé), course [0,40]
+inchangée dans les deux cas. Angle impossible (80° testé) : avertissement + extrusion
+droite conservée, jamais de timeline cassée.
+
+Garde-fous : `flip` et `draft` dans `featSig` (le cache se ré-invalide : vérifié),
+suffixes ⇄ / ∠ dans `extName`. `extDistSet` ne touche pas à `flip` (le signe forcé par
+l’opération ne l’écrase plus).
+
+**Mesure qui a failli égarer le test** : `BRepBndLib.Add(sh,box,true)` (boîte sur
+triangulation) gonfle les cotes de ~0,5 mm après un booléen — la géométrie exacte
+(triangulation `false`) est parfaite. Les assertions portent désormais sur la boîte
+exacte ; la boîte « tri » ne sert qu’au constat.
+
+Tests : `test_extrude_flip_draft.cjs` (miroir, poche, ±dépouille, 0, flip+dépouille,
+80°, signatures) — TOUT EST CONFORME. Régression 17/18 (seul `test_fichier_reel` :
+fixture `Sans titre.minifusion.json` supprimée du disque — ENOENT, sans rapport).
+

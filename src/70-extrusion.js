@@ -74,12 +74,14 @@ function extNewOk(){
 function extNewCancel(){extNew=null;sel={kind:null,id:null};renderProps();}
 function extName(f){
   // Nom d'affichage : distance signée, symétrique (±) ou « vers un objet » (cible).
+  // ⇄ = sens inversé (miroir de la course, opération inchangée) ; ∠ = dépouille.
   if(!f)return'Extrusion';
   const base=(f.op==='cut'?'Découpe ':'Extrusion ')+skName(f.sketchId);
-  if(f.upto&&f.upto.ex){const t=doc.features.find(x=>x.id===f.upto.ex);return base+' → '+(t?t.name:'cible supprimée');}
+  const suf=(f.flip?' ⇄':'')+((+f.draft||0)?' ∠'+(+f.draft)+'°':'');
+  if(f.upto&&f.upto.ex){const t=doc.features.find(x=>x.id===f.upto.ex);return base+' → '+(t?t.name:'cible supprimée')+suf;}
   const d=+f.distance||0;
-  if(f.mid)return base+' ±'+(Math.abs(d)/2)+'mm';
-  return base+' '+d+'mm';
+  if(f.mid)return base+' ±'+(Math.abs(d)/2)+'mm'+suf;
+  return base+' '+d+'mm'+suf;
 }
 function resolveExtrudeUpto(f){
   // « Vers un objet » : l'extrusion s'arrête sur la FACE CLICKEE (triangle fi stocké).

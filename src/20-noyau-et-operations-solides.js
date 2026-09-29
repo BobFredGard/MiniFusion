@@ -181,22 +181,35 @@ function extrudeSpan(f){
   // A travers tout : l'outil ne couvre QUE l'étendue réelle du solide projetée sur l'axe
   // (pas tout l'espace) — repli sur une grande course si aucun solide n'est encore résolu.
   const THROUGH=1e4;
+  // (même miroir f.flip que ci-dessous — factorisé pour ne pas diverger)
+  const flipSp=(r,unres)=>{
+    let sp={lo:r.lo,hi:r.hi,far:1};
+    if(unres)sp.unres=true;
+    if(f&&f.flip)sp={lo:-sp.hi,hi:-sp.lo,far:-sp.far,unres:sp.unres};
+    return sp;
+  };
   if(f&&f.through){
     let r=null;
     if(f.sketchId){
       const sk=doc.sketches.find(s=>s.id===f.sketchId);
       if(sk){try{const B=sketchBasis(sk);r=throughPartRange(B);}catch(e){}}
     }
-    if(r)return{lo:r.lo,hi:r.hi,far:1};
+    if(r)return flipSp(r);
     const h=THROUGH/2;
     // unres : aucun solide disponible pour mesurer l'étendue réelle — les appelants qui
     // ANCRENT une géométrie (hôtes de faces) doivent alors NE PAS bouger (sinon l'origine
     // part à ±5000mm et le rejeu suivant la « répare » → rejeu imbriqué inutile).
-    return{lo:-h,hi:h,far:1,unres:true};
+    return flipSp({lo:-h,hi:h},true);
   }
   const raw=(f&&f.distance!==undefined&&f.distance!==null&&isFinite(+f.distance))?+f.distance:10;
-  if(f&&f.mid){const h=Math.abs(raw)/2;return{lo:-h,hi:h,far:raw<0?-1:1};}
-  return{lo:Math.min(0,raw),hi:Math.max(0,raw),far:raw<0?-1:1};
+  let sp;
+  if(f&&f.mid){const h=Math.abs(raw)/2;sp={lo:-h,hi:h,far:raw<0?-1:1};}
+  else sp={lo:Math.min(0,raw),hi:Math.max(0,raw),far:raw<0?-1:1};
+  // Inversion du sens (f.flip) : miroir géométrique pur de la course par rapport au plan
+  // d'esquisse — l'opération (Plot = ajout, Poche = retrait) est INCHANGÉE, seul le côté
+  // change. Tout passe par ici (prismes, rims, ancrages, hôtes), donc tout suit ensemble.
+  if(f&&f.flip)sp={lo:-sp.hi,hi:-sp.lo,far:-sp.far};
+  return sp;
 }
 let lastSolidBodies=[];
 // Solide déjà reconstruit dans le rejeu EN COURS (voie exacte) : c'est la seule référence
@@ -554,6 +567,17 @@ function occShapeOfExtrude(f){
     fuseIn(rimApply(keep(occDiskPrism(data,Cc.x,Cc.y,cEnt.r,sp),'pastille')));
   });
   if(!shape){occDispose(bins);throw new Error('solide vide');}
+  // Dépouille d'extrusion (f.draft, degrés signés / plan d'esquisse) : inclinaison des
+  // parois de l'outil COMPLET (trous percés, contours fusionnés), pivotée sur le plan
+  // d'esquisse — le profil y est exact, il s'évase ou se rétrécit selon le signe.
+  // Échec (angle trop fort, parois non adjacentes au plan) : extrusion droite conservée
+  // + avertissement, jamais de timeline cassée.
+  if(Math.abs(+f.draft||0)>1e-9){
+    try{
+      const r=occExtrudeDraft(shape,bs,sp,+f.draft);
+      shape=r.shape;warns.push(...r.warnings);
+    }catch(e){warns.push('dépouille '+f.draft+'° impossible ('+String((e&&e.message)||e).slice(0,120)+') : extrusion droite conservée');}
+  }
   return{shape,bins,warnings:warns};
 }
 function smoothNormals(pos,creaseDeg){
@@ -870,6 +894,51 @@ function occDraftOnce(result,refFace,faces,angle){
     if(!out||out.IsNull())throw new Error('solide dépouillé vide');
     return {shape:out,refused:refused};
   }finally{occDispose(bin);} // toujours : un `throw` en cours de boucle ne doit pas fuir de handles
+}
+function occExtrudeDraft(shape,bs,sp,angleDeg){
+  // Dépouille d'un OUTIL d'extrusion, pivotée sur le plan d'esquisse : les parois
+  // latérales (tout sauf les deux calottes aux extrémités lo/hi) sont inclinées de
+  // l'angle SIGNÉ, direction +n. Le signe donne le sens : l'angle est passé tel quel
+  // à DraftAngle. Les faces qui refusent (pas de contact avec le plan neutre, p.ex.
+  // raccords de pourtour) sont sautées et signalées — jamais d'exception silencieuse.
+  // En cas d'échec global, on lève : l'appelant conserve l'extrusion droite + avertit.
+  const warnings=[];
+  const ang=(+angleDeg||0)*Math.PI/180;
+  if(!(Math.abs(ang)>1e-9))return{shape,warnings};
+  const n=[bs.n.x,bs.n.y,bs.n.z],o=[bs.o.x,bs.o.y,bs.o.z];
+  const len=Math.abs(sp.hi-sp.lo)||1;
+  const tol=Math.max(0.02,len*1e-4);
+  const sides=[],bin=[];
+  try{
+    const SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE;
+    const ex=new occt.TopExp_Explorer_2(shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,SH);bin.push(ex);
+    while(ex.More()){
+      const fc=occt.TopoDS.Face_1(ex.Current());bin.push(fc);
+      let cap=false;
+      try{
+        const ad=new occt.BRepAdaptor_Surface_2(fc,true);bin.push(ad);
+        if(ad.GetType()===occt.GeomAbs_SurfaceType.GeomAbs_Plane){
+          const d=ad.Plane().Axis().Direction();
+          let nx=d.X(),ny=d.Y(),nz=d.Z();
+          try{if(fc.Orientation_1()===occt.TopAbs_Orientation.TopAbs_REVERSED){nx=-nx;ny=-ny;nz=-nz;}}catch(e){}
+          if(Math.abs(nx*n[0]+ny*n[1]+nz*n[2])>0.999){
+            const Lp=ad.Plane().Location();
+            const off=(Lp.X()-o[0])*n[0]+(Lp.Y()-o[1])*n[1]+(Lp.Z()-o[2])*n[2];
+            if(Math.abs(off-sp.lo)<tol||Math.abs(off-sp.hi)<tol)cap=true;
+          }
+        }
+      }catch(e){}
+      if(!cap)sides.push(fc);
+      ex.Next();
+    }
+    if(!sides.length)throw new Error('aucune paroi latérale à dépouiller');
+    // occDraftOnce copie les handles (TopoDS.Face_1) dans son propre bin : les nôtres
+    // restent valides pendant l'appel et sont libérés avec `bin` ci-dessous.
+    const r=occDraftOnce(shape,{pos:o,n:n},sides,ang);
+    if(r.refused&&r.refused.length)warnings.push(r.refused.length+' face(s) ne touchent pas le plan d\u2019esquisse — non dépouillées');
+    try{shape.delete();}catch(e){}
+    return{shape:r.shape,warnings};
+  }finally{occDispose(bin);}
 }
 function occSharpEdges(shape){
   // Arêtes uniques classées : sharp (noire, C0) vs tangente (grise, G1+). Validé par exécution.
@@ -1524,7 +1593,9 @@ function featSig(f){
   // extrudeSpan / occShapeOfExtrude / occApplyXFillets doit y figurer, sinon le cache
   // pourrait réutiliser un solide périmé.(paramètres d'extrusion, à travers tout, congés
   // et rims 2D rattachés, arêtes et rayon des chanfreins/congés exacts, répétitions).
-  let s=f.type+'|'+(f.op||'add')+'|'+(+f.distance||0)+'|'+(f.mid?1:0)+'|'+(f.visible!==false?1:0)+'|'+(f.through?1:0)+'|'+(f.upto?JSON.stringify(f.upto):'');
+  // flip (sens inversé) et draft (dépouille d'extrusion) modifient le prisme : sans eux
+  // dans la signature, basculer le sens ou l'angle réutiliserait le solide périmé.
+  let s=f.type+'|'+(f.op||'add')+'|'+(+f.distance||0)+'|'+(f.mid?1:0)+'|'+(f.visible!==false?1:0)+'|'+(f.through?1:0)+'|'+(f.upto?JSON.stringify(f.upto):'')+'|'+(f.flip?1:0)+'|'+(+f.draft||0);
   if(f.type==='extrude'||f.type==='revolve'){
     s+='|'+f.sketchId;
     const sk=doc.sketches.find(x=>x.id===f.sketchId);s+='|'+(sk?skSig(sk):'?');
