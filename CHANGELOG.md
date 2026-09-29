@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**71 versions**, de `2026-09-28b` à `2026-09-31c` — la plus récente en bas,
+**72 versions**, de `2026-09-28b` à `2026-09-31d` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1629,3 +1629,34 @@ n°2 : `TopoDS_Face_1` undefined confirmé, `Add` impossible.
 Régression : **syntaxe 20/20 sources OK**, `node build.js --check` vert.
 **Anti-cache** : bump `APP_VER` 31b → 31c (version affichée en permanence) —
 recharger au Ctrl+F5 et vérifier la version avant de conclure.
+---
+
+### `2026-09-31d`
+
+**« COQUE : ctor de BRepBuilderAPI_MakeShell_2 — invalid number of parameters (1),
+expected (2). »**
+
+Deux causes, pas une. D'abord la classe : `BRepBuilderAPI_MakeShell` assemble une
+coque à partir de FACES (ctor vide + ajouts) — ce n'est pas la conversion
+solide→évidé. Vérifié sur le noyau réel : `_1()` vide, `_2` exige 2 params dont
+une `Handle_Geom_Surface`. La vraie opération d'évidage est
+`BRepOffsetAPI_MakeThickSolid` (présente : `_1`, `_2`), validée en Node :
+boîte 20³, dessus retiré, paroi 2 → `IsDone`, 1 solide, 11 faces, bbox externe
+inchangée (`TopTools_ListOfShape_1` + `Append_1`, ctor à 9 params).
+
+Ensuite le design : l'ancien `askCoque` remplaçait le solide vivant hors timeline
+(one-shot, perdu au rejeu suivant, sans faces ni épaisseur paramétrées). La coque
+est donc devenue une **fonction paramétrique `xshell`** sur le pattern du
+dépouillage : faces À RETIRER (ouvertures) + épaisseur, refs durables jamais
+mutées, branche `occFinalShape` + `featSig`, mode interactif (87-coque.js :
+clic des ouvertures, champ paroi, Entrée = appliquer, Échap = annuler), édition
+en place au double-clic, panneau dédié dans l'arbre (40), sortie propre à
+l'annuler (45).
+
+**Test sur le noyau réel** — le code LIVRÉ (`occApplyCoque` de `src/20` évalué
+tel quel en Node) sur boîte 100×70×20, dessus retiré, paroi 2 : **0 warning**,
+`f._m={m:1,t:1}`, `f.faces` intacte et sérialisable, 11 faces, bbox
+±50/±35/0..20 intacte.
+
+Régression : **syntaxe 20/20 OK**, `node build.js --check` vert.
+**Anti-cache** : bump 31c → 31d — Ctrl+Maj+R et vérifier « Code en mémoire ».

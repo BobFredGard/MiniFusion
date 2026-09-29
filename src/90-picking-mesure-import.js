@@ -9,6 +9,7 @@ function wirePick(){
     if(filModeX){if(e.button===0&&!e.ctrlKey)exactToggle(e);return;}
     if(mvMode){if(e.button===0&&!e.ctrlKey)mvFaceCommit(e);return;}
     if(draftMode){if(e.button===0&&!e.ctrlKey)draftToggle(e);return;}
+    if(coqueMode){if(e.button===0&&!e.ctrlKey)coqueToggle(e);return;}
     if(e.altKey)return;
     if(e.shiftKey&&e.button===0){shiftMeasure(e);return;}
     if(e.button===0&&!e.ctrlKey)faceSelect(e,false);
@@ -21,6 +22,7 @@ function wirePick(){
      if(extPickFace){renderer.domElement.style.cursor='crosshair';return;}
     if(mvMode){mvFaceHover(e);renderer.domElement.style.cursor='pointer';return;}
     if(draftMode){draftHover(e);return;}
+    if(coqueMode){coqueHover(e);return;}
       if(filModeX){
        const i=exactPick(e);
        if(i!==xHover){xHover=i;paintExact();}
@@ -115,7 +117,8 @@ function filletTangentChain(sk, startCorner){
     if(extPickFace){extPickFace=null;try{renderer.domElement.style.cursor='default';}catch(e2){}faceEl.textContent='Vers un objet : annulé.';return;}
     if(filMode||filModeX){exitFilletMode();return;}
     if(mvMode){exitMoveFaceMode();return;}
-    if(draftMode){exitDraftMode();return;}clearMeasure();clearHover();hideCtx();hideCtx3D();}});
+    if(draftMode){exitDraftMode();return;}
+    if(coqueMode){exitCoqueMode();return;}clearMeasure();clearHover();hideCtx();hideCtx3D();}});
   // Entrée applique le dépouillage, comme Échap l'annule. Le champ d'angle du panneau
   // est isolé du reste : sans cela, taper un angle puis Entrée valait la saisie mais
   // n'appliquait rien, puisque le garde-fou global ignore toute cible INPUT.
@@ -125,6 +128,14 @@ function filletTangentChain(sk, startCorner){
     const estAngle=t&&t.id==='draftAngleIn';
     if(!estAngle&&t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return;
     e.preventDefault();draftApply();
+  });
+  // Entrée applique la coque, comme Échap l'annule (même isolement du champ).
+  window.addEventListener('keydown',e=>{
+    if(e.key!=='Enter'||!coqueMode)return;
+    const t=e.target;
+    const estThick=t&&t.id==='coqueThickIn';
+    if(!estThick&&t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return;
+    e.preventDefault();coqueApply();
   });
 }
 /* F5 = Vue complète isométrique (au lieu du rechargement navigateur) : on voit la pièce entièrement. */

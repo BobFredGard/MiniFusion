@@ -134,6 +134,7 @@ function enterDraftMode(editF){
   if(filMode)exitFilletMode(true);
   if(filModeX)exitExactFilletMode(true);
   if(mvMode)exitMoveFaceMode(true);
+  if(typeof coqueMode!=='undefined'&&coqueMode)exitCoqueMode(true);
   draftMode={phase:'ref',ref:null,faces:[],angle:5,editing:editing?editing.id:null};
   if(editing){
     // Édition : rejeu SANS la fonction (occSkipFeat) → les faces à dépouiller redeviennent

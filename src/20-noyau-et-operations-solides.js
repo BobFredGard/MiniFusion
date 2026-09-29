@@ -315,47 +315,88 @@ function occUnify(s){
   }
 }
 
-// New shell (Coque) helper
-function occCoque(shape, tol){
+// ---------- Coque (évidage paroi mince) ----------
+// Évider = creuser le solide en ne gardant qu'une PAROI d'épaisseur donnée, en
+// retirant les faces d'ouverture (ex. le dessus d'une boîte → un bac ouvert).
+// Noyau : BRepOffsetAPI_MakeThickSolid(S, facesARetirer, -épaisseur, tol, …).
+// L'ancienne version utilisait BRepBuilderAPI_MakeShell — qui assemble une coque
+// à partir de FACES, pas la conversion solide→évidé : son ctor exigeait 2 params
+// (« invalid number of parameters (1) ») et l'opération n'avait aucun sens ici.
+function shellName(f){
+  const t=String(Math.round((+f.thick||0)*100)/100).replace('.',',');
+  return `Coque ${t} mm · ${(f.faces||[]).length} face(s) retirée(s)`;
+}
+function occCoqueOnce(result,faces,thick){
+  // `faces` = handles OCCT déjà résolus (pas de refs durables ici), `thick` > 0 en
+  // mm. Retourne {shape} — l'appelant libère `faces`, jamais le contraire.
   const bin=[];
   try{
-    const maker = occBinPush(bin,
-      typeof tol==="number"
-        ? new occt.BRepBuilderAPI_MakeShell_3(shape, tol)
-        : new occt.BRepBuilderAPI_MakeShell_2(shape)
-    );
-    maker.Build();
-    if(!maker.IsDone()) throw new Error('Coque impossible');
-    const s=maker.Shape();
-    if(!s) throw new Error('Coque sans forme');
-    return s;
-  }catch(e){
-    occDispose(bin);
-    throw e;
-  }
+    const L=occBinPush(bin,new occt.TopTools_ListOfShape_1());
+    for(const f of faces)L.Append_1(occBinPush(bin,occt.TopoDS.Face_1(f)));
+    const Arc=occt.GeomAbs_JoinType.GeomAbs_Arc;
+    const mk=occBinPush(bin,new occt.BRepOffsetAPI_MakeThickSolid_2(
+      result,L,-Math.abs(thick),0.01,Arc,false,false,Arc,false));
+    mk.Build();
+    let done=false;
+    try{done=!!mk.IsDone();}catch(e){}
+    if(!done)throw new Error('évidage refusé par le moteur (paroi trop épaisse ? ouverture mal placée ?)');
+    const out=occShapeCopy(mk.Shape());
+    if(!out||out.IsNull())throw new Error('solide évidé vide');
+    return {shape:out};
+  }finally{occDispose(bin);}
 }
-
-function askCoque(){
-  if(!occHas()||!occLive||!occLive.shape){
-    faceEl.textContent='Coque : solide exact indisponible (OCCT non chargé ou aucun volume).';
-    return;
+function occApplyCoque(result,f){
+  // Rejoue l'évidage. Retourne {shape,warnings} comme occApplyDraft/occApplyMoveFace.
+  // Les refs durables `f.faces` ne sont JAMAIS écrasées (même règle que le
+  // dépouillage : des handles dans le document casseraient les rejeux suivants).
+  const warnings=[];
+  const t=+f.thick||0;
+  if(!(t>1e-9))return{shape:result,warnings:['épaisseur nulle — aucune coque']};
+  if(!(f.faces||[]).length)return{shape:result,warnings:['aucune face à retirer (ouverture) — la coque resterait fermée et invisible']};
+  const total=(f.faces||[]).length;
+  const got=(f.faces||[]).map(fr=>{try{return occFindFace(result,fr)||null;}catch(e){return null;}}).filter(Boolean);
+  const miss=total-got.length;
+  if(!got.length){
+    f._m={m:0,t:total};
+    return{shape:result,warnings:[`aucune des ${total} face(s) à retirer n'est retrouvée — la pièce a changé`]};
+  }
+  if(miss)warnings.push(`${miss} face(s) à retirer introuvable(s) sur la pièce courante`);
+  f._m={m:got.length,t:total};
+  const run=list=>{
+    if(!list.length)throw new Error('aucune face retrouvable');
+    return occCoqueOnce(result,list,t);
+  };
+  const dropShape=s=>{try{if(s&&s.shape)s.shape.delete();}catch(e){}};
+  let r=null,echec=null;
+  try{r=run(got);}catch(e){echec=e;}
+  if(!r){
+    // Isolation : comme le dépouillage, on cherche quelles faces le moteur refuse.
+    const garde=[];
+    for(const h of got){
+      try{const tst=run(garde.concat([h]));dropShape(tst);garde.push(h);}catch(e2){/* écartée */}
+    }
+    if(!garde.length){
+      got.forEach(g=>{try{g.delete();}catch(e){}});
+      const m=echec&&echec.message||echec;
+      return{shape:result,warnings:[`coque impossible — ${m}. Essayez une paroi plus fine ou une autre face d'ouverture.`],fatal:true};
+    }
+    r=run(garde);
+    f._m={m:garde.length,t:total};
+    warnings.push(`coque partielle : ${garde.length}/${total} face(s) retirée(s), `+
+      `${total-garde.length} écartée(s) par le moteur`);
   }
   try{
-    const newShape=occCoque(occLive.shape);
-    if(!newShape){faceEl.textContent='Coque impossible.';return;}
-    // Replace existing body
-    bodies.forEach(b=>{if(b.id==='occ_result'){scene.remove(b.mesh);b.mesh.geometry.dispose();}});
-    bodies=[];
-    try{occLive.shape.delete();}catch(e){}
-    occLive.shape=newShape;
-    const g=occTessellate(newShape,0.5,0.5);
-    const col=partTint()||autoCol(0);
-    const mat=new THREE.MeshStandardMaterial({color:col,metalness:.35,roughness:.4,clippingPlanes:clipPlane?[clipPlane]:null});
-    const mesh=new THREE.Mesh(g,applyFeatOp(mat,null));
-    scene.add(mesh);
-    bodies.push({id:'occ_result',name:'Coque',mesh,visible:true,kind:'boolean',ref:null});
-    faceEl.textContent='Coque créé.';
-  }catch(e){faceEl.textContent='Coque : '+e.message;}
+    const s=r.shape;
+    let out=s;
+    try{out=occUnify(s);}catch(e){}
+    if(out!==s){try{s.delete();}catch(e){}}
+    got.forEach(g=>{try{g.delete();}catch(e){}});
+    try{result.delete();}catch(e){}
+    return{shape:out,warnings};
+  }catch(e){
+    got.forEach(g=>{try{g.delete();}catch(e2){}});
+    return{shape:result,warnings:[`coque impossible (${(e&&e.message)||e})`],fatal:true};
+  }
 }
 function occDiskPrism(sk,Cx,Cy,r,sp){
   // Pastille pleine (cercles isolés) : 2 demi-arcs -> wire -> face -> UN prisme.
@@ -1526,6 +1567,11 @@ function featSig(f){
     // solide — la dépouille semblait « valide » mais restait invisible (Pièce 7).
     const q=r=>r?((r.pos||[]).map(v=>(+v).toFixed(2)).join(',')+'/'+(r.n||[]).map(v=>(+v).toFixed(3)).join(',')+'/'+(r.dim||[]).map(v=>(+v).toFixed(2)).join(',')):'?';
     s+='|a'+(+f.angle||0)+'@'+q(f.ref)+'|'+((f.faces||[]).map(q).join(';'));
+  }else if(f.type==='xshell'){
+    // L'ÉPAISSEUR et les faces RETIRÉES (ouvertures) font partie de la géométrie :
+    // sans elles le cache réappliquerait l'ancien évidage après un changement.
+    const q=r=>r?((r.pos||[]).map(v=>(+v).toFixed(2)).join(',')+'/'+(r.n||[]).map(v=>(+v).toFixed(3)).join(',')+'/'+(r.dim||[]).map(v=>(+v).toFixed(2)).join(',')):'?';
+    s+='|t'+(+f.thick||0)+'|'+((f.faces||[]).map(q).join(';'));
   }else if(f.type==='repeat'){
     s+='|'+(f.base||[]).join(',')+'|'+(+f.copies||1)+'|'+(+f.dist||0)+'|'+(+f.angle||0)+'|'+(f.axis||f.plane||'');
   }
@@ -1610,6 +1656,24 @@ function occFinalShape(upto){
         return;
       }
       const r=occApplyDraft(result,f);
+      result=r.shape;msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
+      if(r.warnings.length)occCkWarn[ckKey]=r.warnings.slice();else delete occCkWarn[ckKey];
+      occCkPut(ckKey,occShapeCopy(result));
+      return;
+    }
+    if(f.type==='xshell'){
+      // Coque (évidage paroi mince) : même pattern que dépouillage/déplacement —
+      // cache par point de contrôle + warnings. Sans cette branche la fonction
+      // serait silencieusement sautée par le `return` générique ci-dessous.
+      if(!result){msgs.push(`${f.name} : aucun volume à évider — ignoré`);return;}
+      const ckS=occCkGet(ckKey);
+      const cpS=ckS?occShapeCopy(ckS):null;
+      if(cpS){
+        try{result.delete();}catch(e){}result=cpS;
+        const w=occCkWarn[ckKey];if(w&&w.length)msgs.push(...w.map(x=>`${f.name} : ${x}`));
+        return;
+      }
+      const r=occApplyCoque(result,f);
       result=r.shape;msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       if(r.warnings.length)occCkWarn[ckKey]=r.warnings.slice();else delete occCkWarn[ckKey];
       occCkPut(ckKey,occShapeCopy(result));
