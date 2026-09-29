@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**80 versions**, de `2026-09-28b` à `2026-09-31l` — la plus récente en bas,
+**81 versions**, de `2026-09-28b` à `2026-09-31m` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1843,4 +1843,23 @@ face illisible effaçait tout), aucun aperçu, aucun statut. Même remède :
 Tests : nouveau `test_coque_sel.cjs` sur noyau réel — 6 cas `coqueCleanRef`, boîte
 moins son dessus paroi 2 : 11 faces (5 ext. + 5 int. + rebord), 24 arêtes —
 TOUT EST CONFORME. Régression 10/10.
+---
+
+### `2026-09-31m`
+
+**CONGÉS/CHANFREINS : aperçu plein au lieu du patch (même langage que dépouille/coque).**
+
+L’aperçu recalculait N booléens de congé + 2 découpes de diff à chaque clic et
+chaque sortie de champ, pour un patch dont le choix ajout/retrait était fragile
+(boucle mixte). Désormais : le SOLIDE COMPLET avec congé/chanfrein, en rouge
+translucide sur la pièce estompée — moitié moins de booléens par recalcule, même
+visuel que les aperçus bleu (dépouille) et vert (coque).
+
+Détails : `xPreviewShape(base,jobs,cham)` extraite et testée telle quelle (fini la
+copie de logique dans le test, qui dérive) ; libellé « Matière ajoutée/retirée »
+supprimé ; note du panneau mise à jour. Couleur rouge conservée (identité congé).
+
+Tests : `test_apercu_diff.cjs` réécrit — vise la vraie fonction, sans dépendance au
+fixture disparu : congé R4 + chanfrein D6 = solide complet 100×60×40 (écart 0,0),
+15 arêtes, cas vides → null — TOUT PASSE. Régression 10/10.
 

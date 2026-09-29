@@ -140,7 +140,11 @@ function xSelSync(){
   filModeX.sel=kept;
   xPreviewUpdate();
 }
-/* ----- Aperçu rouge translucide du résultat AVANT validation (congé ET chanfrein) ----- */
+/* ----- Aperçu rouge translucide du résultat AVANT validation (congé ET chanfrein) -----
+   On montre le SOLIDE COMPLET avec congé/chanfrein, comme les aperçus dépouille (bleu)
+   et coque (vert) : les 2 booléens de diff « matière ajoutée / retirée » coûtaient plus
+   cher que le congé lui-même, pour un patch dont le choix ajout/retrait était fragile
+   (boucle mixte). Même langage visuel partout, moitié moins de booléens par recalcule. */
 let xPrevBody=null;
 function xPrevRemove(){
   if(xPrevBody){
@@ -156,6 +160,16 @@ function xPrevRemove(){
     delete b._xSaved;delete b._xTrans;delete b._xDW;
   });
   try{refreshParts();}catch(e){}
+}
+function xPreviewShape(base,jobs,cham){
+  // Forme montrée par l'aperçu : le SOLIDE COMPLET avec congé/chanfrein appliqué, ou
+  // null si impossible. Extraite pour être testée telle quelle (test_apercu_diff.cjs),
+  // pas recopiée dans le test — la copie dérive, la fonction non.
+  if(!base||!jobs||!jobs.length)return null;
+  const warns=[];
+  let sh=null;
+  try{sh=occFilletRun(base,jobs,warns,cham);}catch(e){sh=null;}
+  return sh?{shape:sh}:null;
 }
 function xPreviewUpdate(){
   try{
@@ -174,35 +188,15 @@ function xPreviewUpdate(){
       if(bi>=0&&bd<1.5)jobs.push({src:E[bi].src,r:s.r,mid:E[bi].mid});
     });
     if(!jobs.length){xPrevRemove();return;}
-    const warns=[];
-    const sh=occFilletRun(occLive.shape,jobs,warns,cham);
-    if(!sh){xPrevRemove();return;}
-    // On n'affiche QUE LA MODIFICATION, pas le solide entier repeint en rouge. Le sens de la
-    // soustraction ne dépend PAS de l'opération mais de la géométrie : un congé sur un coin
-    // CONVEXE ajoute de la matière (résultat \ base), sur un coin CONCAVE il en retire
-    // (base \ résultat — mesuré : lèvre de rainure, résultat \ base vide, base \ résultat
-    // = 1 solide / 9 faces). Un chanfrein retire toujours. On essaie donc les deux et on
-    // affiche le patch non vide ; si les deux le sont (boucle mixte), on prend le plus grand.
-    const diffOf=(A,B)=>{try{return occCut(A,B);}catch(e){return null;}};
-    let dAdd=diffOf(sh,occLive.shape);   // matière AJOUTÉE
-    let dRem=diffOf(occLive.shape,sh);   // matière RETIRÉE
-    const nonVide=s=>{if(!s)return false;try{return occListEdges(s).length>0;}catch(e){return false;}};
-    const aOk=nonVide(dAdd),rOk=nonVide(dRem);
-    let shown=null,libelle='';
-    if(aOk&&rOk){
-      const ea=occListEdges(dAdd).length,er=occListEdges(dRem).length;
-      shown=ea>=er?dAdd:dRem;libelle=(ea>=er?'ajoutée':'retirée');
-    }else if(aOk){shown=dAdd;libelle='ajoutée';}
-    else if(rOk){shown=dRem;libelle='retirée';}
-    else{shown=sh;libelle='';} // repli : solide complet
+    const pv=xPreviewShape(occLive.shape,jobs,cham);
+    if(!pv||!pv.shape){xPrevRemove();return;}
+    const sh=pv.shape;
     let g=null;
-    try{g=occTessellate(shown,0.5);}catch(e){g=null;}
+    try{g=occTessellate(sh,0.5);}catch(e){g=null;}
     try{sh.delete();}catch(e){}
-    if(dAdd)try{dAdd.delete();}catch(e){}
-    if(dRem)try{dRem.delete();}catch(e){}
     if(!g){xPrevRemove();return;}
     xPrevRemove();
-    // la pièce s'estompe, le patch rouge passe devant
+    // la pièce s'estompe, le résultat rouge passe devant
     bodies.forEach(b=>{
       if(b.ghost||!b.mesh||!b.mesh.material)return;
       b._xSaved=b.mesh.material.opacity;b._xTrans=b.mesh.material.transparent;
@@ -214,7 +208,7 @@ function xPreviewUpdate(){
     mesh.renderOrder=1000;
     mesh.userData.bid='x_preview';mesh.raycast=()=>{};
     scene.add(mesh);
-    xPrevBody={id:'x_preview',name:libelle?('🔴 Matière '+libelle):'🔴 Aperçu (non validé)',mesh,color:0xff453a,visible:true,kind:'ghost',ref:null,ghost:true,preview:true};
+    xPrevBody={id:'x_preview',name:'🔴 Aperçu (non validé)',mesh,color:0xff453a,visible:true,kind:'ghost',ref:null,ghost:true,preview:true};
     bodies.push(xPrevBody);
     filModeX._prevSig=sig;
     try{refreshParts();}catch(e){}
@@ -484,7 +478,7 @@ function renderExactPanel(){
     p.appendChild(nb);
     const pv=document.createElement('div');pv.className='note';
     pv.style.marginTop='4px';
-    pv.textContent=xPrevBody?'🔴 Aperçu affiché : seule la matière modifiée se voit en rouge sur la pièce translucide.'
+    pv.textContent=xPrevBody?'🔴 Aperçu affiché : le solide avec congé/chanfrein, en rouge sur la pièce estompée.'
                            :'🔴 Aperçu indisponible (noyau exact indisponible ou arête sans diagnostic).';
     p.appendChild(pv);
   }
