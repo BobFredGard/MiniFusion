@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**77 versions**, de `2026-09-28b` à `2026-09-31i` — la plus récente en bas,
+**78 versions**, de `2026-09-28b` à `2026-09-31j` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1778,4 +1778,28 @@ symétrie double (31h) et bandeau regroupé (30y). Ajoutés : § Déplacement de
 Table d’architecture : 14 → 20 fichiers, lignes 9 700 → 12 400, lignes 85/86/87 et
 96-bandeau-groupes. Version « Où en est le projet » : 30l → 31h. Icônes relues dans
 dans les sources (🛡️ ⚙ 📐 🔧💾📁). Aucun changement fonctionnel — bump de traçabilité.
+---
+
+### `2026-09-31j`
+
+**DÉPOUILLE façon Fusion : faces bleues, flèche de sens, chaîne tangente, aperçu live.**
+
+La sélection « faisait n’importe quoi » : surbrillance ambre, aucun retour avant
+Appliquer, un clic par face, direction invisible. Désormais :
+
+- **Référence verte, faces retenues bleues** (`0x30d158` / `0x2f7bff`) — les codes
+  couleur de Fusion, repeints par-dessus le maillage exact via `occGroups` ;
+- **Flèche du sens de démoulage** (`THREE.ArrowHelper`, jaune) plantée au centre de
+  la face de référence, longueur proportionnée à la pièce ;
+- **🔗 Chaîne tangente** (cochée par défaut, comme le congé) : un clic ajoute aussi
+  les voisines reliées par des arêtes lisses — nouveau `occTangentFaces` (fermeture
+  transitive sur les arêtes G1+, une arête vive arrête ; mêmes règles que le clic :
+  référence et faces parallèles au neutre exclues, re-clic = retrait simple) ;
+- **Aperçu bleu translucide du solide dépouillé AVANT validation** (même pattern que
+  l’aperçu rouge des congés : signature anti-recalcul, pièce estompée, `_d*` distinct
+  de `_x*` pour que les deux aperçus ne se marchent jamais dessus).
+
+Tests : `test_draft_sel.cjs` sur noyau réel — boîte pure : chaînes singletons ;
+boîte + congé R10 : chaîne mur+congé+voisin (3) ; dessus : singleton ; calcul
+d’aperçu : 3/3 faces résolues, 0 refusée, solide à 15 arêtes — TOUT EST CONFORME.
 

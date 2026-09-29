@@ -11,8 +11,9 @@
    occFaceRef) et non par son numéro : celui-ci change dès qu'une autre opération ajoute
    une face, et le rejeu ne retrouverait plus rien. Même approche que le déplacement
    d'une face (xmove, 85). */
-let draftMode=null; // null | {phase:'ref'|'faces', ref:ref|null, faces:[ref], angle, editing:id|null}
-let draftGroup=null; // surbrillance 3D (référence verte, faces retenues ambre)
+let draftMode=null; // null | {phase:'ref'|'faces', ref:ref|null, faces:[ref], angle, editing:id|null, tangent:bool}
+let draftGroup=null; // surbrillance 3D (référence verte, faces retenues bleues, flèche de sens)
+let draftPrevBody=null; // aperçu translucide du solide dépouillé (non validé)
 
 // Le bouton est créé ICI, dans les sources, comme « Déplacer une face » : la coque HTML
 // est générée, jamais éditée à la main. Idempotent. Le regroupement par type
@@ -52,11 +53,11 @@ function draftPaint(){
   const src=b&&b.mesh?b.mesh.geometry:null;
   const groups=(src&&src.userData.occGroups)||[];
   if(!groups.length)return;
-  // Index BRep → couleur : référence en vert, faces retenues en ambre. Le reste est
-  // laissé tel quel (on ne repeint que ce qui change).
+  // Index BRep → couleur : référence en vert, faces retenues en bleu (comme Fusion).
+  // Le reste est laissé tel quel (on ne repeint que ce qui change).
   const colOf={};
   colOf[draftMode.ref._ord]=0x30d158;
-  (draftMode.faces||[]).forEach(r=>{colOf[r._ord]=0xff9f0a;});
+  (draftMode.faces||[]).forEach(r=>{colOf[r._ord]=0x2f7bff;});
   const kept=Object.keys(colOf).map(Number).filter(o=>groups.some(g=>g.f===o));
   if(!kept.length)return;
   const g=new THREE.BufferGeometry();
@@ -78,6 +79,20 @@ function draftPaint(){
   const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.55,depthTest:false,side:THREE.DoubleSide}));
   m.raycast=()=>{};m.renderOrder=996;
   draftGroup=new THREE.Group();draftGroup.name='draftFaces';draftGroup.add(m);
+  // Flèche du sens de démoulage (direction de dépouille = normale de la référence),
+  // plantée au centre de la face de référence — comme la flèche blanche de Fusion.
+  try{
+    const rn=draftMode.ref.n||[0,0,1],rp=draftMode.ref.pos||[0,0,0];
+    let len=40;
+    try{
+      const bb=new THREE.Box3().setFromObject(b.mesh);
+      const d=bb.max.clone().sub(bb.min).length();
+      if(isFinite(d)&&d>0)len=Math.max(8,d/5);
+    }catch(e){}
+    const ar=new THREE.ArrowHelper(new THREE.Vector3(rn[0],rn[1],rn[2]).normalize(),new THREE.Vector3(rp[0],rp[1],rp[2]),len,0xffe14d,len*0.28,len*0.14);
+    ar.traverse(o=>{o.raycast=()=>{};});
+    draftGroup.add(ar);
+  }catch(e){}
   scene.add(draftGroup);
 }
 function draftFaceUnder(e){
@@ -121,6 +136,116 @@ function draftMarkByPosition(){
   if(draftMode.ref)draftMode.ref._ord=draftOrdOf(draftMode.ref);
   (draftMode.faces||[]).forEach(r=>{r._ord=draftOrdOf(r);});
 }
+function occTangentFaces(shape,ord){
+  // Ordinaux des faces reliées à `ord` par des arêtes LISSES (G1+), en fermeture transitive.
+  // `ord` = rang d'exploration TopExp (le même que occGroups[].f). Une arête vive arrête
+  // la propagation — pendant « faces » de la chaîne tangente des congés, mais pour des faces.
+  const res=[ord];
+  const bin=[];
+  try{
+    if(!shape||!(ord>=0))return res;
+    const SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE;
+    const key=p=>p.map(v=>(+v).toFixed(2)).join(',');
+    // 1) milieux d'arêtes par face (même calcul que occSharpEdges : Value au paramètre médian)
+    const perFace=[];
+    const fx=new occt.TopExp_Explorer_2(shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,SH);bin.push(fx);
+    while(fx.More()){
+      const mids=[];
+      try{
+        const fh=occt.TopoDS.Face_1(fx.Current());bin.push(fh);
+        const ex=new occt.TopExp_Explorer_2(fh,occt.TopAbs_ShapeEnum.TopAbs_EDGE,SH);bin.push(ex);
+        while(ex.More()){
+          try{
+            const eh=occt.TopoDS.Edge_1(ex.Current());bin.push(eh);
+            const ad=new occt.BRepAdaptor_Curve_2(eh);bin.push(ad);
+            const u0=ad.FirstParameter(),u1=ad.LastParameter();
+            if(u1>u0){const m=ad.Value((u0+u1)/2);mids.push(key([m.X(),m.Y(),m.Z()]));try{m.delete();}catch(e){}}
+          }catch(e){}
+          ex.Next();
+        }
+      }catch(e){}
+      perFace.push(mids);
+      fx.Next();
+    }
+    if(ord>=perFace.length)return res;
+    // 2) arête → faces qui la portent
+    const owners=new Map();
+    perFace.forEach((mids,fi)=>mids.forEach(k=>{if(!owners.has(k))owners.set(k,[]);if(owners.get(k).indexOf(fi)<0)owners.get(k).push(fi);}));
+    // 3) lissité depuis occSharpEdges (même clé toFixed(2))
+    const smooth=new Set();
+    try{occSharpEdges(shape).forEach(e=>{if(!e.sharp&&e.mid)smooth.add(key(e.mid));});}catch(e){}
+    // 4) fermeture transitive par les arêtes lisses
+    const seen=new Set([ord]),pile=[ord];
+    while(pile.length){
+      const f=pile.pop();
+      (perFace[f]||[]).forEach(k=>{
+        if(!smooth.has(k))return;
+        (owners.get(k)||[]).forEach(o=>{if(!seen.has(o)){seen.add(o);pile.push(o);}});
+      });
+    }
+    return [...seen].sort((a,b)=>a-b);
+  }catch(e){return res;}
+  finally{try{occDispose(bin);}catch(e){}}
+}
+/* ---------- aperçu bleu translucide du solide dépouillé AVANT validation ----------
+   Même pattern que l'aperçu rouge des congés (xPreviewUpdate) : on rejoue la dépouille
+   sur une copie du solide courant, on affiche le résultat en bleu translucide et la
+   pièce réelle s'estompe. Noms de sauvegarde `_d*` distincts de `_x*` pour que les deux
+   aperçus ne se marchent jamais dessus (les modes s'excluent, mais la ceinture et les
+   bretelles ne coûtent rien ici). */
+function draftPreviewRemove(){
+  if(draftPrevBody){
+    if(draftPrevBody.mesh){try{scene.remove(draftPrevBody.mesh);draftPrevBody.mesh.geometry.dispose();}catch(e){}}
+    bodies=bodies.filter(b=>b!==draftPrevBody);
+    draftPrevBody=null;
+  }
+  bodies.forEach(b=>{
+    if(b._dSaved==null||!b.mesh||!b.mesh.material)return;
+    b.mesh.material.opacity=b._dSaved;b.mesh.material.transparent=b._dTrans;
+    if(b._dDW!==undefined)b.mesh.material.depthWrite=b._dDW;
+    delete b._dSaved;delete b._dTrans;delete b._dDW;
+  });
+  try{refreshParts();}catch(e){}
+}
+function draftPreviewUpdate(){
+  try{
+    if(!draftMode){draftPreviewRemove();return;}
+    const faces=draftMode.faces||[];
+    if(!draftMode.ref||!faces.length||!occLive||!occLive.shape){draftPreviewRemove();return;}
+    // rien à recalculer si la sélection, la référence et l'angle n'ont pas bougé
+    const sig=draftKey(draftMode.ref)+'|'+faces.map(draftKey).join(';')+'|'+draftMode.angle;
+    if(draftMode._prevSig===sig)return;
+    draftMode._prevSig=sig;
+    const got=[];
+    faces.forEach(r=>{try{const h=occFindFace(occLive.shape,r);if(h)got.push(h);}catch(e){}});
+    if(!got.length){draftPreviewRemove();return;}
+    let r=null;
+    try{r=occDraftOnce(occLive.shape,{pos:draftMode.ref.pos,n:draftMode.ref.n},got,+draftMode.angle*Math.PI/180);}
+    finally{got.forEach(g=>{try{g.delete();}catch(e){}});}
+    if(!r||!r.shape){draftPreviewRemove();return;}
+    let sh=r.shape;
+    try{const u=occUnify(sh);if(u!==sh){try{sh.delete();}catch(e){}sh=u;}}catch(e){}
+    let g=null;
+    try{g=occTessellate(sh,0.5);}catch(e){g=null;}
+    try{sh.delete();}catch(e){}
+    if(!g){draftPreviewRemove();return;}
+    draftPreviewRemove();
+    bodies.forEach(b=>{
+      if(b.ghost||!b.mesh||!b.mesh.material)return;
+      b._dSaved=b.mesh.material.opacity;b._dTrans=b.mesh.material.transparent;
+      b.mesh.material.opacity=0.28;b.mesh.material.transparent=true;
+      b._dDW=b.mesh.material.depthWrite;b.mesh.material.depthWrite=false;
+    });
+    const mat=new THREE.MeshStandardMaterial({color:0x2f7bff,transparent:true,opacity:0.55,depthWrite:false,side:THREE.DoubleSide,roughness:0.4,metalness:0.05});
+    const mesh=new THREE.Mesh(g,mat);mesh.name='draftPreview';
+    mesh.renderOrder=1000;
+    mesh.userData.bid='draft_preview';mesh.raycast=()=>{};
+    scene.add(mesh);
+    draftPrevBody={id:'draft_preview',name:'🔵 Aperçu dépouille (non validé)',mesh,color:0x2f7bff,visible:true,kind:'ghost',ref:null,ghost:true,preview:true};
+    bodies.push(draftPrevBody);
+    try{refreshParts();}catch(e){}
+  }catch(e){draftPreviewRemove();}
+}
 function enterDraftMode(editF){
   if(skEdit)return;
   const editing=(editF&&editF.type==='xdraft')?editF:null;
@@ -135,7 +260,7 @@ function enterDraftMode(editF){
   if(filModeX)exitExactFilletMode(true);
   if(mvMode)exitMoveFaceMode(true);
   if(typeof coqueMode!=='undefined'&&coqueMode)exitCoqueMode(true);
-  draftMode={phase:'ref',ref:null,faces:[],angle:5,editing:editing?editing.id:null};
+  draftMode={phase:'ref',ref:null,faces:[],angle:5,editing:editing?editing.id:null,tangent:true};
   if(editing){
     // Édition : rejeu SANS la fonction (occSkipFeat) → les faces à dépouiller redeviennent
     // celles d'origine, cliquables. Exactement la stratégie de l'édition d'un congé exact.
@@ -159,7 +284,7 @@ function enterDraftMode(editF){
 function exitDraftMode(silent){
   if(!draftMode)return;
   const wasEditing=!!draftMode.editing;
-  draftMode=null;draftClearHl();
+  draftMode=null;draftClearHl();draftPreviewRemove();
   if(wasEditing){occSkipFeat=null;markDirty();try{rebuild();}catch(e){}}
   if(!silent)renderProps();
 }
@@ -177,6 +302,7 @@ function draftToggle(e){
   }
   const k=draftKey(hit.ref);
   const i=draftMode.faces.findIndex(r=>draftKey(r)===k);
+  let tangentes=0,ignorees=0;
   if(i>=0){draftMode.faces.splice(i,1);}
   else{
     // La face de référence elle-même n'a rien à faire : elle définit le plan neutre.
@@ -192,10 +318,34 @@ function draftToggle(e){
       }
     }
     draftMode.faces.push(hit.ref);
+    // Chaîne tangente (cochée par défaut, comme le congé) : les voisines reliées à la
+    // face cliquée par des arêtes lisses suivent d'un coup. Mêmes règles que le clic
+    // (référence et faces parallèles au neutre exclues) ; re-clic = retrait simple.
+    if(draftMode.tangent!==false&&hit.ord>=0&&occLive&&occLive.shape){
+      try{
+        occTangentFaces(occLive.shape,hit.ord).forEach(o=>{
+          if(o===hit.ord)return;
+          let r=null;
+          try{
+            const f=occFaceAt(occLive.shape,o);
+            if(f){r=occFaceRef(f);try{f.delete();}catch(e){}}
+          }catch(e){}
+          if(!r){ignorees++;return;}
+          const kk=draftKey(r);
+          if(kk===draftKey(draftMode.ref)){ignorees++;return;}
+          if(draftMode.faces.some(x=>draftKey(x)===kk))return;
+          if(draftMode.ref){
+            const d=r.n[0]*draftMode.ref.n[0]+r.n[1]*draftMode.ref.n[1]+r.n[2]*draftMode.ref.n[2];
+            if(Math.abs(d)>0.999){ignorees++;return;}
+          }
+          r._ord=o;draftMode.faces.push(r);tangentes++;
+        });
+      }catch(e){}
+    }
   }
-  draftPaint();renderDraftPanel();
+  draftPaint();draftPreviewUpdate();renderDraftPanel();
   const nf=draftMode.faces.length;
-  faceEl.textContent=nf?`${nf} face(s) à dépouiller retenue(s) — saisissez l'angle puis <b>Appliquer</b>.`
+  faceEl.textContent=nf?`${nf} face(s) à dépouiller retenue(s)${tangentes?` (dont ${tangentes} tangente(s))`:''}${ignorees?` — ${ignorees} voisine(s) écartée(s) (référence ou parallèle au neutre)`:''} — saisissez l'angle puis <b>Appliquer</b>.`
     :'Aucune face retenue : cliquez les faces à dépouiller, ou <b>Échap</b> pour annuler.';
 }
 function draftHover(e){
@@ -237,6 +387,13 @@ function renderDraftPanel(){
     });
     p.appendChild(lst);
   }
+  // Chaîne tangente : coché par défaut, comme le congé exact.
+  const trow=document.createElement('div');trow.className='row';
+  const tcb=document.createElement('input');tcb.type='checkbox';tcb.checked=draftMode.tangent!==false;
+  tcb.title='En cliquant une face, ajouter aussi ses voisines reliées par des arêtes lisses';
+  const tlab=document.createElement('span');tlab.textContent=' 🔗 Chaîne tangente';
+  trow.appendChild(tcb);trow.appendChild(tlab);p.appendChild(trow);
+  tcb.onchange=()=>{draftMode.tangent=tcb.checked;};
   // Angle : 0 < a < 90, au-delà le dépouillage perd son sens géométrique.
   const row=document.createElement('div');row.className='row';row.style.marginTop='8px';
   const lab=document.createElement('label');lab.textContent=' Angle (°) ';
@@ -247,9 +404,11 @@ function renderDraftPanel(){
     if(!isFinite(v)||v<=0||v>=90){
       inp.value=String(draftMode.angle).replace('.',',');
       faceEl.textContent='Angle invalide : il doit être compris entre 0 et 90° (exclus).';
+      draftPreviewRemove();
       return;
     }
     draftMode.angle=v;inp.value=String(v).replace('.',',');
+    draftPreviewUpdate();
   };
   row.appendChild(lab);row.appendChild(inp);
   const ok=document.createElement('button');ok.className='primary';
