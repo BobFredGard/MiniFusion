@@ -16,9 +16,10 @@ MiniFusion est un MVP de CAO historique (paramétrique, esprit Fusion 360) qui t
 - Opérations solides : union, soustraction, **coalescence des surfaces** (`ShapeUpgrade_UnifySameDomain`) pour supprimer les coutures internes, prismes, disques, plans de coupe.
 
 ### Esquisse — dessin
-- Outils : **sélection/déplacement de points**, ligne, rectangle, oblong/rainure, cercle, arc, point de construction, coïncidence (fusionner 2 extrémités), **congé 2D sur 2 arêtes (arc tangent + R pilotée, `F`)**, **chanfrein 2D (coupe + cote, `H`)**, **ajuster (trim)**.
+- Outils : **sélection/déplacement de points**, ligne, rectangle, oblong/rainure, cercle, arc, point de construction, coïncidence (fusionner 2 extrémités), **congé 2D sur 2 arêtes (arc tangent + R pilotée, `F`)**, **chanfrein 2D (coupe + cote, `H`)**, **décalage — offset (`O`)**, **ajuster (trim)**.
 - **Grille magnétique 1 mm**, zoom+/−/ajuster, annuler/rétablir, vider, valider, exporter l'esquisse en SVG.
 - Rectangle et oblong posés en **2 clics** (1ᵉʳ coin → 2ᵉ coin, `Shift` = centré) avec **cotes automatiques**.
+- **Décalage (`O`, ⇄)** : sélectionnez lignes/cercles/arcs (`Shift` = lot), cliquez le côté → copies **parallèles** (cote `gap` pilotée) ou **concentriques** (cote rayon pilotée). Chaînes lignes+arcs **raccordées** (mitre aux coins), **boucles fermées** (côté auto ou cliqué), cercles isolés concentriques. Cotes persistantes, modifiables au double-clic.
 
 ### Esquisse — contraintes & solveur
 - **12 contraintes** : horizontal, vertical, parallèle, perpendiculaire, égal, symétrie, tangence, coaxiale, milieu, fixe, construction — avec **auto-inférence** (perpendiculaire/tangente détectées à la création, **─/│ prioritaire sur ⟂ implicite**, doublons purgés).
@@ -32,7 +33,8 @@ MiniFusion est un MVP de CAO historique (paramétrique, esprit Fusion 360) qui t
 
 ### Fonctions de modélisation
 - **Extrusions additives (➕ Plot) et soustractives (➖ Poche)**, avec **historique rejouable** : toute édition d'une fonction ou d'une esquisse reconstruit le solide à partir de ce point.
-- **Sens** : un côté, ou **symétrique (miroir)** autour du plan de l'esquisse.
+- **Sens** : un côté, ou **symétrique (miroir)** autour du plan de l'esquisse. Bouton **⇄ Inverser le sens** : miroir de la course par rapport au plan d'esquisse **sans changer l'opération** (Plot reste un ajout, Poche un retrait) — le côté actuel (+n/−n) est rappelé.
+- **Dépouille d'extrusion** : champ **Dépouille (°)**, angle **signé** par rapport au plan d'esquisse (profil exact au plan, évasé ou rétréci selon le signe, 0 = parois droites). Angle impossible → avertissement + extrusion droite conservée.
 - **Étendue** : **📏 Distance** (valeur toujours positive — le signe est déterminé par l'opération, plus besoin de basculer Plot/Poche), **🎯 Jusqu'à la face…** (clic direct sur la face cible, avec suivi d'identité géométrique : la face est retrouvée par centre/normale/aire, pas par indice) et **⤴ A travers tout** (borné à l'étendue réelle de la pièce traversée).
 - Boutons **Inverser le sens**, **Changer d'esquisse**, **Changer la face cliquée**, **🔧 Éditer l'esquisse** (clic droit sur la fonction).
 - **Esquisses sur face** : posées sur n'importe quelle orientation, elles **suivent leur face d'attache** quand le modèle change (épaisseur réduite, profil élargi, face latérale déplacée).
@@ -44,6 +46,17 @@ MiniFusion est un MVP de CAO historique (paramétrique, esprit Fusion 360) qui t
 - **Le profil doit être d'un seul côté de son axe** : à 360°, un profil qui le franchit s'auto-intersecte. Le refus est explicite (« le profil est de part et d'autre de son axe… »), jamais un résultat faux. Les arcs et les cercles sont échantillonnés, pas seulement leur centre.
 - Profils acceptés : **lignes, arcs, cercles**, contours percés (le trou suit), un ou plusieurs contours par esquisse. Solide exact OCCT, avec repli maillage `LatheGeometry` si le noyau échoue.
 
+### Déplacement de face (push/pull 📐)
+- **Cliquez une face** du solide exact : elle est déplacée le long de sa **normale sortante**, distance réglable ensuite (positive = la face avance, négative = elle rentre).
+- La face est mémorisée par sa **géométrie** (centre + normale + dimensions), pas par son numéro : elle est retrouvée à chaque rejeu. Résultat fusionné en **un seul corps** (faces coplanaires recollées), face introuvable = message + solide intact.
+
+### Dépouille (angle de démoulage 🛡️)
+- **2 temps** : 1) la **face de référence** (plan neutre, fixe), 2) les **faces à dépouiller** (re-clic = retirer), puis l'**angle** → Appliquer. Noyau `BRepOffsetAPI_DraftAngle`, édition en place, historique rejouable.
+- **Dépouille d'extrusion** : voir ci-dessus (angle signé / plan d'esquisse, sans fonction séparée).
+
+### Coque (évidage paroi mince ⚙)
+- **Clic des faces à retirer** (les ouvertures, re-clic = retirer), **épaisseur** de paroi, Appliquer : le noyau évide le solide (`BRepOffsetAPI_MakeThickSolid`). Fonction paramétrique rejouable (`xshell`), édition en place.
+
 ### Congés & chanfreins
 - **Congé 2D** (maillage) sur les verticales d'une extrusion, rayon unique, plus **congé de périmètre** (rims haut et/ou bas).
 - **Congés/chanfreins exacts OCCT** : toutes les arêtes du solide sont cliquables, **rayon ou distance par arête**, sélection d'une arête ou d'une boucle de face. **Un clic = une arête** ; l'option « 🔗 arêtes tangentes » (cochée par défaut) y ajoute automatiquement la chaîne tangente — les arêtes cliquées sont en jaune, celles déduites en rouge.
@@ -54,6 +67,7 @@ MiniFusion est un MVP de CAO historique (paramétrique, esprit Fusion 360) qui t
 
 ### Répétitions
 - **Fonction de premier ordre** (type `repeat`) : **Linéaire**, **Circulaire**, **Symétrie** — nombre de copies, axe ou plan (X/Y/Z ou **la face sélectionnée**), distance / angle total.
+- **Symétrie double** : cochez **2ᵉ plan** — la 2ᵉ passe miroite la base **et** les instances de la 1ʳᵉ passe (la 1ʳᵉ symétrie est comprise dans la 2ᵉ, ainsi que l'opération initiale). Plans identiques = 2ᵉ passe sans effet (signalé).
 - **Ctrl+clic** dans l'arborescence pour **ajouter ou retirer une fonction source** (extrusion, découpe, congé, chanfrein) : les instances sont régénérées, y compris leurs esquisses transformées.
 - Les instances sont **regroupées sous la répétition**, repliées par défaut, et **paramétriques** : elles suivent leur source (profondeur, opération, sens, étendue, congé) et régénèrent en place sans perdre leurs identifiants.
 
@@ -63,6 +77,7 @@ MiniFusion est un MVP de CAO historique (paramétrique, esprit Fusion 360) qui t
 - **Annuler / rétablir** sur l'esquisse et sur le document.
 
 ### Interface & navigation
+- **Bandeau regroupé par type** : Esquisse / Extrusion / Révolution en direct, le reste en menus déroulants — **🔧 Modifier le solide** (Congé, Chanfrein, Déplacer une face, Répétition…), **💾 Fichier** (Importer, STEP/STL/OBJ), **📁 Projet**.
 - **Vue 3D sans sidebar** : l'arborescence est une superposition semi-transparente à gauche, avec onglet de repli. Les corps se pilotent par l'œil de la fonction, le clic droit, ou **🎯 Isoler / ✅ Tout afficher**.
 - **Vues** : Iso, Dessus, Face, Droite + **Tout afficher** (F5), qui cadre toute la pièce (corps + esquisses) — jamais de pièce coupée.
 - **Menu ⚙** : vues, sol miroir,repère (axes XYZ), inversion du zoom, mode d'affichage des arêtes, **rafraîchissement dur**, **coupe par plan** (hauteur + côté inversé).
@@ -71,7 +86,7 @@ MiniFusion est un MVP de CAO historique (paramétrique, esprit Fusion 360) qui t
 - **Suppression au clavier** : `Suppr` supprime la (ou les) fonction(s) sélectionnée(s) dans l'arbre, après confirmation nommant chacune. **Ctrl+clic** construit le lot, **Échap** le vide. Les fonctions qui en dépendent (congé sans sa cible, répétition sans une source) sont **emportées** et annoncées ; les esquisses posées sur les faces disparues sont conservées, avec un avertissement. Un clic simple remplace le lot : plus de sélection fantôme.
 - **Répétition** : le bouton 🔁 ouvre son panneau, où les fonctions à répéter se choisissent par **cases à cocher** (et non plus par `Ctrl+clic`, réservé à la multi-suppression). **À la création comme à l'édition**, la même liste s'affiche — cochée sur les sources actuelles, et cocher/décocher met la répétition à jour immédiatement (annulable par `Ctrl+Z`). Une répétition affichée dans l'arbre montre ses instances ; ses **sources portent un repère ◀** et sa ligne affiche **◀ n** (en orange si aucune : elle ne produirait rien).
 - Couleur et opacité par corps, outils translucides masqués après l'opération (aperçu explicite au clic sur la découpe), repère d'origine avec plans visibility par défaut.
-- **Raccourcis** en esquisse : `L C R B P T D F H` (ligne, cercle, rectangle, oblong, projection, trim, cote, congé, chanfrein), `F5` vue complète, `Ctrl+Maj+R` rafraîchissement dur.
+- **Raccourcis** en esquisse : `L C R B P T D F H O` (ligne, cercle, rectangle, oblong, projection, trim, cote, congé, chanfrein, **décalage**), `F5` vue complète, `Ctrl+Maj+R` rafraîchissement dur.
 
 ### Import, export & persistance
 - Import **STEP / STL**, export **STEP / STL / OBJ**.
@@ -106,8 +121,8 @@ python -m http.server 3000
 
 | Chemin | Rôle |
 |---|---|
-| `fusion_mvp.html` | **Fichier généré** — l'application complète en un seul HTML (~9 700 lignes). Ne pas l'éditer à la main : il est reconstruit par `node build.js` |
-| `src/*.js` | **Les sources**, découpées par opération (14 fichiers, du bandeau d'en-tête à l'init). C'est ici qu'on travaille |
+| `fusion_mvp.html` | **Fichier généré** — l'application complète en un seul HTML (~12 400 lignes). Ne pas l'éditer à la main : il est reconstruit par `node build.js` |
+| `src/*.js` | **Les sources**, découpées par opération (20 fichiers, du bandeau d'en-tête à l'init). C'est ici qu'on travaille |
 | `CHANGELOG.md` | **Le journal des modifications** : une entrée par version (cause, correctif, test) |
 | `build.js` | Assemble `src/*.js` → `fusion_mvp.html`. `node build.js --check` échoue si le livrable est périmé |
 | `occt/` | Noyau OpenCascade WebAssembly (~111 Mo) + ses `.bak` locaux (non suivis) |
@@ -143,8 +158,12 @@ node build.js --check
 | `70-extrusion.js` | extrusion : menu, étendue, « jusqu'à la face », visée |
 | `75-revolve.js` | révolution 360° : axe (ligne d'esquisse ou X/Y/Z), Plot/Poche, angle, noyau exact + repli maillage |
 | `80-conges-chanfreins.js` | congés maillage + **mode exact**, références durables, aperçu rouge |
+| `85-deplacement-face.js` | **déplacement de face** (push/pull le long de la normale sortante) |
+| `86-draft-depouillage.js` | **dépouille** (angle de démoulage, plan neutre + faces) |
+| `87-coque.js` | **coque** (évidage paroi mince : faces retirées + épaisseur) |
 | `90-picking-mesure-import.js` | sélection 3D, mesures, F5, menus contextuels, coupe, import/export, sauvegarde |
 | `95-toolbar.js` | barre d'outils et raccourcis |
+| `96-bandeau-groupes.js` | **regroupement du bandeau** par type (menus Modifier / Fichier / Projet) |
 | `96-noyau-occt-tiers-lgpl.js` | **code tiers** (OpenCascade 1.1.4, LGPL) — laissé intact |
 | `97-auto-tests.js` | auto-tests embarqués |
 | `99-init.js` | amorçage |
@@ -166,7 +185,7 @@ fichier unique (voir « Travailler sur le code »).
 
 ## Où en est le projet
 
-MVP fonctionnel — version **2026-09-30l**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
+MVP fonctionnel — version **2026-09-31h**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
 
 > **Note contributeurs** : les anciennes zones gelées (sketch, contraintes, congés, antériorité) sont **dégelées depuis le 2026-09-29** — modification libre sous la discipline projet : on édite **`src/*.js`** (jamais `fusion_mvp.html`, qui est généré) → `node build.js` → régression verte → bump `APP_VER` + **entrée dans [`CHANGELOG.md`](CHANGELOG.md)** → `node build.js --check` → snapshot `Backup/` → push. `node build.js --check` échoue si le livrable est périmé : impossible d'oublier de reconstruire. Seul le noyau exact OCCT (`occApplyXFillets`, `occFinalShape`) demande une validation navigateur : il n'est pas entièrement couvert par le harnais.
 

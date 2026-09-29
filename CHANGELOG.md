@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**76 versions**, de `2026-09-28b` à `2026-09-31h` — la plus récente en bas,
+**77 versions**, de `2026-09-28b` à `2026-09-31i` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -1765,4 +1765,17 @@ x 10..30 / y −15..−5 ET x −30..−10 / y −15..−5, final 4 solides x ±
 stabilité des ids, compatibilité mono-miroir, garde, signatures, rechargement —
 TOUT EST CONFORME. Régression 19/19 exécutables (4 KO = fixtures utilisateur
 supprimées du disque, ENOENT préexistant, sans rapport).
+---
+
+### `2026-09-31i`
+
+**README : documentation de toutes les nouvelles fonctions (30x → 31h).**
+
+Le README datait de la 31e ; il manquait : déplacement de face (30x), dépouille
+(31c), coque (31d), décalage esquisse `O` (31f), flip + dépouille d’extrusion (31g),
+symétrie double (31h) et bandeau regroupé (30y). Ajoutés : § Déplacement de face,
+§ Dépouille, § Coque, ligne décalage + symétrie double, raccourci `O`, ligne bandeau.
+Table d’architecture : 14 → 20 fichiers, lignes 9 700 → 12 400, lignes 85/86/87 et
+96-bandeau-groupes. Version « Où en est le projet » : 30l → 31h. Icônes relues dans
+dans les sources (🛡️ ⚙ 📐 🔧💾📁). Aucun changement fonctionnel — bump de traçabilité.
 
