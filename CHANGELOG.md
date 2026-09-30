@@ -2162,3 +2162,11 @@ Tests : `test_fao3d.cjs` (arcs presents, rayons coherents, CCW, surplomb jamais 
 2. Ombre exacte : `faoShadowPlanes` lit les Z vertex du maillage (dedup 1 µm, cap 160) au lieu de la grille 2 mm — tout voile horizontal, si fin soit-il, a ses faces aux Z vertex : aucun ne peut se cacher (croisements lineaires => union atteinte aux plans). `faoHelixSpot` accepte ces plans en option (Adaptive seul : morph/zigzag gardent le pas de 1 mm teste) ; plans partages ombre+helice par niveau, slices en cache. Le test voile 24.3-24.9 (hors grille) a prouve le trou de l'ancien balayage.
 
 Tests : `test_fao3d.cjs` (clamp |dY| <= 1.25 sur bande nulle, repli droit sans arcs, voile jamais traverse en bas, depart helice a 26.9 au-dessus du voile) — TOUT EST CONFORME. Suite 19/19 verte.
+
+### 2026-09-32n
+
+**README : l'avancee FAO y est enfin raconte (31t a 32m).**
+
+Le README datait de la 31i : aucune trace du fraisage. Ajout d'une section `FAO — fraisage 2.5D / 3D + G-code` (posages, outils Vc/fz, ops 2.5D + debourrage CAV-75-25, ebauche 3D Morph/Zigzag/Adaptive, geodesique, R/A, retrait, limites, G2/G3, posts 840D/Fagor, parallelisme au dessin), ligne `88-fao.js` dans la table d'architecture (20 -> 21 fichiers, ~12 400 -> ~16 100 lignes), 13 -> 19 suites, version et pistes a jour (CYCLE81, 3+2/5 axes).
+
+Aucun changement fonctionnel — bump de tracabilite.

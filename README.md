@@ -73,6 +73,16 @@ MiniFusion est un MVP de CAO historique (paramétrique, esprit Fusion 360) qui t
 - **Ctrl+clic** dans l'arborescence pour **ajouter ou retirer une fonction source** (extrusion, découpe, congé, chanfrein) : les instances sont régénérées, y compris leurs esquisses transformées.
 - Les instances sont **regroupées sous la répétition**, repliées par défaut, et **paramétriques** : elles suivent leur source (profondeur, opération, sens, étendue, congé) et régénèrent en place sans perdre leurs identifiants.
 
+### FAO — fraisage 2.5D / 3D + G-code
+- **Posages** façon setup Fusion : machine, origine `G54`–`G59`, point de bloc, modèle (tous les corps ou sélection), brut auto depuis la bbox + marge, bridage mémorisé. Arbre FAO dédié, fiches posage/opération dans le panneau droit.
+- **Bibliothèque d'outils** : cylindrique, boule, torique (ex. `T6 D25 R2` de la gamme atelier `CAV-75-25`) — `Vc`/`fz` → `S`/`F` calculés, plongée 30 %.
+- **Opérations 2.5D** : **surfaçage** zigzag, **poche** concentrique, **contour** compensé du rayon, **perçage**, **débourrage poche** (hélice `R = 0,4×D` + spirale + tours de parois, calé sur la gamme `CAV-75-25`).
+- **Ébauche 3D** : **Morph** (spirale qui suit la forme), **Zigzag**, **Adaptive** (effort constant : `ae ≤ ¼×D` à grande profondeur, pelage sans retrait, **trochoïdes G2/G3** dans les goulets, ombre exacte des niveaux supérieurs — aucun voile fin traversé, entrées hélice/rampe/micro-hélice). Passes fines `ap2` là où la forme change.
+- **Finition géodésique** : iso-courbes du champ de distances (Dijkstra), sortie centre-outil selon le type de fraise.
+- **Réglages communs** : surépaisseurs **radiale** (parois) + **axiale** (fond), plan de retrait, **limites** rectangle ou chaîne d'arêtes tangentes (règle centre/intérieur/extérieur + marge), **arrondi des coins en G2/G3**, fiches en sections titrées avec infobulles et alertes (`ae` trop grand en Adaptive).
+- **Post-processeurs** : **Siemens 840D** (variantes 630 / 1520) et **Fagor 8065**, multi-outils, origine relative au point de bloc. Aperçu 3D (coupe vert / rapides rouge) + estimation du temps par opération.
+- Menée **en parallèle du dessin** : `doc.fao` persisté, modifications FAO sans rejeu géométrique (`_docVersion` untouched).
+
 ### Antériorité & historique
 - Arborescence complète dans la vue 3D (repliable, avec œil de visibilité, icône par type, marqueur de temps).
 - **⏱ Marqueur de temps** : clic droit sur une fonction → le rejeu s'arrête **avant** elle, les fonctions suivantes sont exclues (grisées) et les **nouvelles fonctions sont insérées à ce niveau**. Levée automatique à l'édition.
@@ -123,8 +133,8 @@ python -m http.server 3000
 
 | Chemin | Rôle |
 |---|---|
-| `fusion_mvp.html` | **Fichier généré** — l'application complète en un seul HTML (~12 400 lignes). Ne pas l'éditer à la main : il est reconstruit par `node build.js` |
-| `src/*.js` | **Les sources**, découpées par opération (20 fichiers, du bandeau d'en-tête à l'init). C'est ici qu'on travaille |
+| `fusion_mvp.html` | **Fichier généré** — l'application complète en un seul HTML (~16 100 lignes). Ne pas l'éditer à la main : il est reconstruit par `node build.js` |
+| `src/*.js` | **Les sources**, découpées par opération (21 fichiers, du bandeau d'en-tête à l'init). C'est ici qu'on travaille |
 | `CHANGELOG.md` | **Le journal des modifications** : une entrée par version (cause, correctif, test) |
 | `build.js` | Assemble `src/*.js` → `fusion_mvp.html`. `node build.js --check` échoue si le livrable est périmé |
 | `occt/` | Noyau OpenCascade WebAssembly (~111 Mo) + ses `.bak` locaux (non suivis) |
@@ -163,6 +173,7 @@ node build.js --check
 | `85-deplacement-face.js` | **déplacement de face** (push/pull le long de la normale sortante) |
 | `86-draft-depouillage.js` | **dépouille** (angle de démoulage, plan neutre + faces) |
 | `87-coque.js` | **coque** (évidage paroi mince : faces retirées + épaisseur) |
+| `88-fao.js` | **FAO** : posages, outils Vc/fz, ops 2.5D/3D (Adaptive, géodésique), limites, G2/G3, posts Siemens/Fagor |
 | `90-picking-mesure-import.js` | sélection 3D, mesures, F5, menus contextuels, coupe, import/export, sauvegarde |
 | `95-toolbar.js` | barre d'outils et raccourcis |
 | `96-bandeau-groupes.js` | **regroupement du bandeau** par type (menus Modifier / Fichier / Projet) |
@@ -178,7 +189,7 @@ fichier unique (voir « Travailler sur le code »).
 
 - **In-app** : 🧪 Auto-tests (non-régression esquisse, contraintes, cotes) — lançables depuis le panneau latéral.
 - **Dev** : harnais Node hors navigateur (solveur, cotation orientée, suivi de faces, références, projections associatives, congés/chanfreins exacts, menu d'extrusion, prismes miroir, répétitions, marqueur temps, performance…) ; certains scénarios s'exécutent sur le **noyau OCCT réel** (`.wasm` chargé en Node), et la version (`APP_VER`) est vérifiée avant chaque sauvegarde dans `Backup/`.
-- **Suite repo** : `tests/` (harnais `appvm.cjs` + 13 suites + fixtures) — portable, aucun chemin absolu : `node tests/run.cjs` ou `npm test` depuis la racine, sur n'importe quel PC.
+- **Suite repo** : `tests/` (harnais `appvm.cjs` + 19 suites + fixtures, dont `test_fao` et `test_fao3d`) — portable, aucun chemin absolu : `node tests/run.cjs` ou `npm test` depuis la racine, sur n'importe quel PC.
 
 ## Historique
 
@@ -188,7 +199,7 @@ fichier unique (voir « Travailler sur le code »).
 
 ## Où en est le projet
 
-MVP fonctionnel — version **2026-09-31h**. Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), plus d'opérations solides.
+MVP fonctionnel — version **2026-09-32m** (CAO + FAO fraisage 2.5D/3D avec G-code Siemens/Fagor). Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), cycles de perçage `CYCLE81`/`G81`, 3+2 / 5 axes.
 
 > **Note contributeurs** : les anciennes zones gelées (sketch, contraintes, congés, antériorité) sont **dégelées depuis le 2026-09-29** — modification libre sous la discipline projet : on édite **`src/*.js`** (jamais `fusion_mvp.html`, qui est généré) → `node build.js` → régression verte → bump `APP_VER` + **entrée dans [`CHANGELOG.md`](CHANGELOG.md)** → `node build.js --check` → snapshot `Backup/` → push. `node build.js --check` échoue si le livrable est périmé : impossible d'oublier de reconstruire. Seul le noyau exact OCCT (`occApplyXFillets`, `occFinalShape`) demande une validation navigateur : il n'est pas entièrement couvert par le harnais. **Versions depuis le 2026-10-01 : `AAAA-MM-JJ-NNN`** (date réelle + compteur quotidien à 001 — voir bloc VERSIONS en tête de `src/00-entete-et-outils.js`).
 
