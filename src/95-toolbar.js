@@ -114,7 +114,7 @@ if($('btnNew'))$('btnNew').onclick=()=>{
   if(!confirm('Nouveau modèle ? Le document courant non sauvé sera perdu.'))return;
   try{exitFilletMode(true);}catch(e){}
   if(skEdit)closeSketch(false);
-  doc={name:'Sans titre',tint:0,sketches:[],features:[],bodyVis:{}};
+  doc={name:'Sans titre',tint:0,sketches:[],features:[],bodyVis:{},bodies:[],bodySeq:1,activeBody:null};
   sel={kind:null,id:null};selFaces=[];fileHandle=null;uidN=0;builtHash=null;builtEngine=null;builtVersion=-1;
   try{occCkClear();}catch(e){}
   markDirty();rebuild();renderProps();showAll();

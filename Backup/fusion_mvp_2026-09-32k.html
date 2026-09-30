@@ -262,7 +262,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-09-32l';
+const APP_VER='2026-09-32k';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 let extPickFace=null; // mode « vers un objet » : clic sur une face pour le sens (Échap = annuler)
@@ -12846,35 +12846,25 @@ function faoRow(){ const d=document.createElement('div');
 function faoLab(t){ const s=document.createElement('span'); s.textContent=t;
   s.style.cssText='color:rgba(255,255,255,.6);font-size:.74rem;'; return s; }
 function faoChanged(){ faoTouch(); faoRefreshPreview(); faoRefreshFaoUI(); }
-function faoNum(val,fn,w,step,title){
+function faoNum(val,fn,w,step){
   const i=document.createElement('input'); i.type='number'; i.value=val; i.style.width=(w||60)+'px';
   if(step)i.step=step;
-  if(title)i.title=title;
   i.onchange=function(){ const v=parseFloat(i.value); if(isFinite(v)){ fn(v); faoChanged(); } };
   return i; }
-function faoTxt(val,fn,w,title){
+function faoTxt(val,fn,w){
   const i=document.createElement('input'); i.type='text'; i.value=val; i.style.width=(w||120)+'px';
-  if(title)i.title=title;
   i.onchange=function(){ fn(i.value); faoChanged(); };
   return i; }
-function faoSel(opts,val,fn,title){
+function faoSel(opts,val,fn){
   const s=document.createElement('select');
   opts.forEach(function(o){ const op=document.createElement('option');
-    op.value=o[0]; op.textContent=o[1]; if(o[2])op.title=o[2]; s.appendChild(op); });
-  s.value=val;
-  if(title)s.title=title;
-  s.onchange=function(){ fn(s.value); faoChanged(); };
+    op.value=o[0]; op.textContent=o[1]; s.appendChild(op); });
+  s.value=val; s.onchange=function(){ fn(s.value); faoChanged(); };
   return s; }
-function faoMini(t,fn,title){
+function faoMini(t,fn){
   const b=document.createElement('button'); b.textContent=t; b.style.fontSize='.72rem';
-  if(title)b.title=title;
   b.onclick=function(){ fn(); faoChanged(); };
   return b; }
-function faoHelp(t){
-  // Ligne d'aide sous un groupe de champs (néophytes : quoi mettre et pourquoi).
-  const n=document.createElement('div');
-  n.style.cssText='font-size:.68rem;color:rgba(255,255,255,.55);line-height:1.35;flex-basis:100%;';
-  n.textContent=t; return n; }
 function faoCard(){
   const d=document.createElement('div');
   d.style.cssText='display:flex;flex-direction:column;gap:6px;background:rgba(255,255,255,.05);'
@@ -13061,20 +13051,16 @@ function faoOpCardElement(setup,op,i){
     rough3d:'Ébauche 3D',geofinish:'Finition géod.',pocket3d:'Débourrage poche'};
   const r=faoRow();
   const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=op.on!==false;
-  cb.title='Décocher = ignorer cette opération (aperçu, temps, G-code)';
   cb.onchange=function(){ op.on=cb.checked; faoChanged(); };
   r.appendChild(cb);
   const tt=document.createElement('span');
   tt.style.cssText='font-weight:700;font-size:.76rem;flex:1;';
   tt.textContent=(i+1)+'. '+(typeName[op.type]||op.type);
   r.appendChild(tt);
-  r.appendChild(faoSel(faoToolOpts(setup),op.toolId,function(v){ op.toolId=v; },
-    'Outil de cette opération (vitesse et avance calculées depuis sa fiche)'));
-  r.appendChild(faoMini('↑',function(){ if(i>0){ setup.ops.splice(i,1); setup.ops.splice(i-1,0,op); } },
-    'Remonter cette opération (usinée plus tôt)'));
-  r.appendChild(faoMini('↓',function(){ if(i<setup.ops.length-1){ setup.ops.splice(i,1); setup.ops.splice(i+1,0,op); } },
-    'Descendre cette opération (usinée plus tard)'));
-  r.appendChild(faoMini('✕',function(){ setup.ops.splice(i,1); },'Supprimer cette opération'));
+  r.appendChild(faoSel(faoToolOpts(setup),op.toolId,function(v){ op.toolId=v; }));
+  r.appendChild(faoMini('↑',function(){ if(i>0){ setup.ops.splice(i,1); setup.ops.splice(i-1,0,op); } }));
+  r.appendChild(faoMini('↓',function(){ if(i<setup.ops.length-1){ setup.ops.splice(i,1); setup.ops.splice(i+1,0,op); } }));
+  r.appendChild(faoMini('✕',function(){ setup.ops.splice(i,1); }));
   d.appendChild(r);
   const rp=faoRow();
   const rect4=function(){
@@ -13112,70 +13098,20 @@ function faoOpCardElement(setup,op,i){
     nt.textContent='Pleines passes à ap + tours de parois seuls au pas tours.';
     d.appendChild(nt);
   }else if(op.type==='rough3d'){
-    // --- fiche Ébauche 3D : sections titrées pour les néophytes.
-    // Chaque champ porte son nom complet + infobulle ; les stratégies et
-    // l'entrée sont expliquées en une ligne, avec garde-fous chiffrés.
-    const strat=op.strategy||'morph';
-    const toolD=(function(){ const t=faoToolById(setup,op.toolId);
-      return (isFinite(+t.d)&&+t.d>0)?+t.d:10; })();
-    const aeNow=isFinite(+op.ae)&&+op.ae>0?+op.ae:toolD*0.6;
-    const apNow=isFinite(+op.ap)&&+op.ap>0?+op.ap:5;
-    d.appendChild(faoH('Hauteurs à usiner (mm)'));
-    const rZ=faoRow();
-    rZ.appendChild(faoLab('Haut')); rZ.appendChild(faoNum(op.ztop,function(v){op.ztop=v;},56,
-      null,'Niveau le plus haut usiné — en général le dessus du brut.'));
-    rZ.appendChild(faoLab('Bas')); rZ.appendChild(faoNum(op.zbot,function(v){op.zbot=v;},56,
-      null,'Niveau le plus bas — fond de la zone à ébaucher (hors surépaisseur).'));
-    d.appendChild(rZ);
-    d.appendChild(faoH('Stratégie de vidage'));
-    const rS=faoRow();
-    rS.appendChild(faoSel([
-      ['morph','Morph · spirale qui suit la forme','Boucles qui épousent les parois, du centre vers l’extérieur. Bon compromis partout.'],
-      ['zigzag','Zigzag · balayage en avalant','Lignes droites aller simple avec dégagements. Simple, mais effort irrégulier.'],
-      ['adaptive','Adaptive · effort constant (conseillé)','Petites passes latérales à grande profondeur : charge d’outil constante. Trochoïdes auto dans les goulets.']],
-      strat,function(v){op.strategy=v;},'Façon de vider la matière à chaque niveau.'));
-    d.appendChild(rS);
-    d.appendChild(faoHelp(
-      strat==='adaptive'?'Adaptive : gardez ae petit (≤ ¼ du Ø outil) et ap profond (≈ 1×Ø). L’outil ne s’enterre jamais.' :
-      strat==='zigzag'?'Zigzag : simple et prévisible. Préférez Morph pour les formes creuses.' :
-      'Morph : spirale régulière. Ajoutez ap2 pour adoucir les marches là où la forme change.'));
-    d.appendChild(faoH('Passes (mm)'));
-    const rP=faoRow();
-    rP.appendChild(faoLab('ap')); rP.appendChild(faoNum(op.ap,function(v){op.ap=Math.max(0.5,v);},48,0.5,
-      'Descente : hauteur usinée par niveau (Maximum Stepdown). Grand en Adaptive (≈ Ø outil), petit en finition.'));
-    rP.appendChild(faoLab('ap2')); rP.appendChild(faoNum(op.ap2||0,function(v){op.ap2=Math.max(0,v);},48,0.5,
-      'Affinage : passes fines entre niveaux là où la forme change (Fine Stepdown). 0 = désactivé. Ignoré en Adaptive.'));
-    rP.appendChild(faoLab('ae')); rP.appendChild(faoNum(op.ae,function(v){op.ae=Math.max(0.5,v);},48,
-      'Pas latéral : distance entre deux passes voisines (Stepover). Petit en Adaptive (≤ ¼ Ø), large en surfaçage.'));
-    d.appendChild(rP);
-    d.appendChild(faoHelp(
-      (strat==='adaptive'&&aeNow>toolD*0.25+1e-9)
-        ?('⚠ ae = '+(aeNow/toolD).toFixed(2)+'×Ø : réduisez à ≤ '+(toolD*0.25).toFixed(1)+' mm pour l’Adaptive (Ø '+toolD+').')
-        :('ae = '+(aeNow/toolD).toFixed(2)+'×Ø, ap = '+(apNow/toolD).toFixed(2)+'×Ø (outil Ø '+toolD+').')));
-    d.appendChild(faoH('Matière à laisser (mm)'));
-    const rR=faoRow();
-    rR.appendChild(faoLab('Parois')); rR.appendChild(faoNum(faoRA(op).radial,function(v){op.radial=Math.max(0,v);},44,0.1,
-      'Surépaisseur sur les côtés : l’ébauche s’arrête à cette distance des parois (la finition l’enlèvera).'));
-    rR.appendChild(faoLab('Fond')); rR.appendChild(faoNum(faoRA(op).axial,function(v){op.axial=Math.max(0,v);},44,0.1,
-      'Surépaisseur sur le fond : l’ébauche s’arrête à cette hauteur au-dessus du fond.'));
-    d.appendChild(rR);
-    const rR2=faoRow();
-    rR2.appendChild(faoLab('Parois fin')); rR2.appendChild(faoNum(isFinite(+op.radial2)?+op.radial2:faoRA(op).radial,function(v){op.radial2=Math.max(0,v);},44,0.1,
-      'Surépaisseur des passes fines ap2 sur les côtés.'));
-    rR2.appendChild(faoLab('Fond fin')); rR2.appendChild(faoNum(isFinite(+op.axial2)?+op.axial2:faoRA(op).axial,function(v){op.axial2=Math.max(0,v);},44,0.1,
-      'Surépaisseur des passes fines ap2 sur le fond.'));
-    d.appendChild(rR2);
-    d.appendChild(faoH('Trajectoire'));
-    const rT2=faoRow();
-    rT2.appendChild(faoLab('Arrondi')); rT2.appendChild(faoNum(isFinite(+op.arrondi)?+op.arrondi:0,function(v){op.arrondi=Math.max(0,v);},48,0.5,
-      'Rayon d’arrondi des angles vifs (sort en G2/G3, trajectoire fluide). 0 = angles vifs.'));
-    rT2.appendChild(faoLab('Entrée'));
-    rT2.appendChild(faoSel([
-      ['auto','Auto · hélice si possible','Hélice quand le vide fait ≥ 2×Ø, sinon rampe.'],
-      ['helix','Hélice · descente circulaire','Creuse sa place en tournant : il faut un vide d’au moins 2×Ø.'],
-      ['ramp','Rampe · descente en biais','Descend en avançant le long de la passe : passe partout, plus lent.']],
-      op.entry||'auto',function(v){op.entry=v;},'Manière de plonger dans la matière — jamais de plongée verticale.'));
-    d.appendChild(rT2);
+    zz();
+    rp.appendChild(faoLab('strat.')); rp.appendChild(faoSel([['morph','Morph'],['zigzag','Zigzag'],['adaptive','Adaptive']],op.strategy||'morph',
+      function(v){op.strategy=v;}));
+    rp.appendChild(faoLab('ap')); rp.appendChild(faoNum(op.ap,function(v){op.ap=Math.max(0.5,v);},48,0.5));
+    rp.appendChild(faoLab('ap2')); rp.appendChild(faoNum(op.ap2||0,function(v){op.ap2=Math.max(0,v);},48,0.5));
+    rp.appendChild(faoLab('pas')); rp.appendChild(faoNum(op.ae,function(v){op.ae=Math.max(0.5,v);},48));
+    rp.appendChild(faoLab('R')); rp.appendChild(faoNum(faoRA(op).radial,function(v){op.radial=Math.max(0,v);},44,0.1));
+    rp.appendChild(faoLab('A')); rp.appendChild(faoNum(faoRA(op).axial,function(v){op.axial=Math.max(0,v);},44,0.1));
+    rp.appendChild(faoLab('R2')); rp.appendChild(faoNum(isFinite(+op.radial2)?+op.radial2:faoRA(op).radial,function(v){op.radial2=Math.max(0,v);},44,0.1));
+    rp.appendChild(faoLab('A2')); rp.appendChild(faoNum(isFinite(+op.axial2)?+op.axial2:faoRA(op).axial,function(v){op.axial2=Math.max(0,v);},44,0.1));
+    rp.appendChild(faoLab('Arrondi')); rp.appendChild(faoNum(isFinite(+op.arrondi)?+op.arrondi:0,function(v){op.arrondi=Math.max(0,v);},48,0.5));
+    rp.appendChild(faoLab('entrée'));
+    rp.appendChild(faoSel([['auto','Auto'],['helix','Hélice'],['ramp','Rampe']],op.entry||'auto',
+      function(v){op.entry=v;}));
   }else if(op.type==='geofinish'){
     rp.appendChild(faoLab('pas 3D')); rp.appendChild(faoNum(op.step,function(v){op.step=Math.max(0.2,v);},52,0.5));
     rp.appendChild(faoLab('laisse')); rp.appendChild(faoNum(op.laisse,function(v){op.laisse=Math.max(0,v);},48,0.1));
@@ -13193,11 +13129,11 @@ function faoOpCardElement(setup,op,i){
       if(lst.length)op.pts=lst;
     },150));
   }
-  if(rp.children.length)d.appendChild(rp); // vide pour l'Ébauche 3D (sections propres)
+  d.appendChild(rp);
   // Limite d'usinage (tout, rectangle, ou chaîne d'arêtes).
   const rl=faoRow();
   const limMode=op.limit?(op.limit.mode||'all'):'all';
-  rl.appendChild(faoLab('Zone'));
+  rl.appendChild(faoLab('Limite'));
   rl.appendChild(faoSel([['all','Tout usiner'],['rect','Rectangle'],['chain','Chaîne d\'arêtes']],limMode,function(v){
     if(v==='rect'){
       const s=faoStock();
@@ -13207,13 +13143,13 @@ function faoOpCardElement(setup,op,i){
       op.limit=old||{mode:'chain',loop:[],closed:false,nEdges:0,tangent:true,side:'center',extra:0};
       faoChainStart(setup.id,op.id);
     }else delete op.limit;
-  },'Zone usinée : tout le brut, un rectangle, ou l’intérieur d’une chaîne d’arêtes.'));
+  }));
   if(limMode==='rect'&&op.limit){
     const L=op.limit;
-    rl.appendChild(faoNum(L.x0,function(v){L.x0=v;},52,null,'Rectangle : coin X mini (mm)'));
-    rl.appendChild(faoNum(L.y0,function(v){L.y0=v;},52,null,'Rectangle : coin Y mini (mm)'));
-    rl.appendChild(faoNum(L.x1,function(v){L.x1=v;},52,null,'Rectangle : coin X maxi (mm)'));
-    rl.appendChild(faoNum(L.y1,function(v){L.y1=v;},52,null,'Rectangle : coin Y maxi (mm)'));
+    rl.appendChild(faoNum(L.x0,function(v){L.x0=v;},52));
+    rl.appendChild(faoNum(L.y0,function(v){L.y0=v;},52));
+    rl.appendChild(faoNum(L.x1,function(v){L.x1=v;},52));
+    rl.appendChild(faoNum(L.y1,function(v){L.y1=v;},52));
   }
   d.appendChild(rl);
   if(limMode==='chain'&&op.limit){
@@ -13235,15 +13171,10 @@ function faoOpCardElement(setup,op,i){
   if((limMode==='rect'||limMode==='chain')&&op.limit){
     const rs=faoRow();
     rs.appendChild(faoLab('Outil'));
-    rs.appendChild(faoSel([
-      ['center','Centre dedans','Le centre de l’outil reste dans la zone.'],
-      ['in','Outil dedans','L’outil entier reste dans la zone (retrait d’un rayon).'],
-      ['out','Tout couvrir','La zone est entièrement balayée, l’outil déborde d’un rayon.']],
-      op.limit.side||'center',function(v){op.limit.side=v;},
-      'Position de l’outil par rapport au bord de la zone.'));
-    rs.appendChild(faoLab('Marge'));
-    rs.appendChild(faoNum(op.limit.extra||0,function(v){op.limit.extra=v;},44,0.5,
-      'Élargit (+) ou rétrécit (−) la zone en mm.'));
+    rs.appendChild(faoSel([['center','Centre'],['in','Intérieur'],['out','Extérieur']],op.limit.side||'center',
+      function(v){op.limit.side=v;}));
+    rs.appendChild(faoLab('+'));
+    rs.appendChild(faoNum(op.limit.extra||0,function(v){op.limit.extra=v;},44,0.5));
     d.appendChild(rs);
   }
   const sf=faoToolSF(faoToolById(setup,op.toolId));
@@ -13671,10 +13602,8 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
   // passes fines (ap2) à R2 là où la section change (marches réduites).
   // Par tranche non plate : spirale morph (boucles imbriquées qui suivent les
   // parois, entrée hélice au centre), zigzag (option, poches complexes) ou
-  // adaptive (pelage au petit pas + trochoïdes G2/G3 dans les goulets, façon
-  // Adaptive 3D : ap profond, ae ≤ 0.25*D, liaisons sans retrait, vide calculé
-  // avec l'ombre des niveaux supérieurs = brut restant, entrée multi-spots
-  // hélice/rampe X-Y/micro-hélice, ordre de pelage selon l'ouverture).
+  // adaptive (pelage extérieur->intérieur au petit pas + trochoïdes dans les
+  // goulets, façon Adaptive 3D : ap profond, ae ≤ 0.25*D, liaisons sans retrait).
   // Plats (couverture > 85 %) : zigzag au grand pas D*0.8 (morph/adaptive gardent
   // leur petit pas : le plat reste pelé, pas surfacing pleine largeur).
   o=o||{};
@@ -13733,7 +13662,7 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
     // plongée) : l'hélice ne refait jamais toute la hauteur depuis la sécu.
     const zFrom=Math.min(secu,L.z+ap);
     if(strategy==='adaptive'){
-      faoRoughAdaptiveLevel(mesh,B,L.z,D,D/2+L.radial+bulge,secu,zFrom,ae,entryMode,o.brutTop,zt,moves);
+      faoRoughAdaptiveLevel(mesh,B,L.z,D,D/2+L.radial+bulge,secu,zFrom,ae,entryMode,o.brutTop,moves);
     }else{
       faoRoughLevel(mesh,B,L.z,D,D/2+L.radial+bulge,secu,zFrom,ae,strategy,entryMode,o.brutTop,moves);
     }
@@ -13742,152 +13671,66 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
   return moves;
 }
 function faoTrochSlot(moves,xa,xb,y,z,D,aeA){
-  // Trochoïde en VRAIS arcs G2/G3 le long d'un goulet : chaque boucle = 4
-  // quarts à 90° (< 180°, IJK incrémental, centre = départ + IJK comme les CN),
-  // émis CCW (G3). Engagement d'un seul côté, pas d'arrêt en fond de
-  // rainure. Reste dans [xa,xb], Z constant.
+  // Trochoïde polygonale (10 pts/boucle) le long d'un goulet : engagement d'un
+  // seul côté, pas d'arrêt en fond de rainure. Reste dans [xa,xb].
   const W=xb-xa;
   if(!(W>0.5))return;
-  const Rt=Math.round(Math.max(0.5,Math.min(D*0.3,aeA*1.5,W/2-0.2))*1000)/1000;
+  const Rt=Math.max(0.5,Math.min(D*0.3,aeA*1.5,W/2-0.2));
   const pitch=Math.max(0.5,Math.min(aeA,D*0.2));
-  const Y=Math.round(y*1000)/1000;
-  moves.push({r:0,x:Math.round((xa+Rt)*1000)/1000,y:Y,z:z});
+  moves.push({r:0,x:Math.round((xa+Rt)*1000)/1000,y:y,z:z});
   let cx=xa+Rt, guard=0;
   while(cx<xb-Rt-1e-9&&guard++<10000){
-    const X=Math.round(cx*1000)/1000;
-    const xE=Math.round((cx+Rt)*1000)/1000, xW=Math.round((cx-Rt)*1000)/1000;
-    const yN=Math.round((y+Rt)*1000)/1000, yS=Math.round((y-Rt)*1000)/1000;
-    // E -> N -> W -> S -> E autour de (X,Y), CCW : i,j = centre - départ.
-    moves.push({r:0,x:X,y:yN,z:z,arc:{i:Math.round((X-xE)*1000)/1000,j:0,cw:false}});
-    moves.push({r:0,x:xW,y:Y,z:z,arc:{i:0,j:Math.round((Y-yN)*1000)/1000,cw:false}});
-    moves.push({r:0,x:X,y:yS,z:z,arc:{i:Math.round((X-xW)*1000)/1000,j:0,cw:false}});
-    moves.push({r:0,x:xE,y:Y,z:z,arc:{i:0,j:Math.round((Y-yS)*1000)/1000,cw:false}});
+    for(let k=1;k<=10;k++){
+      const a=k/10*Math.PI*2;
+      moves.push({r:0,
+        x:Math.round((cx+Rt*Math.cos(a))*1000)/1000,
+        y:Math.round((y+Rt*Math.sin(a))*1000)/1000,z:z});
+    }
     cx+=pitch;
   }
-  moves.push({r:0,x:Math.round(xb*1000)/1000,y:Y,z:z});
+  moves.push({r:0,x:xb,y:y,z:z});
 }
-function faoShadowIntervals(mesh,B,y,z,zt,r,aeA){
-  // Vide à z avec BRUT RESTANT : l'outil vertical n'atteint que ce qui est
-  // libre depuis le dessus — union des sections entre z et zt (pas ≤ 2 mm),
-  // dilatées de r, puis complément dans le brut. Les porte-à-faux (matière
-  // au-dessus, vide en dessous) sont exclus : jamais de plongée sous un
-  // surplomb. Matière lue sur 3 lignes (y±aeA) : une ligne pile sur une arête
-  // (epsilon scanline) verrait un vide plein large et fraiserait le flanc —
-  // les voisines rattrapent le bord. Les 3 vides : [] comme avant (conservatif).
-  const lo=B.x0+r, hi=B.x1-r;
-  const out=[];
-  if(!(hi-lo>0.2))return out;
-  const H=Math.max(0,zt-z);
-  const n=Math.max(1,Math.ceil(H/2));
-  const stepY=Math.max(0.5,isFinite(+aeA)&&+aeA>0?+aeA:2);
-  const forb=[];
-  for(let k=0;k<=n;k++){
-    const zz=Math.round((z+H*k/n)*1000)/1000;
-    const segs=faoSliceZCached(mesh,zz);
-    [y-stepY,y,y+stepY].forEach(function(yy){
-      faoScanIntervals(segs,yy).forEach(function(iv){
-        const a=Math.max(lo,iv[0]-r), b=Math.min(hi,iv[1]+r);
-        if(b-a>-1e-9)forb.push([a,b]);
-      });
-    });
-  }
-  if(!forb.length)return out;
-  forb.sort(function(p,q){return p[0]-q[0];});
-  const mg=[forb[0].slice()];
-  for(let k=1;k<forb.length;k++){
-    const last=mg[mg.length-1];
-    if(forb[k][0]<=last[1]+1e-9)last[1]=Math.max(last[1],forb[k][1]);
-    else mg.push(forb[k].slice());
-  }
-  let cur=lo;
-  mg.forEach(function(f){
-    if(f[0]-cur>0.2)out.push({a:cur,b:f[0],wl:cur>lo+1e-9,wr:true});
-    if(f[1]>cur)cur=f[1];
-  });
-  if(hi-cur>0.2)out.push({a:cur,b:hi,wl:cur>lo+1e-9,wr:false});
-  return out;
-}
-function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves){
-  // Une tranche façon Adaptive : pelage au petit pas (aeA ≤ 0.25*D) dans le
-  // vide RESTANT (ombre des niveaux supérieurs), entrée hélice multi-spots /
-  // rampe X ou Y / micro-hélice, liaisons G1 sans retrait dans la région,
-  // trochoïdes G2/G3 dans les goulets (largeur < 2.5*D).
+function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,moves){
+  // Une tranche façon Adaptive : pelage extérieur->intérieur au petit pas
+  // (aeA ≤ 0.25*D), entrée hélice unique, liaisons G1 sans retrait dans la
+  // même région, trochoïdes dans les goulets (largeur < 2.5*D).
   const segs=faoSliceZCached(mesh,z);
-  const top=isFinite(+zt)?+zt:z;
   const aeA=Math.max(0.5,Math.min(isFinite(+ae)&&+ae>0?+ae:D*0.2,D*0.25));
   const ys=[]; let y=B.y0+r, g=0;
   while(y<=B.y1-r+1e-9&&g++<100000){ ys.push(y); y+=aeA; }
   if(!ys.length)return;
   const lines=[];
   ys.forEach(function(yy){
-    const ivs=faoShadowIntervals(mesh,B,yy,z,top,r,aeA);
+    const ivs=faoRoughIntervals(segs,B,yy,r);
     if(ivs.length)lines.push({y:yy,ivs:ivs});
   });
   if(!lines.length)return;
   const regs=faoRoughRegions(lines);
   regs.forEach(function(R){
     const rl=R.map(function(q){return {y:q.y,ivs:[q.iv]};});
-    // --- entrée : on ne suppose plus le centre. Candidats hélice = top-3
-    // intervalles les plus larges + centroïde ; sinon rampe le long du plus
-    // long run (X ou Y) ; sinon micro-hélice ; sinon région sautée (outil
-    // trop gros — laissé au plus petit outil, jamais de plongée verticale).
-    const byW=rl.slice().sort(function(a,b){
-      return (b.ivs[0].b-b.ivs[0].a)-(a.ivs[0].b-a.ivs[0].a); });
-    let cx0=0, cy0=0;
-    rl.forEach(function(L){ cx0+=(L.ivs[0].a+L.ivs[0].b)/2; cy0+=L.y; });
-    cx0/=rl.length; cy0/=rl.length;
-    const forced=(entryMode||'auto')==='helix'?'helix':(entryMode||'auto')==='ramp'?'ramp':'auto';
-    let hx=null, hr=0, hStart=zFrom, hy=0;
-    if(forced!=='ramp'){
-      const cands=byW.slice(0,3).map(function(L){
-        return {x:(L.ivs[0].a+L.ivs[0].b)/2,y:L.y,elen:L.ivs[0].b-L.ivs[0].a}; });
-      cands.push({x:cx0,y:cy0,elen:0});
-      for(let ci=0;ci<cands.length&&!hx;ci++){
-        const c=cands[ci];
-        const hrr=c.elen>0?Math.max(1,Math.min(D*0.4,c.elen/2-1)):Math.max(0.5,D*0.2);
-        if(!(c.elen>0?c.elen>=2*D:true))continue;
-        if(forced==='auto'&&!(c.elen>=2*D))continue;
-        if(!faoDiscClear(segs,c.x,c.y,hrr,r))continue;
-        hx=c.x; hy=c.y; hr=hrr;
-        hStart=Math.min(zFrom,faoHelixSpot(mesh,c.x,c.y,hrr,r,z,brutTop));
-      }
-    }
-    // Run X le plus long + run Y (intersection commune des intervalles).
+    // Entrée : hélice au centre du plus large intervalle si disque libre.
     let E={y:rl[0].y,iv:rl[0].ivs[0]};
     rl.forEach(function(L){ L.ivs.forEach(function(iv){
       if(iv.b-iv.a>E.iv.b-E.iv.a)E={y:L.y,iv:iv}; }); });
-    const elen=E.iv.b-E.iv.a;
-    let ixA=1/0, ixB=-1/0;
-    rl.forEach(function(L){ ixA=Math.min(ixA,L.ivs[0].a); ixB=Math.max(ixB,L.ivs[0].b); });
-    const yRun=(ixB-ixA>0.2)?(rl[rl.length-1].y-rl[0].y):0;
-    let ramp=null; // {x0,y0,x1,y1}
-    if(forced!=='helix'&&!hx){
-      if(elen>=yRun&&elen>0.2)ramp={x0:E.iv.a,y0:E.y,x1:E.iv.a+Math.min(elen,2*D),y1:E.y};
-      else if(yRun>0.2){ const xm=(ixA+ixB)/2; ramp={x0:xm,y0:rl[0].y,x1:xm,y1:rl[0].y+Math.min(yRun,2*D)}; }
+    const elen=E.iv.b-E.iv.a, ecx=(E.iv.a+E.iv.b)/2;
+    let wantHelix=(entryMode||'auto')==='helix'||((entryMode||'auto')==='auto'&&elen>=2*D);
+    const hr=Math.max(1,Math.min(D*0.4,elen/2-1));
+    let hStart=zFrom;
+    if(wantHelix){
+      if(!(elen>=2))wantHelix=false;
+      else if(!faoDiscClear(segs,ecx,E.y,hr,r))wantHelix=false;
+      else hStart=Math.min(zFrom,faoHelixSpot(mesh,ecx,E.y,hr,r,z,brutTop));
     }
-    if(hx!==null){
-      moves.push({r:1,x:hx,y:hy,z:secu});
-      if(hStart<secu-1e-9)moves.push({r:0,x:hx,y:hy,z:hStart});
-      faoHelixEntry(hx,hy,hStart,z,hr,D).slice(1).forEach(function(m){moves.push(m);});
-    }else if(ramp&&(forced==='ramp'||Math.max(elen,yRun)>=D*0.5)){
-      moves.push({r:1,x:ramp.x0,y:ramp.y0,z:secu});
-      moves.push({r:0,x:ramp.x1,y:ramp.y1,z:z});
-    }else if(forced!=='ramp'){
-      // Micro-hélice : le run est trop court pour une rampe mais un disque
-      // minuscule passe — perçage hélicoïdal lent mais sûr.
-      const run=Math.max(elen,yRun);
-      const mhr=Math.max(0.5,run/2-0.2);
-      const mx=ramp?ramp.x0:(E.iv.a+E.iv.b)/2, my=ramp?ramp.y0:E.y;
-      if(run>0.5&&faoDiscClear(segs,mx,my,mhr,r)){
-        const ms=Math.min(zFrom,faoHelixSpot(mesh,mx,my,mhr,r,z,brutTop));
-        moves.push({r:1,x:mx,y:my,z:secu});
-        if(ms<secu-1e-9)moves.push({r:0,x:mx,y:my,z:ms});
-        faoHelixEntry(mx,my,ms,z,mhr,D).slice(1).forEach(function(m){moves.push(m);});
-        hx=mx; hy=my;
-      }else return; // inusinable à cet outil : on ne laisse aucun move partiel
-    }else return;
-    const fromHole=(hx!==null);
-    // Goulet : tout trochoïde G2/G3, une ligne après l'autre, sans retrait.
+    if(wantHelix){
+      moves.push({r:1,x:ecx,y:E.y,z:secu});
+      if(hStart<secu-1e-9)moves.push({r:0,x:ecx,y:E.y,z:hStart});
+      faoHelixEntry(ecx,E.y,hStart,z,hr,D).slice(1).forEach(function(m){moves.push(m);});
+    }else{
+      const rll=Math.min(elen,2*D);
+      moves.push({r:1,x:E.iv.a,y:E.y,z:secu});
+      moves.push({r:0,x:E.iv.a+rll,y:E.y,z:z});
+    }
+    // Goulet : tout trochoïde, une ligne après l'autre, sans retrait.
     let maxLen=0;
     rl.forEach(function(L){ maxLen=Math.max(maxLen,L.ivs[0].b-L.ivs[0].a); });
     if(maxLen<2.5*D&&rl.length>=2){
@@ -13900,15 +13743,14 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       return;
     }
     if(rl.length<2){
-      // Balayage complet du segment (l'entrée n'en a ouvert qu'un bout).
       const iv=rl[0].ivs[0];
-      moves.push({r:0,x:iv.a,y:rl[0].y,z:z});
       moves.push({r:0,x:iv.b,y:rl[0].y,z:z});
       const last=moves[moves.length-1];
       moves.push({r:1,x:last.x,y:last.y,z:secu});
       return;
     }
-    // Pelage : boucles imbriquées au pas aeA, liaisons G1 continues.
+    // Pelage : boucles imbriquées au pas aeA, émises de l'EXTÉRIEUR vers
+    // l'intérieur (l'outil ne s'enterre jamais), liaisons G1 continues.
     const step=aeA, loops=[];
     for(let k=0;;k++){
       let mL=0;
@@ -13922,25 +13764,14 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       if(!ptsL.length)break;
       loops.push(ptsL.concat(ptsR.reverse()));
     }
-    if(!loops.length){
-      const last=moves[moves.length-1];
-      moves.push({r:1,x:last.x,y:last.y,z:secu});
-      return;
+    // Centre d'abord : l'hélice a ouvert le milieu, on pelaie de l'INTÉRIEUR
+    // vers l'extérieur — chaque boucle est adjacente au vide déjà ouvert
+    // (engagement constant d'un seul côté). L'inverse enterrerait l'outil.
+    for(let li=loops.length-1;li>=0;li--){
+      loops[li].forEach(function(p){ moves.push({r:0,x:Math.round(p.x*1000)/1000,y:Math.round(p.y*1000)/1000,z:z}); });
     }
-    // Ordre selon l'ouverture : trou central (hélice) -> intérieur d'abord ;
-    // rampe au bord -> extérieur d'abord. Chaque boucle reste adjacente au
-    // vide, engagement constant d'un seul côté.
-    if(fromHole){
-      for(let li=loops.length-1;li>=0;li--){
-        loops[li].forEach(function(p){ moves.push({r:0,x:Math.round(p.x*1000)/1000,y:Math.round(p.y*1000)/1000,z:z}); });
-      }
-    }else{
-      for(let li=0;li<loops.length;li++){
-        loops[li].forEach(function(p){ moves.push({r:0,x:Math.round(p.x*1000)/1000,y:Math.round(p.y*1000)/1000,z:z}); });
-      }
-    }
-    const last2=moves[moves.length-1];
-    moves.push({r:1,x:last2.x,y:last2.y,z:secu});
+    const last=moves[moves.length-1];
+    moves.push({r:1,x:last.x,y:last.y,z:secu});
   });
 }
 function faoRoughLevel(mesh,B,z,D,r,secu,zFrom,ae,strategy,entryMode,brutTop,moves){

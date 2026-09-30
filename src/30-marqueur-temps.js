@@ -46,6 +46,8 @@ function addFeature(f){ // insertion au niveau du marqueur si actif (nouveautés
   // Point d'insertion UNIQUE de toute création de fonction (extrusion, révolution,
   // congé/chanfrein exact, répétition, et les fonctions 3D à venir) : c'est donc
   // ici que se prend l'instantané d'annulation. Une seule étape par création.
+  // La fonction naît dans le corps ACTIF (sélectionné dans l'arbre) — jamais orpheline.
+  if(f&&!f.body)try{f.body=ensureActiveBody();}catch(e){}
   docPushUndo('création de « '+(f.name||f.type)+' »');
   const i=tlIdx();
   if(i<0)doc.features.push(f);else doc.features.splice(i,0,f);
@@ -92,6 +94,7 @@ function rebuild(pass){
 }
 function rebuildInner(projPass){
   projPass=projPass||0;
+  try{ensureBodies();}catch(e){} // corps conteneurs : migration des anciens documents
   (doc.sketches||[]).forEach(migrateSketch); // compat anciens brouillons + verrouille le modèle points
   // « Vers un objet » : résolution de la distance (antériorité) AVANT les hôtes de faces.
   (doc.features||[]).forEach(f=>{if(f.type==='extrude'&&f.upto){try{resolveExtrudeUpto(f);}catch(e){}}});

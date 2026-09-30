@@ -15,8 +15,10 @@ function coqueCleanRef(r){
   // rien. Un `dim` manquant fait lever occFindFace au lieu de dégrader, et une exception
   // ici faisait avorter toute l'entrée en mode (état à moitié initialisé, aucun retour
   // visuel) — même cause, même remède que la dépouille (86).
-  return ((r&&Array.isArray(r.pos)&&r.pos.length>=3&&Array.isArray(r.n)&&r.n.length>=3&&Array.isArray(r.dim)&&r.dim.length>=3)
-    ?{pos:r.pos.slice(),n:r.n.slice(),dim:r.dim.slice(),_ord:-1}:null);
+  if(!(r&&Array.isArray(r.pos)&&r.pos.length>=3&&Array.isArray(r.n)&&r.n.length>=3&&Array.isArray(r.dim)&&r.dim.length>=3))return null;
+  const o={pos:r.pos.slice(),n:r.n.slice(),dim:r.dim.slice(),_ord:-1};
+  if(typeof r._bid==='string')o._bid=r._bid;
+  return o;
 }
 
 // Le bouton est créé ICI, dans les sources : la coque HTML est générée, jamais
@@ -45,28 +47,33 @@ function coqueClearHl(){
 function coquePaint(){
   coqueClearHl();
   if(!coqueMode||!(coqueMode.faces||[]).length)return;
-  const b=bodies.find(x=>x.id==='occ_result');
-  const src=b&&b.mesh?b.mesh.geometry:null;
-  const groups=(src&&src.userData.occGroups)||[];
-  if(!groups.length)return;
-  const colOf={};
-  (coqueMode.faces||[]).forEach(r=>{if(r._ord!=null)colOf[r._ord]=0xff453a;});
-  const kept=Object.keys(colOf).map(Number).filter(o=>groups.some(g=>g.f===o));
-  if(!kept.length)return;
-  const g=new THREE.BufferGeometry();
-  const pos=[],col=[],a=src.attributes.position.array,c=new THREE.Color();
-  kept.forEach(o=>{
-    c.setHex(colOf[o]);
-    groups.forEach(gr=>{
-      if(gr.f!==o)return;
-      for(let t=gr.start;t<gr.start+gr.count;t++){
-        const i3=t*3;
-        pos.push(a[i3],a[i3+1],a[i3+2]);
-        col.push(c.r,c.g,c.b);
-      }
+  // Multi-corps : la surbrillance se peint sur chaque solide visible (ordinaux par
+  // solide — une face ne se peint que sur son corps, `_bid`, ou partout si ancien
+  // document sans `_bid`).
+  const targets=bodies.filter(x=>x.kind==='body'&&x.visible!==false&&x.mesh&&x.mesh.visible!==false&&x.mesh.geometry);
+  if(!targets.length)return;
+  const pos=[],col=[],c=new THREE.Color();
+  c.setHex(0xff453a);
+  targets.forEach(b=>{
+    const groups=(b.mesh.geometry.userData.occGroups)||[];
+    if(!groups.length)return;
+    const want=(coqueMode.faces||[]).filter(r=>r._ord!=null&&(r._bid==null||r._bid===b.id)).map(r=>r._ord);
+    const kept=want.filter(o=>groups.some(g=>g.f===o));
+    if(!kept.length)return;
+    const a=b.mesh.geometry.attributes.position.array;
+    kept.forEach(o=>{
+      groups.forEach(gr=>{
+        if(gr.f!==o)return;
+        for(let t=gr.start;t<gr.start+gr.count;t++){
+          const i3=t*3;
+          pos.push(a[i3],a[i3+1],a[i3+2]);
+          col.push(c.r,c.g,c.b);
+        }
+      });
     });
   });
   if(!pos.length)return;
+  const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
   g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
   const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.55,depthTest:false,side:THREE.DoubleSide}));
@@ -75,33 +82,37 @@ function coquePaint(){
   scene.add(coqueGroup);
 }
 function coqueFaceUnder(e){
-  // Face exacte sous le curseur (même chemin que dépouillage/déplacement).
+  // Face exacte sous le curseur (même chemin que dépouillage/déplacement —
+  // résolu sur le SOLIDE DU CORPS cliqué, multi-corps).
   if(!occHas()||!occLive||!occLive.shape)return null;
   try{
     const h=pick(e);
     if(!h||!h.object||!h.object.geometry)return null;
-    if(h.object.userData.bid!=='occ_result')return null;
-    if(h.faceIndex===undefined||h.faceIndex===null)return null;
-    const groups=h.object.geometry.userData.occGroups||[];
-    const g=groups.find(g=>h.faceIndex>=g.start&&h.faceIndex<g.start+g.count);
-    if(!g)return null;
-    const f=occFaceAt(occLive.shape,g.f);
-    if(!f)return null;
-    const ref=occFaceRef(f);
+    const hit=occFaceOfHit(h.object,h.faceIndex);
+    if(!hit||!hit.face)return null;
+    const ref=occFaceRef(hit.face);
+    try{hit.face.delete();}catch(e){}
     if(!ref)return null;
-    // `_ord` = index BRep de la session (surbrillance seule), jamais persisté.
-    return{ref:ref,ord:g.f};
+    ref._bid=hit.bd.id;
+    // `_ord`/`_bid` = session (surbrillance seule), jamais persistés tels quels.
+    return{ref:ref,ord:hit.ord};
   }catch(e){return null;}
 }
 function coqueOrdOf(ref){
-  const b=bodies.find(x=>x.id==='occ_result');
-  const groups=(b&&b.mesh&&b.mesh.geometry.userData.occGroups)||[];
+  // Multi-corps : on cherche sur TOUS les solides affichés, on mémorise le corps.
   const k=coqueKey(ref);
-  for(const g of groups){
-    const f=occFaceAt(occLive.shape,g.f);
-    if(!f)continue;
-    const cur=occFaceRef(f);
-    if(cur&&coqueKey(cur)===k)return g.f;
+  for(const b of bodies){
+    if(b.kind!=='body'||!b.mesh||!b.shape)continue;
+    const groups=(b.mesh.geometry.userData.occGroups)||[];
+    for(const g of groups){
+      let f=null;
+      try{f=occFaceAt(b.shape,g.f);}catch(e){continue;}
+      if(!f)continue;
+      let cur=null;
+      try{cur=occFaceRef(f);}catch(e){}
+      try{f.delete();}catch(e){}
+      if(cur&&coqueKey(cur)===k){ref._bid=b.id;return g.f;}
+    }
   }
   return -1;
 }
@@ -310,7 +321,7 @@ function coqueApply(){
   const t=+coqueMode.thick||0;
   if(!(t>0)){faceEl.textContent='Coque : épaisseur hors bornes (> 0).';return;}
   // On retire `_ord` (index BRep de la session) : surbrillance seule, rien pour le rejeu.
-  const clean=r=>({pos:r.pos.slice(),dim:r.dim.slice(),n:r.n.slice()});
+  const clean=r=>{const o={pos:r.pos.slice(),dim:r.dim.slice(),n:r.n.slice()};if(typeof r._bid==='string')o._bid=r._bid;return o;};
   const faces=coqueMode.faces.map(clean);
   if(coqueMode.editing){
     // Édition EN PLACE (une seule fonction, comme congé/dépouillage).

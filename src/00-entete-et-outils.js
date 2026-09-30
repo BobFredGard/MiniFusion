@@ -6,7 +6,7 @@
    (OCCT ne se charge pas en node) — ne le modifier qu'après validation navigateur ET accord explicite.
 
    ── HISTORIQUE ─────────────────────────────────────────────────────────────
-    Journal des versions (cause, correctif, test) : CHANGELOG.md — 86 entrées,
+    Journal des versions (cause, correctif, test) : CHANGELOG.md — 103 entrées,
     de 2026-09-28b à 2026-09-31e. Elles étaient embarquées ici (50 Ko) et sont
    sorties du livrable le 2026-09-30j. Ce qui précède est la description du projet
    et ses garde-fous, reprise telle quelle.
@@ -23,7 +23,7 @@
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-09-31s';
+const APP_VER='2026-09-32l';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 let extPickFace=null; // mode « vers un objet » : clic sur une face pour le sens (Échap = annuler)
@@ -34,7 +34,7 @@ const statsEl=$('stats'), faceEl=$('faceInfo');
 const log=s=>{statsEl.textContent=s;};
 let scene,camera,renderer,controls,rayc=new THREE.Raycaster();
 let bodies=[]; // {id,name,mesh,color,visible,transparent,kind,ref}
-let doc={name:'Sans titre',sketches:[],features:[],bodyVis:{}}; // features: {id,type:'extrude'|'import',name,sketchId?,distance?,visible}
+let doc={name:'Sans titre',sketches:[],features:[],bodyVis:{},bodies:[],bodySeq:1,activeBody:null}; // features: {id,type:'extrude'|'import',name,sketchId?,distance?,visible} ; bodies: identités multi-corps persistées (Corps 1, Corps 2… — centroïdes, jamais de handles)
 let uidN=0; const uid=p=>p+'_'+(++uidN)+'_'+Date.now().toString(36);
 function entName(kind){
   // Nom persistant unique d'une référence (Arête 1, Face 2, Projetée 3) — compteur

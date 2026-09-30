@@ -16,7 +16,11 @@ const SUITES = [
   "test_undo_document",
   "test_undo_aller_retour",
   "test_revolve",
-  "test_skctxmenu"
+  "test_skctxmenu",
+  "test_fao",
+  "test_fao3d",
+  "test_corps",
+  "test_corps_iso"
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {

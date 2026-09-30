@@ -44,21 +44,18 @@ function exitMoveFaceMode(silent){
   try{clearHover();}catch(e){}
   if(!silent)try{faceEl.textContent='Déplacement de face : annulé.';}catch(e){}
 }
-// Face exacte sous le curseur (le groupe de triangles donne l'index BRep de la face).
+// Face exacte sous le curseur (le groupe de triangles donne l'index BRep de la face,
+// résolu sur le SOLIDE DU CORPS cliqué — multi-corps, voir occFaceOfHit dans 20-noyau).
 function mvFaceUnder(e){
   if(!occHas()||!occLive||!occLive.shape)return null;
   try{
     const h=pick(e);
     if(!h||!h.object||!h.object.geometry)return null;
-    if(h.object.userData.bid!=='occ_result')return null;
-    if(h.faceIndex===undefined||h.faceIndex===null)return null;
-    const groups=h.object.geometry.userData.occGroups||[];
-    const g=groups.find(g=>h.faceIndex>=g.start&&h.faceIndex<g.start+g.count);
-    if(!g)return null;
-    const f=occFaceAt(occLive.shape,g.f);
-    if(!f)return null;
-    const ref=occFaceRef(f);
-    return ref?{ref:ref,ord:g.f}:null;
+    const hit=occFaceOfHit(h.object,h.faceIndex);
+    if(!hit||!hit.face)return null;
+    const ref=occFaceRef(hit.face);
+    try{hit.face.delete();}catch(e){}
+    return ref?{ref:ref,ord:hit.ord}:null;
   }catch(e){return null;}
 }
 function mvFaceHover(e){

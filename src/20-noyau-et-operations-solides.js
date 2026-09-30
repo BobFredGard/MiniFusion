@@ -1176,7 +1176,7 @@ function buildEdgeOverlay(){
   const old=scene.getObjectByName('edgeOverlay');if(old)scene.remove(old);
   if(edgeMode!=='on')return;
   const grp=new THREE.Group();grp.name='edgeOverlay';
-  const occBody=bodies.find(b=>b.id==='occ_result'&&b.visible);
+  const occBody=bodies.find(b=>b.kind==='body'&&b.visible!==false&&b.mesh&&b.mesh.visible!==false);
   if(occBody&&occLive&&occLive.shape){
     try{ // voie exacte : classement C0/G1 réel
       occSharpEdges(occLive.shape).forEach(e=>{
@@ -1187,7 +1187,7 @@ function buildEdgeOverlay(){
     }catch(e){}
   }else{
     bodies.forEach(b=>{ // repli maillage : vives seules (> 30°), noires
-      if(!b.visible||b.ghost||!b.mesh||b.id==='occ_result')return;
+      if(!b.visible||b.ghost||!b.mesh)return;
       try{
         b.mesh.updateMatrixWorld(true);
         const eg=new THREE.EdgesGeometry(b.mesh.geometry,30);
@@ -1624,6 +1624,10 @@ function occCleanup(FR,keepShape){
   occDispose(FR.bin);
   (FR.itemShapes||[]).forEach(s=>{if(s!==keepShape){try{s.delete();}catch(e){}}});
   if(FR.shape&&FR.shape!==keepShape){try{FR.shape.delete();}catch(e){}}
+  // Rejeux jetables (projections, export : keepShape==null) : les solides par corps
+  // partent aussi, sinon chaque passe upto fuit ses solides. Au rebuild (keep = occLive),
+  // ce sont eux qui sont AFFICHÉS : on n'y touche jamais (b.shape les référence).
+  if(!keepShape)(FR.perBody||[]).forEach(p=>{try{if(p.shape&&p.shape!==FR.shape)p.shape.delete();}catch(e){}});
 }
 /* ---------- cache de rejeu : solide accumulé en « points de contrôle » ----------
    Mesuré sur le noyau exact : une fusion costs 67-170 ms, une COPIE du solide
@@ -1680,7 +1684,7 @@ function featSig(f){
   // et rims 2D rattachés, arêtes et rayon des chanfreins/congés exacts, répétitions).
   // flip (sens inversé) et draft (dépouille d'extrusion) modifient le prisme : sans eux
   // dans la signature, basculer le sens ou l'angle réutiliserait le solide périmé.
-  let s=f.type+'|'+(f.op||'add')+'|'+(+f.distance||0)+'|'+(f.mid?1:0)+'|'+(f.visible!==false?1:0)+'|'+(f.through?1:0)+'|'+(f.upto?JSON.stringify(f.upto):'')+'|'+(f.flip?1:0)+'|'+(+f.draft||0);
+  let s=f.type+'|'+(f.op||'add')+'|'+(+f.distance||0)+'|'+(f.mid?1:0)+'|'+(f.visible!==false?1:0)+'|'+(f.through?1:0)+'|'+(f.upto?JSON.stringify(f.upto):'')+'|'+(f.flip?1:0)+'|'+(+f.draft||0)+'|b'+(f.body||'');
   if(f.type==='extrude'||f.type==='revolve'){
     s+='|'+f.sketchId;
     const sk=doc.sketches.find(x=>x.id===f.sketchId);s+='|'+(sk?skSig(sk):'?');
@@ -1739,20 +1743,18 @@ function occCkPut(key,shape){
   occCk.push({key,shape});
   while(occCk.length>occCkMax()){const old=occCk.shift();try{old.shape.delete();}catch(e){}}
 }
-function occFinalShape(upto){
-  // Rejeu STRICT dans l'ordre timeline (antériorité) : extrudes add/cut ET congés exacts
-  // entrelacés. Un congé placé avant une découpe est traversé par elle (comme Fusion),
-  // un congé placé après arrondit aussi les arêtes nées de la découpe.
-  // upto = indice exclusif (rejeu partiel pour références d'esquisse) ; null = tout.
-  // Retourne {shape, ghostShapes, msgs, bin, itemShapes, items} — l'appelant nettoie sauf shape conservée.
+function occReplayBody(bid,list){
+  // Rejeu ISOLÉ d'un corps : mêmes règles que l'ancien rejeu global (ordre timeline,
+  // Fuse/Cut, congés/déplacements/dépouilles/coques entrelacés, cache par points de
+  // contrôle), mais l'accumulateur ne voit QUE les fonctions du corps — une découpe du
+  // corps A ne retire jamais de matière au corps B (Fusion). Les clés de cache sont
+  // préfixées du corps : deux corps aux signatures identiques ne se partagent rien.
   const bin=[],itemShapes=[];let result=null;const msgs=[],ghostShapes=[];
-  let ckKey=(occSkipFeat||'')+'|'; // signature cumulée du préfixe — SANS marqueur upto :
+  let ckKey=bid+'|'+(occSkipFeat||'')+'|'; // signature cumulée du préfixe — SANS marqueur upto :
   // ALL et UPn parcourent les MÊMES préfixes cumulatifs ; un marqueur dans la clé privait
   // les projections (upto<n) de tous les points de contrôle posés par le rejeu complet.
   const items=[]; // extrudes réussies, dans l'ordre (affichage nA/nC)
-  const feats=doc.features.filter(f=>f.visible!==false);
-  (upto==null?feats:feats.slice(0,upto)).forEach(f=>{
-    if(occSkipFeat&&f.id===occSkipFeat)return; // édition de congé : rejeu SANS cette fonction
+  list.forEach(f=>{
     ckKey+=featSig(f)+';';
     if(f.type==='xfillet'){
       if(!result){msgs.push(`${f.name} : aucun volume à congédier — ignoré`);return;}
@@ -1872,6 +1874,31 @@ function occFinalShape(upto){
   });
   return{shape:result,ghostShapes,msgs,bin,itemShapes,items};
 }
+function occFinalShape(upto){
+  // Partition par corps (ordre de première apparition dans la timeline), rejeu isolé
+  // par corps, puis composé GRATUIT pour occLive (picking, ancrages, overlay, aperçu
+  // et export continuent de voir l'ensemble, inchangés).
+  // upto = indice exclusif (rejeu partiel pour références d'esquisse) ; null = tout.
+  // Retourne {shape, perBody:[{bodyId,shape}], ghostShapes, msgs, bin, itemShapes, items}.
+  ensureBodies();
+  const feats=doc.features.filter(f=>f.visible!==false);
+  const list=(upto==null?feats:feats.slice(0,upto)).filter(f=>!(occSkipFeat&&f.id===occSkipFeat));
+  const order=[],byBody={};
+  list.forEach(f=>{
+    const b=(f.body&&doc.bodies.some(e=>e.id===f.body))?f.body:doc.bodies[0].id;
+    if(!byBody[b]){byBody[b]=[];order.push(b);}
+    byBody[b].push(f);
+  });
+  const perBody=[],bin=[],itemShapes=[],ghostShapes=[],msgs=[],items=[];
+  order.forEach(bid=>{
+    const r=occReplayBody(bid,byBody[bid]);
+    if(r.shape)perBody.push({bodyId:bid,shape:r.shape});
+    bin.push(...r.bin);itemShapes.push(...r.itemShapes);
+    ghostShapes.push(...r.ghostShapes);msgs.push(...r.msgs);items.push(...r.items);
+  });
+  const shape=occCompoundOf(perBody.map(p=>p.shape));
+  return{shape,perBody,ghostShapes,msgs,bin,itemShapes,items};
+}
 function legacyPrismGeos(f,warnArr){
   // Prisme maillage (monde) d'une extrusion — même construction que la voie repli. Jette si profil vide.
   const sk=doc.sketches.find(s=>s.id===f.sketchId);if(!sk)throw new Error('esquisse introuvable');
@@ -1905,6 +1932,100 @@ function legacyPrismGeos(f,warnArr){
   });
   return geos;
 }
+function occSolidBox(sh){
+  // Boîte + diagonale d'un solide (pour les tolérances relatives), ou null.
+  try{
+    const box=new occt.Bnd_Box_1();occt.BRepBndLib.Add(sh,box,true);
+    const a=box.CornerMin(),b=box.CornerMax();
+    const r={c:[(a.X()+b.X())/2,(a.Y()+b.Y())/2,(a.Z()+b.Z())/2],
+      dg:Math.hypot(b.X()-a.X(),b.Y()-a.Y(),b.Z()-a.Z())};
+    try{box.delete();}catch(e){}
+    return r;
+  }catch(e){return null;}
+}
+function occBodyOfMesh(mesh){
+  // Corps exact affiché par son mesh (multi-corps : chaque mesh a ses propres
+  // ordinaux de faces — on résout toujours sur le SOLIDE DU CORPS, jamais sur
+  // le composé occLive dont les ordinaux globaux diffèrent dès qu'il y a 2 corps).
+  if(!mesh)return null;
+  const bd=bodies.find(b=>b.mesh===mesh);
+  return (bd&&bd.kind==='body'&&bd.shape)?bd:null;
+}
+function occFaceOfHit(mesh,fi){
+  // Face BRep d'un triangle cliqué : {face, ord, bd}. La face retournée est un
+  // handle neuf — à l'appelant de la supprimer après occFaceRef (comme occFaceAt).
+  const bd=occBodyOfMesh(mesh);
+  if(!bd||fi===undefined||fi===null)return null;
+  try{
+    const groups=mesh.geometry.userData.occGroups||[];
+    const g=groups.find(g=>fi>=g.start&&fi<g.start+g.count);
+    if(!g)return null;
+    const face=occFaceAt(bd.shape,g.f);
+    if(!face)return null;
+    return {face:face,ord:g.f,bd:bd};
+  }catch(e){return null;}
+}
+function bodyEntry(id){
+  // Fiche persistée d'un corps (nom/couleur/centroïde) : la créer si besoin.
+  if(!doc.bodies)doc.bodies=[];
+  let e=doc.bodies.find(x=>x.id===id);
+  if(!e){e={id:id,name:id,c:null};doc.bodies.push(e);}
+  return e;
+}
+function ensureBodies(){
+  // Normalise les corps CONTENEURS (vrais conteneurs façon Fusion, pas des étiquettes
+  // dérivées) : au moins un corps, compteur et actif valides, chaque fonction rangée
+  // dans un corps existant. Idempotent — appelé au rebuild et au chargement, donc les
+  // anciens documents (sans corps ni f.body) migrent tout seuls vers « Corps 1 ».
+  if(!doc.bodies)doc.bodies=[];
+  doc.bodies=doc.bodies.filter(e=>e&&typeof e.id==='string');
+  if(!(doc.bodySeq>0)){
+    let mx=0;
+    doc.bodies.forEach(e=>{const m=/^b(\d+)$/.exec(e.id||'');if(m)mx=Math.max(mx,+m[1]);});
+    (doc.features||[]).forEach(f=>{const m=/^b(\d+)$/.exec(f.body||'');if(m)mx=Math.max(mx,+m[1]);});
+    doc.bodySeq=mx+1;
+  }
+  if(!doc.bodies.length){
+    const n=doc.bodySeq++;
+    doc.bodies.push({id:'b'+n,name:'Corps '+n,c:null});
+  }
+  const ids=new Set(doc.bodies.map(e=>e.id));
+  (doc.features||[]).forEach(f=>{if(!f||typeof f!=='object')return;if(!ids.has(f.body))f.body=doc.bodies[0].id;});
+  if(!ids.has(doc.activeBody))doc.activeBody=doc.bodies[0].id;
+  return doc.bodies;
+}
+function ensureActiveBody(){
+  // Corps de destination des NOUVELLES fonctions : l'actif s'il existe, sinon le
+  // premier (jamais de fonction orpheline, même après un undo exotique).
+  try{
+    ensureBodies();
+    if(doc.bodies.some(e=>e.id===doc.activeBody))return doc.activeBody;
+    doc.activeBody=doc.bodies[0].id;
+    return doc.activeBody;
+  }catch(e){return 'b1';}
+}
+function occCompoundOf(shapes){
+  // Composé SANS booléen (gratuit : ~0 ms contre ~100 ms par fuse) pour occLive :
+  // picking d'arêtes, ancrages, overlay et aperçu continuent de voir l'ensemble.
+  // Les handles partagent les TShapes (compteur OCCT) : suppression habituelle.
+  const list=(shapes||[]).filter(Boolean);
+  if(!list.length)return null;
+  if(list.length===1)return list[0];
+  try{
+    const comp=new occt.TopoDS_Compound();
+    const bd=new occt.TopoDS_Builder();
+    bd.MakeCompound(comp);
+    list.forEach(s=>{try{bd.Add(comp,s);}catch(e){}});
+    try{bd.delete();}catch(e){}
+    return comp;
+  }catch(e){}
+  // Repli : fusions en chaîne (une union de disjoints rend le même composé).
+  try{
+    let acc=occShapeCopy(list[0]);
+    for(let i=1;i<list.length;i++){const u=occFuse(acc,list[i]);try{acc.delete();}catch(e){}acc=u;}
+    return acc;
+  }catch(e){return list[0];}
+}
 function occRebuild(){
   // Retourne true si la voie exacte a abouti (même partiellement), false pour repli maillage.
   occDropLive();
@@ -1912,20 +2033,30 @@ function occRebuild(){
   try{
     FR=occFinalShape(tlReplayCount());
     const D=occXDefl();
-    if(FR.shape){
-      const g=occTessellate(FR.shape,D.lin,D.ang);
-      const tris=(g.attributes.position.count/3)|0;
-      if(tris>0){
-        const _fa=FR.items.filter(j=>(j.f.op||'add')==='add');
-        const _ff=_fa.map(j=>j.f).find(f=>f.color>0)||_fa.map(j=>j.f)[0];
-        const col=partTint()||(_ff?featColor(_ff,autoCol(0)):autoCol(0));
-        const mat=applyFeatOp(new THREE.MeshStandardMaterial({color:col,metalness:.35,roughness:.4,clippingPlanes:clipPlane?[clipPlane]:null}),_ff);
-        const mesh=new THREE.Mesh(g,mat);mesh.userData.bid='occ_result';scene.add(mesh);
-        const nA=FR.items.filter(j=>(j.f.op||'add')==='add').length,nC=FR.items.filter(j=>(j.f.op||'add')==='cut').length;
-        const nX=tlActiveList().filter(x=>x.type==='xfillet'&&x.visible!==false).reduce((a,x)=>a+((x.edges||[]).length),0);
-        bodies.push({id:'occ_result',name:`Solide exact OCCT (${nA}➕ ${nC}➖${nX?` ${nX}⤢`:''} · ${tris.toLocaleString('fr')} tris)`,mesh,color:col,visible:true,kind:'boolean',ref:null});
-        occLive={shape:FR.shape};FR.shape=null; // conservé pour le picking d'arêtes
-      }else faceEl.textContent+=(faceEl.textContent?'\n':'')+'Solide exact vide (tout a été découpé).';
+    // UN mesh PAR CORPS, rejoué isolément : l'id affiché EST l'id du corps (stable,
+    // persisté — plus aucun rapprochement par centroïdes). occLive garde le COMPOSÉ :
+    // congés, ancrages, picking d'arêtes, overlay et cache voient l'ensemble, inchangés.
+    const parts=(FR.perBody||[]).filter(p=>p&&p.shape);
+    if(parts.length){
+      const _fa=FR.items.filter(j=>(j.f.op||'add')==='add');
+      const _ff=_fa.map(j=>j.f).find(f=>f.color>0)||_fa.map(j=>j.f)[0];
+      parts.forEach((p,i)=>{
+        const e=bodyEntry(p.bodyId);
+        let g=null;
+        try{g=occTessellate(p.shape,D.lin,D.ang);}catch(err){FR.msgs.push(e.name+' : maillage impossible, ignoré');return;}
+        const tris=(g.attributes.position.count/3)|0;
+        if(!(tris>0)){try{g.dispose&&g.dispose();}catch(err){}return;}
+        try{const info=occSolidBox(p.shape);if(info)e.c=info.c;}catch(err){}
+        const col=e.color||(parts.length===1?(partTint()||(_ff?featColor(_ff,autoCol(0)):autoCol(0))):autoCol(i));
+        const mat=new THREE.MeshStandardMaterial({color:col,metalness:.35,roughness:.4,clippingPlanes:clipPlane?[clipPlane]:null});
+        if(parts.length===1)applyFeatOp(mat,_ff);
+        const mesh=new THREE.Mesh(g,mat);mesh.userData.bid=e.id;scene.add(mesh);
+        const vis=!doc.bodyVis||!Object.prototype.hasOwnProperty.call(doc.bodyVis,e.id)?true:!!doc.bodyVis[e.id];
+        mesh.visible=vis;
+        bodies.push({id:e.id,name:e.name+' · '+tris.toLocaleString('fr')+' tris',mesh,color:col,visible:vis,kind:'body',ref:null,shape:p.shape});
+      });
+      if(!bodies.some(b=>b.kind==='body'))faceEl.textContent+=(faceEl.textContent?'\n':'')+'Solide exact vide (tout a été découpé).';
+      if(FR.shape){occLive={shape:FR.shape};FR.shape=null;} // conservé pour le picking d'arêtes
     }
     FR.ghostShapes.forEach((gh,i)=>{
       try{

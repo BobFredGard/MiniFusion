@@ -7,6 +7,7 @@ function wirePick(){
     if(Math.hypot(e.clientX-dx,e.clientY-dy)>6)return;
     if(filMode){if(e.button===0&&!e.ctrlKey)filletToggle(e);return;}
     if(filModeX){if(e.button===0&&!e.ctrlKey)exactToggle(e);return;}
+    if(faoChainMode){if(e.button===0&&!e.ctrlKey)faoChainToggle(e);return;}
     if(mvMode){if(e.button===0&&!e.ctrlKey)mvFaceCommit(e);return;}
     if(draftMode){if(e.button===0&&!e.ctrlKey)draftToggle(e);return;}
     if(coqueMode){if(e.button===0&&!e.ctrlKey)coqueToggle(e);return;}
@@ -29,6 +30,12 @@ function wirePick(){
        renderer.domElement.style.cursor=(i===null||i===undefined)?'default':'pointer';
        return;
      }
+     if(faoChainMode){
+       const ci=faoChainPick(e);
+       if(ci!==faoChainHover){faoChainHover=ci;faoChainPaint();}
+       renderer.domElement.style.cursor=(ci===null||ci===undefined)?'default':'pointer';
+       return;
+     }
      if(!filMode)return;
      const ed=filletPick(e);
      // survol = simple indication visuelle (jaune)
@@ -39,7 +46,7 @@ function wirePick(){
      else if(!ed)renderer.domElement.style.cursor='default';
    });
   el.addEventListener('contextmenu',e=>{
-    if(filMode||filModeX){e.preventDefault();return;}
+    if(filMode||filModeX||faoChainMode){e.preventDefault();return;}
     if(e.ctrlKey){e.preventDefault();return;}
     if(Math.hypot(e.clientX-dx,e.clientY-dy)>6)return;
     e.preventDefault();hideCtx();
@@ -116,6 +123,7 @@ function filletTangentChain(sk, startCorner){
   window.addEventListener('keydown',e=>{if(e.key==='Escape'){
     if(extPickFace){extPickFace=null;try{renderer.domElement.style.cursor='default';}catch(e2){}faceEl.textContent='Vers un objet : annulé.';return;}
     if(filMode||filModeX){exitFilletMode();return;}
+    if(faoChainMode){faoChainExit(true);return;}
     if(mvMode){exitMoveFaceMode();return;}
     if(draftMode){exitDraftMode();return;}
     if(coqueMode){exitCoqueMode();return;}clearMeasure();clearHover();hideCtx();hideCtx3D();}});
@@ -147,7 +155,7 @@ window.addEventListener('keydown',e=>{
 window.addEventListener('keydown',e=>{
   if((e.key==='e'||e.key==='E')&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&!e.repeat){
     const t=e.target;if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT'||t.isContentEditable))return;
-    if(skEdit||filMode||filModeX||extPickFace)return;
+    if(skEdit||filMode||filModeX||extPickFace||faoChainMode)return;
     const ov=$('sketchOverlay');if(ov&&ov.classList.contains('open'))return;
     e.preventDefault();
     const b=$('btnExtrude');if(b&&!b.disabled)b.click();
@@ -233,12 +241,16 @@ function occFaceAt(shape,ord){
 }
 function occFaceGeom(mesh,fi){
   // Géométrie exacte d'une face cliquée (plan / cylindre) via le BRep. Null sinon.
-  if(!occHas()||!occLive||!occLive.shape||!mesh||mesh.userData.bid!=='occ_result'||fi===undefined)return null;
+  // Multi-corps : chaque mesh a ses propres ordinaux (occGroups par solide) — la face
+  // est donc résolue sur le SOLIDE DU CORPS cliqué, pas sur le composé occLive.
+  if(!occHas()||!occLive||!occLive.shape||!mesh||fi===undefined)return null;
+  const bd=bodies.find(b=>b.mesh===mesh);
+  if(!bd||bd.kind!=='body'||!bd.shape)return null;
   try{
     const groups=mesh.geometry.userData.occGroups||[];
     const g=groups.find(g=>fi>=g.start&&fi<g.start+g.count);
     if(!g)return null;
-    const f=occFaceAt(occLive.shape,g.f);
+    const f=occFaceAt(bd.shape,g.f);
     if(!f)return null;
     const ad=new occt.BRepAdaptor_Surface_2(f,true);
     const gt=ad.GetType();
@@ -412,7 +424,7 @@ function clearHover(){
 }
 function hoverMove(e){
   // Pré-sélection lumineuse au survol (comme le viewer), ~15 Hz max, jamais en orbite/clic.
-  if(filMode||filModeX||skEdit)return;
+  if(filMode||filModeX||skEdit||faoChainMode)return;
   if(e.buttons!==0)return;
   const now=performance.now();if(now-lastHoverT<65)return;lastHoverT=now;
   try{
@@ -491,14 +503,14 @@ document.querySelectorAll('#ctxMenu button').forEach(b=>b.onclick=()=>{
     const n=prompt('Nouveau nom :',curName(t));if(!n)return;
     if(t.kind==='sketch')doc.sketches.find(s=>s.id===t.id).name=n;
     if(t.kind==='feature')doc.features.find(f=>f.id===t.id).name=n;
-    if(t.kind==='body'){const bd=bodies.find(x=>x.id===t.id);if(bd)bd.name=n;}
+    if(t.kind==='body'){try{bodyEntry(t.id).name=n;dirty=true;}catch(e){}}
     markDirty();rebuild();renderProps();
   }
   if(b.dataset.act==='toggle'){
     if(t.kind==='plane'){setOriginVis(t.id,!originVis[t.id]);return;}
     if(t.kind==='sketch'){const s=doc.sketches.find(x=>x.id===t.id);s.visible=!(s.visible!==false);}
     if(t.kind==='feature'){const f=doc.features.find(x=>x.id===t.id);f.visible=!(f.visible!==false);}
-    if(t.kind==='body'){const bd=bodies.find(x=>x.id===t.id);if(bd){bd.visible=!bd.visible;bd.mesh.visible=bd.visible;}}
+    if(t.kind==='body'){try{bodyToggleVis(t.id);}catch(e){}return;}
     markDirty();rebuild();
   }
   if(b.dataset.act==='tl'){
@@ -514,6 +526,7 @@ document.querySelectorAll('#ctxMenu button').forEach(b=>b.onclick=()=>{
     if(t.kind==='feature'){const f=doc.features.find(x=>x.id===t.id);if(f&&tlLocked(f)){tlSetPtr(null);markDirty();rebuild();}if(f&&f.sketchId)openSketch(f.sketchId);}
   }
   if(b.dataset.act==='del'){
+    if(t.kind==='body'){delBody(t.id);return;} // confirme + cascade + rebuild lui-même
     if(!confirm('Supprimer ?'))return;
     if(t.kind==='sketch'){doc.sketches=doc.sketches.filter(s=>s.id!==t.id);doc.features=doc.features.filter(f=>f.sketchId!==t.id);}
     if(t.kind==='feature'){delFeature(doc.features.find(x=>x.id===t.id));}
@@ -544,11 +557,14 @@ $('ctxColor').addEventListener('change',()=>{
   const m=/^#?([0-9a-fA-F]{6})$/.exec($('ctxColor').value.trim());if(!m)return;
   const c=parseInt(m[1],16);
   if(ff&&colorable(ff)){ff.color=c;markDirty();hideCtx3D();rebuild();renderProps();refreshParts();}
+  else if(bd&&bd.kind==='body'&&!bd.ghost){try{bodyEntry(bd.id).color=c;}catch(e){}markDirty();hideCtx3D();rebuild();renderProps();refreshParts();}
   else{doc.tint=c;markDirty();hideCtx3D();rebuild();renderProps();refreshParts();}
 });
 $('ctxColorAuto').onclick=()=>{
-  const{ff}=ctxFeat();hideCtx3D();
-  if(ff&&colorable(ff))delete ff.color;else delete doc.tint;
+  const{bd,ff}=ctxFeat();hideCtx3D();
+  if(ff&&colorable(ff))delete ff.color;
+  else if(bd&&bd.kind==='body'&&!bd.ghost){try{delete bodyEntry(bd.id).color;}catch(e){}}
+  else delete doc.tint;
   markDirty();rebuild();renderProps();refreshParts();
 };
 $('ctxOp').addEventListener('input',()=>{
@@ -567,7 +583,7 @@ $('ctxOp').addEventListener('change',()=>{
   const o=$('ctxOp').value/100;
   if(ff&&colorable(ff)){ff.opacity=o>=1?undefined:o;markDirty();hideCtx3D();rebuild();renderProps();refreshParts();}
 });
-const curName=t=>{if(t.kind==='plane')return 'Plan '+t.id;if(t.kind==='sketch')return(doc.sketches.find(s=>s.id===t.id)||{}).name;if(t.kind==='feature')return(doc.features.find(f=>f.id===t.id)||{}).name;if(t.kind==='body')return(bodies.find(b=>b.id===t.id)||{}).name;return'';};
+const curName=t=>{if(t.kind==='plane')return 'Plan '+t.id;if(t.kind==='sketch')return(doc.sketches.find(s=>s.id===t.id)||{}).name;if(t.kind==='feature')return(doc.features.find(f=>f.id===t.id)||{}).name;if(t.kind==='body')return String((bodies.find(b=>b.id===t.id)||{}).name||'').replace(/ · .*$/,'');return'';};
 
 /* ---------- coupe ---------- */
 function applyClip(){
@@ -785,7 +801,7 @@ function meshesToOBJ(meshes){
 function serialise(pretty){
   // pretty=1 (défaut) pour l'export fichier lisible ; compact pour l'autosave local
   // (~40 % de volume en moins à sérialiser et à écrire à chaque sauvegarde).
-  return JSON.stringify({app:'MiniFusion',v:1,name:doc.name,tint:doc.tint||0,entNames:doc.entNames||null,originVis,view:collectView(),bodyVis:doc.bodyVis||{},sel:{kind:sel.kind,id:sel.id},sketches:doc.sketches.map(s=>{const c=Object.assign({},s);delete c._refs;return c;}),features:doc.features.map(({_mesh,_m,...r})=>r)},null,pretty===false?null:2);
+  return JSON.stringify({app:'MiniFusion',v:1,name:doc.name,tint:doc.tint||0,entNames:doc.entNames||null,originVis,view:collectView(),bodyVis:doc.bodyVis||{},bodies:(doc.bodies||[]).map(e=>({id:e.id,name:e.name,c:e.c,color:e.color,open:e.open!==false})),bodySeq:doc.bodySeq||0,activeBody:doc.activeBody||null,fold:{sk:!!(doc.fold&&doc.fold.sk),origin:!!(doc.fold&&doc.fold.origin)},fao:doc.fao||null,sel:{kind:sel.kind,id:sel.id},sketches:doc.sketches.map(s=>{const c=Object.assign({},s);delete c._refs;return c;}),features:doc.features.map(({_mesh,_m,...r})=>r)},null,pretty===false?null:2);
 }
 function docHash(){
   // Empreinte du paramétrique rejouable (imports éphémères exclus : non persistés).
@@ -892,7 +908,16 @@ function autosaveFlush(){ // fermeture d'onglet : plus aucune perte possible
 addEventListener('beforeunload',()=>{autosaveFlush();});
 addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')autosaveFlush();});
 async function deserialise(json,opts){
-  const o=JSON.parse(json);doc={name:o.name||'Sans titre',tint:o.tint||0,entNames:o.entNames||null,sketches:o.sketches||[],features:o.features||[],bodyVis:o.bodyVis||{}};
+  const o=JSON.parse(json);doc={name:o.name||'Sans titre',tint:o.tint||0,entNames:o.entNames||null,sketches:o.sketches||[],features:o.features||[],bodyVis:o.bodyVis||{},bodies:Array.isArray(o.bodies)?o.bodies.filter(e=>e&&typeof e.id==='string').map(e=>({id:e.id,name:String(e.name||e.id),c:Array.isArray(e.c)&&e.c.length===3?e.c.slice():null,color:isFinite(+e.color)?+e.color:undefined,open:e.open!==false})):[],
+    bodySeq:o.bodySeq>0?Math.floor(o.bodySeq):1,activeBody:(typeof o.activeBody==='string')?o.activeBody:null,fold:(o.fold&&typeof o.fold==='object')?{sk:!!o.fold.sk,origin:!!o.fold.origin}:{},fao:o.fao||null};
+  // Les numéros de corps ne sont jamais réemployés : le compteur repart au-delà
+  // du plus grand Corps N déjà connu (anciens fichiers sans bodySeq : on le déduit).
+  try{
+    let mx=0;
+    (doc.bodies||[]).forEach(e=>{const m=/^b(\d+)$/.exec(e.id||'');if(m)mx=Math.max(mx,+m[1]);});
+    if(!(doc.bodySeq>mx))doc.bodySeq=mx+1;
+    if(doc.activeBody&&!doc.bodies.some(e=>e.id===doc.activeBody))doc.activeBody=null;
+  }catch(e){}
   try{
     (doc.sketches||[]).forEach(migrateSketch);
     try{resolveAllSketchHosts();}catch(e){}
@@ -904,6 +929,7 @@ async function deserialise(json,opts){
     if(o.sel.kind==='plane'&&PLANES[o.sel.id])sel={kind:'plane',id:o.sel.id};
     else if(o.sel.kind==='sketch'&&doc.sketches.some(s=>s.id===o.sel.id))sel={kind:'sketch',id:o.sel.id};
     else if(o.sel.kind==='feature'&&doc.features.some(f=>f.id===o.sel.id))sel={kind:'feature',id:o.sel.id};
+    else if(o.sel.kind==='body'&&(doc.bodies||[]).some(e=>e.id===o.sel.id))sel={kind:'body',id:o.sel.id};
   }
   // les imports STEP/STL ne sont pas persistés en géométrie dans ce MVP (seuls esquisses+extrusions rejouent) — on l'indique
   const nImp=doc.features.filter(f=>f.type==='import').length;

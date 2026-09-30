@@ -1,0 +1,271 @@
+// FAO : posages + parcours 2.5D + post-processeurs Siemens 840D / Fagor 8065.
+// Pur logique (aucun OCCT) : modèle posage, origine G54, générateurs,
+// post-pros, arbre FAO, fiches panneau droit, persistance — sans rejeu.
+const {loadApp}=require('./appvm.cjs');
+const vm=require('vm');
+(async()=>{
+  const {ctx}=loadApp();
+  const R=[
+    "const P=[];const p=s=>P.push(String(s));",
+    "const ATT=[];const att=(ok,msg)=>{if(!ok)ATT.push(msg);};",
+    // --- formats
+    "att(faoFmtXYZ(10)==='10.000','fmt XYZ entier : '+faoFmtXYZ(10));",
+    "att(faoFmtXYZ(12.34567)==='12.346','fmt XYZ arrondi : '+faoFmtXYZ(12.34567));",
+    "att(faoFmtF(1200)==='1200.0','fmt feed : '+faoFmtF(1200));",
+    "att(faoProgName('ma piece!')==='MA_PIECE_','prog name : '+faoProgName('ma piece!'));",
+    // --- niveaux
+    "const lv=faoLevels(25,0,10);",
+    "att(JSON.stringify(lv)===JSON.stringify([15,5,0]),'niveaux 25->0 ap10 : '+JSON.stringify(lv));",
+    // --- racine posages
+    "const rt0=faoRoot();",
+    "att(rt0.setups.length===1&&rt0.activeSetupId===rt0.setups[0].id,'root : 1 posage actif');",
+    "att(faoSetup().machine==='siemens630','setup defaut : machine 630');",
+    // --- job de test
+    "const job=faoDefaultJob();job.name='TEST';job.stock={x0:0,y0:0,z0:0,x1:100,y1:80,z1:25};",
+    "job.ops=[{type:'facing',z:25,ae:6},{type:'pocket',x0:10,y0:10,x1:90,y1:70,ztop:25,zbot:5,ap:10,ae:5},{type:'contour',x0:10,y0:10,x1:90,y1:70,ztop:5,zbot:0,ap:5},{type:'drill',pts:[[20,20],[80,60]],ztop:25,zbot:5}];",
+    // --- surfaçage
+    "const f=faoOpMoves(job.ops[0],job);",
+    "att(f.length>10,'facing : '+f.length+' moves');",
+    "att(f[0].r===1,'facing : 1er move rapide');",
+    "att(f.filter(m=>!m.r).every(m=>Math.abs(m.z-25)<1e-9),'facing : toute la coupe à Z=25');",
+    "att(f.every(m=>m.y>=-5.01&&m.y<=85.01),'facing : Y dans [y0-r,y1+r]');",
+    "att(f.filter(m=>m.r).every(m=>m.z>=25-1e-9),'facing : rapides au-dessus du brut (Z>=25)');",
+    // --- poche
+    "const pk=faoOpMoves(job.ops[1],job);",
+    "att(pk.length>20,'pocket : '+pk.length+' moves');",
+    "att(pk.every(m=>m.x>=9.99&&m.x<=90.01&&m.y>=9.99&&m.y<=70.01),'pocket : XY dans le rectangle');",
+    "att(pk.some(m=>!m.r&&Math.abs(m.z-5)<1e-9),'pocket : fond Z=5 atteint');",
+    // --- contour
+    "const ct=faoOpMoves(job.ops[2],job);",
+    "att(ct.length>0,'contour : moves');",
+    "att(ct.some(m=>!m.r&&Math.abs(m.x-95)<1e-9),'contour : compensation +r (x1+D/2=95)');",
+    "att(ct.filter(m=>!m.r).every(m=>Math.abs(m.z-0)<1e-9),'contour : 1 niveau Z=0 (5->0 ap5)');",
+    // --- perçage
+    "const dr=faoOpMoves(job.ops[3],job);",
+    "att(dr.length===8,'drill 2 trous : 8 moves, vu '+dr.length);",
+    "att(dr.filter(m=>!m.r).every(m=>Math.abs(m.z-5)<1e-9),'drill : fond Z=5');",
+    // --- estimation
+    "const e=faoEstimate(f,faoToolSF(job.tools[0]).f,5000);",
+    "att(e.cut>0&&e.tmin>0,'estimation : cut='+e.cut.toFixed(0)+' t='+e.tmin.toFixed(2));",
+    // --- post Siemens 630
+    "const s630=faoPost(job,'siemens630');",
+    "att(s630.ext==='mpf','siemens ext mpf');",
+    "att(s630.code.indexOf('; %_N_TEST_MPF')===0,'siemens : en-tete %_N_');",
+    "att(/G71/.test(s630.code)&&/G17 G90 G94 G54/.test(s630.code),'siemens : G71/G17/G90/G94/G54');",
+    "att(/\\nT1 D1\\n/.test(s630.code),'siemens : appel outil T1 D1');",
+    "att(/X-200/.test(s630.code),'siemens630 : parc X-200');",
+    "att(/M30/.test(s630.code),'siemens : M30');",
+    "att(!/^N[0-9]+ /m.test(s630.code),'siemens : pas de numeros de sequence');",
+    "att((s630.code.match(/\\nG1 /g)||[]).length>20,'siemens : G1 bien presents');",
+    // --- variante 1520 : seul le parc change
+    "const s1520=faoPost(job,'siemens1520');",
+    "att(/X-430/.test(s1520.code),'siemens1520 : parc X-430');",
+    "att(s1520.code.replace(/X-430/g,'X-200').replace(/1520/g,'630')===s630.code,'1520 vs 630 : seule difference = parc X (+ nom en-tete)');",
+    // --- post Fagor 8065
+    "const fg=faoPost(job,'fagor8065');",
+    "att(fg.ext==='nc','fagor ext nc');",
+    "att(/^\\(TEST/.test(fg.code),'fagor : commentaire (NOM ...)');",
+    "att(/M06/.test(fg.code)&&/M03/.test(fg.code),'fagor : M06/M03');",
+    "att(/^N10 /m.test(fg.code),'fagor : sequences des N10');",
+    "att(/M30/.test(fg.code),'fagor : M30');",
+    "att((fg.code.match(/ G1 /g)||[]).length===(s630.code.match(/\\nG1 /g)||[]).length,'fagor/siemens : meme nombre de G1');",
+    "att(fg.code.indexOf('SUPA')<0,'fagor : pas de SUPA (inconnu sur Fagor)');",
+    // --- bibliothèque : Vc/fz -> S/F
+    "const sf=faoToolSF({d:10,vc:250,fz:0.06,flutes:2});",
+    "att(sf.s===7958&&sf.f===955,'biblio Vc250/fz0.06 D10 : S'+sf.s+' F'+sf.f);",
+    // --- multi-outils : 2 groupes, 2 changements
+    "const jobB=faoDefaultJob();jobB.name='BI';jobB.stock={x0:0,y0:0,z0:0,x1:100,y1:80,z1:25};",
+    "jobB.ops=[{id:'a',on:true,toolId:'T1',type:'facing',z:25,ae:6},{id:'b',on:true,toolId:'T2',type:'facing',z:25,ae:4}];",
+    "att(faoJobMoves(jobB).length===2,'multi-outils : 2 groupes');",
+    "const sbi=faoPost(jobB,'siemens630').code;",
+    "att((sbi.match(/\\nM6\\n/g)||[]).length===2,'multi-outils : 2x M6');",
+    "att(/T2 D1/.test(sbi),'multi-outils : appel T2 D1');",
+    // --- laisse ébauche
+    "const cl=faoGenContour({x0:10,y0:10,x1:90,y1:70},5,0,{toolD:10,secu:30,laisse:0.5});",
+    "att(cl.some(m=>!m.r&&Math.abs(m.x-95.5)<1e-9),'contour laisse 0.5 : X max 95.5');",
+    "att(cl.filter(m=>!m.r).every(m=>m.z>=0.5-1e-9),'contour laisse 0.5 : fond Z>=0.5');",
+    "const pl=faoGenPocket({x0:10,y0:10,x1:90,y1:70},25,5,{toolD:10,secu:30,ap:10,ae:5,laisse:0.5});",
+    "att(pl.filter(m=>!m.r).every(m=>m.z>=5.5-1e-9),'poche laisse 0.5 : fond Z>=5.5');",
+    // --- op désactivée ignorée partout
+    "const jobC=JSON.parse(JSON.stringify(jobB));jobC.ops[0].on=false;",
+    "att(faoJobMoves(jobC).length===1,'off : 1 seul groupe actif');",
+    "doc.fao=jobC;",
+    "att(faoStatsText().indexOf('1 op')===0,'off : stats 1 op active ('+faoStatsText()+')');",
+    "att(faoPost(jobC,'siemens630').code.indexOf('T1 D1')<0,'off : T1 absent du G-code');",
+    // --- migration ancien job plat (outil unique, 31t)
+    "const keepFao=doc.fao;",
+    "doc.fao={name:'VIEUX',wcs:'G54',post:'siemens630',tool:{num:1,d:12,s:6000,f:900,plunge:200},coolant:'flood',secu:5,marge:5,stock:{x0:0,y0:0,z0:0,x1:50,y1:50,z1:10},ops:[{type:'facing',z:10,ae:6}]};",
+    "const rtM=faoRoot();",
+    "att(rtM.setups.length===1,'migration : 1 posage enveloppe');",
+    "const mig=rtM.setups[0];",
+    "att(mig.tools.length===1&&mig.tools[0].d===12,'migration : outil unique -> biblio D12');",
+    "att(mig.machine==='siemens630','migration : post -> machine');",
+    "att(mig.ops[0].toolId===mig.tools[0].id&&mig.ops[0].on===true&&!!mig.ops[0].id,'migration : op recoit id+toolId+on');",
+    "doc.fao=keepFao;",
+    // --- origine pièce : G-code relatif au point de bloc
+    "const jobO=faoDefaultSetup();jobO.stock={x0:10,y0:0,z0:0,x1:110,y1:80,z1:25};",
+    "jobO.ops=[{id:'o1',on:true,toolId:'T1',type:'facing',z:25,ae:6}];",
+    "const so=faoPost(jobO,'siemens630').code;",
+    "att(/X-7\\.000/.test(so),'origine : X relatif (10-7-10=-7)');",
+    "att(/Z0\\.000/.test(so),'origine : Z relatif (25-25=0)');",
+    "att(/Origine G54/.test(so),'origine : commentaire G54');",
+    "jobO.origin={preset:'top-C'};",
+    "att(/dessus centre/.test(faoPost(jobO,'siemens630').code),'origine : preset centre');",
+    // --- machine portée par le posage
+    "const jobM=faoDefaultSetup();jobM.machine='fagor8065';jobM.stock={x0:0,y0:0,z0:0,x1:50,y1:50,z1:10};",
+    "jobM.ops=[{id:'m1',on:true,toolId:'T1',type:'facing',z:10,ae:6}];",
+    "att(faoPost(jobM).ext==='nc','machine du posage : fagor -> nc sans forcer');",
+    // --- arbre FAO dédié
+    "doc.fao={setups:[job],activeSetupId:job.id};",
+    "faoRoot();",
+    "document.getElementById('faoTree').children.length=0;",
+    "faoRenderTree();",
+    "att(document.getElementById('faoTree').children.length===5,'arbre FAO : 1 posage + 4 ops');",
+    // --- fiches dans le panneau droit
+    "const sid=faoSetup().id, oid=faoSetup().ops[0].id;",
+    "sel={kind:'faoOp',id:oid,setup:sid};renderProps();",
+    "att(document.getElementById('props').children.length>2,'fiche op dans panneau droit');",
+    "sel={kind:'faoSetup',id:sid};renderProps();",
+    "att(document.getElementById('props').children.length>2,'fiche posage dans panneau droit');",
+    // --- fiche Ébauche 3D : sections lisibles, sans plantage (3 stratégies)
+    "const r3=faoOpDefaults('rough3d');",
+    "const c3=faoOpCardElement(faoSetup(),r3,0);",
+    "att(c3.children.length>8,'fiche ebauche 3D : sections, vu '+c3.children.length);",
+    "r3.strategy='adaptive';r3.ae=6;const c3b=faoOpCardElement(faoSetup(),r3,0);",
+    "att(c3b.children.length>8,'fiche adaptive + alerte ae : sans plantage');",
+    "r3.strategy='zigzag';const c3c=faoOpCardElement(faoSetup(),r3,0);",
+    "att(c3c.children.length>8,'fiche zigzag : sans plantage');",
+    "sel={kind:null,id:null};",
+    // --- surépaisseurs radiale / axiale séparées
+    "const pr=faoGenPocket({x0:10,y0:10,x1:90,y1:70},25,5,{toolD:10,secu:30,ap:10,ae:5,radial:1,axial:0});",
+    "att(pr.filter(m=>!m.r).every(m=>m.z>=5-1e-9),'poche A0 : fond Z=5');",
+    "att(pr.every(m=>m.x>=10.99&&m.x<=89.01&&m.y>=10.99&&m.y<=69.01),'poche R1 : XY dans [11,89]x[11,69]');",
+    "const cr=faoGenContour({x0:10,y0:10,x1:90,y1:70},5,0,{toolD:10,secu:30,radial:0.5,axial:0});",
+    "att(cr.some(m=>!m.r&&Math.abs(m.x-95.5)<1e-9),'contour R0.5 : X max 95.5');",
+    "att(cr.filter(m=>!m.r).every(m=>Math.abs(m.z-0)<1e-9),'contour A0 : fond Z=0');",
+    // --- migration laisse -> R/A (géodésique garde laisse)
+    "const mOP={type:'pocket',laisse:0.5};faoSanitiseOps({tools:[{id:'T1'}],ops:[mOP]});",
+    "att(mOP.radial===0.5&&mOP.axial===0.5&&mOP.laisse===undefined,'migration laisse -> R/A');",
+    "const mOG={type:'geofinish',laisse:0.5};faoSanitiseOps({tools:[{id:'T1'}],ops:[mOG]});",
+    "att(mOG.laisse===0.5&&mOG.radial===undefined,'geodesique : laisse conservee');",
+    // --- plan de retrait : défaut dessus+25, utilisé entre outils
+    "att(faoRetractZ(job)===50,'retrait auto = z1+25');",
+    "att(/G0 Z25\\.000/.test(sbi),'retrait inter-outils (50-25=25 relatif)');",
+    "jobB.retract=60;",
+    "att(/G0 Z35\\.000/.test(faoPost(jobB,'siemens630').code),'retrait manuel 60 -> Z35');",
+    "delete jobB.retract;",
+    // --- Liang-Barsky + clipping
+    "const lb=faoClipLB({x:-10,y:5},{x:10,y:5},{x0:0,y0:0,x1:10,y1:10});",
+    "att(lb&&Math.abs(lb[0]-0.5)<1e-9&&Math.abs(lb[1]-1)<1e-9,'Liang-Barsky : entree 0.5');",
+    "att(faoClipLB({x:-5,y:-5},{x:-1,y:-1},{x0:0,y0:0,x1:10,y1:10})===null,'LB : dehors -> null');",
+    "const ei=faoEffLimit({limit:{mode:'rect',x0:0,y0:0,x1:20,y1:20,side:'in',extra:0}},10);",
+    "att(ei&&ei.x0===5&&ei.x1===15,'limite in : retractee de r=5');",
+    "att(faoEffLimit({limit:{mode:'rect',x0:0,y0:0,x1:10,y1:10,side:'out',extra:1}},10).x0===-6,'limite out+extra : -6');",
+    "const jobL=faoDefaultSetup();jobL.stock={x0:0,y0:0,z0:0,x1:100,y1:80,z1:25};",
+    "jobL.ops=[{id:'l1',on:true,toolId:'T1',type:'facing',z:25,ae:6,limit:{mode:'rect',x0:0,y0:0,x1:50,y1:80,side:'center',extra:0}}];",
+    "const lc=faoOpMoves(jobL.ops[0],jobL).filter(m=>!m.r);",
+    "att(lc.length>0&&lc.every(m=>m.x>=-1e-9&&m.x<=50+1e-9),'clip facing : coupe dans [0,50]');",
+    "const jobD=faoDefaultSetup();",
+    "att(faoLimitDrillPts({pts:[[5,5],[99,99]],limit:{mode:'rect',x0:0,y0:0,x1:10,y1:10,side:'center',extra:0}},10).length===1,'perçage : trou hors limite écarté');",
+    // --- chaînes tangentes : A-B tangents, C perpendiculaire
+    "const ED=[{pts:[[0,0,0],[10,0,0]]},{pts:[[10,0,0],[20,0,0]]},{pts:[[20,0,0],[20,10,0]]}];",
+    "att(JSON.stringify(faoTangentSet(ED,[0]).sort())===JSON.stringify([0,1]),'tangent : A+B');",
+    "att(JSON.stringify(faoTangentSet(ED,[2]))===JSON.stringify([2]),'tangent : C seule');",
+    // --- ordonnancement + boucle XY fermée (carré 10x10 désordonné)
+    "const SQ=[{pts:[[10,0,5],[10,10,5]]},{pts:[[0,0,5],[10,0,5]]},{pts:[[0,10,5],[0,0,5]]},{pts:[[10,10,5],[0,10,5]]}];",
+    "const CH=faoOrderEdges(SQ,[0,1,2,3]);",
+    "att(CH.length===1&&CH[0].length===4,'ordre : 1 chaîne de 4');",
+    "const LP=faoLoopFromChains(SQ,CH);",
+    "att(LP.closed===true,'boucle : fermée');",
+    "att(Math.abs(faoLoopArea(LP.loop)-100)<0.01,'boucle : aire 100');",
+    // --- impair + distance + règle outil
+    "const CAR=[[20,20],[80,20],[80,80],[20,80],[20,20]];",
+    "att(faoPointInPoly(50,50,CAR)===true&&faoPointInPoly(10,10,CAR)===false,'impair : dedans/dehors');",
+    "att(Math.abs(faoDistToPoly(50,50,CAR)-30)<1e-9,'distance : 30 au bord');",
+    "att(faoLimInside(50,50,{loop:CAR,side:'in',extra:0},5)===true,'in : centre à 30>=5');",
+    "att(faoLimInside(77,50,{loop:CAR,side:'in',extra:0},5)===false,'in : à 3<5 écarté');",
+    "att(faoLimInside(83,50,{loop:CAR,side:'out',extra:0},5)===true,'out : à 3<=5 gardé');",
+    "att(faoLimInside(90,50,{loop:CAR,side:'out',extra:0},5)===false,'out : à 10>5 écarté');",
+    "att(faoLimInside(83,50,{loop:CAR,side:'center',extra:0},5)===false,'center : dehors écarté');",
+    // --- clip polygone sur balayage : coupe dans le carré, précision 0.1
+    "const MV=[{r:1,x:0,y:50,z:30},{r:1,x:0,y:50,z:25},{r:0,x:100,y:50,z:25}];",
+    "const MC=faoClipMovesPoly(MV,{loop:CAR,side:'center',extra:0},5,30,2);",
+    "const MCC=MC.filter(m=>!m.r);",
+    "att(MCC.length>0&&MCC.every(m=>m.x>=20-0.15&&m.x<=80+0.15),'clip poly : coupe dans [20,80] a 0.15 pres');",
+    "att(MCC.some(m=>Math.abs(m.x-20)<0.11),'clip poly : entrée à 0.1 près');",
+    "att(MC.some(m=>m.r&&m.z===30),'clip poly : ré-entrée par sécu');",
+    // --- dispatch chaîne + filtre perçage chaîne
+    "const jobH=faoDefaultSetup();jobH.stock={x0:0,y0:0,z0:0,x1:100,y1:80,z1:25};",
+    "jobH.ops=[{id:'h1',on:true,toolId:'T1',type:'facing',z:25,ae:80,limit:{mode:'chain',loop:CAR,closed:true,nEdges:4,tangent:false,side:'center',extra:0}}];",
+    "const mh=faoOpMoves(jobH.ops[0],jobH).filter(m=>!m.r);",
+    "att(mh.length>0&&mh.every(m=>m.x>=-1e-9&&m.x<=80+1e-9&&m.y>=-1e-9&&m.y<=80+1e-9),'dispatch chaîne : coupe dans le carré');",
+    "att(faoLimitDrillPts({pts:[[50,50],[5,5]],limit:{mode:'chain',loop:CAR,closed:true,side:'center',extra:0}},10).length===1,'perçage chaîne : 1/2 gardé');",
+    // --- débourrage poche : hélice + pleine + tours, fond à 0.5
+    "const DP=faoGenPocketRough({x0:0,y0:0,x1:100,y1:60},30,0,{toolD:10,ap:6,tour:2,ae:5,radial:0.5,axial:0.5,secu:35});",
+    "att(DP.length>50,'débourrage : '+DP.length+' moves');",
+    "att(DP.some(m=>!m.r&&m.z>24&&m.z<30),'débourrage : descente hélice');",
+    "att(DP.some(m=>!m.r&&Math.abs(m.z-24)<1e-9&&Math.abs(m.x-50)<6),'débourrage : pleine passe à 24');",
+    "const T28=DP.filter(m=>!m.r&&Math.abs(m.z-28)<1e-9);",
+    "att(T28.length>0,'débourrage : tour à 28');",
+    "att(T28.every(m=>Math.abs(m.x-5.5)<0.2||Math.abs(m.x-94.5)<0.2||Math.abs(m.y-5.5)<0.2||Math.abs(m.y-54.5)<0.2||Math.hypot(m.x-50,m.y-30)<=8),'débourrage : tour = périmètre (+ descente hélice)');",
+    "att(DP.filter(m=>!m.r).every(m=>m.z>=0.5-1e-9),'débourrage : fond à 0.5 mini');",
+    "att(DP.filter(m=>!m.r).every(m=>m.x>=5.5-1e-9&&m.x<=94.5+1e-9),'débourrage : radial 0.5 tenu');",
+    // --- dispatch + fiche par défaut
+    "const jobP=faoDefaultSetup();",
+    "const opP=faoOpDefaults('pocket3d');",
+    "att(opP.type==='pocket3d'&&opP.ap===6&&opP.tour===2,'défauts débourrage : ap6 tours2');",
+    "att(Array.isArray(faoOpMoves(Object.assign({},opP,{x0:0,y0:0,x1:100,y1:60,ztop:30,zbot:0}),jobP)),'dispatch pocket3d');",
+    // --- entrée en arc paroi : tangence à +Y des deux côtés
+    "const endTan=function(L){",
+    "  const cx=L.move.arc.i+L.sx, cy=L.move.arc.j+L.move.y;",
+    "  const ex=L.move.x-cx, ey=L.move.y-cy, r=Math.hypot(ex,ey);",
+    "  if(L.move.arc.cw)return [ey/r,-ex/r];",
+    "  return [-ey/r,ex/r];",
+    "};",
+    "const LA=faoLeadArc(10,5,6,5,true,0);",
+    "att(LA&&LA.sx===10&&LA.move.arc.cw===true,'lead-in gauche : départ 10, G2');",
+    "att(Math.abs(endTan(LA)[0])<1e-9&&Math.abs(endTan(LA)[1]-1)<1e-9,'lead-in gauche : tangent +Y');",
+    "const RA2=faoLeadArc(2,5,6,5,false,0);",
+    "att(RA2&&RA2.sx===2&&RA2.move.arc.cw===false,'lead-in droite : départ 2, G3');",
+    "att(Math.abs(endTan(RA2)[0])<1e-9&&Math.abs(endTan(RA2)[1]-1)<1e-9,'lead-in droite : tangent +Y');",
+    "att(faoLeadArc(6,5,6,5,true,0)===null,'lead-in : M sur le mur -> null');",
+    // --- arrondi 2.5D : poche avec arrondi -> arcs, sans -> aucun
+    "const jobA=faoDefaultSetup();jobA.stock={x0:0,y0:0,z0:0,x1:100,y1:60,z1:20};",
+    "const opA={id:'pa',on:true,toolId:'T1',type:'pocket',x0:10,y0:10,x1:90,y1:50,ztop:20,zbot:15,ap:5,ae:5,radial:0,axial:0,arrondi:3};",
+    "att(faoOpMoves(opA,jobA).some(m=>!m.r&&m.arc),'poche arrondi 3 : arcs');",
+    "const opB=Object.assign({},opA,{id:'pb',arrondi:0});",
+    "att(!faoOpMoves(opB,jobA).some(m=>!m.r&&m.arc),'poche arrondi 0 : aucun arc');",
+    // --- arrondi : L 10x10 R2 -> droite + arc + droite, centre (8,2)
+    "const RD=faoRoundPath([{x:0,y:0,z:0},{x:10,y:0,z:0},{x:10,y:10,z:0}],2);",
+    "att(RD.length===4&&!RD[1].arc&&!!RD[2].arc&&!RD[3].arc,'arrondi : G1+arc+G1');",
+    "att(Math.abs(RD[1].x-8)<1e-9&&Math.abs(RD[2].x-10)<1e-9&&Math.abs(RD[2].y-2)<1e-9,'arrondi : points tangents (8,0)->(10,2)');",
+    "att(RD[2].arc.cw===false&&Math.abs(RD[2].arc.i-0)<1e-9&&Math.abs(RD[2].arc.j-2)<1e-9,'arrondi : G3 centre relatif (0,2)');",
+    // --- aligné : pas d'arc
+    "const RL=faoRoundPath([{x:0,y:0,z:0},{x:5,y:0,z:0},{x:10,y:0,z:0}],2);",
+    "att(RL.every(m=>!m.arc),'aligné : aucun arc');",
+    // --- émission G2/G3 (les 2 CN en IJK)
+    "att(faoArcWords({x:10,y:2,z:0,arc:{i:0,j:2,cw:false}},0,0,0)==='G3 X10.000 Y2.000 Z0.000 I0.000 J2.000','G3 IJK');",
+    "att(faoArcWords({x:10,y:2,z:0,arc:{i:0,j:2,cw:true}},0,0,0).indexOf('G2 ')===0,'G2 horaire');",
+    // --- estimation d'arc : quart de cercle R2 = PI
+    "const EA=faoEstimate([{r:1,x:2,y:0,z:0},{r:0,x:0,y:2,z:0,arc:{i:-2,j:0,cw:false}}],1200,5000);",
+    "att(Math.abs(EA.cut-Math.PI)<0.01,'arc estimé PI : '+EA.cut.toFixed(3));",
+    // --- subdivision aperçu : sur le cercle, du début à la fin
+    "const AS=faoArcSegs({x:2,y:0,z:0},{x:0,y:2,z:0,arc:{i:-2,j:0,cw:false}});",
+    "att(AS.length>4,'subdivision : '+AS.length+' pts');",
+    "att(AS.every(q=>Math.abs(Math.hypot(q[0],q[1])-2)<1e-9),'subdivision : rayon 2');",
+    "att(Math.abs(AS[AS.length-1][0]-0)<1e-9&&Math.abs(AS[AS.length-1][1]-2)<1e-9,'subdivision : finit en (0,2)');",
+    // --- persistance + non-rejeu
+    "doc.fao=job;",
+    "att(serialise().indexOf('\"fao\"')>=0,'serialise : doc.fao persiste');",
+    "const v0=_docVersion;faoTouch();",
+    "att(_docVersion===v0,'faoTouch : _docVersion inchange (aucun rejeu geometrique)');",
+    "if(ATT.length){p('');p('ECHECS ('+ATT.length+') :');ATT.forEach(m=>p('  x '+m));}",
+    "else p('TOUT EST CONFORME');",
+    "p('facing='+f.length+' pocket='+pk.length+' contour='+ct.length+' drill='+dr.length);",
+    "p('G1 siemens='+(s630.code.match(/\\nG1 /g)||[]).length+' G1 fagor='+(fg.code.match(/ G1 /g)||[]).length);",
+    "return P.join(String.fromCharCode(10));"
+  ].join('\n');
+  const r=await vm.runInContext('(async()=>{'+R+'})()',ctx,{filename:'fao.js'});
+  console.log(r);
+  process.exit(/ECHECS|  x /.test(r)?1:0);
+})().catch(e=>{console.error('ECHEC',String((e&&e.message)||e).slice(0,500));process.exit(1);});

@@ -280,12 +280,14 @@ function exactPick(e){
   const i=segEdge[Math.round(hits[0].index/2)];
   return (i!==undefined&&i>=0&&filModeX&&i<filModeX.edges.length)?i:null;
 }
-function occFaceEdges(faceOrd){
+function occFaceEdges(faceOrd,shape){
   // Milieux des arêtes d'une face BRep (par rang, même ordre que la tessellation).
+  // Multi-corps : `shape` = solide du corps cliqué (ordinaux par solide) ; à défaut
+  // le composé occLive (ancien comportement, 1 seul corps).
   const out=[],bin=[];
   try{
     const SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE;
-    const ex=new occt.TopExp_Explorer_2(occLive.shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,SH);bin.push(ex);
+    const ex=new occt.TopExp_Explorer_2(shape||occLive.shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,SH);bin.push(ex);
     let k=0,face=null;
     while(ex.More()){if(k===faceOrd){face=occt.TopoDS.Face_1(ex.Current());bin.push(face);break;}k++;ex.Next();}
     if(!face)return out;
@@ -307,11 +309,13 @@ function exactFaceToggle(e){
   // Clic sur une face = (dé)sélectionne toute sa boucle d'arêtes (ex : fond de poche, face supérieure).
   if(!filModeX||!occLive||!occLive.shape)return false;
   const pk=pickFace(e);
-  if(!pk||pk.mesh.userData.bid!=='occ_result')return false;
+  if(!pk||!pk.mesh)return false;
+  const bd=bodies.find(b=>b.mesh===pk.mesh);
+  if(!bd||bd.kind!=='body')return false;
   const groups=pk.mesh.geometry.userData.occGroups||[];
   const g=groups.find(g=>pk.fi>=g.start&&pk.fi<g.start+g.count);
   if(!g)return false;
-  const mids=occFaceEdges(g.f);
+  const mids=occFaceEdges(g.f,bd.shape||occLive.shape);
   if(!mids.length)return false;
   const idx=mids.map(m=>{
     let bi=-1,bd=0.75;

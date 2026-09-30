@@ -217,7 +217,12 @@ function refreshParts(){
 }
 
 /* ---------- rebuild paramétrique (THREE.ExtrudeGeometry) ---------- */
-function clearBodies(){bodies.forEach(b=>{scene.remove(b.mesh);b.mesh.geometry.dispose();});bodies=[];const eo=scene.getObjectByName('edgeOverlay');if(eo)scene.remove(eo);clearMeasure();clearHover();if(selGroup){scene.remove(selGroup);selGroup=null;}selFaces=[];}
+function clearBodies(){
+  // Les `shape` des corps exacts sont des sous-solides du COMPOSÉ occLive (handles
+  // partageant les TShapes, compteur de références OCCT : les supprimer est sûr),
+  // SAUF le repli « forme non décomposable » où l'entrée référence le composé lui-même
+  // (même objet que occLive.shape) — celui-là, seul occDropLive le libère (double-free sinon).
+  bodies.forEach(b=>{scene.remove(b.mesh);b.mesh.geometry.dispose();try{if(b.shape&&(!occLive||b.shape!==occLive.shape))b.shape.delete();}catch(e){}});bodies=[];const eo=scene.getObjectByName('edgeOverlay');if(eo)scene.remove(eo);clearMeasure();clearHover();if(selGroup){scene.remove(selGroup);selGroup=null;}selFaces=[];}
 function planeBasis(plane,sk){
   // Base arbitraire : si l'esquisse porte axU/axV/axN (esquisse sur face), on les utilise.
   // Sinon repli sur les 3 plans d'origine. Z↑ haut, Y→arrière.

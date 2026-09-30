@@ -1993,3 +1993,163 @@ Tests : nouveau `test_mirror_arc.cjs` — slot lignes+arcs + miroir XZ simple : 
 miroir = miroir exact de l’outil source (bbox symétrique, 6 faces). Échoue sans
 le correctif (miroir x −20..20 tronqué), passe avec. Régression 15/15.
 
+### `2026-09-31t`
+
+**FAO : fraisage 2.5D + post-processeurs Siemens 840D (630/1520) et Fagor 8065.**
+
+Nouveau module `src/88-fao.js`, mené en parallèle de la partie dessin : bouton FAO + panneau flottant, brut auto depuis la bbox des corps + marge, surfaçage zigzag, poche concentrique multi-niveaux, contour compensé du rayon outil, perçage, estimation temps, aperçu 3D (coupe vert / rapides rouge), export G-code. Post-pros calqués sur les `.cps` déposés dans `PostPro/` (zip extrait : `630-5axes.cps`, `1520-5axes.cps`, `fagor-8065.cps` ; `ZW_SINUMERIK_5X.znc` viré à la demande) : en-tête `%_N_..._MPF`, `G71/G17/G90/G94`, `T.. D..`, arrosage M7/M8/M9, rétraction `SUPA Z600` + parc X-200/X-430 côté Siemens, séquences N10/pas de 5 + `M06` côté Fagor. MVP 100 % G0/G1 (aucun arc généré, aucune divergence IJK) ; CYCLE81/G81, CYCLE800 et `#CS` en phase 2. `doc.fao` persiste via serialise/deserialise, `faoTouch()` ne touche pas `_docVersion` : aucun rejeu géométrique déclenché.
+
+Tests : nouveau `test_fao.cjs` — formats, niveaux, 4 générateurs (bornes, compensation, fonds), parité G1 Siemens/Fagor (77/77), parc X par variante, persistance, non-rejeu — TOUT EST CONFORME (échoue sans le correctif sécu : rapides à Z5 sous le brut). Régression : skctxmenu, undo_document, mirror_arc verts.
+
+### `2026-09-31u`
+
+**FAO : bibliothèque d’outils (Vc/fz) + une fiche par opération.**
+
+Choix arrêtés : outils nommés persistés (cylindrique/boule/torique, D, rayon de coin, dents, Vc, fz) avec S/F calculés (S=Vc·1000/(π·D), F=fz·z·S, plongée 30 %), rappelés sur chaque fiche ; fiche par opération à la Fusion (outil dédié, ap/ae, laisse ébauche, on/off, monter/descendre, XY/Z éditables, temps par fiche). Post-pros multi-outils : un bloc `T.. D..` + M6/M06 par outil avec ses S/F, origine G54–G59 sélectionnable. `faoDoc()` migre les jobs 31t (outil unique → biblio, id/toolId/on par op). Aperçu, temps et G-code ignorent les ops désactivées.
+
+Tests : `test_fao.cjs` étendu — S/F calculés (7958/955), 2 groupes et 2× M6 en bi-outil, laisse contour/poche (95,5 / Z≥0,5), off exclu du G-code et des stats, migration — TOUT EST CONFORME. Régression : skctxmenu, mirror_arc verts.
+
+### `2026-09-31v`
+
+**FAO 3D : ébauche par tranches + finition iso-géodésique (Dijkstra).**
+
+Noyau 3D pur (sans THREE, testé en Node) : `faoMeshFromBody`/`faoActiveMesh` (soudure à 0,1 µm, cap 120k tris), slice Z, intervalles scanline (règle impair + epsilon anti-sommets), normales pondérées, Dijkstra à tas binaire, iso-courbes marching-triangles chaînées, sortie centre outil (contact + normale×R). Ébauche 3D : tranches Z + zigzag scanline rétracté de r+laisse, clamp au sommet pièce, rapides toujours au-dessus. Finition géodésique : champ de distances depuis le sommet (ou le fond), iso-courbes à pas 3D constant, boule/torique recommandées. 100 % G0/G1 : aucun changement post-pro. Deux ops avec fiches (ap/ae/laisse/pas/origine).
+
+Tests : `test_fao3d.cjs` — slice 8 segs, scan [0,10], normales sortantes, ébauche 2 niveaux bornés, dmax sphère 31,21 (~πR), centres à R+4 — TOUT EST CONFORME. Le test a attrapé un vrai bug de tas binaire (pop troué : dmax 40,5 au lieu de 31,2, prouvé contre référence O(V²)), corrigé (dernier en racine + descente par échanges). Régression : fao, skctxmenu verts.
+
+### `2026-09-31w`
+
+**CORPS SUPPLÉMENTAIRES : le multi-corps est fini (Corps 1, Corps 2…).**
+
+Le découpage du composé en solides (`occSplitSolids`/`syncBodyEntries`) existait mais restait à moitié branché : les pickers de déplacement de face, dépouille, coque et congé exact cherchaient encore le corps unique `occ_result` (clics sans effet dès 2 corps, faces résolues sur le mauvais solide car les ordinaux sont par solide), les fiches `doc.bodies` n'étaient pas persistées (noms/numéros perdus au rechargement), l'œil d'un corps ne survivait pas au rejeu, et l'arbre ne listait aucun corps.
+
+Corrections : helpers partagés `occBodyOfMesh`/`occFaceOfHit` (face résolue sur le solide du corps cliqué) + `bodyEntry`, utilisés par les 4 pickers ; dépouille/coque repeignent leur surbrillance sur chaque solide visible et mémorisent le corps (`_bid`, session seule comme `_ord`) ; `doc.bodies`/`bodySeq`/`activeBody` persistés via serialise/deserialise (compteur recalé au-delà du max, numéros jamais réemployés) ; renommage, couleur par corps et visibilité persistés (panneau corps + menus contextuels, œil d'arbre sans rejeu) ; section « ◧ Corps (n) » dans l'arbre avec marqueur ● de l'actif ; `clearBodies` ne supprime plus le handle quand l'entrée référence le composé lui-même (double-free du repli non décomposable) ; `buildEdgeOverlay` sans branche fantôme.
+
+Tests : nouveau `test_corps.cjs` — 2 solides → b1/b2, ids stables au rejeu, nom/couleur conservés, retrait + b3 sans réemploi, round-trip serialise/deserialise (fiches, actif, bodySeq), instantané undo, garde statique anti-`occ_result` — TOUT EST CONFORME. Régression : **18/18 vertes** (dont fao, fao3d).
+
+### `2026-09-31x`
+
+**CORPS VRAIS CONTENEURS : chaque fonction appartient à un corps, rejeu isolé.**
+
+Créer un corps : bouton **◧ Corps** (reste en direct dans le bandeau) → corps vide + ACTIF (●). Travailler dedans : cliquer son en-tête dans l'arbre l'active — esquisse puis extrusion, la fonction naît dedans (`addFeature` taggue au corps actif, point unique). L'arbre regroupe les fonctions par corps (œil = montrer/masquer ses fonctions, clic droit = renommer/isoler/supprimer le corps et ses fonctions avec cascade congés/répétitions). Anciens documents migrés vers « Corps 1 » (`ensureBodies`, idempotent, au rebuild et au chargement) ; clones de répétition héritent du corps (copie intégrale) ; undo et sauvegarde embarquent les tags sans changement de format.
+
+Géométrie : `occFinalShape` partitionne la timeline par corps et rejoue isolément (`occReplayBody`, mêmes règles Fuse/Cut/entre-lacés, checkpoints préfixés du corps — deux corps identiques ne se partagent rien, `f.body` dans `featSig`), puis composé GRATUIT (`TopoDS_Compound`+`Builder`, repli fuse) pour `occLive` — picking, ancrages, overlay, aperçu, projections et export STEP voient l'ensemble, inchangés. `occRebuild` affiche UN mesh par corps (id = id du corps, fini le rapprochement par centroïdes : `syncBodyEntries`/`occSplitSolids` supprimés) ; `occCleanup` libère aussi les solides par corps sur les rejeux jetables. Les esquisses restent globales et partageables.
+
+Tests : `test_corps.cjs` réécrit (modèle : migration, création/activation, taggage, œil, suppression avec non-réemploi, persistance) + nouveau `test_corps_iso.cjs` sur le VRAI noyau — deux blocs identiques bien placés (pas de partage de checkpoint), poche en A → A 10 faces / B 6 faces intact non déplacé, perBody aux bons ids, occLive à 2 solides — TOUT EST CONFORME. Régression : **19/19 vertes**.
+
+Limites v1 (suites possibles) : deux volumes disjoints DANS un même corps restent un seul mesh (pas d'auto-fractionnement façon Fusion) ; déplacer une fonction d'un corps à l'autre ; voie maillage (repli `file://`) toujours globale.
+
+### `2026-09-31y`
+
+**ARBRE : chaque corps se replie, chaque opération se décale dans son corps.**
+
+Repli : triangle ▶/▼ sur chaque en-tête de corps (`be.open` persisté, ouvert par défaut, jamais replié sur la sélection en cours) — et, puisque la demande les donnait pour repliables alors qu'ils ne l'étaient pas, les groupes **Origine** et **Esquisses** se replient aussi (`doc.fold`, persisté). Décalage : chevrons **▲▼** sur chaque ligne de fonction (et sur les blocs répétition entiers) — `featMove` échange avec la fonction voisine DU MÊME CORPS en sautant les autres corps et les blocs voisins (`A2` passe devant `A1` même si `B1` est entre les deux), instances non déplaçables seules, bouts de corps refusés avec message, une étape d'annulation par décalage.
+
+Tests : `test_corps.cjs` étendu — repli corps/groupes persisté au round-trip, ordres après ▲▼ (dont saut d'un autre corps), undo restaure l'ordre, instance non déplaçable, bloc répétition déplacé entier — TOUT EST CONFORME. Régression : **19/19 vertes** (l'arbre modifié ne casse pas `test_arbre_selection`).
+
+### `2026-09-31z`
+
+**FAO : posage (machine, origine, modèle, brut, bridage) + arbre FAO + fiches panneau droit.**
+
+Structure facon setup Fusion (img1-3) : `doc.fao={setups,activeSetupId}`, chaque posage porte machine (630/1520/8065), origine G54–G59, point de bloc (4 préréglages), modèle (`bodies: all | [ids stables 31x]`), brut+marge, bridage mémorisé, outils et ops. Migration job plat 31t–v. G-code exprimé relatif au point de bloc (offset en post-pro). Arbre FAO dédié (overlay vue 3D) : posages > ops avec on/off, badge [Tn], sélection ; la fiche posage/op s’affiche dans le panneau droit via hook 3 lignes dans `renderProps` (40). Panneau flottant supprimé. Bridage et point pièce cliqué : phase suivante.
+
+Tests : `test_fao.cjs` étendu — racine/migration, origine (X-7.000, Z0.000), machine par posage, arbre (1+4), fiches #props — TOUT EST CONFORME. Régression : fao3d, skctxmenu verts.
+
+### `2026-09-32a`
+
+**ARBRE : le nom de chaque corps est écrit dans sa couleur.**
+
+L'en-tête de corps affiche son nom dans la couleur 3D du corps (`bodyTextColor` : couleur du mesh affiché si présent — palette auto au pire — sinon fiche, sinon texte par défaut), donc on lit quel corps est lequel sans ouvrir le panneau. Le rafraîchissement est en direct à la pipette (`renderTree` sur `input`).
+
+Tests : `test_corps.cjs` étendu — `bodyTextColor` fiche/défaut, en-têtes rendus avec `#00ff00` sur le corps coloré et sans style sur l'autre — TOUT EST CONFORME. Régression : **19/19 vertes**.
+
+### `2026-09-32b`
+
+**FAO : surépaisseurs radiale/axiale, plan de retrait, limite rectangulaire.**
+
+Suite point 5 (img3) : `laisse` unique éclatée en radiale (XY) + axiale (fond/Z) sur surfaçage/poche/contour/ébauche 3D, migration auto, géodésique inchangée (normale). Plan de retrait absolu par posage (auto = dessus + 25, bouton Auto), utilisé entre outils et en fin de programme sur les 2 CN. Limite rect par op + règle outil centre/intérieur/extérieur + décalage supp. : clipping Liang-Barsky des coupes avec ré-entrée sécurisée (remontée sécu, jamais de G0 dans la matière), perçages filtrés. Reste : chaîne d’arêtes, faces, brut restant, évitement bridage, point pièce cliqué.
+
+Tests : `test_fao.cjs` étendu — R/A séparés, migration laisse, retrait auto/manuel, Liang-Barsky, règles in/out, clip facing, filtre perçage — TOUT EST CONFORME. Régression : fao3d vert.
+Réparation encodage : `src/88-fao.js` avait été corrompu en double-UTF-8 par un round-trip PowerShell (accents de l’UI illisibles) — réparé par décodage cp1252 ciblé (277 substitutions), zéro autre fichier touché, suite 19/19 verte après rebuild.
+
+### `2026-09-32c`
+
+**FAO : ébauche 3D qui suit la forme, entrées hélice/rampe, plats optimisés.**
+
+Par tranche Z : entrée douce systématique (hélice si largeur >= 2,5D avec contrôle de dégagement en Y, sinon rampe le long de la passe, forçables par fiche), vidage zigzag, puis passes de parois gauches/droites sur les extrémités d’intervalles (= paroi à r+radiale sans librairie d’offset, entrée par milieu d’intervalle remontée sécu), retract. Plats (couverture > 85 %) : grand pas D*0,8 sans parois. Fini les plongées verticales en pleine matière.
+
+Tests : `test_fao3d.cjs` étendu — hélice (rayon, monotonie), rampe, auto->rampe sur étroit, hélice forcée, parois (2,2)+(2,6), plats au pas 3,2 — TOUT EST CONFORME. Régression : fao vert.
+
+### `2026-09-32d`
+
+**FAO : limite par chaîne d’arêtes tangentes ou non (façon Chaîne Fusion).**
+
+Fiche op : 3e choix `Chaîne d’arêtes` + Sélectionner (mode dédié : overlay bleu, germes jaunes, tangentes déduites rouges, case tangentes auto comme les congés, OK/Annuler/Effacer, Échap). Boucle XY snapshotée à la validation (indépendante d’OCCT au rejeu, refermée d’office si ouverte, cap 2000 pts). Clip impair avec règle outil sans offsetter le polygone (test point+marge, subdivision 2 mm, croisements dichotomie 0,1 mm, ré-entrées sécu). Hooks picking 90 en 6 lignes additives. Reste : chaînes multiples, faces.
+
+Tests : `test_fao.cjs` étendu — BFS tangent, ordre, boucle/aire, impair, règles in/out/center, clip (bornes, précision, sécu), dispatch chaîne, filtre perçage — TOUT EST CONFORME. Régression : fao3d vert.
+
+### `2026-09-32e`
+
+**FAO : ébauche 3D morph (spirale qui suit la forme) + raffinement auto.**
+
+Par tranche : boucles imbriquées au pas radial mini(ae, D/2), émises du centre vers les parois après hélice centrale (rampe si exigu), liaisons G1 courtes. Gros pas `ap` à `R` radial, puis niveaux fins `ap2` à `R2` insérés auto là où la section change (> 20 %) : les marches de 5 mm sont reprises tous les 1-2 mm. Plats : zigzag au grand pas. Zigzag conservé en option (`stratégie`). Fiche : stratégie, ap2, R2/A2. Terminologie calée sur l’Adaptive Clearing Fusion (Maximum Roughing Stepdown, Fine Stepdown, Radial/Axial Stock to Leave).
+
+Tests : `test_fao3d.cjs` étendu — tronc de pyramide (boucles imbriquées, vide inter-boucles, flanc vertical intérieur), raffinement (niveaux 4 et 1), zigzag conservé (traverse à y=-0,5), hélice morph sur sphère — TOUT EST CONFORME. Régression : fao vert.
+
+### `2026-09-32f`
+
+**FAO : arcs G2/G3 de bout en bout + arrondi des coins (trajectoires fluides).**
+
+Fini le 100 % G1 : les moves portent `arc:{i,j,cw}` (IJK incrémental, balayage < 180°, accepté par 840D comme 8065 vérifié dans les .cps), émis en G2/G3 sur les 2 posts, comptés en longueur d’arc (estimation), subdivisés dans l’aperçu. `faoRoundPath` remplace chaque coin 1°..179° par un arc tangent (centre côté intérieur, vérifié), `faoRoundMoves` par passe coupée aux rapides. Fiche ébauche : champ Arrondi (défaut mini(2, D/4), 0 = vifs) ; le bombé (≤ arrondi/2) est repris en `bulge` dans les rétracts pour ne jamais entamer la surépaisseur. Au passage : le dispatch transmet désormais ap2/stratégie/entrée (oubli 32e : l’UI les affichait sans effet).
+
+Tests : arrondi en L (tangences, G3), aligné sans arc, émission G2/G3, estimation PI, subdivision, arrondi du morph (arcs, bornes, rayon) — TOUT EST CONFORME. Régression : fao3d vert.
+
+### `2026-09-32g`
+
+**FAO : trajectoires corrigées sur pièce réelle (brut-moins-pièce, liaisons, régions).**
+
+Repro Barquette.step (OCCT + 1406 tris) : l’ébauche vidait l’INTÉRIEUR de la pièce au lieu de brut-moins-pièce, et l’aperçu reliait les passes (spaghetti vert + éventail rouge). Correctifs : intervalles en complément (brut érodé moins section dilatée, bornes marquées paroi/brut), slice symétrique aux plans de faces (fond de poche sortait vide -> brut complet), lignes hors-section ignorées, parois par région, zigzag one-way avec liaisons sécu (plus de traversée de nervure ni de demi-tour), entrées hélice depuis z+ap en avance plongée (volume /6), aperçu en segments par paire (vert=coupe->coupe, rouge sinon). Mesuré : 0 NaN, 0 hors brut, 0 plongée, 555 arcs, 16823 moves.
+
+Tests : `test_fao3d.cjs` réécrit en complément (canal, marches, facing, régions) — TOUT EST CONFORME. Suite 19/19.
+
+### `2026-09-32h`
+
+**FAO : hélice toujours hors matière +2 mm, trajectoires circulaires.**
+
+Sécurité : `faoHelixSpot` marche depuis le brut et rend le départ à surface+2 (colonne vide : niveau+2), `faoDiscClear` refuse le disque too close des parois (dedans ou < r), les deux branchés sur les entrées morph et zigzag (descente en avance plongée). Circulaire : champ Arrondi sur surfaçage/poche/contour, entrées parois en quart d’arc tangent (G2 gauche / G3 droite, rayon capé, repli direct si exigu). Mesuré Barquette : 14849 moves, 561 arcs, 0 NaN/hors brut/plongée.
+
+Tests : spot +2/dégagé, disque dedans/dehors/proche, tangence G2/G3, arrondi 2.5D on/off, arcs parois zigzag — TOUT EST CONFORME. Suite 19/19.
+
+### `2026-09-32i`
+
+**FAO : op Débourrage poche (pleines passes ap + tours de parois).**
+
+Nouveau type `pocket3d` : par tranches épaisses (ap, défaut 6) hélice centrale en pleine matière (depuis z+ap, avance plongée) + vidage complet en spirale intérieur->extérieur jusqu’à R radial ; entre les tranches, tours de parois SEULS au pas `tour` (défaut 2, jamais sur un niveau profond), entrée intérieure plongée. Fin à zBot+axial (0,5 de la face la plus basse). Fiche : rect, ap, tours, pas, R/A, Arrondi (G2/G3 via arrondi). `+ Débourrage` au posage, arbre et étiquettes.
+
+Tests : hélice, pleine passe, tour=périmètre seul, fond 0.5, radial tenu, défauts ap6/tours2, dispatch — TOUT EST CONFORME. Régression : fao3d vert.
+
+### 2026-09-32j
+
+**FAO : debourrage cale sur la gamme CAV-75-25 (T6 D25 R2).**
+
+Reference atelier CAV-75-25.mpf analysee (38379 blocs, 33385 G1, 2917 G3, 1903 G2, helices R10 au centre, niveaux Z constants ap 1-2, spirales interieur->exterieur continues, coins en G2/G3 IJK incremental) : l entree helicoidale passe a R=0.4*D sur pocket3d, morph et zigzag (10 mm pour D25, au lieu de 0.75*D), garde tour<=0 (pas de tours intercales, finition par contour separe facon CAV), outil T6 torique D25 R2 ajoute a la bibliotheque, en-tete documente (helice + spirale + arrondi + poche circulaire par carre + arrondi = demi-cote).
+
+Tests : suite 19/19 verte (helice, pleine passe, tours, arrondi, morph, zigzag inchanges) ; D25 verifie : hr=10, pas 0.1*D/tour, niveaux constants, G3 via arrondi, jamais de plongee verticale.
+
+### 2026-09-32k
+
+**FAO : strategie Adaptive pour l'ebauche 3D (pelage + trochoides, facon Adaptive Clearing).**
+
+Le Debourrage (pocket3d rectangulaire) et le morph ne tiennent pas l'engagement constant : ae 50-60 % D, coins a 90 degres, retraits par passe. Nouvelle strategie `adaptive` sur l'op Ebauche 3D (fiche : Morph/Zigzag/Adaptive) : ae clampé a <= 0.25*D, ap profond constant (pas de raffinement ap2, comme Fusion qui garde la pleine profondeur), pelage centre->exterieur boucle par boucle apres une unique helice (chaque passe adjacente au vide, engagement d'un seul cote), liaisons G1 sans retrait dans la region (stay-down, 2 rapides par niveau), trochoides polygonales dans les goulets (largeur < 2.5*D). Mesure canal 50 mm D10 : 511 coupes continues, 2 rapides, helice, jamais dans la matiere.
+
+Tests : `test_fao3d.cjs` etendu (moves, helice, bornes, stay-down <= 4 rapides, plus de passes qu'en morph, trochoide en goulet 15 mm) — TOUT EST CONFORME. Suite 19/19 verte.
+
+### 2026-09-32l
+
+**FAO : limites du proto Adaptive levees (arcs, brut restant, entrees) + fiche Ebauche 3D lisible.**
+
+Moteur (`faoTrochSlot`, `faoShadowIntervals`, `faoRoughAdaptiveLevel`) : trochoides en vrais arcs G2/G3 (4 quarts CCW a 90 degres, IJK incremental — le test fente a prouve au passage qu'une ligne pile sur une arete vidait plein large a travers la piece : lecture matiere sur 3 lignes y±aeA), vide calcule avec l'ombre des niveaux superieurs (union des sections par pas <= 2 mm : jamais sous un porte-a-faux, ex. queue d'aronde), entree multi-spots (top-3 intervalles + centroide, rampe X ou Y selon le plus long run, micro-helice, region inusinable sautee sans move partiel), ordre de pelage selon l'ouverture (helice -> interieur d'abord, rampe -> exterieur d'abord).
+
+Fiche Ebauche 3D reecrite en sections pour neophytes : Hauteurs (Haut/Bas), Strategie (libelles explicites + aide par strategie), Passes (ap Descente, ap2 Affinage, ae Pas lateral + ligne ae/ap en xO avec alerte si ae > 1/4 O en Adaptive), Matieres a laisser (Parois/Fond + fin), Trajectoire (Arrondi, Entree expliquee). Infobulles sur tous les champs (helpers `faoNum/faoSel/faoTxt/faoMini` + param `title`, `faoHelp`), boutons ↑↓x et selecteur d'outil titres, zone Limite clarifiee (Zone, Centre dedans/Outil dedans/Tout couvrir, Marge).
+
+Tests : `test_fao3d.cjs` (arcs presents, rayons coherents, CCW, surplomb jamais touche en bas, fente ~O sans helice ni rampe possible) + `test_fao.cjs` (rendu fiche 3 strategies sans plantage) — TOUT EST CONFORME. Suite 19/19 verte.

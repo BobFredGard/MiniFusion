@@ -37,14 +37,34 @@ function featIconOf(f){
 function renderTree(){
   const t=$('tree');t.innerHTML='';
   const g=(s)=>{const d=document.createElement('div');d.className='tgroup';d.textContent=s;t.appendChild(d);};
+  // Groupe repliable (Origine, Esquisses) : même triangle ▶/▼ que les répétitions,
+  // état persisté dans doc.fold. Ouvert par défaut (comportement actuel inchangé).
+  const gfold=(k,label)=>{
+    const f=!!(doc.fold&&doc.fold[k]);
+    const d=document.createElement('div');d.className='tgroup';d.style.cursor='pointer';
+    d.innerHTML='<span class="tri" title="Déplier / replier">'+(f?'▶':'▼')+'</span><span>'+label+'</span>';
+    d.onclick=()=>{doc.fold=doc.fold||{};doc.fold[k]=!f;try{dirty=true;}catch(e){}renderTree();};
+    t.appendChild(d);
+    return !f;
+  };
   const node=(icon,name,kind,id,visible,dbl)=>{
     const _tlLk=(tlMark!=null&&kind==='feature'?(function(){const mi=tlIdx();return mi>=0&&doc.features.findIndex(x=>x.id===id)>=mi;})():false);
     const d=document.createElement('div');
     // une fonction est « sel » si elle est la sélection courante OU membre du lot Ctrl+clic
     const estSel=(sel.kind===kind&&sel.id===id)||(kind==='feature'&&treeSel.indexOf(id)>=0);
+    // Décalage dans le corps (▲▼) : toute fonction non dérivée — les instances de
+    // répétition se déplacent avec leur bloc, jamais seules (pas de chevrons).
+    const _mv=(kind==='feature'&&(function(){const _f=doc.features.find(x=>x.id===id);return !!(_f&&!_f.repeatId);})())
+      ?' <span class="mv" data-d="-1" title="Monter dans le corps">▲</span><span class="mv" data-d="1" title="Descendre dans le corps">▼</span>':'';
     d.className='tnode'+(estSel?' sel':'')+(visible===false?' hidden':'')+(_tlLk?' locked':'');
-    d.innerHTML=`<span>${icon}</span><span class="nm">${name}</span><span class="eye" title="Afficher / masquer">`+(visible===false?'🙈':'👁')+`</span>`;
+    d.innerHTML=`<span>${icon}</span><span class="nm">${name}</span>${_mv}<span class="eye" title="Afficher / masquer">`+(visible===false?'🙈':'👁')+`</span>`;
     d.onclick=ev=>{
+      if(ev.target&&ev.target.classList&&ev.target.classList.contains('mv')){
+        let dd=0;
+        try{dd=+(ev.target.dataset&&ev.target.dataset.d!=null?ev.target.dataset.d:ev.target.getAttribute('data-d'));}catch(e){}
+        if(!featMove(id,dd)){try{faceEl.textContent='Déjà en tête / en fin de corps — rien à décaler.';}catch(e){}}
+        return;
+      }
       if(ev.target&&ev.target.classList&&ev.target.classList.contains('eye')){
         if(kind==='plane'){setOriginVis(id,!originVis[id]);return;}
         if(kind==='sketch'){const s=doc.sketches.find(x=>x.id===id);if(s){s.visible=!(s.visible!==false);markDirty();rebuild();renderTree();}}
@@ -53,7 +73,6 @@ function renderTree(){
           // n'aurait plus aucun moyen de réapparaître, l'overlay Pièces ayant disparu)
           if(!f.repeatId&&doc.bodyVis)bodies.forEach(b=>{if(b.ref===f.id)delete doc.bodyVis[b.id];});
           markDirty();rebuild();renderTree();}}
-        else if(kind==='body'){const b=bodies.find(x=>x.id===id);if(b){b.visible=!b.visible;b.mesh.visible=b.visible;refreshParts();buildEdgeOverlay();refreshMirror();}}
         return;
       }
       if(kind==='feature'&&ev.ctrlKey){
@@ -66,28 +85,32 @@ function renderTree(){
       }
       if(kind==='feature'&&ghostHide===id)ghostHide=null;
       treeSel=kind==='feature'?[id]:[];
-      sel={kind,id};renderTree();renderProps();refreshParts();
+      sel={kind,id};
+      // Le corps cliqué devient le corps ACTIF (persisté, marqué ● dans l'arbre).
+      if(kind==='body'){try{if(doc.activeBody!==id){doc.activeBody=id;dirty=true;}}catch(e){}}
+      renderTree();renderProps();refreshParts();
     };
     if(kind==='sketch')d.title='Clic = sélectionner · double-clic = modifier l’esquisse · 👁 = afficher/masquer';
-    else if(kind==='feature')d.title='Clic = sélectionner · double-clic = éditer congé/chanfrein exact · 👁 = afficher/masquer';
+    else if(kind==='feature')d.title='Clic = sélectionner · double-clic = éditer congé/chanfrein exact · 👁 = afficher/masquer · ▲▼ = décaler dans le corps';
     if(dbl)d.ondblclick=dbl;
     d.oncontextmenu=e=>{e.preventDefault();showCtx(e.clientX,e.clientY,{kind,id});};
     t.appendChild(d);
   };
-  g('⬒ Origine · Z↑ haut · Y arrière');
-  ['XY','XZ','YZ'].forEach(p=>{
-    const d=document.createElement('div');
-    d.className='tnode'+(sel.kind==='plane'&&sel.id===p?' sel':'')+(originVis[p]?'':' hidden');
-    d.title='Clic = sélectionner · double-clic = esquisse dessus · 👁 = montrer/masquer · '+PLANES[p].label;
-    d.innerHTML=`<span class="pdot" style="background:${PLANES[p].css}"></span><span class="nm">Plan ${p} <span style="color:var(--muted)">· ${PLANES[p].role}</span></span><span class="eye" title="Afficher / masquer le plan">👁</span>`;
-    d.onclick=ev=>{if(ev.target&&ev.target.classList&&ev.target.classList.contains('eye')){setOriginVis(p,!originVis[p]);return;}sel={kind:'plane',id:p};renderTree();renderProps();refreshParts();};
-    d.ondblclick=()=>{sel={kind:'plane',id:p};newSketch(p);};
-    d.oncontextmenu=e=>{e.preventDefault();showCtx(e.clientX,e.clientY,{kind:'plane',id:p});};
-    t.appendChild(d);
-  });
-  g('✏️ Esquisses ('+doc.sketches.length+')');
-  doc.sketches.forEach(s=>node('✏️',s.name+' · '+sketchFaceLabel(s)+' · '+s.entities.length+' traits','sketch',s.id,s.visible,()=>openSketch(s.id)));
-  g('🧱 Corps / Fonctions ('+doc.features.length+') · ➕ additif / ➖ découpe');
+  if(gfold('origin','⬒ Origine · Z↑ haut · Y arrière')){
+    ['XY','XZ','YZ'].forEach(p=>{
+      const d=document.createElement('div');
+      d.className='tnode'+(sel.kind==='plane'&&sel.id===p?' sel':'')+(originVis[p]?'':' hidden');
+      d.title='Clic = sélectionner · double-clic = esquisse dessus · 👁 = montrer/masquer · '+PLANES[p].label;
+      d.innerHTML=`<span class="pdot" style="background:${PLANES[p].css}"></span><span class="nm">Plan ${p} <span style="color:var(--muted)">· ${PLANES[p].role}</span></span><span class="eye" title="Afficher / masquer le plan">👁</span>`;
+      d.onclick=ev=>{if(ev.target&&ev.target.classList&&ev.target.classList.contains('eye')){setOriginVis(p,!originVis[p]);return;}sel={kind:'plane',id:p};renderTree();renderProps();refreshParts();};
+      d.ondblclick=()=>{sel={kind:'plane',id:p};newSketch(p);};
+      d.oncontextmenu=e=>{e.preventDefault();showCtx(e.clientX,e.clientY,{kind:'plane',id:p});};
+      t.appendChild(d);
+    });
+  }
+  if(gfold('sk','✏️ Esquisses ('+doc.sketches.length+')')){
+    doc.sketches.forEach(s=>node('✏️',s.name+' · '+sketchFaceLabel(s)+' · '+s.entities.length+' traits','sketch',s.id,s.visible,()=>openSketch(s.id)));
+  }
   if(tlMark!=null){
     const mi=tlIdx();
     const mbar=document.createElement('div');mbar.style.cssText='display:flex;align-items:center;gap:6px;justify-content:space-between;padding:6px 8px;margin:6px 0 2px;border:1px solid var(--border);border-radius:8px;font-size:.72rem;cursor:pointer;background:linear-gradient(90deg,rgba(232,179,74,.14),transparent)';
@@ -104,7 +127,12 @@ function renderTree(){
   // visibilité — l'overlay « Pièces » ayant disparu, il n'y a plus de doublon.
   // glyphe par type : délégué à featIconOf (partagé avec le panneau de répétition)
   const featIcon=f=>featIconOf(f);
-  doc.features.forEach(f=>{
+  // Une fonction APPARTIENT à un corps (f.body) : l'arbre regroupe par corps, chacun
+  // avec son en-tête (activation au clic, œil, menu renommer/supprimer). Les instances
+  // de répétition restent affichées sous leur répétition, où qu'elles soient rangées.
+  const bodyIds=()=>((doc.bodies||[]).length?doc.bodies:[{id:'b1',name:'Corps 1'}]).map(e=>e.id);
+  const bodyOf=f=>(f&&bodyIds().indexOf(f.body)>=0)?f.body:bodyIds()[0];
+  const featNode=f=>{
     if(tlMark!=null&&f.id===tlMark){
       const dm=document.createElement('div');dm.className='tnode';dm.style.cursor='default';
       dm.style.borderTop='2px dashed var(--warn)';dm.style.color='var(--warn)';dm.style.fontWeight='700';
@@ -126,10 +154,16 @@ function renderTree(){
       const srcNames=srcs.map(id=>{const b=doc.features.find(x=>x.id===id);return b?b.name:'?';});
       d.innerHTML=`<span class="tri" title="Déplier / replier les fonctions copiées">${open?'▼':'▶'}</span><span>🔁</span><span class="nm">${f.name} · ${repTypeName(f.mode,f)} · ${kids.length} instance(s)`+
         (srcs.length?` <span class="repsrc" title="Sources : ${srcNames.join(', ')}">◀ ${srcs.length}</span>`:' <span class="repsrc vide" title="Aucune source choisie">◀ 0</span>')+
-        `</span><span class="eye" title="Afficher / masquer">`+(f.visible===false?'🙈':'👁')+`</span>`;
-      d.title='Clic = sélectionner · ▶/▼ = montrer/masquer les fonctions copiées'+
+        `</span> <span class="mv" data-d="-1" title="Monter dans le corps (bloc entier)">▲</span><span class="mv" data-d="1" title="Descendre dans le corps (bloc entier)">▼</span><span class="eye" title="Afficher / masquer">`+(f.visible===false?'🙈':'👁')+`</span>`;
+      d.title='Clic = sélectionner · ▶/▼ = montrer/masquer les fonctions copiées · ▲▼ = décaler le bloc dans le corps'+
         (srcs.length?(' · sources : '+srcNames.join(', ')):' · AUCUNE source : la répétition ne produit rien');
       d.onclick=ev=>{
+        if(ev.target&&ev.target.classList&&ev.target.classList.contains('mv')){
+          let dd=0;
+          try{dd=+(ev.target.dataset&&ev.target.dataset.d!=null?ev.target.dataset.d:ev.target.getAttribute('data-d'));}catch(e){}
+          if(!featMove(f.id,dd)){try{faceEl.textContent='Déjà en tête / en fin de corps — rien à décaler.';}catch(e){}}
+          return;
+        }
         if(ev.target&&ev.target.classList&&ev.target.classList.contains('tri')){f.open=!f.open;renderTree();renderProps();return;}
         if(ev.target&&ev.target.classList&&ev.target.classList.contains('eye')){f.visible=!(f.visible!==false);doc.features.forEach(k=>{if(k.repeatId===f.id)k.visible=f.visible;});markDirty();rebuild();renderTree();return;}
         if(ev.ctrlKey){treeSelToggle(f.id);return;}
@@ -162,6 +196,39 @@ function renderTree(){
     const estSrc=!!(repF&&(repF.base||[]).indexOf(f.id)>=0);
     const ri=repMode&&repMode.feats&&repMode.feats.includes(f.id)?'✓ ':'';
     node(ri+(estSrc?'<span class="srcmark" title="Source de la répétition sélectionnée">◀</span>':'')+featIcon(f),f.name,'feature',f.id,f.visible,(f.type==='xfillet'||f.type==='xdraft'||f.type==='xshell')?()=>{sel={kind:'feature',id:f.id};treeSel=[];if(f.type==='xfillet')enterExactFilletMode(f);else if(f.type==='xdraft')enterDraftMode(f);else enterCoqueMode(f);}:null);
+  };
+  const groups=(doc.bodies||[]).length?doc.bodies:[{id:'b1',name:'Corps 1'}];
+  g('🧱 Corps / Fonctions ('+doc.features.length+') · ➕ additif / ➖ découpe · ● = actif');
+  groups.forEach(be=>{
+    // En-tête du corps : clic = sélectionner ET ACTIVER (les fonctions suivantes
+    // naîtront dedans), œil = montrer/masquer ses fonctions, clic droit = renommer,
+    // isoler, supprimer le corps et ses fonctions.
+    const kids=doc.features.filter(f=>!f.repeatId&&bodyOf(f)===be.id);
+    const estActif=doc.activeBody===be.id;
+    const toutVis=kids.length>0&&kids.every(f=>f.visible!==false);
+    // Replié sur demande (▲ triangle, comme les répétitions), mais jamais quand il
+    // contient la sélection : on ne cache pas ce qu'on édite. Persisté (be.open).
+    const selIn=treeSel.concat([(sel.kind==='feature'||sel.kind==='body')?sel.id:null]).filter(Boolean);
+    const hasSel=selIn.some(id=>id===be.id||bodyOf(doc.features.find(x=>x.id===id))===be.id);
+    const open=be.open!==false||hasSel;
+    const hd=document.createElement('div');
+    hd.className='tnode'+((sel.kind==='body'&&sel.id===be.id)?' sel':'')+(kids.length&&!toutVis?' hidden':'');
+    const bcol=bodyTextColor(be);
+    hd.innerHTML='<span class="tri" title="Déplier / replier les fonctions du corps">'+(open?'▼':'▶')+'</span><span>◧</span><span class="nm"'+(bcol?(' style="color:'+bcol+'"'):'')+'>'+be.name+(estActif?' ●':'')+' · '+kids.length+' fonction(s)</span><span class="eye" title="Afficher / masquer les fonctions du corps">'+(toutVis?'👁':'🙈')+'</span>';
+    hd.title='Clic = sélectionner et ACTIVER (les nouvelles fonctions naîtront dans « '+be.name+' ») · ▶/▼ = replier · 👁 = montrer/masquer · clic droit = renommer / supprimer';
+    hd.onclick=ev=>{
+      if(ev.target&&ev.target.classList&&ev.target.classList.contains('tri')){be.open=!open;try{dirty=true;}catch(e){}renderTree();return;}
+      if(ev.target&&ev.target.classList&&ev.target.classList.contains('eye')){
+        bodyToggleVis(be.id);return;
+      }
+      treeSel=[];
+      sel={kind:'body',id:be.id};
+      try{if(doc.activeBody!==be.id){doc.activeBody=be.id;dirty=true;}}catch(e){}
+      renderTree();renderProps();refreshParts();
+    };
+    hd.oncontextmenu=e=>{e.preventDefault();showCtx(e.clientX,e.clientY,{kind:'body',id:be.id});};
+    t.appendChild(hd);
+    if(open)doc.features.forEach(f=>{if(!f.repeatId&&bodyOf(f)===be.id)featNode(f);});
   });
   updateOriginPlanes();
 }
@@ -470,6 +537,8 @@ function docSanitise(){
   // Répare un document rechargé : instance en double, instance sans répétition, esquisse
   // d'instance abandonnée et nombre de copies aberrant. Les esquisses LIBRES (non
   // consommées par une extrusion) sont conservées : elles sont légitimes.
+  // Les corps conteneurs sont normalisés aussi (anciens documents : tout vers « Corps 1 »).
+  try{ensureBodies();}catch(e){}
   let dup=0,orph=0,sk=0,cap=0;
   const seen=new Set();
   doc.features=(doc.features||[]).filter(f=>{
@@ -505,6 +574,131 @@ function delFeature(f){
   doc.features=doc.features.filter(x=>x.id!==f.id);
   doc.features.forEach(rp=>{if(rp.type==='repeat')rp.base=rp.base.filter(id=>id!==f.id);});
   if(tlMark===f.id)tlMark=null;
+}
+// Le bouton vit ici (sources, jamais la coque HTML — même règle que Révolution) :
+// après Révolution si présente, sinon après Extrusion. Le regroupement du bandeau
+// (96) ne déplace que ses ids connus : ➕ Corps reste en direct, action primaire.
+(function(){
+  if(typeof document==='undefined'||document.getElementById('btnBody'))return;
+  const after=document.getElementById('btnRevolve')||document.getElementById('btnExtrude');
+  if(!after||!after.parentNode)return;
+  const b=document.createElement('button');
+  b.id='btnBody';b.textContent='◧ Corps';
+  b.title='Nouveau corps : les fonctions suivantes naîtront dedans (il devient actif ●)';
+  b.onclick=()=>newBody();
+  after.parentNode.insertBefore(b,after.nextSibling);
+})();
+function newBody(){
+  // Crée un corps VIDE et l'ACTIVE : esquissez puis extrudez, la fonction naîtra
+  // dedans (addFeature taggue au corps actif). Annulable comme toute modification.
+  try{ensureBodies();}catch(e){}
+  docPushUndo('création d\'un corps');
+  const n=doc.bodySeq++;
+  const e={id:'b'+n,name:'Corps '+n,c:null};
+  doc.bodies.push(e);doc.activeBody=e.id;
+  treeSel=[];sel={kind:'body',id:e.id};
+  try{dirty=true;}catch(e2){}
+  renderTree();renderProps();refreshParts();
+  try{faceEl.textContent='« '+e.name+' » créé et ACTIF (●) : esquissez puis extrudez — la fonction naîtra dedans.';}catch(e2){}
+}
+function bodyTextColor(be){
+  // Couleur du NOM du corps dans l'arbre : celle du mesh affiché si présent
+  // (toujours définie : palette auto au pire), sinon celle de la fiche, sinon
+  // couleur du texte par défaut (''). Même source que la pièce 3D : on lit le corps.
+  try{
+    const live=bodies.find(b=>b.kind==='body'&&b.id===be.id);
+    const c=(live&&isFinite(+live.color)&&+live.color>0)?+live.color:((be&&isFinite(+be.color)&&+be.color>0)?+be.color:0);
+    return c?cssHex(c):'';
+  }catch(e){return '';}
+}
+function bodyToggleVis(id){
+  // Œil du corps : montre/masque SES FONCTIONS (donc exclu du rejeu, comme l'œil
+  // d'une fonction — une seule source de vérité, f.visible, annulable, persistée).
+  const kids=doc.features.filter(f=>!f.repeatId&&f.body===id);
+  const vis=!(kids.length>0&&kids.every(f=>f.visible!==false));
+  kids.forEach(f=>{f.visible=vis;});
+  doc.features.forEach(k=>{if(k.repeatId&&k.body===id)k.visible=vis;});
+  markDirty();rebuild();renderTree();
+}
+function featBlockOf(f){
+  // Bloc déplaçable d'un cran : fonction simple ([i,i]) ou répétition + ses
+  // instances ([i,j], contiguës par construction de repGenChildren). Une instance
+  // seule n'est jamais déplaçable (dérivée) : null.
+  const F=doc.features;
+  const i=F.indexOf(f);
+  if(!f||i<0||f.repeatId)return null;
+  if(f.type!=='repeat')return [i,i];
+  const kids=F.filter(k=>k.repeatId===f.id);
+  const j=i+kids.length;
+  for(let k=i+1;k<=j;k++){const o=F[k];if(!o||o.repeatId!==f.id)return null;}
+  return [i,j];
+}
+function featMove(id,dir){
+  // Décale un bloc d'un cran DANS SON CORPS (ordre de rejeu du corps), en sautant
+  // les fonctions des autres corps et les blocs voisins entiers. L'ordre global
+  // n'a de sens que par corps depuis les corps conteneurs : A2 peut passer devant
+  // A1 même si B1 est entre les deux. Annulable (une étape). Retourne true si fait.
+  const F=doc.features;
+  const f=F.find(x=>x.id===id);
+  if(!f||(dir!==1&&dir!==-1))return false;
+  const bl=featBlockOf(f);
+  if(!bl)return false;
+  const mine=f.body, L=bl[1]-bl[0]+1;
+  const topAt=k=>{ // début du bloc contenant l'index k (conteneur ou fonction simple)
+    const o=F[k];if(!o)return -1;
+    if(o.repeatId){const c=F.findIndex(x=>x.id===o.repeatId&&x.type==='repeat');return c;}
+    return k;
+  };
+  const blkLen=k=>{const o=F[k];return (o&&o.type==='repeat'&&!o.repeatId)?F.filter(x=>x.repeatId===o.id).length:0;};
+  let at=-1,after=0;
+  if(dir<0){
+    let k=bl[0]-1;
+    while(k>=0){
+      const s=topAt(k);
+      if(s<0||s>=bl[0]){k--;continue;}
+      if(F[s].body===mine){at=s;after=0;break;}
+      k=s-1; // saute le bloc entier d'un autre corps
+    }
+    if(at<0)return false;
+    docPushUndo('déplacement de « '+f.name+' »');
+    const seg=F.splice(bl[0],L);
+    F.splice(at,0,...seg);
+  }else{
+    let k=bl[1]+1;
+    while(k<F.length){
+      const o=F[k];
+      if(o.repeatId){k++;continue;} // anomalie (instance sans conteneur avant) : on avance
+      const e=k+blkLen(k);
+      if(o.body===mine){at=k;after=e-k+1;break;}
+      k=e+1; // saute le bloc entier d'un autre corps
+    }
+    if(at<0)return false;
+    docPushUndo('déplacement de « '+f.name+' »');
+    const seg=F.splice(bl[0],L);
+    F.splice(at-L+after,0,...seg);
+  }
+  markDirty();rebuild();renderTree();renderProps();
+  return true;
+}
+function delBody(id){
+  // Supprime le corps ET ses fonctions (avec leurs dépendances : congés, répétitions
+  // qui les consomment — delFeature cascade déjà). Les répétitions à cheval sur deux
+  // corps partent aussi, sinon leurs instances resteraient orphelines sans se régénérer.
+  const e=(doc.bodies||[]).find(x=>x.id===id);
+  if(!e)return;
+  const kids=doc.features.filter(f=>f.body===id);
+  const kidIds=new Set(kids.map(f=>f.id));
+  const reps=doc.features.filter(f=>f.type==='repeat'&&(f.body===id||(f.base||[]).some(b=>kidIds.has(b))));
+  const nF=kids.length+reps.filter(r=>r.body!==id).length;
+  if(!confirm('Supprimer « '+e.name+' »'+(nF?(' et ses '+nF+' fonction(s)'):' (vide)')+' ?'))return;
+  docPushUndo('suppression de « '+e.name+' »');
+  reps.forEach(f=>delFeature(f));
+  doc.features.filter(f=>f.body===id).forEach(f=>delFeature(f));
+  doc.bodies=doc.bodies.filter(x=>x.id!==id);
+  if(!doc.bodies.length){const n=doc.bodySeq++;const nid='b'+n;doc.bodies.push({id:nid,name:'Corps '+n,c:null});}
+  if(!doc.bodies.some(x=>x.id===doc.activeBody))doc.activeBody=doc.bodies[0].id;
+  treeSel=[];sel={kind:'body',id:doc.activeBody};
+  markDirty();rebuild();renderTree();renderProps();
 }
 
 // ── sélection multiple + suppression ─────────────────────────────────────────
@@ -656,6 +850,11 @@ function renderProps(){
   if(typeof extNew!=='undefined'&&extNew)extNew=null; // une sélection annule le formulaire en cours
   if(typeof revNew!=='undefined'&&revNew)revNew=null; // idem pour le formulaire de révolution
   const p=$('props');p.innerHTML='';
+  // FAO : les fiches posage/opération vivent dans src/88-fao.js (arbre FAO dédié).
+  if(sel&&(sel.kind==='faoSetup'||sel.kind==='faoOp')){
+    try{ faoRenderProps(p,sel); }catch(e){}
+    return;
+  }
   const nm=document.createElement('div');nm.innerHTML=`<label>Nom du document<input type="text" id="docNameIn" value="${doc.name}"></label>`;
   p.appendChild(nm);$('docNameIn').onchange=e=>{doc.name=e.target.value;$('docName').textContent=doc.name;markDirty();};
   $('docName').textContent=doc.name;
@@ -1067,14 +1266,25 @@ p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.fea
     p.appendChild(btn('🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}));
   }else if(sel.kind==='body'){
     const b=bodies.find(x=>x.id===sel.id);
-    p.appendChild(info(b?`<b>${b.name}</b> · corps affiché`:'Corps non reconstruit.'));
+    let e=null;try{e=bodyEntry(sel.id);}catch(err){}
+    const kids=doc.features.filter(f=>!f.repeatId&&f.body===sel.id);
+    p.appendChild(info(b?`<b>${b.name}</b> · corps affiché · ${kids.length} fonction(s)`:(e?`<b>${e.name}</b> · corps vide · ${kids.length} fonction(s) — esquissez puis extrudez pour le remplir.`:'Corps non reconstruit.')));
+    if(doc.activeBody!==sel.id)p.appendChild(btn('● Activer ce corps',()=>{
+      doc.activeBody=sel.id;try{dirty=true;}catch(err){}
+      renderTree();renderProps();refreshParts();
+      try{faceEl.textContent='« '+((e&&e.name)||sel.id)+' » ACTIF (●) : les nouvelles fonctions naîtront dedans.';}catch(err){}
+    }));
     if(b){
       const ff=b.ref?doc.features.find(x=>x.id===b.ref):null;
       if(colorable(ff)){p.appendChild(colorField(ff));p.appendChild(opacityField(ff));}
+      else if(b.kind==='body'&&!b.ghost)p.appendChild(bodyColorField(b));
       else if(b&&!b.ghost)p.appendChild(partTintField());
       else if(b&&!b.ghost)p.appendChild(note('Couleur : réglez-la sur chaque fonction (extrusion / import).'));
       p.appendChild(btn('🎯 Isoler',()=>isolate(b.id)));p.appendChild(btn('✅ Tout afficher',showAll));
+    }else if(e){
+      p.appendChild(bodyColorField({id:e.id,color:e.color||0x0a84ff}));
     }
+    p.appendChild(btn('🗑 Supprimer le corps',()=>delBody(sel.id)));
   }else if(sel.kind==='plane'){
     const P=PLANES[sel.id]||{role:'',label:''};
     p.appendChild(info(`<b>Plan ${sel.id}</b> · ${P.role} — ${P.label}`));
@@ -1114,6 +1324,29 @@ function colorField(f){
   return holder;
 }
 function colorable(f){return f&&(f.type==='import'||(f.type==='extrude'&&(f.op||'add')!=='cut'));}
+function bodyColorField(b){
+  // Couleur propre au corps (persistée dans doc.bodies via bodyEntry, rejouée au
+  // rebuild — prioritaire sur la teinte pièce pour CE corps, comme colorField).
+  const wrap=document.createElement('div');wrap.className='skrow';
+  const lab=document.createElement('label');lab.textContent='Couleur du corps';lab.style.flex='1';
+  const inp=document.createElement('input');
+  let cur=null;try{cur=bodyEntry(b.id).color;}catch(e){}
+  inp.type='color';inp.value=cssHex(cur||b.color||0x0a84ff);
+  inp.style.width='44px';inp.style.height='26px';inp.style.padding='0';inp.style.border='none';inp.style.background='none';
+  inp.title='Couleur de ce corps seul (persistée)';
+  inp.addEventListener('input',()=>{
+    const m=/^#?([0-9a-fA-F]{6})$/.exec(inp.value.trim());if(!m)return;
+    const c=parseInt(m[1],16);
+    try{bodyEntry(b.id).color=c;}catch(e){}
+    if(b.mesh&&b.mesh.material&&b.mesh.material.color)b.mesh.material.color.setHex(c);
+    try{dirty=true;renderTree();}catch(e){}
+  });
+  inp.addEventListener('change',()=>{markDirty();rebuild();renderProps();});
+  const rst=document.createElement('button');rst.className='skbtn';rst.textContent='Auto';rst.title='Revenir à la couleur automatique';
+  rst.onclick=()=>{try{delete bodyEntry(b.id).color;}catch(e){}markDirty();rebuild();renderProps();};
+  wrap.appendChild(lab);wrap.appendChild(inp);wrap.appendChild(rst);
+  return wrap;
+}
 function partTintField(){
   // Teinte pièce (combiné) : prioritaire sur les couleurs de fonctions.
   const wrap=document.createElement('div');wrap.className='skrow';

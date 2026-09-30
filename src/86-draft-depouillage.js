@@ -49,31 +49,35 @@ function draftClearHl(){
 function draftPaint(){
   draftClearHl();
   if(!draftMode||!draftMode.ref)return;
-  const b=bodies.find(x=>x.id==='occ_result');
-  const src=b&&b.mesh?b.mesh.geometry:null;
-  const groups=(src&&src.userData.occGroups)||[];
-  if(!groups.length)return;
-  // Index BRep → couleur : référence en vert, faces retenues en bleu (comme Fusion).
-  // Le reste est laissé tel quel (on ne repeint que ce qui change).
-  const colOf={};
-  colOf[draftMode.ref._ord]=0x30d158;
-  (draftMode.faces||[]).forEach(r=>{colOf[r._ord]=0x2f7bff;});
-  const kept=Object.keys(colOf).map(Number).filter(o=>groups.some(g=>g.f===o));
-  if(!kept.length)return;
-  const g=new THREE.BufferGeometry();
-  const pos=[],col=[],a=src.attributes.position.array,c=new THREE.Color();
-  kept.forEach(o=>{
-    c.setHex(colOf[o]);
-    groups.forEach(gr=>{
-      if(gr.f!==o)return;
-      for(let t=gr.start;t<gr.start+gr.count;t++){
-        const i3=t*3;
-        pos.push(a[i3],a[i3+1],a[i3+2]);
-        col.push(c.r,c.g,c.b);
-      }
+  // Multi-corps : la surbrillance se peint sur chaque solide visible (ordinaux par
+  // solide — une référence ne se peint que sur son corps, `_bid`, ou partout si
+  // ancien document sans `_bid`). Référence en vert, faces retenues en bleu (Fusion).
+  const targets=bodies.filter(x=>x.kind==='body'&&x.visible!==false&&x.mesh&&x.mesh.visible!==false&&x.mesh.geometry);
+  if(!targets.length)return;
+  const pos=[],col=[],c=new THREE.Color();
+  targets.forEach(b=>{
+    const groups=(b.mesh.geometry.userData.occGroups)||[];
+    if(!groups.length)return;
+    const want=[];
+    if(draftMode.ref._bid==null||draftMode.ref._bid===b.id)want.push([draftMode.ref._ord,0x30d158]);
+    (draftMode.faces||[]).forEach(r=>{if(r._bid==null||r._bid===b.id)want.push([r._ord,0x2f7bff]);});
+    const kept=want.filter(w=>groups.some(g=>g.f===w[0]));
+    if(!kept.length)return;
+    const a=b.mesh.geometry.attributes.position.array;
+    kept.forEach(w=>{
+      c.setHex(w[1]);
+      groups.forEach(gr=>{
+        if(gr.f!==w[0])return;
+        for(let t=gr.start;t<gr.start+gr.count;t++){
+          const i3=t*3;
+          pos.push(a[i3],a[i3+1],a[i3+2]);
+          col.push(c.r,c.g,c.b);
+        }
+      });
     });
   });
   if(!pos.length)return;
+  const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
   g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
   const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.55,depthTest:false,side:THREE.DoubleSide}));
@@ -85,7 +89,8 @@ function draftPaint(){
     const rn=draftMode.ref.n||[0,0,1],rp=draftMode.ref.pos||[0,0,0];
     let len=40;
     try{
-      const bb=new THREE.Box3().setFromObject(b.mesh);
+      const bm=bodies.find(x=>x.kind==='body'&&x.mesh&&(draftMode.ref._bid==null||x.id===draftMode.ref._bid));
+      const bb=new THREE.Box3().setFromObject(bm?bm.mesh:scene);
       const d=bb.max.clone().sub(bb.min).length();
       if(isFinite(d)&&d>0)len=Math.max(8,d/5);
     }catch(e){}
@@ -96,28 +101,28 @@ function draftPaint(){
   scene.add(draftGroup);
 }
 function draftFaceUnder(e){
-  // Face exacte sous le curseur (même chemin que le déplacement d'une face, 85).
+  // Face exacte sous le curseur (même chemin que le déplacement d'une face, 85 —
+  // résolu sur le SOLIDE DU CORPS cliqué, multi-corps).
   if(!occHas()||!occLive||!occLive.shape)return null;
   try{
     const h=pick(e);
     if(!h||!h.object||!h.object.geometry)return null;
-    if(h.object.userData.bid!=='occ_result')return null;
-    if(h.faceIndex===undefined||h.faceIndex===null)return null;
-    const groups=h.object.geometry.userData.occGroups||[];
-    const g=groups.find(g=>h.faceIndex>=g.start&&h.faceIndex<g.start+g.count);
-    if(!g)return null;
-    const f=occFaceAt(occLive.shape,g.f);
-    if(!f)return null;
+    const hit=occFaceOfHit(h.object,h.faceIndex);
+    if(!hit||!hit.face)return null;
+    const f=hit.face;
     const ref=occFaceRef(f);
+    try{f.delete();}catch(e){}
     if(!ref)return null;
+    ref._bid=hit.bd.id;
     // Ancre d'esquisse mémorisée dès le clic : au rejeu, la passe 1 (antériorité) suit
     // les éditions amont via l'esquisse au lieu de la seule proximité (comme les congés).
     // Peut être null (grande face loin de toute entité) : le rejeu retombe alors sur
     // l'identité (passe 1b) puis la proximité (passe 2).
     try{const a=xAnchorFor(ref.pos);if(a)ref.anchor=a;}catch(e){}
-    // `_ord` n'est PAS stockée dans le document : c'est l'index BRep de la session, utile
-    // uniquement pour repeindre la surbrillance. occFaceRef reste pur (pos/dim/n).
-    return{ref:ref,ord:g.f};
+    // `_ord`/`_bid` ne sont PAS stockés dans le document : index BRep et corps de la
+    // session, utiles uniquement pour repeindre la surbrillance. occFaceRef reste
+    // pur (pos/dim/n).
+    return{ref:ref,ord:hit.ord};
   }catch(e){return null;}
 }
 // Retrouve l'index BRep d'une face mémorisée, en la re-faisant correspondre par
@@ -125,14 +130,21 @@ function draftFaceUnder(e){
 // surbrillance APRÈS un rejeu : les index BRep ont bougé, la position est notre seule
 // référence stable (c'est aussi celle que le rejeu utilise, via occFindFace).
 function draftOrdOf(ref){
-  const b=bodies.find(x=>x.id==='occ_result');
-  const groups=(b&&b.mesh&&b.mesh.geometry.userData.occGroups)||[];
+  // Multi-corps : on cherche sur TOUS les solides affichés (une fusion peut avoir
+  // déplacé la face sur un autre corps) et on mémorise le corps trouvé (`_bid`).
   const k=draftKey(ref);
-  for(const g of groups){
-    const f=occFaceAt(occLive.shape,g.f);
-    if(!f)continue;
-    const cur=occFaceRef(f);
-    if(cur&&draftKey(cur)===k)return g.f;
+  for(const b of bodies){
+    if(b.kind!=='body'||!b.mesh||!b.shape)continue;
+    const groups=(b.mesh.geometry.userData.occGroups)||[];
+    for(const g of groups){
+      let f=null;
+      try{f=occFaceAt(b.shape,g.f);}catch(e){continue;}
+      if(!f)continue;
+      let cur=null;
+      try{cur=occFaceRef(f);}catch(e){}
+      try{f.delete();}catch(e){}
+      if(cur&&draftKey(cur)===k){ref._bid=b.id;return g.f;}
+    }
   }
   return -1;
 }
@@ -143,6 +155,7 @@ function draftCleanRef(r){
   if(!(r&&Array.isArray(r.pos)&&r.pos.length>=3&&Array.isArray(r.n)&&r.n.length>=3&&Array.isArray(r.dim)&&r.dim.length>=3))return null;
   const o={pos:r.pos.slice(),n:r.n.slice(),dim:r.dim.slice(),_ord:-1};
   if(r.anchor)o.anchor=Object.assign({},r.anchor);
+  if(typeof r._bid==='string')o._bid=r._bid;
   return o;
 }
 function draftMarkByPosition(){
@@ -488,7 +501,7 @@ function draftApply(){
   // On retire `_ord` (index BRep de la session) : il n'a de sens que pour la surbrillance et
   // il ferait grossir le document sans rien apporter au rejeu. L'ancre, elle, est gardée :
   // c'est elle qui permet au rejeu de suivre les éditions amont (passe 1).
-  const clean=r=>{const o={pos:r.pos.slice(),dim:r.dim.slice(),n:r.n.slice()};if(r.anchor)o.anchor=Object.assign({},r.anchor);return o;};
+  const clean=r=>{const o={pos:r.pos.slice(),dim:r.dim.slice(),n:r.n.slice()};if(r.anchor)o.anchor=Object.assign({},r.anchor);if(typeof r._bid==='string')o._bid=r._bid;return o;};
   const ref=clean(draftMode.ref);
   const faces=draftMode.faces.map(clean);
   if(draftMode.editing){
