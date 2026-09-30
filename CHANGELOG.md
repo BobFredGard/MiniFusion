@@ -2153,3 +2153,12 @@ Moteur (`faoTrochSlot`, `faoShadowIntervals`, `faoRoughAdaptiveLevel`) : trochoi
 Fiche Ebauche 3D reecrite en sections pour neophytes : Hauteurs (Haut/Bas), Strategie (libelles explicites + aide par strategie), Passes (ap Descente, ap2 Affinage, ae Pas lateral + ligne ae/ap en xO avec alerte si ae > 1/4 O en Adaptive), Matieres a laisser (Parois/Fond + fin), Trajectoire (Arrondi, Entree expliquee). Infobulles sur tous les champs (helpers `faoNum/faoSel/faoTxt/faoMini` + param `title`, `faoHelp`), boutons ↑↓x et selecteur d'outil titres, zone Limite clarifiee (Zone, Centre dedans/Outil dedans/Tout couvrir, Marge).
 
 Tests : `test_fao3d.cjs` (arcs presents, rayons coherents, CCW, surplomb jamais touche en bas, fente ~O sans helice ni rampe possible) + `test_fao.cjs` (rendu fiche 3 strategies sans plantage) — TOUT EST CONFORME. Suite 19/19 verte.
+
+### 2026-09-32m
+
+**FAO : limites residuelles de l'Adaptive levees (trochoide bornee, ombre exacte).**
+
+1. Trochoide : l'excursion en Y (±Rt) est clampee a la bande balayee (lignes extremes ± aeA/2 : au-dela on ne sait pas que c'est du vide) ; sans place pour un rayon >= 0.5 : repli en passe droite sur la ligne scannee (toujours sure). `faoTrochSlot` prend les bornes Y de la region.
+2. Ombre exacte : `faoShadowPlanes` lit les Z vertex du maillage (dedup 1 µm, cap 160) au lieu de la grille 2 mm — tout voile horizontal, si fin soit-il, a ses faces aux Z vertex : aucun ne peut se cacher (croisements lineaires => union atteinte aux plans). `faoHelixSpot` accepte ces plans en option (Adaptive seul : morph/zigzag gardent le pas de 1 mm teste) ; plans partages ombre+helice par niveau, slices en cache. Le test voile 24.3-24.9 (hors grille) a prouve le trou de l'ancien balayage.
+
+Tests : `test_fao3d.cjs` (clamp |dY| <= 1.25 sur bande nulle, repli droit sans arcs, voile jamais traverse en bas, depart helice a 26.9 au-dessus du voile) — TOUT EST CONFORME. Suite 19/19 verte.

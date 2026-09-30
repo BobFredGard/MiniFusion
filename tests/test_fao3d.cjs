@@ -165,6 +165,20 @@ const vm=require('vm');
     "const an=faoGenRough3D(NS,BX,40,30,{ap:10,ae:6,toolD:10,radial:0,axial:0,secu:45,strategy:'adaptive'});",
     "att(an.length>10&&an[0].r===1,'adaptive fente : '+an.length+' moves, demarre rapide');",
     "att(an.filter(m=>!m.r).every(m=>m.x>=48.9&&m.x<=51.1),'adaptive fente : reste dans la fente');",
+    // --- trochoide : excursion Y bornee a la bande balayee + repli droit
+    "const tc=[];faoTrochSlot(tc,0,20,5,10,10,2.5,5,5);",
+    "att(tc.some(m=>!m.r&&m.arc),'troch clamp : arcs si place reduite en Y');",
+    "att(tc.filter(m=>!m.r).every(m=>Math.abs(m.y-5)<=1.26),'troch clamp : |dY| <= bord (1.25)');",
+    "const ts=[];faoTrochSlot(ts,0,20,5,10,10,0.5,5,5);",
+    "att(ts.length>0&&ts.every(m=>!m.arc),'troch repli : droit si pas de place');",
+    "att(ts.filter(m=>!m.r).every(m=>m.x>=-1e-9&&m.x<=20+1e-9&&Math.abs(m.y-5)<1e-9),'troch repli : reste sur la ligne');",
+    // --- ombre exacte : voile fin 24.3-24.9 (hors grille 2 mm) jamais traverse
+    "const VL=merge(mkBox(40,60,0,60,0,10),mkBox(30,70,0,60,24.3,24.9));",
+    "const vv=faoGenRough3D(VL,BX2,40,0,{ap:10,ae:6,toolD:10,radial:0.5,axial:0,secu:45,strategy:'adaptive'});",
+    "const c20=vv.filter(m=>!m.r&&Math.abs(m.z-20)<1e-9);",
+    "att(c20.length>0,'adaptive voile : niveau 20 usine autour');",
+    "att(c20.every(m=>m.x<=24.6||m.x>=75.4),'adaptive voile : voile fin jamais traverse');",
+    "att(Math.abs(faoHelixSpot(VL,50,30,3,5.5,20,40,[0,10,24.3,24.9])-26.9)<1e-9,'helice plans : depart au-dessus du voile');",
     // --- dispatch via ops (maillage actif nul en VM -> [] sans planter)
     "const j3=faoDefaultJob();j3.ops=[{id:'x',on:true,toolId:'T3',type:'geofinish',step:1,laisse:0,seed:'top'}];",
     "att(Array.isArray(faoOpMoves(j3.ops[0],j3)),'dispatch geofinish sans maillage : pas de plantage');",

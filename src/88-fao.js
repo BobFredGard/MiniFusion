@@ -1897,10 +1897,20 @@ function faoDiscClear(segs,cx,cy,hr,r){
   }
   return true;
 }
-function faoHelixSpot(mesh,cx,cy,hr,r,z,brutTop){
+function faoHelixSpot(mesh,cx,cy,hr,r,z,brutTop,planes){
   // Départ hélice = 2 mm au-dessus de la plus haute matière sous le disque.
   // Colonne vide : 2 mm au-dessus du niveau (rainure ouverte). Jamais enterré.
+  // Avec `planes` (Z vertex du maillage) : aucun voile fin manqué entre deux
+  // pas de 1 mm ; sans : balayage historique au pas de 1 mm (morph/zigzag).
   const top=isFinite(+brutTop)?+brutTop:z;
+  if(Array.isArray(planes)&&planes.length){
+    for(let k=planes.length-1;k>=0;k--){
+      const zz=planes[k];
+      if(!(zz>z+1e-9&&zz<=top+1e-9))continue;
+      if(faoSliceHit(faoSliceZCached(mesh,Math.round(zz*1000)/1000),cx,cy,hr+r))return zz+2;
+    }
+    return z+2;
+  }
   for(let zz=top;zz>z+1e-9;zz-=1){
     if(faoSliceHit(faoSliceZCached(mesh,zz),cx,cy,hr+r))return zz+2;
   }
@@ -1931,10 +1941,11 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
   // passes fines (ap2) à R2 là où la section change (marches réduites).
   // Par tranche non plate : spirale morph (boucles imbriquées qui suivent les
   // parois, entrée hélice au centre), zigzag (option, poches complexes) ou
-  // adaptive (pelage au petit pas + trochoïdes G2/G3 dans les goulets, façon
-  // Adaptive 3D : ap profond, ae ≤ 0.25*D, liaisons sans retrait, vide calculé
-  // avec l'ombre des niveaux supérieurs = brut restant, entrée multi-spots
-  // hélice/rampe X-Y/micro-hélice, ordre de pelage selon l'ouverture).
+  // adaptive (pelage au petit pas + trochoïdes G2/G3 clampées en Y dans les
+  // goulets, façon Adaptive 3D : ap profond, ae ≤ 0.25*D, liaisons sans
+  // retrait, ombre EXACTE aux plans vertex = brut restant sans voile manqué,
+  // entrées multi-spots hélice/rampe X-Y/micro-hélice avec colonnes exactes,
+  // ordre de pelage selon l'ouverture).
   // Plats (couverture > 85 %) : zigzag au grand pas D*0.8 (morph/adaptive gardent
   // leur petit pas : le plat reste pelé, pas surfacing pleine largeur).
   o=o||{};
@@ -2001,16 +2012,27 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
   faoSliceCache=null;
   return moves;
 }
-function faoTrochSlot(moves,xa,xb,y,z,D,aeA){
+function faoTrochSlot(moves,xa,xb,y,z,D,aeA,yMin,yMax){
   // Trochoïde en VRAIS arcs G2/G3 le long d'un goulet : chaque boucle = 4
   // quarts à 90° (< 180°, IJK incrémental, centre = départ + IJK comme les CN),
   // émis CCW (G3). Engagement d'un seul côté, pas d'arrêt en fond de
-  // rainure. Reste dans [xa,xb], Z constant.
+  // rainure. Reste dans [xa,xb], Z constant. L'excursion en Y (±Rt) est
+  // clampée à la bande balayée (lignes extrêmes ± aeA/2 : au-delà, on ne sait
+  // pas que c'est du vide) ; sans place pour un rayon ≥ 0.5 : passe droite.
   const W=xb-xa;
   if(!(W>0.5))return;
-  const Rt=Math.round(Math.max(0.5,Math.min(D*0.3,aeA*1.5,W/2-0.2))*1000)/1000;
-  const pitch=Math.max(0.5,Math.min(aeA,D*0.2));
   const Y=Math.round(y*1000)/1000;
+  const edge=(isFinite(yMin)&&isFinite(yMax))
+    ?Math.max(0,Math.min(y-yMin,yMax-y)+Math.max(0.5,isFinite(+aeA)&&+aeA>0?+aeA:2)*0.5)
+    :1/0;
+  const Rt0=Math.min(D*0.3,aeA*1.5,W/2-0.2,edge);
+  if(!(Rt0>=0.5)){
+    moves.push({r:0,x:Math.round(xa*1000)/1000,y:Y,z:z});
+    moves.push({r:0,x:Math.round(xb*1000)/1000,y:Y,z:z});
+    return;
+  }
+  const Rt=Math.round(Rt0*1000)/1000;
+  const pitch=Math.max(0.5,Math.min(aeA,D*0.2));
   moves.push({r:0,x:Math.round((xa+Rt)*1000)/1000,y:Y,z:z});
   let cx=xa+Rt, guard=0;
   while(cx<xb-Rt-1e-9&&guard++<10000){
@@ -2026,23 +2048,66 @@ function faoTrochSlot(moves,xa,xb,y,z,D,aeA){
   }
   moves.push({r:0,x:Math.round(xb*1000)/1000,y:Y,z:z});
 }
-function faoShadowIntervals(mesh,B,y,z,zt,r,aeA){
+function faoShadowPlanes(mesh,z,zt){
+  // Plans Z où lire l'ombre : les Z vertex du maillage entre z et zt
+  // (dédup 1 µm, cap 160 avec sous-échantillonnage régulier en repli).
+  // EXACTITUDE : tout voile horizontal, si fin soit-il, a ses faces haute et
+  // basse à des Z vertex — aucun ne peut se cacher entre deux plans
+  // (les croisements variant linéairement, l'union des emprises est atteinte
+  // aux plans vertex). Sans vertex : grille historique au pas ≤ 2 mm.
+  const pls=[Math.round(z*1000)/1000];
+  let zv=null;
+  try{
+    const zs=[];
+    for(let k=0;k<mesh.v.length;k++){ const q=mesh.v[k][2]; if(isFinite(q))zs.push(q); }
+    zs.sort(function(a,b){return a-b;});
+    zv=[];
+    for(let k=0;k<zs.length;k++)if(!zv.length||zs[k]-zv[zv.length-1]>1e-6)zv.push(zs[k]);
+    if(zv.length>160){
+      const thin=[zv[0]], st=(zv.length-1)/159;
+      for(let k=1;k<159;k++)thin.push(zv[Math.round(k*st)]);
+      thin.push(zv[zv.length-1]); zv=thin;
+    }
+  }catch(e){ zv=null; }
+  if(zv&&zv.length){
+    zv.forEach(function(zz){
+      if(zz>z+1e-9&&zz<=zt+1e-9)pls.push(Math.round(zz*1000)/1000);
+    });
+  }else{
+    const H=Math.max(0,zt-z), n=Math.max(1,Math.ceil(H/2));
+    for(let k=1;k<=n;k++)pls.push(Math.round((z+H*k/n)*1000)/1000);
+  }
+  const seen={}, out=[];
+  pls.forEach(function(zz){ const k=String(zz); if(!seen[k]){seen[k]=1;out.push(zz);} });
+  return out;
+}
+function faoShadowIntervals(mesh,B,y,z,zt,r,aeA,planes){
+  // `planes` optionnel : plans pré-calculés du niveau (partagés avec
+  // l'hélice) ; sinon calcul local via faoShadowPlanes.
   // Vide à z avec BRUT RESTANT : l'outil vertical n'atteint que ce qui est
-  // libre depuis le dessus — union des sections entre z et zt (pas ≤ 2 mm),
-  // dilatées de r, puis complément dans le brut. Les porte-à-faux (matière
-  // au-dessus, vide en dessous) sont exclus : jamais de plongée sous un
-  // surplomb. Matière lue sur 3 lignes (y±aeA) : une ligne pile sur une arête
-  // (epsilon scanline) verrait un vide plein large et fraiserait le flanc —
-  // les voisines rattrapent le bord. Les 3 vides : [] comme avant (conservatif).
+  // libre depuis le dessus — union des sections aux plans vertex entre z et
+  // zt (faoShadowPlanes : aucun voile fin manqué), dilatées de r, puis
+  // complément dans le brut. Les porte-à-faux sont exclus : jamais de plongée
+  // sous un surplomb. Matière lue sur 3 lignes (y±aeA) : une ligne pile sur
+  // une arête (epsilon scanline) verrait un vide plein large et fraiserait le
+  // flanc — les voisines rattrapent le bord. Les 3 vides : [] (conservatif).
   const lo=B.x0+r, hi=B.x1-r;
   const out=[];
   if(!(hi-lo>0.2))return out;
-  const H=Math.max(0,zt-z);
-  const n=Math.max(1,Math.ceil(H/2));
   const stepY=Math.max(0.5,isFinite(+aeA)&&+aeA>0?+aeA:2);
   const forb=[];
-  for(let k=0;k<=n;k++){
-    const zz=Math.round((z+H*k/n)*1000)/1000;
+  let pls=null;
+  if(Array.isArray(planes)&&planes.length){
+    const seen={}, tmp=[];
+    planes.forEach(function(zz){
+      if(zz>=z-1e-9&&zz<=zt+1e-9){
+        const q=Math.round(zz*1000)/1000, k=String(q);
+        if(!seen[k]){seen[k]=1;tmp.push(q);}
+      }
+    });
+    pls=tmp.length?tmp:faoShadowPlanes(mesh,z,zt);
+  }else pls=faoShadowPlanes(mesh,z,zt);
+  pls.forEach(function(zz){
     const segs=faoSliceZCached(mesh,zz);
     [y-stepY,y,y+stepY].forEach(function(yy){
       faoScanIntervals(segs,yy).forEach(function(iv){
@@ -2050,7 +2115,7 @@ function faoShadowIntervals(mesh,B,y,z,zt,r,aeA){
         if(b-a>-1e-9)forb.push([a,b]);
       });
     });
-  }
+  });
   if(!forb.length)return out;
   forb.sort(function(p,q){return p[0]-q[0];});
   const mg=[forb[0].slice()];
@@ -2075,12 +2140,15 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   const segs=faoSliceZCached(mesh,z);
   const top=isFinite(+zt)?+zt:z;
   const aeA=Math.max(0.5,Math.min(isFinite(+ae)&&+ae>0?+ae:D*0.2,D*0.25));
+  // Plans partagés du niveau : ombre + colonnes d'hélice lisent les mêmes
+  // Z vertex (aucun voile fin manqué, slices en cache).
+  const planes=faoShadowPlanes(mesh,z,Math.max(top,isFinite(+brutTop)?+brutTop:z));
   const ys=[]; let y=B.y0+r, g=0;
   while(y<=B.y1-r+1e-9&&g++<100000){ ys.push(y); y+=aeA; }
   if(!ys.length)return;
   const lines=[];
   ys.forEach(function(yy){
-    const ivs=faoShadowIntervals(mesh,B,yy,z,top,r,aeA);
+    const ivs=faoShadowIntervals(mesh,B,yy,z,top,r,aeA,planes);
     if(ivs.length)lines.push({y:yy,ivs:ivs});
   });
   if(!lines.length)return;
@@ -2109,7 +2177,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
         if(forced==='auto'&&!(c.elen>=2*D))continue;
         if(!faoDiscClear(segs,c.x,c.y,hrr,r))continue;
         hx=c.x; hy=c.y; hr=hrr;
-        hStart=Math.min(zFrom,faoHelixSpot(mesh,c.x,c.y,hrr,r,z,brutTop));
+        hStart=Math.min(zFrom,faoHelixSpot(mesh,c.x,c.y,hrr,r,z,brutTop,planes));
       }
     }
     // Run X le plus long + run Y (intersection commune des intervalles).
@@ -2139,7 +2207,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       const mhr=Math.max(0.5,run/2-0.2);
       const mx=ramp?ramp.x0:(E.iv.a+E.iv.b)/2, my=ramp?ramp.y0:E.y;
       if(run>0.5&&faoDiscClear(segs,mx,my,mhr,r)){
-        const ms=Math.min(zFrom,faoHelixSpot(mesh,mx,my,mhr,r,z,brutTop));
+        const ms=Math.min(zFrom,faoHelixSpot(mesh,mx,my,mhr,r,z,brutTop,planes));
         moves.push({r:1,x:mx,y:my,z:secu});
         if(ms<secu-1e-9)moves.push({r:0,x:mx,y:my,z:ms});
         faoHelixEntry(mx,my,ms,z,mhr,D).slice(1).forEach(function(m){moves.push(m);});
@@ -2151,9 +2219,11 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     let maxLen=0;
     rl.forEach(function(L){ maxLen=Math.max(maxLen,L.ivs[0].b-L.ivs[0].a); });
     if(maxLen<2.5*D&&rl.length>=2){
+      let yLo=1/0, yHi=-1/0;
+      rl.forEach(function(L){ if(L.y<yLo)yLo=L.y; if(L.y>yHi)yHi=L.y; });
       rl.forEach(function(L){
         const iv=L.ivs[0];
-        faoTrochSlot(moves,iv.a,iv.b,L.y,z,D,aeA);
+        faoTrochSlot(moves,iv.a,iv.b,L.y,z,D,aeA,yLo,yHi);
       });
       const last=moves[moves.length-1];
       moves.push({r:1,x:last.x,y:last.y,z:secu});
