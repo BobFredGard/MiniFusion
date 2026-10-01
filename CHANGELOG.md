@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**116 versions**, de `2026-09-28b` à `2026-10-01-008` — la plus récente en bas,
+**117 versions**, de `2026-09-28b` à `2026-10-01-009` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2265,3 +2265,16 @@ README : ligne post-processeurs mise à jour (Fagor = 3 axes, indexation refusé
 Tests : `test_fao.cjs` — `faoOrientFromNormal` (+Z→B0 C0, +X→B−90 C0, +Y→B−90 C−90, normalisation, face basse→down), garde plan sans corps + annulation + exclusivité chaîne, bouton fiche présent ; brut : mode défaut/mémoire, manuel stable à chaque appel, corps choisi introuvable→repli, UI Source 3 options, 2 rangs X0..Z1, « MAJ brut » masqué en manuel, saisie X0 appliquée, hint corps absent ; surfaçage : `faoFacingAe(3)=45`/`np<2=null`, `faoFacingCount(45)=3`/`(6)=16`, générateur np=3 → lignes y=−5/40/85, sans np → lignes = `faoFacingCount`, `faoOpMoves` np=3→3 niveaux / np absent→compat, carte Passes/écart liés (Passes=3 → écart recalculé ; écart=7 → np effacé). Suite 19/19 verte, `facing=34 pocket=65 contour=7 drill=8` intact.
 
 README : posages (bouton « Sur la pièce »), brut 3 sources, surfaçage passes/écart documentés.
+
+### 2026-10-01-009
+
+**FAO brut : le corps choisi devient invisible dès qu'il est choisi — désignation directe dans l'arbre (📦).**
+
+1. **Masquage automatique** (`faoStockBodySet(bodyId,setup)` / `faoStockBodyRestore` / `faoStockBodyHide_`) : dès qu'un corps est désigné comme brut (select « Brut = » de la fiche OU clic 📦 dans l'arbre), `doc.bodyVis[id]=false` + `mesh.visible=false` — le corps **reste dans `bodies`** (mesh présent : la bbox du brut suit sa géométrie, seule sa vue est off ; `faoStock()` mode body l'inclut **même masqué**, le masquage ne fige jamais le brut). L'ancien corps choisi est restauré au changement de choix — **on ne défait que ce qu'on a fait** (`stockBodyHid` : si le corps était déjà masqué avant le choix, il le reste après le retrait). **Garde-fou** : si le corps choisi est le seul visible, pas de masquage (la vue ne se vide jamais). Snapshot annulable (Ctrl+Z) sur chaque désignation.
+2. **Arbre** : chaque en-tête de corps porte l'icône **📦** (opacité 0,35, pleine sur le brut choisi) — clic = désigner/retirer le brut (mutuellement exclusif avec les clics ▶/👁), badge plein + ligne grisée une fois brut. Le titre de la ligne documente le geste.
+3. **`bodyToggleVis` (œil du corps)** : si le corps est masqué comme brut (`bodyVis=false`), l'œil le **ré-affiche** (supprime `bodyVis[id]`, `stockBodyHid=false`, `refreshParts`) **sans toucher aux features** — ni rejeu, ni sortie du rejeu ; simple visibilité. Sinon comportement historique inchangé (toggle des fonctions du corps).
+4. **Fiche** : select « Brut = » et select Source passent par `faoStockBodySet` (masquage/restauration inclus) ; infobulles mises à jour.
+
+Tests : `test_fao.cjs` — désignation (mode+corps+flag, `bodyVis=false`+invisible, l'autre visible), changement A→B (ancien restauré, nouveau masqué), retrait (mode bodies + visible), garde seul-corps (jamais masqué), arbre : badge 📦 présent, clic simulé = désigne+masque, badge plein, 2ᵉ clic = retire+visible, nettoyage. Suite 19/19 verte.
+
+README : posages — « 📦 dans l'arbre = désigner le brut ; le corps choisi est masqué dans la vue (œil pour le revoir) ».

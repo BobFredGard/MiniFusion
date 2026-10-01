@@ -212,11 +212,28 @@ function renderTree(){
     const hasSel=selIn.some(id=>id===be.id||bodyOf(doc.features.find(x=>x.id===id))===be.id);
     const open=be.open!==false||hasSel;
     const hd=document.createElement('div');
-    hd.className='tnode'+((sel.kind==='body'&&sel.id===be.id)?' sel':'')+(kids.length&&!toutVis?' hidden':'');
+    // 📦 = corps choisi comme BRUT FAO : il est masqué dans la vue dès choisi
+    // (doc.bodyVis=false) — l'icône (pleine sur le brut choisi) le désigne/retire.
+    let stkOn=false;
+    try{ const fs=faoSetup(); stkOn=!!fs&&fs.stockSrc==='body'&&fs.stockBody===be.id; }catch(e){}
+    let visBrut=true;
+    try{ visBrut=!(doc.bodyVis&&doc.bodyVis[be.id]===false); }catch(e){}
+    hd.className='tnode'+((sel.kind==='body'&&sel.id===be.id)?' sel':'')+(((kids.length&&!toutVis)||!visBrut)?' hidden':'');
     const bcol=bodyTextColor(be);
-    hd.innerHTML='<span class="tri" title="Déplier / replier les fonctions du corps">'+(open?'▼':'▶')+'</span><span>◧</span><span class="nm"'+(bcol?(' style="color:'+bcol+'"'):'')+'>'+be.name+(estActif?' ●':'')+' · '+kids.length+' fonction(s)</span><span class="eye" title="Afficher / masquer les fonctions du corps">'+(toutVis?'👁':'🙈')+'</span>';
-    hd.title='Clic = sélectionner et ACTIVER (les nouvelles fonctions naîtront dans « '+be.name+' ») · ▶/▼ = replier · 👁 = montrer/masquer · clic droit = renommer / supprimer';
+    hd.innerHTML='<span class="tri" title="Déplier / replier les fonctions du corps">'+(open?'▼':'▶')+'</span><span>◧</span><span class="nm"'+(bcol?(' style="color:'+bcol+'"'):'')+'>'+be.name+(estActif?' ●':'')+' · '+kids.length+' fonction(s)</span>'+
+      '<span class="stk" style="cursor:pointer'+(stkOn?'':';opacity:.35')+'" title="'+(stkOn?'Corps choisi comme BRUT FAO — cliquer pour RETIRER (il réapparaît dans la vue)':'Définir ce corps comme BRUT : il sera masqué dans la vue dès choisi')+'">📦</span>'+
+      '<span class="eye" title="Afficher / masquer les fonctions du corps">'+(toutVis?'👁':'🙈')+'</span>';
+    hd.title='Clic = sélectionner et ACTIVER (les nouvelles fonctions naîtront dans « '+be.name+' ») · ▶/▼ = replier · 📦 = brut FAO (masqué dans la vue) · 👁 = montrer/masquer · clic droit = renommer / supprimer';
     hd.onclick=ev=>{
+      if(ev.target&&ev.target.classList&&ev.target.classList.contains('stk')){
+        try{
+          const fs=faoSetup();
+          if(fs&&fs.stockSrc==='body'&&fs.stockBody===be.id)faoStockBodySet(null,fs);
+          else faoStockBodySet(be.id,fs);
+        }catch(err){}
+        renderTree();refreshParts();
+        return;
+      }
       if(ev.target&&ev.target.classList&&ev.target.classList.contains('tri')){be.open=!open;try{dirty=true;}catch(e){}renderTree();return;}
       if(ev.target&&ev.target.classList&&ev.target.classList.contains('eye')){
         bodyToggleVis(be.id);return;
@@ -612,6 +629,19 @@ function bodyTextColor(be){
   }catch(e){return '';}
 }
 function bodyToggleVis(id){
+  // Un corps masqué comme BRUT FAO (doc.bodyVis=false) revient par l'œil :
+  // simple visibilité, sans toucher aux features (le brut reste dans le rejeu).
+  try{
+    if(doc.bodyVis&&doc.bodyVis[id]===false){
+      delete doc.bodyVis[id];
+      const s=(typeof faoSetup==='function')?faoSetup():null;
+      if(s&&s.stockSrc==='body'&&s.stockBody===id)s.stockBodyHid=false;
+      const bd=(typeof bodies!=='undefined'&&bodies?bodies:[]).filter(function(b){return b&&b.id===id;})[0];
+      if(bd){bd.visible=true;if(bd.mesh)bd.mesh.visible=true;}
+      markDirty();refreshParts();renderTree();
+      return;
+    }
+  }catch(e){}
   // Œil du corps : montre/masque SES FONCTIONS (donc exclu du rejeu, comme l'œil
   // d'une fonction — une seule source de vérité, f.visible, annulable, persistée).
   const kids=doc.features.filter(f=>!f.repeatId&&f.body===id);

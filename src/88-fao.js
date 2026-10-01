@@ -233,8 +233,11 @@ function faoStock(){
       box=new THREE.Box3(); let n=0;
       const want=(mode==='body')?job.stockBody:null;
       bodies.forEach(function(b){
-        if(!b||b.ghost||b.visible===false||!b.mesh)return;
-        if(want!=null&&b.id!==want)return;
+        if(!b||b.ghost||!b.mesh)return;
+        // Corps choisi : bbox MÊME masqué (le masquage auto ne doit pas figer le
+        // brut) ; mode « tous les corps » : corps visibles seulement (historique).
+        if(want!=null){ if(b.id!==want)return; }
+        else if(b.visible===false)return;
         try{ box.expandByObject(b.mesh); n++; }catch(e){}
       });
       if(!n)box=null;
@@ -257,6 +260,59 @@ function faoStock(){
   if(faoStockValid(job.stock))return job.stock;
   job.stock=faoStockDefault();
   return job.stock;
+}
+
+/* ----- corps-brut : désignation (arbre 📦 ou fiche) + masquage automatique ----- */
+// Dès qu'un corps est CHOISI comme brut (mode « corps choisi »), il devient
+// invisible dans la vue — via doc.bodyVis[id]=false (le corps RESTE dans
+// `bodies`, mesh présent : la bbox du brut suit sa géométrie, seule sa vue est
+// off). L'œil de l'en-tête corps dans l'arbre le re-rend visible
+// (bodyToggleVis). On ne défait QUE ce qu'on a fait : si le corps était déjà
+// masqué avant le choix, il le reste après le retrait (stockBodyHid).
+function faoStockBodyRestore(setup){
+  setup=setup||faoSetup();
+  const id=setup.stockBody;
+  if(id!=null&&setup.stockBodyHid){
+    try{doc.bodyVis=doc.bodyVis||{};delete doc.bodyVis[id];}catch(e){}
+    try{
+      const bl=(typeof bodies!=='undefined'&&bodies)?bodies:[];
+      bl.forEach(function(b){ if(b&&b.id===id){ b.visible=true; if(b.mesh)b.mesh.visible=true; } });
+    }catch(e){}
+    try{markDirty();}catch(e){}
+  }
+  setup.stockBodyHid=false;
+}
+function faoStockBodyHide_(setup,id){
+  try{
+    const bl=(typeof bodies!=='undefined'&&bodies)?bodies:[];
+    const bd=bl.filter(function(b){return b&&b.id===id;})[0];
+    if(!bd||bd.visible===false){ setup.stockBodyHid=false; return; } // absent/déjà masqué : pas à nous
+    const others=bl.filter(function(b){return b&&!b.ghost&&b.id!==id&&b.visible!==false&&b.mesh;});
+    if(!others.length){ setup.stockBodyHid=false; return; } // seul corps visible : ne JAMAIS vider la vue
+    doc.bodyVis=doc.bodyVis||{}; doc.bodyVis[id]=false;
+    bd.visible=false; if(bd.mesh)bd.mesh.visible=false;
+    setup.stockBodyHid=true;
+    markDirty();
+  }catch(e){ setup.stockBodyHid=false; }
+}
+function faoStockBodySet(bodyId,setup){
+  // Désigne (bodyId) ou retire (null) le corps-brut — depuis l'arbre (📦) ou la
+  // fiche (select « Brut = »). Effet : masquage/restauration en vue 3D + mode.
+  setup=setup||faoSetup();
+  try{ faoSnapshot('corps choisi comme brut'); }catch(e){}
+  const prev=(setup.stockSrc==='body'&&setup.stockBody!=null)?setup.stockBody:null;
+  const same=(prev!=null&&prev===bodyId);
+  if(!same)faoStockBodyRestore(setup);
+  if(bodyId==null||bodyId===''){
+    if(setup.stockSrc==='body')setup.stockSrc='bodies';
+    delete setup.stockBody;
+    setup.stockBodyHid=false;
+  }else{
+    setup.stockSrc='body';
+    setup.stockBody=bodyId;
+    if(!same)faoStockBodyHide_(setup,bodyId);
+  }
+  try{ faoChanged(); }catch(e){}
 }
 
 /* ----- niveaux Z (ébauche par passes ap, finition = dernier niveau) ----- */
@@ -1900,19 +1956,25 @@ function faoSetupFiche(p,setup){
   rSrc.appendChild(faoLab('Source'));
   rSrc.appendChild(faoSel([['bodies','Tous les corps'],['body','Corps choisi'],['manual','Manuel']],
     modeS,function(v){
-      if(v==='manual'){ faoStock(); setup.stockSrc='manual'; } // fige la boîte courante
-      else{
-        setup.stockSrc=v;
-        if(v==='body'&&setup.stockBody==null){
+      if(v==='manual'){ faoStock(); faoStockBodyRestore(setup); setup.stockSrc='manual'; } // fige la boîte courante
+      else if(v==='body'){
+        let id=setup.stockBody;
+        if(id==null){
           const first=(typeof bodies!=='undefined'&&bodies?bodies:[])
             .filter(function(b){return b&&!b.ghost&&b.mesh;})[0];
-          setup.stockBody=first?first.id:null;
+          id=first?first.id:null;
         }
+        if(id!=null)faoStockBodySet(id,setup); // désigne + masque le corps choisi
+        else{ setup.stockSrc='body'; setup.stockBody=null; faoStock(); }
+      }
+      else{ // bodies
+        faoStockBodyRestore(setup); // ré-affiche le corps qu'on avait masqué
+        setup.stockSrc='bodies';
         faoStock();
       }
       if(typeof renderProps==='function')renderProps();
     },
-    'D’où vient la boîte du brut : bbox des corps visibles (défaut), bbox d’un seul corps (barreau importé à côté du brut) ou boîte saisie à la main.'));
+    'D’où vient la boîte du brut : bbox des corps visibles (défaut), bbox d’un seul corps (barreau importé à côté du brut — masqué dans la vue dès choisi, 📦 dans l’arbre) ou boîte saisie à la main.'));
   p.appendChild(rSrc);
   if(modeS==='body'){
     const rBd=faoRow();
@@ -1922,8 +1984,8 @@ function faoSetupFiche(p,setup){
     if(bList.length){
       rBd.appendChild(faoSel(bList.map(function(b){return [b.id,String(b.name||b.id)];}),
         setup.stockBody!=null?setup.stockBody:bList[0].id,
-        function(v){ setup.stockBody=v; faoStock(); },
-        'Corps dont la boîte englobante (+ marge) sert de brut.'));
+        function(v){ faoStockBodySet(v,setup); },
+        'Corps dont la boîte englobante (+ marge) sert de brut. Dès choisi, il est masqué dans la vue (œil de l’arbre pour le revoir).'));
     }else{
       const nb=document.createElement('span');
       nb.style.cssText='font-size:.72rem;color:#ff9f0a;';
