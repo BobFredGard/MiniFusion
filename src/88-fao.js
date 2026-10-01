@@ -1408,11 +1408,36 @@ function faoRefreshPreview(){
   }catch(e){}
   return total;
 }
+function faoPreviewGenerate(){
+  // « Générer + aperçu » : régénère ET ré-affiche TOUJOURS les traces
+  // (un ancien « Masquer » ne doit plus les rendre invisibles à vie).
+  faoPrevOn=true;
+  const n=faoRefreshPreview();
+  faoTouch();
+  try{ const b=document.getElementById('faoPrevBtn'); if(b)b.textContent='Masquer'; }catch(e){}
+  try{ if(typeof faceEl!=='undefined'&&faceEl)faceEl.textContent='FAO : '+n+' points de parcours.'+(n?'':' Aucune trajectoire.'); }catch(e){}
+  return n;
+}
 
 /* ================= viewer d'usinage (brut + outil, ▶ lecture / ⏸ pause / ⏹ stop) =================
    Cache les traces, fait apparaître la boîte du brut (+ le corps-brut masqué s'il y en a un),
    anime l'outil le long du parcours et dessine la trace au fil de l'eau. */
-let faoVw=null, faoVwBar=null, faoVwBarT=null;
+let faoVw=null, faoVwBar=null, faoVwBarT=null, faoVwBtn=null, faoVwMatterBtn=null, faoVwEsc=false;
+function faoViewerMsg(t){
+  // Retour utilisateur (jamais silencieux) : barre d'état + console.
+  try{ if(typeof faceEl!=='undefined'&&faceEl)faceEl.textContent=t; }catch(e){}
+  try{ if(typeof console!=='undefined'&&console&&console.log)console.log(t); }catch(e){}
+}
+function faoViewerBtnUpdate(){
+  // Le bouton « Usinage » de la fiche bascule : OUVRIR le mode lecture / en SORTIR.
+  try{
+    if(!faoVwBtn)return;
+    faoVwBtn.textContent=faoVw?'■ Quitter l\'usinage':'▶ Usinage';
+    faoVwBtn.title=faoVw
+      ?'Mode lecture usinage actif : sortir du mode (aussi Échap ou ✕ de la barre) — ré-affiche les traces, retire l\'outil, le brut et la matière.'
+      :'Viewer d\'usinage : cache les traces, fait apparaître le brut, anime l\'outil le long du parcours — barre ▶ ⏸ ⏹ ✕ en bas de la vue (Échap pour sortir).';
+  }catch(e){}
+}
 
 function faoViewerBuild(setup){
   // Séquence complète du posage : points (arcs développés), Ø outil par point,
@@ -1485,6 +1510,7 @@ function faoViewerApply(){
       }
     }catch(e){}
   }
+  try{ faoViewerMatterStep(vw,p); }catch(e){} // matière usinée qui disparaît
 }
 function faoViewerToolCreate(){
   // Groupe outil : fraisier Ø1×H1 (axe local Y, rotation 90° → vertical) + mandrin.
@@ -1547,57 +1573,265 @@ function faoViewerLineCreate(vw){
     return l;
   }catch(e){ return null; }
 }
-function faoViewerOpen(){
-  if(faoVw)return true;
-  const b=faoViewerBuild(faoSetup());
-  if(!b.pts.length||!(b.T>0))return false; // aucune opération jouable
-  const vw={pts:b.pts, dd:b.dd, times:b.times, T:b.T, t:0, idx:0, drawn:0,
-    playing:false, speed:1, prevVis:true, body:null, tool:null, toolBody:null,
-    toolHold:null, line:null, stock:null, toolH:30, _last:0, _looping:false};
-  faoVw=vw;
-  // 1) traces cachées (non destructif : juste .visible=false)
-  try{ if(faoPrevGroup){ vw.prevVis=faoPrevGroup.visible!==false; faoPrevGroup.visible=false; } }catch(e){}
-  // 2) le brut apparaît : box du stock + corps-brut masqué (v009) ré-affiché
-  try{ vw.stock=faoViewerStockCreate(); if(vw.stock)scene.add(vw.stock); }catch(e){}
-  try{
-    const fs=faoSetup();
-    if(fs&&fs.stockSrc==='body'&&fs.stockBody!=null){
-      const b2=(typeof bodies!=='undefined'&&bodies?bodies:[]).filter(function(x){return x&&x.id===fs.stockBody;})[0];
-      if(b2&&b2.mesh&&b2.mesh.visible===false&&doc.bodyVis&&doc.bodyVis[b2.id]===false){
-        vw.body=b2; b2.visible=true; b2.mesh.visible=true;
+/* ---- matière voxelisée : la matière usinée disparaît sous l'outil ----
+   Logique pure (grille + carve) : testable sans scène ; THREE reste derrière
+   des try/catch. Grille ≈ 40k voxels max sur la bbox du brut. */
+function faoMatterGrid(s,pas){
+  if(!s||!(s.x1>s.x0)||!(s.y1>s.y0)||!(s.z1>s.z0))return null;
+  const vol=(s.x1-s.x0)*(s.y1-s.y0)*(s.z1-s.z0);
+  let p=+pas; if(!(p>0))p=Math.cbrt(vol/40000);
+  let nx=0,ny=0,nz=0,n=0,it=0;
+  do{
+    p=(it===0&&+pas>0)?+pas:p; // pas fourni = strict (tests)
+    nx=Math.max(1,Math.ceil((s.x1-s.x0)/p));
+    ny=Math.max(1,Math.ceil((s.y1-s.y0)/p));
+    nz=Math.max(1,Math.ceil((s.z1-s.z0)/p));
+    n=nx*ny*nz; it++;
+    if(n>200000)p*=1.6;
+  }while(n>200000&&it<6);
+  const alive=new Uint8Array(n);
+  for(let i=0;i<n;i++)alive[i]=1;
+  return {pas:p,nx:nx,ny:ny,nz:nz,n:n,ox:s.x0,oy:s.y0,oz:s.z0,alive:alive};
+}
+function faoMatterIdx(g,ix,iy,iz){ return (iz*g.ny+iy)*g.nx+ix; }
+function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r){
+  // Enlève les voxels dont le CENTRE est à distance ≤ r du segment XY (2D)
+  // et z ≥ min(az,bz)−pas/2 : la matière SOUS la pointe reste. Retourne les indices tués.
+  const out=[];
+  if(!g||!(r>0))return out;
+  const zmin=Math.min(az,bz)-g.pas/2;
+  const x0=Math.min(ax,bx)-r, x1=Math.max(ax,bx)+r;
+  const y0=Math.min(ay,by)-r, y1=Math.max(ay,by)+r;
+  if(x1<g.ox||x0>g.ox+g.nx*g.pas||y1<g.oy||y0>g.oy+g.ny*g.pas)return out;
+  const i0=Math.max(0,Math.floor((x0-g.ox)/g.pas)), i1=Math.min(g.nx-1,Math.floor((x1-g.ox)/g.pas));
+  const j0=Math.max(0,Math.floor((y0-g.oy)/g.pas)), j1=Math.min(g.ny-1,Math.floor((y1-g.oy)/g.pas));
+  const k0=Math.max(0,Math.floor((zmin-g.oz)/g.pas)), k1=g.nz-1;
+  const dx=bx-ax, dy=by-ay, L2=dx*dx+dy*dy, r2=r*r;
+  for(let k=k0;k<=k1;k++){
+    const pz=g.oz+(k+0.5)*g.pas;
+    if(pz<zmin)continue;
+    for(let j=j0;j<=j1;j++){
+      const py=g.oy+(j+0.5)*g.pas;
+      for(let i=i0;i<=i1;i++){
+        const idx=faoMatterIdx(g,i,j,k);
+        if(!g.alive[idx])continue;
+        const px=g.ox+(i+0.5)*g.pas;
+        let t=L2>0?((px-ax)*dx+(py-ay)*dy)/L2:0;
+        t=t<0?0:(t>1?1:t);
+        const qx=ax+dx*t, qy=ay+dy*t;
+        const d2=(px-qx)*(px-qx)+(py-qy)*(py-qy);
+        if(d2<=r2){ g.alive[idx]=0; out.push(idx); }
       }
     }
-  }catch(e){}
-  // 3) outil + trace progressive
+  }
+  return out;
+}
+function faoMatterCarveTo(g,pts,dd,times,t){
+  // Rattrapage 0 → t : segments complets + segment en cours interpolé (points d'arrivée en coupe).
+  const out=[];
+  if(!g||!pts||pts.length<2)return out;
+  for(let i=0;i<pts.length-1;i++){
+    if(times[i]>t)break;
+    if(pts[i+1].r)continue;
+    let a=pts[i], b=pts[i+1];
+    if(times[i+1]>t){
+      const t0=times[i], t1=times[i+1];
+      const f=(t1>t0)?Math.max(0,Math.min(1,(t-t0)/(t1-t0))):0;
+      b={x:a.x+(b.x-a.x)*f, y:a.y+(b.y-a.y)*f, z:a.z+(b.z-a.z)*f};
+    }
+    const r=((isFinite(dd[i+1])&&dd[i+1]>0)?dd[i+1]:10)/2;
+    const k=faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r);
+    for(let m=0;m<k.length;m++)out.push(k[m]);
+  }
+  return out;
+}
+function faoViewerMatterHideBodies(vw){
+  // Corps 3D masqués pendant la matière (refs locales, doc.bodyVis jamais touché).
+  // Ne JAMAIS réinitialiser le tableau : après un rebuild (Stop), les corps sont
+  // déjà masqués — leurs refs doivent survivre pour être restaurables au close.
+  if(!vw.hideBodies)vw.hideBodies=[];
   try{
-    const T=faoViewerToolCreate();
-    vw.tool=T.group; vw.toolBody=T.body; vw.toolHold=T.hold; vw.toolH=T.H;
-    if(vw.tool)scene.add(vw.tool);
+    const bs=(typeof bodies!=='undefined'&&bodies)?bodies:[];
+    bs.forEach(function(b){
+      if(b&&b.mesh&&b.mesh.visible!==false&&vw.hideBodies.indexOf(b)<0){ b.mesh.visible=false; vw.hideBodies.push(b); }
+    });
   }catch(e){}
-  try{ vw.line=faoViewerLineCreate(vw); if(vw.line)scene.add(vw.line); }catch(e){}
-  // 4) barre transporteur ▶ ⏸ ⏹ ✕
-  try{ faoViewerBarShow(); }catch(e){}
-  faoViewerApply();
-  faoViewerBarUpdate();
-  return true;
+}
+function faoViewerMatterShowBodies(vw){
+  // Restaure en respectant doc.bodyVis (le corps-brut v009 doit rester masqué).
+  try{
+    (vw.hideBodies||[]).forEach(function(b){
+      if(b&&b.mesh)b.mesh.visible=!(doc&&doc.bodyVis&&doc.bodyVis[b.id]===false)&&(b.visible!==false);
+    });
+  }catch(e){}
+  vw.hideBodies=[];
+}
+function faoViewerMatterDispose(vw){
+  try{ if(vw.matter&&typeof scene!=='undefined'&&scene)scene.remove(vw.matter); }catch(e){}
+  try{ if(vw.matter&&vw.matter.geometry&&vw.matter.geometry.dispose)vw.matter.geometry.dispose(); }catch(e){}
+  vw.matter=null; vw.matterGrid=null; vw.mKills=[]; vw.mPos=null;
+}
+function faoViewerMatterEnable(vw){
+  // (Re)construit les voxels du brut + rattrapage 0 → t courant. Retourne le nb de voxels.
+  faoViewerMatterDispose(vw);
+  if(!vw||vw.matterOn===false)return 0;
+  const s=faoStock(); if(!faoStockValid(s))return 0;
+  const g=faoMatterGrid(s); if(!g)return 0;
+  let im=null;
+  try{
+    const geo=new THREE.BoxGeometry(g.pas*0.94,g.pas*0.94,g.pas*0.94);
+    const mat=new THREE.MeshPhongMaterial({color:0x9c846a,flatShading:true});
+    im=new THREE.InstancedMesh(geo,mat,g.n);
+    im.name='faoMatter';
+    im.raycast=function(){};
+    const m=new THREE.Matrix4();
+    for(let k=0;k<g.nz;k++)for(let j=0;j<g.ny;j++)for(let i=0;i<g.nx;i++){
+      m.makeTranslation(g.ox+(i+0.5)*g.pas, g.oy+(j+0.5)*g.pas, g.oz+(k+0.5)*g.pas);
+      im.setMatrixAt(faoMatterIdx(g,i,j,k),m);
+    }
+    im.instanceMatrix.needsUpdate=true;
+    if(typeof scene!=='undefined'&&scene)scene.add(im);
+  }catch(e){ return 0; }
+  vw.matter=im; vw.matterGrid=g; vw.mKills=[]; vw.mPos=null;
+  if(vw.t>0){
+    const ks=faoMatterCarveTo(g,vw.pts,vw.dd,vw.times,vw.t);
+    faoViewerMatterKill(vw,ks);
+  }
+  faoViewerMatterHideBodies(vw); // le voxel remplace les corps visibles
+  return g.n;
+}
+function faoViewerMatterKill(vw,ks){
+  // Pousse les indices tués dans l'InstancedMesh (scale 0) — diff seul.
+  if(!vw||!vw.matter||!vw.matterGrid||!ks||!ks.length)return;
+  const g=vw.matterGrid, im=vw.matter;
+  try{
+    const m=new THREE.Matrix4();
+    for(let n=0;n<ks.length;n++){
+      const idx=ks[n];
+      if(idx<0||idx>=g.n)continue;
+      const rest=idx%(g.nx*g.ny);
+      const i=rest%g.nx, j=Math.floor(rest/g.nx), k=Math.floor(idx/(g.nx*g.ny));
+      m.makeScale(0,0,0);
+      m.setPosition(g.ox+(i+0.5)*g.pas, g.oy+(j+0.5)*g.pas, g.oz+(k+0.5)*g.pas);
+      im.setMatrixAt(idx,m);
+    }
+    im.instanceMatrix.needsUpdate=true;
+  }catch(e){}
+}
+function faoViewerMatterStep(vw,p){
+  // À chaque frame : enleve la matière du segment balayé (ou rattrapage si saut).
+  if(!vw||vw.matterOn===false||!vw.matterGrid||!vw.matter)return;
+  const g=vw.matterGrid;
+  let ks=null;
+  if(vw.mPos&&vw.mPos.i===p.i){
+    if(!p.r){
+      const r=((isFinite(vw.dd[p.i+1])&&vw.dd[p.i+1]>0)?vw.dd[p.i+1]:10)/2;
+      ks=faoMatterCarveSeg(g,vw.mPos.x,vw.mPos.y,vw.mPos.z,p.x,p.y,p.z,r);
+    }
+  }else{
+    ks=faoMatterCarveTo(g,vw.pts,vw.dd,vw.times,vw.t);
+  }
+  vw.mPos={x:p.x,y:p.y,z:p.z,i:p.i};
+  if(ks&&ks.length)faoViewerMatterKill(vw,ks);
+}
+function faoViewerMatterToggle(){
+  const vw=faoVw; if(!vw)return;
+  vw.matterOn=!(vw.matterOn!==false);
+  if(vw.matterOn===false){ faoViewerMatterShowBodies(vw); faoViewerMatterDispose(vw); }
+  else faoViewerMatterEnable(vw);
+  faoViewerMatterBarUpdate();
+}
+function faoViewerMatterBarUpdate(){
+  try{
+    if(faoVwMatterBtn&&faoVw)faoVwMatterBtn.textContent=(faoVw.matterOn!==false)?'◼ matière':'◻ matière';
+  }catch(e){}
+}
+function faoViewerOpen(){
+  if(faoVw)return true;
+  try{
+    const b=faoViewerBuild(faoSetup());
+    if(!b.pts.length||!(b.T>0)){
+      faoViewerMsg('FAO : aucune trajectoire à jouer — vérifiez le brut et activez au moins une opération.');
+      return false; // aucune opération jouable (jamais silencieux)
+    }
+    const vw={pts:b.pts, dd:b.dd, times:b.times, T:b.T, t:0, idx:0, drawn:0,
+      playing:false, speed:1, prevVis:true, body:null, tool:null, toolBody:null,
+      toolHold:null, line:null, stock:null, toolH:30, _last:0, _looping:false,
+      matterOn:true, matter:null, matterGrid:null, mKills:[], mPos:null, hideBodies:[]};
+    faoVw=vw;
+    // 1) traces cachées (non destructif : juste .visible=false)
+    try{ if(faoPrevGroup){ vw.prevVis=faoPrevGroup.visible!==false; faoPrevGroup.visible=false; } }catch(e){}
+    // 2) le brut apparaît : box du stock + corps-brut masqué (v009) ré-affiché
+    try{ vw.stock=faoViewerStockCreate(); if(vw.stock)scene.add(vw.stock); }catch(e){}
+    try{
+      const fs=faoSetup();
+      if(fs&&fs.stockSrc==='body'&&fs.stockBody!=null){
+        const b2=(typeof bodies!=='undefined'&&bodies?bodies:[]).filter(function(x){return x&&x.id===fs.stockBody;})[0];
+        if(b2&&b2.mesh&&b2.mesh.visible===false&&doc.bodyVis&&doc.bodyVis[b2.id]===false){
+          vw.body=b2; b2.visible=true; b2.mesh.visible=true;
+        }
+      }
+    }catch(e){}
+    // 3) outil + trace progressive
+    try{
+      const T=faoViewerToolCreate();
+      vw.tool=T.group; vw.toolBody=T.body; vw.toolHold=T.hold; vw.toolH=T.H;
+      if(vw.tool)scene.add(vw.tool);
+    }catch(e){}
+    try{ vw.line=faoViewerLineCreate(vw); if(vw.line)scene.add(vw.line); }catch(e){}
+    // 4) matière voxelisée (la matière usinée disparaît sous l'outil)
+    try{ faoViewerMatterEnable(vw); }catch(e){}
+    // 5) barre transporteur ▶ ⏸ ⏹ ✕ + matière
+    try{ faoViewerBarShow(); }catch(e){}
+    try{ faoViewerApply(); }catch(e){}
+    try{ faoViewerBarUpdate(); }catch(e){}
+    faoViewerBtnUpdate();
+    faoViewerMatterBarUpdate();
+    return true;
+  }catch(e){
+    // Rollback complet : JAMAIS d'état « mi-ouvert » bloqué (aucune trace, aucun ✕).
+    try{ faoViewerClose(); }catch(e2){}
+    faoViewerMsg('Usinage : ouverture impossible ('+((e&&e.message)||e)+')');
+    return false;
+  }
 }
 function faoViewerClose(){
+  // Sortie du mode lecture : ENLEVE l'outil, le brut, la matière, ré-affiche les traces.
   const vw=faoVw;
-  if(!vw)return;
   faoVw=null;
-  try{ if(vw.prevVis!==false&&faoPrevGroup)faoPrevGroup.visible=true; }catch(e){}
-  try{ // le corps-brut masqué redevient invisible (on ne défait que ce qu'on a fait)
-    if(vw.body&&doc.bodyVis&&doc.bodyVis[vw.body.id]===false){ vw.body.visible=false; vw.body.mesh.visible=false; }
-  }catch(e){}
-  try{ if(vw.stock)scene.remove(vw.stock); }catch(e){}
-  try{ if(vw.tool)scene.remove(vw.tool); }catch(e){}
-  try{ if(vw.line)scene.remove(vw.line); }catch(e){}
+  if(vw){
+    try{ if(faoPrevGroup)faoPrevGroup.visible=(faoPrevOn!==false); }catch(e){}
+    try{ faoViewerMatterShowBodies(vw); }catch(e){}
+    try{ faoViewerMatterDispose(vw); }catch(e){}
+    try{ // le corps-brut masqué redevient invisible (on ne défait que ce qu'on a fait)
+      if(vw.body&&doc.bodyVis&&doc.bodyVis[vw.body.id]===false){ vw.body.visible=false; vw.body.mesh.visible=false; }
+    }catch(e){}
+    try{ if(vw.stock)scene.remove(vw.stock); }catch(e){}
+    try{ if(vw.tool)scene.remove(vw.tool); }catch(e){}
+    try{ if(vw.line)scene.remove(vw.line); }catch(e){}
+  }
   try{ if(faoVwBar)faoVwBar.style.display='none'; }catch(e){}
+  faoViewerBtnUpdate();
 }
 function faoViewerStart(){
   if(faoVw&&faoVw.playing)return true;
   if(!faoVw&&!faoViewerOpen())return false;
   return faoViewerPlay();
+}
+function faoViewerToggle(){
+  // Bascule du bouton « ▶ Usinage » : OUVRIR le mode lecture / en SORTIR nettoyé.
+  try{
+    if(faoVw){
+      faoViewerClose();
+      faoViewerMsg('FAO : mode lecture usinage quitté — traces ré-affichées, outil et brut retirés.');
+      return false;
+    }
+    if(faoViewerStart()){ faoViewerMsg('FAO : lecture usinage en cours (Échap ou ✕ pour sortir).'); return true; }
+    faoViewerMsg('FAO : aucune trajectoire à jouer — vérifiez le brut et activez au moins une opération.');
+  }catch(e){
+    faoViewerMsg('Usinage : '+((e&&e.message)||e));
+  }
+  return false;
 }
 function faoViewerPlay(){
   const vw=faoVw; if(!vw)return false;
@@ -1614,7 +1848,8 @@ function faoViewerPause(){
 }
 function faoViewerStop(){
   const vw=faoVw; if(!vw)return;
-  vw.t=0; vw.idx=0; vw.playing=false;
+  vw.t=0; vw.idx=0; vw.playing=false; vw.mPos=null;
+  try{ if(vw.matterOn!==false)faoViewerMatterEnable(vw); }catch(e){} // matière restaurée en entier
   faoViewerApply();
   faoViewerBarUpdate();
 }
@@ -1662,7 +1897,9 @@ function faoViewerBarShow(){
     bar.appendChild(mk('▶','Lecture — en fin de parcours : pause automatique',function(){ faoViewerPlay(); }));
     bar.appendChild(mk('⏸','Pause',function(){ faoViewerPause(); }));
     bar.appendChild(mk('⏹','Stop : revient au début du parcours',function(){ faoViewerStop(); }));
-    bar.appendChild(mk('✕','Fermer : ré-affiche les traces, masque le brut et l\'outil',function(){ faoViewerClose(); }));
+    bar.appendChild(mk('✕','Quitter le mode lecture : ré-affiche les traces, retire l\'outil, le brut et la matière (Échap aussi)',function(){ faoViewerClose(); faoViewerMsg('FAO : mode lecture usinage quitté.'); }));
+    const mb=mk('◼ matière','Matière usinée ON : la matière disparaît sous l\'outil (toggle)',function(){ faoViewerMatterToggle(); });
+    bar.appendChild(mb); faoVwMatterBtn=mb;
     const t=document.createElement('span');
     t.style.cssText='font-family:monospace;min-width:118px;text-align:center;color:rgba(255,255,255,.85);';
     t.textContent='00:00 / 00:00';
@@ -1678,6 +1915,7 @@ function faoViewerBarShow(){
     const host=document.getElementById('vpwrap')||document.body;
     host.appendChild(bar);
     faoVwBar=bar;
+    faoViewerMatterBarUpdate();
   }catch(e){}
 }
 function faoViewerBarUpdate(){
@@ -1786,6 +2024,15 @@ function faoRefreshFaoUI(){
 function faoInitUI(){
   if(typeof document==='undefined')return;
   try{
+    if(typeof window!=='undefined'&&window.addEventListener&&!faoVwEsc){
+      faoVwEsc=true; // une seule fois
+      window.addEventListener('keydown',function(e){
+        if(e.key==='Escape'&&faoVw){
+          faoViewerClose();
+          faoViewerMsg('FAO : mode lecture usinage quitté (Échap) — traces ré-affichées.');
+        }
+      });
+    }
     if(!document.getElementById('btnFao')){
       const anchor=document.getElementById('btnExtrude');
       if(anchor&&anchor.parentNode){
@@ -2401,22 +2648,16 @@ function faoSetupFiche(p,setup){
   // Générer + export
   const r5=faoRow();
   const bg=document.createElement('button'); bg.textContent='Générer + aperçu'; bg.style.fontSize='.78rem';
-  bg.onclick=function(){
-    const n=faoRefreshPreview(); faoTouch();
-    st.textContent=faoStatsText();
-    try{ if(typeof faceEl!=='undefined'&&faceEl)faceEl.textContent='FAO : '+n+' points de parcours.'; }catch(e){}
-  };
-  const tg=document.createElement('button'); tg.textContent=faoPrevOn?'Masquer':'Afficher'; tg.style.fontSize='.72rem';
+  bg.title='Régénère les traces et les RÉ-AFFICHE toujours (même après « Masquer »).';
+  bg.onclick=function(){ const n=faoPreviewGenerate(); st.textContent=faoStatsText(); };
+  const tg=document.createElement('button'); tg.id='faoPrevBtn'; tg.textContent=faoPrevOn?'Masquer':'Afficher'; tg.style.fontSize='.72rem';
   tg.onclick=function(){ faoPrevOn=!faoPrevOn; if(!faoPrevOn)faoClearPreview(); else faoRefreshPreview(); faoRefreshFaoUI(); };
   const be=document.createElement('button'); be.textContent='Exporter G-code'; be.style.fontSize='.78rem';
   be.onclick=function(){ faoExport(); };
-  const bvw=document.createElement('button'); bvw.textContent='▶ Usinage'; bvw.style.fontSize='.78rem';
-  bvw.title='Viewer d\'usinage : cache les traces, fait apparaître le brut, anime l\'outil le long du parcours — barre ▶ ⏸ ⏹ ✕ en bas de la vue.';
-  bvw.onclick=function(){
-    if(faoVw&&faoVw.playing)faoViewerPause();
-    else if(faoVw)faoViewerPlay();
-    else faoViewerStart();
-  };
+  const bvw=document.createElement('button'); bvw.id='faoVwBtn'; bvw.textContent='▶ Usinage'; bvw.style.fontSize='.78rem';
+  faoVwBtn=bvw;
+  bvw.onclick=function(){ faoViewerToggle(); };
+  faoViewerBtnUpdate();
   r5.appendChild(bg); r5.appendChild(tg); r5.appendChild(be); r5.appendChild(bvw); p.appendChild(r5);
   const st=document.createElement('div');
   st.style.cssText='font-family:monospace;font-size:.7rem;color:rgba(255,255,255,.7);white-space:pre-wrap;';

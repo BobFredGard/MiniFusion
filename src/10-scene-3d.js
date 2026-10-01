@@ -204,6 +204,9 @@ function refreshParts(){
       }
     }
   }catch(e){}
+  try{ // mode lecture usinage + matière : les corps restent masqués quoi qu'il arrive
+    if(typeof faoVw!=='undefined'&&faoVw&&faoVw.hideBodies)faoVw.hideBodies.forEach(b=>{if(b&&b.mesh)b.mesh.visible=false;});
+  }catch(e){}
   updateGhostVis();
   // La liste « Pièces » a été retirée de l'interface : les corps se pilotent depuis
   // l'arborescence (œil sur la fonction) ou par le clic droit dans la vue 3D.

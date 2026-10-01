@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**120 versions**, de `2026-09-28b` à `2026-10-01-012` — la plus récente en bas,
+**121 versions**, de `2026-09-28b` à `2026-10-01-013` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2316,3 +2316,16 @@ README : surfaçage — « 'écart' : seul paramètre de recouvrement XY, nombre
 Tests : `test_fao.cjs` — build (points, `times.length===pts.length`, `T>0`), seek (t=0 / 50% / fin `done` / retour arrière réinitialise l'idx), aucune op → rien à jouer, ouverture (lecture, traces cachées, brut+outil+trace+barre), avance ×1 exacte, `drawn≥2, outil sur le parcours (bornes élargies), pause qui fige, vitesse ×5, fin auto (`t===T`, trace complète), stop au départ, fermeture (état libéré, traces restaurées, barre masquée). Suite 19/19 verte, golden `facing=34` intact.
 
 README : post-processeurs — « ▶ Viewer d'usinage : cache les traces, affiche le brut, anime l'outil + trace au fil de l'eau, barre ▶⏸⏹✕ avec vitesse ×1 à ×20 ».
+
+### 2026-10-01-013
+
+**FAO : sortie du mode lecture usinage garantie + matière usinée qui disparaît sous l'outil.**
+
+1. **Sortir du mode lecture — 3 chemins, tous nettoyés** : pendant la séance le bouton de la fiche devient **« ■ Quitter l'usinage »** (bascule ouvrir/fermer via `faoViewerToggle`), **Échap** sort aussi (bind unique dans `faoInitUI`), et le **✕** de la barre fait le même **nettoyage complet** : outil retiré, boîte du brut retirée, matière voxel retirée, trace progressive retirée, **traces ré-affichées selon `faoPrevOn`**, corps v009 re-masqué (`doc.bodyVis` inchangé), **corps masqués pour la matière réaffichés en respectant `doc.bodyVis`**, barre masquée, `faoVw=null` + libellé du bouton réinitialisé. Plus aucun état « mi-ouvert » possible.
+2. **Jamais silencieux** : `faoViewerOpen` est wrappé entièrement (try/catch + **rollback `faoViewerClose()`** + message `faceEl`), « aucune trajectoire à jouer » affiche un message explicite au lieu d'un bouton mort, start/stop/logout aussi.
+3. **« Générer + aperçu » ré-affiche TOUJOURS les traces** : `faoPreviewGenerate()` force `faoPrevOn=true` + remet le libellé du bouton à « Masquer » — cause racine du bug « plus de traces même après Générer » (un ancien « Masquer » rendait les traces invisibles à vie).
+4. **Matière usinée voxelisée** : logique pure — `faoMatterGrid(s,pas)` (grille ~40k voxels max, pas auto `cbrt(vol/40000)`, plafond 200k avec itérations), `faoMatterCarveSeg` (voxels centres à distance ≤ Ø/2 du segment balayé ET `z ≥ min(zA,zB)−pas/2` : la matière sous la pointe reste), `faoMatterCarveTo` (rattrapage 0→t, segment en cours interpolé, G0 ignorés). Scène : `InstancedMesh` de cubes joints (`raycast` off), enlèvement par frame (scale 0 sur les indices tués), **toggle « ◼ matière » dans la barre** (défaut ON), **corps visibles masqués pendant la matière** (`vw.hideBodies`, refs locales — préservées par un rebuild au Stop), **Stop = matière entièrement restaurée**, toggle OFF = retrait + corps réaffichés, toggle ON = reconstruction + rattrapage à `t`, `refreshParts` ré-applique les masquages du viewer.
+
+Tests : `test_fao.cjs` — grille (auto ≤ ~40k, pas 5 → 20×16×5), carve (sous l'outil tué / hors rayon vit / sous la pointe vit / rayon 0 → rien), carveTo (G0 n'enlève rien, segment en cours à t=2 déjà coupe, t<0 rien), ouverture matière + corps masqués, avance ×10 s enlève de la matière, Stop restaure, toggles OFF/ON, sortie = état libéré + matière retirée + corps réaffichés + traces réaffichées + barre masquée, bascule du bouton (libellés), « Générer + aperçu » force l'affichage. Suite 19/19 verte, golden `facing=34` intact. Diagnostic Node avec three.js réel : 41 595 voxels, 23 tués en 10 s, reset/toggles/close OK.
+
+README : viewer — sortie du mode garantie (bouton Quitter + Échap + ✕, nettoyage complet outil/brut/matière) ; matière voxelisée « ◼ matière » (la matière usinée disparaît sous l'outil, toggle dans la barre).
