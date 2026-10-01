@@ -323,14 +323,23 @@ function faoFacingAe(stock,D,np){
   if(!(np>=2)||!(H>0))return null;
   return Math.round((H/(np-1))*1000)/1000;
 }
+function faoFacingYs(stock,r,ae){
+  // Extrêmes du zigzag : la 1ʳᵉ (et la dernière) ligne MORDE dans la matière de la
+  // valeur d'écart (plafonnée au rayon) — plus tangente à l'arête du brut.
+  const a=(isFinite(+ae)&&+ae>0)?+ae:1;
+  const m=Math.min(a,r);
+  let yA=+stock.y0-r+m, yB=+stock.y1+r-m;
+  if(!(yB>yA)){ yA=+stock.y0-r; yB=+stock.y1+r; } // span < 2m : sans mordant
+  return {yA:yA,yB:yB};
+}
 function faoFacingCount(stock,D,ae){
   // Nombre de lignes que le zigzag produit (même logique que faoGenFacing).
   const d=(isFinite(+D)&&+D>0)?+D:10;
   const r=d/2;
-  const yA=+stock.y0-r, yB=+stock.y1+r;
   const a=(isFinite(+ae)&&+ae>0)?+ae:d*0.6;
-  let y=yA,n=1,guard=0;
-  while(y<yB-1e-9&&guard++<100000){ y=Math.min(y+a,yB); n++; }
+  const Y=faoFacingYs(stock,r,a);
+  let y=Y.yA,n=1,guard=0;
+  while(y<Y.yB-1e-9&&guard++<100000){ y=Math.min(y+a,Y.yB); n++; }
   return n;
 }
 function faoFacingAp(stock,z,npz){
@@ -360,11 +369,13 @@ function faoGenFacing(stock,o){
   const z=isFinite(+o.z)?+o.z:stock.z1;
   const secu=isFinite(+o.secu)?+o.secu:z+5;
   const dep=r+2; // dépassement latéral (attaque hors matière)
-  const yA=stock.y0-r, yB=stock.y1+r;
+  const yA0=stock.y0-r, yB0=stock.y1+r;
   // Passes pilotées (op.np ≥ 2) : écart exact H/(np−1) → couverture totale
   // garantie, dernier aligné sur la lisière. np absent/null → pilotage par ae.
   const np=isFinite(+o.np)?Math.floor(+o.np):0;
-  if(np>=2&&yB>yA)ae=Math.max(0.01,(yB-yA)/(np-1));
+  if(np>=2&&yB0>yA0)ae=Math.max(0.01,(yB0-yA0)/(np-1));
+  // Extrêmes avec mordant (l'écart morde dans la matière, plafonné au rayon).
+  const Y=faoFacingYs(stock,r,ae), yA=Y.yA, yB=Y.yB;
   // Passes en Z (op.npz ≥ 2) : l'ébauche descend du dessus du brut (z1) jusqu'à
   // la cote z en npz passes égales → ap = (z1−z)/npz, dernière passe = cote.
   // npz absent/1, ou z ≥ z1 (rien à enlever) → une seule passe (historique).
@@ -1453,8 +1464,18 @@ function faoViewerBuild(setup){
     const mv=faoOpMoves(op,setup)||[];
     const ext=[]; let pv=null; // arcs développés (tracé lisse)
     mv.forEach(function(m){
-      if(pv&&!pv.r&&m.arc){ try{ faoArcSegs(pv,m).forEach(function(q){ ext.push({x:q[0],y:q[1],z:q[2],r:0}); }); }catch(e){} }
-      ext.push(m); pv=m;
+      let dev=false;
+      if(pv&&!pv.r&&m.arc){
+        try{
+          const S=faoArcSegs(pv,m);
+          if(S&&S.length){ S.forEach(function(q){ ext.push({x:q[0],y:q[1],z:q[2],r:0}); }); dev=true; }
+        }catch(e){}
+      }
+      // Un arc développé ne repousse PAS son move original : ce doublon `.arc` ferait
+      // recalculer faoSegLen depuis le bout du développé (i/j relatifs au VRAI départ →
+      // centre faux → angle ≈ 2π → temps fictif = gel de ~3-5 s après chaque arc).
+      ext.push(dev?{x:m.x,y:m.y,z:m.z,r:m.r?1:0}:m);
+      pv=m;
     });
     let prev=null;
     ext.forEach(function(m){
@@ -1595,9 +1616,13 @@ function faoMatterGrid(s,pas){
   // au voxel) — mise à jour par CarveSeg, lue par colTop pour le rendu.
   const nc=nx*ny;
   const h=new Float32Array(nc);
-  const full=(+s.z0)+nz*p;
+  // Extents RÉELS du brut (nx*pas peut dépasser x1 d'ici, d'un seul côté — le
+  // rendu et la hauteur init sont calés sur x1/y1/z1 exacts, jamais sur la grille).
+  const sx1=+s.x1, sy1=+s.y1, sz1=+s.z1;
+  const full=sz1;
   for(let i=0;i<nc;i++)h[i]=full;
-  return {pas:p,nx:nx,ny:ny,nz:nz,n:n,ox:s.x0,oy:s.y0,oz:s.z0,alive:alive,h:h};
+  return {pas:p,nx:nx,ny:ny,nz:nz,n:n,ox:s.x0,oy:s.y0,oz:s.z0,alive:alive,h:h,
+          sx1:sx1,sy1:sy1,sz1:sz1,full:full};
 }
 function faoMatterIdx(g,ix,iy,iz){ return (iz*g.ny+iy)*g.nx+ix; }
 function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r){
@@ -1700,8 +1725,10 @@ function faoViewerMatterWriteCol(vw,c){
   const g=vw.matterGrid, a=vw.mArr, T=vw.mTops;
   if(!g||!a||!T)return;
   const nx=g.nx, ny=g.ny, pas=g.pas, ox=g.ox, oy=g.oy, oz=g.oz;
+  const sx1=(g.sx1!=null)?g.sx1:ox+nx*pas, sy1=(g.sy1!=null)?g.sy1:oy+ny*pas;
   const ix=c%nx, iy=(c/nx)|0;
-  const x0=ox+ix*pas, x1=x0+pas, y0=oy+iy*pas, y1=y0+pas;
+  const x0=ox+ix*pas, x1=Math.min(x0+pas,sx1), y0=oy+iy*pas, y1=Math.min(y0+pas,sy1);
+  if(!(x1>x0)||!(y1>y0))return; // colonne au-delà des extents réels (ne rien écrire)
   const zt=T[c];
   // côté replié (z2=zt → quad nul) si le voisin est plus haut : jamais deux faces coplanaires
   const zN=(iy>0?T[c-nx]:oz); const n2=zN<zt?zN:zt;
@@ -1729,9 +1756,9 @@ function faoViewerMatterWriteAll(vw){
   const g=vw.matterGrid; if(!g||!vw.mArr||!vw.mTops)return;
   const nc=g.nx*g.ny;
   for(let c=0;c<nc;c++)faoViewerMatterWriteCol(vw,c);
-  // fond plein du brut (6 verts, statique)
+  // fond plein du brut (6 verts, statique) — clampé aux extents réels du brut
   const a=vw.mArr, oz=g.oz;
-  const X0=g.ox, X1=g.ox+g.nx*g.pas, Y0=g.oy, Y1=g.oy+g.ny*g.pas;
+  const X0=g.ox, X1=(g.sx1!=null)?g.sx1:g.ox+g.nx*g.pas, Y0=g.oy, Y1=(g.sy1!=null)?g.sy1:g.oy+g.ny*g.pas;
   let o=nc*90;
   o=faoMatterPut(a,o,X0,Y0,oz); o=faoMatterPut(a,o,X1,Y0,oz); o=faoMatterPut(a,o,X1,Y1,oz);
   o=faoMatterPut(a,o,X0,Y0,oz); o=faoMatterPut(a,o,X1,Y1,oz); o=faoMatterPut(a,o,X0,Y1,oz);
@@ -1757,7 +1784,7 @@ function faoViewerMatterEnable(vw){
     if(typeof scene!=='undefined'&&scene)scene.add(mesh);
   }catch(e){ return 0; }
   const tops=new Float32Array(nc);
-  const full=g.oz+g.nz*g.pas;
+  const full=(g.full!=null)?g.full:(g.sz1!=null?g.sz1:g.oz+g.nz*g.pas);
   for(let c=0;c<nc;c++)tops[c]=full;
   vw.matter=mesh; vw.matterGrid=g; vw.mTops=tops; vw.mArr=arr; vw.mKills=[]; vw.mPos=null;
   try{ faoViewerMatterWriteAll(vw); }catch(e){ faoViewerMatterDispose(vw); try{ if(mesh&&scene)scene.remove(mesh); }catch(e2){} return 0; }
@@ -2741,7 +2768,9 @@ function faoSetupFiche(p,setup){
   nF.textContent='Bridage mémorisé (phase suivante : évitement dans les parcours).';
   p.appendChild(nF);
   const rC=faoRow();
-  rC.appendChild(faoLab('Sécur')); rC.appendChild(faoNum(setup.secu,function(v){ setup.secu=Math.max(0,v); },48));
+  rC.appendChild(faoLab('Sortie'));
+  rC.appendChild(faoNum(setup.secu,function(v){ setup.secu=Math.max(0,v); },48,1,
+    "Sortie de pièce : dégagement Z au-dessus du brut (mm) — retrait des G0, fin de chaque opération et fin de parcours (viewer + G-code). Généralement 5 à 10."));
   rC.appendChild(faoLab('Retrait')); rC.appendChild(faoNum(faoRetractZ(setup),function(v){ setup.retract=v; },56));
   rC.appendChild(faoMini('Auto',function(){ setup.retract=null; }));
   rC.appendChild(faoLab('Arrosage'));

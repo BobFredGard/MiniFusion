@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**124 versions**, de `2026-09-28b` à `2026-10-01-016` — la plus récente en bas,
+**125 versions**, de `2026-09-28b` à `2026-10-01-017` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2370,3 +2370,16 @@ README : viewer — matière « en surface Z-map » (un seul mesh, colonnes join
 Tests : `test_fao.cjs` — bloc **016** : grille porte une hauteur/colonne, plein au départ, coupe à 17.5 → surface **17.5 exacte**, hors rayon intact, 2ᵉ passe → 12 exact (monotone), vivant sous la pointe. Suite 21/21 verte, golden `facing=34` intact.
 
 README : viewer — surface Z-map à la cote exacte de coupe sous l'outil.
+
+### 2026-10-01-017
+
+**FAO : 4 retours navigateur — gel après arc, brut qui déborde, surfaçage mordant, champ « Sortie ».**
+
+1. **Gel de 3-5 s après chaque arc** (retour) : à la fin de chaque arc, la lecture s'arrêtait puis repartait. **Cause** : `faoViewerBuild` développait l'arc (`faoArcSegs`) puis repoussait **aussi** le move original — ce doublon porte encore `.arc`, `faoSegLen` recalculait un centre faux depuis le bout du développé (`i`/`j` relatifs au VRAI départ) → angle ≈ 2π → temps fictif (3.16 s mesurés) sur un segment de longueur **0** (`L=0.0 Lexp=52.6`). **Fix** : le doublon est repoussé **sans `.arc`** (`{x,y,z,r}`) → `dt=0`, temps monotone intact (les `times` n'étaient pas fautifs, seulement le segment de raccord).
+2. **Brut « un poil trop long » côté X** (retour) : `nx=ceil((x1−x0)/pas)` → `ox+nx·pas > x1` (dépassement d'au plus 1 pas, **d'un seul côté**) et la hauteur init était calée sur `oz+nz·pas` (jusqu'à ~0.8 mm **au-dessus** de `z1`). **Fix** : la grille porte ses **extents réels** (`sx1/sy1/sz1`, `full = z1 exact`) ; le rendu Z-map (30 verts/colonne ET le fond) est **clampé** à `x1/y1` exacts, `h[]` et `mTops[]` démarrent à `z1` — la Z-map coïncide avec la boîte du brut.
+3. **Surfaçage : la 1ʳᵉ passe « tangente à l'arête »** (retour) : les lignes extrêmes étaient à `y0−r` / `y1+r` — le bord de l'outil **longeait** l'arête sans mordre. **Fix** : helper `faoFacingYs(stock,r,ae)` — **mordant dans la matière = la valeur d'écart, plafonnée au rayon** (`m=min(ae,r)`), appliqué à la 1ʳᵉ ET à la dernière ligne (les deux arêtes sont mordues symétriquement ; la ligne reste hors-matière en X par le dépassement `dep`). `faoFacingCount` et `faoGenFacing` **partagent le helper** → le label « N lignes » en lecture seule reste exact.
+4. **Paramètre de sortie de pièce** (retour : « 5 à 10 mm ») : le paramètre existait sous le nom obscur **« Sécur »** (`setup.secu`, mm au-dessus du brut, défaut 5 — déjà appliqué aux G0, à la fin de parcours viewer ET au CYCLE81). **Fix UX** : rang de fiche renommé **« Sortie »** + infobulle explicite (« dégagement Z au-dessus du brut : retrait des G0, fin de chaque opération et fin de parcours — viewer + G-code ; généralement 5 à 10 ») ; le **nom de champ `secu` est conservé** (documents, exports et posts inchangés).
+
+Tests : `test_fao.cjs` — blocs **017-020** : 017 aucun `dt>0.05` sur segment nul après développement d'arcs (parcours arrondi, 44 pts) ; 018 extents réels (grille dépasse bien x1/y1 mesuré, rendu clampé à X1/Y1/Z1) ; 019 mordant (1ʳᵉ ligne à y0 exact = mord de `min(ae,r)=5`, dernière à y1, lignes = `faoFacingCount`) ; 020 Sortie (`setup.secu=10` → sortie finale 35 = z1+10, label « Sortie » en fiche). Ajustements des 3 asserts historiques impactés par le mordant (count `ae=6` 16→15, lignes np=3 → 0/45/80, plongées inter-niveaux vérifiées hors matière **par X en dépassement**) + isolement du bloc 015 (setup dédié avec coupe sous z1, la surface ne peut plus « bouger » à z=z1) et du dispatch chaîne (`ae=40` : une ligne réellement intérieure au lieu de la frontière). Suite FAO verte ; `npm test` 22/23 (KO `test_precision_affichage` = déflection d'affichage, fichiers d'une autre session en cours, hors périmètre FAO), golden `facing=32 pocket=65 contour=7 drill=8` (affichage seul, non asserté).
+
+README : surfaçage — « 1ʳᵉ et dernière ligne à mordant (l'écart morde dans la matière, plafond rayon) » ; posage — champ « Sortie » (mm au-dessus du brut, défaut 5) renommé depuis « Sécur » ; viewer — brut aux extents exacts (plus de débordement d'un pas), gel après arcs corrigé.
