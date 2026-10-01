@@ -333,6 +333,14 @@ function faoFacingCount(stock,D,ae){
   while(y<yB-1e-9&&guard++<100000){ y=Math.min(y+a,yB); n++; }
   return n;
 }
+function faoFacingAp(stock,z,npz){
+  // Pas en Z calculé du surfaçage : ébauche du dessus du brut (z1) à la cote z
+  // en npz passes égales → ap=(z1−z)/npz. npz<2 ou z≥z1 → null (1 passe).
+  if(!(npz>=2))return null;
+  const zTop=isFinite(+stock.z1)?+stock.z1:null;
+  if(zTop==null||!(zTop-(+z)>1e-9))return null;
+  return Math.round(((zTop-(+z))/npz)*1000)/1000;
+}
 function faoLevels(zTop,zBot,ap){
   const p=isFinite(+ap)&&+ap>0?+ap:5;
   const lo=Math.min(+zTop,+zBot), hi=Math.max(+zTop,+zBot);
@@ -357,16 +365,40 @@ function faoGenFacing(stock,o){
   // garantie, dernier aligné sur la lisière. np absent/null → pilotage par ae.
   const np=isFinite(+o.np)?Math.floor(+o.np):0;
   if(np>=2&&yB>yA)ae=Math.max(0.01,(yB-yA)/(np-1));
-  const moves=[{r:1,x:stock.x0-dep,y:yA,z:secu},{r:1,x:stock.x0-dep,y:yA,z:z}];
-  let y=yA, sens=1, garde=0;
-  moves.push({r:0,x:stock.x0-dep,y:y,z:z});
-  while(y<yB-1e-9&&garde++<100000){
-    const xT=sens>0?stock.x1+dep:stock.x0-dep;
-    moves.push({r:0,x:xT,y:y,z:z});
-    y=Math.min(y+ae,yB);
-    moves.push({r:0,x:xT,y:y,z:z});
-    sens=-sens;
-  }
+  // Passes en Z (op.npz ≥ 2) : l'ébauche descend du dessus du brut (z1) jusqu'à
+  // la cote z en npz passes égales → ap = (z1−z)/npz, dernière passe = cote.
+  // npz absent/1, ou z ≥ z1 (rien à enlever) → une seule passe (historique).
+  const npz=(isFinite(+o.npz)&&+o.npz>=2)?Math.floor(+o.npz):1;
+  const zTop=isFinite(+stock.z1)?+stock.z1:z;
+  const zs=[];
+  if(npz>=2&&zTop>z+1e-9){
+    const ap=(zTop-z)/npz;
+    for(let k=1;k<=npz;k++)zs.push(k<npz?Math.round((zTop-k*ap)*1000)/1000:z);
+  }else zs.push(z);
+  const moves=[{r:1,x:stock.x0-dep,y:yA,z:secu}];
+  let sens=1, garde=0;
+  zs.forEach(function(lv,i){
+    // niveaux pairs montent en Y (yA→yB), impairs descendent (yB→yA) : le
+    // boustrophédon se poursuit d'un niveau au suivant, plongée hors matière.
+    const yDown=(i%2===1);
+    let y=yDown?yB:yA;
+    if(i===0){
+      moves.push({r:1,x:stock.x0-dep,y:yA,z:lv});
+      moves.push({r:0,x:stock.x0-dep,y:yA,z:lv});
+    }else{
+      // même XY qu'on quitte (extrémité en dépassement, lisière en Y) : simple
+      // changement de niveau Z — jamais de traversée en diagonale dans la matière.
+      moves.push({r:0,x:moves[moves.length-1].x,y:moves[moves.length-1].y,z:lv});
+    }
+    while(garde++<100000){
+      if(yDown?y<=yA+1e-9:y>=yB-1e-9)break;
+      const xT=sens>0?stock.x1+dep:stock.x0-dep;
+      moves.push({r:0,x:xT,y:y,z:lv});
+      y=yDown?Math.max(y-ae,yA):Math.min(y+ae,yB);
+      moves.push({r:0,x:xT,y:y,z:lv});
+      sens=-sens;
+    }
+  });
   moves.push({r:1,x:moves[moves.length-1].x,y:moves[moves.length-1].y,z:secu});
   return moves;
 }
@@ -911,6 +943,7 @@ function faoOpMoves(op,job){
   if(!op||!op.type)return [];
   if(op.type==='facing')mv=faoGenFacing(job.stock||faoStockDefault(),
     {toolD:D, ae:isFinite(+op.ae)?+op.ae:D*0.6, np:isFinite(+op.np)?+op.np:0,
+     npz:isFinite(+op.npz)?+op.npz:0,
      z:(isFinite(+op.z)?+op.z:(job.stock||{}).z1)+RA.axial, secu:secu});
   else if(op.type==='pocket')mv=faoGenPocket({x0:+op.x0,y0:+op.y0,x1:+op.x1,y1:+op.y1},
     +op.ztop,+op.zbot,Object.assign({},base,{ap:+op.ap,ae:isFinite(+op.ae)?+op.ae:D*0.5,
@@ -1692,6 +1725,16 @@ function faoOpCardElement(setup,op,i){
       op.ae=Math.max(0.5,v);
       op.np=null; // pilotage par écart : le nombre affiché devient le compte de lignes
     },48,0.5,'Distance entre deux passes (écarts voisins égaux). En saisissant l\'écart, le nombre de passes affiché suit ; en saisissant les passes, l\'écart est recalculé.'));
+    // Passes en Z (par brut) : ébauche du dessus du brut (Z1) à la cote Z en N
+    // passes égales — l'ap est CALCULÉ (Z1−Z)/N et affiché en lecture seule.
+    const npzShow=(isFinite(+op.npz)&&+op.npz>=2)?Math.round(+op.npz):1;
+    const apZShow=faoFacingAp(stF,(isFinite(+op.z)?+op.z:stF.z1)+faoRA(op).axial,npzShow);
+    rp.appendChild(faoLab('pz'));
+    rp.appendChild(faoNum(npzShow,function(v){
+      const n=Math.round(v);
+      op.npz=(n>=2)?n:null; // 1 passe = mode historique (coupe unique à la cote Z)
+    },40,1,'Passes en Z du surfaçage : l\'ébauche descend du dessus du brut (Z1) jusqu\'à la cote Z en N passes égales, le pas ap = (Z1−Z)/N est calculé automatiquement. 1 = passe unique (mode historique).'));
+    rp.appendChild(faoLab(apZShow!=null?('ap '+apZShow):'ap —'));
     rp.appendChild(faoLab('laisse Z')); rp.appendChild(faoNum(faoRA(op).axial,function(v){op.axial=Math.max(0,v);},48,0.1));
     rp.appendChild(faoLab('Arrondi')); rp.appendChild(faoNum(isFinite(+op.arrondi)?+op.arrondi:0,function(v){op.arrondi=Math.max(0,v);},48,0.5));
   }else if(op.type==='pocket'||op.type==='contour'){

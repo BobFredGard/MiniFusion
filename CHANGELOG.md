@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**117 versions**, de `2026-09-28b` à `2026-10-01-009` — la plus récente en bas,
+**118 versions**, de `2026-09-28b` à `2026-10-01-010` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2278,3 +2278,16 @@ README : posages (bouton « Sur la pièce »), brut 3 sources, surfaçage passes
 Tests : `test_fao.cjs` — désignation (mode+corps+flag, `bodyVis=false`+invisible, l'autre visible), changement A→B (ancien restauré, nouveau masqué), retrait (mode bodies + visible), garde seul-corps (jamais masqué), arbre : badge 📦 présent, clic simulé = désigne+masque, badge plein, 2ᵉ clic = retire+visible, nettoyage. Suite 19/19 verte.
 
 README : posages — « 📦 dans l'arbre = désigner le brut ; le corps choisi est masqué dans la vue (œil pour le revoir) ».
+
+### 2026-10-01-010
+
+**FAO surfaçage : passes en Z / brut — le pas (ap) est CALCULÉ depuis le nombre de passes.**
+
+1. **Générateur** (`faoGenFacing`) : nouveau pilotage `op.npz` — **l'ébauche descend du dessus du brut (`z1`) jusqu'à la cote `Z` en `pz` passes égales**, `ap = (z1−Z)/pz` (arrondi 0,001 mm), dernière passe = cote exacte. Le boustrophédon se poursuit d'un niveau au suivant : niveaux pairs montent en Y, impairs descendent, et le **changement de niveau se fait en plongée Z aux lisières/dépassements — jamais de traversée diagonale dans la matière**. `pz` absent/`1`, ou `Z ≥ z1` (rien à enlever) → **une seule passe, comportement strictement historique** (golden `facing=34` intact).
+2. **Helper** `faoFacingAp(stock,z,npz)` : `ap = (z1−z)/npz` en lecture seule, `null` si `pz<2` ou `z≥z1`.
+3. **`faoOpMoves`** transmet `op.npz` au générateur ; **carte op « pz »** : champ Passes Z (défaut 1) + libellé **`ap …` calculé et affiché en lecture seule** — saisir `pz≥2` pose `op.npz`, saisir `1` efface (mode historique). `ap` reflète la cote réelle (Z + laisse axiale) comme le génère.
+4. Persistance `op.npz` dans le document, snapshot annulable (Ctrl+Z) via `faoNum`.
+
+Tests : `test_fao.cjs` — `pz=4` sur `z1=40→0` → niveaux `0/10/20/30` (ap=10) ; `pz` absent = passe unique **et structure identique à l'historique** (`zN.length===gNA.length`) ; `pz=1` ≡ absent ; 3 plongées inter-niveau toutes en lisière (hors matière) ; aucune coupe au-dessus du brut ; `faoFacingAp` (cas4/1/0/z≥z1) ; `faoOpMoves` avec `op.npz=4` sur `z1=25→0` (4 niveaux, ap=6.25) et `npz` absent → golden ; carte UI : champ `pz` défaut 1, `pz=4` → `op.npz=4` + label `ap 6.25`, `pz=1` → `npz` effacé. Suite 19/19 verte, `facing=34` intact.
+
+README : surfaçage — « + « pz » : passes en Z / brut — ap = (Z1−Z)/pz calculé et affiché, pz=1 = passe unique ».
