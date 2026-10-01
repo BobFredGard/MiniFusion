@@ -371,6 +371,62 @@ const vm=require('vm');
     "att(faoOrientOn(faoSetup())&&faoOrient(faoSetup()).c===30,'UI 3+2 : C=30 saisi');",
     "r32t.children[5].onclick();",
     "att(faoOrientOn(faoSetup())===false,'UI 3+2 : bouton 3 axes remet a plat');",
+    // --- P2 : rejeu auto de la limite « chaîne » (ancres germes + stale)
+    "const ceOp=faoSetup().ops[0];",
+    "const ceMk=function(x1,y1,x2,y2){const dx=x2-x1,dy=y2-y1;return {mid:[(x1+x2)/2,(y1+y2)/2,0],pts:[[x1,y1,0],[x2,y2,0]],len:Math.hypot(dx,dy),sharp:true};};",
+    "const ceE=[ceMk(0,0,40,0),ceMk(40,0,40,30),ceMk(40,30,0,30),ceMk(0,30,0,0)];",
+    "faoChainMode={setupId:faoSetup().id,opId:ceOp.id,edges:ceE,seeds:[0,1,2,3],tangent:false,sel:[0,1,2,3]};",
+    "faoChainOk();",
+    "att(ceOp.limit&&ceOp.limit.mode==='chain'&&ceOp.limit.anchors&&ceOp.limit.anchors.length===4,'capture chaine : 4 ancres sur les germes');",
+    "att(ceOp.limit.stale===false,'capture chaine : stale=false');",
+    "const ceL0=JSON.stringify(ceOp.limit.loop);",
+    "att(faoLoopArea(ceOp.limit.loop)>1000,'capture chaine : boucle carree ~1200');",
+    // (a) translation XY dans la tolérance -> la boucle suit
+    "const ceE2=ceE.map(function(e){return {mid:[e.mid[0]+5,e.mid[1]-3,0],pts:e.pts.map(function(p){return [p[0]+5,p[1]-3,0];}),len:e.len,sharp:true};});",
+    "const ceR1=faoChainRematch(ceOp,ceE2);",
+    "att(ceR1.changed&&ceR1.stale===false&&ceR1.matched===4,'rejeu : 4/4 ancrees, boucle suivie');",
+    "att(Math.abs(ceOp.limit.loop[0][0]-(JSON.parse(ceL0)[0][0]+5))<1e-6&&Math.abs(ceOp.limit.loop[0][1]-(JSON.parse(ceL0)[0][1]-3))<1e-6,'rejeu : boucle translatee (+5,-3)');",
+    // (b) changement de Z seul -> XY identique -> pas de changement
+    "const ceE3=ceE2.map(function(e){return {mid:[e.mid[0],e.mid[1],20],pts:e.pts.map(function(p){return [p[0],p[1],20];}),len:e.len,sharp:true};});",
+    "const ceL1=JSON.stringify(ceOp.limit.loop);",
+    "const ceR2=faoChainRematch(ceOp,ceE3);",
+    "att(ceR2.changed===false&&ceR2.stale===false&&ceR2.matched===4,'rejeu : Z seul, boucle XY inchangee');",
+    // (c) deplacement hors tolérance -> stale, boucle figee conservee
+    "const ceE4=ceE.map(function(e){return {mid:[e.mid[0]+50,e.mid[1],0],pts:e.pts.map(function(p){return [p[0]+50,p[1],0];}),len:e.len,sharp:true};});",
+    "const ceR3=faoChainRematch(ceOp,ceE4);",
+    "att(ceR3.changed&&ceOp.limit.stale===true&&JSON.stringify(ceOp.limit.loop)===ceL1,'rejeu : +50 mm hors tol -> stale + boucle figee');",
+    // (d) retour du modele d origine -> stale leve, boucle revenue
+    "const ceR4=faoChainRematch(ceOp,ceE);",
+    "att(ceR4.changed&&ceOp.limit.stale===false&&JSON.stringify(ceOp.limit.loop)===ceL0,'rejeu : retour modele -> stale leve + boucle restauree');",
+    // (e) arete manquante -> tous les germes requis -> stale
+    "const ceR5=faoChainRematch(ceOp,ceE.slice(0,3));",
+    "att(ceR5.changed&&ceOp.limit.stale===true&&JSON.stringify(ceOp.limit.loop)===ceL0,'rejeu : arete disparue -> stale, boucle figee');",
+    // (f) ancien document sans ancres -> ignore (comportement historique)
+    "ceOp.limit={mode:'chain',loop:JSON.parse(ceL0),closed:true,nEdges:4,tangent:false,side:'center',extra:0};",
+    "const ceR6=faoChainRematch(ceOp,ceE);",
+    "att(ceR6.changed===false&&ceR6.skipped===true&&JSON.stringify(ceOp.limit.loop)===ceL0,'rejeu : sans ancres -> ignore');",
+    // (g) tangente re-deduite depuis le germe (3 segments colineaires), boucle degeneree -> stale
+    "const ceC=[ceMk(0,0,10,0),ceMk(10,0,20,0),ceMk(20,0,30,0)];",
+    "ceOp.limit={mode:'chain',loop:[[0,0],[10,0]],closed:false,nEdges:1,tangent:true,side:'center',extra:0,anchors:[{m:[5,0,0],len:10}]};",
+    "const ceR7=faoChainRematch(ceOp,ceC);",
+    "att(ceR7.nSel===3&&ceR7.stale===true,'rejeu : tangent re-derinee (3) + boucle degeneree -> stale');",
+    // (h) replay sans OCCT/solide exact -> no-op garde
+    "att(faoChainReplay()===0,'rejeu : solide exact absent -> replay no-op (0)');",
+    // (h2) câblage : la fin de rejeu (buildDone) appelle faoChainReplay
+    "let ceBd=0;const ceOld=faoChainReplay;faoChainReplay=function(){ceBd++;return 0;};",
+    "buildDone();",
+    "faoChainReplay=ceOld;",
+    "att(ceBd===1,'buildDone : branche faoChainReplay');",
+    // (i) alerte fiche (stale) en mode selection de la fiche
+    "const pcSt=document.createElement('div');faoSetupFiche(pcSt,faoSetup());",
+    "const ceHasTxt=function(n,t){if(n.textContent&&n.textContent.indexOf(t)>=0)return true;const c=n.children||[];for(let i=0;i<c.length;i++)if(ceHasTxt(c[i],t))return true;return false;};",
+    "att(ceHasTxt(pcSt,'re-s\\u00e9lectionnez la cha\\u00eene'),'fiche : alerte stale « re-s\\u00e9lectionnez la cha\\u00eene »');",
+    // (j) export : ATTENTION si une op a sa chaine obsolete
+    "const jobS=faoDefaultSetup();jobS.name='TS';jobS.stock={x0:0,y0:0,z0:0,x1:100,y1:80,z1:25};",
+    "jobS.ops=[{id:'as',on:true,toolId:'T1',type:'facing',z:25,ae:6,limit:{mode:'chain',loop:[[0,0],[60,0],[60,40]],closed:true,nEdges:3,tangent:false,side:'center',extra:0,stale:true}}];",
+    "const ceh=faoPost(jobS,'siemens630');",
+    "att(ceh.warns.length===1&&/cha\\u00eene/.test(ceh.warns[0])&&/ATTENTION/.test(ceh.code),'export : alerte limite chaine obsolete en tete de programme');",
+    "delete ceOp.limit;",
     // --- P1-b : UI pilotée dans appvm (œil, ↑/↓, +op, export)
     "doc.fao={setups:[Object.assign(faoDefaultSetup(),{name:'UITEST',stock:{x0:0,y0:0,z0:0,x1:100,y1:80,z1:25},ops:[{id:'u1',on:true,toolId:'T1',type:'facing',z:25,ae:6},{id:'u2',on:true,toolId:'T1',type:'drill',pts:[[20,20]],ztop:25,zbot:5}]})],activeSetupId:null};",
     "sel={kind:null,id:null};document.getElementById('faoTree').children.length=0;faoRenderTree();",

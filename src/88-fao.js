@@ -411,10 +411,12 @@ function faoClipMovesXY(moves,R,secuZ){
 }
 
 /* ----- limite par chaîne d'arêtes : boucle XY + clip polygone ----- */
-// La chaîne est SNAPSHOTÉE à la sélection (pts 3D -> boucle XY) : aucune
-// dépendance OCCT à la génération, la limite survit au rejeu et à la
-// sauvegarde. Modèle modifié -> re-sélectionner (bouton de la fiche).
-// op.limit = {mode:'chain', loop:[[x,y]...], closed, nEdges, tangent, side, extra}.
+// La chaîne est SNAPSHOTÉE à la sélection (pts 3D -> boucle XY) + les ancres des
+// germes (milieu 3D + longueur) sont conservées : à chaque fin de rejeu,
+// faoChainReplay re-suit la boucle sur les arêtes du nouveau solide (rejeu auto) ;
+// si les arêtes ont trop bougé, la boucle figée reste et l'op passe en « stale ».
+// op.limit = {mode:'chain', loop:[[x,y]...], closed, nEdges, tangent, side, extra,
+//             anchors:[{m:[x,y,z],len}...], stale}.
 function faoTangentSet(edges,seeds){
   // BFS tangentiel (même règle que les congés : |dot| > 0.985 aux sommets).
   const norm=function(v){ return (Math.abs(v)<0.0005?0:v).toFixed(3); };
@@ -513,6 +515,118 @@ function faoLoopArea(loop){
   let a=0;
   for(let i=0;i+1<loop.length;i++)a+=loop[i][0]*loop[i+1][1]-loop[i+1][0]*loop[i][1];
   return Math.abs(a/2);
+}
+
+/* ----- rejeu auto : la limite « chaîne » suit le modèle ----- */
+// Chaque validation mémorise milieu 3D + longueur de chaque GERME (ancres figées).
+// À chaque fin de rejeu (buildDone → faoChainReplay), si chaque ancre retrouve « son »
+// arête sur le nouveau solide (tolérance XY, Z libre pour un changement de profondeur,
+// dérive de longueur ≤ 50 %), la boucle est RECONSTRUITE automatiquement (tangentes
+// re-déduites depuis les germes). Sinon la boucle figée est conservée et l'op passe en
+// « stale » : alerte dans la fiche + ATTENTION à l'export (repli = l'ancien
+// « modèle modifié -> re-sélectionner », mais signalé au lieu d'être silencieux).
+const FAO_CHAIN_TOL=10; // mm — distance XY max acceptée entre une ancre et son arête
+function faoEdgeAnchor(e){
+  // {m:[x,y,z], len} d'une arête : milieu OCCT si présent, sinon milieu du polyline.
+  if(!e)return null;
+  const p=e.pts||[];
+  const m=(e.mid&&isFinite(e.mid[0]))?e.mid:(p.length>=2?p[Math.floor((p.length-1)/2)]:null);
+  if(!m||!isFinite(m[0]))return null;
+  return {m:[m[0],m[1],isFinite(+m[2])?+m[2]:0],len:isFinite(+e.len)?+e.len:0};
+}
+function faoChainLoopCap(res){
+  // Cap 2000 pts (clip en O(n)) : les très longues chaînes sont sous-échantillonnées.
+  if(!res||!res.loop||res.loop.length<=2000)return res;
+  const stride=Math.ceil(res.loop.length/2000), thin=[];
+  for(let i=0;i<res.loop.length;i+=stride)thin.push(res.loop[i]);
+  if(thin[thin.length-1]!==res.loop[res.loop.length-1])thin.push(res.loop[res.loop.length-1]);
+  return {loop:thin,closed:res.closed};
+}
+function faoChainRematch(op,edges){
+  // Reconstruit la boucle si les ances des germes retrouvent leurs arêtes.
+  // Retour {changed, stale, matched, nSel, skipped?} — état dérivé : JAMAIS de
+  // snapshot (comme les projections associatives), l'annulation reste au rejeu modèle.
+  const L=op&&op.limit;
+  if(!L||L.mode!=='chain')return {changed:false,skipped:true};
+  if(!(L.anchors&&L.anchors.length))return {changed:false,skipped:true}; // ancien document
+  if(!edges||!edges.length)return {changed:false,skipped:true};
+  const fail=function(nSel){
+    const ch=!L.stale;
+    L.stale=true;
+    return {changed:!!ch,stale:true,matched:0,nSel:nSel||0};
+  };
+  // 1) appariement injectif ancre -> arête (meilleur score, tous les germes requis)
+  const used=new Set(), seeds=[];
+  for(let a=0;a<L.anchors.length;a++){
+    const A=L.anchors[a];
+    if(!A||!A.m||!isFinite(A.m[0]))return fail();
+    let best=-1,bestD=Infinity,bestS=Infinity;
+    for(let i=0;i<edges.length;i++){
+      if(used.has(i))continue;
+      const e=edges[i];
+      if(!e||!e.pts||e.pts.length<2)continue;
+      const m=(e.mid&&isFinite(e.mid[0]))?e.mid:null;
+      if(!m)continue;
+      const dxy=Math.hypot(m[0]-A.m[0],m[1]-A.m[1]);
+      if(dxy>FAO_CHAIN_TOL)continue; // tolérance sèche sur XY (le Z n'est pas borné)
+      const dz=Math.abs((isFinite(+m[2])?+m[2]:0)-(isFinite(+A.m[2])?+A.m[2]:0));
+      const len=+e.len||0;
+      const dl=A.len>1?Math.abs(len-A.len)/A.len:0;
+      if(dl>0.5)continue; // même position mais taille fondu : plus la même arête
+      const s=dxy+0.1*dz+5*dl;
+      if(s<bestS){bestS=s;best=i;bestD=dxy;}
+    }
+    if(best<0||bestD>FAO_CHAIN_TOL)return fail();
+    used.add(best); seeds.push(best);
+  }
+  // 2) re-déduction des tangentes depuis les germes appariés (même règle qu'à la saisie)
+  let sel=seeds.slice();
+  if(L.tangent){
+    const all=[];
+    seeds.forEach(function(s){
+      faoTangentSet(edges,[s]).forEach(function(j){ if(all.indexOf(j)<0)all.push(j); });
+    });
+    sel=all;
+  }
+  // 3) reconstruction de la boucle XY (ordre, clip de longueur, validation)
+  let res=faoLoopFromChains(edges,faoOrderEdges(edges,sel));
+  res=faoChainLoopCap(res);
+  if(!res.loop.length||res.loop.length<3||faoLoopArea(res.loop)<1e-6)return fail(sel.length);
+  const wasStale=!!L.stale;
+  const loopChanged=JSON.stringify(L.loop||[])!==JSON.stringify(res.loop);
+  L.loop=res.loop; L.closed=res.closed; L.nEdges=sel.length; L.stale=false;
+  return {changed:loopChanged||wasStale,stale:false,matched:seeds.length,nSel:sel.length};
+}
+function faoChainReplay(){
+  // Fin de rejeu (buildDone) : re-suit toutes les limites chaîne du document sur les
+  // arêtes du nouveau solide. Repli silencieux partout où l'on ne peut pas juger :
+  // sélection en cours, OCCT absent, solide exact illisible, aucune ancre.
+  try{
+    if(typeof faoChainMode!=='undefined'&&faoChainMode)return 0;
+    const F=(doc&&doc.fao&&doc.fao.setups)||[];
+    let any=false;
+    for(let i=0;i<F.length&&!any;i++){
+      const ops=(F[i]&&F[i].ops)||[];
+      for(let k=0;k<ops.length;k++){
+        const L=ops[k]&&ops[k].limit;
+        if(L&&L.mode==='chain'&&L.anchors&&L.anchors.length){any=true;break;}
+      }
+    }
+    if(!any)return 0;
+    if(typeof occHas==='function'&&!occHas())return 0;
+    if(!occLive||!occLive.shape)return 0;
+    const edges=occSharpEdges(occLive.shape);
+    if(!edges.length)return 0;
+    let n=0;
+    F.forEach(function(st){
+      ((st&&st.ops)||[]).forEach(function(op){
+        const r=faoChainRematch(op,edges);
+        if(r&&r.changed)n++;
+      });
+    });
+    if(n)faoChanged();
+    return n;
+  }catch(e){ return 0; }
 }
 function faoPointInPoly(x,y,loop){
   // Impair : dedans <=> nombre impair de croisements.
@@ -965,6 +1079,11 @@ function faoPost(job,postId){
     faoFmtXYZ(zMin)+' < fond du brut '+faoFmtXYZ(z0)+')');
   if(ori32&&fag)warns.push('3+2 (B'+ORI.b+' C'+ORI.c+') : Fagor sans transformation de '+
     'coordonnées — XYZ non pré-tournés, valider impérativement en simulation / à vide sur la CN');
+  const staleCh=(job.ops||[]).filter(function(o){
+    return o&&o.on!==false&&o.limit&&o.limit.mode==='chain'&&o.limit.stale;
+  }).length;
+  if(staleCh)warns.push(staleCh+' opération(s) : limite « chaîne » obsolète (arêtes du modèle '+
+    'non retrouvées) — re-sélectionner la chaîne avant export');
   const L=[]; let n=10;
   const nc=function(s){ if(fag){ L.push('N'+n+' '+s); n+=5; } else L.push(s); };
   const cmt=function(s){ L.push(fag?('( '+s+' )'):('; '+s)); };
@@ -1077,7 +1196,8 @@ function faoOpLabel(op,job){
   const off=(op&&op.on===false)?' (désactivée)':'';
   const RA=faoRA(op||{});
   const ra=((op&&(op.type==='pocket'||op.type==='contour'||op.type==='rough3d'||op.type==='facing'))&&(RA.radial>0||RA.axial>0))?(' R'+RA.radial+' A'+RA.axial):'';
-  const lim=(op&&op.limit&&(op.limit.mode==='rect'||(op.limit.mode==='chain'&&(op.limit.loop||[]).length>=3)))?' [limite]':'';
+  const lim=(op&&op.limit&&(op.limit.mode==='rect'||(op.limit.mode==='chain'&&(op.limit.loop||[]).length>=3)))
+    ?' [limite]'+(op.limit.stale?'⚠':''):'';
   if(t==='facing')return 'Surfaçage Z='+op.z+tag+off+ra+lim;
   if(t==='pocket')return 'Poche ['+op.x0+','+op.y0+' -> '+op.x1+','+op.y1+'] '+op.ztop+' -> '+op.zbot+ra+tag+off+lim;
   if(t==='contour')return 'Contour ['+op.x0+','+op.y0+' -> '+op.x1+','+op.y1+'] '+op.ztop+' -> '+op.zbot+ra+tag+off+lim;
@@ -1594,6 +1714,12 @@ function faoOpCardElement(setup,op,i){
     bs.onclick=function(){ faoChainStart(setup.id,op.id); };
     rc.appendChild(bs);
     d.appendChild(rc);
+    if(op.limit.stale){
+      const ws=document.createElement('div');
+      ws.style.cssText='font-size:.7rem;color:#ff9f0a;line-height:1.35;';
+      ws.textContent='⚠ Modèle modifié : arêtes non retrouvées — boucle inchangée (obsolète), re-sélectionnez la chaîne.';
+      d.appendChild(ws);
+    }
   }
   if((limMode==='rect'||limMode==='chain')&&op.limit){
     const rs=faoRow();
@@ -2802,8 +2928,9 @@ function faoSeedBottom(mesh){
 
 /* ----- mode sélection : chaîne d'arêtes pour limite d'usinage ----- */
 // Germes cliqués (jaune) + tangentes déduites (rouge), comme les congés.
-// À la validation on SNAPSHOTE la boucle XY dans op.limit : la limite survit
-// au rejeu et à la sauvegarde sans OCCT ; modèle modifié -> re-sélectionner.
+// À la validation on SNAPSHOTE la boucle XY dans op.limit + les ancres des germes :
+// la limite survit au rejeu (re-suie auto par faoChainReplay) et à la sauvegarde
+// sans OCCT ; arêtes trop déplacées -> stale (alerte) -> re-sélectionner.
 let faoChainMode=null, faoChainHover=null;
 function faoChainStart(setupId,opId){
   try{
@@ -2974,7 +3101,7 @@ function faoChainPanel(p,setup,op){
   p.appendChild(r2);
   const note=document.createElement('div');
   note.style.cssText='font-size:.68rem;color:rgba(255,255,255,.5);line-height:1.35;';
-  note.textContent='La boucle XY est figée à la validation. Chaîne ouverte : refermée d\'office en segment droit.';
+  note.textContent='La boucle est re-suie automatiquement à chaque rejeu (ancres des germes) ; si les arêtes ont trop bougé, la fiche passe en alerte. Chaîne ouverte : refermée d\'office en segment droit.';
   p.appendChild(note);
 }
 function faoChainOk(){
@@ -2990,17 +3117,16 @@ function faoChainOk(){
       faceEl.textContent='Chaîne : boucle dégénérée — limite inchangée.';return;
     }
     // Cap : les très longues chaînes sont sous-échantillonnées (clip en O(n)).
-    if(res.loop.length>2000){
-      const stride=Math.ceil(res.loop.length/2000), thin=[];
-      for(let i=0;i<res.loop.length;i+=stride)thin.push(res.loop[i]);
-      if(thin[thin.length-1]!==res.loop[res.loop.length-1])thin.push(res.loop[res.loop.length-1]);
-      res={loop:thin,closed:res.closed};
-    }
+    res=faoChainLoopCap(res);
     const nEdges=faoChainMode.sel.length, wasTangent=!!faoChainMode.tangent;
     const old=op.limit&&op.limit.mode==='chain'?op.limit:null;
     faoSnapshot('limite en chaîne');
     op.limit={mode:'chain',loop:res.loop,closed:res.closed,
       nEdges:nEdges,tangent:wasTangent,
+      // Ancres des germes (figées) : permettent à faoChainReplay de re-suivre la
+      // boucle à chaque fin de rejeu, et de passer en stale si plus retrouvable.
+      anchors:(faoChainMode.seeds||[]).map(function(i){return faoEdgeAnchor(faoChainMode.edges[i]);}).filter(Boolean),
+      stale:false,
       side:(old&&old.side)||'center',extra:(old&&isFinite(+old.extra))?+old.extra:0};
     faoChainExit();
     faoChanged();

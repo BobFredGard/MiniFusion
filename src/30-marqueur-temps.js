@@ -66,6 +66,9 @@ function buildDone(){
   // Fin de reconstruction : rejeu terminé. L'empreinte du document et le cache
   // d'affichage (copie de tous les sommets + IndexedDB) sont REPUSSES apres le rendu.
   builtVersion=_docVersion;builtTl=tlMark;builtSkip=occSkipFeat;
+  // FAO : les limites « chaîne » sont re-suies sur les arêtes du nouveau solide
+  // (état dérivé : pas d'entrée d'annulation) ; sinon marquées obsolètes (stale).
+  try{if(typeof faoChainReplay==='function')faoChainReplay();}catch(e){}
   if(_postT)clearTimeout(_postT);
   _postT=setTimeout(()=>{_postT=null;
     try{builtHash=docHash();}catch(e){}

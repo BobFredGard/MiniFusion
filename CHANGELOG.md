@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**113 versions**, de `2026-09-28b` à `2026-10-01-005` — la plus récente en bas,
+**114 versions**, de `2026-09-28b` à `2026-10-01-006` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2227,3 +2227,15 @@ Tests : `test_fao.cjs` — accélération (défauts + golden `t = d/v + v/A` sur
 Tests : `test_fao.cjs` — défauts/arrondi/détection orient, golden Siemens `TRAORI(1)` avant `T1 D1` + `TRAFOOF` avant `M30` + 0 alerte, golden Fagor `G0 B45.000 C0.000` sans `TRAORI(1)` + 1 alerte + commentaire en tête, identité bit à bit du programme en `{0,0}` vs `orient` absent, rang UI 3+2 (saisie C + bouton 3 axes). Suite 19/19 verte.
 
 README : 3+2 sorti des « pistes envisagées » (restent 5 axes continu, sauvegarde paramétrique, Electron), documenté côté posages et post-processeurs.
+
+### 2026-10-01-006
+
+**FAO P2 : rejeu auto de la limite « chaîne » — ances des germes, boucle re-suie à chaque rejeu, alerte stale.**
+
+1. **Ancres à la validation** : `faoChainOk` mémorise désormais pour chaque GERME `anchors:[{m:[x,y,z],len}]` (milieu OCCT `mid` de l'arête, repli milieu du polyline) + `stale:false`. La boucle XY reste snapshotée (génération sans OCCT) ; les ancres permettent de la re-trouver.
+2. **`faoChainRematch(op,edges)`** (pur, sans OCCT) : appariement injectif ancre→arête sur le nouveau solide — tolérance **XY 10 mm** (Z libre pour un changement de profondeur, pondéré), dérive de longueur ≤ 50 %, meilleur score `dxy + 0.1·dz + 5·dl`. Tous les germes requis : sinon la boucle figée est **conservée** et `stale=true`. Sinon tangentes re-déduites (`faoTangentSet` depuis les germes appariés), ordre (`faoOrderEdges`), boucle XY (`faoLoopFromChains`), cap 2000 pts factorisé (`faoChainLoopCap`), validation aire ≥ 1e-6. Ancres **figées** (tracking absolu, pas de dérive cumulée). État dérivé : **jamais de snapshot** (comme les projections).
+3. **`faoChainReplay()`** : appelé par `buildDone()` (« fin de reconstruction », les 2 chemins exact + maillage) — scan du document (garde : sélection chaîne en cours, aucune ancre, OCCT absent, solide illisible → no-op), `occSharpEdges` listé une fois, rematch de toutes les ops, `faoChanged()` seulement si quelque chose a bougé.
+4. **Signalement** : fiche posage — alerte orange « ⚠ Modèle modifié : arêtes non retrouvées… re-sélectionnez la chaîne » ; libellé arbre `[limite]⚠` ; **export** — `warns` + `ATTENTION` en tête de programme si une op active a sa chaîne obsolète (repli historique « re-sélectionner » désormais **signalé** au lieu d'être silencieux).
+5. Anciens documents sans `anchors` : ignorés (boucle figée comme avant, zéro migration).
+
+Tests : `test_fao.cjs` — capture (4 ancres sur carré 4 germes, aire 1200), traduction +5/−3 suivie, Z seul sans effet (boucle XY identique, `changed=false`), +50 mm hors tolérance → stale + boucle figée, retour modèle → stale levé + boucle restaurée, arête manquante → stale, sans ancres → `skipped`, tangente re-déduite (3 colinéaires → `nSel=3`, aire nulle → stale), replay no-op sans OCCT, câblage `buildDone` (stub compté), alerte fiche (« re-sélectionnez la chaîne »), export `ATTENTION` + warns=1. Suite 19/19 verte.
