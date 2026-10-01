@@ -607,14 +607,17 @@ function applyClip(){
 //      toujours, l'objet n'est plus dans la scène). → importMeshesOfDoc().
 //   2) `docSnap()` strippe `_mesh` (JSON) → annuler/rétablir rendait le corps fantôme
 //      (entrée présente, rien d'affiché). → importHydrate() le re-broche.
-//   3) le shape OCCT est détruit en fin d'import → classification des arêtes
+//   3) le shape OCCT était détruit en fin d'import → classification des arêtes
 //      tangentes impossible ensuite. → calculée tant qu'il vit, stockée ICI.
+//   4) il n'était plus conservé DU TOUT → la voie exacte n'avait rien à unir ni à
+//      soustraire (« découpe dans le vide » sur un STEP). → `entry.brep`, libéré
+//      par la purge de la table comme le mesh.
 // Table délibérément hors `doc` : jamais sérialisée, jamais dans `docHash`,
 // jamais par instantané d'annulation — elle survit à tout rechargement d'état.
 // Propriété : le mesh est LA TABLE qui en décide — il est libéré exactement quand
 // son entrée est retirée (id absent de doc.features ET de toutes les piles
 // d'annulation), donc jamais pendant un aller-retour annuler/rétablir.
-const importGeom=new Map(); // id fonction -> {mesh, edges, faoGeo}
+const importGeom=new Map(); // id fonction -> {mesh, edges, faoGeo, brep}
 function importMeshesOfDoc(){
   // Meshes des imports ENCORE DANS LE DOCUMENT : à afficher, donc à préserver.
   const s=new Set();
@@ -663,6 +666,7 @@ function importHydrate(){
     const e=importGeom.get(id);importGeom.delete(id);
     try{if(e&&e.mesh&&e.mesh.geometry)e.mesh.geometry.dispose();}catch(_){}
     try{if(e&&e.faoGeo&&e.faoGeo.dispose)e.faoGeo.dispose();}catch(_){}
+    try{if(e&&e.brep)e.brep.delete();}catch(_){} // solide exact : même vie que le mesh
   }
 }
 $('btnImport').onclick=()=>$('fileImport').click();
@@ -734,10 +738,14 @@ async function importSTEP(file){
     // toutes, et on les range dans la table. Sans ça, l'overlay « Arêtes » ne couvrait
     // jamais un STEP : le repli ne dessinait que des vives > 30°, tout en noir.
     try{const E=occSharpEdges(shape);if(E&&E.length)entry.edges=E;}catch(e){}
-    importGeom.set(id,entry); // {mesh, edges, faoGeo}
+    // SOLIDE EXACT CONSERVÉ : sans lui, la voie exacte n'avait RIEN à unir ni à
+    // soustraire (le mesh n'est pas un solide) — « Uni » restait deux pièces et
+    // « Soustraction » tombait dans le vide. Le BRep reste la PROPRIÉTÉ de la table :
+    // occReplayBody en prend une COPIE, jamais l'original (libéré ici, à la purge).
+    entry.brep=shape;
+    importGeom.set(id,entry); // {mesh, edges, faoGeo, brep}
     addFeature({id,type:'import',name:file.name.replace(/\.[^.]+$/,''),visible:true,_mesh:mesh});
     try{reader.delete();}catch(e){}
-    try{shape.delete();}catch(e){}
     try{occt.FS.unlink(path);}catch(e){}
     markDirty();rebuild();showAll();
     faceEl.textContent='STEP importé : '+file.name;

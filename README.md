@@ -104,6 +104,7 @@ Une partie FAO est en travail, ce sera long !
 
 ### Import, export & persistance
 - Import **STEP / STL**, export **STEP / STL / OBJ**.
+- **Booléens avec un import** : une esquisse peut **soustraire ou s'unir** à un STEP inséré (corps exact entrant dans la chaîne de rejeu) — le solide importé reste affiché seul tant qu'aucune autre fonction ne le concerne, puis n'est plus dessiné en double une fois fusionné.
 - Projet **`.minifusion.json`** (entièrement paramétrique : esquisses, contraintes, cotes, fonctions, répétitions, ancrages) + **sauvegarde locale automatique** (autosave) et cache de la dernière pièce finie.
 - **🧪 Auto-tests** : batterie de non-régression de l'esquisse et des contraintes, lançable depuis le panneau.
 
@@ -197,7 +198,7 @@ fichier unique (voir « Travailler sur le code »).
 
 - **In-app** : 🧪 Auto-tests (non-régression esquisse, contraintes, cotes) — lançables depuis le panneau latéral.
 - **Dev** : harnais Node hors navigateur (solveur, cotation orientée, suivi de faces, références, projections associatives, congés/chanfreins exacts, menu d'extrusion, prismes miroir, répétitions, marqueur temps, performance…) ; certains scénarios s'exécutent sur le **noyau OCCT réel** (`.wasm` chargé en Node), et la version (`APP_VER`) est vérifiée avant chaque sauvegarde dans `Backup/`.
-- **Suite repo** : `tests/` (harnais `appvm.cjs` + 19 suites + fixtures, dont `test_fao` et `test_fao3d`) — portable, aucun chemin absolu : `node tests/run.cjs` ou `npm test` depuis la racine, sur n'importe quel PC.
+- **Suite repo** : `tests/` (harnais `appvm.cjs` + 24 suites + fixtures, dont `test_fao` et `test_fao3d`) — portable, aucun chemin absolu : `node tests/run.cjs` ou `npm test` depuis la racine, sur n'importe quel PC.
 
 ## Historique
 

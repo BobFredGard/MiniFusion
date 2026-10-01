@@ -1827,11 +1827,15 @@ function occReplayBody(bid,list){
   // contrôle), mais l'accumulateur ne voit QUE les fonctions du corps — une découpe du
   // corps A ne retire jamais de matière au corps B (Fusion). Les clés de cache sont
   // préfixées du corps : deux corps aux signatures identiques ne se partagent rien.
-  const bin=[],itemShapes=[];let result=null;const msgs=[],ghostShapes=[];
+  const bin=[],itemShapes=[],imports=[];let result=null;const msgs=[],ghostShapes=[];
   let ckKey=bid+'|'+(occSkipFeat||'')+'|'; // signature cumulée du préfixe — SANS marqueur upto :
   // ALL et UPn parcourent les MÊMES préfixes cumulatifs ; un marqueur dans la clé privait
   // les projections (upto<n) de tous les points de contrôle posés par le rejeu complet.
   const items=[]; // extrudes réussies, dans l'ordre (affichage nA/nC)
+  // Un import SEUL reste affiché comme avant (son mesh, son nom dans Pièces) ;
+  // dès qu'AU MOINS une autre fonction coexiste dans le corps, il entre dans la
+  // chaîne exacte et devient le volume à unir / soustraire.
+  const importSeul=!list.some(f=>f&&f.type!=='import');
   list.forEach(f=>{
     ckKey+=featSig(f)+';';
     if(f.type==='xfillet'){
@@ -1903,11 +1907,35 @@ function occReplayBody(bid,list){
       occCkPut(ckKey,occShapeCopy(result));
       return;
     }
+    let shape=null;
+    if(f.type==='import'){
+      // UNI / SOUSTRACTION avec un STEP importé : la voie exacte ne rejouait que
+      // extrude/revolve — le STEP n'entraît JAMAIS dans l'accumulateur, donc
+      // « Uni » restait deux pièces affichées côte à côte et « Soustraction »
+      // tombait dans le vide (« découpe dans le vide — ignorée »).
+      if(importSeul)return; // seul : affichage d'origine (mesh + nom du fichier)
+      const e=(typeof importGeom!=='undefined')?importGeom.get(f.id):null;
+      const bp=e&&e.brep;
+      if(!bp){msgs.push(`${f.name} : solide exact indisponible (import STL) — combinaison réservée au repli maillage`);return;}
+      shape=occShapeCopy(bp); // COPIE : la table reste propriétaire de son BRep
+      if(!shape){msgs.push(`${f.name} : copie exacte impossible — ignoré`);return;}
+      imports.push(f.id);
+      if(!result){result=shape;occCkPut(ckKey,occShapeCopy(result));return;}
+      // Mêmes règles qu'une fonction additive (ci-dessous) : point de contrôle
+      // avant de refaire la fusion la plus coûteuse.
+      const ckI=occCkGet(ckKey);
+      const cpI=ckI?occShapeCopy(ckI):null;
+      if(cpI){try{result.delete();}catch(e2){}try{shape.delete();}catch(e2){}result=cpI;return;}
+      const uI=occUnify(occFuse(result,shape));
+      try{result.delete();}catch(e2){}try{shape.delete();}catch(e2){}
+      result=uI;
+      occCkPut(ckKey,occShapeCopy(result));
+      return;
+    }
     if(f.type!=='extrude'&&f.type!=='revolve')return;
     // Pour une découpe « à travers tout », l'étendue se mesure sur le solide DÉJÀ reconstruit
     // (tout ce qui précède dans la timeline) — jamais sur l'affichage de l'édition précédente.
     occThroughBase=(f.type==='extrude'&&f.through&&result)?result:null;
-    let shape=null;
     try{
       const r=(f.type==='revolve')?occShapeOfRevolve(f):occShapeOfExtrude(f);
       bin.push(...r.bins);itemShapes.push(r.shape);
@@ -1950,7 +1978,7 @@ function occReplayBody(bid,list){
     }
     occCkPut(ckKey,occShapeCopy(result)); // point de contrôle pour le rejeu suivant
   });
-  return{shape:result,ghostShapes,msgs,bin,itemShapes,items};
+  return{shape:result,ghostShapes,msgs,bin,itemShapes,items,imports};
 }
 function occFinalShape(upto){
   // Partition par corps (ordre de première apparition dans la timeline), rejeu isolé
@@ -1967,15 +1995,16 @@ function occFinalShape(upto){
     if(!byBody[b]){byBody[b]=[];order.push(b);}
     byBody[b].push(f);
   });
-  const perBody=[],bin=[],itemShapes=[],ghostShapes=[],msgs=[],items=[];
+  const perBody=[],bin=[],itemShapes=[],ghostShapes=[],msgs=[],items=[],imports=[];
   order.forEach(bid=>{
     const r=occReplayBody(bid,byBody[bid]);
     if(r.shape)perBody.push({bodyId:bid,shape:r.shape});
     bin.push(...r.bin);itemShapes.push(...r.itemShapes);
     ghostShapes.push(...r.ghostShapes);msgs.push(...r.msgs);items.push(...r.items);
+    imports.push(...r.imports); // imports entrés dans la chaîne exacte (affichés par le corps)
   });
   const shape=occCompoundOf(perBody.map(p=>p.shape));
-  return{shape,perBody,ghostShapes,msgs,bin,itemShapes,items};
+  return{shape,perBody,ghostShapes,msgs,bin,itemShapes,items,imports};
 }
 function legacyPrismGeos(f,warnArr){
   // Prisme maillage (monde) d'une extrusion — même construction que la voie repli. Jette si profil vide.
@@ -2128,9 +2157,13 @@ function occRebuild(){
           g=occTessellateBudget(p.shape,D,Math.max(1,OCC_DISPLAY_TRIS-trisTot));
           if(!g)g=occTessellate(p.shape,D.lin,D.ang);
         }catch(err){FR.msgs.push(e.name+' : maillage impossible, ignoré');return;}
-        const tris=(g.attributes.position.count/3)|0;
-        trisTot+=tris; // budget global : dépassement ⇒ D muté grossier pour les corps suivants
-        if(!(tris>0)){try{g.dispose&&g.dispose();}catch(err){}return;}
+        // Compteur d'attributs parfois illisible (harnais Node, geometry exotique) :
+        // ce n'est PAS une géométrie vide — on affiche quand même, plutôt que de
+        // faire échouer tout le rebuild exact et de basculer sur le moteur maillage.
+        let tris=0,lit=true;
+        try{tris=(g.attributes.position.count/3)|0;}catch(err){lit=false;}
+        trisTot+=lit?tris:0; // budget global : dépassement ⇒ D muté grossier pour les corps suivants
+        if(lit&&!(tris>0)){try{g.dispose&&g.dispose();}catch(err){}return;}
         try{const info=occSolidBox(p.shape);if(info)e.c=info.c;}catch(err){}
         const col=e.color||(parts.length===1?(partTint()||(_ff?featColor(_ff,autoCol(0)):autoCol(0))):autoCol(i));
         const mat=new THREE.MeshStandardMaterial({color:col,metalness:.35,roughness:.4,clippingPlanes:clipPlane?[clipPlane]:null});
@@ -2138,7 +2171,7 @@ function occRebuild(){
         const mesh=new THREE.Mesh(g,mat);mesh.userData.bid=e.id;scene.add(mesh);
         const vis=!doc.bodyVis||!Object.prototype.hasOwnProperty.call(doc.bodyVis,e.id)?true:!!doc.bodyVis[e.id];
         mesh.visible=vis;
-        bodies.push({id:e.id,name:e.name+' · '+tris.toLocaleString('fr')+' tris',mesh,color:col,visible:vis,kind:'body',ref:null,shape:p.shape});
+        bodies.push({id:e.id,name:e.name+' · '+(lit?tris.toLocaleString('fr'):'?')+' tris',mesh,color:col,visible:vis,kind:'body',ref:null,shape:p.shape});
       });
       if(!bodies.some(b=>b.kind==='body'))faceEl.textContent+=(faceEl.textContent?'\n':'')+'Solide exact vide (tout a été découpé).';
       if(FR.shape){occLive={shape:FR.shape};FR.shape=null;} // conservé pour le picking d'arêtes
@@ -2154,8 +2187,11 @@ function occRebuild(){
         bodies.push({id:'occghost_'+i,name:gh.inexact?`⚠ ${gh.inexact} (maillage — exclu de l'exact)`:'🔧 Outil '+(gh.orphan?'(orphelin)':'(découpe)'),mesh,color:0xff453a,visible:false,kind:'ghost',ref:gh.fid||null,ghost:true});
       }catch(e){msgs.push('fantôme illisible, ignoré');}
     });
-    // Imports mesh : affichés tels quels (non fusionnés au BRep dans ce MVP)
+    // Imports mesh : affichés tels quels SAUF s'ils sont entrés dans la chaîne exacte
+    // (ils SONT alors le corps : un second affichage montrerait le solide deux fois).
+    const consommes=new Set(FR.imports||[]);
     doc.features.filter(f=>f.visible!==false&&f.type==='import'&&f._mesh).forEach(f=>{
+      if(consommes.has(f.id)){try{scene.remove(f._mesh);}catch(e){}return;}
       const col=partTint()||featColor(f,autoCol(1));
       f._mesh.material=applyFeatOp(FreshMat(col),f);scene.add(f._mesh);
       bodies.push({id:f.id,name:f.name,mesh:f._mesh,color:col,visible:true,kind:'import',ref:f.id});

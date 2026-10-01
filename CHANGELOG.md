@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**127 versions**, de `2026-09-28b` à `2026-10-01-019` — la plus récente en bas,
+**128 versions**, de `2026-09-28b` à `2026-10-01-020` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2413,3 +2413,16 @@ README : viewer — « un import STEP ne disparaît plus après une modification
 Tests : `test_fao.cjs` — blocs **021-023** : 021 la 2ᵉ passe **ne tue plus aucun voxel** (centre 12.5 < `zmin` 13.5) mais la Z-map descend **quand même à 16** (gel corrigé), 3ᵉ passe retue → 12 (monotone) ; 022 `sortie` absent → `dep=r+2` historique (−7), `secu=10` → demi-tour à `x0−(r+10)=−15` ; 023 champ « Sortie » présent en fiche **surfaçage** (valeur 7.5 affichée, saisie 12 → `setup.secu=12` → sortie finale 37 + demi-tour −17) et **absent** de la fiche poche ; origine G-code recalée (`X-10.000` = dépassement `r+sortie`). `npm test` **23/23** vert, golden `facing=32 pocket=65 contour=7 drill=8` intact.
 
 README : surfaçage — champ « Sortie » rappelé dans la fiche de l'opération ; réglages — « Sortie (mm hors matière) : dépassement XY du demi-tour + retrait Z, pas 0,5 » ; viewer — matière enlevée à chaque passe (Z-map plus gelée sans kill voxel).
+
+### 2026-10-01-020
+
+**Booléens avec un import STEP : union / soustraction d'une esquisse à un solide inséré — possibles.**
+
+1. **Retour** : « je veux pouvoir unir ou soustraire une esquisse à ce step inséré et ça ne fonctionne pas » — soustraction → « Perçage : découpe dans le vide — ignorée » (le solide reste intact), union → « OCCT : Cannot convert object to primitive value » puis repli maillage (deux pièces affichées côte à côte, jamais combinées). **Cause** : `occReplayBody` sautait toute fonction qui n'était ni `extrude` ni `revolve` (`if(f.type!=='extrude'&&f.type!=='revolve')return`) : le corps importé n'entrait jamais dans l'accumulateur exact — la coupe partait donc dans le vide et l'union appelait `undefined.toJSON`. **Fix** : branche `f.type==='import'` — le solide est **copié** (`occShapeCopy(bp)`, la table `importGeom` reste propriétaire) et posé en tête de chaîne (`occUnify(occFuse(...))`) comme n'importe quel ajout ; le tableau `imports` remonte dans le résultat et `occFinalShape` l'agrège (l'antériorité de l'esquisse, les références de mesure et le repli maillage voient donc aussi le STEP) ; `importSeul` (aucune autre fonction dans la liste) conserve le comportement historique de l'import seul ; `entry.brep` est désormais conservé à l'import (il était `delete()`é dès la fin de `importSTEP`) et libéré à la purge quand la feature sort du document.
+   Coût : ~**14 ms** de copie pour un STEP de 132 faces (`Pièce 5.step`) — négligeable face aux ~650 ms d'un rejeu chaud.
+2. **Double affichage** : une fois consommé, le mesh de l'import restait en scène à côté du corps fusionné. **Fix** : `occRebuild` marque les `imports` du résultat comme consommés (`scene.remove(f._mesh)` et pas de re-création à leur tour), et le repli maillage `rebuildInner` retire de la scène les imports déjà fondus dans le CSG ; la table n'est ni libérée ni supprimée du document (annuler/rétablir inchangés).
+3. **Lecture du compteur de triangles protégée** : `g.attributes.position.count/3` sur une géométrie sans `position` lève une exception JS qui basculait silencieusement la voie exacte en repli maillage ; lecture sous `try` (`lit`), compteur affiché `?` si illisible.
+
+Tests : `test_bool_import.cjs` **14/14** — import seul inchangé (1 corps, mesh en scène, `entry.brep` conservé), soustraction d'un Ø20 à travers le solide importé (8 faces, faces cylindriques présentes, 1 solide, outil en fantôme, plus de « découpe dans le vide », import consommé = mesh retiré), union boîte + proéminence (boîte `[0,0,0]→[85,40,40]`, 12 faces, 1 solide, aucun mesh en double) ; **12 problèmes** sur `fusion_mvp.html` committé (preuve de régression) et `node --check src/*.js` après chaque édition. Enregistrée dans `tests/run.cjs` → `npm test` **24/24** vert.
+
+README : import — booléens possibles avec un STEP inséré (union / soustraction d'une esquisse, corps exact dans la chaîne de rejeu, plus de mesh en double) ; suite de tests → 24 fichiers.

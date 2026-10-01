@@ -24,7 +24,8 @@ const SUITES = [
   "test_import_vie",
   "test_aretes_import",
   "test_precision_affichage",
-  "test_fao_lock"
+  "test_fao_lock",
+  "test_bool_import"
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {

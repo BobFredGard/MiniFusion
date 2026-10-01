@@ -211,6 +211,10 @@ function rebuildInner(projPass){
         mesh.userData.bid='csg_result';scene.add(mesh);
         const nA=jobs.filter(j=>(j.f.op||'add')==='add'||j.isImport).length,nC=jobs.filter(j=>(j.f.op||'add')==='cut').length;
         bodies.push({id:'csg_result',name:`Solide combiné (${nA}➕ ${nC}➖)`,mesh,color:col,visible:true,kind:'boolean',ref:null});ci++;
+        // Les imports ont été FUSIONNÉS dans ce résultat : leur mesh ne doit pas rester
+        // en scène (il y aurait la pièce deux fois). La table d'imports le conserve —
+        // ni libéré ni retiré du document, seulement de l'affichage.
+        jobs.forEach(j=>{if(j.isImport&&j.f._mesh){try{scene.remove(j.f._mesh);}catch(e){}}});
       }catch(e){faceEl.textContent+=(faceEl.textContent?'\n':'')+'Combiné impossible : '+e.message;}
     }else{
       faceEl.textContent+=(faceEl.textContent?'\n':'')+'Soustraction : le solide est vide (tout a été retiré).';
