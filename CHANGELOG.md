@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**129 versions**, de `2026-09-28b` à `2026-10-01-021` — la plus récente en bas,
+**130 versions**, de `2026-09-28b` à `2026-10-01-022` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2438,3 +2438,14 @@ README : import — booléens possibles avec un STEP inséré (union / soustract
 Tests : `tests/test_corps.cjs` — l'ancien bloc Œil devient **trois rôles** (vue seule sans `rebuild` ni perte des fonctions, ⏻ qui rebuild bien et restauré entre les clics car `rebuild()` rejoue les corps factices injectés par le stub, sélection toujours valide) ; `tests/test_fao.cjs` — bloc **(e)** réécrit sur `🧱/👁/⏻` + **(e2)** nouveau : la désignation du brut vient du **select Source** de la fiche (`📦` absent de l'arbre, testé en `indexOf`), **Outils** absent de la fiche / présent dans `faoTreeWrapEl`, rangées `+op` et `Exporter G-code` recherchées **dans le panneau arbre** avec contre-preuve de non-présence en fiche, et nouveau bloc **3.4 `op.hidden`** (ligne masquée → classe `ishid` + `op.hidden===true`, traces sautées par l'aperçu, **Générer + aperçu** qui tout remet à false et réaffiche les 3). `npm test` **24/24** vert ; `build.js --check` sur le livrable committé.
 
 README : arbre — corps `🧱` avec **Œil = vue seule** et **⏻ = rejeu** (`📦` retiré, source du brut = liste Source de la fiche) ; FAO — boutons d'ajout et actions (**Outils**, Exporter, ▶ Usinage, Générer + aperçu) dans le panneau de l'arbre, masquage des traces par ligne.
+
+### 2026-10-01-022
+
+**Clic droit sur un corps → « ⬇ Exporter ce corps en STEP » (seul ce corps).**
+
+1. **Demande** : « dans l'arbre des corps, il faut que je puisse exporter le corps sélectionné, clic droit, en STEP ». L'export STEP existant (bouton du bandeau) n'écrit que le **composé de tous les corps** (`occFinalShape().shape`) : impossible d'en sortir une seule pièce. **Fix** : nouvelle action **« ⬇ Exporter ce corps en STEP »** ajoutée au menu contextuel de l'arbre **et** à celui de la vue 3D — bouton créé en JS (la coque HTML n'est jamais éditée à la main), affiché **uniquement** quand la cible est un corps (`showCtx`/`showCtx3D` règlent `style.display`, masqué pour esquisse, fonction, plan et vue 3D sans corps), `onclick` porté par le bouton lui-même et créé **après** les boucles `querySelectorAll('#ctxMenu button')` (aucun écrasement de handler, ni au runtime ni sous le stub de test).
+2. **La shape vient de `occFinalShape().perBody` filtrée sur le `bodyId`** : c'est exactement le solide de ce corps (mêmes prismes, booléens, congés, imports que l'affichage — le composé global `FR.shape` et le corps voisin ne partent jamais dans le writer), au même pipeline que l'export global : pré-test `occExportPreflight`, écriture `occWriteStep` en `/b.stp` (chemin court fixe), téléchargement `.step`, et `occCleanup(FR,null)` en `finally` (les solides par corps sont libérés, aucun `delete()` sur une shape encore écrite). Nom de fichier = **nom du corps** (caractères `\ / : * ? " < > |` remplacés par `-`), statut et erreurs affichés dans la face d'informations **et** en `alert` : OCCT absent, pré-test KO, corps hors rejeu → « rien à exporter : aucune fonction visible de ce corps dans le rejeu (⏻ éteint ?) ».
+
+Tests : `tests/test_ctx_step.cjs` (nouvelle suite enregistrée dans `tests/run.cjs` → **25/25**) — bouton présent dans les DEUX menus, affiché pour un corps seul / masqué pour esquisse, fonction et vue 3D sans corps ; sans OCCT : alerte + retour en face d'infos ; OCCT simulé (le boot asynchrone de l'app remet `occtReady=false` au premier tick : les stubs sont re-posés **avant** chaque clic) → le writer reçoit **exactement** `perBody[0].shape` du corps (`!== FR.shape`, jamais le corps voisin), chemin `/b.stp`, `dl.download==='Piece A.step'`, `occCleanup` appelé une fois ; export identique depuis le menu 3D ; corps absent du rejeu → rien écrit, rien téléchargé, message explicite. Suite complète **25/25** vert, `build.js --check` sur le livrable committé.
+
+README : import/export — clic droit sur un corps (arbre ou vue 3D) → « ⬇ Exporter ce corps en STEP » : seul ce corps, shape exacte OCCT, fichier `.step` au nom du corps.

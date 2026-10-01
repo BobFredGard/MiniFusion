@@ -483,9 +483,15 @@ function showAll2(){bodies.forEach(b=>{b.visible=true;b.mesh.visible=true;});doc
 
 /* ---------- menus contextuels ---------- */
 let ctxTarget=null;
-function showCtx(x,y,t){ctxTarget=t;$('ctxMenu').style.display='block';$('ctxMenu').style.left=x+'px';$('ctxMenu').style.top=y+'px';}
+/* ---- clic droit → export STEP du SEUL corps (arbre + vue 3D) ----
+   Le bouton est créé en JS (la coque HTML n'est jamais éditée à la main) et
+   n'apparaît que pour un corps (visible via showCtx / showCtx3D). */
+let ctxStepBtn=null, ctxStepBtn3d=null;
+function showCtx(x,y,t){ctxTarget=t;$('ctxMenu').style.display='block';$('ctxMenu').style.left=x+'px';$('ctxMenu').style.top=y+'px';
+  try{ if(ctxStepBtn)ctxStepBtn.style.display=(t&&t.kind==='body')?'':'none'; }catch(e){}}
 function hideCtx(){$('ctxMenu').style.display='none';}
 function showCtx3D(x,y,bid){ctxTarget={kind:'body',id:bid};const _bd=bodies.find(b=>b.id===bid)||{name:'Pièce'};$('ctx3DTitle').textContent=_bd.name||'Pièce';
+  try{ if(ctxStepBtn3d)ctxStepBtn3d.style.display=bid?'':'none'; }catch(e){}
   try{
     const _m=_bd.mesh&&_bd.mesh.material;
     $('ctxColor').value=_m&&_m.color?cssHex(_m.color.getHex()):'#0a84ff';
@@ -543,6 +549,58 @@ document.querySelectorAll('#ctxMenu3D button').forEach(b=>b.onclick=()=>{
   if(b.dataset.act==='isolate')isolate(bd.id);
   if(b.dataset.act==='showall')showAll2();
 });
+/* ---- export STEP du corps : la shape vient de perBody (occFinalShape), donc
+   SEULEMENT ce corps — jamais le composé de tous les corps. ---- */
+async function ctxExportStep(bid){
+  let nm='corps';
+  try{ nm=(bodyEntry(bid)||{}).name||bid||'corps'; }catch(e){}
+  let FR=null;
+  try{
+    if(!occHas())throw new Error('OCCT indisponible (chargement en cours ou échec — servez la page en http://)');
+    faceEl.textContent='Export STEP « '+nm+' » : pré-test…';
+    const pok=(await occExportPreflight());
+    if(!pok[0])throw new Error(pok[1]||'pré-test impossible');
+    FR=occFinalShape();
+    const pb=(FR.perBody||[]).filter(p=>p.bodyId===bid);
+    if(!pb.length)throw new Error('rien à exporter : aucune fonction visible de ce corps dans le rejeu (⏻ éteint ?)');
+    const path='/b.stp'; // chemin court fixe (cf. /o.stp de l'export global)
+    try{occt.FS.unlink(path);}catch(e){}
+    const bytes=occWriteStep(pb.map(p=>p.shape),path);
+    const blob=new Blob([bytes],{type:'application/step'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    a.download=String(nm).replace(/[\\/:*?"<>|]+/g,'-')+'.step';
+    a.click();
+    setTimeout(()=>{try{URL.revokeObjectURL(a.href);}catch(e){}},2000);
+    try{occt.FS.unlink(path);}catch(e){}
+    faceEl.textContent='STEP « '+nm+' » exporté ('+(bytes.length/1024).toFixed(1)+' Ko).';
+  }catch(e){
+    const msg=String((e&&e.message)||e||'erreur');
+    faceEl.textContent='Export STEP « '+nm+' » : '+msg;
+    try{alert('Export STEP de « '+nm+' » impossible : '+msg);}catch(_){}
+  }finally{
+    try{ if(FR)occCleanup(FR,null); }catch(e){}
+  }
+}
+function ctxStepBtnMake(menuId){
+  try{
+    const b=document.createElement('button');
+    b.dataset.act='step';
+    b.textContent='⬇ Exporter ce corps en STEP';
+    b.title='Géométrie exacte (OCCT) de SEULEMENT ce corps : téléchargement du fichier .step.';
+    b.onclick=function(){
+      const t=ctxTarget;
+      try{ if(menuId==='ctxMenu')hideCtx(); else hideCtx3D(); }catch(e){}
+      if(!t||t.kind!=='body'||!t.id)return;
+      ctxExportStep(t.id);
+    };
+    $(menuId).appendChild(b);
+    return b;
+  }catch(e){ return null; }
+}
+// Créés APRÈS les deux boucles ci-dessus : la boucle du runtime ne les voit donc
+// pas (aucun écrasement de onclick) et le stub de test ne la passe pas non plus.
+ctxStepBtn=ctxStepBtnMake('ctxMenu');
+ctxStepBtn3d=ctxStepBtnMake('ctxMenu3D');
 $('ctxColor').addEventListener('input',()=>{
   const{bd,ff}=ctxFeat();if(!bd||!bd.mesh||!bd.mesh.material||!bd.mesh.material.color)return;
   const m=/^#?([0-9a-fA-F]{6})$/.exec($('ctxColor').value.trim());if(!m)return;

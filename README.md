@@ -103,7 +103,7 @@ Une partie FAO est en travail, ce sera long !
 - **Raccourcis** en esquisse : `L C R B P T D F H O` (ligne, cercle, rectangle, oblong, projection, trim, cote, congé, chanfrein, **décalage**), `F5` vue complète, `Ctrl+Maj+R` rafraîchissement dur.
 
 ### Import, export & persistance
-- Import **STEP / STL**, export **STEP / STL / OBJ**.
+- Import **STEP / STL**, export **STEP / STL / OBJ** — et **clic droit sur un corps** (arbre ou vue 3D) → **⬇ Exporter ce corps en STEP** : **seul ce corps** (shape exacte OCCT de `perBody`, jamais l'assemblage de tous les corps), fichier `.step` au nom du corps (les noms d'invalides sont remplacés par `-`) — sans OCCT : alerte claire.
 - **Booléens avec un import** : une esquisse peut **soustraire ou s'unir** à un STEP inséré (corps exact entrant dans la chaîne de rejeu) — le solide importé reste affiché seul tant qu'aucune autre fonction ne le concerne, puis n'est plus dessiné en double une fois fusionné.
 - Projet **`.minifusion.json`** (entièrement paramétrique : esquisses, contraintes, cotes, fonctions, répétitions, ancrages) + **sauvegarde locale automatique** (autosave) et cache de la dernière pièce finie.
 - **🧪 Auto-tests** : batterie de non-régression de l'esquisse et des contraintes, lançable depuis le panneau.
