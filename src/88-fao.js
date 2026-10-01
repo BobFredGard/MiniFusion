@@ -1077,8 +1077,9 @@ function faoPost(job,postId){
   const warns=[];
   if(sousBrut)warns.push(sousBrut+' move(s) de coupe sous le brut (Zmin '+
     faoFmtXYZ(zMin)+' < fond du brut '+faoFmtXYZ(z0)+')');
-  if(ori32&&fag)warns.push('3+2 (B'+ORI.b+' C'+ORI.c+') : Fagor sans transformation de '+
-    'coordonnées — XYZ non pré-tournés, valider impérativement en simulation / à vide sur la CN');
+  if(ori32&&fag)warns.push('3+2 (B'+ORI.b+' C'+ORI.c+') : Fagor 8065 = machine 3 axes — indexation '+
+    'IGNORÉE : B/C non commandés, programme émis en 3 axes (la pièce ne sera PAS inclinée). '+
+    'Remettre 3 axes ou exporter sur Siemens.');
   const staleCh=(job.ops||[]).filter(function(o){
     return o&&o.on!==false&&o.limit&&o.limit.mode==='chain'&&o.limit.stale;
   }).length;
@@ -1107,12 +1108,12 @@ function faoPost(job,postId){
   }
   // 3+2 : indexation de table AVANT tout usinage. Siemens : TRAORI(1) — le
   // contrôleur transforme XYZ (arcs et cycles restent dans le repère pièce).
-  // Fagor 8065 : pas d'équivalent connu -> positionnement + alerte explicite.
+  // Fagor 8065 = machine 3 AXES uniquement : aucun axe rotatif — ne JAMAIS
+  // commander B/C (alarme CN) ni laisser croire à une inclinaison : à plat.
   if(ori32){
     if(fag){
       cmt('3+2 : B'+faoFmtXYZ(ORI.b)+' C'+faoFmtXYZ(ORI.c)+
-        ' — ATTENTION : coordonnées XYZ NON transformées sur ce dialecte (pas d\'équivalent TRAORI) : valider en simulation / à vide !');
-      nc('G0 B'+faoFmtXYZ(ORI.b)+' C'+faoFmtXYZ(ORI.c));
+        ' demandé — machine 3 axes : B/C NON commandés, usinage à plat (voir avertissement)');
     }else{
       nc('TRAORI(1)');
       nc('G0 B'+faoFmtXYZ(ORI.b)+' C'+faoFmtXYZ(ORI.c));
@@ -1780,7 +1781,7 @@ function faoSetupFiche(p,setup){
   const O=faoOrient(setup);
   r32.appendChild(faoLab('3+2 B'));
   r32.appendChild(faoNum(O.b,function(v){ setup.orient={b:Math.round(v*1000)/1000,c:faoOrient(setup).c}; },
-    44,5,"Bascule de table autour de Y (degrés). 0 = usinage 3 axes. Non nul : Siemens = TRAORI(1) + positionnement B/C (XYZ restent repère pièce) ; Fagor = positionnement seul, XYZ non transformés (alerte à l'export)."));
+    44,5,"Bascule de table autour de Y (degrés). 0 = usinage 3 axes. Non nul : Siemens = TRAORI(1) + positionnement B/C (XYZ restent repère pièce) ; Fagor 8065 = machine 3 axes : indexation ignorée à l'export (aucun B/C, alerte)."));
   r32.appendChild(faoLab('C'));
   r32.appendChild(faoNum(O.c,function(v){ setup.orient={b:faoOrient(setup).b,c:Math.round(v*1000)/1000}; },
     44,5,"Rotation de table autour de Z (degrés) — indexation de la pièce dans le plan d'usinage."));
@@ -1788,6 +1789,12 @@ function faoSetupFiche(p,setup){
   r32.appendChild(faoMini('3 axes',function(){ setup.orient={b:0,c:0}; },
     'Remise à plat : annule l\'indexation 3+2 (B=0, C=0).'));
   p.appendChild(r32);
+  if((FAO_POSTS[setup.machine||setup.post]||{}).kind==='fagor'&&(O.b!==0||O.c!==0)){
+    const w32=document.createElement('div');
+    w32.style.cssText='font-size:.7rem;color:#ff9f0a;line-height:1.35;';
+    w32.textContent='⚠ Fagor 8065 = machine 3 axes : cette indexation 3+2 sera IGNORÉE à l\'export (programme émis à plat, aucun B/C).';
+    p.appendChild(w32);
+  }
   // Modèle : corps à usiner
   p.appendChild(faoH('Modèle à usiner'));
   const rB=faoRow();

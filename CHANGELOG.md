@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**114 versions**, de `2026-09-28b` à `2026-10-01-006` — la plus récente en bas,
+**115 versions**, de `2026-09-28b` à `2026-10-01-007` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2239,3 +2239,17 @@ README : 3+2 sorti des « pistes envisagées » (restent 5 axes continu, sauvega
 5. Anciens documents sans `anchors` : ignorés (boucle figée comme avant, zéro migration).
 
 Tests : `test_fao.cjs` — capture (4 ancres sur carré 4 germes, aire 1200), traduction +5/−3 suivie, Z seul sans effet (boucle XY identique, `changed=false`), +50 mm hors tolérance → stale + boucle figée, retour modèle → stale levé + boucle restaurée, arête manquante → stale, sans ancres → `skipped`, tangente re-déduite (3 colinéaires → `nSel=3`, aire nulle → stale), replay no-op sans OCCT, câblage `buildDone` (stub compté), alerte fiche (« re-sélectionnez la chaîne »), export `ATTENTION` + warns=1. Suite 19/19 verte.
+
+### 2026-10-01-007
+
+**FAO 3+2 corrigé : Fagor 8065 = machine 3 axes — aucun B/C émis, indexation refusée avec alerte.**
+
+Correction d'un présupposé faux de la 005 (« Fagor averti, positionnement B/C seul ») : l'utilisateur confirme que son **Fagor 8065 est une machine 3 axes** — commander `G0 B.. C..` y provoquerait une **alarme CN** (aucun axe rotatif), et émettre un programme « indexé » serait impossible.
+
+1. **faoPost (Fagor + 3+2 actif)** : suppression de `G0 B.. C..` — **aucune commande B/C** dans le programme. À la place : commentaire dialecte `( 3+2 : B… C… demandé — machine 3 axes : B/C NON commandés, usinage à plat (voir avertissement))` + `warns` « Fagor 8065 = machine 3 axes — indexation IGNORÉE : B/C non commandés, programme émis en 3 axes (la pièce ne sera PAS inclinée). Remettre 3 axes ou exporter sur Siemens. » remonté en `ATTENTION` en tête de programme et à l'export.
+2. **Fiche posage** : alerte orange immédiate (rafraîchie à chaque changement) quand la machine du posage est Fagor **et** B/C ≠ 0 : « ⚠ Fagor 8065 = machine 3 axes : cette indexation 3+2 sera IGNORÉE à l'export (programme émis à plat, aucun B/C). » Infobulle du champ B alignée.
+3. **Siemens inchangé** : `TRAORI(1)` + `G0 B.. C..` en tête, `TRAFOOF` en pied, XYZ en repère pièce. `{0,0}` toujours bit à bit identique (aucune trace 3+2, test d'identité conservé).
+
+Tests : `test_fao.cjs` — golden Fagor repris : `!/G0 B/` (aucun B/C émis), pas de `TRAORI(1)`, warns=1 avec `machine 3 axes` + `IGNORÉE`, commentaire en tête avec `B/C NON commandés` ; nouveau test fiche : machine Fagor + B45 → alerte « machine 3 axes » / « IGNORÉE » visible (restauration machine/orient ensuite). Suite 19/19 verte.
+
+README : ligne post-processeurs mise à jour (Fagor = 3 axes, indexation refusée).
