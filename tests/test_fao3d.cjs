@@ -49,9 +49,6 @@ const vm=require('vm');
     "att(hxc.length>10&&hxc[hxc.length-1].z===0,'helice : fond Z=0 atteint');",
     "att(hxc.every((m,i)=>i===0||m.z<=hxc[i-1].z+1e-9),'helice : descente monotone');",
     "att(hxc.every(m=>Math.abs(Math.hypot(m.x,m.y)-3)<1e-6),'helice : rayon 3 constant');",
-    // --- rampe unitaire : 2 moves, arrivée au niveau
-    "const rp=faoRampEntry(0,0,10,20,0,0);",
-    "att(rp.length===2&&rp[0].r===1&&rp[1].r===0&&rp[1].z===0,'rampe : rapide + coupe au niveau');",
     // --- auto -> rampe sur intervalle étroit (canal D10 : on force étroit)
     "const rn=faoGenRough3D(CN,BX,40,30,{ap:10,ae:6,toolD:10,radial:0,axial:0,secu:45,entry:'ramp',strategy:'zigzag'});",
     "att(rn[1].r===0&&Math.abs(rn[1].z-30)<1e-9,'rampe : 2e move au niveau 30');",

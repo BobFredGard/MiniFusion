@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**109 versions**, de `2026-09-28b` à `2026-10-01-001` — la plus récente en bas,
+**110 versions**, de `2026-09-28b` à `2026-10-01-002` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2180,3 +2180,14 @@ Aucun changement fonctionnel — bump de tracabilite.
 Correction d'un bug reel : Fagor appliquait le F de plongee au premier G1 meme s'il n'avait pas de Z (test `first` nu vs `first&&/Z/.test(Z)` chez Siemens) — une zigue-zague de surfaçage demarrait donc a 30 % de l'avance de coupe. Correctif unifie : F de plongee uniquement sur la premiere plongee Z apres un rapide.
 
 Tests : `test_fao.cjs` — parite de la sequence F (siemens vs fagor) + "F plongee jamais sur un move XY seul". Suite 19/19 verte.
+
+### 2026-10-01-002
+
+**FAO P0 : undo/redo, rapide + plongee pilotables, G40/G80 + garde-fou sous le brut, purge.**
+
+1. **Annulable (P0-2)** : `faoSnapshot()` instantanie le document AVANT chaque mutation FAO (helpers `faoNum/faoTxt/faoSel/faoMini` + clics directs : oeil, posage, outil, op, corps, limitation chaine) — libelle = infobulle du widget dans le bouton « Annuler ». `docApplySnap` rafraichit desormais l'arbre FAO, la fiche et l'apres-Ctrl+Z.
+2. **Rapide + plongee (P0-3)** : posage avec `rapide` (defaut 5000 mm/min) et `plungePct` (defaut 30 %) editables dans la fiche (rang Rapide G0 / Plongee % de F), pilotes par `faoRapide()`/`faoPlungePct()` : F de plongee des groupes, estimation des temps (carte op + stats) et migration des jobs plats.
+3. **Securite post (P0-4)** : `G40 G80` en entete des deux dialectes (compensation d'outil + cycles en canneau annules au demarrage) ; garde-fou « coupe sous le brut » — tout G1/G2/G3 sous Z0 du brut compte + alerte `ATTENTION` en tete de programme et dans le resultat (`warns`), affichee a l'export.
+4. **Purge (P0-5)** : `faoMeshTop` (jamais appele) et `faoRampEntry` (appele que par son propre test) supprimes avec leur test dedie.
+
+Tests : `test_fao.cjs` — defauts posage, plongee 50 % emise en G-code (et 30 % absente), G40/G80 dialectes, alerte sous le brut (Siemens + Fagor), undo/redo bit a bit, rapide pris en compte dans les stats ; `test_fao3d.cjs` minus la rampe unitaire. Suite 19/19 verte.

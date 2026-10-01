@@ -69,6 +69,10 @@ function docApplySnap(snap){
   try{if(typeof revNew!=='undefined'&&revNew)revNew=null;}catch(e){}
   markDirty();rebuild();
   renderTree();renderProps();refreshParts();
+  // doc.fao vit dans le même document : l'arbre FAO, sa fiche et l'aperçu doivent
+  // suivre la restauration (même garde-fou que les sorties de mode plus haut).
+  try{ if(typeof faoRefreshFaoUI==='function')faoRefreshFaoUI(); }catch(e){}
+  try{ if(typeof faoRefreshPreview==='function')faoRefreshPreview(); }catch(e){}
   try{buildEdgeOverlay();}catch(e){}
   try{refreshMirror();}catch(e){}
   return true;

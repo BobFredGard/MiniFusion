@@ -75,6 +75,8 @@ function faoDefaultSetup(){
     tools:faoDefaultTools(),
     fixture:{note:'', radial:5, axial:5}, // mémorisé ; non pris en compte dans les parcours (phase suivante)
     coolant:'flood', secu:5, marge:5,
+    rapide:5000, // vitesse des G0 (mm/min) — estimation + référence machine
+    plungePct:30, // % de l'avance de coupe appliqué à la plongée (F de plongée)
     stock:faoStockDefault(), ops:[]
   };
 }
@@ -82,7 +84,7 @@ function faoDefaultJob(){ return faoDefaultSetup(); } // alias historique (tests
 function faoMigrateSetup(flat){
   // Job plat 31t/31u -> posage : post->machine, outil unique->biblio, ops repris.
   const s=faoDefaultSetup();
-  ['name','wcs','coolant','secu','marge','stock'].forEach(function(k){
+  ['name','wcs','coolant','secu','marge','stock','rapide','plungePct'].forEach(function(k){
     if(flat&&flat[k]!==undefined)s[k]=flat[k];
   });
   if(flat&&(flat.machine||flat.post))s.machine=flat.machine||flat.post;
@@ -153,21 +155,29 @@ function faoTouch(){
 }
 
 /* ----- bibliothèque d'outils : Vc/fz -> S/F ----- */
+function faoRapide(job){
+  // Vitesse des G0 du posage (mm/min) — défaut machine 5000.
+  return (job&&isFinite(+job.rapide)&&+job.rapide>0)?+job.rapide:5000;
+}
+function faoPlungePct(job){
+  // % de l'avance de coupe appliqué à la plongée (défaut 30).
+  return (job&&isFinite(+job.plungePct)&&+job.plungePct>0)?Math.min(100,+job.plungePct):30;
+}
 function faoToolById(job,id){
   const ts=(job&&job.tools)||[];
   for(let i=0;i<ts.length;i++)if(ts[i].id===id)return ts[i];
   if(ts.length)return ts[0];
   return {id:'T1',num:1,name:'Fraise D10',kind:'flat',d:10,cornerR:0,flutes:2,vc:250,fz:0.06};
 }
-function faoToolSF(t){
-  // S = Vc*1000/(pi*D) ; F = fz*z*S ; plongée = 30 % de F.
+function faoToolSF(t,setup){
+  // S = Vc*1000/(pi*D) ; F = fz*z*S ; plongée = plungePct % de F (posage, défaut 30 %).
   const D=isFinite(+t.d)&&+t.d>0?+t.d:10;
   const vc=isFinite(+t.vc)&&+t.vc>0?+t.vc:250;
   const fz=isFinite(+t.fz)&&+t.fz>0?+t.fz:0.05;
   const z=isFinite(+t.flutes)&&+t.flutes>0?Math.round(+t.flutes):2;
   const s=Math.max(1,Math.round(vc*1000/(Math.PI*D)));
   const f=Math.max(1,Math.round(fz*z*s));
-  return {s:s, f:f, plunge:Math.max(1,Math.round(f*0.3))};
+  return {s:s, f:f, plunge:Math.max(1,Math.round(f*faoPlungePct(setup)/100))};
 }
 function faoKindLabel(k){ return k==='ball'?'Boule':(k==='bull'?'Torique':'Cylindrique'); }
 
@@ -722,7 +732,7 @@ function faoJobMoves(job){
   ((job&&job.ops)||[]).forEach(function(op){
     if(op&&op.on===false)return;
     const tool=faoToolById(job,op&&op.toolId);
-    const sf=faoToolSF(tool);
+    const sf=faoToolSF(tool,job);
     const key=tool.id+'|'+tool.d;
     if(!cur||cur.key!==key){
       cur={key:key, tool:{id:tool.id,num:tool.num,name:tool.name,d:tool.d,
@@ -896,22 +906,36 @@ function faoPost(job,postId){
   const OG=faoOriginPoint(job), ox=OG[0], oy=OG[1], oz=OG[2];
   const retr=faoRetractZ(job);
   const groups=faoJobMoves(job);
+  // Garde-fou : aucun move de coupe (G1/G2/G3) sous le fond du brut — signalé en
+  // tête de programme (le opérateur le voit) et remonté dans le résultat (warns).
+  const z0=(job&&job.stock&&isFinite(+job.stock.z0))?+job.stock.z0:0;
+  let sousBrut=0, zMin=Infinity;
+  groups.forEach(function(g){ g.blocks.forEach(function(b){ b.moves.forEach(function(m){
+    if(!m.r&&isFinite(+m.z)&&+m.z<z0-1e-6){ sousBrut++; if(+m.z<zMin)zMin=+m.z; }
+  });}); });
+  const warns=[];
+  if(sousBrut)warns.push(sousBrut+' move(s) de coupe sous le brut (Zmin '+
+    faoFmtXYZ(zMin)+' < fond du brut '+faoFmtXYZ(z0)+')');
   const L=[]; let n=10;
   const nc=function(s){ if(fag){ L.push('N'+n+' '+s); n+=5; } else L.push(s); };
   const cmt=function(s){ L.push(fag?('( '+s+' )'):('; '+s)); };
   const cool=fag?((job.coolant==='off')?null:'M08')
                 :((job.coolant==='off')?'M9':(job.coolant==='through'?'M8':'M7'));
+  // G40 (annule la compensation d'outil) + G80 (annule les cycles en canneau) en
+  // entête : programme démarré proprement, jamais laissé d'un usage précédent.
   if(fag){
     L.push('('+name+' - MiniFusion FAO '+FAO_VER+' - '+post.label+' - '+faoToday()+')');
     L.push('('+faoOriginLabel(job)+' - origine '+wcs+')');
-    nc('G71 G17 G90 G94 '+wcs);
+    if(warns.length)cmt('ATTENTION : '+warns.join(' ; '));
+    nc('G71 G40 G80 G17 G90 G94 '+wcs);
   }else{
     L.push('; %_N_'+name+'_MPF');
     L.push('; MiniFusion FAO '+FAO_VER+' — '+post.label+' — '+faoToday());
     L.push('; Origine '+wcs+' : '+faoOriginLabel(job)+
       ' ('+faoFmtXYZ(ox)+','+faoFmtXYZ(oy)+','+faoFmtXYZ(oz)+')');
+    if(warns.length)cmt('ATTENTION : '+warns.join(' ; '));
     nc('G71');
-    nc('G17 G90 G94 '+wcs);
+    nc('G40 G80 G17 G90 G94 '+wcs);
   }
   groups.forEach(function(g,gi){
     const t=g.tool;
@@ -947,7 +971,7 @@ function faoPost(job,postId){
     nc('G0 '+post.parkX);
   }
   nc('M30');
-  return {code:L.join('\n')+'\n', ext:post.ext};
+  return {code:L.join('\n')+'\n', ext:post.ext, warns:warns};
 }
 
 function faoOpLabel(op,job){
@@ -1072,17 +1096,26 @@ function faoRow(){ const d=document.createElement('div');
   d.style.cssText='display:flex;gap:6px;align-items:center;flex-wrap:wrap;'; return d; }
 function faoLab(t){ const s=document.createElement('span'); s.textContent=t;
   s.style.cssText='color:rgba(255,255,255,.6);font-size:.74rem;'; return s; }
+function faoSnapshot(title){
+  // Instantané du document AVANT mutation — même discipline que le modèle dessin
+  // (45-annuler-document.js) : Ctrl+Z revient à l'état FAO précédent. Le titre du
+  // widget (infobulle) devient le libellé dans le bouton « Annuler ».
+  try{
+    if(typeof docPushUndo==='function')
+      docPushUndo('FAO : '+(title?String(title).slice(0,48):'modification'));
+  }catch(e){}
+}
 function faoChanged(){ faoTouch(); faoRefreshPreview(); faoRefreshFaoUI(); }
 function faoNum(val,fn,w,step,title){
   const i=document.createElement('input'); i.type='number'; i.value=val; i.style.width=(w||60)+'px';
   if(step)i.step=step;
   if(title)i.title=title;
-  i.onchange=function(){ const v=parseFloat(i.value); if(isFinite(v)){ fn(v); faoChanged(); } };
+  i.onchange=function(){ const v=parseFloat(i.value); if(isFinite(v)){ faoSnapshot(title); fn(v); faoChanged(); } };
   return i; }
 function faoTxt(val,fn,w,title){
   const i=document.createElement('input'); i.type='text'; i.value=val; i.style.width=(w||120)+'px';
   if(title)i.title=title;
-  i.onchange=function(){ fn(i.value); faoChanged(); };
+  i.onchange=function(){ faoSnapshot(title); fn(i.value); faoChanged(); };
   return i; }
 function faoSel(opts,val,fn,title){
   const s=document.createElement('select');
@@ -1090,12 +1123,12 @@ function faoSel(opts,val,fn,title){
     op.value=o[0]; op.textContent=o[1]; if(o[2])op.title=o[2]; s.appendChild(op); });
   s.value=val;
   if(title)s.title=title;
-  s.onchange=function(){ fn(s.value); faoChanged(); };
+  s.onchange=function(){ faoSnapshot(title); fn(s.value); faoChanged(); };
   return s; }
 function faoMini(t,fn,title){
   const b=document.createElement('button'); b.textContent=t; b.style.fontSize='.72rem';
   if(title)b.title=title;
-  b.onclick=function(){ fn(); faoChanged(); };
+  b.onclick=function(){ faoSnapshot(title||('bouton « '+t+' »')); fn(); faoChanged(); };
   return b; }
 function faoHelp(t){
   // Ligne d'aide sous un groupe de champs (néophytes : quoi mettre et pourquoi).
@@ -1150,6 +1183,7 @@ function faoInitUI(){
       add.onclick=function(){
         try{
           const r=faoRoot();
+          faoSnapshot('nouveau posage');
           const s=faoDefaultSetup(); s.name='POSAGE'+(r.setups.length+1);
           r.setups.push(s); r.activeSetupId=s.id;
           faoChanged();
@@ -1191,6 +1225,7 @@ function faoRenderTree(){
         eye.textContent=op.on===false?'○':'●'; eye.title='Activer / désactiver';
         eye.style.color=op.on===false?'#98989d':'#30d158';
         eye.onclick=function(ev){ try{ if(ev&&ev.stopPropagation)ev.stopPropagation(); }catch(e){}
+          faoSnapshot('activer/désactiver « '+faoOpShortLabel(op)+' »');
           op.on=!(op.on!==false); faoChanged(); };
         const lb=document.createElement('span'); lb.style.flex='1';
         lb.textContent=(i+1)+'. '+faoOpShortLabel(op);
@@ -1235,7 +1270,7 @@ function faoToolsElement(setup){
   const H=faoH('Outils ('+(setup.tools||[]).length+') · Vc/fz → S/F auto');
   wrap.appendChild(H);
   (setup.tools||[]).forEach(function(t,ti){
-    const sf=faoToolSF(t);
+    const sf=faoToolSF(t,setup);
     const d=faoCard();
     const r=faoRow();
     r.appendChild(faoLab('T'+t.num));
@@ -1267,6 +1302,7 @@ function faoToolsElement(setup){
   const rT=faoRow();
   const bT=document.createElement('button'); bT.textContent='+ Outil'; bT.style.fontSize='.72rem';
   bT.onclick=function(){
+    faoSnapshot('nouvel outil');
     const n=(setup.tools||[]).length+1;
     setup.tools.push({id:'T'+n+'_'+Date.now().toString(36),num:n,name:'Fraise D10',kind:'flat',
       d:10,cornerR:0,flutes:2,vc:250,fz:0.06});
@@ -1278,7 +1314,7 @@ function faoToolsElement(setup){
 /* ----- fiche d'opération (élément réutilisable) ----- */
 function faoToolOpts(setup){
   return (setup.tools||[]).map(function(t){
-    const sf=faoToolSF(t);
+    const sf=faoToolSF(t,setup);
     return [t.id,'T'+t.num+' '+t.name+' (S'+sf.s+' F'+sf.f+')']; });
 }
 function faoOpCardElement(setup,op,i){
@@ -1289,7 +1325,8 @@ function faoOpCardElement(setup,op,i){
   const r=faoRow();
   const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=op.on!==false;
   cb.title='Décocher = ignorer cette opération (aperçu, temps, G-code)';
-  cb.onchange=function(){ op.on=cb.checked; faoChanged(); };
+  cb.onchange=function(){ faoSnapshot('activer/désactiver « '+(typeName[op.type]||op.type)+' »');
+    op.on=cb.checked; faoChanged(); };
   r.appendChild(cb);
   const tt=document.createElement('span');
   tt.style.cssText='font-weight:700;font-size:.76rem;flex:1;';
@@ -1473,12 +1510,12 @@ function faoOpCardElement(setup,op,i){
       'Élargit (+) ou rétrécit (−) la zone en mm.'));
     d.appendChild(rs);
   }
-  const sf=faoToolSF(faoToolById(setup,op.toolId));
+  const sf=faoToolSF(faoToolById(setup,op.toolId),setup);
   const rr=faoRow();
   const rs=document.createElement('span');
   rs.style.cssText='font-family:monospace;font-size:.7rem;color:rgba(255,255,255,.55);';
   const mv=faoOpMoves(op,setup);
-  const ee=faoEstimate(mv,sf.f,5000);
+  const ee=faoEstimate(mv,sf.f,faoRapide(setup));
   rs.textContent='S'+sf.s+' F'+sf.f+' · '+mv.length+' pts · ≈'+ee.tmin.toFixed(1)+' min';
   rr.appendChild(rs);
   d.appendChild(rr);
@@ -1530,6 +1567,7 @@ function faoSetupFiche(p,setup){
       lb.appendChild(cb);
       lb.appendChild(document.createTextNode(nm));
       cb.onchange=function(){
+        faoSnapshot('corps modélisés du posage');
         const checked=[];
         try{
           Array.from(rB.querySelectorAll('input[type=checkbox]')).forEach(function(x,i){
@@ -1573,6 +1611,15 @@ function faoSetupFiche(p,setup){
   rC.appendChild(faoSel([['flood','M7/M08'],['through','M8'],['off','arrêt']],setup.coolant||'flood',
     function(v){ setup.coolant=v; }));
   p.appendChild(rC);
+  const rV=faoRow();
+  rV.appendChild(faoLab('Rapide G0'));
+  rV.appendChild(faoNum(faoRapide(setup),function(v){ setup.rapide=Math.max(1,Math.round(v)); },
+    56,100,'Vitesse des déplacements en mode rapide (mm/min) — employée pour l\'estimation des temps.'));
+  rV.appendChild(faoLab('Plongée'));
+  rV.appendChild(faoNum(faoPlungePct(setup),function(v){ setup.plungePct=Math.min(100,Math.max(1,v)); },
+    36,5,"Pourcentage de l'avance de coupe appliqué à la plongée (F de plongée des G1 Z)."));
+  rV.appendChild(faoLab('% de F'));
+  p.appendChild(rV);
   p.appendChild(faoToolsElement(setup));
   // Opérations du posage
   p.appendChild(faoH('Opérations ('+(setup.ops||[]).length+')'));
@@ -1580,7 +1627,8 @@ function faoSetupFiche(p,setup){
   [['facing','+ Surfaçage'],['pocket','+ Poche'],['contour','+ Contour'],['drill','+ Perçage'],
    ['rough3d','+ Ébauche 3D'],['geofinish','+ Finition géod.'],['pocket3d','+ Débourrage']].forEach(function(a){
     const b=document.createElement('button'); b.textContent=a[1]; b.style.fontSize='.72rem';
-    b.onclick=function(){ setup.ops.push(faoOpDefaults(a[0])); faoChanged(); };
+    b.onclick=function(){ faoSnapshot('nouvelle opération « '+a[1].replace(/^\+ /,'')+' »');
+      setup.ops.push(faoOpDefaults(a[0])); faoChanged(); };
     r4.appendChild(b); });
   p.appendChild(r4);
   (setup.ops||[]).forEach(function(op,i){
@@ -1645,8 +1693,8 @@ function faoStatsText(){
     const job=faoDoc(); let cut=0, rap=0, tm=0, n=0;
     ((job&&job.ops)||[]).forEach(function(op){
       if(op&&op.on===false)return;
-      const sf=faoToolSF(faoToolById(job,op.toolId));
-      const e=faoEstimate(faoOpMoves(op,job),sf.f,5000);
+      const sf=faoToolSF(faoToolById(job,op.toolId),job);
+      const e=faoEstimate(faoOpMoves(op,job),sf.f,faoRapide(job));
       cut+=e.cut; rap+=e.rap; tm+=e.tmin; n++;
     });
     return n+' op · coupe '+(cut/1000).toFixed(1)+' m · rapides '+(rap/1000).toFixed(1)+' m · ≈'+tm.toFixed(1)+' min';
@@ -1664,7 +1712,8 @@ function faoExport(){
     a.href=URL.createObjectURL(blob); a.download=name;
     document.body.appendChild(a); a.click();
     setTimeout(function(){ try{ URL.revokeObjectURL(a.href); a.remove(); }catch(e){} },500);
-    try{ faceEl.textContent='FAO : '+name+' exporté ('+r.code.split('\n').length+' blocs).'; }catch(e){}
+    try{ faceEl.textContent='FAO : '+name+' exporté ('+r.code.split('\n').length+' blocs).'
+      +(r.warns&&r.warns.length?(' ⚠ '+r.warns.join(' ; ')):''); }catch(e){}
   }catch(e){}
 }
 
@@ -1805,11 +1854,6 @@ function faoScanIntervals(segs,y){
   }
   return out;
 }
-function faoMeshTop(mesh){
-  let m=-1/0;
-  for(let i=0;i<mesh.v.length;i++)if(mesh.v[i][2]>m)m=mesh.v[i][2];
-  return m;
-}
 /* ----- entrées douces : hélice (descente circulaire) ou rampe (biais) ----- */
 // Jamais de plongée verticale dans la matière : l'hélice creuse sa place quand
 // la largeur le permet, sinon la rampe descend en avançant (avance plongée).
@@ -1899,9 +1943,6 @@ function faoHelixEntry(cx,cy,zFrom,zTo,radius,toolD){
     moves.push({r:0,x:cx+radius*Math.cos(a),y:cy+radius*Math.sin(a),z:zTo});
   }
   return moves;
-}
-function faoRampEntry(x0,y0,zFrom,x1,y1,zTo){
-  return [{r:1,x:x0,y:y0,z:zFrom},{r:0,x:x1,y:y1,z:zTo}];
 }
 function faoGenRough3D(mesh,box,ztop,zbot,o){
   // Ébauche 3D façon poche morph : passes épaisses (ap) à R radial, puis
@@ -2826,6 +2867,7 @@ function faoChainOk(){
     }
     const nEdges=faoChainMode.sel.length, wasTangent=!!faoChainMode.tangent;
     const old=op.limit&&op.limit.mode==='chain'?op.limit:null;
+    faoSnapshot('limite en chaîne');
     op.limit={mode:'chain',loop:res.loop,closed:res.closed,
       nEdges:nEdges,tangent:wasTangent,
       side:(old&&old.side)||'center',extra:(old&&isFinite(+old.extra))?+old.extra:0};
