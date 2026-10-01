@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**110 versions**, de `2026-09-28b` à `2026-10-01-002` — la plus récente en bas,
+**111 versions**, de `2026-09-28b` à `2026-10-01-003` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2191,3 +2191,16 @@ Tests : `test_fao.cjs` — parite de la sequence F (siemens vs fagor) + "F plong
 4. **Purge (P0-5)** : `faoMeshTop` (jamais appele) et `faoRampEntry` (appele que par son propre test) supprimes avec leur test dedie.
 
 Tests : `test_fao.cjs` — defauts posage, plongee 50 % emise en G-code (et 30 % absente), G40/G80 dialectes, alerte sous le brut (Siemens + Fagor), undo/redo bit a bit, rapide pris en compte dans les stats ; `test_fao3d.cjs` minus la rampe unitaire. Suite 19/19 verte.
+
+### 2026-10-01-003
+
+**FAO P1-a : perçage en cycles dialecte (CYCLE81/CYCLE83, G98 G81/G83) + pas de plongée Q.**
+
+1. **Siemens 840D** : le bloc perçage n'ecrit plus le deroule G0/G1 mais `G0 X Y Z<retrait> F<plongee>` + `CYCLE81(RTP,RFP,SDIS,DP,)` par trou — parametres alignes sur `PostPro/630-5axes.cps` (RTP = brut+secu, RFP = ztop, SDIS = ecart de securite, DP = zbot, le tout relatif a l'origine).
+2. **Fagor 8065** : `G98 G81 X Y Z<I> F` par trou (aligne sur `PostPro/fagor-8065.cps` : Z = plan de retrait, I = profondeur) + `G80` en fin de bloc (les cycles sont modaux sur Fagor).
+3. **Broche a va-et-vient (Q)** : nouveau champ `peck` (fiche perçage, rang « Q pas », 0 = simple) — `CYCLE83` avec FDEP=RFP-Q, MDEP=Q, VARI=1 (retrait complet) cote Siemens ; `G98 G83 ... I=<-epaisseur/J> J=<nb plongees>` cote Fagor. Q superieur a l'epaisseur = repli sur le cycle simple.
+4. **Inchange ailleurs** : le deroule G0/G1 reste la source de la previsualisation 3D, de l'estimation temps et du garde-fou « sous le brut » (meme valeurs secu/ztop/zbot) ; sequence d'avances F strictement identique entre dialectes (F de plongee horloge sur chaque G0 siemens = F de cycle fagor).
+
+Tests : `test_fao.cjs` — golden CYCLE81 `(5.000, 0.000, 5.000, -20.000, )` et CYCLE83 `(5.000, 0.000, 5.000, -20.000, , -4.000...)`, golden Fagor `G98 G81 X20 Y20 Z5 I-20` / `G98 G83 ... I-4 J5`, annulation G80, absence des cycles inutiles sans Q, garde-fou toujours en cycle. Suite 19/19 verte.
+
+README : le perçage en cycles sort des « pistes envisagees » et rejoint la ligne des post-processeurs.

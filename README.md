@@ -82,7 +82,7 @@ Une partie FAO est en travail, ce sera long !
 - **Ébauche 3D** : **Morph** (spirale qui suit la forme), **Zigzag**, **Adaptive** (effort constant : `ae ≤ ¼×D` à grande profondeur, pelage sans retrait, **trochoïdes G2/G3** dans les goulets, ombre exacte des niveaux supérieurs — aucun voile fin traversé, entrées hélice/rampe/micro-hélice). Passes fines `ap2` là où la forme change.
 - **Finition géodésique** : iso-courbes du champ de distances (Dijkstra), sortie centre-outil selon le type de fraise.
 - **Réglages communs** : surépaisseurs **radiale** (parois) + **axiale** (fond), plan de retrait, **limites** rectangle ou chaîne d'arêtes tangentes (règle centre/intérieur/extérieur + marge), **arrondi des coins en G2/G3**, fiches en sections titrées avec infobulles et alertes (`ae` trop grand en Adaptive).
-- **Post-processeurs** : **Siemens 840D** (variantes 630 / 1520) et **Fagor 8065**, multi-outils, origine relative au point de bloc. Aperçu 3D (coupe vert / rapides rouge) + estimation du temps par opération.
+- **Post-processeurs** : **Siemens 840D** (variantes 630 / 1520) et **Fagor 8065**, multi-outils, origine relative au point de bloc. Perçage en **cycles dialecte** (`CYCLE81` / `CYCLE83` à broche à va-et-vient par pas `Q`, `G98 G81` / `G83` + `G80` côté Fagor). Aperçu 3D (coupe vert / rapides rouge) + estimation du temps par opération.
 - Menée **en parallèle du dessin** : `doc.fao` persisté, modifications FAO sans rejeu géométrique (`_docVersion` untouched).
 
 ### Antériorité & historique
@@ -207,7 +207,7 @@ fichier unique (voir « Travailler sur le code »).
 
 ## Où en est le projet
 
-MVP fonctionnel — version **2026-09-32n** (CAO + FAO fraisage 2.5D/3D avec G-code Siemens/Fagor). Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), cycles de perçage `CYCLE81`/`G81`, 3+2 / 5 axes.
+MVP fonctionnel — version **2026-09-32n** (CAO + FAO fraisage 2.5D/3D avec G-code Siemens/Fagor). Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), 3+2 / 5 axes.
 
 > **Note contributeurs** : les anciennes zones gelées (sketch, contraintes, congés, antériorité) sont **dégelées depuis le 2026-09-29** — modification libre sous la discipline projet : on édite **`src/*.js`** (jamais `fusion_mvp.html`, qui est généré) → `node build.js` → régression verte → bump `APP_VER` + **entrée dans [`CHANGELOG.md`](CHANGELOG.md)** → `node build.js --check` → snapshot `Backup/` → push. `node build.js --check` échoue si le livrable est périmé : impossible d'oublier de reconstruire. Seul le noyau exact OCCT (`occApplyXFillets`, `occFinalShape`) demande une validation navigateur : il n'est pas entièrement couvert par le harnais. **Versions depuis le 2026-10-01 : `AAAA-MM-JJ-NNN`** (date réelle + compteur quotidien à 001 — voir bloc VERSIONS en tête de `src/00-entete-et-outils.js`).
 

@@ -892,6 +892,28 @@ function faoArcWords(m,ox,oy,oz){
   return (m.arc.cw?'G2 ':'G3 ')+'X'+faoFmtXYZ(m.x-ox)+' Y'+faoFmtXYZ(m.y-oy)+
     ' Z'+faoFmtXYZ(m.z-oz)+' I'+faoFmtXYZ(m.arc.i)+' J'+faoFmtXYZ(m.arc.j);
 }
+/* ----- cycle de perçage dialecte (P1-a) -----
+   Mêmes valeurs que le déroulé G0/G1 (retrait = brut + secu, plan de
+   référence = ztop, profondeur = zbot) : la prévisualisation, l'estimation
+   et le garde-fou « sous le brut » restent calés sur le déroulé.
+   Siemens 840D : CYCLE81(RTP,RFP,SDIS,DP) / CYCLE83 (broche à va-et-vient,
+   paramètres alignés sur PostPro/630-5axes.cps).
+   Fagor 8065    : `G98 G81 X Y Z I F` / `G98 G83 X Y Z I J F` (aligné sur
+   PostPro/fagor-8065.cps) + annulation `G80` (cycles modaux). */
+function faoDrillCycle(op,job,oz){
+  if(!op||op.type!=='drill')return null;
+  const tool=faoToolById(job,op.toolId)||{};
+  const pts=faoLimitDrillPts(op,+tool.d);
+  const zt=+op.ztop, zb=+op.zbot;
+  if(!pts||!pts.length||!isFinite(zt)||!isFinite(zb))return null;
+  const top=(job&&job.stock&&isFinite(+job.stock.z1))?+job.stock.z1:zt;
+  const secuAbs=top+(isFinite(+((job||{}).secu))?+job.secu:5);
+  const RFP=zt-oz, RTP=secuAbs-oz, SDIS=RTP-RFP, DP=zb-oz;
+  let peck=isFinite(+op.peck)?+op.peck:0;
+  const span=zt-zb;
+  if(!(peck>0&&span>peck))peck=0;
+  return {pts:pts,RTP:RTP,RFP:RFP,SDIS:SDIS,DP:DP,peck:peck,span:span};
+}
 // Post unifié : un seul corps de programme, dialecte réduit à la tête/pied + style de ligne.
 //  - Siemens 840D : lignes brutes, commentaires `;`, fin SUPA Z600 + parc machine
 //  - Fagor 8065    : lignes numérotées `N##` (+5), commentaires `( … )`, retrait Z classique
@@ -948,6 +970,37 @@ function faoPost(job,postId){
     if(cool&&cool!=='M9')nc(cool);
     g.blocks.forEach(function(b){
       cmt(faoOpLabel(b.op,job));
+      // P1-a : perçage émis en cycle dialecte — le déroulé G0/G1 reste la
+      // source prévisualisation/estimation/garde-fou mais n'est pas écrit ici.
+      const DC=faoDrillCycle(b.op,job,oz);
+      if(DC){
+        DC.pts.forEach(function(p){
+          const X='X'+faoFmtXYZ(+p[0]-ox), Y='Y'+faoFmtXYZ(+p[1]-oy);
+          if(fag){
+            if(DC.peck){
+              const pl=Math.max(Math.floor(DC.span/DC.peck),1);
+              const inc=-(DC.span/pl);
+              nc('G98 G83 '+X+' '+Y+' Z'+faoFmtXYZ(DC.RTP)+
+                ' I'+faoFmtXYZ(inc)+' J'+pl+' F'+FP);
+            }else{
+              nc('G98 G81 '+X+' '+Y+' Z'+faoFmtXYZ(DC.RTP)+
+                ' I'+faoFmtXYZ(DC.DP)+' F'+FP);
+            }
+          }else{
+            // F de plongée sur chaque G0 : séquence d'avances identique au Fagor.
+            nc('G0 '+X+' '+Y+' Z'+faoFmtXYZ(DC.RTP)+' F'+FP);
+            nc(DC.peck
+              ? 'CYCLE83('+faoFmtXYZ(DC.RTP)+', '+faoFmtXYZ(DC.RFP)+', '+
+                faoFmtXYZ(DC.SDIS)+', '+faoFmtXYZ(DC.DP)+', , '+
+                faoFmtXYZ(DC.RFP-DC.peck)+', , 0, , , 1, 1, , '+
+                faoFmtXYZ(DC.peck)+', 0, 0, 0)'
+              : 'CYCLE81('+faoFmtXYZ(DC.RTP)+', '+faoFmtXYZ(DC.RFP)+', '+
+                faoFmtXYZ(DC.SDIS)+', '+faoFmtXYZ(DC.DP)+', )');
+          }
+        });
+        if(fag)nc('G80'); // Fagor : les cycles sont modaux, annulation obligatoire
+        return;
+      }
       let first=true;
       b.moves.forEach(function(m){
         const X='X'+faoFmtXYZ(m.x-ox), Y='Y'+faoFmtXYZ(m.y-oy), Z='Z'+faoFmtXYZ(m.z-oz);
@@ -986,7 +1039,7 @@ function faoOpLabel(op,job){
   if(t==='facing')return 'Surfaçage Z='+op.z+tag+off+ra+lim;
   if(t==='pocket')return 'Poche ['+op.x0+','+op.y0+' -> '+op.x1+','+op.y1+'] '+op.ztop+' -> '+op.zbot+ra+tag+off+lim;
   if(t==='contour')return 'Contour ['+op.x0+','+op.y0+' -> '+op.x1+','+op.y1+'] '+op.ztop+' -> '+op.zbot+ra+tag+off+lim;
-  if(t==='drill')return 'Perçage '+(op.pts||[]).length+' trou(s) '+op.ztop+' -> '+op.zbot+tag+off+lim;
+  if(t==='drill')return 'Perçage '+(op.pts||[]).length+' trou(s) '+op.ztop+' -> '+op.zbot+((+op.peck)>0?' Q'+op.peck:'')+tag+off+lim;
   if(t==='rough3d')return 'Ébauche 3D '+op.ztop+' -> '+op.zbot+' ap '+op.ap+
     (isFinite(+op.ap2)&&+op.ap2>0?(' +fin '+op.ap2):'')+ra+tag+off+lim;
   if(t==='pocket3d')return 'Débourrage ['+op.x0+','+op.y0+' -> '+op.x1+','+op.y1+'] '+
@@ -1076,7 +1129,7 @@ function faoOpDefaults(type){
   if(type==='contour')return Object.assign({},base,{type:'contour',
     x0:s.x0, y0:s.y0, x1:s.x1, y1:s.y1, ztop:s.z1, zbot:s.z0, ap:5, radial:0.5, axial:0.5, arrondi:0});
   if(type==='drill')return Object.assign({},base,{type:'drill',
-    pts:[[+cx.toFixed(2),+cy.toFixed(2)]], ztop:s.z1, zbot:s.z0});
+    pts:[[+cx.toFixed(2),+cy.toFixed(2)]], ztop:s.z1, zbot:s.z0, peck:0});
   if(type==='rough3d')return Object.assign({},base,{type:'rough3d',
     ztop:s.z1, zbot:s.z0, ap:5, ap2:1, ae:+(D*0.6).toFixed(2),
     radial:0.5, axial:0.5, radial2:0.25, axial2:0.25, strategy:'morph', entry:'auto',
@@ -1456,6 +1509,9 @@ function faoOpCardElement(setup,op,i){
       }).filter(function(q){return q;});
       if(lst.length)op.pts=lst;
     },150));
+    rp.appendChild(faoLab('Q pas'));
+    rp.appendChild(faoNum((+op.peck)||0,function(v){op.peck=Math.max(0,v);},52,0.5,
+      'Profondeur de chaque plongée (mm). 0 = perçage simple (CYCLE81 / G81), sinon broche à va-et-vient (CYCLE83 / G83).'));
   }
   if(rp.children.length)d.appendChild(rp); // vide pour l'Ébauche 3D (sections propres)
   // Limite d'usinage (tout, rectangle, ou chaîne d'arêtes).

@@ -87,6 +87,23 @@ const vm=require('vm');
     "att(/ATTENTION/.test(gz.code)&&/sous le brut/.test(gz.code),'garde-fou : mentionnee dans le G-code');",
     "const gzF=faoPost(jobZ,'fagor8065');",
     "att(gzF.warns.length===1&&/\\( ATTENTION/.test(gzF.code),'garde-fou fagor : ( ATTENTION ... )');",
+    "att(/CYCLE81/.test(gz.code),'garde-fou : per\\u00e7age alarm\\u00e9 reste en cycle');",
+    // --- P1-a : cycles de per\\u00e7age dialecte (golden tests)
+    "att(/CYCLE81\\(5\\.000, 0\\.000, 5\\.000, -20\\.000, \\)/.test(s630.code),'siemens : CYCLE81 (golden)');",
+    "att(!/CYCLE83/.test(s630.code),'sans Q : pas de CYCLE83');",
+    "att(/G0 X20\\.000 Y20\\.000 Z5\\.000 F/.test(s630.code),'siemens : trou au retrait, F plong\\u00e9e sur le G0');",
+    "att(/G98 G81 X20\\.000 Y20\\.000 Z5\\.000 I-20\\.000/.test(fg.code),'fagor : G98 G81 (golden)');",
+    "att(/G80/.test(fg.code),'fagor : G80 annule le cycle');",
+    "att(!/G83/.test(fg.code),'sans Q : pas de G83 fagor');",
+    // --- P1-a : broche \\u00e0 va-et-vient (Q / peck)
+    "const jobPk=faoDefaultSetup();jobPk.name='PK';jobPk.stock={x0:0,y0:0,z0:0,x1:100,y1:80,z1:25};",
+    "jobPk.ops=[{id:'k1',on:true,toolId:'T1',type:'drill',pts:[[20,20],[80,60]],ztop:25,zbot:5,peck:4}];",
+    "const spk=faoPost(jobPk,'siemens630').code;",
+    "att(/CYCLE83\\(5\\.000, 0\\.000, 5\\.000, -20\\.000, , -4\\.000/.test(spk),'siemens : CYCLE83 Q=4 (golden, FDEP=RFP-Q)');",
+    "att(!/CYCLE81\\(/.test(spk),'Q>0 : CYCLE81 remplac\\u00e9 par CYCLE83');",
+    "const fpk=faoPost(jobPk,'fagor8065').code;",
+    "att(/G98 G83 X20\\.000 Y20\\.000 Z5\\.000 I-4\\.000 J5/.test(fpk),'fagor : G83 I=-4 J=5 (golden)');",
+    "att(!/G81 X/.test(fpk),'Q>0 fagor : G81 remplac\\u00e9 par G83');",
     // --- bibliothèque : Vc/fz -> S/F
     "const sf=faoToolSF({d:10,vc:250,fz:0.06,flutes:2});",
     "att(sf.s===7958&&sf.f===955,'biblio Vc250/fz0.06 D10 : S'+sf.s+' F'+sf.f);",
