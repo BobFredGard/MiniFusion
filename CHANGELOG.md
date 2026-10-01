@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**122 versions**, de `2026-09-28b` à `2026-10-01-014` — la plus récente en bas,
+**123 versions**, de `2026-09-28b` à `2026-10-01-015` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2342,3 +2342,17 @@ README : viewer — sortie du mode garantie (bouton Quitter + Échap + ✕, nett
 Tests : `test_fao.cjs` — ouverture (titre posage actif, contenu biblio), « + Outil » depuis la fenêtre (compteur outils +1), ✕ ferme (nœud détaché + display none), Échap ferme, **Échap ferme la fenêtre AVANT le viewer** puis 2ᵉ Échap quitte le viewer, bouton fiche bascule, bouton arbre ouvre. Suite 19/19 verte, golden `facing=34` intact.
 
 README : bibliothèque d'outils — bouton « Outils » (fiche posage + arbre FAO) → fenêtre flottante fermable (Échap/✕) avec la bibliothèque éditable.
+
+### 2026-10-01-015
+
+**FAO viewer : la matière usinée passe des « multi cubes » à une surface Z-map pleine.**
+
+1. **Retour navigateur** : le rendu 013 (InstancedMesh de ~40k cubes séparés à 94 %) donnait un effet « briques/Lego » jugé incorrect — **idée revue** : on simule comme un vrai simulateur CAM (méthode Z-map).
+2. **Rendu** : **un seul mesh** (`BufferGeometry` non indexé, Phong plat, DoubleSide) de **colonnes jointives** : par cellule (nx×ny) un top à 2 triangles + 4 côtés, le côté étant **replié (quad nul) si le voisin est plus haut** → jamais deux faces coplanaires, aucun joint, aspect bloc plein usiné avec paliers nets ; fond plein statique sous le brut. Hauteur de colonne = z du dernier voxel vivant de `alive[]` (`faoMatterColTop`) — **la logique de grille/carve/VCE est inchangée** (tests 013 intacts).
+3. **Mise à jour diff** : `faoViewerMatterKill` recalcule la hauteur des colonnes touchées par les voxels tués, réécrit leurs 30 verts + ceux des 4 voisins (leur côté vers elles change) + `needsUpdate` — ni `computeVertexNormals`, ni reconstruction par frame. Mémoire ~30 verts/cellule, une passe à l'ouverture.
+4. **Bug corrigé au passage** : `faoMatterCarveTo` à `t=0` appliquait déjà le point de départ (segment 0 interpolé à f=0) → **trou usiné avant même la lecture** (matière entamée dès l'ouverture/Stop). Fix : `if(!(t>0))return []` — « t≤0 : rien n'a été joué ». La matière n'est plus entamée qu'à la lecture.
+5. États : `vw.mTops` (Float32Array, une hauteur/colonne) + `vw.mArr` (positions) gérés comme le reste (toggle OFF/ON, Stop, close → tout libéré).
+
+Tests : `test_fao.cjs` — bloc **015** : une hauteur par colonne, géométrie = 30 verts/colonne + fond (`(nc*30+6)*3` floats), brut plein au départ (tolérance Float32 1e-4), avance = colonnes entamées + d'autres restent pleines, Stop = surface restaurée pleine, toggle OFF/ON, sortie = état libéré. Suite 19/19 verte, golden `facing=34` intact.
+
+README : viewer — matière « en surface Z-map » (un seul mesh, colonnes jointives, le sommet descend sous l'outil, plus de cubes).

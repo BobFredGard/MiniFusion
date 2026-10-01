@@ -1573,7 +1573,7 @@ function faoViewerLineCreate(vw){
     return l;
   }catch(e){ return null; }
 }
-/* ---- matière voxelisée : la matière usinée disparaît sous l'outil ----
+/* ---- matière usinée (surface Z-map) : elle disparaît sous l'outil ----
    Logique pure (grille + carve) : testable sans scène ; THREE reste derrière
    des try/catch. Grille ≈ 40k voxels max sur la bbox du brut. */
 function faoMatterGrid(s,pas){
@@ -1629,7 +1629,7 @@ function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r){
 function faoMatterCarveTo(g,pts,dd,times,t){
   // Rattrapage 0 → t : segments complets + segment en cours interpolé (points d'arrivée en coupe).
   const out=[];
-  if(!g||!pts||pts.length<2)return out;
+  if(!g||!pts||pts.length<2||!(t>0))return out; // t<=0 : rien n'a été joué, rien à rattraper
   for(let i=0;i<pts.length-1;i++){
     if(times[i]>t)break;
     if(pts[i+1].r)continue;
@@ -1669,54 +1669,116 @@ function faoViewerMatterShowBodies(vw){
 function faoViewerMatterDispose(vw){
   try{ if(vw.matter&&typeof scene!=='undefined'&&scene)scene.remove(vw.matter); }catch(e){}
   try{ if(vw.matter&&vw.matter.geometry&&vw.matter.geometry.dispose)vw.matter.geometry.dispose(); }catch(e){}
-  vw.matter=null; vw.matterGrid=null; vw.mKills=[]; vw.mPos=null;
+  vw.matter=null; vw.matterGrid=null; vw.mKills=[]; vw.mPos=null; vw.mTops=null; vw.mArr=null;
+}
+function faoMatterColTop(g,c){
+  // Z supérieur du matériau restant dans la colonne c (= iy*nx+ix) — lit alive[].
+  const L=g.nx*g.ny;
+  for(let k=g.nz-1;k>=0;k--){ if(g.alive[k*L+c])return g.oz+(k+1)*g.pas; }
+  return g.oz;
+}
+function faoMatterPut(a,o,x,y,z){ a[o]=x; a[o+1]=y; a[o+2]=z; return o+3; }
+function faoMatterMark(rw,list,c){ if(c<0||c>=rw.length||rw[c])return; rw[c]=1; list.push(c); }
+function faoViewerMatterWriteCol(vw,c){
+  // 30 verts (top 2 tri + 4 côtés) de la colonne c écrits dans vw.mArr (diff seul).
+  const g=vw.matterGrid, a=vw.mArr, T=vw.mTops;
+  if(!g||!a||!T)return;
+  const nx=g.nx, ny=g.ny, pas=g.pas, ox=g.ox, oy=g.oy, oz=g.oz;
+  const ix=c%nx, iy=(c/nx)|0;
+  const x0=ox+ix*pas, x1=x0+pas, y0=oy+iy*pas, y1=y0+pas;
+  const zt=T[c];
+  // côté replié (z2=zt → quad nul) si le voisin est plus haut : jamais deux faces coplanaires
+  const zN=(iy>0?T[c-nx]:oz); const n2=zN<zt?zN:zt;
+  const zS=(iy<ny-1?T[c+nx]:oz); const s2=zS<zt?zS:zt;
+  const zW=(ix>0?T[c-1]:oz); const w2=zW<zt?zW:zt;
+  const zE=(ix<nx-1?T[c+1]:oz); const e2=zE<zt?zE:zt;
+  let o=c*90;
+  // top
+  o=faoMatterPut(a,o,x0,y0,zt); o=faoMatterPut(a,o,x1,y0,zt); o=faoMatterPut(a,o,x1,y1,zt);
+  o=faoMatterPut(a,o,x0,y0,zt); o=faoMatterPut(a,o,x1,y1,zt); o=faoMatterPut(a,o,x0,y1,zt);
+  // côté -Y
+  o=faoMatterPut(a,o,x0,y0,n2); o=faoMatterPut(a,o,x0,y0,zt); o=faoMatterPut(a,o,x1,y0,zt);
+  o=faoMatterPut(a,o,x0,y0,n2); o=faoMatterPut(a,o,x1,y0,zt); o=faoMatterPut(a,o,x1,y0,n2);
+  // côté +Y
+  o=faoMatterPut(a,o,x0,y1,s2); o=faoMatterPut(a,o,x1,y1,s2); o=faoMatterPut(a,o,x1,y1,zt);
+  o=faoMatterPut(a,o,x0,y1,s2); o=faoMatterPut(a,o,x1,y1,zt); o=faoMatterPut(a,o,x0,y1,zt);
+  // côté -X
+  o=faoMatterPut(a,o,x0,y0,w2); o=faoMatterPut(a,o,x0,y0,zt); o=faoMatterPut(a,o,x0,y1,zt);
+  o=faoMatterPut(a,o,x0,y0,w2); o=faoMatterPut(a,o,x0,y1,zt); o=faoMatterPut(a,o,x0,y1,w2);
+  // côté +X
+  o=faoMatterPut(a,o,x1,y0,e2); o=faoMatterPut(a,o,x1,y1,e2); o=faoMatterPut(a,o,x1,y1,zt);
+  o=faoMatterPut(a,o,x1,y0,e2); o=faoMatterPut(a,o,x1,y1,zt); o=faoMatterPut(a,o,x1,y0,zt);
+}
+function faoViewerMatterWriteAll(vw){
+  const g=vw.matterGrid; if(!g||!vw.mArr||!vw.mTops)return;
+  const nc=g.nx*g.ny;
+  for(let c=0;c<nc;c++)faoViewerMatterWriteCol(vw,c);
+  // fond plein du brut (6 verts, statique)
+  const a=vw.mArr, oz=g.oz;
+  const X0=g.ox, X1=g.ox+g.nx*g.pas, Y0=g.oy, Y1=g.oy+g.ny*g.pas;
+  let o=nc*90;
+  o=faoMatterPut(a,o,X0,Y0,oz); o=faoMatterPut(a,o,X1,Y0,oz); o=faoMatterPut(a,o,X1,Y1,oz);
+  o=faoMatterPut(a,o,X0,Y0,oz); o=faoMatterPut(a,o,X1,Y1,oz); o=faoMatterPut(a,o,X0,Y1,oz);
 }
 function faoViewerMatterEnable(vw){
-  // (Re)construit les voxels du brut + rattrapage 0 → t courant. Retourne le nb de voxels.
+  // (Re)construit la surface Z-map pleine du brut (colonnes jointives, un seul mesh)
+  // + rattrapage 0 → t courant. Retourne le nb de voxels suivis.
   faoViewerMatterDispose(vw);
   if(!vw||vw.matterOn===false)return 0;
   const s=faoStock(); if(!faoStockValid(s))return 0;
   const g=faoMatterGrid(s); if(!g)return 0;
-  let im=null;
+  const nc=g.nx*g.ny;
+  let mesh=null, arr=null;
   try{
-    const geo=new THREE.BoxGeometry(g.pas*0.94,g.pas*0.94,g.pas*0.94);
-    const mat=new THREE.MeshPhongMaterial({color:0x9c846a,flatShading:true});
-    im=new THREE.InstancedMesh(geo,mat,g.n);
-    im.name='faoMatter';
-    im.raycast=function(){};
-    const m=new THREE.Matrix4();
-    for(let k=0;k<g.nz;k++)for(let j=0;j<g.ny;j++)for(let i=0;i<g.nx;i++){
-      m.makeTranslation(g.ox+(i+0.5)*g.pas, g.oy+(j+0.5)*g.pas, g.oz+(k+0.5)*g.pas);
-      im.setMatrixAt(faoMatterIdx(g,i,j,k),m);
-    }
-    im.instanceMatrix.needsUpdate=true;
-    if(typeof scene!=='undefined'&&scene)scene.add(im);
+    arr=new Float32Array((nc*30+6)*3);
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.BufferAttribute(arr,3));
+    const mat=new THREE.MeshPhongMaterial({color:0x9c846a,flatShading:true,side:THREE.DoubleSide});
+    mesh=new THREE.Mesh(geo,mat);
+    mesh.name='faoMatter';
+    mesh.raycast=function(){};
+    mesh.frustumCulled=false;
+    if(typeof scene!=='undefined'&&scene)scene.add(mesh);
   }catch(e){ return 0; }
-  vw.matter=im; vw.matterGrid=g; vw.mKills=[]; vw.mPos=null;
+  const tops=new Float32Array(nc);
+  const full=g.oz+g.nz*g.pas;
+  for(let c=0;c<nc;c++)tops[c]=full;
+  vw.matter=mesh; vw.matterGrid=g; vw.mTops=tops; vw.mArr=arr; vw.mKills=[]; vw.mPos=null;
+  try{ faoViewerMatterWriteAll(vw); }catch(e){ faoViewerMatterDispose(vw); try{ if(mesh&&scene)scene.remove(mesh); }catch(e2){} return 0; }
   if(vw.t>0){
     const ks=faoMatterCarveTo(g,vw.pts,vw.dd,vw.times,vw.t);
     faoViewerMatterKill(vw,ks);
   }
-  faoViewerMatterHideBodies(vw); // le voxel remplace les corps visibles
+  faoViewerMatterHideBodies(vw); // la surface remplace les corps visibles
   return g.n;
 }
 function faoViewerMatterKill(vw,ks){
-  // Pousse les indices tués dans l'InstancedMesh (scale 0) — diff seul.
-  if(!vw||!vw.matter||!vw.matterGrid||!ks||!ks.length)return;
-  const g=vw.matterGrid, im=vw.matter;
-  try{
-    const m=new THREE.Matrix4();
-    for(let n=0;n<ks.length;n++){
-      const idx=ks[n];
-      if(idx<0||idx>=g.n)continue;
-      const rest=idx%(g.nx*g.ny);
-      const i=rest%g.nx, j=Math.floor(rest/g.nx), k=Math.floor(idx/(g.nx*g.ny));
-      m.makeScale(0,0,0);
-      m.setPosition(g.ox+(i+0.5)*g.pas, g.oy+(j+0.5)*g.pas, g.oz+(k+0.5)*g.pas);
-      im.setMatrixAt(idx,m);
-    }
-    im.instanceMatrix.needsUpdate=true;
-  }catch(e){}
+  // Diff seul : recalcule la hauteur des colonnes touchées (voxels tués), réécrit
+  // leurs verts + ceux des 4 voisins (leur côté vers elles change).
+  if(!vw||!vw.matter||!vw.matterGrid||!vw.mTops||!vw.mArr||!ks||!ks.length)return;
+  const g=vw.matterGrid, nc=g.nx*g.ny, T=vw.mTops;
+  const seen=new Uint8Array(nc), chg=[];
+  for(let n=0;n<ks.length;n++){
+    const idx=ks[n];
+    if(idx<0||idx>=g.n)continue;
+    const c=idx%nc;
+    if(seen[c])continue;
+    seen[c]=1;
+    const t=faoMatterColTop(g,c);
+    if(t!==T[c]){ T[c]=t; chg.push(c); }
+  }
+  if(!chg.length)return;
+  const rw=new Uint8Array(nc), list=[];
+  for(let m=0;m<chg.length;m++){
+    const c=chg[m], ix=c%g.nx;
+    faoMatterMark(rw,list,c);
+    if(ix>0)faoMatterMark(rw,list,c-1);
+    if(ix<g.nx-1)faoMatterMark(rw,list,c+1);
+    if(c>=g.nx)faoMatterMark(rw,list,c-g.nx);
+    if(c+g.nx<nc)faoMatterMark(rw,list,c+g.nx);
+  }
+  for(let m=0;m<list.length;m++)faoViewerMatterWriteCol(vw,list[m]);
+  try{ vw.matter.geometry.attributes.position.needsUpdate=true; }catch(e){}
 }
 function faoViewerMatterStep(vw,p){
   // À chaque frame : enleve la matière du segment balayé (ou rattrapage si saut).
@@ -1757,7 +1819,7 @@ function faoViewerOpen(){
     const vw={pts:b.pts, dd:b.dd, times:b.times, T:b.T, t:0, idx:0, drawn:0,
       playing:false, speed:1, prevVis:true, body:null, tool:null, toolBody:null,
       toolHold:null, line:null, stock:null, toolH:30, _last:0, _looping:false,
-      matterOn:true, matter:null, matterGrid:null, mKills:[], mPos:null, hideBodies:[]};
+      matterOn:true, matter:null, matterGrid:null, mKills:[], mPos:null, mTops:null, mArr:null, hideBodies:[]};
     faoVw=vw;
     // 1) traces cachées (non destructif : juste .visible=false)
     try{ if(faoPrevGroup){ vw.prevVis=faoPrevGroup.visible!==false; faoPrevGroup.visible=false; } }catch(e){}
@@ -1779,7 +1841,7 @@ function faoViewerOpen(){
       if(vw.tool)scene.add(vw.tool);
     }catch(e){}
     try{ vw.line=faoViewerLineCreate(vw); if(vw.line)scene.add(vw.line); }catch(e){}
-    // 4) matière voxelisée (la matière usinée disparaît sous l'outil)
+    // 4) matière usinée : surface Z-map pleine (colonnes jointives, un seul mesh)
     try{ faoViewerMatterEnable(vw); }catch(e){}
     // 5) barre transporteur ▶ ⏸ ⏹ ✕ + matière
     try{ faoViewerBarShow(); }catch(e){}
