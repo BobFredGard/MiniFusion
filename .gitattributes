@@ -1,0 +1,9 @@
+# Normalisation : HEAD est stocké en LF, le working tree local peut être en CRLF
+# (build.js régénère fusion_mvp.html en CRLF — convention du projet).
+# Sans ça, git affiche "modifié" la totalité des fichiers alors que seul l'EOL a bougé.
+* text=auto
+
+# Binaires : jamais de conversion d'octets
+*.wasm binary
+*.step binary
+*.stp binary
