@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**126 versions**, de `2026-09-28b` à `2026-10-01-018` — la plus récente en bas,
+**127 versions**, de `2026-09-28b` à `2026-10-01-019` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2401,3 +2401,15 @@ README : surfaçage — « 1ʳᵉ et dernière ligne à mordant (l'écart morde 
 Tests : 4 nouvelles suites enregistrées dans `tests/run.cjs` → **`npm test` 23/23 vert** sur `fusion_mvp.html` ; les 4 échouent sur un build de contrôle sans ces changements (preuve de régression). Discipline : `node --check src/*.js` après chaque édition (une double ligne `return g;}` a rendu un build injouable en silence).
 
 README : viewer — « un import STEP ne disparaît plus après une modification (esquisse, annuler/rétablir) », arêtes tangentes affichées avec le natif **en un seul objet**, affichage plus fin et commun natif/STEP (déflection d'affichage bornée + budget 400 000 tris) ; FAO — `occXDefl()` préservée.
+
+### 2026-10-01-019
+
+**FAO : la matière descend à CHAQUE passe (gel Z-map corrigé) + sortie de pièce réglable, rappelée en fiche surfaçage.**
+
+1. **Retour** : « toute la matière n'est pas correctement enlevée — 1ʳᵉ passe OK, 2ᵉ OK, **3ᵉ KO**, 4ᵉ OK, **dernière KO** » (alternance). **Cause** : dans `faoMatterCarveSeg`, la mise à jour de `h[c]` était **imbriquée dans le kill voxel** — la Z-map ne descendait que si **au moins un voxel vivant était tué**. Or les cotes de passe tombent parfois **entre les centres des voxels** (ou la colonne est déjà vidée par la passe précédente : centres restants < `zmin`) → aucun kill → `h[c]` **gelait** à la passe précédente → la passe n'enlevait rien à l'affichage. L'alternance OK/KO suit exactement l'alignement des cotes sur les centres. **Fix** : le test XY est fait **une fois par colonne** (indépendant de `k` — le segment balaye toute la hauteur) et `h[c]=min(h[c],zc)` est posé pour **toute colonne touchée en XY**, vivante ou non ; les kills (`alive[]`, `out`) sont strictement inchangés. Bonus : le calcul de distance n'est plus refait à chaque voxel.
+2. **Sortie de pièce réglable** (« j'ai juste besoin d'une zone texte pour dire de combien je sors ») : le dépassement XY en bout de ligne était codé en dur `dep=r+2` — le bord ne sortait que de **2 mm**, réglage impossible. **Fix** : `dep = r + sortie` — le champ « Sortie » pilote désormais **(1)** le retrait Z au-dessus du brut **et (2)** le dépassement XY avant le demi-tour ; `step` 0,5 sur les deux champs (demi-millimètres libres).
+3. **Rappel en fiche surfaçage** : le réglage (de posage, commun à toutes les opérations) est **ré-affiché et éditable dans la fiche de l'opération Surfaçage** (rang « Sortie » après « Arrondi »), infobulle rappelant les deux effets — on règle la passe là, on voit la sortie là. Absent des autres fiches (poche, contour…) pour ne pas dupliquer un réglage global.
+
+Tests : `test_fao.cjs` — blocs **021-023** : 021 la 2ᵉ passe **ne tue plus aucun voxel** (centre 12.5 < `zmin` 13.5) mais la Z-map descend **quand même à 16** (gel corrigé), 3ᵉ passe retue → 12 (monotone) ; 022 `sortie` absent → `dep=r+2` historique (−7), `secu=10` → demi-tour à `x0−(r+10)=−15` ; 023 champ « Sortie » présent en fiche **surfaçage** (valeur 7.5 affichée, saisie 12 → `setup.secu=12` → sortie finale 37 + demi-tour −17) et **absent** de la fiche poche ; origine G-code recalée (`X-10.000` = dépassement `r+sortie`). `npm test` **23/23** vert, golden `facing=32 pocket=65 contour=7 drill=8` intact.
+
+README : surfaçage — champ « Sortie » rappelé dans la fiche de l'opération ; réglages — « Sortie (mm hors matière) : dépassement XY du demi-tour + retrait Z, pas 0,5 » ; viewer — matière enlevée à chaque passe (Z-map plus gelée sans kill voxel).

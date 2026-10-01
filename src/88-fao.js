@@ -368,7 +368,9 @@ function faoGenFacing(stock,o){
   let ae=isFinite(+o.ae)&&+o.ae>0?+o.ae:D*0.6;
   const z=isFinite(+o.z)?+o.z:stock.z1;
   const secu=isFinite(+o.secu)?+o.secu:z+5;
-  const dep=r+2; // dépassement latéral (attaque hors matière)
+  // Dépassement XY : l'outil sort de la matière de `sortie` mm (champ « Sortie »,
+  // défaut 5 — historique 2) AVANT son demi-tour en bout de ligne.
+  const dep=r+(isFinite(+o.sortie)&&+o.sortie>=0?+o.sortie:2);
   const yA0=stock.y0-r, yB0=stock.y1+r;
   // Passes pilotées (op.np ≥ 2) : écart exact H/(np−1) → couverture totale
   // garantie, dernier aligné sur la lisière. np absent/null → pilotage par ae.
@@ -948,13 +950,14 @@ function faoOpMoves(op,job){
   // secu = dégagement RELATIF au-dessus du brut (jamais dans la matière).
   const top=(job&&job.stock&&isFinite(+job.stock.z1))?+job.stock.z1:(isFinite(+op.z)?+op.z:(isFinite(+op.ztop)?+op.ztop:0));
   const secu=top+(isFinite(+((job||{}).secu))?+job.secu:5);
-  const base={toolD:D, secu:secu};
+  const sortie=(isFinite(+((job||{}).secu))?+job.secu:5);
+  const base={toolD:D, secu:secu, sortie:sortie};
   const RA=faoRA(op||{});
   let mv=[];
   if(!op||!op.type)return [];
   if(op.type==='facing')mv=faoGenFacing(job.stock||faoStockDefault(),
     {toolD:D, ae:isFinite(+op.ae)?+op.ae:D*0.6, np:isFinite(+op.np)?+op.np:0,
-     npz:isFinite(+op.npz)?+op.npz:0,
+     npz:isFinite(+op.npz)?+op.npz:0, sortie:sortie,
      z:(isFinite(+op.z)?+op.z:(job.stock||{}).z1)+RA.axial, secu:secu});
   else if(op.type==='pocket')mv=faoGenPocket({x0:+op.x0,y0:+op.y0,x1:+op.x1,y1:+op.y1},
     +op.ztop,+op.zbot,Object.assign({},base,{ap:+op.ap,ae:isFinite(+op.ae)?+op.ae:D*0.5,
@@ -1643,23 +1646,27 @@ function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r){
   const nc=g.nx*g.ny;
   const tc=g.h?new Uint8Array(nc):null;
   const z2=g.h?(zc>g.oz?zc:g.oz):0;
-  for(let k=k0;k<=k1;k++){
-    const pz=g.oz+(k+0.5)*g.pas;
-    if(pz<zmin)continue;
-    for(let j=j0;j<=j1;j++){
-      const py=g.oy+(j+0.5)*g.pas;
-      for(let i=i0;i<=i1;i++){
+  // Test XY UNE fois par colonne (le segment balaye toute la hauteur de la colonne).
+  for(let j=j0;j<=j1;j++){
+    const py=g.oy+(j+0.5)*g.pas;
+    for(let i=i0;i<=i1;i++){
+      const px=g.ox+(i+0.5)*g.pas;
+      let t=L2>0?((px-ax)*dx+(py-ay)*dy)/L2:0;
+      t=t<0?0:(t>1?1:t);
+      const qx=ax+dx*t, qy=ay+dy*t;
+      const d2=(px-qx)*(px-qx)+(py-qy)*(py-qy);
+      if(d2>r2)continue;
+      // Colonne touchée en XY : la Z-map descend à la cote de coupe MÊME si aucun
+      // voxel vivant n'est tué (cote entre deux centres de voxels, ou colonne déjà
+      // vidée par la passe précédente) — c'était le gel « certaines passes
+      // n'enlèvent rien » (alternance OK/KO au fil des passes).
+      if(tc){ const c=j*g.nx+i; if(!tc[c]){ tc[c]=1; if(z2<g.h[c])g.h[c]=z2; } }
+      for(let k=k0;k<=k1;k++){
+        const pz=g.oz+(k+0.5)*g.pas;
+        if(pz<zmin)continue;
         const idx=faoMatterIdx(g,i,j,k);
         if(!g.alive[idx])continue;
-        const px=g.ox+(i+0.5)*g.pas;
-        let t=L2>0?((px-ax)*dx+(py-ay)*dy)/L2:0;
-        t=t<0?0:(t>1?1:t);
-        const qx=ax+dx*t, qy=ay+dy*t;
-        const d2=(px-qx)*(px-qx)+(py-qy)*(py-qy);
-        if(d2<=r2){
-          g.alive[idx]=0; out.push(idx);
-          if(tc){ const c=j*g.nx+i; if(!tc[c]){ tc[c]=1; if(z2<g.h[c])g.h[c]=z2; } }
-        }
+        g.alive[idx]=0; out.push(idx);
       }
     }
   }
@@ -2426,6 +2433,12 @@ function faoOpCardElement(setup,op,i){
     rp.appendChild(faoLab(apZShow!=null?('ap '+apZShow):'ap —'));
     rp.appendChild(faoLab('laisse Z')); rp.appendChild(faoNum(faoRA(op).axial,function(v){op.axial=Math.max(0,v);},48,0.1));
     rp.appendChild(faoLab('Arrondi')); rp.appendChild(faoNum(isFinite(+op.arrondi)?+op.arrondi:0,function(v){op.arrondi=Math.max(0,v);},48,0.5));
+    // Rappel du réglage de POSAGE « Sortie » (même champ que la fiche du posage) :
+    // on le voit et le règle là où l'on paramètre la passe — dépassement XY du
+    // demi-tour + retrait Z (voir infobulle).
+    rp.appendChild(faoLab('Sortie'));
+    rp.appendChild(faoNum(isFinite(+setup.secu)?+setup.secu:5,function(v){ setup.secu=Math.max(0,v); },44,0.5,
+      'Sortie de pièce (mm hors matière — réglage du POSAGE, commun à toutes les opérations) : (1) dépassement XY en bout de ligne — l’outil sort de la pièce avant son demi-tour, (2) retrait Z des G0 et fin de parcours. Généralement 5 à 10.'));
   }else if(op.type==='pocket'||op.type==='contour'){
     rect4(); zz();
     rp.appendChild(faoLab('ap')); rp.appendChild(faoNum(op.ap,function(v){op.ap=Math.max(0.5,v);},48));
@@ -2769,8 +2782,8 @@ function faoSetupFiche(p,setup){
   p.appendChild(nF);
   const rC=faoRow();
   rC.appendChild(faoLab('Sortie'));
-  rC.appendChild(faoNum(setup.secu,function(v){ setup.secu=Math.max(0,v); },48,1,
-    "Sortie de pièce : dégagement Z au-dessus du brut (mm) — retrait des G0, fin de chaque opération et fin de parcours (viewer + G-code). Généralement 5 à 10."));
+  rC.appendChild(faoNum(setup.secu,function(v){ setup.secu=Math.max(0,v); },48,0.5,
+    "Sortie de pièce (mm hors matière) : (1) retrait Z au-dessus du brut — G0, fin d'opération et fin de parcours (viewer + G-code) ; (2) dépassement XY en bout de ligne — l'outil sort de la pièce de cette valeur avant son demi-tour. Généralement 5 à 10. (Rappel dans la fiche Surfaçage.)"));
   rC.appendChild(faoLab('Retrait')); rC.appendChild(faoNum(faoRetractZ(setup),function(v){ setup.retract=v; },56));
   rC.appendChild(faoMini('Auto',function(){ setup.retract=null; }));
   rC.appendChild(faoLab('Arrosage'));
