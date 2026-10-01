@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**118 versions**, de `2026-09-28b` à `2026-10-01-010` — la plus récente en bas,
+**119 versions**, de `2026-09-28b` à `2026-10-01-011` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2291,3 +2291,15 @@ README : posages — « 📦 dans l'arbre = désigner le brut ; le corps choisi 
 Tests : `test_fao.cjs` — `pz=4` sur `z1=40→0` → niveaux `0/10/20/30` (ap=10) ; `pz` absent = passe unique **et structure identique à l'historique** (`zN.length===gNA.length`) ; `pz=1` ≡ absent ; 3 plongées inter-niveau toutes en lisière (hors matière) ; aucune coupe au-dessus du brut ; `faoFacingAp` (cas4/1/0/z≥z1) ; `faoOpMoves` avec `op.npz=4` sur `z1=25→0` (4 niveaux, ap=6.25) et `npz` absent → golden ; carte UI : champ `pz` défaut 1, `pz=4` → `op.npz=4` + label `ap 6.25`, `pz=1` → `npz` effacé. Suite 19/19 verte, `facing=34` intact.
 
 README : surfaçage — « + « pz » : passes en Z / brut — ap = (Z1−Z)/pz calculé et affiché, pz=1 = passe unique ».
+
+### 2026-10-01-011
+
+**FAO surfaçage : plus de redondance — un SEUL paramètre de recouvrement XY : l'« écart ».**
+
+1. **Carte op** : le champ **« Passes » est supprimé** (plus de double saisie passes/écart qui se recalculent l'un l'autre). Reste **« écart »** (ae) = le recouvrement du fraiseur, avec le **nombre de lignes affiché en lecture seule** juste à droite (`16 lignes`), recalculé à chaque saisie.
+2. **Rétrocompatibilité documents anciens** : une op encore pilotée par `op.np` (ancien champ Passes) est **lue telle quelle** — l'écart affiché = `H/(np−1)` et le compteur de lignes = `np` ; **saisir l'écart bascule définitivement** en pilotage par écart (`op.np=null`). Le générateur (`faoGenFacing`) conserve le pilotage `np` pour lire ces documents.
+3. Le champ **« pz »** (passes en Z, `ap` calculé) de la version 010 reste tel quel — même philosophie : un champ saisissable + valeur calculée en lecture seule.
+
+Tests : `test_fao.cjs` — carte sans champ Passes (`!npF && !!aeF`), libellé `16 lignes` en lecture seule, saisie `écart=7` respectée, document ancien `np=3` affiche `45` + `3 lignes`, saisie de l'écart bascule (`ae=7, np=null`). Suites logiques 008 (générations np) inchangées. Suite 19/19 verte, golden `facing=34` intact.
+
+README : surfaçage — « 'écart' : seul paramètre de recouvrement XY, nombre de lignes en lecture seule, ancien champ 'Passes' supprimé ».

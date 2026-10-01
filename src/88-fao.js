@@ -1706,25 +1706,22 @@ function faoOpCardElement(setup,op,i){
   };
   if(op.type==='facing'){
     rp.appendChild(faoLab('Z')); rp.appendChild(faoNum(op.z,function(v){op.z=v;},60));
-    // Passes + écart LIÉS : np≥2 pilote (écart exact H/(np−1), couverture totale)
-    // ; saisir l'écart efface np → pilotage par écart, np affiché = lignes calculées.
+    // SEUL paramètre de recouvrement XY : l'écart (ae). Le nombre de lignes est
+    // affiché en lecture seule à droite. Un ancien document piloté par « Passes »
+    // (np≥2) est lu tel quel (écart affiché = H/(np−1)) ; saisir l'écart bascule
+    // définitivement en pilotage par écart (op.np=null).
     const stF=faoStock();
     const tF=faoToolById(setup,op.toolId);
     const dF=(tF&&isFinite(+tF.d)&&+tF.d>0)?+tF.d:10;
     const npOn=isFinite(+op.np)&&+op.np>=2;
-    const npShow=npOn?Math.round(+op.np):faoFacingCount(stF,dF,op.ae);
     const aeShow=npOn?(faoFacingAe(stF,dF,+op.np)||op.ae):op.ae;
-    rp.appendChild(faoLab('Passes'));
-    rp.appendChild(faoNum(npShow,function(v){
-      op.np=Math.max(2,Math.round(v));
-      const ae=faoFacingAe(faoStock(),dF,op.np);
-      if(ae!=null)op.ae=ae;
-    },40,1,'Nombre de passes de surfaçage : l\'écart est recalculé pour couvrir tout le brut (dernière passe alignée sur la lisière).'));
+    const nbShow=npOn?Math.round(+op.np):faoFacingCount(stF,dF,op.ae);
     rp.appendChild(faoLab('écart'));
     rp.appendChild(faoNum(isFinite(+aeShow)?Math.round(+aeShow*1000)/1000:aeShow,function(v){
       op.ae=Math.max(0.5,v);
-      op.np=null; // pilotage par écart : le nombre affiché devient le compte de lignes
-    },48,0.5,'Distance entre deux passes (écarts voisins égaux). En saisissant l\'écart, le nombre de passes affiché suit ; en saisissant les passes, l\'écart est recalculé.'));
+      op.np=null; // ancien doc « Passes » → bascule en pilotage par écart
+    },48,0.5,'Recouvrement du fraiseur : distance entre deux passes — SEUL paramètre de recouvrement XY (le nombre de lignes résultant est affiché en lecture seule à droite). Sur un ancien document piloté par « Passes », saisir l\'écart bascule définitivement en pilotage par écart.'));
+    rp.appendChild(faoLab(nbShow+' ligne'+(nbShow>1?'s':'')));
     // Passes en Z (par brut) : ébauche du dessus du brut (Z1) à la cote Z en N
     // passes égales — l'ap est CALCULÉ (Z1−Z)/N et affiché en lecture seule.
     const npzShow=(isFinite(+op.npz)&&+op.npz>=2)?Math.round(+op.npz):1;
