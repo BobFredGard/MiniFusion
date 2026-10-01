@@ -182,6 +182,21 @@ function faoOrient(job){
   return {b:Math.round(b*1000)/1000, c:Math.round(c*1000)/1000};
 }
 function faoOrientOn(job){ const o=faoOrient(job); return o.b!==0||o.c!==0; }
+function faoOrientFromNormal(nx,ny,nz){
+  // Normale de face cliquée (repère pièce) -> angles d'indexation table C+B.
+  // Chaîne cinématique : M = Ry(B)·Rz(C) applique la normale à (0,0,1) (outil
+  // vertical). Règle de la main droite ; B ∈ [−90,0] pour une face sortante
+  // ascendante — l'utilisateur ajuste les signes si sa machine diffère.
+  const l=Math.hypot(+nx,+ny,+nz)||1;
+  nx=+nx/l; ny=+ny/l; nz=+nz/l;
+  const r=Math.hypot(nx,ny);
+  const rnd=function(v){ return Math.round(v*100)/100; };
+  return {
+    b:rnd(Math.atan2(-r,nz)*180/Math.PI),
+    c:rnd(Math.atan2(-ny,nx)*180/Math.PI),
+    down:nz<-1e-6 // face tournée vers le bas : pièce à retourner
+  };
+}
 function faoToolById(job,id){
   const ts=(job&&job.tools)||[];
   for(let i=0;i<ts.length;i++)if(ts[i].id===id)return ts[i];
@@ -200,15 +215,26 @@ function faoToolSF(t,setup){
 }
 function faoKindLabel(k){ return k==='ball'?'Boule':(k==='bull'?'Torique':'Cylindrique'); }
 
-/* ----- brut : bbox des corps visibles, + marge ----- */
+/* ----- brut : 3 sources — tous les corps (défaut), corps choisi, manuel ----- */
+function faoStockValid(s){
+  return !!(s&&[s.x0,s.y0,s.z0,s.x1,s.y1,s.z1].every(isFinite)&&s.x1>s.x0&&s.y1>s.y0&&s.z1>s.z0);
+}
 function faoStock(){
   const job=faoDoc();
+  const mode=(job.stockSrc==='body'||job.stockSrc==='manual')?job.stockSrc:'bodies';
+  if(mode==='manual'){
+    // Boîte saisie à la main : jamais recalculée (repli défaut si invalide).
+    if(!faoStockValid(job.stock))job.stock=faoStockDefault();
+    return job.stock;
+  }
   let box=null;
   try{
     if(typeof THREE!=='undefined'&&typeof bodies!=='undefined'&&bodies&&bodies.length){
       box=new THREE.Box3(); let n=0;
+      const want=(mode==='body')?job.stockBody:null;
       bodies.forEach(function(b){
         if(!b||b.ghost||b.visible===false||!b.mesh)return;
+        if(want!=null&&b.id!==want)return;
         try{ box.expandByObject(b.mesh); n++; }catch(e){}
       });
       if(!n)box=null;
@@ -227,14 +253,30 @@ function faoStock(){
       }
     }catch(e){}
   }
-  // Repli : brut mémorisé s'il est valide, sinon défaut.
-  const s=job.stock;
-  if(s&&[s.x0,s.y0,s.z0,s.x1,s.y1,s.z1].every(isFinite)&&s.x1>s.x0&&s.y1>s.y0&&s.z1>s.z0)return s;
+  // Repli : brut mémorisé s'il est valide (corps choisi introuvable…), sinon défaut.
+  if(faoStockValid(job.stock))return job.stock;
   job.stock=faoStockDefault();
   return job.stock;
 }
 
 /* ----- niveaux Z (ébauche par passes ap, finition = dernier niveau) ----- */
+function faoFacingAe(stock,D,np){
+  // Écart (ae) pour usiner EXACTEMENT np passes sur la largeur du brut + Ø.
+  const d=(isFinite(+D)&&+D>0)?+D:10;
+  const H=(+stock.y1-+stock.y0)+d;
+  if(!(np>=2)||!(H>0))return null;
+  return Math.round((H/(np-1))*1000)/1000;
+}
+function faoFacingCount(stock,D,ae){
+  // Nombre de lignes que le zigzag produit (même logique que faoGenFacing).
+  const d=(isFinite(+D)&&+D>0)?+D:10;
+  const r=d/2;
+  const yA=+stock.y0-r, yB=+stock.y1+r;
+  const a=(isFinite(+ae)&&+ae>0)?+ae:d*0.6;
+  let y=yA,n=1,guard=0;
+  while(y<yB-1e-9&&guard++<100000){ y=Math.min(y+a,yB); n++; }
+  return n;
+}
 function faoLevels(zTop,zBot,ap){
   const p=isFinite(+ap)&&+ap>0?+ap:5;
   const lo=Math.min(+zTop,+zBot), hi=Math.max(+zTop,+zBot);
@@ -249,11 +291,16 @@ function faoLevels(zTop,zBot,ap){
 function faoGenFacing(stock,o){
   o=o||{};
   const D=isFinite(+o.toolD)&&+o.toolD>0?+o.toolD:10;
-  const r=D/2, ae=isFinite(+o.ae)&&+o.ae>0?+o.ae:D*0.6;
+  const r=D/2;
+  let ae=isFinite(+o.ae)&&+o.ae>0?+o.ae:D*0.6;
   const z=isFinite(+o.z)?+o.z:stock.z1;
   const secu=isFinite(+o.secu)?+o.secu:z+5;
   const dep=r+2; // dépassement latéral (attaque hors matière)
   const yA=stock.y0-r, yB=stock.y1+r;
+  // Passes pilotées (op.np ≥ 2) : écart exact H/(np−1) → couverture totale
+  // garantie, dernier aligné sur la lisière. np absent/null → pilotage par ae.
+  const np=isFinite(+o.np)?Math.floor(+o.np):0;
+  if(np>=2&&yB>yA)ae=Math.max(0.01,(yB-yA)/(np-1));
   const moves=[{r:1,x:stock.x0-dep,y:yA,z:secu},{r:1,x:stock.x0-dep,y:yA,z:z}];
   let y=yA, sens=1, garde=0;
   moves.push({r:0,x:stock.x0-dep,y:y,z:z});
@@ -807,7 +854,7 @@ function faoOpMoves(op,job){
   let mv=[];
   if(!op||!op.type)return [];
   if(op.type==='facing')mv=faoGenFacing(job.stock||faoStockDefault(),
-    {toolD:D, ae:isFinite(+op.ae)?+op.ae:D*0.6,
+    {toolD:D, ae:isFinite(+op.ae)?+op.ae:D*0.6, np:isFinite(+op.np)?+op.np:0,
      z:(isFinite(+op.z)?+op.z:(job.stock||{}).z1)+RA.axial, secu:secu});
   else if(op.type==='pocket')mv=faoGenPocket({x0:+op.x0,y0:+op.y0,x1:+op.x1,y1:+op.y1},
     +op.ztop,+op.zbot,Object.assign({},base,{ap:+op.ap,ae:isFinite(+op.ae)?+op.ae:D*0.5,
@@ -1570,7 +1617,25 @@ function faoOpCardElement(setup,op,i){
   };
   if(op.type==='facing'){
     rp.appendChild(faoLab('Z')); rp.appendChild(faoNum(op.z,function(v){op.z=v;},60));
-    rp.appendChild(faoLab('pas')); rp.appendChild(faoNum(op.ae,function(v){op.ae=Math.max(0.5,v);},52));
+    // Passes + écart LIÉS : np≥2 pilote (écart exact H/(np−1), couverture totale)
+    // ; saisir l'écart efface np → pilotage par écart, np affiché = lignes calculées.
+    const stF=faoStock();
+    const tF=faoToolById(setup,op.toolId);
+    const dF=(tF&&isFinite(+tF.d)&&+tF.d>0)?+tF.d:10;
+    const npOn=isFinite(+op.np)&&+op.np>=2;
+    const npShow=npOn?Math.round(+op.np):faoFacingCount(stF,dF,op.ae);
+    const aeShow=npOn?(faoFacingAe(stF,dF,+op.np)||op.ae):op.ae;
+    rp.appendChild(faoLab('Passes'));
+    rp.appendChild(faoNum(npShow,function(v){
+      op.np=Math.max(2,Math.round(v));
+      const ae=faoFacingAe(faoStock(),dF,op.np);
+      if(ae!=null)op.ae=ae;
+    },40,1,'Nombre de passes de surfaçage : l\'écart est recalculé pour couvrir tout le brut (dernière passe alignée sur la lisière).'));
+    rp.appendChild(faoLab('écart'));
+    rp.appendChild(faoNum(isFinite(+aeShow)?Math.round(+aeShow*1000)/1000:aeShow,function(v){
+      op.ae=Math.max(0.5,v);
+      op.np=null; // pilotage par écart : le nombre affiché devient le compte de lignes
+    },48,0.5,'Distance entre deux passes (écarts voisins égaux). En saisissant l\'écart, le nombre de passes affiché suit ; en saisissant les passes, l\'écart est recalculé.'));
     rp.appendChild(faoLab('laisse Z')); rp.appendChild(faoNum(faoRA(op).axial,function(v){op.axial=Math.max(0,v);},48,0.1));
     rp.appendChild(faoLab('Arrondi')); rp.appendChild(faoNum(isFinite(+op.arrondi)?+op.arrondi:0,function(v){op.arrondi=Math.max(0,v);},48,0.5));
   }else if(op.type==='pocket'||op.type==='contour'){
@@ -1788,6 +1853,8 @@ function faoSetupFiche(p,setup){
   r32.appendChild(faoLab('°'));
   r32.appendChild(faoMini('3 axes',function(){ setup.orient={b:0,c:0}; },
     'Remise à plat : annule l\'indexation 3+2 (B=0, C=0).'));
+  r32.appendChild(faoMini('Sur la pièce',function(){ faoPlaneStart(setup.id); },
+    'Cliquez une face sortante du modèle : les angles B/C sont calculés automatiquement depuis la normale de la face (vérifiez les sens de rotation).'));
   p.appendChild(r32);
   if((FAO_POSTS[setup.machine||setup.post]||{}).kind==='fagor'&&(O.b!==0||O.c!==0)){
     const w32=document.createElement('div');
@@ -1827,11 +1894,67 @@ function faoSetupFiche(p,setup){
   p.appendChild(rB);
   // Brut + bridage
   p.appendChild(faoH('Brut · bridage'));
+  // Source de la boîte : tous les corps (défaut), un seul corps, ou saisie manuelle.
+  const modeS=(setup.stockSrc==='body'||setup.stockSrc==='manual')?setup.stockSrc:'bodies';
+  const rSrc=faoRow();
+  rSrc.appendChild(faoLab('Source'));
+  rSrc.appendChild(faoSel([['bodies','Tous les corps'],['body','Corps choisi'],['manual','Manuel']],
+    modeS,function(v){
+      if(v==='manual'){ faoStock(); setup.stockSrc='manual'; } // fige la boîte courante
+      else{
+        setup.stockSrc=v;
+        if(v==='body'&&setup.stockBody==null){
+          const first=(typeof bodies!=='undefined'&&bodies?bodies:[])
+            .filter(function(b){return b&&!b.ghost&&b.mesh;})[0];
+          setup.stockBody=first?first.id:null;
+        }
+        faoStock();
+      }
+      if(typeof renderProps==='function')renderProps();
+    },
+    'D’où vient la boîte du brut : bbox des corps visibles (défaut), bbox d’un seul corps (barreau importé à côté du brut) ou boîte saisie à la main.'));
+  p.appendChild(rSrc);
+  if(modeS==='body'){
+    const rBd=faoRow();
+    rBd.appendChild(faoLab('Brut ='));
+    const bList=(typeof bodies!=='undefined'&&bodies?bodies:[])
+      .filter(function(b){return b&&!b.ghost&&b.mesh;});
+    if(bList.length){
+      rBd.appendChild(faoSel(bList.map(function(b){return [b.id,String(b.name||b.id)];}),
+        setup.stockBody!=null?setup.stockBody:bList[0].id,
+        function(v){ setup.stockBody=v; faoStock(); },
+        'Corps dont la boîte englobante (+ marge) sert de brut.'));
+    }else{
+      const nb=document.createElement('span');
+      nb.style.cssText='font-size:.72rem;color:#ff9f0a;';
+      nb.textContent='aucun corps visible — brut resté par défaut';
+      rBd.appendChild(nb);
+    }
+    p.appendChild(rBd);
+  }
+  if(modeS==='manual'){
+    const sM=(setup.stock&&[setup.stock.x0,setup.stock.y0,setup.stock.z0,
+      setup.stock.x1,setup.stock.y1,setup.stock.z1].every(isFinite))?setup.stock:faoStock();
+    const rM1=faoRow(), rM2=faoRow();
+    const mkM=function(k,lab,rr){
+      rr.appendChild(faoLab(lab));
+      rr.appendChild(faoNum(isFinite(+sM[k])?+sM[k]:0,function(v){
+        setup.stock=setup.stock||{}; setup.stock[k]=v;
+      },44));
+    };
+    mkM('x0','X0',rM1); mkM('y0','Y0',rM1); mkM('z0','Z0',rM1);
+    mkM('x1','X1',rM2); mkM('y1','Y1',rM2); mkM('z1','Z1',rM2);
+    p.appendChild(rM1); p.appendChild(rM2);
+    const nM=document.createElement('div');
+    nM.style.cssText='font-size:.68rem;color:rgba(255,255,255,.5);';
+    nM.textContent='Boîte manuelle (repère monde) — jamais recalculée automatiquement.';
+    p.appendChild(nM);
+  }
   const rS=faoRow();
   rS.appendChild(faoLab('Brut '+stock.x0.toFixed(0)+','+stock.y0.toFixed(0)+','+stock.z0.toFixed(0)
     +' → '+stock.x1.toFixed(0)+','+stock.y1.toFixed(0)+','+stock.z1.toFixed(0)+' · marge'));
   rS.appendChild(faoNum(setup.marge,function(v){ setup.marge=Math.max(0,v); faoStock(); },48));
-  rS.appendChild(faoMini('MAJ brut',function(){ faoStock(); }));
+  if(modeS!=='manual')rS.appendChild(faoMini('MAJ brut',function(){ faoStock(); }));
   p.appendChild(rS);
   const rF=faoRow();
   rF.appendChild(faoLab('Bridage'));
@@ -2933,6 +3056,65 @@ function faoSeedBottom(mesh){
   return bi;
 }
 
+/* ----- mode sélection : plan de travail 3+2 sur la pièce ----- */
+// Clic sur une face sortante : la normale (repère pièce) devient l'orientation
+// B/C de la table via faoOrientFromNormal ; une face tournée vers le bas est
+// refusée (pièce à retourner). One-shot : sortie auto après application.
+let faoPlanePick=null;
+function faoPlaneStart(setupId){
+  try{
+    if(typeof skEdit!=='undefined'&&skEdit){faceEl.textContent='Plan : fermez l\'esquisse d\'abord.';return;}
+    if((typeof filMode!=='undefined'&&filMode)||(typeof filModeX!=='undefined'&&filModeX)||
+       (typeof mvMode!=='undefined'&&mvMode)||(typeof draftMode!=='undefined'&&draftMode)||
+       (typeof coqueMode!=='undefined'&&coqueMode)||(typeof extPickFace!=='undefined'&&extPickFace)||
+       (typeof faoChainMode!=='undefined'&&faoChainMode)){
+      faceEl.textContent='Plan : quittez le mode en cours d\'abord.';return;
+    }
+    const bl=(typeof bodies!=='undefined'&&bodies)?bodies.filter(function(b){return b&&!b.ghost&&b.mesh;}):[];
+    if(!bl.length){faceEl.textContent='Plan : aucun corps à cliquer.';return;}
+    const setup=faoSetup(setupId);
+    if(!setup){faceEl.textContent='Plan : poste introuvable.';return;}
+    faoPlanePick={setupId:setup.id};
+    try{renderer.domElement.style.cursor='crosshair';}catch(e){}
+    faceEl.textContent='Plan 3+2 : cliquez une FACE SORTANTE de la pièce (Échap annule).';
+    if(typeof renderProps==='function')renderProps();
+  }catch(e){ try{faceEl.textContent='Plan : impossible ('+e.message+').';}catch(e2){} }
+}
+function faoPlaneCancel(silent){
+  faoPlanePick=null;
+  try{renderer.domElement.style.cursor='default';}catch(e){}
+  if(!silent){ try{ if(typeof renderProps==='function')renderProps(); }catch(e){} }
+}
+function faoPlaneCommit(e){
+  try{
+    if(!faoPlanePick)return;
+    const r=renderer.domElement.getBoundingClientRect();
+    const ndc=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
+    rayc.setFromCamera(ndc,camera);
+    const objs=bodies.filter(function(b){return b&&!b.ghost&&b.visible!==false&&b.mesh;})
+      .map(function(b){return b.mesh;});
+    const hits=objs.length?rayc.intersectObjects(objs,false):[];
+    if(!hits.length){faceEl.textContent='Plan : aucune face touchée, réessayez.';return;}
+    const h=hits[0];
+    const n=h.face&&h.face.normal;
+    if(!n){faceEl.textContent='Plan : face illisible, réessayez.';return;}
+    let nx=n.x,ny=n.y,nz=n.z;
+    try{
+      const v=new THREE.Vector3(n.x,n.y,n.z).transformDirection(h.object.matrixWorld);
+      nx=v.x;ny=v.y;nz=v.z;
+    }catch(e2){}
+    const o=faoOrientFromNormal(nx,ny,nz);
+    if(o.down){faceEl.textContent='Plan : face tournée vers le BAS — pièce à retourner (non appliquée).';return;}
+    const setup=faoSetup(faoPlanePick.setupId);
+    if(!setup){faceEl.textContent='Plan : poste introuvable, annulé.';faoPlaneCancel(true);return;}
+    faoSnapshot('plan sur la pièce');
+    setup.orient={b:o.b,c:o.c};
+    faoPlaneCancel(true);
+    faoChanged();
+    faceEl.textContent='Plan : B '+o.b+'° · C '+o.c+'° appliqués — vérifiez le sens de rotation de votre machine.';
+  }catch(err){ try{faceEl.textContent='Plan : impossible ('+err.message+').';}catch(e2){} }
+}
+
 /* ----- mode sélection : chaîne d'arêtes pour limite d'usinage ----- */
 // Germes cliqués (jaune) + tangentes déduites (rouge), comme les congés.
 // À la validation on SNAPSHOTE la boucle XY dans op.limit + les ancres des germes :
@@ -2944,7 +3126,8 @@ function faoChainStart(setupId,opId){
     if(typeof skEdit!=='undefined'&&skEdit){faceEl.textContent='Chaîne : fermez l\'esquisse d\'abord.';return;}
     if((typeof filMode!=='undefined'&&filMode)||(typeof filModeX!=='undefined'&&filModeX)||
        (typeof mvMode!=='undefined'&&mvMode)||(typeof draftMode!=='undefined'&&draftMode)||
-       (typeof coqueMode!=='undefined'&&coqueMode)||(typeof extPickFace!=='undefined'&&extPickFace)){
+       (typeof coqueMode!=='undefined'&&coqueMode)||(typeof extPickFace!=='undefined'&&extPickFace)||
+       (typeof faoPlanePick!=='undefined'&&faoPlanePick)){
       faceEl.textContent='Chaîne : quittez le mode en cours d\'abord.';return;
     }
     if(!occLive||!occLive.shape){

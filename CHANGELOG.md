@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**115 versions**, de `2026-09-28b` à `2026-10-01-007` — la plus récente en bas,
+**116 versions**, de `2026-09-28b` à `2026-10-01-008` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2253,3 +2253,15 @@ Correction d'un présupposé faux de la 005 (« Fagor averti, positionnement B/C
 Tests : `test_fao.cjs` — golden Fagor repris : `!/G0 B/` (aucun B/C émis), pas de `TRAORI(1)`, warns=1 avec `machine 3 axes` + `IGNORÉE`, commentaire en tête avec `B/C NON commandés` ; nouveau test fiche : machine Fagor + B45 → alerte « machine 3 axes » / « IGNORÉE » visible (restauration machine/orient ensuite). Suite 19/19 verte.
 
 README : ligne post-processeurs mise à jour (Fagor = 3 axes, indexation refusée).
+
+### 2026-10-01-008
+
+**FAO 3 demandes : plan de travail 3+2 cliqué sur la pièce, brut en 3 sources, surfaçage passes + écart liés.**
+
+1. **Plan sur la pièce (3+2)** : bouton « Sur la pièce » dans le rang 3+2 de la fiche → mode pointeur (curseur croix, Échap annule, exclusif avec les autres modes) ; clic sur une **face sortante** → normale (`hit.face.normal` transformée par `matrixWorld`) → `faoOrientFromNormal(nx,ny,nz)` pur : `C = atan2(−ny,nx)`, `r = hypot(nx,ny)`, `B = atan2(−r,nz)` (degrés, règle main droite, arrondi 0,01°). Face tournée vers le **bas** (`nz<0`) : refusée avec message « pièce à retourner » (aucune modification). Application : snapshot annulable + `setup.orient={b,c}` + message de vérification des sens machine (conventions non vérifiables depuis le CAD). `{0,0}` (face +Z) = aucun changement, 3 axes bit à bit intact.
+2. **Brut en 3 sources** (`setup.stockSrc`) : **Tous les corps** (défaut, inchangé — bbox des corps visibles + marge), **Corps choisi** (`setup.stockBody` — bbox d'un seul corps, pour un barreau importé à côté du brut ; corps introuvable → repli mémorisé), **Manuel** (6 champs `X0..Z1` repère monde, **jamais recalculé** ; bascule en manuel fige la boîte courante, « MAJ brut » masqué). Fiche « Brut · bridage » : rang Source (select 3 modes) + select Corps ou hint « aucun corps visible » + 2 rangs de 3 champs numériques.
+3. **Surfaçage : Passes ET écart liés** : `op.np≥2` pilote le générateur (`ae = H/(np−1)`, `H = (y1−y0)+Ø`, écart exact → **couverture totale garantie**, dernière passe alignée sur la lisière) ; `np` absent/null → pilotage par `ae` (**rétrocompat totale**, golden `facing=34` inchangé). Champs carte op liés : saisir **Passes** recalcule l'écart, saisir **écart** efface `np` (le nombre affiché devient le compte de lignes, écarts voisins égaux + dernière raccourcie). Helpers pures `faoFacingAe(stock,D,np)` / `faoFacingCount(stock,D,ae)` (même logique de boucle que le générateur).
+
+Tests : `test_fao.cjs` — `faoOrientFromNormal` (+Z→B0 C0, +X→B−90 C0, +Y→B−90 C−90, normalisation, face basse→down), garde plan sans corps + annulation + exclusivité chaîne, bouton fiche présent ; brut : mode défaut/mémoire, manuel stable à chaque appel, corps choisi introuvable→repli, UI Source 3 options, 2 rangs X0..Z1, « MAJ brut » masqué en manuel, saisie X0 appliquée, hint corps absent ; surfaçage : `faoFacingAe(3)=45`/`np<2=null`, `faoFacingCount(45)=3`/`(6)=16`, générateur np=3 → lignes y=−5/40/85, sans np → lignes = `faoFacingCount`, `faoOpMoves` np=3→3 niveaux / np absent→compat, carte Passes/écart liés (Passes=3 → écart recalculé ; écart=7 → np effacé). Suite 19/19 verte, `facing=34 pocket=65 contour=7 drill=8` intact.
+
+README : posages (bouton « Sur la pièce »), brut 3 sources, surfaçage passes/écart documentés.
