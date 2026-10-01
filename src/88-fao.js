@@ -1404,8 +1404,292 @@ function faoRefreshPreview(){
       mk(mv);
     });
     scene.add(faoPrevGroup);
+    if(typeof faoVw!=='undefined'&&faoVw)faoPrevGroup.visible=false; // viewer : traces restent cachées
   }catch(e){}
   return total;
+}
+
+/* ================= viewer d'usinage (brut + outil, ▶ lecture / ⏸ pause / ⏹ stop) =================
+   Cache les traces, fait apparaître la boîte du brut (+ le corps-brut masqué s'il y en a un),
+   anime l'outil le long du parcours et dessine la trace au fil de l'eau. */
+let faoVw=null, faoVwBar=null, faoVwBarT=null;
+
+function faoViewerBuild(setup){
+  // Séquence complète du posage : points (arcs développés), Ø outil par point,
+  // temps cumulé réel (coupe = feed outil, rapide = G0) — pur, testable sans scène.
+  const pts=[], dd=[], times=[]; // times[i] = temps cumulé EN ARRIVANT au point i
+  let total=0;
+  ((setup&&setup.ops)||[]).forEach(function(op){
+    if(!op||op.on===false)return;
+    const tool=faoToolById(setup,op.toolId);
+    const d=(tool&&isFinite(+tool.d)&&+tool.d>0)?+tool.d:10;
+    const sf=tool?faoToolSF(tool,setup):null;
+    const f=(sf&&isFinite(+sf.f)&&+sf.f>0)?+sf.f:1000;
+    const mv=faoOpMoves(op,setup)||[];
+    const ext=[]; let pv=null; // arcs développés (tracé lisse)
+    mv.forEach(function(m){
+      if(pv&&!pv.r&&m.arc){ try{ faoArcSegs(pv,m).forEach(function(q){ ext.push({x:q[0],y:q[1],z:q[2],r:0}); }); }catch(e){} }
+      ext.push(m); pv=m;
+    });
+    let prev=null;
+    ext.forEach(function(m){
+      pts.push({x:+m.x||0, y:+m.y||0, z:+m.z||0, r:m.r?1:0});
+      dd.push(d);
+      if(prev){
+        const len=faoSegLen(prev,m);
+        const v=m.r?faoRapide(setup):f;
+        total+=len/((isFinite(v)&&v>0?v:600)/60);
+      }
+      times.push(total);
+      prev=m;
+    });
+  });
+  return {pts:pts, dd:dd, times:times, T:total};
+}
+function faoViewerSeek(vw,t){
+  // Position à l'instant t (linéaire entre les points, idx incrémental + retour arrière).
+  const n=vw.pts.length;
+  if(!n)return null;
+  let i=Math.min(vw.idx||0, n-1);
+  while(i<n-1&&vw.times[i+1]<=t)i++;
+  while(i>0&&vw.times[i]>t)i--;
+  vw.idx=i;
+  if(t>=vw.T){ const p=vw.pts[n-1]; return {i:n-1,f:0,x:p.x,y:p.y,z:p.z,r:p.r,d:vw.dd[n-1],done:true}; }
+  if(t<=0){ const p=vw.pts[0]; return {i:0,f:0,x:p.x,y:p.y,z:p.z,r:p.r,d:vw.dd[0],done:false}; }
+  const t0=vw.times[i], t1=vw.times[i+1];
+  const f=(t1>t0)?Math.max(0,Math.min(1,(t-t0)/(t1-t0))):0;
+  const a=vw.pts[i], b=vw.pts[i+1];
+  return {i:i,f:f,x:a.x+(b.x-a.x)*f, y:a.y+(b.y-a.y)*f, z:a.z+(b.z-a.z)*f, r:b.r, d:vw.dd[i+1], done:false};
+}
+function faoViewerApply(){
+  const vw=faoVw; if(!vw)return;
+  const p=faoViewerSeek(vw,vw.t);
+  if(!p)return;
+  vw.drawn=Math.min(p.i+2,vw.pts.length); // points de la trace dessinés
+  if(vw.tool){
+    vw.tool.position.x=p.x; vw.tool.position.y=p.y; vw.tool.position.z=p.z;
+    const d=(isFinite(p.d)&&p.d>0)?p.d:10;
+    if(vw.toolBody){ vw.toolBody.scale.x=d; vw.toolBody.scale.z=d; }   // Ø réel
+    if(vw.toolHold){ vw.toolHold.scale.x=d*1.6; vw.toolHold.scale.z=d*1.6; }
+  }
+  if(vw.line){ // trace progressive : 2 points encadrants (réel + interpolé)
+    try{
+      const pos=vw.line.geometry&&vw.line.geometry.attributes&&vw.line.geometry.attributes.position;
+      const arr=pos&&pos.array;
+      if(arr&&arr.length>0&&arr.length>=6){
+        const i=p.i;
+        arr[3*i]=vw.pts[i].x; arr[3*i+1]=vw.pts[i].y; arr[3*i+2]=vw.pts[i].z;
+        if(i+1<vw.pts.length){ arr[3*i+3]=p.x; arr[3*i+4]=p.y; arr[3*i+5]=p.z; }
+        pos.needsUpdate=true;
+        vw.line.geometry.setDrawRange(0,Math.min(i+2,vw.pts.length));
+      }
+    }catch(e){}
+  }
+}
+function faoViewerToolCreate(){
+  // Groupe outil : fraisier Ø1×H1 (axe local Y, rotation 90° → vertical) + mandrin.
+  // La base du fraisier (= pointe) est au z=0 du groupe → on pose le groupe au point.
+  const H=30;
+  const g=new THREE.Group(); g.name='faoViewerTool';
+  let body=null, hold=null;
+  try{
+    body=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,1,20),
+      new THREE.MeshPhongMaterial({color:0x9ad1ff,flatShading:true,emissive:0x112f4d}));
+    body.raycast=function(){};
+    body.rotation.x=Math.PI/2;
+    body.scale.x=10; body.scale.y=H; body.scale.z=10;
+    body.position.z=H/2;
+    g.add(body);
+    hold=new THREE.Mesh(new THREE.CylinderGeometry(0.9,0.9,1,16),
+      new THREE.MeshPhongMaterial({color:0x676c75,flatShading:true}));
+    hold.raycast=function(){};
+    hold.rotation.x=Math.PI/2;
+    hold.scale.x=16; hold.scale.y=12; hold.scale.z=16;
+    hold.position.z=H+6;
+    g.add(hold);
+  }catch(e){}
+  return {group:g, body:body, hold:hold, H:H};
+}
+function faoViewerStockCreate(){
+  // Boîte du brut (semi-transparente + arêtes) : la bbox sert de « pièce à usiner ».
+  const s=faoStock();
+  if(!faoStockValid(s))return null;
+  const g=new THREE.Group(); g.name='faoViewerStock';
+  try{
+    const bg=new THREE.BoxGeometry(s.x1-s.x0, s.y1-s.y0, s.z1-s.z0);
+    const mat=function(){ return new THREE.MeshBasicMaterial({color:0xffd60a,transparent:true,opacity:.12,depthWrite:false}); };
+    const box=new THREE.Mesh(bg,mat());
+    box.raycast=function(){};
+    box.position.x=(s.x0+s.x1)/2; box.position.y=(s.y0+s.y1)/2; box.position.z=(s.z0+s.z1)/2;
+    g.add(box);
+    try{
+      const e=new THREE.LineSegments(new THREE.EdgesGeometry(bg),new THREE.LineBasicMaterial({color:0xffd60a}));
+      e.position.x=box.position.x; e.position.y=box.position.y; e.position.z=box.position.z;
+      g.add(e);
+    }catch(e2){}
+  }catch(e){}
+  return g;
+}
+function faoViewerLineCreate(vw){
+  // Polyline continue, couleur par vertex : vert = coupe, rouge = rapide.
+  const pos=[], col=[];
+  vw.pts.forEach(function(p,i){
+    pos.push(p.x,p.y,p.z);
+    const c=(i>0&&p.r)?0xff453a:0x30d158;
+    col.push(((c>>16)&255)/255, ((c>>8)&255)/255, (c&255)/255);
+  });
+  try{
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(pos),3));
+    g.setAttribute('color',new THREE.BufferAttribute(new Float32Array(col),3));
+    const l=new THREE.Line(g,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.95}));
+    l.name='faoViewerLine'; l.raycast=function(){};
+    return l;
+  }catch(e){ return null; }
+}
+function faoViewerOpen(){
+  if(faoVw)return true;
+  const b=faoViewerBuild(faoSetup());
+  if(!b.pts.length||!(b.T>0))return false; // aucune opération jouable
+  const vw={pts:b.pts, dd:b.dd, times:b.times, T:b.T, t:0, idx:0, drawn:0,
+    playing:false, speed:1, prevVis:true, body:null, tool:null, toolBody:null,
+    toolHold:null, line:null, stock:null, toolH:30, _last:0, _looping:false};
+  faoVw=vw;
+  // 1) traces cachées (non destructif : juste .visible=false)
+  try{ if(faoPrevGroup){ vw.prevVis=faoPrevGroup.visible!==false; faoPrevGroup.visible=false; } }catch(e){}
+  // 2) le brut apparaît : box du stock + corps-brut masqué (v009) ré-affiché
+  try{ vw.stock=faoViewerStockCreate(); if(vw.stock)scene.add(vw.stock); }catch(e){}
+  try{
+    const fs=faoSetup();
+    if(fs&&fs.stockSrc==='body'&&fs.stockBody!=null){
+      const b2=(typeof bodies!=='undefined'&&bodies?bodies:[]).filter(function(x){return x&&x.id===fs.stockBody;})[0];
+      if(b2&&b2.mesh&&b2.mesh.visible===false&&doc.bodyVis&&doc.bodyVis[b2.id]===false){
+        vw.body=b2; b2.visible=true; b2.mesh.visible=true;
+      }
+    }
+  }catch(e){}
+  // 3) outil + trace progressive
+  try{
+    const T=faoViewerToolCreate();
+    vw.tool=T.group; vw.toolBody=T.body; vw.toolHold=T.hold; vw.toolH=T.H;
+    if(vw.tool)scene.add(vw.tool);
+  }catch(e){}
+  try{ vw.line=faoViewerLineCreate(vw); if(vw.line)scene.add(vw.line); }catch(e){}
+  // 4) barre transporteur ▶ ⏸ ⏹ ✕
+  try{ faoViewerBarShow(); }catch(e){}
+  faoViewerApply();
+  faoViewerBarUpdate();
+  return true;
+}
+function faoViewerClose(){
+  const vw=faoVw;
+  if(!vw)return;
+  faoVw=null;
+  try{ if(vw.prevVis!==false&&faoPrevGroup)faoPrevGroup.visible=true; }catch(e){}
+  try{ // le corps-brut masqué redevient invisible (on ne défait que ce qu'on a fait)
+    if(vw.body&&doc.bodyVis&&doc.bodyVis[vw.body.id]===false){ vw.body.visible=false; vw.body.mesh.visible=false; }
+  }catch(e){}
+  try{ if(vw.stock)scene.remove(vw.stock); }catch(e){}
+  try{ if(vw.tool)scene.remove(vw.tool); }catch(e){}
+  try{ if(vw.line)scene.remove(vw.line); }catch(e){}
+  try{ if(faoVwBar)faoVwBar.style.display='none'; }catch(e){}
+}
+function faoViewerStart(){
+  if(faoVw&&faoVw.playing)return true;
+  if(!faoVw&&!faoViewerOpen())return false;
+  return faoViewerPlay();
+}
+function faoViewerPlay(){
+  const vw=faoVw; if(!vw)return false;
+  if(vw.t>=vw.T)vw.t=0;
+  vw.playing=true; vw._last=0;
+  if(!vw._looping){ vw._looping=true; faoViewerLoop(); }
+  faoViewerBarUpdate();
+  return true;
+}
+function faoViewerPause(){
+  if(!faoVw)return;
+  faoVw.playing=false;
+  faoViewerBarUpdate();
+}
+function faoViewerStop(){
+  const vw=faoVw; if(!vw)return;
+  vw.t=0; vw.idx=0; vw.playing=false;
+  faoViewerApply();
+  faoViewerBarUpdate();
+}
+function faoViewerAdvance(dt){
+  // Avance logique : secondes réelles × vitesse — pur (rAF + tests).
+  const vw=faoVw;
+  if(!vw||!vw.playing)return false;
+  const d=+dt;
+  if(isFinite(d)&&d>0)vw.t+=d*(vw.speed||1);
+  if(vw.t>=vw.T){ vw.t=vw.T; vw.playing=false; }
+  faoViewerApply();
+  faoViewerBarUpdate();
+  return true;
+}
+function faoViewerLoop(){
+  const vw=faoVw;
+  if(!vw){ return; }
+  if(!vw.playing){ vw._looping=false; return; }
+  let now=0;
+  try{ now=(typeof performance!=='undefined'&&performance.now)?performance.now():Date.now(); }catch(e){ now=Date.now(); }
+  const dt=vw._last?Math.min(0.25,(now-vw._last)/1000):0;
+  vw._last=now;
+  faoViewerAdvance(dt);
+  if(faoVw&&faoVw.playing&&typeof requestAnimationFrame==='function')requestAnimationFrame(faoViewerLoop);
+  else if(faoVw)vw._looping=false;
+}
+function faoViewerFmt(sec){
+  const s=Math.max(0,Math.floor(+sec||0));
+  const m=Math.floor(s/60);
+  return (m<10?'0':'')+m+':'+((s%60)<10?'0':'')+(s%60);
+}
+function faoViewerBarShow(){
+  if(faoVwBar){ faoVwBar.style.display='flex'; return; }
+  try{
+    const mk=function(t,title,fn){
+      const b=document.createElement('button'); b.textContent=t;
+      b.style.fontSize='.85rem'; b.title=title;
+      if(fn)b.onclick=fn;
+      return b;
+    };
+    const bar=document.createElement('div'); bar.id='faoViewerBar';
+    bar.style.cssText='position:absolute;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:6px;align-items:center;'
+      +'background:rgba(18,20,24,.94);border:1px solid rgba(255,255,255,.16);border-radius:10px;padding:6px 10px;'
+      +'z-index:30;font-size:.78rem;color:#fff;box-shadow:0 4px 18px rgba(0,0,0,.45);';
+    bar.appendChild(mk('▶','Lecture — en fin de parcours : pause automatique',function(){ faoViewerPlay(); }));
+    bar.appendChild(mk('⏸','Pause',function(){ faoViewerPause(); }));
+    bar.appendChild(mk('⏹','Stop : revient au début du parcours',function(){ faoViewerStop(); }));
+    bar.appendChild(mk('✕','Fermer : ré-affiche les traces, masque le brut et l\'outil',function(){ faoViewerClose(); }));
+    const t=document.createElement('span');
+    t.style.cssText='font-family:monospace;min-width:118px;text-align:center;color:rgba(255,255,255,.85);';
+    t.textContent='00:00 / 00:00';
+    bar.appendChild(t); faoVwBarT=t;
+    const sp=document.createElement('select');
+    sp.title='Vitesse de lecture (× temps réel)';
+    sp.style.fontSize='.75rem';
+    [[1,'×1'],[2,'×2'],[5,'×5'],[10,'×10'],[20,'×20']].forEach(function(o){
+      const op=document.createElement('option'); op.value=o[0]; op.textContent=o[1]; sp.appendChild(op);
+    });
+    sp.onchange=function(){ if(faoVw)faoVw.speed=(+sp.value>0)?+sp.value:1; };
+    bar.appendChild(sp);
+    const host=document.getElementById('vpwrap')||document.body;
+    host.appendChild(bar);
+    faoVwBar=bar;
+  }catch(e){}
+}
+function faoViewerBarUpdate(){
+  try{
+    if(!faoVwBar)return;
+    if(!faoVw){ faoVwBar.style.display='none'; return; }
+    faoVwBar.style.display='flex';
+    if(faoVwBarT){
+      const pct=faoVw.T>0?Math.round(100*faoVw.t/faoVw.T):100;
+      faoVwBarT.textContent=faoViewerFmt(faoVw.t)+' / '+faoViewerFmt(faoVw.T)+' · '+pct+'%';
+    }
+  }catch(e){}
 }
 
 /* ================= interface (bouton + panneau flottant) ================= */
@@ -2126,7 +2410,14 @@ function faoSetupFiche(p,setup){
   tg.onclick=function(){ faoPrevOn=!faoPrevOn; if(!faoPrevOn)faoClearPreview(); else faoRefreshPreview(); faoRefreshFaoUI(); };
   const be=document.createElement('button'); be.textContent='Exporter G-code'; be.style.fontSize='.78rem';
   be.onclick=function(){ faoExport(); };
-  r5.appendChild(bg); r5.appendChild(tg); r5.appendChild(be); p.appendChild(r5);
+  const bvw=document.createElement('button'); bvw.textContent='▶ Usinage'; bvw.style.fontSize='.78rem';
+  bvw.title='Viewer d\'usinage : cache les traces, fait apparaître le brut, anime l\'outil le long du parcours — barre ▶ ⏸ ⏹ ✕ en bas de la vue.';
+  bvw.onclick=function(){
+    if(faoVw&&faoVw.playing)faoViewerPause();
+    else if(faoVw)faoViewerPlay();
+    else faoViewerStart();
+  };
+  r5.appendChild(bg); r5.appendChild(tg); r5.appendChild(be); r5.appendChild(bvw); p.appendChild(r5);
   const st=document.createElement('div');
   st.style.cssText='font-family:monospace;font-size:.7rem;color:rgba(255,255,255,.7);white-space:pre-wrap;';
   st.textContent=faoStatsText();

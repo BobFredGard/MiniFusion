@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**119 versions**, de `2026-09-28b` à `2026-10-01-011` — la plus récente en bas,
+**120 versions**, de `2026-09-28b` à `2026-10-01-012` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2303,3 +2303,16 @@ README : surfaçage — « + « pz » : passes en Z / brut — ap = (Z1−Z)/pz 
 Tests : `test_fao.cjs` — carte sans champ Passes (`!npF && !!aeF`), libellé `16 lignes` en lecture seule, saisie `écart=7` respectée, document ancien `np=3` affiche `45` + `3 lignes`, saisie de l'écart bascule (`ae=7, np=null`). Suites logiques 008 (générations np) inchangées. Suite 19/19 verte, golden `facing=34` intact.
 
 README : surfaçage — « 'écart' : seul paramètre de recouvrement XY, nombre de lignes en lecture seule, ancien champ 'Passes' supprimé ».
+
+### 2026-10-01-012
+
+**FAO : ▶ Viewer d'usinage — le brut, l'outil et la trace animés, avec lecture / pause / stop.**
+
+1. **Bouton « ▶ Usinage »** (fiche posage, rangée « Générer + aperçu ») : toggle lecture/pause. **Au lancement** : (a) les **traces sont cachées** (`faoPrevGroup.visible=false`, non destructif — restauration exacte à la fermeture, et tout regénéré pendant le viewer reste caché), (b) **le brut apparaît** : boîte `faoStock()` semi-transparente + arêtes (or), et si un corps est masqué comme brut (v009) il **réapparaît** pendant la séance (re-masqué au close, `doc.bodyVis` inchangé), (c) l'**outil** est créé (fraisier Ø1×30 mm vertical pointe en bas, mandrin, `raycast` off) + la **trace progressive** se dessine au fil de l'eau (polyline continue, couleur par vertex : vert coupe / rouge rapide, `setDrawRange` avançant), (d) la **barre transporteur** apparaît.
+2. **Barre flottante** (bas de la vue, `#faoViewerBar`) : **▶ lecture · ⏸ pause · ⏹ stop** (retour au début) · **✕ fermer** (tout restaure), temps `mm:ss / mm:ss · %`, **vitesse ×1…×20**. rAF autonome (dt plafonné à 0,25 s), **pause automatique en fin de parcours**.
+3. **Logique pure** : `faoViewerBuild(setup)` — points (arcs développés via `faoArcSegs`), Ø outil par point, **temps cumulés réels** (coupe = `faoToolSF().f`, rapide = `faoRapide()`, longueurs = `faoSegLen`) ; `faoViewerSeek(state,t)` — interpolation linéaire + idx incrémental **avec retour arrière** ; `faoViewerAdvance(dt)` — avance ×vitesse, plafond `T` → pause. Ops `on===false` ignorées.
+4. `faoRefreshPreview` force `visible=false` du groupe si un viewer tourne (aucune réapparition de traces).
+
+Tests : `test_fao.cjs` — build (points, `times.length===pts.length`, `T>0`), seek (t=0 / 50% / fin `done` / retour arrière réinitialise l'idx), aucune op → rien à jouer, ouverture (lecture, traces cachées, brut+outil+trace+barre), avance ×1 exacte, `drawn≥2, outil sur le parcours (bornes élargies), pause qui fige, vitesse ×5, fin auto (`t===T`, trace complète), stop au départ, fermeture (état libéré, traces restaurées, barre masquée). Suite 19/19 verte, golden `facing=34` intact.
+
+README : post-processeurs — « ▶ Viewer d'usinage : cache les traces, affiche le brut, anime l'outil + trace au fil de l'eau, barre ▶⏸⏹✕ avec vitesse ×1 à ×20 ».
