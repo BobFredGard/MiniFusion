@@ -139,6 +139,8 @@ python -m http.server 3000
 | `build.js` | Assemble `src/*.js` → `fusion_mvp.html`. `node build.js --check` échoue si le livrable est périmé |
 | `occt/` | Noyau OpenCascade WebAssembly (~111 Mo) + ses `.bak` locaux (non suivis) |
 | `threejs/` | Rendu 3D (three.js), OrbitControls, CSG |
+| `PostPro/` | Post-processeurs G-code : **Siemens 840D** (variantes 630 / 1520) et **Fagor 8065** |
+| `tests/` | Suite Node portable (harnais `appvm.cjs` + 19 suites + fixtures) : `node tests/run.cjs` ou `npm test` |
 | `Backup/` | Snapshots des versions vertes |
 | `Server.bat` | Lancement local (npx serve, port 3000) |
 
@@ -153,8 +155,12 @@ n'a qu'un fichier à ouvrir.
 # 1. éditer un fichier de src/ (jamais fusion_mvp.html)
 # 2. reconstruire le livrable
 node build.js
-# 3. vérifier que le livrable est à jour (à mettre en CI)
+# 3. régression verte (harnais + 19 suites)
+npm test
+# 4. bump APP_VER (src/00-entete-et-outils.js) + entrée CHANGELOG.md
+# 5. vérifier que le livrable est à jour (à mettre en CI)
 node build.js --check
+# 6. snapshot Backup/ puis push
 ```
 
 | Fichier de `src/` | Contenu |
@@ -199,7 +205,7 @@ fichier unique (voir « Travailler sur le code »).
 
 ## Où en est le projet
 
-MVP fonctionnel — version **2026-09-32m** (CAO + FAO fraisage 2.5D/3D avec G-code Siemens/Fagor). Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), cycles de perçage `CYCLE81`/`G81`, 3+2 / 5 axes.
+MVP fonctionnel — version **2026-09-32n** (CAO + FAO fraisage 2.5D/3D avec G-code Siemens/Fagor). Pistes envisagées : sauvegarde paramétrique complète des imports STEP (rejeu), mode bureau (Electron déjà en dépendance de dev), cycles de perçage `CYCLE81`/`G81`, 3+2 / 5 axes.
 
 > **Note contributeurs** : les anciennes zones gelées (sketch, contraintes, congés, antériorité) sont **dégelées depuis le 2026-09-29** — modification libre sous la discipline projet : on édite **`src/*.js`** (jamais `fusion_mvp.html`, qui est généré) → `node build.js` → régression verte → bump `APP_VER` + **entrée dans [`CHANGELOG.md`](CHANGELOG.md)** → `node build.js --check` → snapshot `Backup/` → push. `node build.js --check` échoue si le livrable est périmé : impossible d'oublier de reconstruire. Seul le noyau exact OCCT (`occApplyXFillets`, `occFinalShape`) demande une validation navigateur : il n'est pas entièrement couvert par le harnais. **Versions depuis le 2026-10-01 : `AAAA-MM-JJ-NNN`** (date réelle + compteur quotidien à 001 — voir bloc VERSIONS en tête de `src/00-entete-et-outils.js`).
 

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**87 versions**, de `2026-09-28b` à `2026-09-31s` — la plus récente en bas,
+**108 versions**, de `2026-09-28b` à `2026-09-32n` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
