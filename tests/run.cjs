@@ -26,7 +26,10 @@ const SUITES = [
   "test_precision_affichage",
   "test_fao_lock",
   "test_bool_import",
-  "test_ctx_step"
+  "test_ctx_step",
+  "test_fao_reset",
+  "test_fao_passes",
+  "test_fao_barre3d"
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {

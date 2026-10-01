@@ -115,6 +115,7 @@ if($('btnNew'))$('btnNew').onclick=()=>{
   try{exitFilletMode(true);}catch(e){}
   if(skEdit)closeSketch(false);
   doc={name:'Sans titre',tint:0,sketches:[],features:[],bodyVis:{},bodies:[],bodySeq:1,activeBody:null};
+  try{ if(typeof faoReset==='function')faoReset(); }catch(e){} // FAO : traces, posages et mode lecture à zéro
   sel={kind:null,id:null};selFaces=[];fileHandle=null;uidN=0;builtHash=null;builtEngine=null;builtVersion=-1;
   try{occCkClear();}catch(e){}
   markDirty();rebuild();renderProps();showAll();

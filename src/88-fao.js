@@ -72,8 +72,6 @@ const FAO_VER='32j';
       +'border:1px solid rgba(255,255,255,.1);border-left:3px solid rgba(10,132,255,.6);'
       +'border-radius:9px;padding:8px 9px;margin:6px 0}'
       +'.fao-card:hover{border-color:rgba(255,255,255,.18)}'
-      /* --- séparateur fin (info hors carte) --- */
-      +'.fao-sep{height:1px;background:rgba(255,255,255,.08);margin:9px 0;flex-basis:100%}'
       /* --- alertes (alerte orange, faible densité, jamais brut) --- */
       +'.fao-alert{font-size:.7rem;color:#ff9f0a;line-height:1.4;padding:5px 8px;'
       +'border-radius:7px;background:rgba(255,159,10,.1);border:1px solid rgba(255,159,10,.35);margin:5px 0}'
@@ -103,6 +101,9 @@ const FAO_VER='32j';
       +'.fao-setup{font-weight:700;font-size:.76rem;margin:7px 0 3px;cursor:pointer;'
       +'padding:4px 7px;border-radius:7px;display:flex;gap:6px;align-items:center}'
       +'.fao-setup:hover{background:rgba(255,255,255,.07)}'
+      +'.fao-setup .fao-tri{cursor:pointer;user-select:none;opacity:.72;font-size:.58rem;'
+      +'padding:0 3px;border-radius:4px}'
+      +'.fao-setup .fao-tri:hover{background:rgba(255,255,255,.12);opacity:1}'
       +'.fao-op{display:flex;gap:6px;align-items:center;padding:4px 7px 4px 14px;'
       +'border-radius:7px;cursor:pointer;font-size:.76rem}'
       +'.fao-op:hover{background:rgba(255,255,255,.07)}'
@@ -126,13 +127,27 @@ const FAO_VER='32j';
       +'.fao-actions button.primary{background:#0a84ff;border-color:#0a84ff;color:#fff;font-weight:600}'
       +'.fao-gen{display:block;width:100%;margin-top:6px;font-size:.74rem;'
       +'background:#0a84ff;border-color:#0a84ff;color:#fff;font-weight:600}'
-      +'.fao-addgrid{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:9px}'
-      +'.fao-addgrid button{font-size:.68rem;padding:5px 4px;white-space:nowrap}'
-      /* --- panneau flottant de l'arbre FAO --- */
-      +'#faoTreeWrap{position:absolute;top:52px;right:10px;z-index:20;width:244px;'
-      +'max-height:calc(100% - 130px);overflow-y:auto;padding:10px 11px;border-radius:13px;'
-      +'background:rgba(16,18,22,.9);border:1px solid rgba(255,255,255,.14);color:#e9e9ec;'
-      +'font-size:.78rem;backdrop-filter:blur(9px);box-shadow:0 16px 38px rgba(0,0,0,.5)}'
+      /* --- barre des 7 +usinage : même pilule que #viewbar, sur la vue 3D --- */
+      +'.fao-addbar{display:flex;gap:5px;align-items:center;margin:10px 0 0 8px;padding:4px 6px;'
+      +'border-radius:10px;background:rgba(16,18,22,.78);border:1px solid rgba(255,255,255,.13);'
+      +'backdrop-filter:blur(7px)}'
+      +'.fao-addbar .fao-addlab{font-size:.66rem;font-weight:700;letter-spacing:.05em;'
+      +'text-transform:uppercase;color:#fff;opacity:.85;padding:0 4px 0 2px;white-space:nowrap}'
+      +'.fao-addbar button{padding:3px 9px;font-size:.76rem;white-space:nowrap}'
+      +'.fao-addbar button:hover{border-color:#0a84ff;background:rgba(10,132,255,.2)}'
+      /* --- panneau flottant de l'arbre FAO : contenu + onglet de repli (procédé
+             identique à l'arbre des corps — le panneau se rabat sur sa droite) --- */
+      +'#faoTreeWrap{position:absolute;top:52px;right:10px;z-index:20;display:flex;'
+      +'flex-direction:row-reverse;align-items:flex-start;font-size:.78rem}'
+      +'#faoTreeWrap .fao-cnt{width:244px;max-height:calc(100vh - 150px);overflow-y:auto;'
+      +'padding:10px 11px;border-radius:13px;background:rgba(16,18,22,.9);'
+      +'border:1px solid rgba(255,255,255,.14);color:#e9e9ec;'
+      +'backdrop-filter:blur(9px);box-shadow:0 16px 38px rgba(0,0,0,.5)}'
+      +'#faoToggle{min-width:22px;height:62px;margin:10px 0 0 4px;padding:0 3px;'
+      +'font-size:.8rem;border-radius:0 10px 10px 0;background:rgba(16,18,22,.9);'
+      +'border:1px solid rgba(255,255,255,.13);color:#e9e9ec}'
+      +'#faoToggle:hover{background:rgba(10,132,255,.3)}'
+      +'#faoTreeWrap.folded .fao-cnt{display:none}'
       +'.fao-title{display:flex;align-items:center;gap:7px;margin:0 0 7px;font-size:.72rem;'
       +'font-weight:700;color:#fff;letter-spacing:.05em;text-transform:uppercase}'
       +'.fao-title::before{content:"";width:6px;height:6px;border-radius:50%;background:#0a84ff;'
@@ -1746,10 +1761,13 @@ function faoMatterGrid(s,pas){
           sx1:sx1,sy1:sy1,sz1:sz1,full:full};
 }
 function faoMatterIdx(g,ix,iy,iz){ return (iz*g.ny+iy)*g.nx+ix; }
-function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r){
+function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r,outCols){
   // Enlève les voxels dont le CENTRE est à distance ≤ r du segment XY (2D)
   // et z ≥ min(az,bz)−pas/2 : la matière SOUS la pointe reste. Retourne les indices tués.
   // Z-map : la hauteur de colonne descend à la cote de coupe EXACTE min(az,bz).
+  // outCols (optionnel) : reçoit les colonnes TOUCHÉES en XY, tuées ou non — le mesh
+  // doit être réécrit pour elles même quand aucun voxel ne meurt (cote entre deux
+  // centres : c'était le gel « la passe suivante n'enlève rien à l'écran »).
   const out=[];
   if(!g||!(r>0))return out;
   const zc=Math.min(az,bz);
@@ -1762,7 +1780,7 @@ function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r){
   const k0=Math.max(0,Math.floor((zmin-g.oz)/g.pas)), k1=g.nz-1;
   const dx=bx-ax, dy=by-ay, L2=dx*dx+dy*dy, r2=r*r;
   const nc=g.nx*g.ny;
-  const tc=g.h?new Uint8Array(nc):null;
+  const tc=(g.h||outCols)?new Uint8Array(nc):null;
   const z2=g.h?(zc>g.oz?zc:g.oz):0;
   // Test XY UNE fois par colonne (le segment balaye toute la hauteur de la colonne).
   for(let j=j0;j<=j1;j++){
@@ -1778,7 +1796,7 @@ function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r){
       // voxel vivant n'est tué (cote entre deux centres de voxels, ou colonne déjà
       // vidée par la passe précédente) — c'était le gel « certaines passes
       // n'enlèvent rien » (alternance OK/KO au fil des passes).
-      if(tc){ const c=j*g.nx+i; if(!tc[c]){ tc[c]=1; if(z2<g.h[c])g.h[c]=z2; } }
+      if(tc){ const c=j*g.nx+i; if(!tc[c]){ tc[c]=1; if(g.h&&z2<g.h[c])g.h[c]=z2; if(outCols)outCols.push(c); } }
       for(let k=k0;k<=k1;k++){
         const pz=g.oz+(k+0.5)*g.pas;
         if(pz<zmin)continue;
@@ -1790,7 +1808,7 @@ function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r){
   }
   return out;
 }
-function faoMatterCarveTo(g,pts,dd,times,t){
+function faoMatterCarveTo(g,pts,dd,times,t,outCols){
   // Rattrapage 0 → t : segments complets + segment en cours interpolé (points d'arrivée en coupe).
   const out=[];
   if(!g||!pts||pts.length<2||!(t>0))return out; // t<=0 : rien n'a été joué, rien à rattraper
@@ -1804,7 +1822,7 @@ function faoMatterCarveTo(g,pts,dd,times,t){
       b={x:a.x+(b.x-a.x)*f, y:a.y+(b.y-a.y)*f, z:a.z+(b.z-a.z)*f};
     }
     const r=((isFinite(dd[i+1])&&dd[i+1]>0)?dd[i+1]:10)/2;
-    const k=faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r);
+    const k=faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols);
     for(let m=0;m<k.length;m++)out.push(k[m]);
   }
   return out;
@@ -1914,26 +1932,35 @@ function faoViewerMatterEnable(vw){
   vw.matter=mesh; vw.matterGrid=g; vw.mTops=tops; vw.mArr=arr; vw.mKills=[]; vw.mPos=null;
   try{ faoViewerMatterWriteAll(vw); }catch(e){ faoViewerMatterDispose(vw); try{ if(mesh&&scene)scene.remove(mesh); }catch(e2){} return 0; }
   if(vw.t>0){
-    const ks=faoMatterCarveTo(g,vw.pts,vw.dd,vw.times,vw.t);
-    faoViewerMatterKill(vw,ks);
+    const tcols=[];
+    const ks=faoMatterCarveTo(g,vw.pts,vw.dd,vw.times,vw.t,tcols);
+    faoViewerMatterKill(vw,ks,tcols);
   }
   faoViewerMatterHideBodies(vw); // la surface remplace les corps visibles
   return g.n;
 }
-function faoViewerMatterKill(vw,ks){
-  // Diff seul : recalcule la hauteur des colonnes touchées (voxels tués), réécrit
-  // leurs verts + ceux des 4 voisins (leur côté vers elles change).
-  if(!vw||!vw.matter||!vw.matterGrid||!vw.mTops||!vw.mArr||!ks||!ks.length)return;
+function faoViewerMatterKill(vw,ks,cols){
+  // Diff seul : recalcule la hauteur des colonnes TOUCHÉES (voxels tués + colonnes
+  // dont la Z-map a baissé sans kill), réécrit leurs verts + ceux des 4 voisins.
+  if(!vw||!vw.matter||!vw.matterGrid||!vw.mTops||!vw.mArr)return;
+  if((!ks||!ks.length)&&(!cols||!cols.length))return;
   const g=vw.matterGrid, nc=g.nx*g.ny, T=vw.mTops;
   const seen=new Uint8Array(nc), chg=[];
-  for(let n=0;n<ks.length;n++){
-    const idx=ks[n];
-    if(idx<0||idx>=g.n)continue;
-    const c=idx%nc;
-    if(seen[c])continue;
+  const mark=function(c){
+    if(c<0||c>=nc||seen[c])return;
     seen[c]=1;
     const t=faoMatterColTop(g,c);
     if(t!==T[c]){ T[c]=t; chg.push(c); }
+  };
+  if(ks){
+    for(let n=0;n<ks.length;n++){
+      const idx=ks[n];
+      if(idx<0||idx>=g.n)continue;
+      mark(idx%nc);
+    }
+  }
+  if(cols){
+    for(let n=0;n<cols.length;n++)mark(cols[n]);
   }
   if(!chg.length)return;
   const rw=new Uint8Array(nc), list=[];
@@ -1953,16 +1980,19 @@ function faoViewerMatterStep(vw,p){
   if(!vw||vw.matterOn===false||!vw.matterGrid||!vw.matter)return;
   const g=vw.matterGrid;
   let ks=null;
+  const cols=[];
   if(vw.mPos&&vw.mPos.i===p.i){
     if(!p.r){
       const r=((isFinite(vw.dd[p.i+1])&&vw.dd[p.i+1]>0)?vw.dd[p.i+1]:10)/2;
-      ks=faoMatterCarveSeg(g,vw.mPos.x,vw.mPos.y,vw.mPos.z,p.x,p.y,p.z,r);
+      ks=faoMatterCarveSeg(g,vw.mPos.x,vw.mPos.y,vw.mPos.z,p.x,p.y,p.z,r,cols);
     }
   }else{
-    ks=faoMatterCarveTo(g,vw.pts,vw.dd,vw.times,vw.t);
+    ks=faoMatterCarveTo(g,vw.pts,vw.dd,vw.times,vw.t,cols);
   }
   vw.mPos={x:p.x,y:p.y,z:p.z,i:p.i};
-  if(ks&&ks.length)faoViewerMatterKill(vw,ks);
+  // Tués OU colonnes touchées : la Z-map descend aussi quand aucun voxel ne meurt,
+  // le mesh doit suivre à chaque passe (sinon la matière ré-apparaît au pass suivant).
+  if((ks&&ks.length)||cols.length)faoViewerMatterKill(vw,ks,cols);
 }
 function faoViewerMatterToggle(){
   const vw=faoVw; if(!vw)return;
@@ -2216,6 +2246,16 @@ function faoSnapshot(title){
   }catch(e){}
 }
 function faoChanged(){ faoTouch(); faoRefreshPreview(); faoRefreshFaoUI(); }
+function faoReset(){
+  // « Nouveau modèle » : la FAO repart de zéro — mode lecture fermé, fenêtre outils
+  // fermée, traces retirées de la scène, posages et opérations remis au défaut.
+  try{ if(typeof faoVw!=='undefined'&&faoVw)faoViewerClose(); }catch(e){}
+  try{ if(typeof faoToolsWin!=='undefined'&&faoToolsWin)faoToolsWindowClose(); }catch(e){}
+  try{ if(typeof doc!=='undefined'&&doc)delete doc.fao; }catch(e){} // faoRoot() recrée un posage propre
+  try{ if(typeof sel!=='undefined'&&sel&&(sel.kind==='faoSetup'||sel.kind==='faoOp'))sel={kind:null,id:null}; }catch(e){}
+  try{ faoViewerBtnUpdate(); }catch(e){}
+  try{ faoChanged(); }catch(e){} // traces (0 pt désormais) + arbre + fiche
+}
 function faoNum(val,fn,w,step,title){
   const i=document.createElement('input'); i.type='number'; i.className='fao-in';
   i.value=val; i.style.width=(w||60)+'px';
@@ -2259,6 +2299,8 @@ function faoRefreshFaoUI(){
   }catch(e){}
 }
 let faoTreeWrapEl=null; // ref réelle du panneau arbre FAO (la lecture par id est ambiguë sous stub)
+let faoAddBarEl=null;   // barre des 7 +usinage posée sur la vue 3D
+let faoFolded=false;    // panneau FAO rabattu sur sa droite (persisté en localStorage)
 function faoInitUI(){
   if(typeof document==='undefined')return;
   try{
@@ -2273,62 +2315,63 @@ function faoInitUI(){
         }
       });
     }
-    if(!document.getElementById('btnFao')){
-      const anchor=document.getElementById('btnExtrude');
-      if(anchor&&anchor.parentNode){
-        const b=document.createElement('button');
-        b.id='btnFao'; b.textContent='FAO';
-        b.title='Fraisage : posages, surfaçage, poche, contour, perçage, 3D + G-code Siemens 840D / Fagor 8065.';
-        b.onclick=function(){
-          try{
-            const w=document.getElementById('faoTreeWrap');
-            if(w)w.style.display=(w.style.display==='none')?'block':'none';
-          }catch(e){}
-        };
-        anchor.parentNode.insertBefore(b,anchor.nextSibling);
+    // 7 boutons d'ajout : sur la vue 3D (même pilule que #viewbar), collés en haut
+    // à droite du panneau des corps — masqués dès que le panneau FAO est rabattu.
+    if(!faoAddBarEl){
+      const barHost=document.getElementById('treeWrap');
+      if(barHost){
+        const bar=document.createElement('div');
+        bar.id='faoAddBar';
+        const lab=document.createElement('span');
+        lab.className='fao-addlab';
+        lab.textContent='+ Usinage';
+        lab.title='Ajouter une opération d’usinage au posage courant — sa fiche s’ouvre dans le panneau de droite.';
+        bar.appendChild(lab);
+        faoAddOpsSpec().forEach(function(a){
+          const nm=a[1].replace(/^\+ /,'');
+          const b=document.createElement('button');
+          b.textContent=nm;
+          b.title='Ajouter une opération « '+nm+' » au posage courant (puis sa fiche s’ouvre à droite)';
+          b.onclick=function(){
+            try{
+              const s=faoSetup();
+              faoSnapshot('nouvelle opération « '+nm+' »');
+              const op=faoOpDefaults(a[0]);
+              s.ops.push(op);
+              faoChanged();
+              faoSelectOp(s.id,op.id);
+            }catch(e){}
+          };
+          bar.appendChild(b);
+        });
+        barHost.appendChild(bar);
+        faoAddBarEl=bar;
       }
     }
     if(!faoTreeWrapEl){
       const host=document.getElementById('vpwrap')||document.body;
       const w=document.createElement('div');
       w.id='faoTreeWrap'; // habillage entièrement en CSS injecté (faoUiCss)
+      // onglet de repli — procédé identique à l'arbre des corps (src/95-toolbar.js)
+      const tog=document.createElement('button');
+      tog.id='faoToggle';
+      tog.textContent='❯';
+      tog.title='Rabattre le panneau FAO sur la droite';
+      w.appendChild(tog);
+      const cnt=document.createElement('div');
+      cnt.className='fao-cnt';
+      w.appendChild(cnt);
       const t=document.createElement('div');
       t.className='fao-title';
       t.textContent='FAO · posages';
-      w.appendChild(t);
-      const tree=document.createElement('div'); tree.id='faoTree'; w.appendChild(tree);
-      // Les usinages s'ajoutent ICI, dans l'arbre FAO (la fiche posage ne porte
-      // plus que la configuration du posage) : + Surfaçage, + Poche, + Contour, …
-      const gAdd=document.createElement('div');
-      gAdd.id='faoAddRow'; gAdd.className='fao-addgrid';
-      faoAddOpsSpec().forEach(function(a){
-        const b=document.createElement('button');
-        b.textContent=a[1];
-        b.title='Ajouter une opération « '+a[1].replace(/^\+ /,'')+' » au posage courant (puis sa fiche s’ouvre à droite)';
-        b.onclick=function(){
-          try{
-            const s=faoSetup();
-            faoSnapshot('nouvelle opération « '+a[1].replace(/^\+ /,'')+' »');
-            const op=faoOpDefaults(a[0]);
-            s.ops.push(op);
-            faoChanged();
-            faoSelectOp(s.id,op.id);
-          }catch(e){}
-        };
-        gAdd.appendChild(b);
-      });
-      w.appendChild(gAdd);
-      // Actions du posage (toutes ici, plus réparties dans la fiche) :
-      // export · outils · nouveau posage · mode lecture usinage.
-      const rB=document.createElement('div'); rB.className='fao-actions';
-      const be=document.createElement('button'); be.className='primary'; be.textContent='Exporter G-code';
-      be.title='Exporte le programme du posage courant : G-code Siemens 840D ou Fagor 8065 (.mpf / .nc).';
-      be.onclick=function(){ faoExport(); };
-      rB.appendChild(be);
-      const tw=document.createElement('button'); tw.id='faoToolsBtn'; tw.textContent='Outils';
-      tw.title='Bibliothèque d\'outils du posage : fenêtre flottante (Échap ou ✕ pour fermer).';
-      tw.onclick=function(){ faoToolsWindowToggle(); };
-      rB.appendChild(tw);
+      cnt.appendChild(t);
+      const tree=document.createElement('div'); tree.id='faoTree'; cnt.appendChild(tree);
+      const grp=function(label){ const g=document.createElement('div'); g.className='fao-h'; g.textContent=label; return g; };
+      const row=function(){ const d=document.createElement('div'); d.className='fao-actions'; return d; };
+      // Les 7 +usinage vivent sur la vue 3D (faoAddBar) ; ici les ACTIONS du
+      // posage, regroupées sous un libellé qui dit ce que le bouton fait.
+      cnt.appendChild(grp('Posage'));
+      const r1=row();
       const add=document.createElement('button'); add.textContent='+ Posage';
       add.title='Nouveau posage (machine, origine, brut propres).';
       add.onclick=function(){
@@ -2340,18 +2383,23 @@ function faoInitUI(){
           faoChanged();
         }catch(e){}
       };
-      rB.appendChild(add);
+      r1.appendChild(add);
+      const tw=document.createElement('button'); tw.id='faoToolsBtn'; tw.textContent='Outils';
+      tw.title='Bibliothèque d\'outils du posage : fenêtre flottante (Échap ou ✕ pour fermer).';
+      tw.onclick=function(){ faoToolsWindowToggle(); };
+      r1.appendChild(tw);
+      cnt.appendChild(r1);
+      cnt.appendChild(grp('Exécution'));
+      const r2=row();
       const bvw=document.createElement('button'); bvw.id='faoVwBtn';
       bvw.textContent=faoVw?'■ Quitter l\'usinage':'▶ Usinage';
       bvw.title='Viewer d\'usinage : cache les traces, anime l\'outil le long du parcours (Échap pour sortir).';
       bvw.onclick=function(){ faoViewerToggle(); };
       faoVwBtn=bvw;
-      rB.appendChild(bvw);
-      faoViewerBtnUpdate();
-      const sp1=document.createElement('div'); sp1.className='fao-sep'; w.appendChild(sp1);
-      w.appendChild(rB);
-      // Générer + aperçu : en bas du menu, toujours visible — ré-affiche aussi les
-      // traces masquées ligne par ligne (op.hidden remis à zéro).
+      r2.appendChild(bvw);
+      cnt.appendChild(r2);
+      // Générer + aperçu : en bas d'Exécution, toujours visible — ré-affiche aussi
+      // les traces masquées ligne par ligne (op.hidden remis à zéro).
       const bg=document.createElement('button'); bg.id='faoGenBtn';
       bg.className='fao-gen';
       bg.textContent='Générer + aperçu';
@@ -2360,8 +2408,28 @@ function faoInitUI(){
         faoPreviewGenerate();
         try{ faoRefreshFaoUI(); }catch(e){}
       };
-      const sp2=document.createElement('div'); sp2.className='fao-sep'; w.appendChild(sp2);
-      w.appendChild(bg);
+      cnt.appendChild(bg);
+      cnt.appendChild(grp('Export'));
+      const r4=row();
+      const be=document.createElement('button'); be.className='primary'; be.textContent='Exporter G-code';
+      be.title='Exporte le programme du posage courant : G-code Siemens 840D ou Fagor 8065 (.mpf / .nc).';
+      be.onclick=function(){ faoExport(); };
+      r4.appendChild(be);
+      cnt.appendChild(r4);
+      faoViewerBtnUpdate();
+      // Repli : contenu masqué, onglet seul au bord droit, barre 3D masquée —
+      // état persisté comme l'arbre des corps (localStorage).
+      const fold=function(){
+        faoFolded=!faoFolded;
+        try{ cnt.style.display=faoFolded?'none':''; }catch(e){}
+        try{ w.classList.toggle('folded',faoFolded); }catch(e){}
+        tog.textContent=faoFolded?'❮':'❯';
+        tog.title=faoFolded?'Déplier le panneau FAO':'Rabattre le panneau FAO sur la droite';
+        if(faoAddBarEl)faoAddBarEl.style.display=faoFolded?'none':'';
+        try{ localStorage.setItem('minifusion_faoFolded',faoFolded?'1':'0'); }catch(e){}
+      };
+      tog.onclick=fold;
+      try{ if(localStorage.getItem('minifusion_faoFolded')==='1')fold(); }catch(e){}
       host.appendChild(w);
       faoTreeWrapEl=w;
     }
@@ -2381,12 +2449,28 @@ function faoRenderTree(){
     r.setups.forEach(function(s,si){
       const h=document.createElement('div');
       h.className='fao-setup'+(isSel('faoSetup',s.id)?' sel':'');
-      h.textContent='▤ '+s.name+' · '+(FAO_POSTS[s.machine||s.post]?FAO_POSTS[s.machine||s.post].label:s.machine)
+      // ▼/▶ : replie les opérations de CE posage — l'état (s.open) est dans le
+      // document, donc enregistré/chargé avec la sauvegarde. Déplié par défaut.
+      const open=s.open!==false;
+      const tri=document.createElement('span');
+      tri.className='fao-tri';
+      tri.textContent=open?'▼':'▶';
+      tri.title=open?'Replier les opérations de ce posage':'Déplier les opérations de ce posage';
+      tri.onclick=function(ev){
+        try{ if(ev&&ev.stopPropagation)ev.stopPropagation(); }catch(e){}
+        s.open=!open;
+        faoChanged(); // persiste dans doc.fao + re-rend l'arbre FAO
+      };
+      h.appendChild(tri);
+      const sl=document.createElement('span');
+      sl.textContent='▤ '+s.name+' · '+(FAO_POSTS[s.machine||s.post]?FAO_POSTS[s.machine||s.post].label:s.machine)
         +(faoOrientOn(s)?(' · 3+2 B'+faoOrient(s).b+' C'+faoOrient(s).c):'');
-      h.title='Clic = fiche du posage dans le panneau droit';
+      h.appendChild(sl);
+      h.title='Clic = fiche du posage dans le panneau droit'
+        +(open?'':' · opérations repliées (clic sur la flèche pour les rouvrir)');
       h.onclick=function(){ faoSelectSetup(s.id); };
       tree.appendChild(h);
-      (s.ops||[]).forEach(function(op,i){
+      if(open)(s.ops||[]).forEach(function(op,i){
         // ●/○ = ACTIVÉE (entre dans le G-code) — indépendant de « Masquer » : une
         // opération désactivée est absente du programme, une opération masquée
         // est dans le programme mais ses TRACES ne s'affichent pas en 3D.
