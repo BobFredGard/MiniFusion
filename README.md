@@ -75,7 +75,7 @@ Une partie FAO est en travail, ce sera long !
 - **Ctrl+clic** dans l'arborescence pour **ajouter ou retirer une fonction source** (extrusion, découpe, congé, chanfrein) : les instances sont régénérées, y compris leurs esquisses transformées.
 - Les instances sont **regroupées sous la répétition**, repliées par défaut, et **paramétriques** : elles suivent leur source (profondeur, opération, sens, étendue, congé) et régénèrent en place sans perdre leurs identifiants.
 
-### FAO — fraisage 2.5D / 3D + G-code
+### FAO — fraisage 2.5D / 3D + G-code (Pas fonctionnel pour l'heure)
 - **Posages** façon setup Fusion : machine, origine `G54`–`G59`, point de bloc, modèle (tous les corps ou sélection), brut auto depuis la bbox + marge, bridage mémorisé. Arbre FAO dédié, fiches posage/opération dans le panneau droit.
 - **Bibliothèque d'outils** : cylindrique, boule, torique (ex. `T6 D25 R2` de la gamme atelier `CAV-75-25`) — `Vc`/`fz` → `S`/`F` calculés, plongée 30 %.
 - **Opérations 2.5D** : **surfaçage** zigzag, **poche** concentrique, **contour** compensé du rayon, **perçage**, **débourrage poche** (hélice `R = 0,4×D` + spirale + tours de parois, calé sur la gamme `CAV-75-25`).
