@@ -1591,15 +1591,23 @@ function faoMatterGrid(s,pas){
   }while(n>200000&&it<6);
   const alive=new Uint8Array(n);
   for(let i=0;i<n;i++)alive[i]=1;
-  return {pas:p,nx:nx,ny:ny,nz:nz,n:n,ox:s.x0,oy:s.y0,oz:s.z0,alive:alive};
+  // Z-map : une hauteur continue PAR COLONNE (= cote de coupe exacte, non quantifiée
+  // au voxel) — mise à jour par CarveSeg, lue par colTop pour le rendu.
+  const nc=nx*ny;
+  const h=new Float32Array(nc);
+  const full=(+s.z0)+nz*p;
+  for(let i=0;i<nc;i++)h[i]=full;
+  return {pas:p,nx:nx,ny:ny,nz:nz,n:n,ox:s.x0,oy:s.y0,oz:s.z0,alive:alive,h:h};
 }
 function faoMatterIdx(g,ix,iy,iz){ return (iz*g.ny+iy)*g.nx+ix; }
 function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r){
   // Enlève les voxels dont le CENTRE est à distance ≤ r du segment XY (2D)
   // et z ≥ min(az,bz)−pas/2 : la matière SOUS la pointe reste. Retourne les indices tués.
+  // Z-map : la hauteur de colonne descend à la cote de coupe EXACTE min(az,bz).
   const out=[];
   if(!g||!(r>0))return out;
-  const zmin=Math.min(az,bz)-g.pas/2;
+  const zc=Math.min(az,bz);
+  const zmin=zc-g.pas/2;
   const x0=Math.min(ax,bx)-r, x1=Math.max(ax,bx)+r;
   const y0=Math.min(ay,by)-r, y1=Math.max(ay,by)+r;
   if(x1<g.ox||x0>g.ox+g.nx*g.pas||y1<g.oy||y0>g.oy+g.ny*g.pas)return out;
@@ -1607,6 +1615,9 @@ function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r){
   const j0=Math.max(0,Math.floor((y0-g.oy)/g.pas)), j1=Math.min(g.ny-1,Math.floor((y1-g.oy)/g.pas));
   const k0=Math.max(0,Math.floor((zmin-g.oz)/g.pas)), k1=g.nz-1;
   const dx=bx-ax, dy=by-ay, L2=dx*dx+dy*dy, r2=r*r;
+  const nc=g.nx*g.ny;
+  const tc=g.h?new Uint8Array(nc):null;
+  const z2=g.h?(zc>g.oz?zc:g.oz):0;
   for(let k=k0;k<=k1;k++){
     const pz=g.oz+(k+0.5)*g.pas;
     if(pz<zmin)continue;
@@ -1620,7 +1631,10 @@ function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r){
         t=t<0?0:(t>1?1:t);
         const qx=ax+dx*t, qy=ay+dy*t;
         const d2=(px-qx)*(px-qx)+(py-qy)*(py-qy);
-        if(d2<=r2){ g.alive[idx]=0; out.push(idx); }
+        if(d2<=r2){
+          g.alive[idx]=0; out.push(idx);
+          if(tc){ const c=j*g.nx+i; if(!tc[c]){ tc[c]=1; if(z2<g.h[c])g.h[c]=z2; } }
+        }
       }
     }
   }
@@ -1672,7 +1686,9 @@ function faoViewerMatterDispose(vw){
   vw.matter=null; vw.matterGrid=null; vw.mKills=[]; vw.mPos=null; vw.mTops=null; vw.mArr=null;
 }
 function faoMatterColTop(g,c){
-  // Z supérieur du matériau restant dans la colonne c (= iy*nx+ix) — lit alive[].
+  // Hauteur de surface de la colonne c (= iy*nx+ix) : Z-map continue (cote exacte),
+  // repli sur le scan alive[] si la grille n'a pas de h.
+  if(g.h)return g.h[c];
   const L=g.nx*g.ny;
   for(let k=g.nz-1;k>=0;k--){ if(g.alive[k*L+c])return g.oz+(k+1)*g.pas; }
   return g.oz;

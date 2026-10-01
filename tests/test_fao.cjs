@@ -776,6 +776,17 @@ const vm=require('vm');
     "att(faoVw.matterOn===true&&!!faoVw.mTops&&faoVw.mTops.length===nc15&&!!faoVw.mArr,'015 : toggle ON = surface reconstruite');",
     "const v15vw=faoVw;faoViewerClose();",
     "att(v15vw.matter===null&&v15vw.mTops===null&&v15vw.mArr===null&&v15vw.matterGrid===null,'015 : sortie = etat libere');",
+    // --- 016 : Z-map continue = cote de coupe exacte (retour : « Z pas colle a l'outil »)
+    "const g16=faoMatterGrid({x0:0,y0:0,z0:0,x1:100,y1:80,z1:25},5);",
+    "att(!!g16.h&&g16.h.length===g16.nx*g16.ny,'016 : grille = une hauteur par colonne ('+g16.h.length+')');",
+    "const c16=8*g16.nx+2,c16b=10*g16.nx+10;",
+    "att(Math.abs(faoMatterColTop(g16,c16)-25)<1e-3,'016 : plein au depart ('+faoMatterColTop(g16,c16)+')');",
+    "faoMatterCarveSeg(g16,10,40,17.5,90,40,17.5,5);",
+    "att(Math.abs(faoMatterColTop(g16,c16)-17.5)<1e-3,'016 : surface = cote exacte 17.5 ('+faoMatterColTop(g16,c16)+')');",
+    "att(Math.abs(faoMatterColTop(g16,c16b)-25)<1e-3,'016 : hors rayon reste plein');",
+    "faoMatterCarveSeg(g16,10,40,12,90,40,12,5);",
+    "att(Math.abs(faoMatterColTop(g16,c16)-12)<1e-3,'016 : 2e passe descend a 12 ('+faoMatterColTop(g16,c16)+')');",
+    "att(g16.alive[faoMatterIdx(g16,2,8,0)]===1,'016 : vivant sous la pointe (voxels inchanges)');",
     // --- P1-b : UI pilotée dans appvm (œil, ↑/↓, +op, export)
     "doc.fao={setups:[Object.assign(faoDefaultSetup(),{name:'UITEST',stock:{x0:0,y0:0,z0:0,x1:100,y1:80,z1:25},ops:[{id:'u1',on:true,toolId:'T1',type:'facing',z:25,ae:6},{id:'u2',on:true,toolId:'T1',type:'drill',pts:[[20,20]],ztop:25,zbot:5}]})],activeSetupId:null};",
     "sel={kind:null,id:null};document.getElementById('faoTree').children.length=0;faoRenderTree();",

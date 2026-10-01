@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**123 versions**, de `2026-09-28b` à `2026-10-01-015` — la plus récente en bas,
+**124 versions**, de `2026-09-28b` à `2026-10-01-016` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2356,3 +2356,17 @@ README : bibliothèque d'outils — bouton « Outils » (fiche posage + arbre FA
 Tests : `test_fao.cjs` — bloc **015** : une hauteur par colonne, géométrie = 30 verts/colonne + fond (`(nc*30+6)*3` floats), brut plein au départ (tolérance Float32 1e-4), avance = colonnes entamées + d'autres restent pleines, Stop = surface restaurée pleine, toggle OFF/ON, sortie = état libéré. Suite 19/19 verte, golden `facing=34` intact.
 
 README : viewer — matière « en surface Z-map » (un seul mesh, colonnes jointives, le sommet descend sous l'outil, plus de cubes).
+
+### 2026-10-01-016
+
+**FAO viewer : la Z-map descend à la cote EXACTE de coupe — le Z est collé à l'outil.**
+
+1. **Retour navigateur** (v015) : XY nickel mais **Z décalé** — « on dirait qu'il enlève la passe d'après », la matière enlevée en Z n'est pas collée à l'outil.
+2. **Cause** : la hauteur de colonne venait du **sommet du plus haut voxel vivant** → quantification au voxel : l'écart à la cote va jusqu'à **presque 1 pas entier SOUS la cote** (mesure, pas 1.71 : passe à 20.5 → surface à 18.81 ; 16 → 15.39 ; 11.5 → 10.26). Avec un pas de passe `ap` du même ordre, ça se lit comme « une passe en trop ».
+3. **Fix — Z-map continue (le vrai modèle)** : `faoMatterGrid` alloue **`g.h` = un Float32Array de nx×ny hauteurs** (init = sommet du brut). `faoMatterCarveSeg` fait en plus du kill voxel : `h[c] = min(h[c], max(z0, min(az,bz)))` sur chaque colonne touchée → **la surface prend la cote de coupe de l'outil, continue (pas de quantification)**. `faoMatterColTop` lit `h` (repli au scan `alive[]` si absente) → le rendu (tops, côtés, diff) est inchangé, seulement la valeur est juste. `alive[]` reste la logique de coupe (tests 013 intacts).
+4. **Mesure avant → après** : écarts par passe 1.69 / 0.61 / 1.24 / 0.16 → **0.000 sur les 4 passes** (+ fin de parcours = cote finale exacte).
+5. Caractéristiques conservées : monotone (min-cumulé, jamais de remontée), clampé au fond du brut, rattrapage/toggle/Stop = reconstruction propre.
+
+Tests : `test_fao.cjs` — bloc **016** : grille porte une hauteur/colonne, plein au départ, coupe à 17.5 → surface **17.5 exacte**, hors rayon intact, 2ᵉ passe → 12 exact (monotone), vivant sous la pointe. Suite 21/21 verte, golden `facing=34` intact.
+
+README : viewer — surface Z-map à la cote exacte de coupe sous l'outil.
