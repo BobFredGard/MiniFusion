@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**111 versions**, de `2026-09-28b` à `2026-10-01-003` — la plus récente en bas,
+**112 versions**, de `2026-09-28b` à `2026-10-01-004` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2204,3 +2204,13 @@ Tests : `test_fao.cjs` — defauts posage, plongee 50 % emise en G-code (et 30 %
 Tests : `test_fao.cjs` — golden CYCLE81 `(5.000, 0.000, 5.000, -20.000, )` et CYCLE83 `(5.000, 0.000, 5.000, -20.000, , -4.000...)`, golden Fagor `G98 G81 X20 Y20 Z5 I-20` / `G98 G83 ... I-4 J5`, annulation G80, absence des cycles inutiles sans Q, garde-fou toujours en cycle. Suite 19/19 verte.
 
 README : le perçage en cycles sort des « pistes envisagees » et rejoint la ligne des post-processeurs.
+
+### 2026-10-01-004
+
+**FAO P1 : tests UI (œil, ↑/↓, +op, export) + estimation à 2 paramètres (accélération, changement d'outil).**
+
+1. **Tests UI (P1-b)** : `test_fao.cjs` pilote maintenant l'arbre et les fiches dans appvm — œil de l'arbre (désactive/réactive l'op + stats à 1 op), boutons ↑/↓ de la fiche (borne haute en tête, bascule d'ordre, **annulable** via le snapshot Ctrl+Z), rang des 7 boutons « + op » (+1 opération du type choisi), export complet avec shims Blob/URL (G-code produit avec M30 + CYCLE81, nom `UITEST.mpf` capturé sur l'ancre). Découverte d'harnais : `tree.innerHTML=''` ne vide pas `children` dans le stub DOM — nettoyage manuel requis (le test existant le faisait déjà, l'hériter).
+2. **Estimation (P1-c)** : 2 nouveaux paramètres posage — `accel` (mm/s², défaut 1000) et `toolChg` (secondes, défaut 30), éditables dans la fiche (rangée Accél. / Ch. outil, annulables). `faoEstimate` prend l'accélération : temps rapide réel `d/v + v/A` par déplacement (un rapide court coûte plus que sa longueur ; repli 1000 sans 4e argument). `faoStats` (extrait de `faoStatsText`) expose les groupes outil et le temps de changement `(nb de groupes − 1) × durée`, sommé dans le total.
+3. Note de fiche mise à jour : « pas d'arcs, pas de cycles » était devenu faux (G2/G3 + CYCLE81).
+
+Tests : `test_fao.cjs` — accélération (défauts + golden `t = d/v + v/A` sur un rapide 100 mm + monotonicité), changement d'outil (`groups===2`, delta exact `+2 min` pour 120 s), les 10 scénarios UI ci-dessus. Suite 19/19 verte.

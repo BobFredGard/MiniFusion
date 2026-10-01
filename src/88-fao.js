@@ -77,6 +77,8 @@ function faoDefaultSetup(){
     coolant:'flood', secu:5, marge:5,
     rapide:5000, // vitesse des G0 (mm/min) — estimation + référence machine
     plungePct:30, // % de l'avance de coupe appliqué à la plongée (F de plongée)
+    accel:1000, // accélération machine (mm/s²) — temps rapide réel d/v + v/A
+    toolChg:30, // durée d'un changement d'outil (s) ajoutée à l'estimation
     stock:faoStockDefault(), ops:[]
   };
 }
@@ -162,6 +164,14 @@ function faoRapide(job){
 function faoPlungePct(job){
   // % de l'avance de coupe appliqué à la plongée (défaut 30).
   return (job&&isFinite(+job.plungePct)&&+job.plungePct>0)?Math.min(100,+job.plungePct):30;
+}
+function faoAccel(job){
+  // Accélération machine (mm/s²) — défaut 1000. Sert au temps rapide réel.
+  return (job&&isFinite(+job.accel)&&+job.accel>0)?+job.accel:1000;
+}
+function faoToolChg(job){
+  // Durée d'un changement d'outil (s) — défaut 30, ajoutée à chaque changement.
+  return (job&&isFinite(+job.toolChg)&&+job.toolChg>=0)?+job.toolChg:30;
 }
 function faoToolById(job,id){
   const ts=(job&&job.tools)||[];
@@ -841,18 +851,22 @@ function faoRoundMoves(moves,radius){
   flush();
   return out;
 }
-function faoEstimate(moves,fCut,fRap){
+function faoEstimate(moves,fCut,fRap,accel){
   const fc=isFinite(+fCut)&&+fCut>0?+fCut:1200;
   const fr=isFinite(+fRap)&&+fRap>0?+fRap:5000;
-  let cut=0, rap=0, prev=null;
+  const A=isFinite(+accel)&&+accel>0?+accel:1000;
+  let cut=0, rap=0, nr=0, prev=null;
   (moves||[]).forEach(function(m){
     if(prev!==null){
       const d=faoSegLen(prev,m);
-      if(m.r)rap+=d; else cut+=d;
+      if(m.r){ rap+=d; nr++; } else cut+=d;
     }
     prev=m;
   });
-  return {cut:cut, rap:rap, tmin:cut/fc+rap/fr};
+  // Temps rapide réel : d/v + v/A (trapèze : la décélération « paie » l'accélération).
+  // v en mm/s = fr/60, A en mm/s² -> v/A en secondes, converti en minutes.
+  const tmin=cut/fc+rap/fr+nr*(fr/60)/A/60;
+  return {cut:cut, rap:rap, nr:nr, tmin:tmin};
 }
 
 /* ----- origine pièce (point de bloc sur le brut, préréglages) ----- */
@@ -1571,7 +1585,7 @@ function faoOpCardElement(setup,op,i){
   const rs=document.createElement('span');
   rs.style.cssText='font-family:monospace;font-size:.7rem;color:rgba(255,255,255,.55);';
   const mv=faoOpMoves(op,setup);
-  const ee=faoEstimate(mv,sf.f,faoRapide(setup));
+  const ee=faoEstimate(mv,sf.f,faoRapide(setup),faoAccel(setup));
   rs.textContent='S'+sf.s+' F'+sf.f+' · '+mv.length+' pts · ≈'+ee.tmin.toFixed(1)+' min';
   rr.appendChild(rs);
   d.appendChild(rr);
@@ -1673,9 +1687,19 @@ function faoSetupFiche(p,setup){
     56,100,'Vitesse des déplacements en mode rapide (mm/min) — employée pour l\'estimation des temps.'));
   rV.appendChild(faoLab('Plongée'));
   rV.appendChild(faoNum(faoPlungePct(setup),function(v){ setup.plungePct=Math.min(100,Math.max(1,v)); },
-    36,5,"Pourcentage de l'avance de coupe appliqué à la plongée (F de plongée des G1 Z)."));
+    36,100,"Pourcentage de l'avance de coupe appliqué à la plongée (F de plongée des G1 Z)."));
   rV.appendChild(faoLab('% de F'));
+  const rA=faoRow();
+  rA.appendChild(faoLab('Accél.'));
+  rA.appendChild(faoNum(faoAccel(setup),function(v){ setup.accel=Math.max(100,Math.round(v)); },
+    44,100,"Accélération de la machine (mm/s²) — le temps des rapides vaut d/v + v/A, un rapide court coûte plus que sa longueur."));
+  rA.appendChild(faoLab('mm/s²'));
+  rA.appendChild(faoLab('Ch. outil'));
+  rA.appendChild(faoNum(faoToolChg(setup),function(v){ setup.toolChg=Math.max(0,Math.round(v)); },
+    40,5,"Durée d'un changement d'outil (secondes) ajoutée à l'estimation pour chaque changement de groupe outil."));
+  rA.appendChild(faoLab('s'));
   p.appendChild(rV);
+  p.appendChild(rA);
   p.appendChild(faoToolsElement(setup));
   // Opérations du posage
   p.appendChild(faoH('Opérations ('+(setup.ops||[]).length+')'));
@@ -1709,7 +1733,7 @@ function faoSetupFiche(p,setup){
   p.appendChild(st);
   const note=document.createElement('div');
   note.style.cssText='font-size:.68rem;color:rgba(255,255,255,.5);line-height:1.35;';
-  note.textContent='3 axes, 100 % G0/G1 (pas d’arcs, pas de cycles). Validez toujours le 1er programme en simulation / à vide sur la CN.';
+    note.textContent='3 axes : G0/G1, G2/G3 (arrondis) + cycles de perçage (CYCLE81/G81). Validez toujours le 1er programme en simulation / à vide sur la CN.';
   p.appendChild(note);
 }
 /* ----- dispatcher panneau droit ----- */
@@ -1744,16 +1768,25 @@ function faoRenderProps(p,s){
   }catch(e){}
 }
 
+function faoStats(job){
+  // Estimation complète du posage : temps de coupe + rapides (accélération
+  // machine) + changements d'outil (nb de groupes outil - 1) × durée unitaire.
+  let cut=0, rap=0, tm=0, n=0;
+  ((job&&job.ops)||[]).forEach(function(op){
+    if(op&&op.on===false)return;
+    const sf=faoToolSF(faoToolById(job,op.toolId),job);
+    const e=faoEstimate(faoOpMoves(op,job),sf.f,faoRapide(job),faoAccel(job));
+    cut+=e.cut; rap+=e.rap; tm+=e.tmin; n++;
+  });
+  let groups=0;
+  try{ groups=job?faoJobMoves(job).length:0; }catch(e){ groups=0; }
+  const tchg=Math.max(0,groups-1)*(faoToolChg(job)/60);
+  return {n:n, cut:cut, rap:rap, groups:groups, tchg:tchg, tmin:tm+tchg};
+}
 function faoStatsText(){
   try{
-    const job=faoDoc(); let cut=0, rap=0, tm=0, n=0;
-    ((job&&job.ops)||[]).forEach(function(op){
-      if(op&&op.on===false)return;
-      const sf=faoToolSF(faoToolById(job,op.toolId),job);
-      const e=faoEstimate(faoOpMoves(op,job),sf.f,faoRapide(job));
-      cut+=e.cut; rap+=e.rap; tm+=e.tmin; n++;
-    });
-    return n+' op · coupe '+(cut/1000).toFixed(1)+' m · rapides '+(rap/1000).toFixed(1)+' m · ≈'+tm.toFixed(1)+' min';
+    const s=faoStats(faoDoc());
+    return s.n+' op · coupe '+(s.cut/1000).toFixed(1)+' m · rapides '+(s.rap/1000).toFixed(1)+' m · ≈'+s.tmin.toFixed(1)+' min';
   }catch(e){ return ''; }
 }
 function faoExport(){
