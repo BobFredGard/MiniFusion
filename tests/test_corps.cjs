@@ -58,13 +58,23 @@ let staticKo=[];
     "const s1=featSig({type:'extrude',op:'add',distance:40,sketchId:'a'});",
     "const s2=featSig({type:'extrude',op:'add',distance:40,sketchId:'a',body:'b2'});",
     "att(s1!==s2,'featSig : le corps fait partie de la signature');",
-    // --- œil du corps : bascule ses fonctions (instances comprises)
+    // --- 3 rôles distincts sur l'en-tête corps : 👁 vue · ⏻ rejeu · ● actif
     "doc.features.push({id:'r1',type:'repeat',name:'Rép',base:[],repeatId:undefined});",
     "doc.features.find(f=>f.id==='r1').body='b2';",
+    "att(typeof bodyToggleEnabled==='function','bodyToggleEnabled présente');",
+    // 👁 = vue seule : le mesh disparaît, AUCUNE feature n est touchée
     "bodyToggleVis('b2');",
-    "att(doc.features.find(f=>f.id==='e2').visible===false,'oeil : fonction masquée');",
+    "att(doc.bodyVis&&doc.bodyVis.b2===false,'oeil : corps masque dans la vue');",
+    "att(doc.features.find(f=>f.id==='e2').visible!==false,'oeil : fonction TOUJOURS dans le rejeu');",
     "bodyToggleVis('b2');",
-    "att(doc.features.find(f=>f.id==='e2').visible!==false,'oeil : fonction réaffichée');",
+    "att(!doc.bodyVis||doc.bodyVis.b2===undefined,'oeil : corps réaffiche');",
+    // ⏻ = rejeu : toutes ses fonctions (instances de répétition comprises), vue inchangée
+    "bodyToggleEnabled('b2');",
+    "att(doc.features.find(f=>f.id==='e2').visible===false,'power : fonction exclue du rejeu');",
+    "att(doc.features.find(f=>f.id==='r1').visible===false,'power : repetition exclue');",
+    "att(!doc.bodyVis||doc.bodyVis.b2===undefined,'power : la vue ne bouge pas');",
+    "bodyToggleEnabled('b2');",
+    "att(doc.features.find(f=>f.id==='e2').visible!==false,'power : fonction ré-incluse');",
     // --- suppression : corps + fonctions, actif replié, numéros non réemployés
     "const seq=doc.bodySeq;",
     "delBody('b2');",

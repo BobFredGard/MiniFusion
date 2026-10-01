@@ -13,6 +13,25 @@ let repMode=null;
     (document.head||document.body||document.documentElement).appendChild(st);
   }catch(e){}
 })();
+// Bandeau de CORPS (🧱) : fond teinté, nom en gras, ⏻ de rejeu et 👁 de vue
+// distincts. Injecté depuis le code — la coque HTML/CSS du livrable généré n'est
+// jamais éditée à la main (même règle que cssRepSrc ci-dessus).
+(function(){
+  try{
+    if(typeof document==='undefined'||document.getElementById('cssTreeBody'))return;
+    const st=document.createElement('style');st.id='cssTreeBody';
+    st.textContent=
+      '.tnode.bh{background:linear-gradient(90deg,rgba(142,142,147,.13),rgba(142,142,147,0))}'+
+      '.tnode.bh .nm,.tnode.bh>span:nth-child(2){font-weight:700}'+
+      '.tnode.bh .tri{opacity:.75}'+
+      '.tnode.bh.off .nm{opacity:.6}'+
+      '.tnode .pwr{cursor:pointer;user-select:none;font-size:.8rem;opacity:.34;filter:grayscale(1)}'+
+      '.tnode .pwr.on{opacity:1;filter:none;color:var(--accent)}'+
+      '.tnode .eye{cursor:pointer;user-select:none}'+
+      '.tnode.bh.hidden .pwr{filter:none;opacity:.6}';
+    (document.head||document.body||document.documentElement).appendChild(st);
+  }catch(e){}
+})();
 // Sélection MULTIPLE de fonctions (Ctrl+clic) + suppression au clavier (Suppr).
 // `sel` reste le modèle simple utilisé partout ailleurs (panneau, outils) : la
 // multi-sélection est un état parallèle, jamais une refonte de `sel`.
@@ -205,36 +224,36 @@ function renderTree(){
     // isoler, supprimer le corps et ses fonctions.
     const kids=doc.features.filter(f=>!f.repeatId&&bodyOf(f)===be.id);
     const estActif=doc.activeBody===be.id;
-    const toutVis=kids.length>0&&kids.every(f=>f.visible!==false);
+    // (état réel de l'en-tête : visVue = vue 3D, enRejeu = rejeu — plus haut)
     // Replié sur demande (▲ triangle, comme les répétitions), mais jamais quand il
     // contient la sélection : on ne cache pas ce qu'on édite. Persisté (be.open).
     const selIn=treeSel.concat([(sel.kind==='feature'||sel.kind==='body')?sel.id:null]).filter(Boolean);
     const hasSel=selIn.some(id=>id===be.id||bodyOf(doc.features.find(x=>x.id===id))===be.id);
     const open=be.open!==false||hasSel;
     const hd=document.createElement('div');
-    // 📦 = corps choisi comme BRUT FAO : il est masqué dans la vue dès choisi
-    // (doc.bodyVis=false) — l'icône (pleine sur le brut choisi) le désigne/retire.
-    let stkOn=false;
-    try{ const fs=faoSetup(); stkOn=!!fs&&fs.stockSrc==='body'&&fs.stockBody===be.id; }catch(e){}
-    let visBrut=true;
-    try{ visBrut=!(doc.bodyVis&&doc.bodyVis[be.id]===false); }catch(e){}
-    hd.className='tnode'+((sel.kind==='body'&&sel.id===be.id)?' sel':'')+(((kids.length&&!toutVis)||!visBrut)?' hidden':'');
+    // 👁 = VUE SEULE (doc.bodyVis : le mesh disparaît, le corps reste dans le rejeu).
+    // ⏻ = REJEU (bodyEnabledOf : toutes les fonctions sont exclues/incluses du
+    // recalcul) — les deux états sont indépendants, un corps peut être visible et
+    // hors rejeu (grisé) ou masqué et activé. Le brut FAO masque aussi via bodyVis :
+    // c'est le même état, l'œil le réaffiche (bodyToggleVis).
+    let visVue=true;
+    try{ visVue=!(doc.bodyVis&&doc.bodyVis[be.id]===false); }catch(e){}
+    const enRejeu=bodyEnabledOf(be.id);
+    // 🧱 = bandeau de CORPS : glyphe dédié (distinct du ◧ des fonctions), bordure
+    // gauche à la couleur du corps et fond teinté — l'arbre se lit d'un coup d'œil.
+    hd.className='tnode bh'+((sel.kind==='body'&&sel.id===be.id)?' sel':'')+(visVue?'':' hidden')+(enRejeu?'':' off');
     const bcol=bodyTextColor(be);
-    hd.innerHTML='<span class="tri" title="Déplier / replier les fonctions du corps">'+(open?'▼':'▶')+'</span><span>◧</span><span class="nm"'+(bcol?(' style="color:'+bcol+'"'):'')+'>'+be.name+(estActif?' ●':'')+' · '+kids.length+' fonction(s)</span>'+
-      '<span class="stk" style="cursor:pointer'+(stkOn?'':';opacity:.35')+'" title="'+(stkOn?'Corps choisi comme BRUT FAO — cliquer pour RETIRER (il réapparaît dans la vue)':'Définir ce corps comme BRUT : il sera masqué dans la vue dès choisi')+'">📦</span>'+
-      '<span class="eye" title="Afficher / masquer les fonctions du corps">'+(toutVis?'👁':'🙈')+'</span>';
-    hd.title='Clic = sélectionner et ACTIVER (les nouvelles fonctions naîtront dans « '+be.name+' ») · ▶/▼ = replier · 📦 = brut FAO (masqué dans la vue) · 👁 = montrer/masquer · clic droit = renommer / supprimer';
+    try{ hd.style.boxShadow='inset 3px 0 0 '+(bcol||'#9a9aa0'); }catch(e){}
+    hd.innerHTML='<span class="tri" title="Déplier / replier les fonctions du corps">'+(open?'▼':'▶')+'</span><span title="Corps — '+(be.name||'')+'">🧱</span>'+
+      '<span class="nm"'+(bcol?(' style="color:'+bcol+'"'):'')+'>'+be.name+(estActif?' ●':'')+' · '+kids.length+' fonction(s)</span>'+
+      '<span class="pwr'+(enRejeu?' on':'')+'" title="'+(enRejeu?'Rejeu ACTIF : toutes les fonctions de ce corps sont recalculées — cliquer pour les EXCLURE (le corps reste visible)':'Rejeu ÉTEINT : toutes les fonctions de ce corps sont exclues (grisées) — cliquer pour les inclure')+'">⏻</span>'+
+      '<span class="eye" title="'+(visVue?'Corps visible dans la 3D — cliquer pour le CACHER (il reste dans le rejeu et l\'export)':'Corps masqué dans la 3D (vue seule) — cliquer pour l\'AFFICHER. Aucune fonction n\'est touchée')+'">'+(visVue?'👁':'🙈')+'</span>';
+    hd.title='Clic = sélectionner et ACTIVER (les nouvelles fonctions naîtront dans « '+be.name+' ») · ▶/▼ = replier · ⏻ = rejeu (inclure/exclure ses fonctions du recalcul) · 👁 = vue 3D seule · clic droit = renommer / supprimer';
     hd.onclick=ev=>{
-      if(ev.target&&ev.target.classList&&ev.target.classList.contains('stk')){
-        try{
-          const fs=faoSetup();
-          if(fs&&fs.stockSrc==='body'&&fs.stockBody===be.id)faoStockBodySet(null,fs);
-          else faoStockBodySet(be.id,fs);
-        }catch(err){}
-        renderTree();refreshParts();
-        return;
-      }
       if(ev.target&&ev.target.classList&&ev.target.classList.contains('tri')){be.open=!open;try{dirty=true;}catch(e){}renderTree();return;}
+      if(ev.target&&ev.target.classList&&ev.target.classList.contains('pwr')){
+        bodyToggleEnabled(be.id);return;
+      }
       if(ev.target&&ev.target.classList&&ev.target.classList.contains('eye')){
         bodyToggleVis(be.id);return;
       }
@@ -629,11 +648,16 @@ function bodyTextColor(be){
   }catch(e){return '';}
 }
 function bodyToggleVis(id){
-  // Un corps masqué comme BRUT FAO (doc.bodyVis=false) revient par l'œil :
-  // simple visibilité, sans toucher aux features (le brut reste dans le rejeu).
+  // Œil du corps = VUE SEULE : le mesh disparaît de la 3D, rien d'autre ne bouge.
+  // Le corps reste dans le rejeu (f.visible inchangé), reste le corps actif, et
+  // reste exportable — cacher ne désactive plus. Séparation stricte des 3 rôles :
+  //   👁 = vue (doc.bodyVis, ce fichier) · ⏻ = rejeu (bodyToggleEnabled) · ● = actif.
   try{
-    if(doc.bodyVis&&doc.bodyVis[id]===false){
+    const caché=!!(doc.bodyVis&&doc.bodyVis[id]===false);
+    if(caché){
       delete doc.bodyVis[id];
+      // Un corps masqué comme BRUT FAO (doc.bodyVis=false posé par faoStockBodyHide_)
+      // revient par l'œil : on ne défait QUE ce qu'on a fait.
       const s=(typeof faoSetup==='function')?faoSetup():null;
       if(s&&s.stockSrc==='body'&&s.stockBody===id)s.stockBodyHid=false;
       const bd=(typeof bodies!=='undefined'&&bodies?bodies:[]).filter(function(b){return b&&b.id===id;})[0];
@@ -641,11 +665,28 @@ function bodyToggleVis(id){
       markDirty();refreshParts();renderTree();
       return;
     }
+    doc.bodyVis=doc.bodyVis||{};doc.bodyVis[id]=false;
+    const bd=(typeof bodies!=='undefined'&&bodies?bodies:[]).filter(function(b){return b&&b.id===id;})[0];
+    if(bd){bd.visible=false;if(bd.mesh)bd.mesh.visible=false;}
+    markDirty();refreshParts();renderTree();
   }catch(e){}
-  // Œil du corps : montre/masque SES FONCTIONS (donc exclu du rejeu, comme l'œil
-  // d'une fonction — une seule source de vérité, f.visible, annulable, persistée).
+}
+function bodyEnabledOf(id){
+  // true = toutes les fonctions du corps sont dans le rejeu (⏻ allumé).
+  try{
+    const kids=doc.features.filter(f=>!f.repeatId&&f.body===id);
+    if(!kids.length)return true;
+    const specs=kids.concat(doc.features.filter(k=>k.repeatId&&k.body===id));
+    return specs.some(f=>f.visible!==false);
+  }catch(e){return true;}
+}
+function bodyToggleEnabled(id){
+  // ⏻ du corps = REJEU : bascule f.visible sur TOUTES ses fonctions (et leurs
+  // instances de répétition) — exactement ce que faisait l'œil avant. Une seule
+  // source de vérité, annulable (Ctrl+Z), persistée dans le document.
+  // N' touche à AUCUNE visibilité de mesh : le corps reste affiché (grisé hors rejeu).
   const kids=doc.features.filter(f=>!f.repeatId&&f.body===id);
-  const vis=!(kids.length>0&&kids.every(f=>f.visible!==false));
+  const vis=!bodyEnabledOf(id); // tout est dedans → on coupe, sinon on rallume
   kids.forEach(f=>{f.visible=vis;});
   doc.features.forEach(k=>{if(k.repeatId&&k.body===id)k.visible=vis;});
   markDirty();rebuild();renderTree();
@@ -879,7 +920,7 @@ function renderRepPanel(){
 function renderProps(){
   if(typeof extNew!=='undefined'&&extNew)extNew=null; // une sélection annule le formulaire en cours
   if(typeof revNew!=='undefined'&&revNew)revNew=null; // idem pour le formulaire de révolution
-  const p=$('props');p.innerHTML='';
+  const p=$('props');p.innerHTML='';p.className='col'; // marqueur FAO retiré hors mode FAO
   // FAO : les fiches posage/opération vivent dans src/88-fao.js (arbre FAO dédié).
   if(sel&&(sel.kind==='faoSetup'||sel.kind==='faoOp')){
     try{ faoRenderProps(p,sel); }catch(e){}

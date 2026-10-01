@@ -36,6 +36,115 @@
 
 const FAO_VER='32j';
 
+/* ================= styles des panneaux FAO (injectés) =================
+   La coque HTML/CSS du livrable généré n'est jamais éditée à la main — même
+   discipline que cssRepSrc / cssTreeBody (40-interface-arbre-props.js). */
+(function(){
+  try{
+    if(typeof document==='undefined'||document.getElementById('faoUiCss'))return;
+    const st=document.createElement('style');st.id='faoUiCss';
+    st.textContent=
+      /* --- titres de section : trait qui court jusqu'au bord --- */
+      '.fao-h{display:flex;align-items:center;gap:8px;font-weight:700;font-size:.7rem;'
+      +'text-transform:uppercase;letter-spacing:.07em;color:#8e8e93;margin:14px 0 7px;'
+      +'padding-bottom:5px;border-bottom:1px solid rgba(255,255,255,.1)}'
+      +'.fao-h::after{content:"";flex:1;height:1px;'
+      +'background:linear-gradient(90deg,rgba(255,255,255,.16),transparent)}'
+      /* --- rangées de champs --- */
+      +'.fao-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:4px 0}'
+      +'.fao-lab{color:rgba(255,255,255,.62);font-size:.72rem;white-space:nowrap}'
+      /* --- champs de saisie --- */
+      +'.fao-in,.fao-sel{background:rgba(0,0,0,.34);border:1px solid rgba(255,255,255,.13);'
+      +'border-radius:7px;color:#f5f5f7;font-size:.75rem;padding:4px 7px;min-width:0}'
+      +'.fao-in:focus,.fao-sel:focus{outline:none;border-color:#0a84ff;'
+      +'box-shadow:0 0 0 3px rgba(10,132,255,.25)}'
+      +'.fao-in:disabled{opacity:.5}'
+      /* --- boutons compacts --- */
+      +'.fao-mini{font-size:.7rem;padding:4px 9px;border-radius:7px;'
+      +'border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);color:#f5f5f7}'
+      +'.fao-mini:hover{border-color:#0a84ff;background:rgba(10,132,255,.2)}'
+      /* --- texte d'aide sous un groupe de champs --- */
+      +'.fao-help{font-size:.68rem;color:rgba(255,255,255,.5);line-height:1.35;'
+      +'flex-basis:100%;margin-top:2px}'
+      /* --- cartes (opérations, blocs d'information) --- */
+      +'.fao-card{display:flex;flex-direction:column;gap:6px;'
+      +'background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.028));'
+      +'border:1px solid rgba(255,255,255,.1);border-left:3px solid rgba(10,132,255,.6);'
+      +'border-radius:9px;padding:8px 9px;margin:6px 0}'
+      +'.fao-card:hover{border-color:rgba(255,255,255,.18)}'
+      /* --- séparateur fin (info hors carte) --- */
+      +'.fao-sep{height:1px;background:rgba(255,255,255,.08);margin:9px 0;flex-basis:100%}'
+      /* --- alertes (alerte orange, faible densité, jamais brut) --- */
+      +'.fao-alert{font-size:.7rem;color:#ff9f0a;line-height:1.4;padding:5px 8px;'
+      +'border-radius:7px;background:rgba(255,159,10,.1);border:1px solid rgba(255,159,10,.35);margin:5px 0}'
+      /* --- méta-info monospace (estimation, curseur outil) --- */
+      +'.fao-meta{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.7rem;'
+      +'color:rgba(255,255,255,.58)}'
+      /* --- pastille cochable (modèle à usiner) --- */
+      +'.fao-check{font-size:.74rem;display:inline-flex;gap:5px;align-items:center;cursor:pointer;'
+      +'padding:3px 8px;border-radius:6px;background:rgba(255,255,255,.05);'
+      +'border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.85)}'
+      +'.fao-check:hover{border-color:rgba(10,132,255,.55);background:rgba(10,132,255,.14)}'
+      /* --- absence d'info --- */
+      +'.fao-empty{font-size:.72rem;color:rgba(255,255,255,.5);font-style:italic}'
+      +'.fao-opnum{font-weight:700;font-size:.76rem;flex:1;color:#e9e9ec}'
+      /* --- fenêtre flottante « Outils » --- */
+      +'.fao-win{position:absolute;top:76px;left:50%;transform:translateX(-50%);z-index:40;'
+      +'width:440px;max-height:72%;overflow-y:auto;padding:13px 15px;border-radius:13px;'
+      +'background:rgba(16,18,22,.97);border:1px solid rgba(255,255,255,.18);color:#e9e9ec;'
+      +'font-size:.78rem;box-shadow:0 18px 46px rgba(0,0,0,.6);backdrop-filter:blur(9px)}'
+      +'.fao-win-h{display:flex;align-items:center;justify-content:space-between;gap:8px;'
+      +'margin:0 0 8px;padding-bottom:7px;border-bottom:1px solid rgba(255,255,255,.1)}'
+      +'.fao-win-t{font-weight:700;font-size:.8rem;color:#fff;letter-spacing:.03em}'
+      +'.fao-win-x{font-size:.85rem;padding:1px 7px;border-radius:6px;background:transparent;'
+      +'border:1px solid rgba(255,255,255,.18);color:rgba(255,255,255,.75);cursor:pointer}'
+      +'.fao-win-x:hover{border-color:rgba(255,95,87,.7);color:#ff5f57;background:rgba(255,95,87,.16)}'
+      /* --- arbre FAO --- */
+      +'.fao-setup{font-weight:700;font-size:.76rem;margin:7px 0 3px;cursor:pointer;'
+      +'padding:4px 7px;border-radius:7px;display:flex;gap:6px;align-items:center}'
+      +'.fao-setup:hover{background:rgba(255,255,255,.07)}'
+      +'.fao-op{display:flex;gap:6px;align-items:center;padding:4px 7px 4px 14px;'
+      +'border-radius:7px;cursor:pointer;font-size:.76rem}'
+      +'.fao-op:hover{background:rgba(255,255,255,.07)}'
+      +'.fao-op .lb{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+      +'.fao-op .eye{cursor:pointer;user-select:none}'
+      +'.fao-op .badge{font-size:.68rem;color:#7ee0c0;font-weight:700}'
+      +'.fao-op .hbtn{font-size:.66rem;padding:1px 6px;border-radius:5px;cursor:pointer;'
+      +'user-select:none;border:1px solid rgba(255,255,255,.14);color:rgba(255,255,255,.62)}'
+      +'.fao-op .hbtn:hover{border-color:#0a84ff;background:rgba(10,132,255,.18)}'
+      +'.fao-op .hbtn.on{border-color:rgba(255,214,10,.55);color:#ffd60a}'
+      +'.fao-op.sel,.fao-setup.sel{background:rgba(10,132,255,.4)}'
+      +'.fao-op .eye.on{color:#30d158}'
+      +'.fao-op .eye.off{color:#98989d}'
+      /* états combinables : hors rejeu (●), traces masquées (Masquer) */
+      +'.fao-op.isoff{opacity:.5}'
+      +'.fao-op.ishid{opacity:.62}'
+      +'.fao-op.isoff.ishid{opacity:.42}'
+      /* --- barre d'actions de l'arbre FAO --- */
+      +'.fao-actions{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:8px}'
+      +'.fao-actions button{flex:1 1 auto;font-size:.72rem;padding:5px 7px;white-space:nowrap}'
+      +'.fao-actions button.primary{background:#0a84ff;border-color:#0a84ff;color:#fff;font-weight:600}'
+      +'.fao-gen{display:block;width:100%;margin-top:6px;font-size:.74rem;'
+      +'background:#0a84ff;border-color:#0a84ff;color:#fff;font-weight:600}'
+      +'.fao-addgrid{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:9px}'
+      +'.fao-addgrid button{font-size:.68rem;padding:5px 4px;white-space:nowrap}'
+      /* --- panneau flottant de l'arbre FAO --- */
+      +'#faoTreeWrap{position:absolute;top:52px;right:10px;z-index:20;width:244px;'
+      +'max-height:calc(100% - 130px);overflow-y:auto;padding:10px 11px;border-radius:13px;'
+      +'background:rgba(16,18,22,.9);border:1px solid rgba(255,255,255,.14);color:#e9e9ec;'
+      +'font-size:.78rem;backdrop-filter:blur(9px);box-shadow:0 16px 38px rgba(0,0,0,.5)}'
+      +'.fao-title{display:flex;align-items:center;gap:7px;margin:0 0 7px;font-size:.72rem;'
+      +'font-weight:700;color:#fff;letter-spacing:.05em;text-transform:uppercase}'
+      +'.fao-title::before{content:"";width:6px;height:6px;border-radius:50%;background:#0a84ff;'
+      +'box-shadow:0 0 8px rgba(10,132,255,.9)}'
+      /* --- panneau props en mode FAO --- */
+      +'.fao-panel .fao-stats{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;'
+      +'font-size:.7rem;color:rgba(255,255,255,.7);white-space:pre-wrap;margin-top:8px}'
+      +'.fao-panel .fao-note{font-size:.68rem;color:rgba(255,255,255,.5);line-height:1.35;margin-top:6px}';
+    (document.head||document.body||document.documentElement).appendChild(st);
+  }catch(e){}
+})();
+
 /* ----- formats numériques (point décimal, comme les .cps : ascii) ----- */
 function faoFmtXYZ(n){ const v=isFinite(+n)?+n:0; return (Math.round(v*1000)/1000).toFixed(3); }
 function faoFmtF(n){ const v=isFinite(+n)&&+n>0?+n:100; return (Math.round(v*10)/10).toFixed(1); }
@@ -262,13 +371,14 @@ function faoStock(){
   return job.stock;
 }
 
-/* ----- corps-brut : désignation (arbre 📦 ou fiche) + masquage automatique ----- */
+/* ----- corps-brut : désignation (fiche posage, liste « Source ») + masquage auto ----- */
 // Dès qu'un corps est CHOISI comme brut (mode « corps choisi »), il devient
 // invisible dans la vue — via doc.bodyVis[id]=false (le corps RESTE dans
 // `bodies`, mesh présent : la bbox du brut suit sa géométrie, seule sa vue est
-// off). L'œil de l'en-tête corps dans l'arbre le re-rend visible
-// (bodyToggleVis). On ne défait QUE ce qu'on a fait : si le corps était déjà
-// masqué avant le choix, il le reste après le retrait (stockBodyHid).
+// off). L'œil 👁 de l'en-tête corps dans l'arbre le re-rend visible
+// (bodyToggleVis = vue seule, ça ne change rien au rejeu). On ne défait QUE ce
+// qu'on a fait : si le corps était déjà masqué avant le choix, il le reste après
+// le retrait (stockBodyHid).
 function faoStockBodyRestore(setup){
   setup=setup||faoSetup();
   const id=setup.stockBody;
@@ -296,8 +406,8 @@ function faoStockBodyHide_(setup,id){
   }catch(e){ setup.stockBodyHid=false; }
 }
 function faoStockBodySet(bodyId,setup){
-  // Désigne (bodyId) ou retire (null) le corps-brut — depuis l'arbre (📦) ou la
-  // fiche (select « Brut = »). Effet : masquage/restauration en vue 3D + mode.
+  // Désigne (bodyId) ou retire (null) le corps-brut — depuis la fiche posage
+  // (selects « Source » / « Brut = »). Effet : masquage/restauration en vue 3D + mode.
   setup=setup||faoSetup();
   try{ faoSnapshot('corps choisi comme brut'); }catch(e){}
   const prev=(setup.stockSrc==='body'&&setup.stockBody!=null)?setup.stockBody:null;
@@ -1414,6 +1524,7 @@ function faoRefreshPreview(){
     };
     (job.ops||[]).forEach(function(op){
       if(op&&op.on===false)return;
+      if(op&&op.hidden===true)return; // traces masquées dans la vue (op.hidden) — le G-code, lui, les garde
       const mv=faoOpMoves(op,job); total+=mv.length;
       mk(mv);
     });
@@ -1423,13 +1534,20 @@ function faoRefreshPreview(){
   return total;
 }
 function faoPreviewGenerate(){
-  // « Générer + aperçu » : régénère ET ré-affiche TOUJOURS les traces
-  // (un ancien « Masquer » ne doit plus les rendre invisibles à vie).
+  // « Générer + aperçu » : régénère ET ré-affiche TOUJOURS les traces — y compris
+  // celles masquées à la main ligne par ligne (op.hidden), qui sont remises à zéro.
   faoPrevOn=true;
+  let reset=0;
+  try{
+    const r=faoRoot();
+    const algs=(r.setups||[]).reduce(function(a,s){return a.concat(s.ops||[]);},[]);
+    reset=algs.filter(function(o){return o&&o.hidden===true;}).length;
+    if(reset){ try{ faoSnapshot('ré-afficher les traces masquées'); }catch(e){} } // avant mutation
+    algs.forEach(function(o){ if(o&&o.hidden===true)o.hidden=false; });
+  }catch(e){}
   const n=faoRefreshPreview();
   faoTouch();
-  try{ const b=document.getElementById('faoPrevBtn'); if(b)b.textContent='Masquer'; }catch(e){}
-  try{ if(typeof faceEl!=='undefined'&&faceEl)faceEl.textContent='FAO : '+n+' points de parcours.'+(n?'':' Aucune trajectoire.'); }catch(e){}
+  try{ if(typeof faceEl!=='undefined'&&faceEl)faceEl.textContent='FAO : '+n+' points de parcours.'+(n?'':' Aucune trajectoire.')+(reset?(' ('+reset+' opération(s) ré-affichée(s))'):''); }catch(e){}
   return n;
 }
 
@@ -2071,17 +2189,23 @@ function faoOpDefaults(type){
     step:1, laisse:0, seed:'top'});
   return Object.assign({},base,{type:type});
 }
+// Les 7 usinages et leur libellé court — source unique des boutons « + » de
+// l'arbre FAO (l'ordre est contractuel : les tests cliquent par index).
+function faoAddOpsSpec(){
+  return [['facing','+ Surfaçage'],['pocket','+ Poche'],['contour','+ Contour'],
+    ['drill','+ Perçage'],['rough3d','+ Ébauche 3D'],['geofinish','+ Finition'],
+    ['pocket3d','+ Débourrage']];
+}
 /* ================= interface FAO : arbre + fiches panneau droit ================= */
 // Arbre FAO dédié (overlay dans la vue 3D) : posages > opérations, état on/off,
 // badge outil. La fiche du posage / de l'op sélectionnée s'affiche dans le
 // panneau droit (#props), comme toute fonction dessin (hook dans renderProps).
 function faoH(t){ const h=document.createElement('div');
-  h.style.cssText='font-weight:700;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:#98989d;margin-top:4px;';
-  h.textContent=t; return h; }
+  h.className='fao-h'; h.textContent=t; return h; }
 function faoRow(){ const d=document.createElement('div');
-  d.style.cssText='display:flex;gap:6px;align-items:center;flex-wrap:wrap;'; return d; }
-function faoLab(t){ const s=document.createElement('span'); s.textContent=t;
-  s.style.cssText='color:rgba(255,255,255,.6);font-size:.74rem;'; return s; }
+  d.className='fao-row'; return d; }
+function faoLab(t){ const s=document.createElement('span');
+  s.className='fao-lab'; s.textContent=t; return s; }
 function faoSnapshot(title){
   // Instantané du document AVANT mutation — même discipline que le modèle dessin
   // (45-annuler-document.js) : Ctrl+Z revient à l'état FAO précédent. Le titre du
@@ -2093,18 +2217,20 @@ function faoSnapshot(title){
 }
 function faoChanged(){ faoTouch(); faoRefreshPreview(); faoRefreshFaoUI(); }
 function faoNum(val,fn,w,step,title){
-  const i=document.createElement('input'); i.type='number'; i.value=val; i.style.width=(w||60)+'px';
+  const i=document.createElement('input'); i.type='number'; i.className='fao-in';
+  i.value=val; i.style.width=(w||60)+'px';
   if(step)i.step=step;
   if(title)i.title=title;
   i.onchange=function(){ const v=parseFloat(i.value); if(isFinite(v)){ faoSnapshot(title); fn(v); faoChanged(); } };
   return i; }
 function faoTxt(val,fn,w,title){
-  const i=document.createElement('input'); i.type='text'; i.value=val; i.style.width=(w||120)+'px';
+  const i=document.createElement('input'); i.type='text'; i.className='fao-in';
+  i.value=val; i.style.width=(w||120)+'px';
   if(title)i.title=title;
   i.onchange=function(){ faoSnapshot(title); fn(i.value); faoChanged(); };
   return i; }
 function faoSel(opts,val,fn,title){
-  const s=document.createElement('select');
+  const s=document.createElement('select'); s.className='fao-sel';
   opts.forEach(function(o){ const op=document.createElement('option');
     op.value=o[0]; op.textContent=o[1]; if(o[2])op.title=o[2]; s.appendChild(op); });
   s.value=val;
@@ -2112,19 +2238,18 @@ function faoSel(opts,val,fn,title){
   s.onchange=function(){ faoSnapshot(title); fn(s.value); faoChanged(); };
   return s; }
 function faoMini(t,fn,title){
-  const b=document.createElement('button'); b.textContent=t; b.style.fontSize='.72rem';
+  const b=document.createElement('button'); b.className='fao-mini'; b.textContent=t;
   if(title)b.title=title;
   b.onclick=function(){ faoSnapshot(title||('bouton « '+t+' »')); fn(); faoChanged(); };
   return b; }
 function faoHelp(t){
   // Ligne d'aide sous un groupe de champs (néophytes : quoi mettre et pourquoi).
   const n=document.createElement('div');
-  n.style.cssText='font-size:.68rem;color:rgba(255,255,255,.55);line-height:1.35;flex-basis:100%;';
+  n.className='fao-help';
   n.textContent=t; return n; }
 function faoCard(){
   const d=document.createElement('div');
-  d.style.cssText='display:flex;flex-direction:column;gap:6px;background:rgba(255,255,255,.05);'
-    +'border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:6px 8px;margin:4px 0;';
+  d.className='fao-card';
   return d; }
 function faoRefreshFaoUI(){
   try{ faoRenderTree(); }catch(e){}
@@ -2166,18 +2291,46 @@ function faoInitUI(){
     if(!faoTreeWrapEl){
       const host=document.getElementById('vpwrap')||document.body;
       const w=document.createElement('div');
-      w.id='faoTreeWrap';
-      w.style.cssText='position:absolute;top:52px;right:10px;z-index:20;width:244px;'
-        +'max-height:calc(100% - 130px);overflow-y:auto;padding:10px 12px;border-radius:12px;'
-        +'background:rgba(16,18,22,.85);border:1px solid rgba(255,255,255,.13);color:#e9e9ec;'
-        +'font-size:.78rem;backdrop-filter:blur(7px);';
+      w.id='faoTreeWrap'; // habillage entièrement en CSS injecté (faoUiCss)
       const t=document.createElement('div');
-      t.style.cssText='margin:0 0 6px;font-size:.76rem;font-weight:700;color:#fff;';
+      t.className='fao-title';
       t.textContent='FAO · posages';
       w.appendChild(t);
       const tree=document.createElement('div'); tree.id='faoTree'; w.appendChild(tree);
-      const rB=faoRow(); rB.style.marginTop='6px';
-      const add=document.createElement('button'); add.textContent='+ Posage'; add.style.fontSize='.72rem';
+      // Les usinages s'ajoutent ICI, dans l'arbre FAO (la fiche posage ne porte
+      // plus que la configuration du posage) : + Surfaçage, + Poche, + Contour, …
+      const gAdd=document.createElement('div');
+      gAdd.id='faoAddRow'; gAdd.className='fao-addgrid';
+      faoAddOpsSpec().forEach(function(a){
+        const b=document.createElement('button');
+        b.textContent=a[1];
+        b.title='Ajouter une opération « '+a[1].replace(/^\+ /,'')+' » au posage courant (puis sa fiche s’ouvre à droite)';
+        b.onclick=function(){
+          try{
+            const s=faoSetup();
+            faoSnapshot('nouvelle opération « '+a[1].replace(/^\+ /,'')+' »');
+            const op=faoOpDefaults(a[0]);
+            s.ops.push(op);
+            faoChanged();
+            faoSelectOp(s.id,op.id);
+          }catch(e){}
+        };
+        gAdd.appendChild(b);
+      });
+      w.appendChild(gAdd);
+      // Actions du posage (toutes ici, plus réparties dans la fiche) :
+      // export · outils · nouveau posage · mode lecture usinage.
+      const rB=document.createElement('div'); rB.className='fao-actions';
+      const be=document.createElement('button'); be.className='primary'; be.textContent='Exporter G-code';
+      be.title='Exporte le programme du posage courant : G-code Siemens 840D ou Fagor 8065 (.mpf / .nc).';
+      be.onclick=function(){ faoExport(); };
+      rB.appendChild(be);
+      const tw=document.createElement('button'); tw.id='faoToolsBtn'; tw.textContent='Outils';
+      tw.title='Bibliothèque d\'outils du posage : fenêtre flottante (Échap ou ✕ pour fermer).';
+      tw.onclick=function(){ faoToolsWindowToggle(); };
+      rB.appendChild(tw);
+      const add=document.createElement('button'); add.textContent='+ Posage';
+      add.title='Nouveau posage (machine, origine, brut propres).';
       add.onclick=function(){
         try{
           const r=faoRoot();
@@ -2188,12 +2341,27 @@ function faoInitUI(){
         }catch(e){}
       };
       rB.appendChild(add);
-      const tw=document.createElement('button'); tw.id='faoToolsBtn'; tw.textContent='Outils';
-      tw.style.fontSize='.72rem';
-      tw.title='Bibliothèque d\'outils du posage : fenêtre flottante (Échap ou ✕ pour fermer).';
-      tw.onclick=function(){ faoToolsWindowToggle(); };
-      rB.appendChild(tw);
+      const bvw=document.createElement('button'); bvw.id='faoVwBtn';
+      bvw.textContent=faoVw?'■ Quitter l\'usinage':'▶ Usinage';
+      bvw.title='Viewer d\'usinage : cache les traces, anime l\'outil le long du parcours (Échap pour sortir).';
+      bvw.onclick=function(){ faoViewerToggle(); };
+      faoVwBtn=bvw;
+      rB.appendChild(bvw);
+      faoViewerBtnUpdate();
+      const sp1=document.createElement('div'); sp1.className='fao-sep'; w.appendChild(sp1);
       w.appendChild(rB);
+      // Générer + aperçu : en bas du menu, toujours visible — ré-affiche aussi les
+      // traces masquées ligne par ligne (op.hidden remis à zéro).
+      const bg=document.createElement('button'); bg.id='faoGenBtn';
+      bg.className='fao-gen';
+      bg.textContent='Générer + aperçu';
+      bg.title='Régénère les traces et les RÉ-AFFICHE toujours (y compris celles masquées ligne par ligne).';
+      bg.onclick=function(){
+        faoPreviewGenerate();
+        try{ faoRefreshFaoUI(); }catch(e){}
+      };
+      const sp2=document.createElement('div'); sp2.className='fao-sep'; w.appendChild(sp2);
+      w.appendChild(bg);
       host.appendChild(w);
       faoTreeWrapEl=w;
     }
@@ -2212,34 +2380,48 @@ function faoRenderTree(){
     }catch(e){ return false; } };
     r.setups.forEach(function(s,si){
       const h=document.createElement('div');
-      h.style.cssText='font-weight:700;font-size:.76rem;margin:6px 0 2px;cursor:pointer;'
-        +'padding:3px 6px;border-radius:6px;'
-        +(isSel('faoSetup',s.id)?'background:rgba(10,132,255,.4);':'');
+      h.className='fao-setup'+(isSel('faoSetup',s.id)?' sel':'');
       h.textContent='▤ '+s.name+' · '+(FAO_POSTS[s.machine||s.post]?FAO_POSTS[s.machine||s.post].label:s.machine)
         +(faoOrientOn(s)?(' · 3+2 B'+faoOrient(s).b+' C'+faoOrient(s).c):'');
       h.title='Clic = fiche du posage dans le panneau droit';
       h.onclick=function(){ faoSelectSetup(s.id); };
       tree.appendChild(h);
       (s.ops||[]).forEach(function(op,i){
+        // ●/○ = ACTIVÉE (entre dans le G-code) — indépendant de « Masquer » : une
+        // opération désactivée est absente du programme, une opération masquée
+        // est dans le programme mais ses TRACES ne s'affichent pas en 3D.
+        const hid=op.hidden===true;
+        const off=op.on===false;
         const d=document.createElement('div');
-        d.style.cssText='display:flex;gap:6px;align-items:center;padding:3px 6px 3px 14px;'
-          +'border-radius:6px;cursor:pointer;font-size:.76rem;'
-          +(isSel('faoOp',op.id)?'background:rgba(10,132,255,.4);':'')
-          +(op.on===false?'opacity:.5;':'');
-        d.title='Clic = fiche dans le panneau droit';
+        d.className='fao-op'+(isSel('faoOp',op.id)?' sel':'')
+          +(off?' isoff':'')+(hid?' ishid':'');
+        d.title='Clic = fiche dans le panneau droit'
+          +(hid?' — traces masquées dans la 3D (opération toujours active)':'');
         const eye=document.createElement('span');
-        eye.textContent=op.on===false?'○':'●'; eye.title='Activer / désactiver';
-        eye.style.color=op.on===false?'#98989d':'#30d158';
+        eye.textContent=off?'○':'●';
+        eye.className='eye '+(off?'off':'on');
+        eye.title='Activer / désactiver (entre dans le G-code)';
         eye.onclick=function(ev){ try{ if(ev&&ev.stopPropagation)ev.stopPropagation(); }catch(e){}
           faoSnapshot('activer/désactiver « '+faoOpShortLabel(op)+' »');
           op.on=!(op.on!==false); faoChanged(); };
-        const lb=document.createElement('span'); lb.style.flex='1';
+        const lb=document.createElement('span'); lb.className='lb';
         lb.textContent=(i+1)+'. '+faoOpShortLabel(op);
         const tool=faoToolById(s,op.toolId);
         const badge=document.createElement('span');
-        badge.style.cssText='font-size:.68rem;color:#7ee0c0;font-weight:700;';
+        badge.className='badge';
         badge.textContent='[T'+(tool.num||'?')+']';
-        d.appendChild(eye); d.appendChild(lb); d.appendChild(badge);
+        // Masquer / Afficher : traces d'UNE opération, à l'extrême droite (l'œil
+        // d'activation reste le premier enfant : ordre contractuel des tests).
+        const mb=document.createElement('span');
+        mb.className='hbtn'+(hid?' on':'');
+        mb.textContent=hid?'Afficher':'Masquer';
+        mb.title=hid
+          ?'Ré-afficher les traces de cette opération dans la 3D (le G-code n a jamais changé)'
+          :'Masquer UNIQUEMENT les traces de cette opération dans la 3D — l opération reste active et exportée';
+        mb.onclick=function(ev){ try{ if(ev&&ev.stopPropagation)ev.stopPropagation(); }catch(e){}
+          faoSnapshot((hid?'ré-afficher':'masquer')+' les traces de « '+faoOpShortLabel(op)+' »');
+          op.hidden=!hid; faoChanged(); };
+        d.appendChild(eye); d.appendChild(lb); d.appendChild(badge); d.appendChild(mb);
         d.onclick=function(){ faoSelectOp(s.id,op.id); };
         tree.appendChild(d);
       });
@@ -2327,17 +2509,14 @@ function faoToolsWindowOpen(){
     if(!faoToolsWin){
       const host=(document.getElementById('vpwrap')||document.body);
       const w=document.createElement('div'); w.id='faoToolsWin';
-      w.style.cssText='position:absolute;top:76px;left:50%;transform:translateX(-50%);z-index:40;width:440px;'
-        +'max-height:72%;overflow-y:auto;padding:12px 14px;border-radius:12px;'
-        +'background:rgba(16,18,22,.96);border:1px solid rgba(255,255,255,.2);color:#e9e9ec;'
-        +'font-size:.78rem;box-shadow:0 8px 34px rgba(0,0,0,.55);backdrop-filter:blur(8px);';
+      w.className='fao-win'; // position + habillage via la feuille faoUiCss
       const h=document.createElement('div');
-      h.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;';
+      h.className='fao-win-h';
       const ht=document.createElement('div'); ht.id='faoToolsWinT';
-      ht.style.cssText='font-weight:700;font-size:.8rem;color:#fff;';
+      ht.className='fao-win-t';
       h.appendChild(ht);
       const xb=document.createElement('button'); xb.id='faoToolsWinX'; xb.textContent='✕';
-      xb.title='Fermer la fenêtre (Échap aussi)'; xb.style.fontSize='.85rem';
+      xb.className='fao-win-x'; xb.title='Fermer la fenêtre (Échap aussi)';
       xb.onclick=function(){ faoToolsWindowClose(); };
       h.appendChild(xb);
       w.appendChild(h);
@@ -2381,7 +2560,7 @@ function faoOpCardElement(setup,op,i){
     op.on=cb.checked; faoChanged(); };
   r.appendChild(cb);
   const tt=document.createElement('span');
-  tt.style.cssText='font-weight:700;font-size:.76rem;flex:1;';
+  tt.className='fao-opnum';
   tt.textContent=(i+1)+'. '+(typeName[op.type]||op.type);
   r.appendChild(tt);
   r.appendChild(faoSel(faoToolOpts(setup),op.toolId,function(v){ op.toolId=v; },
@@ -2455,7 +2634,7 @@ function faoOpCardElement(setup,op,i){
     rp.appendChild(faoLab('A')); rp.appendChild(faoNum(faoRA(op).axial,function(v){op.axial=Math.max(0,v);},44,0.1));
     rp.appendChild(faoLab('Arrondi')); rp.appendChild(faoNum(isFinite(+op.arrondi)?+op.arrondi:0,function(v){op.arrondi=Math.max(0,v);},48,0.5));
     const nt=document.createElement('div');
-    nt.style.cssText='font-size:.68rem;color:rgba(255,255,255,.5);';
+    nt.className='fao-meta';
     nt.textContent='Pleines passes à ap + tours de parois seuls au pas tours.';
     d.appendChild(nt);
   }else if(op.type==='rough3d'){
@@ -2570,7 +2749,7 @@ function faoOpCardElement(setup,op,i){
     const rc=faoRow();
     const hasLoop=(op.limit.loop||[]).length>=3;
     const info=document.createElement('span');
-    info.style.cssText='font-size:.74rem;color:rgba(255,255,255,.7);';
+    info.className='fao-meta';
     info.textContent=hasLoop
       ?(op.limit.nEdges||'?')+' arêtes, boucle '+(op.limit.closed?'fermée':'refermée')
         +(op.limit.tangent?' (tangentes)':'')+' · '+op.limit.loop.length+' pts'
@@ -2583,7 +2762,7 @@ function faoOpCardElement(setup,op,i){
     d.appendChild(rc);
     if(op.limit.stale){
       const ws=document.createElement('div');
-      ws.style.cssText='font-size:.7rem;color:#ff9f0a;line-height:1.35;';
+      ws.className='fao-alert';
       ws.textContent='⚠ Modèle modifié : arêtes non retrouvées — boucle inchangée (obsolète), re-sélectionnez la chaîne.';
       d.appendChild(ws);
     }
@@ -2605,7 +2784,7 @@ function faoOpCardElement(setup,op,i){
   const sf=faoToolSF(faoToolById(setup,op.toolId),setup);
   const rr=faoRow();
   const rs=document.createElement('span');
-  rs.style.cssText='font-family:monospace;font-size:.7rem;color:rgba(255,255,255,.55);';
+  rs.className='fao-meta';
   const mv=faoOpMoves(op,setup);
   const ee=faoEstimate(mv,sf.f,faoRapide(setup),faoAccel(setup));
   rs.textContent='S'+sf.s+' F'+sf.f+' · '+mv.length+' pts · ≈'+ee.tmin.toFixed(1)+' min';
@@ -2620,8 +2799,6 @@ function faoSetupFiche(p,setup){
   const rN=faoRow();
   rN.appendChild(faoLab('Nom'));
   rN.appendChild(faoTxt(setup.name,function(v){ setup.name=faoProgName(v)||setup.name; },120));
-  rN.appendChild(faoMini('Outils',function(){ faoToolsWindowToggle(); },
-    'Bibliothèque d\'outils du posage : fenêtre flottante (Échap ou ✕ pour fermer)'));
   if(faoRoot().setups.length>1)
     rN.appendChild(faoMini('Supprimer',function(){
       const r=faoRoot();
@@ -2661,7 +2838,7 @@ function faoSetupFiche(p,setup){
   p.appendChild(r32);
   if((FAO_POSTS[setup.machine||setup.post]||{}).kind==='fagor'&&(O.b!==0||O.c!==0)){
     const w32=document.createElement('div');
-    w32.style.cssText='font-size:.7rem;color:#ff9f0a;line-height:1.35;';
+    w32.className='fao-alert';
     w32.textContent='⚠ Fagor 8065 = machine 3 axes : cette indexation 3+2 sera IGNORÉE à l\'export (programme émis à plat, aucun B/C).';
     p.appendChild(w32);
   }
@@ -2678,7 +2855,7 @@ function faoSetupFiche(p,setup){
       cb.checked=all||(Array.isArray(setup.bodies)&&setup.bodies.indexOf(b.id)>=0);
       const nm=(b.name||b.id)+'';
       const lb=document.createElement('label');
-      lb.style.cssText='font-size:.74rem;display:inline-flex;gap:4px;align-items:center;';
+      lb.className='fao-check';
       lb.appendChild(cb);
       lb.appendChild(document.createTextNode(nm));
       cb.onchange=function(){
@@ -2721,7 +2898,7 @@ function faoSetupFiche(p,setup){
       }
       if(typeof renderProps==='function')renderProps();
     },
-    'D’où vient la boîte du brut : bbox des corps visibles (défaut), bbox d’un seul corps (barreau importé à côté du brut — masqué dans la vue dès choisi, 📦 dans l’arbre) ou boîte saisie à la main.'));
+    'D’où vient la boîte du brut : bbox des corps visibles (défaut), bbox d’un seul corps (barreau importé à côté du brut — masqué dans la vue dès choisi, l’œil de l’arbre le réaffiche) ou boîte saisie à la main.'));
   p.appendChild(rSrc);
   if(modeS==='body'){
     const rBd=faoRow();
@@ -2735,7 +2912,7 @@ function faoSetupFiche(p,setup){
         'Corps dont la boîte englobante (+ marge) sert de brut. Dès choisi, il est masqué dans la vue (œil de l’arbre pour le revoir).'));
     }else{
       const nb=document.createElement('span');
-      nb.style.cssText='font-size:.72rem;color:#ff9f0a;';
+      nb.className='fao-empty';
       nb.textContent='aucun corps visible — brut resté par défaut';
       rBd.appendChild(nb);
     }
@@ -2755,7 +2932,7 @@ function faoSetupFiche(p,setup){
     mkM('x1','X1',rM2); mkM('y1','Y1',rM2); mkM('z1','Z1',rM2);
     p.appendChild(rM1); p.appendChild(rM2);
     const nM=document.createElement('div');
-    nM.style.cssText='font-size:.68rem;color:rgba(255,255,255,.5);';
+    nM.className='fao-help';
     nM.textContent='Boîte manuelle (repère monde) — jamais recalculée automatiquement.';
     p.appendChild(nM);
   }
@@ -2777,7 +2954,7 @@ function faoSetupFiche(p,setup){
     setup.fixture=setup.fixture||{}; setup.fixture.axial=Math.max(0,v); },44));
   p.appendChild(rF);
   const nF=document.createElement('div');
-  nF.style.cssText='font-size:.68rem;color:rgba(255,255,255,.5);';
+  nF.className='fao-help';
   nF.textContent='Bridage mémorisé (phase suivante : évitement dans les parcours).';
   p.appendChild(nF);
   const rC=faoRow();
@@ -2809,47 +2986,23 @@ function faoSetupFiche(p,setup){
   rA.appendChild(faoLab('s'));
   p.appendChild(rV);
   p.appendChild(rA);
-  p.appendChild(faoToolsElement(setup));
-  // Opérations du posage
-  p.appendChild(faoH('Opérations ('+(setup.ops||[]).length+')'));
-  const r4=faoRow();
-  [['facing','+ Surfaçage'],['pocket','+ Poche'],['contour','+ Contour'],['drill','+ Perçage'],
-   ['rough3d','+ Ébauche 3D'],['geofinish','+ Finition géod.'],['pocket3d','+ Débourrage']].forEach(function(a){
-    const b=document.createElement('button'); b.textContent=a[1]; b.style.fontSize='.72rem';
-    b.onclick=function(){ faoSnapshot('nouvelle opération « '+a[1].replace(/^\+ /,'')+' »');
-      setup.ops.push(faoOpDefaults(a[0])); faoChanged(); };
-    r4.appendChild(b); });
-  p.appendChild(r4);
-  (setup.ops||[]).forEach(function(op,i){
-    p.appendChild(faoOpCardElement(setup,op,i));
-  });
-  // Générer + export
-  const r5=faoRow();
-  const bg=document.createElement('button'); bg.textContent='Générer + aperçu'; bg.style.fontSize='.78rem';
-  bg.title='Régénère les traces et les RÉ-AFFICHE toujours (même après « Masquer »).';
-  bg.onclick=function(){ const n=faoPreviewGenerate(); st.textContent=faoStatsText(); };
-  const tg=document.createElement('button'); tg.id='faoPrevBtn'; tg.textContent=faoPrevOn?'Masquer':'Afficher'; tg.style.fontSize='.72rem';
-  tg.onclick=function(){ faoPrevOn=!faoPrevOn; if(!faoPrevOn)faoClearPreview(); else faoRefreshPreview(); faoRefreshFaoUI(); };
-  const be=document.createElement('button'); be.textContent='Exporter G-code'; be.style.fontSize='.78rem';
-  be.onclick=function(){ faoExport(); };
-  const bvw=document.createElement('button'); bvw.id='faoVwBtn'; bvw.textContent='▶ Usinage'; bvw.style.fontSize='.78rem';
-  faoVwBtn=bvw;
-  bvw.onclick=function(){ faoViewerToggle(); };
-  faoViewerBtnUpdate();
-  r5.appendChild(bg); r5.appendChild(tg); r5.appendChild(be); r5.appendChild(bvw); p.appendChild(r5);
+  // La fiche reste LA configuration du posage. Les usinages, l'export, les
+  // outils, + Posage, ▶ Usinage et « Générer + aperçu » vivent dans l'arbre FAO
+  // (faoInitUI) : on ne promène plus la même action à deux endroits.
   const st=document.createElement('div');
-  st.style.cssText='font-family:monospace;font-size:.7rem;color:rgba(255,255,255,.7);white-space:pre-wrap;';
+  st.className='fao-stats';
   st.textContent=faoStatsText();
   p.appendChild(st);
   const note=document.createElement('div');
-  note.style.cssText='font-size:.68rem;color:rgba(255,255,255,.5);line-height:1.35;';
-    note.textContent='3 axes : G0/G1, G2/G3 (arrondis) + cycles de perçage (CYCLE81/G81). Validez toujours le 1er programme en simulation / à vide sur la CN.';
+  note.className='fao-note';
+  note.textContent='3 axes : G0/G1, G2/G3 (arrondis) + cycles de perçage (CYCLE81/G81). Validez toujours le 1er programme en simulation / à vide sur la CN.';
   p.appendChild(note);
 }
 /* ----- dispatcher panneau droit ----- */
 function faoRenderProps(p,s){
   try{
     p.innerHTML='';
+    try{ p.className='col fao-panel'; }catch(e){}
     const r=faoRoot();
     let setup=null, op=null, idx=-1;
     if(s.kind==='faoSetup'){
@@ -4082,7 +4235,7 @@ function faoChainPanel(p,setup,op){
   p.appendChild(faoH('Limite : chaîne d\'arêtes'));
   const n=faoChainMode.sel.length, ns=(faoChainMode.seeds||[]).length;
   const info=document.createElement('div');
-  info.style.cssText='font-size:.78rem;';
+  info.className='fao-meta';
   info.textContent=n+' arête(s) retenue(s)'+(faoChainMode.tangent?' dont '+ns+' cliquée(s) + tangentes':'')+'.';
   p.appendChild(info);
   const r=faoRow();
@@ -4090,7 +4243,7 @@ function faoChainPanel(p,setup,op){
   cb.onchange=function(){ faoChainMode.tangent=cb.checked; faoChainSync(); faoChainPaint(); faoRefreshFaoUI(); };
   r.appendChild(cb);
   const lb=document.createElement('span'); lb.textContent='Arêtes tangentes auto';
-  lb.style.cssText='font-size:.76rem;'; r.appendChild(lb);
+  lb.className='fao-lab'; r.appendChild(lb);
   p.appendChild(r);
   const r2=faoRow();
   const ok=document.createElement('button'); ok.textContent='OK · utiliser comme limite'; ok.style.fontSize='.78rem';
@@ -4102,7 +4255,7 @@ function faoChainPanel(p,setup,op){
   r2.appendChild(ok); r2.appendChild(no); r2.appendChild(clr);
   p.appendChild(r2);
   const note=document.createElement('div');
-  note.style.cssText='font-size:.68rem;color:rgba(255,255,255,.5);line-height:1.35;';
+  note.className='fao-note';
   note.textContent='La boucle est re-suie automatiquement à chaque rejeu (ancres des germes) ; si les arêtes ont trop bougé, la fiche passe en alerte. Chaîne ouverte : refermée d\'office en segment droit.';
   p.appendChild(note);
 }
