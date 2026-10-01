@@ -79,6 +79,7 @@ function faoDefaultSetup(){
     plungePct:30, // % de l'avance de coupe appliqué à la plongée (F de plongée)
     accel:1000, // accélération machine (mm/s²) — temps rapide réel d/v + v/A
     toolChg:30, // durée d'un changement d'outil (s) ajoutée à l'estimation
+    orient:{b:0, c:0}, // indexation 3+2 : B (basculer Y) / C (tourner Z), degrés
     stock:faoStockDefault(), ops:[]
   };
 }
@@ -173,6 +174,14 @@ function faoToolChg(job){
   // Durée d'un changement d'outil (s) — défaut 30, ajoutée à chaque changement.
   return (job&&isFinite(+job.toolChg)&&+job.toolChg>=0)?+job.toolChg:30;
 }
+function faoOrient(job){
+  // Indexation 3+2 du posage : B = bascule autour de Y, C = rotation autour de Z
+  // (cinématique table C + B). {0,0} = usinage 3 axes strictement inchangé.
+  const o=(job&&job.orient)||{};
+  const b=isFinite(+o.b)?+o.b:0, c=isFinite(+o.c)?+o.c:0;
+  return {b:Math.round(b*1000)/1000, c:Math.round(c*1000)/1000};
+}
+function faoOrientOn(job){ const o=faoOrient(job); return o.b!==0||o.c!==0; }
 function faoToolById(job,id){
   const ts=(job&&job.tools)||[];
   for(let i=0;i<ts.length;i++)if(ts[i].id===id)return ts[i];
@@ -941,6 +950,8 @@ function faoPost(job,postId){
   const wcs=job.wcs||'G54';
   const OG=faoOriginPoint(job), ox=OG[0], oy=OG[1], oz=OG[2];
   const retr=faoRetractZ(job);
+  // Indexation 3+2 (table C + B) : {0,0} = 3 axes strictement inchangé.
+  const ORI=faoOrient(job), ori32=(ORI.b!==0||ORI.c!==0);
   const groups=faoJobMoves(job);
   // Garde-fou : aucun move de coupe (G1/G2/G3) sous le fond du brut — signalé en
   // tête de programme (le opérateur le voit) et remonté dans le résultat (warns).
@@ -952,6 +963,8 @@ function faoPost(job,postId){
   const warns=[];
   if(sousBrut)warns.push(sousBrut+' move(s) de coupe sous le brut (Zmin '+
     faoFmtXYZ(zMin)+' < fond du brut '+faoFmtXYZ(z0)+')');
+  if(ori32&&fag)warns.push('3+2 (B'+ORI.b+' C'+ORI.c+') : Fagor sans transformation de '+
+    'coordonnées — XYZ non pré-tournés, valider impérativement en simulation / à vide sur la CN');
   const L=[]; let n=10;
   const nc=function(s){ if(fag){ L.push('N'+n+' '+s); n+=5; } else L.push(s); };
   const cmt=function(s){ L.push(fag?('( '+s+' )'):('; '+s)); };
@@ -972,6 +985,19 @@ function faoPost(job,postId){
     if(warns.length)cmt('ATTENTION : '+warns.join(' ; '));
     nc('G71');
     nc('G40 G80 G17 G90 G94 '+wcs);
+  }
+  // 3+2 : indexation de table AVANT tout usinage. Siemens : TRAORI(1) — le
+  // contrôleur transforme XYZ (arcs et cycles restent dans le repère pièce).
+  // Fagor 8065 : pas d'équivalent connu -> positionnement + alerte explicite.
+  if(ori32){
+    if(fag){
+      cmt('3+2 : B'+faoFmtXYZ(ORI.b)+' C'+faoFmtXYZ(ORI.c)+
+        ' — ATTENTION : coordonnées XYZ NON transformées sur ce dialecte (pas d\'équivalent TRAORI) : valider en simulation / à vide !');
+      nc('G0 B'+faoFmtXYZ(ORI.b)+' C'+faoFmtXYZ(ORI.c));
+    }else{
+      nc('TRAORI(1)');
+      nc('G0 B'+faoFmtXYZ(ORI.b)+' C'+faoFmtXYZ(ORI.c));
+    }
   }
   groups.forEach(function(g,gi){
     const t=g.tool;
@@ -1029,6 +1055,8 @@ function faoPost(job,postId){
       });
     });
   });
+  // 3+2 : annuler la transformation AVANT les coordonnées machine de fin (SUPA/park).
+  if(ori32&&!fag)nc('TRAFOOF');
   if(fag){
     nc('M09');
     nc('G0 Z'+faoFmtXYZ(retr-oz));
@@ -1277,7 +1305,8 @@ function faoRenderTree(){
       h.style.cssText='font-weight:700;font-size:.76rem;margin:6px 0 2px;cursor:pointer;'
         +'padding:3px 6px;border-radius:6px;'
         +(isSel('faoSetup',s.id)?'background:rgba(10,132,255,.4);':'');
-      h.textContent='▤ '+s.name+' · '+(FAO_POSTS[s.machine||s.post]?FAO_POSTS[s.machine||s.post].label:s.machine);
+      h.textContent='▤ '+s.name+' · '+(FAO_POSTS[s.machine||s.post]?FAO_POSTS[s.machine||s.post].label:s.machine)
+        +(faoOrientOn(s)?(' · 3+2 B'+faoOrient(s).b+' C'+faoOrient(s).c):'');
       h.title='Clic = fiche du posage dans le panneau droit';
       h.onclick=function(){ faoSelectSetup(s.id); };
       tree.appendChild(h);
@@ -1620,6 +1649,19 @@ function faoSetupFiche(p,setup){
     ['top-C','Dessus centre'],['bot-X0Y0','Dessous coin X0Y0']],
     (setup.origin&&setup.origin.preset)||'top-X0Y0',function(v){ setup.origin={preset:v}; }));
   p.appendChild(rO);
+  // Indexation 3+2 (table C + B) — {0,0} = usinage 3 axes strictement inchangé.
+  const r32=faoRow();
+  const O=faoOrient(setup);
+  r32.appendChild(faoLab('3+2 B'));
+  r32.appendChild(faoNum(O.b,function(v){ setup.orient={b:Math.round(v*1000)/1000,c:faoOrient(setup).c}; },
+    44,5,"Bascule de table autour de Y (degrés). 0 = usinage 3 axes. Non nul : Siemens = TRAORI(1) + positionnement B/C (XYZ restent repère pièce) ; Fagor = positionnement seul, XYZ non transformés (alerte à l'export)."));
+  r32.appendChild(faoLab('C'));
+  r32.appendChild(faoNum(O.c,function(v){ setup.orient={b:faoOrient(setup).b,c:Math.round(v*1000)/1000}; },
+    44,5,"Rotation de table autour de Z (degrés) — indexation de la pièce dans le plan d'usinage."));
+  r32.appendChild(faoLab('°'));
+  r32.appendChild(faoMini('3 axes',function(){ setup.orient={b:0,c:0}; },
+    'Remise à plat : annule l\'indexation 3+2 (B=0, C=0).'));
+  p.appendChild(r32);
   // Modèle : corps à usiner
   p.appendChild(faoH('Modèle à usiner'));
   const rB=faoRow();

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**112 versions**, de `2026-09-28b` à `2026-10-01-004` — la plus récente en bas,
+**113 versions**, de `2026-09-28b` à `2026-10-01-005` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2214,3 +2214,16 @@ README : le perçage en cycles sort des « pistes envisagees » et rejoint la li
 3. Note de fiche mise à jour : « pas d'arcs, pas de cycles » était devenu faux (G2/G3 + CYCLE81).
 
 Tests : `test_fao.cjs` — accélération (défauts + golden `t = d/v + v/A` sur un rapide 100 mm + monotonicité), changement d'outil (`groups===2`, delta exact `+2 min` pour 120 s), les 10 scénarios UI ci-dessus. Suite 19/19 verte.
+
+### 2026-10-01-005
+
+**FAO P2 : indexation 3+2 MVP (table C + B) — TRAORI(1) Siemens, alerte coordonnées Fagor.**
+
+1. **Données** : `setup.orient={b,c}` en degrés (défaut `{0,0}` = usinage 3 axes strictement inchangé), helpers `faoOrient()` (arrondi 0.001, gère job absent) / `faoOrientOn()`. Cinématique validée par l'utilisateur : table **C** (rotation autour de Z) + **B** (bascule autour de Y).
+2. **fiche posage** : rang « 3+2 B … C … ° » avec infobulles (repère pièce conservé côté Siemens, alerte Fagor) + bouton « 3 axes » (remise à plat) ; badge « · 3+2 B45 C0 » dans l'en-tête de l'arbre FAO quand actif.
+3. **Siemens 840D** : en tête de programme `TRAORI(1)` + `G0 B.. C..` avant le premier outil (XYZ restent au repère pièce, arcs et cycles natifs inchangés), `TRAFOOF` en pied **avant** les coordonnées machine de fin (M9/SUPA/park/M30).
+4. **Fagor 8065** : positionnement `G0 B.. C..` seul + commentaire dialecte `( 3+2 : B… C… — ATTENTION : coordonnées XYZ NON transformées …)` + alerte `warns` « sans transformation de coordonnées — XYZ non pré-tournés, valider impérativement en simulation / à vide » remontée à l'export et en tête de programme. Aucune transformation géométrique émise (choix explicite : Fagor averti en attente de confirmation de la fonction équivalente sur le 8065).
+
+Tests : `test_fao.cjs` — défauts/arrondi/détection orient, golden Siemens `TRAORI(1)` avant `T1 D1` + `TRAFOOF` avant `M30` + 0 alerte, golden Fagor `G0 B45.000 C0.000` sans `TRAORI(1)` + 1 alerte + commentaire en tête, identité bit à bit du programme en `{0,0}` vs `orient` absent, rang UI 3+2 (saisie C + bouton 3 axes). Suite 19/19 verte.
+
+README : 3+2 sorti des « pistes envisagées » (restent 5 axes continu, sauvegarde paramétrique, Electron), documenté côté posages et post-processeurs.
