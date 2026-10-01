@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**121 versions**, de `2026-09-28b` à `2026-10-01-013` — la plus récente en bas,
+**122 versions**, de `2026-09-28b` à `2026-10-01-014` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2329,3 +2329,16 @@ README : post-processeurs — « ▶ Viewer d'usinage : cache les traces, affich
 Tests : `test_fao.cjs` — grille (auto ≤ ~40k, pas 5 → 20×16×5), carve (sous l'outil tué / hors rayon vit / sous la pointe vit / rayon 0 → rien), carveTo (G0 n'enlève rien, segment en cours à t=2 déjà coupe, t<0 rien), ouverture matière + corps masqués, avance ×10 s enlève de la matière, Stop restaure, toggles OFF/ON, sortie = état libéré + matière retirée + corps réaffichés + traces réaffichées + barre masquée, bascule du bouton (libellés), « Générer + aperçu » force l'affichage. Suite 19/19 verte, golden `facing=34` intact. Diagnostic Node avec three.js réel : 41 595 voxels, 23 tués en 10 s, reset/toggles/close OK.
 
 README : viewer — sortie du mode garantie (bouton Quitter + Échap + ✕, nettoyage complet outil/brut/matière) ; matière voxelisée « ◼ matière » (la matière usinée disparaît sous l'outil, toggle dans la barre).
+
+### 2026-10-01-014
+
+**FAO : fenêtre flottante « Outils » — la bibliothèque d'outils du posage en fenêtre dédiée.**
+
+1. **Deux boutons d'accès « Outils »** : (a) **fiche posage**, rang « Nom » (à côté du nom, infobulle « fenêtre flottante, Échap ou ✕ pour fermer »), (b) **arbre FAO** (à côté de « + Posage », rang flex). Les deux font basculer `faoToolsWindowToggle` (ouvre si fermée, ferme si ouverte).
+2. **La fenêtre** (`#faoToolsWin`, centrée, `z-index:40`) : entête « Outils · <nom du posage> » + **✕**, corps = **le composant existant `faoToolsElement(setup)`** (cartes éditables nom/type/D/r/dents/Vc/fz avec S/F calculé, ✕ supprimer, « + Outil » avec snapshot annulable). Créée à la volée à chaque ouverture — **contenu reconstruit** sur l'**setup actif du moment** (changement de posage suivi), retirée du DOM à la fermeture (aucun doublon).
+3. **Fermeture** : **✕** de la fenêtre, **Échap** (prioritaire sur le viewer : si la fenêtre est ouverte, Échap la ferme d'abord — le viewer n'est touché qu'au coup suivant), ou re-clic sur l'un des deux boutons. Refs globales (`faoToolsWin/X/Body/T`) : le harnais ne re-lit jamais par id (auto-création des stubs).
+4. **Ref réelle du panneau arbre** : `faoTreeWrapEl` remplace la garde `getElementById('faoTreeWrap')` dans `faoInitUI` (sous stub, l'id auto-créé bloquait la création de l'arbre) ; le rendu de l'arbre passe toujours par `getElementById('faoTree')` (inchangé).
+
+Tests : `test_fao.cjs` — ouverture (titre posage actif, contenu biblio), « + Outil » depuis la fenêtre (compteur outils +1), ✕ ferme (nœud détaché + display none), Échap ferme, **Échap ferme la fenêtre AVANT le viewer** puis 2ᵉ Échap quitte le viewer, bouton fiche bascule, bouton arbre ouvre. Suite 19/19 verte, golden `facing=34` intact.
+
+README : bibliothèque d'outils — bouton « Outils » (fiche posage + arbre FAO) → fenêtre flottante fermable (Échap/✕) avec la bibliothèque éditable.

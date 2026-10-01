@@ -2021,13 +2021,16 @@ function faoRefreshFaoUI(){
       &&typeof renderProps==='function')renderProps();
   }catch(e){}
 }
+let faoTreeWrapEl=null; // ref réelle du panneau arbre FAO (la lecture par id est ambiguë sous stub)
 function faoInitUI(){
   if(typeof document==='undefined')return;
   try{
     if(typeof window!=='undefined'&&window.addEventListener&&!faoVwEsc){
       faoVwEsc=true; // une seule fois
       window.addEventListener('keydown',function(e){
-        if(e.key==='Escape'&&faoVw){
+        if(e.key!=='Escape')return;
+        if(faoToolsWin){ faoToolsWindowClose(); return; } // fenêtre outils d'abord
+        if(faoVw){
           faoViewerClose();
           faoViewerMsg('FAO : mode lecture usinage quitté (Échap) — traces ré-affichées.');
         }
@@ -2048,7 +2051,7 @@ function faoInitUI(){
         anchor.parentNode.insertBefore(b,anchor.nextSibling);
       }
     }
-    if(!document.getElementById('faoTreeWrap')){
+    if(!faoTreeWrapEl){
       const host=document.getElementById('vpwrap')||document.body;
       const w=document.createElement('div');
       w.id='faoTreeWrap';
@@ -2061,8 +2064,8 @@ function faoInitUI(){
       t.textContent='FAO · posages';
       w.appendChild(t);
       const tree=document.createElement('div'); tree.id='faoTree'; w.appendChild(tree);
+      const rB=faoRow(); rB.style.marginTop='6px';
       const add=document.createElement('button'); add.textContent='+ Posage'; add.style.fontSize='.72rem';
-      add.style.marginTop='6px';
       add.onclick=function(){
         try{
           const r=faoRoot();
@@ -2072,8 +2075,15 @@ function faoInitUI(){
           faoChanged();
         }catch(e){}
       };
-      w.appendChild(add);
+      rB.appendChild(add);
+      const tw=document.createElement('button'); tw.id='faoToolsBtn'; tw.textContent='Outils';
+      tw.style.fontSize='.72rem';
+      tw.title='Bibliothèque d\'outils du posage : fenêtre flottante (Échap ou ✕ pour fermer).';
+      tw.onclick=function(){ faoToolsWindowToggle(); };
+      rB.appendChild(tw);
+      w.appendChild(rB);
       host.appendChild(w);
+      faoTreeWrapEl=w;
     }
     faoRenderTree();
   }catch(e){}
@@ -2194,6 +2204,52 @@ function faoToolsElement(setup){
   };
   rT.appendChild(bT); wrap.appendChild(rT);
   return wrap;
+}
+/* ----- fenêtre flottante : bibliothèque d'outils du posage actif ----- */
+let faoToolsWin=null, faoToolsWinX=null, faoToolsWinBody=null, faoToolsWinT=null;
+function faoToolsWindowOpen(){
+  // Fenêtre dédiée (au lieu de faire défiler la fiche posage) : créée à la volée,
+  // contenu RECONSTRUIT à chaque ouverture (setup actif du moment), fermable ✕ / Échap.
+  // Refs globales (pattern viewer) — jamais de relecture par id.
+  try{
+    if(!faoToolsWin){
+      const host=(document.getElementById('vpwrap')||document.body);
+      const w=document.createElement('div'); w.id='faoToolsWin';
+      w.style.cssText='position:absolute;top:76px;left:50%;transform:translateX(-50%);z-index:40;width:440px;'
+        +'max-height:72%;overflow-y:auto;padding:12px 14px;border-radius:12px;'
+        +'background:rgba(16,18,22,.96);border:1px solid rgba(255,255,255,.2);color:#e9e9ec;'
+        +'font-size:.78rem;box-shadow:0 8px 34px rgba(0,0,0,.55);backdrop-filter:blur(8px);';
+      const h=document.createElement('div');
+      h.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;';
+      const ht=document.createElement('div'); ht.id='faoToolsWinT';
+      ht.style.cssText='font-weight:700;font-size:.8rem;color:#fff;';
+      h.appendChild(ht);
+      const xb=document.createElement('button'); xb.id='faoToolsWinX'; xb.textContent='✕';
+      xb.title='Fermer la fenêtre (Échap aussi)'; xb.style.fontSize='.85rem';
+      xb.onclick=function(){ faoToolsWindowClose(); };
+      h.appendChild(xb);
+      w.appendChild(h);
+      const body=document.createElement('div'); body.id='faoToolsWinBody';
+      w.appendChild(body);
+      host.appendChild(w);
+      faoToolsWin=w; faoToolsWinX=xb; faoToolsWinBody=body; faoToolsWinT=ht;
+    }
+    const setup=faoSetup();
+    if(faoToolsWinT)faoToolsWinT.textContent='Outils · '+((setup&&setup.name)||'posage');
+    if(faoToolsWinBody){ faoToolsWinBody.innerHTML=''; faoToolsWinBody.appendChild(faoToolsElement(setup)); }
+    faoToolsWin.style.display='block';
+    return true;
+  }catch(e){ faoViewerMsg('Outils : '+((e&&e.message)||e)); return false; }
+}
+function faoToolsWindowClose(){
+  const w=faoToolsWin;
+  try{ if(w&&w.parentNode)w.parentNode.removeChild(w); }catch(e){}
+  try{ if(w)w.style.display='none'; }catch(e){}
+  faoToolsWin=null; faoToolsWinX=null; faoToolsWinBody=null; faoToolsWinT=null;
+}
+function faoToolsWindowToggle(){
+  if(faoToolsWin){ faoToolsWindowClose(); return false; }
+  return faoToolsWindowOpen();
 }
 /* ----- fiche d'opération (élément réutilisable) ----- */
 function faoToolOpts(setup){
@@ -2446,6 +2502,8 @@ function faoSetupFiche(p,setup){
   const rN=faoRow();
   rN.appendChild(faoLab('Nom'));
   rN.appendChild(faoTxt(setup.name,function(v){ setup.name=faoProgName(v)||setup.name; },120));
+  rN.appendChild(faoMini('Outils',function(){ faoToolsWindowToggle(); },
+    'Bibliothèque d\'outils du posage : fenêtre flottante (Échap ou ✕ pour fermer)'));
   if(faoRoot().setups.length>1)
     rN.appendChild(faoMini('Supprimer',function(){
       const r=faoRoot();
