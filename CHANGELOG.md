@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**108 versions**, de `2026-09-28b` à `2026-09-32n` — la plus récente en bas,
+**109 versions**, de `2026-09-28b` à `2026-10-01-001` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2170,3 +2170,13 @@ Tests : `test_fao3d.cjs` (clamp |dY| <= 1.25 sur bande nulle, repli droit sans a
 Le README datait de la 31i : aucune trace du fraisage. Ajout d'une section `FAO — fraisage 2.5D / 3D + G-code` (posages, outils Vc/fz, ops 2.5D + debourrage CAV-75-25, ebauche 3D Morph/Zigzag/Adaptive, geodesique, R/A, retrait, limites, G2/G3, posts 840D/Fagor, parallelisme au dessin), ligne `88-fao.js` dans la table d'architecture (20 -> 21 fichiers, ~12 400 -> ~16 100 lignes), 13 -> 19 suites, version et pistes a jour (CYCLE81, 3+2/5 axes).
 
 Aucun changement fonctionnel — bump de tracabilite.
+
+### 2026-10-01-001
+
+**FAO P0 : post-processeurs fusionnes (un corps, dialecte en tete/pied) + plongee Fagor corrigee.**
+
+`faoPostSiemens` / `faoPostFagor` (~150 lignes quasi jumeelles) remplaces par un seul `faoPost` : `FAO_POSTS` gagne un champ `kind` (siemens/fagor) qui porte tout le dialecte — commentaires `;` vs `( )`, lignes N## vs brutes, G71 separate ou combine, fin SUPA Z600 + parc machine vs retrait Z classique. Corps du programme unique (groupes, changements d'outil, moves, arcs) : la parite des sequences d'avance F entre dialectes devient structurelle.
+
+Correction d'un bug reel : Fagor appliquait le F de plongee au premier G1 meme s'il n'avait pas de Z (test `first` nu vs `first&&/Z/.test(Z)` chez Siemens) — une zigue-zague de surfaçage demarrait donc a 30 % de l'avance de coupe. Correctif unifie : F de plongee uniquement sur la premiere plongee Z apres un rapide.
+
+Tests : `test_fao.cjs` — parite de la sequence F (siemens vs fagor) + "F plongee jamais sur un move XY seul". Suite 19/19 verte.

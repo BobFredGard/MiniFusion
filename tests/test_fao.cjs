@@ -70,6 +70,12 @@ const vm=require('vm');
     "att(/M30/.test(fg.code),'fagor : M30');",
     "att((fg.code.match(/ G1 /g)||[]).length===(s630.code.match(/\\nG1 /g)||[]).length,'fagor/siemens : meme nombre de G1');",
     "att(fg.code.indexOf('SUPA')<0,'fagor : pas de SUPA (inconnu sur Fagor)');",
+    // --- parité des avances (plongée Fagor = plongée Siemens, jamais sur un XY seul)
+    "const sfp=faoFmtF(faoToolSF(job.tools[0]).plunge),fsCut=faoFmtF(faoToolSF(job.tools[0]).f);",
+    "const fsS=(s630.code.match(/ F[0-9.]+/g)||[]).join(','),fsF=(fg.code.match(/ F[0-9.]+/g)||[]).join(',');",
+    "att(fsS===fsF,'fagor/siemens : meme sequence d avances F ('+fsS.length+' mots)');",
+    "const badPl=(fg.code.match(/\\nN[0-9]+ G1 [^\\n]*/g)||[]).filter(l=>l.indexOf(' F'+sfp)>=0&&l.indexOf('Z')<0);",
+    "att(sfp===fsCut||badPl.length===0,'fagor : F plongee jamais sur un XY seul (vu '+badPl.length+')');",
     // --- bibliothèque : Vc/fz -> S/F
     "const sf=faoToolSF({d:10,vc:250,fz:0.06,flutes:2});",
     "att(sf.s===7958&&sf.f===955,'biblio Vc250/fz0.06 D10 : S'+sf.s+' F'+sf.f);",

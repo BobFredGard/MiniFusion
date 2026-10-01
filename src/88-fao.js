@@ -868,10 +868,12 @@ function faoRetractZ(setup){
   return (isFinite(+s.z1)?+s.z1:0)+25;
 }
 /* ================= post-processeurs ================= */
+// Table des machines : `kind` porte le dialecte (commentaires, numérotation,
+// fin de programme) — le corps du programme est commun aux dialectes.
 const FAO_POSTS={
-  siemens630:{label:'Siemens 840D · 630', ext:'mpf', parkX:'X-200'},
-  siemens1520:{label:'Siemens 840D · 1520', ext:'mpf', parkX:'X-430'},
-  fagor8065:{label:'Fagor 8065', ext:'nc'}
+  siemens630:{label:'Siemens 840D · 630', ext:'mpf', parkX:'X-200', kind:'siemens'},
+  siemens1520:{label:'Siemens 840D · 1520', ext:'mpf', parkX:'X-430', kind:'siemens'},
+  fagor8065:{label:'Fagor 8065', ext:'nc', kind:'fagor'}
 };
 function faoToday(){ try{ return new Date().toISOString().slice(0,10); }catch(e){ return ''; } }
 
@@ -880,107 +882,72 @@ function faoArcWords(m,ox,oy,oz){
   return (m.arc.cw?'G2 ':'G3 ')+'X'+faoFmtXYZ(m.x-ox)+' Y'+faoFmtXYZ(m.y-oy)+
     ' Z'+faoFmtXYZ(m.z-oz)+' I'+faoFmtXYZ(m.arc.i)+' J'+faoFmtXYZ(m.arc.j);
 }
-function faoPostSiemens(job,variant){
-  const post=FAO_POSTS[variant]||FAO_POSTS.siemens630;
-  const name=faoProgName(job.name);
-  const cool=(job.coolant==='off')?'M9':(job.coolant==='through'?'M8':'M7');
-  const OG=faoOriginPoint(job), ox=OG[0], oy=OG[1], oz=OG[2];
-  const retr=faoRetractZ(job);
-  const groups=faoJobMoves(job);
-  const L=[];
-  L.push('; %_N_'+name+'_MPF');
-  L.push('; MiniFusion FAO '+FAO_VER+' — '+post.label+' — '+faoToday());
-  L.push('; Origine '+(job.wcs||'G54')+' : '+faoOriginLabel(job)+
-    ' ('+faoFmtXYZ(ox)+','+faoFmtXYZ(oy)+','+faoFmtXYZ(oz)+')');
-  groups.forEach(function(g){
-    const t=g.tool;
-    L.push('; OUTIL T'+(t.num||1)+' '+faoKindLabel((faoToolById(job,t.id)||{}).kind)+' D'+faoFmtXYZ(t.d)+' S'+faoFmtS(t.s)+' F'+faoFmtF(t.f));
-  });
-  L.push('G71');
-  L.push('G17 G90 G94 '+(job.wcs||'G54'));
-  groups.forEach(function(g,gi){
-    const t=g.tool;
-    const S=faoFmtS(t.s), F=faoFmtF(t.f), FP=faoFmtF(t.plunge);
-    if(gi>0){ L.push('M9'); L.push('G0 Z'+faoFmtXYZ(retr-oz)); }
-    L.push('T'+(t.num||1)+' D1');
-    L.push('M6');
-    L.push('S'+S+' M3');
-    if(cool!=='M9')L.push(cool);
-    g.blocks.forEach(function(b){
-      L.push('; '+faoOpLabel(b.op,job));
-      let first=true;
-      b.moves.forEach(function(m){
-        const X='X'+faoFmtXYZ(m.x-ox), Y='Y'+faoFmtXYZ(m.y-oy), Z='Z'+faoFmtXYZ(m.z-oz);
-        if(m.r){ L.push('G0 '+X+' '+Y+' '+Z); first=true; }
-        else if(m.arc){
-          L.push(faoArcWords(m,ox,oy,oz)+' F'+F);
-          first=false;
-        }
-        else{
-          // Première plongée après un rapide : avance de plongée, sinon avance de coupe.
-          const plunge=first&&/Z/.test(Z);
-          L.push('G1 '+X+' '+Y+' '+Z+' F'+(plunge?FP:F));
-          first=false;
-        }
-      });
-    });
-  });
-  L.push('M9');
-  L.push('G0 SUPA Z600 D0');
-  L.push('G0 '+post.parkX);
-  L.push('M30');
-  return {code:L.join('\n')+'\n', ext:post.ext};
-}
-
-function faoPostFagor(job){
-  const post=FAO_POSTS.fagor8065;
-  const name=faoProgName(job.name);
-  const cool=(job.coolant==='off')?null:'M08';
-  const OG=faoOriginPoint(job), ox=OG[0], oy=OG[1], oz=OG[2];
-  const retr=faoRetractZ(job);
-  let n=10; const L=[];
-  const B=function(s){ L.push('N'+n+' '+s); n+=5; };
-  L.push('('+name+' - MiniFusion FAO '+FAO_VER+' - '+post.label+' - '+faoToday()+')');
-  L.push('('+faoOriginLabel(job)+' - origine '+(job.wcs||'G54')+')');
-  B('G71 G17 G90 G94 '+(job.wcs||'G54'));
-  const groups=faoJobMoves(job);
-  groups.forEach(function(g,gi){
-    const t=g.tool;
-    const S=faoFmtS(t.s), F=faoFmtF(t.f), FP=faoFmtF(t.plunge);
-    if(gi>0){ B('M09'); B('G0 Z'+faoFmtXYZ(retr-oz)); }
-    B('(OUTIL T'+(t.num||1)+' '+faoKindLabel((faoToolById(job,t.id)||{}).kind)+' D'+faoFmtXYZ(t.d)+')');
-    B('T'+(t.num||1)+' D1 M06');
-    B('S'+S+' M03');
-    if(cool)B(cool);
-    g.blocks.forEach(function(b){
-      L.push('( '+faoOpLabel(b.op,job)+' )');
-      let first=true;
-      b.moves.forEach(function(m){
-        const X='X'+faoFmtXYZ(m.x-ox), Y='Y'+faoFmtXYZ(m.y-oy), Z='Z'+faoFmtXYZ(m.z-oz);
-        if(m.r){ B('G0 '+X+' '+Y+' '+Z); first=true; }
-        else if(m.arc){
-          B(faoArcWords(m,ox,oy,oz)+' F'+F);
-          first=false;
-        }
-        else{
-          const plunge=first;
-          B('G1 '+X+' '+Y+' '+Z+' F'+(plunge?FP:F));
-          first=false;
-        }
-      });
-    });
-  });
-  B('M09');
-  B('G0 Z'+faoFmtXYZ(retr-oz));
-  B('M30');
-  return {code:L.join('\n')+'\n', ext:post.ext};
-}
-
+// Post unifié : un seul corps de programme, dialecte réduit à la tête/pied + style de ligne.
+//  - Siemens 840D : lignes brutes, commentaires `;`, fin SUPA Z600 + parc machine
+//  - Fagor 8065    : lignes numérotées `N##` (+5), commentaires `( … )`, retrait Z classique
+// Plongée : le F de plongée ne s'applique qu'à la première plongée Z après un rapide —
+// un pur déplacement XY garde l'avance de coupe (correctif du bug Fagor).
 function faoPost(job,postId){
   const id=postId||(job&&(job.machine||job.post))||'siemens630';
-  if(id==='fagor8065')return faoPostFagor(job);
-  if(id==='siemens1520')return faoPostSiemens(job,'siemens1520');
-  return faoPostSiemens(job,'siemens630');
+  const post=FAO_POSTS[id]||FAO_POSTS.siemens630;
+  const fag=post.kind==='fagor';
+  const name=faoProgName(job.name);
+  const wcs=job.wcs||'G54';
+  const OG=faoOriginPoint(job), ox=OG[0], oy=OG[1], oz=OG[2];
+  const retr=faoRetractZ(job);
+  const groups=faoJobMoves(job);
+  const L=[]; let n=10;
+  const nc=function(s){ if(fag){ L.push('N'+n+' '+s); n+=5; } else L.push(s); };
+  const cmt=function(s){ L.push(fag?('( '+s+' )'):('; '+s)); };
+  const cool=fag?((job.coolant==='off')?null:'M08')
+                :((job.coolant==='off')?'M9':(job.coolant==='through'?'M8':'M7'));
+  if(fag){
+    L.push('('+name+' - MiniFusion FAO '+FAO_VER+' - '+post.label+' - '+faoToday()+')');
+    L.push('('+faoOriginLabel(job)+' - origine '+wcs+')');
+    nc('G71 G17 G90 G94 '+wcs);
+  }else{
+    L.push('; %_N_'+name+'_MPF');
+    L.push('; MiniFusion FAO '+FAO_VER+' — '+post.label+' — '+faoToday());
+    L.push('; Origine '+wcs+' : '+faoOriginLabel(job)+
+      ' ('+faoFmtXYZ(ox)+','+faoFmtXYZ(oy)+','+faoFmtXYZ(oz)+')');
+    nc('G71');
+    nc('G17 G90 G94 '+wcs);
+  }
+  groups.forEach(function(g,gi){
+    const t=g.tool;
+    const S=faoFmtS(t.s), F=faoFmtF(t.f), FP=faoFmtF(t.plunge);
+    if(gi>0){ nc(fag?'M09':'M9'); nc('G0 Z'+faoFmtXYZ(retr-oz)); }
+    cmt('OUTIL T'+(t.num||1)+' '+faoKindLabel((faoToolById(job,t.id)||{}).kind)+
+      ' D'+faoFmtXYZ(t.d)+' S'+S+' F'+F);
+    if(fag){ nc('T'+(t.num||1)+' D1 M06'); }else{ nc('T'+(t.num||1)+' D1'); nc('M6'); }
+    nc('S'+S+(fag?' M03':' M3'));
+    if(cool&&cool!=='M9')nc(cool);
+    g.blocks.forEach(function(b){
+      cmt(faoOpLabel(b.op,job));
+      let first=true;
+      b.moves.forEach(function(m){
+        const X='X'+faoFmtXYZ(m.x-ox), Y='Y'+faoFmtXYZ(m.y-oy), Z='Z'+faoFmtXYZ(m.z-oz);
+        if(m.r){ nc('G0 '+X+' '+Y+' '+Z); first=true; }
+        else if(m.arc){ nc(faoArcWords(m,ox,oy,oz)+' F'+F); first=false; }
+        else{
+          // première plongée après un rapide : avance de plongée, sinon avance de coupe.
+          const plunge=first&&/Z/.test(Z);
+          nc('G1 '+X+' '+Y+' '+Z+' F'+(plunge?FP:F));
+          first=false;
+        }
+      });
+    });
+  });
+  if(fag){
+    nc('M09');
+    nc('G0 Z'+faoFmtXYZ(retr-oz));
+  }else{
+    nc('M9');
+    nc('G0 SUPA Z600 D0');
+    nc('G0 '+post.parkX);
+  }
+  nc('M30');
+  return {code:L.join('\n')+'\n', ext:post.ext};
 }
 
 function faoOpLabel(op,job){
