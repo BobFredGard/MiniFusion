@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**125 versions**, de `2026-09-28b` à `2026-10-01-017` — la plus récente en bas,
+**126 versions**, de `2026-09-28b` à `2026-10-01-018` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2383,3 +2383,21 @@ README : viewer — surface Z-map à la cote exacte de coupe sous l'outil.
 Tests : `test_fao.cjs` — blocs **017-020** : 017 aucun `dt>0.05` sur segment nul après développement d'arcs (parcours arrondi, 44 pts) ; 018 extents réels (grille dépasse bien x1/y1 mesuré, rendu clampé à X1/Y1/Z1) ; 019 mordant (1ʳᵉ ligne à y0 exact = mord de `min(ae,r)=5`, dernière à y1, lignes = `faoFacingCount`) ; 020 Sortie (`setup.secu=10` → sortie finale 35 = z1+10, label « Sortie » en fiche). Ajustements des 3 asserts historiques impactés par le mordant (count `ae=6` 16→15, lignes np=3 → 0/45/80, plongées inter-niveaux vérifiées hors matière **par X en dépassement**) + isolement du bloc 015 (setup dédié avec coupe sous z1, la surface ne peut plus « bouger » à z=z1) et du dispatch chaîne (`ae=40` : une ligne réellement intérieure au lieu de la frontière). Suite FAO verte ; `npm test` 22/23 (KO `test_precision_affichage` = déflection d'affichage, fichiers d'une autre session en cours, hors périmètre FAO), golden `facing=32 pocket=65 contour=7 drill=8` (affichage seul, non asserté).
 
 README : surfaçage — « 1ʳᵉ et dernière ligne à mordant (l'écart morde dans la matière, plafond rayon) » ; posage — champ « Sortie » (mm au-dessus du brut, défaut 5) renommé depuis « Sécur » ; viewer — brut aux extents exacts (plus de débordement d'un pas), gel après arcs corrigé.
+
+### 2026-10-01-018
+
+**Viewer 3D : un import STEP ne disparaît plus, arêtes tangentes communes au natif, affichage 2× plus fin — FAO inchangée.**
+
+1. **Un STEP importé disparaissait après la création d'une esquisse** (gel historique « STEP infaillible ») : **Cause** — le mesh d'import vivait dans la chaîne du document, or `clearBodies()` (`src/10`) et `commitPrev()` (`src/30`) appellent `geometry.dispose()` à chaque reconstruction : le mesh d'un import était donc **libéré pendant qu'il était encore affiché**, et la reconstruction suivante (création d'esquisse, découpe, annuler/rétablir) le rendait invisible sans le recréer. **Fix** : `importHydrate()` est appelé en tête de `rebuildInner()` (réattache le mesh d'import, qui n'entre jamais dans la boucle de rebuild) ; `clearBodies()` et `commitPrev()` **ne libèrent plus** un mesh vivant d'import (ni son `b._faoGeo`) ; table `importGeom` (`Map id → {mesh, edges, faoGeo}`, hors `doc`, reprise après une réinitialisation) + `importMeshesOfDoc()`, `importOwnedMeshes()`, `importIdStillReachable(id)`.
+   Tests : `test_import_vie.cjs` **15/15** (import seul, import + natif, esquisse/découpe, annuler/rétablir ×N, `clearBodies`, réinitialisation) ; **10 échecs** sur un build de contrôle construit sans ces changements.
+2. **STEP sans arêtes tangentes + ~150-300 objets dans la scène** : l'overlay d'arêtes en créait **un `THREE.LineSegments` par arête** (trispartés, raycast à refuser un par un) et l'import ne portait aucune arête — rendu différent du natif. **Fix** : `occSharpEdges(shape)` extrait les arêtes **une fois** à l'import (avant `shape.delete()`) → `entry.edges` ; `edgeOverlayData()` + `buildEdgeOverlay()` produisent **un seul** objet `vertexColors` (arête vive `0x000000`, tangente `0x8e9399`, `l.raycast=()=>{}`) partagé natif + import.
+   Tests : `test_aretes_import.cjs` **15/15** (STEP seul, duo natif+STEP = même tracé 27 arêtes, 1 objet) ; contrôle = `edgeOverlayData absente`.
+3. **Affichage 2× plus grossier que le noyau** : le viewer réutilisait `occXDefl()` (lin 0,3 / ang 0,25), déflection **calibrée pour la FAO** → cercles à 11 segments, arêtes de cylindre à 29°, 5 352 tris pour 10 fonctions. **Fix** : `occDisplayDefl(shape)` (lin borné `[0,05 ; 0,35]` = `dg/1600` de la plus grande dimension, ang **0,2**) + `occTessellateBudget(shape, D, 400 000 tris)` (paliers grossiers lin×4 / ang×2 si le budget est dépassé), utilisés par `occRebuild` **et** `importSTEP` → mêmes finesse et arêtes entre natif et STEP ; `occXDefl()` **strictement inchangée**.
+   **Mesure** (banc three.js réel, pièce « Coque et Dépouilles » 10 fonctions) : **5 352 → 8 408 tris** (+57 %), rejeu chaud 549 → 655 ms dont **+70 ms** de tessellation (replay OCCT 367 → 381 ms ≈, `importHydrate` et overlay = 0 ms) ; l'essai `dg/4000` (12 154 tris, +120 ms) a été écarté comme sur-investi.
+   Tests : `test_precision_affichage.cjs` **16/16** (déflection commune natif/STEP, bornes `[0,05 ; 0,35]`, budget de triangles).
+4. **FAO inchangée (garde-fou)** : `faoMeshFromBody` est **wrappé** dans `src/90` (`_faoMeshFromBodyOrig`, `faoLegacyGeo`) — `src/88-fao.js` et `tests/test_fao.cjs` jamais édités. Le corps exact est retessellé avec `occXDefl()` **après** `occt.BRepTools.Clean(shape)` (OCCT **réutilise** un maillage existant s'il est au moins aussi fin : sans `Clean`, un raffinement serait impossible et un rejeu plus grossier resterait au maillage fin). `importSTEP` pose d'abord `entry.faoGeo = occTessellate(shape, 0.5, 0.5)` **avant** la finesse d'affichage → l'import conserve le maillage FAO d'origine.
+   Tests : `test_fao_lock.cjs` **13/13** (corps exact = 100 tris FAO vs 444-484 tris affichage, cache par corps, congés → `[0.2,0.25]`, import → `[[0.5,0.5],[…]]`, import sans retessellation FAO).
+
+Tests : 4 nouvelles suites enregistrées dans `tests/run.cjs` → **`npm test` 23/23 vert** sur `fusion_mvp.html` ; les 4 échouent sur un build de contrôle sans ces changements (preuve de régression). Discipline : `node --check src/*.js` après chaque édition (une double ligne `return g;}` a rendu un build injouable en silence).
+
+README : viewer — « un import STEP ne disparaît plus après une modification (esquisse, annuler/rétablir) », arêtes tangentes affichées avec le natif **en un seul objet**, affichage plus fin et commun natif/STEP (déflection d'affichage bornée + budget 400 000 tris) ; FAO — `occXDefl()` préservée.

@@ -1172,41 +1172,80 @@ function occApplyDraft(result,f){
 }
 let edgeMode='off'; // 'off' | 'on' : surlignage vives noires / tangentes grises
 try{const em=localStorage.getItem('minifusion_edges');if(em==='on'||em==='off')edgeMode=em;}catch(e){}
+function edgeOverlayData(){
+  // POLYLIGNES de l'overlay « Arêtes » : {pts:[[x,y,z]…], sharp, mw?}.
+  // • corps exacts → classification C0/G1 RÉELLE sur le composé occLive (inchangé) ;
+  // • IMPORTS → arêtes classées À L'IMPORT, tant que le shape BRep vivait (après
+  //   shape.delete() la continuité des faces n'est plus consultable : c'est ce qui
+  //   faisait qu'un STEP n'avait AUCUNE arête à côté d'une pièce native) ;
+  // • repli maillage (arêtes > 30°, tout noir) : STL, imports sans classification,
+  //   ou document sans corps exact — comportement d'origine, inchangé.
+  const out=[];
+  if(edgeMode!=='on')return out;
+  const vis=b=>!!(b&&b.visible!==false&&!b.ghost&&b.mesh&&b.mesh.visible!==false);
+  const exact=!!(occLive&&occLive.shape&&bodies.some(b=>b.kind==='body'&&vis(b)));
+  if(exact){
+    try{occSharpEdges(occLive.shape).forEach(e=>{if(e&&e.pts&&e.pts.length>1)out.push({pts:e.pts,sharp:!!e.sharp});});}catch(e){}
+  }
+  bodies.forEach(b=>{
+    if(!vis(b))return;
+    if(b.kind==='import'){
+      let ent=null;
+      try{ent=importGeom.get(b.ref||b.id);}catch(e){ent=null;}
+      if(ent&&ent.edges&&ent.edges.length){
+        ent.edges.forEach(e=>{if(e&&e.pts&&e.pts.length>1)out.push({pts:e.pts,sharp:!!e.sharp,mw:(b.mesh&&b.mesh.matrixWorld)||null});});
+        return;
+      } // STL / import sans classification → repli maillage ci-dessous
+    }else if(exact)return; // corps exacts déjà couverts par le composé occLive
+    try{out.push.apply(out,edgeOverlayFromMesh(b));}catch(e){}
+  });
+  return out;
+}
+function edgeOverlayFromMesh(b){
+  // Repli maillage (ancien comportement, bit à bit) : arêtes vives > 30°, noires.
+  const res=[];
+  b.mesh.updateMatrixWorld(true);
+  const eg=new THREE.EdgesGeometry(b.mesh.geometry,30);
+  const p=eg&&eg.attributes&&eg.attributes.position;
+  if(!p){try{if(eg&&eg.dispose)eg.dispose();}catch(e){}return res;}
+  const A=new THREE.Vector3(),B=new THREE.Vector3(),mw=b.mesh.matrixWorld||null;
+  for(let i=0;i<p.count;i+=2){
+    A.fromBufferAttribute(p,i).applyMatrix4(mw);
+    B.fromBufferAttribute(p,i+1).applyMatrix4(mw);
+    res.push({pts:[[A.x,A.y,A.z],[B.x,B.y,B.z]],sharp:true});
+  }
+  try{eg.dispose();}catch(e){}
+  return res;
+}
 function buildEdgeOverlay(){
   const old=scene.getObjectByName('edgeOverlay');if(old)scene.remove(old);
   if(edgeMode!=='on')return;
-  const grp=new THREE.Group();grp.name='edgeOverlay';
-  const occBody=bodies.find(b=>b.kind==='body'&&b.visible!==false&&b.mesh&&b.mesh.visible!==false);
-  if(occBody&&occLive&&occLive.shape){
-    try{ // voie exacte : classement C0/G1 réel
-      occSharpEdges(occLive.shape).forEach(e=>{
-        const l=new THREE.Line(new THREE.BufferGeometry().setFromPoints(e.pts.map(p=>new THREE.Vector3(p[0],p[1],p[2]))),
-          new THREE.LineBasicMaterial({color:e.sharp?0x000000:0x8e9399}));
-        l.raycast=()=>{};grp.add(l);
-      });
-    }catch(e){}
-  }else{
-    bodies.forEach(b=>{ // repli maillage : vives seules (> 30°), noires
-      if(!b.visible||b.ghost||!b.mesh)return;
-      try{
-        b.mesh.updateMatrixWorld(true);
-        const eg=new THREE.EdgesGeometry(b.mesh.geometry,30);
-        const p=eg.attributes.position,pts=[];
-        const A=new THREE.Vector3(),B=new THREE.Vector3();
-        for(let i=0;i<p.count;i+=2){
-          A.fromBufferAttribute(p,i).applyMatrix4(b.mesh.matrixWorld);
-          B.fromBufferAttribute(p,i+1).applyMatrix4(b.mesh.matrixWorld);
-          pts.push(A.clone(),B.clone());
-        }
-        eg.dispose();
-        if(!pts.length)return;
-        const l=new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts),
-          new THREE.LineBasicMaterial({color:0x000000}));
-        l.raycast=()=>{};grp.add(l);
-      }catch(e){}
-    });
+  const data=edgeOverlayData();
+  if(!data.length)return;
+  // UN SEUL LineSegments à couleurs par sommet : N objets + 2 matériaux deviennent
+  // UN draw call (l'overlay ne coûte plus 2N appels, et suit la fluidité du reste).
+  const pos=[],col=[];
+  for(const d of data){
+    const pts=d&&d.pts;if(!pts||pts.length<2)continue;
+    // vive → noire 0x000000 ; tangente → grise 0x8e9399 (couleurs d'origine)
+    const c=d.sharp?[0,0,0]:[0x8e/255,0x93/255,0x99/255];
+    const M=(d.mw&&d.mw.elements)||null;
+    const put=p=>{
+      let x=+p[0],y=+p[1],z=+p[2];
+      if(M){const X=x,Y=y,Z=z;x=M[0]*X+M[4]*Y+M[8]*Z+M[12];y=M[1]*X+M[5]*Y+M[9]*Z+M[13];z=M[2]*X+M[6]*Y+M[10]*Z+M[14];}
+      pos.push(x,y,z);col.push(c[0],c[1],c[2]);
+    };
+    for(let i=0;i+1<pts.length;i++){put(pts[i]);put(pts[i+1]);}
   }
-  scene.add(grp);
+  if(!pos.length)return;
+  try{
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
+    const l=new THREE.LineSegments(g,new THREE.LineBasicMaterial({vertexColors:true}));
+    l.name='edgeOverlay';l.raycast=()=>{}; // jamais pris par le picking
+    scene.add(l);
+  }catch(e){ /* aucun overlay vaut mieux qu'un rendu cassé */ }
 }
 function distSeg2(px,py,ax,ay,bx,by){const dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy||1e-18;let t=((px-ax)*dx+(py-ay)*dy)/L2;t=Math.max(0,Math.min(1,t));return Math.hypot(px-(ax+t*dx),py-(ay+t*dy));}
 function rotP(Q,Cx,Cy,a){const dx=Q.x-Cx,dy=Q.y-Cy,c=Math.cos(a),s=Math.sin(a);Q.x=Cx+dx*c-dy*s;Q.y=Cy+dx*s+dy*c;}
@@ -1618,6 +1657,45 @@ function occXDefl(){
   doc.features.filter(x=>x.type==='xfillet'&&x.visible!==false).forEach(xf=>(xf.edges||[]).forEach(se=>{if(se.r>0&&se.r<mr)mr=se.r;}));
   if(!(mr<1e9))return{lin:0.5,ang:0.5};
   return{lin:Math.min(0.5,Math.max(0.04,mr/10)),ang:0.25};
+}
+const OCC_DISPLAY_TRIS=400000; // budget de triangles d'AFFICHAGE (la FAO a les siens)
+function occDisplayDefl(shape){
+  // Déflection d'AFFICHAGE, commune au natif et aux imports : même maillage ⇒ même
+  // normales lissées (smoothNormals 35°) ⇒ même ombrage faces/surfaces des deux côtés.
+  // • linéaire proportionnel à la taille de la pièce (0,05 à 0,35 mm) : la finesse ne
+  //   dépend plus de la présence d'un congé, elle suit l'objet réel ;
+  // • angulaire 0,2 rad (~11°) au lieu de 0,5 rad (~29°) : les cercles/cylindres
+  //   cessent d'être des polygones visibles.
+  // CALIBRÉ sur le banc d'attente (bench_phase5, three.js réel, pièce 10 fonctions) :
+  //   0,3/0,25 (avant) 5 300 tris / 176 ms  ·  0,1/0,2 8 500 tris / 242 ms
+  //   0,04/0,2 12 100 tris / 300 ms  →  dg/1600 plafonne le surcoût de rejeu à ~+60 ms
+  //   (+12 % de l'attente après modification) pour un gain net : cercles lisses et
+  //   congés 3× plus fins qu'auparavant. Plus fin que dg/1600 coûte le double pour
+  //   presque plus rien à l'écran.
+  // NE PAS UTILISER pour l'outillage : occXDefl() reste la référence FAO (inchangée).
+  let dg=100;
+  try{const b=occSolidBox(shape);if(b&&b.dg>0)dg=b.dg;}catch(e){}
+  return{lin:Math.min(0.35,Math.max(0.05,dg/1600)),ang:0.2};
+}
+function occTessellateBudget(shape,D,maxTris,countFn){
+  // Tessellation d'affichage BORNÉE : si la définition voulue sortir trop de triangles,
+  // on repasse en grossier (au plus deux paliers, D muté pour la suite du rejeu) - le
+  // temps d'attente après modification reste prévisible quel que soit le fichier.
+  // countFn : sonde optionnelle de comptage (le harnais Node n'a pas de compteurs
+  // d'attributs THREE) ; par défaut on lit g.attributes.position.count.
+  let g=null;
+  for(let k=0;k<3;k++){
+    try{g=occTessellate(shape,D.lin,D.ang);}catch(e){return null;}
+    let n=0;
+    if(typeof countFn==='function'){try{n=+countFn(g)||0;}catch(e){n=0;}}
+    else{try{n=(g&&g.attributes&&g.attributes.position)?(Number(g.attributes.position.count)||0):0;}catch(e){n=0;}}
+    if(!maxTris||n/3<=maxTris)return g;
+    try{if(g&&g.dispose)g.dispose();}catch(e){}
+    g=null;
+    D.lin=Math.min(0.5,D.lin*4);D.ang=Math.min(0.6,D.ang*2);
+    if(D.lin>=0.5&&D.ang>=0.6)break;
+  }
+  return g;
 }
 function occCleanup(FR,keepShape){
   if(!FR)return;
@@ -2032,19 +2110,26 @@ function occRebuild(){
   let FR=null;
   try{
     FR=occFinalShape(tlReplayCount());
-    const D=occXDefl();
     // UN mesh PAR CORPS, rejoué isolément : l'id affiché EST l'id du corps (stable,
-    // persisté — plus aucun rapprochement par centroïdes). occLive garde le COMPOSÉ :
+    // persisté - plus aucun rapprochement par centroïdes). occLive garde le COMPOSÉ :
     // congés, ancrages, picking d'arêtes, overlay et cache voient l'ensemble, inchangés.
     const parts=(FR.perBody||[]).filter(p=>p&&p.shape);
+    // Déflection d'AFFICHAGE commune au natif et aux imports (même ombrage) et bornée
+    // en triangles : occXDefl() — la référence FAO — n'intervient PAS ici, intentionnellement.
+    const D=occDisplayDefl(FR.shape||(parts[0]&&parts[0].shape)||null);
+    let trisTot=0;
     if(parts.length){
       const _fa=FR.items.filter(j=>(j.f.op||'add')==='add');
       const _ff=_fa.map(j=>j.f).find(f=>f.color>0)||_fa.map(j=>j.f)[0];
       parts.forEach((p,i)=>{
         const e=bodyEntry(p.bodyId);
         let g=null;
-        try{g=occTessellate(p.shape,D.lin,D.ang);}catch(err){FR.msgs.push(e.name+' : maillage impossible, ignoré');return;}
+        try{
+          g=occTessellateBudget(p.shape,D,Math.max(1,OCC_DISPLAY_TRIS-trisTot));
+          if(!g)g=occTessellate(p.shape,D.lin,D.ang);
+        }catch(err){FR.msgs.push(e.name+' : maillage impossible, ignoré');return;}
         const tris=(g.attributes.position.count/3)|0;
+        trisTot+=tris; // budget global : dépassement ⇒ D muté grossier pour les corps suivants
         if(!(tris>0)){try{g.dispose&&g.dispose();}catch(err){}return;}
         try{const info=occSolidBox(p.shape);if(info)e.c=info.c;}catch(err){}
         const col=e.color||(parts.length===1?(partTint()||(_ff?featColor(_ff,autoCol(0)):autoCol(0))):autoCol(i));

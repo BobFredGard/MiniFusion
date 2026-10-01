@@ -599,6 +599,72 @@ function applyClip(){
 }
 
 /* ---------- import / export ---------- */
+// ── Géométrie vivante des imports (STEP / STL) ───────────────────────────────
+// Un import n'a AUCUNE forme paramétrique : sa géométrie EST le mesh `f._mesh`,
+// réutilisé tel quel à chaque rejeu. Trois pièges, tous corrigés ici :
+//   1) `commitPrev()` / `clearBodies()` retiraient ce mesh de la scène à chaque rejeu
+//      → le STEP disparaissait dès la création d'une esquisse (bodies le contient
+//      toujours, l'objet n'est plus dans la scène). → importMeshesOfDoc().
+//   2) `docSnap()` strippe `_mesh` (JSON) → annuler/rétablir rendait le corps fantôme
+//      (entrée présente, rien d'affiché). → importHydrate() le re-broche.
+//   3) le shape OCCT est détruit en fin d'import → classification des arêtes
+//      tangentes impossible ensuite. → calculée tant qu'il vit, stockée ICI.
+// Table délibérément hors `doc` : jamais sérialisée, jamais dans `docHash`,
+// jamais par instantané d'annulation — elle survit à tout rechargement d'état.
+// Propriété : le mesh est LA TABLE qui en décide — il est libéré exactement quand
+// son entrée est retirée (id absent de doc.features ET de toutes les piles
+// d'annulation), donc jamais pendant un aller-retour annuler/rétablir.
+const importGeom=new Map(); // id fonction -> {mesh, edges, faoGeo}
+function importMeshesOfDoc(){
+  // Meshes des imports ENCORE DANS LE DOCUMENT : à afficher, donc à préserver.
+  const s=new Set();
+  try{
+    (doc.features||[]).forEach(f=>{
+      if(!f||f.type!=='import')return;
+      if(f._mesh)s.add(f._mesh);
+      const e=importGeom.get(f.id);if(e&&e.mesh)s.add(e.mesh);
+    });
+  }catch(e){}
+  return s;
+}
+function importOwnedMeshes(){
+  // Tous les meshes entretenus par la table (dont ceux d'une fonction momentanément
+  // annulée : ni affichés, mais RÉUTILISABLES au retour → jamais libérés ici).
+  const s=new Set();
+  try{for(const e of importGeom.values())if(e&&e.mesh)s.add(e.mesh);}catch(e){}
+  return s;
+}
+function importIdStillReachable(id){
+  // Annuler retire la fonction du document mais son instantané (JSON) la remettra
+  // peut-être : tant que l'id existe dans une pile, la géométrie doit rester.
+  try{
+    const piles=[docUndoStack,docRedoStack];
+    for(const p of piles){
+      if(!p)continue;
+      for(let i=0;i<p.length;i++){const e=p[i];if(e&&typeof e.snap==='string'&&e.snap.indexOf(id)>=0)return true;}
+    }
+  }catch(e){}
+  return false;
+}
+function importHydrate(){
+  // Re-broche `_mesh` (un instantané d'annulation l'a stripé) et libère les entrées
+  // dont la fonction n'existe plus nulle part.
+  const vivant=new Set();
+  try{
+    (doc.features||[]).forEach(f=>{
+      if(!f||f.type!=='import')return;
+      vivant.add(f.id);
+      if(f._mesh){if(!importGeom.has(f.id))importGeom.set(f.id,{mesh:f._mesh});}
+      else{const e=importGeom.get(f.id);if(e&&e.mesh)f._mesh=e.mesh;}
+    });
+  }catch(e){}
+  for(const id of Array.from(importGeom.keys())){
+    if(vivant.has(id)||importIdStillReachable(id))continue;
+    const e=importGeom.get(id);importGeom.delete(id);
+    try{if(e&&e.mesh&&e.mesh.geometry)e.mesh.geometry.dispose();}catch(_){}
+    try{if(e&&e.faoGeo&&e.faoGeo.dispose)e.faoGeo.dispose();}catch(_){}
+  }
+}
 $('btnImport').onclick=()=>$('fileImport').click();
 $('fileImport').addEventListener('change',async e=>{
   const f=e.target.files[0];if(!f)return;
@@ -613,6 +679,7 @@ async function importSTL(file){
   const mesh=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0x0a84ff}));
   const id=uid('im');
   const feat={id,type:'import',name:file.name.replace(/\.[^.]+$/,''),visible:true,_mesh:mesh};
+  importGeom.set(id,{mesh});
   // centre la pièce
   geo.computeBoundingBox();const c=geo.boundingBox.getCenter(new THREE.Vector3());geo.translate(-c.x,-c.y,-c.z);
   addFeature(feat);sel={kind:'feature',id};markDirty();rebuild();showAll();
@@ -646,10 +713,29 @@ async function importSTEP(file){
     reader.ReadFile(path); // statut passé en revue via NbRootsForTransfer
     if(reader.NbRootsForTransfer()<1)throw new Error('aucun solide transférable');
     reader.TransferRoots();const shape=reader.OneShape();
-    const g=occTessellate(shape,0.5);
-    if(!g.attributes.position.count)throw new Error('tessellation vide');
+    // FAO : la définition HISTORIQUE de l'import (0,5 mm / 0,5 rad), posée AVANT la
+    // finesse d'affichage. Le noyau ne retesselle JAMAIS vers plus grossier : si l'on
+    // commençait par le maillage fin, la demande grossière réutiliserait le fin et
+    // l'outillage verrait d'autres triangles qu'aujourd'hui.
+    let faoGeo=null;
+    try{faoGeo=occTessellate(shape,0.5,0.5);}catch(e){faoGeo=null;}
+    // MÊME déflection d'affichage que le natif (occDisplayDefl) : finesse commune,
+    // ombrage identique, budget de triangles borné. Avant : 0,5 mm fixe + 0,5 rad,
+    // donc un STEP toujours plus grossier qu'une pièce native.
+    const D=occDisplayDefl(shape);
+    const g=occTessellateBudget(shape,D,OCC_DISPLAY_TRIS)||occTessellate(shape,D.lin,D.ang);
+    if(!g||!g.attributes.position.count)throw new Error('tessellation vide');
     const mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0x0a84ff}));
-    addFeature({id:uid('im'),type:'import',name:file.name.replace(/\.[^.]+$/,''),visible:true,_mesh:mesh});
+    const id=uid('im');
+    const entry={mesh};
+    if(faoGeo)entry.faoGeo=faoGeo; // géométrie réservée à l'outillage (voir la fin du fichier)
+    // Arêtes tangentes : besoin des FACES et de leur continuité (C0/G1). Le shape est
+    // détruit juste en dessous (shape.delete()) — on les classe DONC ICI, une fois pour
+    // toutes, et on les range dans la table. Sans ça, l'overlay « Arêtes » ne couvrait
+    // jamais un STEP : le repli ne dessinait que des vives > 30°, tout en noir.
+    try{const E=occSharpEdges(shape);if(E&&E.length)entry.edges=E;}catch(e){}
+    importGeom.set(id,entry); // {mesh, edges, faoGeo}
+    addFeature({id,type:'import',name:file.name.replace(/\.[^.]+$/,''),visible:true,_mesh:mesh});
     try{reader.delete();}catch(e){}
     try{shape.delete();}catch(e){}
     try{occt.FS.unlink(path);}catch(e){}
@@ -657,6 +743,51 @@ async function importSTEP(file){
     faceEl.textContent='STEP importé : '+file.name;
   }catch(e){alert('Import STEP impossible : '+e.message);}
 }
+/* ============ FAO : « corps blindés » (phase 4) ==============================
+   L'affichage est désormais plus fin (occDisplayDefl + budget de triangles, phase 3)
+   et 88-fao fabrique son maillage plan de posage en lisant les positions du mesh
+   AFFICHÉ : sans intervention, un corps exact ou un import STEP donnerait d'autres
+   triangles → autre G-code, et au-delà de 120 000 triangles le corps serait
+   silencieusement EXCLU du posage (faoMeshFromBody renvoie null).
+   On intercèpe donc faoMeshFromBody (déclaré en 88, appelé par faoActiveMesh) :
+   la FAO reçoit la géométrie aux paramètres D'AUJOURD'HUI — occXDefl() pour un
+   corps exact (le paramètre d'outillage n'a pas bougé), 0,5 mm/0,5 rad pour un
+   import STEP (entry.faoGeo). Les autres corps (repli maillage, aperçus, fantômes)
+   passent par l'ancienne fonction, strictement inchangée.
+   Libération : b._faoGeo par clearBodies()/commitPrev(), entry.faoGeo par
+   importHydrate() (entrées purgées). */
+const _faoMeshFromBodyOrig=(typeof faoMeshFromBody==='function')?faoMeshFromBody:null;
+function faoLegacyGeo(b){
+  // Geometry d'OUTILLAGE d'un corps exact, en cache sur le corps.
+  if(!b||b.kind!=='body'||!b.shape)return null;
+  if(b._faoGeo)return b._faoGeo;
+  let g=null;
+  try{
+    // Le shape est déjà maillé en AFFICHAGE (plus fin) : BRepMesh réutilise un
+    // maillage existant s'il est au moins aussi fin → on l'efface, sinon la FAO
+    // récupérerait la finesse d'affichage au lieu de sa définition historique.
+    try{occt.BRepTools.Clean(b.shape);}catch(e){}
+    const D=occXDefl();
+    g=occTessellate(b.shape,D.lin,D.ang);
+  }catch(e){g=null;}
+  if(!g)return null;
+  b._faoGeo=g;
+  return g;
+}
+faoMeshFromBody=function(b){
+  // Seule la lecture du mesh change : on redonne l'ANCIENNE géométrie à la
+  // fonction d'origine via un corps factice {mesh:{geometry,matrixWorld}}.
+  try{
+    if(b&&b.kind==='import'&&_faoMeshFromBodyOrig){
+      const e=importGeom.get(b.id);
+      if(e&&e.faoGeo)return _faoMeshFromBodyOrig({mesh:{geometry:e.faoGeo,matrixWorld:b.mesh&&b.mesh.matrixWorld}});
+    }else if(b&&b.kind==='body'&&b.shape&&_faoMeshFromBodyOrig){
+      const g=faoLegacyGeo(b);
+      if(g)return _faoMeshFromBodyOrig({mesh:{geometry:g,matrixWorld:b.mesh&&b.mesh.matrixWorld}});
+    }
+  }catch(e){}
+  return _faoMeshFromBodyOrig?_faoMeshFromBodyOrig(b):null;
+};
 function occFsDiag(){
   // Photo du FS interne pour diagnostiquer (console F12).
   try{

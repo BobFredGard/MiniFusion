@@ -97,6 +97,7 @@ function rebuild(pass){
 }
 function rebuildInner(projPass){
   projPass=projPass||0;
+  try{importHydrate();}catch(e){} // imports STEP/STL : géométrie revivifiée si un instantané d'annulation l'a stripée
   try{ensureBodies();}catch(e){} // corps conteneurs : migration des anciens documents
   (doc.sketches||[]).forEach(migrateSketch); // compat anciens brouillons + verrouille le modèle points
   // « Vers un objet » : résolution de la distance (antériorité) AVANT les hôtes de faces.
@@ -111,7 +112,19 @@ function rebuildInner(projPass){
   lastSolidBodies=bodies.filter(b=>!b.ghost&&b.mesh&&b.mesh.geometry&&b.mesh.geometry.attributes&&b.mesh.geometry.attributes.position&&b.mesh.geometry.attributes.position.count>0);
   bodies=[];occLive=null;
   const commitPrev=()=>{
-    for(const b of prevBodies){try{scene.remove(b.mesh);b.mesh.geometry.dispose();}catch(e){}}
+    // Un IMPORT n'est pas un corps reconstruit : son mesh (`f._mesh`) est RETENU entre
+    // les rejeux et RÉAFFICHÉ tel quel par occRebuild. Le retirer de la scène + le
+    // libérer le faisait disparaître dès le rejeu suivant (création d'une esquisse) alors
+    // que `bodies` le contient toujours. On ne retire donc que ce qui n'est plus
+    // affichable, et on ne libère que ce que la table d'imports n'entretient pas
+    // (annuler/rétablir doit pouvoir le remettre en scène tel quel).
+    const vivant=importMeshesOfDoc(),garde=importOwnedMeshes();
+    for(const b of prevBodies){
+      if(!b||!b.mesh||vivant.has(b.mesh))continue;
+      try{scene.remove(b.mesh);}catch(e){}
+      if(!garde.has(b.mesh)){try{if(b.mesh.geometry)b.mesh.geometry.dispose();}catch(e){}}
+      try{if(b._faoGeo&&b._faoGeo.dispose)b._faoGeo.dispose();}catch(e){}
+    }
     if(prevLive&&(!occLive||occLive.shape!==prevLive.shape)){try{prevLive.shape.delete();}catch(e){}}
   };
   const rollbackPrev=why=>{

@@ -225,7 +225,18 @@ function clearBodies(){
   // partageant les TShapes, compteur de références OCCT : les supprimer est sûr),
   // SAUF le repli « forme non décomposable » où l'entrée référence le composé lui-même
   // (même objet que occLive.shape) — celui-là, seul occDropLive le libère (double-free sinon).
-  bodies.forEach(b=>{scene.remove(b.mesh);b.mesh.geometry.dispose();try{if(b.shape&&(!occLive||b.shape!==occLive.shape))b.shape.delete();}catch(e){}});bodies=[];const eo=scene.getObjectByName('edgeOverlay');if(eo)scene.remove(eo);clearMeasure();clearHover();if(selGroup){scene.remove(selGroup);selGroup=null;}selFaces=[];}
+  // Les meshes d'import (f._mesh) appartiennent à la fonction : retirés de la scène
+  // comme tous les autres, mais JAMAIS libérés — la table `importGeom` en décide
+  // (annuler/rétablir doit pouvoir les remettre en scène tels quels).
+  const vivant=(typeof importMeshesOfDoc==='function')?importMeshesOfDoc():new Set();
+  const garde=(typeof importOwnedMeshes==='function')?importOwnedMeshes():new Set();
+  bodies.forEach(b=>{
+    try{if(b._faoGeo&&b._faoGeo.dispose)b._faoGeo.dispose();}catch(e){}
+    if(!b.mesh)return;
+    scene.remove(b.mesh);
+    if(!vivant.has(b.mesh)&&!garde.has(b.mesh)){try{b.mesh.geometry.dispose();}catch(e){}}
+    try{if(b.shape&&(!occLive||b.shape!==occLive.shape))b.shape.delete();}catch(e){}
+  });bodies=[];const eo=scene.getObjectByName('edgeOverlay');if(eo)scene.remove(eo);clearMeasure();clearHover();if(selGroup){scene.remove(selGroup);selGroup=null;}selFaces=[];}
 function planeBasis(plane,sk){
   // Base arbitraire : si l'esquisse porte axU/axV/axN (esquisse sur face), on les utilise.
   // Sinon repli sur les 3 plans d'origine. Z↑ haut, Y→arrière.
