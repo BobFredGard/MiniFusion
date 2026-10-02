@@ -148,7 +148,46 @@
             "ae": 22,
             "arrondi": 10,
             "np": null,
-            "npz": 5
+            "npz": 5,
+            "hidden": true
+          },
+          {
+            "id": "op_3_muql1gwe",
+            "on": true,
+            "toolId": "T6",
+            "radial": 0.5,
+            "axial": 0.5,
+            "type": "pocket3d",
+            "x0": -107.5,
+            "y0": -70,
+            "x1": 107.5,
+            "y1": 70,
+            "ztop": 50,
+            "zbot": 10,
+            "ap": 5,
+            "tour": 1,
+            "ae": 5,
+            "arrondi": 30,
+            "hidden": true
+          },
+          {
+            "id": "op_4_muql67vy",
+            "on": true,
+            "toolId": "T6",
+            "radial": 0.5,
+            "axial": 0.5,
+            "type": "rough3d",
+            "ztop": 60,
+            "zbot": 0,
+            "ap": 20,
+            "ap2": 3,
+            "ae": 6,
+            "radial2": 0.25,
+            "axial2": 0.25,
+            "strategy": "morph",
+            "entry": "auto",
+            "arrondi": 2,
+            "hidden": true
           }
         ],
         "stockSrc": "body",
@@ -159,8 +198,8 @@
     "activeSetupId": "setup_2_mup840t5"
   },
   "sel": {
-    "kind": "faoSetup",
-    "id": "setup_2_mup840t5"
+    "kind": "faoOp",
+    "id": "op_4_muql67vy"
   },
   "sketches": [
     {

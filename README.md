@@ -76,7 +76,7 @@ Une partie FAO est en travail, ce sera long !
 - Les instances sont **regroupées sous la répétition**, repliées par défaut, et **paramétriques** : elles suivent leur source (profondeur, opération, sens, étendue, congé) et régénèrent en place sans perdre leurs identifiants.
 
 ### FAO — fraisage 2.5D / 3D + G-code (Pas fonctionnel pour l'heure)
-- **Posages** façon setup Fusion : machine, origine `G54`–`G59`, point de bloc, **indexation 3+2** (table C + B, degrés, bouton 3 axes **et « Sur la pièce »** : cliquez une face sortante, `B`/`C` calculés depuis sa normale — face vers le bas refusée), modèle (tous les corps ou sélection), **brut en 3 sources** (tous les corps + marge / **corps choisi** — désigné par la liste **Source** de la fiche, **masqué dans la vue dès choisi**, `👁` de la ligne corps pour le revoir / **manuel** 6 champs, jamais recalculé), bridage mémorisé. **Arbre FAO dédié** — ligne de corps `🧱` : **👁 œil = vue seule**, **⏻ = rejeu** (œil ne coupe plus les fonctions, `📦` retiré) ; ligne dès usinage : bouton **Masquer** pour ses traces ; **chaque posage porte une flèche ▼/▶** qui replie/déplie **ses opérations** (état `s.open` **enregistré dans le document**) ; les **7 boutons + usinage** ont quitté le panneau pour une **barre posée sur la vue 3D** (même pilule que `Iso`/`Dessus`, collée **en haut à droite du panneau des corps**, titre `+ Usinage`, libellés sans `+`, **masquée dès que le panneau FAO est rabattu**) ; le panneau est **toujours présent** (le bouton `FAO` de la barre d'outils a été retiré) et se **rabat sur sa droite** par l'onglet `❯`/`❮` (procédé de l'arbre des corps, état en `localStorage`) ; ses actions sont **regroupées sous un libellé** — **POSAGE** (`+ Posage`, `Outils`), **EXÉCUTION** (`▶ Usinage`, `Générer + aperçu`), **EXPORT** (`Exporter G-code`) — la fiche ne gardant que la configuration, fiches posage/opération dans le panneau droit ; **« Nouveau modèle » remet toute la FAO à zéro** (mode lecture fermé, fenêtre outils fermée, traces retirées, posages et opérations remis au défaut).
+- **Posages** façon setup Fusion : machine, origine `G54`–`G59`, point de bloc, **indexation 3+2** (table C + B, degrés, bouton 3 axes **et « Sur la pièce »** : cliquez une face sortante, `B`/`C` calculés depuis sa normale — face vers le bas refusée), modèle (tous les corps ou sélection), **brut en 3 sources** (tous les corps + marge / **corps choisi** — désigné par la liste **Source** de la fiche, **masqué dans la vue dès choisi**, `👁` de la ligne corps pour le revoir / **manuel** 6 champs, jamais recalculé), bridage mémorisé. **Arbre FAO dédié** — ligne de corps `🧱` : **👁 œil = vue seule**, **⏻ = rejeu** (œil ne coupe plus les fonctions, `📦` retiré) ; ligne dès usinage : bouton **Masquer** pour ses traces ; **chaque posage porte une flèche ▼/▶** qui replie/déplie **ses opérations** (état `s.open` **enregistré dans le document**) ; les **7 boutons + usinage** ont quitté le panneau pour une **barre posée sur la vue 3D** (même pilule que `Iso`/`Dessus`, **en haut à droite, au-dessus du panneau FAO** — les deux reposent dans la même colonne `#faoWrap`, **même hauteur que la pilule des vues (34px)** : la barre reste sur **une seule ligne** (défilement horizontal invisible si l'écran est étroit, jamais de 2ᵉ ligne — elle ne peut donc plus écraser sa voisine), sans jamais toucher la pilule des vues ; titre `+ Usinage`, libellés sans `+`, **masquée dès que le panneau FAO est rabattu**) ; le panneau est **toujours présent** (le bouton `FAO` de la barre d'outils a été retiré) et se **rabat sur sa droite** par l'onglet `❯`/`❮` (procédé de l'arbre des corps, état en `localStorage`) ; ses actions sont **regroupées sous un libellé** — **POSAGE** (`+ Posage`, `Outils`), **EXÉCUTION** (`▶ Usinage`, `Générer + aperçu`), **EXPORT** (`Exporter G-code`) — la fiche ne gardant que la configuration, fiches posage/opération dans le panneau droit ; **« Nouveau modèle » remet toute la FAO à zéro** (mode lecture fermé, fenêtre outils fermée, traces retirées, posages et opérations remis au défaut).
 - **Bibliothèque d'outils** : cylindrique, boule, torique (ex. `T6 D25 R2` de la gamme atelier `CAV-75-25`) — `Vc`/`fz` → `S`/`F` calculés, plongée 30 % — **bouton « Outils » (groupe POSAGE du panneau FAO) → fenêtre flottante fermable (Échap/✕)** avec la bibliothèque éditable (nom, type, D, r, dents, Vc/fz, + Outil).
 - **Opérations 2.5D** : **surfaçage** zigzag — **« écart » : seul paramètre de recouvrement XY** (l'ancien couple « Passes »/« écart » est supprimé : le **nombre de lignes s'affiche en lecture seule** ; un document ancien piloté par « Passes » reste lu tel quel et bascule à la première saisie de l'écart) **+ « pz » : passes en Z / brut** (l'ébauche descend du dessus du brut `Z1` jusqu'à la cote `Z` en `pz` passes égales, le pas **ap est calculé** `(Z1−Z)/pz` et affiché ; `pz=1` = passe unique) **+ 1ʳᵉ et dernière ligne à mordant** (elles entrent dans la matière de la valeur d'écart, plafonnée au rayon — plus tangentes à l'arête du brut ; le label « N lignes » reste exact) **+ champ « Sortie » rappelé dans la fiche de l'opération** (réglable là où l'on paramètre la passe), **poche** concentrique, **contour** compensé du rayon, **perçage**, **débourrage poche** (hélice `R = 0,4×D` + spirale + tours de parois, calé sur la gamme `CAV-75-25`).
 - **Ébauche 3D** : **Morph** (spirale qui suit la forme), **Zigzag**, **Adaptive** (effort constant : `ae ≤ ¼×D` à grande profondeur, pelage sans retrait, **trochoïdes G2/G3** dans les goulets, ombre exacte des niveaux supérieurs — aucun voile fin traversé, entrées hélice/rampe/micro-hélice). Passes fines `ap2` là où la forme change.
@@ -93,7 +93,7 @@ Une partie FAO est en travail, ce sera long !
 ### Interface & navigation
 - **Bandeau regroupé par type** : Esquisse / Extrusion / Révolution en direct, le reste en menus déroulants — **🔧 Modifier le solide** (Congé, Chanfrein, Déplacer une face, Répétition…), **💾 Fichier** (Importer, STEP/STL/OBJ), **📁 Projet**.
 - **Vue 3D sans sidebar** : l'arborescence est une superposition semi-transparente à gauche, avec onglet de repli. Les corps se pilotent par l'œil de la fonction, le clic droit, ou **🎯 Isoler / ✅ Tout afficher**.
-- **Vues** : Iso, Dessus, Face, Droite + **Tout afficher** (F5), qui cadre toute la pièce (corps + esquisses) — jamais de pièce coupée.
+- **Vues** : la pilule `Iso` · `Dessus` · `Face` · `Droite` · `Tout afficher` (F5, qui cadre toute la pièce — corps + esquisses, jamais de pièce coupée) · `⚙` vit **en haut à gauche, au-dessus du panneau des corps** (arbre repoussé dessous) ; le menu `⚙` s'ouvre juste sous la pilule.
 - **Menu ⚙** : vues, sol miroir,repère (axes XYZ), inversion du zoom, mode d'affichage des arêtes, **rafraîchissement dur**, **coupe par plan** (hauteur + côté inversé).
 - **Affichage des arêtes** (vives en noir, coutures lisses en gris) : les contours sont **tracés à la courbe**, pas à 12 points fixes — un cercle est découpé en autant de segments que nécessaire pour que l'écart reste sous **0,02 mm** (37 segments pour R5, 61 pour R15), et une droite tient en 2 points. Un revolution ne se lit plus comme un polygone, même en fort zoom.
 - **Annuler / rétablir** : `Ctrl+Z` / `Ctrl+Y`, ou les boutons **↩ Annuler / ↪ Rétablir** du panneau *État* qui affichent le nombre d'étapes disponibles. Couvre **toute** modification du modèle : création d'extrusion, de révolution, de congé/chanfrein, de répétition, suppression, changement de paramètre. 40 étapes d'historique.
@@ -165,6 +165,32 @@ npm test
 node build.js --check
 # 6. snapshot Backup/ puis push
 ```
+
+### Synchronisation Mac ↔ Windows
+
+Le dépôt est commité depuis les deux machines (même dépôt GitHub, ou dossiers
+Dropbox partagés) ; `.gitattributes` verrouille les deux sources de divergence :
+
+- **Fins de ligne** : `* text=auto` + règles explicites → l'index est **toujours en LF**,
+  que le working tree soit en CRLF (Windows) ou en LF (macOS) ; plus de « fichiers
+  modifiés » fantômes d'un OS à l'autre. `build.js` régénère `fusion_mvp.html`
+  **en CRLF à l'identique** (il normalise `src/` avant concaténation) : le livrable est
+  donc byte-à-byte identique sur les deux machines, aucun conflit de rebuild.
+- **Noms de fichiers en Unicode NFC** : macOS (HFS+) et Dropbox écrivent du **NFD**,
+  ce qui créait des renommages fantômes (`Pièce` ↔ `Pie` + combining). Les chemins de
+  l'index sont normalisés en NFC ; ne jamais réintroduire un nom d'export macOS.
+
+Configuration **à faire une fois par clone** :
+
+```bash
+# macOS
+git config core.autocrlf input
+git config core.precomposeunicode true     # valeur par défaut, à vérifier
+# Windows
+git config core.autocrlf true
+```
+
+Avant chaque push : `git status` (vide), `node build.js --check`, `npm test`.
 
 | Fichier de `src/` | Contenu |
 |---|---|

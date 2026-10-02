@@ -127,19 +127,31 @@ const FAO_VER='32j';
       +'.fao-actions button.primary{background:#0a84ff;border-color:#0a84ff;color:#fff;font-weight:600}'
       +'.fao-gen{display:block;width:100%;margin-top:6px;font-size:.74rem;'
       +'background:#0a84ff;border-color:#0a84ff;color:#fff;font-weight:600}'
-      /* --- barre des 7 +usinage : même pilule que #viewbar, sur la vue 3D --- */
-      +'.fao-addbar{display:flex;gap:5px;align-items:center;margin:10px 0 0 8px;padding:4px 6px;'
-      +'border-radius:10px;background:rgba(16,18,22,.78);border:1px solid rgba(255,255,255,.13);'
+      /* --- colonne de droite : la barre des 7 +usinage repose AU-DESSUS du panneau
+             FAO, sur sa propre pilule (meme decor ET meme HAUTEUR que #viewbar :
+             34px = bouton 24px + padding 4px 6px + bordure). Largeur bornee par
+             #faoWrap pour ne jamais recouvrir #viewbar (a gauche) ; la barre ne se
+             plie JAMAIS (nowrap + scroll horizontal invisible) pour rester sur une
+             seule ligne = hauteur identique a #viewbar, meme sur petit ecran. --- */
+      +'#faoWrap{position:absolute;top:10px;right:10px;min-width:270px;max-width:calc(100% - 384px);'
+      +'z-index:20;display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none}'
+      +'#faoWrap>*{pointer-events:auto}'
+      +'.fao-addbar{display:flex;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;'
+      +'gap:4px;align-items:center;'
+      +'width:100%;padding:4px 6px;border-radius:10px;'
+      +'background:rgba(16,18,22,.78);border:1px solid rgba(255,255,255,.13);'
       +'backdrop-filter:blur(7px)}'
-      +'.fao-addbar .fao-addlab{font-size:.66rem;font-weight:700;letter-spacing:.05em;'
-      +'text-transform:uppercase;color:#fff;opacity:.85;padding:0 4px 0 2px;white-space:nowrap}'
-      +'.fao-addbar button{padding:3px 9px;font-size:.76rem;white-space:nowrap}'
+      +'.fao-addbar::-webkit-scrollbar{display:none}'
+      +'.fao-addbar .fao-addlab{font-size:.66rem;font-weight:700;letter-spacing:.04em;'
+      +'text-transform:uppercase;color:#fff;opacity:.85;padding:0 2px;white-space:nowrap}'
+      +'.fao-addbar button{padding:4px 6px;font-size:.76rem;white-space:nowrap}'
       +'.fao-addbar button:hover{border-color:#0a84ff;background:rgba(10,132,255,.2)}'
       /* --- panneau flottant de l'arbre FAO : contenu + onglet de repli (procédé
-             identique à l'arbre des corps — le panneau se rabat sur sa droite) --- */
-      +'#faoTreeWrap{position:absolute;top:52px;right:10px;z-index:20;display:flex;'
+             identique à l'arbre des corps — le panneau se rabat sur sa droite) ;
+             il coule SOUS la barre au sein de #faoWrap (align-self, plus de top) --- */
+      +'#faoTreeWrap{align-self:flex-end;display:flex;'
       +'flex-direction:row-reverse;align-items:flex-start;font-size:.78rem}'
-      +'#faoTreeWrap .fao-cnt{width:244px;max-height:calc(100vh - 150px);overflow-y:auto;'
+      +'#faoTreeWrap .fao-cnt{width:244px;max-height:calc(100vh - 190px);overflow-y:auto;'
       +'padding:10px 11px;border-radius:13px;background:rgba(16,18,22,.9);'
       +'border:1px solid rgba(255,255,255,.14);color:#e9e9ec;'
       +'backdrop-filter:blur(9px);box-shadow:0 16px 38px rgba(0,0,0,.5)}'
@@ -2300,6 +2312,7 @@ function faoRefreshFaoUI(){
 }
 let faoTreeWrapEl=null; // ref réelle du panneau arbre FAO (la lecture par id est ambiguë sous stub)
 let faoAddBarEl=null;   // barre des 7 +usinage posée sur la vue 3D
+let faoWrapEl=null;     // colonne de droite #faoWrap : barre des +usinage + panneau FAO
 let faoFolded=false;    // panneau FAO rabattu sur sa droite (persisté en localStorage)
 function faoInitUI(){
   if(typeof document==='undefined')return;
@@ -2315,13 +2328,21 @@ function faoInitUI(){
         }
       });
     }
-    // 7 boutons d'ajout : sur la vue 3D (même pilule que #viewbar), collés en haut
-    // à droite du panneau des corps — masqués dès que le panneau FAO est rabattu.
+    // 7 boutons d'ajout : sur la vue 3D (même pilule que #viewbar), posés sur la
+    // colonne de droite AU-DESSUS du panneau FAO — masqués dès que ce panneau est
+    // rabattu. Le panneau FAO coule lui-même sous la barre dans la même colonne.
     if(!faoAddBarEl){
-      const barHost=document.getElementById('treeWrap');
+      const barHost=document.getElementById('vpwrap')||document.body;
       if(barHost){
+        // colonne de droite #faoWrap : barre des +usinage puis panneau FAO
+        let col=null;
+        const sib=barHost.children||[];
+        for(let i=0;i<sib.length;i++){ if(sib[i]&&sib[i].id==='faoWrap'){col=sib[i];break;} }
+        if(!col){ col=document.createElement('div'); col.id='faoWrap'; barHost.appendChild(col); }
+        faoWrapEl=col;
         const bar=document.createElement('div');
         bar.id='faoAddBar';
+        bar.className='fao-addbar'; // pilule : meme panneau que #viewbar (faoUiCss)
         const lab=document.createElement('span');
         lab.className='fao-addlab';
         lab.textContent='+ Usinage';
@@ -2344,12 +2365,12 @@ function faoInitUI(){
           };
           bar.appendChild(b);
         });
-        barHost.appendChild(bar);
+        col.appendChild(bar);
         faoAddBarEl=bar;
       }
     }
     if(!faoTreeWrapEl){
-      const host=document.getElementById('vpwrap')||document.body;
+      const host=faoWrapEl||document.getElementById('vpwrap')||document.body;
       const w=document.createElement('div');
       w.id='faoTreeWrap'; // habillage entièrement en CSS injecté (faoUiCss)
       // onglet de repli — procédé identique à l'arbre des corps (src/95-toolbar.js)

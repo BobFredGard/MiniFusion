@@ -3,7 +3,30 @@
 # Sans ça, git affiche "modifié" la totalité des fichiers alors que seul l'EOL a bougé.
 * text=auto
 
+# Textes explicites : renormalisation garantie quel que soit l'OS de la machine
+# qui clone (Windows autocrlf=true, macOS autocrlf=input — voir README « Synchronisation »).
+*.js      text
+*.cjs     text
+*.css     text
+*.html    text
+*.json    text
+*.md      text
+*.txt     text
+*.yml     text
+*.yaml    text
+# Le .bat doit rester en CRLF pour s'exécuter sous Windows (y compris après un clone macOS)
+*.bat     text eol=crlf
+
+# Noms de fichiers : TOUJOURS en Unicode NFC.
+# macOS (HFS+) et Dropbox écrivent du NFD → git voyait des « renommages » fantômes
+# à chaque aller-retour Mac ↔ Windows. Les chemins de l'index sont en NFC ; sur
+# macOS la valeur par défaut `core.precomposeunicode=true` les lit correctement.
+# Ne jamais ajouter un fichier dont le nom vient d'un export macOS non normalisé.
+
 # Binaires : jamais de conversion d'octets
-*.wasm binary
-*.step binary
-*.stp binary
+*.wasm    binary
+*.step    binary
+*.stp     binary
+*.png     binary
+*.jpg     binary
+*.ico     binary
