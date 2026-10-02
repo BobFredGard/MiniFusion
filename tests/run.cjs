@@ -7,6 +7,7 @@ const SUITES = [
   "test_xmove",
   "test_coque_sel",
   "test_repeat_mir2",
+  "test_repeat_session",
   "test_mirror_arc",
   "test_extrude_flip_draft",
   "test_apercu_diff",

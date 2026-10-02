@@ -550,7 +550,7 @@ function applyExactFillet(){
   if(filModeX.editing){
     // Édition en place : on met À JOUR la fonction existante (pas de 2ᵉ fonction).
     const f=doc.features.find(x=>x.id===filModeX.editing);
-    if(f){f.edges=mkEdges();f.tangent=filModeX.tangent!==false;f.name=xFeatName(f);sel={kind:'feature',id:f.id};}
+    if(f){f.edges=mkEdges();f.tangent=filModeX.tangent!==false;f.name=xFeatName(f);repSyncForFeature(f);sel={kind:'feature',id:f.id};}
     exitExactFilletMode(true); // restaure le rejeu complet avec les arêtes mises à jour
     renderProps();
     faceEl.textContent=label+' : mise à jour enregistrée ('+(f?f.edges.length:0)+' arête(s)).';

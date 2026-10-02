@@ -34,19 +34,24 @@ $('btnSelfTest').onclick=runSelfTests;
 if($('btnRebuild'))$('btnRebuild').onclick=()=>{
   // FORCE le rejeu : sans cela la garde « rien n'a changé » court-circuite et le bouton
   // semblait ne rien faire (régression introduite par l'optimisation de reconstruction).
+  // Balayage des répétitions AVANT le rejeu : les instances se réalignent sur leurs
+  // sources même si un chemin d'édition n'a pas synchronisé pendant la session.
   builtVersion=-1;builtHash=null;builtEngine=null;
   faceEl.textContent='Recalcul demandé…';
+  try{repGenAll();}catch(e){}
   try{rebuild();}catch(e){faceEl.textContent+='\n[Recalcul] '+String((e&&e.message)||e);}};
 
 // ---------- rafraîchissement DUR ----------
 function hardRefresh(){
   // On jette TOUT ce qui pourrait être périmé, puis on rejoue le modèle entier :
+  //   · les INSTANCES de répétition régénérées depuis leurs sources (balayage de réparation)
   //   · points de contrôle du rejeu (solides accumulés mémorisés entre deux reconstructions)
   //   · empreinte du document (mémoïsée) et état du dernier affichage valide
   //   · tous les corps affichés (géométries et matériaux) et le solide exact vivant
   // Le noyau OCCT, lui, n'est PAS rechargé : le recompiler coûterait 10 à 60 s. S'il est
   // lui-même bloqué, c'est le rechargement de la page (navigateur) qui redemarre.
   const t0=performance.now();
+  try{repGenAll();}catch(e){}
   let nCk=0;try{nCk=(typeof occCk!=='undefined'&&occCk.length)||0;occCkClear();}catch(e){}
   _hashMemo=null;_hashVer=-1;
   builtHash=null;builtEngine=null;builtVersion=-1;

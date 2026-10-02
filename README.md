@@ -74,7 +74,7 @@ Une partie FAO est en travail, ce sera long !
 - **Fonction de premier ordre** (type `repeat`) : **Linéaire**, **Circulaire**, **Symétrie** — nombre de copies, axe ou plan (X/Y/Z ou **la face sélectionnée**), distance / angle total.
 - **Symétrie double** : cochez **2ᵉ plan** — la 2ᵉ passe miroite la base **et** les instances de la 1ʳᵉ passe (la 1ʳᵉ symétrie est comprise dans la 2ᵉ, ainsi que l'opération initiale). Plans identiques = 2ᵉ passe sans effet (signalé).
 - **Ctrl+clic** dans l'arborescence pour **ajouter ou retirer une fonction source** (extrusion, découpe, congé, chanfrein) : les instances sont régénérées, y compris leurs esquisses transformées.
-- Les instances sont **regroupées sous la répétition**, repliées par défaut, et **paramétriques** : elles suivent leur source (profondeur, opération, sens, étendue, congé) et régénèrent en place sans perdre leurs identifiants.
+- Les instances sont **regroupées sous la répétition**, repliées par défaut, et **paramétriques** : elles suivent leur source (profondeur, opération, sens, étendue, congé, angle, épaisseur, arêtes de congé) **à chaque modification de la session** — panneaux de propriétés comme éditions en place des outils — et régénèrent en place sans perdre leurs identifiants ; les boutons **Recalcul** et **Rafraîchissement dur** balayent toutes les répétitions (filet de réparation).
 
 ### FAO — fraisage 2.5D / 3D + G-code (Pas fonctionnel pour l'heure)
 - **Posages** façon setup Fusion : machine, origine `G54`–`G59`, point de bloc, **indexation 3+2** (table C + B, degrés, bouton 3 axes **et « Sur la pièce »** : cliquez une face sortante, `B`/`C` calculés depuis sa normale — face vers le bas refusée), modèle (tous les corps ou sélection), **brut en 3 sources** (tous les corps + marge / **corps choisi** — désigné par la liste **Source** de la fiche, **masqué dans la vue dès choisi**, `👁` de la ligne corps pour le revoir / **manuel** 6 champs, jamais recalculé), bridage mémorisé. **Arbre FAO dédié** — ligne de corps `🧱` : **👁 œil = vue seule**, **⏻ = rejeu** (œil ne coupe plus les fonctions, `📦` retiré) ; ligne dès usinage : bouton **Masquer** pour ses traces ; **chaque posage porte une flèche ▼/▶** qui replie/déplie **ses opérations** (état `s.open` **enregistré dans le document**) ; les **7 boutons + usinage** ont quitté le panneau pour une **barre posée sur la vue 3D** (même pilule que `Iso`/`Dessus`, **en haut à droite, au-dessus du panneau FAO** — les deux reposent dans la même colonne `#faoWrap`, **même hauteur que la pilule des vues (34px)** : la barre reste sur **une seule ligne** (défilement horizontal invisible si l'écran est étroit, jamais de 2ᵉ ligne — elle ne peut donc plus écraser sa voisine), sans jamais toucher la pilule des vues ; titre `+ Usinage`, libellés sans `+`, **masquée dès que le panneau FAO est rabattu**) ; le panneau est **toujours présent** (le bouton `FAO` de la barre d'outils a été retiré) et se **rabat sur sa droite** par l'onglet `❯`/`❮` (procédé de l'arbre des corps, état en `localStorage`) ; ses actions sont **regroupées sous un libellé** — **POSAGE** (`+ Posage`, `Outils`), **EXÉCUTION** (`▶ Usinage`, `Générer + aperçu`), **EXPORT** (`Exporter G-code`) — la fiche ne gardant que la configuration, fiches posage/opération dans le panneau droit ; **« Nouveau modèle » remet toute la FAO à zéro** (mode lecture fermé, fenêtre outils fermée, traces retirées, posages et opérations remis au défaut).
@@ -144,7 +144,7 @@ python -m http.server 3000
 | `occt/` | Noyau OpenCascade WebAssembly (~111 Mo) + ses `.bak` locaux (non suivis) |
 | `threejs/` | Rendu 3D (three.js), OrbitControls, CSG |
 | `PostPro/` | Post-processeurs G-code : **Siemens 840D** (variantes 630 / 1520) et **Fagor 8065** |
-| `tests/` | Suite Node portable (harnais `appvm.cjs` + 35 suites + fixtures) : `node tests/run.cjs` ou `npm test` |
+| `tests/` | Suite Node portable (harnais `appvm.cjs` + 36 suites + fixtures) : `node tests/run.cjs` ou `npm test` |
 | `Backup/` | Snapshots des versions vertes |
 | `Server.bat` | Lancement local (npx serve, port 3000) |
 
@@ -159,7 +159,7 @@ n'a qu'un fichier à ouvrir.
 # 1. éditer un fichier de src/ (jamais fusion_mvp.html)
 # 2. reconstruire le livrable
 node build.js
-# 3. régression verte (harnais + 35 suites)
+# 3. régression verte (harnais + 36 suites)
 npm test
 # 4. bump APP_VER (src/00-entete-et-outils.js) + entrée CHANGELOG.md
 # 5. vérifier que le livrable est à jour (à mettre en CI)
@@ -225,7 +225,7 @@ fichier unique (voir « Travailler sur le code »).
 
 - **In-app** : 🧪 Auto-tests (non-régression esquisse, contraintes, cotes) — lançables depuis le panneau latéral.
 - **Dev** : harnais Node hors navigateur (solveur, cotation orientée, suivi de faces, références, projections associatives, congés/chanfreins exacts, menu d'extrusion, prismes miroir, répétitions, marqueur temps, performance…) ; certains scénarios s'exécutent sur le **noyau OCCT réel** (`.wasm` chargé en Node), et la version (`APP_VER`) est vérifiée avant chaque sauvegarde dans `Backup/`.
-- **Suite repo** : `tests/` (harnais `appvm.cjs` + 35 suites + fixtures, dont `test_fao`, `test_fao3d`, `test_fao_barre3d`, `test_corps_style`, `test_esquisse_contraintes`, `test_ctx_menu_viewport`, `test_conge_fond_poche` et `test_conge_tangent`) — portable, aucun chemin absolu : `node tests/run.cjs` ou `npm test` depuis la racine, sur n'importe quel PC.
+- **Suite repo** : `tests/` (harnais `appvm.cjs` + 36 suites + fixtures, dont `test_fao`, `test_fao3d`, `test_fao_barre3d`, `test_corps_style`, `test_esquisse_contraintes`, `test_ctx_menu_viewport`, `test_conge_fond_poche`, `test_conge_tangent` et `test_repeat_session`) — portable, aucun chemin absolu : `node tests/run.cjs` ou `npm test` depuis la racine, sur n'importe quel PC.
 
 ## Historique
 

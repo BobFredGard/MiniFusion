@@ -329,6 +329,7 @@ function coqueApply(){
     if(f){
       docPushUndo('édition de « '+shellName(f)+' »');
       f.faces=faces;f.thick=t;f.name=shellName(f);
+      repSyncForFeature(f); // les instances de la répétition suivent la nouvelle épaisseur
       sel={kind:'feature',id:f.id};
     }
     exitCoqueMode(true);

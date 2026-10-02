@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**136 versions**, de `2026-09-28b` à `2026-10-02-005` — la plus récente en bas,
+**137 versions**, de `2026-09-28b` à `2026-10-02-006` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2547,3 +2547,17 @@ Tests : **2 nouvelles suites enregistrées dans `tests/run.cjs` → `npm test` 3
 `build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-005.html`.
 
 README : congés/chanfreins — le choix d'arête est **bloqué** : niveau du clic + `pos0` départagent fond/rebord/couture **quelle que soit l'ordre d'énumération**, un congé sur le fond d'une poche y reste après toute modification amont ; l'option « arêtes tangentes » et les germe sont **persistées** (une arête cliquée = toute la chaîne, à chaque rejeu) ; tests → 35 suites.
+
+### `2026-10-02-006`
+
+Répétitions/symétries — les instances suivent leur source **pendant toute la session** : six chemins modifiaient un paramètre de source **sans** `repSyncForFeature` (donc sans régénération des instances) et les deux boutons de réparation ne balayaient aucune répétition.
+
+(1) Retour « je change la distance / l'angle / l'épaisseur d'une fonction source et les copies restent à l'ancienne valeur » : les trois **panneaux de propriétés** concernés — Déplacement de face (`f.dist`), Dépouillage (`f.angle`), Coque (`f.thick`) dans `src/40` — appelaient `markDirty();rebuild()` sans synchroniser, et les trois **éditions en place des outils** faisaient de même : `draftApply` (`f.ref`/`f.faces`/`f.angle`, `src/86`), `coqueApply` (`f.faces`/`f.thick`, `src/87`) et `applyExactFillet` en mode édition (`f.edges`/`f.tangent`, `src/80`). Le rejeu régénère les instances depuis **leurs propres enregistrements** (`repCloneFeature` ne recopie la source qu'au moment de `repGenChildren`) : sans appel, les clones gardent les paramètres d'origine. Fix : `repSyncForFeature(f)` ajouté dans les 6 chemins, **avant** `markDirty/rebuild`, comme le faisaient déjà les panneaux extrusion/révolution/congé.
+
+(2) Boutons **Recalcul** et **Rafraîchissement dur** : ils forçaient le rejeu (`builtVersion=-1`, caches jetés) mais ne réalignaient pas les instances sur leurs sources. Nouveau `repGenAll()` (`src/40`) : balayage de **chaque** répétition, instances recyclées en place (ids stables), appelé en tête de `hardRefresh()` et du `onclick` de `btnRebuild` (`src/95`) — filet de réparation qui aligne les instances même si un chemin n'a pas synchronisé.
+
+Tests : **nouvelle suite `tests/test_repeat_session.cjs` enregistrée dans `tests/run.cjs` → `npm test` 36/36 vert**, **ROUGE vérifiée sur le build d'avant correctif (10/10)** : document extrusion + 4 types de source (xmove, xdraft, xshell, xfillet) + répétition linéaire 2 copies = 10 instances ; les 6 chemins sont **pilotés pour de vrai** (champ de paramètre trouvé dans le DOM des propriétés + événement `change`, `draftApply`, `coqueApply`, `applyExactFillet`) et chaque instance doit recevoir la nouvelle valeur (25 mm, 30°, 8 mm, 40°, 12 mm, 2 arêtes + drapeau `tangent`) ; les deux boutons sont appelés après une désynchronisation simulée (source bougée sans sync) : instance réalignée **et** contrôle moteur (`occShapeOfExtrude` : hauteur 20 → 28 mm, placement linéaire x 25..45) ; garde-fous ids stables + 10 instances en fin de parcours. Les 4 arêtes de l'instance de congé (au lieu des 2 sélectionnées) sont attendues : la passe 2b enrichit `f.edges` sur le solide réel de l'instance.
+
+`build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-006.html`.
+
+README : répétitions — les instances suivent leur source **à chaque modification de la session** (panneaux de propriétés comme éditions en place des outils) et les boutons **Recalcul** / **Rafraîchissement dur** balayent toutes les répétitions ; tests → 36 suites.

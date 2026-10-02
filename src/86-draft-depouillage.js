@@ -511,6 +511,7 @@ function draftApply(){
     if(f){
       docPushUndo('édition de « '+draftName(f)+' »');
       f.ref=ref;f.faces=faces;f.angle=a;f.name=draftName(f);
+      repSyncForFeature(f); // les instances de la répétition suivent le nouveau paramètre
       sel={kind:'feature',id:f.id};
     }
     exitDraftMode(true);

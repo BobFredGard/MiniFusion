@@ -566,6 +566,12 @@ function repSyncForFeature(f){
   if(!f)return;
   for(const rp of [...doc.features]){if(rp.type==='repeat'&&rp.base.includes(f.id))repGenChildren(rp);}
 }
+function repGenAll(){
+  // Balayage de réparation : CHAQUE répétition régénérée depuis ses sources. Appelé par
+  // les boutons Recalcul et Rafraîchissement dur — le filet qui réaligne les instances
+  // même si un chemin d'édition n'a pas synchronisé pendant la session.
+  for(const rp of [...doc.features]){if(rp.type==='repeat')repGenChildren(rp);}
+}
 const REPEAT_MAX=200; // garde-fou : une saisie de copies aberrante ne doit pas figer le rejeu
 function repMaxCopies(v){const n=Math.floor(+v||1);return isFinite(n)?Math.min(REPEAT_MAX,Math.max(1,n)):1;}
 function repCloneSkName(sk){return /\(rép\s*\d+\)\s*$/.test((sk&&sk.name)||'');}
@@ -959,7 +965,7 @@ function renderProps(){
         const v=parseFloat(String(d.value).replace(',','.').replace(/\s/g,''));
         if(!isFinite(v)){d.value=String(+f.dist||0).replace('.',',');return;}
         if(v===+f.dist)return;
-        f.dist=Math.abs(v)<1e-9?0:v;f.name=mvName(f);
+        f.dist=Math.abs(v)<1e-9?0:v;f.name=mvName(f);repSyncForFeature(f);
         markDirty();rebuild();renderTree();renderProps();
         faceEl.textContent=v===0?'Distance nulle : la fonction ne déforme rien.':
           ('Distance '+f.name.replace('Déplacement de face ','')+' appliquée le long de la normale sortante de la face.');
@@ -1001,7 +1007,7 @@ function renderProps(){
         // Poussé dans l'historique AVANT la modification : l'undo doit ramener l'ancien
         // angle, sinon le point de contrôle rejoue la mauvaise géométrie.
         docPushUndo();
-        f.angle=v;f.name=draftName(f);
+        f.angle=v;f.name=draftName(f);repSyncForFeature(f);
         markDirty();rebuild();renderTree();renderProps();
         faceEl.textContent='Dépouillage à '+v.toFixed(1).replace('.',',')+'° appliqué.';
       });
@@ -1041,7 +1047,7 @@ function renderProps(){
         if(v===+f.thick)return;
         // Poussé dans l'historique AVANT la modification (même règle que l'angle).
         docPushUndo();
-        f.thick=v;f.name=shellName(f);
+        f.thick=v;f.name=shellName(f);repSyncForFeature(f);
         markDirty();rebuild();renderTree();renderProps();
         faceEl.textContent='Coque à '+String(v).replace('.',',')+' mm appliquée.';
       });
