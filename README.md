@@ -113,6 +113,7 @@ Une partie FAO est en travail, ce sera long !
 - **Cache de rejeu par points de contrôle** : le solide est mémorisé après chaque fonction, une modification de fin de timeline ne refait que les fusions concernées (jusqu'à ~4× plus rapide), avec invalidation dès qu'un octet de la signature change.
 - **Rejeu inutile sauté** (contrôle O(1)), `docHash` et sauvegardes différées hors du chemin critique, écriture forcée à la fermeture.
 - **🔁 Recalculer** force le rejeu, **⟳⟳ Hard** jette tous les réservoirs périmés et **rejoue puis rapporte** ce qu'il a fait (durée, moteur, fonctions, corps, triangles avant/après).
+- **✓ Valider** : contrôle du modèle en **7 phases diagnostic + réparation** — 1 document (instances orphelines, doublons, copies bornées…), 2 répétitions (instances désynchronisées réalignées), 3 esquisses (contraintes/cotes violées signalées en ⚠), 4 fonctions (rejeu, erreurs/dégradations), 5 moteur+caches (état d'OCCT + rafraîchissement dur), 6 corps+imports (fiches de corps, visibilités et géométries d'imports orphelines), 7 rapport. Chaque phase répare ce qui l'est automatiquement ; le compte `VALIDATION : N/7 phases OK — M réparation(s)` s'écrit dans la zone **🧪 Auto-tests**.
 - **Rafraîchissement dur à chaque modification** par défaut (reconstruction complète, aucune géométrie réutilisée) — désactivable dans le menu ⚙ pour le rejeu rapide.
 - Robustesse : nettoyage des documents pollués au chargement, garde anti-rejeu imbriqué, échec d'un congé **isolé et non destructif**, avertissements explicites plutôt que plantage, version du code affichée en permanence (anti-cache navigateur).
 
@@ -131,7 +132,7 @@ python -m http.server 3000
 
 - **Avec serveur** : tout fonctionne, y compris le noyau exact OCCT.
 - **En `file://`** (double-clic sur `fusion_mvp.html`) : mode maillage ; clique sur **⚙ Noyau .wasm…** et désigne `occt/opencascade.wasm.wasm` pour activer le noyau exact sans serveur.
-- Dans l'application : **🧪 Auto-tests** rejoue la batterie de non-régression de l'esquisse.
+- Dans l'application : **🧪 Auto-tests** rejoue la batterie de non-régression de l'esquisse ; **✓ Valider** exécute les 7 phases de diagnostic + réparation du modèle (rapport dans la zone Auto-tests).
 
 ## Architecture du dépôt
 
@@ -144,7 +145,7 @@ python -m http.server 3000
 | `occt/` | Noyau OpenCascade WebAssembly (~111 Mo) + ses `.bak` locaux (non suivis) |
 | `threejs/` | Rendu 3D (three.js), OrbitControls, CSG |
 | `PostPro/` | Post-processeurs G-code : **Siemens 840D** (variantes 630 / 1520) et **Fagor 8065** |
-| `tests/` | Suite Node portable (harnais `appvm.cjs` + 36 suites + fixtures) : `node tests/run.cjs` ou `npm test` |
+| `tests/` | Suite Node portable (harnais `appvm.cjs` + 37 suites + fixtures) : `node tests/run.cjs` ou `npm test` |
 | `Backup/` | Snapshots des versions vertes |
 | `Server.bat` | Lancement local (npx serve, port 3000) |
 
@@ -159,7 +160,7 @@ n'a qu'un fichier à ouvrir.
 # 1. éditer un fichier de src/ (jamais fusion_mvp.html)
 # 2. reconstruire le livrable
 node build.js
-# 3. régression verte (harnais + 36 suites)
+# 3. régression verte (harnais + 37 suites)
 npm test
 # 4. bump APP_VER (src/00-entete-et-outils.js) + entrée CHANGELOG.md
 # 5. vérifier que le livrable est à jour (à mettre en CI)
@@ -223,9 +224,9 @@ fichier unique (voir « Travailler sur le code »).
 
 ## Tests
 
-- **In-app** : 🧪 Auto-tests (non-régression esquisse, contraintes, cotes) — lançables depuis le panneau latéral.
+- **In-app** : 🧪 Auto-tests (non-régression esquisse, contraintes, cotes) et **✓ Valider** (7 phases diagnostic + réparation du modèle, rapport dans la zone Auto-tests) — depuis le panneau latéral.
 - **Dev** : harnais Node hors navigateur (solveur, cotation orientée, suivi de faces, références, projections associatives, congés/chanfreins exacts, menu d'extrusion, prismes miroir, répétitions, marqueur temps, performance…) ; certains scénarios s'exécutent sur le **noyau OCCT réel** (`.wasm` chargé en Node), et la version (`APP_VER`) est vérifiée avant chaque sauvegarde dans `Backup/`.
-- **Suite repo** : `tests/` (harnais `appvm.cjs` + 36 suites + fixtures, dont `test_fao`, `test_fao3d`, `test_fao_barre3d`, `test_corps_style`, `test_esquisse_contraintes`, `test_ctx_menu_viewport`, `test_conge_fond_poche`, `test_conge_tangent` et `test_repeat_session`) — portable, aucun chemin absolu : `node tests/run.cjs` ou `npm test` depuis la racine, sur n'importe quel PC.
+- **Suite repo** : `tests/` (harnais `appvm.cjs` + 37 suites + fixtures, dont `test_fao`, `test_fao3d`, `test_fao_barre3d`, `test_corps_style`, `test_esquisse_contraintes`, `test_ctx_menu_viewport`, `test_conge_fond_poche`, `test_conge_tangent`, `test_repeat_session` et `test_validate`) — portable, aucun chemin absolu : `node tests/run.cjs` ou `npm test` depuis la racine, sur n'importe quel PC.
 
 ## Historique
 

@@ -143,3 +143,106 @@ function runSelfTests(){
   log(`Auto-tests : ${okN}/${out.length} OK`);
 }
 
+/* ----- ✓ Valider : 7 phases diagnostic + réparation, rapport dans #selfTest ----- */
+function runValidate(){
+  // Chaque phase pose un diagnostic ET répare ce qui l'est ; le compte rendu
+  // (✅ vert / ⚠ signalé / ❌ échec) s'écrit dans la zone Auto-tests (#selfTest),
+  // et le texte revient aussi en valeur de retour (les tests du dépôt le lisent).
+  const L=[];let rep=0;
+  const line=(n,st,txt)=>L.push(n+' '+st+' '+txt);
+  // 1) DOCUMENT — docSanitise : instances orphelines/doublons, copies bornées, noms de
+  //    congé/dépouillage/coque réalignés sur la géométrie réelle.
+  try{
+    const r=docSanitise()||{};
+    const n=(r.dup||0)+(r.orph||0)+(r.sk||0)+(r.cap||0)+(r.ren||0);rep+=n;
+    line(1,'✅','Document — '+(n?n+' anomalie(s) réparée(s) (doublons '+r.dup+', instances orphelines '+r.orph+', esquisses abandonnées '+r.sk+', copies bornées '+r.cap+', noms réalignés '+r.ren+')':'aucune anomalie'));
+  }catch(e){line(1,'❌','Document — '+String((e&&e.message)||e));}
+  // 2) RÉPÉTITIONS — écart paramètre source/instance, puis balayage repGenAll().
+  try{
+    const PF=['distance','dist','angle','thick','radius','op','flip','mid','tangent'];
+    const eqv=(a,b)=>JSON.stringify(a===undefined?null:a)===JSON.stringify(b===undefined?null:b);
+    const staleOf=k=>{const s=doc.features.find(f=>f.id===k._src);if(!s)return 0;for(const p of PF)if(!eqv(s[p],k[p]))return 1;return 0;};
+    const kids=doc.features.filter(f=>f.repeatId);
+    let st=0;kids.forEach(k=>{st+=staleOf(k);});
+    repGenAll();
+    let st2=0;doc.features.filter(f=>f.repeatId).forEach(k=>{st2+=staleOf(k);});
+    if(st&&st2<st)rep+=st-st2;
+    line(2,st2?'❌':'✅','Répétitions — '+doc.features.filter(f=>f.type==='repeat').length+' répétition(s), '+kids.length+' instance(s)'+
+      (st?' — '+st+' désynchronisée(s) réalignée(s)':' à jour')+
+      (st2?' — '+st2+' restent désynchronisée(s)':st?' — 0 reste après balayage':''));
+  }catch(e){line(2,'❌','Répétitions — '+String((e&&e.message)||e));}
+  // 3) ESQUISSES — skAudit : contraintes/cotes non respectées. Diagnostic seulement :
+  //    réparer tout seul demanderait de choisir entre sous- et sur-contrainte.
+  try{
+    const bad=[];
+    (doc.sketches||[]).forEach(sk=>{
+      let a=null;try{a=skAudit(sk);}catch(e){}
+      const n=((a&&a.all)||[]).filter(o=>(o.viol||0)>0.05).length;
+      if(n)bad.push((sk.name||sk.id)+' ('+n+')');
+    });
+    line(3,bad.length?'⚠':'✅','Esquisses — '+(doc.sketches||[]).length+' esquisse(s)'+
+      (bad.length?', dont '+bad.length+' avec contrainte(s)/cote(s) violée(s) : '+bad.join(', '):', aucune violation'));
+  }catch(e){line(3,'❌','Esquisses — '+String((e&&e.message)||e));}
+  // 4) FONCTIONS — rejeu complet, puis lecture des marques : _err (échec) et
+  //    _m.m<_m.t (fonction dégradée : visage introuvable après modification amont).
+  try{
+    if(!(typeof buildKeyUpToDate==='function'&&buildKeyUpToDate()))rebuild();
+    const fsx=doc.features.filter(f=>f.type!=='repeat');
+    const err=fsx.filter(f=>f._err);
+    const miss=fsx.filter(f=>f._m&&f._m.t&&f._m.m<f._m.t);
+    const noms=a=>a.slice(0,4).map(f=>f.name||f.type).join(', ')+(a.length>4?'…':'');
+    line(4,err.length?'❌':(miss.length?'⚠':'✅'),'Fonctions — '+fsx.length+' fonction(s) rejouée(s)'+
+      (err.length?' — '+err.length+' en erreur : '+noms(err):'')+
+      (miss.length?' — '+miss.length+' dégradée(s) : '+noms(miss):'')+
+      (err.length||miss.length?'':' — aucune erreur'));
+  }catch(e){line(4,'❌','Fonctions — rejeu impossible : '+String((e&&e.message)||e));}
+  // 5) MOTEUR+CACHES — état d'OCCT, puis hardRefresh : jet de TOUS les caches et
+  //    rejeu du modèle entier (le filet qui remet d'aplomb un état caché périmé).
+  try{
+    const eng=(typeof occtReady!=='undefined'&&occtReady)?'OCCT chargé':'repli maillage (OCCT absent)';
+    hardRefresh();rep++;
+    line(5,'✅','Moteur+caches — '+eng+' ; caches jetés + rejeu complet');
+  }catch(e){line(5,'❌','Moteur+caches — '+String((e&&e.message)||e));}
+  // 6) CORPS+IMPORTS — fiche de corps manquante (ensureBodies), visibilités orphelines
+  //    (bodyVis sans corps) et géométrie d'import dont la fonction a disparu.
+  try{
+    ensureBodies();
+    const ids=new Set((doc.bodies||[]).map(b=>b.id));
+    let ov=0;for(const k of Object.keys(doc.bodyVis||{})){if(!ids.has(k)){delete doc.bodyVis[k];ov++;}}
+    let io=0;
+    try{
+      const viv=new Set((doc.features||[]).filter(f=>f.type==='import').map(f=>f.id));
+      for(const id of Array.from(importGeom.keys())){if(viv.has(id)||(typeof importIdStillReachable==='function'&&importIdStillReachable(id)))continue;io++;}
+      importHydrate(); // purge réelle + re-brochage des meshes déstripés
+    }catch(e){}
+    rep+=ov+io;
+    line(6,'✅','Corps+imports — '+(doc.bodies||[]).length+' corps'+
+      (ov+io?', '+ov+' visibilité(s) orpheline(s) et '+io+' import(s) orphelin(s) purgé(s)':' — cohérent'));
+  }catch(e){line(6,'❌','Corps+imports — '+String((e&&e.message)||e));}
+  // 7) RAPPORT — agrégat des 6 phases + total des réparations, écrit dans #selfTest.
+  const ok6=L.filter(s=>s.indexOf(' ✅ ')>=0).length;
+  const txt='VALIDATION : '+(ok6+1)+'/7 phases OK — '+rep+' réparation(s)\n'+L.join('\n')+
+    '\n7 ✅ Rapport — '+ok6+'/6 phases vertes, '+rep+' réparation(s) : écrit dans la zone Auto-tests';
+  try{$('selfTest').textContent=txt;}catch(e){}
+  try{faceEl.textContent='✓ Valider : '+(ok6+1)+'/7 phases, '+rep+' réparation(s) — rapport dans Auto-tests.';}catch(e){}
+  try{log('Validation : '+(ok6+1)+'/7 OK, '+rep+' réparation(s)');}catch(e){}
+  return txt;
+}
+
+// Bouton « ✓ Valider » : monté depuis le JS à côté de « 🧪 Auto-tests » (la coque HTML
+// n'est jamais éditée à la main — même régime que ↩ Annuler). Idempotent.
+(function(){
+  try{
+    if(typeof document==='undefined'||document.getElementById('btnValidate'))return;
+    const hote=document.getElementById('btnSelfTest');
+    if(!hote||!hote.parentNode)return;
+    const b=document.createElement('button');
+    b.id='btnValidate';
+    b.textContent='✓ Valider';
+    b.title='Valider le modèle : 7 phases diagnostic + réparation (document, répétitions, esquisses, fonctions, moteur, corps) — rapport dans Auto-tests';
+    b.onclick=()=>runValidate();
+    hote.parentNode.insertBefore(b,hote);
+  }catch(e){}
+})();
+
+

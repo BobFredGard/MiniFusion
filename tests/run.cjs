@@ -37,7 +37,8 @@ const SUITES = [
   "test_ctx_menu_viewport",
   "test_fao_reset",
   "test_fao_passes",
-  "test_fao_barre3d"
+  "test_fao_barre3d",
+  "test_validate"
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {

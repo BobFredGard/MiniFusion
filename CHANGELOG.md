@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**137 versions**, de `2026-09-28b` à `2026-10-02-006` — la plus récente en bas,
+**138 versions**, de `2026-09-28b` à `2026-10-02-007` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2561,3 +2561,26 @@ Tests : **nouvelle suite `tests/test_repeat_session.cjs` enregistrée dans `test
 `build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-006.html`.
 
 README : répétitions — les instances suivent leur source **à chaque modification de la session** (panneaux de propriétés comme éditions en place des outils) et les boutons **Recalcul** / **Rafraîchissement dur** balayent toutes les répétitions ; tests → 36 suites.
+
+### `2026-10-02-007`
+
+Nouveau bouton **✓ Valider** : contrôle du modèle en **7 phases diagnostic + réparation**, rapport écrit dans la zone **🧪 Auto-tests**.
+
+(1) Retour « je veux vérifier que mon document est sain avant de continuer » : il n'existait que 🧪 Auto-tests (non-régression du moteur, lancée manuellement) et ⟳⟳ Hard (rejeu complet borgne) — aucun contrôle **du document lui-même** : instance restée d'un modèle supprimé, répétition désynchronisée de sa source, esquisse sur-contrainte, fonction en erreur après modification amont, visibilité d'un corps disparu, géométrie d'import orpheline.
+
+(2) Nouveau `runValidate()` (`src/97-auto-tests.js`), 7 phases, chacune diagnostic **et** réparation quand elle est automatisable :
+1. **Document** — `docSanitise()` : doublons, instances orphelines, esquisses abandonnées, copies bornées, noms de congé/dépouillage/coque réalignés ; le retour `{dup,orph,sk,cap,ren}` devient le compteur de réparations.
+2. **Répétitions** — écart paramètre source/instance (distance, angle, épaisseur, rayon, op, flip, mid, tangence — `edges` exclu : la passe 2b l'enrichit légitimement sur le solide réel), puis `repGenAll()` (balayage de chaque répétition, ids stables) et re-vérification.
+3. **Esquisses** — `skAudit()` sur chaque esquisse : contraintes/cotes violées signalées en ⚠. Diagnostic seulement : réparer seul demanderait de choisir entre sous- et sur-contrainte.
+4. **Fonctions** — rejeu (`buildKeyUpToDate()` sinon `rebuild()`), lecture de `_err` (❌ en erreur) et `_m.m<_m.t` (⚠ dégradée : visage introuvable).
+5. **Moteur+caches** — état d'OCCT annoncé (« OCCT chargé » / repli maillage), puis `hardRefresh()` : jet de tous les caches + rejeu complet — filet de remise d'aplomb.
+6. **Corps+imports** — `ensureBodies()`, purge des entrées `bodyVis` sans corps et de la table `importGeom` (libération mesh/brep des imports dont la fonction a disparu, via `importHydrate()`).
+7. **Rapport** — agrégat `VALIDATION : N/7 phases OK — M réparation(s)` + les 6 lignes détaillées, écrit dans `#selfTest` (zone Auto-tests) et renvoyé en texte (lisible par les tests).
+
+Bouton : **créé depuis le JS** (même régime que ↩ Annuler — la coque HTML n'est jamais éditée à la main), monté à côté de « 🧪 Auto-tests » via IIFE idempotent (`btnValidate`, `insertBefore(b,hote)`), `onclick => runValidate()`.
+
+Tests : **nouvelle suite `tests/test_validate.cjs` enregistrée dans `tests/run.cjs` → `npm test` 37/37 vert**, **ROUGE vérifiée sur le build d'avant (5/5 : `btnValidate`, libellé, montage, onclick et `runValidate()` absents)** : structure source (`src/97` lu tel quel) + comportement sur un document seedé — instance orpheline (`repeatId` inexistant), instance désynchronisée (distance 20 → 5), esquisse avec cote 999 alors que la ligne mesure 20 — assertions : rapport à en-tête `VALIDATION` et 7 lignes de phases, `#selfTest` alimenté, orphelin purgé (phase 1 ✅), instance réalignée à 20 (phase 2 ✅), violation signalée en ⚠ (phase 3), « OCCT chargé » (phase 5 ✅), compteur ≥ 3 réparations.
+
+`build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-007.html`.
+
+README : nouveau bouton **✓ Valider** (7 phases diagnostic + réparation, rapport dans la zone Auto-tests) ; tests → 37 suites.
