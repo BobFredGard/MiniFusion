@@ -40,7 +40,8 @@ const SUITES = [
   "test_fao_barre3d",
   "test_validate",
   "test_tree_filter",
-  "test_view_reframe"
+  "test_view_reframe",
+  "test_prodver_badge"
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {

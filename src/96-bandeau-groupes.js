@@ -13,11 +13,23 @@
 (function(){
   const bar=document.querySelector('.tb');
   if(!bar)return;
+  // Badge de version produit, en haut à droite du bandeau : enfant du .topbar
+  // (hors .tb, donc jamais déplacé par le regroupement), poussé à droite par
+  // margin-left:auto, avant la rangée .hints qui force le retour à la ligne.
+  const top=document.querySelector('.topbar')||bar.parentNode;
+  if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
+    const v=document.createElement('span');
+    v.id='prodVer';v.textContent='V0.1.0';v.title='Version produit';
+    const hints=document.querySelector('.hints');
+    if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
+    else if(top)top.appendChild(v);
+    else bar.appendChild(v);
+  }
   if(bar.querySelector('.dd'))return; // déjà fait
   const $=id=>document.getElementById(id);
 
   // Le style part aussi d'ici (même raison que le bandeau).
-  if(!document.getElementById('styleBandeau')){
+  if(!Array.from(document.head.children||[]).some(n=>n&&n.id==='styleBandeau')){
     const st=document.createElement('style');
     st.id='styleBandeau';
     st.textContent=[
@@ -31,7 +43,8 @@
       '.ddMenu button:hover{background:var(--primary)}',
       '.ddMenu button i{font-style:normal;opacity:.85;margin-right:7px}',
       '.ddMenu .ddSep{width:auto;height:1px;margin:4px 6px;background:var(--border)}',
-      '.ddMenu .ddLab{padding:7px 10px 3px;font-size:.66rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}'
+      '.ddMenu .ddLab{padding:7px 10px 3px;font-size:.66rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}',
+      '#prodVer{margin-left:auto;font-size:.68rem;font-weight:700;letter-spacing:.03em;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text);white-space:nowrap}'
     ].join('\n');
     document.head.appendChild(st);
   }

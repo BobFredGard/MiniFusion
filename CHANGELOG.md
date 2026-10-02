@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**140 versions**, de `2026-09-28b` à `2026-10-02-009` — la plus récente en bas,
+**141 versions**, de `2026-09-28b` à `2026-10-02-010` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2615,3 +2615,13 @@ Tests : **nouvelle suite `tests/test_view_reframe.cjs` enregistrée dans `tests/
 `build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-009.html`.
 
 README : tests → 39 suites.
+
+### `2026-10-02-010`
+
+Bandeau — badge de version produit « V0.1.0 » en haut à droite. La coque HTML n'étant jamais éditée à la main, le badge est créé depuis JS dans `src/96-bandeau-groupes.js` (avec le regroupement du bandeau) : enfant direct du `.topbar` (hors `.tb`, donc jamais déplacé par le regroupement), poussé dans le coin par `margin-left:auto` avant la rangée `.hints` qui force le retour à la ligne — vérifié en navigateur : 15 px du bord droit du bandeau, `V0.1.0` à l'écran avec `APP_VER` `2026-10-02-010`. Sa règle `#prodVer` rejoint le style injecté `styleBandeau`, dont le garde bascule du `getElementById` aux enfants de `<head>` (le harnais auto-créant tout id demandé, l'injection était invisible en test) ; `documentStub` expose maintenant les nœuds `.topbar` et `.tb` pour que `src/96` s'exécute réellement en test.
+
+Tests : **nouvelle suite `tests/test_prodver_badge.cjs` enregistrée dans `tests/run.cjs` → `npm test` 40/40 vert**, **ROUGE vérifiée sur le build d'avant (6 échecs)** : structure (badge + règle `margin-left:auto` dans `src/96`, `V0.1.0` présent dans le script construit seulement, jamais dans le head de la coque) + comportement (`#prodVer` enfant du `.topbar` et hors barre `.tb`, `#prodVer{...margin-left:auto}` dans le style injecté).
+
+`build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-010.html`.
+
+README : tests → 40 suites.

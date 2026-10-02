@@ -38,6 +38,8 @@ function mkNode(){
 }
 const idMap=new Map();
 const docBodyNode=mkNode();docBodyNode.tagName='BODY';docBodyNode.id='body';
+const tbNode=mkNode();tbNode.className='tb'; // barre du bandeau supérieur (src/96 y regroupe les boutons)
+const topNode=mkNode();topNode.className='topbar'; // bandeau supérieur (src/96 y injecte le badge de version)
 const documentStub={
   getElementById:id=>{if(!idMap.has(id))idMap.set(id,mkNode());return idMap.get(id);},
   createElement:tag=>{const n=mkNode();n.tagName=String(tag).toUpperCase();return n;},
@@ -46,6 +48,8 @@ const documentStub={
   addEventListener(t,fn){evBind(documentStub,t,fn);},removeEventListener(){},
   dispatchEvent(ev){ev.target=documentStub;evFire(documentStub,ev);evFire('window',ev);return true;},
   querySelector(sel){
+    if(sel==='.topbar')return topNode;
+    if(sel==='.tb')return tbNode;
     if(sel==='body > input')return docBodyNode.children.find(c=>String(c.tagName).toUpperCase()==='INPUT')||null;
     return null;},
   querySelectorAll(sel){return [];},
