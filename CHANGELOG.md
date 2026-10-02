@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**139 versions**, de `2026-09-28b` à `2026-10-02-008` — la plus récente en bas,
+**140 versions**, de `2026-09-28b` à `2026-10-02-009` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2598,3 +2598,20 @@ Tests : **nouvelle suite `tests/test_tree_filter.cjs` enregistrée dans `tests/r
 `build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-008.html`.
 
 README : arbre **filtré** au blocage ⏱ (l'arbre ne montre que les fonctions rejouées) ; tests → 38 suites.
+
+### `2026-10-02-009`
+
+Vue 3D — au chargement, la caméra n'est plus jamais cadrée sur le moteur de repli : re-cadrage garanti après la bascule exact, plus de vue noire.
+
+(1) Retour « Plus de vue 3D : au refresh les plans apparaissent puis disparaissent et rien à l'écran — on peut rejouer, faire apparaître FAO, mais plus de vue 3D » : mesuré en navigateur réel (Brave headless, CDP, avec le document de l'utilisateur) sur **tous** les builds `-004` à `-008` — ce n'était pas une régression des lots 4/5. Séquence : `init` cadre via `showAll()` dès que le cache est restauré, mais le noyau OCCT n'est prêt qu'après (`Noyau prêt — recalcul exact…`) — le premier rebuild tourne donc sur le repli CSG, dont le « solide combiné » a pour ce document une boîte dégénérée **40×40×10000** (BSP) → `showAll()` cadre r≈10000 → caméra à (7000,-6000,7045), distance ~11600 > plan lointain 5000 → **tout est clippé, écran noir** (les plans d'origine encore visibles sur les premières frames avant cadrage — « les plans apparaissent puis disparaissent »). Le passage à l'exact remplace les corps (modèle sain : 218 mm, 17 608 tris, 1 corps visible) mais ne re-recadre jamais : la vue reste noire jusqu'à un Iso / Tout afficher manuel. Rejeu et FAO restent utilisables (rien ne dépend de la caméra) — d'où le retour « on peut rejouer, faire apparaître FAO ».
+
+(2) Correctif, trois points :
+- `src/99-init` : le `showAll()` du boot est gardé par `occtReady` — sans noyau prêt, aucun cadrage sur le repli (la caméra par défaut (90,-90,90) montre déjà l'origine, aucune phase noire) ;
+- `src/00` `occtFinishBoot()` : après le `rebuild()` exact, `if(!viewUserMoved){try{showAll();}catch(e){}}` — re-cadrage sur le modèle réel, à chaque chemin de démarrage (http, cache local, .wasm manuel) ;
+- `src/10` `buildScene()` : `viewUserMoved` passe à true au premier glisser (pointermove avec bouton) ou à la roulette sur le canvas — l'utilisateur qui pilote sa caméra pendant le chargement ne se fait pas voler sa vue par le re-cadrage.
+
+Tests : **nouvelle suite `tests/test_view_reframe.cjs` enregistrée dans `tests/run.cjs` → `npm test` 39/39 vert**, **ROUGE vérifiée sur le build d'avant (comportement : `occtFinishBoot` de -008 appelait `showAll` 0 fois — les deux asserts de re-cadrage tombaient)** : structure source (drapeau `viewUserMoved` + garde dans `src/00`, double garde `occtReady` sans `showAll()` nu dans `src/99`, écoutes pointermove/roulette dans `src/10`) + comportement avec `showAll` remplacé par un compteur : `occtFinishBoot()` appelle `showAll()` exactement 1 fois, et aucun nouvel appel dès que `viewUserMoved=true`.
+
+`build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-009.html`.
+
+README : tests → 39 suites.

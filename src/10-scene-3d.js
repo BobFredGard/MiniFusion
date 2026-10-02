@@ -47,6 +47,12 @@ function buildScene(){
   // Souris : rotation = clic GAUCHE enfoncé, roulette (molette) conservée = rotation aussi,
   // déplacement (pan) = clic DROIT enfoncé. Clic court sans glisser = sélection (gardien >6px).
   if(controls.mouseButtons&&THREE.MOUSE){controls.mouseButtons.LEFT=THREE.MOUSE.ROTATE;controls.mouseButtons.MIDDLE=THREE.MOUSE.ROTATE;controls.mouseButtons.RIGHT=THREE.MOUSE.PAN;}
+  // Dès que l'utilisateur pilote réellement la caméra (glisser bouton enfoncé / roulette),
+  // le re-cadrage automatique du démarrage (occtFinishBoot) ne doit plus lui voler sa vue.
+  try{
+    renderer.domElement.addEventListener('pointermove',e=>{if(e.buttons)viewUserMoved=true;},{passive:true});
+    renderer.domElement.addEventListener('wheel',()=>{viewUserMoved=true;},{passive:true});
+  }catch(e){}
   fit(); wirePick(); animate();
   window.addEventListener('resize',fit);
 }

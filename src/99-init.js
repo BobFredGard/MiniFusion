@@ -7,8 +7,10 @@ try{const auto=localStorage.getItem('minifusion_auto');if(auto){deserialise(auto
 // il n'y a pas de solide exact (occLive) — donc ni congé, ni esquisse sur face, ni sélection
 // de face : « impossible de rejouer le solide ». Symptôme mesuré : le PREMIER F5 rejouait
 // (cache périmé par la version), le SECOND ne rejouait plus (cache valide) et la pièce
-// devenait inerte. On force donc le rejeu dans les DEUX cas, et on cadre la vue : au
-// chargement, la caméra n'est jamais ajustée sur la pièce, qui peut rester hors champ.
+// devenait inerte. On force donc le rejeu dans les DEUX cas. Le cadrage a lieu une fois
+// le noyau exact prêt (occtFinishBoot) : cadrer ici, pendant le repli maillage, prendrait
+// la boîte du « solide combiné » parfois dégénérée (40×40×10000) — caméra hors champ,
+// vue noire. Tant qu'OCCT n'est pas prêt, la caméra par défaut (90,-90,90) montre l'origine.
 try{
   restoreViewCache().then(ok=>{
     if(ok)log('Affichage restauré depuis le cache — rejeu exact en cours…');
@@ -16,7 +18,7 @@ try{
     // puisque restoreViewCache vient de poser builtHash.
     builtVersion=-1;builtHash=null;builtEngine=null;
     try{rebuild();}catch(e){}
-    try{showAll();}catch(e){}
+    try{if(occtReady)showAll();}catch(e){}
   });
-}catch(e){try{builtVersion=-1;builtHash=null;builtEngine=null;rebuild();showAll();}catch(e2){}}
+}catch(e){try{builtVersion=-1;builtHash=null;builtEngine=null;rebuild();if(occtReady)showAll();}catch(e2){}}
 log('Prêt. Esquisse → Extrusion → Export. Même navigation que le viewer.');

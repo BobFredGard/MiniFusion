@@ -39,7 +39,8 @@ const SUITES = [
   "test_fao_passes",
   "test_fao_barre3d",
   "test_validate",
-  "test_tree_filter"
+  "test_tree_filter",
+  "test_view_reframe"
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {

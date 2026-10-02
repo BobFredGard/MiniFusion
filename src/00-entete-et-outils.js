@@ -23,7 +23,7 @@
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-02-008';
+const APP_VER='2026-10-02-009';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 let extPickFace=null; // mode « vers un objet » : clic sur une face pour le sens (Échap = annuler)
@@ -79,6 +79,7 @@ function applyView(v){
     applyClip();refreshMirror();buildEdgeOverlay();
   }catch(e){}
 }
+let viewUserMoved=false; // l'utilisateur a piloté la caméra (glisser/roulette) depuis le chargement
 let occBaseMsg='OCCT : état inconnu',occEngineMsg='—';
 function occStatus(){try{$('occtState').textContent=occBaseMsg+' · Moteur : '+occEngineMsg;}catch(e){}
   try{const b=$('btnOccWasm');if(b)b.style.display=occtReady?'none':'';}catch(e){}}
@@ -96,6 +97,10 @@ async function occtFinishBoot(){
     // rechargement de la page, le cache était valide, le rejeu sauté, occLive absent —
     // plus aucun congé, plus aucune esquisse sur face, plus aucune sélection de face.
     try{faceEl.textContent='Noyau prêt — recalcul exact…';builtVersion=-1;builtHash=null;builtEngine=null;rebuild();}catch(e){}
+    // Re-cadrage après bascule exact : le 1er cadrage (chargement) s'est fait sur le repli
+    // maillage, dont le solide combiné peut avoir une boîte dégénérée (mesuré : 40×40×10000,
+    // caméra propulsée hors du plan lointain 5000 → vue noire jusqu'au prochain Iso).
+    if(!viewUserMoved){try{showAll();}catch(e){}}
     try{if(filMode&&occLive&&occLive.shape){exitFilletMode(true);enterExactFilletMode();}}catch(e){}}
 }
 async function bootWasmBinary(buf){
