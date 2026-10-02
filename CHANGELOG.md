@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**132 versions**, de `2026-09-28b` à `2026-10-02-001` — la plus récente en bas,
+**133 versions**, de `2026-09-28b` à `2026-10-02-002` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2480,3 +2480,22 @@ Tests : `tests/test_fao_barre3d.cjs` réécrit sur la nouvelle géométrie — `
 README : écran 3D — les 7 `+ usinage` forment une pilule **en haut à droite, au-dessus du panneau FAO** (colonne `#faoWrap`, largeur bornée, **une seule ligne toujours : défilement horizontal invisible sur écran étroit, jamais de 2ᵉ ligne, hauteur 34px = celle de la pilule des vues**, le panneau FAO coule dessous), les boutons `Iso`/`Dessus`/`Face`/`Droite`/`Tout afficher`/`⚙` forment la pilule **en haut à gauche, au-dessus du panneau des corps** (menu réglages ouvert sous elle).
 
 Repo — **synchronisation Mac ↔ Windows** : `.gitattributes` explicite (règles `text` par extension, `*.bat text eol=crlf`, `png/jpg/ico` en binaire, commentaire sur les noms **Unicode NFC**) + section README « Synchronisation » (config par clone `core.autocrlf` / `core.precomposeunicode`, `git status` + `build --check` + `npm test` avant push) ; **chemins de l'index normalisés en NFC** (les doublons NFD macOS/Dropbox — `Cavité`, `Coque et Dépouilles`, `Pièce 5`, `Révolution 1`, fixtures `Ma Pièce`/`congé` — sont supprimés, `build.js` régénère le livrable en CRLF à l'identique sur les deux OS) ; `Server.bat` perd son chemin codé en dur `C:\Users\Zique\...` pour `%~dp0`. Données : `Cavité Usinage.step/.json` re-exportés, `Pince.minifusion.json` ajouté.
+
+### `2026-10-02-002`
+
+**Esquisse : le solide reste visible en TRANSLUCIDE pendant l'édition (au bon état du timeline), et les arêtes se projettent (vives + tangences) avec un repli sans noyau.**
+
+1. **Retours** : « en posant une esquisse sur une face, il ne reste à l'écran que les STEP importés » et « pendant l'édition la pièce est opaque, le fondu a disparu ».
+2. **Causes** (diagnostic hors-repo, `openSketch` / `skBuildRefs` / `projectEdgeAt`) :
+   - **ordre inversé** : `skBuildRefs()` tournait **avant** `tlEditLock()+rebuild()` → le fondu 0,75 et les références étaient posés sur l'**ancien** état, puis le rejeu **régénérait les matériaux** : pièce opaque + références de l'état final ;
+   - **esquisse posée sur face non consommée** : `tlEditLock(hôte)` excluait la fonction porteuse du rejeu → le corps qui porte la face **disparaissait** (seuls les imports STEP survivaient) ;
+   - **consommateur** détecté par `f.type==='extrude'` **seul** (3 occurrences) : une esquisse consommée par une **révolution** était traitée comme non consommée ;
+   - un **rebuild en session** (`buildDone`) repartait de matériaux neufs : le fondu sautait ;
+   - **projection** : garde « noyau OCCT requis » **inconditionnelle** malgré le repli sur les références, références violettes **invisibles** pendant l'outil ⧉, et deux arêtes projetant le même segment 2D départagées par l'**ordre** de `occListEdges`.
+3. **Fix — ordre d'ouverture** : verrou **puis** rebuild **puis** `skBuildRefs()`. Nouveau `tlEditLockAfter(f)` (rejeu **après** la porteuse ; aucun verrou si c'est la dernière fonction → modèle complet) ; `skBuildRefs`, `findClosestProjectedEdge` et `projectEdgeAt` passent par le nouvel helper `skConsumerIdx(sk)` (extrude **ou** revolve, fonctions visibles), et `geomLater` prend la révolution en compte.
+4. **Fix — fondu** : helpers `skFadeSaveRestore()` / `skApplyFade()` pilotés par `skEdit._fade` (`'bodies'` = corps à 75 %, `'ghost'` = corps masqués + fantôme antérieur) — appelés par `skBuildRefs` **et** par `buildDone` (le rejeu repose le fondu) ; `closeSketch` efface le mode **avant** son rebuild de sortie (sinon le fondu reviait après restauration) ; si le rejeu partiel échoue, ou si le fantôme n'a pas pu être monté, les corps restent **visibles en fondu** — jamais d'écran vide.
+5. **Fix — projection** : antériorité via `skConsumerIdx` ; **départage par écart au plan** (`d2D + 0,25×|dz|`, porte `d2D<tol`) : l'arête **du plan projeté** gagne sur celle qui ne fait que se projeter dessus (bloc avant : bord z=40 > bord z=0) ; garde assouplie — repli sur `sk._refs` (corps visibles) quand le noyau est absent, message d'origine réservé au cas « ni noyau **ni** références » ; les références sont affichées **pendant l'outil ⧉** (et re-masquées à la sortie avec le toggle éteint).
+
+Tests : **2 nouvelles suites enregistrées dans `tests/run.cjs` → `npm test` 30/30 vert.** `tests/test_esquisse_transparence.cjs` — esquisse libre (fondu 0,75), esquisse **posée sur face** dernière fonction (aucun verrou, **1 corps visible** alors que l'ancien code en laissait **0**), porteuse suivie d'une autre fonction (`tlMark` = la fonction suivante, corps toujours là), esquisse consommée (`tlMark` avant la consommatrice, corps **translucides** alors qu'ils étaient opaques), `markDirty()+rebuild()` en session qui **repose** le fondu, fermeture (opacité restaurée, mode effacé, fantôme détruit) — vérifié **rouge** sur le build d'avant correction. `tests/test_esquisse_projection.cjs` (noyau OCCT réel, boîte 100×60×40 filée R4 : 13 vives + 2 tangentes) — arête vive **du plan** choisie sur le doublon du z=0, arête de **tangence** (y=56, z=40) projetée, `skConsumerIdx` = 0 sur une **révolution** consommatrice, références violettes tracées **8** pendant l'outil / **0** hors outil, repli sans noyau via les références (1 entité projetée), garde dure sans noyau ni références (0 + message « noyau OCCT »). `build.js --check` sur le livrable committé.
+
+README : esquisse — le solide reste **visible en translucide (75 %)** au bon état du timeline (avant la consommatrice, **après** la fonction porteuse) ; projections — **vives et de tangence**, arêtes du plan prioritaires, références visibles pendant ⧉, repli sans noyau ; tests → 30 suites.

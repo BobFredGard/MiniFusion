@@ -29,9 +29,10 @@ Une partie FAO est en travail, ce sera long !
 - **12 contraintes** : horizontal, vertical, parallèle, perpendiculaire, égal, symétrie, tangence, coaxiale, milieu, fixe, construction — avec **auto-inférence** (perpendiculaire/tangente détectées à la création, **─/│ prioritaire sur ⟂ implicite**, doublons purgés).
 - **Solveur maison** : Levenberg-Marquardt + relaxation, avec panneau « Santé » (degrés de liberté, résidus), convergence mesurée.
 - **Cotes pilotées** : longueur, Ø, rayon, distance, angle, entraxe. Elles se posent en **H, V ou aligné selon la position du curseur**, avec gestion des angles complémentaires (secteur obtus respecté). **Shift+clic sur 2 lignes** : entraxe si elles sont **parallèles** (à 3° près), angle sinon — la parallèle est décidée sur les **vecteurs de direction**, donc deux lignes parallèles sans sommet commun sont bien reconnues.
+- **Pendant l'édition** : le solide reste **visible en translucide (75 %)**, calé sur le bon état du timeline — l'état **avant la fonction qui consomme l'esquisse**, ou l'état **après la fonction porteuse** pour une esquisse posée sur face (la face ne disparaît jamais de l'écran). Le fondu est reposé après chaque rejeu et entièrement restauré à la fermeture.
 
 ### Cotation, mesures & annotations
-- **Projections associatives** : projeter une arête 3D du solide dans l'esquisse (⧉, ligne ou cercle + centre) pour la coter — **l'entité suit les changements du modèle**.
+- **Projections associatives** : projeter une arête 3D du solide dans l'esquisse (⧉, ligne ou cercle + centre) pour la coter — **l'entité suit les changements du modèle**. **Vives ET de tangence**, même hors plan : les arêtes du plan d'esquisse l'emportent sur celles qui ne font que se projeter dessus, les références sont affichées pendant l'outil, et **sans noyau OCCT** on retombe sur les références des corps visibles (le message « noyau requis » n'apparaît plus que s'il n'y a rien à projeter).
 - **Mesures 3D** : face→face, Ø, entraxe, avec lignes de cotation et pieds de ligne affichés en 3D.
 - **Références nommées** : chaque arête de congé, face porteuse et projection reçoit un nom persistant (`Arête 1`, `Face 2`, `Projetée 3`) — visible dans les panneaux, conservé à la sauvegarde.
 
@@ -143,7 +144,7 @@ python -m http.server 3000
 | `occt/` | Noyau OpenCascade WebAssembly (~111 Mo) + ses `.bak` locaux (non suivis) |
 | `threejs/` | Rendu 3D (three.js), OrbitControls, CSG |
 | `PostPro/` | Post-processeurs G-code : **Siemens 840D** (variantes 630 / 1520) et **Fagor 8065** |
-| `tests/` | Suite Node portable (harnais `appvm.cjs` + 28 suites + fixtures) : `node tests/run.cjs` ou `npm test` |
+| `tests/` | Suite Node portable (harnais `appvm.cjs` + 30 suites + fixtures) : `node tests/run.cjs` ou `npm test` |
 | `Backup/` | Snapshots des versions vertes |
 | `Server.bat` | Lancement local (npx serve, port 3000) |
 
@@ -158,7 +159,7 @@ n'a qu'un fichier à ouvrir.
 # 1. éditer un fichier de src/ (jamais fusion_mvp.html)
 # 2. reconstruire le livrable
 node build.js
-# 3. régression verte (harnais + 19 suites)
+# 3. régression verte (harnais + 30 suites)
 npm test
 # 4. bump APP_VER (src/00-entete-et-outils.js) + entrée CHANGELOG.md
 # 5. vérifier que le livrable est à jour (à mettre en CI)
@@ -224,7 +225,7 @@ fichier unique (voir « Travailler sur le code »).
 
 - **In-app** : 🧪 Auto-tests (non-régression esquisse, contraintes, cotes) — lançables depuis le panneau latéral.
 - **Dev** : harnais Node hors navigateur (solveur, cotation orientée, suivi de faces, références, projections associatives, congés/chanfreins exacts, menu d'extrusion, prismes miroir, répétitions, marqueur temps, performance…) ; certains scénarios s'exécutent sur le **noyau OCCT réel** (`.wasm` chargé en Node), et la version (`APP_VER`) est vérifiée avant chaque sauvegarde dans `Backup/`.
-- **Suite repo** : `tests/` (harnais `appvm.cjs` + 28 suites + fixtures, dont `test_fao`, `test_fao3d` et `test_fao_barre3d`) — portable, aucun chemin absolu : `node tests/run.cjs` ou `npm test` depuis la racine, sur n'importe quel PC.
+- **Suite repo** : `tests/` (harnais `appvm.cjs` + 30 suites + fixtures, dont `test_fao`, `test_fao3d` et `test_fao_barre3d`) — portable, aucun chemin absolu : `node tests/run.cjs` ou `npm test` depuis la racine, sur n'importe quel PC.
 
 ## Historique
 

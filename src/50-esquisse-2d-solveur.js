@@ -82,6 +82,42 @@ function getFaceProps(mesh,fi){
   }catch(e){return null;}
 }
 let skShowRefs=false; // B : violet masqué par défaut — fantôme gris 2D suffit (⧉ projette ce que tu veux)
+function skConsumerIdx(sk){
+  // Index (dans les fonctions visibles) de l'extrusion OU de la révolution qui
+  // consomme l'esquisse, sinon -1. Le consommateur détermine l'antériorité des
+  // références et des projections — révolution comprise (tlHostFeatureOfSketch
+  // l'incluait déjà, la détection ne suivait pas).
+  if(!sk)return -1;
+  return (doc.features||[]).filter(f=>f.visible!==false)
+    .findIndex(f=>(f.type==='extrude'||f.type==='revolve')&&f.sketchId===sk.id);
+}
+function skFadeSaveRestore(){
+  // Remet les opacités d'origine mémorisées par skApplyFade (idempotent).
+  bodies.forEach(b=>{
+    if(b._savedOpacity!=null&&b.mesh&&b.mesh.material){
+      b.mesh.material.opacity=b._savedOpacity; b.mesh.material.transparent=b._savedTransparent;
+      delete b._savedOpacity; delete b._savedTransparent;
+    }
+  });
+}
+function skApplyFade(){
+  // (Re)pose le fondu de la session d'esquisse sur l'état ACTUELLEMENT affiché.
+  // skEdit._fade : 'bodies' = corps en fondu 0.75 · 'ghost' = corps masqués +
+  // fantôme antérieur · null = rien (hors session). Re-appelé après chaque rebuild :
+  // le rejeu régénère les matériaux et volerait sinon le fondu.
+  if(!skEdit)return;
+  skFadeSaveRestore();
+  if(skEdit._fade==='bodies'){
+    bodies.forEach(b=>{
+      if(!b.ghost&&b.mesh&&b.mesh.visible&&b.mesh.material){
+        b._savedOpacity=b.mesh.material.opacity; b._savedTransparent=b.mesh.material.transparent;
+        b.mesh.material.transparent=true; b.mesh.material.opacity=0.75; // pièce bien visible (couleur conservée), derrière la grille
+      }
+    });
+  }else if(skEdit._fade==='ghost'){
+    bodies.forEach(b=>{ if(!b.ghost&&b.mesh) b.mesh.visible=false; });
+  }
+}
 function skBRepPlanarRefs(shape){
   // Vrais contours sur le plan (lignes + arcs/cercles) — pas de polyligne 12 pts
   try{
@@ -143,8 +179,7 @@ function findClosestProjectedEdge(sk,x,y,preferMid,wantType){
   const basis=sketchBasis(sk),u=basis.u,v=basis.v,o=basis.o;
   let candShapes=[],FRk=null;
   try{
-    const feats=(doc.features||[]).filter(f=>f.visible!==false);
-    const idx=feats.findIndex(f=>f.type==='extrude'&&f.sketchId===sk.id);
+    const idx=skConsumerIdx(sk);
     if(idx>=0&&occHas()){
       const FR=occFinalShape(idx);
       // Nettoyage DIFFÉRÉ (finally plus bas) : occCleanup(FR,null) supprime FR.shape —
@@ -253,8 +288,7 @@ function projectEdgeAt(sk,x,y){
   const candShapes=[];let FRk=null;
   // 1) solide antérieur exact si esquisse consommée, sinon solide fini
   try{
-    const feats=(doc.features||[]).filter(f=>f.visible!==false);
-    const idx=feats.findIndex(f=>f.type==='extrude'&&f.sketchId===sk.id);
+    const idx=skConsumerIdx(sk);
     if(idx>=0&&occHas()){
       const FR=occFinalShape(idx);
       // Nettoyage DIFFÉRÉ (try/finally en fin de fonction) : occCleanup(FR,null) supprime
@@ -297,8 +331,16 @@ function projectEdgeAt(sk,x,y){
             d=bestA;
           }
         } else for(let i=0;i<pts2.length-1;i++) d=Math.min(d,distSeg2(x,y,pts2[i][0],pts2[i][1],pts2[i+1][0],pts2[i+1][1]));
-        if(d<bd&&d<tol){
-          bd=d;
+        // Départage par l'écart au plan d'esquisse : deux arêtes peuvent se superposer
+        // exactement en 2D (bloc avant / bloc arrière) — l'arête du plan projeté gagne.
+        let dz=0;
+        try{
+          dz=1e9;
+          for(const p of e.pts){ const t=Math.abs((p[0]-o.x)*n.x+(p[1]-o.y)*n.y+(p[2]-o.z)*n.z); if(t<dz)dz=t; }
+          if(dz>1e8)dz=0;
+        }catch(err){dz=0;}
+        if(d<tol&&d+0.25*dz<bd){
+          bd=d+0.25*dz;
           srcMid=e.mid?e.mid.slice():null;
           if(isCirc){
             const span=Math.abs(((arcA2-arcA1)%(Math.PI*2)+Math.PI*2)%(Math.PI*2));
@@ -374,10 +416,11 @@ function skBuildRefs(){
   // AVANT la fonction qui consomme cette esquisse — pas la pièce finie.
   // Esquisse jamais consommée : solide fini.
   if(!skEdit){return;}
-  skEdit._refs=[];skEdit._ghost=[];skEdit._refNote='';
+  skEdit._refs=[];skEdit._ghost=[];skEdit._refNote='';skEdit._fade=null;
   const feats=doc.features.filter(f=>f.visible!==false);
-  const idx=feats.findIndex(f=>f.type==='extrude'&&f.sketchId===skEdit.id);
-  const geomLater=arr=>arr.some(f=>f.type==='extrude'||f.type==='xfillet'||f.type==='fillet');
+  const idx=skConsumerIdx(skEdit);
+  const geomLater=arr=>arr.some(f=>f.type==='extrude'||f.type==='revolve'||f.type==='xfillet'||f.type==='fillet');
+  const dropGhost=()=>{ if(skAnteriorGhost){ try{scene.remove(skAnteriorGhost); skAnteriorGhost.geometry.dispose();}catch(e){} skAnteriorGhost=null; } };
   if(idx<0){
     try{
       const br=skBRepPlanarRefs(occLive?occLive.shape:null);
@@ -385,18 +428,9 @@ function skBuildRefs(){
       skEdit._ghost=[]; // B : pas de wireframe 2D — on voit la 3D en fondu
     }catch(e){skEdit._refs=[]; skEdit._ghost=[];}
     skEdit._refNote='référence : solide fini (esquisse non consommée)';
+    dropGhost();
     // B : 3D en fondu léger dans le plan (pas de traits)
-    try{
-      if(skAnteriorGhost){ try{scene.remove(skAnteriorGhost); skAnteriorGhost.geometry.dispose();}catch(e){} skAnteriorGhost=null; }
-      bodies.forEach(b=>{ if(b._savedOpacity!=null&&b.mesh&&b.mesh.material){ b.mesh.material.opacity=b._savedOpacity; b.mesh.material.transparent=b._savedTransparent; delete b._savedOpacity; delete b._savedTransparent; }});
-      bodies.forEach(b=>{
-        if(!b.ghost&&b.mesh&&b.mesh.visible&&b.mesh.material){
-          b._savedOpacity=b.mesh.material.opacity; b._savedTransparent=b.mesh.material.transparent;
-          b.mesh.material.transparent=true; b.mesh.material.opacity=0.75; // pièce bien visible (couleur conservée), derrière la grille
-        }
-      });
-      skEdit._ghost=[];
-    }catch(e){}
+    skEdit._fade='bodies'; try{skApplyFade();}catch(e){}
     return;
   }
   if(!(geomLater(feats.slice(idx+1))&&occHas())){
@@ -404,24 +438,15 @@ function skBuildRefs(){
       const br=skBRepPlanarRefs(occLive?occLive.shape:null);
       skEdit._refs=(br&&br.length)?br:skRefMeshes(bodies.filter(b=>!b.ghost).map(b=>b.mesh));
       skEdit._ghost=[];
-      bodies.forEach(b=>{ if(b._savedOpacity!=null&&b.mesh&&b.mesh.material){ b.mesh.material.opacity=b._savedOpacity; b.mesh.material.transparent=b._savedTransparent; delete b._savedOpacity; delete b._savedTransparent; }});
-      bodies.forEach(b=>{
-        if(!b.ghost&&b.mesh&&b.mesh.visible&&b.mesh.material){
-          b._savedOpacity=b.mesh.material.opacity; b._savedTransparent=b.mesh.material.transparent;
-          b.mesh.material.transparent=true; b.mesh.material.opacity=0.75; // pièce bien visible (couleur conservée), derrière la grille
-        }
-      });
     }catch(e){skEdit._refs=[]; skEdit._ghost=[];}
+    dropGhost();
+    skEdit._fade='bodies'; try{skApplyFade();}catch(e){}
     return; // 3D en fondu dans le plan, pas de wireframe
   }
   // Rejeu partiel exact jusqu'à la fonction consommatrice (exclue).
   skEdit._refNote=`référence : état avant « ${feats[idx].name} »`;
-  // fantôme 3D antérieur : on masque le solide fini et on affiche l'état avant
-  if(skAnteriorGhost){ try{scene.remove(skAnteriorGhost); skAnteriorGhost.geometry.dispose();}catch(e){} skAnteriorGhost=null; }
-  bodies.forEach(b=>{
-    if(b._savedOpacity!=null&&b.mesh&&b.mesh.material){ b.mesh.material.opacity=b._savedOpacity; b.mesh.material.transparent=b._savedTransparent; delete b._savedOpacity; delete b._savedTransparent; }
-    if(!b.ghost) b.mesh.visible=false;
-  });
+  dropGhost();
+  let ok=false;
   try{
     const FR=occFinalShape(idx);
     try{
@@ -443,23 +468,44 @@ function skBuildRefs(){
         const mat=new THREE.MeshStandardMaterial({color:bcol,transparent:true,opacity:0.75,depthTest:true}); // couleur de la pièce, pas de gris fantôme
           skAnteriorGhost=new THREE.Mesh(g,mat); skAnteriorGhost.name='skAnteriorGhost'; scene.add(skAnteriorGhost);
         }catch(e){}
-      }else {skEdit._refs=[]; skEdit._ghost=[];}
+        ok=true;
+      }
     }finally{occCleanup(FR,null);}
-  }catch(e){
+  }catch(e){ok=false;}
+  if(ok){
+    // corps masqués seulement si le fantôme antérieur a réellement été monté — sinon on
+    // garde les corps affichés en fondu (même géométrie, jamais d'écran vide).
+    skEdit._fade=skAnteriorGhost?'ghost':'bodies';
+  }else{
+    // Rejeu impossible / aucun solide : on garde les corps affichés en fondu plutôt
+    // que de tout masquer (écran vide = ce qu'on corrige).
     try{skEdit._refs=skRefMeshes(bodies.filter(b=>!b.ghost).map(b=>b.mesh));}catch(e2){skEdit._refs=[];}
     skEdit._ghost=[];
     skEdit._refNote='référence : solide fini (rejeu partiel impossible)';
-    bodies.forEach(b=>{ if(!b.ghost) b.mesh.visible=true; if(b._savedOpacity!=null&&b.mesh&&b.mesh.material){ b.mesh.material.opacity=b._savedOpacity; b.mesh.material.transparent=b._savedTransparent; delete b._savedOpacity; delete b._savedTransparent; }});
+    bodies.forEach(b=>{ if(!b.ghost) b.mesh.visible=true; });
+    skEdit._fade='bodies';
   }
+  try{skApplyFade();}catch(e){}
 }
 function openSketch(id){
   skEdit=doc.sketches.find(s=>s.id===id);if(!skEdit)return;
   migrateSketch(skEdit);
+  // 1) VERROU puis REBUILD puis REFS (l'ordre compte) : skBuildRefs pose le fondu 0.75 et
+  // les références sur les meshes — avant, il s'appuyait sur l'ancien état (matériaux neufs
+  // ensuite → corps opaque) et sur des corps encore en état final (écran vide).
+  //   · esquisse consommée  : verrou avant la consommatrice (état qui la précède, Fusion) ;
+  //   · esquisse posée sur face non consommée : verrou APRÈS la fonction porteuse, pour
+  //     garder la face visible (sinon le rejeu l'exclut et il ne reste rien à l'écran) ;
+  //   · esquisse libre      : aucun verrou (modèle complet).
+  let locked=false;
+  const ci=skConsumerIdx(skEdit);
+  if(ci>=0){ locked=tlEditLock(doc.features.filter(f=>f.visible!==false)[ci]); }
+  else{
+    const host=tlHostFeatureOfSketch(skEdit);
+    if(host) locked=tlEditLockAfter(host);
+  }
+  if(locked){try{rebuild();}catch(e){}}
   skBuildRefs();
-  // Verrouille l'arbre sur la fonction propriétaire : pendant l'édition on ne voit
-  // que les opérations qui la précèdent (arbre + solide). Esquisse libre : rien à bloquer.
-  const host=tlHostFeatureOfSketch(skEdit);
-  if(host){tlEditLock(host);try{rebuild();}catch(e){}}
   skTool='select';skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skPendPt=null;skCoinA=null;skDraft=null;skDown=null;skDrag=null;skDragPushed=false;skDimDrag=null;skSel=null;skSelX=[];skMsg='';skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
   skUndoStack=[];skRedoStack=[];
   document.querySelectorAll('#skToolbar .tool').forEach(x=>x.classList.toggle('on',x.dataset.tool==='select'));
@@ -476,6 +522,9 @@ function closeSketch(save){
     if(!b.ghost) b.mesh.visible=true;
     if(b._savedOpacity!=null&&b.mesh&&b.mesh.material){ b.mesh.material.opacity=b._savedOpacity; b.mesh.material.transparent=b._savedTransparent; delete b._savedOpacity; delete b._savedTransparent; }
   });
+  // Mode de fondu effacé AVANT le rebuild de sortie : sinon buildDone→skApplyFade
+  // repose le fondu 0.75 après restauration et la pièce resterait translucide.
+  if(skEdit)skEdit._fade=null;
   // Sortie : le verrou est TOUJOURS levé (validation comme annulation) pour régénérer
   // la fonction modifiée et celles qui suivent ; sans rebuild de sortie, un verrou posé
   // à l'ouverture laisserait l'arbre bloqué.
@@ -1930,7 +1979,9 @@ function drawSketch2D(){
     }
   }
   // Références : arêtes du solide projetées (fond violet, non éditable, jamais dans le profil)
-  if(skShowRefs&&(sk._refs||[]).length){
+  // Outil ⧉ Projeter : visibles d'office (sinon on projette « dans le vide ») — masquées
+  // dès que l'outil est quitté si le toggle reste éteint.
+  if((skShowRefs||skTool==='project')&&(sk._refs||[]).length){
     for(let i=0;i<sk._refs.length;i++){const r=sk._refs[i];
       if(r.type==='circle'){
         const[a,b]=w2s(r.cx,r.cy);

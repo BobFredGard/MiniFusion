@@ -521,7 +521,12 @@ svg.addEventListener('pointerdown',e=>{
     return;
   }
   if(skTool==='project'){
-    if(!occHas()||!occLive||!occLive.shape){skStatus('Projeter : noyau OCCT requis et solide visible.');return;}
+    // OCCT donne les arêtes BRep exactes (vives ET de tangence) ; sans noyau on garde le
+    // repli sur les références projetées (corps visibles) — dégradé, mais utilisable.
+    if(!(occHas()&&occLive&&occLive.shape)&&!((sk._refs||[]).length)){
+      skStatus('Projeter : noyau OCCT requis (⚙ Noyau .wasm ou serveur) et solide visible.');
+      return;
+    }
     const pr=projectEdgeAt(sk,wx,wy);
     if(!pr){skStatus('Aucune arête 3D sur ce plan à proximité.');return;}
     skPushUndo();

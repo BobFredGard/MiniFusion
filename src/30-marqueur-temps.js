@@ -31,6 +31,20 @@ function tlEditUnlock(){
   tlSetPtr(null);markDirty();
   return true;
 }
+function tlEditLockAfter(f){
+  // Verrou APRÈS f : la fonction f est REJOUÉE (incluse), la suivante est exclue.
+  // Esquisse posée sur face non consommée : l'état affiché doit être celui qui PORTE
+  // la face (sinon la porteuse disparaît du rejeu → plus aucun corps à l'écran, seul
+  // un import STEP survivant reste visible). Si f est la dernière fonction, rien à
+  // exclure → aucun verrou (modèle complet, comme une esquisse libre).
+  if(!f||!doc.features.some(x=>x.id===f.id))return false;
+  const next=doc.features[doc.features.indexOf(f)+1]||null;
+  if(!next){
+    if(tlMark!==null){tlSetPtr(null);markDirty();}
+    return false;
+  }
+  return tlEditLock(next);
+}
 function tlHostFeatureOfSketch(sk){
   // Fonction « propriétaire » d'une esquisse : la première extrusion/révolution qui
   // l'utilise (ordre timeline), sinon l'hôte de face (esquisse posée sur face).
@@ -69,6 +83,9 @@ function buildDone(){
   // FAO : les limites « chaîne » sont re-suies sur les arêtes du nouveau solide
   // (état dérivé : pas d'entrée d'annulation) ; sinon marquées obsolètes (stale).
   try{if(typeof faoChainReplay==='function')faoChainReplay();}catch(e){}
+  // Session d'esquisse ouverte : le rejeu régénère les matériaux — le fondu 0.75 (et le
+  // masquage des corps en mode fantôme) serait perdu. skApplyFade est inerte hors session.
+  try{if(typeof skApplyFade==='function')skApplyFade();}catch(e){}
   if(_postT)clearTimeout(_postT);
   _postT=setTimeout(()=>{_postT=null;
     try{builtHash=docHash();}catch(e){}

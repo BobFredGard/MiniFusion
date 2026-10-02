@@ -17,6 +17,8 @@ const SUITES = [
   "test_undo_aller_retour",
   "test_revolve",
   "test_skctxmenu",
+  "test_esquisse_transparence",
+  "test_esquisse_projection",
   "test_fao",
   "test_fao3d",
   "test_corps",
