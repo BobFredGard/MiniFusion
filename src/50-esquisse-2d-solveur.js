@@ -111,7 +111,9 @@ function skApplyFade(){
     bodies.forEach(b=>{
       if(!b.ghost&&b.mesh&&b.mesh.visible&&b.mesh.material){
         b._savedOpacity=b.mesh.material.opacity; b._savedTransparent=b.mesh.material.transparent;
-        b.mesh.material.transparent=true; b.mesh.material.opacity=0.75; // pièce bien visible (couleur conservée), derrière la grille
+        // Fondu via la MÊME écriture que la slider du corps : la pièce reste lisible
+        // (éclat compensé), et un corps déjà translucide devient plus voilé, pas plus sombre.
+        setMatAlpha(b.mesh.material,Math.min(bodyOpOf(b.bodyId||b.id),0.75));
       }
     });
   }else if(skEdit._fade==='ghost'){
@@ -1367,6 +1369,22 @@ function solveSketch(sk,iters,anchor){
     skSolveFinal(sk,anchor);
   }else{
     skSolveFinal(sk,anchor); // sur l'état relaxation
+  }
+  // Garde-fou « saisie ancrée » : pendant un glisser le point pris à la souris est figé,
+  // ce qui peut RIVALISER avec une contrainte (milieu sur arête projetée figée, extrémité
+  // coincée sur une ligne fixe, cote incompatible…). L'état ancré est alors rejeté : on
+  // resout SANS ancre (les contraintes gagnent) et on ne garde ce second essai que s'il
+  // abaisse vraiment le résidu → aucune contrainte ne reste violée après un glisser.
+  // Recursion bornée : l'appel récursif passe anchor=undefined donc le garde-fou ne se
+  // redéclenche pas.
+  if(anchor&&anchor.length){
+    let rA=0;try{rA=skAudit(sk).residual||0;}catch(e){rA=0;}
+    if(rA>1e-4){ // ≫ bruit numérique, ≪ le seuil d'alerte d'audit (0,05 mm)
+      const snapA=skSnapCoords(sk);
+      let rB=Infinity;
+      try{solveSketch(sk,iters);rB=skAudit(sk).residual||0;}catch(e){rB=Infinity;}
+      if(!(rB<rA-1e-9))skRestoreCoords(sk,snapA); // pas de gain → on garde l'état ancré
+    }
   }
 }
 /* resolveur linéaire : Cholesky A·x=b (A SPD en place) */

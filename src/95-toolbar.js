@@ -81,18 +81,6 @@ addEventListener('keydown',e=>{
     e.preventDefault();try{hardRefresh();}catch(err){}
   }
 });
-try{
-  if($('optTint')){
-    if(partTint())$('optTint').value=cssHex(partTint());
-    $('optTint').addEventListener('input',()=>{
-      const m=/^#?([0-9a-fA-F]{6})$/.exec($('optTint').value.trim());if(!m)return;
-      doc.tint=parseInt(m[1],16);
-      bodies.forEach(b=>{if(!b.ghost&&b.mesh&&b.mesh.material&&b.mesh.material.color)b.mesh.material.color.setHex(doc.tint);});
-    });
-    $('optTint').addEventListener('change',()=>{markDirty();rebuild();});
-  }
-  if($('optTintAuto'))$('optTintAuto').onclick=()=>{delete doc.tint;markDirty();rebuild();};
-}catch(e){}
 if($('btnOccWasm'))$('btnOccWasm').onclick=()=>$('fileWasm').click();
 if($('fileWasm'))$('fileWasm').addEventListener('change',async e=>{
   const f=e.target.files[0];if(!f)return;

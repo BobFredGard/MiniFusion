@@ -1329,32 +1329,29 @@ p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.fea
         inpD.addEventListener('click',e=>e.stopPropagation());
         labD.appendChild(inpD);p.appendChild(labD);
       }
-      if((f.op||'add')!=='cut'){p.appendChild(colorField(f));p.appendChild(opacityField(f));}
       p.appendChild(btn('🔧 Changer d\'esquisse',()=>askExtrude(null,f)));
     }
-    if(f.type==='import'){p.appendChild(colorField(f));p.appendChild(opacityField(f));}
     p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;markDirty();rebuild();}));
     p.appendChild(btn('🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}));
   }else if(sel.kind==='body'){
-    const b=bodies.find(x=>x.id===sel.id);
-    let e=null;try{e=bodyEntry(sel.id);}catch(err){}
+    // Corps conteneur : son id EST celui de la fiche (doc.bodies) et, en mode
+    // exact, celui des meshes affichés. En mode maillage le mesh porte l'id de la
+    // fonction : on le retrouve par bodyId (bodyIdOfRuntime).
+    let e=null;try{e=bodyEntryOf(sel.id);}catch(err){}
+    const shown=bodies.filter(x=>!x.ghost&&bodyIdOfRuntime(x)===sel.id);
+    const b=shown.find(x=>x.kind==='body')||shown[0]||null;
     const kids=doc.features.filter(f=>!f.repeatId&&f.body===sel.id);
-    p.appendChild(info(b?`<b>${b.name}</b> · corps affiché · ${kids.length} fonction(s)`:(e?`<b>${e.name}</b> · corps vide · ${kids.length} fonction(s) — esquissez puis extrudez pour le remplir.`:'Corps non reconstruit.')));
+    p.appendChild(info(b?`<b>${e?e.name:sel.id}</b> · corps affiché · ${kids.length} fonction(s)`:(e?`<b>${e.name}</b> · corps vide · ${kids.length} fonction(s) — esquissez puis extrudez pour le remplir.`:'Corps non reconstruit.')));
     if(doc.activeBody!==sel.id)p.appendChild(btn('● Activer ce corps',()=>{
       doc.activeBody=sel.id;try{dirty=true;}catch(err){}
       renderTree();renderProps();refreshParts();
       try{faceEl.textContent='« '+((e&&e.name)||sel.id)+' » ACTIF (●) : les nouvelles fonctions naîtront dedans.';}catch(err){}
     }));
-    if(b){
-      const ff=b.ref?doc.features.find(x=>x.id===b.ref):null;
-      if(colorable(ff)){p.appendChild(colorField(ff));p.appendChild(opacityField(ff));}
-      else if(b.kind==='body'&&!b.ghost)p.appendChild(bodyColorField(b));
-      else if(b&&!b.ghost)p.appendChild(partTintField());
-      else if(b&&!b.ghost)p.appendChild(note('Couleur : réglez-la sur chaque fonction (extrusion / import).'));
-      p.appendChild(btn('🎯 Isoler',()=>isolate(b.id)));p.appendChild(btn('✅ Tout afficher',showAll));
-    }else if(e){
-      p.appendChild(bodyColorField({id:e.id,color:e.color||0x0a84ff}));
-    }
+    // ── Style du corps : UNE source (doc.bodies[].color / .op), la même que le
+    //    clic-droit et le rendu. Plus de couleur ni d'opacité par fonction.
+    p.appendChild(bodyStyleField(sel.id));
+    if(b)p.appendChild(btn('🎯 Isoler',()=>isolate(b.id)));
+    p.appendChild(btn('✅ Tout afficher',showAll));
     p.appendChild(btn('🗑 Supprimer le corps',()=>delBody(sel.id)));
   }else if(sel.kind==='plane'){
     const P=PLANES[sel.id]||{role:'',label:''};
@@ -1369,87 +1366,54 @@ p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.fea
 }
 const skName=id=>(doc.sketches.find(s=>s.id===id)||{name:'?'}).name;
 const exName=id=>(doc.features.find(f=>f.id===id)||{name:'?'}).name;
-function colorField(f){
-  // Sélecteur natif lié à f.color (persistée, rejouée au rebuild). Bouton Auto = retour auto.
-  const b=bodies.find(x=>x.ref===f.id);
-  const shown=(f&&f.color>0)?f.color:(b?b.color:0x9a9aa0);
-  const wrap=document.createElement('div');wrap.className='skrow';
-  const lab=document.createElement('label');lab.textContent='Couleur';lab.style.flex='1';
-  const inp=document.createElement('input');
-  inp.type='color';inp.value=cssHex(shown);
-  inp.style.width='44px';inp.style.height='26px';inp.style.padding='0';inp.style.border='none';inp.style.background='none';
-  inp.title='Palette (natif, fiable partout)';
-  inp.addEventListener('input',()=>{
-    const m=/^#?([0-9a-fA-F]{6})$/.exec(inp.value.trim());
-    if(!m)return;
-    f.color=parseInt(m[1],16);
-    bodies.forEach(b=>{if(b.ref===f.id&&b.mesh&&b.mesh.material&&b.mesh.material.color)b.mesh.material.color.setHex(f.color);});
-    try{const cur=ctxFeat(); if(cur.ff&&cur.ff.id===f.id){const ce=$('ctxColor'); if(ce) ce.value=cssHex(f.color);}}catch(e){}
-  });
-  inp.addEventListener('change',()=>{markDirty();rebuild();renderProps();});
-  const rst=document.createElement('button');rst.className='skbtn';rst.textContent='Auto';rst.title='Revenir à la couleur automatique';
-  rst.onclick=()=>{delete f.color;markDirty();rebuild();renderProps();};
-  wrap.appendChild(lab);wrap.appendChild(inp);wrap.appendChild(rst);
+function bodyStyleField(id){
+  // ── Couleur + transparence du CORPS : la fiche doc.bodies fait foi PARTOUT ──
+  // (panneau ci-dessous, clic-droit arbre + vue 3D, rendu). Ni couleur ni opacité
+  // par fonction, et surtout AUCUN bouton « Auto » : ce qu'on choisit est ce
+  // qu'on a. Tout est appliqué en direct (applyBodyStyleLive) : le glisser ne
+  // déclenche aucun rejeu, il n'y a donc rien à « valider » à la fin.
   const holder=document.createElement('div');holder.className='col';
-  holder.appendChild(wrap);holder.appendChild(presetRow(f));
-  return holder;
-}
-function colorable(f){return f&&(f.type==='import'||(f.type==='extrude'&&(f.op||'add')!=='cut'));}
-function bodyColorField(b){
-  // Couleur propre au corps (persistée dans doc.bodies via bodyEntry, rejouée au
-  // rebuild — prioritaire sur la teinte pièce pour CE corps, comme colorField).
   const wrap=document.createElement('div');wrap.className='skrow';
   const lab=document.createElement('label');lab.textContent='Couleur du corps';lab.style.flex='1';
   const inp=document.createElement('input');
-  let cur=null;try{cur=bodyEntry(b.id).color;}catch(e){}
-  inp.type='color';inp.value=cssHex(cur||b.color||0x0a84ff);
+  inp.type='color';inp.value=cssHex(bodyColorOf(id));
   inp.style.width='44px';inp.style.height='26px';inp.style.padding='0';inp.style.border='none';inp.style.background='none';
-  inp.title='Couleur de ce corps seul (persistée)';
-  inp.addEventListener('input',()=>{
-    const m=/^#?([0-9a-fA-F]{6})$/.exec(inp.value.trim());if(!m)return;
-    const c=parseInt(m[1],16);
-    try{bodyEntry(b.id).color=c;}catch(e){}
-    if(b.mesh&&b.mesh.material&&b.mesh.material.color)b.mesh.material.color.setHex(c);
-    try{dirty=true;renderTree();}catch(e){}
-  });
-  inp.addEventListener('change',()=>{markDirty();rebuild();renderProps();});
-  const rst=document.createElement('button');rst.className='skbtn';rst.textContent='Auto';rst.title='Revenir à la couleur automatique';
-  rst.onclick=()=>{try{delete bodyEntry(b.id).color;}catch(e){}markDirty();rebuild();renderProps();};
-  wrap.appendChild(lab);wrap.appendChild(inp);wrap.appendChild(rst);
-  return wrap;
-}
-function partTintField(){
-  // Teinte pièce (combiné) : prioritaire sur les couleurs de fonctions.
-  const wrap=document.createElement('div');wrap.className='skrow';
-  const lab=document.createElement('label');lab.textContent='Teinte pièce';lab.style.flex='1';
-  const inp=document.createElement('input');
-  inp.type='color';inp.value=cssHex(partTint()||0x0a84ff);
-  inp.style.width='44px';inp.style.height='26px';inp.style.padding='0';inp.style.border='none';inp.style.background='none';
-  inp.addEventListener('input',()=>{
-    const m=/^#?([0-9a-fA-F]{6})$/.exec(inp.value.trim());if(!m)return;
-    doc.tint=parseInt(m[1],16);
-    bodies.forEach(b=>{if(!b.ghost&&b.mesh&&b.mesh.material&&b.mesh.material.color)b.mesh.material.color.setHex(doc.tint);});
-    try{ const cur=ctxFeat(); if(!cur.ff){ const ce=$('ctxColor'); if(ce) ce.value=inp.value; } }catch(e){}
-  });
-  inp.addEventListener('change',()=>{markDirty();rebuild();renderProps();});
-  const rst=document.createElement('button');rst.className='skbtn';rst.textContent='Auto';rst.title='Retirer la teinte pièce';
-  rst.onclick=()=>{delete doc.tint;markDirty();rebuild();renderProps();};
-  wrap.appendChild(lab);wrap.appendChild(inp);wrap.appendChild(rst);
-  return wrap;
-}
-function opacityField(f){
-  const wrap=document.createElement('div');wrap.className='skrow';
-  const lab=document.createElement('label');lab.textContent='Opacité';lab.style.flex='1';
-  const r=document.createElement('input');r.type='range';r.min='15';r.max='100';
-  r.value=Math.round(((f.opacity>0&&f.opacity<1)?f.opacity:1)*100);r.style.flex='2';
-  const v=document.createElement('span');v.textContent=r.value+'%';v.style.minWidth='38px';v.style.textAlign='right';v.style.fontSize='.78rem';
-  r.oninput=()=>{
-    v.textContent=r.value+'%';const o=r.value/100;f.opacity=o>=1?undefined:o;
-    bodies.forEach(b=>{if(b.ref===f.id&&b.mesh&&b.mesh.material){b.mesh.material.transparent=o<1;b.mesh.material.opacity=o;b.mesh.material.needsUpdate=true;}});
-    try{const cur=ctxFeat(); if(cur.ff&&cur.ff.id===f.id){const ce=$('ctxOp'); if(ce){ce.value=r.value; const cv=$('ctxOpV'); if(cv) cv.textContent=r.value+'%';}}}catch(e){}
+  inp.title='Couleur de CE corps — la même dans l\u2019arbre, au clic-droit et à l\u2019écran';
+  const readHex=()=>{const m=/^#?([0-9a-fA-F]{6})$/.exec(String(inp.value||'').trim());return m?parseInt(m[1],16):null;};
+  const sw=swatchRow(c=>{inp.value=cssHex(c);commitColor(c,true);});
+  sw.dataset.sw='1'; // repéré par ctxStyleSync : l'anneau suit la source
+  const commitColor=(c,fin)=>{
+    if(c==null)return;
+    setBodyColor(id,c);          // source unique
+    applyBodyStyleLive(id);      // écran immédiat, sans rejeu
+    try{renderTree();}catch(e){} // nom du corps dans l'arbre : dans sa couleur
+    swatchMark(sw,cssHex(c));
+    try{ctxStyleSync();}catch(e){}
+    if(fin){markDirty();renderProps();}
   };
-  r.onchange=()=>{markDirty();rebuild();renderProps();};
-  wrap.appendChild(lab);wrap.appendChild(r);wrap.appendChild(v);
-  return wrap;
+  inp.addEventListener('input',()=>commitColor(readHex(),false));
+  inp.addEventListener('change',()=>commitColor(readHex(),true));
+  wrap.appendChild(lab);wrap.appendChild(inp);
+  holder.appendChild(wrap);
+  holder.appendChild(sw);
+  swatchMark(sw,cssHex(bodyColorOf(id)));
+  const row=document.createElement('div');row.className='skrow';
+  const lab2=document.createElement('label');lab2.textContent='Transparence';lab2.style.flex='1';
+  const r=document.createElement('input');r.type='range';r.min='15';r.max='100';r.step='1';
+  r.value=Math.round(bodyOpOf(id)*100);r.style.flex='2';
+  r.title='100 % = opaque · on voit au travers SANS que la pièce perde son éclat';
+  const v=document.createElement('span');v.textContent=r.value+'%';v.style.minWidth='38px';v.style.textAlign='right';v.style.fontSize='.78rem';
+  const commitOp=(fin)=>{
+    v.textContent=r.value+'%';
+    setBodyOp(id,+r.value/100);  // source unique
+    applyBodyStyleLive(id);      // direct : pas de rejeu, donc fluide
+    try{ctxStyleSync();}catch(e){}
+    if(fin){markDirty();renderProps();}
+  };
+  r.addEventListener('input',()=>commitOp(false));
+  r.addEventListener('change',()=>commitOp(true));
+  row.appendChild(lab2);row.appendChild(r);row.appendChild(v);
+  holder.appendChild(row);
+  return holder;
 }
 

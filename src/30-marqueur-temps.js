@@ -222,12 +222,16 @@ function rebuildInner(projPass){
     if(result&&result.polygons.length){
       try{
         const _ja=jobs.filter(j=>(j.f.op||'add')==='add'||j.isImport);
-        const _jf=_ja.map(j=>j.f).find(f=>f.color>0)||_ja.map(j=>j.f)[0];
-        const col=partTint()||(_jf?featColor(_jf,autoCol(0)):autoCol(0));
-        const mesh=CSG.toMesh(result,new THREE.Matrix4(),applyFeatOp(new THREE.MeshStandardMaterial({color:col,metalness:.35,roughness:.4,clippingPlanes:clipPlane?[clipPlane]:null}),_jf));
+        // Le solide combiné appartient au corps de sa PREMIÈRE fonction additive :
+        // c'est la fiche de ce corps qui porte sa couleur et sa transparence.
+        const _jh=_ja.find(j=>!j.isImport)||_ja[0]||null;
+        const csgId=_jh&&_jh.f&&_jh.f.body?_jh.f.body:null;
+        const col=bodyColorOf(csgId);
+        const mat=applyBodyStyle(new THREE.MeshStandardMaterial({metalness:.35,roughness:.4,clippingPlanes:clipPlane?[clipPlane]:null}),csgId);
+        const mesh=CSG.toMesh(result,new THREE.Matrix4(),mat);
         mesh.userData.bid='csg_result';scene.add(mesh);
-        const nA=jobs.filter(j=>(j.f.op||'add')==='add'||j.isImport).length,nC=jobs.filter(j=>(j.f.op||'add')==='cut').length;
-        bodies.push({id:'csg_result',name:`Solide combiné (${nA}➕ ${nC}➖)`,mesh,color:col,visible:true,kind:'boolean',ref:null});ci++;
+        const nA=_ja.length,nC=jobs.filter(j=>(j.f.op||'add')==='cut').length;
+        bodies.push({id:'csg_result',name:`Solide combiné (${nA}➕ ${nC}➖)`,mesh,color:col,visible:true,kind:'boolean',ref:null,bodyId:csgId});ci++;
         // Les imports ont été FUSIONNÉS dans ce résultat : leur mesh ne doit pas rester
         // en scène (il y aurait la pièce deux fois). La table d'imports le conserve —
         // ni libéré ni retiré du document, seulement de l'affichage.
@@ -248,19 +252,20 @@ function rebuildInner(projPass){
     // Sans découpe : affichage direct comme avant (rapide, sans BSP)
     jobs.forEach(j=>{
       if(j.isImport){
-        const col=partTint()||featColor(j.f,autoCol(ci));
-        j.f._mesh.material=applyFeatOp(FreshMat(col),j.f);scene.add(j.f._mesh);
-        bodies.push({id:j.f.id,name:j.f.name,mesh:j.f._mesh,color:col,visible:true,kind:'import',ref:j.f.id});ci++;
+        const col=bodyColorOf(j.f.body); // l'import est rangé dans un corps : SA couleur, SA transparence
+        j.f._mesh.material=applyBodyStyle(FreshMat(col),j.f.body);scene.add(j.f._mesh);
+        bodies.push({id:j.f.id,name:j.f.name,mesh:j.f._mesh,color:col,visible:true,kind:'import',ref:j.f.id,bodyId:j.f.body||null});ci++;
         return;
       }
       const isCut=(j.f.op||'add')==='cut';
       j.geos.forEach((g,k)=>{
-        const col=isCut?0xff453a:(partTint()||featColor(j.f,autoCol(ci)));
-        const mat=applyFeatOp(new THREE.MeshStandardMaterial({color:col,metalness:.35,roughness:.4,clippingPlanes:clipPlane?[clipPlane]:null,transparent:isCut,opacity:isCut?0.45:1}),j.f);
+        const col=isCut?0xff453a:bodyColorOf(j.f.body);
+        const mat=new THREE.MeshStandardMaterial({color:col,metalness:.35,roughness:.4,clippingPlanes:clipPlane?[clipPlane]:null,transparent:isCut,opacity:isCut?0.45:1});
+        if(!isCut)applyBodyStyle(mat,j.f.body); // découpe : rouge translucide de fantôme, sémantique forcée
         const mesh=new THREE.Mesh(g,mat);
         mesh.userData.bid=j.f.id;
         scene.add(mesh);
-        bodies.push({id:j.f.id+(j.geos.length>1?'#'+k:''),name:j.geos.length>1?`${j.f.name}[${k+1}]`:j.f.name,mesh,color:col,visible:true,kind:isCut?'ghost':'extrude',ref:j.f.id,op:j.f.op||'add',ghost:isCut});
+        bodies.push({id:j.f.id+(j.geos.length>1?'#'+k:''),name:j.geos.length>1?`${j.f.name}[${k+1}]`:j.f.name,mesh,color:col,visible:true,kind:isCut?'ghost':'extrude',ref:j.f.id,bodyId:j.f.body||null,op:j.f.op||'add',ghost:isCut});
         ci++;
       });
     });

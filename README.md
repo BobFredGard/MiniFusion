@@ -144,7 +144,7 @@ python -m http.server 3000
 | `occt/` | Noyau OpenCascade WebAssembly (~111 Mo) + ses `.bak` locaux (non suivis) |
 | `threejs/` | Rendu 3D (three.js), OrbitControls, CSG |
 | `PostPro/` | Post-processeurs G-code : **Siemens 840D** (variantes 630 / 1520) et **Fagor 8065** |
-| `tests/` | Suite Node portable (harnais `appvm.cjs` + 30 suites + fixtures) : `node tests/run.cjs` ou `npm test` |
+| `tests/` | Suite Node portable (harnais `appvm.cjs` + 32 suites + fixtures) : `node tests/run.cjs` ou `npm test` |
 | `Backup/` | Snapshots des versions vertes |
 | `Server.bat` | Lancement local (npx serve, port 3000) |
 
@@ -225,7 +225,7 @@ fichier unique (voir « Travailler sur le code »).
 
 - **In-app** : 🧪 Auto-tests (non-régression esquisse, contraintes, cotes) — lançables depuis le panneau latéral.
 - **Dev** : harnais Node hors navigateur (solveur, cotation orientée, suivi de faces, références, projections associatives, congés/chanfreins exacts, menu d'extrusion, prismes miroir, répétitions, marqueur temps, performance…) ; certains scénarios s'exécutent sur le **noyau OCCT réel** (`.wasm` chargé en Node), et la version (`APP_VER`) est vérifiée avant chaque sauvegarde dans `Backup/`.
-- **Suite repo** : `tests/` (harnais `appvm.cjs` + 30 suites + fixtures, dont `test_fao`, `test_fao3d` et `test_fao_barre3d`) — portable, aucun chemin absolu : `node tests/run.cjs` ou `npm test` depuis la racine, sur n'importe quel PC.
+- **Suite repo** : `tests/` (harnais `appvm.cjs` + 32 suites + fixtures, dont `test_fao`, `test_fao3d`, `test_fao_barre3d`, `test_corps_style` et `test_esquisse_contraintes`) — portable, aucun chemin absolu : `node tests/run.cjs` ou `npm test` depuis la racine, sur n'importe quel PC.
 
 ## Historique
 

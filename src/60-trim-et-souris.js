@@ -615,7 +615,7 @@ svg.addEventListener('pointermove',e=>{
       if(skFixed(sk).has(p))return;
       const o=skDragEnt.orig[p];if(o)sk.points[p]={x:o.x+dx,y:o.y+dy};
     });
-    solveSketch(sk,40);drawSketch2D();return;
+    solveSketch(sk,40,skDragEnt.anchor);drawSketch2D();return;
   }
   if(skDimDrag){
     const dd=dimById(sk,skDimDrag.id);if(!dd){skDimDrag=null;return;}

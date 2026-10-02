@@ -488,24 +488,47 @@ let ctxTarget=null;
    n'apparaît que pour un corps (visible via showCtx / showCtx3D). */
 let ctxStepBtn=null, ctxStepBtn3d=null;
 function showCtx(x,y,t){ctxTarget=t;$('ctxMenu').style.display='block';$('ctxMenu').style.left=x+'px';$('ctxMenu').style.top=y+'px';
-  try{ if(ctxStepBtn)ctxStepBtn.style.display=(t&&t.kind==='body')?'':'none'; }catch(e){}}
+  try{ if(ctxStepBtn)ctxStepBtn.style.display=(t&&t.kind==='body')?'':'none'; }catch(e){}
+  // style du corps : le menu du CORPS porte la couleur et la transparence (même
+  // source que le panneau et que la vue 3D) — masqué ailleurs, comme l'export STEP.
+  try{ ctxStyleShow('ctxMenu',!!(t&&t.kind==='body')); ctxStyleSync(); }catch(e){}}
 function hideCtx(){$('ctxMenu').style.display='none';}
+function ctxBodyId(t){
+  // Cible du clic-droit → CORPS conteneur. L'id affiché n'est PAS toujours celui
+  // du corps (en mode maillage, le mesh porte l'id de sa fonction) : c'est CET id
+  // qui sert à lire et à écrire la couleur et la transparence, partout.
+  if(!t)return null;
+  if(t.kind==='body'&&t.id){
+    try{ if((doc.bodies||[]).some(e=>e&&e.id===t.id))return t.id; }catch(e){}
+    let f=null;
+    try{ f=(doc.features||[]).find(x=>x&&x.id===t.id); }catch(e){}
+    if(f)return f.body||null;
+    let rb=null;
+    try{ rb=bodies.find(b=>b&&b.id===t.id); }catch(e){}
+    if(rb)return bodyIdOfRuntime(rb);
+    return null;
+  }
+  if(t.kind==='feature'){
+    let f=null;
+    try{ f=(doc.features||[]).find(x=>x&&x.id===t.id); }catch(e){}
+    return f?(f.body||null):null;
+  }
+  return null;
+}
 function showCtx3D(x,y,bid){ctxTarget={kind:'body',id:bid};const _bd=bodies.find(b=>b.id===bid)||{name:'Pièce'};$('ctx3DTitle').textContent=_bd.name||'Pièce';
   try{ if(ctxStepBtn3d)ctxStepBtn3d.style.display=bid?'':'none'; }catch(e){}
   try{
-    const _m=_bd.mesh&&_bd.mesh.material;
-    $('ctxColor').value=_m&&_m.color?cssHex(_m.color.getHex()):'#0a84ff';
-    const _op=_m?(_m.transparent?_m.opacity:1):1;
-    $('ctxOp').value=Math.round(_op*100);$('ctxOpV').textContent=Math.round(_op*100)+'%';
+    // ON LIT LA SOURCE, pas le matériau affiché : un fondu d'esquisse ou le cache
+    // local changerait artificiellement l'affichage, pas la pièce.
+    const _bid=ctxBodyId(ctxTarget);
+    const _op=Math.round(bodyOpOf(_bid)*100);
+    $('ctxColor').value=cssHex(bodyColorOf(_bid));
+    $('ctxOp').value=_op;$('ctxOpV').textContent=_op+'%';
+    ctxStyleShow('ctxMenu3D',!!(bid&&!_bd.ghost));
+    ctxStyleSync();
   }catch(e){}
   $('ctxMenu3D').style.display='block';$('ctxMenu3D').style.left=x+'px';$('ctxMenu3D').style.top=y+'px';}
 function hideCtx3D(){$('ctxMenu3D').style.display='none';}
-function ctxFeat(){
-  const t=ctxTarget;if(!t)return{};
-  const bd=bodies.find(x=>x.id===t.id);if(!bd)return{};
-  const ff=bd.ref?doc.features.find(x=>x.id===bd.ref):null;
-  return{bd,ff};
-}
 document.querySelectorAll('#ctxMenu button').forEach(b=>b.onclick=()=>{
   const t=ctxTarget;hideCtx();if(!t)return;
   if(b.dataset.act==='rename'){
@@ -545,7 +568,9 @@ document.querySelectorAll('#ctxMenu button').forEach(b=>b.onclick=()=>{
 document.querySelectorAll('#ctxMenu3D button').forEach(b=>b.onclick=()=>{
   const t=ctxTarget;hideCtx3D();if(!t)return;const bd=bodies.find(x=>x.id===t.id);if(!bd)return;
   if(b.dataset.act==='hide'){bd.visible=false;bd.mesh.visible=false;refreshParts();buildEdgeOverlay();}
-  if(b.dataset.act==='ghost'){bd.mesh.material.transparent=true;bd.mesh.material.opacity=.25;bd.mesh.material.needsUpdate=true;}
+  // 👻 = preset de la SLIDER (25 %) : il écrit la même fiche que le curseur et le
+  // panneau du corps, il n'y a donc plus d'opacité « à part » qui se désynchronise.
+  if(b.dataset.act==='ghost')ctxSetBodyOp(25,true);
   if(b.dataset.act==='isolate')isolate(bd.id);
   if(b.dataset.act==='showall')showAll2();
 });
@@ -553,7 +578,7 @@ document.querySelectorAll('#ctxMenu3D button').forEach(b=>b.onclick=()=>{
    SEULEMENT ce corps — jamais le composé de tous les corps. ---- */
 async function ctxExportStep(bid){
   let nm='corps';
-  try{ nm=(bodyEntry(bid)||{}).name||bid||'corps'; }catch(e){}
+  try{ nm=(bodyEntryOf(bid)||{}).name||bid||'corps'; }catch(e){}
   let FR=null;
   try{
     if(!occHas())throw new Error('OCCT indisponible (chargement en cours ou échec — servez la page en http://)');
@@ -591,59 +616,88 @@ function ctxStepBtnMake(menuId){
       const t=ctxTarget;
       try{ if(menuId==='ctxMenu')hideCtx(); else hideCtx3D(); }catch(e){}
       if(!t||t.kind!=='body'||!t.id)return;
-      ctxExportStep(t.id);
+      // En mode maillage l'id cliqué est celui de la FONCTION : le corps conteneur
+      // est celui que perBody connaît (bodyId) — sans quoi aucun solide n'est trouvé.
+      let cid=null;try{cid=ctxBodyId(t);}catch(e){}
+      ctxExportStep(cid||t.id);
     };
     $(menuId).appendChild(b);
     return b;
   }catch(e){ return null; }
 }
+/* ── Style du corps dans les DEUX menus : deux miroirs d'une seule source ─────
+   La coque de la vue 3D porte déjà la rangée « couleur » et la rangée
+   « transparence » ; on lui ajoute le nuancier. Le menu de l'arbre est monté EN
+   JS (règle du dépôt : on ne touche jamais la coque à la main). Une seule paire
+   de fonctions écrit dans doc.bodies[] — donc panneau, arbre et vue 3D ne peuvent
+   plus diverger, et il n'y a plus de bouton « Auto ». */
+function ctxSetBodyColor(c,commit){
+  try{
+    const bid=ctxBodyId(ctxTarget);
+    if(!bid||!(c>0))return;
+    setBodyColor(bid,c);           // source unique
+    applyBodyStyleLive(bid);       // écran immédiat, aucun rejeu
+    try{renderTree();}catch(e){}
+    ctxStyleSync();                // l' AUTRE miroir suit
+    if(commit){markDirty();try{renderProps();}catch(e){}}
+  }catch(e){}
+}
+function ctxSetBodyOp(pct,commit){
+  try{
+    const bid=ctxBodyId(ctxTarget);
+    if(!bid)return;
+    const v=Math.max(15,Math.min(100,Math.round(+pct||100)));
+    setBodyOp(bid,v/100);          // source unique
+    applyBodyStyleLive(bid);
+    ctxStyleSync();
+    if(commit){markDirty();try{renderProps();}catch(e){}}
+  }catch(e){}
+}
+(function ctxStyleInit(){
+  try{
+    const wire=(c,o)=>{
+      const hex=()=>{const m=/^#?([0-9a-fA-F]{6})$/.exec(String(c.value||'').trim());return m?parseInt(m[1],16):null;};
+      c.addEventListener('input',()=>{const v=hex();if(v!=null)ctxSetBodyColor(v,false);});
+      c.addEventListener('change',()=>{const v=hex();if(v!=null)ctxSetBodyColor(v,true);});
+      o.addEventListener('input',()=>ctxSetBodyOp(o.value,false));
+      o.addEventListener('change',()=>ctxSetBodyOp(o.value,true));
+    };
+    // 1) vue 3D — rangées existantes dans la coque + nuancier inséré entre elles
+    const c3=$('ctxColor'),o3=$('ctxOp'),v3=$('ctxOpV');
+    if(c3&&o3&&c3.parentElement&&o3.parentElement){
+      const host=c3.parentElement.parentElement;
+      const sw=swatchRow(hx=>ctxSetBodyColor(hx,true),'ctxRow');
+      if(host&&host.insertBefore)host.insertBefore(sw,o3.parentElement);
+      ctxStyleReg.push({menu:'ctxMenu3D',wrap:c3.parentElement,c:c3,o:o3,v:v3});
+      ctxStyleReg.push({menu:'ctxMenu3D',wrap:sw,s:sw});
+      wire(c3,o3);
+    }
+    // 2) arbre — rangées fabriquées en JS, en bas du menu
+    const menu=$('ctxMenu');
+    if(menu){
+      const wrap=document.createElement('div');wrap.className='ctxWrap';
+      const rc=document.createElement('div');rc.className='ctxRow';
+      const ic=document.createElement('span');ic.title='Couleur du corps (la même partout)';ic.textContent='🎨';rc.appendChild(ic);
+      const ci=document.createElement('input');ci.type='color';ci.value='#0a84ff';ci.title='Couleur du corps';
+      rc.appendChild(ci);
+      const sw=swatchRow(hx=>ctxSetBodyColor(hx,true),'ctxRow');
+      const ro=document.createElement('div');ro.className='ctxRow';
+      const io=document.createElement('span');io.title='Transparence du corps (identique au panneau)';io.textContent='🔆';ro.appendChild(io);
+      const oi=document.createElement('input');oi.type='range';oi.min='15';oi.max='100';oi.value='100';
+      const ov=document.createElement('span');ov.className='ctxOpV';ov.textContent='100%';
+      ro.appendChild(oi);ro.appendChild(ov);
+      wrap.appendChild(rc);wrap.appendChild(sw);wrap.appendChild(ro);
+      menu.appendChild(wrap);
+      ctxStyleReg.push({menu:'ctxMenu',wrap:wrap,c:ci,o:oi,v:ov});
+      ctxStyleReg.push({menu:'ctxMenu',wrap:wrap,s:sw});
+      wire(ci,oi);
+    }
+  }catch(e){}
+})();
 // Créés APRÈS les deux boucles ci-dessus : la boucle du runtime ne les voit donc
 // pas (aucun écrasement de onclick) et le stub de test ne la passe pas non plus.
 ctxStepBtn=ctxStepBtnMake('ctxMenu');
 ctxStepBtn3d=ctxStepBtnMake('ctxMenu3D');
-$('ctxColor').addEventListener('input',()=>{
-  const{bd,ff}=ctxFeat();if(!bd||!bd.mesh||!bd.mesh.material||!bd.mesh.material.color)return;
-  const m=/^#?([0-9a-fA-F]{6})$/.exec($('ctxColor').value.trim());if(!m)return;
-  bd.mesh.material.color.setHex(parseInt(m[1],16));
-  try{
-    if(ff&&sel.kind==='feature'&&sel.id===ff.id){
-      const rp=document.querySelector('#props input[type=color]'); if(rp) rp.value=$('ctxColor').value;
-    } else if(!ff){
-      const pt=document.querySelector('#props input[type=color]'); if(pt) pt.value=$('ctxColor').value;
-    }
-  }catch(e){}
-});
-$('ctxColor').addEventListener('change',()=>{
-  const{bd,ff}=ctxFeat();if(!bd)return;
-  const m=/^#?([0-9a-fA-F]{6})$/.exec($('ctxColor').value.trim());if(!m)return;
-  const c=parseInt(m[1],16);
-  if(ff&&colorable(ff)){ff.color=c;markDirty();hideCtx3D();rebuild();renderProps();refreshParts();}
-  else if(bd&&bd.kind==='body'&&!bd.ghost){try{bodyEntry(bd.id).color=c;}catch(e){}markDirty();hideCtx3D();rebuild();renderProps();refreshParts();}
-  else{doc.tint=c;markDirty();hideCtx3D();rebuild();renderProps();refreshParts();}
-});
-$('ctxColorAuto').onclick=()=>{
-  const{bd,ff}=ctxFeat();hideCtx3D();
-  if(ff&&colorable(ff))delete ff.color;
-  else if(bd&&bd.kind==='body'&&!bd.ghost){try{delete bodyEntry(bd.id).color;}catch(e){}}
-  else delete doc.tint;
-  markDirty();rebuild();renderProps();refreshParts();
-};
-$('ctxOp').addEventListener('input',()=>{
-  const{bd,ff}=ctxFeat();if(!bd||!bd.mesh||!bd.mesh.material)return;
-  const o=$('ctxOp').value/100;$('ctxOpV').textContent=$('ctxOp').value+'%';
-  bd.mesh.material.transparent=o<1;bd.mesh.material.opacity=o;bd.mesh.material.needsUpdate=true;
-  try{
-    if(ff&&sel.kind==='feature'&&sel.id===ff.id){
-      const rp=document.querySelector('#props input[type=range][min="15"]');
-      if(rp){ rp.value=$('ctxOp').value; const sp=rp.parentElement.querySelector('span'); if(sp) sp.textContent=$('ctxOp').value+'%';}
-    }
-  }catch(e){}
-});
-$('ctxOp').addEventListener('change',()=>{
-  const{bd,ff}=ctxFeat();if(!bd)return;
-  const o=$('ctxOp').value/100;
-  if(ff&&colorable(ff)){ff.opacity=o>=1?undefined:o;markDirty();hideCtx3D();rebuild();renderProps();refreshParts();}
-});
 const curName=t=>{if(t.kind==='plane')return 'Plan '+t.id;if(t.kind==='sketch')return(doc.sketches.find(s=>s.id===t.id)||{}).name;if(t.kind==='feature')return(doc.features.find(f=>f.id===t.id)||{}).name;if(t.kind==='body')return String((bodies.find(b=>b.id===t.id)||{}).name||'').replace(/ · .*$/,'');return'';};
 
 /* ---------- coupe ---------- */
@@ -1001,7 +1055,7 @@ function meshesToOBJ(meshes){
 function serialise(pretty){
   // pretty=1 (défaut) pour l'export fichier lisible ; compact pour l'autosave local
   // (~40 % de volume en moins à sérialiser et à écrire à chaque sauvegarde).
-  return JSON.stringify({app:'MiniFusion',v:1,name:doc.name,tint:doc.tint||0,entNames:doc.entNames||null,originVis,view:collectView(),bodyVis:doc.bodyVis||{},bodies:(doc.bodies||[]).map(e=>({id:e.id,name:e.name,c:e.c,color:e.color,open:e.open!==false})),bodySeq:doc.bodySeq||0,activeBody:doc.activeBody||null,fold:{sk:!!(doc.fold&&doc.fold.sk),origin:!!(doc.fold&&doc.fold.origin)},fao:doc.fao||null,sel:{kind:sel.kind,id:sel.id},sketches:doc.sketches.map(s=>{const c=Object.assign({},s);delete c._refs;return c;}),features:doc.features.map(({_mesh,_m,...r})=>r)},null,pretty===false?null:2);
+  return JSON.stringify({app:'MiniFusion',v:1,name:doc.name,tint:doc.tint||0,entNames:doc.entNames||null,originVis,view:collectView(),bodyVis:doc.bodyVis||{},bodies:(doc.bodies||[]).map(e=>({id:e.id,name:e.name,c:e.c,color:e.color,op:e.op,open:e.open!==false})),bodySeq:doc.bodySeq||0,activeBody:doc.activeBody||null,fold:{sk:!!(doc.fold&&doc.fold.sk),origin:!!(doc.fold&&doc.fold.origin)},fao:doc.fao||null,sel:{kind:sel.kind,id:sel.id},sketches:doc.sketches.map(s=>{const c=Object.assign({},s);delete c._refs;return c;}),features:doc.features.map(({_mesh,_m,...r})=>r)},null,pretty===false?null:2);
 }
 function docHash(){
   // Empreinte du paramétrique rejouable (imports éphémères exclus : non persistés).
@@ -1052,8 +1106,11 @@ function saveViewCache(){
       const g=b.mesh.geometry;if(!g||!g.attributes.position||!g.attributes.position.count)continue;
       const p=g.attributes.position.array,n=g.attributes.normal?g.attributes.normal.array:null;
       verts+=g.attributes.position.count;if(verts>1500000)return; // trop gros : pas de cache
-      items.push({id:b.id,name:b.name,color:b.color,kind:b.kind||'mesh',ref:b.ref||null,
-        op:(b.mesh.material&&b.mesh.material.transparent)?b.mesh.material.opacity:1,
+      // On persiste la SOURCE (fiche du corps), pas la matière affichée : un fondu
+      // d'esquisse ou un cache local ne doit jamais figurer dans le document.
+      const bid=b.bodyId||bodyIdOfRuntime(b)||b.id;
+      items.push({id:b.id,bodyId:bid,name:b.name,color:bodyColorOf(bid),kind:b.kind||'mesh',ref:b.ref||null,
+        op:bodyOpOf(bid),
         pos:ArrayBuffer.isView(p)?p.slice():p.slice(),nor:n?(ArrayBuffer.isView(n)?n.slice():n.slice()):null});
     }
     if(!items.length)return;
@@ -1079,10 +1136,11 @@ async function restoreViewCache(){
       g.setAttribute('position',new THREE.Float32BufferAttribute(it.pos,3));
       if(it.nor&&it.nor.length===it.pos.length)g.setAttribute('normal',new THREE.Float32BufferAttribute(it.nor,3));
       else g.computeVertexNormals();
+      const bid=it.bodyId||it.id;
       const mat=new THREE.MeshStandardMaterial({color:it.color,metalness:.35,roughness:.4});
-      if(it.op>0&&it.op<1){mat.transparent=true;mat.opacity=it.op;}
+      try{applyBodyStyle(mat,bid);}catch(e){}
       const mesh=new THREE.Mesh(g,mat);mesh.userData.bid=it.id;scene.add(mesh);
-      bodies.push({id:it.id,name:it.name,mesh,color:it.color,visible:true,kind:it.kind,ref:it.ref,cached:true});
+      bodies.push({id:it.id,name:it.name,mesh,color:it.color,visible:true,kind:it.kind,ref:it.ref,cached:true,bodyId:bid});
     });
     if(!bodies.length)return false;
     builtHash=c.hash;builtEngine=c.exact?'exact':'mesh'; // l'affichage correspond au doc : aucun recalcul auto
@@ -1108,7 +1166,7 @@ function autosaveFlush(){ // fermeture d'onglet : plus aucune perte possible
 addEventListener('beforeunload',()=>{autosaveFlush();});
 addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')autosaveFlush();});
 async function deserialise(json,opts){
-  const o=JSON.parse(json);doc={name:o.name||'Sans titre',tint:o.tint||0,entNames:o.entNames||null,sketches:o.sketches||[],features:o.features||[],bodyVis:o.bodyVis||{},bodies:Array.isArray(o.bodies)?o.bodies.filter(e=>e&&typeof e.id==='string').map(e=>({id:e.id,name:String(e.name||e.id),c:Array.isArray(e.c)&&e.c.length===3?e.c.slice():null,color:isFinite(+e.color)?+e.color:undefined,open:e.open!==false})):[],
+  const o=JSON.parse(json);doc={name:o.name||'Sans titre',tint:o.tint||0,entNames:o.entNames||null,sketches:o.sketches||[],features:o.features||[],bodyVis:o.bodyVis||{},bodies:Array.isArray(o.bodies)?o.bodies.filter(e=>e&&typeof e.id==='string').map(e=>({id:e.id,name:String(e.name||e.id),c:Array.isArray(e.c)&&e.c.length===3?e.c.slice():null,color:isFinite(+e.color)?+e.color:undefined,op:(e.op>0&&e.op<1)?+e.op:undefined,open:e.open!==false})):[],
     bodySeq:o.bodySeq>0?Math.floor(o.bodySeq):1,activeBody:(typeof o.activeBody==='string')?o.activeBody:null,fold:(o.fold&&typeof o.fold==='object')?{sk:!!o.fold.sk,origin:!!o.fold.origin}:{},fao:o.fao||null};
   // Les numéros de corps ne sont jamais réemployés : le compteur repart au-delà
   // du plus grand Corps N déjà connu (anciens fichiers sans bodySeq : on le déduit).
@@ -1118,6 +1176,11 @@ async function deserialise(json,opts){
     if(!(doc.bodySeq>mx))doc.bodySeq=mx+1;
     if(doc.activeBody&&!doc.bodies.some(e=>e.id===doc.activeBody))doc.activeBody=null;
   }catch(e){}
+  // Corps conteneurs + MIGRATION de style : f.color/f.opacity et la teinte pièce
+  // sont reportés sur la fiche du corps puis supprimés, même quand on ne rejoue
+  // pas ({rebuild:false} : restauration d'un brouillon) — sinon la prochaine
+  // sauvegarde réécrirait l'ancien modèle et la source serait réouverte.
+  try{ensureBodies();}catch(e){}
   try{
     (doc.sketches||[]).forEach(migrateSketch);
     try{resolveAllSketchHosts();}catch(e){}

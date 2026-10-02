@@ -1218,12 +1218,22 @@ function edgeOverlayFromMesh(b){
   return res;
 }
 function buildEdgeOverlay(){
-  const old=scene.getObjectByName('edgeOverlay');if(old)scene.remove(old);
+  const old=scene.getObjectByName('edgeOverlay');
+  if(old){
+    scene.remove(old);
+    try{old.traverse(o=>{if(o&&o.geometry&&o.geometry.dispose)o.geometry.dispose();});}catch(e){}
+  }
   if(edgeMode!=='on')return;
   const data=edgeOverlayData();
   if(!data.length)return;
-  // UN SEUL LineSegments à couleurs par sommet : N objets + 2 matériaux deviennent
-  // UN draw call (l'overlay ne coûte plus 2N appels, et suit la fluidité du reste).
+  // UN SEUL set de sommets, DEUX passes (les arêtes derrière le solide s'atténuent) :
+  //   • VOILE (renderOrder -10, depthTest off) : peint AVANT les solides. Un corps
+  //     translucide se dessine dessus en le laissant paraître à (1 - opacité) → les
+  //     arêtes du fond apparaissent VERSETÉS, jamais crues ; un corps opaque le
+  //     recouvre entièrement → comportement d'origine, strictement identique.
+  //   • NET (depthTest on, après les corps) : là où le depth buffer le permet,
+  //     c'est-à-dire devant le solide — vives noires, tangentes grises, pleines.
+  // Un seul draw call partagé : l'overlay ne coûte pas plus cher qu'avant.
   const pos=[],col=[];
   for(const d of data){
     const pts=d&&d.pts;if(!pts||pts.length<2)continue;
@@ -1242,9 +1252,13 @@ function buildEdgeOverlay(){
     const g=new THREE.BufferGeometry();
     g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
     g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
-    const l=new THREE.LineSegments(g,new THREE.LineBasicMaterial({vertexColors:true}));
-    l.name='edgeOverlay';l.raycast=()=>{}; // jamais pris par le picking
-    scene.add(l);
+    const grp=new THREE.Group();grp.name='edgeOverlay'; // un seul nom : clearBodies() retire les DEUX passes
+    const veil=new THREE.LineSegments(g,new THREE.LineBasicMaterial({vertexColors:true,depthTest:false,depthWrite:false}));
+    veil.raycast=()=>{};veil.renderOrder=-10;
+    const net=new THREE.LineSegments(g,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,depthWrite:false}));
+    net.raycast=()=>{};net.renderOrder=990;
+    grp.add(veil);grp.add(net);
+    scene.add(grp); // jamais pris par le picking (raycast neutre sur les deux passes)
   }catch(e){ /* aucun overlay vaut mieux qu'un rendu cassé */ }
 }
 function distSeg2(px,py,ax,ay,bx,by){const dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy||1e-18;let t=((px-ax)*dx+(py-ay)*dy)/L2;t=Math.max(0,Math.min(1,t));return Math.hypot(px-(ax+t*dx),py-(ay+t*dy));}
@@ -2099,6 +2113,30 @@ function ensureBodies(){
   const ids=new Set(doc.bodies.map(e=>e.id));
   (doc.features||[]).forEach(f=>{if(!f||typeof f!=='object')return;if(!ids.has(f.body))f.body=doc.bodies[0].id;});
   if(!ids.has(doc.activeBody))doc.activeBody=doc.bodies[0].id;
+  // Migration « la couleur et la transparence vivent dans le CORPS » : l'ancien
+  // modèle portait f.color / f.opacity sur la FONCTION (+ une teinte pièce globale).
+  // On les reporte sur la fiche du corps puis on les SUPPRIME — une seule source
+  // pour le panneau du corps, le clic-droit et le rendu, quel que soit le moteur
+  // (exact ou maillage). Idempotent : rejoué à chaque rejeu, sans effet ensuite.
+  try{
+    (doc.features||[]).forEach(f=>{
+      if(!f)return;
+      if(f.color>0||(f.opacity>0&&f.opacity<1)){
+        const e=bodyEntry(ids.has(f.body)?f.body:doc.bodies[0].id);
+        if(e){
+          if(f.color>0&&!(e.color>0))e.color=f.color;
+          if(f.opacity>0&&f.opacity<1&&!(e.op>0))e.op=Math.round(f.opacity*1000)/1000;
+        }
+      }
+      if(f.color>0)delete f.color;
+      if(f.opacity!==undefined)delete f.opacity;
+    });
+    if(doc.tint>0){ // teinte pièce : reportée sur chaque corps déjà colorié, puis retirée
+      const t=doc.tint;
+      doc.bodies.forEach(e=>{if(e&&!(e.color>0))e.color=t;});
+      delete doc.tint;
+    }
+  }catch(err){}
   return doc.bodies;
 }
 function ensureActiveBody(){
@@ -2148,9 +2186,7 @@ function occRebuild(){
     const D=occDisplayDefl(FR.shape||(parts[0]&&parts[0].shape)||null);
     let trisTot=0;
     if(parts.length){
-      const _fa=FR.items.filter(j=>(j.f.op||'add')==='add');
-      const _ff=_fa.map(j=>j.f).find(f=>f.color>0)||_fa.map(j=>j.f)[0];
-      parts.forEach((p,i)=>{
+      parts.forEach(p=>{
         const e=bodyEntry(p.bodyId);
         let g=null;
         try{
@@ -2165,13 +2201,13 @@ function occRebuild(){
         trisTot+=lit?tris:0; // budget global : dépassement ⇒ D muté grossier pour les corps suivants
         if(lit&&!(tris>0)){try{g.dispose&&g.dispose();}catch(err){}return;}
         try{const info=occSolidBox(p.shape);if(info)e.c=info.c;}catch(err){}
-        const col=e.color||(parts.length===1?(partTint()||(_ff?featColor(_ff,autoCol(0)):autoCol(0))):autoCol(i));
+        const col=bodyColorOf(e.id); // fiche du corps : couleur unique (plus de couleur par fonction)
         const mat=new THREE.MeshStandardMaterial({color:col,metalness:.35,roughness:.4,clippingPlanes:clipPlane?[clipPlane]:null});
-        if(parts.length===1)applyFeatOp(mat,_ff);
+        applyBodyStyle(mat,e.id); // + transparence du corps (100 % = opaque, inchangé)
         const mesh=new THREE.Mesh(g,mat);mesh.userData.bid=e.id;scene.add(mesh);
         const vis=!doc.bodyVis||!Object.prototype.hasOwnProperty.call(doc.bodyVis,e.id)?true:!!doc.bodyVis[e.id];
         mesh.visible=vis;
-        bodies.push({id:e.id,name:e.name+' · '+(lit?tris.toLocaleString('fr'):'?')+' tris',mesh,color:col,visible:vis,kind:'body',ref:null,shape:p.shape});
+        bodies.push({id:e.id,name:e.name+' · '+(lit?tris.toLocaleString('fr'):'?')+' tris',mesh,color:col,visible:vis,kind:'body',ref:null,bodyId:e.id,shape:p.shape});
       });
       if(!bodies.some(b=>b.kind==='body'))faceEl.textContent+=(faceEl.textContent?'\n':'')+'Solide exact vide (tout a été découpé).';
       if(FR.shape){occLive={shape:FR.shape};FR.shape=null;} // conservé pour le picking d'arêtes
@@ -2192,9 +2228,9 @@ function occRebuild(){
     const consommes=new Set(FR.imports||[]);
     doc.features.filter(f=>f.visible!==false&&f.type==='import'&&f._mesh).forEach(f=>{
       if(consommes.has(f.id)){try{scene.remove(f._mesh);}catch(e){}return;}
-      const col=partTint()||featColor(f,autoCol(1));
-      f._mesh.material=applyFeatOp(FreshMat(col),f);scene.add(f._mesh);
-      bodies.push({id:f.id,name:f.name,mesh:f._mesh,color:col,visible:true,kind:'import',ref:f.id});
+      const col=bodyColorOf(f.body); // l'import appartient à un corps : SA couleur
+      f._mesh.material=applyBodyStyle(FreshMat(col),f.body);scene.add(f._mesh);
+      bodies.push({id:f.id,name:f.name,mesh:f._mesh,color:col,visible:true,kind:'import',ref:f.id,bodyId:f.body||null});
     });
     occCleanup(FR,(occLive&&occLive.shape)||null);
     if(FR.msgs.length)faceEl.textContent+=(faceEl.textContent?'\n':'')+FR.msgs.slice(0,4).join('\n');

@@ -194,7 +194,6 @@ function updateGhostVis(){
   });
 }
 function refreshParts(){
-  try{const _t=$('optTint');if(_t&&partTint())_t.value=cssHex(partTint());}catch(e){}
   try{const _e=$('optEdges');if(_e&&_e.value!==edgeMode)_e.value=edgeMode;}catch(e){}
   try{
     if(doc.bodyVis)for(const b of bodies){

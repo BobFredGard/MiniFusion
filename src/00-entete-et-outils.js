@@ -23,7 +23,7 @@
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-02-002';
+const APP_VER='2026-10-02-003';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 let extPickFace=null; // mode « vers un objet » : clic sur une face pour le sens (Échap = annuler)
@@ -114,30 +114,144 @@ async function bootWasmBinary(buf){
 const VIVID=[0x0a84ff,0x30d158,0xff9f0a,0xbf5af2,0xff453a,0x64d2ff,0xffd60a,0x5e5ce6];
 const pickColor=i=>VIVID[i%VIVID.length];
 const cssHex=c=>'#'+(c>>>0).toString(16).padStart(6,'0');
-function featColor(f,fb){return(f&&f.color>0)?f.color:fb;} // couleur perso sinon auto
-function featOp(f){const o=f&&f.opacity;return(o>0&&o<1)?{transparent:true,opacity:o}:{transparent:false,opacity:1};}
-function applyFeatOp(mat,f){ // opacité persistée (coupes/fantômes : sémantique forcée, ignorée)
-  if(!mat||!f)return mat;
-  if((f.op||'add')==='cut')return mat;
-  const o=featOp(f);
-  if(o.transparent){mat.transparent=true;mat.opacity=o.opacity;mat.needsUpdate=true;}
-  return mat;
-}
 let vivid=true;
 try{const _vv=localStorage.getItem('minifusion_vivid');if(_vv==='off')vivid=false;}catch(e){}
 function autoCol(ci){return vivid?pickColor(ci):0x9a9aa0;}
 function partTint(){return(doc&&doc.tint>0)?doc.tint:0;} // teinte pièce (prioritaire partout)
 const COLOR_SWATCHES=['#0a84ff','#30d158','#ff9f0a','#bf5af2','#ff453a','#64d2ff','#ffd60a','#5e5ce6','#9a9aa0'];
-function presetRow(f){
-  // Nuancier rapide : pastilles prédéfinies (remplace Coloris, 100 % fiable).
-  const row=document.createElement('div');row.className='row';row.style.gap='4px';row.style.marginTop='2px';
+/* ── Style d'un CORPS : UNE source de vérité ──────────────────────────────────
+   `doc.bodies[].color` (hex) et `doc.bodies[].op` (0,15..1) sont lus ET écrits
+   par tout le monde : panneau du corps, clic-droit (arbre et vue 3D) et rendu.
+   Plus aucune couleur ni opacité par fonction (f.color/f.opacity migrés vers la
+   fiche du corps puis supprimés — voir ensureBodies), plus de bouton « Auto ». */
+function bodyEntryOf(id){ // LECTURE seule : ne crée jamais de fiche (l'écriture passe par bodyEntry)
+  try{ if(!doc||!doc.bodies||!id)return null; for(let i=0;i<doc.bodies.length;i++){const e=doc.bodies[i];if(e&&e.id===id)return e;} }catch(err){}
+  return null;
+}
+function bodyIndexOf(id){ try{ if(!doc||!doc.bodies||!id)return -1; return doc.bodies.findIndex(e=>e&&e.id===id); }catch(err){return -1;} }
+function bodyColorOf(id){ // fiche du corps > teinte pièce (anciens fichiers) > palette auto stable PAR corps
+  const e=bodyEntryOf(id);
+  if(e&&e.color>0)return e.color;
+  return partTint()||autoCol(Math.max(0,bodyIndexOf(id)));
+}
+function bodyOpOf(id){ const e=bodyEntryOf(id); const o=e?e.op:0; return (o>0&&o<1)?o:1; } // 1 = opaque
+function setBodyColor(id,c){
+  if(!id||!(c>0))return false;const e=bodyEntry(id);if(!e)return false;e.color=c;return true;
+}
+function setBodyOp(id,o){ // 100 % : pas de champ (le document reste « opaque par défaut »)
+  if(!id)return false;const e=bodyEntry(id);if(!e)return false;
+  if(!(o<0.999))delete e.op; else e.op=Math.max(0.15,Math.round(o*1000)/1000);
+  return true;
+}
+function bodyIdOfRuntime(b){ // corps CONTENEUR d'un corps affiché : en mode maillage l'id affiché est celui de la fonction
+  if(!b)return null;
+  if(b.bodyId)return b.bodyId;
+  if(b.kind==='body')return b.id;
+  let f=null;
+  try{ f=(b.ref&&doc.features.find(x=>x&&x.id===b.ref))||doc.features.find(x=>x&&x.id===b.id); }catch(err){}
+  return f?(f.body||null):null;
+}
+function setMatAlpha(mat,a){
+  // Transparence VRAIE (opacité), pas une baisse d'intensité : on garde le corps
+  // lumineux, on garde le depth buffer (les arêtes derrière le solide sont
+  // atténuées et non crues) et on désamorce le métal, intrinsèquement sombre.
+  if(!mat)return mat;
+  a=(typeof a==='number'&&a>0&&a<=1)?a:1;
+  const tr=a<0.999;
+  mat.transparent=tr;mat.opacity=a;
+  try{
+    if('depthWrite'in mat)mat.depthWrite=true;
+    if('metalness'in mat)mat.metalness=tr?0.05:0.35;
+    if('roughness'in mat)mat.roughness=tr?0.55:0.4;
+    if(mat.emissive&&mat.emissive.setHex){
+      if(tr&&mat.color&&mat.color.r!=null){ // compensation d'éclat : translucide ≠ éteint
+        const k=(1-a)*0.5;
+        mat.emissive.setRGB(mat.color.r*k,mat.color.g*k,mat.color.b*k);
+      }else mat.emissive.setHex(0x000000);
+    }
+    if(mat.needsUpdate!==undefined)mat.needsUpdate=true;
+  }catch(err){}
+  return mat;
+}
+function applyBodyStyle(mat,id){ // couleur + transparence d'une matière depuis la fiche du corps
+  if(!mat)return mat;
+  const c=bodyColorOf(id);
+  if(mat.color&&mat.color.setHex)mat.color.setHex(c);
+  return setMatAlpha(mat,bodyOpOf(id));
+}
+function applyBodyStyleLive(id){ // application IMMÉDIATE pendant le glisser (aucun rejeu)
+  try{
+    const c=bodyColorOf(id),list=(typeof bodies!=='undefined'&&bodies)?bodies:[];
+    for(const b of list){
+      if(!b||b.ghost||bodyIdOfRuntime(b)!==id||!b.mesh||!b.mesh.material)continue;
+      if(b._xSaved!=null||b._dSaved!=null||b._cSaved!=null)continue; // mode congé/dépouille/coque : style gelé
+      applyBodyStyle(b.mesh.material,id);b.color=c;
+    }
+  }catch(err){}
+}
+function swatchRow(setHex,cls){
+  // Nuancier prédéfini : les mêmes pastilles dans le panneau du corps et dans les menus.
+  const row=document.createElement('div');row.className=cls||'row';row.style.gap='4px';row.style.marginTop='2px';
   COLOR_SWATCHES.forEach(h=>{
     const s=document.createElement('span');
-    s.title=h;s.style.cssText='width:18px;height:18px;border-radius:50%;cursor:pointer;border:1px solid rgba(255,255,255,.5);background:'+h;
-    s.onclick=()=>{f.color=parseInt(h.slice(1),16);markDirty();rebuild();renderProps();};
+    s.title='Couleur '+h;s.dataset.hex=h;
+    s.style.cssText='width:18px;height:18px;border-radius:50%;cursor:pointer;border:1px solid rgba(255,255,255,.5);background:'+h;
+    s.onclick=()=>setHex(parseInt(h.slice(1),16));
     row.appendChild(s);
   });
   return row;
+}
+const ctxStyleReg=[]; // {menu,wrap,c,o,v,s} — les miroirs des DEUX menus contextuels
+function swatchMark(row,hex){ // anneau blanc sur la pastille en cours (null = aucune)
+  try{
+    if(!row||!row.children)return;
+    const h=String(hex||'').toLowerCase();
+    for(let i=0;i<row.children.length;i++){
+      const ch=row.children[i];
+      if(!ch||!ch.style||!ch.dataset||!ch.dataset.hex)continue;
+      const on=h&&String(ch.dataset.hex).toLowerCase()===h;
+      ch.style.boxShadow=on?'0 0 0 2px #fff':'none';
+    }
+  }catch(err){}
+}
+function ctxStyleSync(){
+  // Relit la source unique et repeint TOUS les miroirs : clic-droit (arbre + vue
+  // 3D) et panneau du corps affiché — même couleur, même transparence, à jour,
+  // sans rejeu et sans copie d'état (c'est la fiche qui fait foi, pas l'écran).
+  try{
+    let bid=null;
+    try{bid=ctxBodyId(ctxTarget);}catch(err){bid=null;}
+    const hex=cssHex(bodyColorOf(bid)),pct=Math.round(bodyOpOf(bid)*100);
+    ctxStyleReg.forEach(r=>{
+      try{
+        if(r.c&&r.c.value!==hex)r.c.value=hex;
+        if(r.o){r.o.value=pct;if(r.v)r.v.textContent=pct+'%';}
+        if(r.s)swatchMark(r.s,hex);
+      }catch(err){}
+    });
+    // le panneau des propriétés (recréé à chaque renderProps) : seulement s'il
+    // montre BIEN le corps visé — on n'écrit jamais dans le panneau d'un autre.
+    try{
+      if(typeof sel!=='undefined'&&sel&&sel.kind==='body'&&bid&&bid===sel.id){
+        const pi=document.querySelector('#props input[type=color]');
+        if(pi&&pi.value!==hex)pi.value=hex;
+        const pr=document.querySelector('#props input[type=range][min="15"]');
+        if(pr){
+          if(+pr.value!==pct)pr.value=pct;
+          const sp=pr.parentElement?pr.parentElement.querySelector('span'):null;
+          if(sp)sp.textContent=pct+'%';
+        }
+        swatchMark(document.querySelector('#props [data-sw]'),hex);
+      }
+    }catch(err){}
+  }catch(err){}
+}
+function ctxStyleShow(menuId,show){
+  // Le style n'a de sens que là où une CIBLE existe : masqué sinon (esquisse,
+  // fond de la vue 3D, outil de découpe) — comme le bouton d'export STEP.
+  try{
+    ctxStyleReg.forEach(r=>{if(r.menu===menuId&&r.wrap)r.wrap.style.display=show?'':'none';});
+  }catch(err){}
 }
 /* Plans d'origine bien distincts : une couleur par plan + pastille arbre assortie */
 const PLANES={
