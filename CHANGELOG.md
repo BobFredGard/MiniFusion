@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**134 versions**, de `2026-09-28b` à `2026-10-02-003` — la plus récente en bas,
+**135 versions**, de `2026-09-28b` à `2026-10-02-004` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2516,3 +2516,17 @@ Tests : **2 nouvelles suites enregistrées dans `tests/run.cjs` → `npm test` 3
 `build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-003.html`.
 
 README : style du corps — **couleur et transparence à la source `doc.bodies`**, identique dans la fiche, les deux menus contextuels et le rendu (transparence vraie, arêtes du fond atténuées), plus de teinte pièce ni de bouton « Auto » ; esquisse — **aucun glisser ne laisse de contrainte violée** (garde-fou « saisie ancrée ») ; tests → 32 suites.
+
+### `2026-10-02-004`
+
+**Clic-droit : le menu ne rogne plus son entrée « ⬇ Exporter ce corps en STEP ».**
+
+1. **Cause — retour « la procédure existait mais je ne trouve plus le menu »** : le menu s'ouvre bien, mais `#ctxMenu`/`#ctxMenu3D` sont `position:fixed` dans un `body{height:100vh;overflow:hidden}` **sans clamp de position** — ouvert en bas d'écran, tout ce qui dépassait du viewport était **coupé et inaccessible** (pas de scroll). Et le bloc **couleur/transparence** ajouté au menu du corps en -003 (3 rangées ≈ 110 px) a repoussé le bouton d'export, **dernier enfant** du menu, d'autant plus bas : à partir d'un certain y, l'entrée disparaissait complètement alors que le reste du menu restait visible.
+2. **Fix — placement clampé** : nouveau helper pur `ctxClampPos(x,y,w,h,vw,vh)` (plancher 4 px, plancher `taille-4` quand la fenêtre est plus petite que le menu) + `ctxPlace(el,x,y)` qui pose `left`/`top`, **mesure le menu** (`offsetWidth/Height`) et repositionne dans le viewport ; les deux ouvreurs (`showCtx`, `showCtx3D`) passent par `ctxPlace`. Sans mesure (harnais de test) : comportement inchangé.
+3. **Fix — garde-fous CSS injecté depuis JS** (règle du dépôt : la coque ne s'édite jamais à la main) : `#ctxMenu,#ctxMenu3D{max-height:calc(100vh - 8px);overflow-y:auto}` — même un menu plus haut que l'écran reste **parcourable**, la dernière entrée donc toujours atteignable. Le bouton d'export reste le dernier enfant (inchangé : aucun écrasement d'`onclick`, contrats de `test_ctx_step` préservés).
+
+Tests : **nouvelle suite `tests/test_ctx_menu_viewport.cjs` enregistrée dans `tests/run.cjs` → `npm test` 33/33 vert** — clamp en pur (bas, droite, hors écran à plancher 4, déjà-dedans inchangé), intégration `showCtx`/`showCtx3D` ouverts à `y=790` sur `800` (top recalé à `h-4`), menu déjà dedans non repositionné, bouton STEP **dernier enfant et visible** dans les deux menus, CSS `max-height` bien injecté depuis JS.
+
+`build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-004.html`.
+
+README : import/export — le menu clic-droit du corps se **repositionne dans le viewport** (et défile s'il dépasse) : l'entrée « ⬇ Exporter ce corps en STEP » est toujours visible ; tests → 33 suites.

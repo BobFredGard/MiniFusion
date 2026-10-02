@@ -487,7 +487,37 @@ let ctxTarget=null;
    Le bouton est créé en JS (la coque HTML n'est jamais éditée à la main) et
    n'apparaît que pour un corps (visible via showCtx / showCtx3D). */
 let ctxStepBtn=null, ctxStepBtn3d=null;
-function showCtx(x,y,t){ctxTarget=t;$('ctxMenu').style.display='block';$('ctxMenu').style.left=x+'px';$('ctxMenu').style.top=y+'px';
+/* ---- menus : jamais coupés par le bord de l'écran --------------------------
+   #ctxMenu / #ctxMenu3D sont position:fixed dans un body overflow:hidden : un
+   menu ouvert en bas d'écran était ROGNÉ hors viewport et sa DERNIÈRE entrée
+   (l'export STEP du corps, ajoutée après le bloc couleur/transparence de -003)
+   devenait invisible — « le menu est ouvert mais je ne trouve plus l'entrée ».
+   Le placement passe par ctxPlace : clamp testable en pur (ctxClampPos) +
+   garde-fous CSS (max-height + scroll) injecté depuis JS (règle du dépôt :
+   la coque ne s'édite jamais à la main). */
+function ctxClampPos(x,y,w,h,vw,vh){
+  const mx=Math.max(4,vw-w-4), my=Math.max(4,vh-h-4);
+  return {left:Math.max(4,Math.min(+x||0,mx)), top:Math.max(4,Math.min(+y||0,my))};
+}
+function ctxPlace(el,x,y){
+  try{
+    el.style.left=x+'px';el.style.top=y+'px';
+    const w=el.offsetWidth||0, h=el.offsetHeight||0;
+    const vw=(typeof window!=='undefined'&&window.innerWidth)||0;
+    const vh=(typeof window!=='undefined'&&window.innerHeight)||0;
+    if(!(w>0&&h>0&&vw>0&&vh>0))return; // pas de mesure (harnais) : on garde x,y
+    const p=ctxClampPos(x,y,w,h,vw,vh);
+    el.style.left=p.left+'px';el.style.top=p.top+'px';
+  }catch(e){}
+}
+(function ctxMenuMaxCss(){
+  try{
+    const st=document.createElement('style');
+    st.textContent='#ctxMenu,#ctxMenu3D{max-height:calc(100vh - 8px);overflow-y:auto}';
+    (document.head||document.documentElement).appendChild(st);
+  }catch(e){}
+})();
+function showCtx(x,y,t){ctxTarget=t;$('ctxMenu').style.display='block';ctxPlace($('ctxMenu'),x,y);
   try{ if(ctxStepBtn)ctxStepBtn.style.display=(t&&t.kind==='body')?'':'none'; }catch(e){}
   // style du corps : le menu du CORPS porte la couleur et la transparence (même
   // source que le panneau et que la vue 3D) — masqué ailleurs, comme l'export STEP.
@@ -527,7 +557,7 @@ function showCtx3D(x,y,bid){ctxTarget={kind:'body',id:bid};const _bd=bodies.find
     ctxStyleShow('ctxMenu3D',!!(bid&&!_bd.ghost));
     ctxStyleSync();
   }catch(e){}
-  $('ctxMenu3D').style.display='block';$('ctxMenu3D').style.left=x+'px';$('ctxMenu3D').style.top=y+'px';}
+  $('ctxMenu3D').style.display='block';ctxPlace($('ctxMenu3D'),x,y);}
 function hideCtx3D(){$('ctxMenu3D').style.display='none';}
 document.querySelectorAll('#ctxMenu button').forEach(b=>b.onclick=()=>{
   const t=ctxTarget;hideCtx();if(!t)return;

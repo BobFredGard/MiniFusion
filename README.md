@@ -104,7 +104,7 @@ Une partie FAO est en travail, ce sera long !
 - **Raccourcis** en esquisse : `L C R B P T D F H O` (ligne, cercle, rectangle, oblong, projection, trim, cote, congé, chanfrein, **décalage**), `F5` vue complète, `Ctrl+Maj+R` rafraîchissement dur.
 
 ### Import, export & persistance
-- Import **STEP / STL**, export **STEP / STL / OBJ** — et **clic droit sur un corps** (arbre ou vue 3D) → **⬇ Exporter ce corps en STEP** : **seul ce corps** (shape exacte OCCT de `perBody`, jamais l'assemblage de tous les corps), fichier `.step` au nom du corps (les noms d'invalides sont remplacés par `-`) — sans OCCT : alerte claire.
+- Import **STEP / STL**, export **STEP / STL / OBJ** — et **clic droit sur un corps** (arbre ou vue 3D) → **⬇ Exporter ce corps en STEP** : **seul ce corps** (shape exacte OCCT de `perBody`, jamais l'assemblage de tous les corps), fichier `.step` au nom du corps (les noms d'invalides sont remplacés par `-`) — sans OCCT : alerte claire. Le menu se **repositionne dans le viewport** (et défile s'il dépasse) : cette entrée, dernière du menu, est toujours visible.
 - **Booléens avec un import** : une esquisse peut **soustraire ou s'unir** à un STEP inséré (corps exact entrant dans la chaîne de rejeu) — le solide importé reste affiché seul tant qu'aucune autre fonction ne le concerne, puis n'est plus dessiné en double une fois fusionné.
 - Projet **`.minifusion.json`** (entièrement paramétrique : esquisses, contraintes, cotes, fonctions, répétitions, ancrages) + **sauvegarde locale automatique** (autosave) et cache de la dernière pièce finie.
 - **🧪 Auto-tests** : batterie de non-régression de l'esquisse et des contraintes, lançable depuis le panneau.
@@ -144,7 +144,7 @@ python -m http.server 3000
 | `occt/` | Noyau OpenCascade WebAssembly (~111 Mo) + ses `.bak` locaux (non suivis) |
 | `threejs/` | Rendu 3D (three.js), OrbitControls, CSG |
 | `PostPro/` | Post-processeurs G-code : **Siemens 840D** (variantes 630 / 1520) et **Fagor 8065** |
-| `tests/` | Suite Node portable (harnais `appvm.cjs` + 32 suites + fixtures) : `node tests/run.cjs` ou `npm test` |
+| `tests/` | Suite Node portable (harnais `appvm.cjs` + 33 suites + fixtures) : `node tests/run.cjs` ou `npm test` |
 | `Backup/` | Snapshots des versions vertes |
 | `Server.bat` | Lancement local (npx serve, port 3000) |
 
@@ -159,7 +159,7 @@ n'a qu'un fichier à ouvrir.
 # 1. éditer un fichier de src/ (jamais fusion_mvp.html)
 # 2. reconstruire le livrable
 node build.js
-# 3. régression verte (harnais + 30 suites)
+# 3. régression verte (harnais + 33 suites)
 npm test
 # 4. bump APP_VER (src/00-entete-et-outils.js) + entrée CHANGELOG.md
 # 5. vérifier que le livrable est à jour (à mettre en CI)
@@ -225,7 +225,7 @@ fichier unique (voir « Travailler sur le code »).
 
 - **In-app** : 🧪 Auto-tests (non-régression esquisse, contraintes, cotes) — lançables depuis le panneau latéral.
 - **Dev** : harnais Node hors navigateur (solveur, cotation orientée, suivi de faces, références, projections associatives, congés/chanfreins exacts, menu d'extrusion, prismes miroir, répétitions, marqueur temps, performance…) ; certains scénarios s'exécutent sur le **noyau OCCT réel** (`.wasm` chargé en Node), et la version (`APP_VER`) est vérifiée avant chaque sauvegarde dans `Backup/`.
-- **Suite repo** : `tests/` (harnais `appvm.cjs` + 32 suites + fixtures, dont `test_fao`, `test_fao3d`, `test_fao_barre3d`, `test_corps_style` et `test_esquisse_contraintes`) — portable, aucun chemin absolu : `node tests/run.cjs` ou `npm test` depuis la racine, sur n'importe quel PC.
+- **Suite repo** : `tests/` (harnais `appvm.cjs` + 33 suites + fixtures, dont `test_fao`, `test_fao3d`, `test_fao_barre3d`, `test_corps_style`, `test_esquisse_contraintes` et `test_ctx_menu_viewport`) — portable, aucun chemin absolu : `node tests/run.cjs` ou `npm test` depuis la racine, sur n'importe quel PC.
 
 ## Historique
 

@@ -31,6 +31,7 @@ const SUITES = [
   "test_fao_lock",
   "test_bool_import",
   "test_ctx_step",
+  "test_ctx_menu_viewport",
   "test_fao_reset",
   "test_fao_passes",
   "test_fao_barre3d"
