@@ -155,12 +155,14 @@ function renderTree(){
     if(tlMark!=null&&f.id===tlMark){
       const dm=document.createElement('div');dm.className='tnode';dm.style.cursor='default';
       dm.style.borderTop='2px dashed var(--warn)';dm.style.color='var(--warn)';dm.style.fontWeight='700';
-      dm.textContent='⏱ — marqueur ici —';
+      dm.textContent='⏱ — marqueur ici — '+(doc.features.length-tlIdx())+' fonction(s) masquée(s) sous le marqueur';
       t.appendChild(dm);
     }
     if(f.repeatId)return; // instance : affichée sous sa répétition
+    if(tlLocked(f))return; // ⏱ FILTRE au blocage : hors rejeu = hors arbre (bandeau + ligne marqueur restent)
     if(f.type==='repeat'){
       const kids=doc.features.filter(c=>c.repeatId===f.id);
+      const vkids=kids.filter(k=>!tlLocked(k)); // ⏱ filtre au blocage : instances hors rejeu masquées
       // les SOURCES de la répétition sélectionnée : marquées dans l'arbre, pour voir
       // d'un coup d'œil ce qui l'alimente et ce qui ne lui appartient pas.
       const srcs=(f.base||[]);
@@ -171,7 +173,7 @@ function renderTree(){
       const d=document.createElement('div');
       d.className='tnode'+((sel.kind==='feature'&&sel.id===f.id)||treeSel.indexOf(f.id)>=0?' sel':'')+(f.visible===false?' hidden':'')+(tlLocked(f)?' locked':'');
       const srcNames=srcs.map(id=>{const b=doc.features.find(x=>x.id===id);return b?b.name:'?';});
-      d.innerHTML=`<span class="tri" title="Déplier / replier les fonctions copiées">${open?'▼':'▶'}</span><span>🔁</span><span class="nm">${f.name} · ${repTypeName(f.mode,f)} · ${kids.length} instance(s)`+
+      d.innerHTML=`<span class="tri" title="Déplier / replier les fonctions copiées">${open?'▼':'▶'}</span><span>🔁</span><span class="nm">${f.name} · ${repTypeName(f.mode,f)} · ${vkids.length} instance(s)`+
         (srcs.length?` <span class="repsrc" title="Sources : ${srcNames.join(', ')}">◀ ${srcs.length}</span>`:' <span class="repsrc vide" title="Aucune source choisie">◀ 0</span>')+
         `</span> <span class="mv" data-d="-1" title="Monter dans le corps (bloc entier)">▲</span><span class="mv" data-d="1" title="Descendre dans le corps (bloc entier)">▼</span><span class="eye" title="Afficher / masquer">`+(f.visible===false?'🙈':'👁')+`</span>`;
       d.title='Clic = sélectionner · ▶/▼ = montrer/masquer les fonctions copiées · ▲▼ = décaler le bloc dans le corps'+
@@ -192,7 +194,7 @@ function renderTree(){
       d.oncontextmenu=e=>{e.preventDefault();showCtx(e.clientX,e.clientY,{kind:'feature',id:f.id});};
       t.appendChild(d);
       if(!open)return;
-      kids.forEach(k=>{
+      vkids.forEach(k=>{
         const d=document.createElement('div');d.className='tnode repchild'+((sel.kind==='feature'&&sel.id===f.id)||treeSel.indexOf(k.id)>=0?' sel':'')+(k.visible===false?' hidden':'');
         d.innerHTML=`<span>${featIcon(k)}</span><span class="nm">${k.name}</span><span class="eye" title="Afficher / masquer">`+(k.visible===false?'🙈':'👁')+`</span>`;
         d.style.paddingLeft='22px';
@@ -217,12 +219,13 @@ function renderTree(){
     node(ri+(estSrc?'<span class="srcmark" title="Source de la répétition sélectionnée">◀</span>':'')+featIcon(f),f.name,'feature',f.id,f.visible,(f.type==='xfillet'||f.type==='xdraft'||f.type==='xshell')?()=>{sel={kind:'feature',id:f.id};treeSel=[];if(f.type==='xfillet')enterExactFilletMode(f);else if(f.type==='xdraft')enterDraftMode(f);else enterCoqueMode(f);}:null);
   };
   const groups=(doc.bodies||[]).length?doc.bodies:[{id:'b1',name:'Corps 1'}];
-  g('🧱 Corps / Fonctions ('+doc.features.length+') · ➕ additif / ➖ découpe · ● = actif');
+  g('🧱 Corps / Fonctions ('+doc.features.filter(f=>!tlLocked(f)).length+') · ➕ additif / ➖ découpe · ● = actif');
   groups.forEach(be=>{
     // En-tête du corps : clic = sélectionner ET ACTIVER (les fonctions suivantes
     // naîtront dedans), œil = montrer/masquer ses fonctions, clic droit = renommer,
     // isoler, supprimer le corps et ses fonctions.
     const kids=doc.features.filter(f=>!f.repeatId&&bodyOf(f)===be.id);
+    const kidsVis=kids.filter(f=>!tlLocked(f)); // ⏱ filtre au blocage : compteurs = fonctions affichées
     const estActif=doc.activeBody===be.id;
     // (état réel de l'en-tête : visVue = vue 3D, enRejeu = rejeu — plus haut)
     // Replié sur demande (▲ triangle, comme les répétitions), mais jamais quand il
@@ -245,7 +248,7 @@ function renderTree(){
     const bcol=bodyTextColor(be);
     try{ hd.style.boxShadow='inset 3px 0 0 '+(bcol||'#9a9aa0'); }catch(e){}
     hd.innerHTML='<span class="tri" title="Déplier / replier les fonctions du corps">'+(open?'▼':'▶')+'</span><span title="Corps — '+(be.name||'')+'">🧱</span>'+
-      '<span class="nm"'+(bcol?(' style="color:'+bcol+'"'):'')+'>'+be.name+(estActif?' ●':'')+' · '+kids.length+' fonction(s)</span>'+
+      '<span class="nm"'+(bcol?(' style="color:'+bcol+'"'):'')+'>'+be.name+(estActif?' ●':'')+' · '+kidsVis.length+' fonction(s)</span>'+
       '<span class="pwr'+(enRejeu?' on':'')+'" title="'+(enRejeu?'Rejeu ACTIF : toutes les fonctions de ce corps sont recalculées — cliquer pour les EXCLURE (le corps reste visible)':'Rejeu ÉTEINT : toutes les fonctions de ce corps sont exclues (grisées) — cliquer pour les inclure')+'">⏻</span>'+
       '<span class="eye" title="'+(visVue?'Corps visible dans la 3D — cliquer pour le CACHER (il reste dans le rejeu et l\'export)':'Corps masqué dans la 3D (vue seule) — cliquer pour l\'AFFICHER. Aucune fonction n\'est touchée')+'">'+(visVue?'👁':'🙈')+'</span>';
     hd.title='Clic = sélectionner et ACTIVER (les nouvelles fonctions naîtront dans « '+be.name+' ») · ▶/▼ = replier · ⏻ = rejeu (inclure/exclure ses fonctions du recalcul) · 👁 = vue 3D seule · clic droit = renommer / supprimer';

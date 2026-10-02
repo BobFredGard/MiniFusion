@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**138 versions**, de `2026-09-28b` à `2026-10-02-007` — la plus récente en bas,
+**139 versions**, de `2026-09-28b` à `2026-10-02-008` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2584,3 +2584,17 @@ Tests : **nouvelle suite `tests/test_validate.cjs` enregistrée dans `tests/run.
 `build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-007.html`.
 
 README : nouveau bouton **✓ Valider** (7 phases diagnostic + réparation, rapport dans la zone Auto-tests) ; tests → 37 suites.
+
+### `2026-10-02-008`
+
+Arborescence — au blocage ⏱ (marqueur temps), l'arbre est désormais **filtré** : les fonctions exclues du rejeu ne sont plus listées.
+
+(1) Retour « pendant que le temps est bloqué, l'arbre affiche quand même toutes les fonctions en gris barré : on ne voit plus ce que contient réellement la pièce » : depuis l'origine du marqueur temps (`6a4c34e`, 2026-09-29n), les fonctions au-delà du marqueur étaient **grisées** (`opacity:.4` + barré, CSS `.tnode.locked`) mais toujours **listées** — l'arbre ne correspondait pas au modèle rejoué que décrivait pourtant le bandeau « Temps bloqué avant ».
+
+(2) Fix — filtre aligné au pixel près sur `tlActiveList()` (ce qui est rejoué est ce qui s'affiche), dans `renderTree` (`src/40`) : `featNode` s'arrête désormais sur toute fonction `tlLocked(f)` **après** la ligne « ⏱ — marqueur ici — » (le séparateur reste, il annonce désormais le nombre de fonctions masquées sous le marqueur) ; les **instances de répétition** suivent la même règle (`vkids`, boucle d'instances) — une répétition située avant le marqueur reste listée mais affiche le nombre d'instances non verrouillées (`0 instance(s)` quand le marqueur coupe entre la répétition et ses instances) ; l'en-tête de groupe compte `doc.features.filter(!tlLocked)` et l'en-tête de corps compte `kidsVis`. Bandeau, bouton « ↗ Rejouer tout » et déblocage à l'édition sont inchangés — tout revient à la levée. Sans marqueur, `tlLocked()` est faux partout : arbre strictement identique à avant (rétrocompat).
+
+Tests : **nouvelle suite `tests/test_tree_filter.cjs` enregistrée dans `tests/run.cjs` → `npm test` 38/38 vert**, **ROUGE vérifiée sur le build d'avant (7/24)** : document extrusions + répétition dépliée (2 instances), pilotage des **vrais** rendus `renderTree()` (fenêtre du dernier rendu, comme `test_arbre_selection`) — sans marqueur les 6 lignes + compteurs (6) et 4 fonctions ; marqueur avant « Sortie » → ligne **absente**, 5 autres visibles, bandeau « Temps bloqué avant « Sortie » — 5 fonction(s) rejouée(s) », ligne marqueur « 1 fonction(s) masquée(s) », compteurs (5) et 3 ; marqueur **sur une instance** → instances suivantes et « Sortie » filtrées, répétition à « 0 instance(s) », bandeau nommant « Copie 1 » et 3 rejouées ; vrai clic sur « ↗ Rejouer tout » → `tlMark` levé, tout revient, bandeau disparu, compteurs (6).
+
+`build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-008.html`.
+
+README : arbre **filtré** au blocage ⏱ (l'arbre ne montre que les fonctions rejouées) ; tests → 38 suites.
