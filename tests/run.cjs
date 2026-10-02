@@ -12,6 +12,8 @@ const SUITES = [
   "test_apercu_diff",
   "test_apercu_edition",
   "test_conge_reel",
+  "test_conge_fond_poche",
+  "test_conge_tangent",
   "test_arbre_selection",
   "test_undo_document",
   "test_undo_aller_retour",

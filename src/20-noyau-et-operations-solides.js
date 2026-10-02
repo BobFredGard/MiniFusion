@@ -1292,7 +1292,10 @@ function xAnchorFor(m){
       const x2=dx*B.u.x+dy*B.u.y+dz*B.u.z,y2=dx*B.v.x+dy*B.v.y+dz*B.v.z,z2=dx*B.n.x+dy*B.n.y+dz*B.n.z;
       let bestP=null,bdP=RAD;
       Object.keys(s.points||{}).forEach(pid=>{const p=s.points[pid];if(!p)return;const d=Math.hypot(p.x-x2,p.y-y2);if(d<bdP){bdP=d;bestP=pid;}});
-      if(bestP)consider({t:'p',sk:s.id,id:bestP,far:far?1:0},bdP,z2);
+      // z = NIVEAU du clic (repère de l'esquisse, voyage avec l'origine) : sans lui une
+      // ancre point n'a AUCUNE information de hauteur — xAnchorMatch ne peut pas distinguer
+      // le fond, le rebord et la couture d'une poche qui projetent tous sur ce point.
+      if(bestP)consider({t:'p',sk:s.id,id:bestP,z:+z2.toFixed(3),far:far?1:0},bdP,z2);
       let bestE=null,bdE=RAD;
       (s.entities||[]).forEach(e=>{
         if(e.construction||e.ref)return; // ancre = géométrie de profil uniquement
@@ -1356,13 +1359,14 @@ function xAnchorMatch(se,edges){
     const dx=m[0]-B.o.x,dy=m[1]-B.o.y,dz=m[2]-B.o.z;
     return[dx*B.u.x+dy*B.u.y+dz*B.u.z,dx*B.v.x+dy*B.v.y+dz*B.v.z,dx*B.n.x+dy*B.n.y+dz*B.n.z];
   };
-  // Hauteur de référence : la POSITION D'ORIGINE de la sélection (figée à la création,
-  // conservée même quand se.pos est rafraîchi) plutôt que la position courante.
-  // ⚠ pos0 est en coordonnées MONDE alors que q[2] est RELATIF au plan de l'esquisse : les
-  // comparer tels quels inverse haut et bas (mesuré sur une poche traversed par une découpe
-  // « à travers tout » : les arcs du BAS, pos0 z=0, se résolvaient sur les arêtes du HAUT
-  // parce que q[2]=0 y désignait le niveau supérieur). On projette donc pos0 comme un point.
-  const zRef=(se.pos0&&se.pos0.length===3)?proj(se.pos0)[2]:(a.z||0);
+  // Hauteur de référence : le NIVEAU ENREGISTRÉ À LA CRÉATION (ancre z, repère local qui
+  // suit l'origine de l'esquisse) plutôt que la position courante. ⚠ pos0 est figé en
+  // coordonnées MONDE : une poche qui suit la face porteuse glisse de 20 mm et
+  // proj(se.pos0) devient périmé (−32 au lieu de −12, mesuré) — l'ancre, elle, reste juste.
+  // repli (anciens documents sans z) : projeter pos0 comme un point (q[2] est RELATIF au
+  // plan ; comparer tel quels inversait haut et bas) — corrigé pour 'p' par a.z (B).
+  const zRef=(a.z!==undefined&&a.z!==null&&isFinite(+a.z))?+a.z
+    :((se.pos0&&se.pos0.length===3)?proj(se.pos0)[2]:(a.z||0));
   if(a.t==='p'){
     const p=s.points[a.id];if(!p)return out;
     // Hauteurs « naturelles » du solide pour cette esquisse (bas/haut des volumes qu'elle
@@ -1373,35 +1377,42 @@ function xAnchorMatch(se,edges){
       let m=1e9;for(const d of spans){m=Math.min(m,Math.abs(q2-d.lo),Math.abs(q2-d.hi));}
       return Math.min(m,Math.abs(q2-zRef)+2); // à défaut, la position d'origine
     };
-    let best=null;
+    // CANDIDATURES UNIFIÉES (toutes orientations) + NIVEAU + POS0. Les trois arêtes d'une
+    // poche //XZ (fond, rebord, couture verticale) projetent au MÊME point d'esquisse et
+    // dzPref les égalise (lo/hi du même prisme) : sans niveau ni distance au clic elles se
+    // départageaient au PREMIER RENCONTRÉ — le premier loop n'acceptait que les verticales
+    // et rendait aussitôt (la couture gagnait quoi que soit l'ordre), le repli sans pos0
+    // prenait tout autre chose au hasard. L'ordre d'énumération d'OCCT, bouleversé par
+    // toute édition amont, faisait donc basculer le congé sur l'arête extérieure (retour
+    // utilisateur). On reprend la mécanique de la branche 'e' : buckets de NIVEAU (zRef =
+    // niveau du clic), score avec distance au clic (pos0, plafonnée 60 mm), départage par
+    // pos0 à score équivalent — sans orientation forcée, sans dépendance à l'ordre.
+    const rows=[];
     edges.forEach((e,i)=>{
       const q=proj(e.mid);
       const d2=Math.hypot(q[0]-p.x,q[1]-p.y);
       if(d2>5.0)return;
       const P0=e.pts[0],P1=e.pts[e.pts.length-1],L=Math.hypot(P1[0]-P0[0],P1[1]-P0[1],P1[2]-P0[2]);
       if(L<1e-9)return;
-      const du=Math.abs(((P1[0]-P0[0])*B.u.x+(P1[1]-P0[1])*B.u.y+(P1[2]-P0[2])*B.u.z)/L);
-      const dv=Math.abs(((P1[0]-P0[0])*B.v.x+(P1[1]-P0[1])*B.v.y+(P1[2]-P0[2])*B.v.z)/L);
-      if(Math.max(du,dv)>0.1)return; // pas verticale : pas notre coin
-      const sc=d2+0.3*dzPref(q[2]);
-      if(!best||sc<best.sc)best={i,sc};
+      const d0=(se.pos0&&se.pos0.length===3)
+        ?Math.hypot(e.mid[0]-se.pos0[0],e.mid[1]-se.pos0[1],e.mid[2]-se.pos0[2]):0;
+      const lvl=Math.abs(q[2]-zRef);
+      const sc=d2+0.3*dzPref(q[2])+0.6*Math.min(d0,60);
+      rows.push({i,sc,lvl,d0});
     });
-    if(best)out.push(best.i);
-    // Repli : aucune verticale ne convient → on accepte la meilleure arête QUELCONQUE passant
-    // par le point d'esquisse. Cas réel : les lignes de 60 mm d'un bord de découpe sont
-    // ancrées sur un point mais sont HORIZONTALES ; le filtre « verticale » les écartait,
-    // la passe 2 saute les arêtes à ancre point, et le congé partait en « arête introuvable »
-    // alors que l'arête était toujours là. Le repli ne s'active qu'à défaut de verticale.
-    if(best)return out;
-    let bestH=null;
-    edges.forEach((e,i)=>{
-      const q=proj(e.mid);
-      const d2=Math.hypot(q[0]-p.x,q[1]-p.y);
-      if(d2>5.0)return;
-      const sc=d2+0.3*dzPref(q[2]);
-      if(!bestH||sc<bestH.sc)bestH={i,sc};
-    });
-    if(bestH)out.push(bestH.i);
+    const pick=bk=>{
+      if(!bk.length)return null;
+      bk.sort((x,y)=>x.sc-y.sc);
+      const g0=bk[0].sc;
+      const near=bk.filter(c=>c.sc<=g0+6);
+      if(near.length<2)return near[0].i;
+      near.sort((x,y)=>x.d0-y.d0); // à score équivalent : l'arête du CLIQUE l'emporte
+      return near[0].i;
+    };
+    let c=pick(rows.filter(r=>r.lvl<=2.0));
+    if(c===null)c=pick(rows.filter(r=>r.lvl<=8.0));
+    if(c===null)c=pick(rows);
+    if(c!==null)out.push(c);
     return out;
   }
   const e=(s.entities||[]).find(k=>k.id===a.id);if(!e)return out;
@@ -1446,7 +1457,10 @@ function xAnchorMatch(se,edges){
     // Ancre « far » (arête née d'un congé/chanfrein) : l'arc est à quelques mm de l'entité 2D
     // qui l'a produit → tolérance élargie, sinon plus aucune candidate et référence perdue.
     if(d2>(a.far?8.0:2.5))return;
-    const zErr=Math.abs(q[2]-expectedZ);
+    // Buckets : le niveau ATTENDU (épaisseur courante) OU le niveau du CLIQUE (zRef, figé
+    // à la création) — le min ne peut qu'AJOUTER la candidate au niveau du clic, jamais
+    // écarter celle attendue : une ancre de côté faux ne peut plus faire partir le clic.
+    const zErr=Math.min(Math.abs(q[2]-expectedZ),Math.abs(q[2]-zRef));
     // DISTANCE À LA POSITION D'ORIGINE — terme UNIFORME, présent dans les deux branches.
     // pos0 est la donnée la plus durable qui soit (elle ne bouge jamais). Sans elle, deux
     // arêtes très proches en 2D se départagent au hasard, le mauvais choix est écrit dans
@@ -1517,9 +1531,9 @@ function occApplyXFillets(base,xfils){
   });
   const near=(a,b,tol)=>Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2])<tol;
   const xNum=v=>String(+(+v).toFixed(2)).replace('.',','); // rayon/longueur : 16 et non 16,0
-  const jobs=[],matchedSe=new Set();
+  const jobs=[],matchedSe=new Set(),seBi=new Map();
   const take=(bi,r,se)=>{
-    if(se){matchedSe.add(se);if(!se.pos0)se.pos0=se.pos.slice(); // POSITION D'ORIGINE figée : c'est elle la référence durable
+    if(se){matchedSe.add(se);seBi.set(se,bi);if(!se.pos0)se.pos0=se.pos.slice(); // POSITION D'ORIGINE figée : c'est elle la référence durable
       se.pos=edges[bi].mid.slice();se.len=+edges[bi].len.toFixed(3);} // snapshot rafraîchi (repli plus tard)
     const dup=jobs.find(j=>j.bi===bi);
     if(dup)dup.r=Math.max(dup.r,r);else jobs.push({bi,r});
@@ -1597,6 +1611,54 @@ function occApplyXFillets(base,xfils){
         cands.push({i,s:xyd+0.2*Math.abs(e.mid[2]-zref)+0.15*Math.abs(e.len-se.len)});
       });
       if(cands.length){cands.sort((a,b)=>a.s-b.s);take(cands[0].i,se.r,se);}
+    });
+  });
+  // Passe 2b : congé à TANGENCE PERSISTÉE (f.tangent) — UNE arête germe suffit : à chaque
+  // rejeu la chaîne tangente est recalculée sur les arêtes du solide ACTUEL, exactement
+  // comme xSelSync le fait à la création, mais rejouée. Une entrée déduite perdue se
+  // rattache à la chaîne (par sa position d'origine), une arête APPARUE après édition amont
+  // rejoint la bande avec le RAYON DU GERME : « tangence cochée sur une seule arête = toute
+  // la chaîne, à chaque fois ». Les entrées sans drapeau seed (documents antérieurs) ne
+  // déduisent rien : passe 1/2/3 se comportent comme avant.
+  xfils.forEach(xf=>{
+    if(!xf.tangent)return;
+    const es=(xf.edges||[]).filter(se=>se.r>0);
+    if(!es.length)return;
+    const seeded=es.filter(se=>se.seed);
+    const roots=(seeded.length?seeded:es).filter(se=>matchedSe.has(se)); // rétrocompat sans drapeau
+    if(!roots.length)return;
+    const chain=new Set();
+    roots.forEach(se=>{const bi=seBi.get(se);if(bi==null)return;
+      xTangentChainOf(edges,bi).forEach(j=>chain.add(j));});
+    if(!chain.size)return;
+    const hasJob=j=>jobs.some(job=>job.bi===j);
+    // 1) entrées PERDUES se rattachent à la chaîne (ancre pos0, tol 60 mm — comme p0t)
+    es.forEach(se=>{
+      if(matchedSe.has(se))return;
+      const ref=se.pos0&&se.pos0.length===3?se.pos0:se.pos;
+      let best=-1,bd=60;
+      chain.forEach(j=>{
+        if(hasJob(j))return;
+        const m=edges[j].mid;
+        const d=Math.hypot(m[0]-ref[0],m[1]-ref[1],m[2]-ref[2]);
+        if(d<bd){bd=d;best=j;}
+      });
+      if(best>=0)take(best,se.r,se);
+    });
+    // 2) arêtes de la chaîne SANS entrée (apparues) → ajoutées à la fonction avec le rayon
+    //    du germe le plus proche : la bande s'étend toute seule, f.edges reflete le solide.
+    chain.forEach(j=>{
+      if(hasJob(j))return;
+      const m=edges[j].mid;
+      const at=ref=>Math.hypot(ref[0]-m[0],ref[1]-m[1],ref[2]-m[2]);
+      if(es.some(se=>at(se.pos0&&se.pos0.length===3?se.pos0:se.pos)<0.75))return; // doublon d'une entrée
+      let bs=null,bd=1e9;
+      roots.forEach(se=>{const d=at(se.pos0&&se.pos0.length===3?se.pos0:se.pos);if(d<bd){bd=d;bs=se;}});
+      if(!bs)return;
+      const ne={pos:m.slice(),pos0:m.slice(),r:bs.r,len:+(edges[j].len||0).toFixed(3),
+        anchor:null,name:'tangente'};
+      xf.edges.push(ne);es.push(ne);
+      take(j,bs.r,ne);
     });
   });
   // Passe 3 : signature de groupe pour orphelins (anciennes sélections déplacées).
@@ -1792,8 +1854,11 @@ function featSig(f){
     // solide (le congé nouveau n'apparaissait pas). `pos`/`len` sont rafraîchis par
     // occApplyXFillets à chaque appariage réussi, donc ils décrivent l'arête réellement
     // résolue ; l'ancre décrit le ciblage (même position, arête voisine possible).
-    s+='|'+(f.chamfer?1:0)+'|'+((f.edges||[]).map(e=>
-      (+e.r||0)+'/'+(+e.len||0)+'@'+(e.pos||[]).map(x=>(+x).toFixed(3)).join(',')
+    // tangent (chaîne déduite à chaque rejeu) et seed (arête germe) changent la GÉOMÉTRIE
+    // appliquée : les mettre dans la signature force le cache à rejouer quand on décoche
+    // « arêtes tangentes » ou qu'on change de germe — sinon le solide périmé persiste.
+    s+='|'+(f.chamfer?1:0)+'|'+(f.tangent?1:0)+'|'+((f.edges||[]).map(e=>
+      (+e.r||0)+'/'+(+e.len||0)+(e.seed?'s':'')+'@'+(e.pos||[]).map(x=>(+x).toFixed(3)).join(',')
       +((e.anchor)?('#'+e.anchor.t+(e.anchor.sk||'')+(e.anchor.id||'')+'z'+(e.anchor.z||0)+'s'+(e.anchor.side||0)+'d'+(e.anchor.dist||0)+'f'+(e.anchor.far||0)):'')).join(';'));
   }else if(f.type==='xmove'){
     // La DISTANCE fait partie de la géométrie, et la face visée par sa référence durable

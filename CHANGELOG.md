@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**135 versions**, de `2026-09-28b` à `2026-10-02-004` — la plus récente en bas,
+**136 versions**, de `2026-09-28b` à `2026-10-02-005` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2530,3 +2530,20 @@ Tests : **nouvelle suite `tests/test_ctx_menu_viewport.cjs` enregistrée dans `t
 `build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-004.html`.
 
 README : import/export — le menu clic-droit du corps se **repositionne dans le viewport** (et défile s'il dépasse) : l'entrée « ⬇ Exporter ce corps en STEP » est toujours visible ; tests → 33 suites.
+
+### `2026-10-02-005`
+
+**Congés/chanfreins qui ne changent PLUS d'arête après une modification amont · l'option « arêtes tangentes » est persistée (une arête germe = toute la chaîne, à chaque rejeu).**
+
+1. **Cause — retour « le congé revient mais sur l'arête extérieure de la poche » (priorité : bloquer l'arête choisie)** : l'ancre de type POINT (`t:'p'`), celle qu'on obtient en cliquant près d'un point d'esquisse, ne portait **aucune information de hauteur** (`z` non enregistré dans `xAnchorFor`) et sa branche de `xAnchorMatch` ne mesurait **ni le niveau du clic ni la distance à `pos0`** : le fond, le rebord et la couture verticale d'une poche //XZ projetent tous sur le même point d'esquisse, `dzPref` les égalise (lo/hi du même prisme) et le premier loop n'acceptait que les arêtes verticales → **la couture gagnait quoi que soit l'ordre**, le repli prenait tout autre chose au hasard. L'ordre d'énumération d'OCCT, bouleversé par toute édition amont (ex. Esquisse 1 en longueur 130→150 : la face porteuse glisse, la poche suit), suffisait donc à faire basculer le congé sur l'arête extérieure.
+2. **Fix — niveau + pos0 dans la branche point** : `xAnchorFor` enregistre désormais `z` (niveau du clic, repère local qui voyage avec l'origine de l'esquisse) pour les ancres `t:'p'` ; `zRef` **priorise** ce niveau figé — le repli `proj(pos0)` (coordonnées monde figées) devient périmé dès qu'une poche suit sa face porteuse (−32 au lieu de −12, mesuré) ; `xAnchorMatch` branche point = **candidats unifiés toutes orientations**, buckets de niveau (`|q2−zRef|` ≤ 2 puis ≤ 8 puis reste), score `d2 + 0.3·dzPref + 0.6·min(d0,60)`, départage par `pos0` à score équivalent (fenêtre 6 mm, miroir de la branche entité) — **indépendant de l'ordre OCCT**, sans orientation forcée. Branche entité : les buckets acceptent aussi le niveau du clic (`min(niveau attendu, niveau du clic)`) — le min ne peut qu'**ajouter** la candidate au niveau du clic, jamais écarter celle attendue.
+3. **Cause — retour « une seule arête + tangence : l'appli doit trouver toute seule les arêtes à chaque fois »** : ni la case « arêtes tangentes » ni les arêtes **germes** n'étaient persistées — tout était redemandé à l'interface à chaque session, et un rejeu ne recalculait jamais la chaîne (une entrée déduite perdue restait perdue, une arête apparue restait dehors).
+4. **Fix — `f.tangent` + `e.seed` persistés, chaîne rejouée** : enregistrés à la création et à l'édition (`applyExactFillet` re-marque le germe depuis `filModeX.seeds`, `enterExactFilletMode` restaure l'état du congé et ne re-coche plus « tangence » en dépit de l'utilisateur), inclus dans `featSig` (le cache ne réutilise plus un solide périmé quand on bascule la case) ; nouvelle **passe 2b** dans `occApplyXFillets` : à chaque rejeu la chaîne tangente est recalculée sur les arêtes du solide actuel via `xTangentChainOf` (extrait d'`occTangentChain`, utilisable hors interface) — une entrée déduite **perdue** se rattache à la chaîne par sa position d'origine (tol 60 mm), une arête **apparue** rejoint la bande avec le **rayon du germe** et rejoint `f.edges` (avec une ancre recalée à l'instant de l'ajout). Documents antérieurs sans drapeau : comportement inchangé (rétrocompat).
+
+Tests : **2 nouvelles suites enregistrées dans `tests/run.cjs` → `npm test` 35/35 vert.**
+- `tests/test_conge_fond_poche.cjs` — **ROUGE vérifiée sur le build d'avant correctif** : le congé du fond se posait sur la **couture** (7,2 mm du fond), en ordre naturel **et** inversé, avant **et** après allongement, et l'ancre point était enregistrée sans `z`. Poche //XZ sur la face latérale (origine `SIDE` qui glisse avec l'arête porteuse), mur du bas scindé en son milieu (le point d'esquisse réel reçoit l'ancre), congé cliqué sur le **fond** : vérification du match en ordre naturel **et inversé** (indépendance à l'ordre d'énumération OCCT) + garde-fou « clic sur la couture → la couture » + chemin complet feature, avant **et** après `Esquisse 1` 130→150 (la poche glisse de 20 mm — le congé reste sur le fond, à 0,00 mm) ;
+- `tests/test_conge_tangent.cjs` — création **par l'interface** (mode exact, un germe cliqué, propagation de chaîne 4) avec `f.tangent`/`e.seed` persistés et `_m 4/4`, rejeu stable (rien ne s'ajoute ni ne se perd), **allongement du slot** (chaîne toujours 4/4, aucune perte), cycle **JSON**, tangence **décochée** (1/1 appliqué, la chaîne ne se redessine pas) puis **recochée** (la chaîne 4/4 est retrouvée **seule**, germe unique conservé).
+
+`build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-005.html`.
+
+README : congés/chanfreins — le choix d'arête est **bloqué** : niveau du clic + `pos0` départagent fond/rebord/couture **quelle que soit l'ordre d'énumération**, un congé sur le fond d'une poche y reste après toute modification amont ; l'option « arêtes tangentes » et les germe sont **persistées** (une arête cliquée = toute la chaîne, à chaque rejeu) ; tests → 35 suites.

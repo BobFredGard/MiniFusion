@@ -46,7 +46,9 @@ function enterExactFilletMode(editF,kind){
   if(filMode)exitFilletMode(true);
   // tangent : les arêtes tangentes à celle cliquée sont ajoutées automatiquement (coché par
   // défaut). Un clic = UNE arête ; plus de double-clic qui attrapait une chaîne entière.
-  filModeX={sel:[],seeds:[],tangent:true,radius:2,edges:[],editing:editing?editing.id:null,kind:k};
+  // En édition : la case reste sur l'état PERSISTÉ du congé (f.tangent) — elle ne se
+  // remet plus « cochée » en dépit de l'utilisateur à chaque réédition.
+  filModeX={sel:[],seeds:[],tangent:editing?(editing.tangent!==false):true,radius:2,edges:[],editing:editing?editing.id:null,kind:k};
   if(editing){
     // Édition : rejeu SANS la fonction (occSkipFeat) → les arêtes vives d'origine redeviennent
     // cliquables (l'arrondi appliqué les a remplacées par des surfaces tangentes).
@@ -54,7 +56,7 @@ function enterExactFilletMode(editF,kind){
     (editing.edges||[]).forEach(s=>{
       if(seen.some(u=>Math.abs((u.r||0)-(s.r||0))<1e-9&&Math.hypot(u.pos[0]-s.pos[0],u.pos[1]-s.pos[1],u.pos[2]-s.pos[2])<=0.75))return;
       seen.push(s);
-      filModeX.sel.push({pos:s.pos.slice(),pos0:(s.pos0||s.pos).slice(),r:s.r||2,len:+(s.len||0)||0,anchor:s.anchor||null,name:s.name||null});
+      filModeX.sel.push({pos:s.pos.slice(),pos0:(s.pos0||s.pos).slice(),r:s.r||2,len:+(s.len||0)||0,anchor:s.anchor||null,name:s.name||null,seed:s.seed?1:0});
     });
     const rr=filModeX.sel.find(s=>s.r>0);if(rr)filModeX.radius=rr.r;
     occSkipFeat=editing.id;
@@ -72,9 +74,13 @@ function enterExactFilletMode(editF,kind){
   // de re-déduction tangente : on ne veut pas élargir silencieusement une sélection existante)
   if(editing){
     const prevT=filModeX.tangent;filModeX.tangent=false;
+    // Germes = les arêtes cliquées à la CRÉATION (f.edges[].seed persisté) : la tangence
+    // se re-déduit d'elles au rejeu. Rétrocompat : documents antérieurs sans drapeau →
+    // tout est germe (comportement d'avant : toutes les entrées = toutes les graines).
+    const anySeed=(editing.edges||[]).some(o=>o.seed);
     (filModeX.sel||[]).forEach(s=>{
       const i=filModeX.edges.findIndex(e=>Math.hypot(e.mid[0]-s.pos[0],e.mid[1]-s.pos[1],e.mid[2]-s.pos[2])<0.75);
-      if(i>=0)xSeedAdd(i);
+      if(i>=0&&(!anySeed||s.seed))xSeedAdd(i);
     });
     filModeX.tangent=prevT;
   }
@@ -381,14 +387,17 @@ function exactTangentToggle(startIdx){
   xPreviewUpdate();
   faceEl.textContent=`${xLabel(filModeX.kind)} : arêtes tangentes ${filModeX.tangent?'ajoutées automatiquement':'désactivées'} · ${filModeX.sel.length} arête(s).`;
 }
-function occTangentChain(startIdx){
-  const n=filModeX.edges.length;
+function xTangentChainOf(list,startIdx){
+  // Chaîne tangente sur une LISTE d'arêtes arbitraire. Extrait d'occTangentChain (qui ne
+  // marche que sur filModeX.edges, indisponible pendant un rejeu) : src/20 en a besoin
+  // pour rejouer une tangence persistée directement sur les arêtes du solide actuel.
+  const n=list.length;
   if(startIdx<0||startIdx>=n) return [startIdx];
   try{
     const vmap=new Map(); // vertex key -> [edgeIdx]
     const edgeKeys=[];
     for(let i=0;i<n;i++){
-      const e=filModeX.edges[i];
+      const e=list[i];
       const pts=e.pts||[];
       if(pts.length<2) continue;
       const norm=v=> (Math.abs(v)<0.0005?0:v).toFixed(3);
@@ -402,7 +411,7 @@ function occTangentChain(startIdx){
       vmap.get(k1).push(i);
     }
     const getTan=(ei, atEnd)=>{
-      const e=filModeX.edges[ei];
+      const e=list[ei];
       const pts=e.pts||[];
       if(pts.length<2) return null;
       const a=atEnd ? pts[pts.length-2] : pts[0];
@@ -443,6 +452,7 @@ function occTangentChain(startIdx){
     return Array.from(visited);
   }catch(e){ return [startIdx]; }
 }
+function occTangentChain(startIdx){return xTangentChainOf(filModeX.edges,startIdx);}
 function renderExactPanel(){
   if(!filModeX)return;
   const p=$('props');p.innerHTML='';
@@ -529,17 +539,24 @@ function applyExactFillet(){
   // pos0 = position d'origine figée à la sélection : c'est elle la référence durable (celle que
   // xAnchorMatch relit pour départager un arc de congé de son segment colinéaire, et celle qui
   // permet de suivre l'arête quand le solide change de hauteur). Conservée en édition.
-  const mkEdges=()=>filModeX.sel.map(s=>({pos:s.pos.slice(),pos0:(s.pos0||s.pos).slice(),r:s.r,len:+(s.len||0),anchor:s.anchor||null,name:s.name||entName('edge')}));
+  // seed = arête GERME (cliquée) : re-marquée depuis filModeX.seeds (indices stables dans la
+  // session), c'est elle qui ancre la propagation tangente à chaque rejeu (passe 2b).
+  const mkEdges=()=>filModeX.sel.map(s=>{
+    const e={pos:s.pos.slice(),pos0:(s.pos0||s.pos).slice(),r:s.r,len:+(s.len||0),anchor:s.anchor||null,name:s.name||entName('edge')};
+    const ei=filModeX.edges.findIndex(x=>x&&Math.hypot(x.mid[0]-s.pos[0],x.mid[1]-s.pos[1],x.mid[2]-s.pos[2])<0.75);
+    if((ei>=0&&(filModeX.seeds||[]).indexOf(ei)>=0)||s.seed)e.seed=1;
+    return e;
+  });
   if(filModeX.editing){
     // Édition en place : on met À JOUR la fonction existante (pas de 2ᵉ fonction).
     const f=doc.features.find(x=>x.id===filModeX.editing);
-    if(f){f.edges=mkEdges();f.name=xFeatName(f);sel={kind:'feature',id:f.id};}
-    exitFilletMode(true); // restaure le rejeu complet avec les arêtes mises à jour
+    if(f){f.edges=mkEdges();f.tangent=filModeX.tangent!==false;f.name=xFeatName(f);sel={kind:'feature',id:f.id};}
+    exitExactFilletMode(true); // restaure le rejeu complet avec les arêtes mises à jour
     renderProps();
     faceEl.textContent=label+' : mise à jour enregistrée ('+(f?f.edges.length:0)+' arête(s)).';
     return;
   }
-  const nf={id:uid('xf'),type:'xfillet',name:xLabel(k)+' ('+filModeX.sel.length+' arête(s))',edges:mkEdges(),visible:true};
+  const nf={id:uid('xf'),type:'xfillet',name:xLabel(k)+' ('+filModeX.sel.length+' arête(s))',edges:mkEdges(),visible:true,tangent:filModeX.tangent!==false};
   if(xIsChamfer(k))nf.chamfer=true;
   addFeature(nf);
   sel={kind:'feature',id:nf.id};

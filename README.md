@@ -64,8 +64,8 @@ Une partie FAO est en travail, ce sera long !
 
 ### Congés & chanfreins
 - **Congé 2D** (maillage) sur les verticales d'une extrusion, rayon unique, plus **congé de périmètre** (rims haut et/ou bas).
-- **Congés/chanfreins exacts OCCT** : toutes les arêtes du solide sont cliquables, **rayon ou distance par arête**, sélection d'une arête ou d'une boucle de face. **Un clic = une arête** ; l'option « 🔗 arêtes tangentes » (cochée par défaut) y ajoute automatiquement la chaîne tangente — les arêtes cliquées sont en jaune, celles déduites en rouge.
-- **Références durables** : chaque arête sélectionnée est ancrée sur la géométrie qui l'a produite (point, entité, niveau haut/bas de l'épaisseur) et **retrouve sa place** après n'importe quelle modification du modèle, y compris sur les arêtes nées d'un autre congé. La position d'origine (pos0) est figée et sert de référence de départage : une sélection = **une** arête, jamais deux, et un mauvais appariement ne peut plus s'aggraver d'un rejeu à l'autre.
+- **Congés/chanfreins exacts OCCT** : toutes les arêtes du solide sont cliquables, **rayon ou distance par arête**, sélection d'une arête ou d'une boucle de face. **Un clic = une arête** ; l'option « 🔗 arêtes tangentes » (cochée par défaut) y ajoute automatiquement la chaîne tangente — les arêtes cliquées sont en jaune, celles déduites en rouge. L'option **et les arêtes germe sont persistées** avec le congé : une seule arête cliquée suffit, et **à chaque rejeu** l'appli retrouve seule toute la chaîne (entrées perdues rattachées, arêtes apparues ajoutées au rayon du germe).
+- **Références durables** : chaque arête sélectionnée est ancrée sur la géométrie qui l'a produite (point, entité, **niveau du clic** haut/bas — fond, rebord et couture d'une même poche se distinguent même s'ils projetent au même point d'esquisse) et **retrouve sa place** après n'importe quelle modification du modèle, y compris sur les arêtes nées d'un autre congé. La position d'origine (pos0) est figée et sert de référence de départage : une sélection = **une** arête, jamais deux, **quel que soit l'ordre d'énumération d'OCCT** — un congé sur le fond d'une poche y reste après toute modification amont — et un mauvais appariement ne peut plus s'aggraver d'un rejeu à l'autre.
 - **Édition en place** : ✏️ *Modifier la sélection* (ou double-clic dans l'arbre) ajoute/retrait des arêtes, ajuste les rayons arête par arête, sans créer de seconde fonction. L'appariement est reporté en direct : `✅ n/n arêtes retrouvées` ou `⚠ n/n`.
 - **Aperçu avant validation** : dès qu'une arête est sélectionnée, le résultat s'affiche **en rouge translucide** (la pièce s'estompe derrière) et se recalcule à chaque changement de rayon — congé comme chanfrein. L'aperçu disparaît en quittant le mode ou après application.
 - Repli maillage complet si le noyau exact n'est pas disponible.
@@ -144,7 +144,7 @@ python -m http.server 3000
 | `occt/` | Noyau OpenCascade WebAssembly (~111 Mo) + ses `.bak` locaux (non suivis) |
 | `threejs/` | Rendu 3D (three.js), OrbitControls, CSG |
 | `PostPro/` | Post-processeurs G-code : **Siemens 840D** (variantes 630 / 1520) et **Fagor 8065** |
-| `tests/` | Suite Node portable (harnais `appvm.cjs` + 33 suites + fixtures) : `node tests/run.cjs` ou `npm test` |
+| `tests/` | Suite Node portable (harnais `appvm.cjs` + 35 suites + fixtures) : `node tests/run.cjs` ou `npm test` |
 | `Backup/` | Snapshots des versions vertes |
 | `Server.bat` | Lancement local (npx serve, port 3000) |
 
@@ -159,7 +159,7 @@ n'a qu'un fichier à ouvrir.
 # 1. éditer un fichier de src/ (jamais fusion_mvp.html)
 # 2. reconstruire le livrable
 node build.js
-# 3. régression verte (harnais + 33 suites)
+# 3. régression verte (harnais + 35 suites)
 npm test
 # 4. bump APP_VER (src/00-entete-et-outils.js) + entrée CHANGELOG.md
 # 5. vérifier que le livrable est à jour (à mettre en CI)
@@ -225,7 +225,7 @@ fichier unique (voir « Travailler sur le code »).
 
 - **In-app** : 🧪 Auto-tests (non-régression esquisse, contraintes, cotes) — lançables depuis le panneau latéral.
 - **Dev** : harnais Node hors navigateur (solveur, cotation orientée, suivi de faces, références, projections associatives, congés/chanfreins exacts, menu d'extrusion, prismes miroir, répétitions, marqueur temps, performance…) ; certains scénarios s'exécutent sur le **noyau OCCT réel** (`.wasm` chargé en Node), et la version (`APP_VER`) est vérifiée avant chaque sauvegarde dans `Backup/`.
-- **Suite repo** : `tests/` (harnais `appvm.cjs` + 33 suites + fixtures, dont `test_fao`, `test_fao3d`, `test_fao_barre3d`, `test_corps_style`, `test_esquisse_contraintes` et `test_ctx_menu_viewport`) — portable, aucun chemin absolu : `node tests/run.cjs` ou `npm test` depuis la racine, sur n'importe quel PC.
+- **Suite repo** : `tests/` (harnais `appvm.cjs` + 35 suites + fixtures, dont `test_fao`, `test_fao3d`, `test_fao_barre3d`, `test_corps_style`, `test_esquisse_contraintes`, `test_ctx_menu_viewport`, `test_conge_fond_poche` et `test_conge_tangent`) — portable, aucun chemin absolu : `node tests/run.cjs` ou `npm test` depuis la racine, sur n'importe quel PC.
 
 ## Historique
 
