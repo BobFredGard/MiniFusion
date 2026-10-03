@@ -6,6 +6,7 @@ const SUITES = [
   "test_draft_sel",
   "test_xmove",
   "test_coque_sel",
+  "test_coque_depouille",
   "test_repeat_mir2",
   "test_repeat_session",
   "test_mirror_arc",

@@ -340,24 +340,156 @@ function shellName(f){
   const t=String(Math.round((+f.thick||0)*100)/100).replace('.',',');
   return `Coque ${t} mm · ${(f.faces||[]).length} face(s) retirée(s)`;
 }
-function occCoqueOnce(result,faces,thick){
-  // `faces` = handles OCCT déjà résolus (pas de refs durables ici), `thick` > 0 en
-  // mm. Retourne {shape} — l'appelant libère `faces`, jamais le contraire.
+function occCoqueThick(result,faces,thick,join,inter){
+  // Cœur MakeThickSolid partagé par toutes les recettes : join/inter paramétrables
+  // (Arc direct, Intersection, …). `faces` = handles OCCT résolus, `thick` > 0 en mm.
   const bin=[];
   try{
     const L=occBinPush(bin,new occt.TopTools_ListOfShape_1());
     for(const f of faces)L.Append_1(occBinPush(bin,occt.TopoDS.Face_1(f)));
-    const Arc=occt.GeomAbs_JoinType.GeomAbs_Arc;
     const mk=occBinPush(bin,new occt.BRepOffsetAPI_MakeThickSolid_2(
-      result,L,-Math.abs(thick),0.01,Arc,false,false,Arc,false));
+      result,L,-Math.abs(thick),0.01,join,inter,false,join,false));
     mk.Build();
     let done=false;
     try{done=!!mk.IsDone();}catch(e){}
     if(!done)throw new Error('évidage refusé par le moteur (paroi trop épaisse ? ouverture mal placée ?)');
     const out=occShapeCopy(mk.Shape());
-    if(!out||out.IsNull())throw new Error('solide évidé vide');
-    return {shape:out};
+    if(!out||out.IsNull()){try{if(out)out.delete();}catch(e){}throw new Error('solide évidé vide');}
+    return out;
   }finally{occDispose(bin);}
+}
+function occCoqueOnce(result,faces,thick){
+  // Recette « directe » (Arc) seule — aperçus et cas simples. Les appels qui
+  // doivent supporter dépouille/congés passent par occCoqueRecettes (chaîne).
+  return {shape:occCoqueThick(result,faces,thick,occt.GeomAbs_JoinType.GeomAbs_Arc,false)};
+}
+function occCoqueBBox(sh){
+  // AddOptimal = boîte PRÉCISE (le Add conservateur gonfle les pôles BSpline et
+  // ferait passer des junk pour du gabarit). Filet d'échec conservateur si indispo.
+  const b=new occt.Bnd_Box_1();
+  try{occt.BRepBndLib.AddOptimal(sh,b,true,false);}
+  catch(e){try{occt.BRepBndLib.AddOptimal(sh,b);}catch(e2){try{b.delete();}catch(e){}return null;}}
+  try{
+    const a=b.CornerMin(),z=b.CornerMax();
+    const o=[a.X(),a.Y(),a.Z(),z.X(),z.Y(),z.Z()];
+    try{b.delete();}catch(e){}
+    return o;
+  }catch(e){try{b.delete();}catch(e2){}return null;}
+}
+function occCoqueVolume(sh){
+  try{
+    const G=new occt.GProp_GProps_1();
+    occt.BRepGProp.VolumeProperties_1(sh,G,false,false,false);
+    const v=G.Mass();
+    try{G.delete();}catch(e){}
+    return v;
+  }catch(e){return null;}
+}
+function occCoqueNFaces(sh){
+  let n=0;
+  try{
+    const x=new occt.TopExp_Explorer_2(sh,occt.TopAbs_ShapeEnum.TopAbs_FACE,occt.TopAbs_ShapeEnum.TopAbs_SHAPE);
+    while(x.More()){n++;x.Next();}
+    x.delete();
+  }catch(e){}
+  return n;
+}
+function occCoqueEvidage(base,out,thick){
+  // Vrai évidage ? Le moteur rend parfois IsDone=true avec un résultat NON
+  // évidé (dessus conservé, face parasite qui explose hors gabarit) — c'était le
+  // bug « la coque ne marche pas toujours ». Trois critères mesurés (sondages) :
+  //  · bbox serrée autour de la base, ±(2+2×paroi) — attrape le junk hors gabarit ;
+  //  · ≥ +2 faces — l'évidage crée parois internes + rebord (un junk n'en crée pas) ;
+  //  · volume < 0.5×base — junk ≈ 105 % de la base, évidage « partiel » ≈ 72 %,
+  //    évidage réel 7..13 % : 0.5 discrimine nettement les trois familles.
+  try{
+    const b=occCoqueBBox(base),o=occCoqueBBox(out);
+    if(!b||!o)return false;
+    const m=2+2*Math.abs(+thick||0);
+    for(let i=0;i<3;i++)if(o[i]<b[i]-m)return false;
+    for(let i=3;i<6;i++)if(o[i]>b[i]+m)return false;
+    if(occCoqueNFaces(out)-occCoqueNFaces(base)<2)return false;
+    const v0=occCoqueVolume(base),v1=occCoqueVolume(out);
+    if(!(typeof v0==="number"&&typeof v1==="number"))return false;
+    return v1>0&&v1<v0*0.5;
+  }catch(e){return false;}
+}
+function occCoqueValide(sh){
+  try{
+    const a=new occt.BRepCheck_Analyzer(sh,true);
+    const v=a.IsValid_1(sh);
+    try{a.delete();}catch(e){}
+    return !!v;
+  }catch(e){return false;}
+}
+function occCoqueRepare(sh){
+  // ShapeFix : le résultat de conversion Arc peut être GÉOMÉTRIQUEMENT juste et
+  // topologiquement invalide (3 faces/35) — le fix répare sans bouger les cotes.
+  try{
+    const h=new occt.Handle_Message_ProgressIndicator_1();
+    const fx=new occt.ShapeFix_Shape_2(sh);
+    fx.Perform(h);
+    const s2=fx.Shape();
+    let c=null;
+    if(s2&&!s2.IsNull())c=occShapeCopy(s2);
+    try{fx.delete();}catch(e){}
+    try{h.delete();}catch(e){}
+    return c;
+  }catch(e){return null;}
+}
+function occCoqueRecettes(result,entries,thick){
+  // Chaîne de recettes d'évidage, acceptées UNIQUEMENT après validation :
+  //   1. Arc direct            — cas simples (boîte, dépouille nulle) : inchangé ;
+  //   2. Intersection (jI)     — dépouille simple sans congé ;
+  //   3. ConvertToBSpline+Arc  — arcs non maniables sur les surfaces de dépouille
+  //      (convertir les extrusions en BSpline rend l'offset Arc calculable),
+  //      suivie de ShapeFix si la topologie ressort invalide.
+  // entries = [{fr,h}] : refs durables (recette 3 re-résout les refs sur la forme
+  // convertie — les handles de `result` n'y sont pas valables) + handles résolus.
+  const Arc=occt.GeomAbs_JoinType.GeomAbs_Arc;
+  const I=occt.GeomAbs_JoinType.GeomAbs_Intersection;
+  const essai=(shape,faces,join,inter)=>{
+    const out=occCoqueThick(shape,faces,thick,join,inter);
+    if(!occCoqueEvidage(result,out,thick)){try{out.delete();}catch(e){}return null;}
+    if(occCoqueValide(out))return out;
+    const fix=occCoqueRepare(out);
+    if(fix&&occCoqueValide(fix)&&occCoqueEvidage(result,fix,thick)){
+      try{out.delete();}catch(e){}
+      return fix;
+    }
+    try{if(fix)fix.delete();}catch(e){}
+    return out;
+  };
+  const hs=entries.map(e=>e.h).filter(Boolean);
+  let errA=null;
+  try{
+    const r=essai(result,hs,Arc,false);
+    if(r)return{shape:r};
+  }catch(e){errA=e;}
+  try{
+    const r=essai(result,hs,I,true);
+    if(r)return{shape:r};
+  }catch(e){if(!errA)errA=e;}
+  try{
+    if(occt.ShapeCustom&&occt.ShapeCustom.ConvertToBSpline){
+      const cv=occt.ShapeCustom.ConvertToBSpline(result,true,false,false,false);
+      if(cv&&!cv.IsNull()){
+        try{
+          const fc=[];
+          for(const e of entries){
+            try{const h=occFindFace(cv,e.fr);if(h)fc.push(h);}catch(e2){}
+          }
+          if(fc.length){
+            try{
+              const r=essai(cv,fc,Arc,false);
+              if(r)return{shape:r};
+            }finally{fc.forEach(g=>{try{g.delete();}catch(e2){}});}
+          }
+        }finally{try{cv.delete();}catch(e){}}
+      }else{try{if(cv)cv.delete();}catch(e){}}
+    }
+  }catch(e){if(!errA)errA=e;}
+  throw errA||new Error('évidage refusé par le moteur (paroi trop épaisse ? ouverture mal placée ?)');
 }
 function occApplyCoque(result,f){
   // Rejoue l'évidage. Retourne {shape,warnings} comme occApplyDraft/occApplyMoveFace.
@@ -368,29 +500,30 @@ function occApplyCoque(result,f){
   if(!(t>1e-9))return{shape:result,warnings:['épaisseur nulle — aucune coque']};
   if(!(f.faces||[]).length)return{shape:result,warnings:['aucune face à retirer (ouverture) — la coque resterait fermée et invisible']};
   const total=(f.faces||[]).length;
-  const got=(f.faces||[]).map(fr=>{try{return occFindFace(result,fr)||null;}catch(e){return null;}}).filter(Boolean);
-  const miss=total-got.length;
-  if(!got.length){
+  const entries=(f.faces||[]).map(fr=>{try{const h=occFindFace(result,fr);return h?{fr:fr,h:h}:null;}catch(e){return null;}}).filter(Boolean);
+  const miss=total-entries.length;
+  if(!entries.length){
     f._m={m:0,t:total};
     return{shape:result,warnings:[`aucune des ${total} face(s) à retirer n'est retrouvée — la pièce a changé`]};
   }
   if(miss)warnings.push(`${miss} face(s) à retirer introuvable(s) sur la pièce courante`);
-  f._m={m:got.length,t:total};
+  f._m={m:entries.length,t:total};
+  const freeHs=list=>list.forEach(e=>{try{if(e&&e.h)e.h.delete();}catch(e2){}});
   const run=list=>{
     if(!list.length)throw new Error('aucune face retrouvable');
-    return occCoqueOnce(result,list,t);
+    return occCoqueRecettes(result,list,t);
   };
   const dropShape=s=>{try{if(s&&s.shape)s.shape.delete();}catch(e){}};
   let r=null,echec=null;
-  try{r=run(got);}catch(e){echec=e;}
+  try{r=run(entries);}catch(e){echec=e;}
   if(!r){
     // Isolation : comme le dépouillage, on cherche quelles faces le moteur refuse.
     const garde=[];
-    for(const h of got){
-      try{const tst=run(garde.concat([h]));dropShape(tst);garde.push(h);}catch(e2){/* écartée */}
+    for(const e of entries){
+      try{const tst=run(garde.concat([e]));dropShape(tst);garde.push(e);}catch(e2){/* écartée */}
     }
     if(!garde.length){
-      got.forEach(g=>{try{g.delete();}catch(e){}});
+      freeHs(entries);
       const m=echec&&echec.message||echec;
       return{shape:result,warnings:[`coque impossible — ${m}. Essayez une paroi plus fine ou une autre face d'ouverture.`],fatal:true};
     }
@@ -404,14 +537,15 @@ function occApplyCoque(result,f){
     let out=s;
     try{out=occUnify(s);}catch(e){}
     if(out!==s){try{s.delete();}catch(e){}}
-    got.forEach(g=>{try{g.delete();}catch(e){}});
+    freeHs(entries);
     try{result.delete();}catch(e){}
     return{shape:out,warnings};
   }catch(e){
-    got.forEach(g=>{try{g.delete();}catch(e2){}});
+    freeHs(entries);
     return{shape:result,warnings:[`coque impossible (${(e&&e.message)||e})`],fatal:true};
   }
 }
+
 function occDiskPrism(sk,Cx,Cy,r,sp){
   // Pastille pleine (cercles isolés) : 2 demi-arcs -> wire -> face -> UN prisme.
   // sp = plage {lo,hi} (ou nombre pour compat) : cercle construit au plan décalé z0=lo,

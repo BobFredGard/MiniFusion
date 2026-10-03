@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**148 versions**, de `2026-09-28b` à `2026-10-02-017` — la plus récente en bas,
+**149 versions**, de `2026-09-28b` à `2026-10-02-018` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2703,3 +2703,13 @@ Correctif : repli sur `C0` pour TOUS les types d'entités (ligne/cercle : projec
 Tests : **nouvelle suite `tests/test_sk_offset_joints.cjs` enregistrée dans `tests/run.cjs` → `npm test` 47/47 vert**, **ROUGE vérifiée (7 échecs)** : comportement (arcs concentriques ouverts : 1 trou, 4 pids sans fusion ; cercle en 2 arcs fermé : 2 trous ; swap `jInfo`/`order` : joint contraint → 1 pid au lieu de 2 distincts liés, joint fusionné → 2 pids au lieu d'1) + non-régression (résidu nul après règlement sur les 3 cas, suite `test_sk_offset_contraintes` inchangée). `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-02-017.html`.
 
 README : tests → 47 suites.
+
+### `2026-10-02-018`
+
+Coque : « l'outil coque ne fonctionne pas bien tout le temps » — sur un document réel de l'utilisateur (extrusion 20 mm à dépouille −15° avec flip + congé exact R6, coque 1 mm ouvrant le dessus), `MakeThickSolid` avec `join=Arc` renvoie **IsDone=true SANS évidage** : le dessus reste en place, une face parasite (`OffsetSurface`) explose la boîte englobante hors gabarit (z −32,6 au lieu de −20) et le volume monte à 106 % de la base — aucun avertissement remonté, d'où le « parfois ça marche ». La même recette sur une boîte ou sans dépouille fonctionne parfaitement (elle ne doit donc pas être remplacée, mais doublée).
+
+Correctif : chaîne de recettes **validées avant acceptation** — `occCoqueRecettes`, appelée par le rejeu (`occApplyCoque`) ET l'aperçu vert (`coquePreviewUpdate`, qui affichait lui aussi le junk) : (1) Arc direct — cas simples inchangés ; (2) `join=Intersection` — dépouille simple sans congé ; (3) `ShapeCustom.ConvertToBSpline(extr)` + Arc — les arcs d'offset non maniables sur les surfaces de dépouille deviennent calculables — puis `ShapeFix_Shape` si la topologie ressort invalide (3 faces/35 sans le fix). Chaque tentative passe `occCoqueEvidage` : bbox `AddOptimal` dans le gabarit base ±(2+2×paroi), ≥ +2 faces (parois internes + rebord), volume < 0,5×base — qui rejette le junk (106 %) et l'évidage partiel (72 %) et accepte le vrai évidage (9 %) ; une tentative rejetée n'est jamais retournée. Les refs durables des faces d'ouverture sont re-résolues sur la forme convertie (les handles de la base n'y sont pas valables).
+
+Tests : **nouvelle suite `tests/test_coque_depouille.cjs` enregistrée dans `tests/run.cjs` → `npm test` 48/48 vert**, **ROUGE vérifiée (10 échecs)** sur `tests/fixtures/coque.json` (document réel), 3 configurations : A dépouille+congé (junk : 19f au lieu de 35, vol 146 736 > 0,5×base, bbox hors gabarit, anneau 7 914 mm² non ouvert, 1 face non maillable), B dépouille seule (idem), D sans dépouille (vert d'entrée = non-régression de la recette directe) ; puis VERT : A → 35f/11 958/anneau 352/valide/mailable, B → 19f/12 445, D inchangé, `_m=1/1` partout. Non-régressions `test_coque_sel` + `test_repeat_session` ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-02-018.html`.
+
+README : tests → 48 suites.

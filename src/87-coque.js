@@ -159,11 +159,13 @@ function coquePreviewUpdate(){
     if(coqueMode._prevSig===sig)return;
     coqueMode._prevSig=sig;
     const got=[];
-    faces.forEach(r=>{try{const h=occFindFace(occLive.shape,r);if(h)got.push(h);}catch(e){}});
+    faces.forEach(r=>{try{const h=occFindFace(occLive.shape,r);if(h)got.push({fr:r,h:h});}catch(e){}});
     if(!got.length){coquePreviewRemove();return;}
     let r=null;
-    try{r=occCoqueOnce(occLive.shape,got,t);}
-    finally{got.forEach(g=>{try{g.delete();}catch(e){}});}
+    // Chaîne de recettes + validation (même cœur que le rejeu) : l'aperçu vert
+    // doit montrer le VRAI évidage, pas le junk « IsDone=true » des dépouilles.
+    try{r=occCoqueRecettes(occLive.shape,got,t);}
+    finally{got.forEach(g=>{try{g.h.delete();}catch(e){}});}
     if(!r||!r.shape){coquePreviewRemove();return;}
     const sh=r.shape;
     let g=null;
