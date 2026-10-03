@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**141 versions**, de `2026-09-28b` à `2026-10-02-010` — la plus récente en bas,
+**142 versions**, de `2026-09-28b` à `2026-10-02-011` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2625,3 +2625,15 @@ Tests : **nouvelle suite `tests/test_prodver_badge.cjs` enregistrée dans `tests
 `build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-010.html`.
 
 README : tests → 40 suites.
+
+### `2026-10-02-011`
+
+Cache de rejeu — filet de signature dans `featSig` (`src/20`) : la fonction ENTIÈRE entre dans la signature de préfixe (`JSON.stringify` d'une copie filtrée). Toute propriété, connue ou future, invalide le suffixe dès qu'elle bouge — donc jamais de solide périmé réutilisé si un champ se rajoute au moteur (la lacune qui avait fait basculer le défaut sur le rejeu complet le 2026-09-30a). Exclus de la sérialisation : `_mesh` et `_m` (état dérivé non géométrique, `_mesh` étant une référence THREE non sérialisable), `name` et `open` (affichage pur : replier un nœud ou renommer ne change pas le solide et invaliderait tout).
+
+Préparation du lot suivant : ce filet est le prérequis pour re-basculer le défaut sur le rejeu rapide (`freshHard=false`) sans risque de géométrie périmée — l'égalité rapide/complet est désormais prouvée.
+
+Tests : **nouvelle suite `tests/test_cache_exact.cjs` enregistrée dans `tests/run.cjs` → `npm test` 41/41 vert**, **ROUGE vérifiée (2 échecs)** : structure (copie filtrée `for(const k in f)` + `JSON.stringify` et les 4 exclusions dans `featSig`) + comportement au noyau OCCT réel — 5 scénarios (distance/flip/congé 2D en fin de timeline, poche « à travers tout » en milieu, distance en tête), référence complète vs rejeu rapide : topologies strictement égales (faces/arêtes/sommets/solides/boîte englobante), réutilisation du préfixe prouvée pendant le rebuild rapide en fin de timeline (≥1 hit) et invalidation totale en tête/milieu (0 hit — sinon un solide périmé serait réutilisé).
+
+`build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-011.html`.
+
+README : tests → 41 suites.

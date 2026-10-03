@@ -1880,6 +1880,14 @@ function featSig(f){
   }else if(f.type==='repeat'){
     s+='|'+(f.base||[]).join(',')+'|'+(+f.copies||1)+'|'+(+f.dist||0)+'|'+(+f.angle||0)+'|'+(f.axis||f.plane||'')+'|'+JSON.stringify(f.planeN||null)+'|'+(f.plane2||'')+'|'+JSON.stringify(f.planeN2||null);
   }
+  // Filet (2026-10-02-011) : la fonction ENTIÈRE entre dans la signature — toute
+  // propriété, connue ou future, invalide le suffixe dès qu'elle bouge, donc jamais
+  // de solide périmé réutilisé si un champ se rajoute au moteur. Exclus :
+  // _mesh/_m (état dérivé vivant, non géométrique — _mesh est une référence THREE
+  // non sérialisable), name/open (affichage pur : replier un nœud ou renommer ne
+  // change pas le solide et invaliderait tout).
+  const jf={};for(const k in f){if(k==='name'||k==='open'||k==='_m'||k==='_mesh')continue;jf[k]=f[k];}
+  s+='|j'+JSON.stringify(jf);
   return s;
 }
 function occCkGet(key){

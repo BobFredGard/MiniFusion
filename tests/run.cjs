@@ -41,7 +41,8 @@ const SUITES = [
   "test_validate",
   "test_tree_filter",
   "test_view_reframe",
-  "test_prodver_badge"
+  "test_prodver_badge",
+  "test_cache_exact"
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {
