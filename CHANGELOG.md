@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**147 versions**, de `2026-09-28b` à `2026-10-02-016` — la plus récente en bas,
+**148 versions**, de `2026-09-28b` à `2026-10-02-017` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2693,3 +2693,13 @@ Correctif : `if(aF&&bF)return;` sur les passes `h` et `v` — l'ancre du glisser
 Tests : **nouvelle suite `tests/test_sk_hv_drag.cjs` enregistrée dans `tests/run.cjs` → `npm test` 46/46 vert**, **ROUGE vérifiée (8 échecs)** : glisser de point sur ligne h ancrée à O (déformé de 7,5 pendant ET après), glisser d'entité sur rectangle à O (a.y=-5, c.x=10 au milieu du glisser, retour au relâcher), point fixé par contrainte emmené (f.y=7,5 persistant) ; non-régression : ligne libre (extrémité libre suit l'ancre), rectangle re-serré après relâcher, O intact partout. `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-02-016.html`.
 
 README : tests → 46 suites.
+
+### `2026-10-02-017`
+
+Décalage (offset) : « le décalage garde bien les tangences mais pas les coïncidences » — symptôme confirmé au questionnaire : **trous aux joints**. Enquête (`skOffsetApply`) : quand l'intersection des courbes DÉCALÉES est introuvable, chaque entité créait SON PROPRE point (`jointsBad` + `solo`, aucun pid partagé, aucune contrainte) → les bouts des copies ne sont plus liés et s'écartent au règlement suivant. Deux causes. (1) `circleCircleInt` renvoie `[]` dès que les centres sont confondus → un cercle dessiné en 2 ARCS concentriques est TOUJOURS non raccordé (1 trou en chaîne ouverte, 2 sur un cercle fermé), et `lineCircleInt` n'avait pas — contrairement à la ligne/ligne — de repli sur le point source `C0` (courbes décalées disjoints pour un angle aigu et un gros décalage). (2) `jInfo` (joint fusionné vs contrainte coincident de la source) était calculé sur `ch.order` pendant que l'inversion d'ordre (clic côté `S` fourni par l'UI, chaîne ouverte) réorientait `order` : les flags tombaient sur le MAUVAIS joint — la coincident n'était pas recréée là où elle était (ou l'était là où elle n'était pas).
+
+Correctif : repli sur `C0` pour TOUS les types d'entités (ligne/cercle : projection du point source sur la droite décalée + point du cercle décalé à l'angle du joint, milieu ; cercle/cercle : rayons décalés à l'angle du joint, milieu) — le joint est TOUJOURS un pid partagé, fusion structurelle in-ouvrable, `jointsBad` ne subsiste que si `C0` est absent (jamais pour un vrai joint) ; et `jInfo` est calculé sur `order` après inversion, les tangences forcées de la source sont recréées au bon endroit.
+
+Tests : **nouvelle suite `tests/test_sk_offset_joints.cjs` enregistrée dans `tests/run.cjs` → `npm test` 47/47 vert**, **ROUGE vérifiée (7 échecs)** : comportement (arcs concentriques ouverts : 1 trou, 4 pids sans fusion ; cercle en 2 arcs fermé : 2 trous ; swap `jInfo`/`order` : joint contraint → 1 pid au lieu de 2 distincts liés, joint fusionné → 2 pids au lieu d'1) + non-régression (résidu nul après règlement sur les 3 cas, suite `test_sk_offset_contraintes` inchangée). `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-02-017.html`.
+
+README : tests → 47 suites.

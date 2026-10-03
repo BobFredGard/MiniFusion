@@ -44,6 +44,7 @@ const SUITES = [
   "test_prodver_badge",
   "test_cache_exact",
   "test_sk_offset_contraintes",
+  "test_sk_offset_joints",
   "test_fresh_default",
   "test_hard_phases",
   "test_sk_origin",

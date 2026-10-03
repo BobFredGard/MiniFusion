@@ -1832,9 +1832,9 @@ function skOffsetApply(sk,ids,D,S){
       }
       s=1;
     }
-    const jInfo=ch.order.map((o,i)=>{ // joint : pid fusionné (forced=false) OU contrainte coincident (forced=true)
+    const jInfo=order.map((o,i)=>{ // joint : pid fusionné (forced=false) OU contrainte coincident (forced=true)
       if(i===n-1&&!ch.closed)return null;
-      const nx=ch.order[(i+1)%n];
+      const nx=order[(i+1)%n];
       const la=skEdgeEnds(o.e,o.fwd),lb=skEdgeEnds(nx.e,nx.fwd);
       for(const p of la)for(const q of lb)if(p===q)return{pid:p,forced:false};
       for(const p of la)for(const q of lb)if(skSameEnd(sk,p,q))return{pid:p,forced:true};
@@ -1869,11 +1869,23 @@ function skOffsetApply(sk,ids,D,S){
       }else if(oi.o.e.t==='line'||oj.o.e.t==='line'){
         const li=oi.o.e.t==='line'?oi:oj,ci=oi.o.e.t==='line'?oj:oi;
         const a=lineOf(li);
-        const hit=near(lineCircleInt(a.P,a.D,ci.C,ci.r),C0||{x:0,y:0});
-        M=hit;
+        M=near(lineCircleInt(a.P,a.D,ci.C,ci.r),C0||{x:0,y:0});
+        if(!M&&C0){ // droite/cercle décalés disjoints (angle + gros décalage) → point commun approché, JAMAIS de trou
+          const dx=li.B.x-li.A.x,dy=li.B.y-li.A.y,L=dx*dx+dy*dy||1e-12;
+          const t=((C0.x-li.A.x)*dx+(C0.y-li.A.y)*dy)/L;
+          const pL={x:li.A.x+dx*t,y:li.A.y+dy*t};
+          const vx=C0.x-ci.C.x,vy=C0.y-ci.C.y,V=Math.hypot(vx,vy)||1e-12;
+          const pC={x:ci.C.x+vx/V*ci.r,y:ci.C.y+vy/V*ci.r};
+          M={x:(pL.x+pC.x)/2,y:(pL.y+pC.y)/2};
+        }
       }else{
-        const hit=near(circleCircleInt(oi.C,oi.r,oj.C,oj.r),C0||{x:0,y:0});
-        M=hit;
+        M=near(circleCircleInt(oi.C,oi.r,oj.C,oj.r),C0||{x:0,y:0});
+        if(!M&&C0){ // centres confondus (cercle dessiné en arcs concentriques) → les rayons décalés à l'angle du joint, JAMAIS de trou
+          const vx=C0.x-oi.C.x,vy=C0.y-oi.C.y,V=Math.hypot(vx,vy)||1e-12;
+          const p1={x:oi.C.x+vx/V*oi.r,y:oi.C.y+vy/V*oi.r};
+          const p2={x:oj.C.x+vx/V*oj.r,y:oj.C.y+vy/V*oj.r};
+          M={x:(p1.x+p2.x)/2,y:(p1.y+p2.y)/2};
+        }
       }
       if(!M){jointsBad++;newEnds[i]={solo:true};continue;}
       if(J0&&J0.forced){ // source contrainte : deux points DISTINCTS au joint, liés par coincident
