@@ -1,5 +1,6 @@
 /* ---------- esquisse 2D ---------- */
 let skEdit=null, skAnteriorGhost=null;
+let skTreeFoldSave=null; // arborescence : état avant l'ouverture (null = rien à restaurer)
 function newSketch(preset){
   const isPlane=p=>typeof p==='string'&&['XY','XZ','YZ'].includes(p.toUpperCase());
   let pl=isPlane(preset)?preset.toUpperCase():((sel.kind==='plane'&&isPlane(sel.id))?sel.id:null);
@@ -514,6 +515,10 @@ function openSketch(id){
   $('skTitle').textContent='Esquisse — '+skEdit.name+' (plan '+sketchFaceLabel(skEdit)+')';
   $('sketchOverlay').classList.add('open');exitFilletMode(true);skRefreshHealth();skFitView();sketchAlignCamera();renderSkPanel();skUndoBtn();
   try{$('skStatWrap').style.display='block';}catch(e){}
+  // Arborescence (menu des corps) RABATTUE pendant l'édition : le voile de
+  // l'esquisse la laisse transparaître et encombre le plan de travail.
+  // Restaurée à la sortie — état antérieur respecté (nesting = sans effet).
+  try{if(skTreeFoldSave===null)skTreeFoldSave=treeFolded;if(!treeFolded)treeFoldSet(true);}catch(e){}
 }
 function closeSketch(save){
   $('sketchOverlay').classList.remove('open');
@@ -534,6 +539,9 @@ function closeSketch(save){
   if(save&&skEdit){solveSketch(skEdit);cleanupSk(skEdit);repSyncForSketch(skEdit.id);markDirty();rebuild();projRefreshRerun(0);sel={kind:'sketch',id:skEdit.id};renderTree();renderProps();}
   else if(skEdit){markDirty();try{rebuild();}catch(e){}renderTree();renderProps();}
   skEdit=null;skSel=null;skSelX=[];skChain=null;skArcC=null;skArcPa=null;skDraft=null;skDown=null;skDrag=null;skDimDrag=null;skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
+  // Arborescence re-dépliée à la sortie, sauf si l'état antérieur était
+  // rabattu (choix manuel de l'utilisateur conservé).
+  try{if(skTreeFoldSave===false)treeFoldSet(false);skTreeFoldSave=null;}catch(e){}
 }
 const svg=$('skSvg');
 const NS='http://www.w3.org/2000/svg';

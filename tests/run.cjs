@@ -22,6 +22,7 @@ const SUITES = [
   "test_revolve",
   "test_skctxmenu",
   "test_esquisse_transparence",
+  "test_esquisse_arbre_rabat",
   "test_esquisse_projection",
   "test_esquisse_contraintes",
   "test_fao",

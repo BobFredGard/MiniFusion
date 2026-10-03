@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**150 versions**, de `2026-09-28b` à `2026-10-02-019` — la plus récente en bas,
+**151 versions**, de `2026-09-28b` à `2026-10-02-020` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2723,3 +2723,13 @@ Correctif : joint **géométrique** (superposition < 1e-6) ajouté à pid/coinci
 Tests : **nouvelle suite `tests/test_sk_offset_projetee.cjs` enregistrée dans `tests/run.cjs` → `npm test` 49/49 vert**, **ROUGE vérifiée (6 échecs)** sur `tests/fixtures/décalage.json` (document réel) : A chaînage (8 chaînes singleton au lieu d'1 boucle fermée de 8), B décalage frais côté intérieur (pids=16 partages=0), C rejeu `S=null` « décaler auto » (idem) ; VERT après correctif : 1 chaîne fermée de 8, 8 pids partagés dans les deux sens de côté, rayons 6,128/13,872, cotes gap 3,872, résidu nul, aucun bout |coord|>100 mm. Non-régressions `test_sk_offset_joints` + `test_sk_offset_contraintes` ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-02-019.html`.
 
 README : tests → 49 suites.
+
+### `2026-10-02-020`
+
+Esquisse : en mode édition, l'arborescence (menu des corps / fonctions) reste visible derrière le voile translucide de l'esquisse (rgba .72) et encombre le plan de travail — elle doit se rabattre à l'entrée et redevient visible à la sortie.
+
+Correctif : à l'entrée (`openSketch`) l'arborescence se RABAT automatiquement ; à la sortie (`closeSketch`) elle redevient visible. État porté par un helper partagé `treeFoldSet`/`treeFolded` (source de vérité unique : classe `folded` du wrap, libellé ❯/❮ et titre de l'onglet) — l'état antérieur est mémorisé (`skTreeFoldSave`) : si l'arborescence était déjà rabattue avant l'entrée elle reste rabattue à la sortie (choix manuel conservé), et un dépliage manuel PENDANT l'édition est respecté (nesting sans effet). Le repli automatique n'écrit jamais dans `localStorage` : seul le clic sur l'onglet persiste l'état (`minifusion_treeFolded`).
+
+Tests : **nouvelle suite `tests/test_esquisse_arbre_rabat.cjs` enregistrée dans `tests/run.cjs` → `npm test` 50/50 vert**, **ROUGE vérifiée (8 échecs)** : A1/A2 (repli à l'entrée, visible à la sortie), B0/B1/B2 (état antérieur rabattu respecté des deux côtés), C0 (repli), C3 (persistance du clic manuel), D0 (repli) ; VERT après correctif sur les 4 scénarios (entrée/sortie, antériorité, localStorage non écrit par l'entrée/sortie, choix manuel en cours conservé). Non-régressions arbre/esquisse (`test_arbre_selection`, `test_tree_filter`, `test_esquisse_transparence`, `test_fao*`) au run complet ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-02-020.html`.
+
+README : tests → 50 suites.

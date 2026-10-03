@@ -129,14 +129,24 @@ try{if($('optEdges')){$('optEdges').value=edgeMode;$('optEdges').onchange=()=>{e
 $('clipOn').onchange=applyClip;$('clipPos').oninput=applyClip;$('clipFlip').onchange=applyClip;
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>setView(b.dataset.view));
 // --- arborescence dans la vue 3D : onglet de repli + menu réglages ---
-(function(){
+// État de l'arborescence : source de vérité partagée (openSketch/closeSketch la
+// rabattent en mode esquisse puis la re rendent visible à la sortie).
+let treeFolded=false;
+function treeFoldSet(f){ // replier/déplier SANS toucher à localStorage (clic manuel = persistance)
+  treeFolded=!!f;
   const wrap=$('treeWrap'),tog=$('treeToggle');
-  if(wrap&&tog){
-    const fold=()=>{wrap.classList.toggle('folded');tog.textContent=wrap.classList.contains('folded')?'❮':'❯';
-      tog.title=wrap.classList.contains('folded')?'Déplier l’arborescence':'Replier l’arborescence';};
-    tog.onclick=fold;
-    try{if(localStorage.getItem('minifusion_treeFolded')==='1')fold();}catch(e){}
-    tog.addEventListener('click',()=>{try{localStorage.setItem('minifusion_treeFolded',wrap.classList.contains('folded')?'1':'0');}catch(e){}});
+  if(!wrap||!tog)return;
+  if(treeFolded)wrap.classList.add('folded');else wrap.classList.remove('folded');
+  tog.textContent=treeFolded?'❮':'❯';
+  tog.title=treeFolded?'Déplier l’arborescence':'Replier l’arborescence';
+}
+(function(){
+  const tog=$('treeToggle');
+  if(tog){
+    treeFoldSet(false); // état par défaut : déplié
+    try{if(localStorage.getItem('minifusion_treeFolded')==='1')treeFoldSet(true);}catch(e){}
+    tog.onclick=()=>{treeFoldSet(!treeFolded);
+      try{localStorage.setItem('minifusion_treeFolded',treeFolded?'1':'0');}catch(e){}};
   }
   const btn=$('btnSettings'),menu=$('setMenu');
   if(btn&&menu){
