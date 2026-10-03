@@ -43,7 +43,8 @@ const SUITES = [
   "test_view_reframe",
   "test_prodver_badge",
   "test_cache_exact",
-  "test_sk_offset_contraintes"
+  "test_sk_offset_contraintes",
+  "test_fresh_default"
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {

@@ -1,7 +1,8 @@
 // 2026-10-02-011 : cache de rejeu par points de contrôle — le rejeu RAPIDE
 // (freshHard=false, checkpoints réutilisés) doit produire une topologie
 // STRICTEMENT IDENTIQUE au rejeu COMPLET (freshHard=true, purge avant chaque
-// rejeu). Le rapide est désactivé par défaut depuis 2026-09-30a : la signature
+// rejeu). Le rapide était désactivé par défaut de 2026-09-30a à -012 (réactivé
+// par défaut au lot 2026-10-02-013) : la signature
 // de préfixe (featSig) ne couvrait pas toutes les propriétés lues par la
 // géométrie et un changement pouvait laisser un solide périmé au titre de
 // « moins frais ». Filet : la fonction entière est sérialisée dans la

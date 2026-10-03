@@ -69,8 +69,9 @@ function addFeature(f){ // insertion au niveau du marqueur si actif (nouveautés
 }
 // « fraîcheur » : dur par DEFAUT — chaque modification reconstruit le modèle depuis zéro
 // (aucun sous-ensemble réutilisé). Passer à false active le rejeu rapide par points de contrôle.
-let freshHard=true;
-try{freshHard=localStorage.getItem('minifusion_freshHard')!=='0';}catch(e){}
+let freshHard=false; // défaut = REJEU RAPIDE (2026-10-02-013) : le filet featSig (-011)
+// prouve que le rapide est aussi juste que le complet ; la préférence ⚙ reste persistée.
+try{const _fh=localStorage.getItem('minifusion_freshHard');if(_fh!==null)freshHard=_fh==='1';}catch(e){}
 let rebuildDepth=0;
 function buildKeyUpToDate(){
   // Un affichage valide existe-t-il encore pour l'état courant du document ?

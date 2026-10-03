@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**143 versions**, de `2026-09-28b` à `2026-10-02-012` — la plus récente en bas,
+**144 versions**, de `2026-09-28b` à `2026-10-02-013` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2647,3 +2647,13 @@ Tests : **nouvelle suite `tests/test_sk_offset_contraintes.cjs` enregistrée dan
 `build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-012.html`.
 
 README : tests → 42 suites.
+
+### `2026-10-02-013`
+
+Rejeu rapide par défaut : le défaut de `freshHard` bascule de `true` (reconstruction complète à chaque modification, en vigueur depuis 2026-09-30a) à `false` — les points de contrôle du rejeu sont de nouveau conservés d'une reconstruction à l'autre, ~4× plus rapide sur les modifications de fin de timeline. La validité n'est plus conditionnée au mode : le filet de signature du lot -011 (`featSig` sérialise la fonction entière) invalide toute propriété qui bouge, y compris le profil des esquisses (`skSig`), et la suite `test_cache_exact` prouve l'égalité stricte rapide/complet au noyau réel. Lecture de préférence : `localStorage.minifusion_freshHard` via `==='1'` (absent = rapide ; l'ancien idiome `!=='0'` — défaut dur — disparaît), la case ⚙ « Rafraîchissement dur à chaque modification » reste persistée telle quelle avec ses messages et purge au basculement.
+
+Tests : **nouvelle suite `tests/test_fresh_default.cjs` enregistrée dans `tests/run.cjs` → `npm test` 43/43 vert**, **ROUGE vérifiée (5 échecs)** : structure (défaut littéral `freshHard=false`, idiome `!=='0'` disparu, lecture `==='1'`) + comportement (`freshHard===false` au chargement, `rebuild()` par défaut n'a pas jeté les points de contrôle, purge restaurée avec `freshHard=true`, bascule ⚙ avec persistance `0/1` et messages faceEl).
+
+`build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-013.html`.
+
+README : défaut de fraîcheur inversé (rejeu rapide par défaut) ; tests → 43 suites.
