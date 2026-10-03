@@ -686,6 +686,12 @@ function skSameEnd(sk,a,b){ // deux extrémités « jointes » : même point OU 
   if(a===b)return true;
   return !!a&&!!b&&skHasCoincident(sk,a,b);
 }
+function skJointSame(sk,a,b){ // joint de décalage : skSameEnd OU superposition géométrique (< 1e-6) — les projections créent leurs points DUPLICATA à chaque jonction (pids distincts, écarts ~2e-8, aucune contrainte)
+  if(skSameEnd(sk,a,b))return true;
+  if(!a||!b)return false;
+  const pa=sk.points[a],pb=sk.points[b];
+  return !!pa&&!!pb&&Math.hypot(pa.x-pb.x,pa.y-pb.y)<1e-6;
+}
 function skPerpImplied(sk,aId,bId){
   // ⟂ IMPLICITE par ─/│ : une droite H et une droite V sont perpendiculaires par
   // construction — ajouter ⟂ ne sert à rien (que du sur-contrainte et du bruit).
@@ -1772,7 +1778,7 @@ function skOffsetChains(sk,ids){
   const ends=e=>e.t==='line'?[e.p1,e.p2]:(e.t==='arc'?[e.pa,e.pb]:[]);
   const cand=(sk.entities||[]).filter(e=>set.has(e.id)&&(e.t==='line'||e.t==='arc')&&!e.ref);
   const used=new Set(),chains=[];
-  const hit=(e,p)=>ends(e).some(q=>skSameEnd(sk,q,p)); // joint par pid fusionné OU par contrainte coincident
+  const hit=(e,p)=>ends(e).some(q=>skJointSame(sk,q,p)); // joint par pid fusionné, contrainte coincident OU superposition géométrique
   while(true){
     const start=cand.find(e=>!used.has(e.id));
     if(!start)break;
@@ -1785,10 +1791,10 @@ function skOffsetChains(sk,ids){
     while(true){
       const nx=cand.find(e=>!used.has(e.id)&&hit(e,exit));
       if(!nx)break;
-      const fwd=skSameEnd(sk,ends(nx)[0],exit);
+      const fwd=skJointSame(sk,ends(nx)[0],exit);
       order.push({e:nx,fwd});used.add(nx.id);
       exit=ends(nx)[fwd?1:0];
-      if(skSameEnd(sk,exit,entry)){closed=true;break;}
+      if(skJointSame(sk,exit,entry)){closed=true;break;}
     }
     chains.push({order,closed});
   }
@@ -1838,6 +1844,7 @@ function skOffsetApply(sk,ids,D,S){
       const la=skEdgeEnds(o.e,o.fwd),lb=skEdgeEnds(nx.e,nx.fwd);
       for(const p of la)for(const q of lb)if(p===q)return{pid:p,forced:false};
       for(const p of la)for(const q of lb)if(skSameEnd(sk,p,q))return{pid:p,forced:true};
+      if(skJointSame(sk,la[1],lb[0]))return{pid:la[1],forced:false}; // jonction géométrique (projection) : C0 = extrémité sortante de la source, UN seul pid partagé sur les copies (fusion structurelle)
       return null;});
     const offLine=(A,B,s)=>{const n=skLeftNormal(A,B);return[{x:A.x+s*D*n.x,y:A.y+s*D*n.y},{x:B.x+s*D*n.x,y:B.y+s*D*n.y}];};
     const offs=[];let bad=false;

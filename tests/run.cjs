@@ -46,6 +46,7 @@ const SUITES = [
   "test_cache_exact",
   "test_sk_offset_contraintes",
   "test_sk_offset_joints",
+  "test_sk_offset_projetee",
   "test_fresh_default",
   "test_hard_phases",
   "test_sk_origin",

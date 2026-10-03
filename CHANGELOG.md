@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**149 versions**, de `2026-09-28b` à `2026-10-02-018` — la plus récente en bas,
+**150 versions**, de `2026-09-28b` à `2026-10-02-019` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2713,3 +2713,13 @@ Correctif : chaîne de recettes **validées avant acceptation** — `occCoqueRec
 Tests : **nouvelle suite `tests/test_coque_depouille.cjs` enregistrée dans `tests/run.cjs` → `npm test` 48/48 vert**, **ROUGE vérifiée (10 échecs)** sur `tests/fixtures/coque.json` (document réel), 3 configurations : A dépouille+congé (junk : 19f au lieu de 35, vol 146 736 > 0,5×base, bbox hors gabarit, anneau 7 914 mm² non ouvert, 1 face non maillable), B dépouille seule (idem), D sans dépouille (vert d'entrée = non-régression de la recette directe) ; puis VERT : A → 35f/11 958/anneau 352/valide/mailable, B → 19f/12 445, D inchangé, `_m=1/1` partout. Non-régressions `test_coque_sel` + `test_repeat_session` ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-02-018.html`.
 
 README : tests → 48 suites.
+
+### `2026-10-02-019`
+
+Décalage : sur « Esquisse 2 » (face) du document réel de l'utilisateur, les 8 copies du décalage **ne forment pas de boucle** : aucun pid partagé entre les copies (16 extrémités libres, trous structurels aux jonctions) — et le document sauvé garde en plus 3 bouts aberrants (±10⁴ mm) stables au règlement (résidu 2,66e-15 : dégâts d'une version antérieure, aucun chemin actuel ne produit de telles valeurs sur ce document, vérifié par rejeu frais). Cause : `skOffsetChains` ne relie les entités que par pid fusionné OU contrainte coincident — or une **projection** crée ses points DUPLICATA à chaque jonction (pids distincts, écarts ~2e-8, aucune contrainte) → 8 chaînes singleton ouvertes → aucune phase de joints → copies déconnectées.
+
+Correctif : joint **géométrique** (superposition < 1e-6) ajouté à pid/coincident dans tout le chaînage (`hit`, orientation, fermeture — helper `skJointSame`) + repli dans `jInfo` : `J0={pid: extrémité sortante de la source, forced:false}` sur les jonctions purement géométriques → les 8 joints des copies partagent UN pid (fusion structurelle, boucle in-ouvrable), avec C0 = position source saine pour l'intersection des courbes décalées ; la sémantique `forced` (recréer la coincident de la source) reste réservée aux vraies contraintes. Les vieilles copies aberrantes du document se réparent en les supprimant puis en redécalant (scénarios B/C du test).
+
+Tests : **nouvelle suite `tests/test_sk_offset_projetee.cjs` enregistrée dans `tests/run.cjs` → `npm test` 49/49 vert**, **ROUGE vérifiée (6 échecs)** sur `tests/fixtures/décalage.json` (document réel) : A chaînage (8 chaînes singleton au lieu d'1 boucle fermée de 8), B décalage frais côté intérieur (pids=16 partages=0), C rejeu `S=null` « décaler auto » (idem) ; VERT après correctif : 1 chaîne fermée de 8, 8 pids partagés dans les deux sens de côté, rayons 6,128/13,872, cotes gap 3,872, résidu nul, aucun bout |coord|>100 mm. Non-régressions `test_sk_offset_joints` + `test_sk_offset_contraintes` ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-02-019.html`.
+
+README : tests → 49 suites.
