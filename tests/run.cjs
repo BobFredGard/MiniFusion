@@ -42,7 +42,8 @@ const SUITES = [
   "test_tree_filter",
   "test_view_reframe",
   "test_prodver_badge",
-  "test_cache_exact"
+  "test_cache_exact",
+  "test_sk_offset_contraintes"
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {

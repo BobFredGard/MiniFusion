@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**142 versions**, de `2026-09-28b` à `2026-10-02-011` — la plus récente en bas,
+**143 versions**, de `2026-09-28b` à `2026-10-02-012` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2637,3 +2637,13 @@ Tests : **nouvelle suite `tests/test_cache_exact.cjs` enregistrée dans `tests/r
 `build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-011.html`.
 
 README : tests → 41 suites.
+
+### `2026-10-02-012`
+
+Esquisse → Décalage — quand la SOURCE est contrainte entre ses éléments, les copies reçoivent maintenant les mêmes liens ENTRE ELLES (contraintes explicites) : `skOffsetChains` détecte les joints créés par une contrainte `coincident` (aujourd'hui seuls les pids fusionnés faisaient chaîne — une source contrainte à points distincts n'était jamais raccordée, ses copies sortaient indépendantes) ; `skOffsetApply` recrée alors, sur les copies, l'état identique de la source : 2 points DISTINCTS positionnés au joint + contrainte `coincident` quand la source est liée ainsi, et contrainte `tangent` (copie-ligne ↔ copie-arc) quand la source ligne/arc était contrainte tangente. La source à pids fusionnés (non contrainte) garde son comportement : pids partagés, `parallel`+cotes `gap`, `radius` — aucune contrainte copie↔copie ajoutée. Nouveaux helpers `skHasCoincident`/`skHasTangent`/`skSameEnd` (pattern `skHasParallel`).
+
+Tests : **nouvelle suite `tests/test_sk_offset_contraintes.cjs` enregistrée dans `tests/run.cjs` → `npm test` 42/42 vert**, **ROUGE vérifiée (5 échecs)** : structure (détection `coincident` dans `skOffsetChains`, créations `coincident`/`tangent` dans `skOffsetApply`) + comportement (source contrainte → copie coincidente avec points distincts joints à (27,3) et résidu `skAudit` ≈ 0 ; source tangente → contrainte `tangent` sur les copies et résidu ≈ 0) + non-régression (source fusionnée sans contraintes ajoutées, source non tangente, cercle solo).
+
+`build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-012.html`.
+
+README : tests → 42 suites.

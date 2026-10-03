@@ -662,6 +662,12 @@ function cleanupSk(sk){
 function hasHV(sk,lineId,t){return (sk.constraints||[]).some(c=>c.type===t&&c.line===lineId);}
 function skHasPerp(sk,aId,bId){return (sk.constraints||[]).some(c=>c.type==='perpendicular'&&((c.a===aId&&c.b===bId)||(c.a===bId&&c.b===aId)));}
 function skHasParallel(sk,aId,bId){return (sk.constraints||[]).some(c=>c.type==='parallel'&&((c.a===aId&&c.b===bId)||(c.a===bId&&c.b===aId)));}
+function skHasCoincident(sk,pa,pb){return (sk.constraints||[]).some(c=>c.type==='coincident'&&((c.a===pa&&c.b===pb)||(c.a===pb&&c.b===pa)));}
+function skHasTangent(sk,l,e){return (sk.constraints||[]).some(c=>c.type==='tangent'&&((c.line===l&&c.ent===e)||(c.line===e&&c.ent===l)));}
+function skSameEnd(sk,a,b){ // deux extrémités « jointes » : même point OU liées par une contrainte coincident
+  if(a===b)return true;
+  return !!a&&!!b&&skHasCoincident(sk,a,b);
+}
 function skPerpImplied(sk,aId,bId){
   // ⟂ IMPLICITE par ─/│ : une droite H et une droite V sont perpendiculaires par
   // construction — ajouter ⟂ ne sert à rien (que du sur-contrainte et du bruit).
@@ -1740,22 +1746,23 @@ function skOffsetChains(sk,ids){
   const ends=e=>e.t==='line'?[e.p1,e.p2]:(e.t==='arc'?[e.pa,e.pb]:[]);
   const cand=(sk.entities||[]).filter(e=>set.has(e.id)&&(e.t==='line'||e.t==='arc')&&!e.ref);
   const used=new Set(),chains=[];
+  const hit=(e,p)=>ends(e).some(q=>skSameEnd(sk,q,p)); // joint par pid fusionné OU par contrainte coincident
   while(true){
     const start=cand.find(e=>!used.has(e.id));
     if(!start)break;
-    const deg=p=>cand.filter(e=>!used.has(e.id)&&ends(e).includes(p)).length;
+    const deg=p=>cand.filter(e=>!used.has(e.id)&&hit(e,p)).length;
     const[ss1,ss2]=ends(start);
     let entry=deg(ss1)<=1?ss1:ss2;
     const order=[{e:start,fwd:ends(start)[0]===entry}];
     used.add(start.id);
     let exit=ends(start)[order[0].fwd?1:0],closed=false;
     while(true){
-      const nx=cand.find(e=>!used.has(e.id)&&ends(e).includes(exit));
+      const nx=cand.find(e=>!used.has(e.id)&&hit(e,exit));
       if(!nx)break;
-      const fwd=ends(nx)[0]===exit;
+      const fwd=skSameEnd(sk,ends(nx)[0],exit);
       order.push({e:nx,fwd});used.add(nx.id);
       exit=ends(nx)[fwd?1:0];
-      if(exit===entry){closed=true;break;}
+      if(skSameEnd(sk,exit,entry)){closed=true;break;}
     }
     chains.push({order,closed});
   }
@@ -1799,9 +1806,13 @@ function skOffsetApply(sk,ids,D,S){
       }
       s=1;
     }
-    const joints=ch.order.map((o,i)=>{const nx=ch.order[(i+1)%n];if(i===n-1&&!ch.closed)return null;
-      const a=new Set(skEdgeEnds(o.e,o.fwd)),b=new Set(skEdgeEnds(nx.e,nx.fwd));
-      for(const p of a)if(b.has(p))return p;return null;});
+    const jInfo=ch.order.map((o,i)=>{ // joint : pid fusionné (forced=false) OU contrainte coincident (forced=true)
+      if(i===n-1&&!ch.closed)return null;
+      const nx=ch.order[(i+1)%n];
+      const la=skEdgeEnds(o.e,o.fwd),lb=skEdgeEnds(nx.e,nx.fwd);
+      for(const p of la)for(const q of lb)if(p===q)return{pid:p,forced:false};
+      for(const p of la)for(const q of lb)if(skSameEnd(sk,p,q))return{pid:p,forced:true};
+      return null;});
     const offLine=(A,B,s)=>{const n=skLeftNormal(A,B);return[{x:A.x+s*D*n.x,y:A.y+s*D*n.y},{x:B.x+s*D*n.x,y:B.y+s*D*n.y}];};
     const offs=[];let bad=false;
     for(const o of order){
@@ -1821,7 +1832,7 @@ function skOffsetApply(sk,ids,D,S){
     const newEnds=new Array(n);
     for(let i=0;i<n;i++){
       if(i===n-1&&!ch.closed)break;
-      const nx=(i+1)%n,C0=P[joints[i]];
+      const nx=(i+1)%n,J0=jInfo[i],C0=J0?P[J0.pid]:null;
       const oi=offs[i],oj=offs[nx];
       let M=null;
       const lineOf=o=>{const d={x:o.B.x-o.A.x,y:o.B.y-o.A.y},L=Math.hypot(d.x,d.y)||1e-9;return{P:o.A,D:{x:d.x/L,y:d.y/L}};};
@@ -1839,16 +1850,29 @@ function skOffsetApply(sk,ids,D,S){
         M=hit;
       }
       if(!M){jointsBad++;newEnds[i]={solo:true};continue;}
-      const pid=addPoint(sk,M.x,M.y);
-      newEnds[i]={pid};
+      if(J0&&J0.forced){ // source contrainte : deux points DISTINCTS au joint, liés par coincident
+        newEnds[i]={pid:addPoint(sk,M.x,M.y),pid2:addPoint(sk,M.x,M.y),forced:true};
+      }else{
+        newEnds[i]={pid:addPoint(sk,M.x,M.y)};
+      }
     }
+    const copyIds=new Array(n);
     for(let i=0;i<n;i++){
       const o=order[i],off=offs[i];
       const prevJ=ch.closed?newEnds[(i-1+n)%n]:(i===0?null:newEnds[i-1]);
       const nextJ=ch.closed?newEnds[i]:(i===n-1?null:newEnds[i]);
       const endFor=(side,endOff)=>{
         const J=side==='prev'?prevJ:nextJ;
-        if(J&&J.pid)return J.pid;
+        if(J&&J.pid){
+          if(side==='prev'){
+            // le côté « prev » porte le second point du couple : la contrainte
+            // coincident de la source est recréée sur les copies (état identique)
+            if(J.forced&&J.pid2&&!skHasCoincident(sk,J.pid,J.pid2))
+              sk.constraints.push({id:skNewEid(sk),type:'coincident',a:J.pid,b:J.pid2});
+            return J.pid2||J.pid;
+          }
+          return J.pid;
+        }
         return addPoint(sk,endOff.x,endOff.y);
       };
       if(o.e.t==='line'){
@@ -1859,6 +1883,7 @@ function skOffsetApply(sk,ids,D,S){
         if(!skHasParallel(sk,o.e.id,nid))sk.constraints.push({id:skNewEid(sk),type:'parallel',a:o.e.id,b:nid});
         sk.dims.push({id:skNewEid(sk),type:'gap',a:o.e.id,b:nid,value:+D.toFixed(3),ox:0,oy:0});
         copies.push(nid);
+        copyIds[i]=nid;
       }else{
         const pA=endFor('prev',{x:off.C.x,y:off.C.y}),pB=endFor('next',{x:off.C.x,y:off.C.y});
         const angOf=pt=>Math.atan2(pt.y-off.C.y,pt.x-off.C.x);
@@ -1879,7 +1904,21 @@ function skOffsetApply(sk,ids,D,S){
         sk.entities.push(cp);
         sk.dims.push({id:skNewEid(sk),type:'radius',ent:nid,value:+off.r.toFixed(3),ox:0,oy:0});
         copies.push(nid);
+        copyIds[i]=nid;
       }
+    }
+    // Tangence de la source recréée entre les copies : si ligne et arc étaient
+    // contraints tangents, leurs copies le sont aussi (le décalage préserve la
+    // tangence géométriquement — la contrainte la maintient ensuite).
+    for(let i=0;i<n;i++){
+      if(!jInfo[i])continue;
+      const ea=order[i].e,eb=order[(i+1)%n].e;
+      if(!((ea.t==='line'&&eb.t==='arc')||(ea.t==='arc'&&eb.t==='line')))continue;
+      const lid=(ea.t==='line')?copyIds[i]:copyIds[(i+1)%n];
+      const eid=(ea.t==='arc')?copyIds[i]:copyIds[(i+1)%n];
+      if(!lid||!eid)continue;
+      if(skHasTangent(sk,ea.id,eb.id)&&!skHasTangent(sk,lid,eid))
+        sk.constraints.push({id:skNewEid(sk),type:'tangent',line:lid,ent:eid});
     }
     doneChains++;
   }
