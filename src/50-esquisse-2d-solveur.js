@@ -586,7 +586,25 @@ let skProjectHover=null; // ⧉ : arête projetable sous le curseur (preview ora
 /* ----- modèle points partagés (coïncidence structurelle) ----- */
 function skPts(sk){return sk.points||(sk.points={});}
 const SK_ORIGIN='O'; // point d'origine permanent (0,0) — toujours fixe, jamais supprimé ni GC
-function ensureOrigin(sk){if(!sk)return;const P=skPts(sk);if(!P[SK_ORIGIN])P[SK_ORIGIN]={x:0,y:0};}
+function ensureOrigin(sk){
+  if(!sk)return;
+  const P=skPts(sk);
+  const O=P[SK_ORIGIN];
+  if(!O){
+    // Esquisse corrompue SANS origine : si UN point est déjà pile en (0,0), c'est l'ancien
+    // faux-origine qui porte les droites dessinées « en 0 ». On le PROMOUVOIT en origine
+    // (fusion des références, y compris ancrages de congé) plutôt que de créer un doublon
+    // invisible à côté : l'origine garde son rôle, les attaches des lignes suivent.
+    // Jamais un point FIXÉ (arête projetée calée en 0,0 : sa place lui appartient).
+    const busy=new Set([skChain,skArcC,skCoinA,skPendPt,skDrag,skDown&&skDown.pid].filter(Boolean));
+    const fk=skFixed(sk);
+    const cand=Object.keys(P).find(pid=>!busy.has(pid)&&!fk.has(pid)&&Math.abs(P[pid].x)<=1e-6&&Math.abs(P[pid].y)<=1e-6);
+    P[SK_ORIGIN]={x:0,y:0};
+    if(cand&&cand!==SK_ORIGIN)mergePoints(sk,cand,SK_ORIGIN);
+  }else if(O.x!==0||O.y!==0){
+    O.x=0;O.y=0; // l'origine est (0,0) par définition : aucun réglage ne doit l'emmener
+  }
+}
 function skNewPid(sk){sk.seq=sk.seq||1;return 'p'+(sk.seq++);}
 function skNewEid(sk){sk.seq=sk.seq||1;return 'e'+(sk.seq++);}
 function addPoint(sk,x,y){const id=skNewPid(sk);skPts(sk)[id]={x,y};return id;}
@@ -1349,6 +1367,7 @@ function skSolveFinal(sk,anchor){
    bien posés ; la relaxation conserve les cas qu'elle résolvait déjà (sous/pluridéterminés). */
 function solveSketch(sk,iters,anchor){
   if(!sk||!sk.points)return;iters=iters||120;
+  ensureOrigin(sk); // origine clouée (0,0) AVANT tout essai : réglage autour du vrai repère
   const base=skSnapCoords(sk); // état de départ (avant tout essai)
   let lsSnap=null; // coordonnées atteintes par le LM
   let lsRes=Infinity;
@@ -1392,6 +1411,8 @@ function solveSketch(sk,iters,anchor){
       if(!(rB<rA-1e-9))skRestoreCoords(sk,snapA); // pas de gain → on garde l'état ancré
     }
   }
+  const Of=(sk.points||{})[SK_ORIGIN];
+  if(Of&&(Of.x!==0||Of.y!==0)){Of.x=0;Of.y=0;} // filet de sortie : aucune passe n'emmène l'origine
 }
 /* resolveur linéaire : Cholesky A·x=b (A SPD en place) */
 function cholSolve(A,b,n){
@@ -1540,6 +1561,9 @@ function mergePoints(sk,fromPid,toPid){
   sk.entities.forEach(e=>{['p1','p2','p','pc','pa','pb'].forEach(k=>{if(e[k]===fromPid)e[k]=toPid;});});
   (sk.dims||[]).forEach(d=>{if(d.a===fromPid)d.a=toPid;if(d.b===fromPid)d.b=toPid;if(d.p===fromPid)d.p=toPid;});
   (sk.constraints||[]).forEach(c=>{if(c.p===fromPid)c.p=toPid;if(c.a===fromPid&&c.type==='coincident')c.a=toPid;if(c.b===fromPid&&c.type==='coincident')c.b=toPid;});
+  // ancrages de congé/chanfrein : une ancre type p visant le point fusionné doit suivre
+  (doc.features||[]).forEach(f=>{if(!f||f.type!=='xfillet'||!f.edges)return;
+    f.edges.forEach(en=>{const a=en&&en.anchor;if(a&&a.t==='p'&&a.sk===sk.id&&a.id===fromPid)a.id=toPid;});});
   delete sk.points[fromPid];return true;
 }
 function skCommitLine(sk,fromPid,snap,ex,ey,dimVal){

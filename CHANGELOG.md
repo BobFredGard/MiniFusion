@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**145 versions**, de `2026-09-28b` à `2026-10-02-014` — la plus récente en bas,
+**146 versions**, de `2026-09-28b` à `2026-10-02-015` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2669,3 +2669,17 @@ Tests : **nouvelle suite `tests/test_hard_phases.cjs` (noyau OCCT réel) enregis
 `build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-014.html`.
 
 README : tests → 44 suites.
+
+### `2026-10-02-015`
+
+Point d'origine : « mon point d'origine perd son origine ». Document réel fourni par l'utilisateur : `points.O` resté dérivé au centre exact du rectangle (-38,27 ; -26,70) au lieu de (0,0), état stable au résidu nul puisque **rien ne ré-ancrait plus jamais l'origine** — `ensureOrigin` ne faisait que la créer si absente, et aucun code ne réparait un état déjà corrompu. Enquête (sonde d'écritures sur `O` + parcours souris complet) : toutes les passes de règlement filtrent `skFixed` qui inclut `O`, le LM l'exclut des inconnues, le glisser et `undo/redo` la conservent — le symptôme vient d'un état persisté, pas du règlement courant. Correctif en trois couches.
+
+`ensureOrigin` (appelée à l'ouverture via `migrateSketch`, après chaque action via `cleanupSk`, et en tête de `solveSketch`) devient réparatrice : **ré-anchrage inconditionnel** — si `O` existe mais n'est plus en (0,0), il est recollé (le dessin, contraint autour de l'origine, se re-centre au règlement suivant) ; et si l'esquisse n'a plus de point `O` mais qu'un point **non fixé** est pile en (0,0) (ancien faux-origine portant les droites dessinées « en 0 »), ce point est **promu en origine** par fusion plutôt que de créer un doublon invisible à côté : l'origine garde son rôle et les attaches des lignes suivent. Les points fixés (arête projetée calée en 0,0) ne sont jamais promus — leur place leur appartient.
+
+`mergePoints` transfère désormais, avec les entités/cotes/contraintes, les **ancres type p des congés/chanfreins** (`doc.features[].edges[].anchor`) : la fusion vers `O` ne laisse plus une ancre pointant vers un pid détruit. `solveSketch` ajoute en plus un **filet de sortie** : aucune passe ne doit emmener l'origine, elle est recollée (0,0) à la fin de chaque règlement.
+
+Tests : **nouvelle suite `tests/test_sk_origin.cjs` enregistrée dans `tests/run.cjs` → `npm test` 45/45 vert**, **ROUGE vérifiée (8 échecs)** : structure (ré-anchrage dans `ensureOrigin`, promotion avec exclusion des fixés, transfert d'ancres dans `mergePoints`, `ensureOrigin` + filet de sortie dans `solveSketch`) + comportement (document réel de l'utilisateur : `O` ramené (0,0) à l'ouverture, rectangle re-centré au règlement avec résidu nul ; doublon promu — une seule clé en (0,0), ligne ré-attachée ; filet tête et filet de sortie — passe parasite simulée, `O` recollé ; ancre de congé suivant la promotion ; non-régressions : cote depuis `O` réglée, glisser sur `O` bloqué, `skClearAll`).
+
+`build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-015.html`.
+
+README : tests → 45 suites.
