@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**151 versions**, de `2026-09-28b` à `2026-10-02-020` — la plus récente en bas,
+**152 versions**, de `2026-09-28b` à `2026-10-02-021` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2733,3 +2733,13 @@ Correctif : à l'entrée (`openSketch`) l'arborescence se RABAT automatiquement 
 Tests : **nouvelle suite `tests/test_esquisse_arbre_rabat.cjs` enregistrée dans `tests/run.cjs` → `npm test` 50/50 vert**, **ROUGE vérifiée (8 échecs)** : A1/A2 (repli à l'entrée, visible à la sortie), B0/B1/B2 (état antérieur rabattu respecté des deux côtés), C0 (repli), C3 (persistance du clic manuel), D0 (repli) ; VERT après correctif sur les 4 scénarios (entrée/sortie, antériorité, localStorage non écrit par l'entrée/sortie, choix manuel en cours conservé). Non-régressions arbre/esquisse (`test_arbre_selection`, `test_tree_filter`, `test_esquisse_transparence`, `test_fao*`) au run complet ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-02-020.html`.
 
 README : tests → 50 suites.
+
+### `2026-10-02-021`
+
+Esquisse : dans le document réel de l'utilisateur (rectangle 110×80 XY extrudé 20 mm puis 4 congés verticaux r=20 sur les coins), une esquisse ouverte sur la face haute n'affiche que le rectangle net — les congés sont absents de la pièce translucide ET de la référence (8 lignes, 0 arc), alors qu'une esquisse XY montre la pièce avec ses congés. Cause : `openSketch` verrouillait la timeline APRÈS la fonction porteuse (`tlEditLockAfter`) pour une esquisse sur face non consommée → le rejeu excluait `xf_3` → modèle tranché à 6 faces, avec la note « solide fini » annoncée à tort.
+
+Correctif : esquisse sur face **non consommée** → **aucun verrou, modèle complet** — la porteuse est antérieure donc toujours rejouée ; les fonctions suivantes, congés compris, restent visibles (la face ne disparaît jamais de l'écran). `tlEditLockAfter` supprimée (code mort). Inchangés : esquisse **consommée** (verrou avant la consommatrice, état antérieur), esquisse libre, fondu translucide 0,75 ; la note « solide fini » devient exacte. Contrat T3 de `test_esquisse_transparence` révisé en conséquence : modèle complet (aucun verrou) au lieu du verrou après porteuse — l'ancien verrou excluait toute fonction suivante, mécanique même du bug.
+
+Tests : **nouvelle suite `tests/test_esquisse_face_conges.cjs` enregistrée dans `tests/run.cjs` → `npm test` 51/51 vert**, **ROUGE vérifiée (3 échecs)** sur `tests/fixtures/face-congé.json` (document réel) : A1 verrou `xf_3` au lieu de `null`, A2 6 faces au lieu de 10, A3 0 arc dans la référence ; VERT après correctif (10 faces, 8 lignes + 8 arcs, note exacte, fondu actif) avec non-régressions esquisse XY libre et esquisse consommée (verrou `ex_2`). `test_esquisse_transparence` révisé (T3) puis vert ; run complet 51/51 ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-02-021.html`.
+
+README : tests → 51 suites.

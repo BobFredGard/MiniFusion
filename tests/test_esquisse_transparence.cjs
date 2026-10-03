@@ -5,9 +5,11 @@
 //  2) esquisse POSÉE SUR FACE non consommée : tlEditLock(hôte) excluait la fonction porteuse
 //     du rejeu → plus aucun corps à l'écran (seuls les imports STEP survivaient) ;
 //  3) un rebuild pendant la session (buildDone) effaçait le fondu.
-// Contrats : extrusion consommée → verrou avant la consommatrice ; esquisse sur face →
-// verrou APRÈS la porteuse (replay de l'état qui porte la face) ; esquisse libre → aucun
-// verrou ; fermeture → corps restaurés (opacité 1) sans fuite du mode de fondu.
+// Contrats : extrusion consommée → verrou avant la consommatrice ; esquisse sur face NON
+// consommée → aucun verrou, modèle complet (contrat révisé 2026-10-02-021 : verrouiller APRÈS
+// la porteuse excluait les fonctions suivantes — congés absents de la référence de l'esquisse
+// sur face, bug test.json — la porteuse est antérieure donc toujours rejouée) ; esquisse
+// libre → aucun verrou ; fermeture → corps restaurés (opacité 1) sans fuite du mode de fondu.
 // Harnais : THREE est un stub Node (mkMaterial n'a PAS d'opacity) — « restauré » se dit
 // donc « transparent=false et opacity absente ou ≈1 », jamais 0.75.
 const {loadApp}=require('./appvm.cjs');
@@ -55,13 +57,15 @@ const {loadApp}=require('./appvm.cjs');
     'A(visOk()&&opacOk(0.75),"T2 : corps visible et translucide");',
     'A(String(skEdit._refNote||"").indexOf("solide fini")>=0,"T2 : note de reference presente");',
     'closeSketch(false);',
-    // ── T3 : une fonction existe APRÈS la porteuse → verrou APRES (porteuse rejouée) ──
+    // ── T3 : une fonction existe APRÈS la porteuse → modèle complet, aucun verrou ──
+    // (contrat révisé 2026-10-02-021 : l'ancien verrou après porteuse masquait ex_late —
+    //  même mécanique qui coupait xf_3 dans le bug test.json, congés invisibles en esquisse)
     'doc.sketches.push(rect("s4","E4"));ensureSketchBasis(doc.sketches[doc.sketches.length-1]);',
     'doc.features.push({id:"ex_late",type:"extrude",name:"Tard",sketchId:"s4",op:"add",distance:5,dist:5,d2:0});',
     'safeRebuild("t3");',
     'openSketch("s2");',
     'out.t3={tlMark:tlMark,ids:live().map(b=>b.id)};',
-    'A(tlMark==="ex_late","T3 : verrou APRES la porteuse (rejeu de ex_t, exclusion de ex_late) — tlMark="+tlMark);',
+    'A(tlMark===null,"T3 : esquisse sur face -> MODELE COMPLET (aucun verrou, la porteuse est anterieure) — tlMark="+tlMark);',
     'A(live().some(b=>b.id==="ex_t"),"T3 : le corps qui porte la face existe toujours");',
     'A(visOk()&&opacOk(0.75),"T3 : corps visible et translucide");',
     'closeSketch(false);',

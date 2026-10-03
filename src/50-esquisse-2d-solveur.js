@@ -497,16 +497,13 @@ function openSketch(id){
   // les références sur les meshes — avant, il s'appuyait sur l'ancien état (matériaux neufs
   // ensuite → corps opaque) et sur des corps encore en état final (écran vide).
   //   · esquisse consommée  : verrou avant la consommatrice (état qui la précède, Fusion) ;
-  //   · esquisse posée sur face non consommée : verrou APRÈS la fonction porteuse, pour
-  //     garder la face visible (sinon le rejeu l'exclut et il ne reste rien à l'écran) ;
+  //   · esquisse sur face NON consommée : aucun verrou (modèle complet) — la porteuse est
+  //     antérieure donc toujours rejouée ; verrouiller après elle excluait les fonctions
+  //     suivantes : congés absents de la référence, seul le rectangle restait (test.json) ;
   //   · esquisse libre      : aucun verrou (modèle complet).
   let locked=false;
   const ci=skConsumerIdx(skEdit);
   if(ci>=0){ locked=tlEditLock(doc.features.filter(f=>f.visible!==false)[ci]); }
-  else{
-    const host=tlHostFeatureOfSketch(skEdit);
-    if(host) locked=tlEditLockAfter(host);
-  }
   if(locked){try{rebuild();}catch(e){}}
   skBuildRefs();
   skTool='select';skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skPendPt=null;skCoinA=null;skDraft=null;skDown=null;skDrag=null;skDragPushed=false;skDimDrag=null;skSel=null;skSelX=[];skMsg='';skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;

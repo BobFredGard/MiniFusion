@@ -1,0 +1,891 @@
+{
+  "app": "MiniFusion",
+  "v": 1,
+  "name": "Sans titre",
+  "tint": 0,
+  "entNames": {
+    "edge": 10,
+    "face": 5
+  },
+  "originVis": {
+    "XY": false,
+    "XZ": false,
+    "YZ": false
+  },
+  "view": {
+    "edges": "on",
+    "mirror": true,
+    "axes": false,
+    "zoomInv": false,
+    "clipOn": false,
+    "clipPos": 0,
+    "clipFlip": false
+  },
+  "bodyVis": {},
+  "bodies": [
+    {
+      "id": "b1",
+      "name": "Corps 1",
+      "c": [
+        0,
+        0,
+        10
+      ],
+      "open": true
+    }
+  ],
+  "bodySeq": 2,
+  "activeBody": "b1",
+  "fold": {
+    "sk": false,
+    "origin": false
+  },
+  "fao": {
+    "setups": [
+      {
+        "id": "setup_3_musc5qo3",
+        "name": "POSAGE1",
+        "machine": "siemens630",
+        "wcs": "G54",
+        "origin": {
+          "preset": "top-X0Y0"
+        },
+        "bodies": "all",
+        "tools": [
+          {
+            "id": "T1",
+            "num": 1,
+            "name": "Fraise D10",
+            "kind": "flat",
+            "d": 10,
+            "cornerR": 0,
+            "flutes": 2,
+            "vc": 250,
+            "fz": 0.06
+          },
+          {
+            "id": "T2",
+            "num": 2,
+            "name": "Fraise D6",
+            "kind": "flat",
+            "d": 6,
+            "cornerR": 0,
+            "flutes": 2,
+            "vc": 250,
+            "fz": 0.04
+          },
+          {
+            "id": "T3",
+            "num": 3,
+            "name": "Boule D8",
+            "kind": "ball",
+            "d": 8,
+            "cornerR": 4,
+            "flutes": 2,
+            "vc": 200,
+            "fz": 0.04
+          },
+          {
+            "id": "T6",
+            "num": 6,
+            "name": "Torique D25 R2",
+            "kind": "bull",
+            "d": 25,
+            "cornerR": 2,
+            "flutes": 2,
+            "vc": 628,
+            "fz": 0.18
+          }
+        ],
+        "fixture": {
+          "note": "",
+          "radial": 5,
+          "axial": 5
+        },
+        "coolant": "flood",
+        "secu": 5,
+        "marge": 5,
+        "rapide": 5000,
+        "plungePct": 30,
+        "accel": 1000,
+        "toolChg": 30,
+        "orient": {
+          "b": 0,
+          "c": 0
+        },
+        "stock": {
+          "x0": 0,
+          "y0": 0,
+          "z0": 0,
+          "x1": 100,
+          "y1": 80,
+          "z1": 25
+        },
+        "ops": []
+      }
+    ],
+    "activeSetupId": "setup_3_musc5qo3"
+  },
+  "sel": {
+    "kind": "sketch",
+    "id": "sk_10_musc7igu"
+  },
+  "sketches": [
+    {
+      "id": "sk_1_musc5r65",
+      "name": "Esquisse 1",
+      "plane": "XY",
+      "entities": [
+        {
+          "id": "e5",
+          "t": "line",
+          "p1": "p1",
+          "p2": "p2"
+        },
+        {
+          "id": "e6",
+          "t": "line",
+          "p1": "p2",
+          "p2": "p3"
+        },
+        {
+          "id": "e7",
+          "t": "line",
+          "p1": "p3",
+          "p2": "p4"
+        },
+        {
+          "id": "e8",
+          "t": "line",
+          "p1": "p4",
+          "p2": "p1"
+        },
+        {
+          "id": "e15",
+          "t": "line",
+          "p1": "O",
+          "p2": "p13",
+          "construction": true
+        },
+        {
+          "id": "e16",
+          "t": "line",
+          "p1": "O",
+          "p2": "p14",
+          "construction": true
+        }
+      ],
+      "points": {
+        "O": {
+          "x": 0,
+          "y": 0
+        },
+        "p1": {
+          "x": -55,
+          "y": 40
+        },
+        "p2": {
+          "x": 55,
+          "y": 40
+        },
+        "p3": {
+          "x": 55,
+          "y": -40
+        },
+        "p4": {
+          "x": -55,
+          "y": -40
+        },
+        "p13": {
+          "x": 110,
+          "y": 0
+        },
+        "p14": {
+          "x": 0,
+          "y": 80
+        }
+      },
+      "constraints": [
+        {
+          "id": "e9",
+          "type": "h",
+          "line": "e5"
+        },
+        {
+          "id": "e10",
+          "type": "h",
+          "line": "e7"
+        },
+        {
+          "id": "e11",
+          "type": "v",
+          "line": "e6"
+        },
+        {
+          "id": "e12",
+          "type": "v",
+          "line": "e8"
+        },
+        {
+          "id": "e17",
+          "type": "h",
+          "line": "e15"
+        },
+        {
+          "id": "e18",
+          "type": "v",
+          "line": "e16"
+        },
+        {
+          "id": "e19",
+          "type": "fix",
+          "p": "O"
+        },
+        {
+          "id": "e20",
+          "type": "symmetric",
+          "a": "e8",
+          "b": "e6",
+          "mid": "e16"
+        },
+        {
+          "id": "e21",
+          "type": "symmetric",
+          "a": "e5",
+          "b": "e7",
+          "mid": "e15"
+        }
+      ],
+      "dims": [
+        {
+          "id": "e22",
+          "type": "length",
+          "line": "e5",
+          "value": 110,
+          "ox": 0,
+          "oy": 6
+        },
+        {
+          "id": "e23",
+          "type": "length",
+          "line": "e6",
+          "value": 80,
+          "ox": 6,
+          "oy": 0
+        }
+      ],
+      "seq": 24,
+      "visible": false,
+      "origin": [
+        0,
+        0,
+        0
+      ],
+      "axU": [
+        1,
+        0,
+        0
+      ],
+      "axV": [
+        0,
+        1,
+        0
+      ],
+      "axN": [
+        0,
+        0,
+        1
+      ],
+      "_ghost": [],
+      "_refNote": "référence : solide fini (esquisse non consommée)",
+      "_fade": null,
+      "_health": {
+        "loops": 1,
+        "holes": 0,
+        "opens": [],
+        "gapPair": null,
+        "gapD": 1000000000,
+        "dupes": [],
+        "degen": [],
+        "selfints": []
+      },
+      "_audit": {
+        "residual": 0,
+        "all": [
+          {
+            "id": "e22",
+            "desc": "longueur",
+            "viol": 0
+          },
+          {
+            "id": "e23",
+            "desc": "longueur",
+            "viol": 0
+          },
+          {
+            "id": "e9",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e10",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e11",
+            "desc": "v",
+            "viol": 0
+          },
+          {
+            "id": "e12",
+            "desc": "v",
+            "viol": 0
+          },
+          {
+            "id": "e17",
+            "desc": "h",
+            "viol": 0
+          },
+          {
+            "id": "e18",
+            "desc": "v",
+            "viol": 0
+          },
+          {
+            "id": "e20",
+            "desc": "symétrie",
+            "viol": 0
+          },
+          {
+            "id": "e21",
+            "desc": "symétrie",
+            "viol": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "sk_4_musc6inx",
+      "name": "Esquisse 2 (face)",
+      "plane": "FACE",
+      "entities": [],
+      "points": {
+        "O": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      "constraints": [],
+      "dims": [],
+      "seq": 1,
+      "visible": true,
+      "origin": [
+        0,
+        0,
+        20
+      ],
+      "axU": [
+        1,
+        0,
+        0
+      ],
+      "axV": [
+        0,
+        1,
+        0
+      ],
+      "axN": [
+        0,
+        0,
+        1
+      ],
+      "host": {
+        "feat": "ex_2_musc631s",
+        "tag": "TOP",
+        "x": 0,
+        "y": 0,
+        "name": "Face 1"
+      },
+      "_ghost": [],
+      "_refNote": "référence : solide fini (esquisse non consommée)",
+      "_fade": null,
+      "_health": {
+        "loops": 0,
+        "holes": 0,
+        "opens": [],
+        "gapPair": null,
+        "gapD": 1000000000,
+        "dupes": [],
+        "degen": [],
+        "selfints": []
+      },
+      "_audit": {
+        "residual": 0,
+        "all": []
+      }
+    },
+    {
+      "id": "sk_5_musc6olj",
+      "name": "Esquisse 3 (face)",
+      "plane": "FACE",
+      "entities": [],
+      "points": {
+        "O": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      "constraints": [],
+      "dims": [],
+      "seq": 1,
+      "visible": true,
+      "origin": [
+        0,
+        0,
+        20
+      ],
+      "axU": [
+        1,
+        0,
+        0
+      ],
+      "axV": [
+        0,
+        1,
+        0
+      ],
+      "axN": [
+        0,
+        0,
+        1
+      ],
+      "host": {
+        "feat": "ex_2_musc631s",
+        "tag": "TOP",
+        "x": 0,
+        "y": 0,
+        "name": "Face 2"
+      },
+      "_ghost": [],
+      "_refNote": "référence : solide fini (esquisse non consommée)",
+      "_fade": null,
+      "_health": {
+        "loops": 0,
+        "holes": 0,
+        "opens": [],
+        "gapPair": null,
+        "gapD": 1000000000,
+        "dupes": [],
+        "degen": [],
+        "selfints": []
+      },
+      "_audit": {
+        "residual": 0,
+        "all": []
+      }
+    },
+    {
+      "id": "sk_6_musc724j",
+      "name": "Esquisse 4",
+      "plane": "XY",
+      "entities": [],
+      "points": {
+        "O": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      "constraints": [],
+      "dims": [],
+      "seq": 1,
+      "visible": true,
+      "origin": [
+        0,
+        0,
+        0
+      ],
+      "axU": [
+        1,
+        0,
+        0
+      ],
+      "axV": [
+        0,
+        1,
+        0
+      ],
+      "axN": [
+        0,
+        0,
+        1
+      ],
+      "_ghost": [],
+      "_refNote": "référence : solide fini (esquisse non consommée)",
+      "_fade": null,
+      "_health": {
+        "loops": 0,
+        "holes": 0,
+        "opens": [],
+        "gapPair": null,
+        "gapD": 1000000000,
+        "dupes": [],
+        "degen": [],
+        "selfints": []
+      },
+      "_audit": {
+        "residual": 0,
+        "all": []
+      }
+    },
+    {
+      "id": "sk_7_musc74ms",
+      "name": "Esquisse 5 (face)",
+      "plane": "FACE",
+      "entities": [],
+      "points": {
+        "O": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      "constraints": [],
+      "dims": [],
+      "seq": 1,
+      "visible": true,
+      "origin": [
+        0,
+        0,
+        20
+      ],
+      "axU": [
+        1,
+        0,
+        0
+      ],
+      "axV": [
+        0,
+        1,
+        0
+      ],
+      "axN": [
+        0,
+        0,
+        1
+      ],
+      "host": {
+        "feat": "ex_2_musc631s",
+        "tag": "TOP",
+        "x": 0,
+        "y": 0,
+        "name": "Face 3"
+      },
+      "_ghost": [],
+      "_refNote": "référence : solide fini (esquisse non consommée)",
+      "_fade": null,
+      "_health": {
+        "loops": 0,
+        "holes": 0,
+        "opens": [],
+        "gapPair": null,
+        "gapD": 1000000000,
+        "dupes": [],
+        "degen": [],
+        "selfints": []
+      },
+      "_audit": {
+        "residual": 0,
+        "all": []
+      }
+    },
+    {
+      "id": "sk_8_musc78h2",
+      "name": "Esquisse 6 (face)",
+      "plane": "FACE",
+      "entities": [],
+      "points": {
+        "O": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      "constraints": [],
+      "dims": [],
+      "seq": 1,
+      "visible": true,
+      "origin": [
+        0,
+        0,
+        20
+      ],
+      "axU": [
+        1,
+        0,
+        0
+      ],
+      "axV": [
+        0,
+        1,
+        0
+      ],
+      "axN": [
+        0,
+        0,
+        1
+      ],
+      "host": {
+        "feat": "ex_2_musc631s",
+        "tag": "TOP",
+        "x": 0,
+        "y": 0,
+        "name": "Face 4"
+      },
+      "_ghost": [],
+      "_refNote": "référence : solide fini (esquisse non consommée)",
+      "_fade": null,
+      "_health": {
+        "loops": 0,
+        "holes": 0,
+        "opens": [],
+        "gapPair": null,
+        "gapD": 1000000000,
+        "dupes": [],
+        "degen": [],
+        "selfints": []
+      },
+      "_audit": {
+        "residual": 0,
+        "all": []
+      }
+    },
+    {
+      "id": "sk_9_musc7bey",
+      "name": "Esquisse 7",
+      "plane": "XY",
+      "entities": [],
+      "points": {
+        "O": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      "constraints": [],
+      "dims": [],
+      "seq": 1,
+      "visible": true,
+      "origin": [
+        0,
+        0,
+        0
+      ],
+      "axU": [
+        1,
+        0,
+        0
+      ],
+      "axV": [
+        0,
+        1,
+        0
+      ],
+      "axN": [
+        0,
+        0,
+        1
+      ],
+      "_ghost": [],
+      "_refNote": "référence : solide fini (esquisse non consommée)",
+      "_fade": null,
+      "_health": {
+        "loops": 0,
+        "holes": 0,
+        "opens": [],
+        "gapPair": null,
+        "gapD": 1000000000,
+        "dupes": [],
+        "degen": [],
+        "selfints": []
+      },
+      "_audit": {
+        "residual": 0,
+        "all": []
+      }
+    },
+    {
+      "id": "sk_10_musc7igu",
+      "name": "Esquisse 8 (face)",
+      "plane": "FACE",
+      "entities": [],
+      "points": {
+        "O": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      "constraints": [],
+      "dims": [],
+      "seq": 1,
+      "visible": true,
+      "origin": [
+        0,
+        0,
+        20
+      ],
+      "axU": [
+        1,
+        0,
+        0
+      ],
+      "axV": [
+        0,
+        1,
+        0
+      ],
+      "axN": [
+        0,
+        0,
+        1
+      ],
+      "host": {
+        "feat": "ex_2_musc631s",
+        "tag": "TOP",
+        "x": 0,
+        "y": 0,
+        "name": "Face 5"
+      },
+      "_ghost": [],
+      "_refNote": "référence : solide fini (esquisse non consommée)",
+      "_fade": null,
+      "_health": {
+        "loops": 0,
+        "holes": 0,
+        "opens": [],
+        "gapPair": null,
+        "gapD": 1000000000,
+        "dupes": [],
+        "degen": [],
+        "selfints": []
+      },
+      "_audit": {
+        "residual": 0,
+        "all": []
+      }
+    }
+  ],
+  "features": [
+    {
+      "id": "ex_2_musc631s",
+      "type": "extrude",
+      "name": "Extrusion Esquisse 1 20mm",
+      "sketchId": "sk_1_musc5r65",
+      "distance": 20,
+      "op": "add",
+      "visible": true,
+      "mid": false,
+      "upto": null,
+      "body": "b1"
+    },
+    {
+      "id": "xf_3_musc6gxe",
+      "type": "xfillet",
+      "name": "Congé exact (4 arête(s))",
+      "edges": [
+        {
+          "pos": [
+            55,
+            -40,
+            10
+          ],
+          "pos0": [
+            55,
+            -40,
+            10
+          ],
+          "r": 20,
+          "len": 20,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_1_musc5r65",
+            "id": "p3",
+            "z": 10,
+            "far": 0
+          },
+          "name": "Arête 7",
+          "seed": 1
+        },
+        {
+          "pos": [
+            55,
+            40,
+            10
+          ],
+          "pos0": [
+            55,
+            40,
+            10
+          ],
+          "r": 20,
+          "len": 20,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_1_musc5r65",
+            "id": "p2",
+            "z": 10,
+            "far": 0
+          },
+          "name": "Arête 8",
+          "seed": 1
+        },
+        {
+          "pos": [
+            -55,
+            40,
+            10
+          ],
+          "pos0": [
+            -55,
+            40,
+            10
+          ],
+          "r": 20,
+          "len": 20,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_1_musc5r65",
+            "id": "p1",
+            "z": 10,
+            "far": 0
+          },
+          "name": "Arête 9",
+          "seed": 1
+        },
+        {
+          "pos": [
+            -55,
+            -40,
+            10
+          ],
+          "pos0": [
+            -55,
+            -40,
+            10
+          ],
+          "r": 20,
+          "len": 20,
+          "anchor": {
+            "t": "p",
+            "sk": "sk_1_musc5r65",
+            "id": "p4",
+            "z": 10,
+            "far": 0
+          },
+          "name": "Arête 10",
+          "seed": 1
+        }
+      ],
+      "visible": true,
+      "tangent": true,
+      "body": "b1"
+    }
+  ]
+}
