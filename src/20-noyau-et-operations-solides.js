@@ -1793,6 +1793,7 @@ function occCleanup(FR,keepShape){
    invalide tout ce qui suit, donc aucune geometrie perimee ne peut etre reutilisee. */
 let occCk=[]; // [{key,shape}] du plus ancien au plus recent
 let occCkWarn={}; // avertissements de congé par point de contrôle (mêmes entrées = mêmes messages)
+let occProjPass=0; // 0 = rejeu principal ; >=1 = passe de projection imbriquée (rebuild(pass))
 // Limite adaptative : 8 points de contrôle sur une timeline de 13 fonctions évacuaient les
 // prÉfixes (les projections upto<13 ne trouvaient JAMAIS leur point de contrôle → rejeu
 // complet 4 fois par reconstruction). On couvre toute la timeline, bornée pour la mémoire.
@@ -1894,17 +1895,24 @@ function occCkGet(key){
   for(let i=occCk.length-1;i>=0;i--)if(occCk[i].key===key)return occCk[i].shape;
   return null;
 }
-function occCkPut(key,shape){
-  if(!shape)return;
+function occCkPut(key,mkShape){
+  // Mode frais (2026-10-02-014) : le rejeu principal (pass 0) ne MÉMORISE rien —
+  // fraîcheur absolue et copie BRep (1 à 4 ms) économisée à chaque fonction. Seules
+  // les passes de projection imbriquées (rebuild(pass>=1)) posent leurs points de
+  // contrôle : elles rejouent un préfixe déjà stabilisé par le rejeu courant.
+  if(freshHard&&!(occProjPass>=1))return;
+  const mk=(typeof mkShape==='function')?mkShape:null;
   const i=occCk.findIndex(c=>c.key===key);
   if(i>=0){
     // Déjà mémorisé : on GARDE l'existant, on remonte sa fraîcheur (fin de file = à évacuer
-    // en dernier) et on jette la copie surnuméraire. (Ne comparer qu'à la dernière clé
-    // laissait les doublons gonfler la file et évacuer les vrais points de contrôle.)
+    // en dernier). (Ne comparer qu'à la dernière clé laissait les doublons gonfler la file
+    // et évacuer les vrais points de contrôle.) La copie n'est même plus fabriquée.
     const old=occCk[i];occCk.splice(i,1);occCk.push(old);
-    try{shape.delete();}catch(e){}
+    if(!mk&&mkShape){try{mkShape.delete();}catch(e){}}
     return;
   }
+  const shape=mk?mk():mkShape;
+  if(!shape)return;
   occCk.push({key,shape});
   while(occCk.length>occCkMax()){const old=occCk.shift();try{old.shape.delete();}catch(e){}}
 }
@@ -1939,7 +1947,7 @@ function occReplayBody(bid,list){
       const r=occApplyXFillets(result,[f]);
       result=r.shape;msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       if(r.warnings.length)occCkWarn[ckKey]=r.warnings.slice();else delete occCkWarn[ckKey];
-      occCkPut(ckKey,occShapeCopy(result));
+      occCkPut(ckKey,()=>occShapeCopy(result));
       return;
     }
     if(f.type==='xmove'){
@@ -1954,7 +1962,7 @@ function occReplayBody(bid,list){
       const r=occApplyMoveFace(result,f);
       result=r.shape;msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       if(r.warnings.length)occCkWarn[ckKey]=r.warnings.slice();else delete occCkWarn[ckKey];
-      occCkPut(ckKey,occShapeCopy(result));
+      occCkPut(ckKey,()=>occShapeCopy(result));
       return;
     }
     if(f.type==='xdraft'){
@@ -1973,7 +1981,7 @@ function occReplayBody(bid,list){
       const r=occApplyDraft(result,f);
       result=r.shape;msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       if(r.warnings.length)occCkWarn[ckKey]=r.warnings.slice();else delete occCkWarn[ckKey];
-      occCkPut(ckKey,occShapeCopy(result));
+      occCkPut(ckKey,()=>occShapeCopy(result));
       return;
     }
     if(f.type==='xshell'){
@@ -1991,7 +1999,7 @@ function occReplayBody(bid,list){
       const r=occApplyCoque(result,f);
       result=r.shape;msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       if(r.warnings.length)occCkWarn[ckKey]=r.warnings.slice();else delete occCkWarn[ckKey];
-      occCkPut(ckKey,occShapeCopy(result));
+      occCkPut(ckKey,()=>occShapeCopy(result));
       return;
     }
     let shape=null;
@@ -2007,7 +2015,7 @@ function occReplayBody(bid,list){
       shape=occShapeCopy(bp); // COPIE : la table reste propriétaire de son BRep
       if(!shape){msgs.push(`${f.name} : copie exacte impossible — ignoré`);return;}
       imports.push(f.id);
-      if(!result){result=shape;occCkPut(ckKey,occShapeCopy(result));return;}
+      if(!result){result=shape;occCkPut(ckKey,()=>occShapeCopy(result));return;}
       // Mêmes règles qu'une fonction additive (ci-dessous) : point de contrôle
       // avant de refaire la fusion la plus coûteuse.
       const ckI=occCkGet(ckKey);
@@ -2016,7 +2024,7 @@ function occReplayBody(bid,list){
       const uI=occUnify(occFuse(result,shape));
       try{result.delete();}catch(e2){}try{shape.delete();}catch(e2){}
       result=uI;
-      occCkPut(ckKey,occShapeCopy(result));
+      occCkPut(ckKey,()=>occShapeCopy(result));
       return;
     }
     if(f.type!=='extrude'&&f.type!=='revolve')return;
@@ -2052,7 +2060,7 @@ function occReplayBody(bid,list){
       try{result.delete();}catch(e){}try{shape.delete();}catch(e){}
       result=c;
     }else{
-      if(!result){result=shape;occCkPut(ckKey,occShapeCopy(result));return;}
+      if(!result){result=shape;occCkPut(ckKey,()=>occShapeCopy(result));return;}
       // Préfixe inchangé : la fusion est déjà faite dans la copie mémorisée.
       const ckA=occCkGet(ckKey);
       const cpA=ckA?occShapeCopy(ckA):null;
@@ -2063,7 +2071,7 @@ function occReplayBody(bid,list){
       try{result.delete();}catch(e){}try{shape.delete();}catch(e){}
       result=u;
     }
-    occCkPut(ckKey,occShapeCopy(result)); // point de contrôle pour le rejeu suivant
+    occCkPut(ckKey,()=>occShapeCopy(result)); // point de contrôle pour le rejeu suivant
   });
   return{shape:result,ghostShapes,msgs,bin,itemShapes,items,imports};
 }
@@ -2249,7 +2257,10 @@ function occRebuild(){
   occDropLive();
   let FR=null;
   try{
+    const _tr=performance.now();
     FR=occFinalShape(tlReplayCount());
+    phAdd('replay',performance.now()-_tr);
+    const _ts=performance.now();
     // UN mesh PAR CORPS, rejoué isolément : l'id affiché EST l'id du corps (stable,
     // persisté - plus aucun rapprochement par centroïdes). occLive garde le COMPOSÉ :
     // congés, ancrages, picking d'arêtes, overlay et cache voient l'ensemble, inchangés.
@@ -2307,6 +2318,7 @@ function occRebuild(){
     });
     occCleanup(FR,(occLive&&occLive.shape)||null);
     if(FR.msgs.length)faceEl.textContent+=(faceEl.textContent?'\n':'')+FR.msgs.slice(0,4).join('\n');
+    phAdd('mesh',performance.now()-_ts);
     return true;
   }catch(e){
     try{if(FR)occCleanup(FR,null);}catch(_){}
@@ -2324,7 +2336,9 @@ function projRefreshRerun(pass){
   const sigOf=()=>{let s='';const F=(doc&&doc.features)||[];for(let i=0;i<F.length;i++){if(F[i].visible!==false)s+=featSig(F[i])+';';}return s;};
   const s0=sigOf();
   let ch=false;
+  const _tp=performance.now();
   try{ch=updateAllProjections();}catch(e){}
+  phAdd('proj',performance.now()-_tp);
   if(!ch)return false;
   if(sigOf()===s0){
     // Projeté recalé sans effet sur le profil : on ne rejoue pas, mais on persiste les

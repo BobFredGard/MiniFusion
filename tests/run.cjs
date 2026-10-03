@@ -44,7 +44,8 @@ const SUITES = [
   "test_prodver_badge",
   "test_cache_exact",
   "test_sk_offset_contraintes",
-  "test_fresh_default"
+  "test_fresh_default",
+  "test_hard_phases"
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {

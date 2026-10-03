@@ -69,6 +69,8 @@ function addFeature(f){ // insertion au niveau du marqueur si actif (nouveautés
 }
 // « fraîcheur » : dur par DEFAUT — chaque modification reconstruit le modèle depuis zéro
 // (aucun sous-ensemble réutilisé). Passer à false active le rejeu rapide par points de contrôle.
+let hardPh=null; // {rep,purge,rejeu,aff,hotes,replay,mesh,maillage,proj} — rempli pendant hardRefresh()
+const phAdd=(k,ms)=>{if(hardPh)hardPh[k]=(hardPh[k]||0)+ms;}; // nul hors rafraîchissement dur
 let freshHard=false; // défaut = REJEU RAPIDE (2026-10-02-013) : le filet featSig (-011)
 // prouve que le rapide est aussi juste que le complet ; la préférence ⚙ reste persistée.
 try{const _fh=localStorage.getItem('minifusion_freshHard');if(_fh!==null)freshHard=_fh==='1';}catch(e){}
@@ -111,16 +113,19 @@ function rebuild(pass){
   // autorisés (rebuild + passe de projections) ; au-delà, on arrête et on prévient.
   if(rebuildDepth>=3){try{faceEl.textContent+=(faceEl.textContent?'\n':'')+'[Rejeu] reconstruction interrompue (rejeu non borné) — rechargez la page.';}catch(e){}return;}
   rebuildDepth++;
-  try{return rebuildInner(pass);}finally{rebuildDepth--;}
+  const _pp=occProjPass;occProjPass=pass||0; // 0 = rejeu principal (pas de ck en mode frais)
+  try{return rebuildInner(pass);}finally{rebuildDepth--;occProjPass=_pp;}
 }
 function rebuildInner(projPass){
   projPass=projPass||0;
+  const _th=performance.now();
   try{importHydrate();}catch(e){} // imports STEP/STL : géométrie revivifiée si un instantané d'annulation l'a stripée
   try{ensureBodies();}catch(e){} // corps conteneurs : migration des anciens documents
   (doc.sketches||[]).forEach(migrateSketch); // compat anciens brouillons + verrouille le modèle points
   // « Vers un objet » : résolution de la distance (antériorité) AVANT les hôtes de faces.
   (doc.features||[]).forEach(f=>{if(f.type==='extrude'&&f.upto){try{resolveExtrudeUpto(f);}catch(e){}}});
   try{resolveAllSketchHosts();}catch(e){}
+  phAdd('hotes',performance.now()-_th);
   // Snapshot du dernier état valide : commit si le rebuild aboutit, rollback sinon.
   const prevBodies=bodies,prevLive=occLive;
   const prevSet=new Set(scene.children);
@@ -170,6 +175,7 @@ function rebuildInner(projPass){
     faceEl.textContent+=(faceEl.textContent?'\n':'')+'OCCT : repli sur le moteur maillage pour ce rebuild.';
     if(bodies.length)clearBodies(); // sécurité : un repli partiel ne doit jamais doubler l'affichage
   }else occEngineMsg='maillage (OCCT absent)';
+  const _tm=performance.now();
   const csgOK=(typeof CSG!=='undefined'&&CSG&&CSG.fromMesh&&CSG.toMesh);
   // Phase 1 : construit chaque prisme en coordonnées monde (sans l'afficher encore)
   const jobs=[]; // {f, geos:[BufferGeometry monde], ghost?:false}
@@ -271,6 +277,7 @@ function rebuildInner(projPass){
       });
     });
   }
+  phAdd('maillage',performance.now()-_tm);
   refreshParts();renderTree();renderTimeline();autosave();applyClip();
   occStatus();
   if(filWarn.length)faceEl.textContent+=(faceEl.textContent?'\n':'')+filWarn.slice(0,4).join('\n');

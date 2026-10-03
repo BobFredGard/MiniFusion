@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**144 versions**, de `2026-09-28b` à `2026-10-02-013` — la plus récente en bas,
+**145 versions**, de `2026-09-28b` à `2026-10-02-014` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2657,3 +2657,15 @@ Tests : **nouvelle suite `tests/test_fresh_default.cjs` enregistrée dans `tests
 `build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-013.html`.
 
 README : défaut de fraîcheur inversé (rejeu rapide par défaut) ; tests → 43 suites.
+
+### `2026-10-02-014`
+
+Rafraîchissement dur : phases mesurées + mode frais sans points de contrôle. `occCkPut` est désormais un garde centralisé : en mode frais (`freshHard=true`), le REJEU PRINCIPAL (pass 0) ne mémorise PLUS AUCUN point de contrôle — fraîcheur absolue et copie BRep (1 à 4 ms par fonction) économisées — tandis que les passes de projection imbriquées (`rebuild(pass>=1)`, drapeau `occProjPass`) gardent le droit de poser leurs points : elles rejouent un préfixe stabilisé par le rejeu courant. Les 8 call sites passent en thunk (`()=>occShapeCopy(result)`) : en mode frais, la copie n'est même plus fabriquée ; en mode rapide, comportement strictement inchangé (avec un bonus : sur une clé déjà mémorisée, plus aucune copie jetée). Les avertissements `occCkWarn` restent auto-réparants (rejeu → réécriture).
+
+`hardRefresh()` (bouton ⟲⟳ et Ctrl+Maj+R) chronomètre maintenant chaque phase et l'affiche dans son rapport (« · phases : … ») + dans l'objet retourné (`phases`) : `rep` (balayage des répétitions), `purge`, `hotes` (imports/corps/migrateurs/hôtes de faces), `replay` (rejeu exact `occFinalShape`), `mesh` (tessellation + scènes), `maillage` (repli CSG), `proj` (recalcul des projections associatives), `autres` (divers = rejeu − sous-phases), `aff` (affichage final). Les sous-chronomètres sont portés par le compteur global `hardPh`/`phAdd()` : actifs uniquement pendant un `hardRefresh()`, coût nul partout ailleurs.
+
+Tests : **nouvelle suite `tests/test_hard_phases.cjs` (noyau OCCT réel) enregistrée dans `tests/run.cjs` → `npm test` 44/44 vert**, **ROUGE vérifiée (18 échecs)** : structure (déclaration `occProjPass`, garde `freshHard&&!(occProjPass>=1)`, signature thunk, 8 call sites en thunk, chronos `phAdd('replay'|'mesh'|'proj'|'hotes'|'maillage')`, compteur `hardPh`/`phAdd`, `occProjPass=pass||0` dans `rebuild()`, activation/désactivation + ligne « · phases » dans `hardRefresh`) + comportement (mode rapide : 2 ck posés ; mode frais : 0 ck après rejeu ; `hardRefresh` retourne `phases` complet, `replay>0`, somme des sous-phases bornée par le temps de rejeu, ligne présente dans `faceEl`).
+
+`build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-014.html`.
+
+README : tests → 44 suites.

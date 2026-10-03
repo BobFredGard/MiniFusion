@@ -50,9 +50,11 @@ function hardRefresh(){
   //   · tous les corps affichés (géométries et matériaux) et le solide exact vivant
   // Le noyau OCCT, lui, n'est PAS rechargé : le recompiler coûterait 10 à 60 s. S'il est
   // lui-même bloqué, c'est le rechargement de la page (navigateur) qui redemarre.
+  const ph={rep:0,purge:0,rejeu:0,aff:0,hotes:0,replay:0,mesh:0,maillage:0,proj:0};
+  hardPh=ph; // les sous-chronomètres (src/20/30) ne tournent que pendant ce appel
   const t0=performance.now();
-  try{repGenAll();}catch(e){}
-  let nCk=0;try{nCk=(typeof occCk!=='undefined'&&occCk.length)||0;occCkClear();}catch(e){}
+  try{const a=performance.now();repGenAll();ph.rep=performance.now()-a;}catch(e){}
+  let nCk=0;try{nCk=(typeof occCk!=='undefined'&&occCk.length)||0;const a=performance.now();occCkClear();ph.purge=performance.now()-a;}catch(e){}
   _hashMemo=null;_hashVer=-1;
   builtHash=null;builtEngine=null;builtVersion=-1;
   try{for(const b of bodies){try{scene.remove(b.mesh);}catch(e){}try{if(b.mesh&&b.mesh.geometry)b.mesh.geometry.dispose();}catch(e){}}}catch(e){}
@@ -62,7 +64,10 @@ function hardRefresh(){
   let tris=0;try{scene.traverse(o=>{if(o.isMesh&&o.geometry&&o.geometry.attributes&&o.geometry.attributes.position)tris+=(o.geometry.index?o.geometry.index.count:o.geometry.attributes.position.count)/3;});}catch(e){}
   faceEl.textContent='Rafraîchissement dur : caches jetés ('+nCk+' point(s) de contrôle), rejeu complet…';
   let err=null;
+  const _tr=performance.now();
   try{rebuild();}catch(e){err=e;}
+  ph.rejeu=performance.now()-_tr;
+  hardPh=null;
   const ms=Math.round(performance.now()-t0);
   let nb=0,t2=0;
   try{nb=bodies.length;scene.traverse(o=>{if(o.isMesh&&o.geometry&&o.geometry.attributes&&o.geometry.attributes.position)t2+=(o.geometry.index?o.geometry.index.count:o.geometry.attributes.position.count)/3;});}catch(e){}
@@ -75,8 +80,14 @@ function hardRefresh(){
   if(err)lignes.push('ERREUR : '+String((err&&err.message)||err));
   else if(!nb)lignes.push('⚠ aucun corps affiché — le modèle est vide ou toutes les fonctions sont masquées.');
   faceEl.textContent=lignes.join('\n');
+  const _ta=performance.now();
   try{refreshParts();renderTree();renderProps();}catch(e){}
-  return {ms:ms,nCk:nCk,bodies:nb,tris:Math.round(t2),engine:occEngineMsg,err:err?String(err.message||err):null};
+  ph.aff=performance.now()-_ta;
+  const RR=x=>Math.round(x||0);
+  const autres=Math.max(0,ph.rejeu-(ph.hotes+ph.replay+ph.mesh+ph.maillage+ph.proj));
+  faceEl.textContent+='\n'+'· phases : repGen '+RR(ph.rep)+' ms · purge '+RR(ph.purge)+' · hôtes/solveur '+RR(ph.hotes)+' · rejeu exact '+RR(ph.replay)+' · tessellation/scène '+RR(ph.mesh)+' · repli maillage '+RR(ph.maillage)+' · projections '+RR(ph.proj)+' · divers '+RR(autres)+' · affichage '+RR(ph.aff);
+  return {ms:ms,nCk:nCk,bodies:nb,tris:Math.round(t2),engine:occEngineMsg,err:err?String(err.message||err):null,
+    phases:{rep:RR(ph.rep),purge:RR(ph.purge),rejeu:RR(ph.rejeu),aff:RR(ph.aff),hotes:RR(ph.hotes),replay:RR(ph.replay),mesh:RR(ph.mesh),maillage:RR(ph.maillage),proj:RR(ph.proj),autres:RR(autres)}};
 }
 if($('btnHard'))$('btnHard').onclick=()=>{try{hardRefresh();}catch(e){faceEl.textContent+='\n[Hard] '+String((e&&e.message)||e);}};
 // Raccourci : Ctrl+Maj+R (F5 est déjà pris par la vue isométrique)
