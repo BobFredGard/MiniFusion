@@ -2314,6 +2314,17 @@ let faoTreeWrapEl=null; // ref réelle du panneau arbre FAO (la lecture par id e
 let faoAddBarEl=null;   // barre des 7 +usinage posée sur la vue 3D
 let faoWrapEl=null;     // colonne de droite #faoWrap : barre des +usinage + panneau FAO
 let faoFolded=false;    // panneau FAO rabattu sur sa droite (persisté en localStorage)
+let faoCntEl=null;      // contenu .fao-cnt (ref réelle pour le repli programmatique)
+let faoTogEl=null;      // onglet #faoToggle (ref réelle : lecture par id ambiguë sous stub)
+function faoFoldSet(f){ // replier/déplier SANS toucher à localStorage (clic manuel = persistance)
+  if(!faoTreeWrapEl||!faoCntEl||!faoTogEl)return;
+  faoFolded=!!f;
+  try{faoCntEl.style.display=faoFolded?'none':'';}catch(e){}
+  try{faoTreeWrapEl.classList.toggle('folded',faoFolded);}catch(e){}
+  faoTogEl.textContent=faoFolded?'❮':'❯';
+  faoTogEl.title=faoFolded?'Déplier le panneau FAO':'Rabattre le panneau FAO sur la droite';
+  if(faoAddBarEl)faoAddBarEl.style.display=faoFolded?'none':'';
+}
 function faoInitUI(){
   if(typeof document==='undefined')return;
   try{
@@ -2438,21 +2449,18 @@ function faoInitUI(){
       r4.appendChild(be);
       cnt.appendChild(r4);
       faoViewerBtnUpdate();
+      // Refs du repli programmatique (session d'esquisse) posées AVANT la
+      // restauration initiale, qui passe par fold() → faoFoldSet.
+      faoTreeWrapEl=w;faoCntEl=cnt;faoTogEl=tog;
       // Repli : contenu masqué, onglet seul au bord droit, barre 3D masquée —
-      // état persisté comme l'arbre des corps (localStorage).
+      // état persisté comme l'arbre des corps (clic de l'onglet seul).
       const fold=function(){
-        faoFolded=!faoFolded;
-        try{ cnt.style.display=faoFolded?'none':''; }catch(e){}
-        try{ w.classList.toggle('folded',faoFolded); }catch(e){}
-        tog.textContent=faoFolded?'❮':'❯';
-        tog.title=faoFolded?'Déplier le panneau FAO':'Rabattre le panneau FAO sur la droite';
-        if(faoAddBarEl)faoAddBarEl.style.display=faoFolded?'none':'';
+        faoFoldSet(!faoFolded);
         try{ localStorage.setItem('minifusion_faoFolded',faoFolded?'1':'0'); }catch(e){}
       };
       tog.onclick=fold;
       try{ if(localStorage.getItem('minifusion_faoFolded')==='1')fold(); }catch(e){}
       host.appendChild(w);
-      faoTreeWrapEl=w;
     }
     faoRenderTree();
   }catch(e){}

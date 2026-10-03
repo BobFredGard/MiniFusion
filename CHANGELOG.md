@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**152 versions**, de `2026-09-28b` à `2026-10-02-021` — la plus récente en bas,
+**153 versions**, de `2026-09-28b` à `2026-10-02-022` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2743,3 +2743,13 @@ Correctif : esquisse sur face **non consommée** → **aucun verrou, modèle com
 Tests : **nouvelle suite `tests/test_esquisse_face_conges.cjs` enregistrée dans `tests/run.cjs` → `npm test` 51/51 vert**, **ROUGE vérifiée (3 échecs)** sur `tests/fixtures/face-congé.json` (document réel) : A1 verrou `xf_3` au lieu de `null`, A2 6 faces au lieu de 10, A3 0 arc dans la référence ; VERT après correctif (10 faces, 8 lignes + 8 arcs, note exacte, fondu actif) avec non-régressions esquisse XY libre et esquisse consommée (verrou `ex_2`). `test_esquisse_transparence` révisé (T3) puis vert ; run complet 51/51 ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-02-021.html`.
 
 README : tests → 51 suites.
+
+### `2026-10-02-022`
+
+Esquisse : en mode édition, le menu FAO (colonne `#faoWrap` : barre « + Usinage » + panneau « FAO · posages ») reste ouvert par-dessus le voile translucide de l'esquisse — il doit se cacher à l'entrée et se rouvrir à la sortie, sans jamais y toucher s'il était déjà replié.
+
+Correctif : à l'entrée (`openSketch`) le menu FAO se replie s'il est ouvert (état mémorisé `skFaoFoldSave`, mêmes conventions que l'arborescence) ; à la sortie (`closeSketch`) il se rouvre **uniquement s'il était ouvert avant l'entrée** — déjà replié : ni l'entrée ni la sortie ne l'affectent, dépliage manuel pendant la session conservé. État posé par le nouveau helper partagé `faoFoldSet` : repli idempotent **sans** `localStorage` — la préférence persistée `minifusion_faoFolded` n'est jamais réécrite en édition (seul le clic de l'onglet `fold()` persiste, comme avant). Refs réelles `faoCntEl`/`faoTogEl` posées avant la restauration initiale (lecture par id ambiguë sous harnais).
+
+Tests : **nouvelle suite `tests/test_esquisse_fao_cache.cjs` enregistrée dans `tests/run.cjs` → `npm test` 52/52 vert**, **ROUGE vérifiée (7 échecs)** : A1/A2/A3 (panneau, barre et onglet non cachés à l'entrée), B2 (barre jamais restaurée à la sortie), D1/D2/D3 (scénario manuel : caché à l'entrée, dépliage en session, choix conservé) ; VERT après correctif (A caché, B réouvert, C déjà replié intouché, D choix manuel conservé, zéro écriture `minifusion_faoFolded` en édition, clic manuel toujours persistant). Non-régressions `test_fao_barre3d` (repli du panneau par la flèche), `test_esquisse_transparence`, `test_esquisse_arbre_rabat` au run complet ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-02-022.html`.
+
+README : tests → 52 suites.

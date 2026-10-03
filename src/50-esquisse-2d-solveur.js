@@ -1,6 +1,7 @@
 /* ---------- esquisse 2D ---------- */
 let skEdit=null, skAnteriorGhost=null;
 let skTreeFoldSave=null; // arborescence : état avant l'ouverture (null = rien à restaurer)
+let skFaoFoldSave=null;  // menu FAO : ouvert avant l'entrée ? (null = rien à restaurer)
 function newSketch(preset){
   const isPlane=p=>typeof p==='string'&&['XY','XZ','YZ'].includes(p.toUpperCase());
   let pl=isPlane(preset)?preset.toUpperCase():((sel.kind==='plane'&&isPlane(sel.id))?sel.id:null);
@@ -516,6 +517,10 @@ function openSketch(id){
   // l'esquisse la laisse transparaître et encombre le plan de travail.
   // Restaurée à la sortie — état antérieur respecté (nesting = sans effet).
   try{if(skTreeFoldSave===null)skTreeFoldSave=treeFolded;if(!treeFolded)treeFoldSet(true);}catch(e){}
+  // Menu FAO (colonne #faoWrap : « + Usinage » + posages) : caché pendant l'édition,
+  // réouvert à la sortie s'il était ouvert avant — déjà replié : on n'y touche pas.
+  // Mêmes règles que l'arborescence : localStorage jamais réécrit en édition.
+  try{if(skFaoFoldSave===null)skFaoFoldSave=faoFolded;if(!faoFolded)faoFoldSet(true);}catch(e){}
 }
 function closeSketch(save){
   $('sketchOverlay').classList.remove('open');
@@ -539,6 +544,7 @@ function closeSketch(save){
   // Arborescence re-dépliée à la sortie, sauf si l'état antérieur était
   // rabattu (choix manuel de l'utilisateur conservé).
   try{if(skTreeFoldSave===false)treeFoldSet(false);skTreeFoldSave=null;}catch(e){}
+  try{if(skFaoFoldSave===false)faoFoldSet(false);skFaoFoldSave=null;}catch(e){}
 }
 const svg=$('skSvg');
 const NS='http://www.w3.org/2000/svg';
