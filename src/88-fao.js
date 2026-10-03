@@ -250,6 +250,7 @@ function faoSanitiseOps(s){
     }
     if(op.type!=='geofinish')delete op.laisse;
     if(op.limit&&op.limit.mode!=='rect'&&op.limit.mode!=='chain')delete op.limit;
+    if(op.zlim&&!(op.zlim.anchors&&op.zlim.anchors.length))delete op.zlim;
   });
 }
 // radial/axial effectifs d'une op (compat 31v : `laisse` vaut les deux).
@@ -882,6 +883,94 @@ function faoChainRematch(op,edges){
   L.loop=res.loop; L.closed=res.closed; L.nEdges=sel.length; L.stale=false;
   return {changed:loopChanged||wasStale,stale:false,matched:seeds.length,nSel:sel.length};
 }
+function faoZlimFromEdges(edges,idxs){
+  // Limite Z par arêtes : ancre par germe + Zmax/Zmin sur les arêtes retenues.
+  // {ztop,zbot,anchors} ou null si sélection invalide (faut ztop > zbot).
+  const anchors=[]; let ztop=-Infinity,zbot=Infinity;
+  for(let k=0;k<(idxs||[]).length;k++){
+    const e=edges&&edges[idxs[k]];
+    if(!e||!e.pts||e.pts.length<2)continue;
+    const A=faoEdgeAnchor(e); if(!A)return null;
+    anchors.push(A);
+    for(let i=0;i<e.pts.length;i++){
+      const z=+e.pts[i][2];
+      if(isFinite(z)){ if(z>ztop)ztop=z; if(z<zbot)zbot=z; }
+    }
+  }
+  if(!anchors.length||!(ztop>zbot))return null;
+  return {ztop:Math.round(ztop*1000)/1000,zbot:Math.round(zbot*1000)/1000,anchors:anchors};
+}
+function faoZlimRematch(op,edges){
+  // Re-branche la limite Z (ancres figées des germes) à chaque fin de rejeu :
+  // état dérivé comme les chaînes — Z recalculé sur les arêtes appariées (tol
+  // 3D), stale si introuvable/hors tolérance : valeurs figées conservées +
+  // alerte en fiche (re-sélectionner les arêtes).
+  const L=op&&op.zlim;
+  if(!L)return {changed:false,skipped:true};
+  if(!(L.anchors&&L.anchors.length))return {changed:false,skipped:true}; // ancien document
+  if(!edges||!edges.length)return {changed:false,skipped:true};
+  const fail=function(){
+    const ch=!L.stale;
+    L.stale=true;
+    return {changed:!!ch,stale:true,matched:0};
+  };
+  // 1) appariement injectif ancre -> arête (meilleur score, toutes exigées)
+  const used=new Set(); const got=[];
+  for(let a=0;a<L.anchors.length;a++){
+    const A=L.anchors[a];
+    if(!A||!A.m||!isFinite(A.m[0]))return fail();
+    let best=-1,bestS=Infinity;
+    for(let i=0;i<edges.length;i++){
+      if(used.has(i))continue;
+      const e=edges[i];
+      if(!e||!e.pts||e.pts.length<2)continue;
+      const m=(e.mid&&isFinite(e.mid[0]))?e.mid:null;
+      if(!m)continue;
+      const dz=Math.abs((isFinite(+m[2])?+m[2]:0)-(isFinite(+A.m[2])?+A.m[2]:0));
+      const d3=Math.hypot(m[0]-A.m[0],m[1]-A.m[1],dz);
+      if(d3>FAO_CHAIN_TOL)continue; // tolérance 3D (XY + Z)
+      const len=+e.len||0;
+      const dl=A.len>1?Math.abs(len-A.len)/A.len:0;
+      if(dl>0.5)continue; // même position mais taille fondu : plus la même arête
+      const s=d3+5*dl;
+      if(s<bestS){bestS=s;best=i;}
+    }
+    if(best<0)return fail();
+    used.add(best); got.push(edges[best]);
+  }
+  // 2) Zmax/Zmin sur les arêtes appariées (source de vérité : le modèle)
+  let ztop=-Infinity,zbot=Infinity;
+  got.forEach(function(e){
+    (e.pts||[]).forEach(function(p){
+      const z=+p[2];
+      if(isFinite(z)){ if(z>ztop)ztop=z; if(z<zbot)zbot=z; }
+    });
+  });
+  if(!(ztop>zbot))return fail();
+  ztop=Math.round(ztop*1000)/1000; zbot=Math.round(zbot*1000)/1000;
+  const wasStale=!!L.stale;
+  const changed=wasStale||ztop!==+op.ztop||zbot!==+op.zbot;
+  L.nEdges=got.length; L.stale=false;
+  op.ztop=ztop; op.zbot=zbot;
+  return {changed:changed,stale:false,matched:got.length};
+}
+function faoZlimBreak(op){
+  // Édition manuelle d'un champ Haut/Bas : casse le lien avec les arêtes
+  // (valeurs conservées) — les champs repassent en saisie libre.
+  if(op&&op.zlim)delete op.zlim;
+}
+function faoRematchAll(setups,edges){
+  // Fin de rejeu : une seule passe re-branche chaînes XY ET limites Z.
+  let n=0;
+  ((setups)||[]).forEach(function(st){
+    ((st&&st.ops)||[]).forEach(function(op){
+      const r=faoChainRematch(op,edges);
+      const rz=faoZlimRematch(op,edges);
+      if((r&&r.changed)||(rz&&rz.changed))n++;
+    });
+  });
+  return n;
+}
 function faoChainReplay(){
   // Fin de rejeu (buildDone) : re-suit toutes les limites chaîne du document sur les
   // arêtes du nouveau solide. Repli silencieux partout où l'on ne peut pas juger :
@@ -893,8 +982,10 @@ function faoChainReplay(){
     for(let i=0;i<F.length&&!any;i++){
       const ops=(F[i]&&F[i].ops)||[];
       for(let k=0;k<ops.length;k++){
-        const L=ops[k]&&ops[k].limit;
-        if(L&&L.mode==='chain'&&L.anchors&&L.anchors.length){any=true;break;}
+        const o=ops[k]||{};
+        const L=o.limit, Z=o.zlim;
+        if((L&&L.mode==='chain'&&L.anchors&&L.anchors.length)||
+           (Z&&Z.anchors&&Z.anchors.length)){any=true;break;}
       }
     }
     if(!any)return 0;
@@ -902,13 +993,7 @@ function faoChainReplay(){
     if(!occLive||!occLive.shape)return 0;
     const edges=occSharpEdges(occLive.shape);
     if(!edges.length)return 0;
-    let n=0;
-    F.forEach(function(st){
-      ((st&&st.ops)||[]).forEach(function(op){
-        const r=faoChainRematch(op,edges);
-        if(r&&r.changed)n++;
-      });
-    });
+    const n=faoRematchAll(F,edges);
     if(n)faoChanged();
     return n;
   }catch(e){ return 0; }
@@ -1368,10 +1453,10 @@ function faoPost(job,postId){
     'IGNORÉE : B/C non commandés, programme émis en 3 axes (la pièce ne sera PAS inclinée). '+
     'Remettre 3 axes ou exporter sur Siemens.');
   const staleCh=(job.ops||[]).filter(function(o){
-    return o&&o.on!==false&&o.limit&&o.limit.mode==='chain'&&o.limit.stale;
+    return o&&o.on!==false&&((o.limit&&o.limit.mode==='chain'&&o.limit.stale)||(o.zlim&&o.zlim.stale));
   }).length;
-  if(staleCh)warns.push(staleCh+' opération(s) : limite « chaîne » obsolète (arêtes du modèle '+
-    'non retrouvées) — re-sélectionner la chaîne avant export');
+  if(staleCh)warns.push(staleCh+' opération(s) : limite « chaîne »/Z obsolète (arêtes du modèle '+
+    'non retrouvées) — re-sélectionner les arêtes avant export');
   const L=[]; let n=10;
   const nc=function(s){ if(fag){ L.push('N'+n+' '+s); n+=5; } else L.push(s); };
   const cmt=function(s){ L.push(fag?('( '+s+' )'):('; '+s)); };
@@ -1484,8 +1569,9 @@ function faoOpLabel(op,job){
   const off=(op&&op.on===false)?' (désactivée)':'';
   const RA=faoRA(op||{});
   const ra=((op&&(op.type==='pocket'||op.type==='contour'||op.type==='rough3d'||op.type==='facing'))&&(RA.radial>0||RA.axial>0))?(' R'+RA.radial+' A'+RA.axial):'';
-  const lim=(op&&op.limit&&(op.limit.mode==='rect'||(op.limit.mode==='chain'&&(op.limit.loop||[]).length>=3)))
-    ?' [limite]'+(op.limit.stale?'⚠':''):'';
+  const lim=((op&&op.limit&&(op.limit.mode==='rect'||(op.limit.mode==='chain'&&(op.limit.loop||[]).length>=3)))
+    ?' [limite]'+(op.limit.stale?'⚠':''):'')
+    +((op&&op.zlim)?' [Z]'+(op.zlim.stale?'⚠':''):'');
   if(t==='facing')return 'Surfaçage Z='+op.z+tag+off+ra+lim;
   if(t==='pocket')return 'Poche ['+op.x0+','+op.y0+' -> '+op.x1+','+op.y1+'] '+op.ztop+' -> '+op.zbot+ra+tag+off+lim;
   if(t==='contour')return 'Contour ['+op.x0+','+op.y0+' -> '+op.x1+','+op.y1+'] '+op.ztop+' -> '+op.zbot+ra+tag+off+lim;
@@ -2761,11 +2847,32 @@ function faoOpCardElement(setup,op,i){
     const apNow=isFinite(+op.ap)&&+op.ap>0?+op.ap:5;
     d.appendChild(faoH('Hauteurs à usiner (mm)'));
     const rZ=faoRow();
-    rZ.appendChild(faoLab('Haut')); rZ.appendChild(faoNum(op.ztop,function(v){op.ztop=v;},56,
-      null,'Niveau le plus haut usiné — en général le dessus du brut.'));
-    rZ.appendChild(faoLab('Bas')); rZ.appendChild(faoNum(op.zbot,function(v){op.zbot=v;},56,
-      null,'Niveau le plus bas — fond de la zone à ébaucher (hors surépaisseur).'));
+    rZ.appendChild(faoLab('Haut')); rZ.appendChild(faoNum(op.ztop,function(v){faoZlimBreak(op);op.ztop=v;},56,
+      null,'Niveau le plus haut usiné — en général le dessus du brut. Édité à la main : casse le lien avec les arêtes.'));
+    rZ.appendChild(faoLab('Bas')); rZ.appendChild(faoNum(op.zbot,function(v){faoZlimBreak(op);op.zbot=v;},56,
+      null,'Niveau le plus bas — fond de la zone à ébaucher (hors surépaisseur). Édité à la main : casse le lien avec les arêtes.'));
+    if(op.zlim){
+      const bz=document.createElement('span'); bz.className='fao-meta';
+      bz.textContent='lié à '+(op.zlim.nEdges||'?')+' arête(s)'+(op.zlim.stale?' ⚠':'');
+      bz.title='Haut/Bas suivent ces arêtes à chaque rejeu du modèle.';
+      rZ.appendChild(bz);
+      const br=document.createElement('button'); br.textContent='Retirer'; br.style.fontSize='.72rem';
+      br.title='Retirer le lien avec les arêtes (valeurs conservées, redeviennent éditables).';
+      br.onclick=function(){ faoZlimBreak(op); faoChanged();
+        try{ if(typeof renderProps==='function')renderProps(); }catch(e){} };
+      rZ.appendChild(br);
+    }else{
+      const bl=document.createElement('button'); bl.textContent='Limiter Z (arêtes)'; bl.style.fontSize='.72rem';
+      bl.title='Sélectionner des arêtes du modèle pour fixer le haut et le bas de la zone à ébaucher.';
+      bl.onclick=function(){ faoZlimStart(setup.id,op.id); };
+      rZ.appendChild(bl);
+    }
     d.appendChild(rZ);
+    if(op.zlim&&op.zlim.stale){
+      const wz=document.createElement('div'); wz.className='fao-note';
+      wz.textContent='⚠ Modèle modifié : arêtes de limite Z non retrouvées — valeurs inchangées. Re-sélectionnez les arêtes.';
+      d.appendChild(wz);
+    }
     d.appendChild(faoH('Stratégie de vidage'));
     const rS=faoRow();
     rS.appendChild(faoSel([
@@ -4199,35 +4306,43 @@ function faoPlaneCommit(e){
 // la limite survit au rejeu (re-suie auto par faoChainReplay) et à la sauvegarde
 // sans OCCT ; arêtes trop déplacées -> stale (alerte) -> re-sélectionner.
 let faoChainMode=null, faoChainHover=null;
-function faoChainStart(setupId,opId){
+function faoChainStart(setupId,opId,kind){
   try{
-    if(typeof skEdit!=='undefined'&&skEdit){faceEl.textContent='Chaîne : fermez l\'esquisse d\'abord.';return;}
+    const PRE=(kind==='z')?'Limite Z':'Chaîne';
+    if(typeof skEdit!=='undefined'&&skEdit){faceEl.textContent=PRE+' : fermez l\'esquisse d\'abord.';return;}
     if((typeof filMode!=='undefined'&&filMode)||(typeof filModeX!=='undefined'&&filModeX)||
        (typeof mvMode!=='undefined'&&mvMode)||(typeof draftMode!=='undefined'&&draftMode)||
        (typeof coqueMode!=='undefined'&&coqueMode)||(typeof extPickFace!=='undefined'&&extPickFace)||
        (typeof faoPlanePick!=='undefined'&&faoPlanePick)){
-      faceEl.textContent='Chaîne : quittez le mode en cours d\'abord.';return;
+      faceEl.textContent=PRE+' : quittez le mode en cours d\'abord.';return;
     }
     if(!occLive||!occLive.shape){
-      if(typeof occHas==='function'&&!occHas()){faceEl.textContent='Chaîne : solide exact indisponible (OCCT non chargé ou aucun volume).';return;}
+      if(typeof occHas==='function'&&!occHas()){faceEl.textContent=PRE+' : solide exact indisponible (OCCT non chargé ou aucun volume).';return;}
       try{rebuild();}catch(e){}
-      if(!occLive||!occLive.shape){faceEl.textContent='Chaîne : recalcul impossible.';return;}
+      if(!occLive||!occLive.shape){faceEl.textContent=PRE+' : recalcul impossible.';return;}
     }
     let edges=[];
     try{ edges=occSharpEdges(occLive.shape); }catch(e){ edges=[]; }
-    if(!edges.length){faceEl.textContent='Chaîne : aucune arête listable.';return;}
+    if(!edges.length){faceEl.textContent=PRE+' : aucune arête listable.';return;}
     const setup=faoSetup(setupId);
     const op=(setup.ops||[]).filter(function(o){return o.id===opId;})[0];
-    if(!op){faceEl.textContent='Chaîne : opération introuvable.';return;}
+    if(!op){faceEl.textContent=PRE+' : opération introuvable.';return;}
+    const isZ=(kind==='z');
     const old=op.limit&&op.limit.mode==='chain'?op.limit:null;
     faoChainMode={setupId:setup.id,opId:op.id,edges:edges,seeds:[],
-      tangent:old?!!old.tangent:true,sel:[]};
+      tangent:isZ?false:(old?!!old.tangent:true),sel:[],kind:isZ?'z':'chain'};
     faoChainHover=null;
     faoChainBuildOverlay();
     if(typeof renderProps==='function')renderProps();
-    faceEl.textContent='Chaîne : cliquez des arêtes ('+edges.length+' listées) · tangentes auto '+
-      (faoChainMode.tangent?'ON':'OFF')+' · OK valide, Échap annule.';
-  }catch(e){ try{faceEl.textContent='Chaîne : impossible ('+e.message+').';}catch(e2){} }
+    faceEl.textContent=isZ
+      ?('Limite Z : cliquez les arêtes des hauteurs ('+edges.length+' listées) · OK valide, Échap annule.')
+      :('Chaîne : cliquez des arêtes ('+edges.length+' listées) · tangentes auto '+
+        (faoChainMode.tangent?'ON':'OFF')+' · OK valide, Échap annule.');
+  }catch(e){ try{faceEl.textContent=PRE+' : impossible ('+e.message+').';}catch(e2){} }
+}
+function faoZlimStart(setupId,opId){
+  // Sélection d'arêtes au service des hauteurs Haut/Bas de l'ébauche 3D.
+  faoChainStart(setupId,opId,'z');
 }
 function faoChainExit(silent){
   try{
@@ -4328,8 +4443,9 @@ function faoChainToggle(e){
   try{
     if(!faoChainMode||!faoChainMode.edges)return;
     const i=faoChainPick(e);
+    const PRE=(faoChainMode.kind==='z')?'Limite Z':'Chaîne';
     if(i===null||i===undefined||!faoChainMode.edges[i]){
-      faceEl.textContent='Chaîne : cliquez une arête bleue.'+
+      faceEl.textContent=PRE+' : cliquez une arête bleue.'+
         (faoChainMode.tangent?' Les tangentes sont ajoutées automatiquement.':' Une seule arête par clic.');
       return;
     }
@@ -4341,35 +4457,43 @@ function faoChainToggle(e){
     if(typeof renderProps==='function')renderProps();
     const extra=(faoChainMode.tangent&&faoChainMode.sel.length>faoChainMode.seeds.length)
       ?' ('+faoChainMode.sel.length+' retenues dont '+faoChainMode.seeds.length+' cliquée(s) + tangentes)':'';
-    faceEl.textContent='Chaîne : '+faoChainMode.sel.length+' arête(s)'+extra+'.';
-  }catch(err){ try{faceEl.textContent='Chaîne : sélection impossible ('+err.message+').';}catch(e2){} }
+    faceEl.textContent=((faoChainMode.kind==='z')?'Limite Z':'Chaîne')+' : '+
+      faoChainMode.sel.length+' arête(s)'+extra+'.';
+  }catch(err){ try{faceEl.textContent='Sélection impossible ('+err.message+').';}catch(e2){} }
 }
 function faoChainPanel(p,setup,op){
-  p.appendChild(faoH('Limite : chaîne d\'arêtes'));
+  const isZ=(faoChainMode.kind==='z');
+  p.appendChild(faoH(isZ?'Limite Z : sélection d\'arêtes':'Limite : chaîne d\'arêtes'));
   const n=faoChainMode.sel.length, ns=(faoChainMode.seeds||[]).length;
   const info=document.createElement('div');
   info.className='fao-meta';
-  info.textContent=n+' arête(s) retenue(s)'+(faoChainMode.tangent?' dont '+ns+' cliquée(s) + tangentes':'')+'.';
+  info.textContent=isZ
+    ?(n+' arête(s) — une ou plusieurs en haut, une ou plusieurs en bas : Ztop = Zmax, Zbot = Zmin.')
+    :(n+' arête(s) retenue(s)'+(faoChainMode.tangent?' dont '+ns+' cliquée(s) + tangentes':'')+'.');
   p.appendChild(info);
-  const r=faoRow();
-  const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!faoChainMode.tangent;
-  cb.onchange=function(){ faoChainMode.tangent=cb.checked; faoChainSync(); faoChainPaint(); faoRefreshFaoUI(); };
-  r.appendChild(cb);
-  const lb=document.createElement('span'); lb.textContent='Arêtes tangentes auto';
-  lb.className='fao-lab'; r.appendChild(lb);
-  p.appendChild(r);
+  if(!isZ){
+    const r=faoRow();
+    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!faoChainMode.tangent;
+    cb.onchange=function(){ faoChainMode.tangent=cb.checked; faoChainSync(); faoChainPaint(); faoRefreshFaoUI(); };
+    r.appendChild(cb);
+    const lb=document.createElement('span'); lb.textContent='Arêtes tangentes auto';
+    lb.className='fao-lab'; r.appendChild(lb);
+    p.appendChild(r);
+  }
   const r2=faoRow();
-  const ok=document.createElement('button'); ok.textContent='OK · utiliser comme limite'; ok.style.fontSize='.78rem';
+  const ok=document.createElement('button'); ok.textContent=isZ?'OK · appliquer la limite Z':'OK · utiliser comme limite'; ok.style.fontSize='.78rem';
   ok.onclick=function(){ faoChainOk(); };
   const no=document.createElement('button'); no.textContent='Annuler'; no.style.fontSize='.72rem';
-  no.onclick=function(){ faoChainExit(); faceEl.textContent='Chaîne : annulée, limite inchangée.'; };
+  no.onclick=function(){ faoChainExit(); faceEl.textContent=(isZ?'Limite Z':'Chaîne')+' : annulée, limite inchangée.'; };
   const clr=document.createElement('button'); clr.textContent='Effacer'; clr.style.fontSize='.72rem';
   clr.onclick=function(){ faoChainMode.seeds=[]; faoChainMode.sel=[]; faoChainPaint(); faoRefreshFaoUI(); };
   r2.appendChild(ok); r2.appendChild(no); r2.appendChild(clr);
   p.appendChild(r2);
   const note=document.createElement('div');
   note.className='fao-note';
-  note.textContent='La boucle est re-suie automatiquement à chaque rejeu (ancres des germes) ; si les arêtes ont trop bougé, la fiche passe en alerte. Chaîne ouverte : refermée d\'office en segment droit.';
+  note.textContent=isZ
+    ?'Haut et bas sont re-suivis à chaque rejeu (ancres des germes) ; éditer un champ casse le lien, une arête perdue met la fiche en alerte (valeurs gardées).'
+    :'La boucle est re-suie automatiquement à chaque rejeu (ancres des germes) ; si les arêtes ont trop bougé, la fiche passe en alerte. Chaîne ouverte : refermée d\'office en segment droit.';
   p.appendChild(note);
 }
 function faoChainOk(){
@@ -4377,12 +4501,29 @@ function faoChainOk(){
     if(!faoChainMode)return;
     const setup=faoSetup(faoChainMode.setupId);
     const op=(setup.ops||[]).filter(function(o){return o.id===faoChainMode.opId;})[0];
-    if(!op){faceEl.textContent='Chaîne : opération introuvable.';faoChainExit();return;}
-    if(!faoChainMode.sel.length){faceEl.textContent='Chaîne : aucune arête — limite inchangée.';faoChainExit();return;}
+    const isZ=(faoChainMode.kind==='z');
+    const PRE=isZ?'Limite Z':'Chaîne';
+    if(!op){faceEl.textContent=PRE+' : opération introuvable.';faoChainExit();return;}
+    if(!faoChainMode.sel.length){faceEl.textContent=PRE+' : aucune arête — limite inchangée.';faoChainExit();return;}
+    if(isZ){
+      // --- Limite Z par arêtes : Zmax/Zmin sur la sélection + ancre par germe.
+      const nSel=faoChainMode.sel.length;
+      const Z=faoZlimFromEdges(faoChainMode.edges,faoChainMode.sel);
+      if(!Z){faoChainExit();faceEl.textContent='Limite Z : sélection invalide (haut > bas requis) — inchangée.';return;}
+      faoSnapshot('limite Z par arêtes');
+      op.ztop=Z.ztop; op.zbot=Z.zbot;
+      // Lien suivi à chaque rejeu (faoZlimRematch) ; éditer un champ casse le
+      // lien (faoZlimBreak) ; arête perdue -> stale + alerte, valeurs gardées.
+      op.zlim={anchors:Z.anchors,nEdges:nSel,stale:false};
+      faoChainExit();
+      faoChanged();
+      faceEl.textContent='Limite Z : haut '+Z.ztop+' → bas '+Z.zbot+' ('+nSel+' arêtes) enregistrée.';
+      return;
+    }
     const chains=faoOrderEdges(faoChainMode.edges,faoChainMode.sel);
     let res=faoLoopFromChains(faoChainMode.edges,chains);
     if(!res.loop.length||faoLoopArea(res.loop)<1e-6){
-      faceEl.textContent='Chaîne : boucle dégénérée — limite inchangée.';return;
+      faceEl.textContent=PRE+' : boucle dégénérée — limite inchangée.';return;
     }
     // Cap : les très longues chaînes sont sous-échantillonnées (clip en O(n)).
     res=faoChainLoopCap(res);
@@ -4398,8 +4539,8 @@ function faoChainOk(){
       side:(old&&old.side)||'center',extra:(old&&isFinite(+old.extra))?+old.extra:0};
     faoChainExit();
     faoChanged();
-    faceEl.textContent='Chaîne : limite '+(res.closed?'fermée':'refermée')+' ('+
+    faceEl.textContent=PRE+' : limite '+(res.closed?'fermée':'refermée')+' ('+
       nEdges+' arêtes) enregistrée.';
-  }catch(e){ try{faceEl.textContent='Chaîne : validation impossible ('+e.message+').';}catch(e2){} }
+  }catch(e){ try{faceEl.textContent=PRE+' : validation impossible ('+e.message+').';}catch(e2){} }
 }
 try{ faoInitUI(); }catch(e){}

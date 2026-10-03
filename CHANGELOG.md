@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**155 versions**, de `2026-09-28b` à `2026-10-03-002` — la plus récente en bas,
+**156 versions**, de `2026-09-28b` à `2026-10-03-003` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2773,3 +2773,11 @@ Renumérotation version produit : le badge du bandeau passe **V0.1.0 → V0.1.1*
 Correctif : `prodVer` dans `src/96-bandeau-groupes.js` (`v.textContent='V0.1.1'`) — la coque HTML n'est jamais éditée à la main, le badge reste injecté par `styleBandeau`.
 
 Tests : `tests/test_prodver_badge.cjs` révisé (8 mentions V0.1.0 → V0.1.1, regex échappées comprises), **ROUGE vérifiée (3 échecs : texte src/96, script construit, `textContent` runtime)** → VERT ; run complet 53/53 ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-03-002.html` ; tag `V0.1.1` déplacé sur ce commit (message mis à jour).
+
+### `2026-10-03-003`
+
+Ébauche 3D, phase A : **zones de limitation HAUTES et BASSES par sélection d'arêtes** — Haut/Bas se figeaient à la saisie manuelle ; on sélectionne maintenant des arêtes du modèle pour cadrer la zone à ébaucher (suite du plan « Ébauche 3D », point 7).
+
+Correctifs/fonctions dans `src/88-fao.js` : `faoZlimFromEdges` (capture : Zmax/Zmin sur la sélection + ancre par germe, refuse si ztop ≤ zbot), `faoZlimRematch` (rejeu : re-branche les ancres sur les arêtes du nouveau solide en tolérance 3D = `FAO_CHAIN_TOL`, stale si introuvable/hors tolérance — valeurs figées gardées + alerte fiche), `faoZlimBreak` (édition manuelle d'un champ casse le lien), `faoRematchAll` (passe unique en fin de rejeu : chaînes XY **et** limites Z, appelée par `faoChainReplay`), `faoZlimStart`/`faoChainStart(setupId,opId,kind)` en mode `kind:'z'` (sans tangences, panneau dédié « Limite Z »). Fiche rough3d : badge « lié à N arête(s) », boutons « Limiter Z (arêtes) »/« Retirer », alerte si arêtes perdues ; libellé arbre `[Z]⚠` ; alerte d'export si zlim stale ; `faoSanitiseOps` retire un `zlim` vide. Les générateurs lisent toujours `op.ztop`/`op.zbot` : **aucun changement de chaîne de fabrication** — le lien n'est qu'une source de vérité dérivée (même régime que les projections associatives).
+
+Tests : **nouvelle suite `tests/test_fao_zlim.cjs` enregistrée dans `tests/run.cjs` → `npm test` 54/54 vert**, **ROUGE vérifiée (FATAL : `zOp.zlim.stale` absent)** sur 16 points (capture A, garde B, rejeu C×5, casse D, `faoRematchAll` E×2, fiche F×4) ; VERT après implémentation ; run complet 54/54 ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-03-003.html`.

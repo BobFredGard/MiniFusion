@@ -43,6 +43,7 @@ const SUITES = [
   "test_fao_reset",
   "test_fao_passes",
   "test_fao_barre3d",
+  "test_fao_zlim",
   "test_validate",
   "test_tree_filter",
   "test_view_reframe",

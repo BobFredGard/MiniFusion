@@ -147,7 +147,7 @@ python -m http.server 3000
 | `occt/` | Noyau OpenCascade WebAssembly (~111 Mo) + ses `.bak` locaux (non suivis) |
 | `threejs/` | Rendu 3D (three.js), OrbitControls, CSG |
 | `PostPro/` | Post-processeurs G-code : **Siemens 840D** (variantes 630 / 1520) et **Fagor 8065** |
-| `tests/` | Suite Node portable (harnais `appvm.cjs` + 53 suites + fixtures) : `node tests/run.cjs` ou `npm test` |
+| `tests/` | Suite Node portable (harnais `appvm.cjs` + 54 suites + fixtures) : `node tests/run.cjs` ou `npm test` |
 | `Backup/` | Snapshots des versions vertes |
 | `Server.bat` | Lancement local (npx serve, port 3000) |
 
@@ -162,7 +162,7 @@ n'a qu'un fichier à ouvrir.
 # 1. éditer un fichier de src/ (jamais fusion_mvp.html)
 # 2. reconstruire le livrable
 node build.js
-# 3. régression verte (harnais + 53 suites)
+# 3. régression verte (harnais + 54 suites)
 npm test
 # 4. bump APP_VER (src/00-entete-et-outils.js) + entrée CHANGELOG.md
 # 5. vérifier que le livrable est à jour (à mettre en CI)
@@ -228,7 +228,7 @@ fichier unique (voir « Travailler sur le code »).
 
 - **In-app** : 🧪 Auto-tests (non-régression esquisse, contraintes, cotes) et **✓ Valider** (7 phases diagnostic + réparation du modèle, rapport dans la zone Auto-tests) — depuis le panneau latéral.
 - **Dev** : harnais Node hors navigateur (solveur, cotation orientée, suivi de faces, références, projections associatives, congés/chanfreins exacts, menu d'extrusion, prismes miroir, répétitions, marqueur temps, performance…) ; certains scénarios s'exécutent sur le **noyau OCCT réel** (`.wasm` chargé en Node), et la version (`APP_VER`) est vérifiée avant chaque sauvegarde dans `Backup/`.
-- **Suite repo** : `tests/` (harnais `appvm.cjs` + 53 suites + fixtures, dont `test_fao`, `test_fao3d`, `test_fao_barre3d`, `test_corps_style`, `test_esquisse_contraintes`, `test_esquisse_arbre_rabat`, `test_esquisse_face_conges`, `test_esquisse_fao_cache`, `test_ctx_menu_viewport`, `test_conge_fond_poche`, `test_conge_tangent`, `test_repeat_session`, `test_validate`, `test_tree_filter`, `test_view_reframe`, `test_prodver_badge`, `test_cache_exact`, `test_sk_offset_contraintes`, `test_sk_offset_joints`, `test_proj_arc_sens`, `test_sk_offset_projetee`, `test_fresh_default`, `test_hard_phases`, `test_sk_origin`, `test_sk_hv_drag` et `test_coque_depouille`) — portable, aucun chemin absolu : `node tests/run.cjs` ou `npm test` depuis la racine, sur n'importe quel PC.
+- **Suite repo** : `tests/` (harnais `appvm.cjs` + 54 suites + fixtures, dont `test_fao`, `test_fao3d`, `test_fao_barre3d`, `test_fao_zlim`, `test_corps_style`, `test_esquisse_contraintes`, `test_esquisse_arbre_rabat`, `test_esquisse_face_conges`, `test_esquisse_fao_cache`, `test_ctx_menu_viewport`, `test_conge_fond_poche`, `test_conge_tangent`, `test_repeat_session`, `test_validate`, `test_tree_filter`, `test_view_reframe`, `test_prodver_badge`, `test_cache_exact`, `test_sk_offset_contraintes`, `test_sk_offset_joints`, `test_proj_arc_sens`, `test_sk_offset_projetee`, `test_fresh_default`, `test_hard_phases`, `test_sk_origin`, `test_sk_hv_drag` et `test_coque_depouille`) — portable, aucun chemin absolu : `node tests/run.cjs` ou `npm test` depuis la racine, sur n'importe quel PC.
 
 ## Historique
 
