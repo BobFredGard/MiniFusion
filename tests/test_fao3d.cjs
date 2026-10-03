@@ -50,15 +50,15 @@ const vm=require('vm');
     "att(hxc.every((m,i)=>i===0||m.z<=hxc[i-1].z+1e-9),'helice : descente monotone');",
     "att(hxc.every(m=>Math.abs(Math.hypot(m.x,m.y)-3)<1e-6),'helice : rayon 3 constant');",
     // --- auto -> rampe sur intervalle étroit (canal D10 : on force étroit)
-    "const rn=faoGenRough3D(CN,BX,40,30,{ap:10,ae:6,toolD:10,radial:0,axial:0,secu:45,entry:'ramp',strategy:'zigzag'});",
+    "const rn=faoGenRough3D(CN,BX,40,30,{ap:10,ae:6,toolD:10,radial:0,axial:0,secu:45,entry:'ramp'});",
     "att(rn[1].r===0&&Math.abs(rn[1].z-30)<1e-9,'rampe : 2e move au niveau 30');",
     // --- hélice forcée sur large (canal 50 >= 25)
-    "const rh=faoGenRough3D(CN,BX,40,30,{ap:10,ae:6,toolD:10,radial:0,axial:0,secu:45,entry:'helix',strategy:'zigzag'});",
+    "const rh=faoGenRough3D(CN,BX,40,30,{ap:10,ae:6,toolD:10,radial:0,axial:0,secu:45,entry:'helix'});",
     "att(rh[1].r===0&&rh[1].z<45&&rh[1].z>30,'helice forcee : 2e move en descente');",
     "att(rh.some(m=>!m.r&&Math.abs(m.z-30)<1e-9),'helice forcee : niveau 30 atteint');",
-    // --- parois pièce : x=25 et x=75 suivis sur plusieurs lignes
+    // --- parois pièce : x=25 et x=75 suivis sur plusieurs lignes (grille aeA=2.5)
     "att(rm.some(m=>!m.r&&Math.abs(m.x-25)<1e-9&&Math.abs(m.y-0)<1e-9),'paroi : (25,0)');",
-    "att(rm.some(m=>!m.r&&Math.abs(m.x-25)<1e-9&&Math.abs(m.y-54)<1e-9),'paroi : (25,54) suivie');",
+    "att(rm.some(m=>!m.r&&Math.abs(m.x-25)<1e-9&&Math.abs(m.y-52.5)<1e-9),'paroi : (25,52.5) suivie');",
     "att(rm.some(m=>!m.r&&Math.abs(m.x-75)<1e-9),'paroi droite x=75');",
     // --- plats : au-dessus de la pièce (z=30 vide) = surfaçage pleine largeur
     "const rf=faoGenRough3D(mkBox(40,60,20,40,0,10),BX,30,10,{ap:10,ae:6,toolD:10,radial:0,axial:0,secu:35});",
@@ -69,33 +69,29 @@ const vm=require('vm');
     "const ST=merge(merge(mkBox(0,30,0,60,0,20),mkBox(70,100,0,60,0,20)),merge(mkBox(0,20,0,60,20,40),mkBox(80,100,0,60,20,40)));",
     "const mo=faoGenRough3D(ST,BX,40,0,{ap:10,ae:6,toolD:10,radial:0.5,axial:0,secu:45});",
     "const z30=mo.filter(m=>!m.r&&Math.abs(m.z-30)<1e-9);",
-    "att(z30.some(m=>m.x>23&&m.x<27),'morph : boucle externe ~25.5');",
-    "att(z30.some(m=>m.x>44&&m.x<46),'morph : boucle interne ~45');",
+    "att(z30.some(m=>m.x>23&&m.x<27),'troco : paroi gauche ~25.5');",
+    "att(z30.some(m=>m.x>44&&m.x<46),'troco : passage interieur ~45');",
     "const consec=function(arr){const out=[];for(let i=1;i<arr.length;i++)out.push([arr[i-1],arr[i]]);return out;};",
-    "att(consec(z30).some(p=>!p[0].r&&!p[1].r&&Math.abs(p[0].x-p[1].x)<0.01&&Math.abs(p[0].y-p[1].y)>2&&Math.abs(p[0].x-50)>20),'morph : flanc vertical (suivi de forme)');",
-    // --- raffinement : ap2=2 entre z=30 et z=20 (section 55 -> 35)
+    "att(consec(z30).some(p=>!p[0].r&&!p[1].r&&Math.abs(p[0].x-p[1].x)<0.01&&Math.abs(p[0].y-p[1].y)>2&&Math.abs(p[0].x-50)>20),'troco : flanc vertical (liaison entre lignes)');",
+    // --- mode unique : les passes fines ap2 n'existent plus (pelage trocoïdal)
     "const mr=faoGenRough3D(ST,BX,40,0,{ap:10,ap2:2,ae:6,toolD:10,radial:0.5,axial:0,secu:45,entry:'ramp'});",
     "const zr={};mr.filter(m=>!m.r).forEach(m=>{zr[Math.round(m.z)]=1;});",
-    "att(zr[26]&&zr[22],'raffinement : niveaux 26 et 22 présents');",
-    "att(!zr[15],'pas de niveau parasite à 15');",
-    // --- zigzag conservé en option : traverse complète à mi-poche
+    "att(!zr[26],'troco : ap2 ignore, aucun niveau fin à 26');",
+    "att(!zr[24],'troco : ap2 ignore, aucun niveau fin à 24');",
+    // --- mode unique : l'option strategy est rejetée (sortie identique)
     "const mz=faoGenRough3D(ST,BX,40,30,{ap:10,ae:6,toolD:10,radial:0.5,axial:0,secu:45,strategy:'zigzag'});",
-    "const mzz=mz.filter(m=>!m.r&&Math.abs(m.z-30)<1e-9);",
-    "const zx=mzz.map(m=>m.x);",
-    "att(Math.min.apply(null,zx)<=26&&Math.max.apply(null,zx)>=74,'zigzag : traverse [25.5,74.5]');",
-    "att(mz.some(m=>!m.r&&m.arc),'zigzag : arcs dentree parois');",
+    "const mz0=faoGenRough3D(ST,BX,40,30,{ap:10,ae:6,toolD:10,radial:0.5,axial:0,secu:45});",
+    "att(JSON.stringify(mz)===JSON.stringify(mz0),'strategy zigzag rejetee : sortie identique');",
     // --- régions : 2 colonnes disjointes sur 2 lignes = 2 régions
     "const RG=faoRoughRegions([{y:0,ivs:[{a:0,b:4},{a:6,b:10}]},{y:1,ivs:[{a:0,b:4},{a:6,b:10}]}]);",
     "att(RG.length===2&&RG.every(g=>g.length===2),'régions : 2 colonnes');",
     "att(RG.some(g=>g.every(q=>q.iv.b<=4+1e-9)),'région gauche : que [0,4]');",
-    // --- zigzag : le vide entre intervalles n'est jamais coupé, liaison par sécu
-    "const ZL=[];faoRoughZigzag([{y:0,ivs:[{a:0,b:4},{a:6,b:10}]}],5,10,0,30,30,6,'ramp',false,[],{x0:0,y0:0,x1:10,y1:10},null,null,ZL);",
-    "att(ZL.filter(m=>!m.r).every(m=>m.x<=4+1e-9||m.x>=6-1e-9),'zigzag : jamais de coupe dans le vide ]4,6[');",
-    "att(ZL.some(m=>m.r&&Math.abs(m.z-30)<1e-9),'zigzag : liaison par sécu');",
-    // --- arrondi du morph : des arcs, bornes + surépaisseur tenues
+    // --- mode unique : les anciennes stratégies ont été supprimées du code
+    "att(typeof faoRoughLevel==='undefined'&&typeof faoRoughMorph==='undefined'&&typeof faoRoughZigzag==='undefined'&&typeof faoRoughIntervals==='undefined','mode unique : helpers morph/zigzag supprimes');",
+    // --- arrondi de l'ébauche : des arcs, bornes + surépaisseur tenues
     "const mro=faoGenRough3D(ST,BX,40,30,{ap:10,ae:6,toolD:10,radial:0.5,axial:0,secu:45});",
     "const mrr=faoRoundMoves(mro,2);",
-    "att(mrr.some(m=>!m.r&&m.arc),'arrondi morph : arcs présents');",
+    "att(mrr.some(m=>!m.r&&m.arc),'arrondi : arcs présents');",
     "const m30=mrr.filter(m=>!m.r&&Math.abs(m.z-30)<1e-9);",
     "att(m30.filter(m=>!m.arc).every(m=>m.x>=25.5-1e-9&&m.x<=74.5+1e-9),'arrondi : droites dans [25.5,74.5]');",
     "att(m30.every(m=>m.x>=25.5-0.9&&m.x<=74.5+0.9),'arrondi : bombe <= 0.9 (sagitta 90°)');",
@@ -129,10 +125,10 @@ const vm=require('vm');
     "p('rayon moyen centres : '+rmoy.toFixed(2)+' (attendu ~14)');",
     "att(rmoy>13&&rmoy<15,'centres outil à R+4');",
     "att(cuts[0].z>5,'1er anneau près du sommet : z='+cuts[0].z.toFixed(1));",
-    // --- morph + hélice centrale sur sphère (équateur large, SP défini plus haut)
+    // --- hélice d'entrée sur sphère (équateur large, SP défini plus haut)
     "const mh=faoGenRough3D(SP,{x0:-12,y0:-12,x1:12,y1:12},20,0,{ap:10,ae:4,toolD:4,radial:0.5,axial:0,secu:30});",
-    "att(mh.some(m=>!m.r&&m.z>10&&m.z<30),'morph sphere : descente helice 30->10');",
-    // --- adaptive : pelage petit pas + stay-down + trochoide (canal CN, BX)
+    "att(mh.some(m=>!m.r&&m.z>10&&m.z<30),'sphere : descente entree 20->10');",
+    // --- pelage trocoïdal : petit pas + stay-down + trochoide (canal CN, BX)
     "const ad=faoGenRough3D(CN,BX,40,30,{ap:10,ae:6,toolD:10,radial:0.5,axial:0,secu:45,strategy:'adaptive'});",
     "att(ad.length>50,'adaptive : '+ad.length+' moves');",
     "att(ad[0].r===1,'adaptive : 1er move rapide');",
@@ -140,7 +136,7 @@ const vm=require('vm');
     "att(ad.some(m=>!m.r&&m.z>30&&m.z<45),'adaptive : descente helice');",
     "att(ad.filter(m=>m.r).length<=4,'adaptive : stay-down, '+ad.filter(m=>m.r).length+' rapides');",
     "const mo1=faoGenRough3D(CN,BX,40,30,{ap:10,ae:6,toolD:10,radial:0.5,axial:0,secu:45,strategy:'morph'});",
-    "att(ad.filter(m=>!m.r).length>mo1.filter(m=>!m.r).length,'adaptive : plus de passes qu en morph (petit pas)');",
+    "att(ad.filter(m=>!m.r).length===mo1.filter(m=>!m.r).length,'strategy morph rejetee : meme sortie troco');",
     // --- adaptive en goulet 15 mm (D10) : trochoides, pas de droite pleine largeur
     "const NB=merge(mkBox(0,42.5,0,60,0,40),mkBox(57.5,100,0,60,0,40));",
     "const az=faoGenRough3D(NB,BX,40,30,{ap:10,ae:6,toolD:10,radial:0.5,axial:0,secu:45,strategy:'adaptive'});",

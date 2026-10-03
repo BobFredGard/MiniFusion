@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**156 versions**, de `2026-09-28b` à `2026-10-03-003` — la plus récente en bas,
+**157 versions**, de `2026-09-28b` à `2026-10-03-004` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2781,3 +2781,11 @@ Tests : `tests/test_prodver_badge.cjs` révisé (8 mentions V0.1.0 → V0.1.1, r
 Correctifs/fonctions dans `src/88-fao.js` : `faoZlimFromEdges` (capture : Zmax/Zmin sur la sélection + ancre par germe, refuse si ztop ≤ zbot), `faoZlimRematch` (rejeu : re-branche les ancres sur les arêtes du nouveau solide en tolérance 3D = `FAO_CHAIN_TOL`, stale si introuvable/hors tolérance — valeurs figées gardées + alerte fiche), `faoZlimBreak` (édition manuelle d'un champ casse le lien), `faoRematchAll` (passe unique en fin de rejeu : chaînes XY **et** limites Z, appelée par `faoChainReplay`), `faoZlimStart`/`faoChainStart(setupId,opId,kind)` en mode `kind:'z'` (sans tangences, panneau dédié « Limite Z »). Fiche rough3d : badge « lié à N arête(s) », boutons « Limiter Z (arêtes) »/« Retirer », alerte si arêtes perdues ; libellé arbre `[Z]⚠` ; alerte d'export si zlim stale ; `faoSanitiseOps` retire un `zlim` vide. Les générateurs lisent toujours `op.ztop`/`op.zbot` : **aucun changement de chaîne de fabrication** — le lien n'est qu'une source de vérité dérivée (même régime que les projections associatives).
 
 Tests : **nouvelle suite `tests/test_fao_zlim.cjs` enregistrée dans `tests/run.cjs` → `npm test` 54/54 vert**, **ROUGE vérifiée (FATAL : `zOp.zlim.stale` absent)** sur 16 points (capture A, garde B, rejeu C×5, casse D, `faoRematchAll` E×2, fiche F×4) ; VERT après implémentation ; run complet 54/54 ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-03-003.html`.
+
+### `2026-10-03-004`
+
+Ébauche 3D, phase D : **mode trocoïdal unique** — les trois stratégies de vidage (Morph / Zigzag / Adaptive) et les passes fines `ap2` sont supprimées : l'ébauche 3D adopte le seul pelage trocoïdal (déjà le meilleur des trois), les anciens documents étant migrés à la lecture (suite du plan « Ébauche 3D », point 3).
+
+Correctifs dans `src/88-fao.js` : `faoGenRough3D` ramené à un plan de niveaux épais `ap` + `faoRoughAdaptiveLevel` (options `strategy`/`ap2`/`refineTol` ignorées) ; suppression des helpers `faoRoughLevel`, `faoRoughMorph`, `faoRoughZigzag`, `faoRoughIntervals` (`faoRoughRegions` et `faoHelixEntry` conservées, utilisées par le mode unique) ; `faoShadowIntervals` distingue maintenant le **niveau vide de matière** (surfaçage pleine largeur, historique morph) de la **ligne hors section** (conservatif, rien à y vider) — le pelage plaquait autrefois au-dessus de la pièce (bug plat) ; fiche rough3d sans selecteur de stratégie, sans champ `ap2` ni rang « Parois fin / Fond fin », aide `ae` en mode trocoïdal, libellé arbre sans `+fin` ; `faoOpDefaults`/`faoOpMoves` sans les champs morts ; `faoSanitiseOps` retire `strategy`/`ap2`/`radial2`/`axial2` des documents anciens (même régime que `zlim`) ; README (Ébauche 3D, alertes `ae`) mis au mode unique.
+
+Tests : révision façon T3 (pas de nouvelle suite) — `tests/test_fao3d.cjs` (10 points réécrits : paroi (25,52.5), `ap2` ignoré, `strategy` sans effet, helpers supprimés, comparaison troco unique) et `tests/test_fao.cjs` (fiche sans « Morph/Zigzag/Adaptive »), **ROUGE vérifiée (7 échecs)** → VERT après implémentation ; run complet **54/54** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-03-004.html`.

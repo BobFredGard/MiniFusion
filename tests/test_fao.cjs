@@ -172,14 +172,16 @@ const vm=require('vm');
     "att(document.getElementById('props').children.length>2,'fiche op dans panneau droit');",
     "sel={kind:'faoSetup',id:sid};renderProps();",
     "att(document.getElementById('props').children.length>2,'fiche posage dans panneau droit');",
-    // --- fiche Ébauche 3D : sections lisibles, sans plantage (3 stratégies)
+    // --- fiche Ébauche 3D : sections lisibles, sans plantage (mode unique)
     "const r3=faoOpDefaults('rough3d');",
     "const c3=faoOpCardElement(faoSetup(),r3,0);",
     "att(c3.children.length>8,'fiche ebauche 3D : sections, vu '+c3.children.length);",
-    "r3.strategy='adaptive';r3.ae=6;const c3b=faoOpCardElement(faoSetup(),r3,0);",
-    "att(c3b.children.length>8,'fiche adaptive + alerte ae : sans plantage');",
-    "r3.strategy='zigzag';const c3c=faoOpCardElement(faoSetup(),r3,0);",
-    "att(c3c.children.length>8,'fiche zigzag : sans plantage');",
+    "r3.ae=6;const c3b=faoOpCardElement(faoSetup(),r3,0);",
+    "att(c3b.children.length>8,'fiche ae=6 (alerte troco) : sans plantage');",
+    // mode unique : le sélecteur de stratégie (Morph/Zigzag/Adaptive) a disparu
+    "const sels3=[];(function w3(n){(n.children||[]).forEach(function(c){if(c.tagName==='SELECT')sels3.push(c);w3(c);});})(c3);",
+    "const sTxt=sels3.map(function(s){let t='';(s.children||[]).forEach(function(o){t+=(o.textContent||'')+'|';});return t;}).join('');",
+    "att(!/Morph|Zigzag|Adaptive/.test(sTxt),'fiche : selecteur de strategie supprime');",
     "sel={kind:null,id:null};",
     // --- surépaisseurs radiale / axiale séparées
     "const pr=faoGenPocket({x0:10,y0:10,x1:90,y1:70},25,5,{toolD:10,secu:30,ap:10,ae:5,radial:1,axial:0});",
