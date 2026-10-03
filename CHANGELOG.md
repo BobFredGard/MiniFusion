@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**146 versions**, de `2026-09-28b` à `2026-10-02-015` — la plus récente en bas,
+**147 versions**, de `2026-09-28b` à `2026-10-02-016` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2683,3 +2683,13 @@ Tests : **nouvelle suite `tests/test_sk_origin.cjs` enregistrée dans `tests/run
 `build.js --check` sur le livrable committé ; snapshot `Backup/fusion_mvp_2026-10-02-015.html`.
 
 README : tests → 45 suites.
+
+### `2026-10-02-016`
+
+Droites verticales/horizontales pendant un glisser : « il faut faire en sorte, comme pour les coïncidences et tangences, qu'une droite verticale ou horizontale LE RESTE quand on déplace le reste de l'esquisse — là elles se déforment et reviennent à leur état ». Les passes `h`/`v` de `solveSketchRelax` étaient les seules à ne pas posséder la garde « les deux extrémités figées → ne rien bouger » (l'ont déjà : coincident, online, midpoint, parallel/perpendicular, angle). Pendant un glisser, `fix = skFixed ∪ ancre` : avec O (fixé) et le point tiré (ancré), la branche `else` MOYENNait les deux extrémités — ce qui déplace aussi le point fixé. Résultat : la contrainte paraît artificiellement satisfaite à la moyenne, le garde-fou « saisie ancrée » (résidu > 1e-4 → re-règlement sans ancre) ne se déclenche pas, le filet de sortie recolle O en (0,0) et la ligne reste penchée de la moitié du delta pendant tout le glisser — elle « revient à son état » au règlement suivant (relâcher d'une entité), ou reste corrompue (glisser de point : aucun re-règlement au relâcher, résidu persistant).
+
+Correctif : `if(aF&&bF)return;` sur les passes `h` et `v` — l'ancre du glisser cède à la contrainte : pendant le glisser la ligne reste droite et le point tiré ne suit le curseur que sur l'axe libre (y verrouillé par l'horizontale, x par la verticale), le garde-fou re-sout alors sans ancre sur un état déjà satisfait → aucun rebond au relâcher. Effet de bord corrigé au passage : un point fixé par contrainte `fix` (hors O) était emmené par le moyennage et NE REVENAIT PAS (le filet ne recollait que O) — test D : f.y restait à 7,5 après le glisser.
+
+Tests : **nouvelle suite `tests/test_sk_hv_drag.cjs` enregistrée dans `tests/run.cjs` → `npm test` 46/46 vert**, **ROUGE vérifiée (8 échecs)** : glisser de point sur ligne h ancrée à O (déformé de 7,5 pendant ET après), glisser d'entité sur rectangle à O (a.y=-5, c.x=10 au milieu du glisser, retour au relâcher), point fixé par contrainte emmené (f.y=7,5 persistant) ; non-régression : ligne libre (extrémité libre suit l'ancre), rectangle re-serré après relâcher, O intact partout. `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-02-016.html`.
+
+README : tests → 46 suites.

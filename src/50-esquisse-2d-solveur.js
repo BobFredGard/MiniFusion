@@ -938,9 +938,11 @@ function solveSketchRelax(sk,iters,anchor){
       }
       if(c.type==='h'){const l=entById(sk,c.line);if(!l||l.t!=='line')return;const A=P[l.p1],B=P[l.p2];if(!A||!B)return;
         const aF=fix.has(l.p1),bF=fix.has(l.p2);
+        if(aF&&bF)return; // les deux figés (fixé + ancre de glisser) : ne rien bouger — l'ancre cède, le garde-fou re-sout sans elle
         if(aF&&!bF)B.y=A.y;else if(bF&&!aF)A.y=B.y;else{const m=(A.y+B.y)/2;A.y=m;B.y=m;}}
       if(c.type==='v'){const l=entById(sk,c.line);if(!l||l.t!=='line')return;const A=P[l.p1],B=P[l.p2];if(!A||!B)return;
         const aF=fix.has(l.p1),bF=fix.has(l.p2);
+        if(aF&&bF)return; // idem : aucune moyenne sur un point fixé (O ou contrainte fix)
         if(aF&&!bF)B.x=A.x;else if(bF&&!aF)A.x=B.x;else{const m=(A.x+B.x)/2;A.x=m;B.x=m;}}
       if(c.type==='parallel' || c.type==='perpendicular'){
         const A=entById(sk,c.a),B=entById(sk,c.b);if(!A||!B||A.t!=='line'||B.t!=='line')return;

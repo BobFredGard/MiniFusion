@@ -46,7 +46,8 @@ const SUITES = [
   "test_sk_offset_contraintes",
   "test_fresh_default",
   "test_hard_phases",
-  "test_sk_origin"
+  "test_sk_origin",
+  "test_sk_hv_drag"
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {
