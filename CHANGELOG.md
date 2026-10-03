@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**154 versions**, de `2026-09-28b` à `2026-10-03-001` — la plus récente en bas,
+**155 versions**, de `2026-09-28b` à `2026-10-03-002` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2765,3 +2765,11 @@ Date : première version du **2026-10-03** (les lots `-021`/`-022`, commis ce jo
 Tests : **nouvelle suite `tests/test_proj_arc_sens.cjs` enregistrée dans `tests/run.cjs` → `npm test` 53/53 vert**, **ROUGE vérifiée (2 échecs)** sur `tests/fixtures/arêtes.json` (document réel) : A1 (après rejeu `e17` en 268,5°, `sensOK=false`), B1.2 (la création renvoie le complément pour le même arc — bonne arête, mauvais sens) ; VERT après correctif (4/4 arcs `sensOK=true` en 91,5°, création contenante sur les 4, `memeArrete=true`). `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-03-001.html`.
 
 README : tests → 53 suites.
+
+### `2026-10-03-002`
+
+Renumérotation version produit : le badge du bandeau passe **V0.1.0 → V0.1.1**, en cohérence avec le tag `V0.1.1` posé sur le lot précédent (milestone « projection circulaire fiable »).
+
+Correctif : `prodVer` dans `src/96-bandeau-groupes.js` (`v.textContent='V0.1.1'`) — la coque HTML n'est jamais éditée à la main, le badge reste injecté par `styleBandeau`.
+
+Tests : `tests/test_prodver_badge.cjs` révisé (8 mentions V0.1.0 → V0.1.1, regex échappées comprises), **ROUGE vérifiée (3 échecs : texte src/96, script construit, `textContent` runtime)** → VERT ; run complet 53/53 ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-03-002.html` ; tag `V0.1.1` déplacé sur ce commit (message mis à jour).
