@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**153 versions**, de `2026-09-28b` à `2026-10-02-022` — la plus récente en bas,
+**154 versions**, de `2026-09-28b` à `2026-10-03-001` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2753,3 +2753,15 @@ Correctif : à l'entrée (`openSketch`) le menu FAO se replie s'il est ouvert (�
 Tests : **nouvelle suite `tests/test_esquisse_fao_cache.cjs` enregistrée dans `tests/run.cjs` → `npm test` 52/52 vert**, **ROUGE vérifiée (7 échecs)** : A1/A2/A3 (panneau, barre et onglet non cachés à l'entrée), B2 (barre jamais restaurée à la sortie), D1/D2/D3 (scénario manuel : caché à l'entrée, dépliage en session, choix conservé) ; VERT après correctif (A caché, B réouvert, C déjà replié intouché, D choix manuel conservé, zéro écriture `minifusion_faoFolded` en édition, clic manuel toujours persistant). Non-régressions `test_fao_barre3d` (repli du panneau par la flèche), `test_esquisse_transparence`, `test_esquisse_arbre_rabat` au run complet ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-02-022.html`.
 
 README : tests → 52 suites.
+
+### `2026-10-03-001`
+
+Esquisse : la projection d'une arête circulaire rend parfois son **inverse** — l'arc projeté couvre le complément de l'arête choisie (« des fois j'ai l'inverse, il faut projeter l'arête de l'arc et pas son inverse ») ; dans le document réel de l'utilisateur (`arêtes.json`), l'Esquisse 6 projette 4 arcs d'arrondi dont `e17` (coin haut-droit) avec un secteur de 268,5° au lieu de 91,5° — le grand cercle en pointillé de la capture. Cause : l'entité arc va **toujours** de `pa` à `pb` en sens trigonométrique (`arcAngles`), mais la projection reprenait `pa=pts[0]`, `pb=pts[dernier]` dans l'orientation OCCT de l'arête — orientation arbitraire : quand l'arête est parcourue « à l'envers », le CCW devient le complément (les 3 autres arcs étaient bons par chance).
+
+Correctif : nouvel helper `arcOrient(cx,cy,…,milieu)` ordonne les extrémités pour que le secteur trigonométrique `pa→pb` contienne le **milieu réel de l'arête** (jamais son complément) — appliqué aux deux chemins : création (`projectEdgeAt`) et rafraîchissement associatif (`findClosestProjectedEdge` → `updateAssociativeProjections`), ce qui **répare aussi les documents déjà sauvés inversés** au prochain rejeu. Lignes et cercles pleins inchangés (sans orientation).
+
+Date : première version du **2026-10-03** (les lots `-021`/`-022`, commis ce jour, portaient encore le préfixe `2026-10-02`).
+
+Tests : **nouvelle suite `tests/test_proj_arc_sens.cjs` enregistrée dans `tests/run.cjs` → `npm test` 53/53 vert**, **ROUGE vérifiée (2 échecs)** sur `tests/fixtures/arêtes.json` (document réel) : A1 (après rejeu `e17` en 268,5°, `sensOK=false`), B1.2 (la création renvoie le complément pour le même arc — bonne arête, mauvais sens) ; VERT après correctif (4/4 arcs `sensOK=true` en 91,5°, création contenante sur les 4, `memeArrete=true`). `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-03-001.html`.
+
+README : tests → 53 suites.

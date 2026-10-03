@@ -172,6 +172,16 @@ function skBRepPlanarRefs(shape){
     return out.length?out:null;
   }catch(e){return null;}
 }
+function arcOrient(cx,cy,x1,y1,x2,y2,mx,my){
+  // L'arc entité va TOUJOURS de pa à pb dans le sens trigonométrique (arcAngles), mais
+  // l'arête OCCT source peut être parcourue « à l'envers » : sans cet échange on projeterait
+  // le COMPLÉMENT de l'arête (l'inverse). On ordonne les extrémités pour que le secteur CCW
+  // contienne le milieu réel de l'arête (jamais son complément).
+  if(!isFinite(mx)||!isFinite(my))return[x1,y1,x2,y2];
+  const a1=Math.atan2(y1-cy,x1-cx),a2=Math.atan2(y2-cy,x2-cx),am=Math.atan2(my-cy,mx-cx);
+  if(angInArc(am,a1,a2))return[x1,y1,x2,y2];
+  return[x2,y2,x1,y1];
+}
 function findClosestProjectedEdge(sk,x,y,preferMid,wantType){
   // sans tolérance, cherche l'arête projetée la plus proche (antériorité).
   // preferMid : milieu 3D mémorisé à la projection — l'arête source d'origine prime
@@ -222,7 +232,7 @@ function findClosestProjectedEdge(sk,x,y,preferMid,wantType){
           if(isCirc){
             const isFull=Math.hypot(pts2[0][0]-pts2[pts2.length-1][0],pts2[0][1]-pts2[pts2.length-1][1])<0.5;
             if(isFull) pr={type:'circle',cx,cy,r};
-            else pr={type:'arc',cx,cy,r,x1:pts2[0][0],y1:pts2[0][1],x2:pts2[pts2.length-1][0],y2:pts2[pts2.length-1][1]};
+            else {const pm=pts2[Math.floor(pts2.length/2)];const oa=arcOrient(cx,cy,pts2[0][0],pts2[0][1],pts2[pts2.length-1][0],pts2[pts2.length-1][1],pm[0],pm[1]);pr={type:'arc',cx,cy,r,x1:oa[0],y1:oa[1],x2:oa[2],y2:oa[3]};}
           } else pr={type:'line',x1:pts2[0][0],y1:pts2[0][1],x2:pts2[pts2.length-1][0],y2:pts2[pts2.length-1][1]};
           if(sc<bd){bd=sc;best=pr;srcMid=e.mid?e.mid.slice():null;}
           if(wantType&&pr.type===wantType&&sc<bTyd){bTyd=sc;bTy=pr;bTySrc=e.mid?e.mid.slice():null;}
@@ -351,8 +361,9 @@ function projectEdgeAt(sk,x,y){
             const isFull = span>6.0 || Math.hypot(pts2[0][0]-pts2[pts2.length-1][0], pts2[0][1]-pts2[pts2.length-1][1])<0.5;
             if(isFull) best={type:'circle',cx,cy,r};
             else {
-              const p0a=pts2[0], p1a=pts2[pts2.length-1];
-              best={type:'arc',cx,cy,r, x1:p0a[0],y1:p0a[1],x2:p1a[0],y2:p1a[1]};
+              const p0a=pts2[0], p1a=pts2[pts2.length-1], pma=pts2[Math.floor(pts2.length/2)];
+              const oa=arcOrient(cx,cy,p0a[0],p0a[1],p1a[0],p1a[1],pma[0],pma[1]);
+              best={type:'arc',cx,cy,r, x1:oa[0],y1:oa[1],x2:oa[2],y2:oa[3]};
             }
           } else best={type:'line',x1:pts2[0][0],y1:pts2[0][1],x2:pts2[pts2.length-1][0],y2:pts2[pts2.length-1][1]};
         }
