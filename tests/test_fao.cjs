@@ -695,10 +695,19 @@ const vm=require('vm');
     // --- 013 : sortie du mode lecture + matière usinée qui disparaît sous l'outil
     // (a) grille voxel pure (pas de scène)
     "const g13=faoMatterGrid({x0:0,y0:0,z0:0,x1:100,y1:80,z1:25});",
-    "att(!!g13&&g13.n>0&&g13.n<=90000,'matiere : grille auto '+g13.nx+'x'+g13.ny+'x'+g13.nz+'='+g13.n+' (plafond ~40k)');",
+    "att(!!g13&&g13.n>0&&g13.n<=2100000,'matiere : grille auto '+g13.nx+'x'+g13.ny+'x'+g13.nz+'='+g13.n+' (anisotrope : <=60k colonnes x 32 couches)');",
     "att(g13.alive.length===g13.n&&g13.alive[0]===1&&g13.alive[g13.n-1]===1,'matiere : tous vivants au depart');",
     "const g13b=faoMatterGrid({x0:0,y0:0,z0:0,x1:100,y1:80,z1:25},5);",
     "att(g13b.nx===20&&g13b.ny===16&&g13b.nz===5&&g13b.n===1600,'matiere : pas 5 -> 20x16x5=1600 ('+g13b.nx+'x'+g13b.ny+'x'+g13b.nz+')');",
+    // --- grille de rendu ANISOTROPE (retour 4/10) : maille XY fine, Z grossier
+    "const gA=faoMatterGrid({x0:0,y0:0,z0:0,x1:300,y1:200,z1:50});",
+    "att(gA.pas<=1.6,'matiere rendu : maille XY fine sur 300x200 ('+gA.pas.toFixed(2)+' mm)');",
+    "att(gA.nx*gA.ny<=60000,'matiere rendu : colonnes <= 60000 ('+gA.nx*gA.ny+')');",
+    "att(isFinite(gA.pz)&&gA.pz>=gA.pas-1e-9,'matiere rendu : couche Z grossiere pz='+gA.pz+' >= maille');",
+    "att(gA.nz<=32&&gA.n<=2100000,'matiere rendu : Z borne (nz='+gA.nz+', n='+gA.n+')');",
+    "const cB=Math.floor((100-gA.oy)/gA.pas)*gA.nx+Math.floor((150-gA.ox)/gA.pas);",
+    "faoMatterCarveSeg(gA,20,100,40,280,100,40,5);",
+    "att(Math.abs(faoMatterColTop(gA,cB)-40)<1e-3,'matiere rendu : Z-map exacte 40 sur maille fine');",
     // (b) carve : sous l'outil meurt, hors rayon vit, sous la pointe vit
     "const g13c=faoMatterGrid({x0:0,y0:0,z0:0,x1:100,y1:80,z1:25},5);",
     "const kA=faoMatterIdx(g13c,2,8,4),kB=faoMatterIdx(g13c,2,10,4),kC=faoMatterIdx(g13c,2,8,3);",

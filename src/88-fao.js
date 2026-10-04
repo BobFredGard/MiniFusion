@@ -1845,17 +1845,33 @@ function faoViewerLineCreate(vw){
    des try/catch. Grille ≈ 40k voxels max sur la bbox du brut. */
 function faoMatterGrid(s,pas){
   if(!s||!(s.x1>s.x0)||!(s.y1>s.y0)||!(s.z1>s.z0))return null;
-  const vol=(s.x1-s.x0)*(s.y1-s.y0)*(s.z1-s.z0);
-  let p=+pas; if(!(p>0))p=Math.cbrt(vol/40000);
-  let nx=0,ny=0,nz=0,n=0,it=0;
-  do{
-    p=(it===0&&+pas>0)?+pas:p; // pas fourni = strict (tests)
-    nx=Math.max(1,Math.ceil((s.x1-s.x0)/p));
-    ny=Math.max(1,Math.ceil((s.y1-s.y0)/p));
-    nz=Math.max(1,Math.ceil((s.z1-s.z0)/p));
-    n=nx*ny*nz; it++;
-    if(n>200000)p*=1.6;
-  }while(n>200000&&it<6);
+  let p=+pas;
+  let nx=0,ny=0,nz=0,n=0,it=0,pz=0;
+  if(p>0){
+    // pas fourni = strict (tests) : isotrope historique, plafond 200k voxels.
+    do{
+      p=(it===0)?+pas:p;
+      nx=Math.max(1,Math.ceil((s.x1-s.x0)/p));
+      ny=Math.max(1,Math.ceil((s.y1-s.y0)/p));
+      nz=Math.max(1,Math.ceil((s.z1-s.z0)/p));
+      n=nx*ny*nz; it++;
+      if(n>200000)p*=1.6;
+    }while(n>200000&&it<6);
+    pz=p;
+  }else{
+    // DEFaut (rendu) : grille ANISOTROPE (retour 4/10) — maille XY fine pour
+    // l'emprise visuelle (colonnes jointives), couches Z grossieres : le rendu
+    // lit la Z-map continue h[], seule la maille XY compte a l'ecran. Budget
+    // 60000 colonnes (plancher 0,5 mm), 32 couches Z max (n <= 1,92M).
+    const X=s.x1-s.x0, Y=s.y1-s.y0, H=s.z1-s.z0;
+    p=Math.max(0.5,Math.sqrt((X*Y)/60000));
+    nx=Math.max(1,Math.ceil(X/p)); ny=Math.max(1,Math.ceil(Y/p));
+    it=0;
+    while(nx*ny>60000&&it++<8){ p*=1.1; nx=Math.max(1,Math.ceil(X/p)); ny=Math.max(1,Math.ceil(Y/p)); }
+    nz=Math.max(1,Math.min(32,Math.ceil(H/Math.max(p,1e-6))));
+    n=nx*ny*nz;
+    pz=H/nz;
+  }
   const alive=new Uint8Array(n);
   for(let i=0;i<n;i++)alive[i]=1;
   // Z-map : une hauteur continue PAR COLONNE (= cote de coupe exacte, non quantifiée
@@ -1867,7 +1883,7 @@ function faoMatterGrid(s,pas){
   const sx1=+s.x1, sy1=+s.y1, sz1=+s.z1;
   const full=sz1;
   for(let i=0;i<nc;i++)h[i]=full;
-  return {pas:p,nx:nx,ny:ny,nz:nz,n:n,ox:s.x0,oy:s.y0,oz:s.z0,alive:alive,h:h,
+  return {pas:p,pz:pz,nx:nx,ny:ny,nz:nz,n:n,ox:s.x0,oy:s.y0,oz:s.z0,alive:alive,h:h,
           sx1:sx1,sy1:sy1,sz1:sz1,full:full};
 }
 function faoMatterIdx(g,ix,iy,iz){ return (iz*g.ny+iy)*g.nx+ix; }
@@ -1881,13 +1897,14 @@ function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r,outCols){
   const out=[];
   if(!g||!(r>0))return out;
   const zc=Math.min(az,bz);
-  const zmin=zc-g.pas/2;
+  const pzv=g.pz||g.pas;
+  const zmin=zc-pzv/2;
   const x0=Math.min(ax,bx)-r, x1=Math.max(ax,bx)+r;
   const y0=Math.min(ay,by)-r, y1=Math.max(ay,by)+r;
   if(x1<g.ox||x0>g.ox+g.nx*g.pas||y1<g.oy||y0>g.oy+g.ny*g.pas)return out;
   const i0=Math.max(0,Math.floor((x0-g.ox)/g.pas)), i1=Math.min(g.nx-1,Math.floor((x1-g.ox)/g.pas));
   const j0=Math.max(0,Math.floor((y0-g.oy)/g.pas)), j1=Math.min(g.ny-1,Math.floor((y1-g.oy)/g.pas));
-  const k0=Math.max(0,Math.floor((zmin-g.oz)/g.pas)), k1=g.nz-1;
+  const k0=Math.max(0,Math.floor((zmin-g.oz)/pzv)), k1=g.nz-1;
   const dx=bx-ax, dy=by-ay, L2=dx*dx+dy*dy, r2=r*r;
   const nc=g.nx*g.ny;
   const tc=(g.h||outCols)?new Uint8Array(nc):null;
@@ -1908,8 +1925,8 @@ function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r,outCols){
       // n'enlèvent rien » (alternance OK/KO au fil des passes).
       if(tc){ const c=j*g.nx+i; if(!tc[c]){ tc[c]=1; if(g.h&&z2<g.h[c])g.h[c]=z2; if(outCols)outCols.push(c); } }
       for(let k=k0;k<=k1;k++){
-        const pz=g.oz+(k+0.5)*g.pas;
-        if(pz<zmin)continue;
+        const zcell=g.oz+(k+0.5)*pzv;
+        if(zcell<zmin)continue;
         const idx=faoMatterIdx(g,i,j,k);
         if(!g.alive[idx])continue;
         g.alive[idx]=0; out.push(idx);
@@ -1968,7 +1985,7 @@ function faoMatterColTop(g,c){
   // repli sur le scan alive[] si la grille n'a pas de h.
   if(g.h)return g.h[c];
   const L=g.nx*g.ny;
-  for(let k=g.nz-1;k>=0;k--){ if(g.alive[k*L+c])return g.oz+(k+1)*g.pas; }
+  for(let k=g.nz-1;k>=0;k--){ if(g.alive[k*L+c])return g.oz+(k+1)*(g.pz||g.pas); }
   return g.oz;
 }
 function faoMatterPut(a,o,x,y,z){ a[o]=x; a[o+1]=y; a[o+2]=z; return o+3; }
@@ -2037,7 +2054,7 @@ function faoViewerMatterEnable(vw){
     if(typeof scene!=='undefined'&&scene)scene.add(mesh);
   }catch(e){ return 0; }
   const tops=new Float32Array(nc);
-  const full=(g.full!=null)?g.full:(g.sz1!=null?g.sz1:g.oz+g.nz*g.pas);
+  const full=(g.full!=null)?g.full:(g.sz1!=null?g.sz1:g.oz+g.nz*(g.pz||g.pas));
   for(let c=0;c<nc;c++)tops[c]=full;
   vw.matter=mesh; vw.matterGrid=g; vw.mTops=tops; vw.mArr=arr; vw.mKills=[]; vw.mPos=null;
   try{ faoViewerMatterWriteAll(vw); }catch(e){ faoViewerMatterDispose(vw); try{ if(mesh&&scene)scene.remove(mesh); }catch(e2){} return 0; }

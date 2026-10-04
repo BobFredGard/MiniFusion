@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**161 versions**, de `2026-09-28b` à `2026-10-04-002` — la plus récente en bas,
+**162 versions**, de `2026-09-28b` à `2026-10-04-003` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2821,3 +2821,11 @@ Tests : révision façon T3 (pas de nouvelle suite) — `tests/test_fao.cjs` (ar
 Ajouts dans `src/88-fao.js` : champ d'opération **`minipasses`** (0 = off, nettoyé 0-9 à la lecture, champ **« mini »** dans la fiche Ébauche 3D avec infobulle) ; `faoGenRough3D` émet, après chaque niveau, les mini-passes de la bande `[plan, plan supérieur]` — `zm = round(bandTop − k·h/(nb+1))`, dilation `r = D/2 + s_k`, appel à `faoRoughAdaptiveLevel` avec option **`{ringOnly:true}`** ; `faoRoughAdaptiveLevel` (nouveau paramètre `opt`) : en `ringOnly`, seule la boucle extérieure (k=0, à la dilation du niveau) est émise — **contour de parois à distance `r+s_k`**, sans pelage intermédiaire ni centre ; entrées hélice/rampe/micro-hélice et goulets trocoïdaux inchangés (l'hélice au centre est rejetée par le disque, la rampe part du bord).
 
 Tests : révision façon T3 (pas de nouvelle suite) — `tests/test_fao3d.cjs` (plaque 60×40×18, `ap=6` → plans [12,6,0] ; `minipasses=2` → z = 16/14, 10/8, 4/2 ; plans 16 et 14 usinés >5 moves ; contour seul : ≤4 moves sous `r_eff` à chaque niveau ; plan trocoïdal z=12 toujours usiné ; off par défaut : aucun plan z=16 sans le champ), **ROUGE vérifiée (1 échec : plans z=16/14 = 0/4 moves)** → VERT après implémentation ; run complet **54/54** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-04-002.html`.
+
+### `2026-10-04-003`
+
+Retour utilisateur 4 : **rendu de la matière — cubes trop gros** — la grille du rendu était isotrope (`pas = cbrt(volume/40000)`, plafond 200 000 voxels) : sur un brut 300×200×50, maille de 4,22 mm — les colonnes se voyaient en gros cubes (suite du retour utilisateur du 4 octobre, point 4).
+
+Correctif dans `src/88-fao.js` — **grille anisotrope par défaut** (le chemin `pas` explicite des tests reste strict et strictement identique) : `faoMatterGrid` sans pas fourni → maille XY `max(0,5 mm, √(surface/60000))` avec boucle de garantie ≤ 60 000 colonnes, et **Z découplé** : 32 couches maximum (`pz = H/nz`, nouveau champ `pz` de la grille) — la Z-map `h[]` reste continue et reste la seule source du rendu, seules les colonnes XY comptent à l'écran ; `faoMatterCarveSeg` mesure les couches en `pz` (équivalent à `pas` sur grille isotrope), idem repli `faoMatterColTop` et `full`. Exemples : 300×200 → 4,22 à 1,00 mm ; 150×100 → 3,1 à 0,5 mm ; buffer de colonnes ≤ 21,6 Mo, mises à jour diff-inchangées (fluidité préservée).
+
+Tests : révision façon T3 (pas de nouvelle suite) — `tests/test_fao.cjs` : plafond du test 013 révisé (`n ≤ 2100000` — anisotrope ≤ 60 000 × 32, l'ancien « ~40k » ne s'applique plus) + nouveau bloc grille anisotrope (maille XY ≤ 1,6 mm sur 300×200, colonnes ≤ 60 000, `pz ≥ maille`, `nz ≤ 32`, Z-map exacte 40 après carve sur maille fine), **ROUGE vérifiée (2 échecs : maille 4,22 mm, `pz` absent)** → VERT après implémentation ; run complet **54/54** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-04-003.html`.
