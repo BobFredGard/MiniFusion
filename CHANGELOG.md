@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**164 versions**, de `2026-09-28b` à `2026-10-04-005` — la plus récente en bas,
+**165 versions**, de `2026-09-28b` à `2026-10-04-006` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2847,3 +2847,13 @@ Correctifs dans `src/88-fao.js` :
 - `faoClipMovesPoly` (clip impair des limites chaîne) : le point de **sortie** est émis côté dé-dans (dichotomie `t0`) — plus de coupe 0,1 mm au-delà de la limite (régression révélée par le nouveau sillon sur la lisière `y=80`, le point de sortie tombait à 80,06).
 
 Tests : révision façon T3 (pas de nouvelle suite) — `tests/test_fao.cjs` : nouveau test **024** (aide `swFn` : lignes sillonnées en matière par transposition horizontale) — lignes sillonnées = `faoFacingCount` sur cas générique (15), passe finale `npz=4` à z=0 (15), et les chiffres du document `Cavité Usinage` D25/écart 20 (8), **ROUGE vérifiée (3 échecs : 14/15, 14/15, 7/8)** → VERT après implémentation (clip corrigé au passage) ; run complet **54/54** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-04-005.html`. Document de reproduction `Cavité Usinage.minifusion.json` ajouté au dépôt.
+
+### `2026-10-04-006`
+
+Retour utilisateur du 4 octobre (point 2) : **ébauche 3D — dérive en X, gradins sur les faces** — la position des lignes se bornait à l'existence (`y±aeA`, avec aeA < r) : une ligne pouvait rester à `mur∓aeA` au lieu de `mur∓r`, la coupe mordait la paroi en décalage et les faces horizontales gardaient des gradins.
+
+Correctifs dans `src/88-fao.js` :
+- nouveau `faoYCands` : bornage exact au RAYON — lecture verticale des croisements X des segs de section aux plans vertex du niveau (3 échantillons par intervalle, appariement even-odd), règle recouvrement > 1 µm (tangence et ulps admis), candidats `paroi∓r` arrondis au µm et triés par proximité ;
+- `faoRoughAdaptiveLevel` : si le disque traverse une paroi, la ligne est **clampée** au voisin sûr — descente jusqu'à 12 paliers (chaque échec raffine avec les croisements restants au candidat : paroi courbe des angles arrondis), candidate purement hors brut ignoré, ligne **abandonnée** si aucun voisin sûr (jamais de coupe sous paroi) ; dédup `seenY` puis tri des lignes après clamp.
+
+Tests : façon T3 (pas de nouvelle suite) — `tests/test_fao3d.cjs` : nouveau test **025** (maillage à coins arrondis : bordage des murs Y haut/bas au rayon, garde en X, marge), **ROUGE vérifiée (2 échecs exacts : `y max 58.00 <= 55.6`, `y min 26.00 >= 26.4`)** → VERT après implémentation ; `tests/test_fao.cjs` VERT (facing=33 pocket=65 contour=7 drill=8, G1 siemens=74 fagor=74) ; run complet **54/54** ; probe sur le document réel `Cavité Usinage` : bornes de poche exactes au rayon sur les 6 niveaux (±45.97 … −26.51/28.21), pathX = intervalles, 0 gouge ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-04-006.html`.

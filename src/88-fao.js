@@ -3776,6 +3776,63 @@ function faoShadowIntervals(mesh,B,y,z,zt,r,aeA,planes){
   if(hi-cur>0.2)out.push({a:cur,b:hi,wl:cur>lo+1e-9,wr:false});
   return out;
 }
+function faoYCands(mesh,planes,z,zt,y,r,ivs){
+  // Y sûrs les plus proches d'abord pour une ligne dont le disque
+  // [y-r,y+r] traverserait une paroi en Y sur ses intervalles ; [] = aucun
+  // croisement. Lecture verticale exacte : croisements X des segs de la
+  // section à chaque plan vertex du niveau (mêmes plans que l'ombre) aux
+  // échantillons x de chaque intervalle, appariés 0-1, 2-3 (even-odd).
+  // Règle : recouvrement > 1 µm — la tangence (y+r==v0 ou y-r==v1, ulps
+  // compris) reste admise : lignes de marge d>=r et disques tangents.
+  // Candidats par arête traversée [v0,v1] : v0-r (dessous), v1+r (dessus).
+  const pls=[], seen={};
+  for(let i=0;i<planes.length;i++){
+    const zz=planes[i];
+    if(zz>=z-1e-9&&zz<=zt+1e-9){
+      const q=Math.round(zz*1000)/1000,k=String(q);
+      if(!seen[k]){seen[k]=1;pls.push(q);}
+    }
+  }
+  if(!pls.length)return [];
+  const cross=[];
+  for(let i=0;i<ivs.length;i++){
+    const a=ivs[i].a,b=ivs[i].b,w=b-a;
+    if(!(w>0.05))continue;
+    const d=Math.min(1,w/8);
+    const xs=[a+d,(a+b)/2,b-d];
+    for(let si=0;si<xs.length;si++){
+      const x=xs[si];
+      for(let pi=0;pi<pls.length;pi++){
+        const segs=faoSliceZCached(mesh,pls[pi]);
+        const ys=[];
+        for(let k=0;k<segs.length;k++){
+          const s=segs[k];
+          if((s[0]<x&&x<s[2])||(s[2]<x&&x<s[0])){
+            const t=(x-s[0])/(s[2]-s[0]);
+            ys.push(s[1]+t*(s[3]-s[1]));
+          }
+        }
+        ys.sort(function(p,q){return p-q;});
+        for(let k=0;k+1<ys.length;k+=2){
+          const v0=ys[k],v1=ys[k+1];
+          // Recouvrement > 1 µm seulement : la tangence — et les ulps du
+          // calcul de v1+r — ne sont pas un croisement (candidat tangent
+          // accepté au re-test, dédup au µm des jumeaux).
+          const ov=Math.min(y+r,v1)-Math.max(y-r,v0);
+          if(ov>1e-6)cross.push(Math.round((v0-r)*1e6)/1e6,Math.round((v1+r)*1e6)/1e6);
+        }
+      }
+    }
+  }
+  if(!cross.length)return [];
+  cross.sort(function(p,q){return Math.abs(p-y)-Math.abs(q-y)||p-q;});
+  const out=[];
+  for(let i=0;i<cross.length;i++){
+    if(!out.length||out[out.length-1]!==cross[i])out.push(cross[i]);
+  }
+  return out;
+}
+
 function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,opt){
   // Une tranche façon Adaptive : pelage au petit pas (aeA ≤ 0.25*D) dans le
   // vide RESTANT (ombre des niveaux supérieurs), entrée hélice multi-spots /
@@ -3803,10 +3860,47 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   }
   if(!ys.length)return;
   const lines=[];
+  const seenY={};
   ys.forEach(function(yy){
-    const ivs=faoShadowIntervals(mesh,B,yy,z,top,r,aeA,planes);
-    if(ivs.length)lines.push({y:yy,ivs:ivs});
+    let ivs=faoShadowIntervals(mesh,B,yy,z,top,r,aeA,planes);
+    if(!ivs.length)return;
+    // Bornage exact au RAYON sur les murs en Y (retour 4/10) : l'existence
+    // lisait y±aeA (aeA<r) et laissait passer jusqu'à mur∓aeA au lieu de
+    // mur∓r (gradins sur les faces horizontales). Si le disque traverse une
+    // paroi, la ligne est bornée au voisin sûr (paroi∓r) au lieu d'être
+    // laissée ; sans voisin sûr elle est abandonnée — jamais de coupe sous
+    // paroi. Dédup après clamp + tri (le clamp peut réordonner).
+    let yc=yy;
+    const c0=faoYCands(mesh,planes,z,top,yy,r,ivs);
+    if(c0.length){
+      // Descente : un candidat sûr sur un échantillon peut encore traverser
+      // la paroi courbe (angle arrondi) sur un autre — chaque échec raffine
+      // la liste avec les croisements restants à ce candidat. Candidat
+      // purement hors brut ignoré (même règle que la boucle ys) : jamais de
+      // ligne inventée au-delà de la marge. Garde fou : 12 paliers, puis
+      // abandon de la ligne (jamais de coupe sous paroi).
+      let ok=null, cands=c0, guard=0;
+      while(cands.length&&ok===null&&guard++<12){
+        let rest=null;
+        for(let ci=0;ci<cands.length&&ok===null;ci++){
+          const t=cands[ci];
+          if(t+r<=B.y0+1e-9||t-r>=B.y1-1e-9)continue;
+          const iv2=faoShadowIntervals(mesh,B,t,z,top,r,aeA,planes);
+          if(!iv2.length)continue;
+          const rs=faoYCands(mesh,planes,z,top,t,r,iv2);
+          if(!rs.length){ok=t;ivs=iv2;break;}
+          if(rest===null)rest=rs;
+        }
+        cands=ok?[]:(rest||[]);
+      }
+      if(ok===null)return;
+      yc=ok;
+    }
+    if(seenY[yc])return;
+    seenY[yy]=1; seenY[yc]=1;
+    lines.push({y:yc,ivs:ivs});
   });
+  lines.sort(function(p,q){return p.y-q.y;});
   if(!lines.length)return;
   const regs=faoRoughRegions(lines);
   regs.forEach(function(R){
