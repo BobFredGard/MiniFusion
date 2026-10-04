@@ -256,6 +256,13 @@ function faoSanitiseOps(s){
     delete op.strategy; delete op.ap2; delete op.radial2; delete op.axial2;
     // 2026-10-04-002 : mini-passes Z de l'ebauche (0 = off). Valeur nettoyee.
     if(op.type==='rough3d'){const mp=+op.minipasses;op.minipasses=isFinite(mp)&&mp>0?Math.min(9,Math.round(mp)):0;}
+    // 2026-10-04-004 : finition géodésique — limites Z héritées du brut,
+    // garde-fou fraise droite recalculée à chaque dispatch (jamais stockée).
+    if(op.type==='geofinish'){
+      if(!isFinite(+op.ztop))op.ztop=faoStock().z1;
+      if(!isFinite(+op.zbot))op.zbot=faoStock().z0;
+      delete op.geoBlocked;
+    }
   });
 }
 // radial/axial effectifs d'une op (compat 31v : `laisse` vaut les deux).
@@ -1215,8 +1222,10 @@ function faoOpMoves(op,job){
       const tool=faoToolById(job,op.toolId);
       mv=faoGenGeoFinish(am.mesh,
         {step:isFinite(+op.step)?+op.step:1,toolD:D,kind:tool.kind,
-         cornerR:tool.cornerR,laisse:+op.laisse||0,secu:secu,seed:op.seed||'top'});
-    }
+         cornerR:tool.cornerR,laisse:+op.laisse||0,secu:secu,seed:op.seed||'top',
+         ztop:op.ztop,zbot:op.zbot});
+      op.geoBlocked=(tool.kind==='flat'&&!mv.length);
+    }else op.geoBlocked=false;
   }
   // Limite : rect (Liang-Barsky rapide) ou chaîne d'arêtes (clip impair).
   // Phase suivante : chaîne d'arêtes multiples, faces.
@@ -2343,7 +2352,7 @@ function faoOpDefaults(type){
     radial:0.5, axial:0.5, entry:'auto', minipasses:0,
     arrondi:+(Math.min(2,D*0.25)).toFixed(2)});
   if(type==='geofinish')return Object.assign({},base,{type:'geofinish',
-    step:1, laisse:0, seed:'top'});
+    step:1, laisse:0, seed:'top', ztop:s.z1, zbot:s.z0});
   return Object.assign({},base,{type:type});
 }
 // Les 7 usinages et leur libellé court — source unique des boutons « + » de
@@ -2800,6 +2809,7 @@ function faoOpCardElement(setup,op,i){
   r.appendChild(faoMini('✕',function(){ setup.ops.splice(i,1); },'Supprimer cette opération'));
   d.appendChild(r);
   const rp=faoRow();
+  let geoNote=null;
   const rect4=function(){
     rp.appendChild(faoLab('X')); rp.appendChild(faoNum(op.x0,function(v){op.x0=v;},56));
     rp.appendChild(faoLab('Y')); rp.appendChild(faoNum(op.y0,function(v){op.y0=v;},56));
@@ -2941,6 +2951,15 @@ function faoOpCardElement(setup,op,i){
     rp.appendChild(faoLab('laisse')); rp.appendChild(faoNum(op.laisse,function(v){op.laisse=Math.max(0,v);},48,0.1));
     rp.appendChild(faoLab('départ'));
     rp.appendChild(faoSel([['top','Sommet'],['bottom','Fond']],op.seed||'top',function(v){op.seed=v;}));
+    // 2026-10-04-004 : limites Z (au-delà, relief non fini) + garde-fou fraise droite.
+    zz();
+    const tG=faoToolById(setup,op.toolId);
+    if(tG&&tG.kind==='flat'){
+      geoNote=document.createElement('div'); geoNote.className='fao-note';
+      geoNote.textContent=op.geoBlocked
+        ? '⚠ Fraise droite refusée : le modèle n\'est pas horizontal (pente > 8°). Utilisez une boule ou une torique.'
+        : 'Fraise droite : finition réservée aux faces horizontales — le reste du modèle n\'est pas usiné.';
+    }
   }else if(op.type==='drill'){
     zz();
     const pts=(op.pts||[]).map(function(q){return (+q[0])+','+(+q[1]);}).join('; ');
@@ -2957,6 +2976,7 @@ function faoOpCardElement(setup,op,i){
       'Profondeur de chaque plongée (mm). 0 = perçage simple (CYCLE81 / G81), sinon broche à va-et-vient (CYCLE83 / G83).'));
   }
   if(rp.children.length)d.appendChild(rp); // vide pour l'Ébauche 3D (sections propres)
+  if(geoNote)d.appendChild(geoNote);
   // Limite d'usinage (tout, rectangle, ou chaîne d'arêtes).
   const rl=faoRow();
   const limMode=op.limit?(op.limit.mode||'all'):'all';
@@ -4008,10 +4028,13 @@ function faoSeedTop(mesh){
   for(let i=0;i<mesh.v.length;i++)if(mesh.v[i][2]>bm){bm=mesh.v[i][2];bi=i;}
   return bi;
 }
-function faoIsoSegs(mesh,normals,dist,iso){
+function faoIsoSegs(mesh,normals,dist,iso,flags,want){
   // Marching-triangles : segments 3D + normales interpolées (points de contact).
+  // 2026-10-04-004 : flags/want — masque optionnel des familles plate/inclinée
+  // (iso-Z sur les faces en pente, anneaux géodésiques sur les plateaux).
   const segs=[];
   for(let i=0;i<mesh.t.length;i++){
+    if(flags&&flags[i]!==want)continue;
     const ti=mesh.t[i];
     const P=[mesh.v[ti[0]],mesh.v[ti[1]],mesh.v[ti[2]]];
     const N=[normals[ti[0]],normals[ti[1]],normals[ti[2]]];
@@ -4059,9 +4082,33 @@ function faoChainSegs(segs,tol){
   }
   return chains;
 }
+function faoGeoFlags(mesh,zb,zt){
+  // 2026-10-04-004 : partition des faces — plate = normale quasi verticale
+  // (nz ≥ 0,99 ≈ 8°, marge de tessellation), sinon inclinée/mur. flags limite
+  // l'extraction à une famille ; un plateau n'est retenu que dans [zb,zt]
+  // (limites Z) ; anySlope (toutes faces, hors limites) pilote le garde-fou
+  // de la fraise droite.
+  const flags=new Uint8Array(mesh.t.length);
+  let anySlope=false, hasFlat=false;
+  for(let i=0;i<mesh.t.length;i++){
+    const t=mesh.t[i],A=mesh.v[t[0]],B=mesh.v[t[1]],C=mesh.v[t[2]];
+    const ux=B[0]-A[0],uy=B[1]-A[1],uz=B[2]-A[2];
+    const wx=C[0]-A[0],wy=C[1]-A[1],wz=C[2]-A[2];
+    const nx=uy*wz-uz*wy, ny=uz*wx-ux*wz, nz=ux*wy-uy*wx;
+    const l=Math.hypot(nx,ny,nz)||1;
+    if(nz/l>=0.99){
+      const zc=(A[2]+B[2]+C[2])/3;
+      if(zc>=zb-1e-9&&zc<=zt+1e-9){flags[i]=1;hasFlat=true;}
+    }else anySlope=true;
+  }
+  return {flags:flags,anySlope:anySlope,hasFlat:hasFlat};
+}
 function faoGenGeoFinish(mesh,o){
-  // Finition iso-géodésique : iso-courbes du champ de distances, sorties centre
-  // outil (contact + normale×Rc, Rc = rayon actif : boule D/2, torique r coin).
+  // Finition iso (retour 4/10) : (1) passes horizontales iso-Z sur les faces
+  // en pente — chaque liaison part à Z constant ; (2) anneaux géodésiques sur
+  // les seules faces horizontales (couverture des plateaux). Sorties centre
+  // outil (contact + normale×Rc, Rc = rayon actif : boule D/2, torique r
+  // coin, droite 0). Limites ztop/zbot (défaut : étendue du maillage).
   o=o||{};
   if(!mesh||!mesh.v||!mesh.v.length)return [];
   const D=isFinite(+o.toolD)&&+o.toolD>0?+o.toolD:8;
@@ -4072,15 +4119,25 @@ function faoGenGeoFinish(mesh,o){
   const secu=isFinite(+o.secu)?+o.secu:5;
   const step=isFinite(+o.step)&&+o.step>0?+o.step:1;
   const normals=faoMeshNormals(mesh);
+  let zmax=-1/0, zmin=1/0;
+  for(let i=0;i<mesh.v.length;i++){ const z=mesh.v[i][2]; if(z>zmax)zmax=z; if(z<zmin)zmin=z; }
+  const zt=Math.min(isFinite(+o.ztop)?+o.ztop:zmax, zmax);
+  const zb=Math.max(isFinite(+o.zbot)?+o.zbot:zmin, zmin);
+  const G=faoGeoFlags(mesh,zb,zt);
+  // Garde-fou fraise droite (point 2) : sans rayon actif, une pente même
+  // légère laisse une arête non finie — on refuse plutot que de mentir.
+  if(kind==='flat'&&G.anySlope)return [];
   const seed=(o.seed==='bottom')?faoSeedBottom(mesh):faoSeedTop(mesh);
   const dist=faoDijkstra(mesh,seed);
   let dmax=0;
   for(let i=0;i<dist.length;i++)if(dist[i]<1/0&&dist[i]>dmax)dmax=dist[i];
   if(!(dmax>0))return [];
   const moves=[];
-  for(let iso=step;iso<dmax;iso+=step){
-    const segs=faoIsoSegs(mesh,normals,dist,iso);
-    if(!segs.length)continue;
+  const zf=new Float64Array(mesh.v.length);
+  for(let i=0;i<mesh.v.length;i++)zf[i]=mesh.v[i][2];
+  const level=function(field,iso,flat){
+    const segs=faoIsoSegs(mesh,normals,field,iso,G.flags,flat);
+    if(!segs.length)return;
     const chains=faoChainSegs(segs,Math.max(1e-4,step*0.02));
     chains.forEach(function(ch){
       if(ch.length<2)return;
@@ -4093,7 +4150,17 @@ function faoGenGeoFinish(mesh,o){
       for(let i=0;i<cen.length;i++)moves.push({r:0,x:cen[i].x,y:cen[i].y,z:cen[i].z});
     });
     if(moves.length){ const last=moves[moves.length-1]; moves.push({r:1,x:last.x,y:last.y,z:secu}); }
+  };
+  // (1) Iso-Z sur les faces en pente : niveaux ancrés au plafond, descendant
+  // (seed top) ou ascendant (seed bottom), bornes ztop/zbot.
+  if(G.anySlope){
+    const zlv=[];
+    for(let k=1;;k++){ const z=zt-k*step; if(!(z>zb+1e-9))break; zlv.push(z); }
+    if(o.seed==='bottom')zlv.reverse();
+    for(let i=0;i<zlv.length;i++)level(zf,zlv[i],0);
   }
+  // (2) Anneaux géodésiques sur les seuls plateaux (dans les limites Z).
+  if(G.hasFlat)for(let iso=step;iso<dmax;iso+=step)level(dist,iso,1);
   return moves;
 }
 function faoSeedBottom(mesh){

@@ -195,6 +195,32 @@ const vm=require('vm');
     "att(mm.some(m=>!m.r&&Math.abs(m.z-12)<1e-6),'mini passes : plan trocoïdal z=12 toujours usine');",
     "const m0=faoGenRough3D(PL,BX,18,0,{ap:6,ae:6,toolD:10,radial:0.5,axial:0,secu:45,strategy:'adaptive'});",
     "att(m0.filter(m=>!m.r&&Math.abs(m.z-16)<1e-6).length===0,'minipasses off par defaut : aucun plan z=16');",
+    // --- geodésique 6+2 : sens horizontal, limites Z, garde-fou fraise droite (retour 4/10)
+    "const PLN={v:[[0,0,30],[60,0,30],[60,40,30],[0,40,30]],t:[[0,1,2],[0,2,3]]};",
+    "const SL={v:[[0,0,0],[40,0,20],[40,20,20],[40,40,20],[0,40,0]],t:[[0,1,2],[0,2,3],[0,3,4]]};",
+    // formes : offsets outil sur plan horizontal (ball D8 +4, bull coin1 +1, droite +0)
+    "const gB=faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top'});",
+    "const zB=gB.filter(m=>!m.r).map(m=>m.z);",
+    "att(zB.length>4&&Math.abs(Math.max.apply(null,zB)-34)<1e-6,'geo formes : ball D8 sur plan z=30 -> coupe z=34, vu '+(zB.length?Math.max.apply(null,zB):'-'));",
+    "const gU=faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'bull',cornerR:1,laisse:0,secu:45,seed:'top'});",
+    "const zU=gU.filter(m=>!m.r).map(m=>m.z);",
+    "att(zU.length>4&&Math.abs(Math.max.apply(null,zU)-31)<1e-6,'geo formes : bull coin1 sur plan -> coupe z=31, vu '+(zU.length?Math.max.apply(null,zU):'-'));",
+    "const gF=faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'flat',laisse:0,secu:45,seed:'top'});",
+    "const zF=gF.filter(m=>!m.r).map(m=>m.z);",
+    "att(zF.length>4&&Math.abs(Math.max.apply(null,zF)-30)<1e-6,'geo formes : fraise droite sur plan -> coupe z=30, vu '+(zF.length?Math.max.apply(null,zF):'-'));",
+    // sens horizontal : passes iso-Z sur la rampe (chaque liaison reste a Z constant)
+    "const gS=faoGenGeoFinish(SL,{step:5,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top'});",
+    "const cs=gS.filter(m=>!m.r);",
+    "att(cs.length>6,'geo rampe : '+cs.length+' coupe outil');",
+    "let badZ=0,run=[];gS.forEach(function(m){if(!m.r){run.push(m.z);return;}if(run.length>1){const z0=run[0];if(run.some(function(z){return Math.abs(z-z0)>1e-6;}))badZ++;}run=[];});",
+    "att(badZ===0,'geo sens horizontal : chaque liaison a Z constant ('+badZ+' liaisons variables)');",
+    // limites Z : ztop=12 -> aucune coupe au-dessus de 12+Rc
+    "const gL=faoGenGeoFinish(SL,{step:5,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top',ztop:12});",
+    "const zL=gL.filter(m=>!m.r).map(m=>m.z);",
+    "att(zL.length>0&&Math.max.apply(null,zL)<16,'geo limites Z : ztop=12 -> coupe max '+(zL.length?Math.max.apply(null,zL).toFixed(2):'-')+' < 16');",
+    // garde-fou fraise droite : refusee sur non-horizontal, acceptee sur plan
+    "att(faoGenGeoFinish(SL,{step:5,toolD:8,kind:'flat',laisse:0,secu:45}).length===0,'geo garde-fou : fraise droite refusee sur rampe');",
+    "att(faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'flat',laisse:0,secu:45}).length>0,'geo garde-fou : fraise droite acceptee sur plan');",
     // --- dispatch via ops (maillage actif nul en VM -> [] sans planter)
     "const j3=faoDefaultJob();j3.ops=[{id:'x',on:true,toolId:'T3',type:'geofinish',step:1,laisse:0,seed:'top'}];",
     "att(Array.isArray(faoOpMoves(j3.ops[0],j3)),'dispatch geofinish sans maillage : pas de plantage');",
