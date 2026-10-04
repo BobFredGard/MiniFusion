@@ -181,6 +181,20 @@ const vm=require('vm');
     "const mp=faoGenRough3D(mkBox(10,50,10,110,0,20),BP,30,0,{ap:10,ae:6,toolD:10,radial:0.5,axial:0,secu:45,strategy:'adaptive'});",
     "let lv=0,pp=null;mp.forEach(function(m){if(m.r){pp=null;return;}if(pp&&Math.abs(m.x-pp.x)<1e-6&&Math.abs(m.y-pp.y)>5)lv++;pp=m;});",
     "att(lv>0,'sens long : liaison longue verticale sur brut portrait ('+lv+')');",
+    // --- mini-passes Z : contours de parois entre plans trocoïdaux (retour 4/10)
+    // Plaque 60x40x18, ap=6 -> plans [12,6,0] ; bandes de 6 mm ; minipasses=2
+    // -> z = 16,14 / 10,8 / 4,2 (k*ap/(nb+1) sous le plan du dessus, strictement
+    // entre les plans). Offsets s = radial*(nb-k)/nb -> 0.25 puis 0 au plus profond.
+    "const PL=mkBox(20,80,20,60,0,18);",
+    "const mm=faoGenRough3D(PL,BX,18,0,{ap:6,ae:6,toolD:10,radial:0.5,axial:0,secu:45,strategy:'adaptive',minipasses:2});",
+    "const mid=function(ms,rr){return ms.filter(m=>blkD(m.x,m.y,20,80,20,60)<rr-0.01).length;};",
+    "const m16=mm.filter(m=>!m.r&&Math.abs(m.z-16)<1e-6),m14=mm.filter(m=>!m.r&&Math.abs(m.z-14)<1e-6);",
+    "att(m16.length>5&&m14.length>5,'mini passes : plans z=16/14 usines ('+m16.length+'/'+m14.length+' moves)');",
+    "att(mid(m16,5.25)<=4,'mini passe 1 (z=16, s=0.25) : contour de parois seul ('+mid(m16,5.25)+' moves sous r_eff)');",
+    "att(mid(m14,5)<=4,'mini passe 2 (z=14, s=0) : contour de parois seul ('+mid(m14,5)+' moves sous r_eff)');",
+    "att(mm.some(m=>!m.r&&Math.abs(m.z-12)<1e-6),'mini passes : plan trocoïdal z=12 toujours usine');",
+    "const m0=faoGenRough3D(PL,BX,18,0,{ap:6,ae:6,toolD:10,radial:0.5,axial:0,secu:45,strategy:'adaptive'});",
+    "att(m0.filter(m=>!m.r&&Math.abs(m.z-16)<1e-6).length===0,'minipasses off par defaut : aucun plan z=16');",
     // --- dispatch via ops (maillage actif nul en VM -> [] sans planter)
     "const j3=faoDefaultJob();j3.ops=[{id:'x',on:true,toolId:'T3',type:'geofinish',step:1,laisse:0,seed:'top'}];",
     "att(Array.isArray(faoOpMoves(j3.ops[0],j3)),'dispatch geofinish sans maillage : pas de plantage');",

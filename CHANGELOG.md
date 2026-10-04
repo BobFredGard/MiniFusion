@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**160 versions**, de `2026-09-28b` à `2026-10-04-001` — la plus récente en bas,
+**161 versions**, de `2026-09-28b` à `2026-10-04-002` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2813,3 +2813,11 @@ Retour utilisateur 3 : **traces de parcours plus précises** — les arcs étaie
 Correctif dans `src/88-fao.js` `faoArcSegs` : subdivision **adaptative par écart de corde (sagitta ≤ 0,05 mm)** — `dth = min(5°, 2·acos(1 − sag/r))`, plafond 1024 segments ; les grands rayons sont découpés bien au-delà de 5° (R200 90° : 18 → 36 segments, corde 8,9 mm), les petits rayons (trochoïdes R2,3, arrondis R8) gardent les 5° historiques — ni changement de densité là où c'était déjà juste. Consommateur unique : aperçu FAO (`faoRefreshPreview`) et trace au fil de l'eau de la visionneuse (`faoViewerBuild`) ; G-code inchangé (G2/G3).
 
 Tests : révision façon T3 (pas de nouvelle suite) — `tests/test_fao.cjs` (arc R200 90° : corde max < 15 mm ; garde-fou R2,3 90° = 18 segments inchangés), **ROUGE vérifiée (1 échec : 17,45 mm)** → VERT après implémentation ; run complet **54/54** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-04-001.html`.
+
+### `2026-10-04-002`
+
+Ébauche 3D, retour utilisateur 1 : **mini-passes Z** — l'interprétation « passes de contour » précédente était fausse : chaque cycle descend d'`ap` en trocoïdal, **puis** les mini-passes usinent **uniquement les parois** entre le plan atteint et le plan du dessus, à profondeur `k·ap/(nb+1)` (strictement entre les deux plans, jamais dessus ; ex. `ap=3`, `nb=2` → sous 1 et 2) avec décalage radial décroissant `laisse·(nb−k)/nb` — nul au plus profond (la paroi est finie à ce niveau : pas de passe finale) ; le centre est déjà pelé par le trocoïdal, le plan du dessus devient le départ du cycle suivant (suite du retour utilisateur du 4 octobre, point 1).
+
+Ajouts dans `src/88-fao.js` : champ d'opération **`minipasses`** (0 = off, nettoyé 0-9 à la lecture, champ **« mini »** dans la fiche Ébauche 3D avec infobulle) ; `faoGenRough3D` émet, après chaque niveau, les mini-passes de la bande `[plan, plan supérieur]` — `zm = round(bandTop − k·h/(nb+1))`, dilation `r = D/2 + s_k`, appel à `faoRoughAdaptiveLevel` avec option **`{ringOnly:true}`** ; `faoRoughAdaptiveLevel` (nouveau paramètre `opt`) : en `ringOnly`, seule la boucle extérieure (k=0, à la dilation du niveau) est émise — **contour de parois à distance `r+s_k`**, sans pelage intermédiaire ni centre ; entrées hélice/rampe/micro-hélice et goulets trocoïdaux inchangés (l'hélice au centre est rejetée par le disque, la rampe part du bord).
+
+Tests : révision façon T3 (pas de nouvelle suite) — `tests/test_fao3d.cjs` (plaque 60×40×18, `ap=6` → plans [12,6,0] ; `minipasses=2` → z = 16/14, 10/8, 4/2 ; plans 16 et 14 usinés >5 moves ; contour seul : ≤4 moves sous `r_eff` à chaque niveau ; plan trocoïdal z=12 toujours usiné ; off par défaut : aucun plan z=16 sans le champ), **ROUGE vérifiée (1 échec : plans z=16/14 = 0/4 moves)** → VERT après implémentation ; run complet **54/54** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-04-002.html`.

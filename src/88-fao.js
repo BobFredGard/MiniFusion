@@ -254,6 +254,8 @@ function faoSanitiseOps(s){
     // 2026-10-03-004 : mode trocoïdal unique — anciennes stratégies et passes
     // fines ap2 retirées du document à la lecture (migration, comme la laisse).
     delete op.strategy; delete op.ap2; delete op.radial2; delete op.axial2;
+    // 2026-10-04-002 : mini-passes Z de l'ebauche (0 = off). Valeur nettoyee.
+    if(op.type==='rough3d'){const mp=+op.minipasses;op.minipasses=isFinite(mp)&&mp>0?Math.min(9,Math.round(mp)):0;}
   });
 }
 // radial/axial effectifs d'une op (compat 31v : `laisse` vaut les deux).
@@ -1203,6 +1205,7 @@ function faoOpMoves(op,job){
     if(am&&am.mesh)mv=faoGenRough3D(am.mesh,am.box,+op.ztop,+op.zbot,
       {ap:+op.ap,ae:isFinite(+op.ae)?+op.ae:D*0.6,toolD:D,
        radial:RA.radial,axial:RA.axial,
+       minipasses:isFinite(+op.minipasses)?+op.minipasses:0,
        entry:op.entry||'auto',bulge:bulge,brutTop:brutTop,secu:secu});
   }
   else if(op.type==='geofinish'){
@@ -2320,7 +2323,7 @@ function faoOpDefaults(type){
     pts:[[+cx.toFixed(2),+cy.toFixed(2)]], ztop:s.z1, zbot:s.z0, peck:0});
   if(type==='rough3d')return Object.assign({},base,{type:'rough3d',
     ztop:s.z1, zbot:s.z0, ap:5, ae:+(D*0.6).toFixed(2),
-    radial:0.5, axial:0.5, entry:'auto',
+    radial:0.5, axial:0.5, entry:'auto', minipasses:0,
     arrondi:+(Math.min(2,D*0.25)).toFixed(2)});
   if(type==='geofinish')return Object.assign({},base,{type:'geofinish',
     step:1, laisse:0, seed:'top'});
@@ -2891,6 +2894,8 @@ function faoOpCardElement(setup,op,i){
       'Descente : hauteur usinée par niveau (Maximum Stepdown). Profond en mode trocoïdal (≈ Ø outil).'));
     rP.appendChild(faoLab('ae')); rP.appendChild(faoNum(op.ae,function(v){op.ae=Math.max(0.5,v);},48,
       'Pas latéral : distance entre deux passes voisines (Stepover). ≤ ¼ du Ø en mode trocoïdal.'));
+    rP.appendChild(faoLab('mini')); rP.appendChild(faoNum(op.minipasses||0,function(v){op.minipasses=Math.max(0,Math.min(9,Math.round(v)));},40,1,
+      'Mini-passes Z par niveau : contour des parois entre deux plans (0 = off). Profondeur k·ap/(nb+1) sous le plan du dessus, décalage radial décroissant.'));
     d.appendChild(rP);
     d.appendChild(faoHelp(
       (aeNow>toolD*0.25+1e-9)
@@ -3554,12 +3559,26 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
   const plan=faoLevels(zt,zBot,ap).map(function(z){ return {z:z,radial:RA.radial}; });
   const moves=[];
   const bulge=isFinite(+o.bulge)&&+o.bulge>0?+o.bulge:0;
+  const nb=isFinite(+o.minipasses)&&+o.minipasses>0?Math.min(9,Math.round(+o.minipasses)):0;
   faoSliceCache={mesh:M,map:{}};
-  plan.forEach(function(L){
+  plan.forEach(function(L,li){
     // Entrée depuis z+ap (rainure du dessus déjà ouverte, descente en avance
     // plongée) : l'hélice ne refait jamais toute la hauteur depuis la sécu.
     const zFrom=Math.min(secu,L.z+ap);
     faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial+bulge,secu,zFrom,ae,entryMode,o.brutTop,zt,moves);
+    // MINI-PASSES (retour 4/10) : après le pelage du niveau, contour des parois
+    // entre ce plan et le plan du dessus : profondeurs k*h/(nb+1) sous le plan
+    // du dessus (strictement entre les deux, jamais dessus), décalage radial
+    // décroissant laisse*(nb-k)/nb — 0 au plus profond (paroi finie).
+    if(nb){
+      const bandTop=li>0?plan[li-1].z:zt;
+      const h=bandTop-L.z;
+      if(h>1e-9)for(let k=1;k<=nb;k++){
+        const zm=Math.round((bandTop-k*h/(nb+1))*1000)/1000;
+        const s=RA.radial*(nb-k)/nb;
+        faoRoughAdaptiveLevel(M,BB,zm,D,D/2+s,secu,Math.min(secu,bandTop),ae,entryMode,o.brutTop,zt,moves,{ringOnly:true});
+      }
+    }
   });
   faoSliceCache=null;
   if(swapped){
@@ -3718,7 +3737,7 @@ function faoShadowIntervals(mesh,B,y,z,zt,r,aeA,planes){
   if(hi-cur>0.2)out.push({a:cur,b:hi,wl:cur>lo+1e-9,wr:false});
   return out;
 }
-function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves){
+function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,opt){
   // Une tranche façon Adaptive : pelage au petit pas (aeA ≤ 0.25*D) dans le
   // vide RESTANT (ombre des niveaux supérieurs), entrée hélice multi-spots /
   // rampe X ou Y / micro-hélice, liaisons G1 sans retrait dans la région,
@@ -3855,6 +3874,9 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       moves.push({r:1,x:last.x,y:last.y,z:secu});
       return;
     }
+    // MINI-PASSES : contour de parois seulement — seule la boucle extérieure
+    // (k=0, à la dilation du niveau) est émise ; le centre est déjà pelé.
+    if(opt&&opt.ringOnly)loops.splice(1);
     // Ordre selon l'ouverture : trou central (hélice) -> intérieur d'abord ;
     // rampe au bord -> extérieur d'abord. Chaque boucle reste adjacente au
     // vide, engagement constant d'un seul côté.
