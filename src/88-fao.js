@@ -3530,18 +3530,36 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
   const ae=isFinite(+o.ae)&&+o.ae>0?+o.ae:D*0.6;
   const entryMode=o.entry||'auto';
   const B=box||{x0:0,y0:0,x1:100,y1:80};
+  // SENS LONG (retour utilisateur) : brut plus haut que large -> pelage le
+  // long de Y : on transpose x<->y du maillage et de la boite (hauteurs
+  // d'outillage identiques), puis chaque move est remis en place a la
+  // sortie (miroir y=x : IJK echanges, sens cw inverse). Carres et
+  // paysages : inchanges.
+  let swapped=false, M=mesh, BB=B;
+  if((B.y1-B.y0)>(B.x1-B.x0)){
+    swapped=true;
+    M={v:mesh.v.map(function(p){return [p[1],p[0],p[2]];}),t:mesh.t};
+    BB={x0:B.y0,y0:B.x0,x1:B.y1,y1:B.x1};
+  }
   // Plan : niveaux épais à ap (le petit ae suit les marches, pas de passe fine).
   const plan=faoLevels(zt,zBot,ap).map(function(z){ return {z:z,radial:RA.radial}; });
   const moves=[];
   const bulge=isFinite(+o.bulge)&&+o.bulge>0?+o.bulge:0;
-  faoSliceCache={mesh:mesh,map:{}};
+  faoSliceCache={mesh:M,map:{}};
   plan.forEach(function(L){
     // Entrée depuis z+ap (rainure du dessus déjà ouverte, descente en avance
     // plongée) : l'hélice ne refait jamais toute la hauteur depuis la sécu.
     const zFrom=Math.min(secu,L.z+ap);
-    faoRoughAdaptiveLevel(mesh,B,L.z,D,D/2+L.radial+bulge,secu,zFrom,ae,entryMode,o.brutTop,zt,moves);
+    faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial+bulge,secu,zFrom,ae,entryMode,o.brutTop,zt,moves);
   });
   faoSliceCache=null;
+  if(swapped){
+    for(let i=0;i<moves.length;i++){
+      const m=moves[i], x=m.x;
+      m.x=m.y; m.y=x;
+      if(m.arc){const ii=m.arc.i; m.arc.i=m.arc.j; m.arc.j=ii; m.arc.cw=!m.arc.cw;}
+    }
+  }
   return moves;
 }
 function faoTrochSlot(moves,xa,xb,y,z,D,aeA,yMin,yMax){

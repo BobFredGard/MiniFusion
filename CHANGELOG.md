@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**158 versions**, de `2026-09-28b` à `2026-10-03-005` — la plus récente en bas,
+**159 versions**, de `2026-09-28b` à `2026-10-03-006` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2797,3 +2797,11 @@ Tests : révision façon T3 (pas de nouvelle suite) — `tests/test_fao3d.cjs` (
 Correctifs dans `src/88-fao.js` : `faoShadowIntervals` — sortie d'un rayon hors boîte (`lo=B.x0-r`, `hi=B.x1+r`), lecture **par distance à l'intervalle matière** `[yLo,yHi]` (`d>=r` → pleine largeur même sans lecture, sinon conservatif), grille `ys` de `B.y0-r` à `B.y1+r` avec skip des lignes purement hors brut ; `faoRoughRegions` : union **uniquement sur recouvrement 1:1 mutuel** (une ligne pleine ne fusionne plus les colonnes — pas de pelage en travers des plots) ; `faoDiscClear` : **distance euclidienne au contour** (un échantillon hors matière sans croisement en Y passait et l'hélice plongeait dans la pièce) ; entrée hélice/micro-hélice vérifiée sur **toutes les sections du niveau** (`segsAll` = ombre, pas seulement la slice à z — un voile fin au-dessus était invisible) ; arcs trochoïdes marqués `arc.troch` (distingués des arrondis `R<=2`).
 
 Tests : révision façon T3 (pas de nouvelle suite) — `tests/test_fao3d.cjs` (marge latérale/avant dégagées sur canal + plat, emprise z=10 pièce respectée, `<=12` rapides, arrondis hors troch, fente en distance coin-juste sur les deux plots), **ROUGE vérifiée (3 échecs : marge latérale, marge avant, plat marge)** → VERT après implémentation ; run complet **54/54** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-03-005.html`.
+
+### `2026-10-03-006`
+
+Ébauche 3D, retour utilisateur A : **sens long** — le pelage suivait toujours l'axe X : sur un brut portrait, des lignes pleines sur le court axe et des liaisons rapprochées le long du grand axe (virages nombreux, temps de coupe mauvais) (suite du retour utilisateur « Ébauche 3D », point 2).
+
+Correctif dans `src/88-fao.js` `faoGenRough3D` : **brut plus haut que large → transposition x↔y** du maillage et de la boîte avant pelage (lignes le long de Y, hauteurs d'outillage identiques), puis remise en place de chaque move à la sortie (miroir y=x : IJK échangés, sens cw inversé pour les G2/G3). Carrés et paysages inchangés — les boîtes de test BX/BX2 (paysage) et SP (carré) ne basculent pas.
+
+Tests : révision façon T3 (pas de nouvelle suite) — `tests/test_fao3d.cjs` (brut portrait 60×120 : liaison longue verticale `Δx=0, Δy>5` entre colonnes, comptée dans une run coupée — cassée aux retraits), **ROUGE vérifiée (1 échec : lv=0)** → VERT après implémentation ; run complet **54/54** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-03-006.html`.

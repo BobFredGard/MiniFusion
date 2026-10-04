@@ -176,6 +176,11 @@ const vm=require('vm');
     "att(c20.length>0,'adaptive voile : niveau 20 usine autour');",
     "att(c20.every(m=>!(m.x>24.6&&m.x<75.4&&m.y>-5.5+1e-9&&m.y<65.5-1e-9)),'adaptive voile : voile fin jamais traverse');",
     "att(Math.abs(faoHelixSpot(VL,50,30,3,5.5,20,40,[0,10,24.3,24.9])-26.9)<1e-9,'helice plans : depart au-dessus du voile');",
+    // --- sens long : brut PORTRAIT -> pelage le long de Y (liaisons longues verticales)
+    "const BP={x0:0,y0:0,x1:60,y1:120};",
+    "const mp=faoGenRough3D(mkBox(10,50,10,110,0,20),BP,30,0,{ap:10,ae:6,toolD:10,radial:0.5,axial:0,secu:45,strategy:'adaptive'});",
+    "let lv=0,pp=null;mp.forEach(function(m){if(m.r){pp=null;return;}if(pp&&Math.abs(m.x-pp.x)<1e-6&&Math.abs(m.y-pp.y)>5)lv++;pp=m;});",
+    "att(lv>0,'sens long : liaison longue verticale sur brut portrait ('+lv+')');",
     // --- dispatch via ops (maillage actif nul en VM -> [] sans planter)
     "const j3=faoDefaultJob();j3.ops=[{id:'x',on:true,toolId:'T3',type:'geofinish',step:1,laisse:0,seed:'top'}];",
     "att(Array.isArray(faoOpMoves(j3.ops[0],j3)),'dispatch geofinish sans maillage : pas de plantage');",
