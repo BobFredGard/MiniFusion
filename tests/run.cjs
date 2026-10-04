@@ -30,6 +30,7 @@ const SUITES = [
   "test_esquisse_contraintes",
   "test_fao",
   "test_fao3d",
+  "test_fao_bornage",
   "test_corps",
   "test_corps_iso",
   "test_corps_style",

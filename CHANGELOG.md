@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**165 versions**, de `2026-09-28b` à `2026-10-04-006` — la plus récente en bas,
+**166 versions**, de `2026-09-28b` à `2026-10-04-007` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2857,3 +2857,11 @@ Correctifs dans `src/88-fao.js` :
 - `faoRoughAdaptiveLevel` : si le disque traverse une paroi, la ligne est **clampée** au voisin sûr — descente jusqu'à 12 paliers (chaque échec raffine avec les croisements restants au candidat : paroi courbe des angles arrondis), candidate purement hors brut ignoré, ligne **abandonnée** si aucun voisin sûr (jamais de coupe sous paroi) ; dédup `seenY` puis tri des lignes après clamp.
 
 Tests : façon T3 (pas de nouvelle suite) — `tests/test_fao3d.cjs` : nouveau test **025** (maillage à coins arrondis : bordage des murs Y haut/bas au rayon, garde en X, marge), **ROUGE vérifiée (2 échecs exacts : `y max 58.00 <= 55.6`, `y min 26.00 >= 26.4`)** → VERT après implémentation ; `tests/test_fao.cjs` VERT (facing=33 pocket=65 contour=7 drill=8, G1 siemens=74 fagor=74) ; run complet **54/54** ; probe sur le document réel `Cavité Usinage` : bornes de poche exactes au rayon sur les 6 niveaux (±45.97 … −26.51/28.21), pathX = intervalles, 0 gouge ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-04-006.html`.
+
+### `2026-10-04-007`
+
+ROUGE 026 (défaut propre, sans retour) : **ébauche 3D — descente de bornage abandonnée, rayé le long du mur** — sur le document réel `Cavité Usinage`, la descente de `faoRoughAdaptiveLevel` (candidats restants, garde 12 paliers puis `return`) progressait de quelques µm par palier quand la paroi est vue à des x différents selon le candidat ré-échantillonné : garde épuisée → ligne abandonnée → **coupe manquant** le long du mur sur 12 niveaux (z49/48/41/28…20.5, écarts 0.6 à 5.7 mm avec la borne sûre).
+
+Correctif dans `src/88-fao.js` (`faoRoughAdaptiveLevel`) : la descente devient **sens du 1er candidat sûr → remontée de la grille `aeA` jusqu'au 1er point propre → bissection** entre le dernier point sale et le premier propre (borne ±1e-4, convergence garantie, coût borné) ; l'abandon ne subsiste que si le mur est réellement inaccessible (jamais de coupe sous paroi) ; candidats purement hors brut toujours ignorés.
+
+Tests : nouvelle suite **55** `tests/test_fao_bornage.cjs` — nouveau test **026** (document `Cavité Usinage`, 30 niveaux × 2 côtés) : vérité terrain indépendante de l'implémentation — par niveau (principal + mini-passes), la ligne de grille extérieure traversant le mur sert de départ à une bissection sur `clean(t)` (`faoYCands` vide) ; un coupe doit exister à ≤ 0.5 mm de cette borne (contrôles à 0), **ROUGE vérifiée (12 niveaux en écart, max 5.67)** → VERT après implémentation (écarts ≤ 0.001, 4072 moves au lieu de 3968) ; run complet **55/55** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-04-007.html`.

@@ -3873,27 +3873,50 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     let yc=yy;
     const c0=faoYCands(mesh,planes,z,top,yy,r,ivs);
     if(c0.length){
-      // Descente : un candidat sûr sur un échantillon peut encore traverser
-      // la paroi courbe (angle arrondi) sur un autre — chaque échec raffine
-      // la liste avec les croisements restants à ce candidat. Candidat
-      // purement hors brut ignoré (même règle que la boucle ys) : jamais de
-      // ligne inventée au-delà de la marge. Garde fou : 12 paliers, puis
-      // abandon de la ligne (jamais de coupe sous paroi).
-      let ok=null, cands=c0, guard=0;
-      while(cands.length&&ok===null&&guard++<12){
-        let rest=null;
-        for(let ci=0;ci<cands.length&&ok===null;ci++){
-          const t=cands[ci];
-          if(t+r<=B.y0+1e-9||t-r>=B.y1-1e-9)continue;
-          const iv2=faoShadowIntervals(mesh,B,t,z,top,r,aeA,planes);
-          if(!iv2.length)continue;
-          const rs=faoYCands(mesh,planes,z,top,t,r,iv2);
-          if(!rs.length){ok=t;ivs=iv2;break;}
-          if(rest===null)rest=rs;
+      // Descente corrigée (ROUGE 026) : la liste des croisements
+      // restants pouvait avancer de quelques µm par palier (paroi vue
+      // différente à chaque ré-échantillon x) et la garde 12 abandonnait la
+      // ligne → rayé non usiné le long du mur. On prend le sens du premier
+      // candidat sûr (le plus proche), on remonte la grille aeA jusqu'au
+      // premier point PROPRE (aucun croisement sur son ombre), puis
+      // bissection entre le dernier point sale et le premier propre : borne
+      // exacte (±1e-4), convergence garantie, garde-fou inchangé (ligne
+      // réellement inaccessible → abandon). Candidat purement hors brut
+      // ignoré (même règle que la boucle ys) : jamais de ligne inventée
+      // au-delà de la marge.
+      const can=[];
+      for(let ci=0;ci<c0.length;ci++){
+        const t=c0[ci];
+        if(t+r<=B.y0+1e-9||t-r>=B.y1-1e-9)continue;
+        can.push(t);
+      }
+      let ok=null;
+      if(can.length){
+        const up=can[0]>yy;
+        for(let pass=0;pass<2&&ok===null;pass++){
+          const dir=pass? !up:up;
+          let sale=yy, propre=null;
+          for(let k=1;k<100000;k++){
+            const y=dir? yy+k*aeA : yy-k*aeA;
+            if(y+r<=B.y0+1e-9||y-r>=B.y1-1e-9)break;
+            const iv2=faoShadowIntervals(mesh,B,y,z,top,r,aeA,planes);
+            if(iv2.length&&!faoYCands(mesh,planes,z,top,y,r,iv2).length){propre=y;break;}
+            sale=y;
+          }
+          if(propre===null)continue;
+          for(let i=0;i<40&&Math.abs(propre-sale)>1e-4;i++){
+            const m=(sale+propre)/2;
+            const iv2=faoShadowIntervals(mesh,B,m,z,top,r,aeA,planes);
+            if(iv2.length&&!faoYCands(mesh,planes,z,top,m,r,iv2).length)propre=m;
+            else sale=m;
+          }
+          ok=propre;
         }
-        cands=ok?[]:(rest||[]);
       }
       if(ok===null)return;
+      const ivOk=faoShadowIntervals(mesh,B,ok,z,top,r,aeA,planes);
+      if(!ivOk.length)return;
+      ivs=ivOk;
       yc=ok;
     }
     if(seenY[yc])return;
