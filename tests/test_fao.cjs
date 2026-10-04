@@ -647,6 +647,9 @@ const vm=require('vm');
     "const vwb=faoViewerBuild(vj);",
     "att(vwb.pts.length>10,'viewer : points du parcours ('+vwb.pts.length+')');",
     "att(vwb.times.length===vwb.pts.length&&vwb.times[0]===0,'viewer : temps alignes sur les points');",
+    "att(vwb.lens&&vwb.lens.length===vwb.pts.length&&vwb.lens[0]===0,'viewer : longueurs cumulees alignees (fenetre trace)');",
+    "att(faoTraceWindow(vwb.lens,0,0)===0,'viewer : fenetre trace au depart (depuis le debut)');",
+    "att(faoTraceWindow(vwb.lens,vwb.pts.length-1,0)>0,'viewer : fenetre trace en fin de parcours (from='+faoTraceWindow(vwb.lens,vwb.pts.length-1,0)+')');",
     "att(vwb.T>0&&isFinite(vwb.T),'viewer : duree totale '+vwb.T.toFixed(1)+' s');",
     "const st12={pts:vwb.pts,dd:vwb.dd,times:vwb.times,idx:0,T:vwb.T};",
     "const q0=faoViewerSeek(st12,0);",
@@ -682,7 +685,7 @@ const vm=require('vm');
     // fin automatique en bout de parcours + trace complete
     "faoVw.playing=true;faoViewerAdvance(faoVw.T+60);",
     "att(faoVw.t===faoVw.T&&faoVw.playing===false,'viewer : fin auto en bout de parcours');",
-    "att(faoVw.drawn===faoVw.pts.length,'viewer : trace entierement dessinee');",
+    "att(faoVw.drawn>=2&&faoVw.drawn<faoVw.pts.length,'viewer : trace en fenetre derriere la fraise (drawn='+faoVw.drawn+'/'+faoVw.pts.length+')');",
     // stop : retour au depart
     "faoViewerStop();",
     "att(faoVw.t===0&&faoVw.playing===false&&faoVw.idx===0,'viewer : stop revient au depart');",

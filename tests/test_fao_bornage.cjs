@@ -74,9 +74,9 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     faoSliceCache={mesh:mesh,map:{}};
     const zt=50,aeA=6,TOL=0.5;
     function rOf(z){
-      if([50,45,40,35,30,25,20.5].indexOf(z)>=0)return 13;
-      const bands=[[49,48,47,46],[44,43,42,41],[39,38,37,36],[34,33,32,31],[29,28,27,26],[24.1,23.2,22.3,21.4]];
-      for(let i=0;i<bands.length;i++){const k=bands[i].indexOf(z);if(k>=0)return 13-0.125*(k+1);}
+      // Retour 6/10 (A3) : mini-passes à marge ENTière (s = radial) — même
+      // r que le parent (D/2 + radial = 13) à tous les niveaux, plus de
+      // décroissance (nb-k)/nb qui laissait le contour collé à la cote.
       return 13;
     }
     function bound(z,r,planes,sign){
@@ -144,14 +144,16 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   const nul=out.rows.filter(R=>R.gLo===null||R.gHi===null).length;
   A(nul===0,'60 bornes atteintes par bissection, '+nul+' côté(s) inatteignable(s)');
   for(const R of out.rows){
-    const okLo=R.gLo!==null&&R.gLo<=0.5;
-    const okHi=R.gHi!==null&&R.gHi<=0.5;
+    // Retour 6/10 : aussi le GOUGE (borne franchie vers la matière, g < 0)
+    // — distance perpendiculaire exacte, plus jamais r·cosθ ni recul d'aeA.
+    const okLo=R.gLo!==null&&R.gLo<=0.5&&R.gLo>=-0.1;
+    const okHi=R.gHi!==null&&R.gHi<=0.5&&R.gHi>=-0.1;
     A(okLo&&okHi,
       'z='+R.z+' bornes : bas coupe '+(R.mn===null?'absente':R.mn)+
       ' vs borne '+(R.tLo===null?'inatteignable':R.tLo)+' (écart '+R.gLo+')'+
       ' — haut coupe '+(R.mx===null?'absente':R.mx)+
       ' vs borne '+(R.tHi===null?'inatteignable':R.tHi)+' (écart '+R.gHi+')'+
-      (okLo?'':' [BAS MANQUANT/TROP LOIN]')+(okHi?'':' [HAUT MANQUANT/TROP LOIN]'));
+      (okLo?'':' [BAS MANQUANT/TROP LOIN/GOUGE]')+(okHi?'':' [HAUT MANQUANT/TROP LOIN/GOUGE]'));
   }
   console.log(ko?('  '+ko+' échec(s)'):'  bornage murs : bornes atteintes partout');
   process.exit(ko?1:0);

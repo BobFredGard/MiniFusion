@@ -35,10 +35,15 @@ const vm=require('vm');
     "const merge=function(A,B){const off=A.v.length;return {v:A.v.concat(B.v),t:A.t.concat(B.t.map(function(t){return [t[0]+off,t[1]+off,t[2]+off];}))};};",
     "const CN=merge(mkBox(0,20,0,60,0,40),mkBox(80,100,0,60,0,40));",
     "const BX={x0:-5,y0:-5,x1:105,y1:65};",
+    "const blkD=function(px,py,x0,x1,y0,y1){const dx=Math.max(x0-px,0,px-x1),dy=Math.max(y0-py,0,py-y1);return Math.hypot(dx,dy);};",
     "const rm=faoGenRough3D(CN,BX,40,0,{ap:10,ae:6,toolD:10,radial:0,axial:0,secu:45});",
     "att(rm.length>10,'canal : '+rm.length+' moves');",
     "att(rm[0].r===1,'canal : 1er move rapide');",
-    "att(rm.filter(m=>!m.r).every(m=>m.x<=-5+1e-9||(m.x>=25-1e-9&&m.x<=75+1e-9)||m.x>=105-1e-9||m.y<=-5+1e-9||m.y>=65-1e-9),'canal : zones libres seulement (marge comprise)');",
+    // Retour 6/10 : les abouts sont à la DISTANCE PERPENDICULAIRE (r·cosθ et
+    // recul y±aeA supprimés) — la zone alignée X/Y ne reflétait plus la vérité
+    // physique près des coins. Vérité : disque ≥ r sur toute la pièce +
+    // garde-fou course dans la boîte élargie.
+    "att(rm.filter(m=>!m.r).every(m=>blkD(m.x,m.y,0,20,0,60)>=4.99&&blkD(m.x,m.y,80,100,0,60)>=4.99&&m.x>=-30&&m.x<=140&&m.y>=-30&&m.y<=100),'canal : clearance outil >= r sur les deux plots (marge comprise)');",
     "att(rm.filter(m=>m.r).every(m=>m.z>=0-1e-9),'canal : rapides jamais sous le niveau');",
     "att(rm.some(m=>!m.r&&m.x<=-5+1e-9),'canal : marge laterale degagee');",
     "att(rm.some(m=>!m.r&&m.y<=-5+1e-9),'canal : marge avant degagee');",
@@ -66,7 +71,7 @@ const vm=require('vm');
     "const rf=faoGenRough3D(mkBox(40,60,20,40,0,10),BX,30,10,{ap:10,ae:6,toolD:10,radial:0,axial:0,secu:35});",
     "const z20=rf.filter(m=>!m.r&&Math.abs(m.z-20)<1e-9);",
     "att(z20.some(m=>m.x<10)&&z20.some(m=>m.x>90),'plat z=20 : pleine largeur');",
-    "att(rf.filter(m=>!m.r&&Math.abs(m.z-10)<1e-9).every(m=>!(m.x>35+1e-9&&m.x<65-1e-9&&m.y>15+1e-9&&m.y<45-1e-9)),'z=10 : jamais dans l emprise [35,65]x(15,45) (piece respectee)');",
+    "att(rf.filter(m=>!m.r&&Math.abs(m.z-10)<1e-9).every(m=>blkD(m.x,m.y,40,60,20,40)>=4.99),'z=10 : clearance >= r sur la piece (emprise respectee)');",
     "att(rf.filter(m=>!m.r&&Math.abs(m.z-10)<1e-9).some(m=>m.x<0),'plat z=10 : marge laterale degagee');",
     // --- marches : plots larges en bas, étroits en haut (raffinement auto)
     "const ST=merge(merge(mkBox(0,30,0,60,0,20),mkBox(70,100,0,60,0,20)),merge(mkBox(0,20,0,60,20,40),mkBox(80,100,0,60,20,40)));",
@@ -96,8 +101,8 @@ const vm=require('vm');
     "const mrr=faoRoundMoves(mro,2);",
     "att(mrr.some(m=>!m.r&&m.arc),'arrondi : arcs présents');",
     "const m30=mrr.filter(m=>!m.r&&Math.abs(m.z-30)<1e-9);",
-    "att(m30.filter(m=>!m.arc).every(m=>m.x<=-5.5+1e-9||(m.x>=25.5-1e-9&&m.x<=74.5+1e-9)||m.x>=105.5-1e-9||m.y<=-5.5+1e-9||m.y>=65.5-1e-9),'arrondi : droites en zones libres (marge comprise)');",
-    "att(m30.every(m=>m.x<=-4.6+1e-9||(m.x>=24.6-1e-9&&m.x<=75.4+1e-9)||m.x>=104.6-1e-9||m.y<=-5.5+1e-9||m.y>=65.5-1e-9),'arrondi : bombe <= 0.9 (sagitta 90 degres)');",
+    "att(m30.filter(m=>!m.arc).every(m=>blkD(m.x,m.y,0,20,0,60)>=4.99&&blkD(m.x,m.y,80,100,0,60)>=4.99&&m.x>=-30&&m.x<=140&&m.y>=-30&&m.y<=100),'arrondi : droites clearance >= r (marge comprise)');",
+    "att(m30.every(m=>blkD(m.x,m.y,0,20,0,60)>=4.59&&blkD(m.x,m.y,80,100,0,60)>=4.59&&m.x>=-30&&m.x<=140&&m.y>=-30&&m.y<=100),'arrondi : bombe <= 0.9 (sagitta 90 degres)');",
     "att(mrr.filter(m=>!m.r&&m.arc&&!m.arc.troch).every(m=>Math.hypot(m.arc.i,m.arc.j)<=2.01),'arrondi : rayon <= 2 (hors trochoides)');",
     // --- sphère lat-long R=10 (8x12), seed = pôle nord
     "const SP={v:[[0,0,10]],t:[]};",
@@ -135,7 +140,7 @@ const vm=require('vm');
     "const ad=faoGenRough3D(CN,BX,40,30,{ap:10,ae:6,toolD:10,radial:0.5,axial:0,secu:45,strategy:'adaptive'});",
     "att(ad.length>50,'adaptive : '+ad.length+' moves');",
     "att(ad[0].r===1,'adaptive : 1er move rapide');",
-    "att(ad.filter(m=>!m.r).every(m=>m.x<=-5.5+1e-9||(m.x>=25.5-1e-9&&m.x<=74.5+1e-9)||m.x>=105.5-1e-9||m.y<=-5.5+1e-9||m.y>=65.5-1e-9),'adaptive : zones libres seulement (marge comprise)');",
+    "att(ad.filter(m=>!m.r).every(m=>blkD(m.x,m.y,0,20,0,60)>=5.49&&blkD(m.x,m.y,80,100,0,60)>=5.49&&m.x>=-30&&m.x<=140&&m.y>=-30&&m.y<=100),'adaptive : clearance outil >= r (marge comprise)');",
     "att(ad.some(m=>!m.r&&m.z>30&&m.z<45),'adaptive : descente helice');",
     "att(ad.filter(m=>m.r).length<=12,'adaptive : stay-down, '+ad.filter(m=>m.r).length+' rapides (1 entree par colonne)');",
     "const mo1=faoGenRough3D(CN,BX,40,30,{ap:10,ae:6,toolD:10,radial:0.5,axial:0,secu:45,strategy:'morph'});",
@@ -154,13 +159,12 @@ const vm=require('vm');
     "const av=faoGenRough3D(DV,BX2,40,0,{ap:10,ae:6,toolD:10,radial:0.5,axial:0,secu:45,strategy:'adaptive'});",
     "const c10=av.filter(m=>!m.r&&Math.abs(m.z-10)<1e-9);",
     "att(c10.length>0,'adaptive surplomb : niveau bas usine');",
-    "att(c10.every(m=>!(m.x>24.6&&m.x<75.4&&m.y>-5.5+1e-9&&m.y<65.5-1e-9)),'adaptive surplomb : jamais sous le porte-a-faux [30,70]');",
+    "att(c10.every(m=>blkD(m.x,m.y,30,70,0,60)>=5.49),'adaptive surplomb : jamais sous le porte-a-faux [30,70]');",
     "att(av.some(m=>!m.r&&Math.abs(m.z-30)<1e-9),'adaptive surplomb : niveau haut usine');",
     // --- adaptive : micro-entree en fente ~D (12 mm, D10 : ni helice ni rampe)",
     "const NS=merge(mkBox(0,44,0,60,0,40),mkBox(56,100,0,60,0,40));",
     "const an=faoGenRough3D(NS,BX,40,30,{ap:10,ae:6,toolD:10,radial:0,axial:0,secu:45,strategy:'adaptive'});",
     "att(an.length>10&&an[0].r===1,'adaptive fente : '+an.length+' moves, demarre rapide');",
-    "const blkD=function(px,py,x0,x1,y0,y1){const dx=Math.max(x0-px,0,px-x1),dy=Math.max(y0-py,0,py-y1);return Math.hypot(dx,dy);};",
     "att(an.filter(m=>!m.r).every(m=>blkD(m.x,m.y,0,44,0,60)>=4.98&&blkD(m.x,m.y,56,100,0,60)>=4.98),'adaptive fente : clearance outil >= r sur les deux plots');",
     // --- trochoide : excursion Y bornee a la bande balayee + repli droit
     "const tc=[];faoTrochSlot(tc,0,20,5,10,10,2.5,5,5);",
@@ -174,7 +178,7 @@ const vm=require('vm');
     "const vv=faoGenRough3D(VL,BX2,40,0,{ap:10,ae:6,toolD:10,radial:0.5,axial:0,secu:45,strategy:'adaptive'});",
     "const c20=vv.filter(m=>!m.r&&Math.abs(m.z-20)<1e-9);",
     "att(c20.length>0,'adaptive voile : niveau 20 usine autour');",
-    "att(c20.every(m=>!(m.x>24.6&&m.x<75.4&&m.y>-5.5+1e-9&&m.y<65.5-1e-9)),'adaptive voile : voile fin jamais traverse');",
+    "att(c20.every(m=>blkD(m.x,m.y,30,70,0,60)>=5.49),'adaptive voile : voile fin jamais traverse');",
     "att(Math.abs(faoHelixSpot(VL,50,30,3,5.5,20,40,[0,10,24.3,24.9])-26.9)<1e-9,'helice plans : depart au-dessus du voile');",
     // --- sens long : brut PORTRAIT -> pelage le long de Y (liaisons longues verticales)
     "const BP={x0:0,y0:0,x1:60,y1:120};",
