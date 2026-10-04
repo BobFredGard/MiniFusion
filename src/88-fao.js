@@ -553,13 +553,15 @@ function faoGenFacing(stock,o){
       // changement de niveau Z — jamais de traversée en diagonale dans la matière.
       moves.push({r:0,x:moves[moves.length-1].x,y:moves[moves.length-1].y,z:lv});
     }
+    // 2026-10-04-005 : la ligne est sillonnée AVANT le test de lisière — la
+    // dernière passe devait finir le travail (l'alignement de bord manquait).
     while(garde++<100000){
-      if(yDown?y<=yA+1e-9:y>=yB-1e-9)break;
       const xT=sens>0?stock.x1+dep:stock.x0-dep;
-      moves.push({r:0,x:xT,y:y,z:lv});
+      moves.push({r:0,x:xT,y:y,z:lv});            // ligne : toute la largeur
+      sens=-sens;                                  // prochaine ligne : l'autre côté
+      if(yDown?y<=yA+1e-9:y>=yB-1e-9)break;        // lisière atteinte : tout est fait
       y=yDown?Math.max(y-ae,yA):Math.min(y+ae,yB);
-      moves.push({r:0,x:xT,y:y,z:lv});
-      sens=-sens;
+      moves.push({r:0,x:xT,y:y,z:lv});            // transposition verticale (hors matière)
     }
   });
   moves.push({r:1,x:moves[moves.length-1].x,y:moves[moves.length-1].y,z:secu});
@@ -1060,7 +1062,7 @@ function faoClipMovesPoly(moves,lim,r,secuZ,sub){
       if(insideMid===ain)t0=tm; else t1=tm;
       if(Math.hypot((bx-ax)*(t1-t0),(by-ay)*(t1-t0))<0.1)break;
     }
-    const t=ain?t1:t0;
+    const t=t0; // côté ain : sortie DEDANS, entrée DEHORS — jamais au-delà
     return [ax+(bx-ax)*t,ay+(by-ay)*t];
   };
   const zAt=function(ax,ay,az,bx,by,bz,cx,cy){

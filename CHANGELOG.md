@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**163 versions**, de `2026-09-28b` à `2026-10-04-004` — la plus récente en bas,
+**164 versions**, de `2026-09-28b` à `2026-10-04-005` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2837,3 +2837,13 @@ Retour utilisateur 4 : **finition géodésique — sens horizontal, limites Z, g
 Correctif dans `src/88-fao.js` — **finition à deux familles** : `faoGeoFlags` partitionne les faces (plate = normale quasi verticale `nz ≥ 0,99` ≈ 8°, marge de tessellation ; sinon inclinée/mur) ; (1) **passes horizontales iso-Z** sur les faces en pente — champ Z des sommets dans `faoIsoSegs` (nouveaux paramètres optionnels `flags`/`want`), niveaux ancrés au plafond `ztop − k·pas` jusqu'à `zbot`, descendant (`départ Sommet`) ou ascendant (`Fond`) : **chaque liaison part à Z constant** ; (2) **anneaux géodésiques** (ancien champ Dijkstra) sur les **seuls plateaux**, dans les limites Z — jeux de triangles disjoints → couture nulle, couverture des surfaces horizontales conservée. **Limites Z** : champs `ztop`/`zbot` ajoutés à `faoNewOp` (hérités du brut) et au dispatch, héritage du stock à la lecture, rangée **Zhaut/Zbas** (`zz()`) dans la fiche. **Garde-fou fraise droite** : `kind='flat'` sur un modèle avec face en pente → `[]` (aucune trajectoire au lieu d'un résultat trompeur), drapeau `op.geoBlocked` recalculé à chaque dispatch (jamais stocké, `delete` à la lecture) + note d'avertissement dans la fiche.
 
 Tests : révision façon T3 (pas de nouvelle suite) — `tests/test_fao3d.cjs` : plan horizontal z=30 (offsets : ball D8 → 34, torique coin 1 → 31, droite → 30), rampe 40×40 à ~26° (liaisons à Z constant, `ztop=12` → coupe max < 16, fraise droite refusée `[]` / acceptée sur plan), sphère R10 inchangée (anneaux centre à `R+4`, 1ᵉʳ anneau z > 5), **ROUGE vérifiée (3 échecs : 16 liaisons variables, ztop ignoré → 23,58, droite non refusée)** → VERT après implémentation ; run complet **54/54** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-04-004.html`.
+
+### `2026-10-04-005`
+
+Retour utilisateur du 4 octobre (nouvelle salve, point 1) : **surfaçage — la dernière passe ne finit pas le travail** — le boustrophédon testait la lisière AVANT de la sillonner : la ligne de bord n'était jamais émise (le compte `faoFacingCount` l'annonçait pourtant, d'où l'affichage > réel), la dernière passe finissait un alignement en deçà de la lisière, laissant un bandeau non usiné sur toute la longueur (ex. D25/écart 20 : manque 7,5 mm au bord).
+
+Correctifs dans `src/88-fao.js` :
+- `faoGenFacing` : la ligne est sillonnée **avant** le test de lisière (le `sens` n'est retourné qu'après la ligne) — toutes les lignes du compte sont usinées à chaque niveau, dont la dernière passe, sans jamais de traversée diagonale (la transposition verticale reste en dépassement X) ; le cas `count===1` sillonne aussi sa ligne ;
+- `faoClipMovesPoly` (clip impair des limites chaîne) : le point de **sortie** est émis côté dé-dans (dichotomie `t0`) — plus de coupe 0,1 mm au-delà de la limite (régression révélée par le nouveau sillon sur la lisière `y=80`, le point de sortie tombait à 80,06).
+
+Tests : révision façon T3 (pas de nouvelle suite) — `tests/test_fao.cjs` : nouveau test **024** (aide `swFn` : lignes sillonnées en matière par transposition horizontale) — lignes sillonnées = `faoFacingCount` sur cas générique (15), passe finale `npz=4` à z=0 (15), et les chiffres du document `Cavité Usinage` D25/écart 20 (8), **ROUGE vérifiée (3 échecs : 14/15, 14/15, 7/8)** → VERT après implémentation (clip corrigé au passage) ; run complet **54/54** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-04-005.html`. Document de reproduction `Cavité Usinage.minifusion.json` ajouté au dépôt.

@@ -900,6 +900,18 @@ const vm=require('vm');
     "const c23p=faoOpCardElement(s23,{id:'p23',on:true,toolId:'T1',type:'pocket',x0:10,y0:10,x1:90,y1:70,ztop:5,zbot:0,ap:5},0);",
     "let lab23p=false;(function w23p(n){if(n.children)n.children.forEach(function(ch){if(ch.textContent==='Sortie')lab23p=true;w23p(ch);});})(c23p);",
     "att(lab23p===false,'023 : le rappel Sortie est propre au surfaçage (absent de la poche)');",
+    // --- 024 : surfaçage — la DERNIERE ligne sillonne toute la largeur (retour 4/10)
+    "const swFn=function(ms,st){const y={};let px=null,py=null;ms.forEach(function(m){if(!m.r&&py!==null&&Math.abs(m.y-py)<1e-9){const xa=Math.min(px,m.x),xb=Math.max(px,m.x);if(xa<=st.x0+1e-9&&xb>=st.x1-1e-9)y[m.y]=1;}px=m.x;py=m.y;});return Object.keys(y).length;};",
+    "const st24={x0:0,y0:0,z0:0,x1:100,y1:80,z1:25};",
+    "const g24=faoGenFacing(st24,{toolD:10,z:25,secu:30,ae:6});",
+    "att(swFn(g24,st24)===faoFacingCount(st24,10,6),'024 : lignes sillonnees en matiere = faoFacingCount ('+swFn(g24,st24)+'/'+faoFacingCount(st24,10,6)+')');",
+    "const g24b=faoGenFacing(st24,{toolD:10,z:0,secu:30,ae:6,npz:4});",
+    "const f24b=g24b.filter(function(m){return m.z<1e-9;});",
+    "att(swFn(f24b,st24)===faoFacingCount(st24,10,6),'024 : passe finale (z=0) sillonne toutes les lignes ('+swFn(f24b,st24)+'/'+faoFacingCount(st24,10,6)+')');",
+    "const st24c={x0:-107.5,y0:-70,z0:0,x1:107.5,y1:70,z1:60};",
+    "const g24c=faoGenFacing(st24c,{toolD:25,z:50,secu:80,ae:20,npz:4});",
+    "const f24c=g24c.filter(function(m){return Math.abs(m.z-50)<1e-9;});",
+    "att(swFn(f24c,st24c)===faoFacingCount(st24c,25,20),'024 : doc Cavit\\u00e9, passe finale D25/ae20 : les 8 lignes sillonnees ('+swFn(f24c,st24c)+'/8)');",
     // --- P1-b : UI pilotée dans appvm (œil, ↑/↓, +op, export)
     "doc.fao={setups:[Object.assign(faoDefaultSetup(),{name:'UITEST',stock:{x0:0,y0:0,z0:0,x1:100,y1:80,z1:25},ops:[{id:'u1',on:true,toolId:'T1',type:'facing',z:25,ae:6},{id:'u2',on:true,toolId:'T1',type:'drill',pts:[[20,20]],ztop:25,zbot:5}]})],activeSetupId:null};",
     "sel={kind:null,id:null};document.getElementById('faoTree').children.length=0;faoRenderTree();",
