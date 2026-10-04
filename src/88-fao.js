@@ -3443,7 +3443,9 @@ function faoSliceHit(segs,cx,cy,clear){
 }
 function faoDiscClear(segs,cx,cy,hr,r){
   // Le disque d'hélice (centre,hr) évite-t-il la pièce (dedans ou à moins
-  // de r) ? 8 échantillons sur le cercle.
+  // de r) ? 8 échantillons sur le cercle, distance euclidienne au contour :
+  // un échantillon juste hors matière (aucun croisement en Y) échappait à
+  // la vérification et l'hélice plongeait dans la pièce.
   for(let k=0;k<8;k++){
     const a=k/8*Math.PI*2, xx=cx+hr*Math.cos(a), yy=cy+hr*Math.sin(a);
     const xs=[];
@@ -3457,9 +3459,16 @@ function faoDiscClear(segs,cx,cy,hr,r){
     let left=0;
     for(let i=0;i<xs.length;i++)if(xs[i]<xx-1e-9)left++;
     if(left%2)return false;
-    for(let i=0;i<xs.length;i+=2){
-      if(xx>=xs[i]-r-1e-9&&xx<=xs[i+1]+r+1e-9)return false;
+    let dmin=1/0;
+    for(let i=0;i<segs.length;i++){
+      const s=segs[i], ax=s[0], ay=s[1], dx=s[2]-s[0], dy=s[3]-s[1];
+      const L2=dx*dx+dy*dy;
+      let t=L2>0?((xx-ax)*dx+(yy-ay)*dy)/L2:0;
+      if(t<0)t=0; else if(t>1)t=1;
+      const px=ax+t*dx-xx, py=ay+t*dy-yy, d2=px*px+py*py;
+      if(d2<dmin)dmin=d2;
     }
+    if(dmin<(r-1e-9)*(r-1e-9))return false;
   }
   return true;
 }
@@ -3563,10 +3572,10 @@ function faoTrochSlot(moves,xa,xb,y,z,D,aeA,yMin,yMax){
     const xE=Math.round((cx+Rt)*1000)/1000, xW=Math.round((cx-Rt)*1000)/1000;
     const yN=Math.round((y+Rt)*1000)/1000, yS=Math.round((y-Rt)*1000)/1000;
     // E -> N -> W -> S -> E autour de (X,Y), CCW : i,j = centre - départ.
-    moves.push({r:0,x:X,y:yN,z:z,arc:{i:Math.round((X-xE)*1000)/1000,j:0,cw:false}});
-    moves.push({r:0,x:xW,y:Y,z:z,arc:{i:0,j:Math.round((Y-yN)*1000)/1000,cw:false}});
-    moves.push({r:0,x:X,y:yS,z:z,arc:{i:Math.round((X-xW)*1000)/1000,j:0,cw:false}});
-    moves.push({r:0,x:xE,y:Y,z:z,arc:{i:0,j:Math.round((Y-yS)*1000)/1000,cw:false}});
+    moves.push({r:0,x:X,y:yN,z:z,arc:{i:Math.round((X-xE)*1000)/1000,j:0,cw:false,troch:true}});
+    moves.push({r:0,x:xW,y:Y,z:z,arc:{i:0,j:Math.round((Y-yN)*1000)/1000,cw:false,troch:true}});
+    moves.push({r:0,x:X,y:yS,z:z,arc:{i:Math.round((X-xW)*1000)/1000,j:0,cw:false,troch:true}});
+    moves.push({r:0,x:xE,y:Y,z:z,arc:{i:0,j:Math.round((Y-yS)*1000)/1000,cw:false,troch:true}});
     cx+=pitch;
   }
   moves.push({r:0,x:Math.round(xb*1000)/1000,y:Y,z:z});
@@ -3613,13 +3622,18 @@ function faoShadowIntervals(mesh,B,y,z,zt,r,aeA,planes){
   // complément dans le brut. Les porte-à-faux sont exclus : jamais de plongée
   // sous un surplomb. Matière lue sur 3 lignes (y±aeA) : une ligne pile sur
   // une arête (epsilon scanline) verrait un vide plein large et fraiserait le
-  // flanc — les voisines rattrapent le bord. Les 3 vides : [] (conservatif).
-  const lo=B.x0+r, hi=B.x1-r;
+  // flanc — les voisines rattrapent le bord. Vide sur les 3 : distance à
+  // l'emprise du niveau (voir plus bas).
+  // L'outil peut sortir d'un rayon du brut en X : la marge/congé périphérique
+  // doit être usiné (centre toléré jusqu'à B.x0-r / B.x1+r, disque tangent
+  // au mur — cf. facedep=r+sortie côté facing).
+  const lo=B.x0-r, hi=B.x1+r;
   const out=[];
   if(!(hi-lo>0.2))return out;
   const stepY=Math.max(0.5,isFinite(+aeA)&&+aeA>0?+aeA:2);
   const forb=[];
   let hasMat=false; // matière sur un plan/section du niveau (quel que soit y)
+  let yLo=1/0, yHi=-1/0; // emprise Y de la matière entre z et zt
   let pls=null;
   if(Array.isArray(planes)&&planes.length){
     const seen={}, tmp=[];
@@ -3634,6 +3648,13 @@ function faoShadowIntervals(mesh,B,y,z,zt,r,aeA,planes){
   pls.forEach(function(zz){
     const segs=faoSliceZCached(mesh,zz);
     if(segs.length)hasMat=true;
+    for(let i=0;i<segs.length;i++){
+      const s=segs[i];
+      if(s[1]<yLo)yLo=s[1];
+      if(s[1]>yHi)yHi=s[1];
+      if(s[3]<yLo)yLo=s[3];
+      if(s[3]>yHi)yHi=s[3];
+    }
     [y-stepY,y,y+stepY].forEach(function(yy){
       faoScanIntervals(segs,yy).forEach(function(iv){
         const a=Math.max(lo,iv[0]-r), b=Math.min(hi,iv[1]+r);
@@ -3642,11 +3663,17 @@ function faoShadowIntervals(mesh,B,y,z,zt,r,aeA,planes){
     });
   });
   if(!forb.length){
-    // Niveau sans matière du tout (aucune section entre z et zt) : brut au-dessus
-    // de la pièce = surfaçage pleine largeur (historique morph : slice vide →
-    // full). Sinon la matière est ailleurs : ligne hors section, conservatif
-    // — rien à y vider (jamais de fraisage d'une ligne qui ne voit rien).
+    // Ligne qui ne voit rien sur les 3 lectures :
+    //  - niveau vide (brut au-dessus de la pièce) : surfaçage pleine largeur ;
+    //  - matière à >= r en Y (hors emprise + outil tangent au mur) : colonne
+    //    dégagée sur toute la largeur — on vide la marge/le congé, même si la
+    //    ligne ne lit de la matière sur aucun plan (c'était la manchette
+    //    laissée par l'ancien complément borné à la boîte) ;
+    //  - sinon (matière proche non vue : arête pile sur une lecture) :
+    //    conservatif, rien — jamais de plongée sous un relief.
     if(!hasMat)return [{a:lo,b:hi,wl:false,wr:false}];
+    const d=y<yLo?yLo-y:(y>yHi?y-yHi:0);
+    if(d>=r-1e-9)return [{a:lo,b:hi,wl:false,wr:false}];
     return out;
   }
   forb.sort(function(p,q){return p[0]-q[0];});
@@ -3675,8 +3702,20 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   // Plans partagés du niveau : ombre + colonnes d'hélice lisent les mêmes
   // Z vertex (aucun voile fin manqué, slices en cache).
   const planes=faoShadowPlanes(mesh,z,Math.max(top,isFinite(+brutTop)?+brutTop:z));
-  const ys=[]; let y=B.y0+r, g=0;
-  while(y<=B.y1-r+1e-9&&g++<100000){ ys.push(y); y+=aeA; }
+  // Entrée : le corps de l'outil monte jusqu'au brut — le disque se vérifie
+  // sur TOUTES les sections du niveau (l'ombre), pas seulement à z : un
+  // voile fin au-dessus n'apparaît pas dans la slice à z et l'hélice le
+  // traversait en descendant.
+  let segsAll=segs.slice();
+  for(let pi=0;pi<planes.length;pi++){
+    if(planes[pi]>z+1e-9)segsAll=segsAll.concat(faoSliceZCached(mesh,planes[pi]));
+  }
+  const ys=[]; let y=B.y0-r, g=0;
+  while(y<=B.y1+r+1e-9&&g++<100000){
+    // lignes purement hors brut (disque tangent sans coupe) : ignorees
+    if(!(y+r<=B.y0+1e-9||y-r>=B.y1-1e-9))ys.push(y);
+    y+=aeA;
+  }
   if(!ys.length)return;
   const lines=[];
   ys.forEach(function(yy){
@@ -3707,7 +3746,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
         const hrr=c.elen>0?Math.max(1,Math.min(D*0.4,c.elen/2-1)):Math.max(0.5,D*0.2);
         if(!(c.elen>0?c.elen>=2*D:true))continue;
         if(forced==='auto'&&!(c.elen>=2*D))continue;
-        if(!faoDiscClear(segs,c.x,c.y,hrr,r))continue;
+        if(!faoDiscClear(segsAll,c.x,c.y,hrr,r))continue;
         hx=c.x; hy=c.y; hr=hrr;
         hStart=Math.min(zFrom,faoHelixSpot(mesh,c.x,c.y,hrr,r,z,brutTop,planes));
       }
@@ -3738,7 +3777,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       const run=Math.max(elen,yRun);
       const mhr=Math.max(0.5,run/2-0.2);
       const mx=ramp?ramp.x0:(E.iv.a+E.iv.b)/2, my=ramp?ramp.y0:E.y;
-      if(run>0.5&&faoDiscClear(segs,mx,my,mhr,r)){
+      if(run>0.5&&faoDiscClear(segsAll,mx,my,mhr,r)){
         const ms=Math.min(zFrom,faoHelixSpot(mesh,mx,my,mhr,r,z,brutTop,planes));
         moves.push({r:1,x:mx,y:my,z:secu});
         if(ms<secu-1e-9)moves.push({r:0,x:mx,y:my,z:ms});
@@ -3814,11 +3853,22 @@ function faoRoughRegions(lines){
   const uni=function(a,b){ a=find(a); b=find(b); if(a!==b)parent[a]=b; };
   lines.forEach(function(L,li){ L.ivs.forEach(function(iv,ii){ parent[id(li,ii)]=id(li,ii); }); });
   for(let li=1;li<lines.length;li++){
-    lines[li].ivs.forEach(function(iv,ii){
-      lines[li-1].ivs.forEach(function(pv,pi){
-        if(iv.a<pv.b&&pv.a<iv.b)uni(id(li,ii),id(li-1,pi));
-      });
-    });
+    // Union UNIQUEMENT si le recouvrement est 1:1 des deux côtés : une ligne
+    // pleine (marge hors matière) recouvre toutes les colonnes — les fusionner
+    // donnerait un pelage en travers des plots. Elle reste région à part.
+    const prev=lines[li-1], cur=lines[li];
+    const ovC=[], ovP=new Array(prev.ivs.length).fill(0);
+    for(let ii=0;ii<cur.ivs.length;ii++){
+      ovC[ii]=[];
+      for(let pj=0;pj<prev.ivs.length;pj++){
+        if(cur.ivs[ii].a<prev.ivs[pj].b&&prev.ivs[pj].a<cur.ivs[ii].b){
+          ovC[ii].push(pj); ovP[pj]++;
+        }
+      }
+    }
+    for(let ii=0;ii<cur.ivs.length;ii++){
+      if(ovC[ii].length===1&&ovP[ovC[ii][0]]===1)uni(id(li,ii),id(li-1,ovC[ii][0]));
+    }
   }
   const groups={};
   lines.forEach(function(L,li){

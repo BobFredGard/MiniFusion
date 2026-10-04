@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**157 versions**, de `2026-09-28b` à `2026-10-03-004` — la plus récente en bas,
+**158 versions**, de `2026-09-28b` à `2026-10-03-005` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2789,3 +2789,11 @@ Tests : **nouvelle suite `tests/test_fao_zlim.cjs` enregistrée dans `tests/run.
 Correctifs dans `src/88-fao.js` : `faoGenRough3D` ramené à un plan de niveaux épais `ap` + `faoRoughAdaptiveLevel` (options `strategy`/`ap2`/`refineTol` ignorées) ; suppression des helpers `faoRoughLevel`, `faoRoughMorph`, `faoRoughZigzag`, `faoRoughIntervals` (`faoRoughRegions` et `faoHelixEntry` conservées, utilisées par le mode unique) ; `faoShadowIntervals` distingue maintenant le **niveau vide de matière** (surfaçage pleine largeur, historique morph) de la **ligne hors section** (conservatif, rien à y vider) — le pelage plaquait autrefois au-dessus de la pièce (bug plat) ; fiche rough3d sans selecteur de stratégie, sans champ `ap2` ni rang « Parois fin / Fond fin », aide `ae` en mode trocoïdal, libellé arbre sans `+fin` ; `faoOpDefaults`/`faoOpMoves` sans les champs morts ; `faoSanitiseOps` retire `strategy`/`ap2`/`radial2`/`axial2` des documents anciens (même régime que `zlim`) ; README (Ébauche 3D, alertes `ae`) mis au mode unique.
 
 Tests : révision façon T3 (pas de nouvelle suite) — `tests/test_fao3d.cjs` (10 points réécrits : paroi (25,52.5), `ap2` ignoré, `strategy` sans effet, helpers supprimés, comparaison troco unique) et `tests/test_fao.cjs` (fiche sans « Morph/Zigzag/Adaptive »), **ROUGE vérifiée (7 échecs)** → VERT après implémentation ; run complet **54/54** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-03-004.html`.
+
+### `2026-10-03-005`
+
+Ébauche 3D, retour utilisateur B1 : **marges et congés usinés** — l'ancien complément borné à la boîte laissait la manchette autour des plots (intervalles nuls `B.x0+r..B.x1-r` bornant la sortie, lignes de marge sans matière retournant `[]`, grille bornée `[B.y0+r, B.y1-r]`, union des régions fusionnant les colonnes pleines en travers des plots) (suite du retour utilisateur « Ébauche 3D », point 1).
+
+Correctifs dans `src/88-fao.js` : `faoShadowIntervals` — sortie d'un rayon hors boîte (`lo=B.x0-r`, `hi=B.x1+r`), lecture **par distance à l'intervalle matière** `[yLo,yHi]` (`d>=r` → pleine largeur même sans lecture, sinon conservatif), grille `ys` de `B.y0-r` à `B.y1+r` avec skip des lignes purement hors brut ; `faoRoughRegions` : union **uniquement sur recouvrement 1:1 mutuel** (une ligne pleine ne fusionne plus les colonnes — pas de pelage en travers des plots) ; `faoDiscClear` : **distance euclidienne au contour** (un échantillon hors matière sans croisement en Y passait et l'hélice plongeait dans la pièce) ; entrée hélice/micro-hélice vérifiée sur **toutes les sections du niveau** (`segsAll` = ombre, pas seulement la slice à z — un voile fin au-dessus était invisible) ; arcs trochoïdes marqués `arc.troch` (distingués des arrondis `R<=2`).
+
+Tests : révision façon T3 (pas de nouvelle suite) — `tests/test_fao3d.cjs` (marge latérale/avant dégagées sur canal + plat, emprise z=10 pièce respectée, `<=12` rapides, arrondis hors troch, fente en distance coin-juste sur les deux plots), **ROUGE vérifiée (3 échecs : marge latérale, marge avant, plat marge)** → VERT après implémentation ; run complet **54/54** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-03-005.html`.
