@@ -1268,7 +1268,9 @@ function faoSegLen(p0,m){
   return Math.abs(sw)*r;
 }
 function faoArcSegs(p0,m,maxStep){
-  // Subdivision d'arc pour l'aperçu (pas ~5°).
+  // Subdivision d'arc pour l'aperçu/visionneuse : ADAPTATIVE (sagitta
+  // ≤ 0.05 mm) — un grand rayon est découpé bien au-delà de 5° pour que
+  // le cercle reste un cercle à l'écran ; les petits rayons gardent 5°.
   const pts=[];
   if(!m.arc)return pts;
   const r=Math.hypot(m.arc.i,m.arc.j);
@@ -1278,8 +1280,15 @@ function faoArcSegs(p0,m,maxStep){
   let sw=a1-a0;
   if(m.arc.cw){ while(sw>=0)sw-=2*Math.PI; }
   else{ while(sw<=0)sw+=2*Math.PI; }
-  const n=Math.max(2,Math.ceil(Math.abs(sw)/(Math.PI/36)));
-  for(let i=1;i<=n;i++){
+  const sag=0.05; // écart de corde max (mm)
+  const dth0=Math.PI/36; // 5° : plafond angulaire historique
+  let dth=dth0;
+  if(r>sag){
+    const c=1-sag/r;
+    const d=2*Math.acos(c>1?1:(c<-1?-1:c)); // sagitta : dth = 2·acos(1−sag/r)
+    if(isFinite(d)&&d>0&&d<dth)dth=d;
+  }
+  const n=Math.max(2,Math.min(1024,Math.ceil(Math.abs(sw)/dth)));  for(let i=1;i<=n;i++){
     const a=a0+sw*i/n;
     pts.push([cx+r*Math.cos(a),cy+r*Math.sin(a),p0.z+(m.z-p0.z)*i/n]);
   }

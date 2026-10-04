@@ -16,6 +16,13 @@ const vm=require('vm');
     // --- niveaux
     "const lv=faoLevels(25,0,10);",
     "att(JSON.stringify(lv)===JSON.stringify([15,5,0]),'niveaux 25->0 ap10 : '+JSON.stringify(lv));",
+    // --- arcs : subdivision adaptative (écart de corde ≤ 0.05 mm)
+    "const as=faoArcSegs({x:200,y:0,z:0},{arc:{i:-200,j:0,cw:false},x:0,y:200,z:0});",
+    "const pv=[{x:200,y:0}].concat(as.map(q=>({x:q[0],y:q[1]})));",
+    "let mc=0;for(let i=1;i<pv.length;i++)mc=Math.max(mc,Math.hypot(pv[i].x-pv[i-1].x,pv[i].y-pv[i-1].y));",
+    "att(mc<15,'arcs : corde <= 15 mm sur R200 90deg ('+mc.toFixed(2)+' mm, '+as.length+' segs)');",
+    "const as2=faoArcSegs({x:2.3,y:0,z:0},{arc:{i:-2.3,j:0,cw:false},x:0,y:2.3,z:0});",
+    "att(as2.length===18,'arcs : R2.3 90deg garde 5 deg (18 segs, vu '+as2.length+')');",
     // --- racine posages
     "const rt0=faoRoot();",
     "att(rt0.setups.length===1&&rt0.activeSetupId===rt0.setups[0].id,'root : 1 posage actif');",

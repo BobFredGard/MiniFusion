@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**159 versions**, de `2026-09-28b` à `2026-10-03-006` — la plus récente en bas,
+**160 versions**, de `2026-09-28b` à `2026-10-04-001` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2805,3 +2805,11 @@ Tests : révision façon T3 (pas de nouvelle suite) — `tests/test_fao3d.cjs` (
 Correctif dans `src/88-fao.js` `faoGenRough3D` : **brut plus haut que large → transposition x↔y** du maillage et de la boîte avant pelage (lignes le long de Y, hauteurs d'outillage identiques), puis remise en place de chaque move à la sortie (miroir y=x : IJK échangés, sens cw inversé pour les G2/G3). Carrés et paysages inchangés — les boîtes de test BX/BX2 (paysage) et SP (carré) ne basculent pas.
 
 Tests : révision façon T3 (pas de nouvelle suite) — `tests/test_fao3d.cjs` (brut portrait 60×120 : liaison longue verticale `Δx=0, Δy>5` entre colonnes, comptée dans une run coupée — cassée aux retraits), **ROUGE vérifiée (1 échec : lv=0)** → VERT après implémentation ; run complet **54/54** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-03-006.html`.
+
+### `2026-10-04-001`
+
+Retour utilisateur 3 : **traces de parcours plus précises** — les arcs étaient développés en pas fixe de 5° (corde de 17,5 mm sur un R200 : le cercle « se voyait » en polygone à l'aperçu comme dans la visionneuse) (suite du retour utilisateur du 4 octobre, point 3).
+
+Correctif dans `src/88-fao.js` `faoArcSegs` : subdivision **adaptative par écart de corde (sagitta ≤ 0,05 mm)** — `dth = min(5°, 2·acos(1 − sag/r))`, plafond 1024 segments ; les grands rayons sont découpés bien au-delà de 5° (R200 90° : 18 → 36 segments, corde 8,9 mm), les petits rayons (trochoïdes R2,3, arrondis R8) gardent les 5° historiques — ni changement de densité là où c'était déjà juste. Consommateur unique : aperçu FAO (`faoRefreshPreview`) et trace au fil de l'eau de la visionneuse (`faoViewerBuild`) ; G-code inchangé (G2/G3).
+
+Tests : révision façon T3 (pas de nouvelle suite) — `tests/test_fao.cjs` (arc R200 90° : corde max < 15 mm ; garde-fou R2,3 90° = 18 segments inchangés), **ROUGE vérifiée (1 échec : 17,45 mm)** → VERT après implémentation ; run complet **54/54** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-04-001.html`.
