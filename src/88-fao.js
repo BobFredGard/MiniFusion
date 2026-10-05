@@ -3521,34 +3521,84 @@ function faoSliceHit(segs,cx,cy,clear){
   for(let i=0;i<xs.length;i++)if(xs[i]<cx-1e-9)left++;
   return (left%2)===1;
 }
+/* Index (hash dense + tranches Y) mémoïsé par tableau de segments : le même
+   `segsAll` (construit une fois par niveau) est interrogé 100 000 fois. */
+const faoDiscIdxCache=(typeof WeakMap!=='undefined')?new WeakMap():null;
+function faoDiscIdx(segs){
+  if(!faoDiscIdxCache)return null;
+  let idx=faoDiscIdxCache.get(segs);
+  if(idx)return idx;
+  const H=faoHashBuild(4);
+  if(segs.length)faoHashSegs(H,segs);
+  const step=1;
+  let y0=1/0,y1=-1/0;
+  for(let i=0;i<segs.length;i++){
+    const a=segs[i][1],b=segs[i][3];
+    if(a<y0)y0=a; if(b<y0)y0=b; if(a>y1)y1=a; if(b>y1)y1=b;
+  }
+  let rows=[],n=1;
+  if(segs.length&&y1>=y0){
+    n=Math.max(1,Math.ceil((y1-y0)/step)+1);
+    rows=new Array(n);
+    for(let i=0;i<segs.length;i++){
+      const a=segs[i][1],b=segs[i][3];
+      if(a===b)continue;
+      let i0=Math.floor((Math.min(a,b)-y0)/step),i1=Math.floor((Math.max(a,b)-y0)/step);
+      if(i0<0)i0=0; else if(i0>n-1)i0=n-1;
+      if(i1<0)i1=0; else if(i1>n-1)i1=n-1;
+      for(let k=i0;k<=i1;k++){let arr=rows[k];if(!arr)rows[k]=arr=[];arr.push(i);}
+    }
+    idx={H:H,rows:rows,n:n,y0:y0,step:step};
+  }else idx={H:H,rows:rows,n:1,y0:0,step:step};
+  faoDiscIdxCache.set(segs,idx);
+  return idx;
+}
 function faoDiscClear(segs,cx,cy,hr,r){
   // Le disque d'hélice (centre,hr) évite-t-il la pièce (dedans ou à moins
   // de r) ? 8 échantillons sur le cercle, distance euclidienne au contour :
   // un échantillon juste hors matière (aucun croisement en Y) échappait à
   // la vérification et l'hélice plongeait dans la pièce.
+  // Même sémantique qu'avant : parité (croisements comptés sur toute la
+  // travée Y, sans tri) puis distance min < r-1e-9 — mais via les index.
+  const idx=faoDiscIdx(segs);
   for(let k=0;k<8;k++){
     const a=k/8*Math.PI*2, xx=cx+hr*Math.cos(a), yy=cy+hr*Math.sin(a);
-    const xs=[];
-    for(let i=0;i<segs.length;i++){
-      const s=segs[i];
-      if((s[1]-yy)*(s[3]-yy)<=0&&s[1]!==s[3])
-        xs.push(s[0]+(s[2]-s[0])*(yy-s[1])/(s[3]-s[1]));
+    let len=0,left=0;
+    if(idx&&idx.rows.length){
+      let b=Math.floor((yy-idx.y0)/idx.step);
+      if(b<0)b=0; else if(b>=idx.n)b=idx.n-1;
+      const row=idx.rows[b];
+      if(row)for(let t=0;t<row.length;t++){
+        const s=segs[row[t]];
+        if((s[1]-yy)*(s[3]-yy)<=0&&s[1]!==s[3]){
+          len++;
+          if(s[0]+(s[2]-s[0])*(yy-s[1])/(s[3]-s[1])<xx-1e-9)left++;
+        }
+      }
+    }else{
+      for(let i=0;i<segs.length;i++){
+        const s=segs[i];
+        if((s[1]-yy)*(s[3]-yy)<=0&&s[1]!==s[3]){
+          len++;
+          if(s[0]+(s[2]-s[0])*(yy-s[1])/(s[3]-s[1])<xx-1e-9)left++;
+        }
+      }
     }
-    xs.sort(function(a,b){return a-b;});
-    if(xs.length%2)return false;
-    let left=0;
-    for(let i=0;i<xs.length;i++)if(xs[i]<xx-1e-9)left++;
+    if(len%2)return false;
     if(left%2)return false;
-    let dmin=1/0;
-    for(let i=0;i<segs.length;i++){
-      const s=segs[i], ax=s[0], ay=s[1], dx=s[2]-s[0], dy=s[3]-s[1];
-      const L2=dx*dx+dy*dy;
-      let t=L2>0?((xx-ax)*dx+(yy-ay)*dy)/L2:0;
-      if(t<0)t=0; else if(t>1)t=1;
-      const px=ax+t*dx-xx, py=ay+t*dy-yy, d2=px*px+py*py;
-      if(d2<dmin)dmin=d2;
+    if(idx&&faoDistSeg(idx.H,xx,yy,r)<r-1e-9)return false;
+    if(!idx){
+      let dmin=1/0;
+      for(let i=0;i<segs.length;i++){
+        const s=segs[i], ax=s[0], ay=s[1], dx=s[2]-s[0], dy=s[3]-s[1];
+        const L2=dx*dx+dy*dy;
+        let t=L2>0?((xx-ax)*dx+(yy-ay)*dy)/L2:0;
+        if(t<0)t=0; else if(t>1)t=1;
+        const px=ax+t*dx-xx, py=ay+t*dy-yy, d2=px*px+py*py;
+        if(d2<dmin)dmin=d2;
+      }
+      if(dmin<(r-1e-9)*(r-1e-9))return false;
     }
-    if(dmin<(r-1e-9)*(r-1e-9))return false;
   }
   return true;
 }
@@ -3952,6 +4002,580 @@ function faoYCands(mesh,planes,z,zt,y,r,ivs){
   return out;
 }
 
+/* ===== LOT A — suivi de contour : sections, offset, validation exacte =====
+ Chaque passe suit l'intersection modèle/plan OFFSETÉE à la distance d
+ (r = D/2 + radial au plus près de la matière) : le centre d'outil reste à
+ >= d partout (jamais de gouge), les familles de passes d = r + k*aeA
+ parcourent la marge jusqu'aux coins de la boite, E0 referme la limite
+ extérieure (x = B.x0-r …) exactement comme le complément scanline d'avant.
+  - index de segments (hash) dedup entre plans, chaînes COMPLETES par plan
+    pour la parité (trous = XOR par plan, recouvrements = OR entre plans) ;
+  - offset : arc de rayon d sur les angles convexes (couverture <= 1,9 :
+    un miter y depasserait), miter <= 3d sur les rentrants (sinon chanfrein),
+    arêtes échantillonnées a 0,25 mm (fléchisse < 0,0015 -> gouge 5,49 tenue) ;
+  - validation stricte de CHAQUE point : dans la boite [B.x0-r,B.x1+r]²,
+    distance a TOUTES les sections >= d-1e-6, pas dedans (parite) ;
+  - morceaux valides bornés par bissection ±1e-4 (aucun abandon global),
+    simplification Douglas-Peucker 0,004, grille Y (B.y0-r + k*aeA) insérée
+    APRES simplification — (25,0), (25,52,5), y=-10, y=38 des tests. */
+/* Index spatial DENSE (tableau plaqué, bornes connues) : ni concaténation de
+   clés string « ix:iy » ni lookups sur objet — le balayage d'un carré de
+   rayon d (jusqu'à 25×25 cellules pour d=49) était le 1er coût du fichier. */
+function faoHashBuild(cell){ return {cell:cell>0?cell:4,a:[],x0:0,y0:0,w:0,h:0}; }
+function faoHashFit(H,ix0,iy0,ix1,iy1){
+  if(ix1<ix0||iy1<iy0)return;
+  let x0=H.x0,y0=H.y0,w=H.w,h=H.h;
+  if(!w||!h){x0=ix0;y0=iy0;w=ix1-ix0+1;h=iy1-iy0+1;}
+  else{
+    if(ix0<x0){w+=x0-ix0;x0=ix0;}
+    if(ix1>x0+w-1)w=ix1-x0+1;
+    if(iy0<y0){h+=y0-iy0;y0=iy0;}
+    if(iy1>y0+h-1)h=iy1-y0+1;
+  }
+  if(w===H.w&&h===H.h&&x0===H.x0&&y0===H.y0)return;
+  // Les anciennes cellules doivent être RECALÉES (ox,oy) : si les bornes
+  // s'étendent vers la gauche ou le haut, écrire en colonne 0 déplacerait
+  // toute la grille d'une case et fausserait les distances.
+  const ox=H.x0-x0,oy=H.y0-y0;
+  const na=new Array(w*h);
+  for(let y=0;y<H.h;y++){const o=(y+oy)*w+ox,so=y*H.w;for(let x=0;x<H.w;x++)na[o+x]=H.a[so+x];}
+  H.a=na;H.x0=x0;H.y0=y0;H.w=w;H.h=h;
+}
+function faoHashSegs(H,segs){
+  const c=H.cell;
+  let ix0=1/0,iy0=1/0,ix1=-1/0,iy1=-1/0;
+  for(let i=0;i<segs.length;i++){
+    const s=segs[i];
+    const a=Math.floor(Math.min(s[0],s[2])/c),b=Math.floor(Math.max(s[0],s[2])/c);
+    const d=Math.floor(Math.min(s[1],s[3])/c),e=Math.floor(Math.max(s[1],s[3])/c);
+    if(a<ix0)ix0=a; if(b>ix1)ix1=b; if(d<iy0)iy0=d; if(e>iy1)iy1=e;
+  }
+  if(ix1<-1/0)return H;
+  faoHashFit(H,ix0,iy0,ix1,iy1);
+  const w=H.w;
+  for(let i=0;i<segs.length;i++){
+    const s=segs[i];
+    const ix0=Math.floor(Math.min(s[0],s[2])/c),ix1=Math.floor(Math.max(s[0],s[2])/c);
+    const iy0=Math.floor(Math.min(s[1],s[3])/c),iy1=Math.floor(Math.max(s[1],s[3])/c);
+    for(let iy=iy0;iy<=iy1;iy++){const o=(iy-H.y0)*w-H.x0;
+      for(let ix=ix0;ix<=ix1;ix++){
+        const p=o+ix; let a=H.a[p]; if(!a)a=H.a[p]=[]; a.push(s);
+      }}
+  }
+  return H;
+}
+function faoDistXY(x,y,segs){
+  let best=1/0;
+  for(let i=0;i<segs.length;i++){
+    const s=segs[i],dx=s[2]-s[0],dy=s[3]-s[1],L2=dx*dx+dy*dy;
+    let t=L2>0?((x-s[0])*dx+(y-s[1])*dy)/L2:0;
+    if(t<0)t=0;else if(t>1)t=1;
+    const ex=s[0]+t*dx-x,ey=s[1]+t*dy-y,d2=ex*ex+ey*ey;
+    if(d2<best)best=d2;
+  }
+  return best===1/0?1/0:Math.sqrt(best);
+}
+function faoDistSeg(H,x,y,dMax,tMax){
+  // Distance au plus proche segment dans le carre [x,y]±dMax ; Infinity si rien
+  // a portee — suffisant pour tout test « < seuil » avec seuil <= dMax (aucun
+  // segment a portee = >= dMax >= seuil). `tMax` (optionnel) autorise une
+  // sortie des que best < tMax^2 : le booléen du test est alors définitif.
+  const c=H.cell,a=H.a,W=H.w,Hh=H.h;
+  if(!W||!Hh)return 1/0;
+  let ix0=Math.floor((x-dMax)/c),ix1=Math.floor((x+dMax)/c);
+  let iy0=Math.floor((y-dMax)/c),iy1=Math.floor((y+dMax)/c);
+  if(ix0<H.x0)ix0=H.x0; if(ix1>H.x0+W-1)ix1=H.x0+W-1;
+  if(iy0<H.y0)iy0=H.y0; if(iy1>H.y0+Hh-1)iy1=H.y0+Hh-1;
+  if(ix0>ix1||iy0>iy1)return 1/0;
+  const lim=dMax*dMax;
+  // tMax absent/inutilisable : -1 (best >= 0 toujours) = aucune sortie
+  // anticipée. Piège : 1/0 rendrait `best<tm` vrai dès le 1er segment.
+  const tm=(tMax===undefined||!(tMax<dMax))?-1:tMax*tMax;
+  let best=1/0;
+  for(let iy=iy0;iy<=iy1;iy++){
+    const ro=(iy-H.y0)*W-H.x0;
+    for(let ix=ix0;ix<=ix1;ix++){
+      const arr=a[ro+ix]; if(!arr)continue;
+      for(let k=0;k<arr.length;k++){
+        const s=arr[k],ax=s[0],ay=s[1],bx=s[2],by=s[3];
+        // rejet AABB (borne inferieure de la distance) : bien moins cher que
+        // la projection sur le segment, et exact pour un seuil <= dMax.
+        const x0=ax<bx?ax:bx,x1=ax<bx?bx:ax,y0=ay<by?ay:by,y1=ay<by?by:ay;
+        const qx=x<x0?x0-x:(x>x1?x-x1:0),qy=y<y0?y0-y:(y>y1?y-y1:0);
+        const cap=best<lim?best:lim;
+        if(qx*qx+qy*qy>=cap)continue;
+        const dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy;
+        let t=L2>0?((x-ax)*dx+(y-ay)*dy)/L2:0;
+        if(t<0)t=0;else if(t>1)t=1;
+        const ex=ax+t*dx-x,ey=ay+t*dy-y,d2=ex*ex+ey*ey;
+        if(d2<best){
+          best=d2;
+          if(best<=1e-18)return 0;
+          if(best<tm)return Math.sqrt(best);
+        }
+      }
+    }
+  }
+  return best===1/0?1/0:Math.sqrt(best);
+}
+function faoPointsKey(pts){
+  const a=[];
+  for(let i=0;i<pts.length;i++)a.push(Math.round(pts[i][0]*1000)+','+Math.round(pts[i][1]*1000));
+  a.sort();
+  return a.join(';');
+}
+function faoChainsClosed(segs){
+  // Sections [x1,y1,x2,y2] -> chaînes FERMÉES {pts,bb} (fermeture forcée).
+  const raw=faoChainSegs(segs.map(function(s){
+    return [{p:[s[0],s[1],0]},{p:[s[2],s[3],0]}];
+  }),1e-4);
+  const out=[];
+  raw.forEach(function(ch){
+    const pts=[];
+    ch.forEach(function(q){
+      const p=q.p;
+      if(!pts.length||Math.abs(pts[pts.length-1][0]-p[0])>1e-9||Math.abs(pts[pts.length-1][1]-p[1])>1e-9)
+        pts.push([p[0],p[1]]);
+    });
+    while(pts.length>1&&Math.abs(pts[0][0]-pts[pts.length-1][0])<1e-9&&Math.abs(pts[0][1]-pts[pts.length-1][1])<1e-9)
+      pts.pop();
+    if(pts.length<3)return;
+    pts.push([pts[0][0],pts[0][1]]);
+    const bb=faoPtsBB(pts);
+    out.push({pts:pts,bb:bb});
+  });
+  return out;
+}
+function faoPtsBB(pts){
+  const bb=[1/0,1/0,-1/0,-1/0];
+  for(let i=0;i<pts.length;i++){
+    if(pts[i][0]<bb[0])bb[0]=pts[i][0];
+    if(pts[i][1]<bb[1])bb[1]=pts[i][1];
+    if(pts[i][0]>bb[2])bb[2]=pts[i][0];
+    if(pts[i][1]>bb[3])bb[3]=pts[i][1];
+  }
+  return bb;
+}
+function faoShadowShape(mesh,planes,B,r,gstep){
+  // Shape du niveau : sections par plan (parité), index global dedup (distance),
+  // chaînes uniques (offset), boite de validation [B.*-r,B.*+r], pas de grille.
+  const S={pl:[],hash:faoHashBuild(4),rect:[B.x0-r,B.y0-r,B.x1+r,B.y1+r],
+    chains:[],keys:{},gstep:gstep>0?gstep:2,segs:[]};
+  const seen={};
+  planes.forEach(function(zz){
+    const segs=faoSliceZCached(mesh,Math.round(zz*1000)/1000);
+    if(!segs.length)return;
+    const chains=faoChainsClosed(segs);
+    if(!chains.length)return;
+    const bb=[1/0,1/0,-1/0,-1/0];
+    chains.forEach(function(ch){
+      if(ch.bb[0]<bb[0])bb[0]=ch.bb[0];
+      if(ch.bb[1]<bb[1])bb[1]=ch.bb[1];
+      if(ch.bb[2]>bb[2])bb[2]=ch.bb[2];
+      if(ch.bb[3]>bb[3])bb[3]=ch.bb[3];
+      const k=faoPointsKey(ch.pts.slice(0,ch.pts.length-1));
+      if(!S.keys[k]){S.keys[k]=1;S.chains.push(ch);}
+    });
+    S.pl.push({chains:chains,bb:bb});
+    const hs=[];
+    segs.forEach(function(s){
+      const k=[Math.round(Math.min(s[0],s[2])*1e4)/1e4,Math.round(Math.min(s[1],s[3])*1e4)/1e4,
+        Math.round(Math.max(s[0],s[2])*1e4)/1e4,Math.round(Math.max(s[1],s[3])*1e4)/1e4].join(',');
+      if(seen[k])return;
+      seen[k]=1;
+      S.segs.push(s);
+      hs.push(s);
+    });
+    if(hs.length)faoHashSegs(S.hash,hs);
+  });
+  return S;
+}
+/* Index Y par tranches (pas 1 mm) : la parité rayon +X ne dépend que des
+   arêtes dont l'échantillon Y est inclus dans [min[,max[ ; balayer toute la
+   chaîne (2 000 arêtes) 4,4 M de fois coûtait 89 s. Les tranches ne sont
+   qu'une CANDIDATURE : la condition exacte est re-testée arête par arête. */
+function faoChainYB(ch){
+  if(ch.yb)return ch.yb;
+  const step=1,pts=ch.pts,y0=ch.bb[1],y1=ch.bb[3];
+  const n=Math.max(1,Math.ceil((y1-y0)/step)+1);
+  const rows=new Array(n);
+  for(let i=0;i+1<pts.length;i++){
+    const a=pts[i][1],b=pts[i+1][1];
+    if(a===b)continue;
+    let i0=Math.floor((Math.min(a,b)-y0)/step),i1=Math.floor((Math.max(a,b)-y0)/step);
+    if(i0<0)i0=0; else if(i0>n-1)i0=n-1;
+    if(i1<0)i1=0; else if(i1>n-1)i1=n-1;
+    for(let k=i0;k<=i1;k++){let arr=rows[k];if(!arr)rows[k]=arr=[];arr.push(i);}
+  }
+  ch.yb={y0:y0,step:step,rows:rows,n:n};
+  return ch.yb;
+}
+function faoChainParity(ch,x,y){
+  // Parité impair (rayon +X) de la chaîne fermée — un seul croisement => dedans.
+  if(y<ch.bb[1]||y>ch.bb[3])return 0;
+  const yb=faoChainYB(ch);
+  let b=Math.floor((y-yb.y0)/yb.step);
+  if(b<0)b=0; else if(b>=yb.n)b=yb.n-1;
+  const row=yb.rows[b];
+  if(!row)return 0;
+  const pts=ch.pts;
+  let c=0;
+  for(let t=0;t<row.length;t++){
+    const i=row[t],a=pts[i],b2=pts[i+1];
+    if((a[1]>y)!==(b2[1]>y)){
+      const tt=(y-a[1])/(b2[1]-a[1]);
+      if(a[0]+tt*(b2[0]-a[0])>x)c++;
+    }
+  }
+  return c&1;
+}
+/* Index Y fusionné PAR PLAN (pas 0,5 mm) : la parité du plan est le XOR des
+   parités de toutes ses chaînes = parité du TOTAL des croisements (algèbre
+   XOR), donc une seule passe sur les arêtes de la tranche remplace une passe
+   par chaîne — exact, la condition d'arête est re-testée mot pour mot. */
+function faoPlaneYB(P){
+  if(P.yb)return P.yb;
+  const step=0.5,chs=P.chains,E=[];
+  let y0=1/0,y1=-1/0;
+  for(let k=0;k<chs.length;k++){
+    const pts=chs[k].pts;
+    for(let i=0;i+1<pts.length;i++){
+      const a=pts[i],b=pts[i+1];
+      E.push(a[0],a[1],b[0],b[1]);
+      const ya=a[1],yb2=b[1];
+      if(ya<y0)y0=ya; if(yb2<y0)y0=yb2;
+      if(ya>y1)y1=ya; if(yb2>y1)y1=yb2;
+    }
+  }
+  let rows=[],n=1;
+  if(E.length&&y1>=y0){
+    n=Math.max(1,Math.ceil((y1-y0)/step)+1);
+    rows=new Array(n);
+    for(let i=0;i<E.length;i+=4){
+      const ya=E[i+1],yb2=E[i+3];
+      if(ya===yb2)continue;
+      let i0=Math.floor((Math.min(ya,yb2)-y0)/step),i1=Math.floor((Math.max(ya,yb2)-y0)/step);
+      if(i0<0)i0=0; else if(i0>n-1)i0=n-1;
+      if(i1<0)i1=0; else if(i1>n-1)i1=n-1;
+      for(let t=i0;t<=i1;t++){let arr=rows[t];if(!arr)rows[t]=arr=[];arr.push(i);}
+    }
+  }
+  P.yb={y0:y0,step:step,rows:rows,n:n,E:E};
+  return P.yb;
+}
+function faoShapeInside(S,x,y){
+  // OR des parités XOR par plan : trous gérés au plan, union entre plans
+  // (matiere au-dessus = colonne interdite, meme regle que l'ombre).
+  for(let i=0;i<S.pl.length;i++){
+    const P=S.pl[i];
+    if(y<P.bb[1]||y>P.bb[3])continue;
+    const yb=faoPlaneYB(P);
+    if(!yb.E.length)continue;
+    let b=Math.floor((y-yb.y0)/yb.step);
+    if(b<0)b=0; else if(b>=yb.n)b=yb.n-1;
+    const row=yb.rows[b];
+    if(!row)continue;
+    const E=yb.E;
+    let c=0;
+    for(let t=0;t<row.length;t++){
+      const i=row[t],ax=E[i],ay=E[i+1],bx=E[i+2],by=E[i+3];
+      if((ay>y)!==(by>y)){
+        const tt=(y-ay)/(by-ay);
+        if(ax+tt*(bx-ax)>x)c^=1;
+      }
+    }
+    if(c)return true;
+  }
+  return false;
+}
+function faoShapeValid(S,x,y,d){
+  const R=S.rect;
+  if(x<R[0]-1e-9||y<R[1]-1e-9||x>R[2]+1e-9||y>R[3]+1e-9)return false;
+  if(faoDistSeg(S.hash,x,y,d,d-1e-6)<d-1e-6)return false;
+  if(faoShapeInside(S,x,y))return false;
+  return true;
+}
+function faoChainSide(ch,S){
+  // Sens de l'offset : probe d'interiorite a ±1e-3 de l'arête (cote NON
+  // matiere = sortant) — indispensable pour les chaines de trous (offset DANS
+  // le trou). Repli : vote multi-arêtes, puis shoelace.
+  const pts=ch.pts,n=pts.length-1;
+  if(n<1)return 1;
+  const order=[];
+  for(let i=0;i<n;i++){
+    const dx=pts[i+1][0]-pts[i][0],dy=pts[i+1][1]-pts[i][1];
+    order.push([dx*dx+dy*dy,i]);
+  }
+  order.sort(function(a,b){return b[0]-a[0];});
+  let vr=0,vl=0;
+  for(let k=0;k<Math.min(5,order.length);k++){
+    const i=order[k][1];
+    let ux=pts[i+1][0]-pts[i][0],uy=pts[i+1][1]-pts[i][1];
+    const L=Math.hypot(ux,uy); if(!(L>1e-9))continue;
+    ux/=L;uy/=L;
+    const mx=(pts[i][0]+pts[i+1][0])/2,my=(pts[i][1]+pts[i+1][1])/2;
+    const nx=uy,ny=-ux; // perp droite
+    if(faoShapeInside(S,mx+nx*1e-3,my+ny*1e-3))vr++;
+    else if(faoShapeInside(S,mx-nx*1e-3,my-ny*1e-3))vl++;
+  }
+  if(vr>vl)return -1;
+  if(vl>vr)return 1;
+  let a2=0;
+  for(let i=0;i<n;i++)a2+=pts[i][0]*pts[i+1][1]-pts[i+1][0]*pts[i][1];
+  return a2>0?1:-1;
+}
+function faoOffsetChain(pts,d,side){
+  // Offset fermé a distance d du cote « sortant » (side=+1 : normale perp
+  // droite de la marche). Convexe -> arc (pas angulaire <= 0.25/d, cap 0.2) ;
+  // rentrant -> miter (intersection des deux droites offset) si <= 3d, sinon
+  // chanfrein tronqué a 3d. Retourne le polygone CYCLIQUE (dernier point
+  // adjacent au premier), ou null si degenere.
+  const n=pts.length-1;
+  if(n<3||!(d>0))return null;
+  const dir=[],nor=[];
+  for(let i=0;i<n;i++){
+    let dx=pts[i+1][0]-pts[i][0],dy=pts[i+1][1]-pts[i][1];
+    const L=Math.hypot(dx,dy);
+    if(!(L>1e-9))return null;
+    dx/=L;dy/=L;
+    dir.push([dx,dy]);
+    nor.push(side>0?[dy,-dx]:[-dy,dx]);
+  }
+  const cr2=function(a,b){return a[0]*b[1]-a[1]*b[0];};
+  const V=[];
+  for(let i=0;i<n;i++){
+    const ip=(i-1+n)%n,u=dir[ip],v=dir[i],P=pts[i];
+    const cr=cr2(u,v);
+    const Sp=[P[0]+d*nor[ip][0],P[1]+d*nor[ip][1]];
+    const Ep=[P[0]+d*nor[i][0],P[1]+d*nor[i][1]];
+    const it={u:u,v:v,P:P,cr:cr,S:Sp,E:Ep,conv:cr*side>1e-12,list:null,entry:null,exit:null};
+    if(it.conv){
+      const list=[[Sp[0],Sp[1]]];
+      const a0=Math.atan2(Sp[1]-P[1],Sp[0]-P[0]);
+      let a1=Math.atan2(Ep[1]-P[1],Ep[0]-P[0]);
+      let da=a1-a0;
+      while(da<=-Math.PI)da+=2*Math.PI;
+      while(da>Math.PI)da-=2*Math.PI;
+      if(Math.abs(da)>1e-12){
+        const stp=Math.min(0.2,0.25/d);
+        const k=Math.max(1,Math.ceil(Math.abs(da)/stp));
+        for(let t=1;t<k;t++){
+          const a=a0+da*t/k;
+          list.push([P[0]+d*Math.cos(a),P[1]+d*Math.sin(a)]);
+        }
+      }
+      list.push([Ep[0],Ep[1]]);
+      it.list=list;
+      it.entry=list[0];
+      it.exit=list[list.length-1];
+    }else if(Math.abs(cr)>1e-9){
+      const t=cr2([Ep[0]-Sp[0],Ep[1]-Sp[1]],v)/cr;
+      const M=[Sp[0]+t*u[0],Sp[1]+t*u[1]];
+      const dm=Math.hypot(M[0]-P[0],M[1]-P[1]);
+      if(dm<=3*d){
+        it.list=[[M[0],M[1]]];
+        it.entry=it.list[0];
+        it.exit=it.list[0];
+      }else{
+        const lim=d*Math.sqrt(8); // distance ligne offset telle que |A-P| = 3d
+        const sgn=t>=0?1:-1;
+        const A=[Sp[0]+sgn*lim*u[0],Sp[1]+sgn*lim*u[1]];
+        const s2=cr2([Ep[0]-Sp[0],Ep[1]-Sp[1]],u)/cr;
+        const sgn2=s2>=0?1:-1;
+        const C=[Ep[0]+sgn2*lim*v[0],Ep[1]+sgn2*lim*v[1]];
+        it.list=[[A[0],A[1]],[C[0],C[1]]];
+        it.entry=it.list[0];
+        it.exit=it.list[1];
+      }
+    }else{
+      it.list=[[Sp[0],Sp[1]],[Ep[0],Ep[1]]];
+      it.entry=it.list[0];
+      it.exit=it.list[1];
+    }
+    V.push(it);
+  }
+  const out=[];
+  const put=function(x,y){
+    if(out.length&&Math.abs(out[out.length-1][0]-x)<1e-9&&Math.abs(out[out.length-1][1]-y)<1e-9)return;
+    out.push([x,y]);
+  };
+  const sample=function(A,B){
+    const dx=B[0]-A[0],dy=B[1]-A[1],L=Math.hypot(dx,dy);
+    if(!(L>1e-9))return;
+    const k=Math.ceil(L/0.25);
+    for(let t=1;t<k;t++)put(A[0]+dx*t/k,A[1]+dy*t/k);
+  };
+  for(let i=0;i<n;i++){
+    const it=V[i];
+    for(let k=0;k<it.list.length;k++)put(it.list[k][0],it.list[k][1]);
+    const nx=V[(i+1)%n];
+    sample(it.exit,nx.entry);
+  }
+  return out.length>=3?out:null;
+}
+function faoBisectValid(a,b,isValid){
+  // Frontiere valid/invalide : renvoie TOUJOURS un point du cote VALIDE.
+  const vA=isValid(a),vB=isValid(b);
+  if(vA&&vB)return b;
+  if(!vA&&!vB)return null;
+  let A=vA?b:a, B=vA?a:b; // A = cote invalide, B = cote valide
+  for(let i=0;i<40&&Math.hypot(B[0]-A[0],B[1]-A[1])>1e-4;i++){
+    const m=[(A[0]+B[0])/2,(A[1]+B[1])/2];
+    if(isValid(m))B=m;else A=m;
+  }
+  return B;
+}
+function faoSplitValid(pts,isValid){
+  // Polygone cyclique -> morceaux valides, bornes affinées par bissection
+  // (±1e-4) : aucun morceau n'est abandonné en bloc.
+  const n=pts.length;
+  if(n<3)return [];
+  const v=new Array(n);
+  let all=true;
+  for(let i=0;i<n;i++){v[i]=!!isValid(pts[i]);if(!v[i])all=false;}
+  if(all)return [pts];
+  let k=0;
+  while(k<n&&v[k])k++;
+  if(k>=n)return [];
+  const L=n,rot=new Array(L),rv=new Array(L);
+  for(let i=0;i<L;i++){rot[i]=pts[(k+i)%L];rv[i]=v[(k+i)%L];}
+  const out=[];
+  let i=1;
+  while(i<L){
+    if(!rv[i]){i++;continue;}
+    let j=i;
+    while(j+1<L&&rv[j+1])j++;
+    const b0=faoBisectValid(rot[i-1],rot[i],isValid);
+    const b1=faoBisectValid(rot[j],rot[(j+1)%L],isValid);
+    const run=[];
+    if(b0)run.push(b0);
+    for(let t=i;t<=j;t++)run.push(rot[t]);
+    if(b1)run.push(b1);
+    if(run.length>=2)out.push(run);
+    i=j+2;
+  }
+  return out;
+}
+function faoSimplifyPts(pts,tol){
+  // Douglas-Peucker iteratif : ne garde QUE des points d'origine (distances
+  // deja validées intacts), ecart max tol.
+  const n=pts.length;
+  if(n<3)return pts.slice();
+  const keep=new Array(n).fill(false);
+  keep[0]=keep[n-1]=true;
+  const st=[[0,n-1]];
+  while(st.length){
+    const seg=st.pop(),a=seg[0],b=seg[1];
+    if(b-a<2)continue;
+    const A=pts[a],B=pts[b];
+    const dx=B[0]-A[0],dy=B[1]-A[1],L2=dx*dx+dy*dy;
+    let md=-1,mi=-1;
+    for(let q=a+1;q<b;q++){
+      const P=pts[q];
+      let dd;
+      if(L2<1e-18)dd=Math.hypot(P[0]-A[0],P[1]-A[1]);
+      else{
+        let t=((P[0]-A[0])*dx+(P[1]-A[1])*dy)/L2;
+        if(t<0)t=0;else if(t>1)t=1;
+        dd=Math.hypot(P[0]-(A[0]+dx*t),P[1]-(A[1]+dy*t));
+      }
+      if(dd>md){md=dd;mi=q;}
+    }
+    if(md>tol){keep[mi]=true;st.push([a,mi],[mi,b]);}
+  }
+  const out=[];
+  for(let q=0;q<n;q++)if(keep[q])out.push(pts[q]);
+  return out;
+}
+function faoInsertGridY(pts,y0,step,closed,isValid){
+  // Grille Y (y0 + k*step) : insertion APRÈS simplification — (25,0),
+  // (25,52,5), y=-10, y=38 des tests sortent la ligne verticale exacte.
+  if(!(step>0)||pts.length<2)return pts;
+  const out=[],n=pts.length;
+  const segs=closed?n:n-1;
+  for(let i=0;i<segs;i++){
+    const A=pts[i],B=pts[(i+1)%n];
+    out.push(A);
+    const dy=B[1]-A[1];
+    if(Math.abs(dy)<1e-12)continue;
+    const ylo=Math.min(A[1],B[1]),yhi=Math.max(A[1],B[1]);
+    const k0=Math.ceil((ylo-y0)/step-1e-9),k1=Math.floor((yhi-y0)/step+1e-9);
+    // Ordre du TRAJET : croissant si le segment monte, decroissant s'il descend
+    // (sinon la grille intervertit les points et dessine un zigzag).
+    const g0=dy>0?k0:k1, g1=dy>0?k1:k0, gs=dy>0?1:-1;
+    for(let g=g0;gs>0?g<=g1:g>=g1;g+=gs){
+      const yG=y0+g*step;
+      if(yG<=ylo+1e-9||yG>=yhi-1e-9)continue;
+      const t=(yG-A[1])/dy;
+      const p=[A[0]+t*(B[0]-A[0]),yG];
+      if(isValid&&!isValid(p))continue;
+      out.push(p);
+    }
+  }
+  if(!closed)out.push(pts[n-1]);
+  return out;
+}
+function faoEmitRuns(S,raw,valid,out){
+  // Valide -> morceaux (bissection) -> simplifie -> grille Y -> dedup/drop.
+  if(!out.dedup)out.dedup={};
+  const runs=faoSplitValid(raw,valid);
+  for(let ri=0;ri<runs.length;ri++){
+    const run=runs[ri];
+    if(run.length<2)continue;
+    const simp=faoSimplifyPts(run,0.004);
+    const closed=(run===raw);
+    const grd=faoInsertGridY(simp,S.rect[1],S.gstep,closed,valid);
+    if(grd.length<2)continue;
+    const bb=faoPtsBB(grd);
+    if(Math.max(bb[2]-bb[0],bb[3]-bb[1])<0.1)continue;
+    const k=faoPointsKey(grd);
+    if(out.dedup[k])continue;
+    out.dedup[k]=1;
+    out.push({pts:grd,closed:closed,bb:bb});
+  }
+  return out;
+}
+function faoRectRaw(x0,y0,x1,y1){
+  // Rectangle échantillonné a 0,25 mm (E0/E-k : memes regles de validation).
+  const c=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]];
+  const raw=[];
+  for(let i=0;i<4;i++){
+    const A=c[i],B=c[(i+1)%4];
+    const L=Math.hypot(B[0]-A[0],B[1]-A[1]);
+    const k=Math.max(1,Math.ceil(L/0.25));
+    for(let t=0;t<k;t++){
+      const p=[A[0]+(B[0]-A[0])*t/k,A[1]+(B[1]-A[1])*t/k];
+      if(!raw.length||Math.abs(raw[raw.length-1][0]-p[0])>1e-9||Math.abs(raw[raw.length-1][1]-p[1])>1e-9)
+        raw.push(p);
+    }
+  }
+  return raw;
+}
+function faoOffsetRuns(S,d){
+  // Toutes les chaines du niveau offsetées a d -> morceaux valides.
+  const out=[];
+  const valid=function(p){return faoShapeValid(S,p[0],p[1],d);};
+  for(let ci=0;ci<S.chains.length;ci++){
+    const ch=S.chains[ci];
+    if(!ch.side)ch.side=faoChainSide(ch,S);
+    const raw=faoOffsetChain(ch.pts,d,ch.side);
+    if(!raw)continue;
+    faoEmitRuns(S,raw,valid,out);
+  }
+  return out;
+}
+function faoRectRuns(S,inset,d){
+  // E0 (inset=0) : le tour de la boite de validation, valide a d (= r).
+  // E-k (inset=k*aeA) : cadres imbriqués pour les niveaux vides (surfaçage).
+  const R=S.rect;
+  const x0=R[0]+inset,x1=R[2]-inset,y0=R[1]+inset,y1=R[3]-inset;
+  if(!(x1-x0>0.2&&y1-y0>0.2))return [];
+  const out=[];
+  const valid=function(p){return faoShapeValid(S,p[0],p[1],d);};
+  faoEmitRuns(S,faoRectRaw(x0,y0,x1,y1),valid,out);
+  return out;
+}
+
 function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,opt){
   // Une tranche façon Adaptive : pelage au petit pas (aeA ≤ 0.25*D) dans le
   // vide RESTANT (ombre des niveaux supérieurs), entrée hélice multi-spots /
@@ -4045,224 +4669,321 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   lines.sort(function(p,q){return p.y-q.y;});
   if(!lines.length)return;
   const regs=faoRoughRegions(lines);
-  // Retour 6/10 : tour complet — régions X+ d'abord, puis X− (le balayage
-  // attaque d'abord le côté droit, puis finit le reste).
-  regs.sort(function(P,Q){
-    const cxR=function(Rg){let s=0;Rg.forEach(function(e){s+=(e.iv.a+e.iv.b)/2;});return s/Rg.length;};
-    return cxR(Q)-cxR(P);
-  });
+  // --- SUIVI DE CONTOUR (lot B) : les passes sont les chaines du niveau
+  // offsetees a d = r + k*aeA + les cadres E-k de la boite. Le centre d'outil
+  // reste donc a >= d de la MATIERE partout (aucun gouge), la marge est
+  // parcourue jusqu'aux coins, les goulets (largeur < 2.5*D) prennent des
+  // trochoïdes G2/G3, les morceaux sont chaines par un tour greedy
+  // stay-down (liaison G1 sûre = coupe directe, sinon retrait vertical).
+  const rnd=function(v){return Math.round(v*1000)/1000;};
+  const isRing=!!(opt&&opt.ringOnly);
+  const tz=(opt&&isFinite(+opt.travelZ))?Math.min(secu,+opt.travelZ):null;
+  const zTopSafe=Math.max(top,isFinite(+brutTop)?+brutTop:top);
+  const pathOK=function(p,q){
+    if(tz&&tz>=zTopSafe-1e-9)return true;
+    const dx=q.x-p.x,dy=q.y-p.y,L=Math.sqrt(dx*dx+dy*dy);
+    const n=Math.max(1,Math.ceil(L));
+    const rr=Math.max(0.01,r-1e-3);
+    for(let i=0;i<=n;i++){
+      const t=i/n;
+      if(!faoDiscClear(segsAll,p.x+dx*t,p.y+dy*t,0,rr))return false;
+    }
+    return true;
+  };
+  const gotoXY=function(px,py){
+    px=rnd(px); py=rnd(py);
+    if(!moves.length){moves.push({r:1,x:px,y:py,z:secu});return secu;}
+    const prev=moves[moves.length-1];
+    const zGo=(tz&&pathOK(prev,{x:px,y:py}))?tz:secu;
+    if(Math.abs(prev.z-zGo)>1e-9)moves.push({r:1,x:prev.x,y:prev.y,z:zGo});
+    moves.push({r:1,x:px,y:py,z:zGo});
+    return zGo;
+  };
+  const sortie=function(p){
+    moves.push({r:1,x:p.x,y:p.y,z:tz||secu});
+  };
+  // Coupe G1 sûre : centre a >= r-0.005 de la matiere sur tout le trajet
+  // (marge = tolerance des tests de gouge, echantillon <= 0.25 mm).
+  const rrSafe=Math.max(0.01,r-0.005);
+  const segClear=function(ax,ay,bx,by){
+    const dx=bx-ax,dy=by-ay,L=Math.sqrt(dx*dx+dy*dy);
+    const n=Math.max(1,Math.ceil(L/0.25));
+    for(let i=0;i<=n;i++){
+      const t=i/n;
+      if(!faoDiscClear(segsAll,ax+dx*t,ay+dy*t,0,rrSafe))return false;
+    }
+    return true;
+  };
+  // Liaison vers un morceau : coupe directe si le segment est sûr (stay-down,
+  // aucun move ajoute), sinon translation a vide + plongee verticale.
+  const linkTo=function(px,py){
+    const prev=moves[moves.length-1];
+    if(prev&&!prev.r&&segClear(prev.x,prev.y,px,py))return;
+    gotoXY(px,py);
+  };
+  const pushCut=function(x,y){
+    const nx=rnd(x),ny=rnd(y),prev=moves[moves.length-1];
+    if(prev&&!prev.r&&Math.abs(prev.x-nx)<1e-9&&Math.abs(prev.y-ny)<1e-9)return;
+    moves.push({r:0,x:nx,y:ny,z:z});
+  };
+  // --- passes : chaines offsetees + cadres imbriques (E0/E-k)
+  const S=faoShadowShape(mesh,planes,B,r,aeA);
+  const chunks=[];
+  for(let k=0;k<200;k++){
+    const inset=k*aeA, d=r+k*aeA;
+    const ro=faoOffsetRuns(S,d);
+    const fr=faoRectRuns(S,inset,d);
+    for(let i=0;i<ro.length;i++)if(ro[i].pts&&ro[i].pts.length>=2)chunks.push(ro[i]);
+    for(let i=0;i<fr.length;i++)if(fr[i].pts&&fr[i].pts.length>=2)chunks.push(fr[i]);
+    if(isRing)break;
+    if(!ro.length&&!fr.length)break;
+  }
+  // --- goulets : trochoïdes G2/G3 par region etroite (un morceau par region,
+  // jamais reverse : les arcs G2/G3 sont orientes).
+  // Controle 2D (retour 6/10) : faoShadowIntervals ne garantit que la LIGNE
+  // de la region, pas l'excursion ±Rt du trochoide — chaque point emis (arcs
+  // echantillonnes a 0,25 mm + liaisons) doit rester a >= rrSafe. Goulet non
+  // valide : chute sur des sous-lignes valides point par point (ni abandon,
+  // ni gouge).
+  const mvSafe=function(list){
+    let px=null,py=null;
+    for(let k=0;k<list.length;k++){
+      const m=list[k];
+      if(!faoShapeValid(S,m.x,m.y,rrSafe))return false;
+      if(px!==null){
+        if(m.arc){
+          const cx=px+m.arc.i,cy=py+m.arc.j,Rr=Math.hypot(m.arc.i,m.arc.j);
+          if(Rr>1e-9){
+            const a0=Math.atan2(py-cy,px-cx),a1=Math.atan2(m.y-cy,m.x-cx);
+            let da=a1-a0;
+            if(m.arc.cw){ if(da>0)da-=2*Math.PI; }else if(da<0)da+=2*Math.PI;
+            const n=Math.max(4,Math.ceil(Math.abs(da)*Rr/0.25));
+            for(let s=1;s<n;s++){
+              const a=a0+da*s/n;
+              if(!faoShapeValid(S,cx+Rr*Math.cos(a),cy+Rr*Math.sin(a),rrSafe))return false;
+            }
+          }
+        }else{
+          const dx=m.x-px,dy=m.y-py,L=Math.hypot(dx,dy);
+          const n=Math.max(1,Math.ceil(L/0.25));
+          for(let s=1;s<n;s++){
+            if(!faoShapeValid(S,px+dx*s/n,py+dy*s/n,rrSafe))return false;
+          }
+        }
+      }
+      px=m.x;py=m.y;
+    }
+    return true;
+  };
+  const safeRun=function(xa,xb,y){
+    const out=[];let cur=null;
+    const n=Math.max(1,Math.ceil((xb-xa)/0.25));
+    for(let i=0;i<=n;i++){
+      const x=xa+(xb-xa)*i/n;
+      if(faoShapeValid(S,x,y,rrSafe)){
+        if(!cur)cur=[];
+        cur.push({r:0,x:rnd(x),y:rnd(y),z:z});
+      }else if(cur){ if(cur.length>=2)out.push({mv:cur}); cur=null; }
+    }
+    if(cur&&cur.length>=2)out.push({mv:cur});
+    return out;
+  };
+  if(!isRing){
+    regs.forEach(function(R){
+      let ml=0;
+      R.forEach(function(q){ ml=Math.max(ml,q.iv.b-q.iv.a); });
+      if(!(ml<2.5*D&&R.length>=2))return;
+      let yLo=1/0,yHi=-1/0;
+      R.forEach(function(q){ if(q.y<yLo)yLo=q.y; if(q.y>yHi)yHi=q.y; });
+      const mv=[];
+      R.forEach(function(q){ faoTrochSlot(mv,q.iv.a,q.iv.b,q.y,z,D,aeA,yLo,yHi); });
+      if(mv.length>=2&&mvSafe(mv)){ chunks.push({mv:mv}); return; }
+      R.forEach(function(q){
+        const rs=safeRun(q.iv.a,q.iv.b,q.y);
+        for(let i=0;i<rs.length;i++)chunks.push(rs[i]);
+      });
+    });
+  }
+  if(!chunks.length)return;
+  // --- entree (UNE par niveau) : meme contrat qu'avant (tangente / helice
+  // multi-spots / rampe X ou Y / micro-helice / plongee sûre).
+  const flat=[];
+  lines.forEach(function(L){ L.ivs.forEach(function(iv){ flat.push({y:L.y,iv:iv}); }); });
+  if(!flat.length)return;
+  let hasTroch=false;
   regs.forEach(function(R){
-    const rl=R.map(function(q){return {y:q.y,ivs:[q.iv]};});
-    // --- classification AVANT l'entrée (retour 6/10) : goulet trochoïdal /
-    // mini-passes (ringOnly) — l'entrée en dépend : hélice pour trocho,
-    // tangente à la face pour mini ; liaison basse si travelZ (band suivant).
-    let maxLen=0;
-    rl.forEach(function(L){ maxLen=Math.max(maxLen,L.ivs[0].b-L.ivs[0].a); });
-    const isTroch=maxLen<2.5*D&&rl.length>=2;
-    const isRing=!!(opt&&opt.ringOnly);
-    const tz=(opt&&isFinite(+opt.travelZ))?Math.min(secu,+opt.travelZ):null;
-    let cx0=0, cy0=0;
-    rl.forEach(function(L){ cx0+=(L.ivs[0].a+L.ivs[0].b)/2; cy0+=L.y; });
-    cx0/=rl.length; cy0/=rl.length;
-    const rnd=function(v){return Math.round(v*1000)/1000;};
-    // Liaison à vide SÛRE (retour 6/10 — tours rouges supprimés) : trajet
-    // horizontal à bandTop+2 (tz) si le segment reste dans le vide du niveau
-    // (disque ≥ r partout : colonne claire jusqu'au sommet par l'ombre),
-    // sinon remontée à secu — jamais de traversée de la pièce à basse
-    // altitude entre deux régions.
-    const zTopSafe=Math.max(top,isFinite(+brutTop)?+brutTop:top);
-    const pathOK=function(p,q){
-      if(tz&&tz>=zTopSafe-1e-9)return true;
-      const dx=q.x-p.x,dy=q.y-p.y,L=Math.sqrt(dx*dx+dy*dy);
-      const n=Math.max(1,Math.ceil(L));
-      const rr=Math.max(0.01,r-1e-3);
-      for(let i=0;i<=n;i++){
-        const t=i/n;
-        if(!faoDiscClear(segsAll,p.x+dx*t,p.y+dy*t,0,rr))return false;
-      }
-      return true;
-    };
-    // Aller à vide vers (px,py) : à tz si le chemin est sûr, sinon via secu
-    // (colonne du point de départ claire : retrait vertical sur place).
-    // Retourne la Z d'arrivée (pour la descente verticale suivante).
-    const gotoXY=function(px,py){
-      if(!moves.length){moves.push({r:1,x:px,y:py,z:secu});return secu;}
-      const prev=moves[moves.length-1];
-      const zGo=(tz&&pathOK(prev,{x:px,y:py}))?tz:secu;
-      if(Math.abs(prev.z-zGo)>1e-9)moves.push({r:1,x:prev.x,y:prev.y,z:zGo});
-      moves.push({r:1,x:px,y:py,z:zGo});
-      return zGo;
-    };
-    const sortie=function(p){
-      // Retrait VERTICAL sur place (colonne du point de boucle claire
-      // jusqu'au sommet par l'ombre du niveau) : à la Z de liaison si
-      // possible, sinon secu — aucune liaison oblique à travers la matière.
-      moves.push({r:1,x:p.x,y:p.y,z:tz||secu});
-    };
-    // --- entrée : on ne suppose plus le centre. Candidats hélice = top-3
-    // intervalles les plus larges + centroïde ; sinon rampe le long du plus
-    // long run (X ou Y) ; sinon micro-hélice ; sinon région sautée (outil
-    // trop gros — laissé au plus petit outil, jamais de plongée verticale).
-    // Retour 6/10 : mini-passes = glissement TANGENT le long de la face
-    // (pas d'hélice au centre) ; trochoïdaux = hélice (forcée plus bas).
-    let tang=null;
-    if(isRing&&rl.length>=2){
-      const a0=rl[0].ivs[0].a, b0=rl[0].ivs[0].b;
-      const p0x=(a0+b0)/2, p0y=rl[0].y;
-      const LN=Math.min(2*D,(b0-a0)/2-1);
-      if(LN>=1){
-        const sx=p0x+LN, sy=p0y;
-        if(faoDiscClear(segsAll,sx,sy,0,r)&&
-           faoDiscClear(segsAll,(sx+p0x)/2,sy,0,r))
-          tang={sx:sx,sy:sy,px:p0x,py:p0y};
-      }
-    }
-    const byW=rl.slice().sort(function(a,b){
-      return (b.ivs[0].b-b.ivs[0].a)-(a.ivs[0].b-a.ivs[0].a); });
-    const forced=(entryMode||'auto')==='helix'?'helix':(entryMode||'auto')==='ramp'?'ramp':'auto';
-    // Mode explicite (helix/ramp choisi par l'utilisateur) PRIORITAIRE ;
-    // en auto, un goulet trochoïdal prend l'hélice (les replis micro/rampe
-    // plus bas gardent le tour complet).
-    const fmode=forced!=='auto'?forced:(isTroch?'helix':'auto');
-    let hx=null, hr=0, hStart=zFrom, hy=0;
-    if(!tang&&fmode!=='ramp'){
-      const cands=byW.slice(0,3).map(function(L){
-        return {x:(L.ivs[0].a+L.ivs[0].b)/2,y:L.y,elen:L.ivs[0].b-L.ivs[0].a}; });
-      cands.push({x:cx0,y:cy0,elen:0});
-      for(let ci=0;ci<cands.length&&!hx;ci++){
-        const c=cands[ci];
-        const hrr=c.elen>0?Math.max(1,Math.min(D*0.4,c.elen/2-1)):Math.max(0.5,D*0.2);
-        if(!(c.elen>0?c.elen>=2*D:true))continue;
-        if(fmode==='auto'&&!(c.elen>=2*D))continue;
-        if(!faoDiscClear(segsAll,c.x,c.y,hrr,r))continue;
-        hx=c.x; hy=c.y; hr=hrr;
-        hStart=Math.min(zFrom,faoHelixSpot(mesh,c.x,c.y,hrr,r,z,brutTop,planes));
-      }
-    }
-    // Run X le plus long + run Y (intersection commune des intervalles).
-    let E={y:rl[0].y,iv:rl[0].ivs[0]};
-    rl.forEach(function(L){ L.ivs.forEach(function(iv){
-      if(iv.b-iv.a>E.iv.b-E.iv.a)E={y:L.y,iv:iv}; }); });
-    const elen=E.iv.b-E.iv.a;
-    let ixA=1/0, ixB=-1/0;
-    rl.forEach(function(L){ ixA=Math.min(ixA,L.ivs[0].a); ixB=Math.max(ixB,L.ivs[0].b); });
-    const yRun=(ixB-ixA>0.2)?(rl[rl.length-1].y-rl[0].y):0;
-    let ramp=null; // {x0,y0,x1,y1}
-    if(!tang&&(fmode!=='helix'||isTroch)&&!hx){
-      if(elen>=yRun&&elen>0.2)ramp={x0:E.iv.a,y0:E.y,x1:E.iv.a+Math.min(elen,2*D),y1:E.y};
-      else if(yRun>0.2){ const xm=(ixA+ixB)/2; ramp={x0:xm,y0:rl[0].y,x1:xm,y1:rl[0].y+Math.min(yRun,2*D)}; }
-    }
-    if(tang){
-      // Mini-passes (retour 6/10) : entrée TANGENTE à la face — arrivée à
-      // vide au point d'appel (colonne claire), descente d'air (helixSpot)
-      // puis diagonale de ramp le long de la face jusqu'à p0 : la boucle
-      // commence en p0 (unshift plus bas) et glisse d'un seul trait. Aucune
-      // hélice marquée au centre du band, aucune plongée verticale.
-      const zG=gotoXY(rnd(tang.sx),rnd(tang.sy));
-      const hs=Math.min(zFrom,faoHelixSpot(mesh,tang.sx,tang.sy,0,r,z,brutTop,planes));
-      if(Math.abs(zG-hs)>1e-9)moves.push({r:0,x:rnd(tang.sx),y:rnd(tang.sy),z:hs});
-      moves.push({r:0,x:rnd(tang.px),y:rnd(tang.py),z:z});
-    }else if(hx!==null){
-      const zG=gotoXY(hx,hy);
-      if(Math.abs(zG-hStart)>1e-9)moves.push({r:0,x:hx,y:hy,z:hStart});
-      faoHelixEntry(hx,hy,hStart,z,hr,D).slice(1).forEach(function(m){moves.push(m);});
-    }else if(ramp&&(fmode==='ramp'||(!isTroch&&Math.max(elen,yRun)>=D*0.5))){
-      gotoXY(ramp.x0,ramp.y0);
-      moves.push({r:0,x:ramp.x1,y:ramp.y1,z:z});
-    }else{
-      // Micro-hélice : le run est trop court pour une rampe mais un disque
-      // minuscule passe — perçage hélicoïdal lent mais sûr (toujours une
-      // hélice : convient aux trochoïdaux, repli pour le tour complet).
-      const run=Math.max(elen,yRun);
-      const mhr=Math.max(0.5,run/2-0.2);
-      const mx=ramp?ramp.x0:(E.iv.a+E.iv.b)/2, my=ramp?ramp.y0:E.y;
-      if(fmode!=='ramp'&&run>0.5&&faoDiscClear(segsAll,mx,my,mhr,r)){
-        const ms=Math.min(zFrom,faoHelixSpot(mesh,mx,my,mhr,r,z,brutTop,planes));
-        const zG=gotoXY(mx,my);
-        if(Math.abs(zG-ms)>1e-9)moves.push({r:0,x:mx,y:my,z:ms});
-        faoHelixEntry(mx,my,ms,z,mhr,D).slice(1).forEach(function(m){moves.push(m);});
-        hx=mx; hy=my;
-      }else if(isTroch&&ramp){
-        // Trochoïdal sans place d'hélice : repli rampe — tour complet,
-        // jamais de plongée verticale, jamais de région abandonnée.
-        gotoXY(ramp.x0,ramp.y0);
-        moves.push({r:0,x:ramp.x1,y:ramp.y1,z:z});
-      }else return; // inusinable à cet outil : on ne laisse aucun move partiel
-    }
-    const fromHole=(hx!==null);
-    // Goulet : tout trochoïde G2/G3, une ligne après l'autre, sans retrait.
-    // (maxLen/classification calculés en tête de région ; mini-passes = tour
-    // de contour, pas de slots.)
-    if(!isRing&&isTroch){
-      let yLo=1/0, yHi=-1/0;
-      rl.forEach(function(L){ if(L.y<yLo)yLo=L.y; if(L.y>yHi)yHi=L.y; });
-      rl.forEach(function(L){
-        const iv=L.ivs[0];
-        faoTrochSlot(moves,iv.a,iv.b,L.y,z,D,aeA,yLo,yHi);
-      });
-      const last=moves[moves.length-1];
-      sortie(last);
-      return;
-    }
-    if(rl.length<2){
-      // Balayage complet du segment (l'entrée n'en a ouvert qu'un bout).
-      const iv=rl[0].ivs[0];
-      moves.push({r:0,x:iv.a,y:rl[0].y,z:z});
-      moves.push({r:0,x:iv.b,y:rl[0].y,z:z});
-      const last=moves[moves.length-1];
-      sortie(last);
-      return;
-    }
-    // Pelage : boucles imbriquées au pas aeA, liaisons G1 continues.
-    const step=aeA, loops=[];
-    for(let k=0;;k++){
-      let mL=0;
-      rl.forEach(function(L){ mL=Math.max(mL,L.ivs[0].b-L.ivs[0].a); });
-      if(mL-2*k*step<0.5)break;
-      const ptsL=[], ptsR=[];
-      rl.forEach(function(L){
-        const iv=L.ivs[0], a=iv.a+k*step, b=iv.b-k*step;
-        if(b-a>0.2){ ptsL.push({x:a,y:L.y}); ptsR.push({x:b,y:L.y}); }
-      });
-      if(!ptsL.length)break;
-      loops.push(ptsL.concat(ptsR.reverse()));
-    }
-    if(!loops.length){
-      const last=moves[moves.length-1];
-      sortie(last);
-      return;
-    }
-    // MINI-PASSES : contour de parois seulement — seule la boucle extérieure
-    // (k=0, à la dilation du niveau) est émise ; le centre est déjà pelé.
-    if(opt&&opt.ringOnly)loops.splice(1);
-    // Entrée tangente : p0 (tête du glissement) devient le premier point de
-    // la boucle — le tour commence exactement à l'arrivée.
-    if(tang&&loops.length)loops[0].unshift({x:tang.px,y:tang.py});
-    // Ordre selon l'ouverture : trou central (hélice) -> intérieur d'abord ;
-    // rampe au bord -> extérieur d'abord. Chaque boucle reste adjacente au
-    // vide, engagement constant d'un seul côté.
-    if(fromHole){
-      for(let li=loops.length-1;li>=0;li--){
-        loops[li].forEach(function(p){ moves.push({r:0,x:Math.round(p.x*1000)/1000,y:Math.round(p.y*1000)/1000,z:z}); });
-      }
-    }else{
-      for(let li=0;li<loops.length;li++){
-        loops[li].forEach(function(p){ moves.push({r:0,x:Math.round(p.x*1000)/1000,y:Math.round(p.y*1000)/1000,z:z}); });
-      }
-    }
-    // Retour 6/10 : fermeture du TOUR — la dernière boucle émise s'arrête en
-    // (b, y0) ; sans le retour vers son premier point, le bord le long de la
-    // première ligne (mini-passes : la face du bas) n'est jamais coupé —
-    // c'est le « manque » montré sur l'aperçu.
-    if(loops.length){
-      const LE=loops[fromHole?0:loops.length-1];
-      const f0=LE[0];
-      moves.push({r:0,x:Math.round(f0.x*1000)/1000,y:Math.round(f0.y*1000)/1000,z:z});
-    }
-    const last2=moves[moves.length-1];
-    sortie(last2);
+    let ml=0;
+    R.forEach(function(q){ ml=Math.max(ml,q.iv.b-q.iv.a); });
+    if(ml<2.5*D&&R.length>=2)hasTroch=true;
   });
+  let E=flat[0];
+  for(let i=1;i<flat.length;i++)if(flat[i].iv.b-flat[i].iv.a>E.iv.b-E.iv.a)E=flat[i];
+  const elen=E.iv.b-E.iv.a;
+  let ixA=1/0, ixB=-1/0;
+  flat.forEach(function(f){ ixA=Math.min(ixA,f.iv.a); ixB=Math.max(ixB,f.iv.b); });
+  const yRun=(ixB-ixA>0.2)?(lines[lines.length-1].y-lines[0].y):0;
+  let cx0=0, cy0=0;
+  lines.forEach(function(L){ cx0+=(L.ivs[0].a+L.ivs[0].b)/2; cy0+=L.y; });
+  cx0/=lines.length; cy0/=lines.length;
+  let tang=null;
+  if(isRing&&lines.length>=2){
+    const a0=lines[0].ivs[0].a, b0=lines[0].ivs[0].b;
+    const p0x=(a0+b0)/2, p0y=lines[0].y;
+    const LN=Math.min(2*D,(b0-a0)/2-1);
+    if(LN>=1){
+      const sx=p0x+LN, sy=p0y;
+      if(faoDiscClear(segsAll,sx,sy,0,r)&&
+         faoDiscClear(segsAll,(sx+p0x)/2,sy,0,r))
+        tang={sx:sx,sy:sy,px:p0x,py:p0y};
+    }
+  }
+  const byW=flat.slice().sort(function(a,b){
+    return (b.iv.b-b.iv.a)-(a.iv.b-a.iv.a); });
+  const forced=(entryMode||'auto')==='helix'?'helix':(entryMode||'auto')==='ramp'?'ramp':'auto';
+  const fmode=forced!=='auto'?forced:(hasTroch?'helix':'auto');
+  let hx=null, hr=0, hStart=zFrom, hy=0;
+  if(!tang&&fmode!=='ramp'){
+    const cands=byW.slice(0,3).map(function(f){
+      return {x:(f.iv.a+f.iv.b)/2,y:f.y,elen:f.iv.b-f.iv.a}; });
+    cands.push({x:cx0,y:cy0,elen:0});
+    for(let ci=0;ci<cands.length&&!hx;ci++){
+      const c=cands[ci];
+      const hrr=c.elen>0?Math.max(1,Math.min(D*0.4,c.elen/2-1)):Math.max(0.5,D*0.2);
+      if(!(c.elen>0?c.elen>=2*D:true))continue;
+      if(fmode==='auto'&&!(c.elen>=2*D))continue;
+      if(!faoDiscClear(segsAll,c.x,c.y,hrr,r))continue;
+      hx=c.x; hy=c.y; hr=hrr;
+      hStart=Math.min(zFrom,faoHelixSpot(mesh,c.x,c.y,hrr,r,z,brutTop,planes));
+    }
+  }
+  let ramp=null;
+  if(!tang&&(fmode!=='helix'||hasTroch)&&!hx){
+    if(elen>=yRun&&elen>0.2)ramp={x0:E.iv.a,y0:E.y,x1:E.iv.a+Math.min(elen,2*D),y1:E.y};
+    else if(yRun>0.2){
+      const xm=(ixA+ixB)/2;
+      const rp={x0:xm,y0:lines[0].y,x1:xm,y1:lines[0].y+Math.min(yRun,2*D)};
+      // Rampe verticale : validee sur tout le segment (le milieu de la boite
+      // peut tomber dans la matiere sur cette ligne), sinon repli horizontal.
+      if(segClear(rp.x0,rp.y0,rp.x1,rp.y1))ramp=rp;
+      else if(elen>0.2)ramp={x0:E.iv.a,y0:E.y,x1:E.iv.a+Math.min(elen,2*D),y1:E.y};
+    }
+  }
+  if(tang){
+    const zG=gotoXY(tang.sx,tang.sy);
+    const hs=Math.min(zFrom,faoHelixSpot(mesh,tang.sx,tang.sy,0,r,z,brutTop,planes));
+    if(Math.abs(zG-hs)>1e-9)moves.push({r:0,x:rnd(tang.sx),y:rnd(tang.sy),z:hs});
+    moves.push({r:0,x:rnd(tang.px),y:rnd(tang.py),z:z});
+  }else if(hx!==null){
+    const zG=gotoXY(hx,hy);
+    if(Math.abs(zG-hStart)>1e-9)moves.push({r:0,x:rnd(hx),y:rnd(hy),z:hStart});
+    faoHelixEntry(hx,hy,hStart,z,hr,D).slice(1).forEach(function(m){moves.push(m);});
+  }else if(ramp&&(fmode==='ramp'||(!hasTroch&&Math.max(elen,yRun)>=D*0.5))){
+    gotoXY(ramp.x0,ramp.y0);
+    moves.push({r:0,x:rnd(ramp.x1),y:rnd(ramp.y1),z:z});
+  }else{
+    // Micro-helice si le disque minuscule passe, sinon plongee sûre :
+    // jamais de region abandonnee, jamais de plongee dans la matiere.
+    const run=Math.max(elen,yRun);
+    const mhr=Math.max(0.5,run/2-0.2);
+    const mx=ramp?ramp.x0:(E.iv.a+E.iv.b)/2, my=ramp?ramp.y0:E.y;
+    if(fmode!=='ramp'&&run>0.5&&faoDiscClear(segsAll,mx,my,mhr,r)){
+      const ms=Math.min(zFrom,faoHelixSpot(mesh,mx,my,mhr,r,z,brutTop,planes));
+      const zG=gotoXY(mx,my);
+      if(Math.abs(zG-ms)>1e-9)moves.push({r:0,x:rnd(mx),y:rnd(my),z:ms});
+      faoHelixEntry(mx,my,ms,z,mhr,D).slice(1).forEach(function(m){moves.push(m);});
+    }else{
+      linkTo(mx,my);
+      pushCut(mx,my);
+    }
+  }
+  // --- tour des morceaux : greedy (le plus proche dont la liaison est sûre)
+  const segDist=function(ax,ay,bx,by,px,py){
+    const dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy;
+    let t=L2>0?((px-ax)*dx+(py-ay)*dy)/L2:0;
+    if(t<0)t=0;else if(t>1)t=1;
+    const qx=px-(ax+t*dx),qy=py-(ay+t*dy);
+    return Math.sqrt(qx*qx+qy*qy);
+  };
+  const polyDist=function(ch,px,py){
+    let d=1/0;
+    if(ch.mv){
+      for(let i=0;i+1<ch.mv.length;i++){
+        const a=ch.mv[i],b=ch.mv[i+1];
+        const dd=segDist(a.x,a.y,b.x,b.y,px,py);
+        if(dd<d)d=dd;
+      }
+      return d;
+    }
+    const P=ch.pts,n=P.length,segsN=ch.closed?n:n-1;
+    for(let i=0;i<segsN;i++){
+      const a=P[i],b=P[(i+1)%n];
+      const dd=segDist(a[0],a[1],b[0],b[1],px,py);
+      if(dd<d)d=dd;
+    }
+    return d;
+  };
+  // Point d'entree : vertex le plus proche (ferme), extremite la plus
+  // proche (ouvert, reversible), toujours en avant (morceau trochoïdal).
+  const ordered=function(ch,px,py){
+    if(ch.mv)return ch.mv;
+    const P=ch.pts;
+    if(ch.closed){
+      let bi=0,bd=1/0;
+      for(let i=0;i<P.length;i++){
+        const dx=P[i][0]-px,dy=P[i][1]-py,dd=dx*dx+dy*dy;
+        if(dd<bd){bd=dd;bi=i;}
+      }
+      return P.slice(bi).concat(P.slice(0,bi));
+    }
+    const f=P[0],l=P[P.length-1];
+    const df=(f[0]-px)*(f[0]-px)+(f[1]-py)*(f[1]-py);
+    const dl=(l[0]-px)*(l[0]-px)+(l[1]-py)*(l[1]-py);
+    if(dl<df){
+      const rev=new Array(P.length);
+      for(let i=0;i<P.length;i++)rev[i]=P[P.length-1-i];
+      return rev;
+    }
+    return P;
+  };
+  const emitChunk=function(ch,px,py){
+    if(ch.mv){
+      const seq=ch.mv;
+      linkTo(seq[0].x,seq[0].y);
+      pushCut(seq[0].x,seq[0].y);
+      for(let i=1;i<seq.length;i++){
+        const q=seq[i],prev=moves[moves.length-1];
+        if(!q.arc&&!prev.r&&Math.abs(prev.x-q.x)<1e-9&&Math.abs(prev.y-q.y)<1e-9&&Math.abs(prev.z-q.z)<1e-9)continue;
+        moves.push(q);
+      }
+      return;
+    }
+    const seq=ordered(ch,px,py);
+    linkTo(seq[0][0],seq[0][1]);
+    pushCut(seq[0][0],seq[0][1]);
+    for(let i=1;i<seq.length;i++)pushCut(seq[i][0],seq[i][1]);
+    if(ch.closed)pushCut(seq[0][0],seq[0][1]);
+  };
+  const remaining=chunks.slice();
+  while(remaining.length){
+    const P=moves[moves.length-1],px=P.x,py=P.y;
+    const order=[];
+    for(let i=0;i<remaining.length;i++)order.push({i:i,d:polyDist(remaining[i],px,py)});
+    order.sort(function(a,b){return a.d-b.d;});
+    let pick=-1;
+    for(let t=0;t<order.length;t++){
+      const ch=remaining[order[t].i];
+      const seq=ordered(ch,px,py);
+      const qx=ch.mv?seq[0].x:seq[0][0], qy=ch.mv?seq[0].y:seq[0][1];
+      if(segClear(px,py,qx,qy)){pick=order[t].i;break;}
+    }
+    if(pick<0)pick=order[0].i;
+    const ch=remaining[pick];
+    remaining.splice(pick,1);
+    emitChunk(ch,px,py);
+  }
+  sortie(moves[moves.length-1]);
 }
+
 function faoRoughRegions(lines){
   // Regroupe les intervalles en régions connexes en Y (recouvrement X) :
   // une nervure/îlot = une région, suivie pour elle-même (morph).

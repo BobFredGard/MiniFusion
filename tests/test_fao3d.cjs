@@ -266,6 +266,41 @@ const vm=require('vm');
     "const xm=cX.length?Math.max.apply(null,cX.map(m=>m.x)):NaN;",
     "att(isFinite(xm)&&xm>=82-0.6&&xm<=82+0.6,'025 mur X : exact au rayon (x max '+xm.toFixed(2)+' ~ 82)');",
     "att(c30.some(m=>m.y===-10&&m.x<=-14+1e-6),'025 marge : ligne pleine largeur conservee (y=-10, x<=-14)');",
+    // --- 027 : suivi de contour — pas de barrage d'excroissance, collé à 0,5.
+    // Plaque + tenon (excroissance vers la marge) : l'ancien scanline abandonnait
+    // la ligne y=4.5 (bande morte 2→7 traversant toute la marge = barrage).
+    // (a) couverture : tout échantillon libre (dist >= r) à <= 1,9 mm d'une
+    //     coupe (pas de bande > ~2 mm) ; (b) point de l'ancienne bande usiné ;
+    // (c) aucune coupe < 5,49 (gouge) ; (d) au moins une coupe à 5,5 (collé).
+    "const QP=merge(mkBox(20,80,20,60,0,20),mkBox(45,55,8,20,0,30));",
+    "const QB={x0:0,y0:0,x1:100,y1:80};",
+    "const qm=faoGenRough3D(QP,QB,30,0,{ap:10,ae:6,toolD:10,radial:0.5,axial:0,secu:45});",
+    "const qD=function(px,py){return Math.min(blkD(px,py,20,80,20,60),blkD(px,py,45,55,8,20));};",
+    "const qPS=function(p,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy;let t=L2>0?((p[0]-a[0])*dx+(p[1]-a[1])*dy)/L2:0;t=t<0?0:t>1?1:t;return Math.hypot(p[0]-(a[0]+dx*t),p[1]-(a[1]+dy*t));};",
+    "const qCuts=[];",
+    "{let last=null;qm.forEach(function(m){",
+    "  if(m.r||Math.abs(m.z-10)>1e-6){last=null;return;}",
+    "  if(last)qCuts.push([last,[m.x,m.y]]);",
+    "  last=[m.x,m.y];",
+    "});}",
+    "att(qCuts.length>50,'027 : '+qCuts.length+' segments de coupe au niveau z=10');",
+    "let qW=0,qWp=null,qN=0;",
+    "for(let px=-5;px<=105;px++)for(let py=-5;py<=85;py++){",
+    "  if(qD(px,py)<5.499)continue;",
+    "  qN++;",
+    "  const p=[px,py];let best=1/0;",
+    "  for(let i=0;i<qCuts.length;i++){const d=qPS(p,qCuts[i][0],qCuts[i][1]);if(d<best)best=d;}",
+    "  if(best>qW){qW=best;qWp=[px,py];}",
+    "}",
+    "att(qN>800,'027 : '+qN+' échantillons libres');",
+    "att(qW<=1.9,'027 couverture : écart max '+qW.toFixed(2)+' mm en ('+(qWp?qWp[0]+','+qWp[1]:'?')+'), suivi de contour sans bande morte (<=1,9)');",
+    "let qBd=1/0;",
+    "qCuts.forEach(function(sg){qBd=Math.min(qBd,qPS([40,4.5],sg[0],sg[1]));});",
+    "att(qBd<=1.9,'027 barrage : coupe à '+qBd.toFixed(2)+' mm de (40,4.5), ancienne bande 2→7 usinée (<=1,9)');",
+    "let qMin=1/0;",
+    "qCuts.forEach(function(sg){[sg[0],sg[1]].forEach(function(p){const d=qD(p[0],p[1]);if(d<qMin)qMin=d;});});",
+    "att(qMin>=5.49,'027 gouge : coupe la plus proche '+qMin.toFixed(3)+' mm de la matière (>=5,49)');",
+    "att(qMin<=5.51,'027 collé : '+qMin.toFixed(3)+' mm <= 5,51 (section suivie à 0,5)');",
     // --- 2026-10-04-009 : entrées géofinition — mode, garde hélice, groupement par zone
     "att(typeof faoGeoEntryMode==='function','geo entree : faoGeoEntryMode definie');",
     "if(typeof faoGeoEntryMode==='function'){",
