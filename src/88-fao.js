@@ -1224,7 +1224,8 @@ function faoOpMoves(op,job){
       mv=faoGenGeoFinish(am.mesh,
         {step:isFinite(+op.step)?+op.step:1,toolD:D,kind:tool.kind,
          cornerR:tool.cornerR,laisse:+op.laisse||0,secu:secu,seed:op.seed||'top',
-         ztop:op.ztop,zbot:op.zbot});
+         ztop:op.ztop,zbot:op.zbot,
+         entry:op.entry||'auto',hasRrough:faoGeoHasRrough(job,op)});
       op.geoBlocked=(tool.kind==='flat'&&!mv.length);
     }else op.geoBlocked=false;
   }
@@ -2371,7 +2372,7 @@ function faoOpDefaults(type){
     radial:0.5, axial:0.5, entry:'auto', minipasses:0,
     arrondi:+(Math.min(2,D*0.25)).toFixed(2)});
   if(type==='geofinish')return Object.assign({},base,{type:'geofinish',
-    step:1, laisse:0, seed:'top', ztop:s.z1, zbot:s.z0});
+    step:1, laisse:0, seed:'top', entry:'auto', ztop:s.z1, zbot:s.z0});
   return Object.assign({},base,{type:type});
 }
 // Les 7 usinages et leur libellé court — source unique des boutons « + » de
@@ -2970,6 +2971,15 @@ function faoOpCardElement(setup,op,i){
     rp.appendChild(faoLab('laisse')); rp.appendChild(faoNum(op.laisse,function(v){op.laisse=Math.max(0,v);},48,0.1));
     rp.appendChild(faoLab('départ'));
     rp.appendChild(faoSel([['top','Sommet'],['bottom','Fond']],op.seed||'top',function(v){op.seed=v;}));
+    // 2026-10-04-009 : entrée identique à l'ébauche 3D — hélice réservée si un
+    // débourrage/ébauche est actif avant (sinon rampe, descente en biais).
+    rp.appendChild(faoLab('Entrée'));
+    rp.appendChild(faoSel([
+      ['auto','Auto · hélice si possible','Hélice quand une paroi raide offre la place, sinon rampe.'],
+      ['helix','Hélice · descente circulaire','Creuse sa place en tournant — exige un débourrage ou une ébauche avant.'],
+      ['ramp','Rampe · descente en biais','Descend en avançant le long de la trajectoire : passe partout.']],
+      op.entry||'auto',function(v){op.entry=v;},
+      'Manière de plonger dans la pièce — jamais de plongée verticale ; l’hélice est interdite sans ébauche/débourrage avant.'));
     // 2026-10-04-004 : limites Z (au-delà, relief non fini) + garde-fou fraise droite.
     zz();
     const tG=faoToolById(setup,op.toolId);
@@ -4426,6 +4436,32 @@ function faoGeoFlags(mesh,zb,zt){
   }
   return {flags:flags,anySlope:anySlope,hasFlat:hasFlat};
 }
+function faoGeoEntryMode(entry,hasRrough){
+  // 2026-10-04-009 : mode d'entrée de la géofinition. L'hélice creuse sa place
+  // en tournant — INTERDITE sans débourrage/ébauche actif AVANT cette finition
+  // (sinon elle plongerait dans la matière pleine) : on retombe sur la rampe,
+  // qui descend en biais sur l'air au-dessus de la trajectoire.
+  const m=(entry==='ramp'||entry==='helix')?entry:'auto';
+  if(m==='ramp')return 'ramp';
+  if(!hasRrough)return 'ramp';
+  return m;
+}
+function faoGeoHasRrough(job,op){
+  // Débourrage (pocket3d) ou ébauche 3D (rough3d) actif AVANT cette opération
+  // dans le même posage ? Op introuvable -> false (jamais d'hélice au doute).
+  const ops=(job&&job.ops)||[];
+  let i=-1;
+  for(let k=0;k<ops.length;k++){
+    if(ops[k]===op||(op&&op.id&&ops[k]&&ops[k].id===op.id)){i=k;break;}
+  }
+  if(i<0)return false;
+  for(let k=0;k<i;k++){
+    const q=ops[k];
+    if(!q||q.on===false)continue;
+    if(q.type==='rough3d'||q.type==='pocket3d')return true;
+  }
+  return false;
+}
 function faoGenGeoFinish(mesh,o){
   // Finition iso (retour 4/10) : (1) passes horizontales iso-Z sur les faces
   // en pente — chaque liaison part à Z constant ; (2) anneaux géodésiques sur
@@ -4458,21 +4494,31 @@ function faoGenGeoFinish(mesh,o){
   const moves=[];
   const zf=new Float64Array(mesh.v.length);
   for(let i=0;i<mesh.v.length;i++)zf[i]=mesh.v[i][2];
+  // 2026-10-04-009 : collecte par ZONE (un niveau = une zone regroupant toutes
+  // ses chaînes), puis émission groupée : 2 rapides à secu par zone (entrée +
+  // sortie) au lieu d'un couple à secu par chaîne — les chaînes d'un même
+  // niveau se relient à la Z de liaison (colonne vérifiée), sinon via secu.
+  const mode=faoGeoEntryMode(o.entry,o.hasRrough);
+  const zones=[];
   const level=function(field,iso,flat){
     const segs=faoIsoSegs(mesh,normals,field,iso,G.flags,flat);
     if(!segs.length)return;
     const chains=faoChainSegs(segs,Math.max(1e-4,step*0.02));
+    const zcs=[];
+    let zmaxZ=-1/0;
     chains.forEach(function(ch){
       if(ch.length<2)return;
       const cen=ch.map(function(q){
         const l=Math.hypot(q.n[0],q.n[1],q.n[2])||1;
         return {x:q.p[0]+q.n[0]/l*R, y:q.p[1]+q.n[1]/l*R, z:q.p[2]+q.n[2]/l*R};
       });
-      moves.push({r:1,x:cen[0].x,y:cen[0].y,z:secu});
-      moves.push({r:1,x:cen[0].x,y:cen[0].y,z:cen[0].z});
-      for(let i=0;i<cen.length;i++)moves.push({r:0,x:cen[i].x,y:cen[i].y,z:cen[i].z});
+      const nl=Math.hypot(ch[0].n[0],ch[0].n[1],ch[0].n[2])||1;
+      let cz=-1/0;
+      cen.forEach(function(p){ if(p.z>cz)cz=p.z; });
+      if(cz>zmaxZ)zmaxZ=cz;
+      zcs.push({pts:cen,n0:[ch[0].n[0]/nl,ch[0].n[1]/nl,ch[0].n[2]/nl]});
     });
-    if(moves.length){ const last=moves[moves.length-1]; moves.push({r:1,x:last.x,y:last.y,z:secu}); }
+    if(zcs.length)zones.push({chains:zcs,zmax:zmaxZ});
   };
   // (1) Iso-Z sur les faces en pente : niveaux ancrés au plafond, descendant
   // (seed top) ou ascendant (seed bottom), bornes ztop/zbot.
@@ -4484,6 +4530,161 @@ function faoGenGeoFinish(mesh,o){
   }
   // (2) Anneaux géodésiques sur les seuls plateaux (dans les limites Z).
   if(G.hasFlat)for(let iso=step;iso<dmax;iso+=step)level(dist,iso,1);
+  // --- phase d'émission : une entrée + une sortie par zone -----------------
+  const margin=Math.max(1,D*0.2);
+  zones.forEach(function(Z){
+    // Z de liaison : au-dessus des coupes de la zone, sous secu quand possible.
+    const travel=Math.max(Z.zmax,Math.min(secu,Z.zmax+margin));
+    let segsLink=null;
+    const linkSegs=function(){
+      if(!segsLink){
+        // Colonne de la liaison : de travel-R (portée du métal sous le centre)
+        // au sommet du maillage — tout voile/ressaut y est vu (plans vertex).
+        segsLink=[];
+        const pls=faoShadowPlanes(mesh,travel-R,zmax);
+        for(let k=0;k<pls.length;k++){
+          const s=faoSliceZCached(mesh,pls[k]);
+          if(s.length)segsLink=segsLink.concat(s);
+        }
+      }
+      return segsLink;
+    };
+    // Distance XY d'un point au matériau de la colonne (0 = dedans) — miroir
+    // de faoDiscClear avec hr=0 (parité + distance au contour).
+    const ptDist=function(x,y){
+      const segs=linkSegs();
+      const xs=[];
+      for(let i=0;i<segs.length;i++){const s=segs[i];
+        if((s[1]-y)*(s[3]-y)<=0&&s[1]!==s[3])
+          xs.push(s[0]+(s[2]-s[0])*(y-s[1])/(s[3]-s[1]));}
+      xs.sort(function(a,b){return a-b;});
+      let left=0;
+      for(let i=0;i<xs.length;i++)if(xs[i]<x-1e-9)left++;
+      if((left%2)===1)return 0;
+      let dmin=1/0;
+      for(let i=0;i<segs.length;i++){const s=segs[i];
+        const ax=s[0],ay=s[1],ex=s[2]-s[0],ey=s[3]-s[1],L2=ex*ex+ey*ey;
+        let u=L2>0?((x-ax)*ex+(y-ay)*ey)/L2:0; if(u<0)u=0; else if(u>1)u=1;
+        const px=ax+u*ex-x,py=ay+u*ey-y,d2=px*px+py*py;
+        if(d2<dmin)dmin=d2;}
+      return Math.sqrt(dmin);
+    };
+    const pathOK=function(p,q){
+      const segs=linkSegs();
+      // La liaison ne doit jamais être PIÈRE que les points de coupe qu'elle
+      // relie (offsets en normales de sommet fondues : le liseré peut situer
+      // sous l'enveloppe) : seuil = min(R, distance réelle des extrémités).
+      const d0=ptDist(p.x,p.y), d1=ptDist(q.x,q.y);
+      if(!(d0>1e-6&&d1>1e-6))return false;
+      const rr=Math.max(0.01,Math.min(R,d0,d1)-1e-3);
+      const dx=q.x-p.x,dy=q.y-p.y,Ln=Math.sqrt(dx*dx+dy*dy);
+      const n=Math.max(1,Math.ceil(Ln));
+      for(let i=0;i<=n;i++){
+        const t=i/n;
+        if(!faoDiscClear(segs,p.x+dx*t,p.y+dy*t,0,rr))return false;
+      }
+      return true;
+    };
+    const chainTol=Math.max(1e-4,step*0.02);
+    // Point visé par l'approche d'une chaîne : centre d'hélice (si autorisé) ou
+    // point ~2D le long du tracé — la rampe descend ensuite en diagonale de pk
+    // jusqu'au début (jamais de plongée verticale).
+    const candLink=function(pts,n0){
+      const here=pts[0];
+      let pk=0,acc=0;
+      for(let i=1;i<pts.length;i++){
+        acc+=Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y);
+        if(acc>=2*D){pk=i;break;}
+        pk=i;
+      }
+      let hx=null,hr=0,planesE=null;
+      if(mode!=='ramp'&&n0[2]<=0.5&&Math.hypot(n0[0],n0[1])>0.05){
+        hr=Math.max(0.5,Math.min(D*0.4,3));
+        const nlxy=Math.hypot(n0[0],n0[1]);
+        const off=hr+R+0.5;
+        const cx=here.x+n0[0]/nlxy*off, cy=here.y+n0[1]/nlxy*off;
+        planesE=faoShadowPlanes(mesh,here.z-R,zmax);
+        const segsE=[];
+        for(let k=0;k<planesE.length;k++){
+          const s=faoSliceZCached(mesh,planesE[k]);
+          if(s.length)segsE.push.apply(segsE,s);
+        }
+        if(faoDiscClear(segsE,cx,cy,hr,R))hx={x:cx,y:cy};
+      }
+      return {pts:pts,pk:pk,hx:hx,hr:hr,planesE:planesE,
+              pt:hx?hx:{x:pts[pk].x,y:pts[pk].y}};
+    };
+    Z.chains.forEach(function(C,ci){
+      if(ci>0){
+        // Chaîne (fermée : tous les démarrages × 2 sens ; ouverte : droit ou
+        // inversé) choisie pour QUE la liaison depuis la chaîne précédente
+        // reste dans le vide : tous les candidats évalués au pathOK, on garde
+        // un passage bas (sinon le plus court — repli via secu émis plus bas).
+        const prev=Z.chains[ci-1],from=prev.pts[prev.pts.length-1];
+        const n0=C.n0,pts0=C.pts;
+        const closed=pts0.length>3&&
+          Math.hypot(pts0[0].x-pts0[pts0.length-1].x,pts0[0].y-pts0[pts0.length-1].y,pts0[0].z-pts0[pts0.length-1].z)<chainTol;
+        const cands=[];
+        if(closed){for(let k=0;k<pts0.length-1;k++){cands.push([k,1]);cands.push([k,-1]);}}
+        else{cands.push([0,1]);cands.push([0,-1]);}
+        let best=null;
+        for(let t=0;t<cands.length;t++){
+          const c=cands[t];
+          let pts;
+          if(c[1]===1)pts=c[0]>0?pts0.slice(c[0]).concat(pts0.slice(1,c[0])):pts0.slice();
+          else{const rv=pts0.slice().reverse();pts=c[0]>0?rv.slice(c[0]).concat(rv.slice(1,c[0])):rv;}
+          const I=candLink(pts,n0);
+          const ok=pathOK(from,I.pt);
+          const len=Math.hypot(I.pt.x-from.x,I.pt.y-from.y);
+          if(!best||((ok?0:1)<(best.ok?0:1))||(ok===best.ok&&len<best.len))
+            best={pts:pts,ok:ok,len:len};
+        }
+        if(best)C.pts=best.pts;
+      }
+      const I=candLink(C.pts,C.n0);
+      const pts=I.pts,here=pts[0],pk=I.pk,hx=I.hx,hr=I.hr,planesE=I.planesE;
+      const ax=hx?hx.x:pts[pk].x, ay=hx?hx.y:pts[pk].y;
+      let startZ;
+      if(ci===0){
+        // Zone suivante (sortie précédente déjà à secu) ou début de programme.
+        moves.push({r:1,x:ax,y:ay,z:secu});
+        startZ=secu;
+      }else{
+        // Liaison intra-zone : lift sur place, XY à la Z de liaison si la
+        // colonne reste claire — sinon passage par secu (jamais de traversée
+        // de la pièce à basse altitude entre deux chaînes).
+        const prev=Z.chains[ci-1],from=prev.pts[prev.pts.length-1];
+        const liftZ=pathOK(from,{x:ax,y:ay})?travel:secu;
+        if(Math.abs(from.z-liftZ)>1e-9)moves.push({r:1,x:from.x,y:from.y,z:liftZ});
+        moves.push({r:1,x:ax,y:ay,z:liftZ});
+        startZ=liftZ;
+      }
+      if(hx){
+        // Hélice : descente d'air jusqu'au spot, spirale, G1 au début de chaîne.
+        const spot=faoHelixSpot(mesh,hx.x,hx.y,hr,R,here.z,zmax,planesE);
+        const hStart=Math.min(startZ,spot);
+        if(Math.abs(startZ-hStart)>1e-9)moves.push({r:0,x:hx.x,y:hx.y,z:hStart});
+        const hel=faoHelixEntry(hx.x,hx.y,hStart,here.z,hr,D);
+        for(let i=1;i<hel.length;i++)moves.push(hel[i]);
+        moves.push({r:0,x:here.x,y:here.y,z:here.z});
+      }else if(pk<1){
+        moves.push({r:1,x:here.x,y:here.y,z:here.z});
+      }else{
+        // Rampe : diagonale en AIR au-dessus du tracé (pk -> début), z au
+        // moins égale au contact local — rapide (aucune coupe) et sûre.
+        for(let i=pk-1;i>=0;i--){
+          const f=(pk-i)/pk;
+          const lin=startZ+(here.z-startZ)*f;
+          const zz=Math.max(lin,pts[i].z);
+          moves.push({r:1,x:pts[i].x,y:pts[i].y,z:zz});
+        }
+      }
+      for(let i=0;i<pts.length;i++)moves.push({r:0,x:pts[i].x,y:pts[i].y,z:pts[i].z});
+    });
+    // Sortie de zone : retrait vertical sur place à secu (2e rapide de la zone).
+    const lc=Z.chains[Z.chains.length-1],lp=lc.pts[lc.pts.length-1];
+    moves.push({r:1,x:lp.x,y:lp.y,z:secu});
+  });
   return moves;
 }
 function faoSeedBottom(mesh){
