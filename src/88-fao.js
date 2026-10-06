@@ -1,20 +1,14 @@
 /* ---------- FAO : fraisage 2.5D + post-processeurs CN ---------- */
 // Module mené EN PARALLÈLE de la partie dessin : il ne touche à aucune géométrie.
 // Il lit les corps affichés (bbox), génère des parcours outil (ébauche/finition
-// 2.5D : surfaçage, poche, contour, perçage, débourrage) et post-processe en
+// 2.5D : surfaçage, poche, contour, perçage) et post-processe en
 // G-code pour Siemens SINUMERIK 840D (variantes 630 / 1520, cf. PostPro/*.cps)
 // et Fagor 8065 (cf. PostPro/fagor-8065.cps).
 //
-// Référence atelier CAV-75-25.mpf (T6 D=25 CR=2, S8000, F5000/6000, ZMIN=-24.108) :
-// débourrage = entrée hélicoïdale circulaire au centre (rayon centre-outil ~0.4*D,
-// pas ~0.1*D/tour, en G1 petits segments, avance de coupe), puis vidage en spirale
-// concentrique intérieur->extérieur à Z constant par niveau (ap 1-2), liaisons
-// continues sans rétract (G1 + grands G3 de liaison), coins arrondis en G2/G3
-// (IJK incrémental), parois reprises en tours seuls, finition par contour G2.
-// C'est exactement ce que fait `pocket3d` : hélice (faoHelixEntry) + spirale
-// rectangulaire + arrondi des coins (faoRoundMoves -> G2/G3) + tours de parois.
-// Une poche circulaire Ø20 centre-outil s'obtient avec un carré + arrondi = demi-côté
-// (4 coins à 90° -> cercle complet).
+// Référence atelier CAV-75-25.mpf (T6 D=25 CR=2, S8000, F5000/6000, ZMIN=-24.108)
+// — parcours détaillé conservé dans le changelog. L'ancienne opération
+// « Débourrage » (`pocket3d`) a été SUPPRIMÉE : les anciens documents sont
+// nettoyés à l'ouverture par `faoSanitiseOps` (aucune op orpheline).
 //
 // Conventions reprises des .cps de référence :
 //  - Siemens : `; %_N_NOM_MPF`, G71/G17/G90/G94, G54, `T.. D..` + M6, S/M3,
@@ -203,8 +197,8 @@ function faoStockDefault(){ return {x0:0,y0:0,z0:0,x1:100,y1:80,z1:25}; }
 function faoDefaultTools(){
   // Bibliothèque initiale : cylindrique (ébauche/finition 2.5D), boule et
   // torique (finition 3D — rayon de coin stocké). T6 = fraise de la gamme
-  // CAV-75-25 (D25 CR2 torique, S8000 F5000/6000) pour rejouer le débourrage
-  // de référence à l'identique (hélice R10 = 0.4*D, ap 1-2, ae 8-10).
+  // CAV-75-25 (D25 CR2 torique, S8000 F5000/6000) — la gamme de l'atelier
+  // (référence CAV-75-25.mpf, hélice R10 = 0.4*D, ap 1-2, ae 8-10).
   return [
     {id:'T1',num:1,name:'Fraise D10',kind:'flat',d:10,cornerR:0,flutes:2,vc:250,fz:0.06},
     {id:'T2',num:2,name:'Fraise D6',kind:'flat',d:6,cornerR:0,flutes:2,vc:250,fz:0.04},
@@ -249,6 +243,16 @@ function faoMigrateSetup(flat){
   return s;
 }
 function faoSanitiseOps(s){
+  // 2026-10-06-004 : « Débourrage » (pocket3d) SUPPRIMÉ de l'application —
+  // les anciennes opérations sont retirées du document à la lecture (migration,
+  // comme `strategie`/`laisse`) : plus de fiche, plus de bouton, plus de
+  // parcours orphelin dans l'aperçu et le G-code. Suppression EN PLACE :
+  // faoRoot() relance cette fonction à chaque appel, un tableau remplacé
+  // laisserait les références déjà saisies (opérations, undo) pointer ailleurs.
+  const ops=s.ops;
+  if(Array.isArray(ops))
+    for(let i=ops.length-1;i>=0;i--)
+      if(ops[i]&&ops[i].type==='pocket3d')ops.splice(i,1);
   (s.ops||[]).forEach(function(op){
     if(!op.id)op.id=faoNewId('op');
     if(op.on===undefined)op.on=true;
@@ -1156,82 +1160,125 @@ function faoClipMovesPoly(moves,lim,r,secuZ,sub){
   return out;
 }
 
-/* ----- débourrage de poche : pleines passes + tours de parois ----- */
-// Par tranches épaisses (ap) : hélice au centre (pleine matière) + vidage
-// complet jusqu'à R radial ; entre les tranches, TOURS DE PAROIS seuls au pas
-// fin (tour) — les marches de ap sont reprises tous les 2 mm. Fin à
-// zBot+axial (0,5 de la face la plus basse). La passe de finition viendra
-// ensuite à R=0. Référence CAV-75-25 : hélice R=0.4*D (10 mm pour D25),
-// pas hélice 0.1*D/tour, spirale intérieur->extérieur à Z constant, coins
-// repris en G2/G3 par `arrondi` (dispatch), jamais de plongée verticale.
-function faoGenPocketRough(rect,zTop,zBot,o){
-  o=o||{};
-  const D=isFinite(+o.toolD)&&+o.toolD>0?+o.toolD:10;
-  const RA=faoRA(o);
-  const r=D/2+RA.radial;
-  const secu=isFinite(+o.secu)?+o.secu:+zTop+5;
-  const ap=isFinite(+o.ap)&&+o.ap>0?+o.ap:6;
-  const tour=isFinite(+o.tour)?+o.tour:2;
-  const zb=+zBot+RA.axial;
-  const moves=[];
-  const W=(rect.x1-rect.x0)-2*r, H=(rect.y1-rect.y0)-2*r;
-  if(!(W>0.5&&H>0.5))return [];
-  const cx=(rect.x0+rect.x1)/2, cy=(rect.y0+rect.y1)/2;
-  const step=Math.min(isFinite(+o.ae)&&+o.ae>0?+o.ae:D*0.6,D*0.5);
-  // Boucles imbriquées intérieur->extérieur à partir d'un inset de base.
-  const loopsFrom=function(inset){
-    const loops=[];
-    for(let k=0;;k++){
-      const t=inset+k*step;
-      const ax=rect.x0+t, bx=rect.x1-t, ay=rect.y0+t, by=rect.y1-t;
-      if(!(bx-ax>0.5&&by-ay>0.5))break;
-      loops.push([{x:ax,y:ay},{x:bx,y:ay},{x:bx,y:by},{x:ax,y:by},{x:ax,y:ay}]);
+/* ----- ZONE = frontière inviolable pendant le travail -----------------------
+   Règle d'atelier : aucun MOVE DE COUPE (G1/G2/G3) hors de la zone — c'est
+   l'usinage, cela ne sort pas. Les RAPIDES (G0) ont le droit de la traverser :
+   retour chercher un outil, liaison d'une opération à l'autre, retrait au plan
+   de sécurité : ils ne coupent rien.
+   Deux garde-fous, du plus tôt au plus tard :
+   · `faoZoneCuts`   — appelé en DERNIER dans faoOpMoves, après faoRoundMoves
+     (les arrondis d'angle sont créés après le clip : leurs arcs peuvent
+     dépasser la frontière — ils sont alors aplatis puis recoupés) ;
+   · `faoSegClipper` — filet de sécurité à l'AFFICHAGE, sur les seuls segments
+     de coupe (un aperçu ne montre donc jamais de coupe hors zone, même avec
+     un tracé en cache ancien). */
+function faoZoneCuts(moves,op,job,secu){
+  // Vérifie que la coupe est bien entière dans la zone ; si un seul point
+  // déborde (extrémité, croisement, arc d'arrondi), répare : arcs -> polygone,
+  // puis re-clip des SEULS segments de coupe (les rapides passent tels quels).
+  const lim=op&&op.limit;
+  if(!lim||!moves||!moves.length)return moves;
+  const tool=faoToolById(job,op&&op.toolId);
+  const D=(tool&&+tool.d>0)?+tool.d:10;
+  const chain=(lim.mode==='chain'&&lim.loop&&lim.loop.length>=3);
+  let R=null, at=null;
+  if(chain){
+    at=function(x,y){ return faoLimInside(x,y,lim,D/2); };
+  }else if(lim.mode==='rect'){
+    R=faoEffLimit(op,D);
+    if(!R)return moves;
+    at=function(x,y){ return x>=R.x0&&x<=R.x1&&y>=R.y0&&y<=R.y1; };
+  }else return moves;
+  const depasse=function(a,b,m){
+    // Extrémité de coupe hors zone, ou segment/arc qui traverse la frontière.
+    if(!at(m.x,m.y))return true;
+    if(m.arc){
+      const pts=faoArcSegs(a,m);
+      for(let k=0;k<pts.length;k++)if(!at(pts[k][0],pts[k][1]))return true;
+      return false;
     }
-    return loops.reverse(); // intérieur d'abord (après hélice centrale)
+    if(chain)return faoPolyCross(a.x,a.y,m.x,m.y,lim.loop);
+    const s=faoClipLB({x:a.x,y:a.y},{x:m.x,y:m.y},R);
+    return !s||s[0]>1e-9||s[1]<1-1e-9;
   };
-  const deep=faoLevels(+zTop,zb,ap);
-  deep.forEach(function(z,di){
-    // 1. Hélice centrale (pleine matière) depuis z+ap, avance plongée.
-    // CAV-75-25 : rayon centre-outil 10 mm pour D25, soit 0.4*D.
-    // Départ de l'hélice : 2 mm AU-DESSUS de la face à usiner (matière
-    // sous le disque), donc DANS LE VIDE — jamais pile sur la face.
-    const zMat=(di===0)?+zTop:deep[di-1];
-    const zFrom=Math.min(secu,zMat+2);
-    const fit=Math.min(W,H)/2;
-    if(fit>=1.5&&Math.min(W,H)>=2.5*D){
-      const hr=Math.min(D*0.4,fit-0.5);
-      moves.push({r:1,x:cx,y:cy,z:secu});
-      if(zFrom<secu-1e-9)moves.push({r:0,x:cx,y:cy,z:zFrom});
-      faoHelixEntry(cx,cy,zFrom,z,hr,D).slice(1).forEach(function(m){moves.push(m);});
-    }else{
-      const rl=Math.min(W,2*D);
-      moves.push({r:1,x:rect.x0+r,y:cy,z:secu});
-      moves.push({r:0,x:rect.x0+r+rl,y:cy,z:z});
+  // --- 1) diagnostic : la coupe est-elle entièrement dedans ?
+  let prev=null, bust=false;
+  for(let i=0;i<moves.length&&!bust;i++){
+    const m=moves[i];
+    if(m.r){ prev=m; continue; }   // rapides : le droit de traverser
+    if(prev&&depasse(prev,m,m))bust=true;
+    if(!prev&&!at(m.x,m.y))bust=true;
+    prev=m;
+  }
+  if(!bust)return moves;       // RAS : on ne touche à rien
+  // --- 2) réparation
+  const flat=[]; prev=null;
+  for(let i=0;i<moves.length;i++){
+    const m=moves[i];
+    if(m.r){ flat.push(m); prev=m; continue; }
+    if(m.arc&&prev){
+      const pts=faoArcSegs(prev,m); let ok=at(m.x,m.y);
+      for(let k=0;k<pts.length&&ok;k++)if(!at(pts[k][0],pts[k][1]))ok=false;
+      if(ok){ flat.push(m); prev=m; continue; }
+      for(let k=0;k<pts.length;k++)flat.push({r:0,x:pts[k][0],y:pts[k][1],z:pts[k][2]});
+      prev=flat[flat.length-1];
+      continue;
     }
-    // 2. Vidage complet : spirale intérieur->extérieur (liaisons G1 courtes).
-    loopsFrom(r).forEach(function(loop){
-      loop.forEach(function(p){ moves.push({r:0,x:p.x,y:p.y,z:z}); });
-    });
-    moves.push({r:1,x:cx,y:cy,z:secu});
-    // 3. Tours de parois seuls entre la tranche précédente et celle-ci.
-    // tour<=0 : pas de tours (ébauche CAV pure, finition par contour séparé).
-    const zHi=di===0?+zTop:deep[di-1];
-    if(tour>0)
-    for(let f=zHi-tour;f>z+1e-9;f-=tour){
-      const fz=Math.round(f*1000)/1000;
-      const ax=rect.x0+r, bx=rect.x1-r, ay=rect.y0+r, by=rect.y1-r;
-      const ix=Math.min(ax+5,bx-1), iy=Math.min(ay+5,by-1);
-      moves.push({r:1,x:ix,y:iy,z:secu});
-      moves.push({r:1,x:ix,y:iy,z:fz});
-      moves.push({r:0,x:ax,y:ay,z:fz});
-      moves.push({r:0,x:bx,y:ay,z:fz});
-      moves.push({r:0,x:bx,y:by,z:fz});
-      moves.push({r:0,x:ax,y:by,z:fz});
-      moves.push({r:0,x:ax,y:ay,z:fz});
-      moves.push({r:1,x:ax,y:ay,z:secu});
+    flat.push(m); prev=m;
+  }
+  return chain?faoClipMovesPoly(flat,lim,D/2,secu,2):faoClipMovesXY(flat,R,secu);
+}
+/* ----- affichage : la COUPE ne sort jamais de la zone (l'aperçu le garantit)
+   même sur un tracé en cache. Les rapides, eux, sont dessinés tels quels :
+   ils peuvent traverser la zone (retour outil, liaison). */
+function faoPolyCross(ax,ay,bx,by,loop){
+  const dx=bx-ax, dy=by-ay;
+  for(let i=0,j=loop.length-1;i<loop.length;j=i++){
+    const cx1=loop[j][0],cy1=loop[j][1],cx2=loop[i][0],cy2=loop[i][1];
+    const ex=cx2-cx1, ey=cy2-cy1;
+    const den=dx*ey-dy*ex;
+    if(Math.abs(den)<1e-12)continue;
+    const t=((cx1-ax)*ey-(cy1-ay)*ex)/den;
+    const u=((cx1-ax)*dy-(cy1-ay)*dx)/den;
+    if(t>1e-9&&t<1-1e-9&&u>1e-9&&u<1-1e-9)return true;
+  }
+  return false;
+}
+function faoSegClipper(op,job){
+  // -> fn(ax,ay,az,bx,by,bz,push) qui ne pousse que la partie DANS la zone,
+  //    ou null : opération sans zone (affichage inchangé, cas par défaut).
+  // Usage réservé aux segments de COUPE (cf. faoRefreshPreview) : un rapide
+  // a le droit de traverser la frontière.
+  const lim=op&&op.limit;
+  if(!lim)return null;
+  const tool=faoToolById(job,op&&op.toolId);
+  const D=(tool&&+tool.d>0)?+tool.d:10;
+  if(lim.mode==='rect'){
+    const R=faoEffLimit(op,D);
+    if(!R)return null;
+    return function(ax,ay,az,bx,by,bz,push){
+      const s=faoClipLB({x:ax,y:ay},{x:bx,y:by},R);
+      if(!s)return;
+      push(ax+(bx-ax)*s[0],ay+(by-ay)*s[0],az+(bz-az)*s[0],
+           ax+(bx-ax)*s[1],ay+(by-ay)*s[1],az+(bz-az)*s[1]);
+    };
+  }
+  if(lim.mode!=='chain'||!lim.loop||lim.loop.length<3)return null;
+  const loop=lim.loop, r=D/2; // r = même règle outil que le clip des parcours
+  const at=function(x,y){ return faoLimInside(x,y,lim,r); };
+  return function(ax,ay,az,bx,by,bz,push){
+    const ain=at(ax,ay), bin=at(bx,by);
+    const cross=faoPolyCross(ax,ay,bx,by,loop);
+    if(ain&&bin&&!cross){ push(ax,ay,az,bx,by,bz); return; } // cas courant : 1 test
+    if(!ain&&!bin&&!cross)return;                            // tout dehors : rien
+    const n=Math.max(1,Math.ceil(Math.hypot(bx-ax,by-ay)));  // subdivision 1 mm
+    let px=ax,py=ay,pz=az,pin=ain;
+    for(let i=1;i<=n;i++){
+      const t=i/n, cx=ax+(bx-ax)*t, cy=ay+(by-ay)*t, cz=az+(bz-az)*t, cin=at(cx,cy);
+      if(cin&&pin)push(px,py,pz,cx,cy,cz);
+      px=cx;py=cy;pz=cz;pin=cin;
     }
-  });
-  return moves;
+  };
 }
 
 /* ----- cache de parcours + de maillage -----
@@ -1819,9 +1866,6 @@ function faoOpMoves(op,job){
   else if(op.type==='contour')mv=faoGenContour({x0:+op.x0,y0:+op.y0,x1:+op.x1,y1:+op.y1},
     +op.ztop,+op.zbot,Object.assign({},base,{ap:+op.ap,radial:RA.radial,axial:RA.axial}));
   else if(op.type==='drill')mv=faoGenDrill(faoLimitDrillPts(op,D),+op.ztop,+op.zbot,secu);
-  else if(op.type==='pocket3d')mv=faoGenPocketRough({x0:+op.x0,y0:+op.y0,x1:+op.x1,y1:+op.y1},
-    +op.ztop,+op.zbot,Object.assign({},base,{ap:+op.ap,tour:isFinite(+op.tour)?+op.tour:2,
-      ae:isFinite(+op.ae)?+op.ae:D*0.5,radial:RA.radial,axial:RA.axial}));
   else if(op.type==='rough3d'){
     let am=null;
     try{ am=faoActiveMesh(job); }catch(e){ am=null; }
@@ -1857,10 +1901,14 @@ function faoOpMoves(op,job){
     mv=faoClipMovesPoly(mv,lim,D/2,secu,2);
   }
   // Arrondi des coins (trajectoires circulaires) : ébauche 3D + 2.5D
-  // (surfaçage/poche/contour/débourrage). 0 = angles vifs.
+  // (surfaçage/poche/contour). 0 = angles vifs.
   if(op&&isFinite(+op.arrondi)&&+op.arrondi>0&&mv.length&&
-     (op.type==='rough3d'||op.type==='facing'||op.type==='pocket'||op.type==='contour'||op.type==='pocket3d'))
+     (op.type==='rough3d'||op.type==='facing'||op.type==='pocket'||op.type==='contour'))
     mv=faoRoundMoves(mv,+op.arrondi);
+  // ZONE = frontière inviolable pendant le travail : garde-fou de coupe posé
+  // EN DERNIER (faoRoundMoves crée ses arcs APRÈS le clip — un arrondi pouvait
+  // dépasser la frontière). Les rapides, eux, traversent librement.
+  if(lim&&mv.length)mv=faoZoneCuts(mv,op,job,secu);
   if(ck!==null)faoOpMovesStore(op,ck,mv);
   if(ck!==null)faoMovesSave(job,op,ck,mv); // persistance : prochaine ouverture = lecture
   if(op){ try{ op.stale=false; }catch(e){} } // generation fraiche
@@ -2295,8 +2343,6 @@ function faoOpLabel(op,job){
   if(t==='contour')return 'Contour ['+op.x0+','+op.y0+' -> '+op.x1+','+op.y1+'] '+op.ztop+' -> '+op.zbot+ra+tag+off+lim;
   if(t==='drill')return 'Perçage '+(op.pts||[]).length+' trou(s) '+op.ztop+' -> '+op.zbot+((+op.peck)>0?' Q'+op.peck:'')+tag+off+lim;
   if(t==='rough3d')return 'Ébauche 3D '+op.ztop+' -> '+op.zbot+' ap '+op.ap+ra+tag+off+lim;
-  if(t==='pocket3d')return 'Débourrage ['+op.x0+','+op.y0+' -> '+op.x1+','+op.y1+'] '+
-    op.ztop+' -> '+op.zbot+' ap '+op.ap+' tours '+op.tour+ra+tag+off+lim;
   if(t==='geofinish')return 'Finition géodésique pas '+op.step+tag+off+lim;
   return t;
 }
@@ -2317,6 +2363,37 @@ function faoClearPreview(){
   faoPrevGroup=null;
 }
 let faoPrevMissing=0; // ops sans parcours en memoire lors du dernier redraw en LECTURE
+function faoSegSplit(moves,clip){
+  // Segments par PAIRE CONSECUTIVE de la séquence réelle : coupe->coupe en
+  // vert, tout passage par un rapide en rouge. Aucune liaison fantôme.
+  // `clip` (zone de l'opération) ne borne QUE la coupe : la zone est une
+  // frontière inviolable pendant le travail, mais un G0 a le droit de la
+  // traverser — retour chercher un outil, liaison entre opérations.
+  // -> {cut:[x,y,z,...], rap:[x,y,z,...]}
+  const out={cut:[],rap:[]};
+  if(!moves||!moves.length)return out;
+  let prev=null;
+  const seg=function(arr,ax,ay,az,bx,by,bz,coupe){
+    if(!clip||!coupe){ arr.push(ax,ay,az,bx,by,bz); return; }
+    clip(ax,ay,az,bx,by,bz,function(x1,y1,z1,x2,y2,z2){ arr.push(x1,y1,z1,x2,y2,z2); });
+  };
+  moves.forEach(function(m){
+    if(prev!==null){
+      const arr=(m.r)?out.rap:out.cut; // le segment prend la commande de SA destination (G0 -> rouge)
+      const coupe=!m.r;
+      if(m.arc&&!prev.r){
+        let pp={x:prev.x,y:prev.y,z:prev.z};
+        faoArcSegs(prev,m).forEach(function(q){
+          seg(arr,pp.x,pp.y,pp.z,q[0],q[1],q[2],coupe); pp={x:q[0],y:q[1],z:q[2]};
+        });
+      }else{
+        seg(arr,prev.x,prev.y,prev.z,m.x,m.y,m.z,coupe);
+      }
+    }
+    prev=m;
+  });
+  return out;
+}
 function faoRefreshPreview(mode){
   // mode='calcule' : SEUL cas ou l'on PRODUIT les parcours absents — réservé à
   // « Tout régénérer ». Défaut (et mode=true) : LECTURE SEULE — on dessine ce
@@ -2330,29 +2407,13 @@ function faoRefreshPreview(mode){
   try{
     if(typeof THREE==='undefined'||typeof scene==='undefined'||!scene)return 0;
     faoPrevGroup=new THREE.Group(); faoPrevGroup.name='faoPreview';
-    const mk=function(moves){
-      // Segments par PAIRE CONSECUTIVE de la séquence réelle : coupe->coupe
-      // en vert, tout passage par un rapide en rouge. Plus aucune liaison
-      // fantôme entre passes disjointes.
+    const mk=function(moves,clip){
+      // Coupe en vert, rapides en rouge — faoSegSplit borne la coupe à la zone
+      // et laisse les G0 traverser librement (cf. faoSegSplit).
       if(!moves||!moves.length)return;
       try{
-        const cut=[], rap=[];
-        let prev=null;
-        const seg=function(arr,ax,ay,az,bx,by,bz){ arr.push(ax,ay,az,bx,by,bz); };
-        moves.forEach(function(m){
-          if(prev!==null){
-            const arr=(m.r)?rap:cut; // le segment prend la commande de SA destination (G0 -> rouge)
-            if(m.arc&&!prev.r){
-              let pp={x:prev.x,y:prev.y,z:prev.z};
-              faoArcSegs(prev,m).forEach(function(q){
-                seg(arr,pp.x,pp.y,pp.z,q[0],q[1],q[2]); pp={x:q[0],y:q[1],z:q[2]};
-              });
-            }else{
-              seg(arr,prev.x,prev.y,prev.z,m.x,m.y,m.z);
-            }
-          }
-          prev=m;
-        });
+        const sp=faoSegSplit(moves,clip);
+        const cut=sp.cut, rap=sp.rap;
         const add=function(arr,color,alpha){
           if(arr.length<6)return;
           const g=new THREE.BufferGeometry();
@@ -2371,7 +2432,7 @@ function faoRefreshPreview(mode){
       if(op&&op.hidden===true)return; // traces masquées dans la vue (op.hidden) — le G-code, lui, les garde
       if(b.absent){ faoPrevMissing++; return; } // pas de parcours en memoire : on n'invente rien
       const mv=b.moves; total+=mv.length;
-      mk(mv);
+      mk(mv,faoSegClipper(op,job));
     });
     scene.add(faoPrevGroup);
     if(typeof faoVw!=='undefined'&&faoVw)faoPrevGroup.visible=false; // viewer : traces restent cachées
@@ -3097,11 +3158,6 @@ function faoOpDefaults(type){
     x0:+(s.x0+job.marge).toFixed(2), y0:+(s.y0+job.marge).toFixed(2),
     x1:+(s.x1-job.marge).toFixed(2), y1:+(s.y1-job.marge).toFixed(2),
     ztop:s.z1, zbot:s.z0, ap:5, ae:+(D*0.5).toFixed(2), radial:0.5, axial:0.5, arrondi:0});
-  if(type==='pocket3d')return Object.assign({},base,{type:'pocket3d',
-    x0:+(s.x0+job.marge).toFixed(2), y0:+(s.y0+job.marge).toFixed(2),
-    x1:+(s.x1-job.marge).toFixed(2), y1:+(s.y1-job.marge).toFixed(2),
-    ztop:s.z1, zbot:s.z0, ap:6, tour:2, ae:+(D*0.5).toFixed(2),
-    radial:0.5, axial:0.5, arrondi:+(Math.min(2,D*0.25)).toFixed(2)});
   if(type==='contour')return Object.assign({},base,{type:'contour',
     x0:s.x0, y0:s.y0, x1:s.x1, y1:s.y1, ztop:s.z1, zbot:s.z0, ap:5, radial:0.5, axial:0.5, arrondi:0});
   if(type==='drill')return Object.assign({},base,{type:'drill',
@@ -3112,14 +3168,16 @@ function faoOpDefaults(type){
     arrondi:+(Math.min(2,D*0.25)).toFixed(2)});
   if(type==='geofinish')return Object.assign({},base,{type:'geofinish',
     step:1, laisse:0, seed:'top', entry:'auto', ztop:s.z1, zbot:s.z0});
+  // Type retiré (2026-10-06-004 : pocket3d) ou inconnu -> null : pas de fiche,
+  // pas d'opération fantôme. Seule la barre « + Usinage » crée des opérations.
+  if(['facing','pocket','contour','drill','rough3d','geofinish'].indexOf(type)<0)return null;
   return Object.assign({},base,{type:type});
 }
-// Les 7 usinages et leur libellé court — source unique des boutons « + » de
+// Les 6 usinages et leur libellé court — source unique des boutons « + » de
 // l'arbre FAO (l'ordre est contractuel : les tests cliquent par index).
 function faoAddOpsSpec(){
   return [['facing','+ Surfaçage'],['pocket','+ Poche'],['contour','+ Contour'],
-    ['drill','+ Perçage'],['rough3d','+ Ébauche 3D'],['geofinish','+ Finition'],
-    ['pocket3d','+ Débourrage']];
+    ['drill','+ Perçage'],['rough3d','+ Ébauche 3D'],['geofinish','+ Finition']];
 }
 /* ================= interface FAO : arbre + fiches panneau droit ================= */
 // Arbre FAO dédié (overlay dans la vue 3D) : posages > opérations, état on/off,
@@ -3412,9 +3470,10 @@ function faoInitUI(){
           b.title='Ajouter une opération « '+nm+' » au posage courant (puis sa fiche s’ouvre à droite)';
           b.onclick=function(){
             try{
+              const op=faoOpDefaults(a[0]);
+              if(!op)return;
               const s=faoSetup();
               faoSnapshot('nouvelle opération « '+nm+' »');
-              const op=faoOpDefaults(a[0]);
               s.ops.push(op);
               faoChanged();
               faoSelectOp(s.id,op.id);
@@ -3605,7 +3664,7 @@ function faoRenderTree(){
 }
 function faoOpShortLabel(op){
   const n={facing:'Surfaçage',pocket:'Poche',contour:'Contour',drill:'Perçage',
-    rough3d:'Ébauche 3D',geofinish:'Finition géod.',pocket3d:'Débourrage'}[op.type]||op.type;
+    rough3d:'Ébauche 3D',geofinish:'Finition géod.'}[op.type]||op.type;
   if(op.type==='drill')return n+' ('+(op.pts||[]).length+')';
   return n;
 }
@@ -3727,7 +3786,7 @@ function faoOpCardElement(setup,op,i){
   const d=faoCard();
   if(op.on===false)d.style.opacity='0.55';
   const typeName={facing:'Surfaçage',pocket:'Poche',contour:'Contour',drill:'Perçage',
-    rough3d:'Ébauche 3D',geofinish:'Finition géod.',pocket3d:'Débourrage poche'};
+    rough3d:'Ébauche 3D',geofinish:'Finition géod.'};
   const r=faoRow();
   const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=op.on!==false;
   cb.title='Décocher = ignorer cette opération (aperçu, temps, G-code)';
@@ -3812,18 +3871,6 @@ function faoOpCardElement(setup,op,i){
     rp.appendChild(faoLab('R')); rp.appendChild(faoNum(faoRA(op).radial,function(v){op.radial=Math.max(0,v);},44,0.1));
     rp.appendChild(faoLab('A')); rp.appendChild(faoNum(faoRA(op).axial,function(v){op.axial=Math.max(0,v);},44,0.1));
     rp.appendChild(faoLab('Arrondi')); rp.appendChild(faoNum(isFinite(+op.arrondi)?+op.arrondi:0,function(v){op.arrondi=Math.max(0,v);},48,0.5));
-  }else if(op.type==='pocket3d'){
-    rect4(); zz();
-    rp.appendChild(faoLab('ap')); rp.appendChild(faoNum(op.ap,function(v){op.ap=Math.max(0.5,v);},48,0.5));
-    rp.appendChild(faoLab('tours')); rp.appendChild(faoNum(op.tour||0,function(v){op.tour=Math.max(0,v);},48,0.5));
-    rp.appendChild(faoLab('pas')); rp.appendChild(faoNum(op.ae,function(v){op.ae=Math.max(0.5,v);},48));
-    rp.appendChild(faoLab('R')); rp.appendChild(faoNum(faoRA(op).radial,function(v){op.radial=Math.max(0,v);},44,0.1));
-    rp.appendChild(faoLab('A')); rp.appendChild(faoNum(faoRA(op).axial,function(v){op.axial=Math.max(0,v);},44,0.1));
-    rp.appendChild(faoLab('Arrondi')); rp.appendChild(faoNum(isFinite(+op.arrondi)?+op.arrondi:0,function(v){op.arrondi=Math.max(0,v);},48,0.5));
-    const nt=document.createElement('div');
-    nt.className='fao-meta';
-    nt.textContent='Pleines passes à ap + tours de parois seuls au pas tours.';
-    d.appendChild(nt);
   }else if(op.type==='rough3d'){
     // --- fiche Ébauche 3D : sections titrées pour les néophytes.
     // Chaque champ porte son nom complet + infobulle ; le mode unique et
@@ -3901,14 +3948,14 @@ function faoOpCardElement(setup,op,i){
     rp.appendChild(faoLab('départ'));
     rp.appendChild(faoSel([['top','Sommet'],['bottom','Fond']],op.seed||'top',function(v){op.seed=v;}));
     // 2026-10-04-009 : entrée identique à l'ébauche 3D — hélice réservée si un
-    // débourrage/ébauche est actif avant (sinon rampe, descente en biais).
+    // ébauche 3D est active avant (sinon rampe, descente en biais).
     rp.appendChild(faoLab('Entrée'));
     rp.appendChild(faoSel([
       ['auto','Auto · hélice si possible','Hélice quand une paroi raide offre la place, sinon rampe.'],
-      ['helix','Hélice · descente circulaire','Creuse sa place en tournant — exige un débourrage ou une ébauche avant.'],
+      ['helix','Hélice · descente circulaire','Creuse sa place en tournant — exige une ébauche 3D avant.'],
       ['ramp','Rampe · descente en biais','Descend en avançant le long de la trajectoire : passe partout.']],
       op.entry||'auto',function(v){op.entry=v;},
-      'Manière de plonger dans la pièce — jamais de plongée verticale ; l’hélice est interdite sans ébauche/débourrage avant.'));
+      'Manière de plonger dans la pièce — jamais de plongée verticale ; l’hélice est interdite sans ébauche 3D avant.'));
     // 2026-10-04-004 : limites Z (au-delà, relief non fini) + garde-fou fraise droite.
     zz();
     const tG=faoToolById(setup,op.toolId);
@@ -6158,7 +6205,7 @@ function faoGeoFlags(mesh,zb,zt){
 }
 function faoGeoEntryMode(entry,hasRrough){
   // 2026-10-04-009 : mode d'entrée de la géofinition. L'hélice creuse sa place
-  // en tournant — INTERDITE sans débourrage/ébauche actif AVANT cette finition
+  // en tournant — INTERDITE sans ébauche 3D active AVANT cette finition
   // (sinon elle plongerait dans la matière pleine) : on retombe sur la rampe,
   // qui descend en biais sur l'air au-dessus de la trajectoire.
   const m=(entry==='ramp'||entry==='helix')?entry:'auto';
@@ -6167,8 +6214,9 @@ function faoGeoEntryMode(entry,hasRrough){
   return m;
 }
 function faoGeoHasRrough(job,op){
-  // Débourrage (pocket3d) ou ébauche 3D (rough3d) actif AVANT cette opération
-  // dans le même posage ? Op introuvable -> false (jamais d'hélice au doute).
+  // Ébauche 3D (rough3d) active AVANT cette opération dans le même posage ?
+  // Op introuvable -> false (jamais d'hélice au doute). L'ancien « Débourrage »
+  // (pocket3d) ayant été supprimé, il ne compte plus comme débourrage.
   const ops=(job&&job.ops)||[];
   let i=-1;
   for(let k=0;k<ops.length;k++){
@@ -6178,7 +6226,7 @@ function faoGeoHasRrough(job,op){
   for(let k=0;k<i;k++){
     const q=ops[k];
     if(!q||q.on===false)continue;
-    if(q.type==='rough3d'||q.type==='pocket3d')return true;
+    if(q.type==='rough3d')return true;
   }
   return false;
 }

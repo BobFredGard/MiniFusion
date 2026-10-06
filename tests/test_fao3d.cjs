@@ -320,13 +320,13 @@ const vm=require('vm');
     "  const JO={ops:[{id:'r',type:'rough3d',on:false},{id:'g',type:'geofinish'}]};",
     "  att(faoGeoHasRrough(JO,JO.ops[1])===false,'geo entree : ebauche desactivee avant -> false');",
     "  const JD={ops:[{id:'r',type:'pocket3d',on:true},{id:'g',type:'geofinish'}]};",
-    "  att(faoGeoHasRrough(JD,JD.ops[1])===true,'geo entree : debourrage avant -> true');",
+    "  att(faoGeoHasRrough(JD,JD.ops[1])===false,'geo entree : pocket3d supprime -> false');",
     "  const JV={ops:[{id:'g',type:'geofinish'}]};",
     "  att(faoGeoHasRrough(JV,JV.ops[0])===false,'geo entree : aucune operation avant -> false');",
     "  att(faoGeoHasRrough({ops:[]},{id:'z',type:'geofinish'})===false,'geo entree : op introuvable -> false');",
     "}",
     "att(faoOpDefaults('geofinish').entry==='auto','geo entree : defaut entry auto');",
-    // Hélice sans débourrage : identique au ramp (l'entrée est ignorée en sécurité)
+    // Hélice sans ébauche : identique au ramp (l'entrée est ignorée en sécurité)
     "const gXr=faoGenGeoFinish(SL,{step:5,toolD:8,kind:'ball',laisse:0,secu:45,entry:'ramp'});",
     "const gXh=faoGenGeoFinish(SL,{step:5,toolD:8,kind:'ball',laisse:0,secu:45,entry:'helix'});",
     "att(JSON.stringify(gXh)===JSON.stringify(gXr),'geo entree : helix sans ebauche = ramp (sortie identique)');",

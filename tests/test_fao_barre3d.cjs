@@ -1,4 +1,4 @@
-// Refonte FAO demandée : 1) les 7 +usinage quittent le panneau des corps pour une
+// Refonte FAO demandée : 1) les 6 +usinage quittent le panneau des corps pour une
 // barre posée sur la vue 3D (même pilule que #viewbar) à DROITE, AU-DESSUS du
 // panneau FAO — les deux reposent dans la même colonne #faoWrap ; 2) les boutons
 // Iso/Dessus/Face/Droite passent à GAUCHE, au-dessus du panneau des corps.
@@ -36,7 +36,7 @@ const CSS={
   const R=[
     "const P=[];const p=s=>P.push(String(s));",
     "const ATT=[];const att=(ok,msg)=>{if(!ok)ATT.push(msg);};",
-    // --- 1) barre des 7 +usinage : colonne de droite, AU-DESSUS du panneau FAO
+    // --- 1) barre des 6 +usinage : colonne de droite, AU-DESSUS du panneau FAO
     "att(!!faoAddBarEl,'barre faoAddBar creee');",
     "att(!!faoWrapEl,'colonne #faoWrap creee');",
     "const VP=document.getElementById('vpwrap');",
@@ -48,11 +48,11 @@ const CSS={
     "att(TW.children.indexOf(faoAddBarEl)<0,'barre PAS dans #treeWrap (elle a quitte le panneau des corps)');",
     "att(faoAddBarEl.className==='fao-addbar','pilule .fao-addbar (meme grand panneau que #viewbar)');",
     "const kids=faoAddBarEl.children;",
-    "att(kids.length===8,'titre + 7 boutons ('+kids.length+')');",
+    "att(kids.length===7,'titre + 6 boutons ('+kids.length+')');",
     "att(kids[0].className==='fao-addlab'&&kids[0].textContent==='+ Usinage','titre de groupe « + Usinage »');",
     "const labs=kids.slice(1).map(function(k){return k.textContent;});",
-    "const want=['Surfaçage','Poche','Contour','Perçage','Ébauche 3D','Finition','Débourrage'];",
-    "att(labs.length===7&&labs.join('|')===want.join('|'),'libelles sans + : '+labs.join(','));",
+    "const want=['Surfaçage','Poche','Contour','Perçage','Ébauche 3D','Finition'];",
+    "att(labs.length===6&&labs.join('|')===want.join('|'),'libelles sans + : '+labs.join(','));",
     "att(labs.every(function(l){return l.charAt(0)!=='+';}),'aucun + devant les libelles');",
     "let inWrap=false;(function w(n){if(n===faoAddBarEl)inWrap=true;if(n&&n.children)n.children.forEach(w);})(faoTreeWrapEl);",
     "att(!inWrap,'la barre n est PAS dans le panneau FAO');",

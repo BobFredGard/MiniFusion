@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**172 versions**, de `2026-09-28b` à `2026-10-06-003` — la plus récente en bas,
+**173 versions**, de `2026-09-28b` à `2026-10-06-004` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2959,3 +2959,21 @@ Correctif : `faoMeshFp()` trie les coordonnées quantifiées (0,001 mm) **avant*
 Migration : la formule change, donc `APP_VER`/`CACHE_VER` passent à `2026-10-06-003` ; les entrées écrites en `2026-10-06-002` sont rejetées par la **version** (motif net : « version obsolète, attendu … ») plutôt que par une fausse empreinte — **une seule** régénération supplémentaire (« Tout régénérer » puis re-enregistrer le fichier), ensuite le cache tient au F5 et à la réouverture.
 
 Tests : `test_fao_cache_idb` +2 assertions (mêmes sommets dans un **autre ordre** → empreinte identique ; coordonnée décalée de 0,5 mm → empreinte différente) ; contrats préservés ; badge produit **V0.1.4 → V0.1.5** (`src/96-bandeau-groupes.js` + `tests/test_prodver_badge.cjs`, 11 mentions) ; run complet **67/67** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-06-003.html`.
+
+### `2026-10-06-004`
+
+**La zone de l'opération est une frontière inviolable pendant le travail — mais on traverse au G0 pour aller chercher un outil.**
+
+Demande exprimée puis affinée deux fois : « ce n'est pas simplement clipper les traces, c'est empêcher tout usinage en dehors de la zone. La zone est une frontière inviolable ! » puis « aucun mouvement pendant la coupe ou le travail, mais on peut la traverser pour revenir chercher un outil ». Règle retenue : **un move de COUPE (G1/G2/G3) ne sort jamais de la zone** (l'Ébauche 3D d'abord), un **rapide (G0) la traverse librement** — retour chercher un outil, liaison d'une opération à l'autre, retrait au plan de sécurité : il n'usine pas. Deux garde-fous, du plus tôt au plus tard.
+
+**`faoZoneCuts` — le dernier étage de génération.** `faoRoundPath` fabrique ses arcs d'arrondi **après** le clip des segments : un arrondi pouvait donc dépasser la frontière sans que rien ne le voie. La fonction est appelée en **dernier** dans `faoOpMoves`, après `faoRoundMoves`, et marche sur la séquence complète — extrémités, croisements (`faoPolyCross`), échantillonnage des arcs (`faoArcSegs`). Si tout est dedans elle rend **le même tableau** (aucun rejeu, clés de cache inchangées) ; sinon elle aplatit les arcs fautifs en polyligne et re-clippe **les seuls segments de coupe** (`faoClipMovesPoly` / `faoClipMovesXY`), rapides intouchés.
+
+**`faoSegSplit` + `faoSegClipper` — l'aperçu.** Le découpage des segments en couches vert/rouge est sorti de `mk` dans une fonction testable, et le clipper de zone n'est appelé **que sur la coupe** : l'aperçu ne montre plus aucune ligne de coupe à l'extérieur, tout en dessinant les rouges **entiers** (droit de traversée).
+
+Validation sur le document réel (Ebauche 3D `op_4_muw6s87o`, boucle de 133 sommets, arrondi 2 mm, 72 977 moves) : **72 857 moves de coupe dont 25 011 arcs, 0 fuite** — extrémités, croisements et arcs échantillonnés à r = 12,5 mm ; `faoZoneCuts` rend un tableau **identique** (garde-fou neutre : ni régénération ni invalidation) ; **68 rapides sur 120 passent hors zone**, comme demandé ; le clipper de l'aperçu est appelé **127 503 fois, uniquement sur les 127 503 segments de coupe**, les 119 segments rouges tracés entiers.
+
+Suppression complète de « Débourrage » (`pocket3d`) : `faoGenPocketRough` et son bloc de commentaire, le dispatch de génération, `faoRoundMoves`, `faoOpDesc`, la fiche du panneau, les libellés de la barre, `faoGeoHasRrough`, les commentaires UI/entête, `faoAddOpsSpec` (6 boutons au lieu de 7), et **`faoOpDefaults`** qui renvoie désormais `null` pour un type inconnu (avec garde `if(!op)return;` sur le bouton `+`). Les documents qui en contiennent encore sont nettoyés à l'ouverture par `faoSanitiseOps`, **en place** : un `filter` remplacerait le tableau `ops` et périmait la référence tenue par l'appelant — `stU.setups[0].ops.push(...)` évalue son membre `.ops` **avant** son argument — la migration passe donc par un `splice`.
+
+Migration : `APP_VER` → `2026-10-06-004`, **`CACHE_VER` inchangé (`2026-10-06-003`)** : ni le contenu des parcours ni leur clé ne change, **aucune régénération à refaire**.
+
+Tests : `test_fao.cjs` — clipper (chaîne/rect/dedans/hors/traversée/z inchangé), **`faoZoneCuts`** (coupe traversante bornée, rapide de traversée intact, parcours sain rendu tel quel, arc sortant aplati puis recoupé, parcours réel coupe+arrondi sans sortie), **`faoSegSplit`** (clipper appelé 2 fois sur 4 segments = coupe seule, rapide hors zone tracé entier), suppression de `pocket3d` (7 assertions) ; `test_fao3d.cjs` (`pocket3d → false`), `test_fao_barre3d.cjs` (6 boutons, `kids.length===7`), `test_fao_helice.cjs` (entrée hélice testée en direct, `helOf` retiré) ; `test_fao_cache_idb.cjs` aligné sur `CACHE_VER` (lignes 45/70) ; badge produit **V0.1.5 → V0.1.2** (choix utilisateur explicite : on garde V0.1.2, `src/96-bandeau-groupes.js` + `tests/test_prodver_badge.cjs`, 11 mentions) ; run complet **67/67** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-06-004.html`.

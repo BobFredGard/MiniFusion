@@ -42,7 +42,7 @@ const vm=require('vm');
     A(mv1.length>0,'generation : '+mv1.length+' points');
     A(!!kv[idbKey],'parcours écrits dans IndexedDB sous « '+idbKey+' »');
     A(kv[idbKey]&&kv[idbKey].v===1,'entree format v=1');
-    A(kv[idbKey]&&kv[idbKey].ver===APP_VER,'entree versionnee '+APP_VER);
+    A(kv[idbKey]&&kv[idbKey].ver===CACHE_VER,'entree versionnee '+CACHE_VER);
     A(kv[idbKey]&&kv[idbKey].k===ck1,'entree = cle de cache exacte');
     A(kv[idbKey]&&kv[idbKey].mv===mv1,'entree = parcours memorises');
 
@@ -67,7 +67,7 @@ const vm=require('vm');
     count(); faoOpMoves(s.ops[0],s); uncount();
     A(gen===1,'version differente : on recalcule ('+gen+')');
     A(faoOpMoves(s.ops[0],s)!==mvPrec,'version differente : nouveau tableau (pas celui en base)');
-    kv[idbKey].ver=APP_VER;
+    kv[idbKey].ver=CACHE_VER;
 
     /* ============ 4. cle differente (parametre modifie) ============ */
     const mvPrec4=kv[idbKey].mv;

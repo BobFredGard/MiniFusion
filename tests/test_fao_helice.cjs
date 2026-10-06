@@ -1,6 +1,6 @@
 // FAO — entrées hélice : départ 2 mm au-dessus de la MATIÈRE (dans le vide)
 // et jeu latéral de 2 mm au contour. Couvre la constante de jeu, la règle
-// de disque, le débourrage (pocket3d) et le garde-fou anti-plongée de
+// de disque, l'entrée hélice (faoHelixEntry) et le garde-fou anti-plongée de
 // l'ébauche 3D (rough3d).
 const {loadApp}=require('./appvm.cjs');
 const vm=require('vm');
@@ -8,29 +8,6 @@ const vm=require('vm');
   const {ctx}=loadApp();
   const out=vm.runInContext(`(function(){
     const P=[]; const A=(ok,m)=>P.push((ok?'OK   ':'ECHEC')+' : '+m);
-
-    // Détection d'hélice : centre = point suivi d'une série de points à
-    // distance constante (rayon) de lui, Z non croissant (faoHelixEntry).
-    const helOf=function(mv,D){
-      const hel=[];
-      for(let i=0;i+2<mv.length;i++){
-        const c=mv[i];
-        if(c.r)continue;
-        let hr=-1, ok=false, lastZ=c.z, cnt=0;
-        for(let j=1;j<600&&i+j<mv.length;j++){
-          const m=mv[i+j];
-          if(m.r)break;
-          const d=Math.hypot(m.x-c.x,m.y-c.y);
-          if(hr<0){ if(!(d>0.5&&d<D*0.6))break; hr=d; ok=true; }
-          else if(Math.abs(d-hr)>0.6)break;
-          if(j>1&&m.z>c.z+1e-9)break;
-          lastZ=m.z; cnt++;
-        }
-        // une vraie helice d'entree : >= 6 points ET >= 1 mm de descente
-        if(ok&&cnt>=6&&(c.z-lastZ)>=1){ hel.push({z0:c.z,zLvl:lastZ,hr:hr}); i+=20; }
-      }
-      return hel;
-    };
 
     // --- 1. constante de jeu
     A(faoHelixJeu===2,'faoHelixJeu = 2 mm (vu '+faoHelixJeu+')');
@@ -47,26 +24,21 @@ const vm=require('vm');
     A(faoDiscClear(segs,5,5,0,6)===false,'disque : centre a 5 du mur, marge 6 -> refusé');
     A(faoDiscClear(segs,20,5,0,5)===true,'disque : dehors et loin -> autorisé');
 
-    // --- 3. débourrage (pocket3d) : départ de la 1re hélice à zTop+2
-    const job=faoDefaultJob(); job.name='HELIX';
-    job.stock={x0:0,y0:0,z0:0,x1:100,y1:80,z1:60};
-    job.ops=[{type:'pocket3d',x0:10,y0:10,x1:90,y1:70,ztop:60,zbot:10,ap:8,ae:6,tour:2}];
-    const D=(job.tools[0]&&job.tools[0].d)||10;
-    const mv=faoOpMoves(job.ops[0],job);
-    const hel=helOf(mv,D);
-    A(hel.length>=4,'débourrage : '+hel.length+' hélices détectées (D'+D+')');
-    if(hel.length){
-      A(Math.abs(hel[0].z0-62)<1e-9,'débourrage : 1re hélice démarre à zTop+2 = 62 (vu '+
-        hel[0].z0.toFixed(3)+')');
-      A(hel.every(h=>h.z0>=h.zLvl+2-1e-9),
-        'débourrage : chaque hélice démarre à >= niveau+2 (min '+
-        Math.min.apply(null,hel.map(h=>h.z0-h.zLvl)).toFixed(3)+' mm)');
-      A(hel.every(h=>h.z0>h.zLvl+1e-9),'débourrage : aucun départ au niveau de coupe');
-      A(hel.every(h=>h.hr>0.5&&h.hr<=D*0.6),'débourrage : rayon helice plausible');
-    }
-    // jamais de point de coupe sous zBot, rapides toujours au secu
-    const SEC=(isFinite(+job.secu)&&+job.secu>0)?+job.secu:50;A(mv.filter(m=>m.r).every(m=>m.z>=SEC-1e-9),'débourrage : rapides a la securite '+SEC);
-    A(mv.filter(m=>!m.r).every(m=>m.z>=job.ops[0].zbot-1e-9),'débourrage : rien sous le fond');
+    // --- 3. entrée hélice (faoHelixEntry) : rapide de départ en l'air, pas
+    //        vertical ≤ 0.1*D (anti-plongée), rayon constant, fin exacte à zTo.
+    const HE=faoHelixEntry(50,40,62,10,10,25);
+    A(HE.length>20,'helice : '+HE.length+' moves');
+    A(HE[0].r===1&&Math.abs(HE[0].z-62)<1e-9&&Math.abs(HE[0].x-60)<1e-9,
+      'helice : rapide de depart a zFrom=62, rayon 10 (dans le vide)');
+    A(HE.filter(function(m){return m.r;}).length===1,'helice : un seul rapide (le depart)');
+    const HC=HE.filter(function(m){return !m.r;});
+    A(HC.length>10&&HC.every(function(m){return m.z>=10-1e-9;}),'helice : rien sous zTo=10');
+    A(Math.abs(HC[HC.length-1].z-10)<1e-9,'helice : fin exacte a zTo=10 (palier de fond)');
+    A(HC.every(function(m){return Math.abs(Math.hypot(m.x-50,m.y-40)-10)<1e-6;}),
+      'helice : rayon constant 10 mm');
+    let pas=0;
+    for(let i=1;i<HC.length;i++){const dz=HC[i-1].z-HC[i].z; if(dz>pas)pas=dz;}
+    A(pas<=2.5+1e-9,'helice : pas vertical max '+pas.toFixed(3)+' <= 0.1*D = 2.5 mm');
 
     // --- 4. ébauche 3D : la micro-hélice de secours ne doit jamais conduire
     //        à une plongée dans la matière (fente ~D entre deux plots)
