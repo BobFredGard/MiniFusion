@@ -958,7 +958,16 @@ const vm=require('vm');
     "const __cr=document.createElement;let __dl='';document.createElement=function(t){const n=__cr(t);if(String(t).toLowerCase()==='a'){n.click=function(){__dl=n.download;};}return n;};",
     "let expB=null;(function wX(n){if(expB)return;if(n.textContent==='Exporter G-code')expB=n;if(n.children)n.children.forEach(wX);})(faoTreeWrapEl);",
     "att(!!expB,'arbre FAO : bouton Exporter G-code');",
-    "expB.onclick();",
+    // « calculer puis valider » : modif -> bouton grisé + export bloqué ;
+    // « Générer + aperçu » re-valide et ré-ouvre l'export.
+    "faoChanged();",
+    "let expA=null;(function wA2(n){if(expA)return;if(n.textContent==='Exporter G-code')expA=n;if(n.children)n.children.forEach(wA2);})(faoTreeWrapEl);",
+    "att(!!expA&&expA.disabled===true,'export : bouton grisé tant que périmé');",
+    "faoPreviewGenerate();",
+    "let expG=null;(function wG2(n){if(expG)return;if(n.textContent==='Exporter G-code')expG=n;if(n.children)n.children.forEach(wG2);})(faoTreeWrapEl);",
+    "att(faoPrevStale===false,'export : aperçu validé par « Générer + aperçu »');",
+    "att(!!expG&&expG.disabled===false,'export : bouton actif après régénération');",
+    "expG.onclick();",
     "att(globalThis.__exp.length>100,'UI export : G-code produit ('+globalThis.__exp.length+' car.)');",
     "att(/M30/.test(globalThis.__exp),'UI export : pied M30');",
     "att(/CYCLE81/.test(globalThis.__exp),'UI export : per\\u00e7age en cycle dialecte');",

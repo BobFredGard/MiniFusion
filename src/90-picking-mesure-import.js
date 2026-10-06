@@ -1244,6 +1244,10 @@ async function deserialise(json,opts){
   if(!opts||opts.rebuild!==false){rebuild();renderProps();showAll();}
   else renderProps();
   if(nImp)alert(nImp+' corps importé(s) non rejoués (géométrie non persistée dans ce MVP) — réimportez le STEP/STL. Sauvegarde paramétrique complète à l\'étape suivante.');
+  // Parcours d'outils : on lit d'abord le cache persisté (IndexedDB), on ne
+  // recalcule que ce qui manque — l'ouverture ne reprend plus les ~90 s du calcul.
+  try{ if(typeof faoMovesReset==='function')faoMovesReset(); }catch(e){}
+  try{ if(typeof faoMovesPreloadSoon==='function')faoMovesPreloadSoon(); }catch(e){}
 }
 $('btnSave').onclick=async()=>{
   const data=serialise();
