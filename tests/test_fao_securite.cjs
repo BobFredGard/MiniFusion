@@ -99,9 +99,26 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     }
     A(viol===0,'séquence réelle : 0 translation XY rapide sous le plan ('+nTravel+
        ' translations, viol='+viol+(viol?'), plus bas '+maxLow.toFixed(1):'')+')');
-    A(nPlan>100,'séquence réelle : le plan est réellement utilisé ('+nPlan+' pts à '+safe+' mm)');
+    // Le seuil était >100 quand les EXCURSIONS hors zone (tours du cadre de
+    // validation, 30 séries de G0) gonflaient ce comptage de ~2 pts par G0 dehors
+    // retirés : le plan reste la voie unique des translations rapides (viol=0).
+    A(nPlan>20,'séquence réelle : le plan est réellement utilisé ('+nPlan+' pts à '+safe+' mm)');
     A(seq.some(function(b){return b.moves.some(function(m){return m.r&&Math.abs(m.z-safe)<1e-9;});}),
        'séquence réelle : au moins une opération passe par le plan');
+    // Règle d'atelier (capture) : la zone est un MUR — aucun G0 de l'OPÉRATION
+    // ne part « usiner dans le vide ». Les franchissements sanctionnés (changement
+    // d'outil, point de repos) sont le fait de la séquence ENTRE deux opérations :
+    // le plan de sécurité reste d'ailleurs le seul lieu des translations rapides.
+    let horsRap=0, opsZone=0;
+    ((job&&job.ops)||[]).forEach(function(op){
+      if(!op||!op.limit)return;
+      const ctx=faoZoneCtx(op,job); if(!ctx)return;
+      opsZone++;
+      const mv=faoOpMoves(op,job)||[];
+      for(let k=0;k<mv.length;k++)if(mv[k].r&&!ctx.at(mv[k].x,mv[k].y))horsRap++;
+    });
+    A(opsZone>0&&horsRap===0,'document réelle : 0 G0 hors zone dans l opération à zone ('+
+       horsRap+' restant(s) sur '+opsZone+' op(s) concernée(s))');
 
     // ---- 3. G-code : même invariant, lu dans le programme émis ----
     const J=faoDefaultSetup();

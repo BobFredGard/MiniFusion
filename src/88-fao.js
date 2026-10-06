@@ -1160,35 +1160,114 @@ function faoClipMovesPoly(moves,lim,r,secuZ,sub){
   return out;
 }
 
-/* ----- ZONE = frontière inviolable pendant le travail -----------------------
-   Règle d'atelier : aucun MOVE DE COUPE (G1/G2/G3) hors de la zone — c'est
-   l'usinage, cela ne sort pas. Les RAPIDES (G0) ont le droit de la traverser :
-   retour chercher un outil, liaison d'une opération à l'autre, retrait au plan
-   de sécurité : ils ne coupent rien.
-   Deux garde-fous, du plus tôt au plus tard :
-   · `faoZoneCuts`   — appelé en DERNIER dans faoOpMoves, après faoRoundMoves
+/* ----- ZONE = mur vertical inviolable ---------------------------------------
+   Règle d'atelier (affinée jusqu'à la capture) : la zone est un MUR. Rien ne
+   s'y usine dehors, et les G0 ne font plus de TOUR « dans le vide » : on ne la
+   franchit que pour l'ENGAGEMENT (retour d'outil en tête d'opération), la
+   SORTIE, le CHANGEMENT D'OUTIL ou le POINT DE REPOS — les trois dernières
+   raisons étant le fait de la séquence/post, jamais d'une opération isolée.
+   Trois garde-fous, du plus tôt au plus tard :
+   · `faoZoneStrip`   — les séries de G0 hors zone sont retirées à la
+     GÉNÉRATION (dans faoZoneCuts) et à la LECTURE (faoOpMoves +
+     faoOpMovesTry) : un tracé déjà en cache est purgé sans régénération ;
+   · `faoZoneCuts`    — appelé en DERNIER dans faoOpMoves, après faoRoundMoves
      (les arrondis d'angle sont créés après le clip : leurs arcs peuvent
      dépasser la frontière — ils sont alors aplatis puis recoupés) ;
-   · `faoSegClipper` — filet de sécurité à l'AFFICHAGE, sur les seuls segments
+   · `faoSegClipper`  — filet de sécurité à l'AFFICHAGE, sur les seuls segments
      de coupe (un aperçu ne montre donc jamais de coupe hors zone, même avec
      un tracé en cache ancien). */
-function faoZoneCuts(moves,op,job,secu){
-  // Vérifie que la coupe est bien entière dans la zone ; si un seul point
-  // déborde (extrémité, croisement, arc d'arrondi), répare : arcs -> polygone,
-  // puis re-clip des SEULS segments de coupe (les rapides passent tels quels).
+function faoZoneCtx(op,job){
+  // -> {lim, D, chain, R?, at(x,y), cross(a,b)} pour l'opération, ou null
+  //    (pas de zone exploitable : la règle ne s'applique pas à cette op).
   const lim=op&&op.limit;
-  if(!lim||!moves||!moves.length)return moves;
+  if(!lim)return null;
   const tool=faoToolById(job,op&&op.toolId);
   const D=(tool&&+tool.d>0)?+tool.d:10;
-  const chain=(lim.mode==='chain'&&lim.loop&&lim.loop.length>=3);
-  let R=null, at=null;
-  if(chain){
-    at=function(x,y){ return faoLimInside(x,y,lim,D/2); };
-  }else if(lim.mode==='rect'){
-    R=faoEffLimit(op,D);
-    if(!R)return moves;
-    at=function(x,y){ return x>=R.x0&&x<=R.x1&&y>=R.y0&&y<=R.y1; };
-  }else return moves;
+  if(lim.mode==='chain'&&lim.loop&&lim.loop.length>=3){
+    const loop=lim.loop, r=D/2;
+    return {lim:lim,D:D,chain:true,
+      at:function(x,y){ return faoLimInside(x,y,lim,r); },
+      cross:function(a,b){ return faoPolyCross(a.x,a.y,b.x,b.y,loop); }};
+  }
+  if(lim.mode==='rect'){
+    const R=faoEffLimit(op,D);
+    if(!R)return null;
+    return {lim:lim,D:D,chain:false,R:R,
+      at:function(x,y){ return x>=R.x0&&x<=R.x1&&y>=R.y0&&y<=R.y1; },
+      cross:function(a,b){
+        const s=faoClipLB({x:a.x,y:a.y},{x:b.x,y:b.y},R);
+        return !s||s[0]>1e-9||s[1]<1-1e-9; }};
+  }
+  return null;
+}
+function faoZoneSecu(op,job){
+  // Plan de dégagement ABSOLU de l'opération (dessus du brut + marge sécurité).
+  const top=(job&&job.stock&&isFinite(+job.stock.z1))?+job.stock.z1:
+    (op&&isFinite(+op.z))?+op.z:(op&&isFinite(+op.ztop))?+op.ztop:0;
+  return top+((job&&isFinite(+job.secu))?+job.secu:5);
+}
+function faoZoneStrip(moves,ctx,secu){
+  // Retire les SÉRIES de rapides hors zone : la coupe a déjà été clipée avant,
+  // ces G0 ne font que se rendre « dans le vide » (tour du cadre de validation,
+  // liaison au ras du brut, plongée déportée hors mur). Ils ne sont gardés que
+  // s'ils ouvrent l'opération (engagement, retour d'outil) ou si la jonction
+  // directe prev->next traverserait elle la frontière : on ne fabrique JAMAIS
+  // un franchissement nouveau. Rend le MÊME tableau si rien ne sort.
+  if(!ctx||!moves||!moves.length)return moves;
+  const at=ctx.at;
+  const runs=[]; let k=0;
+  while(k<moves.length){
+    const m=moves[k];
+    if(m.r&&!at(m.x,m.y)){
+      let j=k;
+      while(j<moves.length&&moves[j].r&&!at(moves[j].x,moves[j].y))j++;
+      runs.push([k,j-1]); k=j;
+    }else k++;
+  }
+  if(!runs.length)return moves;
+  const drop=runs.map(function(r){
+    const a=r[0], b=r[1];
+    const prev=a>0?moves[a-1]:null, next=b+1<moves.length?moves[b+1]:null;
+    if(!prev)return false;                       // tête d'op : engagement
+    if(next&&ctx.cross(prev,next))return false;  // franchissement nécessaire
+    return true;
+  });
+  if(!drop.some(function(d){ return d; }))return moves;
+  const out=[]; let u=0;
+  for(let i=0;i<moves.length;i++){
+    if(u<runs.length&&i===runs[u][0]){
+      const a=runs[u][0], b=runs[u][1];
+      const prev=a>0?moves[a-1]:null, next=b+1<moves.length?moves[b+1]:null;
+      u++;
+      if(!drop[u-1]){ for(let t=a;t<=b;t++)out.push(moves[t]); i=b; continue; }
+      // jonction : jamais de G0 à z de coupe (retrait puis liaison en sécurité)
+      if(prev&&prev.r===0)out.push({r:1,x:prev.x,y:prev.y,z:secu});
+      if(next&&next.r===0)out.push({r:1,x:next.x,y:next.y,z:secu});
+      i=b; continue;
+    }
+    out.push(moves[i]);
+  }
+  return out;
+}
+function faoZoneServe(ch,op,job,secu){
+  // Lecture d'un tracé en cache : la purge des excursions est appliquée UNE fois
+  // puis rangée dans l'entrée mémoire — pas de rejeu, clé de cache inchangée.
+  if(!ch||!Array.isArray(ch.mv))return ch?ch.mv:null;
+  const ctx=faoZoneCtx(op,job);
+  if(!ctx)return ch.mv;
+  const mv=faoZoneStrip(ch.mv,ctx,secu);
+  if(mv!==ch.mv)ch.mv=mv;
+  return ch.mv;
+}
+function faoZoneCuts(moves,op,job,secu){
+  // 0) purge des excursions de G0 (le diagnostic verrait un rapide dehors comme
+  //    un débordement de coupe) ; 1) la coupe est-elle entière dans la zone ?
+  //    Si un seul point déborde (extrémité, croisement, arc d'arrondi) :
+  //    2) réparation — arcs -> polygone, puis re-clip des SEULS segments de
+  //    coupe (les rapides restent ce qu'ils sont, hors les séries retirées).
+  const ctx=faoZoneCtx(op,job);
+  if(!ctx||!moves||!moves.length)return moves;
+  const at=ctx.at;
   const depasse=function(a,b,m){
     // Extrémité de coupe hors zone, ou segment/arc qui traverse la frontière.
     if(!at(m.x,m.y))return true;
@@ -1197,24 +1276,23 @@ function faoZoneCuts(moves,op,job,secu){
       for(let k=0;k<pts.length;k++)if(!at(pts[k][0],pts[k][1]))return true;
       return false;
     }
-    if(chain)return faoPolyCross(a.x,a.y,m.x,m.y,lim.loop);
-    const s=faoClipLB({x:a.x,y:a.y},{x:m.x,y:m.y},R);
-    return !s||s[0]>1e-9||s[1]<1-1e-9;
+    return ctx.cross(a,b);
   };
+  const m0=faoZoneStrip(moves,ctx,secu);
   // --- 1) diagnostic : la coupe est-elle entièrement dedans ?
   let prev=null, bust=false;
-  for(let i=0;i<moves.length&&!bust;i++){
-    const m=moves[i];
+  for(let i=0;i<m0.length&&!bust;i++){
+    const m=m0[i];
     if(m.r){ prev=m; continue; }   // rapides : le droit de traverser
     if(prev&&depasse(prev,m,m))bust=true;
     if(!prev&&!at(m.x,m.y))bust=true;
     prev=m;
   }
-  if(!bust)return moves;       // RAS : on ne touche à rien
+  if(!bust)return m0;          // RAS : on ne touche à rien d'autre
   // --- 2) réparation
   const flat=[]; prev=null;
-  for(let i=0;i<moves.length;i++){
-    const m=moves[i];
+  for(let i=0;i<m0.length;i++){
+    const m=m0[i];
     if(m.r){ flat.push(m); prev=m; continue; }
     if(m.arc&&prev){
       const pts=faoArcSegs(prev,m); let ok=at(m.x,m.y);
@@ -1226,11 +1304,13 @@ function faoZoneCuts(moves,op,job,secu){
     }
     flat.push(m); prev=m;
   }
-  return chain?faoClipMovesPoly(flat,lim,D/2,secu,2):faoClipMovesXY(flat,R,secu);
+  const cut=ctx.chain?faoClipMovesPoly(flat,ctx.lim,ctx.D/2,secu,2)
+                     :faoClipMovesXY(flat,ctx.R,secu);
+  return faoZoneStrip(cut,ctx,secu);
 }
 /* ----- affichage : la COUPE ne sort jamais de la zone (l'aperçu le garantit)
-   même sur un tracé en cache. Les rapides, eux, sont dessinés tels quels :
-   ils peuvent traverser la zone (retour outil, liaison). */
+   même sur un tracé en cache. Les rapides, eux, sont dessinés tels quels —
+   engagés en tête d'opération ou franchissements de la séquence. */
 function faoPolyCross(ax,ay,bx,by,loop){
   const dx=bx-ax, dy=by-ay;
   for(let i=0,j=loop.length-1;i<loop.length;j=i++){
@@ -1814,8 +1894,9 @@ function faoOpMovesTry(op,job){
     const ck=faoOpMovesKey(op,job);
     if(ck===null)return null;
     const ch=faoOpMovesHit(op);
-    if(ch&&ch.key===ck)return ch.mv;
-    if(ch&&op&&op.stale===true)return ch.mv; // perime : on affiche l'ancien trace
+    const secu=faoZoneSecu(op,job);
+    if(ch&&ch.key===ck)return faoZoneServe(ch,op,job,secu);
+    if(ch&&op&&op.stale===true)return faoZoneServe(ch,op,job,secu); // perime : on affiche l'ancien trace
     return null;
   }catch(e){ return null; }
 }
@@ -1838,19 +1919,20 @@ function faoOpMoves(op,job){
   // Prime le maillage AVANT la clé : faoSetupFp lit les maillages des corps, il
   // faut qu'ils existent avant de calculer la clé (sinon 'nb' = clé fausse).
   if(op&&(op.type==='rough3d'||op.type==='geofinish')){ try{ faoActiveMesh(job); }catch(e){} }
+  // secu = dégagement RELATIF au-dessus du brut (jamais dans la matière).
+  // Calculé AVANT les retours cache : la purge des excursions hors zone
+  // (faoZoneServe) en a besoin pour rebrancher les jonctions.
+  const secu=faoZoneSecu(op,job);
   const ck=faoOpMovesKey(op,job);
   if(ck!==null){
     const ch=faoOpMovesHit(op);
-    if(ch&&ch.key===ck)return ch.mv;
+    if(ch&&ch.key===ck)return faoZoneServe(ch,op,job,secu);
     // PERIME : on sert l'ancien trace tant que « Generer + apercu » n'a pas ete
     // presse — une modification ne bouge RIEN a l'ecran d'elle-meme.
-    if(ch&&op&&op.stale===true)return ch.mv;
+    if(ch&&op&&op.stale===true)return faoZoneServe(ch,op,job,secu);
   }
   const tool=faoToolById(job,op&&op.toolId);
   const D=isFinite(+tool.d)&&+tool.d>0?+tool.d:10;
-  // secu = dégagement RELATIF au-dessus du brut (jamais dans la matière).
-  const top=(job&&job.stock&&isFinite(+job.stock.z1))?+job.stock.z1:(isFinite(+op.z)?+op.z:(isFinite(+op.ztop)?+op.ztop:0));
-  const secu=top+(isFinite(+((job||{}).secu))?+job.secu:5);
   const sortie=(isFinite(+((job||{}).secu))?+job.secu:5);
   const base={toolD:D, secu:secu, sortie:sortie};
   const RA=faoRA(op||{});

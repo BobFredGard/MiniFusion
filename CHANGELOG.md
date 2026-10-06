@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**173 versions**, de `2026-09-28b` à `2026-10-06-004` — la plus récente en bas,
+**174 versions**, de `2026-09-28b` à `2026-10-06-005` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2977,3 +2977,23 @@ Suppression complète de « Débourrage » (`pocket3d`) : `faoGenPocketRough` et
 Migration : `APP_VER` → `2026-10-06-004`, **`CACHE_VER` inchangé (`2026-10-06-003`)** : ni le contenu des parcours ni leur clé ne change, **aucune régénération à refaire**.
 
 Tests : `test_fao.cjs` — clipper (chaîne/rect/dedans/hors/traversée/z inchangé), **`faoZoneCuts`** (coupe traversante bornée, rapide de traversée intact, parcours sain rendu tel quel, arc sortant aplati puis recoupé, parcours réel coupe+arrondi sans sortie), **`faoSegSplit`** (clipper appelé 2 fois sur 4 segments = coupe seule, rapide hors zone tracé entier), suppression de `pocket3d` (7 assertions) ; `test_fao3d.cjs` (`pocket3d → false`), `test_fao_barre3d.cjs` (6 boutons, `kids.length===7`), `test_fao_helice.cjs` (entrée hélice testée en direct, `helOf` retiré) ; `test_fao_cache_idb.cjs` aligné sur `CACHE_VER` (lignes 45/70) ; badge produit **V0.1.5 → V0.1.2** (choix utilisateur explicite : on garde V0.1.2, `src/96-bandeau-groupes.js` + `tests/test_prodver_badge.cjs`, 11 mentions) ; run complet **67/67** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-06-004.html`.
+
+### `2026-10-06-005`
+
+**La zone est un mur vertical : plus aucun G0 ne part « usiner dans le vide ».**
+
+Capture à l'appui : « Là, tu sors de la limite pour aller usiner dans le vide ! Incompréhensible ! ». Règle retenue, la quatrième fois qu'on l'affine : la zone n'est franchie que pour l'**ENGAGEMENT** (retour d'outil en tête d'opération), la **SORTIE**, le **CHANGEMENT D'OUTIL** ou le **POINT DE REPOS** — les trois dernières raisons étant le fait de la séquence/post, jamais d'une opération isolée.
+
+Diagnostic sur le document réel (tracé en cache du bundle, `op_4`, 48 011 moves) : la coupe était déjà entièrement dedans (47 836 moves, 0 fuite), mais **107 G0 sur 175 sortaient**, répartis en **30 séries** : 29 excursions sans objet (coupe → G0 dehors → plongée au niveau **hors mur** → retour dedans → coupe suivante) et une fin d'opération sur le cadre de validation (±120,5 / ±80,5 = brut + r de l'outil). Toutes partaient de dedans, revenaient dedans, et **chaque jonction directe restait dans la boucle** (0 franchissement nécessaire) : le détour ne servait à rien, il faisait 25 mm en dehors du mur pour rien.
+
+**`faoZoneStrip(moves,ctx,secu)` — supprime les séries de G0 hors zone.** Série = points consécutifs dont l'extrémité est hors mur. Elle n'est retirée que si elle n'ouvre pas l'opération (engagement : en tête, conservé) et si la jonction directe `prev -> next` ne traverserait pas elle la frontière — on ne fabrique **jamais** un franchissement nouveau (cas d'une zone concave : la série est alors conservée). Jonction réparée : retrait sécu sur place quand le move précédent est une coupe, liaison sécu quand le move suivant est une coupe — jamais de G0 à z de coupe. Idempotent : rend le **même tableau** quand rien ne sort.
+
+Trois appels, pour que la règle vaille **aussi sur un ancien cache** : dans `faoZoneCuts` (génération) **avant** le diagnostic — un rapide dehors déclenchait un faux débordement et une réparation inutile — puis après la réparation, et à la **LECTURE** via `faoZoneServe` (`faoOpMoves` + `faoOpMovesTry`) : le tracé en mémoire est purgé une fois puis rangé dans l'entrée, **sans régénération** (`CACHE_VER` inchangé, clés intactes). `faoZoneCtx` factorise le couple `at(x,y)` / `cross(a,b)` (chaîne comme rectangle), `faoZoneSecu` la formule du dégagement.
+
+Validation : simulation du strip sur le tracé **en cache** du bundle — 48 011 → 47 904 moves (30 séries retirées, **0 insertion** : toutes les jonctions étaient déjà des G0 à secu 65), coupe **47 836 → 47 836** (l'usinage ne bouge pas d'un point), **G0 hors zone 107 → 0**. Génération réelle dans le harnais (maillage stub) : 72 909 moves, 52 rapides, **0 hors zone**, et `faoSeqSafe` n'ajoute aucun G0 dehors.
+
+`faoSafeAhead` / `faoSeqSafe` sont inchangés : les translations rapides restent normalisées au plan (160 mm, 0 violation). En revanche le comptage « pts au plan » du document réel passe de >100 à 53 : c'étaient ces excursions qui le gonflaient, ~2 points de plan par G0 dehors — le seuil du test est ramené à >20.
+
+Tests : `test_fao.cjs` **+12 assertions** sur `faoZoneCtx` / `faoZoneStrip` / `faoZoneServe` (contexte construit, sans limite → null, excursion supprimée et plus aucun point dehors, idempotence, jonction coupe→coupe = retrait sécu + liaison sécu, fin d'opération = retrait sécu sur place, engagement en tête conservé, jonction traversante sur un **L** conservée, purge **ET** rangement de l'entrée de cache, purge avant le diagnostic de `faoZoneCuts`) ; `test_fao_securite.cjs` — **nouveau contrôle sur le document réel : 0 G0 hors zone dans l'opération à zone** (les franchissements de la séquence entre deux opérations restent autorisés : ils sont ceux du changement d'outil). Run complet **67/67** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-06-005.html`.
+
+Migration : `APP_VER` → `2026-10-06-005`, **`CACHE_VER` inchangé (`2026-10-06-003`)** : ni la coupe ni la clé ne changent — **aucune régénération à refaire**, le purge se fait à la lecture.
