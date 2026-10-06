@@ -262,7 +262,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-06-003';
+const APP_VER='2026-10-06-002';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -274,7 +274,7 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée.
    `cacheVerOK` accepte en plus les tampons historiques de même moteur. */
-const CACHE_VER='2026-10-06-003';
+const CACHE_VER='2026-10-06-002';
 function cacheVerOK(v){
   if(v===CACHE_VER)return true;
   return v==='2026-10-06-001'; // même moteur, seule l'interface a bougé
@@ -13834,24 +13834,16 @@ function faoMeshFp(mm){
   // Empreinte CONTENUE du maillage d'un corps — identique d'une session a l'autre,
   // contrairement a faoBodyGen (compteur de session, repasse a 0 au F5). Quantification
   // a 0,001 mm : absorbe les ecarts d'arrondi entre deux executions du meme solide.
-  // INDEPENDANTE DE L'ORDRE : deux rejeux du meme solide enumerent les faces autrement
-  // (les positions de reference des filtres derivent de 1e-9 entre deux enregistrements
-  //  -> meme contour, autre ordre de triangles). Hacher la sequence classait les memes
-  // points dans un autre ordre = autre cle = « cache perdu a chaque rafraichissement »
-  // alors que le solide ne bougeait pas d'un cheveu (sonde : empreinte TRIEE identique
-  // sur les deux etats, empreinte sequentielle differente).
   if(!mm||!mm.v||!mm.v.length)return '0';
   if(!faoMovesFpMap){ try{ faoMovesFpMap=new WeakMap(); }catch(e){ faoMovesFpMap=null; } }
   if(faoMovesFpMap){ const e=faoMovesFpMap.get(mm); if(e)return e; }
-  const v=mm.v, t=new Array(v.length);
+  let h=2166136261; const v=mm.v;
   for(let i=0;i<v.length;i++){
-    const p=v[i];
-    t[i]=(Math.round(((p&&+p[0])||0)*1000)|0)+','+(Math.round(((p&&+p[1])||0)*1000)|0)+','+(Math.round(((p&&+p[2])||0)*1000)|0);
+    const p=v[i]; if(!p)continue;
+    h^=(Math.round((+p[0]||0)*1000)|0); h=Math.imul(h,16777619);
+    h^=(Math.round((+p[1]||0)*1000)|0); h=Math.imul(h,16777619);
+    h^=(Math.round((+p[2]||0)*1000)|0); h=Math.imul(h,16777619);
   }
-  t.sort();
-  const s=t.join('|');
-  let h=2166136261;
-  for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); }
   const fp=(h>>>0).toString(36)+'_'+v.length;
   if(faoMovesFpMap){ try{ faoMovesFpMap.set(mm,fp); }catch(e){} }
   return fp;
@@ -20882,7 +20874,7 @@ window.addEventListener('pointerdown',e=>{if(!$('ctxMenu').contains(e.target))hi
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.5';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.4';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);

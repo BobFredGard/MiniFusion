@@ -15,7 +15,7 @@ const vm=require('vm');
     // --- état initial : aperçu valide, export ouvert
     faoPrevStale=false; faoStaleUI();
     A(faoPrevStale===false,'état initial : aperçu valide');
-    A(gen().textContent.indexOf('G')===0,'état initial : bouton « Générer + aperçu »');
+    A(gen().textContent.indexOf('T')===0,'état initial : bouton « Tout régénérer » : '+JSON.stringify(gen().textContent));
     A(exp().disabled===false,'état initial : export ouvert');
 
     // --- toute modification pèrimé l'aperçu
@@ -37,10 +37,10 @@ const vm=require('vm');
     const code=faoPost(job).code;
     A(code&&code.length>500,'faoPost reste disponible même périmé ('+code.length+' car.)');
 
-    // --- « Générer + aperçu » re-valide
+    // --- « Tout régénérer » re-valide
     faoPreviewGenerate();
     A(faoPrevStale===false,'faoPreviewGenerate() : aperçu re-validé');
-    A(gen().textContent.indexOf('G')===0,'bouton redevenu « Générer + aperçu » : '+JSON.stringify(gen().textContent));
+    A(gen().textContent.indexOf('T')===0,'bouton redevenu « Tout régénérer » : '+JSON.stringify(gen().textContent));
     A(exp().disabled===false,'export ré-ouvert');
 
     // --- l'export n'est plus refusé (il ne déclenche plus le message de blocage)

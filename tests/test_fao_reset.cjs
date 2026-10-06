@@ -16,7 +16,7 @@ const vm=require('vm');
     "s1.ops=[faoOpDefaults('facing')];s1.ops[0].z=20;",
     "const s2=faoDefaultSetup();s2.name='AVANT2';s2.ops=[faoOpDefaults('facing')];s2.ops[0].z=18;",
     "doc.fao={setups:[s1,s2],activeSetupId:s1.id};",
-    "faoPrevOn=true;const nPrev=faoRefreshPreview();",
+    "faoPrevOn=true;const nPrev=faoRefreshPreview('calcule');",
     "att(nPrev>0,'depart : traces affichees ('+nPrev+' pts)');",
     "faoVw=null;att(faoViewerStart()===true,'depart : mode lecture usinage ouvert');",
     "faoToolsWindowOpen();att(!!faoToolsWin,'depart : fenetre outils ouverte');",

@@ -1126,6 +1126,21 @@ async function idbGet(k){
     rq.onerror=()=>{try{db.close();}catch(e){}rej(rq.error);};
   });
 }
+async function idbKeys(prefix){
+  // Tous les identifiants du magasin « kv », filtres par prefixe — necessaire
+  // pour embarquer le cache de trajectoires dans un fichier .miniFusion.
+  const db=await idbOpen();
+  return new Promise((res,rej)=>{
+    try{
+      const rq=db.transaction('kv','readonly').objectStore('kv').getAllKeys();
+      rq.onsuccess=()=>{try{db.close();}catch(e){}
+        res((rq.result||[]).filter(function(k){
+          return typeof k==='string'&&(!prefix||k.indexOf(prefix)===0); }));
+      };
+      rq.onerror=()=>{try{db.close();}catch(e){}rej(rq.error);};
+    }catch(e){try{db.close();}catch(e2){}rej(e);}
+  });
+}
 function saveViewCache(){
   // Mémorise le dernier affichage valide (hors ligne = retour instantané au rechargement).
   try{
@@ -1144,7 +1159,7 @@ function saveViewCache(){
         pos:ArrayBuffer.isView(p)?p.slice():p.slice(),nor:n?(ArrayBuffer.isView(n)?n.slice():n.slice()):null});
     }
     if(!items.length)return;
-    idbSet('lastGood',{v:1,ver:APP_VER,at:Date.now(),hash:docHash(),engine:occEngineMsg,exact:builtEngine==='exact',items}).catch(()=>{});
+    idbSet('lastGood',{v:1,ver:CACHE_VER,at:Date.now(),hash:docHash(),engine:occEngineMsg,exact:builtEngine==='exact',items}).catch(()=>{});
   }catch(e){}
 }
 async function restoreViewCache(){
@@ -1153,12 +1168,13 @@ async function restoreViewCache(){
     if(typeof indexedDB==='undefined')return false;
     const c=await idbGet('lastGood');
     if(!c||c.v!==1||!c.items||!c.items.length)return false;
-    // La VALIDITÉ du cache dépend du hash du document ET de la VERSION DU CODE. Sans ce
+    // La VALIDITÉ du cache dépend du hash du document ET de la VERSION DU MOTEUR (CACHE_VER,
+    // pas APP_VER : une évolution d'interface ne produit pas une autre image). Sans ce
     // second critère, un rendu produit par une version buguée est restauré indéfiniment :
     // le document n'a pas bougé, donc le hash colle, et l'affichage reste celui de l'ancien
     // code — même après le correctif. Symptôme exact : « F5 n'affiche rien, il faut cliquer
     // sur Recalculer ». Toute évolution du moteur de géométrie invalide donc le cache.
-    if(c.ver!==APP_VER)return false;
+    if(!cacheVerOK(c.ver))return false;
     if(c.hash!==docHash())return false; // doc différent : recalcul direct
     clearBodies();
     c.items.forEach(it=>{
@@ -1248,20 +1264,118 @@ async function deserialise(json,opts){
   // recalcule que ce qui manque — l'ouverture ne reprend plus les ~90 s du calcul.
   try{ if(typeof faoMovesReset==='function')faoMovesReset(); }catch(e){}
   try{ if(typeof faoMovesPreloadSoon==='function')faoMovesPreloadSoon(); }catch(e){}
+  // ARBRE FAO : doc.fao a CHANGE (ouverture de fichier, restauration du brouillon au
+  // F5) — sans ce rendu, l'arbre FAO gardait celui du document precedent (posage sans
+  // aucune operation, alors que sa fleche reste ▼ : « le posage est la, pas ses ops »).
+  try{ if(typeof faoRefreshFaoUI==='function')faoRefreshFaoUI(); }catch(e){}
 }
-$('btnSave').onclick=async()=>{
-  const data=serialise();
+/* ---------- conteneur .miniFusion : document + cache de trajectoires ----------
+   Demandé : « un fichier dédié qui encapsule le json ET son cache ». Le document
+   tient dans le JSON, mais les parcours de l'ébauche 3D (7,9 Mo, ~90 s de calcul)
+   vivent dans l'IndexedDB de CE navigateur : rouvrir ailleurs, ou après une
+   purge, remet le triangle ⚠. Le bundle embarque ces entrées (faoMoves:*) —
+   rouvrir donne l'état sauvegardé, sans recalcul. Le cache d'IMAGE (lastGood,
+   plusieurs Mo de sommets) reste local : il ne fait que gagner du temps. */
+function bundleIs(txt){
+  // true = fichier .miniFusion ; false = ancien .minifusion.json (lu tel quel).
+  try{ const b=JSON.parse(txt); return !!(b&&b.bundle===1&&b.doc); }
+  catch(e){ return false; }
+}
+async function bundleMoves(){
+  const out={};
+  if(!faoMovesReady())return out;
   try{
-    if(window.showSaveFilePicker&&fileHandle){const w=await fileHandle.createWritable();await w.write(data);await w.close();autosave();alert('Sauvé dans '+fileHandle.name);return;}
+    const ks=await idbKeys('faoMoves:');
+    for(let i=0;i<ks.length;i++){
+      try{ const v=await idbGet(ks[i]); if(v&&v.v===1&&Array.isArray(v.mv))out[ks[i]]=v; }
+      catch(e){}
+    }
   }catch(e){}
-  try{localStorage.setItem('minifusion_auto',data);localStorage.setItem('minifusion_named_'+doc.name,data);dirty=false;refreshParts();alert('Sauvé en local (navigateur) sous « '+doc.name+' ». Utilisez « Sous… » pour un fichier dédié.');}catch(e){alert('Sauvegarde impossible : '+e.message);}
+  return out;
+}
+async function bundleSerialise(){
+  const moves=await bundleMoves();
+  return JSON.stringify({app:'MiniFusion',bundle:1,v:APP_VER,cacheVer:CACHE_VER,
+    at:Date.now(),name:doc.name||'',doc:JSON.parse(serialise()),
+    nMoves:Object.keys(moves).length,moves:moves});
+}
+let faoBundleMovesN=0;   // trajectoires embarquees dans le fichier ouvert
+function bundleReport(){
+  // A l'ouverture d'un .miniFusion : dire ce que le fichier contient RÉELLEMENT.
+  // « 1 opération sans parcours » sans dire laquelle ni pourquoi, c'est ce qui a
+  // fait perdre une heure — le bundle ne transporte que ce que la machine
+  // d'origine avait (tampon de version, clé du solide, entrée jamais produite).
+  try{
+    const job=faoDoc(), has=faoBundleMovesN;
+    const miss=faoActiveOps(job).filter(function(op){
+      const ck=faoOpMovesKey(op,job), ch=faoOpMovesHit(op);
+      return ck!==null&&!(ch&&ch.key===ck);
+    });
+    if(!miss.length)return;
+    if(typeof faceEl==='undefined'||!faceEl)return;
+    const why=faoMovesWhyShort(job,miss[0]);
+    faceEl.textContent='FAO : fichier ouvert — '+miss.length+' opération(s) sans parcours'
+      +(has?(' valide dans les '+has+' trajectoires embarquées')
+            :' (0 trajectoire embarquée : ancien format)')
+      +(why?' — '+why:'')
+      +' — « Tout régénérer » une fois, puis re-enregistrer le fichier.';
+  }catch(e){}
+}
+async function bundleRestore(txt,opts){
+  // Trajectoires d'abord (IndexedDB), document ensuite (deserialise relance la
+  // lecture), puis mémoire amorcée : fonctionne aussi SANS IndexedDB.
+  const b=JSON.parse(txt);
+  if(!b||b.bundle!==1||!b.doc)return false;
+  const moves=b.moves||{};
+  if(opts&&opts.name&&b.doc&&typeof b.doc==='object')b.doc.name=opts.name;
+  const ks=Object.keys(moves);
+  if(ks.length&&faoMovesReady()){
+    for(let i=0;i<ks.length;i++){ try{ await idbSet(ks[i],moves[ks[i]]); }catch(e){} }
+  }
+  faoBundleMovesN=ks.length;
+  faoBundleWantReport=true;   // consomme par faoMovesDone() (fin de lecture)
+  try{ setTimeout(function(){
+        try{ if(faoBundleWantReport&&!faoMovesPending()){ faoBundleWantReport=false; bundleReport(); } }
+        catch(e){} },1500); }catch(e){}
+  await deserialise(JSON.stringify(b.doc),opts);
+  // MÉMOIRE : indispensable SANS IndexedDB (le prechargeur n'y lit rien) et
+  // immédiat AVEC — le premier dessin n'attend aucune relecture asynchrone.
+  let seeded=0;
+  try{
+    const r=faoRoot();
+    (((r&&r.setups)||[])).forEach(function(s){
+      ((s&&s.ops)||[]).forEach(function(op){
+        const e=moves['faoMoves:'+((s&&s.id)||'_')+':'+((op&&op.id)||'_')];
+        if(e&&e.v===1&&e.k&&cacheVerOK(e.ver)&&Array.isArray(e.mv)&&e.k===faoOpMovesKey(op,s)){
+          faoOpMovesStore(op,e.k,e.mv); seeded++;
+        }
+      });
+    });
+  }catch(e){}
+  if(seeded)try{ faoMovesDone(); }catch(e){}   // scan + dessin : AUCUN calcul
+  try{ if(faoBundleWantReport&&!faoMovesReady()){ faoBundleWantReport=false; bundleReport(); } }catch(e){}
+  return true;
+}
+
+$('btnSave').onclick=async()=>{
+  // Fichier dédié = bundle (.miniFusion : document + trajectoires) ; le repli
+  // navigateur garde le JSON compact, seul format qui tient dans localStorage.
+  try{
+    if(window.showSaveFilePicker&&fileHandle){
+      const data=await bundleSerialise();
+      const w=await fileHandle.createWritable();await w.write(data);await w.close();
+      autosave();alert('Sauvé dans '+fileHandle.name+' (document + trajectoires).');return;
+    }
+  }catch(e){}
+  try{const d=serialise();localStorage.setItem('minifusion_auto',d);localStorage.setItem('minifusion_named_'+doc.name,d);dirty=false;refreshParts();alert('Sauvé en local (navigateur) sous « '+doc.name+' ». Utilisez « Sous… » pour un fichier dédié.');}catch(e){alert('Sauvegarde impossible : '+e.message);}
 };
 $('btnSaveAs').onclick=async()=>{
-  const data=serialise();const fname=(doc.name||'piece').replace(/[\\/:*?"<>|]/g,'_')+'.minifusion.json';
+  const fname=(doc.name||'piece').replace(/[\\/:*?"<>|]/g,'_')+'.miniFusion';
+  let data;try{ data=await bundleSerialise(); }catch(err){ data=serialise(); }
   try{
     if(window.showSaveFilePicker){
-      fileHandle=await window.showSaveFilePicker({suggestedName:fname,types:[{description:'MiniFusion',accept:{'application/json':['.json']}}]});
-      const w=await fileHandle.createWritable();await w.write(data);await w.close();autosave();alert('Sauvé sous '+fileHandle.name);return;
+      fileHandle=await window.showSaveFilePicker({suggestedName:fname,types:[{description:'MiniFusion (document + trajectoires)',accept:{'application/json':['.miniFusion']}}]});
+      const w=await fileHandle.createWritable();await w.write(data);await w.close();autosave();alert('Sauvé sous '+fileHandle.name+' (document + trajectoires).');return;
     }
     throw new Error('no picker');
   }catch(e){
@@ -1272,7 +1386,14 @@ $('btnSaveAs').onclick=async()=>{
 $('btnLoad').onclick=()=>$('fileProj').click();
 $('fileProj').addEventListener('change',async e=>{
   const f=e.target.files[0];if(!f)return;
-  try{await deserialise(await f.text());doc.name=f.name.replace(/\.minifusion\.json$|\.json$/,'');rebuild();renderProps();}catch(err){alert('Projet illisible : '+err.message);}
+  try{
+    const txt=await f.text();const nm=f.name.replace(/(\.minifusion(\.json)?|\.json)$/i,'');
+    if(bundleIs(txt))await bundleRestore(txt,{name:nm});          // .miniFusion : doc + trajectoires
+    else{await deserialise(txt);doc.name=nm;rebuild();renderProps();} // ancien .minifusion.json
+  }catch(err){alert('Projet illisible : '+err.message);}
   e.target.value='';
 });
+try{$('fileProj').accept='.json,.minifusion.json,.miniFusion';}catch(e){}
+try{$('btnSaveAs').title='Sauver sous… (.miniFusion : document + trajectoires)';}catch(e){}
+try{$('btnLoad').title='Ouvrir un projet (.miniFusion ou .minifusion.json)';}catch(e){}
 

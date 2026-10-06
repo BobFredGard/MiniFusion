@@ -67,7 +67,7 @@ const CSS={
     "att("+(!NOBT)+",'plus de bouton btnFao dans la coque');",
     // --- 4) panneau : groupes libellés + actions toujours là
     "const texts=[];(function w(n){if(n&&n.textContent)texts.push(n.textContent);if(n&&n.children)n.children.forEach(w);})(faoTreeWrapEl);",
-    "['Posage','Exécution','Export','+ Posage','Outils','▶ Usinage','Générer + aperçu','Exporter G-code'].forEach(function(t){",
+    "['Posage','Exécution','Export','+ Posage','Outils','▶ Usinage','Tout régénérer','Exporter G-code'].forEach(function(t){",
     "  att(texts.indexOf(t)>=0,'panneau : « '+t+' » present');});",
     "const grpN=texts.filter(function(t){return t==='Posage'||t==='Exécution'||t==='Export';}).length;",
     "att(grpN===3,'3 groupes libelles ('+grpN+')');",

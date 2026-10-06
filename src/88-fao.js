@@ -131,7 +131,7 @@ const FAO_VER='32j';
       +'.fao-gen{display:block;width:100%;margin-top:6px;font-size:.74rem;'
       +'background:#0a84ff;border-color:#0a84ff;color:#fff;font-weight:600}'
       /* « calculer puis valider » : l'aperçu/programme est périmé tant qu'on n'a
-         pas relancé « Générer + aperçu » — le bouton le signale et l'export
+         pas relancé « Tout régénérer » — le bouton le signale et l'export
          est bloqué. */
       +'.fao-gen.fao-stale{background:#7a2a12;border-color:#ff453a;color:#ffd7d3;'
       +'animation:faoStalePulse 1.8s ease-in-out infinite}'
@@ -1264,21 +1264,30 @@ function faoOpSig(op){
   }catch(e){ return op; }
   return o;
 }
-let faoMovesFpMap=null; // WeakMap (maillage deja memoise) -> empreinte du contenu
+let faoMovesFpMap=null;
+let faoFpParts=''; // derniere liste hachee par faoSetupFp : id:empreinte_nb par corps // WeakMap (maillage deja memoise) -> empreinte du contenu
 function faoMeshFp(mm){
   // Empreinte CONTENUE du maillage d'un corps — identique d'une session a l'autre,
   // contrairement a faoBodyGen (compteur de session, repasse a 0 au F5). Quantification
   // a 0,001 mm : absorbe les ecarts d'arrondi entre deux executions du meme solide.
+  // INDEPENDANTE DE L'ORDRE : deux rejeux du meme solide enumerent les faces autrement
+  // (les positions de reference des filtres derivent de 1e-9 entre deux enregistrements
+  //  -> meme contour, autre ordre de triangles). Hacher la sequence classait les memes
+  // points dans un autre ordre = autre cle = « cache perdu a chaque rafraichissement »
+  // alors que le solide ne bougeait pas d'un cheveu (sonde : empreinte TRIEE identique
+  // sur les deux etats, empreinte sequentielle differente).
   if(!mm||!mm.v||!mm.v.length)return '0';
   if(!faoMovesFpMap){ try{ faoMovesFpMap=new WeakMap(); }catch(e){ faoMovesFpMap=null; } }
   if(faoMovesFpMap){ const e=faoMovesFpMap.get(mm); if(e)return e; }
-  let h=2166136261; const v=mm.v;
+  const v=mm.v, t=new Array(v.length);
   for(let i=0;i<v.length;i++){
-    const p=v[i]; if(!p)continue;
-    h^=(Math.round((+p[0]||0)*1000)|0); h=Math.imul(h,16777619);
-    h^=(Math.round((+p[1]||0)*1000)|0); h=Math.imul(h,16777619);
-    h^=(Math.round((+p[2]||0)*1000)|0); h=Math.imul(h,16777619);
+    const p=v[i];
+    t[i]=(Math.round(((p&&+p[0])||0)*1000)|0)+','+(Math.round(((p&&+p[1])||0)*1000)|0)+','+(Math.round(((p&&+p[2])||0)*1000)|0);
   }
+  t.sort();
+  const s=t.join('|');
+  let h=2166136261;
+  for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); }
   const fp=(h>>>0).toString(36)+'_'+v.length;
   if(faoMovesFpMap){ try{ faoMovesFpMap.set(mm,fp); }catch(e){} }
   return fp;
@@ -1290,17 +1299,24 @@ function faoSetupFp(job){
   try{
     if(typeof bodies==='undefined'||!bodies||!bodies.length)return 'nb';
     const only=(job&&Array.isArray(job.bodies))?job.bodies:null;
-    const parts=[];
+    const parts=[],diag=[];
     for(let bi=0;bi<bodies.length;bi++){
       const b=bodies[bi];
       if(!b||b.ghost||b.visible===false)continue;
       if(only&&only.indexOf(b.id)<0)continue;
       const mm=faoMeshFromBodyCached(b);
       if(!mm)continue;
-      parts.push(String(b.id)+':'+faoMeshFp(mm));
+      // Le hash porte la GEOMETRIE seule : l'identite du corps n'entre dans aucune
+      // trajectoire (faoActiveMesh fusionne les maillages visibles, sans id). Un id
+      // qui bouge entre deux sessions rendait la cle fausse alors que le solide et
+      // le parcours étaient identiques. L'id reste dans la liste DIAGNOSTIC.
+      const fp=faoMeshFp(mm);
+      parts.push(fp);
+      diag.push(String(b.id)+':'+fp);
     }
-    if(!parts.length)return 'nb';
+    if(!parts.length){ faoFpParts=''; return 'nb'; }
     const str=parts.join('|');
+    faoFpParts=diag.join('|');
     let h=2166136261;
     for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619);}
     return (h>>>0).toString(36)+'_'+parts.length;
@@ -1308,6 +1324,11 @@ function faoSetupFp(job){
 }
 function faoOpMovesKey(op,job){
   try{
+    // Normalisation AVANT hachage : faoRoot() le fait a chaque acces, mais une
+    // cle calculee hors de cette voie (migration, appel direct) voyait un op
+    // SANS minipasses/laisse puis un op AVEC -> « cle differente » a chaque
+    // ouverture alors que RIEN n'avait bouge. Idempotent : aucun effet de bord.
+    if(job&&Array.isArray(job.ops))faoSanitiseOps(job);
     const js={};
     for(const k in job){
       if(!Object.prototype.hasOwnProperty.call(job,k)||k==='ops'||k==='open')continue;
@@ -1334,7 +1355,15 @@ function faoOpMovesKey(op,job){
       });
     }
     let body='0'; // hors ebauche 3D/geofinition : aucun dependence au solide
-    if(op&&(op.type==='rough3d'||op.type==='geofinish'))body=faoSetupFp(job);
+    if(op&&(op.type==='rough3d'||op.type==='geofinish')){
+      const fp=faoSetupFp(job);
+      // Solide pas encore construit ('nb') ou ilegitime ('x') : AUCUNE cle possible.
+      // Une clé « nb|… » ne pouvait matcher aucune entrée (la lecture l'écartait déjà)
+      // mais elle rendait st true -> triangle rouge pose DES l'ouverture, avant meme
+      // que le solide existe — et il ne retombait jamais.
+      if(fp==='nb'||fp==='x')return null;
+      body=fp;
+    }
     return body+'|'+JSON.stringify([faoOpSig(op),js,dep]);
   }catch(e){ return null; } // non sérialisable -> pas de cache (toujours juste)
 }
@@ -1358,9 +1387,136 @@ function faoMeshFromBodyCached(b){
    L'entree n'est servie que si sa cle est EXACTEMENT celle du moment present et si
    la VERSION DU CODE est la meme : sinon on recalcule, comme avant. */
 let faoMovesWritten=null; // Set idbKey|cle -> deja ecrit dans cette session
+let faoMovesWhy=null;     // Map idbKey -> {why:'absente'|'format'|'version'|'cle',...}
+let faoBundleWantReport=false; // un .miniFusion vient d'etre ouvert : dire ce qu'il contient
+function faoKeyDiff(a,b){
+  // Deux cles de parcours differentes : POURQUOI ? « cle differente » ne disait
+  // rien (solide ? outil ? parametres ?) et la moitie du diagnostic restait a
+  // faire a la main. Compare d'abord l'empreinte du solide, puis chaque
+  // composante du JSON : le motif remonte mot pour mot dans l'infobulle du ⚠.
+  try{
+    if(a===b)return '';
+    const pa=String(a==null?'':a).split('|'), pb=String(b==null?'':b).split('|');
+    const fa=pa.shift(), fb=pb.shift();
+    if(fa!==fb)return 'empreinte du SOLIDE differente ('+(fa||'vide')+' -> '+(fb||'vide')+')';
+    let ja=null,jb=null;
+    try{ ja=JSON.parse(pa.join('|')); }catch(e){}
+    try{ jb=JSON.parse(pb.join('|')); }catch(e){}
+    if(!Array.isArray(ja)||!Array.isArray(jb))return 'cle differente';
+    const d=[];
+    const one=function(x,y,lab){
+      if(JSON.stringify(x)===JSON.stringify(y))return;
+      if(!x||!y||typeof x!=='object'||typeof y!=='object'){ d.push(lab); return; }
+      const ks={};
+      Object.keys(x).forEach(function(k){ks[k]=1;});
+      Object.keys(y).forEach(function(k){ks[k]=1;});
+      Object.keys(ks).forEach(function(k){
+        let sx='',sy='';
+        try{ sx=JSON.stringify(x[k]); }catch(e){ sx='?'; }
+        try{ sy=JSON.stringify(y[k]); }catch(e){ sy='?'; }
+        if(sx!==sy)d.push(lab+k);
+      });
+    };
+    one(ja[0],jb[0],'operation.');
+    one(ja[1],jb[1],'posage.');
+    one(ja[2],jb[2],'dependance.');
+    if(!d.length)return 'cle differente';
+    return d.slice(0,6).join(', ')+(d.length>6?' …':'');
+  }catch(e){ return 'cle differente'; }
+}
+function faoPartsDiff(a,b){
+  // Compare la liste des corps haches, corps par corps : « empreinte du solide
+  // differente » ne disait pas SIQUEL corps ni SI c'etaient les memes sommets.
+  // meme nombre de sommets + autre hash => les coordonnees ont bouge (matrixWorld,
+  // rejeu, jitter OCCT) ; nombre different => le maillage lui-meme a change.
+  try{
+    if(!a||!b)return '';
+    const M=function(s){
+      const m={};
+      String(s).split('|').forEach(function(p){
+        const i=p.indexOf(':'); if(i<0)return;
+        const id=p.slice(0,i), fp=p.slice(i+1), j=fp.lastIndexOf('_');
+        m[id]={fp:fp,n:j<0?0:+fp.slice(j+1)};
+      });
+      return m;
+    };
+    const X=M(a), Y=M(b), d=[];
+    for(const id in X){
+      if(!(id in Y)){ d.push('corps '+id+' disparu'); continue; }
+      if(X[id].fp===Y[id].fp)continue;
+      if(X[id].n&&Y[id].n&&X[id].n!==Y[id].n)
+        d.push('corps '+id+' : '+X[id].n+' -> '+Y[id].n+' sommets');
+      else
+        d.push('corps '+id+' : memes sommets, coordonnees differentes ('
+          +X[id].fp.split('_')[0]+' -> '+Y[id].fp.split('_')[0]+')');
+    }
+    for(const id in Y){ if(!(id in X))d.push('corps '+id+' apparue'); }
+    if(!d.length)return '';
+    return d.slice(0,3).join(' ; ')+(d.length>3?' …':'');
+  }catch(e){ return ''; }
+}
+function faoMovesWhySet(k,why,info){
+  // Pourquoi une entree du cache a-t-elle ete REJETEE a la lecture ? Sans cela,
+  // « 1 operation sans parcours en memoire » ne dit jamais si la trace n'existe
+  // pas, si elle vient d'un ancien moteur, ou si sa cle (donc le SOLIDE) a bouge.
+  try{
+    if(!k)return;
+    if(!faoMovesWhy)faoMovesWhy=new Map();
+    if(!why){ faoMovesWhy.delete(k); return; }
+    const e={why:why};
+    if(info)for(const kk in info)e[kk]=info[kk];
+    faoMovesWhy.set(k,e);
+  }catch(e){}
+}
+function faoMovesWhyGet(job,op){
+  try{ return (faoMovesWhy&&faoMovesWhy.get(faoMovesIdbKey(job,op)))||null; }
+  catch(e){ return null; }
+}
+function faoMovesWhyShort(job,op){
+  // Forme COURTE, pour la barre d'etat (le detail complet est dans l'infobulle du ⚠).
+  const w=faoMovesWhyGet(job,op);
+  if(!w)return '';
+  if(w.why==='version')return 'trace ecrite par un ancien moteur ('+w.ver+')';
+  if(w.why==='cle')return w.d||'cle differente : outil / parametres / SOLIDE modifies';
+  if(w.why==='absente')return 'jamais generate ici (ou cache purge)';
+  if(w.why==='format')return 'entree de cache illisible';
+  return '';
+}
 let faoMovesPreloading=false, faoMovesPreloaded=false;
+// Reessais : a l'ouverture le solide n'existe pas encore (restoreViewCache +
+// rejeu exact). Sans reprise automatique, la lecture s'arretait sur « nb » et le
+// premier clic recyclait tout le calcul (90 s) alors que rien n'etait perime.
+let faoMovesRetry=0, faoMovesRetryT=null;
 function faoMovesIdbKey(job,op){
   return 'faoMoves:'+((job&&job.id)||'_')+':'+((op&&op.id)||'_');
+}
+function faoSolidSettled(){
+  // Le corps affiche vient-il du REJEU exact, ou du REPLI D'IMAGE ?
+  // restoreViewCache() remet des corps « cached » SANS shape : la FAO lit alors le
+  // maillage d'affichage (l'interception « corps blindés » exige b.shape). Le rejeu
+  // exact remplace ensuite ces corps par des corps kind:'body' AVEC shape ->
+  // AUTRE source, AUTRE empreinte. Generer pendant cette fenetre ecrivait une entree
+  // maudite : valable 3 secondes, rouge des l'ouverture suivante — cas exact de
+  // « l'Ébauche 3D perd son cache a chaque refresh ».
+  // Tant que c'est faux : on ne lit pas, on n'ecrit pas, on ne genere pas.
+  try{
+    if(typeof bodies==='undefined'||!bodies||!bodies.length)return true;
+    for(let i=0;i<bodies.length;i++){
+      const b=bodies[i];
+      if(!b||b.ghost||b.visible===false)continue;
+      if(b.cached===true&&!b.shape)return false;
+    }
+    return true;
+  }catch(e){ return true; }
+}
+let faoRegenWhenSettled=false; // « Tout régénérer » pressé pendant le rejeu
+function faoRegenFlush(){
+  try{
+    if(!faoRegenWhenSettled)return;
+    if(!faoSolidSettled())return;
+    faoRegenWhenSettled=false;
+    faoPreviewGenerate();
+  }catch(e){}
 }
 function faoMovesReady(){
   // Hors navigateur (harnais de tests) ou IDB indisponible : simplemente desactive.
@@ -1371,28 +1527,94 @@ function faoMovesReady(){
 function faoMovesReset(){
   // Nouveau document : l'ecriture doit repartir, et la lecture differeree aussi.
   try{ if(faoMovesWritten&&faoMovesWritten.clear)faoMovesWritten.clear(); }catch(e){}
+  try{ if(faoMovesWhy&&faoMovesWhy.clear)faoMovesWhy.clear(); }catch(e){}
+  try{ if(faoMovesRetryT){ clearTimeout(faoMovesRetryT); faoMovesRetryT=null; } }catch(e){}
+  faoMovesPreloading=false;
   faoMovesPreloaded=false;
+  faoMovesRetry=0;
+  faoMovesFpSeen=null; // aucun solide lu pour ce document : la prochaine lecture compte
+}
+function faoMovesEngSig(job){
+  // Ce qui NE se voit pas dans la cle mais change l'empreinte du solide : le
+  // moteur (exact vs repli maillage), l'identite et le TYPE des corps visibles
+  // (kind:'body' -> geometrie d'outillage occXDefl, sinon maillage d'affichage).
+  // Rangee dans l'entree, elle permet de dire « le solide a change de source »
+  // plutot que « cle differente » quand c'est exactement le cas.
+  try{
+    if(typeof bodies==='undefined'||!bodies)return '';
+    const only=(job&&Array.isArray(job.bodies))?job.bodies:null;
+    const L=[];
+    for(let i=0;i<bodies.length;i++){
+      const b=bodies[i];
+      if(!b||b.ghost||b.visible===false)continue;
+      if(only&&only.indexOf(b.id)<0)continue;
+      L.push(b.id+'#'+(b.kind||'?')+(b._faoGeo?'*':''));
+    }
+    return (typeof builtEngine==='string'?builtEngine:'?')+'|'+L.join(',');
+  }catch(e){ return ''; }
 }
 function faoMovesSave(job,op,key,mv){
   // Ecriture ASYNCHRONE et sans effet de bord : une panne d'IndexedDB ne bloque
   // ni l'apercu ni l'export (on recalcule simplement, comme aujourd'hui).
   try{
     if(!faoMovesReady()||!key||!mv)return;
+    if(!faoSolidSettled())return; // clé calculée sur le repli : elle ne vaudra plus
     if(!faoMovesWritten)faoMovesWritten=new Set();
     const k=faoMovesIdbKey(job,op);
     const tag=k+'|'+key;
     if(faoMovesWritten.has(tag))return;
     faoMovesWritten.add(tag);
-    Promise.resolve(idbSet(k,{v:1,ver:APP_VER,k:key,n:mv.length,at:Date.now(),mv:mv}))
+    Promise.resolve(idbSet(k,{v:1,ver:CACHE_VER,k:key,n:mv.length,at:Date.now(),
+      e:faoMovesEngSig(job),p:faoFpParts,mv:mv}))
       .catch(function(){});
   }catch(e){}
+}
+/* ----- le solide bouge : les CLES de l'ebauche 3D bougent avec lui -----
+   Seules les operations rough3d/geofinish embarquent faoSetupFp dans leur cle —
+   d'ou « le Surfaçage passe toujours, l'Ébauche 3D jamais ». Au F5 la premiere
+   lecture se fait sur le REPLI MAILLAGE (le noyau OCCT exact n'a pas encore boote) :
+   autre empreinte, entree rejetee, triangle rouge. Quand le solide exact arrive,
+   il faut RELIRE — sans quoi la lecture, deja « prete », ne regardait plus rien. */
+let faoMovesFpSeen=null; // {posageId: faoSetupFp} du solide utilise a la derniere lecture
+function faoMovesSolidFp(){
+  // Empreinte des solides qui entrent dans une CLE de parcours (seuls ces types
+  // dependent du maillage : le Surfaçage, lui, ne voit jamais bouger sa clé).
+  const o={};
+  try{
+    const r=faoRoot();
+    ((r&&r.setups)||[]).forEach(function(s){
+      if(!s)return;
+      const ops=s.ops||[];
+      for(let i=0;i<ops.length;i++){
+        const t=ops[i]&&ops[i].type;
+        if(t==='rough3d'||t==='geofinish'){ o[s.id]=faoSetupFp(s); return; }
+      }
+    });
+  }catch(e){}
+  return o;
+}
+function faoMovesFpDiffers(snap){
+  try{
+    const cur=faoMovesSolidFp();
+    for(const id in cur){ if(!snap||snap[id]!==cur[id])return true; }
+    for(const id in snap){ if(!(id in cur))return true; }
+  }catch(e){}
+  return false;
+}
+function faoMovesSolidChanged(){
+  // Depuis la derniere lecture, le solide a change (repli maillage -> OCCT exact,
+  // import, edition du parametrique) : les cles de l'ebauche 3D ne valent plus.
+  try{ if(!faoMovesReady())return false; return faoMovesFpDiffers(faoMovesFpSeen); }
+  catch(e){ return false; }
 }
 async function faoMovesPreload(){
   // Rechauffe le cache MEMOIRE depuis IndexedDB : les parcours deja calcules par la
   // meme version sont SERVIS, pas recalcules. Renvoie le nombre d'operations restaurees.
   let n=0, pending=false;
+  const snap=faoMovesSolidFp(); // solide tel qu'il est QUAND ON COMMENCE a lire
   try{
     if(!faoMovesReady())return 0;
+    if(!faoSolidSettled())return 0; // rejeu en cours : on relira quand le solide sera la
     const r=faoRoot(); const setups=(r&&r.setups)||[];
     for(let si=0;si<setups.length;si++){
       const s=setups[si]; if(!s)continue;
@@ -1405,26 +1627,163 @@ async function faoMovesPreload(){
           if(faoSetupFp(s)==='nb'){ pending=true; continue; }
         }
         const ck=faoOpMovesKey(op,s); if(!ck)continue;
-        const ch=faoOpMovesHit(op); if(ch&&ch.key===ck)continue; // deja en memoire
+        const curParts=faoFpParts; // figee tout de suite : l'await plus bas cede le fil
+        const idk=faoMovesIdbKey(s,op);
+        const ch=faoOpMovesHit(op);
+        if(ch&&ch.key===ck){ faoMovesWhySet(idk,null); continue; } // deja en memoire
         let val=null;
-        try{ val=await idbGet(faoMovesIdbKey(s,op)); }catch(e){ val=null; }
-        if(!val||val.v!==1||val.ver!==APP_VER||val.k!==ck||!Array.isArray(val.mv))continue;
+        try{ val=await idbGet(idk); }catch(e){ val=null; }
+        if(!val){ faoMovesWhySet(idk,'absente'); continue; }
+        const nb=(val.n||(val.mv&&val.mv.length)||0);
+        if(val.v!==1){ faoMovesWhySet(idk,'format',{ver:val.ver}); continue; }
+        if(!cacheVerOK(val.ver)){ faoMovesWhySet(idk,'version',{ver:val.ver,n:nb}); continue; }
+        if(!Array.isArray(val.mv)){ faoMovesWhySet(idk,'format',{ver:val.ver,n:nb}); continue; }
+        if(val.k!==ck){
+          const eng=faoMovesEngSig(s);
+          let d=faoKeyDiff(val.k,ck);
+          const per=val.p?faoPartsDiff(val.p,curParts):'';
+          if(per)d=per+' ; '+d;
+          if(val.e&&eng&&val.e!==eng)d='source du solide changee ('
+            +val.e+' -> '+eng+') ; '+d;
+          d+=' | corps actuels : '+(curParts||'?')+' ; ecrits : '+(val.p||'sans detail');
+          faoMovesWhySet(idk,'cle',{ver:val.ver,k:val.k,n:nb,e:val.e,d:d}); continue; }
+        faoMovesWhySet(idk,null);
         faoOpMovesStore(op,ck,val.mv); n++;
       }
     }
-    if(!pending)faoMovesPreloaded=true;
+    if(!pending){
+      faoMovesFpSeen=snap;
+      faoMovesPreloaded=true; faoMovesRetry=0; faoMovesDone();
+      // Le solide a bouge PENDANT la lecture : les cles utilisees ne valent plus —
+      // on relit une fois (plutot que de laisser un triangle rouge injustifie).
+      try{
+        if(faoMovesFpDiffers(snap))
+          setTimeout(function(){ try{ faoMovesPreloadSoon(true); }catch(e){} },0);
+      }catch(e){}
+    }
   }catch(e){}
   return n;
 }
-function faoMovesPreloadSoon(){
-  // Declencheur foin-et-oubli (l'init, l'ouverture de document) : une seule course
-  // a la fois, et on reessaie tant que le solide n'a pas ete construit.
+function faoMovesPending(){
+  // Lecture IndexedDB en cours : un AFFICHAGE (nb de points, temps, stats) ne doit
+  // JAMAIS servir de pretexte a un calcul — on attend, on n'invente pas.
+  try{ return !!(faoMovesReady()&&!faoMovesPreloaded); }catch(e){ return false; }
+}
+function faoActiveOps(job){
+  // Operations qui comptent : desactivees (on=false) exclues, partout
+  // (apercu, stats, validation) — un lanceur desactive n'a pas de parcours a servir.
+  return ((job&&job.ops)||[]).filter(function(o){return o&&o.on!==false;});
+}
+function faoMovesAllReady(job){
+  // Vrai seulement si CHAQUE operation active a sa trace EN MEMOIRE avec sa cle
+  // exacte (outil + parametres + brut + maillage) : l'apercu peut alors etre dessine
+  // et VALIDE sans le moindre calcul. 0 operation = rien a valider (faux).
   try{
-    if(faoMovesPreloading||faoMovesPreloaded||!faoMovesReady())return;
+    const ops=faoActiveOps(job);
+    if(!ops.length)return false;
+    for(let i=0;i<ops.length;i++){
+      const o=ops[i];
+      if(o.type==='rough3d'||o.type==='geofinish'){ try{ faoActiveMesh(job); }catch(e){} }
+      const ck=faoOpMovesKey(o,job);
+      if(ck===null)return false;              // solide pas encore construit
+      const ch=faoOpMovesHit(o);
+      if(!(ch&&ch.key===ck))return false;
+    }
+    return true;
+  }catch(e){ return false; }
+}
+function faoMovesDone(){
+  // Fin de lecture : 1) ACCES IMMEDIAT — si CHAQUE parcours est deja en memoire
+  // (ouverture d'un fichier bien genere), on DESSINE tout de suite et l'apercu est
+  // VALIDE : le bouton passe au vert sans rien presser et l'export s'ouvre. Aucun
+  // calcul : le cache est lu, jamais recalcule. 2) Les modifications arrivees
+  // PENDANT l'attente sont tranchees ici (l'oeil « Masquer » n'en est pas une).
+  try{
+    const w=faoPrevWanted; faoPrevWanted=false;
+    const job=faoDoc();
+    const nops=faoActiveOps(job).length;
+    if(!w){
+      if(nops)try{ faoStaleScan(); }catch(e){}  // qui est servi par la memoire ?
+      const pret=nops?faoMovesAllReady(job):true;
+      // On DESSINE des le premier dessin disponible, meme partiel : à l'ouverture
+      // les traces presents doivent apparaitre tout de suite, sinon chaque ligne
+      // dit « Masquer » alors que RIEN n'est affiche. Les absentes sont comptees
+      // (faoPrevMissing) et l'apercu reste non valide tant qu'une seule manque.
+      if(nops&&faoPrevOn)try{ faoRefreshPreview(); }catch(e){}
+      faoPrevStale=!pret;                      // 0 operation : rien a valider
+      try{ faoStaleUI(); }catch(e){}
+    }else if(w==='full'){
+      try{ faoStaleScan(); }catch(e){}
+      try{ faoRefreshPreview(); }catch(e){}
+      faoPrevStale=true;                       // une modif a eu lieu pendant l'attente
+      try{ faoStaleUI(); }catch(e){}
+    }else if(w==='lecture'){
+      try{ faoRefreshPreview(true); }catch(e){}
+    }
+    if(faoBundleWantReport&&faoMovesReady()&&!faoMovesPending()){
+      faoBundleWantReport=false;
+      try{ if(typeof bundleReport==='function')bundleReport(); }catch(e){}
+    }
+    try{ faoRegenFlush(); }catch(e){}
+    const a=(typeof document!=='undefined'&&document)?document.activeElement:null;
+    if(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.isContentEditable))return;
+    if(typeof sel==='undefined'||!sel||!(sel.kind==='faoOp'||sel.kind==='faoSetup'))return;
+    if(typeof renderProps==='function')renderProps();
+    if(typeof faoRefreshFaoUI==='function')faoRefreshFaoUI();
+  }catch(e){}
+}
+function faoMovesPreloadSoon(force){
+  // Declencheur foin-et-oubli (l'init, l'ouverture de document) : une seule course
+  // a la fois, et on RESSAIE toutes les 400 ms tant que le solide n'existe pas —
+  // sans quoi la lecture s'arretait sur « nb » et le 1er clic recalculait tout.
+  // force = le solide vient d'etre construit : repartir meme si on avait abandonne.
+  try{
+    if(!faoMovesReady())return;
+    if(force){ try{ if(faoMovesRetryT){ clearTimeout(faoMovesRetryT); faoMovesRetryT=null; } }catch(e){}
+      faoMovesPreloading=false; faoMovesPreloaded=false; faoMovesRetry=0; }
+    if(faoMovesPreloading||faoMovesPreloaded)return;
+    if(faoMovesRetryT)return; // une reprise est deja programmee
     faoMovesPreloading=true;
-    Promise.resolve(faoMovesPreload()).then(function(){ faoMovesPreloading=false; },
-      function(){ faoMovesPreloading=false; });
+    Promise.resolve(faoMovesPreload()).then(function(){
+      faoMovesPreloading=false;
+      if(faoMovesPreloaded){ faoMovesRetry=0; return; } // faoMovesDone : fait par le prechargeur
+      // Solide pas encore la : on retente, jusqu'a ce que les maillages arrivent.
+      if(faoMovesRetry<75){ faoMovesRetry++;
+        faoMovesRetryT=setTimeout(function(){
+          try{ faoMovesRetryT=null; }catch(e){}
+          faoMovesPreloadSoon();
+        },400);
+      }else{ faoMovesPreloaded=true; faoMovesRetry=0; faoMovesDone(); } // on n'attend plus
+    }, function(){ faoMovesPreloading=false; });
   }catch(e){ faoMovesPreloading=false; }
+}
+/* ----- lecture SANS calcul : affichage = cache uniquement -----
+   Un affichage (nombre de points, temps, stats, stats du posage) ne doit jamais
+   declencher une regeneration : tant que le cache IndexedDB est en lecture on
+   renvoie « rien » et le panneau affiche « … » — il se remplit tout seul. */
+function faoOpMovesTry(op,job){
+  try{
+    if(op&&(op.type==='rough3d'||op.type==='geofinish')){ try{ faoActiveMesh(job); }catch(e){} }
+    const ck=faoOpMovesKey(op,job);
+    if(ck===null)return null;
+    const ch=faoOpMovesHit(op);
+    if(ch&&ch.key===ck)return ch.mv;
+    if(ch&&op&&op.stale===true)return ch.mv; // perime : on affiche l'ancien trace
+    return null;
+  }catch(e){ return null; }
+}
+function faoMovesStat(op,job){
+  // 1) trace deja en memoire -> tel quel. 2) lecture en cours -> null (« … »).
+  // 3) cache persistant DISPONIBLE mais entree absente -> null : on ne recalcule
+  //    PAS au passage. Cliquer sur le nom d'une operation n'est pas un ordre de
+  //    generation : l'etat le dit (« pas de parcours ») et le bouton ⚠ / « Générer
+  //    + aperçu » produit. 4) aucun cache du tout (IndexedDB absent) : on calcule,
+  //    comme avant — il n'y a rien d'autre pour servir l'affichage.
+  const mv=faoOpMovesTry(op,job);
+  if(mv)return mv;
+  if(faoMovesPending())return null;
+  if(faoMovesReady())return null;
+  return faoOpMoves(op,job);
 }
 
 /* ----- dispatch : une op -> moves (outil de sa fiche + limite rect) ----- */
@@ -1693,14 +2052,20 @@ function faoSafeAhead(prev,m,safe){
   if(m.z<safe-1e-9)ins.push({r:1,x:m.x,y:m.y,z:safe});          // translation au plan
   return ins;
 }
-function faoSeqSafe(job){
-  // Séquence complète du posage [{op,moves}] avec rapids normalisés au plan de
+function faoSeqSafe(job,seule){
+  // Séquence complète du posage [{op,moves}] avec rapides normalisés au plan de
   // sécurité. Source unique partagée par l'aperçu, le visionneuse et le G-code.
+  // seule=true : LECTURE SEULE — un parcours absent de la memoire est IGNORE
+  // (absent:true), jamais calcule : afficher/masquer une trace ne regenerate rien.
   const safe=faoSafeZ(job);
   const res=[]; let prev=null;
   ((job&&job.ops)||[]).forEach(function(op){
     if(!op||op.on===false)return;
-    const mv=faoOpMoves(op,job)||[];
+    let mv=null;
+    if(seule){
+      mv=faoOpMovesTry(op,job);
+      if(mv===null){ res.push({op:op,moves:[],absent:true}); return; }
+    }else mv=faoOpMoves(op,job)||[];
     const out=[];
     for(let i=0;i<mv.length;i++){
       const m=mv[i];
@@ -1939,6 +2304,7 @@ function faoOpLabel(op,job){
 /* ================= prévisualisation 3D (décor, jamais de rejeu) ================= */
 let faoPrevGroup=null, faoPrevOn=true;
 let faoPrevStale=false; // « calculer puis valider » : vrai = aperçu/programme périmé
+let faoPrevWanted=false; // 'full'/'lecture' : travail reporte jusqu'a la fin de la lecture du cache
 let faoGenBtnEl=null;   // refs RÉELLES des boutons (lecture par id ambiguë sous stub)
 let faoExportBtnEl=null;
 function faoClearPreview(){
@@ -1950,10 +2316,17 @@ function faoClearPreview(){
   }catch(e){}
   faoPrevGroup=null;
 }
-function faoRefreshPreview(){
+let faoPrevMissing=0; // ops sans parcours en memoire lors du dernier redraw en LECTURE
+function faoRefreshPreview(mode){
+  // mode='calcule' : SEUL cas ou l'on PRODUIT les parcours absents — réservé à
+  // « Tout régénérer ». Défaut (et mode=true) : LECTURE SEULE — on dessine ce
+  // qui existe déjà en mémoire. Un affichage (ouverture, œil Masquer, repli de
+  // l'arbre, modification, annuler/rétablir) ne doit jamais régénérer : sans
+  // entrée en base, il laisserait simplement un trou (faoPrevMissing).
+  const seule=(mode!=='calcule');
   faoClearPreview();
   if(!faoPrevOn)return 0;
-  const job=faoDoc(); let total=0;
+  const job=faoDoc(); let total=0; faoPrevMissing=0;
   try{
     if(typeof THREE==='undefined'||typeof scene==='undefined'||!scene)return 0;
     faoPrevGroup=new THREE.Group(); faoPrevGroup.name='faoPreview';
@@ -1993,9 +2366,10 @@ function faoRefreshPreview(){
         add(rap,0xff453a,0.3);
       }catch(e){}
     };
-    faoSeqSafe(job).forEach(function(b){
+    faoSeqSafe(job,seule).forEach(function(b){
       const op=b.op;
       if(op&&op.hidden===true)return; // traces masquées dans la vue (op.hidden) — le G-code, lui, les garde
+      if(b.absent){ faoPrevMissing++; return; } // pas de parcours en memoire : on n'invente rien
       const mv=b.moves; total+=mv.length;
       mk(mv);
     });
@@ -2005,25 +2379,25 @@ function faoRefreshPreview(){
   return total;
 }
 function faoPreviewGenerate(){
-  // « Générer + aperçu » = TOUT, à la demande : on purge le cache (chaque opération
-  // est recalculée, même celles à jour), puis on ré-affiche TOUTES les traces —
-  // y compris celles masquées à la main ligne par ligne (op.hidden), remises à zéro.
-  // Le triangle ⚠ d'une ligne, lui, ne régénère QUE son opération.
+  // « Tout régénérer » = TOUT, à la demande : on purge le cache (chaque opération
+  // est recalculée, même celles à jour), puis on ré-affiche TOUTES les traces.
+  // Les traces masquées à la main (op.hidden) le RESTENT : le masquage se fait
+  // ligne par ligne, jamais remis à zéro en cachette. Le triangle ⚠ d'une ligne,
+  // lui, ne régénère QUE son opération.
   faoPrevOn=true;
+  if(!faoSolidSettled()){
+    // Generer maintenant produirait une trajectoire (et une cle) sur le MAILLAGE DE
+    // REPLI : elle serait rejetee des la fin du rejeu. On diffère, on le dit.
+    faoRegenWhenSettled=true;
+    try{ if(typeof faceEl!=='undefined'&&faceEl)faceEl.textContent='FAO : le solide exact n\'est pas encore en place (rejeu en cours) — régénération automatique à la fin du rejeu.'; }catch(e){}
+    return 0;
+  }
   faoOpMovesPurge();
   faoStaleClear();
-  let reset=0;
-  try{
-    const r=faoRoot();
-    const algs=(r.setups||[]).reduce(function(a,s){return a.concat(s.ops||[]);},[]);
-    reset=algs.filter(function(o){return o&&o.hidden===true;}).length;
-    if(reset){ try{ faoSnapshot('ré-afficher les traces masquées'); }catch(e){} } // avant mutation
-    algs.forEach(function(o){ if(o&&o.hidden===true)o.hidden=false; });
-  }catch(e){}
-  const n=faoRefreshPreview();
+  const n=faoRefreshPreview('calcule');
   faoTouch();
   faoPrevStale=false; faoStaleUI();
-  try{ if(typeof faceEl!=='undefined'&&faceEl)faceEl.textContent='FAO : '+n+' points de parcours.'+(n?'':' Aucune trajectoire.')+(reset?(' ('+reset+' opération(s) ré-affichée(s))'):''); }catch(e){}
+  try{ if(typeof faceEl!=='undefined'&&faceEl)faceEl.textContent='FAO : '+n+' points de parcours.'+(n?'':' Aucune trajectoire.'); }catch(e){}
   return n;
 }
 
@@ -2800,6 +3174,33 @@ function faoStaleScan(){
   return n;
 }
 function faoStaleClear(){ faoAllOps().forEach(function(o){ if(o&&o.stale===true)o.stale=false; }); }
+function faoStaleWhy(op,job){
+  // Pourquoi CETTE ligne est-elle marquée ⚠ ? Trois causes tres differentes
+  // (aucune trace / tampon d'ancien moteur / autre cle = le SOLIDE a bouge), et
+  // sans cela l'utilisateur ne peut pas trancher — « 1 operation sans parcours »
+  // ne dit pas SI la trace existe dans le cache.
+  try{
+    if(!faoSolidSettled())return 'Rejeu exact en cours : le corps affiche vient du cache local (sans solide). La lecture et la generation attendent la fin du rejeu — quelques secondes.';
+    if(faoMovesPending())return 'Lecture du cache en cours : la reponse s affiche dans un instant.';
+    const ck=faoOpMovesKey(op,job);
+    if(ck===null)return 'Solide ou maillage indisponible : aucune cle de cache possible pour l instant.';
+    const ch=faoOpMovesHit(op);
+    if(!ch){
+      const w=faoMovesWhyGet(job,op);
+      if(w&&w.why==='version')return 'Trace conservee mais ecrite par une version ANTERIEURE du moteur ('+w.ver+') : a regenerer une fois, puis re-enregistrer.';
+      if(w&&w.why==='cle')return 'Trace conservee sous une AUTRE cle ('+(w.n||0)+' points) : '
+        +(w.d||'outil, parametres ou SOLIDE modifies depuis la generation.')
+        +' Cette operation n a pas pu etre servie telle quelle depuis le cache.'
+        +' Remede : « Tout regenerer » une fois, puis re-enregistrer le fichier'
+        +' — la trace reste ensuite valable tant que le solide ne change pas.';
+      if(w&&w.why==='absente')return 'Aucune trace enregistree pour cette operation (jamais generate ici, ou cache purge).';
+      if(w&&w.why==='format')return 'Entree de cache illisible : a regenerer une fois.';
+      return 'Aucune trace enregistree pour cette operation sur cette machine (jamais generate ici).';
+    }
+    if(ch.key!==ck)return 'Trace en memoire sous une autre cle : '+faoKeyDiff(ch.key,ck)+'.';
+    return '';
+  }catch(e){ return ''; }
+}
 function faoOpMovesPurge(){
   // Purge COMPLETE du cache : la prochaine lecture recalcule CHAQUE operation.
   try{ faoOpMovesMap=new WeakMap(); }catch(e){}
@@ -2822,40 +3223,80 @@ function faoRegenOp(setupId,opId){
   }catch(e){ return 0; }
 }
 function faoStaleUI(){
-  // Reflète faoPrevStale sur le bouton « Générer + aperçu » et sur l'export.
+  // Reflète faoPrevStale sur le bouton « Tout régénérer » et sur l'export.
   try{
     let bg=faoGenBtnEl;
     if(!bg&&(typeof document!=='undefined'&&document))bg=document.getElementById('faoGenBtn');
     if(bg){
       const n=faoStaleCount();
       bg.textContent=faoPrevStale
-        ? (String.fromCharCode(0x26a0)+' Tout régénérer'+(n?' ('+n+')':'')+' + aperçu')
-        : 'Générer + aperçu';
+        ? (String.fromCharCode(0x26a0)+' Tout régénérer'+(n?' ('+n+')':''))
+        : 'Tout régénérer';
       if(bg.classList&&bg.classList.toggle)bg.classList.toggle('fao-stale',!!faoPrevStale);
       bg.title=faoPrevStale
         ? ((n?(n+' opération(s) à régénérer — son triangle ⚠ ne régénère qu’elle. ')
              :'')
-           +'Ce bouton régénère TOUTES les opérations puis ré-affiche les traces.')
+           +'Ce bouton régénère TOUTES les opérations puis ré-affiche les traces'
+           +' (les traces masquées ligne par ligne le RESTENT).')
         : ('Régénère TOUTES les opérations (même celles à jour) puis RÉ-AFFICHE toutes'
-           +' les traces — y compris celles masquées ligne par ligne.');
+           +' les traces — les traces masquées ligne par ligne ne le sont pas :'
+           +' masquez-les à la main, ligne par ligne.');
     }
     let be=faoExportBtnEl;
     if(!be&&(typeof document!=='undefined'&&document))be=document.getElementById('faoExportBtn');
     if(be){
       be.disabled=!!faoPrevStale;
       be.title=faoPrevStale
-        ?'Export bloqué : aperçu périmé. Cliquez d’abord sur « Régénérer + aperçu ».'
+        ?'Export bloqué : aperçu périmé. Cliquez d’abord sur « Tout régénérer ».'
         :'Exporte le programme du posage courant : G-code Siemens 840D ou Fagor 8065 (.mpf / .nc).';
     }
   }catch(e){}
 }
 function faoChanged(){
-  faoStaleScan();          // 1) qui doit être regeneré -> icônes !
+  // Pendant la lecture du cache, aucun verdict n'est fiable : la memoire est vide,
+  // tout parait « perime » alors que rien ne l'est (et l'apercu recalculerait tout).
+  // On tranchera apres la lecture — cf. faoMovesDone().
+  const attend=faoMovesPending();
+  if(attend)faoPrevWanted='full';
+  else faoStaleScan();            // 1) qui doit être regeneré -> icônes !
   faoTouch();
-  faoRefreshPreview();     // 2) redraw : sert l'ancien trace pour les perimes
+  if(!attend)faoRefreshPreview(); // 2) redraw : sert l'ancien trace pour les perimes
   faoRefreshFaoUI();
   faoPrevStale=true;
   faoStaleUI();
+}
+function faoVisibleChanged(){
+  // OEIL « Masquer / Afficher » : champ PUREMENT AFFICHAGE (ignore par faoOpSig, le
+  // G-code ne change pas, l'export reste valide, aucun triangle). On DESSINE ce qui
+  // est deja en memoire : ouvrir un document puis masquer une operation ne doit
+  // JAMAIS declencher la regeneration des trajectoires (~90 s sur l'ebauche 3D).
+  faoTouch();
+  if(faoMovesPending()){
+    if(!faoPrevWanted)faoPrevWanted='lecture'; // redraw en fin de lecture
+    faoRefreshFaoUI();
+    return;
+  }
+  const n=faoRefreshPreview(true);
+  faoRefreshFaoUI();
+  try{
+    if(faoPrevMissing>0&&typeof faceEl!=='undefined'&&faceEl){
+      let why='';
+      try{
+        const job=faoDoc();
+        const ops=faoActiveOps(job).filter(function(o){ return !o||!o.hidden; });
+        for(let i=0;i<ops.length;i++){
+          const ck=faoOpMovesKey(ops[i],job), ch=faoOpMovesHit(ops[i]);
+          if(ck!==null&&!(ch&&ch.key===ck)){ why=faoMovesWhyShort(job,ops[i]); if(why)break; }
+        }
+      }catch(e){}
+      faceEl.textContent='FAO : '+faoPrevMissing+' operation(s) sans parcours en memoire'
+        +' ('+n+' points affiches)'
+        +(why?' — '+why:'')
+        +' — « Tout régénérer » pour les produire.';
+    }
+    else if(n>0&&typeof faceEl!=='undefined'&&faceEl)
+      faceEl.textContent='FAO : '+n+' points de parcours.';
+  }catch(e){}
 }
 function faoReset(){
   // « Nouveau modèle » : la FAO repart de zéro — mode lecture fermé, fenêtre outils
@@ -2866,6 +3307,11 @@ function faoReset(){
   try{ if(typeof sel!=='undefined'&&sel&&(sel.kind==='faoSetup'||sel.kind==='faoOp'))sel={kind:null,id:null}; }catch(e){}
   try{ faoViewerBtnUpdate(); }catch(e){}
   try{ faoChanged(); }catch(e){} // traces (0 pt désormais) + arbre + fiche
+  // Rien à valider : sans opération active, un bouton « ⚠ Tout régénérer » ment
+  // (il n'y a rien à générer) — le bouton revient au vert dès l'ouverture.
+  try{
+    if(!faoActiveOps(faoDoc()).length){ faoPrevStale=false; faoStaleUI(); }
+  }catch(e){}
 }
 function faoNum(val,fn,w,step,title){
   const i=document.createElement('input'); i.type='number'; i.className='fao-in';
@@ -3030,12 +3476,13 @@ function faoInitUI(){
       faoVwBtn=bvw;
       r2.appendChild(bvw);
       cnt.appendChild(r2);
-      // Générer + aperçu : en bas d'Exécution, toujours visible — ré-affiche aussi
-      // les traces masquées ligne par ligne (op.hidden remis à zéro).
+      // Tout régénérer : en bas d'Exécution, toujours visible — régénère TOUTES
+      // les trajectoires ; les traces masquées ligne par ligne le RESTENT masquées.
       const bg=document.createElement('button'); bg.id='faoGenBtn'; faoGenBtnEl=bg;
       bg.className='fao-gen';
-      bg.textContent='Générer + aperçu';
-      bg.title='Régénère les traces et les RÉ-AFFICHE toujours (y compris celles masquées ligne par ligne).';
+      bg.textContent='Tout régénérer';
+      bg.title='Régénère TOUTES les trajectoires (même celles à jour). Les traces'
+        +' masquées ligne par ligne le restent — masquez-les à la main.';
       bg.onclick=function(){
         faoPreviewGenerate();
         try{ faoRefreshFaoUI(); }catch(e){}
@@ -3088,7 +3535,7 @@ function faoRenderTree(){
       tri.onclick=function(ev){
         try{ if(ev&&ev.stopPropagation)ev.stopPropagation(); }catch(e){}
         s.open=!open;
-        faoChanged(); // persiste dans doc.fao + re-rend l'arbre FAO
+        faoTouch(); // champ purement UI : persiste dans doc.fao + re-rend l'arbre, sans rien recalculer
       };
       h.appendChild(tri);
       const sl=document.createElement('span');
@@ -3133,14 +3580,16 @@ function faoRenderTree(){
           :'Masquer UNIQUEMENT les traces de cette opération dans la 3D — l opération reste active et exportée';
         mb.onclick=function(ev){ try{ if(ev&&ev.stopPropagation)ev.stopPropagation(); }catch(e){}
           faoSnapshot((hid?'ré-afficher':'masquer')+' les traces de « '+faoOpShortLabel(op)+' »');
-          op.hidden=!hid; faoChanged(); };
+          op.hidden=!hid; faoVisibleChanged(); };
         d.appendChild(eye); d.appendChild(lb); d.appendChild(badge);
         if(op.stale===true){
           const sk=document.createElement('span');
           sk.className='stalei';
           sk.textContent=String.fromCharCode(0x26a0);
+          const why=faoStaleWhy(op,s);
           sk.title='Parcours à régénérer : CETTE opération a changé. Clic = ne régénérer'
-            +' que cette opération (le bouton « Générer + aperçu » régénère tout).';
+            +' que cette opération (le bouton « Tout régénérer » régénère tout).'
+            +(why?(' '+why):'');
           sk.onclick=function(ev){
             try{ if(ev&&ev.stopPropagation)ev.stopPropagation(); }catch(e){}
             faoRegenOp(s.id,op.id);
@@ -3295,8 +3744,10 @@ function faoOpCardElement(setup,op,i){
     const w=document.createElement('span');
     w.textContent=String.fromCharCode(0x26a0);
     w.style.cssText='color:#ff453a;font-weight:700;cursor:pointer;';
+    const why=faoStaleWhy(op,setup);
     w.title='Parcours à régénérer : CETTE opération a changé. Clic = ne régénérer'
-      +' que cette opération (le bouton « Générer + aperçu » régénère tout).';
+      +' que cette opération (le bouton « Tout régénérer » régénère tout).'
+      +(why?(' '+why):'');
     w.onclick=function(){ faoRegenOp(setup.id,op.id); };
     r.appendChild(w);
   }
@@ -3546,9 +3997,21 @@ function faoOpCardElement(setup,op,i){
   const rr=faoRow();
   const rs=document.createElement('span');
   rs.className='fao-meta';
-  const mv=faoOpMoves(op,setup);
-  const ee=faoEstimate(mv,sf.f,faoRapide(setup),faoAccel(setup));
-  rs.textContent='S'+sf.s+' F'+sf.f+' · '+mv.length+' pts · ≈'+ee.tmin.toFixed(1)+' min';
+  // Ouvrir une operation ne doit PAS la recalculer : le cache est lu (IDB ou
+  // memoire). Lecture en cours -> « … » qui se remplit tout seul ; cache lu mais
+  // parcours absent -> on le DIT, on ne lance pas ~90 s derriere un clic de fiche.
+  const mv=faoMovesStat(op,setup);
+  if(!mv){
+    if(faoMovesPending()){
+      rs.textContent='S'+sf.s+' F'+sf.f+' · chargement du parcours…';
+      faoMovesPreloadSoon();
+    }else{
+      rs.textContent='S'+sf.s+' F'+sf.f+' · pas de parcours en mémoire — « Tout régénérer »';
+    }
+  }else{
+    const ee=faoEstimate(mv,sf.f,faoRapide(setup),faoAccel(setup));
+    rs.textContent='S'+sf.s+' F'+sf.f+' · '+mv.length+' pts · ≈'+ee.tmin.toFixed(1)+' min';
+  }
   rr.appendChild(rs);
   d.appendChild(rr);
   return d;
@@ -3754,7 +4217,7 @@ function faoSetupFiche(p,setup){
   p.appendChild(rV);
   p.appendChild(rA);
   // La fiche reste LA configuration du posage. Les usinages, l'export, les
-  // outils, + Posage, ▶ Usinage et « Générer + aperçu » vivent dans l'arbre FAO
+  // outils, + Posage, ▶ Usinage et « Tout régénérer » vivent dans l'arbre FAO
   // (faoInitUI) : on ne promène plus la même action à deux endroits.
   const st=document.createElement('div');
   st.className='fao-stats';
@@ -3767,6 +4230,7 @@ function faoSetupFiche(p,setup){
 }
 /* ----- dispatcher panneau droit ----- */
 function faoRenderProps(p,s){
+  try{ faoMovesPreloadSoon(); }catch(e){} // foin-et-oubli : le cache se remplit pendant qu'on regarde
   try{
     p.innerHTML='';
     try{ p.className='col fao-panel'; }catch(e){}
@@ -3798,31 +4262,62 @@ function faoRenderProps(p,s){
   }catch(e){}
 }
 
+function faoStatsGroups(job){
+  // Groupes d'outils SANS toucher aux parcours : faoJobMoves() calcule les absents,
+  // et une estimation affichée n'a pas le droit de produire une trajectoire.
+  let groups=0, prev=null;
+  try{
+    faoActiveOps(job).forEach(function(op){
+      const t=faoToolById(job,op.toolId)||{};
+      const k=String(t.id)+'|'+String(t.d);
+      if(k!==prev){ groups++; prev=k; }
+    });
+  }catch(e){ groups=0; }
+  return groups;
+}
 function faoStats(job){
   // Estimation complète du posage : temps de coupe + rapides (accélération
   // machine) + changements d'outil (nb de groupes outil - 1) × durée unitaire.
-  let cut=0, rap=0, tm=0, n=0;
-  ((job&&job.ops)||[]).forEach(function(op){
-    if(op&&op.on===false)return;
+  let cut=0, rap=0, tm=0, n=0, wait=false, missing=0;
+  faoActiveOps(job).forEach(function(op){
     const sf=faoToolSF(faoToolById(job,op.toolId),job);
-    const e=faoEstimate(faoOpMoves(op,job),sf.f,faoRapide(job),faoAccel(job));
+    const mv=faoMovesStat(op,job); // lecture d'abord : une stats ne recalcule rien
+    if(!mv){ if(faoMovesPending())wait=true; else missing++; return; }
+    const e=faoEstimate(mv,sf.f,faoRapide(job),faoAccel(job));
     cut+=e.cut; rap+=e.rap; tm+=e.tmin; n++;
   });
-  let groups=0;
-  try{ groups=job?faoJobMoves(job).length:0; }catch(e){ groups=0; }
+  if(wait)return {n:0, cut:0, rap:0, groups:0, tchg:0, tmin:0, pending:true};
+  const groups=faoStatsGroups(job);
   const tchg=Math.max(0,groups-1)*(faoToolChg(job)/60);
-  return {n:n, cut:cut, rap:rap, groups:groups, tchg:tchg, tmin:tm+tchg};
+  return {n:n, cut:cut, rap:rap, groups:groups, tchg:tchg, tmin:tm+tchg, missing:missing};
 }
 function faoStatsText(){
   try{
     const s=faoStats(faoDoc());
-    return s.n+' op · coupe '+(s.cut/1000).toFixed(1)+' m · rapides '+(s.rap/1000).toFixed(1)+' m · ≈'+s.tmin.toFixed(1)+' min';
+    if(s.pending)return 'Estimation : chargement du parcours…';
+    const base=s.n+' op · coupe '+(s.cut/1000).toFixed(1)+' m · rapides '
+      +(s.rap/1000).toFixed(1)+' m · ≈'+s.tmin.toFixed(1)+' min';
+    if(s.missing){
+      let why='';
+      try{
+        const job=faoDoc();
+        const ops=faoActiveOps(job).filter(function(o){ return !o||!o.hidden; });
+        for(let i=0;i<ops.length;i++){
+          const ck=faoOpMovesKey(ops[i],job), ch=faoOpMovesHit(ops[i]);
+          if(ck!==null&&!(ch&&ch.key===ck)){ why=faoMovesWhyShort(job,ops[i]); if(why)break; }
+        }
+      }catch(e){}
+      return 'Estimation partielle : '+base+' — '+s.missing
+        +' opération(s) sans parcours en mémoire'+(why?' ('+why+')':'')
+        +', « Tout régénérer » pour les produire.';
+    }
+    return base;
   }catch(e){ return ''; }
 }
 function faoExport(){
   try{
     if(faoPrevStale){
-      try{ faceEl.textContent='FAO : export bloqu\u00e9 — aper\u00e7u p\u00e9rim\u00e9, cliquez \u00ab G\u00e9n\u00e9rer + aper\u00e7u \u00bb d\u2019abord.'; }catch(e){}
+      try{ faceEl.textContent='FAO : export bloqu\u00e9 — aper\u00e7u p\u00e9rim\u00e9, cliquez \u00ab Tout r\u00e9g\u00e9rer \u00bb d\u2019abord.'; }catch(e){}
       try{ if(typeof console!=='undefined'&&console&&console.warn)console.warn('FAO : export bloqu\u00e9 — aper\u00e7u p\u00e9rim\u00e9.'); }catch(e){}
       faoStaleUI();
       return;

@@ -19,7 +19,7 @@ try{
     builtVersion=-1;builtHash=null;builtEngine=null;
     try{rebuild();}catch(e){}
     try{if(occtReady)showAll();}catch(e){}
-    try{faoMovesPreloadSoon();}catch(e){} // parcours persistes : chaud avant le 1er clic
+    try{faoMovesPreloadSoon(true);}catch(e){} // solide rejoue : on (re)charge les parcours persistes
   });
-}catch(e){try{builtVersion=-1;builtHash=null;builtEngine=null;rebuild();if(occtReady)showAll();faoMovesPreloadSoon();}catch(e2){}}
+}catch(e){try{builtVersion=-1;builtHash=null;builtEngine=null;rebuild();if(occtReady)showAll();faoMovesPreloadSoon(true);}catch(e2){}}
 log('Prêt. Esquisse → Extrusion → Export. Même navigation que le viewer.');

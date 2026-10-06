@@ -72,6 +72,15 @@ function buildDone(){
   // FAO : les limites « chaîne » sont re-suies sur les arêtes du nouveau solide
   // (état dérivé : pas d'entrée d'annulation) ; sinon marquées obsolètes (stale).
   try{if(typeof faoChainReplay==='function')faoChainReplay();}catch(e){}
+  // FAO : le solide vient d'être (re)construit — l'Ébauche 3D embarque son empreinte
+  // dans sa clé de cache. Au F5 la 1re lecture a lieu sur le REPLI MAILLAGE, avant le
+  // boot du noyau exact : clé fausse, entrée rejetée, triangle rouge qui ne retombait
+  // JAMAIS (le Surfaçage, lui, ne dépend pas du solide — d'où « il passe toujours »).
+  // Dès que l'empreinte change, on RELIT le cache : aucune recalculation.
+  try{ if(typeof faoMovesSolidChanged==='function'&&faoMovesSolidChanged())faoMovesPreloadSoon(true); }catch(e){}
+  // « Tout régénérer » pressé PENDANT le rejeu (corps encore en repli d'image) :
+  // le solide est enfin là, on exécute maintenant (sinon la clé ecrirait sur le repli).
+  try{ if(typeof faoRegenFlush==='function')faoRegenFlush(); }catch(e){}
   // Session d'esquisse ouverte : le rejeu régénère les matériaux — le fondu 0.75 (et le
   // masquage des corps en mode fantôme) serait perdu. skApplyFade est inerte hors session.
   try{if(typeof skApplyFade==='function')skApplyFade();}catch(e){}

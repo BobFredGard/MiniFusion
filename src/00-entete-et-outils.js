@@ -23,9 +23,23 @@
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-06-001';
+const APP_VER='2026-10-06-003';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
+
+/* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
+   SÉPARÉ d'APP_VER exprès : un changement d'interface (badge, panneau, texte)
+   ne touche ni le rejeu exact ni les générateurs de trajectoire. Les épingler à
+   APP_VER coûtait à CHAQUE livraison un rejeu complet (~90 s sur l'ébauche 3D)
+   et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
+   A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
+   faoGen*) : c'est le seul cas où une entrée devient légitimement périmée.
+   `cacheVerOK` accepte en plus les tampons historiques de même moteur. */
+const CACHE_VER='2026-10-06-003';
+function cacheVerOK(v){
+  if(v===CACHE_VER)return true;
+  return v==='2026-10-06-001'; // même moteur, seule l'interface a bougé
+}
 let extPickFace=null; // mode « vers un objet » : clic sur une face pour le sens (Échap = annuler)
 let ghostHide=null; // découpe dont l'OUTIL (fantôme rouge translucide) reste masqué après
                    // l'opération — le mécanisme d'aperçu au clic dans l'arbre est inchangé.

@@ -109,6 +109,20 @@ const vm=require('vm');
     faoMeshFromBody=function(){ return {v:[[0,0,0],[20,0,0],[0,20,0]],t:[[0,1,2]]}; };
     const fp3=faoSetupFp(s);
     A(fp3!==fp1,'maillage different -> empreinte differente ('+fp3+')');
+    // Le solide est un JEU de points : deux rejeux enumerent les faces autrement
+    // (positions de reference des filtres qui derivent de 1e-9 entre deux
+    // enregistrements) — meme contour, autre ordre. Hacher la sequence classait
+    // les memes points dans un autre ordre = « cache perdu a chaque F5 » a
+    // solide immobile (constate sur le document reel : empreinte triee identique,
+    // empreinte sequentielle differente).
+    faoMovesFpMap=null;
+    faoMeshFromBody=function(){ return {v:[[0,10,0],[10,0,0],[0,0,0]],t:[[0,1,2]]}; };
+    const fp4=faoSetupFp(s);
+    A(fp4===fp1,'mêmes sommets, AUTRE ordre -> empreinte IDENTIQUE ('+fp4+')');
+    faoMovesFpMap=null;
+    faoMeshFromBody=function(){ return {v:[[0,0,0],[10,0,0],[0,10,0.5]],t:[[0,1,2]]}; };
+    const fp5=faoSetupFp(s);
+    A(fp5!==fp1,'coordonnee decalee de 0,5 mm -> empreinte differente ('+fp5+')');
 
     /* ============ 8. la cle suit l'empreinte, SAUF hors 3D ============ */
     faoMovesFpMap=null;

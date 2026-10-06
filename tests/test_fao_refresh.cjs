@@ -71,7 +71,7 @@ const vm=require('vm');
       'triangle : nouveau tracé pour D25 ('+mvA0.length+' -> '+mvA1.length+' points)');
     A(faoOpMoves(s.ops[1],s)===mvB0,'triangle : opB NON recalculée (même tableau)');
     A(faoStaleCount()===0&&faoPrevStale===false,'triangle : plus rien à régénérer');
-    A(gen().textContent.indexOf('G')===0,'bouton redevenu « Générer + aperçu » : '+JSON.stringify(gen().textContent));
+    A(gen().textContent.indexOf('T')===0,'bouton redevenu « Tout régénérer » : '+JSON.stringify(gen().textContent));
     A(exp().disabled===false,'export ré-ouvert');
     renderTree();
     A(countIcon()===0,'arbre : triangle effacé ('+countIcon()+')');
