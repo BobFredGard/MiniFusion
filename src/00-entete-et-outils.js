@@ -23,7 +23,7 @@
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-06-005';
+const APP_VER='2026-10-06-006';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -35,10 +35,14 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée.
    `cacheVerOK` accepte en plus les tampons historiques de même moteur. */
-const CACHE_VER='2026-10-06-003';
+const CACHE_VER='2026-10-06-006';
 function cacheVerOK(v){
-  if(v===CACHE_VER)return true;
-  return v==='2026-10-06-001'; // même moteur, seule l'interface a bougé
+  // 2026-10-06-006 : faoGen* bouge (départ d'hélice 2 mm au-dessus de la face
+  // d'entrée de la passe) — PLUS aucun tampon antérieur n'écrit les mêmes
+  // parcours : les entrées stockées sont légitimement périmées, à régénérer
+  // une fois. L'exception historique (même moteur, seule l'interface a bougé)
+  // saute d'autant.
+  return v===CACHE_VER;
 }
 let extPickFace=null; // mode « vers un objet » : clic sur une face pour le sens (Échap = annuler)
 let ghostHide=null; // découpe dont l'OUTIL (fantôme rouge translucide) reste masqué après

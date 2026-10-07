@@ -59,7 +59,14 @@ const vm=require('vm');
     const pire=Math.min.apply(null,coups.map(m=>Math.min(
       blkD(m.x,m.y,0,44,0,60),blkD(m.x,m.y,56,100,0,60))));
     A(pire>=4.98,'ébauche 3D fente : jeu outil minimum '+pire.toFixed(3)+' mm (>= r-0,02)');
-    A(coups.every(m=>m.z<=40+1e-9),'ébauche 3D fente : rien au-dessus du brut');
+    // Le départ d'hélice attaque 2 mm au-dessus de la face d'entrée (= le brut
+    // 40) : les seuls points au-dessus du brut sont ceux de l'entrée, en
+    // descente continue — après engagement, plus rien au-dessus.
+    let eng=false,remonte=null;
+    coups.forEach(function(m){
+      if(m.z<=40+1e-9)eng=true; else if(eng&&remonte===null)remonte=m.z; });
+    A(remonte===null,'ébauche 3D fente : rien au-dessus du brut après engagement'+
+      (remonte===null?'':' (vu Z='+remonte+')'));
     const zMinRap=Math.min.apply(null,an.filter(m=>m.r).map(m=>m.z));
     A(zMinRap>=40,'ébauche 3D fente : rapides jamais sous le brut (min '+zMinRap+')');
 
@@ -70,6 +77,35 @@ const vm=require('vm');
     const pire2=Math.min.apply(null,rm.filter(m=>!m.r).map(m=>Math.min(
       blkD(m.x,m.y,0,20,0,60),blkD(m.x,m.y,80,100,0,60))));
     A(pire2>=4.99,'ébauche 3D canal : jeu outil minimum '+pire2.toFixed(3)+' mm (>= r)');
+
+    // --- 6. ébauche 3D : le départ d'hélice est 2 mm au-dessus de la FACE
+    //        D'ENTRÉE de la passe (ici ztop=40), jamais au-dessus de la face
+    //        obtenue (z=35). ap=5 : l'ancien repli z+2 = 37 pour cette passe
+    //        (document réel : 47 face à 50) = 3 mm DANS la matière (ap-2).
+    //        Le disque (Ø10) qui touche le brut compte comme "sur matière".
+    const HS=merge(mkBox(0,40,0,60,0,40),mkBox(60,100,0,60,0,40));
+    const hm=faoGenRough3D(HS,{x0:-5,y0:-5,x1:105,y1:65},40,35,
+      {ap:5,ae:2.5,toolD:10,radial:0,axial:0,secu:45});
+    const surMat=function(m){ // disque Ø outil en contact avec le brut 0..40
+      const dx=Math.max(-5-m.x,0,m.x-105), dy=Math.max(-5-m.y,0,m.y-65);
+      return Math.hypot(dx,dy)<=5+1e-9;};
+    let debut=null,plongee=0,pr=null,entree=true;
+    for(let i=0;i<hm.length;i++){
+      const m=hm[i];
+      if(entree&&surMat(m)&&m.z<42-1e-9){
+        if(debut===null)debut=m.z;
+        if(pr)plongee=Math.max(plongee,pr.z-m.z);
+        if(m.z<=35+1e-9)entree=false; // premier contact avec le niveau : entrée finie
+      }
+      pr=m;
+    }
+    A(hm.length>10,'hélice départ : '+hm.length+' moves');
+    A(debut!==null&&debut>=41-1e-9,
+      'hélice départ : 1er point sur matière sous face+2 a Z='+
+      (debut===null?'?':debut)+' (>= 41 = 40 + 2 - 0,1*D)');
+    A(plongee<=1+1e-9,
+      'hélice entrée : descente verticale max '+plongee.toFixed(2)+
+      ' mm (<= 0,1*D = 1 mm, ap=5 -> ancien bug 8 mm)');
 
     return P;
   })()`,ctx);

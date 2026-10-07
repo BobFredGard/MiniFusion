@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**174 versions**, de `2026-09-28b` à `2026-10-06-005` — la plus récente en bas,
+**175 versions**, de `2026-09-28b` à `2026-10-06-006` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -2997,3 +2997,19 @@ Validation : simulation du strip sur le tracé **en cache** du bundle — 48 011
 Tests : `test_fao.cjs` **+12 assertions** sur `faoZoneCtx` / `faoZoneStrip` / `faoZoneServe` (contexte construit, sans limite → null, excursion supprimée et plus aucun point dehors, idempotence, jonction coupe→coupe = retrait sécu + liaison sécu, fin d'opération = retrait sécu sur place, engagement en tête conservé, jonction traversante sur un **L** conservée, purge **ET** rangement de l'entrée de cache, purge avant le diagnostic de `faoZoneCuts`) ; `test_fao_securite.cjs` — **nouveau contrôle sur le document réel : 0 G0 hors zone dans l'opération à zone** (les franchissements de la séquence entre deux opérations restent autorisés : ils sont ceux du changement d'outil). Run complet **67/67** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-06-005.html`.
 
 Migration : `APP_VER` → `2026-10-06-005`, **`CACHE_VER` inchangé (`2026-10-06-003`)** : ni la coupe ni la clé ne changent — **aucune régénération à refaire**, le purge se fait à la lecture.
+
+### `2026-10-06-006`
+
+**L'hélice d'entrée attaque 2 mm au-dessus de la face à USINER, pas au-dessus de la face obtenue.**
+
+Demande : « Elle commence 2 mm au-dessus de la face finie de la 1ʳᵉ passe alors qu'il faudrait qu'elle commence 2 mm au-dessus de la face d'entrée de la 1ʳᵉ passe. Tu rentres dans la matière sur 3 mm car le gap est réglé sur 5 mm. C'est valable pour toutes les hélices. »
+
+Diagnostic : `faoHelixSpot` ne lit que le **maillage** — colonne vide de matière de la *pièce* (le cas quasi général d'une entrée, vérifié par `faoDiscClear` sur toutes les sections du niveau) ⇒ repli `z+2`, c'est-à-dire la face **obtenue** de la passe en cours + 2 (la règle « entrée hélice face+2 » annoncée par `2026-10-06-001` n'était donc vraie que pour la matière du maillage). Sur le document réel (`op_4`, `ztop` 50, `ap` 5, 1ʳᵉ passe 50 → 45) : départ à **47 = 3 mm dans la matière** (`ap−2`) ; voulu 52. Le maillage ne voit ni le brut ni ce que les passes précédentes ont enlevé.
+
+**Plancher `hFloor = min(secu, zFrom+2)` dans `faoRoughAdaptiveLevel`.** `zFrom = min(secu, z+ap)` est déjà la face d'entrée de la passe (`zt` pour la 1ʳᵉ) et la liaison utilise déjà la même valeur (`tvZ = bandTop+2`) : les trois chemins d'entrée — hélice multi-spots, entrée tangente, micro-hélice de secours — passent par `Math.max(faoHelixSpot(…), hFloor)`, donc l'hélice part **à la même altitude que le travel** (le move de descente disparaît même : `|zG−hStart| < 1e-9`). `faoHelixSpot` est inchangé, sa doc corrigée (« le plancher est posé par l'appelant »). La **géofinition** n'est pas touchée : son spot est choisi dans une colonne dégagée (offset hors paroi), `here.z+2` y est déjà dans l'air.
+
+Validation : test synthétique reprenant les chiffres du rapport (plaque 40 mm, `ap` 5, outil Ø10) — **avant** : 1ᵉʳ point sous face+2 à **Z = 37**, descente verticale de **8 mm** en contact avec la matière ; **après** : **Z = 41,9** et **0,10 mm** (pas d'hélice). Le passe-à-plans mini-passes (test réel) confirme le même déplacement : l'hélice traverse désormais z=16 **en un point unique, à 28 mm des parois**, et non au contour.
+
+Tests : `test_fao_helice.cjs` **+3 assertions** (bloc 6 : 1ᵉʳ point sous face+2 ≥ 41, plongée d'entrée ≤ 0,1×D, géométrie à fente) et reformulation de « rien au-dessus du brut » en **« rien au-dessus du brut après engagement »** — l'entrée légitime traverse le brut en descente continue (20 points), c'est exactement le but ; `test_fao3d.cjs` — « minipasses off : aucun plan z=16 » resserré sur le **contour** (`mid(…,5.5)===0`), le plan reste interdit. Run complet **67/67** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-06-006.html`.
+
+Migration : `APP_VER` → `2026-10-06-006`, **`CACHE_VER` → `2026-10-06-006`** : les générateurs (`faoGen*`) ont bougé, donc — comme le veut la règle de l'entête — les parcours stockés sont **légitimement périmés** ; l'exception historique `2026-10-06-001` saute (ancien moteur aussi). À l'ouverture : « trace écrite par une version antérieure du moteur », export bloqué, **une régénération** puis ré-enregistrement du fichier.

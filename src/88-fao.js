@@ -4606,7 +4606,10 @@ function faoScanIntervals(segs,y){
 /* ----- entrées douces : hélice (descente circulaire) ou rampe (biais) ----- */
 // Jamais de plongée verticale dans la matière : l'hélice creuse sa place quand
 // la largeur le permet, sinon la rampe descend en avançant (avance plongée).
-// L'hélice attaque TOUJOURS hors matière, 2 mm au-dessus (faoHelixSpot).
+// L'hélice attaque TOUJOURS hors matière, 2 mm au-dessus de la matière
+// restante : faoHelixSpot (matière du maillage) + plancher hFloor côté
+// ébauche 3D (face d'entrée de la passe + 2 mm — le maillage ne voit ni le
+// brut ni la matière des passes précédentes).
 let faoSliceCache=null;
 function faoSliceZCached(mesh,z){
   const k=Math.round(z*1000)/1000;
@@ -4718,7 +4721,10 @@ function faoDiscClear(segs,cx,cy,hr,r){
 }
 function faoHelixSpot(mesh,cx,cy,hr,r,z,brutTop,planes){
   // Départ hélice = 2 mm au-dessus de la plus haute matière sous le disque.
-  // Colonne vide : 2 mm au-dessus du niveau (rainure ouverte). Jamais enterré.
+  // Colonne vide : repli 2 mm au-dessus du NIVEAU (rainure ouverte) — le
+  // plancher « face d'entrée de la passe + 2 mm » est posé par l'appelant
+  // (hFloor, faoRoughAdaptiveLevel) : le maillage ne voit ni le brut ni la
+  // matière enlevée par les passes précédentes.
   // Avec `planes` (Z vertex du maillage) : aucun voile fin manqué entre deux
   // pas de 1 mm ; sans : balayage historique au pas de 1 mm (morph/zigzag).
   const top=isFinite(+brutTop)?+brutTop:z;
@@ -5962,6 +5968,11 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   const forced=(entryMode||'auto')==='helix'?'helix':(entryMode||'auto')==='ramp'?'ramp':'auto';
   const fmode=forced!=='auto'?forced:(hasTroch?'helix':'auto');
   let hx=null, hr=0, hStart=zFrom, hy=0;
+  // Face d'ENTREE de la passe = z+ap (zFrom = zt pour la 1re passe) : le
+  // depart d'helice ne descend jamais sous cette face + 2 mm. Sans ce
+  // plancher faoHelixSpot retombe sur z+2 (face obtenue + 2) : ap=5 ->
+  // spirale attaquant 3 mm DANS la matiere (document reel : 47 face a 50).
+  const hFloor=Math.min(secu,zFrom+2);
   if(!tang&&fmode!=='ramp'){
     const cands=byW.slice(0,3).map(function(f){
       return {x:(f.iv.a+f.iv.b)/2,y:f.y,elen:f.iv.b-f.iv.a}; });
@@ -5976,8 +5987,9 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       if(!faoDiscClear(segsAll,c.x,c.y,hrr,r+faoHelixJeu)&&
          !faoDiscClear(segsAll,c.x,c.y,hrr,r))continue;
       hx=c.x; hy=c.y; hr=hrr;
-      // spot = 2 mm au-dessus de la matiere : JAMAIS rabaisse par zFrom
-      hStart=faoHelixSpot(mesh,c.x,c.y,hrr,r,z,brutTop,planes);
+      // spot = 2 mm au-dessus de la matiere RESTANTE : jamais sous hFloor
+      // (face d'entree de la passe + 2 mm), sinon la spirale attaque dedans.
+      hStart=Math.max(faoHelixSpot(mesh,c.x,c.y,hrr,r,z,brutTop,planes),hFloor);
     }
   }
   let ramp=null;
@@ -5994,7 +6006,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   }
   if(tang){
     const zG=gotoXY(tang.sx,tang.sy);
-    const hs=faoHelixSpot(mesh,tang.sx,tang.sy,0,r,z,brutTop,planes);
+    const hs=Math.max(faoHelixSpot(mesh,tang.sx,tang.sy,0,r,z,brutTop,planes),hFloor);
     if(Math.abs(zG-hs)>1e-9)moves.push({r:0,x:rnd(tang.sx),y:rnd(tang.sy),z:hs});
     moves.push({r:0,x:rnd(tang.px),y:rnd(tang.py),z:z});
   }else if(hx!==null){
@@ -6015,7 +6027,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     const secOk=(fmode!=='ramp'&&run>0.5)&&(faoDiscClear(segsAll,mx,my,mhr,r+faoHelixJeu)||
                                             faoDiscClear(segsAll,mx,my,mhr,r));
     if(secOk){
-      const ms=faoHelixSpot(mesh,mx,my,mhr,r,z,brutTop,planes);
+      const ms=Math.max(faoHelixSpot(mesh,mx,my,mhr,r,z,brutTop,planes),hFloor);
       const zG=gotoXY(mx,my);
       if(Math.abs(zG-ms)>1e-9)moves.push({r:0,x:rnd(mx),y:rnd(my),z:ms});
       faoHelixEntry(mx,my,ms,z,mhr,D).slice(1).forEach(function(m){moves.push(m);});

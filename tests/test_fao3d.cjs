@@ -198,7 +198,11 @@ const vm=require('vm');
     "att(mid(m14,5)<=4,'mini passe 2 (z=14, s=0) : contour de parois seul ('+mid(m14,5)+' moves sous r_eff)');",
     "att(mm.some(m=>!m.r&&Math.abs(m.z-12)<1e-6),'mini passes : plan trocoïdal z=12 toujours usine');",
     "const m0=faoGenRough3D(PL,BX,18,0,{ap:6,ae:6,toolD:10,radial:0.5,axial:0,secu:45,strategy:'adaptive'});",
-    "att(m0.filter(m=>!m.r&&Math.abs(m.z-16)<1e-6).length===0,'minipasses off par defaut : aucun plan z=16');",
+    // L'hélice d'entrée part maintenant 2 mm au-dessus de la face d'entrée
+    // (18+2=20) et la traverse en descendant : elle traverse z=16, mais un SEUL
+    // point, loin des parois — un vrai mini-plan z=16 serait au contour (5,25).
+    "const m16off=m0.filter(m=>!m.r&&Math.abs(m.z-16)<1e-6);",
+    "att(mid(m16off,5.5)===0,'minipasses off par defaut : aucun plan z=16 ('+m16off.length+' pt(s), dont '+mid(m16off,5.5)+' au contour)');",
     // --- geodésique 6+2 : sens horizontal, limites Z, garde-fou fraise droite (retour 4/10)
     "const PLN={v:[[0,0,30],[60,0,30],[60,40,30],[0,40,30]],t:[[0,1,2],[0,2,3]]};",
     "const SL={v:[[0,0,0],[40,0,20],[40,20,20],[40,40,20],[0,40,0]],t:[[0,1,2],[0,2,3],[0,3,4]]};",
