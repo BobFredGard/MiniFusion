@@ -150,6 +150,56 @@ const vm=require('vm');
     A(uoS.finitParois===true&&uoS.finitN===1,'sanitise : finitN invalide -> 1, casse gardee');
     A(uoS2.finitParois===undefined&&uoS2.finitN===undefined,'sanitise : case non cochee -> champs retires');
 
+    // --- 6. FINITION = DERNIERE PASSE EN PROFONDEUR UNIQUEMENT (8/10)
+    const minParZ=function(cuts){
+      const mm={};
+      cuts.forEach(function(p){ if(!inP(p))return;
+        const k=Math.round(p.z*1000)/1000;
+        if(!(k in mm)||p.x<mm[k])mm[k]=p.x; });
+      return mm; };
+    const mOff=minParZ(gen(5,0.5,0,null));
+    const mOn=minParZ(gen(5,0.5,0,{finitParois:true,finitN:2}));
+    const ks=Object.keys(mOn).map(Number).sort(function(a,b){return b-a;});
+    const last=ks[ks.length-1];
+    A(last===5,'derniere passe en profondeur = niveau du fond (z='+last+')');
+    A(mOn[last]<=25.01&&mOn[last]<mOff[last]-0.1,
+      'finition sur la DERNIERE passe seul (z='+last+' : '+mOff[last].toFixed(3)+' -> '+mOn[last].toFixed(3)+')');
+    let hautOk=true,hautVu=0;
+    ks.forEach(function(z){ if(z===last)return; hautVu++;
+      if(!(z in mOff)||mOn[z]<mOff[z]-1e-6)hautOk=false; });
+    A(hautOk&&hautVu>0,'aucune finition sur les passes superieures ('+hautVu+' niveaux : min x identique au mode OFF)');
+
+    // --- 7. LAISSE « FOND » AP ALIGN + NIVEAU CIBLE + PROFONDEURS (9/10)
+    // ap=5 : la grille tombe PILE sur le fond 5 — le niveau 5 mangeait la
+    // laisse 0,5 (« va au fond malgré le 0,5 ») : il est remonte a fond+Fond.
+    const a5=hist(gen(0,0.5,0.5,{ap:5}));
+    A((a5[5]||0)===0&&(a5[5.5]||0)>0&&minKey(a5)===5.5,
+      'ap=5 aligne : laisse 0,5 preservee (z=5 -> '+(a5[5]||0)+', z=5,5 -> '+(a5[5.5]||0)+', zmin '+minKey(a5)+')');
+    const b5=hist(gen(0,0.5,0,{ap:5}));
+    A((b5[5]||0)>0,'ap=5 Fond=0 : plancher usine a z=5 ('+(b5[5]||0)+' points)');
+    // Bas=0 : la finition vise le PLANCHER (niveau le plus profond >= fond),
+    // pas le dernier du plan (fond de zone 0 : hors poche, inutile).
+    const f0=minParZ(gen(0,0.5,0,{finitParois:true,finitN:2}));
+    A(f0[5]>=24.999&&f0[5]<=25.01&&minKey(f0)===5,
+      'Bas=0 : finition au PLANCHER z=5 (min x '+(f0[5]!==undefined?f0[5].toFixed(3):'absent')+', zmin '+minKey(f0)+')');
+    // Profondeurs multiples : dent plus courte que le mur -> sequence vers le haut
+    const p2=minParZ(gen(5,0.5,0,{finitParois:true,finitN:1,finitProf:2}));
+    A(p2[5]>=24.999&&p2[5]<=25.01&&p2[7.5]>=24.999&&p2[7.5]<=25.01,
+      '2 profondeurs : anneaux z=5 ('+(p2[5]!==undefined?p2[5].toFixed(3):'absent')+') et z=7,5 ('+(p2[7.5]!==undefined?p2[7.5].toFixed(3):'absent')+')');
+    A(p2[8.5]>=25.49&&p2[7]>=25.49&&p2[5.5]>=25.49,
+      '2 profondeurs : niveaux intermediaires = ebauche seule (min x 25,5)');
+    const p3=minParZ(gen(5,0.5,0,{finitParois:true,finitN:1,finitProf:3}));
+    A(p3[6.667]>=24.999&&p3[6.667]<=25.01&&p3[8.333]>=24.999&&p3[8.333]<=25.01,
+      '3 profondeurs : cotes 6,667 et 8,333 au contact ('+(p3[6.667]!==undefined?p3[6.667].toFixed(3):'absent')+', '+(p3[8.333]!==undefined?p3[8.333].toFixed(3):'absent')+')');
+    // Fiche : champ Profondeurs (grise OFF, reglable ON)
+    const findProf=function(root){return all(root).filter(function(n){
+      return /input/i.test(n.tagName||'')&&n.type==='number'&&/Profondeurs de finition/.test(String(n.title||''));})[0];};
+    const cF=faoOpCardElement(us,uo,0), zpF=findProf(cF);
+    A(!!zpF&&zpF.disabled===true,'fiche OFF : champ Profondeurs present + grise');
+    findBox(cF).checked=true; findBox(cF).onchange();
+    const cH=faoOpCardElement(us,uo,0), zpH=findProf(cH);
+    A(!!zpH&&zpH.disabled===false,'fiche ON : Profondeurs reglable (disabled='+(zpH?zpH.disabled:'introuvable')+')');
+
     return P;
   })()`,ctx);
   let ko=0;

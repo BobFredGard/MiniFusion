@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**176 versions**, de `2026-09-28b` à `2026-10-07-001` — la plus récente en bas,
+**177 versions**, de `2026-09-28b` à `2026-10-07-002` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3033,3 +3033,21 @@ Validation (fixture poche **manifold** — 40 tris, chaque arête deux fois dans
 Tests : nouveau `tests/test_fao_fond_finition.cjs` — **30 assertions** (fermeture manifold de la fixture, détection de fonds avec triangulation inversée, voûte ignorée, plancher `Bas=0` en 0 et 0,5, régressions `Bas=5`, finition off/1/2/3 passes, garde anti-gouge, `Parois=0`, **puis la fiche** : case + N passes rendues, grises/actives selon la case, aide qui suit 1 → 3, champs supprimés au décochage, `faoSanitiseOps`), **inscrit dans la liste `SUITES` de `tests/run.cjs`**. Run complet **68/68** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-07-001.html`.
 
 Migration : `APP_VER` → `2026-10-07-001`, **`CACHE_VER` → `2026-10-07-001`** : `faoGenRough3D` a bougé — les parcours stockés sont **légitimement périmés**, une régénération à l'ouverture. Badge produit **V0.1.2 inchangé** (demande explicite du 7/10 : on reste en V0.1.2, `src/96-bandeau-groupes.js` non touché).
+
+### `2026-10-07-002`
+
+**Ébauche 3D → Finition : la finition ne sort que sur la DERNIÈRE passe en profondeur (+ option « Profondeurs »), et la laisse « Fond » tient quand `ap` tombe pile sur le fond.**
+
+Demandes : (8/10) « Ebauche 3D -> Finition : que sur la dernière passe en profondeur. » — (9/10) « peux-tu ajouter une option pour ce cas précisément ? » (fraise à dent courte : la colonne de laisse n'est râlée que sur la hauteur de dent) — (10/10) « si le fond est à 0,5, tu te mets bien à 0,5 du fond ? On dirait que ça va au fond malgré le 0,5 » (oui : bug réel, corrigé ici).
+
+**Dernière passe.** Dans `faoGenRough3D`, le bloc de finition est conditionné à `li===finIdx` — niveau le plus PROFOND **≥ plancher détecté** (`faoUpFloors`) : avec `Bas=0` la grille descend sous la poche et son dernier niveau (fond de ZONE) ne la touche jamais, viser `plan.length-1` ne finissait donc rien. Sans plancher utile → dernier du plan (comportement antérieur conservé). L'ébauche et les mini-passes restent inchangées à chaque niveau ; la finition émet ses N contours à décroissance `Parois·(nf−k)/nf → 0` **uniquement à cette cote** — gain : les niveaux supérieurs ne recalculent plus leur région pour la finition.
+
+**Laisse « Fond » (10/10).** Un niveau de grille tombant dans `[fond, fond+Fond[` mangeait la laisse — cas réel `ap=5`, fond 20 : le niveau 20 coupait pile au fond et le « Fond » 0,5 disparaissait (le fixture ap 1,5 tombait à 5,5, d'où le test vert). Tout niveau de l'intervalle est **retiré** et un niveau à `fond+Fond` exact est posé (ajout seulement s'il manque : documents non alignés strictement inchangés).
+
+**Option « Profondeurs » (9/10).** Champ `finitProf` 1..9 (défaut 1) sur la fiche, grisé tant que « Finir parois » est décoché : N cotes `zj = bas + (haut−bas)·j/N` vers le haut (j=0 pile au niveau bas, sommet strictement sous `zt` — jamais sur le plan de bord), écart = hauteur du mur / N, l'aide rappelle « dent ≥ écart ; 1 = la dent couvre le mur seule ». Entrée/travel de chaque cote = niveau strictement au-dessus (`zFrom=zA`, `travel=zA+2`), **identique à l'appel unique pour N=1**. `finitProf` entre dans la sanitise, la signature de parcours et le dispatch rough3d.
+
+Interface : infobulle de la case, ligne « Profondeurs / cotes » et aide réécrites (« × N profondeur(s) »).
+
+Tests : `test_fao_fond_finition.cjs` **+8 assertions (41 total)** — section 7 : `ap=5` aligné (z=5 → 0 point, z=5,5 → 305, zmin 5,5 ; régression `Fond=0`), finition au **PLANCHER** avec `Bas=0` (min x 25,000 à z=5, zmin 5 — attrape le viser-`plan.last` à z=0), anneaux 2 profondeurs z=5/7,5 et 3 profondeurs 6,667/8,333 au contact (25,000), niveaux intermédiaires = ébauche seule, champ Profondeurs grisé OFF / réglable ON. Les 33 assertions antérieures passent inchangées. Run complet **68/68** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-07-002.html`.
+
+Migration : `APP_VER` → `2026-10-07-002`, **`CACHE_VER` → `2026-10-07-002`** : `faoGenRough3D` a bougé — parcours stockés périmés, **une régénération** à l'ouverture. Badge **V0.1.2 inchangé**.
