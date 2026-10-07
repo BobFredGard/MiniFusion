@@ -270,7 +270,13 @@ function faoSanitiseOps(s){
     // fines ap2 retirées du document à la lecture (migration, comme la laisse).
     delete op.strategy; delete op.ap2; delete op.radial2; delete op.axial2;
     // 2026-10-04-002 : mini-passes Z de l'ebauche (0 = off). Valeur nettoyee.
-    if(op.type==='rough3d'){const mp=+op.minipasses;op.minipasses=isFinite(mp)&&mp>0?Math.min(9,Math.round(mp)):0;}
+    if(op.type==='rough3d'){const mp=+op.minipasses;op.minipasses=isFinite(mp)&&mp>0?Math.min(9,Math.round(mp)):0;
+      // 2026-10-07-001 : finition des parois (N contours « Parois » -> 0),
+      // OFF par defaut : ni champ ni effet tant que la case n'est pas cochee
+      // (les documents existants restent strictement identiques, sig compris).
+      if(op.finitParois){op.finitParois=true;
+        const fn=Math.round(+op.finitN);op.finitN=isFinite(fn)&&fn>0?Math.min(9,fn):1;}
+      else{delete op.finitParois;delete op.finitN;}}
     // 2026-10-04-004 : finition géodésique — limites Z héritées du brut,
     // garde-fou fraise droite recalculée à chaque dispatch (jamais stockée).
     if(op.type==='geofinish'){
@@ -1958,6 +1964,7 @@ function faoOpMoves(op,job){
       {ap:+op.ap,ae:isFinite(+op.ae)?+op.ae:D*0.6,toolD:D,
        radial:RA.radial,axial:RA.axial,
        minipasses:isFinite(+op.minipasses)?+op.minipasses:0,
+       finitParois:!!op.finitParois,finitN:op.finitN,
        entry:op.entry||'auto',brutTop:brutTop,secu:secu});
   }
   else if(op.type==='geofinish'){
@@ -4013,6 +4020,29 @@ function faoOpCardElement(setup,op,i){
     rR.appendChild(faoLab('Fond')); rR.appendChild(faoNum(faoRA(op).axial,function(v){op.axial=Math.max(0,v);},44,0.1,
       'Surépaisseur sur le fond : l’ébauche s’arrête à cette hauteur au-dessus du fond.'));
     d.appendChild(rR);
+    // 2026-10-07-001 : FINITION DES PAROIS — N contours « Parois » → 0 par
+    // niveau. Case OFF par défaut : aucun document existant ne bouge ; tant que
+    // la case est cochée, le sig de l'op change → parcours périmé → rejeu.
+    const rFi=faoRow();
+    const cbFi=document.createElement('input'); cbFi.type='checkbox'; cbFi.checked=!!op.finitParois;
+    cbFi.title='Finir les parois : après l’ébauche de chaque niveau, N contours enlèvent la matière laissée « Parois » jusqu’à 0 (dernière passe à la cote théorique). Décochée = ébauche seule.';
+    cbFi.onchange=function(){ faoSnapshot('finir les parois');
+      if(cbFi.checked){ op.finitParois=true; if(!isFinite(+op.finitN))op.finitN=1; }
+      else{ delete op.finitParois; delete op.finitN; }
+      faoChanged(); };
+    rFi.appendChild(cbFi);
+    rFi.appendChild(faoLab('Finir parois'));
+    const numFi=faoNum(isFinite(+op.finitN)?Math.round(+op.finitN):1,function(v){
+      op.finitN=Math.max(1,Math.min(9,Math.round(v)));},36,1,
+      'Passes de finition des parois : de « Parois » à 0, réparties régulièrement (1 = directement à 0).');
+    numFi.disabled=!op.finitParois;
+    numFi.title='Nombre de contours de finition — cochez « Finir parois » pour le régler.';
+    rFi.appendChild(numFi);
+    rFi.appendChild(faoLab('passes'));
+    d.appendChild(rFi);
+    if(op.finitParois)d.appendChild(faoHelp(
+      'Finition : '+Math.round(op.finitN)+' contour(s) de paroi par niveau (dernier à 0) — '+
+      'chaque niveau recalculera sa région '+Math.round(op.finitN)+' fois de plus.'));
     d.appendChild(faoH('Trajectoire'));
     const rT2=faoRow();
     rT2.appendChild(faoLab('Arrondi')); rT2.appendChild(faoNum(isFinite(+op.arrondi)?+op.arrondi:0,function(v){op.arrondi=Math.max(0,v);},48,0.5,
@@ -4764,6 +4794,50 @@ function faoHelixEntry(cx,cy,zFrom,zTo,radius,toolD){
   }
   return moves;
 }
+function faoUpFloors(mesh,z0,z1){
+  // FONDS RÉELS du maillage (7/10) : faces horizontales avec matière EN
+  // DESSOUS et vide au-dessus — plancher de poche, sommet de bossage — dans
+  // [z0,z1]. Candidats = faces planes horizontales (les deux orientations de
+  // triangulation), décision par PARITÉ exacte de l'app (faoScanIntervals)
+  // juste en dessous / au-dessus : ni dépendance au sens des triangles, ni
+  // faux positif sur une voûte (face tournée vers le bas) ni sur une interface
+  // interne. Aires groupées par cote quantifiée à 0,001 ; seuil 0,01 mm²
+  // (slivers de tessellation ignorés).
+  const res=[];
+  if(!mesh||!mesh.v||!mesh.v.length||!mesh.t||!mesh.t.length)return res;
+  const cands={};
+  for(let i=0;i<mesh.t.length;i++){
+    const tr=mesh.t[i],a=mesh.v[tr[0]],b=mesh.v[tr[1]],c=mesh.v[tr[2]];
+    if(!a||!b||!c)continue;
+    const ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2];
+    const vx=c[0]-a[0],vy=c[1]-a[1],vz=c[2]-a[2];
+    const nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx;
+    const len=Math.sqrt(nx*nx+ny*ny+nz*nz);
+    if(!(len>0)||Math.abs(nz)/len<0.999)continue; // pas horizontal (> ~2,5°)
+    const z=Math.round(a[2]*1000)/1000;
+    if(!(z>=z0-1e-9&&z<=z1+1e-9))continue;
+    const k=String(z);
+    if(!cands[k])cands[k]=[];
+    cands[k].push({x:(a[0]+b[0]+c[0])/3,y:(a[1]+b[1]+c[1])/3,a:0.5*len});
+  }
+  const inside=function(segs,x,y){
+    const ivs=faoScanIntervals(segs,y);
+    for(let i=0;i<ivs.length;i++)if(x>ivs[i][0]+1e-7&&x<ivs[i][1]-1e-7)return true;
+    return false;
+  };
+  for(const k in cands){
+    const z=+k, list=cands[k];
+    const below=faoSliceZ(mesh,z-0.001), above=faoSliceZ(mesh,z+0.001);
+    let ar=0;
+    for(let i=0;i<list.length;i++){
+      const p=list[i];
+      if(inside(below,p.x,p.y)&&!inside(above,p.x,p.y))ar+=p.a;
+    }
+    if(ar>=0.01)res.push(z);
+  }
+  res.sort(function(p,q){return q-p;});
+  return res;
+}
 function faoGenRough3D(mesh,box,ztop,zbot,o){
   // Ébauche 3D en MODE TROCOÏDAL UNIQUE (lot 2026-10-03-004) : pelage à ap
   // constant (ae ≤ 0.25*D), trochoïdes G2/G3 clampées en Y dans les goulets,
@@ -4799,8 +4873,37 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
   }
   // Plan : niveaux épais à ap (le petit ae suit les marches, pas de passe fine).
   const plan=faoLevels(zt,zBot,ap).map(function(z){ return {z:z,radial:RA.radial}; });
+  // PLANCHER RÉEL (7/10) : la grille `ap` est ancrée sur `Haut` et ne se pose
+  // sur le fond de la poche que si `Bas` vaut ce fond (ou y tombe par hasard).
+  // Sinon le dernier niveau utile laisse jusqu'à `ap` de matière sur le
+  // plancher ET `Fond` ne décale que le bas de zone — le fond n'est jamais
+  // fini (Fond=0 comme Fond=0,5, sondes A/B). On pose donc un niveau
+  // `fond + Fond` quand la grille en laisserait plus : c'est la passe courte
+  // qui ne remplit pas `ap`. Aucun ajout quand la grille tombe déjà dessus
+  // (coût nul, documents existants inchangés — sondes : Bas=fond, axiales).
+  if(isFinite(zt)&&isFinite(+zbot)&&zt>+zbot){
+    const floors=faoUpFloors(M,Math.min(+zbot,zt),Math.max(+zbot,zt));
+    for(let i=0;i<floors.length;i++){
+      const f=floors[i];
+      if(f<+zbot-1e-9||f>=zt-1e-9)continue;   // hors zone (`Bas`) ou au niveau `Haut`
+      const target=Math.round((f+RA.axial)*1000)/1000; // fond + Fond
+      let g=null;
+      for(let j=0;j<plan.length;j++)
+        if(plan[j].z>=f-1e-9&&(g===null||plan[j].z<g))g=plan[j].z;
+      if(g!==null&&g<=target+1e-9)continue;    // la grille pose déjà dessus (ou plus bas)
+      plan.push({z:target,radial:RA.radial});
+    }
+    plan.sort(function(a,b){return b.z-a.z;});
+  }
   const moves=[];
   const nb=isFinite(+o.minipasses)&&+o.minipasses>0?Math.min(9,Math.round(+o.minipasses)):0;
+  // FINITION DES PAROIS (7/10) : N contours par niveau, offsets
+  // radial*(nf-k)/nf → 0 (k=1..nf), le dernier à la cote théorique. OFF par
+  // défaut (aucun document existant ne bouge) ; exige une laisse radiale > 0
+  // (sinon l'ébauche est déjà au mur). Même contrat que les mini-passes
+  // (ringOnly, entrée depuis le plan du dessus) mais décalage DÉCROISSANT.
+  const nf=(o.finitParois&&RA.radial>0)
+    ?Math.max(1,Math.min(9,Math.round(isFinite(+o.finitN)?+o.finitN:1))):0;
   faoSliceCache={mesh:M,map:{}};
   plan.forEach(function(L,li){
     // Entrée depuis z+ap (rainure du dessus déjà ouverte, descente en avance
@@ -4824,6 +4927,15 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
         const s=RA.radial;
         faoRoughAdaptiveLevel(M,BB,zm,D,D/2+s,secu,Math.min(secu,bandTop),ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvZ});
       }
+    }
+    // FINITION DES PAROIS (7/10) : après le pelage et les mini-passes du
+    // niveau, N contours à décroissance régulière enlèvent la bande laissée
+    // « Parois » (bande INVISIBLE du maillage : r se mesure au mur théorique,
+    // l'anneau à D/2+off l'attaque par l'extérieur, dernier au contact exact).
+    // Risque A3 (paroi inclinée / fraise à coin) : case off par défaut.
+    if(nf)for(let k=1;k<=nf;k++){
+      const off=RA.radial*(nf-k)/nf;
+      faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+off,secu,Math.min(secu,bandTop),ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvZ});
     }
   });
   faoSliceCache=null;

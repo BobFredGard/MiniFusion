@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**175 versions**, de `2026-09-28b` à `2026-10-06-006` — la plus récente en bas,
+**176 versions**, de `2026-09-28b` à `2026-10-07-001` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3013,3 +3013,23 @@ Validation : test synthétique reprenant les chiffres du rapport (plaque 40 mm, 
 Tests : `test_fao_helice.cjs` **+3 assertions** (bloc 6 : 1ᵉʳ point sous face+2 ≥ 41, plongée d'entrée ≤ 0,1×D, géométrie à fente) et reformulation de « rien au-dessus du brut » en **« rien au-dessus du brut après engagement »** — l'entrée légitime traverse le brut en descente continue (20 points), c'est exactement le but ; `test_fao3d.cjs` — « minipasses off : aucun plan z=16 » resserré sur le **contour** (`mid(…,5.5)===0`), le plan reste interdit. Run complet **67/67** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-06-006.html`.
 
 Migration : `APP_VER` → `2026-10-06-006`, **`CACHE_VER` → `2026-10-06-006`** : les générateurs (`faoGen*`) ont bougé, donc — comme le veut la règle de l'entête — les parcours stockés sont **légitimement périmés** ; l'exception historique `2026-10-06-001` saute (ancien moteur aussi). À l'ouverture : « trace écrite par une version antérieure du moteur », export bloqué, **une régénération** puis ré-enregistrement du fichier.
+
+### `2026-10-07-001`
+
+**Ébauche 3D : le plan se pose enfin sur le fond réel de la poche, et les parois se finissent (case + N passes).**
+
+Demande (7/10) : « Le fond : la dernière passe “courte” doit être émise pour que le fond soit terminé quand `Fond=0`. Les parois : case à cocher pour finir la poche avec N passes (ex. `Parois` 0,5 → 0,25 puis 0). »
+
+Diagnostic (sondes A/B, poche 100×80, plancher z=5, ouverture 10, ap 1,5) : `faoLevels` ancre la grille sur `Haut` et pousse `lo = Bas + Fond` — le plan ne se pose sur le fond que si `Bas` vaut ce fond (ou y tombe par hasard). `Bas = 0`, c'est-à-dire **sous** le fond : dernier niveau utile 5,5 → **0,5 mm laissés sur le plancher et `Fond` sans le moindre effet** (identique pour 0 et 0,5) ; `Bas = 5` : zmin 5 / 5,5, juste. Rien dans l'application ne plaçait un niveau sur le fond quand la grille ne tombe pas dessus.
+
+Correctif 1 — **plancher**. `faoUpFloors(mesh,z0,z1)` liste les faces horizontales avec matière **en dessous** : candidats = faces planes (les deux orientations de triangulation), décision par **parité exacte de l'app** (`faoScanIntervals` à `z∓0,001`) — ni dépendance du sens des triangles, ni faux positif sur une voûte ou sur une interface interne (le cas des murs posés sur la dalle) ; aires groupées par cote quantifiée à 0,001, seuil 0,01 mm². Dans `faoGenRough3D`, pour chaque fond `f ∈ [Bas, Haut[` : `target = f + Fond` est **posé dans le plan** seulement si la grille n'a pas déjà un niveau dans `[f, target]` — sinon rien ne bouge (coût nul, documents existants inchangés). La bande résiduelle est toujours < ap : la descente hélice l'usine comme pour un niveau ordinaire. Limite connue, préexistante à `faoSliceZ` : une cote pile sur un maillage à arêtes doubles (boîtes collées, non booléennes) fait doublon dans la section et fausse la parité — les maillages OCCT/manifold, eux, sont dans le cas nominal.
+
+Correctif 2 — **finition des parois**. Champs d'opération `finitParois` (case, **OFF par défaut**) et `finitN` (1..9, défaut 1), nettoyés par `faoSanitiseOps` (absents = sig strictement identique → aucun document existant n'est marqué périmé), portés par le dispatch `faoOpMoves`. Par niveau, **après** l'ébauche et les mini-passes : `nf` contours `ringOnly` à décroissance régulière `off = Parois·(nf−k)/nf → 0` (k = 1..nf, dernier à la cote théorique, centre outil à `D/2` du mur). La bande `[0, Parois]` est invisible du maillage (`r` se mesure au mur théorique) : l'anneau l'attaque par l'extérieur, la descente hélice l'enlève, et `off = 0` ne dépasse jamais la paroi → aucun gouge. Sans laisse radiale, la finition est sans effet (l'ébauche est déjà au mur). Risque A3 (paroi inclinée / fraise à coin) documenté — d'où la case **décochée par défaut**.
+
+Interface : ligne « Finir parois » + nombre de passes dans la fiche Ébauche 3D (infobulles + aide chiffrée : « N contours par niveau = N× plus de calcul de région »), champ grisé tant que la case est décochée ; décocher remet le sig à l'état pristine. `faoOpSig` et la clé de cache suivent les deux champs : cocher rend l'opération périmée, la régénération applique.
+
+Validation (fixture poche **manifold** — 40 tris, chaque arête deux fois dans les deux sens : les boîtes collées posaient des arêtes doubles à z-pile et la parité y lisait la cavité comme du matière, ce qui masquait le plancher) : `Bas=0/Fond=0` → **161 points à z=5 dans la poche, zmin 5** (0 avant correctif) ; `Bas=0/Fond=0,5` → z=5 intact, zmin 5,5 (laisse respectée) ; `Bas=5` inchangé (0 / 161). Finition, mur x=20, Ø10, `Parois=0,5` : centre minimum **x=25,500** (case off, inchangé) → **x=25,000** avec 1 passe ; 2 passes → anneau intermédiaire à x=25,25 **et** contact à 25,000 ; 3 passes → 25,333 / 25,167 / 25,000 ; aucun point sous la cote théorique ; `Parois=0` + case cochée : sans effet.
+
+Tests : nouveau `tests/test_fao_fond_finition.cjs` — **30 assertions** (fermeture manifold de la fixture, détection de fonds avec triangulation inversée, voûte ignorée, plancher `Bas=0` en 0 et 0,5, régressions `Bas=5`, finition off/1/2/3 passes, garde anti-gouge, `Parois=0`, **puis la fiche** : case + N passes rendues, grises/actives selon la case, aide qui suit 1 → 3, champs supprimés au décochage, `faoSanitiseOps`), **inscrit dans la liste `SUITES` de `tests/run.cjs`**. Run complet **68/68** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-07-001.html`.
+
+Migration : `APP_VER` → `2026-10-07-001`, **`CACHE_VER` → `2026-10-07-001`** : `faoGenRough3D` a bougé — les parcours stockés sont **légitimement périmés**, une régénération à l'ouverture. Badge produit **V0.1.2 inchangé** (demande explicite du 7/10 : on reste en V0.1.2, `src/96-bandeau-groupes.js` non touché).
