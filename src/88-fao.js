@@ -279,7 +279,23 @@ function faoSanitiseOps(s){
       if(op.finitParois){op.finitParois=true;
         const fn=Math.round(+op.finitN);op.finitN=isFinite(fn)&&fn>0?Math.min(9,fn):1;
         const fp=Math.round(+op.finitProf);op.finitProf=isFinite(fp)&&fp>0?Math.min(9,fp):1;}
-      else{delete op.finitParois;delete op.finitN;delete op.finitProf;}}
+      else{delete op.finitParois;delete op.finitN;delete op.finitProf;}
+      // 2026-10-07-004 : mode de vidage (absent = conventionnel, 'troco') +
+      // poche d'entree (reference d'esquisse). Le sig de l'esquisse est
+      // RAJEUCHI a chaque lecture : skSig entre dans la signature de l'op ->
+      // editer la poche perime le parcours (la cle de cache porte le sig).
+      // Sans doc (contexte degrade) on ne touche PAS a la reference ; esquisse
+      // vraiment absente -> champ retire, repli conventionnel strict.
+      if(op.mode!=='troco')delete op.mode;
+      if(op.entree){
+        if(typeof op.entree==='string')op.entree={sk:op.entree};
+        const hasDoc=(typeof doc!=='undefined'&&doc&&Array.isArray(doc.sketches));
+        if(hasDoc){
+          const sk=doc.sketches.find(function(s){return s.id===op.entree.sk;});
+          if(sk&&skSig)op.entree={sk:sk.id,sig:skSig(sk)};
+          else delete op.entree;
+        }else if(!op.entree.sk||typeof op.entree.sk!=='string')delete op.entree;
+      }}
     // 2026-10-04-004 : finition géodésique — limites Z héritées du brut,
     // garde-fou fraise droite recalculée à chaque dispatch (jamais stockée).
     if(op.type==='geofinish'){
@@ -1968,7 +1984,10 @@ function faoOpMoves(op,job){
        radial:RA.radial,axial:RA.axial,
        minipasses:isFinite(+op.minipasses)?+op.minipasses:0,
        finitParois:!!op.finitParois,finitN:op.finitN,finitProf:op.finitProf,
-       entry:op.entry||'auto',brutTop:brutTop,secu:secu});
+       entry:op.entry||'auto',brutTop:brutTop,secu:secu,
+       // 2026-10-07-004 : poche d'entree du mode trocoïdal (polygone monde
+       // résolu ici ; null = repli conventionnel strict dans le générateur).
+       poly:(op.mode==='troco'&&op.entree)?faoEntreePoly(op):null});
   }
   else if(op.type==='geofinish'){
     let am=null;
@@ -3238,6 +3257,169 @@ function faoViewerBarUpdate(){
   }catch(e){}
 }
 
+/* ===== 2026-10-07-004 : poche d'ENTRÉE du mode trocoïdal ===== */
+function faoPolyRowIvs(poly,y){
+  // Intervalles X parcourant le polygone à la hauteur y (scanline).
+  const xs=[];
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const a=poly[i],b=poly[j];
+    if((a[1]>y)!==(b[1]>y))xs.push(a[0]+(b[0]-a[0])*(y-a[1])/(b[1]-a[1]));
+  }
+  xs.sort(function(p,q){return p-q;});
+  const out=[];
+  for(let k=0;k+1<xs.length;k+=2)
+    if(xs[k+1]-xs[k]>1e-9)out.push([xs[k],xs[k+1]]);
+  return out;
+}
+function faoEntreePoly(op){
+  // Esquisse de la poche -> polygone XY en COORDONNÉES MONDE (le générateur
+  // le transpose lui-même si le sens long a basculé x<->y).
+  // Contours FORTS seulement : skLoopTrace exclut déjà construction/ref.
+  // Repli (null) : esquisse absente, plan non horizontal, contour multiple,
+  // îlot ou trou dedans, cercle dedans/autour (décor ambigu).
+  try{
+    if(!op||!op.entree||typeof doc==='undefined'||!doc||!Array.isArray(doc.sketches))return null;
+    const sk=doc.sketches.find(function(s){return s.id===op.entree.sk;});
+    if(!sk)return null;
+    const b=sketchBasis(sk);
+    if(!b||Math.abs(b.n.z)<0.99)return null;   // poche = profil XY horizontal
+    const tr=skLoopTrace(sk);
+    if(!tr||!tr.loops||!tr.loops.length)return null;
+    if((tr.circleHoles&&tr.circleHoles.length)||(tr.circlesOut&&tr.circlesOut.length))return null;
+    const TAU=Math.PI*2;
+    for(let i=0;i<tr.loops.length;i++){
+      const L=tr.loops[i];
+      if(L.kind==='island'||L.kind==='hole')return null; // îlot / anneau -> repli
+    }
+    // Candidats = contours extérieurs à aire positive. skLoopTrace peut en
+    // produire DEUX pour un MÊME contour fermé (une traverse par sens) dès
+    // qu'un arc est présent : les deux traversées tessellent alors le même
+    // polygone (sens opposés) — dédoublonnés ci-dessous (bbox + aire). Deux
+    // vrais contours disjoints -> deux polygones distincts -> repli.
+    const cands=[];
+    for(let i=0;i<tr.loops.length;i++){
+      const L=tr.loops[i];
+      if(L.kind==='outer'&&L.area>0)cands.push(L);
+    }
+    if(!cands.length)return null;
+    const polys=[];
+    for(let ci=0;ci<cands.length;ci++){
+      const chain=cands[ci].chain, nodes=chainNodesOf(chain);
+      const pts=[];
+      let bad=false;
+      for(let i=0;i<chain.length&&!bad;i++){
+        const st=chain[i], ed=st.ed, toId=nodes[i+1];
+        if(ed.kind==='line'){
+          const q=tr.pts[toId];
+          if(q)pts.push([q.x,q.y]);
+        }else{
+          const a=ed.e, C=tr.pts[a.pc], an=arcAngles(sk,a);
+          if(!C||!an||!(a.r>1e-9)){bad=true;break;}
+          // Arc : delta CCW strictement > 0 (arcAngles) — la traverse
+          // INVERSE fait le retour COURT (-d), jamais le complément 2PI-d.
+          const fwd=(ed.a===st.from);
+          const d=an.a2-an.a1;
+          const sweep=fwd?d:-d;
+          const s0=fwd?an.a1:an.a2;
+          const n2=Math.max(2,Math.ceil(Math.abs(sweep)/TAU*24));
+          for(let k=1;k<=n2;k++){
+            const t=s0+sweep*k/n2;
+            pts.push([C.x+a.r*Math.cos(t),C.y+a.r*Math.sin(t)]);
+          }
+        }
+      }
+      if(bad||pts.length<3)continue;
+      // dédup quasi-confondus + fermeture
+      const u=[];
+      for(let i=0;i<pts.length;i++){
+        const p=pts[i], q=u[u.length-1];
+        if(!q||Math.hypot(p[0]-q[0],p[1]-q[1])>1e-6)u.push(p);
+      }
+      while(u.length>1&&
+        Math.hypot(u[0][0]-u[u.length-1][0],u[0][1]-u[u.length-1][1])<1e-6)u.pop();
+      if(u.length<3)continue;
+      // 2D esquisse -> monde (repère du dessin), XY seulement
+      const w=[];
+      let okW=true;
+      for(let i=0;i<u.length;i++){
+        const Q=occW(sk,u[i][0],u[i][1]);
+        if(!isFinite(Q[0])||!isFinite(Q[1])){okW=false;break;}
+        w.push([Q[0],Q[1]]);
+      }
+      if(!okW||w.length<3)continue;
+      // aire signée : polygone normalisé CCW (le dédoublonnage compare les
+      // aires absolues ; pip et scanline sont insensibles au sens)
+      let s2=0;
+      for(let i=0;i<w.length;i++){
+        const p=w[i], q=w[(i+1)%w.length];
+        s2+=p[0]*q[1]-q[0]*p[1];
+      }
+      if(s2<0){w.reverse();s2=-s2;}
+      let ax0=1/0,ax1=-1/0,ay0=1/0,ay1=-1/0;
+      for(let i=0;i<w.length;i++){
+        if(w[i][0]<ax0)ax0=w[i][0]; if(w[i][0]>ax1)ax1=w[i][0];
+        if(w[i][1]<ay0)ay0=w[i][1]; if(w[i][1]>ay1)ay1=w[i][1];
+      }
+      let dup=false;
+      for(let i=0;i<polys.length&&!dup;i++){
+        const G=polys[i];
+        if(Math.abs(G.x0-ax0)<1e-6&&Math.abs(G.x1-ax1)<1e-6&&
+           Math.abs(G.y0-ay0)<1e-6&&Math.abs(G.y1-ay1)<1e-6&&
+           Math.abs(G.a-Math.abs(s2)/2)<1e-6)dup=true;
+      }
+      if(!dup)polys.push({w:w,x0:ax0,x1:ax1,y0:ay0,y1:ay1,a:Math.abs(s2)/2});
+    }
+    // Un SEUL contour unique (double parcours d'un arc dédoublonné) — sinon
+    // repli : contours multiples / décor ambigu.
+    if(polys.length!==1)return null;
+    return polys[0].w;
+  }catch(e){ return null; }
+}
+function faoPolyUsable(poly,D,mesh,B,zt,zbot,ae){
+  // Repli conventionnel silencieux si la poche ne peut pas servir d'entrée :
+  //  1) l'outil TIENT dedans (un point intérieur à >= D/2 + 0,25 du bord) —
+  //     sinon la colonne n'est jamais évacuée par la phase A et l'« air » du
+  //     maillage serait un mensonge (plongée en matière pleine) ;
+  //  2) la poche TOUCHE la region usinable (intervalles du niveau) — sinon
+  //     elle est posée dans la matière hors cavite.
+  try{
+    if(!poly||poly.length<3)return false;
+    let x0=1/0,x1=-1/0,y0=1/0,y1=-1/0;
+    for(let i=0;i<poly.length;i++){
+      const p=poly[i];
+      if(p[0]<x0)x0=p[0]; if(p[0]>x1)x1=p[0];
+      if(p[1]<y0)y0=p[1]; if(p[1]>y1)y1=p[1];
+    }
+    const need=D/2+0.25, N=12; let fit=false;
+    for(let i=1;i<N&&!fit;i++)for(let j=1;j<N&&!fit;j++){
+      const x=x0+(x1-x0)*i/N, y=y0+(y1-y0)*j/N;
+      if(faoPointInPoly(x,y,poly)&&faoDistToPoly(x,y,poly)>=need)fit=true;
+    }
+    if(!fit)return false;
+    if(!mesh||!mesh.v||!mesh.v.length)return true; // pas de maillage : structurel seul
+    const hi=isFinite(+zt)?+zt:(isFinite(+zbot)?+zbot:0);
+    const lo=isFinite(+zbot)?+zbot:hi-1;
+    const H=Math.max(1e-3,hi-lo);
+    const zs=[hi-0.05*H, hi-0.5*H, lo+0.05*H];
+    const r=D/2, aeA=Math.max(0.5,Math.min(isFinite(+ae)&&+ae>0?+ae:D*0.6,D*0.25));
+    for(let zi=0;zi<zs.length;zi++){
+      const z=zs[zi];
+      if(!(z>lo&&z<hi))continue;
+      const planes=faoShadowPlanes(mesh,z,hi);
+      for(let k=1;k<=5;k++){
+        const y=y0+(y1-y0)*k/6;
+        const ivs=faoShadowIntervals(mesh,B,y,z,hi,r,aeA,planes);
+        if(!ivs.length)continue;
+        const rs=faoPolyRowIvs(poly,y);
+        for(let a=0;a<ivs.length;a++)for(let b=0;b<rs.length;b++){
+          const ov=Math.min(ivs[a].b,rs[b][1])-Math.max(ivs[a].a,rs[b][0]);
+          if(ov>0.5)return true;
+        }
+      }
+    }
+    return false;
+  }catch(e){ return false; }
+}
 /* ================= interface (bouton + panneau flottant) ================= */
 function faoOpDefaults(type){
   const s=faoStock(); const job=faoDoc();
@@ -3999,14 +4181,48 @@ function faoOpCardElement(setup,op,i){
       wz.textContent='⚠ Modèle modifié : arêtes de limite Z non retrouvées — valeurs inchangées. Re-sélectionnez les arêtes.';
       d.appendChild(wz);
     }
-    d.appendChild(faoH('Vidage (mode trocoïdal unique)'));
-    d.appendChild(faoHelp(
-      'Pelage à ap constant avec entrées hélice/rampe et trochoïdes automatiques dans les goulets : '+
-      'gardez ae petit (≤ ¼ du Ø outil) et ap profond (≈ 1×Ø). L’outil ne s’enterre jamais.'));
+    d.appendChild(faoH('Vidage'));
+    const rM=faoRow();
+    rM.appendChild(faoLab('Mode'));
+    rM.appendChild(faoSel([
+      ['conv','Conventionnel','Pelage à ap constant (champ ap) : entrées hélice/rampe, trochoïdes automatiques dans les goulets.'],
+      ['troco','Trocoïdal · poche d’entrée','Deux phases : évidement conventionnel de la poche d’abord, puis niveaux à pas Ø attaqués depuis la poche en ronds.']],
+      op.mode||'conv',function(v){
+        if(v==='troco')op.mode='troco'; else delete op.mode;
+      },'Mode de vidage — en trocoïdal, la poche d’entrée évacuée par la phase 1 sert d’air aux entrées profondes (jamais de plongée en matière pleine).'));
+    d.appendChild(rM);
+    if(op.mode==='troco'){
+      const rS=faoRow();
+      rS.appendChild(faoLab('Poche'));
+      const opts=[['','— choisir une esquisse —','Sans poche valide, repli conventionnel.']];
+      ((typeof doc!=='undefined'&&doc&&doc.sketches)||[]).forEach(function(s){
+        opts.push([s.id,s.name+' · '+sketchFaceLabel(s),(s.entities||[]).length+' traits']);
+      });
+      rS.appendChild(faoSel(opts,(op.entree&&op.entree.sk)||'',function(v){
+        if(v)op.entree={sk:v}; else delete op.entree;
+      },'Esquisse de la poche d’entrée : contour fermé de traits FORTS (hors construction), plan horizontal, sans îlot ni trou, large d’au moins Ø outil.'));
+      d.appendChild(rS);
+      if(!op.entree){
+        d.appendChild(faoHelp('Choisissez une esquisse : sans poche, le mode trocoïdal se rabat sur le conventionnel.'));
+      }else if(!faoEntreePoly(op)){
+        d.appendChild(faoHelp('⚠ Esquisse inutilisable (plan non horizontal, contours multiples, îlot ou trou dedans, cercle) — repli conventionnel.'));
+      }else{
+        d.appendChild(faoHelp(
+          'Phase 1 : évidement de la poche à ap (conventionnel) jusqu’à fond+Fond, murs temporaires sans laisse. '+
+          'Phase 2 : niveaux à Ø outil sur toute la cavité, entrée par la poche évacuée, ronds vers l’extérieur. '+
+          'Plancher, parois (Parois/Fond) et finition inchangés.'));
+      }
+    }else{
+      d.appendChild(faoHelp(
+        'Pelage à ap constant avec entrées hélice/rampe et trochoïdes automatiques dans les goulets : '+
+        'gardez ae petit (≤ ¼ du Ø outil) et ap profond (≈ 1×Ø). L’outil ne s’enterre jamais.'));
+    }
     d.appendChild(faoH('Passes (mm)'));
     const rP=faoRow();
     rP.appendChild(faoLab('ap')); rP.appendChild(faoNum(op.ap,function(v){op.ap=Math.max(0.5,v);},48,0.5,
-      'Descente : hauteur usinée par niveau (Maximum Stepdown). Profond en mode trocoïdal (≈ Ø outil).'));
+      (op.mode==='troco')
+        ?'Descente de la PHASE 1 — évidement de la poche d’entrée (les niveaux profonds de la phase 2 sont à pas Ø outil, automatiques).'
+        :'Descente : hauteur usinée par niveau (Maximum Stepdown). Profond en mode trocoïdal (≈ Ø outil).'));
     rP.appendChild(faoLab('ae')); rP.appendChild(faoNum(op.ae,function(v){op.ae=Math.max(0.5,v);},48,
       'Pas latéral : distance entre deux passes voisines (Stepover). ≤ ¼ du Ø en mode trocoïdal.'));
     rP.appendChild(faoLab('mini')); rP.appendChild(faoNum(op.minipasses||0,function(v){op.minipasses=Math.max(0,Math.min(50,Math.round(v)));},40,1,
@@ -4890,8 +5106,28 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
     M={v:mesh.v.map(function(p){return [p[1],p[0],p[2]];}),t:mesh.t};
     BB={x0:B.y0,y0:B.x0,x1:B.y1,y1:B.x1};
   }
-  // Plan : niveaux épais à ap (le petit ae suit les marches, pas de passe fine).
-  const plan=faoLevels(zt,zBot,ap).map(function(z){ return {z:z,radial:RA.radial}; });
+  // 2026-10-07-004 : POCHE D'ENTREE (mode trocoïdal) — polygone XY monde
+  // résolu par le dispatch (faoEntreePoly) ; transposé avec le maillage quand
+  // le sens long a basculé x<->y. Sans polygone VALIDÉ, les deux phases sont
+  // inertes et le parcours conventionnel est STRICTEMENT identique.
+  let poly=null;
+  if(Array.isArray(o.poly)){
+    poly=[];
+    for(let i=0;i<o.poly.length;i++){
+      const q=o.poly[i];
+      if(Array.isArray(q)&&isFinite(+q[0])&&isFinite(+q[1]))poly.push([+q[0],+q[1]]);
+      else{poly=null;break;}
+    }
+    if(poly&&poly.length<3)poly=null;
+  }
+  if(swapped&&poly)poly=poly.map(function(p){return [p[1],p[0]];});
+  // Sécurité (repli conventionnel silencieux) : l'outil doit TENIR dans la
+  // poche — la colonne est alors entièrement évacuée par la phase A, donc
+  // l'« air » que le maillage promet en phase B est un VRAI vide ; et la poche
+  // doit TOUCHER la region usinable (sinon elle est posée dans la matière
+  // hors cavite : phase A vide, phase B sans entrée digne de ce nom).
+  if(poly&&!faoPolyUsable(poly,D,M,BB,zt,+zbot,ae))poly=null;
+  const troco=!!poly;
   // PLANCHER RÉEL (7/10) : la grille `ap` est ancrée sur `Haut` et ne se pose
   // sur le fond de la poche que si `Bas` vaut ce fond (ou y tombe par hasard).
   // Sinon le dernier niveau utile laisse jusqu'à `ap` de matière sur le
@@ -4905,21 +5141,31 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
   // Fonds calculés UNE fois (réutilisés par la finition : niveau cible).
   const zoneOk=isFinite(zt)&&isFinite(+zbot)&&zt>+zbot;
   const floorsUp=zoneOk?faoUpFloors(M,Math.min(+zbot,zt),Math.max(+zbot,zt)):[];
-  if(zoneOk){
-    for(let i=0;i<floorsUp.length;i++){
-      const f=floorsUp[i];
-      if(f<+zbot-1e-9||f>=zt-1e-9)continue;   // hors zone (`Bas`) ou au niveau `Haut`
-      const target=Math.round((f+RA.axial)*1000)/1000; // fond + Fond
-      let atT=false;
-      for(let j=plan.length-1;j>=0;j--){
-        const z=plan[j].z;
-        if(z>=f-1e-9&&z<target-1e-9)plan.splice(j,1);   // coupait dans la laisse
-        else if(Math.abs(z-target)<=1e-9)atT=true;
+  // Construction d'une grille (niveaux + poses de fond) — appelée DEUX fois en
+  // mode trocoïdal : `ap` pour la phase A (évidement conventionnel de la
+  // poche) et Ø outil pour la phase B (niveaux profonds, toute la cavité).
+  const mkPlan=function(apx){
+    const p=faoLevels(zt,zBot,apx).map(function(z){ return {z:z,radial:RA.radial}; });
+    if(zoneOk){
+      for(let i=0;i<floorsUp.length;i++){
+        const f=floorsUp[i];
+        if(f<+zbot-1e-9||f>=zt-1e-9)continue;   // hors zone (`Bas`) ou au niveau `Haut`
+        const target=Math.round((f+RA.axial)*1000)/1000; // fond + Fond
+        let atT=false;
+        for(let j=p.length-1;j>=0;j--){
+          const z=p[j].z;
+          if(z>=f-1e-9&&z<target-1e-9)p.splice(j,1);   // coupait dans la laisse
+          else if(Math.abs(z-target)<=1e-9)atT=true;
+        }
+        if(!atT)p.push({z:target,radial:RA.radial});    // haut de laisse exact
       }
-      if(!atT)plan.push({z:target,radial:RA.radial});    // haut de laisse exact
+      p.sort(function(a,b){return b.z-a.z;});
     }
-    plan.sort(function(a,b){return b.z-a.z;});
-  }
+    return p;
+  };
+  const planA=troco?mkPlan(ap):null;        // phase A : niveaux conventionnels
+  const plan=troco?mkPlan(D):mkPlan(ap);    // phase B (pas = Ø) / conventionnel
+  const apP=troco?D:ap;                     // descente entre niveaux du plan actif
   const moves=[];
   const nb=isFinite(+o.minipasses)&&+o.minipasses>0?Math.min(50,Math.round(+o.minipasses)):0;
   // FINITION DES PAROIS (8/10) : N contours sur la DERNIÈRE passe en
@@ -4948,16 +5194,74 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
     }
   }
   faoSliceCache={mesh:M,map:{}};
+  // PHASE A — ÉVIDEMENT DE LA POCHE (2026-10-07-004) : la même ébauche
+  // conventionnelle (niveaux `ap`, mêmes entrées/travel/plancher/fond) mais
+  // entrées contraintes au polygone (opt.poly) et coupe clipée à l'intérieur
+  // du polygone érodé de D/2 — murs temporaires à 0 de laisse (les vraies
+  // parois restent protégées par les intervalles maillage, r = D/2 + Parois).
+  // Le niveau est calculé sur la boîte COMPLÈTE (jamais sur le bbox de la
+  // poche : faoShadowIntervals devient conservatif-vide quand la boîte
+  // intérieure ne touche aucune matière, cf. poche centrale en mode
+  // transposé) ; c'est le clip final qui borne tout à la poche. La colonne
+  // descend jusqu'à fond+Fond avant les niveaux profonds : chaque entrée de
+  // phase B est alors dans du vide RÉEL, pas seulement dans le vide du modèle.
+  if(troco&&planA&&planA.length){
+    let qx0=1/0,qx1=-1/0,qy0=1/0,qy1=-1/0;
+    poly.forEach(function(p){
+      if(p[0]<qx0)qx0=p[0]; if(p[0]>qx1)qx1=p[0];
+      if(p[1]<qy0)qy0=p[1]; if(p[1]>qy1)qy1=p[1];
+    });
+    const Bp={x0:Math.max(BB.x0,qx0),y0:Math.max(BB.y0,qy0),
+              x1:Math.min(BB.x1,qx1),y1:Math.min(BB.y1,qy1)};
+    if(Bp.x1>Bp.x0&&Bp.y1>Bp.y0){
+      let movesA=[];
+      planA.forEach(function(L,li){
+        const zFrom=Math.min(secu,L.z+ap);
+        const bandTop=li>0?planA[li-1].z:zt;
+        const tvZ=Math.min(secu,bandTop+2);
+        faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+RA.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,movesA,{travelZ:tvZ,poly:poly});
+      });
+      // Clip à la poche : centre d'outil >= D/2 du bord (side 'in', extra 0)
+      // — les rapides de liaison sont conservés (jamais de coupe dehors).
+      // Aplatissement AVANT clip (même réparation que faoZoneCuts) : le clip
+      // ne lit que les segments droits, les arcs trochoïdes des goulets
+      // traverseraient la frontière — ceux entièrement dedans restent des
+      // G2/G3, les dépassants sont échantillonnés puis recoupés.
+      const limA={loop:poly,side:'in',extra:0};
+      const inA=function(x,y){ return faoLimInside(x,y,limA,D/2); };
+      const flatA=[]; let pvA=null;
+      for(let i=0;i<movesA.length;i++){
+        const m=movesA[i];
+        if(m.r){ flatA.push(m); pvA=m; continue; }
+        if(m.arc&&pvA){
+          const pts=faoArcSegs(pvA,m);
+          let ok=inA(m.x,m.y)&&inA(pvA.x,pvA.y);
+          for(let k=0;k<pts.length&&ok;k++)if(!inA(pts[k][0],pts[k][1]))ok=false;
+          if(ok){ flatA.push(m); pvA=m; continue; }
+          for(let k=0;k<pts.length;k++)flatA.push({r:0,x:pts[k][0],y:pts[k][1],z:pts[k][2]});
+          pvA=flatA[flatA.length-1];
+          continue;
+        }
+        flatA.push(m); pvA=m;
+      }
+      movesA=faoClipMovesPoly(flatA,limA,D/2,secu,2);
+      for(let i=0;i<movesA.length;i++)moves.push(movesA[i]);
+    }
+  }
   plan.forEach(function(L,li){
-    // Entrée depuis z+ap (rainure du dessus déjà ouverte, descente en avance
+    // Entrée depuis z+pas (rainure du dessus déjà ouverte, descente en avance
     // plongée) : l'hélice ne refait jamais toute la hauteur depuis la sécu.
-    const zFrom=Math.min(secu,L.z+ap);
+    // Pas = ap en conventionnel, Ø outil en phase B (niveaux profonds).
+    const zFrom=Math.min(secu,L.z+apP);
     // Retour 6/10 : LIAISON BASSE — après chaque région (parent OU mini), on
     // revient à bandTop+2 (à vide, hors gouttière) au lieu de la tour rouge
     // jusqu'à secu, avec inset vers l'intérieur ouvert (ou secu par défaut).
     const bandTop=li>0?plan[li-1].z:zt;
     const tvZ=Math.min(secu,bandTop+2);
-    faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ});
+    // poly (phase B) : entrée FORCÉE dans la poche — le pelage offset
+    // (ronds + trochoïdes des goulets) repart du centre vers l'extérieur,
+    // toujours en contact avec le vide évacué par la phase A.
+    faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,poly:troco?poly:null});
     // MINI-PASSES (retour 4/10) : après le pelage du niveau, contour des parois
     // entre ce plan et le plan du dessus : profondeurs k*h/(nb+1) sous le plan
     // du dessus (strictement entre les deux, jamais dessus), décalage radial
@@ -6111,21 +6415,47 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   const flat=[];
   lines.forEach(function(L){ L.ivs.forEach(function(iv){ flat.push({y:L.y,iv:iv}); }); });
   if(!flat.length)return;
+  // ENTREE TROCOÏDALE (2026-10-07-004) : les candidats d'entrée (E = intervalle
+  // le plus large, hélice multi-spots, rampe, micro-hélice) sont CLIPPÉS au
+  // polygone de la poche — la descente ne se fait que dans la colonne
+  // évacuée par la phase A (vide RÉEL, pas seulement vide au modèle). Le
+  // pelage (lines/regs/chunks) reste entier : la phase B coupe toute la
+  // cavité, seul le POINT D'ENTRÉE doit être en air. Polygone sans
+  // recoupement à ce niveau : repli sur les intervalles complets.
+  const polyE=(opt&&Array.isArray(opt.poly)&&opt.poly.length>=2)?opt.poly:null;
+  let flatE=flat;
+  if(polyE){
+    const fp=[];
+    for(let i=0;i<flat.length;i++){
+      const f=flat[i], rs=faoPolyRowIvs(polyE,f.y);
+      for(let k=0;k<rs.length;k++){
+        const a=Math.max(f.iv.a,rs[k][0]), b=Math.min(f.iv.b,rs[k][1]);
+        if(b-a>0.5)fp.push({y:f.y,iv:{a:a,b:b}});
+      }
+    }
+    if(fp.length)flatE=fp;
+  }
   let hasTroch=false;
   regs.forEach(function(R){
     let ml=0;
     R.forEach(function(q){ ml=Math.max(ml,q.iv.b-q.iv.a); });
     if(ml<2.5*D&&R.length>=2)hasTroch=true;
   });
-  let E=flat[0];
-  for(let i=1;i<flat.length;i++)if(flat[i].iv.b-flat[i].iv.a>E.iv.b-E.iv.a)E=flat[i];
+  let E=flatE[0];
+  for(let i=1;i<flatE.length;i++)if(flatE[i].iv.b-flatE[i].iv.a>E.iv.b-E.iv.a)E=flatE[i];
   const elen=E.iv.b-E.iv.a;
   let ixA=1/0, ixB=-1/0;
-  flat.forEach(function(f){ ixA=Math.min(ixA,f.iv.a); ixB=Math.max(ixB,f.iv.b); });
-  const yRun=(ixB-ixA>0.2)?(lines[lines.length-1].y-lines[0].y):0;
+  flatE.forEach(function(f){ ixA=Math.min(ixA,f.iv.a); ixB=Math.max(ixB,f.iv.b); });
+  const yRun=(ixB-ixA>0.2)?(flatE[flatE.length-1].y-flatE[0].y):0;
   let cx0=0, cy0=0;
-  lines.forEach(function(L){ cx0+=(L.ivs[0].a+L.ivs[0].b)/2; cy0+=L.y; });
-  cx0/=lines.length; cy0/=lines.length;
+  if(polyE&&flatE!==flat){
+    // Centroid des intervalles CLIPPÉS : le candidat de repli tombe dedans.
+    flatE.forEach(function(f){ cx0+=(f.iv.a+f.iv.b)/2; cy0+=f.y; });
+    cx0/=flatE.length; cy0/=flatE.length;
+  }else{
+    lines.forEach(function(L){ cx0+=(L.ivs[0].a+L.ivs[0].b)/2; cy0+=L.y; });
+    cx0/=lines.length; cy0/=lines.length;
+  }
   let tang=null;
   if(isRing&&lines.length>=2){
     const a0=lines[0].ivs[0].a, b0=lines[0].ivs[0].b;
@@ -6138,7 +6468,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
         tang={sx:sx,sy:sy,px:p0x,py:p0y};
     }
   }
-  const byW=flat.slice().sort(function(a,b){
+  const byW=flatE.slice().sort(function(a,b){
     return (b.iv.b-b.iv.a)-(a.iv.b-a.iv.a); });
   const forced=(entryMode||'auto')==='helix'?'helix':(entryMode||'auto')==='ramp'?'ramp':'auto';
   const fmode=forced!=='auto'?forced:(hasTroch?'helix':'auto');
@@ -6172,7 +6502,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     if(elen>=yRun&&elen>0.2)ramp={x0:E.iv.a,y0:E.y,x1:E.iv.a+Math.min(elen,2*D),y1:E.y};
     else if(yRun>0.2){
       const xm=(ixA+ixB)/2;
-      const rp={x0:xm,y0:lines[0].y,x1:xm,y1:lines[0].y+Math.min(yRun,2*D)};
+      const rp={x0:xm,y0:flatE[0].y,x1:xm,y1:flatE[0].y+Math.min(yRun,2*D)};
       // Rampe verticale : validee sur tout le segment (le milieu de la boite
       // peut tomber dans la matiere sur cette ligne), sinon repli horizontal.
       if(segClear(rp.x0,rp.y0,rp.x1,rp.y1))ramp=rp;

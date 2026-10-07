@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**178 versions**, de `2026-09-28b` à `2026-10-07-003` — la plus récente en bas,
+**179 versions**, de `2026-09-28b` à `2026-10-07-004` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3065,3 +3065,17 @@ Documents existants (`minipasses ≤ 9`) : **parcours strictement identiques** �
 Tests : `test_fao3d.cjs` **+4 assertions** — sanitise (99→50, 50 et 12 conservés), plan intermédiaire `z=11,882` (= 12 − 6/51) bien émis au contour avec `minipasses:50`, volume de moves > 2× le cas `minipasses:2`, et `minipasses:99` → parcours **identique** à `50` (plafond générateur). Run complet **68/68** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-07-003.html`.
 
 Migration : `APP_VER` → `2026-10-07-003`, **`CACHE_VER` inchangé** (`2026-10-07-002`). Badge **V0.1.2 inchangé**.
+
+### `2026-10-07-004`
+
+**Ébauche 3D : mode trocoïdal + poche d'entrée (esquisse) — phase A clipée à la poche, phase B à pas Ø attaquée depuis la poche.**
+
+Nouveau sélecteur « Conventionnel / Trocoïdal » sur la fiche Ébauche 3D. En mode trocoïdal l'opération lit une **poche d'entrée** dessinée en esquisse (`op.entree = {sk, sig}`) : `faoEntreePoly` tesselle le contour fort unique (traits + arcs, plan horizontal, coordonnées monde) en polygone ; repli conventionnel STRICT (sortie identique au parcours sans poche) si l'esquisse est absente, verticale, multi-contours, îlot/trou/cercle — et `faoPolyUsable` pour l'outil qui ne tient pas ou la poche hors région usinable. `op.mode` absent = conventionnel ; la sanitise purge tout champ ≠ `troco` et repose le sig à chaque édition → sigs des documents existants inchangés.
+
+Deux phases dans `faoGenRough3D` : **phase A** — évidement conventionnel des niveaux `ap` calculé sur la boîte complète (`faoShadowIntervals` devient conservateur-vide sur une boîte intérieure ne touchant aucune matière, cf. poche centrale en mode transposé), entrées contraintes au polygone (`opt.poly`) et coupe clipée à ≥ D/2 à l'intérieur (murs temporaires à 0 de laisse ; les arcs trochoïdes dépassants sont aplatis avant clip, même réparation que `faoZoneCuts` — le clip ne lit que les segments droits) ; **phase B** — niveaux profonds à pas Ø outil, pelage ronds/trochoïdes sur TOUTE la cavité avec entrée forcée dans la poche évacuée, la colonne descendant à `fond + Fond` avant les niveaux profonds (chaque entrée est alors dans du vide réel, pas seulement dans le vide du modèle). Le générateur transpose le polygone quand le sens long a basculé x↔y.
+
+Poche : `faoEntreePoly` tolère les doubles traversées d'un même arc (retour COURT dans les deux sens, dédoublonnage bbox + aire) — un quarter-disc tesselle en 8 points au lieu d'être refusé ; deux vrais contours disjoints → repli.
+
+Tests : nouveau `tests/test_fao_troco.cjs` — fixture bloc **manifold** 80×60×18, poche x[10,70] y[10,50] fond z=4 (rôles de sommets prouvés de `test_fao_fond_finition`) : conventionnel inchangé, phase A clipée (z=14/10/6 min sd ≥ −4,1), phase B hors poche (z=8 et z=4,5), sens long transposé (boîte portrait), replis JSON == conv (outil trop grand, poche hors zone, esquisse absente/sans poche), `faoEntreePoly` (rect, construction, anneau, 2 contours, cercle, plan vertical, arc tessellé, origine déplacée), sanitise (mode/sig/purge) et dispatch 4 opérations via `faoOpMoves`. **Inscrit dans `SUITES`** (`tests/run.cjs`, 69 suites). Run complet **69/69** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-07-004.html`.
+
+Migration : `APP_VER` → `2026-10-07-004`, **`CACHE_VER` inchangé** (`2026-10-07-002`) : sans poche (`poly: null`) le chemin de code est strictement identique → parcours et sigs des documents existants inchangés, aucune régénération forcée. Badge **V0.1.2 inchangé**.
