@@ -31,6 +31,7 @@ const SUITES = [
   "test_fao",
   "test_fao3d",
   "test_fao_troco",
+  "test_fao_escargot",
   "test_fao_bornage",
   "test_fao_chain",
   "test_fao_couverture",

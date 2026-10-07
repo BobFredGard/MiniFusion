@@ -286,7 +286,9 @@ function faoSanitiseOps(s){
       // editer la poche perime le parcours (la cle de cache porte le sig).
       // Sans doc (contexte degrade) on ne touche PAS a la reference ; esquisse
       // vraiment absente -> champ retire, repli conventionnel strict.
-      if(op.mode!=='troco')delete op.mode;
+      // 2026-10-07-005 : 'escargot' (spirale centre -> faces) conserve aussi ;
+      // tout autre mode inconnu est purge (absent = conventionnel).
+      if(op.mode!=='troco'&&op.mode!=='escargot')delete op.mode;
       if(op.entree){
         if(typeof op.entree==='string')op.entree={sk:op.entree};
         const hasDoc=(typeof doc!=='undefined'&&doc&&Array.isArray(doc.sketches));
@@ -1987,6 +1989,9 @@ function faoOpMoves(op,job){
        entry:op.entry||'auto',brutTop:brutTop,secu:secu,
        // 2026-10-07-004 : poche d'entree du mode trocoïdal (polygone monde
        // résolu ici ; null = repli conventionnel strict dans le générateur).
+       // 2026-10-07-005 : mode de vidage — 'escargot' = spirale centre ->
+       // faces (faoSpiralLevel) ; absent = conventionnel (documents anciens).
+       mode:op.mode,
        poly:(op.mode==='troco'&&op.entree)?faoEntreePoly(op):null});
   }
   else if(op.type==='geofinish'){
@@ -3439,6 +3444,9 @@ function faoOpDefaults(type){
   if(type==='rough3d')return Object.assign({},base,{type:'rough3d',
     ztop:s.z1, zbot:s.z0, ap:5, ae:+(D*0.6).toFixed(2),
     radial:0.5, axial:0.5, entry:'auto', minipasses:0,
+    // 2026-10-07-005 : l'ESCARGOT est la 1re selection a la creation
+    // (les documents anciens sans mode restent conventionnels).
+    mode:'escargot',
     arrondi:+(Math.min(2,D*0.25)).toFixed(2)});
   if(type==='geofinish')return Object.assign({},base,{type:'geofinish',
     step:1, laisse:0, seed:'top', entry:'auto', ztop:s.z1, zbot:s.z0});
@@ -4185,11 +4193,12 @@ function faoOpCardElement(setup,op,i){
     const rM=faoRow();
     rM.appendChild(faoLab('Mode'));
     rM.appendChild(faoSel([
-      ['conv','Conventionnel','Pelage à ap constant (champ ap) : entrées hélice/rampe, trochoïdes automatiques dans les goulets.'],
+      ['escargot','Escargot · du centre vers les faces','Pelage en spirale depuis le pôle de la zone à usiner : chaque tour s’éloigne de ae, entrée en hélice obligatoire, les faces sont finies en dernier (2026-10-07-005, mode par défaut à la création).'],
+      ['conv','Conventionnel','Pelage à ap constant (champ ap) : du milieu de la zone vers les bords, entrées hélice/rampe, trochoïdes automatiques dans les goulets.'],
       ['troco','Trocoïdal · poche d’entrée','Deux phases : évidement conventionnel de la poche d’abord, puis niveaux à pas Ø attaqués depuis la poche en ronds.']],
       op.mode||'conv',function(v){
-        if(v==='troco')op.mode='troco'; else delete op.mode;
-      },'Mode de vidage — en trocoïdal, la poche d’entrée évacuée par la phase 1 sert d’air aux entrées profondes (jamais de plongée en matière pleine).'));
+        if(v==='troco')op.mode='troco'; else if(v==='escargot')op.mode='escargot'; else delete op.mode;
+      },'Mode de vidage — escargot par défaut à la création ; en trocoïdal, la poche d’entrée évacuée par la phase 1 sert d’air aux entrées profondes (jamais de plongée en matière pleine).'));
     d.appendChild(rM);
     if(op.mode==='troco'){
       const rS=faoRow();
@@ -4212,9 +4221,17 @@ function faoOpCardElement(setup,op,i){
           'Phase 2 : niveaux à Ø outil sur toute la cavité, entrée par la poche évacuée, ronds vers l’extérieur. '+
           'Plancher, parois (Parois/Fond) et finition inchangés.'));
       }
+    }else if(op.mode==='escargot'){
+      d.appendChild(faoHelp(
+        'Escargot : pelage en spirale depuis le centre de la zone à usiner (pôle d’inaccessibilité, pas le '+
+        'centre de la boîte — la 1re coupe n’attaque plus un bord de face) vers les faces, tours espacés de ae, '+
+        'toutes les entrées en matière sont des hélices (jamais de plongée directe). '+
+        'Dernière passe de chaque niveau : contour des faces du solide au ras (laisse outil). '+
+        'Mini-passes, plafond/fond et finition inchangés — ae pilote la distance entre deux tours.'));
     }else{
       d.appendChild(faoHelp(
         'Pelage à ap constant avec entrées hélice/rampe et trochoïdes automatiques dans les goulets : '+
+        'on enlève le MILIEU de la zone avant les bords (les bords et la marge finissent la passe), '+
         'gardez ae petit (≤ ¼ du Ø outil) et ap profond (≈ 1×Ø). L’outil ne s’enterre jamais.'));
     }
     d.appendChild(faoH('Passes (mm)'));
@@ -5029,6 +5046,240 @@ function faoHelixEntry(cx,cy,zFrom,zTo,radius,toolD){
   }
   return moves;
 }
+/* ----- ESCARGOT (2026-10-07-005) : pelage en spirale centre -> faces -----
+   Le niveau part du CENTRE de la région (bbox des intervalles d'ombre du
+   niveau — au mieux le centre de la pièce) et s'en éloigne en spirale
+   ARCHIMÉDIEN : chaque tour gagne `ae` en rayon (le stepover = distance
+   entre deux tours), jusqu'aux faces — le tour extérieur s'arrête à
+   r = D/2 + Parois des parois (mêmes intervalles d'ombre que le
+   conventionnel : ni gouge, même laisse, « finir au mieux » au mur).
+   Le polygone de la région n'est jamais construit : chaque échantillon est
+   testé par faoShadowIntervals (colonne atteignable depuis le dessus,
+   matière dilatée de r) — un passage hors région est simplement sauté
+   (rapide + ré-entrée), un passage dedans est coupé en G1 ; la liaison
+   directe est validée par segClear (repli = ré-entrée).
+   Toute ENTRÉE en matière est une HÉLICE (obligation « 1re face », utile
+   à tous les niveaux) : même spot, même plancher hFloor = min(secu,
+   zFrom+2) et faoHelixEntry qu'en conventionnel ; repli plongée sûre
+   uniquement si aucun rayon d'hélice ne passe (colonne d'ombre garantie).
+   Mini-passes et finition : inchangées (ringOnly conventionnel).
+   */
+function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,opt){
+  const segs=faoSliceZCached(mesh,z);
+  const top=isFinite(+zt)?+zt:z;
+  const aeA=Math.max(0.5,Math.min(isFinite(+ae)&&+ae>0?+ae:D*0.2,D*0.25));
+  const planes=faoShadowPlanes(mesh,z,Math.max(top,isFinite(+brutTop)?+brutTop:z));
+  let segsAll=segs.slice();
+  for(let pi=0;pi<planes.length;pi++){
+    if(planes[pi]>z+1e-9)segsAll=segsAll.concat(faoSliceZCached(mesh,planes[pi]));
+  }
+  const rnd=function(v){return Math.round(v*1000)/1000;};
+  const tz=(opt&&isFinite(+opt.travelZ))?Math.min(secu,+opt.travelZ):null;
+  const pitch=Math.max(0.1,isFinite(+ae)&&+ae>0?+ae:D*0.5);
+  // --- ZONE DU NIVEAU (retour 1/3) : le centre doit être le POLE
+  // d'inaccessibilité des cases usinables (case légale la plus loin d'une
+  // case illégale), pas le centre de la bbox des intervalles — sur une pièce
+  // à poche décalée la bbox tombe au centre de la BOÎTE, hors zone, et la
+  // 1re coupe se pique contre un bord de face (mesuré : 20,85 mm du centre de
+  // zone). Cases = même membership que la spirale, transformée de distance
+  // chanfrein 2 passes (distance aux cases illégales + au bord de boîte).
+  const S=faoShadowShape(mesh,planes,B,r,aeA);
+  const rrM=Math.max(0.01,r-0.005);
+  const inside=function(x,y){return faoShapeValid(S,x,y,rrM);};
+  const gx0=S.rect[0],gy0=S.rect[1];
+  const extX=S.rect[2]-S.rect[0],extY=S.rect[3]-S.rect[1];
+  if(!(extX>0&&extY>0))return;
+  let h=Math.min(1.5,Math.max(0.5,pitch*0.25));
+  h=Math.max(h,Math.max(extX,extY)/400); // garde-fou : <= 401² cases
+  const nx=Math.max(2,Math.floor(extX/h)+1),ny=Math.max(2,Math.floor(extY/h)+1);
+  const mask=new Uint8Array(nx*ny);
+  let rx0=1/0,rx1=-1/0,ry0=1/0,ry1=-1/0,nL=0;
+  for(let j=0;j<ny;j++){
+    const y=gy0+j*h;
+    for(let i=0;i<nx;i++){
+      const x=gx0+i*h;
+      if(!faoShapeValid(S,x,y,rrM))continue;
+      mask[j*nx+i]=1;nL++;
+      if(x<rx0)rx0=x; if(x>rx1)rx1=x;
+      if(y<ry0)ry0=y; if(y>ry1)ry1=y;
+    }
+  }
+  if(!nL)return;
+  const D1=1,D2=Math.SQRT2,INF=1e18;
+  const dist=new Float64Array(nx*ny);
+  for(let p=0;p<nx*ny;p++)dist[p]=mask[p]?INF:0;
+  for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+    const p=j*nx+i;let d=dist[p];
+    if(i>0)d=Math.min(d,dist[p-1]+D1);
+    if(j>0)d=Math.min(d,dist[p-nx]+D1);
+    if(i>0&&j>0)d=Math.min(d,dist[p-nx-1]+D2);
+    if(i<nx-1&&j>0)d=Math.min(d,dist[p-nx+1]+D2);
+    dist[p]=d;
+  }
+  for(let j=ny-1;j>=0;j--)for(let i=nx-1;i>=0;i--){
+    const p=j*nx+i;let d=dist[p];
+    if(i<nx-1)d=Math.min(d,dist[p+1]+D1);
+    if(j<ny-1)d=Math.min(d,dist[p+nx]+D1);
+    if(i<nx-1&&j<ny-1)d=Math.min(d,dist[p+nx+1]+D2);
+    if(i>0&&j<ny-1)d=Math.min(d,dist[p+nx-1]+D2);
+    dist[p]=d;
+  }
+  // pôle : case la plus éloignée ; le maximum est souvent un PLATEAU de
+  // cases égales (rectangle érodé) — moyenne des cases liées, sinon la
+  // première case du balayage (coin haut-gauche du plateau) décale le centre.
+  let bd=-1,pxs=0,pys=0,nPk=0;
+  for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+    const p=j*nx+i;
+    if(!mask[p])continue;
+    // distance au bord de boîte (cases) : un niveau sans aucune matière illé-
+    // gale (poche entièrement ouverte) prend le CENTRE de la zone, pas un coin.
+    const sc=Math.min(dist[p],Math.min(i,nx-1-i,j,ny-1-j));
+    if(sc>bd+1e-9){bd=sc;pxs=i;pys=j;nPk=1;}
+    else if(sc>=bd-1e-9){pxs+=i;pys+=j;nPk++;}
+  }
+  const cx=gx0+(pxs/nPk)*h, cy=gy0+(pys/nPk)*h;
+  const Rmax=Math.max(
+    Math.hypot(rx0-cx,ry0-cy),Math.hypot(rx1-cx,ry0-cy),
+    Math.hypot(rx0-cx,ry1-cy),Math.hypot(rx1-cx,ry1-cy))+2*pitch;
+  // --- liaisons (copie conventionnelle) : G1 sûre ou translation à vide
+  const zTopSafe=Math.max(top,isFinite(+brutTop)?+brutTop:top);
+  const pathOK=function(p,q){
+    if(tz&&tz>=zTopSafe-1e-9)return true;
+    const dx=q.x-p.x,dy=q.y-p.y,L=Math.sqrt(dx*dx+dy*dy);
+    const n=Math.max(1,Math.ceil(L));
+    const rr=Math.max(0.01,r-1e-3);
+    for(let i=0;i<=n;i++){
+      const t=i/n;
+      // parité + disque : un segment droit traversant une bande matière LARGE
+      // (≥ r de chaque bord) restait « sûr » à faoDiscClear seul.
+      if(!faoShapeValid(S,p.x+dx*t,p.y+dy*t,rr))return false;
+    }
+    return true;
+  };
+  const gotoXY=function(px,py){
+    px=rnd(px); py=rnd(py);
+    if(!moves.length){moves.push({r:1,x:px,y:py,z:secu});return secu;}
+    const prev=moves[moves.length-1];
+    const zGo=(tz&&pathOK(prev,{x:px,y:py}))?tz:secu;
+    if(Math.abs(prev.z-zGo)>1e-9)moves.push({r:1,x:prev.x,y:prev.y,z:zGo});
+    moves.push({r:1,x:px,y:py,z:zGo});
+    return zGo;
+  };
+  const rrSafe=Math.max(0.01,r-0.005);
+  const segClear=function(ax,ay,bx,by){
+    const dx=bx-ax,dy=by-ay,L=Math.sqrt(dx*dx+dy*dy);
+    const n=Math.max(1,Math.ceil(L/0.25));
+    for(let i=0;i<=n;i++){
+      const t=i/n;
+      if(!faoShapeValid(S,ax+dx*t,ay+dy*t,rrSafe))return false;
+    }
+    return true;
+  };
+  const pushCut=function(x,y){
+    const nx=rnd(x),ny=rnd(y),prev=moves[moves.length-1];
+    if(prev&&!prev.r&&Math.abs(prev.x-nx)<1e-9&&Math.abs(prev.y-ny)<1e-9)return;
+    moves.push({r:0,x:nx,y:ny,z:z});
+  };
+  // --- ENTRÉE HÉLICE (obligation 1re face) : spot = 2 mm au-dessus de la
+  // matière restante sous le disque, plancher hFloor = min(secu, zFrom+2)
+  // (le maillage ne voit ni le brut ni les passes précédentes).
+  const hFloor=Math.min(secu,zFrom+2);
+  const pickHr=function(x,y){
+    const cands=[D*0.4,D*0.2,1,0.5];
+    for(let i=0;i<cands.length;i++){
+      const hr=cands[i];
+      if(!(hr>=0.5))continue;
+      if(faoDiscClear(segsAll,x,y,hr,r+faoHelixJeu)||faoDiscClear(segsAll,x,y,hr,r))return hr;
+    }
+    return 0; // aucun rayon : plongée sûre (colonne d'ombre garantie par le membership)
+  };
+  const entryTo=function(x,y){
+    const zG=gotoXY(x,y);
+    const hr=pickHr(x,y);
+    const hStart=Math.max(faoHelixSpot(mesh,x,y,hr,r,z,brutTop,planes),hFloor);
+    if(Math.abs(zG-hStart)>1e-9)moves.push({r:0,x:rnd(x),y:rnd(y),z:hStart});
+    if(hr>0){
+      faoHelixEntry(x,y,hStart,z,hr,D).slice(1).forEach(function(m){moves.push(m);});
+      pushCut(x,y); // resynchronise sur l'échantillon (le tour de fond finit sur le cercle)
+    }else{
+      moves.push({r:0,x:rnd(x),y:rnd(y),z:z});
+    }
+  };
+  // --- spirale : R(θ) = pitch·θ/2π, échantillonnage à corde s (borné),
+  // pas angulaire borné à π/6 près du centre.
+  const s=Math.max(0.5,Math.min(Math.max(pitch,D*0.25),D*0.5));
+  const thMax=2*Math.PI*(Math.ceil(Rmax/pitch)+1);
+  let th=0,guard=0,atCut=false,prevIn=false,px=cx,py=cy;
+  while(th<=thMax&&guard++<400000){
+    const R=pitch*th/(2*Math.PI);
+    const x=cx+R*Math.cos(th), y=cy+R*Math.sin(th);
+    if(inside(x,y)){
+      if(!atCut||!prevIn||!segClear(px,py,x,y))entryTo(x,y);
+      else pushCut(x,y);
+      atCut=true; prevIn=true; px=x; py=y;
+    }else prevIn=false;
+    th+=(R>1e-9)?Math.min(s/R,Math.PI/6):Math.PI/6;
+  }
+  // --- DERNIÈRE PASSE : les FACES du solide (retour 2/3). Mêmes chaînes que
+  // le conventionnel k=0 : chaines du niveau offsetées à r (la laisse de
+  // l'outil suit exactement les parois) + cadre E0 de la boîte. Chaîne la plus
+  // proche d'abord ; liaison G1 sûre sinon entrée (hélice si le disque passe,
+  // sinon plongée sûre au point — un helix tangent au mur est hors zone, et le
+  // dernier tour de spirale est déjà à proximité quasi systématique).
+  const rem=faoOffsetRuns(S,r).concat(faoRectRuns(S,0,r)).filter(function(c){
+    return c.pts&&c.pts.length>=2&&Math.max(c.bb[2]-c.bb[0],c.bb[3]-c.bb[1])>=0.1;
+  });
+  const cpd=function(ch,px,py){
+    const P=ch.pts,n=P.length,segsN=ch.closed?n:n-1;
+    let d=1/0;
+    for(let i=0;i<segsN;i++){
+      const a=P[i],b=P[(i+1)%n];
+      const dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy;
+      let t=L2>0?((px-a[0])*dx+(py-a[1])*dy)/L2:0;
+      if(t<0)t=0;else if(t>1)t=1;
+      const qx=px-(a[0]+t*dx),qy=py-(a[1]+t*dy),dd=Math.sqrt(qx*qx+qy*qy);
+      if(dd<d)d=dd;
+    }
+    return d;
+  };
+  const cord=function(ch,px,py){
+    const P=ch.pts;
+    if(ch.closed){
+      let bi=0,bd2=1/0;
+      for(let i=0;i<P.length;i++){
+        const dx=P[i][0]-px,dy=P[i][1]-py,dd=dx*dx+dy*dy;
+        if(dd<bd2){bd2=dd;bi=i;}
+      }
+      return P.slice(bi).concat(P.slice(0,bi));
+    }
+    const f=P[0],l=P[P.length-1];
+    const df=(f[0]-px)*(f[0]-px)+(f[1]-py)*(f[1]-py);
+    const dl=(l[0]-px)*(l[0]-px)+(l[1]-py)*(l[1]-py);
+    if(dl<df){
+      const rev=new Array(P.length);
+      for(let i=0;i<P.length;i++)rev[i]=P[P.length-1-i];
+      return rev;
+    }
+    return P;
+  };
+  while(rem.length){
+    const P=moves.length?moves[moves.length-1]:null;
+    const sx0=rem[0].pts[0][0],sy0=rem[0].pts[0][1];
+    const px=P?P.x:sx0, py=P?P.y:sy0;
+    let bi2=0,bd2=1/0;
+    for(let i=0;i<rem.length;i++){
+      const dd=cpd(rem[i],px,py);
+      if(dd<bd2){bd2=dd;bi2=i;}
+    }
+    const ch=rem.splice(bi2,1)[0];
+    const seq=cord(ch,px,py);
+    const sx=seq[0][0],sy=seq[0][1];
+    if(!P||P.r||!segClear(P.x,P.y,sx,sy))entryTo(sx,sy);
+    else pushCut(sx,sy);
+    for(let i=1;i<seq.length;i++)pushCut(seq[i][0],seq[i][1]);
+    if(ch.closed)pushCut(seq[0][0],seq[0][1]);
+  }
+}
 function faoUpFloors(mesh,z0,z1){
   // FONDS RÉELS du maillage (7/10) : faces horizontales avec matière EN
   // DESSOUS et vide au-dessus — plancher de poche, sommet de bossage — dans
@@ -5128,6 +5379,11 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
   // hors cavite : phase A vide, phase B sans entrée digne de ce nom).
   if(poly&&!faoPolyUsable(poly,D,M,BB,zt,+zbot,ae))poly=null;
   const troco=!!poly;
+  // ESCARGOT (2026-10-07-005) : pelage en spirale depuis le centre vers les
+  // faces (faoSpiralLevel), entrées obligatoires en hélice. `o.mode` posé par
+  // le dispatch ; sans mode (documents existants) le parcours conventionnel
+  // reste STRICTEMENT identique. Un polygone de poche l'emporte (mode troco).
+  const esc=(!troco&&o.mode==='escargot');
   // PLANCHER RÉEL (7/10) : la grille `ap` est ancrée sur `Haut` et ne se pose
   // sur le fond de la poche que si `Bas` vaut ce fond (ou y tombe par hasard).
   // Sinon le dernier niveau utile laisse jusqu'à `ap` de matière sur le
@@ -5261,7 +5517,10 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
     // poly (phase B) : entrée FORCÉE dans la poche — le pelage offset
     // (ronds + trochoïdes des goulets) repart du centre vers l'extérieur,
     // toujours en contact avec le vide évacué par la phase A.
-    faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,poly:troco?poly:null});
+    // ESCARGOT : spirale centre -> faces sur le même plan/levels, mêmes
+    // entrées/travel ; mini-passes et finition restent conventionnelles.
+    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ});
+    else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,poly:troco?poly:null});
     // MINI-PASSES (retour 4/10) : après le pelage du niveau, contour des parois
     // entre ce plan et le plan du dessus : profondeurs k*h/(nb+1) sous le plan
     // du dessus (strictement entre les deux, jamais dessus), décalage radial
@@ -6334,12 +6593,30 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   // --- passes : chaines offsetees + cadres imbriques (E0/E-k)
   const S=faoShadowShape(mesh,planes,B,r,aeA);
   const chunks=[];
+  // Chaque morceau porte son k de priorité : 0 = bords (mur, marge, cadre
+  // E0, goulet), croissant = vers l'intérieur de la zone. Le tour épuise le
+  // k plus grand d'abord (retour 3) : du MILIEU vers les BORDS.
+  // Chaîne offsetée vers l'EXTÉRIEUR (bande de marge, tour de boîte) : son k
+  // croissant s'éloigne de la matière — k inversé en 0, elle finit la passe.
+  let outerCh=null;
+  S.chains.forEach(function(ch){
+    const A=(ch.bb[2]-ch.bb[0])*(ch.bb[3]-ch.bb[1]);
+    const B2=outerCh?(outerCh.bb[2]-outerCh.bb[0])*(outerCh.bb[3]-outerCh.bb[1]):-1;
+    if(A>B2)outerCh=ch;
+  });
+  const kTag=function(chunk,k){
+    if(k>0&&outerCh){
+      const p=chunk.pts&&chunk.pts[0];
+      if(p&&!faoPointInPoly(p[0],p[1],outerCh.pts))return 0;
+    }
+    return k;
+  };
   for(let k=0;k<200;k++){
     const inset=k*aeA, d=r+k*aeA;
     const ro=faoOffsetRuns(S,d);
     const fr=faoRectRuns(S,inset,d);
-    for(let i=0;i<ro.length;i++)if(ro[i].pts&&ro[i].pts.length>=2)chunks.push(ro[i]);
-    for(let i=0;i<fr.length;i++)if(fr[i].pts&&fr[i].pts.length>=2)chunks.push(fr[i]);
+    for(let i=0;i<ro.length;i++)if(ro[i].pts&&ro[i].pts.length>=2){ro[i].k=kTag(ro[i],k);chunks.push(ro[i]);}
+    for(let i=0;i<fr.length;i++)if(fr[i].pts&&fr[i].pts.length>=2){fr[i].k=kTag(fr[i],k);chunks.push(fr[i]);}
     if(isRing)break;
     if(!ro.length&&!fr.length)break;
   }
@@ -6402,10 +6679,10 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       R.forEach(function(q){ if(q.y<yLo)yLo=q.y; if(q.y>yHi)yHi=q.y; });
       const mv=[];
       R.forEach(function(q){ faoTrochSlot(mv,q.iv.a,q.iv.b,q.y,z,D,aeA,yLo,yHi); });
-      if(mv.length>=2&&mvSafe(mv)){ chunks.push({mv:mv}); return; }
+      if(mv.length>=2&&mvSafe(mv)){ chunks.push({mv:mv,k:0}); return; }
       R.forEach(function(q){
         const rs=safeRun(q.iv.a,q.iv.b,q.y);
-        for(let i=0;i<rs.length;i++)chunks.push(rs[i]);
+        for(let i=0;i<rs.length;i++){rs[i].k=0;chunks.push(rs[i]);}
       });
     });
   }
@@ -6479,8 +6756,38 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   // spirale attaquant 3 mm DANS la matiere (document reel : 47 face a 50).
   const hFloor=Math.min(secu,zFrom+2);
   if(!tang&&fmode!=='ramp'){
-    const cands=byW.slice(0,3).map(function(f){
-      return {x:(f.iv.a+f.iv.b)/2,y:f.y,elen:f.iv.b-f.iv.a}; });
+    const cands=[];
+    if(!isRing){
+      // Zone intérieure (murs des DEUX côtés, wl&&wr) la plus large, au
+      // milieu en Y (retour 1) : la bande de marge (aucun mur) est toujours
+      // la plus large en largeur absolue et capte l'entrée — on veut entrer
+      // au centre de la ZONE à usiner, d'où part le premier (et plus grand)
+      // k, puis on descend vers les bords (retour 3).
+      let bIf=null,bw=-1,yS=0,nI=0;
+      flatE.forEach(function(f){
+        if(!(f.iv.wl&&f.iv.wr))return;
+        yS+=f.y;nI++;
+        const w=f.iv.b-f.iv.a;
+        if(w>bw){bw=w;bIf=f;}
+      });
+      if(bIf){
+        const cyI=yS/nI;
+        let bJ=bIf,by=Math.abs(bIf.y-cyI);
+        flatE.forEach(function(f){
+          if(!(f.iv.wl&&f.iv.wr))return;
+          if(Math.abs((f.iv.b-f.iv.a)-bw)>1e-9)return;
+          const dy=Math.abs(f.y-cyI);
+          if(dy<by){by=dy;bJ=f;}
+        });
+        cands.push({x:(bJ.iv.a+bJ.iv.b)/2,y:bJ.y,elen:bw});
+      }
+      // centre de la boîte de validation : niveau sans aucune zone à deux
+      // murs (surfaçage pleine plaque) — rejeté par la parité si matière.
+      cands.push({x:(B.x0+B.x1)/2,y:(B.y0+B.y1)/2,elen:0});
+    }
+    byW.slice(0,3).forEach(function(f){
+      cands.push({x:(f.iv.a+f.iv.b)/2,y:f.y,elen:f.iv.b-f.iv.a});
+    });
     cands.push({x:cx0,y:cy0,elen:0});
     for(let ci=0;ci<cands.length&&!hx;ci++){
       const c=cands[ci];
@@ -6608,20 +6915,37 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     for(let i=1;i<seq.length;i++)pushCut(seq[i][0],seq[i][1]);
     if(ch.closed)pushCut(seq[0][0],seq[0][1]);
   };
+  // --- tour des morceaux (retour 3/3) : du MILIEU vers les BORDS.
+  // Hors mini-passes : on épuise d'abord le k le plus grand (intérieur de la
+  // zone), puis on descend jusqu'au k=0 (murs, cadre E0, goulets) — la der-
+  // nière passe suit les faces. Au sein d'un même k : distance croissante,
+  // liaison sûre d'abord (repli = le plus proche du groupe). Mini-passes
+  // (ringOnly, un seul k) : greedy historique strictement inchangé.
   const remaining=chunks.slice();
-  while(remaining.length){
-    const P=moves[moves.length-1],px=P.x,py=P.y;
+  const safePick=function(list,px,py){
     const order=[];
-    for(let i=0;i<remaining.length;i++)order.push({i:i,d:polyDist(remaining[i],px,py)});
+    for(let i=0;i<list.length;i++)order.push({i:i,d:polyDist(list[i],px,py)});
     order.sort(function(a,b){return a.d-b.d;});
-    let pick=-1;
     for(let t=0;t<order.length;t++){
-      const ch=remaining[order[t].i];
+      const ch=list[order[t].i];
       const seq=ordered(ch,px,py);
       const qx=ch.mv?seq[0].x:seq[0][0], qy=ch.mv?seq[0].y:seq[0][1];
-      if(segClear(px,py,qx,qy)){pick=order[t].i;break;}
+      if(segClear(px,py,qx,qy))return order[t].i;
     }
-    if(pick<0)pick=order[0].i;
+    return order.length?order[0].i:-1;
+  };
+  while(remaining.length){
+    const P=moves[moves.length-1],px=P.x,py=P.y;
+    let pick=-1;
+    if(isRing){
+      pick=safePick(remaining,px,py);
+    }else{
+      let kTop=-1;
+      for(let i=0;i<remaining.length;i++)if((remaining[i].k||0)>kTop)kTop=remaining[i].k||0;
+      const grp=[];
+      for(let i=0;i<remaining.length;i++)if((remaining[i].k||0)===kTop)grp.push(remaining[i]);
+      pick=remaining.indexOf(grp[safePick(grp,px,py)]);
+    }
     const ch=remaining[pick];
     remaining.splice(pick,1);
     emitChunk(ch,px,py);

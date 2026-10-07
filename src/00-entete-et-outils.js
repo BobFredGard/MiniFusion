@@ -23,7 +23,7 @@
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-07-004';
+const APP_VER='2026-10-07-005';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -33,17 +33,15 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    APP_VER coûtait à CHAQUE livraison un rejeu complet (~90 s sur l'ébauche 3D)
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
-   faoGen*) : c'est le seul cas où une entrée devient légitimement périmée.
-   `cacheVerOK` accepte en plus les tampons historiques de même moteur. */
-const CACHE_VER='2026-10-07-002';
+   faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
+const CACHE_VER='2026-10-07-005';
 function cacheVerOK(v){
-  // 2026-10-07-002 : la finition des parois ne sort plus qu'à la DERNIÈRE passe
-  // en profondeur (avant : à chaque niveau, option multi-profondeurs `finitProf`)
-  // ET la laisse « Fond » tient même quand un niveau de grille tombe pile sur
-  // le fond (ap aligné mangeait la laisse) — la structure des parcours bouge.
-  // PLUS aucun tampon antérieur n'écrit les mêmes parcours : les entrées
-  // stockées sont légitimement périmées, à régénérer une fois. L'exception
-  // historique (même moteur, seule l'interface a bougé) saute d'autant.
+  // 2026-10-07-005 : l'ordre des morceaux du conventionnel (du milieu vers les
+  // bords, k décroissant) ET son point d'entrée (intervalle intérieur au
+  // centre de la zone, plus la bande de marge) changent TOUS les parcours —
+  // les tampons stockés écrivent d'autres points. L'escargot ajoute centre =
+  // pôle de la zone (parité + disque) et une passe finale de contour des
+  // faces. Aucune exception historique : périmés, à régénérer une fois.
   return v===CACHE_VER;
 }
 let extPickFace=null; // mode « vers un objet » : clic sur une face pour le sens (Échap = annuler)
