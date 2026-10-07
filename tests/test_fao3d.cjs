@@ -203,6 +203,16 @@ const vm=require('vm');
     // point, loin des parois — un vrai mini-plan z=16 serait au contour (5,25).
     "const m16off=m0.filter(m=>!m.r&&Math.abs(m.z-16)<1e-6);",
     "att(mid(m16off,5.5)===0,'minipasses off par defaut : aucun plan z=16 ('+m16off.length+' pt(s), dont '+mid(m16off,5.5)+' au contour)');",
+    // --- plafond mini-passes 9 -> 50 (2026-10-07-003) : sanitise + générateur
+    "const sjm={ops:[{id:'m99',type:'rough3d',minipasses:99},{id:'m50',type:'rough3d',minipasses:50},{id:'m12',type:'rough3d',minipasses:12}]};",
+    "faoSanitiseOps(sjm);",
+    "att(sjm.ops[0].minipasses===50,'sanitise mini : 99 -> 50 (nouveau plafond)');",
+    "att(sjm.ops[1].minipasses===50&&sjm.ops[2].minipasses===12,'sanitise mini : 50 et 12 conserves (ancien plafond 9)');",
+    "const mm50=faoGenRough3D(PL,BX,18,0,{ap:6,ae:6,toolD:10,radial:0.5,axial:0,secu:45,strategy:'adaptive',minipasses:50});",
+    "att(mid(mm50.filter(m=>!m.r&&Math.abs(m.z-11.882)<1e-6),5.6)>0,'mini 50 : plan intermediaire z=11,882 (= 12 - 6/51) au contour');",
+    "att(mm50.length>mm.length*2,'mini 50 : plans intermediaires en plus ('+mm50.length+' > 2x '+mm.length+' moves)');",
+    "const mm99=faoGenRough3D(PL,BX,18,0,{ap:6,ae:6,toolD:10,radial:0.5,axial:0,secu:45,strategy:'adaptive',minipasses:99});",
+    "att(mm99.length===mm50.length,'gen mini : 99 capé a 50 (meme parcours : '+mm99.length+' = '+mm50.length+' moves)');",
     // --- geodésique 6+2 : sens horizontal, limites Z, garde-fou fraise droite (retour 4/10)
     "const PLN={v:[[0,0,30],[60,0,30],[60,40,30],[0,40,30]],t:[[0,1,2],[0,2,3]]};",
     "const SL={v:[[0,0,0],[40,0,20],[40,20,20],[40,40,20],[0,40,0]],t:[[0,1,2],[0,2,3],[0,3,4]]};",

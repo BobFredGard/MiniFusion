@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**177 versions**, de `2026-09-28b` à `2026-10-07-002` — la plus récente en bas,
+**178 versions**, de `2026-09-28b` à `2026-10-07-003` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3051,3 +3051,17 @@ Interface : infobulle de la case, ligne « Profondeurs / cotes » et aide rééc
 Tests : `test_fao_fond_finition.cjs` **+8 assertions (41 total)** — section 7 : `ap=5` aligné (z=5 → 0 point, z=5,5 → 305, zmin 5,5 ; régression `Fond=0`), finition au **PLANCHER** avec `Bas=0` (min x 25,000 à z=5, zmin 5 — attrape le viser-`plan.last` à z=0), anneaux 2 profondeurs z=5/7,5 et 3 profondeurs 6,667/8,333 au contact (25,000), niveaux intermédiaires = ébauche seule, champ Profondeurs grisé OFF / réglable ON. Les 33 assertions antérieures passent inchangées. Run complet **68/68** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-07-002.html`.
 
 Migration : `APP_VER` → `2026-10-07-002`, **`CACHE_VER` → `2026-10-07-002`** : `faoGenRough3D` a bougé — parcours stockés périmés, **une régénération** à l'ouverture. Badge **V0.1.2 inchangé**.
+
+### `2026-10-07-003`
+
+**Mini-passes Z : plafond 9 → 50.**
+
+Demande : « le nombre de mini passes est limité à 9, on peut aller à 50 MAX. »
+
+Correctif : le plafond `Math.min(9, …)` est relevé à **50** aux trois endroits qui le posent — `faoSanitiseOps` (nettoyage à la lecture), la fiche Ébauche 3D (champ `mini`, infobulle « 0 = off, 1 à 50 ») et le générateur `faoGenRough3D` (`nb`, la voie d'appel direct). Sanitise : `50` et `12` sont conservés tels quels, `99` → `50`.
+
+Documents existants (`minipasses ≤ 9`) : **parcours strictement identiques** → `CACHE_VER` inchangé ; la clé de cache porte la valeur, un champ édité à 30 se régénère de lui-même à la première génération.
+
+Tests : `test_fao3d.cjs` **+4 assertions** — sanitise (99→50, 50 et 12 conservés), plan intermédiaire `z=11,882` (= 12 − 6/51) bien émis au contour avec `minipasses:50`, volume de moves > 2× le cas `minipasses:2`, et `minipasses:99` → parcours **identique** à `50` (plafond générateur). Run complet **68/68** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-07-003.html`.
+
+Migration : `APP_VER` → `2026-10-07-003`, **`CACHE_VER` inchangé** (`2026-10-07-002`). Badge **V0.1.2 inchangé**.

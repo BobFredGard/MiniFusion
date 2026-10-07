@@ -270,7 +270,8 @@ function faoSanitiseOps(s){
     // fines ap2 retirées du document à la lecture (migration, comme la laisse).
     delete op.strategy; delete op.ap2; delete op.radial2; delete op.axial2;
     // 2026-10-04-002 : mini-passes Z de l'ebauche (0 = off). Valeur nettoyee.
-    if(op.type==='rough3d'){const mp=+op.minipasses;op.minipasses=isFinite(mp)&&mp>0?Math.min(9,Math.round(mp)):0;
+    // 2026-10-07-003 : plafond 9 -> 50 (le generateur plafonne aussi a 50).
+    if(op.type==='rough3d'){const mp=+op.minipasses;op.minipasses=isFinite(mp)&&mp>0?Math.min(50,Math.round(mp)):0;
       // 2026-10-07-001/002 : finition des parois (N contours « Parois » -> 0,
       // sur la DERNIERE passe en profondeur, finitProf cotes vers le haut) —
       // OFF par defaut : ni champ ni effet tant que la case n'est pas cochee
@@ -4008,8 +4009,8 @@ function faoOpCardElement(setup,op,i){
       'Descente : hauteur usinée par niveau (Maximum Stepdown). Profond en mode trocoïdal (≈ Ø outil).'));
     rP.appendChild(faoLab('ae')); rP.appendChild(faoNum(op.ae,function(v){op.ae=Math.max(0.5,v);},48,
       'Pas latéral : distance entre deux passes voisines (Stepover). ≤ ¼ du Ø en mode trocoïdal.'));
-    rP.appendChild(faoLab('mini')); rP.appendChild(faoNum(op.minipasses||0,function(v){op.minipasses=Math.max(0,Math.min(9,Math.round(v)));},40,1,
-      'Mini-passes Z par niveau : contour des parois entre deux plans (0 = off). Profondeur k·ap/(nb+1) sous le plan du dessus, décalage radial décroissant.'));
+    rP.appendChild(faoLab('mini')); rP.appendChild(faoNum(op.minipasses||0,function(v){op.minipasses=Math.max(0,Math.min(50,Math.round(v)));},40,1,
+      'Mini-passes Z par niveau : contour des parois entre deux plans (0 = off, 1 à 50). Profondeur k·ap/(nb+1) sous le plan du dessus, décalage radial décroissant.'));
     d.appendChild(rP);
     d.appendChild(faoHelp(
       (aeNow>toolD*0.25+1e-9)
@@ -4920,7 +4921,7 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
     plan.sort(function(a,b){return b.z-a.z;});
   }
   const moves=[];
-  const nb=isFinite(+o.minipasses)&&+o.minipasses>0?Math.min(9,Math.round(+o.minipasses)):0;
+  const nb=isFinite(+o.minipasses)&&+o.minipasses>0?Math.min(50,Math.round(+o.minipasses)):0;
   // FINITION DES PAROIS (8/10) : N contours sur la DERNIÈRE passe en
   // profondeur, offsets radial*(nf-k)/nf → 0 (k=1..nf), le dernier à la cote
   // théorique ; finitProf = cotes vers le haut (1 = dent haute, N = mur à
