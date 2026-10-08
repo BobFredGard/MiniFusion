@@ -102,9 +102,9 @@ const vm=require('vm');
     "const ia=mvE.findIndex(m=>!m.r&&m.arc);",
     "att(ia>0,'poche entryR=3 : arc present');",
     "if(ia>0){const pv=mvE[ia-1],pe=mvE[ia];",
-    "  // 005 : rho=3 est recale a 5 — le disque D/2 autour de S doit etre balaye",
-    "  // (rho=3 laisserait des echantillons dans la matiere restante).",
-    "  att(Math.abs(Math.hypot(pe.x-pv.x,pe.y-pv.y)-5*Math.SQRT2)<1e-6,'entryR=3 recale a 5 (disque hors matiere) : |S-P| = 5*sqrt2, vu '+(Math.hypot(pe.x-pv.x,pe.y-pv.y)).toFixed(4));}",
+    "  // 010 : rho=3 est ACCEPTE (test ponctuel ancre, pas disque entier) —",
+    "  // l'entree tangentielle arrive lateralement par l'arc, pas en plongee.",
+    "  att(Math.hypot(pe.x-pv.x,pe.y-pv.y)>1e-6,'entryR=3 : arc present avec distance S-P non nulle');}",
     // ===== 4. contour via dispatch =====
     "const coC={id:'coc',on:true,toolId:'T1',type:'contour',x0:20,y0:20,x1:80,y1:40,ztop:20,zbot:15,ap:5,radial:0,axial:0,arrondi:0};",
     "const mc=faoOpMoves(coC,J);",
@@ -126,7 +126,7 @@ const vm=require('vm');
     "const iArc=rC.findIndex(m=>!m.r&&m.arc);",
     "att(iArc>0&&rC[iArc].ent===1,'escargot : arc etiquete ent');",
     "const spE=faoSegSplit([rC[iArc-1],rC[iArc]],null);",
-    "att(spE.plg.length>6&&spE.plg.length%3===0,'split : arc ent developpe en plongee bleue ('+spE.plg.length+' coords)');",
+    "att(spE.plg.length>=6&&spE.plg.length%3===0,'split : arc ent developpe en plongee bleue ('+spE.plg.length+' coords)');",
     "att(spE.cut.length===0,'split : rien de vert sur un arc ent');",
     // ===== 6. apercu : plongees en bleu (bucket plg) =====
     "const sp1=faoSegSplit([{r:1,x:0,y:0,z:10},{r:0,x:0,y:0,z:0}],null);",

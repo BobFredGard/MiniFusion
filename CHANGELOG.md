@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**189 versions**, de `2026-09-28b` à `2026-10-08-009` — la plus récente en bas,
+**190 versions**, de `2026-09-28b` à `2026-10-08-010` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3243,3 +3243,17 @@ Noyau — `entryTo` (pass 2 de la spirale) : **descente verticale sûre** (`faoP
 Tests — `test_fao_circ.cjs` : valeurs `faoCircRhos` rétablies ([D/4, D/2, ae, D] / [3, 5, 10]) ; `test_fao_zone2.cjs` : tolérance îlot rétablie (±2). Sécurité 007 : 0 plongée à plat non couverte. Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-08-009.html`.
 
 Migration : `APP_VER` → `2026-10-08-009`, **`CACHE_VER` → `2026-10-08-009`** : les générateurs changent (descente sûre préférée à l'hélice = autres trajets d'entrée, mêmes sigs) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.
+
+---
+
+### `2026-10-08-010`
+
+**FAO : entrée tangentielle par point d'ancre ponctuel + ramp le long de l'arc — hélices 12 → 8 par fixture escargot (2/couche au lieu de 3), arcs 12 → 239.**
+
+Demande : « C'est quand même plus simple de partir d'un point hors matière et y rentrer en tangence que de venir directement dans la matière. Le rayon peut être de 2mm comme 10. » Diagnostic : le blocage n'était pas géométrique mais une **condition trop stricte** — `faoCircEval` exigeait `faoPlungeClear` (disque entier D/2 balayé autour de l'ancre) avant l'arc tangent. Or l'entrée tangentielle arrive **latéralement** par l'arc : il suffit que le **centre** de l'ancre soit dans l'air ou le déjà-usiné, pas le disque entier. À la limite du déjà-usiné, le test disque échouait toujours → repli hélice systématique.
+
+Noyau — `faoCircEval` : ancre validée par **test ponctuel** (`airAt(S)` ou `faoCircAnchor` = coupe antérieure à ≤ D/2·0,98 de S) au lieu de `faoPlungeClear` (disque entier). `entryTo` pass 1 : si `faoPlungeClear` passe (disque entier dégagé) → descente verticale + arc à plat (comme avant) ; sinon → **ramp le long de l'arc tangent** (descente en coupant sur l'arc, paliers ≤ 2 mm, sous-arcs IJK) — jamais de plongée à plat sur du brut restant. Résultat (fixture escargot Ø25, poche ouverte) : hélices **12 → 8** (2/couche : pôle + un point d'attaque géométriquement bloqué pour l'arc), arcs **12 → 239** (ré-entries en tangence). Les 2 hélices restantes sont nécessaires : à (30.4,35.4) 0 candidat d'arc valide sur 8 (ancre hors région ou arc traverserait la matière), au pôle direction dégénérée.
+
+Tests — `test_fao_circ.cjs` : entryR=3 accepté (test ponctuel, plus de recalage à ρ=5) ; split arc ent ≥ 6 coords (sous-arc du ramp). Sécurité 007 : 0 plongée à plat non couverte. Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-08-010.html`.
+
+Migration : `APP_VER` → `2026-10-08-010`, **`CACHE_VER` → `2026-10-08-010`** : les générateurs changent (test ponctuel ancre + ramp arc = autres trajets d'entrée, mêmes sigs) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.

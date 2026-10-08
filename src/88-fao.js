@@ -5790,10 +5790,13 @@ function faoCircRhos(D,ae,entryR){
   return out;
 }
 function faoCircEval(Px,Py,ux,uy,rho,valid,moves,z,D,needAnchor,airAt){
-  // Premier côté PASSANT : S légal, arc entier légal, disque outil TOTALEMENT
-  // hors matière restante (faoPlungeClear) sauf `needAnchor===false` (contour :
-  // S tombe déjà à ≥ r hors pièce, tout le disque est dans l'air). `rho` peut
-  // être une liste de rayons croissants (faoCircRhos — 2026-10-08-005).
+  // Premier côté PASSANT : S légal, arc entier légal. `rho` peut être une
+  // liste de rayons croissants (faoCircRhos — 2026-10-08-005).
+  // 2026-10-08-010 : ancre = test PONCTUEL (air ou déjà-usiné) + non pas
+  // disque entier — l'entrée est TANGENTIELLE (on arrive latéralement par
+  // l'arc, pas en plongée verticale) : il suffit que le centre de S soit
+  // dans un zone déjà ouverte. `needAnchor===false` (contour externe) :
+  // S tombe déjà à ≥ r hors pièce, tout le disque est dans l'air.
   const RH=Array.isArray(rho)?rho:[rho];
   for(let ri=0;ri<RH.length;ri++){
     const sides=faoSidesCirc(Px,Py,ux,uy,RH[ri]);
@@ -5806,7 +5809,7 @@ function faoCircEval(Px,Py,ux,uy,rho,valid,moves,z,D,needAnchor,airAt){
       let ok=true;
       for(let k=0;k<pts.length;k++)if(!valid(pts[k][0],pts[k][1])){ok=false;break;}
       if(!ok)continue;
-      if(needAnchor!==false&&!faoPlungeClear(s.sx,s.sy,moves,z,D,airAt))continue;
+      if(needAnchor!==false&&!airAt(s.sx,s.sy)&&!faoCircAnchor(moves,s.sx,s.sy,z,D))continue;
       return s;
     }
   }
@@ -5993,13 +5996,36 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     // (faoPlungeClear), ni hélice tenable -> l'APPELANT RAMPE le long du
     // chemin (descente en avançant, jamais à plat sur du brut restant).
     if(entryMode==='circ'){
-      // pass 1 (005/007) : ancre DÉJÀ balayée (ré-entrée) -> descente verticale.
+      // pass 1 (005/007/010) : ancre DÉJÀ balayée (ré-entrée) -> entrée
+      // TANGENTIELLE. Si le disque entier est dégagé (faoPlungeClear) :
+      // descente verticale + arc à plat. Sinon (ancre à la limite du
+      // déjà-usiné) : RAMPE le long de l'arc depuis zG — la descente se fait
+      // EN COUPANT sur l'arc tangent, jamais à plat sur du brut restant.
       const side=faoCircEval(x,y,ux||0,uy||0,rhoCirc,inside,moves,z,D,true,airSp);
       if(side){
         const zG=gotoXY(side.sx,side.sy);
-        if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(side.sx),y:rnd(side.sy),z:z});
-        moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:z,
-          arc:{i:side.cx-side.sx,j:side.cy-side.sy,cw:side.cw}});
+        if(faoPlungeClear(side.sx,side.sy,moves,z,D,airSp)){
+          if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(side.sx),y:rnd(side.sy),z:z});
+          moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:z,
+            arc:{i:side.cx-side.sx,j:side.cy-side.sy,cw:side.cw}});
+        }else{
+          // 010 : ramp le long de l'arc S -> P (descente en coupant, paliers ≤ 2 mm)
+          const Rr=Math.hypot(side.sx-side.cx,side.sy-side.cy);
+          let a0=Math.atan2(side.sy-side.cy,side.sx-side.cx);
+          let a1=Math.atan2(y-side.cy,x-side.cx);
+          let da=a1-a0;
+          if(side.cw){if(da>0)da-=2*Math.PI;}else if(da<0)da+=2*Math.PI;
+          const nR=Math.max(2,Math.ceil((zG-z)/2));
+          let ppx=side.sx,ppy=side.sy;
+          for(let s=1;s<=nR;s++){
+            const f=s/nR,a=a0+da*f;
+            const xx=side.cx+Rr*Math.cos(a),yy=side.cy+Rr*Math.sin(a);
+            moves.push({r:0,ent:1,x:rnd(xx),y:rnd(yy),
+              z:Math.round((zG+(z-zG)*f)*1000)/1000,
+              arc:{i:side.cx-ppx,j:side.cy-ppy,cw:side.cw}});
+            ppx=xx;ppy=yy;
+          }
+        }
         return true;
       }
       // pass 2 (008) : 1re ATTAQUE du niveau — la matière à z n'est pas encore
