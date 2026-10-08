@@ -698,7 +698,45 @@ function faoGenPocket(rect,zTop,zBot,o){
       // repli 006 : hélice de descente à l'angle (jamais de plongée à plat).
       let side=null;
       if(entryMode==='circ')side=faoCircEval(ax,ay,1,0,rhoCirc,pocketOK,moves,z,D,true,airPk);
-      if(side){
+      if(!side&&entryMode==='circ'){
+        // 008 : 1re ATTAQUE du niveau — l'ancre échoue (rien n'est coupé à z).
+        // On garde le MÊME arc tangent et on descend sur place en HÉLICE
+        // (orbite tenue par l'écart analytic à la paroi) : entrée circulaire
+        // à chaque niveau, jamais de plongée à plat sur du brut.
+        for(let ri=0;ri<rhoCirc.length&&!side;ri++){
+          const sides=faoSidesCirc(ax,ay,1,0,rhoCirc[ri]);
+          if(!sides)continue;
+          for(let i=0;i<sides.length;i++){
+            const s2=sides[i];
+            if(!pocketOK(s2.sx,s2.sy))continue;
+            const pts2=faoCircArcPts(s2,ax,ay);
+            if(!pts2)continue;
+            let okA=true;
+            for(let k=0;k<pts2.length;k++)if(!pocketOK(pts2[k][0],pts2[k][1])){okA=false;break;}
+            if(!okA)continue;
+            const cl=Math.min(s2.sx-R.x0,R.x1-s2.sx,s2.sy-R.y0,R.y1-s2.sy)-r;
+            const hrH=Math.min(D*0.4,cl);
+            if(!(hrH>=0.5))continue;
+            const hFrom=(li>0)?zs[li-1]:+zTop;
+            const hS=(hFrom>z+1e-9)?hFrom:secu;
+            const last=moves.length?moves[moves.length-1]:null;
+            if(!last||Math.abs(last.x-s2.sx)>1e-9||Math.abs(last.y-s2.sy)>1e-9||Math.abs(last.z-secu)>1e-9){
+              if(last)moves.push({r:1,x:last.x,y:last.y,z:secu});
+              moves.push({r:1,x:s2.sx,y:s2.sy,z:secu});
+            }
+            moves.push({r:0,ent:1,x:s2.sx,y:s2.sy,z:hS});
+            faoHelixEntry(s2.sx,s2.sy,hS,z,hrH,D).slice(1).forEach(function(m){moves.push(m);});
+            moves.push({r:0,x:s2.sx,y:s2.sy,z:z});
+            moves.push({r:0,ent:1,x:ax,y:ay,z:z,
+              arc:{i:s2.cx-s2.sx,j:s2.cy-s2.sy,cw:s2.cw}});
+            s2.h008=true; side=s2;
+            break;
+          }
+        }
+      }
+      if(side&&side.h008){
+        // 008 : hélice + arc déjà émis ci-dessus.
+      }else if(side){
         const prev=moves[moves.length-1];
         if(prev&&!prev.r&&Math.abs(prev.z-z)<1e-9){
           moves.push({r:0,ent:1,x:side.sx,y:side.sy,z:z});
@@ -5780,10 +5818,12 @@ function faoCircEval(Px,Py,ux,uy,rho,valid,moves,z,D,needAnchor,airAt){
    matière dilatée de r) — un passage hors région est simplement sauté
    (rapide + ré-entrée), un passage dedans est coupé en G1 ; la liaison
    directe est validée par segClear (repli = ré-entrée).
-   Toute ENTRÉE en matière est une HÉLICE (obligation « 1re face », utile
-   à tous les niveaux) : même spot, même plancher hFloor = min(secu,
-   zFrom+2) et faoHelixEntry qu'en conventionnel ; repli plongée sûre
-   uniquement si aucun rayon d'hélice ne passe (colonne d'ombre garantie).
+    Toute ENTRÉE en matière descend en HÉLICE (obligation « 1re face », utile
+    à tous les niveaux) — 008 : sauf entrée CIRCULAIRE, où l'hélice se fait
+    sur l'ANCRE de l'arc (pass 2) puis l'arc tangent accoste le tracé ;
+    même spot, même plancher hFloor = min(secu, zFrom+2) et faoHelixEntry
+    qu'en conventionnel ; repli plongée sûre uniquement si aucun rayon
+    d'hélice ne passe (colonne d'ombre garantie).
    Mini-passes et finition : inchangées (ringOnly conventionnel).
    */
 function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,opt){
@@ -5807,6 +5847,13 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   // chanfrein 2 passes (distance aux cases illégales + au bord de boîte).
   const S=faoShadowShape(mesh,planes,B,r,aeA);
   const rrM=Math.max(0.01,r-0.005);
+  // 008 : bbox 2D de la pièce — ancre d'arc hors silhouette = pas de hélice
+  // (les chaînes du cadre E0 en marge entreraient par un ressort dans l'air).
+  const mBB=[1/0,1/0,-1/0,-1/0];
+  for(let vi=0;vi<mesh.v.length;vi++){const vv=mesh.v[vi];
+    if(vv[0]<mBB[0])mBB[0]=vv[0]; if(vv[1]<mBB[1])mBB[1]=vv[1];
+    if(vv[0]>mBB[2])mBB[2]=vv[0]; if(vv[1]>mBB[3])mBB[3]=vv[1];}
+  const insideSil=function(x,y){return x>=mBB[0]-1e-9&&x<=mBB[2]+1e-9&&y>=mBB[1]-1e-9&&y<=mBB[3]+1e-9;};
   const inside=function(x,y){return faoShapeValid(S,x,y,rrM);};
   const gx0=S.rect[0],gy0=S.rect[1];
   const extX=S.rect[2]-S.rect[0],extY=S.rect[3]-S.rect[1];
@@ -5915,6 +5962,11 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     }
     return 0; // aucun rayon : plongée sûre (colonne d'ombre garantie par le membership)
   };
+  // 008 : orbite légale (8 points dans la région) autour d'un point quelconque.
+  const okOrbPt=function(px,py,h){
+    for(let k=0;k<8;k++){const a=k/8*2*Math.PI;if(!inside(px+h*Math.cos(a),py+h*Math.sin(a)))return false;}
+    return true;
+  };
   const rhoCirc=faoCircRhos(D,ae,opt.entryR);
   // 2026-10-08-007 : air = hors du BRUT (la boîte de stock), plus « hors de la
   // pièce » — pendant l'ébauche le vide de poche (et l'extérieur d'un bossage)
@@ -5935,6 +5987,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     // (faoPlungeClear), ni hélice tenable -> l'APPELANT RAMPE le long du
     // chemin (descente en avançant, jamais à plat sur du brut restant).
     if(entryMode==='circ'){
+      // pass 1 (005/007) : ancre DÉJÀ balayée (ré-entrée) -> descente verticale.
       const side=faoCircEval(x,y,ux||0,uy||0,rhoCirc,inside,moves,z,D,true,airSp);
       if(side){
         const zG=gotoXY(side.sx,side.sy);
@@ -5943,32 +5996,64 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
           arc:{i:side.cx-side.sx,j:side.cy-side.sy,cw:side.cw}});
         return true;
       }
+      // pass 2 (008) : 1re ATTAQUE du niveau — la matière à z n'est pas encore
+      // coupée, l'ancre échoue inévitablement au disque. On garde le MÊME arc
+      // tangent et on descend sur place en HÉLICE à orbite légale (engagement
+      // progressif, orbite tenue dans la région = jamais à cheval) : les
+      // entrées circulaires redeviennent la norme au début de chaque niveau.
+      for(let ri=0;ri<rhoCirc.length;ri++){
+        const sides=faoSidesCirc(x,y,ux||0,uy||0,rhoCirc[ri]);
+        if(!sides)continue;
+        for(let i=0;i<sides.length;i++){
+          const s2=sides[i];
+          if(!inside(s2.sx,s2.sy))continue;
+          if(!insideSil(s2.sx,s2.sy))continue; // 008 : ancre hors silhouette = pas de ressort dans l'air
+          const pts2=faoCircArcPts(s2,x,y);
+          if(!pts2)continue;
+          let okA=true;
+          for(let k=0;k<pts2.length;k++)if(!inside(pts2[k][0],pts2[k][1])){okA=false;break;}
+          if(!okA)continue;
+          let hrH=pickHr(s2.sx,s2.sy);
+          if(!(hrH>0)){
+            hrH=Math.max(1,D*0.2);
+            while(hrH>0.5&&!okOrbPt(s2.sx,s2.sy,hrH))hrH-=0.5;
+            if(!(hrH>0.5&&okOrbPt(s2.sx,s2.sy,hrH)))continue;
+          }
+          const zG=gotoXY(s2.sx,s2.sy);
+          const hS=Math.max(faoHelixSpot(mesh,s2.sx,s2.sy,hrH,r,z,brutTop,planes),hFloor);
+          if(Math.abs(zG-hS)>1e-9)moves.push({r:0,ent:1,x:rnd(s2.sx),y:rnd(s2.sy),z:hS});
+          faoHelixEntry(s2.sx,s2.sy,hS,z,hrH,D).slice(1).forEach(function(m){moves.push(m);});
+          pushCut(s2.sx,s2.sy);
+          moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:z,
+            arc:{i:s2.cx-s2.sx,j:s2.cy-s2.sy,cw:s2.cw}});
+          return true;
+        }
+      }
     }
+    // 008 : hélice de descente au point d'attaque UNIQUEMENT dans la
+    // silhouette de la pièce (centre de poche : direction dégénérée au pôle,
+    // pas d'arc possible) — hors silhouette (cadre E0, marge) : aucun
+    // ressort dans l'air, l'appelant ramp le long du chemin.
     const zG=gotoXY(x,y);
-    const hr=pickHr(x,y);
-    const hStart=Math.max(faoHelixSpot(mesh,x,y,hr,r,z,brutTop,planes),hFloor);
-    if(Math.abs(zG-hStart)>1e-9)moves.push({r:0,x:rnd(x),y:rnd(y),z:hStart});
-    if(hr>0){
-      faoHelixEntry(x,y,hStart,z,hr,D).slice(1).forEach(function(m){moves.push(m);});
-      pushCut(x,y); // resynchronise sur l'échantillon (le tour de fond finit sur le cercle)
-      return true;
+    if(insideSil(x,y)){
+      const hr=pickHr(x,y);
+      const hStart=Math.max(faoHelixSpot(mesh,x,y,hr>0?hr:0,r,z,brutTop,planes),hFloor);
+      if(Math.abs(zG-hStart)>1e-9)moves.push({r:0,x:rnd(x),y:rnd(y),z:hStart});
+      if(hr>0){
+        faoHelixEntry(x,y,hStart,z,hr,D).slice(1).forEach(function(m){moves.push(m);});
+        pushCut(x,y);
+        return true;
+      }
+      let hrF=Math.max(1,D*0.2);
+      while(hrF>0.5&&!okOrbPt(x,y,hrF))hrF-=0.5;
+      if(hrF>0.5&&okOrbPt(x,y,hrF)){
+        faoHelixEntry(x,y,hStart,z,hrF,D).slice(1).forEach(function(m){moves.push(m);});
+        pushCut(x,y);
+        return true;
+      }
     }
-    // 2026-10-08-006 : JAMAIS de plongée à plat dans la matière brute — la
-    // fraise (Ø25 en tête) atterrirait à cheval sur la 1re phase. Hélice de
-    // descente dont l'ORBITE est réduite jusqu'à rester dans la région
-    // légale (sinon on surcouperait le mur en orbite) ; aucun orbite tenable
-    // (chaîne de face tangent au mur) -> plongée à plat au centre légal.
-    let hrF=Math.max(1,D*0.2);
-    const okOrb=function(h){
-      for(let k=0;k<8;k++){const a=k/8*2*Math.PI;if(!inside(x+h*Math.cos(a),y+h*Math.sin(a)))return false;}
-      return true;
-    };
-    while(hrF>0.5&&!okOrb(hrF))hrF-=0.5;
-    if(hrF>0.5&&okOrb(hrF)){
-      faoHelixEntry(x,y,hStart,z,hrF,D).slice(1).forEach(function(m){moves.push(m);});
-      pushCut(x,y);
-      return true;
-    }
+    const hStart2=Math.max(faoHelixSpot(mesh,x,y,0,r,z,brutTop,planes),hFloor);
+    if(Math.abs(zG-hStart2)>1e-9)moves.push({r:0,x:rnd(x),y:rnd(y),z:hStart2});
     // 007 : plongée à plat UNIQUEMENT si le disque est déjà balayé ou en air
     // réel (airSp = hors brut) — sinon l'appelant ramp le long du chemin.
     if(faoPlungeClear(x,y,moves,z,D,airSp)){
@@ -5976,7 +6061,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
       pushCut(x,y);
       return true;
     }
-    rampZ0=hStart; // l'air vers hStart est déjà émis : le rampage continue à z
+    rampZ0=hStart2; // l'air vers hStart2 est déjà émis : le rampage continue à z
     return false;
   };
   // --- spirale : R(θ) = pitch·θ/2π, échantillonnage à corde s (borné),
@@ -7350,6 +7435,13 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   };
   // --- passes : chaines offsetees + cadres imbriques (E0/E-k)
   const S=faoShadowShape(mesh,planes,B,r,aeA);
+  // 008 : bbox 2D de la pièce — ancre d'arc hors silhouette = pas de hélice
+  // (les chaînes du cadre E0 en marge entreraient par un ressort dans l'air).
+  const mBB=[1/0,1/0,-1/0,-1/0];
+  for(let vi=0;vi<mesh.v.length;vi++){const vv=mesh.v[vi];
+    if(vv[0]<mBB[0])mBB[0]=vv[0]; if(vv[1]<mBB[1])mBB[1]=vv[1];
+    if(vv[0]>mBB[2])mBB[2]=vv[0]; if(vv[1]>mBB[3])mBB[3]=vv[1];}
+  const insideSil=function(x,y){return x>=mBB[0]-1e-9&&x<=mBB[2]+1e-9&&y>=mBB[1]-1e-9&&y<=mBB[3]+1e-9;};
   const chunks=[];
   // Chaque morceau porte son k de priorité : 0 = bords (mur, marge, cadre
   // E0, goulet), croissant = vers l'intérieur de la zone. Le tour épuise le
@@ -7683,17 +7775,60 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   };
   const validXY=function(x,y){ return faoShapeValid(S,x,y,rrSafe); };
   const circEnter=function(Px,Py,ux,uy){
-    // Arc tangent : rapide vers S, descente G1 en Z à l'ancre (matière déjà
-    // enlevée sur place), arc jusqu'au point d'attaque. false = repli.
-    // 2026-10-08-005 : rayons candidats + disque outil entièrement en air.
+    // Arc tangent : rapide vers S, descente en Z, arc jusqu'au point d'attaque.
+    // 005 : ancre déjà balayée (ré-entrée) -> descente verticale. 008 : 1re
+    // attaque — ancre non balayée inévitable -> descente en HÉLICE sur place à
+    // orbite légale, puis le MÊME arc tangent (les entrées circulaires ne sont
+    // plus abandonnées faute de matière déjà coupée). false = repli.
     if(entryMode!=='circ')return false;
+    const emitArc=function(s){
+      moves.push({r:0,ent:1,x:rnd(Px),y:rnd(Py),z:z,
+        arc:{i:s.cx-s.sx,j:s.cy-s.sy,cw:s.cw}});
+    };
     const side=faoCircEval(Px,Py,ux,uy,rhoCirc,validXY,moves,z,D,true,airCv);
-    if(!side)return false;
-    const zG=gotoXY(side.sx,side.sy);
-    if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(side.sx),y:rnd(side.sy),z:z});
-    moves.push({r:0,ent:1,x:rnd(Px),y:rnd(Py),z:z,
-      arc:{i:side.cx-side.sx,j:side.cy-side.sy,cw:side.cw}});
-    return true;
+    if(side){
+      const zG=gotoXY(side.sx,side.sy);
+      if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(side.sx),y:rnd(side.sy),z:z});
+      emitArc(side);
+      return true;
+    }
+    for(let ri=0;ri<rhoCirc.length;ri++){
+      const sides=faoSidesCirc(Px,Py,ux,uy,rhoCirc[ri]);
+      if(!sides)continue;
+      for(let i=0;i<sides.length;i++){
+        const s2=sides[i];
+        if(!validXY(s2.sx,s2.sy))continue;
+        if(!insideSil(s2.sx,s2.sy))continue; // 008 : ancre hors silhouette = pas de ressort dans l'air
+        const pts2=faoCircArcPts(s2,Px,Py);
+        if(!pts2)continue;
+        let okA=true;
+        for(let k=0;k<pts2.length;k++)if(!validXY(pts2[k][0],pts2[k][1])){okA=false;break;}
+        if(!okA)continue;
+        let hrH=0;
+        const hc=[D*0.4,D*0.2,1,0.5];
+        for(let hi=0;hi<hc.length;hi++){
+          if(hc[hi]>=0.5&&(faoDiscClear(segsAll,s2.sx,s2.sy,hc[hi],r+faoHelixJeu)||
+             faoDiscClear(segsAll,s2.sx,s2.sy,hc[hi],r))){hrH=hc[hi];break;}
+        }
+        if(!(hrH>0)){
+          hrH=Math.max(1,D*0.2);
+          const okS=function(h){
+            for(let k=0;k<8;k++){const a=k/8*2*Math.PI;if(!validXY(s2.sx+h*Math.cos(a),s2.sy+h*Math.sin(a)))return false;}
+            return true;
+          };
+          while(hrH>0.5&&!okS(hrH))hrH-=0.5;
+          if(!(hrH>0.5&&okS(hrH)))continue;
+        }
+        const zG=gotoXY(s2.sx,s2.sy);
+        const hS=Math.max(faoHelixSpot(mesh,s2.sx,s2.sy,hrH,r,z,brutTop,planes),hFloor);
+        if(Math.abs(zG-hS)>1e-9)moves.push({r:0,ent:1,x:rnd(s2.sx),y:rnd(s2.sy),z:hS});
+        faoHelixEntry(s2.sx,s2.sy,hS,z,hrH,D).slice(1).forEach(function(m){moves.push(m);});
+        pushCut(s2.sx,s2.sy);
+        emitArc(s2);
+        return true;
+      }
+    }
+    return false;
   };
   // Première cible = le morceau que le tour épuisera en premier (même règle).
   let circOK=false;
@@ -7746,6 +7881,16 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     const run=Math.max(elen,yRun);
     const mhr=Math.max(0.5,run/2-0.2);
     const mx=ramp?ramp.x0:(E.iv.a+E.iv.b)/2, my=ramp?ramp.y0:E.y;
+    // 008 : JAMAIS d'hélice dans l'AIR — boîte de brut ∩ hors pièce = rien à
+    // enlever sous la colonne (le cadre E0 en marge et les intervalles d'ombre
+    // hors boîte entreraient par un ressort dans le vide). Sous le vide de
+    // poche, la MATIÈRE BRUT est bien là (hors pièce dans la boîte) : hélice.
+    const surMatiere=(mx>=B.x0-1e-9&&mx<=B.x1+1e-9&&my>=B.y0-1e-9&&my<=B.y1+1e-9)&&
+      !faoShapeInside(S,mx,my);
+    if(!surMatiere){
+      // rien à enlever ici : le 1er morceau (linkIn 007) ramp/linkpe depuis
+      // la position précédente.
+    }else{
     let hrH=(fmode!=='ramp'&&run>0.5&&
       (faoDiscClear(segsAll,mx,my,mhr,r+faoHelixJeu)||
        faoDiscClear(segsAll,mx,my,mhr,r)))?mhr:Math.max(1,D*0.2);
@@ -7767,9 +7912,10 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       linkTo(mx,my);
       pushCut(mx,my);
     }
+    }
   }
   while(remaining.length){
-    const P=moves[moves.length-1],px=P.x,py=P.y;
+    const P=moves.length?moves[moves.length-1]:null,px=P?P.x:cx0,py=P?P.y:cy0;
     let pick=-1;
     if(isRing){
       pick=safePick(remaining,px,py);

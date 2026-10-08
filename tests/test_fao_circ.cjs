@@ -20,6 +20,10 @@
 // 7. 007 (feedback « après la spirale à cheval ») : air = hors du BRUT (boîte),
 //    entrées de faces/ré-entries = rampes le long du chemin — fixture poche
 //    ouverte escargot Ø25 : 0 plongée à plat dont le disque ne soit balayé.
+// 8. 008 (feedback « entrées circulaires remplacées par des hélices ») :
+//    pass 2 = descente en hélice sur l'ancre puis MÊME arc tangent — arcs
+//    circulaires dès le 1er niveau, sécurité 007 conservée (0 plongée non
+//    couverte).
 const {loadApp}=require('./appvm.cjs');
 const vm=require('vm');
 (async()=>{
@@ -196,6 +200,22 @@ const vm=require('vm');
     "}",
     "att(nc7===0,'007 escargot D25 poche ouverte : 0 plongee a plat non couverte apres la spirale ('+nc7+'/'+n7+')');",
     "att(r7.filter(m=>m.ent===1).length>=20,'007 escargot : entrees/rampes etiquetees ent ('+r7.filter(m=>m.ent===1).length+' moves)');",
+    // ===== 9. 008 : les ENTRÉES CIRCULAIRES ne sont plus abandonnées faute de
+    // matière déjà coupée — descente en hélice sur l'ancre puis MÊME arc
+    // tangent (pass 2) : arcs au début de CHAQUE niveau, sécurité 007 (0
+    // plongée non couverte) inchangée. =====
+    "const a7=r7.filter(m=>m.arc);",
+    "att(a7.length>=4,'008 escargot : entrees circulaires des le 1er niveau ('+a7.length+' arcs = 1/niveau, ressorts d air elimines)');",
+    "att(a7.every(m=>m.ent===1),'008 escargot : arcs etiquetes ent (bleu)');",
+    "const rc7=faoGenRough3D(FRa,Ba,18,4,{ap:4,ae:8,toolD:25,radial:0,axial:0,secu:45,mode:'conv',entry:'circ'});",
+    "att(rc7.filter(m=>m.arc).length>=50,'008 conv D25 : entrees circulaires presentes ('+rc7.filter(m=>m.arc).length+' arcs)');",
+    "let nc7b=0;",
+    "for(let i=1;i<rc7.length;i++){const a=rc7[i-1],b=rc7[i];",
+    "  if(!(Math.abs(b.x-a.x)<1e-9&&Math.abs(b.y-a.y)<1e-9&&b.z<a.z-1e-9))continue;",
+    "  if(a.z-b.z<=3+1e-9||b.z>=18-1e-9)continue;",
+    "  if(!faoPlungeClear(b.x,b.y,rc7.slice(0,i),b.z,25,airHB))nc7b++;",
+    "}",
+    "att(nc7b===0,'008 conv : 0 plongee a plat non couverte ('+nc7b+')');",
     "if(ATT.length){p('');p('ECHECS ('+ATT.length+') :');ATT.forEach(m=>p('  x '+m));}",
     "else p('TOUT EST CONFORME');",
     "return P.join(String.fromCharCode(10));"

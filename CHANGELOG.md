@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**187 versions**, de `2026-09-28b` à `2026-10-08-007` — la plus récente en bas,
+**188 versions**, de `2026-09-28b` à `2026-10-08-008` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3213,3 +3213,19 @@ Noyau — `airSp` (spirale) et `airCv` (conventionnel) = **hors boîte B** (`x<B
 Tests — `test_fao.cjs` et `test_fao_fond_finition.cjs` : les mouvements `ent` (rampes) sont exclus des comparaisons de cote Z / min-X (les rampes émettent légitimement des Z intermédiaires) ; `test_fao_circ.cjs` section 007 : fixture poche ouverte escargot Ø25 (`diag11`) — **0 plongée à plat dont le disque D/2 ne soit déjà balayé** (airAt = hors boîte), rampes étiquetées `ent`. Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-08-007.html`.
 
 Migration : `APP_VER` → `2026-10-08-007`, **`CACHE_VER` → `2026-10-08-007`** : les générateurs changent (airAt hors boîte + rampes le long du chemin = autres trajets d'entrée, mêmes sigs) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.
+
+---
+
+### `2026-10-08-008`
+
+**FAO : les entrées circulaires ne sont plus abandonnées faute de matière déjà coupée — hélice sur l'ANCRE puis MÊME arc tangent (pass 2) ; fini les ressorts d'hélice dans l'air (cadre E0, intervalles d'ombre hors boîte).**
+
+Demande (feedback 007) : « les entrées circulaires sont remplacées par des hélices presque tout le temps », puis « il reste un paquet d'hélices ». Diagnostic : deux causes. (1) `faoCircEval` exigeait l'ancre **déjà balayée** (`faoPlungeClear`) — au début d'un niveau rien n'est encore coupé à z, donc TOUS les candidats échouaient et l'arc était rejeté systématiquement au profit de l'hélice ; le mode circ ne s'appliquait donc qu'aux ré-entries. (2) Les replis hélice au point d'attaque (orbite `pickHr` / orbite réduite du 006) et les chaînes du **cadre E0 en marge** (intervalle d'ombre hors boîte) généraient des ressorts **dans l'air, autour de la pièce** : mesuré sur la fixture escargot Ø25, **15 hélices par niveau dont 8 dans l'air**.
+
+Noyau — `entryTo` (spirale) et `circEnter` (conventionnel) : **deux passes** sur les candidats d'arc. Pass 1 (inchangée) : ancre déjà balayée → descente verticale + arc tangent. **Pass 2 (008)** : ancre quelconque (1re attaque du niveau) → **hélice de descente sur l'ancre même** à orbite légale (`pickHr`/`okOrbPt` pour la spirale, `faoDiscClear` + orbite réduite pour le conv) **puis le même arc tangent** — l'arc circulaire n'est plus abandonné faute de matière déjà coupée : il devient la norme au début de chaque niveau, l'hélice servant uniquement de rampe de descente sur l'ancre. Ancrage **hors silhouette** (bbox 2D de la pièce, `insideSil`) : la pass 2 n'émet **jamais** de ressort — l'appelant ramp le long du chemin (comportement 007), ce qui supprime les hélices dans l'air des chaînes du cadre E0 et des intervalles d'ombre hors boîte. Repli hélice au point d'attaque (006) conservé **uniquement dans la silhouette** (centre de poche, direction dégénérée au pôle = pas d'arc possible) ; hors silhouette → rampe. `faoRoughAdaptiveLevel` : test de matière sous la colonne corrigé (`boîte ∩ hors pièce` via `faoShapeInside`, la tranche du sol fini lisait le vide de poche comme de l'air) + garde sur la boucle de liaison (`moves` vide). Aucun trajet n'atterrit à plat sur du brut restant (sécurité 007 inchangée).
+
+Résultat (fixture escargot Ø25, poche ouverte) : hélices **15 → 3 par niveau**, toutes dans la pièce (centre de poche + anneau + micro-orbite de fin de rampe), **0 ressort dans l'air** ; arcs circulaires **0 → 1 par niveau** (entrée au centre) + arcs de ré-entrée quand la chaîne est hors de portée ; conv inchangé (192 arcs).
+
+Tests — `test_fao_circ.cjs` section 008 : escargot Ø25 — arcs circulaires présents dès le 1er niveau (`>= 4`, soit 1/niveau) et étiquetés `ent` ; conv D25 — `>= 50` arcs ; **0 plongée à plat non couverte** (sécurité 007 conservée). Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-08-008.html`.
+
+Migration : `APP_VER` → `2026-10-08-008`, **`CACHE_VER` → `2026-10-08-008`** : les générateurs changent (pass 2 hélice-sur-ancre + gate silhouette = autres trajets d'entrée, mêmes sigs) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.
