@@ -37,6 +37,7 @@ const SUITES = [
   "test_fao_chain",
   "test_fao_couverture",
   "test_fao_helice",
+  "test_fao_circ",
   "test_fao_fond_finition",
   "test_fao_planes",
   "test_fao_securite",

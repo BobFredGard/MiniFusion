@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**183 versions**, de `2026-09-28b` à `2026-10-08-003` — la plus récente en bas,
+**184 versions**, de `2026-09-28b` à `2026-10-08-004` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3151,3 +3151,21 @@ UI — fiche ébauche 3D : rangée **Sens** sous Mode (avalant/bidir ; affiche l
 Tests — `tests/test_fao_sens.cjs` et `tests/test_fao_zone2.cjs` **nouveaux, inscrits dans `SUITES`** (70 → 72 suites) : sens (legacy byte-identique conv/escargot au générateur ET au dispatch, avalant ≠ bidir, coupes 8165/8159, defaults/sanitise/sig, fiche Sens) ; îlot (dilatation r+marge, clip complément rect et chaîne, ZoneCtx composé ET/OU, ZoneCuts 2 passes, SegClipper, perçage, sig/sanitise, fiche Zone int. + validation chaîne2 + rematch ancres, dispatch complet sur fixture poche : **0 coupe dans l'îlot, 680 coupes conservées à l'extérieur, identiques à la référence sans îlot**). `test_fao_escargot` réqualifié : les aides ne sont plus dans la fiche → popup contextmenu (ouverture + fermetures Échap / pointerdown / changement de mode). Run complet **72/72** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-08-003.html`.
 
 Migration : `APP_VER` → `2026-10-08-003`, **`CACHE_VER` inchangé** (`2026-10-08-002`) : les documents existants n'ont ni `sens` ni `limit2` → sigs strictement identiques et parcours byte-identiques (prouvé) → **aucun rejeu forcé** ; seules les opérations éditées en Sens / Zone int. changent de sig et se régénèrent seules. Badge **V0.1.2 inchangé**.
+
+---
+
+### `2026-10-08-004`
+
+**FAO : entrée circulaire (arc tangent) sur poche / contour / ébauche 3D / finition, plongées en bleu à l'aperçu, cadre de retrait en Z pur dans la visionneuse.**
+
+Demande (3 points) : (1) les **plongées** d'outil sortent du vert coupe : rouge = rapide, **bleu = plongée**, vert = usinage ; (2) le début/fin d'outil dans la visionneuse se cadre sur la zone de **retrait uniquement en Z** (plus de recadrage XY) ; (3) nouvelle entrée **circ** (arc tangent, rayon `entryR` défaut **Ø/4**) pour l'ébauche 3D (escargot + conventionnel + mini-passes) **et les autres opérations** — la **1ʳᵉ attaque** d'un niveau garde l'hélice/rampe historique, l'arc prend le relais dès que de la matière est enlevée (ancre) ; `'auto'` reste le legacy.
+
+Noyau (circ) — helpers globaux : `faoSidesCirc` (2 côtés tangents : C = P+ρn, S = C−ρu, CCW `cw:false` / miroir `cw:true`), `faoCircArcPts` (13 échantillons S→P), `faoCircAnchor` (coupe non-rapide à ≤ D/2·0,98 de S et cote ≤ z — arcs tracés par `faoArcSegs`, rapids ignorés), `faoCircEval` (S + arc entier valides, ancre exigée sauf `needAnchor:false`) ; ρ = `entryR` ou Ø/4. Dispatch : `entry`/`entryR` transmis aux **4 sites** avec repli `op.entry||'circ'` (doc sans champ = circ ; les générateurs gardent `o.entry||'auto'` pour les appels directs → tests/anciens appels inchangés) ; `faoSanitiseOps` purge `entry` hors {auto,helix,ramp,circ} et `entryR` invalide. Ébauche escargot : `entryTo(x,y,ux,uy)` — direction = tangente CCW de la spirale (repli pas d'échantillon), chaînes de faces = 1ʳᵉ maillon. Ébauche conventionnel : bloc d'émission déplacé **après** les helpers (le tour fournit la cible), 1ʳᵉ morceau testé en circ avant le legacy, `emitChunk` = liaison directe stay-down → **circ** → translation+plongée (repli) ; mini-passes et finition parois inclus (ancre = pelage du niveau principal sous le plan mini-passe). Poche : rings suivants en **stay-down** (G1 à Z de coupe + arc, zéro remontée par ring) ; anneau de tête de niveau = repli legacy. Contour : rapide sur S, descente **en Z en air** puis arc tangent au coin (ancre non requise, validité = centre outil ≥ r hors pièce). Finition : `faoGeoEntryMode` accepte `circ` (sans ébauche 3D amont → rampe, même garde-fou que l'hélice) ; tentative circ avant hélice / pk<1 / rampe (validité = `ptDist ≥ max(0,01,R−0,5)` sur la colonne de liaison, ancre exigée).
+
+Aperçu / visionneuse — `faoSegSplit` ajoute le bucket **`plg`** (G1 strictement vertical descendant = plongée, borné par le clip comme la coupe) rendu **bleu `0x0a84ff`** (rouge = G0, vert = coupe) ; `faoViewerBuild` réécrit en **chunks par op** avec encadrement retrait en tête/queue (le point `r:1` même XY à `faoRetractAbs` s'il est au-dessus, times/lens/total/cum recalculés).
+
+UI — helper commun **`faoEntryRows`** (select 4 options, **« Cercle · arc tangent » en 1ʳᵉ** + champ **« R entrée »** défaut Ø/4) monté sur les fiches Poche, Contour, Ébauche 3D et Finition ; `faoOpDefaults` écrit `entry:'circ'` (ébauche 3D, finition).
+
+Tests — `tests/test_fao_circ.cjs` **nouveau, inscrit dans `SUITES`** (72 → 73 suites) : géométrie côtés/points d'arc/ancre/gating `faoCircEval` (repli null, miroir CW), sanitise + defaults + mode finition (`circ` sans ébauche → rampe), poche via dispatch (arc présent, `'auto'` sans arc, rings stay-down = moins de remontées, |S−P| = ρ√2 avec `entryR:3`), contour (arc tangent au coin (15,15)), escargot (arcs de ré-entrée en circ, zéro arc en auto, coupes ≥ fond), bucket `plg` (plongée bleue / G1 horizontal vert / destination G0 rouge). `test_fao3d` : défaut géofinition → `'circ'` ; `test_fao` : fixture « poche arrondi » figée en `entry:'auto'` (on y isole l'ARRONDI, le cercle étant couvert par le nouveau test). Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-08-004.html`.
+
+Migration : `APP_VER` → `2026-10-08-004`, **`CACHE_VER` → `2026-10-08-004`** : les générateurs eux-mêmes changent (entrée circ par défaut = autres trajets, mêmes sigs) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Documents avec `entry:'auto'` explicite (ex. `Cavité Usinage`) : parcours inchangés. Badge **V0.1.2 inchangé**.

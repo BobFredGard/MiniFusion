@@ -9,7 +9,7 @@ const ROOT=path.join(__dirname,'..');
 globalThis.__dirname=path.join(ROOT,'occt');
 vm.runInThisContext(fs.readFileSync(path.join(ROOT,'occt','opencascade.full.js'),'utf8'),{filename:'occt.js'});
 const {loadApp}=require('./appvm.cjs');
-const json=fs.readFileSync(path.join(ROOT,'Cavité Usinage.minifusion.json'),'utf8');
+const json=fs.readFileSync([path.join(ROOT,'Cavité Usinage.minifusion.json'),path.join(ROOT,'Exemples','Cavité Usinage.minifusion.json')].find(fs.existsSync),'utf8');
 let ko=0;
 const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m);};
 (async()=>{

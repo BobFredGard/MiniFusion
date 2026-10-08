@@ -339,7 +339,7 @@ const vm=require('vm');
     "  att(faoGeoHasRrough(JV,JV.ops[0])===false,'geo entree : aucune operation avant -> false');",
     "  att(faoGeoHasRrough({ops:[]},{id:'z',type:'geofinish'})===false,'geo entree : op introuvable -> false');",
     "}",
-    "att(faoOpDefaults('geofinish').entry==='auto','geo entree : defaut entry auto');",
+    "att(faoOpDefaults('geofinish').entry==='circ','geo entree : defaut entry circ (2026-10-08-004)');",
     // Hélice sans ébauche : identique au ramp (l'entrée est ignorée en sécurité)
     "const gXr=faoGenGeoFinish(SL,{step:5,toolD:8,kind:'ball',laisse:0,secu:45,entry:'ramp'});",
     "const gXh=faoGenGeoFinish(SL,{step:5,toolD:8,kind:'ball',laisse:0,secu:45,entry:'helix'});",

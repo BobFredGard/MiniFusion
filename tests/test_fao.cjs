@@ -367,8 +367,10 @@ const vm=require('vm');
     "att(Math.abs(endTan(RA2)[0])<1e-9&&Math.abs(endTan(RA2)[1]-1)<1e-9,'lead-in droite : tangent +Y');",
     "att(faoLeadArc(6,5,6,5,true,0)===null,'lead-in : M sur le mur -> null');",
     // --- arrondi 2.5D : poche avec arrondi -> arcs, sans -> aucun
+    // (2026-10-08-004 : entry figé en 'auto' — ici on isole l'ARRONDI ; le
+    //  cercle d'entrée, lui, est couvert par test_fao_circ.cjs.)
     "const jobA=faoDefaultSetup();jobA.stock={x0:0,y0:0,z0:0,x1:100,y1:60,z1:20};",
-    "const opA={id:'pa',on:true,toolId:'T1',type:'pocket',x0:10,y0:10,x1:90,y1:50,ztop:20,zbot:15,ap:5,ae:5,radial:0,axial:0,arrondi:3};",
+    "const opA={id:'pa',on:true,toolId:'T1',type:'pocket',x0:10,y0:10,x1:90,y1:50,ztop:20,zbot:15,ap:5,ae:5,radial:0,axial:0,arrondi:3,entry:'auto'};",
     "att(faoOpMoves(opA,jobA).some(m=>!m.r&&m.arc),'poche arrondi 3 : arcs');",
     "const opB=Object.assign({},opA,{id:'pb',arrondi:0});",
     "att(!faoOpMoves(opB,jobA).some(m=>!m.r&&m.arc),'poche arrondi 0 : aucun arc');",
