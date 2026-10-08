@@ -60,6 +60,11 @@ const FAO_VER='32j';
       /* --- texte d'aide sous un groupe de champs --- */
       +'.fao-help{font-size:.68rem;color:rgba(255,255,255,.5);line-height:1.35;'
       +'flex-basis:100%;margin-top:2px}'
+      /* --- popup d'infos (clic droit sur le select Mode de l'Ébauche 3D) --- */
+      +'.fao-ctx{position:fixed;z-index:60;max-width:340px;padding:8px 10px;'
+      +'border-radius:9px;background:rgba(16,18,22,.97);border:1px solid rgba(255,255,255,.2);'
+      +'color:#e9e9ec;font-size:.7rem;line-height:1.45;'
+      +'box-shadow:0 12px 34px rgba(0,0,0,.55);cursor:default}'
       /* --- cartes (opérations, blocs d'information) --- */
       +'.fao-card{display:flex;flex-direction:column;gap:6px;'
       +'background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.028));'
@@ -279,6 +284,22 @@ function faoSanitiseOps(s){
     }
     if(op.type!=='geofinish')delete op.laisse;
     if(op.limit&&op.limit.mode!=='rect'&&op.limit.mode!=='chain')delete op.limit;
+    // 2026-10-08-003 : zone INTERIEURE (ilot a ne pas toucher) — meme forme
+    // que la zone exterieure, sinon supprimee. Rect : coins reordonnes (jamais
+    // d'ilot silencieusement ignore) ; chaine : cote 'out' FORCE (regle outil
+    // de l'ilot : dilate de r+marge, on garde le complement).
+    if(op.limit2){
+      if(op.limit2.mode!=='rect'&&op.limit2.mode!=='chain')delete op.limit2;
+      else if(op.limit2.mode==='rect'){
+        const T=op.limit2, a=+T.x0, b=+T.x1, c=+T.y0, d=+T.y1;
+        if(!(isFinite(a)&&isFinite(b)&&isFinite(c)&&isFinite(d)))delete op.limit2;
+        else{ T.x0=Math.min(a,b); T.x1=Math.max(a,b); T.y0=Math.min(c,d); T.y1=Math.max(c,d);
+              if(!isFinite(+T.extra))T.extra=0; }
+      }else{
+        if(!isFinite(+op.limit2.extra))op.limit2.extra=0;
+        op.limit2.side='out';
+      }
+    }
     if(op.zlim&&!(op.zlim.anchors&&op.zlim.anchors.length))delete op.zlim;
     // 2026-10-08-002 : plans de l'opération (héritage posage) — forme
     // normalisée, sinon vide -> champ supprimé (héritage retrouvé).
@@ -312,6 +333,9 @@ function faoSanitiseOps(s){
       if(op.mode!=='escargot')delete op.mode;
       delete op.entree;
       }
+    // 2026-10-08-003 : sens de passe — seuls 'avalant' et 'bidir' survivent,
+    // et seulement sur l'Ebauche 3D (hors de la, le champ n'a pas de sens).
+    if(op.type!=='rough3d'||(op.sens!=='avalant'&&op.sens!=='bidir'))delete op.sens;
     // 2026-10-04-004 : finition géodésique — limites Z héritées du brut,
     // garde-fou fraise droite recalculée à chaque dispatch (jamais stockée).
     if(op.type==='geofinish'){
@@ -718,14 +742,39 @@ function faoEffLimit(op,toolD){
   if(!(R.x1>R.x0&&R.y1>R.y0))return null;
   return R;
 }
+// 2026-10-08-003 : zone INTERIEURE (îlot à préserver) — le COMPLÉMENT de ce
+// rectangle dilaté de r+extra est la zone usinable (règle outil fixée « hors
+// de l'îlot », la marge ajoute de la distance). Dégénéré (extra très négatif)
+// : planter sur 0,01 mm plutôt que d'ignorer l'îlot en silence (on ne usine
+// JAMAIS l'îlot par défaut).
+function faoLimit2R(lim2,toolD){
+  if(!lim2||lim2.mode!=='rect')return null;
+  const r=(isFinite(+toolD)&&+toolD>0?+toolD:10)/2;
+  const ex=isFinite(+lim2.extra)?+lim2.extra:0;
+  const k=Math.max(0.01,r+ex);
+  const R={x0:+lim2.x0-k, y0:+lim2.y0-k, x1:+lim2.x1+k, y1:+lim2.y1+k};
+  if(!(R.x1>R.x0&&R.y1>R.y0))return null;
+  return R;
+}
 function faoLimitDrillPts(op,toolD){
   const pts=(op&&op.pts)||[];
   const lim=op&&op.limit;
   if(lim&&lim.mode==='chain'&&lim.loop&&lim.loop.length>=3)
     return pts.filter(function(p){ return faoLimInside(+p[0],+p[1],lim,0); });
   const R=faoEffLimit(op,toolD);
-  if(!R)return pts;
-  return pts.filter(function(p){ return +p[0]>=R.x0&&+p[0]<=R.x1&&+p[1]>=R.y0&&+p[1]<=R.y1; });
+  let out=R?pts.filter(function(p){ return +p[0]>=R.x0&&+p[0]<=R.x1&&+p[1]>=R.y0&&+p[1]<=R.y1; }):pts;
+  // 2026-10-08-003 : l'îlot intérieur exclut aussi les perçages — avec le
+  // RAYON de l'outil (le centre seul ne suffit pas : la fraise mordrait l'îlot).
+  const L2=op&&op.limit2;
+  if(L2&&L2.mode==='rect'){
+    const R2=faoLimit2R(L2,toolD);
+    if(R2)out=out.filter(function(p){
+      return !(+p[0]>=R2.x0&&+p[0]<=R2.x1&&+p[1]>=R2.y0&&+p[1]<=R2.y1); });
+  }else if(L2&&L2.mode==='chain'&&L2.loop&&L2.loop.length>=3){
+    const r=(isFinite(+toolD)&&+toolD>0?+toolD:10)/2;
+    out=out.filter(function(p){ return !faoLimInside(+p[0],+p[1],L2,r); });
+  }
+  return out;
 }
 function faoClipLB(p0,p1,R){
   // Liang-Barsky : fraction [t0,t1] du segment dans R, ou null.
@@ -739,20 +788,45 @@ function faoClipLB(p0,p1,R){
   }
   return t0<=t1?[t0,t1]:null;
 }
-function faoClipMovesXY(moves,R,secuZ){
-  // Ne garde que la coupe dans R. Ré-entrée sécurisée : remontée sécu,
-  // rapide XY, plongée — jamais de G0 dans la matière.
+function faoClipMovesXY(moves,R,secuZ,invert){
+  // Ne garde que la coupe dans R (invert = DEHORS, 2026-10-08-003 : complément
+  // de la zone intérieure/îlot — 0, 1 ou 2 morceaux par segment). Ré-entrée
+  // sécurisée : remontée sécu, rapide XY, plongée — jamais de G0 dans la matière.
   const out=[]; let px=null, py=null, pz=null, inside=false;
   const inR=function(x,y){ return x>=R.x0&&x<=R.x1&&y>=R.y0&&y<=R.y1; };
+  const keep=function(x,y){ return invert?!inR(x,y):inR(x,y); };
   moves.forEach(function(m){
-    if(m.r){ out.push(m); px=m.x; py=m.y; pz=m.z; inside=inR(m.x,m.y); return; }
-    if(m.arc){ out.push(m); px=m.x; py=m.y; pz=m.z; inside=inR(m.x,m.y); return; }
-    if(px===null){ px=m.x; py=m.y; pz=m.z; inside=inR(m.x,m.y); }
+    if(m.r){ out.push(m); px=m.x; py=m.y; pz=m.z; inside=keep(m.x,m.y); return; }
+    if(m.arc){ out.push(m); px=m.x; py=m.y; pz=m.z; inside=keep(m.x,m.y); return; }
+    if(px===null){ px=m.x; py=m.y; pz=m.z; inside=keep(m.x,m.y); }
     const seg=faoClipLB({x:px,y:py},{x:m.x,y:m.y},R);
-    if(!seg){ inside=false; }
+    if(!invert){
+      if(!seg){ inside=false; }
+      else{
+        const ax=px+(m.x-px)*seg[0], ay=py+(m.y-py)*seg[0], az=pz+(m.z-pz)*seg[0];
+        const bx=px+(m.x-px)*seg[1], by=py+(m.y-py)*seg[1], bz=pz+(m.z-pz)*seg[1];
+        if(!inside||Math.hypot(ax-px,ay-py)>1e-6){
+          out.push({r:1,x:px,y:py,z:secuZ});
+          out.push({r:1,x:ax,y:ay,z:secuZ});
+          out.push({r:1,x:ax,y:ay,z:az});
+        }
+        out.push({r:0,x:bx,y:by,z:bz});
+        inside=true;
+      }
+      px=m.x; py=m.y; pz=m.z;
+      return;
+    }
+    // invert : morceaux [0,t0] et [t1,1] (segment hors R = tout garder).
+    const pieces=[];
+    if(!seg)pieces.push([0,1]);
     else{
-      const ax=px+(m.x-px)*seg[0], ay=py+(m.y-py)*seg[0], az=pz+(m.z-pz)*seg[0];
-      const bx=px+(m.x-px)*seg[1], by=py+(m.y-py)*seg[1], bz=pz+(m.z-pz)*seg[1];
+      if(seg[0]>1e-9)pieces.push([0,seg[0]]);
+      if(seg[1]<1-1e-9)pieces.push([seg[1],1]);
+    }
+    if(!pieces.length){ inside=false; px=m.x; py=m.y; pz=m.z; return; }
+    pieces.forEach(function(pc){
+      const ax=px+(m.x-px)*pc[0], ay=py+(m.y-py)*pc[0], az=pz+(m.z-pz)*pc[0];
+      const bx=px+(m.x-px)*pc[1], by=py+(m.y-py)*pc[1], bz=pz+(m.z-pz)*pc[1];
       if(!inside||Math.hypot(ax-px,ay-py)>1e-6){
         out.push({r:1,x:px,y:py,z:secuZ});
         out.push({r:1,x:ax,y:ay,z:secuZ});
@@ -760,7 +834,7 @@ function faoClipMovesXY(moves,R,secuZ){
       }
       out.push({r:0,x:bx,y:by,z:bz});
       inside=true;
-    }
+    });
     px=m.x; py=m.y; pz=m.z;
   });
   return out;
@@ -927,11 +1001,13 @@ function faoChainLoopCap(res){
   if(thin[thin.length-1]!==res.loop[res.loop.length-1])thin.push(res.loop[res.loop.length-1]);
   return {loop:thin,closed:res.closed};
 }
-function faoChainRematch(op,edges){
+function faoChainRematch(op,edges,field){
   // Reconstruit la boucle si les ances des germes retrouvent leurs arêtes.
   // Retour {changed, stale, matched, nSel, skipped?} — état dérivé : JAMAIS de
   // snapshot (comme les projections associatives), l'annulation reste au rejeu modèle.
-  const L=op&&op.limit;
+  // 2026-10-08-003 : field ('limit' par défaut, ou 'limit2') — la zone
+  // intérieure se re-branche avec exactement les mêmes règes d'ancres.
+  const L=op&&op[field||'limit'];
   if(!L||L.mode!=='chain')return {changed:false,skipped:true};
   if(!(L.anchors&&L.anchors.length))return {changed:false,skipped:true}; // ancien document
   if(!edges||!edges.length)return {changed:false,skipped:true};
@@ -1071,13 +1147,15 @@ function faoZlimBreak(op){
   if(op&&op.zlim)delete op.zlim;
 }
 function faoRematchAll(setups,edges){
-  // Fin de rejeu : une seule passe re-branche chaînes XY ET limites Z.
+  // Fin de rejeu : une seule passe re-branche chaînes XY (zones ext et
+  // intérieure) ET limites Z.
   let n=0;
   ((setups)||[]).forEach(function(st){
     ((st&&st.ops)||[]).forEach(function(op){
       const r=faoChainRematch(op,edges);
+      const r2=faoChainRematch(op,edges,'limit2');
       const rz=faoZlimRematch(op,edges);
-      if((r&&r.changed)||(rz&&rz.changed))n++;
+      if((r&&r.changed)||(r2&&r2.changed)||(rz&&rz.changed))n++;
     });
   });
   return n;
@@ -1094,8 +1172,9 @@ function faoChainReplay(){
       const ops=(F[i]&&F[i].ops)||[];
       for(let k=0;k<ops.length;k++){
         const o=ops[k]||{};
-        const L=o.limit, Z=o.zlim;
+        const L=o.limit, L2=o.limit2, Z=o.zlim;
         if((L&&L.mode==='chain'&&L.anchors&&L.anchors.length)||
+           (L2&&L2.mode==='chain'&&L2.anchors&&L2.anchors.length)||
            (Z&&Z.anchors&&Z.anchors.length)){any=true;break;}
       }
     }
@@ -1143,13 +1222,15 @@ function faoLimInside(x,y,lim,r){
   if(side==='out')return in0||(d<=rr+ex);
   return in0||(d<=ex);
 }
-function faoClipMovesPoly(moves,lim,r,secuZ,sub){
+function faoClipMovesPoly(moves,lim,r,secuZ,sub,atFn){
   // Clip impair : on subdivise (pas `sub`, 2 mm défaut) et on ne garde que les
   // passages dedans, croisement affiné par dichotomie (0,1 mm). Ré-entrée
   // sécurisée comme en rect : remontée sécu, jamais de G0 dans la matière.
+  // 2026-10-08-003 : atFn (optionnel) remplace la règle lim/r — utilisé pour
+  // l'îlot intérieur (on garde le COMPLÉMENT : atFn = !faoLimInside).
   const step=isFinite(+sub)&&+sub>0?+sub:2;
   const out=[]; let px=null, py=null, pz=null, inside=false;
-  const at=function(x,y){ return faoLimInside(x,y,lim,r); };
+  const at=(typeof atFn==='function')?atFn:function(x,y){ return faoLimInside(x,y,lim,r); };
   const cross=function(ax,ay,bx,by,ain){
     // Dichotomie du point de croisement (sortie à 0,1 mm).
     let t0=0, t1=1;
@@ -1218,28 +1299,57 @@ function faoClipMovesPoly(moves,lim,r,secuZ,sub){
      de coupe (un aperçu ne montre donc jamais de coupe hors zone, même avec
      un tracé en cache ancien). */
 function faoZoneCtx(op,job){
-  // -> {lim, D, chain, R?, at(x,y), cross(a,b)} pour l'opération, ou null
-  //    (pas de zone exploitable : la règle ne s'applique pas à cette op).
-  const lim=op&&op.limit;
-  if(!lim)return null;
+  // -> {lim, lim2, D, chain, R?, R2?, at(x,y), cross(a,b)} pour l'opération,
+  //    ou null (aucune zone exploitable : la règle ne s'applique pas à cette op).
+  // 2026-10-08-003 : la zone INTERIEURE (îlot) se compose — on garde ce qui
+  // est dedans (lim) ET hors de l'îlot (lim2). at/cross deviennent le ET / le
+  // OU des deux frontières ; la coupe finale se refait en deux temps dans
+  // faoZoneCuts (clip extérieur exact, puis clip îlot).
+  const lim=op&&op.limit, lim2=op&&op.limit2;
+  if(!lim&&!lim2)return null;
   const tool=faoToolById(job,op&&op.toolId);
   const D=(tool&&+tool.d>0)?+tool.d:10;
-  if(lim.mode==='chain'&&lim.loop&&lim.loop.length>=3){
+  let at=null, cross=null, R=null, chain=false, limOK=null;
+  if(lim&&lim.mode==='chain'&&lim.loop&&lim.loop.length>=3){
+    limOK=lim; chain=true;
     const loop=lim.loop, r=D/2;
-    return {lim:lim,D:D,chain:true,
-      at:function(x,y){ return faoLimInside(x,y,lim,r); },
-      cross:function(a,b){ return faoPolyCross(a.x,a.y,b.x,b.y,loop); }};
-  }
-  if(lim.mode==='rect'){
-    const R=faoEffLimit(op,D);
-    if(!R)return null;
-    return {lim:lim,D:D,chain:false,R:R,
-      at:function(x,y){ return x>=R.x0&&x<=R.x1&&y>=R.y0&&y<=R.y1; },
-      cross:function(a,b){
+    at=function(x,y){ return faoLimInside(x,y,lim,r); };
+    cross=function(a,b){ return faoPolyCross(a.x,a.y,b.x,b.y,loop); };
+  }else if(lim&&lim.mode==='rect'){
+    const R0=faoEffLimit(op,D);
+    if(R0){
+      limOK=lim; R=R0;
+      at=function(x,y){ return x>=R.x0&&x<=R.x1&&y>=R.y0&&y<=R.y1; };
+      cross=function(a,b){
         const s=faoClipLB({x:a.x,y:a.y},{x:b.x,y:b.y},R);
-        return !s||s[0]>1e-9||s[1]<1-1e-9; }};
+        return !s||s[0]>1e-9||s[1]<1-1e-9; };
+    }
   }
-  return null;
+  // --- îlot intérieur : la zone usinable est le COMPLÉMENT de l'îlot dilaté.
+  let R2=null, lim2OK=null;
+  if(lim2&&lim2.mode==='rect'){
+    R2=faoLimit2R(lim2,D);
+    if(!R2)R2=null; else lim2OK=lim2;
+  }else if(lim2&&lim2.mode==='chain'&&lim2.loop&&lim2.loop.length>=3){
+    lim2OK=lim2;
+  }
+  if(!limOK&&!lim2OK)return null;
+  if(lim2OK){
+    const r2=D/2;
+    const at2=R2
+      ?function(x,y){ return !(x>=R2.x0&&x<=R2.x1&&y>=R2.y0&&y<=R2.y1); }
+      :function(x,y){ return !faoLimInside(x,y,lim2OK,r2); };
+    const cross2=R2
+      // Chevauchement avec l'îlot (et non « pas entièrement dedans ») :
+      // ligne AVOID l'îlot -> false (raccourci autorisé, coupe jugée propre),
+      // ligne qui l'entrechevauche -> true (pas de raccourci à travers).
+      ?function(a,b){ return !!faoClipLB({x:a.x,y:a.y},{x:b.x,y:b.y},R2); }
+      :function(a,b){ return faoPolyCross(a.x,a.y,b.x,b.y,lim2OK.loop); };
+    const at1=at, cross1=cross;
+    at=at1?function(x,y){ return at1(x,y)&&at2(x,y); }:at2;
+    cross=cross1?function(a,b){ return cross1(a,b)||cross2(a,b); }:cross2;
+  }
+  return {lim:limOK,lim2:lim2OK,D:D,chain:chain,R:R,R2:R2,at:at,cross:cross};
 }
 /* ===================== PLANS : DÉGAGEMENT / RETRAIT ===================== */
 // 2026-10-08-002 : plans façon Fusion360, PAR OPÉRATION (héritage posage ->
@@ -1479,8 +1589,15 @@ function faoZoneCuts(moves,op,job,secu){
     }
     flat.push(m); prev=m;
   }
-  const cut=ctx.chain?faoClipMovesPoly(flat,ctx.lim,ctx.D/2,secu,2)
-                     :faoClipMovesXY(flat,ctx.R,secu);
+  let cut=flat;
+  if(ctx.chain)cut=faoClipMovesPoly(cut,ctx.lim,ctx.D/2,secu,2);
+  else if(ctx.R)cut=faoClipMovesXY(cut,ctx.R,secu);
+  // 2026-10-08-003 : puis le COMPLÉMENT de l'îlot intérieur (deuxième passe :
+  // les deux clips se composent — intersection des zones usinables).
+  if(ctx.R2)cut=faoClipMovesXY(cut,ctx.R2,secu,true);
+  else if(ctx.lim2)
+    cut=faoClipMovesPoly(cut,ctx.lim2,ctx.D/2,secu,2,
+      function(x,y){ return !faoLimInside(x,y,ctx.lim2,ctx.D/2); });
   return faoZoneStrip(cut,ctx,secu);
 }
 /* ----- affichage : la COUPE ne sort jamais de la zone (l'aperçu le garantit)
@@ -1504,29 +1621,46 @@ function faoSegClipper(op,job){
   //    ou null : opération sans zone (affichage inchangé, cas par défaut).
   // Usage réservé aux segments de COUPE (cf. faoRefreshPreview) : un rapide
   // a le droit de traverser la frontière.
-  const lim=op&&op.limit;
-  if(!lim)return null;
-  const tool=faoToolById(job,op&&op.toolId);
-  const D=(tool&&+tool.d>0)?+tool.d:10;
-  if(lim.mode==='rect'){
-    const R=faoEffLimit(op,D);
-    if(!R)return null;
-    return function(ax,ay,az,bx,by,bz,push){
-      const s=faoClipLB({x:ax,y:ay},{x:bx,y:by},R);
-      if(!s)return;
-      push(ax+(bx-ax)*s[0],ay+(by-ay)*s[0],az+(bz-az)*s[0],
-           ax+(bx-ax)*s[1],ay+(by-ay)*s[1],az+(bz-az)*s[1]);
-    };
+  // 2026-10-08-003 : zone intérieure (îlot) — ctx composé (ET des deux zones).
+  const ctx=faoZoneCtx(op,job);
+  if(!ctx)return null;
+  if(!ctx.lim2){
+    // --- extérieur seul : chemins historiques EXACTS (inchangés) ---
+    if(ctx.chain){
+      const at=ctx.at;
+      return function(ax,ay,az,bx,by,bz,push){
+        const ain=at(ax,ay), bin=at(bx,by);
+        const cross=ctx.cross({x:ax,y:ay},{x:bx,y:by});
+        if(ain&&bin&&!cross){ push(ax,ay,az,bx,by,bz); return; } // cas courant : 1 test
+        if(!ain&&!bin&&!cross)return;                            // tout dehors : rien
+        const n=Math.max(1,Math.ceil(Math.hypot(bx-ax,by-ay)));  // subdivision 1 mm
+        let px=ax,py=ay,pz=az,pin=ain;
+        for(let i=1;i<=n;i++){
+          const t=i/n, cx=ax+(bx-ax)*t, cy=ay+(by-ay)*t, cz=az+(bz-az)*t, cin=at(cx,cy);
+          if(cin&&pin)push(px,py,pz,cx,cy,cz);
+          px=cx;py=cy;pz=cz;pin=cin;
+        }
+      };
+    }
+    if(ctx.R){
+      const R=ctx.R;
+      return function(ax,ay,az,bx,by,bz,push){
+        const s=faoClipLB({x:ax,y:ay},{x:bx,y:by},R);
+        if(!s)return;
+        push(ax+(bx-ax)*s[0],ay+(by-ay)*s[0],az+(bz-az)*s[0],
+             ax+(bx-ax)*s[1],ay+(by-ay)*s[1],az+(bz-az)*s[1]);
+      };
+    }
+    return null;
   }
-  if(lim.mode!=='chain'||!lim.loop||lim.loop.length<3)return null;
-  const loop=lim.loop, r=D/2; // r = même règle outil que le clip des parcours
-  const at=function(x,y){ return faoLimInside(x,y,lim,r); };
+  // --- composé (limite + îlot) : at = ET, cross = OU, marche 1 mm ---
+  const at=ctx.at;
   return function(ax,ay,az,bx,by,bz,push){
     const ain=at(ax,ay), bin=at(bx,by);
-    const cross=faoPolyCross(ax,ay,bx,by,loop);
-    if(ain&&bin&&!cross){ push(ax,ay,az,bx,by,bz); return; } // cas courant : 1 test
-    if(!ain&&!bin&&!cross)return;                            // tout dehors : rien
-    const n=Math.max(1,Math.ceil(Math.hypot(bx-ax,by-ay)));  // subdivision 1 mm
+    const cr=ctx.cross({x:ax,y:ay},{x:bx,y:by});
+    if(ain&&bin&&!cr){ push(ax,ay,az,bx,by,bz); return; }
+    if(!ain&&!bin&&!cr)return;
+    const n=Math.max(1,Math.ceil(Math.hypot(bx-ax,by-ay)));
     let px=ax,py=ay,pz=az,pin=ain;
     for(let i=1;i<=n;i++){
       const t=i/n, cx=ax+(bx-ax)*t, cy=ay+(by-ay)*t, cz=az+(bz-az)*t, cin=at(cx,cy);
@@ -1561,6 +1695,12 @@ function faoOpSig(op){
         const L={};
         for(const kk in v) if(Object.prototype.hasOwnProperty.call(v,kk)&&kk!=='stale'&&kk!=='missing')L[kk]=v[kk];
         o.limit=L;
+      }else if(k==='limit2'&&v&&typeof v==='object'){
+        // 2026-10-08-003 : zone interieure — mêmes règles que la zone
+        // extérieure : les drapeaux transitaires ne changent jamais la clé.
+        const L2={};
+        for(const kk in v) if(Object.prototype.hasOwnProperty.call(v,kk)&&kk!=='stale'&&kk!=='missing')L2[kk]=v[kk];
+        o.limit2=L2;
       }else o[k]=v;
     }
   }catch(e){ return op; }
@@ -2143,7 +2283,11 @@ function faoOpMoves(op,job){
         // (posage.planes.mode) : les liaisons tiennent secu (le plan) au lieu
         // de remonter à 5 mm au-dessus de la matière (mode 'min5').
         remPlan:!!(job&&job.planes&&job.planes.mode==='plan'),
-        mode:op.mode});
+        mode:op.mode,
+        // 2026-10-08-003 : sens de passe — 'avalant' = sens de coupe constant
+        // (aucune chaine retournee) ; absent/'bidir' = legacy (retournement
+        // vers l'extremite la plus proche).
+        sens:op.sens});
   }
   else if(op.type==='geofinish'){
     let am=null;
@@ -2161,11 +2305,23 @@ function faoOpMoves(op,job){
   // Limite : rect (Liang-Barsky rapide) ou chaîne d'arêtes (clip impair).
   // Phase suivante : chaîne d'arêtes multiples, faces.
   const lim=op.limit;
+  // 2026-10-08-003 : zone intérieure (îlot) — clip en COMPLÉMENT, après
+  // l'extérieur (les deux se composent en intersection).
+  const lim2=op.limit2;
   if(lim&&lim.mode==='rect'&&mv.length){
     const R=faoEffLimit(op,D);
     if(R)mv=faoClipMovesXY(mv,R,secu);
   }else if(lim&&lim.mode==='chain'&&lim.loop&&lim.loop.length>=3&&mv.length){
     mv=faoClipMovesPoly(mv,lim,D/2,secu,2);
+  }
+  if(lim2&&mv.length){
+    if(lim2.mode==='rect'){
+      const R2=faoLimit2R(lim2,D);
+      if(R2)mv=faoClipMovesXY(mv,R2,secu,true);
+    }else if(lim2.mode==='chain'&&lim2.loop&&lim2.loop.length>=3){
+      mv=faoClipMovesPoly(mv,lim2,D/2,secu,2,
+        function(x,y){ return !faoLimInside(x,y,lim2,D/2); });
+    }
   }
   // Arrondi des coins (trajectoires circulaires) : ébauche 3D + 2.5D
   // (surfaçage/poche/contour). 0 = angles vifs.
@@ -2175,7 +2331,8 @@ function faoOpMoves(op,job){
   // ZONE = frontière inviolable pendant le travail : garde-fou de coupe posé
   // EN DERNIER (faoRoundMoves crée ses arcs APRÈS le clip — un arrondi pouvait
   // dépasser la frontière). Les rapides, eux, traversent librement.
-  if(lim&&mv.length)mv=faoZoneCuts(mv,op,job,secu);
+  // 2026-10-08-003 : l'îlot intérieur compte comme une zone (ctx composé).
+  if((lim||lim2)&&mv.length)mv=faoZoneCuts(mv,op,job,secu);
   if(ck!==null)faoOpMovesStore(op,ck,mv);
   if(ck!==null)faoMovesSave(job,op,ck,mv); // persistance : prochaine ouverture = lecture
   if(op){ try{ op.stale=false; }catch(e){} } // generation fraiche
@@ -2483,9 +2640,10 @@ function faoPost(job,postId){
     'IGNORÉE : B/C non commandés, programme émis en 3 axes (la pièce ne sera PAS inclinée). '+
     'Remettre 3 axes ou exporter sur Siemens.');
   const staleCh=(job.ops||[]).filter(function(o){
-    return o&&o.on!==false&&((o.limit&&o.limit.mode==='chain'&&o.limit.stale)||(o.zlim&&o.zlim.stale));
+    return o&&o.on!==false&&((o.limit&&o.limit.mode==='chain'&&o.limit.stale)||
+      (o.limit2&&o.limit2.mode==='chain'&&o.limit2.stale)||(o.zlim&&o.zlim.stale));
   }).length;
-  if(staleCh)warns.push(staleCh+' opération(s) : limite « chaîne »/Z obsolète (arêtes du modèle '+
+  if(staleCh)warns.push(staleCh+' opération(s) : limite « chaîne »/îlot/Z obsolète (arêtes du modèle '+
     'non retrouvées) — re-sélectionner les arêtes avant export');
   const L=[]; let n=10;
   const nc=function(s){ if(fag){ L.push('N'+n+' '+s); n+=5; } else L.push(s); };
@@ -2628,6 +2786,8 @@ function faoOpLabel(op,job){
   const ra=((op&&(op.type==='pocket'||op.type==='contour'||op.type==='rough3d'||op.type==='facing'))&&(RA.radial>0||RA.axial>0))?(' R'+RA.radial+' A'+RA.axial):'';
   const lim=((op&&op.limit&&(op.limit.mode==='rect'||(op.limit.mode==='chain'&&(op.limit.loop||[]).length>=3)))
     ?' [limite]'+(op.limit.stale?'⚠':''):'')
+    +((op&&op.limit2&&(op.limit2.mode==='rect'||(op.limit2.mode==='chain'&&(op.limit2.loop||[]).length>=3)))
+    ?' [îlot]'+(op.limit2.stale?'⚠':''):'')
     +((op&&op.zlim)?' [Z]'+(op.zlim.stale?'⚠':''):'');
   if(t==='facing')return 'Surfaçage Z='+op.z+tag+off+ra+lim;
   if(t==='pocket')return 'Poche ['+op.x0+','+op.y0+' -> '+op.x1+','+op.y1+'] '+op.ztop+' -> '+op.zbot+ra+tag+off+lim;
@@ -3459,6 +3619,12 @@ function faoOpDefaults(type){
     // 2026-10-07-005 : l'ESCARGOT est la 1re selection a la creation
     // (les documents anciens sans mode restent conventionnels).
     mode:'escargot',
+    // 2026-10-08-003 : sens de passe — 'avalant' (defaut a la creation) =
+    // sens de coupe CONSTANT : aucune chaine retournee, la passe suit toujours
+    // le meme sens d'avance (les dents attaquent la matiere de la meme facon,
+    // cf. sens de rotation de la fraise). Absent = legacy 'bidir' (retournement
+    // vers l'extremite la plus proche, documents anteriurs inchanges).
+    sens:'avalant',
     arrondi:+(Math.min(2,D*0.25)).toFixed(2)});
   if(type==='geofinish')return Object.assign({},base,{type:'geofinish',
     step:1, laisse:0, seed:'top', entry:'auto', ztop:s.z1, zbot:s.z0});
@@ -3696,6 +3862,43 @@ function faoHelp(t){
   const n=document.createElement('div');
   n.className='fao-help';
   n.textContent=t; return n; }
+/* 2026-10-08-003 : infos de mode en menu CONTEXTUEL — la fiche reste lisible
+   (les blocs d'aide « trop en place » ont été retirés) : clic droit sur le
+   select Mode de l'Ébauche 3D = popup avec le texte du mode CHOISI. Fermeture
+   sur clic extérieur, Échap, ou changement de mode (voir le wrapper du select). */
+let faoInfoBox=null, faoInfoOff=null;
+function faoModeInfoClose(){
+  if(faoInfoOff){ try{faoInfoOff();}catch(e){} faoInfoOff=null; }
+  if(faoInfoBox){
+    try{ faoInfoBox.remove(); }catch(e){}
+    // Le harnais de test stub remove() : on désactive aussi la classe pour que
+    // « popup fermé » soit observable partout (inoffensif côté navigateur).
+    try{ faoInfoBox.className='fao-ctx-off'; }catch(e){}
+    faoInfoBox=null;
+  }
+}
+function faoModeInfoShow(x,y,text){
+  faoModeInfoClose();
+  const b=document.createElement('div');
+  b.className='fao-ctx';
+  b.textContent=text;
+  try{ b.style.left=Math.max(4,x)+'px'; b.style.top=Math.max(4,y)+'px'; }catch(e){}
+  try{ document.body.appendChild(b); }catch(e){ return; }
+  faoInfoBox=b;
+  try{
+    const away=function(e){
+      if(faoInfoBox&&e&&e.target&&faoInfoBox.contains&&faoInfoBox.contains(e.target))return;
+      faoModeInfoClose();
+    };
+    const key=function(e){ if(!e||e.key==='Escape'||e.keyCode===27)faoModeInfoClose(); };
+    window.addEventListener('pointerdown',away);
+    window.addEventListener('keydown',key);
+    faoInfoOff=function(){
+      try{ window.removeEventListener('pointerdown',away); }catch(e){}
+      try{ window.removeEventListener('keydown',key); }catch(e){}
+    };
+  }catch(e){}
+}
 function faoCard(){
   const d=document.createElement('div');
   d.className='fao-card';
@@ -4314,26 +4517,51 @@ function faoOpCardElement(setup,op,i){
     d.appendChild(faoH('Vidage'));
     const rM=faoRow();
     rM.appendChild(faoLab('Mode'));
-    rM.appendChild(faoSel([
+    const modeSel=faoSel([
       ['escargot','Escargot · du centre vers les faces','Pelage en spirale depuis le pôle de la zone à usiner : chaque tour s’éloigne de ae, entrée en hélice obligatoire, les faces sont finies en dernier (2026-10-07-005, mode par défaut à la création).'],
       ['conv','Conventionnel','Pelage à ap constant (champ ap) : du milieu de la zone vers les bords, entrées hélice/rampe, trochoïdes automatiques dans les goulets.']],
       op.mode||'conv',function(v){
         if(v==='escargot')op.mode='escargot'; else delete op.mode;
-      },'Mode de vidage — escargot par défaut à la création, absent = conventionnel (mode trocoïdal supprimé en 2026-10-08-001).'));
-    d.appendChild(rM);
-    if(op.mode==='escargot'){
-      d.appendChild(faoHelp(
-        'Escargot : pelage en spirale depuis le centre de la zone à usiner (pôle d’inaccessibilité, pas le '+
+      },'Mode de vidage — escargot par défaut à la création, absent = conventionnel (mode trocoïdal supprimé en 2026-10-08-001). Clic droit : infos sur ce mode.');
+    // 2026-10-08-003 : les aides « trop en place » partent en menu contextuel
+    // (clic droit sur ce select) — la fiche garde la place pour les vrais
+    // réglages. Contenu = texte du mode ACTUELLEMENT choisi.
+    const modeTexts={
+      escargot:'Escargot : pelage en spirale depuis le centre de la zone à usiner (pôle d’inaccessibilité, pas le '+
         'centre de la boîte — la 1re coupe n’attaque plus un bord de face) vers les faces, tours espacés de ae, '+
         'toutes les entrées en matière sont des hélices (jamais de plongée directe). '+
         'Dernière passe de chaque niveau : contour des faces du solide au ras (laisse outil). '+
-        'Mini-passes, plafond/fond et finition inchangés — ae pilote la distance entre deux tours.'));
-    }else{
-      d.appendChild(faoHelp(
-        'Pelage à ap constant avec entrées hélice/rampe et trochoïdes automatiques dans les goulets : '+
-        'on enlève le MILIEU de la zone avant les bords (les bords et la marge finissent la passe), '+
-        'gardez ae petit (≤ ¼ du Ø outil) et ap profond (≈ 1×Ø). L’outil ne s’enterre jamais.'));
-    }
+        'Mini-passes, plafond/fond et finition inchangés — ae pilote la distance entre deux tours.',
+      conv:'Pelage à ap constant avec entrées hélice/rampe et trochoïdes automatiques dans les goulets : '+
+        'on enlève le MILIEU de la zone avant les bords (les bords et la marge finient la passe), '+
+        'gardez ae petit (≤ ¼ du Ø outil) et ap profond (≈ 1×Ø). L’outil ne s’enterre jamais.'
+    };
+    modeSel.addEventListener('contextmenu',function(e){
+      try{ e.preventDefault(); }catch(err){}
+      faoModeInfoShow((e&&isFinite(+e.clientX))?+e.clientX+8:60,
+                      (e&&isFinite(+e.clientY))?+e.clientY+8:60,
+                      modeTexts[op.mode==='escargot'?'escargot':'conv']);
+    });
+    const modePrevOnchange=modeSel.onchange;
+    modeSel.onchange=function(){ faoModeInfoClose(); modePrevOnchange(); };
+    rM.appendChild(modeSel);
+    d.appendChild(rM);
+    // 2026-10-08-003 : SENS DE PASSE — 'avalant' = sens de coupe constant
+    // (aucune chaine retournée : les dents attaquent la matière de la même
+    // façon sur tous les morceaux — sens de rotation de la fraise) ; défaut à
+    // la création. 'bidir' = ancien comportement (retournement vers
+    // l'extrémité la plus proche, triangles courts en fin de passe).
+    // Document ancien sans champ = effectivement bidirectionnel → on affiche
+    // 'bidir' (la valeur réelle) plutôt que le défaut d'usine.
+    const rS=faoRow();
+    rS.appendChild(faoLab('Sens'));
+    rS.appendChild(faoSel([
+      ['avalant','Sens unique · avalant','Toutes les passes coupent vers le même côté (dents attaquant la matière du même sens, comme la rotation de la fraise) : enchaînement au plus proche SANS retournement, retour rapide à vide en fin de passe. Défaut à la création (2026-10-08-003).'],
+      ['bidir','Bidirectionnel','Chaque passe retourne vers l’extrémité la plus proche de la précédente (moins de trajet à vide, mais le sens de coupe alterne — lecture des documents antérieurs, comportement historique).']],
+      (op.sens==='avalant')?'avalant':'bidir',
+      function(v){ if(v==='avalant')op.sens='avalant'; else op.sens='bidir'; },
+      'Sens de passe de l’ébauche 3D — avalant (sens de coupe constant) ou bidirectionnel (retournement vers l’extrémité la plus proche).'));
+    d.appendChild(rS);
     d.appendChild(faoH('Passes (mm)'));
     const rP=faoRow();
     rP.appendChild(faoLab('ap')); rP.appendChild(faoNum(op.ap,function(v){op.ap=Math.max(0.5,v);},48,0.5,
@@ -4502,6 +4730,68 @@ function faoOpCardElement(setup,op,i){
     rs.appendChild(faoNum(op.limit.extra||0,function(v){op.limit.extra=v;},44,0.5,
       'Élargit (+) ou rétrécit (−) la zone en mm.'));
     d.appendChild(rs);
+  }
+  // 2026-10-08-003 : ZONE INTÉRIEURE (îlot à préserver) — on usine ENTRE la
+  // zone extérieure et cet îlot. Règle outil fixée « hors de l'îlot » (side
+  // 'out' interne) : la Marge ajoute de la distance entre l'outil et l'îlot.
+  const rl2=faoRow();
+  const lim2Mode=op.limit2?(op.limit2.mode||'rect'):'none';
+  rl2.appendChild(faoLab('Zone int.'));
+  rl2.appendChild(faoSel([
+    ['none','Aucune','Pas de zone intérieure : toute la matière de la zone extérieure est usinée.'],
+    ['rect','Rectangle (îlot)','Rectangle à NE PAS usiner — l\'outil reste à un rayon + marge du contour.'],
+    ['chain','Chaîne d\'arêtes','Îlot délimité par des arêtes du modèle — même règle outil, re-suivi à chaque rejeu.']],
+    lim2Mode,function(v){
+      if(v==='rect'){
+        const s=faoStock();
+        const cx=((+s.x0)+(+s.x1))/2, cy=((+s.y0)+(+s.y1))/2;
+        const w=Math.max(2,Math.min((+s.x1)-(+s.x0),(+s.y1)-(+s.y0))*0.15);
+        op.limit2={mode:'rect',x0:Math.round((cx-w)*100)/100,y0:Math.round((cy-w)*100)/100,
+          x1:Math.round((cx+w)*100)/100,y1:Math.round((cy+w)*100)/100,extra:0};
+      }else if(v==='chain'){
+        const old=op.limit2&&op.limit2.mode==='chain'?op.limit2:null;
+        op.limit2=old||{mode:'chain',loop:[],closed:false,nEdges:0,tangent:true,side:'out',extra:0};
+        faoChainStart(setup.id,op.id,'chain2');
+      }else delete op.limit2;
+    },
+    'Zone intérieure (îlot) : matière à NE PAS toucher — l\'ébauche usine entre les deux zones.'));
+  if(lim2Mode==='rect'&&op.limit2){
+    const L2=op.limit2;
+    rl2.appendChild(faoNum(L2.x0,function(v){L2.x0=v;},52,null,'Îlot : coin X mini (mm)'));
+    rl2.appendChild(faoNum(L2.y0,function(v){L2.y0=v;},52,null,'Îlot : coin Y mini (mm)'));
+    rl2.appendChild(faoNum(L2.x1,function(v){L2.x1=v;},52,null,'Îlot : coin X maxi (mm)'));
+    rl2.appendChild(faoNum(L2.y1,function(v){L2.y1=v;},52,null,'Îlot : coin Y maxi (mm)'));
+  }
+  d.appendChild(rl2);
+  if(lim2Mode==='chain'&&op.limit2){
+    const rc2=document.createElement('div');
+    rc2.className='fao-row';
+    const hasLoop2=(op.limit2.loop||[]).length>=3;
+    const info2=document.createElement('span');
+    info2.className='fao-meta';
+    info2.textContent=hasLoop2
+      ?('îlot : '+(op.limit2.nEdges||'?')+' arêtes, boucle '+(op.limit2.closed?'fermée':'refermée')
+        +' · '+op.limit2.loop.length+' pts')
+      :'aucune boucle — sélectionnez les arêtes de l\'îlot';
+    rc2.appendChild(info2);
+    const bs2=document.createElement('button'); bs2.textContent=hasLoop2?'Re-sélectionner':'Sélectionner';
+    bs2.style.fontSize='.72rem';
+    bs2.onclick=function(){ faoChainStart(setup.id,op.id,'chain2'); };
+    rc2.appendChild(bs2);
+    d.appendChild(rc2);
+    if(op.limit2.stale){
+      const ws2=document.createElement('div');
+      ws2.className='fao-alert';
+      ws2.textContent='⚠ Modèle modifié : arêtes de l\'îlot non retrouvées — boucle inchangée (obsolète), re-sélectionnez.';
+      d.appendChild(ws2);
+    }
+  }
+  if(op.limit2&&lim2Mode!=='none'){
+    const rs2=faoRow();
+    rs2.appendChild(faoLab('Marge'));
+    rs2.appendChild(faoNum(op.limit2.extra||0,function(v){op.limit2.extra=v;},44,0.5,
+      'Distance supplémentaire (+) entre l\'outil et l\'îlot, en mm.'));
+    d.appendChild(rs2);
   }
   const sf=faoToolSF(faoToolById(setup,op.toolId),setup);
   const rr=faoRow();
@@ -5363,6 +5653,11 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     }
     return d;
   };
+  // 2026-10-08-003 — sens 'avalant' : comme ordered() du conventionnel, les
+  // chaines de faces ne sont JAMAIS retournees (sens de coupe constant) ;
+  // les anneaux fermes restent simplement tournes vers le depart le plus
+  // proche. Absent/'bidir' : retournement libre, code historique.
+  const avalant=!!(opt&&opt.sens==='avalant');
   const cord=function(ch,px,py){
     const P=ch.pts;
     if(ch.closed){
@@ -5373,6 +5668,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
       }
       return P.slice(bi).concat(P.slice(0,bi));
     }
+    if(avalant)return P; // sens unique : ordre naturel de la chaine
     const f=P[0],l=P[P.length-1];
     const df=(f[0]-px)*(f[0]-px)+(f[1]-py)*(f[1]-py);
     const dl=(l[0]-px)*(l[0]-px)+(l[1]-py)*(l[1]-py);
@@ -5559,10 +5855,11 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
     // toujours le plan de retrait (secu porte déjà le plan).
     const bandTop=li>0?plan[li-1].z:zt;
     const tvZ=o.remPlan?secu:Math.min(secu,bandTop+5);
-    // ESCARGOT : spirale centre -> faces sur le même plan/levels, mêmes
-    // entrées/travel ; mini-passes et finition restent conventionnelles.
-    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ});
-    else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ});
+    // ESCARGOT : spirale centre -> faces sur le meme plan/levels, memes
+    // entrees/travel ; mini-passes et finition restent conventionnelles.
+    // 2026-10-08-003 : sens (avalant = sens de coupe constant) porte par opt.
+    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens});
+    else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens});
     // MINI-PASSES (retour 4/10) : après le pelage du niveau, contour des parois
     // entre ce plan et le plan du dessus : profondeurs k*h/(nb+1) sous le plan
     // du dessus (strictement entre les deux, jamais dessus), décalage radial
@@ -5573,7 +5870,7 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
       if(h>1e-9)for(let k=1;k<=nb;k++){
         const zm=Math.round((bandTop-k*h/(nb+1))*1000)/1000;
         const s=RA.radial;
-        faoRoughAdaptiveLevel(M,BB,zm,D,D/2+s,secu,Math.min(secu,bandTop),ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvZ});
+        faoRoughAdaptiveLevel(M,BB,zm,D,D/2+s,secu,Math.min(secu,bandTop),ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvZ,sens:o.sens});
       }
     }
     // FINITION DES PAROIS (8/10) : UNIQUEMENT sur `finIdx` = niveau le plus
@@ -5602,7 +5899,7 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
           tvJ=o.remPlan?secu:Math.min(secu,zA+5); // 2026-10-08-002 : 5 mm (was 2)
         for(let k=1;k<=nf;k++){
           const off=RA.radial*(nf-k)/nf;
-          faoRoughAdaptiveLevel(M,BB,zj,D,D/2+off,secu,zF,ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvJ});
+          faoRoughAdaptiveLevel(M,BB,zj,D,D/2+off,secu,zF,ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvJ,sens:o.sens});
         }
       }
     }
@@ -6893,6 +7190,13 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   };
   // Point d'entree : vertex le plus proche (ferme), extremite la plus
   // proche (ouvert, reversible), toujours en avant (morceau trochoïdal).
+  // 2026-10-08-003 — sens 'avalant' : AUCUN retournement de chaine ouverte —
+  // la passe suit toujours le meme sens d'avance (sens de coupe constant,
+  // les dents attaquent la matiere de la meme facon quels que soient le
+  // morceau et son voisin). Les anneaux fermes ne sont que ROTATIONNES
+  // (depart au plus proche, orientation de coupe inchangee). Absent/'bidir' :
+  // retournement vers l'extremite la plus proche, strictement l'ancien code.
+  const avalant=!!(opt&&opt.sens==='avalant');
   const ordered=function(ch,px,py){
     if(ch.mv)return ch.mv;
     const P=ch.pts;
@@ -6904,6 +7208,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       }
       return P.slice(bi).concat(P.slice(0,bi));
     }
+    if(avalant)return P; // sens unique : on garde l'ordre naturel de la chaine
     const f=P[0],l=P[P.length-1];
     const df=(f[0]-px)*(f[0]-px)+(f[1]-py)*(f[1]-py);
     const dl=(l[0]-px)*(l[0]-px)+(l[1]-py)*(l[1]-py);
@@ -7536,8 +7841,11 @@ function faoZPlaneCommit(e){
 // sans OCCT ; arêtes trop déplacées -> stale (alerte) -> re-sélectionner.
 let faoChainMode=null, faoChainHover=null;
 function faoChainStart(setupId,opId,kind){
+  // kind : 'chain' (zone extérieure, défaut) · 'chain2' (zone intérieure,
+  // îlot 2026-10-08-003) · 'z' (limite Z d'ébauche 3D).
   try{
-    const PRE=(kind==='z')?'Limite Z':'Chaîne';
+    const is2=(kind==='chain2');
+    const PRE=(kind==='z')?'Limite Z':(is2?'Chaîne (îlot)':'Chaîne');
     if(typeof skEdit!=='undefined'&&skEdit){faceEl.textContent=PRE+' : fermez l\'esquisse d\'abord.';return;}
     if((typeof filMode!=='undefined'&&filMode)||(typeof filModeX!=='undefined'&&filModeX)||
        (typeof mvMode!=='undefined'&&mvMode)||(typeof draftMode!=='undefined'&&draftMode)||
@@ -7557,17 +7865,20 @@ function faoChainStart(setupId,opId,kind){
     const op=(setup.ops||[]).filter(function(o){return o.id===opId;})[0];
     if(!op){faceEl.textContent=PRE+' : opération introuvable.';return;}
     const isZ=(kind==='z');
-    const old=op.limit&&op.limit.mode==='chain'?op.limit:null;
+    const old=is2
+      ?(op.limit2&&op.limit2.mode==='chain'?op.limit2:null)
+      :(op.limit&&op.limit.mode==='chain'?op.limit:null);
     faoChainMode={setupId:setup.id,opId:op.id,edges:edges,seeds:[],
-      tangent:isZ?false:(old?!!old.tangent:true),sel:[],kind:isZ?'z':'chain'};
+      tangent:isZ?false:(old?!!old.tangent:true),sel:[],
+      kind:isZ?'z':(is2?'chain2':'chain')};
     faoChainHover=null;
     faoChainBuildOverlay();
     if(typeof renderProps==='function')renderProps();
     faceEl.textContent=isZ
       ?('Limite Z : cliquez les arêtes des hauteurs ('+edges.length+' listées) · OK valide, Échap annule.')
-      :('Chaîne : cliquez des arêtes ('+edges.length+' listées) · tangentes auto '+
+      :(PRE+' : cliquez des arêtes ('+edges.length+' listées) · tangentes auto '+
         (faoChainMode.tangent?'ON':'OFF')+' · OK valide, Échap annule.');
-  }catch(e){ try{faceEl.textContent=PRE+' : impossible ('+e.message+').';}catch(e2){} }
+  }catch(e){ try{faceEl.textContent='Chaîne : impossible ('+e.message+').';}catch(e2){} }
 }
 function faoZlimStart(setupId,opId){
   // Sélection d'arêtes au service des hauteurs Haut/Bas de l'ébauche 3D.
@@ -7672,7 +7983,7 @@ function faoChainToggle(e){
   try{
     if(!faoChainMode||!faoChainMode.edges)return;
     const i=faoChainPick(e);
-    const PRE=(faoChainMode.kind==='z')?'Limite Z':'Chaîne';
+    const PRE=(faoChainMode.kind==='z')?'Limite Z':(faoChainMode.kind==='chain2'?'Chaîne (îlot)':'Chaîne');
     if(i===null||i===undefined||!faoChainMode.edges[i]){
       faceEl.textContent=PRE+' : cliquez une arête bleue.'+
         (faoChainMode.tangent?' Les tangentes sont ajoutées automatiquement.':' Une seule arête par clic.');
@@ -7686,13 +7997,16 @@ function faoChainToggle(e){
     if(typeof renderProps==='function')renderProps();
     const extra=(faoChainMode.tangent&&faoChainMode.sel.length>faoChainMode.seeds.length)
       ?' ('+faoChainMode.sel.length+' retenues dont '+faoChainMode.seeds.length+' cliquée(s) + tangentes)':'';
-    faceEl.textContent=((faoChainMode.kind==='z')?'Limite Z':'Chaîne')+' : '+
+    faceEl.textContent=((faoChainMode.kind==='z')?'Limite Z'
+      :(faoChainMode.kind==='chain2'?'Chaîne (îlot)':'Chaîne'))+' : '+
       faoChainMode.sel.length+' arête(s)'+extra+'.';
   }catch(err){ try{faceEl.textContent='Sélection impossible ('+err.message+').';}catch(e2){} }
 }
 function faoChainPanel(p,setup,op){
   const isZ=(faoChainMode.kind==='z');
-  p.appendChild(faoH(isZ?'Limite Z : sélection d\'arêtes':'Limite : chaîne d\'arêtes'));
+  const is2=(faoChainMode.kind==='chain2');
+  p.appendChild(faoH(isZ?'Limite Z : sélection d\'arêtes'
+    :(is2?'Zone intérieure : chaîne d\'arêtes (îlot)':'Limite : chaîne d\'arêtes')));
   const n=faoChainMode.sel.length, ns=(faoChainMode.seeds||[]).length;
   const info=document.createElement('div');
   info.className='fao-meta';
@@ -7710,10 +8024,13 @@ function faoChainPanel(p,setup,op){
     p.appendChild(r);
   }
   const r2=faoRow();
-  const ok=document.createElement('button'); ok.textContent=isZ?'OK · appliquer la limite Z':'OK · utiliser comme limite'; ok.style.fontSize='.78rem';
+  const ok=document.createElement('button');
+  ok.textContent=isZ?'OK · appliquer la limite Z'
+    :(is2?'OK · utiliser comme îlot':'OK · utiliser comme limite');
+  ok.style.fontSize='.78rem';
   ok.onclick=function(){ faoChainOk(); };
   const no=document.createElement('button'); no.textContent='Annuler'; no.style.fontSize='.72rem';
-  no.onclick=function(){ faoChainExit(); faceEl.textContent=(isZ?'Limite Z':'Chaîne')+' : annulée, limite inchangée.'; };
+  no.onclick=function(){ faoChainExit(); faceEl.textContent=(isZ?'Limite Z':(is2?'Chaîne (îlot)':'Chaîne'))+' : annulée, limite inchangée.'; };
   const clr=document.createElement('button'); clr.textContent='Effacer'; clr.style.fontSize='.72rem';
   clr.onclick=function(){ faoChainMode.seeds=[]; faoChainMode.sel=[]; faoChainPaint(); faoRefreshFaoUI(); };
   r2.appendChild(ok); r2.appendChild(no); r2.appendChild(clr);
@@ -7722,7 +8039,9 @@ function faoChainPanel(p,setup,op){
   note.className='fao-note';
   note.textContent=isZ
     ?'Haut et bas sont re-suivis à chaque rejeu (ancres des germes) ; éditer un champ casse le lien, une arête perdue met la fiche en alerte (valeurs gardées).'
-    :'La boucle est re-suie automatiquement à chaque rejeu (ancres des germes) ; si les arêtes ont trop bougé, la fiche passe en alerte. Chaîne ouverte : refermée d\'office en segment droit.';
+    :(is2
+      ?'Îlot à préserver : l\'ébauche usine HORS de cette boucle (outil au moins à un rayon + marge du contour — règle outil fixée, pas de choix de côté). Re-suivi automatique à chaque rejeu comme la zone extérieure.'
+      :'La boucle est re-suie automatiquement à chaque rejeu (ancres des germes) ; si les arêtes ont trop bougé, la fiche passe en alerte. Chaîne ouverte : refermée d\'office en segment droit.');
   p.appendChild(note);
 }
 function faoChainOk(){
@@ -7731,7 +8050,8 @@ function faoChainOk(){
     const setup=faoSetup(faoChainMode.setupId);
     const op=(setup.ops||[]).filter(function(o){return o.id===faoChainMode.opId;})[0];
     const isZ=(faoChainMode.kind==='z');
-    const PRE=isZ?'Limite Z':'Chaîne';
+    const is2=(faoChainMode.kind==='chain2');
+    const PRE=isZ?'Limite Z':(is2?'Chaîne (îlot)':'Chaîne');
     if(!op){faceEl.textContent=PRE+' : opération introuvable.';faoChainExit();return;}
     if(!faoChainMode.sel.length){faceEl.textContent=PRE+' : aucune arête — limite inchangée.';faoChainExit();return;}
     if(isZ){
@@ -7757,18 +8077,24 @@ function faoChainOk(){
     // Cap : les très longues chaînes sont sous-échantillonnées (clip en O(n)).
     res=faoChainLoopCap(res);
     const nEdges=faoChainMode.sel.length, wasTangent=!!faoChainMode.tangent;
-    const old=op.limit&&op.limit.mode==='chain'?op.limit:null;
-    faoSnapshot('limite en chaîne');
-    op.limit={mode:'chain',loop:res.loop,closed:res.closed,
+    const old=is2
+      ?(op.limit2&&op.limit2.mode==='chain'?op.limit2:null)
+      :(op.limit&&op.limit.mode==='chain'?op.limit:null);
+    faoSnapshot(is2?'zone intérieure en chaîne':'limite en chaîne');
+    const L={mode:'chain',loop:res.loop,closed:res.closed,
       nEdges:nEdges,tangent:wasTangent,
       // Ancres des germes (figées) : permettent à faoChainReplay de re-suivre la
       // boucle à chaque fin de rejeu, et de passer en stale si plus retrouvable.
       anchors:(faoChainMode.seeds||[]).map(function(i){return faoEdgeAnchor(faoChainMode.edges[i]);}).filter(Boolean),
       stale:false,
       side:(old&&old.side)||'center',extra:(old&&isFinite(+old.extra))?+old.extra:0};
+    // 2026-10-08-003 : l'îlot intérieur impose la règle outil « out » (dilaté
+    // de r+marge, on garde le complément) — pas de choix de côté à l'écran.
+    if(is2)L.side='out';
+    if(is2)op.limit2=L; else op.limit=L;
     faoChainExit();
     faoChanged();
-    faceEl.textContent=PRE+' : limite '+(res.closed?'fermée':'refermée')+' ('+
+    faceEl.textContent=PRE+' : '+(is2?'îlot ':'limite ')+(res.closed?'fermée':'refermée')+' ('+
       nEdges+' arêtes) enregistrée.';
   }catch(e){ try{faceEl.textContent=PRE+' : validation impossible ('+e.message+').';}catch(e2){} }
 }

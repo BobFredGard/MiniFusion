@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**182 versions**, de `2026-09-28b` à `2026-10-08-002` — la plus récente en bas,
+**183 versions**, de `2026-09-28b` à `2026-10-08-003` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3131,3 +3131,23 @@ UI — fiche posage : les champs absolus « Retrait » et « Plan Z » deviennen
 Tests — `tests/test_fao_planes.cjs` **nouveau, inscrit dans `SUITES`** (69 → 70 suites) : 71 vérifications (résolution des 10 références + max/min + chaîne retrait, vue legacy, héritage op > posage, mode plan/min5 + plancher brut, sanitise complet, clés de parcours, rapides normalisés, G-code tête / retrait inter-outils / RTP de cycle, fiches posage + opération libellés et valeurs) ; `test_fao_securite` : libellé « Plan Z » → « Dégagement ». Run complet **70/70** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-08-002.html`.
 
 Migration : `APP_VER` → `2026-10-08-002`, **`CACHE_VER` → `2026-10-08-002`** : les remontées locales de l'ébauche 3D passent de +2 à +5 mm bornées par le plan de retrait — mêmes sigs, AUTRES points de rapides → tampons FAO périmés, régénération unique. Badge **V0.1.2 inchangé** ; tag Git **`V0.1.2` créé et poussé sur GitHub avec cette version** (il n'avait jamais été poussé, malgré le `(V0.1.2)` des messages de commit depuis 2026-10-04-008).
+
+---
+
+### `2026-10-08-003`
+
+**FAO : sens de coupe « avalant » sur l'ébauche 3D, aides de mode en clic droit, et zone intérieure (îlot) à préserver sur toutes les opérations à zone.**
+
+Demande (3 points, GO reçu) : (1) liaison **avalant** (défaut) vs **bidir** des passes d'ébauche 3D, avec sélecteur **Sens** dans la fiche — « avalant » = sens de coupe constant (les dents attaquent la matière de la même façon), le vrai sens de rotation (le signe CW/CCW) reste à régler au besoin ; (2) les aides **Escargot** / **Conventionnel** sortent de la fiche pour un **menu clic droit** sur le sélecteur Mode ; (3) une **zone intérieure** `op.limit2` (îlot à préserver) en plus de la zone extérieure `op.limit`, pour **toutes** les opérations à zone : on usine **entre les deux**.
+
+Noyau (îlot) — `faoLimit2R` dilate le rect d'îlot de `r + Marge` (k borné à ≥ 0,01 : marge très négative = îlot rétréci au maximum, **jamais d'oubli silencieux**), `faoLimitDrillPts` exclut les trous dans l'îlot (rayon outil), `faoClipMovesXY(...,invert)` découpe le **complément** (re-entry sécurisé en 2 remontées secu), `faoClipMovesPoly(...,atFn)` prend un prédicat surchargeable. `faoZoneCtx(op,job)` compose les deux frontières : `at = ET`, `cross = OU` — `cross2` rect = **chevauchement** avec l'îlot (ligne qui l'évite → raccourci autorisé, ligne qui l'entrechevauche → pas de raccourci) ; îlot seul accepté (zone ext vide). `faoZoneCuts` refait la coupe finale en 2 passes (ext exact, puis îlot) ; `faoSegClipper` partage ce contexte (chemins historiques exacts sans `limit2`, marche 1 mm composée sinon) ; le clip îlot s'applique dans `faoOpMoves` après l'extérieur et après le parcours ; `faoOpSig` embranche `limit2` (stale/absent exclus de la clé). Sanitise : mode purge, rect réordonné `x0<x1/y0<y1`, extra numérique, **règle outil `side:'out'` forcée** à la lecture et à l'OK (on garde le complément, la chaîne ne bascule jamais côté « dedans ») — forcé aussi à l'écriture du picking. Export : avertissement si l'îlot est en stale + libellé G-code ` [îlot]⚠`. `faoChainRematch(op,edges,field)` devient générique (`limit` / `limit2`) et `faoChainReplay` vérifie les deux ; picking `kind:'chain2'` (préfixe « Chaîne (îlot) », écrit `op.limit2`, libellé « îlot »).
+
+Noyau (sens) — `faoOpDefaults` ébauche 3D écrit `sens:'avalant'` ; `faoSanitiseOps` purge tout autre champ ; le dispatch `faoOpMoves` transmet `sens` aux 4 niveaux (`faoSpiralLevel`, `faoRoughAdaptiveLevel` ×3) ; gating dans `ordered()` et `cord()` : **chaînes ouvertes jamais retournées** en avalant (la liaison ne fait qu'un sens), chaînes **fermées toujours rotationnées** (mouvement ininterrompu — le signe éventuel reste une histoire de signe, à régler plus tard). Un opérateur sans champ = legacy **bidir** : parcours **byte-identiques** (prouvé au générateur et au dispatch).
+
+Aides de mode — helpers `faoInfoBox` / `faoModeInfoClose` / `faoModeInfoShow` (boîte façon `.fao-help`, style `.fao-ctx`) ; les deux blocs d'aide Escargot/Conventionnel sont retirés de la fiche : `modeTexts` + `contextmenu` sur le sélecteur Mode (fermeture : clic extérieur / Échap / changement de mode via wrapper `onchange`), titre du sélecteur += « Clic droit : infos sur ce mode. ».
+
+UI — fiche ébauche 3D : rangée **Sens** sous Mode (avalant/bidir ; affiche la valeur réelle legacy `bidir` quand le champ est absent, écrit `op.sens` au changement). Toutes opérations à zone : rangée **Zone int.** (`Aucune` / `Rect.` / `Chaîne` + 4 champs de coins + bouton « Chaîne… » kind `chain2` + alerte stale) et rangée **Marge** dédiée à l'îlot, sous la zone extérieure.
+
+Tests — `tests/test_fao_sens.cjs` et `tests/test_fao_zone2.cjs` **nouveaux, inscrits dans `SUITES`** (70 → 72 suites) : sens (legacy byte-identique conv/escargot au générateur ET au dispatch, avalant ≠ bidir, coupes 8165/8159, defaults/sanitise/sig, fiche Sens) ; îlot (dilatation r+marge, clip complément rect et chaîne, ZoneCtx composé ET/OU, ZoneCuts 2 passes, SegClipper, perçage, sig/sanitise, fiche Zone int. + validation chaîne2 + rematch ancres, dispatch complet sur fixture poche : **0 coupe dans l'îlot, 680 coupes conservées à l'extérieur, identiques à la référence sans îlot**). `test_fao_escargot` réqualifié : les aides ne sont plus dans la fiche → popup contextmenu (ouverture + fermetures Échap / pointerdown / changement de mode). Run complet **72/72** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-08-003.html`.
+
+Migration : `APP_VER` → `2026-10-08-003`, **`CACHE_VER` inchangé** (`2026-10-08-002`) : les documents existants n'ont ni `sens` ni `limit2` → sigs strictement identiques et parcours byte-identiques (prouvé) → **aucun rejeu forcé** ; seules les opérations éditées en Sens / Zone int. changent de sig et se régénèrent seules. Badge **V0.1.2 inchangé**.
