@@ -670,7 +670,10 @@ function faoGenPocket(rect,zTop,zBot,o){
   // 2026-10-08-004 : entrée circulaire — centre d'outil légal = boîte de la
   // poche retirée de r (jamais dans la paroi).
   const entryMode=o.entry||'auto';
-  const rhoCirc=(isFinite(+o.entryR)&&+o.entryR>0)?+o.entryR:D/4;
+  const rhoCirc=faoCircRhos(D,ae,o.entryR);
+  // 2026-10-08-005 : air = hors de la boîte de poche (matière restante =
+  // intérieur du rectangle usiné).
+  const airPk=function(x,y){ return x<R.x0-1e-9||x>R.x1+1e-9||y<R.y0-1e-9||y>R.y1+1e-9; };
   const pocketOK=function(x,y){
     return x>=R.x0+r-1e-9&&x<=R.x1-r+1e-9&&y>=R.y0+r-1e-9&&y<=R.y1-r+1e-9;
   };
@@ -694,17 +697,17 @@ function faoGenPocket(rect,zTop,zBot,o){
       // bande est déjà ouverte ; premier anneau d'un niveau = aucune ancre ->
       // repli historique (rapide sur place + plongée).
       let side=null;
-      if(entryMode==='circ')side=faoCircEval(ax,ay,1,0,rhoCirc,pocketOK,moves,z,D,true);
+      if(entryMode==='circ')side=faoCircEval(ax,ay,1,0,rhoCirc,pocketOK,moves,z,D,true,airPk);
       if(side){
         const prev=moves[moves.length-1];
         if(prev&&!prev.r&&Math.abs(prev.z-z)<1e-9){
-          moves.push({r:0,x:side.sx,y:side.sy,z:z});
+          moves.push({r:0,ent:1,x:side.sx,y:side.sy,z:z});
         }else{
           if(prev)moves.push({r:1,x:prev.x,y:prev.y,z:secu});
           moves.push({r:1,x:side.sx,y:side.sy,z:secu});
-          moves.push({r:0,x:side.sx,y:side.sy,z:z});
+          moves.push({r:0,ent:1,x:side.sx,y:side.sy,z:z});
         }
-        moves.push({r:0,x:ax,y:ay,z:z,
+        moves.push({r:0,ent:1,x:ax,y:ay,z:z,
           arc:{i:side.cx-side.sx,j:side.cy-side.sy,cw:side.cw}});
       }else{
         moves.push({r:1,x:ax,y:ay,z:secu});
@@ -737,7 +740,7 @@ function faoGenContour(rect,zTop,zBot,o){
   // reste dehors à ≥ r de la pièce (ancre inutile, tout se passe en air) ;
   // rapide sur place, descente en Z à S, arc tangent sur le début de passe.
   const entryMode=o.entry||'auto';
-  const rhoCirc=(isFinite(+o.entryR)&&+o.entryR>0)?+o.entryR:D/4;
+  const rhoCirc=faoCircRhos(D,0,o.entryR);
   const outsideOK=function(x,y){
     const dx=Math.max(rect.x0-x,0,x-rect.x1);
     const dy=Math.max(rect.y0-y,0,y-rect.y1);
@@ -747,8 +750,8 @@ function faoGenContour(rect,zTop,zBot,o){
   zs.forEach(function(z,li){
     if(sideC){
       moves.push({r:1,x:sideC.sx,y:sideC.sy,z:secu});
-      moves.push({r:0,x:sideC.sx,y:sideC.sy,z:z});
-      moves.push({r:0,x:ax,y:ay,z:z,
+      moves.push({r:0,ent:1,x:sideC.sx,y:sideC.sy,z:z});
+      moves.push({r:0,ent:1,x:ax,y:ay,z:z,
         arc:{i:sideC.cx-sideC.sx,j:sideC.cy-sideC.sy,cw:sideC.cw}});
     }else{
       if(li===0)moves.push({r:1,x:ex,y:ey,z:secu});
@@ -2892,7 +2895,9 @@ function faoSegSplit(moves,clip){
     if(prev!==null){
       // plongée = G1 vertical descendant (mêmes XY, Z qui baisse) — bleu.
       const plg=!m.r&&!m.arc&&Math.abs(m.x-prev.x)<1e-9&&Math.abs(m.y-prev.y)<1e-9&&m.z<prev.z-1e-9;
-      const arr=(m.r)?out.rap:(plg?out.plg:out.cut); // le segment prend la commande de SA destination (G0 -> rouge)
+      // 2026-10-08-005 : les moves étiquetés ent (hélice, rampe, arc circ,
+      // descente d'entrée) sont regroupés en « plongée » pour le tracé bleu.
+      const arr=(m.r)?out.rap:((plg||m.ent)?out.plg:out.cut); // le segment prend la commande de SA destination (G0 -> rouge)
       const coupe=!m.r;
       if(m.arc&&!prev.r){
         let pp={x:prev.x,y:prev.y,z:prev.z};
@@ -3019,13 +3024,15 @@ function faoViewerBuild(setup){
       if(pv&&!pv.r&&m.arc){
         try{
           const SA=faoArcSegs(pv,m);
-          if(SA&&SA.length){ SA.forEach(function(q){ ext.push({x:q[0],y:q[1],z:q[2],r:0}); }); dev=true; }
+          // 2026-10-08-005 : un arc développé d'entrée (ent) garde l'étiquette
+          // sur ses échantillons — le tracé bleu suit l'arc entier.
+          if(SA&&SA.length){ SA.forEach(function(q){ ext.push({x:q[0],y:q[1],z:q[2],r:0,ent:m.ent?1:0}); }); dev=true; }
         }catch(e){}
       }
       // Un arc développé ne repousse PAS son move original : ce doublon `.arc` ferait
       // recalculer faoSegLen depuis le bout du développé (i/j relatifs au VRAI départ →
       // centre faux → angle ≈ 2π → temps fictif = gel de ~3-5 s après chaque arc).
-      ext.push(dev?{x:m.x,y:m.y,z:m.z,r:m.r?1:0}:m);
+      ext.push(dev?{x:m.x,y:m.y,z:m.z,r:m.r?1:0,ent:m.ent?1:0}:m);
       pv=m;
     });
     if(ext.length)chunks.push({op:op,ext:ext,f:f,d:d});
@@ -3047,7 +3054,7 @@ function faoViewerBuild(setup){
   chunks.forEach(function(C){
     let prev=null;
     C.ext.forEach(function(m){
-      pts.push({x:+m.x||0, y:+m.y||0, z:+m.z||0, r:m.r?1:0});
+      pts.push({x:+m.x||0, y:+m.y||0, z:+m.z||0, r:m.r?1:0, ent:m.ent?1:0});
       dd.push(C.d);
       if(prev){
         const len=faoSegLen(prev,m);
@@ -3164,12 +3171,13 @@ function faoViewerStockCreate(){
 }
 function faoViewerLineCreate(vw){
   // Polyline continue, couleur par vertex : vert = coupe, rouge = rapide,
-  // bleu = plongée (G1 vertical descendant — 2026-10-08-004).
+  // bleu = plongée (G1 vertical descendant — 2026-10-08-004) ou entrée
+  // étiquetée ent (hélice, rampe, arc circ, descente d'entrée — 005).
   const pos=[], col=[];
   vw.pts.forEach(function(p,i){
     pos.push(p.x,p.y,p.z);
     const q=(i>0)?vw.pts[i-1]:null;
-    const plg=q&&!p.r&&!q.r&&Math.abs(p.x-q.x)<1e-9&&Math.abs(p.y-q.y)<1e-9&&p.z<q.z-1e-9;
+    const plg=p.ent|| (q&&!p.r&&!q.r&&Math.abs(p.x-q.x)<1e-9&&Math.abs(p.y-q.y)<1e-9&&p.z<q.z-1e-9);
     const c=(i>0&&p.r)?0xff453a:(plg?0x0a84ff:0x30d158);
     col.push(((c>>16)&255)/255, ((c>>8)&255)/255, (c&255)/255);
   });
@@ -5550,12 +5558,12 @@ function faoHelixEntry(cx,cy,zFrom,zTo,radius,toolD){
   const total=turns*per;
   for(let i=1;i<=total;i++){
     const a=i/per*Math.PI*2;
-    moves.push({r:0,x:cx+radius*Math.cos(a),y:cy+radius*Math.sin(a),
+    moves.push({r:0,ent:1,x:cx+radius*Math.cos(a),y:cy+radius*Math.sin(a),
       z:Math.round((zFrom-depth*i/total)*1000)/1000});
   }
   for(let i=1;i<=per;i++){ // tour de fond : palier propre
     const a=i/per*Math.PI*2;
-    moves.push({r:0,x:cx+radius*Math.cos(a),y:cy+radius*Math.sin(a),z:zTo});
+    moves.push({r:0,ent:1,x:cx+radius*Math.cos(a),y:cy+radius*Math.sin(a),z:zTo});
   }
   return moves;
 }
@@ -5627,22 +5635,81 @@ function faoCircAnchor(moves,Sx,Sy,z,D){
   }
   return false;
 }
-function faoCircEval(Px,Py,ux,uy,rho,valid,moves,z,D,needAnchor){
-  // Premier côté PASSANT : S légal, arc entier légal, ancre exigée sauf
-  // `needAnchor===false` (contour : S tombe en dehors de la matière, l'air
-  // est prouvé par la validité du point).
-  const sides=faoSidesCirc(Px,Py,ux,uy,rho);
-  if(!sides)return null;
-  for(let i=0;i<sides.length;i++){
-    const s=sides[i];
-    if(!valid(s.sx,s.sy))continue;
-    const pts=faoCircArcPts(s,Px,Py);
-    if(!pts)continue;
-    let ok=true;
-    for(let k=0;k<pts.length;k++)if(!valid(pts[k][0],pts[k][1])){ok=false;break;}
-    if(!ok)continue;
-    if(needAnchor!==false&&!faoCircAnchor(moves,s.sx,s.sy,z,D))continue;
-    return s;
+function faoPlungeClear(Sx,Sy,moves,z,D,airAt){
+  // 2026-10-08-005 : la plongée en S exige la fraise TOTALEMENT hors matière
+  // restante — le disque de rayon D/2 autour de S doit être entièrement balayé
+  // par des coupes antérieures (empreinte de coupe à cote ≤ z) ou en air
+  // (airAt : hors de la matière brute/poche/colonne). Échantillons : centre +
+  // cercle D/2 échantillonné à ~1 mm (K ≈ π·D). Sinon : repli hélice/rampe —
+  // jamais de plongée qui mord la matière restante. (L'ancre ponctuelle
+  // 2026-10-08-004 est un cas particulier — centre couvert — remplacée ici.)
+  const R=D/2, lim=R+1e-9, lim2=lim*lim, near=(R+lim);
+  const K=Math.max(16,Math.min(64,Math.ceil(Math.PI*D)));
+  const qx=[Sx],qy=[Sy];
+  for(let k=0;k<K;k++){const a=k/K*2*Math.PI;qx.push(Sx+R*Math.cos(a));qy.push(Sy+R*Math.sin(a));}
+  const cov=new Uint8Array(qx.length);
+  let left=qx.length;
+  const d2=function(ax,ay,bx,by,px,py){
+    const dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy;
+    let t=L2>0?((px-ax)*dx+(py-ay)*dy)/L2:0;
+    if(t<0)t=0; else if(t>1)t=1;
+    const ex=ax+t*dx-px, ey=ay+t*dy-py;
+    return ex*ex+ey*ey;
+  };
+  const testSeg=function(ax,ay,bx,by){
+    if(d2(ax,ay,bx,by,Sx,Sy)>near*near)return; // trop loin de S : aucun échantillon
+    for(let k=0;k<qx.length;k++)
+      if(!cov[k]&&d2(ax,ay,bx,by,qx[k],qy[k])<=lim2){cov[k]=1;left--;}
+  };
+  for(let i=1;i<moves.length&&left>0;i++){
+    const a=moves[i-1],b=moves[i];
+    if(a.r||b.r)continue;
+    if(a.z>z+1e-9||b.z>z+1e-9)continue;
+    if(b.arc){
+      const pts=faoArcSegs(a,b);
+      if(pts&&pts.length){
+        let px=a.x,py=a.y;
+        for(let k=0;k<pts.length;k++){testSeg(px,py,pts[k][0],pts[k][1]);px=pts[k][0];py=pts[k][1];}
+      }else testSeg(a.x,a.y,b.x,b.y);
+    }else testSeg(a.x,a.y,b.x,b.y);
+  }
+  if(moves.length&&!moves[0].r&&moves[0].z<=z+1e-9)testSeg(moves[0].x,moves[0].y,moves[0].x,moves[0].y);
+  for(let k=0;k<qx.length;k++)if(!cov[k]&&!(airAt&&airAt(qx[k],qy[k])))return false;
+  return true;
+}
+function faoCircRhos(D,ae,entryR){
+  // Candidats de rayon (croissants, 2026-10-08-005) : le rayon demandé
+  // (entryR, défaut Ø/4), puis Ø/2, le pas ae et Ø — un rayon plus large
+  // recule le point de plongée S dans la zone déjà usinée pour que le disque
+  // entier de la fraise y trouve de l'air. Premier candidat faisant passer
+  // toutes les conditions (S, arc, disque) gagne ; sinon repli hélice/rampe.
+  const r0=(isFinite(+entryR)&&+entryR>0)?+entryR:+(D/4).toFixed(2);
+  const out=[];
+  const add=function(v){ if(v>1e-9&&!out.some(function(w){return Math.abs(w-v)<1e-9;}))out.push(v); };
+  add(r0); add(D/2); add(isFinite(+ae)&&+ae>0?+ae:0); add(D);
+  out.sort(function(a,b){return a-b;});
+  return out;
+}
+function faoCircEval(Px,Py,ux,uy,rho,valid,moves,z,D,needAnchor,airAt){
+  // Premier côté PASSANT : S légal, arc entier légal, disque outil TOTALEMENT
+  // hors matière restante (faoPlungeClear) sauf `needAnchor===false` (contour :
+  // S tombe déjà à ≥ r hors pièce, tout le disque est dans l'air). `rho` peut
+  // être une liste de rayons croissants (faoCircRhos — 2026-10-08-005).
+  const RH=Array.isArray(rho)?rho:[rho];
+  for(let ri=0;ri<RH.length;ri++){
+    const sides=faoSidesCirc(Px,Py,ux,uy,RH[ri]);
+    if(!sides)continue;
+    for(let i=0;i<sides.length;i++){
+      const s=sides[i];
+      if(!valid(s.sx,s.sy))continue;
+      const pts=faoCircArcPts(s,Px,Py);
+      if(!pts)continue;
+      let ok=true;
+      for(let k=0;k<pts.length;k++)if(!valid(pts[k][0],pts[k][1])){ok=false;break;}
+      if(!ok)continue;
+      if(needAnchor!==false&&!faoPlungeClear(s.sx,s.sy,moves,z,D,airAt))continue;
+      return s;
+    }
   }
   return null;
 }
@@ -5793,17 +5860,21 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     }
     return 0; // aucun rayon : plongée sûre (colonne d'ombre garantie par le membership)
   };
-  const rhoCirc=(isFinite(+opt.entryR)&&+opt.entryR>0)?+opt.entryR:D/4;
+  const rhoCirc=faoCircRhos(D,ae,opt.entryR);
+  // 2026-10-08-005 : air = hors de la matière brute du niveau (le disque
+  // outil doit être totalement hors matière restante — faoPlungeClear).
+  const airSp=function(x,y){ return !faoShapeInside(S,x,y); };
   const entryTo=function(x,y,ux,uy){
     // 2026-10-08-004 : ENTRÉE CIRCULAIRE — si de la matière est déjà enlevée
     // près du départ (ancre), on descend en Z sur place puis on accoste en
     // arc tangent ; sinon repli hélice/plongée sûre (1re attaque du niveau).
+    // 2026-10-08-005 : rayons candidats + disque outil entièrement en air.
     if(entryMode==='circ'){
-      const side=faoCircEval(x,y,ux||0,uy||0,rhoCirc,inside,moves,z,D,true);
+      const side=faoCircEval(x,y,ux||0,uy||0,rhoCirc,inside,moves,z,D,true,airSp);
       if(side){
         const zG=gotoXY(side.sx,side.sy);
-        if(Math.abs(zG-z)>1e-9)moves.push({r:0,x:rnd(side.sx),y:rnd(side.sy),z:z});
-        moves.push({r:0,x:rnd(x),y:rnd(y),z:z,
+        if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(side.sx),y:rnd(side.sy),z:z});
+        moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:z,
           arc:{i:side.cx-side.sx,j:side.cy-side.sy,cw:side.cw}});
         return;
       }
@@ -7449,17 +7520,20 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   };
   // --- ENTRÉE DU NIVEAU (UNE) : émission ici, après les helpers — le tour
   // fournit la cible à l'entrée circulaire (2026-10-08-004).
-  const rhoCirc=(isFinite(+opt.entryR)&&+opt.entryR>0)?+opt.entryR:D/4;
+  const rhoCirc=faoCircRhos(D,ae,opt.entryR);
+  // 2026-10-08-005 : air = hors de la matière brute du niveau.
+  const airCv=function(x,y){ return !faoShapeInside(S,x,y); };
   const validXY=function(x,y){ return faoShapeValid(S,x,y,rrSafe); };
   const circEnter=function(Px,Py,ux,uy){
     // Arc tangent : rapide vers S, descente G1 en Z à l'ancre (matière déjà
     // enlevée sur place), arc jusqu'au point d'attaque. false = repli.
+    // 2026-10-08-005 : rayons candidats + disque outil entièrement en air.
     if(entryMode!=='circ')return false;
-    const side=faoCircEval(Px,Py,ux,uy,rhoCirc,validXY,moves,z,D,true);
+    const side=faoCircEval(Px,Py,ux,uy,rhoCirc,validXY,moves,z,D,true,airCv);
     if(!side)return false;
     const zG=gotoXY(side.sx,side.sy);
-    if(Math.abs(zG-z)>1e-9)moves.push({r:0,x:rnd(side.sx),y:rnd(side.sy),z:z});
-    moves.push({r:0,x:rnd(Px),y:rnd(Py),z:z,
+    if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(side.sx),y:rnd(side.sy),z:z});
+    moves.push({r:0,ent:1,x:rnd(Px),y:rnd(Py),z:z,
       arc:{i:side.cx-side.sx,j:side.cy-side.sy,cw:side.cw}});
     return true;
   };
@@ -7502,7 +7576,9 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     faoHelixEntry(hx,hy,hStart,z,hr,D).slice(1).forEach(function(m){moves.push(m);});
   }else if(ramp&&(fmode==='ramp'||(!hasTroch&&Math.max(elen,yRun)>=D*0.5))){
     gotoXY(ramp.x0,ramp.y0);
-    moves.push({r:0,x:rnd(ramp.x1),y:rnd(ramp.y1),z:z});
+    // 2026-10-08-005 : la rampe G1 d'attaque (coupe diagonale en biseau) est
+    // une entrée — étiquetée ent (tracé bleu, comme l'hélice et l'arc circ).
+    moves.push({r:0,ent:1,x:rnd(ramp.x1),y:rnd(ramp.y1),z:z});
   }else{
     // Micro-helice si le disque minuscule passe, sinon plongee sûre :
     // jamais de region abandonnee, jamais de plongee dans la matiere.
@@ -7932,11 +8008,15 @@ function faoGenGeoFinish(mesh,o){
       // repli historique (hélice si slot, rampe, plongeon le long du tracé).
       let circ=null;
       if(mode==='circ'&&pts.length>1){
-        const rhoG=(isFinite(+o.entryR)&&+o.entryR>0)?+o.entryR:D/4;
+        // 2026-10-08-005 : rayons candidats (pas des iso = candidat) + disque
+        // outil entièrement hors matière restante (air = ptDist > 0 ;
+        // couverture par les passes iso antérieures à cote ≤ z sinon repli).
+        const rhoG=faoCircRhos(D,step,o.entryR);
         const need=Math.max(0.01,R-0.5);
         circ=faoCircEval(here.x,here.y,pts[1].x-here.x,pts[1].y-here.y,rhoG,
           function(x,y){ return ptDist(x,y)>=need; },
-          moves,here.z,D,true);
+          moves,here.z,D,true,
+          function(x,y){ return ptDist(x,y)>1e-9; });
       }
       const ax=circ?circ.sx:(hx?hx.x:pts[pk].x), ay=circ?circ.sy:(hx?hx.y:pts[pk].y);
       let startZ;
@@ -7957,8 +8037,9 @@ function faoGenGeoFinish(mesh,o){
       let skip0=false;
       if(circ){
         // Rapide arrivé à S (secu/travel), descente en Z à S, arc tangent.
-        if(Math.abs(startZ-here.z)>1e-9)moves.push({r:0,x:circ.sx,y:circ.sy,z:here.z});
-        moves.push({r:0,x:here.x,y:here.y,z:here.z,
+        // 2026-10-08-005 : descente + arc étiquetés ent (tracé bleu).
+        if(Math.abs(startZ-here.z)>1e-9)moves.push({r:0,ent:1,x:circ.sx,y:circ.sy,z:here.z});
+        moves.push({r:0,ent:1,x:here.x,y:here.y,z:here.z,
           arc:{i:circ.cx-circ.sx,j:circ.cy-circ.sy,cw:circ.cw}});
         skip0=true;
       }else if(hx){

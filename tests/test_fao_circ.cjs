@@ -1,6 +1,10 @@
-// 2026-10-08-004 « Entrée circulaire + plongées bleues » — Vérité terrain.
+// 2026-10-08-004 « Entrée circulaire + plongées bleues » + 005 « disque hors
+// matière + tracé bleu des entrées » — Vérité terrain.
 // 1. Helpers d'arc : géométrie des deux côtés tangents, points d'échantillon,
 //    ancre (matière déjà ouverte) et garde-fous de faoCircEval (repli = null).
+//    005 : l'ancre ponctuelle devient faoPlungeClear — le DISQUE D/2 autour de
+//    S doit être entièrement balayé (coupes z'≤z) ou en air (airAt) ; rayons
+//    candidats faoCircRhos (entryR, Ø/2, ae, Ø croissants).
 // 2. Migration : sanitise (entry/entryR) + défauts à la création ('circ') +
 //    mode géofinition (circ interdit sans ébauche amont → rampe).
 // 3. Générateurs via le DISPATCH (doc sans champ = circ) :
@@ -8,7 +12,9 @@
 //    · contour : arc tangent arrivant au coin de passe ;
 //    · escargot: arcs de ré-entrée ('auto' reste sans arc, arrondi 0).
 // 4. EntryR : |S−P| = rho·√2 (rayon transmis jusqu'au générateur).
-// 5. Aperçu : faoSegSplit route la plongée verticale descendante en bleu (plg).
+// 5. Aperçu : faoSegSplit route la plongée verticale descendante en bleu (plg) ;
+//    005 : les moves étiquetés ent (hélice, rampe, arc circ, descente d'entrée)
+//    partent aussi en bleu, et l'étiquette survit à faoViewerBuild.
 const {loadApp}=require('./appvm.cjs');
 const vm=require('vm');
 (async()=>{
@@ -28,17 +34,40 @@ const vm=require('vm');
     "att(faoCircAnchor(mvAnc,7,3,5,10)===false,'ancre : aucune coupe a z<=5 -> false');",
     "att(faoCircAnchor([{r:1,x:5,y:3,z:10},{r:1,x:15,y:3,z:10}],7,3,10,10)===false,'ancre : les rapids ne comptent pas');",
     "const alw=function(){return true;};",
-    "att(faoCircEval(10,0,1,0,3,alw,[],10,10,true)===null,'eval : sans ancre -> null (repli legacy)');",
-    "const e2=faoCircEval(10,0,1,0,3,alw,mvAnc,10,10,true);",
-    "att(e2&&e2.sx===7&&e2.sy===3,'eval : ancre presente -> cote CCW');",
+    "const airNo=function(){return false;};",
+    // --- 005 : faoPlungeClear — le disque D/2 autour de S est TOTALEMENT hors
+    // matière restante (balayé par les coupes z'<=z ou en air via airAt).
+    "att(faoPlungeClear(7,3,[],10,10,airNo)===false,'plungeClear : disque non couvert, pas d air -> false');",
+    "att(faoPlungeClear(7,3,[],10,10,alw)===true,'plungeClear : disque en air (airAt) -> true');",
+    "const mvSw=[{r:1,x:0,y:0,z:30}];",
+    "for(let yy=-2;yy<=8;yy+=1){mvSw.push({r:0,x:2,y:yy,z:10},{r:0,x:12,y:yy,z:10});}",
+    "att(faoPlungeClear(7,3,mvSw,10,10,airNo)===true,'plungeClear : disque entierement balaye par les coupes -> true');",
+    "att(faoPlungeClear(7,3,[{r:0,x:30,y:30,z:10},{r:0,x:40,y:30,z:10}],10,10,airNo)===false,'plungeClear : coupe trop loin de S -> false');",
+    "att(faoPlungeClear(7,3,[{r:1,x:2,y:3,z:10},{r:1,x:12,y:3,z:10}],10,10,airNo)===false,'plungeClear : les rapides ne couvrent pas');",
+    "att(faoPlungeClear(7,3,[{r:0,x:2,y:3,z:20},{r:0,x:12,y:3,z:20}],10,10,airNo)===false,'plungeClear : coupe au-dessus de z ignoree');",
+    // --- 005 : faoCircRhos — candidats croissants entryR, D/2, ae, D.
+    "const rh1=faoCircRhos(10,6,undefined);",
+    "att(rh1.length===4&&rh1[0]===2.5&&rh1[1]===5&&rh1[2]===6&&rh1[3]===10,'rhos defaut : [D/4, D/2, ae, D] croissants');",
+    "const rh2=faoCircRhos(10,0,3);",
+    "att(rh2.length===3&&rh2[0]===3&&rh2[1]===5&&rh2[2]===10,'rhos entryR=3, ae nul : [3, 5, 10]');",
+    // --- faoCircEval avec la nouvelle regle disque.
+    "att(faoCircEval(10,0,1,0,3,alw,[],10,10,true,airNo)===null,'eval : disque non couvert sans air -> null (repli legacy)');",
+    "const eAir=faoCircEval(10,0,1,0,3,alw,[],10,10,true,alw);",
+    "att(eAir&&eAir.sx===7&&eAir.sy===3,'eval : disque en air -> cote CCW');",
+    "const e2=faoCircEval(10,0,1,0,3,alw,mvSw,10,10,true,airNo);",
+    "att(e2&&e2.sx===7&&e2.sy===3,'eval : disque balaye -> cote CCW');",
+    "const mvPatch=[{r:1,x:0,y:0,z:30}];",
+    "for(let yy=0;yy<=9;yy+=1){mvPatch.push({r:0,x:0,y:yy,z:10},{r:0,x:4,y:yy,z:10});}",
+    "const e2r=faoCircEval(10,0,1,0,[2.5,7],alw,mvPatch,10,4,true,airNo);",
+    "att(e2r&&Math.abs(e2r.sx-3)<1e-9&&Math.abs(e2r.sy-7)<1e-9,'eval : rho 2.5 echoue (disque non balaye), rho 7 reussi -> S=(3,7)');",
     "const e3=faoCircEval(10,0,1,0,3,alw,[],10,10,false);",
-    "att(e3&&e3.sx===7&&e3.sy===3,'eval : needAnchor false (contour) -> sans ancre');",
+    "att(e3&&e3.sx===7&&e3.sy===3,'eval : needAnchor false (contour) -> sans disque');",
     "const noS0=function(x,y){return !(Math.abs(x-7)<1&&Math.abs(y-3)<1);};",
-    "const mvAnc2=mvAnc.concat([{r:0,x:0,y:-3,z:10},{r:0,x:14,y:-3,z:10}]);",
-    "const e4=faoCircEval(10,0,1,0,3,noS0,mvAnc2,10,10,true);",
-    "att(e4&&e4.sx===7&&e4.sy===-3,'eval : cote CCW illegal -> miroir CW');",
+    "const mvAnc2=[{r:1,x:0,y:0,z:30},{r:0,x:0,y:-3,z:10},{r:0,x:14,y:-3,z:10}];",
+    "const e4=faoCircEval(10,0,1,0,3,noS0,mvAnc2,10,10,true,airNo);",
+    "att(e4&&e4.sx===7&&e4.sy===-3,'eval : cote CCW illegal -> miroir CW (disque balaye par y=-3)');",
     "const noBoth=function(){return false;};",
-    "att(faoCircEval(10,0,1,0,3,noBoth,mvAnc,10,10,true)===null,'eval : aucun cote legal -> null');",
+    "att(faoCircEval(10,0,1,0,3,noBoth,mvSw,10,10,true,airNo)===null,'eval : aucun cote legal -> null');",
     // ===== 2. sanitise + defauts + mode geo =====
     "const sk={ops:[{id:'o1',type:'pocket',entry:'zigzag',entryR:'x'},{id:'o2',type:'rough3d',entry:'circ',entryR:4}]};",
     "faoSanitiseOps(sk);",
@@ -59,11 +88,14 @@ const vm=require('vm');
     "const mvA=faoOpMoves(pkA,J);",
     "att(!mvA.some(m=>!m.r&&m.arc),'poche auto : aucun arc (arrondi 0)');",
     "att(mvC.filter(m=>m.r).length<mvA.filter(m=>m.r).length,'poche circ : rings en stay-down (moins de remontees '+mvC.filter(m=>m.r).length+' < '+mvA.filter(m=>m.r).length+')');",
+    "att(mvC.some(m=>m.ent===1),'poche circ : sequence d entree etiquetee ent (bleu)');",
     "const mvE=faoOpMoves(Object.assign({},pkC,{id:'pke',entryR:3}),J);",
     "const ia=mvE.findIndex(m=>!m.r&&m.arc);",
     "att(ia>0,'poche entryR=3 : arc present');",
     "if(ia>0){const pv=mvE[ia-1],pe=mvE[ia];",
-    "  att(Math.abs(Math.hypot(pe.x-pv.x,pe.y-pv.y)-3*Math.SQRT2)<1e-6,'entryR=3 : |S-P| = rho*sqrt2, vu '+(Math.hypot(pe.x-pv.x,pe.y-pv.y)).toFixed(4));}",
+    "  // 005 : rho=3 est recale a 5 — le disque D/2 autour de S doit etre balaye",
+    "  // (rho=3 laisserait des echantillons dans la matiere restante).",
+    "  att(Math.abs(Math.hypot(pe.x-pv.x,pe.y-pv.y)-5*Math.SQRT2)<1e-6,'entryR=3 recale a 5 (disque hors matiere) : |S-P| = 5*sqrt2, vu '+(Math.hypot(pe.x-pv.x,pe.y-pv.y)).toFixed(4));}",
     // ===== 4. contour via dispatch =====
     "const coC={id:'coc',on:true,toolId:'T1',type:'contour',x0:20,y0:20,x1:80,y1:40,ztop:20,zbot:15,ap:5,radial:0,axial:0,arrondi:0};",
     "const mc=faoOpMoves(coC,J);",
@@ -81,6 +113,12 @@ const vm=require('vm');
     "att(rC.some(m=>!m.r&&m.arc),'escargot circ : arcs de re-entree');",
     "att(rC.length>10&&rA.length>10,'escargot : generation non vide (circ '+rC.length+' / auto '+rA.length+' moves)');",
     "att(rC.filter(m=>!m.r).every(m=>m.z>=-1e-9),'escargot circ : aucune coupe sous le fond');",
+    "att(rC.some(m=>m.ent===1),'escargot circ : ent sur les entrees');",
+    "const iArc=rC.findIndex(m=>!m.r&&m.arc);",
+    "att(iArc>0&&rC[iArc].ent===1,'escargot : arc etiquete ent');",
+    "const spE=faoSegSplit([rC[iArc-1],rC[iArc]],null);",
+    "att(spE.plg.length>6&&spE.plg.length%3===0,'split : arc ent developpe en plongee bleue ('+spE.plg.length+' coords)');",
+    "att(spE.cut.length===0,'split : rien de vert sur un arc ent');",
     // ===== 6. apercu : plongees en bleu (bucket plg) =====
     "const sp1=faoSegSplit([{r:1,x:0,y:0,z:10},{r:0,x:0,y:0,z:0}],null);",
     "att(sp1.plg.length===6,'plongee : G1 vertical descendant -> 6 coords en bleu');",
@@ -89,6 +127,11 @@ const vm=require('vm');
     "att(sp2.cut.length===6,'split : G1 horizontal -> coupe verte');",
     "att(sp2.plg.length===6,'split : G1 vertical descendant -> plongee bleue');",
     "att(sp2.rap.length===6,'split : destination G0 -> rapide rouge');",
+    "const hx=faoHelixEntry(0,0,10,0,2,10);",
+    "att(hx.length>11&&hx.slice(1).every(m=>m.ent===1),'helix : toutes les G1 etiquetees ent (bleu)');",
+    "const JO=Object.assign({},J,{ops:[pkC]});",
+    "const vwC=faoViewerBuild(JO);",
+    "att(vwC.pts.some(p=>p.ent===1),'viewer : ent propage jusqu aux pts (bleu)');",
     "if(ATT.length){p('');p('ECHECS ('+ATT.length+') :');ATT.forEach(m=>p('  x '+m));}",
     "else p('TOUT EST CONFORME');",
     "return P.join(String.fromCharCode(10));"

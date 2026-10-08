@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**184 versions**, de `2026-09-28b` à `2026-10-08-004` — la plus récente en bas,
+**185 versions**, de `2026-09-28b` à `2026-10-08-005` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3169,3 +3169,19 @@ UI — helper commun **`faoEntryRows`** (select 4 options, **« Cercle · arc ta
 Tests — `tests/test_fao_circ.cjs` **nouveau, inscrit dans `SUITES`** (72 → 73 suites) : géométrie côtés/points d'arc/ancre/gating `faoCircEval` (repli null, miroir CW), sanitise + defaults + mode finition (`circ` sans ébauche → rampe), poche via dispatch (arc présent, `'auto'` sans arc, rings stay-down = moins de remontées, |S−P| = ρ√2 avec `entryR:3`), contour (arc tangent au coin (15,15)), escargot (arcs de ré-entrée en circ, zéro arc en auto, coupes ≥ fond), bucket `plg` (plongée bleue / G1 horizontal vert / destination G0 rouge). `test_fao3d` : défaut géofinition → `'circ'` ; `test_fao` : fixture « poche arrondi » figée en `entry:'auto'` (on y isole l'ARRONDI, le cercle étant couvert par le nouveau test). Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-08-004.html`.
 
 Migration : `APP_VER` → `2026-10-08-004`, **`CACHE_VER` → `2026-10-08-004`** : les générateurs eux-mêmes changent (entrée circ par défaut = autres trajets, mêmes sigs) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Documents avec `entry:'auto'` explicite (ex. `Cavité Usinage`) : parcours inchangés. Badge **V0.1.2 inchangé**.
+
+---
+
+### `2026-10-08-005`
+
+**FAO : la plongée d'entrée exige la fraise TOTALEMENT hors matière restante (disque Ø outil balayé ou en air, rayons candidats), hélice / rampe / arc circ en bleu dans la visionneuse.**
+
+Demande (feedback 004) : l'entrée circulaire doit « prendre en compte le diamètre de fraise et la dégager de la matière restante » — au moment de la plongée en S, **toute l'empreinte de la fraise** (disque de rayon D/2) doit être déjà usinée ou en air, pas seulement le centre ; et dans le tracé, **les hélices, rampes et entrées circulaires doivent être bleues** aussi. Le point d'attaque reste tangent à la droite/courbe à usiner (rentrée directe depuis le cercle) — inchangé.
+
+Noyau — **`faoPlungeClear(Sx,Sy,moves,z,D,airAt)`** remplace l'ancre ponctuelle : échantillons = centre + cercle D/2 (~1 mm d'espacement, K ≈ π·D borné 16…64), chaque échantillon doit être couvert par une coupe non-rapide à cote ≤ z (arcs tracés par `faoArcSegs`, préfiltre à D de S, tolérance D/2+ε) ou passer le test d'air `airAt` — sinon repli hélice / rampe / plongée sûre (aucune plongée qui mord la matière restante). **`faoCircRhos(D,ae,entryR)`** : liste de rayons candidats croissants `[entryR défaut Ø/4, Ø/2, ae, Ø]` — un rayon plus large recule S dans la zone déjà balayée (ex. poche : ρ=2.5 laisse des échantillons en matière → ρ=5 accoste sur l'anneau précédent). `faoCircEval` accepte une liste et teste chaque candidat × 2 côtés (S, arc entier, disque) ; `faoCircAnchor` reste pour la compatibilité des tests. `airAt` par contexte : matière brute hors silhouette (`!faoShapeInside`) pour l'escargot et le conventionnel, hors boîte pour la poche, hors colonne (`ptDist>0`) pour la finition ; contour inchangé (`needAnchor:false`, centre à ≥ r hors pièce = disque déjà en air). La tangence à la ligne/courbe à usiner est préservée : tous les candidats arrivent en P tangent à u.
+
+Tracé — les moves d'entrée portent l'étiquette **`ent:1`** : toutes les G1 de `faoHelixEntry`, la rampe G1 du conventionnel, la descente en Z + l'arc de chaque entrée circ (escargot, conventionnel, poche, contour, finition) ; `faoSegSplit` route `ent` dans le bucket **`plg`** (bleu, y compris les arcs développés) ; `faoViewerBuild` propage `ent` sur les échantillons d'arc développés et sur `pts`, `faoViewerLineCreate` colore en bleu `0x0a84ff` (rouge = G0, vert = coupe — les rapides de sécurité restent rouges). Post G-code et estimation de temps inchangés (étiquette ignorée).
+
+Tests — `tests/test_fao_circ.cjs` étendu : `faoPlungeClear` (disque non couvert / en air / balayé / coupe trop loin / rapides ignorés / coupe au-dessus de z), `faoCircRhos` (candidats croissants), `faoCircEval` (repli sans couverture, disque en air, disque balayé, escalade de rayon 2.5 → 7, miroir CW couvert par une seule ligne), poche (`entryR:3` recalé à **5** par le disque → |S−P| = 5√2), escargot (arcs étiquetés `ent`, arc développé routé en `plg`), hélice (toutes G1 `ent`), visionneuse (`ent` propagé jusqu'aux `pts`). Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-08-005.html`.
+
+Migration : `APP_VER` → `2026-10-08-005`, **`CACHE_VER` → `2026-10-08-005`** : les générateurs changent (disque hors matière = autres S/ρ, parfois repli legacy là où 004 plaçait un arc) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.
