@@ -253,6 +253,20 @@ function faoSanitiseOps(s){
   if(Array.isArray(ops))
     for(let i=ops.length-1;i>=0;i--)
       if(ops[i]&&ops[i].type==='pocket3d')ops.splice(i,1);
+  // 2026-10-08-002 : plans de dégagement/retrait (référence + décalage).
+  // Forme normalisée sinon SUPPRIMÉE (repli legacy safeZ/retract) ; le mode
+  // des remontées n'accepte que 'min5' (défaut) ou 'plan'.
+  if(s.planes&&typeof s.planes==='object'){
+    const P=s.planes, out={};
+    const c=faoPlaneClean(P.clear,'clear'); if(c)out.clear=c;
+    const r=faoPlaneClean(P.retr,'retr'); if(r)out.retr=r;
+    if(P.mode==='plan'||P.mode==='min5')out.mode=P.mode;
+    if(out.clear||out.retr||out.mode)s.planes=out; else delete s.planes;
+  }else if(s.planes!==undefined)delete s.planes;
+  if(s.fixture&&typeof s.fixture==='object'){
+    if(!isFinite(+s.fixture.z0))delete s.fixture.z0;
+    if(!isFinite(+s.fixture.z1))delete s.fixture.z1;
+  }
   (s.ops||[]).forEach(function(op){
     if(!op.id)op.id=faoNewId('op');
     if(op.on===undefined)op.on=true;
@@ -266,6 +280,14 @@ function faoSanitiseOps(s){
     if(op.type!=='geofinish')delete op.laisse;
     if(op.limit&&op.limit.mode!=='rect'&&op.limit.mode!=='chain')delete op.limit;
     if(op.zlim&&!(op.zlim.anchors&&op.zlim.anchors.length))delete op.zlim;
+    // 2026-10-08-002 : plans de l'opération (héritage posage) — forme
+    // normalisée, sinon vide -> champ supprimé (héritage retrouvé).
+    if(op.planes&&typeof op.planes==='object'){
+      const P=op.planes, out={};
+      const c=faoPlaneClean(P.clear,'clear'); if(c)out.clear=c;
+      const r=faoPlaneClean(P.retr,'retr'); if(r)out.retr=r;
+      if(out.clear||out.retr)op.planes=out; else delete op.planes;
+    }else if(op.planes!==undefined)delete op.planes;
     // 2026-10-03-004 : mode trocoïdal unique — anciennes stratégies et passes
     // fines ap2 retirées du document à la lecture (migration, comme la laisse).
     delete op.strategy; delete op.ap2; delete op.radial2; delete op.axial2;
@@ -280,24 +302,16 @@ function faoSanitiseOps(s){
         const fn=Math.round(+op.finitN);op.finitN=isFinite(fn)&&fn>0?Math.min(9,fn):1;
         const fp=Math.round(+op.finitProf);op.finitProf=isFinite(fp)&&fp>0?Math.min(9,fp):1;}
       else{delete op.finitParois;delete op.finitN;delete op.finitProf;}
-      // 2026-10-07-004 : mode de vidage (absent = conventionnel, 'troco') +
-      // poche d'entree (reference d'esquisse). Le sig de l'esquisse est
-      // RAJEUCHI a chaque lecture : skSig entre dans la signature de l'op ->
-      // editer la poche perime le parcours (la cle de cache porte le sig).
-      // Sans doc (contexte degrade) on ne touche PAS a la reference ; esquisse
-      // vraiment absente -> champ retire, repli conventionnel strict.
-      // 2026-10-07-005 : 'escargot' (spirale centre -> faces) conserve aussi ;
+      // 2026-10-07-005 : 'escargot' (spirale centre -> faces) conserve ;
       // tout autre mode inconnu est purge (absent = conventionnel).
-      if(op.mode!=='troco'&&op.mode!=='escargot')delete op.mode;
-      if(op.entree){
-        if(typeof op.entree==='string')op.entree={sk:op.entree};
-        const hasDoc=(typeof doc!=='undefined'&&doc&&Array.isArray(doc.sketches));
-        if(hasDoc){
-          const sk=doc.sketches.find(function(s){return s.id===op.entree.sk;});
-          if(sk&&skSig)op.entree={sk:sk.id,sig:skSig(sk)};
-          else delete op.entree;
-        }else if(!op.entree.sk||typeof op.entree.sk!=='string')delete op.entree;
-      }}
+      // 2026-10-08-001 : mode trocoïdal SUPPRIME (tracé peu satisfaisant) :
+      // seul 'escargot' subsiste a cote du conventionnel ; un document 'troco'
+      // bascule en conventionnel (sig bouge -> regen de l'op seule). La poche
+      // d'entree (esquisse) part avec le mode : champ retire partout (les sigs
+      // qui la portaient bougent aussi).
+      if(op.mode!=='escargot')delete op.mode;
+      delete op.entree;
+      }
     // 2026-10-04-004 : finition géodésique — limites Z héritées du brut,
     // garde-fou fraise droite recalculée à chaque dispatch (jamais stockée).
     if(op.type==='geofinish'){
@@ -1227,11 +1241,145 @@ function faoZoneCtx(op,job){
   }
   return null;
 }
+/* ===================== PLANS : DÉGAGEMENT / RETRAIT ===================== */
+// 2026-10-08-002 : plans façon Fusion360, PAR OPÉRATION (héritage posage ->
+// op). Un plan = {ref, dz} : valeur = Z de la référence + décalage, en
+// coordonnées MONDE (repère pièce). `ref` ∈ FAO_PLANE_REFS ; 'max'/'min'
+// portent deux sous-plans {s1,s2} (sous-références de base seulement) ;
+// 'face' porte `fz` = Z mesuré au clic. Le plan 'retrait' n'est chaîné que
+// DANS le plan de dégagement (déGagement = retrait + 10 par défaut) — la
+// chaîne est bornée à 2 maillons (nettoyage + garde `dep`), jamais de cycle.
+// Les plans alimentent : translations rapides XY (dégagement), remontées des
+// G0 (retrait, selon `planes.mode`), retrait inter-outils et fin de parcours.
+const FAO_PLANE_REFS=[
+  ['brutHaut','Haut du brut'],
+  ['brutBas','Fond du brut'],
+  ['modeleHaut','Haut du modèle'],
+  ['modeleBas','Bas du modèle'],
+  ['bridageHaut','Haut du bridage'],
+  ['bridageBas','Bas du bridage'],
+  ['face','Sélection (face)'],
+  ['origine','Origine (absolue)'],
+  ['max','Le plus élevé des deux'],
+  ['min','Le plus bas des deux']
+];
+function faoModelZBox(job){
+  // bbox des corps du modèle (sans marge) — Z « Haut/Bas du modèle ».
+  // Repli : Z du brut (le brut suit le modèle en source corps).
+  try{
+    if(typeof THREE!=='undefined'&&typeof bodies!=='undefined'&&bodies&&bodies.length){
+      const box=new THREE.Box3(); let n=0;
+      const want=(job&&job.stockSrc==='body')?job.stockBody:null;
+      bodies.forEach(function(b){
+        if(!b||b.ghost||!b.mesh)return;
+        if(want!=null){ if(b.id!==want)return; }
+        else if(b.visible===false)return;
+        try{ box.expandByObject(b.mesh); n++; }catch(e){}
+      });
+      if(n&&!box.isEmpty()&&isFinite(box.min.z)&&isFinite(box.max.z))
+        return {z0:box.min.z,z1:box.max.z};
+    }
+  }catch(e){}
+  const s=faoStock(); return {z0:s.z0,z1:s.z1};
+}
+function faoPlaneZ(pl,op,job,dep){
+  // Résolution ABSOLUE d'un plan. NaN = plan illisible (repli côté appelant).
+  dep=dep||0;
+  if(!pl||typeof pl!=='object'||!pl.ref||dep>4)return NaN;
+  const st=(job&&job.stock&&isFinite(+job.stock.z1))?job.stock:faoStockDefault();
+  const z1=isFinite(+st.z1)?+st.z1:0, z0=isFinite(+st.z0)?+st.z0:0;
+  let z=NaN;
+  switch(pl.ref){
+    case 'brutHaut': z=z1; break;
+    case 'brutBas': z=z0; break;
+    case 'modeleHaut': case 'modeleBas':{
+      const mb=faoModelZBox(job);
+      z=(pl.ref==='modeleHaut')?mb.z1:mb.z0; break;
+    }
+    case 'bridageHaut':{ const f=job&&job.fixture;
+      z=(f&&isFinite(+f.z1))?+f.z1:z1; break; }
+    case 'bridageBas':{ const f=job&&job.fixture;
+      z=(f&&isFinite(+f.z0))?+f.z0:z0; break; }
+    case 'face': z=isFinite(+pl.fz)?+pl.fz:z1; break;
+    case 'origine': z=0; break;
+    case 'retrait': // chaîne unique : dégagement depuis le retrait
+      if(dep>=3)return NaN;
+      z=faoRetractAbs(op,job); break;
+    case 'max': case 'min':{
+      const a=faoPlaneZ(pl.s1,op,job,dep+1), b=faoPlaneZ(pl.s2,op,job,dep+1);
+      if(!isFinite(a)&&!isFinite(b))return NaN;
+      if(!isFinite(a))return b;
+      if(!isFinite(b))return a;
+      return (pl.ref==='max')?Math.max(a,b):Math.min(a,b);
+    }
+    default: return NaN;
+  }
+  if(!isFinite(z))return NaN;
+  return z+(isFinite(+pl.dz)?+pl.dz:0);
+}
+function faoClearAbs(op,job){
+  // Plan de dégagement ABSOLU de l'opération (héritage op > posage > legacy).
+  const pl=(op&&op.planes&&op.planes.clear)?op.planes.clear:
+    (job&&job.planes&&job.planes.clear)?job.planes.clear:null;
+  if(pl){ const z=faoPlaneZ(pl,op,job,0); if(isFinite(z))return z; }
+  return faoSafeZ(job);
+}
+function faoRetractAbs(op,job){
+  // Plan de retrait ABSOLU de l'opération (héritage op > posage > legacy).
+  const pl=(op&&op.planes&&op.planes.retr)?op.planes.retr:
+    (job&&job.planes&&job.planes.retr)?job.planes.retr:null;
+  if(pl){ const z=faoPlaneZ(pl,op,job,0); if(isFinite(z))return z; }
+  return faoRetractZ(job);
+}
 function faoZoneSecu(op,job){
-  // Plan de dégagement ABSOLU de l'opération (dessus du brut + marge sécurité).
+  // Plan des RAPIDES internes de l'opération (absolu, jamais sous le brut) :
+  //  - mode 'plan' (remontées « toujours au plan de retrait ») : le plan de
+  //    retrait lui-même, ramené au-dessus du brut ;
+  //  - mode 'min5' (défaut, « plan de retrait ou minimum +5 mm ») : le plan
+  //    de retrait BORNÉ par dessus brut + Sortie (5 par défaut) — c'est
+  //    l'ancien secu absolu quand le retrait vaut brut+25 (héritage).
   const top=(job&&job.stock&&isFinite(+job.stock.z1))?+job.stock.z1:
     (op&&isFinite(+op.z))?+op.z:(op&&isFinite(+op.ztop))?+op.ztop:0;
-  return top+((job&&isFinite(+job.secu))?+job.secu:5);
+  const retr=Math.max(faoRetractAbs(op,job),top); // jamais sous le dessus du brut
+  const mode=(job&&job.planes&&job.planes.mode)||'min5';
+  if(mode==='plan')return retr;
+  const ceil=top+((job&&isFinite(+job.secu))?+job.secu:5); // Sortie
+  return Math.min(retr,ceil);
+}
+/* ----- nettoyage (sanitise) : forme normalisée, sinon null (repli legacy) ----- */
+function faoPlaneSlotClean(s){
+  if(!s||typeof s!=='object')return null;
+  let ok=false;
+  for(let i=0;i<FAO_PLANE_REFS.length;i++){
+    const r=FAO_PLANE_REFS[i][0];
+    if(r===s.ref&&r!=='max'&&r!=='min'&&r!=='retrait'){ok=true;break;}
+  }
+  if(!ok)return null;
+  const o={ref:s.ref,dz:isFinite(+s.dz)?+s.dz:0};
+  if(s.ref==='face'){ if(!isFinite(+s.fz))return null; o.fz=+s.fz; }
+  return o;
+}
+function faoPlaneClean(pl,role){
+  // role='clear' : accepte la chaîne 'retrait' ; role='retr' : jamais.
+  if(!pl||typeof pl!=='object')return null;
+  if(pl.ref==='max'||pl.ref==='min'){
+    const s1=faoPlaneSlotClean(pl.s1), s2=faoPlaneSlotClean(pl.s2);
+    return (s1&&s2)?{ref:pl.ref,s1:s1,s2:s2}:null;
+  }
+  if(pl.ref==='retrait')return (role==='clear')?{ref:'retrait',dz:isFinite(+pl.dz)?+pl.dz:0}:null;
+  return faoPlaneSlotClean(pl);
+}
+function faoPlaneEff(job,op){
+  // Valeurs EFFECTIVES montrées à l'écran (héritage op > posage > legacy).
+  // Le legacy traduit les anciens champs absolus en références : Auto =
+  // brut+100 (dégagement) / brut+25 (retrait), valeur forcée = origine+val.
+  const P=(job&&job.planes)||{}, O=(op&&op.planes)||{};
+  const clear=O.clear||P.clear||
+    (job&&isFinite(+job.safeZ)?{ref:'origine',dz:+job.safeZ}:{ref:'brutHaut',dz:100});
+  const retr=O.retr||P.retr||
+    (job&&isFinite(+job.retract)?{ref:'origine',dz:+job.retract}:{ref:'brutHaut',dz:25});
+  return {clear:clear,retr:retr,mode:P.mode==='plan'?'plan':'min5',
+    ownClear:!!O.clear,ownRetr:!!O.retr};
 }
 function faoZoneStrip(moves,ctx,secu){
   // Retire les SÉRIES de rapides hors zone : la coupe a déjà été clipée avant,
@@ -1986,13 +2134,16 @@ function faoOpMoves(op,job){
        radial:RA.radial,axial:RA.axial,
        minipasses:isFinite(+op.minipasses)?+op.minipasses:0,
        finitParois:!!op.finitParois,finitN:op.finitN,finitProf:op.finitProf,
-       entry:op.entry||'auto',brutTop:brutTop,secu:secu,
-       // 2026-10-07-004 : poche d'entree du mode trocoïdal (polygone monde
-       // résolu ici ; null = repli conventionnel strict dans le générateur).
-       // 2026-10-07-005 : mode de vidage — 'escargot' = spirale centre ->
-       // faces (faoSpiralLevel) ; absent = conventionnel (documents anciens).
-       mode:op.mode,
-       poly:(op.mode==='troco'&&op.entree)?faoEntreePoly(op):null});
+        entry:op.entry||'auto',brutTop:brutTop,secu:secu,
+        // 2026-10-07-005 : mode de vidage — 'escargot' = spirale centre ->
+        // faces (faoSpiralLevel) ; absent = conventionnel (documents anciens).
+        // 2026-10-08-001 : la poche d'entree (o.poly) a disparu avec le mode
+        // trocoïdal.
+        // 2026-10-08-002 : remPlan = remontées « toujours plan de retrait »
+        // (posage.planes.mode) : les liaisons tiennent secu (le plan) au lieu
+        // de remonter à 5 mm au-dessus de la matière (mode 'min5').
+        remPlan:!!(job&&job.planes&&job.planes.mode==='plan'),
+        mode:op.mode});
   }
   else if(op.type==='geofinish'){
     let am=null;
@@ -2190,16 +2341,27 @@ function faoOriginLabel(setup){
     pr==='bot-X0Y0'?'dessous coin X0Y0':'dessus coin X0Y0';
 }
 /* ----- plans : retrait (absolu, auto = dessus + 25) ----- */
+// 2026-10-08-002 : le plan de dégagement/retrait se règle par RÉFÉRENCE
+// (`setup.planes` / `op.planes`) ; les anciens champs absolus `retract` /
+// `safeZ` restent le repli des documents qui n'ont jamais touché les plans.
 function faoRetractZ(setup){
+  if(setup&&setup.planes&&setup.planes.retr){
+    const z=faoPlaneZ(setup.planes.retr,null,setup,0);
+    if(isFinite(z))return z;
+  }
   if(setup&&isFinite(+setup.retract))return +setup.retract;
   const s=(setup&&setup.stock)||faoStockDefault();
   return (isFinite(+s.z1)?+s.z1:0)+25;
 }
-/* ----- plan de sécurité : 100 mm au-dessus de la pièce ----- */
+/* ----- plan de sécurité / dégagement : 100 mm au-dessus de la pièce ----- */
 // Tout RAPIDE qui translate en XY passe par ce plan : on remonte d'abord, on
 // traverse au plan, puis on plonge. Jamais de translation en Z bas (l'outil
 // ne doit pas traverser la matière en G0).
 function faoSafeZ(job){
+  if(job&&job.planes&&job.planes.clear){
+    const z=faoPlaneZ(job.planes.clear,null,job,0);
+    if(isFinite(z))return z;
+  }
   if(job&&isFinite(+job.safeZ)&&+job.safeZ>-1e9)return +job.safeZ;
   const s=(job&&job.stock)||faoStockDefault();
   return (isFinite(+s.z1)?+s.z1:0)+100; // le brut contient la pièce
@@ -2218,13 +2380,14 @@ function faoSafeAhead(prev,m,safe){
 }
 function faoSeqSafe(job,seule){
   // Séquence complète du posage [{op,moves}] avec rapides normalisés au plan de
-  // sécurité. Source unique partagée par l'aperçu, le visionneuse et le G-code.
+  // sécurité DE CHAQUE OPÉRATION (2026-10-08-002 : plans par opération, hérités
+  // du posage). Source unique partagée par l'aperçu, le visionneuse et le G-code.
   // seule=true : LECTURE SEULE — un parcours absent de la memoire est IGNORE
   // (absent:true), jamais calcule : afficher/masquer une trace ne regenerate rien.
-  const safe=faoSafeZ(job);
   const res=[]; let prev=null;
   ((job&&job.ops)||[]).forEach(function(op){
     if(!op||op.on===false)return;
+    const safe=faoClearAbs(op,job); // plan de dégagement de CETTE opération
     let mv=null;
     if(seule){
       mv=faoOpMovesTry(op,job);
@@ -2239,11 +2402,9 @@ function faoSeqSafe(job,seule){
       prev=m;
     }
     // Perçage émis en cycle dialecte : la machine repose au plan du cycle
-    // (dessus + sortie), sous le plan de sécurité.
+    // (plan de retrait de l'opération = RTP), sous le plan de sécurité.
     if(op.type==='drill'&&mv.length){
-      const top=(job&&job.stock&&isFinite(+job.stock.z1))?+job.stock.z1:(+op.ztop||0);
-      const so=isFinite(+job.secu)?+job.secu:5;
-      prev={x:mv[mv.length-1].x,y:mv[mv.length-1].y,z:top+so};
+      prev={x:mv[mv.length-1].x,y:mv[mv.length-1].y,z:faoZoneSecu(op,job)};
     }
     res.push({op:op,moves:out});
   });
@@ -2265,9 +2426,10 @@ function faoArcWords(m,ox,oy,oz){
     ' Z'+faoFmtXYZ(m.z-oz)+' I'+faoFmtXYZ(m.arc.i)+' J'+faoFmtXYZ(m.arc.j);
 }
 /* ----- cycle de perçage dialecte (P1-a) -----
-   Mêmes valeurs que le déroulé G0/G1 (retrait = brut + secu, plan de
-   référence = ztop, profondeur = zbot) : la prévisualisation, l'estimation
-   et le garde-fou « sous le brut » restent calés sur le déroulé.
+   Mêmes valeurs que le déroulé G0/G1 (retrait = plan d'usinage de l'opération
+   depuis 2026-10-08-002, plan de référence = ztop, profondeur = zbot) : la
+   prévisualisation, l'estimation et le garde-fou « sous le brut » restent
+   calés sur le déroulé.
    Siemens 840D : CYCLE81(RTP,RFP,SDIS,DP) / CYCLE83 (broche à va-et-vient,
    paramètres alignés sur PostPro/630-5axes.cps).
    Fagor 8065    : `G98 G81 X Y Z I F` / `G98 G83 X Y Z I J F` (aligné sur
@@ -2278,8 +2440,9 @@ function faoDrillCycle(op,job,oz){
   const pts=faoLimitDrillPts(op,+tool.d);
   const zt=+op.ztop, zb=+op.zbot;
   if(!pts||!pts.length||!isFinite(zt)||!isFinite(zb))return null;
-  const top=(job&&job.stock&&isFinite(+job.stock.z1))?+job.stock.z1:zt;
-  const secuAbs=top+(isFinite(+((job||{}).secu))?+job.secu:5);
+  // 2026-10-08-002 : retrait du cycle = plan d'usinage de l'opération (T) —
+  // identique à l'ancien top+secu en mode 'min5' sans plan personnalisé.
+  const secuAbs=faoZoneSecu(op,job);
   const RFP=zt-oz, RTP=secuAbs-oz, SDIS=RTP-RFP, DP=zb-oz;
   let peck=isFinite(+op.peck)?+op.peck:0;
   const span=zt-zb;
@@ -2298,7 +2461,9 @@ function faoPost(job,postId){
   const name=faoProgName(job.name);
   const wcs=job.wcs||'G54';
   const OG=faoOriginPoint(job), ox=OG[0], oy=OG[1], oz=OG[2];
+  // Repli : plan de retrait du posage (aucune op ON -> groupe sans bloc).
   const retr=faoRetractZ(job);
+  let retrPrev=retr; // plan de retrait du groupe précédent (retrait inter-outils)
   // Indexation 3+2 (table C + B) : {0,0} = 3 axes strictement inchangé.
   const ORI=faoOrient(job), ori32=(ORI.b!==0||ORI.c!==0);
   const groups=faoJobMoves(job);
@@ -2361,7 +2526,15 @@ function faoPost(job,postId){
   groups.forEach(function(g,gi){
     const t=g.tool;
     const S=faoFmtS(t.s), F=faoFmtF(t.f), FP=faoFmtF(t.plunge);
-    if(gi>0){ nc(fag?'M09':'M9'); nc('G0 Z'+faoFmtXYZ(retr-oz)); }
+    // Plan de retrait du groupe en cours = plan de sa 1re opération (hérité
+    // du posage sinon) — 2026-10-08-002, plans par opération.
+    let retrCur=retr;
+    for(let bi=0;bi<(g.blocks||[]).length;bi++){
+      const qb=g.blocks[bi]&&g.blocks[bi].op;
+      if(qb&&qb.on!==false){ retrCur=faoRetractAbs(qb,job); break; }
+    }
+    if(gi>0){ nc(fag?'M09':'M9'); nc('G0 Z'+faoFmtXYZ(retrPrev-oz)); }
+    retrPrev=retrCur;
     cmt('OUTIL T'+(t.num||1)+' '+faoKindLabel((faoToolById(job,t.id)||{}).kind)+
       ' D'+faoFmtXYZ(t.d)+' S'+S+' F'+F);
     if(fag){ nc('T'+(t.num||1)+' D1 M06'); }else{ nc('T'+(t.num||1)+' D1'); nc('M6'); }
@@ -2370,6 +2543,9 @@ function faoPost(job,postId){
     g.blocks.forEach(function(b){
       cmt(faoOpLabel(b.op,job));
       const sq=SEQ[qi++]||{moves:b.moves};
+      // Plan de dégagement de CETTE opération (hérité du posage sinon) —
+      // 2026-10-08-002 : la plongée/translation passe par son propre plan.
+      const safeB=faoClearAbs(b.op,job);
       // P1-a : perçage émis en cycle dialecte — le déroulé G0/G1 reste la
       // source prévisualisation/estimation/garde-fou mais n'est pas écrit ici.
       const DC=faoDrillCycle(b.op,job,oz);
@@ -2402,15 +2578,14 @@ function faoPost(job,postId){
         // La machine repose au plan du cycle (dessus + sortie) sur le dernier trou.
         if(DC.pts.length){
           const lp=DC.pts[DC.pts.length-1];
-          const dTop=(job&&job.stock&&isFinite(+job.stock.z1))?+job.stock.z1:(+b.op.ztop||0);
-          prev={x:+lp[0],y:+lp[1],z:dTop+(isFinite(+job.secu)?+job.secu:5)};
+          prev={x:+lp[0],y:+lp[1],z:faoZoneSecu(b.op,job)};
         }
         return;
       }
       let first=true;
       sq.moves.forEach(function(m){
         // Plan de sécurité : retrait sur place -> translation au plan -> plongée.
-        const ins=faoSafeAhead(prev,m,safe);
+        const ins=faoSafeAhead(prev,m,safeB);
         if(ins)for(let q=0;q<ins.length;q++){
           const J=ins[q];
           nc('G0 X'+faoFmtXYZ(J.x-ox)+' Y'+faoFmtXYZ(J.y-oy)+' Z'+faoFmtXYZ(J.z-oz));
@@ -2433,7 +2608,7 @@ function faoPost(job,postId){
   if(ori32&&!fag)nc('TRAFOOF');
   if(fag){
     nc('M09');
-    nc('G0 Z'+faoFmtXYZ(retr-oz));
+    nc('G0 Z'+faoFmtXYZ(retrPrev-oz));
   }else{
     nc('M9');
     nc('G0 SUPA Z600 D0');
@@ -3262,169 +3437,6 @@ function faoViewerBarUpdate(){
   }catch(e){}
 }
 
-/* ===== 2026-10-07-004 : poche d'ENTRÉE du mode trocoïdal ===== */
-function faoPolyRowIvs(poly,y){
-  // Intervalles X parcourant le polygone à la hauteur y (scanline).
-  const xs=[];
-  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
-    const a=poly[i],b=poly[j];
-    if((a[1]>y)!==(b[1]>y))xs.push(a[0]+(b[0]-a[0])*(y-a[1])/(b[1]-a[1]));
-  }
-  xs.sort(function(p,q){return p-q;});
-  const out=[];
-  for(let k=0;k+1<xs.length;k+=2)
-    if(xs[k+1]-xs[k]>1e-9)out.push([xs[k],xs[k+1]]);
-  return out;
-}
-function faoEntreePoly(op){
-  // Esquisse de la poche -> polygone XY en COORDONNÉES MONDE (le générateur
-  // le transpose lui-même si le sens long a basculé x<->y).
-  // Contours FORTS seulement : skLoopTrace exclut déjà construction/ref.
-  // Repli (null) : esquisse absente, plan non horizontal, contour multiple,
-  // îlot ou trou dedans, cercle dedans/autour (décor ambigu).
-  try{
-    if(!op||!op.entree||typeof doc==='undefined'||!doc||!Array.isArray(doc.sketches))return null;
-    const sk=doc.sketches.find(function(s){return s.id===op.entree.sk;});
-    if(!sk)return null;
-    const b=sketchBasis(sk);
-    if(!b||Math.abs(b.n.z)<0.99)return null;   // poche = profil XY horizontal
-    const tr=skLoopTrace(sk);
-    if(!tr||!tr.loops||!tr.loops.length)return null;
-    if((tr.circleHoles&&tr.circleHoles.length)||(tr.circlesOut&&tr.circlesOut.length))return null;
-    const TAU=Math.PI*2;
-    for(let i=0;i<tr.loops.length;i++){
-      const L=tr.loops[i];
-      if(L.kind==='island'||L.kind==='hole')return null; // îlot / anneau -> repli
-    }
-    // Candidats = contours extérieurs à aire positive. skLoopTrace peut en
-    // produire DEUX pour un MÊME contour fermé (une traverse par sens) dès
-    // qu'un arc est présent : les deux traversées tessellent alors le même
-    // polygone (sens opposés) — dédoublonnés ci-dessous (bbox + aire). Deux
-    // vrais contours disjoints -> deux polygones distincts -> repli.
-    const cands=[];
-    for(let i=0;i<tr.loops.length;i++){
-      const L=tr.loops[i];
-      if(L.kind==='outer'&&L.area>0)cands.push(L);
-    }
-    if(!cands.length)return null;
-    const polys=[];
-    for(let ci=0;ci<cands.length;ci++){
-      const chain=cands[ci].chain, nodes=chainNodesOf(chain);
-      const pts=[];
-      let bad=false;
-      for(let i=0;i<chain.length&&!bad;i++){
-        const st=chain[i], ed=st.ed, toId=nodes[i+1];
-        if(ed.kind==='line'){
-          const q=tr.pts[toId];
-          if(q)pts.push([q.x,q.y]);
-        }else{
-          const a=ed.e, C=tr.pts[a.pc], an=arcAngles(sk,a);
-          if(!C||!an||!(a.r>1e-9)){bad=true;break;}
-          // Arc : delta CCW strictement > 0 (arcAngles) — la traverse
-          // INVERSE fait le retour COURT (-d), jamais le complément 2PI-d.
-          const fwd=(ed.a===st.from);
-          const d=an.a2-an.a1;
-          const sweep=fwd?d:-d;
-          const s0=fwd?an.a1:an.a2;
-          const n2=Math.max(2,Math.ceil(Math.abs(sweep)/TAU*24));
-          for(let k=1;k<=n2;k++){
-            const t=s0+sweep*k/n2;
-            pts.push([C.x+a.r*Math.cos(t),C.y+a.r*Math.sin(t)]);
-          }
-        }
-      }
-      if(bad||pts.length<3)continue;
-      // dédup quasi-confondus + fermeture
-      const u=[];
-      for(let i=0;i<pts.length;i++){
-        const p=pts[i], q=u[u.length-1];
-        if(!q||Math.hypot(p[0]-q[0],p[1]-q[1])>1e-6)u.push(p);
-      }
-      while(u.length>1&&
-        Math.hypot(u[0][0]-u[u.length-1][0],u[0][1]-u[u.length-1][1])<1e-6)u.pop();
-      if(u.length<3)continue;
-      // 2D esquisse -> monde (repère du dessin), XY seulement
-      const w=[];
-      let okW=true;
-      for(let i=0;i<u.length;i++){
-        const Q=occW(sk,u[i][0],u[i][1]);
-        if(!isFinite(Q[0])||!isFinite(Q[1])){okW=false;break;}
-        w.push([Q[0],Q[1]]);
-      }
-      if(!okW||w.length<3)continue;
-      // aire signée : polygone normalisé CCW (le dédoublonnage compare les
-      // aires absolues ; pip et scanline sont insensibles au sens)
-      let s2=0;
-      for(let i=0;i<w.length;i++){
-        const p=w[i], q=w[(i+1)%w.length];
-        s2+=p[0]*q[1]-q[0]*p[1];
-      }
-      if(s2<0){w.reverse();s2=-s2;}
-      let ax0=1/0,ax1=-1/0,ay0=1/0,ay1=-1/0;
-      for(let i=0;i<w.length;i++){
-        if(w[i][0]<ax0)ax0=w[i][0]; if(w[i][0]>ax1)ax1=w[i][0];
-        if(w[i][1]<ay0)ay0=w[i][1]; if(w[i][1]>ay1)ay1=w[i][1];
-      }
-      let dup=false;
-      for(let i=0;i<polys.length&&!dup;i++){
-        const G=polys[i];
-        if(Math.abs(G.x0-ax0)<1e-6&&Math.abs(G.x1-ax1)<1e-6&&
-           Math.abs(G.y0-ay0)<1e-6&&Math.abs(G.y1-ay1)<1e-6&&
-           Math.abs(G.a-Math.abs(s2)/2)<1e-6)dup=true;
-      }
-      if(!dup)polys.push({w:w,x0:ax0,x1:ax1,y0:ay0,y1:ay1,a:Math.abs(s2)/2});
-    }
-    // Un SEUL contour unique (double parcours d'un arc dédoublonné) — sinon
-    // repli : contours multiples / décor ambigu.
-    if(polys.length!==1)return null;
-    return polys[0].w;
-  }catch(e){ return null; }
-}
-function faoPolyUsable(poly,D,mesh,B,zt,zbot,ae){
-  // Repli conventionnel silencieux si la poche ne peut pas servir d'entrée :
-  //  1) l'outil TIENT dedans (un point intérieur à >= D/2 + 0,25 du bord) —
-  //     sinon la colonne n'est jamais évacuée par la phase A et l'« air » du
-  //     maillage serait un mensonge (plongée en matière pleine) ;
-  //  2) la poche TOUCHE la region usinable (intervalles du niveau) — sinon
-  //     elle est posée dans la matière hors cavite.
-  try{
-    if(!poly||poly.length<3)return false;
-    let x0=1/0,x1=-1/0,y0=1/0,y1=-1/0;
-    for(let i=0;i<poly.length;i++){
-      const p=poly[i];
-      if(p[0]<x0)x0=p[0]; if(p[0]>x1)x1=p[0];
-      if(p[1]<y0)y0=p[1]; if(p[1]>y1)y1=p[1];
-    }
-    const need=D/2+0.25, N=12; let fit=false;
-    for(let i=1;i<N&&!fit;i++)for(let j=1;j<N&&!fit;j++){
-      const x=x0+(x1-x0)*i/N, y=y0+(y1-y0)*j/N;
-      if(faoPointInPoly(x,y,poly)&&faoDistToPoly(x,y,poly)>=need)fit=true;
-    }
-    if(!fit)return false;
-    if(!mesh||!mesh.v||!mesh.v.length)return true; // pas de maillage : structurel seul
-    const hi=isFinite(+zt)?+zt:(isFinite(+zbot)?+zbot:0);
-    const lo=isFinite(+zbot)?+zbot:hi-1;
-    const H=Math.max(1e-3,hi-lo);
-    const zs=[hi-0.05*H, hi-0.5*H, lo+0.05*H];
-    const r=D/2, aeA=Math.max(0.5,Math.min(isFinite(+ae)&&+ae>0?+ae:D*0.6,D*0.25));
-    for(let zi=0;zi<zs.length;zi++){
-      const z=zs[zi];
-      if(!(z>lo&&z<hi))continue;
-      const planes=faoShadowPlanes(mesh,z,hi);
-      for(let k=1;k<=5;k++){
-        const y=y0+(y1-y0)*k/6;
-        const ivs=faoShadowIntervals(mesh,B,y,z,hi,r,aeA,planes);
-        if(!ivs.length)continue;
-        const rs=faoPolyRowIvs(poly,y);
-        for(let a=0;a<ivs.length;a++)for(let b=0;b<rs.length;b++){
-          const ov=Math.min(ivs[a].b,rs[b][1])-Math.max(ivs[a].a,rs[b][0]);
-          if(ov>0.5)return true;
-        }
-      }
-    }
-    return false;
-  }catch(e){ return false; }
-}
 /* ================= interface (bouton + panneau flottant) ================= */
 function faoOpDefaults(type){
   const s=faoStock(); const job=faoDoc();
@@ -4064,6 +4076,116 @@ function faoToolOpts(setup){
     const sf=faoToolSF(t,setup);
     return [t.id,'T'+t.num+' '+t.name+' (S'+sf.s+' F'+sf.f+')']; });
 }
+/* ----- plans de dégagement/retrait : rangées « référence + décalage » ----- */
+// 2026-10-08-002 — composants partagés fiche posage / fiche opération.
+function faoPlaneRefOpts(allowRetract,allowMM){
+  const o=[];
+  if(allowRetract)o.push(['retrait','Hauteur de retrait']);
+  for(let i=0;i<FAO_PLANE_REFS.length;i++){
+    const r=FAO_PLANE_REFS[i][0];
+    if(!allowMM&&(r==='max'||r==='min'))continue;
+    o.push([FAO_PLANE_REFS[i][0],FAO_PLANE_REFS[i][1]]);
+  }
+  return o;
+}
+function faoPlaneSet(owner,which,pl){
+  // Écrit SEULEMENT le plan touché (l'autre reste hérité du posage). Écriture
+  // pure : le widget appelant (faoSel/faoNum/faoMini) prend déjà le snapshot
+  // d'annulation et appelle faoChanged(). Sur le posage, l'ancien champ
+  // absolu (safeZ/retract) devient redondant : supprimé (une seule source).
+  owner.planes=owner.planes||{};
+  owner.planes[which]=pl;
+  if(owner.ops!==undefined&&owner.stock!==undefined){
+    if(which==='clear')delete owner.safeZ;
+    if(which==='retr')delete owner.retract;
+  }
+}
+function faoPlaneRow(which,label,pl,job,op,tgt){
+  // tgt={setupId,opId} pour le picking « face ». Conteneur = ligne principale
+  // (+ 2 lignes de sous-références pour max/min) + valeur résolue à droite.
+  const owner=op||job;
+  const isMM=(pl.ref==='max'||pl.ref==='min');
+  const set=function(np){ faoPlaneSet(owner,which,np); };
+  const z=faoPlaneZ(pl,op,job,0);
+  const tip='Référence « '+label+' » : valeur = Z de la référence + décalage '+
+    '(mm), toujours ramenée au-dessus du dessus du brut.';
+  const box=document.createElement('div');
+  const row=faoRow();
+  row.appendChild(faoLab(label));
+  row.appendChild(faoSel(faoPlaneRefOpts(which==='clear',true),pl.ref,function(v){
+    if(v===pl.ref)return;
+    if(v==='max'||v==='min'){
+      const s1=(pl.ref==='max'||pl.ref==='min')?pl.s1:
+        {ref:pl.ref,dz:isFinite(+pl.dz)?+pl.dz:0,fz:pl.fz};
+      const s2=(pl.ref==='max'||pl.ref==='min')?pl.s2:{ref:'brutHaut',dz:0};
+      set({ref:v,s1:s1,s2:s2});
+    }else{
+      const s=(pl.ref==='max'||pl.ref==='min')?(pl.s1||{ref:'brutHaut',dz:0}):pl;
+      const np={ref:v,dz:isFinite(+s.dz)?+s.dz:0};
+      if(v==='face')np.fz=isFinite(+s.fz)?+s.fz:
+        (isFinite(z)?Math.round((z-np.dz)*100)/100:0);
+      set(np);
+    }
+  },tip));
+  if(!isMM){
+    row.appendChild(faoNum(isFinite(+pl.dz)?+pl.dz:0,function(v){
+      set(Object.assign({},pl,{dz:v}));
+    },48,0.5,'Décalage « '+label+' » (mm, ±) ajouté à la référence.'));
+    if(pl.ref==='face')row.appendChild(faoMini('Sélect.',function(){
+      faoZPlaneStart({setupId:tgt.setupId,opId:tgt.opId,which:which,slot:null});
+    },'Cliquer la face de référence dans la vue 3D (Échap annule).'));
+  }
+  row.appendChild(faoLab('= '+(isFinite(z)?z.toFixed(2):'—')));
+  box.appendChild(row);
+  if(isMM){
+    [[1,pl.s1||{ref:'brutHaut',dz:0}],[2,pl.s2||{ref:'brutHaut',dz:0}]].forEach(function(pr){
+      const slot=pr[0], s=pr[1];
+      const r2=faoRow();
+      r2.appendChild(faoLab('· '+(slot===1?'1re':'2e')));
+      r2.appendChild(faoSel(faoPlaneRefOpts(false,false),s.ref,function(v){
+        if(v===s.ref)return;
+        const ns={ref:v,dz:isFinite(+s.dz)?+s.dz:0};
+        if(v==='face')ns.fz=isFinite(+s.fz)?+s.fz:0;
+        const np=Object.assign({},pl);
+        np[slot===1?'s1':'s2']=ns;
+        set(np);
+      },'Sous-référence '+(slot===1?'1re':'2e')+' « '+label+' » (base du plus/bas des deux).'));
+      r2.appendChild(faoNum(isFinite(+s.dz)?+s.dz:0,function(v){
+        const np=Object.assign({},pl);
+        np[slot===1?'s1':'s2']=Object.assign({},s,{dz:v});
+        set(np);
+      },48,0.5,'Décalage de la sous-référence.'));
+      if(s.ref==='face')r2.appendChild(faoMini('Sélect.',function(){
+        faoZPlaneStart({setupId:tgt.setupId,opId:tgt.opId,which:which,slot:slot});
+      },'Cliquer la face de référence (Échap annule).'));
+      box.appendChild(r2);
+    });
+  }
+  return box;
+}
+function faoPlanesCard(setup,op){
+  // Section « Plans » de la fiche opération : héritage posage > op > legacy.
+  const box=document.createElement('div');
+  box.appendChild(faoH('Plans'));
+  const eff=faoPlaneEff(setup,op);
+  const tgt={setupId:setup.id,opId:op.id};
+  box.appendChild(faoPlaneRow('clear','Dégagement',eff.clear,setup,op,tgt));
+  box.appendChild(faoPlaneRow('retr','Retrait',eff.retr,setup,op,tgt));
+  if(eff.ownClear||eff.ownRetr){
+    const rh=faoRow();
+    rh.appendChild(faoMini('Hériter du posage',function(){
+      if(!op.planes)return;
+      delete op.planes.clear; delete op.planes.retr;
+      if(!op.planes.clear&&!op.planes.retr)delete op.planes;
+    },'Revenir aux plans du posage pour cette opération.'));
+    box.appendChild(rh);
+  }
+  box.appendChild(faoHelp(
+    'Dégagement = plan des translations rapides XY ; Retrait = plan des remontées '+
+    '(mode « Remontées » du posage). Hérités du posage tant que non modifiés — '+
+    'tout plan reste au-dessus du dessus du brut.'));
+  return box;
+}
 function faoOpCardElement(setup,op,i){
   const d=faoCard();
   if(op.on===false)d.style.opacity='0.55';
@@ -4145,7 +4267,7 @@ function faoOpCardElement(setup,op,i){
     // demi-tour + retrait Z (voir infobulle).
     rp.appendChild(faoLab('Sortie'));
     rp.appendChild(faoNum(isFinite(+setup.secu)?+setup.secu:5,function(v){ setup.secu=Math.max(0,v); },44,0.5,
-      'Sortie de pièce (mm hors matière — réglage du POSAGE, commun à toutes les opérations) : (1) dépassement XY en bout de ligne — l’outil sort de la pièce avant son demi-tour, (2) retrait Z des G0 et fin de parcours. Généralement 5 à 10.'));
+      'Sortie de pièce (mm hors matière — réglage du POSAGE, commun à toutes les opérations) : (1) dépassement XY en bout de ligne — l’outil sort de la pièce avant son demi-tour, (2) plafond des remontées locales du mode « Remontées : plan retrait ou +5 mm ». Généralement 5 à 10.'));
   }else if(op.type==='pocket'||op.type==='contour'){
     rect4(); zz();
     rp.appendChild(faoLab('ap')); rp.appendChild(faoNum(op.ap,function(v){op.ap=Math.max(0.5,v);},48));
@@ -4194,34 +4316,12 @@ function faoOpCardElement(setup,op,i){
     rM.appendChild(faoLab('Mode'));
     rM.appendChild(faoSel([
       ['escargot','Escargot · du centre vers les faces','Pelage en spirale depuis le pôle de la zone à usiner : chaque tour s’éloigne de ae, entrée en hélice obligatoire, les faces sont finies en dernier (2026-10-07-005, mode par défaut à la création).'],
-      ['conv','Conventionnel','Pelage à ap constant (champ ap) : du milieu de la zone vers les bords, entrées hélice/rampe, trochoïdes automatiques dans les goulets.'],
-      ['troco','Trocoïdal · poche d’entrée','Deux phases : évidement conventionnel de la poche d’abord, puis niveaux à pas Ø attaqués depuis la poche en ronds.']],
+      ['conv','Conventionnel','Pelage à ap constant (champ ap) : du milieu de la zone vers les bords, entrées hélice/rampe, trochoïdes automatiques dans les goulets.']],
       op.mode||'conv',function(v){
-        if(v==='troco')op.mode='troco'; else if(v==='escargot')op.mode='escargot'; else delete op.mode;
-      },'Mode de vidage — escargot par défaut à la création ; en trocoïdal, la poche d’entrée évacuée par la phase 1 sert d’air aux entrées profondes (jamais de plongée en matière pleine).'));
+        if(v==='escargot')op.mode='escargot'; else delete op.mode;
+      },'Mode de vidage — escargot par défaut à la création, absent = conventionnel (mode trocoïdal supprimé en 2026-10-08-001).'));
     d.appendChild(rM);
-    if(op.mode==='troco'){
-      const rS=faoRow();
-      rS.appendChild(faoLab('Poche'));
-      const opts=[['','— choisir une esquisse —','Sans poche valide, repli conventionnel.']];
-      ((typeof doc!=='undefined'&&doc&&doc.sketches)||[]).forEach(function(s){
-        opts.push([s.id,s.name+' · '+sketchFaceLabel(s),(s.entities||[]).length+' traits']);
-      });
-      rS.appendChild(faoSel(opts,(op.entree&&op.entree.sk)||'',function(v){
-        if(v)op.entree={sk:v}; else delete op.entree;
-      },'Esquisse de la poche d’entrée : contour fermé de traits FORTS (hors construction), plan horizontal, sans îlot ni trou, large d’au moins Ø outil.'));
-      d.appendChild(rS);
-      if(!op.entree){
-        d.appendChild(faoHelp('Choisissez une esquisse : sans poche, le mode trocoïdal se rabat sur le conventionnel.'));
-      }else if(!faoEntreePoly(op)){
-        d.appendChild(faoHelp('⚠ Esquisse inutilisable (plan non horizontal, contours multiples, îlot ou trou dedans, cercle) — repli conventionnel.'));
-      }else{
-        d.appendChild(faoHelp(
-          'Phase 1 : évidement de la poche à ap (conventionnel) jusqu’à fond+Fond, murs temporaires sans laisse. '+
-          'Phase 2 : niveaux à Ø outil sur toute la cavité, entrée par la poche évacuée, ronds vers l’extérieur. '+
-          'Plancher, parois (Parois/Fond) et finition inchangés.'));
-      }
-    }else if(op.mode==='escargot'){
+    if(op.mode==='escargot'){
       d.appendChild(faoHelp(
         'Escargot : pelage en spirale depuis le centre de la zone à usiner (pôle d’inaccessibilité, pas le '+
         'centre de la boîte — la 1re coupe n’attaque plus un bord de face) vers les faces, tours espacés de ae, '+
@@ -4237,18 +4337,14 @@ function faoOpCardElement(setup,op,i){
     d.appendChild(faoH('Passes (mm)'));
     const rP=faoRow();
     rP.appendChild(faoLab('ap')); rP.appendChild(faoNum(op.ap,function(v){op.ap=Math.max(0.5,v);},48,0.5,
-      (op.mode==='troco')
-        ?'Descente de la PHASE 1 — évidement de la poche d’entrée (les niveaux profonds de la phase 2 sont à pas Ø outil, automatiques).'
-        :'Descente : hauteur usinée par niveau (Maximum Stepdown). Profond en mode trocoïdal (≈ Ø outil).'));
+      'Descente : hauteur usinée par niveau (Maximum Stepdown).'));
     rP.appendChild(faoLab('ae')); rP.appendChild(faoNum(op.ae,function(v){op.ae=Math.max(0.5,v);},48,
-      'Pas latéral : distance entre deux passes voisines (Stepover). ≤ ¼ du Ø en mode trocoïdal.'));
+      'Pas latéral : distance entre deux passes voisines (Stepover).'));
     rP.appendChild(faoLab('mini')); rP.appendChild(faoNum(op.minipasses||0,function(v){op.minipasses=Math.max(0,Math.min(50,Math.round(v)));},40,1,
       'Mini-passes Z par niveau : contour des parois entre deux plans (0 = off, 1 à 50). Profondeur k·ap/(nb+1) sous le plan du dessus, décalage radial décroissant.'));
     d.appendChild(rP);
     d.appendChild(faoHelp(
-      (aeNow>toolD*0.25+1e-9)
-        ?('⚠ ae = '+(aeNow/toolD).toFixed(2)+'×Ø : réduisez à ≤ '+(toolD*0.25).toFixed(1)+' mm pour le mode trocoïdal (Ø '+toolD+').')
-        :('ae = '+(aeNow/toolD).toFixed(2)+'×Ø, ap = '+(apNow/toolD).toFixed(2)+'×Ø (outil Ø '+toolD+').')));
+      'ae = '+(aeNow/toolD).toFixed(2)+'×Ø, ap = '+(apNow/toolD).toFixed(2)+'×Ø (outil Ø '+toolD+').'));
     d.appendChild(faoH('Matière à laisser (mm)'));
     const rR=faoRow();
     rR.appendChild(faoLab('Parois')); rR.appendChild(faoNum(faoRA(op).radial,function(v){op.radial=Math.max(0,v);},44,0.1,
@@ -4346,6 +4442,9 @@ function faoOpCardElement(setup,op,i){
   }
   if(rp.children.length)d.appendChild(rp); // vide pour l'Ébauche 3D (sections propres)
   if(geoNote)d.appendChild(geoNote);
+  // 2026-10-08-002 : plans de l'opération (dégagement / retrait), hérités du
+  // posage tant que non modifiés — avant la zone (les plans cadrent tout).
+  d.appendChild(faoPlanesCard(setup,op));
   // Limite d'usinage (tout, rectangle, ou chaîne d'arêtes).
   const rl=faoRow();
   const limMode=op.limit?(op.limit.mode||'all'):'all';
@@ -4588,6 +4687,18 @@ function faoSetupFiche(p,setup){
   rF.appendChild(faoNum(setup.fixture?setup.fixture.axial:5,function(v){
     setup.fixture=setup.fixture||{}; setup.fixture.axial=Math.max(0,v); },44));
   p.appendChild(rF);
+  // Bornes Z du bridage : références « Haut/Bas du bridage » des plans
+  // (2026-10-08-002). Défaut = fond/dessus du brut (non stocké tant qu'édité).
+  const rFZ=faoRow();
+  rFZ.appendChild(faoLab('Br. Z0'));
+  rFZ.appendChild(faoNum(isFinite(+setup.fixture.z0)?+setup.fixture.z0:stock.z0,function(v){
+    setup.fixture=setup.fixture||{}; setup.fixture.z0=v; },44,1,
+    'Bas du bridage (mm, repère monde) — référence « Bas du bridage » des plans. Défaut = fond du brut.'));
+  rFZ.appendChild(faoLab('Z1'));
+  rFZ.appendChild(faoNum(isFinite(+setup.fixture.z1)?+setup.fixture.z1:stock.z1,function(v){
+    setup.fixture=setup.fixture||{}; setup.fixture.z1=v; },44,1,
+    'Haut du bridage (mm, repère monde) — référence « Haut du bridage » des plans. Défaut = dessus du brut.'));
+  p.appendChild(rFZ);
   const nF=document.createElement('div');
   nF.className='fao-help';
   nF.textContent='Bridage mémorisé (phase suivante : évitement dans les parcours).';
@@ -4595,19 +4706,29 @@ function faoSetupFiche(p,setup){
   const rC=faoRow();
   rC.appendChild(faoLab('Sortie'));
   rC.appendChild(faoNum(setup.secu,function(v){ setup.secu=Math.max(0,v); },48,0.5,
-    "Sortie de pièce (mm hors matière) : (1) retrait Z au-dessus du brut — G0, fin d'opération et fin de parcours (viewer + G-code) ; (2) dépassement XY en bout de ligne — l'outil sort de la pièce de cette valeur avant son demi-tour. Généralement 5 à 10. (Rappel dans la fiche Surfaçage.)"));
-  rC.appendChild(faoLab('Retrait')); rC.appendChild(faoNum(faoRetractZ(setup),function(v){ setup.retract=v; },56));
-  rC.appendChild(faoMini('Auto',function(){ setup.retract=null; }));
+    "Sortie de pièce (mm hors matière) : (1) dépassement XY en bout de ligne — l'outil sort de la pièce de cette valeur avant son demi-tour, (2) plafond des remontées locales du mode « Remontées : plan retrait ou +5 mm ». Généralement 5 à 10."));
   rC.appendChild(faoLab('Arrosage'));
   rC.appendChild(faoSel([['flood','M7/M08'],['through','M8'],['off','arrêt']],setup.coolant||'flood',
     function(v){ setup.coolant=v; }));
   p.appendChild(rC);
-  const rZ=faoRow();
-  rZ.appendChild(faoLab('Plan Z'));
-  rZ.appendChild(faoNum(faoSafeZ(setup),function(v){ setup.safeZ=Math.max(0,v); },56,10,
-    "Plan de sécurité (mm) : tout G0 qui se déplace en XY remonte d\'abord sur CE plan, traverse au plan, puis plonge — jamais de translation en Z bas. Défaut = dessus du brut + 100 mm."));
-  rZ.appendChild(faoMini('Auto',function(){ setup.safeZ=null; }));
-  p.appendChild(rZ);
+  // 2026-10-08-002 : plans de référence (Fusion360) + mode des remontées —
+  // remplace les anciens champs absolus « Retrait » et « Plan Z ».
+  const effP=faoPlaneEff(setup,null);
+  const tgtP={setupId:setup.id,opId:null};
+  p.appendChild(faoPlaneRow('clear','Dégagement',effP.clear,setup,null,tgtP));
+  p.appendChild(faoPlaneRow('retr','Retrait',effP.retr,setup,null,tgtP));
+  const rMd=faoRow();
+  rMd.appendChild(faoLab('Remontées'));
+  rMd.appendChild(faoSel([
+    ['min5','Plan retrait ou +5 mm','Défaut : les G0 remontent localement à 5 mm au-dessus de la matière, sans jamais dépasser le plan de retrait (Sortie en borne le plafond).'],
+    ['plan','Toujours plan de retrait','Toutes les remontées montent au plan de retrait — liaisons plus hautes, plus lentes, mais dégagement maximal.']],
+    effP.mode,function(v){ setup.planes=setup.planes||{}; setup.planes.mode=v; },
+    'Remontées (liaisons G0) : toujours le plan de retrait, OU remontée locale minimum 5 mm bornée par le plan de retrait.'));
+  p.appendChild(rMd);
+  p.appendChild(faoHelp(
+    'Plans en mm par référence (« depuis ») + décalage : dégagement = plan des translations rapides XY, '+
+    'retrait = plan des remontées et des changements d\'outil. Opérations : héritent de ces valeurs '+
+    'tant qu\'elles ne les touchent pas ; tout plan reste ≥ dessus du brut.'));
   const rV=faoRow();
   rV.appendChild(faoLab('Rapide G0'));
   rV.appendChild(faoNum(faoRapide(setup),function(v){ setup.rapide=Math.max(1,Math.round(v)); },
@@ -5357,33 +5478,13 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
     M={v:mesh.v.map(function(p){return [p[1],p[0],p[2]];}),t:mesh.t};
     BB={x0:B.y0,y0:B.x0,x1:B.y1,y1:B.x1};
   }
-  // 2026-10-07-004 : POCHE D'ENTREE (mode trocoïdal) — polygone XY monde
-  // résolu par le dispatch (faoEntreePoly) ; transposé avec le maillage quand
-  // le sens long a basculé x<->y. Sans polygone VALIDÉ, les deux phases sont
-  // inertes et le parcours conventionnel est STRICTEMENT identique.
-  let poly=null;
-  if(Array.isArray(o.poly)){
-    poly=[];
-    for(let i=0;i<o.poly.length;i++){
-      const q=o.poly[i];
-      if(Array.isArray(q)&&isFinite(+q[0])&&isFinite(+q[1]))poly.push([+q[0],+q[1]]);
-      else{poly=null;break;}
-    }
-    if(poly&&poly.length<3)poly=null;
-  }
-  if(swapped&&poly)poly=poly.map(function(p){return [p[1],p[0]];});
-  // Sécurité (repli conventionnel silencieux) : l'outil doit TENIR dans la
-  // poche — la colonne est alors entièrement évacuée par la phase A, donc
-  // l'« air » que le maillage promet en phase B est un VRAI vide ; et la poche
-  // doit TOUCHER la region usinable (sinon elle est posée dans la matière
-  // hors cavite : phase A vide, phase B sans entrée digne de ce nom).
-  if(poly&&!faoPolyUsable(poly,D,M,BB,zt,+zbot,ae))poly=null;
-  const troco=!!poly;
   // ESCARGOT (2026-10-07-005) : pelage en spirale depuis le centre vers les
   // faces (faoSpiralLevel), entrées obligatoires en hélice. `o.mode` posé par
   // le dispatch ; sans mode (documents existants) le parcours conventionnel
-  // reste STRICTEMENT identique. Un polygone de poche l'emporte (mode troco).
-  const esc=(!troco&&o.mode==='escargot');
+  // reste STRICTEMENT identique.
+  // 2026-10-08-001 : le mode trocoïdal (poche d'entrée o.poly, phases A/B)
+  // a été supprimé — il ne reste que ces deux modes.
+  const esc=(o.mode==='escargot');
   // PLANCHER RÉEL (7/10) : la grille `ap` est ancrée sur `Haut` et ne se pose
   // sur le fond de la poche que si `Bas` vaut ce fond (ou y tombe par hasard).
   // Sinon le dernier niveau utile laisse jusqu'à `ap` de matière sur le
@@ -5397,9 +5498,7 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
   // Fonds calculés UNE fois (réutilisés par la finition : niveau cible).
   const zoneOk=isFinite(zt)&&isFinite(+zbot)&&zt>+zbot;
   const floorsUp=zoneOk?faoUpFloors(M,Math.min(+zbot,zt),Math.max(+zbot,zt)):[];
-  // Construction d'une grille (niveaux + poses de fond) — appelée DEUX fois en
-  // mode trocoïdal : `ap` pour la phase A (évidement conventionnel de la
-  // poche) et Ø outil pour la phase B (niveaux profonds, toute la cavité).
+  // Construction d'une grille (niveaux + poses de fond).
   const mkPlan=function(apx){
     const p=faoLevels(zt,zBot,apx).map(function(z){ return {z:z,radial:RA.radial}; });
     if(zoneOk){
@@ -5419,9 +5518,7 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
     }
     return p;
   };
-  const planA=troco?mkPlan(ap):null;        // phase A : niveaux conventionnels
-  const plan=troco?mkPlan(D):mkPlan(ap);    // phase B (pas = Ø) / conventionnel
-  const apP=troco?D:ap;                     // descente entre niveaux du plan actif
+  const plan=mkPlan(ap);                    // niveaux + poses de fond
   const moves=[];
   const nb=isFinite(+o.minipasses)&&+o.minipasses>0?Math.min(50,Math.round(+o.minipasses)):0;
   // FINITION DES PAROIS (8/10) : N contours sur la DERNIÈRE passe en
@@ -5450,77 +5547,22 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
     }
   }
   faoSliceCache={mesh:M,map:{}};
-  // PHASE A — ÉVIDEMENT DE LA POCHE (2026-10-07-004) : la même ébauche
-  // conventionnelle (niveaux `ap`, mêmes entrées/travel/plancher/fond) mais
-  // entrées contraintes au polygone (opt.poly) et coupe clipée à l'intérieur
-  // du polygone érodé de D/2 — murs temporaires à 0 de laisse (les vraies
-  // parois restent protégées par les intervalles maillage, r = D/2 + Parois).
-  // Le niveau est calculé sur la boîte COMPLÈTE (jamais sur le bbox de la
-  // poche : faoShadowIntervals devient conservatif-vide quand la boîte
-  // intérieure ne touche aucune matière, cf. poche centrale en mode
-  // transposé) ; c'est le clip final qui borne tout à la poche. La colonne
-  // descend jusqu'à fond+Fond avant les niveaux profonds : chaque entrée de
-  // phase B est alors dans du vide RÉEL, pas seulement dans le vide du modèle.
-  if(troco&&planA&&planA.length){
-    let qx0=1/0,qx1=-1/0,qy0=1/0,qy1=-1/0;
-    poly.forEach(function(p){
-      if(p[0]<qx0)qx0=p[0]; if(p[0]>qx1)qx1=p[0];
-      if(p[1]<qy0)qy0=p[1]; if(p[1]>qy1)qy1=p[1];
-    });
-    const Bp={x0:Math.max(BB.x0,qx0),y0:Math.max(BB.y0,qy0),
-              x1:Math.min(BB.x1,qx1),y1:Math.min(BB.y1,qy1)};
-    if(Bp.x1>Bp.x0&&Bp.y1>Bp.y0){
-      let movesA=[];
-      planA.forEach(function(L,li){
-        const zFrom=Math.min(secu,L.z+ap);
-        const bandTop=li>0?planA[li-1].z:zt;
-        const tvZ=Math.min(secu,bandTop+2);
-        faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+RA.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,movesA,{travelZ:tvZ,poly:poly});
-      });
-      // Clip à la poche : centre d'outil >= D/2 du bord (side 'in', extra 0)
-      // — les rapides de liaison sont conservés (jamais de coupe dehors).
-      // Aplatissement AVANT clip (même réparation que faoZoneCuts) : le clip
-      // ne lit que les segments droits, les arcs trochoïdes des goulets
-      // traverseraient la frontière — ceux entièrement dedans restent des
-      // G2/G3, les dépassants sont échantillonnés puis recoupés.
-      const limA={loop:poly,side:'in',extra:0};
-      const inA=function(x,y){ return faoLimInside(x,y,limA,D/2); };
-      const flatA=[]; let pvA=null;
-      for(let i=0;i<movesA.length;i++){
-        const m=movesA[i];
-        if(m.r){ flatA.push(m); pvA=m; continue; }
-        if(m.arc&&pvA){
-          const pts=faoArcSegs(pvA,m);
-          let ok=inA(m.x,m.y)&&inA(pvA.x,pvA.y);
-          for(let k=0;k<pts.length&&ok;k++)if(!inA(pts[k][0],pts[k][1]))ok=false;
-          if(ok){ flatA.push(m); pvA=m; continue; }
-          for(let k=0;k<pts.length;k++)flatA.push({r:0,x:pts[k][0],y:pts[k][1],z:pts[k][2]});
-          pvA=flatA[flatA.length-1];
-          continue;
-        }
-        flatA.push(m); pvA=m;
-      }
-      movesA=faoClipMovesPoly(flatA,limA,D/2,secu,2);
-      for(let i=0;i<movesA.length;i++)moves.push(movesA[i]);
-    }
-  }
   plan.forEach(function(L,li){
     // Entrée depuis z+pas (rainure du dessus déjà ouverte, descente en avance
     // plongée) : l'hélice ne refait jamais toute la hauteur depuis la sécu.
-    // Pas = ap en conventionnel, Ø outil en phase B (niveaux profonds).
-    const zFrom=Math.min(secu,L.z+apP);
+    const zFrom=Math.min(secu,L.z+ap);
     // Retour 6/10 : LIAISON BASSE — après chaque région (parent OU mini), on
-    // revient à bandTop+2 (à vide, hors gouttière) au lieu de la tour rouge
-    // jusqu'à secu, avec inset vers l'intérieur ouvert (ou secu par défaut).
+    // revient à 5 mm au-dessus de la matière (à vide, hors gouttière) au lieu
+    // de la tour rouge jusqu'à secu, avec inset vers l'intérieur ouvert.
+    // 2026-10-08-002 : remontées réglables — mode 'min5' (défaut) = local à
+    // 5 mm au-dessus de la bande (was 2 mm) borné par secu ; mode 'plan' =
+    // toujours le plan de retrait (secu porte déjà le plan).
     const bandTop=li>0?plan[li-1].z:zt;
-    const tvZ=Math.min(secu,bandTop+2);
-    // poly (phase B) : entrée FORCÉE dans la poche — le pelage offset
-    // (ronds + trochoïdes des goulets) repart du centre vers l'extérieur,
-    // toujours en contact avec le vide évacué par la phase A.
+    const tvZ=o.remPlan?secu:Math.min(secu,bandTop+5);
     // ESCARGOT : spirale centre -> faces sur le même plan/levels, mêmes
     // entrées/travel ; mini-passes et finition restent conventionnelles.
     if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ});
-    else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,poly:troco?poly:null});
+    else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ});
     // MINI-PASSES (retour 4/10) : après le pelage du niveau, contour des parois
     // entre ce plan et le plan du dessus : profondeurs k*h/(nb+1) sous le plan
     // du dessus (strictement entre les deux, jamais dessus), décalage radial
@@ -5556,7 +5598,8 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
         for(let i=0;i<plan.length;i++)
           if(plan[i].z>zj+1e-9&&(zA===null||plan[i].z<zA))zA=plan[i].z;
         if(zA===null)zA=zt;
-        const zF=Math.min(secu,zA), tvJ=Math.min(secu,zA+2);
+        const zF=Math.min(secu,zA),
+          tvJ=o.remPlan?secu:Math.min(secu,zA+5); // 2026-10-08-002 : 5 mm (was 2)
         for(let k=1;k<=nf;k++){
           const off=RA.radial*(nf-k)/nf;
           faoRoughAdaptiveLevel(M,BB,zj,D,D/2+off,secu,zF,ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvJ});
@@ -6692,47 +6735,21 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   const flat=[];
   lines.forEach(function(L){ L.ivs.forEach(function(iv){ flat.push({y:L.y,iv:iv}); }); });
   if(!flat.length)return;
-  // ENTREE TROCOÏDALE (2026-10-07-004) : les candidats d'entrée (E = intervalle
-  // le plus large, hélice multi-spots, rampe, micro-hélice) sont CLIPPÉS au
-  // polygone de la poche — la descente ne se fait que dans la colonne
-  // évacuée par la phase A (vide RÉEL, pas seulement vide au modèle). Le
-  // pelage (lines/regs/chunks) reste entier : la phase B coupe toute la
-  // cavité, seul le POINT D'ENTRÉE doit être en air. Polygone sans
-  // recoupement à ce niveau : repli sur les intervalles complets.
-  const polyE=(opt&&Array.isArray(opt.poly)&&opt.poly.length>=2)?opt.poly:null;
-  let flatE=flat;
-  if(polyE){
-    const fp=[];
-    for(let i=0;i<flat.length;i++){
-      const f=flat[i], rs=faoPolyRowIvs(polyE,f.y);
-      for(let k=0;k<rs.length;k++){
-        const a=Math.max(f.iv.a,rs[k][0]), b=Math.min(f.iv.b,rs[k][1]);
-        if(b-a>0.5)fp.push({y:f.y,iv:{a:a,b:b}});
-      }
-    }
-    if(fp.length)flatE=fp;
-  }
   let hasTroch=false;
   regs.forEach(function(R){
     let ml=0;
     R.forEach(function(q){ ml=Math.max(ml,q.iv.b-q.iv.a); });
     if(ml<2.5*D&&R.length>=2)hasTroch=true;
   });
-  let E=flatE[0];
-  for(let i=1;i<flatE.length;i++)if(flatE[i].iv.b-flatE[i].iv.a>E.iv.b-E.iv.a)E=flatE[i];
+  let E=flat[0];
+  for(let i=1;i<flat.length;i++)if(flat[i].iv.b-flat[i].iv.a>E.iv.b-E.iv.a)E=flat[i];
   const elen=E.iv.b-E.iv.a;
   let ixA=1/0, ixB=-1/0;
-  flatE.forEach(function(f){ ixA=Math.min(ixA,f.iv.a); ixB=Math.max(ixB,f.iv.b); });
-  const yRun=(ixB-ixA>0.2)?(flatE[flatE.length-1].y-flatE[0].y):0;
+  flat.forEach(function(f){ ixA=Math.min(ixA,f.iv.a); ixB=Math.max(ixB,f.iv.b); });
+  const yRun=(ixB-ixA>0.2)?(flat[flat.length-1].y-flat[0].y):0;
   let cx0=0, cy0=0;
-  if(polyE&&flatE!==flat){
-    // Centroid des intervalles CLIPPÉS : le candidat de repli tombe dedans.
-    flatE.forEach(function(f){ cx0+=(f.iv.a+f.iv.b)/2; cy0+=f.y; });
-    cx0/=flatE.length; cy0/=flatE.length;
-  }else{
-    lines.forEach(function(L){ cx0+=(L.ivs[0].a+L.ivs[0].b)/2; cy0+=L.y; });
-    cx0/=lines.length; cy0/=lines.length;
-  }
+  lines.forEach(function(L){ cx0+=(L.ivs[0].a+L.ivs[0].b)/2; cy0+=L.y; });
+  cx0/=lines.length; cy0/=lines.length;
   let tang=null;
   if(isRing&&lines.length>=2){
     const a0=lines[0].ivs[0].a, b0=lines[0].ivs[0].b;
@@ -6745,7 +6762,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
         tang={sx:sx,sy:sy,px:p0x,py:p0y};
     }
   }
-  const byW=flatE.slice().sort(function(a,b){
+  const byW=flat.slice().sort(function(a,b){
     return (b.iv.b-b.iv.a)-(a.iv.b-a.iv.a); });
   const forced=(entryMode||'auto')==='helix'?'helix':(entryMode||'auto')==='ramp'?'ramp':'auto';
   const fmode=forced!=='auto'?forced:(hasTroch?'helix':'auto');
@@ -6764,7 +6781,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       // au centre de la ZONE à usiner, d'où part le premier (et plus grand)
       // k, puis on descend vers les bords (retour 3).
       let bIf=null,bw=-1,yS=0,nI=0;
-      flatE.forEach(function(f){
+      flat.forEach(function(f){
         if(!(f.iv.wl&&f.iv.wr))return;
         yS+=f.y;nI++;
         const w=f.iv.b-f.iv.a;
@@ -6773,7 +6790,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       if(bIf){
         const cyI=yS/nI;
         let bJ=bIf,by=Math.abs(bIf.y-cyI);
-        flatE.forEach(function(f){
+        flat.forEach(function(f){
           if(!(f.iv.wl&&f.iv.wr))return;
           if(Math.abs((f.iv.b-f.iv.a)-bw)>1e-9)return;
           const dy=Math.abs(f.y-cyI);
@@ -6809,7 +6826,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     if(elen>=yRun&&elen>0.2)ramp={x0:E.iv.a,y0:E.y,x1:E.iv.a+Math.min(elen,2*D),y1:E.y};
     else if(yRun>0.2){
       const xm=(ixA+ixB)/2;
-      const rp={x0:xm,y0:flatE[0].y,x1:xm,y1:flatE[0].y+Math.min(yRun,2*D)};
+      const rp={x0:xm,y0:flat[0].y,x1:xm,y1:flat[0].y+Math.min(yRun,2*D)};
       // Rampe verticale : validee sur tout le segment (le milieu de la boite
       // peut tomber dans la matiere sur cette ligne), sinon repli horizontal.
       if(segClear(rp.x0,rp.y0,rp.x1,rp.y1))ramp=rp;
@@ -7440,6 +7457,75 @@ function faoPlaneCommit(e){
     faoPlaneCancel(true);
     faoChanged();
     faceEl.textContent='Plan : B '+o.b+'° · C '+o.c+'° appliqués — vérifiez le sens de rotation de votre machine.';
+  }catch(err){ try{faceEl.textContent='Plan : impossible ('+err.message+').';}catch(e2){} }
+}
+
+/* ----- picking « face » des plans (2026-10-08-002) ----- */
+// Le clic sur une face fige son Z (`fz`) dans le plan choisi (référence
+// « Sélection ») — même garde-fous de modes que le picking 3+2 (faoPlaneStart).
+let faoZPlanePick=null;
+function faoZPlaneStart(t){
+  // t={setupId,opId,which:'clear'|'retr',slot:1|2|null}
+  try{
+    if(typeof skEdit!=='undefined'&&skEdit){faceEl.textContent='Plan : fermez l\'esquisse d\'abord.';return;}
+    if((typeof filMode!=='undefined'&&filMode)||(typeof filModeX!=='undefined'&&filModeX)||
+       (typeof mvMode!=='undefined'&&mvMode)||(typeof draftMode!=='undefined'&&draftMode)||
+       (typeof coqueMode!=='undefined'&&coqueMode)||(typeof extPickFace!=='undefined'&&extPickFace)||
+       (typeof faoPlanePick!=='undefined'&&faoPlanePick)||(typeof faoChainMode!=='undefined'&&faoChainMode)){
+      faceEl.textContent='Plan : quittez le mode en cours d\'abord.';return;
+    }
+    const bl=(typeof bodies!=='undefined'&&bodies)?bodies.filter(function(b){return b&&!b.ghost&&b.mesh;}):[];
+    if(!bl.length){faceEl.textContent='Plan : aucun corps à cliquer.';return;}
+    if(!faoSetup(t.setupId)){faceEl.textContent='Plan : poste introuvable.';return;}
+    faoZPlanePick=t;
+    try{renderer.domElement.style.cursor='crosshair';}catch(e){}
+    faceEl.textContent='Plan : cliquez la FACE de référence (Z retenu = point cliqué, Échap annule).';
+    if(typeof renderProps==='function')renderProps();
+  }catch(e){ try{faceEl.textContent='Plan : impossible ('+e.message+').';}catch(e2){} }
+}
+function faoZPlaneCancel(silent){
+  faoZPlanePick=null;
+  try{renderer.domElement.style.cursor='default';}catch(e){}
+  if(!silent){ try{ if(typeof renderProps==='function')renderProps(); }catch(e){} }
+}
+function faoZPlaneCommit(e){
+  try{
+    if(!faoZPlanePick)return;
+    const t=faoZPlanePick;
+    const r=renderer.domElement.getBoundingClientRect();
+    const ndc=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
+    rayc.setFromCamera(ndc,camera);
+    const objs=bodies.filter(function(b){return b&&!b.ghost&&b.visible!==false&&b.mesh;})
+      .map(function(b){return b.mesh;});
+    const hits=objs.length?rayc.intersectObjects(objs,false):[];
+    if(!hits.length){faceEl.textContent='Plan : aucune face touchée, réessayez.';return;}
+    const z=Math.round(hits[0].point.z*100)/100;
+    const setup=faoSetup(t.setupId);
+    if(!setup){faceEl.textContent='Plan : poste introuvable, annulé.';faoZPlaneCancel(true);return;}
+    let owner=setup, op=null;
+    if(t.opId){
+      const ops=setup.ops||[];
+      for(let i=0;i<ops.length;i++)if(ops[i]&&ops[i].id===t.opId){op=ops[i];break;}
+      if(!op){faceEl.textContent='Plan : opération introuvable, annulé.';faoZPlaneCancel(true);return;}
+      owner=op;
+    }
+    const eff=faoPlaneEff(setup,op);
+    const base=(t.which==='clear'?eff.clear:eff.retr)||{ref:'brutHaut',dz:0};
+    const mm=(base.ref==='max'||base.ref==='min');
+    let pl;
+    if(t.slot&&mm){
+      const cur=(t.slot===1?base.s1:base.s2)||{ref:'brutHaut',dz:0};
+      const slot={ref:'face',dz:isFinite(+cur.dz)?+cur.dz:0,fz:z};
+      pl=Object.assign({},base);
+      pl[t.slot===1?'s1':'s2']=slot;
+    }else{
+      pl=Object.assign({},base,{ref:'face',fz:z});
+    }
+    faoSnapshot('plan face (Z '+z.toFixed(2)+')');
+    faoPlaneSet(owner,t.which,pl);
+    faoZPlaneCancel(true);
+    faoChanged();
+    faceEl.textContent='Plan : face retenue à Z '+z.toFixed(2)+' mm — valeur résolue à jour dans la fiche.';
   }catch(err){ try{faceEl.textContent='Plan : impossible ('+err.message+').';}catch(e2){} }
 }
 

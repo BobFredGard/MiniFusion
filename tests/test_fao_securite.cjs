@@ -169,8 +169,8 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     faoSetupFiche(pc,faoDoc());
     let labZ=null;
     (function w(n){ if(n.children)n.children.forEach(function(ch){
-      if(ch.textContent==='Plan Z')labZ=ch; w(ch); }); })(pc);
-    A(!!labZ,'fiche posage : champ « Plan Z »');
+      if(ch.textContent==='Dégagement')labZ=ch; w(ch); }); })(pc);
+    A(!!labZ,'fiche posage : champ « Dégagement »');
 
     return R;
   })()`,ctx);

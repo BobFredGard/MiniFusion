@@ -184,7 +184,7 @@ const vm=require('vm');
     "const c3=faoOpCardElement(faoSetup(),r3,0);",
     "att(c3.children.length>8,'fiche ebauche 3D : sections, vu '+c3.children.length);",
     "r3.ae=6;const c3b=faoOpCardElement(faoSetup(),r3,0);",
-    "att(c3b.children.length>8,'fiche ae=6 (alerte troco) : sans plantage');",
+    "att(c3b.children.length>8,'fiche ae=6 : sans plantage');",
     // mode unique : le sélecteur de stratégie (Morph/Zigzag/Adaptive) a disparu
     "const sels3=[];(function w3(n){(n.children||[]).forEach(function(c){if(c.tagName==='SELECT')sels3.push(c);w3(c);});})(c3);",
     "const sTxt=sels3.map(function(s){let t='';(s.children||[]).forEach(function(o){t+=(o.textContent||'')+'|';});return t;}).join('');",

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**180 versions**, de `2026-09-28b` à `2026-10-07-005` — la plus récente en bas,
+**182 versions**, de `2026-09-28b` à `2026-10-08-002` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3099,3 +3099,35 @@ Fiche : sélecteur à 3 options (Escargot en 1re position) avec aides mises à j
 Tests : `tests/test_fao_escargot.cjs` étendu — fixture **manifold** 80×60×18 (poche x[10,70] y[10,50] fond z=4) : conv sans mode == `mode:'conv'` au JSON près + **section ordre conv** (1re coupe ≤ 10 mm du centre, fin de niveau ≥ 45 mm, dernier centre avant 1er bord) ; escargot ≠ conv, 1re coupe au centre (≤ 2,5 mm), 1re entrée hélice (≥ 10 points descendants, rayon ≤ Ø/2, fin sur le plan z=14), expansion + quasi-monotone, lasse ∈ [5,3 ; 6,5] aux 4 niveaux, faces atteintes, **queue sur la laisse 40/40** ; **fixture décalée** (manifold + pôle ≤ 2,5 mm de (60,30) + hélice + lasse) ; mini-passes, sens long portrait, `faoOpDefaults` + sanitise + fiche + dispatch inchangés. **Inscrit dans `SUITES`** (`tests/run.cjs`, 70 suites). Run complet **70/70** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-07-005.html`.
 
 Migration : `APP_VER` → `2026-10-07-005`, **`CACHE_VER` → `2026-10-07-005`** : l'ordre des morceaux du conventionnel (k décroissant, chaînes sortantes en 0) ET son point d'entrée (intervalle intérieur au centre) changent tous les parcours produits — les tampons FAO stockés écrivent d'autres points, périmés, à régénérer une fois ; `cacheVerOK` réécrit sans exception historique (l'escargot ajouté au moteur rendrait de toute façon les tampons 002 périmés dès sa première génération). Badge **V0.1.2 inchangé**.
+
+---
+
+### `2026-10-08-001`
+
+**Ébauche 3D : le mode Trocoïdal est SUPPRIMÉ (tracé peu satisfaisant) — le sélecteur ne garde plus que Escargot / Conventionnel, et la poche d'entrée (esquisse) part avec lui.**
+
+Demande : « le tracé Trocoïdal n'est pas satisfaisant… on va le supprimer. » Le mécanisme 2026-10-07-004 (phase A clipée à la poche, phase B à pas Ø attaquée depuis la poche) disparaît en entier. **INTACT** : le pelage trochoïdal des **goulets** (`faoTrochSlot`, arcs G2/G3 dans `faoRoughAdaptiveLevel`) reste la stratégie interne du **conventionnel** — les tests `test_fao3d` qui le couvrent sont conservés ; escargot, mini-passes, plancher/fond, finition de parois, sens long, entrées hélice/rampe : inchangés.
+
+Correctif — fiche Ébauche 3D : sélecteur à 2 options (Escargot / Conventionnel, handler conservé : escargot écrit `op.mode`, conventionnel l'efface), bloc « Poche » (choix de l'esquisse + aides phase 1/phase 2) supprimé, infobulles ap/ae débarrassées des mentions « phase 1 / pas Ø outil / ≤ ¼ Ø en trocoïdal », et l'alerte `⚠ ae > ¼ Ø` (réservée au troco) retirée — le conseil ≤ ¼ Ø reste dans l'aide conventionnelle, le ratio ae/ap reste affiché. `faoSanitiseOps` : `mode:'troco'` → **conventionnel** (le sig bouge → régénération ciblée de l'opération), `op.entree` retiré de TOUS les documents ; le dispatch ne transmet plus `poly` ; `faoGenRough3D` perd le polygone d'entrée, la phase A (clip à ≥ D/2), `planA`/`apP` (grille à pas Ø outil) et l'entrée forcée dans la poche — `esc = (o.mode==='escargot')` nu. `faoEntreePoly` / `faoPolyUsable` / `faoPolyRowIvs` (163 lignes) supprimés ; dans `faoRoughAdaptiveLevel` le clip d'entrée au polygone (`polyE`) disparaît et les candidats d'entrée repartent des intervalles complets — strictement identique pour les modes conservés (ce clip ne servait que la poche troco).
+
+Tests : `tests/test_fao_troco.cjs` supprimé et désinscrit de `SUITES` (70 → 69 suites) ; `test_fao.cjs` message « alerte troco » requalifié ; `test_prodver_badge` maintenu sur **V0.1.2** ; `test_fao3d` inchangé (libellés « troco » historiques = pelage du conventionnel, fixtures sans `mode`). Run complet **69/69** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-08-001.html`.
+
+Migration : `APP_VER` → `2026-10-08-001`, **`CACHE_VER` inchangé** (`2026-10-07-005`) : parcours escargot/conventionnel strictement identiques → aucun rejeu pour les documents sans troco ; seuls les opérateurs porteurs de `mode:'troco'`/`entree` changent de sig et se régénèrent seuls. Badge **V0.1.2 inchangé** (choix explicite de 2026-10-06-004 : le tag produit reste V0.1.2).
+
+---
+
+### `2026-10-08-002`
+
+**FAO : les plans de dégagement / retrait façon Fusion360 — référence « depuis » + décalage, par opération, remontées réglables.**
+
+Demande : des plans de référence comme dans Fusion360 — chaque plan = une référence (haut/fond du brut, haut/bas du modèle, haut/bas du bridage, sélection d'une face, origine, le plus élevé/le plus bas des deux, et pour le dégagement la hauteur de retrait) plus un décalage en mm. Réponses de cadrage : plans **par opération** (héritage posage → op), remontées en **réglage au choix**, références en **liste complète** (y compris « Sélection face »).
+
+Noyau — `FAO_PLANE_REFS` + `faoPlaneZ` résolvent un plan `{ref,dz}` (sous-références `s1`/`s2` pour max/min, `fz` pour la face cliquée, chaîne `'retrait'` autorisée uniquement en dégagement, garde anti-récursion) ; `faoClearAbs` / `faoRetractAbs` donnent le plan ABSOLU d'une opération (héritage op > posage > legacy `safeZ`/`retract`), `faoZoneSecu` le plan des rapides internes : mode `plan` → plan de retrait (plancher dessus du brut), mode `min5` (défaut) → retrait borné par dessus brut + Sortie — **strictement l'ancien absolu (z1+25 / z1+Sortie) quand aucun plan n'est défini**. `faoPlaneEff` affiche l'héritage legacy traduit (Auto = brut+100 / brut+25, valeur forcée = origine+valeur) ; `faoPlaneClean` + `faoSanitiseOps` normalisent posage ET opération, forme invalide = plan SUPPRIMÉ (repli héritage) — aucune migration n'écrit `setup.planes` : les documents existants ne sont pas réécrits, les plans ne se matérialisent qu'à la première édition UI.
+
+Trajectoires — `faoSeqSafe` (source unique aperçu / visionneuse / G-code) prend le dégagement de CHAQUE opération ; `faoPost` émet le retrait inter-outils depuis la 1ʳᵉ op ON du groupe (`retrPrev`/`retrCur`) et la tête de blocs / plongées sur le plan de l'opération ; le perçage — déroulé ET cycle dialecte (`CYCLE81/83` Siemens, `G98 G81/G83` Fagor) — prend RTP = `faoZoneSecu(op)` ; ébauche 3D : `tvZ`/`tvJ` = plan si mode `plan`, sinon min(Secu, dessus zone + **5 mm**) — +2 auparavant (remontées locales plus sures). Sig : `op.planes` entrent dans `faoOpSig`, `setup.planes`/`setup.fixture` dans `faoOpMovesKey` automatiquement — toute édition de plan invalide le cache de l'opération touchée.
+
+UI — fiche posage : les champs absolus « Retrait » et « Plan Z » deviennent deux rangées **Dégagement** / **Retrait** (sélecteur de référence + décalage + valeur résolue `= z`), nouvelle rangée **Remontées** (`Plan retrait ou +5 mm` par défaut / `Toujours plan de retrait`), bornes de bridage **Br. Z0 / Z1** dans « Brut · bridage » (références haut/bas du bridage, défaut = brut), infobulle « Sortie » requalifiée (plafond des remontées locales, reste le dépassement XY). Fiche opération (tous types) : section **Plans** héritée du posage + bouton « Hériter du posage » dès qu'un plan est propre ; max/min affichent deux sous-rangées 1ʳᵉ/2ᵉ. Référence **Sélection (face)** : bouton « Sélect. » → clic sur la face dans la vue 3D (`faoZPlaneStart/Commit/Cancel` : mêmes gardes-fous de modes que le picking 3+2, Échap annule, Z = point cliqué) — entrées ajoutées au dispatcher de `src/90-picking-mesure-import.js`.
+
+Tests — `tests/test_fao_planes.cjs` **nouveau, inscrit dans `SUITES`** (69 → 70 suites) : 71 vérifications (résolution des 10 références + max/min + chaîne retrait, vue legacy, héritage op > posage, mode plan/min5 + plancher brut, sanitise complet, clés de parcours, rapides normalisés, G-code tête / retrait inter-outils / RTP de cycle, fiches posage + opération libellés et valeurs) ; `test_fao_securite` : libellé « Plan Z » → « Dégagement ». Run complet **70/70** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-08-002.html`.
+
+Migration : `APP_VER` → `2026-10-08-002`, **`CACHE_VER` → `2026-10-08-002`** : les remontées locales de l'ébauche 3D passent de +2 à +5 mm bornées par le plan de retrait — mêmes sigs, AUTRES points de rapides → tampons FAO périmés, régénération unique. Badge **V0.1.2 inchangé** ; tag Git **`V0.1.2` créé et poussé sur GitHub avec cette version** (il n'avait jamais été poussé, malgré le `(V0.1.2)` des messages de commit depuis 2026-10-04-008).

@@ -9,6 +9,7 @@ function wirePick(){
     if(filModeX){if(e.button===0&&!e.ctrlKey)exactToggle(e);return;}
     if(faoChainMode){if(e.button===0&&!e.ctrlKey)faoChainToggle(e);return;}
     if(faoPlanePick){if(e.button===0&&!e.ctrlKey)faoPlaneCommit(e);return;}
+    if(faoZPlanePick){if(e.button===0&&!e.ctrlKey)faoZPlaneCommit(e);return;}
     if(mvMode){if(e.button===0&&!e.ctrlKey)mvFaceCommit(e);return;}
     if(draftMode){if(e.button===0&&!e.ctrlKey)draftToggle(e);return;}
     if(coqueMode){if(e.button===0&&!e.ctrlKey)coqueToggle(e);return;}
@@ -23,6 +24,7 @@ function wirePick(){
    el.addEventListener('pointermove',e=>{
       if(extPickFace){renderer.domElement.style.cursor='crosshair';return;}
       if(faoPlanePick){renderer.domElement.style.cursor='crosshair';return;}
+      if(faoZPlanePick){renderer.domElement.style.cursor='crosshair';return;}
     if(mvMode){mvFaceHover(e);renderer.domElement.style.cursor='pointer';return;}
     if(draftMode){draftHover(e);return;}
     if(coqueMode){coqueHover(e);return;}
@@ -48,7 +50,7 @@ function wirePick(){
      else if(!ed)renderer.domElement.style.cursor='default';
    });
   el.addEventListener('contextmenu',e=>{
-    if(filMode||filModeX||faoChainMode||faoPlanePick){e.preventDefault();return;}
+    if(filMode||filModeX||faoChainMode||faoPlanePick||faoZPlanePick){e.preventDefault();return;}
     if(e.ctrlKey){e.preventDefault();return;}
     if(Math.hypot(e.clientX-dx,e.clientY-dy)>6)return;
     e.preventDefault();hideCtx();
@@ -125,6 +127,7 @@ function filletTangentChain(sk, startCorner){
   window.addEventListener('keydown',e=>{if(e.key==='Escape'){
     if(extPickFace){extPickFace=null;try{renderer.domElement.style.cursor='default';}catch(e2){}faceEl.textContent='Vers un objet : annulé.';return;}
     if(faoPlanePick){faoPlaneCancel();faceEl.textContent='Plan : annulé.';return;}
+    if(faoZPlanePick){faoZPlaneCancel();faceEl.textContent='Plan : annulé.';return;}
     if(filMode||filModeX){exitFilletMode();return;}
     if(faoChainMode){faoChainExit(true);return;}
     if(mvMode){exitMoveFaceMode();return;}

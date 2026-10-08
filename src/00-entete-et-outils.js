@@ -23,7 +23,7 @@
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-07-005';
+const APP_VER='2026-10-08-002';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -34,14 +34,23 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-07-005';
+const CACHE_VER='2026-10-08-002';
 function cacheVerOK(v){
+  // 2026-10-08-002 : plans de dégagement/retrait — les remontées locales de
+  // l'ébauche 3D passent de +2 à +5 mm (tvZ/tvJ bornés par le plan de retrait)
+  // : même clé de sig, AUTRES points de rapides. Périmés légitimement, à
+  // régénérer une fois (wipe unique).
   // 2026-10-07-005 : l'ordre des morceaux du conventionnel (du milieu vers les
   // bords, k décroissant) ET son point d'entrée (intervalle intérieur au
   // centre de la zone, plus la bande de marge) changent TOUS les parcours —
   // les tampons stockés écrivent d'autres points. L'escargot ajoute centre =
   // pôle de la zone (parité + disque) et une passe finale de contour des
   // faces. Aucune exception historique : périmés, à régénérer une fois.
+  // 2026-10-08-001 : suppression du mode trocoïdal — CACHE_VER INCHANGE : les
+  // parcours escargot/conventionnel sont strictement identiques (le clip
+  // d'entrée au polygone ne servait que la poche troco) ; seuls les
+  // documents qui portaient mode 'troco' ou une poche d'entrée bougent — le
+  // sig de l'op (mode/entree) les identifie et ne régénère qu'eux.
   return v===CACHE_VER;
 }
 let extPickFace=null; // mode « vers un objet » : clic sur une face pour le sens (Échap = annuler)
