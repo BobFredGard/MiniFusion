@@ -153,7 +153,7 @@ const vm=require('vm');
     // --- 6. FINITION = DERNIERE PASSE EN PROFONDEUR UNIQUEMENT (8/10)
     const minParZ=function(cuts){
       const mm={};
-      cuts.forEach(function(p){ if(!inP(p))return;
+      cuts.forEach(function(p){ if(!inP(p)||p.ent)return; // 007 : rampes d'entrée (ent) hors comparaison
         const k=Math.round(p.z*1000)/1000;
         if(!(k in mm)||p.x<mm[k])mm[k]=p.x; });
       return mm; };

@@ -765,6 +765,12 @@ function faoGenContour(rect,zTop,zBot,o){
   // 2026-10-08-004 : ENTRÉE CIRCULAIRE — contour EXTERNE : le centre d'outil
   // reste dehors à ≥ r de la pièce (ancre inutile, tout se passe en air) ;
   // rapide sur place, descente en Z à S, arc tangent sur le début de passe.
+  // 2026-10-08-007 : l'extérieur d'un bossage n'est PAS de l'air — c'est du
+  // brut (à moins qu'une ébauche ne l'ait déjà enlevé, que le contour ne
+  // voit pas). La « descente à S » devient une RAMPE le long de l'arc tangent
+  // (interpolation hélicoïdale répartie en paliers ≤ 2 mm) : la fraise
+  // découpe le brut en progressant, jamais à plat dessus. Le repli historique
+  // (sans cercle) ramp le long du 1er côté du rectangle, comme la poche 006.
   const entryMode=o.entry||'auto';
   const rhoCirc=faoCircRhos(D,0,o.entryR);
   const outsideOK=function(x,y){
@@ -776,13 +782,36 @@ function faoGenContour(rect,zTop,zBot,o){
   zs.forEach(function(z,li){
     if(sideC){
       moves.push({r:1,x:sideC.sx,y:sideC.sy,z:secu});
-      moves.push({r:0,ent:1,x:sideC.sx,y:sideC.sy,z:z});
-      moves.push({r:0,ent:1,x:ax,y:ay,z:z,
-        arc:{i:sideC.cx-sideC.sx,j:sideC.cy-sideC.sy,cw:sideC.cw}});
+      // 007 : arc tangent RAMPE — descente répartie le long de l'arc (chaque
+      // sous-arc garde son centre IJK ; G2/G3 hélicoïdal = légal).
+      const Rr=Math.hypot(sideC.sx-sideC.cx,sideC.sy-sideC.cy);
+      let a0=Math.atan2(sideC.sy-sideC.cy,sideC.sx-sideC.cx);
+      let a1=Math.atan2(ay-sideC.cy,ax-sideC.cx);
+      let da=a1-a0;
+      if(sideC.cw){if(da>0)da-=2*Math.PI;}else if(da<0)da+=2*Math.PI;
+      const nR=Math.max(2,Math.ceil((zTop-z)/2));
+      let ppx=sideC.sx,ppy=sideC.sy;
+      for(let s=1;s<=nR;s++){
+        const f=s/nR,a=a0+da*f;
+        const xx=sideC.cx+Rr*Math.cos(a),yy=sideC.cy+Rr*Math.sin(a);
+        moves.push({r:0,ent:1,x:xx,y:yy,
+          z:Math.round((zTop+(z-zTop)*f)*1000)/1000,
+          arc:{i:sideC.cx-ppx,j:sideC.cy-ppy,cw:sideC.cw}});
+        ppx=xx;ppy=yy;
+      }
     }else{
-      if(li===0)moves.push({r:1,x:ex,y:ey,z:secu});
-      else moves.push({r:1,x:ex,y:ey,z:secu});
-      moves.push({r:1,x:ax,y:ay,z:z});
+      // 007 : repli = RAMPE le long du 1er côté (descente en coupant le brut,
+      // paliers ≤ 2 mm) — jamais de plongée/rapide à plat dans le brut.
+      const z0=(li>0)?zs[li-1]:+zTop;
+      moves.push({r:1,x:ex,y:ey,z:secu});
+      moves.push({r:1,x:ax,y:ay,z:secu});
+      if(z0>z+1e-9)moves.push({r:0,ent:1,x:ax,y:ay,z:z0});
+      const nR=Math.max(2,Math.ceil((z0-z)/2));
+      for(let s=1;s<=nR;s++){
+        const f=s/nR;
+        moves.push({r:0,ent:1,x:ax+(bx-ax)*f,y:ay,
+          z:Math.round((z0+(z-z0)*f)*1000)/1000});
+      }
     }
     moves.push({r:0,x:bx,y:ay,z:z});
     moves.push({r:0,x:bx,y:by,z:z});
@@ -5887,14 +5916,24 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     return 0; // aucun rayon : plongée sûre (colonne d'ombre garantie par le membership)
   };
   const rhoCirc=faoCircRhos(D,ae,opt.entryR);
-  // 2026-10-08-005 : air = hors de la matière brute du niveau (le disque
-  // outil doit être totalement hors matière restante — faoPlungeClear).
-  const airSp=function(x,y){ return !faoShapeInside(S,x,y); };
+  // 2026-10-08-007 : air = hors du BRUT (la boîte de stock), plus « hors de la
+  // pièce » — pendant l'ébauche le vide de poche (et l'extérieur d'un bossage)
+  // n'est PAS de l'air, c'est du brut à enlever : `!faoShapeInside` acceptait
+  // des ancres/plongées au cœur du brut non usiné (« fraise à cheval après la
+  // spirale »). Hors boîte = seul endroit réellement vide.
+  const airSp=function(x,y){
+    return x<B.x0-1e-9||x>B.x1+1e-9||y<B.y0-1e-9||y>B.y1+1e-9;
+  };
+  // 007 : hauteur de départ communiquée au RAMPAGE quand entryTo renvoie false.
+  let rampZ0=0;
   const entryTo=function(x,y,ux,uy){
     // 2026-10-08-004 : ENTRÉE CIRCULAIRE — si de la matière est déjà enlevée
     // près du départ (ancre), on descend en Z sur place puis on accoste en
     // arc tangent ; sinon repli hélice/plongée sûre (1re attaque du niveau).
     // 2026-10-08-005 : rayons candidats + disque outil entièrement en air.
+    // 2026-10-08-007 : renvoie true = entrée sûre émise ; false = ni ancre
+    // (faoPlungeClear), ni hélice tenable -> l'APPELANT RAMPE le long du
+    // chemin (descente en avançant, jamais à plat sur du brut restant).
     if(entryMode==='circ'){
       const side=faoCircEval(x,y,ux||0,uy||0,rhoCirc,inside,moves,z,D,true,airSp);
       if(side){
@@ -5902,7 +5941,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
         if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(side.sx),y:rnd(side.sy),z:z});
         moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:z,
           arc:{i:side.cx-side.sx,j:side.cy-side.sy,cw:side.cw}});
-        return;
+        return true;
       }
     }
     const zG=gotoXY(x,y);
@@ -5912,28 +5951,41 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     if(hr>0){
       faoHelixEntry(x,y,hStart,z,hr,D).slice(1).forEach(function(m){moves.push(m);});
       pushCut(x,y); // resynchronise sur l'échantillon (le tour de fond finit sur le cercle)
-    }else{
-      // 2026-10-08-006 : JAMAIS de plongée à plat dans la matière brute — la
-      // fraise (Ø25 en tête) atterrirait à cheval sur la 1re phase. Hélice de
-      // descente dont l'ORBITE est réduite jusqu'à rester dans la région
-      // légale (sinon on surcouperait le mur en orbite) ; aucun orbite tenable
-      // (chaîne de face tangent au mur) -> plongée à plat au centre légal.
-      let hrF=Math.max(1,D*0.2);
-      const okOrb=function(h){
-        for(let k=0;k<8;k++){const a=k/8*2*Math.PI;if(!inside(x+h*Math.cos(a),y+h*Math.sin(a)))return false;}
-        return true;
-      };
-      while(hrF>0.5&&!okOrb(hrF))hrF-=0.5;
-      if(hrF>0.5&&okOrb(hrF))faoHelixEntry(x,y,hStart,z,hrF,D).slice(1).forEach(function(m){moves.push(m);});
-      else moves.push({r:0,x:rnd(x),y:rnd(y),z:z});
-      pushCut(x,y);
+      return true;
     }
+    // 2026-10-08-006 : JAMAIS de plongée à plat dans la matière brute — la
+    // fraise (Ø25 en tête) atterrirait à cheval sur la 1re phase. Hélice de
+    // descente dont l'ORBITE est réduite jusqu'à rester dans la région
+    // légale (sinon on surcouperait le mur en orbite) ; aucun orbite tenable
+    // (chaîne de face tangent au mur) -> plongée à plat au centre légal.
+    let hrF=Math.max(1,D*0.2);
+    const okOrb=function(h){
+      for(let k=0;k<8;k++){const a=k/8*2*Math.PI;if(!inside(x+h*Math.cos(a),y+h*Math.sin(a)))return false;}
+      return true;
+    };
+    while(hrF>0.5&&!okOrb(hrF))hrF-=0.5;
+    if(hrF>0.5&&okOrb(hrF)){
+      faoHelixEntry(x,y,hStart,z,hrF,D).slice(1).forEach(function(m){moves.push(m);});
+      pushCut(x,y);
+      return true;
+    }
+    // 007 : plongée à plat UNIQUEMENT si le disque est déjà balayé ou en air
+    // réel (airSp = hors brut) — sinon l'appelant ramp le long du chemin.
+    if(faoPlungeClear(x,y,moves,z,D,airSp)){
+      moves.push({r:0,x:rnd(x),y:rnd(y),z:z});
+      pushCut(x,y);
+      return true;
+    }
+    rampZ0=hStart; // l'air vers hStart est déjà émis : le rampage continue à z
+    return false;
   };
   // --- spirale : R(θ) = pitch·θ/2π, échantillonnage à corde s (borné),
   // pas angulaire borné à π/6 près du centre.
   const s=Math.max(0.5,Math.min(Math.max(pitch,D*0.25),D*0.5));
   const thMax=2*Math.PI*(Math.ceil(Rmax/pitch)+1);
   let th=0,guard=0,atCut=false,prevIn=false,px=cx,py=cy;
+  // 007 : descente répartie le long de la spirale (rampL>0 = rampage actif)
+  let rampL=0,rampK=0,rampTot=0;
   while(th<=thMax&&guard++<400000){
     const R=pitch*th/(2*Math.PI);
     const x=cx+R*Math.cos(th), y=cy+R*Math.sin(th);
@@ -5943,11 +5995,40 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
       // (R=0) : repli sur le pas de l'échantillon.
       let ex=-(y-cy), ey=(x-cx);
       if(Math.hypot(ex,ey)<1e-9){ ex=x-px; ey=y-py; }
-      if(!atCut||!prevIn||!segClear(px,py,x,y))entryTo(x,y,ex,ey);
+      if(rampL>0){
+        // 007 : on CONTINUE le rampage — la fraise descend en avançant sur la
+        // spirale (coupe progressive du croissant non balayé, centre légal).
+        rampK++;
+        const zr=Math.max(z,Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000);
+        moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:zr});
+        rampL--;
+      }else if(!atCut||!prevIn||!segClear(px,py,x,y)){
+        if(!entryTo(x,y,ex,ey)){
+          // 007 : aucune entrée sûre ici (pas d'ancre balayée, pas d'orbite
+          // tenable) -> RAMPAGE le long de la spirale : la fraise découpe en
+          // progressant, jamais à plat sur le brut restant.
+          rampTot=Math.max(2,Math.ceil((rampZ0-z)/2));
+          rampK=1; rampL=rampTot-1;
+          const zr=Math.max(z,Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000);
+          moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:zr});
+        }
+      }
       else pushCut(x,y);
       atCut=true; prevIn=true; px=x; py=y;
     }else prevIn=false;
     th+=(R>1e-9)?Math.min(s/R,Math.PI/6):Math.PI/6;
+  }
+  // 007 : fin de spirale pendant un rampage : on termine la descente au
+  // dernier point légal — hélice micro-orbite si elle tient, sinon plongée
+  // claire (disque déjà balayé), sinon on garde la cote atteinte (sûr).
+  if(rampL>0){
+    const zLast=moves.length?moves[moves.length-1].z:z;
+    if(zLast>z+1e-9){
+      let orbOk=true;
+      for(let k=0;k<8;k++){const a=k/8*2*Math.PI;if(!inside(px+0.5*Math.cos(a),py+0.5*Math.sin(a))){orbOk=false;break;}}
+      if(orbOk)faoHelixEntry(px,py,zLast,z,0.5,D).slice(1).forEach(function(m){moves.push(m);});
+      else if(faoPlungeClear(px,py,moves,z,D,airSp))moves.push({r:0,x:rnd(px),y:rnd(py),z:z});
+    }
   }
   // --- DERNIÈRE PASSE : les FACES du solide (retour 2/3). Mêmes chaînes que
   // le conventionnel k=0 : chaines du niveau offsetées à r (la laisse de
@@ -6012,9 +6093,25 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     // Direction d'attaque = premier maillon de la chaîne (sens de coupe).
     const ex2=(seq.length>1)?seq[1][0]-seq[0][0]:0;
     const ey2=(seq.length>1)?seq[1][1]-seq[0][1]:0;
-    if(!P||P.r||!segClear(P.x,P.y,sx,sy))entryTo(sx,sy,ex2,ey2);
+    let i0=1;
+    if(!P||P.r||!segClear(P.x,P.y,sx,sy)){
+      if(!entryTo(sx,sy,ex2,ey2)){
+        // 2026-10-08-007 : RAMPE le long de la chaîne de faces — la fraise
+        // descend EN COUPANT le croissant non balayé le long du mur (paliers
+        // bornés à ~2 mm, répartis sur les points disponibles), centre
+        // toujours à r du mur : aucune plongée à plat sur le brut restant,
+        // aucun gouge.
+        const nUse=Math.max(1,Math.min(seq.length-1,Math.ceil((rampZ0-z)/2)));
+        const dz=(rampZ0-z)/nUse;
+        for(let i=1;i<=nUse;i++){
+          moves.push({r:0,ent:1,x:rnd(seq[i][0]),y:rnd(seq[i][1]),
+            z:Math.round((rampZ0-dz*i)*1000)/1000});
+        }
+        i0=nUse+1;
+      }
+    }
     else pushCut(sx,sy);
-    for(let i=1;i<seq.length;i++)pushCut(seq[i][0],seq[i][1]);
+    for(let i=i0;i<seq.length;i++)pushCut(seq[i][0],seq[i][1]);
     if(ch.closed)pushCut(seq[0][0],seq[0][1]);
   }
 }
@@ -7510,21 +7607,38 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   };
   const emitChunk=function(ch,px,py){
     // Liaison d'entrée : directe si sûre (stay-down), sinon ENTRÉE CIRCULAIRE
-    // (2026-10-08-004) qui remplace la plongée verticale ; repli historique =
-    // translation à vide + plongée.
-    const linkIn=function(ax,ay,ux,uy){
+    // (2026-10-08-004) ; 007 : sinon plongée uniquement si le disque est déjà
+    // balayé/en air réel (hors brut) — sinon RAMPE LE LONG DU MORCEAU (la
+    // fraise descend en coupant, jamais à plat sur le brut restant). Renvoie
+    // l'index du 1er point du morceau restant à émettre.
+    const linkIn=function(seq,ax,ay,ux,uy){
       const prev=moves[moves.length-1];
-      if(prev&&!prev.r&&segClear(prev.x,prev.y,ax,ay)){ pushCut(ax,ay); return; }
-      if(circEnter(ax,ay,ux,uy))return;
+      if(prev&&!prev.r&&segClear(prev.x,prev.y,ax,ay)){ pushCut(ax,ay); return 1; }
+      if(circEnter(ax,ay,ux,uy))return 1;
+      if(faoPlungeClear(ax,ay,moves,z,D,airCv)){ gotoXY(ax,ay); pushCut(ax,ay); return 1; }
+      // 007 : RAMPE le long du morceau — descente répartie (~2 mm par point,
+      // bornée aux points disponibles) ; les morceaux ch.mv gardent leurs arcs
+      // (interpolation hélicoïdale G2/G3 en descente = légal).
       gotoXY(ax,ay);
-      pushCut(ax,ay);
+      const hS=Math.max(faoHelixSpot(mesh,ax,ay,0,r,z,brutTop,planes),hFloor);
+      if(Math.abs(hS-z)>1e-9)moves.push({r:0,ent:1,x:rnd(ax),y:rnd(ay),z:hS});
+      const nUse=Math.max(1,Math.min(seq.length-1,Math.ceil((hS-z)/2)));
+      const dz=(hS-z)/nUse;
+      for(let i=1;i<=nUse;i++){
+        const q=seq[i];
+        const m={r:0,ent:1,x:rnd(ch.mv?q.x:q[0]),y:rnd(ch.mv?q.y:q[1]),
+                 z:Math.round((hS-dz*i)*1000)/1000};
+        if(ch.mv&&q.arc)m.arc=q.arc;
+        moves.push(m);
+      }
+      return nUse+1;
     };
     if(ch.mv){
       const seq=ch.mv;
       let ux=0,uy=0;
       if(seq.length>1){ux=seq[1].x-seq[0].x;uy=seq[1].y-seq[0].y;}
-      linkIn(seq[0].x,seq[0].y,ux,uy);
-      for(let i=1;i<seq.length;i++){
+      const i0=linkIn(seq,seq[0].x,seq[0].y,ux,uy);
+      for(let i=i0;i<seq.length;i++){
         const q=seq[i],prev=moves[moves.length-1];
         if(!q.arc&&!prev.r&&Math.abs(prev.x-q.x)<1e-9&&Math.abs(prev.y-q.y)<1e-9&&Math.abs(prev.z-q.z)<1e-9)continue;
         moves.push(q);
@@ -7534,8 +7648,8 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     const seq=ordered(ch,px,py);
     let ux=0,uy=0;
     if(seq.length>1){ux=seq[1][0]-seq[0][0];uy=seq[1][1]-seq[0][1];}
-    linkIn(seq[0][0],seq[0][1],ux,uy);
-    for(let i=1;i<seq.length;i++)pushCut(seq[i][0],seq[i][1]);
+    const i0=linkIn(seq,seq[0][0],seq[0][1],ux,uy);
+    for(let i=i0;i<seq.length;i++)pushCut(seq[i][0],seq[i][1]);
     if(ch.closed)pushCut(seq[0][0],seq[0][1]);
   };
   // --- tour des morceaux (retour 3/3) : du MILIEU vers les BORDS.
@@ -7560,8 +7674,13 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   // --- ENTRÉE DU NIVEAU (UNE) : émission ici, après les helpers — le tour
   // fournit la cible à l'entrée circulaire (2026-10-08-004).
   const rhoCirc=faoCircRhos(D,ae,opt.entryR);
-  // 2026-10-08-005 : air = hors de la matière brute du niveau.
-  const airCv=function(x,y){ return !faoShapeInside(S,x,y); };
+  // 2026-10-08-007 : air = hors du BRUT (la boîte de stock), plus « hors de la
+  // pièce » — l'extérieur d'un bossage et le vide de poche sont du brut à
+  // enlever, pas de l'air (ancres/plongées acceptées au cœur du brut non
+  // usiné = « fraise à cheval » après les passes).
+  const airCv=function(x,y){
+    return x<B.x0-1e-9||x>B.x1+1e-9||y<B.y0-1e-9||y>B.y1+1e-9;
+  };
   const validXY=function(x,y){ return faoShapeValid(S,x,y,rrSafe); };
   const circEnter=function(Px,Py,ux,uy){
     // Arc tangent : rapide vers S, descente G1 en Z à l'ancre (matière déjà
@@ -7641,7 +7760,10 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       if(Math.abs(zG-ms)>1e-9)moves.push({r:0,x:rnd(mx),y:rnd(my),z:ms});
       faoHelixEntry(mx,my,ms,z,hrH,D).slice(1).forEach(function(m){moves.push(m);});
       pushCut(mx,my);
-    }else{
+    }else if(faoPlungeClear(mx,my,moves,z,D,airCv)){
+      // 2026-10-08-007 : plongée à plat admise UNIQUEMENT si le disque est
+      // déjà balayé ou en air réel (hors brut) — sinon on n'émet rien : le
+      // 1er morceau du tour ramp le long de sa chaîne (linkIn 007).
       linkTo(mx,my);
       pushCut(mx,my);
     }

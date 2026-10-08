@@ -46,7 +46,7 @@ const vm=require('vm');
     "const ct=faoOpMoves(job.ops[2],job);",
     "att(ct.length>0,'contour : moves');",
     "att(ct.some(m=>!m.r&&Math.abs(m.x-95)<1e-9),'contour : compensation +r (x1+D/2=95)');",
-    "att(ct.filter(m=>!m.r).every(m=>Math.abs(m.z-0)<1e-9),'contour : 1 niveau Z=0 (5->0 ap5)');",
+    "att(ct.filter(m=>!m.r&&!m.ent).every(m=>Math.abs(m.z-0)<1e-9),'contour : 1 niveau Z=0 (5->0 ap5)');",
     // --- perçage
     "const dr=faoOpMoves(job.ops[3],job);",
     "att(dr.length===8,'drill 2 trous : 8 moves, vu '+dr.length);",
@@ -196,7 +196,7 @@ const vm=require('vm');
     "att(pr.every(m=>m.x>=10.99&&m.x<=89.01&&m.y>=10.99&&m.y<=69.01),'poche R1 : XY dans [11,89]x[11,69]');",
     "const cr=faoGenContour({x0:10,y0:10,x1:90,y1:70},5,0,{toolD:10,secu:30,radial:0.5,axial:0});",
     "att(cr.some(m=>!m.r&&Math.abs(m.x-95.5)<1e-9),'contour R0.5 : X max 95.5');",
-    "att(cr.filter(m=>!m.r).every(m=>Math.abs(m.z-0)<1e-9),'contour A0 : fond Z=0');",
+    "att(cr.filter(m=>!m.r&&!m.ent).every(m=>Math.abs(m.z-0)<1e-9),'contour A0 : fond Z=0');",
     // --- migration laisse -> R/A (géodésique garde laisse)
     "const mOP={type:'pocket',laisse:0.5};faoSanitiseOps({tools:[{id:'T1'}],ops:[mOP]});",
     "att(mOP.radial===0.5&&mOP.axial===0.5&&mOP.laisse===undefined,'migration laisse -> R/A');",

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**185 versions**, de `2026-09-28b` à `2026-10-08-005` — la plus récente en bas,
+**187 versions**, de `2026-09-28b` à `2026-10-08-007` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3199,3 +3199,17 @@ Noyau — règle unique : **une plongée doit se faire en se déplaçant, le cen
 Tests — `tests/test_fao_circ.cjs` étendu (section 006) : poche Ø25 (`[10,70]×[10,50]`, ztop 20) — **aucune descente verticale > 3 mm non couverte** par une coupe à cote ≤ z dans le disque D/2 (plongée à plat dans la matière = 0), rampes étiquetées `ent`; escargot Ø25 (boîte `mkB(0,60,0,80,0,30)`, `faoGenRough3D` mode `escargot` `entry:'circ'`) — idem, **0 plongée à plat en matière**. `test_fao_escargot` (métrique lasse [5.3,6.5]) repasse. Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-08-006.html`.
 
 Migration : `APP_VER` → `2026-10-08-006`, **`CACHE_VER` → `2026-10-08-006`** : les générateurs changent (rampe/hélice légale à la place des plongées à plat = autres trajets d'entrée, mêmes sigs) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.
+
+---
+
+### `2026-10-08-007`
+
+**FAO : air = hors du BRUT (boîte), plus « hors pièce » — fini les retours à plat sur les croissants non balayés après la spirale ; entrées de faces / ré-entries / contour en rampes le long du chemin.**
+
+Demande (feedback 006) : « après la spirale, la fraise rentre toujours à cheval dans la matière — sais-tu où se trouve exactement la matière restante ? ». Diagnostic (`diag9`, fixture poche ouverte, escargot Ø25) : 8 plongées à plat sur des croissants — `airSp`/`airCv` utilisaient `!faoShapeInside` = « hors pièce », qui traite le **vide de la poche** comme de l'air alors que c'est du **brut restant** ; `faoPlungeClear` recevait donc un `airAt` toujours vrai dans le vide, acceptait n'importe quelle ancre ; le repli plongée à plat atterrissait ensuite sur les zones que les tours circulaires de la spirale n'avaient pas balayées (coins de la région érodée). Le maillage ne voyait ni le brut ni les passes précédentes — le vrai test est la **boîte de brut** : tout ce qui est hors de B est de l'air, tout ce qui est dans B est (ou sera) de la matière.
+
+Noyau — `airSp` (spirale) et `airCv` (conventionnel) = **hors boîte B** (`x<B.x0−1e−9 || x>B.x1+1e−9 || y<B.y0−1e−9 || y>B.y1+1e−9`) ; `entryTo` renvoie un booléen (true = entrée sûre faite, false = **rampe le long du chemin**) ; la plongée à plat du conventionnel est gateée sur `faoPlungeClear(...,airCv)`. Passes de faces (fin de spirale) : si `entryTo` échoue → rampes le long de `seq` (paliers ≤ 2 mm, `ent:1`), reprise à `i0=nUse+1`. Conv `emitChunk`/`linkIn(seq,...)` renvoient l'index de reprise ; ordre = lien sûr → `circEnter` → plongée si `faoPlungeClear` → **rampe le long du morceau** (sous-objets `ch.mv` gardent leurs arcs ; descente d'air à `hS` étiquetée `ent:1`). `faoGenContour` : circ → **arc tangent en rampes hélicoïdales** (sous-arcs IJK, paliers depuis `zTop`) ; repli → rapide à secu + descente d'air à `z0` + **rampe le long du 1ʳᵉ côté**.
+
+Tests — `test_fao.cjs` et `test_fao_fond_finition.cjs` : les mouvements `ent` (rampes) sont exclus des comparaisons de cote Z / min-X (les rampes émettent légitimement des Z intermédiaires) ; `test_fao_circ.cjs` section 007 : fixture poche ouverte escargot Ø25 (`diag11`) — **0 plongée à plat dont le disque D/2 ne soit déjà balayé** (airAt = hors boîte), rampes étiquetées `ent`. Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-08-007.html`.
+
+Migration : `APP_VER` → `2026-10-08-007`, **`CACHE_VER` → `2026-10-08-007`** : les générateurs changent (airAt hors boîte + rampes le long du chemin = autres trajets d'entrée, mêmes sigs) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.

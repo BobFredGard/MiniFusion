@@ -17,6 +17,9 @@
 //    partent aussi en bleu, et l'étiquette survit à faoViewerBuild.
 // 6. 006 (feedback Ø25) : JAMAIS de plongée à plat dans la matière — poche =
 //    rampe le long du 1er anneau, ébauche 3D = hélice à orbite légale réduite.
+// 7. 007 (feedback « après la spirale à cheval ») : air = hors du BRUT (boîte),
+//    entrées de faces/ré-entries = rampes le long du chemin — fixture poche
+//    ouverte escargot Ø25 : 0 plongée à plat dont le disque ne soit balayé.
 const {loadApp}=require('./appvm.cjs');
 const vm=require('vm');
 (async()=>{
@@ -162,6 +165,37 @@ const vm=require('vm');
     "  if(!covE)nPlatE++;",
     "}",
     "att(nPlatE===0,'006 escargot D25 : aucune plongee a plat dans la matiere ('+nPlatE+')');",
+    // ===== 8. 007 : air = hors du BRUT (boite) — apres la spirale, AUCUNE
+    // plongee a plat dont le disque D/2 ne soit deja balaye (croissants des
+    // murs/coins non sweeps par les tours circulaires = « a cheval »). =====
+    "const FVa=[[0,0,0],[80,0,0],[80,60,0],[0,60,0],",
+    " [0,0,18],[80,0,18],[80,60,18],[0,60,18],",
+    " [10,10,4],[70,10,4],[70,50,4],[10,50,4],",
+    " [10,10,18],[70,10,18],[70,50,18],[10,50,18],",
+    " [0,10,18],[80,10,18],[80,50,18],[0,50,18]];",
+    "const FTa=[[0,2,1],[0,3,2],",
+    " [0,1,5],[0,5,4],[2,3,7],[2,7,6],",
+    " [0,4,16],[0,16,19],[0,19,7],[0,7,3],",
+    " [1,2,6],[1,6,18],[1,18,17],[1,17,5],",
+    " [4,5,17],[4,17,13],[4,13,12],[4,12,16],",
+    " [6,7,19],[6,19,15],[6,15,14],[6,14,18],",
+    " [16,12,15],[16,15,19],[13,17,18],[13,18,14],",
+    " [8,9,10],[8,10,11],",
+    " [8,13,9],[8,12,13],[10,15,11],[10,14,15],",
+    " [8,11,15],[8,15,12],[9,13,14],[9,14,10]];",
+    "const FRa={v:FVa,t:FTa};",
+    "const Ba={x0:-5,y0:-5,x1:85,y1:65};",
+    "const r7=faoGenRough3D(FRa,Ba,18,4,{ap:4,ae:8,toolD:25,radial:0,axial:0,secu:45,mode:'escargot',entry:'circ'});",
+    "const airHB=function(x,y){return x<Ba.x0-1e-9||x>Ba.x1+1e-9||y<Ba.y0-1e-9||y>Ba.y1+1e-9;};",
+    "let n7=0,nc7=0;",
+    "for(let i=1;i<r7.length;i++){const a=r7[i-1],b=r7[i];",
+    "  if(!(Math.abs(b.x-a.x)<1e-9&&Math.abs(b.y-a.y)<1e-9&&b.z<a.z-1e-9))continue;",
+    "  if(a.z-b.z<=3+1e-9||b.z>=18-1e-9)continue;",
+    "  n7++;",
+    "  if(!faoPlungeClear(b.x,b.y,r7.slice(0,i),b.z,25,airHB))nc7++;",
+    "}",
+    "att(nc7===0,'007 escargot D25 poche ouverte : 0 plongee a plat non couverte apres la spirale ('+nc7+'/'+n7+')');",
+    "att(r7.filter(m=>m.ent===1).length>=20,'007 escargot : entrees/rampes etiquetees ent ('+r7.filter(m=>m.ent===1).length+' moves)');",
     "if(ATT.length){p('');p('ECHECS ('+ATT.length+') :');ATT.forEach(m=>p('  x '+m));}",
     "else p('TOUT EST CONFORME');",
     "return P.join(String.fromCharCode(10));"
