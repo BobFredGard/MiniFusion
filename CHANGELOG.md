@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**188 versions**, de `2026-09-28b` à `2026-10-08-008` — la plus récente en bas,
+**189 versions**, de `2026-09-28b` à `2026-10-08-009` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3228,4 +3228,18 @@ Résultat (fixture escargot Ø25, poche ouverte) : hélices **15 → 3 par nivea
 
 Tests — `test_fao_circ.cjs` section 008 : escargot Ø25 — arcs circulaires présents dès le 1er niveau (`>= 4`, soit 1/niveau) et étiquetés `ent` ; conv D25 — `>= 50` arcs ; **0 plongée à plat non couverte** (sécurité 007 conservée). Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-08-008.html`.
 
-Migration : `APP_VER` → `2026-10-08-008`, **`CACHE_VER` → `2026-10-08-008`** : les générateurs changent (pass 2 hélice-sur-ancre + gate silhouette = autres trajets d'entrée, mêmes sigs) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.
+Migration : `APP_VER` → `2026-10-08-009`, **`CACHE_VER` → `2026-10-08-009`** : les générateurs changent (pass 2 hélice-sur-ancre + gate silhouette = autres trajets d'entrée, mêmes sigs) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.
+
+---
+
+### `2026-10-08-009`
+
+**FAO : descente sûre préférée à l'hélice quand l'ancre est déjà dégagée (ré-entrée) — hélice conservée uniquement pour la 1ʳᵉ attaque ; constat que les 3 hélices par couche sont géométriquement nécessaires (pas réductibles).**
+
+Demande : réduire les hélices superflues en gardant la sécurité 007 (jamais plonger à plat dans la matière). Diagnostic (fixture escargot Ø25, poche ouverte) : les 3 hélices par couche sont le **pôle** (centre de poche, direction dégénérée = pas d'arc possible) + **2 points d'attaque** où l'ancre `S = P + ρn − ρu` sort de la région à tout `ρ ≥ D/4`, et où aux ρ serrés (D/16, D/10, D/6) l'arc traverserait la matière (`okA=false`). Ces 3 positions sont donc **géométriquement nécessaires** ; les ρ plus petits testés en tête de `faoCircRhos` n'ont rien amélioré et ont été retirés.
+
+Noyau — `entryTo` (pass 2 de la spirale) : **descente verticale sûre** (`faoPlungeClear`) préférée à l'hélice quand l'ancre est déjà dégagée (ré-entrée de spirale), hélice (`pickHr`/`okOrbPt`) sinon (1ʳᵉ attaque, matière pleine). `faoCircRhos` inchangée canoniquement (ρ = entryR, Ø/2, ae, Ø).
+
+Tests — `test_fao_circ.cjs` : valeurs `faoCircRhos` rétablies ([D/4, D/2, ae, D] / [3, 5, 10]) ; `test_fao_zone2.cjs` : tolérance îlot rétablie (±2). Sécurité 007 : 0 plongée à plat non couverte. Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-08-009.html`.
+
+Migration : `APP_VER` → `2026-10-08-009`, **`CACHE_VER` → `2026-10-08-009`** : les générateurs changent (descente sûre préférée à l'hélice = autres trajets d'entrée, mêmes sigs) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.

@@ -5776,6 +5776,12 @@ function faoCircRhos(D,ae,entryR){
   // recule le point de plongée S dans la zone déjà usinée pour que le disque
   // entier de la fraise y trouve de l'air. Premier candidat faisant passer
   // toutes les conditions (S, arc, disque) gagne ; sinon repli hélice/rampe.
+  // 2026-10-08-009 (constat) : les ρ plus petits (D/16, D/10, D/6) testés en
+  // tête n'ont rien amélioré — aux positions de ré-entrée, l'ancre sort de la
+  // région à tout ρ ≥ D/4, et aux ρ serrés l'arc traverserait la matière
+  // (okA=false). Les 3 hélices de ces couches (pôle + 2 points d'attaque)
+  // sont GÉOMÉTRIQUEMENT NÉCESSAIRES pour ne jamais plonger à plat ; elles
+  // sont conservées telles quelles (cf. tests 007 : 0 plongée non couverte).
   const r0=(isFinite(+entryR)&&+entryR>0)?+entryR:+(D/4).toFixed(2);
   const out=[];
   const add=function(v){ if(v>1e-9&&!out.some(function(w){return Math.abs(w-v)<1e-9;}))out.push(v); };
@@ -6013,16 +6019,24 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
           let okA=true;
           for(let k=0;k<pts2.length;k++)if(!inside(pts2[k][0],pts2[k][1])){okA=false;break;}
           if(!okA)continue;
-          let hrH=pickHr(s2.sx,s2.sy);
-          if(!(hrH>0)){
-            hrH=Math.max(1,D*0.2);
-            while(hrH>0.5&&!okOrbPt(s2.sx,s2.sy,hrH))hrH-=0.5;
-            if(!(hrH>0.5&&okOrbPt(s2.sx,s2.sy,hrH)))continue;
-          }
           const zG=gotoXY(s2.sx,s2.sy);
-          const hS=Math.max(faoHelixSpot(mesh,s2.sx,s2.sy,hrH,r,z,brutTop,planes),hFloor);
-          if(Math.abs(zG-hS)>1e-9)moves.push({r:0,ent:1,x:rnd(s2.sx),y:rnd(s2.sy),z:hS});
-          faoHelixEntry(s2.sx,s2.sy,hS,z,hrH,D).slice(1).forEach(function(m){moves.push(m);});
+          if(faoPlungeClear(s2.sx,s2.sy,moves,z,D,airSp)){
+            // 009 : ancre déjà enlevée (ré-entrée de spirale) -> descente
+            // verticale sûre, puis l'arc tangent accoste le tracé.
+            if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(s2.sx),y:rnd(s2.sy),z:z});
+          }else{
+            // 008/009 : 1re attaque (matière pleine) -> hélice à orbite
+            // légale sur l'ancre, engagement progressif, jamais à plat.
+            let hrH=pickHr(s2.sx,s2.sy);
+            if(!(hrH>0)){
+              hrH=Math.max(1,D*0.2);
+              while(hrH>0.5&&!okOrbPt(s2.sx,s2.sy,hrH))hrH-=0.5;
+              if(!(hrH>0.5&&okOrbPt(s2.sx,s2.sy,hrH)))continue;
+            }
+            const hS=Math.max(faoHelixSpot(mesh,s2.sx,s2.sy,hrH,r,z,brutTop,planes),hFloor);
+            if(Math.abs(zG-hS)>1e-9)moves.push({r:0,ent:1,x:rnd(s2.sx),y:rnd(s2.sy),z:hS});
+            faoHelixEntry(s2.sx,s2.sy,hS,z,hrH,D).slice(1).forEach(function(m){moves.push(m);});
+          }
           pushCut(s2.sx,s2.sy);
           moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:z,
             arc:{i:s2.cx-s2.sx,j:s2.cy-s2.sy,cw:s2.cw}});
