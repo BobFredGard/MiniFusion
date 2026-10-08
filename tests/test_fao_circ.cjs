@@ -15,6 +15,8 @@
 // 5. Aperçu : faoSegSplit route la plongée verticale descendante en bleu (plg) ;
 //    005 : les moves étiquetés ent (hélice, rampe, arc circ, descente d'entrée)
 //    partent aussi en bleu, et l'étiquette survit à faoViewerBuild.
+// 6. 006 (feedback Ø25) : JAMAIS de plongée à plat dans la matière — poche =
+//    rampe le long du 1er anneau, ébauche 3D = hélice à orbite légale réduite.
 const {loadApp}=require('./appvm.cjs');
 const vm=require('vm');
 (async()=>{
@@ -132,6 +134,34 @@ const vm=require('vm');
     "const JO=Object.assign({},J,{ops:[pkC]});",
     "const vwC=faoViewerBuild(JO);",
     "att(vwC.pts.some(p=>p.ent===1),'viewer : ent propage jusqu aux pts (bleu)');",
+    // ===== 7. 006 : JAMAIS de plongee a plat dans la matiere (Ø25) =====
+    "const d2sT=function(ax,ay,bx,by,px,py){const dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy;let t=L2>0?((px-ax)*dx+(py-ay)*dy)/L2:0;t=t<0?0:(t>1?1:t);const ex=ax+t*dx-px,ey=ay+t*dy-py;return ex*ex+ey*ey;};",
+    "const J25=faoDefaultSetup();J25.stock={x0:0,y0:0,z0:0,x1:120,y1:90,z1:20};",
+    "J25.tools=[{id:'T1',d:25,f:800,sf:1000}];",
+    "const pk25={id:'p25',on:true,toolId:'T1',type:'pocket',x0:10,y0:10,x1:110,y1:80,ztop:20,zbot:5,ap:5,ae:6,radial:0,axial:0,arrondi:0};",
+    "const mv25=faoOpMoves(pk25,J25);",
+    "let nPlat=0;",
+    "for(let i=1;i<mv25.length;i++){const a=mv25[i-1],b=mv25[i];",
+    "  if(!(Math.abs(b.x-a.x)<1e-9&&Math.abs(b.y-a.y)<1e-9&&b.z<a.z-1e-9))continue;",
+    "  if(a.z-b.z<=3+1e-9||b.z>=20-1e-9)continue;",
+    "  let covF=0;",
+    "  for(let j=1;j<i&&!covF;j++){const c=mv25[j-1],e=mv25[j];if(c.r||e.r)continue;if(c.z>b.z+1e-9||e.z>b.z+1e-9)continue;if(d2sT(c.x,c.y,e.x,e.y,b.x,b.y)<=13*13)covF=1;}",
+    "  if(!covF)nPlat++;",
+    "}",
+    "att(nPlat===0,'006 poche D25 : aucune plongee a plat non couverte dans la matiere ('+nPlat+')');",
+    "att(mv25.filter(m=>m.ent===1).length>=10,'006 poche D25 : rampes d entree etiquetees ent ('+mv25.filter(m=>m.ent===1).length+' moves)');",
+    "const CN1=mkB(0,60,0,80,0,30);",
+    "const r25=faoGenRough3D(CN1,{x0:-2,y0:-2,x1:62,y1:82},30,0,{ap:10,ae:8,toolD:25,radial:0,axial:0,secu:45,mode:'escargot',entry:'circ'});",
+    "let nPlatE=0;",
+    "for(let i=1;i<r25.length;i++){const a=r25[i-1],b=r25[i];",
+    "  if(!(Math.abs(b.x-a.x)<1e-9&&Math.abs(b.y-a.y)<1e-9&&b.z<a.z-1e-9))continue;",
+    "  if(a.z-b.z<=3+1e-9||b.z>=30-1e-9)continue;",
+    "  if(!(b.x>=0&&b.x<=60&&b.y>=0&&b.y<=80))continue;",
+    "  let covE=0;",
+    "  for(let j=1;j<i&&!covE;j++){const c=r25[j-1],e=r25[j];if(c.r||e.r)continue;if(c.z>b.z+1e-9||e.z>b.z+1e-9)continue;if(d2sT(c.x,c.y,e.x,e.y,b.x,b.y)<=13*13)covE=1;}",
+    "  if(!covE)nPlatE++;",
+    "}",
+    "att(nPlatE===0,'006 escargot D25 : aucune plongee a plat dans la matiere ('+nPlatE+')');",
     "if(ATT.length){p('');p('ECHECS ('+ATT.length+') :');ATT.forEach(m=>p('  x '+m));}",
     "else p('TOUT EST CONFORME');",
     "return P.join(String.fromCharCode(10));"

@@ -679,7 +679,7 @@ function faoGenPocket(rect,zTop,zBot,o){
   };
   const moves=[];
   const zs=faoLevels(+zTop,zb,isFinite(+o.ap)?+o.ap:5);
-  zs.forEach(function(z){
+  zs.forEach(function(z,li){
     // Contours concentriques depuis la paroi (r) vers le centre.
     const insets=[]; let k=r;
     const cx=(R.x0+R.x1)/2, cy=(R.y0+R.y1)/2;
@@ -695,7 +695,7 @@ function faoGenPocket(rect,zTop,zBot,o){
       // 2026-10-08-004 : ENTRÉE CIRCULAIRE — un arc tangent attaque l'anneau
       // depuis l'anneau précédent, G1 à Z de coupe (aucune remontée) quand la
       // bande est déjà ouverte ; premier anneau d'un niveau = aucune ancre ->
-      // repli historique (rapide sur place + plongée).
+      // repli 006 : hélice de descente à l'angle (jamais de plongée à plat).
       let side=null;
       if(entryMode==='circ')side=faoCircEval(ax,ay,1,0,rhoCirc,pocketOK,moves,z,D,true,airPk);
       if(side){
@@ -710,8 +710,34 @@ function faoGenPocket(rect,zTop,zBot,o){
         moves.push({r:0,ent:1,x:ax,y:ay,z:z,
           arc:{i:side.cx-side.sx,j:side.cy-side.sy,cw:side.cw}});
       }else{
-        moves.push({r:1,x:ax,y:ay,z:secu});
-        moves.push({r:1,x:ax,y:ay,z:z});
+        // 2026-10-08-006 : 1re phase du niveau — JAMAIS de plongée à plat
+        // dans la matière pleine (fraise à cheval, Ø25 en tête) et jamais
+        // d'orbite (déborderait le coin légal -> surcoupe du mur) : RAMPE le
+        // long du 1er côté de l'anneau — la fraise descend EN SE DEPLACANT,
+        // centre exactement sur l'anneau (aucune surcoupe). hFrom = face
+        // déjà usinée du niveau précédent (sinon zTop).
+        const hFrom=(li>0)?zs[li-1]:+zTop;
+        const z0=(hFrom>z+1e-9)?hFrom:secu;
+        const last=moves.length?moves[moves.length-1]:null;
+        if(!last||Math.abs(last.x-ax)>1e-9||Math.abs(last.y-ay)>1e-9||Math.abs(last.z-secu)>1e-9){
+          if(last)moves.push({r:1,x:last.x,y:last.y,z:secu});
+          moves.push({r:1,x:ax,y:ay,z:secu});
+        }
+        // 2 côtés depuis le coin : le plus long porte la rampe (paliers <= 2 mm).
+        let rx=bx-ax,ry=0;
+        if(Math.abs(rx)<2&&Math.abs(by-ay)>=2){ rx=0; ry=by-ay; }
+        const L=Math.hypot(rx,ry);
+        if(z0>z+1e-9)moves.push({r:0,ent:1,x:ax,y:ay,z:z0}); // air jusqu'a la face
+        if(L>=2&&z0>z+1e-9){
+          const nR=Math.max(2,Math.ceil((z0-z)/2));
+          for(let s=1;s<=nR;s++){
+            const f=s/nR;
+            moves.push({r:0,ent:1,x:ax+rx*f,y:ay+ry*f,z:z0+(z-z0)*f});
+          }
+        }else{
+          moves.push({r:0,ent:1,x:ax,y:ay,z:z0});
+          moves.push({r:0,x:ax,y:ay,z:z});
+        }
       }
       moves.push({r:0,x:bx,y:ay,z:z});
       moves.push({r:0,x:bx,y:by,z:z});
@@ -5887,7 +5913,20 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
       faoHelixEntry(x,y,hStart,z,hr,D).slice(1).forEach(function(m){moves.push(m);});
       pushCut(x,y); // resynchronise sur l'échantillon (le tour de fond finit sur le cercle)
     }else{
-      moves.push({r:0,x:rnd(x),y:rnd(y),z:z});
+      // 2026-10-08-006 : JAMAIS de plongée à plat dans la matière brute — la
+      // fraise (Ø25 en tête) atterrirait à cheval sur la 1re phase. Hélice de
+      // descente dont l'ORBITE est réduite jusqu'à rester dans la région
+      // légale (sinon on surcouperait le mur en orbite) ; aucun orbite tenable
+      // (chaîne de face tangent au mur) -> plongée à plat au centre légal.
+      let hrF=Math.max(1,D*0.2);
+      const okOrb=function(h){
+        for(let k=0;k<8;k++){const a=k/8*2*Math.PI;if(!inside(x+h*Math.cos(a),y+h*Math.sin(a)))return false;}
+        return true;
+      };
+      while(hrF>0.5&&!okOrb(hrF))hrF-=0.5;
+      if(hrF>0.5&&okOrb(hrF))faoHelixEntry(x,y,hStart,z,hrF,D).slice(1).forEach(function(m){moves.push(m);});
+      else moves.push({r:0,x:rnd(x),y:rnd(y),z:z});
+      pushCut(x,y);
     }
   };
   // --- spirale : R(θ) = pitch·θ/2π, échantillonnage à corde s (borné),
@@ -7580,20 +7619,28 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     // une entrée — étiquetée ent (tracé bleu, comme l'hélice et l'arc circ).
     moves.push({r:0,ent:1,x:rnd(ramp.x1),y:rnd(ramp.y1),z:z});
   }else{
-    // Micro-helice si le disque minuscule passe, sinon plongee sûre :
-    // jamais de region abandonnee, jamais de plongee dans la matiere.
+    // 2026-10-08-006 : première attaque sans région ouverte — JAMAIS de
+    // plongée à plat dans la matière (fraise à cheval sur la phase) : hélice
+    // de descente depuis le spot, orbite réduite jusqu'à rester dans la
+    // région légale (sinon surcoupe du mur en orbite) ; aucune orbite
+    // tenable -> liaison + coupe (centre légal, repli historique).
     const run=Math.max(elen,yRun);
     const mhr=Math.max(0.5,run/2-0.2);
     const mx=ramp?ramp.x0:(E.iv.a+E.iv.b)/2, my=ramp?ramp.y0:E.y;
-    // secours : on preferera toujours l'helice (jeu 2 mm, sinon jeu 0) plutot
-    // qu'une plongee directe — la descente se fait de toute facon a spot (face+2).
-    const secOk=(fmode!=='ramp'&&run>0.5)&&(faoDiscClear(segsAll,mx,my,mhr,r+faoHelixJeu)||
-                                            faoDiscClear(segsAll,mx,my,mhr,r));
-    if(secOk){
-      const ms=Math.max(faoHelixSpot(mesh,mx,my,mhr,r,z,brutTop,planes),hFloor);
+    let hrH=(fmode!=='ramp'&&run>0.5&&
+      (faoDiscClear(segsAll,mx,my,mhr,r+faoHelixJeu)||
+       faoDiscClear(segsAll,mx,my,mhr,r)))?mhr:Math.max(1,D*0.2);
+    const okOrb=function(h){
+      for(let k=0;k<8;k++){const a=k/8*2*Math.PI;if(!validXY(mx+h*Math.cos(a),my+h*Math.sin(a)))return false;}
+      return true;
+    };
+    while(hrH>0.5&&!okOrb(hrH))hrH-=0.5;
+    if(hrH>0.5&&okOrb(hrH)){
+      const ms=Math.max(faoHelixSpot(mesh,mx,my,hrH,r,z,brutTop,planes),hFloor);
       const zG=gotoXY(mx,my);
       if(Math.abs(zG-ms)>1e-9)moves.push({r:0,x:rnd(mx),y:rnd(my),z:ms});
-      faoHelixEntry(mx,my,ms,z,mhr,D).slice(1).forEach(function(m){moves.push(m);});
+      faoHelixEntry(mx,my,ms,z,hrH,D).slice(1).forEach(function(m){moves.push(m);});
+      pushCut(mx,my);
     }else{
       linkTo(mx,my);
       pushCut(mx,my);
@@ -8034,7 +8081,7 @@ function faoGenGeoFinish(mesh,o){
         moves.push({r:1,x:ax,y:ay,z:liftZ});
         startZ=liftZ;
       }
-      let skip0=false;
+      let skip0=false, ramp0=false;
       if(circ){
         // Rapide arrivé à S (secu/travel), descente en Z à S, arc tangent.
         // 2026-10-08-005 : descente + arc étiquetés ent (tracé bleu).
@@ -8051,7 +8098,11 @@ function faoGenGeoFinish(mesh,o){
         for(let i=1;i<hel.length;i++)moves.push(hel[i]);
         moves.push({r:0,x:here.x,y:here.y,z:here.z});
       }else if(pk<1){
-        moves.push({r:1,x:here.x,y:here.y,z:here.z});
+        // 2026-10-08-006 : JAMAIS de plongée à plat sur le début de chaîne
+        // (fraise à cheval sur le mur) — RAMPE le long du 1er tronçon : la
+        // fraise descend EN SE DÉPLAÇANT sur la chaîne (centre légal
+        // préservé ; aucune orbite possible sans surcoupe du mur).
+        ramp0=true;
       }else{
         // Rampe : diagonale en AIR au-dessus du tracé (pk -> début), z au
         // moins égale au contact local — rapide (aucune coupe) et sûre.
@@ -8062,7 +8113,19 @@ function faoGenGeoFinish(mesh,o){
           moves.push({r:1,x:pts[i].x,y:pts[i].y,z:zz});
         }
       }
-      for(let i=skip0?1:0;i<pts.length;i++)moves.push({r:0,x:pts[i].x,y:pts[i].y,z:pts[i].z});
+      for(let i=skip0?1:0;i<pts.length;i++){
+        // 006 : 1er tronçon rampe (pk<1) — descente répartie le long du
+        // segment, puis la chaîne suit à z de coupe.
+        if(i===1&&ramp0&&pts.length>1&&startZ>here.z+1e-9){
+          const nR=Math.max(2,Math.ceil((startZ-here.z)/2));
+          for(let s=1;s<=nR;s++){
+            const f=s/nR;
+            moves.push({r:0,x:here.x+(pts[1].x-here.x)*f,
+                              y:here.y+(pts[1].y-here.y)*f,
+                              z:startZ+(here.z-startZ)*f});
+          }
+        }else moves.push({r:0,x:pts[i].x,y:pts[i].y,z:pts[i].z});
+      }
     });
     // Sortie de zone : retrait vertical sur place à secu (2e rapide de la zone).
     const lc=Z.chains[Z.chains.length-1],lp=lc.pts[lc.pts.length-1];
