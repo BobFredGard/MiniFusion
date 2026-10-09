@@ -23,7 +23,7 @@
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-09-001';
+const APP_VER='2026-10-09-002';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -34,7 +34,7 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-09-001';
+const CACHE_VER='2026-10-09-002';
 function cacheVerOK(v){
   // 2026-10-08-002 : plans de dégagement/retrait — les remontées locales de
   // l'ébauche 3D passent de +2 à +5 mm (tvZ/tvJ bornés par le plan de retrait)

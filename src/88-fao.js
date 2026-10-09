@@ -30,6 +30,12 @@
 
 const FAO_VER='32j';
 
+// 10-09-002 : distance minimale (mm) pour sauter en RAPIDE (lever + G0) —
+// en deçà, la liaison reste un G1 à la cote (segClear). Sauter à chaque
+// anneau pour quelques centimètres « c'est n'importe quoi » : on ne lève
+// que si le trajet vaut vraiment le coup (>= 50 mm).
+const faoRapideMin=50;
+
 /* ================= styles des panneaux FAO (injectés) =================
    La coque HTML/CSS du livrable généré n'est jamais éditée à la main — même
    discipline que cssRepSrc / cssTreeBody (40-interface-arbre-props.js). */
@@ -6020,15 +6026,17 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     }
     return null;
   };
-  // 011 : arrivée sur le vide — déjà à cote z et liaison valide = G1 à plat
-  // dans le vide (aucun lever) ; sinon rapide en hauteur + PLONGÉE À PLAT
-  // sur Q (disque clair par construction de voidWay).
+  // 011 : arrivée sur le vide — rapide en hauteur au-dessus de Q puis
+  // PLONGÉE À PLAT sur Q (disque clair par construction de voidWay).
+  // 10-09-002 : lever + rapide (« au plus vite en l'air ») SAUF liaison
+  // courte (< faoRapideMin) et sûre : G1 à plat dans le vide (sauter pour
+  // un hop de quelques centimètres à chaque anneau, c'est n'importe quoi).
   const arriveVoid=function(qx,qy){
     const prev=moves.length?moves[moves.length-1]:null;
-    if(prev&&!prev.r&&Math.abs(prev.z-z)<1e-9&&segClear(prev.x,prev.y,qx,qy)){
-      pushCut(qx,qy);
-      return;
-    }
+    const ddx=qx-(prev?prev.x:0), ddy=qy-(prev?prev.y:0);
+    if(prev&&!prev.r&&Math.abs(prev.z-z)<1e-9&&
+       ddx*ddx+ddy*ddy<faoRapideMin*faoRapideMin&&
+       segClear(prev.x,prev.y,qx,qy)){ pushCut(qx,qy); return; }
     const zG=gotoXY(qx,qy);
     if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(qx),y:rnd(qy),z:z});
   };
@@ -6309,23 +6317,31 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     // à la cote — ne JAMAIS accoster la chaîne depuis cette cote (une poussée
     // directe serait une plongée verticale non contrôlée) : entryTo (vide
     // d'abord) ou ramp depuis rampZ0.
-    if(!P||P.r||P.z>z+1e-9||!segClear(P.x,P.y,sx,sy)){
-      if(!entryTo(sx,sy,ex2,ey2)){
-        // 2026-10-08-007 : RAMPE le long de la chaîne de faces — la fraise
-        // descend EN COUPANT le croissant non balayé le long du mur (paliers
-        // bornés à ~2 mm, répartis sur les points disponibles), centre
-        // toujours à r du mur : aucune plongée à plat sur le brut restant,
-        // aucun gouge.
-        const nUse=Math.max(1,Math.min(seq.length-1,Math.ceil((rampZ0-z)/2)));
-        const dz=(rampZ0-z)/nUse;
-        for(let i=1;i<=nUse;i++){
-          moves.push({r:0,ent:1,x:rnd(seq[i][0]),y:rnd(seq[i][1]),
-            z:Math.round((rampZ0-dz*i)*1000)/1000});
-        }
-        i0=nUse+1;
+    // 10-09-002 : liaison courte (< faoRapideMin) et sûre = G1 à la cote
+    // (déjà sur place : aucun trajet) — pas de lever pour un hop de quelques
+    // centimètres ; au-delà : rapide en l'air (mode circ : cercle d'entrée,
+    // sinon plongée plate sûre 007) ; repli ramp le long de la chaîne.
+    const ici=P&&!P.r&&Math.abs(P.z-z)<1e-9;
+    const here=ici&&Math.abs(P.x-sx)<1e-9&&Math.abs(P.y-sy)<1e-9;
+    if(here){
+      pushCut(sx,sy);
+    }else if(ici&&(sx-P.x)*(sx-P.x)+(sy-P.y)*(sy-P.y)<faoRapideMin*faoRapideMin&&
+             segClear(P.x,P.y,sx,sy)){
+      pushCut(sx,sy);
+    }else if(!entryTo(sx,sy,ex2,ey2)){
+      // 2026-10-08-007 : RAMPE le long de la chaîne de faces — la fraise
+      // descend EN COUPANT le croissant non balayé le long du mur (paliers
+      // bornés à ~2 mm, répartis sur les points disponibles), centre
+      // toujours à r du mur : aucune plongée à plat sur le brut restant,
+      // aucun gouge.
+      const nUse=Math.max(1,Math.min(seq.length-1,Math.ceil((rampZ0-z)/2)));
+      const dz=(rampZ0-z)/nUse;
+      for(let i=1;i<=nUse;i++){
+        moves.push({r:0,ent:1,x:rnd(seq[i][0]),y:rnd(seq[i][1]),
+          z:Math.round((rampZ0-dz*i)*1000)/1000});
       }
+      i0=nUse+1;
     }
-    else pushCut(sx,sy);
     for(let i=i0;i<seq.length;i++)pushCut(seq[i][0],seq[i][1]);
     if(ch.closed)pushCut(seq[0][0],seq[0][1]);
   }
@@ -7551,12 +7567,18 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     }
     return true;
   };
-  // Liaison vers un morceau : coupe directe si le segment est sûr (stay-down,
-  // aucun move ajoute), sinon translation a vide + plongee verticale.
+  // Liaison vers un morceau : translation en l'air (l'appelant plonge ensuite,
+  // disque contrôlé par l'appelant) — SAUF liaison courte (< faoRapideMin) et
+  // sûre : G1 à la cote, aucun lever (renvoie false, l'appelant émet le G1).
+  // 10-09-002 : on ne saute en rapide que si le trajet vaut le coup (>= 50 mm).
   const linkTo=function(px,py){
-    const prev=moves[moves.length-1];
-    if(prev&&!prev.r&&segClear(prev.x,prev.y,px,py))return;
+    const prev=moves.length?moves[moves.length-1]:null;
+    const dx=px-(prev?prev.x:0), dy=py-(prev?prev.y:0);
+    if(prev&&!prev.r&&Math.abs(prev.z-z)<1e-9&&
+       dx*dx+dy*dy<faoRapideMin*faoRapideMin&&
+       segClear(prev.x,prev.y,px,py))return false;
     gotoXY(px,py);
+    return true;
   };
   const pushCut=function(x,y){
     const nx=rnd(x),ny=rnd(y),prev=moves[moves.length-1];
@@ -7828,20 +7850,37 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     return P;
   };
   const emitChunk=function(ch,px,py){
-    // Liaison d'entrée : directe si sûre (stay-down), sinon ENTRÉE CIRCULAIRE
-    // (2026-10-08-004) ; 007 : sinon plongée uniquement si le disque est déjà
-    // balayé/en air réel (hors brut) — sinon RAMPE LE LONG DU MORCEAU (la
-    // fraise descend en coupant, jamais à plat sur le brut restant). Renvoie
-    // l'index du 1er point du morceau restant à émettre.
+    // Liaison d'entrée (10-09-002) : liaison courte (< faoRapideMin) sûre =
+    // G1 à la cote (aucun lever) ; sinon ENTRÉE CIRCULAIRE (2026-10-08-004,
+    // toutes mini-passes comprises), sinon rapide + plongée plate si le
+    // disque est déjà balayé/en air réel (hors brut), 007 : sinon RAMPE LE
+    // LONG DU MORCEAU (la fraise descend en coupant, jamais à plat sur du
+    // brut restant). Renvoie l'index du 1er point du morceau restant à
+    // émettre.
     const linkIn=function(seq,ax,ay,ux,uy){
       const prev=moves[moves.length-1];
-      if(prev&&!prev.r&&segClear(prev.x,prev.y,ax,ay)){ pushCut(ax,ay); return 1; }
+      if(prev&&!prev.r&&Math.abs(prev.x-ax)<1e-9&&Math.abs(prev.y-ay)<1e-9)return 1; // déjà sur place
+      // 10-09-002 : liaison courte (< faoRapideMin) et sûre = G1 à la cote
+      // (pas de lever pour un rayon à l'autre) ; au-delà : ENTRÉE CIRCULAIRE
+      // (toutes mini-passes comprises), sinon plongée plate sûre, sinon ramp.
+      if(prev&&!prev.r&&Math.abs(prev.z-z)<1e-9&&
+         (ax-prev.x)*(ax-prev.x)+(ay-prev.y)*(ay-prev.y)<faoRapideMin*faoRapideMin&&
+         segClear(prev.x,prev.y,ax,ay)){ pushCut(ax,ay); return 1; }
       if(circEnter(ax,ay,ux,uy))return 1;
-      if(faoPlungeClear(ax,ay,moves,z,D,airCv)){ gotoXY(ax,ay); pushCut(ax,ay); return 1; }
+      if(faoPlungeClear(ax,ay,moves,z,D,airCv)){ gotoXY(ax,ay); moves.push({r:0,ent:1,x:rnd(ax),y:rnd(ay),z:z}); return 1; }
       // 007 : RAMPE le long du morceau — descente répartie (~2 mm par point,
       // bornée aux points disponibles) ; les morceaux ch.mv gardent leurs arcs
       // (interpolation hélicoïdale G2/G3 en descente = légal).
       gotoXY(ax,ay);
+      // 10-09-002 : ancre HORS la boîte brute ET disque entièrement dégagé
+      // (balayé, hors boîte ou hors silhouette — la matière ne peut pas
+      // exister hors silhouette) : descente plate directe. Une ramp
+      // remonterait au-dessus du brut après l'engagement (hélice fente) ;
+      // un disque qui mord encore la matière reste interdit (007).
+      if(airCv(ax,ay)&&faoPlungeClear(ax,ay,moves,z,D,
+         function(sx2,sy2){return airCv(sx2,sy2)||!insideSil(sx2,sy2);})){
+        moves.push({r:0,ent:1,x:rnd(ax),y:rnd(ay),z:z}); return 1;
+      }
       const hS=Math.max(faoHelixSpot(mesh,ax,ay,0,r,z,brutTop,planes),hFloor);
       if(Math.abs(hS-z)>1e-9)moves.push({r:0,ent:1,x:rnd(ax),y:rnd(ay),z:hS});
       const nUse=Math.max(1,Math.min(seq.length-1,Math.ceil((hS-z)/2)));
@@ -7916,7 +7955,12 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
         arc:{i:s.cx-s.sx,j:s.cy-s.sy,cw:s.cw}});
     };
     const side=faoCircEval(Px,Py,ux,uy,rhoCirc,validXY,moves,z,D,true,airCv);
-    if(side){
+    // 10-09-002 : l'entrée circulaire s'applique à toutes les liaisons
+    // assez longues (>= faoRapideMin, mini-passes comprises) — la descente
+    // sur l'ancre n'est admise QUE si le disque est déjà dégagé (007 : le
+    // test ponctuel de faoCircEval ne suffit pas pour PLONGER) ; sinon on
+    // retombe sur l'hélice de la pass 2 qui amène le MÊME arc tangent.
+    if(side&&faoPlungeClear(side.sx,side.sy,moves,z,D,airCv)){
       const zG=gotoXY(side.sx,side.sy);
       if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(side.sx),y:rnd(side.sy),z:z});
       emitArc(side);
@@ -8039,11 +8083,46 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       // 2026-10-08-007 : plongée à plat admise UNIQUEMENT si le disque est
       // déjà balayé ou en air réel (hors brut) — sinon on n'émet rien : le
       // 1er morceau du tour ramp le long de sa chaîne (linkIn 007).
-      linkTo(mx,my);
-      pushCut(mx,my);
+      // 10-09-002 : liaison courte sûre = G1 à la cote (pushCut) ; au-delà,
+      // lever + rapide puis plongée plate.
+      if(linkTo(mx,my))moves.push({r:0,ent:1,x:rnd(mx),y:rnd(my),z:z});
+      else pushCut(mx,my);
     }
     }
   }
+  // 10-09-002 : mini-passes — un tour fait, la fraise est passée partout :
+  // un morceau dont CHAQUE point a son disque D/2 entièrement balayé à la
+  // cote (même test que la plongée sûre 007) est déjà usiné. Le refaire =
+  // vitesse travail dans le vide (parfois même avant la fin du tour, le
+  // greedy saisit un morceau déjà couvert entre deux morceaux vierges). On
+  // le DROPE sans bouger ; la couverture est réévaluée à chaque choix (le
+  // tour couvre au fur et à mesure). Actif uniquement en ringOnly (mini-
+  // passes ET finition conventionnelle) : les passes normales gardent leur
+  // parcours historique. Deux temps : (1) filtre rapide — chaque point doit
+  // avoir une coupe à la MÊME cote à ≤ r, sinon non couvert (on ne saute
+  // jamais une bague utile) ; (2) test disque complet faoPlungeClear.
+  const chunkCovered=function(ch){
+    const zc=[];
+    for(let i=0;i<moves.length;i++){const m=moves[i];
+      if(!m.r&&Math.abs(m.z-z)<1e-9)zc.push(m);}
+    if(!zc.length)return false;
+    const r2=rrSafe*rrSafe;
+    const near=function(x,y){
+      for(let k=0;k<zc.length;k++){
+        const dx=zc[k].x-x,dy=zc[k].y-y;
+        if(dx*dx+dy*dy<=r2)return true;
+      }
+      return false;
+    };
+    const P=ch.mv?null:ch.pts, n=ch.mv?ch.mv.length:(P?P.length:0);
+    if(!n)return false;
+    for(let i=0;i<n;i++){
+      const x=ch.mv?ch.mv[i].x:P[i][0], y=ch.mv?ch.mv[i].y:P[i][1];
+      if(!near(x,y))return false;
+      if(!faoPlungeClear(x,y,moves,z,D,airCv))return false;
+    }
+    return true;
+  };
   while(remaining.length){
     const P=moves.length?moves[moves.length-1]:null,px=P?P.x:cx0,py=P?P.y:cy0;
     let pick=-1;
@@ -8058,6 +8137,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     }
     const ch=remaining[pick];
     remaining.splice(pick,1);
+    if(isRing&&chunkCovered(ch))continue; // 10-09-002 : déjà usiné — pas de coupe dans le vide
     emitChunk(ch,px,py);
   }
   sortie(moves[moves.length-1]);

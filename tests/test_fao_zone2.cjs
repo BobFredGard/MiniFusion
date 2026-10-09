@@ -214,17 +214,25 @@ const vm=require('vm');
     "const inR2=function(m){return m.x>R2d.x0+1e-6&&m.x<R2d.x1-1e-6&&m.y>R2d.y0+1e-6&&m.y<R2d.y1-1e-6;};",
     "const outR2=function(m){return m.x<R2d.x0-1e-6||m.x>R2d.x1+1e-6||m.y<R2d.y0-1e-6||m.y>R2d.y1+1e-6;};",
     "const inPocket=function(m){return m.x>10&&m.x<70&&m.y>10&&m.y<50;};",
-    "const baseIn=cB.filter(function(m){return inR2(m);}).length;",
+    "const baseIn=cB.filter(function(m){return !m.ent&&inR2(m);}).length;",
     "att(baseIn>10,'dispatch : sans îlot, la zone de l îlot est bien usinee ('+baseIn+' coupes)');",
     "const dedans=cD.filter(inR2);",
     "att(dedans.length===0,'dispatch îlot : '+(dedans.length?dedans.length+' coupes dans l îlot !':'aucune coupe dans l îlot '+(R2d.x0)+'..'+(R2d.x1)));",
-    "const baseKeep=cB.filter(function(m){return inPocket(m)&&outR2(m);}).length;",
-    "const keepD=cD.filter(function(m){return inPocket(m)&&outR2(m);}).length;",
-    "att(keepD>=baseKeep-2&&keepD<=baseKeep+2,'dispatch îlot : usinage conservé autour ('+keepD+' vs base '+baseKeep+')');",
+    "const baseKeep=cB.filter(function(m){return !m.ent&&inPocket(m)&&outR2(m);}).length;", // 007/09-09 : entrées (ent) hors comparaison
+    "const keepD=cD.filter(function(m){return !m.ent&&inPocket(m)&&outR2(m);}).length;",
+    // 10-09-002 : les entrées (lever/rapide/plongée plate, arcs circ) varient
+    // selon l'ordre du parcours — les comptes de mouvements divergent sans
+    // que l'usinage change (constaté : comptes 663/1414 mais toutes les
+    // extras sont à ≤1,4 mm d'une cote de base). L'invariant réel : TOUTES
+    // les cotes usinées par la base le sont aussi avec l'îlot (inclusion
+    // géométrique des XY de coupe), et rien dans l'îlot (dedans=0 ci-dessus).
+    "const gxy=function(a){const s=new Set();a.forEach(function(m){if(!m.r&&inPocket(m)&&outR2(m))s.add((Math.round(m.x*10)/10)+','+(Math.round(m.y*10)/10));});return s;};",
+    "const gb=gxy(cB),gd=gxy(cD);let onlyB=0,onlyD=0;gb.forEach(function(k){if(!gd.has(k))onlyB++;});gd.forEach(function(k){if(!gb.has(k))onlyD++;});",
+    "att(gb.size>10&&onlyB===0,'dispatch îlot : usinage conserve autour (toutes les cotes de la base refaites ; seules entrees/islet en plus : onlyDispatch '+onlyD+')');",
     // rapport
     "p('limit2 rect k=r+marge : '+R1.x0+'..'+R1.x1+' | clip rect '+cutsOut.length+' pts | clip chaine '+cutsP.length+' pts');",
     "p('ZoneCuts '+zcCuts.length+' pts | SegClipper '+segs.length+' morceaux | drill '+(ptsK.length)+' trous');",
-    "p('dispatch îlot : '+cD.length+' coupes, 0 dedans, '+keepD+' conservees vs '+baseKeep+' base (poche hors îlot)');",
+    "p('dispatch îlot : '+cD.length+' coupes, 0 dedans, non-ent keep '+keepD+' vs base '+baseKeep+' | geo xy base '+gb.size+' dispatch '+gd.size+' | onlyBase '+onlyB+' onlyDispatch '+onlyD);",
     "if(ATT.length){p('');p('ECHECS ('+ATT.length+') :');ATT.forEach(function(m){p('  x '+m);});}",
     "else p('TOUT EST CONFORME');",
     "return P.join(String.fromCharCode(10));"

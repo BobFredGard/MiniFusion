@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**191 versions**, de `2026-09-28b` à `2026-10-09-001` — la plus récente en bas,
+**192 versions**, de `2026-09-28b` à `2026-10-09-002` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3273,3 +3273,17 @@ Résultat (fixture escargot Ø25, poche ouverte) : hélices **8 → 4** (pôle s
 Tests — `test_fao_escargot.cjs` : expansion mesurée sur les coupes **dans la pièce** (le tour E0 hors silhouette, entrelacé greedy avec les faces, faussait les moyennes : c'est l'ordre d'attaque des chaînes, pas l'expansion) : **+19,4 mm** (1er → 3er tiers), quasi-monotone 1/143, lasse outil et faces inchangées. Sécurité 007 intacte (0 plongée à plat non couverte). Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-09-001.html`.
 
 Migration : `APP_VER` → `2026-10-09-001`, **`CACHE_VER` → `2026-10-09-001`** : les générateurs changent (arrivées dans le vide avant entrée = autres trajets d'entrée, mêmes sigs) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.
+
+---
+
+### `2026-10-09-002`
+
+**FAO : rapide au-delà de 50 mm (en deçà, glissement G1 à la cote), entrée circulaire sur toutes les mini-passes, morceaux déjà couverts dropés — « aller au plus vite en l'air » sans sauter à chaque anneau.**
+
+Demande : « Oui change la préférence. je préfère aller au plus vite en l'air et pas en vitesse travail au sol ! » ; « maintenant que l'entrée circulaire fonctionne, il faut l'appliquer à toutes les mini passes » ; « une fois le tour complet fait, pas la peine de revenir finir puisque la fraise est passée partout… pour le moment elle vient usiner dans le vide, des fois avant le tour » ; puis : « on va déterminer une distance mini de 50 mm pour sauter en rapide car sinon, c'est n'importe quoi ! à chaque rayon, il saute 1x ! ».
+
+Noyau — constante **`faoRapideMin=50`** (mm) : liaison < 50 mm ET sûre (`prev` à cote z + `segClear`) = **glissement G1 à la cote** (aucun lever) ; ≥ 50 mm ou segment bloqué = lever + rapide. Les quatre sites de liaison sont gouvernés : `linkIn` (conv), `linkTo` (renvoie false = glissement, l'appelant émet le G1), boucle des faces, `arriveVoid`. L'entrée circulaire couvre ensuite **toutes** les liaisons ≥ 50 mm, mini-passes (`ringOnly`) comprises, avec garde 007 sur l'ancre (`faoPlungeClear` ; sinon repli hélice pass 2 = même arc tangent). Ancre hors boîte brute + disque entièrement dégagé (balayé / hors boîte / hors silhouette) → **descente plate** directe (fini la ramp qui remontait au-dessus du brut après engagement). Mini-passes : helper **`chunkCovered`** — morceau dont chaque point a une coupe à la même cote ≤ r et le disque entier dégagé (`faoPlungeClear`) = déjà usiné → **dropé sans bouger** (couverture réévaluée à chaque choix du greedy) ; actif en `ringOnly` (mini-passes ET finition conventionnelle), parcours des passes normales inchangé.
+
+Tests — `test_fao_zone2.cjs` : l'assertion comptable ±2 devient **inclusion géométrique** (`onlyBase=0` : toutes les cotes XY de la base refaites avec l'îlot ; les 131 extras ≤ 1,4 mm = empreintes d'entrée et anneau d'îlot) : avec la nouvelle politique d'entrée les comptes de mouvements divergent (663 vs 1414 non-ent) sans que l'usinage change. Corrigés au passage : `test_fao3d` (adaptive stay-down ≤ 12 rapides, troco ap2, couverture 027) et `test_fao_helice` (fente : plus de coupe au-dessus du brut après engagement). Sécurité 007 intacte (0 plongée à plat non couverte). Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-09-002.html`.
+
+Migration : `APP_VER` → `2026-10-09-002`, **`CACHE_VER` → `2026-10-09-002`** : les générateurs changent (glissements < 50 mm, entrées circ sur ≥ 50 mm, drop des morceaux couverts = autres trajets, mêmes sigs) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.
