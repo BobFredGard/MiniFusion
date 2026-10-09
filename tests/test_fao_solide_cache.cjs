@@ -42,9 +42,13 @@ const vm=require('vm');
     faoPrevOn=true;
 
     let gen=0;
-    const origG=faoGenRough3D;
-    faoGenRough3D=function(){ gen++;
-      return [{r:0,x:10,y:10,z:20},{r:0,x:80,y:10,z:20},{r:0,x:80,y:60,z:20}]; };
+    // 2026-10-09-005 : le corps de l'ébauche est le générateur faoGenRough3DIt
+    // (faoGenRough3D n'est plus qu'un drain synchrone) — on intercepte L'entrée
+    // réelle du calcul, comme avant.
+    const origGI=faoGenRough3DIt;
+    faoGenRough3DIt=function*(){ gen++;
+      const fake=[{r:0,x:10,y:10,z:20},{r:0,x:80,y:10,z:20},{r:0,x:80,y:60,z:20}];
+      yield fake; return fake; };
 
     /* ==== 1. solide pas construit : PAS de clé -> PAS de triangle ==== */
     faoOpMovesPurge(); faoMovesReset();
@@ -106,7 +110,7 @@ const vm=require('vm');
     A(mvE.length===mvR.length,'edition : meme nombre de points qu a la generation');
 
     faoOpMovesPurge(); faoMovesReset();
-    faoGenRough3D=origG;
+    faoGenRough3DIt=origGI;
     faoMeshFromBody=mA;
     return P;
   })()`,ctx);

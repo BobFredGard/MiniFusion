@@ -2391,7 +2391,11 @@ function faoMovesStat(op,job){
 }
 
 /* ----- dispatch : une op -> moves (outil de sa fiche + limite rect) ----- */
-function faoOpMoves(op,job){
+// 2026-10-09-005 : corps en générateur (faoOpMovesIt) — l'ébauche 3D cède le
+// fil après chaque niveau (yield* faoGenRough3DIt) pour le dessin progressif.
+// faoOpMoves() = drain SYNCHRONE strictement équivalent (appels classiques,
+// tests, G-code, estimation, aperçu canonique) ; faoOpMovesStream() = flux.
+function* faoOpMovesIt(op,job){
   // Prime le maillage AVANT la clé : faoSetupFp lit les maillages des corps, il
   // faut qu'ils existent avant de calculer la clé (sinon 'nb' = clé fausse).
   if(op&&(op.type==='rough3d'||op.type==='geofinish')){ try{ faoActiveMesh(job); }catch(e){} }
@@ -2433,7 +2437,7 @@ function faoOpMoves(op,job){
     // bulge supprimé : la sonde (A/B) montrait une garde identique avec ou
     // sans compensation parent — l'arrondi tangent reste hors mur (≥0.48).
     const brutTop=(job&&job.stock&&isFinite(+job.stock.z1))?+job.stock.z1:null;
-    if(am&&am.mesh)mv=faoGenRough3D(am.mesh,am.box,+op.ztop,+op.zbot,
+    if(am&&am.mesh)mv=yield* faoGenRough3DIt(am.mesh,am.box,+op.ztop,+op.zbot,
       {ap:+op.ap,ae:isFinite(+op.ae)?+op.ae:D*0.6,toolD:D,
        radial:RA.radial,axial:RA.axial,
        minipasses:isFinite(+op.minipasses)?+op.minipasses:0,
@@ -2505,6 +2509,45 @@ function faoOpMoves(op,job){
   if(ck!==null)faoMovesSave(job,op,ck,mv); // persistance : prochaine ouverture = lecture
   if(op){ try{ op.stale=false; }catch(e){} } // generation fraiche
   return mv;
+}
+function faoOpMoves(op,job){
+  // Drain SYNCHRONE : identique (au résultat près) à l'ancienne fonction.
+  const it=faoOpMovesIt(op,job);
+  let r; while(!(r=it.next()).done){}
+  return r.value;
+}
+function faoYieldUI(){
+  // Cède la main au navigateur (rAF) entre deux niveaux de l'ébauche, pour
+  // que les courbes dessinées soient visibles — repli setTimeout / micro-tâche
+  // (harnais de tests : rAF no-op -> la garde temporisée débloque le flux).
+  // Jamais bloquant : premier arrivé gagne, le reste est sans effet.
+  return new Promise(function(res){
+    let done=false;
+    const fin=function(){ if(done)return; done=true; res(); };
+    try{
+      if(typeof requestAnimationFrame==='function'){
+        requestAnimationFrame(fin);
+        if(typeof setTimeout==='function')setTimeout(fin,50); else fin();
+      }else if(typeof setTimeout==='function')setTimeout(fin,0);
+      else fin();
+    }catch(e){ fin(); }
+  });
+}
+function faoOpMovesStream(op,job,onChunk){
+  // Même corps que faoOpMoves, mais en FLUX : à chaque yield (niveau de
+  // l'ébauche 3D), on passe le fragment au dessinateur puis on rend la main
+  // au navigateur. Renvoie une Promise<moves> — résultat final identique à la
+  // version synchrone (le corps ne dépend pas du découpage des yields).
+  const it=faoOpMovesIt(op,job);
+  return (async function(){
+    let r=it.next();
+    while(!r.done){
+      if(onChunk){ try{ onChunk(r.value); }catch(e){} }
+      await faoYieldUI();
+      r=it.next();
+    }
+    return r.value;
+  })();
 }
 function faoJobMoves(job){
   // Regroupe par outil (changement d'outil si l'id change). Les ops
@@ -2987,7 +3030,7 @@ function faoClearPreview(){
   faoPrevGroup=null;
 }
 let faoPrevMissing=0; // ops sans parcours en memoire lors du dernier redraw en LECTURE
-function faoSegSplit(moves,clip){
+function faoSegSplit(moves,clip,prev0){
   // Segments par PAIRE CONSECUTIVE de la séquence réelle : coupe->coupe en
   // vert, tout passage par un rapide en rouge. Aucune liaison fantôme.
   // `clip` (zone de l'opération) ne borne QUE la coupe : la zone est une
@@ -2995,10 +3038,13 @@ function faoSegSplit(moves,clip){
   // traverser — retour chercher un outil, liaison entre opérations.
   // 2026-10-08-004 : PLOONGÉES en bleu — un G1 strictement vertical qui
   // descend (plongée d'outil) sort du vert coupe ; les G0 restent rouges.
-  // -> {cut:[x,y,z,...], rap:[x,y,z,...], plg:[x,y,z,...]}
-  const out={cut:[],rap:[],plg:[]};
-  if(!moves||!moves.length)return out;
-  let prev=null;
+  // `prev0` (2026-10-09-005) : move précédent fourni par l'appelant — le
+  // premier segment d'un découpage incrémental n'est jamais fantôme. Le
+  // dernier move est renvoyé (`out.prev`) pour enchaîner le fragment suivant.
+  // -> {cut:[x,y,z,...], rap:[x,y,z,...], plg:[x,y,z,...], prev:move|null}
+  const out={cut:[],rap:[],plg:[],prev:null};
+  if(!moves||!moves.length){ out.prev=(prev0===undefined)?null:prev0; return out; }
+  let prev=(prev0===undefined)?null:prev0;
   const seg=function(arr,ax,ay,az,bx,by,bz,coupe){
     if(!clip||!coupe){ arr.push(ax,ay,az,bx,by,bz); return; }
     clip(ax,ay,az,bx,by,bz,function(x1,y1,z1,x2,y2,z2){ arr.push(x1,y1,z1,x2,y2,z2); });
@@ -3022,7 +3068,43 @@ function faoSegSplit(moves,clip){
     }
     prev=m;
   });
+  out.prev=prev;
   return out;
+}
+function faoPrevAdd(group,sp){
+  // Ajoute le résultat d'un faoSegSplit au groupe de l'aperçu : coupe vert
+  // 30d158, rapides rouges ff453a (30% de transparence), plongées bleues
+  // 0a84ff (2026-10-08-004). Renvoie les objets créés (pour retrait provisoire
+  // — 2026-10-09-005, dessin progressif) ; échec silencieux (stubs/tests).
+  const objs=[];
+  if(!group||!sp)return objs;
+  const add=function(arr,color,alpha){
+    if(arr.length<6)return;
+    try{
+      const g=new THREE.BufferGeometry();
+      g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(arr),3));
+      const mat=new THREE.LineBasicMaterial({color:color});
+      // Rapides en transparence : ils ne doivent pas masquer le parcours vert.
+      if(alpha!==undefined&&alpha<1){ mat.transparent=true; mat.opacity=alpha; mat.depthWrite=false; }
+      const ls=new THREE.LineSegments(g,mat);
+      group.add(ls); objs.push(ls);
+    }catch(e){}
+  };
+  add(sp.cut,0x30d158);
+  add(sp.rap,0xff453a,0.3);
+  add(sp.plg||[],0x0a84ff);
+  return objs;
+}
+function faoPrevDrop(objs){
+  // Retire et libère les objets dessinés (traits provisoires remplacés par le
+  // rendu canonique final). Silencieux sur les stubs/tests.
+  if(!objs||!objs.length)return;
+  for(let i=0;i<objs.length;i++){
+    const o=objs[i];
+    try{ if(o&&o.parent)o.parent.remove(o); }catch(e){}
+    try{ if(o&&o.geometry&&o.geometry.dispose)o.geometry.dispose(); }catch(e){}
+    try{ if(o&&o.material&&o.material.dispose)o.material.dispose(); }catch(e){}
+  }
 }
 function faoRefreshPreview(mode){
   // mode='calcule' : SEUL cas ou l'on PRODUIT les parcours absents — réservé à
@@ -3038,27 +3120,10 @@ function faoRefreshPreview(mode){
     if(typeof THREE==='undefined'||typeof scene==='undefined'||!scene)return 0;
     faoPrevGroup=new THREE.Group(); faoPrevGroup.name='faoPreview';
     const mk=function(moves,clip){
-      // Coupe en vert, rapides en rouge — faoSegSplit borne la coupe à la zone
-      // et laisse les G0 traverser librement (cf. faoSegSplit).
+      // Coupe en vert, rapides en rouge, plongées en bleu — faoSegSplit borne la
+      // coupe à la zone et laisse les G0 traverser librement (cf. faoSegSplit).
       if(!moves||!moves.length)return;
-      try{
-        const sp=faoSegSplit(moves,clip);
-        const cut=sp.cut, rap=sp.rap;
-        const add=function(arr,color,alpha){
-          if(arr.length<6)return;
-          const g=new THREE.BufferGeometry();
-          g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(arr),3));
-          const mat=new THREE.LineBasicMaterial({color:color});
-          // Rapides en transparence : ils ne doivent pas masquer le parcours vert.
-          if(alpha!==undefined&&alpha<1){ mat.transparent=true; mat.opacity=alpha; mat.depthWrite=false; }
-          faoPrevGroup.add(new THREE.LineSegments(g,mat));
-        };
-        add(cut,0x30d158);
-        add(rap,0xff453a,0.3);
-        // 2026-10-08-004 : plongées (G1 vertical descendant) en BLEU — rouge
-        // = rapide, vert = usinage, bleu = plongée d'outil.
-        add(sp.plg||[],0x0a84ff);
-      }catch(e){}
+      try{ faoPrevAdd(faoPrevGroup,faoSegSplit(moves,clip)); }catch(e){}
     };
     faoSeqSafe(job,seule).forEach(function(b){
       const op=b.op;
@@ -3089,6 +3154,90 @@ function faoPreviewGenerate(){
   faoOpMovesPurge();
   faoStaleClear();
   const n=faoRefreshPreview('calcule');
+  faoTouch();
+  faoPrevStale=false; faoStaleUI();
+  try{ if(typeof faceEl!=='undefined'&&faceEl)faceEl.textContent='FAO : '+n+' points de parcours.'+(n?'':' Aucune trajectoire.'); }catch(e){}
+  return n;
+}
+
+/* ----- dessin PROGRESSIF (2026-10-09-005) : les courbes apparaissent pendant
+   la génération au lieu d'un écran figé de ~60 s. Même séquence que
+   faoPreviewGenerate (purge -> calcul -> rendu canonique final), mais chaque
+   niveau de l'ébauche 3D rend la main au navigateur et dessine ses courbes
+   (traits provisoires bruts, remplacés in fine par le rendu CANONIQUE
+   faoRefreshPreview('calcule') — source unique de vérité, strictement
+   identique à l'ancien flux synchrone). Un rafraîchissement concurrent
+   (ouverture, modification, ⚠) prend la main via le jeton faoStreamTok. */
+let faoStreamTok=0;
+async function faoRefreshPreviewStream(){
+  faoClearPreview();
+  if(!faoPrevOn)return 0;
+  const job=faoDoc();
+  if(typeof THREE==='undefined'||typeof scene==='undefined'||!scene)return 0;
+  const tok=++faoStreamTok;
+  faoPrevGroup=new THREE.Group(); faoPrevGroup.name='faoPreview';
+  scene.add(faoPrevGroup);
+  if(typeof faoVw!=='undefined'&&faoVw)faoPrevGroup.visible=false; // viewer : traces restent cachées
+  const ops=((job&&job.ops)||[]).filter(function(op){ return op&&op.on!==false; });
+  for(let i=0;i<ops.length;i++){
+    if(tok!==faoStreamTok)return -1; // un autre rafraîchissement a pris la main
+    const op=ops[i];
+    try{ if(typeof faceEl!=='undefined'&&faceEl)faceEl.textContent='FAO : génération '+(i+1)+'/'+ops.length+'…'; }catch(e){}
+    try{
+      if(op.type==='rough3d'||op.type==='geofinish'){
+        // Long : les yields (un par niveau / mini-passe / finition) déposent
+        // les fragments au fur et à mesure — traits PROVISOIRES (bruts, sans
+        // arrondi/zone/sécurité rapide) qui seront tous remplacés par le rendu
+        // canonique final.
+        const st={n:0,prev:null};
+        await faoOpMovesStream(op,job,function(marr){
+          if(tok!==faoStreamTok||!marr||marr.length<=st.n)return;
+          const delta=(op.hidden===true)?null:marr.slice(st.n);
+          st.n=marr.length;
+          if(!delta)return;
+          try{
+            const sp=faoSegSplit(delta,faoSegClipper(op,job),st.prev);
+            st.prev=sp.prev;
+            faoPrevAdd(faoPrevGroup,sp);
+          }catch(e){}
+        });
+      }else{
+        // Opérations 2.5D : calcul (coups de cache = instantané) + dessin.
+        const mv=faoOpMoves(op,job);
+        if(mv&&mv.length&&op.hidden!==true)
+          try{ faoPrevAdd(faoPrevGroup,faoSegSplit(mv,faoSegClipper(op,job))); }catch(e){}
+      }
+    }catch(e){}
+    await faoYieldUI();
+  }
+  if(tok!==faoStreamTok)return -1;
+  // Rendu CANONIQUE : tout est en mémoire (coups de cache) — c'est exactement
+  // ce que le bouton faisait en un bloc : rapides sécurisés, arrondis, zones,
+  // op. masquées, faoPrevMissing… strictement identique au flux synchrone.
+  try{ if(typeof faceEl!=='undefined'&&faceEl)faceEl.textContent='FAO : affichage…'; }catch(e){}
+  return faoRefreshPreview('calcule');
+}
+async function faoPreviewGenerateAsync(){
+  // Version FLUX de faoPreviewGenerate() : même séquence, mais les courbes
+  // apparaissent au fur et à mesure. Utilisée UNIQUEMENT par le bouton
+  // « Tout régénérer » (l'ancien chemin synchrone reste en place pour
+  // faoRegenFlush, l'ouverture de document et les tests).
+  faoPrevOn=true;
+  if(!faoSolidSettled()){
+    // Generer maintenant produirait une trajectoire (et une cle) sur le MAILLAGE DE
+    // REPLI : elle serait rejetee des la fin du rejeu. On diffère, on le dit.
+    faoRegenWhenSettled=true;
+    try{ if(typeof faceEl!=='undefined'&&faceEl)faceEl.textContent='FAO : le solide exact n\'est pas encore en place (rejeu en cours) — régénération automatique à la fin du rejeu.'; }catch(e){}
+    return 0;
+  }
+  faoOpMovesPurge();
+  faoStaleClear();
+  let n=0;
+  try{ n=await faoRefreshPreviewStream(); }catch(e){
+    n=-1;
+    try{ if(typeof console!=='undefined'&&console&&console.log)console.log('faoPreviewGenerateAsync',e); }catch(e2){}
+  }
+  if(n<0)return 0; // supersede : un autre rafraîchissement a déjà peint
   faoTouch();
   faoPrevStale=false; faoStaleUI();
   try{ if(typeof faceEl!=='undefined'&&faceEl)faceEl.textContent='FAO : '+n+' points de parcours.'+(n?'':' Aucune trajectoire.'); }catch(e){}
@@ -4269,8 +4418,21 @@ function faoInitUI(){
       bg.title='Régénère TOUTES les trajectoires (même celles à jour). Les traces'
         +' masquées ligne par ligne le restent — masquez-les à la main.';
       bg.onclick=function(){
-        faoPreviewGenerate();
-        try{ faoRefreshFaoUI(); }catch(e){}
+        // 2026-10-09-005 : flux progressif — les courbes apparaissent pendant
+        // la génération (le bouton est grisé le temps du calcul).
+        if(bg.disabled)return;
+        bg.disabled=true;
+        const done=function(){ try{ bg.disabled=false; }catch(e){} };
+        try{
+          Promise.resolve(faoPreviewGenerateAsync()).then(function(){
+            try{ faoRefreshFaoUI(); }catch(e){}
+            done();
+          },function(e){
+            try{ if(typeof console!=='undefined'&&console&&console.log)console.log('regen',e); }catch(e2){}
+            try{ faoRefreshFaoUI(); }catch(e){}
+            done();
+          });
+        }catch(e){ done(); }
       };
       cnt.appendChild(bg);
       cnt.appendChild(grp('Export'));
@@ -6520,7 +6682,12 @@ function faoUpFloors(mesh,z0,z1){
   res.sort(function(p,q){return q-p;});
   return res;
 }
-function faoGenRough3D(mesh,box,ztop,zbot,o){
+// 2026-10-09-005 : le corps est un GÉNÉRATEUR (faoGenRough3DIt) qui « cède le
+// fil » après chaque niveau/mini-passe/finition (yield moves) — l'aperçu
+// dessine les courbes au fur et à mesure (faoOpMovesStream). L'appel classique
+// faoGenRough3D() reste SYNCHRONE (drain complet, résultat strictement
+// identique) : tests, G-code, estimation et le rendu canonique l'utilisent.
+function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
   // Ébauche 3D en MODE TROCOÏDAL UNIQUE (lot 2026-10-03-004) : pelage à ap
   // constant (ae ≤ 0.25*D), trochoïdes G2/G3 clampées en Y dans les goulets,
   // liaisons sans retrait, ombre EXACTE aux plans vertex = brut restant sans
@@ -6622,7 +6789,10 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
     }
   }
   faoSliceCache={mesh:M,map:{}};
-  plan.forEach(function(L,li){
+  // forEach -> for (yield interdit dans une closure) : chaque itération de
+  // niveau cède le fil au flux via yield moves (dessin progressif 005).
+  for(let li=0;li<plan.length;li++){
+    const L=plan[li];
     // Entrée depuis z+pas (rainure du dessus déjà ouverte, descente en avance
     // plongée) : l'hélice ne refait jamais toute la hauteur depuis la sécu.
     const zFrom=Math.min(secu,L.z+ap);
@@ -6639,6 +6809,7 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
     // 2026-10-08-003 : sens (avalant = sens de coupe constant) porte par opt.
     if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR});
     else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR});
+    yield moves; // dessin progressif 005 : pelage du niveau fini
     // MINI-PASSES (retour 4/10) : après le pelage du niveau, contour des parois
     // entre ce plan et le plan du dessus : profondeurs k*h/(nb+1) sous le plan
     // du dessus (strictement entre les deux, jamais dessus), décalage radial
@@ -6650,6 +6821,7 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
         const zm=Math.round((bandTop-k*h/(nb+1))*1000)/1000;
         const s=RA.radial;
         faoRoughAdaptiveLevel(M,BB,zm,D,D/2+s,secu,Math.min(secu,bandTop),ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvZ,sens:o.sens,entryR:o.entryR});
+        yield moves; // dessin progressif 005 : mini-passe k
       }
     }
     // FINITION DES PAROIS (8/10) : UNIQUEMENT sur `finIdx` = niveau le plus
@@ -6679,10 +6851,11 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
         for(let k=1;k<=nf;k++){
           const off=RA.radial*(nf-k)/nf;
           faoRoughAdaptiveLevel(M,BB,zj,D,D/2+off,secu,zF,ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvJ,sens:o.sens,entryR:o.entryR});
+          yield moves; // dessin progressif 005 : finition k
         }
       }
     }
-  });
+  }
   faoSliceCache=null;
   if(swapped){
     for(let i=0;i<moves.length;i++){
@@ -6692,6 +6865,14 @@ function faoGenRough3D(mesh,box,ztop,zbot,o){
     }
   }
   return moves;
+}
+function faoGenRough3D(mesh,box,ztop,zbot,o){
+  // Appel SYNCHRONE (identique à l'ancienne fonction) : draine le générateur
+  // jusqu'au bout. Le flux progressif 005 passe par faoGenRough3DIt via
+  // faoOpMovesIt (yield*).
+  const it=faoGenRough3DIt(mesh,box,ztop,zbot,o);
+  let r; while(!(r=it.next()).done){}
+  return r.value;
 }
 function faoTrochSlot(moves,xa,xb,y,z,D,aeA,yMin,yMax){
   // Trochoïde en VRAIS arcs G2/G3 le long d'un goulet : chaque boucle = 4

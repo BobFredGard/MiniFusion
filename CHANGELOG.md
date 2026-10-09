@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**194 versions**, de `2026-09-28b` à `2026-10-09-004` — la plus récente en bas,
+**195 versions**, de `2026-09-28b` à `2026-10-09-005` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3319,3 +3319,19 @@ Résultat (pièce réelle `Cavité Usinage`, T6 D25, minis 4 — flux identique,
 Différentiel — `diff_core.cjs` : `faoDistSeg` **20 000/20 000** (exact sans `tMax`, booléen avec `tMax`) + `faoPlungeClear` **3 000/3 000** vs références O(n) d'origine ; canari escargot **identique bit-à-bit** (rawEnt 560 / postEnt 1050 / postArc 14110 / postN 52782, `diag:0`). Sécurité 007/008 intacte. Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-09-004.html`.
 
 Migration : `APP_VER` → `2026-10-09-004`, **`CACHE_VER` → `2026-10-09-004`** : les générateurs changent (index/rejets/couronnes = code des faoGen* — sortie attendue identique, tampons régénérés par sécurité) ; régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.
+
+---
+
+### `2026-10-09-005`
+
+**FAO : les courbes apparaissent AU FUR ET À MESURE pendant la génération (l'écran n'est plus figé ~60 s) — ébauche 3D en générateur qui cède le fil après chaque niveau, dessin incrémental provisoire, rendu canonique final strictement identique.**
+
+Demande : « peut-on avoir les courbes qui apparaissent au fur et à mesure ? » — clarification : *pendant* la génération FAO (et non à l'ouverture ni en mode visualiseur).
+
+Architecture — `faoGenRough3D` devient le **générateur `faoGenRough3DIt`** : `plan.forEach` → `for` (yield interdit en closure), `yield moves` après chaque pelage de niveau, mini-passe et finition ; la fonction `faoGenRough3D` reste le **drain synchrone** (tests, G-code, estimation : inchangés). `faoOpMoves` → `faoOpMovesIt` (`yield*` de l'ébauche) + drain sync `faoOpMoves` + **`faoOpMovesStream(op,job,onChunk)`** (Promise qui passe chaque fragment au dessinateur puis rend la main via `faoYieldUI` : rAF + garde temporisée 50 ms — le rAF no-op du harnais de tests ne bloque jamais). `faoSegSplit(moves,clip,prev0)` : 3ᵉ paramètre optionnel (le premier segment d'un découpage incrémental n'est jamais fantôme) + `out.prev` pour enchaîner.
+
+Dessin — `faoRefreshPreviewStream()` : miroir async de `faoRefreshPreview('calcule')` avec jeton `faoStreamTok` (une ouverture/modification/⚠ concurrent(e) prend la main), traits **provisoires** par fragment (bruts — ni arrondi, ni zone, ni rapides sécurisés — op. masquées non dessinées), opérations 2.5D dessinées à leur tour ; fin du flux = **rendu canonique** `faoRefreshPreview('calcule')` en coups de cache (source unique de vérité : même sortie que l'ancien bloc synchrone). Helpers partagés **`faoPrevAdd`/`faoPrevDrop`** (le `mk` du rendu canonique *est* `faoPrevAdd` : couleurs vert `30d158` / rouge `ff453a` 30 % / bleu `0a84ff` inchangées). **`faoPreviewGenerateAsync()` réservée au bouton « Tout régénérer »** (grisé pendant le flux, progression « FAO : génération i/n… » dans la barre d'état) ; `faoPreviewGenerate()` synchrone intacte pour `faoRegenFlush`, l'ouverture de document et les tests.
+
+Tests — `stream_eq.cjs` **16/16** : drain ≡ synchrone (12 yields, 16 390 ≡ 16 390 pts), `faoOpMovesStream` ≡ `faoOpMoves` (2 179 ≡ 2 179 avec `limit` rect → zone), **cache hit ≡ calcul direct** (`faoZoneServe` idempotent), pipeline `faoPreviewGenerateAsync` ≡ `faoPreviewGenerate` (**2 422 ≡ 2 422 pts, 101 921 ≡ 101 921 chars de parcours**), bouton grisé puis réactivé, garde rAF no-op (378 ms, sans blocage). `test_fao_solide_cache.cjs` : interception portée sur `faoGenRough3DIt` (l'entrée réelle du calcul — « 1 seul calcul » intact). Pièce réelle `Cavité Usinage` : **107 873 moves, stats pc/fi/npTail identiques, 66,2 s** (surcoute du drain ≈ 0). Run complet **73/73** ; canari escargot identique bit-à-bit (postN 52782, `diag:0`) ; `diff_core` **20 000/20 000** + **3 000/3 000** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-09-005.html`.
+
+Migration : `APP_VER` → `2026-10-09-005`, **`CACHE_VER` → `2026-10-09-005`** : `faoGen*` restructurés en générateurs (sortie prouvée identique par `stream_eq`, tampons régénérés par sécurité — règle « le code qui produit change »). Badge **V0.1.2 inchangé**.
