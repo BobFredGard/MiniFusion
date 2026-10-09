@@ -5953,10 +5953,16 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     }
     return true;
   };
+  // 011 : VIDE D'ABORD — vraie coupe déjà émise à cote z dans CE niveau (le
+  // tableau moves est partagé entre niveaux : le drapeau est local à
+  // faoSpiralLevel). Tant qu'il est faux (1re attaque du niveau), rien n'a
+  // encore été balayé à cette cote : inutile de chercher du vide.
+  let sweptNow=false;
   const pushCut=function(x,y){
     const nx=rnd(x),ny=rnd(y),prev=moves[moves.length-1];
     if(prev&&!prev.r&&Math.abs(prev.x-nx)<1e-9&&Math.abs(prev.y-ny)<1e-9)return;
     moves.push({r:0,x:nx,y:ny,z:z});
+    sweptNow=true;
   };
   // --- ENTRÉE HÉLICE (obligation 1re face) : spot = 2 mm au-dessus de la
   // matière restante sous le disque, plancher hFloor = min(secu, zFrom+2)
@@ -5985,6 +5991,47 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   const airSp=function(x,y){
     return x<B.x0-1e-9||x>B.x1+1e-9||y<B.y0-1e-9||y>B.y1+1e-9;
   };
+  // 011 : VIDE D'ABORD (feedback « après la spirale tu rentres en pleine
+  // matière en rampe circulaire alors qu'il y a plein de vide avant ») —
+  // après la spirale tout le plancher du niveau est du vide : avant toute
+  // hélice/rampe en matière, on cherche un point Q à portée de la cible où
+  // le disque D/2 est ENTIÈREMENT balayé (ou en air), ON Y PLONGE À PLAT
+  // (sûr par construction : faoPlungeClear, test 007), puis on accoste la
+  // cible à cote z (liaison latérale à travers le déjà-usiné, centre
+  // toujours dans la région = aucun gouge). L'entrée circulaire (arc
+  // tangent) vient ensuite, depuis le vide. Rejeté si le vide n'est pas
+  // joignable à cote (mur entre Q et la cible = gouge) : repli hélice /
+  // rampe inchangé (marge E0, 1re attaque).
+  const voidWay=function(tx,ty){
+    if(!sweptNow)return null;
+    const step=Math.max(2,D*0.12),Rmax=Math.min(45,Math.max(18,D*1.6));
+    const maxK=Math.ceil(Rmax/step);
+    for(let k=1;k<=maxK;k++){
+      const rad=k*step;
+      const n=Math.max(6,Math.ceil(2*Math.PI*rad/step));
+      for(let j=0;j<n;j++){
+        const a=j/n*2*Math.PI;
+        const qx=tx+rad*Math.cos(a),qy=ty+rad*Math.sin(a);
+        if(!inside(qx,qy))continue;
+        if(!segClear(qx,qy,tx,ty))continue;
+        if(!faoPlungeClear(qx,qy,moves,z,D,airSp))continue;
+        return {x:qx,y:qy};
+      }
+    }
+    return null;
+  };
+  // 011 : arrivée sur le vide — déjà à cote z et liaison valide = G1 à plat
+  // dans le vide (aucun lever) ; sinon rapide en hauteur + PLONGÉE À PLAT
+  // sur Q (disque clair par construction de voidWay).
+  const arriveVoid=function(qx,qy){
+    const prev=moves.length?moves[moves.length-1]:null;
+    if(prev&&!prev.r&&Math.abs(prev.z-z)<1e-9&&segClear(prev.x,prev.y,qx,qy)){
+      pushCut(qx,qy);
+      return;
+    }
+    const zG=gotoXY(qx,qy);
+    if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(qx),y:rnd(qy),z:z});
+  };
   // 007 : hauteur de départ communiquée au RAMPAGE quand entryTo renvoie false.
   let rampZ0=0;
   const entryTo=function(x,y,ux,uy){
@@ -6003,13 +6050,31 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
       // EN COUPANT sur l'arc tangent, jamais à plat sur du brut restant.
       const side=faoCircEval(x,y,ux||0,uy||0,rhoCirc,inside,moves,z,D,true,airSp);
       if(side){
-        const zG=gotoXY(side.sx,side.sy);
         if(faoPlungeClear(side.sx,side.sy,moves,z,D,airSp)){
+          const zG=gotoXY(side.sx,side.sy);
           if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(side.sx),y:rnd(side.sy),z:z});
           moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:z,
             arc:{i:side.cx-side.sx,j:side.cy-side.sy,cw:side.cw}});
-        }else{
-          // 010 : ramp le long de l'arc S -> P (descente en coupant, paliers ≤ 2 mm)
+          return true;
+        }
+        // 011 : VIDE D'ABORD — l'ancre est à la limite du déjà-usiné mais le
+        // vide est joignable à proximité : on plonge À PLAT sur Q (clair),
+        // on accoste l'ancre à cote z, puis l'arc tangent accoste la cible
+        // — l'entrée circulaire depuis le vide, jamais une rampe en matière.
+        const Qs=voidWay(side.sx,side.sy);
+        if(Qs){
+          arriveVoid(Qs.x,Qs.y);
+          pushCut(side.sx,side.sy);
+          moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:z,
+            arc:{i:side.cx-side.sx,j:side.cy-side.sy,cw:side.cw}});
+          return true;
+        }
+        // 010 : AUCUN vide joignable (ex. ancre en marge, mur entre le vide et
+        // la cible) -> ramp le long de l'arc S -> P (descente en coupant,
+        // paliers ≤ 2 mm) : la descente se fait EN COUPANT sur l'arc tangent,
+        // jamais à plat sur du brut restant.
+        {
+          const zG=gotoXY(side.sx,side.sy);
           const Rr=Math.hypot(side.sx-side.cx,side.sy-side.cy);
           let a0=Math.atan2(side.sy-side.cy,side.sx-side.cx);
           let a1=Math.atan2(y-side.cy,x-side.cx);
@@ -6045,23 +6110,32 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
           let okA=true;
           for(let k=0;k<pts2.length;k++)if(!inside(pts2[k][0],pts2[k][1])){okA=false;break;}
           if(!okA)continue;
-          const zG=gotoXY(s2.sx,s2.sy);
           if(faoPlungeClear(s2.sx,s2.sy,moves,z,D,airSp)){
             // 009 : ancre déjà enlevée (ré-entrée de spirale) -> descente
             // verticale sûre, puis l'arc tangent accoste le tracé.
+            const zG=gotoXY(s2.sx,s2.sy);
             if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(s2.sx),y:rnd(s2.sy),z:z});
           }else{
-            // 008/009 : 1re attaque (matière pleine) -> hélice à orbite
-            // légale sur l'ancre, engagement progressif, jamais à plat.
-            let hrH=pickHr(s2.sx,s2.sy);
-            if(!(hrH>0)){
-              hrH=Math.max(1,D*0.2);
-              while(hrH>0.5&&!okOrbPt(s2.sx,s2.sy,hrH))hrH-=0.5;
-              if(!(hrH>0.5&&okOrbPt(s2.sx,s2.sy,hrH)))continue;
+            // 011 : VIDE D'ABORD — l'ancre n'est pas entièrement dégagée mais
+            // le vide est joignable : plongée plate sur Q + liaison à cote,
+            // l'arc tangent vient depuis le vide (pas d'hélice en matière).
+            const Q2=voidWay(s2.sx,s2.sy);
+            if(Q2){
+              arriveVoid(Q2.x,Q2.y);
+            }else{
+              const zG=gotoXY(s2.sx,s2.sy);
+              // 008/009 : 1re attaque (matière pleine) -> hélice à orbite
+              // légale sur l'ancre, engagement progressif, jamais à plat.
+              let hrH=pickHr(s2.sx,s2.sy);
+              if(!(hrH>0)){
+                hrH=Math.max(1,D*0.2);
+                while(hrH>0.5&&!okOrbPt(s2.sx,s2.sy,hrH))hrH-=0.5;
+                if(!(hrH>0.5&&okOrbPt(s2.sx,s2.sy,hrH)))continue;
+              }
+              const hS=Math.max(faoHelixSpot(mesh,s2.sx,s2.sy,hrH,r,z,brutTop,planes),hFloor);
+              if(Math.abs(zG-hS)>1e-9)moves.push({r:0,ent:1,x:rnd(s2.sx),y:rnd(s2.sy),z:hS});
+              faoHelixEntry(s2.sx,s2.sy,hS,z,hrH,D).slice(1).forEach(function(m){moves.push(m);});
             }
-            const hS=Math.max(faoHelixSpot(mesh,s2.sx,s2.sy,hrH,r,z,brutTop,planes),hFloor);
-            if(Math.abs(zG-hS)>1e-9)moves.push({r:0,ent:1,x:rnd(s2.sx),y:rnd(s2.sy),z:hS});
-            faoHelixEntry(s2.sx,s2.sy,hS,z,hrH,D).slice(1).forEach(function(m){moves.push(m);});
           }
           pushCut(s2.sx,s2.sy);
           moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:z,
@@ -6069,6 +6143,25 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
           return true;
         }
       }
+    }
+    // 011 : VIDE D'ABORD (repli générique — auto, ou circ sans ancre) — le
+    // disque de la cible est déjà entièrement balayé ou en air : plongée à
+    // plat directement, AVANT toute hélice. Après la spirale le plancher du
+    // niveau est du vide partout : une hélice ici serait exactement le
+    // « rampe circulaire en pleine matière » du feedback.
+    if(faoPlungeClear(x,y,moves,z,D,airSp)){
+      const zG=gotoXY(x,y);
+      if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:z});
+      pushCut(x,y);
+      return true;
+    }
+    // 011 : sinon le vide est peut-être joignable À CÔTÉ : Q où le disque est
+    // clair, plongée plate sur Q, puis accoste la cible à cote z.
+    const Qw=voidWay(x,y);
+    if(Qw){
+      arriveVoid(Qw.x,Qw.y);
+      pushCut(x,y);
+      return true;
     }
     // 008 : hélice de descente au point d'attaque UNIQUEMENT dans la
     // silhouette de la pièce (centre de poche : direction dégénérée au pôle,
@@ -6094,13 +6187,6 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     }
     const hStart2=Math.max(faoHelixSpot(mesh,x,y,0,r,z,brutTop,planes),hFloor);
     if(Math.abs(zG-hStart2)>1e-9)moves.push({r:0,x:rnd(x),y:rnd(y),z:hStart2});
-    // 007 : plongée à plat UNIQUEMENT si le disque est déjà balayé ou en air
-    // réel (airSp = hors brut) — sinon l'appelant ramp le long du chemin.
-    if(faoPlungeClear(x,y,moves,z,D,airSp)){
-      moves.push({r:0,x:rnd(x),y:rnd(y),z:z});
-      pushCut(x,y);
-      return true;
-    }
     rampZ0=hStart2; // l'air vers hStart2 est déjà émis : le rampage continue à z
     return false;
   };
@@ -6219,7 +6305,11 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     const ex2=(seq.length>1)?seq[1][0]-seq[0][0]:0;
     const ey2=(seq.length>1)?seq[1][1]-seq[0][1]:0;
     let i0=1;
-    if(!P||P.r||!segClear(P.x,P.y,sx,sy)){
+    // 011 : P.z > z = fin de spiral en cours de rampage sans être redescendu
+    // à la cote — ne JAMAIS accoster la chaîne depuis cette cote (une poussée
+    // directe serait une plongée verticale non contrôlée) : entryTo (vide
+    // d'abord) ou ramp depuis rampZ0.
+    if(!P||P.r||P.z>z+1e-9||!segClear(P.x,P.y,sx,sy)){
       if(!entryTo(sx,sy,ex2,ey2)){
         // 2026-10-08-007 : RAMPE le long de la chaîne de faces — la fraise
         // descend EN COUPANT le croissant non balayé le long du mur (paliers

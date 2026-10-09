@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**190 versions**, de `2026-09-28b` à `2026-10-08-010` — la plus récente en bas,
+**191 versions**, de `2026-09-28b` à `2026-10-08-011` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3257,3 +3257,19 @@ Noyau — `faoCircEval` : ancre validée par **test ponctuel** (`airAt(S)` ou `f
 Tests — `test_fao_circ.cjs` : entryR=3 accepté (test ponctuel, plus de recalage à ρ=5) ; split arc ent ≥ 6 coords (sous-arc du ramp). Sécurité 007 : 0 plongée à plat non couverte. Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-08-010.html`.
 
 Migration : `APP_VER` → `2026-10-08-010`, **`CACHE_VER` → `2026-10-08-010`** : les générateurs changent (test ponctuel ancre + ramp arc = autres trajets d'entrée, mêmes sigs) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.
+
+---
+
+### `2026-10-08-011`
+
+**FAO : VIDE D'ABORD — toute entrée restante plonge d'abord À PLAT dans le vide déjà usiné (point Q), puis accoste la cible à cote z et entre circulairement ; hélices 8 → 4 (pôle seul), descents non claires 309 → 81 (aucune près d'un vide).**
+
+Demande : « on vient de finir la spirale et tu attaques le reste et tu rentres en pleine matière, en rampe circulaire, alors qu'il y a plein de vide avant où tu pourrais entrer bien à plat et circulairement… Ceci est valable pour tout le reste de cette poche » ; « dès la fin de la spirale, du vide il y en a tout le temps ! ». Diagnostic : le repli générique d'`entryTo` plongeait (hélice/plongée) AVANT tout test de disque clair, la pass 1 rampait dans l'arc quand l'ancre n'était pas entièrement balayée, et les faces rampaient depuis `rampZ0` — autant d'attaques en pleine matière alors que le vide de la poche est joignable juste à côté.
+
+Noyau — drapeau `sweptNow` (coupe déjà émise à cote z dans CE niveau, posé par `pushCut`) ; helper **`voidWay(tx,ty)`** : cherche un point Q dans un anneau (k·step jusqu'à 45 mm max) tel que `segClear(Q→cible)` ET `faoPlungeClear(Q)` — Q est atteignable à plat depuis la position courante et dégagé pour plonger ; null si aucune coupe du niveau n'est encore émise. Helper **`arriveVoid(Q)`** : si la position précédente est déjà à cote z et le segment est sûr → `pushCut(Q)` sans lever (aucune plongée), sinon aller rapide + **plongée plate `ent:1`** dans le vide, puis `pushCut` de la cible. Appliqué dans la pass 1 (disque clair → plat + arc ; sinon `voidWay` → `arriveVoid` + arc ; sinon ramp d'arc 010), la pass 2 (clair → plat ; sinon `voidWay` → `arriveVoid` ; sinon hélice), et le repli générique (**clair d'abord** → `voidWay` → hélice `insideSil` en dernier recours) ; boucle des faces : refus d'accostage depuis une cote de rampage non redescendue (`P.z>z+1e-9`).
+
+Résultat (fixture escargot Ø25, poche ouverte) : hélices **8 → 4** (pôle seul, 1/couche), arcs 239 → 48 (ramps d'arc multi-sous-arcs remplacées par une seule arrivée + arc), moves 2851 → 2492, descentes 573 → 152, descentes non claires 309 → 81 (toutes hélices de pôle, **aucune près d'un vide ≤ 30 mm**) ; couverture de la poche à 100 % (inchangée), boîte 52,2 → 53,2 %.
+
+Tests — `test_fao_escargot.cjs` : expansion mesurée sur les coupes **dans la pièce** (le tour E0 hors silhouette, entrelacé greedy avec les faces, faussait les moyennes : c'est l'ordre d'attaque des chaînes, pas l'expansion) : **+19,4 mm** (1er → 3er tiers), quasi-monotone 1/143, lasse outil et faces inchangées. Sécurité 007 intacte (0 plongée à plat non couverte). Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-08-011.html`.
+
+Migration : `APP_VER` → `2026-10-08-011`, **`CACHE_VER` → `2026-10-08-011`** : les générateurs changent (arrivées dans le vide avant entrée = autres trajets d'entrée, mêmes sigs) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.

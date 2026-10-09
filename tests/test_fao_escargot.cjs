@@ -129,8 +129,12 @@ const vm=require('vm');
     "const i14=cE.findIndex(function(m){return Math.abs(m.z-14)<1e-6;});",
     "const i10=cE.findIndex(function(m){return Math.abs(m.z-10)<1e-6;});",
     "att(i14>=0&&i10>i14,'escargot : plan z=14 avant z=10');",
-    // EXPANSION dans le plan : centre -> faces (tiers 3 largement plus loin)
-    "const z14=atZ(cE,14);",
+    // EXPANSION dans le plan : centre -> faces (tiers 3 largement plus loin).
+    // 011 : mesure sur les coupes DANS la piece — le tour E0 de la boite
+    // (hors silhouette, entrelace greedy avec les faces) pesait dans les
+    // moyennes : ce n'est que l'ordre d'attaque des chaines, pas l'expansion
+    // de la spirale (poche couverte a 100 % dans les deux cas).
+    "const z14=atZ(cE,14).filter(function(m){return m.x>=0&&m.x<=80&&m.y>=0&&m.y<=60;});",
     "const dOf=function(m){return Math.hypot(m.x-40,m.y-30);};",
     "const q=Math.max(1,Math.floor(z14.length/3));",
     "let a1=0,a3=0;",
