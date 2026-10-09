@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**192 versions**, de `2026-09-28b` à `2026-10-09-002` — la plus récente en bas,
+**193 versions**, de `2026-09-28b` à `2026-10-09-003` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3287,3 +3287,17 @@ Noyau — constante **`faoRapideMin=50`** (mm) : liaison < 50 mm ET sûre (`prev
 Tests — `test_fao_zone2.cjs` : l'assertion comptable ±2 devient **inclusion géométrique** (`onlyBase=0` : toutes les cotes XY de la base refaites avec l'îlot ; les 131 extras ≤ 1,4 mm = empreintes d'entrée et anneau d'îlot) : avec la nouvelle politique d'entrée les comptes de mouvements divergent (663 vs 1414 non-ent) sans que l'usinage change. Corrigés au passage : `test_fao3d` (adaptive stay-down ≤ 12 rapides, troco ap2, couverture 027) et `test_fao_helice` (fente : plus de coupe au-dessus du brut après engagement). Sécurité 007 intacte (0 plongée à plat non couverte). Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-09-002.html`.
 
 Migration : `APP_VER` → `2026-10-09-002`, **`CACHE_VER` → `2026-10-09-002`** : les générateurs changent (glissements < 50 mm, entrées circ sur ≥ 50 mm, drop des morceaux couverts = autres trajets, mêmes sigs) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.
+
+---
+
+### `2026-10-09-003`
+
+**FAO : mini-passes — la fraise se positionne À PLAT dans le vide puis part en circulaire (0 rampe, 0 hélice) ; côté/arc de la 1re attaque jugés à la règle 008 de la spirale.**
+
+Demande : « utiliser le plan de chaque mini passe, positionner la fraise à l'intérieur, dans le vide, et partir en circulaire, pas en rampe ». Diagnostic : en mini-passes l'entrée circulaire tombait sur le repli « diagonale » (`entry auto` = aucun arc) et, quand `circ` était forcé, tous les candidats de la pass 2 étaient rejetés par `validXY` (statique, exige ≥ r de TOUTE la matière restante) : le croissant de paroi du plan mini non encore coupé est précisément ce que l'arc d'entrée doit couper — aucun point tangent n'est donc « valide » à la 1re attaque, l'arc ne sortait jamais.
+
+Noyau — gate `circEnter` : **`isRing` force l'entrée circulaire** quel que soit `entry` du document ; helpers **`voidWayC(tx,ty)`** (anneau de recherche : Q accessible à plat, `segClear` + `faoPlungeClear`) et **`arriveVoidC`** (plongée plate `ent:1` sur Q, puis accostage de la cible à cote z). Pass 1 : disque clair → plat + arc ; sinon `voidWayC` → arrivée depuis le vide + arc. Pass 2 : côté jaugeé à la **silhouette** (`insideSil`, règle 008 de la spirale : jamais dans l'air) au lieu de `validXY` pour `isRing` — l'arc coupe le croissant comme en spirale ; la plongée sur le côté reste gardée par `faoPlungeClear` (007), sinon `voidWayC(s2)` → vide + arc, l'hélice restant en dernier recours ; repli final = entrée depuis le vide sans arc (jamais de rampe). `linkIn` tente le vide avant toute rampe. Hors mini-passes, `validXY` strict et « auto sans arc » sont conservés à l'identique (tests 007/008 intacts).
+
+Tests — pièce réelle `Cavité Usinage` (T6 D25, `entry auto`, minis 4) : 20 plans mini, **0 rampe / 0 hélice**, 1re attaque = **plongée plate dans le vide (`disq=clair`)** sur les 20, **18/20 plans émettent ≥ 1 arc** (repli sans arc sur 2 plans : chaînes de cadre hors silhouette + une zone fine), ≈ 2/3 des liaisons ≥ 50 mm entrent par l'arc. Plaque + canal (diags) : 14/14 plans 1er `disq=clair`, arcs sur les chaînes intérieures. Sécurité 007 intacte (0 plongée à plat non couverte). Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-09-003.html`.
+
+Migration : `APP_VER` → `2026-10-09-003`, **`CACHE_VER` → `2026-10-09-003`** : les générateurs changent (entrées mini-passes depuis le vide + arc tangent en 1re attaque = autres trajets, mêmes sigs) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.

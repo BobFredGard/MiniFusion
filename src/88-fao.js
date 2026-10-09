@@ -7881,6 +7881,14 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
          function(sx2,sy2){return airCv(sx2,sy2)||!insideSil(sx2,sy2);})){
         moves.push({r:0,ent:1,x:rnd(ax),y:rnd(ay),z:z}); return 1;
       }
+      // 10-09-003 : mini-passes — JAMAIS de rampe : dernier repli = position
+      // dans le vide (Q clair à portée de l'ancre) puis liaison à cote z.
+      // L'entrée n'a pas d'arc (géométrie refusée plus haut), mais elle se
+      // fait entièrement en matière déjà enlevée — aucune descente en brut.
+      if(isRing){
+        const Qv=voidWayC(ax,ay);
+        if(Qv){ arriveVoidC(Qv.x,Qv.y); pushCut(ax,ay); return 1; }
+      }
       const hS=Math.max(faoHelixSpot(mesh,ax,ay,0,r,z,brutTop,planes),hFloor);
       if(Math.abs(hS-z)>1e-9)moves.push({r:0,ent:1,x:rnd(ax),y:rnd(ay),z:hS});
       const nUse=Math.max(1,Math.min(seq.length-1,Math.ceil((hS-z)/2)));
@@ -7943,13 +7951,53 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     return x<B.x0-1e-9||x>B.x1+1e-9||y<B.y0-1e-9||y>B.y1+1e-9;
   };
   const validXY=function(x,y){ return faoShapeValid(S,x,y,rrSafe); };
+  // 10-09-003 : VIDE D'ABORD (mini-passes — copie conforme du 011 spirale,
+  // sans garde sweptNow : en mini-passes la 1re attaque du plan est FRANCHE,
+  // le vide vient du plan plus profond z' <= z). Avant toute plongée/hélice/
+  // rampe en matière, on cherche un point Q à portée de la cible où le
+  // disque D/2 est ENTIÈREMENT balayé (ou en air) ; on y PLONGE À PLAT
+  // (faoPlungeClear = test 007), on accoste la cible à cote z (liaison
+  // latérale à travers le déjà-usiné), l'arc tangent vient depuis le vide.
+  const voidWayC=function(tx,ty){
+    const step=Math.max(2,D*0.12),Rmax=Math.min(45,Math.max(18,D*1.6));
+    const maxK=Math.ceil(Rmax/step);
+    for(let k=1;k<=maxK;k++){
+      const rad=k*step;
+      const n=Math.max(6,Math.ceil(2*Math.PI*rad/step));
+      for(let j=0;j<n;j++){
+        const a=j/n*2*Math.PI;
+        const qx=tx+rad*Math.cos(a),qy=ty+rad*Math.sin(a);
+        if(!validXY(qx,qy))continue;
+        if(!segClear(qx,qy,tx,ty))continue;
+        if(!faoPlungeClear(qx,qy,moves,z,D,airCv))continue;
+        return {x:qx,y:qy};
+      }
+    }
+    return null;
+  };
+  // 10-09-003 : arrivée sur le vide — rapide en hauteur au-dessus de Q puis
+  // PLONGÉE À PLAT sur Q (disque clair par construction de voidWayC) ; la
+  // liaison courte sûre (< faoRapideMin) reste un G1 à plat sans lever.
+  const arriveVoidC=function(qx,qy){
+    const prev=moves.length?moves[moves.length-1]:null;
+    const ddx=qx-(prev?prev.x:0), ddy=qy-(prev?prev.y:0);
+    if(prev&&!prev.r&&Math.abs(prev.z-z)<1e-9&&
+       ddx*ddx+ddy*ddy<faoRapideMin*faoRapideMin&&
+       segClear(prev.x,prev.y,qx,qy)){ pushCut(qx,qy); return; }
+    const zG=gotoXY(qx,qy);
+    if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(qx),y:rnd(qy),z:z});
+  };
   const circEnter=function(Px,Py,ux,uy){
     // Arc tangent : rapide vers S, descente en Z, arc jusqu'au point d'attaque.
     // 005 : ancre déjà balayée (ré-entrée) -> descente verticale. 008 : 1re
     // attaque — ancre non balayée inévitable -> descente en HÉLICE sur place à
     // orbite légale, puis le MÊME arc tangent (les entrées circulaires ne sont
     // plus abandonnées faute de matière déjà coupée). false = repli.
-    if(entryMode!=='circ')return false;
+    // 10-09-003 : les MINI-PASSES (ringOnly) partent TOUJOURS en circulaire,
+    // quel que soit entryMode du doc (auto inclu) : plan de la mini passe +
+    // positionnement dans le vide à l'intérieur, jamais de rampe. Les passes
+    // normales gardent leur gate historique (entryMode==='circ').
+    if(entryMode!=='circ'&&!isRing)return false;
     const emitArc=function(s){
       moves.push({r:0,ent:1,x:rnd(Px),y:rnd(Py),z:z,
         arc:{i:s.cx-s.sx,j:s.cy-s.sy,cw:s.cw}});
@@ -7966,18 +8014,61 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       emitArc(side);
       return true;
     }
+    // 10-09-003 : VIDE D'ABORD (mini-passes) — le disque sur l'ancre n'est
+    // pas dégagé (paroi non encore coupée) : plongée plate sur Q (intérieur
+    // déjà usiné par le plan profond), accostage de l'ancre à cote z, l'arc
+    // tangent vient depuis le vide — pas de rampe, pas d'hélice.
+    if(side&&isRing){
+      const Qs=voidWayC(side.sx,side.sy);
+      if(Qs){
+        arriveVoidC(Qs.x,Qs.y);
+        pushCut(side.sx,side.sy);
+        emitArc(side);
+        return true;
+      }
+    }
     for(let ri=0;ri<rhoCirc.length;ri++){
       const sides=faoSidesCirc(Px,Py,ux,uy,rhoCirc[ri]);
       if(!sides)continue;
       for(let i=0;i<sides.length;i++){
         const s2=sides[i];
-        if(!validXY(s2.sx,s2.sy))continue;
         if(!insideSil(s2.sx,s2.sy))continue; // 008 : ancre hors silhouette = pas de ressort dans l'air
+        // 10-09-003 : mini-passes — 1re ATTACQUE d'un contour vierge : le
+        // croissant de paroi n'est pas encore coupé, aucun point à < r de la
+        // paroi n'est « valide » au sens statique (validXY) : l'arc d'entrée
+        // est justement ce qui coupe ce croissant. On applique la règle
+        // 008 de la spirale : côté dans la SILHOUETTE (jamais dans l'air,
+        // 008 : pas de ressort hors pièce) — la plongée reste gardée par
+        // faoPlungeClear (007) et le vide par voidWayC.
+        if(!isRing&&!validXY(s2.sx,s2.sy))continue;
         const pts2=faoCircArcPts(s2,Px,Py);
         if(!pts2)continue;
         let okA=true;
-        for(let k=0;k<pts2.length;k++)if(!validXY(pts2[k][0],pts2[k][1])){okA=false;break;}
+        for(let k=0;k<pts2.length;k++)if(!(isRing?insideSil:validXY)(pts2[k][0],pts2[k][1])){okA=false;break;}
         if(!okA)continue;
+        // 10-09-003 : mini-passes — disque d'ancre déjà dégagé -> descente
+        // plate + MÊME arc tangent (aucune hélice nécessaire).
+        if(isRing&&faoPlungeClear(s2.sx,s2.sy,moves,z,D,airCv)){
+          const zG=gotoXY(s2.sx,s2.sy);
+          if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(s2.sx),y:rnd(s2.sy),z:z});
+          pushCut(s2.sx,s2.sy);
+          emitArc(s2);
+          return true;
+        }
+        // 10-09-003 : VIDE D'ABORD (mini-passes) — 1re attaque : aucun disque
+        // dégagé près de la paroi, mais l'intérieur du plan (usiné par le plan
+        // plus profond) est du vide joignable : on plonge à plat sur Q, on
+        // accoste l'ancre à cote z, l'arc tangent vient depuis le vide —
+        // l'hélice ne reste qu'en dernier recours de cette boucle.
+        if(isRing){
+          const Qs=voidWayC(s2.sx,s2.sy);
+          if(Qs){
+            arriveVoidC(Qs.x,Qs.y);
+            pushCut(s2.sx,s2.sy);
+            emitArc(s2);
+            return true;
+          }
+        }
         let hrH=0;
         const hc=[D*0.4,D*0.2,1,0.5];
         for(let hi=0;hi<hc.length;hi++){
@@ -8002,11 +8093,26 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
         return true;
       }
     }
+    // 10-09-003 : mini-passes — AUCUNE géométrie d'arc tenable : on entre
+    // quand même depuis le vide (plongée plate sur Q + liaison à cote vers
+    // l'ancre). Jamais de rampe en mini-passes ; si le vide n'est pas
+    // joignable non plus, false -> repli de l'appelant (encore contrôlé
+    // par faoPlungeClear avant toute rampe).
+    if(isRing){
+      const Qs=voidWayC(Px,Py);
+      if(Qs){
+        arriveVoidC(Qs.x,Qs.y);
+        pushCut(Px,Py);
+        return true;
+      }
+    }
     return false;
   };
   // Première cible = le morceau que le tour épuisera en premier (même règle).
   let circOK=false;
-  if(entryMode==='circ'&&remaining.length){
+  // 10-09-003 : mini-passes (isRing) entrent aussi en circulaire depuis le
+  // vide — le gate d'entrée du niveau suit le même choix que circEnter.
+  if((entryMode==='circ'||isRing)&&remaining.length){
     const px0=moves.length?moves[moves.length-1].x:cx0;
     const py0=moves.length?moves[moves.length-1].y:cy0;
     let pk0=-1;
