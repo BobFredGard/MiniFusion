@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**193 versions**, de `2026-09-28b` à `2026-10-09-003` — la plus récente en bas,
+**194 versions**, de `2026-09-28b` à `2026-10-09-004` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3301,3 +3301,21 @@ Noyau — gate `circEnter` : **`isRing` force l'entrée circulaire** quel que so
 Tests — pièce réelle `Cavité Usinage` (T6 D25, `entry auto`, minis 4) : 20 plans mini, **0 rampe / 0 hélice**, 1re attaque = **plongée plate dans le vide (`disq=clair`)** sur les 20, **18/20 plans émettent ≥ 1 arc** (repli sans arc sur 2 plans : chaînes de cadre hors silhouette + une zone fine), ≈ 2/3 des liaisons ≥ 50 mm entrent par l'arc. Plaque + canal (diags) : 14/14 plans 1er `disq=clair`, arcs sur les chaînes intérieures. Sécurité 007 intacte (0 plongée à plat non couverte). Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-09-003.html`.
 
 Migration : `APP_VER` → `2026-10-09-003`, **`CACHE_VER` → `2026-10-09-003`** : les générateurs changent (entrées mini-passes depuis le vide + arc tangent en 1re attaque = autres trajets, mêmes sigs) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.
+
+---
+
+### `2026-10-09-004`
+
+**FAO : hélices et rampes d'entrée restent BLEUES après clip/arrondi (la couleur `ent` survit aux filtres) + génération des parcours ×2,4 plus rapide (151 s → 60-65 s sur la pièce réelle) — index incrémental des coupes, rejet de cellule par bbox union, scan en couronnes autour du puits.**
+
+Demande : « colorer les hélices et rampes d'entrée en bleu » (le clip XY/zone et l'arrondi remplaçaient `m.ent` par la couleur coupe) ; puis « accélérer la génération des parcours d'outil (151 s → ×2 minimum) — GPU / tous les CPU ? ».
+
+Couleur — 4 sites écrasaient `ent` : `faoClipMovesXY` et `faoClipMovesPoly` raccourcis (`push0` conserve `m.ent`), expansion d'arc de `faoZoneCuts` (le `ent` de l'entrée suit chaque morceau), `faoRoundMoves` (arrêt sur `m.ent` : pas de fusion avec la coupe ordinaire). Vérifié : canari escargot **0 diagonale verte**, `ent` préservé sur clip/round/pk ; assertions **6bis** ajoutées à `test_fao_circ.cjs`.
+
+Noyau perf — (1) **index incrémental `fmi`** par tableau `moves` (segments arcs-développés + zmax par cellule 6 mm, points !r par tranche µm de z) : `faoPlungeClose`/`near` interrogent l'index au lieu de O(tous les moves), `chunkCovered` idem ; (2) **`faoXBCand`** buckets X pour `faoYCands` ; (3) **`fsgGrid`** (grille flood-fill exacte, non-frontières) + `faoShapeInside` wrapper, `faoShapeValid` : parité O(1) d'abord, distance ensuite (ET logique) ; (4) **`faoDistSeg`** : bbox UNION par cellule (`H.b`, tenue à jour par `faoHashSegs`/`faoHashFit`) — chemin `tMax` ignore les cellules dont l'union est ≥ tm (seg ⊆ union = sur-ensemble conservateur, booléen exact), repli row-major exact sans `tMax` ; `faoDiscClear` passe `tMax` + lignes packées 5 nombres (croisement bit-à-bit identique, plus d'indirection `segs[idx]`) ; (5) **`faoPlungeClear`** : cellules `fmi` avec bbox union en tête — scan en **couronnes** autour du puits (left tombe plus vite) + rejet de cellule entière si union > near (tous ses segments échoueraient au testSeg), `testSeg` = boucle 65 échantillons simple (variantes « grilles indexées » mesurées PLUS lentes : 441 s puis 229 s, rebasculées) ; compteurs de plongées confirmés inchangés (180 909 appels, queue indexée 107 871). `fmiIdx`/`faoPlungeClose` en repli O(n) si pas de WeakMap.
+
+Résultat (pièce réelle `Cavité Usinage`, T6 D25, minis 4 — flux identique, 107 873 moves) : **151 s → 60-65 s (×2,4-2,5)** — `faoPlungeClear` 37,9 → **5,6 s**, `faoOffsetRuns` 39 → **23 s**, profils CPU : `testSeg` 262 → fondu, `faoDistSeg` 60,8 → ~15 s, `faoDiscClear` 13,6 → moitié. La cible « ×2 minimum » est atteinte en mono-thread (workers/GPU : ultérieur si besoin).
+
+Différentiel — `diff_core.cjs` : `faoDistSeg` **20 000/20 000** (exact sans `tMax`, booléen avec `tMax`) + `faoPlungeClear` **3 000/3 000** vs références O(n) d'origine ; canari escargot **identique bit-à-bit** (rawEnt 560 / postEnt 1050 / postArc 14110 / postN 52782, `diag:0`). Sécurité 007/008 intacte. Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-09-004.html`.
+
+Migration : `APP_VER` → `2026-10-09-004`, **`CACHE_VER` → `2026-10-09-004`** : les générateurs changent (index/rejets/couronnes = code des faoGen* — sortie attendue identique, tampons régénérés par sécurité) ; régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.

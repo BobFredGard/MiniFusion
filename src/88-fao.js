@@ -945,7 +945,11 @@ function faoClipMovesXY(moves,R,secuZ,invert){
   // Ne garde que la coupe dans R (invert = DEHORS, 2026-10-08-003 : complément
   // de la zone intérieure/îlot — 0, 1 ou 2 morceaux par segment). Ré-entrée
   // sécurisée : remontée sécu, rapide XY, plongée — jamais de G0 dans la matière.
+  // 10-09-004 : un move reconstruit garde l'étiquette d'entrée (ent) de SA
+  // destination — sans elle, hélices/rampes perdent le tracé bleu au clip
+  // (les arcs, poussés tels quels, restaient bleus : incohérence perçue).
   const out=[]; let px=null, py=null, pz=null, inside=false;
+  const push0=function(x,y,z,m){ const o={r:0,x:x,y:y,z:z}; if(m&&m.ent)o.ent=1; out.push(o); };
   const inR=function(x,y){ return x>=R.x0&&x<=R.x1&&y>=R.y0&&y<=R.y1; };
   const keep=function(x,y){ return invert?!inR(x,y):inR(x,y); };
   moves.forEach(function(m){
@@ -963,7 +967,7 @@ function faoClipMovesXY(moves,R,secuZ,invert){
           out.push({r:1,x:ax,y:ay,z:secuZ});
           out.push({r:1,x:ax,y:ay,z:az});
         }
-        out.push({r:0,x:bx,y:by,z:bz});
+        push0(bx,by,bz,m);
         inside=true;
       }
       px=m.x; py=m.y; pz=m.z;
@@ -985,7 +989,7 @@ function faoClipMovesXY(moves,R,secuZ,invert){
         out.push({r:1,x:ax,y:ay,z:secuZ});
         out.push({r:1,x:ax,y:ay,z:az});
       }
-      out.push({r:0,x:bx,y:by,z:bz});
+      push0(bx,by,bz,m);
       inside=true;
     });
     px=m.x; py=m.y; pz=m.z;
@@ -1383,6 +1387,9 @@ function faoClipMovesPoly(moves,lim,r,secuZ,sub,atFn){
   // l'îlot intérieur (on garde le COMPLÉMENT : atFn = !faoLimInside).
   const step=isFinite(+sub)&&+sub>0?+sub:2;
   const out=[]; let px=null, py=null, pz=null, inside=false;
+  // 10-09-004 : conservation de l'étiquette d'entrée (ent) sur les points
+  // reconstruits — même règle que faoClipMovesXY (bleu préservé au clip).
+  const push0=function(x,y,z,m){ const o={r:0,x:x,y:y,z:z}; if(m&&m.ent)o.ent=1; out.push(o); };
   const at=(typeof atFn==='function')?atFn:function(x,y){ return faoLimInside(x,y,lim,r); };
   const cross=function(ax,ay,bx,by,ain){
     // Dichotomie du point de croisement (sortie à 0,1 mm).
@@ -1421,12 +1428,12 @@ function faoClipMovesPoly(moves,lim,r,secuZ,sub,atFn){
         const c=cross(cx,cy,nx,ny,false);
         const zc=zAt(cx,cy,cz,nx,ny,nz,c[0],c[1]);
         enter(c[0],c[1],zc);
-        out.push({r:0,x:nx,y:ny,z:nz});
+        push0(nx,ny,nz,m);
       }else if(nin&&cin){
-        out.push({r:0,x:nx,y:ny,z:nz});
+        push0(nx,ny,nz,m);
       }else if(!nin&&cin){
         const c=cross(cx,cy,nx,ny,true);
-        out.push({r:0,x:c[0],y:c[1],z:zAt(cx,cy,cz,nx,ny,nz,c[0],c[1])});
+        push0(c[0],c[1],zAt(cx,cy,cz,nx,ny,nz,c[0],c[1]),m);
       }
       cx=nx; cy=ny; cz=nz; cin=nin;
     }
@@ -1736,7 +1743,8 @@ function faoZoneCuts(moves,op,job,secu){
       const pts=faoArcSegs(prev,m); let ok=at(m.x,m.y);
       for(let k=0;k<pts.length&&ok;k++)if(!at(pts[k][0],pts[k][1]))ok=false;
       if(ok){ flat.push(m); prev=m; continue; }
-      for(let k=0;k<pts.length;k++)flat.push({r:0,x:pts[k][0],y:pts[k][1],z:pts[k][2]});
+      // 10-09-004 : un arc d'entrée développé reste bleu (ent sur chaque point).
+      for(let k=0;k<pts.length;k++){ const o={r:0,x:pts[k][0],y:pts[k][1],z:pts[k][2]}; if(m.ent)o.ent=1; flat.push(o); }
       prev=flat[flat.length-1];
       continue;
     }
@@ -2603,6 +2611,11 @@ function faoRoundPath(pts,radius){
 }
 function faoRoundMoves(moves,radius){
   // Arrondit les passages coupés, passe par passe (les rapides coupent).
+  // 10-09-004 : les SÉQUENCES D'ENTRÉE (ent — hélice, rampe, plongée d'entrée)
+  // coupent aussi le run et passent telles quelles : ni la géométrie de
+  // l'entrée (une hélice arrondie au rayon d'arrondi n'est plus l'entrée
+  // calculée), ni son étiquette bleue ne doivent changer. Seules les coupes
+  // de parcours sont arrondies.
   const R=isFinite(+radius)&&+radius>0?+radius:0;
   if(!(R>0))return moves;
   const out=[]; let run=[];
@@ -2617,7 +2630,7 @@ function faoRoundMoves(moves,radius){
     run=[];
   };
   (moves||[]).forEach(function(m){
-    if(m.r||m.arc){ flush(); out.push(m); return; }
+    if(m.r||m.arc||m.ent){ flush(); out.push(m); return; }
     run.push({x:m.x,y:m.y,z:m.z});
   });
   flush();
@@ -5565,7 +5578,9 @@ function faoDiscIdx(segs){
       let i0=Math.floor((Math.min(a,b)-y0)/step),i1=Math.floor((Math.max(a,b)-y0)/step);
       if(i0<0)i0=0; else if(i0>n-1)i0=n-1;
       if(i1<0)i1=0; else if(i1>n-1)i1=n-1;
-      for(let k=i0;k<=i1;k++){let arr=rows[k];if(!arr)rows[k]=arr=[];arr.push(i);}
+      // pack 5 nombres (ax,ay,by,dx,dy) — voir faoDiscClear
+      const sg=segs[i],ax=sg[0],ay=sg[1],by=sg[3],dx=sg[2]-sg[0],dy=by-ay;
+      for(let k=i0;k<=i1;k++){let arr=rows[k];if(!arr)rows[k]=arr=[];arr.push(ax,ay,by,dx,dy);}
     }
     idx={H:H,rows:rows,n:n,y0:y0,step:step};
   }else idx={H:H,rows:rows,n:1,y0:0,step:step};
@@ -5586,12 +5601,15 @@ function faoDiscClear(segs,cx,cy,hr,r){
     if(idx&&idx.rows.length){
       let b=Math.floor((yy-idx.y0)/idx.step);
       if(b<0)b=0; else if(b>=idx.n)b=idx.n-1;
+      // Lignes PACKÉES 5 nombres (ax,ay,by,dx,dy) : plus d'indirection
+      // segs[idx] par croisement ; expression du croisement identique
+      // (ordre d'évaluation `dx*(yy-ay)/dy` bit-à-bit comme l'original).
       const row=idx.rows[b];
-      if(row)for(let t=0;t<row.length;t++){
-        const s=segs[row[t]];
-        if((s[1]-yy)*(s[3]-yy)<=0&&s[1]!==s[3]){
+      if(row)for(let t=0;t<row.length;t+=5){
+        const ay=row[t+1],by=row[t+2];
+        if((ay-yy)*(by-yy)<=0&&ay!==by){
           len++;
-          if(s[0]+(s[2]-s[0])*(yy-s[1])/(s[3]-s[1])<xx-1e-9)left++;
+          if(row[t]+row[t+3]*(yy-ay)/(by-ay)<xx-1e-9)left++;
         }
       }
     }else{
@@ -5605,7 +5623,7 @@ function faoDiscClear(segs,cx,cy,hr,r){
     }
     if(len%2)return false;
     if(left%2)return false;
-    if(idx&&faoDistSeg(idx.H,xx,yy,r)<r-1e-9)return false;
+    if(idx&&faoDistSeg(idx.H,xx,yy,r,r-1e-9)<r-1e-9)return false;
     if(!idx){
       let dmin=1/0;
       for(let i=0;i<segs.length;i++){
@@ -5734,7 +5752,75 @@ function faoCircAnchor(moves,Sx,Sy,z,D){
   }
   return false;
 }
+/* Index incrémental par tableau `moves` (2026-10-09-004) : les coupes
+   émises ne font que GRANDIR (push) — les segments (arcs développés,
+   zmax des extrémités) et les points !r sont indexés UNE fois ; chaque
+   requête ne traite que la queue nouvelle puis ne lit que les cellules
+   dans son rayon. Sur-ensemble exact des balayages O(n) historiques :
+   mêmes tests, même sortie anticipée, même premier point — seul l'ordre
+   de balayage change (cov = union, idempotent). */
+const fmiCache=(typeof WeakMap!=='undefined')?new WeakMap():null;
+const fmiSC=6, fmiPC=8; // cellules mm : segments / points
+function fmiK(ix,iy){ return ix*262144+iy; } // |iy| < 262144 (coords ±1,5 M mm)
+function fmiSeg(g,ax,ay,bx,by,zm){
+  const c=fmiSC;
+  const ix0=Math.floor((ax<bx?ax:bx)/c),ix1=Math.floor((ax<bx?bx:ax)/c);
+  const iy0=Math.floor((ay<by?ay:by)/c),iy1=Math.floor((ay<by?by:ay)/c);
+  if((ix1-ix0+1)*(iy1-iy0+1)>4096){g.osg.push([ax,ay,bx,by,zm]);return;}
+  // bbox du segment : tête de cellule (4 nombres) = union des bboxes —
+  // borne inférieure de la distance à tout segment de la cellule (seg ⊆
+  // union) pour rejeter la cellule entière avant tout testSeg.
+  const ux0=ax<bx?ax:bx,ux1=ax<bx?bx:ax,uy0=ay<by?ay:by,uy1=ay<by?by:ay;
+  for(let iy=iy0;iy<=iy1;iy++)for(let ix=ix0;ix<=ix1;ix++){
+    const k=fmiK(ix,iy);
+    let arr=g.seg.get(k);
+    if(!arr){arr=[ux0,uy0,ux1,uy1];g.seg.set(k,arr);}
+    else{
+      if(ux0<arr[0])arr[0]=ux0; if(uy0<arr[1])arr[1]=uy0;
+      if(ux1>arr[2])arr[2]=ux1; if(uy1>arr[3])arr[3]=uy1;
+    }
+    arr.push(ax,ay,bx,by,zm); // aplati : 5 nombres par segment (décalé de 4)
+  }
+}
+function fmiIdx(moves){
+  if(!fmiCache)return null;
+  let g=fmiCache.get(moves);
+  if(!g){g={np:0,nq:0,seg:new Map(),pt:new Map(),osg:[],fst:null,fstD:0};fmiCache.set(moves,g);}
+  const L=moves.length;
+  if(globalThis.__st){const S=globalThis.__st;S.fi++;const old=g.np;S.npTail+=Math.max(0,(L>1?L-1:0)-old);}
+  if(L&&!g.fstD){g.fstD=1;const m0=moves[0];
+    g.fst=(m0.r||m0.x===undefined)?null:{x:m0.x,y:m0.y,z:m0.z};}
+  for(let j=g.np;j<L-1;j++){
+    const a=moves[j],b=moves[j+1];
+    if(a.r||b.r)continue;
+    const zm=a.z>b.z?a.z:b.z; // rejet original a.z>zz+1e-9||b.z>zz+1e-9 ⟺ zm>zz+1e-9
+    if(b.arc){
+      const pts=faoArcSegs(a,b);
+      if(pts&&pts.length){
+        let px=a.x,py=a.y;
+        for(let k=0;k<pts.length;k++){fmiSeg(g,px,py,pts[k][0],pts[k][1],zm);px=pts[k][0];py=pts[k][1];}
+      }else fmiSeg(g,a.x,a.y,b.x,b.y,zm); // repli corde (inchangé)
+    }else fmiSeg(g,a.x,a.y,b.x,b.y,zm);
+  }
+  g.np=L>1?L-1:0;
+  for(let i=g.nq;i<L;i++){
+    const m=moves[i];
+    if(!m.r&&m.x!==undefined){
+      // 2026-10-09-004 : points TRIPT par tranche z µm — la requête
+      // (|m.z-z|<1e-9) ne lit que les 3 tranches voisines (sur-ensemble
+      // exact : deux valeurs à <1e-9 s'écartent d'au plus 1 en µm).
+      const zk=Math.round(m.z*1e6);
+      let zb=g.pt.get(zk); if(!zb){zb=new Map();g.pt.set(zk,zb);}
+      const k=fmiK(Math.floor(m.x/fmiPC),Math.floor(m.y/fmiPC));
+      let arr=zb.get(k); if(!arr){arr=[];zb.set(k,arr);}
+      arr.push(m);
+    }
+  }
+  g.nq=L;
+  return g;
+}
 function faoPlungeClear(Sx,Sy,moves,z,D,airAt){
+  if(globalThis.__st)globalThis.__st.pc++;
   // 2026-10-08-005 : la plongée en S exige la fraise TOTALEMENT hors matière
   // restante — le disque de rayon D/2 autour de S doit être entièrement balayé
   // par des coupes antérieures (empreinte de coupe à cote ≤ z) ou en air
@@ -5742,7 +5828,9 @@ function faoPlungeClear(Sx,Sy,moves,z,D,airAt){
   // cercle D/2 échantillonné à ~1 mm (K ≈ π·D). Sinon : repli hélice/rampe —
   // jamais de plongée qui mord la matière restante. (L'ancre ponctuelle
   // 2026-10-08-004 est un cas particulier — centre couvert — remplacée ici.)
-  const R=D/2, lim=R+1e-9, lim2=lim*lim, near=(R+lim);
+  // 2026-10-09-004 : interrogation via l'index incrémental fmi (même
+  // sémantique, O(cellules proches) au lieu de O(tous les moves)).
+  const R=D/2, lim=R+1e-9, lim2=lim*lim, near=(R+lim), near2=near*near;
   const K=Math.max(16,Math.min(64,Math.ceil(Math.PI*D)));
   const qx=[Sx],qy=[Sy];
   for(let k=0;k<K;k++){const a=k/K*2*Math.PI;qx.push(Sx+R*Math.cos(a));qy.push(Sy+R*Math.sin(a));}
@@ -5755,24 +5843,66 @@ function faoPlungeClear(Sx,Sy,moves,z,D,airAt){
     const ex=ax+t*dx-px, ey=ay+t*dy-py;
     return ex*ex+ey*ey;
   };
+  // 2026-10-09-004 : boucle échantillons SIMPLE — la variante « cellules
+  // indexées » (grille dense / Map) mesurée PLUS LENTE (mémoire dispersée,
+  // 4 floors + clamp par appel ≈ 124 s supplémentaires sur 300 M testSeg).
+  // Ici : rejet d'abord (d2 vers S), puis cov d'abord (Uint8Array L1) —
+  // sortie immédiate dès left==0.
   const testSeg=function(ax,ay,bx,by){
-    if(d2(ax,ay,bx,by,Sx,Sy)>near*near)return; // trop loin de S : aucun échantillon
-    for(let k=0;k<qx.length;k++)
+    if(d2(ax,ay,bx,by,Sx,Sy)>near2)return;
+    for(let k=0;k<qx.length&&left>0;k++){
       if(!cov[k]&&d2(ax,ay,bx,by,qx[k],qy[k])<=lim2){cov[k]=1;left--;}
+    }
   };
-  for(let i=1;i<moves.length&&left>0;i++){
-    const a=moves[i-1],b=moves[i];
-    if(a.r||b.r)continue;
-    if(a.z>z+1e-9||b.z>z+1e-9)continue;
-    if(b.arc){
-      const pts=faoArcSegs(a,b);
-      if(pts&&pts.length){
-        let px=a.x,py=a.y;
-        for(let k=0;k<pts.length;k++){testSeg(px,py,pts[k][0],pts[k][1]);px=pts[k][0];py=pts[k][1];}
+  const g=fmiIdx(moves);
+  if(g){
+    const c=fmiSC;
+    const ix0=Math.floor((Sx-near)/c),ix1=Math.floor((Sx+near)/c);
+    const iy0=Math.floor((Sy-near)/c),iy1=Math.floor((Sy+near)/c);
+    const cx=Math.floor(Sx/c),cy=Math.floor(Sy/c);
+    const rMax=Math.max(cx-ix0,ix1-cx,cy-iy0,iy1-cy);
+    // 2026-10-09-004 : scan en COURONNES autour du puits (les cellules
+    // proches couvrent d'abord le centre → left tombe plus vite) + rejet
+    // de cellule entière si la union des bboxes est à > near de S (tous
+    // ses segments échoueraient au testSeg premier). Ordre sans effet
+    // sémantique (cov = union idempotente, sortie identique à left==0).
+    for(let ring=0;ring<=rMax&&left>0;ring++){
+      const b0x=cx-ring<ix0?ix0:cx-ring, b1x=cx+ring>ix1?ix1:cx+ring;
+      const b0y=cy-ring<iy0?iy0:cy-ring, b1y=cy+ring>iy1?iy1:cy+ring;
+      for(let iy=b0y;iy<=b1y&&left>0;iy++)for(let ix=b0x;ix<=b1x&&left>0;ix++){
+        const dx=ix>cx?ix-cx:cx-ix, dy=iy>cy?iy-cy:cy-iy;
+        if((dx>dy?dx:dy)!==ring)continue;
+        const arr=g.seg.get(fmiK(ix,iy)); if(!arr)continue;
+        const qx=Sx<arr[0]?arr[0]-Sx:(Sx>arr[2]?Sx-arr[2]:0);
+        const qy=Sy<arr[1]?arr[1]-Sy:(Sy>arr[3]?Sy-arr[3]:0);
+        if(qx*qx+qy*qy>near2)continue; // union > near ⟹ tout seg > near
+        for(let t=4;t<arr.length&&left>0;t+=5){
+          if(arr[t+4]>z+1e-9)continue; // a.z>z+1e-9||b.z>z+1e-9 ⟺ max>z+1e-9
+          testSeg(arr[t],arr[t+1],arr[t+2],arr[t+3]);
+        }
+      }
+    }
+    if(left>0)for(let t=0;t<g.osg.length&&left>0;t++){
+      const s=g.osg[t];
+      if(s[4]>z+1e-9)continue;
+      testSeg(s[0],s[1],s[2],s[3]);
+    }
+    if(left>0&&g.fst&&g.fst.z<=z+1e-9)testSeg(g.fst.x,g.fst.y,g.fst.x,g.fst.y);
+  }else{
+    for(let i=1;i<moves.length&&left>0;i++){
+      const a=moves[i-1],b=moves[i];
+      if(a.r||b.r)continue;
+      if(a.z>z+1e-9||b.z>z+1e-9)continue;
+      if(b.arc){
+        const pts=faoArcSegs(a,b);
+        if(pts&&pts.length){
+          let px=a.x,py=a.y;
+          for(let k=0;k<pts.length;k++){testSeg(px,py,pts[k][0],pts[k][1]);px=pts[k][0];py=pts[k][1];}
+        }else testSeg(a.x,a.y,b.x,b.y);
       }else testSeg(a.x,a.y,b.x,b.y);
-    }else testSeg(a.x,a.y,b.x,b.y);
+    }
+    if(moves.length&&!moves[0].r&&moves[0].z<=z+1e-9)testSeg(moves[0].x,moves[0].y,moves[0].x,moves[0].y);
   }
-  if(moves.length&&!moves[0].r&&moves[0].z<=z+1e-9)testSeg(moves[0].x,moves[0].y,moves[0].x,moves[0].y);
   for(let k=0;k<qx.length;k++)if(!cov[k]&&!(airAt&&airAt(qx[k],qy[k])))return false;
   return true;
 }
@@ -6780,6 +6910,51 @@ function faoShadowIntervals(mesh,B,y,z,zt,r,aeA,planes){
   }
   return out;
 }
+/* Buckets X par tableau de segments (2026-10-09-004) : faoSliceZCached
+   retourne le MÊME tableau — les deux tests de faoYCands ne dépendent
+   que de x : croisement vertical ⟸ cellule(x) ; hit perpendiculaire
+   (dd<r ⇒ point le plus proche dans l'AABB x ∩ [x±r]) ⟸ cellules
+   [x±r]. Sur-ensemble exact ; les candidats sont rejoués dans l'ordre
+   d'index d'origine (ordre, ties et hit identiques). */
+const fxbCache=(typeof WeakMap!=='undefined')?new WeakMap():null;
+const fxbC=4, fxbMax=64; // cellules mm ; > 256 mm d'AABB → liste permanente
+function fxbIdx(segs){
+  if(!fxbCache)return null;
+  let g=fxbCache.get(segs);
+  if(g)return g;
+  g={bk:new Map(),ov:[],st:new Int32Array(segs.length),stp:0};
+  for(let i=0;i<segs.length;i++){
+    const s=segs[i];
+    const ix0=Math.floor(Math.min(s[0],s[2])/fxbC),ix1=Math.floor(Math.max(s[0],s[2])/fxbC);
+    if(ix1-ix0+1>fxbMax){g.ov.push(i);continue;}
+    for(let ix=ix0;ix<=ix1;ix++){
+      let a=g.bk.get(ix); if(!a){a=[];g.bk.set(ix,a);}
+      a.push(i);
+    }
+  }
+  fxbCache.set(segs,g);
+  return g;
+}
+function faoXBCand(segs,x,r){
+  const g=fxbIdx(segs);
+  if(!g){ // repli sans WeakMap : tous les index, ordre croissant (identique)
+    const out=new Array(segs.length);
+    for(let i=0;i<segs.length;i++)out[i]=i;
+    return out;
+  }
+  const st=++g.stp;
+  const out=[];
+  const r0=Math.floor((x-r)/fxbC),r1=Math.floor((x+r)/fxbC);
+  for(let ix=r0;ix<=r1;ix++){
+    const a=g.bk.get(ix); if(!a)continue;
+    for(let t=0;t<a.length;t++){const i=a[t];
+      if(g.st[i]!==st){g.st[i]=st;out.push(i);}}
+  }
+  for(let t=0;t<g.ov.length;t++){const i=g.ov[t];
+    if(g.st[i]!==st){g.st[i]=st;out.push(i);}}
+  out.sort(function(a,b){return a-b;});
+  return out;
+}
 function faoYCands(mesh,planes,z,zt,y,r,ivs){
   // Y sûrs les plus proches d'abord pour une ligne dont le disque
   // [y-r,y+r] traverserait une paroi en Y sur ses intervalles ; [] = aucun
@@ -6810,8 +6985,9 @@ function faoYCands(mesh,planes,z,zt,y,r,ivs){
         const segs=faoSliceZCached(mesh,pls[pi]);
         const ys=[];
         let hit=null; // seg le plus proche si distance perpendiculaire < r
-        for(let k=0;k<segs.length;k++){
-          const s=segs[k];
+        const cand=faoXBCand(segs,x,r); // 2026-10-09-004 : cellules X utiles
+        for(let ci=0;ci<cand.length;ci++){
+          const s=segs[cand[ci]];
           if((s[0]<x&&x<s[2])||(s[2]<x&&x<s[0])){
             const t=(x-s[0])/(s[2]-s[0]);
             ys.push(s[1]+t*(s[3]-s[1]));
@@ -6874,7 +7050,7 @@ function faoYCands(mesh,planes,z,zt,y,r,ivs){
 /* Index spatial DENSE (tableau plaqué, bornes connues) : ni concaténation de
    clés string « ix:iy » ni lookups sur objet — le balayage d'un carré de
    rayon d (jusqu'à 25×25 cellules pour d=49) était le 1er coût du fichier. */
-function faoHashBuild(cell){ return {cell:cell>0?cell:4,a:[],x0:0,y0:0,w:0,h:0}; }
+function faoHashBuild(cell){ return {cell:cell>0?cell:4,a:[],b:[],x0:0,y0:0,w:0,h:0}; }
 function faoHashFit(H,ix0,iy0,ix1,iy1){
   if(ix1<ix0||iy1<iy0)return;
   let x0=H.x0,y0=H.y0,w=H.w,h=H.h;
@@ -6890,9 +7066,10 @@ function faoHashFit(H,ix0,iy0,ix1,iy1){
   // s'étendent vers la gauche ou le haut, écrire en colonne 0 déplacerait
   // toute la grille d'une case et fausserait les distances.
   const ox=H.x0-x0,oy=H.y0-y0;
-  const na=new Array(w*h);
-  for(let y=0;y<H.h;y++){const o=(y+oy)*w+ox,so=y*H.w;for(let x=0;x<H.w;x++)na[o+x]=H.a[so+x];}
-  H.a=na;H.x0=x0;H.y0=y0;H.w=w;H.h=h;
+  const na=new Array(w*h),nb=new Array(w*h);
+  for(let y=0;y<H.h;y++){const o=(y+oy)*w+ox,so=y*H.w;
+    for(let x=0;x<H.w;x++){na[o+x]=H.a[so+x];nb[o+x]=H.b[so+x];}}
+  H.a=na;H.b=nb;H.x0=x0;H.y0=y0;H.w=w;H.h=h;
 }
 function faoHashSegs(H,segs){
   const c=H.cell;
@@ -6905,14 +7082,23 @@ function faoHashSegs(H,segs){
   }
   if(ix1<-1/0)return H;
   faoHashFit(H,ix0,iy0,ix1,iy1);
-  const w=H.w;
+  const w=H.w,b=H.b;
   for(let i=0;i<segs.length;i++){
     const s=segs[i];
     const ix0=Math.floor(Math.min(s[0],s[2])/c),ix1=Math.floor(Math.max(s[0],s[2])/c);
     const iy0=Math.floor(Math.min(s[1],s[3])/c),iy1=Math.floor(Math.max(s[1],s[3])/c);
+    // bbox du segment (une fois) pour l'union par cellule
+    const ux0=s[0]<s[2]?s[0]:s[2],ux1=s[0]<s[2]?s[2]:s[0];
+    const uy0=s[1]<s[3]?s[1]:s[3],uy1=s[1]<s[3]?s[3]:s[1];
     for(let iy=iy0;iy<=iy1;iy++){const o=(iy-H.y0)*w-H.x0;
       for(let ix=ix0;ix<=ix1;ix++){
         const p=o+ix; let a=H.a[p]; if(!a)a=H.a[p]=[]; a.push(s);
+        const q=b[p];
+        if(!q)b[p]=[ux0,uy0,ux1,uy1];
+        else{ // union : sur-ensemble exact pour rejeter une cellule entière
+          if(ux0<q[0])q[0]=ux0; if(uy0<q[1])q[1]=uy0;
+          if(ux1>q[2])q[2]=ux1; if(uy1>q[3])q[3]=uy1;
+        }
       }}
   }
   return H;
@@ -6944,18 +7130,29 @@ function faoDistSeg(H,x,y,dMax,tMax){
   // tMax absent/inutilisable : -1 (best >= 0 toujours) = aucune sortie
   // anticipée. Piège : 1/0 rendrait `best<tm` vrai dès le 1er segment.
   const tm=(tMax===undefined||!(tMax<dMax))?-1:tMax*tMax;
+  const useT=tm>=0, capT=useT?tm:lim, bb=H.b;
   let best=1/0;
   for(let iy=iy0;iy<=iy1;iy++){
     const ro=(iy-H.y0)*W-H.x0;
     for(let ix=ix0;ix<=ix1;ix++){
-      const arr=a[ro+ix]; if(!arr)continue;
+      const p=ro+ix;
+      const arr=a[p]; if(!arr)continue;
+      // 2026-10-09-004 — chemin tMax : la bbox UNION des segments de la
+      // cellule est une borne inférieure de la distance de CHAQUE segment
+      // (seg ⊆ union) : union >= tm ⟹ tous les segments >= tm ⟹ la cellule
+      // ne peut contenir aucun < tm, ignorée. Si toutes le sont, le test
+      // bolléen est faux — exact (sur-ensemble conservateur).
+      if(useT&&bb){const q=bb[p];
+        if(q){const qx=x<q[0]?q[0]-x:(x>q[2]?x-q[2]:0),qy=y<q[1]?q[1]-y:(y>q[3]?y-q[3]:0);
+          if(qx*qx+qy*qy>=tm)continue;}
+      }
       for(let k=0;k<arr.length;k++){
         const s=arr[k],ax=s[0],ay=s[1],bx=s[2],by=s[3];
         // rejet AABB (borne inferieure de la distance) : bien moins cher que
         // la projection sur le segment, et exact pour un seuil <= dMax.
         const x0=ax<bx?ax:bx,x1=ax<bx?bx:ax,y0=ay<by?ay:by,y1=ay<by?by:ay;
         const qx=x<x0?x0-x:(x>x1?x-x1:0),qy=y<y0?y0-y:(y>y1?y-y1:0);
-        const cap=best<lim?best:lim;
+        const cap=best<capT?best:capT;
         if(qx*qx+qy*qy>=cap)continue;
         const dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy;
         let t=L2>0?((x-ax)*dx+(y-ay)*dy)/L2:0;
@@ -7116,7 +7313,81 @@ function faoPlaneYB(P){
   P.yb={y0:y0,step:step,rows:rows,n:n,E:E};
   return P.yb;
 }
+/* Grille exacte de parité (2026-10-09-004) : une cellule jamais traversée
+   par une arête de plan a une parité CONSTANTE (connexité 4 : aucune
+   frontière entre deux cellules voisines non marquées) — valeur calculée
+   UNE fois au centre d'une cellule de chaque composante ; cellules-
+   frontière → test exact inchangé (faoShapeInsideRaw). Marqueur 3×3
+   autour du DDA conservatif (toute arête traversant une cellule la marque).
+   Planchers/tables (sauts y hors [bb1,bb3]) : prouvé qu'une cellule non
+   marquée straddlant bb ne peut porter la parité 1 de part et d'autre. */
+const fsgCache=(typeof WeakMap!=='undefined')?new WeakMap():null;
+function fsgGrid(S){
+  if(!fsgCache)return null;
+  let g=fsgCache.get(S);
+  if(g!==undefined)return g;
+  g=null;
+  const R=S.rect;
+  if(R&&R[2]>R[0]&&R[3]>R[1]){
+    const sizes=[1,2,4,8];
+    for(let si=0;si<sizes.length&&!g;si++){
+      const cs=sizes[si];
+      const ix0=Math.floor(R[0]/cs),ix1=Math.floor(R[2]/cs);
+      const iy0=Math.floor(R[1]/cs),iy1=Math.floor(R[3]/cs);
+      const W=ix1-ix0+1,Hh=iy1-iy0+1;
+      if(W<1||Hh<1||W*Hh>400000)continue;
+      const bnd=new Uint8Array(W*Hh);
+      for(let pi=0;pi<S.pl.length;pi++){
+        const E=faoPlaneYB(S.pl[pi]).E;
+        for(let i=0;i+3<E.length;i+=4){
+          const ax=E[i],ay=E[i+1],bx=E[i+2],by=E[i+3];
+          const st=Math.max(1,Math.ceil(Math.max(Math.abs(bx-ax),Math.abs(by-ay))/(cs*0.5)));
+          for(let t=0;t<=st;t++){
+            const ccx=Math.floor((ax+(bx-ax)*(t/st))/cs),ccy=Math.floor((ay+(by-ay)*(t/st))/cs);
+            for(let oy=-1;oy<=1;oy++)for(let ox=-1;ox<=1;ox++){
+              const gx=ccx+ox-ix0,gy=ccy+oy-iy0;
+              if(gx>=0&&gx<W&&gy>=0&&gy<Hh)bnd[gy*W+gx]=1;
+            }
+          }
+        }
+      }
+      const comp=new Int32Array(W*Hh); comp.fill(-1);
+      const stack=new Int32Array(W*Hh);
+      const vals=[];
+      let ncomp=0;
+      for(let i=0;i<W*Hh;i++){
+        if(bnd[i]||comp[i]!==-1)continue;
+        let sp=0; stack[sp++]=i; comp[i]=ncomp;
+        while(sp){
+          const p=stack[--sp];
+          const px=p%W,py=(p-px)/W;
+          if(px>0&&!bnd[p-1]&&comp[p-1]===-1){comp[p-1]=ncomp;stack[sp++]=p-1;}
+          if(px<W-1&&!bnd[p+1]&&comp[p+1]===-1){comp[p+1]=ncomp;stack[sp++]=p+1;}
+          if(py>0&&!bnd[p-W]&&comp[p-W]===-1){comp[p-W]=ncomp;stack[sp++]=p-W;}
+          if(py<Hh-1&&!bnd[p+W]&&comp[p+W]===-1){comp[p+W]=ncomp;stack[sp++]=p+W;}
+        }
+        const gx=i%W,gy=(i-gx)/W;
+        vals.push(faoShapeInsideRaw(S,(gx+ix0+0.5)*cs,(gy+iy0+0.5)*cs)?1:0);
+        ncomp++;
+      }
+      g={cs:cs,ix0:ix0,iy0:iy0,W:W,H:Hh,comp:comp,vals:vals};
+    }
+  }
+  fsgCache.set(S,g);
+  return g;
+}
 function faoShapeInside(S,x,y){
+  const g=fsgGrid(S);
+  if(g){
+    const gx=Math.floor(x/g.cs)-g.ix0,gy=Math.floor(y/g.cs)-g.iy0;
+    if(gx>=0&&gx<g.W&&gy>=0&&gy<g.H){
+      const c=g.comp[gy*g.W+gx];
+      if(c>=0)return !!g.vals[c];
+    }
+  }
+  return faoShapeInsideRaw(S,x,y);
+}
+function faoShapeInsideRaw(S,x,y){
   // OR des parités XOR par plan : trous gérés au plan, union entre plans
   // (matiere au-dessus = colonne interdite, meme regle que l'ombre).
   for(let i=0;i<S.pl.length;i++){
@@ -7144,8 +7415,11 @@ function faoShapeInside(S,x,y){
 function faoShapeValid(S,x,y,d){
   const R=S.rect;
   if(x<R[0]-1e-9||y<R[1]-1e-9||x>R[2]+1e-9||y>R[3]+1e-9)return false;
-  if(faoDistSeg(S.hash,x,y,d,d-1e-6)<d-1e-6)return false;
+  // 2026-10-09-004 : parité d'abord (grille O(1)) — un point DANS la
+  // matière est rejeté sans balayer le hash de distance ; ET logique
+  // (les deux tests doivent échouer) : l'ordre ne change pas le résultat.
   if(faoShapeInside(S,x,y))return false;
+  if(faoDistSeg(S.hash,x,y,d,d-1e-6)<d-1e-6)return false;
   return true;
 }
 function faoChainSide(ch,S){
@@ -8208,15 +8482,35 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   // avoir une coupe à la MÊME cote à ≤ r, sinon non couvert (on ne saute
   // jamais une bague utile) ; (2) test disque complet faoPlungeClear.
   const chunkCovered=function(ch){
-    const zc=[];
-    for(let i=0;i<moves.length;i++){const m=moves[i];
-      if(!m.r&&Math.abs(m.z-z)<1e-9)zc.push(m);}
-    if(!zc.length)return false;
+    // 2026-10-09-004 : index incrémental (points !r par cellule, queue
+    // seule) — plus de reconstruction zc O(moves) par candidat ni de
+    // balayage O(zc) par point ; filtre z exact conservé à la requête.
+    const g=fmiIdx(moves);
     const r2=rrSafe*rrSafe;
     const near=function(x,y){
-      for(let k=0;k<zc.length;k++){
-        const dx=zc[k].x-x,dy=zc[k].y-y;
-        if(dx*dx+dy*dy<=r2)return true;
+      if(!g){
+        for(let i=0;i<moves.length;i++){const m=moves[i];
+          if(!m.r&&Math.abs(m.z-z)<1e-9){
+            const dx=m.x-x,dy=m.y-y;
+            if(dx*dx+dy*dy<=r2)return true;}}
+        return false;
+      }
+      const c=fmiPC;
+      const ix0=Math.floor((x-rrSafe)/c),ix1=Math.floor((x+rrSafe)/c);
+      const iy0=Math.floor((y-rrSafe)/c),iy1=Math.floor((y+rrSafe)/c);
+      const z0=Math.round(z*1e6);
+      for(let dz=-1;dz<=1;dz++){
+        const zb=g.pt.get(z0+dz); if(!zb)continue;
+        for(let iy=iy0;iy<=iy1;iy++)for(let ix=ix0;ix<=ix1;ix++){
+          const arr=zb.get(fmiK(ix,iy)); if(!arr)continue;
+          for(let k=0;k<arr.length;k++){
+            const m=arr[k];
+            if(Math.abs(m.z-z)<1e-9){
+              const dx=m.x-x,dy=m.y-y;
+              if(dx*dx+dy*dy<=r2)return true;
+            }
+          }
+        }
       }
       return false;
     };

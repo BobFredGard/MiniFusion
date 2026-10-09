@@ -141,6 +141,22 @@ const vm=require('vm');
     "const JO=Object.assign({},J,{ops:[pkC]});",
     "const vwC=faoViewerBuild(JO);",
     "att(vwC.pts.some(p=>p.ent===1),'viewer : ent propage jusqu aux pts (bleu)');",
+    // ===== 6bis. 10-09-004 : ent SURVIT au clip et a l'arrondi (bleu partout) =====
+    // Sans cette conservation, les post-traitements reconstruisaient les moves
+    // SANS ent : helices/rampes perdaient le tracé bleu (les arcs, pousses tels
+    // quels, restaient bleus — cercles bleus, rampes vertes : incoherence vue).
+    "const entMv=[{r:1,x:-20,y:5,z:30},{r:0,ent:1,x:-20,y:5,z:10},{r:0,ent:1,x:30,y:5,z:10},{r:0,ent:1,x:30,y:40,z:10}];",
+    "const cXY=faoClipMovesXY(entMv,{x0:0,y0:0,x1:100,y1:60},25,0);",
+    "att(cXY.filter(m=>!m.r).length>0&&cXY.filter(m=>!m.r).every(m=>m.ent===1),'clipXY : les points reconstruits gardent ent (bleu)');",
+    "const limSq={mode:'chain',loop:[[0,0],[100,0],[100,60],[0,60]],closed:true};",
+    "const cPoly=faoClipMovesPoly(entMv,limSq,5,25,2);",
+    "att(cPoly.filter(m=>!m.r).length>0&&cPoly.filter(m=>!m.r).every(m=>m.ent===1),'clipPoly : les points reconstruits gardent ent (bleu)');",
+    "const rndE=faoRoundMoves([{r:1,x:0,y:0,z:30},{r:0,ent:1,x:10,y:10,z:10},{r:0,ent:1,x:10,y:10,z:5},{r:0,x:40,y:10,z:5},{r:0,x:40,y:40,z:5},{r:0,x:10,y:40,z:5},{r:0,x:10,y:10,z:5}],2);",
+    "att(rndE.filter(m=>m.ent===1).length===2,'round : les ent passent telles quelles (geom + bleu)');",
+    "att(rndE.some(m=>m.arc),'round : la coupe non-ent est bien arrondie');",
+    "const pkLim=Object.assign({},pkC,{id:'plim',entry:'auto',arrondi:2,limit:{mode:'rect',x0:5,y0:5,x1:95,y1:55}});",
+    "const mvLim=faoOpMoves(pkLim,J);",
+    "att(mvLim.filter(m=>!m.r&&m.ent===1).length>0,'dispatch : rampes d entree encore etiquetees apres clip+arrondi+zone');",
     // ===== 7. 006 : JAMAIS de plongee a plat dans la matiere (Ø25) =====
     "const d2sT=function(ax,ay,bx,by,px,py){const dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy;let t=L2>0?((px-ax)*dx+(py-ay)*dy)/L2:0;t=t<0?0:(t>1?1:t);const ex=ax+t*dx-px,ey=ay+t*dy-py;return ex*ex+ey*ey;};",
     "const J25=faoDefaultSetup();J25.stock={x0:0,y0:0,z0:0,x1:120,y1:90,z1:20};",
