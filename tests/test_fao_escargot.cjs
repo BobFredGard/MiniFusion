@@ -130,7 +130,7 @@ const vm=require('vm');
     "const i10=cE.findIndex(function(m){return Math.abs(m.z-10)<1e-6;});",
     "att(i14>=0&&i10>i14,'escargot : plan z=14 avant z=10');",
     // EXPANSION dans le plan : centre -> faces (tiers 3 largement plus loin).
-    // 011 : mesure sur les coupes DANS la piece — le tour E0 de la boite
+    // 10-09-001 : mesure sur les coupes DANS la piece — le tour E0 de la boite
     // (hors silhouette, entrelace greedy avec les faces) pesait dans les
     // moyennes : ce n'est que l'ordre d'attaque des chaines, pas l'expansion
     // de la spirale (poche couverte a 100 % dans les deux cas).

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**191 versions**, de `2026-09-28b` à `2026-10-08-011` — la plus récente en bas,
+**191 versions**, de `2026-09-28b` à `2026-10-09-001` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3260,7 +3260,7 @@ Migration : `APP_VER` → `2026-10-08-010`, **`CACHE_VER` → `2026-10-08-010`**
 
 ---
 
-### `2026-10-08-011`
+### `2026-10-09-001`
 
 **FAO : VIDE D'ABORD — toute entrée restante plonge d'abord À PLAT dans le vide déjà usiné (point Q), puis accoste la cible à cote z et entre circulairement ; hélices 8 → 4 (pôle seul), descents non claires 309 → 81 (aucune près d'un vide).**
 
@@ -3270,6 +3270,6 @@ Noyau — drapeau `sweptNow` (coupe déjà émise à cote z dans CE niveau, pos�
 
 Résultat (fixture escargot Ø25, poche ouverte) : hélices **8 → 4** (pôle seul, 1/couche), arcs 239 → 48 (ramps d'arc multi-sous-arcs remplacées par une seule arrivée + arc), moves 2851 → 2492, descentes 573 → 152, descentes non claires 309 → 81 (toutes hélices de pôle, **aucune près d'un vide ≤ 30 mm**) ; couverture de la poche à 100 % (inchangée), boîte 52,2 → 53,2 %.
 
-Tests — `test_fao_escargot.cjs` : expansion mesurée sur les coupes **dans la pièce** (le tour E0 hors silhouette, entrelacé greedy avec les faces, faussait les moyennes : c'est l'ordre d'attaque des chaînes, pas l'expansion) : **+19,4 mm** (1er → 3er tiers), quasi-monotone 1/143, lasse outil et faces inchangées. Sécurité 007 intacte (0 plongée à plat non couverte). Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-08-011.html`.
+Tests — `test_fao_escargot.cjs` : expansion mesurée sur les coupes **dans la pièce** (le tour E0 hors silhouette, entrelacé greedy avec les faces, faussait les moyennes : c'est l'ordre d'attaque des chaînes, pas l'expansion) : **+19,4 mm** (1er → 3er tiers), quasi-monotone 1/143, lasse outil et faces inchangées. Sécurité 007 intacte (0 plongée à plat non couverte). Run complet **73/73** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-09-001.html`.
 
-Migration : `APP_VER` → `2026-10-08-011`, **`CACHE_VER` → `2026-10-08-011`** : les générateurs changent (arrivées dans le vide avant entrée = autres trajets d'entrée, mêmes sigs) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.
+Migration : `APP_VER` → `2026-10-09-001`, **`CACHE_VER` → `2026-10-09-001`** : les générateurs changent (arrivées dans le vide avant entrée = autres trajets d'entrée, mêmes sigs) → périmés légitimement, régénération unique des tampons FAO à l'ouverture. Badge **V0.1.2 inchangé**.
