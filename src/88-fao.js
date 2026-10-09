@@ -8022,6 +8022,20 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     }
     return true;
   };
+  // 006 : liaison de COUPE (reste sur le plan) — la matière À z sous le
+  // disque est ce qu'on vient enlever (ouverture de poche, étagère déjà en
+  // cours) ; seule l'OMBRE du niveau (S = ombre des plans supérieurs) compte
+  // : même critère que les bandes (safeRun) — porte-à-faux / voile fin /
+  // surplomb restent interdits (faoShapeValid rejette l'intérieur de S).
+  const linkCutOK=function(ax,ay,bx,by){
+    const dx=bx-ax,dy=by-ay,L=Math.sqrt(dx*dx+dy*dy);
+    const n=Math.max(1,Math.ceil(L/0.25));
+    for(let i=0;i<=n;i++){
+      const t=i/n;
+      if(!faoShapeValid(S,ax+dx*t,ay+dy*t,rrSafe))return false;
+    }
+    return true;
+  };
   // Liaison vers un morceau : translation en l'air (l'appelant plonge ensuite,
   // disque contrôlé par l'appelant) — SAUF liaison courte (< faoRapideMin) et
   // sûre : G1 à la cote, aucun lever (renvoie false, l'appelant émet le G1).
@@ -8070,12 +8084,23 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   };
   for(let k=0;k<200;k++){
     const inset=k*aeA, d=r+k*aeA;
-    const ro=faoOffsetRuns(S,d);
-    const fr=faoRectRuns(S,inset,d);
-    for(let i=0;i<ro.length;i++)if(ro[i].pts&&ro[i].pts.length>=2){ro[i].k=kTag(ro[i],k);chunks.push(ro[i]);}
-    for(let i=0;i<fr.length;i++)if(fr[i].pts&&fr[i].pts.length>=2){fr[i].k=kTag(fr[i],k);chunks.push(fr[i]);}
-    if(isRing)break;
-    if(!ro.length&&!fr.length)break;
+    let any=false;
+    // 006 : chaînes offsetées k=0..2 = SUIVI DES FACES (mur + 2 anneaux de
+    // délestage radial) ; au-delà le MILIEU est ouvert en bandes PARALLELES
+    // (voir plus bas) — pas d'anneaux concentriques lointains.
+    if(k<=2){
+      const ro=faoOffsetRuns(S,d);
+      for(let i=0;i<ro.length;i++)if(ro[i].pts&&ro[i].pts.length>=2){ro[i].k=kTag(ro[i],k);chunks.push(ro[i]);any=true;}
+    }
+    // Cadres E-k : E0 (tour de boîte) toujours ; E-k>=1 = affrontement de la
+    // MARGE (cadres imbriqués, jamais dans la matière — la validité d= r+k*aeA
+    // les tue au contact de l'ombre) — UNIQUEMENT s'il reste de la matière
+    // (niveau vide : les bandes pleine largeur couvrent tout, pas de double
+    // passe). Arrêt dès qu'un palier ne produit plus rien.
+    const fr=(k===0||S.chains.length)?faoRectRuns(S,inset,d):[];
+    for(let i=0;i<fr.length;i++)if(fr[i].pts&&fr[i].pts.length>=2){fr[i].k=kTag(fr[i],k);chunks.push(fr[i]);any=true;}
+    if(isRing)break; // mini-passes/finition : k=0 seulement (comme avant)
+    if(k>0&&!any)break;
   }
   // --- goulets : trochoïdes G2/G3 par region etroite (un morceau par region,
   // jamais reverse : les arcs G2/G3 sont orientes).
@@ -8127,6 +8152,36 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     if(cur&&cur.length>=2)out.push({mv:cur});
     return out;
   };
+  // --- BANDES PARALLÈLES (006) : le milieu du niveau s'ouvre en lignes
+  // droites depuis le centre jusqu'aux faces (« des lignes bien droites
+  // depuis le centre jusqu'au moment où tu rejoins les faces, et là tu
+  // commences à les suivre »). Une seule entrée (circ/hélice) a ouvert la
+  // zone : les bandes se chaînent ensuite en G1 À LA CÔTE (liaison de
+  // coupe — linkIn 006 : « pas la peine de sortir et de re-rentrer »).
+  // Les régions étroites (goulets) restent aux trochoïdes (bloc suivant).
+  if(!isRing){
+    const trochIVs=new Set();
+    regs.forEach(function(R){
+      let ml=0;
+      R.forEach(function(q){ ml=Math.max(ml,q.iv.b-q.iv.a); });
+      if(ml<2.5*D&&R.length>=2)R.forEach(function(q){ trochIVs.add(q.iv); });
+    });
+    for(let li=0;li<lines.length;li++){
+      const L=lines[li];
+      for(let ii=0;ii<L.ivs.length;ii++){
+        const iv=L.ivs[ii];
+        if(trochIVs.has(iv))continue;
+        const runs=safeRun(iv.a,iv.b,L.y);
+        for(let ri=0;ri<runs.length;ri++){
+          // Serpentin : lignes impaires inversées (le bout de la ligne N
+          // colle au bout de la ligne N+1 — liaison courte, reste au plan).
+          if(li%2===1)runs[ri].mv.reverse();
+          runs[ri].k=1000; // priorité MAX : bandes avant tout le reste
+          chunks.push(runs[ri]);
+        }
+      }
+    }
+  }
   if(!isRing){
     regs.forEach(function(R){
       let ml=0;
@@ -8220,6 +8275,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       cands.push({x:(f.iv.a+f.iv.b)/2,y:f.y,elen:f.iv.b-f.iv.a});
     });
     cands.push({x:cx0,y:cy0,elen:0});
+    let fbHx=null; // 006 : meilleur spot « qui mord » (aucun disque balayé)
     for(let ci=0;ci<cands.length&&!hx;ci++){
       const c=cands[ci];
       const hrr=c.elen>0?Math.max(1,Math.min(D*0.4,c.elen/2-1)):Math.max(0.5,D*0.2);
@@ -8227,12 +8283,33 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       if(fmode==='auto'&&!(c.elen>=2*D))continue;
       // jeu 2 mm si possible, sinon ancien comportement (jeu 0) : surtout ne
       // pas rejeter l'helice serree au profit de la micro-helice de secours.
-      if(!faoDiscClear(segsAll,c.x,c.y,hrr,r+faoHelixJeu)&&
-         !faoDiscClear(segsAll,c.x,c.y,hrr,r))continue;
+      const disq=(!faoDiscClear(segsAll,c.x,c.y,hrr,r+faoHelixJeu)&&
+                  !faoDiscClear(segsAll,c.x,c.y,hrr,r));
+      if(disq){
+        // 006 : AUCUNE tache dégagée sur ce candidat — la 1ʳᵉ hélice du
+        // niveau a le droit de MORDRE (« Oui, hélice autorisée à mordre ») :
+        // on le garde en repli plutôt que de tomber sur la rampe. Le
+        // candidat est le MEILLEUR spot (zone intérieure la plus large en
+        // premier) — il ouvre la poche d'où partiront les bandes parallèles.
+        // Garde ombre : JAMAIS sous un porte-à-faux/voile (centre + orbite
+        // hors de S, comme les bandes) — la matière mordue est la matière
+        // restante EXPOSÉE depuis le dessus.
+        let okS=faoShapeValid(S,c.x,c.y,rrSafe);
+        if(okS)for(let a2=0;a2<8;a2++){
+          const t2=a2/8*2*Math.PI;
+          if(!faoShapeValid(S,c.x+hrr*Math.cos(t2),c.y+hrr*Math.sin(t2),rrSafe)){okS=false;break;}
+        }
+        if(okS&&!fbHx)fbHx={x:c.x,y:c.y,hrr:hrr};
+        continue;
+      }
       hx=c.x; hy=c.y; hr=hrr;
       // spot = 2 mm au-dessus de la matiere RESTANTE : jamais sous hFloor
       // (face d'entree de la passe + 2 mm), sinon la spirale attaque dedans.
       hStart=Math.max(faoHelixSpot(mesh,c.x,c.y,hrr,r,z,brutTop,planes),hFloor);
+    }
+    if(!hx&&fbHx){
+      hx=fbHx.x; hy=fbHx.y; hr=fbHx.hrr;
+      hStart=Math.max(faoHelixSpot(mesh,hx,hy,hr,r,z,brutTop,planes),hFloor);
     }
   }
   let ramp=null;
@@ -8304,6 +8381,9 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     }
     return P;
   };
+  // 006 : l'entrée du niveau est émise — les liaisons suivantes restent sur
+  // le plan (coupe latérale) au lieu de sortir et de re-rentrer en hélice.
+  let entered=false;
   const emitChunk=function(ch,px,py){
     // Liaison d'entrée (10-09-002) : liaison courte (< faoRapideMin) sûre =
     // G1 à la cote (aucun lever) ; sinon ENTRÉE CIRCULAIRE (2026-10-08-004,
@@ -8321,6 +8401,23 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       if(prev&&!prev.r&&Math.abs(prev.z-z)<1e-9&&
          (ax-prev.x)*(ax-prev.x)+(ay-prev.y)*(ay-prev.y)<faoRapideMin*faoRapideMin&&
          segClear(prev.x,prev.y,ax,ay)){ pushCut(ax,ay); return 1; }
+      // 006 : après l'entrée du niveau, TOUT reste sur le plan — la liaison
+      // EST de la coupe (ouverture de poche de l'intérieur vers l'extérieur :
+      // « pas la peine de sortir et de re-rentrer en hélice »). Test :
+      // chemin hors de l'OMBRE du niveau (porte-à-faux/voile/surplomb =
+      // interdit, même critère que les bandes) — la matière à z sous le
+      // disque est le travail. Repli sur l'ancien cascade sinon.
+      if(!isRing&&entered&&prev&&Math.abs(prev.z-z)<1e-9){
+        if(linkCutOK(prev.x,prev.y,ax,ay)){ pushCut(ax,ay); return 1; }
+        // 006 : chemin en L (un coude) quand le direct coupe un coin d'ombre
+        // — les bandes serpentin passent souvent par le coude.
+        if(linkCutOK(prev.x,prev.y,ax,prev.y)&&linkCutOK(ax,prev.y,ax,ay)){
+          pushCut(ax,prev.y); pushCut(ax,ay); return 1;
+        }
+        if(linkCutOK(prev.x,prev.y,prev.x,ay)&&linkCutOK(prev.x,ay,ax,ay)){
+          pushCut(prev.x,ay); pushCut(ax,ay); return 1;
+        }
+      }
       if(circEnter(ax,ay,ux,uy))return 1;
       if(faoPlungeClear(ax,ay,moves,z,D,airCv)){ gotoXY(ax,ay); moves.push({r:0,ent:1,x:rnd(ax),y:rnd(ay),z:z}); return 1; }
       // 007 : RAMPE le long du morceau — descente répartie (~2 mm par point,
@@ -8570,25 +8667,42 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   if((entryMode==='circ'||isRing)&&remaining.length){
     const px0=moves.length?moves[moves.length-1].x:cx0;
     const py0=moves.length?moves[moves.length-1].y:cy0;
-    let pk0=-1;
-    if(isRing)pk0=safePick(remaining,px0,py0);
-    else{
+    if(isRing){
+      const pk0=safePick(remaining,px0,py0);
+      const ch0=remaining[pk0];
+      if(ch0){
+        const s0=ordered(ch0,px0,py0);
+        const ax0=ch0.mv?s0[0].x:s0[0][0], ay0=ch0.mv?s0[0].y:s0[0][1];
+        let ux0=0,uy0=0;
+        if(s0.length>1){
+          ux0=ch0.mv?s0[1].x-s0[0].x:s0[1][0]-s0[0][0];
+          uy0=ch0.mv?s0[1].y-s0[0].y:s0[1][1]-s0[0][1];
+        }
+        circOK=circEnter(ax0,ay0,ux0,uy0);
+      }
+    }else{
       let kTop=-1;
       for(let i=0;i<remaining.length;i++)if((remaining[i].k||0)>kTop)kTop=remaining[i].k||0;
       const grp=[];
       for(let i=0;i<remaining.length;i++)if((remaining[i].k||0)===kTop)grp.push(remaining[i]);
-      pk0=remaining.indexOf(grp[safePick(grp,px0,py0)]);
-    }
-    const ch0=remaining[pk0];
-    if(ch0){
-      const s0=ordered(ch0,px0,py0);
-      const ax0=ch0.mv?s0[0].x:s0[0][0], ay0=ch0.mv?s0[0].y:s0[0][1];
-      let ux0=0,uy0=0;
-      if(s0.length>1){
-        ux0=ch0.mv?s0[1].x-s0[0].x:s0[1][0]-s0[0][0];
-        uy0=ch0.mv?s0[1].y-s0[0].y:s0[1][1]-s0[0][1];
+      // 006 : le 1er morceau du tour est une BANDE (k=1000) — son point de
+      // départ n'accepte pas toujours l'entrée circulaire (trop près d'une
+      // ombre). On essaie les plus proches jusqu'à ce que circEnter accepte ;
+      // sinon la chaîne d'entrée classique (tang/hélice/rampe) reste le repli.
+      const cand=grp.map(function(ch){
+        const s0=ordered(ch,px0,py0);
+        const ax=ch.mv?s0[0].x:s0[0][0], ay=ch.mv?s0[0].y:s0[0][1];
+        let ux=0,uy=0;
+        if(s0.length>1){
+          ux=ch.mv?s0[1].x-s0[0].x:s0[1][0]-s0[0][0];
+          uy=ch.mv?s0[1].y-s0[0].y:s0[1][1]-s0[0][1];
+        }
+        return {ax:ax,ay:ay,ux:ux,uy:uy,d:(ax-px0)*(ax-px0)+(ay-py0)*(ay-py0)};
+      });
+      cand.sort(function(a,b){return a.d-b.d;});
+      for(let gi=0;gi<cand.length&&gi<8&&!circOK;gi++){
+        if(circEnter(cand[gi].ax,cand[gi].ay,cand[gi].ux,cand[gi].uy))circOK=true;
       }
-      circOK=circEnter(ax0,ay0,ux0,uy0);
     }
   }
   if(circOK){
@@ -8651,6 +8765,35 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     }
     }
   }
+  // 006 : rien n'a été émis à la cote (circ refusé partout, pas de tang /
+  // hélice / rampe) — au moins une cible du tour accepte l'entrée
+  // circulaire : le tour y vient en liaison de coupe (linkIn 006). Sans
+  // cela, linkIn finissait en descente hélice de secours à ras de paroi
+  // (faux « niveaux » z intermédiaires). Ne touche pas aux niveaux où la
+  // chaîne d'entrée a déjà émis à z.
+  const pmE=moves.length?moves[moves.length-1]:null;
+  if((!pmE||pmE.z>z+1e-9)&&!isRing&&remaining.length){
+    const ex0=pmE?pmE.x:cx0, ey0=pmE?pmE.y:cy0;
+    const cE=remaining.map(function(ch){
+      const s0=ordered(ch,ex0,ey0);
+      const ax=ch.mv?s0[0].x:s0[0][0], ay=ch.mv?s0[0].y:s0[0][1];
+      let ux=0,uy=0;
+      if(s0.length>1){
+        ux=ch.mv?s0[1].x-s0[0].x:s0[1][0]-s0[0][0];
+        uy=ch.mv?s0[1].y-s0[0].y:s0[1][1]-s0[0][1];
+      }
+      return {ax:ax,ay:ay,ux:ux,uy:uy,d:(ax-ex0)*(ax-ex0)+(ay-ey0)*(ay-ey0)};
+    });
+    cE.sort(function(a,b){return a.d-b.d;});
+    for(let ei=0;ei<cE.length&&ei<40&&!circOK;ei++){
+      if(circEnter(cE[ei].ax,cE[ei].ay,cE[ei].ux,cE[ei].uy))circOK=true;
+    }
+  }
+  // 006 : l'entrée du niveau est émise (ou rien n'est utile ici) — les
+  // liaisons du tour restent désormais sur le plan (linkIn 006) quand la
+  // géométrie le permet ; la cascade circ/plongée/rampe reste le repli
+  // (prev.z≈z fait la séparation : secu → premier morceau = ancien chemin).
+  entered=true;
   // 10-09-002 : mini-passes — un tour fait, la fraise est passée partout :
   // un morceau dont CHAQUE point a son disque D/2 entièrement balayé à la
   // cote (même test que la plongée sûre 007) est déjà usiné. Le refaire =

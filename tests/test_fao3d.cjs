@@ -63,6 +63,17 @@ const vm=require('vm');
     "const rh=faoGenRough3D(CN,BX,40,30,{ap:10,ae:6,toolD:10,radial:0,axial:0,secu:45,entry:'helix'});",
     "att(rh[1].r===0&&rh[1].z<45&&rh[1].z>30,'helice forcee : 2e move en descente');",
     "att(rh.some(m=>!m.r&&Math.abs(m.z-30)<1e-9),'helice forcee : niveau 30 atteint');",
+    // --- 2026-10-09-006 : bandes parallèles + rester sur le plan (canal rm)
+    // (a) le milieu s'ouvre en longues lignes droites à cote constant (bandes),
+    // sur BEAUCOUP de y distincts (les cadres seuls ne donnent que quelques y) ;
+    // (b) les entrées sont groupées (≈1 par niveau/zone — plus de sortie/
+    // ré-entrée en hélice à chaque morceau) ; (c) stay-down : peu de rapides.
+    "const ln6=[];const ys6={};for(let i=1;i<rm.length;i++){const a=rm[i-1],b=rm[i];if(!a.r&&!b.r&&Math.abs(a.z-b.z)<1e-9&&Math.abs(a.y-b.y)<1e-9&&Math.abs(a.x-b.x)>=10){ln6.push(i);ys6[a.y.toFixed(2)]=1;}}",
+    "att(ln6.length>20,'006 bandes : '+ln6.length+' longues lignes droites (>=10 mm) a cote constant');",
+    "att(Object.keys(ys6).length>=12,'006 bandes : '+Object.keys(ys6).length+' y distincts (bandes, pas seulement cadres)');",
+    "let ent6=0,last6=false;rm.forEach(function(m){const e=m.ent===1;if(e&&!last6)ent6++;last6=e;});",
+    "att(ent6<=12,'006 entrees : '+ent6+' groupes ent (≈1 par zone/niveau, pas de re-entree morceau a morceau)');",
+    "att(rm.filter(m=>m.r).length<=20,'006 stay-down : '+rm.filter(m=>m.r).length+' rapides sur '+rm.length+' moves');",
     // --- parois pièce : x=25 et x=75 suivis sur plusieurs lignes (grille aeA=2.5)
     "att(rm.some(m=>!m.r&&Math.abs(m.x-25)<1e-9&&Math.abs(m.y-0)<1e-9),'paroi : (25,0)');",
     "att(rm.some(m=>!m.r&&Math.abs(m.x-25)<1e-9&&Math.abs(m.y-52.5)<1e-9),'paroi : (25,52.5) suivie');",

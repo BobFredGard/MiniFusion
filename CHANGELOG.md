@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**195 versions**, de `2026-09-28b` à `2026-10-09-005` — la plus récente en bas,
+**196 versions**, de `2026-09-28b` à `2026-10-09-006` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3335,3 +3335,19 @@ Dessin — `faoRefreshPreviewStream()` : miroir async de `faoRefreshPreview('cal
 Tests — `stream_eq.cjs` **16/16** : drain ≡ synchrone (12 yields, 16 390 ≡ 16 390 pts), `faoOpMovesStream` ≡ `faoOpMoves` (2 179 ≡ 2 179 avec `limit` rect → zone), **cache hit ≡ calcul direct** (`faoZoneServe` idempotent), pipeline `faoPreviewGenerateAsync` ≡ `faoPreviewGenerate` (**2 422 ≡ 2 422 pts, 101 921 ≡ 101 921 chars de parcours**), bouton grisé puis réactivé, garde rAF no-op (378 ms, sans blocage). `test_fao_solide_cache.cjs` : interception portée sur `faoGenRough3DIt` (l'entrée réelle du calcul — « 1 seul calcul » intact). Pièce réelle `Cavité Usinage` : **107 873 moves, stats pc/fi/npTail identiques, 66,2 s** (surcoute du drain ≈ 0). Run complet **73/73** ; canari escargot identique bit-à-bit (postN 52782, `diag:0`) ; `diff_core` **20 000/20 000** + **3 000/3 000** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-09-005.html`.
 
 Migration : `APP_VER` → `2026-10-09-005`, **`CACHE_VER` → `2026-10-09-005`** : `faoGen*` restructurés en générateurs (sortie prouvée identique par `stream_eq`, tampons régénérés par sécurité — règle « le code qui produit change »). Badge **V0.1.2 inchangé**.
+
+---
+
+### `2026-10-09-006`
+
+**FAO ébauche 3D, mode Conventionnel : bandes de lignes parallèles depuis le centre jusqu'aux faces + suivi des faces ; une seule entrée par niveau, le reste des liaisons se fait SUR LE PLAN (liaisons de coupe, plus de sortie/ré-entrée en hélice à chaque morceau) ; la 1ʳᵉ hélice a le droit de mordre la matière.**
+
+Demande (livraison `2026-10-09-006`) : (1) bandes de lignes parallèles droites depuis le centre jusqu'aux faces, puis suivi des faces ; (2) une seule entrée par niveau, ensuite rester sur le plan ; (3) la 1ʳᵉ hélice peut mordre. Périmètre strict : l'escargot (`faoSpiralLevel`) et les mini-passes/finition (`isRing`) restent intacts.
+
+Bandes — après `safeRun` (avant le bloc trochs), pour chaque `lines[li]`/région non-trochs, `safeRun(iv.a, iv.b, L.y)` en serpentin (`li%2` inversé), rangées `k=1000`. La boucle k n'applique les chaînes qu'aux niveaux **0..2** (au-delà : bandes seules, cadres `faoRectRuns` vidés) ; `trochIVs` exclut les régions de peeling ; `if(isRing)break` après k=0.
+
+Liaisons de coupe — `linkCutOK(ax,ay,bx,by)` : échantillonnage 0,25 mm hors **ombre** `faoShapeValid(S,…,rrSafe)` (porte-à-faux/voile/surplomb interdits). Après l'entrée du niveau (`entered` posé à la première émission d'entrée), `linkIn` tente le direct, puis un chemin **en L** (un coude — les serpentin passent souvent par le coude), sinon cascade (circ multi-candidats sur les 8 cibles kTop, repli circ sur 40 cibles restantes, plongée, hélice). Pré-tour circ jusqu'à 8 candidats (`isRing` : un seul, inchangé). Fallback hélice mordante `fbHx` : centre **et** orbite (8 pts) doivent être valides — jamais sous porte-à-faux ; la 1ʳᵉ hélice n'est plus soumise au test de disque balayé (« a le droit de mordre »).
+
+Tests — `test_fao3d.cjs` : 5 → 3 → 2 → **0 échec** (surplomb/voile corrigé par `faoShapeValid`, couverture 027 par les chaînes k≤2, mini50 par l'arrêt des anneaux lointains, faux plans z=26/24 éliminés par le chemin en L) ; asserts 006 ajoutés sur le canal : >20 longues lignes droites à cote constant, ≥12 y distincts (bandes, pas seulement cadres), ≤12 groupes d'entrée, stay-down ≤20 rapides. Suite complète **73/73** ; `diff_core` **20 000/20 000** + **3 000/3 000** (noyau intact) ; canari escargot : invariants **`diag:0`** (`aPkAuto`, `aPk25`, `aEsc`) — compteurs `esc` attendus différents (rawEnt 510, postEnt 1020, postArc 9630, postN 107 992) ; pièce réelle `Cavité Usinage` : **148 324 moves, 45,9 s** (×37 % de points mais ×30 % plus rapide : moins de cascades d'entrée) ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-09-006.html`.
+
+Migration : `APP_VER` → `2026-10-09-006`, **`CACHE_VER` → `2026-10-09-006`** : la sortie du générateur de l'ébauche change (bandes + liaisons de coupe), tampons régénérés à l'ouverture. Badge **V0.1.2 inchangé**.
