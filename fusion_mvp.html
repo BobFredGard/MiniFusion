@@ -262,7 +262,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-11-006';
+const APP_VER='2026-10-11-007';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -15958,9 +15958,13 @@ async function faoPreviewGenerateAsync(){
    anime l'outil le long du parcours et dessine un BOUT de trace qui suit la fraise
    puis disparaît au fur et à mesure derrière elle (fenêtre glissante). */
 let faoVw=null, faoVwBar=null, faoVwBarT=null, faoVwBtn=null, faoVwMatterBtn=null, faoVwEsc=false;
-// 2026-10-11-002 : rendu « forme réelle » (profil de fraise réel, carve au rayon
-// d'arête, surface nette aux cotes exactes, brut = corps réel) — `false` = ancien rendu
-// simple (cylindre, carve Ø/2, colonnes, boîte) conservé pour comparaison.
+// 2026-10-11-007 : le bouton de la barre est à 3 ÉTATS (cycle) —
+//   `reel`  ◈  surface NETTE aux cotes exactes (défaut « forme réelle » de 003)
+//   `lisse` ≈  physique réelle + surface DOUCE (heightfield continu de la 002)
+//   `simple`◇  ancien rendu simple (cylindre, carve Ø/2, colonnes, boîte)
+// `faoViewerExact` reste la PHYSIQUE réelle (= mode !== 'simple', lue par
+// l'outil/le carve/le brut) ; `faoViewerMode` ajoute le style de SURFACE.
+let faoViewerMode='reel';
 let faoViewerExact=true, faoVwExactBtn=null;
 // 2026-10-11-003 : finesse du détail (0 bas / 1 normal / 2 haut) — pilote le budget
 // de la grille de matière ET le maillage de l'outil, avec les 2 cases de la barre :
@@ -16543,39 +16547,184 @@ function faoViewerMatterWriteAll(vw){
   o=faoMatterPut(a,o,X0,Y0,oz); o=faoMatterPut(a,o,X1,Y0,oz); o=faoMatterPut(a,o,X1,Y1,oz);
   o=faoMatterPut(a,o,X0,Y0,oz); o=faoMatterPut(a,o,X1,Y1,oz); o=faoMatterPut(a,o,X0,Y1,oz);
 }
-/* ---- 2026-10-11-003 : « surface nette » ----
-   Le heightfield de 002 (nœud = moyenne des 4 cellules adjacentes) est SUPPRIMÉ :
-   ce lissage floutait les traces de l'outil d'une maille (arêtes R2, marches
-   d'escalier, limite coupe/non-coupe). Les deux modes rendent la colonne à sa
-   cote EXACTE via faoViewerMatterWriteCol (30 verts/colonne). */
+/* ---- surface : « nette » (défaut) OU « lisse » (3e version du bouton) ----
+   2026-10-11-003 avait SUPPRIMÉ le heightfield de 002 (nœud = moyenne des 4
+   cellules adjacentes) : ce lissage floutait les traces de l'outil d'une maille
+   (arêtes R2, marches d'escalier, limite coupe/non-coupe). 2026-10-11-007 le
+   RÉINTRODUIT en OPTION choisie (bouton ≈ lisse) — le défaut « net » de 003 est
+   inchangé : la colonne à SA cote exacte via faoViewerMatterWriteCol. */
+function faoHFAddTri(pos,acc,a,b,c){
+  const ax=pos[a*3],ay=pos[a*3+1],az=pos[a*3+2];
+  const bx=pos[b*3],by=pos[b*3+1],bz=pos[b*3+2];
+  const cx=pos[c*3],cy=pos[c*3+1],cz=pos[c*3+2];
+  const ux=bx-ax,uy=by-ay,uz=bz-az, vx=cx-ax,vy=cy-ay,vz=cz-az;
+  const nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+  acc[a*3]+=nx;acc[a*3+1]+=ny;acc[a*3+2]+=nz;
+  acc[b*3]+=nx;acc[b*3+1]+=ny;acc[b*3+2]+=nz;
+  acc[c*3]+=nx;acc[c*3+1]+=ny;acc[c*3+2]+=nz;
+}
+function faoViewerMatterHFBuild(vw){
+  // (Re)construit la surface continue pleine du brut : nœuds à la cote du brut,
+  // murs de bord jusqu'au fond, fond plein — retourne le mesh (ou null).
+  const g=vw.matterGrid; if(!g||!vw.mTops)return null;
+  try{
+    const nx=g.nx, ny=g.ny, NX=nx+1, NY=ny+1, NV=NX*NY, nc=nx*ny;
+    const sx1=(g.sx1!=null)?g.sx1:g.ox+nx*g.pas, sy1=(g.sy1!=null)?g.sy1:g.oy+ny*g.pas;
+    const oz=g.oz;
+    const full=(g.full!=null)?g.full:(g.sz1!=null?g.sz1:oz+g.nz*(g.pz||g.pas));
+    const E=2*nx+2*ny;               // quads de mur (dessous + dessus + gauche + droite)
+    const NVW=NV+4*E+4;              // nœuds + murs (4 verts/quad) + fond
+    const pos=new Float32Array(NVW*3), nrm=new Float32Array(NVW*3);
+    const n2top=new Int32Array(NV*2).fill(-1);
+    const idx=new Uint32Array(nc*6+E*6+6);
+    const nodeX=function(ni){ return Math.min(g.ox+ni*g.pas, sx1); };
+    const nodeY=function(nj){ return Math.min(g.oy+nj*g.pas, sy1); };
+    for(let nj=0;nj<NY;nj++)for(let ni=0;ni<NX;ni++){
+      const n=nj*NX+ni;
+      pos[n*3]=nodeX(ni); pos[n*3+1]=nodeY(nj); pos[n*3+2]=full;
+      nrm[n*3]=0; nrm[n*3+1]=0; nrm[n*3+2]=1;
+    }
+    let io=0;
+    for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+      const a=j*NX+i, b=a+1, cN=a+NX, dN=a+NX+1;
+      idx[io++]=a; idx[io++]=b; idx[io++]=dN;
+      idx[io++]=a; idx[io++]=dN; idx[io++]=cN;
+    }
+    let e=0;
+    const wall=function(nA,nB,ex,ey){
+      const wv=NV+e*4;
+      const ax=pos[nA*3],ay=pos[nA*3+1],bx=pos[nB*3],by=pos[nB*3+1];
+      pos[wv*3]=ax;   pos[wv*3+1]=ay;   pos[wv*3+2]=full;
+      pos[(wv+1)*3]=bx;pos[(wv+1)*3+1]=by;pos[(wv+1)*3+2]=full;
+      pos[(wv+2)*3]=bx;pos[(wv+2)*3+1]=by;pos[(wv+2)*3+2]=oz;
+      pos[(wv+3)*3]=ax;pos[(wv+3)*3+1]=ay;pos[(wv+3)*3+2]=oz;
+      for(let s=0;s<4;s++){ nrm[(wv+s)*3]=ex; nrm[(wv+s)*3+1]=ey; nrm[(wv+s)*3+2]=0; }
+      idx[io++]=wv; idx[io++]=wv+1; idx[io++]=wv+2;
+      idx[io++]=wv; idx[io++]=wv+2; idx[io++]=wv+3;
+      if(n2top[nA*2]<0)n2top[nA*2]=wv; else n2top[nA*2+1]=wv;
+      if(n2top[nB*2]<0)n2top[nB*2]=wv+1; else n2top[nB*2+1]=wv+1;
+      e++;
+    };
+    for(let ni=0;ni<nx;ni++)wall(ni,ni+1,0,-1);                       // bord −Y
+    for(let ni=0;ni<nx;ni++){ const base=ny*NX+ni; wall(base,base+1,0,1); } // bord +Y
+    for(let nj=0;nj<ny;nj++)wall(nj*NX,(nj+1)*NX,-1,0);               // bord −X
+    for(let nj=0;nj<ny;nj++)wall(nj*NX+nx,(nj+1)*NX+nx,1,0);          // bord +X
+    const b0=NV+4*E, b1=b0+1, b2=b0+2, b3=b0+3;
+    pos[b0*3]=g.ox;pos[b0*3+1]=g.oy;pos[b0*3+2]=oz;
+    pos[b1*3]=sx1;pos[b1*3+1]=g.oy;pos[b1*3+2]=oz;
+    pos[b2*3]=sx1;pos[b2*3+1]=sy1;pos[b2*3+2]=oz;
+    pos[b3*3]=g.ox;pos[b3*3+1]=sy1;pos[b3*3+2]=oz;
+    for(let s=0;s<4;s++){ nrm[(b0+s)*3]=0; nrm[(b0+s)*3+1]=0; nrm[(b0+s)*3+2]=-1; }
+    idx[io++]=b0; idx[io++]=b1; idx[io++]=b2;
+    idx[io++]=b0; idx[io++]=b2; idx[io++]=b3;
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+    geo.setAttribute('normal',new THREE.BufferAttribute(nrm,3));
+    geo.setIndex(new THREE.BufferAttribute(idx,1));
+    const mesh=new THREE.Mesh(geo,new THREE.MeshPhongMaterial({color:0x9c846a,side:THREE.DoubleSide}));
+    mesh.name='faoMatter';
+    mesh.raycast=function(){};
+    mesh.frustumCulled=false;
+    if(typeof scene!=='undefined'&&scene)scene.add(mesh);
+    vw.mH={NX:NX,NY:NY,NV:NV,E:E,pos:pos,nrm:nrm,n2top:n2top,geo:geo,idx:idx,mesh:mesh};
+    return mesh;
+  }catch(e){ return null; }
+}
+function faoViewerMatterHFUpdate(vw,chg){
+  // Diff seul : la hauteur des NŒUDS des cellules changées (moyenne de leurs
+  // 4 cellules adjacentes = lissage naturel de la Z-map), le dessus des murs
+  // de bord concernés, puis les normales des cellules touchantes.
+  const H=vw.mH, g=vw.matterGrid, T=vw.mTops;
+  if(!H||!g||!T||!chg||!chg.length)return;
+  const NX=H.NX, NV=H.NV, pos=H.pos, nrm=H.nrm, n2top=H.n2top;
+  const nc=g.nx*g.ny;
+  const zSeen=new Uint8Array(NV), zList=[];
+  for(let m=0;m<chg.length;m++){
+    const c=chg[m]; if(c<0||c>=nc)continue;
+    const i=c%g.nx, j=(c/g.nx)|0;
+    for(let dj=0;dj<2;dj++)for(let di=0;di<2;di++){
+      const ni=(i+di>g.nx)?g.nx:(i+di), nj=(j+dj>g.ny)?g.ny:(j+dj);
+      const n=nj*NX+ni;
+      if(zSeen[n])continue;
+      zSeen[n]=1; zList.push(n);
+      let sum=0,cnt=0;
+      for(let cj=Math.max(0,nj-1);cj<=Math.min(g.ny-1,nj);cj++)
+        for(let ci=Math.max(0,ni-1);ci<=Math.min(g.nx-1,ni);ci++){ sum+=T[ci+cj*g.nx]; cnt++; }
+      if(cnt)pos[n*3+2]=sum/cnt;
+      for(let s=0;s<2;s++){ const w=n2top[n*2+s]; if(w>=0)pos[w*3+2]=pos[n*3+2]; }
+    }
+  }
+  if(!zList.length)return;
+  const cSeen=new Uint8Array(nc), cList=[];
+  const nSeen=new Uint8Array(NV), nList=[];
+  for(let m=0;m<zList.length;m++){
+    const n=zList[m], ni=n%NX, nj=(n/NX)|0;
+    for(let cj=Math.max(0,nj-1);cj<=Math.min(g.ny-1,nj);cj++)
+      for(let ci=Math.max(0,ni-1);ci<=Math.min(g.nx-1,ni);ci++){
+        const c=ci+cj*g.nx;
+        if(!cSeen[c]){ cSeen[c]=1; cList.push(c); }
+      }
+  }
+  const acc=new Float32Array(NV*3);
+  const markN=function(n){ if(!nSeen[n]){ nSeen[n]=1; nList.push(n); } };
+  for(let m=0;m<cList.length;m++){
+    const c=cList[m], i=c%g.nx, j=(c/g.nx)|0;
+    const a=j*NX+i, b=a+1, cN=a+NX, dN=a+NX+1;
+    markN(a);markN(b);markN(cN);markN(dN);
+    faoHFAddTri(pos,acc,a,b,dN);
+    faoHFAddTri(pos,acc,a,dN,cN);
+  }
+  for(let m=0;m<nList.length;m++){
+    const n=nList[m], o=n*3;
+    const x=acc[o],y=acc[o+1],z=acc[o+2];
+    const L=Math.sqrt(x*x+y*y+z*z);
+    if(L>1e-12){ nrm[o]=x/L; nrm[o+1]=y/L; nrm[o+2]=z/L; }
+    else { nrm[o]=0; nrm[o+1]=0; nrm[o+2]=1; }
+  }
+  try{
+    const attr=H.geo&&H.geo.attributes;
+    if(attr&&attr.position&&attr.normal){ attr.position.needsUpdate=true; attr.normal.needsUpdate=true; }
+  }catch(e){}
+}
 function faoViewerMatterEnable(vw){
-  // (Re)construit la surface Z-map pleine du brut (colonnes jointives, un seul mesh)
-  // + rattrapage 0 → t courant. Retourne le nb de voxels suivis.
-  // 2026-10-11-003 « surface nette » : PLUS de heightfield lissé (moyenne des
-  // 4 nœuds = flou d'une maille sur les traces) — les deux modes rendent la
-  // colonne à SA cote exacte (30 verts, côtés repliés si voisin plus haut).
+  // (Re)construit la surface Z-map pleine du brut + rattrapage 0 → t courant.
+  // Retourne le nb de voxels suivis.
+  // 2026-10-11-003 « surface nette » (défaut, modes réel ET simple) : la colonne
+  // à SA cote exacte (30 verts, côtés repliés si voisin plus haut).
+  // 2026-10-11-007 « ≈ lisse » (3e version du bouton, vw.smooth) : heightfield
+  // continu — nœud = moyenne des 4 cellules adjacentes (flou d'une maille sur
+  // les traces assumé, cf. 003), normales lissées, murs de bord + fond.
   faoViewerMatterDispose(vw);
   if(!vw||vw.matterOn===false)return 0;
   const s=faoStock(); if(!faoStockValid(s))return 0;
   const g=faoMatterGrid(s); if(!g)return 0;
   const nc=g.nx*g.ny;
+  const smooth=!!vw.smooth; // « ≈ lisse » : heightfield continu au lieu des colonnes
   let mesh=null, arr=null;
-  try{
-    arr=new Float32Array((nc*30+6)*3);
-    const geo=new THREE.BufferGeometry();
-    geo.setAttribute('position',new THREE.BufferAttribute(arr,3));
-    const mat=new THREE.MeshPhongMaterial({color:0x9c846a,flatShading:true,side:THREE.DoubleSide});
-    mesh=new THREE.Mesh(geo,mat);
-    mesh.name='faoMatter';
-    mesh.raycast=function(){};
-    mesh.frustumCulled=false;
-    if(typeof scene!=='undefined'&&scene)scene.add(mesh);
-  }catch(e){ return 0; }
+  if(!smooth){
+    try{
+      arr=new Float32Array((nc*30+6)*3);
+      const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.BufferAttribute(arr,3));
+      const mat=new THREE.MeshPhongMaterial({color:0x9c846a,flatShading:true,side:THREE.DoubleSide});
+      mesh=new THREE.Mesh(geo,mat);
+      mesh.name='faoMatter';
+      mesh.raycast=function(){};
+      mesh.frustumCulled=false;
+      if(typeof scene!=='undefined'&&scene)scene.add(mesh);
+    }catch(e){ return 0; }
+  }
   const tops=new Float32Array(nc);
   const full=(g.full!=null)?g.full:(g.sz1!=null?g.sz1:g.oz+g.nz*(g.pz||g.pas));
   for(let c=0;c<nc;c++)tops[c]=full;
   vw.matter=mesh; vw.matterGrid=g; vw.mTops=tops; vw.mArr=arr; vw.mKills=[]; vw.mPos=null; vw.mH=null;
-  try{ faoViewerMatterWriteAll(vw); }catch(e){ faoViewerMatterDispose(vw); try{ if(mesh&&scene)scene.remove(mesh); }catch(e2){} return 0; }
+  if(smooth){
+    const m2=faoViewerMatterHFBuild(vw);
+    if(!m2){ faoViewerMatterDispose(vw); return 0; }
+    vw.matter=m2; // le heightfield EST la matière (mêmes noms/dispose que mArr)
+  }else{
+    try{ faoViewerMatterWriteAll(vw); }catch(e){ faoViewerMatterDispose(vw); try{ if(mesh&&scene)scene.remove(mesh); }catch(e2){} return 0; }
+  }
   if(vw.t>0){
     const tcols=[];
     const ks=faoMatterCarveTo(g,vw.pts,vw.dd,vw.times,vw.t,tcols,vw.exact?vw.cr:null);
@@ -16587,9 +16736,9 @@ function faoViewerMatterEnable(vw){
 function faoViewerMatterKill(vw,ks,cols){
   // Diff seul : recalcule la hauteur des colonnes TOUCHÉES (voxels tués + colonnes
   // dont la Z-map a baissé sans kill), réécrit leurs verts + ceux des 4 voisins.
-  // 2026-10-11-003 : unifié sur WriteCol — les DEUX modes affichent la cote EXACTE
-  // de chaque colonne (plus de moyenne de nœuds).
-  if(!vw||!vw.matter||!vw.matterGrid||!vw.mTops||!vw.mArr)return;
+  // 2026-10-11-003 « net » : unifié sur WriteCol — cote EXACTE de chaque colonne ;
+  // 2026-10-11-007 « lisse » : branche HFUpdate (nœuds moyennés + normales).
+  if(!vw||!vw.matter||!vw.matterGrid||!vw.mTops||(!vw.mArr&&!vw.mH))return;
   if((!ks||!ks.length)&&(!cols||!cols.length))return;
   const g=vw.matterGrid, nc=g.nx*g.ny, T=vw.mTops;
   const seen=new Uint8Array(nc), chg=[];
@@ -16610,6 +16759,10 @@ function faoViewerMatterKill(vw,ks,cols){
     for(let n=0;n<cols.length;n++)mark(cols[n]);
   }
   if(!chg.length)return;
+  if(vw.mH){ // « ≈ lisse » : réécriture des NŒUDS (moyennes) + normales — diff seul
+    try{ faoViewerMatterHFUpdate(vw,chg); }catch(e){}
+    return;
+  }
   const rw=new Uint8Array(nc), list=[];
   for(let m=0;m<chg.length;m++){
     const c=chg[m], ix=c%g.nx;
@@ -16685,39 +16838,59 @@ function faoViewerMatterBarUpdate(){
 function faoViewerExactBarUpdate(){
   try{
     if(faoVwExactBtn){
-      faoVwExactBtn.textContent=faoViewerExact?'◈ réel':'◇ simple';
-      faoVwExactBtn.title=faoViewerExact
-        ?'Rendu « forme réelle » : profil de fraise (torique/boule), carve au rayon d\'arête (arrondi R2 au bas des parois), surface nette aux cotes exactes et brut au corps réel — clic = basculer vers l\'ancien rendu simple (toggle).'
-        :'Rendu « simple » historique : cylindre Ø plat, carve Ø/2, surface en colonnes, boîte du brut — clic = revenir au rendu forme réelle (toggle).';
+      // 2026-10-11-007 : bouton à 3 ÉTATS — ◈ réel → ≈ lisse → ◇ simple → …
+      faoVwExactBtn.textContent=(faoViewerMode==='lisse')?'≈ lisse':(faoViewerExact?'◈ réel':'◇ simple');
+      faoVwExactBtn.title=(faoViewerMode==='lisse')
+        ?'Rendu « lisse » : physique réelle (profil de fraise, carve R2, brut au corps) + surface DOUCE (heightfield continu, nœuds moyennés — l\'aspect de la 002) — clic = basculer vers « simple ».'
+        :(faoViewerExact
+        ?'Rendu « forme réelle » : profil de fraise (torique/boule), carve au rayon d\'arête (arrondi R2 au bas des parois), surface NETTE aux cotes exactes et brut au corps réel — clic = basculer vers « lisse ».'
+        :'Rendu « simple » historique : cylindre Ø plat, carve Ø/2, surface en colonnes, boîte du brut — clic = revenir au rendu « réel ».');
     }
   }catch(e){}
 }
 function faoViewerExactToggle(){
-  // Bascule « forme réelle » <-> « simple » EN COURS de lecture : outil, brut et
-  // matière sont reconstruits à la volée (la matière rattrape 0 → t, temps et
-  // lecture sont préservés).
-  faoViewerExact=!faoViewerExact;
+  // Cycle des 3 versions (2026-10-11-007) : ◈ réel → ≈ lisse → ◇ simple → …
+  // EN COURS de lecture : la matière est reconstruite à la volée (rattrapage
+  // 0 → t, temps et lecture préservés) ; outil et brut ne sont reconstruits
+  // que si la PHYSIQUE change (« simple » <-> réel/lisse).
+  const order=['reel','lisse','simple'];
+  const i=order.indexOf(faoViewerMode);
+  faoViewerModeSet(order[(i<0?0:i+1)%order.length]);
+}
+function faoViewerModeSet(m){
+  // m : 'reel' (surface nette, défaut) | 'lisse' (surface douce) | 'simple'
+  // (historique). Physique (outil/carve/brut) = mode !== 'simple' (toujours
+  // lue via faoViewerExact) ; style de surface = vw.smooth.
+  if(m!=='lisse'&&m!=='simple')m='reel';
+  faoViewerMode=m;
+  faoViewerExact=(m!=='simple');
   faoViewerExactBarUpdate();
   const vw=faoVw;
   if(!vw)return;
+  const phys=(vw.exact!==faoViewerExact); // physique réelle <-> simple : outil + brut à rebuild
   vw.exact=faoViewerExact;
-  vw.toolSig=null;
-  try{ // outil : profil réel <-> cylindre plat
-    const old=vw.tool;
-    const T=faoViewerToolCreate(vw.exact,(vw.kt&&vw.kt[0])||'flat',(vw.cr&&vw.cr[0])||0,(vw.dd&&vw.dd[0])||10);
-    vw.tool=T.group; vw.toolBody=T.body; vw.toolHold=T.hold; vw.toolSpin=T.spin; vw.toolSig=T.sig;
-    if(old){ try{ scene.remove(old); }catch(e){} faoViewerToolDispose(old); }
-    if(vw.tool)scene.add(vw.tool);
-  }catch(e){}
-  try{ // brut : fantôme corps <-> boîte
-    const st=vw.stock;
-    vw.stock=faoViewerStockCreate();
-    if(st)try{ scene.remove(st); }catch(e){}
-    if(vw.stock)scene.add(vw.stock);
-  }catch(e){}
+  vw.smooth=(m==='lisse');
+  if(phys){
+    vw.toolSig=null;
+    try{ // outil : profil réel <-> cylindre plat
+      const old=vw.tool;
+      const T=faoViewerToolCreate(vw.exact,(vw.kt&&vw.kt[0])||'flat',(vw.cr&&vw.cr[0])||0,(vw.dd&&vw.dd[0])||10);
+      vw.tool=T.group; vw.toolBody=T.body; vw.toolHold=T.hold; vw.toolSpin=T.spin; vw.toolSig=T.sig;
+      if(old){ try{ scene.remove(old); }catch(e){} faoViewerToolDispose(old); }
+      if(vw.tool)scene.add(vw.tool);
+    }catch(e){}
+    try{ // brut : fantôme corps <-> boîte
+      const st=vw.stock;
+      vw.stock=faoViewerStockCreate();
+      if(st)try{ scene.remove(st); }catch(e){}
+      if(vw.stock)scene.add(vw.stock);
+    }catch(e){}
+  }
   try{ if(vw.matterOn!==false)faoViewerMatterEnable(vw); }catch(e){} // rattrapage 0 → t
   try{ faoViewerApply(); }catch(e){}
-  faoViewerMsg('FAO : rendu '+(faoViewerExact?'forme réelle (profil + carve arrondi + surface lisse + brut corps)':'simple historique')+'.');
+  faoViewerMsg('FAO : rendu '+({reel:'forme réelle — surface NETTE aux cotes exactes',
+    lisse:'lisse — physique réelle + surface DOUCE (heightfield)',
+    simple:'simple historique'}[m])+'.');
   faoViewerPieceBodyApply(); // cases « corps pièce » / « corps outil » suivent le rebuild
   faoViewerHoldApply();
 }
@@ -16750,6 +16923,7 @@ function faoViewerOpen(){
       playing:false, speed:1, prevVis:true, body:null, tool:null, toolBody:null,
       toolHold:null, toolSpin:null, toolSig:null, line:null, stock:null, toolH:30, _last:0, _looping:false,
       exact:faoViewerExact,
+      smooth:faoViewerMode==='lisse',
       matterOn:true, matter:null, matterGrid:null, mKills:[], mPos:null, mTops:null, mArr:null, mH:null, hideBodies:[]};
     faoVw=vw;
     // 1) traces cachées (non destructif : juste .visible=false)
@@ -24774,7 +24948,7 @@ window.addEventListener('pointerdown',e=>{if(!$('ctxMenu').contains(e.target))hi
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.3';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.4';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);
