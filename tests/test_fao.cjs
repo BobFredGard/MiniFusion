@@ -813,16 +813,16 @@ const vm=require('vm');
     // --- 013 : sortie du mode lecture + matière usinée qui disparaît sous l'outil
     // (a) grille voxel pure (pas de scène)
     "const g13=faoMatterGrid({x0:0,y0:0,z0:0,x1:100,y1:80,z1:25});",
-    "att(!!g13&&g13.n>0&&g13.n<=2100000,'matiere : grille auto '+g13.nx+'x'+g13.ny+'x'+g13.nz+'='+g13.n+' (anisotrope : <=60k colonnes x 32 couches)');",
+    "att(!!g13&&g13.n>0&&g13.n<=6400000,'matiere : grille auto '+g13.nx+'x'+g13.ny+'x'+g13.nz+'='+g13.n+' (anisotrope : <=200k colonnes x 32 couches)');",
     "att(g13.alive.length===g13.n&&g13.alive[0]===1&&g13.alive[g13.n-1]===1,'matiere : tous vivants au depart');",
     "const g13b=faoMatterGrid({x0:0,y0:0,z0:0,x1:100,y1:80,z1:25},5);",
     "att(g13b.nx===20&&g13b.ny===16&&g13b.nz===5&&g13b.n===1600,'matiere : pas 5 -> 20x16x5=1600 ('+g13b.nx+'x'+g13b.ny+'x'+g13b.nz+')');",
     // --- grille de rendu ANISOTROPE (retour 4/10) : maille XY fine, Z grossier
     "const gA=faoMatterGrid({x0:0,y0:0,z0:0,x1:300,y1:200,z1:50});",
     "att(gA.pas<=1.6,'matiere rendu : maille XY fine sur 300x200 ('+gA.pas.toFixed(2)+' mm)');",
-    "att(gA.nx*gA.ny<=60000,'matiere rendu : colonnes <= 60000 ('+gA.nx*gA.ny+')');",
+    "att(gA.nx*gA.ny<=200000,'matiere rendu : colonnes <= 200000 ('+gA.nx*gA.ny+')');",
     "att(isFinite(gA.pz)&&gA.pz>=gA.pas-1e-9,'matiere rendu : couche Z grossiere pz='+gA.pz+' >= maille');",
-    "att(gA.nz<=32&&gA.n<=2100000,'matiere rendu : Z borne (nz='+gA.nz+', n='+gA.n+')');",
+    "att(gA.nz<=32&&gA.n<=6400000,'matiere rendu : Z borne (nz='+gA.nz+', n='+gA.n+')');",
     "const cB=Math.floor((100-gA.oy)/gA.pas)*gA.nx+Math.floor((150-gA.ox)/gA.pas);",
     "faoMatterCarveSeg(gA,20,100,40,280,100,40,5);",
     "att(Math.abs(faoMatterColTop(gA,cB)-40)<1e-3,'matiere rendu : Z-map exacte 40 sur maille fine');",
@@ -1073,10 +1073,10 @@ const vm=require('vm');
     "att(!!g25a&&g25a.pas>=2&&g25a.nx*g25a.ny<=8000,'025 : detail bas -> pas '+g25a.pas+', '+(g25a.nx*g25a.ny)+' colonnes (<= 8000)');",
     "faoViewerDetail=2;",
     "const g25c=faoMatterGrid(S25);",
-    "att(!!g25c&&g25c.pas>=0.25&&g25c.nx*g25c.ny<=100000&&g25c.n<=3200000,'025 : detail haut -> pas '+g25c.pas+', '+(g25c.nx*g25c.ny)+' colonnes, n='+g25c.n+' (<= 3.2M)');",
+    "att(!!g25c&&g25c.pas>=0.25&&g25c.nx*g25c.ny<=400000&&g25c.n<=13000000,'025 : detail haut -> pas '+g25c.pas+', '+(g25c.nx*g25c.ny)+' colonnes, n='+g25c.n+' (<= 400000 / 13M)');",
     "faoViewerDetail=1;",
     "const g25b=faoMatterGrid(S25);",
-    "att(!!g25b&&g25b.pas>=0.5&&g25b.nx*g25b.ny<=60000,'025 : detail normal = historique (pas '+g25b.pas+', '+(g25b.nx*g25b.ny)+' colonnes)');",
+    "att(!!g25b&&g25b.pas>=0.4&&g25b.nx*g25b.ny<=200000,'025 : detail normal = maille 0.4 pour l arc R2 (pas '+g25b.pas+', '+(g25b.nx*g25b.ny)+' colonnes <= 200000)');",
     // — finesse : sig de l'outil + reconstruction en cours de lecture
     "att(faoViewerStart()===true,'025 : lecture ouverte');",
     "att(typeof faoViewerDetailSet==='function'&&faoVw.toolSig.indexOf('#1')>=0,'025 : sig outil porte le niveau (#1 : '+faoVw.toolSig+')');",
@@ -1084,7 +1084,7 @@ const vm=require('vm');
     "faoViewerDetailSet(2);",
     "att(faoVw.toolSig.indexOf('#2')>=0,'025 : niveau haut -> sig #2 ('+faoVw.toolSig+')');",
     "att(faoVw.toolBody!==b25,'025 : corps outil reconstruit (Lathe 44 segs, tubes 64x8)');",
-    "att(!!faoVw.matterGrid&&faoVw.matterGrid.nx*faoVw.matterGrid.ny<=100000,'025 : matiere reconstruite au detail haut ('+(faoVw.matterGrid.nx*faoVw.matterGrid.ny)+' colonnes)');",
+    "att(!!faoVw.matterGrid&&faoVw.matterGrid.nx*faoVw.matterGrid.ny<=400000,'025 : matiere reconstruite au detail haut ('+(faoVw.matterGrid.nx*faoVw.matterGrid.ny)+' colonnes)');",
     "faoViewerDetailSet(1);",
     "att(faoVw.toolSig.indexOf('#1')>=0,'025 : retour au niveau normal (#1) avec rattrapage 0->t');",
     // — case « corps outil » (mandrin)
@@ -1108,6 +1108,39 @@ const vm=require('vm');
     "att(faoVw===null&&faoViewerDetail===1&&faoVwHideBody===false&&faoVwHideHold===false,'025 : ferme, etat libere (niveau normal, cases decochees)');",
     "att(bodies[0]&&bodies[0].mesh.visible===true,'025 : close = corps restaure');",
     "bodies.length=0;",
+    // --- 028 : rayon R2 ÉCHANTILLONNÉ à la maille normale (0,4 mm — demandé :
+    // « je ne vois pas le rayon de l'outil sur les parois à 25° ») + early-out
+    // sans effet de bord (replay bit-identique : 0 kill, 0 drift de h).
+    // Passe horizontale bull D25 R2 à z=20 le long de y=40.2 (centre de colonne) :
+    // la bande d'arc ρ ∈ (10,5 ; 12,5] doit compter ≥ 8 points (mesuré : 10,
+    // 5 de chaque côté) suivant zc+cr−√(cr²−(ρ−(r−cr))²) — à l'ancienne maille
+    // 0,788 mm il n'en restait que 3, qui fondaient à l'œil.
+    "faoViewerDetail=1;",
+    "const S28={x0:0,y0:0,z0:0,x1:100,y1:80,z1:25};",
+    "const g28=faoMatterGrid(S28);",
+    "att(!!g28&&g28.pas<=0.4+1e-9,'028 : niveau normal = maille <= 0.4 mm (pas '+g28.pas.toFixed(3)+')');",
+    "const j28=Math.round((40.2-g28.oy)/g28.pas-0.5);",
+    "const yc28=g28.oy+(j28+0.5)*g28.pas;",
+    "att(Math.abs(yc28-40.2)<1e-9,'028 : passe alignee sur un centre de colonne (y='+yc28+')');",
+    "const i28=Math.round((50.2-g28.ox)/g28.pas-0.5);",
+    "faoMatterCarveSeg(g28,10,yc28,20,90,yc28,20,12.5,[],2);",
+    "const ar28=[];for(let rw28=0;rw28<g28.ny;rw28++){const rho28=Math.abs(g28.oy+(rw28+0.5)*g28.pas-yc28);const hh28=faoMatterColTop(g28,rw28*g28.nx+i28);if(rho28>10.5&&rho28<=12.5&&hh28>20+1e-6&&hh28<21.999)ar28.push([rho28,hh28]);}",
+    "att(ar28.length>=8,'028 : bande d arc R2 echantillonnee a la maille normale ('+ar28.length+' pts, >= 8 attendus)');",
+    "let for28=true;for(let a28=0;a28<ar28.length;a28++){const exp28=22-Math.sqrt(Math.max(0,4-Math.pow(ar28[a28][0]-10.5,2)));if(Math.abs(ar28[a28][1]-exp28)>1e-4)for28=false;}",
+    "att(for28,'028 : chaque point suit la formule d arc zc+cr-sqrt(cr^2-(rho-(r-cr))^2) a 1e-4');",
+    "let rise28=0;for(let a28=0;a28<ar28.length;a28++)if(ar28[a28][1]-20>rise28)rise28=ar28[a28][1]-20;",
+    "att(rise28>1.0,'028 : haut de la bande visible (montee de '+rise28.toFixed(3)+' mm > 1)');",
+    "att(Math.abs(faoMatterColTop(g28,j28*g28.nx+i28)-20)<1e-6,'028 : fond plat sous l outil = 20 exact');",
+    "att(Math.abs(faoMatterColTop(g28,(j28+26)*g28.nx+i28)-20)<1e-6,'028 : rho=10.4 <= 10.5 -> fond plat 20');",
+    "att(Math.abs(faoMatterColTop(g28,(j28+32)*g28.nx+i28)-25)<1e-6,'028 : rho=12.8 > 12.5 hors emprise -> intacte 25');",
+    "const g28d=faoMatterGrid(S28);",
+    "faoMatterCarveSeg(g28d,10,yc28,20,90,yc28,20,12.5,[]);",
+    "let ar28d=0;for(let rw28=0;rw28<g28d.ny;rw28++){const rho28=Math.abs(g28d.oy+(rw28+0.5)*g28d.pas-yc28);const hh28=faoMatterColTop(g28d,rw28*g28d.nx+i28);if(rho28>10.5&&rho28<=12.5&&hh28>20+1e-6&&hh28<21.999)ar28d++;}",
+    "att(ar28d===0,'028 : sans cr (cylindre historique) = coupe plate, 0 point d arc ('+ar28d+')');",
+    "const h28s=g28.h.slice();",
+    "const k28r=faoMatterCarveSeg(g28,10,yc28,20,90,yc28,20,12.5,[],2);",
+    "let d28=0;for(let c28=0;c28<h28s.length;c28++)if(g28.h[c28]!==h28s[c28])d28++;",
+    "att(k28r.length===0&&d28===0,'028 : replay = 0 kill + 0 drift h (early-out actif, bit-identique)');",
     // --- P1-b : UI pilotée dans appvm (œil, ↑/↓, +op, export)
     "doc.fao={setups:[Object.assign(faoDefaultSetup(),{name:'UITEST',stock:{x0:0,y0:0,z0:0,x1:100,y1:80,z1:25},ops:[{id:'u1',on:true,toolId:'T1',type:'facing',z:25,ae:6},{id:'u2',on:true,toolId:'T1',type:'drill',pts:[[20,20]],ztop:25,zbot:5}]})],activeSetupId:null};",
     "sel={kind:null,id:null};document.getElementById('faoTree').children.length=0;faoRenderTree();",

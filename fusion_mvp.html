@@ -262,7 +262,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-11-003';
+const APP_VER='2026-10-11-004';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -15954,15 +15954,19 @@ let faoVw=null, faoVwBar=null, faoVwBarT=null, faoVwBtn=null, faoVwMatterBtn=nul
 // d'arête, surface nette aux cotes exactes, brut = corps réel) — `false` = ancien rendu
 // simple (cylindre, carve Ø/2, colonnes, boîte) conservé pour comparaison.
 let faoViewerExact=true, faoVwExactBtn=null;
-// 2026-10-11-003 : finesse du détail (0 bas / 1 normal = historique byte-identique
-// / 2 haut) — pilote le budget de la grille de matière ET le maillage de l'outil,
-// avec les 2 cases de la barre : « corps pièce » (corps 3D masqués, brut et
-// matière visibles) et « corps outil » (le mandrin gris).
+// 2026-10-11-003 : finesse du détail (0 bas / 1 normal / 2 haut) — pilote le budget
+// de la grille de matière ET le maillage de l'outil, avec les 2 cases de la barre :
+// « corps pièce » (corps 3D masqués, brut et matière visibles) et « corps outil »
+// (le mandrin gris).
+// 2026-10-11-004 : budgets relevés pour que l'arrondi R2 de la fraise torique soit
+// VISIBLE au niveau normal (maille 0,4 mm ≈ 5 échantillons sur l'arc de 2 mm — à
+// 0,5/0,788 mm l'arc fondait à l'œil) — la promesse « byte-identique » du niveau 1
+// est abandonnée (cf. CHANGELOG 2026-10-11-004).
 let faoViewerDetail=1, faoVwDetailSel=null, faoVwHideBody=false, faoVwHideHold=false;
 const faoDetailCfg=[
   {B:8000, F:2.0,  lathe:12, tub:16, rad:4},
-  {B:60000,F:0.5,  lathe:24, tub:36, rad:6},
-  {B:100000,F:0.25,lathe:44, tub:64, rad:8}];
+  {B:200000,F:0.4, lathe:24, tub:36, rad:6},
+  {B:400000,F:0.25,lathe:44, tub:64, rad:8}];
 function faoViewerMsg(t){
   // Retour utilisateur (jamais silencieux) : barre d'état + console.
   try{ if(typeof faceEl!=='undefined'&&faceEl)faceEl.textContent=t; }catch(e){}
@@ -16304,9 +16308,9 @@ function faoMatterGrid(s,pas){
     // DEFaut (rendu) : grille ANISOTROPE (retour 4/10) — maille XY fine pour
     // l'emprise visuelle (colonnes jointives), couches Z grossieres : le rendu
     // lit la Z-map continue h[], seule la maille XY compte a l'ecran. Budget et
-    // plancher XY viennent de faoDetailCfg[faoViewerDetail] (2026-10-11-003) :
-    // 60000 colonnes / 0,5 mm au niveau normal = l'historique byte-identique,
-    // 32 couches Z max (n <= 3,2M au niveau haut, budget 100000).
+    // plancher XY viennent de faoDetailCfg[faoViewerDetail] (2026-10-11-003/004) :
+    // 200000 colonnes / 0,4 mm au niveau normal (arrondi R2 ≈ 5 pts sur l'arc),
+    // 32 couches Z max (n <= 13M au niveau haut, budget 400000).
     const X=s.x1-s.x0, Y=s.y1-s.y0, H=s.z1-s.z0;
     const cfg=faoDetailCfg[faoViewerDetail]||faoDetailCfg[1];
     const B=cfg.B, F=cfg.F;
@@ -16343,8 +16347,18 @@ function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r,outCols,cr){
   // outCols (optionnel) : reçoit les colonnes TOUCHÉES en XY, tuées ou non — le mesh
   // doit être réécrit pour elles même quand aucun voxel ne meurt (cote entre deux
   // centres : c'était le gel « la passe suivante n'enlève rien à l'écran »).
+  // 2026-10-11-004 : EARLY-OUT — colonne d'j retaillée (g.hc) à une cote ≤ z2 :
+  // zcol ≥ z2 toujours (l'arc relève), h ne peut donc pas descendre et les kills
+  // sont un no-op (voxels déjà morts) : on saute la colonne. Bit-identique (hashes
+  // h/alive + arêtes vérifiés aux 3 budgets), rattrapage ×14 plus rapide, colonnes
+  // poussées 65 M → 4 M (l'Array du rattrapage explosait au plafond V8 2^27 et
+  // picait à 520 Mo). tc passe en tampon d'horodatage g.tcs (1 Uint32/colonne,
+  // +1 par segment) au lieu d'une allocation Uint8Array(nc) par segment.
   const out=[];
   if(!g||!(r>0))return out;
+  const nc=g.nx*g.ny;
+  if(!g.hc){ g.hc=new Uint8Array(nc); if(g.h){ for(let i=0;i<nc;i++)g.hc[i]=(g.h[i]<g.full)?1:0; } }
+  if(!g.tcs||g.tsg>4200000000){ g.tcs=new Uint32Array(nc); g.tsg=0; }
   const zc=Math.min(az,bz);
   const CR=(isFinite(+cr)&&+cr>0)?Math.min(+cr,+r):0;
   const rc=+r-CR; // rayon du fond plat de l'outil
@@ -16357,13 +16371,18 @@ function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r,outCols,cr){
   const j0=Math.max(0,Math.floor((y0-g.oy)/g.pas)), j1=Math.min(g.ny-1,Math.floor((y1-g.oy)/g.pas));
   const k0=Math.max(0,Math.floor((zmin-g.oz)/pzv)), k1=g.nz-1;
   const dx=bx-ax, dy=by-ay, L2=dx*dx+dy*dy, r2=r*r;
-  const nc=g.nx*g.ny;
-  const tc=(g.h||outCols)?new Uint8Array(nc):null;
+  const useTc=(g.h||outCols);
+  const tsg=useTc?(++g.tsg):0, tcBuf=useTc?g.tcs:null;
   const z2=g.h?(zc>g.oz?zc:g.oz):0;
+  const hc=g.hc;
   // Test XY UNE fois par colonne (le segment balaye toute la hauteur de la colonne).
   for(let j=j0;j<=j1;j++){
     const py=g.oy+(j+0.5)*g.pas;
     for(let i=i0;i<=i1;i++){
+      const c=j*g.nx+i;
+      // EARLY-OUT : déjà retaillée à cette cote (ou plus basse) — aucune descente
+      // de h possible (zcol >= z2), kills = no-op (voxels déjà morts).
+      if(g.h&&hc[c]&&g.h[c]<=z2)continue;
       const px=g.ox+(i+0.5)*g.pas;
       let t=L2>0?((px-ax)*dx+(py-ay)*dy)/L2:0;
       t=t<0?0:(t>1?1:t);
@@ -16381,7 +16400,7 @@ function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r,outCols,cr){
       // voxel vivant n'est tué (cote entre deux centres de voxels, ou colonne déjà
       // vidée par la passe précédente) — c'était le gel « certaines passes
       // n'enlèvent rien » (alternance OK/KO au fil des passes).
-      if(tc){ const c=j*g.nx+i; if(!tc[c]){ tc[c]=1; if(g.h&&zcol<g.h[c])g.h[c]=zcol; if(outCols)outCols.push(c); } }
+      if(tcBuf){ if(tcBuf[c]!==tsg){ tcBuf[c]=tsg; if(g.h&&zcol<g.h[c]){ g.h[c]=zcol; hc[c]=1; } if(outCols)outCols.push(c); } }
       const zminC=(CR>0&&g.h)?zcol-pzv/2:zmin;
       const ks0=(CR>0&&g.h)?Math.max(k0,Math.floor((zminC-g.oz)/pzv)):k0;
       for(let k=ks0;k<=k1;k++){
