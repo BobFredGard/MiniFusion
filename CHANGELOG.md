@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**201 versions**, de `2026-09-28b` à `2026-10-11-001` — la plus récente en bas,
+**202 versions**, de `2026-09-28b` à `2026-10-11-002` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3433,3 +3433,21 @@ Correctif (4) — **`faoRapideMin` 50 → 30** (`src/88-fao.js`) : en deçà de 
 Mesures **pièce réelle `Cavité Usinage`, T6 Ø10, mode escargot** — A/B (seul `gotoXY` changé) : **rapides au plan de retrait 166 → 53 (−68 %), sous-secu 28 → 142**, les nouveaux vols à z ∈ {30; 35; 40; 45} = bande+5/matière+5 ; coupes **33 256 inchangées**, `outZone=0`, `zLevels=24`, `sideChanges=230` ; arcs : 195 rapides / 54 longues / max 131,2 mm (coût des liaisons inter-anneaux face au zigzag 004 : 144 / 35 / 95,4 — compensé par la chute des retraits) ; conv inchangé (82 rapides, 62 à `secu`, 20 sous — copie conventionnelle non touchée). Suite complète **73/73** ; `test_fao_sens` escargot `avalant` distinct (125 796 ≠ 124 880 sans-champ) ; couverture `test_fao_couverture` **100,00 %** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-11-001.html` (001-004 du 2026-10-10 figés, non écrasés).
 
 Migration : `APP_VER` → `2026-10-11-001`, **`CACHE_VER` → `2026-10-11-001`** : les arcs concentriques, le sens avalant et la hauteur des rapides sont cuits dans le tableau `mv` servi par le cache — sans bump, l'ancien zigzag à `secu` serait resservi ; compteur quotidien reparti à 001 (règle 00-entete l.17-21) ; tampons régénérés à l'ouverture. Badge **V0.1.2 → V0.1.3**.
+
+### `2026-10-11-002`
+
+**FAO viewer usinage — rendu « forme réelle » : (1) l'outil a sa vraie forme (profil de révolution plat/torique/boule, gorges hélicoïdales, rotation pendant l'avance) ; (2) la matière est taillée au rayon d'arête de la fraise (l'arrondi R2 apparaît au bas des parois) ; (3) la surface Z-map devient continue et lissée — fini les cubes/briques, ~10× moins de mémoire géométrique ; (4) le brut au corps réel s'affiche en fantôme jaune — plus un bouton `◈ réel / ◇ simple` dans la barre du viewer : l'ancien rendu reste à un clic.**
+
+Demande : « un viewer d'usinage plus exact — fraise torique rayon d'arête 2, formes d'outil visibles pendant l'usinage, plus proche de la réalité que des cubes », avec choix explicites : lots 1+2+3+4 complets, garder l'ancien rendu en toggle, gorges hélicoïdales + rotation de la fraise pendant l'avance.
+
+Correctif (1) — **forme de l'outil transportée par point** : `faoToolEffCr` (rayon d'arête effectif : `flat`=0, `bull`=`cornerR` borné à D/2, `ball`=D/2 — la source de vérité de la forme de coupe) + `faoToolProfile` (profil de révolution unitaire PUR et testable : fond plat ρ=0.5−q, arc d'arête q, cylindre — un seul arc couvre torique ET boule, q=0.5 → pointe arrondie) ; `faoViewerBuild` émet `kt` (kind) et `cr` (mm) par point au même rang que `dd` (Ø). Rendu : `faoViewerToolCreate/BodyMake` construit un `LatheGeometry` (Ø unitaire, scale = Ø réel) + **3 gorges hélicoïdales** (`TubeGeometry`, ≈1,5 tour, teinte sombre, débordent de 1,5 % de Ø) sur un groupe « spin » qui **tourne pendant l'avance** (`faoViewerAdvance`, ω·vitesse) ; un changement d'outil en cours de parcours (T1→T6) reconstruit le seul corps via `faoViewerToolBodySwap` (signature kind + cr/Ø, mandrin et groupe conservés, géométries disposées).
+
+Correctif (2) — **carve au rayon d'arête** : `faoMatterCarveSeg(g,…,r,outCols,cr)` — la cote de coupe d'une colonne à distance ρ passe de « plane à `zc` » à `zc + cr − √(cr²−(ρ−(r−cr))²)` pour ρ ∈ [r−cr, r] (arc sous l'arête), `zc` sous le fond plat (ρ ≤ r−cr) ; `cr=0` (défaut) = cylindre historique **byte-identique** (régression garantie), kill voxel aligné sur la cote par colonne. Les trois appelants (`faoMatterCarveTo`, `faoMatterCarveRange`, rattrapage 0→t) transmettent `vw.cr` **seulement en mode réel**.
+
+Correctif (3) — **surface continue lissée** : `faoViewerMatterHFBuild/Update` remplace les colonnes « 30 verts/colonne `flatShading` » par un **heightfield indexé** — UN sommet partagé par nœud de grille ((nx+1)×(ny+1)), z = moyenne des colonnes adjacentes (lissage naturel de la Z-map), normales recalculées sur la zone sale uniquement (diff), murs de bord périmétriques + fond ; mémoire ~10× moindre (1,8 M → ~61 k floats sur une pièce courante). `vw.mTops` (une hauteur par colonne) reste le canon **identique dans les deux modes** ; le maillage historique est conservé tel quel derrière le toggle. Garde de `faoViewerMatterKill` adaptée (`mArr` non requis en mode réel).
+
+Correctif (4) — **brut au corps réel** : quand `stockSrc='body'`, `faoViewerStockCreate` affiche un **clone fantôme jaune** (opacité 0,12 + arêtes) du maillage du corps au lieu de la boîte de bbox (repli boîte : corps absent, brut manuel, ou rendu simple).
+
+Correctif (5) — **toggle** : bouton `◈ réel / ◇ simple` dans la barre transporteur (`faoViewerExactToggle`, défaut **réel**, `faoViewerExact`) — outil, brut et matière reconstruits **à la volée** avec rattrapage 0→t, temps et lecture préservés ; message utilisateur à chaque bascule (jamais silencieux).
+
+Mesures — suite complète **73/73** ; `test_fao.cjs` enrichi : profil plat (3 points, bout vif) / torique D25 R2 (fond 0,42·D = 10,5 mm, sommet d'arête (0.5, 0.08)) / boule = arc q=0.5, `effCr` (4 bornes), `kt`/`cr` par point, carve R2 (fond plat → 20, arc ρ=11,75 → 20,439, hors emprise intacte, voxels k10 tués/k9 vifs, régression sans cr = coupe plate), bloc 015 mode-aware (nœuds+murs+fond, index 2 tris/cellule) et 015bis (bascule réel↔simple avec reconstruction complète) ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-11-002.html` (001-004 du 10/10 et 001 du 11/10 figés, non écrasés). Migration : `APP_VER` → `2026-10-11-002`, **`CACHE_VER` inchangé** : le viewer ne touche pas au tableau `mv` (génération FAO identique — precedent 2026-10-08-001) ; compteur quotidien 002 (règle 00-entete l.17-21) ; badge **V0.1.3 inchangé**.
