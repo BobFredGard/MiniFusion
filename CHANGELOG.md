@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**202 versions**, de `2026-09-28b` à `2026-10-11-002` — la plus récente en bas,
+**203 versions**, de `2026-09-28b` à `2026-10-11-003` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3451,3 +3451,21 @@ Correctif (4) — **brut au corps réel** : quand `stockSrc='body'`, `faoViewerS
 Correctif (5) — **toggle** : bouton `◈ réel / ◇ simple` dans la barre transporteur (`faoViewerExactToggle`, défaut **réel**, `faoViewerExact`) — outil, brut et matière reconstruits **à la volée** avec rattrapage 0→t, temps et lecture préservés ; message utilisateur à chaque bascule (jamais silencieux).
 
 Mesures — suite complète **73/73** ; `test_fao.cjs` enrichi : profil plat (3 points, bout vif) / torique D25 R2 (fond 0,42·D = 10,5 mm, sommet d'arête (0.5, 0.08)) / boule = arc q=0.5, `effCr` (4 bornes), `kt`/`cr` par point, carve R2 (fond plat → 20, arc ρ=11,75 → 20,439, hors emprise intacte, voxels k10 tués/k9 vifs, régression sans cr = coupe plate), bloc 015 mode-aware (nœuds+murs+fond, index 2 tris/cellule) et 015bis (bascule réel↔simple avec reconstruction complète) ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-11-002.html` (001-004 du 10/10 et 001 du 11/10 figés, non écrasés). Migration : `APP_VER` → `2026-10-11-002`, **`CACHE_VER` inchangé** : le viewer ne touche pas au tableau `mv` (génération FAO identique — precedent 2026-10-08-001) ; compteur quotidien 002 (règle 00-entete l.17-21) ; badge **V0.1.3 inchangé**.
+
+### `2026-10-11-003`
+
+**FAO viewer — précision demandée : (1) sens des dents corrigé — les gorges passent de l'hélice GAUCHE à l'hélice DROITE (fraise standard ; coupe M03 CW déjà conforme) ; (2) sélecteur « détail » dans la barre : 3 niveaux de finesse (8 000 / 60 000 / 100 000 colonnes — maille 2 / 0,5 / 0,25 mm) pilotant grille XY, reconstruction de l'outil et signature ; (3) deux cases — « corps pièce » (masque les corps 3D, brut + matière restent visibles : « je veux voir le brut en cours d'usinage ») et « corps outil » (masque le mandrin gris) ; (4) « surface nette » — le heightfield lissé de 002 est SUPPRIMÉ : plus de moyenne des 4 nœuds qui floutait les traces de l'outil d'une maille, les deux modes affichent chaque colonne à sa cote EXACTE.**
+
+Demande (1) : « le sens des dents n'est pas bon » — vérification par recherche : hélice droite standard = tourner horairement vu du mandrin fait avancer l'outil dans la matière (Mitsubishi : RH end mill = RH helix + CW vu du côté mandrin ; ISCAR : RH helix s'enroule horaire en s'éloignant de l'extrémité ; engineeringtechnology.org : coupier droite + hélice droite = copeaux vers le haut) ; M03 = sens horaire vu du mandrin (bccncmilling, getgcode).
+
+Correctif (1) — **`faoFluteTh(off,t) = off − 2π·1,5·t`** : les gorges de `faoViewerToolFill` passent de `+` (hélice gauche — `atan2(z,x)` croissant avec la hauteur) à `−` (hélice droite : `atan2(z,x)` décroissant, axe +y mandrin en haut). Le spin (`toolSpin.rotation.y -=`) était **déjà** en M03 CW vu du mandrin : inchangé, commentaires sources ajoutés.
+
+Demande (2)-(3) : « le rendu n'est pas assez précis » + choix explicites (finesse dans la barre, « corps de pièce » pour voir le brut pendant l'usinage, « corps de l'outil » = mandrin gris).
+
+Correctif (2) — **détail** : `faoDetailCfg` (3 niveaux : `B` budget colonnes, `F` maille XY, `lathe/tub/rad` segments outil — niveau 1 = byte-identique historique) + `faoViewerDetail` (défaut 1), `faoViewerDetailSet(v)` : sig `kind@cr/Ø#détail` nulle → `faoViewerApply` (reconstruit l'outil) + matière relancée avec rattrapage 0→t ; `faoMatterGrid` lit `B/F` sur sa branche défaut (branche `pas` stricte des tests intouchée) ; select dans la barre près de `◈ réel`.
+
+Correctif (3) — **cases** : `faoViewerPieceBodyApply` — masquage par **LISTE `hideBodies`** (cochée → `HideBodies` ; décochée → `ShowBodies` + re-`HideBodies` si matière ON ; close → restaure les corps masqués) et `faoViewerHoldApply` (mandrin) ; appels dans `MatterToggle` / `ExactToggle` / `Open` ; deux `mkChk` dans la barre du viewer.
+
+Correctif (4) — **surface nette** : `faoHFAddTri`, `faoViewerMatterHFBuild`, `faoViewerMatterHFUpdate` **supprimés** (tombstone en commentaire) ; `faoViewerMatterEnable` construit `mArr` (30 verts/colonne, `flatShading`) dans les DEUX modes, `faoViewerMatterKill` unifié sur le diff `WriteCol` (garde `!vw.mArr`) — chaque colonne affiche `T[c]` **exact**, côtés repliés si voisin plus haut : arêtes R2, marches d'escalier et limite coupe/non-coupe au pixel de maille ; `mH:null` conservé dans l'état. Les vraies différences de mode restent : carve au rayon d'arête (`cr`), fraise à gorges, fantôme de brut. (Le heightfield mémo-moins-10× rendu obsolète par la demande de précision : `mArr` = 360 B/cellule, ≤ 36 Mo au détail haut — comme le mode simple depuis toujours.)
+
+Mesures — suite complète **73/73** ; `test_fao.cjs` : nouveau bloc **025** (gorges décroissantes `faoFluteTh`, spin `rotation.y−=` = M03, grille bas/haut + niveau de détail, sig `#1↔#2`, mandrin on/off, corps pièce via liste + toggles matière, barre ≥ 2 selects + ≥ 2 cases, close/restauration) ; blocs 015/015bis unifiés sur `mArr` + **assert cote exacte** (`arr[c*90+2] === mTops[c]`, aucune moyenne) ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-11-003.html` (001-003 du 11/10 figés, non écrasés). Migration : `APP_VER` → `2026-10-11-003`, **`CACHE_VER` inchangé** (la génération FAO ne bouge pas — précédent 002) ; compteur quotidien 003 (règle 00-entete l.17-21) ; badge **V0.1.3 inchangé**.
