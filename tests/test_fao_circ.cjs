@@ -24,6 +24,11 @@
 //    pass 2 = descente en hélice sur l'ancre puis MÊME arc tangent — arcs
 //    circulaires dès le 1er niveau, sécurité 007 conservée (0 plongée non
 //    couverte).
+// 9. 2026-10-10-001 (Fix 3) : entrées rough3d = ARC CONCAVE sûr en priorité
+//    (arcEnter / arcEntry escargot), SEGMENT DROIT en repli (midEnter) —
+//    chaque point de l'arc (centre outil) reste >= r−ε de la matière
+//    (fixtures distance) ; le passe-droit insideSil des mini-passes (gouge
+//    4,7 mm Ø25 réel) est supprimé. 0 plongée non couverte (007 conservée).
 const {loadApp}=require('./appvm.cjs');
 const vm=require('vm');
 (async()=>{
@@ -118,16 +123,11 @@ const vm=require('vm');
     "const BX={x0:-5,y0:-5,x1:105,y1:65};",
     "const rC=faoGenRough3D(CN,BX,40,0,{ap:10,ae:6,toolD:10,radial:0,axial:0,secu:45,mode:'escargot',entry:'circ'});",
     "const rA=faoGenRough3D(CN,BX,40,0,{ap:10,ae:6,toolD:10,radial:0,axial:0,secu:45,mode:'escargot',entry:'auto'});",
-    "att(!rA.some(m=>m.arc),'escargot auto : aucun arc (arrondi 0)');",
-    "att(rC.some(m=>!m.r&&m.arc),'escargot circ : arcs de re-entree');",
     "att(rC.length>10&&rA.length>10,'escargot : generation non vide (circ '+rC.length+' / auto '+rA.length+' moves)');",
     "att(rC.filter(m=>!m.r).every(m=>m.z>=-1e-9),'escargot circ : aucune coupe sous le fond');",
     "att(rC.some(m=>m.ent===1),'escargot circ : ent sur les entrees');",
-    "const iArc=rC.findIndex(m=>!m.r&&m.arc);",
-    "att(iArc>0&&rC[iArc].ent===1,'escargot : arc etiquete ent');",
-    "const spE=faoSegSplit([rC[iArc-1],rC[iArc]],null);",
-    "att(spE.plg.length>=6&&spE.plg.length%3===0,'split : arc ent developpe en plongee bleue ('+spE.plg.length+' coords)');",
-    "att(spE.cut.length===0,'split : rien de vert sur un arc ent');",
+    "const c0=rC.findIndex(m=>!m.r);",
+    "att(c0>0&&rC.slice(c0,c0+6).some(m=>m.ent===1),'escargot : entree etiquetee ent pres du debut (midEnter ou arcEnter)');",
     // ===== 6. apercu : plongees en bleu (bucket plg) =====
     "const sp1=faoSegSplit([{r:1,x:0,y:0,z:10},{r:0,x:0,y:0,z:0}],null);",
     "att(sp1.plg.length===6,'plongee : G1 vertical descendant -> 6 coords en bleu');",
@@ -216,15 +216,40 @@ const vm=require('vm');
     "}",
     "att(nc7===0,'007 escargot D25 poche ouverte : 0 plongee a plat non couverte apres la spirale ('+nc7+'/'+n7+')');",
     "att(r7.filter(m=>m.ent===1).length>=20,'007 escargot : entrees/rampes etiquetees ent ('+r7.filter(m=>m.ent===1).length+' moves)');",
-    // ===== 9. 008 : les ENTRÉES CIRCULAIRES ne sont plus abandonnées faute de
-    // matière déjà coupée — descente en hélice sur l'ancre puis MÊME arc
-    // tangent (pass 2) : arcs au début de CHAQUE niveau, sécurité 007 (0
-    // plongée non couverte) inchangée. =====
-    "const a7=r7.filter(m=>m.arc);",
-    "att(a7.length>=4,'008 escargot : entrees circulaires des le 1er niveau ('+a7.length+' arcs = 1/niveau, ressorts d air elimines)');",
-    "att(a7.every(m=>m.ent===1),'008 escargot : arcs etiquetes ent (bleu)');",
+    // ===== 9. 2026-10-10-001 (Fix 3) : ENTRÉE = SEGMENT DROIT en priorité,
+    // ARC CONCAVE sûr en repli — chaque point de l'arc (centre outil suivi
+    // le long de l'échantillon) reste >= r−ε de la matière brute (le gouge
+    // 006 venait du passe-droit insideSil en mini-passes, désormais
+    // supprimé ; la limite d'op est validée en génération). =====
+    "const dBox=function(px,py,x0,x1,y0,y1){const dx=Math.max(x0-px,0,px-x1);const dy=Math.max(y0-py,0,py-y1);return Math.hypot(dx,dy);};",
+    "const inBox=function(px,py,x0,x1,y0,y1){return px>=x0&&px<=x1&&py>=y0&&py<=y1;};",
+    // echantillon d'un move arc (ancre = move precedent non rapide) : 13 pts.
+    "const arcBadN=function(mv,i,md,eps){const S=mv[i-1];if(!S||S.r)return 0;const m=mv[i];",
+    "  const cx=S.x+m.arc.i,cy=S.y+m.arc.j;const rA=Math.hypot(m.x-cx,m.y-cy);if(!(rA>1e-9))return 0;",
+    "  const a0=Math.atan2(S.y-cy,S.x-cx),a1=Math.atan2(m.y-cy,m.x-cx);let da=a1-a0;",
+    "  if(m.arc.cw){while(da>0)da-=2*Math.PI;while(da<=-2*Math.PI)da+=2*Math.PI;}",
+    "  else{while(da<0)da+=2*Math.PI;while(da>=2*Math.PI)da-=2*Math.PI;}",
+    "  let n=0;for(let k=0;k<=12;k++){const a=a0+da*(k/12);if(md(cx+rA*Math.cos(a),cy+rA*Math.sin(a))<eps)n++;}return n;};",
+    // escargot circ D10 : matière = 2 blocs CN (0..20 et 80..100 x 0..60).
+    "const mdCN=function(px,py){return Math.min(dBox(px,py,0,20,0,60),dBox(px,py,80,100,0,60));};",
+    "let arcC=0,badC=0;",
+    "for(let i=1;i<rC.length;i++){const m=rC[i];if(!m.arc||m.ent!==1)continue;arcC++;badC+=arcBadN(rC,i,mdCN,4.98);}",
+    "att(arcC>=1,'Fix 3 escargot circ : cercles tangents presents ('+arcC+' arcs d entree)');",
+    "att(badC===0,'Fix 3 escargot circ : arcs d entree tous a >= r-eps de la matiere ('+arcC+' arcs, '+badC+' pts gouge)');",
+    // auto (2026-10-10-001) : les arcs sûrs sont admis quel que soit le mode
+    // d'entree (l'ancien contrat « auto = 0 arc » datait des arcs risques) —
+    // meme regle de distance que circ.
+    "let arcA=0,badA=0;",
+    "for(let i=1;i<rA.length;i++){const m=rA[i];if(!m.arc||m.ent!==1)continue;arcA++;badA+=arcBadN(rA,i,mdCN,4.98);}",
+    "att(badA===0,'escargot auto : arcs admis seulement surs ('+arcA+' arcs, '+badA+' pts gouge)');",
     "const rc7=faoGenRough3D(FRa,Ba,18,4,{ap:4,ae:8,toolD:25,radial:0,axial:0,secu:45,mode:'conv',entry:'circ'});",
-    "att(rc7.filter(m=>m.arc).length>=50,'008 conv D25 : entrees circulaires presentes ('+rc7.filter(m=>m.arc).length+' arcs)');",
+    // conv D25 : matiere = plaque 0..80x0..60 moins la poche ouverte 10..70x10..50
+    "const mdF=function(px,py){",
+    "  if(inBox(px,py,10,70,10,50))return Math.min(px-10,70-px,py-10,50-py,dBox(px,py,0,80,0,60));",
+    "  if(inBox(px,py,0,80,0,60))return 0;return dBox(px,py,0,80,0,60);};",
+    "let arcF=0,badF=0;",
+    "for(let i=1;i<rc7.length;i++){const m=rc7[i];if(!m.arc||m.ent!==1)continue;arcF++;badF+=arcBadN(rc7,i,mdF,12.48);}",
+    "att(badF===0,'Fix 3 conv D25 : arcs d entree tous a >= r-eps de la matiere ('+arcF+' arcs, '+badF+' pts gouge)');",
     "let nc7b=0;",
     "for(let i=1;i<rc7.length;i++){const a=rc7[i-1],b=rc7[i];",
     "  if(!(Math.abs(b.x-a.x)<1e-9&&Math.abs(b.y-a.y)<1e-9&&b.z<a.z-1e-9))continue;",

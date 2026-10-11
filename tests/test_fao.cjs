@@ -343,6 +343,19 @@ const vm=require('vm');
     "const zsS=faoZoneServe(chZS,opZS,jobQ,30);",
     "att(zsS===chZS.mv&&zsS.length===4,'serve : tracé en cache purgé ET rangé dans l entrée (aucun rejeu)');",
     "att(faoZoneCuts(mEx,opZS,jobQ,30).length===4,'zone : faoZoneCuts purge les G0 AVANT le diagnostic (pas de faux débordement)');",
+    // --- 2026-10-10-002 : garde-brut (SANS zone) — un G0 dont les DEUX bouts
+    //     sont hors de la boîte du brut est retiré ; la tête (engagement) et
+    //     la queue (retour outil) sont préservées ; re-jonexion en sécurité.
+    "const mG=[{r:0,x:50,y:50,z:5},{r:1,x:200,y:200,z:30},{r:1,x:250,y:250,z:30},{r:0,x:55,y:55,z:5}];",
+    "const g1=faoZoneStrip(mG,null,30);",
+    "att(g1.length===4&&g1.every(function(m){return !(m.r&&m.x>100&&m.y>80);}), 'garde-brut : rapide interne 100% hors brut retiré + re-jonexion sécu');",
+    "att(g1[1].r===1&&g1[1].x===50&&g1[1].z===30&&g1[2].r===1&&g1[2].x===55&&g1[2].z===30,'garde-brut : re-jonexion = retrait sécu sur place puis liaison sécu');",
+    "const mHead=[{r:1,x:-40,y:50,z:30},{r:1,x:140,y:50,z:30},{r:0,x:60,y:50,z:5}];",
+    "att(faoZoneStrip(mHead,null,30)===mHead,'garde-brut : série en tête (engagement) conservée');",
+    "const mTail=[{r:0,x:50,y:50,z:5},{r:1,x:-30,y:-30,z:12}];",
+    "att(faoZoneStrip(mTail,null,30).length===2,'garde-brut : série en fin d op (retour outil) conservée');",
+    "const mCross=[{r:0,x:90,y:20,z:5},{r:1,x:150,y:150,z:30},{r:0,x:10,y:80,z:5}];",
+    "att(faoZoneStrip(mCross,null,30).length===4,'garde-brut : franchissement (jonction traverse la boîte) = re-jonexion sécu');",
     // --- faoSegSplit : l aperçu ne route QUE la coupe par le clipper ; les
     //     rapides (G0) sont tracés tels quels, même hors zone (traversée).
     "const mvS=[{r:1,x:-40,y:50,z:30},{r:1,x:140,y:50,z:30},{r:0,x:140,y:50,z:5},{r:0,x:60,y:50,z:5}];",

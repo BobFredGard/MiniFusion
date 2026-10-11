@@ -33,8 +33,9 @@ const FAO_VER='32j';
 // 10-09-002 : distance minimale (mm) pour sauter en RAPIDE (lever + G0) —
 // en deçà, la liaison reste un G1 à la cote (segClear). Sauter à chaque
 // anneau pour quelques centimètres « c'est n'importe quoi » : on ne lève
-// que si le trajet vaut vraiment le coup (>= 50 mm).
-const faoRapideMin=50;
+// que si le trajet vaut vraiment le coup (>= 30 mm — 2026-10-11-001 :
+// règle 50 → 30 à la demande : lever l'outil entre 2 entrées au-delà de 30).
+const faoRapideMin=30;
 
 /* ================= styles des panneaux FAO (injectés) =================
    La coque HTML/CSS du livrable généré n'est jamais éditée à la main — même
@@ -1652,13 +1653,104 @@ function faoPlaneEff(job,op){
     ownClear:!!O.clear,ownRetr:!!O.retr};
 }
 function faoZoneStrip(moves,ctx,secu){
+  // 2026-10-10-002 : test de franchissement de la boîte brut (utilisé par le
+  // garde-brut ci-dessous) : true si le segment a->b ENTRE dans la boîte sb
+  // (au moins une extrémité dedans ET l'autre dehors, ou intersection non
+  // triviale avec une arête). Un segment entièrement dedans ou entièrement
+  // dehors ne FRANCHIT pas la frontière -> false.
+  function faoBoxCross(a,b,sb){
+    const inB=function(x,y){ return x>=sb.x0-1e-9&&x<=sb.x1+1e-9&&y>=sb.y0-1e-9&&y<=sb.y1+1e-9; };
+    const ain=inB(a.x,a.y), bin=inB(b.x,b.y);
+    if(ain!==bin)return true; // une extrémité dedans, l'autre dehors : franchit
+    if(ain&&bin)return false; // les deux dedans : pas de franchissement
+    // les deux dehors : franchit SSI le segment coupe la boîte (intersection
+    // non triviale, pas seulement un point de contact)
+    const x0=sb.x0,y0=sb.y0,x1=sb.x1,y1=sb.y1;
+    let t0=0,t1=1; const dx=b.x-a.x, dy=b.y-a.y;
+    const clip=function(p,q){
+      if(Math.abs(dx)<1e-12){ if(p>0)return a.x<=q; return a.x>=q; }
+      const r=(q-a.x)/dx; if(p>0){ if(r>t1)return false; if(r>t0)t0=r; }
+      else { if(r<t0)return false; if(r<t1)t1=r; } return true;
+    };
+    if(!clip(-dx,x0))return false; if(!clip(dx,x1))return false;
+    const clipY=function(p,q){
+      if(Math.abs(dy)<1e-12){ if(p>0)return a.y<=q; return a.y>=q; }
+      const r=(q-a.y)/dy; if(p>0){ if(r>t1)return false; if(r>t0)t0=r; }
+      else { if(r<t0)return false; if(r<t1)t1=r; } return true;
+    };
+    if(!clipY(-dy,y0))return false; if(!clipY(dy,y1))return false;
+    // Franchissement non triviel : longueur d'intersection > epsilon
+    return (t1-t0)>1e-9;
+  }
   // Retire les SÉRIES de rapides hors zone : la coupe a déjà été clipée avant,
   // ces G0 ne font que se rendre « dans le vide » (tour du cadre de validation,
   // liaison au ras du brut, plongée déportée hors mur). Ils ne sont gardés que
   // s'ils ouvrent l'opération (engagement, retour d'outil) ou si la jonction
   // directe prev->next traverserait elle la frontière : on ne fabrique JAMAIS
   // un franchissement nouveau. Rend le MÊME tableau si rien ne sort.
-  if(!ctx||!moves||!moves.length)return moves;
+  if(!moves||!moves.length)return moves;
+  // --- 2026-10-10-002 : garde-brut (SANS zone uniquement).
+  // Un G0 dont les DEUX bouts sont hors de la boîte du brut ne sert jamais
+  // l'usinage : il traverserait dans le vide au-delà du brut (c'est le trait
+  // rouge que l'utilisateur voit hors pièce). Un engagement / un retour
+  // d'outil / un franchissement nécessaire ont au moins un bout DEDANS :
+  // ils survivent. La coupe (r=0) n'est pas touchée ici (elle est clipée par
+  // la zone quand il y en a une ; sinon c'est la génération qui la borne).
+  // QUAND IL Y A UNE ZONE (ctx) : la purge de zone ci-dessous gère déjà les
+  // rapides (faoZoneStrip) — on ne duplique pas la logique.
+  if(!ctx){
+  try{
+    const sb=faoStock();
+    if(sb&&isFinite(sb.x0)&&isFinite(sb.x1)&&isFinite(sb.y0)&&isFinite(sb.y1)){
+      const inB=function(x,y){
+        return x>=sb.x0-1e-9&&x<=sb.x1+1e-9&&y>=sb.y0-1e-9&&y<=sb.y1+1e-9;
+      };
+      const br=[]; let prev=null, dropped=false;
+      // 2026-10-10-002 : la PREMIÈRE série de rapides (engagement / retour
+      // d'outil en tête d'op) est préservée — même règle que faoZoneStrip pour
+      // la zone. Un outil doit pouvoir approcher depuis l'extérieur du brut.
+      let i0=0;
+      while(i0<moves.length&&moves[i0].r&&!inB(moves[i0].x,moves[i0].y))i0++;
+      for(let i=0;i<i0;i++)br.push(moves[i]); // tête préservée
+      prev=(i0>0)?moves[i0-1]:null;
+      // Séries de rapides hors brut APRES la tête (même logique que zone)
+      for(let i=i0;i<moves.length;){
+        const m=moves[i];
+        if(m.r&&!inB(m.x,m.y)){
+          let j=i;
+          while(j<moves.length&&moves[j].r&&!inB(moves[j].x,moves[j].y))j++;
+          // Série [i,j-1] 100% hors brut. Retirée SEULEMENT si :
+          //  - elle n'est ni en tête (engagement) ni en fin d'op (retour outil) ;
+          //  - la jonction prev->next ne traverserait PAS la frontière du brut.
+          const pr=(i>0)?moves[i-1]:null, nx=(j<moves.length)?moves[j]:null;
+          if(!pr||!nx){ i=j; prev=nx||prev; continue; } // tête ou queue : préservée
+          if(!faoBoxCross(pr,nx,sb)){ dropped=true; i=j; prev=nx; continue; }
+        }
+        br.push(m); prev=m; i++;
+      }
+      if(dropped&&br.length){
+        // Re-jonexion EN SÉCURITÉ (même règle que faoZoneStrip) : un rapide
+        // hors brut retiré est remplacé par un retrait vertical au point de
+        // coupe précédent, puis une liaison sécu au point suivant. Jamais de
+        // coupe→coupe diagonale (plongée déportée).
+        const out2=[]; prev=null;
+        for(let i=0;i<br.length;i++){
+          const m=br[i];
+          // Transition coupe→coupe (rapide retiré entre les deux) : on remonte
+          // d'abord en Z au point courant, puis on descend au point suivant.
+          if(prev&&prev.r===0&&m.r===0){
+            const zc=Math.max(prev.z,m.z,secu);
+            out2.push({r:1,x:prev.x,y:prev.y,z:zc});
+            out2.push({r:1,x:m.x,y:m.y,z:zc});
+          }
+          out2.push(m); prev=m;
+        }
+        moves=out2;
+      }else if(dropped) moves=br;
+    }
+  }catch(e){}
+  } // fin garde-brut (sans zone)
+  if(!ctx)return moves;
   const at=ctx.at;
   const runs=[]; let k=0;
   while(k<moves.length){
@@ -2437,6 +2529,10 @@ function* faoOpMovesIt(op,job){
     // bulge supprimé : la sonde (A/B) montrait une garde identique avec ou
     // sans compensation parent — l'arrondi tangent reste hors mur (≥0.48).
     const brutTop=(job&&job.stock&&isFinite(+job.stock.z1))?+job.stock.z1:null;
+    // Fix 2 (2026-10-10-001) : la limite d'op (lim/lim2) est injectée EN
+    // GÉNÉRATION — le clip final restait en filet et jetait 43 % des points
+    // générés sur la pièce réelle (61 276 moves + 9,2 s de clipPoly).
+    const zctx=faoZoneCtx(op,job);
     if(am&&am.mesh)mv=yield* faoGenRough3DIt(am.mesh,am.box,+op.ztop,+op.zbot,
       {ap:+op.ap,ae:isFinite(+op.ae)?+op.ae:D*0.6,toolD:D,
        radial:RA.radial,axial:RA.axial,
@@ -2445,6 +2541,7 @@ function* faoOpMovesIt(op,job){
         // 2026-10-08-004 : entrée CIRC par défaut (doc sans champ = arc
         // tangent, repli hélice/rampe si pas d'ancre ; 'auto' = legacy).
         entry:op.entry||'circ',entryR:op.entryR,brutTop:brutTop,secu:secu,
+        zoneAt:zctx?zctx.at:null,
         // 2026-10-07-005 : mode de vidage — 'escargot' = spirale centre ->
         // faces (faoSpiralLevel) ; absent = conventionnel (documents anciens).
         // 2026-10-08-001 : la poche d'entree (o.poly) a disparu avec le mode
@@ -6144,6 +6241,11 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   }
   const rnd=function(v){return Math.round(v*1000)/1000;};
   const tz=(opt&&isFinite(+opt.travelZ))?Math.min(secu,+opt.travelZ):null;
+  // 2026-10-10-004 : limite d'op injectée EN GÉNÉRATION (comme le conventionnel
+  // Fix 2) — toute coupe (spirale, masque, liaisons de coupe) exige d'être dans
+  // la zone de la chaîne d'arêtes sélectionnée ; les rapides (pathOK) traversent
+  // librement, comme au conventionnel.
+  const zoneAt=(opt&&typeof opt.zoneAt==='function')?opt.zoneAt:null;
   const pitch=Math.max(0.1,isFinite(+ae)&&+ae>0?+ae:D*0.5);
   // --- ZONE DU NIVEAU (retour 1/3) : le centre doit être le POLE
   // d'inaccessibilité des cases usinables (case légale la plus loin d'une
@@ -6161,7 +6263,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     if(vv[0]<mBB[0])mBB[0]=vv[0]; if(vv[1]<mBB[1])mBB[1]=vv[1];
     if(vv[0]>mBB[2])mBB[2]=vv[0]; if(vv[1]>mBB[3])mBB[3]=vv[1];}
   const insideSil=function(x,y){return x>=mBB[0]-1e-9&&x<=mBB[2]+1e-9&&y>=mBB[1]-1e-9&&y<=mBB[3]+1e-9;};
-  const inside=function(x,y){return faoShapeValid(S,x,y,rrM);};
+  const inside=function(x,y){return faoShapeValid(S,x,y,rrM)&&(!zoneAt||zoneAt(x,y));};
   const gx0=S.rect[0],gy0=S.rect[1];
   const extX=S.rect[2]-S.rect[0],extY=S.rect[3]-S.rect[1];
   if(!(extX>0&&extY>0))return;
@@ -6174,7 +6276,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     const y=gy0+j*h;
     for(let i=0;i<nx;i++){
       const x=gx0+i*h;
-      if(!faoShapeValid(S,x,y,rrM))continue;
+      if(!faoShapeValid(S,x,y,rrM)||(zoneAt&&!zoneAt(x,y)))continue;
       mask[j*nx+i]=1;nL++;
       if(x<rx0)rx0=x; if(x>rx1)rx1=x;
       if(y<ry0)ry0=y; if(y>ry1)ry1=y;
@@ -6213,10 +6315,28 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     if(sc>bd+1e-9){bd=sc;pxs=i;pys=j;nPk=1;}
     else if(sc>=bd-1e-9){pxs+=i;pys+=j;nPk++;}
   }
-  const cx=gx0+(pxs/nPk)*h, cy=gy0+(pys/nPk)*h;
+  const cxP=gx0+(pxs/nPk)*h, cyP=gy0+(pys/nPk)*h;
+  // 2026-10-10-004 (demande « l'entrée des 1ères passes doit se trouver au
+  // centre de la pièce sauf, vraiment, si pas de place ») : le CENTRE
+  // GÉOMÉTRIQUE du solide (mBB — le centre du maillage, pas le pôle) devient
+  // le centre de la spirale, donc le point d'attaque (hélice/plongée/arc) de
+  // CHAQUE passe — il coïncide avec le 1er échantillon R=0 de la spirale.
+  // « Pas de place » = centre illégal : hors zone, contre une paroi (marge
+  // outil rrM) ou hors l'étendue du masque — alors on garde le pôle
+  // d'inaccessibilité (case légale la plus éloignée des murs), comportement
+  // antérieur. Le reste (Rmax/Rcent/clearArcs) suit le centre choisi.
+  const gcx=(mBB[0]+mBB[2])/2, gcy=(mBB[1]+mBB[3])/2;
+  const gcOK=inside(gcx,gcy)&&gcx>=rx0&&gcx<=rx1&&gcy>=ry0&&gcy<=ry1;
+  const cx=gcOK?gcx:cxP, cy=gcOK?gcy:cyP;
   const Rmax=Math.max(
     Math.hypot(rx0-cx,ry0-cy),Math.hypot(rx1-cx,ry0-cy),
     Math.hypot(rx0-cx,ry1-cy),Math.hypot(rx1-cx,ry1-cy))+2*pitch;
+  // 2026-10-10-004 (un côté puis l'autre) : la spirale n'ouvre plus que le
+  // centre jusqu'aux MURS PROCHES (rayon = distance du centre au bord de
+  // région le plus proche), pas jusqu'à Rmax. La matière restante (les
+  // extrémités le long de l'axe long) est éclaircie ensuite par clearArcs
+  // (demi-anneaux circulaires par côté — 2026-10-11-001).
+  const Rcent=Math.min(cx-rx0,rx1-cx,cy-ry0,ry1-cy)+pitch;
   // --- liaisons (copie conventionnelle) : G1 sûre ou translation à vide
   const zTopSafe=Math.max(top,isFinite(+brutTop)?+brutTop:top);
   const pathOK=function(p,q){
@@ -6232,11 +6352,37 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     }
     return true;
   };
+  // 2026-10-11-001 (demande) : liaison entre passes NON continues ni
+  // tangentes = rapide à +5 mm au-dessus du plan de travail actif (tz =
+  // bande+5), JAMAIS le plan de retrait sauf nécessité de dégagement :
+  // hauteur de matière le long du chemin (même modèle que faoHelixSpot —
+  // le maillage = vérité pièce, le brut restant est couvert par tz) bornée
+  // par secu. Échantillonnage ≤ 2 mm, disque de rayon r+1 à chaque
+  // échantillon (couvre l'écart) ; colonne vide → z+2 → max(tz,…) = tz.
+  const pathMatTop=function(p,q){
+    if(!mesh||!mesh.v||!planes||!planes.length)return null;
+    const dx=q.x-p.x,dy=q.y-p.y,L=Math.sqrt(dx*dx+dy*dy);
+    const n=Math.min(512,Math.max(1,Math.ceil(L/2)));
+    const effR=r+1;
+    let top=z+2;
+    for(let i=0;i<=n;i++){
+      const t=i/n;
+      const sp=faoHelixSpot(mesh,p.x+dx*t,p.y+dy*t,0,effR,z,brutTop,planes);
+      if(sp>top)top=sp;
+    }
+    return top+3; // faoHelixSpot = matière+2 → +5 total
+  };
   const gotoXY=function(px,py){
     px=rnd(px); py=rnd(py);
     if(!moves.length){moves.push({r:1,x:px,y:py,z:secu});return secu;}
     const prev=moves[moves.length-1];
-    const zGo=(tz&&pathOK(prev,{x:px,y:py}))?tz:secu;
+    let zGo=secu;
+    if(tz&&pathOK(prev,{x:px,y:py})){
+      zGo=tz;
+    }else if(tz){
+      const zN=pathMatTop(prev,{x:px,y:py});
+      zGo=(zN!==null)?Math.max(tz,Math.min(secu,zN)):secu;
+    }
     if(Math.abs(prev.z-zGo)>1e-9)moves.push({r:1,x:prev.x,y:prev.y,z:zGo});
     moves.push({r:1,x:px,y:py,z:zGo});
     return zGo;
@@ -6247,7 +6393,9 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     const n=Math.max(1,Math.ceil(L/0.25));
     for(let i=0;i<=n;i++){
       const t=i/n;
-      if(!faoShapeValid(S,ax+dx*t,ay+dy*t,rrSafe))return false;
+      const qx=ax+dx*t,qy=ay+dy*t;
+      if(!faoShapeValid(S,qx,qy,rrSafe))return false;
+      if(zoneAt&&!zoneAt(qx,qy))return false; // Fix 2 : jamais de coupe hors zone
     }
     return true;
   };
@@ -6280,7 +6428,6 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     for(let k=0;k<8;k++){const a=k/8*2*Math.PI;if(!inside(px+h*Math.cos(a),py+h*Math.sin(a)))return false;}
     return true;
   };
-  const rhoCirc=faoCircRhos(D,ae,opt.entryR);
   // 2026-10-08-007 : air = hors du BRUT (la boîte de stock), plus « hors de la
   // pièce » — pendant l'ébauche le vide de poche (et l'extérieur d'un bossage)
   // n'est PAS de l'air, c'est du brut à enlever : `!faoShapeInside` acceptait
@@ -6332,118 +6479,80 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     const zG=gotoXY(qx,qy);
     if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(qx),y:rnd(qy),z:z});
   };
+  // 2026-10-10-001 (retour « je ne vois aucune entrée en cercles tangents ») :
+  // ARC CONCAVE SÛR en tête de l'entrée escargot — même règle que arcEnter
+  // (adaptatif) : ancre ET chaque point de l'arc (centre outil suivi) à
+  // >= rrM de l'ombre (inside), accès par accostage de coupe / plongée 007 /
+  // vide 011 / hélice 008 sur l'ancre, puis MÊME arc tangent vers l'intérieur.
+  // false = cascade sûre de entryTo (plongée/vide/hélice sur la cible, rampe
+  // de l'appelant). Aucune morsure de paroi : le croissant est refusé par
+  // inside (le gouge 006 venait du passe-droit insideSil).
+  const rhoCircS=faoCircRhos(D,ae,(opt&&opt.entryR));
+  const arcEntry=function(x,y,ux,uy){
+    if(!(ux*ux+uy*uy>1e-12))return false;
+    const emitArc=function(s){
+      moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:z,
+        arc:{i:s.cx-s.sx,j:s.cy-s.sy,cw:s.cw}});
+    };
+    for(let ri=0;ri<rhoCircS.length;ri++){
+      const sides=faoSidesCirc(x,y,ux,uy,rhoCircS[ri]);
+      if(!sides)continue;
+      for(let i=0;i<sides.length;i++){
+        const s=sides[i];
+        if(!inside(s.sx,s.sy))continue;
+        const pts2=faoCircArcPts(s,x,y);
+        if(!pts2)continue;
+        let okA=true;
+        for(let k=0;k<pts2.length;k++)if(!inside(pts2[k][0],pts2[k][1])){okA=false;break;}
+        if(!okA)continue;
+        const prev=moves.length?moves[moves.length-1]:null;
+        const atZ=!!(prev&&!prev.r&&Math.abs(prev.z-z)<1e-9);
+        // (1) déjà à la cote : accostage de coupe jusqu'à l'ancre, puis arc.
+        if(atZ&&segClear(prev.x,prev.y,s.sx,s.sy)){ pushCut(s.sx,s.sy); emitArc(s); return true; }
+        // (2) plongée sûre sur l'ancre (007 : disque déjà balayé/en air).
+        if(faoPlungeClear(s.sx,s.sy,moves,z,D,airSp)){
+          const zG=gotoXY(s.sx,s.sy);
+          if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(s.sx),y:rnd(s.sy),z:z});
+          emitArc(s);
+          return true;
+        }
+        // (3) vide d'abord (011) : plongée plate sur Q, accostage, arc.
+        if(sweptNow){
+          const Qs=voidWay(s.sx,s.sy);
+          if(Qs){ arriveVoid(Qs.x,Qs.y); pushCut(s.sx,s.sy); emitArc(s); return true; }
+        }
+        // (4) hélice à orbite légale sur l'ancre (008) — émission seulement
+        // si le spot est légal (aucun rapide orphelin si l'appelant rampe).
+        if(!insideSil(s.sx,s.sy))continue;
+        const hr=pickHr(s.sx,s.sy);
+        let hUse=hr;
+        if(!(hUse>0)){
+          hUse=Math.max(1,D*0.2);
+          while(hUse>0.5&&!okOrbPt(s.sx,s.sy,hUse))hUse-=0.5;
+          if(!(hUse>0.5&&okOrbPt(s.sx,s.sy,hUse)))continue;
+        }
+        const zG2=gotoXY(s.sx,s.sy);
+        const hS=Math.max(faoHelixSpot(mesh,s.sx,s.sy,hUse,r,z,brutTop,planes),hFloor);
+        if(Math.abs(zG2-hS)>1e-9)moves.push({r:0,x:rnd(s.sx),y:rnd(s.sy),z:hS});
+        faoHelixEntry(s.sx,s.sy,hS,z,hUse,D).slice(1).forEach(function(m){moves.push(m);});
+        pushCut(s.sx,s.sy);
+        emitArc(s);
+        return true;
+      }
+    }
+    return false;
+  };
   // 007 : hauteur de départ communiquée au RAMPAGE quand entryTo renvoie false.
   let rampZ0=0;
   const entryTo=function(x,y,ux,uy){
-    // 2026-10-08-004 : ENTRÉE CIRCULAIRE — si de la matière est déjà enlevée
-    // près du départ (ancre), on descend en Z sur place puis on accoste en
-    // arc tangent ; sinon repli hélice/plongée sûre (1re attaque du niveau).
-    // 2026-10-08-005 : rayons candidats + disque outil entièrement en air.
-    // 2026-10-08-007 : renvoie true = entrée sûre émise ; false = ni ancre
-    // (faoPlungeClear), ni hélice tenable -> l'APPELANT RAMPE le long du
-    // chemin (descente en avançant, jamais à plat sur du brut restant).
-    if(entryMode==='circ'){
-      // pass 1 (005/007/010) : ancre DÉJÀ balayée (ré-entrée) -> entrée
-      // TANGENTIELLE. Si le disque entier est dégagé (faoPlungeClear) :
-      // descente verticale + arc à plat. Sinon (ancre à la limite du
-      // déjà-usiné) : RAMPE le long de l'arc depuis zG — la descente se fait
-      // EN COUPANT sur l'arc tangent, jamais à plat sur du brut restant.
-      const side=faoCircEval(x,y,ux||0,uy||0,rhoCirc,inside,moves,z,D,true,airSp);
-      if(side){
-        if(faoPlungeClear(side.sx,side.sy,moves,z,D,airSp)){
-          const zG=gotoXY(side.sx,side.sy);
-          if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(side.sx),y:rnd(side.sy),z:z});
-          moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:z,
-            arc:{i:side.cx-side.sx,j:side.cy-side.sy,cw:side.cw}});
-          return true;
-        }
-        // 011 : VIDE D'ABORD — l'ancre est à la limite du déjà-usiné mais le
-        // vide est joignable à proximité : on plonge À PLAT sur Q (clair),
-        // on accoste l'ancre à cote z, puis l'arc tangent accoste la cible
-        // — l'entrée circulaire depuis le vide, jamais une rampe en matière.
-        const Qs=voidWay(side.sx,side.sy);
-        if(Qs){
-          arriveVoid(Qs.x,Qs.y);
-          pushCut(side.sx,side.sy);
-          moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:z,
-            arc:{i:side.cx-side.sx,j:side.cy-side.sy,cw:side.cw}});
-          return true;
-        }
-        // 010 : AUCUN vide joignable (ex. ancre en marge, mur entre le vide et
-        // la cible) -> ramp le long de l'arc S -> P (descente en coupant,
-        // paliers ≤ 2 mm) : la descente se fait EN COUPANT sur l'arc tangent,
-        // jamais à plat sur du brut restant.
-        {
-          const zG=gotoXY(side.sx,side.sy);
-          const Rr=Math.hypot(side.sx-side.cx,side.sy-side.cy);
-          let a0=Math.atan2(side.sy-side.cy,side.sx-side.cx);
-          let a1=Math.atan2(y-side.cy,x-side.cx);
-          let da=a1-a0;
-          if(side.cw){if(da>0)da-=2*Math.PI;}else if(da<0)da+=2*Math.PI;
-          const nR=Math.max(2,Math.ceil((zG-z)/2));
-          let ppx=side.sx,ppy=side.sy;
-          for(let s=1;s<=nR;s++){
-            const f=s/nR,a=a0+da*f;
-            const xx=side.cx+Rr*Math.cos(a),yy=side.cy+Rr*Math.sin(a);
-            moves.push({r:0,ent:1,x:rnd(xx),y:rnd(yy),
-              z:Math.round((zG+(z-zG)*f)*1000)/1000,
-              arc:{i:side.cx-ppx,j:side.cy-ppy,cw:side.cw}});
-            ppx=xx;ppy=yy;
-          }
-        }
-        return true;
-      }
-      // pass 2 (008) : 1re ATTAQUE du niveau — la matière à z n'est pas encore
-      // coupée, l'ancre échoue inévitablement au disque. On garde le MÊME arc
-      // tangent et on descend sur place en HÉLICE à orbite légale (engagement
-      // progressif, orbite tenue dans la région = jamais à cheval) : les
-      // entrées circulaires redeviennent la norme au début de chaque niveau.
-      for(let ri=0;ri<rhoCirc.length;ri++){
-        const sides=faoSidesCirc(x,y,ux||0,uy||0,rhoCirc[ri]);
-        if(!sides)continue;
-        for(let i=0;i<sides.length;i++){
-          const s2=sides[i];
-          if(!inside(s2.sx,s2.sy))continue;
-          if(!insideSil(s2.sx,s2.sy))continue; // 008 : ancre hors silhouette = pas de ressort dans l'air
-          const pts2=faoCircArcPts(s2,x,y);
-          if(!pts2)continue;
-          let okA=true;
-          for(let k=0;k<pts2.length;k++)if(!inside(pts2[k][0],pts2[k][1])){okA=false;break;}
-          if(!okA)continue;
-          if(faoPlungeClear(s2.sx,s2.sy,moves,z,D,airSp)){
-            // 009 : ancre déjà enlevée (ré-entrée de spirale) -> descente
-            // verticale sûre, puis l'arc tangent accoste le tracé.
-            const zG=gotoXY(s2.sx,s2.sy);
-            if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(s2.sx),y:rnd(s2.sy),z:z});
-          }else{
-            // 011 : VIDE D'ABORD — l'ancre n'est pas entièrement dégagée mais
-            // le vide est joignable : plongée plate sur Q + liaison à cote,
-            // l'arc tangent vient depuis le vide (pas d'hélice en matière).
-            const Q2=voidWay(s2.sx,s2.sy);
-            if(Q2){
-              arriveVoid(Q2.x,Q2.y);
-            }else{
-              const zG=gotoXY(s2.sx,s2.sy);
-              // 008/009 : 1re attaque (matière pleine) -> hélice à orbite
-              // légale sur l'ancre, engagement progressif, jamais à plat.
-              let hrH=pickHr(s2.sx,s2.sy);
-              if(!(hrH>0)){
-                hrH=Math.max(1,D*0.2);
-                while(hrH>0.5&&!okOrbPt(s2.sx,s2.sy,hrH))hrH-=0.5;
-                if(!(hrH>0.5&&okOrbPt(s2.sx,s2.sy,hrH)))continue;
-              }
-              const hS=Math.max(faoHelixSpot(mesh,s2.sx,s2.sy,hrH,r,z,brutTop,planes),hFloor);
-              if(Math.abs(zG-hS)>1e-9)moves.push({r:0,ent:1,x:rnd(s2.sx),y:rnd(s2.sy),z:hS});
-              faoHelixEntry(s2.sx,s2.sy,hS,z,hrH,D).slice(1).forEach(function(m){moves.push(m);});
-            }
-          }
-          pushCut(s2.sx,s2.sy);
-          moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:z,
-            arc:{i:s2.cx-s2.sx,j:s2.cy-s2.sy,cw:s2.cw}});
-          return true;
-        }
-      }
-    }
+    // 2026-10-10-001 (retour cercles tangents) : ARC CONCAVE SÛR D'ABORD
+    // (arcEntry — ancre/points >= rrM de l'ombre, accès sûrs 007/011/008) ;
+    // la cascade sûre historique reste le repli : plongée 007 sur la cible /
+    // vide 011 / hélice à orbite légale / repli RAMPE le long du chemin
+    // (descente en avançant, jamais à plat sur du brut restant). renvoie
+    // true = entrée sûre émise ; false = l'APPELANT RAMPE (rampZ0 = hauteur
+    // déjà émise).
+    if(arcEntry(x,y,ux,uy))return true;
     // 011 : VIDE D'ABORD (repli générique — auto, ou circ sans ancre) — le
     // disque de la cible est déjà entièrement balayé ou en air : plongée à
     // plat directement, AVANT toute hélice. Après la spirale le plancher du
@@ -6493,7 +6602,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   // --- spirale : R(θ) = pitch·θ/2π, échantillonnage à corde s (borné),
   // pas angulaire borné à π/6 près du centre.
   const s=Math.max(0.5,Math.min(Math.max(pitch,D*0.25),D*0.5));
-  const thMax=2*Math.PI*(Math.ceil(Rmax/pitch)+1);
+  const thMax=2*Math.PI*(Math.ceil(Rcent/pitch)+1);
   let th=0,guard=0,atCut=false,prevIn=false,px=cx,py=cy;
   // 007 : descente répartie le long de la spirale (rampL>0 = rampage actif)
   let rampL=0,rampK=0,rampTot=0;
@@ -6541,6 +6650,92 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
       else if(faoPlungeClear(px,py,moves,z,D,airSp))moves.push({r:0,x:rnd(px),y:rnd(py),z:z});
     }
   }
+  // --- CÔTÉS (2026-10-11-001) : ARCS CONCENTRIQUES par côté — remplace le
+  // zigzag DROIT de la 004 (demande « les passes après la spirale étaient de
+  // type circulaire avant et maintenant elles sont droites — cela ne me plaît
+  // pas ; le parcours circulaire se rapproche du trochoïdal »). La spirale
+  // centrale (Rcent = murs proches) a ouvert le disque ; la matière restante
+  // — les extrémités le long de X interne (SENS LONG force l'axe long en X,
+  // remis en place à la sortie) — s'éclaircit par DEMI-ANNEAUX en « D »
+  // centrés sur (cx,cy) : rayons de Rsp (dernier tour de spirale) jusqu'à
+  // Rmax, pas radial = pitch, échantillonnage angulaire identique à la
+  // spirale (corde s, Δθ ≤ π/6), plage bornée au demi-plan du côté — LE PLAN
+  // MÉDIAN x=cx EST UNE LIMITE TEMPORAIRE : aucun arc ne le dépasse. Côté de
+  // DÉPART = côté de la fin de spirale (le levier du dernier tour), l'autre
+  // côté ensuite — UN SEUL croisement : le pont rejoint l'extrémité du
+  // demi-anneau voisin posée SUR le plan médian (G1 sûr dans le déjà usiné,
+  // sinon une unique entrée/rapide). Sérpentin par rayon (alternance de sens,
+  // lien radial court = pitch validé segClear, repli entryTo) — aucun G0
+  // radiating entre les deux bouts ; aucune ligne droite : parcours circulaire
+  // (pré-trochoïdal) comme avant la 004. AVALANT (demande « quand Avalant est
+  // sélectionné, il faut travailler toujours dans le même sens ! ») : les
+  // demi-anneaux sont alors TOUS parcourus dans le MÊME sens angulaire (comme
+  // la spirale, CCW) — pas de sérpentin ; les retours de rayon se font par la
+  // corde le long du plan médian (G1 à la cote dans le déjà usiné) et le
+  // croisement entre côtés longe aussi le plan. Bidir (défaut sans champ) :
+  // sérpentin (retournement vers l'extrémité la plus proche), inchangé.
+  const avalant=!!(opt&&opt.sens==='avalant');
+  const clearArcs=function(side,pyRef){
+    const thA=side>0?-Math.PI/2:Math.PI/2;
+    const thB=side>0?Math.PI/2:3*Math.PI/2;
+    // 1er rayon commencé par l'extrémité du demi-anneau la plus proche du
+    // point d'arrivée (fin de spirale pour le 1er côté, fin du côté précédent
+    // pour le 2nd) : le pont devient un court G1, pas une rapide longue.
+    // avalant : sens unique — début toujours à thA (aucun retournement).
+    let rev=avalant?false:((side>0)?(pyRef>=cy):(pyRef<cy));
+    const Rsp=pitch*(Math.ceil(Rcent/pitch)+1); // rayon atteint par la spirale (thMax)
+    let nEm=0,ag=0;
+    for(let R=Rsp;R<=Rmax+1e-9;R+=pitch){
+      const dth=Math.min(s/Math.max(R,0.5),Math.PI/6);
+      const samp=[];
+      for(let th=thA;th<=thB+1e-12;th+=dth){
+        const x=cx+R*Math.cos(th),y=cy+R*Math.sin(th);
+        samp.push([th,x,y,inside(x,y)]);
+      }
+      if(rev)samp.reverse();
+      let had=false;
+      for(let i=0;i<samp.length&&ag++<500000;i++){
+        const sm=samp[i];
+        if(!sm[3]){prevIn=false;continue;}
+        had=true;
+        const th=sm[0],x=sm[1],y=sm[2];
+        const sg=rev?-1:1;
+        let ex=-Math.sin(th)*sg, ey=Math.cos(th)*sg;
+        if(Math.hypot(ex,ey)<1e-9){ex=x-px;ey=y-py;}
+        if(rampL>0){
+          rampK++;
+          const zr=Math.max(z,Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000);
+          moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:zr});
+          rampL--;
+        }else if(!atCut||!prevIn||!segClear(px,py,x,y)){
+          if(!entryTo(x,y,ex,ey)){
+            rampTot=Math.max(2,Math.ceil((rampZ0-z)/2));
+            rampK=1; rampL=rampTot-1;
+            const zr=Math.max(z,Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000);
+            moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:zr});
+          }
+        }
+        else pushCut(x,y);
+        atCut=true; prevIn=true; px=x; py=y;
+        nEm++;
+      }
+      if(had&&!avalant)rev=!rev; // sérpentin (bidir) : rayon suivant inversé
+    }
+    return nEm;
+  };
+  // 007 : la descente éventuellement active est terminée par le bloc « fin de
+  // spirale pendant un rampage » ci-dessus — état clos avant les côtés.
+  rampL=0;
+  // état réel au début des côtés : à cote z (sinon entryTo gère l'accostage
+  // depuis la cote restante — même garde que la passe de faces, note 011).
+  {
+    const P=moves.length?moves[moves.length-1]:null;
+    atCut=!!(P&&!P.r&&Math.abs(P.z-z)<1e-9);
+    prevIn=atCut;
+  }
+  const side0=(px>=cx)?1:-1; // côté où la spirale s'est arrêtée : d'abord là
+  clearArcs(side0,py);
+  clearArcs(-side0,py); // py = dernier point du côté précédent (mis à jour)
   // --- DERNIÈRE PASSE : les FACES du solide (retour 2/3). Mêmes chaînes que
   // le conventionnel k=0 : chaines du niveau offsetées à r (la laisse de
   // l'outil suit exactement les parois) + cadre E0 de la boîte. Chaîne la plus
@@ -6550,6 +6745,35 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   const rem=faoOffsetRuns(S,r).concat(faoRectRuns(S,0,r)).filter(function(c){
     return c.pts&&c.pts.length>=2&&Math.max(c.bb[2]-c.bb[0],c.bb[3]-c.bb[1])>=0.1;
   });
+  // 2026-10-10-004 : les chaines de FACES (parois du solide) sont egalement
+  // decoupees des la creation a la FRONTIERE de zone — meme filet Fix 2 du
+  // conventionnel (2026-10-10-001). Sans ce filtre, la passe de faces suivait
+  // les parois de tout le solide : 82 788 coupes hors zone etaient generatees
+  // puis jetees en silence par faoClipMovesPoly (le filet final ne faisait que
+  // cacher la violation en generation). Les runs hors zone disparaissent, les
+  // runs dedans deviennent des chaines ouvertes (comme au conventionnel) ;
+  // les rapides franchissent librement.
+  if(zoneAt){
+    const zs=[];
+    for(let ci=0;ci<rem.length;ci++){
+      const chZ=rem[ci],P=chZ.pts;
+      let run=null,split=false;
+      for(let pi=0;pi<P.length;pi++){
+        if(zoneAt(P[pi][0],P[pi][1])){
+          if(!run)run=[];
+          run.push(P[pi]);
+        }else{
+          split=true;
+          if(run&&run.length>=2)zs.push({pts:run,closed:false,bb:faoPtsBB(run)});
+          run=null;
+        }
+      }
+      if(!split){zs.push(chZ);continue;} // tout dedans : chaine d'origine (closed conserve)
+      if(run&&run.length>=2)zs.push({pts:run,closed:false,bb:faoPtsBB(run)});
+    }
+    rem.length=0;
+    for(let ci=0;ci<zs.length;ci++)rem.push(zs[ci]);
+  }
   const cpd=function(ch,px,py){
     const P=ch.pts,n=P.length,segsN=ch.closed?n:n-1;
     let d=1/0;
@@ -6567,7 +6791,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   // chaines de faces ne sont JAMAIS retournees (sens de coupe constant) ;
   // les anneaux fermes restent simplement tournes vers le depart le plus
   // proche. Absent/'bidir' : retournement libre, code historique.
-  const avalant=!!(opt&&opt.sens==='avalant');
+  // (avalant est declare plus haut, avant clearArcs — 2026-10-11-001.)
   const cord=function(ch,px,py){
     const P=ch.pts;
     if(ch.closed){
@@ -6807,8 +7031,8 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     // ESCARGOT : spirale centre -> faces sur le meme plan/levels, memes
     // entrees/travel ; mini-passes et finition restent conventionnelles.
     // 2026-10-08-003 : sens (avalant = sens de coupe constant) porte par opt.
-    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR});
-    else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR});
+    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
+    else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
     yield moves; // dessin progressif 005 : pelage du niveau fini
     // MINI-PASSES (retour 4/10) : après le pelage du niveau, contour des parois
     // entre ce plan et le plan du dessus : profondeurs k*h/(nb+1) sous le plan
@@ -6820,7 +7044,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
       if(h>1e-9)for(let k=1;k<=nb;k++){
         const zm=Math.round((bandTop-k*h/(nb+1))*1000)/1000;
         const s=RA.radial;
-        faoRoughAdaptiveLevel(M,BB,zm,D,D/2+s,secu,Math.min(secu,bandTop),ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvZ,sens:o.sens,entryR:o.entryR});
+        faoRoughAdaptiveLevel(M,BB,zm,D,D/2+s,secu,Math.min(secu,bandTop),ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
         yield moves; // dessin progressif 005 : mini-passe k
       }
     }
@@ -6850,7 +7074,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
           tvJ=o.remPlan?secu:Math.min(secu,zA+5); // 2026-10-08-002 : 5 mm (was 2)
         for(let k=1;k<=nf;k++){
           const off=RA.radial*(nf-k)/nf;
-          faoRoughAdaptiveLevel(M,BB,zj,D,D/2+off,secu,zF,ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvJ,sens:o.sens,entryR:o.entryR});
+          faoRoughAdaptiveLevel(M,BB,zj,D,D/2+off,secu,zF,ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvJ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
           yield moves; // dessin progressif 005 : finition k
         }
       }
@@ -7985,6 +8209,11 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   // stay-down (liaison G1 sûre = coupe directe, sinon retrait vertical).
   const rnd=function(v){return Math.round(v*1000)/1000;};
   const isRing=!!(opt&&opt.ringOnly);
+  // Fix 2 (2026-10-10-001) : limite d'op injectée EN GÉNÉRATION — toutes les
+  // validations de coupe (segments, liaisons, bandes, trochoïdes, morceaux)
+  // exigent en plus d'être DANS la zone : le clip final ne sert plus qu'à
+  // raffiner la frontière (filet), plus à jeter 43 % du tracé.
+  const zoneAt=(opt&&typeof opt.zoneAt==='function')?opt.zoneAt:null;
   const tz=(opt&&isFinite(+opt.travelZ))?Math.min(secu,+opt.travelZ):null;
   const zTopSafe=Math.max(top,isFinite(+brutTop)?+brutTop:top);
   const pathOK=function(p,q){
@@ -8018,7 +8247,9 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     const n=Math.max(1,Math.ceil(L/0.25));
     for(let i=0;i<=n;i++){
       const t=i/n;
-      if(!faoDiscClear(segsAll,ax+dx*t,ay+dy*t,0,rrSafe))return false;
+      const qx=ax+dx*t,qy=ay+dy*t;
+      if(!faoDiscClear(segsAll,qx,qy,0,rrSafe))return false;
+      if(zoneAt&&!zoneAt(qx,qy))return false; // Fix 2 : jamais de coupe hors zone
     }
     return true;
   };
@@ -8032,14 +8263,16 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     const n=Math.max(1,Math.ceil(L/0.25));
     for(let i=0;i<=n;i++){
       const t=i/n;
-      if(!faoShapeValid(S,ax+dx*t,ay+dy*t,rrSafe))return false;
+      const qx=ax+dx*t,qy=ay+dy*t;
+      if(!faoShapeValid(S,qx,qy,rrSafe))return false;
+      if(zoneAt&&!zoneAt(qx,qy))return false; // Fix 2 : jamais de coupe hors zone
     }
     return true;
   };
   // Liaison vers un morceau : translation en l'air (l'appelant plonge ensuite,
   // disque contrôlé par l'appelant) — SAUF liaison courte (< faoRapideMin) et
   // sûre : G1 à la cote, aucun lever (renvoie false, l'appelant émet le G1).
-  // 10-09-002 : on ne saute en rapide que si le trajet vaut le coup (>= 50 mm).
+  // 10-09-002 : on ne saute en rapide que si le trajet vaut le coup (>= 30 mm).
   const linkTo=function(px,py){
     const prev=moves.length?moves[moves.length-1]:null;
     const dx=px-(prev?prev.x:0), dy=py-(prev?prev.y:0);
@@ -8114,6 +8347,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     for(let k=0;k<list.length;k++){
       const m=list[k];
       if(!faoShapeValid(S,m.x,m.y,rrSafe))return false;
+      if(zoneAt&&!zoneAt(m.x,m.y))return false;
       if(px!==null){
         if(m.arc){
           const cx=px+m.arc.i,cy=py+m.arc.j,Rr=Math.hypot(m.arc.i,m.arc.j);
@@ -8125,6 +8359,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
             for(let s=1;s<n;s++){
               const a=a0+da*s/n;
               if(!faoShapeValid(S,cx+Rr*Math.cos(a),cy+Rr*Math.sin(a),rrSafe))return false;
+              if(zoneAt&&!zoneAt(cx+Rr*Math.cos(a),cy+Rr*Math.sin(a)))return false;
             }
           }
         }else{
@@ -8132,6 +8367,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
           const n=Math.max(1,Math.ceil(L/0.25));
           for(let s=1;s<n;s++){
             if(!faoShapeValid(S,px+dx*s/n,py+dy*s/n,rrSafe))return false;
+            if(zoneAt&&!zoneAt(px+dx*s/n,py+dy*s/n))return false;
           }
         }
       }
@@ -8144,7 +8380,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     const n=Math.max(1,Math.ceil((xb-xa)/0.25));
     for(let i=0;i<=n;i++){
       const x=xa+(xb-xa)*i/n;
-      if(faoShapeValid(S,x,y,rrSafe)){
+      if(faoShapeValid(S,x,y,rrSafe)&&(!zoneAt||zoneAt(x,y))){
         if(!cur)cur=[];
         cur.push({r:0,x:rnd(x),y:rnd(y),z:z});
       }else if(cur){ if(cur.length>=2)out.push({mv:cur}); cur=null; }
@@ -8172,12 +8408,25 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
         const iv=L.ivs[ii];
         if(trochIVs.has(iv))continue;
         const runs=safeRun(iv.a,iv.b,L.y);
-        for(let ri=0;ri<runs.length;ri++){
-          // Serpentin : lignes impaires inversées (le bout de la ligne N
-          // colle au bout de la ligne N+1 — liaison courte, reste au plan).
-          if(li%2===1)runs[ri].mv.reverse();
-          runs[ri].k=1000; // priorité MAX : bandes avant tout le reste
-          chunks.push(runs[ri]);
+        if(!runs.length)continue;
+        // Serpentin (2026-10-10-001, Fix 1) : lignes impaires inversées ET
+        // poussées en ORDRE INVERSE — la création suit le vrai enjambement
+        // (ligne paire G->D, ligne impaire D->G, runs dans le sens du
+        // balayage). Le tour consomme ensuite les bandes dans cet ordre de
+        // CRÉATION au lieu du greedy « plus proche » (voir plus bas).
+        if(li%2===1){
+          for(let rj=runs.length-1;rj>=0;rj--){
+            runs[rj].mv.reverse();
+            runs[rj].k=1000; // priorité MAX : bandes avant tout le reste
+            runs[rj].band=1; // marqueur de séquence (tour ordonné)
+            chunks.push(runs[rj]);
+          }
+        }else{
+          for(let rj=0;rj<runs.length;rj++){
+            runs[rj].k=1000;
+            runs[rj].band=1;
+            chunks.push(runs[rj]);
+          }
         }
       }
     }
@@ -8197,6 +8446,36 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
         for(let i=0;i<rs.length;i++){rs[i].k=0;chunks.push(rs[i]);}
       });
     });
+  }
+  // Fix 2 (2026-10-10-001) : les morceaux (chaines offsetees + cadres) sont
+  // decoupes des la creation a la FRONTIERE de zone : la piece reelle
+  // generait 142 459 points dont 43 % etaient jetes ensuite par
+  // faoClipMovesPoly (61 276 moves + 9,2 s de clipPoly + 5,9 s de zoneCuts).
+  // `any` de la boucle k a ete calcule AVANT ce filtre (semantique d'arret
+  // identique) ; les rapides (travels) ne sont pas concernes (franchissement
+  // libre de la zone) ; les bandes deja filtrees par safeRun ne bougent pas.
+  if(zoneAt){
+    const zs=[];
+    for(let ci=0;ci<chunks.length;ci++){
+      const chZ=chunks[ci];
+      const P=chZ.pts;
+      if(!P||!P.length){zs.push(chZ);continue;} // morceaux mv (trochoïdes) : pas de pts
+      let run=null, split=false;
+      for(let pi=0;pi<P.length;pi++){
+        if(zoneAt(P[pi][0],P[pi][1])){
+          if(!run)run=[];
+          run.push(P[pi]);
+        }else{
+          split=true;
+          if(run&&run.length>=2)zs.push({pts:run,closed:false,bb:faoPtsBB(run),k:chZ.k});
+          run=null;
+        }
+      }
+      if(!split){zs.push(chZ);continue;} // tout dedans : morceau d'origine (closed conserve)
+      if(run&&run.length>=2)zs.push({pts:run,closed:false,bb:faoPtsBB(run),k:chZ.k});
+    }
+    chunks.length=0;
+    for(let ci=0;ci<zs.length;ci++)chunks.push(zs[ci]);
   }
   if(!chunks.length)return;
   // --- entree (UNE par niveau) : meme contrat qu'avant (tangente / helice
@@ -8227,7 +8506,8 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     if(LN>=1){
       const sx=p0x+LN, sy=p0y;
       if(faoDiscClear(segsAll,sx,sy,0,r)&&
-         faoDiscClear(segsAll,(sx+p0x)/2,sy,0,r))
+         faoDiscClear(segsAll,(sx+p0x)/2,sy,0,r)&&
+         (!zoneAt||zoneAt(sx,sy))&&(!zoneAt||zoneAt(p0x,p0y))) // Fix 2
         tang={sx:sx,sy:sy,px:p0x,py:p0y};
     }
   }
@@ -8281,6 +8561,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       const hrr=c.elen>0?Math.max(1,Math.min(D*0.4,c.elen/2-1)):Math.max(0.5,D*0.2);
       if(!(c.elen>0?c.elen>=2*D:true))continue;
       if(fmode==='auto'&&!(c.elen>=2*D))continue;
+      if(zoneAt&&!zoneAt(c.x,c.y))continue; // Fix 2 : ancre hélice hors zone
       // jeu 2 mm si possible, sinon ancien comportement (jeu 0) : surtout ne
       // pas rejeter l'helice serree au profit de la micro-helice de secours.
       const disq=(!faoDiscClear(segsAll,c.x,c.y,hrr,r+faoHelixJeu)&&
@@ -8294,7 +8575,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
         // Garde ombre : JAMAIS sous un porte-à-faux/voile (centre + orbite
         // hors de S, comme les bandes) — la matière mordue est la matière
         // restante EXPOSÉE depuis le dessus.
-        let okS=faoShapeValid(S,c.x,c.y,rrSafe);
+        let okS=faoShapeValid(S,c.x,c.y,rrSafe)&&(!zoneAt||zoneAt(c.x,c.y));
         if(okS)for(let a2=0;a2<8;a2++){
           const t2=a2/8*2*Math.PI;
           if(!faoShapeValid(S,c.x+hrr*Math.cos(t2),c.y+hrr*Math.sin(t2),rrSafe)){okS=false;break;}
@@ -8386,18 +8667,19 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   let entered=false;
   const emitChunk=function(ch,px,py){
     // Liaison d'entrée (10-09-002) : liaison courte (< faoRapideMin) sûre =
-    // G1 à la cote (aucun lever) ; sinon ENTRÉE CIRCULAIRE (2026-10-08-004,
-    // toutes mini-passes comprises), sinon rapide + plongée plate si le
-    // disque est déjà balayé/en air réel (hors brut), 007 : sinon RAMPE LE
-    // LONG DU MORCEAU (la fraise descend en coupant, jamais à plat sur du
-    // brut restant). Renvoie l'index du 1er point du morceau restant à
-    // émettre.
+    // G1 à la cote (aucun lever) ; sinon ARC CONCAVE sûr en priorité
+    // (arcEnter — vers l'intérieur, chaque point validé à rrSafe), sinon
+    // SEGMENT DROIT vers le milieu M du 1er segment (midEnter), sinon rapide
+    // + plongée plate si le disque est déjà balayé/en air réel (hors brut),
+    // 007 : sinon RAMPE LE LONG DU MORCEAU (la fraise descend en coupant,
+    // jamais à plat sur du brut restant). Renvoie l'index du 1er point du
+    // morceau restant à émettre.
     const linkIn=function(seq,ax,ay,ux,uy){
       const prev=moves[moves.length-1];
       if(prev&&!prev.r&&Math.abs(prev.x-ax)<1e-9&&Math.abs(prev.y-ay)<1e-9)return 1; // déjà sur place
       // 10-09-002 : liaison courte (< faoRapideMin) et sûre = G1 à la cote
-      // (pas de lever pour un rayon à l'autre) ; au-delà : ENTRÉE CIRCULAIRE
-      // (toutes mini-passes comprises), sinon plongée plate sûre, sinon ramp.
+      // (pas de lever pour un rayon à l'autre) ; au-delà : LIAISON DROITE +
+      // plongée/vide sûre vers M (midEnter), sinon plongée plate, sinon ramp.
       if(prev&&!prev.r&&Math.abs(prev.z-z)<1e-9&&
          (ax-prev.x)*(ax-prev.x)+(ay-prev.y)*(ay-prev.y)<faoRapideMin*faoRapideMin&&
          segClear(prev.x,prev.y,ax,ay)){ pushCut(ax,ay); return 1; }
@@ -8418,7 +8700,12 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
           pushCut(prev.x,ay); pushCut(ax,ay); return 1;
         }
       }
-      if(circEnter(ax,ay,ux,uy))return 1;
+      // 2026-10-10-001 : ARC CONCAVE SÛR D'ABORD (retour « je ne vois aucune
+      // entrée en cercles tangents ») — le cercle tangent sûr (arcEnter) est
+      // essayé avant la ligne droite ; si l'arc est impossible (ancre/points
+      // trop près de la matière ou hors zone), midEnter prend le relais.
+      if(arcEnter(seq,ch,ax,ay))return 1;
+      if(midEnter(seq,ch,ax,ay))return 1;
       if(faoPlungeClear(ax,ay,moves,z,D,airCv)){ gotoXY(ax,ay); moves.push({r:0,ent:1,x:rnd(ax),y:rnd(ay),z:z}); return 1; }
       // 007 : RAMPE le long du morceau — descente répartie (~2 mm par point,
       // bornée aux points disponibles) ; les morceaux ch.mv gardent leurs arcs
@@ -8479,7 +8766,18 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   // nière passe suit les faces. Au sein d'un même k : distance croissante,
   // liaison sûre d'abord (repli = le plus proche du groupe). Mini-passes
   // (ringOnly, un seul k) : greedy historique strictement inchangé.
+  // 2026-10-10-002 (demande 2) : les BANDES (k=1000) sont consommées UN CÔTÉ
+  // À LA FOIS — on finit d'abord le côté +Y (du CENTRE vers le bord), PUIS on
+  // revient et on finit le côté −Y (du centre vers l'autre bord). L'ordre
+  // alterné (cB, cB+1, cB−1, …) faisait traverser le centre à chaque bande ;
+  // on garde le serpentin (transitions courtes intra-côté) et le démarrage au
+  // centre, on ne change que l'ordre des côtés : une seule longue transition
+  // (du bord atteint au 1er band de l'autre côté), les deux sweeps restent
+  // monotones. Si le lien vers la suivante n'est pas sûr (segClear/coude
+  // 006), repli greedy sur le groupe puis la suite reprend au prochain tour.
+  // Les morceaux non-bandes (k<1000) et les mini-passes gardent le greedy.
   const remaining=chunks.slice();
+  let bandOrder=null, bandIdx=0;
   const safePick=function(list,px,py){
     const order=[];
     for(let i=0;i<list.length;i++)order.push({i:i,d:polyDist(list[i],px,py)});
@@ -8492,8 +8790,85 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     }
     return order.length?order[0].i:-1;
   };
+  // 2026-10-10-001 (007b) : ARCCONCAVE DE REPLI(« cerclesconcaves, vers
+  // l'intérieur de la pièce ») — le SEGMENT DROIT (midEnter) resteprioritaire ;
+  // quand il est impossible,on réintroduit l'arctangentmais avec la règle de
+  // sûreté :CHAQUE point de l'arc (le centre outilsuit l'arc) doit resterà
+  // >= rrSafe del'ombre (validXY = S + rrSafe + limite d'op) — l'arc « tourne
+  // versl'intérieur » car tout arc sortant de lapièce/de la zone est rejeté
+  // par validXY. L'ancien passe-droit insideSil (bbox) des mini-passesétait
+  // la cause du gouge 4,7 mm : il disparaît.
+  const arcEnter=function(seq,ch,ax,ay){
+    if(!seq||seq.length<2)return false;
+    const g=function(i){return ch.mv?[seq[i].x,seq[i].y]:[seq[i][0],seq[i][1]];};
+    const Q=g(1);
+    const ux=Q[0]-ax, uy=Q[1]-ay;
+    if(!(ux*ux+uy*uy>1e-12))return false;
+    const emitArc=function(s){
+      moves.push({r:0,ent:1,x:rnd(ax),y:rnd(ay),z:z,
+        arc:{i:s.cx-s.sx,j:s.cy-s.sy,cw:s.cw}});
+    };
+    for(let ri=0;ri<rhoCirc.length;ri++){
+      const sides=faoSidesCirc(ax,ay,ux,uy,rhoCirc[ri]);
+      if(!sides)continue;
+      for(let i=0;i<sides.length;i++){
+        const s=sides[i];
+        // Ancre de tangence : centre outil à >= rrSafe de l'ombre + dans la
+        // limite (validXY) — jamais insideSil.
+        if(!validXY(s.sx,s.sy))continue;
+        const pts2=faoCircArcPts(s,ax,ay);
+        if(!pts2)continue;
+        let okA=true;
+        for(let k=0;k<pts2.length;k++)if(!validXY(pts2[k][0],pts2[k][1])){okA=false;break;}
+        if(!okA)continue;
+        const prev=moves.length?moves[moves.length-1]:null;
+        const atZ=!!(prev&&!prev.r&&Math.abs(prev.z-z)<1e-9);
+        // (1) déjà à la cote : accostage de coupe jusqu'à l'ancre de l'arc.
+        if(atZ&&segClear(prev.x,prev.y,s.sx,s.sy)){ pushCut(s.sx,s.sy); emitArc(s); return true; }
+        // (2) plongée sûre sur l'ancre (007) puis arc — la descente n'est
+        // admise que si le disque est déjà dégagé/en air.
+        if(faoPlungeClear(s.sx,s.sy,moves,z,D,airCv)){
+          const zG=gotoXY(s.sx,s.sy);
+          if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(s.sx),y:rnd(s.sy),z:z});
+          emitArc(s);
+          return true;
+        }
+        // (3) mini-passes : VIDE D'ABORD (intérieur usiné par le plan
+        // profond) — plongée plate sur Q, accostage de l'ancre, puis arc.
+        if(isRing){
+          const Qs=voidWayC(s.sx,s.sy);
+          if(Qs){ arriveVoidC(Qs.x,Qs.y); pushCut(s.sx,s.sy); emitArc(s); return true; }
+        }
+        // (4) hélice à orbite légale sur l'ancre (008) puis le MÊME arc.
+        let hrH=0;
+        const hc=[D*0.4,D*0.2,1,0.5];
+        for(let hi=0;hi<hc.length;hi++){
+          if(hc[hi]>=0.5&&(faoDiscClear(segsAll,s.sx,s.sy,hc[hi],r+faoHelixJeu)||
+             faoDiscClear(segsAll,s.sx,s.sy,hc[hi],r))){hrH=hc[hi];break;}
+        }
+        if(!(hrH>0)){
+          hrH=Math.max(1,D*0.2);
+          const okS=function(h){
+            for(let k=0;k<8;k++){const a=k/8*2*Math.PI;if(!validXY(s.sx+h*Math.cos(a),s.sy+h*Math.sin(a)))return false;}
+            return true;
+          };
+          while(hrH>0.5&&!okS(hrH))hrH-=0.5;
+          if(!(hrH>0.5&&okS(hrH)))continue;
+        }
+        const zG2=gotoXY(s.sx,s.sy);
+        const hS=Math.max(faoHelixSpot(mesh,s.sx,s.sy,hrH,r,z,brutTop,planes),hFloor);
+        if(Math.abs(zG2-hS)>1e-9)moves.push({r:0,ent:1,x:rnd(s.sx),y:rnd(s.sy),z:hS});
+        faoHelixEntry(s.sx,s.sy,hS,z,hrH,D).slice(1).forEach(function(m){moves.push(m);});
+        pushCut(s.sx,s.sy);
+        emitArc(s);
+        return true;
+      }
+    }
+    return false;
+  };
   // --- ENTRÉE DU NIVEAU (UNE) : émission ici, après les helpers — le tour
-  // fournit la cible à l'entrée circulaire (2026-10-08-004).
+  // fournit la cible ; priorité au SEGMENT DROIT (midEnter), repli ARC
+  // CONCAVE sûr (arcEnter, 2026-10-10-001).
   const rhoCirc=faoCircRhos(D,ae,opt.entryR);
   // 2026-10-08-007 : air = hors du BRUT (la boîte de stock), plus « hors de la
   // pièce » — l'extérieur d'un bossage et le vide de poche sont du brut à
@@ -8502,7 +8877,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
   const airCv=function(x,y){
     return x<B.x0-1e-9||x>B.x1+1e-9||y<B.y0-1e-9||y>B.y1+1e-9;
   };
-  const validXY=function(x,y){ return faoShapeValid(S,x,y,rrSafe); };
+  const validXY=function(x,y){ return faoShapeValid(S,x,y,rrSafe)&&(!zoneAt||zoneAt(x,y)); };
   // 10-09-003 : VIDE D'ABORD (mini-passes — copie conforme du 011 spirale,
   // sans garde sweptNow : en mini-passes la 1re attaque du plan est FRANCHE,
   // le vide vient du plan plus profond z' <= z). Avant toute plongée/hélice/
@@ -8539,131 +8914,70 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     const zG=gotoXY(qx,qy);
     if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(qx),y:rnd(qy),z:z});
   };
-  const circEnter=function(Px,Py,ux,uy){
-    // Arc tangent : rapide vers S, descente en Z, arc jusqu'au point d'attaque.
-    // 005 : ancre déjà balayée (ré-entrée) -> descente verticale. 008 : 1re
-    // attaque — ancre non balayée inévitable -> descente en HÉLICE sur place à
-    // orbite légale, puis le MÊME arc tangent (les entrées circulaires ne sont
-    // plus abandonnées faute de matière déjà coupée). false = repli.
-    // 10-09-003 : les MINI-PASSES (ringOnly) partent TOUJOURS en circulaire,
-    // quel que soit entryMode du doc (auto inclu) : plan de la mini passe +
-    // positionnement dans le vide à l'intérieur, jamais de rampe. Les passes
-    // normales gardent leur gate historique (entryMode==='circ').
-    if(entryMode!=='circ'&&!isRing)return false;
-    const emitArc=function(s){
-      moves.push({r:0,ent:1,x:rnd(Px),y:rnd(Py),z:z,
-        arc:{i:s.cx-s.sx,j:s.cy-s.sy,cw:s.cw}});
-    };
-    const side=faoCircEval(Px,Py,ux,uy,rhoCirc,validXY,moves,z,D,true,airCv);
-    // 10-09-002 : l'entrée circulaire s'applique à toutes les liaisons
-    // assez longues (>= faoRapideMin, mini-passes comprises) — la descente
-    // sur l'ancre n'est admise QUE si le disque est déjà dégagé (007 : le
-    // test ponctuel de faoCircEval ne suffit pas pour PLONGER) ; sinon on
-    // retombe sur l'hélice de la pass 2 qui amène le MÊME arc tangent.
-    if(side&&faoPlungeClear(side.sx,side.sy,moves,z,D,airCv)){
-      const zG=gotoXY(side.sx,side.sy);
-      if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(side.sx),y:rnd(side.sy),z:z});
-      emitArc(side);
-      return true;
+  // --- ENTRÉE EN LIGNE DROITE VERS LE MILIEU DU 1er SEGMENT (2026-10-10-001,
+  // Fix 3). Les entrées en ARC TANGENT amenaient le CENTRE plus près que r de
+  // la paroi : mesuré sur la pièce réelle Ø25 (outil T6) = 26 arcs dont 14
+  // GOUGES (minD < 12,5, pire 7,79 mm — la fraise entrait 4,7 mm dans la
+  // matière) + 12 arcs mangeant la laisse de 0,5 (tous aux mini-passes),
+  // plainte « usinage de la matière qu'il ne faut pas toucher » + escargot
+  // « rayons d'entrée tangents ». On entre au MILIEU M du premier segment de
+  // la cible avec la cascade sûre existante (liaison de coupe / plongée 007 /
+  // vide 10-09-003 / repli hélice de l'appelant), puis on accoste M -> seq[0]
+  // (demi-segment retaillé) : TOUTE l'entrée est désormais en droites
+  // validées (segClear / linkCutOK / faoPlungeClear — centre toujours à
+  // >= rrSafe de la matière), couverture complète (chaîne fermée : la boucle
+  // referme sur M ; ouverte : back-cut M->seq[0]). false = repli de
+  // l'appelant (chaîne d'entrée hélice/rampe, ou la cascade de linkIn sur
+  // seq[0]).
+  const midEnter=function(seq,ch,ax,ay){
+    if(!seq||seq.length<2)return false;
+    const g=function(i){return ch.mv?[seq[i].x,seq[i].y]:[seq[i][0],seq[i][1]];};
+    const A=g(0),Q=g(1);
+    const Mx=(A[0]+Q[0])/2, My=(A[1]+Q[1])/2;
+    // Demi-segment d'accostage M -> seq[0] : non sur -> on laisse l'appelant
+    // entrer directement sur seq[0] (cascade historique, jamais d'arc).
+    if(!segClear(Mx,My,ax,ay))return false;
+    const prev=moves.length?moves[moves.length-1]:null;
+    const atZ=!!(prev&&!prev.r&&Math.abs(prev.z-z)<1e-9);
+    // (1) déjà à la cote : droite de coupe validée jusqu'à M (aucun lever,
+    // aucun arc) puis demi-segment — liaison courte historique généralisée.
+    if(atZ&&segClear(prev.x,prev.y,Mx,My)){ pushCut(Mx,My); pushCut(ax,ay); return 1; }
+    // (2) après l'entrée du niveau (hors mini-passes) : LIAISON DE COUPE sur
+    // le plan (même critère que les bandes) — le bout de chaîne seq[0] (un
+    // coin d'ombre parfois) n'est pas franchissable en direct, M l'est.
+    if(!isRing&&entered&&atZ&&linkCutOK(prev.x,prev.y,Mx,My)){
+      pushCut(Mx,My); pushCut(ax,ay); return 1;
     }
-    // 10-09-003 : VIDE D'ABORD (mini-passes) — le disque sur l'ancre n'est
-    // pas dégagé (paroi non encore coupée) : plongée plate sur Q (intérieur
-    // déjà usiné par le plan profond), accostage de l'ancre à cote z, l'arc
-    // tangent vient depuis le vide — pas de rampe, pas d'hélice.
-    if(side&&isRing){
-      const Qs=voidWayC(side.sx,side.sy);
-      if(Qs){
-        arriveVoidC(Qs.x,Qs.y);
-        pushCut(side.sx,side.sy);
-        emitArc(side);
-        return true;
-      }
+    // (3) plongée sûre sur M (007 : disque D/2 déjà balayé ou en air réel) —
+    // descente verticale sur place, puis accostage à cote.
+    if(faoPlungeClear(Mx,My,moves,z,D,airCv)){
+      gotoXY(Mx,My);
+      moves.push({r:0,ent:1,x:rnd(Mx),y:rnd(My),z:z});
+      pushCut(ax,ay); return 1;
     }
-    for(let ri=0;ri<rhoCirc.length;ri++){
-      const sides=faoSidesCirc(Px,Py,ux,uy,rhoCirc[ri]);
-      if(!sides)continue;
-      for(let i=0;i<sides.length;i++){
-        const s2=sides[i];
-        if(!insideSil(s2.sx,s2.sy))continue; // 008 : ancre hors silhouette = pas de ressort dans l'air
-        // 10-09-003 : mini-passes — 1re ATTACQUE d'un contour vierge : le
-        // croissant de paroi n'est pas encore coupé, aucun point à < r de la
-        // paroi n'est « valide » au sens statique (validXY) : l'arc d'entrée
-        // est justement ce qui coupe ce croissant. On applique la règle
-        // 008 de la spirale : côté dans la SILHOUETTE (jamais dans l'air,
-        // 008 : pas de ressort hors pièce) — la plongée reste gardée par
-        // faoPlungeClear (007) et le vide par voidWayC.
-        if(!isRing&&!validXY(s2.sx,s2.sy))continue;
-        const pts2=faoCircArcPts(s2,Px,Py);
-        if(!pts2)continue;
-        let okA=true;
-        for(let k=0;k<pts2.length;k++)if(!(isRing?insideSil:validXY)(pts2[k][0],pts2[k][1])){okA=false;break;}
-        if(!okA)continue;
-        // 10-09-003 : mini-passes — disque d'ancre déjà dégagé -> descente
-        // plate + MÊME arc tangent (aucune hélice nécessaire).
-        if(isRing&&faoPlungeClear(s2.sx,s2.sy,moves,z,D,airCv)){
-          const zG=gotoXY(s2.sx,s2.sy);
-          if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(s2.sx),y:rnd(s2.sy),z:z});
-          pushCut(s2.sx,s2.sy);
-          emitArc(s2);
-          return true;
-        }
-        // 10-09-003 : VIDE D'ABORD (mini-passes) — 1re attaque : aucun disque
-        // dégagé près de la paroi, mais l'intérieur du plan (usiné par le plan
-        // plus profond) est du vide joignable : on plonge à plat sur Q, on
-        // accoste l'ancre à cote z, l'arc tangent vient depuis le vide —
-        // l'hélice ne reste qu'en dernier recours de cette boucle.
-        if(isRing){
-          const Qs=voidWayC(s2.sx,s2.sy);
-          if(Qs){
-            arriveVoidC(Qs.x,Qs.y);
-            pushCut(s2.sx,s2.sy);
-            emitArc(s2);
-            return true;
-          }
-        }
-        let hrH=0;
-        const hc=[D*0.4,D*0.2,1,0.5];
-        for(let hi=0;hi<hc.length;hi++){
-          if(hc[hi]>=0.5&&(faoDiscClear(segsAll,s2.sx,s2.sy,hc[hi],r+faoHelixJeu)||
-             faoDiscClear(segsAll,s2.sx,s2.sy,hc[hi],r))){hrH=hc[hi];break;}
-        }
-        if(!(hrH>0)){
-          hrH=Math.max(1,D*0.2);
-          const okS=function(h){
-            for(let k=0;k<8;k++){const a=k/8*2*Math.PI;if(!validXY(s2.sx+h*Math.cos(a),s2.sy+h*Math.sin(a)))return false;}
-            return true;
-          };
-          while(hrH>0.5&&!okS(hrH))hrH-=0.5;
-          if(!(hrH>0.5&&okS(hrH)))continue;
-        }
-        const zG=gotoXY(s2.sx,s2.sy);
-        const hS=Math.max(faoHelixSpot(mesh,s2.sx,s2.sy,hrH,r,z,brutTop,planes),hFloor);
-        if(Math.abs(zG-hS)>1e-9)moves.push({r:0,ent:1,x:rnd(s2.sx),y:rnd(s2.sy),z:hS});
-        faoHelixEntry(s2.sx,s2.sy,hS,z,hrH,D).slice(1).forEach(function(m){moves.push(m);});
-        pushCut(s2.sx,s2.sy);
-        emitArc(s2);
-        return true;
-      }
+    // (4) ancre en AIR (hors boîte de brut) : plongée plate admise (repli
+    // 10-09-002 : le vide ne peut pas mordre).
+    if(airCv(Mx,My)&&faoPlungeClear(Mx,My,moves,z,D,
+       function(sx2,sy2){return airCv(sx2,sy2)||!insideSil(sx2,sy2);})){
+      gotoXY(Mx,My);
+      moves.push({r:0,ent:1,x:rnd(Mx),y:rnd(My),z:z});
+      pushCut(ax,ay); return 1;
     }
-    // 10-09-003 : mini-passes — AUCUNE géométrie d'arc tenable : on entre
-    // quand même depuis le vide (plongée plate sur Q + liaison à cote vers
-    // l'ancre). Jamais de rampe en mini-passes ; si le vide n'est pas
-    // joignable non plus, false -> repli de l'appelant (encore contrôlé
-    // par faoPlungeClear avant toute rampe).
+    // (5) mini-passes : VIDE D'ABORD — plongée plate sur Q (intérieur déjà
+    // balayé par le plan plus profond), accostage à cote vers M puis demi-
+    // segment ; jamais de rampe en mini-passes (repli = l'appelant).
     if(isRing){
-      const Qs=voidWayC(Px,Py);
-      if(Qs){
-        arriveVoidC(Qs.x,Qs.y);
-        pushCut(Px,Py);
-        return true;
-      }
+      const Qm=voidWayC(Mx,My);
+      if(Qm){ arriveVoidC(Qm.x,Qm.y); pushCut(Mx,My); pushCut(ax,ay); return 1; }
     }
     return false;
   };
   // Première cible = le morceau que le tour épuisera en premier (même règle).
-  let circOK=false;
-  // 10-09-003 : mini-passes (isRing) entrent aussi en circulaire depuis le
-  // vide — le gate d'entrée du niveau suit le même choix que circEnter.
+  let entOK=false;
+  // 10-09-003 -> 2026-10-10-001 : l'entrée du niveau (mini-passes OU
+  // entryMode 'circ') cherche d'abord l'ARC CONCAVE SÛR (arcEnter), puis la
+  // LIAISON DROITE vers le milieu M du 1er segment (midEnter) — le gate suit
+  // le même choix que linkIn.
   if((entryMode==='circ'||isRing)&&remaining.length){
     const px0=moves.length?moves[moves.length-1].x:cx0;
     const py0=moves.length?moves[moves.length-1].y:cy0;
@@ -8673,12 +8987,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       if(ch0){
         const s0=ordered(ch0,px0,py0);
         const ax0=ch0.mv?s0[0].x:s0[0][0], ay0=ch0.mv?s0[0].y:s0[0][1];
-        let ux0=0,uy0=0;
-        if(s0.length>1){
-          ux0=ch0.mv?s0[1].x-s0[0].x:s0[1][0]-s0[0][0];
-          uy0=ch0.mv?s0[1].y-s0[0].y:s0[1][1]-s0[0][1];
-        }
-        circOK=circEnter(ax0,ay0,ux0,uy0);
+        entOK=!!arcEnter(s0,ch0,ax0,ay0)||!!midEnter(s0,ch0,ax0,ay0);
       }
     }else{
       let kTop=-1;
@@ -8686,27 +8995,23 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       const grp=[];
       for(let i=0;i<remaining.length;i++)if((remaining[i].k||0)===kTop)grp.push(remaining[i]);
       // 006 : le 1er morceau du tour est une BANDE (k=1000) — son point de
-      // départ n'accepte pas toujours l'entrée circulaire (trop près d'une
-      // ombre). On essaie les plus proches jusqu'à ce que circEnter accepte ;
-      // sinon la chaîne d'entrée classique (tang/hélice/rampe) reste le repli.
+      // départ n'accepte pas toujours l'entrée (trop près d'une ombre). On
+      // essaie les plus proches jusqu'à ce que midEnter accepte ; sinon la
+      // chaîne d'entrée classique (tang/hélice/rampe) reste le repli.
       const cand=grp.map(function(ch){
         const s0=ordered(ch,px0,py0);
         const ax=ch.mv?s0[0].x:s0[0][0], ay=ch.mv?s0[0].y:s0[0][1];
-        let ux=0,uy=0;
-        if(s0.length>1){
-          ux=ch.mv?s0[1].x-s0[0].x:s0[1][0]-s0[0][0];
-          uy=ch.mv?s0[1].y-s0[0].y:s0[1][1]-s0[0][1];
-        }
-        return {ax:ax,ay:ay,ux:ux,uy:uy,d:(ax-px0)*(ax-px0)+(ay-py0)*(ay-py0)};
+        return {ch:ch,seq:s0,ax:ax,ay:ay,d:(ax-px0)*(ax-px0)+(ay-py0)*(ay-py0)};
       });
       cand.sort(function(a,b){return a.d-b.d;});
-      for(let gi=0;gi<cand.length&&gi<8&&!circOK;gi++){
-        if(circEnter(cand[gi].ax,cand[gi].ay,cand[gi].ux,cand[gi].uy))circOK=true;
+      for(let gi=0;gi<cand.length&&gi<8&&!entOK;gi++){
+        if(arcEnter(cand[gi].seq,cand[gi].ch,cand[gi].ax,cand[gi].ay)||
+           midEnter(cand[gi].seq,cand[gi].ch,cand[gi].ax,cand[gi].ay))entOK=true;
       }
     }
   }
-  if(circOK){
-    // entrée circulaire émise — le tour enchaîne en liaison directe.
+  if(entOK){
+    // entrée en ligne droite émise — le tour enchaîne en liaison directe.
   }else if(tang){
     const zG=gotoXY(tang.sx,tang.sy);
     const hs=Math.max(faoHelixSpot(mesh,tang.sx,tang.sy,0,r,z,brutTop,planes),hFloor);
@@ -8735,7 +9040,7 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     // hors boîte entreraient par un ressort dans le vide). Sous le vide de
     // poche, la MATIÈRE BRUT est bien là (hors pièce dans la boîte) : hélice.
     const surMatiere=(mx>=B.x0-1e-9&&mx<=B.x1+1e-9&&my>=B.y0-1e-9&&my<=B.y1+1e-9)&&
-      !faoShapeInside(S,mx,my);
+      !faoShapeInside(S,mx,my)&&(!zoneAt||zoneAt(mx,my)); // Fix 2 : hors zone = vide
     if(!surMatiere){
       // rien à enlever ici : le 1er morceau (linkIn 007) ramp/linkpe depuis
       // la position précédente.
@@ -8765,10 +9070,10 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     }
     }
   }
-  // 006 : rien n'a été émis à la cote (circ refusé partout, pas de tang /
-  // hélice / rampe) — au moins une cible du tour accepte l'entrée
-  // circulaire : le tour y vient en liaison de coupe (linkIn 006). Sans
-  // cela, linkIn finissait en descente hélice de secours à ras de paroi
+  // 006 -> 2026-10-10-001 : rien n'a été émis à la cote (entrée droite
+  // refusée partout, pas de tang / hélice / rampe) — au moins une cible du
+  // tour accepte l'entrée (midEnter) : le tour y vient en liaison de coupe.
+  // Sans cela, linkIn finissait en descente hélice de secours à ras de paroi
   // (faux « niveaux » z intermédiaires). Ne touche pas aux niveaux où la
   // chaîne d'entrée a déjà émis à z.
   const pmE=moves.length?moves[moves.length-1]:null;
@@ -8777,16 +9082,12 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     const cE=remaining.map(function(ch){
       const s0=ordered(ch,ex0,ey0);
       const ax=ch.mv?s0[0].x:s0[0][0], ay=ch.mv?s0[0].y:s0[0][1];
-      let ux=0,uy=0;
-      if(s0.length>1){
-        ux=ch.mv?s0[1].x-s0[0].x:s0[1][0]-s0[0][0];
-        uy=ch.mv?s0[1].y-s0[0].y:s0[1][1]-s0[0][1];
-      }
-      return {ax:ax,ay:ay,ux:ux,uy:uy,d:(ax-ex0)*(ax-ex0)+(ay-ey0)*(ay-ey0)};
+      return {ch:ch,seq:s0,ax:ax,ay:ay,d:(ax-ex0)*(ax-ex0)+(ay-ey0)*(ay-ey0)};
     });
     cE.sort(function(a,b){return a.d-b.d;});
-    for(let ei=0;ei<cE.length&&ei<40&&!circOK;ei++){
-      if(circEnter(cE[ei].ax,cE[ei].ay,cE[ei].ux,cE[ei].uy))circOK=true;
+    for(let ei=0;ei<cE.length&&ei<40&&!entOK;ei++){
+      if(arcEnter(cE[ei].seq,cE[ei].ch,cE[ei].ax,cE[ei].ay)||
+         midEnter(cE[ei].seq,cE[ei].ch,cE[ei].ax,cE[ei].ay))entOK=true;
     }
   }
   // 006 : l'entrée du niveau est émise (ou rien n'est utile ici) — les
@@ -8857,7 +9158,71 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
       for(let i=0;i<remaining.length;i++)if((remaining[i].k||0)>kTop)kTop=remaining[i].k||0;
       const grp=[];
       for(let i=0;i<remaining.length;i++)if((remaining[i].k||0)===kTop)grp.push(remaining[i]);
-      pick=remaining.indexOf(grp[safePick(grp,px,py)]);
+      if(kTop>=1000&&grp[0]&&grp[0].band){
+        // Fix 1 (2026-10-10-001) : bandes en ORDRE DE CRÉATION (serpentin
+        // li%2, jamais greedy) mais démarrées du CENTRE du niveau et
+        // rayonnant vers les DEUX bords (deux-pointeurs sur les y) — le
+        // « milieu d'abord » (RETOUR 3, canari escargot) reste vrai, les
+        // transitions restent courtes (1 à 2 pas de pas de bande) et les
+        // lignes hors poche (les bords) ferment le niveau.
+        // 2026-10-10-002 (demande 2) : UN CÔTÉ À LA FOIS — on épuise d'abord
+        // le côté +Y (du centre vers le bord), puis on revient et on épuise le
+        // côté −Y (du centre vers l'autre bord). Le rayonnement alterné (cB,
+        // cB+1, cB−1, …) faisait traverser le centre à chaque bande ; on garde
+        // le serpentin (transitions courtes intra-côté) et le démarrage au
+        // centre, on ne change que l'ordre des côtés : une seule longue
+        // transition au retournement, les deux sweeps restent monotones.
+        if(!bandOrder){
+          const seenY={},ysB=[];
+          for(let i=0;i<grp.length;i++){
+            const yv=+((grp[i].mv?grp[i].mv[0].y:grp[i].pts[0][1]).toFixed(3));
+            if(!seenY[yv]){seenY[yv]=1;ysB.push(yv);}
+          }
+          ysB.sort(function(a,b){return a-b;});
+          let cB=0,bd=1/0;
+          for(let i=0;i<ysB.length;i++){
+            const d=Math.abs(ysB[i]-cy0);
+            if(d<bd){bd=d;cB=i;}
+          }
+          const ordY=[];
+          for(let i=cB;i<ysB.length;i++)ordY.push(i);   // côté +Y : du centre au bord
+          for(let i=cB-1;i>=0;i--)ordY.push(i);         // côté −Y : du centre à l'autre bord
+          bandOrder=[];
+          for(let oi=0;oi<ordY.length;oi++){
+            const yv=ysB[ordY[oi]];
+            for(let i=0;i<grp.length;i++){
+              const gy=+((grp[i].mv?grp[i].mv[0].y:grp[i].pts[0][1]).toFixed(3));
+              if(gy===yv)bandOrder.push(grp[i]);
+            }
+          }
+          bandIdx=0;
+        }
+        while(bandIdx<bandOrder.length){
+          const chB=bandOrder[bandIdx];
+          const jb=remaining.indexOf(chB);
+          if(jb<0){bandIdx++;continue;} // déjà prise via le repli greedy
+          const sq=ordered(chB,px,py);
+          const qx=chB.mv?sq[0].x:sq[0][0], qy=chB.mv?sq[0].y:sq[0][1];
+          if(segClear(px,py,qx,qy)){pick=jb;bandIdx++;break;}
+          // coude 006 : la transition serpentin longe la face — le direct
+          // peut mordre un coin d'ombre, le coude (L) reste clair : on garde
+          // l'ordre de création. Repli greedy seulement si ni direct ni coude.
+          if(linkCutOK(px,py,qx,py)||linkCutOK(px,py,px,qy)){pick=jb;bandIdx++;break;}
+          break; // ni direct ni coude -> repli greedy ci-dessous (suite retestée)
+        }
+      }
+      if(pick<0){
+        const gp=safePick(grp,px,py);
+        pick=remaining.indexOf(grp[gp]);
+        // Resynchronisation (Fix 1) : un repli greedy consomme une bande
+        // hors séquence — sans cette ligne, bandIdx restait bloqué sur la
+        // bande ratée et CHAQUE transition suivante re-échouait (cascade =
+        // quasi tout le niveau retombait en greedy).
+        if(bandOrder&&grp[gp]&&grp[gp].band){
+          const bj=bandOrder.indexOf(grp[gp]);
+          if(bj>=0)bandIdx=bj+1;
+        }
+      }
     }
     const ch=remaining[pick];
     remaining.splice(pick,1);

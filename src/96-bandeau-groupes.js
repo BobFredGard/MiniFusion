@@ -19,7 +19,7 @@
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.2';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.3';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);
