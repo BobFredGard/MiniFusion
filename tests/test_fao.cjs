@@ -1241,6 +1241,54 @@ const vm=require('vm');
     "mbV.onclick({stopPropagation(){}});",
     "att(sU.ops[0].hidden===false,'affichage manuel : « Afficher » remet la trace');",
     "att(faoRefreshPreview()===nAll,'affichage manuel : preview totale ('+nAll+' pts)');",
+    // --- 029 : ébauche 3D — le REPÈRE de génération doit suivre la POCHE
+    // (2026-10-11-005, « Cavité inverse » = le parcours « tourne de 90° »).
+    //   (a) brut PORTRAIT (SENS LONG : transpose x<->y du maillage) + limite :
+    //       la zone doit être transposée AUSSI — sinon le prédicat monde est
+    //       lu dans le repère retourné et l'extrémité Y du pochage (|y|>42,5)
+    //       n'est JAMAIS usinée (mesuré 41,9 au lieu de 72,5).
+    //   (b) limite tournée 35° en Z : le pas (bandes conventionnelles) doit
+    //       suivre l'axe de la poche, pas les axes du brut.
+    "const box9e=function(x0,y0,z0,x1,y1,z1){const v=[[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]];const t=[[0,2,1],[0,3,2],[4,5,6],[4,6,7],[0,1,5],[0,5,4],[1,2,6],[1,6,5],[2,3,7],[2,7,6],[3,0,4],[3,4,7]];return {v:v,t:t};};",
+    "const hollow9=function(o,i){const A=box9e.apply(null,o),B9=box9e.apply(null,i),off=A.v.length;return {v:A.v.concat(B9.v),t:A.t.concat(B9.t.map(function(q){return [q[0]+off,q[1]+off,q[2]+off];}))};};",
+    "const rect9=function(hx,hy){return [[hx,hy],[-hx,hy],[-hx,-hy],[hx,-hy]];};",
+    "const origAM9=faoActiveMesh;",
+    // (a) — boîte 150x220 (HAUTE -> SENS LONG) trou ±65x±100, zone ±42.5x±72.5
+    "const m9a=hollow9([-75,-110,0,75,110,50],[-65,-100,0,65,100,50]);",
+    "faoActiveMesh=function(){return {mesh:{v:m9a.v,t:m9a.t},box:{x0:-75,y0:-110,z0:0,x1:75,y1:110,z1:50}};};",
+    "const job9a=faoDefaultJob();job9a.stock={x0:-75,y0:-110,z0:0,x1:75,y1:110,z1:50};",
+    "const op9a={type:'rough3d',toolId:'T1',ztop:50,zbot:30,ap:10,ae:3,mode:'escargot',sens:'avalant',limit:{mode:'chain',loop:rect9(42.5,72.5)}};",
+    "const mv9a=faoOpMoves(op9a,job9a);",
+    "const cu9a=mv9a.filter(function(m){return !m.r;});",
+    "let yM9=0,xM9=0;cu9a.forEach(function(m){yM9=Math.max(yM9,Math.abs(m.y));xM9=Math.max(xM9,Math.abs(m.x));});",
+    "att(cu9a.length>50,'029a : ébauche escargot = '+cu9a.length+' coupes ('+mv9a.length+' moves)');",
+    "att(yM9>=60,'029a : extrémité Y de la zone usinée (max|y|='+yM9.toFixed(2)+', attendu ~72.5) — zone non transposée = « tourne de 90° »');",
+    "att(xM9<=42.51&&cu9a.every(function(m){return Math.abs(m.y)<=72.51;}),'029a : coupes dans la limite (max|x|='+xM9.toFixed(2)+', max|y|='+yM9.toFixed(2)+')');",
+    // (b) — boîte CARRE (aucune transpose) + zone = rectangle tourné 35°
+    "const m9b=hollow9([-110,-110,0,110,110,50],[-90,-90,0,90,90,50]);",
+    "faoActiveMesh=function(){return {mesh:{v:m9b.v,t:m9b.t},box:{x0:-110,y0:-110,z0:0,x1:110,y1:110,z1:50}};};",
+    "const th9=35*Math.PI/180,u9c=[Math.cos(th9),Math.sin(th9)],v9c=[-Math.sin(th9),Math.cos(th9)];",
+    "const loop9=[];for(let s9=0;s9<4;s9++){const uu9=(s9<2)?60:-60,vv9=(s9%2)?25:-25;loop9.push([uu9*u9c[0]+vv9*v9c[0],uu9*u9c[1]+vv9*v9c[1]]);}",
+    "const job9b=faoDefaultJob();job9b.stock={x0:-110,y0:-110,z0:0,x1:110,y1:110,z1:50};",
+    "const op9b={type:'rough3d',toolId:'T1',ztop:50,zbot:30,ap:10,ae:3,limit:{mode:'chain',loop:loop9}};",
+    "const mv9b=faoOpMoves(op9b,job9b);",
+    "att(mv9b.filter(function(m){return !m.r;}).length>50,'029b : ébauche conventionnelle = '+mv9b.length+' moves');",
+    "let in9=true;mv9b.forEach(function(m){if(m.r)return;const pu=Math.abs(m.x*u9c[0]+m.y*u9c[1]),pv=Math.abs(m.x*v9c[0]+m.y*v9c[1]);if(pu>60.02||pv>25.02)in9=false;});",
+    "att(in9,'029b : toutes les coupes dans le rectangle tourné 35°');",
+    "let n9=0,g9=0,c9=null;const flush9=function(){if(c9&&c9.L>=8){let A9=c9.A*180/Math.PI;A9=((A9%90)+90)%90;n9++;if(A9>=30&&A9<=40)g9++;}c9=null;};",
+    "for(let i9=1;i9<mv9b.length;i9++){const a9=mv9b[i9-1],b9=mv9b[i9];if(a9.r||b9.r||a9.arc||b9.arc||a9.ent||b9.ent){flush9();continue;}const dx9=b9.x-a9.x,dy9=b9.y-a9.y,L9=Math.hypot(dx9,dy9);if(L9<1e-9)continue;const A9=Math.atan2(dy9,dx9);if(!c9){c9={A:A9,L:L9};}else{let d9=A9-c9.A;while(d9>Math.PI)d9-=2*Math.PI;while(d9<-Math.PI)d9+=2*Math.PI;if(Math.abs(d9)>20*Math.PI/180){flush9();c9={A:A9,L:L9};}else c9.L+=L9;}}flush9();",
+    "att(n9>=15&&g9>=n9*0.7,'029b : pas aligné sur l axe de la poche ('+g9+'/'+n9+' segments >= 8 mm dans [30,40°], attendu 35°)');",
+    // (c) — brut PORTRAIT + poche PAYSAGE : c'est la MATIÈRE qui décide ->
+    //       bandes le long de X (le SENS LONG ancien travaillait en Y par
+    //       principe : « le travail X/Y dépend de la matière restante »).
+    "faoActiveMesh=function(){return {mesh:{v:m9a.v,t:m9a.t},box:{x0:-75,y0:-110,z0:0,x1:75,y1:110,z1:50}};};",
+    "const job9c=faoDefaultJob();job9c.stock={x0:-75,y0:-110,z0:0,x1:75,y1:110,z1:50};",
+    "const op9c={type:'rough3d',toolId:'T1',ztop:50,zbot:30,ap:10,ae:3,limit:{mode:'chain',loop:rect9(72.5,42.5)}};",
+    "const mv9c=faoOpMoves(op9c,job9c);",
+    "let n9c=0,g9c=0,c9c=null;const flush9c=function(){if(c9c&&c9c.L>=8){n9c++;if(Math.abs(c9c.dx)>=Math.abs(c9c.dy))g9c++;}c9c=null;};",
+    "for(let i9=1;i9<mv9c.length;i9++){const a9=mv9c[i9-1],b9=mv9c[i9];if(a9.r||b9.r||a9.arc||b9.arc||a9.ent||b9.ent){flush9c();continue;}const dx9=b9.x-a9.x,dy9=b9.y-a9.y,L9=Math.hypot(dx9,dy9);if(L9<1e-9)continue;const A9=Math.atan2(dy9,dx9);if(!c9c)c9c={A:A9,dx:0,dy:0,L:0};else{let d9=A9-c9c.A;while(d9>Math.PI)d9-=2*Math.PI;while(d9<-Math.PI)d9+=2*Math.PI;if(Math.abs(d9)>20*Math.PI/180){flush9c();c9c={A:A9,dx:0,dy:0,L:0};}}c9c.dx+=dx9;c9c.dy+=dy9;c9c.L+=L9;}flush9c();",
+    "att(n9c>=15&&g9c>=n9c*0.7,'029c : la poche PAYSAGE impose les bandes en X ('+g9c+'/'+n9c+' runs longs majoritairement horizontaux)');",
+    "faoActiveMesh=origAM9;",
     "if(ATT.length){p('');p('ECHECS ('+ATT.length+') :');ATT.forEach(m=>p('  x '+m));}",
     "else p('TOUT EST CONFORME');",
     "p('facing='+f.length+' pocket='+pk.length+' contour='+ct.length+' drill='+dr.length);",

@@ -23,7 +23,7 @@
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-11-004';
+const APP_VER='2026-10-11-005';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -34,8 +34,13 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-11-001';
+const CACHE_VER='2026-10-11-002';
 function cacheVerOK(v){
+  // 2026-10-11-002 : ébauche 3D — la ZONE voyage dans le REPÈRE (zoneAt
+  // transposé sous SENS LONG + rotation de −θ sur l'axe d'une limite oblique,
+  // faoLoopAxis) : les documents à zone + brut portrait/changé CHANGENT de
+  // parcours (les extrémités de poche n'étaient pas usinées, « tourné de
+  // 90° »). Périmés légitimement, à régénérer une fois (wipe unique).
   // 2026-10-08-002 : plans de dégagement/retrait — les remontées locales de
   // l'ébauche 3D passent de +2 à +5 mm (tvZ/tvJ bornés par le plan de retrait)
   // : même clé de sig, AUTRES points de rapides. Périmés légitimement, à

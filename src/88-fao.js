@@ -2569,6 +2569,9 @@ function* faoOpMovesIt(op,job){
         // tangent, repli hélice/rampe si pas d'ancre ; 'auto' = legacy).
         entry:op.entry||'circ',entryR:op.entryR,brutTop:brutTop,secu:secu,
         zoneAt:zctx?zctx.at:null,
+        // 2026-10-11-005 : la limite voyage avec la zone — le REPÈRE de
+        // génération (faoLoopAxis) suit l'axe de la chaîne (poche oblique).
+        limit:op.limit,
         // 2026-10-07-005 : mode de vidage — 'escargot' = spirale centre ->
         // faces (faoSpiralLevel) ; absent = conventionnel (documents anciens).
         // 2026-10-08-001 : la poche d'entree (o.poly) a disparu avec le mode
@@ -7231,6 +7234,49 @@ function faoUpFloors(mesh,z0,z1){
   res.sort(function(p,q){return q-p;});
   return res;
 }
+// 2026-10-11-005 — ORIENTATION DU PARCOURS = LA MATIÈRE À USINER (demande :
+// « Peu importe la position de la pièce : si le sens long est sur Y, tu
+// travailles en Y ; s'il est à 38,5°, tu suis cet angle »). PCA des sommets
+// de la chaîne -> axe LONG de la poche :
+//   null          = pas de préférence (absent, <3 pts, quasi-carré) : la
+//                   boîte du brut fait foi (SENS LONG historique) ;
+//   0             = axe sur X (pochage paysage) : repère = la pièce, AUCUNE
+//                   transformation (la zone commande, pas la boîte) ;
+//   π/2           = axe sur Y (pochage portrait) ;
+//   autre         = oblique (35°, 38,5°…) : rotation du repère sur l'axe.
+// Tolérance 2° (snap sur 0/90°) + ratio d'étendues ≥ 1,3 (carré = arbitraire).
+function faoLoopAxis(loop){
+  if(!loop||loop.length<3)return null;
+  let n=0,sx=0,sy=0,sxx=0,syy=0,sxy=0;
+  for(let i=0;i<loop.length;i++){
+    const x=+loop[i][0], y=+loop[i][1];
+    if(!isFinite(x)||!isFinite(y))continue;
+    n++; sx+=x; sy+=y; sxx+=x*x; syy+=y*y; sxy+=x*y;
+  }
+  if(n<3)return null;
+  const cx=sx/n, cy=sy/n;
+  const a=sxx/n-cx*cx, b=sxy/n-cx*cy, c=syy/n-cy*cy;
+  let th=0.5*Math.atan2(2*b, a-c);          // vecteur propre principal (PCA)
+  if(!isFinite(th))return null;
+  if(th>Math.PI/2)th-=Math.PI;              // normalisation (−90°,90°]
+  else if(th<=-Math.PI/2)th+=Math.PI;
+  // Étendues le long / perp de l'axe : sans préférence nette (carré, quasi-
+  // carré : L < 1,3*W) l'orientation serait arbitraire -> boîte du brut.
+  const cs=Math.cos(th), sn=Math.sin(th);
+  let u0=1/0,u1=-1/0,v0=1/0,v1=-1/0;
+  for(let i=0;i<loop.length;i++){
+    const x=+loop[i][0], y=+loop[i][1];
+    if(!isFinite(x)||!isFinite(y))continue;
+    const u=x*cs+y*sn, v=-x*sn+y*cs;
+    if(u<u0)u0=u; if(u>u1)u1=u; if(v<v0)v0=v; if(v>v1)v1=v;
+  }
+  const L=Math.max(u1-u0,1e-9), W=Math.max(v1-v0,1e-9);
+  if(L<1.3*W)return null;
+  const TOL=2*Math.PI/180;                  // 2° : aligné -> exact 0 ou π/2
+  if(Math.abs(th)<=TOL)return 0;
+  if(Math.abs(th-Math.PI/2)<=TOL||Math.abs(th+Math.PI/2)<=TOL)return Math.PI/2;
+  return th;
+}
 // 2026-10-09-005 : le corps est un GÉNÉRATEUR (faoGenRough3DIt) qui « cède le
 // fil » après chaque niveau/mini-passe/finition (yield moves) — l'aperçu
 // dessine les courbes au fur et à mesure (faoOpMovesStream). L'appel classique
@@ -7263,12 +7309,78 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
   // d'outillage identiques), puis chaque move est remis en place a la
   // sortie (miroir y=x : IJK echanges, sens cw inverse). Carres et
   // paysages : inchanges.
-  let swapped=false, M=mesh, BB=B;
-  if((B.y1-B.y0)>(B.x1-B.x0)){
+  // 2026-10-11-005 — LA ZONE DÉCIDE DE L'ORIENTATION (faoLoopAxis, cf. plus
+  // haut) : axe paysage (0) -> repère = la pièce, AUCUNE transformation (le
+  // parcours se dessine sur la pièce dans sa position) ; axe portrait (π/2)
+  // ou oblique (35°, 38,5°…) -> rotation −th du maillage/boîte sur l'axe de
+  // la poche, sortie +th (isométrie : cw/IJK exacts). SANS ZONE (thL=null) :
+  // SENS LONG historique inchangé (miroir si le brut est plus haut que large).
+  const thL=faoLoopAxis(o&&o.limit&&o.limit.loop);
+  let th=0, swapped=false, M=mesh, BB=B;
+  if(thL!==null&&thL!==0){
+    th=thL;
+    const cs=Math.cos(th), sn=Math.sin(th); // matrice repère = R(−th)
+    const v2=new Array(mesh.v.length);
+    let x0=1/0,y0=1/0,x1=-1/0,y1=-1/0;
+    for(let i=0;i<mesh.v.length;i++){
+      const p=mesh.v[i];
+      const X=p[0]*cs+p[1]*sn, Y=p[1]*cs-p[0]*sn;
+      v2[i]=[X,Y,p[2]];
+      if(X<x0)x0=X; if(X>x1)x1=X; if(Y<y0)y0=Y; if(Y>y1)y1=Y;
+    }
+    M={v:v2,t:mesh.t};
+    BB={x0:x0,y0:y0,x1:x1,y1:y1,z0:B.z0,z1:B.z1};
+  }else if(thL===null&&(B.y1-B.y0)>(B.x1-B.x0)){
     swapped=true;
     M={v:mesh.v.map(function(p){return [p[1],p[0],p[2]];}),t:mesh.t};
     BB={x0:B.y0,y0:B.x0,x1:B.y1,y1:B.x1};
   }
+  // 2026-10-11-005 — LA ZONE PART DANS LE REPERE AUSSI : `o.zoneAt` est un
+  // prédicat MONDE ; livré tel quel dans un repère transposé/pendant, il
+  // « tournait » de 90° (Cavité inverse : |y| du parcours bloqué à 42,5 au
+  // lieu de 72,5 — les extrémités de la poche n'étaient JAMAIS usinées).
+  if(typeof o.zoneAt==='function'&&(th!==0||swapped)){
+    const zW=o.zoneAt;
+    if(th!==0){
+      const cs=Math.cos(th), sn=Math.sin(th); // R(+th) : repère -> monde
+      o=Object.assign({},o,{zoneAt:function(x,y){ return zW(x*cs-y*sn, x*sn+y*cs); }});
+    }else{
+      o=Object.assign({},o,{zoneAt:function(x,y){ return zW(y,x); }});
+    }
+  }
+  // 2026-10-11-005 — APERÇU PROVISOIRE DANS LA POSITION DE LA PIÈCE : pendant
+  // la génération, les yields livraient les moves DANS LE REPÈRE INTERNE — le
+  // tracé se dessinait à 90° (brut portrait) puis « sautait » à la fin. Chaque
+  // yield livre désormais une COPIE transformée repère -> pièce (l'entrée
+  // finale reste la vraie, transformée in place, strictement identique).
+  let xf=null; // move -> coordonnées pièce (null = repère = pièce)
+  if(th!==0){
+    const cs=Math.cos(th), sn=Math.sin(th); // R(+th)
+    xf=function(m){
+      const x=m.x, y=m.y;
+      m.x=x*cs-y*sn; m.y=x*sn+y*cs;
+      if(m.arc){const ii=m.arc.i, jj=m.arc.j;
+        m.arc.i=ii*cs-jj*sn; m.arc.j=ii*sn+jj*cs;}
+    };
+  }else if(swapped){
+    xf=function(m){
+      const x=m.x;
+      m.x=m.y; m.y=x;
+      if(m.arc){const ii=m.arc.i; m.arc.i=m.arc.j; m.arc.j=ii; m.arc.cw=!m.arc.cw;}
+    };
+  }
+  const frameYield=function(){
+    if(!xf)return moves;
+    const out=new Array(moves.length);
+    for(let i=0;i<moves.length;i++){
+      const s=moves[i];
+      const m=Object.assign({},s);
+      if(s.arc)m.arc=Object.assign({},s.arc);
+      xf(m);
+      out[i]=m;
+    }
+    return out;
+  };
   // ESCARGOT (2026-10-07-005) : pelage en spirale depuis le centre vers les
   // faces (faoSpiralLevel), entrées obligatoires en hélice. `o.mode` posé par
   // le dispatch ; sans mode (documents existants) le parcours conventionnel
@@ -7358,7 +7470,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     // 2026-10-08-003 : sens (avalant = sens de coupe constant) porte par opt.
     if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
     else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
-    yield moves; // dessin progressif 005 : pelage du niveau fini
+    yield frameYield(); // dessin progressif 005 : pelage du niveau fini
     // MINI-PASSES (retour 4/10) : après le pelage du niveau, contour des parois
     // entre ce plan et le plan du dessus : profondeurs k*h/(nb+1) sous le plan
     // du dessus (strictement entre les deux, jamais dessus), décalage radial
@@ -7370,7 +7482,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
         const zm=Math.round((bandTop-k*h/(nb+1))*1000)/1000;
         const s=RA.radial;
         faoRoughAdaptiveLevel(M,BB,zm,D,D/2+s,secu,Math.min(secu,bandTop),ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
-        yield moves; // dessin progressif 005 : mini-passe k
+        yield frameYield(); // dessin progressif 005 : mini-passe k
       }
     }
     // FINITION DES PAROIS (8/10) : UNIQUEMENT sur `finIdx` = niveau le plus
@@ -7400,19 +7512,16 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
         for(let k=1;k<=nf;k++){
           const off=RA.radial*(nf-k)/nf;
           faoRoughAdaptiveLevel(M,BB,zj,D,D/2+off,secu,zF,ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvJ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
-          yield moves; // dessin progressif 005 : finition k
+          yield frameYield(); // dessin progressif 005 : finition k
         }
       }
     }
   }
   faoSliceCache=null;
-  if(swapped){
-    for(let i=0;i<moves.length;i++){
-      const m=moves[i], x=m.x;
-      m.x=m.y; m.y=x;
-      if(m.arc){const ii=m.arc.i; m.arc.i=m.arc.j; m.arc.j=ii; m.arc.cw=!m.arc.cw;}
-    }
-  }
+  // Retour repère -> pièce : même xf que les yields (source unique) — rotation
+  // R(+th) si la zone a tourné le repère, miroir SENS LONG si brut portrait
+  // sans zone ; in place, strictement équivalent à l'entrée du flux.
+  if(xf)for(let i=0;i<moves.length;i++)xf(moves[i]);
   return moves;
 }
 function faoGenRough3D(mesh,box,ztop,zbot,o){
