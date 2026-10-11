@@ -1365,9 +1365,9 @@ function faoChainReplay(){
     }
     if(!any)return 0;
     if(typeof occHas==='function'&&!occHas())return 0;
-    if(!occLive||!occLive.shape)return 0;
-    const edges=occSharpEdges(occLive.shape);
-    if(!edges.length)return 0;
+    let edges=null;
+    try{ edges=faoChainEdgesWorld(); }catch(e){ return 0; }
+    if(!edges||!edges.length)return 0;
     const n=faoRematchAll(F,edges);
     if(n)faoChanged();
     return n;
@@ -10273,6 +10273,54 @@ function faoZPlaneCommit(e){
 // À la validation on SNAPSHOTE la boucle XY dans op.limit + les ancres des germes :
 // la limite survit au rejeu (re-suie auto par faoChainReplay) et à la sauvegarde
 // sans OCCT ; arêtes trop déplacées -> stale (alerte) -> re-sélectionner.
+function faoChainEdgesWorld(){
+  // Arêtes listables pour la saisie de zone (Chaîne / Chaîne îlot / Limite Z).
+  // • composé exact occLive, COMME AVANT (pièce native) ;
+  // • + imports STEP affichés : un import SEUL n'entre JAMAIS dans la chaîne
+  //   exacte (occReplayBody « importSeul → return ») donc occLive reste null et
+  //   la saisie refusait tout (« recalcul impossible ») alors que l'overlay
+  //   « Arêtes » dessinait bien le STEP (mêmes arêtes classées À L'IMPORT,
+  //   importGeom entry.edges — cf. edgeOverlayData).
+  // Le composé occLive ne contient jamais un import non consommé (il n'est
+  // poussé dans bodies QUE s'il n'est PAS dans FR.imports) : aucun doublon.
+  const out=[];
+  const add=function(e,mw){
+    try{
+      if(!e||!e.pts||e.pts.length<1)return;
+      let p=e.pts,mid=(e.mid&&isFinite(e.mid[0]))?[+e.mid[0],+e.mid[1],isFinite(+e.mid[2])?+e.mid[2]:0]:null;
+      let len=+e.len;
+      if(mw&&mw.elements){ // coordonnées mesh -> monde (comme buildEdgeOverlay)
+        p=p.map(function(q){const v=new THREE.Vector3(q[0],q[1],q[2]).applyMatrix4(mw);return[v.x,v.y,v.z];});
+        if(mid){const m=new THREE.Vector3(mid[0],mid[1],mid[2]).applyMatrix4(mw);mid=[m.x,m.y,m.z];}
+      }
+      if(!mid||!isFinite(len)||len<=0){
+        // repli maillage (STL / import sans classification) : milieu à mi-
+        // longueur + longueur cumulée, CALCULÉS donc stables d'un rejeu à l'autre.
+        let L=0;const acc=[0];
+        for(let i=0;i+1<p.length;i++){L+=Math.hypot(p[i+1][0]-p[i][0],p[i+1][1]-p[i][1],p[i+1][2]-p[i][2]);acc.push(L);}
+        if(!(L>1e-12))return;
+        len=L;
+        const half=L/2;let k=0;while(k+1<acc.length&&acc[k+1]<half)k++;
+        const seg=acc[k+1]-acc[k],t=seg>1e-12?(half-acc[k])/seg:0;
+        mid=[p[k][0]+(p[k+1][0]-p[k][0])*t,p[k][1]+(p[k+1][1]-p[k][1])*t,p[k][2]+(p[k+1][2]-p[k][2])*t];
+      }
+      out.push({mid:mid,pts:p,len:len,sharp:e.sharp!==false});
+    }catch(err){}
+  };
+  if(typeof occLive!=='undefined'&&occLive&&occLive.shape){
+    try{occSharpEdges(occLive.shape).forEach(function(e){add(e,null);});}catch(e){}
+  }
+  try{
+    (typeof bodies!=='undefined'&&bodies?bodies:[]).forEach(function(b){
+      if(!b||b.kind!=='import'||b.visible===false||b.ghost||!b.mesh||b.mesh.visible===false)return;
+      let ent=null;try{ent=(typeof importGeom!=='undefined'&&importGeom)?importGeom.get(b.ref||b.id):null;}catch(e){}
+      const mw=(b.mesh&&b.mesh.matrixWorld)||null;
+      if(ent&&ent.edges&&ent.edges.length){ent.edges.forEach(function(e){add(e,mw);});return;}
+      try{edgeOverlayFromMesh(b).forEach(function(e){add(e,null);});}catch(e){} // STL : déjà en monde
+    });
+  }catch(e){}
+  return out;
+}
 let faoChainMode=null, faoChainHover=null;
 function faoChainStart(setupId,opId,kind){
   // kind : 'chain' (zone extérieure, défaut) · 'chain2' (zone intérieure,
@@ -10290,11 +10338,17 @@ function faoChainStart(setupId,opId,kind){
     if(!occLive||!occLive.shape){
       if(typeof occHas==='function'&&!occHas()){faceEl.textContent=PRE+' : solide exact indisponible (OCCT non chargé ou aucun volume).';return;}
       try{rebuild();}catch(e){}
-      if(!occLive||!occLive.shape){faceEl.textContent=PRE+' : recalcul impossible.';return;}
+      // Un import SEUL ne fabrique AUCUN solide exact (occReplayBody : importSeul
+      // → return) : occLive peut rester null alors que les arêtes du STEP existent
+      // — on liste quand même (faoChainEdgesWorld lit importGeom) au lieu de
+      // refuser tout à ce stade.
     }
     let edges=[];
-    try{ edges=occSharpEdges(occLive.shape); }catch(e){ edges=[]; }
-    if(!edges.length){faceEl.textContent=PRE+' : aucune arête listable.';return;}
+    try{ edges=faoChainEdgesWorld(); }catch(e){ edges=[]; }
+    if(!edges.length){
+      faceEl.textContent=(!occLive||!occLive.shape)?(PRE+' : recalcul impossible.'):(PRE+' : aucune arête listable.');
+      return;
+    }
     const setup=faoSetup(setupId);
     const op=(setup.ops||[]).filter(function(o){return o.id===opId;})[0];
     if(!op){faceEl.textContent=PRE+' : opération introuvable.';return;}
