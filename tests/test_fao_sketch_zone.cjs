@@ -1,11 +1,14 @@
-// FAO 2026-10-13-001 — zone par ESQUISSE : le contour d'une esquisse (plan
+// FAO 2026-10-13-001/002 — zone par ESQUISSE : le contour d'une esquisse (plan
 // horizontal, sans îlot/trou/cercle) devient la limite d'usinage — toutes
-// opérations (ébauche 3D, crêtes constantes, 2.5D, perçage). La boucle est
-// extraite au choix (faoSketchLoop) puis RE-EXTRAITE à chaque fin de rejeu
-// (faoSketchReplay) : édition -> nouvelle zone ; esquisse perdue ou devenue
-// inutilisable -> stale + alerte, l'ANCIEN contour reste appliqué (jamais une
-// zone qui s'ouvre en silence). Mêmes règles d'extraction que la poche
-// d'entrée (-005) : contours FORTS, dédoublonnage, un seul contour unique.
+// opérations (ébauche 3D, crêtes constantes, 2.5D, perçage) — ET, depuis
+// 2026-10-13-002, la ZONE INTÉRIEURE (îlot à préserver) accepte aussi le mode
+// esquisse (limit2.mode='sketch') : mêmes règles d'extraction, règle outil
+// « out » forcée, rejeu au même hook. La boucle est extraite au choix
+// (faoSketchLoop) puis RE-EXTRAITE à chaque fin de rejeu (faoSketchReplay) :
+// édition -> nouvelle zone ; esquisse perdue ou devenue inutilisable -> stale
+// + alerte, l'ANCIEN contour reste appliqué (jamais une zone qui s'ouvre en
+// silence). Mêmes règles d'extraction que la poche d'entrée (-005) : contours
+// FORTS, dédoublonnage, un seul contour unique.
 const {loadApp}=require('./appvm.cjs');
 const vm=require('vm');
 (async()=>{
@@ -62,7 +65,12 @@ const vm=require('vm');
     "att(!!oMid.limit&&oMid.limit.sk==='','sanitise : choix en cours (sk vide) conserve');",
     "att(!oNoSk.limit,'sanitise : sk manquant -> purge');",
     "att(!oBog.limit,'sanitise : mode inconnu -> purge');",
-    "att(!oL2.limit2,'sanitise : esquisse refusee en zone int (hors perimetre)');",
+    "att(!!oL2.limit2&&oL2.limit2.sk==='zs1','sanitise : esquisse en zone int CONSERVEE (2026-10-13-002)');",
+    "att(oL2.limit2&&oL2.limit2.side==='out','sanitise : îlot esquisse -> side out FORCE');",
+    "att(oL2.limit2&&oL2.limit2.extra===0,'sanitise : îlot esquisse -> extra defaut 0');",
+    "const oL2b={id:'s6',type:'pocket',limit2:{mode:'sketch',loop:[[0,0],[1,0],[1,1]]}};",
+    "faoSanitiseOps({tools:[{id:'T1',num:1,d:10,kind:'flat'}],ops:[oL2b]});",
+    "att(!oL2b.limit2,'sanitise : îlot esquisse sans sk string -> purge');",
     // ============ 4. faoZoneCtx ===========================================
     "const job=faoDefaultJob();",
     "job.stock={x0:-5,y0:-5,z0:0,x1:85,y1:65,z1:18};",
@@ -161,6 +169,84 @@ const vm=require('vm');
     "  'fiche : esquisse absente/inutilisable -> alerte + zone NON appliquee');",
     "opU.limit.sk='zs1';opU.limit.loop=w;opU.limit.stale=true;",
     "att(txt(faoOpCardElement(faoSetup(),opU,0)).indexOf('obsolète')>=0,'fiche : stale -> alerte obsolete');",
+    // ============ 11. îlot par esquisse (limit2) ==========================
+    "const opI={id:'zi2',on:true,toolId:'T1',type:'pocket',ap:4,ae:5,ztop:18,zbot:4,",
+    "  limit:{mode:'rect',x0:0,y0:0,x1:80,y1:60,side:'center',extra:0},",
+    "  limit2:{mode:'sketch',sk:'zs1',loop:w,side:'out',extra:0}};",
+    "const zi=faoZoneCtx(opI,job);",
+    "att(!!zi&&!!zi.lim2,'ctx îlot : contexte compose lim+lim2 ok');",
+    "if(zi){",
+    "  att(zi.at(60,15)===true,'ctx îlot : dedans zone, hors îlot -> usinable');",
+    "  att(zi.at(20,15)===false,'ctx îlot : dans l esquisse îlot -> NON usinable');",
+    "  att(zi.at(90,15)===false,'ctx îlot : hors zone ext -> NON usinable');",
+    "  att(zi.cross({x:-5,y:15},{x:100,y:15})===true,'ctx îlot : traverse les deux bords -> cross');",
+    "}",
+    "const opDI={id:'zdi',type:'drill',toolId:'T1',pts:[[20,15],[60,15]],limit2:opI.limit2};",
+    "const kpI=faoLimitDrillPts(opDI,10);",
+    "att(kpI.length===1&&kpI[0][0]===60,'drill îlot : trou dans l esquisse exclu, hors îlot garde ('+kpI.length+')');",
+    "const mvI=[{r:1,x:-10,y:15,z:8},{r:0,x:-10,y:15,z:1},{r:0,x:100,y:15,z:1}];",
+    "const zcI=faoZoneCuts(mvI,opI,job,8);",
+    "const ckI=zcI.filter(function(m){return !m.r;});",
+    "att(ckI.length>0,'ZoneCuts îlot : coupe conservee ('+ckI.length+' pts)');",
+    "att(ckI.every(function(m){return !faoLimInside(m.x,m.y,opI.limit2,5);}),'ZoneCuts îlot : aucune coupe dans l îlot dilate');",
+    "att(ckI.some(function(m){return m.x>50;}),'ZoneCuts îlot : partie hors îlot bien usinee');",
+    "att(faoOpLabel(opI,job).indexOf('[îlot]')>=0,'fiche îlot : tag [îlot] present');",
+    "const opIS={id:'zi3',toolId:'T1',type:'pocket',limit2:Object.assign({},opI.limit2,{stale:true})};",
+    "att(faoOpLabel(opIS,job).indexOf('⚠')>=0,'fiche îlot : stale esquisse affiche ⚠');",
+    "const opIL={id:'zi4',toolId:'T1',type:'pocket',limit2:{mode:'sketch',sk:'zs1',loop:[[0,0],[1,0]],side:'out',extra:0}};",
+    "att(faoOpLabel(opIL,job).indexOf('[îlot]')<0,'fiche îlot : loop <3 pts -> pas de tag');",
+    "const sigI={id:'x',type:'pocket',limit2:{mode:'sketch',sk:'zs1',loop:w,side:'out',extra:0}};",
+    "const sigI2=JSON.parse(J(sigI));sigI2.limit2.loop=[[0,0],[41,0],[41,30],[0,30]];",
+    "att(J(faoOpSig(sigI))!==J(faoOpSig(sigI2)),'sig îlot : la boucle limit2 entre dans la cle');",
+    "const S1=faoSetup();if(S1.ops.indexOf(opI)<0)S1.ops.push(opI);",
+    "let n2=-2;try{ n2=faoSketchReplay(); }catch(e){ n2=-99; }",
+    "att(n2>=0,'replay îlot : execution sans exception (n='+n2+')');",
+    "att((opI.limit2.loop||[]).length>=4&&opI.limit2.stale!==true,'replay îlot : boucle extraite, pas de stale');",
+    "const bAv2=J(opI.limit2.loop);",
+    "rect.points.b.x=55;rect.points.c.x=55;",
+    "n2=-2;try{ n2=faoSketchReplay(); }catch(e){ n2=-99; }",
+    "att(n2>0,'replay îlot : edition esquisse -> changement detecte');",
+    "att(J(opI.limit2.loop)!==bAv2,'replay îlot : boucle mise a jour');",
+    "const bSt2=J(opI.limit2.loop);",
+    "doc.sketches=[];",
+    "n2=-2;try{ n2=faoSketchReplay(); }catch(e){ n2=-99; }",
+    "att(opI.limit2.stale===true,'replay îlot : esquisse perdue -> stale');",
+    "att(J(opI.limit2.loop)===bSt2,'replay îlot : boucle inchangee (îlot jamais ouvert en silence)');",
+    "doc.sketches=[rect];",
+    "n2=-2;try{ n2=faoSketchReplay(); }catch(e){ n2=-99; }",
+    "att(opI.limit2.stale===false,'replay îlot : esquisse restauree -> stale efface');",
+    "try{const ix1=S1.ops.indexOf(opI);if(ix1>=0)S1.ops.splice(ix1,1);}catch(e){}",
+    // ============ 12. fiche UI : îlot par esquisse ========================
+    "const opU2={id:'u2',type:'pocket',ap:4,ae:5,ztop:18,zbot:4,x0:0,y0:0,x1:10,y1:10,toolId:'T1'};",
+    "const cardA=faoOpCardElement(faoSetup(),opU2,0);",
+    "const l2sel=all(cardA).filter(function(n){return n.tagName==='SELECT'&&",
+    "  Array.prototype.map.call(n.children||[],function(o){return String(o.textContent||'');}).join('|').indexOf('Rectangle (îlot)')>=0;})[0];",
+    "att(!!l2sel,'fiche îlot : selecteur Zone int. present');",
+    "if(l2sel){",
+    "  att(Array.prototype.map.call(l2sel.children,function(o){return String(o.textContent);}).join('|').indexOf('Esquisse')>=0,",
+    "    'fiche îlot : option Esquisse presente');",
+    "  l2sel.value='sketch';l2sel.onchange();",
+    "  att(opU2.limit2&&opU2.limit2.mode==='sketch'&&opU2.limit2.sk==='','fiche îlot : bascule -> îlot esquisse (sk vide)');",
+    "  att(opU2.limit2&&opU2.limit2.side==='out','fiche îlot : side out pose a la creation');",
+    "}",
+    "const cardB=faoOpCardElement(faoSetup(),opU2,0);",
+    "const skSel2=all(cardB).filter(function(n){return n.tagName==='SELECT'&&",
+    "  Array.prototype.map.call(n.children||[],function(o){return String(o.textContent||'');}).join('|').indexOf('choisir une esquisse')>=0;})[0];",
+    "att(!!skSel2,'fiche îlot : selecteur Esquisse present');",
+    "if(skSel2){",
+    "  skSel2.value='zs1';skSel2.onchange();",
+    "  att(opU2.limit2.sk==='zs1'&&(opU2.limit2.loop||[]).length>=4,'fiche îlot : choix -> boucle extraite');",
+    "}",
+    "const cardC=faoOpCardElement(faoSetup(),opU2,0);",
+    "const tC=txt(cardC);",
+    "att(tC.indexOf('Îlot : boucle de')>=0,'fiche îlot : statut boucle affiche');",
+    "att(tC.indexOf('îlot NON appliqué')<0,'fiche îlot : pas d alerte une fois valide');",
+    "att(tC.indexOf('Marge')>=0,'fiche îlot : rangée Marge presente');",
+    "opU2.limit2.sk='zv';opU2.limit2.loop=[];opU2.limit2.stale=false;",
+    "att(txt(faoOpCardElement(faoSetup(),opU2,0)).indexOf('îlot NON appliqué')>=0,",
+    "  'fiche îlot : esquisse absente/inutilisable -> alerte + îlot NON applique');",
+    "opU2.limit2.sk='zs1';opU2.limit2.loop=w;opU2.limit2.stale=true;",
+    "att(txt(faoOpCardElement(faoSetup(),opU2,0)).indexOf('obsolète')>=0,'fiche îlot : stale -> alerte obsolete');",
     "return ATT;"
   ].join('\n');
   const out=await vm.runInContext('(async()=>{'+R+'\n})()',ctx);
@@ -169,7 +255,7 @@ const vm=require('vm');
     console.log('ECHECS :');out.forEach(m=>console.log('  x '+m));
     process.exit(1);
   }
-  console.log('=== zone par esquisse : extraction, ctx, clip, rejeu, fiche ===');
+  console.log('=== zone par esquisse : extraction, ctx, clip, rejeu, fiche + îlot (limit2) ===');
   console.log('TOUT EST CONFORME');
   process.exit(0);
 })().catch(e=>{console.log('FATAL/FAIL',String((e&&e.stack)||e).slice(0,1400));process.exit(1);});

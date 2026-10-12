@@ -262,7 +262,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-13-001';
+const APP_VER='2026-10-13-002';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -273,7 +273,7 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-13-001';
+const CACHE_VER='2026-10-13-002';
 function cacheVerOK(v){
   // 2026-10-11-002 : ébauche 3D — la ZONE voyage dans le REPÈRE (zoneAt
   // transposé sous SENS LONG + rotation de −θ sur l'axe d'une limite oblique,
@@ -12885,7 +12885,12 @@ function faoSanitiseOps(s){
     // d'ilot silencieusement ignore) ; chaine : cote 'out' FORCE (regle outil
     // de l'ilot : dilate de r+marge, on garde le complement).
     if(op.limit2){
-      if(op.limit2.mode!=='rect'&&op.limit2.mode!=='chain')delete op.limit2;
+      if(op.limit2.mode==='sketch'){
+        // 2026-10-13-002 : îlot par ESQUISSE — même contrat que la limite
+        // esquisse (boucle re-extraite au rejeu), règle outil out FORCE.
+        if(typeof op.limit2.sk!=='string'||!Array.isArray(op.limit2.loop))delete op.limit2;
+        else{ if(!isFinite(+op.limit2.extra))op.limit2.extra=0; op.limit2.side='out'; }
+      }else if(op.limit2.mode!=='rect'&&op.limit2.mode!=='chain')delete op.limit2;
       else if(op.limit2.mode==='rect'){
         const T=op.limit2, a=+T.x0, b=+T.x1, c=+T.y0, d=+T.y1;
         if(!(isFinite(a)&&isFinite(b)&&isFinite(c)&&isFinite(d)))delete op.limit2;
@@ -13557,7 +13562,7 @@ function faoLimitDrillPts(op,toolD){
     const R2=faoLimit2R(L2,toolD);
     if(R2)out=out.filter(function(p){
       return !(+p[0]>=R2.x0&&+p[0]<=R2.x1&&+p[1]>=R2.y0&&+p[1]<=R2.y1); });
-  }else if(L2&&L2.mode==='chain'&&L2.loop&&L2.loop.length>=3){
+  }else if(L2&&(L2.mode==='chain'||L2.mode==='sketch')&&L2.loop&&L2.loop.length>=3){
     const r=(isFinite(+toolD)&&+toolD>0?+toolD:10)/2;
     out=out.filter(function(p){ return !faoLimInside(+p[0],+p[1],L2,r); });
   }
@@ -14084,13 +14089,17 @@ function faoSketchReplay(){
     for(let i=0;i<F.length;i++){
       const ops=(F[i]&&F[i].ops)||[];
       for(let k=0;k<ops.length;k++){
-        const L=ops[k]&&ops[k].limit;
-        if(!L||L.mode!=='sketch'||typeof L.sk!=='string'||!L.sk)continue;
-        const w=faoSketchLoop(L.sk);
-        if(w&&w.length>=3){
-          if(!faoLoopSame(L.loop,w)){ L.loop=w; L.closed=true; n++; }
-          if(L.stale){ L.stale=false; n++; }
-        }else if(!L.stale){ L.stale=true; n++; }
+        const o=ops[k]||{};
+        // 2026-10-13-002 : rejeu des esquisses de zone ET d'îlot (limit + limit2).
+        for(let li=0;li<2;li++){
+          const L=li?o.limit2:o.limit;
+          if(!L||L.mode!=='sketch'||typeof L.sk!=='string'||!L.sk)continue;
+          const w=faoSketchLoop(L.sk);
+          if(w&&w.length>=3){
+            if(!faoLoopSame(L.loop,w)){ L.loop=w; L.closed=true; n++; }
+            if(L.stale){ L.stale=false; n++; }
+          }else if(!L.stale){ L.stale=true; n++; }
+        }
       }
     }
   }catch(e){ return 0; }
@@ -14270,7 +14279,7 @@ function faoZoneCtx(op,job){
   if(lim2&&lim2.mode==='rect'){
     R2=faoLimit2R(lim2,D);
     if(!R2)R2=null; else lim2OK=lim2;
-  }else if(lim2&&lim2.mode==='chain'&&lim2.loop&&lim2.loop.length>=3){
+  }else if(lim2&&(lim2.mode==='chain'||lim2.mode==='sketch')&&lim2.loop&&lim2.loop.length>=3){
     lim2OK=lim2;
   }
   if(!limOK&&!lim2OK)return null;
@@ -15376,7 +15385,7 @@ function* faoOpMovesIt(op,job){
     if(lim2.mode==='rect'){
       const R2=faoLimit2R(lim2,D);
       if(R2)mv=faoClipMovesXY(mv,R2,secu,true);
-    }else if(lim2.mode==='chain'&&lim2.loop&&lim2.loop.length>=3){
+    }else if((lim2.mode==='chain'||lim2.mode==='sketch')&&lim2.loop&&lim2.loop.length>=3){
       mv=faoClipMovesPoly(mv,lim2,D/2,secu,2,
         function(x,y){ return !faoLimInside(x,y,lim2,D/2); });
     }
@@ -15743,7 +15752,7 @@ function faoPost(job,postId){
     'Remettre 3 axes ou exporter sur Siemens.');
   const staleCh=(job.ops||[]).filter(function(o){
     return o&&o.on!==false&&((o.limit&&(o.limit.mode==='chain'||o.limit.mode==='sketch')&&o.limit.stale)||
-      (o.limit2&&o.limit2.mode==='chain'&&o.limit2.stale)||(o.zlim&&o.zlim.stale));
+      (o.limit2&&(o.limit2.mode==='chain'||o.limit2.mode==='sketch')&&o.limit2.stale)||(o.zlim&&o.zlim.stale));
   }).length;
   if(staleCh)warns.push(staleCh+' opération(s) : limite « chaîne »/« esquisse »/îlot/Z obsolète (arêtes du modèle '+
     'non retrouvées ou esquisse modifiée) — re-sélectionner / re-choisir avant export');
@@ -15888,7 +15897,7 @@ function faoOpLabel(op,job){
   const ra=((op&&(op.type==='pocket'||op.type==='contour'||op.type==='rough3d'||op.type==='facing'))&&(RA.radial>0||RA.axial>0))?(' R'+RA.radial+' A'+RA.axial):'';
   const lim=((op&&op.limit&&(op.limit.mode==='rect'||((op.limit.mode==='chain'||op.limit.mode==='sketch')&&(op.limit.loop||[]).length>=3)))
     ?' [limite]'+(op.limit.stale?'⚠':''):'')
-    +((op&&op.limit2&&(op.limit2.mode==='rect'||(op.limit2.mode==='chain'&&(op.limit2.loop||[]).length>=3)))
+    +((op&&op.limit2&&(op.limit2.mode==='rect'||((op.limit2.mode==='chain'||op.limit2.mode==='sketch')&&(op.limit2.loop||[]).length>=3)))
     ?' [îlot]'+(op.limit2.stale?'⚠':''):'')
     +((op&&op.zlim)?' [Z]'+(op.zlim.stale?'⚠':''):'');
   if(t==='facing')return 'Surfaçage Z='+op.z+tag+off+ra+lim;
@@ -18526,7 +18535,8 @@ function faoOpCardElement(setup,op,i){
   rl2.appendChild(faoSel([
     ['none','Aucune','Pas de zone intérieure : toute la matière de la zone extérieure est usinée.'],
     ['rect','Rectangle (îlot)','Rectangle à NE PAS usiner — l\'outil reste à un rayon + marge du contour.'],
-    ['chain','Chaîne d\'arêtes','Îlot délimité par des arêtes du modèle — même règle outil, re-suivi à chaque rejeu.']],
+    ['chain','Chaîne d\'arêtes','Îlot délimité par des arêtes du modèle — même règle outil, re-suivi à chaque rejeu.'],
+    ['sketch','Esquisse','Îlot délimité par un contour d\'esquisse — re-extrait à chaque rejeu.']],
     lim2Mode,function(v){
       if(v==='rect'){
         const s=faoStock();
@@ -18538,6 +18548,11 @@ function faoOpCardElement(setup,op,i){
         const old=op.limit2&&op.limit2.mode==='chain'?op.limit2:null;
         op.limit2=old||{mode:'chain',loop:[],closed:false,nEdges:0,tangent:true,side:'out',extra:0};
         faoChainStart(setup.id,op.id,'chain2');
+      }else if(v==='sketch'){
+        // 2026-10-13-002 : îlot par esquisse — on garde l'ancien choix d'esquisse
+        // si on y revenait, sinon on repart d'une îlot vide (jamais deviné).
+        const old=op.limit2&&op.limit2.mode==='sketch'?op.limit2:null;
+        op.limit2=old||{mode:'sketch',sk:'',loop:[],closed:true,side:'out',extra:0};
       }else delete op.limit2;
     },
     'Zone intérieure (îlot) : matière à NE PAS toucher — l\'ébauche usine entre les deux zones.'));
@@ -18570,6 +18585,43 @@ function faoOpCardElement(setup,op,i){
       ws2.className='fao-alert';
       ws2.textContent='⚠ Modèle modifié : arêtes de l\'îlot non retrouvées — boucle inchangée (obsolète), re-sélectionnez.';
       d.appendChild(ws2);
+    }
+  }
+  if(lim2Mode==='sketch'&&op.limit2){
+    // 2026-10-13-002 : îlot par ESQUISSE — miroir de la limite esquisse :
+    // boucle extraite au choix, re-extrapée à chaque rejeu (faoSketchReplay).
+    const L2=op.limit2;
+    const rsk2=document.createElement('div');
+    rsk2.className='fao-row';
+    rsk2.appendChild(faoLab('Esquisse'));
+    const skOpts2=[['','— choisir une esquisse —','Contour fermé (traits forts), plan horizontal, sans îlot ni trou, sans cercle.']];
+    ((typeof doc!=='undefined'&&doc&&doc.sketches)||[]).forEach(function(s){
+      skOpts2.push([s.id,s.name+' · '+sketchFaceLabel(s),(s.entities||[]).length+' traits']);
+    });
+    rsk2.appendChild(faoSel(skOpts2,L2.sk||'',function(v){
+      L2.sk=v||'';
+      const w=L2.sk?faoSketchLoop(L2.sk):null;
+      if(w&&w.length>=3){ L2.loop=w; L2.closed=true; L2.stale=false; }
+      else L2.loop=[];
+    },'Esquisse de l\'îlot : contour extérieur unique en vue XY, plan horizontal, sans îlot ni trou. Re-extraite à chaque rejeu.'));
+    d.appendChild(rsk2);
+    const hasLoopS2=(L2.loop||[]).length>=3;
+    const infoS2=document.createElement('div');
+    if(hasLoopS2){
+      infoS2.className='fao-help';
+      infoS2.textContent='Îlot : boucle de '+L2.loop.length+' pts — re-extraite à chaque rejeu (éditer l’esquisse met l’îlot à jour).';
+    }else{
+      infoS2.className='fao-alert';
+      infoS2.textContent=L2.sk
+        ?'⚠ Esquisse absente ou inutilisable (plan non horizontal, contours multiples, îlot ou trou, cercle) — îlot NON appliqué.'
+        :'Aucune esquisse choisie — îlot NON appliqué.';
+    }
+    d.appendChild(infoS2);
+    if(L2.stale&&hasLoopS2){
+      const wsS2=document.createElement('div');
+      wsS2.className='fao-alert';
+      wsS2.textContent='⚠ Esquisse supprimée ou devenue inutilisable — boucle inchangée (obsolète) : re-choisissez une esquisse.';
+      d.appendChild(wsS2);
     }
   }
   if(op.limit2&&lim2Mode!=='none'){
@@ -19039,27 +19091,46 @@ function faoSliceZ(mesh,z){
   // Les deux sens de contact sommet/plan sont traités (un niveau pile sur un
   // plan de faces — fond de poche, embase — sortait vide avant : le brut
   // complet était alors usiné à travers la pièce).
-  const segs=[], e=1e-9; let i;
-  for(i=0;i<mesh.t.length;i++){
-    const P=[mesh.v[mesh.t[i][0]],mesh.v[mesh.t[i][1]],mesh.v[mesh.t[i][2]]];
-    const d=[P[0][2]-z,P[1][2]-z,P[2][2]-z];
-    const pts=[];
-    for(let k=0;k<3;k++){
-      const a=P[k], b=P[(k+1)%3], da=d[k], db=d[(k+1)%3];
-      if((da<-e&&db>e)||(da>e&&db<-e)){
-        const s=da/(da-db);
-        pts.push([a[0]+(b[0]-a[0])*s, a[1]+(b[1]-a[1])*s]);
-      }else if(Math.abs(da)<=e&&Math.abs(db)>e){
-        pts.push([a[0],a[1]]);
-      }else if(Math.abs(db)<=e&&Math.abs(da)>e){
-        pts.push([b[0],b[1]]);
-      }
+  // 2026-10-13-002 : chemins scalaires sans tableaux intermédiaires ni
+  // closures par face (règles strictement identiques : mêmes cas de contact,
+  // mêmes tests, dédups < 1e-7) — cette fonction tourne ~160 fois par
+  // colonne × dizaines de milliers de faces sur pièce réaliste.
+  const segs=[], e=1e-9, T=mesh.t, V=mesh.v;
+  let ax=0,ay=0,bx=0,by=0,n=0;
+  const pushp=function(px,py){
+    if(n===0){ax=px;ay=py;n=1;return;}
+    if(n>1)return; // 3e point distinct : uq[2] inutilisé comme avant
+    const dx=px-ax,dy=py-ay;
+    if(dx*dx+dy*dy<1e-14)return; // doublon (hypot < 1e-7)
+    bx=px;by=py;n=2;
+  };
+  for(let i=0;i<T.length;i++){
+    const t=T[i], a=V[t[0]], b=V[t[1]], c=V[t[2]];
+    const da=a[2]-z, db=b[2]-z, dc=c[2]-z;
+    let s;
+    n=0;
+    if((da<-e&&db>e)||(da>e&&db<-e)){
+      s=da/(da-db); pushp(a[0]+(b[0]-a[0])*s,a[1]+(b[1]-a[1])*s);
+    }else if(Math.abs(da)<=e&&Math.abs(db)>e){
+      pushp(a[0],a[1]);
+    }else if(Math.abs(db)<=e&&Math.abs(da)>e){
+      pushp(b[0],b[1]);
     }
-    const uq=[];
-    pts.forEach(function(p){
-      if(!uq.some(function(q){return Math.hypot(q[0]-p[0],q[1]-p[1])<1e-7;}))uq.push(p);
-    });
-    if(uq.length>=2)segs.push([uq[0][0],uq[0][1],uq[1][0],uq[1][1]]);
+    if((db<-e&&dc>e)||(db>e&&dc<-e)){
+      s=db/(db-dc); pushp(b[0]+(c[0]-b[0])*s,b[1]+(c[1]-b[1])*s);
+    }else if(Math.abs(db)<=e&&Math.abs(dc)>e){
+      pushp(b[0],b[1]);
+    }else if(Math.abs(dc)<=e&&Math.abs(db)>e){
+      pushp(c[0],c[1]);
+    }
+    if((dc<-e&&da>e)||(dc>e&&da<-e)){
+      s=dc/(dc-da); pushp(c[0]+(a[0]-c[0])*s,c[1]+(a[1]-c[1])*s);
+    }else if(Math.abs(dc)<=e&&Math.abs(da)>e){
+      pushp(c[0],c[1]);
+    }else if(Math.abs(da)<=e&&Math.abs(dc)>e){
+      pushp(a[0],a[1]);
+    }
+    if(n===2)segs.push([ax,ay,bx,by]);
   }
   return segs;
 }
@@ -19091,10 +19162,18 @@ function faoScanIntervals(segs,y){
 // brut ni la matière des passes précédentes).
 let faoSliceCache=null;
 function faoSliceZCached(mesh,z){
+  // 2026-10-13-002 : slot AUTO-INITIÉ — hors du batch 2.5D (où faoSliceCache
+  // est posé puis nullifié), la colonne de liaison de la CRÊTES CONSTANTES
+  // recomposait jusqu'à ~160 tranches planes PAR HAUTEUR SANS JAMAIS CACHER :
+  // 17 001 coupes pleines maillage = ~2 min sur une pièce 38k tris (faoSliceZ
+  // est pur : mémoïsation strictement équivalente). Le slot unique saute de
+  // lui-même dès qu'un autre maillage est utilisé (même forme qu'avant).
   const k=Math.round(z*1000)/1000;
-  if(faoSliceCache&&faoSliceCache.mesh===mesh&&faoSliceCache.map[k])return faoSliceCache.map[k];
+  if(!faoSliceCache||faoSliceCache.mesh!==mesh)faoSliceCache={mesh:mesh,map:{}};
+  const hit=faoSliceCache.map[k];
+  if(hit)return hit;
   const s=faoSliceZ(mesh,z);
-  if(faoSliceCache&&faoSliceCache.mesh===mesh)faoSliceCache.map[k]=s;
+  faoSliceCache.map[k]=s;
   return s;
 }
 function faoSliceHit(segs,cx,cy,clear){
@@ -19159,7 +19238,10 @@ function faoDiscClear(segs,cx,cy,hr,r){
   // Même sémantique qu'avant : parité (croisements comptés sur toute la
   // travée Y, sans tri) puis distance min < r-1e-9 — mais via les index.
   const idx=faoDiscIdx(segs);
-  for(let k=0;k<8;k++){
+  // 2026-10-13-002 : hr=0 -> les 8 échantillons du cercle COÏNCIDAIENT (même
+  // point testé 8 fois) — une seule passe, strictement équivalente.
+  const n8=hr>0?8:1;
+  for(let k=0;k<n8;k++){
     const a=k/8*Math.PI*2, xx=cx+hr*Math.cos(a), yy=cy+hr*Math.sin(a);
     let len=0,left=0;
     if(idx&&idx.rows.length){
@@ -20545,15 +20627,14 @@ function faoTrochSlot(moves,xa,xb,y,z,D,aeA,yMin,yMax){
   }
   moves.push({r:0,x:Math.round(xb*1000)/1000,y:Y,z:z});
 }
-function faoShadowPlanes(mesh,z,zt){
-  // Plans Z où lire l'ombre : les Z vertex du maillage entre z et zt
-  // (dédup 1 µm, cap 160 avec sous-échantillonnage régulier en repli).
-  // EXACTITUDE : tout voile horizontal, si fin soit-il, a ses faces haute et
-  // basse à des Z vertex — aucun ne peut se cacher entre deux plans
-  // (les croisements variant linéairement, l'union des emprises est atteinte
-  // aux plans vertex). Sans vertex : grille historique au pas ≤ 2 mm.
-  const pls=[Math.round(z*1000)/1000];
-  let zv=null;
+// Z vertex triés/dédups/cap 160, mémoïsés par maillage (2026-10-13-002) —
+// extrait de faoShadowPlanes : le tri + dédups du maillage (O(N log N)) était
+// refait À CHAQUE appel (~1 s de cumul sur 387 appels × 19k vertex).
+const faoZvCache=new WeakMap();
+function faoZvOf(mesh){
+  let zv=faoZvCache.get(mesh);
+  if(zv!==undefined)return zv;
+  zv=null;
   try{
     const zs=[];
     for(let k=0;k<mesh.v.length;k++){ const q=mesh.v[k][2]; if(isFinite(q))zs.push(q); }
@@ -20566,6 +20647,18 @@ function faoShadowPlanes(mesh,z,zt){
       thin.push(zv[zv.length-1]); zv=thin;
     }
   }catch(e){ zv=null; }
+  faoZvCache.set(mesh,zv);
+  return zv;
+}
+function faoShadowPlanes(mesh,z,zt){
+  // Plans Z où lire l'ombre : les Z vertex du maillage entre z et zt
+  // (dédup 1 µm, cap 160 avec sous-échantillonnage régulier en repli).
+  // EXACTITUDE : tout voile horizontal, si fin soit-il, a ses faces haute et
+  // basse à des Z vertex — aucun ne peut se cacher entre deux plans
+  // (les croisements variant linéairement, l'union des emprises est atteinte
+  // aux plans vertex). Sans vertex : grille historique au pas ≤ 2 mm.
+  const pls=[Math.round(z*1000)/1000];
+  const zv=faoZvOf(mesh);
   if(zv&&zv.length){
     zv.forEach(function(zz){
       if(zz>z+1e-9&&zz<=zt+1e-9)pls.push(Math.round(zz*1000)/1000);
@@ -22882,6 +22975,13 @@ function faoSplinePts(P0,T0,P1,T1,n){
   out[nS]={x:P1.x,y:P1.y,z:P1.z};
   return out;
 }
+// Colonnes de liaison par maillage, mémoïsées ENTRE générations
+// (2026-10-13-002) : régénérer après un réglage réutilise les mêmes tableaux
+// concaténés → faoDiscIdx/faoHashSegs (index spatiaux) frappent à
+// l'identique au lieu de rebâtir ~100 hash × dizaines de milliers de
+// segments (~6 s sur pièce 38k tris). Borné à 128 entrées pour plafonner la
+// mémoire ; H évicté = reconcat mémoïsée + rehash, jamais plus.
+const faoColCache=new WeakMap();
 function* faoGenGeoFinishIt(mesh,o){
   // Finition iso (retour 4/10) : (1) passes horizontales iso-Z sur les faces
   // en pente — chaque liaison part à Z constant ; (2) anneaux géodésiques sur
@@ -23109,10 +23209,14 @@ function* faoGenGeoFinishIt(mesh,o){
   // Colonnes de liaison par hauteur H (2026-10-13-001, remontées courtes) :
   // le repli valide un chemin à une hauteur H ≠ travel — même colonne ombre
   // tranchée à H-R (portée du métal sous le centre) jusqu'au sommet du
-  // maillage, mémoïsée par H et partagée entre zones.
-  const segCache=new Map();
+  // maillage, mémoïsée par H et partagée entre zones — et, depuis
+  // 2026-10-13-002, entre générations (cache global faoColCache).
+  let colMap=faoColCache.get(mesh);
+  if(!colMap){colMap=new Map();faoColCache.set(mesh,colMap);}
   const segsFor=function(H){
-    let s=segCache.get(H);
+    // Clé = plage de plans réellement lue (H−R, zmax] arrondie au µm.
+    const key=Math.round((H-R)*1000)/1000+'|'+Math.round(zmax*1000)/1000;
+    let s=colMap.get(key);
     if(!s){
       s=[];
       const pls=faoShadowPlanes(mesh,H-R,zmax);
@@ -23120,13 +23224,35 @@ function* faoGenGeoFinishIt(mesh,o){
         const q=faoSliceZCached(mesh,pls[k]);
         if(q.length)s=s.concat(q);
       }
-      segCache.set(H,s);
+      if(colMap.size>=128)colMap.clear();
+      colMap.set(key,s);
     }
     return s;
   };
   // Distance XY d'un point au matériau d'une colonne (0 = dedans) — miroir
-  // de faoDiscClear avec hr=0 (parité + distance au contour).
+  // de faoDiscClear avec hr=0 (parité + distance au contour). 2026-10-13-002 :
+  // via l'index Y+hash (faoDiscIdx/faoDistSeg) — la colonne empilée pèse des
+  // dizaines de milliers de segments et chaque liaison/spline/entrée
+  // l'interroge des centaines de fois (le balayage linéaire totalisait ~9 s
+  // sur une pièce 38k tris). Bornage R+2 : TOUS les consommateurs ne
+  // comparent qu'à des seuils ≤ R (>1e-9, ≥need=R−0,5, min(R,·)) — une
+  // distance > R+2 leur est strictement équivalente.
+  const ptCap=R+2;
   const ptDistS=function(segs,x,y){
+      const idx=faoDiscIdx(segs);
+      if(idx&&idx.rows.length){
+        let b=Math.floor((y-idx.y0)/idx.step);
+        if(b<0)b=0; else if(b>=idx.n)b=idx.n-1;
+        const row=idx.rows[b];
+        let left=0;
+        if(row)for(let t=0;t<row.length;t+=5){
+          const ay=row[t+1],by=row[t+2];
+          if((ay-y)*(by-y)<=0&&ay!==by&&row[t]+row[t+3]*(y-ay)/(by-ay)<x-1e-9)left++;
+        }
+        if((left%2)===1)return 0;
+        const d=faoDistSeg(idx.H,x,y,ptCap);
+        return d===1/0?ptCap:d;
+      }
       const xs=[];
       for(let i=0;i<segs.length;i++){const s=segs[i];
         if((s[1]-y)*(s[3]-y)<=0&&s[1]!==s[3])
@@ -25585,7 +25711,7 @@ window.addEventListener('pointerdown',e=>{if(!$('ctxMenu').contains(e.target))hi
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.7';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.8';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);
