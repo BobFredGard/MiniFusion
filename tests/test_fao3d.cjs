@@ -241,8 +241,17 @@ const vm=require('vm');
     "const gS=faoGenGeoFinish(SL,{step:5,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top'});",
     "const cs=gS.filter(m=>!m.r);",
     "att(cs.length>6,'geo rampe : '+cs.length+' coupe outil');",
-    "let badZ=0,run=[];gS.forEach(function(m){if(!m.r){run.push(m.z);return;}if(run.length>1){const z0=run[0];if(run.some(function(z){return Math.abs(z-z0)>1e-6;}))badZ++;}run=[];});",
-    "att(badZ===0,'geo sens horizontal : chaque liaison a Z constant ('+badZ+' liaisons variables)');",
+    // gap constant SUR LA SURFACE (geodesique, pas iso-Z) : les passes suivent
+    // le champ geodesique, donc les traces varient en Z sur une pente (ce
+    // n'est plus de l iso-Z) ET l'ecart geodesique entre traces est constant.
+    "let badZ=0,run=[];gS.forEach(function(m){if(!m.r){run.push(m);return;}if(run.length>1){const z0=run[0].z;if(run.some(function(m){return Math.abs(m.z-z0)>1e-6;}))badZ++;}run=[];});",
+    "att(badZ>=1,'geo gap constant : traces non horizontales sur pente ('+badZ+' liaisons a Z variable)');",
+    // ecart geodesique constant : distance 3D minimale entre deux passes
+    // consecutive (hors graine) = step, pas un resserrement brutal ni un trou.
+    "const gRuns=[];let gCur=[];gS.forEach(function(m){if(!m.r){gCur.push(m);}else{if(gCur.length)gRuns.push(gCur);gCur=[];}});if(gCur.length)gRuns.push(gCur);",
+    "const gMid=[];for(let i=1;i<gRuns.length-1;i++){const a=gRuns[i],b=gRuns[i+1];let best=1/0;a.forEach(function(pa){b.forEach(function(pb){const d=Math.hypot(pa.x-pb.x,pa.y-pb.y,pa.z-pb.z);if(d<best)best=d;});});if(best<20)gMid.push(best);}",
+    "const gOk=gMid.filter(function(d){return Math.abs(d-5)<=0.6;}).length;",
+    "att(gMid.length>=4&&gOk>=gMid.length*0.6,'geo gap constant : '+gOk+'/'+gMid.length+' ecarts ~ 5mm');",
     // limites Z : ztop=12 -> aucune coupe au-dessus de 12+Rc
     "const gL=faoGenGeoFinish(SL,{step:5,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top',ztop:12});",
     "const zL=gL.filter(m=>!m.r).map(m=>m.z);",
@@ -253,6 +262,41 @@ const vm=require('vm');
     // --- dispatch via ops (maillage actif nul en VM -> [] sans planter)
     "const j3=faoDefaultJob();j3.ops=[{id:'x',on:true,toolId:'T3',type:'geofinish',step:1,laisse:0,seed:'top'}];",
     "att(Array.isArray(faoOpMoves(j3.ops[0],j3)),'dispatch geofinish sans maillage : pas de plantage');",
+    // --- 026 : géofinish 2026-10-12-002 — liaison par SPLINE TANGENTE (façon Fusion 360)
+    // (1) unit : faoSplinePts respecte les points de départ/arrivée exacts, et les
+    // tangentes aux bouts collent aux tangentes demandées (droite = dot 1.0).
+    "function _dir(a,b){const dx=b.x-a.x,dy=b.y-a.y,dz=b.z-a.z,l=Math.hypot(dx,dy,dz)||1;return {x:dx/l,y:dy/l,z:dz/l};}",
+    "const _P0={x:1,y:2,z:3},_P1={x:8,y:6,z:9},_T={x:7,y:4,z:6};",
+    "const _sp=faoSplinePts(_P0,_T,_P1,_T,20);",
+    "att(_sp[0].x===1&&_sp[0].y===2&&_sp[0].z===3&&_sp[_sp.length-1].x===8&&_sp[_sp.length-1].y===6&&_sp[_sp.length-1].z===9,'geo spline : extremites exactes');",
+    "const _u0=_dir(_sp[0],_sp[1]),_w0=_dir(_P0,{x:_P0.x+_T.x,y:_P0.y+_T.y,z:_P0.z+_T.z});",
+    "att(_u0.x*_w0.x+_u0.y*_w0.y+_u0.z*_w0.z>0.999,'geo spline : tangente au depart (dot '+(_u0.x*_w0.x+_u0.y*_w0.y+_u0.z*_w0.z).toFixed(3)+')');",
+    "const _u1=_dir(_sp[_sp.length-2],_sp[_sp.length-1]),_w1=_dir(_P1,{x:_P1.x+_T.x,y:_P1.y+_T.y,z:_P1.z+_T.z});",
+    "att(_u1.x*_w1.x+_u1.y*_w1.y+_u1.z*_w1.z>0.999,'geo spline : tangente a l arrivee (dot '+(_u1.x*_w1.x+_u1.y*_w1.y+_u1.z*_w1.z).toFixed(3)+')');",
+    // (2) Deux plateaux disjoints a meme Z : un seul niveau geodesique = zone
+    // multi-chaines -> la liaison inter-chaînes passe par une spline en AIR
+    // (beaucoup de rapides G0) au lieu d un couple lift-secu. o.spline:false = repli lift.
+    "const SBX=(function(){",
+    "  const V=[],T=[];",
+    "  function quad(a,b,c,d){T.push([a,b,c],[a,c,d]);}",
+    "  function box(x0,y0,x1,y1,z0,z1){const b=V.length;V.push([x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]);quad(b,b+1,b+2,b+3);quad(b+4,b+5,b+6,b+7);quad(b,b+1,b+5,b+4);quad(b+1,b+2,b+6,b+5);quad(b+2,b+3,b+7,b+6);quad(b+3,b,b+4,b+7);}",
+    "  box(0,0,20,20,0,10);box(30,0,50,20,0,10);",
+    "  return {v:V,t:T};",
+    "})();",
+    "const geoSOn=faoGenGeoFinish(SBX,{step:5,toolD:6,kind:'ball',laisse:0,secu:25,seed:'top'});",
+    "const geoSOff=faoGenGeoFinish(SBX,{step:5,toolD:6,kind:'ball',laisse:0,secu:25,seed:'top',spline:false});",
+    "const rapOn=geoSOn.filter(m=>m.r).length,rapOff=geoSOff.filter(m=>m.r).length;",
+    "att(JSON.stringify(geoSOn)!==JSON.stringify(geoSOff),'geo spline : la liaison change le parcours');",
+    "att(rapOn>rapOff,'geo spline : liaisons en air -> plus de rapides ('+rapOn+' > '+rapOff+')');",
+    "att(geoSOn.filter(m=>!m.r).length===geoSOff.filter(m=>!m.r).length,'geo spline : nb de coupes inchange (liaisons volantes)');",
+    // (3) laisse>0 : rien a tondre -> la spline ne s emet pas, repli lift strictement identique
+    "const geoLOn=faoGenGeoFinish(SBX,{step:5,toolD:6,kind:'ball',laisse:3,secu:25,seed:'top'});",
+    "const geoLOff=faoGenGeoFinish(SBX,{step:5,toolD:6,kind:'ball',laisse:3,secu:25,seed:'top',spline:false});",
+    "att(JSON.stringify(geoLOn)===JSON.stringify(geoLOff),'geo spline : laisse>0 -> liaison lift inchangee');",
+    // (4) PLN (zones mono-chaîne) : spline sans effet, parcours strictement identique
+    "const geoPnOn=faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top'});",
+    "const geoPnOff=faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top',spline:false});",
+    "att(JSON.stringify(geoPnOn)===JSON.stringify(geoPnOff),'geo spline : zone mono-chaîne -> inchangee');",
     // --- 025 : ébauche 3D — lignes bornées au RAYON sur les murs en Y (retour 4/10 pt 2)
     // Boîte 100x80x50, poche x10..90 y19..63 z20..50 ouverte dessus, D16 r=8 ae=4 :
     // les lignes de pelage doivent rester à >= r des parois Y (l'existence lisait

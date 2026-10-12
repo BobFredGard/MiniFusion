@@ -2604,7 +2604,9 @@ function* faoOpMovesIt(op,job){
     try{ am=faoActiveMesh(job); }catch(e){ am=null; }
     if(am&&am.mesh){
       const tool=faoToolById(job,op.toolId);
-      mv=faoGenGeoFinish(am.mesh,
+      // 2026-10-12-002 : yield* — la finition cède le fil par chaîne/zone
+      // (aperçu progressif au flux, comme l'ébauche 3D 005).
+      mv=yield* faoGenGeoFinishIt(am.mesh,
         {step:isFinite(+op.step)?+op.step:1,toolD:D,kind:tool.kind,
          cornerR:tool.cornerR,laisse:+op.laisse||0,secu:secu,seed:op.seed||'top',
          ztop:op.ztop,zbot:op.zbot,
@@ -9951,13 +9953,18 @@ function faoSeedTop(mesh){
   for(let i=0;i<mesh.v.length;i++)if(mesh.v[i][2]>bm){bm=mesh.v[i][2];bi=i;}
   return bi;
 }
-function faoIsoSegs(mesh,normals,dist,iso,flags,want){
+function faoIsoSegs(mesh,normals,dist,iso,flags,want,mask){
   // Marching-triangles : segments 3D + normales interpolées (points de contact).
   // 2026-10-04-004 : flags/want — masque optionnel des familles plate/inclinée
   // (iso-Z sur les faces en pente, anneaux géodésiques sur les plateaux).
+  // 2026-10-12-002 : mask optionnel — un tableau booléen par face. Si fourni
+  // (non nul), il prime sur flags/want : les faces à true sont EXTRAITES et les
+  // autres ignorées. Permet (a) l'extraction toutes faces (géodésique gap
+  // constant) et (b) l'extraction d'une sous-partie non couverte (restes).
   const segs=[];
   for(let i=0;i<mesh.t.length;i++){
-    if(flags&&flags[i]!==want)continue;
+    if(mask){ if(!mask[i])continue; }
+    else if(flags&&flags[i]!==want)continue;
     const ti=mesh.t[i];
     const P=[mesh.v[ti[0]],mesh.v[ti[1]],mesh.v[ti[2]]];
     const N=[normals[ti[0]],normals[ti[1]],normals[ti[2]]];
@@ -10003,6 +10010,16 @@ function faoChainSegs(segs,tol){
     }
     chains.push(chain);
   }
+  // 2026-10-12-002 : longueur d'arc par chaîne (somme des segments), attachée
+  // au tableau retourné — sert au filtre d'incohérence (fragments trop courts).
+  const lens=new Array(chains.length);
+  for(let i=0;i<chains.length;i++){
+    let a=0; const c=chains[i];
+    for(let j=1;j<c.length;j++)
+      a+=Math.hypot(c[j].p[0]-c[j-1].p[0],c[j].p[1]-c[j-1].p[1],c[j].p[2]-c[j-1].p[2]);
+    lens[i]=a;
+  }
+  chains.lens=lens;
   return chains;
 }
 function faoGeoFlags(mesh,zb,zt){
@@ -10055,7 +10072,30 @@ function faoGeoHasRrough(job,op){
   }
   return false;
 }
-function faoGenGeoFinish(mesh,o){
+function faoSplinePts(P0,T0,P1,T1,n){
+  // 2026-10-12-002 : échantillonnage d'une LIAISON PAR SPLINE TANGENTE
+  // (demande : « passer de l'une à l'autre via une spline qui se déplacerait
+  // en X, Y et Z pour rejoindre la courbe suivante… tangente aux 2 extrémités
+  // de chaque courbe » — comme Fusion 360). Hermite cubique 3D :
+  // C(t)=h00·P0+h10·m0+h01·P1+h11·m1, m0/m1 = tangentes aux extrémités DÉJÀ
+  // scalées en mm par l'appelant (bornées par chord/3 et 0,9·longueur du
+  // segment adjacent pour éviter le dépassement). Extrémités forcées exactes
+  // (jointure C0 parfaite), n 1/10 échantillons réguliers en t — le caller
+  // prend n=ceil(chord/0,5) (corde ≤ 0,5 mm pour le G1 du post-processeur).
+  const nS=Math.max(6,Math.min(128,isFinite(+n)?Math.round(+n):12));
+  const out=new Array(nS+1);
+  for(let k=0;k<=nS;k++){
+    const t=k/nS,t2=t*t,t3=t2*t;
+    const h00=2*t3-3*t2+1,h10=t3-2*t2+t,h01=-2*t3+3*t2,h11=t3-t2;
+    out[k]={x:h00*P0.x+h10*T0.x+h01*P1.x+h11*T1.x,
+            y:h00*P0.y+h10*T0.y+h01*P1.y+h11*T1.y,
+            z:h00*P0.z+h10*T0.z+h01*P1.z+h11*T1.z};
+  }
+  out[0]={x:P0.x,y:P0.y,z:P0.z};
+  out[nS]={x:P1.x,y:P1.y,z:P1.z};
+  return out;
+}
+function* faoGenGeoFinishIt(mesh,o){
   // Finition iso (retour 4/10) : (1) passes horizontales iso-Z sur les faces
   // en pente — chaque liaison part à Z constant ; (2) anneaux géodésiques sur
   // les seules faces horizontales (couverture des plateaux). Sorties centre
@@ -10085,47 +10125,134 @@ function faoGenGeoFinish(mesh,o){
   for(let i=0;i<dist.length;i++)if(dist[i]<1/0&&dist[i]>dmax)dmax=dist[i];
   if(!(dmax>0))return [];
   const moves=[];
-  const zf=new Float64Array(mesh.v.length);
-  for(let i=0;i<mesh.v.length;i++)zf[i]=mesh.v[i][2];
-  // 2026-10-04-009 : collecte par ZONE (un niveau = une zone regroupant toutes
-  // ses chaînes), puis émission groupée : 2 rapides à secu par zone (entrée +
-  // sortie) au lieu d'un couple à secu par chaîne — les chaînes d'un même
-  // niveau se relient à la Z de liaison (colonne vérifiée), sinon via secu.
   const mode=faoGeoEntryMode(o.entry,o.hasRrough);
   const zones=[];
-  const level=function(field,iso,flat){
-    const segs=faoIsoSegs(mesh,normals,field,iso,G.flags,flat);
-    if(!segs.length)return;
-    const chains=faoChainSegs(segs,Math.max(1e-4,step*0.02));
-    const zcs=[];
-    let zmaxZ=-1/0;
-    chains.forEach(function(ch){
-      if(ch.length<2)return;
-      const cen=ch.map(function(q){
-        const l=Math.hypot(q.n[0],q.n[1],q.n[2])||1;
-        return {x:q.p[0]+q.n[0]/l*R, y:q.p[1]+q.n[1]/l*R, z:q.p[2]+q.n[2]/l*R};
-      });
-      const nl=Math.hypot(ch[0].n[0],ch[0].n[1],ch[0].n[2])||1;
-      let cz=-1/0;
-      cen.forEach(function(p){ if(p.z>cz)cz=p.z; });
-      if(cz>zmaxZ)zmaxZ=cz;
-      zcs.push({pts:cen,n0:[ch[0].n[0]/nl,ch[0].n[1]/nl,ch[0].n[2]/nl]});
-    });
-    if(zcs.length)zones.push({chains:zcs,zmax:zmaxZ});
-  };
-  // (1) Iso-Z sur les faces en pente : niveaux ancrés au plafond, descendant
-  // (seed top) ou ascendant (seed bottom), bornes ztop/zbot.
-  if(G.anySlope){
-    const zlv=[];
-    for(let k=1;;k++){ const z=zt-k*step; if(!(z>zb+1e-9))break; zlv.push(z); }
-    if(o.seed==='bottom')zlv.reverse();
-    for(let i=0;i<zlv.length;i++)level(zf,zlv[i],0);
+  // --- GÉODÉSIQUE 2026-10-12-002 --------------------------------------------
+  // On remplace (1) iso-Z sur les pentes + (2) anneaux sur les plateaux par UN
+  // SEUL champ géodésique (Dijkstra depuis le seed) extrait sur TOUTES les
+  // faces. L'écart entre passes est constant SUR LA SURFACE (distance
+  // géodésique), pas en XY : sur pente les traces dérivent en Z, mais restent
+  // à step l'une de l'autre. L'horizontalité n'est plus une contrainte, c'est
+  // un résultat (naturel sur les plateaux).
+  // Fenêtre Z : borne la SURFACE SOURCE par le centroïd des faces (garde la
+  // sémantique 004 : ztop=12 sur une pente → surfaces ≤ 12 usinées, centre
+  // outil pouvant monter à 12+Rc). Si ztop/zbot non fournis, pas de masque.
+  const userZ=isFinite(+o.ztop)||isFinite(+o.zbot);
+  const allMask=new Uint8Array(mesh.t.length);
+  for(let i=0;i<mesh.t.length;i++){
+    if(!userZ){allMask[i]=1;continue;}
+    const t=mesh.t[i];
+    const zc=(mesh.v[t[0]][2]+mesh.v[t[1]][2]+mesh.v[t[2]][2])/3;
+    allMask[i]=(zc>=zb-1e-9&&zc<=zt+1e-9)?1:0;
   }
-  // (2) Anneaux géodésiques sur les seuls plateaux (dans les limites Z).
-  if(G.hasFlat)for(let iso=step;iso<dmax;iso+=step)level(dist,iso,1);
+  const chainsTol=Math.max(1e-4,step*0.02);
+  // Grille de couverture : les chaînes émises marquent les cellules qu'elles
+  // arpentent (pas step). Une cellule non marquée = zone non couverte → restes.
+  const CS=Math.max(1e-3,step);
+  const covSet=new Set();
+  const ckey=function(x,y,z){
+    return Math.floor(x/CS)+','+Math.floor(y/CS)+','+Math.floor(z/CS);
+  };
+  const covMark=function(chs){
+    for(let i=0;i<chs.length;i++){ const c=chs[i];
+      for(let j=0;j<c.length;j++)covSet.add(ckey(c[j].p[0],c[j].p[1],c[j].p[2]));
+    }
+  };
+  const covHas=function(p){ return covSet.has(ckey(p[0],p[1],p[2])); };
+  // Filtre d'incohérence : une iso dont les FRAGMENTS (chaînes d'arc <
+  // max(step,D)) pèsent plus de 60 % de la longueur totale est abandonnée —
+  // on passe à la suite plutôt que de rattraper point par point.
+  const coherent=function(chs){
+    if(!chs.length)return false;
+    let tot=0,frag=0;
+    const lens=chs.lens||[];
+    const seuil=Math.max(step,D);
+    for(let i=0;i<chs.length;i++){
+      const a=lens[i]||0; tot+=a;
+      if(a<seuil)frag+=a;
+    }
+    return tot>0&&frag<=0.6*tot;
+  };
+  // Émission d'un champ géodésique donné (séries d'iso à step). Si cover=1,
+  // seules les chaînes dont au moins la moitié des points sont NON couverts
+  // sont retenues (restes). Marque la couverture des chaînes retenues.
+  const emitGeo=function(dist,cover){
+    let dmax=0;
+    for(let i=0;i<dist.length;i++)if(dist[i]<1/0&&dist[i]>dmax)dmax=dist[i];
+    if(!(dmax>0))return 0;
+    const addLevel=function(chs){
+      const zcs=[];
+      let zmaxZ=-1/0;
+      chs.forEach(function(ch){
+        if(ch.length<2)return;
+        // bornes Z de la CHAÎNE SOURCE (surface) — ztop/zbot bornent la surface
+        // usinée, pas le centre outil (qui peut monter à ztop+Rc). Cohérent avec
+        // le 004 : ztop=12 → surfaces ≤ 12, centre ≤ 12+Rc.
+        let zlo=1/0,zhi=-1/0;
+        for(let j=0;j<ch.length;j++){const z=ch[j].p[2];if(z<zlo)zlo=z;if(z>zhi)zhi=z;}
+        if(userZ&&(zhi>zt+1e-6||zlo<zb-1e-6))return;
+        const cen=ch.map(function(q){
+          const l=Math.hypot(q.n[0],q.n[1],q.n[2])||1;
+          return {x:q.p[0]+q.n[0]/l*R, y:q.p[1]+q.n[1]/l*R, z:q.p[2]+q.n[2]/l*R};
+        });
+        const nl=Math.hypot(ch[0].n[0],ch[0].n[1],ch[0].n[2])||1;
+        let cz=-1/0;
+        cen.forEach(function(p){ if(p.z>cz)cz=p.z; });
+        if(cz>zmaxZ)zmaxZ=cz;
+        zcs.push({pts:cen,n0:[ch[0].n[0]/nl,ch[0].n[1]/nl,ch[0].n[2]/nl]});
+      });
+      if(zcs.length)zones.push({chains:zcs,zmax:zmaxZ});
+    };
+    let n=0;
+    for(let iso=step;iso<dmax;iso+=step){
+      const segs=faoIsoSegs(mesh,normals,dist,iso,null,0,allMask);
+      if(!segs.length)continue;
+      let chs=faoChainSegs(segs,chainsTol);
+      if(cover){
+        const keep=[],keepL=[];
+        for(let ci=0;ci<chs.length;ci++){
+          const ch=chs[ci]; let unc=0;
+          for(let j=0;j<ch.length;j++)if(!covHas(ch[j].p))unc++;
+          if(unc*2>=ch.length){keep.push(ch);keepL.push(chs.lens[ci]);}
+        }
+        keep.lens=keepL;
+        chs=keep;
+      }
+      if(!chs.length)continue;
+      if(!coherent(chs))continue; // iso incohérente → on saute
+      addLevel(chs);
+      covMark(chs);
+      n++;
+    }
+    return n;
+  };
+  // --- SÉQUENCE haut → bas → restes (2026-10-12-002) ----------------------
+  // (0) champ principal depuis le seed demandé (top par défaut). Couvre la
+  // majorité de la surface.
+  emitGeo(dist,null);
+  // (1) restes : zones que le champ principal n'a pas atteintes (dessous,
+  // surplomb, régions disconnectes). On reprend avec des seeds locaux tant
+  // que >20 % des cellules englobantes restent non couvertes (3 essais max).
+  // Un seed n'émet que des chaînes NON encore couvertes → pas de doublon.
+  for(let t=0;t<3;t++){
+    let miss=0;
+    for(let i=0;i<mesh.v.length;i++)
+      if(!covHas(mesh.v[i]))miss++;
+    if(miss*5<=mesh.v.length)break; // ≤20 % non couvert → suffisant
+    // seed local = sommet non couvert le plus éloigné du champ principal.
+    let best=-1,bd=-1;
+    for(let i=0;i<mesh.v.length;i++){
+      if(covHas(mesh.v[i]))continue;
+      const d=dist[i]<1/0?dist[i]:0;
+      if(d>bd){bd=d;best=i;}
+    }
+    if(best<0)break;
+    emitGeo(faoDijkstra(mesh,best),1);
+  }
   // --- phase d'émission : une entrée + une sortie par zone -----------------
   const margin=Math.max(1,D*0.2);
-  zones.forEach(function(Z){
+  for(let zi=0;zi<zones.length;zi++){
+    const Z=zones[zi];
     // Z de liaison : au-dessus des coupes de la zone, sous secu quand possible.
     const travel=Math.max(Z.zmax,Math.min(secu,Z.zmax+margin));
     let segsLink=null;
@@ -10179,6 +10306,77 @@ function faoGenGeoFinish(mesh,o){
       return true;
     };
     const chainTol=Math.max(1e-4,step*0.02);
+    // 2026-10-12-002 : LIAISON PAR SPLINE TANGENTE entre deux chaînes d'une
+    // même zone (demande : splines X/Y/Z tangentes aux bouts, façon Fusion
+    // 360). Validation par échantillon : (1) jamais de matière AU-DESSUS
+    // (sections vertex de la colonne au-dessus du niveau de la zone) ;
+    // (2) jamais sous la bande [min(z), max(z)] des deux bouts ; (3) dans
+    // l'air, jamais plus bas que le niveau des deux bouts. Échec = 1 retry
+    // avec tangentes réduites ×0,5 (moins de dépassement), puis repli lift.
+    // Émission HYBRIDE : échantillon SUR la matière (ptDist=0) = coupe G1
+    // (liaison coupante continue : tond les festons entre deux passes
+    // voisines — DÉSACTIVÉ si laisse>0, on ne touche pas la matière
+    // laissée) ; échantillon dans l'air = rapide G0.
+    let spPl=null;
+    const splinePlanes=function(){
+      if(!spPl){
+        spPl=[];
+        // SÉCURITÉ : on ne garde que les plans STRICTEMENT au-dessus du niveau
+        // de coupe des chaînes de la zone (au-dessus de zmax de la zone) — le
+        // plan de coupe lui-même (le plateau) n'est PAS un obstacle : la fraise
+        // y est censée reposer (liaison coupante sur la matière finie).
+        const pls=faoShadowPlanes(mesh,Z.zmax+0.05,zmax);
+        for(let k=0;k<pls.length;k++){
+          const s2=faoSliceZCached(mesh,pls[k]);
+          if(s2.length)spPl.push({z:pls[k],segs:s2});
+        }
+      }
+      return spPl;
+    };
+    const splineEmit=function(from,tx,ty,pz,T0,l0,T1,l1){
+      if(!(L<=1e-9))return null; // laisse>0 : rien à tondre — lift sûr
+      if(o.spline===false)return null; // échappatoire (tests / comparaison)
+      const p0={x:from.x,y:from.y,z:from.z};
+      const p1={x:tx,y:ty,z:pz};
+      const chord=Math.hypot(p1.x-p0.x,p1.y-p0.y,p1.z-p0.z);
+      if(!(chord>0.2))return null; // bout à bout : lift (ou continue)
+      // Profondeur de coupe actif : une liaison en AIR ne doit jamais plonger
+      // sous ce seuil (sinon la fraise entamerait le matériau restant d'un
+      // coup non voulu). Pour une boule, la portée de coupe = Rc (rayon boule) ;
+      // on garde 0,5 mm de marge. Le test "au-dessus des extrémités" (zFloor)
+      // était trop strict : il rejetait toute liaison en air entre deux passes
+      // de même cote — c'est le cas normal sur un plateau (annulus).
+      const zFloor=Math.min(p0.z,p1.z)-(Rc+0.5);
+      const zLo=Math.min(p0.z,p1.z)-0.05;
+      for(let att=0;att<2;att++){
+        const sc=att?0.5:1;
+        const s0=Math.min(chord/3,0.9*(l0||0))*sc;
+        const s1=Math.min(chord/3,0.9*(l1||0))*sc;
+        const spts=faoSplinePts(p0,
+          {x:(T0?T0.x:0)*s0,y:(T0?T0.y:0)*s0,z:(T0?T0.z:0)*s0},
+          p1,{x:T1.x*s1,y:T1.y*s1,z:T1.z*s1},Math.ceil(chord/0.5));
+        if(!spts)break;
+        let ok=true;
+        const pl=splinePlanes();
+        for(let k=0;k<spts.length;k++){
+          const s=spts[k];
+          if(s.z<zLo){ok=false;break;}
+          for(let q=0;q<pl.length;q++){
+            if(pl[q].z<=s.z+0.05)continue;
+            if(faoDiscClear(pl[q].segs,s.x,s.y,0,0.001)===false){ok=false;break;}
+          }
+          if(!ok)break;
+          if(ptDist(s.x,s.y)>1e-9&&s.z<zFloor){ok=false;break;} // air : pas sous la portée de coupe
+        }
+        if(!ok)continue;
+        for(let k=1;k<spts.length;k++){
+          const s=spts[k];
+          moves.push({r:ptDist(s.x,s.y)<=1e-9?0:1,x:s.x,y:s.y,z:s.z});
+        }
+        return spts[spts.length-1].z;
+      }
+      return null;
+    };
     // Point visé par l'approche d'une chaîne : centre d'hélice (si autorisé) ou
     // point ~2D le long du tracé — la rampe descend ensuite en diagonale de pk
     // jusqu'au début (jamais de plongée verticale).
@@ -10207,7 +10405,8 @@ function faoGenGeoFinish(mesh,o){
       return {pts:pts,pk:pk,hx:hx,hr:hr,planesE:planesE,
               pt:hx?hx:{x:pts[pk].x,y:pts[pk].y}};
     };
-    Z.chains.forEach(function(C,ci){
+    for(let ci=0;ci<Z.chains.length;ci++){
+      const C=Z.chains[ci];
       if(ci>0){
         // Chaîne (fermée : tous les démarrages × 2 sens ; ouverte : droit ou
         // inversé) choisie pour QUE la liaison depuis la chaîne précédente
@@ -10254,20 +10453,45 @@ function faoGenGeoFinish(mesh,o){
           function(x,y){ return ptDist(x,y)>1e-9; });
       }
       const ax=circ?circ.sx:(hx?hx.x:pts[pk].x), ay=circ?circ.sy:(hx?hx.y:pts[pk].y);
-      let startZ;
+      let startZ, linkSpline=false;
       if(ci===0){
         // Zone suivante (sortie précédente déjà à secu) ou début de programme.
         moves.push({r:1,x:ax,y:ay,z:secu});
         startZ=secu;
       }else{
-        // Liaison intra-zone : lift sur place, XY à la Z de liaison si la
-        // colonne reste claire — sinon passage par secu (jamais de traversée
-        // de la pièce à basse altitude entre deux chaînes).
+        // Liaison intra-zone (2026-10-12-002) : SPLINE TANGENTE d'abord,
+        // lift Z / secu en repli (jamais de traversée de la pièce à basse
+        // altitude non prouvée). La spline rejoint le point d'attaque :
+        // S de l'arc circ (tangente = perpauvre au rayon, sens cw) ou le
+        // début de chaîne (tangente = 1er segment) — hélice et approche
+        // mid-trace (pk≥1) gardent le lift (descente d'air dédiée).
         const prev=Z.chains[ci-1],from=prev.pts[prev.pts.length-1];
-        const liftZ=pathOK(from,{x:ax,y:ay})?travel:secu;
-        if(Math.abs(from.z-liftZ)>1e-9)moves.push({r:1,x:from.x,y:from.y,z:liftZ});
-        moves.push({r:1,x:ax,y:ay,z:liftZ});
-        startZ=liftZ;
+        let startZs=null;
+        const l0=prev.pts.length>1?Math.hypot(from.x-prev.pts[prev.pts.length-2].x,
+          from.y-prev.pts[prev.pts.length-2].y,from.z-prev.pts[prev.pts.length-2].z):0;
+        const l1=pts.length>1?Math.hypot(pts[1].x-pts[0].x,pts[1].y-pts[0].y,pts[1].z-pts[0].z):0;
+        const T0=l0>1e-9?{x:(from.x-prev.pts[prev.pts.length-2].x)/l0,
+                          y:(from.y-prev.pts[prev.pts.length-2].y)/l0,
+                          z:(from.z-prev.pts[prev.pts.length-2].z)/l0}:null;
+        const T1=l1>1e-9?{x:(pts[1].x-pts[0].x)/l1,y:(pts[1].y-pts[0].y)/l1,
+                          z:(pts[1].z-pts[0].z)/l1}:{x:1,y:0,z:0};
+        if(circ){
+          const rsx=circ.sx-circ.cx,rsy=circ.sy-circ.cy;
+          const lA=Math.hypot(rsx,rsy)||1;
+          const TA=circ.cw?{x:rsy/lA,y:-rsx/lA,z:0}:{x:-rsy/lA,y:rsx/lA,z:0};
+          startZs=splineEmit(from,circ.sx,circ.sy,here.z,T0,l0,TA,l1||lA);
+        }else if(!hx){
+          startZs=splineEmit(from,here.x,here.y,here.z,T0,l0,T1,l1);
+        }
+        if(startZs!==null){startZ=startZs;linkSpline=true;}
+        else{
+          // Repli historique : lift sur place, XY à la Z de liaison si la
+          // colonne reste claire — sinon passage par secu.
+          const liftZ=pathOK(from,{x:ax,y:ay})?travel:secu;
+          if(Math.abs(from.z-liftZ)>1e-9)moves.push({r:1,x:from.x,y:from.y,z:liftZ});
+          moves.push({r:1,x:ax,y:ay,z:liftZ});
+          startZ=liftZ;
+        }
       }
       let skip0=false, ramp0=false;
       if(circ){
@@ -10285,6 +10509,10 @@ function faoGenGeoFinish(mesh,o){
         const hel=faoHelixEntry(hx.x,hx.y,hStart,here.z,hr,D);
         for(let i=1;i<hel.length;i++)moves.push(hel[i]);
         moves.push({r:0,x:here.x,y:here.y,z:here.z});
+      }else if(linkSpline){
+        // 2026-10-12-002 : la spline de liaison a déposé la fraise EXACTEMENT
+        // au début de chaîne, à la cote de coupe — la chaîne part directement
+        // (pas de rampe, pas de diagonale air).
       }else if(pk<1){
         // 2026-10-08-006 : JAMAIS de plongée à plat sur le début de chaîne
         // (fraise à cheval sur le mur) — RAMPE le long du 1er tronçon : la
@@ -10314,12 +10542,23 @@ function faoGenGeoFinish(mesh,o){
           }
         }else moves.push({r:0,x:pts[i].x,y:pts[i].y,z:pts[i].z});
       }
-    });
+      yield moves; // 2026-10-12-002 : dessin progressif — chaîne finie
+    }
     // Sortie de zone : retrait vertical sur place à secu (2e rapide de la zone).
     const lc=Z.chains[Z.chains.length-1],lp=lc.pts[lc.pts.length-1];
     moves.push({r:1,x:lp.x,y:lp.y,z:secu});
-  });
+    yield moves; // dessin progressif — zone finie
+  }
   return moves;
+}
+function faoGenGeoFinish(mesh,o){
+  // Appel SYNCHRONE (drain complet du générateur) : strictement équivalent au
+  // flux — dispatch, tests, G-code et estimation ne bougent pas. Le flux
+  // progressif (aperçu au fil de l'eau) passe par faoGenGeoFinishIt via
+  // faoOpMovesIt (yield*), comme l'ébauche 3D 2026-10-09-005.
+  const it=faoGenGeoFinishIt(mesh,o);
+  let r; while(!(r=it.next()).done){}
+  return r.value;
 }
 function faoSeedBottom(mesh){
   let bi=0, bm=1/0;
