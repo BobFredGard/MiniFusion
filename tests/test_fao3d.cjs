@@ -241,17 +241,17 @@ const vm=require('vm');
     "const gS=faoGenGeoFinish(SL,{step:5,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top'});",
     "const cs=gS.filter(m=>!m.r);",
     "att(cs.length>6,'geo rampe : '+cs.length+' coupe outil');",
-    // gap constant SUR LA SURFACE (geodesique, pas iso-Z) : les passes suivent
-    // le champ geodesique, donc les traces varient en Z sur une pente (ce
-    // n'est plus de l iso-Z) ET l'ecart geodesique entre traces est constant.
+    // 2026-10-13-001 : passes HORIZONTALES sur pente (iso-Z, pas adaptif) =
+    // parallèles à XY ET à écart SURFACE constant (crêtes // et à égale
+    // distance, façon Fusion 360). Chaque run de coupes à Z constant.
     "let badZ=0,run=[];gS.forEach(function(m){if(!m.r){run.push(m);return;}if(run.length>1){const z0=run[0].z;if(run.some(function(m){return Math.abs(m.z-z0)>1e-6;}))badZ++;}run=[];});",
-    "att(badZ>=1,'geo gap constant : traces non horizontales sur pente ('+badZ+' liaisons a Z variable)');",
-    // ecart geodesique constant : distance 3D minimale entre deux passes
-    // consecutive (hors graine) = step, pas un resserrement brutal ni un trou.
+    "att(badZ===0,'geo iso-Z : traces horizontales sur pente ('+badZ+' liaisons a Z variable, attendu 0)');",
+    // écart SUR LA SURFACE : distance 3D minimale entre deux passes
+    // consecutive = step (5mm) — pas adaptif Δz=step·sinθ garantit surface=step.
     "const gRuns=[];let gCur=[];gS.forEach(function(m){if(!m.r){gCur.push(m);}else{if(gCur.length)gRuns.push(gCur);gCur=[];}});if(gCur.length)gRuns.push(gCur);",
     "const gMid=[];for(let i=1;i<gRuns.length-1;i++){const a=gRuns[i],b=gRuns[i+1];let best=1/0;a.forEach(function(pa){b.forEach(function(pb){const d=Math.hypot(pa.x-pb.x,pa.y-pb.y,pa.z-pb.z);if(d<best)best=d;});});if(best<20)gMid.push(best);}",
     "const gOk=gMid.filter(function(d){return Math.abs(d-5)<=0.6;}).length;",
-    "att(gMid.length>=4&&gOk>=gMid.length*0.6,'geo gap constant : '+gOk+'/'+gMid.length+' ecarts ~ 5mm');",
+    "att(gMid.length>=4&&gOk>=gMid.length*0.6,'geo écart surface : '+gOk+'/'+gMid.length+' ecarts ~ 5mm');",
     // limites Z : ztop=12 -> aucune coupe au-dessus de 12+Rc
     "const gL=faoGenGeoFinish(SL,{step:5,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top',ztop:12});",
     "const zL=gL.filter(m=>!m.r).map(m=>m.z);",
@@ -293,10 +293,32 @@ const vm=require('vm');
     "const geoLOn=faoGenGeoFinish(SBX,{step:5,toolD:6,kind:'ball',laisse:3,secu:25,seed:'top'});",
     "const geoLOff=faoGenGeoFinish(SBX,{step:5,toolD:6,kind:'ball',laisse:3,secu:25,seed:'top',spline:false});",
     "att(JSON.stringify(geoLOn)===JSON.stringify(geoLOff),'geo spline : laisse>0 -> liaison lift inchangee');",
-    // (4) PLN (zones mono-chaîne) : spline sans effet, parcours strictement identique
+    // (4) PLN (zones mono-chaîne) : la spline INTER-ZONES (2026-10-13-001)
+    // relie maintenant les zones même mono-chaîne -> parcours différent.
     "const geoPnOn=faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top'});",
     "const geoPnOff=faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top',spline:false});",
-    "att(JSON.stringify(geoPnOn)===JSON.stringify(geoPnOff),'geo spline : zone mono-chaîne -> inchangee');",
+    "att(JSON.stringify(geoPnOn)!==JSON.stringify(geoPnOff),'geo spline : zone mono-chaîne -> liaison inter-zones active');",
+    // --- 2026-10-13-001 : remontées COURTES + arc VERTICAL d'entrée
+    // (a) spline:false sur PLN : le repli ne monte plus à secu — 2 rapides
+    //     secu seulement (début de programme + retrait final), le reste à
+    //     travel (colonne vide sur plan) ou H court.
+    "const secP=geoPnOff.filter(m=>m.r===1&&Math.abs(m.z-45)<1e-9).length;",
+    "att(secP<=2,'geo remontee courte : '+secP+' rapides a secu sur PLN (<=2 : debut + retrait), repli a travel/H');",
+    // (b) chaque liaison cut->r:1->r:1 part de l'EXTRÉMITÉ LA PLUS PROCHE du
+    //     tracé suivant (orientation aussi en tête de zone) : saut XY max
+    //     < 30 mm (sans optimisation ~40 sur PLN 60x40).
+    "let mj=0;for(let i=0;i+2<geoPnOff.length;i++){if(geoPnOff[i].r===0&&geoPnOff[i+1].r===1&&geoPnOff[i+2].r===1){const d=Math.hypot(geoPnOff[i+2].x-geoPnOff[i].x,geoPnOff[i+2].y-geoPnOff[i].y);if(d>mj)mj=d;}}",
+    "p('geo remontee courte : liaison cut->r:1->r:1 max '+mj.toFixed(1)+' mm');",
+    "att(mj>0&&mj<30,'geo remontee courte : liaison max '+mj.toFixed(1)+' mm < 30 (extremite la plus proche du tracé suivant)');",
+    // (c) arc VERTICAL d'entrée (varc) : avec ébauche avant + entrée circ,
+    //     chaque entrée = quart de cercle en PLAN VERTICAL (G1 bleus ent,
+    //     Δz>0) — plus aucun arc XY ({i,j,cw}) en entrée.
+    "const geoV=faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top',entry:'circ',hasRrough:true});",
+    "const vE=geoV.filter(m=>!m.r&&m.ent===1);",
+    "att(vE.length>=8,'geo arc vertical : '+vE.length+' points d entree ent (quart de cercle attendu)');",
+    "const vZmin=Math.min.apply(null,vE.map(m=>m.z)),vZmax=Math.max.apply(null,vE.map(m=>m.z));",
+    "att(vZmax-vZmin>1,'geo arc vertical : entree en plan vertical (dz '+(vZmax-vZmin).toFixed(2)+' > 1)');",
+    "att(geoV.filter(m=>m.ent===1&&m.arc).length===0,'geo arc vertical : aucun arc XY en entree (tout G1 de plan vertical)');",
     // --- 025 : ébauche 3D — lignes bornées au RAYON sur les murs en Y (retour 4/10 pt 2)
     // Boîte 100x80x50, poche x10..90 y19..63 z20..50 ouverte dessus, D16 r=8 ae=4 :
     // les lignes de pelage doivent rester à >= r des parois Y (l'existence lisait
@@ -403,15 +425,15 @@ const vm=require('vm');
     "const TW=merge(merge(mkBox(0,20,0,20,0,40),mkBox(40,60,0,20,0,40)),mkBox(80,100,0,20,0,40));",
     "const gT=faoGenGeoFinish(TW,{step:6,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top',entry:'ramp'});",
     "att(gT.length>50,'geo zones : '+gT.length+' moves (3 tours)');",
+    // 2026-10-13-001 : le repli ne remonte plus à secu (travel/H court
+    // d'abord) — comptage par MOTIF cut->r:1->r:1 HAUTEUR-AGNOSTIC (une
+    // transition de chaîne = une zone), les rapides secu restent bornés.
     "const secOK=function(m){return m.r===1&&Math.abs(m.z-45)<1e-9;};",
     "let nS=0,nZ=0;",
-    "for(let i=0;i<gT.length;i++){",
-    "  if(!secOK(gT[i]))continue;",
-    "  nS++;",
-    "  const prevCut=i>0&&gT[i-1].r===0;",
-    "  const nextSec=(i===gT.length-1)||secOK(gT[i+1]);",
-    "  if(prevCut&&nextSec)nZ++;",
+    "for(let i=0;i+2<gT.length;i++){",
+    "  if(gT[i].r===0&&gT[i+1].r===1&&gT[i+2].r===1)nZ++;",
     "}",
+    "nS=gT.filter(secOK).length;",
     "p('geo zones : rapides a secu='+nS+' zones='+nZ);",
     "att(nZ>=6,'geo zones : au moins 6 zones (niveaux iso), vu '+nZ);",
     "att(nS<=2*nZ+2,'geo groupement : rapides a secu '+nS+' <= 2*zones+2='+(2*nZ+2));",

@@ -69,8 +69,10 @@ function buildDone(){
   // Fin de reconstruction : rejeu terminé. L'empreinte du document et le cache
   // d'affichage (copie de tous les sommets + IndexedDB) sont REPUSSES apres le rendu.
   builtVersion=_docVersion;builtTl=tlMark;builtSkip=occSkipFeat;
-  // FAO : les limites « chaîne » sont re-suies sur les arêtes du nouveau solide
-  // (état dérivé : pas d'entrée d'annulation) ; sinon marquées obsolètes (stale).
+  // FAO : les limites « esquisse » sont re-extraites du document et les
+  // limites « chaîne » re-suivies sur les arêtes du nouveau solide (état
+  // dérivé : pas d'entrée d'annulation) ; sinon marquées obsolètes (stale).
+  try{if(typeof faoSketchReplay==='function')faoSketchReplay();}catch(e){}
   try{if(typeof faoChainReplay==='function')faoChainReplay();}catch(e){}
   // FAO : le solide vient d'être (re)construit — l'Ébauche 3D embarque son empreinte
   // dans sa clé de cache. Au F5 la 1re lecture a lieu sur le REPLI MAILLAGE, avant le
