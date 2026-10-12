@@ -262,7 +262,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-11-007';
+const APP_VER='2026-10-12-001';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -273,7 +273,7 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-11-002';
+const CACHE_VER='2026-10-12-001';
 function cacheVerOK(v){
   // 2026-10-11-002 : ébauche 3D — la ZONE voyage dans le REPÈRE (zoneAt
   // transposé sous SENS LONG + rotation de −θ sur l'axe d'une limite oblique,
@@ -13392,6 +13392,14 @@ function faoGenPocket(rect,zTop,zBot,o){
           moves.push({r:0,ent:1,x:ax,y:ay,z:z0});
           moves.push({r:0,x:ax,y:ay,z:z});
         }
+        // 2026-10-12-001 : la RAMPE ne descend le 1er côté qu'en progressant
+        // (z0 -> z) — le fond sous la rampe restait +z0->z au-dessus de la
+        // cote finale (bande de matiere le long du MUR D'ENTREE, visible en
+        // parois/fond à 0 comme un gap pièce/usiné, jusqu'à ~ ap de haut).
+        // Re-point à (ax,ay) À PLAT à z : le rectangle partagé qui suit
+        // referme alors le 1er côté à la cote exacte (meme chose que les
+        // entrees circulaires, qui arrivent à (ax,ay)).
+        if(L>=2&&z0>z+1e-9)moves.push({r:0,x:ax,y:ay,z:z});
       }
       moves.push({r:0,x:bx,y:ay,z:z});
       moves.push({r:0,x:bx,y:by,z:z});
@@ -13466,6 +13474,11 @@ function faoGenContour(rect,zTop,zBot,o){
         moves.push({r:0,ent:1,x:ax+(bx-ax)*f,y:ay,
           z:Math.round((z0+(z-z0)*f)*1000)/1000});
       }
+      // 2026-10-12-001 : la RAMPE ne couvre le 1er côté qu'en descendant
+      // (z0 -> z) — bande de matière le long du côté d'entrée (gap visible
+      // en parois/fond à 0, cf. poche). Re-point à (ax,ay) À PLAT à z : le
+      // rectangle partagé qui suit referme le 1er côté à la cote exacte.
+      if(z0>z+1e-9)moves.push({r:0,x:ax,y:ay,z:z});
     }
     moves.push({r:0,x:bx,y:ay,z:z});
     moves.push({r:0,x:bx,y:by,z:z});
@@ -24948,7 +24961,7 @@ window.addEventListener('pointerdown',e=>{if(!$('ctxMenu').contains(e.target))hi
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.4';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.5';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);

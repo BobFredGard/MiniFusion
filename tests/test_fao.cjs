@@ -197,6 +197,19 @@ const vm=require('vm');
     "const cr=faoGenContour({x0:10,y0:10,x1:90,y1:70},5,0,{toolD:10,secu:30,radial:0.5,axial:0});",
     "att(cr.some(m=>!m.r&&Math.abs(m.x-95.5)<1e-9),'contour R0.5 : X max 95.5');",
     "att(cr.filter(m=>!m.r&&!m.ent).every(m=>Math.abs(m.z-0)<1e-9),'contour A0 : fond Z=0');",
+    // --- 2026-10-12-001 : repasse à plat du 1er côté après RAMPE (gap 0/0)
+    // La rampe 006 ne descend le côté d'entrée qu'en progressant (z0 -> z) :
+    // sans repasse, une bande de matière restait le long du mur d'entrée
+    // (jusqu'à ~ ap, visible comme un vide pièce/usiné en laisses 0/0).
+    "const gp=faoGenPocket({x0:10,y0:10,x1:90,y1:70},25,15,{toolD:25,secu:30,ap:5,entry:'ramp'});",
+    "att(gp.some(m=>!m.r&&Math.abs(m.x-22.5)<1e-9&&Math.abs(m.y-22.5)<1e-9&&Math.abs(m.z-20)<1e-9),'gap poche : côté entrée à plat Z=20');",
+    "att(gp.some(m=>!m.r&&Math.abs(m.x-22.5)<1e-9&&Math.abs(m.y-22.5)<1e-9&&Math.abs(m.z-15)<1e-9),'gap poche : côté entrée à plat Z=15');",
+    "const gi=gp.findIndex(m=>!m.r&&Math.abs(m.x-22.5)<1e-9&&Math.abs(m.y-22.5)<1e-9&&Math.abs(m.z-15)<1e-9);",
+    "att(gi>-1&&gp[gi+1]&&!gp[gi+1].r&&Math.abs(gp[gi+1].x-77.5)<1e-9&&Math.abs(gp[gi+1].y-22.5)<1e-9&&Math.abs(gp[gi+1].z-15)<1e-9,'gap poche : le rectangle referme le côté S à plat ('+(gp[gi+1]?gp[gi+1].x+','+gp[gi+1].y+','+gp[gi+1].z:'fin'));",
+    "const gpd=faoGenPocket({x0:10,y0:10,x1:90,y1:70},25,15,{toolD:25,secu:30,ap:5});",
+    "att(gpd.some(m=>!m.r&&Math.abs(m.x-22.5)<1e-9&&Math.abs(m.y-22.5)<1e-9&&Math.abs(m.z-15)<1e-9),'gap poche defaut : repli rampe referme aussi le côté S (Z=15)');",
+    "const gc=faoGenContour({x0:10,y0:10,x1:90,y1:70},5,0,{toolD:10,secu:30,entry:'ramp'});",
+    "att(gc.some(m=>!m.r&&Math.abs(m.x-5)<1e-9&&Math.abs(m.y-5)<1e-9&&Math.abs(m.z-0)<1e-9),'gap contour : côté entrée à plat Z=0');",
     // --- migration laisse -> R/A (géodésique garde laisse)
     "const mOP={type:'pocket',laisse:0.5};faoSanitiseOps({tools:[{id:'T1'}],ops:[mOP]});",
     "att(mOP.radial===0.5&&mOP.axial===0.5&&mOP.laisse===undefined,'migration laisse -> R/A');",
@@ -916,6 +929,16 @@ const vm=require('vm');
     "bTr14.onclick();",
     "att(faoToolsWin===null,'014 : bouton arbre bascule (2e clic = ferme)');",
     "faoToolsWindowClose();",
+    // --- 016 : non-régression carve du gap (2026-10-12-001) — la bande du
+    // côté d'entrée (rampe 006, masquée par axial>0) est maintenant à la
+    // cote exacte du fond en 0/0 : fond intérieur + bande ≈ 15.
+    "doc.fao={setups:[Object.assign(faoDefaultSetup(),{name:'V016G',stock:{x0:0,y0:0,z0:0,x1:100,y1:80,z1:25},ops:[{id:'v16g',on:true,toolId:'T6',type:'pocket',x0:10,y0:10,x1:90,y1:70,ztop:25,zbot:15,ap:5,radial:0,axial:0}]} )],activeSetupId:null};",
+    "faoVw=null;faoPrevOn=true;att(faoViewerStart()===true,'016g : viewer demarre');",
+    "faoViewerAdvance(30);",
+    "const gk16=faoVw.matterGrid,Hk16=faoVw.mTops,xk16=function(i){return gk16.ox+(i+0.5)*gk16.pas;},yk16=function(j){return gk16.oy+(j+0.5)*gk16.pas;};",
+    "let mxk16=-1e9,lxk16='';for(let j=0;j<gk16.ny;j++)for(let i=0;i<gk16.nx;i++){const X=xk16(i),Y=yk16(j);if(X<25||X>75||Y<20||Y>60)continue;const h=Hk16[j*gk16.nx+i];if(h>mxk16){mxk16=h;lxk16='('+X.toFixed(1)+','+Y.toFixed(1)+')';}}",
+    "att(mxk16<15.02,'016g gap carve : fond interieur + bande entree = '+mxk16.toFixed(3)+' <= 15.02 '+lxk16);",
+    "faoViewerClose();",
     // --- 015 : matière = surface Z-map pleine (colonnes jointives, un seul mesh)
     "doc.fao={setups:[Object.assign(faoDefaultSetup(),{name:'V015',stock:{x0:0,y0:0,z0:0,x1:100,y1:80,z1:25},ops:[{id:'v15',on:true,toolId:'T1',type:'facing',z:20,ae:6}]})],activeSetupId:null};",
     "faoVw=null;faoPrevOn=true;",

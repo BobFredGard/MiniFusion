@@ -810,6 +810,14 @@ function faoGenPocket(rect,zTop,zBot,o){
           moves.push({r:0,ent:1,x:ax,y:ay,z:z0});
           moves.push({r:0,x:ax,y:ay,z:z});
         }
+        // 2026-10-12-001 : la RAMPE ne descend le 1er côté qu'en progressant
+        // (z0 -> z) — le fond sous la rampe restait +z0->z au-dessus de la
+        // cote finale (bande de matiere le long du MUR D'ENTREE, visible en
+        // parois/fond à 0 comme un gap pièce/usiné, jusqu'à ~ ap de haut).
+        // Re-point à (ax,ay) À PLAT à z : le rectangle partagé qui suit
+        // referme alors le 1er côté à la cote exacte (meme chose que les
+        // entrees circulaires, qui arrivent à (ax,ay)).
+        if(L>=2&&z0>z+1e-9)moves.push({r:0,x:ax,y:ay,z:z});
       }
       moves.push({r:0,x:bx,y:ay,z:z});
       moves.push({r:0,x:bx,y:by,z:z});
@@ -884,6 +892,11 @@ function faoGenContour(rect,zTop,zBot,o){
         moves.push({r:0,ent:1,x:ax+(bx-ax)*f,y:ay,
           z:Math.round((z0+(z-z0)*f)*1000)/1000});
       }
+      // 2026-10-12-001 : la RAMPE ne couvre le 1er côté qu'en descendant
+      // (z0 -> z) — bande de matière le long du côté d'entrée (gap visible
+      // en parois/fond à 0, cf. poche). Re-point à (ax,ay) À PLAT à z : le
+      // rectangle partagé qui suit referme le 1er côté à la cote exacte.
+      if(z0>z+1e-9)moves.push({r:0,x:ax,y:ay,z:z});
     }
     moves.push({r:0,x:bx,y:ay,z:z});
     moves.push({r:0,x:bx,y:by,z:z});
