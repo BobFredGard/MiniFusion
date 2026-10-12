@@ -10244,11 +10244,18 @@ function faoAdjacency(mesh){
   }
   return adj;
 }
-function faoDijkstra(mesh,seed){
+function faoDijkstra(mesh,seed,adjIn){
   // Tas binaire : V=50k sans broncher dans le navigateur.
+  // 2026-10-13-004 : seed accepte un entier (source unique, historique) OU un
+  // tableau de graines (multi-sources — contour-offset plateau : toutes les
+  // frontières à distance 0, le champ mesure alors l'écart À LA FRONTIÈRE).
+  // adjIn optionnel : adjacence pré-filtrée (ex. faces plates seules) — le
+  // champ est alors mesuré DANS ce sous-graphe (offset 2D du plateau, pas un
+  // géodésique qui pourrait passer par les parois).
   const n=mesh.v.length, dist=new Array(n).fill(1/0);
-  const adj=faoAdjacency(mesh);
-  dist[seed]=0;
+  const adj=adjIn||faoAdjacency(mesh);
+  const seeds=Array.isArray(seed)?seed:[seed];
+  for(let s=0;s<seeds.length;s++){const si=seeds[s];if(si>=0&&si<n)dist[si]=0;}
   const HK=[], HV=[];
   const push=function(k,v){ HK.push(k); HV.push(v); let i=HK.length-1;
     while(i>0){ const p=(i-1)>>1; if(HK[p]<=k)break; HK[i]=HK[p]; HV[i]=HV[p]; i=p; }
@@ -10265,7 +10272,7 @@ function faoDijkstra(mesh,seed){
         const tv=HV[i];HV[i]=HV[m];HV[m]=tv; i=m; }
     }
     return top; };
-  push(0,seed);
+  for(let s=0;s<seeds.length;s++){const si=seeds[s];if(si>=0&&si<n)push(0,si);}
   const done=new Array(n).fill(false);
   while(HK.length){
     const u=pop();
@@ -10606,33 +10613,96 @@ function* faoGenGeoFinishIt(mesh,o){
     if(o.seed==='bottom')zlv.reverse();
     for(let i=0;i<zlv.length;i++)emitLevel(zf,zlv[i],null,0);
   }
-  // (2) Passes parallèles sur les plateaux — MÊME direction que les traces de
-  // paroi (demande : « les traces sur le plat continuent d'être // à celles des
-  // parois, quitte à revenir finir les îlots créés »). Direction du contour =
-  // perpendiculaire à la normale XY dominante (PCA sur les faces de paroi).
-  // Champ u = dx·y − dy·x → iso-lignes droites // au contour, pas = step.
-  // Les îlots non couverts sont finis par les restes (3) plus bas.
+  // (2) Passes sur les plateaux — TOUR COMPLET (2026-10-13-004, demande :
+  // « pourquoi ne pas faire un tour complet ? Cela évite les va-et-vient en
+  // rapide » / « partir d'un point pour y revenir puis passer à l'autre »).
+  // Champ géodésique MULTI-SOURCES depuis la FRONTIÈRE du plateau (sommet à la
+  // fois plate et non-plate = rive où le plateau rencontre la paroi) — le
+  // Dijkstra est restreint au sous-graphe des faces plates, la distance est
+  // donc mesurée DANS le plateau (offset 2D) et non à travers les parois.
+  // Iso-lignes à k·step = BOUCLES FERMÉES concentriques (chaque passe = un
+  // tour complet du contour, pas = step) — reliées entre elles par un court
+  // décalage radial, zéro va-et-vient. Les îlots non couverts sont finis par
+  // les restes (3) plus bas.
   if(G.hasFlat){
-    let cxx=0,cxy=0,cyy=0;
+    const vFlat=new Uint8Array(mesh.v.length), vNon=new Uint8Array(mesh.v.length);
+    const flatAdj=[]; for(let i=0;i<mesh.v.length;i++)flatAdj.push([]);
+    const flink=function(a,b){ if(flatAdj[a].indexOf(b)<0)flatAdj[a].push(b); };
     for(let i=0;i<mesh.t.length;i++){
-      if(G.flags[i]===1||!allMask[i])continue;
       const t=mesh.t[i];
-      const A=mesh.v[t[0]],B=mesh.v[t[1]],C=mesh.v[t[2]];
-      const ux=B[0]-A[0],uy=B[1]-A[1],uz=B[2]-A[2];
-      const wx=C[0]-A[0],wy=C[1]-A[1],wz=C[2]-A[2];
-      const nx=uy*wz-uz*wy,ny=uz*wx-ux*wz,nzz=ux*wy-uy*wx;
-      const l=Math.hypot(nx,ny,nzz)||1;
-      const nxN=nx/l,nyN=ny/l;
-      cxx+=nxN*nxN;cxy+=nxN*nyN;cyy+=nyN*nyN;
+      if(G.flags[i]===1&&allMask[i]){
+        vFlat[t[0]]=1;vFlat[t[1]]=1;vFlat[t[2]]=1;
+        flink(t[0],t[1]); flink(t[1],t[0]);
+        flink(t[1],t[2]); flink(t[2],t[1]);
+        flink(t[2],t[0]); flink(t[0],t[2]);
+      }else{vNon[t[0]]=1;vNon[t[1]]=1;vNon[t[2]]=1;}
     }
-    const th=0.5*Math.atan2(2*cxy,cxx-cyy);
-    const pdx=-Math.sin(th),pdy=Math.cos(th); // direction du contour
-    const u=new Float64Array(mesh.v.length);
-    for(let i=0;i<mesh.v.length;i++)u[i]=pdx*mesh.v[i][1]-pdy*mesh.v[i][0];
-    let umin=1/0,umax=-1/0;
-    for(let i=0;i<u.length;i++){if(u[i]<umin)umin=u[i];if(u[i]>umax)umax=u[i];}
-    for(let k=Math.ceil(umin/step);k*step<=umax+1e-9;k++){
-      emitLevel(u,k*step,null,1);
+    const seedSet=new Uint8Array(mesh.v.length);
+    const seeds=[];
+    const addSeed=function(i){ if(!seedSet[i]){seedSet[i]=1;seeds.push(i);} };
+    // Rive interne : sommet à la fois plate et non-plate (plateau rencontre
+    // la paroi).
+    for(let i=0;i<mesh.v.length;i++)if(vFlat[i]&&vNon[i])addSeed(i);
+    // Frontière du MAILLAGE (arête utilisée par 1 seule face) : nécessaire
+    // quand le plateau va jusqu'au bord de la pièce (pas de paroi adjacente —
+    // un plan simple n'a que des sommets plates, aucun seed rive).
+    const ecount=new Map();
+    for(let i=0;i<mesh.t.length;i++){
+      const t=mesh.t[i];
+      for(let e=0;e<3;e++){
+        const a=t[e],b=t[(e+1)%3];
+        const k=a<b?a+','+b:b+','+a;
+        ecount.set(k,(ecount.get(k)||0)+1);
+      }
+    }
+    for(let i=0;i<mesh.t.length;i++){
+      if(G.flags[i]!==1||!allMask[i])continue;
+      const t=mesh.t[i];
+      for(let e=0;e<3;e++){
+        const a=t[e],b=t[(e+1)%3];
+        const k=a<b?a+','+b:b+','+a;
+        if(ecount.get(k)===1){addSeed(a);addSeed(b);}
+      }
+    }
+    let usedGeo=false;
+    if(seeds.length){
+      const dflat=faoDijkstra(mesh,seeds,flatAdj);
+      let dmaxF=-1/0;
+      for(let i=0;i<dflat.length;i++)if(dflat[i]<1/0&&dflat[i]>dmaxF)dmaxF=dflat[i];
+      // Il faut au moins un pas d'intérieur pour placer un anneau — un
+      // maillage grossier (2 triangles, aucun sommet intérieur) ne peut pas
+      // recevoir d'offset, on retombe sur le champ linéaire ci-dessous.
+      if(dmaxF>step){
+        usedGeo=true;
+        for(let k=1;k*step<=dmaxF+1e-9;k++)emitLevel(dflat,k*step,null,1);
+      }
+    }
+    if(!usedGeo){
+      // Repli champ LINÉAIRE (historique 2026-10-13-001) : maillage grossier
+      // sans sommets intérieurs — iso-lignes droites // au contour, extraites
+      // directement sur les faces (marching triangles n'a pas besoin de nœuds
+      // intérieurs).
+      let cxx=0,cxy=0,cyy=0;
+      for(let i=0;i<mesh.t.length;i++){
+        if(G.flags[i]===1||!allMask[i])continue;
+        const t=mesh.t[i];
+        const A=mesh.v[t[0]],B=mesh.v[t[1]],C=mesh.v[t[2]];
+        const ux=B[0]-A[0],uy=B[1]-A[1],uz=B[2]-A[2];
+        const wx=C[0]-A[0],wy=C[1]-A[1],wz=C[2]-A[2];
+        const nx=uy*wz-uz*wy,ny=uz*wx-ux*wz,nzz=ux*wy-uy*wx;
+        const l=Math.hypot(nx,ny,nzz)||1;
+        const nxN=nx/l,nyN=ny/l;
+        cxx+=nxN*nxN;cxy+=nxN*nyN;cyy+=nyN*nyN;
+      }
+      const th=0.5*Math.atan2(2*cxy,cxx-cyy);
+      const pdx=-Math.sin(th),pdy=Math.cos(th);
+      const u=new Float64Array(mesh.v.length);
+      for(let i=0;i<mesh.v.length;i++)u[i]=pdx*mesh.v[i][1]-pdy*mesh.v[i][0];
+      let umin=1/0,umax=-1/0;
+      for(let i=0;i<u.length;i++){if(u[i]<umin)umin=u[i];if(u[i]>umax)umax=u[i];}
+      for(let k=Math.ceil(umin/step);k*step<=umax+1e-9;k++){
+        emitLevel(u,k*step,null,1);
+      }
     }
   }
   // (3) restes : zones que les deux familles n'ont pas couvertes (dessous,
@@ -10893,6 +10963,53 @@ function* faoGenGeoFinishIt(mesh,o){
       }
       return null;
     };
+    // 2026-10-13-004 : LIGNE DROITE PRIORITAIRE (demande : « les lignes
+    // droites c'est bien mieux »). Segment direct from→to, validé par
+    // échantillons (MÊME contrat que la spline : z ≥ zLo, pas de matière
+    // AU-DESSUS, air jamais sous portée de coupe), émission hybride fusionnée
+    // (sur matière = G1 tr:1, en air = G0 tr:1 fusionné — la ligne droite
+    // s'aplatit en 1 move par run). Retourne la cote d'arrivée si OK, null
+    // sinon (le repli essaiera la spline puis le lift). Ne s'applique pas aux
+    // entrées varc/circ/hélice (ce sont des arcs dédiés).
+    const straightEmit=function(from,tx,ty,pz){
+      if(!(L<=1e-9))return null;
+      if(o.spline===false)return null; // échappatoire (tests / comparaison)
+      const p0={x:from.x,y:from.y,z:from.z};
+      const p1={x:tx,y:ty,z:pz};
+      const chord=Math.hypot(p1.x-p0.x,p1.y-p0.y,p1.z-p0.z);
+      if(!(chord>0.2))return null;
+      const zFloor=Math.min(p0.z,p1.z)-(Rc+0.5);
+      const zLo=Math.min(p0.z,p1.z)-0.05;
+      const pl=splinePlanes();
+      const sampleOK=function(x,y,z){
+        if(z<zLo)return false;
+        for(let q=0;q<pl.length;q++){
+          if(pl[q].z<=z+0.05)continue;
+          if(faoDiscClear(pl[q].segs,x,y,0,0.001)===false)return false;
+        }
+        if(ptDist(x,y)>1e-9&&z<zFloor)return false;
+        return true;
+      };
+      const n=Math.max(2,Math.ceil(chord/0.5));
+      const spts=[];
+      for(let k=0;k<=n;k++){
+        const t=k/n;
+        const s={x:p0.x+(p1.x-p0.x)*t,y:p0.y+(p1.y-p0.y)*t,z:p0.z+(p1.z-p0.z)*t};
+        if(!sampleOK(s.x,s.y,s.z))return null;
+        spts.push(s);
+      }
+      // Émission : ligne droite = chaque run matière/air = 1 move direct.
+      let prevType=null;
+      for(let k=1;k<spts.length;k++){
+        const s=spts[k];
+        const typ=ptDist(s.x,s.y)<=1e-9?0:1;
+        if(typ!==prevType||k===spts.length-1){
+          moves.push({r:typ,tr:1,x:s.x,y:s.y,z:s.z});
+          prevType=typ;
+        }
+      }
+      return spts[spts.length-1].z;
+    };
     // Point visé par l'approche d'une chaîne : centre d'hélice (si autorisé) ou
     // point ~2D le long du tracé — la rampe descend ensuite en diagonale de pk
     // jusqu'au début (jamais de plongée verticale).
@@ -11019,10 +11136,10 @@ function* faoGenGeoFinishIt(mesh,o){
             ay=varc?varc.ay:(circ?circ.sy:(hx?hx.y:pts[pk].y));
       let startZ, linkSpline=false;
       if(ci===0&&prevEnd){
-        // Liaison INTER-ZONES (2026-10-13-001) : SPLINE TANGENTE d'abord —
-        // supprime les remontées à secu inutiles entre zones (gain de temps,
-        // demande : « aller vers le prochain tracé avec une spline »). Repli
-        // lift COURT (travel/H, secu en dernier) si la spline échoue.
+        // Liaison INTER-ZONES (2026-10-13-004) : LIGNE DROITE d'abord —
+        // segment direct s'il dégage (demande « les lignes droites c'est bien
+        // mieux »), spline tangente seulement si la ligne est bloquée, lift
+        // COURT (travel/H, secu en dernier) en dernier repli.
         const from=prevEnd;
         let startZs=null;
         const l0=prevEnd.l0||0;
@@ -11040,7 +11157,8 @@ function* faoGenGeoFinishIt(mesh,o){
           const TA=circ.cw?{x:rsy/lA,y:-rsx/lA,z:0}:{x:-rsy/lA,y:rsx/lA,z:0};
           startZs=splineEmit(from,circ.sx,circ.sy,here.z,T0,l0,TA,l1||lA);
         }else if(!hx){
-          startZs=splineEmit(from,here.x,here.y,here.z,T0,l0,T1,l1);
+          startZs=straightEmit(from,here.x,here.y,here.z);
+          if(startZs===null)startZs=splineEmit(from,here.x,here.y,here.z,T0,l0,T1,l1);
         }
         if(startZs!==null){startZ=startZs;linkSpline=true;}
         else{
@@ -11071,12 +11189,14 @@ function* faoGenGeoFinishIt(mesh,o){
         moves.push({r:1,x:ax,y:ay,z:secu});
         startZ=secu;
       }else{
-        // Liaison intra-zone (2026-10-12-002) : SPLINE TANGENTE d'abord,
-        // lift Z / secu en repli (jamais de traversée de la pièce à basse
-        // altitude non prouvée). La spline rejoint le point d'attaque :
+        // Liaison intra-zone (2026-10-13-004) : LIGNE DROITE d'abord —
+        // segment direct s'il dégage (demande « les lignes droites c'est bien
+        // mieux »), spline tangente seulement si la ligne est bloquée, lift
+        // Z / secu en dernier repli (jamais de traversée de la pièce à basse
+        // altitude non prouvée). La liaison rejoint le point d'attaque :
         // S de l'arc circ (tangente = perpauvre au rayon, sens cw) ou le
-        // début de chaîne (tangente = 1er segment) — hélice et approche
-        // mid-trace (pk≥1) gardent le lift (descente d'air dédiée).
+        // début de chaîne — hélice et approche mid-trace (pk≥1) gardent le
+        // lift (descente d'air dédiée).
         const prev=Z.chains[ci-1],from=prev.pts[prev.pts.length-1];
         let startZs=null;
         const l0=prev.pts.length>1?Math.hypot(from.x-prev.pts[prev.pts.length-2].x,
@@ -11098,7 +11218,8 @@ function* faoGenGeoFinishIt(mesh,o){
           const TA=circ.cw?{x:rsy/lA,y:-rsx/lA,z:0}:{x:-rsy/lA,y:rsx/lA,z:0};
           startZs=splineEmit(from,circ.sx,circ.sy,here.z,T0,l0,TA,l1||lA);
         }else if(!hx){
-          startZs=splineEmit(from,here.x,here.y,here.z,T0,l0,T1,l1);
+          startZs=straightEmit(from,here.x,here.y,here.z);
+          if(startZs===null)startZs=splineEmit(from,here.x,here.y,here.z,T0,l0,T1,l1);
         }
         if(startZs!==null){startZ=startZs;linkSpline=true;}
         else{
