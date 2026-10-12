@@ -262,7 +262,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-13-002';
+const APP_VER='2026-10-13-003';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -273,7 +273,7 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-13-002';
+const CACHE_VER='2026-10-13-003';
 function cacheVerOK(v){
   // 2026-10-11-002 : ébauche 3D — la ZONE voyage dans le REPÈRE (zoneAt
   // transposé sous SENS LONG + rotation de −θ sur l'axe d'une limite oblique,
@@ -15986,7 +15986,9 @@ function faoPrevAdd(group,sp){
     }catch(e){}
   };
   add(sp.cut,0x30d158);
-  add(sp.rap,0xff453a,0.3);
+  // 2026-10-13-003 : rapides selon faoViewerRap (tous 30 % / fondu 8 % /
+  // masqués) — bouton « Rapides » de la barre Exécution.
+  if(faoViewerRap!=='masque')add(sp.rap,0xff453a,faoViewerRap==='fondu'?0.08:0.3);
   add(sp.plg||[],0x0a84ff);
   return objs;
 }
@@ -16152,6 +16154,28 @@ let faoVw=null, faoVwBar=null, faoVwBarT=null, faoVwBtn=null, faoVwMatterBtn=nul
 // l'outil/le carve/le brut) ; `faoViewerMode` ajoute le style de SURFACE.
 let faoViewerMode='reel';
 let faoViewerExact=true, faoVwExactBtn=null;
+// 2026-10-13-003 : affichage des RAPIDES dans l'aperçu (demande « presque
+// plus de traces rouges, juste le nécessaire ») — 3 états :
+//   tous   rouge 30 % (défaut, historique)
+//   fondu  rouge 8 % (contexte sans bruit)
+//   masque rapides non dessinés (coupe + entrées seules)
+// Recoloration SANS régénération : faoRefreshPreview redessine depuis les
+// moves mémorisés (lecture seule).
+let faoViewerRap='tous', faoVwRapBtn=null;
+function faoViewerRapLabel(s){
+  return s==='tous'?'Rapides ✓':(s==='fondu'?'Rapides ~':'Rapides ✕');
+}
+function faoViewerRapSet(s){
+  faoViewerRap=s;
+  try{ if(faoVwRapBtn)faoVwRapBtn.textContent=faoViewerRapLabel(s); }catch(e){}
+  try{ localStorage.setItem('minifusion_faoRap',s); }catch(e){}
+  try{ faoRefreshPreview(); }catch(e){}
+}
+function faoViewerRapNext(){
+  const order=['tous','fondu','masque'];
+  const i=order.indexOf(faoViewerRap);
+  faoViewerRapSet(order[(i<0?0:i+1)%order.length]);
+}
 // 2026-10-11-003 : finesse du détail (0 bas / 1 normal / 2 haut) — pilote le budget
 // de la grille de matière ET le maillage de l'outil, avec les 2 cases de la barre :
 // « corps pièce » (corps 3D masqués, brut et matière visibles) et « corps outil »
@@ -17779,6 +17803,16 @@ function faoInitUI(){
       bvw.onclick=function(){ faoViewerToggle(); };
       faoVwBtn=bvw;
       r2.appendChild(bvw);
+      // 2026-10-13-003 : cycle d'affichage des rapides (tous / fondus /
+      // masqués) — recoloration seule, aucune régénération. État persisté.
+      try{ const rv=localStorage.getItem('minifusion_faoRap');
+        if(rv==='fondu'||rv==='masque')faoViewerRap=rv; }catch(e){}
+      const brap=document.createElement('button'); brap.id='faoRapBtn';
+      brap.textContent=faoViewerRapLabel(faoViewerRap);
+      brap.title='Traces rapides (rouges) : ✓ tous (30 %) — ~ fondus (8 %, contexte sans bruit) — ✕ masqués (coupe et entrées seules).';
+      brap.onclick=function(){ faoViewerRapNext(); };
+      faoVwRapBtn=brap;
+      r2.appendChild(brap);
       cnt.appendChild(r2);
       // Tout régénérer : en bas d'Exécution, toujours visible — régénère TOUTES
       // les trajectoires ; les traces masquées ligne par ligne le RESTENT masquées.
@@ -23335,45 +23369,140 @@ function* faoGenGeoFinishIt(mesh,o){
       // de même cote — c'est le cas normal sur un plateau (annulus).
       const zFloor=Math.min(p0.z,p1.z)-(Rc+0.5);
       const zLo=Math.min(p0.z,p1.z)-0.05;
-      for(let att=0;att<2;att++){
-        const sc=att?0.5:1;
-        const s0=Math.min(chord/3,0.9*(l0||0))*sc;
-        const s1=Math.min(chord/3,0.9*(l1||0))*sc;
-        const spts=faoSplinePts(p0,
-          {x:(T0?T0.x:0)*s0,y:(T0?T0.y:0)*s0,z:(T0?T0.z:0)*s0},
-          p1,{x:T1.x*s1,y:T1.y*s1,z:T1.z*s1},Math.ceil(chord/0.5));
-        if(!spts)break;
-        let ok=true;
-        const pl=splinePlanes();
-        for(let k=0;k<spts.length;k++){
-          const s=spts[k];
-          if(s.z<zLo){ok=false;break;}
-          for(let q=0;q<pl.length;q++){
-            if(pl[q].z<=s.z+0.05)continue;
-            if(faoDiscClear(pl[q].segs,s.x,s.y,0,0.001)===false){ok=false;break;}
-          }
-          if(!ok)break;
-          if(ptDist(s.x,s.y)>1e-9&&s.z<zFloor){ok=false;break;} // air : pas sous la portée de coupe
+      const pl=splinePlanes();
+      // Validation par échantillon : z ≥ zLo, jamais de matière AU-DESSUS
+      // (sections des colonnes à une cote strictement supérieure), air jamais
+      // sous la portée de coupe. Partagée par les 3 tentatives et par la
+      // re-validation des corde fusionnées.
+      const sampleOK=function(x,y,z){
+        if(z<zLo)return false;
+        for(let q=0;q<pl.length;q++){
+          if(pl[q].z<=z+0.05)continue;
+          if(faoDiscClear(pl[q].segs,x,y,0,0.001)===false)return false;
         }
-        if(!ok)continue;
-        for(let k=1;k<spts.length;k++){
-          const s=spts[k];
-          moves.push({r:ptDist(s.x,s.y)<=1e-9?0:1,x:s.x,y:s.y,z:s.z});
+        if(ptDist(x,y)>1e-9&&z<zFloor)return false;
+        return true;
+      };
+      const validate=function(spts){
+        for(let k=0;k<spts.length;k++)
+          if(!sampleOK(spts[k].x,spts[k].y,spts[k].z))return false;
+        return true;
+      };
+      const chordOK=function(A,B){
+        const n=Math.max(1,Math.ceil(Math.hypot(B.x-A.x,B.y-A.y,B.z-A.z)/0.5));
+        for(let k=1;k<n;k++){
+          const t=k/n;
+          if(!sampleOK(A.x+(B.x-A.x)*t,A.y+(B.y-A.y)*t,A.z+(B.z-A.z)*t))
+            return false;
+        }
+        return true;
+      };
+      // 2026-10-13-003 : FUSION DES ÉCHANTILLONS AIR — un run consécutif
+      // d'échantillons G0 devient quelques rapides DIRECTS (ajustement
+      // gourmand) : corde la plus longue possible, re-validée au gabarit
+      // 0,5 mm ET bornée à 0,5 mm de la courbe (les liaisons droites — type
+      // diagonale de plateau — s'aplatissent en 1 G0 ; les courbes — type
+      // transitions Fusion tangentes — gardent leur forme avec peu de
+      // segments). Échec corde = échantillon par échantillon (validés).
+      const emitMerged=function(spts){
+        // Distance point/segment (bornage de forme de la corde).
+        const devOK=function(A,B,k){
+          const s=spts[k],ax=A.x,ay=A.y,az=A.z;
+          const ex=B.x-ax,ey=B.y-ay,ez=B.z-az;
+          const L2=ex*ex+ey*ey+ez*ez;
+          let t=L2>0?((s.x-ax)*ex+(s.y-ay)*ey+(s.z-az)*ez)/L2:0;
+          if(t<0)t=0; else if(t>1)t=1;
+          const dx=ax+ex*t-s.x,dy=ay+ey*t-s.y,dz=az+ez*t-s.z;
+          return dx*dx+dy*dy+dz*dz<=0.25; // 0,5 mm
+        };
+        let i0=1;
+        while(i0<spts.length){
+          const r0=ptDist(spts[i0].x,spts[i0].y)<=1e-9?0:1;
+          let i1=i0;
+          while(i1+1<spts.length&&
+            (ptDist(spts[i1+1].x,spts[i1+1].y)<=1e-9?0:1)===r0)i1++;
+          if(r0===1){
+            let a=i0-1; // la corde part de la position courante
+            while(a<i1){
+              let b=a+1;
+              while(b+1<=i1&&chordOK(spts[a],spts[b+1])){
+                let dOK=true;
+                for(let k=a+1;k<=b+1;k++)if(!devOK(spts[a],spts[b+1],k)){dOK=false;break;}
+                if(!dOK)break;
+                b++;
+              }
+              moves.push({r:1,tr:1,x:spts[b].x,y:spts[b].y,z:spts[b].z});
+              a=b;
+            }
+          }else{
+            for(let k=i0;k<=i1;k++){const s=spts[k];
+              moves.push({r:0,tr:1,x:s.x,y:s.y,z:s.z});}
+          }
+          i0=i1+1;
         }
         return spts[spts.length-1].z;
+      };
+      const s0=Math.min(chord/3,0.9*(l0||0));
+      const s1=Math.min(chord/3,0.9*(l1||0));
+      for(let att=0;att<4;att++){
+        let spts;
+        if(att<3){
+          // att 0/1 : tangente 3D pleine puis demi (moins de dépassement).
+          // att 2 : RAMP-SPLINE (2026-10-13-003, demande « transitions type
+          // Fusion ») — tangentes XY conservées (bulbe tangent aux deux
+          // passes), Z composante nulle : le profil Z est un smoothstep entre
+          // les deux cotes, strictement dans [min,max] → plus de creux sous
+          // zLo, la liaison rattrape la plupart des cas qui tombaient en lift.
+          // Atterrissage à la cote de coupe au début de chaîne (vert continu).
+          const sc=att===1?0.5:1, flat=att>=2;
+          spts=faoSplinePts(p0,
+            {x:(T0?T0.x:0)*s0*sc,y:(T0?T0.y:0)*s0*sc,z:flat?0:(T0?T0.z:0)*s0*sc},
+            p1,{x:T1.x*s1*sc,y:T1.y*s1*sc,z:flat?0:T1.z*s1*sc},Math.ceil(chord/0.5));
+          if(!spts)break;
+        }else{
+          // att 3 : SPLINE PLATE à z = travel — Hermite XY (Z neutralisé) à
+          // cote constante : colonne au-dessus de travel quasi vide, validation
+          // toujours OK. Atterrissage à travel → ramp0 (descente le long du
+          // 1er tronçon) ; repli lift à secu si travel est déjà à secu.
+          const zP=Math.max(p0.z,p1.z,travel);
+          if(zP>=secu-1e-9)break;
+          p0.z=zP; p1.z=zP;
+          spts=faoSplinePts(p0,
+            {x:(T0?T0.x:0)*s0,y:(T0?T0.y:0)*s0,z:0},
+            p1,{x:T1.x*s1,y:T1.y*s1,z:0},Math.ceil(chord/0.5));
+          if(!spts)break;
+        }
+        if(!validate(spts))continue;
+        return emitMerged(spts);
       }
       return null;
     };
     // Point visé par l'approche d'une chaîne : centre d'hélice (si autorisé) ou
     // point ~2D le long du tracé — la rampe descend ensuite en diagonale de pk
     // jusqu'au début (jamais de plongée verticale).
-    const candLink=function(pts,n0){
+    const candLink=function(pts0i,n0){
+      let pts=pts0i;
+      // 2026-10-13-003 : chaîne grossière (1er tronçon > 2D sans point iso) —
+      // insertion d'un point interpolé À 2D : l'attaque lift/diagonale se fait
+      // le long de la chaîne, pas à l'autre bout (saut de 40 mm sinon). Point
+      // collinéaire : le tracé de coupe est identique.
+      if(pts.length>1){
+        const d1=Math.hypot(pts[1].x-pts[0].x,pts[1].y-pts[0].y,pts[1].z-pts[0].z);
+        if(d1>2*D+1e-6){
+          const t=(2*D)/d1;
+          pts=pts.slice();
+          pts.splice(1,0,{x:pts[0].x+(pts[1].x-pts[0].x)*t,
+                            y:pts[0].y+(pts[1].y-pts[0].y)*t,
+                            z:pts[0].z+(pts[1].z-pts[0].z)*t});
+        }
+      }
       const here=pts[0];
       let pk=0,acc=0;
       for(let i=1;i<pts.length;i++){
-        acc+=Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y);
-        if(acc>=2*D){pk=i;break;}
-        pk=i;
+        const d=Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y);
+        if(acc+d>=2*D&&i>1)break;
+        acc+=d; pk=i;
+        if(acc>=2*D)break;
       }
       let hx=null,hr=0,planesE=null;
       if(mode!=='ramp'&&n0[2]<=0.5&&Math.hypot(n0[0],n0[1])>0.05){
@@ -23417,7 +23546,13 @@ function* faoGenGeoFinishIt(mesh,o){
           else{const rv=pts0.slice().reverse();pts=c[0]>0?rv.slice(c[0]).concat(rv.slice(1,c[0])):rv;}
           const I=candLink(pts,n0);
           const ok=pathOK(from,I.pt);
-          const len=Math.hypot(I.pt.x-from.x,I.pt.y-from.y);
+          // 2026-10-13-003 : mesure vers le VRAI point d'attaque (hx ou début
+          // de chaîne) et non vers I.pt (pts[pk] ≈ 2D le long de la chaîne) —
+          // sur chaînes échantillonnées grossièrement pk tombe à l'opposé du
+          // début, la sélection inversait le sens et fabriquait des diagonales
+          // de 40 mm au lieu du saut de 6 mm entre passes voisines.
+          const axc=I.hx?I.hx.x:pts[0].x, ayc=I.hx?I.hx.y:pts[0].y;
+          const len=Math.hypot(axc-from.x,ayc-from.y);
           if(!best||((ok?0:1)<(best.ok?0:1))||(ok===best.ok&&len<best.len))
             best={pts:pts,ok:ok,len:len};
         }
@@ -23501,6 +23636,15 @@ function* faoGenGeoFinishIt(mesh,o){
           else{
             const H=Math.max(travel,Math.min(secu,Math.max(from.z,Z.zmax)+5));
             if(H>travel&&H<secu&&pathOKh(from,{x:ax,y:ay},H))lz=H;
+            else{
+              // 2026-10-13-003 : 2e échelon au Zmax GLOBAL — segsFor lit le
+              // maillage entier : les pics d'une autre zone rendent la colonne
+              // de H1 non vide et le segment droit échoue → secu inutile. Au-
+              // dessus de tout le maillage la colonne est vide (validation
+              // toujours OK) → vol à zmax+5 au lieu de secu.
+              const H2=Math.max(travel,Math.min(secu,Math.max(from.z,zmax)+5));
+              if(H2>travel&&H2<secu&&H2!==H&&pathOKh(from,{x:ax,y:ay},H2))lz=H2;
+            }
           }
           if(Math.abs(from.z-lz)>1e-9)moves.push({r:1,x:from.x,y:from.y,z:lz});
           moves.push({r:1,x:ax,y:ay,z:lz});
@@ -23550,6 +23694,12 @@ function* faoGenGeoFinishIt(mesh,o){
           else{
             const H=Math.max(travel,Math.min(secu,Math.max(from.z,Z.zmax)+5));
             if(H>travel&&H<secu&&pathOKh(from,{x:ax,y:ay},H))liftZ=H;
+            else{
+              // 2026-10-13-003 : 2e échelon au Zmax GLOBAL (voir liaison
+              // inter-zones) — colonne vide au-dessus de tout le maillage.
+              const H2=Math.max(travel,Math.min(secu,Math.max(from.z,zmax)+5));
+              if(H2>travel&&H2<secu&&H2!==H&&pathOKh(from,{x:ax,y:ay},H2))liftZ=H2;
+            }
           }
           if(Math.abs(from.z-liftZ)>1e-9)moves.push({r:1,x:from.x,y:from.y,z:liftZ});
           moves.push({r:1,x:ax,y:ay,z:liftZ});
@@ -23591,15 +23741,17 @@ function* faoGenGeoFinishIt(mesh,o){
         const hel=faoHelixEntry(hx.x,hx.y,hStart,here.z,hr,D);
         for(let i=1;i<hel.length;i++)moves.push(hel[i]);
         moves.push({r:0,x:here.x,y:here.y,z:here.z});
-      }else if(linkSpline){
+      }else if(linkSpline&&startZ<=here.z+1e-9){
         // 2026-10-12-002 : la spline de liaison a déposé la fraise EXACTEMENT
         // au début de chaîne, à la cote de coupe — la chaîne part directement
         // (pas de rampe, pas de diagonale air).
-      }else if(pk<1){
+      }else if(pk<1||linkSpline){
         // 2026-10-08-006 : JAMAIS de plongée à plat sur le début de chaîne
         // (fraise à cheval sur le mur) — RAMPE le long du 1er tronçon : la
         // fraise descend EN SE DÉPLAÇANT sur la chaîne (centre légal
         // préservé ; aucune orbite possible sans surcoupe du mur).
+        // 2026-10-13-003 : aussi l'atterrissage de la spline PLATE (startZ =
+        // travel > here.z) — descente répartie le long du 1er tronçon.
         ramp0=true;
       }else{
         // Rampe : diagonale en AIR au-dessus du tracé (pk -> début), z au
@@ -25711,7 +25863,7 @@ window.addEventListener('pointerdown',e=>{if(!$('ctxMenu').contains(e.target))hi
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.8';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.9';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);

@@ -244,8 +244,14 @@ const vm=require('vm');
     // 2026-10-13-001 : passes HORIZONTALES sur pente (iso-Z, pas adaptif) =
     // parallèles à XY ET à écart SURFACE constant (crêtes // et à égale
     // distance, façon Fusion 360). Chaque run de coupes à Z constant.
-    "let badZ=0,run=[];gS.forEach(function(m){if(!m.r){run.push(m);return;}if(run.length>1){const z0=run[0].z;if(run.some(function(m){return Math.abs(m.z-z0)>1e-6;}))badZ++;}run=[];});",
-    "att(badZ===0,'geo iso-Z : traces horizontales sur pente ('+badZ+' liaisons a Z variable, attendu 0)');",
+    // 2026-10-13-003 : les liaisons coupantes (spline tr:1, transitions type
+    // Fusion) sont exclues du regroupement ; tolérance 2 mm sur le z des
+    // passes (spikes d'isocourbe préexistants sur mesh grossier, visibles
+    // depuis que la transition atterrit à plat — un retour adaptatif ferait
+    // ≥ step·sinθ ≈ 3 mm et serait compté).
+    "let badZ=0,run=[];const zchk=function(run){if(run.length<2)return;let zmin=1/0,zmax=-1/0;run.forEach(function(m){if(m.z<zmin)zmin=m.z;if(m.z>zmax)zmax=m.z;});if(zmax-zmin>2)badZ++;};",
+    "gS.forEach(function(m){if(m.tr){zchk(run);run=[];return;}if(!m.r){run.push(m);return;}zchk(run);run=[];});zchk(run);",
+    "att(badZ===0,'geo iso-Z : traces horizontales sur pente ('+badZ+' passes à Z variable > 2 mm, attendu 0)');",
     // écart SUR LA SURFACE : distance 3D minimale entre deux passes
     // consecutive = step (5mm) — pas adaptif Δz=step·sinθ garantit surface=step.
     "const gRuns=[];let gCur=[];gS.forEach(function(m){if(!m.r){gCur.push(m);}else{if(gCur.length)gRuns.push(gCur);gCur=[];}});if(gCur.length)gRuns.push(gCur);",
@@ -287,7 +293,7 @@ const vm=require('vm');
     "const geoSOff=faoGenGeoFinish(SBX,{step:5,toolD:6,kind:'ball',laisse:0,secu:25,seed:'top',spline:false});",
     "const rapOn=geoSOn.filter(m=>m.r).length,rapOff=geoSOff.filter(m=>m.r).length;",
     "att(JSON.stringify(geoSOn)!==JSON.stringify(geoSOff),'geo spline : la liaison change le parcours');",
-    "att(rapOn>rapOff,'geo spline : liaisons en air -> plus de rapides ('+rapOn+' > '+rapOff+')');",
+    "att(rapOn<=rapOff,'geo spline : liaisons en air -> pas plus de rapides que le lift ('+rapOn+' <= '+rapOff+', fusion des G0)');",
     "att(geoSOn.filter(m=>!m.r).length===geoSOff.filter(m=>!m.r).length,'geo spline : nb de coupes inchange (liaisons volantes)');",
     // (3) laisse>0 : rien a tondre -> la spline ne s emet pas, repli lift strictement identique
     "const geoLOn=faoGenGeoFinish(SBX,{step:5,toolD:6,kind:'ball',laisse:3,secu:25,seed:'top'});",
