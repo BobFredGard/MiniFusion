@@ -10567,6 +10567,20 @@ function* faoGenGeoFinishIt(mesh,o){
       chs=keep;
     }
     if(!chs.length)return false;
+    // 2026-10-13-005 : rejet des chaînes DÉGÉNÉRÉES (longueur nulle ou quasi —
+    // artefacts d'iso au ras des sommets sur maillage régulier) : sans ce
+    // filtre chaque fragment zéro devient une zone à 1 segment, reliée par un
+    // rapide parasite (29 rapides au plateau pour 3 vraies boucles concentriques).
+    {
+      const keep=[],keepL=[];
+      const seuilDeg=Math.max(1e-6,step*0.05);
+      for(let ci=0;ci<chs.length;ci++){
+        if((chs.lens[ci]||0)>=seuilDeg){keep.push(chs[ci]);keepL.push(chs.lens[ci]);}
+      }
+      keep.lens=keepL;
+      chs=keep;
+    }
+    if(!chs.length)return false;
     if(!coherent(chs))return false;
     addLevel(chs);
     covMark(chs);
@@ -11156,7 +11170,12 @@ function* faoGenGeoFinishIt(mesh,o){
           const lA=Math.hypot(rsx,rsy)||1;
           const TA=circ.cw?{x:rsy/lA,y:-rsx/lA,z:0}:{x:-rsy/lA,y:rsx/lA,z:0};
           startZs=splineEmit(from,circ.sx,circ.sy,here.z,T0,l0,TA,l1||lA);
-        }else if(!hx){
+        }else{
+          // 2026-10-13-005 : LIGNE DROITE / SPLINE TOUJOURS essayées, même
+          // quand hx est défini (demande « sans remontées en Z » sur les
+          // pentes) — la condition !hx sautait le lien et forçait le lift à
+          // chaque transition de niveau iso-Z. hx ne sert plus qu'au repli
+          // hélice (descente d'air) si les deux échecs.
           startZs=straightEmit(from,here.x,here.y,here.z);
           if(startZs===null)startZs=splineEmit(from,here.x,here.y,here.z,T0,l0,T1,l1);
         }
@@ -11217,7 +11236,9 @@ function* faoGenGeoFinishIt(mesh,o){
           const lA=Math.hypot(rsx,rsy)||1;
           const TA=circ.cw?{x:rsy/lA,y:-rsx/lA,z:0}:{x:-rsy/lA,y:rsx/lA,z:0};
           startZs=splineEmit(from,circ.sx,circ.sy,here.z,T0,l0,TA,l1||lA);
-        }else if(!hx){
+        }else{
+          // 2026-10-13-005 : idem liaison inter-zones — ligne droite /
+          // spline même quand hx est défini (suppression du lift forcé).
           startZs=straightEmit(from,here.x,here.y,here.z);
           if(startZs===null)startZs=splineEmit(from,here.x,here.y,here.z,T0,l0,T1,l1);
         }
@@ -11270,19 +11291,13 @@ function* faoGenGeoFinishIt(mesh,o){
         moves.push({r:0,ent:1,x:here.x,y:here.y,z:here.z,
           arc:{i:circ.cx-circ.sx,j:circ.cy-circ.sy,cw:circ.cw}});
         skip0=true;
-      }else if(hx){
-        // Hélice : descente d'air jusqu'au spot, spirale, G1 au début de chaîne.
-        const spot=faoHelixSpot(mesh,hx.x,hx.y,hr,R,here.z,zmax,planesE);
-        const hStart=Math.min(startZ,spot);
-        if(Math.abs(startZ-hStart)>1e-9)moves.push({r:0,x:hx.x,y:hx.y,z:hStart});
-        const hel=faoHelixEntry(hx.x,hx.y,hStart,here.z,hr,D);
-        for(let i=1;i<hel.length;i++)moves.push(hel[i]);
-        moves.push({r:0,x:here.x,y:here.y,z:here.z});
       }else if(linkSpline&&startZ<=here.z+1e-9){
-        // 2026-10-12-002 : la spline de liaison a déposé la fraise EXACTEMENT
-        // au début de chaîne, à la cote de coupe — la chaîne part directement
-        // (pas de rampe, pas de diagonale air).
-      }else if(pk<1||linkSpline){
+        // 2026-10-12-002 : la spline/ligne droite de liaison a déposé la fraise
+        // EXACTEMENT au début de chaîne, à la cote de coupe — la chaîne part
+        // directement (pas de rampe, pas de diagonale air, pas d'hélice).
+        // 2026-10-13-005 : AVANT le test hx — sinon l'hélice s'exécutait même
+        // quand la liaison avait déjà atterri (lift forcé sur pentes).
+      }else if(linkSpline||pk<1){
         // 2026-10-08-006 : JAMAIS de plongée à plat sur le début de chaîne
         // (fraise à cheval sur le mur) — RAMPE le long du 1er tronçon : la
         // fraise descend EN SE DÉPLAÇANT sur la chaîne (centre légal
@@ -11290,6 +11305,15 @@ function* faoGenGeoFinishIt(mesh,o){
         // 2026-10-13-003 : aussi l'atterrissage de la spline PLATE (startZ =
         // travel > here.z) — descente répartie le long du 1er tronçon.
         ramp0=true;
+      }else if(hx){
+        // Hélice : descente d'air jusqu'au spot, spirale, G1 au début de chaîne.
+        // Seulement si AUCUNE liaison (straight/spline) n'a réussi — repli.
+        const spot=faoHelixSpot(mesh,hx.x,hx.y,hr,R,here.z,zmax,planesE);
+        const hStart=Math.min(startZ,spot);
+        if(Math.abs(startZ-hStart)>1e-9)moves.push({r:0,x:hx.x,y:hx.y,z:hStart});
+        const hel=faoHelixEntry(hx.x,hx.y,hStart,here.z,hr,D);
+        for(let i=1;i<hel.length;i++)moves.push(hel[i]);
+        moves.push({r:0,x:here.x,y:here.y,z:here.z});
       }else{
         // Rampe : diagonale en AIR au-dessus du tracé (pk -> début), z au
         // moins égale au contact local — rapide (aucune coupe) et sûre.
