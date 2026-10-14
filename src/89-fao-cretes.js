@@ -737,6 +737,7 @@ function* faoGenScallopIt(mesh,o){
   // --- 4. anneaux par front -------------------------------------------------
   const margin=step*0.5;
   const covered=new Array(fronts.length).fill(-1); // niveau couvert (mm)
+  let FsRest=null; // champs des restes (d_k − couvert_k), pour les pointes
   const loops=[]; // {g groupe, lvl niveau, iso, pts:[points de contact], closed, rest?}
   const interp=function(F,pt){const fa=F[pt.a],fb=F[pt.b];
     if(!(fa<1/0)||!(fb<1/0))return 1/0;
@@ -825,7 +826,7 @@ function* faoGenScallopIt(mesh,o){
       });
       const isoList=Array.from(lv.values()).sort(function(a,b){return a.iso-b.iso;});
       // champs décalés (une copie par front) pour l'iso EXACTE du minimum
-      const Fs=fields.map(function(F,fi){const c=covered[fi]<0?0:covered[fi];
+      const Fs=FsRest=fields.map(function(F,fi){const c=covered[fi]<0?0:covered[fi];
         const G=new Float64Array(nv);for(let i=0;i<nv;i++)G[i]=F[i]-c;return G;});
       // index : le min exact dans un triangle est dans [min des nœuds de dL,
       // min_k max des nœuds de F_k] (il peut DÉPASSER les valeurs aux nœuds)
@@ -853,7 +854,7 @@ function* faoGenScallopIt(mesh,o){
           if(!c.closed||lenOf(c.pts)<Math.max(4*step,2))return;
           const z=compOf(c.pts);
           if(z>=0&&!it.zones.has(z))return;
-          loops.push({g:fronts.length+(z>=0?z:Mx.length),lvl:it.m,iso:it.iso,pts:c.pts,closed:true,rest:1});
+          loops.push({g:fronts.length+(z>=0?z:Mx.length),lvl:it.m,iso:it.iso,dl:it.iso/it.m,pts:c.pts,closed:true,rest:1});
           diag.rest++;
         });
         if(q%6===5)yield moves;
@@ -952,13 +953,85 @@ function* faoGenScallopIt(mesh,o){
     out.push({x:out[0].x,y:out[0].y,z:out[0].z});
     return out;
   };
+  // POINTES des restes (façon Fusion : « finir plus pointu »). Une lentille
+  // se termine en coin aigu entre deux fronts ; l'offset intérieur d'un coin
+  // de demi-angle α recule de Δ/sin α — la boucle n'atteint pas la pointe et
+  // laisse un triangle non fini (écart > pas/2 au-delà de pas/(2 sin α)). À
+  // chaque coin de la boucle, l'outil file le long de la CRÊTE du champ de
+  // reste (ligne de partage, max transverse de d_L) jusqu'à d_L = iso − Δ/2
+  // (zone déjà à moins de Δ/2 de la passe extérieure), puis revient : aller-
+  // retour pointu, Z = descente outil (jamais de surcoupe).
+  const fAt=function(A,x,y){
+    const fx=(x-bx0)/g,fy=(y-by0)/g,i=Math.floor(fx),j=Math.floor(fy);
+    if(i<0||j<0||i>=nx-1||j>=ny-1)return 1/0;
+    const u=fx-i,v=fy-j,a=A[j*nx+i],b=A[j*nx+i+1],c=A[(j+1)*nx+i],d=A[(j+1)*nx+i+1];
+    if(((i+j)&1)===0)return u>=v?a+u*(b-a)+v*(d-b):a+v*(c-a)+u*(d-c);
+    return u+v<=1?a+u*(b-a)+v*(c-a):d+(1-u)*(c-d)+(1-v)*(b-d);
+  };
+  const dLAt=function(x,y){
+    if(zoneAt&&!zoneAt(x,y))return -1/0;
+    const k=Math.round((y-by0)/g)*nx+Math.round((x-bx0)/g);
+    if(!(k>=0&&k<nv)||!inside[k])return -1/0;
+    let m=1/0;for(let q=0;q<FsRest.length;q++){const v=fAt(FsRest[q],x,y);if(v<m)m=v;}
+    return m;
+  };
+  const spikes=function(P,lp){
+    const n=P.length-1;
+    if(!FsRest||n<12)return P;
+    let Lp=0;for(let i=1;i<=n;i++)Lp+=Math.hypot(P[i].x-P[i-1].x,P[i].y-P[i-1].y);
+    const w=Math.max(2,Math.round(1/(Lp/n)));
+    const at=function(i){return P[((i%n)+n)%n];};
+    const turn=new Float64Array(n);
+    for(let i=0;i<n;i++){const a=at(i-w),b=at(i),c=at(i+w);
+      const ux=b.x-a.x,uy=b.y-a.y,vx=c.x-b.x,vy=c.y-b.y;
+      const lu=Math.hypot(ux,uy),lv=Math.hypot(vx,vy);
+      turn[i]=lu>1e-9&&lv>1e-9?Math.acos(Math.max(-1,Math.min(1,(ux*vx+uy*vy)/(lu*lv)))):0;}
+    const target=lp.iso-lp.dl*0.5,hs=Math.min(0.15,g*0.5),maxL=Math.max(6,lp.dl*12);
+    const ins=new Map();
+    for(let i=0;i<n;i++){
+      if(turn[i]<1.5)continue; // coin < ~86° de déviation : boucle arrondie, pas une pointe
+      let mx=true;for(let q=-w;q<=w;q++)if(q&&turn[((i+q)%n+n)%n]>turn[i]){mx=false;break;}
+      if(!mx)continue;
+      const a=at(i-w),b=at(i),c=at(i+w);
+      const l1=Math.hypot(b.x-a.x,b.y-a.y),l2=Math.hypot(c.x-b.x,c.y-b.y);
+      let ux=(b.x-a.x)/l1-(c.x-b.x)/l2,uy=(b.y-a.y)/l1-(c.y-b.y)/l2;
+      const lu=Math.hypot(ux,uy);if(!(lu>1e-9))continue;ux/=lu;uy/=lu;
+      let X=b.x,Y=b.y,cur=dLAt(X,Y);
+      if(!(cur>target))continue;
+      const out=[];let len=0;
+      while(len<maxL){
+        const nxx=-uy,nyy=ux;let bv=-1/0,bx=0,by=0;
+        for(let q=-2;q<=2;q++){const x=X+ux*hs+nxx*q*hs*0.6,y=Y+uy*hs+nyy*q*hs*0.6;
+          const v=dLAt(x,y);if(v>bv){bv=v;bx=x;by=y;}}
+        if(!(bv>-1/0)||bv>cur+0.02)break; // hors zone, ou la crête remonte
+        const dx=bx-X,dy=by-Y,dl=Math.hypot(dx,dy);
+        ux=0.6*ux+0.4*dx/dl;uy=0.6*uy+0.4*dy/dl;const l3=Math.hypot(ux,uy);ux/=l3;uy/=l3;
+        X=bx;Y=by;cur=bv;len+=dl;
+        out.push([X,Y]);
+        if(cur<=target)break;
+      }
+      if(len<Math.max(0.3,lp.dl*0.5))continue;
+      // aller-retour : points tous les ~0,4 mm, Z descente outil
+      const sp=[];
+      for(let q=2;q<out.length;q+=3)sp.push(out[q]);
+      if(sp[sp.length-1]!==out[out.length-1])sp.push(out[out.length-1]);
+      const go=sp.map(function(p){let z=zAt(p[0],p[1]);if(!(z>-1/0))z=b.z;return {x:p[0],y:p[1],z:z};});
+      ins.set(i,go.concat(go.slice(0,-1).reverse()).concat([{x:b.x,y:b.y,z:b.z}]));
+      diag.tips=(diag.tips||0)+1;
+    }
+    if(!ins.size)return P;
+    const R=[];
+    for(let i=0;i<=n;i++){R.push(P[i]);const sp=i<n?ins.get(i):null;if(sp)for(let q=0;q<sp.length;q++)R.push(sp[q]);}
+    return R;
+  };
   loops.forEach(function(lp){
     let P=lp.pts.map(toolPt);
     // boucle fermée : dernier = premier exactement, puis lissage (sauf boucle
     // qui longe une falaise : sa position est imposée par la paroi)
     if(lp.closed){P[P.length-1]={x:P[0].x,y:P[0].y,z:P[0].z};
       let cl=false;for(let i=0;i<P.length;i++)if(P[i].cliff){cl=true;break;}
-      if(!cl)P=smoothLoop(P);}
+      if(!cl)P=smoothLoop(P);
+      if(lp.rest)P=spikes(P,lp);}
     // sous-échantillonnage de sécurité : segments ≤ 2 mm (Z suit la descente)
     const Q=[P[0]];
     for(let i=1;i<P.length;i++){
@@ -1079,6 +1152,126 @@ function* faoGenScallopIt(mesh,o){
       const z=drop.tip(x,y);if(z>zm)zm=z;}
     return Math.max(zm+1,Math.min(secu,zm+5));
   };
+  // GLISSEMENT au contact (2026-10-14-003, demande : « des glissements entre
+  // traces plutôt que des remontées et nouvelles entrées ») : d'une fin de
+  // séquence au départ de la suivante, l'outil reste sur la surface outil —
+  // chemin le plus court DANS la région (A* 8-connexe sur la grille, coût =
+  // longueur 3D), tendu (raccourcis tant que le segment reste dans la
+  // région), raccords tangents aux deux boucles, Z = descente outil (aucune
+  // surcoupe, quel que soit le tracé XY). Au-delà de stayMax (longueur du
+  // glissement), retour à sortie + saut local + entrée.
+  const stayMax=isFinite(+o.stayMax)&&+o.stayMax>=0?+o.stayMax:100;
+  const nodeNear=function(x,y){
+    const i0=Math.round((x-bx0)/g),j0=Math.round((y-by0)/g);
+    let best=-1,bd=1/0;
+    for(let r=0;r<=3&&best<0;r++)for(let j=j0-r;j<=j0+r;j++)for(let i=i0-r;i<=i0+r;i++){
+      if(i<0||j<0||i>=nx||j>=ny)continue;const k=j*nx+i;if(!inside[k])continue;
+      const d=(V[k][0]-x)*(V[k][0]-x)+(V[k][1]-y)*(V[k][1]-y);if(d<bd){bd=d;best=k;}}
+    return best;
+  };
+  const inReg=function(x,y){
+    const i=Math.round((x-bx0)/g),j=Math.round((y-by0)/g);
+    if(i<0||j<0||i>=nx||j>=ny||!inside[j*nx+i])return false;
+    return !zoneAt||zoneAt(x,y);
+  };
+  const segIn=function(a,b){
+    const l=Math.hypot(b[0]-a[0],b[1]-a[1]),n=Math.max(1,Math.ceil(l/(g*0.5)));
+    for(let k=1;k<n;k++)if(!inReg(a[0]+(b[0]-a[0])*k/n,a[1]+(b[1]-a[1])*k/n))return false;
+    return true;
+  };
+  const NB8=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+  let aG=null,aF=null,aP=null,aStamp=null,aRun=0;
+  const astar=function(s0,s1,lim){
+    if(!aG){aG=new Float64Array(nv);aF=new Float64Array(nv);aP=new Int32Array(nv);aStamp=new Int32Array(nv);}
+    aRun++;
+    const tx=V[s1][0],ty=V[s1][1];
+    const H=[];// tas binaire de [f, k]
+    const hpush=function(fv,k){H.push([fv,k]);let i=H.length-1;
+      while(i>0){const p=(i-1)>>1;if(H[p][0]<=fv)break;const t=H[p];H[p]=H[i];H[i]=t;i=p;}};
+    const hpop=function(){const top=H[0],last=H.pop();
+      if(H.length){H[0]=last;let i=0;for(;;){const l=2*i+1,r=l+1;let m=i;
+        if(l<H.length&&H[l][0]<H[m][0])m=l;if(r<H.length&&H[r][0]<H[m][0])m=r;
+        if(m===i)break;const t=H[m];H[m]=H[i];H[i]=t;i=m;}}
+      return top;};
+    aStamp[s0]=aRun;aG[s0]=0;aP[s0]=-1;aF[s0]=0;
+    hpush(Math.hypot(V[s0][0]-tx,V[s0][1]-ty),s0);
+    let it=0;
+    while(H.length){
+      const e=hpop(),k=e[1];
+      if(aF[k]===1&&aStamp[k]===aRun)continue;
+      aF[k]=1;
+      if(k===s1){const path=[];for(let q=k;q>=0;q=aP[q])path.push(q);return path.reverse();}
+      if(e[0]>lim||++it>400000)return null;
+      const i=k%nx,j=(k-i)/nx,P=V[k];
+      for(let q=0;q<8;q++){const ii=i+NB8[q][0],jj=j+NB8[q][1];
+        if(ii<0||jj<0||ii>=nx||jj>=ny)continue;const w=jj*nx+ii;if(!inside[w])continue;
+        if(aStamp[w]===aRun&&aF[w]===1)continue;
+        const Q=V[w],gv=aG[k]+Math.hypot(Q[0]-P[0],Q[1]-P[1],Q[2]-P[2]);
+        if(aStamp[w]!==aRun){aStamp[w]=aRun;aF[w]=0;aG[w]=1/0;}
+        if(gv<aG[w]){aG[w]=gv;aP[w]=k;hpush(gv+Math.hypot(Q[0]-tx,Q[1]-ty),w);}}
+    }
+    return null;
+  };
+  // points 3D d'un tracé XY : pas 0,4 mm, Z = descente outil ; un segment
+  // dont le milieu passe sous la surface est recoupé (falaise : montée
+  // quasi verticale, jamais de corde dans la matière)
+  const surfPts=function(xy,z0,z1){
+    const out=[];
+    const zOf=function(x,y,zf){let z=drop.tip(x,y);return z>-1/0?z:zf;};
+    const seg=function(a,b,dep){
+      const mx=(a.x+b.x)/2,my=(a.y+b.y)/2,zm=zOf(mx,my,(a.z+b.z)/2);
+      let over=zm>(a.z+b.z)/2+0.002;
+      for(let q=1;q<4&&!over;q+=2){const t=q/4;
+        if(zOf(a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t,a.z)>a.z+(b.z-a.z)*t+0.002)over=true;}
+      if(over){
+        if(dep<5){const m={x:mx,y:my,z:zm};seg(a,m,dep+1);seg(m,b,dep+1);return;}
+        if(b.z>a.z)out.push({x:a.x,y:a.y,z:Math.max(b.z,zm)});
+        else out.push({x:b.x,y:b.y,z:Math.max(a.z,zm)});
+      }
+      out.push(b);
+    };
+    let prev={x:xy[0][0],y:xy[0][1],z:z0};
+    for(let i=1;i<xy.length;i++){
+      const a=xy[i-1],b=xy[i],l=Math.hypot(b[0]-a[0],b[1]-a[1]),n=Math.max(1,Math.ceil(l/0.4));
+      for(let k=1;k<=n;k++){const x=a[0]+(b[0]-a[0])*k/n,y=a[1]+(b[1]-a[1])*k/n;
+        const last=(i===xy.length-1&&k===n);
+        const p={x:x,y:y,z:last?z1:zOf(x,y,prev.z)};
+        seg(prev,p,0);prev=p;}
+    }
+    return out;
+  };
+  const slide=function(A,TA,B,TB){
+    if(!(stayMax>0))return null;
+    const dAB=Math.hypot(B.x-A.x,B.y-A.y);
+    if(dAB>stayMax)return null;
+    let xy;
+    if(segIn([A.x,A.y],[B.x,B.y]))xy=[[A.x,A.y],[B.x,B.y]];
+    else{
+      const s0=nodeNear(A.x,A.y),s1=nodeNear(B.x,B.y);
+      if(s0<0||s1<0)return null;
+      const path=astar(s0,s1,stayMax);
+      if(!path)return null;
+      const raw=[[A.x,A.y]];for(let q=0;q<path.length;q++)raw.push([V[path[q]][0],V[path[q]][1]]);raw.push([B.x,B.y]);
+      // tension : raccourci vers le point le plus lointain visible
+      xy=[raw[0]];let i=0;
+      while(i<raw.length-1){let j=Math.min(raw.length-1,i+60);
+        while(j>i+1&&!segIn(raw[i],raw[j]))j--;
+        xy.push(raw[j]);i=j;}
+    }
+    // longueur (XY) bornée
+    let L=0;for(let q=1;q<xy.length;q++)L+=Math.hypot(xy[q][0]-xy[q-1][0],xy[q][1]-xy[q-1][1]);
+    if(L>stayMax)return null;
+    // raccords tangents (Hermite XY) aux deux bouts quand ils restent dans la région
+    if(xy.length===2){
+      const k0=Math.min(dAB*0.8,6);
+      const lt0=Math.hypot(TA.x,TA.y)||1,lt1=Math.hypot(TB.x,TB.y)||1;
+      const sp=faoSplinePts({x:A.x,y:A.y,z:0},{x:TA.x/lt0*k0,y:TA.y/lt0*k0,z:0},{x:B.x,y:B.y,z:0},{x:TB.x/lt1*k0,y:TB.y/lt1*k0,z:0},Math.max(2,Math.ceil(dAB/0.4)));
+      const xs=sp.map(function(p){return [p.x,p.y];});
+      let ok=true;for(let q=1;q<xs.length&&ok;q++)if(!inReg(xs[q][0],xs[q][1]))ok=false;
+      if(ok)xy=xs;
+    }
+    return surfPts(xy,A.z,B.z);
+  };
   const emitLoop=function(tp){
     for(let i=1;i<tp.length;i++)push({r:0,x:tp[i].x,y:tp[i].y,z:tp[i].z});
   };
@@ -1126,22 +1319,29 @@ function* faoGenScallopIt(mesh,o){
     const S=tp[0];
     const TS=tangentAt(tp,0);
     const lin=leadIn(S,TS);
-    if(first){
-      push({r:1,x:lin[0].x,y:lin[0].y,z:secu});
-      first=false;
+    const sl=first?null:slide(cur,curT,S,TS);
+    if(sl){
+      for(let k=0;k<sl.length;k++)push({r:0,tr:1,x:sl[k].x,y:sl[k].y,z:sl[k].z});
+      diag.slides=(diag.slides||0)+1;
     }else{
-      // sortie de la séquence précédente puis saut local
-      const lo=leadOut(cur,curT);
-      lo.forEach(function(p){push({r:0,ent:1,x:p.x,y:p.y,z:p.z});});
-      const E=lo[lo.length-1];
-      const H=hopZ(E,lin[0]);
-      if(H>E.z+1e-9)push({r:1,x:E.x,y:E.y,z:H});
-      push({r:1,x:lin[0].x,y:lin[0].y,z:H});
+      if(first){
+        push({r:1,x:lin[0].x,y:lin[0].y,z:secu});
+        first=false;
+      }else{
+        // sortie de la séquence précédente puis saut local
+        const lo=leadOut(cur,curT);
+        lo.forEach(function(p){push({r:0,ent:1,x:p.x,y:p.y,z:p.z});});
+        const E=lo[lo.length-1];
+        const H=hopZ(E,lin[0]);
+        if(H>E.z+1e-9)push({r:1,x:E.x,y:E.y,z:H});
+        push({r:1,x:lin[0].x,y:lin[0].y,z:H});
+        diag.lifts=(diag.lifts||0)+1;
+      }
+      // descente rapide jusqu'au-dessus de l'arc d'entrée (0,5 mm), puis arc
+      const zA=lin[0].z;
+      push({r:1,x:lin[0].x,y:lin[0].y,z:zA+0.5});
+      for(let k=0;k<lin.length;k++)push({r:0,ent:1,x:lin[k].x,y:lin[k].y,z:lin[k].z});
     }
-    // descente rapide jusqu'au-dessus de l'arc d'entrée (0,5 mm), puis arc
-    const zA=lin[0].z;
-    push({r:1,x:lin[0].x,y:lin[0].y,z:zA+0.5});
-    for(let k=0;k<lin.length;k++)push({r:0,ent:1,x:lin[k].x,y:lin[k].y,z:lin[k].z});
     emitLoop(tp);
     cur=tp[tp.length-1];curT=tangentAt(tp,tp.length-1);
     seqCount++;
@@ -1166,11 +1366,8 @@ function* faoGenScallopIt(mesh,o){
       const P0={x:cur.x,y:cur.y,z:cur.z},P1={x:S2.x,y:S2.y,z:S2.z};
       const lt0=Math.hypot(curT.x,curT.y)||1,lt1=Math.hypot(T2.x,T2.y)||1;
       const sp=faoSplinePts(P0,{x:curT.x/lt0*k0,y:curT.y/lt0*k0,z:0},P1,{x:T2.x/lt1*k0,y:T2.y/lt1*k0,z:0},Math.ceil(chord/0.4));
-      for(let k=1;k<sp.length;k++){
-        const s=sp[k];
-        const z=k===sp.length-1?S2.z:dropZ(s.x,s.y,Math.min(P0.z,P1.z)-50);
-        push({r:0,tr:1,x:s.x,y:s.y,z:z});
-      }
+      const sz=surfPts(sp.map(function(s){return [s.x,s.y];}),P0.z,S2.z);
+      for(let k=0;k<sz.length;k++)push({r:0,tr:1,x:sz[k].x,y:sz[k].y,z:sz[k].z});
       emitLoop(tr);
       cur=tr[tr.length-1];curT=tangentAt(tr,tr.length-1);
       lp=nx;

@@ -104,14 +104,15 @@ const vm=require('vm');
     "att(dA.length&&dB.length&&dN.length,'dispatch : trois parcours generes ('+dA.length+'/'+dB.length+'/'+dN.length+')');",
     "att(J(dA)!==J(dB),'dispatch : avalant DIFFERENT de bidir');",
     "att(J(dN)===J(dB),'dispatch ancien doc : sans champ == bidir (byte-identique)');",
-    // ================= 6. geofinish 2026-10-13-007 (retro-ingenierie cav.txt)
-    // Sens oppose alterne quand le champ est absent (absent == bidir) ;
-    // 'avalant' = proximite sans alternance (parcours DIFFERENT).
+    // ================= 6. geofinish — 2026-10-14-003 : Iso-Z supprimé, le sens
+    // se teste sur Crêtes constantes : absent == avalant (sens unique),
+    // 'bidir' alterne d'un anneau à l'autre (parcours DIFFERENT).
     "const GX={v:[[0,0,0],[20,0,0],[20,20,0],[0,20,0],[0,0,10],[20,0,10],[20,20,10],[0,20,10]],t:[[0,2,1],[0,3,2],[4,5,6],[4,6,7],[0,1,5],[0,5,4],[2,3,7],[2,7,6],[0,4,7],[0,7,3],[1,2,6],[1,6,5]]};",
-    "const gX0=faoGenGeoFinish(GX,{step:5,toolD:6,kind:'ball',laisse:0,secu:25,seed:'top'});",
-    "const gXB=faoGenGeoFinish(GX,{step:5,toolD:6,kind:'ball',laisse:0,secu:25,seed:'top',sens:'bidir'});",
-    "att(J(gX0)===J(gXB),'geofinish : sans champ == bidir (sens oppose par defaut)');",
-    "const gXA=faoGenGeoFinish(GX,{step:5,toolD:6,kind:'ball',laisse:0,secu:25,seed:'top',sens:'avalant'});",
+    "const gxZ=function(x,y){return x>=1&&x<=19&&y>=1&&y<=19;};",
+    "const gX0=faoGenScallop(GX,{step:1,toolD:6,kind:'ball',laisse:0,secu:25,zoneAt:gxZ});",
+    "const gXA=faoGenScallop(GX,{step:1,toolD:6,kind:'ball',laisse:0,secu:25,zoneAt:gxZ,sens:'avalant'});",
+    "att(gX0.length>50&&J(gX0)===J(gXA),'geofinish : sans champ == avalant (sens unique par defaut)');",
+    "const gXB=faoGenScallop(GX,{step:1,toolD:6,kind:'ball',laisse:0,secu:25,zoneAt:gxZ,sens:'bidir'});",
     "att(J(gXB)!==J(gXA),'geofinish : avalant DIFFERENT de bidir ('+gXB.length+' vs '+gXA.length+' moves)');",
     // 2026-10-14-001 : cav.txt relu anneau par anneau — Fusion garde le MEME
     // sens pour tous les anneaux d'un front : creation = Cretes constantes

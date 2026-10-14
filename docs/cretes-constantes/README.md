@@ -54,8 +54,17 @@ Tout se calcule sur la **surface outil** : la cote de la pointe obtenue par desc
    en XY, et la boucle de reste disparaissait. Les niveaux sont à m·Δ, avec Δ = Mx/(n+½) ≤ pas.
 6. **Positions outil** : XY du point d'iso, Z = descente outil exacte (sur une falaise, recul vers
    le bas de la maille), lissage gaussien XY.
-7. **Séquences** : groupe par groupe, une boucle n'est disponible que si ses « mères » sont faites ;
-   liaison en S au contact vers le niveau suivant, sinon arc de sortie, saut local, arc d'entrée.
+7. **Pointes des restes** (`2026-10-14-003`) : une lentille finit en coin aigu entre deux fronts. L'offset
+   intérieur d'un coin de demi-angle α recule de Δ/sin α : la boucle n'atteint pas la pointe et laisse un
+   triangle non fini. À chaque coin d'une boucle de reste, l'outil file le long de la **crête** du champ de
+   reste (maximum transverse de d_L) jusqu'à d_L = iso − Δ/2, puis revient : un aller-retour pointu, comme Fusion.
+8. **Séquences** : groupe par groupe, une boucle n'est disponible que si ses « mères » sont faites.
+   On passe au niveau suivant par une liaison en S au contact.
+9. **Glissements** (`2026-10-14-003`) : d'une séquence à la suivante, l'outil **reste au contact**.
+   Il prend le plus court chemin dans la région (A* 8-connexe sur la grille, coût = longueur 3D), tendu
+   par raccourcis visibles, avec des raccords tangents. Z = descente outil, et un segment dont un point
+   intermédiaire passerait sous la surface est recoupé. Au-delà de **Glissement max** (100 mm par défaut ;
+   0 = toujours remonter), l'outil revient à la sortie en arc, au saut local et à l'arc d'entrée.
 
 ## Résultat sur la cavité
 
@@ -73,7 +82,18 @@ Bord haut, à x = 0 (y/z du centre-pointe, en mm) :
 
 ![bord](overlay_bord.png)
 
-- 2 fronts, 24 + 24 anneaux, 32 boucles de reste ; environ 1,1 s en Node au pas de 1, 5,5 s au pas de 0,35.
+- 2 fronts, 24 + 24 anneaux, 32 boucles de reste, 51 pointes ; 22 séquences reliées par **21 glissements et
+  0 remontée** (au pas de 0,35 : 65 glissements, 0 remontée) ; environ 1,3 s en Node au pas de 1, 5,9 s au pas de 0,35.
+
+### Pointes des lentilles (pas 0,5)
+
+Au pied des bosses, les lentilles se terminent en pointe. Les boucles concentriques s'y arrêtaient avant le bout
+(triangles blancs). Elles finissent maintenant en aller-retour sur la crête :
+
+![pointes](pointes_pas05.png)
+
+Couverture au pas de 0,5 : 0,33 % → 0,13 % des points au-delà de 0,55 pas, et 0,17 % → 0,04 % au-delà de 0,75 pas.
+Au pas de 0,35 : 0,27 % → 0,08 % au-delà de 0,75 pas.
 
 ### Pas fin (0,35) : couverture
 

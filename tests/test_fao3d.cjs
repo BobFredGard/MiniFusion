@@ -1,6 +1,6 @@
-// FAO 3D : ébauche par tranches + finition iso-géodésique.
+// FAO 3D : ébauche par tranches + finition parallèle (Iso-Z supprimé 2026-10-14-003).
 // Maillages synthétiques (boîte 10³, sphère lat-long) : slice, scanline,
-// normales, Dijkstra, iso-courbes et génération rough3d/geofinish.
+// normales, iso-courbes et génération rough3d/geofinish.
 const {loadApp}=require('./appvm.cjs');
 const vm=require('vm');
 (async()=>{
@@ -131,19 +131,11 @@ const vm=require('vm');
     "let out=0;for(let i=0;i<SP.v.length;i++){const l=Math.hypot(SP.v[i][0],SP.v[i][1],SP.v[i][2])||1;",
     " if((SP.v[i][0]*sn[i][0]+SP.v[i][1]*sn[i][1]+SP.v[i][2]*sn[i][2])/l<0.9)out++;}",
     "att(out===0,'sphere : normales sortantes ('+out+' KO)');",
-    "const sd=faoDijkstra(SP,faoSeedTop(SP));",
-    "let dm=0;for(let i=0;i<sd.length;i++)if(sd[i]<1/0&&sd[i]>dm)dm=sd[i];",
-    "p('dmax sphere R10 : '+dm.toFixed(2)+' (attendu ~31.4)');",
-    "att(dm>25&&dm<33,'dmax dans [25,33]');",
-    // --- finition géodésique : anneaux au pas 5, centres à R+4
-    "const gm=faoGenGeoFinish(SP,{step:5,toolD:8,kind:'ball',laisse:0,secu:30,seed:'top'});",
+    // --- finition (2026-10-14-003 : Iso-Z supprimé, faoGenGeoFinish = profils
+    // PARALLÈLES) : passes sur la sphère, pointe outil jamais sous la surface
+    "const gm=faoGenGeoFinish(SP,{step:5,toolD:8,kind:'ball',laisse:0,secu:30});",
     "att(gm.length>20,'geofinish : '+gm.length+' moves');",
-    "const cuts=gm.filter(m=>!m.r);",
-    "const rr=cuts.map(m=>Math.hypot(m.x,m.y,m.z));",
-    "const rmoy=rr.reduce((a,b)=>a+b,0)/rr.length;",
-    "p('rayon moyen centres : '+rmoy.toFixed(2)+' (attendu ~14)');",
-    "att(rmoy>13&&rmoy<15,'centres outil à R+4');",
-    "att(cuts[0].z>5,'1er anneau près du sommet : z='+cuts[0].z.toFixed(1));",
+    "att(gm.filter(m=>!m.r).every(m=>Math.hypot(m.x,m.y,m.z+4)>=13.5),'geofinish sphère : centre outil hors matière (R+4)');",
     // --- hélice d'entrée sur sphère (équateur large, SP défini plus haut)
     "const mh=faoGenRough3D(SP,{x0:-12,y0:-12,x1:12,y1:12},20,0,{ap:10,ae:4,toolD:4,radial:0.5,axial:0,secu:30});",
     "att(mh.some(m=>!m.r&&m.z>10&&m.z<30),'sphere : descente entree 20->10');",
@@ -230,49 +222,27 @@ const vm=require('vm');
     // formes : offsets outil sur plan horizontal — 2026-10-13-006 : les points
     // chemin sont la POINTE outil (tip), plus le centre. Ball D8 sur plan z=30
     // -> coupe z=30 (la pointe touche la surface ; le centre serait à 34).
-    "const gB=faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top'});",
+    "const gB=faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'ball',laisse:0,secu:45});",
     "const zB=gB.filter(m=>!m.r).map(m=>m.z);",
     "att(zB.length>4&&Math.abs(Math.max.apply(null,zB)-30)<1e-6,'geo formes : ball D8 sur plan z=30 -> coupe z=30 (pointe), vu '+(zB.length?Math.max.apply(null,zB):'-'));",
-    "const gU=faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'bull',cornerR:1,laisse:0,secu:45,seed:'top'});",
+    "const gU=faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'bull',cornerR:1,laisse:0,secu:45});",
     "const zU=gU.filter(m=>!m.r).map(m=>m.z);",
     "att(zU.length>4&&Math.abs(Math.max.apply(null,zU)-30)<1e-6,'geo formes : bull coin1 sur plan -> coupe z=30 (pointe), vu '+(zU.length?Math.max.apply(null,zU):'-'));",
-    "const gF=faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'flat',laisse:0,secu:45,seed:'top'});",
+    "const gF=faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'flat',laisse:0,secu:45});",
     "const zF=gF.filter(m=>!m.r).map(m=>m.z);",
     "att(zF.length>4&&Math.abs(Math.max.apply(null,zF)-30)<1e-6,'geo formes : fraise droite sur plan -> coupe z=30, vu '+(zF.length?Math.max.apply(null,zF):'-'));",
-    // sens horizontal : passes iso-Z sur la rampe (chaque liaison reste a Z constant)
-    "const gS=faoGenGeoFinish(SL,{step:5,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top'});",
+    "const gS=faoGenGeoFinish(SL,{step:5,toolD:8,kind:'ball',laisse:0,secu:45});",
     "const cs=gS.filter(m=>!m.r);",
     "att(cs.length>6,'geo rampe : '+cs.length+' coupe outil');",
-    // 2026-10-13-001 : passes HORIZONTALES sur pente (iso-Z, pas adaptif) =
-    // parallèles à XY ET à écart SURFACE constant (crêtes // et à égale
-    // distance, façon Fusion 360). Chaque run de coupes à Z constant.
-    // 2026-10-13-003 : les liaisons coupantes (spline tr:1, transitions type
-    // Fusion) sont exclues du regroupement ; tolérance 2 mm sur le z des
-    // passes (spikes d'isocourbe préexistants sur mesh grossier, visibles
-    // depuis que la transition atterrit à plat — un retour adaptatif ferait
-    // ≥ step·sinθ ≈ 3 mm et serait compté).
-    "let badZ=0,run=[];const zchk=function(run){if(run.length<2)return;let zmin=1/0,zmax=-1/0;run.forEach(function(m){if(m.z<zmin)zmin=m.z;if(m.z>zmax)zmax=m.z;});if(zmax-zmin>2)badZ++;};",
-    "gS.forEach(function(m){if(m.tr){zchk(run);run=[];return;}if(!m.r){run.push(m);return;}zchk(run);run=[];});zchk(run);",
-    "att(badZ===0,'geo iso-Z : traces horizontales sur pente ('+badZ+' passes à Z variable > 2 mm, attendu 0)');",
-    // écart SUR LA SURFACE : distance 3D minimale entre deux passes
-    // consecutive = step (5mm) — pas adaptif Δz=step·sinθ garantit surface=step.
-    // 2026-10-13-007 : les transitions tr:1 (stitch spiral, spline) sont
-    // exclues des runs ET les séparent — on mesure l'écart entre passes de
-    // coupe pures, pas via les points de liaison qui touchent la passe
-    // suivante (best≈0 sinon).
-    "const gRuns=[];let gCur=[];gS.forEach(function(m){if(!m.r&&!m.tr){gCur.push(m);}else{if(gCur.length)gRuns.push(gCur);gCur=[];}});if(gCur.length)gRuns.push(gCur);",
-    "const gMid=[];for(let i=1;i<gRuns.length-1;i++){const a=gRuns[i],b=gRuns[i+1];let best=1/0;a.forEach(function(pa){b.forEach(function(pb){const d=Math.hypot(pa.x-pb.x,pa.y-pb.y,pa.z-pb.z);if(d<best)best=d;});});if(best<20)gMid.push(best);}",
-    "const gOk=gMid.filter(function(d){return Math.abs(d-5)<=0.6;}).length;",
-    "att(gMid.length>=4&&gOk>=gMid.length*0.6,'geo écart surface : '+gOk+'/'+gMid.length+' ecarts ~ 5mm');",
     // limites Z : ztop=12 -> aucune coupe au-dessus de 12+Rc
-    "const gL=faoGenGeoFinish(SL,{step:5,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top',ztop:12});",
+    "const gL=faoGenGeoFinish(SL,{step:5,toolD:8,kind:'ball',laisse:0,secu:45,ztop:12});",
     "const zL=gL.filter(m=>!m.r).map(m=>m.z);",
     "att(zL.length>0&&Math.max.apply(null,zL)<16,'geo limites Z : ztop=12 -> coupe max '+(zL.length?Math.max.apply(null,zL).toFixed(2):'-')+' < 16');",
     // garde-fou fraise droite : refusee sur non-horizontal, acceptee sur plan
     "att(faoGenGeoFinish(SL,{step:5,toolD:8,kind:'flat',laisse:0,secu:45}).length===0,'geo garde-fou : fraise droite refusee sur rampe');",
     "att(faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'flat',laisse:0,secu:45}).length>0,'geo garde-fou : fraise droite acceptee sur plan');",
     // --- dispatch via ops (maillage actif nul en VM -> [] sans planter)
-    "const j3=faoDefaultJob();j3.ops=[{id:'x',on:true,toolId:'T3',type:'geofinish',step:1,laisse:0,seed:'top'}];",
+    "const j3=faoDefaultJob();j3.ops=[{id:'x',on:true,toolId:'T3',type:'geofinish',step:1,laisse:0}];",
     "att(Array.isArray(faoOpMoves(j3.ops[0],j3)),'dispatch geofinish sans maillage : pas de plantage');",
     // --- 026 : géofinish 2026-10-12-002 — liaison par SPLINE TANGENTE (façon Fusion 360)
     // (1) unit : faoSplinePts respecte les points de départ/arrivée exacts, et les
@@ -295,8 +265,8 @@ const vm=require('vm');
     "  box(0,0,20,20,0,10);box(30,0,50,20,0,10);",
     "  return {v:V,t:T};",
     "})();",
-    "const geoSOn=faoGenGeoFinish(SBX,{step:5,toolD:6,kind:'ball',laisse:0,secu:25,seed:'top'});",
-    "const geoSOff=faoGenGeoFinish(SBX,{step:5,toolD:6,kind:'ball',laisse:0,secu:25,seed:'top',spline:false});",
+    "const geoSOn=faoGenGeoFinish(SBX,{step:5,toolD:6,kind:'ball',laisse:0,secu:25});",
+    "const geoSOff=faoGenGeoFinish(SBX,{step:5,toolD:6,kind:'ball',laisse:0,secu:25,spline:false});",
     "const rapOn=geoSOn.filter(m=>m.r).length,rapOff=geoSOff.filter(m=>m.r).length;",
     "att(JSON.stringify(geoSOn)!==JSON.stringify(geoSOff),'geo spline : la liaison change le parcours');",
     "att(rapOn<=rapOff,'geo spline : liaisons en air -> pas plus de rapides que le lift ('+rapOn+' <= '+rapOff+', fusion des G0)');",
@@ -306,13 +276,13 @@ const vm=require('vm');
     // r:0 bouge d'autant — mais les points de coupe émis sont inchangés.
     "att(geoSOn.filter(m=>!m.r&&!m.tr).length===geoSOff.filter(m=>!m.r&&!m.tr).length,'geo spline : coupe pure inchangee ('+geoSOn.filter(m=>!m.r&&!m.tr).length+' == '+geoSOff.filter(m=>!m.r&&!m.tr).length+', liaisons volantes)');",
     // (3) laisse>0 : rien a tondre -> la spline ne s emet pas, repli lift strictement identique
-    "const geoLOn=faoGenGeoFinish(SBX,{step:5,toolD:6,kind:'ball',laisse:3,secu:25,seed:'top'});",
-    "const geoLOff=faoGenGeoFinish(SBX,{step:5,toolD:6,kind:'ball',laisse:3,secu:25,seed:'top',spline:false});",
+    "const geoLOn=faoGenGeoFinish(SBX,{step:5,toolD:6,kind:'ball',laisse:3,secu:25});",
+    "const geoLOff=faoGenGeoFinish(SBX,{step:5,toolD:6,kind:'ball',laisse:3,secu:25,spline:false});",
     "att(JSON.stringify(geoLOn)===JSON.stringify(geoLOff),'geo spline : laisse>0 -> liaison lift inchangee');",
     // (4) PLN (zones mono-chaîne) : la spline INTER-ZONES (2026-10-13-001)
     // relie maintenant les zones même mono-chaîne -> parcours différent.
-    "const geoPnOn=faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top'});",
-    "const geoPnOff=faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top',spline:false});",
+    "const geoPnOn=faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'ball',laisse:0,secu:45});",
+    "const geoPnOff=faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'ball',laisse:0,secu:45,spline:false});",
     "att(JSON.stringify(geoPnOn)!==JSON.stringify(geoPnOff),'geo spline : zone mono-chaîne -> liaison inter-zones active');",
     // --- 2026-10-13-001 : remontées COURTES + arc VERTICAL d'entrée
     // (a) spline:false sur PLN : le repli ne monte plus à secu — 2 rapides
@@ -333,7 +303,7 @@ const vm=require('vm');
     // (c) arc VERTICAL d'entrée (varc) : avec ébauche avant + entrée circ,
     //     chaque entrée = quart de cercle en PLAN VERTICAL (G1 bleus ent,
     //     Δz>0) — plus aucun arc XY ({i,j,cw}) en entrée.
-    "const geoV=faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top',entry:'circ',hasRrough:true});",
+    "const geoV=faoGenGeoFinish(PLN,{step:6,toolD:8,kind:'ball',laisse:0,secu:45,entry:'circ',hasRrough:true});",
     "const vE=geoV.filter(m=>!m.r&&m.ent===1);",
     "att(vE.length>=8,'geo arc vertical : '+vE.length+' points d entree ent (quart de cercle attendu)');",
     "const vZmin=Math.min.apply(null,vE.map(m=>m.z)),vZmax=Math.max.apply(null,vE.map(m=>m.z));",
@@ -349,39 +319,28 @@ const vm=require('vm');
     "  box(0,0,60,40,0,2);box(22,12,38,28,2,8);box(26,16,34,24,8,12);",
     "  return {v:V,t:T};",
     "})();",
-    "const gPar=faoGenGeoFinish(PBOX,{step:2,toolD:6,kind:'ball',laisse:0,secu:20,seed:'top',traj:'parallel'});",
-    "const gIso2=faoGenGeoFinish(PBOX,{step:2,toolD:6,kind:'ball',laisse:0,secu:20,seed:'top'});",
+    "const gPar=faoGenGeoFinish(PBOX,{step:2,toolD:6,kind:'ball',laisse:0,secu:20,traj:'parallel'});",
     "att(gPar.length>100,'geo parallel : parcours genere ('+gPar.length+' moves)');",
     "const parRuns=[];let parCur=[];gPar.forEach(function(m){if(!m.r&&!m.tr){parCur.push(m);}else{if(parCur.length){parRuns.push(parCur);parCur=[];}}});if(parCur.length)parRuns.push(parCur);",
     "let parZS=0;parRuns.forEach(function(r){const zs=r.map(function(m){return m.z;});const s=Math.max.apply(null,zs)-Math.min.apply(null,zs);if(s>parZS)parZS=s;});",
     "att(parZS>2,'geo parallel : passes 3D montant sur le boss (Z-spread max '+parZS.toFixed(1)+' > 2)');",
     "att(parRuns.length>=10,'geo parallel : profils sur toute la largeur ('+parRuns.length+' runs)');",
     "att(gPar.filter(m=>!m.r&&m.z<3).length>100,'geo parallel : fond couvert ('+gPar.filter(m=>!m.r&&m.z<3).length+' coupes basses)');",
-    "att(gPar.filter(m=>m.r).length<gIso2.filter(m=>m.r).length,'geo parallel : moins de rapides que iso ('+gPar.filter(m=>m.r).length+' < '+gIso2.filter(m=>m.r).length+')');",
-    "const gZig=faoGenGeoFinish(PBOX,{step:2,toolD:6,kind:'ball',laisse:0,secu:20,seed:'top',traj:'zigzag'});",
-    "att(JSON.stringify(gZig)===JSON.stringify(gIso2),'geo parallel : valeur inconnue retombe sur iso');",
+    "const gZig=faoGenGeoFinish(PBOX,{step:2,toolD:6,kind:'ball',laisse:0,secu:20,traj:'zigzag'});",
+    "att(JSON.stringify(gZig)===JSON.stringify(gPar),'geo : générateur = profils parallèles quel que soit traj (Iso-Z supprimé)');",
     // --- 2026-10-13-007 : DIRECTION des passes (Auto/X/Y/Angle) — PBOX 60x40
     // (axe long X) : auto==x, ang0==x, ang90==y, x!=y, valeur inconnue==auto.
-    "const gDX=faoGenGeoFinish(PBOX,{step:2,toolD:6,kind:'ball',laisse:0,secu:20,seed:'top',traj:'parallel',pdir:'x'});",
-    "const gDY=faoGenGeoFinish(PBOX,{step:2,toolD:6,kind:'ball',laisse:0,secu:20,seed:'top',traj:'parallel',pdir:'y'});",
-    "const gD0=faoGenGeoFinish(PBOX,{step:2,toolD:6,kind:'ball',laisse:0,secu:20,seed:'top',traj:'parallel',pdir:'ang',pdirAng:0});",
-    "const gD90=faoGenGeoFinish(PBOX,{step:2,toolD:6,kind:'ball',laisse:0,secu:20,seed:'top',traj:'parallel',pdir:'ang',pdirAng:90});",
-    "const gDB=faoGenGeoFinish(PBOX,{step:2,toolD:6,kind:'ball',laisse:0,secu:20,seed:'top',traj:'parallel',pdir:'nope'});",
+    "const gDX=faoGenGeoFinish(PBOX,{step:2,toolD:6,kind:'ball',laisse:0,secu:20,traj:'parallel',pdir:'x'});",
+    "const gDY=faoGenGeoFinish(PBOX,{step:2,toolD:6,kind:'ball',laisse:0,secu:20,traj:'parallel',pdir:'y'});",
+    "const gD0=faoGenGeoFinish(PBOX,{step:2,toolD:6,kind:'ball',laisse:0,secu:20,traj:'parallel',pdir:'ang',pdirAng:0});",
+    "const gD90=faoGenGeoFinish(PBOX,{step:2,toolD:6,kind:'ball',laisse:0,secu:20,traj:'parallel',pdir:'ang',pdirAng:90});",
+    "const gDB=faoGenGeoFinish(PBOX,{step:2,toolD:6,kind:'ball',laisse:0,secu:20,traj:'parallel',pdir:'nope'});",
     "att(JSON.stringify(gPar)===JSON.stringify(gDX),'geo direction : auto==x sur 60x40');",
     "att(JSON.stringify(gD0)===JSON.stringify(gDX),'geo direction : ang0==x');",
     "att(JSON.stringify(gD90)===JSON.stringify(gDY),'geo direction : ang90==y');",
     "att(JSON.stringify(gDX)!==JSON.stringify(gDY),'geo direction : x!=y');",
     "att(JSON.stringify(gDB)===JSON.stringify(gPar),'geo direction : valeur inconnue==auto');",
     "att(gDY.length>100&&gD0.length>100,'geo direction : tous les modes generent');",
-    // --- 2026-10-13-007 : LIMITE BASSE — la pointe ATTEINT zbot (demande :
-    // après zbot on n'usine plus, mais la boule arrive à zbot). Mur vertical
-    // 10x10, zbot=2, boule D8 (Rc=4) : niveau final exactement à 2, pointe
-    // min = 2-4 = -2 (sans le niveau final : bloqué à 0.9, bande non finie).
-    "const WALL={v:[[0,0,0],[10,0,0],[10,0,10],[0,0,10]],t:[[0,1,2],[0,2,3]]};",
-    "const gLim=faoGenGeoFinish(WALL,{step:5,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top',zbot:2});",
-    "const limZ=gLim.filter(m=>!m.r).map(m=>m.z);",
-    "const limMin=limZ.length?Math.min.apply(null,limZ):1/0;",
-    "att(limZ.length>0&&limMin<=-1&&limMin>=-3,'geo limite basse : pointe min '+limMin.toFixed(2)+' ≈ zbot-Rc (-2)');",
     // --- 2026-10-13-007 : ORPHELINS géodésiques — boss bas (haut z=6) cerné
     // de plat + mur haut (z=20, fixe zt) : le boss est invisible du seed haut,
     // ses flancs ne sont couverts que par les rives pente/plat (2e Dijkstra).
@@ -392,7 +351,7 @@ const vm=require('vm');
     "  box(0,0,60,40,0,2);box(10,10,20,20,2,6);box(50,0,54,40,0,20);",
     "  return {v:V,t:T};",
     "})();",
-    "const gOrph=faoGenGeoFinish(ORPH,{step:2,toolD:6,kind:'ball',laisse:0,secu:25,seed:'top'});",
+    "const gOrph=faoGenGeoFinish(ORPH,{step:2,toolD:6,kind:'ball',laisse:0,secu:25});",
     "const flank=gOrph.filter(m=>!m.r&&m.x>9&&m.x<21&&m.y>9&&m.y<21&&m.z>2&&m.z<6);",
     "att(flank.length>0,'geo orphelins : flancs du boss couverts par les rives ('+flank.length+' coupes)');",
     // --- 2026-10-13-007 : départ Fond — les bandes partent du bas (ordre
@@ -505,7 +464,7 @@ const vm=require('vm');
     "att(JSON.stringify(gXh)===JSON.stringify(gXr),'geo entree : helix sans ebauche = ramp (sortie identique)');",
     // 3 tours égaux : iso à chaque niveau = 3 chaînes/niveau (regroupement par zone)
     "const TW=merge(merge(mkBox(0,20,0,20,0,40),mkBox(40,60,0,20,0,40)),mkBox(80,100,0,20,0,40));",
-    "const gT=faoGenGeoFinish(TW,{step:6,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top',entry:'ramp'});",
+    "const gT=faoGenGeoFinish(TW,{step:6,toolD:8,kind:'ball',laisse:0,secu:45,entry:'ramp'});",
     "att(gT.length>50,'geo zones : '+gT.length+' moves (3 tours)');",
     // 2026-10-13-001 : le repli ne remonte plus à secu (travel/H court
     // d'abord) — comptage par MOTIF cut->r:1->r:1 HAUTEUR-AGNOSTIC (une
@@ -520,7 +479,7 @@ const vm=require('vm');
     "att(nZ>=6,'geo zones : au moins 6 zones (niveaux iso), vu '+nZ);",
     "att(nS<=2*nZ+2,'geo groupement : rapides a secu '+nS+' <= 2*zones+2='+(2*nZ+2));",
     // Hélice avec débourrage avant : l'entrée change vraiment (spot disjoint des tours)
-    "const gXe=faoGenGeoFinish(TW,{step:6,toolD:8,kind:'ball',laisse:0,secu:45,seed:'top',entry:'helix',hasRrough:true});",
+    "const gXe=faoGenGeoFinish(TW,{step:6,toolD:8,kind:'ball',laisse:0,secu:45,entry:'helix',hasRrough:true});",
     "att(gXe.length>50&&JSON.stringify(gXe)!==JSON.stringify(gT),'geo entree : helix avec ebauche avant change l entree');",
     "if(ATT.length){p('');p('ECHECS ('+ATT.length+') :');ATT.forEach(m=>p('  x '+m));}",
     "else p('TOUT EST CONFORME');",

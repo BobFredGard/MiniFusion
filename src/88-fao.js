@@ -365,11 +365,16 @@ function faoSanitiseOps(s){
     // 2026-10-13-007 : direction des passes parallèles — 'auto'/'x'/'y'/'ang'
     // sur Crêtes constantes (+ angle fini si 'ang'), absent = auto (axe long).
     if(op.type==='geofinish'){
-      if(op.traj!=='parallel'&&op.traj!=='scallop')delete op.traj;
+      // 2026-10-14-003 : Iso-Z supprimé — absent / 'iso' (documents
+      // antérieurs) -> Crêtes constantes façon Fusion ; 'départ' (seed) aussi.
+      if(op.traj!=='parallel')op.traj='scallop';
+      delete op.seed;
       if(op.pdir!=='x'&&op.pdir!=='y'&&op.pdir!=='ang'&&op.pdir!=='auto')delete op.pdir;
       if(op.pdir==='ang'&&!isFinite(+op.pdirAng))delete op.pdir;
       if(op.pdir!=='ang'&&('pdirAng' in op))delete op.pdirAng;
     }else{ delete op.traj; delete op.pdir; delete op.pdirAng; }
+    if(op.type!=='geofinish')delete op.stayMax;
+    else if(!(isFinite(+op.stayMax)&&+op.stayMax>=0))delete op.stayMax;
     // 2026-10-04-004 : finition géodésique — limites Z héritées du brut,
     // garde-fou fraise droite recalculée à chaque dispatch (jamais stockée).
     if(op.type==='geofinish'){
@@ -2803,19 +2808,16 @@ function* faoOpMovesIt(op,job){
       if(op.traj==='scallop')mv=yield* faoGenScallopIt(am.mesh,
         {step:isFinite(+op.step)?+op.step:1,toolD:D,kind:tool.kind,
          cornerR:tool.cornerR,laisse:+op.laisse||0,secu:secu,
-         ztop:op.ztop,zbot:op.zbot,sens:op.sens,
+         ztop:op.ztop,zbot:op.zbot,sens:op.sens,stayMax:op.stayMax,
          zoneAt:zctx?zctx.at:null});
       else mv=yield* faoGenGeoFinishIt(am.mesh,
         {step:isFinite(+op.step)?+op.step:1,toolD:D,kind:tool.kind,
-         cornerR:tool.cornerR,laisse:+op.laisse||0,secu:secu,seed:op.seed||'top',
+         cornerR:tool.cornerR,laisse:+op.laisse||0,secu:secu,
          ztop:op.ztop,zbot:op.zbot,
          // 2026-10-13-007 : sens de passe (rétro-ingénierie cav.txt) —
          // 'bidir' (défaut, absent inclus) = alternance du sens de coupe ;
          // 'avalant' = proximité sans alternance, ordre haut→bas.
          sens:op.sens,
-         // 2026-10-13-007 : trajectoire — 'parallel' = passes 3D parallèles
-         // (profils verticaux à pas constant, visu Fusion) ; absent = iso-Z.
-         traj:op.traj,
          // 2026-10-13-007 : direction des passes parallèles — 'auto' (axe
          // long), 'x', 'y', 'ang' (angle op.pdirAng, degrés depuis X).
          pdir:op.pdir,pdirAng:op.pdirAng,
@@ -4870,7 +4872,7 @@ function faoOpDefaults(type){
     sens:'avalant',
     arrondi:+(Math.min(2,D*0.25)).toFixed(2)});
   if(type==='geofinish')return Object.assign({},base,{type:'geofinish',
-    step:1, laisse:0, seed:'top', entry:'circ', ztop:s.z1, zbot:s.z0,
+    step:1, laisse:0, entry:'circ', ztop:s.z1, zbot:s.z0,
     // 2026-10-14-001 : Crêtes constantes façon Fusion par défaut, sens unique
     // avalant (cav.txt relu anneau par anneau : 30 + 24 anneaux, TOUS dans le
     // même sens par front — la lecture « sens alterné » du 007 était fausse).
@@ -5919,8 +5921,6 @@ function faoOpCardElement(setup,op,i){
   }else if(op.type==='geofinish'){
     rp.appendChild(faoLab('pas 3D')); rp.appendChild(faoNum(op.step,function(v){op.step=Math.max(0.2,v);},52,0.5));
     rp.appendChild(faoLab('laisse')); rp.appendChild(faoNum(op.laisse,function(v){op.laisse=Math.max(0,v);},48,0.1));
-    rp.appendChild(faoLab('départ'));
-    rp.appendChild(faoSel([['top','Sommet'],['bottom','Fond']],op.seed||'top',function(v){op.seed=v;}));
     // 2026-10-04-009 : entrée identique à l'ébauche 3D — hélice réservée si un
     // ébauche 3D est active avant (sinon rampe). 2026-10-08-004 : circ par
     // défaut (même règle : sans ébauche avant, faoGeoEntryMode retombe rampe).
@@ -5944,18 +5944,19 @@ function faoOpCardElement(setup,op,i){
     rp.appendChild(faoLab('Trajectoire'));
     rp.appendChild(faoSel([
       ['scallop','Crêtes constantes · offsets des bords','Façon Fusion 360 : anneaux FERMÉS à distance constante SUR la surface, depuis chaque bord de la zone (îlot, contour), qui se rencontrent à mi-chemin ; les restes sont finis en boucles concentriques. Liaisons en S au contact, aucune surcoupe (descente outil). Défaut à la création.'],
-      ['iso','Iso-Z · niveaux horizontaux','Niveaux horizontaux à pas adaptif sur les pentes + anneaux concentriques sur les plateaux (comportement historique).'],
       ['parallel','Parallèle · passes 3D','Passes 3D parallèles à espacement constant le long de l’axe long de la pièce : chaque passe suit la surface en Z, continue à travers boss et parois, façon Fusion 360.']],
-      (op.traj==='parallel'||op.traj==='scallop')?op.traj:'iso',
-      function(v){ if(v==='parallel'||v==='scallop')op.traj=v; else delete op.traj; pdShow(); },
+      (op.traj==='parallel')?'parallel':'scallop',
+      function(v){ op.traj=(v==='parallel')?'parallel':'scallop'; pdShow(); },
       'Type de trajectoire — parallèle = passes 3D continues façon Fusion 360.'));
     // 2026-10-13-007 : DIRECTION des passes (mode Parallèle) — Auto (axe long
     // de la pièce), X, Y, ou Angle libre en degrés depuis X (0 = X, 90 = Y).
     // Pour aligner sur une arête/face : lire son angle dans l'esquisse ou
     // l'arbre et le saisir ici (la sélection géométrique directe viendra).
-    // Direction/Angle n'ont de sens qu'en Parallèle : masqués en Iso-Z.
+    // Direction/Angle n'ont de sens qu'en Parallèle : masqués en Crêtes constantes.
     const pdEls=[];
-    const pdShow=function(){ pdEls.forEach(function(e){ e.style.display=(op.traj==='parallel')?'':'none'; }); };
+    const scEls=[];
+    const pdShow=function(){ pdEls.forEach(function(e){ e.style.display=(op.traj==='parallel')?'':'none'; });
+      scEls.forEach(function(e){ e.style.display=(op.traj==='parallel')?'none':''; }); };
     pdEls.push(rp.appendChild(faoLab('Direction')));
     const pdSel=faoSel([
       ['auto','Auto · axe long','Passes le long du plus grand côté de la pièce (choix automatique).'],
@@ -5969,6 +5970,13 @@ function faoOpCardElement(setup,op,i){
     pdEls.push(rp.appendChild(faoLab('Angle°')));
     pdEls.push(rp.appendChild(faoNum(isFinite(+op.pdirAng)?+op.pdirAng:0,function(v){op.pdirAng=v;if(op.pdir!=='ang'){op.pdir='ang';pdSel.value='ang';}},52,1,
       'Angle des passes en degrés depuis X (0 = X, 90 = Y). Saisir bascule en mode Angle.')));
+    // 2026-10-14-003 : GLISSEMENT MAX (Crêtes constantes) — entre deux
+    // séquences l'outil glisse au contact sur la surface (pas de remontée ni
+    // de nouvelle entrée) tant que le chemin fait moins de N mm. 0 = toujours
+    // sortie + saut local + entrée. Absent = 100.
+    scEls.push(rp.appendChild(faoLab('Glissement')));
+    scEls.push(rp.appendChild(faoNum(isFinite(+op.stayMax)?+op.stayMax:100,function(v){op.stayMax=Math.max(0,v);},52,10,
+      'Longueur max (mm) d’un glissement au contact entre deux séquences de passes, à la place d’une remontée + nouvelle entrée. 0 = toujours remonter.')));
     pdShow();
     // 2026-10-04-004 : limites Z (au-delà, relief non fini) + garde-fou fraise droite.
     zz();
@@ -5985,7 +5993,7 @@ function faoOpCardElement(setup,op,i){
       const gd=op.geoDiag;
       const gdEl=document.createElement('div'); gdEl.className='fao-meta';
       if(gd.fronts!==undefined)
-        gdEl.textContent='Diag : '+gd.fronts+' bord(s) · anneaux '+(gd.rings||[]).join('/')+' · '+(gd.rest||0)+' boucles de reste · '+(gd.seq||0)+' séquence(s) · '+(gd.ms||0)+' ms';
+        gdEl.textContent='Diag : '+gd.fronts+' bord(s) · anneaux '+(gd.rings||[]).join('/')+' · '+(gd.rest||0)+' boucles de reste · '+(gd.seq||0)+' séquence(s) · '+(gd.slides||0)+' glissement(s) · '+(gd.lifts||0)+' remontée(s) · '+(gd.tips||0)+' pointe(s) · '+(gd.ms||0)+' ms';
       else
       gdEl.textContent='Diag : '+gd.chains+' chaînes ('+gd.slope+' pentes · '+gd.plate+' plateaux · '+gd.par+' // · '+gd.rest+' restes)'+(gd.flat?'':' · ⚠ aucun plan détecté');
       d.appendChild(gdEl);
@@ -10367,63 +10375,6 @@ function faoLeadArc(Mx,My,Wx,Wy,leftWall,z){
   return {sx:Sx, move:{r:0,x:Wx,y:Wy,z:z,arc:{i:cx-Sx,j:0,cw:leftWall}}};
 }
 
-function faoAdjacency(mesh){
-  const adj=[]; let i;
-  for(i=0;i<mesh.v.length;i++)adj.push([]);
-  const link=function(a,b){ if(adj[a].indexOf(b)<0)adj[a].push(b); };
-  for(i=0;i<mesh.t.length;i++){
-    const t=mesh.t[i];
-    link(t[0],t[1]); link(t[1],t[0]); link(t[1],t[2]); link(t[2],t[1]); link(t[2],t[0]); link(t[0],t[2]);
-  }
-  return adj;
-}
-function faoDijkstra(mesh,seed,adjIn){
-  // Tas binaire : V=50k sans broncher dans le navigateur.
-  // 2026-10-13-004 : seed accepte un entier (source unique, historique) OU un
-  // tableau de graines (multi-sources — contour-offset plateau : toutes les
-  // frontières à distance 0, le champ mesure alors l'écart À LA FRONTIÈRE).
-  // adjIn optionnel : adjacence pré-filtrée (ex. faces plates seules) — le
-  // champ est alors mesuré DANS ce sous-graphe (offset 2D du plateau, pas un
-  // géodésique qui pourrait passer par les parois).
-  const n=mesh.v.length, dist=new Array(n).fill(1/0);
-  const adj=adjIn||faoAdjacency(mesh);
-  const seeds=Array.isArray(seed)?seed:[seed];
-  for(let s=0;s<seeds.length;s++){const si=seeds[s];if(si>=0&&si<n)dist[si]=0;}
-  const HK=[], HV=[];
-  const push=function(k,v){ HK.push(k); HV.push(v); let i=HK.length-1;
-    while(i>0){ const p=(i-1)>>1; if(HK[p]<=k)break; HK[i]=HK[p]; HV[i]=HV[p]; i=p; }
-    HK[i]=k; HV[i]=v; };
-  const pop=function(){ const top=HV[0];
-    const lk=HK.pop(), lv=HV.pop();
-    if(HK.length){
-      HK[0]=lk; HV[0]=lv; // le dernier prend la racine, puis on le fait descendre
-      let i=0;
-      for(;;){ const l=i*2+1, r=l+1; let m=i;
-        if(l<HK.length&&HK[l]<HK[m])m=l; if(r<HK.length&&HK[r]<HK[m])m=r;
-        if(m===i)break;
-        const tk=HK[i];HK[i]=HK[m];HK[m]=tk;
-        const tv=HV[i];HV[i]=HV[m];HV[m]=tv; i=m; }
-    }
-    return top; };
-  for(let s=0;s<seeds.length;s++){const si=seeds[s];if(si>=0&&si<n)push(0,si);}
-  const done=new Array(n).fill(false);
-  while(HK.length){
-    const u=pop();
-    if(done[u])continue; done[u]=true;
-    const du=dist[u], pu=mesh.v[u], nb=adj[u];
-    for(let i=0;i<nb.length;i++){
-      const w=nb[i], pw=mesh.v[w];
-      const nd=du+Math.hypot(pw[0]-pu[0],pw[1]-pu[1],pw[2]-pu[2]);
-      if(nd<dist[w]){ dist[w]=nd; push(nd,w); }
-    }
-  }
-  return dist;
-}
-function faoSeedTop(mesh){
-  let bi=0, bm=-1/0;
-  for(let i=0;i<mesh.v.length;i++)if(mesh.v[i][2]>bm){bm=mesh.v[i][2];bi=i;}
-  return bi;
-}
 function faoIsoSegs(mesh,normals,dist,iso,flags,want,mask){
   // Marching-triangles : segments 3D + normales interpolées (points de contact).
   // 2026-10-04-004 : flags/want — masque optionnel des familles plate/inclinée
@@ -10573,11 +10524,11 @@ function faoSplinePts(P0,T0,P1,T1,n){
 // mémoire ; H évicté = reconcat mémoïsée + rehash, jamais plus.
 const faoColCache=new WeakMap();
 function* faoGenGeoFinishIt(mesh,o){
-  // Finition iso (retour 4/10) : (1) passes horizontales iso-Z sur les faces
-  // en pente — chaque liaison part à Z constant ; (2) anneaux géodésiques sur
-  // les seules faces horizontales (couverture des plateaux). Sorties centre
-  // outil (contact + normale×Rc, Rc = rayon actif : boule D/2, torique r
-  // coin, droite 0). Limites ztop/zbot (défaut : étendue du maillage).
+  // Trajectoire PARALLÈLE de la finition Crêtes constantes (profils 3D à pas
+  // constant). 2026-10-14-003 : le mode Iso-Z (niveaux horizontaux + anneaux
+  // plateaux + restes) est SUPPRIMÉ — Crêtes constantes façon Fusion
+  // (src/89-fao-cretes.js) le remplace. Sorties pointe outil (contact +
+  // normale×Rc − Rc·z). Limites ztop/zbot (défaut : étendue du maillage).
   o=o||{};
   if(!mesh||!mesh.v||!mesh.v.length)return [];
   const D=isFinite(+o.toolD)&&+o.toolD>0?+o.toolD:8;
@@ -10596,11 +10547,6 @@ function* faoGenGeoFinishIt(mesh,o){
   // Garde-fou fraise droite (point 2) : sans rayon actif, une pente même
   // légère laisse une arête non finie — on refuse plutot que de mentir.
   if(kind==='flat'&&G.anySlope)return [];
-  const seed=(o.seed==='bottom')?faoSeedBottom(mesh):faoSeedTop(mesh);
-  const dist=faoDijkstra(mesh,seed);
-  let dmax=0;
-  for(let i=0;i<dist.length;i++)if(dist[i]<1/0&&dist[i]>dmax)dmax=dist[i];
-  if(!(dmax>0))return [];
   const moves=[];
   const mode=faoGeoEntryMode(o.entry,o.hasRrough);
   // 2026-10-13-007 : SENS DE PASSE (rétro-ingénierie cav.txt) — 'bidir'
@@ -10738,16 +10684,15 @@ function* faoGenGeoFinishIt(mesh,o){
     covMark(chs);
     return true;
   };
-  // --- SÉQUENCE : iso-Z pentes → passes // plateaux → restes ----------------
+  // --- PROFILS PARALLÈLES ----------------------------------------------------
   // 2026-10-13-007 : TRAJECTOIRE PARALLÈLE (rétro-ingénierie cav.txt + visu
   // Fusion « passes bleues » : passes 3D parallèles à espacement constant,
   // continues à travers boss et parois). Champ = coordonnée le long de l'axe
   // PERPENDICULAIRE au sens de passe (axe long de la pièce) : les iso-lignes
   // sont les profils verticaux qui suivent la surface en Z (montées/descentes).
   // Toute la machinerie est réutilisée (marching, chaînage, couverture, zones,
-  // stitch fam:'par', sens opposé). Les restes (3) ratissent ensuite.
-  const trajPar=(o.traj==='parallel');
-  if(trajPar){
+  // stitch fam:'par', sens opposé).
+  {
     let bx0=1/0,bx1=-1/0,by0=1/0,by1=-1/0;
     for(let i=0;i<mesh.v.length;i++){const v=mesh.v[i];
       if(v[0]<bx0)bx0=v[0];if(v[0]>bx1)bx1=v[0];
@@ -10783,197 +10728,6 @@ function* faoGenGeoFinishIt(mesh,o){
       }
       zoneTag=null;
     }
-  }
-  // (1) ISO GÉODÉSIQUES sur les faces en pente (2026-10-13-007 : crête
-  // constante VRAIE — distance mesurée SUR la surface, perpendiculaire aux
-  // passes, plus de cotes Z). Dijkstra restreint aux pentes depuis le haut
-  // (avalant : seed haut ; seed 'bottom' : seed bas) + rives pente/plat pour
-  // les composantes déconnectées (bosses). Isos à k·step = espacement SURFACE
-  // exact sans adaptation sinθ (sur mur plan : identique à l'ancien iso-Z).
-  // Final : un anneau EXACTEMENT à zb (limite basse : la pointe atteint zb).
-  if(!trajPar&&G.anySlope){
-    const dzFloor=Math.max(0.05,step*0.1);
-    const sBand=Math.max(dzFloor,step*0.1);
-    const slopeAdj=[]; for(let i=0;i<mesh.v.length;i++)slopeAdj.push([]);
-    const slink=function(a,b){ if(slopeAdj[a].indexOf(b)<0)slopeAdj[a].push(b); };
-    const vSlope=new Uint8Array(mesh.v.length), vFlat=new Uint8Array(mesh.v.length);
-    for(let i=0;i<mesh.t.length;i++){
-      const t=mesh.t[i];
-      if(!allMask[i])continue;
-      if(G.flags[i]===1){vFlat[t[0]]=1;vFlat[t[1]]=1;vFlat[t[2]]=1;}
-      else{
-        vSlope[t[0]]=1;vSlope[t[1]]=1;vSlope[t[2]]=1;
-        slink(t[0],t[1]);slink(t[1],t[0]);
-        slink(t[1],t[2]);slink(t[2],t[1]);
-        slink(t[2],t[0]);slink(t[0],t[2]);
-      }
-    }
-    const seedSet=new Uint8Array(mesh.v.length);
-    const seeds=[];
-    const addSeed=function(i){ if(!seedSet[i]){seedSet[i]=1;seeds.push(i);} };
-    if(o.seed==='bottom'){
-      for(let i=0;i<mesh.v.length;i++)if(vSlope[i]&&mesh.v[i][2]<=zb+sBand)addSeed(i);
-    }else{
-      for(let i=0;i<mesh.v.length;i++)if(vSlope[i]&&mesh.v[i][2]>=zt-sBand)addSeed(i);
-    }
-    let dslope=seeds.length?faoDijkstra(mesh,seeds,slopeAdj):[];
-    // Orphelins (composantes non atteintes : boss cerné de plat) → seed des
-    // rives pente/plat locales, 2e passe Dijkstra.
-    let orph=false;
-    for(let i=0;i<mesh.v.length;i++)if(vSlope[i]&&!(dslope[i]<1/0)){orph=true;break;}
-    if(orph){
-      for(let i=0;i<mesh.v.length;i++)if(vSlope[i]&&vFlat[i])addSeed(i);
-      if(seeds.length)dslope=faoDijkstra(mesh,seeds,slopeAdj);
-    }
-    let dmaxS=-1/0;
-    for(let i=0;i<dslope.length;i++)if(dslope[i]<1/0&&dslope[i]>dmaxS)dmaxS=dslope[i];
-    const iso0=Math.min(step*0.05,0.1);
-    let lastIso=-1;
-    if(dmaxS>iso0){
-      for(let k=0;;k++){
-        const iso=(k===0)?iso0:k*step;
-        if(iso>dmaxS+1e-9)break;
-        lastIso=iso;
-        zoneTag={fam:'slope',lvl:iso};emitLevel(dslope,iso,null,0);
-      }
-      zoneTag=null;
-    }
-    // Anneau final EXACTEMENT à zb (limite basse : la pointe atteint zb ;
-    // miroir du niveau zEps du haut). Champs Z direct, même famille, lvl en
-    // continuité (bande suivante) pour ne pas casser le stitch spiral.
-    if(zt>zb+1e-9){
-      const zf=new Float64Array(mesh.v.length);
-      for(let i=0;i<mesh.v.length;i++)zf[i]=mesh.v[i][2];
-      zoneTag={fam:'slope',lvl:(lastIso>=0?lastIso+step:0)};emitLevel(zf,zb,null,0);
-      zoneTag=null;
-    }
-  }
-  // (2) Passes sur les plateaux — TOUR COMPLET (2026-10-13-004, demande :
-  // « pourquoi ne pas faire un tour complet ? Cela évite les va-et-vient en
-  // rapide » / « partir d'un point pour y revenir puis passer à l'autre »).
-  // Champ géodésique MULTI-SOURCES depuis la FRONTIÈRE du plateau (sommet à la
-  // fois plate et non-plate = rive où le plateau rencontre la paroi) — le
-  // Dijkstra est restreint au sous-graphe des faces plates, la distance est
-  // donc mesurée DANS le plateau (offset 2D) et non à travers les parois.
-  // Iso-lignes à k·step = BOUCLES FERMÉES concentriques (chaque passe = un
-  // tour complet du contour, pas = step) — reliées entre elles par un court
-  // décalage radial, zéro va-et-vient. Les îlots non couverts sont finis par
-  // les restes (3) plus bas. Inactif en trajectoire parallèle (1P couvre tout).
-  if(!trajPar&&G.hasFlat){
-    const vFlat=new Uint8Array(mesh.v.length), vNon=new Uint8Array(mesh.v.length);
-    const flatAdj=[]; for(let i=0;i<mesh.v.length;i++)flatAdj.push([]);
-    const flink=function(a,b){ if(flatAdj[a].indexOf(b)<0)flatAdj[a].push(b); };
-    for(let i=0;i<mesh.t.length;i++){
-      const t=mesh.t[i];
-      if(G.flags[i]===1&&allMask[i]){
-        vFlat[t[0]]=1;vFlat[t[1]]=1;vFlat[t[2]]=1;
-        flink(t[0],t[1]); flink(t[1],t[0]);
-        flink(t[1],t[2]); flink(t[2],t[1]);
-        flink(t[2],t[0]); flink(t[0],t[2]);
-      }else{vNon[t[0]]=1;vNon[t[1]]=1;vNon[t[2]]=1;}
-    }
-    const seedSet=new Uint8Array(mesh.v.length);
-    const seeds=[];
-    const addSeed=function(i){ if(!seedSet[i]){seedSet[i]=1;seeds.push(i);} };
-    // Rive interne : sommet à la fois plate et non-plate (plateau rencontre
-    // la paroi).
-    for(let i=0;i<mesh.v.length;i++)if(vFlat[i]&&vNon[i])addSeed(i);
-    // Frontière du MAILLAGE (arête utilisée par 1 seule face) : nécessaire
-    // quand le plateau va jusqu'au bord de la pièce (pas de paroi adjacente —
-    // un plan simple n'a que des sommets plates, aucun seed rive).
-    const ecount=new Map();
-    for(let i=0;i<mesh.t.length;i++){
-      const t=mesh.t[i];
-      for(let e=0;e<3;e++){
-        const a=t[e],b=t[(e+1)%3];
-        const k=a<b?a+','+b:b+','+a;
-        ecount.set(k,(ecount.get(k)||0)+1);
-      }
-    }
-    for(let i=0;i<mesh.t.length;i++){
-      if(G.flags[i]!==1||!allMask[i])continue;
-      const t=mesh.t[i];
-      for(let e=0;e<3;e++){
-        const a=t[e],b=t[(e+1)%3];
-        const k=a<b?a+','+b:b+','+a;
-        if(ecount.get(k)===1){addSeed(a);addSeed(b);}
-      }
-    }
-    let usedGeo=false;
-    if(seeds.length){
-      const dflat=faoDijkstra(mesh,seeds,flatAdj);
-      let dmaxF=-1/0;
-      for(let i=0;i<dflat.length;i++)if(dflat[i]<1/0&&dflat[i]>dmaxF)dmaxF=dflat[i];
-      // Il faut au moins un pas d'intérieur pour placer un anneau — un
-      // maillage grossier (2 triangles, aucun sommet intérieur) ne peut pas
-      // recevoir d'offset, on retombe sur le champ linéaire ci-dessous.
-      if(dmaxF>step){
-        usedGeo=true;
-        // 2026-10-13-006 : première passe PRÈS DE LA RIVE (iso0 ≈ 0), pas à
-        // step — « plat usiné JUSQU'À l'esquisse, bout de fraise = contour ».
-        // Sans cela l'anneau extérieur démarrait à step de la limite (D/2 = 4 mm
-        // de bavure non finie le long du contour). iso0 = 0,1 mm (assez près
-        // pour que la boule touche le contour, assez loin pour le marching
-        // triangles qui ignore les sommets exactement sur l'iso).
-        const iso0=Math.min(step*0.05,0.1);
-        for(let k=0;k*step<=dmaxF+1e-9;k++){
-          const iso=(k===0)?iso0:k*step;
-          zoneTag={fam:'plate',lvl:iso};emitLevel(dflat,iso,null,1);
-        }
-        zoneTag=null;
-      }
-    }
-    if(!usedGeo){
-      // Repli champ LINÉAIRE (historique 2026-10-13-001) : maillage grossier
-      // sans sommets intérieurs — iso-lignes droites // au contour, extraites
-      // directement sur les faces (marching triangles n'a pas besoin de nœuds
-      // intérieurs).
-      let cxx=0,cxy=0,cyy=0;
-      for(let i=0;i<mesh.t.length;i++){
-        if(G.flags[i]===1||!allMask[i])continue;
-        const t=mesh.t[i];
-        const A=mesh.v[t[0]],B=mesh.v[t[1]],C=mesh.v[t[2]];
-        const ux=B[0]-A[0],uy=B[1]-A[1],uz=B[2]-A[2];
-        const wx=C[0]-A[0],wy=C[1]-A[1],wz=C[2]-A[2];
-        const nx=uy*wz-uz*wy,ny=uz*wx-ux*wz,nzz=ux*wy-uy*wx;
-        const l=Math.hypot(nx,ny,nzz)||1;
-        const nxN=nx/l,nyN=ny/l;
-        cxx+=nxN*nxN;cxy+=nxN*nyN;cyy+=nyN*nyN;
-      }
-      const th=0.5*Math.atan2(2*cxy,cxx-cyy);
-      const pdx=-Math.sin(th),pdy=Math.cos(th);
-      const u=new Float64Array(mesh.v.length);
-      for(let i=0;i<mesh.v.length;i++)u[i]=pdx*mesh.v[i][1]-pdy*mesh.v[i][0];
-      let umin=1/0,umax=-1/0;
-      for(let i=0;i<u.length;i++){if(u[i]<umin)umin=u[i];if(u[i]>umax)umax=u[i];}
-      for(let k=Math.ceil(umin/step);k*step<=umax+1e-9;k++){
-        zoneTag={fam:'plate',lvl:k*step};emitLevel(u,k*step,null,1);
-      }
-      zoneTag=null;
-    }
-  }
-  // (3) restes : zones que les deux familles n'ont pas couvertes (dessous,
-  // surplomb, régions disconnectes). Seeds locaux tant que >20 % non couvert.
-  // 2026-10-13-007 : DÉSACTIVÉ en trajectoire parallèle — les restes géodésiques
-  // partent dans toutes les directions (30°/45° constatés) et brisent le
-  // contrat « une seule direction ». Les profils couvrent tout ; les bandes
-  // tangentes éventuelles se traiteront dans la direction unique.
-  if(!trajPar)for(let t=0;t<3;t++){
-    let miss=0;
-    for(let i=0;i<mesh.v.length;i++)
-      if(!covHas(mesh.v[i]))miss++;
-    if(miss*5<=mesh.v.length)break;
-    let best=-1,bd=-1;
-    for(let i=0;i<mesh.v.length;i++){
-      if(covHas(mesh.v[i]))continue;
-      const d=dist[i]<1/0?dist[i]:0;
-      if(d>bd){bd=d;best=i;}
-    }
-    if(best<0)break;
-    const dl=faoDijkstra(mesh,best);
-    let lm=0;
-    for(let i=0;i<dl.length;i++)if(dl[i]<1/0&&dl[i]>lm)lm=dl[i];
-    if(lm>0){zoneTag={fam:'rest',lvl:0};for(let iso=step;iso<lm;iso+=step)emitLevel(dl,iso,1,null);zoneTag=null;}
   }
   // --- phase d'émission : une entrée + une sortie par zone -----------------
   // 2026-10-13-007 : DIAG embarqué (fond nu : quelle phase est morte ?) —
@@ -11751,12 +11505,6 @@ function faoGenGeoFinish(mesh,o){
   let r; while(!(r=it.next()).done){}
   return r.value;
 }
-function faoSeedBottom(mesh){
-  let bi=0, bm=1/0;
-  for(let i=0;i<mesh.v.length;i++)if(mesh.v[i][2]<bm){bm=mesh.v[i][2];bi=i;}
-  return bi;
-}
-
 /* ----- mode sélection : plan de travail 3+2 sur la pièce ----- */
 // Clic sur une face sortante : la normale (repère pièce) devient l'orientation
 // B/C de la table via faoOrientFromNormal ; une face tournée vers le bas est
