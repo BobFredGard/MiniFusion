@@ -1047,10 +1047,18 @@ function* faoGenScallopIt(mesh,o){
     lp.len=l;
   });
   yield moves;
+  // distance au SEGMENT le plus proche (2026-10-14-006 : la distance au
+  // sommet le plus proche voyait à 4,5 mm un anneau à 1 mm — Douglas-Peucker
+  // ne laisse que les extrémités des droites) ; s = abscisse du projeté
+  // depuis le sommet i.
   const near=function(lp,P){
-    let bi=0,bd=1/0;const tp=lp.tp;
-    for(let i=0;i<tp.length-1;i++){const dx=tp[i].x-P.x,dy=tp[i].y-P.y,dz=tp[i].z-P.z,d=dx*dx+dy*dy+dz*dz;if(d<bd){bd=d;bi=i;}}
-    return {i:bi,d:Math.sqrt(bd)};
+    let bi=0,bd=1/0,bs=0;const tp=lp.tp;
+    for(let i=0;i<tp.length-1;i++){const A=tp[i],B=tp[i+1];
+      const ex=B.x-A.x,ey=B.y-A.y,ez=B.z-A.z,l2=ex*ex+ey*ey+ez*ez;
+      let t=l2>0?((P.x-A.x)*ex+(P.y-A.y)*ey+(P.z-A.z)*ez)/l2:0;if(t<0)t=0;else if(t>1)t=1;
+      const dx=A.x+ex*t-P.x,dy=A.y+ey*t-P.y,dz=A.z+ez*t-P.z,d=dx*dx+dy*dy+dz*dz;
+      if(d<bd){bd=d;bi=i;bs=t*Math.sqrt(l2);}}
+    return {i:bi,d:Math.sqrt(bd),s:bs};
   };
   // Parenté des boucles : B (niveau m+1) est fille de A (niveau m, même
   // groupe) si elle passe à moins de 2,5 pas + R/2 de A. Une boucle n'est
@@ -1152,23 +1160,13 @@ function* faoGenScallopIt(mesh,o){
       const z=drop.tip(x,y);if(z>zm)zm=z;}
     return Math.max(zm+1,Math.min(secu,zm+5));
   };
-  // GLISSEMENT au contact (2026-10-14-003, demande : « des glissements entre
-  // traces plutôt que des remontées et nouvelles entrées ») : d'une fin de
-  // séquence au départ de la suivante, l'outil reste sur la surface outil —
-  // chemin le plus court DANS la région (A* 8-connexe sur la grille, coût =
-  // longueur 3D), tendu (raccourcis tant que le segment reste dans la
-  // région), raccords tangents aux deux boucles, Z = descente outil (aucune
-  // surcoupe, quel que soit le tracé XY). Au-delà de stayMax (longueur du
-  // glissement), retour à sortie + saut local + entrée.
-  const stayMax=isFinite(+o.stayMax)&&+o.stayMax>=0?+o.stayMax:100;
-  const nodeNear=function(x,y){
-    const i0=Math.round((x-bx0)/g),j0=Math.round((y-by0)/g);
-    let best=-1,bd=1/0;
-    for(let r=0;r<=3&&best<0;r++)for(let j=j0-r;j<=j0+r;j++)for(let i=i0-r;i<=i0+r;i++){
-      if(i<0||j<0||i>=nx||j>=ny)continue;const k=j*nx+i;if(!inside[k])continue;
-      const d=(V[k][0]-x)*(V[k][0]-x)+(V[k][1]-y)*(V[k][1]-y);if(d<bd){bd=d;best=k;}}
-    return best;
-  };
+  // TRANSITION au contact entre deux traces (2026-10-14-006, demande : « les
+  // transitions sont entre 2 traces égales au pas défini, pas plus ! » — le
+  // glissement A* du 003 traversait la pièce et laissait des traces) : une
+  // fin de séquence ne glisse vers le départ de la suivante que si celui-ci
+  // est à <= 1,5 pas et en ligne directe dans la région ; sinon sortie en
+  // arc, remontée Z rapide, rapide vers la nouvelle entrée.
+  const linkStep=step*1.5;
   const inReg=function(x,y){
     const i=Math.round((x-bx0)/g),j=Math.round((y-by0)/g);
     if(i<0||j<0||i>=nx||j>=ny||!inside[j*nx+i])return false;
@@ -1178,39 +1176,6 @@ function* faoGenScallopIt(mesh,o){
     const l=Math.hypot(b[0]-a[0],b[1]-a[1]),n=Math.max(1,Math.ceil(l/(g*0.5)));
     for(let k=1;k<n;k++)if(!inReg(a[0]+(b[0]-a[0])*k/n,a[1]+(b[1]-a[1])*k/n))return false;
     return true;
-  };
-  const NB8=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
-  let aG=null,aF=null,aP=null,aStamp=null,aRun=0;
-  const astar=function(s0,s1,lim){
-    if(!aG){aG=new Float64Array(nv);aF=new Float64Array(nv);aP=new Int32Array(nv);aStamp=new Int32Array(nv);}
-    aRun++;
-    const tx=V[s1][0],ty=V[s1][1];
-    const H=[];// tas binaire de [f, k]
-    const hpush=function(fv,k){H.push([fv,k]);let i=H.length-1;
-      while(i>0){const p=(i-1)>>1;if(H[p][0]<=fv)break;const t=H[p];H[p]=H[i];H[i]=t;i=p;}};
-    const hpop=function(){const top=H[0],last=H.pop();
-      if(H.length){H[0]=last;let i=0;for(;;){const l=2*i+1,r=l+1;let m=i;
-        if(l<H.length&&H[l][0]<H[m][0])m=l;if(r<H.length&&H[r][0]<H[m][0])m=r;
-        if(m===i)break;const t=H[m];H[m]=H[i];H[i]=t;i=m;}}
-      return top;};
-    aStamp[s0]=aRun;aG[s0]=0;aP[s0]=-1;aF[s0]=0;
-    hpush(Math.hypot(V[s0][0]-tx,V[s0][1]-ty),s0);
-    let it=0;
-    while(H.length){
-      const e=hpop(),k=e[1];
-      if(aF[k]===1&&aStamp[k]===aRun)continue;
-      aF[k]=1;
-      if(k===s1){const path=[];for(let q=k;q>=0;q=aP[q])path.push(q);return path.reverse();}
-      if(e[0]>lim||++it>400000)return null;
-      const i=k%nx,j=(k-i)/nx,P=V[k];
-      for(let q=0;q<8;q++){const ii=i+NB8[q][0],jj=j+NB8[q][1];
-        if(ii<0||jj<0||ii>=nx||jj>=ny)continue;const w=jj*nx+ii;if(!inside[w])continue;
-        if(aStamp[w]===aRun&&aF[w]===1)continue;
-        const Q=V[w],gv=aG[k]+Math.hypot(Q[0]-P[0],Q[1]-P[1],Q[2]-P[2]);
-        if(aStamp[w]!==aRun){aStamp[w]=aRun;aF[w]=0;aG[w]=1/0;}
-        if(gv<aG[w]){aG[w]=gv;aP[w]=k;hpush(gv+Math.hypot(Q[0]-tx,Q[1]-ty),w);}}
-    }
-    return null;
   };
   // points 3D d'un tracé XY : pas 0,4 mm, Z = descente outil ; un segment
   // dont le milieu passe sous la surface est recoupé (falaise : montée
@@ -1241,35 +1206,17 @@ function* faoGenScallopIt(mesh,o){
     return out;
   };
   const slide=function(A,TA,B,TB){
-    if(!(stayMax>0))return null;
+    if(Math.hypot(B.x-A.x,B.y-A.y,B.z-A.z)>linkStep)return null;
+    if(!segIn([A.x,A.y],[B.x,B.y]))return null;
     const dAB=Math.hypot(B.x-A.x,B.y-A.y);
-    if(dAB>stayMax)return null;
-    let xy;
-    if(segIn([A.x,A.y],[B.x,B.y]))xy=[[A.x,A.y],[B.x,B.y]];
-    else{
-      const s0=nodeNear(A.x,A.y),s1=nodeNear(B.x,B.y);
-      if(s0<0||s1<0)return null;
-      const path=astar(s0,s1,stayMax);
-      if(!path)return null;
-      const raw=[[A.x,A.y]];for(let q=0;q<path.length;q++)raw.push([V[path[q]][0],V[path[q]][1]]);raw.push([B.x,B.y]);
-      // tension : raccourci vers le point le plus lointain visible
-      xy=[raw[0]];let i=0;
-      while(i<raw.length-1){let j=Math.min(raw.length-1,i+60);
-        while(j>i+1&&!segIn(raw[i],raw[j]))j--;
-        xy.push(raw[j]);i=j;}
-    }
-    // longueur (XY) bornée
-    let L=0;for(let q=1;q<xy.length;q++)L+=Math.hypot(xy[q][0]-xy[q-1][0],xy[q][1]-xy[q-1][1]);
-    if(L>stayMax)return null;
-    // raccords tangents (Hermite XY) aux deux bouts quand ils restent dans la région
-    if(xy.length===2){
-      const k0=Math.min(dAB*0.8,6);
-      const lt0=Math.hypot(TA.x,TA.y)||1,lt1=Math.hypot(TB.x,TB.y)||1;
-      const sp=faoSplinePts({x:A.x,y:A.y,z:0},{x:TA.x/lt0*k0,y:TA.y/lt0*k0,z:0},{x:B.x,y:B.y,z:0},{x:TB.x/lt1*k0,y:TB.y/lt1*k0,z:0},Math.max(2,Math.ceil(dAB/0.4)));
-      const xs=sp.map(function(p){return [p.x,p.y];});
-      let ok=true;for(let q=1;q<xs.length&&ok;q++)if(!inReg(xs[q][0],xs[q][1]))ok=false;
-      if(ok)xy=xs;
-    }
+    let xy=[[A.x,A.y],[B.x,B.y]];
+    // raccord tangent (Hermite XY) quand il reste dans la région
+    const k0=dAB*0.8;
+    const lt0=Math.hypot(TA.x,TA.y)||1,lt1=Math.hypot(TB.x,TB.y)||1;
+    const sp=faoSplinePts({x:A.x,y:A.y,z:0},{x:TA.x/lt0*k0,y:TA.y/lt0*k0,z:0},{x:B.x,y:B.y,z:0},{x:TB.x/lt1*k0,y:TB.y/lt1*k0,z:0},Math.max(2,Math.ceil(dAB/0.4)));
+    const xs=sp.map(function(p){return [p.x,p.y];});
+    let ok=true;for(let q=1;q<xs.length&&ok;q++)if(!inReg(xs[q][0],xs[q][1]))ok=false;
+    if(ok)xy=xs;
     return surfPts(xy,A.z,B.z);
   };
   const emitLoop=function(tp){
@@ -1347,18 +1294,19 @@ function* faoGenScallopIt(mesh,o){
     seqCount++;
     // enchaînement : niveau suivant du même groupe, proche → liaison en S
     for(;;){
-      let nb=-1,nd=1/0,ni=0;
+      let nb=-1,nd=1/0,ni=0,ns=0;
       for(let i=0;i<loops.length;i++){
         if(used[i]||loops[i].g!==lp.g||loops[i].lvl!==lp.lvl+1)continue;
-        const r=near(loops[i],cur);if(r.d<nd){nd=r.d;nb=i;ni=r.i;}
+        const r=near(loops[i],cur);if(r.d<nd){nd=r.d;nb=i;ni=r.i;ns=r.s;}
       }
-      if(nb<0||nd>step*2.5+R*0.5)break;
+      // 2026-10-14-006 : transition seulement vers la trace au pas (<= 1,5 pas)
+      if(nb<0||nd>linkStep)break;
       const nx=loops[nb];used[nb]=1;
       let tq=nx.tp;
       if(bidir){lastSense=-lastSense;
-        if(lastSense<0){tq=tq.slice().reverse();ni=near({tp:tq},cur).i;}}
+        if(lastSense<0){tq=tq.slice().reverse();const rr=near({tp:tq},cur);ni=rr.i;ns=rr.s;}}
       const a2=Math.min(adv,nx.len*0.2);
-      const tr=rotate(tq,ni,a2);
+      const tr=rotate(tq,ni,ns+a2);
       const S2=tr[0],T2=tangentAt(tr,0);
       // liaison Hermite XY (tangentes aux 2 boucles), Z = descente outil
       const chord=Math.hypot(S2.x-cur.x,S2.y-cur.y);

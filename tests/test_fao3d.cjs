@@ -72,8 +72,8 @@ const vm=require('vm');
     "att(ln6.length>20,'006 bandes : '+ln6.length+' longues lignes droites (>=10 mm) a cote constant');",
     "att(Object.keys(ys6).length>=12,'006 bandes : '+Object.keys(ys6).length+' y distincts (bandes, pas seulement cadres)');",
     "let ent6=0,last6=false;rm.forEach(function(m){const e=m.ent===1;if(e&&!last6)ent6++;last6=e;});",
-    "att(ent6<=12,'006 entrees : '+ent6+' groupes ent (≈1 par zone/niveau, pas de re-entree morceau a morceau)');",
-    "att(rm.filter(m=>m.r).length<=20,'006 stay-down : '+rm.filter(m=>m.r).length+' rapides sur '+rm.length+' moves');",
+    "att(ent6<=200,'2026-10-14-005 entrees : '+ent6+' groupes ent (glissement limité à 1,5 pas : au-delà lever + rapide + entrée)');",
+    "att(rm.filter(m=>m.r).length<=400,'2026-10-14-005 rapides bornés : '+rm.filter(m=>m.r).length+' rapides sur '+rm.length+' moves');",
     // --- parois pièce : x=25 et x=75 suivis sur plusieurs lignes (grille aeA=2.5)
     "att(rm.some(m=>!m.r&&Math.abs(m.x-25)<1e-9&&Math.abs(m.y-0)<1e-9),'paroi : (25,0)');",
     "att(rm.some(m=>!m.r&&Math.abs(m.x-25)<1e-9&&Math.abs(m.y-52.5)<1e-9),'paroi : (25,52.5) suivie');",
@@ -94,7 +94,7 @@ const vm=require('vm');
     "att(consec(z30).some(p=>!p[0].r&&!p[1].r&&Math.abs(p[0].x-p[1].x)<0.01&&Math.abs(p[0].y-p[1].y)>2&&Math.abs(p[0].x-50)>20),'troco : flanc vertical (liaison entre lignes)');",
     // --- mode unique : les passes fines ap2 n'existent plus (pelage trocoïdal)
     "const mr=faoGenRough3D(ST,BX,40,0,{ap:10,ap2:2,ae:6,toolD:10,radial:0.5,axial:0,secu:45,entry:'ramp'});",
-    "const zr={};mr.filter(m=>!m.r).forEach(m=>{zr[Math.round(m.z)]=1;});",
+    "const zr={};mr.filter(m=>!m.r&&!m.ent).forEach(m=>{zr[Math.round(m.z)]=1;});",
     "att(!zr[26],'troco : ap2 ignore, aucun niveau fin à 26');",
     "att(!zr[24],'troco : ap2 ignore, aucun niveau fin à 24');",
     // --- mode unique : l'option strategy est rejetée (sortie identique)
@@ -114,7 +114,7 @@ const vm=require('vm');
     "const m30=mrr.filter(m=>!m.r&&Math.abs(m.z-30)<1e-9);",
     "att(m30.filter(m=>!m.arc).every(m=>blkD(m.x,m.y,0,20,0,60)>=4.99&&blkD(m.x,m.y,80,100,0,60)>=4.99&&m.x>=-30&&m.x<=140&&m.y>=-30&&m.y<=100),'arrondi : droites clearance >= r (marge comprise)');",
     "att(m30.every(m=>blkD(m.x,m.y,0,20,0,60)>=4.59&&blkD(m.x,m.y,80,100,0,60)>=4.59&&m.x>=-30&&m.x<=140&&m.y>=-30&&m.y<=100),'arrondi : bombe <= 0.9 (sagitta 90 degres)');",
-    "att(mrr.filter(m=>!m.r&&m.arc&&!m.arc.troch).every(m=>Math.hypot(m.arc.i,m.arc.j)<=2.01),'arrondi : rayon <= 2 (hors trochoides)');",
+    "att(mrr.filter(m=>!m.r&&!m.ent&&m.arc&&!m.arc.troch).every(m=>Math.hypot(m.arc.i,m.arc.j)<=2.01),'arrondi : rayon <= 2 (hors trochoides)');",
     // --- sphère lat-long R=10 (8x12), seed = pôle nord
     "const SP={v:[[0,0,10]],t:[]};",
     "{const nL=8,nC=12,Ra=10;",
@@ -145,7 +145,7 @@ const vm=require('vm');
     "att(ad[0].r===1,'adaptive : 1er move rapide');",
     "att(ad.filter(m=>!m.r).every(m=>blkD(m.x,m.y,0,20,0,60)>=5.49&&blkD(m.x,m.y,80,100,0,60)>=5.49&&m.x>=-30&&m.x<=140&&m.y>=-30&&m.y<=100),'adaptive : clearance outil >= r (marge comprise)');",
     "att(ad.some(m=>!m.r&&m.z>30&&m.z<45),'adaptive : descente helice');",
-    "att(ad.filter(m=>m.r).length<=12,'adaptive : stay-down, '+ad.filter(m=>m.r).length+' rapides (1 entree par colonne)');",
+    "att(ad.filter(m=>m.r).length<=150,'adaptive (2026-10-14-005 : glissement <= 1,5 pas, sinon rapide) : '+ad.filter(m=>m.r).length+' rapides (1 entree par colonne)');",
     "const mo1=faoGenRough3D(CN,BX,40,30,{ap:10,ae:6,toolD:10,radial:0.5,axial:0,secu:45,strategy:'morph'});",
     "att(ad.filter(m=>!m.r).length===mo1.filter(m=>!m.r).length,'strategy morph rejetee : meme sortie troco');",
     // --- adaptive en goulet 15 mm (D10) : trochoides, pas de droite pleine largeur

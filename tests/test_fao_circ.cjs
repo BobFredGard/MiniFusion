@@ -90,7 +90,7 @@ const vm=require('vm');
     "att(sk.ops[1].entry==='circ'&&sk.ops[1].entryR===4,'sanitise : valeurs valides conservees');",
     "att(faoOpDefaults('rough3d').entry==='circ','defaut : rough3d entry circ');",
     "att(faoOpDefaults('geofinish').entry==='circ','defaut : geofinish entry circ');",
-    "att(faoOpDefaults('pocket').entry===undefined,'defaut : poche sans champ (dispatch -> circ)');",
+    "att(faoOpDefaults('pocket').entry==='circ','defaut : poche adaptative entry circ (2026-10-14-004)');",
     "att(faoGeoEntryMode('circ',true)==='circ','geo mode : circ avec ebauche amont');",
     "att(faoGeoEntryMode('circ',false)==='ramp','geo mode : circ sans ebauche -> rampe');",
     // ===== 3. poche via dispatch =====

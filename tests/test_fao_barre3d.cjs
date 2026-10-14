@@ -51,7 +51,7 @@ const CSS={
     "att(kids.length===7,'titre + 6 boutons ('+kids.length+')');",
     "att(kids[0].className==='fao-addlab'&&kids[0].textContent==='+ Usinage','titre de groupe « + Usinage »');",
     "const labs=kids.slice(1).map(function(k){return k.textContent;});",
-    "const want=['Surfaçage','Poche','Contour','Perçage','Ébauche 3D','Crêtes Constantes'];",
+    "const want=['Surfaçage','Poche','Contour','Perçage','Ébauche 3D','Finition'];",
     "att(labs.length===6&&labs.join('|')===want.join('|'),'libelles sans + : '+labs.join(','));",
     "att(labs.every(function(l){return l.charAt(0)!=='+';}),'aucun + devant les libelles');",
     "let inWrap=false;(function w(n){if(n===faoAddBarEl)inWrap=true;if(n&&n.children)n.children.forEach(w);})(faoTreeWrapEl);",

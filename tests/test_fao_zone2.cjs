@@ -163,7 +163,7 @@ const vm=require('vm');
     "att(LK&&LK.side==='out','chain2 OK : règle outil îlot forcee side=out');",
     "att(LK&&(LK.loop||[]).length>=3&&LK.closed!==undefined,'chain2 OK : boucle '+((LK&&LK.loop)||[]).length+' pts');",
     "att(LK&&LK.anchors&&LK.anchors.length===2&&LK.stale===false,'chain2 OK : 2 ancres + stale=false');",
-    "att(!opK.limit,'chain2 OK : la zone ext reste vide');",
+    "att(!opK.limit||!(opK.limit.loop||[]).length,'chain2 OK : la zone ext (bord de poche) reste vide');",
     "let r1={};try{r1=faoChainRematch(opK,E,'limit2');}catch(e){r1={err:e.message};}",
     "att(r1.changed===false&&r1.stale===false&&r1.matched===2,'rematch : memes aretes -> boucle identique, pas de stale');",
     "const E5=E.map(function(e){const m={mid:[e.mid[0]+5,e.mid[1],e.mid[2]],pts:[[e.pts[0][0]+5,e.pts[0][1],0],[e.pts[1][0]+5,e.pts[1][1],0]],len:e.len,sharp:true};return m;});",

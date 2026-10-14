@@ -75,12 +75,14 @@ const FIX=path.join(__dirname,'fixtures');
     "att(mv.filter(m=>m.tr).length>50,'cuvette : liaisons au contact (tr) présentes');",
     "att(mv.filter(m=>m.r).length<=4*dg.seq+4,'cuvette : rapides limités aux sauts entre séquences ('+mv.filter(m=>m.r).length+')');",
     // GLISSEMENTS (2026-10-14-003) : entre séquences, l'outil reste au contact
-    // (sauf saut > stayMax) ; stayMax 0 = sortie + saut + entrée comme avant
+    // seulement vers une trace au pas (2026-10-14-006 : <= 1,5 pas, sinon remontée)
     "p('cuvette : glissements '+(dg.slides||0)+', remontées '+(dg.lifts||0)+', pointes '+(dg.tips||0));",
-    "att(dg.seq<2||(dg.slides>=1&&(dg.lifts||0)===0),'cuvette : séquences reliées par glissement, aucune remontée (glissements '+dg.slides+', remontées '+dg.lifts+')');",
-    "att(mv.filter(m=>m.r).length<=3,'cuvette : 3 rapides seulement (approche, descente, retrait), vu '+mv.filter(m=>m.r).length);",
-    "const mv0=faoGenScallop(cuv,{step:1,toolD:6,kind:'ball',laisse:0,secu:30,zoneAt:zone,stayMax:0});",
-    "att(!mv0.diag.slides&&(dg.seq<2||mv0.diag.lifts>=1),'cuvette : stayMax 0 -> remontées, aucun glissement');",
+    // 2026-10-14-006 : transitions SEULEMENT entre deux traces au pas (<= 1,5 pas en travers, + l'avance de la liaison en S <= max(pas, 0,75·D)) ; au-delà : remontée Z rapide sur place puis rapide vers la nouvelle entrée
+    "const trJ=function(mv,lim){let bad=0,mx=0;for(let i=1;i<mv.length;i++){if(!mv[i].tr||mv[i-1].tr)continue;const a=mv[i-1];let j=i;while(j+1<mv.length&&mv[j+1].tr)j++;const b=mv[j];const d=Math.hypot(b.x-a.x,b.y-a.y,b.z-a.z);if(d>mx)mx=d;if(d>lim)bad++;i=j;}return {bad:bad,mx:mx};};",
+    "const tj=trJ(mv,Math.hypot(1.5,4.5)+0.5);",
+    "att(tj.bad===0,'cuvette : transitions au pas seulement (max '+tj.mx.toFixed(2)+' mm, '+tj.bad+' trop longues)');",
+    "const vUp=function(mv){let bad=0;for(let i=1;i<mv.length;i++){const a=mv[i-1],b=mv[i];if(b.r&&!a.r&&i>1&&(Math.abs(b.x-a.x)>1e-6||Math.abs(b.y-a.y)>1e-6))bad++;}return bad;};",
+    "att(vUp(mv)===0,'cuvette : chaque remontée part en Z sur place ('+vUp(mv)+' rapides obliques depuis la coupe)');",
     // bidir : différent, même couverture
     "const mvB=faoGenScallop(cuv,{step:1,toolD:6,kind:'ball',laisse:0,secu:30,zoneAt:zone,sens:'bidir'});",
     "att(JSON.stringify(mvB)!==JSON.stringify(mv),'cuvette : bidir différent du sens unique');",
@@ -139,7 +141,7 @@ const FIX=path.join(__dirname,'fixtures');
     "faoSanitiseOps({ops:[oS,oP,oX,oR,oN]});",
     "att(oS.traj==='scallop'&&oP.traj==='parallel','sanitise : scallop/parallel conservés');",
     "att(oX.traj==='scallop'&&oN.traj==='scallop'&&!('seed' in oX),'sanitise : Iso-Z supprimé — iso / absent -> scallop, départ purgé');",
-    "att(oX.stayMax===40&&!('traj' in oR)&&!('stayMax' in oR),'sanitise : stayMax conservé, traj/stayMax purgés hors geofinish');",
+    "att(!('stayMax' in oX)&&!('traj' in oR),'sanitise : stayMax (retiré) purgé, traj purgé hors geofinish');",
     "att(JSON.stringify(faoOpSig({id:'a',type:'geofinish',traj:'scallop'}))!==JSON.stringify(faoOpSig({id:'a',type:'geofinish',traj:'parallel'})),'sig : scallop ≠ parallel (régénération à la bascule)');",
     // --- 5. cavité réelle (Exemples/Cavité Usinage.miniFusion, maillage OCCT)
     "const job={tools:__cavOp.tools};const op=__cavOp.op;",
@@ -164,7 +166,10 @@ const FIX=path.join(__dirname,'fixtures');
     "const tbad=mc.filter(m=>m.tr&&!zc.at(m.x,m.y)&&!zc.at(m.x+0.06,m.y)&&!zc.at(m.x-0.06,m.y)&&!zc.at(m.x,m.y+0.06)&&!zc.at(m.x,m.y-0.06)).length;",
     "p('cavité : glissements '+(dc.slides||0)+', remontées '+(dc.lifts||0)+', pointes '+(dc.tips||0));",
     "att(tbad===0,'cavité : glissements dans la zone — '+tbad+' points dehors');",
-    "att((dc.slides||0)>=(dc.seq-1)*0.8,'cavité : séquences reliées par glissement (glissements '+dc.slides+' / '+(dc.seq-1)+' liaisons)');",
+    "const tjc=trJ(mc,Math.hypot(1.5,4.5)+0.5);",
+    "att(tjc.bad===0,'cavité : transitions au pas seulement (max '+tjc.mx.toFixed(2)+' mm)');",
+    "att(vUp(mc)===0,'cavité : remontées en Z sur place');",
+    "att(dc.seq<=15,'cavité : anneaux enchaînés au pas (séquences '+dc.seq+')');",
     "att((dc.tips||0)>=4,'cavité : pointes des lentilles finies (aller-retour sur la crête) — '+dc.tips);",
     "if(ATT.length){p('');p('ECHECS ('+ATT.length+') :');ATT.forEach(function(m){p('  x '+m);});}",
     "else p('TOUT EST CONFORME');",
