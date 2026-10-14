@@ -77,6 +77,22 @@ const FIX=path.join(__dirname,'fixtures');
     // bidir : différent, même couverture
     "const mvB=faoGenScallop(cuv,{step:1,toolD:6,kind:'ball',laisse:0,secu:30,zoneAt:zone,sens:'bidir'});",
     "att(JSON.stringify(mvB)!==JSON.stringify(mv),'cuvette : bidir différent du sens unique');",
+    // COUVERTURE à pas fin (2026-10-14-002, retour : « avec un pas à 0,35 il y
+    // a des manques ») : chaque point de la surface outil dans la zone doit
+    // avoir une passe à ≤ 0,75 pas (milieu entre deux passes = 0,5 pas) — pied
+    // de paroi (creux vif) et rencontre des fronts compris.
+    "const cover=function(mv,st){const P=[];for(let i=1;i<mv.length;i++){const a=mv[i-1],b=mv[i];if(a.r||b.r)continue;",
+    "  const n=Math.max(1,Math.ceil(Math.hypot(b.x-a.x,b.y-a.y,b.z-a.z)/0.1));for(let k=0;k<n;k++){const t=k/n;P.push([a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t,a.z+(b.z-a.z)*t]);}}",
+    "  const H=new Map();P.forEach(q=>{const k=Math.floor(q[0])*100003+Math.floor(q[1]);let L=H.get(k);if(!L)H.set(k,L=[]);L.push(q);});",
+    "  let n=0,m1=0,m2=0;for(let y=-29.5;y<=29.5;y+=0.25)for(let x=-49.5;x<=49.5;x+=0.25){if(!zone(x,y))continue;const z=dr.tip(x,y);n++;let b=1e9;",
+    "    const ci=Math.floor(x),cj=Math.floor(y);for(let a=-2;a<=2;a++)for(let c=-2;c<=2;c++){const L=H.get((ci+a)*100003+cj+c);if(!L)continue;for(const q of L){const d=(q[0]-x)**2+(q[1]-y)**2+(q[2]-z)**2;if(d<b)b=d;}}",
+    "    b=Math.sqrt(b);if(b>0.75*st)m1++;if(b>1.5*st)m2++;}",
+    "  return {n:n,m1:m1/n,m2:m2/n};};",
+    "const mv5=faoGenScallop(cuv,{step:0.5,toolD:6,kind:'ball',laisse:0,secu:30,zoneAt:zone});",
+    "const cv5=cover(mv5,0.5);",
+    "p('cuvette pas 0,5 : '+mv5.length+' moves, manque >0,75 pas '+(cv5.m1*100).toFixed(2)+' %, >1,5 pas '+(cv5.m2*100).toFixed(2)+' %');",
+    "att(cv5.m1<0.01,'couverture pas 0,5 : < 1 % de points à > 0,75 pas d\\'une passe (vu '+(cv5.m1*100).toFixed(2)+' %)');",
+    "att(cv5.m2===0,'couverture pas 0,5 : aucun point à > 1,5 pas (vu '+(cv5.m2*100).toFixed(2)+' %)');",
     // --- 2. outils -----------------------------------------------------------
     "const mvT=faoGenScallop(cuv,{step:1.5,toolD:10,kind:'bull',cornerR:2,laisse:0,secu:30,zoneAt:zone});",
     "const drT=faoScDropper(cuv,'bull',10,2,0);let gT=0;",

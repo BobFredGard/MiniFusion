@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**217 versions**, de `2026-09-28b` à `2026-10-14-001` — la plus récente en bas,
+**218 versions**, de `2026-09-28b` à `2026-10-14-002` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3589,3 +3589,13 @@ Résultat sur la cavité : 2 fronts, 24 + 24 anneaux, ~40 boucles de reste, 14-1
 Intégration : dispatch `faoOpMovesIt` (`op.traj==='scallop'` → `faoGenScallopIt`), clip/garde-fou de zone sautés pour cette trajectoire (la zone est la région du générateur ; le re-clip couperait les arcs tangents au bord) ; sanitize `traj` ∈ {parallel, scallop} ; fiche : option « Crêtes constantes · offsets des bords » en tête, diag « N bord(s) · anneaux a/b · boucles de reste · séquences · ms » ; défauts `geofinish` → `traj:'scallop', sens:'avalant'`. Performance : `faoDistToPoly` sans `Math.hypot` par segment (×16 sur le test de zone, profite aussi aux clips existants).
 
 Tests : nouveau `tests/test_fao_cretes.cjs` (cuvette synthétique : 2 fronts, écart entre anneaux = 1,00 mm sur le fond, aucune surcoupe > 0,02, rapides au-dessus de la matière, sens horaire/anti-horaire, séquences ; torique sans surcoupe ; droite refusée sur pente ; laisse ; FMM plan exact et source ponctuelle < 10 % (Dijkstra 41 %) ; descente outil ; défauts/sanitize/sig ; cavité réelle `tests/fixtures/cavite_usinage_mesh.json` + `cavite_usinage_op.json`) ; `test_fao_sens` : défaut de création `avalant` + `scallop`. Données de référence versionnées : `Exemples/cav.txt`, `Exemples/Cavité Usinage.miniFusion`, `Exemples/Cavité.step`, `docs/cretes-constantes/`. Migration : `APP_VER` et `CACHE_VER` → `2026-10-14-001` ; badge **V0.1.13 → V0.1.14**.
+
+### `2026-10-14-002`
+
+**Crêtes Constantes façon Fusion — REFONTE sur la surface outil (retours : « les parcours descendent anormalement en haut des 4 faces » / « avec un pas à 0,35 il y a des manques … trop d'oscillations, ceux de Fusion sont plus linéaires »).**
+
+Constats mesurés : (1) bord haut, écart compté sur la PIÈCE → saut de 2,2 mm en Z sur l'arrondi convexe (Fusion compte sur la surface du centre outil : 49,86 → 49,41 → 48,69) ; (2) au pas de 0,35, manques en anneau au PIED des parois et autour des bosses : la conversion contact + normale·R se REPLIE dans un creux plus serré que l'outil (passes entassées puis trou) ; (3) oscillations : bruit des normales du maillage et ambiguïté des arêtes vives ; (4) manque résiduel à la rencontre des fronts : l'iso du MINIMUM interpolée aux nœuds écrasait son pli (bande de 0,85 mm sur paroi à 65° = 0,36 mm en XY).
+
+Correctifs (`src/89-fao-cretes.js`) : tout le calcul passe sur la SURFACE OUTIL — grille XY (~0,7·pas, ≤ 300 000 nœuds dans la zone), Z = descente outil exacte, région = position outil dans la zone (test de zone direct, plus de tolérance d'arête vive ni de normales), distance géodésique FMM sur cette surface (métrique Fusion), points d'iso → Z exact par descente (recul vers le bas de la maille sur falaise) ; restes par iso EXACTE du minimum par triangle (`faoScIsoMin`, cellules à champ unique, raccords par clés d'arête et de pli) ; orientation des segments d'iso TOPOLOGIQUE (un test géométrique rompait le chaînage sur les segments de longueur nulle — iso passant par un nœud, fréquent sur grille régulière) ; fragments d'iso < max(3·pas, 2 mm) ignorés (une miette ouverte arrêtait tout le front) ; descente outil réécrite à plat (primitives uniques sommets/arêtes/facettes, typées, triées Z↓ par cellule de D/4, sans allocation : ×2,5) ; recherche du bord sans descente quand la fenêtre Z ne coupe rien ; raffinement et normales par nappe supprimés.
+
+Mesures cavité : bord haut 60,51/49,84 · 59,65/49,37 · 59,01/48,69 · 58,51/47,71 (Fusion 60,60/49,86 · 59,70/49,41 · 59,01/48,69 · 58,55/47,80) ; pas 0,35 : profil à x = 20 espacé de 0,35 du fond au bord, manques > 0,75 pas 0,72 % → 0,27 % (traits fins au centre des lentilles, limite du remplissage par niveaux), > 1,5 pas 0,11 % → 0 % ; durée pas 0,35 12,6 s → 5,5 s, pas 1 2,0 → 1,1 s. Tests : `test_fao_cretes` + couverture au pas 0,5 sur la cuvette (< 1 % au-delà de 0,75 pas, 0 au-delà de 1,5) ; doc `docs/cretes-constantes/` mise à jour (carte de couverture, bosse au pas fin). Suite complète, `build.js --check`, snapshot `Backup/fusion_mvp_2026-10-14-002.html`. Migration : `APP_VER` et `CACHE_VER` → `2026-10-14-002` ; badge **V0.1.14 → V0.1.15**.
