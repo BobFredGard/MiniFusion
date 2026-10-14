@@ -262,7 +262,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-14-010';
+const APP_VER='2026-10-14-011';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -273,7 +273,7 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-14-010';
+const CACHE_VER='2026-10-14-011';
 function cacheVerOK(v){
   // 2026-10-11-002 : ébauche 3D — la ZONE voyage dans le REPÈRE (zoneAt
   // transposé sous SENS LONG + rotation de −θ sur l'axe d'une limite oblique,
@@ -12646,6 +12646,18 @@ const faoRapideMin=30;
       +'.fao-in:focus,.fao-sel:focus{outline:none;border-color:#0a84ff;'
       +'box-shadow:0 0 0 3px rgba(10,132,255,.25)}'
       +'.fao-in:disabled{opacity:.5}'
+      /* --- 2026-10-14-011 : champs numériques SANS flèches (illisibles), valeur à droite --- */
+      +'.fao-in[type=number]{-moz-appearance:textfield;appearance:textfield;text-align:right}'
+      +'.fao-in[type=number]::-webkit-inner-spin-button,.fao-in[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}'
+      /* --- onglets de la fiche d'opération --- */
+      +'.fao-tabs{display:flex;flex-wrap:wrap;gap:2px;margin:8px 0 6px;border-bottom:1px solid rgba(255,255,255,.12)}'
+      +'.fao-tab{background:none;border:none;border-bottom:2px solid transparent;color:rgba(255,255,255,.6);'
+      +'font-size:.74rem;padding:5px 8px;cursor:pointer;border-radius:0}'
+      +'.fao-tab:hover{color:#f5f5f7}'
+      +'.fao-tab.on{color:#f5f5f7;border-bottom-color:#0a84ff}'
+      +'.fao-pair{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}'
+      +'.fao-tip{font-size:.7rem;color:rgba(255,255,255,.58);line-height:1.4;margin-top:8px;'
+      +'padding:6px 8px;border-radius:7px;background:rgba(255,255,255,.04);min-height:1.4em}'
       /* --- boutons compacts --- */
       +'.fao-mini{font-size:.7rem;padding:4px 9px;border-radius:7px;'
       +'border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);color:#f5f5f7}'
@@ -17805,7 +17817,8 @@ function faoReset(){
 }
 function faoNum(val,fn,w,step,title){
   const i=document.createElement('input'); i.type='number'; i.className='fao-in';
-  i.value=val; i.style.width=(w||60)+'px';
+  // valeur affichée arrondie (1,000000001 → 1) : jamais de chiffres parasites
+  i.value=(typeof val==='number'&&isFinite(val))?String(+val.toFixed(4)):val; i.style.width=Math.max(52,(w||60)+8)+'px'; // sans flèches : la place va à la valeur
   if(step)i.step=step;
   if(title)i.title=title;
   i.onchange=function(){ const v=parseFloat(i.value); if(isFinite(v)){ faoSnapshot(title); fn(v); faoChanged(); } };
@@ -17847,7 +17860,7 @@ function faoEntryRows(rp,op,D){
     op.entry||'circ',function(v){op.entry=v;},
     'Manière de plonger dans la matière — jamais de plongée verticale.'));
   const dE=(isFinite(+D)&&+D>0)?+D:10;
-  rp.appendChild(faoLab('R entrée'));
+  rp.appendChild(faoLab('Rayon d\'entrée'));
   rp.appendChild(faoNum(isFinite(+op.entryR)&&+op.entryR>0?+op.entryR:+(dE/4).toFixed(2),function(v){
     if(isFinite(v)&&v>0)op.entryR=v; else delete op.entryR;
   },44,0.1,
@@ -18403,6 +18416,89 @@ function faoPlanesCard(setup,op){
     'tout plan reste au-dessus du dessus du brut.'));
   return box;
 }
+/* 2026-10-14-011 : FICHE EN ONGLETS (retour : « menus pas top, zones texte
+   illisibles à cause des flèches, indications pas assez claires, peut-être
+   mettre des onglets par type d'informations »). Les sections de la fiche
+   (titres faoH) sont rangées dans des onglets — Réglages, Zone, Hauteurs,
+   Passes, Entrées, Matière, Attaches — ; l'en-tête (outil, ordre) et la
+   ligne de bilan restent visibles. Chaque onglet a une ligne d'aide qui
+   explique le champ survolé ou en cours de saisie (son infobulle). Onglet
+   choisi mémorisé par opération. */
+const faoTabSel={};
+const FAO_TAB_ORDER=['Réglages','Zone','Hauteurs','Passes','Entrées','Matière','Attaches'];
+const FAO_TAB_HELP={
+  'Réglages':'Paramètres principaux de l’opération. Survolez un champ pour son explication.',
+  'Zone':'Où usiner : tout le brut, un rectangle, des arêtes du modèle ou une esquisse — et ce qu’il faut épargner.',
+  'Hauteurs':'Haut et Bas de la zone usinée (mm). Ils peuvent suivre des arêtes du modèle.',
+  'Passes':'Descente par niveau, pas latéral et manière de vider.',
+  'Entrées':'Comment l’outil entre dans la matière, et les plans de dégagement / retrait.',
+  'Matière':'Surépaisseur laissée pour l’opération suivante (mm).',
+  'Attaches':'Ponts de matière pour tenir la pièce en détourage traversant.'};
+function faoTabOf(t){
+  t=String(t||'').toLowerCase().replace(/\s*\(.*$/,'').trim();
+  const M=[['hauteur','Hauteurs'],['vidage','Passes'],['passes','Passes'],['côté et sens','Passes'],
+    ['trajectoire','Entrées'],['plans','Entrées'],['entrée','Entrées'],['matière','Matière'],
+    ['attaches','Attaches'],['zone','Zone'],['bord de la poche','Zone'],['profil','Zone']];
+  for(let i=0;i<M.length;i++)if(t.indexOf(M[i][0])===0)return M[i][1];
+  return null;
+}
+function faoCardTabs(d,op){
+  const kids=Array.prototype.slice.call(d.children||[]);
+  if(kids.length<3)return null;
+  const foot=kids[kids.length-1],mid=kids.slice(1,-1);
+  const groups={};let cur='Réglages';
+  const isH=function(el){return !!(el&&el.className==='fao-h');};
+  mid.forEach(function(el){
+    let h=isH(el)?el:null;
+    if(!h&&el.children&&el.children[0]&&isH(el.children[0]))h=el.children[0];
+    if(h){const t=faoTabOf(h.textContent);if(t)cur=t;}
+    (groups[cur]||(groups[cur]=[])).push(el);
+  });
+  // un onglet qui ne contient qu'un titre (section vide) est retiré
+  const names=FAO_TAB_ORDER.filter(function(n){
+    return groups[n]&&groups[n].some(function(el){return !isH(el);});});
+  if(names.length<2)return null;
+  // carte NEUVE (appendChild seul : déplace les éléments, marche partout)
+  const nd=faoCard();
+  try{ if(d.style&&d.style.opacity)nd.style.opacity=d.style.opacity; }catch(e){}
+  nd.appendChild(kids[0]);
+  const bar=document.createElement('div');bar.className='fao-tabs';
+  const panes={},btns={};
+  const sel=(op&&faoTabSel[op.id]&&names.indexOf(faoTabSel[op.id])>=0)?faoTabSel[op.id]:names[0];
+  const show=function(n){
+    names.forEach(function(k){panes[k].style.display=(k===n)?'':'none';btns[k].className='fao-tab'+(k===n?' on':'');});
+    if(op)faoTabSel[op.id]=n;
+  };
+  names.forEach(function(n){
+    const b=document.createElement('button');b.className='fao-tab';b.textContent=n;b.title=FAO_TAB_HELP[n]||n;
+    b.onclick=function(){show(n);};
+    bar.appendChild(b);btns[n]=b;
+    const p=document.createElement('div');p.className='fao-pane';
+    // les titres de section restent (ils portent l'unité, ex. « Passes (mm) »)
+    groups[n].forEach(function(el){p.appendChild(el);});
+    // libellé + champ : jamais séparés au retour à la ligne (panneau étroit)
+    Array.prototype.slice.call(p.querySelectorAll?p.querySelectorAll('.fao-row'):[]).forEach(function(row){
+      const ch=Array.prototype.slice.call(row.children||[]);
+      for(let q=0;q+1<ch.length;q++){
+        if(ch[q].className!=='fao-lab')continue;
+        const nx=ch[q+1];if(!nx||nx.className==='fao-lab')continue;
+        const pr=document.createElement('span');pr.className='fao-pair';
+        row.insertBefore(pr,ch[q]);pr.appendChild(ch[q]);pr.appendChild(nx);q++;
+      }
+    });
+    const tip=document.createElement('div');tip.className='fao-tip';tip.textContent=FAO_TAB_HELP[n]||'';
+    const say=function(e){let t=e&&e.target;for(let q=0;q<4&&t&&t!==p;q++){if(t.title){tip.textContent=t.title;return;}t=t.parentNode;}};
+    try{p.addEventListener('mouseover',say);p.addEventListener('focusin',say);
+      p.addEventListener('mouseleave',function(){tip.textContent=FAO_TAB_HELP[n]||'';});}catch(e){}
+    p.appendChild(tip);
+    panes[n]=p;
+  });
+  nd.appendChild(bar);
+  names.forEach(function(n){nd.appendChild(panes[n]);});
+  nd.appendChild(foot);
+  show(sel);
+  return nd;
+}
 function faoOpCardElement(setup,op,i){
   const d=faoCard();
   if(op.on===false)d.style.opacity='0.55';
@@ -18446,8 +18542,8 @@ function faoOpCardElement(setup,op,i){
     rp.appendChild(faoNum(op.y1,function(v){op.y1=v;},56));
   };
   const zz=function(){
-    rp.appendChild(faoLab('Zhaut')); rp.appendChild(faoNum(op.ztop,function(v){op.ztop=v;},56));
-    rp.appendChild(faoLab('Zbas')); rp.appendChild(faoNum(op.zbot,function(v){op.zbot=v;},56));
+    rp.appendChild(faoLab('Haut')); rp.appendChild(faoNum(op.ztop,function(v){op.ztop=v;},56));
+    rp.appendChild(faoLab('Bas')); rp.appendChild(faoNum(op.zbot,function(v){op.zbot=v;},56));
   };
   if(op.type==='facing'){
     rp.appendChild(faoLab('Z')); rp.appendChild(faoNum(op.z,function(v){op.z=v;},60));
@@ -18461,7 +18557,7 @@ function faoOpCardElement(setup,op,i){
     const npOn=isFinite(+op.np)&&+op.np>=2;
     const aeShow=npOn?(faoFacingAe(stF,dF,+op.np)||op.ae):op.ae;
     const nbShow=npOn?Math.round(+op.np):faoFacingCount(stF,dF,op.ae);
-    rp.appendChild(faoLab('écart'));
+    rp.appendChild(faoLab('Écart'));
     rp.appendChild(faoNum(isFinite(+aeShow)?Math.round(+aeShow*1000)/1000:aeShow,function(v){
       op.ae=Math.max(0.5,v);
       op.np=null; // ancien doc « Passes » → bascule en pilotage par écart
@@ -18489,10 +18585,10 @@ function faoOpCardElement(setup,op,i){
     faoContourRows(d,setup,op);
   }else if((op.type==='pocket'&&!faoPocketAdapt(op))||op.type==='contour'){
     rect4(); zz();
-    rp.appendChild(faoLab('ap')); rp.appendChild(faoNum(op.ap,function(v){op.ap=Math.max(0.5,v);},48));
-    if(op.type==='pocket'){ rp.appendChild(faoLab('pas')); rp.appendChild(faoNum(op.ae,function(v){op.ae=Math.max(0.5,v);},48)); }
-    rp.appendChild(faoLab('R')); rp.appendChild(faoNum(faoRA(op).radial,function(v){op.radial=Math.max(0,v);},44,0.1));
-    rp.appendChild(faoLab('A')); rp.appendChild(faoNum(faoRA(op).axial,function(v){op.axial=Math.max(0,v);},44,0.1));
+    rp.appendChild(faoLab('Descente ap')); rp.appendChild(faoNum(op.ap,function(v){op.ap=Math.max(0.5,v);},48));
+    if(op.type==='pocket'){ rp.appendChild(faoLab('Pas latéral')); rp.appendChild(faoNum(op.ae,function(v){op.ae=Math.max(0.5,v);},48)); }
+    rp.appendChild(faoLab('Parois')); rp.appendChild(faoNum(faoRA(op).radial,function(v){op.radial=Math.max(0,v);},44,0.1));
+    rp.appendChild(faoLab('Fond')); rp.appendChild(faoNum(faoRA(op).axial,function(v){op.axial=Math.max(0,v);},44,0.1));
     rp.appendChild(faoLab('Arrondi')); rp.appendChild(faoNum(isFinite(+op.arrondi)?+op.arrondi:0,function(v){op.arrondi=Math.max(0,v);},48,0.5));
     faoEntryRows(rp,op,(function(){const t=faoToolById(setup,op.toolId);
       return t&&+t.d>0?+t.d:10;})());
@@ -18583,11 +18679,11 @@ function faoOpCardElement(setup,op,i){
     d.appendChild(rS);
     d.appendChild(faoH('Passes (mm)'));
     const rP=faoRow();
-    rP.appendChild(faoLab('ap')); rP.appendChild(faoNum(op.ap,function(v){op.ap=Math.max(0.5,v);},48,0.5,
+    rP.appendChild(faoLab('Descente ap')); rP.appendChild(faoNum(op.ap,function(v){op.ap=Math.max(0.5,v);},48,0.5,
       'Descente : hauteur usinée par niveau (Maximum Stepdown).'));
-    rP.appendChild(faoLab('ae')); rP.appendChild(faoNum(op.ae,function(v){op.ae=Math.max(0.5,v);},48,
+    rP.appendChild(faoLab('Pas latéral ae')); rP.appendChild(faoNum(op.ae,function(v){op.ae=Math.max(0.5,v);},48,
       'Pas latéral : distance entre deux passes voisines (Stepover).'));
-    rP.appendChild(faoLab('mini')); rP.appendChild(faoNum(op.minipasses||0,function(v){op.minipasses=Math.max(0,Math.min(50,Math.round(v)));},40,1,
+    rP.appendChild(faoLab('Mini-passes')); rP.appendChild(faoNum(op.minipasses||0,function(v){op.minipasses=Math.max(0,Math.min(50,Math.round(v)));},40,1,
       'Mini-passes Z par niveau : contour des parois entre deux plans (0 = off, 1 à 50). Profondeur k·ap/(nb+1) sous le plan du dessus, décalage radial décroissant.'));
     d.appendChild(rP);
     d.appendChild(faoHelp(
@@ -18645,19 +18741,28 @@ function faoOpCardElement(setup,op,i){
     faoEntryRows(rT2,op,toolD);
     d.appendChild(rT2);
   }else if(op.type==='geofinish'){
-    rp.appendChild(faoLab('pas 3D')); rp.appendChild(faoNum(op.step,function(v){op.step=Math.max(0.2,v);},52,0.5));
-    rp.appendChild(faoLab('laisse')); rp.appendChild(faoNum(op.laisse,function(v){op.laisse=Math.max(0,v);},48,0.1));
+    // 2026-10-14-011 : fiche en sections (onglets) — Hauteurs, Passes, Entrées, Matière
+    d.appendChild(faoH('Hauteurs (mm)'));
+    const gH=faoRow();
+    gH.appendChild(faoLab('Haut')); gH.appendChild(faoNum(op.ztop,function(v){op.ztop=v;},56,null,'Haut de la zone finie (mm) : au-dessus, le relief n’est pas fini.'));
+    gH.appendChild(faoLab('Bas')); gH.appendChild(faoNum(op.zbot,function(v){op.zbot=v;},56,null,'Bas de la zone finie (mm) : la pointe de l’outil descend jusqu’ici.'));
+    d.appendChild(gH);
+    d.appendChild(faoH('Passes'));
+    const gP=faoRow();
+    gP.appendChild(faoLab('Pas')); gP.appendChild(faoNum(op.step,function(v){op.step=Math.max(0.2,v);},52,0.5,'Écart entre deux passes voisines, mesuré sur la surface (mm). Plus il est petit, plus les crêtes sont basses.'));
+    d.appendChild(gP);
+    const gE=faoRow();
     // 2026-10-04-009 : entrée identique à l'ébauche 3D — hélice réservée si un
     // ébauche 3D est active avant (sinon rampe). 2026-10-08-004 : circ par
     // défaut (même règle : sans ébauche avant, faoGeoEntryMode retombe rampe).
-    faoEntryRows(rp,op,(function(){const t=faoToolById(setup,op.toolId);
+    faoEntryRows(gE,op,(function(){const t=faoToolById(setup,op.toolId);
       return t&&+t.d>0?+t.d:8;})());
     // 2026-10-13-007 : SENS DE PASSE (rétro-ingénierie cav.txt : passes 2/3 en
     // sens opposé) — 'bidir' (défaut) = alternance du sens de coupe à surcoût
     // borné ; 'avalant' = proximité sans alternance, ordre haut→bas. Document
     // ancien sans champ = bidir (comportement réel).
-    rp.appendChild(faoLab('Sens'));
-    rp.appendChild(faoSel([
+    gP.appendChild(faoLab('Sens'));
+    gP.appendChild(faoSel([
       ['bidir','Bidirectionnel · sens opposé','Chaque passe alterne le sens de coupe par rapport à la précédente (moins de trajet à vide, enchaînement au plus proche en sens inverse).'],
       ['avalant','Sens unique · avalant','Toutes les passes dans le même sens, avalant (côté déjà usiné à droite, matière à gauche — comme Fusion 360 en Crêtes constantes). Défaut à la création.']],
       (op.sens==='avalant')?'avalant':'bidir',
@@ -18667,8 +18772,8 @@ function faoOpCardElement(setup,op,i){
     // « passes bleues ») — 'iso' (défaut, documents anciens) = niveaux
     // horizontaux + anneaux plateaux ; 'parallel' = passes 3D parallèles à
     // pas constant le long de l'axe long, continues à travers boss et parois.
-    rp.appendChild(faoLab('Trajectoire'));
-    rp.appendChild(faoSel([
+    gP.appendChild(faoLab('Trajectoire'));
+    gP.appendChild(faoSel([
       ['scallop','Crêtes constantes · offsets des bords','Façon Fusion 360 : anneaux FERMÉS à distance constante SUR la surface, depuis chaque bord de la zone (îlot, contour), qui se rencontrent à mi-chemin ; les restes sont finis en boucles concentriques. Liaisons en S au contact, aucune surcoupe (descente outil). Défaut à la création.'],
       ['parallel','Parallèle · passes 3D','Passes 3D parallèles à espacement constant le long de l’axe long de la pièce : chaque passe suit la surface en Z, continue à travers boss et parois, façon Fusion 360.']],
       (op.traj==='parallel')?'parallel':'scallop',
@@ -18681,7 +18786,7 @@ function faoOpCardElement(setup,op,i){
     // Direction/Angle n'ont de sens qu'en Parallèle : masqués en Crêtes constantes.
     const pdEls=[];
     const pdShow=function(){ pdEls.forEach(function(e){ e.style.display=(op.traj==='parallel')?'':'none'; }); };
-    pdEls.push(rp.appendChild(faoLab('Direction')));
+    pdEls.push(gP.appendChild(faoLab('Direction')));
     const pdSel=faoSel([
       ['auto','Auto · axe long','Passes le long du plus grand côté de la pièce (choix automatique).'],
       ['x','X','Passes parallèles à l’axe X.'],
@@ -18690,13 +18795,18 @@ function faoOpCardElement(setup,op,i){
       (op.pdir==='x'||op.pdir==='y'||op.pdir==='ang')?op.pdir:'auto',
       function(v){ if(v==='x'||v==='y'||v==='ang'){op.pdir=v;if(v==='ang'&&!isFinite(+op.pdirAng))op.pdirAng=0;} else {delete op.pdir;delete op.pdirAng;} },
       'Direction des passes — actif en trajectoire Parallèle.');
-    pdEls.push(rp.appendChild(pdSel));
-    pdEls.push(rp.appendChild(faoLab('Angle°')));
-    pdEls.push(rp.appendChild(faoNum(isFinite(+op.pdirAng)?+op.pdirAng:0,function(v){op.pdirAng=v;if(op.pdir!=='ang'){op.pdir='ang';pdSel.value='ang';}},52,1,
+    pdEls.push(gP.appendChild(pdSel));
+    pdEls.push(gP.appendChild(faoLab('Angle°')));
+    pdEls.push(gP.appendChild(faoNum(isFinite(+op.pdirAng)?+op.pdirAng:0,function(v){op.pdirAng=v;if(op.pdir!=='ang'){op.pdir='ang';pdSel.value='ang';}},52,1,
       'Angle des passes en degrés depuis X (0 = X, 90 = Y). Saisir bascule en mode Angle.')));
     pdShow();
     // 2026-10-04-004 : limites Z (au-delà, relief non fini) + garde-fou fraise droite.
-    zz();
+    d.appendChild(faoH('Entrées'));
+    d.appendChild(gE);
+    d.appendChild(faoH('Matière à laisser (mm)'));
+    const gM=faoRow();
+    gM.appendChild(faoLab('Surépaisseur')); gM.appendChild(faoNum(op.laisse,function(v){op.laisse=Math.max(0,v);},48,0.1,'Matière laissée sur toute la surface (mm). 0 = à la cote.'));
+    d.appendChild(gM);
     const tG=faoToolById(setup,op.toolId);
     if(tG&&tG.kind==='flat'){
       geoNote=document.createElement('div'); geoNote.className='fao-note';
@@ -18726,7 +18836,7 @@ function faoOpCardElement(setup,op,i){
       }).filter(function(q){return q;});
       if(lst.length)op.pts=lst;
     },150));
-    rp.appendChild(faoLab('Q pas'));
+    rp.appendChild(faoLab('Débourrage Q'));
     rp.appendChild(faoNum((+op.peck)||0,function(v){op.peck=Math.max(0,v);},52,0.5,
       'Profondeur de chaque plongée (mm). 0 = perçage simple (CYCLE81 / G81), sinon broche à va-et-vient (CYCLE83 / G83).'));
   }
@@ -18736,6 +18846,7 @@ function faoOpCardElement(setup,op,i){
   // posage tant que non modifiés — avant la zone (les plans cadrent tout).
   d.appendChild(faoPlanesCard(setup,op));
   // Limite d'usinage (tout, rectangle, chaîne d'arêtes, ou esquisse).
+  d.appendChild(faoH('Zone'));
   const rl=faoRow();
   const limMode=op.limit?(op.limit.mode||'all'):'all';
   rl.appendChild(faoLab('Zone'));
@@ -18961,6 +19072,7 @@ function faoOpCardElement(setup,op,i){
   }
   rr.appendChild(rs);
   d.appendChild(rr);
+  try{ const tc=faoCardTabs(d,op); if(tc)return tc; }catch(e){}
   return d;
 }
 /* ----- fiche du posage ----- */
@@ -28315,7 +28427,7 @@ window.addEventListener('pointerdown',e=>{if(!$('ctxMenu').contains(e.target))hi
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.23';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.24';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);

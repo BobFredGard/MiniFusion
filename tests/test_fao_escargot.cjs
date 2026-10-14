@@ -265,7 +265,7 @@ const vm=require('vm');
     "const selsOf=function(root){return all(root).filter(function(n){return n.tagName==='SELECT';});};",
     "const r3=faoOpDefaults('rough3d');",
     "const card=faoOpCardElement(faoSetup(),r3,0);",
-    "att(card.children.length>8,'fiche escargot : sections ('+card.children.length+')');",
+    "att(all(card).filter(function(n){return n.className==='fao-h';}).length>=4,'fiche escargot : sections ('+all(card).filter(function(n){return n.className==='fao-h';}).length+')');",
     "const sels=selsOf(card);",
     "const modeSel=sels.filter(function(s){return /Escargot/.test(Array.prototype.map.call(s.children||[],",
     "  function(o){return String(o.textContent||'');}).join('|'));})[0];",

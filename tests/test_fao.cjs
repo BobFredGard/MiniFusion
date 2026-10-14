@@ -182,9 +182,11 @@ const vm=require('vm');
     // --- fiche Ébauche 3D : sections lisibles, sans plantage (mode unique)
     "const r3=faoOpDefaults('rough3d');",
     "const c3=faoOpCardElement(faoSetup(),r3,0);",
-    "att(c3.children.length>8,'fiche ebauche 3D : sections, vu '+c3.children.length);",
+    // 2026-10-14-011 : sections rangées en onglets — on compte les titres de section
+    "const nH=function(n){let k=0;(function w(x){if(x.className==='fao-h')k++;(x.children||[]).forEach(w);})(n);return k;};",
+    "att(nH(c3)>=4,'fiche ebauche 3D : sections, vu '+nH(c3));",
     "r3.ae=6;const c3b=faoOpCardElement(faoSetup(),r3,0);",
-    "att(c3b.children.length>8,'fiche ae=6 : sans plantage');",
+    "att(nH(c3b)>=4,'fiche ae=6 : sans plantage');",
     // mode unique : le sélecteur de stratégie (Morph/Zigzag/Adaptive) a disparu
     "const sels3=[];(function w3(n){(n.children||[]).forEach(function(c){if(c.tagName==='SELECT')sels3.push(c);w3(c);});})(c3);",
     "const sTxt=sels3.map(function(s){let t='';(s.children||[]).forEach(function(o){t+=(o.textContent||'')+'|';});return t;}).join('');",
@@ -625,8 +627,8 @@ const vm=require('vm');
     "fkS.ops.push({id:'fk3',on:true,toolId:'T1',type:'facing',z:25,ae:6});",
     "const fkI=fkS.ops.length-1;",
     "const cFk=faoOpCardElement(fkS,fkS.ops[fkI],fkI);",
-    "const fNext=function(n,t){if(n.children){for(let i=0;i<n.children.length;i++){if(n.children[i].textContent===t&&n.children[i+1])return n.children[i+1];const r=fNext(n.children[i],t);if(r)return r;}}return null;};",
-    "const npF=fNext(cFk,'Passes');const aeF=fNext(cFk,'\\u00e9cart');",
+    "const fNext=function(n,t){if(n.children){for(let i=0;i<n.children.length;i++){if(n.children[i].className==='fao-lab'&&n.children[i].textContent===t&&n.children[i+1])return n.children[i+1];const r=fNext(n.children[i],t);if(r)return r;}}return null;};",
+    "const npF=fNext(cFk,'Passes');const aeF=fNext(cFk,'\\u00c9cart'); // 2026-10-14-011 : libellé « Écart »",
     "const fkD=(function(){const t=faoToolById(fkS,'T1');return t&&+t.d>0?+t.d:10;})();",
     // 011 : un SEUL paramètre de recouvrement XY (l'écart), lignes en lecture seule
     "att(!npF&&!!aeF,'UI surfaçage (011) : champ Passes retire, ecart seul');",
@@ -638,7 +640,7 @@ const vm=require('vm');
     // ancien document piloté par « Passes » : lu tel quel, bascule à la saisie
     "fkS.ops[fkI].np=3;delete fkS.ops[fkI].ae;",
     "const cFk2=faoOpCardElement(fkS,fkS.ops[fkI],fkI);",
-    "const aeF2=fNext(cFk2,'\\u00e9cart');",
+    "const aeF2=fNext(cFk2,'\\u00c9cart');",
     "const ae3=Math.round(faoFacingAe(fkS.stock,fkD,3)*1000)/1000;",
     "att(!!aeF2&&+aeF2.value===ae3,'UI surfaçage (011) : doc ancien np=3 -> ecart affiche ('+(aeF2?aeF2.value:'?')+', attendu '+ae3+')');",
     "let lFk2=null;(function w2(n){if(n.children)n.children.forEach(function(ch){if(ch.textContent==='3 lignes')lFk2=ch;w2(ch);});})(cFk2);",

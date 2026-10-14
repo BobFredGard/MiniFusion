@@ -38,6 +38,7 @@ const SUITES = [
   "test_fao_poche",
   "test_fao_contour",
   "test_fao_torique",
+  "test_fao_fiche_onglets",
   "test_fao_bornage",
   "test_fao_chain",
   "test_fao_couverture",
