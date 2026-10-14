@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**216 versions**, de `2026-09-28b` à `2026-10-13-007` — la plus récente en bas,
+**217 versions**, de `2026-09-28b` à `2026-10-14-001` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3575,3 +3575,17 @@ Nouveautés — (1) SENS DE PASSE sur la finition géodésique : `op.sens` = `'b
 Correctifs de revue — (a) ÎLOT (`limit2` chaîne/esquisse) : la garantie revient à **D/2** quel que soit l'outil (zone ctx + clip final) — le rayon 0 du géofinish boule/torique laissait le corps entamer l'îlot de D/2 ; la limite extérieure garde la pointe au contour ; le rect passait déjà par `faoLimit2R(D)`. (b) Fiche : Direction/Angle° MASQUÉS hors trajectoire Parallèle ; saisir un angle bascule aussi le sélecteur sur « Angle… ». (c) Sanitize : `op.traj` ne survit que `'parallel'` sur `geofinish`, purgé ailleurs. (d) `faoOpLabel` remis en forme.
 
 Suite complète **75/75** ; `build.js --check` ; snapshot `Backup/fusion_mvp_2026-10-13-007.html`. Migration : `APP_VER` et `CACHE_VER` → `2026-10-13-007` (génération finition changée : trajectoires périmées à régénérer une fois) ; compteur quotidien 007 ; badge **V0.1.12 → V0.1.13** (`src/96-bandeau-groupes.js` + `tests/test_prodver_badge.cjs`).
+
+### `2026-10-14-001`
+
+**Crêtes Constantes FAÇON FUSION 360 — nouvel algorithme (`src/89-fao-cretes.js`, trajectoire `op.traj='scallop'`, défaut à la création) (demande : « analyse cette image, cav.txt et Cavité Usinage.miniFusion pour reproduire le même parcours … le bon algorithme qui saura reproduire cet exemple à d'autres types de formes »).** Analyse complète dans `docs/cretes-constantes/README.md`.
+
+Rétro-ingénierie de `Exemples/cav.txt` (Fusion 360, boule D6, pas 1) : 7 blocs ; 30 anneaux FERMÉS depuis le bord de l'îlot (offsets exacts : périmètre +2π par anneau), tous horaires ; 24 anneaux FERMÉS depuis le bord haut, anti-horaires ; 4 zones restantes en LENTILLES concentriques (240 → 28 mm) ; côté usiné toujours à droite (avalant, AUCUNE alternance : la lecture « sens alterné » du 007 était fausse) ; liaisons en S d'environ 0,75·D au contact ; entrées et sorties en quart de cercle vertical ; écart mesuré sur la surface du CENTRE OUTIL (bord haut 49,86 → 49,41 → 48,69 …).
+
+Algorithme : région = contacts dont la position outil est dans la zone (limite ∧ ¬îlot, tolérance 0,05 mm sur arête vive), fenêtre Z, normale non tournée vers le bas ; maillage raffiné (arêtes ≤ ~pas, budget 160k triangles, normales lissées PAR NAPPE, rupture > 35°) ; fronts = composantes du bord (coupé par dichotomie) ; distance géodésique par front en FAST MARCHING (onde plane par triangle, angles droits admis) mesurée sur la surface du centre outil ; anneaux à k·pas tant qu'ils restent FERMÉS et dans leur TERRITOIRE (Voronoï géodésique : les fronts se rencontrent à mi-chemin) ; restes d_L = min(d_k − couvert_k) en boucles à Δ = Mx/(n+½) ≤ pas ; positions outil XY = contact + offset (torique : axe décalé de D/2 − r), lissage gaussien adaptatif (σ 0,8 → 2 mm si bruit d'arête vive), Z par DESCENTE OUTIL (boule exacte, torique par 24 boules + disque, droite disque) : aucune surcoupe ; séquences par groupe avec disponibilité « mères faites » (on vide un nid avant d'aller ailleurs), liaisons en S Hermite au contact, sinon arc de sortie → saut local (+5 au-dessus de la matière du trajet) → arc d'entrée.
+
+Résultat sur la cavité : 2 fronts, 24 + 24 anneaux, ~40 boucles de reste, 14-16 séquences, ~2 s en Node (0,7 s dans le navigateur) ; bord haut à x=0 identique à Fusion au centième (60,55/49,85 · 59,69/49,40 · 58,99/48,65 …). Écart connu : l'îlot de l'op du document (66×26,5, marge −5, garde D/2) exclut |x|<64, Fusion part de 58,9 — réglage de l'op.
+
+Intégration : dispatch `faoOpMovesIt` (`op.traj==='scallop'` → `faoGenScallopIt`), clip/garde-fou de zone sautés pour cette trajectoire (la zone est la région du générateur ; le re-clip couperait les arcs tangents au bord) ; sanitize `traj` ∈ {parallel, scallop} ; fiche : option « Crêtes constantes · offsets des bords » en tête, diag « N bord(s) · anneaux a/b · boucles de reste · séquences · ms » ; défauts `geofinish` → `traj:'scallop', sens:'avalant'`. Performance : `faoDistToPoly` sans `Math.hypot` par segment (×16 sur le test de zone, profite aussi aux clips existants).
+
+Tests : nouveau `tests/test_fao_cretes.cjs` (cuvette synthétique : 2 fronts, écart entre anneaux = 1,00 mm sur le fond, aucune surcoupe > 0,02, rapides au-dessus de la matière, sens horaire/anti-horaire, séquences ; torique sans surcoupe ; droite refusée sur pente ; laisse ; FMM plan exact et source ponctuelle < 10 % (Dijkstra 41 %) ; descente outil ; défauts/sanitize/sig ; cavité réelle `tests/fixtures/cavite_usinage_mesh.json` + `cavite_usinage_op.json`) ; `test_fao_sens` : défaut de création `avalant` + `scallop`. Données de référence versionnées : `Exemples/cav.txt`, `Exemples/Cavité Usinage.miniFusion`, `Exemples/Cavité.step`, `docs/cretes-constantes/`. Migration : `APP_VER` et `CACHE_VER` → `2026-10-14-001` ; badge **V0.1.13 → V0.1.14**.

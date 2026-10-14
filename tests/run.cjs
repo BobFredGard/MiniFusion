@@ -34,6 +34,7 @@ const SUITES = [
   "test_fao_sens",
   "test_fao_zone2",
   "test_fao_sketch_zone",
+  "test_fao_cretes",
   "test_fao_bornage",
   "test_fao_chain",
   "test_fao_couverture",

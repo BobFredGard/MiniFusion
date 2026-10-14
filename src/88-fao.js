@@ -365,7 +365,7 @@ function faoSanitiseOps(s){
     // 2026-10-13-007 : direction des passes parallèles — 'auto'/'x'/'y'/'ang'
     // sur Crêtes constantes (+ angle fini si 'ang'), absent = auto (axe long).
     if(op.type==='geofinish'){
-      if(op.traj!=='parallel')delete op.traj;
+      if(op.traj!=='parallel'&&op.traj!=='scallop')delete op.traj;
       if(op.pdir!=='x'&&op.pdir!=='y'&&op.pdir!=='ang'&&op.pdir!=='auto')delete op.pdir;
       if(op.pdir==='ang'&&!isFinite(+op.pdirAng))delete op.pdir;
       if(op.pdir!=='ang'&&('pdirAng' in op))delete op.pdirAng;
@@ -1569,16 +1569,19 @@ function faoPointInPoly(x,y,loop){
   return inside;
 }
 function faoDistToPoly(x,y,loop){
+  // 2026-10-14-001 : distance² minimale puis UNE racine (Math.hypot par
+  // segment coûtait ~30 µs/appel sur une chaîne de 133 points — appelé des
+  // centaines de milliers de fois par la finition Crêtes constantes).
   let m=1/0;
   for(let i=0;i+1<loop.length;i++){
     const ax=loop[i][0], ay=loop[i][1], bx=loop[i+1][0], by=loop[i+1][1];
     const dx=bx-ax, dy=by-ay, l2=dx*dx+dy*dy;
     let t=l2>1e-12?((x-ax)*dx+(y-ay)*dy)/l2:0;
-    t=Math.max(0,Math.min(1,t));
-    const d=Math.hypot(x-(ax+dx*t),y-(ay+dy*t));
-    if(d<m)m=d;
+    t=t<0?0:(t>1?1:t);
+    const ex=x-(ax+dx*t), ey=y-(ay+dy*t), d2=ex*ex+ey*ey;
+    if(d2<m)m=d2;
   }
-  return m;
+  return Math.sqrt(m);
 }
 function faoLimInside(x,y,lim,r){
   // Règle outil (comme Fusion) SANS offsetter le polygone : on teste le point
@@ -2794,7 +2797,15 @@ function* faoOpMovesIt(op,job){
       // champ géodésique (faces hors zone exclues) ; sans cela, zbot bas +
       // parois du maillage = passes qui descendent sous la face limitée.
       const zctx=faoZoneCtx(op,job);
-      mv=yield* faoGenGeoFinishIt(am.mesh,
+      // 2026-10-14-001 : trajectoire 'scallop' = CRÊTES CONSTANTES façon
+      // Fusion 360 (offsets géodésiques depuis les bords de la zone, lentilles
+      // dans les restes, descente outil sans surcoupe) — src/89-fao-cretes.js.
+      if(op.traj==='scallop')mv=yield* faoGenScallopIt(am.mesh,
+        {step:isFinite(+op.step)?+op.step:1,toolD:D,kind:tool.kind,
+         cornerR:tool.cornerR,laisse:+op.laisse||0,secu:secu,
+         ztop:op.ztop,zbot:op.zbot,sens:op.sens,
+         zoneAt:zctx?zctx.at:null});
+      else mv=yield* faoGenGeoFinishIt(am.mesh,
         {step:isFinite(+op.step)?+op.step:1,toolD:D,kind:tool.kind,
          cornerR:tool.cornerR,laisse:+op.laisse||0,secu:secu,seed:op.seed||'top',
          ztop:op.ztop,zbot:op.zbot,
@@ -2827,13 +2838,18 @@ function* faoOpMovesIt(op,job){
   // 2026-10-13-006 : rayon de clip — géofinish boule/torique : la pointe
   // (contact) peut atteindre la limite (r≈0) ; plat : arête = limite (r=D/2).
   const clipR=(op.type==='geofinish'&&tool&&tool.kind!=='flat')?0.001:D/2;
-  if(lim&&lim.mode==='rect'&&mv.length){
+  // 2026-10-14-001 : Crêtes constantes 'scallop' — la zone est déjà la
+  // RÉGION du générateur (bord exact par dichotomie) ; le re-clip couperait
+  // les arcs d'entrée/sortie tangents au bord et réinjecterait des remontées.
+  const zoneDone=(op.type==='geofinish'&&op.traj==='scallop');
+  if(zoneDone){}
+  else if(lim&&lim.mode==='rect'&&mv.length){
     const R=faoEffLimit(op,clipR*2);
     if(R)mv=faoClipMovesXY(mv,R,secu);
   }else if(lim&&(lim.mode==='chain'||lim.mode==='sketch')&&lim.loop&&lim.loop.length>=3&&mv.length){
     mv=faoClipMovesPoly(mv,lim,clipR,secu,2);
   }
-  if(lim2&&mv.length){
+  if(lim2&&mv.length&&!zoneDone){
     if(lim2.mode==='rect'){
       const R2=faoLimit2R(lim2,D);
       if(R2)mv=faoClipMovesXY(mv,R2,secu,true);
@@ -2852,7 +2868,7 @@ function* faoOpMovesIt(op,job){
   // EN DERNIER (faoRoundMoves crée ses arcs APRÈS le clip — un arrondi pouvait
   // dépasser la frontière). Les rapides, eux, traversent librement.
   // 2026-10-08-003 : l'îlot intérieur compte comme une zone (ctx composé).
-  if((lim||lim2)&&mv.length)mv=faoZoneCuts(mv,op,job,secu);
+  if((lim||lim2)&&mv.length&&!zoneDone)mv=faoZoneCuts(mv,op,job,secu);
   if(ck!==null)faoOpMovesStore(op,ck,mv);
   if(ck!==null)faoMovesSave(job,op,ck,mv); // persistance : prochaine ouverture = lecture
   if(op){ try{ op.stale=false; }catch(e){} } // generation fraiche
@@ -4855,9 +4871,10 @@ function faoOpDefaults(type){
     arrondi:+(Math.min(2,D*0.25)).toFixed(2)});
   if(type==='geofinish')return Object.assign({},base,{type:'geofinish',
     step:1, laisse:0, seed:'top', entry:'circ', ztop:s.z1, zbot:s.z0,
-    // 2026-10-13-007 : sens opposé par défaut (rétro-ingénierie cav.txt :
-    // passes 2/3 en sens alterné) — 'avalant' = proximité sans alternance.
-    sens:'bidir'});
+    // 2026-10-14-001 : Crêtes constantes façon Fusion par défaut, sens unique
+    // avalant (cav.txt relu anneau par anneau : 30 + 24 anneaux, TOUS dans le
+    // même sens par front — la lecture « sens alterné » du 007 était fausse).
+    traj:'scallop', sens:'avalant'});
   // Type retiré (2026-10-06-004 : pocket3d) ou inconnu -> null : pas de fiche,
   // pas d'opération fantôme. Seule la barre « + Usinage » crée des opérations.
   if(['facing','pocket','contour','drill','rough3d','geofinish'].indexOf(type)<0)return null;
@@ -5915,21 +5932,22 @@ function faoOpCardElement(setup,op,i){
     // ancien sans champ = bidir (comportement réel).
     rp.appendChild(faoLab('Sens'));
     rp.appendChild(faoSel([
-      ['bidir','Bidirectionnel · sens opposé','Chaque passe alterne le sens de coupe par rapport à la précédente (comme Fusion 360 : moins de trajet à vide, enchaînement au plus proche en sens inverse). Défaut à la création.'],
-      ['avalant','Sens unique · avalant','Toutes les passes gardent leur orientation naturelle, enchaînement au plus proche sans alternance, ordre haut vers bas (descente).']],
+      ['bidir','Bidirectionnel · sens opposé','Chaque passe alterne le sens de coupe par rapport à la précédente (moins de trajet à vide, enchaînement au plus proche en sens inverse).'],
+      ['avalant','Sens unique · avalant','Toutes les passes dans le même sens, avalant (côté déjà usiné à droite, matière à gauche — comme Fusion 360 en Crêtes constantes). Défaut à la création.']],
       (op.sens==='avalant')?'avalant':'bidir',
       function(v){ if(v==='avalant')op.sens='avalant'; else op.sens='bidir'; },
-      'Sens de coupe des passes — bidirectionnel par défaut (sens opposé façon Fusion 360).'));
+      'Sens de coupe des passes — sens unique avalant par défaut (façon Fusion 360).'));
     // 2026-10-13-007 : TRAJECTOIRE (rétro-ingénierie cav.txt + visu Fusion
     // « passes bleues ») — 'iso' (défaut, documents anciens) = niveaux
     // horizontaux + anneaux plateaux ; 'parallel' = passes 3D parallèles à
     // pas constant le long de l'axe long, continues à travers boss et parois.
     rp.appendChild(faoLab('Trajectoire'));
     rp.appendChild(faoSel([
+      ['scallop','Crêtes constantes · offsets des bords','Façon Fusion 360 : anneaux FERMÉS à distance constante SUR la surface, depuis chaque bord de la zone (îlot, contour), qui se rencontrent à mi-chemin ; les restes sont finis en boucles concentriques. Liaisons en S au contact, aucune surcoupe (descente outil). Défaut à la création.'],
       ['iso','Iso-Z · niveaux horizontaux','Niveaux horizontaux à pas adaptif sur les pentes + anneaux concentriques sur les plateaux (comportement historique).'],
       ['parallel','Parallèle · passes 3D','Passes 3D parallèles à espacement constant le long de l’axe long de la pièce : chaque passe suit la surface en Z, continue à travers boss et parois, façon Fusion 360.']],
-      (op.traj==='parallel')?'parallel':'iso',
-      function(v){ if(v==='parallel')op.traj='parallel'; else delete op.traj; pdShow(); },
+      (op.traj==='parallel'||op.traj==='scallop')?op.traj:'iso',
+      function(v){ if(v==='parallel'||v==='scallop')op.traj=v; else delete op.traj; pdShow(); },
       'Type de trajectoire — parallèle = passes 3D continues façon Fusion 360.'));
     // 2026-10-13-007 : DIRECTION des passes (mode Parallèle) — Auto (axe long
     // de la pièce), X, Y, ou Angle libre en degrés depuis X (0 = X, 90 = Y).
@@ -5966,6 +5984,9 @@ function faoOpCardElement(setup,op,i){
     if(op.geoDiag){
       const gd=op.geoDiag;
       const gdEl=document.createElement('div'); gdEl.className='fao-meta';
+      if(gd.fronts!==undefined)
+        gdEl.textContent='Diag : '+gd.fronts+' bord(s) · anneaux '+(gd.rings||[]).join('/')+' · '+(gd.rest||0)+' boucles de reste · '+(gd.seq||0)+' séquence(s) · '+(gd.ms||0)+' ms';
+      else
       gdEl.textContent='Diag : '+gd.chains+' chaînes ('+gd.slope+' pentes · '+gd.plate+' plateaux · '+gd.par+' // · '+gd.rest+' restes)'+(gd.flat?'':' · ⚠ aucun plan détecté');
       d.appendChild(gdEl);
     }
