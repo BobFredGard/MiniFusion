@@ -262,7 +262,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-13-005';
+const APP_VER='2026-10-13-007';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -273,7 +273,7 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-13-005';
+const CACHE_VER='2026-10-13-007';
 function cacheVerOK(v){
   // 2026-10-11-002 : ébauche 3D — la ZONE voyage dans le REPÈRE (zoneAt
   // transposé sous SENS LONG + rotation de −θ sur l'axe d'une limite oblique,
@@ -12943,8 +12943,17 @@ function faoSanitiseOps(s){
       delete op.entree;
       }
     // 2026-10-08-003 : sens de passe — seuls 'avalant' et 'bidir' survivent,
-    // et seulement sur l'Ebauche 3D (hors de la, le champ n'a pas de sens).
-    if(op.type!=='rough3d'||(op.sens!=='avalant'&&op.sens!=='bidir'))delete op.sens;
+    // et seulement sur l'Ebauche 3D et la finition géodésique (2026-10-13-007 :
+    // rétro-ingénierie cav.txt — sens opposé alterné sur Crêtes constantes).
+    if((op.type!=='rough3d'&&op.type!=='geofinish')||(op.sens!=='avalant'&&op.sens!=='bidir'))delete op.sens;
+    // 2026-10-13-007 : direction des passes parallèles — 'auto'/'x'/'y'/'ang'
+    // sur Crêtes constantes (+ angle fini si 'ang'), absent = auto (axe long).
+    if(op.type==='geofinish'){
+      if(op.traj!=='parallel')delete op.traj;
+      if(op.pdir!=='x'&&op.pdir!=='y'&&op.pdir!=='ang'&&op.pdir!=='auto')delete op.pdir;
+      if(op.pdir==='ang'&&!isFinite(+op.pdirAng))delete op.pdir;
+      if(op.pdir!=='ang'&&('pdirAng' in op))delete op.pdirAng;
+    }else{ delete op.traj; delete op.pdir; delete op.pdirAng; }
     // 2026-10-04-004 : finition géodésique — limites Z héritées du brut,
     // garde-fou fraise droite recalculée à chaque dispatch (jamais stockée).
     if(op.type==='geofinish'){
@@ -14258,14 +14267,22 @@ function faoZoneCtx(op,job){
   if(!lim&&!lim2)return null;
   const tool=faoToolById(job,op&&op.toolId);
   const D=(tool&&+tool.d>0)?+tool.d:10;
+  // 2026-10-13-006 : rayon de garantie zone. Géofinish boule/torique : les
+  // points chemin sont la POINTE (contact), qui PEUT atteindre la limite —
+  // le corps de l'outil déborde au-delà mais c'est le comportement normal de
+  // la finition 3D (l'arête est finie par le flanc de la boule). Sans ce
+  // ajustement, un anneau de D/2 restait non fini le long de l'esquisse
+  // (« plat usiné JUSQU'À la limite, bout de fraise = contour »).
+  // Plat (ou op hors géofinish) : arête de l'outil = limite → centre = lim−D/2.
+  const zr=(op&&op.type==='geofinish'&&tool&&tool.kind!=='flat')?0:D/2;
   let at=null, cross=null, R=null, chain=false, limOK=null;
   if(lim&&(lim.mode==='chain'||lim.mode==='sketch')&&lim.loop&&lim.loop.length>=3){
     limOK=lim; chain=true;
-    const loop=lim.loop, r=D/2;
+    const loop=lim.loop, r=zr;
     at=function(x,y){ return faoLimInside(x,y,lim,r); };
     cross=function(a,b){ return faoPolyCross(a.x,a.y,b.x,b.y,loop); };
   }else if(lim&&lim.mode==='rect'){
-    const R0=faoEffLimit(op,D);
+    const R0=faoEffLimit(op,(op&&op.type==='geofinish'&&tool&&tool.kind!=='flat')?0.001:D);
     if(R0){
       limOK=lim; R=R0;
       at=function(x,y){ return x>=R.x0&&x<=R.x1&&y>=R.y0&&y<=R.y1; };
@@ -14284,6 +14301,9 @@ function faoZoneCtx(op,job){
   }
   if(!limOK&&!lim2OK)return null;
   if(lim2OK){
+    // 2026-10-13-007 : l'ÎLOT garde la garantie D/2 quel que soit l'outil —
+    // c'est une zone à PROTÉGER (bride, îlot) : la pointe au bord laisserait
+    // le corps boule/torique entamer l'îlot de D/2. (Rect : faoLimit2R(D).)
     const r2=D/2;
     const at2=R2
       ?function(x,y){ return !(x>=R2.x0&&x<=R2.x1&&y>=R2.y0&&y<=R2.y1); }
@@ -14727,7 +14747,7 @@ function faoOpMovesStore(op,key,mv){
 }
 function faoOpSig(op){
   const o={};
-  const skip={hidden:1,on:1,geoBlocked:1,stale:1};
+  const skip={hidden:1,on:1,geoBlocked:1,geoDiag:1,stale:1};
   try{
     for(const k in op){
       if(!Object.prototype.hasOwnProperty.call(op,k)||skip[k])continue;
@@ -15362,11 +15382,24 @@ function* faoOpMovesIt(op,job){
         {step:isFinite(+op.step)?+op.step:1,toolD:D,kind:tool.kind,
          cornerR:tool.cornerR,laisse:+op.laisse||0,secu:secu,seed:op.seed||'top',
          ztop:op.ztop,zbot:op.zbot,
+         // 2026-10-13-007 : sens de passe (rétro-ingénierie cav.txt) —
+         // 'bidir' (défaut, absent inclus) = alternance du sens de coupe ;
+         // 'avalant' = proximité sans alternance, ordre haut→bas.
+         sens:op.sens,
+         // 2026-10-13-007 : trajectoire — 'parallel' = passes 3D parallèles
+         // (profils verticaux à pas constant, visu Fusion) ; absent = iso-Z.
+         traj:op.traj,
+         // 2026-10-13-007 : direction des passes parallèles — 'auto' (axe
+         // long), 'x', 'y', 'ang' (angle op.pdirAng, degrés depuis X).
+         pdir:op.pdir,pdirAng:op.pdirAng,
          // 2026-10-08-004 : entrée CIRC par défaut (doc sans champ = arc tangent ;
          // sans ébauche 3D amont, faoGeoEntryMode retombe sur la rampe).
          entry:op.entry||'circ',entryR:op.entryR,hasRrough:faoGeoHasRrough(job,op),
          zoneAt:zctx?zctx.at:null});
       op.geoBlocked=(tool.kind==='flat'&&!mv.length);
+      // 2026-10-13-007 : diag embarqué (fond nu : quelle phase est morte ?) —
+      // lu par la fiche op. Stashé AVANT le clip (qui reconstruit les tableaux).
+      try{ if(mv&&mv.diag)op.geoDiag=mv.diag; else delete op.geoDiag; }catch(e){}
     }else op.geoBlocked=false;
   }
   // Limite : rect (Liang-Barsky rapide) ou chaîne d'arêtes (clip impair).
@@ -15375,17 +15408,21 @@ function* faoOpMovesIt(op,job){
   // 2026-10-08-003 : zone intérieure (îlot) — clip en COMPLÉMENT, après
   // l'extérieur (les deux se composent en intersection).
   const lim2=op.limit2;
+  // 2026-10-13-006 : rayon de clip — géofinish boule/torique : la pointe
+  // (contact) peut atteindre la limite (r≈0) ; plat : arête = limite (r=D/2).
+  const clipR=(op.type==='geofinish'&&tool&&tool.kind!=='flat')?0.001:D/2;
   if(lim&&lim.mode==='rect'&&mv.length){
-    const R=faoEffLimit(op,D);
+    const R=faoEffLimit(op,clipR*2);
     if(R)mv=faoClipMovesXY(mv,R,secu);
   }else if(lim&&(lim.mode==='chain'||lim.mode==='sketch')&&lim.loop&&lim.loop.length>=3&&mv.length){
-    mv=faoClipMovesPoly(mv,lim,D/2,secu,2);
+    mv=faoClipMovesPoly(mv,lim,clipR,secu,2);
   }
   if(lim2&&mv.length){
     if(lim2.mode==='rect'){
       const R2=faoLimit2R(lim2,D);
       if(R2)mv=faoClipMovesXY(mv,R2,secu,true);
     }else if((lim2.mode==='chain'||lim2.mode==='sketch')&&lim2.loop&&lim2.loop.length>=3){
+      // 2026-10-13-007 : îlot = garantie D/2 (zone protégée), pas clipR.
       mv=faoClipMovesPoly(mv,lim2,D/2,secu,2,
         function(x,y){ return !faoLimInside(x,y,lim2,D/2); });
     }
@@ -15804,13 +15841,18 @@ function faoPost(job,postId){
     }
     if(gi>0){ nc(fag?'M09':'M9'); nc('G0 Z'+faoFmtXYZ(retrPrev-oz)); }
     retrPrev=retrCur;
-    cmt('OUTIL T'+(t.num||1)+' '+faoKindLabel((faoToolById(job,t.id)||{}).kind)+
+    const toolF=faoToolById(job,t.id)||{};
+    cmt('OUTIL T'+(t.num||1)+' '+faoKindLabel(toolF.kind)+
       ' D'+faoFmtXYZ(t.d)+' S'+S+' F'+F);
     if(fag){ nc('T'+(t.num||1)+' D1 M06'); }else{ nc('T'+(t.num||1)+' D1'); nc('M6'); }
     nc('S'+S+(fag?' M03':' M3'));
     if(cool&&cool!=='M9')nc(cool);
     g.blocks.forEach(function(b){
       cmt(faoOpLabel(b.op,job));
+      // 2026-10-13-007 : #MSG par opération sur Fagor (rétro-ingénierie
+      // cav.txt : N60 #MSG["OPT1: Paroies"]) — l'opérateur voit l'opération
+      // en cours sur la CN. Sanitisé ASCII, sans G1 ni F (parité post intacte).
+      if(fag){ try{ nc('#MSG["'+faoOpAscii(faoOpLabel(b.op,job))+'"]'); }catch(e){} }
       const sq=SEQ[qi++]||{moves:b.moves};
       // Plan de dégagement de CETTE opération (hérité du posage sinon) —
       // 2026-10-08-002 : la plongée/translation passe par son propre plan.
@@ -15878,6 +15920,7 @@ function faoPost(job,postId){
   if(fag){
     nc('M09');
     nc('G0 Z'+faoFmtXYZ(retrPrev-oz));
+    nc('#MSG[""]'); // 2026-10-13-007 : efface le message op (cav.txt N243150)
   }else{
     nc('M9');
     nc('G0 SUPA Z600 D0');
@@ -15887,6 +15930,14 @@ function faoPost(job,postId){
   return {code:L.join('\n')+'\n', ext:post.ext, warns:warns};
 }
 
+function faoOpAscii(s){
+  // 2026-10-13-007 : libellé sanitisé ASCII pour #MSG Fagor (rétro-ingénierie
+  // cav.txt : #MSG["OPT1: Paroies"]) — la CN n'aime ni les accents ni les
+  // guillemets dans les messages.
+  try{
+    return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[#"\r\n]/g,' ').slice(0,64);
+  }catch(e){ return String(s||'').replace(/[^\x20-\x7e]/g,' ').slice(0,64); }
+}
 function faoOpLabel(op,job){
   if(!op)return '?';
   const t=op.type;
@@ -15967,9 +16018,9 @@ function faoSegSplit(moves,clip,prev0){
   return out;
 }
 function faoPrevAdd(group,sp){
-  // Ajoute le résultat d'un faoSegSplit au groupe de l'aperçu : coupe vert
-  // 30d158, rapides rouges ff453a (30% de transparence), plongées bleues
-  // 0a84ff (2026-10-08-004). Renvoie les objets créés (pour retrait provisoire
+  // Ajoute le résultat d'un faoSegSplit au groupe de l'aperçu : coupe bleue
+  // 2f80ff, rapides orange ff9f0a (30% de transparence), plongées/entrées
+  // vertes 30d158 — palette façon Fusion 360 (2026-10-13-007). Renvoie les objets créés (pour retrait provisoire
   // — 2026-10-09-005, dessin progressif) ; échec silencieux (stubs/tests).
   const objs=[];
   if(!group||!sp)return objs;
@@ -15985,11 +16036,14 @@ function faoPrevAdd(group,sp){
       group.add(ls); objs.push(ls);
     }catch(e){}
   };
-  add(sp.cut,0x30d158);
+  // 2026-10-13-007 : palette façon Fusion 360 — coupe BLEUE, rapides
+  // ORANGE, plongées/entrées VERTES (feed). Rapides en transparence : ils
+  // ne doivent pas masquer le parcours bleu.
+  add(sp.cut,0x2f80ff);
   // 2026-10-13-003 : rapides selon faoViewerRap (tous 30 % / fondu 8 % /
   // masqués) — bouton « Rapides » de la barre Exécution.
-  if(faoViewerRap!=='masque')add(sp.rap,0xff453a,faoViewerRap==='fondu'?0.08:0.3);
-  add(sp.plg||[],0x0a84ff);
+  if(faoViewerRap!=='masque')add(sp.rap,0xff9f0a,faoViewerRap==='fondu'?0.08:0.3);
+  add(sp.plg||[],0x30d158);
   return objs;
 }
 function faoPrevDrop(objs){
@@ -16307,6 +16361,9 @@ function faoViewerApply(){
   if(!p)return;
   vw.drawn=Math.min(p.i+2,vw.pts.length); // points atteints (la fenêtre le resserre plus bas)
   if(vw.tool){
+    // 2026-10-13-006 : les points chemin sont la POINTE outil (tip) — le corps
+    // a sa pointe en z local 0, positionnement direct. (L'ancien bug centre→tip
+    // est corrigé à la source dans addLevel du géofinish.)
     vw.tool.position.x=p.x; vw.tool.position.y=p.y; vw.tool.position.z=p.z;
     const d=(isFinite(p.d)&&p.d>0)?p.d:10;
     if(vw.toolBody){ vw.toolBody.scale.x=d; vw.toolBody.scale.z=d; }   // Ø réel
@@ -16491,15 +16548,16 @@ function faoViewerStockCreate(){
   return g;
 }
 function faoViewerLineCreate(vw){
-  // Polyline continue, couleur par vertex : vert = coupe, rouge = rapide,
-  // bleu = plongée (G1 vertical descendant — 2026-10-08-004) ou entrée
-  // étiquetée ent (hélice, rampe, arc circ, descente d'entrée — 005).
+  // Polyline continue, couleur par vertex façon Fusion 360 (2026-10-13-007) :
+  // bleu = coupe, orange = rapide, vert = plongée (G1 vertical descendant —
+  // 2026-10-08-004) ou entrée étiquetée ent (hélice, rampe, arc circ,
+  // descente d'entrée — 005).
   const pos=[], col=[];
   vw.pts.forEach(function(p,i){
     pos.push(p.x,p.y,p.z);
     const q=(i>0)?vw.pts[i-1]:null;
     const plg=p.ent|| (q&&!p.r&&!q.r&&Math.abs(p.x-q.x)<1e-9&&Math.abs(p.y-q.y)<1e-9&&p.z<q.z-1e-9);
-    const c=(i>0&&p.r)?0xff453a:(plg?0x0a84ff:0x30d158);
+    const c=(i>0&&p.r)?0xff9f0a:(plg?0x30d158:0x2f80ff);
     col.push(((c>>16)&255)/255, ((c>>8)&255)/255, (c&255)/255);
   });
   try{
@@ -17380,7 +17438,10 @@ function faoOpDefaults(type){
     sens:'avalant',
     arrondi:+(Math.min(2,D*0.25)).toFixed(2)});
   if(type==='geofinish')return Object.assign({},base,{type:'geofinish',
-    step:1, laisse:0, seed:'top', entry:'circ', ztop:s.z1, zbot:s.z0});
+    step:1, laisse:0, seed:'top', entry:'circ', ztop:s.z1, zbot:s.z0,
+    // 2026-10-13-007 : sens opposé par défaut (rétro-ingénierie cav.txt :
+    // passes 2/3 en sens alterné) — 'avalant' = proximité sans alternance.
+    sens:'bidir'});
   // Type retiré (2026-10-06-004 : pocket3d) ou inconnu -> null : pas de fiche,
   // pas d'opération fantôme. Seule la barre « + Usinage » crée des opérations.
   if(['facing','pocket','contour','drill','rough3d','geofinish'].indexOf(type)<0)return null;
@@ -18432,6 +18493,49 @@ function faoOpCardElement(setup,op,i){
     // défaut (même règle : sans ébauche avant, faoGeoEntryMode retombe rampe).
     faoEntryRows(rp,op,(function(){const t=faoToolById(setup,op.toolId);
       return t&&+t.d>0?+t.d:8;})());
+    // 2026-10-13-007 : SENS DE PASSE (rétro-ingénierie cav.txt : passes 2/3 en
+    // sens opposé) — 'bidir' (défaut) = alternance du sens de coupe à surcoût
+    // borné ; 'avalant' = proximité sans alternance, ordre haut→bas. Document
+    // ancien sans champ = bidir (comportement réel).
+    rp.appendChild(faoLab('Sens'));
+    rp.appendChild(faoSel([
+      ['bidir','Bidirectionnel · sens opposé','Chaque passe alterne le sens de coupe par rapport à la précédente (comme Fusion 360 : moins de trajet à vide, enchaînement au plus proche en sens inverse). Défaut à la création.'],
+      ['avalant','Sens unique · avalant','Toutes les passes gardent leur orientation naturelle, enchaînement au plus proche sans alternance, ordre haut vers bas (descente).']],
+      (op.sens==='avalant')?'avalant':'bidir',
+      function(v){ if(v==='avalant')op.sens='avalant'; else op.sens='bidir'; },
+      'Sens de coupe des passes — bidirectionnel par défaut (sens opposé façon Fusion 360).'));
+    // 2026-10-13-007 : TRAJECTOIRE (rétro-ingénierie cav.txt + visu Fusion
+    // « passes bleues ») — 'iso' (défaut, documents anciens) = niveaux
+    // horizontaux + anneaux plateaux ; 'parallel' = passes 3D parallèles à
+    // pas constant le long de l'axe long, continues à travers boss et parois.
+    rp.appendChild(faoLab('Trajectoire'));
+    rp.appendChild(faoSel([
+      ['iso','Iso-Z · niveaux horizontaux','Niveaux horizontaux à pas adaptif sur les pentes + anneaux concentriques sur les plateaux (comportement historique).'],
+      ['parallel','Parallèle · passes 3D','Passes 3D parallèles à espacement constant le long de l’axe long de la pièce : chaque passe suit la surface en Z, continue à travers boss et parois, façon Fusion 360.']],
+      (op.traj==='parallel')?'parallel':'iso',
+      function(v){ if(v==='parallel')op.traj='parallel'; else delete op.traj; pdShow(); },
+      'Type de trajectoire — parallèle = passes 3D continues façon Fusion 360.'));
+    // 2026-10-13-007 : DIRECTION des passes (mode Parallèle) — Auto (axe long
+    // de la pièce), X, Y, ou Angle libre en degrés depuis X (0 = X, 90 = Y).
+    // Pour aligner sur une arête/face : lire son angle dans l'esquisse ou
+    // l'arbre et le saisir ici (la sélection géométrique directe viendra).
+    // Direction/Angle n'ont de sens qu'en Parallèle : masqués en Iso-Z.
+    const pdEls=[];
+    const pdShow=function(){ pdEls.forEach(function(e){ e.style.display=(op.traj==='parallel')?'':'none'; }); };
+    pdEls.push(rp.appendChild(faoLab('Direction')));
+    const pdSel=faoSel([
+      ['auto','Auto · axe long','Passes le long du plus grand côté de la pièce (choix automatique).'],
+      ['x','X','Passes parallèles à l’axe X.'],
+      ['y','Y','Passes parallèles à l’axe Y.'],
+      ['ang','Angle…','Angle libre en degrés depuis X (champ suivant).']],
+      (op.pdir==='x'||op.pdir==='y'||op.pdir==='ang')?op.pdir:'auto',
+      function(v){ if(v==='x'||v==='y'||v==='ang'){op.pdir=v;if(v==='ang'&&!isFinite(+op.pdirAng))op.pdirAng=0;} else {delete op.pdir;delete op.pdirAng;} },
+      'Direction des passes — actif en trajectoire Parallèle.');
+    pdEls.push(rp.appendChild(pdSel));
+    pdEls.push(rp.appendChild(faoLab('Angle°')));
+    pdEls.push(rp.appendChild(faoNum(isFinite(+op.pdirAng)?+op.pdirAng:0,function(v){op.pdirAng=v;if(op.pdir!=='ang'){op.pdir='ang';pdSel.value='ang';}},52,1,
+      'Angle des passes en degrés depuis X (0 = X, 90 = Y). Saisir bascule en mode Angle.')));
+    pdShow();
     // 2026-10-04-004 : limites Z (au-delà, relief non fini) + garde-fou fraise droite.
     zz();
     const tG=faoToolById(setup,op.toolId);
@@ -18440,6 +18544,14 @@ function faoOpCardElement(setup,op,i){
       geoNote.textContent=op.geoBlocked
         ? '⚠ Fraise droite refusée : le modèle n\'est pas horizontal (pente > 8°). Utilisez une boule ou une torique.'
         : 'Fraise droite : finition réservée aux faces horizontales — le reste du modèle n\'est pas usiné.';
+    }
+    // 2026-10-13-007 : DIAG embarqué (fond nu : quelle phase est morte ?) —
+    // zones par famille + chaînes, plan détecté ou non.
+    if(op.geoDiag){
+      const gd=op.geoDiag;
+      const gdEl=document.createElement('div'); gdEl.className='fao-meta';
+      gdEl.textContent='Diag : '+gd.chains+' chaînes ('+gd.slope+' pentes · '+gd.plate+' plateaux · '+gd.par+' // · '+gd.rest+' restes)'+(gd.flat?'':' · ⚠ aucun plan détecté');
+      d.appendChild(gdEl);
     }
   }else if(op.type==='drill'){
     zz();
@@ -22885,7 +22997,7 @@ function faoIsoSegs(mesh,normals,dist,iso,flags,want,mask){
   const segs=[];
   for(let i=0;i<mesh.t.length;i++){
     if(mask&&!mask[i])continue;
-    if(flags&&flags[i]!==want)continue;
+    if(flags&&want!==null&&want!==undefined&&flags[i]!==want)continue;
     const ti=mesh.t[i];
     const P=[mesh.v[ti[0]],mesh.v[ti[1]],mesh.v[ti[2]]];
     const N=[normals[ti[0]],normals[ti[1]],normals[ti[2]]];
@@ -23054,7 +23166,16 @@ function* faoGenGeoFinishIt(mesh,o){
   if(!(dmax>0))return [];
   const moves=[];
   const mode=faoGeoEntryMode(o.entry,o.hasRrough);
+  // 2026-10-13-007 : SENS DE PASSE (rétro-ingénierie cav.txt) — 'bidir'
+  // (défaut, absent inclus) = alternance du sens de coupe à surcoût borné ;
+  // 'avalant' = proximité pure sans alternance, ordre haut→bas conservé.
+  const sensBidir=(o.sens!=='avalant');
   const zones=[];
+  // 2026-10-13-007 : TAG DE NIVEAU par zone (stitch spiral façon Fusion) —
+  // {fam:'slope'|'plate', lvl:valeur d'iso}. Posé avant chaque emitLevel des
+  // phases 1-2, relu par addLevel. Les restes (phase 3) gardent tag=null
+  // (liaisons validées, pas de stitch).
+  let zoneTag=null;
   // --- CRÊTES CONSTANTES 2026-10-13-001 -------------------------------------
   // Retour au double champ (demandes : « le parcours est oblique, je le veux le
   // plus parallèle possible de XY » / « les traces sur le plat continuent
@@ -23112,7 +23233,10 @@ function* faoGenGeoFinishIt(mesh,o){
     return tot>0&&frag<=0.6*tot;
   };
   // addLevel : convertit des chaînes source (points surface + normales) en
-  // zone émissible (points centre outil = contact + normale×R).
+  // zone émissible (points POINTE outil). 2026-10-13-006 : centre = contact +
+  // normale×R (R=Rc+laisse) ; pointe = centre − (0,0,Rc) le long de l'axe
+  // outil (vertical). Sans cette conversion la boule/torique flottait à +Rc
+  // en simulation ET en G-code (« la fraise ne touche pas les faces »).
   const addLevel=function(chs){
     const zcs=[];
     let zmaxZ=-1/0;
@@ -23123,7 +23247,8 @@ function* faoGenGeoFinishIt(mesh,o){
       if(userZ&&(zhi>zt+1e-6||zlo<zb-1e-6))return;
       const cen=ch.map(function(q){
         const l=Math.hypot(q.n[0],q.n[1],q.n[2])||1;
-        return {x:q.p[0]+q.n[0]/l*R, y:q.p[1]+q.n[1]/l*R, z:q.p[2]+q.n[2]/l*R};
+        // centre = contact + n×R ; pointe = centre − (0,0,Rc)
+        return {x:q.p[0]+q.n[0]/l*R, y:q.p[1]+q.n[1]/l*R, z:q.p[2]+q.n[2]/l*R-Rc};
       });
       const nl=Math.hypot(ch[0].n[0],ch[0].n[1],ch[0].n[2])||1;
       let cz=-1/0;
@@ -23131,7 +23256,7 @@ function* faoGenGeoFinishIt(mesh,o){
       if(cz>zmaxZ)zmaxZ=cz;
       zcs.push({pts:cen,n0:[ch[0].n[0]/nl,ch[0].n[1]/nl,ch[0].n[2]/nl]});
     });
-    if(zcs.length)zones.push({chains:zcs,zmax:zmaxZ});
+    if(zcs.length)zones.push({chains:zcs,zmax:zmaxZ,tag:zoneTag});
   };
   // emitLevel : extrait une iso du champ `field` à la valeur `iso`, restreinte
   // à la famille `want` (0=inclinée, 1=plate, null=toutes) ET au masque zone.
@@ -23165,51 +23290,126 @@ function* faoGenGeoFinishIt(mesh,o){
       chs=keep;
     }
     if(!chs.length)return false;
-    if(!coherent(chs))return false;
+    // 2026-10-13-006 : coherent() ASSOUMPI sur le plateau (want=1) — les
+    // anneaux concentriques d'un maillage grossier sont légitimement
+    // fragmentés en arcs < max(step,D) et le filtre 60 % les rejetait tous
+    // (fond plat vide). Le filtre reste actif sur les pentes (want=0/null).
+    // 2026-10-13-007 : idem profils parallèles (fam 'par') — un profil qui
+    // traverse un boss se fragmente légitimement en tronçons (sol/boss/sol).
+    if(want!==1&&!(zoneTag&&zoneTag.fam==='par')&&!coherent(chs))return false;
     addLevel(chs);
     covMark(chs);
     return true;
   };
   // --- SÉQUENCE : iso-Z pentes → passes // plateaux → restes ----------------
-  // (1) Iso-Z sur les faces en pente : passes HORIZONTALES = parallèles à XY.
-  // 2026-10-13-001 : pas ADAPTIF pour écart SURFACE constant (crêtes // et à
-  // égale distance, façon Fusion 360) — Δz = step × sinθ aux faces inclinées
-  // traversées par le niveau, borné [dzFloor, step]. Mur vertical sinθ≈1 →
-  // Δz≈step ; rampe douce sinθ petit → niveaux Z plus serrés → écart SUR LA
-  // SURFACE = step × sinθ / sinθ = step partout.
-  if(G.anySlope){
-    const zf=new Float64Array(mesh.v.length);
-    for(let i=0;i<mesh.v.length;i++)zf[i]=mesh.v[i][2];
-    // Précalcul par face inclinée (hors masque exclu) : zmin/zmax/sinθ.
-    const fZmin=[],fZmax=[],fSin=[];
-    for(let i=0;i<mesh.t.length;i++){
-      if(G.flags[i]===1||!allMask[i])continue;
-      const t=mesh.t[i];
-      const A=mesh.v[t[0]],B=mesh.v[t[1]],C=mesh.v[t[2]];
-      fZmin.push(Math.min(A[2],B[2],C[2]));
-      fZmax.push(Math.max(A[2],B[2],C[2]));
-      const ux=B[0]-A[0],uy=B[1]-A[1],uz=B[2]-A[2];
-      const wx=C[0]-A[0],wy=C[1]-A[1],wz=C[2]-A[2];
-      const nx=uy*wz-uz*wy,ny=uz*wx-ux*wz,nzz=ux*wy-uy*wx;
-      const l=Math.hypot(nx,ny,nzz)||1;
-      const nzN=nzz/l;
-      fSin.push(Math.sqrt(Math.max(0,1-nzN*nzN)));
+  // 2026-10-13-007 : TRAJECTOIRE PARALLÈLE (rétro-ingénierie cav.txt + visu
+  // Fusion « passes bleues » : passes 3D parallèles à espacement constant,
+  // continues à travers boss et parois). Champ = coordonnée le long de l'axe
+  // PERPENDICULAIRE au sens de passe (axe long de la pièce) : les iso-lignes
+  // sont les profils verticaux qui suivent la surface en Z (montées/descentes).
+  // Toute la machinerie est réutilisée (marching, chaînage, couverture, zones,
+  // stitch fam:'par', sens opposé). Les restes (3) ratissent ensuite.
+  const trajPar=(o.traj==='parallel');
+  if(trajPar){
+    let bx0=1/0,bx1=-1/0,by0=1/0,by1=-1/0;
+    for(let i=0;i<mesh.v.length;i++){const v=mesh.v[i];
+      if(v[0]<bx0)bx0=v[0];if(v[0]>bx1)bx1=v[0];
+      if(v[1]<by0)by0=v[1];if(v[1]>by1)by1=v[1];}
+    // 2026-10-13-007 : DIRECTION des passes (op.pdir : 'auto' = axe long,
+    // 'x', 'y', 'ang' = angle op.pdirAng en degrés). Champ = coordonnée le
+    // long de la PERPENDICULAIRE au sens de passe : les iso-lignes sont les
+    // profils qui courent en (pdx,pdy).
+    let pdx=1,pdy=0;
+    const pm=o.pdir||'auto';
+    if(pm==='x'){pdx=1;pdy=0;}
+    else if(pm==='y'){pdx=0;pdy=1;}
+    else if(pm==='ang'&&isFinite(+o.pdirAng)){
+      // Snap cardinal : ang=90 donne exactement (0,1) comme 'y' (pas de
+      // résidu cos90°≈6e-17 — déterminisme + cache).
+      const pa=(+o.pdirAng)*Math.PI/180;
+      let cx=Math.cos(pa), sy=Math.sin(pa);
+      if(Math.abs(cx)<1e-9)cx=0; else if(Math.abs(Math.abs(cx)-1)<1e-9)cx=cx<0?-1:1;
+      if(Math.abs(sy)<1e-9)sy=0; else if(Math.abs(Math.abs(sy)-1)<1e-9)sy=sy<0?-1:1;
+      pdx=cx;pdy=sy;
     }
-    const dzFloor=Math.max(0.05,step*0.1);
-    const zlv=[];
-    let z=zt;
-    for(let guard=0;guard<10000;guard++){
-      let minSin=1;
-      for(let i=0;i<fZmin.length;i++){
-        if(fZmin[i]<=z+1e-9&&fZmax[i]>=z-1e-9&&fSin[i]<minSin)minSin=fSin[i];
+    else if((bx1-bx0)<(by1-by0)){pdx=0;pdy=1;}
+    const pnx=-pdy, pny=pdx;
+    const pf=new Float64Array(mesh.v.length);
+    let omin=1/0,omax=-1/0;
+    for(let i=0;i<mesh.v.length;i++){
+      const c=pnx*mesh.v[i][0]+pny*mesh.v[i][1];
+      pf[i]=c; if(c<omin)omin=c; if(c>omax)omax=c;
+    }
+    if(omin<=omax){
+      for(let off=omin;off<=omax+1e-9;off+=step){
+        zoneTag={fam:'par',lvl:off};emitLevel(pf,off,null,null);
       }
-      const dz=Math.max(dzFloor,Math.min(step,step*minSin));
-      z-=dz;
-      if(z<=zb+1e-9)break;
-      zlv.push(z);
+      zoneTag=null;
     }
-    if(o.seed==='bottom')zlv.reverse();
-    for(let i=0;i<zlv.length;i++)emitLevel(zf,zlv[i],null,0);
+  }
+  // (1) ISO GÉODÉSIQUES sur les faces en pente (2026-10-13-007 : crête
+  // constante VRAIE — distance mesurée SUR la surface, perpendiculaire aux
+  // passes, plus de cotes Z). Dijkstra restreint aux pentes depuis le haut
+  // (avalant : seed haut ; seed 'bottom' : seed bas) + rives pente/plat pour
+  // les composantes déconnectées (bosses). Isos à k·step = espacement SURFACE
+  // exact sans adaptation sinθ (sur mur plan : identique à l'ancien iso-Z).
+  // Final : un anneau EXACTEMENT à zb (limite basse : la pointe atteint zb).
+  if(!trajPar&&G.anySlope){
+    const dzFloor=Math.max(0.05,step*0.1);
+    const sBand=Math.max(dzFloor,step*0.1);
+    const slopeAdj=[]; for(let i=0;i<mesh.v.length;i++)slopeAdj.push([]);
+    const slink=function(a,b){ if(slopeAdj[a].indexOf(b)<0)slopeAdj[a].push(b); };
+    const vSlope=new Uint8Array(mesh.v.length), vFlat=new Uint8Array(mesh.v.length);
+    for(let i=0;i<mesh.t.length;i++){
+      const t=mesh.t[i];
+      if(!allMask[i])continue;
+      if(G.flags[i]===1){vFlat[t[0]]=1;vFlat[t[1]]=1;vFlat[t[2]]=1;}
+      else{
+        vSlope[t[0]]=1;vSlope[t[1]]=1;vSlope[t[2]]=1;
+        slink(t[0],t[1]);slink(t[1],t[0]);
+        slink(t[1],t[2]);slink(t[2],t[1]);
+        slink(t[2],t[0]);slink(t[0],t[2]);
+      }
+    }
+    const seedSet=new Uint8Array(mesh.v.length);
+    const seeds=[];
+    const addSeed=function(i){ if(!seedSet[i]){seedSet[i]=1;seeds.push(i);} };
+    if(o.seed==='bottom'){
+      for(let i=0;i<mesh.v.length;i++)if(vSlope[i]&&mesh.v[i][2]<=zb+sBand)addSeed(i);
+    }else{
+      for(let i=0;i<mesh.v.length;i++)if(vSlope[i]&&mesh.v[i][2]>=zt-sBand)addSeed(i);
+    }
+    let dslope=seeds.length?faoDijkstra(mesh,seeds,slopeAdj):[];
+    // Orphelins (composantes non atteintes : boss cerné de plat) → seed des
+    // rives pente/plat locales, 2e passe Dijkstra.
+    let orph=false;
+    for(let i=0;i<mesh.v.length;i++)if(vSlope[i]&&!(dslope[i]<1/0)){orph=true;break;}
+    if(orph){
+      for(let i=0;i<mesh.v.length;i++)if(vSlope[i]&&vFlat[i])addSeed(i);
+      if(seeds.length)dslope=faoDijkstra(mesh,seeds,slopeAdj);
+    }
+    let dmaxS=-1/0;
+    for(let i=0;i<dslope.length;i++)if(dslope[i]<1/0&&dslope[i]>dmaxS)dmaxS=dslope[i];
+    const iso0=Math.min(step*0.05,0.1);
+    let lastIso=-1;
+    if(dmaxS>iso0){
+      for(let k=0;;k++){
+        const iso=(k===0)?iso0:k*step;
+        if(iso>dmaxS+1e-9)break;
+        lastIso=iso;
+        zoneTag={fam:'slope',lvl:iso};emitLevel(dslope,iso,null,0);
+      }
+      zoneTag=null;
+    }
+    // Anneau final EXACTEMENT à zb (limite basse : la pointe atteint zb ;
+    // miroir du niveau zEps du haut). Champs Z direct, même famille, lvl en
+    // continuité (bande suivante) pour ne pas casser le stitch spiral.
+    if(zt>zb+1e-9){
+      const zf=new Float64Array(mesh.v.length);
+      for(let i=0;i<mesh.v.length;i++)zf[i]=mesh.v[i][2];
+      zoneTag={fam:'slope',lvl:(lastIso>=0?lastIso+step:0)};emitLevel(zf,zb,null,0);
+      zoneTag=null;
+    }
   }
   // (2) Passes sur les plateaux — TOUR COMPLET (2026-10-13-004, demande :
   // « pourquoi ne pas faire un tour complet ? Cela évite les va-et-vient en
@@ -23221,8 +23421,8 @@ function* faoGenGeoFinishIt(mesh,o){
   // Iso-lignes à k·step = BOUCLES FERMÉES concentriques (chaque passe = un
   // tour complet du contour, pas = step) — reliées entre elles par un court
   // décalage radial, zéro va-et-vient. Les îlots non couverts sont finis par
-  // les restes (3) plus bas.
-  if(G.hasFlat){
+  // les restes (3) plus bas. Inactif en trajectoire parallèle (1P couvre tout).
+  if(!trajPar&&G.hasFlat){
     const vFlat=new Uint8Array(mesh.v.length), vNon=new Uint8Array(mesh.v.length);
     const flatAdj=[]; for(let i=0;i<mesh.v.length;i++)flatAdj.push([]);
     const flink=function(a,b){ if(flatAdj[a].indexOf(b)<0)flatAdj[a].push(b); };
@@ -23272,7 +23472,18 @@ function* faoGenGeoFinishIt(mesh,o){
       // recevoir d'offset, on retombe sur le champ linéaire ci-dessous.
       if(dmaxF>step){
         usedGeo=true;
-        for(let k=1;k*step<=dmaxF+1e-9;k++)emitLevel(dflat,k*step,null,1);
+        // 2026-10-13-006 : première passe PRÈS DE LA RIVE (iso0 ≈ 0), pas à
+        // step — « plat usiné JUSQU'À l'esquisse, bout de fraise = contour ».
+        // Sans cela l'anneau extérieur démarrait à step de la limite (D/2 = 4 mm
+        // de bavure non finie le long du contour). iso0 = 0,1 mm (assez près
+        // pour que la boule touche le contour, assez loin pour le marching
+        // triangles qui ignore les sommets exactement sur l'iso).
+        const iso0=Math.min(step*0.05,0.1);
+        for(let k=0;k*step<=dmaxF+1e-9;k++){
+          const iso=(k===0)?iso0:k*step;
+          zoneTag={fam:'plate',lvl:iso};emitLevel(dflat,iso,null,1);
+        }
+        zoneTag=null;
       }
     }
     if(!usedGeo){
@@ -23299,13 +23510,18 @@ function* faoGenGeoFinishIt(mesh,o){
       let umin=1/0,umax=-1/0;
       for(let i=0;i<u.length;i++){if(u[i]<umin)umin=u[i];if(u[i]>umax)umax=u[i];}
       for(let k=Math.ceil(umin/step);k*step<=umax+1e-9;k++){
-        emitLevel(u,k*step,null,1);
+        zoneTag={fam:'plate',lvl:k*step};emitLevel(u,k*step,null,1);
       }
+      zoneTag=null;
     }
   }
   // (3) restes : zones que les deux familles n'ont pas couvertes (dessous,
   // surplomb, régions disconnectes). Seeds locaux tant que >20 % non couvert.
-  for(let t=0;t<3;t++){
+  // 2026-10-13-007 : DÉSACTIVÉ en trajectoire parallèle — les restes géodésiques
+  // partent dans toutes les directions (30°/45° constatés) et brisent le
+  // contrat « une seule direction ». Les profils couvrent tout ; les bandes
+  // tangentes éventuelles se traiteront dans la direction unique.
+  if(!trajPar)for(let t=0;t<3;t++){
     let miss=0;
     for(let i=0;i<mesh.v.length;i++)
       if(!covHas(mesh.v[i]))miss++;
@@ -23320,9 +23536,19 @@ function* faoGenGeoFinishIt(mesh,o){
     const dl=faoDijkstra(mesh,best);
     let lm=0;
     for(let i=0;i<dl.length;i++)if(dl[i]<1/0&&dl[i]>lm)lm=dl[i];
-    if(lm>0)for(let iso=step;iso<lm;iso+=step)emitLevel(dl,iso,1,null);
+    if(lm>0){zoneTag={fam:'rest',lvl:0};for(let iso=step;iso<lm;iso+=step)emitLevel(dl,iso,1,null);zoneTag=null;}
   }
   // --- phase d'émission : une entrée + une sortie par zone -----------------
+  // 2026-10-13-007 : DIAG embarqué (fond nu : quelle phase est morte ?) —
+  // compté sur les zones taggées, lu par la fiche op via op.geoDiag (hors
+  // sig : donnée dérivée, comme geoBlocked).
+  const faoDiag={slope:0,plate:0,par:0,rest:0,chains:0,flat:G.hasFlat?1:0,anySlope:G.anySlope?1:0};
+  for(let zdi=0;zdi<zones.length;zdi++){const ztg=zones[zdi].tag;
+    const zf=ztg&&ztg.fam;
+    if(zf==='slope')faoDiag.slope++;else if(zf==='plate')faoDiag.plate++;
+    else if(zf==='par')faoDiag.par++;else faoDiag.rest++;
+    faoDiag.chains+=zones[zdi].chains.length;}
+  try{moves.diag=faoDiag;}catch(e){}
   const margin=Math.max(1,D*0.2);
   // Colonnes de liaison par hauteur H (2026-10-13-001, remontées courtes) :
   // le repli valide un chemin à une hauteur H ≠ travel — même colonne ombre
@@ -23388,6 +23614,8 @@ function* faoGenGeoFinishIt(mesh,o){
       return Math.sqrt(dmin);
   };
   let prevEnd=null; // dernier point émis + tangente (liaison inter-zones par spline)
+  let lastSense=1; // 2026-10-13-007 : SENS OPPOSÉ (bidir façon Fusion) — sens
+  // de la dernière chaîne émise (+1/-1), pour alterner le sens de coupe.
   for(let zi=0;zi<zones.length;zi++){
     const Z=zones[zi];
     // Z de liaison : au-dessus des coupes de la zone, sous secu quand possible.
@@ -23438,7 +23666,7 @@ function* faoGenGeoFinishIt(mesh,o){
       }
       return spPl;
     };
-    const splineEmit=function(from,tx,ty,pz,T0,l0,T1,l1){
+    const splineEmit=function(from,tx,ty,pz,T0,l0,T1,l1,slide){
       if(!(L<=1e-9))return null; // laisse>0 : rien à tondre — lift sûr
       if(o.spline===false)return null; // échappatoire (tests / comparaison)
       const p0={x:from.x,y:from.y,z:from.z};
@@ -23453,11 +23681,14 @@ function* faoGenGeoFinishIt(mesh,o){
       // de même cote — c'est le cas normal sur un plateau (annulus).
       const zFloor=Math.min(p0.z,p1.z)-(Rc+0.5);
       const zLo=Math.min(p0.z,p1.z)-0.05;
-      const pl=splinePlanes();
+      const pl=slide?[]:splinePlanes(); // slide : pas de check « matière au-dessus »
       // Validation par échantillon : z ≥ zLo, jamais de matière AU-DESSUS
       // (sections des colonnes à une cote strictement supérieure), air jamais
       // sous la portée de coupe. Partagée par les 3 tentatives et par la
       // re-validation des corde fusionnées.
+      // 2026-10-13-006 : slide=1 → pl=[] → le check « matière au-dessus » est
+      // neutralisé (les extrémités SONT sur la surface, elles ont forcément
+      // de la matière au-dessus — le check les rejetait et forçait le lift).
       const sampleOK=function(x,y,z){
         if(z<zLo)return false;
         for(let q=0;q<pl.length;q++){
@@ -23556,7 +23787,17 @@ function* faoGenGeoFinishIt(mesh,o){
             p1,{x:T1.x*s1,y:T1.y*s1,z:0},Math.ceil(chord/0.5));
           if(!spts)break;
         }
-        if(!validate(spts))continue;
+        if(!validate(spts)){
+          if(typeof FAO_DEBUG_SLIDE!=='undefined'&&FAO_DEBUG_SLIDE){
+            let bad=-1;
+            for(let k=0;k<spts.length;k++)if(!sampleOK(spts[k].x,spts[k].y,spts[k].z)){bad=k;break;}
+            console.log('SPLINE FAIL att='+att+' chord='+chord.toFixed(1)+' bad@'+bad+'/'+spts.length+
+              ' p0z='+p0.z.toFixed(1)+' p1z='+p1.z.toFixed(1)+
+              (bad>=0?' at('+spts[bad].x.toFixed(1)+','+spts[bad].y.toFixed(1)+','+spts[bad].z.toFixed(1)+')':'')+
+              ' zLo='+zLo.toFixed(1)+' zFloor='+zFloor.toFixed(1)+' plN='+pl.length);
+          }
+          continue;
+        }
         return emitMerged(spts);
       }
       return null;
@@ -23593,7 +23834,11 @@ function* faoGenGeoFinishIt(mesh,o){
       for(let k=0;k<=n;k++){
         const t=k/n;
         const s={x:p0.x+(p1.x-p0.x)*t,y:p0.y+(p1.y-p0.y)*t,z:p0.z+(p1.z-p0.z)*t};
-        if(!sampleOK(s.x,s.y,s.z))return null;
+        if(!sampleOK(s.x,s.y,s.z)){
+          if(typeof FAO_DEBUG_SLIDE!=='undefined'&&FAO_DEBUG_SLIDE)
+            console.log('STRAIGHT FAIL k='+k+'/'+n+' at('+s.x.toFixed(1)+','+s.y.toFixed(1)+','+s.z.toFixed(1)+') zLo='+zLo.toFixed(1)+' zFloor='+zFloor.toFixed(1)+' ptDist='+ptDist(s.x,s.y).toFixed(2)+' plN='+pl.length);
+          return null;
+        }
         spts.push(s);
       }
       // Émission : ligne droite = chaque run matière/air = 1 move direct.
@@ -23654,6 +23899,7 @@ function* faoGenGeoFinishIt(mesh,o){
     };
     for(let ci=0;ci<Z.chains.length;ci++){
       const C=Z.chains[ci];
+      let curSense=1; // sens de CETTE chaîne (+1 naturel, -1 si la sélection l'inverse — sens opposé 2026-10-13-007)
       if(ci>0||(ci===0&&prevEnd)){
         // Chaîne (fermée : tous les démarrages × 2 sens ; ouverte : droit ou
         // inversé) choisie pour QUE la liaison depuis la chaîne précédente
@@ -23662,14 +23908,39 @@ function* faoGenGeoFinishIt(mesh,o){
         // 2026-10-13-001 : ÉGALEMENT en tête de zone (ci===0&&prevEnd) —
         // l'extrémité la plus proche du tracé suivant, sinon la liaison
         // inter-zones partait de l'about arbitraire (~40 mm de saut).
+        // 2026-10-13-007 : STITCHABILITÉ (pas de suivi du brut : le G1 direct
+        // est sûr par proximité surface) — niveaux adjacents même famille :
+        // la liaison sera un stitch SANS validation, donc le `ok` (colonne
+        // matière : pics d'autres zones) ne doit pas écarter le plus proche
+        // au profit d'un saut lointain-mais-dégagé.
         const from=ci>0?Z.chains[ci-1].pts[Z.chains[ci-1].pts.length-1]:prevEnd;
+        const stPrev=(ci>0)?(Z.tag||null):((zi>0&&zones[zi-1])?zones[zi-1].tag:null);
+        const stCur=Z.tag||null;
+        const stTags=stPrev&&stCur&&stPrev.fam===stCur.fam&&
+          (stPrev.fam==='slope'||stPrev.fam==='plate'||stPrev.fam==='par')&&
+          Math.abs(stCur.lvl-stPrev.lvl)<=step*1.5+1e-9;
         const n0=C.n0,pts0=C.pts;
         const closed=pts0.length>3&&
           Math.hypot(pts0[0].x-pts0[pts0.length-1].x,pts0[0].y-pts0[pts0.length-1].y,pts0[0].z-pts0[pts0.length-1].z)<chainTol;
         const cands=[];
-        if(closed){for(let k=0;k<pts0.length-1;k++){cands.push([k,1]);cands.push([k,-1]);}}
+        if(closed){
+          // 2026-10-13-005 : FENÊTRE de candidats au lieu de TOUS les points
+          // — O(n²) → O(n·W). On cherche le point le plus proche de `from`
+          // puis on teste une fenêtre de ±W points autour (2 sens). W borné
+          // pour garder la qualité de sélection sans exploser le temps.
+          const W=Math.min(24,Math.max(4,Math.floor(pts0.length/6)));
+          let bi=0,bd=1/0;
+          for(let k=0;k<pts0.length-1;k++){
+            const d=Math.hypot(pts0[k].x-from.x,pts0[k].y-from.y);
+            if(d<bd){bd=d;bi=k;}
+          }
+          for(let k=bi-W;k<=bi+W;k++){
+            const kk=((k%(pts0.length-1))+(pts0.length-1))%(pts0.length-1);
+            cands.push([kk,1]);cands.push([kk,-1]);
+          }
+        }
         else{cands.push([0,1]);cands.push([0,-1]);}
-        let best=null;
+        let best=null, bestAlt=null, bestNear=null;
         for(let t=0;t<cands.length;t++){
           const c=cands[t];
           let pts;
@@ -23685,9 +23956,20 @@ function* faoGenGeoFinishIt(mesh,o){
           const axc=I.hx?I.hx.x:pts[0].x, ayc=I.hx?I.hx.y:pts[0].y;
           const len=Math.hypot(axc-from.x,ayc-from.y);
           if(!best||((ok?0:1)<(best.ok?0:1))||(ok===best.ok&&len<best.len))
-            best={pts:pts,ok:ok,len:len};
+            best={pts:pts,ok:ok,len:len,sense:c[1]};
+          // 2026-10-13-007 : SENS OPPOSÉ (bidir façon Fusion, cav.txt passes
+          // 2/3 en -Y puis +Y) — mémorise le meilleur candidat en sens alterné.
+          if(c[1]===-lastSense&&(!bestAlt||((ok?0:1)<(bestAlt.ok?0:1))||(ok===bestAlt.ok&&len<bestAlt.len)))
+            bestAlt={pts:pts,ok:ok,len:len,sense:c[1]};
+          if(!bestNear||len<bestNear.len)bestNear={pts:pts,len:len,sense:c[1]};
         }
-        if(best)C.pts=best.pts;
+        // G1 direct : proximité PURE quand stitchable (le stitch revérifie le
+        // gap exact ; sinon repli validé — jamais de G1 non prouvé).
+        // Alternance (bidir) sinon, proximité sinon. Inactive en 'avalant'.
+        let pick=best;
+        if(stTags&&bestNear&&bestNear.len<step*2)pick=bestNear;
+        else if(sensBidir&&best&&bestAlt&&bestAlt.ok===best.ok&&bestAlt.len<=best.len*1.5+step)pick=bestAlt;
+        if(pick){C.pts=pick.pts;curSense=pick.sense;}
       }
       const I=candLink(C.pts,C.n0);
       const pts=I.pts,here=pts[0],pk=I.pk,hx=I.hx,hr=I.hr,planesE=I.planesE;
@@ -23705,8 +23987,18 @@ function* faoGenGeoFinishIt(mesh,o){
       // (demande : « des arcs suivant les plans XZ ou YZ »). Validité :
       // ρ ≥ 0,5 et colonne de liaison qui dégage R-0,5 sur A + 6 échantillons
       // du balayage — sinon repli arc XY, hélice, rampe.
+      // 2026-10-13-006 : SLIDE INTER-TRACES — quand on glisse d'une trace vers
+      // la trace inférieure juste en dessous (ΔZ significatif ET trace
+      // précédente existante), on SAUTE le varc/circ (lift + arc vertical) :
+      // la spline smoothstep glisse directement le long de la surface.
+      let slideDZ=0;
+      {
+        const fromSlide=(ci>0?Z.chains[ci-1].pts[Z.chains[ci-1].pts.length-1]:prevEnd);
+        if(fromSlide)slideDZ=Math.abs(fromSlide.z-here.z);
+      }
+      const slideLink=slideDZ>Math.max(0.1,step*0.15);
       let circ=null, varc=null;
-      if(mode==='circ'&&pts.length>1){
+      if(mode==='circ'&&pts.length>1&&!slideLink){
         const rhoV=travel-here.z;
         const dvx=pts[1].x-here.x, dvy=pts[1].y-here.y, lXY=Math.hypot(dvx,dvy);
         if(rhoV>=0.5&&lXY>1e-9){
@@ -23755,21 +24047,60 @@ function* faoGenGeoFinishIt(mesh,o){
           const TA=circ.cw?{x:rsy/lA,y:-rsx/lA,z:0}:{x:-rsy/lA,y:rsx/lA,z:0};
           startZs=splineEmit(from,circ.sx,circ.sy,here.z,T0,l0,TA,l1||lA);
         }else{
-          // 2026-10-13-005 : LIGNE DROITE / SPLINE TOUJOURS essayées, même
-          // quand hx est défini (demande « sans remontées en Z » sur les
-          // pentes) — la condition !hx sautait le lien et forçait le lift à
-          // chaque transition de niveau iso-Z. hx ne sert plus qu'au repli
-          // hélice (descente d'air) si les deux échecs.
-          startZs=straightEmit(from,here.x,here.y,here.z);
-          if(startZs===null)startZs=splineEmit(from,here.x,here.y,here.z,T0,l0,T1,l1);
+          // 2026-10-13-007 : STITCH SPIRAL inter-zones (façon Fusion : 7 passes
+          // continues, 6 micro-liaisons) — niveaux iso-Z / anneaux plateau
+          // CONSECUTIFS (même fam, |Δlvl| ≤ 1.5*step) : G1 direct SANS
+          // validation quand le gap 3D < 2*step. Les niveaux consécutifs d'une
+          // même famille sont adjacents par construction ; la chord reste au
+          // contact (déviation négligeable à pas fin). tr:1 = séparateur de
+          // passes. Respecte o.spline:false ET laisse>0.
+          const dStitch=Math.hypot(here.x-from.x,here.y-from.y,here.z-from.z);
+          const pTagS=(zi>0&&zones[zi-1])?zones[zi-1].tag:null;
+          const cTagS=Z.tag||null;
+          const stitchFam=pTagS&&cTagS&&pTagS.fam===cTagS.fam&&
+            (pTagS.fam==='slope'||pTagS.fam==='plate'||pTagS.fam==='par')&&
+            Math.abs(cTagS.lvl-pTagS.lvl)<=step*1.5+1e-9;
+          if(o.spline!==false&&L<=1e-9&&stitchFam&&dStitch<step*2){
+            moves.push({r:0,tr:1,x:here.x,y:here.y,z:here.z});
+            startZs=here.z;
+          }else{
+          // 2026-10-13-006 : LIAISON COURTE AU CONTACT inter-zones (idem
+          // intra) — zones adjacentes très proches (distance ET ΔZ < step/2) :
+          // G1 direct sans lift. Au-delà, on laisse spline/straight/rapid
+          // gérer (les transitions step-over normales restent des liaisons
+          // validées). tr:1 marque la transition. Respecte o.spline:false
+          // ET laisse>0.
+          const dLink=Math.hypot(here.x-from.x,here.y-from.y,here.z-from.z);
+          const dZlink=Math.abs(from.z-here.z);
+          if(o.spline!==false&&L<=1e-9&&dLink<step*0.6&&dZlink<step*0.5){
+            moves.push({r:0,tr:1,x:here.x,y:here.y,z:here.z});
+            startZs=here.z;
+          }else if(dZlink>Math.max(0.1,step*0.15)){
+            // SUR PENTE (ΔZ ≠ 0 entre les bouts) la corde droite coupe en
+            // DIAGONALE au-dessus de la surface → longue ligne rouge. On
+            // préfère la SPLINE (smoothstep Z, tangente aux 2 passes) qui suit
+            // la surface ; la ligne droite reste le repli si la spline échoue.
+            startZs=splineEmit(from,here.x,here.y,here.z,T0,l0,T1,l1,true);
+            if(startZs===null)startZs=straightEmit(from,here.x,here.y,here.z);
+          }else{
+            startZs=straightEmit(from,here.x,here.y,here.z);
+            if(startZs===null)startZs=splineEmit(from,here.x,here.y,here.z,T0,l0,T1,l1,true);
+          }
+          }
         }
         if(startZs!==null){startZ=startZs;linkSpline=true;}
         else{
           // Repli 2026-10-13-001 : remontée COURTE — travel si le chemin est
           // clair, sinon H = max(from.z, Z.zmax)+5 (borné secu) validée par
           // pathOKh à sa propre altitude, sinon secu (historique).
+          // 2026-10-13-007 : MICRO-LIFT façon Fusion (cav.txt T0-T5 : +5 mm
+          // local, 3 blocs) essayé AVANT travel — lift minimal au-dessus des
+          // deux bouts, validé par pathOKh à sa propre altitude. Écrase les
+          // grands verticaux rouges en petits sauts locaux.
           let lz=secu;
-          if(pathOK(from,{x:ax,y:ay}))lz=travel;
+          const microM=Math.min(secu,Math.max(from.z,here.z)+5);
+          if(microM>Math.max(from.z,here.z)+0.5&&pathOKh(from,{x:ax,y:ay},microM))lz=microM;
+          else if(pathOK(from,{x:ax,y:ay}))lz=travel;
           else{
             const H=Math.max(travel,Math.min(secu,Math.max(from.z,Z.zmax)+5));
             if(H>travel&&H<secu&&pathOKh(from,{x:ax,y:ay},H))lz=H;
@@ -23791,6 +24122,17 @@ function* faoGenGeoFinishIt(mesh,o){
         // Début de programme : rapide à secu vers le point d'attaque.
         moves.push({r:1,x:ax,y:ay,z:secu});
         startZ=secu;
+        // 2026-10-13-007 : POINTE ATTENDUE AU DÉPART (façon Fusion cav.txt
+        // N65-N85 : G0 XY, G0 down, puis G1 court) — descente RAPIDE jusqu'au
+        // spot (haut de matière sous le disque outil + 2, colonne d'air
+        // vérifiée par faoHelixSpot) : les entrées G1 ne font que le court
+        // final au lieu de descendre depuis secu en air.
+        try{
+          const spotX=hx?hx.x:ax, spotY=hx?hx.y:ay;
+          const spot0=faoHelixSpot(mesh,spotX,spotY,hx?hr:0,R,here.z,zmax,planesE);
+          const zSpot=Math.min(secu,isFinite(spot0)?spot0:secu);
+          if(zSpot<secu-1e-9){moves.push({r:1,x:spotX,y:spotY,z:zSpot});startZ=zSpot;}
+        }catch(e){}
       }else{
         // Liaison intra-zone (2026-10-13-004) : LIGNE DROITE d'abord —
         // segment direct s'il dégage (demande « les lignes droites c'est bien
@@ -23821,18 +24163,38 @@ function* faoGenGeoFinishIt(mesh,o){
           const TA=circ.cw?{x:rsy/lA,y:-rsx/lA,z:0}:{x:-rsy/lA,y:rsx/lA,z:0};
           startZs=splineEmit(from,circ.sx,circ.sy,here.z,T0,l0,TA,l1||lA);
         }else{
-          // 2026-10-13-005 : idem liaison inter-zones — ligne droite /
-          // spline même quand hx est défini (suppression du lift forcé).
-          startZs=straightEmit(from,here.x,here.y,here.z);
-          if(startZs===null)startZs=splineEmit(from,here.x,here.y,here.z,T0,l0,T1,l1);
+          // 2026-10-13-006 : LIAISON COURTE AU CONTACT (façon Fusion 360) —
+          // passes adjacentes très proches (distance ET ΔZ < step/2) : G1
+          // direct au niveau de coupe SANS check « matière au-dessus ».
+          // tr:1 marque la transition. Respecte o.spline:false ET laisse>0.
+          const dLink=Math.hypot(here.x-from.x,here.y-from.y,here.z-from.z);
+          if(o.spline!==false&&L<=1e-9&&dLink<step*0.6&&Math.abs(here.z-from.z)<step*0.5){
+            moves.push({r:0,tr:1,x:here.x,y:here.y,z:here.z});
+            startZs=here.z;
+          }else{
+            // 2026-10-13-006 : idem liaison inter-zones — spline d'abord si
+            // ΔZ ≠ 0 (pente), ligne droite sinon.
+            const dZlink=Math.abs(from.z-here.z);
+            if(dZlink>Math.max(0.1,step*0.15)){
+              startZs=splineEmit(from,here.x,here.y,here.z,T0,l0,T1,l1,true);
+              if(startZs===null)startZs=straightEmit(from,here.x,here.y,here.z);
+            }else{
+              startZs=straightEmit(from,here.x,here.y,here.z);
+              if(startZs===null)startZs=splineEmit(from,here.x,here.y,here.z,T0,l0,T1,l1,true);
+            }
+          }
         }
         if(startZs!==null){startZ=startZs;linkSpline=true;}
         else{
           // Repli 2026-10-13-001 : remontée COURTE — travel si le chemin est
           // clair, sinon H = max(from.z, Z.zmax)+5 (borné secu) validée par
           // pathOKh à sa propre altitude, sinon secu (historique).
+          // 2026-10-13-007 : MICRO-LIFT façon Fusion (idem inter-zones) —
+          // +5 mm local validé avant travel.
           let liftZ=secu;
-          if(pathOK(from,{x:ax,y:ay}))liftZ=travel;
+          const microM2=Math.min(secu,Math.max(from.z,here.z)+5);
+          if(microM2>Math.max(from.z,here.z)+0.5&&pathOKh(from,{x:ax,y:ay},microM2))liftZ=microM2;
+          else if(pathOK(from,{x:ax,y:ay}))liftZ=travel;
           else{
             const H=Math.max(travel,Math.min(secu,Math.max(from.z,Z.zmax)+5));
             if(H>travel&&H<secu&&pathOKh(from,{x:ax,y:ay},H))liftZ=H;
@@ -23922,6 +24284,7 @@ function* faoGenGeoFinishIt(mesh,o){
         }else moves.push({r:0,x:pts[i].x,y:pts[i].y,z:pts[i].z});
       }
       // Suivi du dernier point émis + tangente (liaison inter-zones par spline).
+      // 2026-10-13-007 : + sens de la chaîne (sens opposé bidir).
       {
         const last=pts[pts.length-1];
         const prev2=pts.length>1?pts[pts.length-2]:null;
@@ -23929,6 +24292,7 @@ function* faoGenGeoFinishIt(mesh,o){
         prevEnd={x:last.x,y:last.y,z:last.z,
           T:l0last>1e-9?{x:(last.x-prev2.x)/l0last,y:(last.y-prev2.y)/l0last,z:(last.z-prev2.z)/l0last}:null,
           l0:l0last};
+        lastSense=curSense;
       }
       yield moves; // 2026-10-12-002 : dessin progressif — chaîne finie
     }
@@ -26008,7 +26372,7 @@ window.addEventListener('pointerdown',e=>{if(!$('ctxMenu').contains(e.target))hi
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.11';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.13';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);

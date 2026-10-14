@@ -104,6 +104,20 @@ const vm=require('vm');
     "att(dA.length&&dB.length&&dN.length,'dispatch : trois parcours generes ('+dA.length+'/'+dB.length+'/'+dN.length+')');",
     "att(J(dA)!==J(dB),'dispatch : avalant DIFFERENT de bidir');",
     "att(J(dN)===J(dB),'dispatch ancien doc : sans champ == bidir (byte-identique)');",
+    // ================= 6. geofinish 2026-10-13-007 (retro-ingenierie cav.txt)
+    // Sens oppose alterne par defaut (absent == bidir) ; 'avalant' = proximite
+    // sans alternance (parcours DIFFERENT). Creation geofinish = bidir.
+    "const GX={v:[[0,0,0],[20,0,0],[20,20,0],[0,20,0],[0,0,10],[20,0,10],[20,20,10],[0,20,10]],t:[[0,2,1],[0,3,2],[4,5,6],[4,6,7],[0,1,5],[0,5,4],[2,3,7],[2,7,6],[0,4,7],[0,7,3],[1,2,6],[1,6,5]]};",
+    "const gX0=faoGenGeoFinish(GX,{step:5,toolD:6,kind:'ball',laisse:0,secu:25,seed:'top'});",
+    "const gXB=faoGenGeoFinish(GX,{step:5,toolD:6,kind:'ball',laisse:0,secu:25,seed:'top',sens:'bidir'});",
+    "att(J(gX0)===J(gXB),'geofinish : sans champ == bidir (sens oppose par defaut)');",
+    "const gXA=faoGenGeoFinish(GX,{step:5,toolD:6,kind:'ball',laisse:0,secu:25,seed:'top',sens:'avalant'});",
+    "att(J(gXB)!==J(gXA),'geofinish : avalant DIFFERENT de bidir ('+gXB.length+' vs '+gXA.length+' moves)');",
+    "att(faoOpDefaults('geofinish').sens==='bidir','creation geofinish : sens par defaut bidir');",
+    "const ogA={id:'g',type:'geofinish',sens:'avalant'},ogB={id:'g',type:'geofinish',sens:'bidir'},ogX={id:'g',type:'geofinish',sens:'zigzag'};",
+    "faoSanitiseOps({ops:[ogA,ogB,ogX]});",
+    "att(ogA.sens==='avalant'&&ogB.sens==='bidir','sanitise geofinish : avalant/bidir conserves');",
+    "att(!('sens' in ogX),'sanitise geofinish : valeur inconnue purgee');",
     // ================= rapport ==============================================
     "p('conv : sans champ '+J(g0).length+' | bidir '+J(gB).length+' | avalant '+J(gA).length);",
     "p('escargot : sans champ '+J(gE0).length+' | avalant '+J(gEA).length);",
