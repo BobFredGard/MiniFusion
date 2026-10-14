@@ -144,6 +144,7 @@ function rebuildInner(projPass){
       try{scene.remove(b.mesh);}catch(e){}
       if(!garde.has(b.mesh)){try{if(b.mesh.geometry)b.mesh.geometry.dispose();}catch(e){}}
       try{if(b._faoGeo&&b._faoGeo.dispose)b._faoGeo.dispose();}catch(e){}
+      try{if(b._faoGeoFine&&b._faoGeoFine.dispose)b._faoGeoFine.dispose();}catch(e){}
     }
     if(prevLive&&(!occLive||occLive.shape!==prevLive.shape)){try{prevLive.shape.delete();}catch(e){}}
   };

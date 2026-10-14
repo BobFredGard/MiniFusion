@@ -811,6 +811,7 @@ function importHydrate(){
     const e=importGeom.get(id);importGeom.delete(id);
     try{if(e&&e.mesh&&e.mesh.geometry)e.mesh.geometry.dispose();}catch(_){}
     try{if(e&&e.faoGeo&&e.faoGeo.dispose)e.faoGeo.dispose();}catch(_){}
+    try{if(e&&e._faoGeoFine&&e._faoGeoFine.dispose)e._faoGeoFine.dispose();}catch(_){}
     try{if(e&&e.brep)e.brep.delete();}catch(_){} // solide exact : même vie que le mesh
   }
 }
@@ -1400,3 +1401,38 @@ try{$('fileProj').accept='.json,.minifusion.json,.miniFusion';}catch(e){}
 try{$('btnSaveAs').title='Sauver sous… (.miniFusion : document + trajectoires)';}catch(e){}
 try{$('btnLoad').title='Ouvrir un projet (.miniFusion ou .minifusion.json)';}catch(e){}
 
+
+/* 2026-10-14-009 : MAILLAGE FIN DE FINITION — retour « dans les congés,
+   l'affichage montre 2 ou 3 droites qui se suivent, il faut les lisser ».
+   La FAO maille le solide exact à 0,5 mm / 0,5 rad (import STEP) ou
+   occXDefl() (natif : 0,5 rad sans congé 3D) : un congé à 90° = 3 à 4
+   facettes, que la Finition suit fidèlement. La Finition seule reçoit un
+   maillage FIN (corde 0,01 mm, 0,1 rad ≈ 16 facettes sur 90°), en cache
+   sur le corps ; l'Ébauche et les autres opérations gardent le leur
+   (parcours inchangés). Repli : maillage d'outillage habituel. */
+const FAO_FINE_DEFL={lin:0.01,ang:0.1};
+function faoFineGeo(b){
+  try{
+    let shape=null,holder=null;
+    if(b&&b.kind==='import'){const e=importGeom.get(b.id);if(e&&e.brep){shape=e.brep;holder=e;}}
+    else if(b&&b.kind==='body'&&b.shape){shape=b.shape;holder=b;}
+    if(!shape)return null;
+    if(holder._faoGeoFine)return holder._faoGeoFine;
+    let g=null;
+    try{occt.BRepTools.Clean(shape);}catch(e){}
+    try{g=occTessellate(shape,FAO_FINE_DEFL.lin,FAO_FINE_DEFL.ang);}catch(e){g=null;}
+    // le solide garde sa triangulation fine : on l'efface (les autres
+    // lectures — outillage, affichage — retessellent à LEUR définition)
+    try{occt.BRepTools.Clean(shape);}catch(e){}
+    if(!g)return null;
+    holder._faoGeoFine=g;
+    return g;
+  }catch(e){return null;}
+}
+function faoMeshFromBodyFine(b){
+  try{
+    const g=faoFineGeo(b);
+    if(g&&_faoMeshFromBodyOrig)return _faoMeshFromBodyOrig({mesh:{geometry:g,matrixWorld:b.mesh&&b.mesh.matrixWorld}},600000);
+  }catch(e){}
+  return null;
+}

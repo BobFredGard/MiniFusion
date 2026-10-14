@@ -2818,7 +2818,7 @@ function* faoOpMovesIt(op,job){
   }
   else if(op.type==='geofinish'){
     let am=null;
-    try{ am=faoActiveMesh(job); }catch(e){ am=null; }
+    try{ am=faoActiveMesh(job,true); }catch(e){ am=null; } // 2026-10-14-009 : maillage fin (congés)
     if(am&&am.mesh){
       const tool=faoToolById(job,op.toolId);
       // 2026-10-12-002 : yield* — la finition cède le fil par chaîne/zone
@@ -6733,7 +6733,7 @@ function faoExport(){
 // centre outil (contact + normale×R). Approximation honnête : Dijkstra/arêtes,
 // pas MMP/exact — largement suffisante en finition.
 
-function faoMeshFromBody(b){
+function faoMeshFromBody(b,maxTri){
   // BufferGeometry (indexée ou non) -> maillage plan soudé, en coordonnées pièce.
   try{
     if(!b||!b.mesh||!b.mesh.geometry)return null;
@@ -6751,7 +6751,7 @@ function faoMeshFromBody(b){
       return [x,y,z];
     };
     const ntri=idx?idx.length/3:pos.count/3;
-    if(!(ntri>0)||ntri>120000)return null; // garde-fou : trop lourd pour le navigateur
+    if(!(ntri>0)||ntri>(maxTri>0?maxTri:120000))return null; // garde-fou : trop lourd pour le navigateur
     const v=[], t=[], map={};
     const W=function(p){
       const k=p[0].toFixed(4)+','+p[1].toFixed(4)+','+p[2].toFixed(4);
@@ -6767,8 +6767,21 @@ function faoMeshFromBody(b){
     return {v:v,t:t};
   }catch(e){ return null; }
 }
-function faoActiveMesh(setup){
+// 2026-10-14-009 : maillage FIN par corps (Finition), en cache comme l'autre.
+let faoBodyMeshFineMap=null;
+try{ faoBodyMeshFineMap=new WeakMap(); }catch(e){}
+function faoMeshFromBodyFineCached(b){
+  if(typeof faoMeshFromBodyFine!=='function')return null;
+  if(faoBodyMeshFineMap){ const e=faoBodyMeshFineMap.get(b); if(e)return e; }
+  let m=null;
+  try{ m=faoMeshFromBodyFine(b); }catch(e){ m=null; }
+  if(m&&faoBodyMeshFineMap){ try{ faoBodyMeshFineMap.set(b,m); }catch(e){} }
+  return m;
+}
+function faoActiveMesh(setup,fine){
   // Fusion des corps du MODÈLE du posage (setup.bodies : 'all' ou [ids]).
+  // fine (2026-10-14-009) : maillage FIN de finition (congés lisses), repli
+  // sur le maillage d'outillage si indisponible.
   try{
     if(typeof bodies==='undefined'||!bodies||!bodies.length)return null;
     const only=(setup&&Array.isArray(setup.bodies))?setup.bodies:null;
@@ -6778,7 +6791,7 @@ function faoActiveMesh(setup){
       const b=bodies[bi];
       if(!b||b.ghost||b.visible===false)continue;
       if(only&&only.indexOf(b.id)<0)continue;
-      const mm=faoMeshFromBodyCached(b);
+      const mm=(fine&&faoMeshFromBodyFineCached(b))||faoMeshFromBodyCached(b);
       if(!mm)continue;
       const off=V.length;
       for(let i=0;i<mm.v.length;i++){ const p=mm.v[i]; V.push(p);
@@ -6786,7 +6799,7 @@ function faoActiveMesh(setup){
         if(p[0]>x1)x1=p[0]; if(p[1]>y1)y1=p[1]; if(p[2]>z1)z1=p[2]; }
       for(let i=0;i<mm.t.length;i++)T.push([mm.t[i][0]+off,mm.t[i][1]+off,mm.t[i][2]+off]);
       n++;
-      if(T.length>120000)return null;
+      if(T.length>(fine?600000:120000))return null;
     }
     if(!n||!V.length)return null;
     return {mesh:{v:V,t:T}, box:{x0:x0,y0:y0,z0:z0,x1:x1,y1:y1,z1:z1}};
@@ -7859,7 +7872,21 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   // proche d'abord ; liaison G1 sûre sinon entrée (hélice si le disque passe,
   // sinon plongée sûre au point — un helix tangent au mur est hors zone, et le
   // dernier tour de spirale est déjà à proximité quasi systématique).
-  const rem=faoOffsetRuns(S,r).concat(faoRectRuns(S,0,r)).filter(function(c){
+  // 2026-10-14-010 : outil à rayon de coin — la passe de FACES (le tour qui
+  // finit le niveau après le débourrage) suit les contours au CONTACT RÉEL
+  // de l'outil (opt.bullFaces) au lieu des chaînes décalées de r : plus de
+  // passe torique ajoutée en fin d'opération, une passe gagnée par niveau.
+  const bullF=(opt&&typeof opt.bullFaces==='function')?opt.bullFaces(z):null;
+  const wallRuns=bullF?bullF.map(function(c){let p=c.pts;
+      if(c.closed&&p.length>2&&Math.abs(p[0][0]-p[p.length-1][0])<1e-9&&Math.abs(p[0][1]-p[p.length-1][1])<1e-9)p=p.slice(0,-1);
+      return {pts:p,closed:!!c.closed,bb:faoPtsBB(p)};})
+    :faoOffsetRuns(S,r);
+  // liaison de coupe vers un contour torique : validée sur l'outil réel
+  const linkOK=(bullF&&typeof opt.bullOK==='function')
+    ?function(ax,ay,bx,by){const L=Math.hypot(bx-ax,by-ay),n=Math.max(1,Math.ceil(L/0.25));
+        for(let i=0;i<=n;i++){const t=i/n;if(!opt.bullOK(ax+(bx-ax)*t,ay+(by-ay)*t,z))return false;}return true;}
+    :segClear;
+  const rem=wallRuns.concat(faoRectRuns(S,0,r)).filter(function(c){
     return c.pts&&c.pts.length>=2&&Math.max(c.bb[2]-c.bb[0],c.bb[3]-c.bb[1])>=0.1;
   });
   // 2026-10-10-004 : les chaines de FACES (parois du solide) sont egalement
@@ -7959,7 +7986,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     if(here){
       pushCut(sx,sy);
     }else if(ici&&(sx-P.x)*(sx-P.x)+(sy-P.y)*(sy-P.y)<linkMax*linkMax&&
-             segClear(P.x,P.y,sx,sy)){
+             linkOK(P.x,P.y,sx,sy)){
       pushCut(sx,sy);
     }else if(!entryTo(sx,sy,ex2,ey2)){
       // 2026-10-08-007 : RAMPE le long de la chaîne de faces — la fraise
@@ -8269,9 +8296,11 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     // ESCARGOT : spirale centre -> faces sur le meme plan/levels, memes
     // entrees/travel ; mini-passes et finition restent conventionnelles.
     // 2026-10-08-003 : sens (avalant = sens de coupe constant) porte par opt.
-    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
+    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,
+      bullFaces:bullC?function(zz){return faoBullRingRuns(bullCtx(L.radial),zz,o.sens==='avalant',true);}:null,
+      bullOK:bullC?function(x,y,zz){return bullCtx(L.radial).tipB(x,y)<=zz+1e-6;}:null});
     else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
-    if(bullC)bullJobs.push([L.radial,L.z,tvZ]);
+    if(bullC&&!esc)bullJobs.push([L.radial,L.z,tvZ]); // conventionnel : contour ajouté en fin d'opération
     yield frameYield(); // dessin progressif 005 : pelage du niveau fini
     // MINI-PASSES (retour 4/10) : après le pelage du niveau, contour des parois
     // entre ce plan et le plan du dessus : profondeurs k*h/(nb+1) sous le plan
@@ -8318,11 +8347,11 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
           tvJ=o.remPlan?secu:Math.min(secu,zA+5); // 2026-10-08-002 : 5 mm (was 2)
         for(let k=1;k<=nf;k++){
           const off=RA.radial*(nf-k)/nf;
-          faoRoughAdaptiveLevel(M,BB,zj,D,D/2+off,secu,zF,ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvJ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
+          // 2026-10-14-010 : outil à rayon de coin — anneau au contact réel, en place
+          if(bullC)faoBullRingLevel(bullCtx(off),zj,moves,{sens:o.sens,secu:secu,travelZ:tvJ,linkMax:bullLink,all:true});
+          else faoRoughAdaptiveLevel(M,BB,zj,D,D/2+off,secu,zF,ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvJ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
           yield frameYield(); // dessin progressif 005 : finition k
         }
-        // 2026-10-14-007 : passe torique finale à la cote (laisse 0)
-        if(bullC)bullJobs.push([0,zj,tvJ]);
       }
     }
   }

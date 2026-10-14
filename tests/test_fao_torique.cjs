@@ -46,6 +46,17 @@ const vm=require('vm');
     "att(Object.values(gMF.per).every(g=>g>0.5),'mini-passes fraise droite : ~1 mm de trop (référence)');",
     "att(gMB.gmin>-0.01,'mini-passes toriques : aucune surcoupe de la laisse (min '+gMB.gmin.toFixed(4)+')');",
     "att(lift(mMB)<=lift(mMF)+6,'mini-passes : remontées '+lift(mMF)+' -> '+lift(mMB));",
+    // 2026-10-14-010 : ESCARGOT — la passe de faces de chaque niveau EST la passe
+    // torique (aucune passe ajoutée en fin d'opération)
+    "const oE=Object.assign({},oF,{mode:'escargot'});",
+    "const mEF=faoGenRough3D(FR,B,22,0,oE),mEB=faoGenRough3D(FR,B,22,0,Object.assign({},oE,{kind:'bull'}));",
+    "const gEB=gap(mEB);",
+    "p('escargot : droite '+mEF.length+' moves / '+lift(mEF)+' remontées ; torique '+mEB.length+' / '+lift(mEB)+' ; écart '+JSON.stringify(gEB.per));",
+    "att(Object.values(gEB.per).length===5&&Object.values(gEB.per).every(g=>Math.abs(g)<0.01),'escargot torique : passe de faces au contact à chaque niveau');",
+    "att(gEB.gmin>-0.01,'escargot torique : aucune surcoupe (min '+gEB.gmin.toFixed(4)+')');",
+    "att(lift(mEB)<=lift(mEF)+1,'escargot torique : pas de remontée ajoutée ('+lift(mEF)+' -> '+lift(mEB)+')');",
+    "const lastCut=mEB.filter(m=>!m.r).slice(-1)[0];",
+    "att(lastCut&&Math.abs(lastCut.z-0)<0.01,'escargot torique : l opération finit au dernier niveau (pas de passes ajoutées en fin)');",
     // 3. fraise droite / torique R0 : rien d'ajouté
     "const mR0=faoGenRough3D(FR,B,22,0,Object.assign({},oF,{kind:'bull',cornerR:0}));",
     "att(mR0.length===mF.length,'torique R0 = fraise droite : rien d ajouté');",

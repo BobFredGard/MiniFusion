@@ -237,6 +237,7 @@ function clearBodies(){
   const garde=(typeof importOwnedMeshes==='function')?importOwnedMeshes():new Set();
   bodies.forEach(b=>{
     try{if(b._faoGeo&&b._faoGeo.dispose)b._faoGeo.dispose();}catch(e){}
+    try{if(b._faoGeoFine&&b._faoGeoFine.dispose)b._faoGeoFine.dispose();}catch(e){}
     if(!b.mesh)return;
     scene.remove(b.mesh);
     if(!vivant.has(b.mesh)&&!garde.has(b.mesh)){try{b.mesh.geometry.dispose();}catch(e){}}

@@ -143,6 +143,22 @@ const FIX=path.join(__dirname,'fixtures');
     "att(oX.traj==='scallop'&&oN.traj==='scallop'&&!('seed' in oX),'sanitise : Iso-Z supprimé — iso / absent -> scallop, départ purgé');",
     "att(!('stayMax' in oX)&&!('traj' in oR),'sanitise : stayMax (retiré) purgé, traj purgé hors geofinish');",
     "att(JSON.stringify(faoOpSig({id:'a',type:'geofinish',traj:'scallop'}))!==JSON.stringify(faoOpSig({id:'a',type:'geofinish',traj:'parallel'})),'sig : scallop ≠ parallel (régénération à la bascule)');",
+    // 2026-10-14-009 : la Finition demande le maillage FIN (congés lisses) ;
+    // l'Ébauche 3D garde le maillage d'outillage (parcours 005 inchangé)
+    "const keepAM=faoActiveMesh;const asked=[];faoActiveMesh=function(s,fine){asked.push(!!fine);return null;};",
+    "try{const jf=faoDefaultJob();const og=faoOpDefaults('geofinish');og.id='g1';jf.ops=[og];faoOpMoves(og,jf);const orr=faoOpDefaults('rough3d');orr.id='r1';jf.ops=[orr];asked.push('|');faoOpMoves(orr,jf);}catch(e){}",
+    "faoActiveMesh=keepAM;",
+    "const ia=asked.indexOf('|');",
+    "att(asked.slice(0,ia).some(x=>x===true),'Finition : maillage fin demandé ('+JSON.stringify(asked)+')');",
+    "att(asked.slice(ia+1).every(x=>x===false),'Ébauche 3D : maillage d outillage habituel ('+JSON.stringify(asked)+')');",
+    "att(typeof faoMeshFromBodyFine==='function'&&faoMeshFromBodyFine({kind:'body'})===null,'maillage fin : repli null sans solide exact');",
+    "{const kb=(typeof bodies!=='undefined')?bodies:undefined,kF=faoMeshFromBodyFine,kM=faoMeshFromBody;",
+    "  try{bodies=[{id:'bF',kind:'body',visible:true}];",
+    "    faoMeshFromBodyFine=function(){return {v:[[0,0,0],[1,0,0],[0,1,0]],t:[[0,1,2]]};};",
+    "    faoMeshFromBody=function(){return {v:[[0,0,0],[1,0,0],[0,1,0],[1,1,0]],t:[[0,1,2],[1,3,2]]};};",
+    "    const mf=faoActiveMesh({},true),mc=faoActiveMesh({});",
+    "    att(mf&&mf.mesh.t.length===1&&mc&&mc.mesh.t.length===2,'faoActiveMesh : fin pour la Finition ('+(mf&&mf.mesh.t.length)+'), outillage sinon ('+(mc&&mc.mesh.t.length)+')');",
+    "  }finally{bodies=kb;faoMeshFromBodyFine=kF;faoMeshFromBody=kM;}}",
     // --- 5. cavité réelle (Exemples/Cavité Usinage.miniFusion, maillage OCCT)
     "const job={tools:__cavOp.tools};const op=__cavOp.op;",
     "const zc=faoZoneCtx(op,job);const tool=faoToolById(job,op.toolId);",
