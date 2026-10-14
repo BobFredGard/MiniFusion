@@ -2790,6 +2790,8 @@ function* faoOpMovesIt(op,job){
     const pkNoGeo=faoPocketAdapt(op)&&!(zctx&&zctx.chain);
     if(am&&am.mesh&&!pkNoGeo)mv=yield* faoGenRough3DIt(am.mesh,am.box,+op.ztop,+op.zbot,
       {ap:+op.ap,ae:isFinite(+op.ae)?+op.ae:D*0.6,toolD:D,
+       // 2026-10-14-007 : forme de l'outil (passe torique)
+       kind:(faoToolById(job,op.toolId)||{}).kind,cornerR:(faoToolById(job,op.toolId)||{}).cornerR,
        radial:RA.radial,axial:RA.axial,
        minipasses:isFinite(+op.minipasses)?+op.minipasses:0,
        finitParois:!!op.finitParois,finitN:op.finitN,finitProf:op.finitProf,
@@ -8237,6 +8239,18 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     }
   }
   faoSliceCache={mesh:M,map:{}};
+  // 2026-10-14-007 : PASSE TORIQUE (src/89-fao-torique.js) — outil à rayon de
+  // coin (torique : cornerR ; boule : D/2) : après chaque niveau du moteur
+  // (inchangé), passe AJOUTÉE au contact exact de l'outil réel là où la
+  // fraise droite du calcul restait à distance des faces inclinées.
+  const rcT=o.kind==='ball'?D/2:(o.kind==='bull'?Math.min(D/2,+o.cornerR||0):0);
+  const bullC=(rcT>1e-3&&typeof faoBullRingSetup==='function')?{}:null;
+  const bullCtx=function(lai){const k=(+lai||0).toFixed(4);if(!bullC[k])bullC[k]=faoBullRingSetup(M,BB,D,rcT,+lai||0,o.zoneAt);return bullC[k];};
+  const bullLink=1.5*(esc?Math.max(0.5,ae):Math.max(0.5,Math.min(ae,D*0.25)));
+  // passes toriques émises APRÈS tout le moteur : le parcours 005 reste
+  // strictement identique (insérées entre niveaux, elles déplaçaient le point
+  // de départ du niveau suivant : +56 remontées mesurées sur la cavité)
+  const bullJobs=[];
   // forEach -> for (yield interdit dans une closure) : chaque itération de
   // niveau cède le fil au flux via yield moves (dessin progressif 005).
   for(let li=0;li<plan.length;li++){
@@ -8257,6 +8271,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     // 2026-10-08-003 : sens (avalant = sens de coupe constant) porte par opt.
     if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
     else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
+    if(bullC)bullJobs.push([L.radial,L.z,tvZ]);
     yield frameYield(); // dessin progressif 005 : pelage du niveau fini
     // MINI-PASSES (retour 4/10) : après le pelage du niveau, contour des parois
     // entre ce plan et le plan du dessus : profondeurs k*h/(nb+1) sous le plan
@@ -8268,7 +8283,12 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
       if(h>1e-9)for(let k=1;k<=nb;k++){
         const zm=Math.round((bandTop-k*h/(nb+1))*1000)/1000;
         const s=RA.radial;
-        faoRoughAdaptiveLevel(M,BB,zm,D,D/2+s,secu,Math.min(secu,bandTop),ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
+        // 2026-10-14-008 : outil à rayon de coin — la mini-passe (contour de
+        // paroi) est calculée au CONTACT RÉEL de l'outil (laisse Parois), à la
+        // même place du parcours, au lieu du calcul fraise droite (~1 mm de
+        // trop sur les faces inclinées, torique D25 R2).
+        if(bullC)faoBullRingLevel(bullCtx(s),zm,moves,{sens:o.sens,secu:secu,travelZ:tvZ,linkMax:bullLink,all:true});
+        else faoRoughAdaptiveLevel(M,BB,zm,D,D/2+s,secu,Math.min(secu,bandTop),ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
         yield frameYield(); // dessin progressif 005 : mini-passe k
       }
     }
@@ -8301,8 +8321,16 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
           faoRoughAdaptiveLevel(M,BB,zj,D,D/2+off,secu,zF,ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvJ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
           yield frameYield(); // dessin progressif 005 : finition k
         }
+        // 2026-10-14-007 : passe torique finale à la cote (laisse 0)
+        if(bullC)bullJobs.push([0,zj,tvJ]);
       }
     }
+  }
+  if(bullC){
+    for(let q=0;q<bullJobs.length;q++){const J=bullJobs[q];
+      faoBullRingLevel(bullCtx(J[0]),J[1],moves,{sens:o.sens,secu:secu,travelZ:J[2],linkMax:bullLink});}
+    if(bullJobs.length){const lm=moves[moves.length-1];if(lm&&lm.z<secu-1e-9)moves.push({r:1,x:lm.x,y:lm.y,z:secu});}
+    yield frameYield();
   }
   faoSliceCache=null;
   // Retour repère -> pièce : même xf que les yields (source unique) — rotation

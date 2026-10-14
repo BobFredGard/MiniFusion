@@ -116,7 +116,7 @@ function faoScFMM(V,T,vt,dist,ok){
 // de la POINTE en (x,y) — contact sans surcoupe. Boule exacte (sommets, arêtes,
 // facettes), torique = boules de rayon r aux points du cercle (D/2−r) + disque
 // plat central, droite = disque (sommets, arêtes, facette au centre).
-function faoScDropper(mesh,kind,D,cornerR,laisse){
+function faoScDropper(mesh,kind,D,cornerR,laisse,nsRing){
   const L=isFinite(+laisse)&&+laisse>0?+laisse:0;
   const Rt=D/2;
   const r=kind==='flat'?0:(kind==='bull'?Math.min(Rt,isFinite(+cornerR)?+cornerR:Rt):Rt);
@@ -278,7 +278,9 @@ function faoScDropper(mesh,kind,D,cornerR,laisse){
     }
     return h;
   };
-  const NS=24;
+  // anneau de boules du torique : 24 (Finition, inchangé) ; nsRing = plus fin
+  // (passe torique d'ébauche 2026-10-14-007 : boule tous les ~0,5 mm)
+  const NS=(nsRing>24)?Math.round(nsRing):24;
   const tip=function(x,y){
     const k=cell(x,y);
     if(k<0)return -1/0;
