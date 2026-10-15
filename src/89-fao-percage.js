@@ -68,8 +68,8 @@ function faoHolesDetect(shapes){
             const za=L.Z()+Dd.Z()*ad.FirstVParameter(),zb=L.Z()+Dd.Z()*ad.LastVParameter();
             const key=L.X().toFixed(2)+'|'+L.Y().toFixed(2)+'|'+r.toFixed(3);
             let g=groups.get(key);
-            if(!g){g={x:+L.X().toFixed(3),y:+L.Y().toFixed(3),r:r,zLo:Infinity,zHi:-Infinity,cov:0,faces:[],shape:si};groups.set(key,g);}
-            g.zLo=Math.min(g.zLo,za,zb);g.zHi=Math.max(g.zHi,za,zb);g.cov+=u;g.faces.push(si+':'+k);
+            if(!g){g={x:+L.X().toFixed(3),y:+L.Y().toFixed(3),r:r,rng:[],shape:si};groups.set(key,g);}
+            g.rng.push({lo:Math.min(za,zb),hi:Math.max(za,zb),u:u,f:si+':'+k});
           }
         }else if(ty===T.GeomAbs_Cone){
           const c=ad.Cone(),ax=c.Axis(),Dd=ax.Direction();
@@ -87,6 +87,18 @@ function faoHolesDetect(shapes){
     }
     try{ ex.delete(); }catch(e){}
   });
+  // Un même axe peut porter PLUSIEURS tronçons (trou qui traverse une cavité) :
+  // chaque intervalle Z contigu est un trou à part.
+  const segs=new Map();
+  groups.forEach(function(G,key){
+    const R=G.rng.slice().sort(function(a,b){return a.lo-b.lo;});
+    const out=[];
+    R.forEach(function(q){const c=out[out.length-1];
+      if(c&&q.lo<=c.zHi+0.01){c.zHi=Math.max(c.zHi,q.hi);c.cov+=q.u;c.faces.push(q.f);}
+      else out.push({x:G.x,y:G.y,r:G.r,zLo:q.lo,zHi:q.hi,cov:q.u,faces:[q.f],shape:G.shape});});
+    out.forEach(function(g,i){segs.set(key+'#'+i,g);});
+  });
+  groups.clear();segs.forEach(function(v,k){groups.set(k,v);});
   const holes=[];
   groups.forEach(function(g){
     if(g.cov<Math.PI*1.5)return; // < 270° : congé, rainure, demi-lune — pas un trou
@@ -126,6 +138,23 @@ function faoHolesDetect(shapes){
       try{P.delete();cl.delete();}catch(e){}
     }catch(e){}
   });
+  // Trous créés par la fonction 3D « Perçage » (src/76) : nature reconnue d'office
+  // (taraudé M…, lamage, fraisure) — un STEP n'a pas cette information.
+  try{
+    (doc.features||[]).forEach(function(f){
+      if(!f||f.type!=='hole'||f.visible===false)return;
+      const sk=doc.sketches.find(function(q){return q.id===f.sketchId;});if(!sk)return;
+      const A=holeAxis(f,sk);if(Math.abs(A.dir.z)<0.9999)return;
+      A.pts.forEach(function(P){
+        holes.forEach(function(h){
+          if(Math.hypot(h.x-P.x,h.y-P.y)>0.02)return;
+          if(Math.abs(h.d-(+f.d))>0.02&&!(f.kind==='cbore'&&Math.abs(h.d-(+f.cbD))<0.02))return;
+          h.feat={id:f.id,name:f.name,kind:f.kind||'simple',thread:(f.thread&&f.thread.size)?{size:f.thread.size,p:+f.thread.p,len:+f.thread.len||0}:null,
+            role:(f.kind==='cbore'&&Math.abs(h.d-(+f.cbD))<0.02)?'lamage':'trou'};
+        });
+      });
+    });
+  }catch(e){}
   holes.sort(function(a,b){return b.ztop-a.ztop||a.d-b.d||a.x-b.x||a.y-b.y;});
   if(shapes.length===1){faoHoleCache={shape:shapes[0],list:holes};}
   return holes;
@@ -400,7 +429,26 @@ function faoDrillSections(setup,op,d){
       const s=document.createElement('span');s.className='fao-meta';
       s.textContent='Ø'+(+g.d.toFixed(2))+' × '+g.holes.length+' · Z '+(+g.z.toFixed(2))+' → '+(+h0.zbot.toFixed(2))+' · '+(h0.through?'débouchant':'borgne')+
         (h0.tipAng?(' · pointe '+h0.tipAng+'°'):'')+(h0.chD?(' · chanfrein Ø'+(+h0.chD.toFixed(2))):'')+(h0.cb?(' · lamage Ø'+h0.cb.d):'');
-      r.appendChild(s);d.appendChild(r);
+      r.appendChild(s);
+      // nature : reconnue (fonction Perçage) ou choisie (STEP) — trou lisse / taraudé
+      const fe=g.holes.find(function(h){return h.feat;});
+      if(fe&&fe.feat.thread){
+        const t=document.createElement('span');t.className='fao-meta';t.style.color='#ff9f0a';
+        t.textContent='taraudé '+holeThreadLabel(fe.feat.thread)+' (fonction Perçage)';r.appendChild(t);
+      }else if(fe&&fe.feat.role==='lamage'){
+        const t=document.createElement('span');t.className='fao-meta';t.textContent='lamage (fonction Perçage)';r.appendChild(t);
+      }else if(!fe){
+        const key=g.d.toFixed(2)+'@'+g.z.toFixed(2);
+        const info=(setup.holeInfo&&setup.holeInfo[key])||{};
+        const opts=[['','Trou']];
+        ISO_THREADS.forEach(function(t){for(let k=2;k<t.length;k++){const td=t[1]-t[k];if(Math.abs(td-g.d)<=0.3)opts.push([t[0]+'|'+t[k],'Taraudé '+t[0]+(k>2?('×'+String(t[k]).replace('.',',')):'')]);}});
+        if(opts.length>1)r.appendChild(faoSel(opts,info.thread?(info.thread.size+'|'+info.thread.p):'',function(v){
+          setup.holeInfo=setup.holeInfo||{};
+          if(!v)delete setup.holeInfo[key];
+          else{const q=v.split('|');setup.holeInfo[key]={thread:{size:q[0],p:+q[1]}};}
+        },'Pièce importée (STEP) : la nature du trou n’est pas dans la géométrie — indiquez s’il est taraudé (Ø mesuré compatible avec le taraud).'));
+      }
+      d.appendChild(r);
     });
   }else{
     const pts=(op.pts||[]).map(function(q){return (+q[0])+','+(+q[1]);}).join('; ');

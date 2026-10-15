@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**239 versions**, de `2026-09-28b` à `2026-10-15-011` — la plus récente en bas,
+**240 versions**, de `2026-09-28b` à `2026-10-15-012` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3761,3 +3761,14 @@ Constat : une nouvelle opération prenait la fraise T1, créait UN trou au centr
 - **Ordre** : plus court chemin (plus proche voisin + 2-opt) ou zigzag ; anciens perçages XY : ordre saisi conservé.
 - **Parcours immédiat** : un perçage est toujours recalculé sur place (jamais « ⚠ à régénérer », jamais l'ancien tracé).
 Anciens documents : perçages en saisie XY inchangés (cotes, ordre, G-code). `CACHE_VER` inchangé. Nouveau test `test_fao_percage` (noyau réel : débouchant, borgne à pointe 118°, lamage, trou creusé en −Z, pion, ordre, cycles Siemens/Fagor, pointage, suivi du modèle, compatibilité XY). Migration : `APP_VER` → `2026-10-15-011` ; badge **V0.1.35 → V0.1.36**.
+
+### `2026-10-15-012`
+
+**Fonction 3D « Perçage » + centres de perçage + lien FAO (demande : « une fonction Perçage en modélisation, en rapport avec l'opération Perçage FAO : des points dédiés aux centres de trous ; trous ou trous taraudés, lamage et fraisure intégrés, comme Fusion 360 ; laisser le choix trou/taraudage pour un STEP ; reconnaître automatiquement si créé avec » ; puis : fins « jusqu'à la face », « débouchant (prochaine face) », « débouchant tout », longueur filetée longueur / face / prochaine face, bouton Supprimer en double, image du taraudage).**
+
+- **Esquisse** : outil ⊕ « Centre de perçage » (point dédié, cercle + croix orange, hors profil) — seuls ces points portent des trous.
+- **Fonction Perçage** (bouton ⊚ Perçage, nouveau module `src/76-percage.js`) sur l'esquisse sélectionnée, réglée en direct dans Paramètres : type simple / lamage / fraisure (90°, 82°, 100°, 120°) ; taraudage métrique ISO M2→M24 pas gros et fins (Ø de perçage = M − pas) ; préréglages « Vis CHC » ISO 4762 (passage, lamage Ø × profondeur) ; fin Distance (pointe 118/135/140/90° ou fond plat), Jusqu'à la face (clic sur une face plane), Débouchant (arrêt à la 1re sortie de matière, calculé trou par trou), Débouchant tout ; longueur filetée Longueur / Jusqu'à la face / Jusqu'à la prochaine face ; sens automatique vers la matière, inversable. Géométrie EXACTE (outil de révolution par centre : lamage/fraisure + corps + pointe, découpé du corps), signature complète pour le rejeu, icône ⊚ dans l'arbre, nom parlant (« Perçage Taraudé M8 ×4 », « Perçage Ø6,6 lamé Ø11 débouchant tout ×2 »). Débouchant : course limitée à la pièce (pas d'outil fantôme de 2 m).
+- **Image du taraudage** : hélice au pas réel dans le trou sur la longueur filetée + cercle pointillé du Ø nominal (filet cosmétique, comme Fusion ; le solide reste percé au Ø du taraud). Vrai filet modélisé : plus tard, en option.
+- **Lien FAO** : la reconnaissance des trous lit la fonction — « taraudé M8 (fonction Perçage) », « lamage (fonction Perçage) » affichés d'office ; pièce STEP : choix « Trou / Taraudé M… » par groupe (seulement les tailles dont le Ø de taraud correspond au Ø mesuré), rangé dans le posage, sans périmer aucun parcours. Un axe portant plusieurs tronçons (trou traversant une cavité) donne un trou par tronçon.
+- **Repli maillage** (avant le chargement du noyau) : une pointe conique de rayon nul corrompait le booléen BSP — la pièce disparaissait au profit des outils ; corrigé.
+Nouveau test `test_percage_3d` (noyau réel : 4 fonctions, sens auto, Ø de taraud, débouchant, M8 borgne à pointe, lamage CHC, fraisure Ø11 exacte, reconnaissance FAO, paramétrique, fins prochaine face / tout / face à travers une cavité interne, longueur filetée, panneau). Migration : `APP_VER` → `2026-10-15-012` ; badge **V0.1.36 → V0.1.37**.

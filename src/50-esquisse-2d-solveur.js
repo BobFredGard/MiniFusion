@@ -91,7 +91,7 @@ function skConsumerIdx(sk){
   // l'incluait déjà, la détection ne suivait pas).
   if(!sk)return -1;
   return (doc.features||[]).filter(f=>f.visible!==false)
-    .findIndex(f=>(f.type==='extrude'||f.type==='revolve')&&f.sketchId===sk.id);
+    .findIndex(f=>(f.type==='extrude'||f.type==='revolve'||f.type==='hole')&&f.sketchId===sk.id);
 }
 function skFadeSaveRestore(){
   // Remet les opacités d'origine mémorisées par skApplyFade (idempotent).
@@ -2276,7 +2276,11 @@ function drawSketch2D(){
       if(aB.length)badges(Array.from(new Set(aB)),px+8,py-10);
     }
     if(e.t==='cpoint'){const Q=P[e.p];if(!Q)return;const[a,b]=w2s(Q.x,Q.y);
-      skEl('path',{d:`M ${a-6} ${b} H ${a+6} M ${a} ${b-6} V ${b+6}`,stroke:col(e),'stroke-width':wdt(e)});}
+      if(e.hole){ // centre de perçage : cercle + croix orange (distinct du point de construction)
+        const ch=selIds.has(e.id)?'#ff9f0a':'#ffb340';
+        skEl('circle',{cx:a,cy:b,r:7,fill:'none',stroke:ch,'stroke-width':selIds.has(e.id)?2.6:1.8});
+        skEl('path',{d:`M ${a-11} ${b} H ${a+11} M ${a} ${b-11} V ${b+11}`,stroke:ch,'stroke-width':1.2});
+      }else skEl('path',{d:`M ${a-6} ${b} H ${a+6} M ${a} ${b-6} V ${b+6}`,stroke:col(e),'stroke-width':wdt(e)});}
   });
   // extrémités : carrés (plein = fixe) + pastille coïncident + flèche DOF · origine = pastille ronde permanente
   Object.keys(skPts(sk)).forEach(pid=>{
@@ -2770,7 +2774,7 @@ function renderSkPanel(){
       note(`${pn}Ligne${e.ref?' (référence 3D)':(e.construction?' (construction)':'')} · L=${lineLen(sk,e).toFixed(2)} mm`);mkRow('x1',A.x,v=>A.x=v);mkRow('y1',A.y,v=>A.y=v);mkRow('x2',B.x,v=>B.x=v);mkRow('y2',B.y,v=>B.y=v);}
     else if(e.t==='circle'){const C=sk.points[e.pc];note(`${pn}Cercle`+(e.construction?' (construction)':'')+' · Ø='+(e.r*2).toFixed(2)+' mm');mkRow('cx',C.x,v=>C.x=v);mkRow('cy',C.y,v=>C.y=v);mkRow('r',e.r,v=>e.r=Math.max(v,.1));}
     else if(e.t==='arc'){const C=sk.points[e.pc],an=arcAngles(sk,e);note(`${pn}Arc`+(e.construction?' (construction)':'')+' · R='+e.r.toFixed(2)+' mm');mkRow('cx',C.x,v=>C.x=v);mkRow('cy',C.y,v=>C.y=v);mkRow('r',e.r,v=>{e.r=Math.max(v,.1);});if(an){const d1=an.a1*180/Math.PI,d2=an.a2*180/Math.PI;mkRow('a1°',d1,v=>{const a=v*Math.PI/180,A=sk.points[e.pa];A.x=C.x+e.r*Math.cos(a);A.y=C.y+e.r*Math.sin(a);});mkRow('a2°',d2,v=>{const a=v*Math.PI/180,B=sk.points[e.pb];B.x=C.x+e.r*Math.cos(a);B.y=C.y+e.r*Math.sin(a);});}}
-    else if(e.t==='cpoint'){const Q=sk.points[e.p];note('Point de construction');mkRow('x',Q.x,v=>Q.x=v);mkRow('y',Q.y,v=>Q.y=v);}
+    else if(e.t==='cpoint'){const Q=sk.points[e.p];note(e.hole?'Centre de perçage (fonction 3D « Perçage »)':'Point de construction');mkRow('x',Q.x,v=>Q.x=v);mkRow('y',Q.y,v=>Q.y=v);}
     addBtn('🗑 Supprimer',deleteSkSel);
   }else if(skSel&&skSel.kind==='point'){
     const p=sk.points[skSel.pid];

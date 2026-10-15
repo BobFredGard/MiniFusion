@@ -14,6 +14,20 @@
     }
   }
 })();
+// 2026-10-15-012 : bouton « Perçage » (fonction 3D, src/76-percage.js), après l'Extrusion.
+(function(){
+  if(!document.getElementById('btnHole')){
+    const b=document.getElementById('btnExtrude');
+    if(b&&b.parentNode){
+      const n=document.createElement('button');
+      n.id='btnHole';
+      n.textContent='⊚ Perçage';
+      n.title='Perçage : trous sur les CENTRES DE PERÇAGE (⊕) de l\'esquisse sélectionnée — simple, lamage, fraisure, taraudé ISO, borgne ou débouchant. Reconnu par l\'opération FAO Perçage.';
+      b.parentNode.insertBefore(n,b.nextSibling);
+    }
+  }
+})();
+if($('btnHole'))$('btnHole').onclick=()=>askHole(sel.kind==='sketch'?sel.id:null);
 const btnRevolve=$('btnRevolve');
 if(btnRevolve)btnRevolve.onclick=()=>askRevolve(sel.kind==='sketch'?sel.id:null);
 $('btnSketch').onclick=()=>{

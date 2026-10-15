@@ -468,6 +468,9 @@ svg.addEventListener('pointerdown',e=>{
     skDown={pid,x:S.x,y:S.y,center:!!e.shiftKey&&skTool!=='circle'};return;
   }
   if(skTool==='cpoint'){skPushUndo();const pid=snapNewPoint(sk,wx,wy);sk.entities.push({id:skNewEid(sk),t:'cpoint',p:pid});skAutoAttach(sk,pid,wx,wy);afterEdit();return;}
+  // 2026-10-15-012 : CENTRE DE PERÇAGE — point dédié aux trous (fonction 3D « Perçage »),
+  // hors profil comme le point de construction, mais seul retenu par les perçages.
+  if(skTool==='hpoint'){skPushUndo();const pid=snapNewPoint(sk,wx,wy);sk.entities.push({id:skNewEid(sk),t:'cpoint',p:pid,hole:true});skAutoAttach(sk,pid,wx,wy);afterEdit();skStatus('Centre de perçage posé — cotez-le, puis fonction 3D « Perçage ».');return;}
   if(skTool==='arc'){
     if(!skArcC){skPushUndo();skArcC=snapNewPoint(sk,wx,wy);drawSketch2D();skStatus('Arc : cliquez le point de départ.');return;}
     const C=sk.points[skArcC];

@@ -7,6 +7,7 @@ function wirePick(){
     if(Math.hypot(e.clientX-dx,e.clientY-dy)>6)return;
     if(filMode){if(e.button===0&&!e.ctrlKey)filletToggle(e);return;}
     if(filModeX){if(e.button===0&&!e.ctrlKey)exactToggle(e);return;}
+    if(typeof holeFacePick!=='undefined'&&holeFacePick){if(e.button===0&&!e.ctrlKey)holeFacePickAt(e);return;} // fonction Perçage : face de fin
     if(typeof faoHolePick!=='undefined'&&faoHolePick){if(e.button===0&&!e.ctrlKey)faoHolePickAt(e);return;} // perçage : clic sur un trou
     if(faoChainMode){if(e.button===0&&!e.ctrlKey)faoChainToggle(e);return;}
     if(faoPlanePick){if(e.button===0&&!e.ctrlKey)faoPlaneCommit(e);return;}
@@ -132,6 +133,7 @@ function filletTangentChain(sk, startCorner){
     if(filMode||filModeX){exitFilletMode();return;}
     if(faoChainMode){faoChainExit(true);return;}
     if(typeof faoHolePick!=='undefined'&&faoHolePick){faoHolePickExit();return;}
+    if(typeof holeFacePick!=='undefined'&&holeFacePick){holeFacePickCancel();faceEl.textContent='Perçage : sélection de face annulée.';return;}
     if(mvMode){exitMoveFaceMode();return;}
     if(draftMode){exitDraftMode();return;}
     if(coqueMode){exitCoqueMode();return;}clearMeasure();clearHover();hideCtx();hideCtx3D();}});

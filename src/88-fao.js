@@ -2309,6 +2309,7 @@ function faoOpMovesKey(op,job){
     for(const k in job){
       if(!Object.prototype.hasOwnProperty.call(job,k)||k==='ops'||k==='open')continue;
       if(k==='name'||k==='id')continue; // libelle / identifiant : jamais une trajectoire
+      if(k==='holeInfo')continue; // nature des trous d'un STEP (taraudé…) : aucun effet sur les tracés
       js[k]=job[k];
     }
     // Seul l'outil de CETTE operation influence ses parcours : modifier T3 ne

@@ -1974,6 +1974,12 @@ function featSig(f){
   // flip (sens inversé) et draft (dépouille d'extrusion) modifient le prisme : sans eux
   // dans la signature, basculer le sens ou l'angle réutiliserait le solide périmé.
   let s=f.type+'|'+(f.op||'add')+'|'+(+f.distance||0)+'|'+(f.mid?1:0)+'|'+(f.visible!==false?1:0)+'|'+(f.through?1:0)+'|'+(f.upto?JSON.stringify(f.upto):'')+'|'+(f.flip?1:0)+'|'+(+f.draft||0)+'|b'+(f.body||'');
+  if(f.type==='hole'){
+    // Perçage : esquisse (centres) + tous les paramètres qui façonnent l'outil de découpe.
+    const skH=doc.sketches.find(x=>x.id===f.sketchId);
+    s+='|'+f.sketchId+'|'+(skH?skSig(skH):'?')+'|'+JSON.stringify([f.kind,f.d,f.thread||null,f.cbD,f.cbH,f.csD,f.csA,f.end,f.depth,f.tip,!!f.flip,f.uptoPlane||null]);
+    if(skH)(skH.entities||[]).forEach(e=>{if(e&&e.t==='cpoint'&&e.hole){const Q=skH.points[e.p];if(Q)s+=';h'+Q.x.toFixed(4)+','+Q.y.toFixed(4);}});
+  }
   if(f.type==='extrude'||f.type==='revolve'){
     s+='|'+f.sketchId;
     const sk=doc.sketches.find(x=>x.id===f.sketchId);s+='|'+(sk?skSig(sk):'?');
@@ -2161,12 +2167,12 @@ function occReplayBody(bid,list){
       occCkPut(ckKey,()=>occShapeCopy(result));
       return;
     }
-    if(f.type!=='extrude'&&f.type!=='revolve')return;
+    if(f.type!=='extrude'&&f.type!=='revolve'&&f.type!=='hole')return; // hole : fonction Perçage (src/76), toujours une découpe
     // Pour une découpe « à travers tout », l'étendue se mesure sur le solide DÉJÀ reconstruit
     // (tout ce qui précède dans la timeline) — jamais sur l'affichage de l'édition précédente.
-    occThroughBase=(f.type==='extrude'&&f.through&&result)?result:null;
+    occThroughBase=(((f.type==='extrude'&&f.through)||f.type==='hole')&&result)?result:null; // perçage : débouchant / prochaine face
     try{
-      const r=(f.type==='revolve')?occShapeOfRevolve(f):occShapeOfExtrude(f);
+      const r=(f.type==='revolve')?occShapeOfRevolve(f):(f.type==='hole'?occShapeOfHole(f):occShapeOfExtrude(f));
       bin.push(...r.bins);itemShapes.push(r.shape);
       if(r.warnings.length)msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       shape=r.shape;items.push({f,shape});
@@ -2174,12 +2180,12 @@ function occReplayBody(bid,list){
       // Isolation : UNE esquisse fautive ne fait plus basculer tout le solide en maillage.
       msgs.push(`${f.name} : exclu de l'exact (${err.message})`);
       try{
-        const gl=(f.type==='revolve')?legacyRevolveGeos(f,msgs):legacyPrismGeos(f,msgs);
+        const gl=(f.type==='revolve')?legacyRevolveGeos(f,msgs):(f.type==='hole'?legacyHoleGeos(f,msgs):legacyPrismGeos(f,msgs));
         gl.forEach(g=>ghostShapes.push({geo:g,orphan:true,inexact:f.name,fid:f.id}));
       }catch(e2){msgs.push(`${f.name} : même le maillage échoue (${e2.message})`);}
       return;
     }
-    const op=f.op||'add';
+    const op=(f.type==='hole')?'cut':(f.op||'add');
     if(op==='cut'){
       // Fantôme tessellé AVANT delete (use-after-delete = crash + repli fantôme).
       const ghostGeo=(()=>{try{return occTessellate(shape,0.5);}catch(e){msgs.push(`${f.name} : outil illisible`);return null;}})();

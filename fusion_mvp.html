@@ -185,6 +185,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
         <button class="tool" data-tool="circle" title="Cercle : clic 1 = centre, clic 2 = point du Ø">◯</button>
         <button class="tool" data-tool="arc" title="Arc : centre, début, fin (3 clics)">◔</button>
         <button class="tool" data-tool="cpoint" title="Point de construction">·+·</button>
+        <button class="tool" data-tool="hpoint" title="Centre de perçage : point dédié aux trous (fonction 3D « Perçage » : simple, lamage, fraisure, taraudé)">⊕</button>
         <button class="tool" data-tool="project" title="Projeter arête 3D → construction (ligne / cercle + centre) pour coter">⧉</button>
         <button class="tool" data-tool="dim" title="Cote : ligne=longueur, cercle=Ø, arc=rayon, 2 points=distance · Shift+clic 2 lignes = angle (sécantes) ou entraxe (//), pilotés">📐</button>
         <button class="tool" data-tool="coincident" title="Coïncident : cliquez 2 extrémités à fusionner">⌖</button>
@@ -273,7 +274,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-15-011';
+const APP_VER='2026-10-15-012';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -3411,6 +3412,12 @@ function featSig(f){
   // flip (sens inversé) et draft (dépouille d'extrusion) modifient le prisme : sans eux
   // dans la signature, basculer le sens ou l'angle réutiliserait le solide périmé.
   let s=f.type+'|'+(f.op||'add')+'|'+(+f.distance||0)+'|'+(f.mid?1:0)+'|'+(f.visible!==false?1:0)+'|'+(f.through?1:0)+'|'+(f.upto?JSON.stringify(f.upto):'')+'|'+(f.flip?1:0)+'|'+(+f.draft||0)+'|b'+(f.body||'');
+  if(f.type==='hole'){
+    // Perçage : esquisse (centres) + tous les paramètres qui façonnent l'outil de découpe.
+    const skH=doc.sketches.find(x=>x.id===f.sketchId);
+    s+='|'+f.sketchId+'|'+(skH?skSig(skH):'?')+'|'+JSON.stringify([f.kind,f.d,f.thread||null,f.cbD,f.cbH,f.csD,f.csA,f.end,f.depth,f.tip,!!f.flip,f.uptoPlane||null]);
+    if(skH)(skH.entities||[]).forEach(e=>{if(e&&e.t==='cpoint'&&e.hole){const Q=skH.points[e.p];if(Q)s+=';h'+Q.x.toFixed(4)+','+Q.y.toFixed(4);}});
+  }
   if(f.type==='extrude'||f.type==='revolve'){
     s+='|'+f.sketchId;
     const sk=doc.sketches.find(x=>x.id===f.sketchId);s+='|'+(sk?skSig(sk):'?');
@@ -3598,12 +3605,12 @@ function occReplayBody(bid,list){
       occCkPut(ckKey,()=>occShapeCopy(result));
       return;
     }
-    if(f.type!=='extrude'&&f.type!=='revolve')return;
+    if(f.type!=='extrude'&&f.type!=='revolve'&&f.type!=='hole')return; // hole : fonction Perçage (src/76), toujours une découpe
     // Pour une découpe « à travers tout », l'étendue se mesure sur le solide DÉJÀ reconstruit
     // (tout ce qui précède dans la timeline) — jamais sur l'affichage de l'édition précédente.
-    occThroughBase=(f.type==='extrude'&&f.through&&result)?result:null;
+    occThroughBase=(((f.type==='extrude'&&f.through)||f.type==='hole')&&result)?result:null; // perçage : débouchant / prochaine face
     try{
-      const r=(f.type==='revolve')?occShapeOfRevolve(f):occShapeOfExtrude(f);
+      const r=(f.type==='revolve')?occShapeOfRevolve(f):(f.type==='hole'?occShapeOfHole(f):occShapeOfExtrude(f));
       bin.push(...r.bins);itemShapes.push(r.shape);
       if(r.warnings.length)msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       shape=r.shape;items.push({f,shape});
@@ -3611,12 +3618,12 @@ function occReplayBody(bid,list){
       // Isolation : UNE esquisse fautive ne fait plus basculer tout le solide en maillage.
       msgs.push(`${f.name} : exclu de l'exact (${err.message})`);
       try{
-        const gl=(f.type==='revolve')?legacyRevolveGeos(f,msgs):legacyPrismGeos(f,msgs);
+        const gl=(f.type==='revolve')?legacyRevolveGeos(f,msgs):(f.type==='hole'?legacyHoleGeos(f,msgs):legacyPrismGeos(f,msgs));
         gl.forEach(g=>ghostShapes.push({geo:g,orphan:true,inexact:f.name,fid:f.id}));
       }catch(e2){msgs.push(`${f.name} : même le maillage échoue (${e2.message})`);}
       return;
     }
-    const op=f.op||'add';
+    const op=(f.type==='hole')?'cut':(f.op||'add');
     if(op==='cut'){
       // Fantôme tessellé AVANT delete (use-after-delete = crash + repli fantôme).
       const ghostGeo=(()=>{try{return occTessellate(shape,0.5);}catch(e){msgs.push(`${f.name} : outil illisible`);return null;}})();
@@ -3962,7 +3969,7 @@ function tlHostFeatureOfSketch(sk){
   // Fonction « propriétaire » d'une esquisse : la première extrusion/révolution qui
   // l'utilise (ordre timeline), sinon l'hôte de face (esquisse posée sur face).
   if(!sk)return null;
-  const users=doc.features.filter(f=>(f.type==='extrude'||f.type==='revolve')&&f.sketchId===sk.id);
+  const users=doc.features.filter(f=>(f.type==='extrude'||f.type==='revolve'||f.type==='hole')&&f.sketchId===sk.id);
   if(users.length)return users.sort((a,b)=>doc.features.indexOf(a)-doc.features.indexOf(b))[0];
   if(sk.host&&sk.host.feat){const h=doc.features.find(f=>f.id===sk.host.feat);if(h)return h;}
   return null;
@@ -4007,6 +4014,8 @@ function buildDone(){
   try{if(typeof faoChainReplay==='function')faoChainReplay();}catch(e){}
   // Perçage : les trous sélectionnés suivent le modèle reconstruit (2026-10-15-011).
   try{if(typeof faoDrillReplay==='function')faoDrillReplay();}catch(e){}
+  // Fonction Perçage : image du taraudage (hélice + Ø nominal) sur les trous taraudés.
+  try{if(typeof holeThreadOverlay==='function')holeThreadOverlay();}catch(e){}
   // FAO : le solide vient d'être (re)construit — l'Ébauche 3D embarque son empreinte
   // dans sa clé de cache. Au F5 la 1re lecture a lieu sur le REPLI MAILLAGE, avant le
   // boot du noyau exact : clé fausse, entrée rejetée, triangle rouge qui ne retombait
@@ -4116,9 +4125,9 @@ function rebuildInner(projPass){
   // Phase 1 : construit chaque prisme en coordonnées monde (sans l'afficher encore)
   const jobs=[]; // {f, geos:[BufferGeometry monde], ghost?:false}
   tlActiveList().filter(f=>f.visible!==false).forEach(f=>{
-    if(f.type==='extrude'||f.type==='revolve'){
+    if(f.type==='extrude'||f.type==='revolve'||f.type==='hole'){
       try{
-        const geos=(f.type==='revolve')?legacyRevolveGeos(f,filWarn):legacyPrismGeos(f,filWarn);
+        const geos=(f.type==='revolve')?legacyRevolveGeos(f,filWarn):(f.type==='hole'?legacyHoleGeos(f,filWarn):legacyPrismGeos(f,filWarn));
         if(geos.length)jobs.push({f,geos});
       }catch(e){
         const quoi=(f.type==='revolve')?'révolution impossible':'extrusion impossible';
@@ -4297,6 +4306,7 @@ function featIconOf(f){
   if(f.type==='fillet')return xIcon(xKindOf(f));
   if(f.type==='repeat')return '🔁';
   if(f.type==='revolve')return (f.op||'add')==='cut'?'◔':'◍';
+  if(f.type==='hole')return '⊚';
   if(f.type==='xmove')return '📐';
   if(f.type==='xdraft')return ((f._m&&f._m.m<f._m.t)||f._err)?'⚠':'📐';
   if(f.type==='xshell')return ((f._m&&f._m.m<f._m.t)||f._err)?'⚠':'🥚';
@@ -5335,7 +5345,7 @@ function renderProps(){
       return;
     }
     const filRims=f.rims||((f.rimTop||f.rimBot)?{top:!!f.rimTop,bottom:!!f.rimBot}:null);
-    p.appendChild(info(`<b>${f.name}</b> · ${f.type==='extrude'?((f.op||'add')==='cut'?'➖ ':'➕ ')+extName(f):((f.type==='fillet')?'Congé R'+f.radius+' · '+(f.corners||[]).length+' verticale(s)'+(filRims&&(filRims.top||filRims.bottom)?' + périmètre '+(filRims.top&&filRims.bottom?'haut+bas':(filRims.top?'haut':'bas')):'')+' sur '+exName(f.target):((f.type==='xfillet')?`${xIcon(xKindOf(f))} ${xLabel(xKindOf(f))} · ${(f.edges||[]).length} arête(s)`:(f.type==='repeat'?'🔁 Répétition':'Import')))}`));
+    p.appendChild(info(`<b>${f.name}</b> · ${f.type==='extrude'?((f.op||'add')==='cut'?'➖ ':'➕ ')+extName(f):((f.type==='fillet')?'Congé R'+f.radius+' · '+(f.corners||[]).length+' verticale(s)'+(filRims&&(filRims.top||filRims.bottom)?' + périmètre '+(filRims.top&&filRims.bottom?'haut+bas':(filRims.top?'haut':'bas')):'')+' sur '+exName(f.target):((f.type==='xfillet')?`${xIcon(xKindOf(f))} ${xLabel(xKindOf(f))} · ${(f.edges||[]).length} arête(s)`:(f.type==='repeat'?'🔁 Répétition':(f.type==='hole'?'⊚ Perçage':(f.type==='revolve'?'Révolution':'Import')))))}`));
     // Un congé PARTIEL (le triangle ⚠ de l'arbre) doit s'expliquer ici : combien
     // d'arêtes ont été retrouvées, lesquelles manquent, et pourquoi.
     if(f.type==='xfillet'&&f._m&&f._m.t&&f._m.m<f._m.t){
@@ -5450,6 +5460,7 @@ p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.fea
       p.appendChild(lst);
       p.appendChild(btn('✏️ Modifier la sélection (ajout / retrait)',()=>enterExactFilletMode(f)));
     }
+    if(f.type==='hole'){renderHoleProps(p,f);}
     if(f.type==='revolve'){
       // ── Opération (comme l'extrusion) ──
       const lo=document.createElement('label');lo.textContent='Opération';
@@ -5909,6 +5920,7 @@ const SK_ICONS={
   circle:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/>',
   arc:'<path d="M20 18A12 12 0 0 0 8 6"/><path d="M8 18h12M8 18V6" stroke-dasharray="1.6 2.4" stroke-width="1.3"/><circle cx="8" cy="18" r="1.6" fill="currentColor" stroke="none"/>',
   cpoint:'<circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/><path d="M12 3.5v4.5M12 16v4.5M3.5 12H8M16 12h4.5"/>',
+  hpoint:'<circle cx="12" cy="12" r="6.5" stroke-width="2"/><path d="M12 2.5v19M2.5 12h19" stroke-width="1.3"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>',
   project:'<path d="M12 2.8l6 2.6v5.4l-6 2.6-6-2.6V5.4z"/><path d="M6 5.4l6 2.6 6-2.6M12 8v5.4" stroke-width="1.3"/><path d="M12 15.5v3" stroke-dasharray="1.5 1.8"/><path d="M4 21h16"/>',
   dim:'<path d="M4 5v10M20 5v10"/><path d="M4 10h16"/><path d="M7.5 7.5L4 10l3.5 2.5M16.5 7.5L20 10l-3.5 2.5"/><path d="M9 19h6" stroke-width="2.4"/>',
   fillet:'<path d="M4 21v-8a9 9 0 0 1 9-9h8" stroke-width="2.2"/><path d="M4 9V4h5" stroke-dasharray="1.6 2.2" stroke-width="1.3"/><circle cx="13" cy="13" r="1.4" fill="currentColor" stroke="none"/>',
@@ -5979,7 +5991,7 @@ function skPairLineType(t){ const r=SK_CON[t]; return !!(r&&r.pairLines); }
 // (le libellé reste dans title). Les boutons texte (Effacer tout, Terminer…) restent.
 (function skIconizeToolbar(){
   try{
-    const TOOL_IC={select:'select',line:'line',rect:'rect',slot:'slot',circle:'circle',arc:'arc',cpoint:'cpoint',project:'project',dim:'dim',coincident:'coincident',trim:'trim'};
+    const TOOL_IC={select:'select',line:'line',rect:'rect',slot:'slot',circle:'circle',arc:'arc',cpoint:'cpoint',hpoint:'hpoint',project:'project',dim:'dim',coincident:'coincident',trim:'trim'};
     document.querySelectorAll('#skToolbar .tool').forEach(function(b){const k=TOOL_IC[b.dataset.tool];if(k)b.innerHTML=skIcon(k,20);});
     document.querySelectorAll('#skToolbar .con').forEach(function(b){const k=b.dataset.con;if(SK_ICONS[k])b.innerHTML=skIcon(k,20);});
   }catch(e){}
@@ -6079,7 +6091,7 @@ function skConsumerIdx(sk){
   // l'incluait déjà, la détection ne suivait pas).
   if(!sk)return -1;
   return (doc.features||[]).filter(f=>f.visible!==false)
-    .findIndex(f=>(f.type==='extrude'||f.type==='revolve')&&f.sketchId===sk.id);
+    .findIndex(f=>(f.type==='extrude'||f.type==='revolve'||f.type==='hole')&&f.sketchId===sk.id);
 }
 function skFadeSaveRestore(){
   // Remet les opacités d'origine mémorisées par skApplyFade (idempotent).
@@ -8264,7 +8276,11 @@ function drawSketch2D(){
       if(aB.length)badges(Array.from(new Set(aB)),px+8,py-10);
     }
     if(e.t==='cpoint'){const Q=P[e.p];if(!Q)return;const[a,b]=w2s(Q.x,Q.y);
-      skEl('path',{d:`M ${a-6} ${b} H ${a+6} M ${a} ${b-6} V ${b+6}`,stroke:col(e),'stroke-width':wdt(e)});}
+      if(e.hole){ // centre de perçage : cercle + croix orange (distinct du point de construction)
+        const ch=selIds.has(e.id)?'#ff9f0a':'#ffb340';
+        skEl('circle',{cx:a,cy:b,r:7,fill:'none',stroke:ch,'stroke-width':selIds.has(e.id)?2.6:1.8});
+        skEl('path',{d:`M ${a-11} ${b} H ${a+11} M ${a} ${b-11} V ${b+11}`,stroke:ch,'stroke-width':1.2});
+      }else skEl('path',{d:`M ${a-6} ${b} H ${a+6} M ${a} ${b-6} V ${b+6}`,stroke:col(e),'stroke-width':wdt(e)});}
   });
   // extrémités : carrés (plein = fixe) + pastille coïncident + flèche DOF · origine = pastille ronde permanente
   Object.keys(skPts(sk)).forEach(pid=>{
@@ -8758,7 +8774,7 @@ function renderSkPanel(){
       note(`${pn}Ligne${e.ref?' (référence 3D)':(e.construction?' (construction)':'')} · L=${lineLen(sk,e).toFixed(2)} mm`);mkRow('x1',A.x,v=>A.x=v);mkRow('y1',A.y,v=>A.y=v);mkRow('x2',B.x,v=>B.x=v);mkRow('y2',B.y,v=>B.y=v);}
     else if(e.t==='circle'){const C=sk.points[e.pc];note(`${pn}Cercle`+(e.construction?' (construction)':'')+' · Ø='+(e.r*2).toFixed(2)+' mm');mkRow('cx',C.x,v=>C.x=v);mkRow('cy',C.y,v=>C.y=v);mkRow('r',e.r,v=>e.r=Math.max(v,.1));}
     else if(e.t==='arc'){const C=sk.points[e.pc],an=arcAngles(sk,e);note(`${pn}Arc`+(e.construction?' (construction)':'')+' · R='+e.r.toFixed(2)+' mm');mkRow('cx',C.x,v=>C.x=v);mkRow('cy',C.y,v=>C.y=v);mkRow('r',e.r,v=>{e.r=Math.max(v,.1);});if(an){const d1=an.a1*180/Math.PI,d2=an.a2*180/Math.PI;mkRow('a1°',d1,v=>{const a=v*Math.PI/180,A=sk.points[e.pa];A.x=C.x+e.r*Math.cos(a);A.y=C.y+e.r*Math.sin(a);});mkRow('a2°',d2,v=>{const a=v*Math.PI/180,B=sk.points[e.pb];B.x=C.x+e.r*Math.cos(a);B.y=C.y+e.r*Math.sin(a);});}}
-    else if(e.t==='cpoint'){const Q=sk.points[e.p];note('Point de construction');mkRow('x',Q.x,v=>Q.x=v);mkRow('y',Q.y,v=>Q.y=v);}
+    else if(e.t==='cpoint'){const Q=sk.points[e.p];note(e.hole?'Centre de perçage (fonction 3D « Perçage »)':'Point de construction');mkRow('x',Q.x,v=>Q.x=v);mkRow('y',Q.y,v=>Q.y=v);}
     addBtn('🗑 Supprimer',deleteSkSel);
   }else if(skSel&&skSel.kind==='point'){
     const p=sk.points[skSel.pid];
@@ -9858,6 +9874,9 @@ svg.addEventListener('pointerdown',e=>{
     skDown={pid,x:S.x,y:S.y,center:!!e.shiftKey&&skTool!=='circle'};return;
   }
   if(skTool==='cpoint'){skPushUndo();const pid=snapNewPoint(sk,wx,wy);sk.entities.push({id:skNewEid(sk),t:'cpoint',p:pid});skAutoAttach(sk,pid,wx,wy);afterEdit();return;}
+  // 2026-10-15-012 : CENTRE DE PERÇAGE — point dédié aux trous (fonction 3D « Perçage »),
+  // hors profil comme le point de construction, mais seul retenu par les perçages.
+  if(skTool==='hpoint'){skPushUndo();const pid=snapNewPoint(sk,wx,wy);sk.entities.push({id:skNewEid(sk),t:'cpoint',p:pid,hole:true});skAutoAttach(sk,pid,wx,wy);afterEdit();skStatus('Centre de perçage posé — cotez-le, puis fonction 3D « Perçage ».');return;}
   if(skTool==='arc'){
     if(!skArcC){skPushUndo();skArcC=snapNewPoint(sk,wx,wy);drawSketch2D();skStatus('Arc : cliquez le point de départ.');return;}
     const C=sk.points[skArcC];
@@ -11119,6 +11138,353 @@ function askRevokePanel(f){
   sel2.onchange=()=>apply(sel2.value);
   lab.appendChild(sel2);
   const p=$('props');p.insertBefore(lab,p.firstChild);
+}
+
+/* ═══════════════ 76-percage.js — percage ═══════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   PERÇAGE (fonction 3D) — 2026-10-15-012
+   Demande : « une fonction Perçage dans la modélisation 3D, en rapport avec
+   l'opération Perçage FAO : une esquisse avec des points dédiés aux centres de
+   trous, et on crée des trous ou des trous taraudés, avec lamage et fraisure
+   intégrés, comme Fusion 360 ; la FAO le reconnaît automatiquement si créé avec ».
+
+   • Points : entités cpoint `hole:true` de l'esquisse (outil ⊕ Centre de perçage) —
+     seuls ces points portent un trou.
+   • f = {type:'hole', sketchId, kind:'simple'|'cbore'|'csink', d (Ø de perçage),
+          thread:null|{size:'M8',p:1.25,len}, cbD,cbH (lamage), csD,csA (fraisure),
+          end:'blind'|'through', depth (profondeur à plein Ø), tip (angle de pointe,
+          0 = fond plat), flip (sens), op:'cut'}
+     Taraudé : d = Ø de perçage du taraud (M − pas), filet non modélisé (comme
+     Fusion « filet cosmétique ») — l'info voyage jusqu'à la FAO.
+   • Géométrie exacte : par point, un outil de révolution (lamage/fraisure + corps +
+     pointe) le long de −n (ou +n si inversé), unis puis découpés du corps.
+   ═══════════════════════════════════════════════════════════════════════════ */
+// Métrique ISO : [taille, Ø nominal, pas gros, pas fins…]
+const ISO_THREADS=[['M2',2,0.4],['M2.5',2.5,0.45],['M3',3,0.5],['M4',4,0.7],['M5',5,0.8],['M6',6,1,0.75],
+  ['M8',8,1.25,1],['M10',10,1.5,1.25,1],['M12',12,1.75,1.5,1.25],['M14',14,2,1.5],['M16',16,2,1.5],
+  ['M18',18,2.5,2,1.5],['M20',20,2.5,2,1.5],['M22',22,2.5,2,1.5],['M24',24,3,2]];
+// Vis CHC (ISO 4762) : passage moyen, lamage Ø, profondeur de lamage
+const ISO_CHC=[['M3',3.4,6.5,3.4],['M4',4.5,8,4.4],['M5',5.5,10,5.4],['M6',6.6,11,6.4],['M8',9,15,8.6],
+  ['M10',11,18,10.8],['M12',13.5,20,13],['M14',15.5,24,15],['M16',17.5,26,17.5],['M20',22,33,21.5],['M24',26,40,25.5]];
+function isoThread(size){ return ISO_THREADS.find(function(t){return t[0]===size;})||null; }
+function tapDrill(size,p){ const t=isoThread(size); return t?+(t[1]-(p||t[2])).toFixed(2):null; }
+function holeThreadLabel(th){ if(!th||!th.size)return ''; const t=isoThread(th.size); return th.size+((t&&+th.p!==t[2])?('×'+String(th.p).replace('.',',')):''); }
+function holePoints(sk){
+  // Centres de perçage de l'esquisse (2D) : [{id,x,y}]
+  if(!sk)return [];
+  return (sk.entities||[]).filter(function(e){return e&&e.t==='cpoint'&&e.hole&&sk.points&&sk.points[e.p];})
+    .map(function(e){const Q=sk.points[e.p];return {id:e.id,x:Q.x,y:Q.y};});
+}
+function holeName(f){
+  const sk=doc.sketches.find(function(s){return s.id===f.sketchId;});
+  const n=holePoints(sk).length;
+  const fr=function(v){return String(+(+v).toFixed(2)).replace('.',',');};
+  let t=f.thread&&f.thread.size?('Taraudé '+holeThreadLabel(f.thread)):('Ø'+fr(f.d));
+  if(f.kind==='cbore')t+=' lamé Ø'+fr(f.cbD);
+  if(f.kind==='csink')t+=' fraisé Ø'+fr(f.csD);
+  const fin=f.end==='through'?' débouchant tout':(f.end==='next'?' débouchant':(f.end==='upto'?' jusqu’à la face':''));
+  return 'Perçage '+t+fin+' ×'+n;
+}
+function holeNorm(f){
+  // Valeurs bornées (jamais de géométrie dégénérée)
+  const d=Math.max(0.2,+f.d||6.6);
+  return {d:d,r:d/2,
+    kind:f.kind==='cbore'||f.kind==='csink'?f.kind:'simple',
+    cbD:Math.max(d+0.2,+f.cbD||d*1.7),cbH:Math.max(0.1,+f.cbH||d*0.9),
+    csD:Math.max(d+0.2,+f.csD||d*2),csA:Math.min(150,Math.max(60,+f.csA||90)),
+    end:(f.end==='through'||f.end==='next'||f.end==='upto')?f.end:'blind',
+    through:f.end==='through',depth:Math.max(0.2,+f.depth||d*2.5),
+    tip:(f.tip===0||f.tip==='0')?0:Math.min(170,Math.max(60,+f.tip||118))};
+}
+function holeAxis(f,sk){
+  // Origine monde de chaque point + direction de perçage (−n par défaut).
+  const B=sketchBasis(sk);
+  const s=f.flip?1:-1;
+  return {dir:{x:B.n.x*s,y:B.n.y*s,z:B.n.z*s},pts:holePoints(sk).map(function(p){const w=occW(sk,p.x,p.y);return {id:p.id,x:w[0],y:w[1],z:w[2]};})};
+}
+const HOLE_THROUGH=2000; // « débouchant » : la course traverse toute pièce raisonnable
+function holeProfileSegs(N,zEndPt){
+  // Segments le long de l'axe (distance depuis le plan, rayons début/fin) pour un trou.
+  const s=[];let z=0;
+  if(N.kind==='cbore'){s.push([z,N.cbH,N.cbD/2,N.cbD/2]);z=N.cbH;}
+  else if(N.kind==='csink'){const h=(N.csD-N.d)/2/Math.tan(N.csA*Math.PI/360);s.push([z,h,N.csD/2,N.r]);z=h;}
+  const zEnd=Math.max(isFinite(zEndPt)?zEndPt:(N.through?(N.thruLen||HOLE_THROUGH):N.depth),z+0.05);
+  s.push([z,zEnd-z,N.r,N.r]);
+  if(N.end==='blind'&&N.tip>0){const h=N.r/Math.tan(N.tip*Math.PI/360);s.push([zEnd,h,N.r,0]);}
+  return s;
+}
+function occShapeOfHole(f){
+  const sk=doc.sketches.find(function(s){return s.id===f.sketchId;});
+  if(!sk)throw new Error('esquisse introuvable');
+  const A=holeAxis(f,sk);
+  if(!A.pts.length)throw new Error('aucun centre de perçage dans l’esquisse (outil ⊕)');
+  const N=holeNorm(f);
+  // Débouchant : course limitée à la PIÈCE déjà construite (+1 mm) — sinon l'outil
+  // fantôme affiché à la sélection serait une tige de 2 m.
+  if(N.through&&typeof occThroughBase!=='undefined'&&occThroughBase){
+    try{
+      const bb=new occt.Bnd_Box_1();occt.BRepBndLib.Add(occThroughBase,bb,true);
+      const a=bb.CornerMin(),b=bb.CornerMax();let L=0;
+      const cs=[[a.X(),b.X()],[a.Y(),b.Y()],[a.Z(),b.Z()]];
+      A.pts.forEach(function(P){for(let i=0;i<8;i++){const c=[cs[0][i&1],cs[1][(i>>1)&1],cs[2][(i>>2)&1]];
+        L=Math.max(L,(c[0]-P.x)*A.dir.x+(c[1]-P.y)*A.dir.y+(c[2]-P.z)*A.dir.z);}});
+      try{bb.delete();}catch(e){}
+      if(L>0)N.thruLen=L+1;
+    }catch(e){}
+  }
+  const bins=[],warnings=[];
+  const base=(typeof occThroughBase!=='undefined')?occThroughBase:null;
+  const zEndOf=function(P){
+    // Profondeur (plein Ø) de CE trou selon la fin choisie.
+    if(N.end==='upto'){
+      const t=holePlaneDist(f.uptoPlane,P,A.dir);
+      if(t===null){warnings.push('fin « jusqu’à la face » : face non choisie ou parallèle à l’axe — profondeur saisie utilisée');return N.depth;}
+      return t;
+    }
+    if(N.end==='next'){
+      const t=holeNextExit(base,P,A.dir);
+      if(t===null){warnings.push('fin « débouchant » : aucune sortie de matière trouvée — profondeur saisie utilisée');return N.depth;}
+      return t+0.05; // franchit la face de sortie (jamais de pellicule)
+    }
+    if(N.through)return N.thruLen||HOLE_THROUGH;
+    return N.depth;
+  };
+  // longueur filetée effective (information FAO ; le filet n'est pas modélisé)
+  try{
+    if(f.thread&&f.thread.size&&A.pts.length){
+      const m=f.thread.lenMode||'len',P0=A.pts[0];
+      let L=+f.thread.len||0;
+      if(m==='upto'){const t=holePlaneDist(f.thread.uptoPlane,P0,A.dir);if(t!==null)L=t;else warnings.push('longueur filetée « jusqu’à la face » : face non choisie');}
+      else if(m==='next'){const t=holeNextExit(base,P0,A.dir);if(t!==null)L=t;}
+      f._thLen=+L.toFixed(3);
+    }
+  }catch(e){}
+  const D=A.dir;
+  const dir=occBinPush(bins,new occt.gp_Dir_4(D.x,D.y,D.z));
+  let tool=null;
+  const add=function(sh){ if(!tool){tool=sh;return;} const u=occFuse(tool,sh); try{tool.delete();}catch(e){} try{sh.delete();}catch(e){} tool=u; };
+  const OVER=0.02; // départ légèrement au-dessus du plan : jamais de face coplanaire
+  A.pts.forEach(function(P){
+    const segs=holeProfileSegs(N,zEndOf(P));
+    segs.forEach(function(sg,i){
+      const z0=sg[0]-(i===0?OVER:0),h=sg[1]+(i===0?OVER:0);
+      // 1er segment rallongé de OVER au-dessus du plan : un CÔNE (fraisure) est prolongé
+      // sur sa génératrice, sinon le Ø au ras de la face serait trop petit (10,96 pour 11).
+      const r0=(i===0&&sg[1]>1e-9)?sg[2]+OVER*(sg[2]-sg[3])/sg[1]:sg[2];
+      const o=occBinPush(bins,new occt.gp_Pnt_3(P.x+D.x*z0,P.y+D.y*z0,P.z+D.z*z0));
+      const ax=occBinPush(bins,new occt.gp_Ax2_3(o,dir));
+      let sh=null;
+      if(Math.abs(sg[2]-sg[3])<1e-9){const mk=new occt.BRepPrimAPI_MakeCylinder_3(ax,sg[2],h);sh=mk.Shape();try{mk.delete();}catch(e){}}
+      else{const mk=new occt.BRepPrimAPI_MakeCone_3(ax,r0,sg[3],h);sh=mk.Shape();try{mk.delete();}catch(e){}}
+      add(sh);
+    });
+  });
+  return {shape:tool,bins:bins,warnings:warnings};
+}
+function legacyHoleGeos(f,msgs){
+  // Repli maillage (sans noyau exact) : cylindres approchés.
+  const sk=doc.sketches.find(function(s){return s.id===f.sketchId;});
+  if(!sk)throw new Error('esquisse introuvable');
+  const A=holeAxis(f,sk),N=holeNorm(f),geos=[];
+  const segs=holeProfileSegs(N,N.end==='upto'?(holePlaneDist(f.uptoPlane,A.pts[0]||{x:0,y:0,z:0},A.dir)||N.depth):(N.end==='next'?N.depth:undefined));
+  const up=new THREE.Vector3(0,1,0),dv=new THREE.Vector3(A.dir.x,A.dir.y,A.dir.z);
+  const q=new THREE.Quaternion().setFromUnitVectors(up,dv);
+  A.pts.forEach(function(P){
+    segs.forEach(function(sg){
+      const len=Math.min(sg[1],N.through?60:sg[1]); // repli maillage : course bornée
+      // rayon nul (pointe) → 0,01 mm : un sommet dégénéré corrompt le booléen BSP (CSG)
+      const g=new THREE.CylinderGeometry(Math.max(sg[3],0.01),Math.max(sg[2],0.01),len,24);
+      g.applyQuaternion(q);
+      const c=sg[0]+len/2;
+      g.translate(P.x+dv.x*c,P.y+dv.y*c,P.z+dv.z*c);
+      geos.push(g);
+    });
+  });
+  if(!geos.length)throw new Error('aucun centre de perçage');
+  return geos;
+}
+function holePlaneDist(pl,P,D){
+  // Distance le long de l'axe jusqu'au plan choisi {p:[x,y,z],n:[x,y,z]} ; null si absent/parallèle/derrière.
+  if(!pl||!pl.p||!pl.n)return null;
+  const dn=D.x*pl.n[0]+D.y*pl.n[1]+D.z*pl.n[2];
+  if(Math.abs(dn)<1e-6)return null;
+  const t=((pl.p[0]-P.x)*pl.n[0]+(pl.p[1]-P.y)*pl.n[1]+(pl.p[2]-P.z)*pl.n[2])/dn;
+  return t>0.01?t:null;
+}
+function holeNextExit(sh,P,D){
+  // « Jusqu'à la prochaine face » : distance le long de l'axe jusqu'à la PREMIÈRE
+  // sortie de matière (entrée dans le solide, puis sortie). Marche + dichotomie.
+  if(!sh||typeof occt==='undefined')return null;
+  let cl=null;
+  try{
+    cl=new occt.BRepClass3d_SolidClassifier_2(sh);
+    const IN=occt.TopAbs_State.TopAbs_IN;
+    const inAt=function(t){const p=new occt.gp_Pnt_3(P.x+D.x*t,P.y+D.y*t,P.z+D.z*t);cl.Perform(p,1e-7);const r=cl.State()===IN;try{p.delete();}catch(e){}return r;};
+    let bb=null,Lmax=2000;
+    try{bb=new occt.Bnd_Box_1();occt.BRepBndLib.Add(sh,bb,true);const a=bb.CornerMin(),b=bb.CornerMax();Lmax=Math.hypot(b.X()-a.X(),b.Y()-a.Y(),b.Z()-a.Z())+1;bb.delete();}catch(e){}
+    const step=0.25;let t=0.05,seenIn=false,prevIn=false;
+    for(;t<=Lmax;t+=step){
+      const i=inAt(t);
+      if(i){seenIn=true;prevIn=true;continue;}
+      if(seenIn&&prevIn){ // sortie entre t-step et t
+        let lo=t-step,hi=t;
+        for(let k=0;k<30;k++){const m=(lo+hi)/2;if(inAt(m))lo=m;else hi=m;}
+        return hi;
+      }
+      prevIn=false;
+    }
+    return null;
+  }catch(e){return null;}
+  finally{try{if(cl)cl.delete();}catch(e){}}
+}
+let holeFacePick=null; // {fid, which:'end'|'thread'}
+function holeFacePickStart(fid,which){
+  holeFacePick={fid:fid,which:which};
+  try{renderer.domElement.style.cursor='crosshair';}catch(e){}
+  try{faceEl.textContent='Perçage : cliquez une face PLANE de la pièce ('+(which==='thread'?'fin du filetage':'fin du trou')+') — Échap pour annuler.';}catch(e){}
+}
+function holeFacePickCancel(){holeFacePick=null;try{renderer.domElement.style.cursor='default';}catch(e){}}
+function holeFacePickAt(e){
+  if(!holeFacePick)return false;
+  const f=doc.features.find(function(x){return x.id===holeFacePick.fid;});
+  if(!f){holeFacePickCancel();return false;}
+  const h=pick(e);if(!h){try{faceEl.textContent='Perçage : aucune face sous le curseur.';}catch(e2){}return true;}
+  let G=null;try{G=occFaceGeom(h.object,h.faceIndex);}catch(e2){G=null;}
+  if(!G||G.kind!=='plan'){try{faceEl.textContent='Perçage : choisissez une face PLANE.';}catch(e2){}return true;}
+  const pl={p:[G.p.x,G.p.y,G.p.z],n:[G.n.x,G.n.y,G.n.z]};
+  docPushUndo('perçage : face');
+  if(holeFacePick.which==='thread'){if(!f.thread)f.thread={};f.thread.uptoPlane=pl;f.thread.lenMode='upto';}
+  else{f.uptoPlane=pl;f.end='upto';}
+  holeFacePickCancel();
+  f.name=holeName(f);markDirty();rebuild();renderTree();renderProps();
+  try{faceEl.textContent='Perçage : face retenue.';}catch(e2){}
+  return true;
+}
+/* ----- création ----- */
+function askHole(presetSketchId){
+  const lastWithHoles=function(){for(let i=doc.sketches.length-1;i>=0;i--){if(holePoints(doc.sketches[i]).length)return doc.sketches[i].id;}return null;};
+  const skId=(presetSketchId&&holePoints(doc.sketches.find(function(s){return s.id===presetSketchId;})).length)?presetSketchId:lastWithHoles();
+  if(!skId){alert('Perçage : placez d’abord des CENTRES DE PERÇAGE dans une esquisse (outil ⊕ de la barre d’esquisse), puis sélectionnez-la.');return;}
+  const sk=doc.sketches.find(function(s){return s.id===skId;});
+  const nf={id:uid('ho'),type:'hole',name:'',sketchId:skId,kind:'simple',d:6.6,thread:null,
+    cbD:11,cbH:6.4,csD:13,csA:90,end:'blind',depth:15,tip:118,flip:false,op:'cut',visible:true};
+  // sens automatique : vers la matière (le plan d'une face pointe vers l'extérieur)
+  try{
+    if(occHas()&&occLive&&occLive.shape){
+      const A=holeAxis(nf,sk),P=A.pts[0],D=A.dir;
+      const cl=new occt.BRepClass3d_SolidClassifier_2(occLive.shape);
+      const st=function(s){const p=new occt.gp_Pnt_3(P.x+D.x*s,P.y+D.y*s,P.z+D.z*s);cl.Perform(p,1e-6);const r=cl.State();try{p.delete();}catch(e){}return r;};
+      const IN=occt.TopAbs_State.TopAbs_IN;
+      if(st(0.6)!==IN&&st(-0.6)===IN)nf.flip=true;
+      try{cl.delete();}catch(e){}
+    }
+  }catch(e){}
+  nf.name=holeName(nf);
+  docPushUndo('perçage');
+  addFeature(nf);
+  if(sk.visible!==false)sk.visible=false;
+  ghostHide=nf.id;
+  sel={kind:'feature',id:nf.id};
+  markDirty();rebuild();renderTree();renderProps();
+  faceEl.textContent='Perçage créé : '+nf.name+' — réglez type, taraudage et profondeur dans Paramètres.';
+}
+/* ----- panneau de la fonction ----- */
+function renderHoleProps(p,f){
+  const sk=doc.sketches.find(function(s){return s.id===f.sketchId;});
+  const go=function(){f.name=holeName(f);markDirty();rebuild();renderTree();renderProps();};
+  const row=function(lab,el){const l=document.createElement('label');l.textContent=lab;l.appendChild(el);p.appendChild(l);return l;};
+  const sel=function(opts,val,fn){const s=document.createElement('select');s.innerHTML=opts.map(function(o){return '<option value="'+o[0]+'">'+o[1]+'</option>';}).join('');s.value=String(val);s.onchange=function(){docPushUndo('perçage');fn(s.value);go();};return s;};
+  const num=function(val,fn,w){const i=document.createElement('input');i.type='text';i.inputMode='decimal';i.value=String(+(+val).toFixed(3)).replace('.',',');i.style.width=(w||70)+'px';
+    const c=function(){const v=parseFloat(String(i.value).replace(',','.'));if(isFinite(v)&&v>0){docPushUndo('perçage');fn(v);go();}};
+    i.addEventListener('change',c);i.addEventListener('keydown',function(e){if(e.key==='Enter'){c();i.blur();}e.stopPropagation();});i.addEventListener('click',function(e){e.stopPropagation();});return i;};
+  const nP=holePoints(sk).length;
+  const hd=document.createElement('span');hd.className='note';hd.textContent=nP+' centre(s) de perçage dans « '+(sk?sk.name:'?')+' »'+(nP?'':' — ajoutez-en avec l’outil ⊕ de l’esquisse');p.appendChild(hd);
+  // ── type
+  row('Type',sel([['simple','Simple'],['cbore','Lamage'],['csink','Fraisure']],f.kind||'simple',function(v){f.kind=v;}));
+  // ── taraudage
+  const thOpts=[['','Aucun (trou lisse)']];
+  ISO_THREADS.forEach(function(t){thOpts.push([t[0]+'|'+t[2],t[0]+' (pas '+String(t[2]).replace('.',',')+')']);
+    for(let k=3;k<t.length;k++)thOpts.push([t[0]+'|'+t[k],t[0]+'×'+String(t[k]).replace('.',',')+' (fin)']);});
+  row('Taraudage',sel(thOpts,f.thread&&f.thread.size?(f.thread.size+'|'+f.thread.p):'',function(v){
+    if(!v){f.thread=null;return;}
+    const q=v.split('|'),pz=+q[1];f.thread={size:q[0],p:pz,len:(f.thread&&+f.thread.len)||Math.max(2*isoThread(q[0])[1],+f.depth-2*pz)};
+    f.d=tapDrill(q[0],pz);
+    if(f.kind==='csink')f.csD=+(isoThread(q[0])[1]*1.1+0.4).toFixed(2);
+  }));
+  // ── vis CHC (lamage) : préréglages ISO 4762
+  if(f.kind==='cbore')row('Vis CHC',sel([['','—']].concat(ISO_CHC.map(function(c){return [c[0],c[0]+' : Ø'+String(c[1]).replace('.',',')+' / lamage Ø'+c[2]+' × '+String(c[3]).replace('.',',')];})),'',function(v){
+    const c=ISO_CHC.find(function(x){return x[0]===v;});if(!c)return;f.thread=null;f.d=c[1];f.cbD=c[2];f.cbH=c[3];}));
+  // ── Ø de perçage
+  const lD=row(f.thread&&f.thread.size?'Ø de perçage (taraud '+holeThreadLabel(f.thread)+')':'Ø du trou',num(f.d,function(v){f.d=v;}));
+  void lD;
+  if(f.thread&&f.thread.size){
+    row('Longueur filetée',sel([['len','Longueur'],['upto','Jusqu’à la face…'],['next','Jusqu’à la prochaine face']],f.thread.lenMode||'len',function(v){
+      f.thread.lenMode=v; if(v==='upto'&&!f.thread.uptoPlane)setTimeout(function(){holeFacePickStart(f.id,'thread');},0);}));
+    const tm=f.thread.lenMode||'len';
+    if(tm==='len')row('Longueur (mm)',num(f.thread.len||f.depth,function(v){f.thread.len=v;}));
+    else if(tm==='upto'){const b=document.createElement('button');b.textContent=(f.thread.uptoPlane?'✓ Face choisie — ':'')+'Sélectionner la face (filetage)';b.onclick=function(){holeFacePickStart(f.id,'thread');};p.appendChild(b);}
+    if(f._thLen)p.appendChild(Object.assign(document.createElement('span'),{className:'note',textContent:'Longueur filetée effective : '+String(f._thLen).replace('.',',')+' mm'}));
+  }
+  if(f.kind==='cbore'){row('Ø lamage',num(f.cbD,function(v){f.cbD=v;}));row('Profondeur lamage',num(f.cbH,function(v){f.cbH=v;}));}
+  if(f.kind==='csink'){row('Ø fraisure',num(f.csD,function(v){f.csD=v;}));row('Angle fraisure (°)',sel([['90','90°'],['82','82° (UNC)'],['100','100°'],['120','120°']],String(f.csA||90),function(v){f.csA=+v;}));}
+  // ── fin
+  row('Fin',sel([['blind','Distance (borgne)'],['upto','Jusqu’à la face…'],['next','Débouchant (prochaine face)'],['through','Débouchant tout']],f.end||'blind',function(v){
+    f.end=v; if(v==='upto'&&!f.uptoPlane)setTimeout(function(){holeFacePickStart(f.id,'end');},0);}));
+  if(f.end==='upto'){const b=document.createElement('button');b.textContent=(f.uptoPlane?'✓ Face choisie — ':'')+'Sélectionner la face (fin du trou)';b.onclick=function(){holeFacePickStart(f.id,'end');};p.appendChild(b);}
+  if(!f.end||f.end==='blind'){
+    row('Profondeur (plein Ø)',num(f.depth,function(v){f.depth=v;}));
+    row('Fond',sel([['118','Pointe 118°'],['135','Pointe 135°'],['140','Pointe 140°'],['90','Pointe 90°'],['0','Fond plat']],String(f.tip===0?0:(f.tip||118)),function(v){f.tip=+v;}));
+  }
+  row('Sens',sel([['0','Vers la matière (auto)'],['1','Inversé']],f.flip?'1':'0',function(v){f.flip=(v==='1');}));
+  const b1=document.createElement('button');b1.textContent='🔧 Éditer l’esquisse (centres)';b1.onclick=function(){if(sk)openSketch(sk.id);};p.appendChild(b1);
+}
+/* ----- image du taraudage (filet cosmétique) — 2026-10-15-012 -----
+   « Peut-on voir une image de taraudage sur les trous taraudés ? » : hélice au pas
+   réel dessinée DANS le trou (juste en deçà du Ø de perçage, donc visible par
+   l'ouverture) sur la longueur filetée, + cercle du Ø nominal à l'entrée. Le solide
+   reste percé au Ø du taraud (juste pour la FAO) ; rien n'est modélisé. */
+function holeThreadOverlay(){
+  try{
+    const old=scene.getObjectByName('holeThreads');
+    if(old){scene.remove(old);old.traverse(function(o){try{if(o.geometry)o.geometry.dispose();}catch(e){}});}
+    const grp=new THREE.Group();grp.name='holeThreads';
+    (doc.features||[]).forEach(function(f){
+      if(!f||f.type!=='hole'||f.visible===false||!f.thread||!f.thread.size)return;
+      if(typeof tlLocked==='function'&&tlLocked(f))return;
+      const sk=doc.sketches.find(function(s){return s.id===f.sketchId;});if(!sk)return;
+      const t=isoThread(f.thread.size);if(!t)return;
+      const pz=+f.thread.p||t[2],Rn=t[1]/2,N=holeNorm(f);
+      const rh=Math.max(0.05,N.r-0.04);
+      const len=Math.max(pz,+f._thLen||+f.thread.len||N.depth);
+      const A=holeAxis(f,sk),D=new THREE.Vector3(A.dir.x,A.dir.y,A.dir.z);
+      // repère orthonormé autour de l'axe
+      const ref=Math.abs(D.z)<0.9?new THREE.Vector3(0,0,1):new THREE.Vector3(1,0,0);
+      const U=new THREE.Vector3().crossVectors(D,ref).normalize(),V=new THREE.Vector3().crossVectors(D,U).normalize();
+      const off=(N.kind==='cbore')?N.cbH:0;
+      const helix=[],ring=[];
+      A.pts.forEach(function(P){
+        const O=new THREE.Vector3(P.x,P.y,P.z);
+        const turns=len/pz,steps=Math.max(24,Math.ceil(turns*24));
+        let prev=null;
+        for(let i=0;i<=steps;i++){
+          const a=i/steps*turns*Math.PI*2,z=off+i/steps*len;
+          const q=O.clone().addScaledVector(D,z).addScaledVector(U,rh*Math.cos(a)).addScaledVector(V,rh*Math.sin(a));
+          if(prev)helix.push(prev.x,prev.y,prev.z,q.x,q.y,q.z);prev=q;
+        }
+        let pr=null;
+        for(let k=0;k<=48;k++){const a=k/48*Math.PI*2;
+          const q=O.clone().addScaledVector(D,off-0.03).addScaledVector(U,Rn*Math.cos(a)).addScaledVector(V,Rn*Math.sin(a));
+          if(pr)ring.push(pr.x,pr.y,pr.z,q.x,q.y,q.z);pr=q;}
+      });
+      const mkL=function(arr,col,op,dash){
+        const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(arr,3));
+        const m=dash?new THREE.LineDashedMaterial({color:col,dashSize:0.8,gapSize:0.6,transparent:true,opacity:op}):new THREE.LineBasicMaterial({color:col,transparent:true,opacity:op});
+        const l=new THREE.LineSegments(g,m);if(dash&&l.computeLineDistances)l.computeLineDistances();l.renderOrder=5;l.raycast=function(){};return l;};
+      if(helix.length)grp.add(mkL(helix,0xffb340,0.9,false));
+      if(ring.length)grp.add(mkL(ring,0xffb340,0.95,true));
+    });
+    if(grp.children.length)scene.add(grp);
+  }catch(e){}
 }
 
 /* ═══════════════ 80-conges-chanfreins.js — conges chanfreins ═══════════════ */
@@ -15185,6 +15551,7 @@ function faoOpMovesKey(op,job){
     for(const k in job){
       if(!Object.prototype.hasOwnProperty.call(job,k)||k==='ops'||k==='open')continue;
       if(k==='name'||k==='id')continue; // libelle / identifiant : jamais une trajectoire
+      if(k==='holeInfo')continue; // nature des trous d'un STEP (taraudé…) : aucun effet sur les tracés
       js[k]=job[k];
     }
     // Seul l'outil de CETTE operation influence ses parcours : modifier T3 ne
@@ -27353,8 +27720,8 @@ function faoHolesDetect(shapes){
             const za=L.Z()+Dd.Z()*ad.FirstVParameter(),zb=L.Z()+Dd.Z()*ad.LastVParameter();
             const key=L.X().toFixed(2)+'|'+L.Y().toFixed(2)+'|'+r.toFixed(3);
             let g=groups.get(key);
-            if(!g){g={x:+L.X().toFixed(3),y:+L.Y().toFixed(3),r:r,zLo:Infinity,zHi:-Infinity,cov:0,faces:[],shape:si};groups.set(key,g);}
-            g.zLo=Math.min(g.zLo,za,zb);g.zHi=Math.max(g.zHi,za,zb);g.cov+=u;g.faces.push(si+':'+k);
+            if(!g){g={x:+L.X().toFixed(3),y:+L.Y().toFixed(3),r:r,rng:[],shape:si};groups.set(key,g);}
+            g.rng.push({lo:Math.min(za,zb),hi:Math.max(za,zb),u:u,f:si+':'+k});
           }
         }else if(ty===T.GeomAbs_Cone){
           const c=ad.Cone(),ax=c.Axis(),Dd=ax.Direction();
@@ -27372,6 +27739,18 @@ function faoHolesDetect(shapes){
     }
     try{ ex.delete(); }catch(e){}
   });
+  // Un même axe peut porter PLUSIEURS tronçons (trou qui traverse une cavité) :
+  // chaque intervalle Z contigu est un trou à part.
+  const segs=new Map();
+  groups.forEach(function(G,key){
+    const R=G.rng.slice().sort(function(a,b){return a.lo-b.lo;});
+    const out=[];
+    R.forEach(function(q){const c=out[out.length-1];
+      if(c&&q.lo<=c.zHi+0.01){c.zHi=Math.max(c.zHi,q.hi);c.cov+=q.u;c.faces.push(q.f);}
+      else out.push({x:G.x,y:G.y,r:G.r,zLo:q.lo,zHi:q.hi,cov:q.u,faces:[q.f],shape:G.shape});});
+    out.forEach(function(g,i){segs.set(key+'#'+i,g);});
+  });
+  groups.clear();segs.forEach(function(v,k){groups.set(k,v);});
   const holes=[];
   groups.forEach(function(g){
     if(g.cov<Math.PI*1.5)return; // < 270° : congé, rainure, demi-lune — pas un trou
@@ -27411,6 +27790,23 @@ function faoHolesDetect(shapes){
       try{P.delete();cl.delete();}catch(e){}
     }catch(e){}
   });
+  // Trous créés par la fonction 3D « Perçage » (src/76) : nature reconnue d'office
+  // (taraudé M…, lamage, fraisure) — un STEP n'a pas cette information.
+  try{
+    (doc.features||[]).forEach(function(f){
+      if(!f||f.type!=='hole'||f.visible===false)return;
+      const sk=doc.sketches.find(function(q){return q.id===f.sketchId;});if(!sk)return;
+      const A=holeAxis(f,sk);if(Math.abs(A.dir.z)<0.9999)return;
+      A.pts.forEach(function(P){
+        holes.forEach(function(h){
+          if(Math.hypot(h.x-P.x,h.y-P.y)>0.02)return;
+          if(Math.abs(h.d-(+f.d))>0.02&&!(f.kind==='cbore'&&Math.abs(h.d-(+f.cbD))<0.02))return;
+          h.feat={id:f.id,name:f.name,kind:f.kind||'simple',thread:(f.thread&&f.thread.size)?{size:f.thread.size,p:+f.thread.p,len:+f.thread.len||0}:null,
+            role:(f.kind==='cbore'&&Math.abs(h.d-(+f.cbD))<0.02)?'lamage':'trou'};
+        });
+      });
+    });
+  }catch(e){}
   holes.sort(function(a,b){return b.ztop-a.ztop||a.d-b.d||a.x-b.x||a.y-b.y;});
   if(shapes.length===1){faoHoleCache={shape:shapes[0],list:holes};}
   return holes;
@@ -27685,7 +28081,26 @@ function faoDrillSections(setup,op,d){
       const s=document.createElement('span');s.className='fao-meta';
       s.textContent='Ø'+(+g.d.toFixed(2))+' × '+g.holes.length+' · Z '+(+g.z.toFixed(2))+' → '+(+h0.zbot.toFixed(2))+' · '+(h0.through?'débouchant':'borgne')+
         (h0.tipAng?(' · pointe '+h0.tipAng+'°'):'')+(h0.chD?(' · chanfrein Ø'+(+h0.chD.toFixed(2))):'')+(h0.cb?(' · lamage Ø'+h0.cb.d):'');
-      r.appendChild(s);d.appendChild(r);
+      r.appendChild(s);
+      // nature : reconnue (fonction Perçage) ou choisie (STEP) — trou lisse / taraudé
+      const fe=g.holes.find(function(h){return h.feat;});
+      if(fe&&fe.feat.thread){
+        const t=document.createElement('span');t.className='fao-meta';t.style.color='#ff9f0a';
+        t.textContent='taraudé '+holeThreadLabel(fe.feat.thread)+' (fonction Perçage)';r.appendChild(t);
+      }else if(fe&&fe.feat.role==='lamage'){
+        const t=document.createElement('span');t.className='fao-meta';t.textContent='lamage (fonction Perçage)';r.appendChild(t);
+      }else if(!fe){
+        const key=g.d.toFixed(2)+'@'+g.z.toFixed(2);
+        const info=(setup.holeInfo&&setup.holeInfo[key])||{};
+        const opts=[['','Trou']];
+        ISO_THREADS.forEach(function(t){for(let k=2;k<t.length;k++){const td=t[1]-t[k];if(Math.abs(td-g.d)<=0.3)opts.push([t[0]+'|'+t[k],'Taraudé '+t[0]+(k>2?('×'+String(t[k]).replace('.',',')):'')]);}});
+        if(opts.length>1)r.appendChild(faoSel(opts,info.thread?(info.thread.size+'|'+info.thread.p):'',function(v){
+          setup.holeInfo=setup.holeInfo||{};
+          if(!v)delete setup.holeInfo[key];
+          else{const q=v.split('|');setup.holeInfo[key]={thread:{size:q[0],p:+q[1]}};}
+        },'Pièce importée (STEP) : la nature du trou n’est pas dans la géométrie — indiquez s’il est taraudé (Ø mesuré compatible avec le taraud).'));
+      }
+      d.appendChild(r);
     });
   }else{
     const pts=(op.pts||[]).map(function(q){return (+q[0])+','+(+q[1]);}).join('; ');
@@ -27993,6 +28408,7 @@ function wirePick(){
     if(Math.hypot(e.clientX-dx,e.clientY-dy)>6)return;
     if(filMode){if(e.button===0&&!e.ctrlKey)filletToggle(e);return;}
     if(filModeX){if(e.button===0&&!e.ctrlKey)exactToggle(e);return;}
+    if(typeof holeFacePick!=='undefined'&&holeFacePick){if(e.button===0&&!e.ctrlKey)holeFacePickAt(e);return;} // fonction Perçage : face de fin
     if(typeof faoHolePick!=='undefined'&&faoHolePick){if(e.button===0&&!e.ctrlKey)faoHolePickAt(e);return;} // perçage : clic sur un trou
     if(faoChainMode){if(e.button===0&&!e.ctrlKey)faoChainToggle(e);return;}
     if(faoPlanePick){if(e.button===0&&!e.ctrlKey)faoPlaneCommit(e);return;}
@@ -28118,6 +28534,7 @@ function filletTangentChain(sk, startCorner){
     if(filMode||filModeX){exitFilletMode();return;}
     if(faoChainMode){faoChainExit(true);return;}
     if(typeof faoHolePick!=='undefined'&&faoHolePick){faoHolePickExit();return;}
+    if(typeof holeFacePick!=='undefined'&&holeFacePick){holeFacePickCancel();faceEl.textContent='Perçage : sélection de face annulée.';return;}
     if(mvMode){exitMoveFaceMode();return;}
     if(draftMode){exitDraftMode();return;}
     if(coqueMode){exitCoqueMode();return;}clearMeasure();clearHover();hideCtx();hideCtx3D();}});
@@ -29601,6 +30018,20 @@ function faoMeshFromBodyFine(b){
     }
   }
 })();
+// 2026-10-15-012 : bouton « Perçage » (fonction 3D, src/76-percage.js), après l'Extrusion.
+(function(){
+  if(!document.getElementById('btnHole')){
+    const b=document.getElementById('btnExtrude');
+    if(b&&b.parentNode){
+      const n=document.createElement('button');
+      n.id='btnHole';
+      n.textContent='⊚ Perçage';
+      n.title='Perçage : trous sur les CENTRES DE PERÇAGE (⊕) de l\'esquisse sélectionnée — simple, lamage, fraisure, taraudé ISO, borgne ou débouchant. Reconnu par l\'opération FAO Perçage.';
+      b.parentNode.insertBefore(n,b.nextSibling);
+    }
+  }
+})();
+if($('btnHole'))$('btnHole').onclick=()=>askHole(sel.kind==='sketch'?sel.id:null);
 const btnRevolve=$('btnRevolve');
 if(btnRevolve)btnRevolve.onclick=()=>askRevolve(sel.kind==='sketch'?sel.id:null);
 $('btnSketch').onclick=()=>{
@@ -29789,7 +30220,7 @@ window.addEventListener('pointerdown',e=>{if(!$('ctxMenu').contains(e.target))hi
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.36';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.37';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);

@@ -48,6 +48,7 @@ function featIconOf(f){
   if(f.type==='fillet')return xIcon(xKindOf(f));
   if(f.type==='repeat')return '🔁';
   if(f.type==='revolve')return (f.op||'add')==='cut'?'◔':'◍';
+  if(f.type==='hole')return '⊚';
   if(f.type==='xmove')return '📐';
   if(f.type==='xdraft')return ((f._m&&f._m.m<f._m.t)||f._err)?'⚠':'📐';
   if(f.type==='xshell')return ((f._m&&f._m.m<f._m.t)||f._err)?'⚠':'🥚';
@@ -1086,7 +1087,7 @@ function renderProps(){
       return;
     }
     const filRims=f.rims||((f.rimTop||f.rimBot)?{top:!!f.rimTop,bottom:!!f.rimBot}:null);
-    p.appendChild(info(`<b>${f.name}</b> · ${f.type==='extrude'?((f.op||'add')==='cut'?'➖ ':'➕ ')+extName(f):((f.type==='fillet')?'Congé R'+f.radius+' · '+(f.corners||[]).length+' verticale(s)'+(filRims&&(filRims.top||filRims.bottom)?' + périmètre '+(filRims.top&&filRims.bottom?'haut+bas':(filRims.top?'haut':'bas')):'')+' sur '+exName(f.target):((f.type==='xfillet')?`${xIcon(xKindOf(f))} ${xLabel(xKindOf(f))} · ${(f.edges||[]).length} arête(s)`:(f.type==='repeat'?'🔁 Répétition':'Import')))}`));
+    p.appendChild(info(`<b>${f.name}</b> · ${f.type==='extrude'?((f.op||'add')==='cut'?'➖ ':'➕ ')+extName(f):((f.type==='fillet')?'Congé R'+f.radius+' · '+(f.corners||[]).length+' verticale(s)'+(filRims&&(filRims.top||filRims.bottom)?' + périmètre '+(filRims.top&&filRims.bottom?'haut+bas':(filRims.top?'haut':'bas')):'')+' sur '+exName(f.target):((f.type==='xfillet')?`${xIcon(xKindOf(f))} ${xLabel(xKindOf(f))} · ${(f.edges||[]).length} arête(s)`:(f.type==='repeat'?'🔁 Répétition':(f.type==='hole'?'⊚ Perçage':(f.type==='revolve'?'Révolution':'Import')))))}`));
     // Un congé PARTIEL (le triangle ⚠ de l'arbre) doit s'expliquer ici : combien
     // d'arêtes ont été retrouvées, lesquelles manquent, et pourquoi.
     if(f.type==='xfillet'&&f._m&&f._m.t&&f._m.m<f._m.t){
@@ -1201,6 +1202,7 @@ p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.fea
       p.appendChild(lst);
       p.appendChild(btn('✏️ Modifier la sélection (ajout / retrait)',()=>enterExactFilletMode(f)));
     }
+    if(f.type==='hole'){renderHoleProps(p,f);}
     if(f.type==='revolve'){
       // ── Opération (comme l'extrusion) ──
       const lo=document.createElement('label');lo.textContent='Opération';
