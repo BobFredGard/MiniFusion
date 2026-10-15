@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**233 versions**, de `2026-09-28b` à `2026-10-15-005` — la plus récente en bas,
+**234 versions**, de `2026-09-28b` à `2026-10-15-006` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3705,3 +3705,9 @@ Mesure : `occFaceGeom` ne résolvait que les corps natifs ; un STEP seul dans so
 **Pré-sélection d'arêtes (Chaîne, Chaîne îlot, Limite Z) plus visible et plus précise (retour : « les arêtes extérieures sont visibles mais pas assez précises et le trait trop fin ; les arêtes de fond de poche ou de détourage ne le sont pas du tout »).**
 
 Trois causes. 1) Trait : les `LineSegments` WebGL font toujours 1 px → quads écran comme les rapides, 3 px au repos, 5 px survolée/sélectionnée, sur un liseré sombre (+1 px de chaque côté) qui garde le contraste sur n'importe quelle couleur de corps (une arête jaune survolée sur un corps jaune restait invisible). 2) Arêtes concaves (fond de poche, pied de détourage, épaulement) : posées exactement sur la surface, la corde du maillage passait DEVANT elles → invisibles ; le shader avance chaque sommet vers la caméra (0,25 mm + 0,4 % de la distance) : visibles sur la face, toujours cachées par la matière. 3) Pointage : tolérance de 2 mm en 3D (trop large de près, inattrapable de loin) → arête la plus proche en PIXELS écran (≤ 10 px), une arête cachée par la pièce n'étant jamais prise (comparaison au premier impact du rayon). Vérifié sur « Poche et Contour » : 48 arêtes listées, contours du fond de poche (Z 24) et de l'épaulement (Z 13) affichés et pointables ; les seules arêtes refusées sont réellement cachées depuis le point de vue. Migration : `APP_VER` et `CACHE_VER` → `2026-10-15-005` ; badge **V0.1.29 → V0.1.30**.
+
+### `2026-10-15-006`
+
+**Sol miroir : reflet coupé sur les côtés (retour vidéo : « quand la pièce vient dans la zone des panneaux Arborescence et FAO, le miroir se déglingue »).**
+
+Vraie cause, et aussi celle des « fuyantes » du 003 : `updateMirror` orientait la caméra miroir avec `up = (0,0,1)` pris en repère LOCAL de la caméra — le Z-haut du monde confondu avec un axe local. Le haut local d'une caméra est toujours `(0,1,0)` (viewer_STEP et le Reflector de three le font ainsi). La caméra miroir partait donc en roulis : son cadre ne recouvrait plus l'écran et le reflet était tronqué sur les côtés (là où sont les panneaux), ou étiré avant la garde du 003. Mesuré sur « Poche et Contour », vue rasante : part du sol visible couverte par l'image de reflet 71 % → 100 %. Migration : `APP_VER` et `CACHE_VER` → `2026-10-15-006` ; badge **V0.1.30 → V0.1.31**.

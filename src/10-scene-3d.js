@@ -92,7 +92,11 @@ function updateMirror(){
   _mtgt.reflect(_mn).negate();
   _mtgt.add(_mrwp);
   mirrorCam.position.copy(_mview);
-  mirrorCam.up.set(0,0,1).applyMatrix4(_mrot).reflect(_mn);
+  // Haut LOCAL de la caméra = (0,1,0) (comme viewer_STEP / Reflector de three). Avec
+  // (0,0,1) — le Z-haut du MONDE pris pour un axe local — la caméra miroir partait en
+  // roulis : son cadre ne couvrait plus l'écran, le reflet était coupé sur les côtés
+  // (« le miroir se déglingue sous les panneaux ») ou étiré (« fuyantes », 003).
+  mirrorCam.up.set(0,1,0).applyMatrix4(_mrot).reflect(_mn);
   mirrorCam.lookAt(_mtgt);
   // La cible de rendu a l'aspect du canvas (cf. fit()) : on recopie la projection de la
   // caméra, seule combinaison qui garde les UV dans [0,1] sur toute la surface visible.

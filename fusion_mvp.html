@@ -262,7 +262,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-15-005';
+const APP_VER='2026-10-15-006';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -273,7 +273,7 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-15-005';
+const CACHE_VER='2026-10-15-006';
 function cacheVerOK(v){
   // 2026-10-11-002 : ébauche 3D — la ZONE voyage dans le REPÈRE (zoneAt
   // transposé sous SENS LONG + rotation de −θ sur l'axe d'une limite oblique,
@@ -636,7 +636,11 @@ function updateMirror(){
   _mtgt.reflect(_mn).negate();
   _mtgt.add(_mrwp);
   mirrorCam.position.copy(_mview);
-  mirrorCam.up.set(0,0,1).applyMatrix4(_mrot).reflect(_mn);
+  // Haut LOCAL de la caméra = (0,1,0) (comme viewer_STEP / Reflector de three). Avec
+  // (0,0,1) — le Z-haut du MONDE pris pour un axe local — la caméra miroir partait en
+  // roulis : son cadre ne couvrait plus l'écran, le reflet était coupé sur les côtés
+  // (« le miroir se déglingue sous les panneaux ») ou étiré (« fuyantes », 003).
+  mirrorCam.up.set(0,1,0).applyMatrix4(_mrot).reflect(_mn);
   mirrorCam.lookAt(_mtgt);
   // La cible de rendu a l'aspect du canvas (cf. fit()) : on recopie la projection de la
   // caméra, seule combinaison qui garde les UV dans [0,1] sur toute la surface visible.
@@ -28729,7 +28733,7 @@ window.addEventListener('pointerdown',e=>{if(!$('ctxMenu').contains(e.target))hi
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.30';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.31';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);
