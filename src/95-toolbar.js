@@ -31,15 +31,19 @@ if($('btnDraft'))$('btnDraft').onclick=()=>{if(draftMode)exitDraftMode();else{if
 if($('btnCoque'))$('btnCoque').onclick=()=>{if(coqueMode)exitCoqueMode();else{if(filMode||filModeX)exitFilletMode(true);if(draftMode)exitDraftMode(true);}enterCoqueMode();};
 $('btnFit').onclick=showAll;
 $('btnSelfTest').onclick=runSelfTests;
-if($('btnRebuild'))$('btnRebuild').onclick=()=>{
-  // FORCE le rejeu : sans cela la garde « rien n'a changé » court-circuite et le bouton
-  // semblait ne rien faire (régression introduite par l'optimisation de reconstruction).
-  // Balayage des répétitions AVANT le rejeu : les instances se réalignent sur leurs
-  // sources même si un chemin d'édition n'a pas synchronisé pendant la session.
-  builtVersion=-1;builtHash=null;builtEngine=null;
-  faceEl.textContent='Recalcul demandé…';
-  try{repGenAll();}catch(e){}
-  try{rebuild();}catch(e){faceEl.textContent+='\n[Recalcul] '+String((e&&e.message)||e);}};
+// 2026-10-15-009 : UN SEUL bouton « ⟳ Régénérer » (remplace Recalculer, ✓ Valider et
+// ⟳⟳ Hard, redondants) : réparation du document, instances de répétition réalignées,
+// caches jetés, rejeu complet jusqu'à convergence, diagnostic esquisses / fonctions /
+// corps. Rapport détaillé dans « Auto-tests », résumé dans « Mesure ».
+function regenTout(){
+  try{faceEl.textContent='⟳ Régénération du modèle…';}catch(e){}
+  try{return runValidate();}catch(e){try{faceEl.textContent+='\n[Régénérer] '+String((e&&e.message)||e);}catch(_){}}
+}
+if($('btnRebuild')){
+  $('btnRebuild').textContent='⟳ Régénérer';
+  $('btnRebuild').title='Régénérer tout le modèle : répare le document, réaligne les symétries/répétitions, jette les caches et rejoue jusqu’à stabilisation (projections, faces porteuses), puis contrôle esquisses, fonctions et corps. Raccourci : Ctrl+Maj+R';
+  $('btnRebuild').onclick=()=>regenTout();
+}
 
 // ---------- rafraîchissement DUR ----------
 function hardRefresh(){
@@ -94,7 +98,7 @@ if($('btnHard'))$('btnHard').onclick=()=>{try{hardRefresh();}catch(e){faceEl.tex
 addEventListener('keydown',e=>{
   if((e.ctrlKey||e.metaKey)&&e.shiftKey&&(e.key==='R'||e.key==='r')){
     const t=e.target;if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return;
-    e.preventDefault();try{hardRefresh();}catch(err){}
+    e.preventDefault();try{regenTout();}catch(err){}
   }
 });
 if($('btnOccWasm'))$('btnOccWasm').onclick=()=>$('fileWasm').click();

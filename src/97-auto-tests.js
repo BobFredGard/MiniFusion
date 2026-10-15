@@ -186,7 +186,9 @@ function runValidate(){
   // 4) FONCTIONS — rejeu complet, puis lecture des marques : _err (échec) et
   //    _m.m<_m.t (fonction dégradée : visage introuvable après modification amont).
   try{
-    if(!(typeof buildKeyUpToDate==='function'&&buildKeyUpToDate()))rebuild();
+    // 2026-10-15-009 : UN rejeu complet ici (caches jetés, convergence des projections,
+    // instances et faces porteuses) — la phase 5 n'en refait plus un second.
+    hardRefresh();
     const fsx=doc.features.filter(f=>f.type!=='repeat');
     const err=fsx.filter(f=>f._err);
     const miss=fsx.filter(f=>f._m&&f._m.t&&f._m.m<f._m.t);
@@ -200,8 +202,8 @@ function runValidate(){
   //    rejeu du modèle entier (le filet qui remet d'aplomb un état caché périmé).
   try{
     const eng=(typeof occtReady!=='undefined'&&occtReady)?'OCCT chargé':'repli maillage (OCCT absent)';
-    hardRefresh();rep++;
-    line(5,'✅','Moteur+caches — '+eng+' ; caches jetés + rejeu complet');
+    rep++;
+    line(5,'✅','Moteur+caches — '+eng+' ; caches jetés + rejeu complet (phase 4)');
   }catch(e){line(5,'❌','Moteur+caches — '+String((e&&e.message)||e));}
   // 6) CORPS+IMPORTS — fiche de corps manquante (ensureBodies), visibilités orphelines
   //    (bodyVis sans corps) et géométrie d'import dont la fonction a disparu.
@@ -224,25 +226,12 @@ function runValidate(){
   const txt='VALIDATION : '+(ok6+1)+'/7 phases OK — '+rep+' réparation(s)\n'+L.join('\n')+
     '\n7 ✅ Rapport — '+ok6+'/6 phases vertes, '+rep+' réparation(s) : écrit dans la zone Auto-tests';
   try{$('selfTest').textContent=txt;}catch(e){}
-  try{faceEl.textContent='✓ Valider : '+(ok6+1)+'/7 phases, '+rep+' réparation(s) — rapport dans Auto-tests.';}catch(e){}
+  try{faceEl.textContent='⟳ Régénération : '+(ok6+1)+'/7 phases, '+rep+' réparation(s) — rapport dans Auto-tests.';}catch(e){}
   try{log('Validation : '+(ok6+1)+'/7 OK, '+rep+' réparation(s)');}catch(e){}
   return txt;
 }
 
-// Bouton « ✓ Valider » : monté depuis le JS à côté de « 🧪 Auto-tests » (la coque HTML
-// n'est jamais éditée à la main — même régime que ↩ Annuler). Idempotent.
-(function(){
-  try{
-    if(typeof document==='undefined'||document.getElementById('btnValidate'))return;
-    const hote=document.getElementById('btnSelfTest');
-    if(!hote||!hote.parentNode)return;
-    const b=document.createElement('button');
-    b.id='btnValidate';
-    b.textContent='✓ Valider';
-    b.title='Valider le modèle : 7 phases diagnostic + réparation (document, répétitions, esquisses, fonctions, moteur, corps) — rapport dans Auto-tests';
-    b.onclick=()=>runValidate();
-    hote.parentNode.insertBefore(b,hote);
-  }catch(e){}
-})();
+// 2026-10-15-009 : plus de bouton « ✓ Valider » séparé — runValidate() EST l'action du
+// bouton unique « ⟳ Régénérer » (src/95), qui remplace Recalculer / Valider / Hard.
 
 

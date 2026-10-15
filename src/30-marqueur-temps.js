@@ -61,6 +61,10 @@ let freshHard=false; // défaut = REJEU RAPIDE (2026-10-02-013) : le filet featS
 // prouve que le rapide est aussi juste que le complet ; la préférence ⚙ reste persistée.
 try{const _fh=localStorage.getItem('minifusion_freshHard');if(_fh!==null)freshHard=_fh==='1';}catch(e){}
 let rebuildDepth=0;
+// 2026-10-15-009 : passes de régénération jusqu'à CONVERGENCE (projections → instances →
+// faces porteuses → solide…). Une chaîne cote → face → projection → symétrie → face →
+// poche demande plusieurs passes ; une seule était permise.
+const REGEN_MAX_PASS=4;
 function buildKeyUpToDate(){
   // Un affichage valide existe-t-il encore pour l'état courant du document ?
   return bodies.length>0&&builtVersion===_docVersion&&builtTl===tlMark&&builtSkip===occSkipFeat;
@@ -108,7 +112,7 @@ function rebuild(pass){
   // Filet de sécurité : une chaîne de rejeux qui ne converge pas (référence croisée cassée,
   // projection instable) ne doit JAMAIS figer l'interface. Deux niveaux imbriqués sont
   // autorisés (rebuild + passe de projections) ; au-delà, on arrête et on prévient.
-  if(rebuildDepth>=3){try{faceEl.textContent+=(faceEl.textContent?'\n':'')+'[Rejeu] reconstruction interrompue (rejeu non borné) — rechargez la page.';}catch(e){}return;}
+  if(rebuildDepth>=REGEN_MAX_PASS+2){try{faceEl.textContent+=(faceEl.textContent?'\n':'')+'[Rejeu] reconstruction interrompue (rejeu non borné) — rechargez la page.';}catch(e){}return;}
   rebuildDepth++;
   const _pp=occProjPass;occProjPass=pass||0; // 0 = rejeu principal (pas de ck en mode frais)
   try{return rebuildInner(pass);}finally{rebuildDepth--;occProjPass=_pp;}
@@ -122,6 +126,11 @@ function rebuildInner(projPass){
   // « Vers un objet » : résolution de la distance (antériorité) AVANT les hôtes de faces.
   (doc.features||[]).forEach(f=>{if(f.type==='extrude'&&f.upto){try{resolveExtrudeUpto(f);}catch(e){}}});
   try{resolveAllSketchHosts();}catch(e){}
+  // 2026-10-15-009 : les INSTANCES de symétrie/répétition suivent leurs sources pendant
+  // le rejeu (elles n'étaient régénérées qu'à l'édition manuelle de la source : une
+  // source déplacée par une projection ou une face porteuse laissait la copie périmée).
+  // Garde par signature : seules les répétitions dont une source a changé sont refaites.
+  try{if(typeof repSyncStale==='function'&&repSyncStale())resolveAllSketchHosts();}catch(e){}
   phAdd('hotes',performance.now()-_th);
   // Snapshot du dernier état valide : commit si le rebuild aboutit, rollback sinon.
   const prevBodies=bodies,prevLive=occLive;

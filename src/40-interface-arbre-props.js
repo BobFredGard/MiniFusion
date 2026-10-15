@@ -569,6 +569,27 @@ function repSyncForFeature(f){
   if(!f)return;
   for(const rp of [...doc.features]){if(rp.type==='repeat'&&rp.base.includes(f.id))repGenChildren(rp);}
 }
+const repGenSigs=new Map(); // id de répétition -> signature des sources au dernier régénéré
+function repSourceSig(rp){
+  let s=JSON.stringify([rp.mode,rp.copies,rp.dist,rp.angle,rp.axis,rp.plane,rp.planeN,rp.plane2,rp.planeN2,rp.base]);
+  (rp.base||[]).forEach(id=>{const f=doc.features.find(x=>x.id===id);s+='#'+(f?featSig(f):'?');});
+  return s;
+}
+function repSyncStale(){
+  // Rejeu : régénère les répétitions dont une source (fonction OU esquisse) a changé
+  // depuis la dernière génération. Renvoie true si au moins une instance a été refaite.
+  let any=false;
+  for(const rp of [...(doc.features||[])]){
+    if(rp.type!=='repeat'||rp.visible===false)continue;
+    let sg='';try{sg=repSourceSig(rp);}catch(e){continue;}
+    if(repGenSigs.get(rp.id)===sg)continue;
+    const first=!repGenSigs.has(rp.id);
+    repGenSigs.set(rp.id,sg);
+    if(first)continue; // 1er passage : on mémorise seulement (instances déjà générées à l'ouverture / à la création)
+    try{repGenChildren(rp);any=true;}catch(e){}
+  }
+  return any;
+}
 function repGenAll(){
   // Balayage de réparation : CHAQUE répétition régénérée depuis ses sources. Appelé par
   // les boutons Recalcul et Rafraîchissement dur — le filet qui réaligne les instances

@@ -2481,7 +2481,8 @@ function projRefreshRerun(pass){
     try{if(typeof skEdit!=='undefined'&&skEdit)drawSketch2D();}catch(e){}
     return false;
   }
-  if(!(pass>=1)){ try{rebuild(pass+1);}catch(e){} return true; }
+  if((pass||0)<REGEN_MAX_PASS){ try{rebuild((pass||0)+1);}catch(e){} return true; }
   try{autosave();}catch(e){} // coordonnées déjà écrites : au moins les persister
+  try{faceEl.textContent+=(faceEl.textContent?'\n':'')+'⚠ Régénération : le modèle ne s’est pas stabilisé en '+REGEN_MAX_PASS+' passes (référence circulaire ?).';}catch(e){}
   return false;
 }

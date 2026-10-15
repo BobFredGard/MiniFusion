@@ -18,10 +18,9 @@ const {loadApp}=require('./appvm.cjs');
     "const P=[];const p=s=>P.push(String(s));",
     "const ATT=[];const att=(ok,msg)=>{if(!ok)ATT.push(msg);};",
     // ---------- structure source : le bouton vit dans src/97 ----------
-    "att(/btnValidate/.test(__src97),'src/97 : id btnValidate absent');",
-    "att(/✓ Valider/.test(__src97),'src/97 : libellé « ✓ Valider » absent');",
-    "att(/insertBefore\\(b,hote\\)/.test(__src97),'src/97 : montage du bouton à côté de Auto-tests absent');",
-    "att(/onclick=\\(\\)=>runValidate\\(\\)/.test(__src97),'src/97 : le bouton ne déclenche pas runValidate()');",
+    "att(!/b\.id='btnValidate'/.test(__src97),'src/97 : l ancien bouton « ✓ Valider » séparé est encore monté');",
+    "att(typeof regenTout==='function','src/95 : regenTout() (bouton unique ⟳ Régénérer) absente');",
+    "att(/regenTout\(\)/.test(String($('btnRebuild').onclick||'')),'⟳ Régénérer : le bouton ne déclenche pas regenTout()');",
     // ---------- document de test : extrusion saine + orphelin + répétition désynchronisée ----------
     "const mkrect=(id,dim)=>({id,name:'Esquisse '+(dim?'mauvaise':'saine'),plane:'XY',origin:[0,0,0],points:{},entities:[],constraints:[],dims:(dim?[{id:'d_bad',type:'length',line:'e0',value:999}]:[]),seq:50});",
     "const sk=mkrect('sk_t',false),skb=mkrect('sk_bad',true);",

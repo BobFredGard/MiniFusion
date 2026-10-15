@@ -250,8 +250,14 @@ function updateAssociativeProjections(sk){
   if(!sk||!sk.entities) return false;
   let changed=false;
   for(const e of sk.entities){
-    if(!e.construction) continue;
-    const isProj=e.proj||e.isProj|| (e.t==='line' && sk.constraints.some(c=>c.type==='fix'&&c.p===e.p1) && sk.constraints.some(c=>c.type==='fix'&&c.p===e.p2));
+    // 2026-10-15-009 : une arête PROJETÉE reste associative même passée en PROFIL
+    // (on projette pour s'en servir dans le contour, comme Fusion). Avant, seules les
+    // projetées « construction » suivaient : une projetée de profil restait figée à
+    // l'ancienne cote et toute la chaîne aval (symétrie, esquisse sur sa face, poche)
+    // décrochait — « Cavité Usinage » : 50 → 55, le fond suivait, pas la poche.
+    // Le repli « ligne aux 2 bouts fixes » ne vaut QUE pour la construction (une ligne
+    // de profil fixée par l'utilisateur n'est pas une projection).
+    const isProj=e.proj||e.isProj||(e.construction&&e.t==='line'&&sk.constraints.some(c=>c.type==='fix'&&c.p===e.p1)&&sk.constraints.some(c=>c.type==='fix'&&c.p===e.p2));
     if(!isProj) continue;
     if(e.t==='line'){
       const A=sk.points[e.p1], B=sk.points[e.p2]; if(!A||!B) continue;
@@ -642,8 +648,32 @@ function skNewEid(sk){sk.seq=sk.seq||1;return 'e'+(sk.seq++);}
 function addPoint(sk,x,y){const id=skNewPid(sk);skPts(sk)[id]={x,y};return id;}
 function pidAt(sk,x,y){let best=null,bd=0.01;Object.keys(skPts(sk)).forEach(pid=>{const p=sk.points[pid];const d=Math.hypot(p.x-x,p.y-y);if(d<bd){bd=d;best=pid;}});return best||addPoint(sk,x,y);}
 function entById(sk,id){return (sk.entities||[]).find(e=>e.id===id);}
+// 2026-10-15-009 : CÔTÉ des cotes à distance perpendiculaire (entraxe, point ↔ ligne).
+// Écrites (d² − w²)/2w, elles admettaient ±w : quand une référence bougeait (projection
+// associative), le solveur pouvait rejoindre la solution MIROIR — « Cavité Usinage » :
+// 50 → 55 → 50, une ligne cotée 3,26 SOUS l'arête projetée revenait 3,26 AU-DESSUS, et
+// deux congés R7 devenaient impossibles. d.sgn mémorise le côté dès que l'esquisse est
+// dans un état COHÉRENT (cote respectée), puis le solveur et l'audit l'imposent.
+function skDimSignedOf(sk,d){
+  const P=sk.points||{};
+  const nrmOf=l=>{const A=P[l.p1],B=P[l.p2];if(!A||!B)return null;const dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy);if(L<1e-9)return null;return{A,nx:-dy/L,ny:dx/L};};
+  if(d.type==='gap'){const A=entById(sk,d.a),B=entById(sk,d.b);if(!A||!B||A.t!=='line'||B.t!=='line')return null;
+    const n=nrmOf(A),B1=P[B.p1];if(!n||!B1)return null;return (B1.x-n.A.x)*n.nx+(B1.y-n.A.y)*n.ny;}
+  if(d.type==='distline'){const l=entById(sk,d.line),Pt=P[d.p];if(!l||l.t!=='line'||!Pt)return null;
+    const n=nrmOf(l);if(!n)return null;return (Pt.x-n.A.x)*n.nx+(Pt.y-n.A.y)*n.ny;}
+  return null;
+}
+function skDimSides(sk){
+  (sk.dims||[]).forEach(d=>{
+    if((d.type!=='gap'&&d.type!=='distline')||d.sgn===1||d.sgn===-1)return;
+    const w=Math.max(+d.value||0,0);if(!(w>1e-6))return;
+    const sg=skDimSignedOf(sk,d);if(sg==null)return;
+    if(Math.abs(Math.abs(sg)-w)<=Math.max(0.01,w*2e-3))d.sgn=sg>=0?1:-1;
+  });
+}
 function migrateSketch(sk){
   if(!sk.points)sk.points={};if(!sk.constraints)sk.constraints=[];if(!sk.dims)sk.dims=[];if(!sk.seq)sk.seq=1;
+  try{if(sk.entities)skDimSides(sk);}catch(e){}
   try{ensureSketchBasis(sk);}catch(e){}
   sk.dims.forEach(d=>{if(d.ox===undefined)d.ox=0;if(d.oy===undefined)d.oy=0;});
   sk.entities.forEach(e=>{
@@ -880,9 +910,9 @@ function solveSketchRelax(sk,iters,anchor){
         const dx=A2.x-A1.x,dy=A2.y-A1.y,L=Math.hypot(dx,dy)||1e-9;
         const nx=-dy/L,ny=dx/L;
         const signed=(B1.x-A1.x)*nx+(B1.y-A1.y)*ny;
-        let err=Math.max(d.value,0)-Math.abs(signed);if(Math.abs(err)<1e-9)return;
+        const sgn=(d.sgn===1||d.sgn===-1)?d.sgn:(signed>=0?1:-1); // côté mémorisé (jamais la solution miroir)
+        let err=sgn*(sgn*Math.max(d.value,0)-signed);if(Math.abs(err)<1e-9)return;
         err*=0.5;
-        const sgn=signed>=0?1:-1;
         const aFree=!fix.has(A.p1)&&!fix.has(A.p2),bFree=!fix.has(B.p1)&&!fix.has(B.p2);
         if(!aFree&&!bFree)return;
         if(aFree&&!bFree){A1.x-=nx*sgn*err*2;A1.y-=ny*sgn*err*2;A2.x-=nx*sgn*err*2;A2.y-=ny*sgn*err*2;}
@@ -897,7 +927,7 @@ function solveSketchRelax(sk,iters,anchor){
         const dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy)||1e-9;
         const nx=-dy/L,ny=dx/L;
         const signed=(Pt.x-A.x)*nx+(Pt.y-A.y)*ny;
-        const sgn=signed>=0?1:-1;
+        const sgn=(d.sgn===1||d.sgn===-1)?d.sgn:(signed>=0?1:-1); // côté mémorisé
         const err=sgn*d.value-signed;if(Math.abs(err)<1e-9)return;
         const pF=fix.has(d.p),lF=fix.has(l.p1)&&fix.has(l.p2);
         if(pF&&lF)return;
@@ -1194,14 +1224,15 @@ function sklsCollect(sk,out,B){
         const va=vec(A),vb=vec(B);if(va&&vb){const nx=-va.uy,ny=va.ux;
           const sA=P[A.p1],fB=P[B.p1];
           if(sA&&fB){const signed=(fB.x-sA.x)*nx+(fB.y-sA.y)*ny;
-            const w=Math.max(d.value,0);push(w>0?(signed*signed-w*w)/(2*w):signed);}}
+            const w=Math.max(d.value,0);
+            push((d.sgn===1||d.sgn===-1)?(signed-d.sgn*w):(w>0?(signed*signed-w*w)/(2*w):signed));}}
       }
     }
     if(d.type==='distline'){
       const l=entById(sk,d.line),Pt=P[d.p];
       if(l&&l.t==='line'&&Pt){const v=vec(l);if(v){const nx=-v.uy,ny=v.ux,A=P[l.p1];
         if(A){const signed=(Pt.x-A.x)*nx+(Pt.y-A.y)*ny;const w=Math.max(d.value,0);
-          push(w>0?(signed*signed-w*w)/(2*w):signed);}}}
+          push((d.sgn===1||d.sgn===-1)?(signed-d.sgn*w):(w>0?(signed*signed-w*w)/(2*w):signed));}}}
     }
   });
   // ── contraintes ──
@@ -1433,6 +1464,7 @@ function skSolveFinal(sk,anchor){
 function solveSketch(sk,iters,anchor){
   if(!sk||!sk.points)return;iters=iters||120;
   ensureOrigin(sk); // origine clouée (0,0) AVANT tout essai : réglage autour du vrai repère
+  try{skDimSides(sk);}catch(e){} // côté des entraxes / point↔ligne lu sur l'état cohérent courant
   const base=skSnapCoords(sk); // état de départ (avant tout essai)
   let lsSnap=null; // coordonnées atteintes par le LM
   let lsRes=Infinity;
@@ -2968,11 +3000,13 @@ function skAudit(sk){
       if(A&&B&&A.t==='line'&&B.t==='line'){const P0=sk.points;
         const A1=P0[A.p1],A2=P0[A.p2],B1=P0[B.p1],B2=P0[B.p2];
         if(A1&&A2&&B1&&B2){const dx=A2.x-A1.x,dy=A2.y-A1.y,L=Math.hypot(dx,dy)||1e-9;
-          push(d.id,'entraxe',Math.abs(Math.abs((B1.x-A1.x)*(-dy/L)+(B1.y-A1.y)*(dx/L))-d.value));}}}
+          const sg=(B1.x-A1.x)*(-dy/L)+(B1.y-A1.y)*(dx/L);
+          push(d.id,'entraxe',(d.sgn===1||d.sgn===-1)?Math.abs(sg-d.sgn*d.value):Math.abs(Math.abs(sg)-d.value));}}}
     if(d.type==='distline'){const l=entById(sk,d.line),Pt=P[d.p];
       if(l&&l.t==='line'&&Pt){const A=P[l.p1],B=P[l.p2];
         if(A&&B){const dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy)||1e-9;
-          push(d.id,'⟂ centre↔ligne',Math.abs(Math.abs((Pt.x-A.x)*(-dy/L)+(Pt.y-A.y)*(dx/L))-d.value));}}}
+          const sg=(Pt.x-A.x)*(-dy/L)+(Pt.y-A.y)*(dx/L);
+          push(d.id,'⟂ centre↔ligne',(d.sgn===1||d.sgn===-1)?Math.abs(sg-d.sgn*d.value):Math.abs(Math.abs(sg)-d.value));}}}
   });
   (sk.constraints||[]).forEach(c=>{
     if(c.type==='h'||c.type==='v'){const l=entById(sk,c.line);if(l&&l.t==='line'){const A=P[l.p1],B=P[l.p2];if(A&&B)push(c.id,c.type,Math.abs(c.type==='h'?A.y-B.y:A.x-B.x));}}

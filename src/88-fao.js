@@ -115,6 +115,28 @@ const faoRapideMin=30;
       +'.fao-win-x{font-size:.85rem;padding:1px 7px;border-radius:6px;background:transparent;'
       +'border:1px solid rgba(255,255,255,.18);color:rgba(255,255,255,.75);cursor:pointer}'
       +'.fao-win-x:hover{border-color:rgba(255,95,87,.7);color:#ff5f57;background:rgba(255,95,87,.16)}'
+      /* --- bibliothèque d'outils (2026-10-15-010) --- */
+      +'.fao-win.fao-toolwin{width:min(1040px,95%);max-height:88%;top:60px}'
+      +'.fao-tl{display:flex;gap:14px;align-items:flex-start}'
+      +'.fao-tl-left{width:240px;flex:none;display:flex;flex-direction:column;gap:8px}'
+      +'.fao-tl-list{display:flex;flex-direction:column;gap:4px;max-height:60vh;overflow-y:auto}'
+      +'.fao-tl-it{padding:7px 9px;border-radius:8px;cursor:pointer;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03)}'
+      +'.fao-tl-it:hover{border-color:rgba(10,132,255,.5)}'
+      +'.fao-tl-it.on{background:rgba(10,132,255,.2);border-color:#0a84ff}'
+      +'.fao-tl-n{font-weight:700;font-size:.78rem;color:#fff}'
+      +'.fao-tl-s{font-size:.68rem;color:rgba(255,255,255,.6);margin-top:2px}'
+      +'.fao-tl-btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}'
+      +'.fao-tl-body{flex:1;display:flex;gap:12px;align-items:flex-start;min-width:0}'
+      +'.fao-tl-detail{flex:1;min-width:0}'
+      +'.fao-tl-pic{flex:none;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:4px}'
+      +'.fao-tl-h{font-weight:700;font-size:.74rem;color:#64d2ff;margin:10px 0 5px;letter-spacing:.02em}'
+      +'.fao-tl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:5px 12px}'
+      +'.fao-tl-f{display:flex;align-items:center;gap:6px;font-size:.74rem;color:rgba(255,255,255,.85)}'
+      +'.fao-tl-f span{flex:1;white-space:nowrap}'
+      +'.fao-tl-f input{width:76px}'
+      +'.fao-tl-f.wide input{width:150px}'
+      +'.fao-tl-f em{font-style:normal;font-size:.64rem;color:rgba(255,255,255,.5);width:44px}'
+      +'.fao-tl-f.def input{color:rgba(255,255,255,.5)}'
       /* --- arbre FAO --- */
       +'.fao-setup{font-weight:700;font-size:.76rem;margin:7px 0 3px;cursor:pointer;'
       +'padding:4px 7px;border-radius:7px;display:flex;gap:6px;align-items:center}'
@@ -2197,7 +2219,7 @@ function faoOpMovesStore(op,key,mv){
 }
 function faoOpSig(op){
   const o={};
-  const skip={hidden:1,on:1,geoBlocked:1,geoDiag:1,stale:1};
+  const skip={hidden:1,on:1,geoBlocked:1,geoDiag:1,stale:1,cut:1}; // cut : vitesses/avances (2026-10-15-010) — aucun effet sur le tracé
   try{
     for(const k in op){
       if(!Object.prototype.hasOwnProperty.call(op,k)||skip[k])continue;
@@ -2290,7 +2312,9 @@ function faoOpMovesKey(op,job){
     }
     // Seul l'outil de CETTE operation influence ses parcours : modifier T3 ne
     // doit pas rendre perimes les traces des operations qui tournent en T1.
-    if(js&&js.tools)js.tools=[faoToolById(job,op&&op.toolId)];
+    // 2026-10-15-010 : sous-ensemble HISTORIQUE de la fiche (faoToolKeyObj) — les champs
+    // ajoutés (longueurs, avances…) ne changent aucune trajectoire et ne périment rien.
+    if(js&&js.tools)js.tools=[faoToolKeyObj(faoToolById(job,op&&op.toolId))];
     // Une operation ne depend QUE d'elle-meme, de son outil, du brut/du maillage
     // (faoBodyGen) — ET, pour la GEOFINITION uniquement, des operations qui la
     // PRECEDENT (faoGeoHasRrough lit leur type et leur etat actif). Tout le reste
@@ -2965,14 +2989,14 @@ function faoJobMoves(job){
   ((job&&job.ops)||[]).forEach(function(op){
     if(op&&op.on===false)return;
     const tool=faoToolById(job,op&&op.toolId);
-    const sf=faoToolSF(tool,job);
+    const sf=faoOpCutting(op,job); // conditions de CETTE opération (fiche ou surcharge)
     const key=tool.id+'|'+tool.d;
     if(!cur||cur.key!==key){
       cur={key:key, tool:{id:tool.id,num:tool.num,name:tool.name,d:tool.d,
         s:sf.s, f:sf.f, plunge:sf.plunge}, blocks:[]};
       out.push(cur);
     }
-    cur.blocks.push({op:op,moves:faoOpMoves(op,job)});
+    cur.blocks.push({op:op,moves:faoOpMoves(op,job),cut:sf});
   });
   return out;
 }
@@ -3324,7 +3348,13 @@ function faoPost(job,postId){
     if(fag){ nc('T'+(t.num||1)+' D1 M06'); }else{ nc('T'+(t.num||1)+' D1'); nc('M6'); }
     nc('S'+S+(fag?' M03':' M3'));
     if(cool&&cool!=='M9')nc(cool);
+    let sCur=S;
     g.blocks.forEach(function(b){
+      // 2026-10-15-010 : conditions de coupe de CETTE opération (fiche outil ou
+      // surcharge de l'opération). Par défaut identiques au groupe → sortie inchangée.
+      const CB=b.cut||faoOpCutting(b.op,job);
+      const SB=faoFmtS(CB.s), F=faoFmtF(CB.f), FP=faoFmtF(CB.plunge), FE=faoFmtF(CB.entry), FR=faoFmtF(CB.retract);
+      if(SB!==sCur){ nc('S'+SB); sCur=SB; }
       cmt(faoOpLabel(b.op,job));
       // 2026-10-13-007 : #MSG par opération sur Fagor (rétro-ingénierie
       // cav.txt : N60 #MSG["OPT1: Paroies"]) — l'opérateur voit l'opération
@@ -3381,11 +3411,14 @@ function faoPost(job,postId){
         }
         const X='X'+faoFmtXYZ(m.x-ox), Y='Y'+faoFmtXYZ(m.y-oy), Z='Z'+faoFmtXYZ(m.z-oz);
         if(m.r){ nc('G0 '+X+' '+Y+' '+Z); first=true; }
-        else if(m.arc){ nc(faoArcWords(m,ox,oy,oz)+' F'+F); first=false; }
+        else if(m.arc){ nc(faoArcWords(m,ox,oy,oz)+' F'+(m.ent?FE:F)); first=false; }
         else{
-          // première plongée après un rapide : avance de plongée, sinon avance de coupe.
+          // première plongée après un rapide : avance de plongée ; mouvement d'entrée
+          // (rampe, hélice, approche) : F entrée ; remontée verticale : F remontée ;
+          // sinon avance de coupe.
           const plunge=first&&/Z/.test(Z);
-          nc('G1 '+X+' '+Y+' '+Z+' F'+(plunge?FP:F));
+          const up=!plunge&&prev&&Math.abs(m.x-prev.x)<1e-6&&Math.abs(m.y-prev.y)<1e-6&&m.z>prev.z+1e-6;
+          nc('G1 '+X+' '+Y+' '+Z+' F'+(plunge?FP:(m.ent?FE:(up?FR:F))));
           first=false;
         }
         prev=m;
@@ -3803,7 +3836,7 @@ function faoViewerBuild(setup){
     const d=(tool&&isFinite(+tool.d)&&+tool.d>0)?+tool.d:10;
     const kind=(tool&&tool.kind)?tool.kind:'flat';
     const cr=faoToolEffCr(tool); // rayon d'arête réel (mm) — forme de coupe par point
-    const sf=tool?faoToolSF(tool,setup):null;
+    const sf=tool?faoOpCutting(op,setup):null; // avance de CETTE opération
     const f=(sf&&isFinite(+sf.f)&&+sf.f>0)?+sf.f:1000;
     const mv=S.moves;
     const ext=[]; let pv=null; // arcs développés (tracé lisse)
@@ -5629,53 +5662,7 @@ function faoSelectOp(setupId,opId){
     faoRenderTree();
   }catch(e){}
 }
-/* ----- bibliothèque d'outils (élément réutilisable) ----- */
-function faoToolsElement(setup){
-  const wrap=document.createElement('div');
-  const H=faoH('Outils ('+(setup.tools||[]).length+') · Vc/fz → S/F auto');
-  wrap.appendChild(H);
-  (setup.tools||[]).forEach(function(t,ti){
-    const sf=faoToolSF(t,setup);
-    const d=faoCard();
-    const r=faoRow();
-    r.appendChild(faoLab('T'+t.num));
-    r.appendChild(faoTxt(t.name,function(v){ t.name=String(v||t.name).slice(0,24); },92));
-    r.appendChild(faoSel([['flat','Cylindrique'],['bull','Torique'],['ball','Boule']],t.kind||'flat',
-      function(v){ t.kind=v; if(v==='ball')t.cornerR=t.d/2; }));
-    r.appendChild(faoMini('✕',function(){
-      if(setup.tools.length<=1)return;
-      setup.tools.splice(ti,1);
-      setup.tools.forEach(function(k,i){ k.num=i+1; });
-    }));
-    d.appendChild(r);
-    const r2=faoRow();
-    r2.appendChild(faoLab('D')); r2.appendChild(faoNum(t.d,function(v){ t.d=Math.max(0.5,v);
-      if(t.kind==='ball')t.cornerR=t.d/2; },52));
-    if(t.kind==='bull'){ r2.appendChild(faoLab('r')); r2.appendChild(faoNum(t.cornerR||0,function(v){ t.cornerR=Math.max(0,v); },44)); }
-    r2.appendChild(faoLab('dents')); r2.appendChild(faoNum(t.flutes,function(v){ t.flutes=Math.max(1,Math.round(v)); },40));
-    d.appendChild(r2);
-    const r3=faoRow();
-    r3.appendChild(faoLab('Vc')); r3.appendChild(faoNum(t.vc,function(v){ t.vc=Math.max(1,v); },56));
-    r3.appendChild(faoLab('fz')); r3.appendChild(faoNum(t.fz,function(v){ t.fz=Math.max(0.005,v); },52,0.01));
-    const s=document.createElement('span');
-    s.style.cssText='font-family:monospace;font-size:.72rem;color:#7ee0c0;';
-    s.textContent='→ S'+sf.s+' F'+sf.f+' (plongée '+sf.plunge+')';
-    r3.appendChild(s);
-    d.appendChild(r3);
-    wrap.appendChild(d);
-  });
-  const rT=faoRow();
-  const bT=document.createElement('button'); bT.textContent='+ Outil'; bT.style.fontSize='.72rem';
-  bT.onclick=function(){
-    faoSnapshot('nouvel outil');
-    const n=(setup.tools||[]).length+1;
-    setup.tools.push({id:'T'+n+'_'+Date.now().toString(36),num:n,name:'Fraise D10',kind:'flat',
-      d:10,cornerR:0,flutes:2,vc:250,fz:0.06});
-    faoChanged();
-  };
-  rT.appendChild(bT); wrap.appendChild(rT);
-  return wrap;
-}
+/* ----- bibliothèque d'outils : src/89-fao-outils.js (faoToolsElement, 2026-10-15-010) ----- */
 /* ----- fenêtre flottante : bibliothèque d'outils du posage actif ----- */
 let faoToolsWin=null, faoToolsWinX=null, faoToolsWinBody=null, faoToolsWinT=null;
 function faoToolsWindowOpen(){
@@ -5686,7 +5673,7 @@ function faoToolsWindowOpen(){
     if(!faoToolsWin){
       const host=(document.getElementById('vpwrap')||document.body);
       const w=document.createElement('div'); w.id='faoToolsWin';
-      w.className='fao-win'; // position + habillage via la feuille faoUiCss
+      w.className='fao-win fao-toolwin'; // grande fenêtre : liste à gauche, fiche à droite (2026-10-15-010)
       const h=document.createElement('div');
       h.className='fao-win-h';
       const ht=document.createElement('div'); ht.id='faoToolsWinT';
@@ -5703,7 +5690,7 @@ function faoToolsWindowOpen(){
       faoToolsWin=w; faoToolsWinX=xb; faoToolsWinBody=body; faoToolsWinT=ht;
     }
     const setup=faoSetup();
-    if(faoToolsWinT)faoToolsWinT.textContent='Outils · '+((setup&&setup.name)||'posage');
+    if(faoToolsWinT)faoToolsWinT.textContent='Bibliothèque d’outils · '+((setup&&setup.name)||'posage');
     if(faoToolsWinBody){ faoToolsWinBody.innerHTML=''; faoToolsWinBody.appendChild(faoToolsElement(setup)); }
     faoToolsWin.style.display='block';
     return true;
@@ -5844,9 +5831,10 @@ function faoPlanesCard(setup,op){
    explique le champ survolé ou en cours de saisie (son infobulle). Onglet
    choisi mémorisé par opération. */
 const faoTabSel={};
-const FAO_TAB_ORDER=['Réglages','Zone','Hauteurs','Passes','Entrées','Matière','Attaches'];
+const FAO_TAB_ORDER=['Réglages','Outil','Zone','Hauteurs','Passes','Entrées','Matière','Attaches'];
 const FAO_TAB_HELP={
   'Réglages':'Paramètres principaux de l’opération. Survolez un champ pour son explication.',
+  'Outil':'Outil de l’opération, vitesse de rotation et avances. Grisé = valeur de la fiche outil ; une valeur saisie ici ne vaut que pour cette opération.',
   'Zone':'Où usiner : tout le brut, un rectangle, des arêtes du modèle ou une esquisse — et ce qu’il faut épargner.',
   'Hauteurs':'Haut et Bas de la zone usinée (mm). Ils peuvent suivre des arêtes du modèle.',
   'Passes':'Descente par niveau, pas latéral et manière de vider.',
@@ -5855,7 +5843,7 @@ const FAO_TAB_HELP={
   'Attaches':'Ponts de matière pour tenir la pièce en détourage traversant.'};
 function faoTabOf(t){
   t=String(t||'').toLowerCase().replace(/\s*\(.*$/,'').trim();
-  const M=[['hauteur','Hauteurs'],['vidage','Passes'],['passes','Passes'],['côté et sens','Passes'],
+  const M=[['outil','Outil'],['hauteur','Hauteurs'],['vidage','Passes'],['passes','Passes'],['côté et sens','Passes'],
     ['trajectoire','Entrées'],['plans','Entrées'],['entrée','Entrées'],['matière','Matière'],
     ['attaches','Attaches'],['zone','Zone'],['bord de la poche','Zone'],['profil','Zone']];
   for(let i=0;i<M.length;i++)if(t.indexOf(M[i][0])===0)return M[i][1];
@@ -5933,8 +5921,8 @@ function faoOpCardElement(setup,op,i){
   tt.className='fao-opnum';
   tt.textContent=(i+1)+'. '+(typeName[op.type]||op.type);
   r.appendChild(tt);
-  r.appendChild(faoSel(faoToolOpts(setup),op.toolId,function(v){ op.toolId=v; },
-    'Outil de cette opération (vitesse et avance calculées depuis sa fiche)'));
+  r.appendChild(faoSel(faoToolOpts(setup),op.toolId,function(v){ op.toolId=v; delete op.cut; },
+    'Outil de cette opération — en changer reprend les vitesses et avances de sa fiche (onglet Outil)'));
   if(op.stale===true){
     const w=document.createElement('span');
     w.textContent=String.fromCharCode(0x26a0);
@@ -6461,7 +6449,9 @@ function faoOpCardElement(setup,op,i){
       'Distance supplémentaire (+) entre l\'outil et l\'îlot, en mm.'));
     d.appendChild(rs2);
   }
-  const sf=faoToolSF(faoToolById(setup,op.toolId),setup);
+  // 2026-10-15-010 : onglet « Outil » (vitesse, avances, portée) — avant le bilan.
+  try{ d.appendChild(faoOpToolSection(setup,op)); }catch(e){}
+  const sf=faoOpCutting(op,setup);
   const rr=faoRow();
   const rs=document.createElement('span');
   rs.className='fao-meta';
@@ -6771,10 +6761,10 @@ function faoStats(job){
   // machine) + changements d'outil (nb de groupes outil - 1) × durée unitaire.
   let cut=0, rap=0, tm=0, n=0, wait=false, missing=0;
   faoActiveOps(job).forEach(function(op){
-    const sf=faoToolSF(faoToolById(job,op.toolId),job);
+    const sf=faoOpCutting(op,job); // avance + rapide de CETTE opération
     const mv=faoMovesStat(op,job); // lecture d'abord : une stats ne recalcule rien
     if(!mv){ if(faoMovesPending())wait=true; else missing++; return; }
-    const e=faoEstimate(mv,sf.f,faoRapide(job),faoAccel(job));
+    const e=faoEstimate(mv,sf.f,sf.rapid,faoAccel(job));
     cut+=e.cut; rap+=e.rap; tm+=e.tmin; n++;
   });
   if(wait)return {n:0, cut:0, rap:0, groups:0, tchg:0, tmin:0, pending:true};

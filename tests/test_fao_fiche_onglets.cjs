@@ -15,8 +15,8 @@ const vm=require('vm');
     "const R3=card('rough3d'),GF=card('geofinish'),PK=card('pocket'),CT=card('contour');",
     "const names=function(c){return tabs(c).map(b=>b.textContent).join('|');};",
     "p('ébauche : '+names(R3.c)+' ; finition : '+names(GF.c)+' ; poche : '+names(PK.c)+' ; contour : '+names(CT.c));",
-    "att(names(R3.c)==='Zone|Hauteurs|Passes|Entrées|Matière','ébauche 3D : onglets Zone, Hauteurs, Passes, Entrées, Matière ('+names(R3.c)+')');",
-    "att(names(GF.c)==='Zone|Hauteurs|Passes|Entrées|Matière','finition : mêmes onglets ('+names(GF.c)+')');",
+    "att(names(R3.c)==='Outil|Zone|Hauteurs|Passes|Entrées|Matière','ébauche 3D : onglets Outil, Zone, Hauteurs, Passes, Entrées, Matière ('+names(R3.c)+')');",
+    "att(names(GF.c)==='Outil|Zone|Hauteurs|Passes|Entrées|Matière','finition : mêmes onglets ('+names(GF.c)+')');",
     "att(/Attaches/.test(names(CT.c))&&/Zone/.test(names(CT.c)),'contour : onglet Attaches et profil ('+names(CT.c)+')');",
     "att(/Zone/.test(names(PK.c))&&/Matière/.test(names(PK.c)),'poche : bord et matière ('+names(PK.c)+')');",
     // un seul onglet visible ; clic = bascule ; mémorisé par opération

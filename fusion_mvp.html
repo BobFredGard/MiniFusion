@@ -236,7 +236,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
     <div class="note" style="margin-top:4px">Code en mémoire : <b id="appVerLive">…</b> — si ce numéro n'est pas à jour, le navigateur sert une copie en cache : <b>Ctrl+Maj+R</b> (rechargement forcé).</div>
     <div id="skStatWrap" style="display:none;margin-top:8px"><p class="panel-title">État des Contraintes</p><div id="skStat" class="note">—</div></div>
     <div class="row" style="margin-top:6px"><button id="btnOccWasm" title="Mode fichier (file://) : désignez occt/opencascade.wasm.wasm pour démarrer le noyau exact sans serveur">⚙ Noyau .wasm…</button><input type="file" id="fileWasm" accept=".wasm" style="display:none"></div>
-    <div class="row" style="margin-top:6px"><button id="btnRebuild" title="Rejoue tout le pipeline (exact si dispo)">🔁 Recalculer</button><button id="btnSelfTest" title="Rejoue la batterie de non-régression (esquisse)">🧪 Auto-tests</button><button id="btnHard" title="Rafraîchissement DUR : jette TOUS les caches (points de contrôle du rejeu, empreinte du document, état d'affichage) et rejoue l'intégralité du modèle. Raccourci : Ctrl+Maj+R">⟳⟳ Hard</button></div>
+    <div class="row" style="margin-top:6px"><button id="btnRebuild" title="Régénérer tout le modèle (Ctrl+Maj+R)">⟳ Régénérer</button><button id="btnSelfTest" title="Rejoue la batterie de non-régression (esquisse)">🧪 Auto-tests</button></div>
     <div id="selfTest" class="note" style="white-space:pre-wrap;max-height:150px;overflow:auto"></div></div>
   </aside>
 </div>
@@ -273,7 +273,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-15-008';
+const APP_VER='2026-10-15-010';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -284,7 +284,7 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-15-008';
+const CACHE_VER='2026-10-15-009';
 function cacheVerOK(v){
   // 2026-10-11-002 : ébauche 3D — la ZONE voyage dans le REPÈRE (zoneAt
   // transposé sous SENS LONG + rotation de −θ sur l'axe d'une limite oblique,
@@ -3918,8 +3918,9 @@ function projRefreshRerun(pass){
     try{if(typeof skEdit!=='undefined'&&skEdit)drawSketch2D();}catch(e){}
     return false;
   }
-  if(!(pass>=1)){ try{rebuild(pass+1);}catch(e){} return true; }
+  if((pass||0)<REGEN_MAX_PASS){ try{rebuild((pass||0)+1);}catch(e){} return true; }
   try{autosave();}catch(e){} // coordonnées déjà écrites : au moins les persister
+  try{faceEl.textContent+=(faceEl.textContent?'\n':'')+'⚠ Régénération : le modèle ne s’est pas stabilisé en '+REGEN_MAX_PASS+' passes (référence circulaire ?).';}catch(e){}
   return false;
 }
 
@@ -3987,6 +3988,10 @@ let freshHard=false; // défaut = REJEU RAPIDE (2026-10-02-013) : le filet featS
 // prouve que le rapide est aussi juste que le complet ; la préférence ⚙ reste persistée.
 try{const _fh=localStorage.getItem('minifusion_freshHard');if(_fh!==null)freshHard=_fh==='1';}catch(e){}
 let rebuildDepth=0;
+// 2026-10-15-009 : passes de régénération jusqu'à CONVERGENCE (projections → instances →
+// faces porteuses → solide…). Une chaîne cote → face → projection → symétrie → face →
+// poche demande plusieurs passes ; une seule était permise.
+const REGEN_MAX_PASS=4;
 function buildKeyUpToDate(){
   // Un affichage valide existe-t-il encore pour l'état courant du document ?
   return bodies.length>0&&builtVersion===_docVersion&&builtTl===tlMark&&builtSkip===occSkipFeat;
@@ -4034,7 +4039,7 @@ function rebuild(pass){
   // Filet de sécurité : une chaîne de rejeux qui ne converge pas (référence croisée cassée,
   // projection instable) ne doit JAMAIS figer l'interface. Deux niveaux imbriqués sont
   // autorisés (rebuild + passe de projections) ; au-delà, on arrête et on prévient.
-  if(rebuildDepth>=3){try{faceEl.textContent+=(faceEl.textContent?'\n':'')+'[Rejeu] reconstruction interrompue (rejeu non borné) — rechargez la page.';}catch(e){}return;}
+  if(rebuildDepth>=REGEN_MAX_PASS+2){try{faceEl.textContent+=(faceEl.textContent?'\n':'')+'[Rejeu] reconstruction interrompue (rejeu non borné) — rechargez la page.';}catch(e){}return;}
   rebuildDepth++;
   const _pp=occProjPass;occProjPass=pass||0; // 0 = rejeu principal (pas de ck en mode frais)
   try{return rebuildInner(pass);}finally{rebuildDepth--;occProjPass=_pp;}
@@ -4048,6 +4053,11 @@ function rebuildInner(projPass){
   // « Vers un objet » : résolution de la distance (antériorité) AVANT les hôtes de faces.
   (doc.features||[]).forEach(f=>{if(f.type==='extrude'&&f.upto){try{resolveExtrudeUpto(f);}catch(e){}}});
   try{resolveAllSketchHosts();}catch(e){}
+  // 2026-10-15-009 : les INSTANCES de symétrie/répétition suivent leurs sources pendant
+  // le rejeu (elles n'étaient régénérées qu'à l'édition manuelle de la source : une
+  // source déplacée par une projection ou une face porteuse laissait la copie périmée).
+  // Garde par signature : seules les répétitions dont une source a changé sont refaites.
+  try{if(typeof repSyncStale==='function'&&repSyncStale())resolveAllSketchHosts();}catch(e){}
   phAdd('hotes',performance.now()-_th);
   // Snapshot du dernier état valide : commit si le rebuild aboutit, rollback sinon.
   const prevBodies=bodies,prevLive=occLive;
@@ -4805,6 +4815,27 @@ function repSyncForFeature(f){
   // opération, sens, étendue, congé édités) : les clones suivent les nouveaux paramètres.
   if(!f)return;
   for(const rp of [...doc.features]){if(rp.type==='repeat'&&rp.base.includes(f.id))repGenChildren(rp);}
+}
+const repGenSigs=new Map(); // id de répétition -> signature des sources au dernier régénéré
+function repSourceSig(rp){
+  let s=JSON.stringify([rp.mode,rp.copies,rp.dist,rp.angle,rp.axis,rp.plane,rp.planeN,rp.plane2,rp.planeN2,rp.base]);
+  (rp.base||[]).forEach(id=>{const f=doc.features.find(x=>x.id===id);s+='#'+(f?featSig(f):'?');});
+  return s;
+}
+function repSyncStale(){
+  // Rejeu : régénère les répétitions dont une source (fonction OU esquisse) a changé
+  // depuis la dernière génération. Renvoie true si au moins une instance a été refaite.
+  let any=false;
+  for(const rp of [...(doc.features||[])]){
+    if(rp.type!=='repeat'||rp.visible===false)continue;
+    let sg='';try{sg=repSourceSig(rp);}catch(e){continue;}
+    if(repGenSigs.get(rp.id)===sg)continue;
+    const first=!repGenSigs.has(rp.id);
+    repGenSigs.set(rp.id,sg);
+    if(first)continue; // 1er passage : on mémorise seulement (instances déjà générées à l'ouverture / à la création)
+    try{repGenChildren(rp);any=true;}catch(e){}
+  }
+  return any;
 }
 function repGenAll(){
   // Balayage de réparation : CHAQUE répétition régénérée depuis ses sources. Appelé par
@@ -6205,8 +6236,14 @@ function updateAssociativeProjections(sk){
   if(!sk||!sk.entities) return false;
   let changed=false;
   for(const e of sk.entities){
-    if(!e.construction) continue;
-    const isProj=e.proj||e.isProj|| (e.t==='line' && sk.constraints.some(c=>c.type==='fix'&&c.p===e.p1) && sk.constraints.some(c=>c.type==='fix'&&c.p===e.p2));
+    // 2026-10-15-009 : une arête PROJETÉE reste associative même passée en PROFIL
+    // (on projette pour s'en servir dans le contour, comme Fusion). Avant, seules les
+    // projetées « construction » suivaient : une projetée de profil restait figée à
+    // l'ancienne cote et toute la chaîne aval (symétrie, esquisse sur sa face, poche)
+    // décrochait — « Cavité Usinage » : 50 → 55, le fond suivait, pas la poche.
+    // Le repli « ligne aux 2 bouts fixes » ne vaut QUE pour la construction (une ligne
+    // de profil fixée par l'utilisateur n'est pas une projection).
+    const isProj=e.proj||e.isProj||(e.construction&&e.t==='line'&&sk.constraints.some(c=>c.type==='fix'&&c.p===e.p1)&&sk.constraints.some(c=>c.type==='fix'&&c.p===e.p2));
     if(!isProj) continue;
     if(e.t==='line'){
       const A=sk.points[e.p1], B=sk.points[e.p2]; if(!A||!B) continue;
@@ -6597,8 +6634,32 @@ function skNewEid(sk){sk.seq=sk.seq||1;return 'e'+(sk.seq++);}
 function addPoint(sk,x,y){const id=skNewPid(sk);skPts(sk)[id]={x,y};return id;}
 function pidAt(sk,x,y){let best=null,bd=0.01;Object.keys(skPts(sk)).forEach(pid=>{const p=sk.points[pid];const d=Math.hypot(p.x-x,p.y-y);if(d<bd){bd=d;best=pid;}});return best||addPoint(sk,x,y);}
 function entById(sk,id){return (sk.entities||[]).find(e=>e.id===id);}
+// 2026-10-15-009 : CÔTÉ des cotes à distance perpendiculaire (entraxe, point ↔ ligne).
+// Écrites (d² − w²)/2w, elles admettaient ±w : quand une référence bougeait (projection
+// associative), le solveur pouvait rejoindre la solution MIROIR — « Cavité Usinage » :
+// 50 → 55 → 50, une ligne cotée 3,26 SOUS l'arête projetée revenait 3,26 AU-DESSUS, et
+// deux congés R7 devenaient impossibles. d.sgn mémorise le côté dès que l'esquisse est
+// dans un état COHÉRENT (cote respectée), puis le solveur et l'audit l'imposent.
+function skDimSignedOf(sk,d){
+  const P=sk.points||{};
+  const nrmOf=l=>{const A=P[l.p1],B=P[l.p2];if(!A||!B)return null;const dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy);if(L<1e-9)return null;return{A,nx:-dy/L,ny:dx/L};};
+  if(d.type==='gap'){const A=entById(sk,d.a),B=entById(sk,d.b);if(!A||!B||A.t!=='line'||B.t!=='line')return null;
+    const n=nrmOf(A),B1=P[B.p1];if(!n||!B1)return null;return (B1.x-n.A.x)*n.nx+(B1.y-n.A.y)*n.ny;}
+  if(d.type==='distline'){const l=entById(sk,d.line),Pt=P[d.p];if(!l||l.t!=='line'||!Pt)return null;
+    const n=nrmOf(l);if(!n)return null;return (Pt.x-n.A.x)*n.nx+(Pt.y-n.A.y)*n.ny;}
+  return null;
+}
+function skDimSides(sk){
+  (sk.dims||[]).forEach(d=>{
+    if((d.type!=='gap'&&d.type!=='distline')||d.sgn===1||d.sgn===-1)return;
+    const w=Math.max(+d.value||0,0);if(!(w>1e-6))return;
+    const sg=skDimSignedOf(sk,d);if(sg==null)return;
+    if(Math.abs(Math.abs(sg)-w)<=Math.max(0.01,w*2e-3))d.sgn=sg>=0?1:-1;
+  });
+}
 function migrateSketch(sk){
   if(!sk.points)sk.points={};if(!sk.constraints)sk.constraints=[];if(!sk.dims)sk.dims=[];if(!sk.seq)sk.seq=1;
+  try{if(sk.entities)skDimSides(sk);}catch(e){}
   try{ensureSketchBasis(sk);}catch(e){}
   sk.dims.forEach(d=>{if(d.ox===undefined)d.ox=0;if(d.oy===undefined)d.oy=0;});
   sk.entities.forEach(e=>{
@@ -6835,9 +6896,9 @@ function solveSketchRelax(sk,iters,anchor){
         const dx=A2.x-A1.x,dy=A2.y-A1.y,L=Math.hypot(dx,dy)||1e-9;
         const nx=-dy/L,ny=dx/L;
         const signed=(B1.x-A1.x)*nx+(B1.y-A1.y)*ny;
-        let err=Math.max(d.value,0)-Math.abs(signed);if(Math.abs(err)<1e-9)return;
+        const sgn=(d.sgn===1||d.sgn===-1)?d.sgn:(signed>=0?1:-1); // côté mémorisé (jamais la solution miroir)
+        let err=sgn*(sgn*Math.max(d.value,0)-signed);if(Math.abs(err)<1e-9)return;
         err*=0.5;
-        const sgn=signed>=0?1:-1;
         const aFree=!fix.has(A.p1)&&!fix.has(A.p2),bFree=!fix.has(B.p1)&&!fix.has(B.p2);
         if(!aFree&&!bFree)return;
         if(aFree&&!bFree){A1.x-=nx*sgn*err*2;A1.y-=ny*sgn*err*2;A2.x-=nx*sgn*err*2;A2.y-=ny*sgn*err*2;}
@@ -6852,7 +6913,7 @@ function solveSketchRelax(sk,iters,anchor){
         const dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy)||1e-9;
         const nx=-dy/L,ny=dx/L;
         const signed=(Pt.x-A.x)*nx+(Pt.y-A.y)*ny;
-        const sgn=signed>=0?1:-1;
+        const sgn=(d.sgn===1||d.sgn===-1)?d.sgn:(signed>=0?1:-1); // côté mémorisé
         const err=sgn*d.value-signed;if(Math.abs(err)<1e-9)return;
         const pF=fix.has(d.p),lF=fix.has(l.p1)&&fix.has(l.p2);
         if(pF&&lF)return;
@@ -7149,14 +7210,15 @@ function sklsCollect(sk,out,B){
         const va=vec(A),vb=vec(B);if(va&&vb){const nx=-va.uy,ny=va.ux;
           const sA=P[A.p1],fB=P[B.p1];
           if(sA&&fB){const signed=(fB.x-sA.x)*nx+(fB.y-sA.y)*ny;
-            const w=Math.max(d.value,0);push(w>0?(signed*signed-w*w)/(2*w):signed);}}
+            const w=Math.max(d.value,0);
+            push((d.sgn===1||d.sgn===-1)?(signed-d.sgn*w):(w>0?(signed*signed-w*w)/(2*w):signed));}}
       }
     }
     if(d.type==='distline'){
       const l=entById(sk,d.line),Pt=P[d.p];
       if(l&&l.t==='line'&&Pt){const v=vec(l);if(v){const nx=-v.uy,ny=v.ux,A=P[l.p1];
         if(A){const signed=(Pt.x-A.x)*nx+(Pt.y-A.y)*ny;const w=Math.max(d.value,0);
-          push(w>0?(signed*signed-w*w)/(2*w):signed);}}}
+          push((d.sgn===1||d.sgn===-1)?(signed-d.sgn*w):(w>0?(signed*signed-w*w)/(2*w):signed));}}}
     }
   });
   // ── contraintes ──
@@ -7388,6 +7450,7 @@ function skSolveFinal(sk,anchor){
 function solveSketch(sk,iters,anchor){
   if(!sk||!sk.points)return;iters=iters||120;
   ensureOrigin(sk); // origine clouée (0,0) AVANT tout essai : réglage autour du vrai repère
+  try{skDimSides(sk);}catch(e){} // côté des entraxes / point↔ligne lu sur l'état cohérent courant
   const base=skSnapCoords(sk); // état de départ (avant tout essai)
   let lsSnap=null; // coordonnées atteintes par le LM
   let lsRes=Infinity;
@@ -8923,11 +8986,13 @@ function skAudit(sk){
       if(A&&B&&A.t==='line'&&B.t==='line'){const P0=sk.points;
         const A1=P0[A.p1],A2=P0[A.p2],B1=P0[B.p1],B2=P0[B.p2];
         if(A1&&A2&&B1&&B2){const dx=A2.x-A1.x,dy=A2.y-A1.y,L=Math.hypot(dx,dy)||1e-9;
-          push(d.id,'entraxe',Math.abs(Math.abs((B1.x-A1.x)*(-dy/L)+(B1.y-A1.y)*(dx/L))-d.value));}}}
+          const sg=(B1.x-A1.x)*(-dy/L)+(B1.y-A1.y)*(dx/L);
+          push(d.id,'entraxe',(d.sgn===1||d.sgn===-1)?Math.abs(sg-d.sgn*d.value):Math.abs(Math.abs(sg)-d.value));}}}
     if(d.type==='distline'){const l=entById(sk,d.line),Pt=P[d.p];
       if(l&&l.t==='line'&&Pt){const A=P[l.p1],B=P[l.p2];
         if(A&&B){const dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy)||1e-9;
-          push(d.id,'⟂ centre↔ligne',Math.abs(Math.abs((Pt.x-A.x)*(-dy/L)+(Pt.y-A.y)*(dx/L))-d.value));}}}
+          const sg=(Pt.x-A.x)*(-dy/L)+(Pt.y-A.y)*(dx/L);
+          push(d.id,'⟂ centre↔ligne',(d.sgn===1||d.sgn===-1)?Math.abs(sg-d.sgn*d.value):Math.abs(Math.abs(sg)-d.value));}}}
   });
   (sk.constraints||[]).forEach(c=>{
     if(c.type==='h'||c.type==='v'){const l=entById(sk,c.line);if(l&&l.t==='line'){const A=P[l.p1],B=P[l.p2];if(A&&B)push(c.id,c.type,Math.abs(c.type==='h'?A.y-B.y:A.x-B.x));}}
@@ -12924,6 +12989,28 @@ const faoRapideMin=30;
       +'.fao-win-x{font-size:.85rem;padding:1px 7px;border-radius:6px;background:transparent;'
       +'border:1px solid rgba(255,255,255,.18);color:rgba(255,255,255,.75);cursor:pointer}'
       +'.fao-win-x:hover{border-color:rgba(255,95,87,.7);color:#ff5f57;background:rgba(255,95,87,.16)}'
+      /* --- bibliothèque d'outils (2026-10-15-010) --- */
+      +'.fao-win.fao-toolwin{width:min(1040px,95%);max-height:88%;top:60px}'
+      +'.fao-tl{display:flex;gap:14px;align-items:flex-start}'
+      +'.fao-tl-left{width:240px;flex:none;display:flex;flex-direction:column;gap:8px}'
+      +'.fao-tl-list{display:flex;flex-direction:column;gap:4px;max-height:60vh;overflow-y:auto}'
+      +'.fao-tl-it{padding:7px 9px;border-radius:8px;cursor:pointer;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03)}'
+      +'.fao-tl-it:hover{border-color:rgba(10,132,255,.5)}'
+      +'.fao-tl-it.on{background:rgba(10,132,255,.2);border-color:#0a84ff}'
+      +'.fao-tl-n{font-weight:700;font-size:.78rem;color:#fff}'
+      +'.fao-tl-s{font-size:.68rem;color:rgba(255,255,255,.6);margin-top:2px}'
+      +'.fao-tl-btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}'
+      +'.fao-tl-body{flex:1;display:flex;gap:12px;align-items:flex-start;min-width:0}'
+      +'.fao-tl-detail{flex:1;min-width:0}'
+      +'.fao-tl-pic{flex:none;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:4px}'
+      +'.fao-tl-h{font-weight:700;font-size:.74rem;color:#64d2ff;margin:10px 0 5px;letter-spacing:.02em}'
+      +'.fao-tl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:5px 12px}'
+      +'.fao-tl-f{display:flex;align-items:center;gap:6px;font-size:.74rem;color:rgba(255,255,255,.85)}'
+      +'.fao-tl-f span{flex:1;white-space:nowrap}'
+      +'.fao-tl-f input{width:76px}'
+      +'.fao-tl-f.wide input{width:150px}'
+      +'.fao-tl-f em{font-style:normal;font-size:.64rem;color:rgba(255,255,255,.5);width:44px}'
+      +'.fao-tl-f.def input{color:rgba(255,255,255,.5)}'
       /* --- arbre FAO --- */
       +'.fao-setup{font-weight:700;font-size:.76rem;margin:7px 0 3px;cursor:pointer;'
       +'padding:4px 7px;border-radius:7px;display:flex;gap:6px;align-items:center}'
@@ -15006,7 +15093,7 @@ function faoOpMovesStore(op,key,mv){
 }
 function faoOpSig(op){
   const o={};
-  const skip={hidden:1,on:1,geoBlocked:1,geoDiag:1,stale:1};
+  const skip={hidden:1,on:1,geoBlocked:1,geoDiag:1,stale:1,cut:1}; // cut : vitesses/avances (2026-10-15-010) — aucun effet sur le tracé
   try{
     for(const k in op){
       if(!Object.prototype.hasOwnProperty.call(op,k)||skip[k])continue;
@@ -15099,7 +15186,9 @@ function faoOpMovesKey(op,job){
     }
     // Seul l'outil de CETTE operation influence ses parcours : modifier T3 ne
     // doit pas rendre perimes les traces des operations qui tournent en T1.
-    if(js&&js.tools)js.tools=[faoToolById(job,op&&op.toolId)];
+    // 2026-10-15-010 : sous-ensemble HISTORIQUE de la fiche (faoToolKeyObj) — les champs
+    // ajoutés (longueurs, avances…) ne changent aucune trajectoire et ne périment rien.
+    if(js&&js.tools)js.tools=[faoToolKeyObj(faoToolById(job,op&&op.toolId))];
     // Une operation ne depend QUE d'elle-meme, de son outil, du brut/du maillage
     // (faoBodyGen) — ET, pour la GEOFINITION uniquement, des operations qui la
     // PRECEDENT (faoGeoHasRrough lit leur type et leur etat actif). Tout le reste
@@ -15774,14 +15863,14 @@ function faoJobMoves(job){
   ((job&&job.ops)||[]).forEach(function(op){
     if(op&&op.on===false)return;
     const tool=faoToolById(job,op&&op.toolId);
-    const sf=faoToolSF(tool,job);
+    const sf=faoOpCutting(op,job); // conditions de CETTE opération (fiche ou surcharge)
     const key=tool.id+'|'+tool.d;
     if(!cur||cur.key!==key){
       cur={key:key, tool:{id:tool.id,num:tool.num,name:tool.name,d:tool.d,
         s:sf.s, f:sf.f, plunge:sf.plunge}, blocks:[]};
       out.push(cur);
     }
-    cur.blocks.push({op:op,moves:faoOpMoves(op,job)});
+    cur.blocks.push({op:op,moves:faoOpMoves(op,job),cut:sf});
   });
   return out;
 }
@@ -16133,7 +16222,13 @@ function faoPost(job,postId){
     if(fag){ nc('T'+(t.num||1)+' D1 M06'); }else{ nc('T'+(t.num||1)+' D1'); nc('M6'); }
     nc('S'+S+(fag?' M03':' M3'));
     if(cool&&cool!=='M9')nc(cool);
+    let sCur=S;
     g.blocks.forEach(function(b){
+      // 2026-10-15-010 : conditions de coupe de CETTE opération (fiche outil ou
+      // surcharge de l'opération). Par défaut identiques au groupe → sortie inchangée.
+      const CB=b.cut||faoOpCutting(b.op,job);
+      const SB=faoFmtS(CB.s), F=faoFmtF(CB.f), FP=faoFmtF(CB.plunge), FE=faoFmtF(CB.entry), FR=faoFmtF(CB.retract);
+      if(SB!==sCur){ nc('S'+SB); sCur=SB; }
       cmt(faoOpLabel(b.op,job));
       // 2026-10-13-007 : #MSG par opération sur Fagor (rétro-ingénierie
       // cav.txt : N60 #MSG["OPT1: Paroies"]) — l'opérateur voit l'opération
@@ -16190,11 +16285,14 @@ function faoPost(job,postId){
         }
         const X='X'+faoFmtXYZ(m.x-ox), Y='Y'+faoFmtXYZ(m.y-oy), Z='Z'+faoFmtXYZ(m.z-oz);
         if(m.r){ nc('G0 '+X+' '+Y+' '+Z); first=true; }
-        else if(m.arc){ nc(faoArcWords(m,ox,oy,oz)+' F'+F); first=false; }
+        else if(m.arc){ nc(faoArcWords(m,ox,oy,oz)+' F'+(m.ent?FE:F)); first=false; }
         else{
-          // première plongée après un rapide : avance de plongée, sinon avance de coupe.
+          // première plongée après un rapide : avance de plongée ; mouvement d'entrée
+          // (rampe, hélice, approche) : F entrée ; remontée verticale : F remontée ;
+          // sinon avance de coupe.
           const plunge=first&&/Z/.test(Z);
-          nc('G1 '+X+' '+Y+' '+Z+' F'+(plunge?FP:F));
+          const up=!plunge&&prev&&Math.abs(m.x-prev.x)<1e-6&&Math.abs(m.y-prev.y)<1e-6&&m.z>prev.z+1e-6;
+          nc('G1 '+X+' '+Y+' '+Z+' F'+(plunge?FP:(m.ent?FE:(up?FR:F))));
           first=false;
         }
         prev=m;
@@ -16612,7 +16710,7 @@ function faoViewerBuild(setup){
     const d=(tool&&isFinite(+tool.d)&&+tool.d>0)?+tool.d:10;
     const kind=(tool&&tool.kind)?tool.kind:'flat';
     const cr=faoToolEffCr(tool); // rayon d'arête réel (mm) — forme de coupe par point
-    const sf=tool?faoToolSF(tool,setup):null;
+    const sf=tool?faoOpCutting(op,setup):null; // avance de CETTE opération
     const f=(sf&&isFinite(+sf.f)&&+sf.f>0)?+sf.f:1000;
     const mv=S.moves;
     const ext=[]; let pv=null; // arcs développés (tracé lisse)
@@ -18438,53 +18536,7 @@ function faoSelectOp(setupId,opId){
     faoRenderTree();
   }catch(e){}
 }
-/* ----- bibliothèque d'outils (élément réutilisable) ----- */
-function faoToolsElement(setup){
-  const wrap=document.createElement('div');
-  const H=faoH('Outils ('+(setup.tools||[]).length+') · Vc/fz → S/F auto');
-  wrap.appendChild(H);
-  (setup.tools||[]).forEach(function(t,ti){
-    const sf=faoToolSF(t,setup);
-    const d=faoCard();
-    const r=faoRow();
-    r.appendChild(faoLab('T'+t.num));
-    r.appendChild(faoTxt(t.name,function(v){ t.name=String(v||t.name).slice(0,24); },92));
-    r.appendChild(faoSel([['flat','Cylindrique'],['bull','Torique'],['ball','Boule']],t.kind||'flat',
-      function(v){ t.kind=v; if(v==='ball')t.cornerR=t.d/2; }));
-    r.appendChild(faoMini('✕',function(){
-      if(setup.tools.length<=1)return;
-      setup.tools.splice(ti,1);
-      setup.tools.forEach(function(k,i){ k.num=i+1; });
-    }));
-    d.appendChild(r);
-    const r2=faoRow();
-    r2.appendChild(faoLab('D')); r2.appendChild(faoNum(t.d,function(v){ t.d=Math.max(0.5,v);
-      if(t.kind==='ball')t.cornerR=t.d/2; },52));
-    if(t.kind==='bull'){ r2.appendChild(faoLab('r')); r2.appendChild(faoNum(t.cornerR||0,function(v){ t.cornerR=Math.max(0,v); },44)); }
-    r2.appendChild(faoLab('dents')); r2.appendChild(faoNum(t.flutes,function(v){ t.flutes=Math.max(1,Math.round(v)); },40));
-    d.appendChild(r2);
-    const r3=faoRow();
-    r3.appendChild(faoLab('Vc')); r3.appendChild(faoNum(t.vc,function(v){ t.vc=Math.max(1,v); },56));
-    r3.appendChild(faoLab('fz')); r3.appendChild(faoNum(t.fz,function(v){ t.fz=Math.max(0.005,v); },52,0.01));
-    const s=document.createElement('span');
-    s.style.cssText='font-family:monospace;font-size:.72rem;color:#7ee0c0;';
-    s.textContent='→ S'+sf.s+' F'+sf.f+' (plongée '+sf.plunge+')';
-    r3.appendChild(s);
-    d.appendChild(r3);
-    wrap.appendChild(d);
-  });
-  const rT=faoRow();
-  const bT=document.createElement('button'); bT.textContent='+ Outil'; bT.style.fontSize='.72rem';
-  bT.onclick=function(){
-    faoSnapshot('nouvel outil');
-    const n=(setup.tools||[]).length+1;
-    setup.tools.push({id:'T'+n+'_'+Date.now().toString(36),num:n,name:'Fraise D10',kind:'flat',
-      d:10,cornerR:0,flutes:2,vc:250,fz:0.06});
-    faoChanged();
-  };
-  rT.appendChild(bT); wrap.appendChild(rT);
-  return wrap;
-}
+/* ----- bibliothèque d'outils : src/89-fao-outils.js (faoToolsElement, 2026-10-15-010) ----- */
 /* ----- fenêtre flottante : bibliothèque d'outils du posage actif ----- */
 let faoToolsWin=null, faoToolsWinX=null, faoToolsWinBody=null, faoToolsWinT=null;
 function faoToolsWindowOpen(){
@@ -18495,7 +18547,7 @@ function faoToolsWindowOpen(){
     if(!faoToolsWin){
       const host=(document.getElementById('vpwrap')||document.body);
       const w=document.createElement('div'); w.id='faoToolsWin';
-      w.className='fao-win'; // position + habillage via la feuille faoUiCss
+      w.className='fao-win fao-toolwin'; // grande fenêtre : liste à gauche, fiche à droite (2026-10-15-010)
       const h=document.createElement('div');
       h.className='fao-win-h';
       const ht=document.createElement('div'); ht.id='faoToolsWinT';
@@ -18512,7 +18564,7 @@ function faoToolsWindowOpen(){
       faoToolsWin=w; faoToolsWinX=xb; faoToolsWinBody=body; faoToolsWinT=ht;
     }
     const setup=faoSetup();
-    if(faoToolsWinT)faoToolsWinT.textContent='Outils · '+((setup&&setup.name)||'posage');
+    if(faoToolsWinT)faoToolsWinT.textContent='Bibliothèque d’outils · '+((setup&&setup.name)||'posage');
     if(faoToolsWinBody){ faoToolsWinBody.innerHTML=''; faoToolsWinBody.appendChild(faoToolsElement(setup)); }
     faoToolsWin.style.display='block';
     return true;
@@ -18653,9 +18705,10 @@ function faoPlanesCard(setup,op){
    explique le champ survolé ou en cours de saisie (son infobulle). Onglet
    choisi mémorisé par opération. */
 const faoTabSel={};
-const FAO_TAB_ORDER=['Réglages','Zone','Hauteurs','Passes','Entrées','Matière','Attaches'];
+const FAO_TAB_ORDER=['Réglages','Outil','Zone','Hauteurs','Passes','Entrées','Matière','Attaches'];
 const FAO_TAB_HELP={
   'Réglages':'Paramètres principaux de l’opération. Survolez un champ pour son explication.',
+  'Outil':'Outil de l’opération, vitesse de rotation et avances. Grisé = valeur de la fiche outil ; une valeur saisie ici ne vaut que pour cette opération.',
   'Zone':'Où usiner : tout le brut, un rectangle, des arêtes du modèle ou une esquisse — et ce qu’il faut épargner.',
   'Hauteurs':'Haut et Bas de la zone usinée (mm). Ils peuvent suivre des arêtes du modèle.',
   'Passes':'Descente par niveau, pas latéral et manière de vider.',
@@ -18664,7 +18717,7 @@ const FAO_TAB_HELP={
   'Attaches':'Ponts de matière pour tenir la pièce en détourage traversant.'};
 function faoTabOf(t){
   t=String(t||'').toLowerCase().replace(/\s*\(.*$/,'').trim();
-  const M=[['hauteur','Hauteurs'],['vidage','Passes'],['passes','Passes'],['côté et sens','Passes'],
+  const M=[['outil','Outil'],['hauteur','Hauteurs'],['vidage','Passes'],['passes','Passes'],['côté et sens','Passes'],
     ['trajectoire','Entrées'],['plans','Entrées'],['entrée','Entrées'],['matière','Matière'],
     ['attaches','Attaches'],['zone','Zone'],['bord de la poche','Zone'],['profil','Zone']];
   for(let i=0;i<M.length;i++)if(t.indexOf(M[i][0])===0)return M[i][1];
@@ -18742,8 +18795,8 @@ function faoOpCardElement(setup,op,i){
   tt.className='fao-opnum';
   tt.textContent=(i+1)+'. '+(typeName[op.type]||op.type);
   r.appendChild(tt);
-  r.appendChild(faoSel(faoToolOpts(setup),op.toolId,function(v){ op.toolId=v; },
-    'Outil de cette opération (vitesse et avance calculées depuis sa fiche)'));
+  r.appendChild(faoSel(faoToolOpts(setup),op.toolId,function(v){ op.toolId=v; delete op.cut; },
+    'Outil de cette opération — en changer reprend les vitesses et avances de sa fiche (onglet Outil)'));
   if(op.stale===true){
     const w=document.createElement('span');
     w.textContent=String.fromCharCode(0x26a0);
@@ -19270,7 +19323,9 @@ function faoOpCardElement(setup,op,i){
       'Distance supplémentaire (+) entre l\'outil et l\'îlot, en mm.'));
     d.appendChild(rs2);
   }
-  const sf=faoToolSF(faoToolById(setup,op.toolId),setup);
+  // 2026-10-15-010 : onglet « Outil » (vitesse, avances, portée) — avant le bilan.
+  try{ d.appendChild(faoOpToolSection(setup,op)); }catch(e){}
+  const sf=faoOpCutting(op,setup);
   const rr=faoRow();
   const rs=document.createElement('span');
   rs.className='fao-meta';
@@ -19580,10 +19635,10 @@ function faoStats(job){
   // machine) + changements d'outil (nb de groupes outil - 1) × durée unitaire.
   let cut=0, rap=0, tm=0, n=0, wait=false, missing=0;
   faoActiveOps(job).forEach(function(op){
-    const sf=faoToolSF(faoToolById(job,op.toolId),job);
+    const sf=faoOpCutting(op,job); // avance + rapide de CETTE opération
     const mv=faoMovesStat(op,job); // lecture d'abord : une stats ne recalcule rien
     if(!mv){ if(faoMovesPending())wait=true; else missing++; return; }
-    const e=faoEstimate(mv,sf.f,faoRapide(job),faoAccel(job));
+    const e=faoEstimate(mv,sf.f,sf.rapid,faoAccel(job));
     cut+=e.cut; rap+=e.rap; tm+=e.tmin; n++;
   });
   if(wait)return {n:0, cut:0, rap:0, groups:0, tchg:0, tmin:0, pending:true};
@@ -26854,6 +26909,332 @@ function faoGenScallop(mesh,o){
   return r.value;
 }
 
+/* ═══════════════ 89-fao-outils.js — fao outils ═══════════════ */
+/* ============ FAO : fiches outils + conditions de coupe par opération ============
+   2026-10-15-010 — demande : « piloter la vitesse de rotation et l'avance, par outil
+   et par opération, avec un onglet spécial outil ; une page outil plus grande avec la
+   liste des outils à gauche et leurs paramètres à droite ; leur taille, zone de coupe,
+   de dégagement, longueur sous mandrin… ; retrouver S et les avances travail,
+   plongée, remontée, rapide. Modifier l'outil dans l'opération ne touche PAS sa
+   fiche ; par défaut on prend les valeurs de la fiche au choix de l'outil. »
+
+   MODÈLE — un outil (setup.tools[]) garde ses champs historiques (id, num, name, kind,
+   d, cornerR, flutes, vc, fz) ; les nouveaux champs sont OPTIONNELS (défaut calculé) :
+     géométrie : lc (longueur de coupe), dDeg/lDeg (Ø et longueur de dégagement),
+                 dq (Ø queue), lsm (longueur sous mandrin), lt (longueur totale),
+                 dPo (Ø du porte-outil / mandrin), mat (matière de l'outil)
+     coupe     : fPl (plongée), fEnt (entrée/rampe), fRet (remontée), rapide (G0)
+                 — S et F restent DÉRIVÉS de Vc et fz (S = Vc·1000/πD, F = fz·z·S) ;
+                 saisir S ou F réécrit Vc ou fz.
+   OPÉRATION — op.cut = SURCHARGES champ par champ {s,f,fPl,fEnt,fRet,rapide} : un champ
+   absent HÉRITE de la fiche outil (une fiche modifiée se propage aux opérations qui
+   n'ont pas surchargé ce champ). Changer d'outil dans l'opération efface op.cut : les
+   valeurs de la nouvelle fiche s'appliquent. Les surcharges ne remontent JAMAIS dans
+   la fiche.
+   CACHE — les avances ne changent aucune trajectoire : la clé de cache des parcours ne
+   voit que les champs historiques de l'outil et ignore op.cut (aucun recalcul).
+   G-CODE — sorties IDENTIQUES par défaut (entrée = remontée = travail) ; une S
+   différente entre deux opérations du même outil émet « S… » ; les mouvements
+   d'entrée (rampe, hélice, arc d'approche) prennent F entrée, les remontées en G1
+   F remontée, la 1re descente après un rapide F plongée (règle historique). */
+const FAO_TOOL_LEGACY=['id','num','name','kind','d','cornerR','flutes','vc','fz'];
+function faoToolKeyObj(t){
+  // Sous-ensemble HISTORIQUE (ordre conservé) pour la clé de cache des parcours :
+  // ajouter des champs aux fiches ne périme aucune trajectoire existante.
+  const o={};if(!t)return o;
+  FAO_TOOL_LEGACY.forEach(function(k){ if(t[k]!==undefined)o[k]=t[k]; });
+  return o;
+}
+const faoR1=function(v){ return Math.round(v*10)/10; };
+function faoToolDims(t){
+  // Géométrie complète, défauts plausibles (fraise carbure monobloc) si non saisis.
+  const D=(t&&isFinite(+t.d)&&+t.d>0)?+t.d:10;
+  const num=function(k,def){ const v=t&&+t[k]; return (isFinite(v)&&v>0)?{v:v,def:false}:{v:def,def:true}; };
+  const lc=num('lc',faoR1(Math.max(D*2.5,3)));
+  const dDeg=num('dDeg',D);
+  const lDeg=num('lDeg',lc.v);
+  const QS=[6,8,10,12,16,20,25,32]; // queues standard (mm)
+  const dq=num('dq',QS.find(function(q){return q>=D;})||Math.ceil(D));
+  const lsm=num('lsm',faoR1(Math.max(lDeg.v+Math.max(8,D),D*3.5)));
+  const lt=num('lt',faoR1(Math.max(lsm.v+Math.max(25,dq.v*2.5),50)));
+  const dPo=num('dPo',faoR1(dq.v+Math.max(12,dq.v)));
+  return {D:D,lc:lc,dDeg:dDeg,lDeg:lDeg,dq:dq,lsm:lsm,lt:lt,dPo:dPo};
+}
+function faoToolCut(t,setup){
+  // Conditions de coupe de la FICHE (valeurs par défaut de toute opération).
+  const sf=faoToolSF(t||{},setup);
+  const pos=function(k){ const v=t&&+t[k]; return (isFinite(v)&&v>0)?Math.round(v):null; };
+  return {s:sf.s,f:sf.f,
+    plunge:pos('fPl')||sf.plunge,
+    entry:pos('fEnt')||sf.f,
+    retract:pos('fRet')||sf.f,
+    rapid:pos('rapide')||faoRapide(setup)};
+}
+const FAO_CUT_FIELDS=[ // [clé op.cut, clé résultat, libellé, aide]
+  ['s','s','S (tr/min)','Vitesse de rotation de la broche.'],
+  ['f','f','F travail','Avance de coupe (mm/min) : passes, contours, balayages.'],
+  ['fPl','plunge','F plongée','Avance de la 1re descente après un rapide (mm/min), et des cycles de perçage.'],
+  ['fEnt','entry','F entrée','Avance des mouvements d’entrée : rampe, hélice, arc d’approche (mm/min).'],
+  ['fRet','retract','F remontée','Avance des remontées en G1 (sortie de matière en Z, mm/min).'],
+  ['rapide','rapid','Rapide G0','Vitesse des déplacements rapides (mm/min) — sert à l’estimation du temps ; la machine fait ses G0 à sa propre vitesse.']
+];
+function faoOpCutting(op,setup){
+  // Conditions EFFECTIVES d'une opération : surcharge op.cut sinon fiche outil.
+  const t=faoToolById(setup,op&&op.toolId);
+  const b=faoToolCut(t,setup);
+  const c=(op&&op.cut&&typeof op.cut==='object')?op.cut:{};
+  const out={src:{}};
+  FAO_CUT_FIELDS.forEach(function(F){
+    const v=+c[F[0]];
+    if(isFinite(v)&&v>0){ out[F[1]]=Math.round(v); out.src[F[1]]='op'; }
+    else{ out[F[1]]=b[F[1]]; out.src[F[1]]='fiche'; }
+  });
+  const D=(t&&+t.d>0)?+t.d:10;
+  out.vc=Math.round(out.s*Math.PI*D/1000);
+  out.tool=t;
+  return out;
+}
+function faoToolNewFrom(t,n){
+  const c=JSON.parse(JSON.stringify(t||{kind:'flat',d:10,cornerR:0,flutes:2,vc:250,fz:0.06}));
+  c.id='T'+n+'_'+Date.now().toString(36);c.num=n;
+  c.name=t?((t.name||'Outil')+' (copie)').slice(0,32):'Fraise D10';
+  return c;
+}
+/* ----- schéma coté de l'outil (vue de profil) ----- */
+function faoToolSvg(t){
+  const g=faoToolDims(t),D=g.D;
+  const cr=faoToolEffCr(t);
+  const W=300,H=360,pad=44;
+  // échelle : longueur totale + porte-outil sur la hauteur, Ø porte-outil sur la largeur
+  const holderH=Math.max(g.dPo.v*0.9,18);
+  const totH=g.lsm.v+holderH;
+  const sc=Math.min((H-2*pad)/totH,(W-150)/Math.max(g.dPo.v,D));
+  const cx=110,yTip=H-pad;
+  const Y=function(z){ return yTip-z*sc; };
+  const X=function(r){ return cx+r*sc; };
+  const parts=[];
+  const rect=function(r,z0,z1,fill,stroke,dash){
+    parts.push('<rect x="'+X(-r).toFixed(1)+'" y="'+Y(z1).toFixed(1)+'" width="'+(2*r*sc).toFixed(1)+'" height="'+((z1-z0)*sc).toFixed(1)+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="1.2"'+(dash?' stroke-dasharray="3 2"':'')+'/>');
+  };
+  // porte-outil (mandrin) au-dessus de la longueur sous mandrin
+  rect(g.dPo.v/2,g.lsm.v,g.lsm.v+holderH,'rgba(142,142,147,.25)','#8e8e93',true);
+  // queue
+  rect(g.dq.v/2,g.lDeg.v,g.lsm.v,'rgba(100,210,255,.12)','#64d2ff');
+  // dégagement (col)
+  if(g.lDeg.v>g.lc.v+1e-6)rect(g.dDeg.v/2,g.lc.v,g.lDeg.v,'rgba(100,210,255,.08)','#64d2ff');
+  // partie coupante (avec bout plat / torique / boule)
+  const r=D/2,c2=Math.min(cr,r);
+  const p=[];
+  p.push('M'+X(-r).toFixed(1)+' '+Y(g.lc.v).toFixed(1));
+  p.push('L'+X(-r).toFixed(1)+' '+Y(c2).toFixed(1));
+  if(c2>0)p.push('A'+(c2*sc).toFixed(1)+' '+(c2*sc).toFixed(1)+' 0 0 0 '+X(-r+c2).toFixed(1)+' '+Y(0).toFixed(1));
+  p.push('L'+X(r-c2).toFixed(1)+' '+Y(0).toFixed(1));
+  if(c2>0)p.push('A'+(c2*sc).toFixed(1)+' '+(c2*sc).toFixed(1)+' 0 0 0 '+X(r).toFixed(1)+' '+Y(c2).toFixed(1));
+  p.push('L'+X(r).toFixed(1)+' '+Y(g.lc.v).toFixed(1)+'Z');
+  parts.push('<path d="'+p.join(' ')+'" fill="rgba(255,159,10,.28)" stroke="#ff9f0a" stroke-width="1.4"/>');
+  // hélices (décor)
+  for(let k=1;k<4;k++){const z=g.lc.v*k/4;parts.push('<path d="M'+X(-r).toFixed(1)+' '+Y(z).toFixed(1)+' L'+X(r).toFixed(1)+' '+Y(z+Math.min(D,g.lc.v/4)).toFixed(1)+'" stroke="rgba(255,159,10,.45)" stroke-width="1"/>');}
+  // cotes verticales à droite
+  const dimV=function(z0,z1,x,txt,col){
+    const a=Y(z0),b=Y(z1);
+    parts.push('<line x1="'+x+'" y1="'+a.toFixed(1)+'" x2="'+x+'" y2="'+b.toFixed(1)+'" stroke="'+col+'" stroke-width="1"/>');
+    parts.push('<path d="M'+(x-3)+' '+(a-5).toFixed(1)+' L'+x+' '+a.toFixed(1)+' L'+(x+3)+' '+(a-5).toFixed(1)+' M'+(x-3)+' '+(b+5).toFixed(1)+' L'+x+' '+b.toFixed(1)+' L'+(x+3)+' '+(b+5).toFixed(1)+'" fill="none" stroke="'+col+'" stroke-width="1"/>');
+    parts.push('<text x="'+(x+5)+'" y="'+((a+b)/2+4).toFixed(1)+'" fill="'+col+'" font-size="11">'+txt+'</text>');
+  };
+  const xr=X(Math.max(g.dPo.v,D)/2)+14;
+  dimV(0,g.lc.v,xr,'Lc '+g.lc.v,'#ff9f0a');
+  if(g.lDeg.v>g.lc.v+1e-6)dimV(0,g.lDeg.v,xr+52,'Ldég '+g.lDeg.v,'#64d2ff');
+  dimV(0,g.lsm.v,xr+(g.lDeg.v>g.lc.v+1e-6?104:52),'Lsm '+g.lsm.v,'#e9e9ec');
+  // cote Ø au bout
+  const yb=Y(0)+16;
+  parts.push('<line x1="'+X(-r).toFixed(1)+'" y1="'+yb+'" x2="'+X(r).toFixed(1)+'" y2="'+yb+'" stroke="#ff9f0a" stroke-width="1"/>');
+  parts.push('<text x="'+cx+'" y="'+(yb+13)+'" fill="#ff9f0a" font-size="11" text-anchor="middle">Ø'+D+(c2>0&&c2<r?(' R'+faoR1(c2)):'')+'</text>');
+  parts.push('<text x="'+cx+'" y="'+(Y(g.lsm.v+holderH)-6).toFixed(1)+'" fill="#8e8e93" font-size="10" text-anchor="middle">mandrin Ø'+g.dPo.v+'</text>');
+  return '<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" style="display:block">'+parts.join('')+'</svg>';
+}
+/* ----- bibliothèque : liste à gauche, fiche à droite ----- */
+let faoToolSelId=null;
+function faoToolsElement(setup){
+  const wrap=document.createElement('div');wrap.className='fao-tl';
+  const tools=setup.tools||(setup.tools=[]);
+  if(!tools.some(function(t){return t.id===faoToolSelId;}))faoToolSelId=tools[0]?tools[0].id:null;
+  const rerender=function(){ try{ wrap.parentNode&&faoToolsWindowRefresh(); }catch(e){} };
+  // ── colonne gauche : liste ──
+  const L=document.createElement('div');L.className='fao-tl-list';
+  tools.forEach(function(t){
+    const it=document.createElement('div');it.className='fao-tl-it'+(t.id===faoToolSelId?' on':'');
+    const nOps=((setup.ops)||[]).filter(function(o){return o&&o.toolId===t.id;}).length;
+    const a=document.createElement('div');a.className='fao-tl-n';a.textContent='T'+t.num+'  '+(t.name||'');
+    const b=document.createElement('div');b.className='fao-tl-s';
+    const sf=faoToolCut(t,setup);
+    b.textContent=faoKindLabel(t.kind)+' Ø'+t.d+(t.kind==='bull'?(' R'+(t.cornerR||0)):'')+' · S'+sf.s+' F'+sf.f+(nOps?(' · '+nOps+' op'):'');
+    it.appendChild(a);it.appendChild(b);
+    it.onclick=function(){ faoToolSelId=t.id; rerender(); };
+    L.appendChild(it);
+  });
+  const lb=document.createElement('div');lb.className='fao-tl-btns';
+  const mkB=function(txt,title,fn){const x=document.createElement('button');x.className='fao-mini';x.textContent=txt;x.title=title;x.onclick=fn;lb.appendChild(x);return x;};
+  mkB('+ Nouveau','Ajouter un outil (fraise Ø10 par défaut)',function(){
+    faoSnapshot('nouvel outil');const n=tools.reduce(function(m,t){return Math.max(m,+t.num||0);},0)+1;
+    const t=faoToolNewFrom(null,n);t.name='Fraise D10';tools.push(t);faoToolSelId=t.id;faoChanged();rerender();});
+  mkB('⧉ Dupliquer','Copier l’outil sélectionné',function(){
+    const s=tools.find(function(t){return t.id===faoToolSelId;});if(!s)return;
+    faoSnapshot('dupliquer l’outil');const n=tools.reduce(function(m,t){return Math.max(m,+t.num||0);},0)+1;
+    const t=faoToolNewFrom(s,n);tools.push(t);faoToolSelId=t.id;faoChanged();rerender();});
+  mkB('✕ Supprimer','Supprimer l’outil (impossible s’il est utilisé par une opération ou s’il est le dernier)',function(){
+    const i=tools.findIndex(function(t){return t.id===faoToolSelId;});if(i<0||tools.length<=1)return;
+    const used=(setup.ops||[]).filter(function(o){return o&&o.toolId===tools[i].id;}).length;
+    if(used){try{faceEl.textContent='Outil T'+tools[i].num+' utilisé par '+used+' opération(s) : changez-leur d’outil avant de le supprimer.';}catch(e){}return;}
+    faoSnapshot('supprimer l’outil');tools.splice(i,1);faoToolSelId=tools[0]?tools[0].id:null;faoChanged();rerender();});
+  const left=document.createElement('div');left.className='fao-tl-left';
+  left.appendChild(L);left.appendChild(lb);
+  wrap.appendChild(left);
+  // ── colonne droite : fiche ──
+  const t=tools.find(function(x){return x.id===faoToolSelId;});
+  const R=document.createElement('div');R.className='fao-tl-detail';
+  if(!t){R.textContent='Aucun outil.';wrap.appendChild(R);return wrap;}
+  const g=faoToolDims(t),cut=faoToolCut(t,setup),sf=faoToolSF(t,setup);
+  const set=function(k,v,title){ faoSnapshot(title||k); if(v===null||v===''||!(isFinite(+v)))delete t[k]; else t[k]=+v; };
+  const field=function(parent,lab,val,isDef,fn,title,step,unit){
+    const p=document.createElement('label');p.className='fao-tl-f'+(isDef?' def':'');p.title=title||lab;
+    const s=document.createElement('span');s.textContent=lab;p.appendChild(s);
+    const i=document.createElement('input');i.type='number';i.className='fao-in';i.value=String(+(+val).toFixed(4));
+    if(step)i.step=step;
+    i.onchange=function(){const v=parseFloat(i.value);if(isFinite(v)&&v>0){fn(v);faoChanged();rerender();}};
+    p.appendChild(i);
+    if(unit){const u=document.createElement('em');u.textContent=unit;p.appendChild(u);}
+    parent.appendChild(p);return i;
+  };
+  const sec=function(title){const h=document.createElement('div');h.className='fao-tl-h';h.textContent=title;R.appendChild(h);
+    const b=document.createElement('div');b.className='fao-tl-grid';R.appendChild(b);return b;};
+  // identification
+  const s1=sec('Identification');
+  const pN=document.createElement('label');pN.className='fao-tl-f';pN.title='Numéro d’outil (T) dans le magasin';
+  pN.innerHTML='<span>T n°</span>';const iN=document.createElement('input');iN.type='number';iN.className='fao-in';iN.value=t.num;
+  iN.onchange=function(){const v=Math.round(+iN.value);if(v>0){faoSnapshot('numéro d’outil');t.num=v;faoChanged();rerender();}};pN.appendChild(iN);s1.appendChild(pN);
+  const pT=document.createElement('label');pT.className='fao-tl-f wide';pT.innerHTML='<span>Nom</span>';
+  const iT=document.createElement('input');iT.type='text';iT.className='fao-in';iT.value=t.name||'';
+  iT.onchange=function(){faoSnapshot('nom d’outil');t.name=String(iT.value||t.name).slice(0,32);faoChanged();rerender();};pT.appendChild(iT);s1.appendChild(pT);
+  const pK=document.createElement('label');pK.className='fao-tl-f';pK.innerHTML='<span>Type</span>';
+  const sK=document.createElement('select');sK.className='fao-sel';
+  [['flat','Cylindrique'],['bull','Torique'],['ball','Boule']].forEach(function(o){const e=document.createElement('option');e.value=o[0];e.textContent=o[1];sK.appendChild(e);});
+  sK.value=t.kind||'flat';
+  sK.onchange=function(){faoSnapshot('type d’outil');t.kind=sK.value;if(t.kind==='ball')t.cornerR=t.d/2;else if(t.kind==='flat')t.cornerR=0;faoChanged();rerender();};
+  pK.appendChild(sK);s1.appendChild(pK);
+  const pM=document.createElement('label');pM.className='fao-tl-f';pM.innerHTML='<span>Matière</span>';
+  const sM=document.createElement('select');sM.className='fao-sel';
+  ['Carbure','Carbure revêtu','ARS / HSS','Plaquettes'].forEach(function(o){const e=document.createElement('option');e.value=o;e.textContent=o;sM.appendChild(e);});
+  sM.value=t.mat||'Carbure';sM.onchange=function(){faoSnapshot('matière d’outil');t.mat=sM.value;faoChanged();};
+  pM.appendChild(sM);s1.appendChild(pM);
+  // géométrie
+  const s2=sec('Géométrie (mm) — valeurs grisées = défaut calculé, à préciser');
+  field(s2,'Ø coupe',t.d,false,function(v){set('d',Math.max(0.1,v),'Ø outil');if(t.kind==='ball')t.cornerR=t.d/2;},'Diamètre de coupe',0.1);
+  if(t.kind==='bull')field(s2,'Rayon de coin',t.cornerR||0,false,function(v){set('cornerR',Math.min(v,t.d/2),'rayon de coin');},'Rayon du coin torique',0.1);
+  field(s2,'Dents',t.flutes||2,false,function(v){set('flutes',Math.max(1,Math.round(v)),'nombre de dents');},'Nombre de dents (sert au calcul de F = fz × z × S)',1);
+  field(s2,'Long. de coupe Lc',g.lc.v,g.lc.def,function(v){set('lc',v,'longueur de coupe');},'Longueur de la partie coupante (hélices) depuis le bout',0.5);
+  field(s2,'Ø dégagement',g.dDeg.v,g.dDeg.def,function(v){set('dDeg',Math.min(v,t.d),'Ø de dégagement');},'Diamètre du col au-dessus de la coupe (≤ Ø coupe) : permet de plonger plus profond que Lc sans frotter',0.1);
+  field(s2,'Long. dégagée',g.lDeg.v,g.lDeg.def,function(v){set('lDeg',Math.max(v,g.lc.v),'longueur dégagée');},'Longueur depuis le bout jusqu’au début de la queue (profondeur atteignable sans que la queue frotte)',0.5);
+  field(s2,'Ø queue',g.dq.v,g.dq.def,function(v){set('dq',v,'Ø de queue');},'Diamètre de la queue (serrage)',0.5);
+  field(s2,'Long. sous mandrin',g.lsm.v,g.lsm.def,function(v){set('lsm',v,'longueur sous mandrin');},'Longueur qui dépasse du porte-outil (sortie d’outil) : profondeur maximale avant collision du mandrin',0.5);
+  field(s2,'Long. totale',g.lt.v,g.lt.def,function(v){set('lt',v,'longueur totale');},'Longueur totale de l’outil',0.5);
+  field(s2,'Ø mandrin',g.dPo.v,g.dPo.def,function(v){set('dPo',v,'Ø du porte-outil');},'Diamètre du porte-outil / mandrin au nez',0.5);
+  // coupe
+  const s3=sec('Conditions de coupe — valeurs par défaut des opérations');
+  const D=+t.d>0?+t.d:10,z=+t.flutes>0?Math.round(+t.flutes):2;
+  field(s3,'Vc',t.vc||250,false,function(v){set('vc',v,'Vc');},'Vitesse de coupe (m/min) — S = Vc × 1000 / (π × Ø)',1,'m/min');
+  field(s3,'S',sf.s,false,function(v){set('vc',+(v*Math.PI*D/1000).toFixed(2),'S (via Vc)');},'Vitesse de rotation (tr/min) — saisir S recalcule Vc',10,'tr/min');
+  field(s3,'fz',t.fz||0.05,false,function(v){set('fz',v,'fz');},'Avance par dent (mm) — F = fz × dents × S',0.005,'mm/dt');
+  field(s3,'F travail',sf.f,false,function(v){set('fz',+(v/(z*sf.s)).toFixed(4),'F (via fz)');},'Avance de coupe (mm/min) — saisir F recalcule fz',10,'mm/min');
+  field(s3,'F plongée',cut.plunge,!(+t.fPl>0),function(v){set('fPl',v,'F plongée');},'Avance de plongée (mm/min). Défaut : '+faoPlungePct(setup)+' % de F travail (posage)',10,'mm/min');
+  field(s3,'F entrée',cut.entry,!(+t.fEnt>0),function(v){set('fEnt',v,'F entrée');},'Avance des entrées : rampe, hélice, arc d’approche (mm/min). Défaut : F travail',10,'mm/min');
+  field(s3,'F remontée',cut.retract,!(+t.fRet>0),function(v){set('fRet',v,'F remontée');},'Avance des remontées en G1 (mm/min). Défaut : F travail',10,'mm/min');
+  field(s3,'Rapide G0',cut.rapid,!(+t.rapide>0),function(v){set('rapide',v,'rapide');},'Vitesse des rapides pour l’estimation du temps (mm/min). Défaut : celle du posage',100,'mm/min');
+  const rz=document.createElement('div');rz.className='fao-tl-btns';
+  const bz=document.createElement('button');bz.className='fao-mini';bz.textContent='↺ Avances par défaut';
+  bz.title='Remet F plongée / entrée / remontée / rapide sur leurs valeurs calculées';
+  bz.onclick=function(){faoSnapshot('avances par défaut');['fPl','fEnt','fRet','rapide'].forEach(function(k){delete t[k];});faoChanged();rerender();};
+  rz.appendChild(bz);R.appendChild(rz);
+  const body=document.createElement('div');body.className='fao-tl-body';
+  body.appendChild(R);
+  const pic=document.createElement('div');pic.className='fao-tl-pic';pic.innerHTML=faoToolSvg(t);
+  body.appendChild(pic);
+  wrap.appendChild(body);
+  return wrap;
+}
+function faoToolsWindowRefresh(){
+  try{
+    if(!faoToolsWin||!faoToolsWinBody)return;
+    const setup=faoSetup();
+    const keep=faoToolsWinBody.scrollTop;
+    faoToolsWinBody.innerHTML='';faoToolsWinBody.appendChild(faoToolsElement(setup));
+    faoToolsWinBody.scrollTop=keep;
+  }catch(e){}
+}
+function faoToolsOpenOn(toolId){
+  // « Modifier la fiche » depuis une opération : ouvre la bibliothèque sur CET outil.
+  faoToolSelId=toolId||faoToolSelId;
+  if(faoToolsWin)faoToolsWindowRefresh();else faoToolsWindowOpen();
+  try{ if(faoToolsWin)faoToolsWin.classList.add('fao-toolwin'); }catch(e){}
+}
+/* ----- fiche d'opération : onglet « Outil » ----- */
+function faoOpToolSection(setup,op){
+  const box=document.createElement('div');
+  box.appendChild(faoH('Outil et conditions de coupe'));
+  const t=faoToolById(setup,op.toolId);
+  const C=faoOpCutting(op,setup);
+  const g=faoToolDims(t);
+  const r0=faoRow();
+  r0.appendChild(faoLab('Outil'));
+  r0.appendChild(faoSel(faoToolOpts(setup),op.toolId,function(v){ op.toolId=v; delete op.cut; },
+    'Outil de l’opération — en changer reprend les vitesses et avances de SA fiche'));
+  r0.appendChild(faoMini('Fiche…',function(){ faoToolsOpenOn(op.toolId); },'Ouvrir la fiche de cet outil dans la bibliothèque'));
+  box.appendChild(r0);
+  const info=document.createElement('div');info.className='fao-meta';
+  info.textContent=faoKindLabel(t.kind)+' Ø'+t.d+(t.kind==='bull'?(' R'+(t.cornerR||0)):'')+' · '+(t.flutes||2)+' dents · Lc '+g.lc.v+' · sous mandrin '+g.lsm.v+' mm · Vc '+C.vc+' m/min';
+  box.appendChild(info);
+  FAO_CUT_FIELDS.forEach(function(F){
+    const r=faoRow();
+    r.appendChild(faoLab(F[2]));
+    const isOp=C.src[F[1]]==='op';
+    const inp=faoNum(C[F[1]],function(v){
+      if(!(v>0))return;
+      if(!op.cut||typeof op.cut!=='object')op.cut={};
+      op.cut[F[0]]=Math.round(v);
+    },60,F[0]==='rapide'?100:10,F[3]+' — modifié ici, il ne vaut que pour cette opération (la fiche outil reste inchangée).');
+    if(!isOp)inp.style.opacity='0.62';
+    r.appendChild(inp);
+    const tag=document.createElement('span');tag.className='fao-meta';
+    tag.textContent=isOp?'opération':'fiche';
+    tag.style.color=isOp?'#ff9f0a':'';
+    r.appendChild(tag);
+    if(isOp)r.appendChild(faoMini('↺',function(){ if(op.cut){ delete op.cut[F[0]]; if(!Object.keys(op.cut).length)delete op.cut; } },
+      'Revenir à la valeur de la fiche outil'));
+    box.appendChild(r);
+  });
+  // portée de l'outil : profondeur atteinte vs longueurs de la fiche
+  try{
+    const w=faoOpReachWarn(op,setup,t,g);
+    if(w){const n=document.createElement('div');n.className='fao-note';n.textContent=w;box.appendChild(n);}
+  }catch(e){}
+  return box;
+}
+function faoOpReachWarn(op,setup,t,g){
+  // Profondeur usinée (dessus du brut → Z le plus bas en coupe) comparée à la
+  // longueur de coupe, à la longueur dégagée et à la sortie sous mandrin.
+  const mv=(typeof faoMovesStat==='function')?faoMovesStat(op,setup):null;
+  if(!mv||!mv.length)return null;
+  let zmin=Infinity;
+  for(let i=0;i<mv.length;i++){const m=mv[i];if(m&&!m.r&&isFinite(+m.z)&&+m.z<zmin)zmin=+m.z;}
+  if(!isFinite(zmin))return null;
+  let top=null;try{const st=faoStock();top=(st&&isFinite(+st.z1))?+st.z1:null;}catch(e){}
+  if(top===null||!isFinite(top))return null;
+  const prof=faoR1(top-zmin);
+  if(prof>g.lsm.v)return '⚠ Profondeur usinée '+prof+' mm > longueur sous mandrin '+g.lsm.v+' mm : COLLISION du mandrin — sortez l’outil ou changez d’outil.';
+  if(prof>g.lDeg.v)return '⚠ Profondeur usinée '+prof+' mm > longueur dégagée '+g.lDeg.v+' mm : la queue (Ø'+g.dq.v+') frotte sur les parois.';
+  if(prof>g.lc.v)return 'Profondeur usinée '+prof+' mm > longueur de coupe '+g.lc.v+' mm : vérifiez que le col dégagé (Ø'+g.dDeg.v+') passe.';
+  return null;
+}
+
 /* ═══════════════ 89-fao-torique.js — fao torique ═══════════════ */
 /* ================================================================
    ÉBAUCHE 3D — PASSE TORIQUE (2026-10-14-007)
@@ -28769,15 +29150,19 @@ if($('btnDraft'))$('btnDraft').onclick=()=>{if(draftMode)exitDraftMode();else{if
 if($('btnCoque'))$('btnCoque').onclick=()=>{if(coqueMode)exitCoqueMode();else{if(filMode||filModeX)exitFilletMode(true);if(draftMode)exitDraftMode(true);}enterCoqueMode();};
 $('btnFit').onclick=showAll;
 $('btnSelfTest').onclick=runSelfTests;
-if($('btnRebuild'))$('btnRebuild').onclick=()=>{
-  // FORCE le rejeu : sans cela la garde « rien n'a changé » court-circuite et le bouton
-  // semblait ne rien faire (régression introduite par l'optimisation de reconstruction).
-  // Balayage des répétitions AVANT le rejeu : les instances se réalignent sur leurs
-  // sources même si un chemin d'édition n'a pas synchronisé pendant la session.
-  builtVersion=-1;builtHash=null;builtEngine=null;
-  faceEl.textContent='Recalcul demandé…';
-  try{repGenAll();}catch(e){}
-  try{rebuild();}catch(e){faceEl.textContent+='\n[Recalcul] '+String((e&&e.message)||e);}};
+// 2026-10-15-009 : UN SEUL bouton « ⟳ Régénérer » (remplace Recalculer, ✓ Valider et
+// ⟳⟳ Hard, redondants) : réparation du document, instances de répétition réalignées,
+// caches jetés, rejeu complet jusqu'à convergence, diagnostic esquisses / fonctions /
+// corps. Rapport détaillé dans « Auto-tests », résumé dans « Mesure ».
+function regenTout(){
+  try{faceEl.textContent='⟳ Régénération du modèle…';}catch(e){}
+  try{return runValidate();}catch(e){try{faceEl.textContent+='\n[Régénérer] '+String((e&&e.message)||e);}catch(_){}}
+}
+if($('btnRebuild')){
+  $('btnRebuild').textContent='⟳ Régénérer';
+  $('btnRebuild').title='Régénérer tout le modèle : répare le document, réaligne les symétries/répétitions, jette les caches et rejoue jusqu’à stabilisation (projections, faces porteuses), puis contrôle esquisses, fonctions et corps. Raccourci : Ctrl+Maj+R';
+  $('btnRebuild').onclick=()=>regenTout();
+}
 
 // ---------- rafraîchissement DUR ----------
 function hardRefresh(){
@@ -28832,7 +29217,7 @@ if($('btnHard'))$('btnHard').onclick=()=>{try{hardRefresh();}catch(e){faceEl.tex
 addEventListener('keydown',e=>{
   if((e.ctrlKey||e.metaKey)&&e.shiftKey&&(e.key==='R'||e.key==='r')){
     const t=e.target;if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return;
-    e.preventDefault();try{hardRefresh();}catch(err){}
+    e.preventDefault();try{regenTout();}catch(err){}
   }
 });
 if($('btnOccWasm'))$('btnOccWasm').onclick=()=>$('fileWasm').click();
@@ -28936,7 +29321,7 @@ window.addEventListener('pointerdown',e=>{if(!$('ctxMenu').contains(e.target))hi
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.33';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.35';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);
@@ -29356,7 +29741,9 @@ function runValidate(){
   // 4) FONCTIONS — rejeu complet, puis lecture des marques : _err (échec) et
   //    _m.m<_m.t (fonction dégradée : visage introuvable après modification amont).
   try{
-    if(!(typeof buildKeyUpToDate==='function'&&buildKeyUpToDate()))rebuild();
+    // 2026-10-15-009 : UN rejeu complet ici (caches jetés, convergence des projections,
+    // instances et faces porteuses) — la phase 5 n'en refait plus un second.
+    hardRefresh();
     const fsx=doc.features.filter(f=>f.type!=='repeat');
     const err=fsx.filter(f=>f._err);
     const miss=fsx.filter(f=>f._m&&f._m.t&&f._m.m<f._m.t);
@@ -29370,8 +29757,8 @@ function runValidate(){
   //    rejeu du modèle entier (le filet qui remet d'aplomb un état caché périmé).
   try{
     const eng=(typeof occtReady!=='undefined'&&occtReady)?'OCCT chargé':'repli maillage (OCCT absent)';
-    hardRefresh();rep++;
-    line(5,'✅','Moteur+caches — '+eng+' ; caches jetés + rejeu complet');
+    rep++;
+    line(5,'✅','Moteur+caches — '+eng+' ; caches jetés + rejeu complet (phase 4)');
   }catch(e){line(5,'❌','Moteur+caches — '+String((e&&e.message)||e));}
   // 6) CORPS+IMPORTS — fiche de corps manquante (ensureBodies), visibilités orphelines
   //    (bodyVis sans corps) et géométrie d'import dont la fonction a disparu.
@@ -29394,26 +29781,13 @@ function runValidate(){
   const txt='VALIDATION : '+(ok6+1)+'/7 phases OK — '+rep+' réparation(s)\n'+L.join('\n')+
     '\n7 ✅ Rapport — '+ok6+'/6 phases vertes, '+rep+' réparation(s) : écrit dans la zone Auto-tests';
   try{$('selfTest').textContent=txt;}catch(e){}
-  try{faceEl.textContent='✓ Valider : '+(ok6+1)+'/7 phases, '+rep+' réparation(s) — rapport dans Auto-tests.';}catch(e){}
+  try{faceEl.textContent='⟳ Régénération : '+(ok6+1)+'/7 phases, '+rep+' réparation(s) — rapport dans Auto-tests.';}catch(e){}
   try{log('Validation : '+(ok6+1)+'/7 OK, '+rep+' réparation(s)');}catch(e){}
   return txt;
 }
 
-// Bouton « ✓ Valider » : monté depuis le JS à côté de « 🧪 Auto-tests » (la coque HTML
-// n'est jamais éditée à la main — même régime que ↩ Annuler). Idempotent.
-(function(){
-  try{
-    if(typeof document==='undefined'||document.getElementById('btnValidate'))return;
-    const hote=document.getElementById('btnSelfTest');
-    if(!hote||!hote.parentNode)return;
-    const b=document.createElement('button');
-    b.id='btnValidate';
-    b.textContent='✓ Valider';
-    b.title='Valider le modèle : 7 phases diagnostic + réparation (document, répétitions, esquisses, fonctions, moteur, corps) — rapport dans Auto-tests';
-    b.onclick=()=>runValidate();
-    hote.parentNode.insertBefore(b,hote);
-  }catch(e){}
-})();
+// 2026-10-15-009 : plus de bouton « ✓ Valider » séparé — runValidate() EST l'action du
+// bouton unique « ⟳ Régénérer » (src/95), qui remplace Recalculer / Valider / Hard.
 
 /* ═══════════════ 99-init.js — init ═══════════════ */
 /* ---------- init ---------- */
