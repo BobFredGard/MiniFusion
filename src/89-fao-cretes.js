@@ -1026,6 +1026,28 @@ function* faoGenScallopIt(mesh,o){
     for(let i=0;i<=n;i++){R.push(P[i]);const sp=i<n?ins.get(i):null;if(sp)for(let q=0;q<sp.length;q++)R.push(sp[q]);}
     return R;
   };
+  // 2026-10-14-012 : CORDES CONFORMES — les points sont sur la surface outil,
+  // mais sur une zone convexe (flancs d'une bosse) la corde entre deux points
+  // à 0,4 mm passait SOUS la surface (jusqu'à 0,015 mm sur la pointe, 0,024 mm
+  // sur la pièce : creux vus en simulation). Chaque segment est contrôlé au
+  // quart, à la moitié et aux trois quarts ; il est recoupé tant qu'un point
+  // passe sous la descente outil de plus de 2 µm.
+  const conform=function(P){
+    if(!P||P.length<2)return P;
+    const out=[P[0]];
+    const zOf=function(x,y,zf){const z=drop.tip(x,y);return z>-1/0?z:zf;};
+    const seg=function(a,b,dep){
+      let bad=false;
+      for(let q=1;q<4&&!bad;q++){const t=q/4,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t;
+        if(zOf(x,y,-1/0)>a.z+(b.z-a.z)*t+0.002)bad=true;}
+      if(bad&&dep<6){const mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
+        const m={x:mx,y:my,z:Math.max(zOf(mx,my,(a.z+b.z)/2),(a.z+b.z)/2)};
+        seg(a,m,dep+1);seg(m,b,dep+1);return;}
+      out.push(b);
+    };
+    for(let i=1;i<P.length;i++)seg(P[i-1],P[i],0);
+    return out;
+  };
   loops.forEach(function(lp){
     let P=lp.pts.map(toolPt);
     // boucle fermée : dernier = premier exactement, puis lissage (sauf boucle
@@ -1044,7 +1066,7 @@ function* faoGenScallopIt(mesh,o){
           let z=zAt(x,y);if(!(z>-1/0))z=a.z+(b.z-a.z)*s/ns;Q.push({x:x,y:y,z:z});}}
       Q.push(b);
     }
-    lp.tp=simplify(Q,tol);
+    lp.tp=conform(simplify(Q,tol));
     let l=0;for(let i=1;i<lp.tp.length;i++)l+=Math.hypot(lp.tp[i].x-lp.tp[i-1].x,lp.tp[i].y-lp.tp[i-1].y,lp.tp[i].z-lp.tp[i-1].z);
     lp.len=l;
   });
@@ -1267,7 +1289,7 @@ function* faoGenScallopIt(mesh,o){
     tp=rotate(tp,si,0);
     const S=tp[0];
     const TS=tangentAt(tp,0);
-    const lin=leadIn(S,TS);
+    const lin=conform(leadIn(S,TS)); // cordes de l'arc contrôlées (2026-10-14-012)
     const sl=first?null:slide(cur,curT,S,TS);
     if(sl){
       for(let k=0;k<sl.length;k++)push({r:0,tr:1,x:sl[k].x,y:sl[k].y,z:sl[k].z});
@@ -1278,7 +1300,7 @@ function* faoGenScallopIt(mesh,o){
         first=false;
       }else{
         // sortie de la séquence précédente puis saut local
-        const lo=leadOut(cur,curT);
+        const lo=conform([cur].concat(leadOut(cur,curT))).slice(1);
         lo.forEach(function(p){push({r:0,ent:1,x:p.x,y:p.y,z:p.z});});
         const E=lo[lo.length-1];
         const H=hopZ(E,lin[0]);
@@ -1326,7 +1348,7 @@ function* faoGenScallopIt(mesh,o){
     yield moves;
   }
   if(cur){
-    const lo=leadOut(cur,curT);
+    const lo=conform([cur].concat(leadOut(cur,curT))).slice(1);
     lo.forEach(function(p){push({r:0,ent:1,x:p.x,y:p.y,z:p.z});});
     const E=lo[lo.length-1];
     if(E.z<secu)push({r:1,x:E.x,y:E.y,z:secu});

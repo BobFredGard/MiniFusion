@@ -48,7 +48,7 @@ const FIX=path.join(__dirname,'fixtures');
     "  for(let k=0;k<=n;k++){const x=a.x+(b.x-a.x)*k/n,y=a.y+(b.y-a.y)*k/n,z=a.z+(b.z-a.z)*k/n;",
     "    const g=dr.tip(x,y)-z;if(g>gouge){gouge=g;gx=[x,y,z];}}}",
     "p('cuvette : surcoupe max '+gouge.toFixed(4)+' mm'+(gx?' en '+gx.map(c=>c.toFixed(2)).join(','):''));",
-    "att(gouge<0.02,'cuvette : aucune surcoupe > 0,02 mm (vu '+gouge.toFixed(4)+')');",
+    "att(gouge<0.005,'cuvette : aucune surcoupe > 0,005 mm, cordes comprises (vu '+gouge.toFixed(4)+')');",
     // rapides : jamais sous la descente outil
     "let rbad=0;for(let i=1;i<mv.length;i++){const a=mv[i-1],b=mv[i];if(!b.r)continue;",
     "  const n=Math.max(1,Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)/0.5));",

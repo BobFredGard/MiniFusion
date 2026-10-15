@@ -4047,11 +4047,10 @@ function faoViewerStockCreate(){
           const mat=new THREE.MeshBasicMaterial({color:0xffd60a,transparent:true,opacity:.12,depthWrite:false});
           clone.traverse(function(o){ if(o.isMesh){ o.material=mat; o.raycast=function(){}; } });
           g.add(clone);
-          try{
-            const e=new THREE.LineSegments(new THREE.EdgesGeometry(b.mesh.geometry),
-              new THREE.LineBasicMaterial({color:0xffd60a}));
-            g.add(e);
-          }catch(e2){}
+          // 2026-10-14-012 : plus d'arêtes jaunes sur le brut-corps — EdgesGeometry
+          // (seuil 1°) traçait TOUTES les lignes de tessellation d'un STEP importé
+          // (surfaces courbes finement maillées) : « lignes jaunes qui polluent le
+          // résultat ». Le fantôme transparent suffit à situer le brut.
           return g;
         }
       }
