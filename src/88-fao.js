@@ -527,10 +527,12 @@ function faoToolSF(t,setup){
   const z=isFinite(+t.flutes)&&+t.flutes>0?Math.round(+t.flutes):2;
   const s=Math.max(1,Math.round(vc*1000/(Math.PI*D)));
   // Foret / foret à centrer : avance PAR TOUR (F = f × S), pas par dent.
-  const f=(t&&(t.kind==='drill'||t.kind==='spot'))?Math.max(1,Math.round(faoToolFr(t)*s)):Math.max(1,Math.round(fz*z*s));
+  // Taraud : F = PAS × S (imposé par le filet) — jamais une avance « au choix ».
+  const f=(t&&t.kind==='tap'&&+t.p>0)?Math.max(1,Math.round(+t.p*s))
+    :((t&&(t.kind==='drill'||t.kind==='spot'))?Math.max(1,Math.round(faoToolFr(t)*s)):Math.max(1,Math.round(fz*z*s)));
   return {s:s, f:f, plunge:Math.max(1,Math.round(f*faoPlungePct(setup)/100))};
 }
-function faoKindLabel(k){ return k==='ball'?'Boule':(k==='bull'?'Torique':(k==='drill'?'Foret':(k==='spot'?'Foret à centrer':'Cylindrique'))); }
+function faoKindLabel(k){ return k==='ball'?'Boule':(k==='bull'?'Torique':(k==='drill'?'Foret':(k==='spot'?'Foret à centrer':(k==='tap'?'Taraud':'Cylindrique')))); }
 function faoToolEffCr(t){
   // Rayon d'arête ENCORE CHARGEUT (mm) : ball = D/2 plein, bull = cornerR borné
   // à D/2, flat = 0 (bout plat) — la source de vérité de la forme de coupe.
@@ -3267,8 +3269,10 @@ function faoDrillCycle(op,job,oz){
   });
   const h0=holes[0];
   // compat : pts / RFP / DP / peck / span du 1er trou (anciens appelants, tests)
+  const tT=faoToolById(job,op.toolId);
   return {holes:holes,pts:plan.map(function(p){return [p.x,p.y];}),RTP:RTP,RFP:h0.RFP,SDIS:h0.SDIS,DP:h0.DP,
-    peck:h0.peck,span:h0.span,chip:cyc==='chip',dwell:dwell};
+    peck:h0.peck,span:h0.span,chip:cyc==='chip',dwell:dwell,
+    tap:cyc==='tap'?{p:(tT&&+tT.p>0)?+tT.p:1}:null};
 }
 // Post unifié : un seul corps de programme, dialecte réduit à la tête/pied + style de ligne.
 //  - Siemens 840D : lignes brutes, commentaires `;`, fin SUPA Z600 + parc machine
@@ -3389,6 +3393,18 @@ function faoPost(job,postId){
         (DC.holes||[]).forEach(function(H){
           const X='X'+faoFmtXYZ(+H.x-ox), Y='Y'+faoFmtXYZ(+H.y-oy);
           const DTB=DC.dwell>0?faoFmtXYZ(DC.dwell):'';
+          if(DC.tap){
+            // 2026-10-15-013 : TARAUDAGE RIGIDE (F = pas × S). Siemens : CYCLE84 avec
+            // PIT = pas (positif = filet à droite), SDAC=3 (M3 après cycle), SST = SST1 = S.
+            // Fagor 8065 : G84 rigide (R1) — syntaxe à valider sur la machine.
+            if(fag){
+              nc('G98 G84 '+X+' '+Y+' Z'+faoFmtXYZ(DC.RTP)+' I'+faoFmtXYZ(H.DP)+' K0 R1 F'+F);
+            }else{
+              nc('G0 '+X+' '+Y+' Z'+faoFmtXYZ(DC.RTP));
+              nc('CYCLE84('+faoFmtXYZ(DC.RTP)+', '+faoFmtXYZ(H.RFP)+', '+faoFmtXYZ(H.SDIS)+', '+faoFmtXYZ(H.DP)+', , '+DTB+', 3, , '+faoFmtXYZ(DC.tap.p)+', 0, '+SB+', '+SB+')');
+            }
+            return;
+          }
           if(fag){
             if(H.peck&&DC.chip){
               nc('G0 '+X+' '+Y+' Z'+faoFmtXYZ(DC.RTP));
@@ -5685,7 +5701,15 @@ function faoRenderTree(){
 function faoOpShortLabel(op){
   const n={facing:'Surfaçage',pocket:'Poche',contour:'Contour',drill:'Perçage',
     rough3d:'Ébauche 3D',geofinish:'Finition'}[op.type]||op.type;
-  if(op.type==='drill')return n+' ('+(op.pts||[]).length+')';
+  if(op.type==='drill'){
+    // 2026-10-15-013 : libellé selon le cycle et les trous (« Taraudage M8 (4) »).
+    if(op.src!=='model')return n+' ('+(op.pts||[]).length+')';
+    const H=op.holes||[],c=op.cycle||'drill';
+    const fr=function(v){return String(+(+v).toFixed(2)).replace('.',',');};
+    if(c==='spot')return 'Pointage ('+H.length+')';
+    if(c==='tap'){const h=H.find(function(x){return x.thread;});return 'Taraudage'+(h&&typeof holeThreadLabel==='function'?' '+holeThreadLabel(h.thread):'')+' ('+H.length+')';}
+    return n+(H.length?' Ø'+fr(H[0].d):'')+' ('+H.length+')';
+  }
   return n;
 }
 function faoSelectSetup(id){

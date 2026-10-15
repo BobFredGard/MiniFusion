@@ -211,7 +211,7 @@ function faoToolsElement(setup){
   iT.onchange=function(){faoSnapshot('nom d’outil');t.name=String(iT.value||t.name).slice(0,32);faoChanged();rerender();};pT.appendChild(iT);s1.appendChild(pT);
   const pK=document.createElement('label');pK.className='fao-tl-f';pK.innerHTML='<span>Type</span>';
   const sK=document.createElement('select');sK.className='fao-sel';
-  [['flat','Cylindrique'],['bull','Torique'],['ball','Boule'],['drill','Foret'],['spot','Foret à centrer']].forEach(function(o){const e=document.createElement('option');e.value=o[0];e.textContent=o[1];sK.appendChild(e);});
+  [['flat','Cylindrique'],['bull','Torique'],['ball','Boule'],['drill','Foret'],['spot','Foret à centrer'],['tap','Taraud']].forEach(function(o){const e=document.createElement('option');e.value=o[0];e.textContent=o[1];sK.appendChild(e);});
   sK.value=t.kind||'flat';
   sK.onchange=function(){faoSnapshot('type d’outil');t.kind=sK.value;if(t.kind==='ball')t.cornerR=t.d/2;else if(t.kind!=='bull')t.cornerR=0;
     if((t.kind==='drill'||t.kind==='spot')&&!(+t.ang>0))t.ang=t.kind==='spot'?90:118;faoChanged();rerender();};
@@ -225,6 +225,14 @@ function faoToolsElement(setup){
   const s2=sec('Géométrie (mm) — valeurs grisées = défaut calculé, à préciser');
   field(s2,'Ø coupe',t.d,false,function(v){set('d',Math.max(0.1,v),'Ø outil');if(t.kind==='ball')t.cornerR=t.d/2;},'Diamètre de coupe',0.1);
   if(t.kind==='bull')field(s2,'Rayon de coin',t.cornerR||0,false,function(v){set('cornerR',Math.min(v,t.d/2),'rayon de coin');},'Rayon du coin torique',0.1);
+  if(t.kind==='tap'){
+    const pT=document.createElement('label');pT.className='fao-tl-f';pT.innerHTML='<span>Filet</span>';
+    const sT=document.createElement('select');sT.className='fao-sel';
+    ISO_THREADS.forEach(function(q){for(let k=2;k<q.length;k++){const e=document.createElement('option');e.value=q[0]+'|'+q[k];e.textContent=q[0]+(k>2?('×'+q[k]):'')+' (pas '+q[k]+')';sT.appendChild(e);}});
+    sT.value=(t.size||'M8')+'|'+(t.p||1.25);
+    sT.onchange=function(){const q=sT.value.split('|');faoSnapshot('filet du taraud');t.size=q[0];t.p=+q[1];const T=isoThread(q[0]);if(T)t.d=T[1];t.name='Taraud '+holeThreadLabel({size:t.size,p:t.p});faoChanged();rerender();};
+    pT.appendChild(sT);s2.appendChild(pT);
+  }
   if(t.kind==='drill'||t.kind==='spot')field(s2,'Angle de pointe',faoToolAngle(t),!(+t.ang>0),function(v){set('ang',Math.min(179,Math.max(30,v)),'angle de pointe');},'Angle de pointe du foret (°) : 118 / 135 / 140 ; foret à centrer 90',1,'°');
   field(s2,'Dents',t.flutes||2,false,function(v){set('flutes',Math.max(1,Math.round(v)),'nombre de dents');},'Nombre de dents (sert au calcul de F = fz × z × S)',1);
   field(s2,'Long. de coupe Lc',g.lc.v,g.lc.def,function(v){set('lc',v,'longueur de coupe');},'Longueur de la partie coupante (hélices) depuis le bout',0.5);
@@ -239,7 +247,9 @@ function faoToolsElement(setup){
   const D=+t.d>0?+t.d:10,z=+t.flutes>0?Math.round(+t.flutes):2;
   field(s3,'Vc',t.vc||250,false,function(v){set('vc',v,'Vc');},'Vitesse de coupe (m/min) — S = Vc × 1000 / (π × Ø)',1,'m/min');
   field(s3,'S',sf.s,false,function(v){set('vc',+(v*Math.PI*D/1000).toFixed(2),'S (via Vc)');},'Vitesse de rotation (tr/min) — saisir S recalcule Vc',10,'tr/min');
-  if(t.kind==='drill'||t.kind==='spot'){
+  if(t.kind==='tap'){
+    const nt=document.createElement('span');nt.className='fao-meta';nt.textContent='F = pas × S = '+(t.p||'?')+' × '+sf.s+' = '+sf.f+' mm/min (imposée par le filet)';s3.appendChild(nt);
+  }else if(t.kind==='drill'||t.kind==='spot'){
     field(s3,'f par tour',faoToolFr(t),!(+t.fr>0),function(v){set('fr',v,'avance par tour');},'Avance par tour du foret (mm/tr) — F = f × S',0.005,'mm/tr');
     field(s3,'F perçage',sf.f,false,function(v){set('fr',+(v/sf.s).toFixed(4),'F (via f/tr)');},'Avance de perçage (mm/min) — saisir F recalcule f/tr',10,'mm/min');
   }else{

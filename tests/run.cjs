@@ -66,6 +66,7 @@ const SUITES = [
   "test_fao_outils",
   "test_fao_percage",
   "test_percage_3d",
+  "test_fao_taraudage",
   "test_aretes_import",
   "test_fao_chain_step",
   "test_precision_affichage",

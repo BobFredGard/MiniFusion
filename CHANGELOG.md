@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**240 versions**, de `2026-09-28b` à `2026-10-15-012` — la plus récente en bas,
+**241 versions**, de `2026-09-28b` à `2026-10-15-013` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3772,3 +3772,13 @@ Anciens documents : perçages en saisie XY inchangés (cotes, ordre, G-code). `C
 - **Lien FAO** : la reconnaissance des trous lit la fonction — « taraudé M8 (fonction Perçage) », « lamage (fonction Perçage) » affichés d'office ; pièce STEP : choix « Trou / Taraudé M… » par groupe (seulement les tailles dont le Ø de taraud correspond au Ø mesuré), rangé dans le posage, sans périmer aucun parcours. Un axe portant plusieurs tronçons (trou traversant une cavité) donne un trou par tronçon.
 - **Repli maillage** (avant le chargement du noyau) : une pointe conique de rayon nul corrompait le booléen BSP — la pièce disparaissait au profit des outils ; corrigé.
 Nouveau test `test_percage_3d` (noyau réel : 4 fonctions, sens auto, Ø de taraud, débouchant, M8 borgne à pointe, lamage CHC, fraisure Ø11 exacte, reconnaissance FAO, paramétrique, fins prochaine face / tout / face à travers une cavité interne, longueur filetée, panneau). Migration : `APP_VER` → `2026-10-15-012` ; badge **V0.1.36 → V0.1.37**.
+
+### `2026-10-15-013`
+
+**FAO : taraudage et gamme automatique de perçage.**
+
+- **Taraud** (bibliothèque) : type « Taraud », filet ISO (taille + pas, gros et fins) ; F = pas × S, imposée par le filet. Choisi ou CRÉÉ automatiquement à la taille du filet des trous sélectionnés.
+- **Cycle « Taraudage »** dans l'opération Perçage : CYCLE84 rigide sur Siemens (PIT = pas, SDAC = 3, SST = SST1 = S) ; G84 R1 sur Fagor 8065 (syntaxe à valider en atelier). Profondeur : longueur filetée de la fonction Perçage (effective, y compris « jusqu'à la face » / « prochaine face »), saisie dans l'opération, sinon (STEP) profondeur du trou − 2 pas pour un borgne, traversant pour un débouchant. Le filet des trous voyage avec eux (fonction Perçage reconnue, ou choix « Taraudé M… » d'un STEP) ; alerte si le taraud ne correspond pas au filet.
+- **Gamme** (bouton ⚙ Gamme, section Trous) : remplace l'opération par pointage (tous les Ø, foret à centrer) → un perçage par Ø (débourrage automatique au-delà de 4 × Ø, Q = Ø) → un taraudage par filet. Pointage d'un trou taraudé au Ø NOMINAL + 0,4 (entrée du taraud). Lamages signalés « à fraiser » (interpolation hélicoïdale : étape suivante), non percés.
+- **Libellés** des opérations de perçage : « Pointage (6) », « Perçage Ø6,75 (4) », « Taraudage M8 (4) » (arbre FAO, commentaires et #MSG du G-code).
+Nouveau test `test_fao_taraudage` (noyau réel : gamme complète, débourrage automatique, taraud M8 F = 1,25 × S, profondeur filetée, pointage nominal, CYCLE84 / G84, STEP marqué M10). Migration : `APP_VER` → `2026-10-15-013` ; badge **V0.1.37 → V0.1.38**.
