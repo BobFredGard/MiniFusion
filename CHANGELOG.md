@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**234 versions**, de `2026-09-28b` à `2026-10-15-006` — la plus récente en bas,
+**235 versions**, de `2026-09-28b` à `2026-10-15-007` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3711,3 +3711,13 @@ Trois causes. 1) Trait : les `LineSegments` WebGL font toujours 1 px → quads �
 **Sol miroir : reflet coupé sur les côtés (retour vidéo : « quand la pièce vient dans la zone des panneaux Arborescence et FAO, le miroir se déglingue »).**
 
 Vraie cause, et aussi celle des « fuyantes » du 003 : `updateMirror` orientait la caméra miroir avec `up = (0,0,1)` pris en repère LOCAL de la caméra — le Z-haut du monde confondu avec un axe local. Le haut local d'une caméra est toujours `(0,1,0)` (viewer_STEP et le Reflector de three le font ainsi). La caméra miroir partait donc en roulis : son cadre ne recouvrait plus l'écran et le reflet était tronqué sur les côtés (là où sont les panneaux), ou étiré avant la garde du 003. Mesuré sur « Poche et Contour », vue rasante : part du sol visible couverte par l'image de reflet 71 % → 100 %. Migration : `APP_VER` et `CACHE_VER` → `2026-10-15-006` ; badge **V0.1.30 → V0.1.31**.
+
+### `2026-10-15-007`
+
+**Esquisse consolidée, contrainte Colinéaire, nouveau jeu d'icônes (demande : « jeter un œil sur l'esquisse et ses règles, consolider, ajouter la contrainte Colinéaire, revoir tous les icônes qui se ressemblent tous »).**
+
+Consolidation : nouveau module `src/49-esquisse-registre-icones.js` — registre `SK_CON` (nom, icône, degrés de liberté retirés, liaison ligne-ligne) lu par le comptage des DDL, la liste du panneau, les pastilles du dessin et la recopie des liaisons lors d'une scission, d'un ajustement ou d'une sélection par propagation (ces listes étaient en dur et dispersées). Défauts corrigés au passage : l'AUDIT ignorait Parallèle et Perpendiculaire (jamais de ⚠ sur une ∥/⟂ violée, et le choix LM/relaxation par résidu d'audit ne la voyait pas) ; Tangence posée dans l'ordre « cercle puis ligne » ou entre 2 cercles non annulable ; ligne de libellé Symétrie en double ; la recopie de Symétrie sur un axe scindé perdait l'axe.
+
+Colinéaire (⫽, barre + menu contextuel 2 lignes) : 2 résidus (extrémités de B sur la droite de A) au solveur LM, relaxation symétrique (ligne figée → l'autre la rejoint), audit en mm, 2 DDL, dédoublonnage (une ∥ sur la même paire devient redondante et est purgée), refusée sur 2 lignes ⟂, recopiée sur les morceaux d'une ligne scindée/ajustée.
+
+Icônes : jeu SVG commun 24×24 au trait (33 icônes : 11 outils, 15 contraintes, 7 cotes), une forme distincte par fonction — fini ⦾ ◎ ⊕ ⌖ ⌾ quasi identiques. Utilisé par la barre d'esquisse (outils en blanc, contraintes en vert, séparateurs de groupes), le menu contextuel, les listes Contraintes/Cotes, et les pastilles posées sur le dessin (remplacent les lettres vertes H V ∥ ⟂ ⇔ = ◎). Nouveau test `test_esquisse_colineaire` (20 vérifications) + Colinéaire ajoutée à la réparation libre et à l'aller-retour JSON intégré (15 types). Migration : `APP_VER` et `CACHE_VER` → `2026-10-15-007` ; badge **V0.1.31 → V0.1.32**.

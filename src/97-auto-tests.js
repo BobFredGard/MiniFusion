@@ -42,10 +42,10 @@ function runSelfTests(){
   T('Congé R5 ×4 coins',()=>{const r=applyFilletsToSketch(rect(),[{corners:[{x:40,y:0},{x:0,y:0},{x:0,y:20},{x:40,y:20}],radius:5}]);
     if(r.applied!==4)return 'applied='+r.applied+' '+r.warnings.join(';');
     const tr=skLoopTrace(r.sk);return tr.solids.length===1?null:`solides=${tr.solids.length}`;});
-  T('Persistance : round-trip JSON garde les 14 types de contraintes',()=>{
+  T('Persistance : round-trip JSON garde les 15 types de contraintes',()=>{
     const s={points:{p1:{x:0,y:0},p2:{x:40,y:0},p3:{x:40,y:20},p5:{x:50,y:50},p6:{x:60,y:50},p7:{x:70,y:50},pc:{x:20,y:30},pc2:{x:20,y:40},pa:{x:15,y:40},pb:{x:25,y:40}},
       entities:[{id:'a',t:'line',p1:'p1',p2:'p2'},{id:'b',t:'line',p1:'p2',p2:'p3'},{id:'g',t:'line',p1:'p5',p2:'p6'},{id:'h2',t:'line',p1:'p6',p2:'p7'},{id:'e',t:'circle',pc:'pc',r:8},{id:'f',t:'arc',pc:'pc2',pa:'pa',pb:'pb',r:5}],
-      constraints:[{id:'k01',type:'h',line:'a'},{id:'k02',type:'v',line:'b'},{id:'k03',type:'parallel',a:'a',b:'h2'},{id:'k04',type:'perpendicular',a:'g',b:'h2'},{id:'k05',type:'equal',a:'a',b:'b'},{id:'k06',type:'fix',p:'p1'},{id:'k07',type:'fix',ent:'e'},{id:'k08',type:'tangent',line:'a',ent:'e'},{id:'k09',type:'tangent',line:'b',ent:'f'},{id:'k10',type:'tangent2',a:'e',b:'f'},{id:'k11',type:'coaxial',a:'e',b:'f'},{id:'k12',type:'symmetric',a:'a',b:'b',mid:'g'},{id:'k13',type:'coincident',a:'p1',b:'p5'},{id:'k14',type:'oncircle',p:'p7',ent:'e'},{id:'k15',type:'online',p:'p5',line:'b'},{id:'k16',type:'midpoint',p:'p5',line:'b'},{id:'k17',type:'midpoint',a:'a',b:'b'}],
+      constraints:[{id:'k01',type:'h',line:'a'},{id:'k02',type:'v',line:'b'},{id:'k03',type:'parallel',a:'a',b:'h2'},{id:'k03b',type:'collinear',a:'g',b:'b'},{id:'k04',type:'perpendicular',a:'g',b:'h2'},{id:'k05',type:'equal',a:'a',b:'b'},{id:'k06',type:'fix',p:'p1'},{id:'k07',type:'fix',ent:'e'},{id:'k08',type:'tangent',line:'a',ent:'e'},{id:'k09',type:'tangent',line:'b',ent:'f'},{id:'k10',type:'tangent2',a:'e',b:'f'},{id:'k11',type:'coaxial',a:'e',b:'f'},{id:'k12',type:'symmetric',a:'a',b:'b',mid:'g'},{id:'k13',type:'coincident',a:'p1',b:'p5'},{id:'k14',type:'oncircle',p:'p7',ent:'e'},{id:'k15',type:'online',p:'p5',line:'b'},{id:'k16',type:'midpoint',p:'p5',line:'b'},{id:'k17',type:'midpoint',a:'a',b:'b'}],
       dims:[{id:'d1',type:'length',line:'a',value:40,ox:0,oy:0},{id:'d2',type:'radius',ent:'e',value:8,ox:0,oy:0}],seq:200};
     const n0=s.constraints.length,nD=s.dims.length;
     const back=JSON.parse(JSON.stringify(s));
@@ -53,7 +53,7 @@ function runSelfTests(){
     if(back.constraints.length!==n0)return 'contraintes '+n0+'→'+back.constraints.length;
     if(back.dims.length!==nD)return 'cotes '+nD+'→'+back.dims.length;
     const types=new Set(back.constraints.map(c=>c.type));
-    const manque=['h','v','parallel','perpendicular','equal','fix','tangent','tangent2','coaxial','symmetric','coincident','oncircle','online','midpoint'].filter(t=>!types.has(t));
+    const manque=['h','v','parallel','perpendicular','collinear','equal','fix','tangent','tangent2','coaxial','symmetric','coincident','oncircle','online','midpoint'].filter(t=>!types.has(t));
     return manque.length?'types perdus : '+manque.join(','):null;});
   T('⟂ implicite H×V non ajoutée à la création (mais ⟂ vraie si)',()=>{
     const keepE=skEdit,keepU=skUndoStack,keepR=skRedoStack,keepC=skChain,keepI=skInfer;

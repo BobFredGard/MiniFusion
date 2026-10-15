@@ -42,6 +42,8 @@ const {loadApp}=require('./appvm.cjs');
 'torture("│ Vertical",mkSk(B,[L("l","a","b")],[{id:"k",type:"v",line:"l"}]));',
 'torture("∥ Parallèle",mkSk(B,[L("l1","a","b"),L("l2","c","d")],[{id:"k",type:"parallel",a:"l1",b:"l2"}]));',
 'torture("⟂ Perpendiculaire",mkSk(B,[L("l1","a","b"),L("l2","c","d")],[{id:"k",type:"perpendicular",a:"l1",b:"l2"}]));',
+'torture("⫽ Colinéaire",mkSk(B,[L("l1","a","b"),L("l2","c","d")],[{id:"k",type:"collinear",a:"l1",b:"l2"}]));',
+'torture("⫽ Colinéaire (1 ligne figée)",mkSk(B,[L("l1","a","b"),L("l2","c","d")],[{id:"f1",type:"fix",p:"a"},{id:"f2",type:"fix",p:"b"},{id:"k",type:"collinear",a:"l1",b:"l2"}]));',
 'torture("＝ Égal (lignes)",mkSk(B,[L("l1","a","b"),L("l2","c","d")],[{id:"k",type:"equal",a:"l1",b:"l2"}]));',
 'torture("＝ Égal (cercles)",mkSk({O:{x:0,y:0},c1:{x:-30,y:0},c2:{x:30,y:0}},',
 '  [{id:"e1",t:"circle",pc:"c1",r:5},{id:"e2",t:"circle",pc:"c2",r:12}],[{id:"k",type:"equal",a:"e1",b:"e2"}]));',

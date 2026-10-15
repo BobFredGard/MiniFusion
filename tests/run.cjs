@@ -60,6 +60,7 @@ const SUITES = [
   "test_corps_style",
   "test_import_vie",
   "test_import_persist",
+  "test_esquisse_colineaire",
   "test_aretes_import",
   "test_fao_chain_step",
   "test_precision_affichage",

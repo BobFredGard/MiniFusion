@@ -732,7 +732,7 @@ function skConKey(c){
     case 'fix': return 'fix@'+(c.p!=null?('p:'+c.p):('ent:'+c.ent));
     case 'tangent': return 'tangent@'+c.line+'|'+c.ent;
     case 'tangent2': return 'tangent2@'+pair(c.a,c.b);
-    case 'parallel': case 'perpendicular': case 'equal': return c.type+'@'+pair(c.a,c.b);
+    case 'parallel': case 'perpendicular': case 'equal': case 'collinear': return c.type+'@'+pair(c.a,c.b);
     case 'symmetric': return 'symmetric@'+pair(c.a,c.b)+'|'+c.mid;
     case 'coaxial': return 'coaxial@'+pair(c.a,c.b);
     case 'coincident': return 'coincident@'+pair(c.a,c.b);
@@ -746,8 +746,11 @@ function skDedupConstraints(sk){
   // Purge les doublons exacts + les ⟂ implicites par ─/│ (même règle qu'à la
   // création). Appelée par cleanupSk : toute édition ré-équilibre la liste.
   const seen=new Set(),out=[];
+  const coll=new Set((sk.constraints||[]).filter(c=>c&&c.type==='collinear').map(c=>[String(c.a),String(c.b)].sort().join('|')));
   (sk.constraints||[]).forEach(c=>{
     if(c.type==='perpendicular'&&skPerpImplied(sk,c.a,c.b))return;
+    // Colinéaire ⇒ parallèle : la ∥ sur la même paire ne ferait que sur-contraindre.
+    if(c.type==='parallel'&&coll.has([String(c.a),String(c.b)].sort().join('|')))return;
     const k=skConKey(c);
     if(seen.has(k))return;
     seen.add(k);out.push(c);
@@ -1085,6 +1088,22 @@ function solveSketchRelax(sk,iters,anchor){
         else if(!aF){CA.x+=ux*err*0.5;CA.y+=uy*err*0.5;}
         else if(!bF){CB.x-=ux*err*0.5;CB.y-=uy*err*0.5;}
       }
+      if(c.type==='collinear'){ // 2 lignes sur la MÊME droite : chaque extrémité libre rejoint la droite de l'autre
+        const la=entById(sk,c.a),lb=entById(sk,c.b);
+        if(!la||!lb||la.t!=='line'||lb.t!=='line')return;
+        const A1=P[la.p1],A2=P[la.p2],B1=P[lb.p1],B2=P[lb.p2];if(!A1||!A2||!B1||!B2)return;
+        const aFL=fix.has(la.p1)&&fix.has(la.p2),bFL=fix.has(lb.p1)&&fix.has(lb.p2);
+        if(aFL&&bFL)return;
+        const toward=(Q,qid,U1,U2,k)=>{ // pied de Q sur la droite (U1,U2), fraction k
+          if(fix.has(qid))return;
+          const dx=U2.x-U1.x,dy=U2.y-U1.y,L2=dx*dx+dy*dy;if(L2<1e-12)return;
+          const t=((Q.x-U1.x)*dx+(Q.y-U1.y)*dy)/L2;
+          Q.x+=(U1.x+t*dx-Q.x)*k;Q.y+=(U1.y+t*dy-Q.y)*k;
+        };
+        const kb=aFL?1:(bFL?0:0.5),ka=bFL?1:(aFL?0:0.5);
+        if(kb>0){toward(B1,lb.p1,A1,A2,kb*0.5);toward(B2,lb.p2,A1,A2,kb*0.5);}
+        if(ka>0){toward(A1,la.p1,B1,B2,ka*0.5);toward(A2,la.p2,B1,B2,ka*0.5);}
+      }
       if(c.type==='coaxial'){ // mêmes centres (concentriques) : rapprochement vers le milieu
         const A=entById(sk,c.a),B=entById(sk,c.b);if(!A||!B)return;
         if((A.t!=='circle'&&A.t!=='arc')||(B.t!=='circle'&&B.t!=='arc'))return;
@@ -1208,6 +1227,12 @@ function sklsCollect(sk,out,B){
       const A=entById(sk,c.a),B=entById(sk,c.b);
       if(A&&B&&A.t==='line'&&B.t==='line'){const va=vec(A),vb=vec(B);
         if(va&&vb){if(c.type==='parallel')push((va.ux*vb.uy-va.uy*vb.ux));else push((va.ux*vb.ux+va.uy*vb.uy));}}
+    }
+    if(c.type==='collinear'){ // 2 résidus : extrémités de B sur la droite portée par A (mm)
+      const A=entById(sk,c.a),B=entById(sk,c.b);
+      if(A&&B&&A.t==='line'&&B.t==='line'){const va=vec(A),A1=P[A.p1],B1=P[B.p1],B2=P[B.p2];
+        if(va&&A1&&B1&&B2){const nx=-va.uy,ny=va.ux;
+          push((B1.x-A1.x)*nx+(B1.y-A1.y)*ny);push((B2.x-A1.x)*nx+(B2.y-A1.y)*ny);}}
     }
     if(c.type==='equal'){
       const A=entById(sk,c.a),B=entById(sk,c.b);
@@ -1519,7 +1544,7 @@ function lineConstrsOf(sk,id){ // toutes les contraintes « dédiées » à la l
   return (sk.constraints||[]).filter(c=>{
     if(!c)return false;
     if(c.type==='h'||c.type==='v'||c.type==='tangent')return c.line===id;
-    if(c.type==='parallel'||c.type==='perpendicular'||c.type==='symmetric')return c.a===id||c.b===id;
+    if(skPairLineType(c.type))return c.a===id||c.b===id||(c.type==='symmetric'&&c.mid===id);
     if(c.type==='midpoint')return c.line===id||c.a===id||c.b===id;
     if(c.type==='fix')return c.ent===id;
     return false;
@@ -1550,10 +1575,10 @@ function cloneLineConstraints(sk,oldId,newIds,drop){
       }else if(c.type==='fix'){
         if(!(sk.constraints||[]).some(x=>x.type==='fix'&&x.ent===nid))
           sk.constraints.push({id:skNewEid(sk),type:'fix',ent:nid});
-      }else if(c.type==='parallel'||c.type==='perpendicular'||c.type==='symmetric'){
-        const a=(c.a===oldId)?nid:c.a,b=(c.b===oldId)?nid:c.b;
-        if(a!==b&&!(sk.constraints||[]).some(x=>x.type===c.type&&((x.a===a&&x.b===b)||(c.type!=='parallel'&&x.a===b&&x.b===a))))
-          sk.constraints.push({id:skNewEid(sk),type:c.type,a,b});
+      }else if(skPairLineType(c.type)){
+        const a=(c.a===oldId)?nid:c.a,b=(c.b===oldId)?nid:c.b,mid=(c.mid===oldId)?nid:c.mid;
+        if(a!==b&&a!==mid&&b!==mid&&!(sk.constraints||[]).some(x=>x.type===c.type&&x.mid===c.mid&&((x.a===a&&x.b===b)||(c.type!=='parallel'&&x.a===b&&x.b===a))))
+          sk.constraints.push(Object.assign({id:skNewEid(sk),type:c.type,a,b},c.mid?{mid}:{}));
       }
     });
   });
@@ -2154,6 +2179,16 @@ function drawSketch2D(){
     });
     return out;
   };
+  // Pastilles de contraintes (2026-10-15-007) : même icône que la barre d'outils,
+  // posées côte à côte — remplacent les lettres/glyphes verts (H V ∥ ⟂ ⇔ = ◎).
+  const badges=(names,sx,sy)=>{
+    names.forEach((nmI,i)=>{
+      const g=skEl('g',{transform:'translate('+(sx+i*17)+','+(sy-8)+')',class:'skbadge'});
+      skEl('rect',{x:0,y:0,width:16,height:16,rx:4,fill:'#16261b',stroke:'#30d158','stroke-width':1},g);
+      const ic=skEl('g',{transform:'translate(2,2) scale(0.5)',fill:'none',stroke:'#30d158','stroke-width':2.4,'stroke-linecap':'round','stroke-linejoin':'round',color:'#30d158'},g);
+      try{ic.innerHTML=SK_ICONS[nmI]||'';}catch(e){}
+    });
+  };
   const drawT=(q)=>{const[tx,ty]=w2s(q.x,q.y);
     const g=skEl('text',{x:tx+6,y:ty-6,fill:'#30d158','font-size':12,'font-weight':'bold'});g.textContent='T';};
   (sk.entities||[]).forEach(e=>{
@@ -2164,10 +2199,17 @@ function drawSketch2D(){
       const hv=(sk.constraints||[]).filter(k=>(k.type==='h'||k.type==='v')&&k.line===e.id).map(k=>k.type.toUpperCase()).join('');
       const eq=(sk.constraints||[]).some(k=>k.type==='equal'&&(k.a===e.id||k.b===e.id));
       const tgL=(sk.constraints||[]).filter(k=>k.type==='tangent'&&k.line===e.id);
-      const pp=(sk.constraints||[]).filter(k=>(k.type==='parallel'||k.type==='perpendicular')&&(k.a===e.id||k.b===e.id)).map(k=>k.type==='parallel'?'∥':'⟂').join('');
-      const sy=(sk.constraints||[]).some(k=>k.type==='symmetric'&&(k.a===e.id||k.b===e.id||k.mid===e.id));
-      if(hv||eq||tgL.length||pp||sy){const[mx,my]=w2s((A.x+B.x)/2,(A.y+B.y)/2);
-        const t=skEl('text',{x:mx+8,y:my-8,fill:'#30d158','font-size':12,'font-weight':'bold'});t.textContent=hv+pp+(sy?'⇔':'')+(eq?'=':'');}
+      const nmB=[];
+      (sk.constraints||[]).forEach(k=>{
+        if((k.type==='h'||k.type==='v')&&k.line===e.id)nmB.push(k.type);
+        else if((k.type==='parallel'||k.type==='perpendicular'||k.type==='collinear')&&(k.a===e.id||k.b===e.id))nmB.push(k.type);
+        else if(k.type==='symmetric'&&(k.a===e.id||k.b===e.id||k.mid===e.id))nmB.push('symmetric');
+        else if(k.type==='midpoint'&&(k.line===e.id||k.a===e.id||k.b===e.id))nmB.push('midpoint');
+        else if(k.type==='fix'&&k.ent===e.id)nmB.push('fix');
+      });
+      if(eq)nmB.push('equal');
+      if(nmB.length){const[mx,my]=w2s((A.x+B.x)/2,(A.y+B.y)/2);
+        badges(Array.from(new Set(nmB)),mx+8,my-10);}
       // sigle T par tangence sur la ligne, au point de contact (l'autre sigle est sur le cercle/arc)
       if(tgL.length){const ddx=B.x-A.x,ddy=B.y-A.y,l2=ddx*ddx+ddy*ddy;
         tgL.forEach(k=>{const E=entById(sk,k.ent),Cc=E?P[E.pc]:null;if(!Cc||l2<1e-12)return;
@@ -2178,8 +2220,8 @@ function drawSketch2D(){
       skEl('circle',{cx:a,cy:b,r:Math.abs(e.r)*skView.s,fill:e.construction?'none':'rgba(100,210,255,.07)',stroke:col(e),'stroke-width':wdt(e),...(e.construction?{'stroke-dasharray':'7 5',opacity:.45}:{})});
       const[px,py]=w2s(C.x,C.y);skEl('rect',{x:px-3,y:py-3,width:6,height:6,fill:fix.has(e.pc)?'#e8e8ea':'none',stroke:col(e)});
       tangT(e,C).forEach(drawT); // T au point de contact (un par tangence), pas au centre
-      if((sk.constraints||[]).some(k=>k.type==='coaxial'&&(k.a===e.id||k.b===e.id))){
-        const t=skEl('text',{x:px+7,y:py-7,fill:'#30d158','font-size':12,'font-weight':'bold'});t.textContent='◎';}
+      const cB=[];(sk.constraints||[]).forEach(k=>{if(k.type==='coaxial'&&(k.a===e.id||k.b===e.id))cB.push('coaxial');else if(k.type==='equal'&&(k.a===e.id||k.b===e.id))cB.push('equal');else if(k.type==='fix'&&k.ent===e.id)cB.push('fix');});
+      if(cB.length)badges(Array.from(new Set(cB)),px+8,py-10);
     }
     if(e.t==='arc'){const C=P[e.pc];if(!C)return;const an=arcAngles(sk,e);if(!an)return;
       const p1={x:C.x+e.r*Math.cos(an.a1),y:C.y+e.r*Math.sin(an.a1)},p2={x:C.x+e.r*Math.cos(an.a2),y:C.y+e.r*Math.sin(an.a2)};
@@ -2188,8 +2230,8 @@ function drawSketch2D(){
       skEl('path',{d:`M ${a} ${b} A ${e.r*skView.s} ${e.r*skView.s} 0 ${dd>Math.PI?1:0} 0 ${c} ${d}`,fill:'none',stroke:col(e),'stroke-width':wdt(e),...(e.construction?{'stroke-dasharray':'7 5',opacity:.45}:{})});
       const[px,py]=w2s(C.x,C.y);skEl('rect',{x:px-3,y:py-3,width:6,height:6,fill:'none',stroke:col(e)});
       tangT(e,C).forEach(drawT); // T au point de contact (un par tangence)
-      if((sk.constraints||[]).some(k=>k.type==='coaxial'&&(k.a===e.id||k.b===e.id))){
-        const t=skEl('text',{x:px+7,y:py-7,fill:'#30d158','font-size':12,'font-weight':'bold'});t.textContent='◎';}
+      const aB=[];(sk.constraints||[]).forEach(k=>{if(k.type==='coaxial'&&(k.a===e.id||k.b===e.id))aB.push('coaxial');else if(k.type==='equal'&&(k.a===e.id||k.b===e.id))aB.push('equal');else if(k.type==='fix'&&k.ent===e.id)aB.push('fix');});
+      if(aB.length)badges(Array.from(new Set(aB)),px+8,py-10);
     }
     if(e.t==='cpoint'){const Q=P[e.p];if(!Q)return;const[a,b]=w2s(Q.x,Q.y);
       skEl('path',{d:`M ${a-6} ${b} H ${a+6} M ${a} ${b-6} V ${b+6}`,stroke:col(e),'stroke-width':wdt(e)});}
@@ -2637,32 +2679,29 @@ function skDefaultStatus(){
   return s;
 }
 function conDesc(sk,c){
+  // Texte SANS glyphe : l'icône (registre SK_CON) est posée à côté par la liste.
   const nm=id=>{const e=entById(sk,id);return e?({line:'ligne',circle:'cercle',arc:'arc',cpoint:'point'}[e.t]||'?')+'…'+String(id).slice(-3):'?';};
-  if(c.type==='h')return'─ Horizontal '+nm(c.line);
-  if(c.type==='v')return'│ Vertical '+nm(c.line);
-  if(c.type==='parallel')return'∥ Parallèle '+nm(c.a)+' / '+nm(c.b);
-  if(c.type==='perpendicular')return'⟂ Perpendiculaire '+nm(c.a)+' / '+nm(c.b);
-  if(c.type==='equal')return'＝ Égal '+nm(c.a)+' / '+nm(c.b);
-  if(c.type==='fix')return'📌 Fixe '+(c.p?('pt…'+String(c.p).slice(-3)):nm(c.ent));
-  if(c.type==='tangent')return'⦾ Tangent '+nm(c.line)+' / '+nm(c.ent);
-  if(c.type==='tangent2')return'⦾ Tangent '+nm(c.a)+' / '+nm(c.b);
-  if(c.type==='coaxial')return'◎ Coaxial '+nm(c.a)+' / '+nm(c.b);
-  if(c.type==='symmetric')return'⇔ Symétrie '+nm(c.a)+' / '+nm(c.b)+' | '+nm(c.mid);
-  if(c.type==='symmetric')return'⇔ Symétrie '+nm(c.a)+' / '+nm(c.b)+' Δ '+nm(c.mid);
-  if(c.type==='coincident')return'⌾ Coïncident pt…'+String(c.a).slice(-3)+' / pt…'+String(c.b).slice(-3)+(c.a===SK_ORIGIN||c.b===SK_ORIGIN?' (origine)':'');
-  if(c.type==='oncircle')return'⊙ Point sur '+nm(c.ent)+' pt…'+String(c.p).slice(-3);
-  if(c.type==='online')return'∈ Point sur '+nm(c.line)+' pt…'+String(c.p).slice(-3);
-  if(c.type==='midpoint')return c.p?('⊕ Milieu pt…'+String(c.p).slice(-3)+' au centre de '+nm(c.line)):('⊕ Milieux égaux '+nm(c.a)+' / '+nm(c.b));
-  return c.type;
+  const pt=id=>'pt…'+String(id).slice(-3);
+  const R=SK_CON[c.type],N=R?R.nom:c.type;
+  if(c.type==='h'||c.type==='v')return N+' '+nm(c.line);
+  if(c.type==='fix')return N+' '+(c.p?pt(c.p):nm(c.ent));
+  if(c.type==='tangent')return N+' '+nm(c.line)+' / '+nm(c.ent);
+  if(c.type==='symmetric')return N+' '+nm(c.a)+' / '+nm(c.b)+' | axe '+nm(c.mid);
+  if(c.type==='coincident')return N+' '+pt(c.a)+' / '+pt(c.b)+(c.a===SK_ORIGIN||c.b===SK_ORIGIN?' (origine)':'');
+  if(c.type==='oncircle')return 'Point '+pt(c.p)+' sur '+nm(c.ent);
+  if(c.type==='online')return 'Point '+pt(c.p)+' sur '+nm(c.line);
+  if(c.type==='midpoint')return c.p?('Milieu : '+pt(c.p)+' au centre de '+nm(c.line)):('Milieux égaux '+nm(c.a)+' / '+nm(c.b));
+  if(c.a&&c.b)return N+' '+nm(c.a)+' / '+nm(c.b);
+  return N;
 }
 function dimDesc(sk,d){
-  if(d.type==='length')return'⟷ Longueur = '+d.value.toFixed(2);
-  if(d.type==='distance')return'⟷ Distance = '+d.value.toFixed(2);
+  if(d.type==='length')return'Longueur = '+d.value.toFixed(2);
+  if(d.type==='distance')return'Distance = '+d.value.toFixed(2);
   if(d.type==='diameter')return'Ø = '+d.value.toFixed(2);
   if(d.type==='radius')return'R = '+d.value.toFixed(2);
-  if(d.type==='angle')return'∠ = '+(d.value*180/Math.PI).toFixed(1)+'°';
-  if(d.type==='gap')return'⇔ entraxe = '+d.value.toFixed(2);
-  if(d.type==='distline')return'⟂ centre↔ligne = '+d.value.toFixed(2);
+  if(d.type==='angle')return'Angle = '+(d.value*180/Math.PI).toFixed(1)+'°';
+  if(d.type==='gap')return'Entraxe = '+d.value.toFixed(2);
+  if(d.type==='distline')return'Point ↔ ligne = '+d.value.toFixed(2);
   return d.type;
 }
 function renderSkPanel(){
@@ -2724,7 +2763,8 @@ function renderSkPanel(){
     const d=document.createElement('div');d.className='li'+(skSel&&skSel.kind==='con'&&skSel.id===c.id?' sel':'');
     const wA=((sk._audit||{}).all||[]).find(o=>o.id===c.id);
     const bad=wA&&wA.viol>0.05;
-    const s=document.createElement('span');s.textContent=conDesc(sk,c)+(bad?`  ⚠±${wA.viol.toFixed(2)}`:'');d.appendChild(s);
+    const ic=document.createElement('span');ic.className='skli-ic';ic.innerHTML=skIcon((SK_CON[c.type]||{}).ic||'fix',15);d.appendChild(ic);
+    const s=document.createElement('span');s.textContent=conDesc(sk,c)+(bad?`  ⚠±${wA.viol.toFixed(2)}`:'');s.style.flex='1';d.appendChild(s);
     if(bad)d.style.borderColor='#ff453a';
     const x=document.createElement('span');x.className='x';x.textContent='✕';x.title='Retirer';
     x.onclick=ev=>{ev.stopPropagation();skPushUndo();sk.constraints=sk.constraints.filter(k=>k.id!==c.id);if(skSel&&skSel.id===c.id)skSel=null;solveSketch(sk);drawSketch2D();renderSkPanel();};
@@ -2737,6 +2777,7 @@ function renderSkPanel(){
     const r=document.createElement('div');r.className='li'+(skSel&&skSel.kind==='dim'&&skSel.id===d.id?' sel':'');
     const wD=((sk._audit||{}).all||[]).find(o=>o.id===d.id);
     const badD=wD&&wD.viol>0.05;
+    const icD=document.createElement('span');icD.className='skli-ic';icD.innerHTML=skIcon(SK_DIM_IC[d.type]||'dim',15);r.appendChild(icD);
     const s=document.createElement('span');s.textContent=dimDesc(sk,d)+(badD?`  ⚠±${wD.viol.toFixed(2)}`:'');s.style.flex='1';r.appendChild(s);
     if(badD)r.style.borderColor='#ff453a';
     const x=document.createElement('span');x.className='x';x.textContent='✕';x.title='Retirer';
@@ -2783,8 +2824,8 @@ function applyCon(type){
     if(ents.length!==2){skStatus('Tangence : sélectionnez 1 ligne + 1 cercle/arc (ou 2 cercles).');return;}
     const[a,b]=ents,isL=e=>e.t==='line',isC=e=>e.t==='circle'||e.t==='arc';
     if(isL(a)&&isC(b)){skPushUndo();sk.constraints.push({id:skNewEid(sk),type:'tangent',line:a.id,ent:b.id});skPinTangent(sk,a.id,b.id);}
-    else if(isL(b)&&isC(a)){sk.constraints.push({id:skNewEid(sk),type:'tangent',line:b.id,ent:a.id});skPinTangent(sk,b.id,a.id);}
-    else if(isC(a)&&isC(b))sk.constraints.push({id:skNewEid(sk),type:'tangent2',a:a.id,b:b.id});
+    else if(isL(b)&&isC(a)){skPushUndo();sk.constraints.push({id:skNewEid(sk),type:'tangent',line:b.id,ent:a.id});skPinTangent(sk,b.id,a.id);}
+    else if(isC(a)&&isC(b)){skPushUndo();sk.constraints.push({id:skNewEid(sk),type:'tangent2',a:a.id,b:b.id});}
     else{skStatus('Tangence : ligne↔cercle ou cercle↔cercle uniquement.');return;}
   }
   if(type==='coaxial'){
@@ -2806,6 +2847,19 @@ function applyCon(type){
     if(type==='perpendicular'&&skPerpImplied(sk,a,b)){skStatus('⟂ implicite par ─/│ : non ajoutée (déjà acquise).');return;}
     skPushUndo();
     sk.constraints.push({id:skNewEid(sk),type:type,a:lines[0].id,b:lines[1].id});
+  }
+  if(type==='collinear'){
+    if(lines.length!==2){skStatus('Colinéaire : sélectionnez exactement 2 lignes.');return;}
+    const[a,b]=lines;
+    if(a.id===b.id){skStatus('Colinéaire : 2 lignes distinctes.');return;}
+    if((sk.constraints||[]).some(c=>c.type==='collinear'&&((c.a===a.id&&c.b===b.id)||(c.a===b.id&&c.b===a.id)))){skStatus('Colinéaire déjà posée.');return;}
+    if((sk.constraints||[]).some(c=>c.type==='perpendicular'&&((c.a===a.id&&c.b===b.id)||(c.a===b.id&&c.b===a.id)))){skStatus('Colinéaire impossible : ces lignes sont perpendiculaires (⟂ posée).');return;}
+    skPushUndo();
+    sk.constraints.push({id:skNewEid(sk),type:'collinear',a:a.id,b:b.id});
+    sk.constraints=skDedupConstraints(sk); // la ∥ éventuelle sur cette paire devient redondante
+    skMsg='';solveSketch(sk);drawSketch2D();renderSkPanel();
+    skStatus('Colinéaire — les 2 lignes portées par la même droite.');
+    return;
   }
   if(type==='symmetric'){
     if(lines.length!==3){skStatus('Symétrie : sélectionnez 3 lignes — 2 à symétriser + l’axe en dernier (ex : clic axe en dernier).');return;}
@@ -2913,6 +2967,21 @@ function skAudit(sk){
   });
   (sk.constraints||[]).forEach(c=>{
     if(c.type==='h'||c.type==='v'){const l=entById(sk,c.line);if(l&&l.t==='line'){const A=P[l.p1],B=P[l.p2];if(A&&B)push(c.id,c.type,Math.abs(c.type==='h'?A.y-B.y:A.x-B.x));}}
+    if(c.type==='parallel'||c.type==='perpendicular'||c.type==='collinear'){
+      // ABSENTS de l'audit jusqu'au 2026-10-15-007 : une ∥/⟂ violée n'était jamais
+      // signalée ⚠, et le choix LM/relaxation (meilleur résidu d'audit) l'ignorait.
+      const A=entById(sk,c.a),B=entById(sk,c.b);
+      if(A&&B&&A.t==='line'&&B.t==='line'){const A1=P[A.p1],A2=P[A.p2],B1=P[B.p1],B2=P[B.p2];
+        if(A1&&A2&&B1&&B2){
+          const ax=A2.x-A1.x,ay=A2.y-A1.y,La=Math.hypot(ax,ay),bx=B2.x-B1.x,by=B2.y-B1.y,Lb=Math.hypot(bx,by);
+          if(La>1e-9&&Lb>1e-9){
+            if(c.type==='collinear'){const nx=-ay/La,ny=ax/La;
+              push(c.id,'colinéaire',Math.max(Math.abs((B1.x-A1.x)*nx+(B1.y-A1.y)*ny),Math.abs((B2.x-A1.x)*nx+(B2.y-A1.y)*ny)));}
+            else{const cr=(ax*by-ay*bx)/(La*Lb),dt=(ax*bx+ay*by)/(La*Lb);
+              // sin de l'écart × longueur de la plus courte : flèche en mm au bout de la ligne
+              push(c.id,c.type==='parallel'?'parallèle':'perpendiculaire',Math.abs(c.type==='parallel'?cr:dt)*Math.min(La,Lb));}
+          }}}
+    }
     if(c.type==='equal'){const A=entById(sk,c.a),B=entById(sk,c.b);
       if(A&&B){if(A.t==='line'&&B.t==='line')push(c.id,'égal',Math.abs(lineLen(sk,A)-lineLen(sk,B)));
         else if((A.t==='circle'||A.t==='arc')&&(B.t==='circle'||B.t==='arc'))push(c.id,'égal',Math.abs(A.r-B.r));}}
@@ -2975,7 +3044,7 @@ function skDof(sk){
   const nR=(sk.entities||[]).filter(e=>e.t==='circle'||e.t==='arc').length;
   const nO=P[SK_ORIGIN]?2:0; // l'origine est toujours fixe (2 DOF en moins)
   let eq=0;
-  (sk.constraints||[]).forEach(c=>{eq+=(c.type==='fix'?(c.ent?3:2):(c.type==='symmetric'?4:((c.type==='coincident'||c.type==='coaxial'||c.type==='midpoint')?2:1)));});
+  (sk.constraints||[]).forEach(c=>{eq+=skConDof(c);}); // registre SK_CON (49)
   eq+=(sk.dims||[]).length;
   return 2*Object.keys(P).length+nR-eq-nO;
 }

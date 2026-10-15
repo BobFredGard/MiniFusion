@@ -93,6 +93,14 @@ input[type=range]{accent-color:var(--primary);width:100%}
 .skbtn{font-size:.74rem;padding:5px 9px}
 #skToolbar .tool.on{background:var(--primary);border-color:var(--primary)}
 #skToolbar .con.on{background:#30d158;border-color:#30d158}
+#skToolbar .tool,#skToolbar .con{padding:5px 7px;line-height:0;min-width:34px;display:inline-flex;align-items:center;justify-content:center}
+#skToolbar .con{color:#30d158}
+#skToolbar .con[data-con="construction"]{color:#c7c7cc}
+#skToolbar .tool.on{color:#fff}
+#skToolbar .sksep{width:1px;align-self:stretch;background:var(--border);margin:0 2px}
+.skico{display:block;flex:none}
+.skli-ic{display:inline-flex;align-items:center;color:#30d158;flex:none;margin-right:6px}
+#skConsList .li,#skDimsList .li{display:flex;align-items:center}
 #ctxMenu,#ctxMenu3D{display:none;position:fixed;z-index:5000;min-width:200px;background:rgba(28,28,32,.96);border:1px solid var(--border);border-radius:9px;padding:5px;box-shadow:0 12px 32px rgba(0,0,0,.6)}
 #ctxMenu button,#ctxMenu3D button{display:block;width:100%;text-align:left;background:none;border:none;padding:7px 10px;font-size:.82rem;border-radius:6px}
 #ctxMenu .ctxRow,#ctxMenu3D .ctxRow{display:flex;gap:6px;align-items:center;padding:5px 10px;font-size:.82rem}
@@ -181,10 +189,12 @@ input[type=range]{accent-color:var(--primary);width:100%}
         <button class="tool" data-tool="dim" title="Cote : ligne=longueur, cercle=Ø, arc=rayon, 2 points=distance · Shift+clic 2 lignes = angle (sécantes) ou entraxe (//), pilotés">📐</button>
         <button class="tool" data-tool="coincident" title="Coïncident : cliquez 2 extrémités à fusionner">⌖</button>
         <button class="tool" data-tool="trim" title="Ajuster (trim) : cliquez le tronçon à retirer entre 2 intersections">✂</button>
+        <span class="sksep"></span>
         <button class="con" data-con="h" title="Horizontal : lignes sélectionnées">─H</button>
         <button class="con" data-con="v" title="Vertical : lignes sélectionnées">│V</button>
         <button class="con" data-con="parallel" title="Parallèle : 2 lignes">∥</button>
         <button class="con" data-con="perpendicular" title="Perpendiculaire : 2 lignes">⟂</button>
+        <button class="con" data-con="collinear" title="Colinéaire : 2 lignes portées par la même droite">⫽</button>
         <button class="con" data-con="equal" title="Égal : 2 lignes ou 2 cercles/arcs">＝</button>
         <button class="con" data-con="symmetric" title="Symétrie : 2 lignes + axe (3ᵉ ligne sélectionnée) — miroir">⇔</button>
         <button class="con" data-con="fix" title="Fixe : point / ligne / cercle sélectionné">📌</button>
@@ -192,6 +202,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
         <button class="con" data-con="coaxial" title="Coaxial : 2 cercles/arcs — mêmes centres (concentriques)">◎</button>
         <button class="con" data-con="midpoint" title="Milieu : 2 lignes (milieux égaux) ou 1 point + 1 ligne (point au centre) — sans couper la ligne">⊕</button>
         <button class="con" data-con="construction" title="Construction : hors profil, trait discontinu (touche X)">⇄</button>
+        <span class="sksep"></span>
         <label style="font-size:.75rem"><input type="checkbox" id="skSnap" checked> Grille 1 mm</label>
         <button id="skZoomIn" title="Zoom + (ou molette)">＋</button>
         <button id="skZoomOut" title="Zoom - (ou molette)">－</button>
@@ -262,7 +273,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-15-006';
+const APP_VER='2026-10-15-007';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -273,7 +284,7 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-15-006';
+const CACHE_VER='2026-10-15-007';
 function cacheVerOK(v){
   // 2026-10-11-002 : ébauche 3D — la ZONE voyage dans le REPÈRE (zoneAt
   // transposé sous SENS LONG + rotation de −θ sur l'axe d'une limite oblique,
@@ -5843,6 +5854,101 @@ window.addEventListener('keydown',e=>{
   }
 });
 
+/* ═══════════════ 49-esquisse-registre-icones.js — esquisse registre icones ═══════════════ */
+/* ============ Esquisse : registre des contraintes + jeu d'icônes ============
+   2026-10-15-007 — « consolider l'esquisse et ses règles, ajouter Colinéaire,
+   revoir tous les icônes qui se ressemblent tous ».
+   • SK_CON : UNE fiche par type de contrainte (nom, icône, degrés de liberté
+     retirés, rôle de ses références). Le comptage des DDL, la liste du panneau,
+     les badges du dessin et la recopie lors d'une coupe lisent cette fiche au
+     lieu de listes en dur dispersées (qui oubliaient des types : ∥/⟂ absents de
+     l'audit, Colinéaire impossible à ajouter sans toucher 10 endroits).
+   • SK_ICONS : icônes SVG 24×24 au trait (même épaisseur, même grille), une
+     FORME distincte par fonction — fini les glyphes Unicode ⦾ ◎ ⊕ ⌖ ⌾ quasi
+     identiques. Utilisées par la barre, le menu contextuel, la liste des
+     contraintes et les badges posés sur le dessin. */
+const SK_ICONS={
+  // ── outils de dessin ──
+  select:'<path d="M6 3v15.5l4.2-4 2.9 6.5 2.6-1.1-2.9-6.4H19z" fill="currentColor" stroke="none"/>',
+  line:'<path d="M5 19L19 5"/><circle cx="5" cy="19" r="2" fill="currentColor" stroke="none"/><circle cx="19" cy="5" r="2" fill="currentColor" stroke="none"/>',
+  rect:'<rect x="4" y="6.5" width="16" height="11"/><circle cx="4" cy="6.5" r="1.8" fill="currentColor" stroke="none"/><circle cx="20" cy="17.5" r="1.8" fill="currentColor" stroke="none"/>',
+  slot:'<path d="M8.5 7h7a5 5 0 0 1 0 10h-7a5 5 0 0 1 0-10z"/><circle cx="8.5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="12" r="1.3" fill="currentColor" stroke="none"/>',
+  circle:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/>',
+  arc:'<path d="M20 18A12 12 0 0 0 8 6"/><path d="M8 18h12M8 18V6" stroke-dasharray="1.6 2.4" stroke-width="1.3"/><circle cx="8" cy="18" r="1.6" fill="currentColor" stroke="none"/>',
+  cpoint:'<circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/><path d="M12 3.5v4.5M12 16v4.5M3.5 12H8M16 12h4.5"/>',
+  project:'<path d="M12 2.8l6 2.6v5.4l-6 2.6-6-2.6V5.4z"/><path d="M6 5.4l6 2.6 6-2.6M12 8v5.4" stroke-width="1.3"/><path d="M12 15.5v3" stroke-dasharray="1.5 1.8"/><path d="M4 21h16"/>',
+  dim:'<path d="M4 5v10M20 5v10"/><path d="M4 10h16"/><path d="M7.5 7.5L4 10l3.5 2.5M16.5 7.5L20 10l-3.5 2.5"/><path d="M9 19h6" stroke-width="2.4"/>',
+  trim:'<circle cx="6" cy="7" r="2.6"/><circle cx="6" cy="17" r="2.6"/><path d="M8.2 8.5L20 16.5M8.2 15.5L20 7.5"/>',
+  // ── contraintes ──
+  h:'<path d="M3.5 12h17" stroke-width="2.4"/><path d="M3.5 8v8M20.5 8v8" stroke-width="1.4"/>',
+  v:'<path d="M12 3.5v17" stroke-width="2.4"/><path d="M8 3.5h8M8 20.5h8" stroke-width="1.4"/>',
+  parallel:'<path d="M5 19L13 5M11 19L19 5" stroke-width="2.2"/>',
+  perpendicular:'<path d="M4 19.5h16M12 19.5V4.5" stroke-width="2.2"/><path d="M12 15h4.5v4.5" stroke-width="1.4"/>',
+  collinear:'<path d="M3 21l6-6M15 9l6-6" stroke-width="2.4"/><path d="M9 15l6-6" stroke-dasharray="1.4 2.2" stroke-width="1.4"/>',
+  equal:'<path d="M5 9h14M5 15h14" stroke-width="2.4"/>',
+  symmetric:'<path d="M12 2.5v19" stroke-dasharray="2 2.2" stroke-width="1.4"/><path d="M9 6.5L3.5 12 9 17.5M15 6.5l5.5 5.5-5.5 5.5"/>',
+  fix:'<rect x="5.5" y="10.5" width="13" height="10" rx="1.6"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/><circle cx="12" cy="15.5" r="1.3" fill="currentColor" stroke="none"/>',
+  tangent:'<circle cx="12" cy="14.5" r="6"/><path d="M2.5 8.5h19" stroke-width="2.2"/><circle cx="12" cy="8.5" r="1.6" fill="currentColor" stroke="none"/>',
+  tangent2:'<circle cx="7.5" cy="12" r="5"/><circle cx="17.5" cy="12" r="5"/><circle cx="12.5" cy="12" r="1.4" fill="currentColor" stroke="none"/>',
+  coaxial:'<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/>',
+  midpoint:'<path d="M3 17h18"/><path d="M12 16.5l-3.6-6h7.2z" fill="currentColor" stroke="none"/><path d="M3 14.5v5M21 14.5v5" stroke-width="1.4"/>',
+  coincident:'<circle cx="12" cy="12" r="3.4"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/><path d="M2.5 12h4.5M17 12h4.5"/><path d="M5 9.5L7.5 12 5 14.5M19 9.5L16.5 12l2.5 2.5"/>',
+  online:'<path d="M3 18L21 8"/><circle cx="12" cy="13" r="2.6" fill="currentColor" stroke="none"/>',
+  oncircle:'<circle cx="11" cy="13" r="7"/><circle cx="16" cy="8.1" r="2.4" fill="currentColor" stroke="none"/>',
+  construction:'<path d="M3 21L12 12" stroke-dasharray="2.6 2.2"/><circle cx="15.5" cy="8.5" r="5" stroke-dasharray="2.6 2.2"/>',
+  // ── cotes (liste du panneau) ──
+  length:'<path d="M4 5v10M20 5v10"/><path d="M4 10h16"/><path d="M7.5 7.5L4 10l3.5 2.5M16.5 7.5L20 10l-3.5 2.5"/><path d="M9 19h6" stroke-width="2.4"/>',
+  distance:'<circle cx="5" cy="16" r="2" fill="currentColor" stroke="none"/><circle cx="19" cy="16" r="2" fill="currentColor" stroke="none"/><path d="M5 9h14"/><path d="M8 6.8L5 9l3 2.2M16 6.8L19 9l-3 2.2"/>',
+  diameter:'<circle cx="12" cy="12" r="8"/><path d="M6.3 17.7L17.7 6.3"/><path d="M14.5 6.3h3.2v3.2M9.5 17.7H6.3v-3.2" stroke-width="1.4"/>',
+  radius:'<circle cx="12" cy="12" r="8"/><path d="M12 12l5.6-5.6"/><path d="M14.4 6.4h3.2v3.2" stroke-width="1.4"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/>',
+  angle:'<path d="M4 19.5h16M4 19.5L15 5"/><path d="M12 19.5a8 8 0 0 0-2.4-5.7"/>',
+  gap:'<path d="M3 6.5h18M3 17.5h18" stroke-width="2.2"/><path d="M12 7.5v9M9.8 9.8L12 7.5l2.2 2.3M9.8 14.2L12 16.5l2.2-2.3" stroke-width="1.4"/>',
+  distline:'<path d="M3 19h18" stroke-width="2.2"/><circle cx="12" cy="5" r="2" fill="currentColor" stroke="none"/><path d="M12 7.5v9.5M9.8 14.7L12 17l2.2-2.3" stroke-width="1.4"/>'
+};
+function skIcon(name,px){
+  // Icône SVG en ligne (HTML). currentColor : suit la couleur du bouton / de la ligne.
+  const s=px||18,body=SK_ICONS[name]||SK_ICONS.select;
+  return '<svg class="skico" viewBox="0 0 24 24" width="'+s+'" height="'+s+'" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+body+'</svg>';
+}
+/* Registre : nom affiché · icône · DDL retirés · rôles des références.
+   refs : 'line' (ligne), 'ent' (cercle/arc), 'a'/'b' (entités), 'p' (point),
+   'mid' (axe), 'pts' (a/b = POINTS). pairLines = liaison entre 2 lignes, recopiée
+   sur les morceaux d'une ligne coupée (scission, ajustement). */
+const SK_CON={
+  h:            {nom:'Horizontal',      ic:'h',            dof:1},
+  v:            {nom:'Vertical',        ic:'v',            dof:1},
+  parallel:     {nom:'Parallèle',       ic:'parallel',     dof:1, pairLines:true},
+  perpendicular:{nom:'Perpendiculaire', ic:'perpendicular',dof:1, pairLines:true},
+  collinear:    {nom:'Colinéaire',      ic:'collinear',    dof:2, pairLines:true},
+  equal:        {nom:'Égal',            ic:'equal',        dof:1},
+  symmetric:    {nom:'Symétrie',        ic:'symmetric',    dof:4, pairLines:true},
+  fix:          {nom:'Fixe',            ic:'fix',          dof:2},   // point : 2 · entité : 3 (cf. skConDof)
+  tangent:      {nom:'Tangence',        ic:'tangent',      dof:1},
+  tangent2:     {nom:'Tangence',        ic:'tangent2',     dof:1},
+  coaxial:      {nom:'Coaxial',         ic:'coaxial',      dof:2},
+  coincident:   {nom:'Coïncident',      ic:'coincident',   dof:2},
+  midpoint:     {nom:'Milieu',          ic:'midpoint',     dof:2},
+  online:       {nom:'Point sur ligne', ic:'online',       dof:1},
+  oncircle:     {nom:'Point sur courbe',ic:'oncircle',     dof:1}
+};
+const SK_DIM_IC={length:'length',distance:'distance',diameter:'diameter',radius:'radius',angle:'angle',gap:'gap',distline:'distline'};
+function skConDof(c){
+  if(!c)return 0;
+  if(c.type==='fix')return c.ent?3:2;
+  const r=SK_CON[c.type];
+  return r?r.dof:1;
+}
+function skPairLineType(t){ const r=SK_CON[t]; return !!(r&&r.pairLines); }
+// Barre d'esquisse : chaque bouton outil/contrainte reçoit l'icône du jeu commun
+// (le libellé reste dans title). Les boutons texte (Effacer tout, Terminer…) restent.
+(function skIconizeToolbar(){
+  try{
+    const TOOL_IC={select:'select',line:'line',rect:'rect',slot:'slot',circle:'circle',arc:'arc',cpoint:'cpoint',project:'project',dim:'dim',coincident:'coincident',trim:'trim'};
+    document.querySelectorAll('#skToolbar .tool').forEach(function(b){const k=TOOL_IC[b.dataset.tool];if(k)b.innerHTML=skIcon(k,20);});
+    document.querySelectorAll('#skToolbar .con').forEach(function(b){const k=b.dataset.con;if(SK_ICONS[k])b.innerHTML=skIcon(k,20);});
+  }catch(e){}
+})();
+
 /* ═══════════════ 50-esquisse-2d-solveur.js — esquisse 2d solveur ═══════════════ */
 /* ---------- esquisse 2D ---------- */
 let skEdit=null, skAnteriorGhost=null;
@@ -6578,7 +6684,7 @@ function skConKey(c){
     case 'fix': return 'fix@'+(c.p!=null?('p:'+c.p):('ent:'+c.ent));
     case 'tangent': return 'tangent@'+c.line+'|'+c.ent;
     case 'tangent2': return 'tangent2@'+pair(c.a,c.b);
-    case 'parallel': case 'perpendicular': case 'equal': return c.type+'@'+pair(c.a,c.b);
+    case 'parallel': case 'perpendicular': case 'equal': case 'collinear': return c.type+'@'+pair(c.a,c.b);
     case 'symmetric': return 'symmetric@'+pair(c.a,c.b)+'|'+c.mid;
     case 'coaxial': return 'coaxial@'+pair(c.a,c.b);
     case 'coincident': return 'coincident@'+pair(c.a,c.b);
@@ -6592,8 +6698,11 @@ function skDedupConstraints(sk){
   // Purge les doublons exacts + les ⟂ implicites par ─/│ (même règle qu'à la
   // création). Appelée par cleanupSk : toute édition ré-équilibre la liste.
   const seen=new Set(),out=[];
+  const coll=new Set((sk.constraints||[]).filter(c=>c&&c.type==='collinear').map(c=>[String(c.a),String(c.b)].sort().join('|')));
   (sk.constraints||[]).forEach(c=>{
     if(c.type==='perpendicular'&&skPerpImplied(sk,c.a,c.b))return;
+    // Colinéaire ⇒ parallèle : la ∥ sur la même paire ne ferait que sur-contraindre.
+    if(c.type==='parallel'&&coll.has([String(c.a),String(c.b)].sort().join('|')))return;
     const k=skConKey(c);
     if(seen.has(k))return;
     seen.add(k);out.push(c);
@@ -6931,6 +7040,22 @@ function solveSketchRelax(sk,iters,anchor){
         else if(!aF){CA.x+=ux*err*0.5;CA.y+=uy*err*0.5;}
         else if(!bF){CB.x-=ux*err*0.5;CB.y-=uy*err*0.5;}
       }
+      if(c.type==='collinear'){ // 2 lignes sur la MÊME droite : chaque extrémité libre rejoint la droite de l'autre
+        const la=entById(sk,c.a),lb=entById(sk,c.b);
+        if(!la||!lb||la.t!=='line'||lb.t!=='line')return;
+        const A1=P[la.p1],A2=P[la.p2],B1=P[lb.p1],B2=P[lb.p2];if(!A1||!A2||!B1||!B2)return;
+        const aFL=fix.has(la.p1)&&fix.has(la.p2),bFL=fix.has(lb.p1)&&fix.has(lb.p2);
+        if(aFL&&bFL)return;
+        const toward=(Q,qid,U1,U2,k)=>{ // pied de Q sur la droite (U1,U2), fraction k
+          if(fix.has(qid))return;
+          const dx=U2.x-U1.x,dy=U2.y-U1.y,L2=dx*dx+dy*dy;if(L2<1e-12)return;
+          const t=((Q.x-U1.x)*dx+(Q.y-U1.y)*dy)/L2;
+          Q.x+=(U1.x+t*dx-Q.x)*k;Q.y+=(U1.y+t*dy-Q.y)*k;
+        };
+        const kb=aFL?1:(bFL?0:0.5),ka=bFL?1:(aFL?0:0.5);
+        if(kb>0){toward(B1,lb.p1,A1,A2,kb*0.5);toward(B2,lb.p2,A1,A2,kb*0.5);}
+        if(ka>0){toward(A1,la.p1,B1,B2,ka*0.5);toward(A2,la.p2,B1,B2,ka*0.5);}
+      }
       if(c.type==='coaxial'){ // mêmes centres (concentriques) : rapprochement vers le milieu
         const A=entById(sk,c.a),B=entById(sk,c.b);if(!A||!B)return;
         if((A.t!=='circle'&&A.t!=='arc')||(B.t!=='circle'&&B.t!=='arc'))return;
@@ -7054,6 +7179,12 @@ function sklsCollect(sk,out,B){
       const A=entById(sk,c.a),B=entById(sk,c.b);
       if(A&&B&&A.t==='line'&&B.t==='line'){const va=vec(A),vb=vec(B);
         if(va&&vb){if(c.type==='parallel')push((va.ux*vb.uy-va.uy*vb.ux));else push((va.ux*vb.ux+va.uy*vb.uy));}}
+    }
+    if(c.type==='collinear'){ // 2 résidus : extrémités de B sur la droite portée par A (mm)
+      const A=entById(sk,c.a),B=entById(sk,c.b);
+      if(A&&B&&A.t==='line'&&B.t==='line'){const va=vec(A),A1=P[A.p1],B1=P[B.p1],B2=P[B.p2];
+        if(va&&A1&&B1&&B2){const nx=-va.uy,ny=va.ux;
+          push((B1.x-A1.x)*nx+(B1.y-A1.y)*ny);push((B2.x-A1.x)*nx+(B2.y-A1.y)*ny);}}
     }
     if(c.type==='equal'){
       const A=entById(sk,c.a),B=entById(sk,c.b);
@@ -7365,7 +7496,7 @@ function lineConstrsOf(sk,id){ // toutes les contraintes « dédiées » à la l
   return (sk.constraints||[]).filter(c=>{
     if(!c)return false;
     if(c.type==='h'||c.type==='v'||c.type==='tangent')return c.line===id;
-    if(c.type==='parallel'||c.type==='perpendicular'||c.type==='symmetric')return c.a===id||c.b===id;
+    if(skPairLineType(c.type))return c.a===id||c.b===id||(c.type==='symmetric'&&c.mid===id);
     if(c.type==='midpoint')return c.line===id||c.a===id||c.b===id;
     if(c.type==='fix')return c.ent===id;
     return false;
@@ -7396,10 +7527,10 @@ function cloneLineConstraints(sk,oldId,newIds,drop){
       }else if(c.type==='fix'){
         if(!(sk.constraints||[]).some(x=>x.type==='fix'&&x.ent===nid))
           sk.constraints.push({id:skNewEid(sk),type:'fix',ent:nid});
-      }else if(c.type==='parallel'||c.type==='perpendicular'||c.type==='symmetric'){
-        const a=(c.a===oldId)?nid:c.a,b=(c.b===oldId)?nid:c.b;
-        if(a!==b&&!(sk.constraints||[]).some(x=>x.type===c.type&&((x.a===a&&x.b===b)||(c.type!=='parallel'&&x.a===b&&x.b===a))))
-          sk.constraints.push({id:skNewEid(sk),type:c.type,a,b});
+      }else if(skPairLineType(c.type)){
+        const a=(c.a===oldId)?nid:c.a,b=(c.b===oldId)?nid:c.b,mid=(c.mid===oldId)?nid:c.mid;
+        if(a!==b&&a!==mid&&b!==mid&&!(sk.constraints||[]).some(x=>x.type===c.type&&x.mid===c.mid&&((x.a===a&&x.b===b)||(c.type!=='parallel'&&x.a===b&&x.b===a))))
+          sk.constraints.push(Object.assign({id:skNewEid(sk),type:c.type,a,b},c.mid?{mid}:{}));
       }
     });
   });
@@ -8000,6 +8131,16 @@ function drawSketch2D(){
     });
     return out;
   };
+  // Pastilles de contraintes (2026-10-15-007) : même icône que la barre d'outils,
+  // posées côte à côte — remplacent les lettres/glyphes verts (H V ∥ ⟂ ⇔ = ◎).
+  const badges=(names,sx,sy)=>{
+    names.forEach((nmI,i)=>{
+      const g=skEl('g',{transform:'translate('+(sx+i*17)+','+(sy-8)+')',class:'skbadge'});
+      skEl('rect',{x:0,y:0,width:16,height:16,rx:4,fill:'#16261b',stroke:'#30d158','stroke-width':1},g);
+      const ic=skEl('g',{transform:'translate(2,2) scale(0.5)',fill:'none',stroke:'#30d158','stroke-width':2.4,'stroke-linecap':'round','stroke-linejoin':'round',color:'#30d158'},g);
+      try{ic.innerHTML=SK_ICONS[nmI]||'';}catch(e){}
+    });
+  };
   const drawT=(q)=>{const[tx,ty]=w2s(q.x,q.y);
     const g=skEl('text',{x:tx+6,y:ty-6,fill:'#30d158','font-size':12,'font-weight':'bold'});g.textContent='T';};
   (sk.entities||[]).forEach(e=>{
@@ -8010,10 +8151,17 @@ function drawSketch2D(){
       const hv=(sk.constraints||[]).filter(k=>(k.type==='h'||k.type==='v')&&k.line===e.id).map(k=>k.type.toUpperCase()).join('');
       const eq=(sk.constraints||[]).some(k=>k.type==='equal'&&(k.a===e.id||k.b===e.id));
       const tgL=(sk.constraints||[]).filter(k=>k.type==='tangent'&&k.line===e.id);
-      const pp=(sk.constraints||[]).filter(k=>(k.type==='parallel'||k.type==='perpendicular')&&(k.a===e.id||k.b===e.id)).map(k=>k.type==='parallel'?'∥':'⟂').join('');
-      const sy=(sk.constraints||[]).some(k=>k.type==='symmetric'&&(k.a===e.id||k.b===e.id||k.mid===e.id));
-      if(hv||eq||tgL.length||pp||sy){const[mx,my]=w2s((A.x+B.x)/2,(A.y+B.y)/2);
-        const t=skEl('text',{x:mx+8,y:my-8,fill:'#30d158','font-size':12,'font-weight':'bold'});t.textContent=hv+pp+(sy?'⇔':'')+(eq?'=':'');}
+      const nmB=[];
+      (sk.constraints||[]).forEach(k=>{
+        if((k.type==='h'||k.type==='v')&&k.line===e.id)nmB.push(k.type);
+        else if((k.type==='parallel'||k.type==='perpendicular'||k.type==='collinear')&&(k.a===e.id||k.b===e.id))nmB.push(k.type);
+        else if(k.type==='symmetric'&&(k.a===e.id||k.b===e.id||k.mid===e.id))nmB.push('symmetric');
+        else if(k.type==='midpoint'&&(k.line===e.id||k.a===e.id||k.b===e.id))nmB.push('midpoint');
+        else if(k.type==='fix'&&k.ent===e.id)nmB.push('fix');
+      });
+      if(eq)nmB.push('equal');
+      if(nmB.length){const[mx,my]=w2s((A.x+B.x)/2,(A.y+B.y)/2);
+        badges(Array.from(new Set(nmB)),mx+8,my-10);}
       // sigle T par tangence sur la ligne, au point de contact (l'autre sigle est sur le cercle/arc)
       if(tgL.length){const ddx=B.x-A.x,ddy=B.y-A.y,l2=ddx*ddx+ddy*ddy;
         tgL.forEach(k=>{const E=entById(sk,k.ent),Cc=E?P[E.pc]:null;if(!Cc||l2<1e-12)return;
@@ -8024,8 +8172,8 @@ function drawSketch2D(){
       skEl('circle',{cx:a,cy:b,r:Math.abs(e.r)*skView.s,fill:e.construction?'none':'rgba(100,210,255,.07)',stroke:col(e),'stroke-width':wdt(e),...(e.construction?{'stroke-dasharray':'7 5',opacity:.45}:{})});
       const[px,py]=w2s(C.x,C.y);skEl('rect',{x:px-3,y:py-3,width:6,height:6,fill:fix.has(e.pc)?'#e8e8ea':'none',stroke:col(e)});
       tangT(e,C).forEach(drawT); // T au point de contact (un par tangence), pas au centre
-      if((sk.constraints||[]).some(k=>k.type==='coaxial'&&(k.a===e.id||k.b===e.id))){
-        const t=skEl('text',{x:px+7,y:py-7,fill:'#30d158','font-size':12,'font-weight':'bold'});t.textContent='◎';}
+      const cB=[];(sk.constraints||[]).forEach(k=>{if(k.type==='coaxial'&&(k.a===e.id||k.b===e.id))cB.push('coaxial');else if(k.type==='equal'&&(k.a===e.id||k.b===e.id))cB.push('equal');else if(k.type==='fix'&&k.ent===e.id)cB.push('fix');});
+      if(cB.length)badges(Array.from(new Set(cB)),px+8,py-10);
     }
     if(e.t==='arc'){const C=P[e.pc];if(!C)return;const an=arcAngles(sk,e);if(!an)return;
       const p1={x:C.x+e.r*Math.cos(an.a1),y:C.y+e.r*Math.sin(an.a1)},p2={x:C.x+e.r*Math.cos(an.a2),y:C.y+e.r*Math.sin(an.a2)};
@@ -8034,8 +8182,8 @@ function drawSketch2D(){
       skEl('path',{d:`M ${a} ${b} A ${e.r*skView.s} ${e.r*skView.s} 0 ${dd>Math.PI?1:0} 0 ${c} ${d}`,fill:'none',stroke:col(e),'stroke-width':wdt(e),...(e.construction?{'stroke-dasharray':'7 5',opacity:.45}:{})});
       const[px,py]=w2s(C.x,C.y);skEl('rect',{x:px-3,y:py-3,width:6,height:6,fill:'none',stroke:col(e)});
       tangT(e,C).forEach(drawT); // T au point de contact (un par tangence)
-      if((sk.constraints||[]).some(k=>k.type==='coaxial'&&(k.a===e.id||k.b===e.id))){
-        const t=skEl('text',{x:px+7,y:py-7,fill:'#30d158','font-size':12,'font-weight':'bold'});t.textContent='◎';}
+      const aB=[];(sk.constraints||[]).forEach(k=>{if(k.type==='coaxial'&&(k.a===e.id||k.b===e.id))aB.push('coaxial');else if(k.type==='equal'&&(k.a===e.id||k.b===e.id))aB.push('equal');else if(k.type==='fix'&&k.ent===e.id)aB.push('fix');});
+      if(aB.length)badges(Array.from(new Set(aB)),px+8,py-10);
     }
     if(e.t==='cpoint'){const Q=P[e.p];if(!Q)return;const[a,b]=w2s(Q.x,Q.y);
       skEl('path',{d:`M ${a-6} ${b} H ${a+6} M ${a} ${b-6} V ${b+6}`,stroke:col(e),'stroke-width':wdt(e)});}
@@ -8483,32 +8631,29 @@ function skDefaultStatus(){
   return s;
 }
 function conDesc(sk,c){
+  // Texte SANS glyphe : l'icône (registre SK_CON) est posée à côté par la liste.
   const nm=id=>{const e=entById(sk,id);return e?({line:'ligne',circle:'cercle',arc:'arc',cpoint:'point'}[e.t]||'?')+'…'+String(id).slice(-3):'?';};
-  if(c.type==='h')return'─ Horizontal '+nm(c.line);
-  if(c.type==='v')return'│ Vertical '+nm(c.line);
-  if(c.type==='parallel')return'∥ Parallèle '+nm(c.a)+' / '+nm(c.b);
-  if(c.type==='perpendicular')return'⟂ Perpendiculaire '+nm(c.a)+' / '+nm(c.b);
-  if(c.type==='equal')return'＝ Égal '+nm(c.a)+' / '+nm(c.b);
-  if(c.type==='fix')return'📌 Fixe '+(c.p?('pt…'+String(c.p).slice(-3)):nm(c.ent));
-  if(c.type==='tangent')return'⦾ Tangent '+nm(c.line)+' / '+nm(c.ent);
-  if(c.type==='tangent2')return'⦾ Tangent '+nm(c.a)+' / '+nm(c.b);
-  if(c.type==='coaxial')return'◎ Coaxial '+nm(c.a)+' / '+nm(c.b);
-  if(c.type==='symmetric')return'⇔ Symétrie '+nm(c.a)+' / '+nm(c.b)+' | '+nm(c.mid);
-  if(c.type==='symmetric')return'⇔ Symétrie '+nm(c.a)+' / '+nm(c.b)+' Δ '+nm(c.mid);
-  if(c.type==='coincident')return'⌾ Coïncident pt…'+String(c.a).slice(-3)+' / pt…'+String(c.b).slice(-3)+(c.a===SK_ORIGIN||c.b===SK_ORIGIN?' (origine)':'');
-  if(c.type==='oncircle')return'⊙ Point sur '+nm(c.ent)+' pt…'+String(c.p).slice(-3);
-  if(c.type==='online')return'∈ Point sur '+nm(c.line)+' pt…'+String(c.p).slice(-3);
-  if(c.type==='midpoint')return c.p?('⊕ Milieu pt…'+String(c.p).slice(-3)+' au centre de '+nm(c.line)):('⊕ Milieux égaux '+nm(c.a)+' / '+nm(c.b));
-  return c.type;
+  const pt=id=>'pt…'+String(id).slice(-3);
+  const R=SK_CON[c.type],N=R?R.nom:c.type;
+  if(c.type==='h'||c.type==='v')return N+' '+nm(c.line);
+  if(c.type==='fix')return N+' '+(c.p?pt(c.p):nm(c.ent));
+  if(c.type==='tangent')return N+' '+nm(c.line)+' / '+nm(c.ent);
+  if(c.type==='symmetric')return N+' '+nm(c.a)+' / '+nm(c.b)+' | axe '+nm(c.mid);
+  if(c.type==='coincident')return N+' '+pt(c.a)+' / '+pt(c.b)+(c.a===SK_ORIGIN||c.b===SK_ORIGIN?' (origine)':'');
+  if(c.type==='oncircle')return 'Point '+pt(c.p)+' sur '+nm(c.ent);
+  if(c.type==='online')return 'Point '+pt(c.p)+' sur '+nm(c.line);
+  if(c.type==='midpoint')return c.p?('Milieu : '+pt(c.p)+' au centre de '+nm(c.line)):('Milieux égaux '+nm(c.a)+' / '+nm(c.b));
+  if(c.a&&c.b)return N+' '+nm(c.a)+' / '+nm(c.b);
+  return N;
 }
 function dimDesc(sk,d){
-  if(d.type==='length')return'⟷ Longueur = '+d.value.toFixed(2);
-  if(d.type==='distance')return'⟷ Distance = '+d.value.toFixed(2);
+  if(d.type==='length')return'Longueur = '+d.value.toFixed(2);
+  if(d.type==='distance')return'Distance = '+d.value.toFixed(2);
   if(d.type==='diameter')return'Ø = '+d.value.toFixed(2);
   if(d.type==='radius')return'R = '+d.value.toFixed(2);
-  if(d.type==='angle')return'∠ = '+(d.value*180/Math.PI).toFixed(1)+'°';
-  if(d.type==='gap')return'⇔ entraxe = '+d.value.toFixed(2);
-  if(d.type==='distline')return'⟂ centre↔ligne = '+d.value.toFixed(2);
+  if(d.type==='angle')return'Angle = '+(d.value*180/Math.PI).toFixed(1)+'°';
+  if(d.type==='gap')return'Entraxe = '+d.value.toFixed(2);
+  if(d.type==='distline')return'Point ↔ ligne = '+d.value.toFixed(2);
   return d.type;
 }
 function renderSkPanel(){
@@ -8570,7 +8715,8 @@ function renderSkPanel(){
     const d=document.createElement('div');d.className='li'+(skSel&&skSel.kind==='con'&&skSel.id===c.id?' sel':'');
     const wA=((sk._audit||{}).all||[]).find(o=>o.id===c.id);
     const bad=wA&&wA.viol>0.05;
-    const s=document.createElement('span');s.textContent=conDesc(sk,c)+(bad?`  ⚠±${wA.viol.toFixed(2)}`:'');d.appendChild(s);
+    const ic=document.createElement('span');ic.className='skli-ic';ic.innerHTML=skIcon((SK_CON[c.type]||{}).ic||'fix',15);d.appendChild(ic);
+    const s=document.createElement('span');s.textContent=conDesc(sk,c)+(bad?`  ⚠±${wA.viol.toFixed(2)}`:'');s.style.flex='1';d.appendChild(s);
     if(bad)d.style.borderColor='#ff453a';
     const x=document.createElement('span');x.className='x';x.textContent='✕';x.title='Retirer';
     x.onclick=ev=>{ev.stopPropagation();skPushUndo();sk.constraints=sk.constraints.filter(k=>k.id!==c.id);if(skSel&&skSel.id===c.id)skSel=null;solveSketch(sk);drawSketch2D();renderSkPanel();};
@@ -8583,6 +8729,7 @@ function renderSkPanel(){
     const r=document.createElement('div');r.className='li'+(skSel&&skSel.kind==='dim'&&skSel.id===d.id?' sel':'');
     const wD=((sk._audit||{}).all||[]).find(o=>o.id===d.id);
     const badD=wD&&wD.viol>0.05;
+    const icD=document.createElement('span');icD.className='skli-ic';icD.innerHTML=skIcon(SK_DIM_IC[d.type]||'dim',15);r.appendChild(icD);
     const s=document.createElement('span');s.textContent=dimDesc(sk,d)+(badD?`  ⚠±${wD.viol.toFixed(2)}`:'');s.style.flex='1';r.appendChild(s);
     if(badD)r.style.borderColor='#ff453a';
     const x=document.createElement('span');x.className='x';x.textContent='✕';x.title='Retirer';
@@ -8629,8 +8776,8 @@ function applyCon(type){
     if(ents.length!==2){skStatus('Tangence : sélectionnez 1 ligne + 1 cercle/arc (ou 2 cercles).');return;}
     const[a,b]=ents,isL=e=>e.t==='line',isC=e=>e.t==='circle'||e.t==='arc';
     if(isL(a)&&isC(b)){skPushUndo();sk.constraints.push({id:skNewEid(sk),type:'tangent',line:a.id,ent:b.id});skPinTangent(sk,a.id,b.id);}
-    else if(isL(b)&&isC(a)){sk.constraints.push({id:skNewEid(sk),type:'tangent',line:b.id,ent:a.id});skPinTangent(sk,b.id,a.id);}
-    else if(isC(a)&&isC(b))sk.constraints.push({id:skNewEid(sk),type:'tangent2',a:a.id,b:b.id});
+    else if(isL(b)&&isC(a)){skPushUndo();sk.constraints.push({id:skNewEid(sk),type:'tangent',line:b.id,ent:a.id});skPinTangent(sk,b.id,a.id);}
+    else if(isC(a)&&isC(b)){skPushUndo();sk.constraints.push({id:skNewEid(sk),type:'tangent2',a:a.id,b:b.id});}
     else{skStatus('Tangence : ligne↔cercle ou cercle↔cercle uniquement.');return;}
   }
   if(type==='coaxial'){
@@ -8652,6 +8799,19 @@ function applyCon(type){
     if(type==='perpendicular'&&skPerpImplied(sk,a,b)){skStatus('⟂ implicite par ─/│ : non ajoutée (déjà acquise).');return;}
     skPushUndo();
     sk.constraints.push({id:skNewEid(sk),type:type,a:lines[0].id,b:lines[1].id});
+  }
+  if(type==='collinear'){
+    if(lines.length!==2){skStatus('Colinéaire : sélectionnez exactement 2 lignes.');return;}
+    const[a,b]=lines;
+    if(a.id===b.id){skStatus('Colinéaire : 2 lignes distinctes.');return;}
+    if((sk.constraints||[]).some(c=>c.type==='collinear'&&((c.a===a.id&&c.b===b.id)||(c.a===b.id&&c.b===a.id)))){skStatus('Colinéaire déjà posée.');return;}
+    if((sk.constraints||[]).some(c=>c.type==='perpendicular'&&((c.a===a.id&&c.b===b.id)||(c.a===b.id&&c.b===a.id)))){skStatus('Colinéaire impossible : ces lignes sont perpendiculaires (⟂ posée).');return;}
+    skPushUndo();
+    sk.constraints.push({id:skNewEid(sk),type:'collinear',a:a.id,b:b.id});
+    sk.constraints=skDedupConstraints(sk); // la ∥ éventuelle sur cette paire devient redondante
+    skMsg='';solveSketch(sk);drawSketch2D();renderSkPanel();
+    skStatus('Colinéaire — les 2 lignes portées par la même droite.');
+    return;
   }
   if(type==='symmetric'){
     if(lines.length!==3){skStatus('Symétrie : sélectionnez 3 lignes — 2 à symétriser + l’axe en dernier (ex : clic axe en dernier).');return;}
@@ -8759,6 +8919,21 @@ function skAudit(sk){
   });
   (sk.constraints||[]).forEach(c=>{
     if(c.type==='h'||c.type==='v'){const l=entById(sk,c.line);if(l&&l.t==='line'){const A=P[l.p1],B=P[l.p2];if(A&&B)push(c.id,c.type,Math.abs(c.type==='h'?A.y-B.y:A.x-B.x));}}
+    if(c.type==='parallel'||c.type==='perpendicular'||c.type==='collinear'){
+      // ABSENTS de l'audit jusqu'au 2026-10-15-007 : une ∥/⟂ violée n'était jamais
+      // signalée ⚠, et le choix LM/relaxation (meilleur résidu d'audit) l'ignorait.
+      const A=entById(sk,c.a),B=entById(sk,c.b);
+      if(A&&B&&A.t==='line'&&B.t==='line'){const A1=P[A.p1],A2=P[A.p2],B1=P[B.p1],B2=P[B.p2];
+        if(A1&&A2&&B1&&B2){
+          const ax=A2.x-A1.x,ay=A2.y-A1.y,La=Math.hypot(ax,ay),bx=B2.x-B1.x,by=B2.y-B1.y,Lb=Math.hypot(bx,by);
+          if(La>1e-9&&Lb>1e-9){
+            if(c.type==='collinear'){const nx=-ay/La,ny=ax/La;
+              push(c.id,'colinéaire',Math.max(Math.abs((B1.x-A1.x)*nx+(B1.y-A1.y)*ny),Math.abs((B2.x-A1.x)*nx+(B2.y-A1.y)*ny)));}
+            else{const cr=(ax*by-ay*bx)/(La*Lb),dt=(ax*bx+ay*by)/(La*Lb);
+              // sin de l'écart × longueur de la plus courte : flèche en mm au bout de la ligne
+              push(c.id,c.type==='parallel'?'parallèle':'perpendiculaire',Math.abs(c.type==='parallel'?cr:dt)*Math.min(La,Lb));}
+          }}}
+    }
     if(c.type==='equal'){const A=entById(sk,c.a),B=entById(sk,c.b);
       if(A&&B){if(A.t==='line'&&B.t==='line')push(c.id,'égal',Math.abs(lineLen(sk,A)-lineLen(sk,B)));
         else if((A.t==='circle'||A.t==='arc')&&(B.t==='circle'||B.t==='arc'))push(c.id,'égal',Math.abs(A.r-B.r));}}
@@ -8821,7 +8996,7 @@ function skDof(sk){
   const nR=(sk.entities||[]).filter(e=>e.t==='circle'||e.t==='arc').length;
   const nO=P[SK_ORIGIN]?2:0; // l'origine est toujours fixe (2 DOF en moins)
   let eq=0;
-  (sk.constraints||[]).forEach(c=>{eq+=(c.type==='fix'?(c.ent?3:2):(c.type==='symmetric'?4:((c.type==='coincident'||c.type==='coaxial'||c.type==='midpoint')?2:1)));});
+  (sk.constraints||[]).forEach(c=>{eq+=skConDof(c);}); // registre SK_CON (49)
   eq+=(sk.dims||[]).length;
   return 2*Object.keys(P).length+nR-eq-nO;
 }
@@ -9402,10 +9577,10 @@ function trimEntity(sk,ent,cx,cy){
       if(!newId)return;
       (sk.constraints||[]).forEach(c=>{
         if(!c)return;
-        if((c.type==='parallel'||c.type==='perpendicular'||c.type==='symmetric')&&(c.a===ent.id||c.b===ent.id)){
-          const a=c.a===ent.id?newId:c.a,b=c.b===ent.id?newId:c.b;
-          if(a!==b&&!(sk.constraints||[]).some(x=>x.type===c.type&&((x.a===a&&x.b===b)||(c.type!=='parallel'&&x.a===b&&x.b===a))))
-            sk.constraints.push({id:skNewEid(sk),type:c.type,a,b});
+        if(skPairLineType(c.type)&&(c.a===ent.id||c.b===ent.id||c.mid===ent.id)){
+          const a=c.a===ent.id?newId:c.a,b=c.b===ent.id?newId:c.b,mid=c.mid===ent.id?newId:c.mid;
+          if(a!==b&&a!==mid&&b!==mid&&!(sk.constraints||[]).some(x=>x.type===c.type&&x.mid===mid&&((x.a===a&&x.b===b)||(c.type!=='parallel'&&x.a===b&&x.b===a))))
+            sk.constraints.push(Object.assign({id:skNewEid(sk),type:c.type,a,b},mid?{mid}:{}));
         }else if(c.type==='fix'&&c.ent===ent.id){
           if(!(sk.constraints||[]).some(x=>x.type==='fix'&&x.ent===newId))
             sk.constraints.push({id:skNewEid(sk),type:'fix',ent:newId});
@@ -9508,7 +9683,7 @@ function skDragComp(sk,seed){
         if(!L||!sk.points[c.p])return;
         if(pids.has(c.p)&&!ents.has(L.id)){ents.add(L.id);skEntPids(L).forEach(p=>{if(p&&sk.points[p])pids.add(p);});changed=true;}
         else if(ents.has(L.id)&&!pids.has(c.p)){pids.add(c.p);changed=true;}
-      }else if(c.type==='symmetric'||c.type==='parallel'||c.type==='perpendicular'){
+      }else if(skPairLineType(c.type)){
         const A=entById(sk,c.a),B=entById(sk,c.b);
         if(!A||!B)return;
         if(ents.has(A.id)&&!ents.has(B.id)){ents.add(B.id);skEntPids(B).forEach(p=>{if(p&&sk.points[p])pids.add(p);});changed=true;}
@@ -10032,8 +10207,22 @@ function showSkCtx(x,y){
   const lines=selEnts.filter(e=>e.t==='line'), circles=selEnts.filter(e=>e.t==='circle'), arcs=selEnts.filter(e=>e.t==='arc');
   const tot=selEnts.length + pts.length;
   m.innerHTML='<div id="skCtxTitle" style="font-size:.72rem;color:var(--muted);padding:4px 8px">Cote / Contrainte</div>';
+  // 2026-10-15-007 : le glyphe Unicode de tête est remplacé par l'icône SVG du jeu
+  // commun (SK_ICONS) — mêmes formes que la barre d'outils et les pastilles du dessin.
+  const CTX_IC=[['📏 Longueur','length'],['📏 Distance points','distance'],['📏 Distance point','distline'],['📏 Distance centres','distance'],['📏 Distance','distline'],
+    ['─','h'],['│','v'],['📌','fix'],['∥','parallel'],['⟂','perpendicular'],['＝','equal'],['⊕','midpoint'],
+    ['⦾ Tangence','tangent'],['⦾ Congé','arc'],['◎','coaxial'],['⌀','diameter'],['○ Rayon','radius'],['⌾','coincident'],
+    ['∠','angle'],['⇔ Entraxe','gap'],['⇔ Symétrie','symmetric'],['⇄ Construction','construction'],['⇄ Géométrie','construction'],
+    ['⇄ Décaler','parallel'],['◣','trim'],['⫽','collinear']];
   const add=(label, fn)=>{
-    const b=document.createElement('button'); b.textContent=label; b.style.cssText='display:block;width:100%;text-align:left;padding:6px 10px;background:none;border:none;color:#fff;cursor:pointer;font-size:.82rem'; b.onmouseenter=()=>b.style.background='rgba(255,255,255,.08)'; b.onmouseleave=()=>b.style.background='none'; b.onclick=()=>{ hideSkCtx(); fn(); }; m.appendChild(b);
+    const b=document.createElement('button');
+    const hit=CTX_IC.find(([k])=>label.indexOf(k)===0);
+    const txt=hit?label.slice(label.indexOf(' ')+1):label;
+    b.style.cssText='display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:6px 10px;background:none;border:none;color:#fff;cursor:pointer;font-size:.82rem';
+    if(hit){const ic=document.createElement('span');ic.className='skli-ic';ic.innerHTML=skIcon(hit[1],16);b.appendChild(ic);}
+    const tx=document.createElement('span');tx.textContent=txt;b.appendChild(tx);
+    if(typeof b.textContent!=='string'||!b.textContent)b.textContent=txt; /* DOM simulé des tests : pas d'agrégation des enfants */
+    b.onmouseenter=()=>b.style.background='rgba(255,255,255,.08)'; b.onmouseleave=()=>b.style.background='none'; b.onclick=()=>{ hideSkCtx(); fn(); }; m.appendChild(b);
   };
   let has=false;
   // construction : bascule hors profil (touche X)
@@ -10082,7 +10271,7 @@ function showSkCtx(x,y){
       const d=skEdit.dims.find(x=>x.id===id);
       skStatus('Cote angle ∠'+(d&&d.value?(d.value*180/Math.PI).toFixed(1):'?')+'° posée.');
     });
-    add('∥ Parallèle',()=>applyCon('parallel')); add('⟂ Perpendiculaire',()=>applyCon('perpendicular'));
+    add('∥ Parallèle',()=>applyCon('parallel')); add('⟂ Perpendiculaire',()=>applyCon('perpendicular')); add('⫽ Colinéaire',()=>applyCon('collinear'));
     add('＝ Égal',()=>applyCon('equal')); add('─ Horizontal',()=>applyCon('h')); add('│ Vertical',()=>applyCon('v')); add('⊕ Milieux égaux (2 lignes)',()=>applyCon('midpoint')); has=true;
     add('⦾ Congé (arc tangent + R)',()=>skApplyFilletSel()); add('◣ Chanfrein (coupe + cote)',()=>skApplyChamferSel());
     const offEl=selEnts.filter(e=>(e.t==='line'||e.t==='circle'||e.t==='arc')&&!e.ref);
@@ -28733,7 +28922,7 @@ window.addEventListener('pointerdown',e=>{if(!$('ctxMenu').contains(e.target))hi
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.31';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.32';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);
@@ -29009,10 +29198,10 @@ function runSelfTests(){
   T('Congé R5 ×4 coins',()=>{const r=applyFilletsToSketch(rect(),[{corners:[{x:40,y:0},{x:0,y:0},{x:0,y:20},{x:40,y:20}],radius:5}]);
     if(r.applied!==4)return 'applied='+r.applied+' '+r.warnings.join(';');
     const tr=skLoopTrace(r.sk);return tr.solids.length===1?null:`solides=${tr.solids.length}`;});
-  T('Persistance : round-trip JSON garde les 14 types de contraintes',()=>{
+  T('Persistance : round-trip JSON garde les 15 types de contraintes',()=>{
     const s={points:{p1:{x:0,y:0},p2:{x:40,y:0},p3:{x:40,y:20},p5:{x:50,y:50},p6:{x:60,y:50},p7:{x:70,y:50},pc:{x:20,y:30},pc2:{x:20,y:40},pa:{x:15,y:40},pb:{x:25,y:40}},
       entities:[{id:'a',t:'line',p1:'p1',p2:'p2'},{id:'b',t:'line',p1:'p2',p2:'p3'},{id:'g',t:'line',p1:'p5',p2:'p6'},{id:'h2',t:'line',p1:'p6',p2:'p7'},{id:'e',t:'circle',pc:'pc',r:8},{id:'f',t:'arc',pc:'pc2',pa:'pa',pb:'pb',r:5}],
-      constraints:[{id:'k01',type:'h',line:'a'},{id:'k02',type:'v',line:'b'},{id:'k03',type:'parallel',a:'a',b:'h2'},{id:'k04',type:'perpendicular',a:'g',b:'h2'},{id:'k05',type:'equal',a:'a',b:'b'},{id:'k06',type:'fix',p:'p1'},{id:'k07',type:'fix',ent:'e'},{id:'k08',type:'tangent',line:'a',ent:'e'},{id:'k09',type:'tangent',line:'b',ent:'f'},{id:'k10',type:'tangent2',a:'e',b:'f'},{id:'k11',type:'coaxial',a:'e',b:'f'},{id:'k12',type:'symmetric',a:'a',b:'b',mid:'g'},{id:'k13',type:'coincident',a:'p1',b:'p5'},{id:'k14',type:'oncircle',p:'p7',ent:'e'},{id:'k15',type:'online',p:'p5',line:'b'},{id:'k16',type:'midpoint',p:'p5',line:'b'},{id:'k17',type:'midpoint',a:'a',b:'b'}],
+      constraints:[{id:'k01',type:'h',line:'a'},{id:'k02',type:'v',line:'b'},{id:'k03',type:'parallel',a:'a',b:'h2'},{id:'k03b',type:'collinear',a:'g',b:'b'},{id:'k04',type:'perpendicular',a:'g',b:'h2'},{id:'k05',type:'equal',a:'a',b:'b'},{id:'k06',type:'fix',p:'p1'},{id:'k07',type:'fix',ent:'e'},{id:'k08',type:'tangent',line:'a',ent:'e'},{id:'k09',type:'tangent',line:'b',ent:'f'},{id:'k10',type:'tangent2',a:'e',b:'f'},{id:'k11',type:'coaxial',a:'e',b:'f'},{id:'k12',type:'symmetric',a:'a',b:'b',mid:'g'},{id:'k13',type:'coincident',a:'p1',b:'p5'},{id:'k14',type:'oncircle',p:'p7',ent:'e'},{id:'k15',type:'online',p:'p5',line:'b'},{id:'k16',type:'midpoint',p:'p5',line:'b'},{id:'k17',type:'midpoint',a:'a',b:'b'}],
       dims:[{id:'d1',type:'length',line:'a',value:40,ox:0,oy:0},{id:'d2',type:'radius',ent:'e',value:8,ox:0,oy:0}],seq:200};
     const n0=s.constraints.length,nD=s.dims.length;
     const back=JSON.parse(JSON.stringify(s));
@@ -29020,7 +29209,7 @@ function runSelfTests(){
     if(back.constraints.length!==n0)return 'contraintes '+n0+'→'+back.constraints.length;
     if(back.dims.length!==nD)return 'cotes '+nD+'→'+back.dims.length;
     const types=new Set(back.constraints.map(c=>c.type));
-    const manque=['h','v','parallel','perpendicular','equal','fix','tangent','tangent2','coaxial','symmetric','coincident','oncircle','online','midpoint'].filter(t=>!types.has(t));
+    const manque=['h','v','parallel','perpendicular','collinear','equal','fix','tangent','tangent2','coaxial','symmetric','coincident','oncircle','online','midpoint'].filter(t=>!types.has(t));
     return manque.length?'types perdus : '+manque.join(','):null;});
   T('⟂ implicite H×V non ajoutée à la création (mais ⟂ vraie si)',()=>{
     const keepE=skEdit,keepU=skUndoStack,keepR=skRedoStack,keepC=skChain,keepI=skInfer;

@@ -266,10 +266,10 @@ function trimEntity(sk,ent,cx,cy){
       if(!newId)return;
       (sk.constraints||[]).forEach(c=>{
         if(!c)return;
-        if((c.type==='parallel'||c.type==='perpendicular'||c.type==='symmetric')&&(c.a===ent.id||c.b===ent.id)){
-          const a=c.a===ent.id?newId:c.a,b=c.b===ent.id?newId:c.b;
-          if(a!==b&&!(sk.constraints||[]).some(x=>x.type===c.type&&((x.a===a&&x.b===b)||(c.type!=='parallel'&&x.a===b&&x.b===a))))
-            sk.constraints.push({id:skNewEid(sk),type:c.type,a,b});
+        if(skPairLineType(c.type)&&(c.a===ent.id||c.b===ent.id||c.mid===ent.id)){
+          const a=c.a===ent.id?newId:c.a,b=c.b===ent.id?newId:c.b,mid=c.mid===ent.id?newId:c.mid;
+          if(a!==b&&a!==mid&&b!==mid&&!(sk.constraints||[]).some(x=>x.type===c.type&&x.mid===mid&&((x.a===a&&x.b===b)||(c.type!=='parallel'&&x.a===b&&x.b===a))))
+            sk.constraints.push(Object.assign({id:skNewEid(sk),type:c.type,a,b},mid?{mid}:{}));
         }else if(c.type==='fix'&&c.ent===ent.id){
           if(!(sk.constraints||[]).some(x=>x.type==='fix'&&x.ent===newId))
             sk.constraints.push({id:skNewEid(sk),type:'fix',ent:newId});
@@ -372,7 +372,7 @@ function skDragComp(sk,seed){
         if(!L||!sk.points[c.p])return;
         if(pids.has(c.p)&&!ents.has(L.id)){ents.add(L.id);skEntPids(L).forEach(p=>{if(p&&sk.points[p])pids.add(p);});changed=true;}
         else if(ents.has(L.id)&&!pids.has(c.p)){pids.add(c.p);changed=true;}
-      }else if(c.type==='symmetric'||c.type==='parallel'||c.type==='perpendicular'){
+      }else if(skPairLineType(c.type)){
         const A=entById(sk,c.a),B=entById(sk,c.b);
         if(!A||!B)return;
         if(ents.has(A.id)&&!ents.has(B.id)){ents.add(B.id);skEntPids(B).forEach(p=>{if(p&&sk.points[p])pids.add(p);});changed=true;}
@@ -896,8 +896,22 @@ function showSkCtx(x,y){
   const lines=selEnts.filter(e=>e.t==='line'), circles=selEnts.filter(e=>e.t==='circle'), arcs=selEnts.filter(e=>e.t==='arc');
   const tot=selEnts.length + pts.length;
   m.innerHTML='<div id="skCtxTitle" style="font-size:.72rem;color:var(--muted);padding:4px 8px">Cote / Contrainte</div>';
+  // 2026-10-15-007 : le glyphe Unicode de tête est remplacé par l'icône SVG du jeu
+  // commun (SK_ICONS) — mêmes formes que la barre d'outils et les pastilles du dessin.
+  const CTX_IC=[['📏 Longueur','length'],['📏 Distance points','distance'],['📏 Distance point','distline'],['📏 Distance centres','distance'],['📏 Distance','distline'],
+    ['─','h'],['│','v'],['📌','fix'],['∥','parallel'],['⟂','perpendicular'],['＝','equal'],['⊕','midpoint'],
+    ['⦾ Tangence','tangent'],['⦾ Congé','arc'],['◎','coaxial'],['⌀','diameter'],['○ Rayon','radius'],['⌾','coincident'],
+    ['∠','angle'],['⇔ Entraxe','gap'],['⇔ Symétrie','symmetric'],['⇄ Construction','construction'],['⇄ Géométrie','construction'],
+    ['⇄ Décaler','parallel'],['◣','trim'],['⫽','collinear']];
   const add=(label, fn)=>{
-    const b=document.createElement('button'); b.textContent=label; b.style.cssText='display:block;width:100%;text-align:left;padding:6px 10px;background:none;border:none;color:#fff;cursor:pointer;font-size:.82rem'; b.onmouseenter=()=>b.style.background='rgba(255,255,255,.08)'; b.onmouseleave=()=>b.style.background='none'; b.onclick=()=>{ hideSkCtx(); fn(); }; m.appendChild(b);
+    const b=document.createElement('button');
+    const hit=CTX_IC.find(([k])=>label.indexOf(k)===0);
+    const txt=hit?label.slice(label.indexOf(' ')+1):label;
+    b.style.cssText='display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:6px 10px;background:none;border:none;color:#fff;cursor:pointer;font-size:.82rem';
+    if(hit){const ic=document.createElement('span');ic.className='skli-ic';ic.innerHTML=skIcon(hit[1],16);b.appendChild(ic);}
+    const tx=document.createElement('span');tx.textContent=txt;b.appendChild(tx);
+    if(typeof b.textContent!=='string'||!b.textContent)b.textContent=txt; /* DOM simulé des tests : pas d'agrégation des enfants */
+    b.onmouseenter=()=>b.style.background='rgba(255,255,255,.08)'; b.onmouseleave=()=>b.style.background='none'; b.onclick=()=>{ hideSkCtx(); fn(); }; m.appendChild(b);
   };
   let has=false;
   // construction : bascule hors profil (touche X)
@@ -946,7 +960,7 @@ function showSkCtx(x,y){
       const d=skEdit.dims.find(x=>x.id===id);
       skStatus('Cote angle ∠'+(d&&d.value?(d.value*180/Math.PI).toFixed(1):'?')+'° posée.');
     });
-    add('∥ Parallèle',()=>applyCon('parallel')); add('⟂ Perpendiculaire',()=>applyCon('perpendicular'));
+    add('∥ Parallèle',()=>applyCon('parallel')); add('⟂ Perpendiculaire',()=>applyCon('perpendicular')); add('⫽ Colinéaire',()=>applyCon('collinear'));
     add('＝ Égal',()=>applyCon('equal')); add('─ Horizontal',()=>applyCon('h')); add('│ Vertical',()=>applyCon('v')); add('⊕ Milieux égaux (2 lignes)',()=>applyCon('midpoint')); has=true;
     add('⦾ Congé (arc tangent + R)',()=>skApplyFilletSel()); add('◣ Chanfrein (coupe + cote)',()=>skApplyChamferSel());
     const offEl=selEnts.filter(e=>(e.t==='line'||e.t==='circle'||e.t==='arc')&&!e.ref);
