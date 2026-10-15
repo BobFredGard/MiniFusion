@@ -25,11 +25,19 @@ function buildScene(){
   camera.position.set(90,-90,90);
   renderer=new THREE.WebGLRenderer({canvas:$('viewport'),antialias:true});
   renderer.localClippingEnabled=true;
+  try{renderer.setPixelRatio(1.25);}catch(e){} // comme viewer_STEP : arêtes et reflet plus doux
   scene.add(new THREE.HemisphereLight(0xffffff,0x444444,0.75));
   const key=new THREE.DirectionalLight(0xffffff,1.0); key.position.set(60,-40,120); scene.add(key);
   try{if('environment' in scene)scene.environment=makeStudioEnv();}catch(e){} // reflets studio
   axHelper=new THREE.AxesHelper(60); scene.add(axHelper); // X rouge → droite, Y vert → arrière, Z bleu → haut
   // Sol miroir (réflexion planaire temps réel, fondu radial). Z-up : cercle déjà horizontal.
+  // 2026-10-15-003 : hors de la texture du reflet (bords d'écran, vue rapprochée), plus
+  // d'échantillonnage étiré par le ClampToEdge (« fuyantes qui cherchent à sortir de la
+  // zone 3D ») : pas de reflet hors [0,1], fondu doux sur les 3 % du bord.
+  // 2026-10-15-004 : MÊMES RÉGLAGES que viewer_STEP (« le miroir fonctionne à
+  // merveille, mets-moi les mêmes ») : reflet net ×0,62, cible 1024×1024, rendu
+  // ×1,25 — et SEULS les solides se reflètent (arêtes, trièdre, plans d'origine,
+  // trajectoires masqués pendant la passe reflet : c'étaient eux qui scintillaient).
   mirrorRT=new THREE.WebGLRenderTarget(1024,1024);
   mirrorCam=new THREE.PerspectiveCamera();
   mirrorTexMat=new THREE.Matrix4();
@@ -37,7 +45,7 @@ function buildScene(){
     textureMatrix:{value:mirrorTexMat},uCenter:{value:new THREE.Vector3()},uRadius:{value:1}};
   const fm=new THREE.ShaderMaterial({uniforms:mirrorU,
     vertexShader:'uniform mat4 textureMatrix; varying vec4 vUv; varying vec3 vWorld;\nvoid main(){ vec4 wp = modelMatrix * vec4(position, 1.0); vWorld = wp.xyz; vUv = textureMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader:'uniform vec3 color; uniform sampler2D tDiffuse; uniform vec3 uCenter; uniform float uRadius; varying vec4 vUv; varying vec3 vWorld;\nvoid main(){ if(vUv.w<=1e-4){ gl_FragColor=vec4(color,1.0); return; } vec2 uv = vUv.xy / vUv.w; vec3 refl = texture2D(tDiffuse, uv).rgb; float d = distance(vWorld.xy, uCenter.xy); float f = exp(-pow(d / max(uRadius * 1.15, 1e-3), 2.0) * 2.0) * 0.85; gl_FragColor = vec4(mix(color, refl * 0.62, clamp(f, 0.0, 0.85)), 1.0); }'});
+    fragmentShader:'uniform vec3 color; uniform sampler2D tDiffuse; uniform vec3 uCenter; uniform float uRadius; varying vec4 vUv; varying vec3 vWorld;\nvoid main(){ if(vUv.w<=1e-4){ gl_FragColor=vec4(color,1.0); return; } vec2 uv = vUv.xy / vUv.w; float eg = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)); if(eg <= 0.0){ gl_FragColor=vec4(color,1.0); return; } vec3 refl = texture2D(tDiffuse, uv).rgb; float d = distance(vWorld.xy, uCenter.xy); float f = exp(-pow(d / max(uRadius * 1.15, 1e-3), 2.0) * 2.0) * 0.85 * smoothstep(0.0, 0.03, eg); gl_FragColor = vec4(mix(color, refl * 0.62, clamp(f, 0.0, 0.85)), 1.0); }'});
   floorMesh=new THREE.Mesh(new THREE.CircleGeometry(400,48),fm);
   floorMesh.name='floor';floorMesh.position.z=-0.5;scene.add(floorMesh);
   buildOriginPlanes();
@@ -63,10 +71,9 @@ function fit(){
   // combinaison cohérente avec la projection de la caméra miroir. Cible carrée + projection
   // carrée = les bords de l'écran sortent de la texture, et le ClampToEdge de three y étire
   // les pixels du bord en traits déformés.
-  if(mirrorRT){
-    const rw=Math.min(1024,W),rh=Math.max(2,Math.round(rw*H/Math.max(W,1)));
-    if(mirrorRT.width!==rw||mirrorRT.height!==rh){mirrorRT.setSize(rw,rh);mirrorDirty=true;}
-  }
+  // 2026-10-15-004 : cible fixe 1024×1024 comme viewer_STEP (plus de résolution
+  // verticale ; la garde [0,1] du shader règle les bords).
+  if(mirrorRT)mirrorDirty=true;
 }
 const _mn=new THREE.Vector3(0,0,1),_mrwp=new THREE.Vector3(),_mcwp=new THREE.Vector3(),_mview=new THREE.Vector3();
 const _mrot=new THREE.Matrix4(),_mlook=new THREE.Vector3(),_mtgt=new THREE.Vector3(),_mcu=new THREE.Vector3();
@@ -140,7 +147,14 @@ function animate(){
     mirrorViewMoved();
     if(vu&&mirrorDirty){
       floorMesh.visible=false;
+      // Seuls les SOLIDES se reflètent (comme viewer_STEP) : traits, aides et plans masqués.
+      const _mh=[];
+      scene.traverse(o=>{
+        if(!o.visible||o===scene)return;
+        if(o.isLine||o.isLineSegments||o.isPoints||o.isSprite||o===axHelper||(o.material&&o.material.isShaderMaterial)||(o.material&&o.material.transparent&&o.material.opacity<0.6)){o.visible=false;_mh.push(o);}
+      });
       renderer.setRenderTarget(mirrorRT);renderer.clear();renderer.render(scene,mirrorCam);
+      for(const o of _mh)o.visible=true;
       renderer.setRenderTarget(null);
       floorMesh.visible=true;
       mirrorDirty=false;

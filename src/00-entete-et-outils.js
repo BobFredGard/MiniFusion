@@ -23,7 +23,7 @@
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-15-002';
+const APP_VER='2026-10-15-005';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -34,7 +34,7 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-15-002';
+const CACHE_VER='2026-10-15-005';
 function cacheVerOK(v){
   // 2026-10-11-002 : ébauche 3D — la ZONE voyage dans le REPÈRE (zoneAt
   // transposé sous SENS LONG + rotation de −θ sur l'axe d'une limite oblique,
@@ -129,6 +129,8 @@ async function occtFinishBoot(){
     // rechargement de la page, le cache était valide, le rejeu sauté, occLive absent —
     // plus aucun congé, plus aucune esquisse sur face, plus aucune sélection de face.
     try{faceEl.textContent='Noyau prêt — recalcul exact…';builtVersion=-1;builtHash=null;builtEngine=null;rebuild();}catch(e){}
+    // Imports STEP du document (F5, ouverture avant le noyau) : rejoués depuis leur source.
+    try{if(typeof importRestorePending==='function')importRestorePending();}catch(e){}
     // Re-cadrage après bascule exact : le 1er cadrage (chargement) s'est fait sur le repli
     // maillage, dont le solide combiné peut avoir une boîte dégénérée (mesuré : 40×40×10000,
     // caméra propulsée hors du plan lointain 5000 → vue noire jusqu'au prochain Iso).

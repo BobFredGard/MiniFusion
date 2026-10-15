@@ -225,8 +225,11 @@ function measurePair(A,B){
   if(GA.kind==='plan'&&GB.kind==='plan'){
     const ang=Math.acos(Math.min(1,Math.abs(GA.n.dot(GB.n))))*180/Math.PI;
     if(ang<0.5){
-      const signed=(B.point.clone().sub(A.point)).dot(GA.n);
-      dimPair(A.point,A.point.clone().addScaledVector(GA.n,signed),Math.abs(signed).toFixed(2));
+      // Distance EXACTE entre les deux plans (équations BRep), pas entre les points
+      // cliqués : un clic tombe sur le maillage, à la flèche de tessellation près.
+      const signed=(GB.p.clone().sub(GA.p)).dot(GA.n);
+      const A0=A.point.clone().addScaledVector(GA.n,-(A.point.clone().sub(GA.p)).dot(GA.n)); // pied SUR le plan 1
+      dimPair(A0,A0.clone().addScaledVector(GA.n,signed),Math.abs(signed).toFixed(2));
       faceEl.textContent=`Faces parallèles : ${Math.abs(signed).toFixed(2)} mm (angle ${ang.toFixed(2)}°)`;
     }else{
       const d=A.point.distanceTo(B.point);
@@ -249,14 +252,22 @@ function occFaceGeom(mesh,fi){
   // Géométrie exacte d'une face cliquée (plan / cylindre) via le BRep. Null sinon.
   // Multi-corps : chaque mesh a ses propres ordinaux (occGroups par solide) — la face
   // est donc résolue sur le SOLIDE DU CORPS cliqué, pas sur le composé occLive.
-  if(!occHas()||!occLive||!occLive.shape||!mesh||fi===undefined)return null;
+  // 2026-10-15-004 : un import STEP (seul dans son corps) a AUSSI son BRep exact
+  // (importGeom.brep) et son maillage porte occGroups : on le résout pareil. Avant,
+  // un STEP retombait sur la distance entre les points cliqués (« la mesure sur les
+  // fichiers STEP n'est pas identique à celle des solides de l'application »).
+  if(!occHas()||!mesh||fi===undefined)return null;
   const bd=bodies.find(b=>b.mesh===mesh);
-  if(!bd||bd.kind!=='body'||!bd.shape)return null;
+  if(!bd)return null;
+  let shape=null;
+  if(bd.kind==='body'&&bd.shape&&occLive&&occLive.shape)shape=bd.shape;
+  else if(bd.kind==='import'){const e=importGeom.get(bd.ref||bd.id);if(e&&e.brep)shape=e.brep;}
+  if(!shape)return null;
   try{
     const groups=mesh.geometry.userData.occGroups||[];
     const g=groups.find(g=>fi>=g.start&&fi<g.start+g.count);
     if(!g)return null;
-    const f=occFaceAt(bd.shape,g.f);
+    const f=occFaceAt(shape,g.f);
     if(!f)return null;
     const ad=new occt.BRepAdaptor_Surface_2(f,true);
     const gt=ad.GetType();
@@ -275,6 +286,15 @@ function occFaceGeom(mesh,fi){
         p:new THREE.Vector3(a.Location().X(),a.Location().Y(),a.Location().Z())};
     }
     try{ad.delete();}catch(e){}
+    // Repère du mesh (import déplacé) : la géométrie BRep est en coordonnées locales.
+    try{
+      mesh.updateMatrixWorld(true);const M=mesh.matrixWorld;
+      if(M&&!M.equals(new THREE.Matrix4())){
+        const N=new THREE.Matrix3().getNormalMatrix(M);
+        if(out.kind==='cyl'){out.center.applyMatrix4(M);out.axis.applyMatrix3(N).normalize();}
+        else{out.p.applyMatrix4(M);out.n.applyMatrix3(N).normalize();}
+      }
+    }catch(e){}
     return out;
   }catch(e){return null;}
 }
@@ -822,17 +842,110 @@ $('fileImport').addEventListener('change',async e=>{
   else{await importSTEP(f);}
   e.target.value='';
 });
-async function importSTL(file){
-  const buf=await file.arrayBuffer();
-  const geo=parseSTL(buf);
-  if(!geo){alert('STL illisible.');return;}
-  const mesh=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0x0a84ff}));
+/* ---------- 2026-10-15-004 : la SOURCE d'un import est persistée ----------
+   Retour : « quand on sauvegarde la pièce avec le STEP et des usinages, le fichier
+   n'est pas rechargé car manquant. Pourtant le .miniFusion fait 30 Mo ! » — les
+   30 Mo étaient les trajectoires ; la géométrie importée n'était JAMAIS écrite
+   (deserialise la jetait, avec l'alerte « réimportez le STEP/STL »).
+   Désormais : les octets du fichier d'origine sont gardés (mémoire + IndexedDB,
+   clé = empreinte du contenu) ; la fonction import ne porte que la référence
+   f.src={fmt,key,size,file} — le JSON du document, l'autosave et les instantanés
+   d'annulation restent légers. Le .miniFusion EMBARQUE ces octets (base64) : à
+   l'ouverture, le STEP est rejoué avec le MÊME id de fonction, donc le corps, les
+   enlèvements et les opérations FAO qui le visent retrouvent leur cible.
+   Anciens fichiers (sans source) : la fonction est conservée « à réimporter » ;
+   importer un fichier du même nom la rebranche (même id, usinages conservés). */
+const importSrc=new Map(); // 'impsrc:<empreinte>' -> Uint8Array (fichier d'origine)
+function importSrcKey(u8){
+  let h=2166136261;for(let i=0;i<u8.length;i++){h^=u8[i];h=Math.imul(h,16777619);}
+  return 'impsrc:'+(h>>>0).toString(36)+'_'+u8.length;
+}
+function importU8ToB64(u8){
+  let out='';const CH=0x8000;
+  for(let i=0;i<u8.length;i+=CH)out+=String.fromCharCode.apply(null,u8.subarray(i,i+CH));
+  return btoa(out);
+}
+function importB64ToU8(b64){
+  const t=atob(b64);const u=new Uint8Array(t.length);
+  for(let i=0;i<t.length;i++)u[i]=t.charCodeAt(i);
+  return u;
+}
+async function importSrcPut(key,u8){
+  importSrc.set(key,u8);
+  try{await idbSet(key,u8);}catch(e){} // F5 / autosave : relu depuis l'IndexedDB
+}
+async function importSrcGet(key){
+  if(importSrc.has(key))return importSrc.get(key);
+  try{
+    const v=await idbGet(key);
+    if(v){const u=(v instanceof Uint8Array)?v:new Uint8Array(v.buffer||v);importSrc.set(key,u);return u;}
+  }catch(e){}
+  return null;
+}
+function importPlaceholder(name){
+  // Fonction import d'un ancien fichier, restée sans géométrie : même nom → on s'y
+  // rebranche ; sinon, s'il n'en reste qu'UNE, on propose (le nom du fichier sur le
+  // disque diffère souvent : « Cavité(Symétrie miroir) » ↔ « Cavité.step »).
+  const att=(doc.features||[]).filter(f=>f&&f.type==='import'&&!f._mesh&&!importGeom.has(f.id));
+  const m=att.find(f=>f.name===name);
+  if(m)return m;
+  if(att.length===1&&confirm('Rebrancher « '+name+' » sur l\'import manquant « '+att[0].name+' » ?\n(usinages et opérations qui le visent conservés)\n\nAnnuler = l\'ajouter comme nouvel import.'))return att[0];
+  return null;
+}
+function importAttach(name,fmt,u8,entry,fileName){
+  // Fonction import : nouvelle, ou rebranchement d'une fonction « à réimporter ».
+  const key=importSrcKey(u8);
+  importSrcPut(key,u8); // mémoire immédiate ; écriture IndexedDB en tâche de fond (l'import n'attend pas)
+  const src={fmt,key,size:u8.length,file:fileName};
+  const ph=importPlaceholder(name);
+  if(ph){
+    docPushUndo('réimport '+name);
+    ph.src=src;ph._mesh=entry.mesh;importGeom.set(ph.id,entry);
+    sel={kind:'feature',id:ph.id};
+    markDirty();builtVersion=-1;builtHash=null;rebuild();showAll();
+    return ph.id;
+  }
   const id=uid('im');
-  const feat={id,type:'import',name:file.name.replace(/\.[^.]+$/,''),visible:true,_mesh:mesh};
-  importGeom.set(id,{mesh});
+  importGeom.set(id,entry);
+  addFeature({id,type:'import',name,visible:true,_mesh:entry.mesh,src});
+  return id;
+}
+function importStlBuild(u8){
+  const geo=parseSTL(u8.buffer.slice(u8.byteOffset,u8.byteOffset+u8.byteLength));
+  if(!geo)throw new Error('STL illisible');
   // centre la pièce
   geo.computeBoundingBox();const c=geo.boundingBox.getCenter(new THREE.Vector3());geo.translate(-c.x,-c.y,-c.z);
-  addFeature(feat);sel={kind:'feature',id};markDirty();rebuild();showAll();
+  return {mesh:new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0x0a84ff}))};
+}
+async function importSTL(file){
+  const u8=new Uint8Array(await file.arrayBuffer());
+  let entry;try{entry=importStlBuild(u8);}catch(e){alert('STL illisible.');return;}
+  const id=importAttach(file.name.replace(/\.[^.]+$/,''),'stl',u8,entry,file.name);
+  sel={kind:'feature',id};markDirty();rebuild();showAll();
+}
+let _importRestoring=false;
+async function importRestorePending(){
+  // Rejoue les imports du document à partir de leur source persistée. Appelée à
+  // l'ouverture (deserialise) et quand le noyau OCCT devient prêt (F5).
+  if(_importRestoring)return 0;
+  const todo=(doc.features||[]).filter(f=>f&&f.type==='import'&&!f._mesh&&!importGeom.has(f.id)&&f.src&&f.src.key);
+  if(!todo.length)return 0;
+  if(todo.some(f=>f.src.fmt!=='stl')&&!occHas())return 0; // occtFinishBoot relancera
+  _importRestoring=true;let n=0;const miss=[];
+  try{
+    for(const f of todo){
+      const u8=await importSrcGet(f.src.key);
+      if(!u8){miss.push(f.name);continue;}
+      if(!(doc.features||[]).includes(f))continue; // document remplacé entre-temps
+      try{
+        const e=(f.src.fmt==='stl')?importStlBuild(u8):importStepBuild(u8);
+        importGeom.set(f.id,e);f._mesh=e.mesh;n++;
+      }catch(err){miss.push(f.name);}
+    }
+  }finally{_importRestoring=false;}
+  if(n){builtVersion=-1;builtHash=null;builtEngine=null;rebuild();if(!viewUserMoved)showAll();}
+  if(miss.length)try{faceEl.textContent='Import(s) sans source : '+miss.join(', ')+' — réimportez le fichier (même nom : il se rebranche sur la fonction existante).';}catch(e){}
+  return n;
 }
 function parseSTL(buf){
   try{
@@ -855,10 +968,20 @@ function parseSTL(buf){
 async function importSTEP(file){
   if(!occHas()){alert('Moteur STEP (OCCT) pas encore chargé — réessayez dans quelques secondes (page servie en http:// de préférence).\nEn attendant : import STL OK, extrusions OK.');return;}
   try{
-    const buf=await file.arrayBuffer();
+    const u8=new Uint8Array(await file.arrayBuffer());
+    const entry=importStepBuild(u8);
+    importAttach(file.name.replace(/\.[^.]+$/,''),'step',u8,entry,file.name);
+    markDirty();rebuild();showAll();
+    faceEl.textContent='STEP importé : '+file.name;
+  }catch(e){alert('Import STEP impossible : '+e.message);}
+}
+function importStepBuild(u8){
+  // Octets STEP -> {mesh, faoGeo, edges, brep}. Synchrone, déterministe : le
+  // rejeu d'un document redonne EXACTEMENT les mêmes triangles qu'à l'import.
+  {
     const path='/i.stp'; // chemin court fixe (cf. export)
     try{occt.FS.unlink(path);}catch(e){}
-    occt.FS.writeFile(path,new Uint8Array(buf));
+    occt.FS.writeFile(path,u8);
     const reader=new occt.STEPControl_Reader_1();
     reader.ReadFile(path); // statut passé en revue via NbRootsForTransfer
     if(reader.NbRootsForTransfer()<1)throw new Error('aucun solide transférable');
@@ -876,7 +999,6 @@ async function importSTEP(file){
     const g=occTessellateBudget(shape,D,OCC_DISPLAY_TRIS)||occTessellate(shape,D.lin,D.ang);
     if(!g||!g.attributes.position.count)throw new Error('tessellation vide');
     const mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0x0a84ff}));
-    const id=uid('im');
     const entry={mesh};
     if(faoGeo)entry.faoGeo=faoGeo; // géométrie réservée à l'outillage (voir la fin du fichier)
     // Arêtes tangentes : besoin des FACES et de leur continuité (C0/G1). Le shape est
@@ -889,13 +1011,10 @@ async function importSTEP(file){
     // « Soustraction » tombait dans le vide. Le BRep reste la PROPRIÉTÉ de la table :
     // occReplayBody en prend une COPIE, jamais l'original (libéré ici, à la purge).
     entry.brep=shape;
-    importGeom.set(id,entry); // {mesh, edges, faoGeo, brep}
-    addFeature({id,type:'import',name:file.name.replace(/\.[^.]+$/,''),visible:true,_mesh:mesh});
     try{reader.delete();}catch(e){}
     try{occt.FS.unlink(path);}catch(e){}
-    markDirty();rebuild();showAll();
-    faceEl.textContent='STEP importé : '+file.name;
-  }catch(e){alert('Import STEP impossible : '+e.message);}
+    return entry; // {mesh, edges, faoGeo, brep}
+  }
 }
 /* ============ FAO : « corps blindés » (phase 4) ==============================
    L'affichage est désormais plus fin (occDisplayDefl + budget de triangles, phase 3)
@@ -1244,9 +1363,11 @@ async function deserialise(json,opts){
     else if(o.sel.kind==='feature'&&doc.features.some(f=>f.id===o.sel.id))sel={kind:'feature',id:o.sel.id};
     else if(o.sel.kind==='body'&&(doc.bodies||[]).some(e=>e.id===o.sel.id))sel={kind:'body',id:o.sel.id};
   }
-  // les imports STEP/STL ne sont pas persistés en géométrie dans ce MVP (seuls esquisses+extrusions rejouent) — on l'indique
-  const nImp=doc.features.filter(f=>f.type==='import').length;
-  doc.features=doc.features.filter(f=>f.type!=='import');
+  // Imports STEP/STL : la fonction RESTE (même id → corps, enlèvements et FAO
+  // gardent leur cible) ; sa géométrie est rejouée depuis la source persistée
+  // (importRestorePending, fin de fonction). Ancien fichier sans source : la
+  // fonction attend une réimportation du même nom.
+  const sansSrc=doc.features.filter(f=>f.type==='import'&&!(f.src&&f.src.key)).map(f=>f.name);
   occCkClear(); // document remplacé : les points de contrôle ne valent plus rien
   const rep=docSanitise();
   if(rep.dup||rep.orph||rep.sk||rep.cap){try{log('Document réparé : '+rep.dup+' instance(s) en double, '+rep.orph+' instance(s) orpheline(s), '+rep.sk+' esquisse(s) d’instance abandonnée(s), '+rep.cap+' répétition(s) plafonnée(s) à '+REPEAT_MAX+' copies.');}catch(e){}}
@@ -1263,7 +1384,8 @@ async function deserialise(json,opts){
   sel={kind:null,id:null};uidN=doc.sketches.length+doc.features.length+1;
   if(!opts||opts.rebuild!==false){rebuild();renderProps();showAll();}
   else renderProps();
-  if(nImp)alert(nImp+' corps importé(s) non rejoués (géométrie non persistée dans ce MVP) — réimportez le STEP/STL. Sauvegarde paramétrique complète à l\'étape suivante.');
+  if(sansSrc.length)alert(sansSrc.length+' import(s) enregistré(s) sans leur fichier (ancien format) : '+sansSrc.join(', ')+'.\nRéimportez le STEP/STL (même nom, ou confirmez le rebranchement) : il reprend la fonction existante, usinages conservés. Puis ré-enregistrez.');
+  try{importRestorePending();}catch(e){}
   // Parcours d'outils : on lit d'abord le cache persisté (IndexedDB), on ne
   // recalcule que ce qui manque — l'ouverture ne reprend plus les ~90 s du calcul.
   try{ if(typeof faoMovesReset==='function')faoMovesReset(); }catch(e){}
@@ -1286,10 +1408,22 @@ function bundleIs(txt){
   catch(e){ return false; }
 }
 async function bundleMoves(){
+  // 2026-10-15-004 : SEULEMENT les trajectoires des opérations DE CE DOCUMENT.
+  // Avant, toutes les entrées faoMoves:* de l'IndexedDB partaient dans le fichier —
+  // celles de tous les documents jamais ouverts dans ce navigateur : « Vide.miniFusion
+  // pèse 70 Mo ». Clé = 'faoMoves:<posage>:<opération>' (cf. bundleRestore).
   const out={};
   if(!faoMovesReady())return out;
+  const miens=new Set();
   try{
-    const ks=await idbKeys('faoMoves:');
+    const r=faoRoot();
+    (((r&&r.setups)||[])).forEach(function(st){
+      ((st&&st.ops)||[]).forEach(function(op){ miens.add('faoMoves:'+((st&&st.id)||'_')+':'+((op&&op.id)||'_')); });
+    });
+  }catch(e){}
+  if(!miens.size)return out;
+  try{
+    const ks=(await idbKeys('faoMoves:')).filter(function(k){return miens.has(k);});
     for(let i=0;i<ks.length;i++){
       try{ const v=await idbGet(ks[i]); if(v&&v.v===1&&Array.isArray(v.mv))out[ks[i]]=v; }
       catch(e){}
@@ -1297,11 +1431,21 @@ async function bundleMoves(){
   }catch(e){}
   return out;
 }
+async function bundleImports(){
+  // Fichiers d'origine des imports (base64) : sans eux, le STEP manquait à l'ouverture.
+  const out={};
+  for(const f of (doc.features||[])){
+    if(!f||f.type!=='import'||!f.src||!f.src.key||out[f.src.key])continue;
+    try{const u8=await importSrcGet(f.src.key);if(u8)out[f.src.key]=importU8ToB64(u8);}catch(e){}
+  }
+  return out;
+}
 async function bundleSerialise(){
   const moves=await bundleMoves();
+  const imports=await bundleImports();
   return JSON.stringify({app:'MiniFusion',bundle:1,v:APP_VER,cacheVer:CACHE_VER,
     at:Date.now(),name:doc.name||'',doc:JSON.parse(serialise()),
-    nMoves:Object.keys(moves).length,moves:moves});
+    nMoves:Object.keys(moves).length,moves:moves,imports:imports});
 }
 let faoBundleMovesN=0;   // trajectoires embarquees dans le fichier ouvert
 function bundleReport(){
@@ -1332,11 +1476,26 @@ async function bundleRestore(txt,opts){
   if(!b||b.bundle!==1||!b.doc)return false;
   const moves=b.moves||{};
   if(opts&&opts.name&&b.doc&&typeof b.doc==='object')b.doc.name=opts.name;
-  const ks=Object.keys(moves);
+  // Seulement les trajectoires des opérations du document (un ancien fichier
+  // embarquait celles de TOUS les documents du navigateur d'origine : ~70 Mo).
+  const miens=new Set();
+  try{
+    const fr=b.doc&&b.doc.fao;
+    (((fr&&fr.setups)||[])).forEach(function(st){
+      ((st&&st.ops)||[]).forEach(function(op){ miens.add('faoMoves:'+((st&&st.id)||'_')+':'+((op&&op.id)||'_')); });
+    });
+  }catch(e){}
+  const ancienFao=!!(b.doc.fao&&typeof b.doc.fao==='object'&&!Array.isArray(b.doc.fao.setups)); // pré-posages : ids inconnus ici
+  const ks=Object.keys(moves).filter(function(k){return ancienFao||miens.has(k);});
   if(ks.length&&faoMovesReady()){
     for(let i=0;i<ks.length;i++){ try{ await idbSet(ks[i],moves[ks[i]]); }catch(e){} }
   }
   faoBundleMovesN=ks.length;
+  // Sources des imports AVANT le document : deserialise les rejoue aussitôt.
+  const im=(b.imports&&typeof b.imports==='object')?b.imports:{};
+  for(const k of Object.keys(im)){
+    try{if(typeof im[k]==='string')await importSrcPut(k,importB64ToU8(im[k]));}catch(e){}
+  }
   faoBundleWantReport=true;   // consomme par faoMovesDone() (fin de lecture)
   try{ setTimeout(function(){
         try{ if(faoBundleWantReport&&!faoMovesPending()){ faoBundleWantReport=false; bundleReport(); } }

@@ -59,6 +59,7 @@ const SUITES = [
   "test_corps_iso",
   "test_corps_style",
   "test_import_vie",
+  "test_import_persist",
   "test_aretes_import",
   "test_fao_chain_step",
   "test_precision_affichage",

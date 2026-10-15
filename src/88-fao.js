@@ -3544,7 +3544,7 @@ function faoThickSegs(arr,color,alpha,px){
   });
   const mesh=new THREE.Mesh(g,mat);
   mesh.frustumCulled=false;
-  mesh.onBeforeRender=function(rd){ try{ rd.getDrawingBufferSize(res); }catch(e){} };
+  mesh.onBeforeRender=function(rd){ try{ rd.getDrawingBufferSize(res); res.divideScalar(rd.getPixelRatio()||1); }catch(e){} }; // épaisseur en px CSS (pixelRatio 1,25)
   return mesh;
 }
 function faoPrevAdd(group,sp){
@@ -12080,28 +12080,91 @@ function faoChainExit(silent){
     }
   }catch(e){}
 }
+// 2026-10-15-005 : PRÉ-SÉLECTION D'ARÊTES PLUS VISIBLE ET PLUS PRÉCISE.
+// Retour : « les arêtes extérieures sont visibles mais pas assez précises et le trait
+// trop fin ; les arêtes de fond de poche ou de détourage ne le sont pas du tout ».
+// • Trait : les LineSegments WebGL font TOUJOURS 1 px → quads écran (comme les
+//   rapides), 3 px au repos, 5 px survolée / sélectionnée.
+// • Arêtes concaves : posées exactement sur la surface, elles passaient DERRIÈRE la
+//   facette (fond de poche, pied de détourage : la corde du maillage est devant
+//   l'arête vraie). Le shader avance chaque sommet vers la caméra (0,25 mm +
+//   0,4 % de la distance) : visible sur la face, toujours caché par la matière.
+// • Pointage : distance en PIXELS écran au segment (10 px), et non plus 2 mm en 3D
+//   (trop large de près, inattrapable de loin) ; une arête cachée par la pièce
+//   n'est jamais prise.
+const FAO_CHAIN_W=3, FAO_CHAIN_WH=5;
 function faoChainBuildOverlay(){
   try{
     if(!faoChainMode)return;
     const old=scene.getObjectByName('faoChainEdges');
     if(old)scene.remove(old);
-    const positions=[], colors=[], segEdge=[];
+    const segs=[], segEdge=[];
     faoChainMode.edges.forEach(function(e,i){
       const p=e.pts||[];
       for(let k=0;k+1<p.length;k++){
-        positions.push(p[k][0],p[k][1],p[k][2],p[k+1][0],p[k+1][1],p[k+1][2]);
-        colors.push(0,0,0,0,0,0);
+        segs.push(p[k][0],p[k][1],p[k][2],p[k+1][0],p[k+1][1],p[k+1][2]);
         segEdge.push(i);
       }
     });
-    const geo=new THREE.BufferGeometry();
-    geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
-    geo.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
-    const mat=new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:0.95,depthTest:true});
-    const l=new THREE.LineSegments(geo,mat);
-    l.renderOrder=999;
-    l.userData.segEdge=segEdge;
-    const grp=new THREE.Group(); grp.name='faoChainEdges'; grp.add(l);
+    const n=segEdge.length;
+    const pos=new Float32Array(n*12),oth=new Float32Array(n*12),side=new Float32Array(n*4),
+      col=new Float32Array(n*12),wid=new Float32Array(n*4),idx=new Uint32Array(n*6);
+    for(let i=0;i<n;i++){
+      const a=i*6,v=i*12,k=i*4;
+      for(let q=0;q<4;q++){
+        const atA=q<2,o=v+q*3;
+        pos[o]=segs[a+(atA?0:3)];pos[o+1]=segs[a+(atA?1:4)];pos[o+2]=segs[a+(atA?2:5)];
+        oth[o]=segs[a+(atA?3:0)];oth[o+1]=segs[a+(atA?4:1)];oth[o+2]=segs[a+(atA?5:2)];
+        wid[k+q]=FAO_CHAIN_W;
+      }
+      side[k]=1;side[k+1]=-1;side[k+2]=-1;side[k+3]=1;
+      const t=i*6;idx[t]=k;idx[t+1]=k+1;idx[t+2]=k+2;idx[t+3]=k+1;idx[t+4]=k+3;idx[t+5]=k+2;
+    }
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+    g.setAttribute('other',new THREE.BufferAttribute(oth,3));
+    g.setAttribute('side',new THREE.BufferAttribute(side,1));
+    g.setAttribute('col',new THREE.BufferAttribute(col,3));
+    g.setAttribute('wid',new THREE.BufferAttribute(wid,1));
+    g.setIndex(new THREE.BufferAttribute(idx,1));
+    const res=new THREE.Vector2(1000,1000);
+    const mkMat=function(halo){ return new THREE.ShaderMaterial({
+      uniforms:{res:{value:res},halo:{value:halo}},
+      vertexShader:[
+        'attribute vec3 other; attribute float side; attribute vec3 col; attribute float wid; uniform vec2 res; uniform float halo; varying vec3 vCol;',
+        'vec4 pull(vec3 p){',
+        '  vec4 m=modelViewMatrix*vec4(p,1.0);',
+        '  float dd=length(m.xyz);',
+        '  m.xyz*=max(0.0,1.0-(0.25+0.004*dd)/max(dd,1e-3));', // vers la caméra
+        '  return projectionMatrix*m;',
+        '}',
+        'void main(){',
+        '  vCol=halo>0.5?vec3(0.03,0.03,0.05):col;',
+        '  vec4 a=pull(position);',
+        '  vec4 b=pull(other);',
+        '  vec2 d=(b.xy/b.w-a.xy/a.w)*res;',
+        '  float l=length(d);',
+        '  vec2 u=l>1e-6?d/l:vec2(1.0,0.0);',
+        '  vec2 nrm=vec2(-u.y,u.x);',
+        '  a.xy+=nrm*side*(wid+halo*2.0)/res*a.w;',
+        '  gl_Position=a;',
+        '}'].join(String.fromCharCode(10)),
+      fragmentShader:'varying vec3 vCol; void main(){ gl_FragColor=vec4(vCol,1.0); }',
+      side:THREE.DoubleSide
+    }); };
+    // Liseré sombre SOUS le trait (+1 px de chaque côté) : contraste garanti, même
+    // une arête jaune survolée sur un corps jaune reste lisible.
+    const halo=new THREE.Mesh(g,mkMat(1));
+    halo.frustumCulled=false; halo.renderOrder=998; halo.raycast=function(){};
+    const mesh=new THREE.Mesh(g,mkMat(0));
+    mesh.frustumCulled=false;
+    mesh.renderOrder=999;
+    mesh.raycast=function(){}; // pointage écran : faoChainPick
+    mesh.onBeforeRender=function(rd){ try{ rd.getDrawingBufferSize(res); res.divideScalar(rd.getPixelRatio()||1); }catch(e){} };
+    mesh.userData.segEdge=segEdge;
+    mesh.userData.segs=segs;
+    halo.onBeforeRender=mesh.onBeforeRender;
+    const grp=new THREE.Group(); grp.name='faoChainEdges'; grp.add(mesh); grp.add(halo); // [0] = trait (pointage)
     scene.add(grp);
     faoChainPaint();
   }catch(e){ try{faceEl.textContent='Chaîne : affichage impossible ('+e.message+').';}catch(e2){} }
@@ -12118,35 +12181,65 @@ function faoChainPaint(){
     const grp=scene.getObjectByName('faoChainEdges');
     if(!grp||!faoChainMode)return;
     const l=grp.children[0];
-    if(!l||!l.geometry||!l.geometry.attributes.color)return;
-    const col=l.geometry.attributes.color, segEdge=l.userData.segEdge;
+    if(!l||!l.geometry||!l.geometry.attributes.col)return;
+    const col=l.geometry.attributes.col, wid=l.geometry.attributes.wid, segEdge=l.userData.segEdge;
     if(!segEdge)return;
     const c=new THREE.Color(), cache={};
     for(let k=0;k<segEdge.length;k++){
       const i=segEdge[k];
-      let hex=cache[i];
-      if(hex===undefined)hex=cache[i]=faoChainIsSeed(i)?0xffd60a:(faoChainIsSel(i)?0xff453a:(faoChainHover===i?0xffd60a:0x0a84ff));
-      c.setHex(hex);
-      col.setXYZ(k*2,c.r,c.g,c.b);
-      col.setXYZ(k*2+1,c.r,c.g,c.b);
+      let st=cache[i];
+      if(st===undefined){
+        const seed=faoChainIsSeed(i), sl=faoChainIsSel(i), hv=(faoChainHover===i);
+        st=cache[i]={hex:seed?0xffd60a:(sl?0xff453a:(hv?0xffd60a:0x0a84ff)),w:(seed||sl||hv)?FAO_CHAIN_WH:FAO_CHAIN_W};
+      }
+      c.setHex(st.hex);
+      for(let q=0;q<4;q++){col.setXYZ(k*4+q,c.r,c.g,c.b);wid.setX(k*4+q,st.w);}
     }
-    col.needsUpdate=true;
+    col.needsUpdate=true; wid.needsUpdate=true;
   }catch(e){}
 }
 function faoChainPick(e){
+  // Arête la plus proche EN PIXELS du curseur (≤ 10 px), parmi celles que la pièce
+  // ne cache pas (profondeur ≤ premier impact du rayon + tolérance).
   try{
     const grp=scene.getObjectByName('faoChainEdges');
     if(!grp||!faoChainMode)return null;
+    const l=grp.children[0];const segs=l&&l.userData.segs,segEdge=l&&l.userData.segEdge;
+    if(!segs||!segEdge)return null;
     const r=renderer.domElement.getBoundingClientRect();
-    const ndc=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
-    rayc.setFromCamera(ndc,camera);
-    rayc.params.Line.threshold=2;
-    const hits=rayc.intersectObjects(grp.children,false);
-    if(!hits.length)return null;
-    const segEdge=hits[0].object.userData.segEdge;
-    if(!segEdge)return null;
-    const i=segEdge[Math.round(hits[0].index/2)];
-    return (i!==undefined&&i>=0&&i<faoChainMode.edges.length)?i:null;
+    const mx=e.clientX-r.left,my=e.clientY-r.top,W=r.width,H=r.height;
+    // premier impact sur les corps visibles (occultation)
+    let dHit=Infinity;
+    try{
+      const ndc=new THREE.Vector2((mx/W)*2-1,-(my/H)*2+1);
+      rayc.setFromCamera(ndc,camera);
+      const ms=(bodies||[]).filter(function(b){return b&&b.visible!==false&&!b.ghost&&b.mesh&&b.mesh.visible!==false;}).map(function(b){return b.mesh;});
+      const h=rayc.intersectObjects(ms,false);
+      if(h.length)dHit=h[0].distance;
+    }catch(err){}
+    camera.updateMatrixWorld();
+    const PV=new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
+    const cp=camera.position,va=new THREE.Vector4(),vb=new THREE.Vector4();
+    const TOL=10;let best=null,bestD=TOL*TOL,bestZ=Infinity;
+    for(let k=0;k<segEdge.length;k++){
+      const o=k*6;
+      va.set(segs[o],segs[o+1],segs[o+2],1).applyMatrix4(PV);
+      vb.set(segs[o+3],segs[o+4],segs[o+5],1).applyMatrix4(PV);
+      if(va.w<=1e-6||vb.w<=1e-6)continue;
+      const ax=(va.x/va.w*0.5+0.5)*W,ay=(-va.y/va.w*0.5+0.5)*H;
+      const bx=(vb.x/vb.w*0.5+0.5)*W,by=(-vb.y/vb.w*0.5+0.5)*H;
+      const dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy;
+      let t=L2>1e-9?((mx-ax)*dx+(my-ay)*dy)/L2:0;t=t<0?0:(t>1?1:t);
+      const px=ax+dx*t-mx,py=ay+dy*t-my,d2=px*px+py*py;
+      if(d2>bestD+1e-9)continue;
+      // point 3D correspondant (interpolation perspective) et sa distance caméra
+      const tw=t/vb.w/((1-t)/va.w+t/vb.w);
+      const X=segs[o]+(segs[o+3]-segs[o])*tw,Y=segs[o+1]+(segs[o+4]-segs[o+1])*tw,Z=segs[o+2]+(segs[o+5]-segs[o+2])*tw;
+      const dc=Math.hypot(X-cp.x,Y-cp.y,Z-cp.z);
+      if(dc>dHit+Math.max(0.5,0.02*dHit))continue; // cachée par la matière
+      if(d2<bestD-0.25||dc<bestZ){best=segEdge[k];bestD=d2;bestZ=dc;}
+    }
+    return (best!==null&&best>=0&&best<faoChainMode.edges.length)?best:null;
   }catch(e){ return null; }
 }
 function faoChainSync(){

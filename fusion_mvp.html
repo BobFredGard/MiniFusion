@@ -262,7 +262,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-15-002';
+const APP_VER='2026-10-15-005';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -273,7 +273,7 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-15-002';
+const CACHE_VER='2026-10-15-005';
 function cacheVerOK(v){
   // 2026-10-11-002 : ébauche 3D — la ZONE voyage dans le REPÈRE (zoneAt
   // transposé sous SENS LONG + rotation de −θ sur l'axe d'une limite oblique,
@@ -368,6 +368,8 @@ async function occtFinishBoot(){
     // rechargement de la page, le cache était valide, le rejeu sauté, occLive absent —
     // plus aucun congé, plus aucune esquisse sur face, plus aucune sélection de face.
     try{faceEl.textContent='Noyau prêt — recalcul exact…';builtVersion=-1;builtHash=null;builtEngine=null;rebuild();}catch(e){}
+    // Imports STEP du document (F5, ouverture avant le noyau) : rejoués depuis leur source.
+    try{if(typeof importRestorePending==='function')importRestorePending();}catch(e){}
     // Re-cadrage après bascule exact : le 1er cadrage (chargement) s'est fait sur le repli
     // maillage, dont le solide combiné peut avoir une boîte dégénérée (mesuré : 40×40×10000,
     // caméra propulsée hors du plan lointain 5000 → vue noire jusqu'au prochain Iso).
@@ -567,11 +569,19 @@ function buildScene(){
   camera.position.set(90,-90,90);
   renderer=new THREE.WebGLRenderer({canvas:$('viewport'),antialias:true});
   renderer.localClippingEnabled=true;
+  try{renderer.setPixelRatio(1.25);}catch(e){} // comme viewer_STEP : arêtes et reflet plus doux
   scene.add(new THREE.HemisphereLight(0xffffff,0x444444,0.75));
   const key=new THREE.DirectionalLight(0xffffff,1.0); key.position.set(60,-40,120); scene.add(key);
   try{if('environment' in scene)scene.environment=makeStudioEnv();}catch(e){} // reflets studio
   axHelper=new THREE.AxesHelper(60); scene.add(axHelper); // X rouge → droite, Y vert → arrière, Z bleu → haut
   // Sol miroir (réflexion planaire temps réel, fondu radial). Z-up : cercle déjà horizontal.
+  // 2026-10-15-003 : hors de la texture du reflet (bords d'écran, vue rapprochée), plus
+  // d'échantillonnage étiré par le ClampToEdge (« fuyantes qui cherchent à sortir de la
+  // zone 3D ») : pas de reflet hors [0,1], fondu doux sur les 3 % du bord.
+  // 2026-10-15-004 : MÊMES RÉGLAGES que viewer_STEP (« le miroir fonctionne à
+  // merveille, mets-moi les mêmes ») : reflet net ×0,62, cible 1024×1024, rendu
+  // ×1,25 — et SEULS les solides se reflètent (arêtes, trièdre, plans d'origine,
+  // trajectoires masqués pendant la passe reflet : c'étaient eux qui scintillaient).
   mirrorRT=new THREE.WebGLRenderTarget(1024,1024);
   mirrorCam=new THREE.PerspectiveCamera();
   mirrorTexMat=new THREE.Matrix4();
@@ -579,7 +589,7 @@ function buildScene(){
     textureMatrix:{value:mirrorTexMat},uCenter:{value:new THREE.Vector3()},uRadius:{value:1}};
   const fm=new THREE.ShaderMaterial({uniforms:mirrorU,
     vertexShader:'uniform mat4 textureMatrix; varying vec4 vUv; varying vec3 vWorld;\nvoid main(){ vec4 wp = modelMatrix * vec4(position, 1.0); vWorld = wp.xyz; vUv = textureMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader:'uniform vec3 color; uniform sampler2D tDiffuse; uniform vec3 uCenter; uniform float uRadius; varying vec4 vUv; varying vec3 vWorld;\nvoid main(){ if(vUv.w<=1e-4){ gl_FragColor=vec4(color,1.0); return; } vec2 uv = vUv.xy / vUv.w; vec3 refl = texture2D(tDiffuse, uv).rgb; float d = distance(vWorld.xy, uCenter.xy); float f = exp(-pow(d / max(uRadius * 1.15, 1e-3), 2.0) * 2.0) * 0.85; gl_FragColor = vec4(mix(color, refl * 0.62, clamp(f, 0.0, 0.85)), 1.0); }'});
+    fragmentShader:'uniform vec3 color; uniform sampler2D tDiffuse; uniform vec3 uCenter; uniform float uRadius; varying vec4 vUv; varying vec3 vWorld;\nvoid main(){ if(vUv.w<=1e-4){ gl_FragColor=vec4(color,1.0); return; } vec2 uv = vUv.xy / vUv.w; float eg = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)); if(eg <= 0.0){ gl_FragColor=vec4(color,1.0); return; } vec3 refl = texture2D(tDiffuse, uv).rgb; float d = distance(vWorld.xy, uCenter.xy); float f = exp(-pow(d / max(uRadius * 1.15, 1e-3), 2.0) * 2.0) * 0.85 * smoothstep(0.0, 0.03, eg); gl_FragColor = vec4(mix(color, refl * 0.62, clamp(f, 0.0, 0.85)), 1.0); }'});
   floorMesh=new THREE.Mesh(new THREE.CircleGeometry(400,48),fm);
   floorMesh.name='floor';floorMesh.position.z=-0.5;scene.add(floorMesh);
   buildOriginPlanes();
@@ -605,10 +615,9 @@ function fit(){
   // combinaison cohérente avec la projection de la caméra miroir. Cible carrée + projection
   // carrée = les bords de l'écran sortent de la texture, et le ClampToEdge de three y étire
   // les pixels du bord en traits déformés.
-  if(mirrorRT){
-    const rw=Math.min(1024,W),rh=Math.max(2,Math.round(rw*H/Math.max(W,1)));
-    if(mirrorRT.width!==rw||mirrorRT.height!==rh){mirrorRT.setSize(rw,rh);mirrorDirty=true;}
-  }
+  // 2026-10-15-004 : cible fixe 1024×1024 comme viewer_STEP (plus de résolution
+  // verticale ; la garde [0,1] du shader règle les bords).
+  if(mirrorRT)mirrorDirty=true;
 }
 const _mn=new THREE.Vector3(0,0,1),_mrwp=new THREE.Vector3(),_mcwp=new THREE.Vector3(),_mview=new THREE.Vector3();
 const _mrot=new THREE.Matrix4(),_mlook=new THREE.Vector3(),_mtgt=new THREE.Vector3(),_mcu=new THREE.Vector3();
@@ -682,7 +691,14 @@ function animate(){
     mirrorViewMoved();
     if(vu&&mirrorDirty){
       floorMesh.visible=false;
+      // Seuls les SOLIDES se reflètent (comme viewer_STEP) : traits, aides et plans masqués.
+      const _mh=[];
+      scene.traverse(o=>{
+        if(!o.visible||o===scene)return;
+        if(o.isLine||o.isLineSegments||o.isPoints||o.isSprite||o===axHelper||(o.material&&o.material.isShaderMaterial)||(o.material&&o.material.transparent&&o.material.opacity<0.6)){o.visible=false;_mh.push(o);}
+      });
       renderer.setRenderTarget(mirrorRT);renderer.clear();renderer.render(scene,mirrorCam);
+      for(const o of _mh)o.visible=true;
       renderer.setRenderTarget(null);
       floorMesh.visible=true;
       mirrorDirty=false;
@@ -16130,7 +16146,7 @@ function faoThickSegs(arr,color,alpha,px){
   });
   const mesh=new THREE.Mesh(g,mat);
   mesh.frustumCulled=false;
-  mesh.onBeforeRender=function(rd){ try{ rd.getDrawingBufferSize(res); }catch(e){} };
+  mesh.onBeforeRender=function(rd){ try{ rd.getDrawingBufferSize(res); res.divideScalar(rd.getPixelRatio()||1); }catch(e){} }; // épaisseur en px CSS (pixelRatio 1,25)
   return mesh;
 }
 function faoPrevAdd(group,sp){
@@ -24666,28 +24682,91 @@ function faoChainExit(silent){
     }
   }catch(e){}
 }
+// 2026-10-15-005 : PRÉ-SÉLECTION D'ARÊTES PLUS VISIBLE ET PLUS PRÉCISE.
+// Retour : « les arêtes extérieures sont visibles mais pas assez précises et le trait
+// trop fin ; les arêtes de fond de poche ou de détourage ne le sont pas du tout ».
+// • Trait : les LineSegments WebGL font TOUJOURS 1 px → quads écran (comme les
+//   rapides), 3 px au repos, 5 px survolée / sélectionnée.
+// • Arêtes concaves : posées exactement sur la surface, elles passaient DERRIÈRE la
+//   facette (fond de poche, pied de détourage : la corde du maillage est devant
+//   l'arête vraie). Le shader avance chaque sommet vers la caméra (0,25 mm +
+//   0,4 % de la distance) : visible sur la face, toujours caché par la matière.
+// • Pointage : distance en PIXELS écran au segment (10 px), et non plus 2 mm en 3D
+//   (trop large de près, inattrapable de loin) ; une arête cachée par la pièce
+//   n'est jamais prise.
+const FAO_CHAIN_W=3, FAO_CHAIN_WH=5;
 function faoChainBuildOverlay(){
   try{
     if(!faoChainMode)return;
     const old=scene.getObjectByName('faoChainEdges');
     if(old)scene.remove(old);
-    const positions=[], colors=[], segEdge=[];
+    const segs=[], segEdge=[];
     faoChainMode.edges.forEach(function(e,i){
       const p=e.pts||[];
       for(let k=0;k+1<p.length;k++){
-        positions.push(p[k][0],p[k][1],p[k][2],p[k+1][0],p[k+1][1],p[k+1][2]);
-        colors.push(0,0,0,0,0,0);
+        segs.push(p[k][0],p[k][1],p[k][2],p[k+1][0],p[k+1][1],p[k+1][2]);
         segEdge.push(i);
       }
     });
-    const geo=new THREE.BufferGeometry();
-    geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
-    geo.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
-    const mat=new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:0.95,depthTest:true});
-    const l=new THREE.LineSegments(geo,mat);
-    l.renderOrder=999;
-    l.userData.segEdge=segEdge;
-    const grp=new THREE.Group(); grp.name='faoChainEdges'; grp.add(l);
+    const n=segEdge.length;
+    const pos=new Float32Array(n*12),oth=new Float32Array(n*12),side=new Float32Array(n*4),
+      col=new Float32Array(n*12),wid=new Float32Array(n*4),idx=new Uint32Array(n*6);
+    for(let i=0;i<n;i++){
+      const a=i*6,v=i*12,k=i*4;
+      for(let q=0;q<4;q++){
+        const atA=q<2,o=v+q*3;
+        pos[o]=segs[a+(atA?0:3)];pos[o+1]=segs[a+(atA?1:4)];pos[o+2]=segs[a+(atA?2:5)];
+        oth[o]=segs[a+(atA?3:0)];oth[o+1]=segs[a+(atA?4:1)];oth[o+2]=segs[a+(atA?5:2)];
+        wid[k+q]=FAO_CHAIN_W;
+      }
+      side[k]=1;side[k+1]=-1;side[k+2]=-1;side[k+3]=1;
+      const t=i*6;idx[t]=k;idx[t+1]=k+1;idx[t+2]=k+2;idx[t+3]=k+1;idx[t+4]=k+3;idx[t+5]=k+2;
+    }
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+    g.setAttribute('other',new THREE.BufferAttribute(oth,3));
+    g.setAttribute('side',new THREE.BufferAttribute(side,1));
+    g.setAttribute('col',new THREE.BufferAttribute(col,3));
+    g.setAttribute('wid',new THREE.BufferAttribute(wid,1));
+    g.setIndex(new THREE.BufferAttribute(idx,1));
+    const res=new THREE.Vector2(1000,1000);
+    const mkMat=function(halo){ return new THREE.ShaderMaterial({
+      uniforms:{res:{value:res},halo:{value:halo}},
+      vertexShader:[
+        'attribute vec3 other; attribute float side; attribute vec3 col; attribute float wid; uniform vec2 res; uniform float halo; varying vec3 vCol;',
+        'vec4 pull(vec3 p){',
+        '  vec4 m=modelViewMatrix*vec4(p,1.0);',
+        '  float dd=length(m.xyz);',
+        '  m.xyz*=max(0.0,1.0-(0.25+0.004*dd)/max(dd,1e-3));', // vers la caméra
+        '  return projectionMatrix*m;',
+        '}',
+        'void main(){',
+        '  vCol=halo>0.5?vec3(0.03,0.03,0.05):col;',
+        '  vec4 a=pull(position);',
+        '  vec4 b=pull(other);',
+        '  vec2 d=(b.xy/b.w-a.xy/a.w)*res;',
+        '  float l=length(d);',
+        '  vec2 u=l>1e-6?d/l:vec2(1.0,0.0);',
+        '  vec2 nrm=vec2(-u.y,u.x);',
+        '  a.xy+=nrm*side*(wid+halo*2.0)/res*a.w;',
+        '  gl_Position=a;',
+        '}'].join(String.fromCharCode(10)),
+      fragmentShader:'varying vec3 vCol; void main(){ gl_FragColor=vec4(vCol,1.0); }',
+      side:THREE.DoubleSide
+    }); };
+    // Liseré sombre SOUS le trait (+1 px de chaque côté) : contraste garanti, même
+    // une arête jaune survolée sur un corps jaune reste lisible.
+    const halo=new THREE.Mesh(g,mkMat(1));
+    halo.frustumCulled=false; halo.renderOrder=998; halo.raycast=function(){};
+    const mesh=new THREE.Mesh(g,mkMat(0));
+    mesh.frustumCulled=false;
+    mesh.renderOrder=999;
+    mesh.raycast=function(){}; // pointage écran : faoChainPick
+    mesh.onBeforeRender=function(rd){ try{ rd.getDrawingBufferSize(res); res.divideScalar(rd.getPixelRatio()||1); }catch(e){} };
+    mesh.userData.segEdge=segEdge;
+    mesh.userData.segs=segs;
+    halo.onBeforeRender=mesh.onBeforeRender;
+    const grp=new THREE.Group(); grp.name='faoChainEdges'; grp.add(mesh); grp.add(halo); // [0] = trait (pointage)
     scene.add(grp);
     faoChainPaint();
   }catch(e){ try{faceEl.textContent='Chaîne : affichage impossible ('+e.message+').';}catch(e2){} }
@@ -24704,35 +24783,65 @@ function faoChainPaint(){
     const grp=scene.getObjectByName('faoChainEdges');
     if(!grp||!faoChainMode)return;
     const l=grp.children[0];
-    if(!l||!l.geometry||!l.geometry.attributes.color)return;
-    const col=l.geometry.attributes.color, segEdge=l.userData.segEdge;
+    if(!l||!l.geometry||!l.geometry.attributes.col)return;
+    const col=l.geometry.attributes.col, wid=l.geometry.attributes.wid, segEdge=l.userData.segEdge;
     if(!segEdge)return;
     const c=new THREE.Color(), cache={};
     for(let k=0;k<segEdge.length;k++){
       const i=segEdge[k];
-      let hex=cache[i];
-      if(hex===undefined)hex=cache[i]=faoChainIsSeed(i)?0xffd60a:(faoChainIsSel(i)?0xff453a:(faoChainHover===i?0xffd60a:0x0a84ff));
-      c.setHex(hex);
-      col.setXYZ(k*2,c.r,c.g,c.b);
-      col.setXYZ(k*2+1,c.r,c.g,c.b);
+      let st=cache[i];
+      if(st===undefined){
+        const seed=faoChainIsSeed(i), sl=faoChainIsSel(i), hv=(faoChainHover===i);
+        st=cache[i]={hex:seed?0xffd60a:(sl?0xff453a:(hv?0xffd60a:0x0a84ff)),w:(seed||sl||hv)?FAO_CHAIN_WH:FAO_CHAIN_W};
+      }
+      c.setHex(st.hex);
+      for(let q=0;q<4;q++){col.setXYZ(k*4+q,c.r,c.g,c.b);wid.setX(k*4+q,st.w);}
     }
-    col.needsUpdate=true;
+    col.needsUpdate=true; wid.needsUpdate=true;
   }catch(e){}
 }
 function faoChainPick(e){
+  // Arête la plus proche EN PIXELS du curseur (≤ 10 px), parmi celles que la pièce
+  // ne cache pas (profondeur ≤ premier impact du rayon + tolérance).
   try{
     const grp=scene.getObjectByName('faoChainEdges');
     if(!grp||!faoChainMode)return null;
+    const l=grp.children[0];const segs=l&&l.userData.segs,segEdge=l&&l.userData.segEdge;
+    if(!segs||!segEdge)return null;
     const r=renderer.domElement.getBoundingClientRect();
-    const ndc=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
-    rayc.setFromCamera(ndc,camera);
-    rayc.params.Line.threshold=2;
-    const hits=rayc.intersectObjects(grp.children,false);
-    if(!hits.length)return null;
-    const segEdge=hits[0].object.userData.segEdge;
-    if(!segEdge)return null;
-    const i=segEdge[Math.round(hits[0].index/2)];
-    return (i!==undefined&&i>=0&&i<faoChainMode.edges.length)?i:null;
+    const mx=e.clientX-r.left,my=e.clientY-r.top,W=r.width,H=r.height;
+    // premier impact sur les corps visibles (occultation)
+    let dHit=Infinity;
+    try{
+      const ndc=new THREE.Vector2((mx/W)*2-1,-(my/H)*2+1);
+      rayc.setFromCamera(ndc,camera);
+      const ms=(bodies||[]).filter(function(b){return b&&b.visible!==false&&!b.ghost&&b.mesh&&b.mesh.visible!==false;}).map(function(b){return b.mesh;});
+      const h=rayc.intersectObjects(ms,false);
+      if(h.length)dHit=h[0].distance;
+    }catch(err){}
+    camera.updateMatrixWorld();
+    const PV=new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
+    const cp=camera.position,va=new THREE.Vector4(),vb=new THREE.Vector4();
+    const TOL=10;let best=null,bestD=TOL*TOL,bestZ=Infinity;
+    for(let k=0;k<segEdge.length;k++){
+      const o=k*6;
+      va.set(segs[o],segs[o+1],segs[o+2],1).applyMatrix4(PV);
+      vb.set(segs[o+3],segs[o+4],segs[o+5],1).applyMatrix4(PV);
+      if(va.w<=1e-6||vb.w<=1e-6)continue;
+      const ax=(va.x/va.w*0.5+0.5)*W,ay=(-va.y/va.w*0.5+0.5)*H;
+      const bx=(vb.x/vb.w*0.5+0.5)*W,by=(-vb.y/vb.w*0.5+0.5)*H;
+      const dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy;
+      let t=L2>1e-9?((mx-ax)*dx+(my-ay)*dy)/L2:0;t=t<0?0:(t>1?1:t);
+      const px=ax+dx*t-mx,py=ay+dy*t-my,d2=px*px+py*py;
+      if(d2>bestD+1e-9)continue;
+      // point 3D correspondant (interpolation perspective) et sa distance caméra
+      const tw=t/vb.w/((1-t)/va.w+t/vb.w);
+      const X=segs[o]+(segs[o+3]-segs[o])*tw,Y=segs[o+1]+(segs[o+4]-segs[o+1])*tw,Z=segs[o+2]+(segs[o+5]-segs[o+2])*tw;
+      const dc=Math.hypot(X-cp.x,Y-cp.y,Z-cp.z);
+      if(dc>dHit+Math.max(0.5,0.02*dHit))continue; // cachée par la matière
+      if(d2<bestD-0.25||dc<bestZ){best=segEdge[k];bestD=d2;bestZ=dc;}
+    }
+    return (best!==null&&best>=0&&best<faoChainMode.edges.length)?best:null;
   }catch(e){ return null; }
 }
 function faoChainSync(){
@@ -27048,8 +27157,11 @@ function measurePair(A,B){
   if(GA.kind==='plan'&&GB.kind==='plan'){
     const ang=Math.acos(Math.min(1,Math.abs(GA.n.dot(GB.n))))*180/Math.PI;
     if(ang<0.5){
-      const signed=(B.point.clone().sub(A.point)).dot(GA.n);
-      dimPair(A.point,A.point.clone().addScaledVector(GA.n,signed),Math.abs(signed).toFixed(2));
+      // Distance EXACTE entre les deux plans (équations BRep), pas entre les points
+      // cliqués : un clic tombe sur le maillage, à la flèche de tessellation près.
+      const signed=(GB.p.clone().sub(GA.p)).dot(GA.n);
+      const A0=A.point.clone().addScaledVector(GA.n,-(A.point.clone().sub(GA.p)).dot(GA.n)); // pied SUR le plan 1
+      dimPair(A0,A0.clone().addScaledVector(GA.n,signed),Math.abs(signed).toFixed(2));
       faceEl.textContent=`Faces parallèles : ${Math.abs(signed).toFixed(2)} mm (angle ${ang.toFixed(2)}°)`;
     }else{
       const d=A.point.distanceTo(B.point);
@@ -27072,14 +27184,22 @@ function occFaceGeom(mesh,fi){
   // Géométrie exacte d'une face cliquée (plan / cylindre) via le BRep. Null sinon.
   // Multi-corps : chaque mesh a ses propres ordinaux (occGroups par solide) — la face
   // est donc résolue sur le SOLIDE DU CORPS cliqué, pas sur le composé occLive.
-  if(!occHas()||!occLive||!occLive.shape||!mesh||fi===undefined)return null;
+  // 2026-10-15-004 : un import STEP (seul dans son corps) a AUSSI son BRep exact
+  // (importGeom.brep) et son maillage porte occGroups : on le résout pareil. Avant,
+  // un STEP retombait sur la distance entre les points cliqués (« la mesure sur les
+  // fichiers STEP n'est pas identique à celle des solides de l'application »).
+  if(!occHas()||!mesh||fi===undefined)return null;
   const bd=bodies.find(b=>b.mesh===mesh);
-  if(!bd||bd.kind!=='body'||!bd.shape)return null;
+  if(!bd)return null;
+  let shape=null;
+  if(bd.kind==='body'&&bd.shape&&occLive&&occLive.shape)shape=bd.shape;
+  else if(bd.kind==='import'){const e=importGeom.get(bd.ref||bd.id);if(e&&e.brep)shape=e.brep;}
+  if(!shape)return null;
   try{
     const groups=mesh.geometry.userData.occGroups||[];
     const g=groups.find(g=>fi>=g.start&&fi<g.start+g.count);
     if(!g)return null;
-    const f=occFaceAt(bd.shape,g.f);
+    const f=occFaceAt(shape,g.f);
     if(!f)return null;
     const ad=new occt.BRepAdaptor_Surface_2(f,true);
     const gt=ad.GetType();
@@ -27098,6 +27218,15 @@ function occFaceGeom(mesh,fi){
         p:new THREE.Vector3(a.Location().X(),a.Location().Y(),a.Location().Z())};
     }
     try{ad.delete();}catch(e){}
+    // Repère du mesh (import déplacé) : la géométrie BRep est en coordonnées locales.
+    try{
+      mesh.updateMatrixWorld(true);const M=mesh.matrixWorld;
+      if(M&&!M.equals(new THREE.Matrix4())){
+        const N=new THREE.Matrix3().getNormalMatrix(M);
+        if(out.kind==='cyl'){out.center.applyMatrix4(M);out.axis.applyMatrix3(N).normalize();}
+        else{out.p.applyMatrix4(M);out.n.applyMatrix3(N).normalize();}
+      }
+    }catch(e){}
     return out;
   }catch(e){return null;}
 }
@@ -27645,17 +27774,110 @@ $('fileImport').addEventListener('change',async e=>{
   else{await importSTEP(f);}
   e.target.value='';
 });
-async function importSTL(file){
-  const buf=await file.arrayBuffer();
-  const geo=parseSTL(buf);
-  if(!geo){alert('STL illisible.');return;}
-  const mesh=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0x0a84ff}));
+/* ---------- 2026-10-15-004 : la SOURCE d'un import est persistée ----------
+   Retour : « quand on sauvegarde la pièce avec le STEP et des usinages, le fichier
+   n'est pas rechargé car manquant. Pourtant le .miniFusion fait 30 Mo ! » — les
+   30 Mo étaient les trajectoires ; la géométrie importée n'était JAMAIS écrite
+   (deserialise la jetait, avec l'alerte « réimportez le STEP/STL »).
+   Désormais : les octets du fichier d'origine sont gardés (mémoire + IndexedDB,
+   clé = empreinte du contenu) ; la fonction import ne porte que la référence
+   f.src={fmt,key,size,file} — le JSON du document, l'autosave et les instantanés
+   d'annulation restent légers. Le .miniFusion EMBARQUE ces octets (base64) : à
+   l'ouverture, le STEP est rejoué avec le MÊME id de fonction, donc le corps, les
+   enlèvements et les opérations FAO qui le visent retrouvent leur cible.
+   Anciens fichiers (sans source) : la fonction est conservée « à réimporter » ;
+   importer un fichier du même nom la rebranche (même id, usinages conservés). */
+const importSrc=new Map(); // 'impsrc:<empreinte>' -> Uint8Array (fichier d'origine)
+function importSrcKey(u8){
+  let h=2166136261;for(let i=0;i<u8.length;i++){h^=u8[i];h=Math.imul(h,16777619);}
+  return 'impsrc:'+(h>>>0).toString(36)+'_'+u8.length;
+}
+function importU8ToB64(u8){
+  let out='';const CH=0x8000;
+  for(let i=0;i<u8.length;i+=CH)out+=String.fromCharCode.apply(null,u8.subarray(i,i+CH));
+  return btoa(out);
+}
+function importB64ToU8(b64){
+  const t=atob(b64);const u=new Uint8Array(t.length);
+  for(let i=0;i<t.length;i++)u[i]=t.charCodeAt(i);
+  return u;
+}
+async function importSrcPut(key,u8){
+  importSrc.set(key,u8);
+  try{await idbSet(key,u8);}catch(e){} // F5 / autosave : relu depuis l'IndexedDB
+}
+async function importSrcGet(key){
+  if(importSrc.has(key))return importSrc.get(key);
+  try{
+    const v=await idbGet(key);
+    if(v){const u=(v instanceof Uint8Array)?v:new Uint8Array(v.buffer||v);importSrc.set(key,u);return u;}
+  }catch(e){}
+  return null;
+}
+function importPlaceholder(name){
+  // Fonction import d'un ancien fichier, restée sans géométrie : même nom → on s'y
+  // rebranche ; sinon, s'il n'en reste qu'UNE, on propose (le nom du fichier sur le
+  // disque diffère souvent : « Cavité(Symétrie miroir) » ↔ « Cavité.step »).
+  const att=(doc.features||[]).filter(f=>f&&f.type==='import'&&!f._mesh&&!importGeom.has(f.id));
+  const m=att.find(f=>f.name===name);
+  if(m)return m;
+  if(att.length===1&&confirm('Rebrancher « '+name+' » sur l\'import manquant « '+att[0].name+' » ?\n(usinages et opérations qui le visent conservés)\n\nAnnuler = l\'ajouter comme nouvel import.'))return att[0];
+  return null;
+}
+function importAttach(name,fmt,u8,entry,fileName){
+  // Fonction import : nouvelle, ou rebranchement d'une fonction « à réimporter ».
+  const key=importSrcKey(u8);
+  importSrcPut(key,u8); // mémoire immédiate ; écriture IndexedDB en tâche de fond (l'import n'attend pas)
+  const src={fmt,key,size:u8.length,file:fileName};
+  const ph=importPlaceholder(name);
+  if(ph){
+    docPushUndo('réimport '+name);
+    ph.src=src;ph._mesh=entry.mesh;importGeom.set(ph.id,entry);
+    sel={kind:'feature',id:ph.id};
+    markDirty();builtVersion=-1;builtHash=null;rebuild();showAll();
+    return ph.id;
+  }
   const id=uid('im');
-  const feat={id,type:'import',name:file.name.replace(/\.[^.]+$/,''),visible:true,_mesh:mesh};
-  importGeom.set(id,{mesh});
+  importGeom.set(id,entry);
+  addFeature({id,type:'import',name,visible:true,_mesh:entry.mesh,src});
+  return id;
+}
+function importStlBuild(u8){
+  const geo=parseSTL(u8.buffer.slice(u8.byteOffset,u8.byteOffset+u8.byteLength));
+  if(!geo)throw new Error('STL illisible');
   // centre la pièce
   geo.computeBoundingBox();const c=geo.boundingBox.getCenter(new THREE.Vector3());geo.translate(-c.x,-c.y,-c.z);
-  addFeature(feat);sel={kind:'feature',id};markDirty();rebuild();showAll();
+  return {mesh:new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0x0a84ff}))};
+}
+async function importSTL(file){
+  const u8=new Uint8Array(await file.arrayBuffer());
+  let entry;try{entry=importStlBuild(u8);}catch(e){alert('STL illisible.');return;}
+  const id=importAttach(file.name.replace(/\.[^.]+$/,''),'stl',u8,entry,file.name);
+  sel={kind:'feature',id};markDirty();rebuild();showAll();
+}
+let _importRestoring=false;
+async function importRestorePending(){
+  // Rejoue les imports du document à partir de leur source persistée. Appelée à
+  // l'ouverture (deserialise) et quand le noyau OCCT devient prêt (F5).
+  if(_importRestoring)return 0;
+  const todo=(doc.features||[]).filter(f=>f&&f.type==='import'&&!f._mesh&&!importGeom.has(f.id)&&f.src&&f.src.key);
+  if(!todo.length)return 0;
+  if(todo.some(f=>f.src.fmt!=='stl')&&!occHas())return 0; // occtFinishBoot relancera
+  _importRestoring=true;let n=0;const miss=[];
+  try{
+    for(const f of todo){
+      const u8=await importSrcGet(f.src.key);
+      if(!u8){miss.push(f.name);continue;}
+      if(!(doc.features||[]).includes(f))continue; // document remplacé entre-temps
+      try{
+        const e=(f.src.fmt==='stl')?importStlBuild(u8):importStepBuild(u8);
+        importGeom.set(f.id,e);f._mesh=e.mesh;n++;
+      }catch(err){miss.push(f.name);}
+    }
+  }finally{_importRestoring=false;}
+  if(n){builtVersion=-1;builtHash=null;builtEngine=null;rebuild();if(!viewUserMoved)showAll();}
+  if(miss.length)try{faceEl.textContent='Import(s) sans source : '+miss.join(', ')+' — réimportez le fichier (même nom : il se rebranche sur la fonction existante).';}catch(e){}
+  return n;
 }
 function parseSTL(buf){
   try{
@@ -27678,10 +27900,20 @@ function parseSTL(buf){
 async function importSTEP(file){
   if(!occHas()){alert('Moteur STEP (OCCT) pas encore chargé — réessayez dans quelques secondes (page servie en http:// de préférence).\nEn attendant : import STL OK, extrusions OK.');return;}
   try{
-    const buf=await file.arrayBuffer();
+    const u8=new Uint8Array(await file.arrayBuffer());
+    const entry=importStepBuild(u8);
+    importAttach(file.name.replace(/\.[^.]+$/,''),'step',u8,entry,file.name);
+    markDirty();rebuild();showAll();
+    faceEl.textContent='STEP importé : '+file.name;
+  }catch(e){alert('Import STEP impossible : '+e.message);}
+}
+function importStepBuild(u8){
+  // Octets STEP -> {mesh, faoGeo, edges, brep}. Synchrone, déterministe : le
+  // rejeu d'un document redonne EXACTEMENT les mêmes triangles qu'à l'import.
+  {
     const path='/i.stp'; // chemin court fixe (cf. export)
     try{occt.FS.unlink(path);}catch(e){}
-    occt.FS.writeFile(path,new Uint8Array(buf));
+    occt.FS.writeFile(path,u8);
     const reader=new occt.STEPControl_Reader_1();
     reader.ReadFile(path); // statut passé en revue via NbRootsForTransfer
     if(reader.NbRootsForTransfer()<1)throw new Error('aucun solide transférable');
@@ -27699,7 +27931,6 @@ async function importSTEP(file){
     const g=occTessellateBudget(shape,D,OCC_DISPLAY_TRIS)||occTessellate(shape,D.lin,D.ang);
     if(!g||!g.attributes.position.count)throw new Error('tessellation vide');
     const mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0x0a84ff}));
-    const id=uid('im');
     const entry={mesh};
     if(faoGeo)entry.faoGeo=faoGeo; // géométrie réservée à l'outillage (voir la fin du fichier)
     // Arêtes tangentes : besoin des FACES et de leur continuité (C0/G1). Le shape est
@@ -27712,13 +27943,10 @@ async function importSTEP(file){
     // « Soustraction » tombait dans le vide. Le BRep reste la PROPRIÉTÉ de la table :
     // occReplayBody en prend une COPIE, jamais l'original (libéré ici, à la purge).
     entry.brep=shape;
-    importGeom.set(id,entry); // {mesh, edges, faoGeo, brep}
-    addFeature({id,type:'import',name:file.name.replace(/\.[^.]+$/,''),visible:true,_mesh:mesh});
     try{reader.delete();}catch(e){}
     try{occt.FS.unlink(path);}catch(e){}
-    markDirty();rebuild();showAll();
-    faceEl.textContent='STEP importé : '+file.name;
-  }catch(e){alert('Import STEP impossible : '+e.message);}
+    return entry; // {mesh, edges, faoGeo, brep}
+  }
 }
 /* ============ FAO : « corps blindés » (phase 4) ==============================
    L'affichage est désormais plus fin (occDisplayDefl + budget de triangles, phase 3)
@@ -28067,9 +28295,11 @@ async function deserialise(json,opts){
     else if(o.sel.kind==='feature'&&doc.features.some(f=>f.id===o.sel.id))sel={kind:'feature',id:o.sel.id};
     else if(o.sel.kind==='body'&&(doc.bodies||[]).some(e=>e.id===o.sel.id))sel={kind:'body',id:o.sel.id};
   }
-  // les imports STEP/STL ne sont pas persistés en géométrie dans ce MVP (seuls esquisses+extrusions rejouent) — on l'indique
-  const nImp=doc.features.filter(f=>f.type==='import').length;
-  doc.features=doc.features.filter(f=>f.type!=='import');
+  // Imports STEP/STL : la fonction RESTE (même id → corps, enlèvements et FAO
+  // gardent leur cible) ; sa géométrie est rejouée depuis la source persistée
+  // (importRestorePending, fin de fonction). Ancien fichier sans source : la
+  // fonction attend une réimportation du même nom.
+  const sansSrc=doc.features.filter(f=>f.type==='import'&&!(f.src&&f.src.key)).map(f=>f.name);
   occCkClear(); // document remplacé : les points de contrôle ne valent plus rien
   const rep=docSanitise();
   if(rep.dup||rep.orph||rep.sk||rep.cap){try{log('Document réparé : '+rep.dup+' instance(s) en double, '+rep.orph+' instance(s) orpheline(s), '+rep.sk+' esquisse(s) d’instance abandonnée(s), '+rep.cap+' répétition(s) plafonnée(s) à '+REPEAT_MAX+' copies.');}catch(e){}}
@@ -28086,7 +28316,8 @@ async function deserialise(json,opts){
   sel={kind:null,id:null};uidN=doc.sketches.length+doc.features.length+1;
   if(!opts||opts.rebuild!==false){rebuild();renderProps();showAll();}
   else renderProps();
-  if(nImp)alert(nImp+' corps importé(s) non rejoués (géométrie non persistée dans ce MVP) — réimportez le STEP/STL. Sauvegarde paramétrique complète à l\'étape suivante.');
+  if(sansSrc.length)alert(sansSrc.length+' import(s) enregistré(s) sans leur fichier (ancien format) : '+sansSrc.join(', ')+'.\nRéimportez le STEP/STL (même nom, ou confirmez le rebranchement) : il reprend la fonction existante, usinages conservés. Puis ré-enregistrez.');
+  try{importRestorePending();}catch(e){}
   // Parcours d'outils : on lit d'abord le cache persisté (IndexedDB), on ne
   // recalcule que ce qui manque — l'ouverture ne reprend plus les ~90 s du calcul.
   try{ if(typeof faoMovesReset==='function')faoMovesReset(); }catch(e){}
@@ -28109,10 +28340,22 @@ function bundleIs(txt){
   catch(e){ return false; }
 }
 async function bundleMoves(){
+  // 2026-10-15-004 : SEULEMENT les trajectoires des opérations DE CE DOCUMENT.
+  // Avant, toutes les entrées faoMoves:* de l'IndexedDB partaient dans le fichier —
+  // celles de tous les documents jamais ouverts dans ce navigateur : « Vide.miniFusion
+  // pèse 70 Mo ». Clé = 'faoMoves:<posage>:<opération>' (cf. bundleRestore).
   const out={};
   if(!faoMovesReady())return out;
+  const miens=new Set();
   try{
-    const ks=await idbKeys('faoMoves:');
+    const r=faoRoot();
+    (((r&&r.setups)||[])).forEach(function(st){
+      ((st&&st.ops)||[]).forEach(function(op){ miens.add('faoMoves:'+((st&&st.id)||'_')+':'+((op&&op.id)||'_')); });
+    });
+  }catch(e){}
+  if(!miens.size)return out;
+  try{
+    const ks=(await idbKeys('faoMoves:')).filter(function(k){return miens.has(k);});
     for(let i=0;i<ks.length;i++){
       try{ const v=await idbGet(ks[i]); if(v&&v.v===1&&Array.isArray(v.mv))out[ks[i]]=v; }
       catch(e){}
@@ -28120,11 +28363,21 @@ async function bundleMoves(){
   }catch(e){}
   return out;
 }
+async function bundleImports(){
+  // Fichiers d'origine des imports (base64) : sans eux, le STEP manquait à l'ouverture.
+  const out={};
+  for(const f of (doc.features||[])){
+    if(!f||f.type!=='import'||!f.src||!f.src.key||out[f.src.key])continue;
+    try{const u8=await importSrcGet(f.src.key);if(u8)out[f.src.key]=importU8ToB64(u8);}catch(e){}
+  }
+  return out;
+}
 async function bundleSerialise(){
   const moves=await bundleMoves();
+  const imports=await bundleImports();
   return JSON.stringify({app:'MiniFusion',bundle:1,v:APP_VER,cacheVer:CACHE_VER,
     at:Date.now(),name:doc.name||'',doc:JSON.parse(serialise()),
-    nMoves:Object.keys(moves).length,moves:moves});
+    nMoves:Object.keys(moves).length,moves:moves,imports:imports});
 }
 let faoBundleMovesN=0;   // trajectoires embarquees dans le fichier ouvert
 function bundleReport(){
@@ -28155,11 +28408,26 @@ async function bundleRestore(txt,opts){
   if(!b||b.bundle!==1||!b.doc)return false;
   const moves=b.moves||{};
   if(opts&&opts.name&&b.doc&&typeof b.doc==='object')b.doc.name=opts.name;
-  const ks=Object.keys(moves);
+  // Seulement les trajectoires des opérations du document (un ancien fichier
+  // embarquait celles de TOUS les documents du navigateur d'origine : ~70 Mo).
+  const miens=new Set();
+  try{
+    const fr=b.doc&&b.doc.fao;
+    (((fr&&fr.setups)||[])).forEach(function(st){
+      ((st&&st.ops)||[]).forEach(function(op){ miens.add('faoMoves:'+((st&&st.id)||'_')+':'+((op&&op.id)||'_')); });
+    });
+  }catch(e){}
+  const ancienFao=!!(b.doc.fao&&typeof b.doc.fao==='object'&&!Array.isArray(b.doc.fao.setups)); // pré-posages : ids inconnus ici
+  const ks=Object.keys(moves).filter(function(k){return ancienFao||miens.has(k);});
   if(ks.length&&faoMovesReady()){
     for(let i=0;i<ks.length;i++){ try{ await idbSet(ks[i],moves[ks[i]]); }catch(e){} }
   }
   faoBundleMovesN=ks.length;
+  // Sources des imports AVANT le document : deserialise les rejoue aussitôt.
+  const im=(b.imports&&typeof b.imports==='object')?b.imports:{};
+  for(const k of Object.keys(im)){
+    try{if(typeof im[k]==='string')await importSrcPut(k,importB64ToU8(im[k]));}catch(e){}
+  }
   faoBundleWantReport=true;   // consomme par faoMovesDone() (fin de lecture)
   try{ setTimeout(function(){
         try{ if(faoBundleWantReport&&!faoMovesPending()){ faoBundleWantReport=false; bundleReport(); } }
@@ -28461,7 +28729,7 @@ window.addEventListener('pointerdown',e=>{if(!$('ctxMenu').contains(e.target))hi
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.27';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.30';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);
