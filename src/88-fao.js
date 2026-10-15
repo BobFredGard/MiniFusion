@@ -2825,7 +2825,7 @@ function* faoOpMovesIt(op,job){
   else if(op.type==='contour')mv=faoGenContour({x0:+op.x0,y0:+op.y0,x1:+op.x1,y1:+op.y1},
     +op.ztop,+op.zbot,Object.assign({},base,{ap:+op.ap,radial:RA.radial,axial:RA.axial,
       entry:op.entry||'circ',entryR:op.entryR}));
-  else if(op.type==='drill')mv=faoGenDrillPlan(faoDrillPlan(op,job),secu); // trous du modèle ou XY (src/89-fao-percage.js)
+  else if(op.type==='drill')mv=(op.cycle==='helix')?faoGenHelixPlan(faoDrillPlan(op,job),D,op,secu):faoGenDrillPlan(faoDrillPlan(op,job),secu,op); // trous du modèle ou XY (src/89-fao-percage.js) ; helix = fraisage
   else if(op.type==='rough3d'||faoPocketAdapt(op)){
     let am=null;
     try{ am=faoActiveMesh(job); }catch(e){ am=null; }
@@ -3251,6 +3251,7 @@ function faoArcWords(m,ox,oy,oz){
    PostPro/fagor-8065.cps) + annulation `G80` (cycles modaux). */
 function faoDrillCycle(op,job,oz){
   if(!op||op.type!=='drill')return null;
+  if(op.cycle==='helix')return null; // fraisage hélicoïdal : émis en G1/G2/G3 comme un parcours
   // 2026-10-15-011 : un plan PAR TROU (départ et fond propres — trous du modèle à
   // des hauteurs différentes), dans l'ordre optimisé. Saisie XY : comme avant.
   const plan=faoDrillPlan(op,job);
@@ -5707,6 +5708,7 @@ function faoOpShortLabel(op){
     const H=op.holes||[],c=op.cycle||'drill';
     const fr=function(v){return String(+(+v).toFixed(2)).replace('.',',');};
     if(c==='spot')return 'Pointage ('+H.length+')';
+    if(c==='helix')return 'Lamage fraisé'+(H.length?' Ø'+fr(H[0].d):'')+' ('+H.length+')';
     if(c==='tap'){const h=H.find(function(x){return x.thread;});return 'Taraudage'+(h&&typeof holeThreadLabel==='function'?' '+holeThreadLabel(h.thread):'')+' ('+H.length+')';}
     return n+(H.length?' Ø'+fr(H[0].d):'')+' ('+H.length+')';
   }

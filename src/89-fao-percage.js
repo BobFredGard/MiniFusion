@@ -231,6 +231,12 @@ function faoDrillDepthOf(op,t,h){
   // Z de la POINTE de l'outil au fond, pour un trou.
   const L=faoToolTipLen(t),brk=isFinite(+op.brk)?Math.max(0,+op.brk):1;
   const cyc=op.cycle||'drill';
+  const mode0=op.depthMode||'full';
+  if(cyc==='helix'){
+    // fraisage : fond PLAT au fond du trou (lamage) ; débouchant : + débouchage
+    if(mode0==='manual'&&isFinite(+op.zbot))return +op.zbot;
+    return h.through?(h.zbot-brk):h.zbot;
+  }
   if(cyc==='spot'){
     // Ø de pointage : saisi, sinon chanfrein du modèle, sinon Ø NOMINAL + 0,4 pour un
     // trou taraudé (entrée du taraud), sinon Ø du trou + 0,4.
@@ -290,13 +296,19 @@ function faoDrillPlan(op,job){
   // saisie XY historique : ordre saisi (programmes existants inchangés) sauf choix explicite
   return faoDrillOrder(list,op.order||(op.src==='model'?'auto':'sel'));
 }
-function faoGenDrillPlan(plan,secuAbs){
+function faoGenDrillPlan(plan,secuAbs,op){
+  // Taraudage : le taraud RESSORT à la MÊME avance qu'il est entré (F = pas × S),
+  // seul le sens de rotation s'inverse — jamais en rapide (aperçu + estimation ;
+  // le G-code, lui, laisse CYCLE84 / G84 rigide le faire).
+  const tap=!!(op&&op.cycle==='tap');
   const moves=[];
   plan.forEach(function(p){
     const s=Math.max(+secuAbs||0,p.rfp+2);
+    const zr=p.rfp+Math.min(2,Math.max(0.5,s-p.rfp));
     moves.push({r:1,x:p.x,y:p.y,z:s});
-    moves.push({r:1,x:p.x,y:p.y,z:p.rfp+Math.min(2,Math.max(0.5,s-p.rfp))});
+    moves.push({r:1,x:p.x,y:p.y,z:zr});
     moves.push({r:0,x:p.x,y:p.y,z:p.zTip});
+    if(tap)moves.push({r:0,x:p.x,y:p.y,z:zr,tapOut:1});
     moves.push({r:1,x:p.x,y:p.y,z:s});
   });
   return moves;
@@ -304,6 +316,7 @@ function faoGenDrillPlan(plan,secuAbs){
 /* ----- outil : affectation automatique ----- */
 function faoDrillAutoTool(setup,op,d){
   // Foret du bon Ø dans la bibliothèque, sinon création ; foret à centrer pour un pointage.
+  if(op.cycle==='helix')return faoHelixTool(setup,op,d);
   const want=(op.cycle==='spot')?'spot':(op.cycle==='tap'?'tap':'drill');
   const cur=faoToolById(setup,op.toolId);
   const tools=setup.tools||(setup.tools=[]);
@@ -418,7 +431,7 @@ function faoDrillSections(setup,op,d){
   // ── cycle (Réglages)
   const rc=faoRow();
   rc.appendChild(faoLab('Cycle'));
-  rc.appendChild(faoSel([['spot','Pointage (centrage)'],['drill','Perçage simple'],['peck','Débourrage (dégagement total)'],['chip','Brise-copeaux'],['tap','Taraudage']],op.cycle||'drill',
+  rc.appendChild(faoSel([['spot','Pointage (centrage)'],['drill','Perçage simple'],['peck','Débourrage (dégagement total)'],['chip','Brise-copeaux'],['tap','Taraudage'],['helix','Fraisage hélicoïdal (lamage)']],op.cycle||'drill',
     function(v){op.cycle=v; if(op.src==='model'&&(op.holes||[]).length){faoDrillAutoTool(setup,op,op.holes[0].d);} },
     'Pointage : G81/CYCLE81 à faible profondeur · Simple : G81 (G82 si temporisation) · Débourrage : G83/CYCLE83 remontée complète · Brise-copeaux : petit recul à chaque passe'));
   if(op.cycle==='peck'||op.cycle==='chip'){
@@ -429,7 +442,15 @@ function faoDrillSections(setup,op,d){
   rc.appendChild(faoNum((+op.dwell)||0,function(v){op.dwell=Math.max(0,v);},44,0.1,'Temporisation au fond (s) — 0 = aucune'));
   d.appendChild(rc);
   const rd=faoRow();
-  if(op.cycle==='tap'){
+  if(op.cycle==='helix'){
+    const tH=faoToolById(setup,op.toolId),dT=(+tH.d>0)?+tH.d:6;
+    rd.appendChild(faoLab('Pas d’hélice'));
+    rd.appendChild(faoNum((+op.helixP)||0,function(v){op.helixP=Math.max(0,v);},48,0.1,'Descente par tour (mm) — 0 = automatique (rampe ≈ 2,5°, ≤ 25 % du Ø fraise)'));
+    const h0=(op.holes||[])[0];
+    const nt=document.createElement('span');nt.className='fao-meta';
+    if(h0){const Rr=(h0.d-dT)/2;nt.textContent=Rr>0.02?('fraise Ø'+dT+' dans Ø'+(+h0.d.toFixed(2))+' · rayon de trajectoire '+Rr.toFixed(2)+(Rr>dT/2*0.9?' · plusieurs anneaux':'')+' · pas '+faoHelixPitch(op,Rr,dT).toFixed(2)):('⚠ fraise Ø'+dT+' trop grosse pour Ø'+(+h0.d.toFixed(2)));}
+    rd.appendChild(nt);
+  }else if(op.cycle==='tap'){
     rd.appendChild(faoLab('Longueur filetée'));
     rd.appendChild(faoNum((+op.tapLen)||0,function(v){op.tapLen=Math.max(0,v);},52,0.5,'Longueur taraudée depuis le dessus (mm) — 0 = longueur de la fonction Perçage, sinon profondeur du trou − 2 pas'));
     const th0=(op.holes||[]).find(function(h){return h.thread;});
@@ -453,7 +474,7 @@ function faoDrillSections(setup,op,d){
   rd.appendChild(faoLab('Ordre'));
   rd.appendChild(faoSel([['auto','Plus court'],['zigzag','Zigzag']],op.order||'auto',function(v){op.order=v;},'Ordre de passage des trous'));
   d.appendChild(rd);
-  if(!faoToolIsDrill(t)&&!(op.cycle==='tap'&&t.kind==='tap')){
+  if(!faoToolIsDrill(t)&&!(op.cycle==='tap'&&t.kind==='tap')&&!(op.cycle==='helix'&&(t.kind==='flat'||t.kind==='bull'))){
     const w=document.createElement('div');w.className='fao-note';
     w.textContent='⚠ L’outil T'+t.num+' n’est pas un foret ('+faoKindLabel(t.kind)+') — choisissez des trous : le foret du bon Ø est pris ou créé.';
     d.appendChild(w);
@@ -547,7 +568,13 @@ function faoDrillGamme(setup,op){
     const dr=Object.assign(faoOpDefaults('drill'),base,{cycle:deep?'peck':'drill',peck:deep?+(+d).toFixed(1):0,holeSel:list.map(function(s){return {d:s.d,z:s.z};})});
     push(dr);faoDrillAutoTool(setup,dr,d);
   });
-  // 3. taraudage : un filet par opération
+  // 3. lamages : fraisage hélicoïdal, un Ø par opération
+  const byC=new Map();cbores.forEach(function(s){const k=(+s.d).toFixed(2);if(!byC.has(k))byC.set(k,[]);byC.get(k).push(s);});
+  byC.forEach(function(list){
+    const hl=Object.assign(faoOpDefaults('drill'),base,{cycle:'helix',holeSel:list.map(function(s){return {d:s.d,z:s.z};})});
+    push(hl);faoHelixTool(setup,hl,list[0].d);
+  });
+  // 4. taraudage : un filet par opération
   const byT=new Map();
   plain.forEach(function(s){const h=of(s).find(function(x){return x.thread;});if(!h)return;
     const k=h.thread.size+'|'+h.thread.p;if(!byT.has(k))byT.set(k,[]);byT.get(k).push(s);});
@@ -556,9 +583,76 @@ function faoDrillGamme(setup,op){
     push(tp);faoDrillAutoTool(setup,tp,list[0].d);
   });
   faoChanged();
-  const names=made.map(function(o){const t=faoToolById(setup,o.toolId);return ({spot:'Pointage',drill:'Perçage',peck:'Perçage (débourrage)',tap:'Taraudage'}[o.cycle]||o.cycle)+' T'+t.num+' '+t.name;});
+  const names=made.map(function(o){const t=faoToolById(setup,o.toolId);return ({spot:'Pointage',drill:'Perçage',peck:'Perçage (débourrage)',tap:'Taraudage',helix:'Lamage fraisé'}[o.cycle]||o.cycle)+' T'+t.num+' '+t.name;});
   let msg='Gamme créée : '+names.join(' → ')+'.';
-  if(cbores.length)msg+=' Lamage(s) Ø'+cbores.map(function(s){return +(+s.d).toFixed(2);}).join(', Ø')+' : à fraiser (interpolation hélicoïdale — étape suivante), non inclus.';
   try{faceEl.textContent=msg;}catch(e){}
   return made;
+}
+
+/* ----- fraisage hélicoïdal (lamages, gros trous) — 2026-10-15-014 -----
+   Fraise cylindrique, descente en hélice EN AVALANT (G3 : sens trigo, broche M3)
+   par quarts de tour, tour complet au fond (dressage), sortie au centre, remontée.
+   Rayon de trajectoire R = (Ø trou − Ø fraise)/2 ; si R dépasse ~ le rayon de la
+   fraise, le noyau central resterait : anneaux concentriques de l'intérieur vers
+   l'extérieur, chacun descendu en hélice. */
+const FAO_MILL_STD=[1,1.5,2,2.5,3,4,5,6,8,10,12,14,16,20,25,32];
+function faoHelixPitch(op,R,toolD){
+  const v=+op.helixP;if(isFinite(v)&&v>0)return v;
+  return Math.max(0.1,Math.min(toolD*0.25,2*Math.PI*Math.max(R,0.2)*Math.tan(2.5*Math.PI/180)));
+}
+function faoGenHelixPlan(plan,toolD,op,secuAbs){
+  const moves=[],rt=toolD/2;
+  plan.forEach(function(p){
+    const Rf=(p.d-toolD)/2;
+    if(!(Rf>0.02))return; // fraise trop grosse : rien (signalé dans la fiche)
+    const s=Math.max(+secuAbs||0,p.rfp+2);
+    // anneaux : extérieur = Rf, pas radial ≤ 1,6 × rayon fraise, jusqu'à couvrir le centre
+    const radii=[Rf];
+    const ae=Math.max(0.1,1.6*rt*0.9);
+    while(radii[0]>rt*0.9){radii.unshift(Math.max(0,radii[0]-ae));}
+    if(radii[0]<=1e-6)radii.shift();
+    radii.forEach(function(R,ri){
+      if(!(R>0.02))return;
+      const pitch=faoHelixPitch(op,R,toolD);
+      const z0=p.rfp+0.5,z1=p.zTip;
+      moves.push({r:1,x:p.x+R,y:p.y,z:s});
+      moves.push({r:1,x:p.x+R,y:p.y,z:z0});
+      // hélice : quarts de tour (balayage < 180° → IJK sûr sur les deux CN)
+      const turns=Math.max(0.25,(z0-z1)/pitch),nq=Math.ceil(turns*4);
+      let a=0;
+      for(let q=1;q<=nq;q++){
+        const a1=q*Math.PI/2,zq=z0-(z0-z1)*q/nq;
+        const sx=p.x+R*Math.cos(a),sy=p.y+R*Math.sin(a);
+        moves.push({r:0,ent:1,x:p.x+R*Math.cos(a1),y:p.y+R*Math.sin(a1),z:zq,arc:{i:p.x-sx,j:p.y-sy,cw:false}});
+        a=a1;
+      }
+      // tour complet au fond (dressage du fond)
+      for(let q=1;q<=4;q++){
+        const a1=a+q*Math.PI/2,a0=a+(q-1)*Math.PI/2;
+        moves.push({r:0,x:p.x+R*Math.cos(a1),y:p.y+R*Math.sin(a1),z:z1,arc:{i:-R*Math.cos(a0),j:-R*Math.sin(a0),cw:false}});
+      }
+      // dégagement : vers le centre (sans marquer la paroi), puis remontée
+      moves.push({r:0,x:p.x,y:p.y,z:z1});
+      moves.push({r:1,x:p.x,y:p.y,z:ri<radii.length-1?p.rfp+1:s});
+    });
+  });
+  return moves;
+}
+function faoHelixTool(setup,op,d){
+  // Plus grande fraise cylindrique de la bibliothèque entre 40 et 85 % du Ø du trou,
+  // sinon création d'une fraise standard (≤ 70 % du Ø).
+  const tools=setup.tools||(setup.tools=[]);
+  const cur=faoToolById(setup,op.toolId);
+  const ok=function(t){return t&&(t.kind==='flat'||t.kind==='bull')&&+t.d>=0.4*d&&+t.d<=0.85*d;};
+  if(ok(cur))return null;
+  const cands=tools.filter(ok).sort(function(a,b){return +b.d-(+a.d);});
+  let t=cands[0],made=false;
+  if(!t){
+    const D=FAO_MILL_STD.filter(function(x){return x<=0.7*d;}).pop()||Math.max(1,+(0.6*d).toFixed(1));
+    const n=tools.reduce(function(m,x){return Math.max(m,+x.num||0);},0)+1;
+    t={id:'T'+n+'_'+Date.now().toString(36),num:n,name:'Fraise D'+D,kind:'flat',d:D,cornerR:0,flutes:3,vc:200,fz:0.03};
+    tools.push(t);made=true;
+  }
+  op.toolId=t.id;delete op.cut;
+  return {tool:t,made:made};
 }

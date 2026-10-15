@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**241 versions**, de `2026-09-28b` à `2026-10-15-013` — la plus récente en bas,
+**242 versions**, de `2026-09-28b` à `2026-10-15-014` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3782,3 +3782,13 @@ Nouveau test `test_percage_3d` (noyau réel : 4 fonctions, sens auto, Ø de tara
 - **Gamme** (bouton ⚙ Gamme, section Trous) : remplace l'opération par pointage (tous les Ø, foret à centrer) → un perçage par Ø (débourrage automatique au-delà de 4 × Ø, Q = Ø) → un taraudage par filet. Pointage d'un trou taraudé au Ø NOMINAL + 0,4 (entrée du taraud). Lamages signalés « à fraiser » (interpolation hélicoïdale : étape suivante), non percés.
 - **Libellés** des opérations de perçage : « Pointage (6) », « Perçage Ø6,75 (4) », « Taraudage M8 (4) » (arbre FAO, commentaires et #MSG du G-code).
 Nouveau test `test_fao_taraudage` (noyau réel : gamme complète, débourrage automatique, taraud M8 F = 1,25 × S, profondeur filetée, pointage nominal, CYCLE84 / G84, STEP marqué M10). Migration : `APP_VER` → `2026-10-15-013` ; badge **V0.1.37 → V0.1.38**.
+
+### `2026-10-15-014`
+
+**FAO : fraisage des lamages par interpolation hélicoïdale ; remontée du taraud à l'avance (retours : « fraisage lamages » ; « un taraudage ça rentre et sort à la même vitesse, seule la rotation change ! »).**
+
+- **Cycle « Fraisage hélicoïdal (lamage) »** dans l'opération Perçage, à la fraise cylindrique : descente en hélice EN AVALANT (G3, sens trigo) par quarts de tour (IJK < 180°, sûr sur 840D et 8065), en F entrée ; pas d'hélice automatique (rampe ≈ 2,5°, ≤ 25 % du Ø fraise) ou saisi ; un tour complet à plat au fond (dressage) ; sortie au centre puis remontée. Rayon de trajectoire (Ø trou − Ø fraise)/2 ; si la fraise ne couvre pas le centre, anneaux concentriques de l'intérieur vers l'extérieur (Ø30 à la fraise Ø10 : 2 anneaux). Fond plat au fond du trou (lamage), débouchant : + débouchage.
+- **Outil** : plus grande fraise cylindrique de la bibliothèque entre 40 % et 85 % du Ø, sinon création d'une fraise standard ≤ 70 % du Ø.
+- **Gamme** : les lamages sont désormais FRAISÉS (pointage → perçages → lamages fraisés → taraudages) ; libellé « Lamage fraisé Ø11 (2) ».
+- **Taraudage** : dans l'aperçu et l'estimation, le taraud ressort en AVANCE (même F = pas × S, rotation inversée), plus en rapide — le G-code l'avait déjà juste (CYCLE84 SST = SST1, G84 rigide).
+Tests : `test_fao_taraudage` étendu (lamage fraisé à la fraise Ø6, G3 au rayon 2,5, fond dressé Z33,6, entrée en F entrée, 2 anneaux pour Ø30/Ø10, remontée du taraud en avance, SST = SST1). Migration : `APP_VER` → `2026-10-15-014` ; badge **V0.1.38 → V0.1.39**.
