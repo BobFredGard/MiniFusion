@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**238 versions**, de `2026-09-28b` à `2026-10-15-010` — la plus récente en bas,
+**239 versions**, de `2026-09-28b` à `2026-10-15-011` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3747,3 +3747,17 @@ Mesuré sur « Cavité Usinage » : 50 → 55 en une régénération (Esquisse 3
 Nouveau module `src/89-fao-outils.js`. **Bibliothèque** (bouton « Outils ») : grande fenêtre, liste des outils à gauche (type, Ø, S/F, nombre d'opérations qui l'utilisent ; + Nouveau, ⧉ Dupliquer, ✕ Supprimer — refusé si l'outil sert), fiche à droite — Identification (n° T, nom, type, matière), Géométrie (Ø coupe, rayon de coin, dents, longueur de coupe, Ø et longueur de dégagement, Ø queue, longueur sous mandrin, longueur totale, Ø mandrin ; grisé = défaut calculé), Conditions de coupe (Vc ⇄ S, fz ⇄ F travail — saisir S ou F recalcule Vc ou fz —, F plongée, F entrée, F remontée, rapide G0) — et schéma coté de l'outil (coupe, col, queue, mandrin ; Lc, L dégagée, L sous mandrin, Ø). **Opération** : nouvel onglet « Outil » (1er après Réglages) — outil, « Fiche… » ouvre la bibliothèque sur lui, S / F travail / plongée / entrée / remontée / rapide avec leur source (« fiche » grisé ou « opération » + ↺) ; une valeur saisie ne vaut que pour l'opération (`op.cut`, surcharge champ par champ), la fiche n'est jamais touchée ; une fiche modifiée se propage aux opérations qui n'ont pas surchargé ce champ ; changer d'outil efface les surcharges (valeurs de la nouvelle fiche). Contrôle de **portée** : profondeur usinée comparée à Lc (col), à la longueur dégagée (la queue frotte) et à la sortie sous mandrin (collision).
 
 G-code : S émise à chaque changement de vitesse entre opérations d'un même outil ; arcs et mouvements d'entrée en F entrée, remontées G1 en F remontée, 1re descente après rapide en F plongée (règle historique), cycles de perçage en F plongée de l'opération. Par défaut (entrée = remontée = travail, aucune surcharge) la sortie est **strictement identique** (tests post-processeurs inchangés). Estimation et simulation : avance et rapide de chaque opération. Cache des parcours : la clé ne voit que les champs historiques de l'outil (id, n°, nom, type, Ø, rayon, dents, Vc, fz) et ignore `op.cut` — ajouter longueurs ou avances ne périme aucune trajectoire. `CACHE_VER` volontairement **inchangé** (aucun parcours modifié : les trajectoires déjà générées restent valides). Nouveau test `test_fao_outils` (30 vérifications) ; `test_fao` et `test_fao_fiche_onglets` adaptés. Migration : `APP_VER` → `2026-10-15-010` ; badge **V0.1.34 → V0.1.35**.
+
+### `2026-10-15-011`
+
+**Perçage refait : trous reconnus sur le modèle, cycles, profondeurs « régleur », forets (retour : « l'opération Perçage ne fait rien, pas d'outil ni parcours »).**
+
+Constat : une nouvelle opération prenait la fraise T1, créait UN trou au centre du brut percé sur toute sa hauteur, et n'affichait rien avant « Tout régénérer ». Nouveau module `src/89-fao-percage.js` :
+- **Reconnaissance** sur la géométrie exacte (OCCT) : cylindres verticaux couvrant ≥ 270°, triés par la MATIÈRE (vide juste dedans, matière juste autour — l'orientation de face n'est pas fiable : une découpe extrudée en −Z donne des trous « FORWARD ») ; Ø, X/Y, Z haut/bas, débouchant (classifieur sous la pointe) ou borgne, angle de pointe, chanfrein d'entrée, lamage (cylindre coaxial plus large, fond plat → borgne). Pions et bossages écartés.
+- **Sélection** par groupe « même Ø + même départ » : cases dans la fiche (onglet Zone, section Trous) ou « Choisir dans la vue » (clic sur un trou, anneaux orange/gris, Échap). Les trous re-suivent le modèle à chaque reconstruction. **Un Ø par opération** : ajouter un autre Ø crée une nouvelle opération Perçage avec son foret (le pointage accepte tous les Ø).
+- **Outils** : types « Foret » (angle de pointe, avance PAR TOUR, F = f × S) et « Foret à centrer » (90°) dans la bibliothèque, schéma à pointe conique ; choisir des trous affecte le foret du même Ø ou le CRÉE.
+- **Cycles** (Réglages) : pointage, perçage simple (temporisation → CYCLE82 / G82), débourrage (CYCLE83 VARI=1 / G83), brise-copeaux (CYCLE83 VARI=0 ; Fagor : passes explicites G1/G0 — syntaxe G73 8065 à confirmer). Départ (RFP) et fond (DP) PAR TROU ; retrait du cycle jamais sous un départ.
+- **Profondeur** : plein Ø au fond du trou (+ longueur de pointe, défaut), pointe au fond, ou cote manuelle ; débouchants : + débouchage (1 mm) ; pointage : profondeur selon le Ø de chanfrein voulu et l'angle.
+- **Ordre** : plus court chemin (plus proche voisin + 2-opt) ou zigzag ; anciens perçages XY : ordre saisi conservé.
+- **Parcours immédiat** : un perçage est toujours recalculé sur place (jamais « ⚠ à régénérer », jamais l'ancien tracé).
+Anciens documents : perçages en saisie XY inchangés (cotes, ordre, G-code). `CACHE_VER` inchangé. Nouveau test `test_fao_percage` (noyau réel : débouchant, borgne à pointe 118°, lamage, trou creusé en −Z, pion, ordre, cycles Siemens/Fagor, pointage, suivi du modèle, compatibilité XY). Migration : `APP_VER` → `2026-10-15-011` ; badge **V0.1.35 → V0.1.36**.

@@ -526,10 +526,11 @@ function faoToolSF(t,setup){
   const fz=isFinite(+t.fz)&&+t.fz>0?+t.fz:0.05;
   const z=isFinite(+t.flutes)&&+t.flutes>0?Math.round(+t.flutes):2;
   const s=Math.max(1,Math.round(vc*1000/(Math.PI*D)));
-  const f=Math.max(1,Math.round(fz*z*s));
+  // Foret / foret à centrer : avance PAR TOUR (F = f × S), pas par dent.
+  const f=(t&&(t.kind==='drill'||t.kind==='spot'))?Math.max(1,Math.round(faoToolFr(t)*s)):Math.max(1,Math.round(fz*z*s));
   return {s:s, f:f, plunge:Math.max(1,Math.round(f*faoPlungePct(setup)/100))};
 }
-function faoKindLabel(k){ return k==='ball'?'Boule':(k==='bull'?'Torique':'Cylindrique'); }
+function faoKindLabel(k){ return k==='ball'?'Boule':(k==='bull'?'Torique':(k==='drill'?'Foret':(k==='spot'?'Foret à centrer':'Cylindrique'))); }
 function faoToolEffCr(t){
   // Rayon d'arête ENCORE CHARGEUT (mm) : ball = D/2 plein, bull = cornerR borné
   // à D/2, flat = 0 (bout plat) — la source de vérité de la forme de coupe.
@@ -2757,6 +2758,10 @@ function faoMovesStat(op,job){
   //    generation : l'etat le dit (« pas de parcours ») et le bouton ⚠ / « Générer
   //    + aperçu » produit. 4) aucun cache du tout (IndexedDB absent) : on calcule,
   //    comme avant — il n'y a rien d'autre pour servir l'affichage.
+  // 2026-10-15-011 : un perçage se calcule en une fraction de ms — toujours À JOUR,
+  // produit sur place (jamais l'ancien tracé d'une opération périmée, jamais
+  // « pas de parcours, Tout régénérer »). faoOpMoves relit le cache si la clé colle.
+  if(op&&op.type==='drill'){ try{ return faoOpMoves(op,job); }catch(e){ return null; } }
   const mv=faoOpMovesTry(op,job);
   if(mv)return mv;
   if(faoMovesPending())return null;
@@ -2783,7 +2788,8 @@ function* faoOpMovesIt(op,job){
     if(ch&&ch.key===ck)return faoZoneServe(ch,op,job,secu);
     // PERIME : on sert l'ancien trace tant que « Generer + apercu » n'a pas ete
     // presse — une modification ne bouge RIEN a l'ecran d'elle-meme.
-    if(ch&&op&&op.stale===true)return faoZoneServe(ch,op,job,secu);
+    // (sauf le perçage : instantané, toujours recalculé à jour — 2026-10-15-011)
+    if(ch&&op&&op.stale===true&&op.type!=='drill')return faoZoneServe(ch,op,job,secu);
   }
   const tool=faoToolById(job,op&&op.toolId);
   const D=isFinite(+tool.d)&&+tool.d>0?+tool.d:10;
@@ -2816,7 +2822,7 @@ function* faoOpMovesIt(op,job){
   else if(op.type==='contour')mv=faoGenContour({x0:+op.x0,y0:+op.y0,x1:+op.x1,y1:+op.y1},
     +op.ztop,+op.zbot,Object.assign({},base,{ap:+op.ap,radial:RA.radial,axial:RA.axial,
       entry:op.entry||'circ',entryR:op.entryR}));
-  else if(op.type==='drill')mv=faoGenDrill(faoLimitDrillPts(op,D),+op.ztop,+op.zbot,secu);
+  else if(op.type==='drill')mv=faoGenDrillPlan(faoDrillPlan(op,job),secu); // trous du modèle ou XY (src/89-fao-percage.js)
   else if(op.type==='rough3d'||faoPocketAdapt(op)){
     let am=null;
     try{ am=faoActiveMesh(job); }catch(e){ am=null; }
@@ -3242,18 +3248,26 @@ function faoArcWords(m,ox,oy,oz){
    PostPro/fagor-8065.cps) + annulation `G80` (cycles modaux). */
 function faoDrillCycle(op,job,oz){
   if(!op||op.type!=='drill')return null;
-  const tool=faoToolById(job,op.toolId)||{};
-  const pts=faoLimitDrillPts(op,+tool.d);
-  const zt=+op.ztop, zb=+op.zbot;
-  if(!pts||!pts.length||!isFinite(zt)||!isFinite(zb))return null;
-  // 2026-10-08-002 : retrait du cycle = plan d'usinage de l'opération (T) —
-  // identique à l'ancien top+secu en mode 'min5' sans plan personnalisé.
+  // 2026-10-15-011 : un plan PAR TROU (départ et fond propres — trous du modèle à
+  // des hauteurs différentes), dans l'ordre optimisé. Saisie XY : comme avant.
+  const plan=faoDrillPlan(op,job);
+  if(!plan.length)return null;
+  // retrait du cycle = plan d'usinage de l'opération, jamais sous un départ de trou
   const secuAbs=faoZoneSecu(op,job);
-  const RFP=zt-oz, RTP=secuAbs-oz, SDIS=RTP-RFP, DP=zb-oz;
-  let peck=isFinite(+op.peck)?+op.peck:0;
-  const span=zt-zb;
-  if(!(peck>0&&span>peck))peck=0;
-  return {pts:pts,RTP:RTP,RFP:RFP,SDIS:SDIS,DP:DP,peck:peck,span:span};
+  const zTopMax=plan.reduce(function(m,p){return Math.max(m,p.rfp);},-Infinity);
+  const RTP=Math.max(secuAbs,zTopMax+2)-oz;
+  const cyc=op.cycle||'drill';
+  const dwell=isFinite(+op.dwell)&&+op.dwell>0?+op.dwell:0;
+  const holes=plan.map(function(p){
+    const RFP=p.rfp-oz, DP=p.zTip-oz, span=p.rfp-p.zTip;
+    let peck=(cyc==='peck'||cyc==='chip'||(!op.cycle&&+op.peck>0))?(isFinite(+op.peck)&&+op.peck>0?+op.peck:0):0;
+    if(!(peck>0&&span>peck))peck=0;
+    return {x:p.x,y:p.y,RFP:RFP,SDIS:Math.max(0,RTP-RFP),DP:DP,span:span,peck:peck};
+  });
+  const h0=holes[0];
+  // compat : pts / RFP / DP / peck / span du 1er trou (anciens appelants, tests)
+  return {holes:holes,pts:plan.map(function(p){return [p.x,p.y];}),RTP:RTP,RFP:h0.RFP,SDIS:h0.SDIS,DP:h0.DP,
+    peck:h0.peck,span:h0.span,chip:cyc==='chip',dwell:dwell};
 }
 // Post unifié : un seul corps de programme, dialecte réduit à la tête/pied + style de ligne.
 //  - Siemens 840D : lignes brutes, commentaires `;`, fin SUPA Z600 + parc machine
@@ -3368,28 +3382,49 @@ function faoPost(job,postId){
       // source prévisualisation/estimation/garde-fou mais n'est pas écrit ici.
       const DC=faoDrillCycle(b.op,job,oz);
       if(DC){
-        DC.pts.forEach(function(p){
-          const X='X'+faoFmtXYZ(+p[0]-ox), Y='Y'+faoFmtXYZ(+p[1]-oy);
+        // 2026-10-15-011 : départ (RFP) et fond (DP) PAR TROU ; temporisation (G82 /
+        // CYCLE82, CYCLE83 DTB) ; brise-copeaux : CYCLE83 VARI=0 (Siemens), passes
+        // explicites G1/G0 sur Fagor (syntaxe G73 8065 à confirmer en atelier).
+        (DC.holes||[]).forEach(function(H){
+          const X='X'+faoFmtXYZ(+H.x-ox), Y='Y'+faoFmtXYZ(+H.y-oy);
+          const DTB=DC.dwell>0?faoFmtXYZ(DC.dwell):'';
           if(fag){
-            if(DC.peck){
-              const pl=Math.max(Math.floor(DC.span/DC.peck),1);
-              const inc=-(DC.span/pl);
+            if(H.peck&&DC.chip){
+              nc('G0 '+X+' '+Y+' Z'+faoFmtXYZ(DC.RTP));
+              nc('G0 Z'+faoFmtXYZ(H.RFP+Math.min(2,H.SDIS)));
+              let z=H.RFP;
+              while(z>H.DP+1e-6){
+                z=Math.max(H.DP,z-H.peck);
+                nc('G1 Z'+faoFmtXYZ(z)+' F'+FP);
+                if(z>H.DP+1e-6)nc('G0 Z'+faoFmtXYZ(z+0.5));
+              }
+              if(DC.dwell>0)nc('G4 K'+faoFmtXYZ(DC.dwell));
+              nc('G0 Z'+faoFmtXYZ(DC.RTP));
+            }else if(H.peck){
+              const pl=Math.max(Math.floor(H.span/H.peck),1);
+              const inc=-(H.span/pl);
               nc('G98 G83 '+X+' '+Y+' Z'+faoFmtXYZ(DC.RTP)+
                 ' I'+faoFmtXYZ(inc)+' J'+pl+' F'+FP);
+            }else if(DC.dwell>0){
+              nc('G98 G82 '+X+' '+Y+' Z'+faoFmtXYZ(DC.RTP)+
+                ' I'+faoFmtXYZ(H.DP)+' K'+faoFmtXYZ(DC.dwell)+' F'+FP);
             }else{
               nc('G98 G81 '+X+' '+Y+' Z'+faoFmtXYZ(DC.RTP)+
-                ' I'+faoFmtXYZ(DC.DP)+' F'+FP);
+                ' I'+faoFmtXYZ(H.DP)+' F'+FP);
             }
           }else{
             // F de plongée sur chaque G0 : séquence d'avances identique au Fagor.
             nc('G0 '+X+' '+Y+' Z'+faoFmtXYZ(DC.RTP)+' F'+FP);
-            nc(DC.peck
-              ? 'CYCLE83('+faoFmtXYZ(DC.RTP)+', '+faoFmtXYZ(DC.RFP)+', '+
-                faoFmtXYZ(DC.SDIS)+', '+faoFmtXYZ(DC.DP)+', , '+
-                faoFmtXYZ(DC.RFP-DC.peck)+', , 0, , , 1, 1, , '+
-                faoFmtXYZ(DC.peck)+', 0, 0, 0)'
-              : 'CYCLE81('+faoFmtXYZ(DC.RTP)+', '+faoFmtXYZ(DC.RFP)+', '+
-                faoFmtXYZ(DC.SDIS)+', '+faoFmtXYZ(DC.DP)+', )');
+            nc(H.peck
+              ? 'CYCLE83('+faoFmtXYZ(DC.RTP)+', '+faoFmtXYZ(H.RFP)+', '+
+                faoFmtXYZ(H.SDIS)+', '+faoFmtXYZ(H.DP)+', , '+
+                faoFmtXYZ(H.RFP-H.peck)+', , 0, '+DTB+', , 1, '+(DC.chip?'0':'1')+', , '+
+                faoFmtXYZ(H.peck)+', 0, 0, 0)'
+              : (DC.dwell>0
+                ? 'CYCLE82('+faoFmtXYZ(DC.RTP)+', '+faoFmtXYZ(H.RFP)+', '+
+                  faoFmtXYZ(H.SDIS)+', '+faoFmtXYZ(H.DP)+', , '+DTB+')'
+                : 'CYCLE81('+faoFmtXYZ(DC.RTP)+', '+faoFmtXYZ(H.RFP)+', '+
+                  faoFmtXYZ(H.SDIS)+', '+faoFmtXYZ(H.DP)+', )'));
           }
         });
         if(fag)nc('G80'); // Fagor : les cycles sont modaux, annulation obligatoire
@@ -5040,8 +5075,14 @@ function faoOpDefaults(type){
     limit:{mode:'chain',loop:[],closed:false,nEdges:0,tangent:true,side:'center',extra:0},
     ztop:s.z1, zbot:s.z0, ap:+Math.max(1,D).toFixed(2), ae:+(D*0.4).toFixed(2), nR:1, fin:0.2,
     radial:0, axial:0, sens:'avalant', overlap:1, tabN:0, tabW:5, tabH:2, arrondi:0});
-  if(type==='drill')return Object.assign({},base,{type:'drill',
-    pts:[[+cx.toFixed(2),+cy.toFixed(2)]], ztop:s.z1, zbot:s.z0, peck:0});
+  if(type==='drill'){
+    // 2026-10-15-011 : trous RECONNUS sur le modèle (aucun par défaut — plus de trou
+    // fantôme au centre du brut sur toute sa hauteur), foret de la bibliothèque.
+    const dr=(job.tools||[]).find(function(t){return t.kind==='drill';});
+    return Object.assign({},base,{type:'drill',toolId:dr?dr.id:base.toolId,src:'model',holeSel:[],holes:[],
+      cycle:'drill',depthMode:'full',brk:1,order:'auto',peck:0,dwell:0,
+      pts:[], ztop:s.z1, zbot:s.z0});
+  }
   if(type==='rough3d')return Object.assign({},base,{type:'rough3d',
     ztop:s.z1, zbot:s.z0, ap:5, ae:+(D*0.6).toFixed(2),
     radial:0.5, axial:0.5,
@@ -5118,6 +5159,8 @@ function faoStaleScan(){
         // Prima le maillage AVANT la cle (comme faoOpMoves) : la 1re lecture
         // d'une ebauche 3D incremente faoBodyGen.
         if(faoMeshOp(o)){ try{ faoActiveMesh(s); }catch(e){} }
+        // 2026-10-15-011 : perçage = instantané → régénéré sur place, jamais « ⚠ ».
+        if(o.type==='drill'){ try{ o.stale=false; faoOpMoves(o,s); }catch(e){} }
         const ck=faoOpMovesKey(o,s), ch=faoOpMovesHit(o);
         const st=(ck!==null)&&!(ch&&ch.key===ck);
         o.stale=st;
@@ -5843,7 +5886,7 @@ const FAO_TAB_HELP={
   'Attaches':'Ponts de matière pour tenir la pièce en détourage traversant.'};
 function faoTabOf(t){
   t=String(t||'').toLowerCase().replace(/\s*\(.*$/,'').trim();
-  const M=[['outil','Outil'],['hauteur','Hauteurs'],['vidage','Passes'],['passes','Passes'],['côté et sens','Passes'],
+  const M=[['outil','Outil'],['trous','Zone'],['hauteur','Hauteurs'],['vidage','Passes'],['passes','Passes'],['côté et sens','Passes'],
     ['trajectoire','Entrées'],['plans','Entrées'],['entrée','Entrées'],['matière','Matière'],
     ['attaches','Attaches'],['zone','Zone'],['bord de la poche','Zone'],['profil','Zone']];
   for(let i=0;i<M.length;i++)if(t.indexOf(M[i][0])===0)return M[i][1];
@@ -6224,19 +6267,8 @@ function faoOpCardElement(setup,op,i){
       d.appendChild(gdEl);
     }
   }else if(op.type==='drill'){
-    zz();
-    const pts=(op.pts||[]).map(function(q){return (+q[0])+','+(+q[1]);}).join('; ');
-    rp.appendChild(faoLab('XY'));
-    rp.appendChild(faoTxt(pts,function(v){
-      const lst=String(v).split(';').map(function(s){
-        const q=s.split(',').map(function(x){return parseFloat(x);});
-        return (q.length>=2&&isFinite(q[0])&&isFinite(q[1]))?[q[0],q[1]]:null;
-      }).filter(function(q){return q;});
-      if(lst.length)op.pts=lst;
-    },150));
-    rp.appendChild(faoLab('Débourrage Q'));
-    rp.appendChild(faoNum((+op.peck)||0,function(v){op.peck=Math.max(0,v);},52,0.5,
-      'Profondeur de chaque plongée (mm). 0 = perçage simple (CYCLE81 / G81), sinon broche à va-et-vient (CYCLE83 / G83).'));
+    // 2026-10-15-011 : cycle, profondeur, ordre + trous du modèle (src/89-fao-percage.js)
+    faoDrillSections(setup,op,d);
   }
   if(rp.children.length)d.appendChild(rp); // vide pour l'Ébauche 3D (sections propres)
   if(geoNote)d.appendChild(geoNote);
@@ -6271,7 +6303,7 @@ function faoOpCardElement(setup,op,i){
     rl.appendChild(faoNum(L.y1,function(v){L.y1=v;},52,null,'Rectangle : coin Y maxi (mm)'));
   }
   const geoOwn=faoPocketAdapt(op)||faoContourProfil(op); // bord / profil : section propre
-  if(!geoOwn)d.appendChild(rl);
+  if(!geoOwn&&!(op.type==='drill'&&op.src==='model'))d.appendChild(rl); // trous du modèle : pas de zone
   if(limMode==='chain'&&op.limit&&!geoOwn){
     const rc=faoRow();
     const hasLoop=(op.limit.loop||[]).length>=3;
@@ -6381,7 +6413,7 @@ function faoOpCardElement(setup,op,i){
     rl2.appendChild(faoNum(L2.x1,function(v){L2.x1=v;},52,null,'Îlot : coin X maxi (mm)'));
     rl2.appendChild(faoNum(L2.y1,function(v){L2.y1=v;},52,null,'Îlot : coin Y maxi (mm)'));
   }
-  if(!faoContourProfil(op))d.appendChild(rl2);
+  if(!faoContourProfil(op)&&!(op.type==='drill'&&op.src==='model'))d.appendChild(rl2); // trous du modèle : ni zone ni îlot
   if(lim2Mode==='chain'&&op.limit2){
     const rc2=document.createElement('div');
     rc2.className='fao-row';

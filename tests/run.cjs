@@ -64,6 +64,7 @@ const SUITES = [
   "test_esquisse_echelle",
   "test_regeneration_chaine",
   "test_fao_outils",
+  "test_fao_percage",
   "test_aretes_import",
   "test_fao_chain_step",
   "test_precision_affichage",

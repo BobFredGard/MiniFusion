@@ -78,6 +78,8 @@ function buildDone(){
   // dérivé : pas d'entrée d'annulation) ; sinon marquées obsolètes (stale).
   try{if(typeof faoSketchReplay==='function')faoSketchReplay();}catch(e){}
   try{if(typeof faoChainReplay==='function')faoChainReplay();}catch(e){}
+  // Perçage : les trous sélectionnés suivent le modèle reconstruit (2026-10-15-011).
+  try{if(typeof faoDrillReplay==='function')faoDrillReplay();}catch(e){}
   // FAO : le solide vient d'être (re)construit — l'Ébauche 3D embarque son empreinte
   // dans sa clé de cache. Au F5 la 1re lecture a lieu sur le REPLI MAILLAGE, avant le
   // boot du noyau exact : clé fausse, entrée rejetée, triangle rouge qui ne retombait
