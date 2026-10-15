@@ -35,6 +35,7 @@ const vm=require('vm');
     "const stepIn=all(c5).find(n=>n.tagName==='INPUT'&&n.type==='number'&&/Écart entre deux passes/.test(n.title||''));",
     "att(stepIn&&stepIn.value==='1','valeur affichée arrondie (vu '+(stepIn&&stepIn.value)+')');",
     "att(all(R3.c).some(n=>n.className==='fao-lab'&&n.textContent==='Descente ap'),'libellé en clair : Descente ap');",
+    "att(all(PK.c).some(n=>n.className==='fao-lab'&&n.textContent==='Finir le fond'),'poche : case « Finir le fond » (onglet Matière)');",
     "if(ATT.length){p('');p('ECHECS ('+ATT.length+') :');ATT.forEach(function(m){p('  x '+m);});}",
     "else p('TOUT EST CONFORME');",
     "return {txt:P.join(String.fromCharCode(10)),ko:ATT.length};"

@@ -82,7 +82,7 @@ const vm=require('vm');
     "const rf=faoGenRough3D(mkBox(40,60,20,40,0,10),BX,30,10,{ap:10,ae:6,toolD:10,radial:0,axial:0,secu:35});",
     "const z20=rf.filter(m=>!m.r&&Math.abs(m.z-20)<1e-9);",
     "att(z20.some(m=>m.x<10)&&z20.some(m=>m.x>90),'plat z=20 : pleine largeur');",
-    "att(rf.filter(m=>!m.r&&Math.abs(m.z-10)<1e-9).every(m=>blkD(m.x,m.y,40,60,20,40)>=4.99),'z=10 : clearance >= r sur la piece (emprise respectee)');",
+    "att(rf.filter(m=>!m.r&&blkD(m.x,m.y,40,60,20,40)<4.99).every(m=>m.z>=10-1e-9),'z=10 : jamais sous le dessus de la pièce (2026-10-15-001 : à Bas = dessus, l outil peut affleurer la face, sans entamer)');",
     "att(rf.filter(m=>!m.r&&Math.abs(m.z-10)<1e-9).some(m=>m.x<0),'plat z=10 : marge laterale degagee');",
     // --- marches : plots larges en bas, étroits en haut (raffinement auto)
     "const ST=merge(merge(mkBox(0,30,0,60,0,20),mkBox(70,100,0,60,0,20)),merge(mkBox(0,20,0,60,20,40),mkBox(80,100,0,60,20,40)));",
@@ -476,7 +476,7 @@ const vm=require('vm');
     "}",
     "nS=gT.filter(secOK).length;",
     "p('geo zones : rapides a secu='+nS+' zones='+nZ);",
-    "att(nZ>=6,'geo zones : au moins 6 zones (niveaux iso), vu '+nZ);",
+    "att(nZ>=3,'geo zones : au moins 3 zones (une par tour ; 2026-10-15-001 sections au-dessus des plans de faces), vu '+nZ);",
     "att(nS<=2*nZ+2,'geo groupement : rapides a secu '+nS+' <= 2*zones+2='+(2*nZ+2));",
     // Hélice avec débourrage avant : l'entrée change vraiment (spot disjoint des tours)
     "const gXe=faoGenGeoFinish(TW,{step:6,toolD:8,kind:'ball',laisse:0,secu:45,entry:'helix',hasRrough:true});",

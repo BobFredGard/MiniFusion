@@ -228,7 +228,13 @@ const vm=require('vm');
     // géométrique des XY de coupe), et rien dans l'îlot (dedans=0 ci-dessus).
     "const gxy=function(a){const s=new Set();a.forEach(function(m){if(!m.r&&inPocket(m)&&outR2(m))s.add((Math.round(m.x*10)/10)+','+(Math.round(m.y*10)/10));});return s;};",
     "const gb=gxy(cB),gd=gxy(cD);let onlyB=0,onlyD=0;gb.forEach(function(k){if(!gd.has(k))onlyB++;});gd.forEach(function(k){if(!gb.has(k))onlyD++;});",
-    "att(gb.size>10&&onlyB===0,'dispatch îlot : usinage conserve autour (toutes les cotes de la base refaites ; seules entrees/islet en plus : onlyDispatch '+onlyD+')');",
+    // 2026-10-15-002 : escargot seul — la spirale part du centre de la zone, qui
+    // bouge avec l'îlot : les XY ne se superposent plus point à point. Invariant :
+    // la zone autour de l'îlot reste balayée (chaque point usiné par la base,
+    // hors îlot dilaté de r, est à <= ae d'une coupe avec l'îlot).
+    "const nearD=function(m){for(let i=0;i<cD.length;i++){const q=cD[i];if(q.r)continue;if(Math.abs(q.z-m.z)<1e-6&&Math.hypot(q.x-m.x,q.y-m.y)<=6)return true;}return false;};",
+    "const missK=cB.filter(function(m){return !m.ent&&inPocket(m)&&outR2(m);}).filter(function(m,i){return i%7===0&&!nearD(m);}).length;",
+    "att(gb.size>10&&missK===0,'dispatch îlot : usinage conservé autour ('+missK+' points de la base sans coupe proche avec l îlot)');",
     // rapport
     "p('limit2 rect k=r+marge : '+R1.x0+'..'+R1.x1+' | clip rect '+cutsOut.length+' pts | clip chaine '+cutsP.length+' pts');",
     "p('ZoneCuts '+zcCuts.length+' pts | SegClipper '+segs.length+' morceaux | drill '+(ptsK.length)+' trous');",

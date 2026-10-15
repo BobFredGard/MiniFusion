@@ -39,7 +39,7 @@ const vm=require('vm');
     "const mMF=faoGenRough3D(FR,B,22,0,oM),mMB=faoGenRough3D(FR,B,22,0,Object.assign({},oM,{kind:'bull'}));",
     "const drL=faoTorusDropper(FR,10,2,0.5);",
     "const zMini={};mMF.forEach(m=>{if(!m.r&&!m.ent&&Math.abs(m.z-Math.round(m.z))>1e-3)zMini[m.z.toFixed(3)]=1;});",
-    "const gapL=function(mv){const per={};let gmin=1/0;for(let i=1;i<mv.length;i++){const b=mv[i];if(b.r||b.ent)continue;const g=b.z-drL.tip(b.x,b.y);if(g<gmin)gmin=g;const k=b.z.toFixed(3);if(zMini[k]&&(!(k in per)||g<per[k]))per[k]=g;}return {per:per,gmin:gmin};};",
+    "const gapL=function(mv){const per={};let gmin=1/0;for(let i=1;i<mv.length;i++){const b=mv[i];if(b.r||b.ent||b.z<0.01||Math.abs(b.z-20)<0.01)continue; /* faces horizontales (fond, dessus) à Fond 0 : hors laisse Parois */const g=b.z-drL.tip(b.x,b.y);if(g<gmin)gmin=g;const k=b.z.toFixed(3);if(zMini[k]&&(!(k in per)||g<per[k]))per[k]=g;}return {per:per,gmin:gmin};};",
     "const gMF=gapL(mMF),gMB=gapL(mMB);",
     "p('mini-passes (Parois 0,5) — droite '+JSON.stringify(gMF.per)+' / torique '+JSON.stringify(gMB.per));",
     "att(Object.keys(gMB.per).length>=4&&Object.values(gMB.per).every(g=>Math.abs(g)<0.01),'mini-passes toriques : au contact de la laisse Parois');",

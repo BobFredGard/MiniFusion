@@ -262,7 +262,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-14-012';
+const APP_VER='2026-10-15-002';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -273,7 +273,7 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-14-012';
+const CACHE_VER='2026-10-15-002';
 function cacheVerOK(v){
   // 2026-10-11-002 : ébauche 3D — la ZONE voyage dans le REPÈRE (zoneAt
   // transposé sous SENS LONG + rotation de −θ sur l'axe d'une limite oblique,
@@ -12954,6 +12954,8 @@ function faoSanitiseOps(s){
         const fn=Math.round(+op.finitN);op.finitN=isFinite(fn)&&fn>0?Math.min(9,fn):1;
         const fp=Math.round(+op.finitProf);op.finitProf=isFinite(fp)&&fp>0?Math.min(9,fp):1;}
       else{delete op.finitParois;delete op.finitN;delete op.finitProf;}
+      // 2026-10-15-001 : finition du FOND (passe à la cote exacte du fond)
+      if(op.finitFond)op.finitFond=true; else delete op.finitFond;
       // 2026-10-07-005 : 'escargot' (spirale centre -> faces) conserve ;
       // tout autre mode inconnu est purge (absent = conventionnel).
       // 2026-10-08-001 : mode trocoïdal SUPPRIME (tracé peu satisfaisant) :
@@ -12961,7 +12963,10 @@ function faoSanitiseOps(s){
       // bascule en conventionnel (sig bouge -> regen de l'op seule). La poche
       // d'entree (esquisse) part avec le mode : champ retire partout (les sigs
       // qui la portaient bougent aussi).
-      if(op.mode!=='escargot')delete op.mode;
+      // 2026-10-15-002 : CONVENTIONNEL RETIRÉ (« retire le conventionnel partout et on
+      // garde l'escargot partout ») — tout document (absent / 'conv' / autre) passe
+      // en escargot à la lecture.
+      op.mode='escargot';
       delete op.entree;
       }
     // 2026-10-08-003 : sens de passe — seuls 'avalant' et 'bidir' survivent,
@@ -15393,6 +15398,7 @@ function* faoOpMovesIt(op,job){
        radial:RA.radial,axial:RA.axial,
        minipasses:isFinite(+op.minipasses)?+op.minipasses:0,
        finitParois:!!op.finitParois,finitN:op.finitN,finitProf:op.finitProf,
+       finitFond:!!op.finitFond,
         // 2026-10-08-004 : entrée CIRC par défaut (doc sans champ = arc
         // tangent, repli hélice/rampe si pas d'ancre ; 'auto' = legacy).
         entry:op.entry||'circ',entryR:op.entryR,brutTop:brutTop,secu:secu,
@@ -15408,7 +15414,7 @@ function* faoOpMovesIt(op,job){
         // (posage.planes.mode) : les liaisons tiennent secu (le plan) au lieu
         // de remonter à 5 mm au-dessus de la matière (mode 'min5').
         remPlan:!!(job&&job.planes&&job.planes.mode==='plan'),
-        mode:op.mode,
+        mode:'escargot', // 2026-10-15-002 : mode unique
         // 2026-10-08-003 : sens de passe — 'avalant' = sens de coupe constant
         // (aucune chaine retournee) ; absent/'bidir' = legacy (retournement
         // vers l'extremite la plus proche).
@@ -17581,7 +17587,7 @@ function faoOpDefaults(type){
     limit:{mode:'chain',loop:[],closed:false,nEdges:0,tangent:true,side:'in',extra:0},
     ztop:s.z1, zbot:s.z0, ap:+Math.max(1,D).toFixed(2), ae:+(D*0.2).toFixed(2),
     radial:0.3, axial:0.2, finitParois:true, finitN:1, finitProf:1,
-    entry:'circ', sens:'avalant', arrondi:0});
+    entry:'circ', sens:'avalant', arrondi:0, mode:'escargot'});
   if(type==='contour')return Object.assign({},base,{type:'contour',strat:'profil',
     // profil = chaîne d'arêtes (bas de la paroi) ; côté auto, avalant
     limit:{mode:'chain',loop:[],closed:false,nEdges:0,tangent:true,side:'center',extra:0},
@@ -18631,33 +18637,12 @@ function faoOpCardElement(setup,op,i){
     d.appendChild(faoH('Vidage'));
     const rM=faoRow();
     rM.appendChild(faoLab('Mode'));
-    const modeSel=faoSel([
-      ['escargot','Escargot · du centre vers les faces','Pelage en spirale depuis le pôle de la zone à usiner : chaque tour s’éloigne de ae, entrée en hélice obligatoire, les faces sont finies en dernier (2026-10-07-005, mode par défaut à la création).'],
-      ['conv','Conventionnel','Pelage à ap constant (champ ap) : du milieu de la zone vers les bords, entrées hélice/rampe, trochoïdes automatiques dans les goulets.']],
-      op.mode||'conv',function(v){
-        if(v==='escargot')op.mode='escargot'; else delete op.mode;
-      },'Mode de vidage — escargot par défaut à la création, absent = conventionnel (mode trocoïdal supprimé en 2026-10-08-001). Clic droit : infos sur ce mode.');
-    // 2026-10-08-003 : les aides « trop en place » partent en menu contextuel
-    // (clic droit sur ce select) — la fiche garde la place pour les vrais
-    // réglages. Contenu = texte du mode ACTUELLEMENT choisi.
-    const modeTexts={
-      escargot:'Escargot : pelage en spirale depuis le centre de la zone à usiner (pôle d’inaccessibilité, pas le '+
-        'centre de la boîte — la 1re coupe n’attaque plus un bord de face) vers les faces, tours espacés de ae, '+
-        'toutes les entrées en matière sont des hélices (jamais de plongée directe). '+
-        'Dernière passe de chaque niveau : contour des faces du solide au ras (laisse outil). '+
-        'Mini-passes, plafond/fond et finition inchangés — ae pilote la distance entre deux tours.',
-      conv:'Pelage à ap constant avec entrées hélice/rampe et trochoïdes automatiques dans les goulets : '+
-        'on enlève le MILIEU de la zone avant les bords (les bords et la marge finient la passe), '+
-        'gardez ae petit (≤ ¼ du Ø outil) et ap profond (≈ 1×Ø). L’outil ne s’enterre jamais.'
-    };
-    modeSel.addEventListener('contextmenu',function(e){
-      try{ e.preventDefault(); }catch(err){}
-      faoModeInfoShow((e&&isFinite(+e.clientX))?+e.clientX+8:60,
-                      (e&&isFinite(+e.clientY))?+e.clientY+8:60,
-                      modeTexts[op.mode==='escargot'?'escargot':'conv']);
-    });
-    const modePrevOnchange=modeSel.onchange;
-    modeSel.onchange=function(){ faoModeInfoClose(); modePrevOnchange(); };
+    // 2026-10-15-002 : mode unique ESCARGOT (le conventionnel est retiré)
+    const modeSel=document.createElement('span');
+    modeSel.className='fao-meta';
+    modeSel.textContent='Escargot · du centre vers les faces';
+    modeSel.title='Pelage en spirale depuis le centre de la zone à usiner vers les faces, tours espacés de ae ; entrées en hélice ou en arc tangent ; '+
+      'la dernière passe de chaque niveau suit les faces du solide (au contact réel de l’outil torique ou boule).';
     rM.appendChild(modeSel);
     d.appendChild(rM);
     // 2026-10-08-003 : SENS DE PASSE — 'avalant' = sens de coupe constant
@@ -18715,6 +18700,18 @@ function faoOpCardElement(setup,op,i){
     rFi.appendChild(numFi);
     rFi.appendChild(faoLab('passes'));
     d.appendChild(rFi);
+    // 2026-10-15-001 : FINIR LE FOND — avec une surépaisseur « Fond » > 0, une
+    // passe à la cote exacte du fond enlève la laisse ; la finition des parois
+    // (dernière passe latérale) se fait à cette même hauteur.
+    const rFf=faoRow();
+    const cbFf=document.createElement('input'); cbFf.type='checkbox'; cbFf.checked=!!op.finitFond;
+    cbFf.title='Finir le fond : avec une surépaisseur « Fond » > 0, une dernière passe à la cote exacte du fond enlève la laisse (et la finition des parois se fait à cette hauteur). Sans effet si Fond = 0.';
+    cbFf.onchange=function(){ faoSnapshot('finir le fond');
+      if(cbFf.checked)op.finitFond=true; else delete op.finitFond;
+      faoChanged(); };
+    rFf.appendChild(cbFf);
+    rFf.appendChild(faoLab('Finir le fond'));
+    d.appendChild(rFf);
     // 2026-10-07-002 : PROFONDEURS DE FINITION — la « dernière passe » ne
     // racle la colonne que sur la hauteur de DENT ; mur > dent = N cotes
     // (haut-bas)/N vers le haut. 1 par defaut = comportement unique (documents
@@ -19537,32 +19534,22 @@ function faoSliceZ(mesh,z){
     if(dx*dx+dy*dy<1e-14)return; // doublon (hypot < 1e-7)
     bx=px;by=py;n=2;
   };
+  // 2026-10-15-001 : SOMMET PILE SUR LE PLAN = « dessous » (section = limite
+  // par AU-DESSUS, z+0). L'ancien traitement des deux sens de contact
+  // produisait, au Z exact d'une face horizontale (épaulement à 26), des
+  // segments en double qui INVERSAIENT la parité : le centre d'une poche
+  // voisine devenait « matière » dans l'ombre et son fond (24) n'était jamais
+  // usiné. Règle unique : 0 ou 2 croisements par triangle, section étanche ;
+  // une face horizontale au plan n'est pas coupée (on lit juste au-dessus).
   for(let i=0;i<T.length;i++){
     const t=T[i], a=V[t[0]], b=V[t[1]], c=V[t[2]];
-    const da=a[2]-z, db=b[2]-z, dc=c[2]-z;
+    let da=a[2]-z, db=b[2]-z, dc=c[2]-z;
+    if(da<=e&&da>=-e)da=-e; if(db<=e&&db>=-e)db=-e; if(dc<=e&&dc>=-e)dc=-e;
     let s;
     n=0;
-    if((da<-e&&db>e)||(da>e&&db<-e)){
-      s=da/(da-db); pushp(a[0]+(b[0]-a[0])*s,a[1]+(b[1]-a[1])*s);
-    }else if(Math.abs(da)<=e&&Math.abs(db)>e){
-      pushp(a[0],a[1]);
-    }else if(Math.abs(db)<=e&&Math.abs(da)>e){
-      pushp(b[0],b[1]);
-    }
-    if((db<-e&&dc>e)||(db>e&&dc<-e)){
-      s=db/(db-dc); pushp(b[0]+(c[0]-b[0])*s,b[1]+(c[1]-b[1])*s);
-    }else if(Math.abs(db)<=e&&Math.abs(dc)>e){
-      pushp(b[0],b[1]);
-    }else if(Math.abs(dc)<=e&&Math.abs(db)>e){
-      pushp(c[0],c[1]);
-    }
-    if((dc<-e&&da>e)||(dc>e&&da<-e)){
-      s=dc/(dc-da); pushp(c[0]+(a[0]-c[0])*s,c[1]+(a[1]-c[1])*s);
-    }else if(Math.abs(dc)<=e&&Math.abs(da)>e){
-      pushp(c[0],c[1]);
-    }else if(Math.abs(da)<=e&&Math.abs(dc)>e){
-      pushp(a[0],a[1]);
-    }
+    if((da<0)!==(db<0)){ s=da/(da-db); pushp(a[0]+(b[0]-a[0])*s,a[1]+(b[1]-a[1])*s); }
+    if((db<0)!==(dc<0)){ s=db/(db-dc); pushp(b[0]+(c[0]-b[0])*s,b[1]+(c[1]-b[1])*s); }
+    if((dc<0)!==(da<0)){ s=dc/(dc-da); pushp(c[0]+(a[0]-c[0])*s,c[1]+(a[1]-c[1])*s); }
     if(n===2)segs.push([ax,ay,bx,by]);
   }
   return segs;
@@ -19727,16 +19714,22 @@ function faoHelixSpot(mesh,cx,cy,hr,r,z,brutTop,planes){
   // Avec `planes` (Z vertex du maillage) : aucun voile fin manqué entre deux
   // pas de 1 mm ; sans : balayage historique au pas de 1 mm (morph/zigzag).
   const top=isFinite(+brutTop)?+brutTop:z;
+  // 2026-10-15-001 : une section au plan zz est lue JUSTE AU-DESSUS de zz
+  // (faoSliceZ) : la matière vue en zz monte jusqu'au plan suivant — le
+  // départ se prend au-dessus de CE plan-là (sinon l'hélice démarrait sous
+  // le dessus d'un bloc dont la face haute est pile sur un plan).
   if(Array.isArray(planes)&&planes.length){
-    for(let k=planes.length-1;k>=0;k--){
-      const zz=planes[k];
-      if(!(zz>z+1e-9&&zz<=top+1e-9))continue;
-      if(faoSliceHit(faoSliceZCached(mesh,Math.round(zz*1000)/1000),cx,cy,hr+r))return zz+2;
+    const ps=planes.filter(function(zz){return zz>z+1e-9&&zz<=top+1e-9;}).sort(function(a,b){return a-b;});
+    for(let k=ps.length-1;k>=0;k--){
+      if(faoSliceHit(faoSliceZCached(mesh,Math.round(ps[k]*1000)/1000),cx,cy,hr+r))
+        return (k+1<ps.length?ps[k+1]:Math.max(top,ps[k]))+2;
     }
+    // section au niveau même : matière entre z et le premier plan
+    if(faoSliceHit(faoSliceZCached(mesh,Math.round(z*1000)/1000),cx,cy,hr+r))return (ps.length?ps[0]:top)+2;
     return z+2;
   }
   for(let zz=top;zz>z+1e-9;zz-=1){
-    if(faoSliceHit(faoSliceZCached(mesh,zz),cx,cy,hr+r))return zz+2;
+    if(faoSliceHit(faoSliceZCached(mesh,zz),cx,cy,hr+r))return Math.min(top,zz+1)+2;
   }
   return z+2;
 }
@@ -20703,6 +20696,21 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     if(ch.closed)pushCut(seq[0][0],seq[0][1]);
   }
 }
+// 2026-10-15-001 : un fond (face horizontale vers le haut à la cote f) est-il
+// DANS la zone de l'opération ? (Finir le fond : pas de passe sur un
+// épaulement hors de la poche.) Sans zone : oui.
+function faoFloorInZone(mesh,f,zoneAt){
+  if(typeof zoneAt!=='function')return true;
+  const V=mesh.v,T=mesh.t;
+  for(let i=0;i<T.length;i++){
+    const a=V[T[i][0]],b=V[T[i][1]],c=V[T[i][2]];
+    if(Math.abs(a[2]-f)>1e-6||Math.abs(b[2]-f)>1e-6||Math.abs(c[2]-f)>1e-6)continue;
+    // centre et milieux d'arêtes : un grand triangle peut déborder de la zone
+    const pts=[[(a[0]+b[0]+c[0])/3,(a[1]+b[1]+c[1])/3],[(a[0]+b[0])/2,(a[1]+b[1])/2],[(b[0]+c[0])/2,(b[1]+c[1])/2],[(c[0]+a[0])/2,(c[1]+a[1])/2]];
+    for(let k=0;k<pts.length;k++)if(zoneAt(pts[k][0],pts[k][1]))return true;
+  }
+  return false;
+}
 function faoUpFloors(mesh,z0,z1){
   // FONDS RÉELS du maillage (7/10) : faces horizontales avec matière EN
   // DESSOUS et vide au-dessus — plancher de poche, sommet de bossage — dans
@@ -20929,6 +20937,11 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
           else if(Math.abs(z-target)<=1e-9)atT=true;
         }
         if(!atT)p.push({z:target,radial:RA.radial});    // haut de laisse exact
+        // 2026-10-15-001 : FINIR LE FOND — avec une surépaisseur Fond > 0, une
+        // passe à la cote EXACTE du fond enlève la laisse ; la finition des
+        // parois (dernière passe latérale) se fait alors à cette hauteur.
+        if(o.finitFond&&RA.axial>1e-9&&faoFloorInZone(M,f,o.zoneAt)){const zf=Math.round(f*1000)/1000;
+          if(!p.some(function(q){return Math.abs(q.z-zf)<1e-9;}))p.push({z:zf,radial:RA.radial,fond:1});}
       }
       p.sort(function(a,b){return b.z-a.z;});
     }
@@ -28448,7 +28461,7 @@ window.addEventListener('pointerdown',e=>{if(!$('ctxMenu').contains(e.target))hi
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.25';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.27';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);

@@ -64,6 +64,26 @@ const vm=require('vm');
     "  if(!ok)miss++;}",
     "p('poche : fond couvert '+(tot-miss)+'/'+tot+' points');",
     "att(miss===0,'poche : fond entièrement balayé ('+miss+'/'+tot+' points à > r d\\'une coupe du fond)');",
+    // --- 2b. 2026-10-15-001 : poche bordée d'un ÉPAULEMENT plus bas (26) que le
+    // dessus (30), Fond 0 : le plan de l'épaulement inversait la lecture de la
+    // section et le fond (24) n'était jamais usiné (« la Poche ne fonctionne pas »)
+    "const EP=merge(mkBox(0,100,0,60,0,24),mkBox(0,100,0,8,24,26),mkBox(0,100,52,60,24,26),mkBox(0,8,8,52,24,26),mkBox(92,100,8,52,24,26),mkBox(8,92,8,15,24,30),mkBox(8,92,45,52,24,30),mkBox(8,20,15,45,24,30),mkBox(80,92,15,45,24,30));",
+    "faoActiveMesh=function(){return {mesh:EP,box:BX};};",
+    "for(const md of ['escargot',undefined]){const oe=faoOpDefaults('pocket');oe.id='pe'+md;oe.toolId='TP';oe.limit={mode:'chain',loop:loop,closed:true,nEdges:4,tangent:true,side:'in',extra:0};oe.ztop=30;oe.zbot=24;oe.ap=2;oe.axial=0;oe.radial=0.3;if(md)oe.mode=md;else delete oe.mode;",
+    "  let me=[];try{me=faoOpMoves(oe,job);}catch(e){att(false,'épaulement : exception '+e.message);}",
+    "  const zl={};me.filter(m=>!m.r&&!m.ent).forEach(m=>{zl[m.z.toFixed(2)]=1;});",
+    "  p('épaulement ('+(md||'conv')+') : niveaux '+Object.keys(zl).join(' '));",
+    "  att(zl['28.00']&&zl['26.00']&&zl['24.00'],'épaulement 26 ('+(md||'conv')+') : niveaux 28 / 26 / 24 usinés, fond compris (vu '+Object.keys(zl).join(' ')+')');}",
+    // 2026-10-15-001 : FINIR LE FOND — Fond 0,5 : sans la case, le fond reste à 24,5 ;
+    // avec, passe à 24 exact (parois finies à cette hauteur), pas de passe sur l'épaulement 26
+    "for(const ff of [false,true]){const of=faoOpDefaults('pocket');of.id='pf'+ff;of.toolId='TP';of.limit={mode:'chain',loop:loop,closed:true,nEdges:4,tangent:true,side:'in',extra:0};of.ztop=30;of.zbot=24;of.ap=2;of.axial=0.5;of.radial=0.3;of.mode='escargot';if(ff)of.finitFond=true;faoSanitiseOps({ops:[of]});",
+    "  const mf=faoOpMoves(of,job);const zc={};mf.filter(m=>!m.r&&!m.ent).forEach(m=>{const k=m.z.toFixed(2);zc[k]=(zc[k]||0)+1;});const zf={};for(const k in zc)if(zc[k]>10)zf[k]=1; /* niveaux réels (> 10 coupes) */",
+    "  if(!ff)att(!zf['24.00']&&zf['24.50'],'Fond 0,5 sans « Finir le fond » : fond laissé à 24,5 ('+Object.keys(zf).join(' ')+')');",
+    "  else{att(zf['24.00']&&!zf['26.00'],'« Finir le fond » : passe à 24 exact, rien sur l épaulement 26 ('+Object.keys(zf).join(' ')+')');",
+    "    const wd=Math.min.apply(null,mf.filter(m=>!m.r&&!m.ent&&Math.abs(m.z-24)<1e-6&&faoPointInPoly(m.x,m.y,loop)).map(m=>faoDistToPoly(m.x,m.y,loop)));",
+    "    att(Math.abs(wd-3)<0.01,'« Finir le fond » : parois finies à la cote au fond (centre à r = 3, vu '+wd.toFixed(3)+')');",
+    "    att(of.finitFond===true,'sanitise : finitFond conservé');}}",
+    "faoActiveMesh=function(){return {mesh:PK,box:BX};};",
     // --- 3. sans bord : rien (jamais tout le brut)
     "const op0=faoOpDefaults('pocket');op0.id='pk0';op0.toolId='TP';op0.ztop=20;op0.zbot=0;",
     "let mv0=null;try{ mv0=faoOpMoves(op0,job); }catch(e){ att(false,'sans bord : exception '+e.message); }",
