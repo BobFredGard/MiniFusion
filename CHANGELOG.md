@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**235 versions**, de `2026-09-28b` à `2026-10-15-007` — la plus récente en bas,
+**236 versions**, de `2026-09-28b` à `2026-10-15-008` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3721,3 +3721,9 @@ Consolidation : nouveau module `src/49-esquisse-registre-icones.js` — registre
 Colinéaire (⫽, barre + menu contextuel 2 lignes) : 2 résidus (extrémités de B sur la droite de A) au solveur LM, relaxation symétrique (ligne figée → l'autre la rejoint), audit en mm, 2 DDL, dédoublonnage (une ∥ sur la même paire devient redondante et est purgée), refusée sur 2 lignes ⟂, recopiée sur les morceaux d'une ligne scindée/ajustée.
 
 Icônes : jeu SVG commun 24×24 au trait (33 icônes : 11 outils, 15 contraintes, 7 cotes), une forme distincte par fonction — fini ⦾ ◎ ⊕ ⌖ ⌾ quasi identiques. Utilisé par la barre d'esquisse (outils en blanc, contraintes en vert, séparateurs de groupes), le menu contextuel, les listes Contraintes/Cotes, et les pastilles posées sur le dessin (remplacent les lettres vertes H V ∥ ⟂ ⇔ = ◎). Nouveau test `test_esquisse_colineaire` (20 vérifications) + Colinéaire ajoutée à la réparation libre et à l'aller-retour JSON intégré (15 types). Migration : `APP_VER` et `CACHE_VER` → `2026-10-15-007` ; badge **V0.1.31 → V0.1.32**.
+
+### `2026-10-15-008`
+
+**Esquisse : échelle et sélection pour les petites pièces ; icônes Congé / Chanfrein / Décalage (retour : « je veux pouvoir faire des pièces petites et zoomer + ; on ne peut sélectionner que les points des lignes et pas les lignes ; mes pièces tournent autour de 100 mm ; les icônes des congés 2D, chanfreins et offset ne sont pas top et trop petits »).**
+
+Causes trouvées : plusieurs pointages ajoutaient des **mm fixes** à une tolérance en pixels (`SK_PICK+2`, `SK_PICK+3`, bande d'arc `maxD+2`) — à 40 px/mm, « +2 mm » = 80 px : la zone des extrémités couvrait toute la ligne courte ; en plus, toute étiquette de cote à moins de **60 px** du clic était prise avant tout le reste. Désormais tout est en pixels écran : entité 8 px, point 10 px (prioritaire), congé/chanfrein/ajuster 12 px, étiquette = boîte du texte +6 px (Ø/R/angle : 18 px). Zoom 0,15 → **600 px/mm** (plafond 80), cadrage jusqu'à 600 px/mm (plafond 30, et plus de plancher à 1 mm de boîte), grille et pas d'accroche jusqu'au µm, esquisse vide cadrée sur **130 mm** (pièces ~100 mm). Seuils fixes retirés : décalage ≥ 0,5 mm (→ 4 px écran au clic, 0,001 mm en saisie), départ d'arc et longueur dynamique 0,5 mm (→ 4 px), jonction en T 0,5 mm (→ ≤ 5 px). Icônes Congé / Chanfrein / Décalage : SVG du jeu commun à la taille des autres (étaient des glyphes ⦾ ◣ ⇄), aussi dans le menu contextuel. Nouveau test `test_esquisse_echelle` (contre-épreuve sur l'ancien code : ligne inaccessible à 200 px/mm, cote voleuse, décalage 0,2 mm refusé). Migration : `APP_VER` et `CACHE_VER` → `2026-10-15-008` ; badge **V0.1.32 → V0.1.33**.

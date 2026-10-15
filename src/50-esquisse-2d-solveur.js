@@ -563,12 +563,20 @@ function svgSize(){return{ W:svg.clientWidth||800,H:svg.clientHeight||500};}
 function w2s(x,y){const{W,H}=svgSize();const s=skView.s;return[(W/2+(x-skView.cx)*s),(H/2-(y-skView.cy)*s)];}
 function s2w(px,py){const{W,H}=svgSize();const s=skView.s;return[(skView.cx+(px-W/2)/s),(skView.cy-(py-H/2)/s)];}
 let skView={s:2.2,cx:0,cy:0}; // vue 2D : échelle px/mm + centre monde (molette = zoom, clic-molette = pan)
-function skUpdateTols(){SK_SNAP=10/skView.s;SK_PICK=8/skView.s;SK_INF=6/skView.s;}
-function skSnapStep(){const stps=[0.1,0.2,0.5,1,2,5,10,20,50,100,200,500,1000];for(const st of stps){if(st*skView.s>=8)return st;}return 1000;}
+// 2026-10-15-008 : TOUTES les tolérances de pointage sont en PIXELS ÉCRAN (divisées par
+// l'échelle px/mm). Avant, plusieurs appels ajoutaient des mm fixes (SK_PICK+2, +3) :
+// zoomé fort sur une petite pièce, « +2 mm » valait 80 px et la zone des extrémités
+// couvrait toute la ligne — on ne pouvait plus prendre que les points.
+//   SK_PICK 8 px (entité) · SK_PT 10 px (point, prioritaire) · SK_PICKX 12 px (congé,
+//   chanfrein, ajuster) · SK_SNAP 10 px (accroche) · SK_INF 6 px (inférences H/V).
+const SK_SCALE_MIN=0.15, SK_SCALE_MAX=600; // px/mm : de ~5 m à ~1 mm à l'écran
+const SK_DEF_SPAN=130; // mm visibles par défaut sur le petit côté (pièces ~100 mm)
+function skUpdateTols(){SK_SNAP=10/skView.s;SK_PICK=8/skView.s;SK_PT=10/skView.s;SK_PICKX=12/skView.s;SK_INF=6/skView.s;}
+function skSnapStep(){const stps=[0.001,0.002,0.005,0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,20,50,100,200,500,1000];for(const st of stps){if(st*skView.s>=8)return st;}return 1000;}
 function skSnapVal(v){const st=skSnapStep();return Math.round(v/st)*st;}
 function skSetZoom(ns,fx,fy){
   const W=svgSize().W,H=svgSize().H,s0=skView.s;
-  const s1=Math.max(0.15,Math.min(80,ns));if(s1===s0)return;
+  const s1=Math.max(SK_SCALE_MIN,Math.min(SK_SCALE_MAX,ns));if(s1===s0)return;
   const[wbx,wby]=s2w(fx,fy);skView.s=s1;
   skView.cx=wbx-(fx-W/2)/s1;skView.cy=wby+(fy-H/2)/s1; // le point sous le curseur reste sous le curseur
   skUpdateTols();if(skEdit)drawSketch2D();
@@ -582,20 +590,22 @@ function skFitView(){
       refs.forEach(r=>{if(r.x1<x0)x0=r.x1;if(r.x1>x1)x1=r.x1;if(r.x2<x0)x0=r.x2;if(r.x2>x1)x1=r.x2;
         if(r.y1<y0)y0=r.y1;if(r.y1>y1)y1=r.y1;if(r.y2<y0)y0=r.y2;if(r.y2>y1)y1=r.y2;});
       const{W,H}=svgSize(),bw=Math.max(x1-x0,1),bh=Math.max(y1-y0,1);
-      skView.s=Math.max(0.15,Math.min(30,Math.min(W/bw,H/bh)*0.7));
+      skView.s=Math.max(SK_SCALE_MIN,Math.min(SK_SCALE_MAX,Math.min(W/bw,H/bh)*0.7));
       skView.cx=(x0+x1)/2;skView.cy=(y0+y1)/2;
       skUpdateTols();if(skEdit)drawSketch2D();return;
     }
-    skView={s:2.2,cx:0,cy:0};skUpdateTols();if(skEdit)drawSketch2D();return;}
+    {const{W,H}=svgSize();skView={s:Math.max(SK_SCALE_MIN,Math.min(W,H)/SK_DEF_SPAN),cx:0,cy:0};} // esquisse vide : ~130 mm visibles
+    skUpdateTols();if(skEdit)drawSketch2D();return;}
   let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;
   ids.forEach(pid=>{const p=P[pid];if(p.x<x0)x0=p.x;if(p.x>x1)x1=p.x;if(p.y<y0)y0=p.y;if(p.y>y1)y1=p.y;});
-  const{W,H}=svgSize(),bw=Math.max(x1-x0,1),bh=Math.max(y1-y0,1);
-  skView.s=Math.max(0.15,Math.min(30,Math.min(W/bw,H/bh)*0.7));
+  // bw/bh plancher 0,01 mm (était 1 mm : une esquisse de 0,5 mm cadrait comme 1 mm)
+  const{W,H}=svgSize(),bw=Math.max(x1-x0,0.01),bh=Math.max(y1-y0,0.01);
+  skView.s=Math.max(SK_SCALE_MIN,Math.min(SK_SCALE_MAX,Math.min(W/bw,H/bh)*0.7));
   skView.cx=(x0+x1)/2;skView.cy=(y0+y1)/2;
   skUpdateTols();if(skEdit)drawSketch2D();
 }
 function evXY(e){const r=svg.getBoundingClientRect();return s2w(e.clientX-r.left,e.clientY-r.top);}
-let SK_SNAP=5, SK_INF=2.5, SK_PICK=4;
+let SK_SNAP=5, SK_INF=2.5, SK_PICK=4, SK_PT=5, SK_PICKX=6;
 skUpdateTols();
 let skTool='select',skDraft=null,skMsg='';
 let skDown=null,skChain=null,skInfer=null,skSnapMk=null,skSel=null,skSelX=[],skDrag=null,skDragMoved=false,skDragPushed=false,skDimDrag=null,skPan=null;
@@ -1659,7 +1669,7 @@ function skDynCommit(){
   if(skDyn.mode==='len'){ex=skDown.x+val*Math.cos(ang);ey=skDown.y+val*Math.sin(ang);dimVal=val;}
   else{
     const L=D?Math.hypot(D.x2-D.x1,D.y2-D.y1):0;
-    if(L<0.5){skStatus('Déplacez le curseur pour définir la longueur, puis tapez l’angle.');return;}
+    if(L<4/skView.s){skStatus('Déplacez le curseur pour définir la longueur, puis tapez l’angle.');return;}
     ex=skDown.x+L*Math.cos(ang);ey=skDown.y+L*Math.sin(ang);dimVal=L;
   }
   const nl=skCommitLine(sk,skDown.pid,null,ex,ey,dimVal);
@@ -1857,7 +1867,7 @@ function skOffsetDistToSel(sk,ents,S){
 }
 function skOffsetApply(sk,ids,D,S){
   ids=[...new Set(ids||[])];
-  if(!(D>=0.5))return{ok:false,msg:'Décalage : distance ≥ 0,5 mm requise.'};
+  if(!(D>=0.001))return{ok:false,msg:'Décalage : distance ≥ 0,001 mm requise.'};
   const P=sk.points;
   const ents=ids.map(id=>entById(sk,id)).filter(e=>e&&(e.t==='line'||e.t==='circle'||e.t==='arc')&&!e.ref);
   if(!ents.length)return{ok:false,msg:'Décalage : sélectionnez lignes, cercles ou arcs.'};
@@ -2066,7 +2076,7 @@ function nearestEntity(sk,x,y,maxD,skipConstr){
     let d=1e9;const P=sk.points;
     if(e.t==='line'){const A=P[e.p1],B=P[e.p2];if(A&&B)d=distSeg(x,y,A,B);}
     if(e.t==='circle'){const C=P[e.pc];if(C)d=Math.abs(Math.hypot(x-C.x,y-C.y)-e.r);}
-    if(e.t==='arc'){const C=P[e.pc];if(C){const an=arcAngles(sk,e);const dR=Math.abs(Math.hypot(x-C.x,y-C.y)-e.r);d=(an&&dR<maxD+2&&angInArc(Math.atan2(y-C.y,x-C.x),an.a1,an.a2))?dR:1e9;}}
+    if(e.t==='arc'){const C=P[e.pc];if(C){const an=arcAngles(sk,e);const dR=Math.abs(Math.hypot(x-C.x,y-C.y)-e.r);d=(an&&dR<maxD*1.5&&angInArc(Math.atan2(y-C.y,x-C.x),an.a1,an.a2))?dR:1e9;}}
     if(e.t==='cpoint'){const Q=P[e.p];if(Q)d=Math.hypot(x-Q.x,y-Q.y);}
     if(d<bd){bd=d;best=e;}
   });
@@ -2100,7 +2110,7 @@ function drawSketch2D(){
   if(!skEdit)return;const sk=skEdit;
   const{W,H}=svgSize();svg.setAttribute('viewBox',`0 0 ${W} ${H}`);svg.innerHTML='';
   const[gvx0,gvY1]=s2w(0,0),[gvx1,gvY0]=s2w(W,H); // grille adaptative à l'échelle
-  let gstep=10;const gsteps=[0.5,1,2,5,10,20,50,100,200,500,1000,2000];
+  let gstep=10;const gsteps=[0.001,0.002,0.005,0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,20,50,100,200,500,1000,2000];
   for(const st of gsteps){if(st*skView.s>=16){gstep=st;break;}}
   const kx0=Math.floor(gvx0/gstep),kx1=Math.ceil(gvx1/gstep),ky0=Math.floor(gvY0/gstep),ky1=Math.ceil(gvY1/gstep);
   if(kx1-kx0<600)for(let k=kx0;k<=kx1;k++){const gx=k*gstep,isAx=Math.abs(gx)<1e-9;
@@ -2494,12 +2504,11 @@ function hitDimLabel(sk,px,py){ // px,py en pixels écran SVG → id de cote ou 
         const lx=dx*Math.cos(deg)+dy*Math.sin(deg);
         const ly=-dx*Math.sin(deg)+dy*Math.cos(deg);
         const half=(String(d.value).length*7.8+14)/2;
-        if(Math.abs(lx)<half+14&&Math.abs(ly)<22)return d.id;
-        if(Math.hypot(sx-px,sy-py)<60) return d.id;
+        if(Math.abs(lx)<half+6&&Math.abs(ly)<12)return d.id; // boîte du texte (+6 px)
         continue;
       }
     }
-    if(Math.hypot(sx-px,sy-py)<60)return d.id;
+    if(Math.hypot(sx-px,sy-py)<18)return d.id; // Ø, R, angle : 18 px autour de l'étiquette (était 60)
   }
   return null;
 }

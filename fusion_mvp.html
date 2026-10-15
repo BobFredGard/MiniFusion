@@ -273,7 +273,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-15-007';
+const APP_VER='2026-10-15-008';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -284,7 +284,7 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-15-007';
+const CACHE_VER='2026-10-15-008';
 function cacheVerOK(v){
   // 2026-10-11-002 : ébauche 3D — la ZONE voyage dans le REPÈRE (zoneAt
   // transposé sous SENS LONG + rotation de −θ sur l'axe d'une limite oblique,
@@ -5878,6 +5878,9 @@ const SK_ICONS={
   cpoint:'<circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/><path d="M12 3.5v4.5M12 16v4.5M3.5 12H8M16 12h4.5"/>',
   project:'<path d="M12 2.8l6 2.6v5.4l-6 2.6-6-2.6V5.4z"/><path d="M6 5.4l6 2.6 6-2.6M12 8v5.4" stroke-width="1.3"/><path d="M12 15.5v3" stroke-dasharray="1.5 1.8"/><path d="M4 21h16"/>',
   dim:'<path d="M4 5v10M20 5v10"/><path d="M4 10h16"/><path d="M7.5 7.5L4 10l3.5 2.5M16.5 7.5L20 10l-3.5 2.5"/><path d="M9 19h6" stroke-width="2.4"/>',
+  fillet:'<path d="M4 21v-8a9 9 0 0 1 9-9h8" stroke-width="2.2"/><path d="M4 9V4h5" stroke-dasharray="1.6 2.2" stroke-width="1.3"/><circle cx="13" cy="13" r="1.4" fill="currentColor" stroke="none"/>',
+  chamfer:'<path d="M4 21V11l7-7h10" stroke-width="2.2"/><path d="M4 8V4h4" stroke-dasharray="1.6 2.2" stroke-width="1.3"/>',
+  offset:'<path d="M3 19c3-9 15-9 18 0" stroke-width="2.2"/><path d="M7 21c2-5 8-5 10 0" stroke-dasharray="2.2 2" stroke-width="1.6"/><path d="M12 7.5v5M10 10.5l2 2 2-2" stroke-width="1.4"/>',
   trim:'<circle cx="6" cy="7" r="2.6"/><circle cx="6" cy="17" r="2.6"/><path d="M8.2 8.5L20 16.5M8.2 15.5L20 7.5"/>',
   // ── contraintes ──
   h:'<path d="M3.5 12h17" stroke-width="2.4"/><path d="M3.5 8v8M20.5 8v8" stroke-width="1.4"/>',
@@ -6515,12 +6518,20 @@ function svgSize(){return{ W:svg.clientWidth||800,H:svg.clientHeight||500};}
 function w2s(x,y){const{W,H}=svgSize();const s=skView.s;return[(W/2+(x-skView.cx)*s),(H/2-(y-skView.cy)*s)];}
 function s2w(px,py){const{W,H}=svgSize();const s=skView.s;return[(skView.cx+(px-W/2)/s),(skView.cy-(py-H/2)/s)];}
 let skView={s:2.2,cx:0,cy:0}; // vue 2D : échelle px/mm + centre monde (molette = zoom, clic-molette = pan)
-function skUpdateTols(){SK_SNAP=10/skView.s;SK_PICK=8/skView.s;SK_INF=6/skView.s;}
-function skSnapStep(){const stps=[0.1,0.2,0.5,1,2,5,10,20,50,100,200,500,1000];for(const st of stps){if(st*skView.s>=8)return st;}return 1000;}
+// 2026-10-15-008 : TOUTES les tolérances de pointage sont en PIXELS ÉCRAN (divisées par
+// l'échelle px/mm). Avant, plusieurs appels ajoutaient des mm fixes (SK_PICK+2, +3) :
+// zoomé fort sur une petite pièce, « +2 mm » valait 80 px et la zone des extrémités
+// couvrait toute la ligne — on ne pouvait plus prendre que les points.
+//   SK_PICK 8 px (entité) · SK_PT 10 px (point, prioritaire) · SK_PICKX 12 px (congé,
+//   chanfrein, ajuster) · SK_SNAP 10 px (accroche) · SK_INF 6 px (inférences H/V).
+const SK_SCALE_MIN=0.15, SK_SCALE_MAX=600; // px/mm : de ~5 m à ~1 mm à l'écran
+const SK_DEF_SPAN=130; // mm visibles par défaut sur le petit côté (pièces ~100 mm)
+function skUpdateTols(){SK_SNAP=10/skView.s;SK_PICK=8/skView.s;SK_PT=10/skView.s;SK_PICKX=12/skView.s;SK_INF=6/skView.s;}
+function skSnapStep(){const stps=[0.001,0.002,0.005,0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,20,50,100,200,500,1000];for(const st of stps){if(st*skView.s>=8)return st;}return 1000;}
 function skSnapVal(v){const st=skSnapStep();return Math.round(v/st)*st;}
 function skSetZoom(ns,fx,fy){
   const W=svgSize().W,H=svgSize().H,s0=skView.s;
-  const s1=Math.max(0.15,Math.min(80,ns));if(s1===s0)return;
+  const s1=Math.max(SK_SCALE_MIN,Math.min(SK_SCALE_MAX,ns));if(s1===s0)return;
   const[wbx,wby]=s2w(fx,fy);skView.s=s1;
   skView.cx=wbx-(fx-W/2)/s1;skView.cy=wby+(fy-H/2)/s1; // le point sous le curseur reste sous le curseur
   skUpdateTols();if(skEdit)drawSketch2D();
@@ -6534,20 +6545,22 @@ function skFitView(){
       refs.forEach(r=>{if(r.x1<x0)x0=r.x1;if(r.x1>x1)x1=r.x1;if(r.x2<x0)x0=r.x2;if(r.x2>x1)x1=r.x2;
         if(r.y1<y0)y0=r.y1;if(r.y1>y1)y1=r.y1;if(r.y2<y0)y0=r.y2;if(r.y2>y1)y1=r.y2;});
       const{W,H}=svgSize(),bw=Math.max(x1-x0,1),bh=Math.max(y1-y0,1);
-      skView.s=Math.max(0.15,Math.min(30,Math.min(W/bw,H/bh)*0.7));
+      skView.s=Math.max(SK_SCALE_MIN,Math.min(SK_SCALE_MAX,Math.min(W/bw,H/bh)*0.7));
       skView.cx=(x0+x1)/2;skView.cy=(y0+y1)/2;
       skUpdateTols();if(skEdit)drawSketch2D();return;
     }
-    skView={s:2.2,cx:0,cy:0};skUpdateTols();if(skEdit)drawSketch2D();return;}
+    {const{W,H}=svgSize();skView={s:Math.max(SK_SCALE_MIN,Math.min(W,H)/SK_DEF_SPAN),cx:0,cy:0};} // esquisse vide : ~130 mm visibles
+    skUpdateTols();if(skEdit)drawSketch2D();return;}
   let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;
   ids.forEach(pid=>{const p=P[pid];if(p.x<x0)x0=p.x;if(p.x>x1)x1=p.x;if(p.y<y0)y0=p.y;if(p.y>y1)y1=p.y;});
-  const{W,H}=svgSize(),bw=Math.max(x1-x0,1),bh=Math.max(y1-y0,1);
-  skView.s=Math.max(0.15,Math.min(30,Math.min(W/bw,H/bh)*0.7));
+  // bw/bh plancher 0,01 mm (était 1 mm : une esquisse de 0,5 mm cadrait comme 1 mm)
+  const{W,H}=svgSize(),bw=Math.max(x1-x0,0.01),bh=Math.max(y1-y0,0.01);
+  skView.s=Math.max(SK_SCALE_MIN,Math.min(SK_SCALE_MAX,Math.min(W/bw,H/bh)*0.7));
   skView.cx=(x0+x1)/2;skView.cy=(y0+y1)/2;
   skUpdateTols();if(skEdit)drawSketch2D();
 }
 function evXY(e){const r=svg.getBoundingClientRect();return s2w(e.clientX-r.left,e.clientY-r.top);}
-let SK_SNAP=5, SK_INF=2.5, SK_PICK=4;
+let SK_SNAP=5, SK_INF=2.5, SK_PICK=4, SK_PT=5, SK_PICKX=6;
 skUpdateTols();
 let skTool='select',skDraft=null,skMsg='';
 let skDown=null,skChain=null,skInfer=null,skSnapMk=null,skSel=null,skSelX=[],skDrag=null,skDragMoved=false,skDragPushed=false,skDimDrag=null,skPan=null;
@@ -7611,7 +7624,7 @@ function skDynCommit(){
   if(skDyn.mode==='len'){ex=skDown.x+val*Math.cos(ang);ey=skDown.y+val*Math.sin(ang);dimVal=val;}
   else{
     const L=D?Math.hypot(D.x2-D.x1,D.y2-D.y1):0;
-    if(L<0.5){skStatus('Déplacez le curseur pour définir la longueur, puis tapez l’angle.');return;}
+    if(L<4/skView.s){skStatus('Déplacez le curseur pour définir la longueur, puis tapez l’angle.');return;}
     ex=skDown.x+L*Math.cos(ang);ey=skDown.y+L*Math.sin(ang);dimVal=L;
   }
   const nl=skCommitLine(sk,skDown.pid,null,ex,ey,dimVal);
@@ -7809,7 +7822,7 @@ function skOffsetDistToSel(sk,ents,S){
 }
 function skOffsetApply(sk,ids,D,S){
   ids=[...new Set(ids||[])];
-  if(!(D>=0.5))return{ok:false,msg:'Décalage : distance ≥ 0,5 mm requise.'};
+  if(!(D>=0.001))return{ok:false,msg:'Décalage : distance ≥ 0,001 mm requise.'};
   const P=sk.points;
   const ents=ids.map(id=>entById(sk,id)).filter(e=>e&&(e.t==='line'||e.t==='circle'||e.t==='arc')&&!e.ref);
   if(!ents.length)return{ok:false,msg:'Décalage : sélectionnez lignes, cercles ou arcs.'};
@@ -8018,7 +8031,7 @@ function nearestEntity(sk,x,y,maxD,skipConstr){
     let d=1e9;const P=sk.points;
     if(e.t==='line'){const A=P[e.p1],B=P[e.p2];if(A&&B)d=distSeg(x,y,A,B);}
     if(e.t==='circle'){const C=P[e.pc];if(C)d=Math.abs(Math.hypot(x-C.x,y-C.y)-e.r);}
-    if(e.t==='arc'){const C=P[e.pc];if(C){const an=arcAngles(sk,e);const dR=Math.abs(Math.hypot(x-C.x,y-C.y)-e.r);d=(an&&dR<maxD+2&&angInArc(Math.atan2(y-C.y,x-C.x),an.a1,an.a2))?dR:1e9;}}
+    if(e.t==='arc'){const C=P[e.pc];if(C){const an=arcAngles(sk,e);const dR=Math.abs(Math.hypot(x-C.x,y-C.y)-e.r);d=(an&&dR<maxD*1.5&&angInArc(Math.atan2(y-C.y,x-C.x),an.a1,an.a2))?dR:1e9;}}
     if(e.t==='cpoint'){const Q=P[e.p];if(Q)d=Math.hypot(x-Q.x,y-Q.y);}
     if(d<bd){bd=d;best=e;}
   });
@@ -8052,7 +8065,7 @@ function drawSketch2D(){
   if(!skEdit)return;const sk=skEdit;
   const{W,H}=svgSize();svg.setAttribute('viewBox',`0 0 ${W} ${H}`);svg.innerHTML='';
   const[gvx0,gvY1]=s2w(0,0),[gvx1,gvY0]=s2w(W,H); // grille adaptative à l'échelle
-  let gstep=10;const gsteps=[0.5,1,2,5,10,20,50,100,200,500,1000,2000];
+  let gstep=10;const gsteps=[0.001,0.002,0.005,0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,20,50,100,200,500,1000,2000];
   for(const st of gsteps){if(st*skView.s>=16){gstep=st;break;}}
   const kx0=Math.floor(gvx0/gstep),kx1=Math.ceil(gvx1/gstep),ky0=Math.floor(gvY0/gstep),ky1=Math.ceil(gvY1/gstep);
   if(kx1-kx0<600)for(let k=kx0;k<=kx1;k++){const gx=k*gstep,isAx=Math.abs(gx)<1e-9;
@@ -8446,12 +8459,11 @@ function hitDimLabel(sk,px,py){ // px,py en pixels écran SVG → id de cote ou 
         const lx=dx*Math.cos(deg)+dy*Math.sin(deg);
         const ly=-dx*Math.sin(deg)+dy*Math.cos(deg);
         const half=(String(d.value).length*7.8+14)/2;
-        if(Math.abs(lx)<half+14&&Math.abs(ly)<22)return d.id;
-        if(Math.hypot(sx-px,sy-py)<60) return d.id;
+        if(Math.abs(lx)<half+6&&Math.abs(ly)<12)return d.id; // boîte du texte (+6 px)
         continue;
       }
     }
-    if(Math.hypot(sx-px,sy-py)<60)return d.id;
+    if(Math.hypot(sx-px,sy-py)<18)return d.id; // Ø, R, angle : 18 px autour de l'étiquette (était 60)
   }
   return null;
 }
@@ -9370,12 +9382,13 @@ function entHits(sk,ent){ // intersections (monde) avec les autres entités
 }
 function pidAtTol(sk,x,y,tol){let best=null,bd=tol;Object.keys(skPts(sk)).forEach(pid=>{const p=sk.points[pid];const d=Math.hypot(p.x-x,p.y-y);if(d<bd){bd=d;best=pid;}});return best||addPoint(sk,x,y);}
 function splitOtherAt(sk,selfId,x,y){ // matérialise le point de coupe dans les lignes traversées (jonction en T)
-  const pid=pidAtTol(sk,x,y,0.5);
+  const tol=Math.min(0.5,SK_SNAP*0.5); // jonction en T : ≤ 5 px écran (0,5 mm fixe fusionnait les petites pièces)
+  const pid=pidAtTol(sk,x,y,tol);
   sk.entities.forEach(o=>{
     if(o.id===selfId||o.t!=='line')return;
     const A=sk.points[o.p1],B=sk.points[o.p2];if(!A||!B)return;
     if(o.p1===pid||o.p2===pid)return;
-    if(distSeg(x,y,A,B)<0.5)splitLineAt(sk,o.id,pid);
+    if(distSeg(x,y,A,B)<tol)splitLineAt(sk,o.id,pid);
   });
   return pid;
 }
@@ -9701,7 +9714,7 @@ svg.addEventListener('dblclick',e=>{
   const dl=hitDimLabel(sk,px,py); // étiquette seule → édition (pas la ligne fléchée)
   if(dl){editDim(dl);return;}
   const[wx,wy]=evXY(e);
-  const ent=nearestEntity(sk,wx,wy,SK_PICK+2);if(!ent)return;
+  const ent=nearestEntity(sk,wx,wy,SK_PT);if(!ent)return;
   if(ent.t!=='line'&&ent.t!=='circle'&&ent.t!=='arc')return;
   const ex=sk.dims.find(d=>(d.type==='length'&&d.line===ent.id)||(d.ent===ent.id&&(d.type==='diameter'||d.type==='radius')));
   if(ex){editDim(ex.id);return;}
@@ -9724,7 +9737,7 @@ svg.addEventListener('pointerdown',e=>{
     if(dl){const dd=dimById(sk,dl);skSel={kind:'dim',id:dl};skSelX=[];
       skDimDrag={id:dl,mode:'label',px:e.clientX,py:e.clientY,ox0:(dd.ox||0),oy0:(dd.oy||0),pushed:false};
       renderSkPanel();return;}
-    const pid=nearestPoint(sk,wx,wy,SK_PICK+2);
+    const pid=nearestPoint(sk,wx,wy,SK_PT);
     if(pid){
       if(e.shiftKey){skSelX.push({kind:'point',pid});renderSkPanel();drawSketch2D();return;}
       skSel={kind:'point',pid};skSelX=[];
@@ -9785,7 +9798,7 @@ svg.addEventListener('pointerdown',e=>{
       skPushUndo();
       const pa=snapNewPoint(sk,wx,wy),P0=sk.points[pa]; // réutilise un point existant → attaché d'office
       const rr=Math.hypot(P0.x-C.x,P0.y-C.y);
-      if(rr<0.5){skStatus('Arc : départ trop près du centre.');return;}
+      if(rr<4/skView.s){skStatus('Arc : départ trop près du centre.');return;}
       skArcPa=pa;skArcA1=Math.atan2(P0.y-C.y,P0.x-C.x);
       skDraft={t:'arc',pc:skArcC,r:rr,a1:skArcA1,a2:skArcA1+0.6};
       skStatus('Arc : cliquez le point final.');drawSketch2D();return;}
@@ -9801,7 +9814,7 @@ svg.addEventListener('pointerdown',e=>{
     if(skDimPlace){ // cote vivante : 2ᵉ entité → conversion (comme Fusion), vide → pose + saisie
       const dd=dimById(sk,skDimPlace.id);
       const ent=nearestEntity(sk,wx,wy,SK_PICK);
-      const pid=nearestPoint(sk,wx,wy,SK_PICK+2);
+      const pid=nearestPoint(sk,wx,wy,SK_PT);
       if(dd&&tryExtendDim(dd,ent,pid))return; // convertie → reste en mode pose
       const id=skDimPlace.id;skDimPlace=null;
       skStatus('Cote posée.');drawSketch2D();renderSkPanel();editDim(id);return;
@@ -9819,7 +9832,7 @@ svg.addEventListener('pointerdown',e=>{
   if(skTool==='fillet'||skTool==='chamfer'){
     // Congé / chanfrein : 2 clics sur 2 lignes en coin (même geste que coïncidence).
     const isF=skTool==='fillet';
-    const ent=nearestEntity(sk,wx,wy,SK_PICK+3,false);
+    const ent=nearestEntity(sk,wx,wy,SK_PICKX,false);
     if(!ent||ent.t!=='line'){skStatus((isF?'Congé ⦾':'Chanfrein ◣')+' : cliquez une ligne droite.');return;}
     if(!skCornA||skCornA.tool!==skTool){skCornA={tool:skTool,id:ent.id};skStatus((isF?'Congé ⦾ : 1ʳᵉ arête ✓ — cliquez la 2ᵉ (coin commun).':'Chanfrein ◣ : 1ʳᵉ arête ✓ — cliquez la 2ᵉ (coin commun).'));drawSketch2D();return;}
     if(ent.id===skCornA.id){skStatus('Même ligne — cliquez une autre ligne.');return;}
@@ -9868,7 +9881,7 @@ svg.addEventListener('pointerdown',e=>{
     afterEdit();return;
   }
   if(skTool==='trim'){
-    const ent=nearestEntity(sk,wx,wy,SK_PICK+3,true);
+    const ent=nearestEntity(sk,wx,wy,SK_PICKX,true);
     if(!ent){skStatus('Ajuster : cliquez un tronçon de ligne, d’arc ou de cercle près d’une intersection.');return;}
     skPushUndo();skStatus(trimEntity(sk,ent,wx,wy));afterEdit();return;
   }
@@ -9879,7 +9892,7 @@ svg.addEventListener('pointerdown',e=>{
     if(!skOffArm){skOffArm=true;skStatus('Décalage ⇄ : cliquez le CÔTÉ (distance = curseur, cotes créées pour ajuster). Échap annule.');drawSketch2D();return;}
     const D=skOffsetDistToSel(sk,sel,{x:wx,y:wy});
     skOffArm=false;
-    if(!(D>=0.5)){skStatus('Décalage : cliquez plus loin (≥ 0,5 mm).');drawSketch2D();return;}
+    if(!(D>=4/skView.s)){skStatus('Décalage : cliquez plus loin du profil.');drawSketch2D();return;}
     skPushUndo();
     const r=skOffsetApply(sk,sel.map(e=>e.id),D,{x:wx,y:wy});
     if(!r.ok){skUndoStack.pop();skUndoBtn();skStatus(r.msg);drawSketch2D();return;}
@@ -10211,9 +10224,9 @@ function showSkCtx(x,y){
   // commun (SK_ICONS) — mêmes formes que la barre d'outils et les pastilles du dessin.
   const CTX_IC=[['📏 Longueur','length'],['📏 Distance points','distance'],['📏 Distance point','distline'],['📏 Distance centres','distance'],['📏 Distance','distline'],
     ['─','h'],['│','v'],['📌','fix'],['∥','parallel'],['⟂','perpendicular'],['＝','equal'],['⊕','midpoint'],
-    ['⦾ Tangence','tangent'],['⦾ Congé','arc'],['◎','coaxial'],['⌀','diameter'],['○ Rayon','radius'],['⌾','coincident'],
+    ['⦾ Tangence','tangent'],['⦾ Congé','fillet'],['◎','coaxial'],['⌀','diameter'],['○ Rayon','radius'],['⌾','coincident'],
     ['∠','angle'],['⇔ Entraxe','gap'],['⇔ Symétrie','symmetric'],['⇄ Construction','construction'],['⇄ Géométrie','construction'],
-    ['⇄ Décaler','parallel'],['◣','trim'],['⫽','collinear']];
+    ['⇄ Décaler','offset'],['◣','chamfer'],['⫽','collinear']];
   const add=(label, fn)=>{
     const b=document.createElement('button');
     const hit=CTX_IC.find(([k])=>label.indexOf(k)===0);
@@ -10374,7 +10387,8 @@ window.addEventListener('keydown',e=>{
   const bar=document.getElementById('skToolbar');if(!bar)return;
   const mk=(tool,icon,title)=>{
     if(bar.querySelector('[data-tool="'+tool+'"]'))return;
-    const b=document.createElement('button');b.className='tool';b.dataset.tool=tool;b.textContent=icon;b.title=title;
+    const b=document.createElement('button');b.className='tool';b.dataset.tool=tool;b.title=title;
+    if(typeof SK_ICONS!=='undefined'&&SK_ICONS[tool])b.innerHTML=skIcon(tool,20);else b.textContent=icon;
     b.onclick=()=>{skCancelDraft();skTool=tool;document.querySelectorAll('#skToolbar .tool').forEach(x=>x.classList.toggle('on',x===b));if(skEdit)skStatus(title);};
     const trim=bar.querySelector('[data-tool="trim"]');
     if(trim&&trim.parentNode)trim.parentNode.insertBefore(b,trim.nextSibling);else bar.appendChild(b);
@@ -28922,7 +28936,7 @@ window.addEventListener('pointerdown',e=>{if(!$('ctxMenu').contains(e.target))hi
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.32';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.33';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);

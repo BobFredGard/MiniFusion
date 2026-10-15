@@ -21,6 +21,9 @@ const SK_ICONS={
   cpoint:'<circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/><path d="M12 3.5v4.5M12 16v4.5M3.5 12H8M16 12h4.5"/>',
   project:'<path d="M12 2.8l6 2.6v5.4l-6 2.6-6-2.6V5.4z"/><path d="M6 5.4l6 2.6 6-2.6M12 8v5.4" stroke-width="1.3"/><path d="M12 15.5v3" stroke-dasharray="1.5 1.8"/><path d="M4 21h16"/>',
   dim:'<path d="M4 5v10M20 5v10"/><path d="M4 10h16"/><path d="M7.5 7.5L4 10l3.5 2.5M16.5 7.5L20 10l-3.5 2.5"/><path d="M9 19h6" stroke-width="2.4"/>',
+  fillet:'<path d="M4 21v-8a9 9 0 0 1 9-9h8" stroke-width="2.2"/><path d="M4 9V4h5" stroke-dasharray="1.6 2.2" stroke-width="1.3"/><circle cx="13" cy="13" r="1.4" fill="currentColor" stroke="none"/>',
+  chamfer:'<path d="M4 21V11l7-7h10" stroke-width="2.2"/><path d="M4 8V4h4" stroke-dasharray="1.6 2.2" stroke-width="1.3"/>',
+  offset:'<path d="M3 19c3-9 15-9 18 0" stroke-width="2.2"/><path d="M7 21c2-5 8-5 10 0" stroke-dasharray="2.2 2" stroke-width="1.6"/><path d="M12 7.5v5M10 10.5l2 2 2-2" stroke-width="1.4"/>',
   trim:'<circle cx="6" cy="7" r="2.6"/><circle cx="6" cy="17" r="2.6"/><path d="M8.2 8.5L20 16.5M8.2 15.5L20 7.5"/>',
   // ── contraintes ──
   h:'<path d="M3.5 12h17" stroke-width="2.4"/><path d="M3.5 8v8M20.5 8v8" stroke-width="1.4"/>',
