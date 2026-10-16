@@ -119,7 +119,9 @@ function refreshMirror(){
   const box=new THREE.Box3();let n=0;
   bodies.forEach(b=>{if(b.visible&&b.mesh){box.expandByObject(b.mesh);n++;}});
   if(!n||box.isEmpty())return;
-  floorMesh.position.z=box.min.z-0.5;
+  // 2026-10-16-014 : sol COLLÉ à la pièce (était −0,5 mm) — le reflet de l'arête du bas tombait
+  // 1 mm plus bas que le trait en filigrane vu à travers une pièce transparente.
+  floorMesh.position.z=box.min.z-Math.max(0.02,box.getSize(new THREE.Vector3()).length()*1e-4);
   _mcu.copy(box.getCenter(new THREE.Vector3()));
   mirrorU.uCenter.value.copy(_mcu);
   mirrorU.uRadius.value=Math.max(box.getSize(new THREE.Vector3()).length()/2,1);

@@ -36,9 +36,11 @@ const {loadApp}=require('./appvm.cjs');
     "mk('cut');F2.distance=10;markDirty();rebuild();{const R=occFinalShape(null);const E=occListEdges(R.shape);const fond=E.some(e=>e.mid&&near(e.mid[2],10,1e-3)&&e.pts.every(p=>near(p[2],10,1e-3)));occCleanup(R,null);A(fond,'8 : outil raccourci (10) : la soustraction suit — fond de trou borgne à Z10');}",
     // transparence vraie
     "setBodyGlass(B1,0.4);A(bodyGlassOf(B1)===0.4,'9 : transparence enregistrée sur le corps');",
-    "const m={transparent:false,opacity:1,depthWrite:true};setMatAlpha(m,1,0.4);A(m.transparent&&near(m.opacity,0.4)&&m.depthWrite===false,'10 : matière : transparente SANS écriture de profondeur (on voit l\\u2019intérieur)');",
+    "const m={transparent:false,opacity:1,depthWrite:true};setMatAlpha(m,1,0.4);const m9={};setMatAlpha(m9,1,0.9);const m1={};setMatAlpha(m1,1,0.1);A(m.transparent&&m.opacity<1&&m.depthWrite===false&&m9.opacity>0.95&&m1.opacity<0.3&&m9.opacity>m.opacity&&m.opacity>m1.opacity,'10 : matière transparente SANS écriture de profondeur ; courbe dépolie (10 % → '+m9.opacity.toFixed(2)+' laiteux · 60 % → '+m.opacity.toFixed(2)+' · 90 % → '+m1.opacity.toFixed(2)+')');",
     "const m2={transparent:false,opacity:1,depthWrite:true};setMatAlpha(m2,0.6);A(m2.transparent&&m2.depthWrite===true,'11 : « Intensité » inchangée (profondeur conservée)');",
     "const js=JSON.parse(serialise(false));A(js.bodies.find(b=>b.id===B1).gl===0.4,'12 : transparence enregistrée dans le fichier');",
+    "A(typeof ctxSetBodyGlass==='function'&&ctxStyleReg.filter(r=>r.g).length>=1,'13 : curseur Transparence dans le menu contextuel (vue 3D vérifiée au navigateur)');",
+    "{const t={roughness:0.4,metalness:0.35};setMatAlpha(t,1,0.98);A(t.opacity>0.99&&t.roughness<0.45,'14 : 1er cran (2 %) : changement à peine visible (opacité '+t.opacity.toFixed(3)+', rugosité '+t.roughness.toFixed(2)+')');}",
     "return out;"
   ].join('\n');
   const o=await vm.runInContext('(async()=>{'+R+'})()',ctx);

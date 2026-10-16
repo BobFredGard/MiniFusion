@@ -6,7 +6,7 @@ function wirePick(){
     if(extPickFace){if(e.button===0)extPickFaceCommit(e);return;} // mode « vers un objet »
     if(Math.hypot(e.clientX-dx,e.clientY-dy)>6)return;
     if(filMode){if(e.button===0&&!e.ctrlKey)filletToggle(e);return;}
-    if(filModeX){if(e.button===0&&!e.ctrlKey)exactToggle(e);return;}
+    if(filModeX){if(e.button===0)exactToggle(e);return;} // Ctrl/Cmd+clic = ajouter / retirer une arête
     if(typeof holeFacePick!=='undefined'&&holeFacePick){if(e.button===0&&!e.ctrlKey)holeFacePickAt(e);return;} // fonction Perçage : face de fin
     if(typeof faoHolePick!=='undefined'&&faoHolePick){if(e.button===0&&!e.ctrlKey)faoHolePickAt(e);return;} // perçage : clic sur un trou
     if(faoChainMode){if(e.button===0&&!e.ctrlKey)faoChainToggle(e);return;}
@@ -865,6 +865,27 @@ function ctxSetBodyOp(pct,commit){
     if(commit){markDirty();try{renderProps();}catch(e){}}
   }catch(e){}
 }
+function ctxSetBodyGlass(pct,commit){
+  // 2026-10-16-011 : transparence VRAIE depuis le clic droit (même source que le panneau)
+  try{
+    const bid=ctxBodyId(ctxTarget);if(!bid)return;
+    const v=Math.max(0,Math.min(90,Math.round(+pct||0)));
+    setBodyGlass(bid,1-v/100);applyBodyStyleLive(bid);try{buildEdgeOverlay();}catch(e){}
+    ctxStyleSync();
+    if(commit){markDirty();try{renderProps();}catch(e){}}
+  }catch(e){}
+}
+function ctxGlassRow(menu){
+  const ro=document.createElement('div');ro.className='ctxRow';
+  const io=document.createElement('span');io.title='Transparence (on voit l’intérieur, identique au panneau)';io.textContent='🫧';ro.appendChild(io);
+  const gi=document.createElement('input');gi.type='range';gi.min='0';gi.max='90';gi.value='0';gi.title='Transparence du corps';
+  const gv=document.createElement('span');gv.className='ctxOpV';gv.textContent='0%';
+  ro.appendChild(gi);ro.appendChild(gv);
+  gi.addEventListener('input',()=>ctxSetBodyGlass(gi.value,false));
+  gi.addEventListener('change',()=>ctxSetBodyGlass(gi.value,true));
+  ctxStyleReg.push({menu,wrap:ro,g:gi,gv});
+  return ro;
+}
 (function ctxStyleInit(){
   try{
     const wire=(c,o)=>{
@@ -883,6 +904,8 @@ function ctxSetBodyOp(pct,commit){
       ctxStyleReg.push({menu:'ctxMenu3D',wrap:c3.parentElement,c:c3,o:o3,v:v3});
       ctxStyleReg.push({menu:'ctxMenu3D',wrap:sw,s:sw});
       wire(c3,o3);
+      o3.title='Intensité du corps';try{o3.previousElementSibling.title='Intensité (estompe la pièce sur le fond)';}catch(e){}
+      const g3=ctxGlassRow('ctxMenu3D');if(host&&host.insertBefore)host.insertBefore(g3,o3.parentElement.nextSibling);
     }
     // 2) arbre — rangées fabriquées en JS, en bas du menu
     const menu=$('ctxMenu');
@@ -894,11 +917,11 @@ function ctxSetBodyOp(pct,commit){
       rc.appendChild(ci);
       const sw=swatchRow(hx=>ctxSetBodyColor(hx,true),'ctxRow');
       const ro=document.createElement('div');ro.className='ctxRow';
-      const io=document.createElement('span');io.title='Transparence du corps (identique au panneau)';io.textContent='🔆';ro.appendChild(io);
+      const io=document.createElement('span');io.title='Intensité du corps (estompe la pièce sur le fond)';io.textContent='🔆';ro.appendChild(io);
       const oi=document.createElement('input');oi.type='range';oi.min='15';oi.max='100';oi.value='100';
       const ov=document.createElement('span');ov.className='ctxOpV';ov.textContent='100%';
       ro.appendChild(oi);ro.appendChild(ov);
-      wrap.appendChild(rc);wrap.appendChild(sw);wrap.appendChild(ro);
+      wrap.appendChild(rc);wrap.appendChild(sw);wrap.appendChild(ro);wrap.appendChild(ctxGlassRow('ctxMenu'));
       menu.appendChild(wrap);
       ctxStyleReg.push({menu:'ctxMenu',wrap:wrap,c:ci,o:oi,v:ov});
       ctxStyleReg.push({menu:'ctxMenu',wrap:wrap,s:sw});
@@ -1494,6 +1517,7 @@ function autosaveFlush(){ // fermeture d'onglet : plus aucune perte possible
 addEventListener('beforeunload',()=>{autosaveFlush();});
 addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')autosaveFlush();});
 async function deserialise(json,opts){
+  try{if(typeof viewFadeOut==='function')viewFadeOut();}catch(e){} // 2026-10-16-015 : fondu à l'ouverture
   const o=JSON.parse(json);doc={name:o.name||'Sans titre',tint:o.tint||0,entNames:o.entNames||null,sketches:o.sketches||[],features:o.features||[],bodyVis:o.bodyVis||{},bodies:Array.isArray(o.bodies)?o.bodies.filter(e=>e&&typeof e.id==='string').map(e=>({id:e.id,name:String(e.name||e.id),c:Array.isArray(e.c)&&e.c.length===3?e.c.slice():null,color:isFinite(+e.color)?+e.color:undefined,op:(e.op>0&&e.op<1)?+e.op:undefined,gl:(e.gl>0&&e.gl<1)?+e.gl:undefined,open:e.open!==false})):[],
     bodySeq:o.bodySeq>0?Math.floor(o.bodySeq):1,activeBody:(typeof o.activeBody==='string')?o.activeBody:null,fold:(o.fold&&typeof o.fold==='object')?{sk:!!o.fold.sk,origin:!!o.fold.origin}:{},fao:o.fao||null,params:Array.isArray(o.params)?o.params.filter(p=>p&&typeof p.name==='string'):[]};
   // Les numéros de corps ne sont jamais réemployés : le compteur repart au-delà
@@ -1553,6 +1577,7 @@ async function deserialise(json,opts){
   // F5) — sans ce rendu, l'arbre FAO gardait celui du document precedent (posage sans
   // aucune operation, alors que sa fleche reste ▼ : « le posage est la, pas ses ops »).
   try{ if(typeof faoRefreshFaoUI==='function')faoRefreshFaoUI(); }catch(e){}
+  try{if(typeof viewFadeIn==='function')viewFadeIn();}catch(e){}
 }
 /* ---------- conteneur .miniFusion : document + cache de trajectoires ----------
    Demandé : « un fichier dédié qui encapsule le json ET son cache ». Le document

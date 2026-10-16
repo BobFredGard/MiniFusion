@@ -275,7 +275,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-16-009';
+const APP_VER='2026-10-16-015';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -452,22 +452,34 @@ function setMatAlpha(mat,a,glass){
   if(!mat)return mat;
   a=(typeof a==='number'&&a>0&&a<=1)?a:1;
   const g=(typeof glass==='number'&&glass>0&&glass<1)?glass:1;
+  // 2026-10-16-010 : courbe « verre dépoli » — aux faibles réglages la pièce reste LAITEUSE
+  // (l'intérieur n'apparaît que flou, estompé), elle ne devient vraiment claire qu'en fin de course.
+  const tg=1-g,tn=Math.min(1,tg/0.9),ge=g<0.999?1-0.75*Math.pow(tn,1.4):1;
+  // 2026-10-16-011 : transition DOUCE depuis 0 % — voile, rugosité et métal suivent le curseur
+  // (avant : voile 26 % et matière mate d'un coup dès le 1er cran).
+  const frost=g<0.999?0.16*Math.sin(Math.PI*Math.min(1,tn*1.25)/2)*(1-0.55*tn):0;
   const tr=a<0.999||g<0.999;
-  mat.transparent=tr;mat.opacity=a*g;
+  // 2026-10-16-013 : three r147 compile une matière OPAQUE avec alpha forcé à 1 (#define OPAQUE) :
+  // passer en transparent EXIGE une recompilation. L'ancien test « mat.needsUpdate!==undefined »
+  // était toujours faux (propriété en écriture seule) → transparence ignorée ou collée.
+  const flip=!!mat.transparent!==tr;
+  mat.transparent=tr;mat.opacity=a*ge;
+  if(flip&&typeof mat.version==='number')mat.needsUpdate=true;
+  mat.userData=mat.userData||{};mat.userData.glass=g<0.999?ge:1;
   try{
     // 2026-10-16-009 : « Intensité » (a) garde le depth buffer → la pièce s'estompe sur le fond ;
     // « Transparence » (g) ne l'écrit plus → on voit l'INTÉRIEUR (poches, perçages, parois et
     // arêtes cachées), rendu verre doux.
     if('depthWrite'in mat)mat.depthWrite=!(g<0.999);
-    if('metalness'in mat)mat.metalness=tr?0.05:0.35;
-    if('roughness'in mat)mat.roughness=tr?0.55:0.4;
+    if('metalness'in mat)mat.metalness=g<0.999?0.35-0.3*Math.min(1,tn*1.5):(tr?0.05:0.35);
+    if('roughness'in mat)mat.roughness=g<0.999?0.4+0.45*Math.min(1,tn*1.5):(tr?0.55:0.4);
     if(mat.emissive&&mat.emissive.setHex){
       if(tr&&mat.color&&mat.color.r!=null){ // compensation d'éclat : translucide ≠ éteint
-        const k=Math.min(0.6,(1-a)*0.5+(1-g)*0.25);
-        mat.emissive.setRGB(mat.color.r*k,mat.color.g*k,mat.color.b*k);
+        const k=Math.min(0.6,(1-a)*0.5+(1-ge)*0.2);
+        mat.emissive.setRGB(Math.min(1,mat.color.r*k+frost),Math.min(1,mat.color.g*k+frost),Math.min(1,mat.color.b*k+frost));
       }else mat.emissive.setHex(0x000000);
     }
-    if(mat.needsUpdate!==undefined)mat.needsUpdate=true;
+    // (recompilation : seulement au basculement opaque ↔ transparent, voir plus haut)
   }catch(err){}
   return mat;
 }
@@ -484,6 +496,7 @@ function applyBodyStyleLive(id){ // application IMMÉDIATE pendant le glisser (a
       if(!b||b.ghost||bodyIdOfRuntime(b)!==id||!b.mesh||!b.mesh.material)continue;
       if(b._xSaved!=null||b._dSaved!=null||b._cSaved!=null)continue; // mode congé/dépouille/coque : style gelé
       applyBodyStyle(b.mesh.material,id);b.color=c;
+      try{if(typeof glassDepthMask==='function')glassDepthMask(b);}catch(e){}
     }
   }catch(err){}
 }
@@ -524,6 +537,7 @@ function ctxStyleSync(){
       try{
         if(r.c&&r.c.value!==hex)r.c.value=hex;
         if(r.o){r.o.value=pct;if(r.v)r.v.textContent=pct+'%';}
+        if(r.g){const gp=Math.round((1-bodyGlassOf(bid))*100);r.g.value=gp;if(r.gv)r.gv.textContent=gp+'%';}
         if(r.s)swatchMark(r.s,hex);
       }catch(err){}
     });
@@ -683,7 +697,9 @@ function refreshMirror(){
   const box=new THREE.Box3();let n=0;
   bodies.forEach(b=>{if(b.visible&&b.mesh){box.expandByObject(b.mesh);n++;}});
   if(!n||box.isEmpty())return;
-  floorMesh.position.z=box.min.z-0.5;
+  // 2026-10-16-014 : sol COLLÉ à la pièce (était −0,5 mm) — le reflet de l'arête du bas tombait
+  // 1 mm plus bas que le trait en filigrane vu à travers une pièce transparente.
+  floorMesh.position.z=box.min.z-Math.max(0.02,box.getSize(new THREE.Vector3()).length()*1e-4);
   _mcu.copy(box.getCenter(new THREE.Vector3()));
   mirrorU.uCenter.value.copy(_mcu);
   mirrorU.uRadius.value=Math.max(box.getSize(new THREE.Vector3()).length()/2,1);
@@ -2074,7 +2090,64 @@ function xLabelLow(k){return xIsChamfer(k)?'chanfrein exact':'congé exact';}
 function xIcon(k){return xIsChamfer(k)?'⟋':'⤢';}
 function xDimPrefix(k){return xIsChamfer(k)?'D':'R';}
 function xFeatName(f){return xLabel(xKindOf(f))+' ('+((f&&f.edges)||[]).length+' arête(s))';}
-function occFilletRun(base,jobs,warns,chamfer){
+// 2026-10-16-015 : congé / chanfrein d'UNE arête SANS suivre la chaîne tangente (OCCT la suit
+// toujours) — arête DROITE et CONVEXE entre deux faces : le secteur de matière est mesuré au
+// classificateur, l'outil (triangle du coin − disque du congé, ou triangle seul pour un
+// chanfrein) est extrudé le long de l'arête en DÉBORDANT devant et derrière, puis soustrait.
+function occSingleEdgeTool(shape,pts,r,chamfer){
+  if(!pts||pts.length<2||!(r>0))return null;
+  const A=pts[0],B=pts[pts.length-1];
+  const sub=(p,q)=>[p[0]-q[0],p[1]-q[1],p[2]-q[2]],add=(p,q)=>[p[0]+q[0],p[1]+q[1],p[2]+q[2]],mul=(p,k)=>[p[0]*k,p[1]*k,p[2]*k];
+  const dot=(p,q)=>p[0]*q[0]+p[1]*q[1]+p[2]*q[2],len=p=>Math.hypot(p[0],p[1],p[2]),nrm=p=>{const l=len(p)||1;return mul(p,1/l);};
+  const cross=(p,q)=>[p[1]*q[2]-p[2]*q[1],p[2]*q[0]-p[0]*q[2],p[0]*q[1]-p[1]*q[0]];
+  const L=len(sub(B,A));if(L<1e-6)return null;
+  const t=nrm(sub(B,A));
+  for(const p of pts){const w=sub(p,A),d=dot(w,t);if(len(sub(w,mul(t,d)))>1e-4*Math.max(1,L))return null;} // arête droite seulement
+  const M=mul(add(A,B),0.5);
+  const a0=Math.abs(t[0])<0.9?[1,0,0]:[0,1,0];
+  const u=nrm(sub(a0,mul(t,dot(a0,t)))),v=cross(t,u);
+  const dir=th=>add(mul(u,Math.cos(th)),mul(v,Math.sin(th)));
+  const bin=[];
+  try{
+    const cl=new occt.BRepClass3d_SolidClassifier_2(shape);bin.push(cl);
+    const IN=occt.TopAbs_State.TopAbs_IN;
+    const eps=Math.max(1e-3,Math.min(0.05,r*0.05));
+    const inAt=th=>{const q=add(M,mul(dir(th),eps));const P=new occt.gp_Pnt_3(q[0],q[1],q[2]);cl.Perform(P,1e-7);const s=cl.State();try{P.delete();}catch(e){}return s===IN;};
+    const N=180,S=[];for(let k=0;k<N;k++)S.push(inAt(2*Math.PI*k/N));
+    const starts=[];for(let k=0;k<N;k++)if(S[k]&&!S[(k+N-1)%N])starts.push(k);
+    if(starts.length!==1)return null; // pas une arête simple entre 2 faces
+    let k1=starts[0],k2=k1;while(S[(k2+1)%N]&&((k2+1)%N)!==k1)k2=(k2+1)%N;
+    const bis=(lo,hi,want)=>{for(let i=0;i<14;i++){const m=(lo+hi)/2;if(inAt(m)===want)hi=m;else lo=m;}return(lo+hi)/2;};
+    const st=2*Math.PI/N;
+    const th1=bis(2*Math.PI*k1/N-st,2*Math.PI*k1/N,true); // passage dehors → dedans
+    const th2=bis(2*Math.PI*(k2+1)/N,2*Math.PI*k2/N,true); // passage dedans → dehors (côté fin)
+    let al=th2-th1;while(al<0)al+=2*Math.PI;while(al>2*Math.PI)al-=2*Math.PI;
+    if(!(al>0.05&&al<Math.PI-0.02))return null; // arête concave (ou plate) : repli OCCT
+    const d1=dir(th1),d2=dir(th2),b=nrm(add(d1,d2));
+    const s=chamfer?r:r/Math.tan(al/2);
+    const T1=add(M,mul(d1,s)),T2=add(M,mul(d2,s));
+    const Eo=sub(M,mul(b,0.5*s+0.5)); // sommet du triangle repoussé HORS matière (pas de face coplanaire)
+    const o=Math.max(2*r,2),half=L/2+o;
+    const at0=p=>sub(p,mul(t,half));
+    const P=p=>{const q=new occt.gp_Pnt_3(p[0],p[1],p[2]);bin.push(q);return q;};
+    const poly=new occt.BRepBuilderAPI_MakePolygon_3(P(at0(Eo)),P(at0(T1)),P(at0(T2)),true);bin.push(poly);
+    if(!poly.IsDone())return null;
+    const fm=new occt.BRepBuilderAPI_MakeFace_15(poly.Wire(),true);bin.push(fm);if(!fm.IsDone())return null;
+    const vec=new occt.gp_Vec_4(t[0]*2*half,t[1]*2*half,t[2]*2*half);bin.push(vec);
+    const pr=new occt.BRepPrimAPI_MakePrism_1(fm.Face(),vec,false,true);bin.push(pr);pr.Build();if(!pr.IsDone())return null;
+    let tool=pr.Shape();
+    if(!chamfer){
+      const h=r/Math.sin(al/2),C=add(M,mul(b,h)),C0=sub(C,mul(t,half+1));
+      const dd=new occt.gp_Dir_4(t[0],t[1],t[2]);bin.push(dd);
+      const ax=new occt.gp_Ax2_3(P(C0),dd);bin.push(ax);
+      const cy=new occt.BRepPrimAPI_MakeCylinder_3(ax,r,2*half+2);bin.push(cy);
+      tool=occCut(tool,cy.Shape());
+    }
+    return tool;
+  }catch(e){return null;}
+  finally{occDispose(bin);}
+}
+function occFilletRun(base,jobs,warns,chamfer,opts){
   // Arrondi/chanfrein BRep : 1) le lot en une passe (rapide), 2) si Build échoue → ARÊTE PAR ARÊTE
   // sur la shape courante (chaque succès conservé — une arête capricieuse ne fait plus
   // tomber toutes les autres). Les srcs changent après chaque arrondi : relocalisation
@@ -2098,6 +2171,21 @@ function occFilletRun(base,jobs,warns,chamfer){
       const s=mf.Shape();occDispose(bin);return s;
     }catch(e){occDispose(bin);return null;}
   };
+  if(opts&&opts.single){
+    // case « tangentes » DÉCOCHÉE : chaque arête seule, sans chaîne tangente
+    let cur=base,done=0;
+    for(const j of jobs){
+      let E=null;try{E=occListEdges(cur);}catch(e){}
+      const ed=(E||[]).find(e=>cur===base?e.src===j.src:(j.mid&&Math.hypot(e.mid[0]-j.mid[0],e.mid[1]-j.mid[1],e.mid[2]-j.mid[2])<3));
+      let nx=null;
+      const tool=ed?occSingleEdgeTool(cur,ed.pts,j.r,chamfer):null;
+      if(tool){try{nx=occCut(cur,tool);}catch(e){nx=null;}try{tool.delete();}catch(e){}}
+      if(!nx&&ed){nx=mk(cur,[{src:ed.src,r:j.r}]);if(nx)warns.push(kindLabel+' : arête courbe ou concave — suivi de la chaîne tangente (noyau)');}
+      if(nx){if(cur!==base){try{cur.delete();}catch(e){}}cur=nx;done++;}
+      else warns.push(kindLabel+' isolé impossible ('+(chamfer?'distance trop grande ?':'rayon trop grand ?')+')');
+    }
+    return cur===base?null:cur;
+  }
   let s=mk(base,jobs);
   if(s)return s;
   let cur=base,done=0;
@@ -2818,18 +2906,57 @@ function edgeOverlayFromMesh(b){
   try{eg.dispose();}catch(e){}
   return res;
 }
+// 2026-10-16-010 : corps en TRANSPARENCE vraie — passe « profondeur seule » dessinée APRÈS sa
+// couleur : les arêtes cachées derrière la face avant ne sont plus tracées net (seul le voile,
+// peint avant les solides, les laisse deviner à travers la matière), les parois intérieures
+// restent visibles (la couleur a été dessinée avant le masque).
+// 2026-10-16-012 : rendu TRANSPARENT en 3 passes (un seul maillage = ordre des triangles
+// quelconque : une paroi de perçage dessinée APRÈS la face avant se mélangeait par-dessus →
+// formes intérieures visibles trop tôt) :
+//   1) profondeur seule (surface la plus proche) · 2) INTÉRIEUR seul (derrière cette surface),
+//   intensité qui monte lentement avec la transparence · 3) surface avant (le maillage lui-même,
+//   depthFunc ≤ → jamais recouverte par l'intérieur). Les arêtes cachées échouent sur la passe 1.
+function glassDepthMask(b){
+  if(!b||!b.mesh)return;
+  const me=b.mesh,mat=me.material,ge=(mat&&mat.userData&&mat.userData.glass)||1;
+  me.userData=me.userData||{};
+  const drop=k=>{const o=me.userData[k];if(o){me.remove(o);try{o.material.dispose();}catch(e){}me.userData[k]=null;}};
+  // pas transparent du tout → aucune passe ; « Intensité » seule → passe de profondeur (la pièce
+  // s'estompe sur le FOND sans montrer l'intérieur) ; « Transparence » → + passe intérieure.
+  if(!(mat&&mat.transparent)||b.ghost){drop('glassMask');drop('glassIn');me.renderOrder=0;if(mat)mat.depthFunc=THREE.LessEqualDepth;return;}
+  const po={polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1};
+  let pre=me.userData.glassMask,inn=me.userData.glassIn;
+  if(!pre||pre.geometry!==me.geometry){drop('glassMask');
+    pre=new THREE.Mesh(me.geometry,new THREE.MeshBasicMaterial(Object.assign({colorWrite:false,depthWrite:true,depthTest:true,transparent:true},po)));
+    pre.renderOrder=1;pre.raycast=()=>{};pre.name='glassPre';me.add(pre);me.userData.glassMask=pre;}
+  if(!(ge<0.999)){drop('glassIn');try{pre.material.clippingPlanes=mat.clippingPlanes||null;}catch(e){}mat.depthFunc=THREE.LessEqualDepth;me.renderOrder=3;return;}
+  if(!inn||inn.geometry!==me.geometry){drop('glassIn');
+    inn=new THREE.Mesh(me.geometry,new THREE.MeshStandardMaterial(Object.assign({transparent:true,depthWrite:false,depthTest:true,depthFunc:THREE.GreaterDepth},po)));
+    inn.renderOrder=2;inn.raycast=()=>{};inn.name='glassIn';me.add(inn);me.userData.glassIn=inn;}
+  // 2026-10-16-013 : TOUT devient transparent en même temps, petit à petit — l'intérieur prend
+  // la même opacité que la surface (poids visible = ge·(1−ge) : 30 % → 0,13 · 90 % → 0,19)
+  const aIn=ge;
+  const im=inn.material;
+  try{im.color.copy(mat.color);im.emissive.copy(mat.emissive);im.roughness=mat.roughness;im.metalness=mat.metalness;}catch(e){}
+  try{const cp=mat.clippingPlanes||null;im.clippingPlanes=cp;pre.material.clippingPlanes=cp;}catch(e){} // plan de coupe respecté
+  im.opacity=aIn;inn.visible=aIn>0.004;im.needsUpdate=true;
+  mat.depthFunc=THREE.LessEqualDepth;me.renderOrder=3; // surface avant, après l'intérieur
+}
+let edgeOverlayErr=null; // dernière erreur (diagnostic)
 function buildEdgeOverlay(){
   const old=scene.getObjectByName('edgeOverlay');
   if(old){
     scene.remove(old);
     try{old.traverse(o=>{if(o&&o.geometry&&o.geometry.dispose)o.geometry.dispose();});}catch(e){}
   }
+  try{(typeof bodies!=='undefined'?bodies:[]).forEach(b=>glassDepthMask(b));}catch(e){} // passes de transparence (arêtes affichées ou non)
   if(edgeMode!=='on')return;
   // 2026-10-16-001 : arêtes RENTRANTES (épaulement, fond de poche) invisibles — dans le creux,
   // les 2 faces voisines sont à la même profondeur que le trait et le masquent. On recule
   // légèrement les FACES des corps (polygonOffset : ne touche que les polygones, pas les traits).
   try{(typeof bodies!=='undefined'?bodies:[]).forEach(b=>{const m=b&&b.mesh&&b.mesh.material;
-    (Array.isArray(m)?m:[m]).forEach(x=>{if(x&&!x.polygonOffset){x.polygonOffset=true;x.polygonOffsetFactor=1;x.polygonOffsetUnits=1;x.needsUpdate=true;}});});}catch(e){}
+    (Array.isArray(m)?m:[m]).forEach(x=>{if(x&&!x.polygonOffset){x.polygonOffset=true;x.polygonOffsetFactor=1;x.polygonOffsetUnits=1;x.needsUpdate=true;}});
+    });}catch(e){}
   const data=edgeOverlayData();
   if(!data.length)return;
   // UN SEUL set de sommets, DEUX passes (les arêtes derrière le solide s'atténuent) :
@@ -2859,13 +2986,21 @@ function buildEdgeOverlay(){
     g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
     g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
     const grp=new THREE.Group();grp.name='edgeOverlay'; // un seul nom : clearBodies() retire les DEUX passes
-    const veil=new THREE.LineSegments(g,new THREE.LineBasicMaterial({vertexColors:true,depthTest:false,depthWrite:false}));
-    veil.raycast=()=>{};veil.renderOrder=-10;
+    // 2026-10-16-011 : arêtes ARRIÈRE en GRIS doux (plus en noir plein) — vues à travers un corps
+    // transparent, elles restent estompées ; sous un corps opaque, toujours invisibles.
+    // 2026-10-16-013 : le voile passe APRÈS les objets opaques (sol, pièces opaques) et AVANT la
+    // pièce transparente (passes 1-3) : peint en premier, il était effacé par le SOL (filigrane
+    // visible seulement par-dessous) ; avec le test de profondeur, une pièce opaque le masque.
+    const veil=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:0x7d828a,transparent:true,opacity:0.9,depthTest:true,depthWrite:false}));
+    veil.raycast=()=>{};veil.renderOrder=0.5;
+    // 2026-10-16-013 : arêtes ARRIÈRE uniquement s'il y a un corps en TRANSPARENCE (filigrane) —
+    // en opaque comme avec la seule « Intensité », plus aucune arête arrière.
+    veil.visible=(typeof bodies!=='undefined'?bodies:[]).some(b=>b&&!b.ghost&&b.mesh&&b.mesh.visible!==false&&b.mesh.material&&b.mesh.material.userData&&typeof b.mesh.material.userData.glass==='number'&&b.mesh.material.userData.glass<0.999);
     const net=new THREE.LineSegments(g,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,depthWrite:false}));
     net.raycast=()=>{};net.renderOrder=990;
     grp.add(veil);grp.add(net);
     scene.add(grp); // jamais pris par le picking (raycast neutre sur les deux passes)
-  }catch(e){ /* aucun overlay vaut mieux qu'un rendu cassé */ }
+  }catch(e){ edgeOverlayErr=e; /* aucun overlay vaut mieux qu'un rendu cassé */ }
 }
 function distSeg2(px,py,ax,ay,bx,by){const dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy||1e-18;let t=((px-ax)*dx+(py-ay)*dy)/L2;t=Math.max(0,Math.min(1,t));return Math.hypot(px-(ax+t*dx),py-(ay+t*dy));}
 function rotP(Q,Cx,Cy,a){const dx=Q.x-Cx,dy=Q.y-Cy,c=Math.cos(a),s=Math.sin(a);Q.x=Cx+dx*c-dy*s;Q.y=Cy+dx*s+dy*c;}
@@ -3118,6 +3253,9 @@ function occApplyXFillets(base,xfils){
   const dp=chamfer?'D':'R';
   const edges=occListEdges(base);
   if(!edges.length){warns.push(lab+' : aucune arête détectée');return{shape:base,warnings:warns};}
+  // 2026-10-16-015 : migration — les entrées « tangente » ajoutées par d'anciens rejeux sont
+  // retirées (la chaîne se re-déduit au calcul) dès qu'il reste au moins une arête CLIQUÉE.
+  (xfils||[]).forEach(xf=>{if(xf&&Array.isArray(xf.edges)&&xf.edges.some(e=>e&&e.name!=='tangente'))xf.edges=xf.edges.filter(e=>!e||e.name!=='tangente');});
   // Anciennes sélections corrompues (anciennes passes multi-candidats) : positions en double →
   // fusion des jumeaux AVANT le réappariement. ATTENTION : trois arêtes distinctes d'une bande
   // de coin (coincidence de deux congé/chanfrein) ont le MÊME milieu — les fusionner sur la
@@ -3251,8 +3389,9 @@ function occApplyXFillets(base,xfils){
       });
       if(best>=0)take(best,se.r,se);
     });
-    // 2) arêtes de la chaîne SANS entrée (apparues) → ajoutées à la fonction avec le rayon
-    //    du germe le plus proche : la bande s'étend toute seule, f.edges reflete le solide.
+    // 2) arêtes de la chaîne SANS entrée → ajoutées AU CALCUL seulement, avec le rayon du germe
+    //    le plus proche. 2026-10-16-015 : plus jamais enregistrées dans la fonction (avant :
+    //    entrées « tangente » qui gonflaient la liste — une arête cliquée suffit).
     chain.forEach(j=>{
       if(hasJob(j))return;
       const m=edges[j].mid;
@@ -3261,10 +3400,7 @@ function occApplyXFillets(base,xfils){
       let bs=null,bd=1e9;
       roots.forEach(se=>{const d=at(se.pos0&&se.pos0.length===3?se.pos0:se.pos);if(d<bd){bd=d;bs=se;}});
       if(!bs)return;
-      const ne={pos:m.slice(),pos0:m.slice(),r:bs.r,len:+(edges[j].len||0).toFixed(3),
-        anchor:null,name:'tangente'};
-      xf.edges.push(ne);es.push(ne);
-      take(j,bs.r,ne);
+      take(j,bs.r,null);
     });
   });
   // Passe 3 : signature de groupe pour orphelins (anciennes sélections déplacées).
@@ -3307,7 +3443,8 @@ function occApplyXFillets(base,xfils){
   });
   if(!jobs.length)return{shape:base,warnings:warns};
   const js=jobs.map(j=>({src:edges[j.bi].src,r:j.r,mid:edges[j.bi].mid.slice()}));
-  const s=occFilletRun(base,js,warns,chamfer);
+  const single=(xfils||[]).length>0&&(xfils||[]).every(x=>x&&x.tangent===false); // case décochée : arête seule
+  const s=occFilletRun(base,js,warns,chamfer,{single});
   if(!s){
     // ÉCHEC : l'appli ne peut pas appliquer la fonction, mais « rouge + refus muet » est le
     // pire des messages. On cherche le plus grand rayon qui MARCHE (échelle descendante, chemin
@@ -3319,7 +3456,7 @@ function occApplyXFillets(base,xfils){
     for(const k of [0.7,0.5,0.4,0.3,0.2]){
       const r2=Math.max(0.5,+(rMax*k).toFixed(2));
       const w2=[];
-      const t=occFilletRun(occShapeCopy(base),js.map(j=>({src:j.src,r:r2,mid:j.mid.slice()})),w2,chamfer);
+      const t=occFilletRun(occShapeCopy(base),js.map(j=>({src:j.src,r:r2,mid:j.mid.slice()})),w2,chamfer,{single});
       if(t){ok=r2;try{t.delete();}catch(e){}break;}
     }
     const why=chamfer?'distance trop grande':'rayon trop grand';
@@ -12582,7 +12719,7 @@ function exitFilletMode(silent){
   if(filModeX){exitExactFilletMode(silent);return;}
   if(!filMode)return;
   filMode=null;filHover=null;
-  const o=scene.getObjectByName('filEdges');if(o)scene.remove(o);
+  const o=scene.getObjectByName('filEdges');if(o)scene.remove(o);{const orb=scene.getObjectByName('filRibbons');if(orb)scene.remove(orb);}
   if(!silent)renderProps();
 }
 /* ----- mode exact : N'importe quelle arête du solide exact, rayon par arête ----- */
@@ -12606,7 +12743,7 @@ function enterExactFilletMode(editF,kind){
   // défaut). Un clic = UNE arête ; plus de double-clic qui attrapait une chaîne entière.
   // En édition : la case reste sur l'état PERSISTÉ du congé (f.tangent) — elle ne se
   // remet plus « cochée » en dépit de l'utilisateur à chaque réédition.
-  filModeX={sel:[],seeds:[],tangent:editing?(editing.tangent!==false):true,radius:2,edges:[],editing:editing?editing.id:null,kind:k};
+  filModeX={sel:[],seeds:[],tangent:editing?(editing.tangent!==false):true,radius:xIsChamfer(k)?1:10,edges:[],editing:editing?editing.id:null,kind:k}; // défauts : congé 10, chanfrein 1
   if(editing){
     // Édition : rejeu SANS la fonction (occSkipFeat) → les arêtes vives d'origine redeviennent
     // cliquables (l'arrondi appliqué les a remplacées par des surfaces tangentes).
@@ -12654,7 +12791,7 @@ function exitExactFilletMode(silent){
   if(wasEditing)occSkipFeat=null;
   filModeX=null;xHover=null;
   try{xPrevRemove();}catch(e){}
-  const o=scene.getObjectByName('filEdges');if(o)scene.remove(o);
+  const o=scene.getObjectByName('filEdges');if(o)scene.remove(o);{const orb=scene.getObjectByName('filRibbons');if(orb)scene.remove(orb);}
   if(wasEditing){tlEditUnlock();markDirty();try{rebuild();}catch(e){}} // lève le verrou : la fonction modifiée ET celles qui suivent sont régénérées
   if(!silent)renderProps();
 }
@@ -12686,8 +12823,9 @@ function xSelSync(){
   const want=[];
   (filModeX.seeds||[]).forEach(i=>{
     if(!filModeX.edges[i])return;
-    if(filModeX.tangent)occTangentChain(i).forEach(j=>{if(want.indexOf(j)<0)want.push(j);});
-    else if(want.indexOf(i)<0)want.push(i);
+    // 2026-10-16-015 : la sélection (et l'arbre) = EXACTEMENT les arêtes cliquées, cochée ou
+    // non ; la case « tangentes » ne dit qu'au calcul de suivre la chaîne tangente (f.tangent).
+    if(want.indexOf(i)<0)want.push(i);
   });
   const kept=[];
   want.forEach(i=>{
@@ -12717,14 +12855,51 @@ function xPrevRemove(){
     bodies=bodies.filter(b=>b!==xPrevBody);
     xPrevBody=null;
   }
-  // on rend son opacité (et son écriture de profondeur) à la pièce réelle
+  // la pièce réelle réapparaît telle quelle (l'aperçu la remplaçait)
   bodies.forEach(b=>{
-    if(b._xSaved==null||!b.mesh||!b.mesh.material)return;
-    b.mesh.material.opacity=b._xSaved;b.mesh.material.transparent=b._xTrans;
-    if(b._xDW!==undefined)b.mesh.material.depthWrite=b._xDW;
-    delete b._xSaved;delete b._xTrans;delete b._xDW;
+    if(b._xSaved==null||!b.mesh)return;
+    b.mesh.visible=b._xVis!==false;
+    delete b._xSaved;delete b._xVis;
   });
   try{refreshParts();}catch(e){}
+}
+// 2026-10-16-015 : signatures géométriques des faces (plan : normale + distance ; cylindre :
+// axe + rayon ; autre : type + centre) — une face du RÉSULTAT sans équivalent dans le solide
+// de départ est une face NOUVELLE (congé / chanfrein) → surlignée dans l'aperçu.
+function occFaceKeys(shape){
+  const keys=[];const r=v=>Math.round(v*200)/200;
+  const SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE;
+  const ex=new occt.TopExp_Explorer_2(shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,SH);
+  const T=occt.GeomAbs_SurfaceType;
+  while(ex.More()){
+    let k='?';
+    try{
+      const f=occt.TopoDS.Face_1(ex.Current());
+      const s=new occt.BRepAdaptor_Surface_2(f,true);const ty=s.GetType();
+      if(ty===T.GeomAbs_Plane){
+        const pl=s.Plane(),ax=pl.Axis(),d=ax.Direction(),p=ax.Location();
+        let n=[d.X(),d.Y(),d.Z()];const sg=(Math.abs(n[0])>1e-9?n[0]:(Math.abs(n[1])>1e-9?n[1]:n[2]))<0?-1:1;n=n.map(v=>v*sg);
+        k='P'+n.map(r).join(',')+'|'+r(n[0]*p.X()+n[1]*p.Y()+n[2]*p.Z());
+      }else if(ty===T.GeomAbs_Cylinder){
+        const cy=s.Cylinder(),ax=cy.Axis(),d=ax.Direction(),p=ax.Location();
+        let n=[d.X(),d.Y(),d.Z()];const sg=(Math.abs(n[0])>1e-9?n[0]:(Math.abs(n[1])>1e-9?n[1]:n[2]))<0?-1:1;n=n.map(v=>v*sg);
+        const t=n[0]*p.X()+n[1]*p.Y()+n[2]*p.Z(),q=[p.X()-n[0]*t,p.Y()-n[1]*t,p.Z()-n[2]*t];
+        k='C'+n.map(r).join(',')+'|'+q.map(r).join(',')+'|'+r(cy.Radius());
+      }else{
+        const u=(s.FirstUParameter()+s.LastUParameter())/2,v=(s.FirstVParameter()+s.LastVParameter())/2,m=s.Value(u,v);
+        k='S'+String(ty&&ty.value!==undefined?ty.value:ty)+'|'+[m.X(),m.Y(),m.Z()].map(r).join(',');
+      }
+      try{s.delete();}catch(e){}
+    }catch(e){k='?';}
+    keys.push(k);ex.Next();
+  }
+  try{ex.delete();}catch(e){}
+  return keys;
+}
+let xBaseKeys={shape:null,keys:null};
+function xNewFaces(base,res){
+  if(xBaseKeys.shape!==base){xBaseKeys={shape:base,keys:new Set(occFaceKeys(base))};}
+  return occFaceKeys(res).map(k=>k==='?'||!xBaseKeys.keys.has(k));
 }
 function xPreviewShape(base,jobs,cham){
   // Forme montrée par l'aperçu : le SOLIDE COMPLET avec congé/chanfrein appliqué, ou
@@ -12733,7 +12908,7 @@ function xPreviewShape(base,jobs,cham){
   if(!base||!jobs||!jobs.length)return null;
   const warns=[];
   let sh=null;
-  try{sh=occFilletRun(base,jobs,warns,cham);}catch(e){sh=null;}
+  try{sh=occFilletRun(base,jobs,warns,cham,{single:!!(filModeX&&filModeX.tangent===false)});}catch(e){sh=null;}
   return sh?{shape:sh}:null;
 }
 function xPreviewUpdate(){
@@ -12742,7 +12917,7 @@ function xPreviewUpdate(){
     const sel=filModeX.sel.filter(s=>s.r>0);
     if(!sel.length||!occLive||!occLive.shape){xPrevRemove();return;}
     // rien à recalculer si la sélection et les rayons n'ont pas bougé
-    const sig=sel.map(s=>s.pos.map(v=>v.toFixed(2)).join(',')+'/'+s.r).join('|')+(xIsChamfer(filModeX.kind)?'#c':'#f');
+    const sig=sel.map(s=>s.pos.map(v=>v.toFixed(2)).join(',')+'/'+s.r).join('|')+(xIsChamfer(filModeX.kind)?'#c':'#f')+(filModeX.tangent===false?'#1':'#t');
     if(filModeX._prevSig===sig)return;
     const cham=xIsChamfer(filModeX.kind);
     const E=occListEdges(occLive.shape);
@@ -12756,24 +12931,30 @@ function xPreviewUpdate(){
     const pv=xPreviewShape(occLive.shape,jobs,cham);
     if(!pv||!pv.shape){xPrevRemove();return;}
     const sh=pv.shape;
-    let g=null;
+    let g=null,isNew=null;
     try{g=occTessellate(sh,0.5);}catch(e){g=null;}
+    try{isNew=xNewFaces(occLive.shape,sh);}catch(e){isNew=null;}
     try{sh.delete();}catch(e){}
     if(!g){xPrevRemove();return;}
     xPrevRemove();
-    // la pièce s'estompe, le résultat rouge passe devant
+    // 2026-10-16-015 : APERÇU = le résultat lui-même, dans la couleur de la pièce, opaque, À LA
+    // PLACE de la pièce ; seules les faces NOUVELLES (congé / chanfrein) sont en orange.
+    // (avant : solide rouge translucide sur une pièce estompée, peu lisible)
+    let col=0x0a84ff;
     bodies.forEach(b=>{
-      if(b.ghost||!b.mesh||!b.mesh.material)return;
-      b._xSaved=b.mesh.material.opacity;b._xTrans=b.mesh.material.transparent;
-      b.mesh.material.opacity=0.28;b.mesh.material.transparent=true;b.mesh.material.depthWrite=false;
-      b._xDW=b.mesh.material.depthWrite;
+      if(b.ghost||!b.mesh||!b.mesh.material||b.preview)return;
+      try{if(b.mesh.material.color)col=b.mesh.material.color.getHex();}catch(e){}
+      b._xSaved=1;b._xVis=b.mesh.visible;b.mesh.visible=false;
     });
-    const mat=new THREE.MeshStandardMaterial({color:0xff453a,transparent:true,opacity:0.6,depthWrite:false,side:THREE.DoubleSide,roughness:0.35,metalness:0.05});
-    const mesh=new THREE.Mesh(g,mat);mesh.name='xPreview';
-    mesh.renderOrder=1000;
+    g.clearGroups();
+    (g.userData.occGroups||[]).forEach(o=>g.addGroup(o.start*3,o.count*3,(isNew&&isNew[o.f])?1:0));
+    const matBase=new THREE.MeshStandardMaterial({color:col,roughness:0.4,metalness:0.35,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1});
+    const matNew=new THREE.MeshStandardMaterial({color:0xff7a1f,emissive:0x5a2000,roughness:0.3,metalness:0.1,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1});
+    const mesh=new THREE.Mesh(g,[matBase,matNew]);mesh.name='xPreview';
+    mesh.renderOrder=0;
     mesh.userData.bid='x_preview';mesh.raycast=()=>{};
     scene.add(mesh);
-    xPrevBody={id:'x_preview',name:'🔴 Aperçu (non validé)',mesh,color:0xff453a,visible:true,kind:'ghost',ref:null,ghost:true,preview:true};
+    xPrevBody={id:'x_preview',name:'🟠 Aperçu (non validé)',mesh,color:0xff7a1f,visible:true,kind:'ghost',ref:null,ghost:true,preview:true};
     bodies.push(xPrevBody);
     filModeX._prevSig=sig;
     try{refreshParts();}catch(e){}
@@ -12822,12 +13003,25 @@ function xPreviewUpdate(){
     for(let k=0;k<segEdge.length;k++){
       const i=segEdge[k];
       let hex=cache[i];
-      if(hex===undefined)hex=cache[i]=xIsSeed(i)?0xffd60a:(xIsSel(i)?0xff453a:(xHover===i?0xffd60a:0x000000));
+      if(hex===undefined)hex=cache[i]=0x000000; // trait de base noir, comme la vue 3D
       c.setHex(hex);
       col.setXYZ(k*2,c.r,c.g,c.b);
       col.setXYZ(k*2+1,c.r,c.g,c.b);
     }
     col.needsUpdate=true;
+    // 2026-10-16-015 : MÊME code que la vue 3D sans fonction active — survol = ruban orange
+    // sanguine, arête retenue (cliquée ou tangente déduite) = ruban orange, 1,6 px.
+    try{
+      let rg=scene.getObjectByName('filRibbons');
+      if(rg){scene.remove(rg);rg.traverse(o=>{try{o.geometry&&o.geometry.dispose();o.material&&o.material.dispose();}catch(e){}});}
+      rg=new THREE.Group();rg.name='filRibbons';
+      (filModeX.edges||[]).forEach((e,i)=>{
+        if(!e||!e.pts||e.pts.length<2)return;
+        if(xIsSel(i)||xIsSeed(i))edgeHoverDraw(e.pts,rg,0xff9f0a);
+        else if(xHover===i)edgeHoverDraw(e.pts,rg,0xff5a1f);
+      });
+      scene.add(rg);
+    }catch(e){}
   }
 
 function exactPick(e){
@@ -12925,10 +13119,15 @@ function exactToggle(e){
     if(i===null||i===undefined||!filModeX.edges[i]){
       if(exactFaceToggle(e))return;
       faceEl.textContent=xLabel(filModeX.kind)+' : cliquez une arête bleue (ou une face = toute sa boucle).'+
-        (filModeX.tangent?' Les arêtes tangentes à celle cliquée sont ajoutées automatiquement.':' Une seule arête par clic.');
+        (filModeX.tangent?' Les arêtes tangentes à celle cliquée sont ajoutées automatiquement.':' Clic = cette arête · Ctrl/Cmd+clic = ajouter / retirer.');
       return;
     }
-    if(xIsSeed(i))xSeedDel(i);else xSeedAdd(i);
+    // 2026-10-16-015 : clic = CETTE arête seule (remplace la sélection) ; Ctrl/Cmd+clic = ajouter /
+    // retirer. Avec « arêtes tangentes », chaque arête choisie entraîne sa chaîne tangente.
+    const multi=!!(e&&(e.ctrlKey||e.metaKey));
+    if(multi){if(xIsSeed(i))xSeedDel(i);else xSeedAdd(i);}
+    else if(filModeX.editing){if(xIsSeed(i))xSeedDel(i);else xSeedAdd(i);} // édition : on complète la sélection chargée
+    else{const only=(filModeX.seeds||[]).length===1&&xIsSeed(i);filModeX.seeds=only?[]:[i];}
     xSelSync();
     paintExact();renderExactPanel();
     const extra=(filModeX.tangent&&filModeX.sel.length>(filModeX.seeds||[]).length)
@@ -13033,15 +13232,20 @@ function renderExactPanel(){
   const tl=document.createElement('label');
   tl.style.cssText='display:flex;align-items:center;gap:6px;margin-top:8px;font-size:.83rem;cursor:pointer';
   const tc=document.createElement('input');tc.type='checkbox';tc.checked=filModeX.tangent!==false;
-  tc.title='Coché : les arêtes tangentes à celle cliquée sont ajoutées automatiquement. Décoché : une seule arête par clic.';
+  tc.title='Coché : le calcul suit la chaîne tangente de chaque arête choisie. Décoché : pas de recherche de tangences. Dans les 2 cas, seules les arêtes cliquées sont sélectionnées (Ctrl/Cmd+clic pour plusieurs).';
   tc.addEventListener('change',()=>{
     filModeX.tangent=tc.checked;
     xSelSync();paintExact();renderExactPanel();
-    faceEl.textContent=`${xLabel(k)} : arêtes tangentes ${tc.checked?'ajoutées automatiquement (germes en jaune)':'désactivées (un clic = une arête)'} · ${filModeX.sel.length} arête(s).`;
+    faceEl.textContent=`${xLabel(k)} : arêtes tangentes ${tc.checked?'ajoutées automatiquement (germes en jaune)':'désactivées (clic = une arête · Ctrl/Cmd+clic = plusieurs)'} · ${filModeX.sel.length} arête(s).`;
   });
   tl.appendChild(tc);
   const tt=document.createElement('span');tt.textContent='🔗 Arêtes tangentes ajoutées automatiquement';
   tl.appendChild(tt);p.appendChild(tl);
+  {const nt=document.createElement('div');nt.className='note';nt.style.marginTop='3px';
+   nt.textContent=filModeX.tangent!==false
+     ?'Clic = une arête (le '+(xIsChamfer(k)?'chanfrein':'congé')+' suit sa chaîne tangente) · Ctrl/Cmd+clic = en ajouter / retirer.'
+     :'Clic = une arête, sans recherche de tangences · Ctrl/Cmd+clic = en ajouter / retirer. Note : le noyau prolonge toujours un '+(xIsChamfer(k)?'chanfrein':'congé')+' le long d’arêtes en continuité tangente (limite OCCT).';
+   p.appendChild(nt);}
   if(filModeX.sel.length){
     const nb=document.createElement('div');nb.className='note';
     nb.style.marginTop='4px';
@@ -13051,8 +13255,8 @@ function renderExactPanel(){
     p.appendChild(nb);
     const pv=document.createElement('div');pv.className='note';
     pv.style.marginTop='4px';
-    pv.textContent=xPrevBody?'🔴 Aperçu affiché : le solide avec congé/chanfrein, en rouge sur la pièce estompée.'
-                           :'🔴 Aperçu indisponible (noyau exact indisponible ou arête sans diagnostic).';
+    pv.textContent=xPrevBody?'🟠 Aperçu : la pièce telle qu’elle sera, les nouvelles faces en orange.'
+                           :'🟠 Aperçu indisponible (noyau exact indisponible ou arête sans diagnostic).';
     p.appendChild(pv);
   }
   const lst=document.createElement('div');lst.className='col';lst.style.marginTop='6px';lst.style.maxHeight='220px';lst.style.overflow='auto';
@@ -29704,7 +29908,7 @@ function wirePick(){
     if(extPickFace){if(e.button===0)extPickFaceCommit(e);return;} // mode « vers un objet »
     if(Math.hypot(e.clientX-dx,e.clientY-dy)>6)return;
     if(filMode){if(e.button===0&&!e.ctrlKey)filletToggle(e);return;}
-    if(filModeX){if(e.button===0&&!e.ctrlKey)exactToggle(e);return;}
+    if(filModeX){if(e.button===0)exactToggle(e);return;} // Ctrl/Cmd+clic = ajouter / retirer une arête
     if(typeof holeFacePick!=='undefined'&&holeFacePick){if(e.button===0&&!e.ctrlKey)holeFacePickAt(e);return;} // fonction Perçage : face de fin
     if(typeof faoHolePick!=='undefined'&&faoHolePick){if(e.button===0&&!e.ctrlKey)faoHolePickAt(e);return;} // perçage : clic sur un trou
     if(faoChainMode){if(e.button===0&&!e.ctrlKey)faoChainToggle(e);return;}
@@ -30563,6 +30767,27 @@ function ctxSetBodyOp(pct,commit){
     if(commit){markDirty();try{renderProps();}catch(e){}}
   }catch(e){}
 }
+function ctxSetBodyGlass(pct,commit){
+  // 2026-10-16-011 : transparence VRAIE depuis le clic droit (même source que le panneau)
+  try{
+    const bid=ctxBodyId(ctxTarget);if(!bid)return;
+    const v=Math.max(0,Math.min(90,Math.round(+pct||0)));
+    setBodyGlass(bid,1-v/100);applyBodyStyleLive(bid);try{buildEdgeOverlay();}catch(e){}
+    ctxStyleSync();
+    if(commit){markDirty();try{renderProps();}catch(e){}}
+  }catch(e){}
+}
+function ctxGlassRow(menu){
+  const ro=document.createElement('div');ro.className='ctxRow';
+  const io=document.createElement('span');io.title='Transparence (on voit l’intérieur, identique au panneau)';io.textContent='🫧';ro.appendChild(io);
+  const gi=document.createElement('input');gi.type='range';gi.min='0';gi.max='90';gi.value='0';gi.title='Transparence du corps';
+  const gv=document.createElement('span');gv.className='ctxOpV';gv.textContent='0%';
+  ro.appendChild(gi);ro.appendChild(gv);
+  gi.addEventListener('input',()=>ctxSetBodyGlass(gi.value,false));
+  gi.addEventListener('change',()=>ctxSetBodyGlass(gi.value,true));
+  ctxStyleReg.push({menu,wrap:ro,g:gi,gv});
+  return ro;
+}
 (function ctxStyleInit(){
   try{
     const wire=(c,o)=>{
@@ -30581,6 +30806,8 @@ function ctxSetBodyOp(pct,commit){
       ctxStyleReg.push({menu:'ctxMenu3D',wrap:c3.parentElement,c:c3,o:o3,v:v3});
       ctxStyleReg.push({menu:'ctxMenu3D',wrap:sw,s:sw});
       wire(c3,o3);
+      o3.title='Intensité du corps';try{o3.previousElementSibling.title='Intensité (estompe la pièce sur le fond)';}catch(e){}
+      const g3=ctxGlassRow('ctxMenu3D');if(host&&host.insertBefore)host.insertBefore(g3,o3.parentElement.nextSibling);
     }
     // 2) arbre — rangées fabriquées en JS, en bas du menu
     const menu=$('ctxMenu');
@@ -30592,11 +30819,11 @@ function ctxSetBodyOp(pct,commit){
       rc.appendChild(ci);
       const sw=swatchRow(hx=>ctxSetBodyColor(hx,true),'ctxRow');
       const ro=document.createElement('div');ro.className='ctxRow';
-      const io=document.createElement('span');io.title='Transparence du corps (identique au panneau)';io.textContent='🔆';ro.appendChild(io);
+      const io=document.createElement('span');io.title='Intensité du corps (estompe la pièce sur le fond)';io.textContent='🔆';ro.appendChild(io);
       const oi=document.createElement('input');oi.type='range';oi.min='15';oi.max='100';oi.value='100';
       const ov=document.createElement('span');ov.className='ctxOpV';ov.textContent='100%';
       ro.appendChild(oi);ro.appendChild(ov);
-      wrap.appendChild(rc);wrap.appendChild(sw);wrap.appendChild(ro);
+      wrap.appendChild(rc);wrap.appendChild(sw);wrap.appendChild(ro);wrap.appendChild(ctxGlassRow('ctxMenu'));
       menu.appendChild(wrap);
       ctxStyleReg.push({menu:'ctxMenu',wrap:wrap,c:ci,o:oi,v:ov});
       ctxStyleReg.push({menu:'ctxMenu',wrap:wrap,s:sw});
@@ -31192,6 +31419,7 @@ function autosaveFlush(){ // fermeture d'onglet : plus aucune perte possible
 addEventListener('beforeunload',()=>{autosaveFlush();});
 addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')autosaveFlush();});
 async function deserialise(json,opts){
+  try{if(typeof viewFadeOut==='function')viewFadeOut();}catch(e){} // 2026-10-16-015 : fondu à l'ouverture
   const o=JSON.parse(json);doc={name:o.name||'Sans titre',tint:o.tint||0,entNames:o.entNames||null,sketches:o.sketches||[],features:o.features||[],bodyVis:o.bodyVis||{},bodies:Array.isArray(o.bodies)?o.bodies.filter(e=>e&&typeof e.id==='string').map(e=>({id:e.id,name:String(e.name||e.id),c:Array.isArray(e.c)&&e.c.length===3?e.c.slice():null,color:isFinite(+e.color)?+e.color:undefined,op:(e.op>0&&e.op<1)?+e.op:undefined,gl:(e.gl>0&&e.gl<1)?+e.gl:undefined,open:e.open!==false})):[],
     bodySeq:o.bodySeq>0?Math.floor(o.bodySeq):1,activeBody:(typeof o.activeBody==='string')?o.activeBody:null,fold:(o.fold&&typeof o.fold==='object')?{sk:!!o.fold.sk,origin:!!o.fold.origin}:{},fao:o.fao||null,params:Array.isArray(o.params)?o.params.filter(p=>p&&typeof p.name==='string'):[]};
   // Les numéros de corps ne sont jamais réemployés : le compteur repart au-delà
@@ -31251,6 +31479,7 @@ async function deserialise(json,opts){
   // F5) — sans ce rendu, l'arbre FAO gardait celui du document precedent (posage sans
   // aucune operation, alors que sa fleche reste ▼ : « le posage est la, pas ses ops »).
   try{ if(typeof faoRefreshFaoUI==='function')faoRefreshFaoUI(); }catch(e){}
+  try{if(typeof viewFadeIn==='function')viewFadeIn();}catch(e){}
 }
 /* ---------- conteneur .miniFusion : document + cache de trajectoires ----------
    Demandé : « un fichier dédié qui encapsule le json ET son cache ». Le document
@@ -31743,7 +31972,7 @@ function openAide(){
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.48';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.54';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);
@@ -32223,6 +32452,56 @@ function runValidate(){
 
 // 2026-10-15-009 : plus de bouton « ✓ Valider » séparé — runValidate() EST l'action du
 // bouton unique « ⟳ Régénérer » (src/95), qui remplace Recalculer / Valider / Hard.
+
+/* ═══════════════ 98-demarrage-fondu.js — demarrage fondu ═══════════════ */
+/* ---------- Démarrage : attendre le noyau OCCT, puis faire apparaître la pièce en fondu (2026-10-16-015) ----------
+   Après un rafraîchissement, le repli maillage s'affichait d'abord puis la pièce exacte la
+   remplaçait (saut visible). La vue 3D reste désormais invisible tant que le noyau n'a pas
+   recalculé la pièce en exact, puis elle apparaît en fondu. Garde-fous : noyau en échec →
+   on montre le maillage ; ouverture locale (file://) qui attend le .wasm → 8 s ; 60 s au plus. */
+let bootVeilOn=false;
+function viewFadeOut(){
+  // ouverture d'un modèle : la vue disparaît d'un coup (l'ancien modèle ne reste pas affiché)
+  try{if(bootVeilOn)return;const cv=document.getElementById('viewport');if(!cv||!cv.style)return;cv.style.transition='none';cv.style.opacity='0';
+    setTimeout(()=>{try{if(cv.style.opacity==='0'&&!bootVeilOn)viewFadeIn();}catch(e){}},4000);}catch(e){} // secours : ouverture en échec
+}
+function viewFadeIn(){
+  // … puis réapparaît en fondu une fois le nouveau modèle reconstruit
+  try{if(bootVeilOn)return;const cv=document.getElementById('viewport');if(!cv||!cv.style)return;
+    const go=()=>{cv.style.transition='opacity .9s ease';cv.style.opacity='1';};
+    if(typeof requestAnimationFrame==='function')requestAnimationFrame(()=>requestAnimationFrame(go));else go();}catch(e){}
+}
+(function(){
+  try{
+    const cv=document.getElementById('viewport'),wrap=document.getElementById('vpwrap');
+    if(!cv||!cv.style||typeof setInterval!=='function')return;
+    cv.style.opacity='0';cv.style.transition='opacity .9s ease';bootVeilOn=true;
+    let veil=null;
+    if(wrap&&wrap.appendChild){
+      veil=document.createElement('div');veil.id='bootVeil';
+      veil.style.cssText='position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;pointer-events:none;z-index:5;color:var(--muted,#8e8e93);font-size:.85rem;transition:opacity .6s ease';
+      veil.innerHTML='<div style="width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,.12);border-top-color:#0a84ff;animation:bootSpin 1s linear infinite"></div><div>Chargement du noyau 3D…</div>';
+      const st=document.createElement('style');st.textContent='@keyframes bootSpin{to{transform:rotate(360deg)}}';
+      try{document.head.appendChild(st);}catch(e){}
+      wrap.appendChild(veil);
+    }
+    const t0=Date.now();
+    const reveal=()=>{
+      clearInterval(iv);bootVeilOn=false;
+      cv.style.transition='opacity .9s ease';cv.style.opacity='1';
+      if(veil){veil.style.opacity='0';setTimeout(()=>{try{veil.remove();}catch(e){}},700);}
+    };
+    const iv=setInterval(()=>{
+      try{
+        const dt=Date.now()-t0;
+        const ready=(typeof occtReady!=='undefined'&&occtReady)&&((typeof builtEngine!=='undefined'&&builtEngine==='exact')||!((doc&&doc.features)||[]).length);
+        const failed=typeof occBaseMsg==='string'&&/impossible|absent|incomplet/i.test(occBaseMsg);
+        const local=(location&&location.protocol==='file:')&&!(typeof occtReady!=='undefined'&&occtReady)&&dt>8000;
+        if(ready||failed||local||dt>60000)reveal();
+      }catch(e){reveal();}
+    },150);
+  }catch(e){}
+})();
 
 /* ═══════════════ 99-init.js — init ═══════════════ */
 /* ---------- init ---------- */

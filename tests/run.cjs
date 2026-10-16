@@ -74,6 +74,7 @@ const SUITES = [
   "test_projection_arcs",
   "test_parametres_3d",
   "test_corps_combiner",
+  "test_conge_arete_seule",
   "test_aretes_import",
   "test_fao_chain_step",
   "test_precision_affichage",

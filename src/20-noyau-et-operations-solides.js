@@ -628,7 +628,64 @@ function xLabelLow(k){return xIsChamfer(k)?'chanfrein exact':'congé exact';}
 function xIcon(k){return xIsChamfer(k)?'⟋':'⤢';}
 function xDimPrefix(k){return xIsChamfer(k)?'D':'R';}
 function xFeatName(f){return xLabel(xKindOf(f))+' ('+((f&&f.edges)||[]).length+' arête(s))';}
-function occFilletRun(base,jobs,warns,chamfer){
+// 2026-10-16-015 : congé / chanfrein d'UNE arête SANS suivre la chaîne tangente (OCCT la suit
+// toujours) — arête DROITE et CONVEXE entre deux faces : le secteur de matière est mesuré au
+// classificateur, l'outil (triangle du coin − disque du congé, ou triangle seul pour un
+// chanfrein) est extrudé le long de l'arête en DÉBORDANT devant et derrière, puis soustrait.
+function occSingleEdgeTool(shape,pts,r,chamfer){
+  if(!pts||pts.length<2||!(r>0))return null;
+  const A=pts[0],B=pts[pts.length-1];
+  const sub=(p,q)=>[p[0]-q[0],p[1]-q[1],p[2]-q[2]],add=(p,q)=>[p[0]+q[0],p[1]+q[1],p[2]+q[2]],mul=(p,k)=>[p[0]*k,p[1]*k,p[2]*k];
+  const dot=(p,q)=>p[0]*q[0]+p[1]*q[1]+p[2]*q[2],len=p=>Math.hypot(p[0],p[1],p[2]),nrm=p=>{const l=len(p)||1;return mul(p,1/l);};
+  const cross=(p,q)=>[p[1]*q[2]-p[2]*q[1],p[2]*q[0]-p[0]*q[2],p[0]*q[1]-p[1]*q[0]];
+  const L=len(sub(B,A));if(L<1e-6)return null;
+  const t=nrm(sub(B,A));
+  for(const p of pts){const w=sub(p,A),d=dot(w,t);if(len(sub(w,mul(t,d)))>1e-4*Math.max(1,L))return null;} // arête droite seulement
+  const M=mul(add(A,B),0.5);
+  const a0=Math.abs(t[0])<0.9?[1,0,0]:[0,1,0];
+  const u=nrm(sub(a0,mul(t,dot(a0,t)))),v=cross(t,u);
+  const dir=th=>add(mul(u,Math.cos(th)),mul(v,Math.sin(th)));
+  const bin=[];
+  try{
+    const cl=new occt.BRepClass3d_SolidClassifier_2(shape);bin.push(cl);
+    const IN=occt.TopAbs_State.TopAbs_IN;
+    const eps=Math.max(1e-3,Math.min(0.05,r*0.05));
+    const inAt=th=>{const q=add(M,mul(dir(th),eps));const P=new occt.gp_Pnt_3(q[0],q[1],q[2]);cl.Perform(P,1e-7);const s=cl.State();try{P.delete();}catch(e){}return s===IN;};
+    const N=180,S=[];for(let k=0;k<N;k++)S.push(inAt(2*Math.PI*k/N));
+    const starts=[];for(let k=0;k<N;k++)if(S[k]&&!S[(k+N-1)%N])starts.push(k);
+    if(starts.length!==1)return null; // pas une arête simple entre 2 faces
+    let k1=starts[0],k2=k1;while(S[(k2+1)%N]&&((k2+1)%N)!==k1)k2=(k2+1)%N;
+    const bis=(lo,hi,want)=>{for(let i=0;i<14;i++){const m=(lo+hi)/2;if(inAt(m)===want)hi=m;else lo=m;}return(lo+hi)/2;};
+    const st=2*Math.PI/N;
+    const th1=bis(2*Math.PI*k1/N-st,2*Math.PI*k1/N,true); // passage dehors → dedans
+    const th2=bis(2*Math.PI*(k2+1)/N,2*Math.PI*k2/N,true); // passage dedans → dehors (côté fin)
+    let al=th2-th1;while(al<0)al+=2*Math.PI;while(al>2*Math.PI)al-=2*Math.PI;
+    if(!(al>0.05&&al<Math.PI-0.02))return null; // arête concave (ou plate) : repli OCCT
+    const d1=dir(th1),d2=dir(th2),b=nrm(add(d1,d2));
+    const s=chamfer?r:r/Math.tan(al/2);
+    const T1=add(M,mul(d1,s)),T2=add(M,mul(d2,s));
+    const Eo=sub(M,mul(b,0.5*s+0.5)); // sommet du triangle repoussé HORS matière (pas de face coplanaire)
+    const o=Math.max(2*r,2),half=L/2+o;
+    const at0=p=>sub(p,mul(t,half));
+    const P=p=>{const q=new occt.gp_Pnt_3(p[0],p[1],p[2]);bin.push(q);return q;};
+    const poly=new occt.BRepBuilderAPI_MakePolygon_3(P(at0(Eo)),P(at0(T1)),P(at0(T2)),true);bin.push(poly);
+    if(!poly.IsDone())return null;
+    const fm=new occt.BRepBuilderAPI_MakeFace_15(poly.Wire(),true);bin.push(fm);if(!fm.IsDone())return null;
+    const vec=new occt.gp_Vec_4(t[0]*2*half,t[1]*2*half,t[2]*2*half);bin.push(vec);
+    const pr=new occt.BRepPrimAPI_MakePrism_1(fm.Face(),vec,false,true);bin.push(pr);pr.Build();if(!pr.IsDone())return null;
+    let tool=pr.Shape();
+    if(!chamfer){
+      const h=r/Math.sin(al/2),C=add(M,mul(b,h)),C0=sub(C,mul(t,half+1));
+      const dd=new occt.gp_Dir_4(t[0],t[1],t[2]);bin.push(dd);
+      const ax=new occt.gp_Ax2_3(P(C0),dd);bin.push(ax);
+      const cy=new occt.BRepPrimAPI_MakeCylinder_3(ax,r,2*half+2);bin.push(cy);
+      tool=occCut(tool,cy.Shape());
+    }
+    return tool;
+  }catch(e){return null;}
+  finally{occDispose(bin);}
+}
+function occFilletRun(base,jobs,warns,chamfer,opts){
   // Arrondi/chanfrein BRep : 1) le lot en une passe (rapide), 2) si Build échoue → ARÊTE PAR ARÊTE
   // sur la shape courante (chaque succès conservé — une arête capricieuse ne fait plus
   // tomber toutes les autres). Les srcs changent après chaque arrondi : relocalisation
@@ -652,6 +709,21 @@ function occFilletRun(base,jobs,warns,chamfer){
       const s=mf.Shape();occDispose(bin);return s;
     }catch(e){occDispose(bin);return null;}
   };
+  if(opts&&opts.single){
+    // case « tangentes » DÉCOCHÉE : chaque arête seule, sans chaîne tangente
+    let cur=base,done=0;
+    for(const j of jobs){
+      let E=null;try{E=occListEdges(cur);}catch(e){}
+      const ed=(E||[]).find(e=>cur===base?e.src===j.src:(j.mid&&Math.hypot(e.mid[0]-j.mid[0],e.mid[1]-j.mid[1],e.mid[2]-j.mid[2])<3));
+      let nx=null;
+      const tool=ed?occSingleEdgeTool(cur,ed.pts,j.r,chamfer):null;
+      if(tool){try{nx=occCut(cur,tool);}catch(e){nx=null;}try{tool.delete();}catch(e){}}
+      if(!nx&&ed){nx=mk(cur,[{src:ed.src,r:j.r}]);if(nx)warns.push(kindLabel+' : arête courbe ou concave — suivi de la chaîne tangente (noyau)');}
+      if(nx){if(cur!==base){try{cur.delete();}catch(e){}}cur=nx;done++;}
+      else warns.push(kindLabel+' isolé impossible ('+(chamfer?'distance trop grande ?':'rayon trop grand ?')+')');
+    }
+    return cur===base?null:cur;
+  }
   let s=mk(base,jobs);
   if(s)return s;
   let cur=base,done=0;
@@ -1372,18 +1444,57 @@ function edgeOverlayFromMesh(b){
   try{eg.dispose();}catch(e){}
   return res;
 }
+// 2026-10-16-010 : corps en TRANSPARENCE vraie — passe « profondeur seule » dessinée APRÈS sa
+// couleur : les arêtes cachées derrière la face avant ne sont plus tracées net (seul le voile,
+// peint avant les solides, les laisse deviner à travers la matière), les parois intérieures
+// restent visibles (la couleur a été dessinée avant le masque).
+// 2026-10-16-012 : rendu TRANSPARENT en 3 passes (un seul maillage = ordre des triangles
+// quelconque : une paroi de perçage dessinée APRÈS la face avant se mélangeait par-dessus →
+// formes intérieures visibles trop tôt) :
+//   1) profondeur seule (surface la plus proche) · 2) INTÉRIEUR seul (derrière cette surface),
+//   intensité qui monte lentement avec la transparence · 3) surface avant (le maillage lui-même,
+//   depthFunc ≤ → jamais recouverte par l'intérieur). Les arêtes cachées échouent sur la passe 1.
+function glassDepthMask(b){
+  if(!b||!b.mesh)return;
+  const me=b.mesh,mat=me.material,ge=(mat&&mat.userData&&mat.userData.glass)||1;
+  me.userData=me.userData||{};
+  const drop=k=>{const o=me.userData[k];if(o){me.remove(o);try{o.material.dispose();}catch(e){}me.userData[k]=null;}};
+  // pas transparent du tout → aucune passe ; « Intensité » seule → passe de profondeur (la pièce
+  // s'estompe sur le FOND sans montrer l'intérieur) ; « Transparence » → + passe intérieure.
+  if(!(mat&&mat.transparent)||b.ghost){drop('glassMask');drop('glassIn');me.renderOrder=0;if(mat)mat.depthFunc=THREE.LessEqualDepth;return;}
+  const po={polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1};
+  let pre=me.userData.glassMask,inn=me.userData.glassIn;
+  if(!pre||pre.geometry!==me.geometry){drop('glassMask');
+    pre=new THREE.Mesh(me.geometry,new THREE.MeshBasicMaterial(Object.assign({colorWrite:false,depthWrite:true,depthTest:true,transparent:true},po)));
+    pre.renderOrder=1;pre.raycast=()=>{};pre.name='glassPre';me.add(pre);me.userData.glassMask=pre;}
+  if(!(ge<0.999)){drop('glassIn');try{pre.material.clippingPlanes=mat.clippingPlanes||null;}catch(e){}mat.depthFunc=THREE.LessEqualDepth;me.renderOrder=3;return;}
+  if(!inn||inn.geometry!==me.geometry){drop('glassIn');
+    inn=new THREE.Mesh(me.geometry,new THREE.MeshStandardMaterial(Object.assign({transparent:true,depthWrite:false,depthTest:true,depthFunc:THREE.GreaterDepth},po)));
+    inn.renderOrder=2;inn.raycast=()=>{};inn.name='glassIn';me.add(inn);me.userData.glassIn=inn;}
+  // 2026-10-16-013 : TOUT devient transparent en même temps, petit à petit — l'intérieur prend
+  // la même opacité que la surface (poids visible = ge·(1−ge) : 30 % → 0,13 · 90 % → 0,19)
+  const aIn=ge;
+  const im=inn.material;
+  try{im.color.copy(mat.color);im.emissive.copy(mat.emissive);im.roughness=mat.roughness;im.metalness=mat.metalness;}catch(e){}
+  try{const cp=mat.clippingPlanes||null;im.clippingPlanes=cp;pre.material.clippingPlanes=cp;}catch(e){} // plan de coupe respecté
+  im.opacity=aIn;inn.visible=aIn>0.004;im.needsUpdate=true;
+  mat.depthFunc=THREE.LessEqualDepth;me.renderOrder=3; // surface avant, après l'intérieur
+}
+let edgeOverlayErr=null; // dernière erreur (diagnostic)
 function buildEdgeOverlay(){
   const old=scene.getObjectByName('edgeOverlay');
   if(old){
     scene.remove(old);
     try{old.traverse(o=>{if(o&&o.geometry&&o.geometry.dispose)o.geometry.dispose();});}catch(e){}
   }
+  try{(typeof bodies!=='undefined'?bodies:[]).forEach(b=>glassDepthMask(b));}catch(e){} // passes de transparence (arêtes affichées ou non)
   if(edgeMode!=='on')return;
   // 2026-10-16-001 : arêtes RENTRANTES (épaulement, fond de poche) invisibles — dans le creux,
   // les 2 faces voisines sont à la même profondeur que le trait et le masquent. On recule
   // légèrement les FACES des corps (polygonOffset : ne touche que les polygones, pas les traits).
   try{(typeof bodies!=='undefined'?bodies:[]).forEach(b=>{const m=b&&b.mesh&&b.mesh.material;
-    (Array.isArray(m)?m:[m]).forEach(x=>{if(x&&!x.polygonOffset){x.polygonOffset=true;x.polygonOffsetFactor=1;x.polygonOffsetUnits=1;x.needsUpdate=true;}});});}catch(e){}
+    (Array.isArray(m)?m:[m]).forEach(x=>{if(x&&!x.polygonOffset){x.polygonOffset=true;x.polygonOffsetFactor=1;x.polygonOffsetUnits=1;x.needsUpdate=true;}});
+    });}catch(e){}
   const data=edgeOverlayData();
   if(!data.length)return;
   // UN SEUL set de sommets, DEUX passes (les arêtes derrière le solide s'atténuent) :
@@ -1413,13 +1524,21 @@ function buildEdgeOverlay(){
     g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
     g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
     const grp=new THREE.Group();grp.name='edgeOverlay'; // un seul nom : clearBodies() retire les DEUX passes
-    const veil=new THREE.LineSegments(g,new THREE.LineBasicMaterial({vertexColors:true,depthTest:false,depthWrite:false}));
-    veil.raycast=()=>{};veil.renderOrder=-10;
+    // 2026-10-16-011 : arêtes ARRIÈRE en GRIS doux (plus en noir plein) — vues à travers un corps
+    // transparent, elles restent estompées ; sous un corps opaque, toujours invisibles.
+    // 2026-10-16-013 : le voile passe APRÈS les objets opaques (sol, pièces opaques) et AVANT la
+    // pièce transparente (passes 1-3) : peint en premier, il était effacé par le SOL (filigrane
+    // visible seulement par-dessous) ; avec le test de profondeur, une pièce opaque le masque.
+    const veil=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:0x7d828a,transparent:true,opacity:0.9,depthTest:true,depthWrite:false}));
+    veil.raycast=()=>{};veil.renderOrder=0.5;
+    // 2026-10-16-013 : arêtes ARRIÈRE uniquement s'il y a un corps en TRANSPARENCE (filigrane) —
+    // en opaque comme avec la seule « Intensité », plus aucune arête arrière.
+    veil.visible=(typeof bodies!=='undefined'?bodies:[]).some(b=>b&&!b.ghost&&b.mesh&&b.mesh.visible!==false&&b.mesh.material&&b.mesh.material.userData&&typeof b.mesh.material.userData.glass==='number'&&b.mesh.material.userData.glass<0.999);
     const net=new THREE.LineSegments(g,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,depthWrite:false}));
     net.raycast=()=>{};net.renderOrder=990;
     grp.add(veil);grp.add(net);
     scene.add(grp); // jamais pris par le picking (raycast neutre sur les deux passes)
-  }catch(e){ /* aucun overlay vaut mieux qu'un rendu cassé */ }
+  }catch(e){ edgeOverlayErr=e; /* aucun overlay vaut mieux qu'un rendu cassé */ }
 }
 function distSeg2(px,py,ax,ay,bx,by){const dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy||1e-18;let t=((px-ax)*dx+(py-ay)*dy)/L2;t=Math.max(0,Math.min(1,t));return Math.hypot(px-(ax+t*dx),py-(ay+t*dy));}
 function rotP(Q,Cx,Cy,a){const dx=Q.x-Cx,dy=Q.y-Cy,c=Math.cos(a),s=Math.sin(a);Q.x=Cx+dx*c-dy*s;Q.y=Cy+dx*s+dy*c;}
@@ -1672,6 +1791,9 @@ function occApplyXFillets(base,xfils){
   const dp=chamfer?'D':'R';
   const edges=occListEdges(base);
   if(!edges.length){warns.push(lab+' : aucune arête détectée');return{shape:base,warnings:warns};}
+  // 2026-10-16-015 : migration — les entrées « tangente » ajoutées par d'anciens rejeux sont
+  // retirées (la chaîne se re-déduit au calcul) dès qu'il reste au moins une arête CLIQUÉE.
+  (xfils||[]).forEach(xf=>{if(xf&&Array.isArray(xf.edges)&&xf.edges.some(e=>e&&e.name!=='tangente'))xf.edges=xf.edges.filter(e=>!e||e.name!=='tangente');});
   // Anciennes sélections corrompues (anciennes passes multi-candidats) : positions en double →
   // fusion des jumeaux AVANT le réappariement. ATTENTION : trois arêtes distinctes d'une bande
   // de coin (coincidence de deux congé/chanfrein) ont le MÊME milieu — les fusionner sur la
@@ -1805,8 +1927,9 @@ function occApplyXFillets(base,xfils){
       });
       if(best>=0)take(best,se.r,se);
     });
-    // 2) arêtes de la chaîne SANS entrée (apparues) → ajoutées à la fonction avec le rayon
-    //    du germe le plus proche : la bande s'étend toute seule, f.edges reflete le solide.
+    // 2) arêtes de la chaîne SANS entrée → ajoutées AU CALCUL seulement, avec le rayon du germe
+    //    le plus proche. 2026-10-16-015 : plus jamais enregistrées dans la fonction (avant :
+    //    entrées « tangente » qui gonflaient la liste — une arête cliquée suffit).
     chain.forEach(j=>{
       if(hasJob(j))return;
       const m=edges[j].mid;
@@ -1815,10 +1938,7 @@ function occApplyXFillets(base,xfils){
       let bs=null,bd=1e9;
       roots.forEach(se=>{const d=at(se.pos0&&se.pos0.length===3?se.pos0:se.pos);if(d<bd){bd=d;bs=se;}});
       if(!bs)return;
-      const ne={pos:m.slice(),pos0:m.slice(),r:bs.r,len:+(edges[j].len||0).toFixed(3),
-        anchor:null,name:'tangente'};
-      xf.edges.push(ne);es.push(ne);
-      take(j,bs.r,ne);
+      take(j,bs.r,null);
     });
   });
   // Passe 3 : signature de groupe pour orphelins (anciennes sélections déplacées).
@@ -1861,7 +1981,8 @@ function occApplyXFillets(base,xfils){
   });
   if(!jobs.length)return{shape:base,warnings:warns};
   const js=jobs.map(j=>({src:edges[j.bi].src,r:j.r,mid:edges[j.bi].mid.slice()}));
-  const s=occFilletRun(base,js,warns,chamfer);
+  const single=(xfils||[]).length>0&&(xfils||[]).every(x=>x&&x.tangent===false); // case décochée : arête seule
+  const s=occFilletRun(base,js,warns,chamfer,{single});
   if(!s){
     // ÉCHEC : l'appli ne peut pas appliquer la fonction, mais « rouge + refus muet » est le
     // pire des messages. On cherche le plus grand rayon qui MARCHE (échelle descendante, chemin
@@ -1873,7 +1994,7 @@ function occApplyXFillets(base,xfils){
     for(const k of [0.7,0.5,0.4,0.3,0.2]){
       const r2=Math.max(0.5,+(rMax*k).toFixed(2));
       const w2=[];
-      const t=occFilletRun(occShapeCopy(base),js.map(j=>({src:j.src,r:r2,mid:j.mid.slice()})),w2,chamfer);
+      const t=occFilletRun(occShapeCopy(base),js.map(j=>({src:j.src,r:r2,mid:j.mid.slice()})),w2,chamfer,{single});
       if(t){ok=r2;try{t.delete();}catch(e){}break;}
     }
     const why=chamfer?'distance trop grande':'rayon trop grand';

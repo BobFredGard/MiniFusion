@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**251 versions**, de `2026-09-28b` à `2026-10-16-009` — la plus récente en bas,
+**257 versions**, de `2026-09-28b` à `2026-10-16-015` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3895,3 +3895,58 @@ Nouveau test `test_parametres_3d` (noyau réel : L = 100 → 150 : épaisseur 10
 - **Menu « 🧱 Création solide »** : Extrusion, Révolution, Perçage, Nouveau corps de pièce ; « Paramètres ƒx » et « Combiner » rejoignent « Modifier le solide » ; seule l'Esquisse reste en bouton direct. Raccourcis E / R / H / F / C / M inchangés.
 - **Transparence vraie** par corps (panneau du corps) : nouveau curseur **Transparence** (0–90 %) — la matière n'écrit plus la profondeur, on voit l'INTÉRIEUR (poches, perçages, arêtes cachées), rendu doux ; l'ancien curseur devient **Intensité** (inchangé). Enregistrée avec la pièce (`gl` du corps).
 Nouveau test `test_corps_combiner` (noyau réel : union Z0→40, soustraction percée, intersection Ø20×20, garder l'outil, outil modifié → trou borgne à Z10, transparence et fichier). Migration : `APP_VER` → `2026-10-16-009` ; badge **V0.1.47 → V0.1.48**.
+
+### `2026-10-16-010`
+
+**Transparence « verre dépoli » (retour : « plus de flou au début et moins voir les arêtes vives cachées par le modèle »).**
+
+- **Courbe progressive** : aux faibles réglages la pièce reste **laiteuse** (10 % → opacité 0,97, 30 % → 0,84) et l'intérieur n'apparaît que flou ; elle ne devient vraiment claire qu'en fin de course (60 % → 0,57, 90 % → 0,25). Voile blanc « dépoli » plus marqué au début, matière mate.
+- **Arêtes cachées atténuées** : passe « profondeur seule » du corps transparent, dessinée après sa couleur → les arêtes vives derrière la face avant ne sont plus tracées net ; elles ne transparaissent qu'à travers la matière, d'autant moins que la pièce est opaque. Les parois intérieures restent visibles.
+Test `test_corps_combiner` (10) adapté à la courbe. Migration : `APP_VER` → `2026-10-16-010` ; badge **V0.1.48 → V0.1.49**.
+
+### `2026-10-16-011`
+
+**Transparence : passage doux, arêtes arrière grises, curseur dans le menu contextuel (retours : « le changement est un peu brutal… un changement doux » ; « les arêtes vives arrière peuvent être vues, mais en gris ou noir transparent, pas plein » ; « rajoute le slider au menu contextuel »).**
+
+- **Transition douce depuis 0 %** : voile dépoli, rugosité et métal suivent progressivement le curseur (avant : voile 26 % et matière mate dès le 1er cran). 2 % → opacité 0,996, rugosité 0,42 ; écart d'image entre crans régulier.
+- **Arêtes arrière en gris doux** (passe « voile ») : à travers un corps transparent elles apparaissent grises et estompées, jamais en noir plein ; sous un corps opaque, toujours invisibles.
+- **🫧 Transparence dans le clic droit** (vue 3D et arbre), synchronisée avec le panneau du corps ; le curseur 🔆 est renommé « Intensité ».
+Test `test_corps_combiner` (13, 14). Migration : `APP_VER` → `2026-10-16-011` ; badge **V0.1.49 → V0.1.50**.
+
+### `2026-10-16-012`
+
+**Transparence : les formes intérieures (perçages, parois de poche) n'apparaissent plus trop vite (retour : « travailler sur les formes intérieures, comme les perçages, qui apparaissent trop vite »).**
+
+- **Cause** : la pièce transparente était dessinée en UNE passe, dans l'ordre quelconque de ses triangles — une paroi de perçage dessinée après la face avant se mélangeait PAR-DESSUS, presque à pleine intensité.
+- **Rendu en 3 passes** : (1) profondeur seule (surface la plus proche) ; (2) **intérieur seul** (tout ce qui est derrière), intensité qui monte lentement — 30 % → quasi invisible (0,03), 60 % → à peine deviné, 90 % → net ; (3) surface avant par-dessus, jamais recouverte. Plan de coupe respecté ; les arêtes cachées restent grises et estompées.
+Vérifié au navigateur (Perçages : 30 / 60 / 90 %). Migration : `APP_VER` → `2026-10-16-012` ; badge **V0.1.50 → V0.1.51**.
+
+### `2026-10-16-013`
+
+**Transparence : défaut de fond corrigé, tout s'estompe ensemble, filigrane visible sous tous les angles (retours : « à 0 on voit à travers » ; « les trous sont visibles sans transparence, surtout vu d'en bas » ; « tout doit devenir transparent en même temps, petit à petit, avec les arêtes arrière en filigrane » ; « on voit les arêtes en filigrane que par-dessous »).**
+
+- **Défaut de fond (depuis toujours)** : three r147 compile une matière opaque avec l'alpha forcé à 1 ; passer en transparent exige une recompilation, jamais demandée (test `mat.needsUpdate!==undefined` toujours faux — propriété en écriture seule). La transparence était ignorée ou « collée » selon l'historique de la matière. Recompilation désormais demandée à chaque bascule opaque ↔ transparent.
+- **Intensité seule** : passe de profondeur → la pièce s'estompe sur le FOND sans jamais montrer l'intérieur ni les arêtes arrière.
+- **Transparence** : l'intérieur (perçages, poches) suit la même opacité que la surface → tout devient transparent EN MÊME TEMPS, petit à petit.
+- **Arêtes arrière en filigrane** : seulement s'il y a un corps en transparence ; dessinées après le sol et les pièces opaques (avant : effacées par le sol, visibles seulement par-dessous), masquées par une pièce opaque.
+Vérifié au navigateur (Perçages : Intensité 46 % ; Transparence 30 / 60 / 90 %, vue de dessus avec sol). Migration : `APP_VER` → `2026-10-16-013` ; badge **V0.1.51 → V0.1.52**.
+
+### `2026-10-16-014`
+
+**Transparence : trait en filigrane aligné sur la face du bas (retour : « un petit décalage entre la face du bas et le trait en filigrane »).**
+
+- Le sol (et son plan miroir) était posé **0,5 mm** sous la pièce : à travers une pièce transparente, le REFLET de l'arête du bas apparaissait 1 mm plus bas que le trait en filigrane. Sol désormais collé à la pièce (0,02 mm, ou 1/10 000 de la taille).
+- Arêtes : la visibilité du voile ne lève plus d'erreur sur une matière sans transparence numérique (overlay jamais interrompu).
+Migration : `APP_VER` → `2026-10-16-014` ; badge **V0.1.52 → V0.1.53**.
+
+### `2026-10-16-015`
+
+**Congés / chanfreins 3D : défauts, sélection, arête seule, aperçu ; démarrage en fondu (retours : défauts 10 / 1 ; « 1 seule arête sélectionnée… les tangentes suivent » ; « une arête… le congé doit déborder devant et derrière » ; « pré-visualisation pas très visible » ; même code couleur que la vue 3D ; attendre OCCT au rafraîchissement + fondu, aussi à l'ouverture d'un modèle).**
+
+- **Valeurs par défaut** : congé **10**, chanfrein **1**.
+- **Sélection** : clic = CETTE arête (remplace) ; **Ctrl/Cmd + clic** = ajouter / retirer. La sélection et l'arbre ne contiennent QUE les arêtes cliquées — plus de « ribambelle » d'entrées « tangente » enregistrées (la chaîne se re-déduit au calcul ; les anciennes entrées sont nettoyées au rejeu) → pas de rebut si le solide change.
+- **Case « arêtes tangentes »** : cochée → le congé suit la chaîne tangente de chaque arête ; **décochée → l'arête SEULE** (OCCT suit toujours la chaîne : pour une arête droite et convexe, l'outil — triangle du coin moins disque, ou triangle pour un chanfrein — est extrudé le long de l'arête en **débordant devant et derrière**, puis soustrait ; arête courbe ou concave → repli noyau avec avertissement).
+- **Aperçu** : la pièce telle qu'elle sera, dans SA couleur, opaque, à la place de la pièce ; seules les **faces nouvelles** (congé / chanfrein) en **orange** (signature géométrique des faces). Avant : solide rouge translucide sur pièce estompée.
+- **Arêtes** : même code que la vue 3D — survol en ruban orange sanguine, arête retenue en ruban orange (1,6 px).
+- **Démarrage** : la vue 3D attend que le noyau OCCT ait recalculé la pièce en exact (indicateur « Chargement du noyau 3D… »), puis apparaît en **fondu** ; à l'**ouverture d'un modèle**, même fondu. Garde-fous : noyau en échec, ouverture locale sans .wasm (8 s), 60 s au plus, secours 4 s si l'ouverture échoue.
+Nouveau test `test_conge_arete_seule` (noyau réel : arête tangente à un arc — cochée = 3 faces de congé, décochée = arête suivante restée vive, débord dans l'arc, chanfrein, solide valide) ; `test_conge_tangent` adapté (1 entrée, 10 faces : la chaîne suit au calcul). Migration : `APP_VER` → `2026-10-16-015` ; badge **V0.1.53 → V0.1.54**.

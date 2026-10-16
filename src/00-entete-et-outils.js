@@ -23,7 +23,7 @@
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-16-009';
+const APP_VER='2026-10-16-015';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -200,22 +200,34 @@ function setMatAlpha(mat,a,glass){
   if(!mat)return mat;
   a=(typeof a==='number'&&a>0&&a<=1)?a:1;
   const g=(typeof glass==='number'&&glass>0&&glass<1)?glass:1;
+  // 2026-10-16-010 : courbe « verre dépoli » — aux faibles réglages la pièce reste LAITEUSE
+  // (l'intérieur n'apparaît que flou, estompé), elle ne devient vraiment claire qu'en fin de course.
+  const tg=1-g,tn=Math.min(1,tg/0.9),ge=g<0.999?1-0.75*Math.pow(tn,1.4):1;
+  // 2026-10-16-011 : transition DOUCE depuis 0 % — voile, rugosité et métal suivent le curseur
+  // (avant : voile 26 % et matière mate d'un coup dès le 1er cran).
+  const frost=g<0.999?0.16*Math.sin(Math.PI*Math.min(1,tn*1.25)/2)*(1-0.55*tn):0;
   const tr=a<0.999||g<0.999;
-  mat.transparent=tr;mat.opacity=a*g;
+  // 2026-10-16-013 : three r147 compile une matière OPAQUE avec alpha forcé à 1 (#define OPAQUE) :
+  // passer en transparent EXIGE une recompilation. L'ancien test « mat.needsUpdate!==undefined »
+  // était toujours faux (propriété en écriture seule) → transparence ignorée ou collée.
+  const flip=!!mat.transparent!==tr;
+  mat.transparent=tr;mat.opacity=a*ge;
+  if(flip&&typeof mat.version==='number')mat.needsUpdate=true;
+  mat.userData=mat.userData||{};mat.userData.glass=g<0.999?ge:1;
   try{
     // 2026-10-16-009 : « Intensité » (a) garde le depth buffer → la pièce s'estompe sur le fond ;
     // « Transparence » (g) ne l'écrit plus → on voit l'INTÉRIEUR (poches, perçages, parois et
     // arêtes cachées), rendu verre doux.
     if('depthWrite'in mat)mat.depthWrite=!(g<0.999);
-    if('metalness'in mat)mat.metalness=tr?0.05:0.35;
-    if('roughness'in mat)mat.roughness=tr?0.55:0.4;
+    if('metalness'in mat)mat.metalness=g<0.999?0.35-0.3*Math.min(1,tn*1.5):(tr?0.05:0.35);
+    if('roughness'in mat)mat.roughness=g<0.999?0.4+0.45*Math.min(1,tn*1.5):(tr?0.55:0.4);
     if(mat.emissive&&mat.emissive.setHex){
       if(tr&&mat.color&&mat.color.r!=null){ // compensation d'éclat : translucide ≠ éteint
-        const k=Math.min(0.6,(1-a)*0.5+(1-g)*0.25);
-        mat.emissive.setRGB(mat.color.r*k,mat.color.g*k,mat.color.b*k);
+        const k=Math.min(0.6,(1-a)*0.5+(1-ge)*0.2);
+        mat.emissive.setRGB(Math.min(1,mat.color.r*k+frost),Math.min(1,mat.color.g*k+frost),Math.min(1,mat.color.b*k+frost));
       }else mat.emissive.setHex(0x000000);
     }
-    if(mat.needsUpdate!==undefined)mat.needsUpdate=true;
+    // (recompilation : seulement au basculement opaque ↔ transparent, voir plus haut)
   }catch(err){}
   return mat;
 }
@@ -232,6 +244,7 @@ function applyBodyStyleLive(id){ // application IMMÉDIATE pendant le glisser (a
       if(!b||b.ghost||bodyIdOfRuntime(b)!==id||!b.mesh||!b.mesh.material)continue;
       if(b._xSaved!=null||b._dSaved!=null||b._cSaved!=null)continue; // mode congé/dépouille/coque : style gelé
       applyBodyStyle(b.mesh.material,id);b.color=c;
+      try{if(typeof glassDepthMask==='function')glassDepthMask(b);}catch(e){}
     }
   }catch(err){}
 }
@@ -272,6 +285,7 @@ function ctxStyleSync(){
       try{
         if(r.c&&r.c.value!==hex)r.c.value=hex;
         if(r.o){r.o.value=pct;if(r.v)r.v.textContent=pct+'%';}
+        if(r.g){const gp=Math.round((1-bodyGlassOf(bid))*100);r.g.value=gp;if(r.gv)r.gv.textContent=gp+'%';}
         if(r.s)swatchMark(r.s,hex);
       }catch(err){}
     });
