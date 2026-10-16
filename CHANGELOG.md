@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**248 versions**, de `2026-09-28b` à `2026-10-16-006` — la plus récente en bas,
+**249 versions**, de `2026-09-28b` à `2026-10-16-007` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3866,3 +3866,11 @@ Nouveau test `test_raccourcis`. Migration : `APP_VER` → `2026-10-16-005` ; bad
 - **Cotes R / Ø** : ligne d'attache RADIALE (par défaut la bissectrice de l'arc → toujours côté EXTÉRIEUR d'un congé ; 45° pour un cercle), flèche posée sur l'arc, coude puis **trait horizontal sous le texte**, vers la droite ou la gauche selon le côté. Diamètre : ligne traversant le cercle, flèches aux 2 bords. Glisser l'étiquette fait tourner la ligne autour du centre ; jamais à l'intérieur du cercle. Les anciens décalages R/Ø sont remis à zéro une fois par esquisse.
 - **❔ Aide** (sous le badge de version, ou F1 hors esquisse, ou « ? ») : raccourcis d'esquisse (contraintes F1…F12, tracé, cotes, paramètres), raccourcis 3D, sélection et mesure, code couleur des esquisses. L'astuce « Ctrl/Cmd+clic : 2e face / arête : mesure » remplace « face 2 + entraxe ».
 Tests : `test_esquisse_regles` (4h–4i), `test_raccourcis` (aide). Migration : `APP_VER` → `2026-10-16-006` ; badge **V0.1.44 → V0.1.45**.
+
+### `2026-10-16-007`
+
+**Esquisse : arcs projetés enfin justes (retour : « toujours un problème de projection des entités arc de cercle, il faut le régler une fois pour toutes »).**
+
+- **Cause** : les références projetées (tirets violets) traçaient chaque arc du début à la fin de l'arête OCCT en sens trigonométrique, sans regarder son sens de parcours → pour une arête parcourue en sens horaire (congés concaves, encoches), c'était le **complément** qui s'affichait (293,6° au lieu de 66,4°) — d'où les quasi-cercles doublés.
+- **Correctif** : l'arc est orienté par le **milieu réel** de l'arête (fonction `skArcRef`, même règle que l'outil Projeter) ; une arête **fermée** est un cercle (avant : test « corde ≈ circonférence », jamais vrai → « arc de 360° ») ; les références sont **dédoublonnées** (une arête était listée une fois par face adjacente).
+Nouveau test `test_projection_arcs` (noyau réel : encoche concave R10 → 132,8° côté matière ; ancienne version : 4 × 293,6°). Migration : `APP_VER` → `2026-10-16-007` ; badge **V0.1.45 → V0.1.46**.

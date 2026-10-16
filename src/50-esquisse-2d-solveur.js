@@ -153,15 +153,11 @@ function skBRepPlanarRefs(shape){
           }
         }catch(e){}
         if(isCirc){
-          // arc vs cercle complet : longueur vs circonférence
-          const len=Math.hypot(bx-ax,by-ay);
-          const circLen=2*Math.PI*r;
-          if(Math.abs(len - circLen) < 1.0){
-            out.push({type:'circle', cx, cy, r});
-          }else{
-            a1=Math.atan2(ay-cy,ax-cx); a2=Math.atan2(by-cy,bx-cx);
-            out.push({type:'arc', cx, cy, r, a1, a2});
-          }
+          // 2026-10-16-007 : cercle complet = arête FERMÉE (début = fin) ; arc orienté par son
+          // vrai MILIEU (l'arête OCCT peut être parcourue en sens horaire → sans cela on
+          // dessinait le COMPLÉMENT : arcs de congé concaves affichés en quasi-cercles).
+          const mx=(mid.X()-o.x)*u.x+(mid.Y()-o.y)*u.y+(mid.Z()-o.z)*u.z, my=(mid.X()-o.x)*v.x+(mid.Y()-o.y)*v.y+(mid.Z()-o.z)*v.z;
+          out.push(skArcRef(cx,cy,r,ax,ay,bx,by,mx,my));
         }else{
           out.push({x1:ax,y1:ay,x2:bx,y2:by});
         }
@@ -169,8 +165,23 @@ function skBRepPlanarRefs(shape){
       ex.Next();
     }
     try{ex.delete();}catch(e){}
-    return out.length?out:null;
+    // une arête est visitée une fois PAR FACE adjacente : références dédoublonnées
+    const seen=new Set(),uniq=[];const k=v=>(Math.round(v*1e4)/1e4).toFixed(4);
+    out.forEach(r=>{let key;
+      if(r.type==='circle')key='c'+k(r.cx)+','+k(r.cy)+','+k(r.r);
+      else if(r.type==='arc')key='a'+k(r.cx)+','+k(r.cy)+','+k(r.r)+','+k(Math.cos(r.a1))+','+k(Math.sin(r.a1))+','+k(Math.cos(r.a2))+','+k(Math.sin(r.a2));
+      else{const p=[k(r.x1)+','+k(r.y1),k(r.x2)+','+k(r.y2)].sort();key='l'+p.join(';');}
+      if(!seen.has(key)){seen.add(key);uniq.push(r);}});
+    return uniq.length?uniq:null;
   }catch(e){return null;}
+}
+function skArcRef(cx,cy,r,ax,ay,bx,by,mx,my){
+  // Référence projetée d'une arête circulaire : cercle si fermée, sinon arc {a1,a2} tracé
+  // en sens trigonométrique de a1 à a2 ET contenant le milieu réel (mx,my) de l'arête.
+  if(Math.hypot(bx-ax,by-ay)<Math.max(1e-6,r*1e-6))return{type:'circle',cx,cy,r};
+  let a1=Math.atan2(ay-cy,ax-cx),a2=Math.atan2(by-cy,bx-cx);
+  if(isFinite(mx)&&isFinite(my)&&!angInArc(Math.atan2(my-cy,mx-cx),a1,a2)){const t=a1;a1=a2;a2=t;}
+  return{type:'arc',cx,cy,r,a1,a2};
 }
 function arcOrient(cx,cy,x1,y1,x2,y2,mx,my){
   // L'arc entité va TOUJOURS de pa à pb dans le sens trigonométrique (arcAngles), mais

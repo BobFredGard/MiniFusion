@@ -71,6 +71,7 @@ const SUITES = [
   "test_parametres",
   "test_regen_perf",
   "test_raccourcis",
+  "test_projection_arcs",
   "test_aretes_import",
   "test_fao_chain_step",
   "test_precision_affichage",
