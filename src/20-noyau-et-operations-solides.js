@@ -307,6 +307,27 @@ function occCut(a,b){
   if(!ok||!s)throw new Error('découpe impossible');
   return s;
 }
+function occCommon(a,b){
+  const c=new occt.BRepAlgoAPI_Common_3(a,b);
+  c.Build();const ok=c.IsDone();const s=ok?c.Shape():null;
+  try{c.delete();}catch(e){}
+  if(!ok||!s)throw new Error('intersection impossible');
+  return s;
+}
+// 2026-10-16-009 : COMBINER des corps (union / soustraction / intersection), comme Fusion.
+function occBodyOfFeat(f){return (f&&f.body&&doc.bodies.some(e=>e.id===f.body))?f.body:(doc.bodies[0]&&doc.bodies[0].id);}
+function occCombinePrefix(f,tb){
+  // fonctions du corps outil tb AVANT la combinaison f (timeline visible)
+  const vis=doc.features.filter(x=>x.visible!==false&&!(occSkipFeat&&x.id===occSkipFeat));
+  const i=vis.indexOf(f);
+  return vis.slice(0,i<0?vis.length:i).filter(x=>x.type!=='repeat'&&occBodyOfFeat(x)===tb);
+}
+function occCombineTool(f,tb,bin){
+  const list=occCombinePrefix(f,tb);if(!list.length)return null;
+  const r=occReplayBody(tb,list);
+  bin.push(...(r.bin||[]));(r.itemShapes||[]).forEach(s=>{if(s&&s!==r.shape)bin.push(s);});
+  return r.shape||null;
+}
 function occUnify(s){
   // Uniformise une fusion additive (ShapeUpgrade_UnifySameDomain) : les faces coplanaires
   // voisines sont recollées → plus de couture horizontale quand un solide est "Uni" par
@@ -2024,8 +2045,14 @@ function featSig(f){
     // appliquée : les mettre dans la signature force le cache à rejouer quand on décoche
     // « arêtes tangentes » ou qu'on change de germe — sinon le solide périmé persiste.
     s+='|'+(f.chamfer?1:0)+'|'+(f.tangent?1:0)+'|'+((f.edges||[]).map(e=>
-      (+e.r||0)+'/'+(+e.len||0)+(e.seed?'s':'')+'@'+(e.pos||[]).map(x=>(+x).toFixed(3)).join(',')
+      // 2026-10-16-008 : position d'ORIGINE figée (pos0) et non le relevé pos/len rafraîchi à
+      // chaque appariement — sinon la signature changeait APRÈS chaque rejeu (point de contrôle
+      // jamais retrouvé). Un changement en amont change déjà le préfixe : aucune fraîcheur perdue.
+      (+e.r||0)+(e.seed?'s':'')+'@'+(e.pos0||e.pos||[]).map(x=>(+x).toFixed(3)).join(',')
       +((e.anchor)?('#'+e.anchor.t+(e.anchor.sk||'')+(e.anchor.id||'')+'z'+(e.anchor.z||0)+'s'+(e.anchor.side||0)+'d'+(e.anchor.dist||0)+'f'+(e.anchor.far||0)):'')).join(';'));
+  }else if(f.type==='combine'){
+    // mode + historique COMPLET des corps outils jusqu'à la combinaison
+    s+='|'+(f.mode||'union')+'|'+(f.keep?1:0)+'|'+(f.tools||[]).map(t=>t+':'+occCombinePrefix(f,t).map(featSig).join(',')).join('/');
   }else if(f.type==='xmove'){
     // La DISTANCE fait partie de la géométrie, et la face visée par sa référence durable
     // (centre + normale + dimensions) : sans elle, changer la distance d'un déplacement
@@ -2192,6 +2219,25 @@ function occReplayBody(bid,list){
       occCkPut(ckKey,()=>occShapeCopy(result));
       return;
     }
+    if(f.type==='combine'){
+      if(!result){msgs.push(`${f.name} : corps cible vide — ignoré`);return;}
+      const ckB=occCkGet(ckKey);const cpB=ckB?occShapeCopy(ckB):null;
+      if(cpB){try{result.delete();}catch(e){}result=cpB;return;}
+      let r2=result;
+      (f.tools||[]).forEach(tb=>{
+        if(tb===bid)return;
+        let ts=null;try{ts=occCombineTool(f,tb,bin);}catch(err){msgs.push(`${f.name} : corps outil illisible (${err.message})`);}
+        if(!ts){msgs.push(`${f.name} : corps outil vide à cet endroit de la timeline`);return;}
+        try{
+          const n=f.mode==='cut'?occCut(r2,ts):(f.mode==='intersect'?occCommon(r2,ts):occUnify(occFuse(r2,ts)));
+          try{r2.delete();}catch(e){}r2=n;
+        }catch(err){msgs.push(`${f.name} : ${err.message}`);}
+        try{ts.delete();}catch(e){}
+      });
+      result=r2;
+      occCkPut(ckKey,()=>occShapeCopy(result));
+      return;
+    }
     if(f.type!=='extrude'&&f.type!=='revolve'&&f.type!=='hole')return; // hole : fonction Perçage (src/76), toujours une découpe
     // Pour une découpe « à travers tout », l'étendue se mesure sur le solide DÉJÀ reconstruit
     // (tout ce qui précède dans la timeline) — jamais sur l'affichage de l'édition précédente.
@@ -2257,7 +2303,10 @@ function occFinalShape(upto){
     byBody[b].push(f);
   });
   const perBody=[],bin=[],itemShapes=[],ghostShapes=[],msgs=[],items=[],imports=[];
+  // corps OUTILS consommés par une combinaison (sans « garder ») : plus affichés
+  const consumed=new Set();list.forEach(f=>{if(f.type==='combine'&&!f.keep)(f.tools||[]).forEach(t=>consumed.add(t));});
   order.forEach(bid=>{
+    if(consumed.has(bid))return;
     const r=occReplayBody(bid,byBody[bid]);
     if(r.shape)perBody.push({bodyId:bid,shape:r.shape});
     bin.push(...r.bin);itemShapes.push(...r.itemShapes);

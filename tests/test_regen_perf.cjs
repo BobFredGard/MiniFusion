@@ -28,7 +28,7 @@ const {loadApp}=require('./appvm.cjs');
     'A(passes===1&&partial===0,"1 : reconstruction sans changement : 1 passe, AUCUN rejeu partiel pour les projections ("+passes+" passe(s), "+partial+" rejeu(x) partiel(s))");',
     'const f=doc.features.find(x=>x.id==="ex_3_mup7fzw5");',
     'passes=0;partial=0;f.distance=55;markDirty();rebuild();const g55=G();',
-    'A(passes<=2,"2 : 1re extrusion 50 → 55 : la chaîne de projections se règle en ≤ 2 passes ("+passes+")");',
+    'A(passes===1,"2 : 1re extrusion 50 → 55 : la chaîne de projections se règle en UNE passe ("+passes+")");',
     'passes=0;partial=0;f.distance=50;markDirty();rebuild();',
     'const p50=passes,g50=G();f.distance=55;markDirty();rebuild();const g55b=G();f.distance=50;markDirty();rebuild();',
     'A(p50<=2&&G()===g50&&g55b===g55,"3 : retour à 50 en ≤ 2 passes, aller-retour REPRODUCTIBLE (2e cycle identique : "+G()+")");',

@@ -345,10 +345,21 @@ function updateAllProjections(){
     L.sort((a,b)=>a.k-b.k);
     L.forEach(({sk,k})=>{ try{ if(updateAssociativeProjections(sk)){changed=true;
       if(_projEdgeCache)[..._projEdgeCache.keys()].forEach(key=>{const n=key[0]==='f'?+key.slice(1):1e9;if(n>k)_projEdgeCache.delete(key);});
+      // la chaîne aval suit AUSSITÔT : esquisses posées sur faces + instances de répétition
+      try{resolveAllSketchHosts();}catch(e){}
+      try{if(typeof repSyncStale==='function'&&repSyncStale())resolveAllSketchHosts();}catch(e){}
     } }catch(e){} });
   }catch(e){}
   finally{if(own)_projEdgeCache=null;}
   return changed;
+}
+function projPreUpdate(){
+  // Avant le rejeu principal : seulement si le noyau exact est prêt et qu'au moins une
+  // esquisse porte des projections associatives (sinon : rien à faire, aucun coût).
+  if(!(typeof occHas==='function'&&occHas()))return false;
+  const any=(doc.sketches||[]).some(sk=>(sk.entities||[]).some(e=>e&&(e.proj||e.isProj)));
+  if(!any)return false;
+  return updateAllProjections();
 }
 function projectEdgeAt(sk,x,y){
   // Arête 3D la plus proche du clic, projetée dans le plan d'esquisse (antériorité).

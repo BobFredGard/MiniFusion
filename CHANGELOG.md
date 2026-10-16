@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**249 versions**, de `2026-09-28b` à `2026-10-16-007` — la plus récente en bas,
+**251 versions**, de `2026-09-28b` à `2026-10-16-009` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3874,3 +3874,24 @@ Tests : `test_esquisse_regles` (4h–4i), `test_raccourcis` (aide). Migration : 
 - **Cause** : les références projetées (tirets violets) traçaient chaque arc du début à la fin de l'arête OCCT en sens trigonométrique, sans regarder son sens de parcours → pour une arête parcourue en sens horaire (congés concaves, encoches), c'était le **complément** qui s'affichait (293,6° au lieu de 66,4°) — d'où les quasi-cercles doublés.
 - **Correctif** : l'arc est orienté par le **milieu réel** de l'arête (fonction `skArcRef`, même règle que l'outil Projeter) ; une arête **fermée** est un cercle (avant : test « corde ≈ circonférence », jamais vrai → « arc de 360° ») ; les références sont **dédoublonnées** (une arête était listée une fois par face adjacente).
 Nouveau test `test_projection_arcs` (noyau réel : encoche concave R10 → 132,8° côté matière ; ancienne version : 4 × 293,6°). Migration : `APP_VER` → `2026-10-16-007` ; badge **V0.1.45 → V0.1.46**.
+
+### `2026-10-16-008`
+
+**Paramètres ƒx dans les fonctions 3D (suite de V0.1.41).**
+
+- Les champs des fonctions acceptent une **valeur**, une **expression** (`L/10`, `Ep - 2`, `max(a; b)`…) ou **« nom = valeur »** : distance et dépouille d'extrusion, angle de révolution, rayon de congé (et rayon de chaque arête d'un congé / chanfrein exact), déplacement de face, dépouillage, coque, distance / angle de répétition, Ø, profondeurs, lamage, fraisure et longueur filetée du perçage.
+- Une valeur de fonction nommée (ex. `Ep`) est utilisable partout : autres fonctions, cotes d'esquisse, paramètres libres — et inversement (une cote d'esquisse `L` pilote l'épaisseur, la profondeur de perçage…).
+- Réévaluation au début de chaque reconstruction : modifier `L` met à jour toute la chaîne (esquisses, fonctions, solide) ; le nom de la fonction suit (« Extrusion Plaque 15mm ») ; les répétitions qui la copient sont resynchronisées. Distance d'extrusion : la valeur ƒx est une course, le sens reste celui choisi.
+- Garde-fous identiques (nom inconnu, pris, réservé, référence circulaire) ; les valeurs ƒx des fonctions apparaissent dans la fenêtre « ƒx Paramètres » et sont enregistrées dans le fichier (`expr`, `pname`). Aide mise à jour.
+- **Régénération en UNE passe** : les projections associatives sont mises à jour AVANT le rejeu principal, dans l'ordre de la timeline, avec recalage immédiat des esquisses posées sur faces et des instances de répétition ; le rejeu principal ne se fait qu'une fois. Signature des congés exacts calée sur la position d'origine des arêtes (plus sur le relevé rafraîchi à chaque rejeu). « Cavité Usinage », 1re extrusion 50 → 55 : **6,8 s → 3,5 s** (26,7 s en V0.1.41) ; reconstruction sans changement 0,3 s ; géométrie identique.
+Nouveau test `test_parametres_3d` (noyau réel : L = 100 → 150 : épaisseur 10 → 15, perçage 8 → 13, solide à Z15). Migration : `APP_VER` → `2026-10-16-008` ; badge **V0.1.46 → V0.1.47**.
+
+### `2026-10-16-009`
+
+**Nouveau corps, Combiner (union / soustraction / intersection), menu « Création solide », vraie transparence (retours : « ajouter Nouveau Corps à l'extrusion… un modificateur d'union, de soustraction ou d'intersection » ; « un menu Création Solide » ; « une belle transparence douce et sauvegardable »).**
+
+- **Extrusion « ◧ Nouveau corps »** (création et propriétés) : le volume naît dans un corps NEUF, séparé ; revenir à Plot / Poche le remet dans son corps d'origine.
+- **⊕ Combiner** (Modifier le solide → Ensembles) : corps cible + corps outil, **union**, **soustraction** ou **intersection**, option « garder le corps outil ». Fonction de la timeline : le booléen s'applique avec l'état des corps outils à cet endroit ; sans « garder », l'outil est consommé (plus affiché). Signature = historique complet des corps outils → modifier l'outil met à jour la combinaison. Icônes ⊕ ⊖ ⊗.
+- **Menu « 🧱 Création solide »** : Extrusion, Révolution, Perçage, Nouveau corps de pièce ; « Paramètres ƒx » et « Combiner » rejoignent « Modifier le solide » ; seule l'Esquisse reste en bouton direct. Raccourcis E / R / H / F / C / M inchangés.
+- **Transparence vraie** par corps (panneau du corps) : nouveau curseur **Transparence** (0–90 %) — la matière n'écrit plus la profondeur, on voit l'INTÉRIEUR (poches, perçages, arêtes cachées), rendu doux ; l'ancien curseur devient **Intensité** (inchangé). Enregistrée avec la pièce (`gl` du corps).
+Nouveau test `test_corps_combiner` (noyau réel : union Z0→40, soustraction percée, intersection Ø20×20, garder l'outil, outil modifié → trou borgne à Z10, transparence et fichier). Migration : `APP_VER` → `2026-10-16-009` ; badge **V0.1.47 → V0.1.48**.

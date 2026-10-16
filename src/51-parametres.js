@@ -55,7 +55,25 @@ function parAll(){
   const m=new Map();
   (doc.params||[]).forEach(p=>{if(p&&p.name)m.set(p.name,{kind:'param',p});});
   (doc.sketches||[]).forEach(sk=>(sk.dims||[]).forEach(d=>{if(d&&d.name)m.set(d.name,{kind:'dim',d,sk});}));
+  parHolders().forEach(({h,f})=>{if(h.pname)Object.keys(h.pname).forEach(k=>{const nm=h.pname[k];if(nm)m.set(nm,{kind:'feat',h,k,f});});});
   return m;
+}
+// 2026-10-16-008 : valeurs des FONCTIONS 3D (distance d'extrusion, Ø et profondeurs de perçage,
+// rayons de congé, angles…) : h.expr[clé] = expression, h.pname[clé] = nom. Porteurs : la
+// fonction, son taraudage (f.thread) et chaque arête d'un congé / chanfrein exact (f.edges[i]).
+function parHolders(){
+  const out=[];
+  (doc.features||[]).forEach(f=>{if(!f||f.repeatId)return;out.push({h:f,f}); // instances de répétition : elles suivent leur source
+    if(f.thread&&typeof f.thread==='object')out.push({h:f.thread,f});
+    (Array.isArray(f.edges)?f.edges:[]).forEach(s=>{if(s&&typeof s==='object')out.push({h:s,f});});});
+  return out;
+}
+function parHolderVal(h,k){const v=+h[k];return k==='distance'?Math.abs(v):v;}
+function parHolderSet(h,k,v){
+  // distance d'extrusion : la saisie est une COURSE (positive), le sens reste celui choisi
+  if(k==='distance'){const sg=(+h[k]<0)?-1:1;v=sg*Math.abs(v);}
+  if(Math.abs((+h[k]||0)-v)>1e-9){h[k]=v;return true;}
+  return false;
 }
 const parPending=new Set(); // esquisses dont une cote a changé, à résoudre (survit aux évaluations intermédiaires)
 function parResolve(){
@@ -68,8 +86,8 @@ function parResolve(){
     if(busy.has(nm))throw new Error('référence circulaire (« '+nm+' »)');
     busy.add(nm);let v;
     try{
-      const ex=e.kind==='param'?e.p.expr:e.d.expr;
-      v=(ex!=null&&String(ex).trim()!=='')?parEval(ex,get):(e.kind==='param'?+e.p.value:parDimUser(e.d));
+      const ex=e.kind==='param'?e.p.expr:(e.kind==='feat'?(e.h.expr&&e.h.expr[e.k]):e.d.expr);
+      v=(ex!=null&&String(ex).trim()!=='')?parEval(ex,get):(e.kind==='param'?+e.p.value:(e.kind==='feat'?parHolderVal(e.h,e.k):parDimUser(e.d)));
     }finally{busy.delete(nm);}
     if(!isFinite(v))throw new Error('« '+nm+' » sans valeur');
     val.set(nm,v);return v;
@@ -85,20 +103,38 @@ function parResolve(){
       delete d.exprErr;
     }catch(e){d.exprErr=e.message;}
   }));
-  return{changed:[...changed],get};
+  let featChanged=false;
+  parHolders().forEach(({h,f})=>{
+    if(!h.expr)return;
+    Object.keys(h.expr).forEach(k=>{
+      const ex=h.expr[k];if(ex==null||String(ex).trim()===''){delete h.expr[k];return;}
+      try{
+        const nm=h.pname&&h.pname[k];
+        const v=nm?get(nm):parEval(ex,get);
+        if(!isFinite(v))throw new Error('valeur non finie');
+        if(parHolderSet(h,k,v)){featChanged=true;f._fxDirty=1;}
+        if(h.exprErr)delete h.exprErr[k];
+      }catch(err){h.exprErr=h.exprErr||{};h.exprErr[k]=err.message;}
+    });
+  });
+  return{changed:[...changed],get,featChanged};
 }
 function parApplyAll(){
   // Réévalue tout et résout les esquisses dont une cote a changé (y compris l'esquisse ouverte).
   const r=parResolve();
   const todo=[...parPending];parPending.clear();
   todo.forEach(sk=>{if((doc.sketches||[]).indexOf(sk)>=0){try{solveSketch(sk);}catch(e){}}});
+  // fonctions 3D dont une valeur ƒx a changé : nom à jour + instances de répétition resynchronisées
+  (doc.features||[]).forEach(f=>{if(!f||!f._fxDirty)return;delete f._fxDirty;
+    try{const nm=({extrude:typeof extName==='function'?extName:null,revolve:typeof revolveName==='function'?revolveName:null,xmove:typeof mvName==='function'?mvName:null,xdraft:typeof draftName==='function'?draftName:null})[f.type];if(nm)f.name=nm(f);}catch(e){}
+    try{if(typeof repSyncForFeature==='function'&&!f.repeatId)repSyncForFeature(f);}catch(e){}});
   return r;
 }
-function parNameCheck(nm,selfDim,selfParam){
+function parNameCheck(nm,selfDim,selfParam,selfH,selfK){
   if(!PAR_ID.test(nm))return'Nom invalide « '+nm+' » : lettres, chiffres, _ (sans espace ni accent, pas de chiffre en tête).';
   if(PAR_FN[nm]||Object.prototype.hasOwnProperty.call(PAR_CONST,nm))return'« '+nm+' » est réservé (fonction / constante).';
   const e=parAll().get(nm);
-  if(e&&!((e.kind==='dim'&&e.d===selfDim)||(e.kind==='param'&&e.p===selfParam)))return'Le nom « '+nm+' » est déjà utilisé.';
+  if(e&&!((e.kind==='dim'&&e.d===selfDim)||(e.kind==='param'&&e.p===selfParam)||(e.kind==='feat'&&e.h===selfH&&e.k===selfK)))return'Le nom « '+nm+' » est déjà utilisé.';
   return true;
 }
 function parRename(oldN,newN){
@@ -107,6 +143,51 @@ function parRename(oldN,newN){
   const re=new RegExp('\\b'+oldN+'\\b','g');
   (doc.params||[]).forEach(p=>{if(p&&p.expr)p.expr=String(p.expr).replace(re,newN);});
   (doc.sketches||[]).forEach(sk=>(sk.dims||[]).forEach(d=>{if(d&&d.expr)d.expr=String(d.expr).replace(re,newN);}));
+  parHolders().forEach(({h})=>{if(h.expr)Object.keys(h.expr).forEach(k=>{h.expr[k]=String(h.expr[k]).replace(re,newN);});});
+}
+function parFxSet(h,k,txt){
+  // Saisie « [nom =] valeur|expression » sur une valeur de fonction 3D. Retour {ok,v}|{ok:false,msg}.
+  // ok + v : la valeur numérique à appliquer (le code de la fonction l'applique lui-même).
+  const s=String(txt==null?'':txt).trim();
+  const mm=/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(s);
+  const name=mm?mm[1]:null,expr=(mm?mm[2]:s).trim();
+  if(!expr)return{ok:false,msg:'Valeur vide.'};
+  if(name){const ok=parNameCheck(name,null,null,h,k);if(ok!==true)return{ok:false,msg:ok};}
+  const oldN=h.pname&&h.pname[k],oldE=h.expr&&h.expr[k];
+  const restore=()=>{if(oldN!==undefined){h.pname=h.pname||{};h.pname[k]=oldN;}else if(h.pname)delete h.pname[k];
+    if(oldE!==undefined){h.expr=h.expr||{};h.expr[k]=oldE;}else if(h.expr)delete h.expr[k];if(h.exprErr)delete h.exprErr[k];};
+  if(name&&oldN&&name!==oldN)parRename(oldN,name);
+  if(name){h.pname=h.pname||{};h.pname[k]=name;}
+  if(parIsNumber(expr)){if(h.expr)delete h.expr[k];return{ok:true,v:parseFloat(expr.replace(',','.'))};}
+  h.expr=h.expr||{};h.expr[k]=expr;
+  const before=h[k];
+  try{parResolve();}catch(e){h.exprErr=h.exprErr||{};h.exprErr[k]=e.message;}
+  if(h.exprErr&&h.exprErr[k]){const msg=h.exprErr[k];if(name&&oldN&&name!==oldN)parRename(name,oldN);restore();h[k]=before;return{ok:false,msg:'Expression : '+msg};}
+  const v=parHolderVal(h,k);h[k]=before; // le code de la fonction applique la valeur (contrôles, nom, rejeu)
+  return{ok:true,v};
+}
+function parFx(inp,h,k){
+  // Branche un champ numérique de fonction 3D sur ƒx : appelé JUSTE APRÈS la création du champ
+  // (avant ses propres gestionnaires) — une expression / « nom = » est mémorisée puis remplacée
+  // par sa valeur numérique, que le gestionnaire existant applique comme d'habitude.
+  if(!inp||!h)return inp;
+  const ex=h.expr&&h.expr[k],nm=h.pname&&h.pname[k];
+  if(ex||nm){inp.value=(nm?nm+' = ':'')+(ex||String(+parHolderVal(h,k).toFixed(4)).replace('.',','));
+    inp.style.width=Math.max(parseInt(inp.style.width)||70,Math.min(240,8*inp.value.length+20))+'px';}
+  inp.title=(inp.title?inp.title+' — ':'')+'ƒx : valeur, expression (L/2 + 3) ou « nom = valeur » pour la nommer';
+  if(h.exprErr&&h.exprErr[k])inp.style.borderColor='#ff9f0a';
+  const go=()=>{
+    const s=String(inp.value).trim();
+    if(inp._fxDone===s)return;
+    if(parIsNumber(s)){if(h.expr&&h.expr[k]){delete h.expr[k];}inp._fxDone=s;return;}
+    const r=parFxSet(h,k,s);
+    if(!r.ok){try{faceEl.textContent='ƒx : '+r.msg;}catch(e){}inp.value=String(+parHolderVal(h,k).toFixed(4)).replace('.',',');inp._fxDone=inp.value;return;}
+    inp.value=String(+r.v.toFixed(6)).replace('.',',');inp._fxDone=inp.value;
+    try{faceEl.textContent='ƒx : '+(h.pname&&h.pname[k]?h.pname[k]+' = ':'')+(h.expr&&h.expr[k]?h.expr[k]+' → ':'')+(+r.v.toFixed(4));}catch(e){}
+  };
+  inp.addEventListener('change',go);inp.addEventListener('blur',go);
+  inp.addEventListener('keydown',e=>{if(e.key==='Enter')go();});
+  return inp;
 }
 function parDimInputText(d){
   // texte proposé dans la saisie : « nom = expression » / « nom = valeur » / expression / valeur
@@ -192,6 +273,17 @@ function openParamsDlg(){
         rename:nm=>{if(!nm){delete d.name;return true;}const ok=parNameCheck(nm,d,null);if(ok!==true)return ok;parRename(d.name,nm);d.name=nm;return true;},
         setExpr:ex=>{const r=parDimCommit(sk,d,ex);if(!r.ok)return r.msg;d.value=r.nv;return true;}});
     }));
+    // valeurs de fonctions 3D nommées ou en expression
+    const featLbl={distance:'distance',draft:'dépouille',angle:'angle',dist:'distance',thick:'épaisseur',radius:'rayon',r:'rayon',d:'Ø',depth:'profondeur',cbD:'Ø lamage',cbH:'prof. lamage',csD:'Ø fraisure',len:'longueur filetée'};
+    parHolders().forEach(({h,f})=>{
+      const ks=new Set([...Object.keys(h.expr||{}),...Object.keys(h.pname||{})]);
+      ks.forEach(k=>{
+        if(!(h.expr&&h.expr[k])&&!(h.pname&&h.pname[k]))return;
+        row({name:h.pname&&h.pname[k],expr:(h.expr&&h.expr[k])?String(h.expr[k]):String(+parHolderVal(h,k).toFixed(4)),val:parHolderVal(h,k),unit:/angle|draft/.test(k)?'°':'',err:h.exprErr&&h.exprErr[k],origin:(f.name||f.id)+' · '+(featLbl[k]||k),
+          rename:nm=>{if(!nm){if(h.pname)delete h.pname[k];return true;}const ok=parNameCheck(nm,null,null,h,k);if(ok!==true)return ok;const o=h.pname&&h.pname[k];if(o)parRename(o,nm);h.pname=h.pname||{};h.pname[k]=nm;return true;},
+          setExpr:ex=>{const r=parFxSet(h,k,ex);if(!r.ok)return r.msg;parHolderSet(h,k,r.v);return true;}});
+      });
+    });
     box.appendChild(tbl);
     const bar=document.createElement('div');bar.style.cssText='display:flex;gap:8px;justify-content:flex-end;margin-top:12px';
     const add=document.createElement('button');add.textContent='+ Paramètre';

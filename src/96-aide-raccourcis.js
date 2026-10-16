@@ -17,7 +17,8 @@ const AIDE_SECTIONS=[
     ['Ctrl/Cmd+Z · Ctrl/Cmd+Y','Annuler · rétablir'],['Échap','Termine l’outil, retour à la sélection']]],
   ['3D — fonctions',[
     ['E','Extrusion'],['R','Révolution'],['H','Perçage'],['F','Congés'],['C','Chanfreins'],['M','Répétitions'],
-    ['F5','Vue isométrique complète'],['ƒx Paramètres','Paramètres et cotes nommées']]],
+    ['F5','Vue isométrique complète'],['ƒx Paramètres','Paramètres, cotes et valeurs nommées'],
+    ['Champs des fonctions','Valeur, expression (L/10) ou « nom = valeur » : extrusion, perçage, congé, dépouille…']]],
   ['3D — sélection et mesure',[
     ['Clic','Face (ou arête présélectionnée en orange)'],['Ctrl/Cmd + clic','2e face ou arête : mesure (entraxe, distance ⟂, angle)'],
     ['Shift + clic','Ø exact'],['Molette','Tourner'],['Ctrl + clic droit','Recentrer'],

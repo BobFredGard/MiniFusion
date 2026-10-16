@@ -23,7 +23,7 @@
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-16-007';
+const APP_VER='2026-10-16-009';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -173,6 +173,9 @@ function bodyColorOf(id){ // fiche du corps > teinte pièce (anciens fichiers) >
   if(e&&e.color>0)return e.color;
   return partTint()||autoCol(Math.max(0,bodyIndexOf(id)));
 }
+function bodyGlassOf(id){ const e=bodyEntryOf(id); const g=e?e.gl:0; return (g>0&&g<1)?g:1; } // 2026-10-16-009 : transparence VRAIE (1 = opaque)
+function setBodyGlass(id,g){ if(!id)return false;const e=bodyEntry(id);if(!e)return false;
+  if(!(g<0.999))delete e.gl; else e.gl=Math.max(0.1,Math.round(g*1000)/1000); return true; }
 function bodyOpOf(id){ const e=bodyEntryOf(id); const o=e?e.op:0; return (o>0&&o<1)?o:1; } // 1 = opaque
 function setBodyColor(id,c){
   if(!id||!(c>0))return false;const e=bodyEntry(id);if(!e)return false;e.color=c;return true;
@@ -190,21 +193,25 @@ function bodyIdOfRuntime(b){ // corps CONTENEUR d'un corps affiché : en mode ma
   try{ f=(b.ref&&doc.features.find(x=>x&&x.id===b.ref))||doc.features.find(x=>x&&x.id===b.id); }catch(err){}
   return f?(f.body||null):null;
 }
-function setMatAlpha(mat,a){
+function setMatAlpha(mat,a,glass){
   // Transparence VRAIE (opacité), pas une baisse d'intensité : on garde le corps
   // lumineux, on garde le depth buffer (les arêtes derrière le solide sont
   // atténuées et non crues) et on désamorce le métal, intrinsèquement sombre.
   if(!mat)return mat;
   a=(typeof a==='number'&&a>0&&a<=1)?a:1;
-  const tr=a<0.999;
-  mat.transparent=tr;mat.opacity=a;
+  const g=(typeof glass==='number'&&glass>0&&glass<1)?glass:1;
+  const tr=a<0.999||g<0.999;
+  mat.transparent=tr;mat.opacity=a*g;
   try{
-    if('depthWrite'in mat)mat.depthWrite=true;
+    // 2026-10-16-009 : « Intensité » (a) garde le depth buffer → la pièce s'estompe sur le fond ;
+    // « Transparence » (g) ne l'écrit plus → on voit l'INTÉRIEUR (poches, perçages, parois et
+    // arêtes cachées), rendu verre doux.
+    if('depthWrite'in mat)mat.depthWrite=!(g<0.999);
     if('metalness'in mat)mat.metalness=tr?0.05:0.35;
     if('roughness'in mat)mat.roughness=tr?0.55:0.4;
     if(mat.emissive&&mat.emissive.setHex){
       if(tr&&mat.color&&mat.color.r!=null){ // compensation d'éclat : translucide ≠ éteint
-        const k=(1-a)*0.5;
+        const k=Math.min(0.6,(1-a)*0.5+(1-g)*0.25);
         mat.emissive.setRGB(mat.color.r*k,mat.color.g*k,mat.color.b*k);
       }else mat.emissive.setHex(0x000000);
     }
@@ -216,7 +223,7 @@ function applyBodyStyle(mat,id){ // couleur + transparence d'une matière depuis
   if(!mat)return mat;
   const c=bodyColorOf(id);
   if(mat.color&&mat.color.setHex)mat.color.setHex(c);
-  return setMatAlpha(mat,bodyOpOf(id));
+  return setMatAlpha(mat,bodyOpOf(id),bodyGlassOf(id));
 }
 function applyBodyStyleLive(id){ // application IMMÉDIATE pendant le glisser (aucun rejeu)
   try{

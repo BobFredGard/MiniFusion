@@ -37,7 +37,7 @@ function renderNewExtrude(){
   // ── Opération : la liste déroulante demandée (Plot ou Poche) ──
   const l1=document.createElement('label');l1.textContent='Opération';
   const s1=document.createElement('select');
-  s1.innerHTML='<option value="add">➕ Plot — ajoute de la matière (bossage)</option><option value="cut">➖ Poche — retire de la matière</option>';
+  s1.innerHTML='<option value="add">➕ Plot — ajoute de la matière (bossage)</option><option value="cut">➖ Poche — retire de la matière</option><option value="new">◧ Nouveau corps — solide séparé</option>';
   s1.value=extNew.op;
   s1.title='Le signe de la distance découle de ce choix : le champ reste toujours positif.';
   s1.onchange=()=>{extNew.op=s1.value;renderNewExtrude();};
@@ -59,9 +59,10 @@ function renderNewExtrude(){
 }
 function extNewOk(){
   if(!extNew)return;
-  const op=extNew.op;
+  const op0=extNew.op,op=op0==='new'?'add':op0;
   const nf={id:uid('ex'),type:'extrude',name:'',sketchId:extNew.sketchId,
     distance:Math.abs(+extNew.dist||20)*(op==='cut'?-1:1),op:op,visible:true,mid:false,upto:null};
+  if(op0==='new'){nf.body=extNewBody();nf.newBody=true;} // 2026-10-16-009 : NOUVEAU CORPS (solide séparé)
   nf.name=extName(nf);
   addFeature(nf);
   const s=doc.sketches.find(x=>x.id===extNew.sketchId);if(s)s.visible=false;
@@ -70,6 +71,11 @@ function extNewOk(){
   ghostHide=(op==='cut')?id:null; // outil caché après l'opération
   sel={kind:'feature',id:id};
   markDirty();rebuild();renderProps();
+}
+function extNewBody(){
+  // crée l'entrée d'un nouveau corps (le corps actif reste inchangé)
+  try{ensureBodies();}catch(e){}
+  const n=doc.bodySeq++;const e={id:'b'+n,name:'Corps '+n,c:null};doc.bodies.push(e);return e.id;
 }
 function extNewCancel(){extNew=null;sel={kind:null,id:null};renderProps();}
 function extName(f){

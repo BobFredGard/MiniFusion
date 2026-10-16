@@ -104,6 +104,8 @@ function rebuild(pass){
   // Rejeu inutile : aucune modification depuis le dernier affichage valide, meme marqueur
   // temps → on ne refait pas la geometrie (les boutons qui TECLENT un rebuild sans changer
   // le document ne coutent plus rien).
+  // 2026-10-16-008 : paramètres ƒx (cotes nommées, expressions des fonctions 3D) à jour AVANT le rejeu
+  if(!pass){try{if(typeof parApplyAll==='function')parApplyAll();}catch(e){}}
   if(!pass&&buildKeyUpToDate())return;
   // Mode « fraîcheur » : on jette les points de contrôle AVANT le rejeu, donc chaque
   // modification reconstruit le modèle depuis zéro — aucun sous-ensemble n'est réemployé
@@ -136,6 +138,10 @@ function rebuildInner(projPass){
   // Garde par signature : seules les répétitions dont une source a changé sont refaites.
   try{if(typeof repSyncStale==='function'&&repSyncStale())resolveAllSketchHosts();}catch(e){}
   phAdd('hotes',performance.now()-_th);
+  // 2026-10-16-008 : projections associatives AVANT le rejeu principal (ordre timeline, hôtes
+  // de faces et instances recalés au fil de l'eau) → le rejeu se fait UNE fois sur un modèle
+  // déjà cohérent, au lieu de « rejeu → projections bougent → second rejeu ».
+  if(!projPass){const _tq=performance.now();try{if(typeof projPreUpdate==='function')projPreUpdate();}catch(e){}phAdd('proj',performance.now()-_tq);}
   // Snapshot du dernier état valide : commit si le rebuild aboutit, rollback sinon.
   const prevBodies=bodies,prevLive=occLive;
   const prevSet=new Set(scene.children);

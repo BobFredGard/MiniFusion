@@ -47,6 +47,7 @@ function featIconOf(f){
   if(f.type==='xfillet')return xIcon(xKindOf(f))+((f._m&&f._m.m<f._m.t)||f._err?'⚠':'');
   if(f.type==='fillet')return xIcon(xKindOf(f));
   if(f.type==='repeat')return '🔁';
+  if(f.type==='combine')return f.mode==='cut'?'⊖':(f.mode==='intersect'?'⊗':'⊕');
   if(f.type==='revolve')return (f.op||'add')==='cut'?'◔':'◍';
   if(f.type==='hole')return '⊚';
   if(f.type==='xmove')return '📐';
@@ -986,7 +987,7 @@ function renderProps(){
       const d=document.createElement('input');
       d.type='text';d.inputMode='decimal';
       d.value=String(+f.dist||0).replace('.',',');
-      d.style.width='90px';
+      d.style.width='90px';parFx(d,f,'dist');
       d.addEventListener('change',()=>{
         const v=parseFloat(String(d.value).replace(',','.').replace(/\s/g,''));
         if(!isFinite(v)){d.value=String(+f.dist||0).replace('.',',');return;}
@@ -1023,7 +1024,7 @@ function renderProps(){
       const d=document.createElement('input');
       d.type='text';d.inputMode='decimal';
       d.value=String(+f.angle||0).replace('.',',');
-      d.style.width='90px';
+      d.style.width='90px';parFx(d,f,'angle');
       d.addEventListener('change',()=>{
         const v=parseFloat(String(d.value).replace(',','.').replace(/\s/g,''));
         if(!isFinite(v)){d.value=String(+f.angle||0).replace('.',',');return;}
@@ -1065,7 +1066,7 @@ function renderProps(){
       const d=document.createElement('input');
       d.type='text';d.inputMode='decimal';
       d.value=String(+f.thick||0).replace('.',',');
-      d.style.width='90px';
+      d.style.width='90px';parFx(d,f,'thick');
       d.addEventListener('change',()=>{
         const v=parseFloat(String(d.value).replace(',','.').replace(/\s/g,''));
         if(!isFinite(v)){d.value=String(+f.thick||0).replace('.',',');return;}
@@ -1156,8 +1157,8 @@ function renderProps(){
         }
         if(f._samePlane)p.appendChild(note('⚠ Les deux plans sont identiques : la 2ᵉ passe est sans effet.'));
       }
-      if(f.mode==='lin'){const l=document.createElement('label');l.textContent=' Distance (mm)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=f.dist;inp.style.width='80px';inp.addEventListener('change',()=>{f.dist=parseFloat(String(inp.value).replace(',','.'))||0;applyCfg();});l.appendChild(inp);p.appendChild(l);}
-      if(f.mode==='circ'){const l=document.createElement('label');l.textContent=' Angle total (°)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=f.angle;inp.style.width='80px';inp.addEventListener('change',()=>{f.angle=parseFloat(String(inp.value).replace(',','.'))||360;applyCfg();});l.appendChild(inp);p.appendChild(l);}
+      if(f.mode==='lin'){const l=document.createElement('label');l.textContent=' Distance (mm)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=f.dist;inp.style.width='80px';parFx(inp,f,'dist');inp.addEventListener('change',()=>{f.dist=parseFloat(String(inp.value).replace(',','.'))||0;applyCfg();});l.appendChild(inp);p.appendChild(l);}
+      if(f.mode==='circ'){const l=document.createElement('label');l.textContent=' Angle total (°)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=f.angle;inp.style.width='80px';parFx(inp,f,'angle');inp.addEventListener('change',()=>{f.angle=parseFloat(String(inp.value).replace(',','.'))||360;applyCfg();});l.appendChild(inp);p.appendChild(l);}
       p.appendChild(btn('🎯 Utiliser la face sélectionnée',()=>repUseFaceFor(f)));
 p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.features.forEach(k=>{if(k.repeatId===f.id)k.visible=v;});markDirty();rebuild();}));
       p.appendChild(btn('🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}));
@@ -1165,7 +1166,7 @@ p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.fea
     }
     if(f.type==='fillet'){
       const lab=document.createElement('label');lab.textContent='Rayon (mm)';
-      const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=f.radius;inp.style.width='80px';
+      const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=f.radius;inp.style.width='80px';parFx(inp,f,'radius');
       const commit=()=>{
         const v=parseFloat(String(inp.value).replace(',','.'));
         if(v>0&&isFinite(v)){f.radius=v;const nc=(f.corners||[]).length+((filRims&&(filRims.top||filRims.bottom))?1:0);f.name=`Congé R${v} (${nc} arête(s))`;markDirty();rebuild();renderProps();}
@@ -1176,6 +1177,7 @@ p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.fea
       inp.addEventListener('click',e=>e.stopPropagation());
       p.appendChild(lab);p.appendChild(inp);
     }
+    if(f.type==='combine'&&typeof combineProps==='function'){combineProps(p,f);}
     if(f.type==='xfillet'){
       if(f._m)p.appendChild(info(f._m.m>=f._m.t?`✅ ${f._m.m}/${f._m.t} arêtes retrouvées`:`⚠ ${f._m.m}/${f._m.t} arêtes retrouvées — cliquez « Modifier la sélection » (✏️)`));
       // Échec géométrique (pas d'arête introuvable, mais le rayon refusé par OCCT) : on dit
@@ -1186,7 +1188,7 @@ p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.fea
         const r=document.createElement('div');r.className='tnode';
         const k=xKindOf(f),dp=xDimPrefix(k);
         r.innerHTML=`<span>${xIcon(k)}</span><span class="nm">${s.name?`<b>${s.name}</b> · `:''}${dp} <b>${s.r}</b>${s.anchor?' ⌖':''} · (${s.pos.map(v=>v.toFixed(1)).join(', ')})</span>`;
-        const num=document.createElement('input');num.type='text';num.inputMode='decimal';num.value=s.r;num.style.width='56px';num.title=(f.chamfer?'Distance':'Rayon')+' de cette arête';
+        const num=document.createElement('input');num.type='text';num.inputMode='decimal';num.value=s.r;num.style.width='56px';num.title=(f.chamfer?'Distance':'Rayon')+' de cette arête';parFx(num,s,'r');
         num.onclick=ev=>ev.stopPropagation();
         const c2=()=>{
           const v=parseFloat(String(num.value).replace(',','.'));
@@ -1227,7 +1229,7 @@ p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.fea
       la.appendChild(sa);p.appendChild(la);
       // ── Angle ──
       const lan=document.createElement('label');lan.textContent='Angle (°)';
-      const ian=document.createElement('input');ian.type='text';ian.inputMode='decimal';ian.value=revolveAngle(f);ian.style.width='80px';
+      const ian=document.createElement('input');ian.type='text';ian.inputMode='decimal';ian.value=revolveAngle(f);ian.style.width='80px';parFx(ian,f,'angle');
       const cn=()=>{const v=parseFloat(String(ian.value).replace(',','.'));
         if(isFinite(v)&&v>0){f.angle=Math.min(360,v);f.name=revolveName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();}};
       ian.addEventListener('change',cn);ian.addEventListener('blur',cn);
@@ -1299,7 +1301,7 @@ p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.fea
         p.appendChild(info(`A travers tout — ${(f.op==='cut')?'Poche (soustraction)':'Plot (addition)'}`));
       }else{
         const lab=document.createElement('label');lab.textContent=f.mid?'Course totale (mm)':'Distance (mm)';
-        const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=Math.abs(f.distance);inp.style.width='80px';
+        const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=Math.abs(f.distance);inp.style.width='80px';parFx(inp,f,'distance');
         const cd=()=>{
           if(f.upto){return}
           const v=parseFloat(String(inp.value).replace(',','.'));
@@ -1313,10 +1315,13 @@ p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.fea
       }
       const lab2=document.createElement('label');lab2.textContent='Opération';
       const sel2=document.createElement('select');
-      sel2.innerHTML=`<option value="add">➕ Plot (hors pièce → addition)</option><option value="cut">➖ Poche (dans pièce → soustraction)</option>`;
-      sel2.value=f.op||'add';
+      sel2.innerHTML=`<option value="add">➕ Plot (hors pièce → addition)</option><option value="cut">➖ Poche (dans pièce → soustraction)</option><option value="new">◧ Nouveau corps (solide séparé)</option>`;
+      sel2.value=f.newBody?'new':(f.op||'add');
       sel2.onchange=()=>{
-        f.op=sel2.value;
+        // 2026-10-16-009 : « Nouveau corps » = plot dans un corps NEUF ; revenir à Plot/Poche le
+        // remet dans le corps d'origine.
+        if(sel2.value==='new'){if(!f.newBody){f._bodyPrev=f.body;f.body=extNewBody();f.newBody=true;}f.op='add';}
+        else{if(f.newBody){f.body=f._bodyPrev||(doc.bodies[0]&&doc.bodies[0].id);delete f._bodyPrev;delete f.newBody;}f.op=sel2.value;}
         if(!f.upto && !f.through){
           // Mode Distance : le signe suit l'opération (Add = +, Cut = -)
           f.distance=Math.abs(f.distance)*(f.op==='cut'?-1:1);
@@ -1348,7 +1353,7 @@ p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.fea
         const labD=document.createElement('label');labD.textContent='Dépouille (°)';
         const inpD=document.createElement('input');inpD.type='text';inpD.inputMode='decimal';
         inpD.value=String(+f.draft||0).replace('.',',');inpD.style.width='70px';
-        inpD.title='Angle signé / plan d\u2019esquisse — le signe donne le sens. 0 = parois droites.';
+        inpD.title='Angle signé / plan d\u2019esquisse — le signe donne le sens. 0 = parois droites.';parFx(inpD,f,'draft');
         const cdD=()=>{
           const v=parseFloat(String(inpD.value).replace(',','.').replace(/\s/g,''));
           if(!isFinite(v)){inpD.value=String(+f.draft||0).replace('.',',');return;}
@@ -1431,7 +1436,7 @@ function bodyStyleField(id){
   holder.appendChild(sw);
   swatchMark(sw,cssHex(bodyColorOf(id)));
   const row=document.createElement('div');row.className='skrow';
-  const lab2=document.createElement('label');lab2.textContent='Transparence';lab2.style.flex='1';
+  const lab2=document.createElement('label');lab2.textContent='Intensité';lab2.style.flex='1';
   const r=document.createElement('input');r.type='range';r.min='15';r.max='100';r.step='1';
   r.value=Math.round(bodyOpOf(id)*100);r.style.flex='2';
   r.title='100 % = opaque · on voit au travers SANS que la pièce perde son éclat';
@@ -1447,6 +1452,18 @@ function bodyStyleField(id){
   r.addEventListener('change',()=>commitOp(true));
   row.appendChild(lab2);row.appendChild(r);row.appendChild(v);
   holder.appendChild(row);
+  // 2026-10-16-009 : vraie TRANSPARENCE (on voit l'intérieur), enregistrée avec la pièce
+  const rowG=document.createElement('div');rowG.className='skrow';
+  const labG=document.createElement('label');labG.textContent='Transparence';labG.style.flex='1';
+  const rg=document.createElement('input');rg.type='range';rg.min='0';rg.max='90';rg.step='1';
+  rg.value=Math.round((1-bodyGlassOf(id))*100);rg.style.flex='2';
+  rg.title='0 % = opaque · on voit au travers de la pièce : poches, perçages, arêtes cachées';
+  const vg=document.createElement('span');vg.textContent=rg.value+'%';vg.style.minWidth='38px';vg.style.textAlign='right';vg.style.fontSize='.78rem';
+  const commitG=(fin)=>{vg.textContent=rg.value+'%';setBodyGlass(id,1-(+rg.value/100));applyBodyStyleLive(id);try{buildEdgeOverlay();}catch(e){}if(fin){markDirty();renderProps();}};
+  rg.addEventListener('input',()=>commitG(false));
+  rg.addEventListener('change',()=>commitG(true));
+  rowG.appendChild(labG);rowG.appendChild(rg);rowG.appendChild(vg);
+  holder.appendChild(rowG);
   return holder;
 }
 

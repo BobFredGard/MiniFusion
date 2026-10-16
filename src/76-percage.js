@@ -251,7 +251,7 @@ function renderHoleProps(p,f){
   const go=function(){f.name=holeName(f);markDirty();rebuild();renderTree();renderProps();};
   const row=function(lab,el){const l=document.createElement('label');l.textContent=lab;l.appendChild(el);p.appendChild(l);return l;};
   const sel=function(opts,val,fn){const s=document.createElement('select');s.innerHTML=opts.map(function(o){return '<option value="'+o[0]+'">'+o[1]+'</option>';}).join('');s.value=String(val);s.onchange=function(){docPushUndo('perçage');fn(s.value);go();};return s;};
-  const num=function(val,fn,w){const i=document.createElement('input');i.type='text';i.inputMode='decimal';i.value=String(+(+val).toFixed(3)).replace('.',',');i.style.width=(w||70)+'px';
+  const num=function(val,fn,w,hh,kk){const i=document.createElement('input');i.type='text';i.inputMode='decimal';i.value=String(+(+val).toFixed(3)).replace('.',',');i.style.width=(w||70)+'px';if(hh)parFx(i,hh,kk); // ƒx (2026-10-16-008)
     const c=function(){const v=parseFloat(String(i.value).replace(',','.'));if(isFinite(v)&&v>0){docPushUndo('perçage');fn(v);go();}};
     i.addEventListener('change',c);i.addEventListener('keydown',function(e){if(e.key==='Enter'){c();i.blur();}e.stopPropagation();});i.addEventListener('click',function(e){e.stopPropagation();});return i;};
   const nP=holePoints(sk).length;
@@ -272,24 +272,24 @@ function renderHoleProps(p,f){
   if(f.kind==='cbore')row('Vis CHC',sel([['','—']].concat(ISO_CHC.map(function(c){return [c[0],c[0]+' : Ø'+String(c[1]).replace('.',',')+' / lamage Ø'+c[2]+' × '+String(c[3]).replace('.',',')];})),'',function(v){
     const c=ISO_CHC.find(function(x){return x[0]===v;});if(!c)return;f.thread=null;f.d=c[1];f.cbD=c[2];f.cbH=c[3];}));
   // ── Ø de perçage
-  const lD=row(f.thread&&f.thread.size?'Ø de perçage (taraud '+holeThreadLabel(f.thread)+')':'Ø du trou',num(f.d,function(v){f.d=v;}));
+  const lD=row(f.thread&&f.thread.size?'Ø de perçage (taraud '+holeThreadLabel(f.thread)+')':'Ø du trou',num(f.d,function(v){f.d=v;},0,f,'d'));
   void lD;
   if(f.thread&&f.thread.size){
     row('Longueur filetée',sel([['len','Longueur'],['upto','Jusqu’à la face…'],['next','Jusqu’à la prochaine face']],f.thread.lenMode||'len',function(v){
       f.thread.lenMode=v; if(v==='upto'&&!f.thread.uptoPlane)setTimeout(function(){holeFacePickStart(f.id,'thread');},0);}));
     const tm=f.thread.lenMode||'len';
-    if(tm==='len')row('Longueur (mm)',num(f.thread.len||f.depth,function(v){f.thread.len=v;}));
+    if(tm==='len')row('Longueur (mm)',num(f.thread.len||f.depth,function(v){f.thread.len=v;},0,f.thread,'len'));
     else if(tm==='upto'){const b=document.createElement('button');b.textContent=(f.thread.uptoPlane?'✓ Face choisie — ':'')+'Sélectionner la face (filetage)';b.onclick=function(){holeFacePickStart(f.id,'thread');};p.appendChild(b);}
     if(f._thLen)p.appendChild(Object.assign(document.createElement('span'),{className:'note',textContent:'Longueur filetée effective : '+String(f._thLen).replace('.',',')+' mm'}));
   }
-  if(f.kind==='cbore'){row('Ø lamage',num(f.cbD,function(v){f.cbD=v;}));row('Profondeur lamage',num(f.cbH,function(v){f.cbH=v;}));}
-  if(f.kind==='csink'){row('Ø fraisure',num(f.csD,function(v){f.csD=v;}));row('Angle fraisure (°)',sel([['90','90°'],['82','82° (UNC)'],['100','100°'],['120','120°']],String(f.csA||90),function(v){f.csA=+v;}));}
+  if(f.kind==='cbore'){row('Ø lamage',num(f.cbD,function(v){f.cbD=v;},0,f,'cbD'));row('Profondeur lamage',num(f.cbH,function(v){f.cbH=v;},0,f,'cbH'));}
+  if(f.kind==='csink'){row('Ø fraisure',num(f.csD,function(v){f.csD=v;},0,f,'csD'));row('Angle fraisure (°)',sel([['90','90°'],['82','82° (UNC)'],['100','100°'],['120','120°']],String(f.csA||90),function(v){f.csA=+v;}));}
   // ── fin
   row('Fin',sel([['blind','Distance (borgne)'],['upto','Jusqu’à la face…'],['next','Débouchant (prochaine face)'],['through','Débouchant tout']],f.end||'blind',function(v){
     f.end=v; if(v==='upto'&&!f.uptoPlane)setTimeout(function(){holeFacePickStart(f.id,'end');},0);}));
   if(f.end==='upto'){const b=document.createElement('button');b.textContent=(f.uptoPlane?'✓ Face choisie — ':'')+'Sélectionner la face (fin du trou)';b.onclick=function(){holeFacePickStart(f.id,'end');};p.appendChild(b);}
   if(!f.end||f.end==='blind'){
-    row('Profondeur (plein Ø)',num(f.depth,function(v){f.depth=v;}));
+    row('Profondeur (plein Ø)',num(f.depth,function(v){f.depth=v;},0,f,'depth'));
     row('Fond',sel([['118','Pointe 118°'],['135','Pointe 135°'],['140','Pointe 140°'],['90','Pointe 90°'],['0','Fond plat']],String(f.tip===0?0:(f.tip||118)),function(v){f.tip=+v;}));
   }
   row('Sens',sel([['0','Vers la matière (auto)'],['1','Inversé']],f.flip?'1':'0',function(v){f.flip=(v==='1');}));

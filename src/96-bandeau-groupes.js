@@ -19,7 +19,7 @@
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.46';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.48';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);
@@ -73,6 +73,14 @@
   // déplacer quoi que ce soit : c'est lui qui garde la bonne place dans la barre.
   const inputs=(()=>{const a=$('fileProj'),b=$('fileImport');return [a,b].filter(Boolean);})();
 
+  // 2026-10-16-009 : « Création solide » regroupe ce qui CRÉE du volume / des corps
+  const gCre=groupe('Création solide','Créer du volume : extrusion, révolution, perçage, nouveau corps',[
+    ['btnExtrude','\u{1F9F1}','Extrusion (E)'],
+    ['btnRevolve','\u{1F504}','Révolution (R)'],
+    ['btnHole','⊚','Perçage (H)'],
+    '#',
+    ['btnBody','◧','Nouveau corps de pièce']
+  ],'\u{1F9F1}');
   const gMod=groupe('Modifier le solide','Fonctions qui modifient le solide existant',[
     [null,'Arêtes'],
     ['btnFillet','◔','Congé — rayon par arête'],
@@ -84,7 +92,11 @@
       ['btnCoque','⚙','Coque'],
     '#',
     [null,'Ensembles'],
-    ['btnRepeat','\u{1F501}','Répétition (linéaire, circulaire, symétrie)']
+    ['btnRepeat','\u{1F501}','Répétition (linéaire, circulaire, symétrie) (M)'],
+    ['btnCombine','⊕','Combiner des corps (union, soustraction, intersection)'],
+    '#',
+    [null,'Paramètres'],
+    ['btnParams','ƒx','Paramètres (cotes et valeurs nommées)']
   ],'\u{1F527}');
   const gFile=groupe('Fichier','Importer une pièce, ou l\'exporter dans un format',[
     [null,'Importer'],
@@ -116,12 +128,13 @@
   const ref=seps[0]||inputs[0]||null;
   if(ref){
     if(seps.length)bar.insertBefore(el('div','sep'),ref);
+    bar.insertBefore(gCre,ref);
     bar.insertBefore(gMod,ref);
     bar.insertBefore(gFile,ref);
     bar.insertBefore(gProj,ref);
   }else{
     bar.appendChild(el('div','sep'));
-    bar.appendChild(gMod);bar.appendChild(gFile);bar.appendChild(gProj);
+    bar.appendChild(gCre);bar.appendChild(gMod);bar.appendChild(gFile);bar.appendChild(gProj);
   }
   seps.forEach(s=>{if(s.parentNode===bar)bar.removeChild(s);});
   inputs.forEach(n=>bar.appendChild(n));
