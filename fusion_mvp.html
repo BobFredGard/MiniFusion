@@ -275,7 +275,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-16-001';
+const APP_VER='2026-10-16-002';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -6574,7 +6574,7 @@ function closeSketch(save){
   // la fonction modifiée et celles qui suivent ; sans rebuild de sortie, un verrou posé
   // à l'ouverture laisserait l'arbre bloqué.
   if(skEdit)tlEditUnlock();
-  if(save&&skEdit){solveSketch(skEdit);cleanupSk(skEdit);repSyncForSketch(skEdit.id);markDirty();rebuild();projRefreshRerun(0);sel={kind:'sketch',id:skEdit.id};renderTree();renderProps();}
+  if(save&&skEdit){try{parApplyAll();}catch(e){}solveSketch(skEdit);cleanupSk(skEdit);repSyncForSketch(skEdit.id);markDirty();rebuild();projRefreshRerun(0);sel={kind:'sketch',id:skEdit.id};renderTree();renderProps();}
   else if(skEdit){markDirty();try{rebuild();}catch(e){}renderTree();renderProps();}
   skEdit=null;skSel=null;skSelX=[];skChain=null;skArcC=null;skArcPa=null;skDraft=null;skDown=null;skDrag=null;skDimDrag=null;skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
   // Arborescence re-dépliée à la sortie, sauf si l'état antérieur était
@@ -7384,7 +7384,14 @@ function sklsCollect(sk,out,B){
   for(let gi=g0;gi<out.length;gi++)out[gi]*=SK_GEO_W;
   // ── ancrage doux : les rayons libres ne dérivent que si une vraie contrainte les tire (equal, tangent2) ──
   if(B&&B.rad){
-    (B.rad||[]).forEach(eid=>{const e=entById(sk,eid);if(e&&B.r0&&B.r0[eid]!=null)push((e.r-B.r0[eid])*1.0);});
+    // 2026-10-16-002 : pas d'ancrage pour un rayon « égal » à un rayon COTÉ (congés multi-coins :
+    // une seule cote R) — l'ancre retenait les suivants (écart ~1e-5 sur « égal »).
+    const dimR=new Set((sk.dims||[]).filter(d=>!d.ref&&(d.type==='radius'||d.type==='diameter')).map(d=>d.ent));
+    const driven=new Set();let grow=true;
+    while(grow){grow=false;(sk.constraints||[]).forEach(c=>{if(c.type!=='equal')return;
+      const a=dimR.has(c.a)||driven.has(c.a),b=dimR.has(c.b)||driven.has(c.b);
+      if(a&&!b&&!driven.has(c.b)){driven.add(c.b);grow=true;}if(b&&!a&&!driven.has(c.a)){driven.add(c.a);grow=true;}});}
+    (B.rad||[]).forEach(eid=>{if(driven.has(eid))return;const e=entById(sk,eid);if(e&&B.r0&&B.r0[eid]!=null)push((e.r-B.r0[eid])*1.0);});
   }
   return out;
 }
@@ -7824,6 +7831,14 @@ function skSharedCorner(sk,idA,idB){
   if(joint)return{error:'Coin partagé avec une autre entité — congé/chanfrein impossible ici.'};
   return{pid,A,B};
 }
+function skKeepVirtualSharp(sk,pid,idA,idB){
+  // 2026-10-16-002 : le coin rogné par un congé / chanfrein était RÉFÉRENCÉ (accroché à
+  // l'origine, coté…) → il reste un COIN VIRTUEL, sur les 2 droites : l'esquisse garde
+  // son ancrage et ses cotes au coin (comme Fusion).
+  const used=(sk.constraints||[]).some(c=>c&&(c.p===pid||c.a===pid||c.b===pid))||(sk.dims||[]).some(d=>d&&(d.a===pid||d.b===pid||d.p===pid));
+  if(!used)return;
+  [idA,idB].forEach(l=>{if(!(sk.constraints||[]).some(c=>c.type==='online'&&c.p===pid&&c.line===l))sk.constraints.push({id:skNewEid(sk),type:'online',p:pid,line:l});});
+}
 function skKeepOverallDims(sk,ids){
   // les côtés rognés ne sont plus symétriques en SEGMENT (un seul bout rogné) : leur
   // symétrie devient une symétrie de DROITES (rectangle par le centre + congés).
@@ -7860,6 +7875,7 @@ function skFilletCorner(sk,idA,idB,r){
   const g=filletCornerGeom(Ao,V,Bo,r);
   if(!g.ok)return{ok:false,msg:'Congé : '+g.warn+(g.warn.indexOf('place')>=0?' — essayez un rayon plus petit.':'.')};
   skKeepOverallDims(sk,[sc.A.id,sc.B.id]); // cotes hors-tout conservées
+  skKeepVirtualSharp(sk,sc.pid,sc.A.id,sc.B.id); // coin référencé → coin virtuel
   const capped=g.rEff<r-1e-6;
   const C=filletCenterFor(g.T1,g.T2,V,g.C1,g.C2);
   const idT1=addPoint(sk,g.T1.x,g.T1.y),idT2=addPoint(sk,g.T2.x,g.T2.y),idC=addPoint(sk,C.x,C.y);
@@ -7897,6 +7913,7 @@ function skChamferCorner(sk,idA,idB,d){
   const P1={x:V.x+(Ao.x-V.x)/lA*dd,y:V.y+(Ao.y-V.y)/lA*dd};
   const P2={x:V.x+(Bo.x-V.x)/lB*dd,y:V.y+(Bo.y-V.y)/lB*dd};
   skKeepOverallDims(sk,[sc.A.id,sc.B.id]); // cotes hors-tout conservées
+  skKeepVirtualSharp(sk,sc.pid,sc.A.id,sc.B.id);
   const idP1=addPoint(sk,P1.x,P1.y),idP2=addPoint(sk,P2.x,P2.y);
   if(sc.A.p1===sc.pid)sc.A.p1=idP1;else sc.A.p2=idP1;
   if(sc.B.p1===sc.pid)sc.B.p1=idP2;else sc.B.p2=idP2;
@@ -7908,12 +7925,18 @@ function skChamferCorner(sk,idA,idB,d){
 function skApplyFilletSel(){
   // Depuis le menu contextuel : 2 lignes sélectionnées → congé au rayon courant.
   if(!skEdit)return;const sk=skEdit;
-  const ls=skSelectedEnts().filter(e=>e.t==='line');
-  if(ls.length!==2){skStatus('Congé : sélectionnez exactement 2 lignes.');return;}
+  // 2026-10-16-002 : 2 lignes OU plus (tous leurs coins communs) — UNE cote R pilote tous les congés
+  const ls=skSelectedEnts().filter(e=>e.t==='line'&&!e.construction);
+  const pairs=[];for(let i=0;i<ls.length;i++)for(let j=i+1;j<ls.length;j++){const a=ls[i],b=ls[j];if(a.p1===b.p1||a.p1===b.p2||a.p2===b.p1||a.p2===b.p2)pairs.push([a,b]);}
+  if(!pairs.length){skStatus('Congé : sélectionnez des lignes qui forment un coin (2 ou plus).');return;}
   skPushUndo();
-  const r=skFilletCorner(sk,ls[0].id,ls[1].id,Math.min(skFilletR,skNiceVal(0.2*Math.min(lineLen(sk,ls[0]),lineLen(sk,ls[1]))))); // proportionné
-  if(!r.ok){skUndoStack.pop();skUndoBtn();skStatus(r.msg);drawSketch2D();return;}
-  afterEdit();skStatus(r.msg+' — R modifiable (double-clic la cote).');
+  const minL=Math.min(...ls.map(l=>lineLen(sk,l)));
+  const R=Math.min(skFilletR,skNiceVal(0.2*minL)); // proportionné
+  skFilletSess=null;let n=0,last=null;
+  pairs.forEach(([a,b])=>{const r=skFilletCorner(sk,a.id,b.id,R);if(r.ok){skCornerLink(sk,true,r);n++;}last=r;});
+  skFilletSess=null;
+  if(!n){skUndoStack.pop();skUndoBtn();skStatus(last&&last.msg||'Congé impossible.');drawSketch2D();return;}
+  afterEdit();skStatus(n+' congé(s) R'+R+' — une seule cote pilote (double-clic pour la modifier).');
 }
 function skApplyChamferSel(){
   // Depuis le menu contextuel : 2 lignes sélectionnées → chanfrein au retrait courant.
@@ -8655,6 +8678,7 @@ function hitDimLabel(sk,px,py){ // px,py en pixels écran SVG → id de cote ou 
   return null;
 }
 function dimText(x,y,str,id){ // étiquette horizontale avec halo sombre (Ø/R)
+  str=parDecor(id,str); // nom= / ƒx
   const[ax,ay]=w2s(x,y);
   const t=skEl('text',{x:ax,y:ay-8,fill:'#30d158','font-size':13,'font-weight':'bold',stroke:'#101012','stroke-width':3,'paint-order':'stroke',style:'cursor:move;pointer-events:all',title:'Glisser pour déplacer · double-clic pour modifier'});
   t.textContent=str;
@@ -8662,6 +8686,7 @@ function dimText(x,y,str,id){ // étiquette horizontale avec halo sombre (Ø/R)
   return t;
 }
 function dimTextOnLine(S,str,id){ // étiquette posée SUR la ligne de cote, alignée avec elle (comme Fusion)
+  str=parDecor(id,str); // nom= / ƒx
   const mx=(S.a.x+S.b.x)/2,my=(S.a.y+S.b.y)/2;
   const[ax,ay]=w2s(S.a.x,S.a.y),[bx,by]=w2s(S.b.x,S.b.y);
   const[sx,sy]=w2s(mx,my);
@@ -8810,18 +8835,21 @@ function editDim(id){
     skStatus('Cote redevenue PILOTANTE.');drawSketch2D();
   }
   const pos=dimLabelPos(sk,d); if(!pos) {
-    const v=prompt(d.type==='angle'?'Nouvel angle (degrés, 1..179) :':'Nouvelle valeur (mm) :', d.type==='angle'?(d.value*180/Math.PI).toFixed(1):d.value);
+    const v=prompt(d.type==='angle'?'Nouvel angle (degrés) — « nom = valeur » pour la nommer :':'Nouvelle valeur (mm) — « nom = valeur » pour la nommer, ou une expression :', parDimInputText(d));
     if(v===null) return;
-    const f=parseFloat(String(v).replace(',','.'));
-    if(!isFinite(f)||f<=0||(d.type==='angle'&&f>=180)){alert('Valeur invalide.');return;}
-    skPushUndo(); d.value=d.type==='angle'?f*Math.PI/180:f; solveSketch(sk);drawSketch2D();renderSkPanel(); return;
+    skPushUndo();
+    const rr=parDimCommit(sk,d,v);
+    if(!rr.ok){skUndoStack.pop();skUndoBtn();alert(rr.msg);return;}
+    d.value=rr.nv; parApplyAll(); solveSketch(sk);drawSketch2D();renderSkPanel(); return;
   }
   const [sx,sy]=w2s(pos.x,pos.y);
   const r=svg.getBoundingClientRect();
   const inp=document.createElement('input');
   inp.type='text'; inp.inputMode='decimal';
-  inp.value=d.type==='angle'?(d.value*180/Math.PI).toFixed(2):String(+(+(d.dia?2*d.value:d.value)).toFixed(4));
-  inp.style.cssText=`position:absolute;left:${r.left+sx-40}px;top:${r.top+sy-14}px;width:80px;height:22px;font-size:12px;text-align:center;border:1px solid #0a84ff;border-radius:6px;background:#1e1e1e;color:#fff;z-index:50`;
+  inp.value=parDimInputText(d); // « nom = expression » si nommée / ƒx
+  inp.title='Valeur, expression (ƒx), ou « nom = valeur » pour nommer la cote';
+  const wIn=Math.max(80,Math.min(260,8*inp.value.length+24));
+  inp.style.cssText=`position:absolute;left:${r.left+sx-wIn/2}px;top:${r.top+sy-14}px;width:${wIn}px;height:22px;font-size:12px;text-align:center;border:1px solid #0a84ff;border-radius:6px;background:#1e1e1e;color:#fff;z-index:50`;
   document.body.appendChild(inp);
   // 2026-10-16-001 : focus DIFFÉRÉ + blur ignoré 300 ms — le clic qui pose la cote
   // retirait le focus et validait aussitôt la saisie (« pas éditable de suite »).
@@ -8832,12 +8860,14 @@ function editDim(id){
     if(done) return; done=true;
     inp.remove();
     if(cancel) return;
-    const f=parseFloat(String(inp.value).replace(',','.'));
-    if(!isFinite(f)||f<=0||(d.type==='angle'&&f>=180)){ skStatus('Valeur invalide.'); return; }
+    // 2026-10-16-002 : « nom = valeur », expression ƒx (noms d'autres cotes / paramètres)
     skPushUndo();
-    const nv=d.type==='angle'?f*Math.PI/180:(d.dia?f/2:f);
+    const rr=parDimCommit(sk,d,inp.value);
+    if(!rr.ok){ skUndoStack.pop();skUndoBtn(); skStatus(rr.msg); drawSketch2D(); return; }
+    const nv=rr.nv;
     skFirstDimScale(sk,d,nv); // 11. esquisse encore libre : toute la forme suit, à l'échelle
-    d.value=nv; solveSketch(sk);drawSketch2D();renderSkPanel();
+    d.value=nv; parApplyAll(); solveSketch(sk);drawSketch2D();renderSkPanel();
+    if(d.name)skStatus('Cote nommée « '+d.name+' » — utilisable dans les autres cotes (ƒx).');
   };
   inp.addEventListener('keydown',e=>{
     if(e.key==='Enter'){ commit(false); }
@@ -9714,6 +9744,230 @@ function dimClick(x,y,shift){
   skStatus('Cote : ligne=longueur, cercle=Ø, arc=R, 2 points=distance · Ctrl/Cmd+clic 2 lignes = angle/entraxe · étiquettes déplaçables au glisser.');
 }
 
+/* ═══════════════ 51-parametres.js — parametres ═══════════════ */
+/* ---------- paramètres utilisateur & cotes nommées (2026-10-16-002) ----------
+   Comme Fusion 360 :
+   • dans la saisie d'une cote, « R_cong = 5 » NOMME la cote (nom choisi par l'utilisateur) ;
+   • une autre cote peut valoir « R_cong », « R_cong*2 », « (L - 2*R_cong)/3 »… (ƒx) ;
+   • des paramètres libres (doc.params : nom + expression) se gèrent dans la fenêtre ƒx.
+   Unités : celles AFFICHÉES par la cote (mm, Ø pour une cote de diamètre ou depuis un
+   axe, degrés pour un angle). sin/cos/tan en degrés. Décimale « 12,5 » acceptée ;
+   arguments séparés par « ; » (ou « , » suivi d'un espace).
+   Une cote nommée sert de paramètre partout (toutes esquisses) ; modifier sa valeur
+   met à jour les cotes qui en dépendent, dans toutes les esquisses, puis le modèle. */
+const PAR_FN={sqrt:Math.sqrt,abs:Math.abs,min:Math.min,max:Math.max,round:Math.round,floor:Math.floor,ceil:Math.ceil,
+  sin:x=>Math.sin(x*Math.PI/180),cos:x=>Math.cos(x*Math.PI/180),tan:x=>Math.tan(x*Math.PI/180),
+  asin:x=>Math.asin(x)*180/Math.PI,acos:x=>Math.acos(x)*180/Math.PI,atan:x=>Math.atan(x)*180/Math.PI};
+const PAR_CONST={pi:Math.PI,PI:Math.PI};
+const PAR_ID=/^[A-Za-z_][A-Za-z0-9_]*$/;
+function parEval(src,lookup){
+  // descente récursive : + - * / ^ ( ) fonctions, noms → lookup(nom)
+  let s=String(src==null?'':src).trim().replace(/(\d),(\d)/g,'$1.$2').replace(/\s*(mm|°|deg)\s*$/i,'');
+  let i=0;
+  const sp=()=>{while(i<s.length&&/\s/.test(s[i]))i++;};
+  const err=m=>{throw new Error(m);};
+  const expr=()=>{let v=term();for(;;){sp();const c=s[i];if(c==='+'){i++;v+=term();}else if(c==='-'){i++;v-=term();}else return v;}};
+  const term=()=>{let v=unary();for(;;){sp();const c=s[i];if(c==='*'){i++;v*=unary();}else if(c==='/'){i++;const d=unary();if(d===0)err('division par zéro');v/=d;}else return v;}};
+  const unary=()=>{sp();if(s[i]==='-'){i++;return -unary();}if(s[i]==='+'){i++;return unary();}return pow();};
+  const pow=()=>{const b=atom();sp();if(s[i]==='^'){i++;return Math.pow(b,unary());}return b;};
+  const atom=()=>{
+    sp();const c=s[i];
+    if(c==='('){i++;const v=expr();sp();if(s[i]!==')')err('« ) » manquante');i++;return v;}
+    const mN=/^(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?/.exec(s.slice(i));
+    if(mN){i+=mN[0].length;return parseFloat(mN[0]);}
+    const mI=/^[A-Za-z_][A-Za-z0-9_]*/.exec(s.slice(i));
+    if(mI){
+      const nm=mI[0];i+=nm.length;sp();
+      if(s[i]==='('){
+        const f=PAR_FN[nm];if(!f)err('fonction inconnue « '+nm+' »');
+        i++;const args=[];sp();
+        if(s[i]!==')'){for(;;){args.push(expr());sp();if(s[i]===';'||s[i]===','){i++;continue;}break;}}
+        sp();if(s[i]!==')')err('« ) » manquante');i++;return f.apply(null,args);
+      }
+      if(Object.prototype.hasOwnProperty.call(PAR_CONST,nm))return PAR_CONST[nm];
+      return lookup(nm);
+    }
+    err(i>=s.length?'expression incomplète':'caractère inattendu « '+c+' »');
+  };
+  if(!s)err('expression vide');
+  const v=expr();sp();
+  if(i<s.length)err('caractère inattendu « '+s[i]+' »');
+  if(!isFinite(v))err('résultat non fini');
+  return v;
+}
+function parIsNumber(t){return /^\s*[+-]?(\d+([.,]\d*)?|[.,]\d+)\s*$/.test(String(t));}
+function parDimUser(d){return d.type==='angle'?d.value*180/Math.PI:(d.dia?2*d.value:d.value);}
+function parDimFromUser(d,f){return d.type==='angle'?f*Math.PI/180:(d.dia?f/2:f);}
+function parAll(){
+  const m=new Map();
+  (doc.params||[]).forEach(p=>{if(p&&p.name)m.set(p.name,{kind:'param',p});});
+  (doc.sketches||[]).forEach(sk=>(sk.dims||[]).forEach(d=>{if(d&&d.name)m.set(d.name,{kind:'dim',d,sk});}));
+  return m;
+}
+const parPending=new Set(); // esquisses dont une cote a changé, à résoudre (survit aux évaluations intermédiaires)
+function parResolve(){
+  // Évalue paramètres et cotes ƒx (ordre de dépendance, cycles détectés). Une cote dont
+  // l'expression échoue garde sa dernière valeur et porte d.exprErr (⚠ à l'écran).
+  const m=parAll(),val=new Map(),busy=new Set(),changed=new Set();
+  const get=nm=>{
+    if(val.has(nm))return val.get(nm);
+    const e=m.get(nm);if(!e)throw new Error('« '+nm+' » inconnu');
+    if(busy.has(nm))throw new Error('référence circulaire (« '+nm+' »)');
+    busy.add(nm);let v;
+    try{
+      const ex=e.kind==='param'?e.p.expr:e.d.expr;
+      v=(ex!=null&&String(ex).trim()!=='')?parEval(ex,get):(e.kind==='param'?+e.p.value:parDimUser(e.d));
+    }finally{busy.delete(nm);}
+    if(!isFinite(v))throw new Error('« '+nm+' » sans valeur');
+    val.set(nm,v);return v;
+  };
+  (doc.params||[]).forEach(p=>{if(!p)return;try{p.value=p.name?get(p.name):parEval(p.expr,get);delete p.err;}catch(e){p.err=e.message;}});
+  (doc.sketches||[]).forEach(sk=>(sk.dims||[]).forEach(d=>{
+    if(!d||d.ref||d.expr==null||String(d.expr).trim()==='')return;
+    try{
+      const v=d.name?get(d.name):parEval(d.expr,get);
+      if(!(v>0)||(d.type==='angle'&&v>=180))throw new Error('valeur hors domaine ('+(+v.toFixed(4))+')');
+      const nv=parDimFromUser(d,v);
+      if(Math.abs(nv-d.value)>1e-9){d.value=nv;changed.add(sk);parPending.add(sk);}
+      delete d.exprErr;
+    }catch(e){d.exprErr=e.message;}
+  }));
+  return{changed:[...changed],get};
+}
+function parApplyAll(){
+  // Réévalue tout et résout les esquisses dont une cote a changé (y compris l'esquisse ouverte).
+  const r=parResolve();
+  const todo=[...parPending];parPending.clear();
+  todo.forEach(sk=>{if((doc.sketches||[]).indexOf(sk)>=0){try{solveSketch(sk);}catch(e){}}});
+  return r;
+}
+function parNameCheck(nm,selfDim,selfParam){
+  if(!PAR_ID.test(nm))return'Nom invalide « '+nm+' » : lettres, chiffres, _ (sans espace ni accent, pas de chiffre en tête).';
+  if(PAR_FN[nm]||Object.prototype.hasOwnProperty.call(PAR_CONST,nm))return'« '+nm+' » est réservé (fonction / constante).';
+  const e=parAll().get(nm);
+  if(e&&!((e.kind==='dim'&&e.d===selfDim)||(e.kind==='param'&&e.p===selfParam)))return'Le nom « '+nm+' » est déjà utilisé.';
+  return true;
+}
+function parRename(oldN,newN){
+  // renomme partout dans les expressions (mot entier)
+  if(!oldN||!newN||oldN===newN)return;
+  const re=new RegExp('\\b'+oldN+'\\b','g');
+  (doc.params||[]).forEach(p=>{if(p&&p.expr)p.expr=String(p.expr).replace(re,newN);});
+  (doc.sketches||[]).forEach(sk=>(sk.dims||[]).forEach(d=>{if(d&&d.expr)d.expr=String(d.expr).replace(re,newN);}));
+}
+function parDimInputText(d){
+  // texte proposé dans la saisie : « nom = expression » / « nom = valeur » / expression / valeur
+  const base=d.type==='angle'?String(+(d.value*180/Math.PI).toFixed(2)):String(+(+(d.dia?2*d.value:d.value)).toFixed(4));
+  const rhs=(d.expr!=null&&String(d.expr).trim()!=='')?String(d.expr):base;
+  return (d.name?d.name+' = ':'')+rhs;
+}
+function parDimCommit(sk,d,txt){
+  // Applique une saisie « [nom =] valeur|expression » à la cote d. Retour {ok,nv}|{ok:false,msg}.
+  const s=String(txt==null?'':txt).trim();
+  const mm=/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(s);
+  const name=mm?mm[1]:null,expr=(mm?mm[2]:s).trim();
+  if(!expr)return{ok:false,msg:'Valeur vide.'};
+  if(name){const ok=parNameCheck(name,d,null);if(ok!==true)return{ok:false,msg:ok};}
+  const old={name:d.name,expr:d.expr,value:d.value};
+  const restore=()=>{if(old.name!==undefined)d.name=old.name;else delete d.name;if(old.expr!==undefined)d.expr=old.expr;else delete d.expr;d.value=old.value;delete d.exprErr;};
+  if(name&&old.name&&name!==old.name)parRename(old.name,name);
+  if(name)d.name=name;
+  let f;
+  if(parIsNumber(expr)){f=parseFloat(expr.replace(',','.'));delete d.expr;}
+  else{
+    d.expr=expr;
+    try{parResolve();}catch(e){d.exprErr=e.message;}
+    if(d.exprErr){const msg=d.exprErr;if(name&&old.name&&name!==old.name)parRename(name,old.name);restore();return{ok:false,msg:'Expression : '+msg};}
+    f=parDimUser(d);
+  }
+  if(!isFinite(f)||f<=0||(d.type==='angle'&&f>=180)){if(name&&old.name&&name!==old.name)parRename(name,old.name);restore();return{ok:false,msg:'Valeur invalide.'};}
+  return{ok:true,nv:parDimFromUser(d,f)};
+}
+function parDecor(id,str){
+  // étiquette : « nom=valeur », « ƒx valeur », ⚠ si l'expression ne s'évalue plus
+  const sk=(typeof skEdit!=='undefined')?skEdit:null;
+  const d=sk&&(sk.dims||[]).find(x=>x.id===id);if(!d)return str;
+  if(d.exprErr)str='⚠'+str;
+  if(d.name)return d.name+'='+str;
+  if(d.expr!=null&&String(d.expr).trim()!=='')return'ƒx '+str;
+  return str;
+}
+
+/* ---------- fenêtre ƒx Paramètres ---------- */
+function parAfterChange(){
+  parApplyAll();
+  try{if(typeof skEdit!=='undefined'&&skEdit){drawSketch2D();renderSkPanel();}}catch(e){}
+  try{markDirty();rebuild();}catch(e){}
+}
+function openParamsDlg(){
+  let ov=document.getElementById('parDlg');if(ov)ov.remove();
+  if(!Array.isArray(doc.params))doc.params=[];
+  try{parResolve();}catch(e){}
+  ov=document.createElement('div');ov.id='parDlg';
+  ov.style.cssText='position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center';
+  const box=document.createElement('div');
+  box.style.cssText='background:#1c1c20;color:#e8e8ea;border:1px solid #3a3a40;border-radius:10px;padding:14px 16px;min-width:560px;max-width:92vw;max-height:80vh;overflow:auto;font-size:13px;box-shadow:0 14px 40px rgba(0,0,0,.6)';
+  ov.appendChild(box);
+  const render=()=>{
+    box.innerHTML='';
+    const h=document.createElement('div');h.innerHTML='<b style="font-size:15px">ƒx Paramètres</b><div style="opacity:.7;margin:4px 0 10px">Nommez une cote en tapant « nom = valeur » dans sa saisie ; utilisez le nom dans d’autres cotes (« nom*2 », « (L-2*nom)/3 »). Angles en degrés.</div>';
+    box.appendChild(h);
+    const tbl=document.createElement('table');tbl.style.cssText='border-collapse:collapse;width:100%';
+    tbl.innerHTML='<tr style="text-align:left;opacity:.7"><th style="padding:3px 6px">Nom</th><th style="padding:3px 6px">Expression</th><th style="padding:3px 6px">Valeur</th><th style="padding:3px 6px">Origine</th><th></th></tr>';
+    const inpCss='background:#101012;color:#fff;border:1px solid #3a3a40;border-radius:5px;padding:3px 6px;width:100%;box-sizing:border-box';
+    const row=(o)=>{
+      const tr=document.createElement('tr');
+      const td=()=>{const t=document.createElement('td');t.style.padding='3px 6px';tr.appendChild(t);return t;};
+      const n=document.createElement('input');n.value=o.name||'';n.style.cssText=inpCss;n.placeholder='nom';td().appendChild(n);
+      const x=document.createElement('input');x.value=o.expr;x.style.cssText=inpCss;td().appendChild(x);
+      const v=td();v.textContent=o.err?('⚠ '+o.err):(isFinite(o.val)?(+o.val.toFixed(4))+(o.unit||''):'');if(o.err)v.style.color='#ff9f0a';
+      td().textContent=o.origin;
+      const del=td();
+      if(o.del){const b=document.createElement('button');b.textContent='🗑';b.title='Supprimer';b.onclick=()=>{o.del();parAfterChange();render();};del.appendChild(b);}
+      n.onchange=()=>{const r=o.rename(n.value.trim());if(r!==true){alert(r);n.value=o.name||'';return;}parAfterChange();render();};
+      x.onchange=()=>{const r=o.setExpr(x.value.trim());if(r!==true){alert(r);x.value=o.expr;return;}parAfterChange();render();};
+      tbl.appendChild(tr);
+    };
+    (doc.params||[]).forEach(p=>row({name:p.name,expr:String(p.expr==null?'':p.expr),val:p.value,err:p.err,origin:'Paramètre',
+      rename:nm=>{if(!nm)return'Nom requis.';const ok=parNameCheck(nm,null,p);if(ok!==true)return ok;parRename(p.name,nm);p.name=nm;return true;},
+      setExpr:ex=>{if(!ex)return'Expression vide.';const o=p.expr;p.expr=ex;parResolve();if(p.err){const m=p.err;p.expr=o;parResolve();return'Expression : '+m;}return true;},
+      del:()=>{doc.params=doc.params.filter(q=>q!==p);}}));
+    (doc.sketches||[]).forEach(sk=>(sk.dims||[]).forEach(d=>{
+      if(!d||(!d.name&&(d.expr==null||String(d.expr).trim()==='')))return;
+      const unit=d.type==='angle'?'°':(d.dia||d.type==='diameter'?' (Ø)':'');
+      row({name:d.name,expr:(d.expr!=null&&String(d.expr).trim()!=='')?String(d.expr):String(+parDimUser(d).toFixed(4)),val:parDimUser(d),unit,err:d.exprErr,origin:(sk.name||sk.id)+' · cote',
+        rename:nm=>{if(!nm){delete d.name;return true;}const ok=parNameCheck(nm,d,null);if(ok!==true)return ok;parRename(d.name,nm);d.name=nm;return true;},
+        setExpr:ex=>{const r=parDimCommit(sk,d,ex);if(!r.ok)return r.msg;d.value=r.nv;return true;}});
+    }));
+    box.appendChild(tbl);
+    const bar=document.createElement('div');bar.style.cssText='display:flex;gap:8px;justify-content:flex-end;margin-top:12px';
+    const add=document.createElement('button');add.textContent='+ Paramètre';
+    add.onclick=()=>{let k=1;while(parAll().has('P'+k))k++;doc.params.push({name:'P'+k,expr:'10',value:10});parAfterChange();render();};
+    const close=document.createElement('button');close.textContent='Fermer';close.onclick=()=>ov.remove();
+    bar.appendChild(add);bar.appendChild(close);box.appendChild(bar);
+  };
+  render();
+  ov.addEventListener('mousedown',e=>{if(e.target===ov)ov.remove();});
+  ov.addEventListener('keydown',e=>{if(e.key==='Escape'){ov.remove();}e.stopPropagation();});
+  document.body.appendChild(ov);
+}
+// boutons ƒx : bandeau principal (après Perçage / Extrusion) et barre d'esquisse (avant ↩)
+(function(){
+  try{
+    if(!document.getElementById('btnParams')){
+      const ref=document.getElementById('btnHole')||document.getElementById('btnExtrude');
+      if(ref&&ref.parentNode){const n=document.createElement('button');n.id='btnParams';n.textContent='ƒx Paramètres';
+        n.title='Paramètres : cotes nommées (« nom = valeur » dans la saisie d’une cote) et paramètres libres, réutilisables dans les expressions des cotes.';
+        ref.parentNode.insertBefore(n,ref.nextSibling);n.onclick=()=>openParamsDlg();}
+    }
+    if(!document.getElementById('skParams')){
+      const u=document.getElementById('skUndo');
+      if(u&&u.parentNode){const n=document.createElement('button');n.id='skParams';n.textContent='ƒx';
+        n.title='Paramètres (cotes nommées, expressions)';u.parentNode.insertBefore(n,u);n.onclick=()=>openParamsDlg();}
+    }
+  }catch(e){}
+})();
+
 /* ═══════════════ 60-trim-et-souris.js — trim et souris ═══════════════ */
 /* ----- ajuster (trim) : retire le tronçon cliqué entre intersections ----- */
 function interLineLine(A,B,C,D){
@@ -10228,9 +10482,16 @@ svg.addEventListener('pointerdown',e=>{
     skCoinA=null;afterEdit();return;
   }
   if(skTool==='fillet'||skTool==='chamfer'){
-    // Congé / chanfrein : 2 clics sur 2 lignes en coin (même geste que coïncidence).
+    // Congé / chanfrein : 2 clics sur 2 lignes en coin (même geste que coïncidence),
+    // ou 1 clic sur le COIN (point commun à 2 lignes). Tous les coins traités pendant la
+    // même passe d'outil partagent UNE cote (les suivants : contrainte « égal »).
     const isF=skTool==='fillet';
-    const ent=nearestEntity(sk,wx,wy,SK_PICKX,false);
+    if(!skCornA){
+      const cp=nearestPoint(sk,wx,wy,SK_SNAP);
+      const ls=cp?(sk.entities||[]).filter(e=>e&&e.t==='line'&&!e.construction&&(e.p1===cp||e.p2===cp)):[];
+      if(ls.length===2){skCornA={tool:skTool,id:ls[0].id};skCornerPick=ls[1];}
+    }
+    const ent=skCornerPick||nearestEntity(sk,wx,wy,SK_PICKX,false);skCornerPick=null;
     if(!ent||ent.t!=='line'){skStatus((isF?'Congé ⦾':'Chanfrein ◣')+' : cliquez une ligne droite.');return;}
     if(!skCornA||skCornA.tool!==skTool){skCornA={tool:skTool,id:ent.id};skStatus((isF?'Congé ⦾ : 1ʳᵉ arête ✓ — cliquez la 2ᵉ (coin commun).':'Chanfrein ◣ : 1ʳᵉ arête ✓ — cliquez la 2ᵉ (coin commun).'));drawSketch2D();return;}
     if(ent.id===skCornA.id){skStatus('Même ligne — cliquez une autre ligne.');return;}
@@ -10242,8 +10503,9 @@ svg.addEventListener('pointerdown',e=>{
     const r=isF?skFilletCorner(sk,skCornA.id,ent.id,Math.min(skFilletR,cap)):skChamferCorner(sk,skCornA.id,ent.id,Math.min(skChamferD,cap));
     skCornA=null;
     if(!r.ok){skUndoStack.pop();skUndoBtn();skStatus(r.msg);drawSketch2D();return;}
+    const linked=skCornerLink(sk,isF,r);
     afterEdit();
-    skStatus(r.msg+(isF?' — R modifiable (double-clic la cote).':' — retrait modifiable (double-clic la cote).'));
+    skStatus(r.msg+(linked?' — lié au 1er (une seule cote pilote tous les coins de la passe ; Échap = nouvelle passe).':(isF?' — R modifiable (double-clic la cote) ; les coins suivants suivront cette cote.':' — retrait modifiable (double-clic la cote) ; les coins suivants suivront cette cote.')));
     return;
   }
   if(skTool==='project'){
@@ -10624,6 +10886,7 @@ function skEscapeToSelect(){
   if(skEdit){drawSketch2D();renderSkPanel();}
 }
 function skCancelDraft(){
+  skFilletSess=null;skCornerPick=null; // nouvelle passe de congés : nouvelle cote
   if(skDimPlace&&skEdit){skEdit.dims=skEdit.dims.filter(x=>x.id!==skDimPlace.id);skDimPlace=null;} // Échap pendant le placement annule la cote
   skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skPendPt=null;skCoinA=null;skCornA=null;skOffArm=null;skDraft=null;skDown=null;skDrag=null;skDragEnt=null;skBox=null;skDyn=null;skDimDrag=null;skPan=null;skInfer=null;skMsg='';skDimLine=null;skDimRef=null;skProjectHover=null;hideSkCtx();if(skEdit){cleanupSk(skEdit);drawSketch2D();renderSkPanel();}}
 function skMinLen(){
@@ -10634,6 +10897,17 @@ function skMinLen(){
 function skMulti(e){
   // multi-sélection / rectangle par le centre / cote paire : Ctrl (Cmd sous macOS) — plus Shift
   return !!(e&&(e.ctrlKey||e.metaKey));
+}
+let skFilletSess=null,skCornerPick=null;
+function skCornerLink(sk,isF,r){
+  // 2026-10-16-002 (comme Fusion) : plusieurs coins congés dans la même passe → UNE seule
+  // cote pilote ; les suivants perdent leur cote propre et reçoivent « égal » au 1er.
+  const newId=isF?r.arcId:r.segId,tool=isF?'fillet':'chamfer';if(!newId)return false;
+  const S=skFilletSess,first=(S&&S.sk===sk.id&&S.tool===tool)?entById(sk,S.id):null;
+  if(!first){skFilletSess={sk:sk.id,tool,id:newId};return false;}
+  sk.dims=(sk.dims||[]).filter(d=>!((isF&&d.type==='radius'&&d.ent===newId)||(!isF&&d.type==='length'&&d.line===newId)));
+  sk.constraints.push({id:skNewEid(sk),type:'equal',a:S.id,b:newId});
+  return true;
 }
 function skNiceVal(v){
   // valeur ronde ≤ v dans la série 1-2-5 (0,1 · 0,2 · 0,5 · 1 · 2 · 5 · 10…)
@@ -10735,6 +11009,9 @@ function showSkCtx(x,y){
     add('📌 Fixe',()=>applyCon('fix')); has=true;
   }
   // point + ligne
+  if(lines.length>2){ // 2026-10-16-002 : congé sur tous les coins des lignes sélectionnées, une seule cote R
+    add('⦾ Congé sur tous les coins (une seule cote R)',()=>skApplyFilletSel()); has=true;
+  }
   if(pts.length===1 && lines.length===1){
     add('📏 Distance point–ligne',()=>{
       const p=skEdit.points[pts[0]], l=lines[0], A=skEdit.points[l.p1], B=skEdit.points[l.p2];
@@ -30187,7 +30464,7 @@ function meshesToOBJ(meshes){
 function serialise(pretty){
   // pretty=1 (défaut) pour l'export fichier lisible ; compact pour l'autosave local
   // (~40 % de volume en moins à sérialiser et à écrire à chaque sauvegarde).
-  return JSON.stringify({app:'MiniFusion',v:1,name:doc.name,tint:doc.tint||0,entNames:doc.entNames||null,originVis,view:collectView(),bodyVis:doc.bodyVis||{},bodies:(doc.bodies||[]).map(e=>({id:e.id,name:e.name,c:e.c,color:e.color,op:e.op,open:e.open!==false})),bodySeq:doc.bodySeq||0,activeBody:doc.activeBody||null,fold:{sk:!!(doc.fold&&doc.fold.sk),origin:!!(doc.fold&&doc.fold.origin)},fao:doc.fao||null,sel:{kind:sel.kind,id:sel.id},sketches:doc.sketches.map(s=>{const c=Object.assign({},s);delete c._refs;return c;}),features:doc.features.map(({_mesh,_m,...r})=>r)},null,pretty===false?null:2);
+  return JSON.stringify({app:'MiniFusion',v:1,name:doc.name,tint:doc.tint||0,entNames:doc.entNames||null,originVis,view:collectView(),bodyVis:doc.bodyVis||{},bodies:(doc.bodies||[]).map(e=>({id:e.id,name:e.name,c:e.c,color:e.color,op:e.op,open:e.open!==false})),bodySeq:doc.bodySeq||0,activeBody:doc.activeBody||null,fold:{sk:!!(doc.fold&&doc.fold.sk),origin:!!(doc.fold&&doc.fold.origin)},fao:doc.fao||null,params:(doc.params||[]).map(p=>({name:p.name,expr:p.expr,value:p.value})),sel:{kind:sel.kind,id:sel.id},sketches:doc.sketches.map(s=>{const c=Object.assign({},s);delete c._refs;return c;}),features:doc.features.map(({_mesh,_m,...r})=>r)},null,pretty===false?null:2);
 }
 function docHash(){
   // Empreinte du paramétrique rejouable (imports éphémères exclus : non persistés).
@@ -30315,7 +30592,7 @@ addEventListener('beforeunload',()=>{autosaveFlush();});
 addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')autosaveFlush();});
 async function deserialise(json,opts){
   const o=JSON.parse(json);doc={name:o.name||'Sans titre',tint:o.tint||0,entNames:o.entNames||null,sketches:o.sketches||[],features:o.features||[],bodyVis:o.bodyVis||{},bodies:Array.isArray(o.bodies)?o.bodies.filter(e=>e&&typeof e.id==='string').map(e=>({id:e.id,name:String(e.name||e.id),c:Array.isArray(e.c)&&e.c.length===3?e.c.slice():null,color:isFinite(+e.color)?+e.color:undefined,op:(e.op>0&&e.op<1)?+e.op:undefined,open:e.open!==false})):[],
-    bodySeq:o.bodySeq>0?Math.floor(o.bodySeq):1,activeBody:(typeof o.activeBody==='string')?o.activeBody:null,fold:(o.fold&&typeof o.fold==='object')?{sk:!!o.fold.sk,origin:!!o.fold.origin}:{},fao:o.fao||null};
+    bodySeq:o.bodySeq>0?Math.floor(o.bodySeq):1,activeBody:(typeof o.activeBody==='string')?o.activeBody:null,fold:(o.fold&&typeof o.fold==='object')?{sk:!!o.fold.sk,origin:!!o.fold.origin}:{},fao:o.fao||null,params:Array.isArray(o.params)?o.params.filter(p=>p&&typeof p.name==='string'):[]};
   // Les numéros de corps ne sont jamais réemployés : le compteur repart au-delà
   // du plus grand Corps N déjà connu (anciens fichiers sans bodySeq : on le déduit).
   try{
@@ -30794,7 +31071,7 @@ window.addEventListener('pointerdown',e=>{if(!$('ctxMenu').contains(e.target))hi
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.40';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.41';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);

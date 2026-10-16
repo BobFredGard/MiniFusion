@@ -511,9 +511,16 @@ svg.addEventListener('pointerdown',e=>{
     skCoinA=null;afterEdit();return;
   }
   if(skTool==='fillet'||skTool==='chamfer'){
-    // Congé / chanfrein : 2 clics sur 2 lignes en coin (même geste que coïncidence).
+    // Congé / chanfrein : 2 clics sur 2 lignes en coin (même geste que coïncidence),
+    // ou 1 clic sur le COIN (point commun à 2 lignes). Tous les coins traités pendant la
+    // même passe d'outil partagent UNE cote (les suivants : contrainte « égal »).
     const isF=skTool==='fillet';
-    const ent=nearestEntity(sk,wx,wy,SK_PICKX,false);
+    if(!skCornA){
+      const cp=nearestPoint(sk,wx,wy,SK_SNAP);
+      const ls=cp?(sk.entities||[]).filter(e=>e&&e.t==='line'&&!e.construction&&(e.p1===cp||e.p2===cp)):[];
+      if(ls.length===2){skCornA={tool:skTool,id:ls[0].id};skCornerPick=ls[1];}
+    }
+    const ent=skCornerPick||nearestEntity(sk,wx,wy,SK_PICKX,false);skCornerPick=null;
     if(!ent||ent.t!=='line'){skStatus((isF?'Congé ⦾':'Chanfrein ◣')+' : cliquez une ligne droite.');return;}
     if(!skCornA||skCornA.tool!==skTool){skCornA={tool:skTool,id:ent.id};skStatus((isF?'Congé ⦾ : 1ʳᵉ arête ✓ — cliquez la 2ᵉ (coin commun).':'Chanfrein ◣ : 1ʳᵉ arête ✓ — cliquez la 2ᵉ (coin commun).'));drawSketch2D();return;}
     if(ent.id===skCornA.id){skStatus('Même ligne — cliquez une autre ligne.');return;}
@@ -525,8 +532,9 @@ svg.addEventListener('pointerdown',e=>{
     const r=isF?skFilletCorner(sk,skCornA.id,ent.id,Math.min(skFilletR,cap)):skChamferCorner(sk,skCornA.id,ent.id,Math.min(skChamferD,cap));
     skCornA=null;
     if(!r.ok){skUndoStack.pop();skUndoBtn();skStatus(r.msg);drawSketch2D();return;}
+    const linked=skCornerLink(sk,isF,r);
     afterEdit();
-    skStatus(r.msg+(isF?' — R modifiable (double-clic la cote).':' — retrait modifiable (double-clic la cote).'));
+    skStatus(r.msg+(linked?' — lié au 1er (une seule cote pilote tous les coins de la passe ; Échap = nouvelle passe).':(isF?' — R modifiable (double-clic la cote) ; les coins suivants suivront cette cote.':' — retrait modifiable (double-clic la cote) ; les coins suivants suivront cette cote.')));
     return;
   }
   if(skTool==='project'){
@@ -907,6 +915,7 @@ function skEscapeToSelect(){
   if(skEdit){drawSketch2D();renderSkPanel();}
 }
 function skCancelDraft(){
+  skFilletSess=null;skCornerPick=null; // nouvelle passe de congés : nouvelle cote
   if(skDimPlace&&skEdit){skEdit.dims=skEdit.dims.filter(x=>x.id!==skDimPlace.id);skDimPlace=null;} // Échap pendant le placement annule la cote
   skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skPendPt=null;skCoinA=null;skCornA=null;skOffArm=null;skDraft=null;skDown=null;skDrag=null;skDragEnt=null;skBox=null;skDyn=null;skDimDrag=null;skPan=null;skInfer=null;skMsg='';skDimLine=null;skDimRef=null;skProjectHover=null;hideSkCtx();if(skEdit){cleanupSk(skEdit);drawSketch2D();renderSkPanel();}}
 function skMinLen(){
@@ -917,6 +926,17 @@ function skMinLen(){
 function skMulti(e){
   // multi-sélection / rectangle par le centre / cote paire : Ctrl (Cmd sous macOS) — plus Shift
   return !!(e&&(e.ctrlKey||e.metaKey));
+}
+let skFilletSess=null,skCornerPick=null;
+function skCornerLink(sk,isF,r){
+  // 2026-10-16-002 (comme Fusion) : plusieurs coins congés dans la même passe → UNE seule
+  // cote pilote ; les suivants perdent leur cote propre et reçoivent « égal » au 1er.
+  const newId=isF?r.arcId:r.segId,tool=isF?'fillet':'chamfer';if(!newId)return false;
+  const S=skFilletSess,first=(S&&S.sk===sk.id&&S.tool===tool)?entById(sk,S.id):null;
+  if(!first){skFilletSess={sk:sk.id,tool,id:newId};return false;}
+  sk.dims=(sk.dims||[]).filter(d=>!((isF&&d.type==='radius'&&d.ent===newId)||(!isF&&d.type==='length'&&d.line===newId)));
+  sk.constraints.push({id:skNewEid(sk),type:'equal',a:S.id,b:newId});
+  return true;
 }
 function skNiceVal(v){
   // valeur ronde ≤ v dans la série 1-2-5 (0,1 · 0,2 · 0,5 · 1 · 2 · 5 · 10…)
@@ -1018,6 +1038,9 @@ function showSkCtx(x,y){
     add('📌 Fixe',()=>applyCon('fix')); has=true;
   }
   // point + ligne
+  if(lines.length>2){ // 2026-10-16-002 : congé sur tous les coins des lignes sélectionnées, une seule cote R
+    add('⦾ Congé sur tous les coins (une seule cote R)',()=>skApplyFilletSel()); has=true;
+  }
   if(pts.length===1 && lines.length===1){
     add('📏 Distance point–ligne',()=>{
       const p=skEdit.points[pts[0]], l=lines[0], A=skEdit.points[l.p1], B=skEdit.points[l.p2];

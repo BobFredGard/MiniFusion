@@ -566,7 +566,7 @@ function closeSketch(save){
   // la fonction modifiée et celles qui suivent ; sans rebuild de sortie, un verrou posé
   // à l'ouverture laisserait l'arbre bloqué.
   if(skEdit)tlEditUnlock();
-  if(save&&skEdit){solveSketch(skEdit);cleanupSk(skEdit);repSyncForSketch(skEdit.id);markDirty();rebuild();projRefreshRerun(0);sel={kind:'sketch',id:skEdit.id};renderTree();renderProps();}
+  if(save&&skEdit){try{parApplyAll();}catch(e){}solveSketch(skEdit);cleanupSk(skEdit);repSyncForSketch(skEdit.id);markDirty();rebuild();projRefreshRerun(0);sel={kind:'sketch',id:skEdit.id};renderTree();renderProps();}
   else if(skEdit){markDirty();try{rebuild();}catch(e){}renderTree();renderProps();}
   skEdit=null;skSel=null;skSelX=[];skChain=null;skArcC=null;skArcPa=null;skDraft=null;skDown=null;skDrag=null;skDimDrag=null;skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
   // Arborescence re-dépliée à la sortie, sauf si l'état antérieur était
@@ -1376,7 +1376,14 @@ function sklsCollect(sk,out,B){
   for(let gi=g0;gi<out.length;gi++)out[gi]*=SK_GEO_W;
   // ── ancrage doux : les rayons libres ne dérivent que si une vraie contrainte les tire (equal, tangent2) ──
   if(B&&B.rad){
-    (B.rad||[]).forEach(eid=>{const e=entById(sk,eid);if(e&&B.r0&&B.r0[eid]!=null)push((e.r-B.r0[eid])*1.0);});
+    // 2026-10-16-002 : pas d'ancrage pour un rayon « égal » à un rayon COTÉ (congés multi-coins :
+    // une seule cote R) — l'ancre retenait les suivants (écart ~1e-5 sur « égal »).
+    const dimR=new Set((sk.dims||[]).filter(d=>!d.ref&&(d.type==='radius'||d.type==='diameter')).map(d=>d.ent));
+    const driven=new Set();let grow=true;
+    while(grow){grow=false;(sk.constraints||[]).forEach(c=>{if(c.type!=='equal')return;
+      const a=dimR.has(c.a)||driven.has(c.a),b=dimR.has(c.b)||driven.has(c.b);
+      if(a&&!b&&!driven.has(c.b)){driven.add(c.b);grow=true;}if(b&&!a&&!driven.has(c.a)){driven.add(c.a);grow=true;}});}
+    (B.rad||[]).forEach(eid=>{if(driven.has(eid))return;const e=entById(sk,eid);if(e&&B.r0&&B.r0[eid]!=null)push((e.r-B.r0[eid])*1.0);});
   }
   return out;
 }
@@ -1816,6 +1823,14 @@ function skSharedCorner(sk,idA,idB){
   if(joint)return{error:'Coin partagé avec une autre entité — congé/chanfrein impossible ici.'};
   return{pid,A,B};
 }
+function skKeepVirtualSharp(sk,pid,idA,idB){
+  // 2026-10-16-002 : le coin rogné par un congé / chanfrein était RÉFÉRENCÉ (accroché à
+  // l'origine, coté…) → il reste un COIN VIRTUEL, sur les 2 droites : l'esquisse garde
+  // son ancrage et ses cotes au coin (comme Fusion).
+  const used=(sk.constraints||[]).some(c=>c&&(c.p===pid||c.a===pid||c.b===pid))||(sk.dims||[]).some(d=>d&&(d.a===pid||d.b===pid||d.p===pid));
+  if(!used)return;
+  [idA,idB].forEach(l=>{if(!(sk.constraints||[]).some(c=>c.type==='online'&&c.p===pid&&c.line===l))sk.constraints.push({id:skNewEid(sk),type:'online',p:pid,line:l});});
+}
 function skKeepOverallDims(sk,ids){
   // les côtés rognés ne sont plus symétriques en SEGMENT (un seul bout rogné) : leur
   // symétrie devient une symétrie de DROITES (rectangle par le centre + congés).
@@ -1852,6 +1867,7 @@ function skFilletCorner(sk,idA,idB,r){
   const g=filletCornerGeom(Ao,V,Bo,r);
   if(!g.ok)return{ok:false,msg:'Congé : '+g.warn+(g.warn.indexOf('place')>=0?' — essayez un rayon plus petit.':'.')};
   skKeepOverallDims(sk,[sc.A.id,sc.B.id]); // cotes hors-tout conservées
+  skKeepVirtualSharp(sk,sc.pid,sc.A.id,sc.B.id); // coin référencé → coin virtuel
   const capped=g.rEff<r-1e-6;
   const C=filletCenterFor(g.T1,g.T2,V,g.C1,g.C2);
   const idT1=addPoint(sk,g.T1.x,g.T1.y),idT2=addPoint(sk,g.T2.x,g.T2.y),idC=addPoint(sk,C.x,C.y);
@@ -1889,6 +1905,7 @@ function skChamferCorner(sk,idA,idB,d){
   const P1={x:V.x+(Ao.x-V.x)/lA*dd,y:V.y+(Ao.y-V.y)/lA*dd};
   const P2={x:V.x+(Bo.x-V.x)/lB*dd,y:V.y+(Bo.y-V.y)/lB*dd};
   skKeepOverallDims(sk,[sc.A.id,sc.B.id]); // cotes hors-tout conservées
+  skKeepVirtualSharp(sk,sc.pid,sc.A.id,sc.B.id);
   const idP1=addPoint(sk,P1.x,P1.y),idP2=addPoint(sk,P2.x,P2.y);
   if(sc.A.p1===sc.pid)sc.A.p1=idP1;else sc.A.p2=idP1;
   if(sc.B.p1===sc.pid)sc.B.p1=idP2;else sc.B.p2=idP2;
@@ -1900,12 +1917,18 @@ function skChamferCorner(sk,idA,idB,d){
 function skApplyFilletSel(){
   // Depuis le menu contextuel : 2 lignes sélectionnées → congé au rayon courant.
   if(!skEdit)return;const sk=skEdit;
-  const ls=skSelectedEnts().filter(e=>e.t==='line');
-  if(ls.length!==2){skStatus('Congé : sélectionnez exactement 2 lignes.');return;}
+  // 2026-10-16-002 : 2 lignes OU plus (tous leurs coins communs) — UNE cote R pilote tous les congés
+  const ls=skSelectedEnts().filter(e=>e.t==='line'&&!e.construction);
+  const pairs=[];for(let i=0;i<ls.length;i++)for(let j=i+1;j<ls.length;j++){const a=ls[i],b=ls[j];if(a.p1===b.p1||a.p1===b.p2||a.p2===b.p1||a.p2===b.p2)pairs.push([a,b]);}
+  if(!pairs.length){skStatus('Congé : sélectionnez des lignes qui forment un coin (2 ou plus).');return;}
   skPushUndo();
-  const r=skFilletCorner(sk,ls[0].id,ls[1].id,Math.min(skFilletR,skNiceVal(0.2*Math.min(lineLen(sk,ls[0]),lineLen(sk,ls[1]))))); // proportionné
-  if(!r.ok){skUndoStack.pop();skUndoBtn();skStatus(r.msg);drawSketch2D();return;}
-  afterEdit();skStatus(r.msg+' — R modifiable (double-clic la cote).');
+  const minL=Math.min(...ls.map(l=>lineLen(sk,l)));
+  const R=Math.min(skFilletR,skNiceVal(0.2*minL)); // proportionné
+  skFilletSess=null;let n=0,last=null;
+  pairs.forEach(([a,b])=>{const r=skFilletCorner(sk,a.id,b.id,R);if(r.ok){skCornerLink(sk,true,r);n++;}last=r;});
+  skFilletSess=null;
+  if(!n){skUndoStack.pop();skUndoBtn();skStatus(last&&last.msg||'Congé impossible.');drawSketch2D();return;}
+  afterEdit();skStatus(n+' congé(s) R'+R+' — une seule cote pilote (double-clic pour la modifier).');
 }
 function skApplyChamferSel(){
   // Depuis le menu contextuel : 2 lignes sélectionnées → chanfrein au retrait courant.
@@ -2647,6 +2670,7 @@ function hitDimLabel(sk,px,py){ // px,py en pixels écran SVG → id de cote ou 
   return null;
 }
 function dimText(x,y,str,id){ // étiquette horizontale avec halo sombre (Ø/R)
+  str=parDecor(id,str); // nom= / ƒx
   const[ax,ay]=w2s(x,y);
   const t=skEl('text',{x:ax,y:ay-8,fill:'#30d158','font-size':13,'font-weight':'bold',stroke:'#101012','stroke-width':3,'paint-order':'stroke',style:'cursor:move;pointer-events:all',title:'Glisser pour déplacer · double-clic pour modifier'});
   t.textContent=str;
@@ -2654,6 +2678,7 @@ function dimText(x,y,str,id){ // étiquette horizontale avec halo sombre (Ø/R)
   return t;
 }
 function dimTextOnLine(S,str,id){ // étiquette posée SUR la ligne de cote, alignée avec elle (comme Fusion)
+  str=parDecor(id,str); // nom= / ƒx
   const mx=(S.a.x+S.b.x)/2,my=(S.a.y+S.b.y)/2;
   const[ax,ay]=w2s(S.a.x,S.a.y),[bx,by]=w2s(S.b.x,S.b.y);
   const[sx,sy]=w2s(mx,my);
@@ -2802,18 +2827,21 @@ function editDim(id){
     skStatus('Cote redevenue PILOTANTE.');drawSketch2D();
   }
   const pos=dimLabelPos(sk,d); if(!pos) {
-    const v=prompt(d.type==='angle'?'Nouvel angle (degrés, 1..179) :':'Nouvelle valeur (mm) :', d.type==='angle'?(d.value*180/Math.PI).toFixed(1):d.value);
+    const v=prompt(d.type==='angle'?'Nouvel angle (degrés) — « nom = valeur » pour la nommer :':'Nouvelle valeur (mm) — « nom = valeur » pour la nommer, ou une expression :', parDimInputText(d));
     if(v===null) return;
-    const f=parseFloat(String(v).replace(',','.'));
-    if(!isFinite(f)||f<=0||(d.type==='angle'&&f>=180)){alert('Valeur invalide.');return;}
-    skPushUndo(); d.value=d.type==='angle'?f*Math.PI/180:f; solveSketch(sk);drawSketch2D();renderSkPanel(); return;
+    skPushUndo();
+    const rr=parDimCommit(sk,d,v);
+    if(!rr.ok){skUndoStack.pop();skUndoBtn();alert(rr.msg);return;}
+    d.value=rr.nv; parApplyAll(); solveSketch(sk);drawSketch2D();renderSkPanel(); return;
   }
   const [sx,sy]=w2s(pos.x,pos.y);
   const r=svg.getBoundingClientRect();
   const inp=document.createElement('input');
   inp.type='text'; inp.inputMode='decimal';
-  inp.value=d.type==='angle'?(d.value*180/Math.PI).toFixed(2):String(+(+(d.dia?2*d.value:d.value)).toFixed(4));
-  inp.style.cssText=`position:absolute;left:${r.left+sx-40}px;top:${r.top+sy-14}px;width:80px;height:22px;font-size:12px;text-align:center;border:1px solid #0a84ff;border-radius:6px;background:#1e1e1e;color:#fff;z-index:50`;
+  inp.value=parDimInputText(d); // « nom = expression » si nommée / ƒx
+  inp.title='Valeur, expression (ƒx), ou « nom = valeur » pour nommer la cote';
+  const wIn=Math.max(80,Math.min(260,8*inp.value.length+24));
+  inp.style.cssText=`position:absolute;left:${r.left+sx-wIn/2}px;top:${r.top+sy-14}px;width:${wIn}px;height:22px;font-size:12px;text-align:center;border:1px solid #0a84ff;border-radius:6px;background:#1e1e1e;color:#fff;z-index:50`;
   document.body.appendChild(inp);
   // 2026-10-16-001 : focus DIFFÉRÉ + blur ignoré 300 ms — le clic qui pose la cote
   // retirait le focus et validait aussitôt la saisie (« pas éditable de suite »).
@@ -2824,12 +2852,14 @@ function editDim(id){
     if(done) return; done=true;
     inp.remove();
     if(cancel) return;
-    const f=parseFloat(String(inp.value).replace(',','.'));
-    if(!isFinite(f)||f<=0||(d.type==='angle'&&f>=180)){ skStatus('Valeur invalide.'); return; }
+    // 2026-10-16-002 : « nom = valeur », expression ƒx (noms d'autres cotes / paramètres)
     skPushUndo();
-    const nv=d.type==='angle'?f*Math.PI/180:(d.dia?f/2:f);
+    const rr=parDimCommit(sk,d,inp.value);
+    if(!rr.ok){ skUndoStack.pop();skUndoBtn(); skStatus(rr.msg); drawSketch2D(); return; }
+    const nv=rr.nv;
     skFirstDimScale(sk,d,nv); // 11. esquisse encore libre : toute la forme suit, à l'échelle
-    d.value=nv; solveSketch(sk);drawSketch2D();renderSkPanel();
+    d.value=nv; parApplyAll(); solveSketch(sk);drawSketch2D();renderSkPanel();
+    if(d.name)skStatus('Cote nommée « '+d.name+' » — utilisable dans les autres cotes (ƒx).');
   };
   inp.addEventListener('keydown',e=>{
     if(e.key==='Enter'){ commit(false); }

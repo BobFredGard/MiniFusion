@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**243 versions**, de `2026-09-28b` à `2026-10-16-001` — la plus récente en bas,
+**244 versions**, de `2026-09-28b` à `2026-10-16-002` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3812,3 +3812,19 @@ Tests : `test_fao_taraudage` étendu (lamage fraisé à la fraise Ø6, G3 au ray
 - **Icône Centre de perçage** : cible + foret, en orange.
 - **3D : arêtes rentrantes visibles** (épaulements, fonds de poche) : les faces des corps sont légèrement reculées (polygonOffset) pour que le trait d'arête ne soit plus masqué dans le creux.
 Nouveau test `test_esquisse_regles` (couleurs/DDL, référence, priorité H/V, centre de congé glissé, rectangle par le centre + 4 congés, axe et Ø, mise à l'échelle, chaîne, Échap, ligne de 0,2 mm, hors-tout). Migration : `APP_VER` → `2026-10-16-001` ; badge **V0.1.39 → V0.1.40**.
+
+### `2026-10-16-002`
+
+**Paramètres (cotes nommées, expressions ƒx) et congés multi-coins pilotés par une seule cote, comme Fusion 360 (retours : « une seule cote est créée et elle pilote les autres » ; « dd1 = valeur… utiliser dd1 comme paramètre pour d'autres cotes » ; « je dois pouvoir les nommer moi-même »).**
+
+- **Cote nommée** : dans la saisie d'une cote, « Longueur = 80 » lui donne le nom choisi par l'utilisateur ; l'étiquette affiche « Longueur=80.00 ».
+- **Expressions ƒx** : une cote peut valoir « Longueur/2 », « (L - 2*Rc)/3 », « max(a; b) », « sqrt(x) », « sin(30) » (degrés)… ; étiquette « ƒx 40.00 ». Décimale « 12,5 » acceptée. Unités = celles affichées (mm, Ø, degrés).
+- **Propagation** : modifier une cote nommée met à jour toutes les cotes qui en dépendent, dans TOUTES les esquisses, puis le modèle (aussi à la fermeture de l'esquisse).
+- **Garde-fous** : référence circulaire, nom inconnu, nom déjà pris ou réservé → refus explicite, la cote garde sa valeur ; une expression devenue invalide (cote source supprimée) garde sa dernière valeur et s'affiche avec ⚠.
+- **Renommage** : renommer une cote met à jour toutes les expressions qui l'utilisent.
+- **Fenêtre « ƒx Paramètres »** (bandeau principal et barre d'esquisse) : paramètres libres (+ Paramètre, nom, expression, suppression) et cotes nommées / ƒx de toutes les esquisses, modifiables en place.
+- **Enregistrés dans le fichier** (`params`, `name`, `expr` des cotes).
+- **Congés multi-coins** : tous les coins traités pendant la même passe de l'outil Congé (ou Chanfrein) partagent UNE cote ; les suivants reçoivent « égal » au 1er. Clic direct sur un COIN (point commun à 2 lignes) = congé. Menu contextuel sur 3 lignes ou plus : « Congé sur tous les coins (une seule cote R) ». Échap = nouvelle passe, nouvelle cote.
+- **Coin virtuel** : un coin référencé (accroché à l'origine, coté…) rogné par un congé / chanfrein reste un point sur les 2 droites → l'esquisse garde son ancrage (0 DDL).
+- Solveur : plus d'ancrage doux sur un rayon « égal » à un rayon coté (il retenait les congés suivants).
+Nouveau test `test_parametres` (évaluateur, nommage, ƒx, propagation entre esquisses, paramètres libres, cycles, renommage, fichier, congés multi-coins à cote unique, coin virtuel). Migration : `APP_VER` → `2026-10-16-002` ; badge **V0.1.40 → V0.1.41**.
