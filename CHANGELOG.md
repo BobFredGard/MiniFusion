@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**242 versions**, de `2026-09-28b` à `2026-10-15-014` — la plus récente en bas,
+**243 versions**, de `2026-09-28b` à `2026-10-16-001` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3792,3 +3792,23 @@ Nouveau test `test_fao_taraudage` (noyau réel : gamme complète, débourrage au
 - **Gamme** : les lamages sont désormais FRAISÉS (pointage → perçages → lamages fraisés → taraudages) ; libellé « Lamage fraisé Ø11 (2) ».
 - **Taraudage** : dans l'aperçu et l'estimation, le taraud ressort en AVANCE (même F = pas × S, rotation inversée), plus en rapide — le G-code l'avait déjà juste (CYCLE84 SST = SST1, G84 rigide).
 Tests : `test_fao_taraudage` étendu (lamage fraisé à la fraise Ø6, G3 au rayon 2,5, fond dressé Z33,6, entrée en F entrée, 2 anneaux pour Ø30/Ø10, remontée du taraud en avance, SST = SST1). Migration : `APP_VER` → `2026-10-15-014` ; badge **V0.1.38 → V0.1.39**.
+
+### `2026-10-16-001`
+
+**Esquisse : règles de contrainte façon Fusion (liste en 13 points), cotes hors-tout conservées par les congés, tangences qui ne se retournent plus ; visualisation des arêtes rentrantes ; Ctrl/Cmd au lieu de Shift.**
+
+- **Couleurs par analyse de RANG** (jacobien numérique + échelonnement) : entité libre = bleue, entité entièrement déterminée = blanche, cotes vertes. Le compteur de DDL est le vrai (plus de comptage d'équations). Au point de tangence d'un congé, « point sur l'arc » et « tangence » sont dégénérés au 1er ordre : l'analyse ajoute l'équation du pied du centre (sinon +2 DDL fantômes par congé et une esquisse avec congés ne passait jamais en blanc).
+- **Cote en sur-contrainte → cote de RÉFÉRENCE** : grise, entre parenthèses, elle mesure sans piloter. Rayons de congé jamais pris pour référence. Une référence qui n'est plus en trop redevient pilotante à l'ouverture ; double-clic dessus = la rendre pilotante si possible.
+- **Priorité** : H/V/tangence pèsent ×300 dans le solveur → en cas de conflit, ce sont les cotes qui cèdent.
+- **Saisie immédiate** de la valeur à la création d'une cote ; double-clic sur le texte, la ligne de cote ou les flèches = édition ; lignes d'attache prolongées quand la cote sort du segment.
+- **Axe de rotation** (clic droit sur une ligne) : trait mixte, hors profil ; cotes depuis l'axe en Ø ; axe par défaut de la révolution.
+- **1re cote d'une esquisse à main levée** : toute l'esquisse est mise à l'échelle (proportions gardées) ; congé / chanfrein par défaut proportionné (valeur ronde ≤ 20 % de la plus courte ligne).
+- **Ligne en chaîne** (le 2e clic crée la ligne et arme la suivante), **Cercle** reste actif ; Échap termine.
+- **Congés / chanfreins sur un rectangle coté** : la cote de longueur devient une cote d'ENTRAXE entre les côtés voisins → la valeur hors-tout est gardée (90 reste 90, congés compris).
+- **Rectangle par le centre** : symétrie de DROITES (plus de segments entiers, incompatible avec un congé qui rogne un seul bout) + bouts d'axes sur les côtés → 90 × 64 + 4 congés = 0 DDL, tout blanc. Migration à l'ouverture pour les esquisses déjà congées.
+- **Tangence orientée** : le côté du centre est relevé sur chaque état résolu puis imposé ; glisser le centre d'un congé ne retourne plus l'arc en grand cercle.
+- **Lignes / cercles < 0,5 mm** : seuil de création en pixels écran (3 px), plus en mm.
+- **Ctrl (Cmd sous macOS)** remplace Shift pour la multi-sélection, le rectangle par le centre et la cote paire ; Cmd+Z / Cmd+Y en esquisse.
+- **Icône Centre de perçage** : cible + foret, en orange.
+- **3D : arêtes rentrantes visibles** (épaulements, fonds de poche) : les faces des corps sont légèrement reculées (polygonOffset) pour que le trait d'arête ne soit plus masqué dans le creux.
+Nouveau test `test_esquisse_regles` (couleurs/DDL, référence, priorité H/V, centre de congé glissé, rectangle par le centre + 4 congés, axe et Ø, mise à l'échelle, chaîne, Échap, ligne de 0,2 mm, hors-tout). Migration : `APP_VER` → `2026-10-16-001` ; badge **V0.1.39 → V0.1.40**.

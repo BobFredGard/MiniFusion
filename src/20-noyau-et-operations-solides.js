@@ -1358,6 +1358,11 @@ function buildEdgeOverlay(){
     try{old.traverse(o=>{if(o&&o.geometry&&o.geometry.dispose)o.geometry.dispose();});}catch(e){}
   }
   if(edgeMode!=='on')return;
+  // 2026-10-16-001 : arêtes RENTRANTES (épaulement, fond de poche) invisibles — dans le creux,
+  // les 2 faces voisines sont à la même profondeur que le trait et le masquent. On recule
+  // légèrement les FACES des corps (polygonOffset : ne touche que les polygones, pas les traits).
+  try{(typeof bodies!=='undefined'?bodies:[]).forEach(b=>{const m=b&&b.mesh&&b.mesh.material;
+    (Array.isArray(m)?m:[m]).forEach(x=>{if(x&&!x.polygonOffset){x.polygonOffset=true;x.polygonOffsetFactor=1;x.polygonOffsetUnits=1;x.needsUpdate=true;}});});}catch(e){}
   const data=edgeOverlayData();
   if(!data.length)return;
   // UN SEUL set de sommets, DEUX passes (les arêtes derrière le solide s'atténuent) :

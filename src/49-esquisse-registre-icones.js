@@ -19,7 +19,8 @@ const SK_ICONS={
   circle:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/>',
   arc:'<path d="M20 18A12 12 0 0 0 8 6"/><path d="M8 18h12M8 18V6" stroke-dasharray="1.6 2.4" stroke-width="1.3"/><circle cx="8" cy="18" r="1.6" fill="currentColor" stroke="none"/>',
   cpoint:'<circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/><path d="M12 3.5v4.5M12 16v4.5M3.5 12H8M16 12h4.5"/>',
-  hpoint:'<circle cx="12" cy="12" r="6.5" stroke-width="2"/><path d="M12 2.5v19M2.5 12h19" stroke-width="1.3"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>',
+  // centre de perçage : CIBLE + FORET dont la pointe vise le centre (orange dans la barre)
+  hpoint:'<circle cx="12" cy="17" r="5.2" stroke-width="1.6"/><path d="M12 10.5v13M5.5 17h13" stroke-width="1"/><path d="M10.2 1.5h3.6v3.2h-3.6z" fill="currentColor" stroke="none"/><path d="M10 4.7h4v7l-2 4.3-2-4.3z" stroke-width="1.4"/><path d="M10 6.6l4 1.4M10 8.9l4 1.4" stroke-width="1.1"/>',
   project:'<path d="M12 2.8l6 2.6v5.4l-6 2.6-6-2.6V5.4z"/><path d="M6 5.4l6 2.6 6-2.6M12 8v5.4" stroke-width="1.3"/><path d="M12 15.5v3" stroke-dasharray="1.5 1.8"/><path d="M4 21h16"/>',
   dim:'<path d="M4 5v10M20 5v10"/><path d="M4 10h16"/><path d="M7.5 7.5L4 10l3.5 2.5M16.5 7.5L20 10l-3.5 2.5"/><path d="M9 19h6" stroke-width="2.4"/>',
   fillet:'<path d="M4 21v-8a9 9 0 0 1 9-9h8" stroke-width="2.2"/><path d="M4 9V4h5" stroke-dasharray="1.6 2.2" stroke-width="1.3"/><circle cx="13" cy="13" r="1.4" fill="currentColor" stroke="none"/>',
@@ -82,6 +83,7 @@ const SK_DIM_IC={length:'length',distance:'distance',diameter:'diameter',radius:
 function skConDof(c){
   if(!c)return 0;
   if(c.type==='fix')return c.ent?3:2;
+  if(c.type==='symmetric'&&c.inf)return 2; // symétrie de droites
   const r=SK_CON[c.type];
   return r?r.dof:1;
 }

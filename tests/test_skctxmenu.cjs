@@ -23,7 +23,7 @@ const {loadApp}=require('./appvm.cjs');
     'A(!!skEdit,"esquisse ouverte");',
     'const C=(wx,wy)=>{const r=svg.getBoundingClientRect();const p=w2s(wx,wy);return [r.left+p[0],r.top+p[1]];};',
     'const ev=(type,x,y,extra)=>{const r=Object.assign({type:type,button:0,buttons:0,shiftKey:false,ctrlKey:false,altKey:false,detail:0,preventDefault:function(){},stopPropagation:function(){}},extra||{});r.clientX=x;r.clientY=y;return r;};',
-    'const downL=(x,y,sh)=>svg.dispatchEvent(ev("pointerdown",x,y,{button:0,shiftKey:!!sh,detail:1}));',
+    'const downL=(x,y,sh)=>svg.dispatchEvent(ev("pointerdown",x,y,{button:0,ctrlKey:!!sh,detail:1}));',
     'const upL=(x,y)=>svg.dispatchEvent(ev("pointerup",x,y,{button:0}));',
     'const clickL=(x,y)=>svg.dispatchEvent(ev("click",x,y,{button:0}));',
     'const rightSeq=(x,y)=>{svg.dispatchEvent(ev("pointerdown",x,y,{button:2}));',

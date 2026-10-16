@@ -388,7 +388,8 @@ svg.addEventListener('dblclick',e=>{
   const sk=skEdit;
   const r0=svg.getBoundingClientRect();
   const px=e.clientX-r0.left,py=e.clientY-r0.top;
-  const dl=hitDimLabel(sk,px,py); // étiquette seule → édition (pas la ligne fléchée)
+  // 2026-10-16-001 : double-clic sur le texte, la ligne de cote ou ses flèches → édition
+  const dl=hitDimLabel(sk,px,py)||hitDimLine(sk,px,py);
   if(dl){editDim(dl);return;}
   const[wx,wy]=evXY(e);
   const ent=nearestEntity(sk,wx,wy,SK_PT);if(!ent)return;
@@ -416,7 +417,7 @@ svg.addEventListener('pointerdown',e=>{
       renderSkPanel();return;}
     const pid=nearestPoint(sk,wx,wy,SK_PT);
     if(pid){
-      if(e.shiftKey){skSelX.push({kind:'point',pid});renderSkPanel();drawSketch2D();return;}
+      if(skMulti(e)){skSelX.push({kind:'point',pid});renderSkPanel();drawSketch2D();return;}
       skSel={kind:'point',pid};skSelX=[];
       // point de jonction (partagé par 2+ entités ou coïncident) → glisser toute la composante en corps rigide
       const nShared=(sk.entities||[]).reduce((n,e)=>n+(skEntPids(e).indexOf(pid)>=0?1:0),0);
@@ -437,7 +438,7 @@ svg.addEventListener('pointerdown',e=>{
       renderSkPanel();drawSketch2D();return;}}
     const ent=nearestEntity(sk,wx,wy,SK_PICK);
     if(ent){
-      if(e.shiftKey){if(!(skSel&&skSel.kind==='ent'&&skSel.id===ent.id))skSelX.push({kind:'ent',id:ent.id});}
+      if(skMulti(e)){if(!(skSel&&skSel.kind==='ent'&&skSel.id===ent.id))skSelX.push({kind:'ent',id:ent.id});}
       else{skSel={kind:'ent',id:ent.id};skSelX=[];}
       // déplacement en corps rigide : toute la composante connexe (points partagés,
       // coïncidences, tangences, symétries, parallélismes) suit le membre saisi
@@ -447,8 +448,8 @@ svg.addEventListener('pointerdown',e=>{
       renderSkPanel();drawSketch2D();return;
     }
     // clic sur le vide → boîte de sélection (gauche→droite : dedans · droite→gauche : croisé)
-    if(!e.shiftKey){skSel=null;skSelX=[];renderSkPanel();}
-    skBox={x0:wx,y0:wy,x1:wx,y1:wy,add:e.shiftKey};
+    if(!skMulti(e)){skSel=null;skSelX=[];renderSkPanel();}
+    skBox={x0:wx,y0:wy,x1:wx,y1:wy,add:skMulti(e)};
     drawSketch2D();return;
   }
   if(skTool==='line'){
@@ -465,7 +466,7 @@ svg.addEventListener('pointerdown',e=>{
   if(skTool==='rect'||skTool==='circle'||skTool==='slot'){
     if(skDown) return;
     const pid=snapNewPoint(sk,wx,wy);const S=sk.points[pid];
-    skDown={pid,x:S.x,y:S.y,center:!!e.shiftKey&&skTool!=='circle'};return;
+    skDown={pid,x:S.x,y:S.y,center:skMulti(e)&&skTool!=='circle'};return;
   }
   if(skTool==='cpoint'){skPushUndo();const pid=snapNewPoint(sk,wx,wy);sk.entities.push({id:skNewEid(sk),t:'cpoint',p:pid});skAutoAttach(sk,pid,wx,wy);afterEdit();return;}
   // 2026-10-15-012 : CENTRE DE PERÇAGE — point dédié aux trous (fonction 3D « Perçage »),
@@ -499,7 +500,7 @@ svg.addEventListener('pointerdown',e=>{
       const id=skDimPlace.id;skDimPlace=null;
       skStatus('Cote posée.');drawSketch2D();renderSkPanel();editDim(id);return;
     }
-    dimClick(wx,wy,e.shiftKey);return;
+    dimClick(wx,wy,skMulti(e));return;
   }
   if(skTool==='coincident'){
     const pid=nearestPoint(sk,wx,wy,SK_SNAP);
@@ -517,7 +518,11 @@ svg.addEventListener('pointerdown',e=>{
     if(!skCornA||skCornA.tool!==skTool){skCornA={tool:skTool,id:ent.id};skStatus((isF?'Congé ⦾ : 1ʳᵉ arête ✓ — cliquez la 2ᵉ (coin commun).':'Chanfrein ◣ : 1ʳᵉ arête ✓ — cliquez la 2ᵉ (coin commun).'));drawSketch2D();return;}
     if(ent.id===skCornA.id){skStatus('Même ligne — cliquez une autre ligne.');return;}
     skPushUndo();
-    const r=isF?skFilletCorner(sk,skCornA.id,ent.id,skFilletR):skChamferCorner(sk,skCornA.id,ent.id,skChamferD);
+    // 2026-10-16-001 : rayon / retrait proportionnés à la géométrie (≤ 20 % de la plus
+    // courte des 2 lignes, valeur ronde) — un R5 sur une esquisse de 8 mm la déformait.
+    const lA=lineLen(sk,entById(sk,skCornA.id)),lB=lineLen(sk,ent);
+    const cap=skNiceVal(0.2*Math.min(lA,lB));
+    const r=isF?skFilletCorner(sk,skCornA.id,ent.id,Math.min(skFilletR,cap)):skChamferCorner(sk,skCornA.id,ent.id,Math.min(skChamferD,cap));
     skCornA=null;
     if(!r.ok){skUndoStack.pop();skUndoBtn();skStatus(r.msg);drawSketch2D();return;}
     afterEdit();
@@ -566,9 +571,9 @@ svg.addEventListener('pointerdown',e=>{
     skPushUndo();skStatus(trimEntity(sk,ent,wx,wy));afterEdit();return;
   }
   if(skTool==='offset'){
-    // Décalage : sélection (Shift = lot) PUIS clic du côté — la distance suit le curseur.
+    // Décalage : sélection (Ctrl/Cmd = lot) PUIS clic du côté — la distance suit le curseur.
     const sel=skSelectedEnts().filter(e=>(e.t==='line'||e.t==='circle'||e.t==='arc')&&!e.ref);
-    if(!sel.length){skStatus('Décalage ⇄ : sélectionnez d’abord 1+ lignes/cercles/arcs (Shift = lot).');return;}
+    if(!sel.length){skStatus('Décalage ⇄ : sélectionnez d’abord 1+ lignes/cercles/arcs (Ctrl/Cmd = lot).');return;}
     if(!skOffArm){skOffArm=true;skStatus('Décalage ⇄ : cliquez le CÔTÉ (distance = curseur, cotes créées pour ajuster). Échap annule.');drawSketch2D();return;}
     const D=skOffsetDistToSel(sk,sel,{x:wx,y:wy});
     skOffArm=false;
@@ -731,7 +736,7 @@ svg.addEventListener('pointerup',e=>{
       const hits=skBoxHits(w);
       if(w.add){hits.forEach(h=>{if(!skSelX.some(s=>s.kind===h.kind&&(s.id===h.id||s.pid===h.pid)))skSelX.push(h);});}
       else{skSel=null;skSelX=hits;}
-      skStatus(hits.length+' entité(s) sélectionnée(s) — Shift+clic pour ajouter.');
+      skStatus(hits.length+' entité(s) sélectionnée(s) — Ctrl/Cmd+clic pour ajouter.');
     }
     renderSkPanel();drawSketch2D();return;
   }
@@ -743,9 +748,9 @@ svg.addEventListener('pointerup',e=>{
     const gxp=e.clientX-(skDown.cx!=null?skDown.cx:e.clientX),gyp=e.clientY-(skDown.cy!=null?skDown.cy:e.clientY);
     const commit=!!skDown.clicked||Math.hypot(gxp,gyp)>5;
     let nl=null,finish=false;
-    if(commit&&d&&L>0.5){
+    if(commit&&d&&L>skMinLen()){
       nl=skCommitLine(sk,skDown.pid,d.snap,d.gx,d.gy,0);finish=true;
-    }else if(commit&&distRaw>0.5){
+    }else if(commit&&distRaw>skMinLen()){
       // clic à l'endroit (sans événement de mouvement intermédiaire)
       const s=findSnap(sk,wx,wy,skDown.pid);
       let ex=wx,ey=wy;
@@ -755,7 +760,17 @@ svg.addEventListener('pointerup',e=>{
       if(skDown.clicked||skDown.fromChain){skDown=null;skChain=null;skStatus('Point de départ annulé — recliquez pour recommencer.');finish=true;}
       else skStatus('Point de départ armé — déplacez puis 2e clic.');
     }
-    if(nl){skDown=null;skChain=null;skTool='select';document.querySelectorAll('#skToolbar .tool').forEach(x=>x.classList.toggle('on',x.dataset.tool==='select'));skStatus('Ligne créée — sélection (➤).');}
+    if(nl){
+      // 2026-10-16-001 : l'outil RESTE actif — le 2e clic crée la ligne ET pose le 1er
+      // point de la suivante (polyligne). Fin : refermer sur un point déjà relié,
+      // Échap ou clic droit.
+      const endPid=nl.p2,EP=sk.points[endPid];
+      const nUse=(sk.entities||[]).filter(x=>x&&(x.p1===endPid||x.p2===endPid||x.pa===endPid||x.pb===endPid)).length;
+      if(EP&&nUse<2){
+        skDown={pid:endPid,x:EP.x,y:EP.y,fromChain:true,clicked:true,cx:e.clientX,cy:e.clientY};skChain=null;
+        skStatus('Ligne créée — la suivante part de son extrémité (clic = ligne suivante · Échap / clic droit = fin).');
+      }else{skDown=null;skChain=null;skStatus('Contour refermé — cliquez un nouveau point de départ (Échap = fin).');}
+    }
     else if(finish&&!nl&&skDown===null){/* statut déjà posé */}
     solveSketch(sk);skDraft=null;skInfer=null;skSnapMk=null;cleanupSk(sk);drawSketch2D();renderSkPanel();return;
   }
@@ -765,12 +780,12 @@ svg.addEventListener('pointerup',e=>{
     let ax=skDown.x,ay=skDown.y;
     const center=!!skDown.center, cPid=skDown.pid;
     if(center){ax=2*ax-bx;ay=2*ay-by;}
-    if(!(Math.abs(bx-ax)>0.5&&Math.abs(by-ay)>0.5)){
+    if(!(Math.abs(bx-ax)>skMinLen()&&Math.abs(by-ay)>skMinLen())){
       skDraft=null;drawSketch2D();
       skStatus((skTool==='slot'?'Oblong':'Rectangle')+(center?' (depuis le centre)':'')+' : 1er point armé — déplacez puis 2e clic.');
       return;
     }
-    if(Math.abs(bx-ax)>0.5&&Math.abs(by-ay)>0.5){
+    if(Math.abs(bx-ax)>skMinLen()&&Math.abs(by-ay)>skMinLen()){
       skPushUndo();
       if(skTool==='slot'){
         const x0=Math.min(ax,bx),x1=Math.max(ax,bx),y0=Math.min(ay,by),y1=Math.max(ay,by);
@@ -798,7 +813,7 @@ svg.addEventListener('pointerup',e=>{
               {id:skNewEid(sk),type:'equal',a:aL.id,b:aR.id});
             try{
               const entraxe=Math.abs(xm1-xm0);
-              if(entraxe>0.5)sk.dims.push({id:skNewEid(sk),type:'length',line:lC.id,value:+entraxe.toFixed(2)});
+              if(entraxe>1e-4)sk.dims.push({id:skNewEid(sk),type:'length',line:lC.id,value:+entraxe.toFixed(2)});
               sk.dims.push({id:skNewEid(sk),type:'radius',ent:aL.id,value:+r.toFixed(2)});
             }catch(e){}
             if(center)sk.constraints.push({id:skNewEid(sk),type:'fix',p:cPid});
@@ -822,7 +837,7 @@ svg.addEventListener('pointerup',e=>{
               {id:skNewEid(sk),type:'equal',a:aB.id,b:aT.id});
             try{
               const entraxe=Math.abs(ym1-ym0);
-              if(entraxe>0.5)sk.dims.push({id:skNewEid(sk),type:'length',line:lA.id,value:+entraxe.toFixed(2)});
+              if(entraxe>1e-4)sk.dims.push({id:skNewEid(sk),type:'length',line:lA.id,value:+entraxe.toFixed(2)});
               sk.dims.push({id:skNewEid(sk),type:'radius',ent:aB.id,value:+r.toFixed(2)});
             }catch(e){}
             if(center)sk.constraints.push({id:skNewEid(sk),type:'fix',p:cPid});
@@ -852,13 +867,16 @@ svg.addEventListener('pointerup',e=>{
             {id:skNewEid(sk),type:'h',line:axisH.id},
             {id:skNewEid(sk),type:'v',line:axisV.id},
             {id:skNewEid(sk),type:'fix',p:cPid},
-            {id:skNewEid(sk),type:'symmetric',a:l4.id,b:l2.id,mid:axisV.id},
-            {id:skNewEid(sk),type:'symmetric',a:l1.id,b:l3.id,mid:axisH.id});
+            {id:skNewEid(sk),type:'symmetric',a:l4.id,b:l2.id,mid:axisV.id,inf:true},
+            {id:skNewEid(sk),type:'symmetric',a:l1.id,b:l3.id,mid:axisH.id,inf:true}, // droites : congés / chanfreins possibles
+            // bouts des axes sur les côtés : plus de longueur d'axe libre (2 DDL fantômes)
+            {id:skNewEid(sk),type:'online',p:pH,line:l2.id},
+            {id:skNewEid(sk),type:'online',p:pV,line:l3.id});
         }
         try{
           const w=Math.abs(bx-ax),h=Math.abs(by-ay);
-          if(w>0.5)sk.dims.push({id:skNewEid(sk),type:'length',line:l1.id,value:+w.toFixed(2),ox:0,oy:6});
-          if(h>0.5)sk.dims.push({id:skNewEid(sk),type:'length',line:l2.id,value:+h.toFixed(2),ox:6,oy:0});
+          if(w>1e-4)sk.dims.push({id:skNewEid(sk),type:'length',line:l1.id,value:+w.toFixed(4),ox:0,oy:6});
+          if(h>1e-4)sk.dims.push({id:skNewEid(sk),type:'length',line:l2.id,value:+h.toFixed(4),ox:6,oy:0});
         }catch(e){}
       }
     }
@@ -869,7 +887,7 @@ svg.addEventListener('pointerup',e=>{
     let bx=wx,by=wy;const s=findSnap(sk,wx,wy);
     if(s){bx=s.x;by=s.y;}else if($('skSnap').checked){bx=skSnapVal(bx);by=skSnapVal(by);}
     const r=Math.hypot(bx-skDown.x,by-skDown.y);
-    if(r<=0.5){skDraft=null;drawSketch2D();skStatus('Cercle : centre armé — déplacez puis 2e clic pour valider le Ø.');return;}
+    if(r<=skMinLen()){skDraft=null;drawSketch2D();skStatus('Cercle : centre armé — déplacez puis 2e clic pour valider le Ø.');return;}
     skPushUndo();
     const nc={id:skNewEid(sk),t:'circle',pc:skDown.pid,r};
     sk.entities.push(nc);
@@ -877,7 +895,7 @@ svg.addEventListener('pointerup',e=>{
     if(s&&s.kind==='point'&&s.pid&&s.pid!==nc.pc&&!(sk.constraints||[]).some(c=>c.type==='oncircle'&&c.p===s.pid&&c.ent===nc.id))
       sk.constraints.push({id:skNewEid(sk),type:'oncircle',p:s.pid,ent:nc.id}); // rayon posé sur un point → point sur cercle
     skDown=null;skDraft=null;afterEdit();
-    skTool='select';document.querySelectorAll('#skToolbar .tool').forEach(x=>x.classList.toggle('on',x.dataset.tool==='select'));skStatus('Cercle créé — sélection (➤).');return;
+    skStatus('Cercle créé — cliquez le centre du suivant (Échap = fin).');return; // 2026-10-16-001 : l'outil reste actif
   }
 });
 function skEscapeToSelect(){
@@ -891,6 +909,21 @@ function skEscapeToSelect(){
 function skCancelDraft(){
   if(skDimPlace&&skEdit){skEdit.dims=skEdit.dims.filter(x=>x.id!==skDimPlace.id);skDimPlace=null;} // Échap pendant le placement annule la cote
   skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skPendPt=null;skCoinA=null;skCornA=null;skOffArm=null;skDraft=null;skDown=null;skDrag=null;skDragEnt=null;skBox=null;skDyn=null;skDimDrag=null;skPan=null;skInfer=null;skMsg='';skDimLine=null;skDimRef=null;skProjectHover=null;hideSkCtx();if(skEdit){cleanupSk(skEdit);drawSketch2D();renderSkPanel();}}
+function skMinLen(){
+  // 2026-10-16-001 : longueur mini d'un tracé = 3 px ÉCRAN (et non 0,5 mm fixe) —
+  // zoomer permet de dessiner des lignes / cercles aussi petits que voulu.
+  return Math.max(1e-4,3/((typeof skView!=='undefined'&&skView.s)||1));
+}
+function skMulti(e){
+  // multi-sélection / rectangle par le centre / cote paire : Ctrl (Cmd sous macOS) — plus Shift
+  return !!(e&&(e.ctrlKey||e.metaKey));
+}
+function skNiceVal(v){
+  // valeur ronde ≤ v dans la série 1-2-5 (0,1 · 0,2 · 0,5 · 1 · 2 · 5 · 10…)
+  if(!(v>0))return 0.1;
+  const e=Math.pow(10,Math.floor(Math.log10(v)));
+  const m=v/e;return (m>=5?5:(m>=2?2:1))*e;
+}
 function hideSkCtx(){ const m=$('skCtxMenu'); if(m) m.style.display='none'; }
 function showSkCtx(x,y){
   if(!skEdit) return;
@@ -928,6 +961,7 @@ function showSkCtx(x,y){
   if(lines.length===1 && tot===1){
     add('📏 Longueur',()=>{ const e=lines[0]; skPushUndo(); skEdit.dims.push({id:skNewEid(skEdit),type:'length',line:e.id,value:+lineLen(skEdit,e).toFixed(2)}); afterEdit(); });
     add('─ Horizontal (H)',()=>applyCon('h')); add('│ Vertical (V)',()=>applyCon('v')); add('📌 Fixe',()=>applyCon('fix')); has=true;
+    {const L0=lines[0];add(L0.axis?'⟲ Retirer l’axe de rotation':'⟲ Axe de rotation',()=>skToggleAxis(L0.id));}
   }
   // 1 cercle / arc
   if(circles.length===1 && tot===1){
@@ -1048,8 +1082,8 @@ window.addEventListener('keydown',e=>{
     if(e.key==='Escape'){e.preventDefault();skEscapeToSelect();return;}
   }
   if(e.key==='Escape'){e.preventDefault();skEscapeToSelect();return;}
-  if(e.ctrlKey&&!e.shiftKey&&(e.key==='z'||e.key==='Z')){e.preventDefault();skUndoTrans();return;}
-  if((e.ctrlKey&&(e.key==='y'||e.key==='Y'))||(e.ctrlKey&&e.shiftKey&&(e.key==='z'||e.key==='Z'))){e.preventDefault();skRedoTrans();return;}
+  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&(e.key==='z'||e.key==='Z')){e.preventDefault();skUndoTrans();return;}
+  if(((e.ctrlKey||e.metaKey)&&(e.key==='y'||e.key==='Y'))||((e.ctrlKey||e.metaKey)&&e.shiftKey&&(e.key==='z'||e.key==='Z'))){e.preventDefault();skRedoTrans();return;}
   if((e.key==='Delete'||e.key==='Backspace')&&skEdit){e.preventDefault();deleteSkSel();return;}
   if((e.key==='x'||e.key==='X')&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&!skDyn&&skEdit){e.preventDefault();toggleConstr();return;}
   // lancer la saisie dynamique en tapant un chiffre (outil Ligne + point de départ armé)
