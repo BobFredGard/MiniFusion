@@ -158,7 +158,19 @@ function filletTangentChain(sk, startCorner){
 }
 /* F5 = Vue complète isométrique (au lieu du rechargement navigateur) : on voit la pièce entièrement. */
 window.addEventListener('keydown',e=>{
-  if(e.key==='F5'){e.preventDefault();setView('iso');return;}
+  if(e.key==='F5'){e.preventDefault();const ov=$('sketchOverlay');if(skEdit||(ov&&ov.classList.contains('open')))return;setView('iso');return;} // en esquisse, F5 = parallèle
+});
+// 2026-10-16-005 : raccourcis 3D (hors esquisse, hors saisie) — H perçage · R révolution ·
+// F congés · C chanfreins · M répétitions (E extrusion : ci-dessous).
+window.addEventListener('keydown',e=>{
+  if(e.ctrlKey||e.altKey||e.metaKey||e.repeat)return;
+  const map={h:'btnHole',r:'btnRevolve',f:'btnFillet',c:'btnChamfer',m:'btnRepeat'};
+  const id=map[String(e.key||'').toLowerCase()];if(!id)return;
+  const t=e.target;if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT'||t.isContentEditable))return;
+  if(skEdit||extPickFace||faoChainMode)return;
+  const ov=$('sketchOverlay');if(ov&&ov.classList.contains('open'))return;
+  const b=$(id);if(!b||b.disabled)return;
+  e.preventDefault();b.click();
 });
 /* raccourci E : ouvrir l'extrusion (Fusion360) — au niveau module pour être armé dès le chargement,
    jamais pendant la saisie (input/textarea/select), une esquisse ouverte ou un mode congé. */

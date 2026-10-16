@@ -291,13 +291,14 @@ function repCanFeature(id){
   if(!f)return false;
   if(f.repeatId)return false;
   if(f.type==='repeat')return false;
-  return f.type==='extrude'||f.type==='xfillet';
+  return f.type==='extrude'||f.type==='xfillet'||f.type==='hole'; // 2026-10-16-005 : perçages répétables
 }
 // Ce qu'une fonction apporte comme source de répétition — sert d'infobulle dans la
 // liste à cocher, pour qu'on sache ce qu'on coche.
 function repCanFeatureHint(f){
   if(!f)return'';
   if(f.type==='extrude')return((f.op||'add')==='cut'?'Découpe':'Plot')+' · '+(+f.distance||0).toFixed(2)+' mm';
+  if(f.type==='hole')return 'Perçage · Ø'+(+f.d||0)+(f.thread&&f.thread.size?' · taraudé '+f.thread.size:'')+(f.kind&&f.kind!=='simple'?' · '+f.kind:'');
   if(f.type==='xfillet')return xLabel(xKindOf(f))+' · '+(f.edges||[]).length+' arête(s)';
   if(f.type==='xmove')return 'Déplacement de face · '+(+f.dist||0)+' mm';
   if(f.type==='xdraft')return 'Dépouillage · '+(+f.angle||0).toFixed(1).replace('.',',')+'° · '+(f.faces||[]).length+' face(s)';
@@ -421,8 +422,8 @@ function repCloneFeature(f,i,skMap,featMap,cfg,reuse){
   // créer un nouveau — les fonctions qui pointent vers cette instance restent valides.
   const nf=JSON.parse(JSON.stringify(f));delete nf._m;delete nf._mesh;
   nf.visible=true;nf._src=f.id;
-  const target=reuse?reuse.id:uid(f.type==='xfillet'?'xf':'ex');
-  if(f.type==='extrude'){
+  const target=reuse?reuse.id:uid(f.type==='xfillet'?'xf':(f.type==='hole'?'ho':'ex'));
+  if(f.type==='extrude'||f.type==='hole'){ // perçage : son esquisse de centres est clonée / transformée comme un profil
     const sk=doc.sketches.find(s=>s.id===f.sketchId);if(!sk)return null;
     featMap[f.id]=target; // AVANT l'esquisse : l'hôte (feat) de l'esquisse se remappe sur l'instance
     const reuseSk=reuse?doc.sketches.find(s=>s.id===reuse.sketchId):null;

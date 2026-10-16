@@ -70,6 +70,7 @@ const SUITES = [
   "test_esquisse_regles",
   "test_parametres",
   "test_regen_perf",
+  "test_raccourcis",
   "test_aretes_import",
   "test_fao_chain_step",
   "test_precision_affichage",

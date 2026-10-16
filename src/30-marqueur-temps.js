@@ -310,12 +310,19 @@ function drawSketchHelpers(){
     const{u,v,n,o}=sketchBasis(sk);
     const grp=new THREE.Group();grp.name='sk_'+sk.id;
     const mat=new THREE.LineBasicMaterial({color:0xffd60a});
+    // 2026-10-16-004 : CONSTRUCTION en pointillés (comme dans l'esquisse) ; axe de rotation
+    // en tireté long orange. Tiret proportionné à l'esquisse (lisible petite ou grande pièce).
+    let ext=0;Object.values(P).forEach(q=>{if(q)ext=Math.max(ext,Math.abs(q.x),Math.abs(q.y));});
+    const dsh=Math.max(0.4,Math.min(6,ext/40));
+    const matC=new THREE.LineDashedMaterial({color:0xffd60a,dashSize:dsh,gapSize:dsh*0.8,transparent:true,opacity:0.8});
+    const matAx=new THREE.LineDashedMaterial({color:0xff9f0a,dashSize:dsh*3,gapSize:dsh*0.9});
+    const mk=(pts,e)=>{const m=(e&&e.axis)?matAx:((e&&e.construction)?matC:mat);const L=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),m);if(m!==mat)L.computeLineDistances();return L;};
     const to3=(x,y)=>new THREE.Vector3().copy(o).addScaledVector(u,x).addScaledVector(v,y);
     (sk.entities||[]).forEach(e=>{
       if(e.t==='line'){const A=P[e.p1],B=P[e.p2];if(!A||!B)return;
-        grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([to3(A.x,A.y),to3(B.x,B.y)]),mat));}
-      if(e.t==='circle'){const C=P[e.pc];if(!C||!(e.r>0))return;const pts=[];for(let i=0;i<=48;i++){const a=i/48*Math.PI*2;pts.push(to3(C.x+Math.cos(a)*e.r,C.y+Math.sin(a)*e.r));}grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),mat));}
-      if(e.t==='arc'){const C=P[e.pc];if(!C||!(e.r>0))return;const an=arcAngles(sk,e);if(!an)return;const pts=[];const d=an.a2-an.a1;const n2=Math.max(2,Math.ceil(d/(Math.PI*2)*48));for(let i=0;i<=n2;i++){const a=an.a1+d*i/n2;pts.push(to3(C.x+Math.cos(a)*e.r,C.y+Math.sin(a)*e.r));}grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),mat));}
+        grp.add(mk([to3(A.x,A.y),to3(B.x,B.y)],e));}
+      if(e.t==='circle'){const C=P[e.pc];if(!C||!(e.r>0))return;const pts=[];for(let i=0;i<=48;i++){const a=i/48*Math.PI*2;pts.push(to3(C.x+Math.cos(a)*e.r,C.y+Math.sin(a)*e.r));}grp.add(mk(pts,e));}
+      if(e.t==='arc'){const C=P[e.pc];if(!C||!(e.r>0))return;const an=arcAngles(sk,e);if(!an)return;const pts=[];const d=an.a2-an.a1;const n2=Math.max(2,Math.ceil(d/(Math.PI*2)*48));for(let i=0;i<=n2;i++){const a=an.a1+d*i/n2;pts.push(to3(C.x+Math.cos(a)*e.r,C.y+Math.sin(a)*e.r));}grp.add(mk(pts,e));}
     });
     scene.add(grp);
   });

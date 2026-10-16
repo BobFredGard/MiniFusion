@@ -966,6 +966,43 @@ function skCornerLink(sk,isF,r){
   sk.constraints.push({id:skNewEid(sk),type:'equal',a:S.id,b:newId});
   return true;
 }
+const SK_FKEYS={F3:'tangent',F4:'equal',F5:'parallel',F6:'perpendicular',F7:'midpoint',F8:'coaxial',F9:'collinear',F10:'symmetric',F12:'fix'};
+function skShortcut(e){
+  // F1 coïncidence · F2 H ou V (selon l'inclinaison de chaque ligne) · F3 tangence · F4 égalité ·
+  // F5 parallèle · F6 perpendiculaire · F7 milieu · F8 concentricité · F9 colinéaire ·
+  // F10 symétrie · F12 blocage · H centre de perçage. Le navigateur ne reçoit pas la touche
+  // (F1 aide, F5 rechargement, F10 menu, F12 outils de développement quand il le permet).
+  const k=e.key,sk=skEdit;
+  const setTool=t=>{const b=document.querySelector('#skToolbar .tool[data-tool="'+t+'"]');if(b)b.click();else{skCancelDraft();skTool=t;}};
+  if((k==='h'||k==='H')&&!e.shiftKey){e.preventDefault();setTool('hpoint');return true;}
+  if(SK_FKEYS[k]){e.preventDefault();applyCon(SK_FKEYS[k]);return true;}
+  if(k==='F2'){
+    e.preventDefault();
+    const ls=skSelectedEnts().filter(x=>x.t==='line');
+    if(!ls.length){skStatus('F2 : sélectionnez une ou plusieurs lignes (H si plutôt horizontale, V si plutôt verticale).');return true;}
+    skPushUndo();let n=0;
+    ls.forEach(l=>{const A=sk.points[l.p1],B=sk.points[l.p2];if(!A||!B)return;
+      const t=Math.abs(B.x-A.x)>=Math.abs(B.y-A.y)?'h':'v',o=t==='h'?'v':'h';
+      if(hasHV(sk,l.id,t)||hasHV(sk,l.id,o))return;
+      sk.constraints.push({id:skNewEid(sk),type:t,line:l.id});n++;});
+    afterEdit();skStatus(n?n+' contrainte(s) H/V posée(s) (F2).':'F2 : déjà horizontale(s) / verticale(s).');return true;
+  }
+  if(k==='F1'){
+    e.preventDefault();
+    const pts=[];if(skSel&&skSel.kind==='point')pts.push(skSel.pid);skSelX.forEach(s=>{if(s.kind==='point'&&pts.indexOf(s.pid)<0)pts.push(s.pid);});
+    const ents=skSelectedEnts();
+    if(pts.length===2){skPushUndo();if(mergePoints(sk,pts[1],pts[0])){skSel=null;skSelX=[];afterEdit();skStatus('Points fusionnés ⌖ (F1).');}return true;}
+    if(pts.length===1&&ents.length===1){
+      const E=ents[0];skPushUndo();
+      if(E.t==='line')sk.constraints.push({id:skNewEid(sk),type:'online',p:pts[0],line:E.id});
+      else if(E.t==='circle'||E.t==='arc')sk.constraints.push({id:skNewEid(sk),type:'oncircle',p:pts[0],ent:E.id});
+      else{skUndoStack.pop();skUndoBtn();skStatus('F1 : point + ligne / cercle, ou 2 points.');return true;}
+      afterEdit();skStatus('Point posé sur '+(E.t==='line'?'la ligne':'le cercle')+' (F1).');return true;
+    }
+    setTool('coincident');skStatus('Coïncident (F1) : cliquez 2 extrémités à fusionner — ou sélectionnez 2 points / point + ligne puis F1.');return true;
+  }
+  return false;
+}
 function skNiceVal(v){
   // valeur ronde ≤ v dans la série 1-2-5 (0,1 · 0,2 · 0,5 · 1 · 2 · 5 · 10…)
   if(!(v>0))return 0.1;
@@ -1133,6 +1170,8 @@ window.addEventListener('keydown',e=>{
     if(e.key==='Escape'){e.preventDefault();skEscapeToSelect();return;}
   }
   if(e.key==='Escape'){e.preventDefault();skEscapeToSelect();return;}
+  // 2026-10-16-005 : raccourcis de contraintes (F1…F12) et H = centre de perçage
+  if(skEdit&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&skShortcut(e))return;
   if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&(e.key==='z'||e.key==='Z')){e.preventDefault();skUndoTrans();return;}
   if(((e.ctrlKey||e.metaKey)&&(e.key==='y'||e.key==='Y'))||((e.ctrlKey||e.metaKey)&&e.shiftKey&&(e.key==='z'||e.key==='Z'))){e.preventDefault();skRedoTrans();return;}
   if((e.key==='Delete'||e.key==='Backspace')&&skEdit){e.preventDefault();deleteSkSel();return;}

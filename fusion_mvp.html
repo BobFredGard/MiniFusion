@@ -275,7 +275,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-16-003';
+const APP_VER='2026-10-16-005';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -4271,12 +4271,19 @@ function drawSketchHelpers(){
     const{u,v,n,o}=sketchBasis(sk);
     const grp=new THREE.Group();grp.name='sk_'+sk.id;
     const mat=new THREE.LineBasicMaterial({color:0xffd60a});
+    // 2026-10-16-004 : CONSTRUCTION en pointillés (comme dans l'esquisse) ; axe de rotation
+    // en tireté long orange. Tiret proportionné à l'esquisse (lisible petite ou grande pièce).
+    let ext=0;Object.values(P).forEach(q=>{if(q)ext=Math.max(ext,Math.abs(q.x),Math.abs(q.y));});
+    const dsh=Math.max(0.4,Math.min(6,ext/40));
+    const matC=new THREE.LineDashedMaterial({color:0xffd60a,dashSize:dsh,gapSize:dsh*0.8,transparent:true,opacity:0.8});
+    const matAx=new THREE.LineDashedMaterial({color:0xff9f0a,dashSize:dsh*3,gapSize:dsh*0.9});
+    const mk=(pts,e)=>{const m=(e&&e.axis)?matAx:((e&&e.construction)?matC:mat);const L=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),m);if(m!==mat)L.computeLineDistances();return L;};
     const to3=(x,y)=>new THREE.Vector3().copy(o).addScaledVector(u,x).addScaledVector(v,y);
     (sk.entities||[]).forEach(e=>{
       if(e.t==='line'){const A=P[e.p1],B=P[e.p2];if(!A||!B)return;
-        grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([to3(A.x,A.y),to3(B.x,B.y)]),mat));}
-      if(e.t==='circle'){const C=P[e.pc];if(!C||!(e.r>0))return;const pts=[];for(let i=0;i<=48;i++){const a=i/48*Math.PI*2;pts.push(to3(C.x+Math.cos(a)*e.r,C.y+Math.sin(a)*e.r));}grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),mat));}
-      if(e.t==='arc'){const C=P[e.pc];if(!C||!(e.r>0))return;const an=arcAngles(sk,e);if(!an)return;const pts=[];const d=an.a2-an.a1;const n2=Math.max(2,Math.ceil(d/(Math.PI*2)*48));for(let i=0;i<=n2;i++){const a=an.a1+d*i/n2;pts.push(to3(C.x+Math.cos(a)*e.r,C.y+Math.sin(a)*e.r));}grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),mat));}
+        grp.add(mk([to3(A.x,A.y),to3(B.x,B.y)],e));}
+      if(e.t==='circle'){const C=P[e.pc];if(!C||!(e.r>0))return;const pts=[];for(let i=0;i<=48;i++){const a=i/48*Math.PI*2;pts.push(to3(C.x+Math.cos(a)*e.r,C.y+Math.sin(a)*e.r));}grp.add(mk(pts,e));}
+      if(e.t==='arc'){const C=P[e.pc];if(!C||!(e.r>0))return;const an=arcAngles(sk,e);if(!an)return;const pts=[];const d=an.a2-an.a1;const n2=Math.max(2,Math.ceil(d/(Math.PI*2)*48));for(let i=0;i<=n2;i++){const a=an.a1+d*i/n2;pts.push(to3(C.x+Math.cos(a)*e.r,C.y+Math.sin(a)*e.r));}grp.add(mk(pts,e));}
     });
     scene.add(grp);
   });
@@ -4576,13 +4583,14 @@ function repCanFeature(id){
   if(!f)return false;
   if(f.repeatId)return false;
   if(f.type==='repeat')return false;
-  return f.type==='extrude'||f.type==='xfillet';
+  return f.type==='extrude'||f.type==='xfillet'||f.type==='hole'; // 2026-10-16-005 : perçages répétables
 }
 // Ce qu'une fonction apporte comme source de répétition — sert d'infobulle dans la
 // liste à cocher, pour qu'on sache ce qu'on coche.
 function repCanFeatureHint(f){
   if(!f)return'';
   if(f.type==='extrude')return((f.op||'add')==='cut'?'Découpe':'Plot')+' · '+(+f.distance||0).toFixed(2)+' mm';
+  if(f.type==='hole')return 'Perçage · Ø'+(+f.d||0)+(f.thread&&f.thread.size?' · taraudé '+f.thread.size:'')+(f.kind&&f.kind!=='simple'?' · '+f.kind:'');
   if(f.type==='xfillet')return xLabel(xKindOf(f))+' · '+(f.edges||[]).length+' arête(s)';
   if(f.type==='xmove')return 'Déplacement de face · '+(+f.dist||0)+' mm';
   if(f.type==='xdraft')return 'Dépouillage · '+(+f.angle||0).toFixed(1).replace('.',',')+'° · '+(f.faces||[]).length+' face(s)';
@@ -4706,8 +4714,8 @@ function repCloneFeature(f,i,skMap,featMap,cfg,reuse){
   // créer un nouveau — les fonctions qui pointent vers cette instance restent valides.
   const nf=JSON.parse(JSON.stringify(f));delete nf._m;delete nf._mesh;
   nf.visible=true;nf._src=f.id;
-  const target=reuse?reuse.id:uid(f.type==='xfillet'?'xf':'ex');
-  if(f.type==='extrude'){
+  const target=reuse?reuse.id:uid(f.type==='xfillet'?'xf':(f.type==='hole'?'ho':'ex'));
+  if(f.type==='extrude'||f.type==='hole'){ // perçage : son esquisse de centres est clonée / transformée comme un profil
     const sk=doc.sketches.find(s=>s.id===f.sketchId);if(!sk)return null;
     featMap[f.id]=target; // AVANT l'esquisse : l'hôte (feat) de l'esquisse se remappe sur l'instance
     const reuseSk=reuse?doc.sketches.find(s=>s.id===reuse.sketchId):null;
@@ -10998,6 +11006,43 @@ function skCornerLink(sk,isF,r){
   sk.constraints.push({id:skNewEid(sk),type:'equal',a:S.id,b:newId});
   return true;
 }
+const SK_FKEYS={F3:'tangent',F4:'equal',F5:'parallel',F6:'perpendicular',F7:'midpoint',F8:'coaxial',F9:'collinear',F10:'symmetric',F12:'fix'};
+function skShortcut(e){
+  // F1 coïncidence · F2 H ou V (selon l'inclinaison de chaque ligne) · F3 tangence · F4 égalité ·
+  // F5 parallèle · F6 perpendiculaire · F7 milieu · F8 concentricité · F9 colinéaire ·
+  // F10 symétrie · F12 blocage · H centre de perçage. Le navigateur ne reçoit pas la touche
+  // (F1 aide, F5 rechargement, F10 menu, F12 outils de développement quand il le permet).
+  const k=e.key,sk=skEdit;
+  const setTool=t=>{const b=document.querySelector('#skToolbar .tool[data-tool="'+t+'"]');if(b)b.click();else{skCancelDraft();skTool=t;}};
+  if((k==='h'||k==='H')&&!e.shiftKey){e.preventDefault();setTool('hpoint');return true;}
+  if(SK_FKEYS[k]){e.preventDefault();applyCon(SK_FKEYS[k]);return true;}
+  if(k==='F2'){
+    e.preventDefault();
+    const ls=skSelectedEnts().filter(x=>x.t==='line');
+    if(!ls.length){skStatus('F2 : sélectionnez une ou plusieurs lignes (H si plutôt horizontale, V si plutôt verticale).');return true;}
+    skPushUndo();let n=0;
+    ls.forEach(l=>{const A=sk.points[l.p1],B=sk.points[l.p2];if(!A||!B)return;
+      const t=Math.abs(B.x-A.x)>=Math.abs(B.y-A.y)?'h':'v',o=t==='h'?'v':'h';
+      if(hasHV(sk,l.id,t)||hasHV(sk,l.id,o))return;
+      sk.constraints.push({id:skNewEid(sk),type:t,line:l.id});n++;});
+    afterEdit();skStatus(n?n+' contrainte(s) H/V posée(s) (F2).':'F2 : déjà horizontale(s) / verticale(s).');return true;
+  }
+  if(k==='F1'){
+    e.preventDefault();
+    const pts=[];if(skSel&&skSel.kind==='point')pts.push(skSel.pid);skSelX.forEach(s=>{if(s.kind==='point'&&pts.indexOf(s.pid)<0)pts.push(s.pid);});
+    const ents=skSelectedEnts();
+    if(pts.length===2){skPushUndo();if(mergePoints(sk,pts[1],pts[0])){skSel=null;skSelX=[];afterEdit();skStatus('Points fusionnés ⌖ (F1).');}return true;}
+    if(pts.length===1&&ents.length===1){
+      const E=ents[0];skPushUndo();
+      if(E.t==='line')sk.constraints.push({id:skNewEid(sk),type:'online',p:pts[0],line:E.id});
+      else if(E.t==='circle'||E.t==='arc')sk.constraints.push({id:skNewEid(sk),type:'oncircle',p:pts[0],ent:E.id});
+      else{skUndoStack.pop();skUndoBtn();skStatus('F1 : point + ligne / cercle, ou 2 points.');return true;}
+      afterEdit();skStatus('Point posé sur '+(E.t==='line'?'la ligne':'le cercle')+' (F1).');return true;
+    }
+    setTool('coincident');skStatus('Coïncident (F1) : cliquez 2 extrémités à fusionner — ou sélectionnez 2 points / point + ligne puis F1.');return true;
+  }
+  return false;
+}
 function skNiceVal(v){
   // valeur ronde ≤ v dans la série 1-2-5 (0,1 · 0,2 · 0,5 · 1 · 2 · 5 · 10…)
   if(!(v>0))return 0.1;
@@ -11165,6 +11210,8 @@ window.addEventListener('keydown',e=>{
     if(e.key==='Escape'){e.preventDefault();skEscapeToSelect();return;}
   }
   if(e.key==='Escape'){e.preventDefault();skEscapeToSelect();return;}
+  // 2026-10-16-005 : raccourcis de contraintes (F1…F12) et H = centre de perçage
+  if(skEdit&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&skShortcut(e))return;
   if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&(e.key==='z'||e.key==='Z')){e.preventDefault();skUndoTrans();return;}
   if(((e.ctrlKey||e.metaKey)&&(e.key==='y'||e.key==='Y'))||((e.ctrlKey||e.metaKey)&&e.shiftKey&&(e.key==='z'||e.key==='Z'))){e.preventDefault();skRedoTrans();return;}
   if((e.key==='Delete'||e.key==='Backspace')&&skEdit){e.preventDefault();deleteSkSel();return;}
@@ -29499,7 +29546,19 @@ function filletTangentChain(sk, startCorner){
 }
 /* F5 = Vue complète isométrique (au lieu du rechargement navigateur) : on voit la pièce entièrement. */
 window.addEventListener('keydown',e=>{
-  if(e.key==='F5'){e.preventDefault();setView('iso');return;}
+  if(e.key==='F5'){e.preventDefault();const ov=$('sketchOverlay');if(skEdit||(ov&&ov.classList.contains('open')))return;setView('iso');return;} // en esquisse, F5 = parallèle
+});
+// 2026-10-16-005 : raccourcis 3D (hors esquisse, hors saisie) — H perçage · R révolution ·
+// F congés · C chanfreins · M répétitions (E extrusion : ci-dessous).
+window.addEventListener('keydown',e=>{
+  if(e.ctrlKey||e.altKey||e.metaKey||e.repeat)return;
+  const map={h:'btnHole',r:'btnRevolve',f:'btnFillet',c:'btnChamfer',m:'btnRepeat'};
+  const id=map[String(e.key||'').toLowerCase()];if(!id)return;
+  const t=e.target;if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT'||t.isContentEditable))return;
+  if(skEdit||extPickFace||faoChainMode)return;
+  const ov=$('sketchOverlay');if(ov&&ov.classList.contains('open'))return;
+  const b=$(id);if(!b||b.disabled)return;
+  e.preventDefault();b.click();
 });
 /* raccourci E : ouvrir l'extrusion (Fusion360) — au niveau module pour être armé dès le chargement,
    jamais pendant la saisie (input/textarea/select), une esquisse ouverte ou un mode congé. */
@@ -31303,7 +31362,7 @@ window.addEventListener('pointerdown',e=>{if(!$('ctxMenu').contains(e.target))hi
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.42';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.44';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);

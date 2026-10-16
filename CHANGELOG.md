@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**245 versions**, de `2026-09-28b` à `2026-10-16-003` — la plus récente en bas,
+**247 versions**, de `2026-09-28b` à `2026-10-16-005` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3842,3 +3842,19 @@ Nouveau test `test_parametres` (évaluateur, nommage, ƒx, propagation entre esq
 - **Présélection des arêtes** au survol en 3D : surbrillance ORANGE SANGUINE (#FF5A1F), ruban à peine plus épais (1,6 px), prioritaire à ≤ 6 px du curseur ; une arête cachée derrière la face survolée est ignorée (point 3D corrigé de la perspective).
 - **Mesure entre arêtes** : clic sur une arête = sélection (orange) ; **Ctrl/Cmd + clic** une 2e arête → droites parallèles : distance PERPENDICULAIRE ; droites quelconques : angle + distance mini ; cercles / arcs : entraxe et Ø (écart des plans si coaxiaux) ; droite + cercle : distance centre ↔ droite. La mesure faces existante accepte aussi Cmd sous macOS.
 Nouveau test `test_regen_perf` (passes, rejeux partiels, aller-retour reproductible) ; `test_esquisse_regles` étendu (8e–8g) ; `test_esquisse_contraintes` B6 mis à jour (étirement). Migration : `APP_VER` → `2026-10-16-003` ; badge **V0.1.41 → V0.1.42**.
+
+### `2026-10-16-004`
+
+**Esquisses en 3D : entités de construction en pointillés (retour : « quand on sort de l'esquisse, les entités de construction doivent être en pointillés aussi en 3D ! »).**
+
+- Lignes, cercles et arcs de **construction** des esquisses visibles : pointillés jaunes (tiret proportionné à la taille de l'esquisse) ; **axe de rotation** : tireté long orange, comme dans l'esquisse ; le profil reste en trait plein.
+Migration : `APP_VER` → `2026-10-16-004` ; badge **V0.1.42 → V0.1.43**.
+
+### `2026-10-16-005`
+
+**Raccourcis clavier (esquisse et 3D) ; perçages répétables (retours : liste de raccourcis ; « on ne peut pas répéter la fonction perçage et c'est dommage »).**
+
+- **Esquisse** : F1 coïncidence (2 points → fusion · point + ligne / cercle → point dessus · sinon outil Coïncident) · F2 H ou V selon l'inclinaison de chaque ligne sélectionnée · F3 tangence · F4 égalité · F5 parallèle · F6 perpendicularité · F7 milieu · F8 concentricité · F9 colinéaire · F10 symétrie · F12 blocage · H centre de perçage. Les touches F sont interceptées (F5 ne recharge plus la page en esquisse).
+- **3D** : H perçage · R révolution · F congés · C chanfreins · M répétitions (E extrusion inchangé) ; jamais pendant une saisie ni avec Ctrl / Cmd / Alt.
+- **Répétition du perçage** (linéaire, circulaire, symétrie) : l'esquisse des centres est clonée et transformée comme un profil ; taraudage, lamage, fraisure suivent ; la FAO reconnaît les trous répétés (noyau réel : 1 → 4 perçages M8).
+Nouveau test `test_raccourcis`. Migration : `APP_VER` → `2026-10-16-005` ; badge **V0.1.43 → V0.1.44**.
