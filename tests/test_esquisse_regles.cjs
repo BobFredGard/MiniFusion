@@ -33,6 +33,11 @@ const {loadApp}=require('./appvm.cjs');
 'sk=rect();skFilletCorner(sk,"e0","e1",5);afterEdit();',
 'const rd=sk.dims.filter(d=>d.type==="radius");',
 'A(rd.length===1&&!rd[0].ref,"4e : la cote de rayon d\\u2019un congé reste PILOTANTE (pas de parenthèses)");',
+// cote R : ligne radiale côté EXTÉRIEUR du congé (bissectrice), trait sous le texte vers l'extérieur
+'{const Lr=rdLayout(sk,rd[0]),arc=entById(sk,rd[0].ent),an=arcAngles(sk,arc),am=(an.a1+an.a2)/2;',
+' const dot=Lr.u.x*Math.cos(am)+Lr.u.y*Math.sin(am),dk=Math.hypot(Lr.K.x-Lr.C.x,Lr.K.y-Lr.C.y);',
+' A(dot>0.999&&dk>arc.r&&Lr.side===(Math.cos(am)>=0?1:-1),"4h : cote R d\\u2019un congé : ligne RADIALE côté extérieur (bissectrice), coude hors de l\\u2019arc, texte du bon côté");',
+' const w=dimLabelPos(sk,rd[0]),q=w2s(w.x,w.y);A(hitDimLabel(sk,q[0],q[1])===rd[0].id,"4i : l\\u2019étiquette R reste cliquable / éditable");}',
 // ── congés sur un rectangle coté : la cote hors-tout est gardée (capture utilisateur 90 × 105)
 'sk=rect([],[{id:"W",type:"length",line:"e2",value:50,chk:1,ox:0,oy:0},{id:"H",type:"length",line:"e1",value:30,chk:1,ox:0,oy:0}]);solveSketch(sk);',
 'skFilletCorner(sk,"e1","e2",5);afterEdit();skFilletCorner(sk,"e2","e3",5);afterEdit();',

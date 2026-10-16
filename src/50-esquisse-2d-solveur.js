@@ -549,6 +549,9 @@ function skBuildRefs(){
   try{skApplyFade();}catch(e){}
 }
 function openSketch(id){
+  // 2026-10-16-006 : nouvelle mise en page des cotes R/Ø — les anciens décalages (calés sur
+  // l'étiquette à 45°) sont remis à zéro UNE fois par esquisse.
+  try{const s1=doc.sketches.find(x=>x.id===id);if(s1&&!s1.rdV){(s1.dims||[]).forEach(d=>{if(d.type==='radius'||d.type==='diameter'){delete d.ox;delete d.oy;}});s1.rdV=1;}}catch(e){}
   try{const s0=doc.sketches.find(x=>x.id===id);if(s0)(s0.dims||[]).forEach(d=>{
     // référence posée par la 1re version (rayons mal analysés) : réévaluée
     if(d.ref&&!d.refV){delete d.ref;delete d.chk;return;}
@@ -2566,11 +2569,55 @@ function angleArcInfo(sk,d){ // {V,rr,a1,dd} — secteur STOCKE (a1=rayon A, dd=
   const dd=(ccw?1:-1)*Math.max(0.02,Math.min(Math.PI-0.02,d.value||0));
   return{V:fr.V,rr,a1:fr.sA,dd};
 }
+// 2026-10-16-006 : cotes de RAYON / DIAMÈTRE façon mise en plan — ligne d'attache RADIALE
+// (bissectrice de l'arc par défaut → toujours côté EXTÉRIEUR d'un congé), flèche sur
+// l'arc, coude puis trait horizontal SOUS le texte, vers la droite ou la gauche selon le côté.
+// Glisser l'étiquette fait tourner la ligne autour du centre ; jamais à l'intérieur du cercle.
+function rdLayout(sk,d){
+  const e=entById(sk,d.ent);if(!e||!(e.r>0))return null;const C=(sk.points||{})[e.pc];if(!C)return null;
+  const s=skView.s||1;
+  let u;
+  if(e.t==='arc'){const an=arcAngles(sk,e);const am=an?(an.a1+an.a2)/2:Math.PI/4;u={x:Math.cos(am),y:Math.sin(am)};}
+  else u={x:Math.SQRT1_2,y:Math.SQRT1_2};
+  const gap=26/s;
+  let K={x:C.x+u.x*(e.r+gap)+(d.ox||0),y:C.y+u.y*(e.r+gap)+(d.oy||0)};
+  let vx=K.x-C.x,vy=K.y-C.y,vl=Math.hypot(vx,vy);
+  if(vl<1e-9){vx=u.x;vy=u.y;vl=1;}
+  u={x:vx/vl,y:vy/vl};
+  const minR=e.r+10/s;
+  if(vl<minR)K={x:C.x+u.x*minR,y:C.y+u.y*minR};
+  return{e,C,u,K,P:{x:C.x+u.x*e.r,y:C.y+u.y*e.r},P2:{x:C.x-u.x*e.r,y:C.y-u.y*e.r},side:u.x>=0?1:-1};
+}
+function rdText(d){
+  const t=(d.type==='diameter'?'Ø':'R')+(+d.value).toFixed(2);
+  return parDecor(d.id,d.ref?'('+t+')':t);
+}
+function rdTextW(str){return String(str).length*7.6+2;}
+function rdDraw(sk,d,st){
+  const L=rdLayout(sk,d);if(!L)return;
+  const str=rdText(d),tw=rdTextW(str);
+  const[px,py]=w2s(L.P.x,L.P.y),[kx,ky]=w2s(L.K.x,L.K.y);
+  const ux=L.u.x,uy=-L.u.y; // repère écran (y vers le bas)
+  if(d.type==='diameter'){
+    const[qx,qy]=w2s(L.P2.x,L.P2.y);
+    skEl('line',{x1:qx,y1:qy,x2:kx,y2:ky,stroke:st,'stroke-width':1.2,'pointer-events':'none'});
+    dimArrow(px,py,ux,uy,st);dimArrow(qx,qy,-ux,-uy,st); // flèches sur le cercle, de l'intérieur
+  }else{
+    skEl('line',{x1:px,y1:py,x2:kx,y2:ky,stroke:st,'stroke-width':1.2,'pointer-events':'none'});
+    dimArrow(px,py,-ux,-uy,st); // flèche posée sur l'arc depuis l'extérieur
+  }
+  const ex=kx+L.side*(tw+10);
+  skEl('line',{x1:kx,y1:ky,x2:ex,y2:ky,stroke:st,'stroke-width':1.2,'pointer-events':'none'}); // trait SOUS le texte
+  const t=skEl('text',{x:(kx+L.side*5).toFixed(1),y:(ky-4).toFixed(1),fill:st,'font-size':13,'font-weight':'bold',stroke:'#101012','stroke-width':3,'paint-order':'stroke','text-anchor':L.side>0?'start':'end',style:'cursor:move;pointer-events:all'});
+  t.textContent=str;t.dataset.dim=d.id;
+  t.addEventListener('dblclick',ev=>{ev.stopPropagation();editDim(d.id);});
+}
 function dimLabelPos(sk,d){ // position monde de l'étiquette, décalage utilisateur inclus (déplaçable)
   const P=sk.points,ox=d.ox||0,oy=d.oy||0;
   if(d.type==='length'||d.type==='distance'||d.type==='gap'||d.type==='distline'){const S=dimSeg(sk,d);if(!S)return null;
     return{x:(S.a.x+S.b.x)/2+ox,y:(S.a.y+S.b.y)/2+oy};}
-  if(d.type==='diameter'||d.type==='radius'){const e=entById(sk,d.ent);if(!e)return null;const C=P[e.pc];if(!C)return null;return{x:C.x+e.r*0.7+ox,y:C.y+e.r*0.7+oy};}
+  if(d.type==='diameter'||d.type==='radius'){const L=rdLayout(sk,d);if(!L)return null;const s=skView.s||1,tw=rdTextW(rdText(d));
+    return{x:L.K.x+L.side*(5+tw/2)/s,y:L.K.y+8/s};} // centre du texte, posé sur le trait d'épaulement
   if(d.type==='angle'){const I=angleArcInfo(sk,d);if(!I)return null; // au milieu de l'arc, comme Fusion
     const am=I.a1+I.dd/2;return{x:I.V.x+I.rr*Math.cos(am)+ox,y:I.V.y+I.rr*Math.sin(am)+oy};}
   return null;
@@ -2705,7 +2752,8 @@ function hitDimLabel(sk,px,py){ // px,py en pixels écran SVG → id de cote ou 
         continue;
       }
     }
-    if(Math.hypot(sx-px,sy-py)<18)return d.id; // Ø, R, angle : 18 px autour de l'étiquette (était 60)
+    if(d.type==='diameter'||d.type==='radius'){const tw=rdTextW(rdText(d));if(Math.abs(px-sx)<tw/2+6&&Math.abs(py-sy)<12)return d.id;continue;}
+    if(Math.hypot(sx-px,sy-py)<18)return d.id; // angle : 18 px autour de l'étiquette (était 60)
   }
   return null;
 }
@@ -2793,13 +2841,7 @@ function drawSkDims(sk){
       // valeur alignée sur la ligne, fond opaque
       dimTextOnLine(S,vtxt(d.value),d.id);
     }
-    if(d.type==='diameter'||d.type==='radius'){const e=entById(sk,d.ent);if(!e)return;const C=P[e.pc];if(!C)return;
-      const[a,b]=w2s(C.x,C.y),[lx,ly]=w2s(w.x,w.y);
-      skEl('line',{x1:a,y1:b,x2:lx,y2:ly,stroke:st,'stroke-width':1,'stroke-dasharray':'3 3','pointer-events':'none'});
-      // flèche sur le cercle (extrémité du rayon)
-      const dl=Math.hypot(lx-a,ly-b)||1;
-      dimArrow(a,b,(a-lx)/dl,(b-ly)/dl,st);
-      dimText(w.x,w.y,d.ref?('('+(d.type==='diameter'?'Ø':'R')+d.value.toFixed(2)+')'):((d.type==='diameter'?'Ø':'R')+d.value.toFixed(2)),d.id);}
+    if(d.type==='diameter'||d.type==='radius'){rdDraw(sk,d,st);}
     if(d.type==='angle'){
       const I=angleArcInfo(sk,d);if(!I)return;
       const{V,rr,a1,dd}=I;

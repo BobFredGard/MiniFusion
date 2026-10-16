@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**247 versions**, de `2026-09-28b` à `2026-10-16-005` — la plus récente en bas,
+**248 versions**, de `2026-09-28b` à `2026-10-16-006` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3858,3 +3858,11 @@ Migration : `APP_VER` → `2026-10-16-004` ; badge **V0.1.42 → V0.1.43**.
 - **3D** : H perçage · R révolution · F congés · C chanfreins · M répétitions (E extrusion inchangé) ; jamais pendant une saisie ni avec Ctrl / Cmd / Alt.
 - **Répétition du perçage** (linéaire, circulaire, symétrie) : l'esquisse des centres est clonée et transformée comme un profil ; taraudage, lamage, fraisure suivent ; la FAO reconnaît les trous répétés (noyau réel : 1 → 4 perçages M8).
 Nouveau test `test_raccourcis`. Migration : `APP_VER` → `2026-10-16-005` ; badge **V0.1.43 → V0.1.44**.
+
+### `2026-10-16-006`
+
+**Cotes de rayon / diamètre façon mise en plan ; bouton Aide (retours : « positionner avec une ligne sous le texte, toujours dans la bonne direction, au congé côté extérieur » ; « en dessous de V0.1.xx un bouton Aide avec les principaux raccourcis »).**
+
+- **Cotes R / Ø** : ligne d'attache RADIALE (par défaut la bissectrice de l'arc → toujours côté EXTÉRIEUR d'un congé ; 45° pour un cercle), flèche posée sur l'arc, coude puis **trait horizontal sous le texte**, vers la droite ou la gauche selon le côté. Diamètre : ligne traversant le cercle, flèches aux 2 bords. Glisser l'étiquette fait tourner la ligne autour du centre ; jamais à l'intérieur du cercle. Les anciens décalages R/Ø sont remis à zéro une fois par esquisse.
+- **❔ Aide** (sous le badge de version, ou F1 hors esquisse, ou « ? ») : raccourcis d'esquisse (contraintes F1…F12, tracé, cotes, paramètres), raccourcis 3D, sélection et mesure, code couleur des esquisses. L'astuce « Ctrl/Cmd+clic : 2e face / arête : mesure » remplace « face 2 + entraxe ».
+Tests : `test_esquisse_regles` (4h–4i), `test_raccourcis` (aide). Migration : `APP_VER` → `2026-10-16-006` ; badge **V0.1.44 → V0.1.45**.

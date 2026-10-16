@@ -37,6 +37,12 @@ const {loadApp}=require('./appvm.cjs');
 'const kids=doc.features.filter(f=>f.repeatId==="rp1");',
 'const ox=kids.map(k=>doc.sketches.find(s=>s.id===k.sketchId).origin[0]).sort((a,b)=>a-b);',
 'A(kids.length===3&&kids.every(k=>k.type==="hole"&&k.thread&&k.thread.size==="M8")&&ox.join(",")==="20,40,60","Répétition linéaire ×3 du perçage : 3 perçages taraudés M8, esquisses décalées de 20 ("+ox.join(",")+")");',
+// aide
+'A(!!$("btnAide"),"Aide : bouton ❔ Aide présent (sous le badge de version)");',
+'let opened=0;const oA=openAide;openAide=function(){opened++;};',
+'key("F1");A(opened===1,"Aide : F1 hors esquisse ouvre l’aide");',
+'key("?");A(opened===2,"Aide : « ? » ouvre l’aide");',
+'mount({id:"z",name:"Z",plane:"XY",visible:true,points:{O:{x:0,y:0}},entities:[],constraints:[],dims:[],seq:5});key("F1");A(opened===2,"Aide : en esquisse, F1 reste la coïncidence (pas d’aide)");openAide=oA;',
 'return out;'
   ].join('\n');
   const o=await vm.runInContext('(async()=>{'+R+'})()',ctx);
