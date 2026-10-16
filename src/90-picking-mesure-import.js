@@ -443,7 +443,7 @@ function faceArea(mesh,fi){
 }
 function highlight(mesh,fi){
   if(!selGroup){selGroup=new THREE.Group();scene.add(selGroup);}
-  const m=new THREE.Mesh(mesh.geometry,new THREE.MeshBasicMaterial({color:0xff9f0a,transparent:true,opacity:.35,depthTest:false}));
+  const m=new THREE.Mesh(mesh.geometry,new THREE.MeshBasicMaterial({color:0xff9f0a,transparent:true,opacity:.35,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-4,depthWrite:false}));
   m.applyMatrix4(mesh.matrixWorld);m.raycast=()=>{};selGroup.add(m);
 }
 const growCache=new WeakMap(); // géométrie -> {adj,fn,nTri} (surlignage + survol)
@@ -529,7 +529,11 @@ function highlightTris(mesh,tris,color,opacity,target){
   const hg=new THREE.BufferGeometry();
   hg.setAttribute('position',new THREE.Float32BufferAttribute(arr,3));
   hg.computeVertexNormals();
-  const hm=new THREE.Mesh(hg,new THREE.MeshBasicMaterial({color,transparent:true,opacity,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2,depthTest:false}));
+  // 2026-10-16-016 : surlignage MASQUÉ par la matière devant lui (depthTest) — avant, il se
+  // voyait à travers la pièce (face arrière orange par-dessus les congés, paroi de poche
+  // « flottante »). Exception : corps en verre, où l'on doit voir la face au travers.
+  const xr=(()=>{try{const u=mesh.material&&mesh.material.userData;return !!(u&&typeof u.glass==='number'&&u.glass<0.999);}catch(e){return false;}})();
+  const hm=new THREE.Mesh(hg,new THREE.MeshBasicMaterial({color,transparent:true,opacity,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-4,depthTest:xr?false:true,depthWrite:false}));
   hm.renderOrder=996;hm.raycast=()=>{};grp.add(hm);
 }
 let hoverGroup=null,hoverKey='',lastHoverT=0;

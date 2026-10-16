@@ -169,7 +169,20 @@ function treeFoldSet(f){ // replier/déplier SANS toucher à localStorage (clic 
   const btn=$('btnSettings'),menu=$('setMenu');
   if(btn&&menu){
     const close=()=>menu.classList.remove('open');
-    btn.onclick=ev=>{ev.stopPropagation();menu.classList.toggle('open');};
+    // 2026-10-16-016 : le menu s'ouvre à DROITE de l'arborescence (ou de sa flèche si elle est
+    // repliée) au lieu de la recouvrir.
+    const place=()=>{
+      try{
+        const par=menu.offsetParent||menu.parentNode,pr=par.getBoundingClientRect();
+        let x=4;
+        for(const id of ['treeOverlay','treeToggle']){
+          const el=$(id);if(!el)continue;const r=el.getBoundingClientRect();
+          if(r.width>0&&r.height>0){x=Math.round(r.right-pr.left+6);break;}
+        }
+        menu.style.left=x+'px';
+      }catch(e){}
+    };
+    btn.onclick=ev=>{ev.stopPropagation();menu.classList.toggle('open');if(menu.classList.contains('open'))place();};
     menu.onclick=ev=>ev.stopPropagation();
     addEventListener('click',close);
     addEventListener('keydown',e=>{if(e.key==='Escape')close();});

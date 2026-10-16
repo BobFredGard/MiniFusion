@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**257 versions**, de `2026-09-28b` à `2026-10-16-015` — la plus récente en bas,
+**258 versions**, de `2026-09-28b` à `2026-10-16-016` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3950,3 +3950,10 @@ Migration : `APP_VER` → `2026-10-16-014` ; badge **V0.1.52 → V0.1.53**.
 - **Arêtes** : même code que la vue 3D — survol en ruban orange sanguine, arête retenue en ruban orange (1,6 px).
 - **Démarrage** : la vue 3D attend que le noyau OCCT ait recalculé la pièce en exact (indicateur « Chargement du noyau 3D… »), puis apparaît en **fondu** ; à l'**ouverture d'un modèle**, même fondu. Garde-fous : noyau en échec, ouverture locale sans .wasm (8 s), 60 s au plus, secours 4 s si l'ouverture échoue.
 Nouveau test `test_conge_arete_seule` (noyau réel : arête tangente à un arc — cochée = 3 faces de congé, décochée = arête suivante restée vive, débord dans l'arc, chanfrein, solide valide) ; `test_conge_tangent` adapté (1 entrée, 10 faces : la chaîne suit au calcul). Migration : `APP_VER` → `2026-10-16-015` ; badge **V0.1.53 → V0.1.54**.
+
+## 2026-10-16-016 · V0.1.55 — Menu ⚙ à droite de l'arborescence ; surlignage de face masqué par la matière
+- **Cause** : le menu des réglages de visualisation (⚙) s'ouvrait par-dessus l'arborescence.
+- **Correctif** : à l'ouverture, il se place à droite de l'arborescence, ou à droite de sa flèche quand elle est repliée (`src/95-toolbar.js`).
+- **Cause** (Axe (1)) : la face cliquée était surlignée SANS test de profondeur — on la voyait à travers la pièce : paroi de poche « flottante » en orange, et la partie arrière du grand cylindre qui débordait en orange sur les congés de devant.
+- **Correctif** : surlignage masqué par la matière devant lui (décalage de polygone pour rester au-dessus de sa propre face) ; seule exception, un corps en verre, où l'on voit la face au travers (`src/90-picking-mesure-import.js`).
+Vérifié au navigateur (arbre déplié et replié ; clic sur le cylindre R28 d'Axe (1) : orange limité à la face, congés intacts). Migration : `APP_VER` → `2026-10-16-016` ; badge **V0.1.54 → V0.1.55**.

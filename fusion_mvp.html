@@ -275,7 +275,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-16-015';
+const APP_VER='2026-10-16-016';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -30345,7 +30345,7 @@ function faceArea(mesh,fi){
 }
 function highlight(mesh,fi){
   if(!selGroup){selGroup=new THREE.Group();scene.add(selGroup);}
-  const m=new THREE.Mesh(mesh.geometry,new THREE.MeshBasicMaterial({color:0xff9f0a,transparent:true,opacity:.35,depthTest:false}));
+  const m=new THREE.Mesh(mesh.geometry,new THREE.MeshBasicMaterial({color:0xff9f0a,transparent:true,opacity:.35,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-4,depthWrite:false}));
   m.applyMatrix4(mesh.matrixWorld);m.raycast=()=>{};selGroup.add(m);
 }
 const growCache=new WeakMap(); // géométrie -> {adj,fn,nTri} (surlignage + survol)
@@ -30431,7 +30431,11 @@ function highlightTris(mesh,tris,color,opacity,target){
   const hg=new THREE.BufferGeometry();
   hg.setAttribute('position',new THREE.Float32BufferAttribute(arr,3));
   hg.computeVertexNormals();
-  const hm=new THREE.Mesh(hg,new THREE.MeshBasicMaterial({color,transparent:true,opacity,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2,depthTest:false}));
+  // 2026-10-16-016 : surlignage MASQUÉ par la matière devant lui (depthTest) — avant, il se
+  // voyait à travers la pièce (face arrière orange par-dessus les congés, paroi de poche
+  // « flottante »). Exception : corps en verre, où l'on doit voir la face au travers.
+  const xr=(()=>{try{const u=mesh.material&&mesh.material.userData;return !!(u&&typeof u.glass==='number'&&u.glass<0.999);}catch(e){return false;}})();
+  const hm=new THREE.Mesh(hg,new THREE.MeshBasicMaterial({color,transparent:true,opacity,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-4,depthTest:xr?false:true,depthWrite:false}));
   hm.renderOrder=996;hm.raycast=()=>{};grp.add(hm);
 }
 let hoverGroup=null,hoverKey='',lastHoverT=0;
@@ -31854,7 +31858,20 @@ function treeFoldSet(f){ // replier/déplier SANS toucher à localStorage (clic 
   const btn=$('btnSettings'),menu=$('setMenu');
   if(btn&&menu){
     const close=()=>menu.classList.remove('open');
-    btn.onclick=ev=>{ev.stopPropagation();menu.classList.toggle('open');};
+    // 2026-10-16-016 : le menu s'ouvre à DROITE de l'arborescence (ou de sa flèche si elle est
+    // repliée) au lieu de la recouvrir.
+    const place=()=>{
+      try{
+        const par=menu.offsetParent||menu.parentNode,pr=par.getBoundingClientRect();
+        let x=4;
+        for(const id of ['treeOverlay','treeToggle']){
+          const el=$(id);if(!el)continue;const r=el.getBoundingClientRect();
+          if(r.width>0&&r.height>0){x=Math.round(r.right-pr.left+6);break;}
+        }
+        menu.style.left=x+'px';
+      }catch(e){}
+    };
+    btn.onclick=ev=>{ev.stopPropagation();menu.classList.toggle('open');if(menu.classList.contains('open'))place();};
     menu.onclick=ev=>ev.stopPropagation();
     addEventListener('click',close);
     addEventListener('keydown',e=>{if(e.key==='Escape')close();});
@@ -31972,7 +31989,7 @@ function openAide(){
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.54';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.55';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);
