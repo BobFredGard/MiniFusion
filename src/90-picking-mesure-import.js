@@ -17,8 +17,8 @@ function wirePick(){
     if(coqueMode){if(e.button===0&&!e.ctrlKey)coqueToggle(e);return;}
     if(e.altKey)return;
     if(e.shiftKey&&e.button===0){shiftMeasure(e);return;}
-    if(e.button===0&&!e.ctrlKey)faceSelect(e,false);
-    else if(e.ctrlKey&&e.button===0)faceSelect(e,true);
+    if(e.button===0&&!(e.ctrlKey||e.metaKey))faceSelect(e,false);
+    else if((e.ctrlKey||e.metaKey)&&e.button===0)faceSelect(e,true);
     else if(e.ctrlKey&&e.button===2)recenter(e);
   });
    el.addEventListener('pointermove',hoverMove);
@@ -178,8 +178,81 @@ function pick(e){
   const hits=rayc.intersectObjects(bodies.filter(b=>b.visible).map(b=>b.mesh),false);
   return hits[0]||null;
 }
+// 2026-10-16-003 : sélection d'ARÊTES (clic sur une arête présélectionnée) et MESURE entre
+// 2 arêtes (Ctrl/Cmd + clic) : droites parallèles → distance perpendiculaire ; droites
+// quelconques → angle + distance mini ; cercles/arcs → entraxe (+ écart des plans si
+// coaxiaux) ; droite + cercle → distance centre ↔ droite.
+let selEdges=[];
+function edgeGeomOf(P){
+  const V=P.map(p=>new THREE.Vector3(p[0],p[1],p[2]));
+  const A=V[0],B=V[V.length-1],u=B.clone().sub(A);const L=u.length();
+  const dev=q=>{if(L<1e-9)return 0;const t=q.clone().sub(A).dot(u)/(L*L);return q.distanceTo(A.clone().addScaledVector(u,t));};
+  if(V.length<=2||V.every(q=>dev(q)<1e-3*Math.max(1,L)))return{kind:'line',a:A,b:B,u:u.clone().normalize(),pts:V};
+  // cercle passant par 3 points (début, milieu, fin) ; fermé → 3 points répartis
+  const closed=A.distanceTo(B)<1e-6*Math.max(1,L)+1e-6;
+  const p1=V[0],p2=V[Math.floor(V.length/3)],p3=V[Math.floor(2*V.length/3)];
+  const a=p2.clone().sub(p1),b=p3.clone().sub(p1),n=a.clone().cross(b);const nn=n.lengthSq();
+  if(nn<1e-12)return{kind:'curve',pts:V};
+  // centre circonscrit : C = p1 + ((|a|²·b − |b|²·a) × n) / (2|n|²), n = a × b
+  const C=p1.clone().add(b.clone().multiplyScalar(a.lengthSq()).sub(a.clone().multiplyScalar(b.lengthSq())).cross(n).multiplyScalar(0.5/nn));
+  const r=C.distanceTo(p1);
+  const ok=V.every(q=>Math.abs(q.distanceTo(C)-r)<2e-3*Math.max(1,r));
+  return ok?{kind:'circle',center:C,axis:n.clone().normalize(),r,closed,pts:V}:{kind:'curve',pts:V};
+}
+function edgeSelect(e,eh,second){
+  const P=edgeHoverSegs()[eh.pi];if(!P)return;
+  const G=edgeGeomOf(P);
+  clearHover();
+  if(!second||!selEdges.length){
+    clearMeasure();selEdges=[{P,G}];
+    if(!selGroup){selGroup=new THREE.Group();scene.add(selGroup);}
+    edgeHoverDraw(P,selGroup,0xff9f0a);
+    const desc=G.kind==='line'?('DROITE · longueur '+G.a.distanceTo(G.b).toFixed(2)+' mm'):(G.kind==='circle'?((G.closed?'CERCLE':'ARC')+' · Ø'+(2*G.r).toFixed(2)+' (R'+G.r.toFixed(2)+')'):'COURBE');
+    faceEl.textContent='Arête 1 : '+desc+'\nCtrl/Cmd+clic une 2e arête : distance perpendiculaire, angle ou entraxe.';
+    return;
+  }
+  selEdges.push({P,G});edgeHoverDraw(P,selGroup,0xff9f0a);
+  const A=selEdges[0].G,B=G;
+  if(A.kind==='line'&&B.kind==='line'){
+    const ang=Math.acos(Math.min(1,Math.abs(A.u.dot(B.u))))*180/Math.PI;
+    if(ang<0.5){
+      const M=B.a.clone().add(B.b).multiplyScalar(0.5);
+      const F=A.a.clone().addScaledVector(A.u,M.clone().sub(A.a).dot(A.u));
+      const d=F.distanceTo(M);
+      dimPair(F,M,d.toFixed(2));
+      faceEl.textContent='Arêtes parallèles : '+d.toFixed(2)+' mm (perpendiculaire) · angle '+ang.toFixed(2)+'°';
+    }else{
+      // plus courte distance entre les 2 segments (échantillonnage + affinage)
+      let best={d:1e18};
+      const segPt=(G0,t)=>G0.a.clone().lerp(G0.b,t);
+      for(let i=0;i<=40;i++)for(let j=0;j<=40;j++){const p=segPt(A,i/40),q=segPt(B,j/40),d=p.distanceTo(q);if(d<best.d)best={d,p,q,i,j};}
+      dimPair(best.p,best.q,best.d.toFixed(2));
+      faceEl.textContent='Arêtes non parallèles : angle '+ang.toFixed(2)+'° · distance mini ≈ '+best.d.toFixed(2)+' mm';
+    }
+    return;
+  }
+  if(A.kind==='circle'&&B.kind==='circle'){
+    const d=A.center.distanceTo(B.center),coax=Math.abs(Math.abs(A.axis.dot(B.axis))-1)<1e-4&&B.center.clone().sub(A.center).cross(A.axis).length()<1e-3;
+    dimPair(A.center,B.center,(coax?'':'entraxe ')+d.toFixed(2));
+    tagAt('Ø '+(2*A.r).toFixed(2),A.pts[0]);tagAt('Ø '+(2*B.r).toFixed(2),B.pts[0]);
+    faceEl.textContent=(coax?'Cercles COAXIAUX : écart des plans '+d.toFixed(2)+' mm':'Entraxe : '+d.toFixed(2)+' mm')+'\nØ1='+(2*A.r).toFixed(2)+' · Ø2='+(2*B.r).toFixed(2);
+    return;
+  }
+  const L=A.kind==='line'?A:(B.kind==='line'?B:null),C=A.kind==='circle'?A:(B.kind==='circle'?B:null);
+  if(L&&C){
+    const F=L.a.clone().addScaledVector(L.u,C.center.clone().sub(L.a).dot(L.u));const d=F.distanceTo(C.center);
+    dimPair(C.center,F,d.toFixed(2));tagAt('Ø '+(2*C.r).toFixed(2),C.pts[0]);
+    faceEl.textContent='Centre ↔ droite : '+d.toFixed(2)+' mm (perpendiculaire) · Ø='+(2*C.r).toFixed(2);
+    return;
+  }
+  // courbes quelconques : distance mini entre points des polylignes
+  let best={d:1e18};A.pts.forEach(p=>B.pts.forEach(q=>{const d=p.distanceTo(q);if(d<best.d)best={d,p,q};}));
+  dimPair(best.p,best.q,best.d.toFixed(2));faceEl.textContent='Distance mini entre arêtes ≈ '+best.d.toFixed(2)+' mm';
+}
 function faceSelect(e,second){
   const h=pick(e);
+  try{const eh=edgeHoverPick(e,h);if(eh){edgeSelect(e,eh,second);return;}}catch(err){}
+  if(second&&selEdges.length&&!selFaces.length){selEdges=[];}
   if(!h){
     if(!second){
       const pl=pickPlane(e);
@@ -452,6 +525,68 @@ function clearHover(){
   hoverKey='';
   if(hoverGroup){scene.remove(hoverGroup);hoverGroup.traverse(o=>{o.geometry&&o.geometry.dispose();o.material&&(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.dispose&&m.dispose());});hoverGroup=null;}
 }
+// 2026-10-16-003 : PRÉSÉLECTION DES ARÊTES au survol (comme les faces) — surbrillance orange sanguine,
+// ruban à peine plus épais que le trait normal (1,6 px au lieu de 1). Priorité à l'arête si le
+// curseur est à ≤ 6 px d'elle ; une arête cachée derrière la face survolée est ignorée.
+let edgeHoverCache={key:'',segs:null};
+function edgeHoverSegs(){
+  const key=(typeof _docVersion!=='undefined'?_docVersion:0)+'|'+bodies.length+'|'+bodies.filter(b=>b.visible).map(b=>b.id).join(',');
+  if(edgeHoverCache.key===key&&edgeHoverCache.segs)return edgeHoverCache.segs;
+  let data=[];try{data=edgeOverlayData()||[];}catch(e){data=[];}
+  const out=[];
+  data.forEach((d,ei)=>{const pts=d&&d.pts;if(!pts||pts.length<2)return;const M=(d.mw&&d.mw.elements)||null;
+    const P=pts.map(p=>{let x=+p[0],y=+p[1],z=+p[2];if(M){const X=x,Y=y,Z=z;x=M[0]*X+M[4]*Y+M[8]*Z+M[12];y=M[1]*X+M[5]*Y+M[9]*Z+M[13];z=M[2]*X+M[6]*Y+M[10]*Z+M[14];}return[x,y,z];});
+    out.push(P);});
+  edgeHoverCache={key,segs:out};
+  return out;
+}
+function edgeHoverPick(e,faceHit){
+  const segs=edgeHoverSegs();if(!segs.length)return null;
+  const r=renderer.domElement.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+  const v=new THREE.Vector3(),vz=new THREE.Vector3(),toS=p=>{vz.set(p[0],p[1],p[2]).applyMatrix4(camera.matrixWorldInverse);v.set(p[0],p[1],p[2]).project(camera);return[(v.x+1)/2*r.width,(1-v.y)/2*r.height,v.z,-vz.z];};
+  let best=null,bd=6;
+  segs.forEach((P,pi)=>{
+    let a=toS(P[0]);
+    for(let k=1;k<P.length;k++){
+      const b=toS(P[k]);
+      if(a[2]<1&&b[2]<1&&a[2]>-1&&b[2]>-1){
+        const dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy||1e-9;
+        let t=((mx-a[0])*dx+(my-a[1])*dy)/L2;t=Math.max(0,Math.min(1,t));
+        const d=Math.hypot(mx-(a[0]+t*dx),my-(a[1]+t*dy));
+        if(d<bd){
+          // paramètre 3D corrigé de la perspective (t écran ≠ t espace)
+          if(!camera.isOrthographicCamera){const za=a[3],zb=b[3];const den=(1-t)*zb+t*za;if(Math.abs(den)>1e-12)t=t*za/den;}
+          const w=[P[k-1][0]+(P[k][0]-P[k-1][0])*t,P[k-1][1]+(P[k][1]-P[k-1][1])*t,P[k-1][2]+(P[k][2]-P[k-1][2])*t];
+          // masquée par la face survolée ? (l'arête doit être au moins aussi proche que la face)
+          const dc=camera.position.distanceTo(new THREE.Vector3(w[0],w[1],w[2]));
+          if(!faceHit||dc<=faceHit.distance*1.004+0.3){bd=d;best={pi,dc};}
+        }
+      }
+      a=b;
+    }
+  });
+  return best;
+}
+function edgeHoverDraw(P,grp,color){
+  // ruban écran : largeur 1,6 px à la profondeur de chaque point, face à la caméra
+  const r=renderer.domElement.getBoundingClientRect();
+  const wpp=q=>{if(camera.isOrthographicCamera)return (camera.top-camera.bottom)/(camera.zoom||1)/r.height;
+    const d=camera.position.distanceTo(q);return 2*d*Math.tan(camera.fov*Math.PI/360)/r.height;};
+  const pos=[],A=new THREE.Vector3(),B=new THREE.Vector3(),dir=new THREE.Vector3(),view=new THREE.Vector3(),n=new THREE.Vector3();
+  for(let k=1;k<P.length;k++){
+    A.set(P[k-1][0],P[k-1][1],P[k-1][2]);B.set(P[k][0],P[k][1],P[k][2]);
+    dir.subVectors(B,A);if(dir.lengthSq()<1e-18)continue;
+    view.subVectors(camera.position,A).normalize();n.crossVectors(dir,view).normalize();
+    const ha=0.8*wpp(A),hb=0.8*wpp(B);
+    const a1=[A.x+n.x*ha,A.y+n.y*ha,A.z+n.z*ha],a2=[A.x-n.x*ha,A.y-n.y*ha,A.z-n.z*ha];
+    const b1=[B.x+n.x*hb,B.y+n.y*hb,B.z+n.z*hb],b2=[B.x-n.x*hb,B.y-n.y*hb,B.z-n.z*hb];
+    pos.push(...a1,...a2,...b1,...b1,...a2,...b2);
+  }
+  if(!pos.length)return;
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:color||0xff5a1f,side:THREE.DoubleSide,depthTest:true,depthWrite:false,transparent:true,opacity:0.95}));
+  m.renderOrder=997;m.raycast=()=>{};grp.add(m);
+}
 function hoverMove(e){
   // Pré-sélection lumineuse au survol (comme le viewer), ~15 Hz max, jamais en orbite/clic.
   if(filMode||filModeX||skEdit||faoChainMode)return;
@@ -459,6 +594,14 @@ function hoverMove(e){
   const now=performance.now();if(now-lastHoverT<65)return;lastHoverT=now;
   try{
     const h=pick(e);
+    const eh=edgeHoverPick(e,h);
+    if(eh){
+      const key='edge:'+eh.pi;if(key===hoverKey)return;
+      clearHover();hoverKey=key;
+      hoverGroup=new THREE.Group();scene.add(hoverGroup);
+      edgeHoverDraw(edgeHoverSegs()[eh.pi],hoverGroup);
+      return;
+    }
     if(!h||h.faceIndex===undefined||h.faceIndex===null){if(hoverKey)clearHover();return;}
     const groups=(h.object.geometry.userData.occGroups||[]);
     const g=groups.find(g=>h.faceIndex>=g.start&&h.faceIndex<g.start+g.count);
@@ -473,7 +616,7 @@ function hoverMove(e){
   }catch(err){}
 }
 function clearMeasure(){
-  selFaces=[];selLabels=[];labelsDiv.innerHTML='';clearHover();
+  selFaces=[];selEdges=[];selLabels=[];labelsDiv.innerHTML='';clearHover();
   if(selGroup){scene.remove(selGroup);selGroup=null;}
   if(measureGroup){scene.remove(measureGroup);measureGroup=null;}
 }

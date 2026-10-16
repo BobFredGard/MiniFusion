@@ -142,8 +142,10 @@ const {loadApp}=require('./appvm.cjs');
 'const q0=skR.points.q0,q1=skR.points.q1,q2=skR.points.q2,q3=skR.points.q3;',
 'step("B6 · rectangle contraint glissé → coin ("+f(q0.x)+","+f(q0.y)+") résidu "+R(skR));',
 'A(Math.hypot(q0.x-165,q0.y-20)<0.5,"B6 : le coin suit le curseur ("+f(q0.x)+","+f(q0.y)+") — non-régression");',
-'A(Math.abs((q1.x-q0.x)-100)<1e-3&&Math.abs(q1.y-q0.y)<1e-3&&Math.abs((q2.y-q1.y)-70)<1e-3,',
-'  "B6 : le rectangle est resté rectangle (100×70) : dx="+(q1.x-q0.x).toFixed(3)+" dy="+(q1.y-q0.y).toFixed(3));',
+// 2026-10-16-003 : comme Fusion, un coin d'une forme NON cotée l'ÉTIRE (avant : corps rigide) —
+// elle reste un rectangle (H/V tenues) et le coin opposé ne bouge pas.
+'A(Math.abs(q1.y-q0.y)<1e-6&&Math.abs(q3.x-q0.x)<1e-6&&Math.abs(q2.x-q1.x)<1e-6&&Math.abs(q2.y-q3.y)<1e-6&&Math.hypot(q2.x-250,q2.y-80)<1e-3,',
+'  "B6 : étiré, toujours rectangle, coin opposé immobile (q2 "+f(q2.x)+","+f(q2.y)+")");',
 'A(R(skR)<1e-6,"B6 : …résidu "+R(skR));',
 // 7. conflit IRRÉDUCTIBLE : il doit rester signalé (pas de dégradation silencieuse)
 'const skX=mount(mkSk({O:{x:0,y:0},u:{x:0,y:0},v:{x:20,y:0}},[],',

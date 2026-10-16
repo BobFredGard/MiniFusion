@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**244 versions**, de `2026-09-28b` à `2026-10-16-002` — la plus récente en bas,
+**245 versions**, de `2026-09-28b` à `2026-10-16-003` — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -3828,3 +3828,17 @@ Nouveau test `test_esquisse_regles` (couleurs/DDL, référence, priorité H/V, c
 - **Coin virtuel** : un coin référencé (accroché à l'origine, coté…) rogné par un congé / chanfrein reste un point sur les 2 droites → l'esquisse garde son ancrage (0 DDL).
 - Solveur : plus d'ancrage doux sur un rayon « égal » à un rayon coté (il retenait les congés suivants).
 Nouveau test `test_parametres` (évaluateur, nommage, ƒx, propagation entre esquisses, paramètres libres, cycles, renommage, fichier, congés multi-coins à cote unique, coin virtuel). Migration : `APP_VER` → `2026-10-16-002` ; badge **V0.1.40 → V0.1.41**.
+
+### `2026-10-16-003`
+
+**Régénération 3D bien plus rapide ; rectangle par le centre qui s'étire symétriquement ; présélection des arêtes en 3D (retours : « plus la pièce est grosse, plus c'est long… essaye sur Cavité Usinage » ; « la symétrie du rectangle a du mal à être bien ancrée » ; « la présélection des faces existe, mais pas des arêtes »).**
+
+- **Régénération** (mesures sur « Cavité Usinage », 26 fonctions, noyau réel) : 1re extrusion 50 → 55 : **26,7 s → 6,8 s** ; retour 55 → 50 : 23 s → 6,7 s ; reconstruction sans changement : 1,6 s → 0,3 s ; dernier congé : 1,6 s → 0,8 s ; ouvrir / fermer une esquisse : 2,6 s → 1,4 s. Géométrie identique à V0.1.41 à chaque étape.
+  - **Projetée toujours « modifiée »** : le test `d1>0.02||d2>0.02` (2 sens de parcours) était TOUJOURS vrai → chaque reconstruction relançait des passes complètes jusqu'à la limite. Corrigé (`min(d1,d2)`).
+  - **Une lecture du solide par fonction consommatrice** (et non par entité projetée), esquisses traitées dans l'ordre de la timeline ; cache persistant des arêtes par signature du préfixe → aucune relecture quand rien n'a changé.
+  - **Outils d'extrusion / révolution / perçage en cache** (même clé que les points de contrôle) : plus reconstruits quand le booléen vient du cache.
+  - Points de contrôle : capacité 3 × la timeline (l'ancien et le nouveau préfixe coexistent pendant les passes).
+- **Rectangle par le centre** : plus de point FIXE au centre ; glisser un coin ou un côté ÉTIRE la forme symétriquement, le centre de symétrie reste en place ; glisser le centre déplace tout le rectangle. Règle générale : glisser un coin d'une forme non cotée ou ancrée l'étire (comme Fusion) ; seule une forme entièrement cotée et libre se déplace en bloc.
+- **Présélection des arêtes** au survol en 3D : surbrillance ORANGE SANGUINE (#FF5A1F), ruban à peine plus épais (1,6 px), prioritaire à ≤ 6 px du curseur ; une arête cachée derrière la face survolée est ignorée (point 3D corrigé de la perspective).
+- **Mesure entre arêtes** : clic sur une arête = sélection (orange) ; **Ctrl/Cmd + clic** une 2e arête → droites parallèles : distance PERPENDICULAIRE ; droites quelconques : angle + distance mini ; cercles / arcs : entraxe et Ø (écart des plans si coaxiaux) ; droite + cercle : distance centre ↔ droite. La mesure faces existante accepte aussi Cmd sous macOS.
+Nouveau test `test_regen_perf` (passes, rejeux partiels, aller-retour reproductible) ; `test_esquisse_regles` étendu (8e–8g) ; `test_esquisse_contraintes` B6 mis à jour (étirement). Migration : `APP_VER` → `2026-10-16-003` ; badge **V0.1.41 → V0.1.42**.

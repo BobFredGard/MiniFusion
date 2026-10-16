@@ -182,6 +182,38 @@ function arcOrient(cx,cy,x1,y1,x2,y2,mx,my){
   if(angInArc(am,a1,a2))return[x1,y1,x2,y2];
   return[x2,y2,x1,y1];
 }
+// 2026-10-16-003 : cache des arêtes candidates PENDANT une passe de mise à jour des
+// projections. Avant : chaque entité projetée rejouait le solide jusqu'à la fonction
+// consommatrice (occFinalShape) puis relisait toutes ses arêtes — « Cavité Usinage » :
+// 26 s pour modifier la 1re extrusion, dont 55 s CPU cumulés ici. Le solide ne change
+// pas pendant la passe : une seule lecture par fonction consommatrice.
+let _projEdgeCache=null;
+// cache PERSISTANT (entre reconstructions) : clé = signature du préfixe de timeline vu par
+// l'esquisse — un préfixe inchangé redonne les mêmes arêtes sans rejouer le solide.
+const _projEdgePersist=new Map();
+function projPrefixSig(idx){
+  try{const F=(doc.features||[]).filter(f=>f.visible!==false).slice(0,idx);let s=(typeof occSkipFeat!=='undefined'&&occSkipFeat)||'';for(const f of F)s+=featSig(f)+';';return s;}catch(e){return null;}
+}
+function projEdgesFor(sk){
+  // → tableau d'arêtes {pts,mid} (repère monde) du solide vu par l'esquisse, ou null
+  let idx=-1;try{idx=skConsumerIdx(sk);}catch(e){idx=-1;}
+  const key=(idx>=0&&occHas())?'f'+idx:((occHas()&&occLive&&occLive.shape)?'live':null);
+  if(!key)return null;
+  if(_projEdgeCache&&_projEdgeCache.has(key))return _projEdgeCache.get(key);
+  const pk=key==='live'?null:projPrefixSig(idx);
+  if(pk!=null&&_projEdgePersist.has(pk)){const ed=_projEdgePersist.get(pk);if(_projEdgeCache)_projEdgeCache.set(key,ed);return ed;}
+  let edges=null;
+  if(key==='live'){try{edges=occListEdges(occLive.shape);}catch(e){edges=null;}}
+  else{
+    let FR=null;
+    try{FR=occFinalShape(idx);if(FR&&FR.shape)edges=occListEdges(FR.shape);}catch(e){edges=null;}
+    // nettoyage APRÈS lecture (occCleanup supprime FR.shape)
+    finally{if(FR){try{occCleanup(FR,null);}catch(e){}}}
+  }
+  if(_projEdgeCache)_projEdgeCache.set(key,edges);
+  if(pk!=null&&edges){_projEdgePersist.set(pk,edges);while(_projEdgePersist.size>24)_projEdgePersist.delete(_projEdgePersist.keys().next().value);}
+  return edges;
+}
 function findClosestProjectedEdge(sk,x,y,preferMid,wantType){
   // sans tolérance, cherche l'arête projetée la plus proche (antériorité).
   // preferMid : milieu 3D mémorisé à la projection — l'arête source d'origine prime
@@ -191,20 +223,10 @@ function findClosestProjectedEdge(sk,x,y,preferMid,wantType){
   let best=null,bd=1e9, srcMid=null;
   let bTy=null,bTyd=1e9,bTySrc=null; // meilleur candidat EXIGÉ par le type de l'entité
   const basis=sketchBasis(sk),u=basis.u,v=basis.v,o=basis.o;
-  let candShapes=[],FRk=null;
-  try{
-    const idx=skConsumerIdx(sk);
-    if(idx>=0&&occHas()){
-      const FR=occFinalShape(idx);
-      // Nettoyage DIFFÉRÉ (finally plus bas) : occCleanup(FR,null) supprime FR.shape —
-      // le lire après = use-after-free → occListEdges échoue → projection jamais mise à jour.
-      if(FR&&FR.shape){candShapes.push(FR.shape);FRk=FR;}
-    } else if(occHas()&&occLive&&occLive.shape) candShapes.push(occLive.shape);
-  }catch(e){}
-  try{
-  for(const sh of candShapes){
+  const edgesAll=projEdgesFor(sk);
+  {
+  for(const edges of (edgesAll?[edgesAll]:[])){
     try{
-      const edges=occListEdges(sh);
       for(const e of edges){
         const pts2=e.pts.map(p=>[(p[0]-o.x)*u.x+(p[1]-o.y)*u.y+(p[2]-o.z)*u.z, (p[0]-o.x)*v.x+(p[1]-o.y)*v.y+(p[2]-o.z)*v.z]);
         let d=1e9;
@@ -240,7 +262,7 @@ function findClosestProjectedEdge(sk,x,y,preferMid,wantType){
       }
     }catch(e){}
   }
-  }finally{ if(FRk){try{occCleanup(FRk,null);}catch(e){} } }
+  }
   let res=best,resSrc=srcMid;
   if(wantType&&best&&best.type!==wantType&&bTy){res=bTy;resSrc=bTySrc;}
   if(res&&resSrc)res.srcMid=resSrc;
@@ -248,6 +270,10 @@ function findClosestProjectedEdge(sk,x,y,preferMid,wantType){
 }
 function updateAssociativeProjections(sk){
   if(!sk||!sk.entities) return false;
+  const own=!_projEdgeCache;if(own)_projEdgeCache=new Map(); // cache local si appel isolé
+  try{return updateAssociativeProjections0(sk);}finally{if(own)_projEdgeCache=null;}
+}
+function updateAssociativeProjections0(sk){
   let changed=false;
   for(const e of sk.entities){
     // 2026-10-15-009 : une arête PROJETÉE reste associative même passée en PROFIL
@@ -267,7 +293,10 @@ function updateAssociativeProjections(sk){
       if(pr.srcMid)e.srcMid=pr.srcMid;
       const d1=Math.hypot(A.x-pr.x1,A.y-pr.y1)+Math.hypot(B.x-pr.x2,B.y-pr.y2);
       const d2=Math.hypot(A.x-pr.x2,A.y-pr.y2)+Math.hypot(B.x-pr.x1,B.y-pr.y1);
-      if(d1>0.02||d2>0.02){
+      // 2026-10-16-003 : « d1>0.02||d2>0.02 » était TOUJOURS vrai (l'un des 2 sens de
+      // parcours est forcément loin) → chaque projetée « changeait » à chaque passe et la
+      // régénération rejouait tout jusqu'à REGEN_MAX_PASS (Cavité Usinage : 16 s au lieu de 2).
+      if(Math.min(d1,d2)>0.02){
         if(d2<d1){ A.x=pr.x2; A.y=pr.y2; B.x=pr.x1; B.y=pr.y1; } else { A.x=pr.x1; A.y=pr.y1; B.x=pr.x2; B.y=pr.y2; }
         changed=true;
       }
@@ -294,9 +323,20 @@ function updateAssociativeProjections(sk){
 function updateAllProjections(){
   // true = au moins une esquisse a bougé → le solide doit être rejoué (projRefreshRerun).
   let changed=false;
+  const own=!_projEdgeCache;if(own)_projEdgeCache=new Map(); // une lecture par fonction consommatrice pour TOUTE la passe
   try{
-    (doc.sketches||[]).forEach(sk=>{ if(sk.id===skEdit?.id)return; if(repCloneSkName(sk))return; try{ if(updateAssociativeProjections(sk))changed=true; }catch(e){} });
+    // 2026-10-16-003 : ordre de la TIMELINE (fonction consommatrice croissante). Quand une
+    // esquisse bouge, le solide vu par les suivantes est relu aussitôt (cache invalidé
+    // au-delà) : toute une chaîne (extrusion → esquisse sur face → symétrie → esquisse →
+    // limite…) se règle en UNE passe au lieu d'une passe complète par maillon.
+    const L=[];
+    (doc.sketches||[]).forEach(sk=>{ if(sk.id===skEdit?.id)return; if(repCloneSkName(sk))return; let k=-1;try{k=skConsumerIdx(sk);}catch(e){} L.push({sk,k:k>=0?k:1e9}); });
+    L.sort((a,b)=>a.k-b.k);
+    L.forEach(({sk,k})=>{ try{ if(updateAssociativeProjections(sk)){changed=true;
+      if(_projEdgeCache)[..._projEdgeCache.keys()].forEach(key=>{const n=key[0]==='f'?+key.slice(1):1e9;if(n>k)_projEdgeCache.delete(key);});
+    } }catch(e){} });
   }catch(e){}
+  finally{if(own)_projEdgeCache=null;}
   return changed;
 }
 function projectEdgeAt(sk,x,y){

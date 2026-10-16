@@ -1938,14 +1938,34 @@ let occProjPass=0; // 0 = rejeu principal ; >=1 = passe de projection imbriquée
 // complet 4 fois par reconstruction). On couvre toute la timeline, bornée pour la mémoire.
 function occCkMax(){
   const n=(((typeof doc!=='undefined')&&doc&&doc.features)?doc.features.length:0)+2;
-  return n<8?8:(n>48?48:n);
+  // 2026-10-16-003 : 3 × la timeline (bornée) — après une modification, l'ancien ET le nouveau
+  // préfixe coexistent pendant les passes de projection ; à 1 × ils s'évinçaient mutuellement.
+  return Math.max(8,Math.min(3*n,120));
 }
 function occShapeCopy(sh){
   try{return new occt.BRepBuilderAPI_Copy_2(sh,true,true).Shape();}catch(e){return null;}
 }
+// 2026-10-16-003 : cache des OUTILS (prisme d'extrusion / révolution / perçage) par clé de
+// préfixe — la même que les points de contrôle. Sur un point de contrôle trouvé, l'outil
+// était quand même reconstruit (fusion des profils ≈ 45 % d'un rejeu « sans changement »).
+let occToolCk=new Map(); // ckKey → {shape, warnings}
+function occToolCkGet(key){
+  if(freshHard&&!(occProjPass>=1))return null;
+  const t=occToolCk.get(key);if(!t)return null;
+  occToolCk.delete(key);occToolCk.set(key,t); // fraîcheur
+  const sh=occShapeCopy(t.shape);return sh?{shape:sh,bins:[],warnings:t.warnings.slice()}:null;
+}
+function occToolCkPut(key,r){
+  if(freshHard&&!(occProjPass>=1))return;
+  if(!r||!r.shape||occToolCk.has(key))return;
+  const cp=occShapeCopy(r.shape);if(!cp)return;
+  occToolCk.set(key,{shape:cp,warnings:(r.warnings||[]).slice()});
+  while(occToolCk.size>occCkMax()){const k=occToolCk.keys().next().value;const o=occToolCk.get(k);occToolCk.delete(k);try{o.shape.delete();}catch(e){}}
+}
 function occCkClear(){
   for(const c of occCk){try{c.shape.delete();}catch(e){}}
   occCk=[];occCkWarn={};
+  occToolCk.forEach(o=>{try{o.shape.delete();}catch(e){}});occToolCk=new Map();
 }
 function skSig(sk){
   // Signature numerique d'une esquisse : base (position + axes), points, entites,
@@ -2177,7 +2197,8 @@ function occReplayBody(bid,list){
     // (tout ce qui précède dans la timeline) — jamais sur l'affichage de l'édition précédente.
     occThroughBase=(((f.type==='extrude'&&f.through)||f.type==='hole')&&result)?result:null; // perçage : débouchant / prochaine face
     try{
-      const r=(f.type==='revolve')?occShapeOfRevolve(f):(f.type==='hole'?occShapeOfHole(f):occShapeOfExtrude(f));
+      let r=occToolCkGet(ckKey);
+      if(!r){r=(f.type==='revolve')?occShapeOfRevolve(f):(f.type==='hole'?occShapeOfHole(f):occShapeOfExtrude(f));occToolCkPut(ckKey,r);}
       bin.push(...r.bins);itemShapes.push(r.shape);
       if(r.warnings.length)msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       shape=r.shape;items.push({f,shape});

@@ -275,7 +275,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser.
  */
 
-const APP_VER='2026-10-16-002';
+const APP_VER='2026-10-16-003';
 try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
@@ -3377,14 +3377,34 @@ let occProjPass=0; // 0 = rejeu principal ; >=1 = passe de projection imbriquée
 // complet 4 fois par reconstruction). On couvre toute la timeline, bornée pour la mémoire.
 function occCkMax(){
   const n=(((typeof doc!=='undefined')&&doc&&doc.features)?doc.features.length:0)+2;
-  return n<8?8:(n>48?48:n);
+  // 2026-10-16-003 : 3 × la timeline (bornée) — après une modification, l'ancien ET le nouveau
+  // préfixe coexistent pendant les passes de projection ; à 1 × ils s'évinçaient mutuellement.
+  return Math.max(8,Math.min(3*n,120));
 }
 function occShapeCopy(sh){
   try{return new occt.BRepBuilderAPI_Copy_2(sh,true,true).Shape();}catch(e){return null;}
 }
+// 2026-10-16-003 : cache des OUTILS (prisme d'extrusion / révolution / perçage) par clé de
+// préfixe — la même que les points de contrôle. Sur un point de contrôle trouvé, l'outil
+// était quand même reconstruit (fusion des profils ≈ 45 % d'un rejeu « sans changement »).
+let occToolCk=new Map(); // ckKey → {shape, warnings}
+function occToolCkGet(key){
+  if(freshHard&&!(occProjPass>=1))return null;
+  const t=occToolCk.get(key);if(!t)return null;
+  occToolCk.delete(key);occToolCk.set(key,t); // fraîcheur
+  const sh=occShapeCopy(t.shape);return sh?{shape:sh,bins:[],warnings:t.warnings.slice()}:null;
+}
+function occToolCkPut(key,r){
+  if(freshHard&&!(occProjPass>=1))return;
+  if(!r||!r.shape||occToolCk.has(key))return;
+  const cp=occShapeCopy(r.shape);if(!cp)return;
+  occToolCk.set(key,{shape:cp,warnings:(r.warnings||[]).slice()});
+  while(occToolCk.size>occCkMax()){const k=occToolCk.keys().next().value;const o=occToolCk.get(k);occToolCk.delete(k);try{o.shape.delete();}catch(e){}}
+}
 function occCkClear(){
   for(const c of occCk){try{c.shape.delete();}catch(e){}}
   occCk=[];occCkWarn={};
+  occToolCk.forEach(o=>{try{o.shape.delete();}catch(e){}});occToolCk=new Map();
 }
 function skSig(sk){
   // Signature numerique d'une esquisse : base (position + axes), points, entites,
@@ -3616,7 +3636,8 @@ function occReplayBody(bid,list){
     // (tout ce qui précède dans la timeline) — jamais sur l'affichage de l'édition précédente.
     occThroughBase=(((f.type==='extrude'&&f.through)||f.type==='hole')&&result)?result:null; // perçage : débouchant / prochaine face
     try{
-      const r=(f.type==='revolve')?occShapeOfRevolve(f):(f.type==='hole'?occShapeOfHole(f):occShapeOfExtrude(f));
+      let r=occToolCkGet(ckKey);
+      if(!r){r=(f.type==='revolve')?occShapeOfRevolve(f):(f.type==='hole'?occShapeOfHole(f):occShapeOfExtrude(f));occToolCkPut(ckKey,r);}
       bin.push(...r.bins);itemShapes.push(r.shape);
       if(r.warnings.length)msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       shape=r.shape;items.push({f,shape});
@@ -6190,6 +6211,38 @@ function arcOrient(cx,cy,x1,y1,x2,y2,mx,my){
   if(angInArc(am,a1,a2))return[x1,y1,x2,y2];
   return[x2,y2,x1,y1];
 }
+// 2026-10-16-003 : cache des arêtes candidates PENDANT une passe de mise à jour des
+// projections. Avant : chaque entité projetée rejouait le solide jusqu'à la fonction
+// consommatrice (occFinalShape) puis relisait toutes ses arêtes — « Cavité Usinage » :
+// 26 s pour modifier la 1re extrusion, dont 55 s CPU cumulés ici. Le solide ne change
+// pas pendant la passe : une seule lecture par fonction consommatrice.
+let _projEdgeCache=null;
+// cache PERSISTANT (entre reconstructions) : clé = signature du préfixe de timeline vu par
+// l'esquisse — un préfixe inchangé redonne les mêmes arêtes sans rejouer le solide.
+const _projEdgePersist=new Map();
+function projPrefixSig(idx){
+  try{const F=(doc.features||[]).filter(f=>f.visible!==false).slice(0,idx);let s=(typeof occSkipFeat!=='undefined'&&occSkipFeat)||'';for(const f of F)s+=featSig(f)+';';return s;}catch(e){return null;}
+}
+function projEdgesFor(sk){
+  // → tableau d'arêtes {pts,mid} (repère monde) du solide vu par l'esquisse, ou null
+  let idx=-1;try{idx=skConsumerIdx(sk);}catch(e){idx=-1;}
+  const key=(idx>=0&&occHas())?'f'+idx:((occHas()&&occLive&&occLive.shape)?'live':null);
+  if(!key)return null;
+  if(_projEdgeCache&&_projEdgeCache.has(key))return _projEdgeCache.get(key);
+  const pk=key==='live'?null:projPrefixSig(idx);
+  if(pk!=null&&_projEdgePersist.has(pk)){const ed=_projEdgePersist.get(pk);if(_projEdgeCache)_projEdgeCache.set(key,ed);return ed;}
+  let edges=null;
+  if(key==='live'){try{edges=occListEdges(occLive.shape);}catch(e){edges=null;}}
+  else{
+    let FR=null;
+    try{FR=occFinalShape(idx);if(FR&&FR.shape)edges=occListEdges(FR.shape);}catch(e){edges=null;}
+    // nettoyage APRÈS lecture (occCleanup supprime FR.shape)
+    finally{if(FR){try{occCleanup(FR,null);}catch(e){}}}
+  }
+  if(_projEdgeCache)_projEdgeCache.set(key,edges);
+  if(pk!=null&&edges){_projEdgePersist.set(pk,edges);while(_projEdgePersist.size>24)_projEdgePersist.delete(_projEdgePersist.keys().next().value);}
+  return edges;
+}
 function findClosestProjectedEdge(sk,x,y,preferMid,wantType){
   // sans tolérance, cherche l'arête projetée la plus proche (antériorité).
   // preferMid : milieu 3D mémorisé à la projection — l'arête source d'origine prime
@@ -6199,20 +6252,10 @@ function findClosestProjectedEdge(sk,x,y,preferMid,wantType){
   let best=null,bd=1e9, srcMid=null;
   let bTy=null,bTyd=1e9,bTySrc=null; // meilleur candidat EXIGÉ par le type de l'entité
   const basis=sketchBasis(sk),u=basis.u,v=basis.v,o=basis.o;
-  let candShapes=[],FRk=null;
-  try{
-    const idx=skConsumerIdx(sk);
-    if(idx>=0&&occHas()){
-      const FR=occFinalShape(idx);
-      // Nettoyage DIFFÉRÉ (finally plus bas) : occCleanup(FR,null) supprime FR.shape —
-      // le lire après = use-after-free → occListEdges échoue → projection jamais mise à jour.
-      if(FR&&FR.shape){candShapes.push(FR.shape);FRk=FR;}
-    } else if(occHas()&&occLive&&occLive.shape) candShapes.push(occLive.shape);
-  }catch(e){}
-  try{
-  for(const sh of candShapes){
+  const edgesAll=projEdgesFor(sk);
+  {
+  for(const edges of (edgesAll?[edgesAll]:[])){
     try{
-      const edges=occListEdges(sh);
       for(const e of edges){
         const pts2=e.pts.map(p=>[(p[0]-o.x)*u.x+(p[1]-o.y)*u.y+(p[2]-o.z)*u.z, (p[0]-o.x)*v.x+(p[1]-o.y)*v.y+(p[2]-o.z)*v.z]);
         let d=1e9;
@@ -6248,7 +6291,7 @@ function findClosestProjectedEdge(sk,x,y,preferMid,wantType){
       }
     }catch(e){}
   }
-  }finally{ if(FRk){try{occCleanup(FRk,null);}catch(e){} } }
+  }
   let res=best,resSrc=srcMid;
   if(wantType&&best&&best.type!==wantType&&bTy){res=bTy;resSrc=bTySrc;}
   if(res&&resSrc)res.srcMid=resSrc;
@@ -6256,6 +6299,10 @@ function findClosestProjectedEdge(sk,x,y,preferMid,wantType){
 }
 function updateAssociativeProjections(sk){
   if(!sk||!sk.entities) return false;
+  const own=!_projEdgeCache;if(own)_projEdgeCache=new Map(); // cache local si appel isolé
+  try{return updateAssociativeProjections0(sk);}finally{if(own)_projEdgeCache=null;}
+}
+function updateAssociativeProjections0(sk){
   let changed=false;
   for(const e of sk.entities){
     // 2026-10-15-009 : une arête PROJETÉE reste associative même passée en PROFIL
@@ -6275,7 +6322,10 @@ function updateAssociativeProjections(sk){
       if(pr.srcMid)e.srcMid=pr.srcMid;
       const d1=Math.hypot(A.x-pr.x1,A.y-pr.y1)+Math.hypot(B.x-pr.x2,B.y-pr.y2);
       const d2=Math.hypot(A.x-pr.x2,A.y-pr.y2)+Math.hypot(B.x-pr.x1,B.y-pr.y1);
-      if(d1>0.02||d2>0.02){
+      // 2026-10-16-003 : « d1>0.02||d2>0.02 » était TOUJOURS vrai (l'un des 2 sens de
+      // parcours est forcément loin) → chaque projetée « changeait » à chaque passe et la
+      // régénération rejouait tout jusqu'à REGEN_MAX_PASS (Cavité Usinage : 16 s au lieu de 2).
+      if(Math.min(d1,d2)>0.02){
         if(d2<d1){ A.x=pr.x2; A.y=pr.y2; B.x=pr.x1; B.y=pr.y1; } else { A.x=pr.x1; A.y=pr.y1; B.x=pr.x2; B.y=pr.y2; }
         changed=true;
       }
@@ -6302,9 +6352,20 @@ function updateAssociativeProjections(sk){
 function updateAllProjections(){
   // true = au moins une esquisse a bougé → le solide doit être rejoué (projRefreshRerun).
   let changed=false;
+  const own=!_projEdgeCache;if(own)_projEdgeCache=new Map(); // une lecture par fonction consommatrice pour TOUTE la passe
   try{
-    (doc.sketches||[]).forEach(sk=>{ if(sk.id===skEdit?.id)return; if(repCloneSkName(sk))return; try{ if(updateAssociativeProjections(sk))changed=true; }catch(e){} });
+    // 2026-10-16-003 : ordre de la TIMELINE (fonction consommatrice croissante). Quand une
+    // esquisse bouge, le solide vu par les suivantes est relu aussitôt (cache invalidé
+    // au-delà) : toute une chaîne (extrusion → esquisse sur face → symétrie → esquisse →
+    // limite…) se règle en UNE passe au lieu d'une passe complète par maillon.
+    const L=[];
+    (doc.sketches||[]).forEach(sk=>{ if(sk.id===skEdit?.id)return; if(repCloneSkName(sk))return; let k=-1;try{k=skConsumerIdx(sk);}catch(e){} L.push({sk,k:k>=0?k:1e9}); });
+    L.sort((a,b)=>a.k-b.k);
+    L.forEach(({sk,k})=>{ try{ if(updateAssociativeProjections(sk)){changed=true;
+      if(_projEdgeCache)[..._projEdgeCache.keys()].forEach(key=>{const n=key[0]==='f'?+key.slice(1):1e9;if(n>k)_projEdgeCache.delete(key);});
+    } }catch(e){} });
   }catch(e){}
+  finally{if(own)_projEdgeCache=null;}
   return changed;
 }
 function projectEdgeAt(sk,x,y){
@@ -10307,6 +10368,29 @@ function skEntPids(e){
   if(e.t==='cpoint')return[e.p];
   return[];
 }
+function skSymCenters(sk){
+  // centres de symétrie : point commun à 2 axes (lignes « mid ») de symétries — rectangle par le centre
+  const cnt={};
+  (sk.constraints||[]).forEach(c=>{if(c&&c.type==='symmetric'){const M=entById(sk,c.mid);if(M&&M.t==='line'){[M.p1,M.p2].forEach(p=>{cnt[p]=(cnt[p]||0)+1;});}}});
+  return Object.keys(cnt).filter(p=>cnt[p]>=2&&sk.points[p]);
+}
+function skDragHold(sk,anchor){
+  // 2026-10-16-003 : pendant un glisser, le CENTRE de symétrie reste en place (sauf s'il est
+  // lui-même saisi) → un rectangle par le centre s'étire symétriquement, comme Fusion.
+  const a=(anchor||[]).slice();
+  skSymCenters(sk).forEach(p=>{if(a.indexOf(p)<0)a.push(p);});
+  return a;
+}
+function skDragRigid(sk,comp){
+  // Glisser EN BLOC seulement si la composante peut vraiment se translater (aucun point
+  // fixe, origine comprise) et qu'elle est indéformable (esquisse ≤ 3 DDL : translation +
+  // rotation). Sinon (rectangle par le centre accroché à l'origine, forme non cotée) :
+  // glisser un coin ÉTIRE la forme, comme Fusion — le bloc tirait contre le point fixe et
+  // le rectangle se ratatinait.
+  const fx=skFixed(sk);
+  if((comp.pids||[]).some(p=>fx.has(p)))return false;
+  try{return skDofInfo(sk).dof<=3;}catch(e){return true;}
+}
 function skDragComp(sk,seed){
   // composante connexe pour un glisser en corps rigide :
   // pids réunis (points partagés), coïncidents, tangents, symétriques, parallèles/perp
@@ -10393,7 +10477,9 @@ svg.addEventListener('pointerdown',e=>{
       // point de jonction (partagé par 2+ entités ou coïncident) → glisser toute la composante en corps rigide
       const nShared=(sk.entities||[]).reduce((n,e)=>n+(skEntPids(e).indexOf(pid)>=0?1:0),0);
       const coin=(sk.constraints||[]).some(c=>c.type==='coincident'&&(c.a===pid||c.b===pid));
-      if(nShared>1||coin){
+      // centre de symétrie saisi (rectangle par le centre non ancré) → toute la forme suit en bloc
+      const isCtr=skSymCenters(sk).indexOf(pid)>=0&&!skDragComp(sk,[pid]).pids.some(p=>skFixed(sk).has(p));
+      if((nShared>1||coin)&&(isCtr||skDragRigid(sk,skDragComp(sk,[pid])))){
         const comp=skDragComp(sk,[pid]);
         const orig={};comp.pids.forEach(p=>{if(sk.points[p])orig[p]={x:sk.points[p].x,y:sk.points[p].y};});
         skDragEnt={x0:wx,y0:wy,pids:comp.pids,orig,anchor:comp.pids.filter(p=>!skFixed(sk).has(p)),pushed:false};
@@ -10413,9 +10499,13 @@ svg.addEventListener('pointerdown',e=>{
       else{skSel={kind:'ent',id:ent.id};skSelX=[];}
       // déplacement en corps rigide : toute la composante connexe (points partagés,
       // coïncidences, tangences, symétries, parallélismes) suit le membre saisi
-      const comp=skDragComp(sk,skEntPids(ent));
+      // 2026-10-16-003 : forme DÉFORMABLE ou ANCRÉE (point fixe / origine dans la composante) →
+      // seule l'entité saisie bouge, le solveur ajuste le reste (côté d'un rectangle par le centre).
+      const comp0=skDragComp(sk,skEntPids(ent));
+      const rigid=skDragRigid(sk,comp0);
+      const comp=rigid?comp0:{pids:skEntPids(ent).filter(p=>p&&sk.points[p]),ents:[ent.id]};
       const orig={};comp.pids.forEach(p=>{if(sk.points[p])orig[p]={x:sk.points[p].x,y:sk.points[p].y};});
-      skDragEnt={x0:wx,y0:wy,pids:comp.pids,orig,anchor:comp.pids.filter(p=>!skFixed(sk).has(p)),pushed:false};
+      skDragEnt={x0:wx,y0:wy,pids:comp.pids,orig,anchor:comp.pids.filter(p=>!skFixed(sk).has(p)),pushed:false,rigid};
       renderSkPanel();drawSketch2D();return;
     }
     // clic sur le vide → boîte de sélection (gauche→droite : dedans · droite→gauche : croisé)
@@ -10589,7 +10679,7 @@ svg.addEventListener('pointermove',e=>{
     if(s){nx=s.x;ny=s.y;skSnapMk={x:nx,y:ny};}
     else{if($('skSnap').checked){nx=skSnapVal(nx);ny=skSnapVal(ny);}skSnapMk=null;}
     sk.points[skDrag]={x:nx,y:ny};skDragMoved=true;
-    solveSketch(sk,40,[skDrag]);drawSketch2D();return;
+    solveSketch(sk,40,skDragHold(sk,[skDrag]));drawSketch2D();return;
   }
   if(skDragEnt){
     const dx=wx-skDragEnt.x0,dy=wy-skDragEnt.y0;
@@ -10603,7 +10693,7 @@ svg.addEventListener('pointermove',e=>{
       if(skFixed(sk).has(p))return;
       const o=skDragEnt.orig[p];if(o)sk.points[p]={x:o.x+dx,y:o.y+dy};
     });
-    solveSketch(sk,40,skDragEnt.anchor);drawSketch2D();return;
+    solveSketch(sk,40,skDragEnt.rigid?skDragEnt.anchor:skDragHold(sk,skDragEnt.anchor));drawSketch2D();return;
   }
   if(skDimDrag){
     const dd=dimById(sk,skDimDrag.id);if(!dd){skDimDrag=null;return;}
@@ -10845,7 +10935,6 @@ svg.addEventListener('pointerup',e=>{
           sk.constraints.push(
             {id:skNewEid(sk),type:'h',line:axisH.id},
             {id:skNewEid(sk),type:'v',line:axisV.id},
-            {id:skNewEid(sk),type:'fix',p:cPid},
             {id:skNewEid(sk),type:'symmetric',a:l4.id,b:l2.id,mid:axisV.id,inf:true},
             {id:skNewEid(sk),type:'symmetric',a:l1.id,b:l3.id,mid:axisH.id,inf:true}, // droites : congés / chanfreins possibles
             // bouts des axes sur les côtés : plus de longueur d'axe libre (2 DDL fantômes)
@@ -29269,8 +29358,8 @@ function wirePick(){
     if(coqueMode){if(e.button===0&&!e.ctrlKey)coqueToggle(e);return;}
     if(e.altKey)return;
     if(e.shiftKey&&e.button===0){shiftMeasure(e);return;}
-    if(e.button===0&&!e.ctrlKey)faceSelect(e,false);
-    else if(e.ctrlKey&&e.button===0)faceSelect(e,true);
+    if(e.button===0&&!(e.ctrlKey||e.metaKey))faceSelect(e,false);
+    else if((e.ctrlKey||e.metaKey)&&e.button===0)faceSelect(e,true);
     else if(e.ctrlKey&&e.button===2)recenter(e);
   });
    el.addEventListener('pointermove',hoverMove);
@@ -29430,8 +29519,81 @@ function pick(e){
   const hits=rayc.intersectObjects(bodies.filter(b=>b.visible).map(b=>b.mesh),false);
   return hits[0]||null;
 }
+// 2026-10-16-003 : sélection d'ARÊTES (clic sur une arête présélectionnée) et MESURE entre
+// 2 arêtes (Ctrl/Cmd + clic) : droites parallèles → distance perpendiculaire ; droites
+// quelconques → angle + distance mini ; cercles/arcs → entraxe (+ écart des plans si
+// coaxiaux) ; droite + cercle → distance centre ↔ droite.
+let selEdges=[];
+function edgeGeomOf(P){
+  const V=P.map(p=>new THREE.Vector3(p[0],p[1],p[2]));
+  const A=V[0],B=V[V.length-1],u=B.clone().sub(A);const L=u.length();
+  const dev=q=>{if(L<1e-9)return 0;const t=q.clone().sub(A).dot(u)/(L*L);return q.distanceTo(A.clone().addScaledVector(u,t));};
+  if(V.length<=2||V.every(q=>dev(q)<1e-3*Math.max(1,L)))return{kind:'line',a:A,b:B,u:u.clone().normalize(),pts:V};
+  // cercle passant par 3 points (début, milieu, fin) ; fermé → 3 points répartis
+  const closed=A.distanceTo(B)<1e-6*Math.max(1,L)+1e-6;
+  const p1=V[0],p2=V[Math.floor(V.length/3)],p3=V[Math.floor(2*V.length/3)];
+  const a=p2.clone().sub(p1),b=p3.clone().sub(p1),n=a.clone().cross(b);const nn=n.lengthSq();
+  if(nn<1e-12)return{kind:'curve',pts:V};
+  // centre circonscrit : C = p1 + ((|a|²·b − |b|²·a) × n) / (2|n|²), n = a × b
+  const C=p1.clone().add(b.clone().multiplyScalar(a.lengthSq()).sub(a.clone().multiplyScalar(b.lengthSq())).cross(n).multiplyScalar(0.5/nn));
+  const r=C.distanceTo(p1);
+  const ok=V.every(q=>Math.abs(q.distanceTo(C)-r)<2e-3*Math.max(1,r));
+  return ok?{kind:'circle',center:C,axis:n.clone().normalize(),r,closed,pts:V}:{kind:'curve',pts:V};
+}
+function edgeSelect(e,eh,second){
+  const P=edgeHoverSegs()[eh.pi];if(!P)return;
+  const G=edgeGeomOf(P);
+  clearHover();
+  if(!second||!selEdges.length){
+    clearMeasure();selEdges=[{P,G}];
+    if(!selGroup){selGroup=new THREE.Group();scene.add(selGroup);}
+    edgeHoverDraw(P,selGroup,0xff9f0a);
+    const desc=G.kind==='line'?('DROITE · longueur '+G.a.distanceTo(G.b).toFixed(2)+' mm'):(G.kind==='circle'?((G.closed?'CERCLE':'ARC')+' · Ø'+(2*G.r).toFixed(2)+' (R'+G.r.toFixed(2)+')'):'COURBE');
+    faceEl.textContent='Arête 1 : '+desc+'\nCtrl/Cmd+clic une 2e arête : distance perpendiculaire, angle ou entraxe.';
+    return;
+  }
+  selEdges.push({P,G});edgeHoverDraw(P,selGroup,0xff9f0a);
+  const A=selEdges[0].G,B=G;
+  if(A.kind==='line'&&B.kind==='line'){
+    const ang=Math.acos(Math.min(1,Math.abs(A.u.dot(B.u))))*180/Math.PI;
+    if(ang<0.5){
+      const M=B.a.clone().add(B.b).multiplyScalar(0.5);
+      const F=A.a.clone().addScaledVector(A.u,M.clone().sub(A.a).dot(A.u));
+      const d=F.distanceTo(M);
+      dimPair(F,M,d.toFixed(2));
+      faceEl.textContent='Arêtes parallèles : '+d.toFixed(2)+' mm (perpendiculaire) · angle '+ang.toFixed(2)+'°';
+    }else{
+      // plus courte distance entre les 2 segments (échantillonnage + affinage)
+      let best={d:1e18};
+      const segPt=(G0,t)=>G0.a.clone().lerp(G0.b,t);
+      for(let i=0;i<=40;i++)for(let j=0;j<=40;j++){const p=segPt(A,i/40),q=segPt(B,j/40),d=p.distanceTo(q);if(d<best.d)best={d,p,q,i,j};}
+      dimPair(best.p,best.q,best.d.toFixed(2));
+      faceEl.textContent='Arêtes non parallèles : angle '+ang.toFixed(2)+'° · distance mini ≈ '+best.d.toFixed(2)+' mm';
+    }
+    return;
+  }
+  if(A.kind==='circle'&&B.kind==='circle'){
+    const d=A.center.distanceTo(B.center),coax=Math.abs(Math.abs(A.axis.dot(B.axis))-1)<1e-4&&B.center.clone().sub(A.center).cross(A.axis).length()<1e-3;
+    dimPair(A.center,B.center,(coax?'':'entraxe ')+d.toFixed(2));
+    tagAt('Ø '+(2*A.r).toFixed(2),A.pts[0]);tagAt('Ø '+(2*B.r).toFixed(2),B.pts[0]);
+    faceEl.textContent=(coax?'Cercles COAXIAUX : écart des plans '+d.toFixed(2)+' mm':'Entraxe : '+d.toFixed(2)+' mm')+'\nØ1='+(2*A.r).toFixed(2)+' · Ø2='+(2*B.r).toFixed(2);
+    return;
+  }
+  const L=A.kind==='line'?A:(B.kind==='line'?B:null),C=A.kind==='circle'?A:(B.kind==='circle'?B:null);
+  if(L&&C){
+    const F=L.a.clone().addScaledVector(L.u,C.center.clone().sub(L.a).dot(L.u));const d=F.distanceTo(C.center);
+    dimPair(C.center,F,d.toFixed(2));tagAt('Ø '+(2*C.r).toFixed(2),C.pts[0]);
+    faceEl.textContent='Centre ↔ droite : '+d.toFixed(2)+' mm (perpendiculaire) · Ø='+(2*C.r).toFixed(2);
+    return;
+  }
+  // courbes quelconques : distance mini entre points des polylignes
+  let best={d:1e18};A.pts.forEach(p=>B.pts.forEach(q=>{const d=p.distanceTo(q);if(d<best.d)best={d,p,q};}));
+  dimPair(best.p,best.q,best.d.toFixed(2));faceEl.textContent='Distance mini entre arêtes ≈ '+best.d.toFixed(2)+' mm';
+}
 function faceSelect(e,second){
   const h=pick(e);
+  try{const eh=edgeHoverPick(e,h);if(eh){edgeSelect(e,eh,second);return;}}catch(err){}
+  if(second&&selEdges.length&&!selFaces.length){selEdges=[];}
   if(!h){
     if(!second){
       const pl=pickPlane(e);
@@ -29704,6 +29866,68 @@ function clearHover(){
   hoverKey='';
   if(hoverGroup){scene.remove(hoverGroup);hoverGroup.traverse(o=>{o.geometry&&o.geometry.dispose();o.material&&(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.dispose&&m.dispose());});hoverGroup=null;}
 }
+// 2026-10-16-003 : PRÉSÉLECTION DES ARÊTES au survol (comme les faces) — surbrillance orange sanguine,
+// ruban à peine plus épais que le trait normal (1,6 px au lieu de 1). Priorité à l'arête si le
+// curseur est à ≤ 6 px d'elle ; une arête cachée derrière la face survolée est ignorée.
+let edgeHoverCache={key:'',segs:null};
+function edgeHoverSegs(){
+  const key=(typeof _docVersion!=='undefined'?_docVersion:0)+'|'+bodies.length+'|'+bodies.filter(b=>b.visible).map(b=>b.id).join(',');
+  if(edgeHoverCache.key===key&&edgeHoverCache.segs)return edgeHoverCache.segs;
+  let data=[];try{data=edgeOverlayData()||[];}catch(e){data=[];}
+  const out=[];
+  data.forEach((d,ei)=>{const pts=d&&d.pts;if(!pts||pts.length<2)return;const M=(d.mw&&d.mw.elements)||null;
+    const P=pts.map(p=>{let x=+p[0],y=+p[1],z=+p[2];if(M){const X=x,Y=y,Z=z;x=M[0]*X+M[4]*Y+M[8]*Z+M[12];y=M[1]*X+M[5]*Y+M[9]*Z+M[13];z=M[2]*X+M[6]*Y+M[10]*Z+M[14];}return[x,y,z];});
+    out.push(P);});
+  edgeHoverCache={key,segs:out};
+  return out;
+}
+function edgeHoverPick(e,faceHit){
+  const segs=edgeHoverSegs();if(!segs.length)return null;
+  const r=renderer.domElement.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+  const v=new THREE.Vector3(),vz=new THREE.Vector3(),toS=p=>{vz.set(p[0],p[1],p[2]).applyMatrix4(camera.matrixWorldInverse);v.set(p[0],p[1],p[2]).project(camera);return[(v.x+1)/2*r.width,(1-v.y)/2*r.height,v.z,-vz.z];};
+  let best=null,bd=6;
+  segs.forEach((P,pi)=>{
+    let a=toS(P[0]);
+    for(let k=1;k<P.length;k++){
+      const b=toS(P[k]);
+      if(a[2]<1&&b[2]<1&&a[2]>-1&&b[2]>-1){
+        const dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy||1e-9;
+        let t=((mx-a[0])*dx+(my-a[1])*dy)/L2;t=Math.max(0,Math.min(1,t));
+        const d=Math.hypot(mx-(a[0]+t*dx),my-(a[1]+t*dy));
+        if(d<bd){
+          // paramètre 3D corrigé de la perspective (t écran ≠ t espace)
+          if(!camera.isOrthographicCamera){const za=a[3],zb=b[3];const den=(1-t)*zb+t*za;if(Math.abs(den)>1e-12)t=t*za/den;}
+          const w=[P[k-1][0]+(P[k][0]-P[k-1][0])*t,P[k-1][1]+(P[k][1]-P[k-1][1])*t,P[k-1][2]+(P[k][2]-P[k-1][2])*t];
+          // masquée par la face survolée ? (l'arête doit être au moins aussi proche que la face)
+          const dc=camera.position.distanceTo(new THREE.Vector3(w[0],w[1],w[2]));
+          if(!faceHit||dc<=faceHit.distance*1.004+0.3){bd=d;best={pi,dc};}
+        }
+      }
+      a=b;
+    }
+  });
+  return best;
+}
+function edgeHoverDraw(P,grp,color){
+  // ruban écran : largeur 1,6 px à la profondeur de chaque point, face à la caméra
+  const r=renderer.domElement.getBoundingClientRect();
+  const wpp=q=>{if(camera.isOrthographicCamera)return (camera.top-camera.bottom)/(camera.zoom||1)/r.height;
+    const d=camera.position.distanceTo(q);return 2*d*Math.tan(camera.fov*Math.PI/360)/r.height;};
+  const pos=[],A=new THREE.Vector3(),B=new THREE.Vector3(),dir=new THREE.Vector3(),view=new THREE.Vector3(),n=new THREE.Vector3();
+  for(let k=1;k<P.length;k++){
+    A.set(P[k-1][0],P[k-1][1],P[k-1][2]);B.set(P[k][0],P[k][1],P[k][2]);
+    dir.subVectors(B,A);if(dir.lengthSq()<1e-18)continue;
+    view.subVectors(camera.position,A).normalize();n.crossVectors(dir,view).normalize();
+    const ha=0.8*wpp(A),hb=0.8*wpp(B);
+    const a1=[A.x+n.x*ha,A.y+n.y*ha,A.z+n.z*ha],a2=[A.x-n.x*ha,A.y-n.y*ha,A.z-n.z*ha];
+    const b1=[B.x+n.x*hb,B.y+n.y*hb,B.z+n.z*hb],b2=[B.x-n.x*hb,B.y-n.y*hb,B.z-n.z*hb];
+    pos.push(...a1,...a2,...b1,...b1,...a2,...b2);
+  }
+  if(!pos.length)return;
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:color||0xff5a1f,side:THREE.DoubleSide,depthTest:true,depthWrite:false,transparent:true,opacity:0.95}));
+  m.renderOrder=997;m.raycast=()=>{};grp.add(m);
+}
 function hoverMove(e){
   // Pré-sélection lumineuse au survol (comme le viewer), ~15 Hz max, jamais en orbite/clic.
   if(filMode||filModeX||skEdit||faoChainMode)return;
@@ -29711,6 +29935,14 @@ function hoverMove(e){
   const now=performance.now();if(now-lastHoverT<65)return;lastHoverT=now;
   try{
     const h=pick(e);
+    const eh=edgeHoverPick(e,h);
+    if(eh){
+      const key='edge:'+eh.pi;if(key===hoverKey)return;
+      clearHover();hoverKey=key;
+      hoverGroup=new THREE.Group();scene.add(hoverGroup);
+      edgeHoverDraw(edgeHoverSegs()[eh.pi],hoverGroup);
+      return;
+    }
     if(!h||h.faceIndex===undefined||h.faceIndex===null){if(hoverKey)clearHover();return;}
     const groups=(h.object.geometry.userData.occGroups||[]);
     const g=groups.find(g=>h.faceIndex>=g.start&&h.faceIndex<g.start+g.count);
@@ -29725,7 +29957,7 @@ function hoverMove(e){
   }catch(err){}
 }
 function clearMeasure(){
-  selFaces=[];selLabels=[];labelsDiv.innerHTML='';clearHover();
+  selFaces=[];selEdges=[];selLabels=[];labelsDiv.innerHTML='';clearHover();
   if(selGroup){scene.remove(selGroup);selGroup=null;}
   if(measureGroup){scene.remove(measureGroup);measureGroup=null;}
 }
@@ -31071,7 +31303,7 @@ window.addEventListener('pointerdown',e=>{if(!$('ctxMenu').contains(e.target))hi
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.41';v.title='Version produit';
+    v.id='prodVer';v.textContent='V0.1.42';v.title='Version produit';
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);

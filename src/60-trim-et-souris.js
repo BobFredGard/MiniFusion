@@ -336,6 +336,29 @@ function skEntPids(e){
   if(e.t==='cpoint')return[e.p];
   return[];
 }
+function skSymCenters(sk){
+  // centres de symétrie : point commun à 2 axes (lignes « mid ») de symétries — rectangle par le centre
+  const cnt={};
+  (sk.constraints||[]).forEach(c=>{if(c&&c.type==='symmetric'){const M=entById(sk,c.mid);if(M&&M.t==='line'){[M.p1,M.p2].forEach(p=>{cnt[p]=(cnt[p]||0)+1;});}}});
+  return Object.keys(cnt).filter(p=>cnt[p]>=2&&sk.points[p]);
+}
+function skDragHold(sk,anchor){
+  // 2026-10-16-003 : pendant un glisser, le CENTRE de symétrie reste en place (sauf s'il est
+  // lui-même saisi) → un rectangle par le centre s'étire symétriquement, comme Fusion.
+  const a=(anchor||[]).slice();
+  skSymCenters(sk).forEach(p=>{if(a.indexOf(p)<0)a.push(p);});
+  return a;
+}
+function skDragRigid(sk,comp){
+  // Glisser EN BLOC seulement si la composante peut vraiment se translater (aucun point
+  // fixe, origine comprise) et qu'elle est indéformable (esquisse ≤ 3 DDL : translation +
+  // rotation). Sinon (rectangle par le centre accroché à l'origine, forme non cotée) :
+  // glisser un coin ÉTIRE la forme, comme Fusion — le bloc tirait contre le point fixe et
+  // le rectangle se ratatinait.
+  const fx=skFixed(sk);
+  if((comp.pids||[]).some(p=>fx.has(p)))return false;
+  try{return skDofInfo(sk).dof<=3;}catch(e){return true;}
+}
 function skDragComp(sk,seed){
   // composante connexe pour un glisser en corps rigide :
   // pids réunis (points partagés), coïncidents, tangents, symétriques, parallèles/perp
@@ -422,7 +445,9 @@ svg.addEventListener('pointerdown',e=>{
       // point de jonction (partagé par 2+ entités ou coïncident) → glisser toute la composante en corps rigide
       const nShared=(sk.entities||[]).reduce((n,e)=>n+(skEntPids(e).indexOf(pid)>=0?1:0),0);
       const coin=(sk.constraints||[]).some(c=>c.type==='coincident'&&(c.a===pid||c.b===pid));
-      if(nShared>1||coin){
+      // centre de symétrie saisi (rectangle par le centre non ancré) → toute la forme suit en bloc
+      const isCtr=skSymCenters(sk).indexOf(pid)>=0&&!skDragComp(sk,[pid]).pids.some(p=>skFixed(sk).has(p));
+      if((nShared>1||coin)&&(isCtr||skDragRigid(sk,skDragComp(sk,[pid])))){
         const comp=skDragComp(sk,[pid]);
         const orig={};comp.pids.forEach(p=>{if(sk.points[p])orig[p]={x:sk.points[p].x,y:sk.points[p].y};});
         skDragEnt={x0:wx,y0:wy,pids:comp.pids,orig,anchor:comp.pids.filter(p=>!skFixed(sk).has(p)),pushed:false};
@@ -442,9 +467,13 @@ svg.addEventListener('pointerdown',e=>{
       else{skSel={kind:'ent',id:ent.id};skSelX=[];}
       // déplacement en corps rigide : toute la composante connexe (points partagés,
       // coïncidences, tangences, symétries, parallélismes) suit le membre saisi
-      const comp=skDragComp(sk,skEntPids(ent));
+      // 2026-10-16-003 : forme DÉFORMABLE ou ANCRÉE (point fixe / origine dans la composante) →
+      // seule l'entité saisie bouge, le solveur ajuste le reste (côté d'un rectangle par le centre).
+      const comp0=skDragComp(sk,skEntPids(ent));
+      const rigid=skDragRigid(sk,comp0);
+      const comp=rigid?comp0:{pids:skEntPids(ent).filter(p=>p&&sk.points[p]),ents:[ent.id]};
       const orig={};comp.pids.forEach(p=>{if(sk.points[p])orig[p]={x:sk.points[p].x,y:sk.points[p].y};});
-      skDragEnt={x0:wx,y0:wy,pids:comp.pids,orig,anchor:comp.pids.filter(p=>!skFixed(sk).has(p)),pushed:false};
+      skDragEnt={x0:wx,y0:wy,pids:comp.pids,orig,anchor:comp.pids.filter(p=>!skFixed(sk).has(p)),pushed:false,rigid};
       renderSkPanel();drawSketch2D();return;
     }
     // clic sur le vide → boîte de sélection (gauche→droite : dedans · droite→gauche : croisé)
@@ -618,7 +647,7 @@ svg.addEventListener('pointermove',e=>{
     if(s){nx=s.x;ny=s.y;skSnapMk={x:nx,y:ny};}
     else{if($('skSnap').checked){nx=skSnapVal(nx);ny=skSnapVal(ny);}skSnapMk=null;}
     sk.points[skDrag]={x:nx,y:ny};skDragMoved=true;
-    solveSketch(sk,40,[skDrag]);drawSketch2D();return;
+    solveSketch(sk,40,skDragHold(sk,[skDrag]));drawSketch2D();return;
   }
   if(skDragEnt){
     const dx=wx-skDragEnt.x0,dy=wy-skDragEnt.y0;
@@ -632,7 +661,7 @@ svg.addEventListener('pointermove',e=>{
       if(skFixed(sk).has(p))return;
       const o=skDragEnt.orig[p];if(o)sk.points[p]={x:o.x+dx,y:o.y+dy};
     });
-    solveSketch(sk,40,skDragEnt.anchor);drawSketch2D();return;
+    solveSketch(sk,40,skDragEnt.rigid?skDragEnt.anchor:skDragHold(sk,skDragEnt.anchor));drawSketch2D();return;
   }
   if(skDimDrag){
     const dd=dimById(sk,skDimDrag.id);if(!dd){skDimDrag=null;return;}
@@ -874,7 +903,6 @@ svg.addEventListener('pointerup',e=>{
           sk.constraints.push(
             {id:skNewEid(sk),type:'h',line:axisH.id},
             {id:skNewEid(sk),type:'v',line:axisV.id},
-            {id:skNewEid(sk),type:'fix',p:cPid},
             {id:skNewEid(sk),type:'symmetric',a:l4.id,b:l2.id,mid:axisV.id,inf:true},
             {id:skNewEid(sk),type:'symmetric',a:l1.id,b:l3.id,mid:axisH.id,inf:true}, // droites : congés / chanfreins possibles
             // bouts des axes sur les côtés : plus de longueur d'axe libre (2 DDL fantômes)
