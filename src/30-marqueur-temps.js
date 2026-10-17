@@ -309,13 +309,15 @@ function rebuildInner(projPass){
   }
 }
 function FreshMat(c){return new THREE.MeshStandardMaterial({color:c,metalness:.35,roughness:.4,clippingPlanes:clipPlane?[clipPlane]:null});}
+function skStrong3D(){try{return document.body.getAttribute('data-theme')==='clair'?0x2a2d33:0xffffff;}catch(e){return 0xffffff;}}
 function drawSketchHelpers(){
   (doc.sketches||[]).forEach(sk=>{
     if(sk.visible===false)return;
     const P=sk.points||{};if(!P)return;
     const{u,v,n,o}=sketchBasis(sk);
     const grp=new THREE.Group();grp.name='sk_'+sk.id;
-    const mat=new THREE.LineBasicMaterial({color:0xffd60a});
+    // V0.2.2 : traits forts de l'esquisse en BLANC dans la vue 3D (gris foncé en thème Clair)
+    const mat=new THREE.LineBasicMaterial({color:skStrong3D()});mat.userData.skStrong=true;
     // 2026-10-16-004 : CONSTRUCTION en pointillés (comme dans l'esquisse) ; axe de rotation
     // en tireté long orange. Tiret proportionné à l'esquisse (lisible petite ou grande pièce).
     let ext=0;Object.values(P).forEach(q=>{if(q)ext=Math.max(ext,Math.abs(q.x),Math.abs(q.y));});

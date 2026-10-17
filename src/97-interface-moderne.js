@@ -16,6 +16,8 @@ function mf3D(t){
   try{if(scene&&scene.background&&scene.background.set)scene.background.set(c[0]);}catch(e){}
   try{if(mirrorU&&mirrorU.color)mirrorU.color.value.set(c[1]);mirrorDirty=true;}catch(e){}
   try{const v=document.getElementById('viewport');if(v)v.style.background=c[2];}catch(e){}
+  // traits forts des esquisses en 3D : blanc (gris foncé en Clair)
+  try{const col=typeof skStrong3D==='function'?skStrong3D():0xffffff;scene.traverse(o=>{if(o.material&&o.material.userData&&o.material.userData.skStrong)o.material.color.set(col);});}catch(e){}
 }
 function mfTheme(t){
   t=MF_THEMES.some(x=>x[0]===t)?t:'nuit';
@@ -30,6 +32,7 @@ function mfUiMode(m){
   mfLS('minifusion_ui',m);
   try{const b=document.getElementById('mfUiBtn');if(b)b.textContent=m==='moderne'?'▦ Moderne':'▦ Classique';}catch(e){}
   if(m==='moderne'){try{mfBuildModern();mfWs(mfLS('minifusion_ws')||'cao');}catch(e){}}
+  try{mfSkLayout();}catch(e){}
   try{if(typeof onResize==='function')onResize();else window.dispatchEvent(new Event('resize'));}catch(e){}
 }
 function mfCss(){
@@ -44,6 +47,23 @@ function mfCss(){
   'body[data-theme="clair"] button.primary{background:var(--primary);color:#fff}',
   'body[data-theme="clair"] .ddMenu,body[data-theme="clair"] .mfPop{background:rgba(255,255,255,.98)!important;color:var(--text)}',
   'body[data-theme="clair"] .ddMenu button:hover{color:#fff}',
+  /* menus contextuels (arbre, pièce 3D, esquisse) : fond clair en Clair (texte sombre lisible) */
+  'body[data-theme="clair"] #ctxMenu,body[data-theme="clair"] #ctxMenu3D,body[data-theme="clair"] #skCtxMenu{background:rgba(255,255,255,.98)!important;color:#1c1c1e;border-color:rgba(0,0,0,.14)!important;box-shadow:0 12px 32px rgba(0,0,0,.18)!important}',
+  'body[data-theme="clair"] #ctxMenu button,body[data-theme="clair"] #ctxMenu3D button,body[data-theme="clair"] #skCtxMenu button{color:#1c1c1e;background:none}',
+  'body[data-theme="clair"] #ctxMenu button:hover,body[data-theme="clair"] #ctxMenu3D button:hover,body[data-theme="clair"] #skCtxMenu button:hover{background:var(--primary);color:#fff}',
+  'body[data-theme="clair"] #ctx3DTitle,body[data-theme="clair"] #skCtxTitle{color:#5f6368!important}',
+  /* fiche FAO (à droite) et panneau Usinage en Clair : textes FAO codés clairs → sombres */
+  'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) :is(.fao-lab,.fao-tab,.fao-tip,.fao-help,.fao-empty,.fao-note){color:#5f6368!important}',
+  'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) :is(.fao-opnum,.fao-title,.fao-h,.fao-tab:hover){color:#1c1c1e!important}',
+  'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) .fao-tab.on{color:#0a6cff!important}',
+  'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) .fao-card{background:rgba(0,0,0,.025)!important;border-color:rgba(0,0,0,.12)!important;border-left-color:rgba(10,108,255,.7)!important}',
+  'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) .fao-op .badge{color:#0f7a5c!important}',
+  'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) .fao-op .hbtn.on{color:#9a6700!important}',
+  'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) .fao-alert{color:#b45f00!important}',
+  'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) :is(.fao-in,.fao-sel){background:#fff!important;color:#1c1c1e!important;border-color:rgba(0,0,0,.18)!important}',
+  'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) .fao-mini{background:rgba(0,0,0,.04)!important;color:#1c1c1e!important;border-color:rgba(0,0,0,.16)!important}',
+  'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) .fao-check{color:#1c1c1e!important}',
+  'body[data-theme="clair"] .fao-ctx{background:rgba(255,255,255,.98)!important;color:#1c1c1e!important;border-color:rgba(0,0,0,.16)!important;box-shadow:0 12px 32px rgba(0,0,0,.18)!important}',
   'body[data-theme="clair"] kbd,body[data-theme="clair"] .hints span{background:rgba(0,0,0,.05)}',
   /* Clair : la vue 3D est claire, ses panneaux aussi (arbre, barre de vues, réglages, FAO, onglets) */
   'body[data-theme="clair"] #treeOverlay,body[data-theme="clair"] #treeToggle,body[data-theme="clair"] #viewbar,body[data-theme="clair"] #setMenu,body[data-theme="clair"] #faoTreeWrap .fao-cnt,body[data-theme="clair"] #faoToggle,body[data-theme="clair"] #faoAddBar,body[data-theme="clair"] #faoViewerBar,body[data-theme="clair"] #mfBrTabs{background:rgba(255,255,255,.9)!important;color:#1c1c1e!important;border-color:rgba(0,0,0,.14)!important;box-shadow:0 6px 20px rgba(0,0,0,.12)!important}',
@@ -86,7 +106,7 @@ function mfCss(){
   '.mfSearch input{width:100%;padding:6px 10px;border-radius:8px;font-size:.8rem;background:rgba(127,127,127,.12);border:1px solid var(--border);color:var(--text)}',
   '.mfRes{position:absolute;top:calc(100% + 4px);left:0;right:0;max-height:340px;overflow:auto}',
   /* ruban */
-  '#mfRibbon{gap:2px;align-items:stretch;flex-wrap:nowrap;overflow-x:auto;padding:6px 8px;margin-bottom:8px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)}',
+  '#mfRibbon{gap:2px;align-items:stretch;flex-wrap:wrap;row-gap:4px;padding:6px 8px;margin-bottom:8px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)}',
   '.mfGrp{display:flex;flex-direction:column;align-items:stretch;padding:0 4px;flex:none;border-right:1px solid var(--border)}',
   '.mfGrp:last-child{border-right:none}',
   '.mfGrpB{display:flex;gap:2px;flex:1}',
@@ -110,9 +130,12 @@ function mfCss(){
   'body.ui-modern[data-ws="fao"] #treeWrap{display:none!important}',
   'body.ui-modern[data-ws="cao"] #faoWrap,body.ui-modern[data-ws="cao"] #faoTreeWrap{display:none!important}',
   'body.ui-modern[data-ws="fao"] #faoAddBar{display:none!important}',
-  'body.ui-modern[data-ws="fao"] #faoWrap{left:4px!important;right:auto!important;top:40px!important;align-items:flex-start!important}',
-  /* panneau Usinage à gauche : bouton de rabat sur son bord gauche, comme l'arbre */
-  'body.ui-modern[data-ws="fao"] #faoTreeWrap{flex-direction:row!important}',
+  'body.ui-modern[data-ws="fao"] #faoWrap{left:0!important;right:auto!important;top:40px!important;align-items:flex-start!important}',
+  /* panneau Usinage à gauche : bouton de rabat COPIÉ de celui de l'arbre (bord gauche, même
+     forme, même place) — le panneau reste collé à gauche, replié ou non */
+  'body.ui-modern[data-ws="fao"] #faoTreeWrap{flex-direction:row!important;align-self:flex-start!important}',
+  'body.ui-modern[data-ws="fao"] #faoToggle{margin:0 0 0 4px!important;min-width:20px;height:88px;border-radius:0 10px 10px 0;border-left:none;writing-mode:vertical-rl;padding:6px 2px;font-size:inherit}',
+  'body.ui-modern[data-ws="fao"] #faoTreeWrap .fao-cnt{margin-left:4px}',
   '#mfPosTabs{display:flex;gap:3px;flex-wrap:wrap;margin:0 0 6px}',
   '#mfPosTabs button{padding:3px 10px;font-size:.72rem;border-radius:7px}',
   '#mfPosTabs button.on{background:var(--primary);border-color:var(--primary);color:#fff}',
@@ -123,7 +146,31 @@ function mfCss(){
   '#mfStatus .mfSp{flex:1}',
   '#mfStatus button{padding:2px 9px;font-size:.7rem}',
   '#mfStMeas{overflow:hidden;text-overflow:ellipsis;max-width:46vw}',
-  'body.ui-modern aside.right>.panel:nth-child(2),body.ui-modern aside.right>.panel:nth-child(3){display:none}',
+  'body.ui-modern aside.right>.panel.mfHideM{display:none}', /* Mesure et État : repérés par leur titre (voir mfBuildModern) */
+  /* esquisse (moderne) : bandeau d'esquisse à la place du ruban, panneau latéral à droite */
+  'body.ui-modern.mf-sk #mfRibbon{display:none!important}',
+  '#mfSkBar{margin-bottom:8px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)}',
+  '#mfSkBar #skToolbar{border-bottom:none;box-shadow:none;background:none;padding:6px 10px}',
+  '#mfSkSidePanel #skSide{width:auto;background:none;border:none;padding:0;max-height:none;overflow:visible}',
+  /* bandeau d'esquisse (moderne) : icône + nom, comme les rubans CAO / FAO, sur une ligne */
+  '.mfSkLab{display:none}',
+  'body.ui-modern.mf-sk #skToolbar{flex-wrap:wrap;overflow:visible;gap:2px;align-items:stretch;row-gap:4px}',
+  'body.ui-modern.mf-sk #skToolbar #skClear{margin-left:auto}',
+  'body.ui-modern.mf-sk #skTitle{display:none}',
+  'body.ui-modern.mf-sk #skToolbar .tool,body.ui-modern.mf-sk #skToolbar .con,body.ui-modern.mf-sk #skToolbar #skZoomIn,body.ui-modern.mf-sk #skToolbar #skZoomOut,body.ui-modern.mf-sk #skToolbar #skFit,body.ui-modern.mf-sk #skToolbar #skRefs,body.ui-modern.mf-sk #skToolbar #skParams,body.ui-modern.mf-sk #skToolbar #skUndo,body.ui-modern.mf-sk #skToolbar #skRedo{flex-direction:column;gap:3px;min-width:37px;padding:4px 2px 3px;line-height:1;border-color:transparent;background:none;flex:none}',
+  'body.ui-modern.mf-sk #skToolbar .tool:hover,body.ui-modern.mf-sk #skToolbar .con:hover{background:rgba(127,127,127,.14)}',
+  'body.ui-modern.mf-sk #skToolbar .tool.on{background:var(--primary)}',
+  'body.ui-modern.mf-sk #skToolbar .con.on{background:#30d158}',
+  'body.ui-modern.mf-sk .mfSkLab{display:block;font-size:.58rem;font-weight:500;line-height:1;white-space:nowrap;color:var(--text);opacity:.85}',
+  'body.ui-modern.mf-sk #skToolbar .tool.on .mfSkLab,body.ui-modern.mf-sk #skToolbar .con.on .mfSkLab{color:#fff;opacity:1}',
+  'body.ui-modern.mf-sk #skToolbar .sksep{align-self:stretch;width:1px;margin:0 3px;background:var(--border)}',
+  'body.ui-modern.mf-sk #skToolbar label{font-size:.66rem;flex:none;white-space:nowrap}',
+  'body.ui-modern.mf-sk #skToolbar #skClear,body.ui-modern.mf-sk #skToolbar #skCancel,body.ui-modern.mf-sk #skToolbar #skOk{flex:none;align-self:center;padding:6px 10px;font-size:.76rem}',
+  /* --- bandeaux ADAPTATIFS à la largeur d'écran --- */
+  '@media (max-width:1700px){.mfRb{min-width:42px;font-size:.62rem}.mfRb i svg{width:20px;height:20px}body.ui-modern.mf-sk #skToolbar .tool,body.ui-modern.mf-sk #skToolbar .con{min-width:33px!important}body.ui-modern.mf-sk .mfSkLab{font-size:.54rem}}',
+  '@media (max-width:1500px){.mfGrpT{display:none}.mfRb{min-width:38px;padding:3px 2px}body.ui-modern.mf-sk .mfSkLab{display:none!important}body.ui-modern.mf-sk #skToolbar .tool,body.ui-modern.mf-sk #skToolbar .con,body.ui-modern.mf-sk #skToolbar #skZoomIn,body.ui-modern.mf-sk #skToolbar #skZoomOut,body.ui-modern.mf-sk #skToolbar #skFit,body.ui-modern.mf-sk #skToolbar #skRefs,body.ui-modern.mf-sk #skToolbar #skParams,body.ui-modern.mf-sk #skToolbar #skUndo,body.ui-modern.mf-sk #skToolbar #skRedo{min-width:32px!important;padding:5px 3px!important}}',
+  '@media (max-width:1200px){.mfRb{font-size:0;min-width:34px;gap:0}.mfRb i{height:22px}.mfSearch{max-width:200px}.mfQuick button{padding:4px 6px}}',
+  '@media (max-width:900px){.mfSearch{display:none!important}.mfWs button{padding:4px 9px}}',
   /* cube de vue */
   '#mfCube{position:absolute;top:4px;right:4px;z-index:24;width:80px;height:80px}',
   '#mfCubeHome{position:absolute;top:2px;left:-18px;width:16px;height:16px;padding:0;font-size:10px;line-height:14px;border-radius:4px;background:rgba(40,44,52,.88)}'
@@ -353,6 +400,55 @@ function mfCube(){
   };
   loop();
 }
+/* ---------- esquisse en interface moderne : plus de place pour dessiner ----------
+   À l'ouverture d'une esquisse : le bandeau d'outils d'esquisse prend la place du ruban de
+   modélisation (sous le bandeau du haut) et le panneau latéral (santé, sélection, contraintes,
+   cotes) passe dans le panneau de droite. Fermeture / retour en classique : tout revient à sa
+   place d'origine (mêmes nœuds, déplacés — leurs gestionnaires restent attachés). */
+const MF_SK_LAB={select:'Sélection',line:'Ligne',rect:'Rectangle',slot:'Oblong',circle:'Cercle',arc:'Arc',cpoint:'Point',hpoint:'Perçage',project:'Projeter',dim:'Cote',coincident:'Coïncident',trim:'Ajuster',offset:'Décalage',chamfer:'Chanfrein',fillet:'Congé',
+  h:'Horizontal',v:'Vertical',parallel:'Parallèle',perpendicular:'Perpend.',collinear:'Colinéaire',equal:'Égal',symmetric:'Symétrie',fix:'Fixe',tangent:'Tangence',coaxial:'Coaxial',midpoint:'Milieu',construction:'Constr.',
+  skZoomIn:'Zoom +',skZoomOut:'Zoom −',skFit:'Cadrer',skRefs:'Arêtes',skParams:'Param.',skUndo:'Annuler',skRedo:'Rétablir'};
+function mfSkLabels(){
+  // libellé sous chaque icône (visible seulement dans le bandeau moderne) — icônes et couleurs inchangées
+  document.querySelectorAll('#skToolbar button').forEach(b=>{
+    const k=(b.dataset&&(b.dataset.tool||b.dataset.con))||b.id;const l=MF_SK_LAB[k];
+    if(!l||b.querySelector('.mfSkLab'))return;
+    const sp=document.createElement('span');sp.className='mfSkLab';sp.textContent=l;b.appendChild(sp);
+  });
+}
+let mfSkMoved=null;
+function mfSkLayout(){
+  const ov=document.getElementById('sketchOverlay');if(!ov)return;
+  const want=document.body.classList.contains('ui-modern')&&ov.classList.contains('open');
+  const tb=document.getElementById('skToolbar'),side=document.getElementById('skSide');
+  if(want&&!mfSkMoved&&tb&&side){
+    mfSkMoved={tbP:tb.parentNode,tbN:tb.nextSibling,sdP:side.parentNode,sdN:side.nextSibling};
+    const rb=document.getElementById('mfRibbon');
+    const host=document.createElement('div');host.id='mfSkBar';
+    (rb&&rb.parentNode?rb.parentNode:document.body).insertBefore(host,rb?rb.nextSibling:null);
+    host.appendChild(tb);
+    mfSkLabels();
+    const right=document.querySelector('aside.right');
+    const pnl=document.createElement('div');pnl.className='panel';pnl.id='mfSkSidePanel';
+    const ttl=document.createElement('p');ttl.className='panel-title';ttl.textContent=((document.getElementById('skTitle')||{}).textContent||'Esquisse');pnl.appendChild(ttl);
+    pnl.appendChild(side);
+    if(right)right.insertBefore(pnl,right.firstChild);
+    document.body.classList.add('mf-sk');
+    try{window.dispatchEvent(new Event('resize'));}catch(e){}
+  }else if(!want&&mfSkMoved){
+    const m=mfSkMoved;mfSkMoved=null;
+    try{m.tbP.insertBefore(tb,m.tbN&&m.tbN.parentNode===m.tbP?m.tbN:null);}catch(e){m.tbP.appendChild(tb);}
+    try{m.sdP.insertBefore(side,m.sdN&&m.sdN.parentNode===m.sdP?m.sdN:null);}catch(e){m.sdP.appendChild(side);}
+    const h=document.getElementById('mfSkBar');if(h)h.parentNode.removeChild(h);
+    const pn=document.getElementById('mfSkSidePanel');if(pn)pn.parentNode.removeChild(pn);
+    document.body.classList.remove('mf-sk');
+    try{window.dispatchEvent(new Event('resize'));}catch(e){}
+  }
+}
+function mfSkWatch(){
+  const ov=document.getElementById('sketchOverlay');if(!ov||ov._mfObs)return;
+  try{const o=new MutationObserver(()=>mfSkLayout());o.observe(ov,{attributes:true,attributeFilter:['class']});ov._mfObs=o;}catch(e){}
+}
 function mfBuildModern(){
   if(mfBuilt)return;mfBuilt=true;
   const top=document.querySelector('.topbar');if(!top)return;
@@ -375,6 +471,9 @@ function mfBuildModern(){
     [['cao','Modèle'],['fao','Usinage']].forEach(([k,l])=>{const b=document.createElement('button');b.textContent=l;b.dataset.mfws=k;b.onclick=()=>mfWs(k);bt.appendChild(b);});
     vp.appendChild(bt);}
   mfCube();
+  mfSkWatch();
+  // panneaux « Mesure » et « État » (remplacés par la barre d'état) repérés par leur titre
+  document.querySelectorAll('aside.right>.panel').forEach(pn=>{const t=pn.querySelector('.panel-title');if(t&&/^(Mesure|État)$/i.test(t.textContent.trim()))pn.classList.add('mfHideM');});
 }
 (function(){
   try{

@@ -3141,6 +3141,33 @@ function applyCon(type){
   if(!skEdit)return;const sk=skEdit,ents=skSelectedEnts();
   if(type==='construction'){toggleConstr();return;}
   const lines=ents.filter(e=>e.t==='line');
+  // V0.2.2 : COÏNCIDENT en contrainte (l'outil ⌖ reste) — 2 points : confondus ; 1 point + 1 ligne :
+  // le point reste sur la DROITE (prolongement compris : distance à la droite infinie) ;
+  // 1 point + 1 cercle / arc : sur la courbe.
+  if(type==='coincident'){
+    const pts=[];if(skSel&&skSel.kind==='point')pts.push(skSel.pid);
+    skSelX.forEach(s=>{if(s.kind==='point'&&!pts.includes(s.pid))pts.push(s.pid);});
+    const curv=ents.filter(e=>e.t==='circle'||e.t==='arc');
+    const has=f=>(sk.constraints||[]).some(f);
+    if(pts.length===2&&!ents.length){
+      const[a,b]=pts;
+      if(has(c=>c.type==='coincident'&&((c.a===a&&c.b===b)||(c.a===b&&c.b===a)))){skStatus('Coïncidence déjà posée.');return;}
+      skPushUndo();sk.constraints.push({id:skNewEid(sk),type:'coincident',a,b});
+    }else if(pts.length===1&&lines.length===1&&ents.length===1){
+      const p=pts[0],l=lines[0];
+      if(l.p1===p||l.p2===p){skStatus('Ce point est déjà une extrémité de la ligne.');return;}
+      if(has(c=>c.type==='online'&&c.p===p&&c.line===l.id)){skStatus('Point déjà sur cette ligne.');return;}
+      skPushUndo();sk.constraints.push({id:skNewEid(sk),type:'online',p,line:l.id});
+    }else if(pts.length===1&&curv.length===1&&ents.length===1){
+      const p=pts[0],e=curv[0];
+      if(e.pc===p){skStatus('Ce point est le centre : utilisez Coaxial ou déplacez-le.');return;}
+      if(has(c=>c.type==='oncircle'&&c.p===p&&c.ent===e.id)){skStatus('Point déjà sur ce cercle.');return;}
+      skPushUndo();sk.constraints.push({id:skNewEid(sk),type:'oncircle',p,ent:e.id});
+    }else{skStatus('Coïncident : sélectionnez 2 points, ou 1 point + 1 ligne (il glissera sur toute la droite), ou 1 point + 1 cercle/arc (Ctrl/Cmd+clic pour le 2ᵉ).');return;}
+    skMsg='';solveSketch(sk);drawSketch2D();renderSkPanel();
+    skStatus(pts.length===2?'Points coïncidents ⌖.':(lines.length?'Point sur la droite ⌖ — il peut glisser au-delà du segment.':'Point sur la courbe ⌖.'));
+    return;
+  }
   if(type==='h'||type==='v'){
     if(!lines.length){skStatus('Sélectionnez d’abord une ou plusieurs lignes (outil ➤).');return;}
     skPushUndo();

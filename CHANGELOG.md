@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**265 versions**, de `2026-09-28b` à `V0.2.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**266 versions**, de `2026-09-28b` à `V0.2.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4015,3 +4015,14 @@ Test `test_prodver_badge` réécrit (APP_VER au format des tags, badge = APP_VER
 - **Thème Clair = vue 3D claire** : fond de scène, sol miroir et canevas suivent le thème (`mf3D`, appelé aussi à la création de la scène) ; arbre, barre de vues, réglages, panneau Usinage et onglets passent en clair.
 - **Esquisse** : bandeau d'outils et barre d'état **opaques** dans tous les thèmes ; en Clair, voile et panneau latéral clairs, dessin inversé (traits sombres sur fond clair, teintes des contraintes et cotes conservées).
 Nouveau `src/97-interface-moderne.js`, nouveau test `test_interface_moderne` (28 boutons du ruban reliés à des commandes existantes, éléments modernes invisibles en classique, rien de détruit, 5 thèmes, mémorisation). Vérifié au navigateur : classique intacte ; moderne CAO et FAO ; cube juste sur ses 6 faces (vue iso : Face / Droite / Dessus) ; recherche « cong » → Congé ; thème Clair.
+
+## V0.2.2 — README refait ; esquisse plein écran (moderne) ; corrections de l'interface
+- **README** condensé (toutes les fonctions CAO / FAO / interface) avec **8 captures neuves** 1920×1080 dans `docs/captures/` : interfaces classique et moderne, thème clair, esquisse, pièce de révolution, posage FAO, simulation, 3+2.
+- **Esquisse en interface moderne** : le bandeau d'outils d'esquisse **remplace le ruban** de modélisation et le panneau latéral (santé, sélection, contraintes, cotes) **passe dans le panneau de droite** — toute la vue pour dessiner. Fermeture ou retour en classique : tout revient à sa place (mêmes nœuds).
+- **Bandeau d'esquisse (moderne) : icône + nom** sous chaque outil, contrainte et commande d'affichage (couleurs d'origine gardées : contraintes vertes, perçage orange, construction grise), sur **une seule ligne** à 1920 px ; le nom de l'esquisse passe en titre du panneau de droite.
+- **Coïncident = contrainte** (bouton vert du groupe contraintes) : 2 points → confondus ; **1 point + 1 ligne → le point reste sur la DROITE et glisse aussi AU-DELÀ du segment** (distance à la droite infinie) ; 1 point + 1 cercle/arc → sur la courbe. L'outil blanc ⌖ est retiré du bandeau (F1 garde le mode « cliquer 2 extrémités »).
+- **Esquisses dans la vue 3D** : traits forts en **blanc** (gris foncé en thème Clair) ; construction et axe inchangés.
+- **Bandeaux adaptatifs** (ruban CAO/FAO et bandeau d'esquisse) : ≤ 1700 px boutons et noms resserrés ; ≤ 1500 px titres de groupes masqués, esquisse en icônes seules ; ≤ 1200 px ruban en icônes seules ; ≤ 900 px recherche masquée ; passage à la ligne au lieu d'un défilement caché (« Terminer » toujours visible).
+- **Bouton de rabat du panneau Usinage** (moderne) : copié sur celui de l'arbre (bord gauche, même forme, même place) ; il ne saute plus au milieu de la vue une fois replié.
+- **Thème Clair** : menus contextuels (arbre, pièce 3D, esquisse, bulles FAO) sur fond clair, lisibles ; fiche FAO et panneau Usinage lisibles (libellés, onglets, champs, cartes).
+- Panneaux « Mesure » / « État » masqués en moderne repérés par leur titre (l'insertion du panneau d'esquisse décalait le repérage par rang).

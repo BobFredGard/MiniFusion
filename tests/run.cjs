@@ -77,6 +77,7 @@ const SUITES = [
   "test_conge_arete_seule",
   "test_posage_repere",
   "test_interface_moderne",
+  "test_coincident_contrainte",
   "test_aretes_import",
   "test_fao_chain_step",
   "test_precision_affichage",
