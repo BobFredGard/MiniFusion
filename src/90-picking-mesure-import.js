@@ -11,11 +11,13 @@ function wirePick(){
     if(typeof faoHolePick!=='undefined'&&faoHolePick){if(e.button===0&&!e.ctrlKey)faoHolePickAt(e);return;} // perçage : clic sur un trou
     if(faoChainMode){if(e.button===0&&!e.ctrlKey)faoChainToggle(e);return;}
     if(faoPlanePick){if(e.button===0&&!e.ctrlKey)faoPlaneCommit(e);return;}
+    if(typeof faoFramePick!=='undefined'&&faoFramePick){if(e.button===0&&!e.ctrlKey)faoFramePickCommit(e);return;} // axe Z / X du posage
     if(faoZPlanePick){if(e.button===0&&!e.ctrlKey)faoZPlaneCommit(e);return;}
     if(mvMode){if(e.button===0&&!e.ctrlKey)mvFaceCommit(e);return;}
     if(draftMode){if(e.button===0&&!e.ctrlKey)draftToggle(e);return;}
     if(coqueMode){if(e.button===0&&!e.ctrlKey)coqueToggle(e);return;}
     if(e.altKey)return;
+    if(e.button===0&&!(e.ctrlKey||e.metaKey)&&typeof faoPosePickAt==='function'&&faoPosePickAt(e))return; // point cardinal → origine du posage
     if(e.shiftKey&&e.button===0){shiftMeasure(e);return;}
     if(e.button===0&&!(e.ctrlKey||e.metaKey))faceSelect(e,false);
     else if((e.ctrlKey||e.metaKey)&&e.button===0)faceSelect(e,true);
@@ -129,6 +131,7 @@ function filletTangentChain(sk, startCorner){
   window.addEventListener('keydown',e=>{if(e.key==='Escape'){
     if(extPickFace){extPickFace=null;try{renderer.domElement.style.cursor='default';}catch(e2){}faceEl.textContent='Vers un objet : annulé.';return;}
     if(faoPlanePick){faoPlaneCancel();faceEl.textContent='Plan : annulé.';return;}
+    if(typeof faoFramePick!=='undefined'&&faoFramePick){faoFramePickCancel();faceEl.textContent='Axe du posage : annulé.';return;}
     if(faoZPlanePick){faoZPlaneCancel();faceEl.textContent='Plan : annulé.';return;}
     if(filMode||filModeX){exitFilletMode();return;}
     if(faoChainMode){faoChainExit(true);return;}
@@ -262,6 +265,9 @@ function edgeSelect(e,eh,second){
   dimPair(best.p,best.q,best.d.toFixed(2));faceEl.textContent='Distance mini entre arêtes ≈ '+best.d.toFixed(2)+' mm';
 }
 function faceSelect(e,second){
+  // 2026-10-16-017 : plans du repère (dessinés devant la pièce) prioritaires
+  if(!second){const tp=triadPickPlane(e);if(tp){clearMeasure();sel={kind:'plane',id:tp};renderTree();renderProps();refreshParts();faceEl.textContent=`Plan ${tp} — ${PLANES[tp].label}
+Bouton « Esquisse » (ou double-clic dans l'arbre) pour dessiner dessus.`;return;}}
   const h=pick(e);
   try{const eh=edgeHoverPick(e,h);if(eh){edgeSelect(e,eh,second);return;}}catch(err){}
   if(second&&selEdges.length&&!selFaces.length){selEdges=[];}
@@ -609,6 +615,8 @@ function hoverMove(e){
   if(e.buttons!==0)return;
   const now=performance.now();if(now-lastHoverT<65)return;lastHoverT=now;
   try{
+    if(triadHoverAt(e)||(typeof faoPoseHoverAt==='function'&&faoPoseHoverAt(e))){if(hoverKey)clearHover();renderer.domElement.style.cursor='pointer';hoverMove._cur=1;return;}
+    if(hoverMove._cur){hoverMove._cur=0;renderer.domElement.style.cursor='';}
     const h=pick(e);
     const eh=edgeHoverPick(e,h);
     if(eh){

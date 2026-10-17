@@ -18,12 +18,14 @@ const vm=require('vm');
     J.fixture={note:'',radial:5,axial:5,z0:-10,z1:30};
     A(faoPlaneZ({ref:'brutHaut',dz:40},null,J,0)===65,'ref brutHaut+40 = 65');
     A(faoPlaneZ({ref:'brutBas',dz:5},null,J,0)===5,'ref brutBas+5 = 5');
+    J.origin={pt:[0,0,0]}; // 2026-10-16-020 : « Origine » = Z0 du POSAGE (ici dessous X0Y0 = 0)
     A(faoPlaneZ({ref:'origine',dz:12},null,J,0)===12,'ref origine+12 = 12');
     A(faoPlaneZ({ref:'bridageHaut',dz:0},null,J,0)===30,'ref bridageHaut = fixture.z1 (30)');
     A(faoPlaneZ({ref:'bridageBas',dz:2},null,J,0)===-8,'ref bridageBas+2 = -8');
     A(faoPlaneZ({ref:'face',fz:60,dz:-5},null,J,0)===55,'ref face 60-5 = 55');
     A(faoPlaneZ({ref:'face',dz:3},null,J,0)===28,'ref face sans fz -> repli dessus brut (25+3)');
     A(faoPlaneZ({ref:'max',s1:{ref:'brutHaut',dz:10},s2:{ref:'origine',dz:48}},null,J,0)===48,'max(brut+10 ; orig+48) = 48');
+    J.origin={pt:[0,0,1]};A(faoPlaneZ({ref:'origine',dz:12},null,J,0)===37,'origine = Z0 du posage : dessus (25) + 12 = 37');delete J.origin;
     A(faoPlaneZ({ref:'min',s1:{ref:'brutHaut',dz:10},s2:{ref:'origine',dz:48}},null,J,0)===35,'min(...) = 35');
     A(faoPlaneZ({ref:'retrait',dz:0},null,J,0)===50,'chaîne dégagement -> retrait hérité (25+25) = 50');
     A(!isFinite(faoPlaneZ({ref:'inconnu'},null,J,0)),'ref inconnue -> NaN (repli appelant)');
@@ -67,7 +69,7 @@ const vm=require('vm');
     A(faoClearAbs(OP,J)===75,'op écrase clear = 75');
     A(faoClearAbs(null,J)===35,'posage intact quand l’op écrète');
     OP.planes={retr:{ref:'origine',dz:8}};
-    A(faoRetractAbs(OP,J)===8,'op retrait propre = 8');
+    J.origin={pt:[0,0,0]};A(faoRetractAbs(OP,J)===8,'op retrait propre = 8');delete J.origin;
     A(faoClearAbs(OP,J)===35,'clear toujours hérité du posage');
     A(faoRetractAbs(null,J)===50,'sans op : retrait legacy 50');
     delete OP.planes; delete J.planes;
@@ -145,13 +147,15 @@ const vm=require('vm');
     // --- 9. fiche posage : libellés 2026-10-08-002
     const pc=document.createElement('div');
     faoSetupFiche(pc,faoDoc());
+    // 2026-10-16-020 : les plans s'affichent RELATIFS à l'origine du posage (Z0)
+    const RZ=(v,s)=>'= '+(v-faoOriginPoint(s||faoDoc())[2]).toFixed(2);
     const pt=leaves(pc), has=(t)=>pt.indexOf(t)>=0;
     A(has('Dégagement')&&has('Retrait')&&has('Remontées'),'fiche posage : « Dégagement » / « Retrait » / « Remontées »');
     A(!has('Plan Z'),'fiche posage : ancien libellé « Plan Z » retiré');
     A(pt.some(t=>t.indexOf('Plan retrait ou +5')>=0),'fiche posage : option remontées « Plan retrait ou +5 »');
     A(pt.some(t=>t.indexOf('Toujours plan de retrait')>=0),'fiche posage : option remontées « plan de retrait »');
     A(has('Br. Z0')&&has('Z1'),'fiche posage : bornes de bridage Z0/Z1');
-    A(has('= 125.00')&&has('= 50.00'),'fiche posage : valeurs héritées 125.00 / 50.00');
+    A(has(RZ(125))&&has(RZ(50)),'fiche posage : valeurs héritées 125 / 50 (relatives : '+RZ(125)+' / '+RZ(50)+')');
 
     // --- 10. fiche opération : section « Plans » + bouton héritage
     const st=faoSetup();
@@ -164,18 +168,19 @@ const vm=require('vm');
       const ot=leaves(card), oh=(t)=>ot.indexOf(t)>=0;
       A(oh('Plans'),'fiche op : titre « Plans »');
       A(oh('Dégagement')&&oh('Retrait'),'fiche op : rangées Dégagement / Retrait');
-      A(oh('= 125.00')&&oh('= 50.00'),'fiche op : valeurs héritées affichées 125.00 / 50.00');
+      A(oh(RZ(125,st))&&oh(RZ(50,st)),'fiche op : valeurs héritées affichées 125 / 50 (relatives)');
       A(!oh('Hériter du posage'),'fiche op : pas de bouton héritage tant que rien n’est écrêté');
       st.ops[0].planes={retr:{ref:'brutHaut',dz:40}};
       const card2=faoOpCardElement(st,st.ops[0],0);
       const o2=leaves(card2);
       A(o2.indexOf('Hériter du posage')>=0,'fiche op : bouton « Hériter du posage » dès plan propre');
-      A(o2.some(t=>t.indexOf('= 65.00')>=0),'fiche op : retrait propre affiché 65.00');
-      A(o2.some(t=>t.indexOf('= 125.00')>=0),'fiche op : dégagement toujours hérité 125.00');
+      A(o2.some(t=>t.indexOf(RZ(65,st))>=0),'fiche op : retrait propre affiché 65 (relatif)');
+      A(o2.some(t=>t.indexOf(RZ(125,st))>=0),'fiche op : dégagement toujours hérité 125 (relatif)');
       st.ops[0].planes={clear:{ref:'max',s1:{ref:'brutHaut',dz:5},s2:{ref:'origine',dz:15}}};
       const card3=faoOpCardElement(st,st.ops[0],0);
       const o3=leaves(card3);
-      A(o3.some(t=>t.indexOf('= 30.00')>=0),'fiche op : plan max résolu = 30.00 (max 30 ; 15)');
+      const e3=RZ(Math.max(faoPlaneZ({ref:'brutHaut',dz:5},null,st,0),faoOriginPoint(st)[2]+15),st);
+      A(o3.some(t=>t.indexOf(e3)>=0),'fiche op : plan max résolu = '+e3+' (max dessus+5 ; origine posage+15)');
       A(o3.indexOf('· 1re')>=0&&o3.indexOf('· 2e')>=0,'fiche op : sous-références 1re/2e pour max');
     }
 

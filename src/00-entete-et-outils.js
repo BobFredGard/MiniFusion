@@ -1,7 +1,7 @@
-/* ============ MiniFusion MVP — paramétrique + viewer-like ============ */
+/* ============ MiniFusion — CAO paramétrique + FAO ============ */
 /* DÉGEL 2026-09-29 — anciennes zones GEL 2026-09-25 (sketch skLoopTrace→solveSketch + contraintes,
    congés xfillet/occApplyXFillets, antériorité occFinalShape/findHost) : désormais MODIFICATION LIBRE,
-   sous la discipline projet — régression 24/24 verts → bump APP_VER → snapshot Backup/ → push GitHub.
+   sous la discipline projet — régression verte → bump APP_VER (= numéro du tag) → snapshot Backup/ → push GitHub.
    GARDE-FOU : le noyau exact OCCT (occApplyXFillets, occFinalShape) n'est PAS couvert par le harnais
    (OCCT ne se charge pas en node) — ne le modifier qu'après validation navigateur ET accord explicite.
 
@@ -13,18 +13,15 @@
    ───────────────────────────────────────────────────────────────────────────
  *
  * ── VERSIONS ──
- * Avant le 2026-10-01 : `2026-09-30l`…`2026-09-31i` (date indicative + lettre).
- * Depuis le 2026-10-01 : `AAAA-MM-JJ-NNN` — date RÉELLE du jour + compteur quotidien
- * démarrant à 001, NNN sur 3 chiffres (`2026-10-01-001`, puis `-002`, …).
- * Le compteur repart à 001 chaque jour : avant de bumper, regarder la dernière version
- * du jour (`git log --oneline`, tags). Même règle pour les snapshots
- * (`Backup/fusion_mvp_AAAA-MM-JJ-NNN.html`) et les entrées `### …` du CHANGELOG.
- * APP_VER n’est comparé qu’à égalité stricte (anti-cache) et affiché : le format
- * peut changer sans rien casser.
+ * Depuis la V0.2.0 (2026-10-17) : UN SEUL numéro, celui des tags Git — `V0.MINEUR.CORRECTIF`
+ * (badge en haut à droite, en-tête des fichiers .miniFusion, aide, CHANGELOG `## V0.x.y`,
+ * snapshots `Backup/fusion_mvp_V0.x.y.html`, tag annoté `V0.x.y`). L'ancien numéro daté
+ * `AAAA-MM-JJ-NNN` (2026-10-01-001 → 2026-10-16-021) reste dans l'historique du CHANGELOG.
+ * APP_VER n'est comparé qu'à égalité stricte (anti-cache) et affiché : le format
+ * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='2026-10-16-016';
-try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
+const APP_VER='V0.2.1';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────

@@ -105,12 +105,12 @@ const vm=require('vm');
     "const zCard3=faoOpCardElement(zs,zOp,0);",
     "let zTopIn=null;(function w(n){",
     "  (n.children||[]).forEach(function(c){",
-    "    if(c.tagName==='INPUT'&&c.type==='number'&&parseFloat(c.value)===44)zTopIn=c;",
+    "    if(c.tagName==='INPUT'&&c.type==='number'&&parseFloat(c.value)===faoDsp(zOp,44,2))zTopIn=c;", // 2026-10-16-020 : cote affichée relative à l'origine du posage
     "    w(c);});})(zCard3);",
     "att(!!zTopIn,'F4 : champ Haut = 44 trouve');",
     "if(zTopIn){zTopIn.value='12';zTopIn.onchange();}",
     "att(!zOp.zlim,'F4 : edition du champ Haut casse le lien');",
-    "att(zOp.ztop===12,'F4 : ztop passe a 12 (vu '+zOp.ztop+')');",
+    "att(zOp.ztop===faoInp(zOp,12,2),'F4 : ztop passe a 12 (relatif a l origine du posage ; vu '+zOp.ztop+')');",
     "return {P:P,ATT:ATT};"
   ].join('\n');
   const o=await vm.runInContext('(async()=>{'+R+'})()',ctx,{filename:'zlim.js'});

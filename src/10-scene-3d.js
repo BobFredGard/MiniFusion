@@ -29,7 +29,8 @@ function buildScene(){
   scene.add(new THREE.HemisphereLight(0xffffff,0x444444,0.75));
   const key=new THREE.DirectionalLight(0xffffff,1.0); key.position.set(60,-40,120); scene.add(key);
   try{if('environment' in scene)scene.environment=makeStudioEnv();}catch(e){} // reflets studio
-  axHelper=new THREE.AxesHelper(60); scene.add(axHelper); // X rouge → droite, Y vert → arrière, Z bleu → haut
+  // 2026-10-16-017 : repère façon Fusion (point + 3 axes + 3 plans cliquables, taille constante à l'écran)
+  axHelper=triadMake({name:'axHelper'}); scene.add(axHelper); scene.add(axHelper.userData.planeGroup); // plans = plans d'origine (œil de l'arbre) // X rouge → droite, Y vert → arrière, Z bleu → haut
   // Sol miroir (réflexion planaire temps réel, fondu radial). Z-up : cercle déjà horizontal.
   // 2026-10-15-003 : hors de la texture du reflet (bords d'écran, vue rapprochée), plus
   // d'échantillonnage étiré par le ClampToEdge (« fuyantes qui cherchent à sortir de la
@@ -48,6 +49,7 @@ function buildScene(){
     fragmentShader:'uniform vec3 color; uniform sampler2D tDiffuse; uniform vec3 uCenter; uniform float uRadius; varying vec4 vUv; varying vec3 vWorld;\nvoid main(){ if(vUv.w<=1e-4){ gl_FragColor=vec4(color,1.0); return; } vec2 uv = vUv.xy / vUv.w; float eg = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)); if(eg <= 0.0){ gl_FragColor=vec4(color,1.0); return; } vec3 refl = texture2D(tDiffuse, uv).rgb; float d = distance(vWorld.xy, uCenter.xy); float f = exp(-pow(d / max(uRadius * 1.15, 1e-3), 2.0) * 2.0) * 0.85 * smoothstep(0.0, 0.03, eg); gl_FragColor = vec4(mix(color, refl * 0.62, clamp(f, 0.0, 0.85)), 1.0); }'});
   floorMesh=new THREE.Mesh(new THREE.CircleGeometry(400,48),fm);
   floorMesh.name='floor';floorMesh.position.z=-0.5;scene.add(floorMesh);
+  try{if(typeof mf3D==='function')mf3D(document.body.getAttribute('data-theme')||'nuit');}catch(e){} // thème (V0.2.1)
   buildOriginPlanes();
   controls=new THREE.OrbitControls(camera,renderer.domElement);
   controls.enableDamping=true; controls.dampingFactor=0.08;
@@ -157,7 +159,7 @@ function animate(){
       const _mh=[];
       scene.traverse(o=>{
         if(!o.visible||o===scene)return;
-        if(o.isLine||o.isLineSegments||o.isPoints||o.isSprite||o===axHelper||(o.material&&o.material.isShaderMaterial)||(o.material&&o.material.transparent&&o.material.opacity<0.6)){o.visible=false;_mh.push(o);}
+        if(o.isLine||o.isLineSegments||o.isPoints||o.isSprite||o===axHelper||(o.userData&&o.userData.triad)||(o.material&&o.material.isShaderMaterial)||(o.material&&o.material.transparent&&o.material.opacity<0.6)){o.visible=false;_mh.push(o);}
       });
       renderer.setRenderTarget(mirrorRT);renderer.clear();renderer.render(scene,mirrorCam);
       for(const o of _mh)o.visible=true;
@@ -166,6 +168,8 @@ function animate(){
       mirrorDirty=false;
     }
   }
+  try{triadUpdateAll();}catch(e){}
+  try{if(typeof faoPoseSync==='function')faoPoseSync();}catch(e){}
   renderer.render(scene,camera);
 }
 function showAll(){
@@ -624,30 +628,17 @@ function makePlaneLabel(text,css){
   s.scale.set(30,15,1);s.raycast=()=>{};return s;
 }
 function buildOriginPlanes(){
-  const SIZE=120;
-  const defs={XY:{rot:null,corner:[75,75,0]},XZ:{rot:'x',corner:[75,0,75]},YZ:{rot:'y',corner:[0,75,75]}};
-  Object.keys(defs).forEach(p=>{
-    const col=PLANES[p].color;
-    const geo=new THREE.PlaneGeometry(SIZE,SIZE);
-    const m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0.10,side:THREE.DoubleSide,depthWrite:false}));
-    m.name='origin_'+p;m.userData.plane=p;m.renderOrder=-1;
-    if(defs[p].rot==='x')m.rotation.x=-Math.PI/2; // → plan XZ (vertical, face)
-    if(defs[p].rot==='y')m.rotation.y=Math.PI/2; // → plan YZ (vertical, côté)
-    const edge=new THREE.LineSegments(new THREE.EdgesGeometry(geo),new THREE.LineBasicMaterial({color:col,transparent:true,opacity:.85}));
-    edge.raycast=()=>{};m.add(edge);
-    const lab=makePlaneLabel(p,PLANES[p].css);lab.position.set(defs[p].corner[0],defs[p].corner[1],defs[p].corner[2]);m.add(lab);
-    scene.add(m);originMeshes[p]=m;
-  });
+  // 2026-10-16-020 : les grands plans d'origine (quads de 120 mm) sont remplacés par les
+  // 3 petits plans du repère pièce (src/11-repere.js) — mêmes clés, même œil dans l'arbre.
+  try{Object.assign(originMeshes,axHelper.userData.planes);}catch(e){}
   updateOriginPlanes();
 }
 function updateOriginPlanes(){
   Object.keys(originMeshes).forEach(p=>{
     const m=originMeshes[p];if(!m)return;
     m.visible=originVis[p]!==false;
-    const act=sel.kind==='plane'&&sel.id===p;
-    m.material.opacity=act?0.30:0.10;
-    if(m.children[0])m.children[0].material.opacity=act?1:.85;
   });
+  try{triadPaint(axHelper);}catch(e){}
 }
 function pickPlane(e){
   const keys=Object.keys(originMeshes).filter(p=>originVis[p]!==false);

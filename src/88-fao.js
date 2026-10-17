@@ -569,15 +569,60 @@ function faoToolProfile(kind,cr,D,H){
 function faoStockValid(s){
   return !!(s&&[s.x0,s.y0,s.z0,s.x1,s.y1,s.z1].every(isFinite)&&s.x1>s.x0&&s.y1>s.y0&&s.z1>s.z0);
 }
+/* 2026-10-16-018 : FORME du brut — 'box' (boîte, défaut), 'cyl' (cylindre d'axe X, Y ou Z, Ø/longueur
+   auto = modèle + marges, ou saisis), 'solid' (le brut EST un corps : pièce brute de fonderie,
+   ébauche importée — mode « corps choisi », sans marge). Le brut reste décrit par sa boîte
+   englobante (x0..z1, ce que lisent tous les parcours) ; un cylindre y ajoute stock.cyl
+   {axis,c:[x,y,z],r} (simulation : colonnes hors du disque vides, vue : cylindre). */
+function faoStockShape(job){ const k=job&&job.stockShape; return (k==='cyl'||k==='solid')?k:'box'; }
+function faoStockCylFrom(job,a,b,m,mzp,mzm,manual,meshes){
+  // a,b = coins du modèle (ou de la boîte manuelle) ; retourne la boîte du cylindre + .cyl
+  const ax=(job.cylAxis==='x'||job.cylAxis==='y')?job.cylAxis:'z';
+  const I=ax==='x'?0:ax==='y'?1:2, U=(I+1)%3, V=(I+2)%3;
+  const A=[a.x,a.y,a.z], B=[b.x,b.y,b.z];
+  const c=[(A[0]+B[0])/2,(A[1]+B[1])/2,(A[2]+B[2])/2];
+  let r=manual?Math.min(B[U]-A[U],B[V]-A[V])/2:Math.hypot(B[U]-A[U],B[V]-A[V])/2+m;
+  // Ø auto : plus grande distance RÉELLE des sommets du modèle à l'axe (une pièce de révolution
+  // donne son Ø exact, pas la diagonale de sa boîte)
+  if(!manual&&meshes&&meshes.length){
+    try{
+      let rm=0;const v=new THREE.Vector3();
+      meshes.forEach(function(me){
+        const pa=me.geometry&&me.geometry.attributes&&me.geometry.attributes.position;if(!pa)return;
+        me.updateMatrixWorld(true);
+        const Fr=faoFrame(job);
+        for(let i=0;i<pa.count;i++){v.fromBufferAttribute(pa,i).applyMatrix4(me.matrixWorld);
+          const q=Fr.id?[v.x,v.y,v.z]:faoToF(Fr,[v.x,v.y,v.z]);const d=Math.hypot(q[U]-c[U],q[V]-c[V]);if(d>rm)rm=d;}
+      });
+      if(rm>0)r=rm+m;
+    }catch(e){}
+  }
+  if(isFinite(+job.cylD)&&+job.cylD>0)r=+job.cylD/2;
+  let lo=A[I], hi=B[I];
+  if(!manual){ if(I===2){ lo-=mzm; hi+=mzp; } else { lo-=m; hi+=m; } }
+  if(isFinite(+job.cylL)&&+job.cylL>0){ // longueur saisie : dessus (Z) ou milieu (X/Y) conservé
+    if(I===2)lo=hi-(+job.cylL); else { const mid=(lo+hi)/2; lo=mid-(+job.cylL)/2; hi=mid+(+job.cylL)/2; }
+  }
+  const lo3=[0,0,0], hi3=[0,0,0];
+  lo3[I]=lo; hi3[I]=hi; lo3[U]=c[U]-r; hi3[U]=c[U]+r; lo3[V]=c[V]-r; hi3[V]=c[V]+r;
+  const cc=c.slice(); cc[I]=(lo+hi)/2;
+  return {x0:lo3[0],y0:lo3[1],z0:lo3[2],x1:hi3[0],y1:hi3[1],z1:hi3[2],cyl:{axis:ax,c:cc,r:r}};
+}
 function faoStock(){
   const job=faoDoc();
-  const mode=(job.stockSrc==='body'||job.stockSrc==='manual')?job.stockSrc:'bodies';
+  const shape=faoStockShape(job);
+  const mode=shape==='solid'?'body':((job.stockSrc==='body'||job.stockSrc==='manual')?job.stockSrc:'bodies');
   if(mode==='manual'){
     // Boîte saisie à la main : jamais recalculée (repli défaut si invalide).
     if(!faoStockValid(job.stock))job.stock=faoStockDefault();
+    const s0=job.stock;
+    if(shape==='cyl'){
+      const s1=faoStockCylFrom(job,{x:+s0.x0,y:+s0.y0,z:+s0.z0},{x:+s0.x1,y:+s0.y1,z:+s0.z1},0,0,0,true);
+      job.stock={x0:s0.x0,y0:s0.y0,z0:s0.z0,x1:s0.x1,y1:s0.y1,z1:s0.z1,cyl:s1.cyl};
+    }else if(s0.cyl){ delete s0.cyl; }
     return job.stock;
   }
-  let box=null;
+  let box=null;const meshes=[];
   try{
     if(typeof THREE!=='undefined'&&typeof bodies!=='undefined'&&bodies&&bodies.length){
       box=new THREE.Box3(); let n=0;
@@ -588,7 +633,7 @@ function faoStock(){
         // brut) ; mode « tous les corps » : corps visibles seulement (historique).
         if(want!=null){ if(b.id!==want)return; }
         else if(b.visible===false)return;
-        try{ box.expandByObject(b.mesh); n++; }catch(e){}
+        try{ box.expandByObject(b.mesh); n++; meshes.push(b.mesh); }catch(e){}
       });
       if(!n)box=null;
       else{
@@ -596,12 +641,23 @@ function faoStock(){
       }
     }
   }catch(e){ box=null; }
-  const m=isFinite(+job.marge)&&+job.marge>=0?+job.marge:5;
+  const solid=shape==='solid'; // brut = le corps lui-même : aucune marge
+  const m=solid?0:(isFinite(+job.marge)&&+job.marge>=0?+job.marge:5);
+  // 2026-10-16-017 : surépaisseurs du brut au-dessus (Z+) et au-dessous (Z−) du modèle (défaut 0)
+  const mzp=solid?0:(isFinite(+job.margeZp)&&+job.margeZp>=0?+job.margeZp:0);
+  const mzm=solid?0:(isFinite(+job.margeZm)&&+job.margeZm>=0?+job.margeZm:0);
+  // 2026-10-16-019 : repère orienté → boîte des corps dans SES coordonnées
+  const Fr=faoFrame(job);
+  if(box&&!Fr.id&&meshes.length){
+    try{ const Bf=faoMeshesBoxF(meshes,Fr); if(Bf){ box.min.set(Bf.x0,Bf.y0,Bf.z0); box.max.set(Bf.x1,Bf.y1,Bf.z1); } }catch(e){}
+  }
   if(box){
     try{
       const a=box.min,b=box.max;
       if([a.x,a.y,a.z,b.x,b.y,b.z].every(isFinite)&&b.x>a.x&&b.y>a.y&&b.z>a.z){
-        job.stock={x0:a.x-m, y0:a.y-m, z0:a.z, x1:b.x+m, y1:b.y+m, z1:b.z};
+        if(shape==='cyl'){ job.stock=faoStockCylFrom(job,a,b,m,mzp,mzm,false,meshes); return job.stock; }
+        job.stock={x0:a.x-m, y0:a.y-m, z0:a.z-mzm, x1:b.x+m, y1:b.y+m, z1:b.z+mzp};
+        if(solid)job.stock.solid=job.stockBody;
         return job.stock;
       }
     }catch(e){}
@@ -1824,12 +1880,15 @@ function faoModelZBox(job){
     if(typeof THREE!=='undefined'&&typeof bodies!=='undefined'&&bodies&&bodies.length){
       const box=new THREE.Box3(); let n=0;
       const want=(job&&job.stockSrc==='body')?job.stockBody:null;
+      const ms=[];
       bodies.forEach(function(b){
         if(!b||b.ghost||!b.mesh)return;
         if(want!=null){ if(b.id!==want)return; }
         else if(b.visible===false)return;
-        try{ box.expandByObject(b.mesh); n++; }catch(e){}
+        try{ box.expandByObject(b.mesh); n++; ms.push(b.mesh); }catch(e){}
       });
+      const Fr=faoFrame(job); // repère orienté : Z du posage
+      if(n&&!Fr.id){ const Bf=faoMeshesBoxF(ms,Fr); if(Bf)return {z0:Bf.z0,z1:Bf.z1}; }
       if(n&&!box.isEmpty()&&isFinite(box.min.z)&&isFinite(box.max.z))
         return {z0:box.min.z,z1:box.max.z};
     }
@@ -1855,7 +1914,7 @@ function faoPlaneZ(pl,op,job,dep){
     case 'bridageBas':{ const f=job&&job.fixture;
       z=(f&&isFinite(+f.z0))?+f.z0:z0; break; }
     case 'face': z=isFinite(+pl.fz)?+pl.fz:z1; break;
-    case 'origine': z=0; break;
+    case 'origine': z=(job&&job.originZero)?0:faoOriginPoint(job)[2]; break; // 2026-10-16-020 : Z0 = origine du POSAGE (repère d'usinage)
     case 'retrait': // chaîne unique : dégagement depuis le retrait
       if(dep>=3)return NaN;
       z=faoRetractAbs(op,job); break;
@@ -2297,7 +2356,7 @@ function faoSetupFp(job){
     faoFpParts=diag.join('|');
     let h=2166136261;
     for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619);}
-    return (h>>>0).toString(36)+'_'+parts.length;
+    return (h>>>0).toString(36)+'_'+parts.length+faoFrameSig(job); // repère orienté : autre solide
   }catch(e){ return 'x'; }
 }
 function faoOpMovesKey(op,job){
@@ -2777,7 +2836,8 @@ function faoMovesStat(op,job){
 // fil après chaque niveau (yield* faoGenRough3DIt) pour le dessin progressif.
 // faoOpMoves() = drain SYNCHRONE strictement équivalent (appels classiques,
 // tests, G-code, estimation, aperçu canonique) ; faoOpMovesStream() = flux.
-function* faoOpMovesIt(op,job){
+function* faoOpMovesIt0(op,job){
+  // (2026-10-16-020 : appelé par faoOpMovesIt, qui gère le repère PROPRE d'une opération)
   // Prime le maillage AVANT la clé : faoSetupFp lit les maillages des corps, il
   // faut qu'ils existent avant de calculer la clé (sinon 'nb' = clé fausse).
   if(faoMeshOp(op)){ try{ faoActiveMesh(job); }catch(e){} }
@@ -3143,17 +3203,17 @@ function faoEstimate(moves,fCut,fRap,accel){
 // Le G-code est exprimé RELATIF à ce point (= position du G54 sur la machine).
 // Phase suivante : point pièce cliqué + orientation (3+2).
 function faoOriginPoint(setup){
+  // 2026-10-16-017 : l'un des 27 points cardinaux du brut ou du modèle (src/89-fao-posage-repere) ;
+  // les préréglages historiques {preset} se lisent comme leurs points équivalents.
   const s=(setup&&setup.stock)||faoStockDefault();
-  const pr=(setup&&setup.origin&&setup.origin.preset)||'top-X0Y0';
-  if(pr==='top-X1Y1')return [s.x1,s.y1,s.z1];
-  if(pr==='top-C')return [(s.x0+s.x1)/2,(s.y0+s.y1)/2,s.z1];
-  if(pr==='bot-X0Y0')return [s.x0,s.y0,s.z0];
-  return [s.x0,s.y0,s.z1]; // 'top-X0Y0' : dessus, coin X0 Y0 (défaut atelier)
+  const sp=faoOriginSpec(setup);
+  const B=(sp.src==='model'&&faoModelBox(setup))||s;
+  return faoBoxPt(B,sp.pt);
 }
 function faoOriginLabel(setup){
-  const pr=(setup&&setup.origin&&setup.origin.preset)||'top-X0Y0';
-  return pr==='top-X1Y1'?'dessus coin X1Y1':pr==='top-C'?'dessus centre':
-    pr==='bot-X0Y0'?'dessous coin X0Y0':'dessus coin X0Y0';
+  const sp=faoOriginSpec(setup);
+  const t=faoCardLabel(sp.pt);
+  return sp.src==='model'?'modèle · '+t:t;
 }
 /* ----- plans : retrait (absolu, auto = dessus + 25) ----- */
 // 2026-10-08-002 : le plan de dégagement/retrait se règle par RÉFÉRENCE
@@ -3251,6 +3311,7 @@ function faoArcWords(m,ox,oy,oz){
    PostPro/fagor-8065.cps) + annulation `G80` (cycles modaux). */
 function faoDrillCycle(op,job,oz){
   if(!op||op.type!=='drill')return null;
+  if(faoOpFrame(job,op))return null; // repère d'opération incliné : perçage émis en déroulé G0/G1
   if(op.cycle==='helix')return null; // fraisage hélicoïdal : émis en G1/G2/G3 comme un parcours
   // 2026-10-15-011 : un plan PAR TROU (départ et fond propres — trous du modèle à
   // des hauteurs différentes), dans l'ordre optimisé. Saisie XY : comme avant.
@@ -3350,6 +3411,9 @@ function faoPost(job,postId){
   }
   nc('G0 Z'+faoFmtXYZ(safe-oz)); // plan de sécurité : Z seul avant tout déplacement XY
   let qi=0, prev=null;
+  // 2026-10-16-020 : orientation 3+2 PAR OPÉRATION (repère propre de l'opération) ;
+  // l'ancien 3+2 du posage reste l'orientation par défaut.
+  let oriCur={b:ORI.b,c:ORI.c}, traOn=ori32&&!fag, fagWarn=false;
   groups.forEach(function(g,gi){
     const t=g.tool;
     const S=faoFmtS(t.s), F=faoFmtF(t.f), FP=faoFmtF(t.plunge);
@@ -3380,6 +3444,24 @@ function faoPost(job,postId){
       // cav.txt : N60 #MSG["OPT1: Paroies"]) — l'opérateur voit l'opération
       // en cours sur la CN. Sanitisé ASCII, sans G1 ni F (parité post intacte).
       if(fag){ try{ nc('#MSG["'+faoOpAscii(faoOpLabel(b.op,job))+'"]'); }catch(e){} }
+      const OB=faoOpBC(job,b.op)||{b:ORI.b,c:ORI.c};
+      if(OB.b!==oriCur.b||OB.c!==oriCur.c){
+        if(fag){
+          cmt('3+2 : B'+faoFmtXYZ(OB.b)+' C'+faoFmtXYZ(OB.c)+' demandé — machine 3 axes : B/C NON commandés');
+          if(!fagWarn){ fagWarn=true; warns.push('Repère d’opération incliné : Fagor 8065 = machine 3 axes — orientation B/C ignorée à l’export.'); }
+        }else{
+          nc('G0 Z'+faoFmtXYZ(safe-oz)); // dégagement AVANT de réorienter l'outil
+          if(prev)prev={x:prev.x,y:prev.y,z:safe};
+          if(OB.b!==0||OB.c!==0){
+            if(!traOn){ nc('TRAORI(1)'); traOn=true; }
+            nc('G0 B'+faoFmtXYZ(OB.b)+' C'+faoFmtXYZ(OB.c));
+          }else{
+            nc('G0 B0 C0');
+            if(traOn){ nc('TRAFOOF'); traOn=false; }
+          }
+        }
+        oriCur={b:OB.b,c:OB.c};
+      }
       const sq=SEQ[qi++]||{moves:b.moves};
       // Plan de dégagement de CETTE opération (hérité du posage sinon) —
       // 2026-10-08-002 : la plongée/translation passe par son propre plan.
@@ -3479,7 +3561,7 @@ function faoPost(job,postId){
     });
   });
   // 3+2 : annuler la transformation AVANT les coordonnées machine de fin (SUPA/park).
-  if(ori32&&!fag)nc('TRAFOOF');
+  if(traOn)nc('TRAFOOF');
   if(fag){
     nc('M09');
     nc('G0 Z'+faoFmtXYZ(retrPrev-oz));
@@ -3534,7 +3616,7 @@ let faoExportBtnEl=null;
 function faoClearPreview(){
   try{
     if(faoPrevGroup&&typeof scene!=='undefined'&&scene){
-      scene.remove(faoPrevGroup);
+      faoDel3D(faoPrevGroup);
       try{ faoPrevGroup.traverse(function(o){ if(o.geometry&&o.geometry.dispose)o.geometry.dispose(); }); }catch(e){}
     }
   }catch(e){}
@@ -3700,7 +3782,7 @@ function faoRefreshPreview(mode){
       const mv=b.moves; total+=mv.length;
       mk(mv,faoSegClipper(op,job));
     });
-    scene.add(faoPrevGroup);
+    faoAdd3D(faoPrevGroup);
     if(typeof faoVw!=='undefined'&&faoVw)faoPrevGroup.visible=false; // viewer : traces restent cachées
   }catch(e){}
   return total;
@@ -3744,7 +3826,7 @@ async function faoRefreshPreviewStream(){
   if(typeof THREE==='undefined'||typeof scene==='undefined'||!scene)return 0;
   const tok=++faoStreamTok;
   faoPrevGroup=new THREE.Group(); faoPrevGroup.name='faoPreview';
-  scene.add(faoPrevGroup);
+  faoAdd3D(faoPrevGroup);
   if(typeof faoVw!=='undefined'&&faoVw)faoPrevGroup.visible=false; // viewer : traces restent cachées
   const ops=((job&&job.ops)||[]).filter(function(op){ return op&&op.on!==false; });
   for(let i=0;i<ops.length;i++){
@@ -3909,7 +3991,9 @@ function faoViewerBuild(setup){
       ext.push(dev?{x:m.x,y:m.y,z:m.z,r:m.r?1:0,ent:m.ent?1:0}:m);
       pv=m;
     });
-    if(ext.length)chunks.push({op:op,ext:ext,f:f,d:d,kind:kind,cr:cr});
+    // 2026-10-16-021 : axe outil de l'opération (repère propre 3+2), en repère posage — null = vertical
+    const axO=(function(){ try{ const fr=faoOpFrame(setup,op); return fr?fr.rel.Z.slice():null; }catch(e){ return null; } })();
+    if(ext.length)chunks.push({op:op,ext:ext,f:f,d:d,kind:kind,cr:cr,ax:axO});
   });
   // Encadrement « zone de retrait » (2026-10-08-004) : en tête, l'outil vient
   // de la zone de retrait ; en queue, il y retourne — dans les DEUX cas un
@@ -3928,7 +4012,7 @@ function faoViewerBuild(setup){
   chunks.forEach(function(C){
     let prev=null;
     C.ext.forEach(function(m){
-      pts.push({x:+m.x||0, y:+m.y||0, z:+m.z||0, r:m.r?1:0, ent:m.ent?1:0});
+      pts.push({x:+m.x||0, y:+m.y||0, z:+m.z||0, r:m.r?1:0, ent:m.ent?1:0, ax:C.ax||null});
       dd.push(C.d);
       kt.push(C.kind||'flat');
       cr.push(C.cr||0);
@@ -3982,6 +4066,10 @@ function faoViewerApply(){
     // a sa pointe en z local 0, positionnement direct. (L'ancien bug centre→tip
     // est corrigé à la source dans addLevel du géofinish.)
     vw.tool.position.x=p.x; vw.tool.position.y=p.y; vw.tool.position.z=p.z;
+    // 2026-10-16-021 : outil le long du Z de l'opération (3+2) — vertical sinon
+    try{ const q=vw.pts[Math.min(p.i+1,vw.pts.length-1)]; const A=q&&q.ax;
+      if(A)vw.tool.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),new THREE.Vector3(A[0],A[1],A[2]));
+      else vw.tool.quaternion.set(0,0,0,1); }catch(e){}
     const d=(isFinite(p.d)&&p.d>0)?p.d:10;
     if(vw.toolBody){ vw.toolBody.scale.x=d; vw.toolBody.scale.z=d; }   // Ø réel
     if(vw.toolHold){ vw.toolHold.scale.x=d*1.6; vw.toolHold.scale.z=d*1.6; }
@@ -4136,6 +4224,7 @@ function faoViewerStockCreate(){
         const b=(typeof bodies!=='undefined'&&bodies?bodies:[]).filter(function(x){return x&&x.id===fs.stockBody;})[0];
         if(b&&b.mesh&&b.mesh.isObject3D){
           const clone=b.mesh.clone();
+          try{ const Fr=faoFrame(fs); if(!Fr.id)clone.applyMatrix4(new THREE.Matrix4().makeBasis(new THREE.Vector3(...Fr.X),new THREE.Vector3(...Fr.Y),new THREE.Vector3(...Fr.Z)).invert()); }catch(e){} // sous la racine posage
           const mat=new THREE.MeshBasicMaterial({color:0xffd60a,transparent:true,opacity:.12,depthWrite:false});
           clone.traverse(function(o){ if(o.isMesh){ o.material=mat; o.raycast=function(){}; } });
           g.add(clone);
@@ -4148,6 +4237,10 @@ function faoViewerStockCreate(){
       }
     }catch(e){}
   }
+  try{ // 2026-10-16-018 : brut cylindrique
+    const cy=faoStockCylMesh(s,0xffd60a,.12);
+    if(cy){ g.add(cy); return g; }
+  }catch(e){}
   try{
     const bg=new THREE.BoxGeometry(s.x1-s.x0, s.y1-s.y0, s.z1-s.z0);
     const mat=function(){ return new THREE.MeshBasicMaterial({color:0xffd60a,transparent:true,opacity:.12,depthWrite:false}); };
@@ -4232,6 +4325,23 @@ function faoMatterGrid(s,pas){
   const sx1=+s.x1, sy1=+s.y1, sz1=+s.z1;
   const full=sz1;
   for(let i=0;i<nc;i++)h[i]=full;
+  // 2026-10-16-018 : brut CYLINDRIQUE — colonnes hors du disque (axe Z) vides ; axe X/Y : dessus
+  // de colonne = génératrice du cylindre (la Z-map ne décrit que le dessus).
+  try{
+    const C=s.cyl;
+    if(C&&C.r>0&&Array.isArray(C.c)){
+      for(let iy=0;iy<ny;iy++)for(let ix=0;ix<nx;ix++){
+        const x=+s.x0+(ix+0.5)*p, y=+s.y0+(iy+0.5)*p, k=iy*nx+ix;
+        let top=full;
+        if(C.axis==='z'){ if(Math.hypot(x-C.c[0],y-C.c[1])>C.r)top=+s.z0; }
+        else{ const d=C.axis==='x'?(y-C.c[1]):(x-C.c[0]); top=Math.abs(d)>C.r?+s.z0:C.c[2]+Math.sqrt(C.r*C.r-d*d); }
+        if(top<full){
+          h[k]=top;
+          const pzz=pz||p;for(let iz=0;iz<nz;iz++){ if(+s.z0+(iz+0.5)*pzz>top)alive[(iz*ny+iy)*nx+ix]=0; }
+        }
+      }
+    }
+  }catch(e){}
   return {pas:p,pz:pz,nx:nx,ny:ny,nz:nz,n:n,ox:s.x0,oy:s.y0,oz:s.z0,alive:alive,h:h,
           sx1:sx1,sy1:sy1,sz1:sz1,full:full};
 }
@@ -4329,7 +4439,7 @@ function faoMatterCarveTo(g,pts,dd,times,t,outCols,crs){
     }
     const r=((isFinite(dd[i+1])&&dd[i+1]>0)?dd[i+1]:10)/2;
     const crv=(crs&&isFinite(+crs[i+1]))?+crs[i+1]:0;
-    const k=faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols,crv);
+    const k=pts[i+1].ax?faoMatterCarveTilt(g,a,b,r,pts[i+1].ax,outCols):faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols,crv);
     for(let m=0;m<k.length;m++)out.push(k[m]);
   }
   return out;
@@ -4377,7 +4487,7 @@ function faoViewerHoldApply(){
   try{ if(faoVw&&faoVw.toolHold)faoVw.toolHold.visible=!faoVwHideHold; }catch(e){}
 }
 function faoViewerMatterDispose(vw){
-  try{ if(vw.matter&&typeof scene!=='undefined'&&scene)scene.remove(vw.matter); }catch(e){}
+  try{ if(vw.matter&&typeof scene!=='undefined'&&scene)faoDel3D(vw.matter); }catch(e){}
   try{ if(vw.matter&&vw.matter.geometry&&vw.matter.geometry.dispose)vw.matter.geometry.dispose(); }catch(e){}
   vw.matter=null; vw.matterGrid=null; vw.mKills=[]; vw.mPos=null; vw.mTops=null; vw.mArr=null; vw.mH=null;
 }
@@ -4512,7 +4622,7 @@ function faoViewerMatterHFBuild(vw){
     mesh.name='faoMatter';
     mesh.raycast=function(){};
     mesh.frustumCulled=false;
-    if(typeof scene!=='undefined'&&scene)scene.add(mesh);
+    if(typeof scene!=='undefined'&&scene)faoAdd3D(mesh);
     vw.mH={NX:NX,NY:NY,NV:NV,E:E,pos:pos,nrm:nrm,n2top:n2top,geo:geo,idx:idx,mesh:mesh};
     return mesh;
   }catch(e){ return null; }
@@ -4598,7 +4708,7 @@ function faoViewerMatterEnable(vw){
       mesh.name='faoMatter';
       mesh.raycast=function(){};
       mesh.frustumCulled=false;
-      if(typeof scene!=='undefined'&&scene)scene.add(mesh);
+      if(typeof scene!=='undefined'&&scene)faoAdd3D(mesh);
     }catch(e){ return 0; }
   }
   const tops=new Float32Array(nc);
@@ -4610,7 +4720,7 @@ function faoViewerMatterEnable(vw){
     if(!m2){ faoViewerMatterDispose(vw); return 0; }
     vw.matter=m2; // le heightfield EST la matière (mêmes noms/dispose que mArr)
   }else{
-    try{ faoViewerMatterWriteAll(vw); }catch(e){ faoViewerMatterDispose(vw); try{ if(mesh&&scene)scene.remove(mesh); }catch(e2){} return 0; }
+    try{ faoViewerMatterWriteAll(vw); }catch(e){ faoViewerMatterDispose(vw); try{ if(mesh&&scene)faoDel3D(mesh); }catch(e2){} return 0; }
   }
   if(vw.t>0){
     const tcols=[];
@@ -4681,7 +4791,8 @@ function faoMatterCarveRange(g,pts,dd,times,t,i0,x0,y0,z0,p,outCols,crs){
     const b={x:+dst.x,y:+dst.y,z:+dst.z};
     const r=((isFinite(dd[i+1])&&dd[i+1]>0)?dd[i+1]:10)/2;
     const crv=(crs&&isFinite(+crs[i+1]))?+crs[i+1]:0;
-    const k=faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols,crv);
+    const axD=pts[i+1]&&pts[i+1].ax; // le point en cours (p, interpolé) ne porte pas l'axe : celui du segment
+    const k=axD?faoMatterCarveTilt(g,a,b,r,axD,outCols):faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols,crv);
     for(let m=0;m<k.length;m++)out.push(k[m]);
     a=b;
   }
@@ -4763,14 +4874,14 @@ function faoViewerModeSet(m){
       const old=vw.tool;
       const T=faoViewerToolCreate(vw.exact,(vw.kt&&vw.kt[0])||'flat',(vw.cr&&vw.cr[0])||0,(vw.dd&&vw.dd[0])||10);
       vw.tool=T.group; vw.toolBody=T.body; vw.toolHold=T.hold; vw.toolSpin=T.spin; vw.toolSig=T.sig;
-      if(old){ try{ scene.remove(old); }catch(e){} faoViewerToolDispose(old); }
-      if(vw.tool)scene.add(vw.tool);
+      if(old){ try{ faoDel3D(old); }catch(e){} faoViewerToolDispose(old); }
+      if(vw.tool)faoAdd3D(vw.tool);
     }catch(e){}
     try{ // brut : fantôme corps <-> boîte
       const st=vw.stock;
       vw.stock=faoViewerStockCreate();
-      if(st)try{ scene.remove(st); }catch(e){}
-      if(vw.stock)scene.add(vw.stock);
+      if(st)try{ faoDel3D(st); }catch(e){}
+      if(vw.stock)faoAdd3D(vw.stock);
     }catch(e){}
   }
   try{ if(vw.matterOn!==false)faoViewerMatterEnable(vw); }catch(e){} // rattrapage 0 → t
@@ -4816,7 +4927,7 @@ function faoViewerOpen(){
     // 1) traces cachées (non destructif : juste .visible=false)
     try{ if(faoPrevGroup){ vw.prevVis=faoPrevGroup.visible!==false; faoPrevGroup.visible=false; } }catch(e){}
     // 2) le brut apparaît : box du stock + corps-brut masqué (v009) ré-affiché
-    try{ vw.stock=faoViewerStockCreate(); if(vw.stock)scene.add(vw.stock); }catch(e){}
+    try{ vw.stock=faoViewerStockCreate(); if(vw.stock)faoAdd3D(vw.stock); }catch(e){}
     try{
       const fs=faoSetup();
       if(fs&&fs.stockSrc==='body'&&fs.stockBody!=null){
@@ -4831,9 +4942,9 @@ function faoViewerOpen(){
       const T=faoViewerToolCreate(vw.exact,(b.kt&&b.kt[0])||'flat',(b.cr&&b.cr[0])||0,(b.dd&&b.dd[0])||10);
       vw.tool=T.group; vw.toolBody=T.body; vw.toolHold=T.hold; vw.toolH=T.H;
       vw.toolSpin=T.spin; vw.toolSig=T.sig;
-      if(vw.tool)scene.add(vw.tool);
+      if(vw.tool)faoAdd3D(vw.tool);
     }catch(e){}
-    try{ vw.line=faoViewerLineCreate(vw); if(vw.line)scene.add(vw.line); }catch(e){}
+    try{ vw.line=faoViewerLineCreate(vw); if(vw.line)faoAdd3D(vw.line); }catch(e){}
     // 4) matière usinée : surface Z-map pleine (colonnes jointives, un seul mesh)
     try{ faoViewerMatterEnable(vw); }catch(e){}
     // 5) barre transporteur ▶ ⏸ ⏹ ✕ + matière
@@ -4863,9 +4974,9 @@ function faoViewerClose(){
     try{ // le corps-brut masqué redevient invisible (on ne défait que ce qu'on a fait)
       if(vw.body&&doc.bodyVis&&doc.bodyVis[vw.body.id]===false){ vw.body.visible=false; vw.body.mesh.visible=false; }
     }catch(e){}
-    try{ if(vw.stock)scene.remove(vw.stock); }catch(e){}
-    try{ if(vw.tool)scene.remove(vw.tool); }catch(e){}
-    try{ if(vw.line)scene.remove(vw.line); }catch(e){}
+    try{ if(vw.stock)faoDel3D(vw.stock); }catch(e){}
+    try{ if(vw.tool)faoDel3D(vw.tool); }catch(e){}
+    try{ if(vw.line)faoDel3D(vw.line); }catch(e){}
   }
   try{ if(faoVwBar)faoVwBar.style.display='none'; }catch(e){}
   faoViewerBtnUpdate();
@@ -5841,7 +5952,10 @@ function faoPlaneRow(which,label,pl,job,op,tgt){
       faoZPlaneStart({setupId:tgt.setupId,opId:tgt.opId,which:which,slot:null});
     },'Cliquer la face de référence dans la vue 3D (Échap annule).'));
   }
-  row.appendChild(faoLab('= '+(isFinite(z)?z.toFixed(2):'—')));
+  // 2026-10-16-020 : valeur affichée relative à l'origine du posage (Z0), ou de l'opération à repère propre
+  const zR=(function(){ try{ const s=faoSetup(tgt.setupId); const o=tgt.opId?(s.ops||[]).filter(function(x){return x.id===tgt.opId;})[0]:null;
+    return z-((o&&faoOpFrame(s,o))?0:faoOriginPoint(s)[2]); }catch(e){ return z; } })();
+  row.appendChild(faoLab('= '+(isFinite(zR)?zR.toFixed(2):'—')));
   box.appendChild(row);
   if(isMM){
     [[1,pl.s1||{ref:'brutHaut',dz:0}],[2,pl.s2||{ref:'brutHaut',dz:0}]].forEach(function(pr){
@@ -5901,9 +6015,10 @@ function faoPlanesCard(setup,op){
    explique le champ survolé ou en cours de saisie (son infobulle). Onglet
    choisi mémorisé par opération. */
 const faoTabSel={};
-const FAO_TAB_ORDER=['Réglages','Outil','Zone','Hauteurs','Passes','Entrées','Matière','Attaches'];
+const FAO_TAB_ORDER=['Réglages','Outil','Zone','Hauteurs','Passes','Entrées','Matière','Attaches','Repère'];
 const FAO_TAB_HELP={
   'Réglages':'Paramètres principaux de l’opération. Survolez un champ pour son explication.',
+  'Repère':'Orientation de l’outil pour CETTE opération (3+2). Par défaut : le repère du posage.',
   'Outil':'Outil de l’opération, vitesse de rotation et avances. Grisé = valeur de la fiche outil ; une valeur saisie ici ne vaut que pour cette opération.',
   'Zone':'Où usiner : tout le brut, un rectangle, des arêtes du modèle ou une esquisse — et ce qu’il faut épargner.',
   'Hauteurs':'Haut et Bas de la zone usinée (mm). Ils peuvent suivre des arêtes du modèle.',
@@ -5915,7 +6030,7 @@ function faoTabOf(t){
   t=String(t||'').toLowerCase().replace(/\s*\(.*$/,'').trim();
   const M=[['outil','Outil'],['trous','Zone'],['hauteur','Hauteurs'],['vidage','Passes'],['passes','Passes'],['côté et sens','Passes'],
     ['trajectoire','Entrées'],['plans','Entrées'],['entrée','Entrées'],['matière','Matière'],
-    ['attaches','Attaches'],['zone','Zone'],['bord de la poche','Zone'],['profil','Zone']];
+    ['attaches','Attaches'],['repère','Repère'],['zone','Zone'],['bord de la poche','Zone'],['profil','Zone']];
   for(let i=0;i<M.length;i++)if(t.indexOf(M[i][0])===0)return M[i][1];
   return null;
 }
@@ -6013,17 +6128,17 @@ function faoOpCardElement(setup,op,i){
   const rp=faoRow();
   let geoNote=null;
   const rect4=function(){
-    rp.appendChild(faoLab('X')); rp.appendChild(faoNum(op.x0,function(v){op.x0=v;},56));
-    rp.appendChild(faoLab('Y')); rp.appendChild(faoNum(op.y0,function(v){op.y0=v;},56));
-    rp.appendChild(faoLab('→')); rp.appendChild(faoNum(op.x1,function(v){op.x1=v;},56));
-    rp.appendChild(faoNum(op.y1,function(v){op.y1=v;},56));
+    rp.appendChild(faoLab('X')); rp.appendChild(faoNum(faoDsp(op,op.x0,0),function(v){op.x0=faoInp(op,v,0);},56));
+    rp.appendChild(faoLab('Y')); rp.appendChild(faoNum(faoDsp(op,op.y0,1),function(v){op.y0=faoInp(op,v,1);},56));
+    rp.appendChild(faoLab('→')); rp.appendChild(faoNum(faoDsp(op,op.x1,0),function(v){op.x1=faoInp(op,v,0);},56));
+    rp.appendChild(faoNum(faoDsp(op,op.y1,1),function(v){op.y1=faoInp(op,v,1);},56));
   };
   const zz=function(){
-    rp.appendChild(faoLab('Haut')); rp.appendChild(faoNum(op.ztop,function(v){op.ztop=v;},56));
-    rp.appendChild(faoLab('Bas')); rp.appendChild(faoNum(op.zbot,function(v){op.zbot=v;},56));
+    rp.appendChild(faoLab('Haut')); rp.appendChild(faoNum(faoDsp(op,op.ztop,2),function(v){op.ztop=faoInp(op,v,2);},56));
+    rp.appendChild(faoLab('Bas')); rp.appendChild(faoNum(faoDsp(op,op.zbot,2),function(v){op.zbot=faoInp(op,v,2);},56));
   };
   if(op.type==='facing'){
-    rp.appendChild(faoLab('Z')); rp.appendChild(faoNum(op.z,function(v){op.z=v;},60));
+    rp.appendChild(faoLab('Z')); rp.appendChild(faoNum(faoDsp(op,op.z,2),function(v){op.z=faoInp(op,v,2);},60));
     // SEUL paramètre de recouvrement XY : l'écart (ae). Le nombre de lignes est
     // affiché en lecture seule à droite. Un ancien document piloté par « Passes »
     // (np≥2) est lu tel quel (écart affiché = H/(np−1)) ; saisir l'écart bascule
@@ -6080,9 +6195,9 @@ function faoOpCardElement(setup,op,i){
     const apNow=isFinite(+op.ap)&&+op.ap>0?+op.ap:5;
     d.appendChild(faoH('Hauteurs à usiner (mm)'));
     const rZ=faoRow();
-    rZ.appendChild(faoLab('Haut')); rZ.appendChild(faoNum(op.ztop,function(v){faoZlimBreak(op);op.ztop=v;},56,
+    rZ.appendChild(faoLab('Haut')); rZ.appendChild(faoNum(faoDsp(op,op.ztop,2),function(v){faoZlimBreak(op);op.ztop=faoInp(op,v,2);},56,
       null,'Niveau le plus haut usiné — en général le dessus du brut. Édité à la main : casse le lien avec les arêtes.'));
-    rZ.appendChild(faoLab('Bas')); rZ.appendChild(faoNum(op.zbot,function(v){faoZlimBreak(op);op.zbot=v;},56,
+    rZ.appendChild(faoLab('Bas')); rZ.appendChild(faoNum(faoDsp(op,op.zbot,2),function(v){faoZlimBreak(op);op.zbot=faoInp(op,v,2);},56,
       null,'Niveau le plus bas — fond de la zone à ébaucher (hors surépaisseur). Édité à la main : casse le lien avec les arêtes.'));
     if(op.zlim){
       const bz=document.createElement('span'); bz.className='fao-meta';
@@ -6212,8 +6327,8 @@ function faoOpCardElement(setup,op,i){
     // 2026-10-14-011 : fiche en sections (onglets) — Hauteurs, Passes, Entrées, Matière
     d.appendChild(faoH('Hauteurs (mm)'));
     const gH=faoRow();
-    gH.appendChild(faoLab('Haut')); gH.appendChild(faoNum(op.ztop,function(v){op.ztop=v;},56,null,'Haut de la zone finie (mm) : au-dessus, le relief n’est pas fini.'));
-    gH.appendChild(faoLab('Bas')); gH.appendChild(faoNum(op.zbot,function(v){op.zbot=v;},56,null,'Bas de la zone finie (mm) : la pointe de l’outil descend jusqu’ici.'));
+    gH.appendChild(faoLab('Haut')); gH.appendChild(faoNum(faoDsp(op,op.ztop,2),function(v){op.ztop=faoInp(op,v,2);},56,null,'Haut de la zone finie (mm) : au-dessus, le relief n’est pas fini.'));
+    gH.appendChild(faoLab('Bas')); gH.appendChild(faoNum(faoDsp(op,op.zbot,2),function(v){op.zbot=faoInp(op,v,2);},56,null,'Bas de la zone finie (mm) : la pointe de l’outil descend jusqu’ici.'));
     d.appendChild(gH);
     d.appendChild(faoH('Passes'));
     const gP=faoRow();
@@ -6324,10 +6439,10 @@ function faoOpCardElement(setup,op,i){
   },'Zone usinée : tout le brut, un rectangle, l’intérieur d’une chaîne d’arêtes, ou le contour d’une esquisse.'));
   if(limMode==='rect'&&op.limit){
     const L=op.limit;
-    rl.appendChild(faoNum(L.x0,function(v){L.x0=v;},52,null,'Rectangle : coin X mini (mm)'));
-    rl.appendChild(faoNum(L.y0,function(v){L.y0=v;},52,null,'Rectangle : coin Y mini (mm)'));
-    rl.appendChild(faoNum(L.x1,function(v){L.x1=v;},52,null,'Rectangle : coin X maxi (mm)'));
-    rl.appendChild(faoNum(L.y1,function(v){L.y1=v;},52,null,'Rectangle : coin Y maxi (mm)'));
+    rl.appendChild(faoNum(faoDsp(op,L.x0,0),function(v){L.x0=faoInp(op,v,0);},52,null,'Rectangle : coin X mini (mm)'));
+    rl.appendChild(faoNum(faoDsp(op,L.y0,1),function(v){L.y0=faoInp(op,v,1);},52,null,'Rectangle : coin Y mini (mm)'));
+    rl.appendChild(faoNum(faoDsp(op,L.x1,0),function(v){L.x1=faoInp(op,v,0);},52,null,'Rectangle : coin X maxi (mm)'));
+    rl.appendChild(faoNum(faoDsp(op,L.y1,1),function(v){L.y1=faoInp(op,v,1);},52,null,'Rectangle : coin Y maxi (mm)'));
   }
   const geoOwn=faoPocketAdapt(op)||faoContourProfil(op); // bord / profil : section propre
   if(!geoOwn&&!(op.type==='drill'&&op.src==='model'))d.appendChild(rl); // trous du modèle : pas de zone
@@ -6435,10 +6550,10 @@ function faoOpCardElement(setup,op,i){
     'Zone intérieure (îlot) : matière à NE PAS toucher — l\'ébauche usine entre les deux zones.'));
   if(lim2Mode==='rect'&&op.limit2){
     const L2=op.limit2;
-    rl2.appendChild(faoNum(L2.x0,function(v){L2.x0=v;},52,null,'Îlot : coin X mini (mm)'));
-    rl2.appendChild(faoNum(L2.y0,function(v){L2.y0=v;},52,null,'Îlot : coin Y mini (mm)'));
-    rl2.appendChild(faoNum(L2.x1,function(v){L2.x1=v;},52,null,'Îlot : coin X maxi (mm)'));
-    rl2.appendChild(faoNum(L2.y1,function(v){L2.y1=v;},52,null,'Îlot : coin Y maxi (mm)'));
+    rl2.appendChild(faoNum(faoDsp(op,L2.x0,0),function(v){L2.x0=faoInp(op,v,0);},52,null,'Îlot : coin X mini (mm)'));
+    rl2.appendChild(faoNum(faoDsp(op,L2.y0,1),function(v){L2.y0=faoInp(op,v,1);},52,null,'Îlot : coin Y mini (mm)'));
+    rl2.appendChild(faoNum(faoDsp(op,L2.x1,0),function(v){L2.x1=faoInp(op,v,0);},52,null,'Îlot : coin X maxi (mm)'));
+    rl2.appendChild(faoNum(faoDsp(op,L2.y1,1),function(v){L2.y1=faoInp(op,v,1);},52,null,'Îlot : coin Y maxi (mm)'));
   }
   if(!faoContourProfil(op)&&!(op.type==='drill'&&op.src==='model'))d.appendChild(rl2); // trous du modèle : ni zone ni îlot
   if(lim2Mode==='chain'&&op.limit2){
@@ -6530,6 +6645,7 @@ function faoOpCardElement(setup,op,i){
     rs.textContent='S'+sf.s+' F'+sf.f+' · '+mv.length+' pts · ≈'+ee.tmin.toFixed(1)+' min';
   }
   rr.appendChild(rs);
+  try{ faoOpFrameRows(d,setup,op); }catch(e){} // 2026-10-16-020 : repère propre (3+2) de l'opération
   d.appendChild(rr);
   try{ const tc=faoCardTabs(d,op); if(tc)return tc; }catch(e){}
   return d;
@@ -6557,15 +6673,28 @@ function faoSetupFiche(p,setup){
   rM.appendChild(faoSel([['G54','G54'],['G55','G55'],['G56','G56'],['G57','G57'],['G58','G58'],['G59','G59']],
     setup.wcs||'G54',function(v){ setup.wcs=v; }));
   p.appendChild(rM);
+  // 2026-10-16-017 : origine = un des 27 points cardinaux (clic dans la vue) du brut ou du modèle
   const rO=faoRow();
-  rO.appendChild(faoLab('Point de bloc'));
-  rO.appendChild(faoSel([['top-X0Y0','Dessus coin X0Y0'],['top-X1Y1','Dessus coin X1Y1'],
-    ['top-C','Dessus centre'],['bot-X0Y0','Dessous coin X0Y0']],
-    (setup.origin&&setup.origin.preset)||'top-X0Y0',function(v){ setup.origin={preset:v}; }));
+  const spO=faoOriginSpec(setup);
+  rO.appendChild(faoLab('Origine sur'));
+  rO.appendChild(faoSel([['stock','Brut'],['model','Modèle']],spO.src,
+    function(v){ setup.origin={pt:faoOriginSpec(setup).pt,src:v}; },
+    'Boîte dont les points cardinaux servent d’origine : le brut (avec ses marges) ou le modèle usiné.'));
+  rO.appendChild(faoLab('· '+faoCardLabel(spO.pt)));
   p.appendChild(rO);
+  const rOp=faoRow();
+  [['Dessus X0Y0',[0,0,1]],['Dessus centre',[0.5,0.5,1]],['Centre',[0.5,0.5,0.5]],['Dessous X0Y0',[0,0,0]]].forEach(function(q){
+    rOp.appendChild(faoMini(q[0],function(){ setup.origin={pt:q[1].slice(),src:faoOriginSpec(setup).src}; },'Origine : '+faoCardLabel(q[1])));
+  });
+  p.appendChild(rOp);
+  p.appendChild(faoHelp('Ou cliquez l’un des points blancs de la vue (coins, milieux d’arêtes, centres de faces, centre). Le repère du posage s’y place ; le G-code est relatif à ce point.'));
+  faoFrameRows(p,setup); // 2026-10-16-019 : orientation Z / X du repère du posage
   // Indexation 3+2 (table C + B) — {0,0} = usinage 3 axes strictement inchangé.
+  // 2026-10-16-020 : le 3+2 se règle désormais PAR OPÉRATION (onglet Repère) ; la ligne
+  // du posage ne reste visible que pour un ancien document qui en porte un.
   const r32=faoRow();
   const O=faoOrient(setup);
+  if(O.b!==0||O.c!==0){
   r32.appendChild(faoLab('3+2 B'));
   r32.appendChild(faoNum(O.b,function(v){ setup.orient={b:Math.round(v*1000)/1000,c:faoOrient(setup).c}; },
     44,5,"Bascule de table autour de Y (degrés). 0 = usinage 3 axes. Non nul : Siemens = TRAORI(1) + positionnement B/C (XYZ restent repère pièce) ; Fagor 8065 = machine 3 axes : indexation ignorée à l'export (aucun B/C, alerte)."));
@@ -6575,9 +6704,9 @@ function faoSetupFiche(p,setup){
   r32.appendChild(faoLab('°'));
   r32.appendChild(faoMini('3 axes',function(){ setup.orient={b:0,c:0}; },
     'Remise à plat : annule l\'indexation 3+2 (B=0, C=0).'));
-  r32.appendChild(faoMini('Sur la pièce',function(){ faoPlaneStart(setup.id); },
-    'Cliquez une face sortante du modèle : les angles B/C sont calculés automatiquement depuis la normale de la face (vérifiez les sens de rotation).'));
   p.appendChild(r32);
+  p.appendChild(faoHelp('Ancien réglage 3+2 du posage (orientation par défaut de ses opérations). Le 3+2 se règle maintenant par opération : onglet « Repère » de l’opération. « 3 axes » le retire.'));
+  }
   if((FAO_POSTS[setup.machine||setup.post]||{}).kind==='fagor'&&(O.b!==0||O.c!==0)){
     const w32=document.createElement('div');
     w32.className='fao-alert';
@@ -6616,6 +6745,50 @@ function faoSetupFiche(p,setup){
   p.appendChild(rB);
   // Brut + bridage
   p.appendChild(faoH('Brut · bridage'));
+  // 2026-10-16-018 : forme du brut — boîte, cylindre ou modèle (un corps EST le brut)
+  const shpS=faoStockShape(setup);
+  const rShp=faoRow();
+  rShp.appendChild(faoLab('Forme'));
+  rShp.appendChild(faoSel([['box','Boîte'],['cyl','Cylindre'],['solid','Modèle (corps)']],shpS,function(v){
+    if(v==='solid'){
+      setup.stockShape='solid';
+      let id=setup.stockBody;
+      if(id==null){const f=(typeof bodies!=='undefined'&&bodies?bodies:[]).filter(function(b){return b&&!b.ghost&&b.mesh;})[0];id=f?f.id:null;}
+      if(id!=null)faoStockBodySet(id,setup);
+    }else{
+      if(setup.stockShape==='solid'){ faoStockBodyRestore(setup); setup.stockSrc='bodies'; }
+      setup.stockShape=v;
+    }
+    faoStock();
+    if(typeof renderProps==='function')renderProps();
+  },'Boîte (modèle + marges), cylindre (barre ronde : axe, Ø et longueur auto ou saisis) ou modèle : un corps du document EST le brut (brut de fonderie, ébauche importée).'));
+  p.appendChild(rShp);
+  if(shpS==='cyl'){
+    const rCy=faoRow();
+    const scy=(setup.stock&&setup.stock.cyl)||null;
+    rCy.appendChild(faoLab('Axe'));
+    rCy.appendChild(faoSel([['z','Z'],['x','X'],['y','Y']],setup.cylAxis||'z',function(v){ setup.cylAxis=v; faoStock(); },
+      'Axe du cylindre (repère pièce).'));
+    rCy.appendChild(faoLab('Ø'));
+    rCy.appendChild(faoNum(isFinite(+setup.cylD)&&+setup.cylD>0?+setup.cylD:(scy?+(2*scy.r).toFixed(3):0),function(v){ setup.cylD=v>0?v:0; faoStock(); },48,1,
+      'Diamètre du brut (mm). 0 = automatique : cercle circonscrit au modèle + marge XY.'));
+    rCy.appendChild(faoLab('L'));
+    const Lc=scy?(scy.axis==='x'?setup.stock.x1-setup.stock.x0:scy.axis==='y'?setup.stock.y1-setup.stock.y0:setup.stock.z1-setup.stock.z0):0;
+    rCy.appendChild(faoNum(isFinite(+setup.cylL)&&+setup.cylL>0?+setup.cylL:+Lc.toFixed(3),function(v){ setup.cylL=v>0?v:0; faoStock(); },48,1,
+      'Longueur du brut (mm). 0 = automatique : modèle + surépaisseurs (Z+/Z− pour un axe Z, marge XY aux deux bouts sinon). Saisie : axe Z = dessus conservé, axe X/Y = milieu conservé.'));
+    rCy.appendChild(faoMini('Auto',function(){ setup.cylD=0; setup.cylL=0; faoStock(); },'Ø et longueur recalculés depuis le modèle et les marges.'));
+    p.appendChild(rCy);
+  }
+  if(shpS==='solid'){
+    const rSo=faoRow();
+    rSo.appendChild(faoLab('Brut ='));
+    const bL=(typeof bodies!=='undefined'&&bodies?bodies:[]).filter(function(b){return b&&!b.ghost&&b.mesh;});
+    if(bL.length)rSo.appendChild(faoSel(bL.map(function(b){return [b.id,String(b.name||b.id)];}),
+      setup.stockBody!=null?setup.stockBody:bL[0].id,function(v){ faoStockBodySet(v,setup); faoStock(); },
+      'Corps qui EST le brut (forme réelle, sans marge) — masqué dans la vue dès choisi, l’œil de l’arbre le réaffiche.'));
+    else rSo.appendChild(faoLab('aucun corps'));
+    p.appendChild(rSo);
+  }
   // Source de la boîte : tous les corps (défaut), un seul corps, ou saisie manuelle.
   const modeS=(setup.stockSrc==='body'||setup.stockSrc==='manual')?setup.stockSrc:'bodies';
   const rSrc=faoRow();
@@ -6641,8 +6814,8 @@ function faoSetupFiche(p,setup){
       if(typeof renderProps==='function')renderProps();
     },
     'D’où vient la boîte du brut : bbox des corps visibles (défaut), bbox d’un seul corps (barreau importé à côté du brut — masqué dans la vue dès choisi, l’œil de l’arbre le réaffiche) ou boîte saisie à la main.'));
-  p.appendChild(rSrc);
-  if(modeS==='body'){
+  if(shpS!=='solid')p.appendChild(rSrc);
+  if(modeS==='body'&&shpS!=='solid'){
     const rBd=faoRow();
     rBd.appendChild(faoLab('Brut ='));
     const bList=(typeof bodies!=='undefined'&&bodies?bodies:[])
@@ -6679,11 +6852,27 @@ function faoSetupFiche(p,setup){
     p.appendChild(nM);
   }
   const rS=faoRow();
-  rS.appendChild(faoLab('Brut '+stock.x0.toFixed(0)+','+stock.y0.toFixed(0)+','+stock.z0.toFixed(0)
-    +' → '+stock.x1.toFixed(0)+','+stock.y1.toFixed(0)+','+stock.z1.toFixed(0)+' · marge'));
-  rS.appendChild(faoNum(setup.marge,function(v){ setup.marge=Math.max(0,v); faoStock(); },48));
+  const OGs=faoOriginPoint(setup); // cotes du brut relatives à l'origine du posage (Z0)
+  const fx=function(v,i){ return (+v-OGs[i]).toFixed(0); };
+  rS.appendChild(faoLab('Brut '+fx(stock.x0,0)+','+fx(stock.y0,1)+','+fx(stock.z0,2)
+    +' → '+fx(stock.x1,0)+','+fx(stock.y1,1)+','+fx(stock.z1,2)));
   if(modeS!=='manual')rS.appendChild(faoMini('MAJ brut',function(){ faoStock(); }));
   p.appendChild(rS);
+  if(modeS!=='manual'&&shpS!=='solid'){
+    const rMg=faoRow();
+    rMg.appendChild(faoLab('Marge XY'));
+    rMg.appendChild(faoNum(setup.marge,function(v){ setup.marge=Math.max(0,v); faoStock(); },40,1,
+      'Surépaisseur du brut autour du modèle, en X et en Y (mm).'));
+    p.appendChild(rMg);
+    const rMz=faoRow(); // 2e ligne : la fiche est étroite, Z− passait seul à la ligne
+    rMz.appendChild(faoLab('Surép. Z+'));
+    rMz.appendChild(faoNum(isFinite(+setup.margeZp)?+setup.margeZp:0,function(v){ setup.margeZp=Math.max(0,v); faoStock(); },40,0.5,
+      'Surépaisseur du brut AU-DESSUS du modèle (mm) — matière à surfacer.'));
+    rMz.appendChild(faoLab('Z−'));
+    rMz.appendChild(faoNum(isFinite(+setup.margeZm)?+setup.margeZm:0,function(v){ setup.margeZm=Math.max(0,v); faoStock(); },40,0.5,
+      'Surépaisseur du brut AU-DESSOUS du modèle (mm) — talon / prise d’étau.'));
+    p.appendChild(rMz);
+  }
   const rF=faoRow();
   rF.appendChild(faoLab('Bridage'));
   rF.appendChild(faoTxt((setup.fixture&&setup.fixture.note)||'',function(v){
@@ -6959,6 +7148,9 @@ function faoActiveMesh(setup,fine){
       if(T.length>(fine?600000:120000))return null;
     }
     if(!n||!V.length)return null;
+    // 2026-10-16-019 : repère orienté du posage → maillage dans SES coordonnées
+    const F=faoFrame(setup);
+    if(!F.id){ const W=V.map(function(p){return faoToF(F,p);}); return {mesh:{v:W,t:T}, box:faoBoxOfVerts(W)}; }
     return {mesh:{v:V,t:T}, box:{x0:x0,y0:y0,z0:z0,x1:x1,y1:y1,z1:z1}};
   }catch(e){ return null; }
 }
@@ -11930,6 +12122,7 @@ function faoPlaneCommit(e){
       const v=new THREE.Vector3(n.x,n.y,n.z).transformDirection(h.object.matrixWorld);
       nx=v.x;ny=v.y;nz=v.z;
     }catch(e2){}
+    try{ const Fr=faoFrame(faoSetup(faoPlanePick.setupId)); if(!Fr.id){ const q=faoRotF(Fr,[nx,ny,nz]); nx=q[0];ny=q[1];nz=q[2]; } }catch(e2){}
     const o=faoOrientFromNormal(nx,ny,nz);
     if(o.down){faceEl.textContent='Plan : face tournée vers le BAS — pièce à retourner (non appliquée).';return;}
     const setup=faoSetup(faoPlanePick.setupId);
@@ -11981,8 +12174,9 @@ function faoZPlaneCommit(e){
       .map(function(b){return b.mesh;});
     const hits=objs.length?rayc.intersectObjects(objs,false):[];
     if(!hits.length){faceEl.textContent='Plan : aucune face touchée, réessayez.';return;}
-    const z=Math.round(hits[0].point.z*100)/100;
     const setup=faoSetup(t.setupId);
+    const hp=hits[0].point,Fr=t.opId?faoOpFrameOf(setup.id,t.opId):faoFrame(setup);
+    const z=Math.round((Fr.id?hp.z:faoToF(Fr,[hp.x,hp.y,hp.z])[2])*100)/100; // Z du repère posage
     if(!setup){faceEl.textContent='Plan : poste introuvable, annulé.';faoZPlaneCancel(true);return;}
     let owner=setup, op=null;
     if(t.opId){
@@ -12088,6 +12282,11 @@ function faoChainStart(setupId,opId,kind){
     }
     let edges=[];
     try{ edges=faoChainEdgesWorld(); }catch(e){ edges=[]; }
+    try{ // 2026-10-16-019 : repère orienté du posage → arêtes dans SES coordonnées
+      const Fr=faoOpFrameOf(setupId,opId); // repère de l'opération (sinon du posage)
+      if(!Fr.id)edges=edges.map(function(e){ const o=Object.assign({},e);
+        o.pts=(e.pts||[]).map(function(q){return faoToF(Fr,q);}); if(e.mid)o.mid=faoToF(Fr,e.mid); return o; });
+    }catch(e){}
     if(!edges.length){
       faceEl.textContent=(!occLive||!occLive.shape)?(PRE+' : recalcul impossible.'):(PRE+' : aucune arête listable.');
       return;
@@ -12119,8 +12318,8 @@ function faoChainExit(silent){
   try{
     faoChainMode=null; faoChainHover=null;
     if(typeof scene!=='undefined'&&scene){
-      const o=scene.getObjectByName('faoChainEdges');
-      if(o)scene.remove(o);
+      const o=faoGet3D('faoChainEdges');
+      if(o)faoDel3D(o);
     }
     try{renderer.domElement.style.cursor='default';}catch(e){}
     if(!silent){
@@ -12145,8 +12344,8 @@ const FAO_CHAIN_W=3, FAO_CHAIN_WH=5;
 function faoChainBuildOverlay(){
   try{
     if(!faoChainMode)return;
-    const old=scene.getObjectByName('faoChainEdges');
-    if(old)scene.remove(old);
+    const old=faoGet3D('faoChainEdges');
+    if(old)faoDel3D(old);
     const segs=[], segEdge=[];
     faoChainMode.edges.forEach(function(e,i){
       const p=e.pts||[];
@@ -12214,7 +12413,7 @@ function faoChainBuildOverlay(){
     mesh.userData.segs=segs;
     halo.onBeforeRender=mesh.onBeforeRender;
     const grp=new THREE.Group(); grp.name='faoChainEdges'; grp.add(mesh); grp.add(halo); // [0] = trait (pointage)
-    scene.add(grp);
+    faoAdd3D(grp);
     faoChainPaint();
   }catch(e){ try{faceEl.textContent='Chaîne : affichage impossible ('+e.message+').';}catch(e2){} }
 }
@@ -12227,7 +12426,7 @@ function faoChainIsSel(i){
 }
 function faoChainPaint(){
   try{
-    const grp=scene.getObjectByName('faoChainEdges');
+    const grp=faoGet3D('faoChainEdges');
     if(!grp||!faoChainMode)return;
     const l=grp.children[0];
     if(!l||!l.geometry||!l.geometry.attributes.col)return;
@@ -12251,7 +12450,7 @@ function faoChainPick(e){
   // Arête la plus proche EN PIXELS du curseur (≤ 10 px), parmi celles que la pièce
   // ne cache pas (profondeur ≤ premier impact du rayon + tolérance).
   try{
-    const grp=scene.getObjectByName('faoChainEdges');
+    const grp=faoGet3D('faoChainEdges');
     if(!grp||!faoChainMode)return null;
     const l=grp.children[0];const segs=l&&l.userData.segs,segEdge=l&&l.userData.segEdge;
     if(!segs||!segEdge)return null;
@@ -12268,7 +12467,8 @@ function faoChainPick(e){
     }catch(err){}
     camera.updateMatrixWorld();
     const PV=new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
-    const cp=camera.position,va=new THREE.Vector4(),vb=new THREE.Vector4();
+    let RW=null; try{ grp.updateMatrixWorld(true); RW=grp.parent?grp.parent.matrixWorld:null; if(RW)PV.multiply(RW); }catch(err){} // segments en repère posage
+    const cpw=camera.position,cp=RW?cpw.clone().applyMatrix4(RW.clone().invert()):cpw,va=new THREE.Vector4(),vb=new THREE.Vector4();
     const TOL=10;let best=null,bestD=TOL*TOL,bestZ=Infinity;
     for(let k=0;k<segEdge.length;k++){
       const o=k*6;

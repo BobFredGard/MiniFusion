@@ -115,7 +115,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
 </head>
 <body>
 <header class="topbar">
-  <div class="brand">◧ MiniFusion <span class="tag">MVP paramétrique</span> <span class="tag" id="appVer" title="Version du code (anti-cache)">…</span></div>
+  <div class="brand">◧ MiniFusion</div>
   <div class="tb">
     <button id="btnSketch" class="primary" title="Nouvelle esquisse — sur la face sélectionnée si une face est sélectionnée, sinon sur le plan XY (double-clic sur un plan de l'arborescence = esquisse dessus)">✏️ Esquisse</button>
     <button id="btnExtrude" title="Extruder une esquisse — raccourci E (sens, étendue et distance dans les propriétés ; flèche )">🧱 Extrusion</button>
@@ -250,10 +250,10 @@ input[type=range]{accent-color:var(--primary);width:100%}
 
 <script>
 /* ═══════════════ 00-entete-et-outils.js — entete et outils ═══════════════ */
-/* ============ MiniFusion MVP — paramétrique + viewer-like ============ */
+/* ============ MiniFusion — CAO paramétrique + FAO ============ */
 /* DÉGEL 2026-09-29 — anciennes zones GEL 2026-09-25 (sketch skLoopTrace→solveSketch + contraintes,
    congés xfillet/occApplyXFillets, antériorité occFinalShape/findHost) : désormais MODIFICATION LIBRE,
-   sous la discipline projet — régression 24/24 verts → bump APP_VER → snapshot Backup/ → push GitHub.
+   sous la discipline projet — régression verte → bump APP_VER (= numéro du tag) → snapshot Backup/ → push GitHub.
    GARDE-FOU : le noyau exact OCCT (occApplyXFillets, occFinalShape) n'est PAS couvert par le harnais
    (OCCT ne se charge pas en node) — ne le modifier qu'après validation navigateur ET accord explicite.
 
@@ -265,18 +265,15 @@ input[type=range]{accent-color:var(--primary);width:100%}
    ───────────────────────────────────────────────────────────────────────────
  *
  * ── VERSIONS ──
- * Avant le 2026-10-01 : `2026-09-30l`…`2026-09-31i` (date indicative + lettre).
- * Depuis le 2026-10-01 : `AAAA-MM-JJ-NNN` — date RÉELLE du jour + compteur quotidien
- * démarrant à 001, NNN sur 3 chiffres (`2026-10-01-001`, puis `-002`, …).
- * Le compteur repart à 001 chaque jour : avant de bumper, regarder la dernière version
- * du jour (`git log --oneline`, tags). Même règle pour les snapshots
- * (`Backup/fusion_mvp_AAAA-MM-JJ-NNN.html`) et les entrées `### …` du CHANGELOG.
- * APP_VER n’est comparé qu’à égalité stricte (anti-cache) et affiché : le format
- * peut changer sans rien casser.
+ * Depuis la V0.2.0 (2026-10-17) : UN SEUL numéro, celui des tags Git — `V0.MINEUR.CORRECTIF`
+ * (badge en haut à droite, en-tête des fichiers .miniFusion, aide, CHANGELOG `## V0.x.y`,
+ * snapshots `Backup/fusion_mvp_V0.x.y.html`, tag annoté `V0.x.y`). L'ancien numéro daté
+ * `AAAA-MM-JJ-NNN` (2026-10-01-001 → 2026-10-16-021) reste dans l'historique du CHANGELOG.
+ * APP_VER n'est comparé qu'à égalité stricte (anti-cache) et affiché : le format
+ * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='2026-10-16-016';
-try{document.getElementById('appVer').textContent=APP_VER;}catch(e){}
+const APP_VER='V0.2.1';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -607,7 +604,8 @@ function buildScene(){
   scene.add(new THREE.HemisphereLight(0xffffff,0x444444,0.75));
   const key=new THREE.DirectionalLight(0xffffff,1.0); key.position.set(60,-40,120); scene.add(key);
   try{if('environment' in scene)scene.environment=makeStudioEnv();}catch(e){} // reflets studio
-  axHelper=new THREE.AxesHelper(60); scene.add(axHelper); // X rouge → droite, Y vert → arrière, Z bleu → haut
+  // 2026-10-16-017 : repère façon Fusion (point + 3 axes + 3 plans cliquables, taille constante à l'écran)
+  axHelper=triadMake({name:'axHelper'}); scene.add(axHelper); scene.add(axHelper.userData.planeGroup); // plans = plans d'origine (œil de l'arbre) // X rouge → droite, Y vert → arrière, Z bleu → haut
   // Sol miroir (réflexion planaire temps réel, fondu radial). Z-up : cercle déjà horizontal.
   // 2026-10-15-003 : hors de la texture du reflet (bords d'écran, vue rapprochée), plus
   // d'échantillonnage étiré par le ClampToEdge (« fuyantes qui cherchent à sortir de la
@@ -626,6 +624,7 @@ function buildScene(){
     fragmentShader:'uniform vec3 color; uniform sampler2D tDiffuse; uniform vec3 uCenter; uniform float uRadius; varying vec4 vUv; varying vec3 vWorld;\nvoid main(){ if(vUv.w<=1e-4){ gl_FragColor=vec4(color,1.0); return; } vec2 uv = vUv.xy / vUv.w; float eg = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)); if(eg <= 0.0){ gl_FragColor=vec4(color,1.0); return; } vec3 refl = texture2D(tDiffuse, uv).rgb; float d = distance(vWorld.xy, uCenter.xy); float f = exp(-pow(d / max(uRadius * 1.15, 1e-3), 2.0) * 2.0) * 0.85 * smoothstep(0.0, 0.03, eg); gl_FragColor = vec4(mix(color, refl * 0.62, clamp(f, 0.0, 0.85)), 1.0); }'});
   floorMesh=new THREE.Mesh(new THREE.CircleGeometry(400,48),fm);
   floorMesh.name='floor';floorMesh.position.z=-0.5;scene.add(floorMesh);
+  try{if(typeof mf3D==='function')mf3D(document.body.getAttribute('data-theme')||'nuit');}catch(e){} // thème (V0.2.1)
   buildOriginPlanes();
   controls=new THREE.OrbitControls(camera,renderer.domElement);
   controls.enableDamping=true; controls.dampingFactor=0.08;
@@ -735,7 +734,7 @@ function animate(){
       const _mh=[];
       scene.traverse(o=>{
         if(!o.visible||o===scene)return;
-        if(o.isLine||o.isLineSegments||o.isPoints||o.isSprite||o===axHelper||(o.material&&o.material.isShaderMaterial)||(o.material&&o.material.transparent&&o.material.opacity<0.6)){o.visible=false;_mh.push(o);}
+        if(o.isLine||o.isLineSegments||o.isPoints||o.isSprite||o===axHelper||(o.userData&&o.userData.triad)||(o.material&&o.material.isShaderMaterial)||(o.material&&o.material.transparent&&o.material.opacity<0.6)){o.visible=false;_mh.push(o);}
       });
       renderer.setRenderTarget(mirrorRT);renderer.clear();renderer.render(scene,mirrorCam);
       for(const o of _mh)o.visible=true;
@@ -744,6 +743,8 @@ function animate(){
       mirrorDirty=false;
     }
   }
+  try{triadUpdateAll();}catch(e){}
+  try{if(typeof faoPoseSync==='function')faoPoseSync();}catch(e){}
   renderer.render(scene,camera);
 }
 function showAll(){
@@ -1202,30 +1203,17 @@ function makePlaneLabel(text,css){
   s.scale.set(30,15,1);s.raycast=()=>{};return s;
 }
 function buildOriginPlanes(){
-  const SIZE=120;
-  const defs={XY:{rot:null,corner:[75,75,0]},XZ:{rot:'x',corner:[75,0,75]},YZ:{rot:'y',corner:[0,75,75]}};
-  Object.keys(defs).forEach(p=>{
-    const col=PLANES[p].color;
-    const geo=new THREE.PlaneGeometry(SIZE,SIZE);
-    const m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0.10,side:THREE.DoubleSide,depthWrite:false}));
-    m.name='origin_'+p;m.userData.plane=p;m.renderOrder=-1;
-    if(defs[p].rot==='x')m.rotation.x=-Math.PI/2; // → plan XZ (vertical, face)
-    if(defs[p].rot==='y')m.rotation.y=Math.PI/2; // → plan YZ (vertical, côté)
-    const edge=new THREE.LineSegments(new THREE.EdgesGeometry(geo),new THREE.LineBasicMaterial({color:col,transparent:true,opacity:.85}));
-    edge.raycast=()=>{};m.add(edge);
-    const lab=makePlaneLabel(p,PLANES[p].css);lab.position.set(defs[p].corner[0],defs[p].corner[1],defs[p].corner[2]);m.add(lab);
-    scene.add(m);originMeshes[p]=m;
-  });
+  // 2026-10-16-020 : les grands plans d'origine (quads de 120 mm) sont remplacés par les
+  // 3 petits plans du repère pièce (src/11-repere.js) — mêmes clés, même œil dans l'arbre.
+  try{Object.assign(originMeshes,axHelper.userData.planes);}catch(e){}
   updateOriginPlanes();
 }
 function updateOriginPlanes(){
   Object.keys(originMeshes).forEach(p=>{
     const m=originMeshes[p];if(!m)return;
     m.visible=originVis[p]!==false;
-    const act=sel.kind==='plane'&&sel.id===p;
-    m.material.opacity=act?0.30:0.10;
-    if(m.children[0])m.children[0].material.opacity=act?1:.85;
   });
+  try{triadPaint(axHelper);}catch(e){}
 }
 function pickPlane(e){
   const keys=Object.keys(originMeshes).filter(p=>originVis[p]!==false);
@@ -1457,6 +1445,108 @@ function sketchShape(sk){
     return{shapes:[],open:false,opens:[]};
   }
   return{shapes,open:false,opens:tr.opens};
+}
+
+/* ═══════════════ 11-repere.js — repere ═══════════════ */
+/* ---------- Repère façon Fusion : point central + 3 axes + 3 plans (2026-10-16-017) ----------
+   Remplace l'AxesHelper (3 traits de 60 mm). Taille CONSTANTE à l'écran (indépendante du zoom),
+   dessiné par-dessus la pièce. Les 3 petits plans du repère de l'appli sont sélectionnables :
+   clic = même sélection que le plan d'origine dans l'arbre (esquisse dessus, référence…).
+   Le même dessin sert au repère des posages FAO (src/88 : faoPoseSync). */
+const TRIADS=[]; // repères à remettre à l'échelle à chaque image
+const TRIAD_AX={X:0xff453a,Y:0x30d158,Z:0x0a84ff};
+function triadMake(opts){
+  opts=opts||{};
+  const g=new THREE.Group();g.name=opts.name||'triad';
+  g.userData.triad=true;g.userData.px=opts.px||100;g.userData.planes={};
+  // 2026-10-16-020 : les 3 plans vivent dans un groupe FRÈRE (même échelle) : repère et plans
+  // se masquent séparément. Repère pièce seulement — les repères FAO n'ont pas de plans.
+  const pg=new THREE.Group();pg.name=(opts.name||'triad')+'Planes';pg.userData.triad=true;pg.userData.px=g.userData.px;pg.userData.follow=g;
+  g.userData.planeGroup=pg;
+  const base=(col,op)=>new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:op==null?1:op,depthTest:false,depthWrite:false,side:THREE.DoubleSide});
+  const RO=opts.renderOrder||990;
+  // 3 plans : petits carrés décalés de l'origine (comme Fusion), couleur du plan d'origine
+  if(opts.planes!==false){
+    const a=0.16,b=0.6;
+    const quad=(pts)=>{const ge=new THREE.BufferGeometry();const v=[];[[0,1,2],[0,2,3]].forEach(t=>t.forEach(i=>v.push(...pts[i])));ge.setAttribute('position',new THREE.Float32BufferAttribute(v,3));return ge;};
+    const defs={XY:[[a,a,0],[b,a,0],[b,b,0],[a,b,0]],XZ:[[a,0,a],[b,0,a],[b,0,b],[a,0,b]],YZ:[[0,a,a],[0,b,a],[0,b,b],[0,a,b]]};
+    Object.keys(defs).forEach(p=>{
+      const col=(typeof PLANES!=='undefined'&&PLANES[p])?PLANES[p].color:0x888888;
+      const m=new THREE.Mesh(quad(defs[p]),base(col,0.34));m.renderOrder=RO;m.userData.plane=p;
+      const ol=new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(defs[p].map(q=>new THREE.Vector3(q[0],q[1],q[2]))),
+        new THREE.LineBasicMaterial({color:col,transparent:true,opacity:.9,depthTest:false,depthWrite:false}));
+      ol.renderOrder=RO+1;ol.raycast=()=>{};m.add(ol);
+      pg.add(m);g.userData.planes[p]=m;
+    });
+    TRIADS.push(pg);
+  }
+  // 3 axes : tige + pointe
+  const axes=[['X',new THREE.Vector3(1,0,0)],['Y',new THREE.Vector3(0,1,0)],['Z',new THREE.Vector3(0,0,1)]];
+  axes.forEach(([k,d])=>{
+    const col=TRIAD_AX[k];
+    const shaft=new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.018,0.84,8),base(col));
+    const tip=new THREE.Mesh(new THREE.ConeGeometry(0.055,0.16,14),base(col));
+    const q=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),d);
+    shaft.quaternion.copy(q);shaft.position.copy(d.clone().multiplyScalar(0.42));
+    tip.quaternion.copy(q);tip.position.copy(d.clone().multiplyScalar(0.92));
+    [shaft,tip].forEach(o=>{o.renderOrder=RO+2;o.raycast=()=>{};g.add(o);});
+  });
+  // point central
+  const c=new THREE.Mesh(new THREE.SphereGeometry(0.065,16,12),base(0xffffff));
+  c.renderOrder=RO+3;c.raycast=()=>{};g.add(c);
+  const cr=new THREE.Mesh(new THREE.SphereGeometry(0.085,16,12),base(0x1c1c1e,0.9));
+  cr.renderOrder=RO+2;cr.raycast=()=>{};g.add(cr);
+  TRIADS.push(g);
+  return g;
+}
+function triadWpp(pos){
+  // mm par pixel à cette position (perspective ou orthographique)
+  try{
+    const h=(renderer&&renderer.domElement&&renderer.domElement.clientHeight)||600;
+    if(camera.isOrthographicCamera)return (camera.top-camera.bottom)/(camera.zoom||1)/h;
+    const d=camera.position.distanceTo(pos);
+    return 2*d*Math.tan((camera.fov*Math.PI/180)/2)/h;
+  }catch(e){return 0.1;}
+}
+function triadUpdateAll(){
+  const wp=new THREE.Vector3();
+  for(const g of TRIADS){
+    if(!g.visible||!g.parent)continue;
+    try{
+      const f=g.userData.follow;if(f){g.position.copy(f.position);g.quaternion.copy(f.quaternion);}
+      g.getWorldPosition(wp);
+      const s=g.userData.px*triadWpp(wp);
+      if(isFinite(s)&&s>0)g.scale.setScalar(s);
+    }catch(e){}
+  }
+}
+let triadHover=null;
+function triadPaint(g){
+  // opacité des plans : survol / sélection (plan d'origine sélectionné dans l'arbre)
+  if(!g||!g.userData.planes)return;
+  Object.keys(g.userData.planes).forEach(p=>{
+    const m=g.userData.planes[p];
+    const act=(typeof sel!=='undefined'&&sel&&sel.kind==='plane'&&sel.id===p);
+    m.material.opacity=act?0.8:(triadHover===p&&g===axHelper?0.6:0.34);
+  });
+}
+function triadPickPlane(e){
+  // Plan du repère de l'appli sous le curseur (prioritaire sur les corps : il est dessiné devant)
+  try{
+    if(!axHelper||!axHelper.userData||!axHelper.userData.planes)return null;
+    const r=renderer.domElement.getBoundingClientRect();
+    const ndc=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
+    rayc.setFromCamera(ndc,camera);
+    axHelper.updateMatrixWorld(true);
+    const ms=Object.values(axHelper.userData.planes).filter(m=>m.visible); // plans masqués (œil de l'arbre) : non cliquables
+    const hits=rayc.intersectObjects(ms,false);
+    return hits.length?hits[0].object.userData.plane:null;
+  }catch(e){return null;}
+}
+function triadHoverAt(e){
+  const p=triadPickPlane(e);
+  if(p!==triadHover){triadHover=p;triadPaint(axHelper);}
+  return p;
 }
 
 /* ═══════════════ 20-noyau-et-operations-solides.js — noyau et operations solides ═══════════════ */
@@ -4609,6 +4699,25 @@ function renderTree(){
     t.appendChild(d);
   };
   if(gfold('origin','⬒ Origine · Z↑ haut · Y arrière')){
+    // 2026-10-16-017 : le REPÈRE (point + 3 axes + 3 plans cliquables) en tête du groupe Origine
+    {
+      const on=!!(axHelper&&axHelper.visible);
+      const d=document.createElement('div');
+      d.className='tnode'+(on?'':' hidden');
+      d.title='Repère de l’origine : point central, axes X/Y/Z et 3 plans cliquables (un clic sur un plan le sélectionne) · 👁 = montrer/masquer';
+      d.innerHTML=`<span class="pdot" style="background:#fff;box-shadow:0 0 0 2px #1c1c1e inset"></span><span class="nm">Repère <span style="color:var(--muted)">· X Y Z + plans</span></span><span class="eye" title="Afficher / masquer le repère">${on?'👁':'🙈'}</span>`;
+      d.onclick=ev=>{
+        if(ev.target&&ev.target.classList&&ev.target.classList.contains('eye')){
+          const v=!(axHelper&&axHelper.visible);
+          if(axHelper)axHelper.visible=v;
+          try{const o=$('optAxes');if(o){o.checked=v;}}catch(e){}
+          try{markDirty();}catch(e){}
+          renderTree();return;
+        }
+        try{faceEl.textContent='Repère de l’origine : cliquez un de ses 3 petits plans dans la vue pour le sélectionner (esquisse dessus, référence).';}catch(e){}
+      };
+      t.appendChild(d);
+    }
     ['XY','XZ','YZ'].forEach(p=>{
       const d=document.createElement('div');
       d.className='tnode'+(sel.kind==='plane'&&sel.id===p?' sel':'')+(originVis[p]?'':' hidden');
@@ -15083,15 +15192,60 @@ function faoToolProfile(kind,cr,D,H){
 function faoStockValid(s){
   return !!(s&&[s.x0,s.y0,s.z0,s.x1,s.y1,s.z1].every(isFinite)&&s.x1>s.x0&&s.y1>s.y0&&s.z1>s.z0);
 }
+/* 2026-10-16-018 : FORME du brut — 'box' (boîte, défaut), 'cyl' (cylindre d'axe X, Y ou Z, Ø/longueur
+   auto = modèle + marges, ou saisis), 'solid' (le brut EST un corps : pièce brute de fonderie,
+   ébauche importée — mode « corps choisi », sans marge). Le brut reste décrit par sa boîte
+   englobante (x0..z1, ce que lisent tous les parcours) ; un cylindre y ajoute stock.cyl
+   {axis,c:[x,y,z],r} (simulation : colonnes hors du disque vides, vue : cylindre). */
+function faoStockShape(job){ const k=job&&job.stockShape; return (k==='cyl'||k==='solid')?k:'box'; }
+function faoStockCylFrom(job,a,b,m,mzp,mzm,manual,meshes){
+  // a,b = coins du modèle (ou de la boîte manuelle) ; retourne la boîte du cylindre + .cyl
+  const ax=(job.cylAxis==='x'||job.cylAxis==='y')?job.cylAxis:'z';
+  const I=ax==='x'?0:ax==='y'?1:2, U=(I+1)%3, V=(I+2)%3;
+  const A=[a.x,a.y,a.z], B=[b.x,b.y,b.z];
+  const c=[(A[0]+B[0])/2,(A[1]+B[1])/2,(A[2]+B[2])/2];
+  let r=manual?Math.min(B[U]-A[U],B[V]-A[V])/2:Math.hypot(B[U]-A[U],B[V]-A[V])/2+m;
+  // Ø auto : plus grande distance RÉELLE des sommets du modèle à l'axe (une pièce de révolution
+  // donne son Ø exact, pas la diagonale de sa boîte)
+  if(!manual&&meshes&&meshes.length){
+    try{
+      let rm=0;const v=new THREE.Vector3();
+      meshes.forEach(function(me){
+        const pa=me.geometry&&me.geometry.attributes&&me.geometry.attributes.position;if(!pa)return;
+        me.updateMatrixWorld(true);
+        const Fr=faoFrame(job);
+        for(let i=0;i<pa.count;i++){v.fromBufferAttribute(pa,i).applyMatrix4(me.matrixWorld);
+          const q=Fr.id?[v.x,v.y,v.z]:faoToF(Fr,[v.x,v.y,v.z]);const d=Math.hypot(q[U]-c[U],q[V]-c[V]);if(d>rm)rm=d;}
+      });
+      if(rm>0)r=rm+m;
+    }catch(e){}
+  }
+  if(isFinite(+job.cylD)&&+job.cylD>0)r=+job.cylD/2;
+  let lo=A[I], hi=B[I];
+  if(!manual){ if(I===2){ lo-=mzm; hi+=mzp; } else { lo-=m; hi+=m; } }
+  if(isFinite(+job.cylL)&&+job.cylL>0){ // longueur saisie : dessus (Z) ou milieu (X/Y) conservé
+    if(I===2)lo=hi-(+job.cylL); else { const mid=(lo+hi)/2; lo=mid-(+job.cylL)/2; hi=mid+(+job.cylL)/2; }
+  }
+  const lo3=[0,0,0], hi3=[0,0,0];
+  lo3[I]=lo; hi3[I]=hi; lo3[U]=c[U]-r; hi3[U]=c[U]+r; lo3[V]=c[V]-r; hi3[V]=c[V]+r;
+  const cc=c.slice(); cc[I]=(lo+hi)/2;
+  return {x0:lo3[0],y0:lo3[1],z0:lo3[2],x1:hi3[0],y1:hi3[1],z1:hi3[2],cyl:{axis:ax,c:cc,r:r}};
+}
 function faoStock(){
   const job=faoDoc();
-  const mode=(job.stockSrc==='body'||job.stockSrc==='manual')?job.stockSrc:'bodies';
+  const shape=faoStockShape(job);
+  const mode=shape==='solid'?'body':((job.stockSrc==='body'||job.stockSrc==='manual')?job.stockSrc:'bodies');
   if(mode==='manual'){
     // Boîte saisie à la main : jamais recalculée (repli défaut si invalide).
     if(!faoStockValid(job.stock))job.stock=faoStockDefault();
+    const s0=job.stock;
+    if(shape==='cyl'){
+      const s1=faoStockCylFrom(job,{x:+s0.x0,y:+s0.y0,z:+s0.z0},{x:+s0.x1,y:+s0.y1,z:+s0.z1},0,0,0,true);
+      job.stock={x0:s0.x0,y0:s0.y0,z0:s0.z0,x1:s0.x1,y1:s0.y1,z1:s0.z1,cyl:s1.cyl};
+    }else if(s0.cyl){ delete s0.cyl; }
     return job.stock;
   }
-  let box=null;
+  let box=null;const meshes=[];
   try{
     if(typeof THREE!=='undefined'&&typeof bodies!=='undefined'&&bodies&&bodies.length){
       box=new THREE.Box3(); let n=0;
@@ -15102,7 +15256,7 @@ function faoStock(){
         // brut) ; mode « tous les corps » : corps visibles seulement (historique).
         if(want!=null){ if(b.id!==want)return; }
         else if(b.visible===false)return;
-        try{ box.expandByObject(b.mesh); n++; }catch(e){}
+        try{ box.expandByObject(b.mesh); n++; meshes.push(b.mesh); }catch(e){}
       });
       if(!n)box=null;
       else{
@@ -15110,12 +15264,23 @@ function faoStock(){
       }
     }
   }catch(e){ box=null; }
-  const m=isFinite(+job.marge)&&+job.marge>=0?+job.marge:5;
+  const solid=shape==='solid'; // brut = le corps lui-même : aucune marge
+  const m=solid?0:(isFinite(+job.marge)&&+job.marge>=0?+job.marge:5);
+  // 2026-10-16-017 : surépaisseurs du brut au-dessus (Z+) et au-dessous (Z−) du modèle (défaut 0)
+  const mzp=solid?0:(isFinite(+job.margeZp)&&+job.margeZp>=0?+job.margeZp:0);
+  const mzm=solid?0:(isFinite(+job.margeZm)&&+job.margeZm>=0?+job.margeZm:0);
+  // 2026-10-16-019 : repère orienté → boîte des corps dans SES coordonnées
+  const Fr=faoFrame(job);
+  if(box&&!Fr.id&&meshes.length){
+    try{ const Bf=faoMeshesBoxF(meshes,Fr); if(Bf){ box.min.set(Bf.x0,Bf.y0,Bf.z0); box.max.set(Bf.x1,Bf.y1,Bf.z1); } }catch(e){}
+  }
   if(box){
     try{
       const a=box.min,b=box.max;
       if([a.x,a.y,a.z,b.x,b.y,b.z].every(isFinite)&&b.x>a.x&&b.y>a.y&&b.z>a.z){
-        job.stock={x0:a.x-m, y0:a.y-m, z0:a.z, x1:b.x+m, y1:b.y+m, z1:b.z};
+        if(shape==='cyl'){ job.stock=faoStockCylFrom(job,a,b,m,mzp,mzm,false,meshes); return job.stock; }
+        job.stock={x0:a.x-m, y0:a.y-m, z0:a.z-mzm, x1:b.x+m, y1:b.y+m, z1:b.z+mzp};
+        if(solid)job.stock.solid=job.stockBody;
         return job.stock;
       }
     }catch(e){}
@@ -16338,12 +16503,15 @@ function faoModelZBox(job){
     if(typeof THREE!=='undefined'&&typeof bodies!=='undefined'&&bodies&&bodies.length){
       const box=new THREE.Box3(); let n=0;
       const want=(job&&job.stockSrc==='body')?job.stockBody:null;
+      const ms=[];
       bodies.forEach(function(b){
         if(!b||b.ghost||!b.mesh)return;
         if(want!=null){ if(b.id!==want)return; }
         else if(b.visible===false)return;
-        try{ box.expandByObject(b.mesh); n++; }catch(e){}
+        try{ box.expandByObject(b.mesh); n++; ms.push(b.mesh); }catch(e){}
       });
+      const Fr=faoFrame(job); // repère orienté : Z du posage
+      if(n&&!Fr.id){ const Bf=faoMeshesBoxF(ms,Fr); if(Bf)return {z0:Bf.z0,z1:Bf.z1}; }
       if(n&&!box.isEmpty()&&isFinite(box.min.z)&&isFinite(box.max.z))
         return {z0:box.min.z,z1:box.max.z};
     }
@@ -16369,7 +16537,7 @@ function faoPlaneZ(pl,op,job,dep){
     case 'bridageBas':{ const f=job&&job.fixture;
       z=(f&&isFinite(+f.z0))?+f.z0:z0; break; }
     case 'face': z=isFinite(+pl.fz)?+pl.fz:z1; break;
-    case 'origine': z=0; break;
+    case 'origine': z=(job&&job.originZero)?0:faoOriginPoint(job)[2]; break; // 2026-10-16-020 : Z0 = origine du POSAGE (repère d'usinage)
     case 'retrait': // chaîne unique : dégagement depuis le retrait
       if(dep>=3)return NaN;
       z=faoRetractAbs(op,job); break;
@@ -16811,7 +16979,7 @@ function faoSetupFp(job){
     faoFpParts=diag.join('|');
     let h=2166136261;
     for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619);}
-    return (h>>>0).toString(36)+'_'+parts.length;
+    return (h>>>0).toString(36)+'_'+parts.length+faoFrameSig(job); // repère orienté : autre solide
   }catch(e){ return 'x'; }
 }
 function faoOpMovesKey(op,job){
@@ -17291,7 +17459,8 @@ function faoMovesStat(op,job){
 // fil après chaque niveau (yield* faoGenRough3DIt) pour le dessin progressif.
 // faoOpMoves() = drain SYNCHRONE strictement équivalent (appels classiques,
 // tests, G-code, estimation, aperçu canonique) ; faoOpMovesStream() = flux.
-function* faoOpMovesIt(op,job){
+function* faoOpMovesIt0(op,job){
+  // (2026-10-16-020 : appelé par faoOpMovesIt, qui gère le repère PROPRE d'une opération)
   // Prime le maillage AVANT la clé : faoSetupFp lit les maillages des corps, il
   // faut qu'ils existent avant de calculer la clé (sinon 'nb' = clé fausse).
   if(faoMeshOp(op)){ try{ faoActiveMesh(job); }catch(e){} }
@@ -17657,17 +17826,17 @@ function faoEstimate(moves,fCut,fRap,accel){
 // Le G-code est exprimé RELATIF à ce point (= position du G54 sur la machine).
 // Phase suivante : point pièce cliqué + orientation (3+2).
 function faoOriginPoint(setup){
+  // 2026-10-16-017 : l'un des 27 points cardinaux du brut ou du modèle (src/89-fao-posage-repere) ;
+  // les préréglages historiques {preset} se lisent comme leurs points équivalents.
   const s=(setup&&setup.stock)||faoStockDefault();
-  const pr=(setup&&setup.origin&&setup.origin.preset)||'top-X0Y0';
-  if(pr==='top-X1Y1')return [s.x1,s.y1,s.z1];
-  if(pr==='top-C')return [(s.x0+s.x1)/2,(s.y0+s.y1)/2,s.z1];
-  if(pr==='bot-X0Y0')return [s.x0,s.y0,s.z0];
-  return [s.x0,s.y0,s.z1]; // 'top-X0Y0' : dessus, coin X0 Y0 (défaut atelier)
+  const sp=faoOriginSpec(setup);
+  const B=(sp.src==='model'&&faoModelBox(setup))||s;
+  return faoBoxPt(B,sp.pt);
 }
 function faoOriginLabel(setup){
-  const pr=(setup&&setup.origin&&setup.origin.preset)||'top-X0Y0';
-  return pr==='top-X1Y1'?'dessus coin X1Y1':pr==='top-C'?'dessus centre':
-    pr==='bot-X0Y0'?'dessous coin X0Y0':'dessus coin X0Y0';
+  const sp=faoOriginSpec(setup);
+  const t=faoCardLabel(sp.pt);
+  return sp.src==='model'?'modèle · '+t:t;
 }
 /* ----- plans : retrait (absolu, auto = dessus + 25) ----- */
 // 2026-10-08-002 : le plan de dégagement/retrait se règle par RÉFÉRENCE
@@ -17765,6 +17934,7 @@ function faoArcWords(m,ox,oy,oz){
    PostPro/fagor-8065.cps) + annulation `G80` (cycles modaux). */
 function faoDrillCycle(op,job,oz){
   if(!op||op.type!=='drill')return null;
+  if(faoOpFrame(job,op))return null; // repère d'opération incliné : perçage émis en déroulé G0/G1
   if(op.cycle==='helix')return null; // fraisage hélicoïdal : émis en G1/G2/G3 comme un parcours
   // 2026-10-15-011 : un plan PAR TROU (départ et fond propres — trous du modèle à
   // des hauteurs différentes), dans l'ordre optimisé. Saisie XY : comme avant.
@@ -17864,6 +18034,9 @@ function faoPost(job,postId){
   }
   nc('G0 Z'+faoFmtXYZ(safe-oz)); // plan de sécurité : Z seul avant tout déplacement XY
   let qi=0, prev=null;
+  // 2026-10-16-020 : orientation 3+2 PAR OPÉRATION (repère propre de l'opération) ;
+  // l'ancien 3+2 du posage reste l'orientation par défaut.
+  let oriCur={b:ORI.b,c:ORI.c}, traOn=ori32&&!fag, fagWarn=false;
   groups.forEach(function(g,gi){
     const t=g.tool;
     const S=faoFmtS(t.s), F=faoFmtF(t.f), FP=faoFmtF(t.plunge);
@@ -17894,6 +18067,24 @@ function faoPost(job,postId){
       // cav.txt : N60 #MSG["OPT1: Paroies"]) — l'opérateur voit l'opération
       // en cours sur la CN. Sanitisé ASCII, sans G1 ni F (parité post intacte).
       if(fag){ try{ nc('#MSG["'+faoOpAscii(faoOpLabel(b.op,job))+'"]'); }catch(e){} }
+      const OB=faoOpBC(job,b.op)||{b:ORI.b,c:ORI.c};
+      if(OB.b!==oriCur.b||OB.c!==oriCur.c){
+        if(fag){
+          cmt('3+2 : B'+faoFmtXYZ(OB.b)+' C'+faoFmtXYZ(OB.c)+' demandé — machine 3 axes : B/C NON commandés');
+          if(!fagWarn){ fagWarn=true; warns.push('Repère d’opération incliné : Fagor 8065 = machine 3 axes — orientation B/C ignorée à l’export.'); }
+        }else{
+          nc('G0 Z'+faoFmtXYZ(safe-oz)); // dégagement AVANT de réorienter l'outil
+          if(prev)prev={x:prev.x,y:prev.y,z:safe};
+          if(OB.b!==0||OB.c!==0){
+            if(!traOn){ nc('TRAORI(1)'); traOn=true; }
+            nc('G0 B'+faoFmtXYZ(OB.b)+' C'+faoFmtXYZ(OB.c));
+          }else{
+            nc('G0 B0 C0');
+            if(traOn){ nc('TRAFOOF'); traOn=false; }
+          }
+        }
+        oriCur={b:OB.b,c:OB.c};
+      }
       const sq=SEQ[qi++]||{moves:b.moves};
       // Plan de dégagement de CETTE opération (hérité du posage sinon) —
       // 2026-10-08-002 : la plongée/translation passe par son propre plan.
@@ -17993,7 +18184,7 @@ function faoPost(job,postId){
     });
   });
   // 3+2 : annuler la transformation AVANT les coordonnées machine de fin (SUPA/park).
-  if(ori32&&!fag)nc('TRAFOOF');
+  if(traOn)nc('TRAFOOF');
   if(fag){
     nc('M09');
     nc('G0 Z'+faoFmtXYZ(retrPrev-oz));
@@ -18048,7 +18239,7 @@ let faoExportBtnEl=null;
 function faoClearPreview(){
   try{
     if(faoPrevGroup&&typeof scene!=='undefined'&&scene){
-      scene.remove(faoPrevGroup);
+      faoDel3D(faoPrevGroup);
       try{ faoPrevGroup.traverse(function(o){ if(o.geometry&&o.geometry.dispose)o.geometry.dispose(); }); }catch(e){}
     }
   }catch(e){}
@@ -18214,7 +18405,7 @@ function faoRefreshPreview(mode){
       const mv=b.moves; total+=mv.length;
       mk(mv,faoSegClipper(op,job));
     });
-    scene.add(faoPrevGroup);
+    faoAdd3D(faoPrevGroup);
     if(typeof faoVw!=='undefined'&&faoVw)faoPrevGroup.visible=false; // viewer : traces restent cachées
   }catch(e){}
   return total;
@@ -18258,7 +18449,7 @@ async function faoRefreshPreviewStream(){
   if(typeof THREE==='undefined'||typeof scene==='undefined'||!scene)return 0;
   const tok=++faoStreamTok;
   faoPrevGroup=new THREE.Group(); faoPrevGroup.name='faoPreview';
-  scene.add(faoPrevGroup);
+  faoAdd3D(faoPrevGroup);
   if(typeof faoVw!=='undefined'&&faoVw)faoPrevGroup.visible=false; // viewer : traces restent cachées
   const ops=((job&&job.ops)||[]).filter(function(op){ return op&&op.on!==false; });
   for(let i=0;i<ops.length;i++){
@@ -18423,7 +18614,9 @@ function faoViewerBuild(setup){
       ext.push(dev?{x:m.x,y:m.y,z:m.z,r:m.r?1:0,ent:m.ent?1:0}:m);
       pv=m;
     });
-    if(ext.length)chunks.push({op:op,ext:ext,f:f,d:d,kind:kind,cr:cr});
+    // 2026-10-16-021 : axe outil de l'opération (repère propre 3+2), en repère posage — null = vertical
+    const axO=(function(){ try{ const fr=faoOpFrame(setup,op); return fr?fr.rel.Z.slice():null; }catch(e){ return null; } })();
+    if(ext.length)chunks.push({op:op,ext:ext,f:f,d:d,kind:kind,cr:cr,ax:axO});
   });
   // Encadrement « zone de retrait » (2026-10-08-004) : en tête, l'outil vient
   // de la zone de retrait ; en queue, il y retourne — dans les DEUX cas un
@@ -18442,7 +18635,7 @@ function faoViewerBuild(setup){
   chunks.forEach(function(C){
     let prev=null;
     C.ext.forEach(function(m){
-      pts.push({x:+m.x||0, y:+m.y||0, z:+m.z||0, r:m.r?1:0, ent:m.ent?1:0});
+      pts.push({x:+m.x||0, y:+m.y||0, z:+m.z||0, r:m.r?1:0, ent:m.ent?1:0, ax:C.ax||null});
       dd.push(C.d);
       kt.push(C.kind||'flat');
       cr.push(C.cr||0);
@@ -18496,6 +18689,10 @@ function faoViewerApply(){
     // a sa pointe en z local 0, positionnement direct. (L'ancien bug centre→tip
     // est corrigé à la source dans addLevel du géofinish.)
     vw.tool.position.x=p.x; vw.tool.position.y=p.y; vw.tool.position.z=p.z;
+    // 2026-10-16-021 : outil le long du Z de l'opération (3+2) — vertical sinon
+    try{ const q=vw.pts[Math.min(p.i+1,vw.pts.length-1)]; const A=q&&q.ax;
+      if(A)vw.tool.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),new THREE.Vector3(A[0],A[1],A[2]));
+      else vw.tool.quaternion.set(0,0,0,1); }catch(e){}
     const d=(isFinite(p.d)&&p.d>0)?p.d:10;
     if(vw.toolBody){ vw.toolBody.scale.x=d; vw.toolBody.scale.z=d; }   // Ø réel
     if(vw.toolHold){ vw.toolHold.scale.x=d*1.6; vw.toolHold.scale.z=d*1.6; }
@@ -18650,6 +18847,7 @@ function faoViewerStockCreate(){
         const b=(typeof bodies!=='undefined'&&bodies?bodies:[]).filter(function(x){return x&&x.id===fs.stockBody;})[0];
         if(b&&b.mesh&&b.mesh.isObject3D){
           const clone=b.mesh.clone();
+          try{ const Fr=faoFrame(fs); if(!Fr.id)clone.applyMatrix4(new THREE.Matrix4().makeBasis(new THREE.Vector3(...Fr.X),new THREE.Vector3(...Fr.Y),new THREE.Vector3(...Fr.Z)).invert()); }catch(e){} // sous la racine posage
           const mat=new THREE.MeshBasicMaterial({color:0xffd60a,transparent:true,opacity:.12,depthWrite:false});
           clone.traverse(function(o){ if(o.isMesh){ o.material=mat; o.raycast=function(){}; } });
           g.add(clone);
@@ -18662,6 +18860,10 @@ function faoViewerStockCreate(){
       }
     }catch(e){}
   }
+  try{ // 2026-10-16-018 : brut cylindrique
+    const cy=faoStockCylMesh(s,0xffd60a,.12);
+    if(cy){ g.add(cy); return g; }
+  }catch(e){}
   try{
     const bg=new THREE.BoxGeometry(s.x1-s.x0, s.y1-s.y0, s.z1-s.z0);
     const mat=function(){ return new THREE.MeshBasicMaterial({color:0xffd60a,transparent:true,opacity:.12,depthWrite:false}); };
@@ -18746,6 +18948,23 @@ function faoMatterGrid(s,pas){
   const sx1=+s.x1, sy1=+s.y1, sz1=+s.z1;
   const full=sz1;
   for(let i=0;i<nc;i++)h[i]=full;
+  // 2026-10-16-018 : brut CYLINDRIQUE — colonnes hors du disque (axe Z) vides ; axe X/Y : dessus
+  // de colonne = génératrice du cylindre (la Z-map ne décrit que le dessus).
+  try{
+    const C=s.cyl;
+    if(C&&C.r>0&&Array.isArray(C.c)){
+      for(let iy=0;iy<ny;iy++)for(let ix=0;ix<nx;ix++){
+        const x=+s.x0+(ix+0.5)*p, y=+s.y0+(iy+0.5)*p, k=iy*nx+ix;
+        let top=full;
+        if(C.axis==='z'){ if(Math.hypot(x-C.c[0],y-C.c[1])>C.r)top=+s.z0; }
+        else{ const d=C.axis==='x'?(y-C.c[1]):(x-C.c[0]); top=Math.abs(d)>C.r?+s.z0:C.c[2]+Math.sqrt(C.r*C.r-d*d); }
+        if(top<full){
+          h[k]=top;
+          const pzz=pz||p;for(let iz=0;iz<nz;iz++){ if(+s.z0+(iz+0.5)*pzz>top)alive[(iz*ny+iy)*nx+ix]=0; }
+        }
+      }
+    }
+  }catch(e){}
   return {pas:p,pz:pz,nx:nx,ny:ny,nz:nz,n:n,ox:s.x0,oy:s.y0,oz:s.z0,alive:alive,h:h,
           sx1:sx1,sy1:sy1,sz1:sz1,full:full};
 }
@@ -18843,7 +19062,7 @@ function faoMatterCarveTo(g,pts,dd,times,t,outCols,crs){
     }
     const r=((isFinite(dd[i+1])&&dd[i+1]>0)?dd[i+1]:10)/2;
     const crv=(crs&&isFinite(+crs[i+1]))?+crs[i+1]:0;
-    const k=faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols,crv);
+    const k=pts[i+1].ax?faoMatterCarveTilt(g,a,b,r,pts[i+1].ax,outCols):faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols,crv);
     for(let m=0;m<k.length;m++)out.push(k[m]);
   }
   return out;
@@ -18891,7 +19110,7 @@ function faoViewerHoldApply(){
   try{ if(faoVw&&faoVw.toolHold)faoVw.toolHold.visible=!faoVwHideHold; }catch(e){}
 }
 function faoViewerMatterDispose(vw){
-  try{ if(vw.matter&&typeof scene!=='undefined'&&scene)scene.remove(vw.matter); }catch(e){}
+  try{ if(vw.matter&&typeof scene!=='undefined'&&scene)faoDel3D(vw.matter); }catch(e){}
   try{ if(vw.matter&&vw.matter.geometry&&vw.matter.geometry.dispose)vw.matter.geometry.dispose(); }catch(e){}
   vw.matter=null; vw.matterGrid=null; vw.mKills=[]; vw.mPos=null; vw.mTops=null; vw.mArr=null; vw.mH=null;
 }
@@ -19026,7 +19245,7 @@ function faoViewerMatterHFBuild(vw){
     mesh.name='faoMatter';
     mesh.raycast=function(){};
     mesh.frustumCulled=false;
-    if(typeof scene!=='undefined'&&scene)scene.add(mesh);
+    if(typeof scene!=='undefined'&&scene)faoAdd3D(mesh);
     vw.mH={NX:NX,NY:NY,NV:NV,E:E,pos:pos,nrm:nrm,n2top:n2top,geo:geo,idx:idx,mesh:mesh};
     return mesh;
   }catch(e){ return null; }
@@ -19112,7 +19331,7 @@ function faoViewerMatterEnable(vw){
       mesh.name='faoMatter';
       mesh.raycast=function(){};
       mesh.frustumCulled=false;
-      if(typeof scene!=='undefined'&&scene)scene.add(mesh);
+      if(typeof scene!=='undefined'&&scene)faoAdd3D(mesh);
     }catch(e){ return 0; }
   }
   const tops=new Float32Array(nc);
@@ -19124,7 +19343,7 @@ function faoViewerMatterEnable(vw){
     if(!m2){ faoViewerMatterDispose(vw); return 0; }
     vw.matter=m2; // le heightfield EST la matière (mêmes noms/dispose que mArr)
   }else{
-    try{ faoViewerMatterWriteAll(vw); }catch(e){ faoViewerMatterDispose(vw); try{ if(mesh&&scene)scene.remove(mesh); }catch(e2){} return 0; }
+    try{ faoViewerMatterWriteAll(vw); }catch(e){ faoViewerMatterDispose(vw); try{ if(mesh&&scene)faoDel3D(mesh); }catch(e2){} return 0; }
   }
   if(vw.t>0){
     const tcols=[];
@@ -19195,7 +19414,8 @@ function faoMatterCarveRange(g,pts,dd,times,t,i0,x0,y0,z0,p,outCols,crs){
     const b={x:+dst.x,y:+dst.y,z:+dst.z};
     const r=((isFinite(dd[i+1])&&dd[i+1]>0)?dd[i+1]:10)/2;
     const crv=(crs&&isFinite(+crs[i+1]))?+crs[i+1]:0;
-    const k=faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols,crv);
+    const axD=pts[i+1]&&pts[i+1].ax; // le point en cours (p, interpolé) ne porte pas l'axe : celui du segment
+    const k=axD?faoMatterCarveTilt(g,a,b,r,axD,outCols):faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols,crv);
     for(let m=0;m<k.length;m++)out.push(k[m]);
     a=b;
   }
@@ -19277,14 +19497,14 @@ function faoViewerModeSet(m){
       const old=vw.tool;
       const T=faoViewerToolCreate(vw.exact,(vw.kt&&vw.kt[0])||'flat',(vw.cr&&vw.cr[0])||0,(vw.dd&&vw.dd[0])||10);
       vw.tool=T.group; vw.toolBody=T.body; vw.toolHold=T.hold; vw.toolSpin=T.spin; vw.toolSig=T.sig;
-      if(old){ try{ scene.remove(old); }catch(e){} faoViewerToolDispose(old); }
-      if(vw.tool)scene.add(vw.tool);
+      if(old){ try{ faoDel3D(old); }catch(e){} faoViewerToolDispose(old); }
+      if(vw.tool)faoAdd3D(vw.tool);
     }catch(e){}
     try{ // brut : fantôme corps <-> boîte
       const st=vw.stock;
       vw.stock=faoViewerStockCreate();
-      if(st)try{ scene.remove(st); }catch(e){}
-      if(vw.stock)scene.add(vw.stock);
+      if(st)try{ faoDel3D(st); }catch(e){}
+      if(vw.stock)faoAdd3D(vw.stock);
     }catch(e){}
   }
   try{ if(vw.matterOn!==false)faoViewerMatterEnable(vw); }catch(e){} // rattrapage 0 → t
@@ -19330,7 +19550,7 @@ function faoViewerOpen(){
     // 1) traces cachées (non destructif : juste .visible=false)
     try{ if(faoPrevGroup){ vw.prevVis=faoPrevGroup.visible!==false; faoPrevGroup.visible=false; } }catch(e){}
     // 2) le brut apparaît : box du stock + corps-brut masqué (v009) ré-affiché
-    try{ vw.stock=faoViewerStockCreate(); if(vw.stock)scene.add(vw.stock); }catch(e){}
+    try{ vw.stock=faoViewerStockCreate(); if(vw.stock)faoAdd3D(vw.stock); }catch(e){}
     try{
       const fs=faoSetup();
       if(fs&&fs.stockSrc==='body'&&fs.stockBody!=null){
@@ -19345,9 +19565,9 @@ function faoViewerOpen(){
       const T=faoViewerToolCreate(vw.exact,(b.kt&&b.kt[0])||'flat',(b.cr&&b.cr[0])||0,(b.dd&&b.dd[0])||10);
       vw.tool=T.group; vw.toolBody=T.body; vw.toolHold=T.hold; vw.toolH=T.H;
       vw.toolSpin=T.spin; vw.toolSig=T.sig;
-      if(vw.tool)scene.add(vw.tool);
+      if(vw.tool)faoAdd3D(vw.tool);
     }catch(e){}
-    try{ vw.line=faoViewerLineCreate(vw); if(vw.line)scene.add(vw.line); }catch(e){}
+    try{ vw.line=faoViewerLineCreate(vw); if(vw.line)faoAdd3D(vw.line); }catch(e){}
     // 4) matière usinée : surface Z-map pleine (colonnes jointives, un seul mesh)
     try{ faoViewerMatterEnable(vw); }catch(e){}
     // 5) barre transporteur ▶ ⏸ ⏹ ✕ + matière
@@ -19377,9 +19597,9 @@ function faoViewerClose(){
     try{ // le corps-brut masqué redevient invisible (on ne défait que ce qu'on a fait)
       if(vw.body&&doc.bodyVis&&doc.bodyVis[vw.body.id]===false){ vw.body.visible=false; vw.body.mesh.visible=false; }
     }catch(e){}
-    try{ if(vw.stock)scene.remove(vw.stock); }catch(e){}
-    try{ if(vw.tool)scene.remove(vw.tool); }catch(e){}
-    try{ if(vw.line)scene.remove(vw.line); }catch(e){}
+    try{ if(vw.stock)faoDel3D(vw.stock); }catch(e){}
+    try{ if(vw.tool)faoDel3D(vw.tool); }catch(e){}
+    try{ if(vw.line)faoDel3D(vw.line); }catch(e){}
   }
   try{ if(faoVwBar)faoVwBar.style.display='none'; }catch(e){}
   faoViewerBtnUpdate();
@@ -20355,7 +20575,10 @@ function faoPlaneRow(which,label,pl,job,op,tgt){
       faoZPlaneStart({setupId:tgt.setupId,opId:tgt.opId,which:which,slot:null});
     },'Cliquer la face de référence dans la vue 3D (Échap annule).'));
   }
-  row.appendChild(faoLab('= '+(isFinite(z)?z.toFixed(2):'—')));
+  // 2026-10-16-020 : valeur affichée relative à l'origine du posage (Z0), ou de l'opération à repère propre
+  const zR=(function(){ try{ const s=faoSetup(tgt.setupId); const o=tgt.opId?(s.ops||[]).filter(function(x){return x.id===tgt.opId;})[0]:null;
+    return z-((o&&faoOpFrame(s,o))?0:faoOriginPoint(s)[2]); }catch(e){ return z; } })();
+  row.appendChild(faoLab('= '+(isFinite(zR)?zR.toFixed(2):'—')));
   box.appendChild(row);
   if(isMM){
     [[1,pl.s1||{ref:'brutHaut',dz:0}],[2,pl.s2||{ref:'brutHaut',dz:0}]].forEach(function(pr){
@@ -20415,9 +20638,10 @@ function faoPlanesCard(setup,op){
    explique le champ survolé ou en cours de saisie (son infobulle). Onglet
    choisi mémorisé par opération. */
 const faoTabSel={};
-const FAO_TAB_ORDER=['Réglages','Outil','Zone','Hauteurs','Passes','Entrées','Matière','Attaches'];
+const FAO_TAB_ORDER=['Réglages','Outil','Zone','Hauteurs','Passes','Entrées','Matière','Attaches','Repère'];
 const FAO_TAB_HELP={
   'Réglages':'Paramètres principaux de l’opération. Survolez un champ pour son explication.',
+  'Repère':'Orientation de l’outil pour CETTE opération (3+2). Par défaut : le repère du posage.',
   'Outil':'Outil de l’opération, vitesse de rotation et avances. Grisé = valeur de la fiche outil ; une valeur saisie ici ne vaut que pour cette opération.',
   'Zone':'Où usiner : tout le brut, un rectangle, des arêtes du modèle ou une esquisse — et ce qu’il faut épargner.',
   'Hauteurs':'Haut et Bas de la zone usinée (mm). Ils peuvent suivre des arêtes du modèle.',
@@ -20429,7 +20653,7 @@ function faoTabOf(t){
   t=String(t||'').toLowerCase().replace(/\s*\(.*$/,'').trim();
   const M=[['outil','Outil'],['trous','Zone'],['hauteur','Hauteurs'],['vidage','Passes'],['passes','Passes'],['côté et sens','Passes'],
     ['trajectoire','Entrées'],['plans','Entrées'],['entrée','Entrées'],['matière','Matière'],
-    ['attaches','Attaches'],['zone','Zone'],['bord de la poche','Zone'],['profil','Zone']];
+    ['attaches','Attaches'],['repère','Repère'],['zone','Zone'],['bord de la poche','Zone'],['profil','Zone']];
   for(let i=0;i<M.length;i++)if(t.indexOf(M[i][0])===0)return M[i][1];
   return null;
 }
@@ -20527,17 +20751,17 @@ function faoOpCardElement(setup,op,i){
   const rp=faoRow();
   let geoNote=null;
   const rect4=function(){
-    rp.appendChild(faoLab('X')); rp.appendChild(faoNum(op.x0,function(v){op.x0=v;},56));
-    rp.appendChild(faoLab('Y')); rp.appendChild(faoNum(op.y0,function(v){op.y0=v;},56));
-    rp.appendChild(faoLab('→')); rp.appendChild(faoNum(op.x1,function(v){op.x1=v;},56));
-    rp.appendChild(faoNum(op.y1,function(v){op.y1=v;},56));
+    rp.appendChild(faoLab('X')); rp.appendChild(faoNum(faoDsp(op,op.x0,0),function(v){op.x0=faoInp(op,v,0);},56));
+    rp.appendChild(faoLab('Y')); rp.appendChild(faoNum(faoDsp(op,op.y0,1),function(v){op.y0=faoInp(op,v,1);},56));
+    rp.appendChild(faoLab('→')); rp.appendChild(faoNum(faoDsp(op,op.x1,0),function(v){op.x1=faoInp(op,v,0);},56));
+    rp.appendChild(faoNum(faoDsp(op,op.y1,1),function(v){op.y1=faoInp(op,v,1);},56));
   };
   const zz=function(){
-    rp.appendChild(faoLab('Haut')); rp.appendChild(faoNum(op.ztop,function(v){op.ztop=v;},56));
-    rp.appendChild(faoLab('Bas')); rp.appendChild(faoNum(op.zbot,function(v){op.zbot=v;},56));
+    rp.appendChild(faoLab('Haut')); rp.appendChild(faoNum(faoDsp(op,op.ztop,2),function(v){op.ztop=faoInp(op,v,2);},56));
+    rp.appendChild(faoLab('Bas')); rp.appendChild(faoNum(faoDsp(op,op.zbot,2),function(v){op.zbot=faoInp(op,v,2);},56));
   };
   if(op.type==='facing'){
-    rp.appendChild(faoLab('Z')); rp.appendChild(faoNum(op.z,function(v){op.z=v;},60));
+    rp.appendChild(faoLab('Z')); rp.appendChild(faoNum(faoDsp(op,op.z,2),function(v){op.z=faoInp(op,v,2);},60));
     // SEUL paramètre de recouvrement XY : l'écart (ae). Le nombre de lignes est
     // affiché en lecture seule à droite. Un ancien document piloté par « Passes »
     // (np≥2) est lu tel quel (écart affiché = H/(np−1)) ; saisir l'écart bascule
@@ -20594,9 +20818,9 @@ function faoOpCardElement(setup,op,i){
     const apNow=isFinite(+op.ap)&&+op.ap>0?+op.ap:5;
     d.appendChild(faoH('Hauteurs à usiner (mm)'));
     const rZ=faoRow();
-    rZ.appendChild(faoLab('Haut')); rZ.appendChild(faoNum(op.ztop,function(v){faoZlimBreak(op);op.ztop=v;},56,
+    rZ.appendChild(faoLab('Haut')); rZ.appendChild(faoNum(faoDsp(op,op.ztop,2),function(v){faoZlimBreak(op);op.ztop=faoInp(op,v,2);},56,
       null,'Niveau le plus haut usiné — en général le dessus du brut. Édité à la main : casse le lien avec les arêtes.'));
-    rZ.appendChild(faoLab('Bas')); rZ.appendChild(faoNum(op.zbot,function(v){faoZlimBreak(op);op.zbot=v;},56,
+    rZ.appendChild(faoLab('Bas')); rZ.appendChild(faoNum(faoDsp(op,op.zbot,2),function(v){faoZlimBreak(op);op.zbot=faoInp(op,v,2);},56,
       null,'Niveau le plus bas — fond de la zone à ébaucher (hors surépaisseur). Édité à la main : casse le lien avec les arêtes.'));
     if(op.zlim){
       const bz=document.createElement('span'); bz.className='fao-meta';
@@ -20726,8 +20950,8 @@ function faoOpCardElement(setup,op,i){
     // 2026-10-14-011 : fiche en sections (onglets) — Hauteurs, Passes, Entrées, Matière
     d.appendChild(faoH('Hauteurs (mm)'));
     const gH=faoRow();
-    gH.appendChild(faoLab('Haut')); gH.appendChild(faoNum(op.ztop,function(v){op.ztop=v;},56,null,'Haut de la zone finie (mm) : au-dessus, le relief n’est pas fini.'));
-    gH.appendChild(faoLab('Bas')); gH.appendChild(faoNum(op.zbot,function(v){op.zbot=v;},56,null,'Bas de la zone finie (mm) : la pointe de l’outil descend jusqu’ici.'));
+    gH.appendChild(faoLab('Haut')); gH.appendChild(faoNum(faoDsp(op,op.ztop,2),function(v){op.ztop=faoInp(op,v,2);},56,null,'Haut de la zone finie (mm) : au-dessus, le relief n’est pas fini.'));
+    gH.appendChild(faoLab('Bas')); gH.appendChild(faoNum(faoDsp(op,op.zbot,2),function(v){op.zbot=faoInp(op,v,2);},56,null,'Bas de la zone finie (mm) : la pointe de l’outil descend jusqu’ici.'));
     d.appendChild(gH);
     d.appendChild(faoH('Passes'));
     const gP=faoRow();
@@ -20838,10 +21062,10 @@ function faoOpCardElement(setup,op,i){
   },'Zone usinée : tout le brut, un rectangle, l’intérieur d’une chaîne d’arêtes, ou le contour d’une esquisse.'));
   if(limMode==='rect'&&op.limit){
     const L=op.limit;
-    rl.appendChild(faoNum(L.x0,function(v){L.x0=v;},52,null,'Rectangle : coin X mini (mm)'));
-    rl.appendChild(faoNum(L.y0,function(v){L.y0=v;},52,null,'Rectangle : coin Y mini (mm)'));
-    rl.appendChild(faoNum(L.x1,function(v){L.x1=v;},52,null,'Rectangle : coin X maxi (mm)'));
-    rl.appendChild(faoNum(L.y1,function(v){L.y1=v;},52,null,'Rectangle : coin Y maxi (mm)'));
+    rl.appendChild(faoNum(faoDsp(op,L.x0,0),function(v){L.x0=faoInp(op,v,0);},52,null,'Rectangle : coin X mini (mm)'));
+    rl.appendChild(faoNum(faoDsp(op,L.y0,1),function(v){L.y0=faoInp(op,v,1);},52,null,'Rectangle : coin Y mini (mm)'));
+    rl.appendChild(faoNum(faoDsp(op,L.x1,0),function(v){L.x1=faoInp(op,v,0);},52,null,'Rectangle : coin X maxi (mm)'));
+    rl.appendChild(faoNum(faoDsp(op,L.y1,1),function(v){L.y1=faoInp(op,v,1);},52,null,'Rectangle : coin Y maxi (mm)'));
   }
   const geoOwn=faoPocketAdapt(op)||faoContourProfil(op); // bord / profil : section propre
   if(!geoOwn&&!(op.type==='drill'&&op.src==='model'))d.appendChild(rl); // trous du modèle : pas de zone
@@ -20949,10 +21173,10 @@ function faoOpCardElement(setup,op,i){
     'Zone intérieure (îlot) : matière à NE PAS toucher — l\'ébauche usine entre les deux zones.'));
   if(lim2Mode==='rect'&&op.limit2){
     const L2=op.limit2;
-    rl2.appendChild(faoNum(L2.x0,function(v){L2.x0=v;},52,null,'Îlot : coin X mini (mm)'));
-    rl2.appendChild(faoNum(L2.y0,function(v){L2.y0=v;},52,null,'Îlot : coin Y mini (mm)'));
-    rl2.appendChild(faoNum(L2.x1,function(v){L2.x1=v;},52,null,'Îlot : coin X maxi (mm)'));
-    rl2.appendChild(faoNum(L2.y1,function(v){L2.y1=v;},52,null,'Îlot : coin Y maxi (mm)'));
+    rl2.appendChild(faoNum(faoDsp(op,L2.x0,0),function(v){L2.x0=faoInp(op,v,0);},52,null,'Îlot : coin X mini (mm)'));
+    rl2.appendChild(faoNum(faoDsp(op,L2.y0,1),function(v){L2.y0=faoInp(op,v,1);},52,null,'Îlot : coin Y mini (mm)'));
+    rl2.appendChild(faoNum(faoDsp(op,L2.x1,0),function(v){L2.x1=faoInp(op,v,0);},52,null,'Îlot : coin X maxi (mm)'));
+    rl2.appendChild(faoNum(faoDsp(op,L2.y1,1),function(v){L2.y1=faoInp(op,v,1);},52,null,'Îlot : coin Y maxi (mm)'));
   }
   if(!faoContourProfil(op)&&!(op.type==='drill'&&op.src==='model'))d.appendChild(rl2); // trous du modèle : ni zone ni îlot
   if(lim2Mode==='chain'&&op.limit2){
@@ -21044,6 +21268,7 @@ function faoOpCardElement(setup,op,i){
     rs.textContent='S'+sf.s+' F'+sf.f+' · '+mv.length+' pts · ≈'+ee.tmin.toFixed(1)+' min';
   }
   rr.appendChild(rs);
+  try{ faoOpFrameRows(d,setup,op); }catch(e){} // 2026-10-16-020 : repère propre (3+2) de l'opération
   d.appendChild(rr);
   try{ const tc=faoCardTabs(d,op); if(tc)return tc; }catch(e){}
   return d;
@@ -21071,15 +21296,28 @@ function faoSetupFiche(p,setup){
   rM.appendChild(faoSel([['G54','G54'],['G55','G55'],['G56','G56'],['G57','G57'],['G58','G58'],['G59','G59']],
     setup.wcs||'G54',function(v){ setup.wcs=v; }));
   p.appendChild(rM);
+  // 2026-10-16-017 : origine = un des 27 points cardinaux (clic dans la vue) du brut ou du modèle
   const rO=faoRow();
-  rO.appendChild(faoLab('Point de bloc'));
-  rO.appendChild(faoSel([['top-X0Y0','Dessus coin X0Y0'],['top-X1Y1','Dessus coin X1Y1'],
-    ['top-C','Dessus centre'],['bot-X0Y0','Dessous coin X0Y0']],
-    (setup.origin&&setup.origin.preset)||'top-X0Y0',function(v){ setup.origin={preset:v}; }));
+  const spO=faoOriginSpec(setup);
+  rO.appendChild(faoLab('Origine sur'));
+  rO.appendChild(faoSel([['stock','Brut'],['model','Modèle']],spO.src,
+    function(v){ setup.origin={pt:faoOriginSpec(setup).pt,src:v}; },
+    'Boîte dont les points cardinaux servent d’origine : le brut (avec ses marges) ou le modèle usiné.'));
+  rO.appendChild(faoLab('· '+faoCardLabel(spO.pt)));
   p.appendChild(rO);
+  const rOp=faoRow();
+  [['Dessus X0Y0',[0,0,1]],['Dessus centre',[0.5,0.5,1]],['Centre',[0.5,0.5,0.5]],['Dessous X0Y0',[0,0,0]]].forEach(function(q){
+    rOp.appendChild(faoMini(q[0],function(){ setup.origin={pt:q[1].slice(),src:faoOriginSpec(setup).src}; },'Origine : '+faoCardLabel(q[1])));
+  });
+  p.appendChild(rOp);
+  p.appendChild(faoHelp('Ou cliquez l’un des points blancs de la vue (coins, milieux d’arêtes, centres de faces, centre). Le repère du posage s’y place ; le G-code est relatif à ce point.'));
+  faoFrameRows(p,setup); // 2026-10-16-019 : orientation Z / X du repère du posage
   // Indexation 3+2 (table C + B) — {0,0} = usinage 3 axes strictement inchangé.
+  // 2026-10-16-020 : le 3+2 se règle désormais PAR OPÉRATION (onglet Repère) ; la ligne
+  // du posage ne reste visible que pour un ancien document qui en porte un.
   const r32=faoRow();
   const O=faoOrient(setup);
+  if(O.b!==0||O.c!==0){
   r32.appendChild(faoLab('3+2 B'));
   r32.appendChild(faoNum(O.b,function(v){ setup.orient={b:Math.round(v*1000)/1000,c:faoOrient(setup).c}; },
     44,5,"Bascule de table autour de Y (degrés). 0 = usinage 3 axes. Non nul : Siemens = TRAORI(1) + positionnement B/C (XYZ restent repère pièce) ; Fagor 8065 = machine 3 axes : indexation ignorée à l'export (aucun B/C, alerte)."));
@@ -21089,9 +21327,9 @@ function faoSetupFiche(p,setup){
   r32.appendChild(faoLab('°'));
   r32.appendChild(faoMini('3 axes',function(){ setup.orient={b:0,c:0}; },
     'Remise à plat : annule l\'indexation 3+2 (B=0, C=0).'));
-  r32.appendChild(faoMini('Sur la pièce',function(){ faoPlaneStart(setup.id); },
-    'Cliquez une face sortante du modèle : les angles B/C sont calculés automatiquement depuis la normale de la face (vérifiez les sens de rotation).'));
   p.appendChild(r32);
+  p.appendChild(faoHelp('Ancien réglage 3+2 du posage (orientation par défaut de ses opérations). Le 3+2 se règle maintenant par opération : onglet « Repère » de l’opération. « 3 axes » le retire.'));
+  }
   if((FAO_POSTS[setup.machine||setup.post]||{}).kind==='fagor'&&(O.b!==0||O.c!==0)){
     const w32=document.createElement('div');
     w32.className='fao-alert';
@@ -21130,6 +21368,50 @@ function faoSetupFiche(p,setup){
   p.appendChild(rB);
   // Brut + bridage
   p.appendChild(faoH('Brut · bridage'));
+  // 2026-10-16-018 : forme du brut — boîte, cylindre ou modèle (un corps EST le brut)
+  const shpS=faoStockShape(setup);
+  const rShp=faoRow();
+  rShp.appendChild(faoLab('Forme'));
+  rShp.appendChild(faoSel([['box','Boîte'],['cyl','Cylindre'],['solid','Modèle (corps)']],shpS,function(v){
+    if(v==='solid'){
+      setup.stockShape='solid';
+      let id=setup.stockBody;
+      if(id==null){const f=(typeof bodies!=='undefined'&&bodies?bodies:[]).filter(function(b){return b&&!b.ghost&&b.mesh;})[0];id=f?f.id:null;}
+      if(id!=null)faoStockBodySet(id,setup);
+    }else{
+      if(setup.stockShape==='solid'){ faoStockBodyRestore(setup); setup.stockSrc='bodies'; }
+      setup.stockShape=v;
+    }
+    faoStock();
+    if(typeof renderProps==='function')renderProps();
+  },'Boîte (modèle + marges), cylindre (barre ronde : axe, Ø et longueur auto ou saisis) ou modèle : un corps du document EST le brut (brut de fonderie, ébauche importée).'));
+  p.appendChild(rShp);
+  if(shpS==='cyl'){
+    const rCy=faoRow();
+    const scy=(setup.stock&&setup.stock.cyl)||null;
+    rCy.appendChild(faoLab('Axe'));
+    rCy.appendChild(faoSel([['z','Z'],['x','X'],['y','Y']],setup.cylAxis||'z',function(v){ setup.cylAxis=v; faoStock(); },
+      'Axe du cylindre (repère pièce).'));
+    rCy.appendChild(faoLab('Ø'));
+    rCy.appendChild(faoNum(isFinite(+setup.cylD)&&+setup.cylD>0?+setup.cylD:(scy?+(2*scy.r).toFixed(3):0),function(v){ setup.cylD=v>0?v:0; faoStock(); },48,1,
+      'Diamètre du brut (mm). 0 = automatique : cercle circonscrit au modèle + marge XY.'));
+    rCy.appendChild(faoLab('L'));
+    const Lc=scy?(scy.axis==='x'?setup.stock.x1-setup.stock.x0:scy.axis==='y'?setup.stock.y1-setup.stock.y0:setup.stock.z1-setup.stock.z0):0;
+    rCy.appendChild(faoNum(isFinite(+setup.cylL)&&+setup.cylL>0?+setup.cylL:+Lc.toFixed(3),function(v){ setup.cylL=v>0?v:0; faoStock(); },48,1,
+      'Longueur du brut (mm). 0 = automatique : modèle + surépaisseurs (Z+/Z− pour un axe Z, marge XY aux deux bouts sinon). Saisie : axe Z = dessus conservé, axe X/Y = milieu conservé.'));
+    rCy.appendChild(faoMini('Auto',function(){ setup.cylD=0; setup.cylL=0; faoStock(); },'Ø et longueur recalculés depuis le modèle et les marges.'));
+    p.appendChild(rCy);
+  }
+  if(shpS==='solid'){
+    const rSo=faoRow();
+    rSo.appendChild(faoLab('Brut ='));
+    const bL=(typeof bodies!=='undefined'&&bodies?bodies:[]).filter(function(b){return b&&!b.ghost&&b.mesh;});
+    if(bL.length)rSo.appendChild(faoSel(bL.map(function(b){return [b.id,String(b.name||b.id)];}),
+      setup.stockBody!=null?setup.stockBody:bL[0].id,function(v){ faoStockBodySet(v,setup); faoStock(); },
+      'Corps qui EST le brut (forme réelle, sans marge) — masqué dans la vue dès choisi, l’œil de l’arbre le réaffiche.'));
+    else rSo.appendChild(faoLab('aucun corps'));
+    p.appendChild(rSo);
+  }
   // Source de la boîte : tous les corps (défaut), un seul corps, ou saisie manuelle.
   const modeS=(setup.stockSrc==='body'||setup.stockSrc==='manual')?setup.stockSrc:'bodies';
   const rSrc=faoRow();
@@ -21155,8 +21437,8 @@ function faoSetupFiche(p,setup){
       if(typeof renderProps==='function')renderProps();
     },
     'D’où vient la boîte du brut : bbox des corps visibles (défaut), bbox d’un seul corps (barreau importé à côté du brut — masqué dans la vue dès choisi, l’œil de l’arbre le réaffiche) ou boîte saisie à la main.'));
-  p.appendChild(rSrc);
-  if(modeS==='body'){
+  if(shpS!=='solid')p.appendChild(rSrc);
+  if(modeS==='body'&&shpS!=='solid'){
     const rBd=faoRow();
     rBd.appendChild(faoLab('Brut ='));
     const bList=(typeof bodies!=='undefined'&&bodies?bodies:[])
@@ -21193,11 +21475,27 @@ function faoSetupFiche(p,setup){
     p.appendChild(nM);
   }
   const rS=faoRow();
-  rS.appendChild(faoLab('Brut '+stock.x0.toFixed(0)+','+stock.y0.toFixed(0)+','+stock.z0.toFixed(0)
-    +' → '+stock.x1.toFixed(0)+','+stock.y1.toFixed(0)+','+stock.z1.toFixed(0)+' · marge'));
-  rS.appendChild(faoNum(setup.marge,function(v){ setup.marge=Math.max(0,v); faoStock(); },48));
+  const OGs=faoOriginPoint(setup); // cotes du brut relatives à l'origine du posage (Z0)
+  const fx=function(v,i){ return (+v-OGs[i]).toFixed(0); };
+  rS.appendChild(faoLab('Brut '+fx(stock.x0,0)+','+fx(stock.y0,1)+','+fx(stock.z0,2)
+    +' → '+fx(stock.x1,0)+','+fx(stock.y1,1)+','+fx(stock.z1,2)));
   if(modeS!=='manual')rS.appendChild(faoMini('MAJ brut',function(){ faoStock(); }));
   p.appendChild(rS);
+  if(modeS!=='manual'&&shpS!=='solid'){
+    const rMg=faoRow();
+    rMg.appendChild(faoLab('Marge XY'));
+    rMg.appendChild(faoNum(setup.marge,function(v){ setup.marge=Math.max(0,v); faoStock(); },40,1,
+      'Surépaisseur du brut autour du modèle, en X et en Y (mm).'));
+    p.appendChild(rMg);
+    const rMz=faoRow(); // 2e ligne : la fiche est étroite, Z− passait seul à la ligne
+    rMz.appendChild(faoLab('Surép. Z+'));
+    rMz.appendChild(faoNum(isFinite(+setup.margeZp)?+setup.margeZp:0,function(v){ setup.margeZp=Math.max(0,v); faoStock(); },40,0.5,
+      'Surépaisseur du brut AU-DESSUS du modèle (mm) — matière à surfacer.'));
+    rMz.appendChild(faoLab('Z−'));
+    rMz.appendChild(faoNum(isFinite(+setup.margeZm)?+setup.margeZm:0,function(v){ setup.margeZm=Math.max(0,v); faoStock(); },40,0.5,
+      'Surépaisseur du brut AU-DESSOUS du modèle (mm) — talon / prise d’étau.'));
+    p.appendChild(rMz);
+  }
   const rF=faoRow();
   rF.appendChild(faoLab('Bridage'));
   rF.appendChild(faoTxt((setup.fixture&&setup.fixture.note)||'',function(v){
@@ -21473,6 +21771,9 @@ function faoActiveMesh(setup,fine){
       if(T.length>(fine?600000:120000))return null;
     }
     if(!n||!V.length)return null;
+    // 2026-10-16-019 : repère orienté du posage → maillage dans SES coordonnées
+    const F=faoFrame(setup);
+    if(!F.id){ const W=V.map(function(p){return faoToF(F,p);}); return {mesh:{v:W,t:T}, box:faoBoxOfVerts(W)}; }
     return {mesh:{v:V,t:T}, box:{x0:x0,y0:y0,z0:z0,x1:x1,y1:y1,z1:z1}};
   }catch(e){ return null; }
 }
@@ -26444,6 +26745,7 @@ function faoPlaneCommit(e){
       const v=new THREE.Vector3(n.x,n.y,n.z).transformDirection(h.object.matrixWorld);
       nx=v.x;ny=v.y;nz=v.z;
     }catch(e2){}
+    try{ const Fr=faoFrame(faoSetup(faoPlanePick.setupId)); if(!Fr.id){ const q=faoRotF(Fr,[nx,ny,nz]); nx=q[0];ny=q[1];nz=q[2]; } }catch(e2){}
     const o=faoOrientFromNormal(nx,ny,nz);
     if(o.down){faceEl.textContent='Plan : face tournée vers le BAS — pièce à retourner (non appliquée).';return;}
     const setup=faoSetup(faoPlanePick.setupId);
@@ -26495,8 +26797,9 @@ function faoZPlaneCommit(e){
       .map(function(b){return b.mesh;});
     const hits=objs.length?rayc.intersectObjects(objs,false):[];
     if(!hits.length){faceEl.textContent='Plan : aucune face touchée, réessayez.';return;}
-    const z=Math.round(hits[0].point.z*100)/100;
     const setup=faoSetup(t.setupId);
+    const hp=hits[0].point,Fr=t.opId?faoOpFrameOf(setup.id,t.opId):faoFrame(setup);
+    const z=Math.round((Fr.id?hp.z:faoToF(Fr,[hp.x,hp.y,hp.z])[2])*100)/100; // Z du repère posage
     if(!setup){faceEl.textContent='Plan : poste introuvable, annulé.';faoZPlaneCancel(true);return;}
     let owner=setup, op=null;
     if(t.opId){
@@ -26602,6 +26905,11 @@ function faoChainStart(setupId,opId,kind){
     }
     let edges=[];
     try{ edges=faoChainEdgesWorld(); }catch(e){ edges=[]; }
+    try{ // 2026-10-16-019 : repère orienté du posage → arêtes dans SES coordonnées
+      const Fr=faoOpFrameOf(setupId,opId); // repère de l'opération (sinon du posage)
+      if(!Fr.id)edges=edges.map(function(e){ const o=Object.assign({},e);
+        o.pts=(e.pts||[]).map(function(q){return faoToF(Fr,q);}); if(e.mid)o.mid=faoToF(Fr,e.mid); return o; });
+    }catch(e){}
     if(!edges.length){
       faceEl.textContent=(!occLive||!occLive.shape)?(PRE+' : recalcul impossible.'):(PRE+' : aucune arête listable.');
       return;
@@ -26633,8 +26941,8 @@ function faoChainExit(silent){
   try{
     faoChainMode=null; faoChainHover=null;
     if(typeof scene!=='undefined'&&scene){
-      const o=scene.getObjectByName('faoChainEdges');
-      if(o)scene.remove(o);
+      const o=faoGet3D('faoChainEdges');
+      if(o)faoDel3D(o);
     }
     try{renderer.domElement.style.cursor='default';}catch(e){}
     if(!silent){
@@ -26659,8 +26967,8 @@ const FAO_CHAIN_W=3, FAO_CHAIN_WH=5;
 function faoChainBuildOverlay(){
   try{
     if(!faoChainMode)return;
-    const old=scene.getObjectByName('faoChainEdges');
-    if(old)scene.remove(old);
+    const old=faoGet3D('faoChainEdges');
+    if(old)faoDel3D(old);
     const segs=[], segEdge=[];
     faoChainMode.edges.forEach(function(e,i){
       const p=e.pts||[];
@@ -26728,7 +27036,7 @@ function faoChainBuildOverlay(){
     mesh.userData.segs=segs;
     halo.onBeforeRender=mesh.onBeforeRender;
     const grp=new THREE.Group(); grp.name='faoChainEdges'; grp.add(mesh); grp.add(halo); // [0] = trait (pointage)
-    scene.add(grp);
+    faoAdd3D(grp);
     faoChainPaint();
   }catch(e){ try{faceEl.textContent='Chaîne : affichage impossible ('+e.message+').';}catch(e2){} }
 }
@@ -26741,7 +27049,7 @@ function faoChainIsSel(i){
 }
 function faoChainPaint(){
   try{
-    const grp=scene.getObjectByName('faoChainEdges');
+    const grp=faoGet3D('faoChainEdges');
     if(!grp||!faoChainMode)return;
     const l=grp.children[0];
     if(!l||!l.geometry||!l.geometry.attributes.col)return;
@@ -26765,7 +27073,7 @@ function faoChainPick(e){
   // Arête la plus proche EN PIXELS du curseur (≤ 10 px), parmi celles que la pièce
   // ne cache pas (profondeur ≤ premier impact du rayon + tolérance).
   try{
-    const grp=scene.getObjectByName('faoChainEdges');
+    const grp=faoGet3D('faoChainEdges');
     if(!grp||!faoChainMode)return null;
     const l=grp.children[0];const segs=l&&l.userData.segs,segEdge=l&&l.userData.segEdge;
     if(!segs||!segEdge)return null;
@@ -26782,7 +27090,8 @@ function faoChainPick(e){
     }catch(err){}
     camera.updateMatrixWorld();
     const PV=new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
-    const cp=camera.position,va=new THREE.Vector4(),vb=new THREE.Vector4();
+    let RW=null; try{ grp.updateMatrixWorld(true); RW=grp.parent?grp.parent.matrixWorld:null; if(RW)PV.multiply(RW); }catch(err){} // segments en repère posage
+    const cpw=camera.position,cp=RW?cpw.clone().applyMatrix4(RW.clone().invert()):cpw,va=new THREE.Vector4(),vb=new THREE.Vector4();
     const TOL=10;let best=null,bestD=TOL*TOL,bestZ=Infinity;
     for(let k=0;k<segEdge.length;k++){
       const o=k*6;
@@ -27193,8 +27502,8 @@ function faoContourRows(d,setup,op){
   }
   d.appendChild(faoH('Hauteurs (mm)'));
   const rZ=faoRow();
-  rZ.appendChild(faoLab('Haut')); rZ.appendChild(faoNum(op.ztop,function(v){op.ztop=v;},56,null,'Haut de la paroi usinée (dessus du brut par défaut).'));
-  rZ.appendChild(faoLab('Bas')); rZ.appendChild(faoNum(op.zbot,function(v){op.zbot=v;},56,null,'Bas de la paroi (arête la plus basse du profil par défaut).'));
+  rZ.appendChild(faoLab('Haut')); rZ.appendChild(faoNum(faoDsp(op,op.ztop,2),function(v){op.ztop=faoInp(op,v,2);},56,null,'Haut de la paroi usinée (dessus du brut par défaut).'));
+  rZ.appendChild(faoLab('Bas')); rZ.appendChild(faoNum(faoDsp(op,op.zbot,2),function(v){op.zbot=faoInp(op,v,2);},56,null,'Bas de la paroi (arête la plus basse du profil par défaut).'));
   d.appendChild(rZ);
   d.appendChild(faoH('Passes (mm)'));
   const rP=faoRow();
@@ -28990,6 +29299,11 @@ function faoToolFr(t){
 /* ----- reconnaissance des trous ----- */
 let faoHoleCache={shape:null,list:null};
 function faoHoleShapes(){
+  // 2026-10-16-019 : solides tournés dans le repère du posage actif (trous « verticaux » = selon SON Z)
+  let Fr=null;try{Fr=faoFrameCur||faoFrame(faoSetup());}catch(e){}
+  return faoHoleShapesW().map(function(s){return (Fr&&!Fr.id)?faoShapeToF(s,Fr):s;});
+}
+function faoHoleShapesW(){
   const out=[];
   try{ if(typeof occLive!=='undefined'&&occLive&&occLive.shape)out.push(occLive.shape); }catch(e){}
   try{
@@ -29316,7 +29630,7 @@ function faoHolePickStart(setupId,opId){
 }
 function faoHolePickExit(){
   faoHolePick=null;
-  try{const o=scene.getObjectByName('faoHoleMarks');if(o)scene.remove(o);}catch(e){}
+  try{const o=faoGet3D('faoHoleMarks');if(o)faoDel3D(o);}catch(e){}
   try{renderer.domElement.style.cursor='default';}catch(e){}
   try{faoRefreshFaoUI();}catch(e){}
 }
@@ -29325,8 +29639,11 @@ function faoHolePickAt(e){
   if(!faoHolePick)return false;
   const setup=faoSetup(faoHolePick.setupId),op=(setup.ops||[]).find(function(o){return o.id===faoHolePick.opId;});
   if(!op){faoHolePickExit();return false;}
-  const h=pick(e);if(!h)return false;
-  const holes=faoHolesDetect();
+  const h0=pick(e);if(!h0)return false;
+  const Fr=faoOpFrameOf(setup.id,op.id),hq=Fr.id?[h0.point.x,h0.point.y,h0.point.z]:faoToF(Fr,[h0.point.x,h0.point.y,h0.point.z]);
+  const h={point:{x:hq[0],y:hq[1],z:hq[2]}}; // point cliqué en repère de l'opération (sinon du posage)
+  const kF=faoFrameCur;faoFrameCur=Fr.id?null:Fr;let holes=[];
+  try{holes=faoHolesDetect();}finally{faoFrameCur=kF;}
   let best=null,bd=Infinity;
   holes.forEach(function(H){
     if(h.point.z>H.zSurf+0.5||h.point.z<H.zbot-0.5)return;
@@ -29372,7 +29689,7 @@ function faoHoleToggle(setup,op,d,z){
 function faoHoleMarks(){
   // Anneaux sur les trous reconnus : gris = disponibles, orange = sélectionnés.
   try{
-    const old=scene.getObjectByName('faoHoleMarks');if(old)scene.remove(old);
+    const old=faoGet3D('faoHoleMarks');if(old)faoDel3D(old);
     if(!faoHolePick)return;
     const setup=faoSetup(faoHolePick.setupId),op=(setup.ops||[]).find(function(o){return o.id===faoHolePick.opId;});
     const grp=new THREE.Group();grp.name='faoHoleMarks';
@@ -29382,7 +29699,7 @@ function faoHoleMarks(){
     faoHolesDetect().forEach(function(H){(op&&faoHoleInSel(op,H)?on:off).push.apply(op&&faoHoleInSel(op,H)?on:off,segOf(H,H.d/2+0.6));});
     if(off.length)grp.add(faoThickSegs(off,0x8e8e93,1,2));
     if(on.length)grp.add(faoThickSegs(on,0xff9f0a,1,3));
-    scene.add(grp);
+    faoAdd3D(grp);
   }catch(e){}
 }
 /* ----- fiche : sections Trous + Cycle ----- */
@@ -29427,7 +29744,7 @@ function faoDrillSections(setup,op,d){
     rd.appendChild(faoLab('Profondeur'));
     rd.appendChild(faoSel([['full','Plein Ø au fond du trou'],['tip','Pointe au fond'],['manual','Cote manuelle']],op.depthMode||'full',function(v){op.depthMode=v;},
       'Plein Ø : la pointe descend en plus de sa longueur (angle du foret) · Pointe au fond : la pointe s’arrête au fond · Cote manuelle : Z de pointe saisi'));
-    if((op.depthMode||'full')==='manual'){rd.appendChild(faoLab('Z')); rd.appendChild(faoNum(op.zbot,function(v){op.zbot=v;},52,null,'Z de la pointe (mm)'));}
+    if((op.depthMode||'full')==='manual'){rd.appendChild(faoLab('Z')); rd.appendChild(faoNum(faoDsp(op,op.zbot,2),function(v){op.zbot=faoInp(op,v,2);},52,null,'Z de la pointe (mm)'));}
     rd.appendChild(faoLab('Débouchage'));
     rd.appendChild(faoNum(isFinite(+op.brk)?+op.brk:1,function(v){op.brk=Math.max(0,v);},44,0.5,'Trous débouchants : dépassement sous la pièce (mm)'));
   }
@@ -29490,8 +29807,8 @@ function faoDrillSections(setup,op,d){
       const lst=String(v).split(';').map(function(s){const q=s.split(',').map(function(x){return parseFloat(x);});
         return (q.length>=2&&isFinite(q[0])&&isFinite(q[1]))?[q[0],q[1]]:null;}).filter(function(q){return q;});
       op.pts=lst;},150,'Points X,Y séparés par « ; »'));
-    rp.appendChild(faoLab('Haut'));rp.appendChild(faoNum(op.ztop,function(v){op.ztop=v;},52));
-    rp.appendChild(faoLab('Bas'));rp.appendChild(faoNum(op.zbot,function(v){op.zbot=v;},52));
+    rp.appendChild(faoLab('Haut'));rp.appendChild(faoNum(faoDsp(op,op.ztop,2),function(v){op.ztop=faoInp(op,v,2);},52));
+    rp.appendChild(faoLab('Bas'));rp.appendChild(faoNum(faoDsp(op,op.zbot,2),function(v){op.zbot=faoInp(op,v,2);},52));
     d.appendChild(rp);
   }
 }
@@ -29615,6 +29932,633 @@ function faoHelixTool(setup,op,d){
   }
   op.toolId=t.id;delete op.cut;
   return {tool:t,made:made};
+}
+
+/* ═══════════════ 89-fao-posage-repere.js — fao posage repere ═══════════════ */
+/* ---------- Posage : repère visible, brut transparent, points cardinaux (2026-10-16-017) ----------
+   Quand un posage (ou une de ses opérations) est sélectionné :
+   - le BRUT apparaît en ambre transparent ;
+   - le REPÈRE du posage (même dessin que celui de l'appli) est posé sur son origine, orienté
+     selon l'indexation 3+2 (B/C) ;
+   - les 27 POINTS CARDINAUX (8 coins, 12 milieux d'arêtes, 6 centres de faces, centre) du brut
+     ou du modèle sont affichés : un clic sur l'un d'eux y place l'origine du posage.
+   L'origine est mémorisée en fractions de la boîte : setup.origin={pt:[fx,fy,fz],src:'stock'|'model'}
+   (les anciens préréglages {preset} restent lus tels quels). Le G-code est relatif à ce point ;
+   les parcours (repère monde) ne changent pas. */
+const FAO_CARD=(function(){const v=[0,0.5,1],o=[];v.forEach(z=>v.forEach(y=>v.forEach(x=>o.push([x,y,z]))));return o;})();
+const FAO_PRESET_PT={'top-X0Y0':[0,0,1],'top-X1Y1':[1,1,1],'top-C':[0.5,0.5,1],'bot-X0Y0':[0,0,0]};
+function faoOriginSpec(setup){
+  const o=(setup&&setup.origin)||{};
+  if(Array.isArray(o.pt)&&o.pt.length===3&&o.pt.every(v=>isFinite(+v)))
+    return {pt:o.pt.map(Number),src:o.src==='model'?'model':'stock'};
+  return {pt:(FAO_PRESET_PT[o.preset]||FAO_PRESET_PT['top-X0Y0']).slice(),src:'stock'};
+}
+function faoModelBox(setup){
+  // boîte du MODÈLE usiné (corps du posage), sans marge ; repli : null
+  try{
+    if(typeof THREE==='undefined'||typeof bodies==='undefined'||!bodies)return null;
+    const want=(setup&&Array.isArray(setup.bodies))?setup.bodies:null;
+    const box=new THREE.Box3();let n=0;
+    bodies.forEach(b=>{
+      if(!b||b.ghost||!b.mesh)return;
+      if(want){if(want.indexOf(b.id)<0)return;}
+      else if(b.visible===false)return;
+      if(setup&&setup.stockSrc==='body'&&setup.stockBody===b.id)return; // corps-brut ≠ modèle
+      try{box.expandByObject(b.mesh);n++;}catch(e){}
+    });
+    if(!n||box.isEmpty())return null;
+    const Fr=faoFrame(setup);
+    if(!Fr.id){ const ms=bodies.filter(b=>b&&!b.ghost&&b.mesh&&(want?want.indexOf(b.id)>=0:b.visible!==false)&&!(setup&&setup.stockSrc==='body'&&setup.stockBody===b.id)).map(b=>b.mesh); const Bf=faoMeshesBoxF(ms,Fr); if(Bf)return Bf; }
+    const a=box.min,c=box.max;
+    if(![a.x,a.y,a.z,c.x,c.y,c.z].every(isFinite))return null;
+    return {x0:a.x,y0:a.y,z0:a.z,x1:c.x,y1:c.y,z1:c.z};
+  }catch(e){return null;}
+}
+function faoBoxPt(B,f){return [B.x0+f[0]*(B.x1-B.x0),B.y0+f[1]*(B.y1-B.y0),B.z0+f[2]*(B.z1-B.z0)];}
+function faoCardLabel(f){
+  const z=f[2]===1?'dessus':f[2]===0?'dessous':'mi-hauteur';
+  const ax=(k,v)=>v===0.5?'':k+(v===0?'0':'1');
+  const xy=(f[0]===0.5&&f[1]===0.5)?'centre':[ax('X',f[0]),ax('Y',f[1])].filter(Boolean).join(' ');
+  const kind=(f[0]===0.5&&f[1]===0.5)?'':((f[0]===0.5||f[1]===0.5)?'milieu ':'coin ');
+  return z+' '+kind+xy;
+}
+/* ----- dessin (reconstruit seulement quand la signature change) ----- */
+let faoOpTriad=null;
+let faoPoseGrp=null,faoPoseTriad=null,faoPoseSig='',faoPoseDots=null,faoPoseHover=-1;
+function faoPoseSetupSel(){
+  try{
+    if(typeof sel==='undefined'||!sel||!(sel.kind==='faoSetup'||sel.kind==='faoOp'))return null;
+    if(typeof skEdit!=='undefined'&&skEdit)return null;
+    const r=faoRoot();
+    const id=sel.kind==='faoSetup'?sel.id:(sel.setup||r.activeSetupId);
+    return r.setups.filter(s=>s.id===id)[0]||null;
+  }catch(e){return null;}
+}
+function faoPoseClear(){
+  if(faoPoseGrp){
+    try{
+      if(faoPoseTriad)faoPoseGrp.remove(faoPoseTriad); // le repère est réutilisé, jamais libéré
+      if(faoOpTriad)faoPoseGrp.remove(faoOpTriad);
+      faoDel3D(faoPoseGrp);
+      faoPoseGrp.traverse(o=>{if(!(o.userData&&o.userData.shared))o.geometry&&o.geometry.dispose();o.material&&o.material.dispose&&o.material.dispose();});
+    }catch(e){}
+    faoPoseGrp=null;
+  }
+  faoPoseDots=null;
+}
+function faoPoseSync(){
+  try{faoRoot3D();}catch(e){} // matrice de la racine FAO = repère du posage actif
+  const setup=faoPoseSetupSel();
+  if(!setup){if(faoPoseGrp){faoPoseClear();faoPoseSig='';if(faoPoseTriad)faoPoseTriad.visible=false;}return;}
+  const st=setup.stock;
+  if(!faoStockValid(st)){if(faoPoseGrp)faoPoseClear();faoPoseSig='';return;}
+  const spec=faoOriginSpec(setup),O=faoOrient(setup);
+  // opération sélectionnée avec son repère propre (3+2) : son repère est dessiné aussi
+  let selOp=null;try{if(sel.kind==='faoOp')selOp=(setup.ops||[]).filter(o=>o.id===sel.id)[0]||null;}catch(e){}
+  const opF=(selOp&&selOp.frame)?faoFrame({frame:Object.assign({},selOp.frame,{o:null})}):null; // axes seuls : centre commun
+  const sig=[setup.id,opF&&!opF.id?opF.X.concat(opF.Z).map(q=>q.toFixed(6)).join(','):'',st.x0,st.y0,st.z0,st.x1,st.y1,st.z1,st.cyl?JSON.stringify(st.cyl):'',faoStockShape(setup),setup.stockBody,spec.pt.join(','),spec.src,O.b,O.c,faoFrameSig(setup),
+    (typeof _docVersion!=='undefined'?_docVersion:0),faoPoseHover].join('|');
+  if(sig===faoPoseSig&&faoPoseGrp)return;
+  faoPoseSig=sig;faoPoseClear();
+  const g=new THREE.Group();g.name='faoPose';
+  // 2026-10-16-020 : dans une OPÉRATION, ni brut ni points d'accroche — seulement les repères
+  let P=null;
+  if(!selOp){
+  // brut transparent : cylindre, corps (forme réelle) ou boîte
+  let drawn=false;
+  try{const cy=faoStockCylMesh(st,0xffb340,.13);if(cy){g.add(cy);drawn=true;}}catch(e){}
+  if(!drawn&&faoStockShape(setup)==='solid'){
+    try{
+      const b=(typeof bodies!=='undefined'&&bodies?bodies:[]).filter(x=>x&&x.id===setup.stockBody)[0];
+      if(b&&b.mesh){
+        const mat=new THREE.MeshBasicMaterial({color:0xffb340,transparent:true,opacity:.16,depthWrite:false,side:THREE.DoubleSide});
+        const cl=new THREE.Mesh(b.mesh.geometry,mat);cl.applyMatrix4(b.mesh.matrixWorld);
+        try{const Fr=faoFrame(setup);if(!Fr.id)cl.applyMatrix4(new THREE.Matrix4().makeBasis(new THREE.Vector3(...Fr.X),new THREE.Vector3(...Fr.Y),new THREE.Vector3(...Fr.Z)).invert());}catch(e){}cl.raycast=()=>{};cl.renderOrder=5;
+        cl.userData.shared=true;g.add(cl);drawn=true;
+      }
+    }catch(e){}
+  }
+  if(!drawn)try{
+    const bg=new THREE.BoxGeometry(st.x1-st.x0,st.y1-st.y0,st.z1-st.z0);
+    const box=new THREE.Mesh(bg,new THREE.MeshBasicMaterial({color:0xffb340,transparent:true,opacity:.13,depthWrite:false,side:THREE.DoubleSide}));
+    box.position.set((st.x0+st.x1)/2,(st.y0+st.y1)/2,(st.z0+st.z1)/2);box.raycast=()=>{};box.renderOrder=5;g.add(box);
+    const e=new THREE.LineSegments(new THREE.EdgesGeometry(bg),new THREE.LineBasicMaterial({color:0xffb340,transparent:true,opacity:.85}));
+    e.position.copy(box.position);e.raycast=()=>{};g.add(e);
+  }catch(e){}
+  // points cardinaux de la boîte de référence (brut ou modèle)
+  const B=(spec.src==='model'&&faoModelBox(setup))||st;
+  const cylAx=(spec.src!=='model'&&st.cyl)?({x:0,y:1,z:2})[st.cyl.axis]:-1;
+  P=FAO_CARD.map(f=>{
+    if(cylAx>=0){const u=f[(cylAx+1)%3],v=f[(cylAx+2)%3];if(u!==0.5&&v!==0.5)return null;} // coin de section : hors du cylindre
+    return faoBoxPt(B,f);});
+  const cur=FAO_CARD.findIndex(f=>f[0]===spec.pt[0]&&f[1]===spec.pt[1]&&f[2]===spec.pt[2]);
+  try{
+    const pos=[],col=[];
+    P.forEach((p,i)=>{if(i===cur||!p)return;pos.push(p[0],p[1],p[2]);const c=i===faoPoseHover?[1,0.35,0.12]:[1,1,1];col.push(...c);});
+    const ge=new THREE.BufferGeometry();
+    ge.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    ge.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
+    const pts=new THREE.Points(ge,new THREE.PointsMaterial({size:8,sizeAttenuation:false,vertexColors:true,depthTest:false,depthWrite:false,transparent:true}));
+    pts.renderOrder=995;pts.raycast=()=>{};g.add(pts);
+    if(spec.src==='model'&&B!==st){ // contour du modèle quand l'origine s'y rapporte
+      const mg=new THREE.BoxGeometry(B.x1-B.x0,B.y1-B.y0,B.z1-B.z0);
+      const ml=new THREE.LineSegments(new THREE.EdgesGeometry(mg),new THREE.LineDashedMaterial({color:0xffffff,dashSize:2,gapSize:1.5,transparent:true,opacity:.6}));
+      ml.position.set((B.x0+B.x1)/2,(B.y0+B.y1)/2,(B.z0+B.z1)/2);ml.computeLineDistances();ml.raycast=()=>{};g.add(ml);
+    }
+  }catch(e){}
+  }
+  faoPoseDots=P;
+  // repère du posage : origine + orientation 3+2 (axes outil vus dans le repère pièce)
+  if(!faoPoseTriad){faoPoseTriad=triadMake({name:'faoPoseTriad',px:70,renderOrder:996,planes:false});}
+  const OP=faoOriginPoint(setup);
+  faoPoseTriad.position.set(OP[0],OP[1],OP[2]);
+  try{
+    const M=new THREE.Matrix4().makeRotationY(O.b*Math.PI/180).multiply(new THREE.Matrix4().makeRotationZ(O.c*Math.PI/180));
+    faoPoseTriad.setRotationFromMatrix(M.invert());
+  }catch(e){}
+  faoPoseTriad.visible=true;
+  g.add(faoPoseTriad);
+  // repère de l'OPÉRATION : même origine, orienté selon son Z / X (dans le repère du posage)
+  if(!faoOpTriad){faoOpTriad=triadMake({name:'faoOpTriad',px:92,renderOrder:997,planes:false});}
+  if(opF&&!opF.id){
+    faoOpTriad.position.set(OP[0],OP[1],OP[2]); // centre COMMUN avec le posage (Fusion 360)
+    faoOpTriad.setRotationFromMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(...opF.X),new THREE.Vector3(...opF.Y),new THREE.Vector3(...opF.Z)));
+    faoOpTriad.visible=true;g.add(faoOpTriad);
+    faoPoseTriad.userData.px=52; // le posage en plus petit : l'opération domine
+  }else{faoOpTriad.visible=false;faoPoseTriad.userData.px=70;}
+  faoAdd3D(g);faoPoseGrp=g;
+}
+function faoPoseNear(e){
+  // index du point cardinal le plus proche du curseur (≤ 9 px), sinon -1
+  if(!faoPoseGrp||!faoPoseDots)return -1;
+  try{
+    const r=renderer.domElement.getBoundingClientRect();
+    const mx=e.clientX-r.left,my=e.clientY-r.top;
+    let best=-1,bd=9;
+    const v=new THREE.Vector3();
+    let RW=null;try{faoPoseGrp.updateMatrixWorld(true);RW=faoPoseGrp.parent?faoPoseGrp.parent.matrixWorld:null;}catch(err){}
+    faoPoseDots.forEach((p,i)=>{
+      if(!p)return;
+      v.set(p[0],p[1],p[2]);if(RW)v.applyMatrix4(RW);v.project(camera);
+      if(v.z>1)return;
+      const sx=(v.x+1)/2*r.width,sy=(1-v.y)/2*r.height;
+      const d=Math.hypot(sx-mx,sy-my);if(d<bd){bd=d;best=i;}
+    });
+    return best;
+  }catch(e){return -1;}
+}
+function faoPoseHoverAt(e){
+  const i=faoPoseNear(e);
+  if(i!==faoPoseHover){faoPoseHover=i;}
+  return i>=0;
+}
+function faoPosePickAt(e){
+  const i=faoPoseNear(e);if(i<0)return false;
+  const setup=faoPoseSetupSel();if(!setup)return false;
+  const spec=faoOriginSpec(setup);
+  faoSnapshot('origine du posage');
+  setup.origin={pt:FAO_CARD[i].slice(),src:spec.src};
+  faoChanged();
+  try{faceEl.textContent='Origine '+(setup.wcs||'G54')+' : '+faoOriginLabel(setup);}catch(err){}
+  try{renderProps();}catch(err){}
+  return true;
+}
+function faoStockCylMesh(st,col,op){
+  // brut cylindrique (stock.cyl) : cylindre transparent + 2 cercles d'arête ; null sinon
+  const C=st&&st.cyl;if(!C||!(C.r>0)||!Array.isArray(C.c))return null;
+  const I=C.axis==='x'?0:C.axis==='y'?1:2;
+  const L=I===0?st.x1-st.x0:I===1?st.y1-st.y0:st.z1-st.z0;
+  const g=new THREE.Group();
+  const cg=new THREE.CylinderGeometry(C.r,C.r,L,64,1,false);
+  const m=new THREE.Mesh(cg,new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:op,depthWrite:false,side:THREE.DoubleSide}));
+  m.raycast=()=>{};m.renderOrder=5;g.add(m);
+  [-L/2,L/2].forEach(y=>{
+    const pts=[];for(let i=0;i<=64;i++){const a=i/64*Math.PI*2;pts.push(new THREE.Vector3(C.r*Math.cos(a),y,C.r*Math.sin(a)));}
+    const l=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:col,transparent:true,opacity:.85}));
+    l.raycast=()=>{};g.add(l);
+  });
+  // CylinderGeometry est d'axe Y : on le couche sur l'axe voulu
+  if(I===0)g.rotation.z=-Math.PI/2; else if(I===2)g.rotation.x=Math.PI/2;
+  g.position.set(C.c[0],C.c[1],C.c[2]);
+  return g;
+}
+/* ---------- Repère ORIENTÉ du posage (2026-10-16-019) ----------
+   Le repère du posage est le repère absolu de ses opérations : tous les calculs FAO se font
+   dans ses coordonnées (outil le long de SON Z). setup.frame = {z, x, flipZ, flipX} où z / x
+   valent '+X' … '-Z' (axe du repère d'origine) ou [nx,ny,nz] (normale de face / arête cliquée).
+   Coordonnées posage = rotation seule du repère pièce (même origine monde) : p_f = Rᵀ·p,
+   p = R·p_f, colonnes de R = X, Y, Z du posage. L'origine G-code (point cardinal) est prise
+   ensuite dans ces coordonnées. Repère par défaut = repère pièce : AUCUN changement. */
+const FAO_AX={'+X':[1,0,0],'-X':[-1,0,0],'+Y':[0,1,0],'-Y':[0,-1,0],'+Z':[0,0,1],'-Z':[0,0,-1]};
+function faoV(v){
+  if(typeof v==='string')return FAO_AX[v]?FAO_AX[v].slice():null;
+  if(Array.isArray(v)&&v.length===3&&v.every(q=>isFinite(+q))){const l=Math.hypot(+v[0],+v[1],+v[2]);return l>1e-9?[v[0]/l,v[1]/l,v[2]/l]:null;}
+  return null;
+}
+function faoFrame(setup){
+  // {X,Y,Z,id} ; id = repère identique au repère pièce
+  const f=(setup&&setup.frame)||{};
+  let Z=faoV(f.z)||[0,0,1], X=faoV(f.x)||[1,0,0];
+  if(f.flipZ)Z=Z.map(q=>-q);
+  if(f.flipX)X=X.map(q=>-q);
+  // X projeté perpendiculairement à Z ; parallèle → axe de repli le moins aligné
+  let d=X[0]*Z[0]+X[1]*Z[1]+X[2]*Z[2];
+  let Xp=[X[0]-d*Z[0],X[1]-d*Z[1],X[2]-d*Z[2]],L=Math.hypot(Xp[0],Xp[1],Xp[2]);
+  let warn='';
+  if(L<1e-6){
+    warn='X parallèle à Z : X remplacé';
+    const c=[[1,0,0],[0,1,0],[0,0,1]].sort((a,b)=>Math.abs(a[0]*Z[0]+a[1]*Z[1]+a[2]*Z[2])-Math.abs(b[0]*Z[0]+b[1]*Z[1]+b[2]*Z[2]))[0];
+    d=c[0]*Z[0]+c[1]*Z[1]+c[2]*Z[2];Xp=[c[0]-d*Z[0],c[1]-d*Z[1],c[2]-d*Z[2]];L=Math.hypot(Xp[0],Xp[1],Xp[2]);
+  }
+  X=[Xp[0]/L,Xp[1]/L,Xp[2]/L];
+  const Y=[Z[1]*X[2]-Z[2]*X[1],Z[2]*X[0]-Z[0]*X[2],Z[0]*X[1]-Z[1]*X[0]];
+  // 2026-10-16-020 : origine du repère (monde) — repère d'opération posé sur une face
+  const O=(Array.isArray(f.o)&&f.o.length===3&&f.o.every(q=>isFinite(+q)))?f.o.map(Number):[0,0,0];
+  const id=Math.abs(X[0]-1)<1e-9&&Math.abs(Y[1]-1)<1e-9&&Math.abs(Z[2]-1)<1e-9&&Math.abs(O[0])<1e-12&&Math.abs(O[1])<1e-12&&Math.abs(O[2])<1e-12;
+  return {X,Y,Z,O,id,warn};
+}
+function faoFrameSig(setup){
+  const F=faoFrame(setup);if(F.id)return '';
+  const r=v=>v.map(q=>(Math.round(q*1e6)/1e6)).join(',');
+  return 'F'+r(F.X)+';'+r(F.Z)+((F.O[0]||F.O[1]||F.O[2])?';'+r(F.O):'');
+}
+// points : translation + rotation ; directions (normales, axes) : rotation seule
+function faoRotF(F,p){return [p[0]*F.X[0]+p[1]*F.X[1]+p[2]*F.X[2],p[0]*F.Y[0]+p[1]*F.Y[1]+p[2]*F.Y[2],p[0]*F.Z[0]+p[1]*F.Z[1]+p[2]*F.Z[2]];}
+function faoRotW(F,q){return [q[0]*F.X[0]+q[1]*F.Y[0]+q[2]*F.Z[0],q[0]*F.X[1]+q[1]*F.Y[1]+q[2]*F.Z[1],q[0]*F.X[2]+q[1]*F.Y[2]+q[2]*F.Z[2]];}
+function faoToF(F,p){const O=F.O||[0,0,0];return faoRotF(F,[p[0]-O[0],p[1]-O[1],p[2]-O[2]]);}
+function faoToW(F,q){const O=F.O||[0,0,0],w=faoRotW(F,q);return [w[0]+O[0],w[1]+O[1],w[2]+O[2]];}
+function faoFrameLabel(v){
+  if(typeof v==='string'&&FAO_AX[v])return v;
+  const u=faoV(v);if(!u)return '+Z';
+  return 'face ('+u.map(q=>(Math.abs(q)<5e-4?0:q).toFixed(3).replace(/\.?0+$/,'')).join(', ')+')';
+}
+/* Racine d'affichage FAO : tout ce que la FAO dessine (aperçu, simulation, chaînes, perçages,
+   brut, repère du posage) est en coordonnées POSAGE sous ce groupe, dont la matrice = R. */
+let faoRootG=null,faoRootSig='';
+function faoRoot3D(){
+  try{
+    if(typeof scene==='undefined'||!scene||typeof THREE==='undefined')return null;
+    if(!faoRootG||!faoRootG.parent){faoRootG=new THREE.Group();faoRootG.name='faoFrameRoot';faoRootG.matrixAutoUpdate=false;scene.add(faoRootG);faoRootSig='?';}
+    let st=null;try{st=faoSetup();}catch(e){}
+    const sg=faoFrameSig(st);
+    if(sg!==faoRootSig){
+      const F=faoFrame(st);
+      faoRootG.matrix.makeBasis(new THREE.Vector3(...F.X),new THREE.Vector3(...F.Y),new THREE.Vector3(...F.Z));
+      faoRootG.matrix.setPosition(F.O[0],F.O[1],F.O[2]);
+      faoRootG.matrixWorldNeedsUpdate=true;faoRootSig=sg;
+    }
+    return faoRootG;
+  }catch(e){return (typeof scene!=='undefined')?scene:null;}
+}
+function faoAdd3D(o){const r=faoRoot3D();if(r&&o)r.add(o);}
+function faoDel3D(o){try{if(o&&o.parent)o.parent.remove(o);}catch(e){}}
+function faoGet3D(name){try{const r=faoRoot3D();return (r&&r.getObjectByName(name))||(scene&&scene.getObjectByName(name))||null;}catch(e){return null;}}
+/* Entrées géométriques ramenées dans le repère du posage */
+function faoMeshToF(mm,F){
+  if(!mm||!F||F.id)return mm;
+  return {v:mm.v.map(p=>faoToF(F,p)),t:mm.t};
+}
+function faoBoxOfVerts(V){
+  let x0=1/0,y0=1/0,z0=1/0,x1=-1/0,y1=-1/0,z1=-1/0;
+  for(const p of V){if(p[0]<x0)x0=p[0];if(p[1]<y0)y0=p[1];if(p[2]<z0)z0=p[2];if(p[0]>x1)x1=p[0];if(p[1]>y1)y1=p[1];if(p[2]>z1)z1=p[2];}
+  return {x0,y0,z0,x1,y1,z1};
+}
+function faoMeshesBoxF(meshes,F){
+  // boîte englobante, en coordonnées posage, des maillages THREE donnés
+  const v=new THREE.Vector3();let B=null;
+  meshes.forEach(me=>{
+    const pa=me.geometry&&me.geometry.attributes&&me.geometry.attributes.position;if(!pa)return;
+    me.updateMatrixWorld(true);
+    for(let i=0;i<pa.count;i++){
+      v.fromBufferAttribute(pa,i).applyMatrix4(me.matrixWorld);
+      const q=faoToF(F,[v.x,v.y,v.z]);
+      if(!B)B={x0:q[0],y0:q[1],z0:q[2],x1:q[0],y1:q[1],z1:q[2]};
+      else{if(q[0]<B.x0)B.x0=q[0];if(q[1]<B.y0)B.y0=q[1];if(q[2]<B.z0)B.z0=q[2];if(q[0]>B.x1)B.x1=q[0];if(q[1]>B.y1)B.y1=q[1];if(q[2]>B.z1)B.z1=q[2];}
+    }
+  });
+  return B;
+}
+const faoShapeFCache=new Map();
+function faoShapeToF(sh,F){
+  // solide OCCT tourné dans le repère du posage (trous, arêtes) — mis en cache par repère
+  if(!sh||!F||F.id||typeof occt==='undefined'||!occt)return sh;
+  const k=F.X.join(',')+'|'+F.Z.join(',')+'|'+(F.O||[]).join(',');
+  const c=faoShapeFCache.get(sh);if(c&&c.k===k)return c.s;
+  try{
+    const t=new occt.gp_Trsf_1();
+    const tO=faoRotF(F,F.O||[0,0,0]);
+    t.SetValues(F.X[0],F.X[1],F.X[2],-tO[0], F.Y[0],F.Y[1],F.Y[2],-tO[1], F.Z[0],F.Z[1],F.Z[2],-tO[2]);
+    const b=new occt.BRepBuilderAPI_Transform_2(sh,t,true);
+    const s=b.Shape();
+    if(faoShapeFCache.size>6)faoShapeFCache.clear();
+    faoShapeFCache.set(sh,{k,s});
+    return s;
+  }catch(e){return sh;}
+}
+/* ----- choix des axes du posage : axe du repère d'origine, ou face / arête cliquée ----- */
+let faoFramePick=null; // {setupId, which:'z'|'x'}
+function faoFramePickStart(setupId,which,opId){
+  faoFramePick={setupId,which,opId:opId||null};
+  try{renderer.domElement.style.cursor='crosshair';}catch(e){}
+  try{faceEl.textContent='Axe '+which.toUpperCase()+' du posage : cliquez une FACE plane (sa normale sortante), une face cylindrique (son axe) ou une ARÊTE droite (sa direction) — Échap annule.';}catch(e){}
+  try{renderProps();}catch(e){}
+}
+function faoFramePickCancel(){faoFramePick=null;try{renderer.domElement.style.cursor='default';}catch(e){}try{renderProps();}catch(e){}}
+function faoFramePickCommit(e){
+  const t=faoFramePick;if(!t)return;
+  const setup=faoSetup(t.setupId);if(!setup){faoFramePickCancel();return;}
+  const op=t.opId?(setup.ops||[]).filter(o=>o.id===t.opId)[0]:null; // repère d'opération : direction ramenée dans le posage
+  if(t.opId&&!op){faoFramePickCancel();return;}
+  let dir=null,what='',hitP=null;
+  try{
+    const h=pick(e);
+    if(h&&h.point)hitP=[h.point.x,h.point.y,h.point.z];
+    const eh=(typeof edgeHoverPick==='function')?edgeHoverPick(e,h):null;
+    if(eh){ // arête droite : direction premier → dernier point
+      const P=edgeHoverSegs()[eh.pi];
+      if(P&&P.length>=2){
+        const a=P[0],b=P[P.length-1],d=[b[0]-a[0],b[1]-a[1],b[2]-a[2]],L=Math.hypot(...d);
+        let straight=L>1e-6;
+        if(straight)for(const q of P){const w=[q[0]-a[0],q[1]-a[1],q[2]-a[2]];const c=[w[1]*d[2]-w[2]*d[1],w[2]*d[0]-w[0]*d[2],w[0]*d[1]-w[1]*d[0]];if(Math.hypot(...c)/L>0.01){straight=false;break;}}
+        if(straight){dir=d.map(q=>q/L);what='arête';}
+      }
+    }
+    if(!dir&&h){
+      let G=null;try{G=occFaceGeom(h.object,h.faceIndex);}catch(err){}
+      if(G&&G.kind==='cyl'&&G.axis){dir=[G.axis.x,G.axis.y,G.axis.z];what='axe du cylindre';}
+      else if(h.face&&h.face.normal){const v=h.face.normal.clone().transformDirection(h.object.matrixWorld);dir=[v.x,v.y,v.z];what='normale de la face';}
+    }
+  }catch(err){}
+  if(!dir){try{faceEl.textContent='Axe du posage : rien de reconnu ici — cliquez une face ou une arête droite.';}catch(e){}return;}
+  if(op){const P=faoFrame(setup);if(!P.id)dir=faoRotF(P,dir);}
+  // direction alignée sur un axe du repère d'origine : on garde son nom (plus lisible)
+  const r=dir.map(q=>Math.abs(q)<1e-9?0:Math.round(q*1e9)/1e9);
+  let v=r;for(const k in FAO_AX){const a=FAO_AX[k];if(Math.abs(a[0]-r[0])<1e-7&&Math.abs(a[1]-r[1])<1e-7&&Math.abs(a[2]-r[2])<1e-7){v=k;break;}}
+  const own=op||setup; // cible : l'opération ou le posage
+  faoSnapshot('axe '+t.which.toUpperCase()+(op?' de l’opération':' du posage'));
+  const apply=function(){
+    own.frame=Object.assign({},own.frame||{});
+    own.frame[t.which]=v;
+    if(t.which==='z'){own.frame.flipZ=false;faoFrameFixX(own);}else own.frame.flipX=false;
+    if(op)delete own.frame.o; // centre commun avec le posage (Fusion 360)
+  };
+  // opération : la face cliquée donne la HAUTEUR de travail (cote le long du nouveau Z)
+  let hitF=null;if(op&&t.which==='z'&&hitP){const P=faoFrame(setup);hitF=faoToF(P,hitP);}
+  if(op)faoOpFrameEdit(setup,op,apply,hitF);else apply();
+  faoFramePick=null;try{renderer.domElement.style.cursor='default';}catch(e){}
+  faoStock();faoChanged();
+  try{faceEl.textContent='Axe '+t.which.toUpperCase()+(op?' de l’opération':' du posage')+' = '+what+' '+faoFrameLabel(v)+(faoFrame(own).warn?' — '+faoFrame(own).warn:'')+'. Parcours à régénérer.';}catch(e){}
+  try{renderProps();}catch(e){}
+}
+function faoFrameRows(p,setup){
+  // Fiche posage : orientation du repère (absolu pour toutes ses opérations)
+  p.appendChild(faoH('Repère du posage'));
+  const f=setup.frame||{};
+  const row=(which,lab,flipKey)=>{
+    const r=faoRow();
+    r.appendChild(faoLab(lab));
+    const cur=f[which];
+    const opts=Object.keys(FAO_AX).map(k=>[k,k]);
+    const isFace=Array.isArray(cur);
+    if(isFace)opts.push(['face',faoFrameLabel(cur)]);
+    r.appendChild(faoSel(opts,isFace?'face':(typeof cur==='string'&&FAO_AX[cur]?cur:(which==='z'?'+Z':'+X')),function(v){
+      if(v==='face')return;
+      setup.frame=Object.assign({},setup.frame||{});setup.frame[which]=v;if(which==='z')faoFrameFixX(setup);faoStock();
+    },'Direction de l’axe '+lab+' du posage, prise sur un axe du repère d’origine.'));
+    r.appendChild(faoMini('Face / arête',function(){ faoFramePickStart(setup.id,which); },
+      'Cliquez dans la vue : face plane = sa normale sortante, face cylindrique = son axe, arête droite = sa direction.'));
+    const cb=document.createElement('input');cb.type='checkbox';cb.checked=!!f[flipKey];
+    cb.onchange=function(){ faoSnapshot('inverser '+lab); setup.frame=Object.assign({},setup.frame||{}); setup.frame[flipKey]=cb.checked; faoStock(); faoChanged(); try{renderProps();}catch(e){} };
+    const lb=document.createElement('label');lb.className='fao-check';lb.appendChild(cb);lb.appendChild(document.createTextNode('Inverser'));
+    r.appendChild(lb);
+    p.appendChild(r);
+  };
+  row('z','Axe Z','flipZ');
+  row('x','Axe X','flipX');
+  const F=faoFrame(setup);
+  const n=document.createElement('div');n.className='fao-help';
+  n.textContent=(F.id?'Repère du posage = repère de la pièce. ':'Repère orienté : Z posage = ('+F.Z.map(q=>q.toFixed(3)).join(', ')+'). ')+
+    (F.warn?'⚠ '+F.warn+'. ':'')+'Toutes les opérations du posage sont calculées dans ce repère (outil le long de son Z) ; le G-code est relatif à son origine.';
+  p.appendChild(n);
+  if(faoFramePick&&faoFramePick.setupId===setup.id){
+    const w=document.createElement('div');w.className='fao-alert';w.textContent='Cliquez une face ou une arête dans la vue pour l’axe '+faoFramePick.which.toUpperCase()+' (Échap annule).';
+    p.appendChild(w);
+  }
+}
+function faoFrameFixX(setup){
+  // Après un changement de Z : si X lui est (presque) parallèle, on prend l'axe du repère
+  // d'origine le moins aligné avec Z (+X, sinon +Y) — la fiche affiche alors le vrai X.
+  const f=setup.frame=Object.assign({},setup.frame||{});
+  let Z=faoV(f.z)||[0,0,1];if(f.flipZ)Z=Z.map(q=>-q);
+  let X=faoV(f.x)||[1,0,0];
+  if(Math.abs(X[0]*Z[0]+X[1]*Z[1]+X[2]*Z[2])<0.999)return;
+  const c=['+X','+Y','+Z'].map(k=>[k,Math.abs(FAO_AX[k][0]*Z[0]+FAO_AX[k][1]*Z[1]+FAO_AX[k][2]*Z[2])]).sort((a,b)=>a[1]-b[1]+(a[1]===b[1]?0:0))[0][0];
+  f.x=c;f.flipX=false;
+}
+/* ---------- Repère PROPRE d'une opération (2026-10-16-020) ----------
+   op.frame = {z, x, flipZ, flipX} exprimé dans le repère du POSAGE (±X… = axes du posage, ou
+   direction de face/arête cliquée ramenée dans le posage). Absent = repère du posage.
+   L'opération est calculée dans son repère (outil le long de son Z : maillage, brut, plans,
+   arêtes, trous y sont ramenés), puis ses mouvements sont ré-exprimés dans le repère du posage
+   (arcs linéarisés). G-code : orientation de l'outil par B/C (3+2) avant l'opération. */
+let faoFrameCur=null; // repère (monde) de l'opération en cours de calcul — trous détectés dedans
+function faoOpFrameOf(setupId,opId){try{const s=faoSetup(setupId);const op=(s.ops||[]).filter(o=>o.id===opId)[0];return (op&&faoOpFrame(s,op))||faoFrame(s);}catch(e){return faoFrame(null);}}
+function faoOpFrame(job,op){
+  // repère composé (directions MONDE) de l'opération ; null si = repère du posage
+  if(!op||!op.frame)return null;
+  // 2026-10-16-020 (Fusion 360) : centre COMMUN avec le posage — seuls les axes suivent les faces
+  const Og=faoOriginPoint(job);
+  const R=faoFrame({frame:Object.assign({},op.frame,{o:Og})});
+  if(R.id)return null;
+  const P=faoFrame(job);
+  // origine de l'opération (repère posage) → monde
+  return {X:faoRotW(P,R.X),Y:faoRotW(P,R.Y),Z:faoRotW(P,R.Z),O:faoToW(P,R.O),id:false,rel:R,P:P};
+}
+function faoOpBC(job,op){
+  // angles B/C (table C+B) qui amènent le Z de l'opération (repère posage) sur l'axe outil
+  const fr=faoOpFrame(job,op);if(!fr)return null;
+  const o=faoOrientFromNormal(fr.rel.Z[0],fr.rel.Z[1],fr.rel.Z[2]);
+  return {b:o.b,c:o.c,down:o.down};
+}
+function faoOpJob(job,op,fr){
+  // posage « vu » dans le repère de l'opération : même posage, autre repère, brut ramené
+  const jo=Object.create(job);
+  jo.frame={z:fr.Z.slice(),x:fr.X.slice(),o:fr.O.slice()};
+  jo.originZero=true; // coordonnées de l'opération : Z0 = son origine (= celle du posage)
+  try{
+    const s=job.stock;
+    if(faoStockValid(s)){
+      const C=[];[s.x0,s.x1].forEach(x=>[s.y0,s.y1].forEach(y=>[s.z0,s.z1].forEach(z=>C.push(faoToF(fr,faoToW(fr.P,[x,y,z]))))));
+      const B=faoBoxOfVerts(C);
+      jo.stock={x0:B.x0,y0:B.y0,z0:B.z0,x1:B.x1,y1:B.y1,z1:B.z1};
+      // emprise XY = la matière du MODÈLE sur / au-dessus du plan Z0 de l'opération (la face
+      // cliquée) — pas la boîte du brut vue en biais, qui ferait usiner surtout dans le vide
+      try{
+        const am=faoActiveMesh(jo);
+        if(am&&am.mesh&&am.mesh.v.length){
+          const zr=(op.z!==''&&op.z!==undefined&&isFinite(+op.z))?+op.z:((op.ztop!==''&&op.ztop!==undefined&&isFinite(+op.ztop))?+op.ztop:null);
+          const up=zr===null?[]:am.mesh.v.filter(p=>p[2]>=zr-0.01);
+          if(up.length>=3){
+            const U=faoBoxOfVerts(up),m=+(job.marge)>=0?+job.marge:0;
+            const nb={x0:Math.max(B.x0,U.x0-m),y0:Math.max(B.y0,U.y0-m),x1:Math.min(B.x1,U.x1+m),y1:Math.min(B.y1,U.y1+m)};
+            if(nb.x1>nb.x0&&nb.y1>nb.y0)Object.assign(jo.stock,nb);
+          }
+        }
+      }catch(e){}
+    }
+  }catch(e){}
+  return jo;
+}
+function faoPtOpToPos(fr,p){return faoToF(fr.P,faoToW(fr,p));}
+function faoMovesOpToPos(mv,fr){
+  // mouvements repère opération → repère posage ; arcs (plan XY de l'opération) linéarisés
+  if(!Array.isArray(mv))return mv;
+  const out=[];let prev=null;
+  for(const m of mv){
+    if(!m||!isFinite(+m.x)){out.push(m);continue;}
+    if(m.arc&&prev){
+      const cx=prev.x+(+m.arc.i||0),cy=prev.y+(+m.arc.j||0);
+      let a0=Math.atan2(prev.y-cy,prev.x-cx),a1=Math.atan2(m.y-cy,m.x-cx);
+      const R=Math.hypot(prev.x-cx,prev.y-cy);
+      if(m.arc.cw){while(a1>a0-1e-12)a1-=2*Math.PI;}else{while(a1<a0+1e-12)a1+=2*Math.PI;}
+      const n=Math.max(2,Math.min(180,Math.ceil(Math.abs(a1-a0)*Math.max(R,0.1)/0.2)));
+      for(let k=1;k<=n;k++){
+        const t=k/n,a=a0+(a1-a0)*t,z=prev.z+(m.z-prev.z)*t;
+        const q=k===n?[m.x,m.y,m.z]:[cx+R*Math.cos(a),cy+R*Math.sin(a),z];
+        const w=faoPtOpToPos(fr,q);const o=Object.assign({},m);delete o.arc;o.x=w[0];o.y=w[1];o.z=w[2];out.push(o);
+      }
+    }else{
+      const w=faoPtOpToPos(fr,[+m.x,+m.y,+m.z]);const o=Object.assign({},m);o.x=w[0];o.y=w[1];o.z=w[2];out.push(o);
+    }
+    prev=m;
+  }
+  for(const k in mv)if(!/^\d+$/.test(k))out[k]=mv[k]; // diag, etc.
+  out.opFrame=true;
+  return out;
+}
+function* faoOpMovesIt(op,job){
+  const fr=faoOpFrame(job,op);
+  if(!fr)return yield* faoOpMovesIt0(op,job);
+  const jo=faoOpJob(job,op,fr);
+  const it=faoOpMovesIt0(op,jo);
+  const step=()=>{const k=faoFrameCur;faoFrameCur=fr;try{return it.next();}finally{faoFrameCur=k;}};
+  let r=step();
+  while(!r.done){
+    const v=r.value;
+    yield (Array.isArray(v)&&v.length&&v[0]&&isFinite(+v[0].x))?faoMovesOpToPos(v,fr):v;
+    r=step();
+  }
+  return faoMovesOpToPos(r.value,fr);
+}
+function faoOpFrameRows(d,setup,op){
+  d.appendChild(faoH('Repère de l’opération'));
+  const own=!!op.frame;
+  const r0=faoRow();
+  r0.appendChild(faoLab('Repère'));
+  r0.appendChild(faoSel([['pos','Celui du posage'],['own','Propre (3+2)']],own?'own':'pos',function(v){
+    faoOpFrameEdit(setup,op,function(){ if(v==='own'){ if(!op.frame)op.frame={z:'+Z',x:'+X'}; } else delete op.frame; });
+    try{renderProps();}catch(e){}
+  },'Par défaut l’opération travaille dans le repère du posage. « Propre » : l’outil est orienté selon le Z choisi (indexation 3+2).'));
+  d.appendChild(r0);
+  if(!own){d.appendChild(faoHelp('Repère du posage : outil le long de son Z, G-code relatif à son origine.'));return;}
+  const f=op.frame;
+  const row=(which,lab,flipKey)=>{
+    const r=faoRow();r.appendChild(faoLab(lab));
+    const cur=f[which],isFace=Array.isArray(cur);
+    const opts=Object.keys(FAO_AX).map(k=>[k,k+' posage']);
+    if(isFace)opts.push(['face',faoFrameLabel(cur)]);
+    r.appendChild(faoSel(opts,isFace?'face':(typeof cur==='string'&&FAO_AX[cur]?cur:(which==='z'?'+Z':'+X')),function(v){
+      if(v==='face')return;faoOpFrameEdit(setup,op,function(){op.frame=Object.assign({},op.frame||{});op.frame[which]=v;if(which==='z')faoFrameFixX(op);});
+    },'Axe '+lab+' de l’opération, pris sur un axe du repère du POSAGE.'));
+    r.appendChild(faoMini('Face / arête',function(){ faoFramePickStart(setup.id,which,op.id); },
+      'Cliquez dans la vue : face plane = sa normale sortante, face cylindrique = son axe, arête droite = sa direction.'));
+    const cb=document.createElement('input');cb.type='checkbox';cb.checked=!!f[flipKey];
+    cb.onchange=function(){ faoSnapshot('inverser '+lab); faoOpFrameEdit(setup,op,function(){op.frame=Object.assign({},op.frame||{}); op.frame[flipKey]=cb.checked;}); faoChanged(); try{renderProps();}catch(e){} };
+    const lb=document.createElement('label');lb.className='fao-check';lb.appendChild(cb);lb.appendChild(document.createTextNode('Inverser'));
+    r.appendChild(lb);d.appendChild(r);
+  };
+  row('z','Axe Z','flipZ');row('x','Axe X','flipX');
+  const BC=faoOpBC(setup,op),F=faoFrame({frame:op.frame});
+  const n=document.createElement('div');n.className=(BC&&BC.down)?'fao-alert':'fao-help';
+  n.textContent=(BC?('Orientation outil : B '+BC.b+'° · C '+BC.c+'° (table C+B) — vérifiez les sens de rotation de votre machine. '):'Même orientation que le posage. ')+
+    (BC&&BC.down?'⚠ Z tourné vers le bas : pièce à retourner. ':'')+(F.warn?'⚠ '+F.warn+'. ':'')+
+    'Calcul dans ce repère ; G-code en coordonnées du posage, outil orienté (TRAORI).';
+  d.appendChild(n);
+}
+function faoOpTopZ(setup,op){
+  // dessus du brut vu dans le repère de l'opération (sinon du posage)
+  try{const fr=faoOpFrame(setup,op);const st=fr?faoOpJob(setup,op,fr).stock:setup.stock;return (st&&isFinite(+st.z1))?+st.z1:null;}catch(e){return null;}
+}
+function faoOpFrameEdit(setup,op,fn,onFace){
+  // change le repère de l'opération en gardant ses hauteurs RELATIVES au dessus du brut ;
+  // repère posé sur une face (onFace) : la face devient le dessus (Z0)
+  if(onFace){ // onFace = point cliqué (repère posage) : sa cote le long du Z de l'opération = hauteur de travail
+    const d=(isFinite(+op.ztop)&&isFinite(+op.zbot))?(+op.ztop)-(+op.zbot):null;
+    fn();
+    const fr=faoOpFrame(setup,op);
+    const zf=fr?Math.round(faoToF(fr,faoToW(fr.P,onFace))[2]*1e4)/1e4:0;
+    if(op.z!==undefined&&op.z!=='')op.z=zf;
+    if(d!==null){op.ztop=zf;op.zbot=Math.round((zf-d)*1e4)/1e4;}
+    return;
+  }
+  const t0=faoOpTopZ(setup,op);
+  fn();
+  const t1=faoOpTopZ(setup,op);
+  if(t0!=null&&t1!=null&&Math.abs(t1-t0)>1e-9)['z','ztop','zbot'].forEach(k=>{if(op[k]!==undefined&&op[k]!==''&&isFinite(+op[k]))op[k]=Math.round((+op[k]+t1-t0)*1e4)/1e4;});
+}
+/* ---------- Cotes des fiches RELATIVES à l'origine du posage (2026-10-16-020) ----------
+   Le repère du posage est LE repère d'usinage : Z0 = son origine (point cardinal), pas le Z de
+   la pièce. Les champs (Z, Haut, Bas, rectangles…) affichent et reçoivent des cotes relatives à
+   cette origine ; le document garde ses valeurs internes (pas de migration, parcours inchangés).
+   Opération à repère propre : ses cotes sont déjà relatives à SON origine (face cliquée). */
+function faoOffOf(op){
+  try{
+    const s=(op&&typeof faoSetupOfOp==='function'&&faoSetupOfOp(op))||faoSetup();
+    if(op&&faoOpFrame(s,op))return [0,0,0];
+    return faoOriginPoint(s);
+  }catch(e){return [0,0,0];}
+}
+function faoDsp(op,v,i){
+  if(v===''||v===null||v===undefined||!isFinite(+v))return v;
+  return Math.round((+v-faoOffOf(op)[i])*1e4)/1e4;
+}
+function faoInp(op,v,i){
+  if(v===''||v===null||v===undefined||!isFinite(+v))return v;
+  return Math.round((+v+faoOffOf(op)[i])*1e6)/1e6;
+}
+/* ---------- Simulation : outil INCLINÉ (opération 3+2) (2026-10-16-021) ----------
+   La matière simulée est une Z-map (une hauteur par colonne, vue du Z du posage). Un outil
+   incliné n'est plus un cylindre vertical : on balaie son ENVELOPPE INFÉRIEURE — le disque du
+   bout (incliné) et les génératrices du corps — par de petits segments verticaux décalés, chacun
+   taillé comme un fin cylindre vertical. La matière sous le disque incliné reste intacte. */
+function faoMatterCarveTilt(g,a,b,r,ax,outCols){
+  const out=[];
+  try{
+    let A=ax.slice();const L=Math.hypot(A[0],A[1],A[2])||1;A=A.map(q=>q/L);
+    const t=Math.abs(A[2])<0.9?[0,0,1]:[1,0,0];
+    let u=[A[1]*t[2]-A[2]*t[1],A[2]*t[0]-A[0]*t[2],A[0]*t[1]-A[1]*t[0]];const lu=Math.hypot(...u);u=u.map(q=>q/lu);
+    const v=[A[1]*u[2]-A[2]*u[1],A[2]*u[0]-A[0]*u[2],A[0]*u[1]-A[1]*u[0]];
+    const pas=Math.max(+g.pas||0.5,r/8),rr=Math.max((+g.pas||0.5)*0.55,pas*0.55);
+    const offs=[];
+    for(let i=-r;i<=r+1e-9;i+=pas)for(let j=-r;j<=r+1e-9;j+=pas){ // disque du bout
+      if(i*i+j*j>r*r)continue;offs.push([u[0]*i+v[0]*j,u[1]*i+v[1]*j,u[2]*i+v[2]*j]);}
+    const H=Math.max(4*r,8); // hauteur de corps balayée (au-delà : rarement de la matière)
+    for(let k=0;k<16;k++){const c=Math.cos(k*Math.PI/8),s=Math.sin(k*Math.PI/8); // corps
+      for(let h=pas;h<=H+1e-9;h+=pas)offs.push([A[0]*h+r*(u[0]*c+v[0]*s),A[1]*h+r*(u[1]*c+v[1]*s),A[2]*h+r*(u[2]*c+v[2]*s)]);}
+    // segment EN PENTE (passe qui descend le chanfrein) : la taille d'un segment se fait à sa
+    // cote la plus basse — on le découpe en petits pas de hauteur, sinon des marches apparaissent
+    const n=Math.max(1,Math.min(400,Math.ceil(Math.abs(b.z-a.z)/Math.max(0.05,(+g.pas||0.5)*0.4))));
+    for(let s=0;s<n;s++){
+      const t0=s/n,t1=(s+1)/n;
+      const ax0=a.x+(b.x-a.x)*t0,ay0=a.y+(b.y-a.y)*t0,az0=a.z+(b.z-a.z)*t0;
+      const bx1=a.x+(b.x-a.x)*t1,by1=a.y+(b.y-a.y)*t1,bz1=a.z+(b.z-a.z)*t1;
+      for(const o of offs){
+        const k=faoMatterCarveSeg(g,ax0+o[0],ay0+o[1],az0+o[2],bx1+o[0],by1+o[1],bz1+o[2],rr,outCols,0);
+        for(let m=0;m<k.length;m++)out.push(k[m]);
+      }
+    }
+  }catch(e){}
+  return out;
 }
 
 /* ═══════════════ 89-fao-torique.js — fao torique ═══════════════ */
@@ -29913,11 +30857,13 @@ function wirePick(){
     if(typeof faoHolePick!=='undefined'&&faoHolePick){if(e.button===0&&!e.ctrlKey)faoHolePickAt(e);return;} // perçage : clic sur un trou
     if(faoChainMode){if(e.button===0&&!e.ctrlKey)faoChainToggle(e);return;}
     if(faoPlanePick){if(e.button===0&&!e.ctrlKey)faoPlaneCommit(e);return;}
+    if(typeof faoFramePick!=='undefined'&&faoFramePick){if(e.button===0&&!e.ctrlKey)faoFramePickCommit(e);return;} // axe Z / X du posage
     if(faoZPlanePick){if(e.button===0&&!e.ctrlKey)faoZPlaneCommit(e);return;}
     if(mvMode){if(e.button===0&&!e.ctrlKey)mvFaceCommit(e);return;}
     if(draftMode){if(e.button===0&&!e.ctrlKey)draftToggle(e);return;}
     if(coqueMode){if(e.button===0&&!e.ctrlKey)coqueToggle(e);return;}
     if(e.altKey)return;
+    if(e.button===0&&!(e.ctrlKey||e.metaKey)&&typeof faoPosePickAt==='function'&&faoPosePickAt(e))return; // point cardinal → origine du posage
     if(e.shiftKey&&e.button===0){shiftMeasure(e);return;}
     if(e.button===0&&!(e.ctrlKey||e.metaKey))faceSelect(e,false);
     else if((e.ctrlKey||e.metaKey)&&e.button===0)faceSelect(e,true);
@@ -30031,6 +30977,7 @@ function filletTangentChain(sk, startCorner){
   window.addEventListener('keydown',e=>{if(e.key==='Escape'){
     if(extPickFace){extPickFace=null;try{renderer.domElement.style.cursor='default';}catch(e2){}faceEl.textContent='Vers un objet : annulé.';return;}
     if(faoPlanePick){faoPlaneCancel();faceEl.textContent='Plan : annulé.';return;}
+    if(typeof faoFramePick!=='undefined'&&faoFramePick){faoFramePickCancel();faceEl.textContent='Axe du posage : annulé.';return;}
     if(faoZPlanePick){faoZPlaneCancel();faceEl.textContent='Plan : annulé.';return;}
     if(filMode||filModeX){exitFilletMode();return;}
     if(faoChainMode){faoChainExit(true);return;}
@@ -30164,6 +31111,9 @@ function edgeSelect(e,eh,second){
   dimPair(best.p,best.q,best.d.toFixed(2));faceEl.textContent='Distance mini entre arêtes ≈ '+best.d.toFixed(2)+' mm';
 }
 function faceSelect(e,second){
+  // 2026-10-16-017 : plans du repère (dessinés devant la pièce) prioritaires
+  if(!second){const tp=triadPickPlane(e);if(tp){clearMeasure();sel={kind:'plane',id:tp};renderTree();renderProps();refreshParts();faceEl.textContent=`Plan ${tp} — ${PLANES[tp].label}
+Bouton « Esquisse » (ou double-clic dans l'arbre) pour dessiner dessus.`;return;}}
   const h=pick(e);
   try{const eh=edgeHoverPick(e,h);if(eh){edgeSelect(e,eh,second);return;}}catch(err){}
   if(second&&selEdges.length&&!selFaces.length){selEdges=[];}
@@ -30511,6 +31461,8 @@ function hoverMove(e){
   if(e.buttons!==0)return;
   const now=performance.now();if(now-lastHoverT<65)return;lastHoverT=now;
   try{
+    if(triadHoverAt(e)||(typeof faoPoseHoverAt==='function'&&faoPoseHoverAt(e))){if(hoverKey)clearHover();renderer.domElement.style.cursor='pointer';hoverMove._cur=1;return;}
+    if(hoverMove._cur){hoverMove._cur=0;renderer.domElement.style.cursor='';}
     const h=pick(e);
     const eh=edgeHoverPick(e,h);
     if(eh){
@@ -31819,7 +32771,7 @@ if($('fileWasm'))$('fileWasm').addEventListener('change',async e=>{
   e.target.value='';
 });
 try{if($('optMirror')){$('optMirror').checked=mirrorOn;$('optMirror').onchange=()=>{mirrorOn=$('optMirror').checked;try{localStorage.setItem('minifusion_mirror',mirrorOn?'on':'off');}catch(e){}refreshMirror();};}}catch(e){}
-try{if($('optAxes')){$('optAxes').checked=axHelper?axHelper.visible:true;$('optAxes').onchange=()=>{if(axHelper)axHelper.visible=$('optAxes').checked;markDirty();};}}catch(e){}
+try{if($('optAxes')){$('optAxes').checked=axHelper?axHelper.visible:true;$('optAxes').onchange=()=>{if(axHelper)axHelper.visible=$('optAxes').checked;markDirty();try{renderTree();}catch(e){}};}}catch(e){}
 try{if($('optZoomInv')){$('optZoomInv').checked=zoomInv;$('optZoomInv').onchange=()=>{zoomInv=$('optZoomInv').checked;if(controls)controls.zoomSpeed=zoomInv?-1:1;try{localStorage.setItem('minifusion_zoominv',zoomInv?'on':'off');}catch(e){}markDirty();};}}catch(e){}
 if($('btnNew'))$('btnNew').onclick=()=>{
   if(!confirm('Nouveau modèle ? Le document courant non sauvé sera perdu.'))return;
@@ -31934,7 +32886,7 @@ function openAide(){
   const box=document.createElement('div');
   box.style.cssText='background:#1c1c20;color:#e8e8ea;border:1px solid #3a3a40;border-radius:10px;padding:14px 18px;width:min(860px,94vw);max-height:84vh;overflow:auto;font-size:12.5px;box-shadow:0 14px 40px rgba(0,0,0,.6)';
   const ver=(document.getElementById('prodVer')||{}).textContent||'';
-  let h='<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><b style="font-size:15px">❔ Aide — raccourcis et astuces</b><span style="opacity:.6">'+ver+' · '+(typeof APP_VER!=='undefined'?APP_VER:'')+'</span><span style="flex:1"></span><button id="aideClose">Fermer</button></div>';
+  let h='<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><b style="font-size:15px">❔ Aide — raccourcis et astuces</b><span style="opacity:.6">'+(typeof APP_VER!=='undefined'?APP_VER:ver)+'</span><span style="flex:1"></span><button id="aideClose">Fermer</button></div>';
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:12px">';
   AIDE_SECTIONS.forEach(([titre,rows])=>{
     h+='<div><div style="font-weight:700;color:#ff9f0a;margin:4px 0 4px">'+titre+'</div><table style="border-collapse:collapse;width:100%">';
@@ -31989,7 +32941,7 @@ function openAide(){
   const top=document.querySelector('.topbar')||bar.parentNode;
   if(!Array.from((top&&top.children)||[]).some(c=>c&&c.id==='prodVer')){
     const v=document.createElement('span');
-    v.id='prodVer';v.textContent='V0.1.55';v.title='Version produit';
+    v.id='prodVer';v.textContent=APP_VER;v.title='Version (= tag Git)'; // V0.2.0 : numéro UNIQUE
     const hints=document.querySelector('.hints');
     if(top&&hints&&hints.parentNode===top)top.insertBefore(v,hints);
     else if(top)top.appendChild(v);
@@ -32469,6 +33421,395 @@ function runValidate(){
 
 // 2026-10-15-009 : plus de bouton « ✓ Valider » séparé — runValidate() EST l'action du
 // bouton unique « ⟳ Régénérer » (src/95), qui remplace Recalculer / Valider / Hard.
+
+/* ═══════════════ 97-interface-moderne.js — interface moderne ═══════════════ */
+/* ---------- Thèmes de couleur + interface « Moderne » (V0.2.1) ----------
+   • Thème (🎨, dans les DEUX interfaces) : Nuit (actuel), Graphite, Atelier, Clair, Contraste —
+     variables CSS sur <body data-theme>, mémorisé (localStorage).
+   • Interface (▦) : « Classique » = l'interface actuelle, intacte ; « Moderne » = espaces CAO / FAO,
+     ruban d'outils (icône + libellé), recherche de commandes (Ctrl+K), barre rapide (annuler,
+     rétablir, enregistrer), navigateur à onglets (Modèle / Usinage, onglets de posages), barre
+     d'état en bas, cube de vue. Le mode moderne n'AJOUTE que des éléments et des règles CSS sous
+     body.ui-modern : chaque bouton du ruban clique le bouton d'origine (même code, même effet) ;
+     revenir en classique retire la classe — rien n'est déplacé ni détruit. */
+const MF_THEMES=[['nuit','Nuit (actuel)'],['graphite','Graphite'],['atelier','Atelier'],['clair','Clair'],['contraste','Contraste élevé']];
+function mfLS(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v);}catch(e){}return null;}
+const MF_3D={nuit:[0x1c1c1e,0x141519,'#141416'],graphite:[0x202124,0x17181a,'#18191b'],atelier:[0x1c1915,0x141210,'#15130f'],clair:[0xe9ecf1,0xd7dbe2,'#e4e7ec'],contraste:[0x000000,0x050505,'#000']};
+function mf3D(t){
+  // fond de la scène, sol miroir et fond du canevas assortis au thème (Clair = vue 3D claire)
+  const c=MF_3D[t]||MF_3D.nuit;
+  try{if(scene&&scene.background&&scene.background.set)scene.background.set(c[0]);}catch(e){}
+  try{if(mirrorU&&mirrorU.color)mirrorU.color.value.set(c[1]);mirrorDirty=true;}catch(e){}
+  try{const v=document.getElementById('viewport');if(v)v.style.background=c[2];}catch(e){}
+}
+function mfTheme(t){
+  t=MF_THEMES.some(x=>x[0]===t)?t:'nuit';
+  try{document.body.setAttribute('data-theme',t);}catch(e){}
+  mf3D(t);
+  mfLS('minifusion_theme',t);
+  try{document.querySelectorAll('.mfThemeOpt').forEach(b=>b.classList.toggle('on',b.dataset.t===t));}catch(e){}
+}
+function mfUiMode(m){
+  m=m==='moderne'?'moderne':'classique';
+  try{document.body.classList.toggle('ui-modern',m==='moderne');}catch(e){}
+  mfLS('minifusion_ui',m);
+  try{const b=document.getElementById('mfUiBtn');if(b)b.textContent=m==='moderne'?'▦ Moderne':'▦ Classique';}catch(e){}
+  if(m==='moderne'){try{mfBuildModern();mfWs(mfLS('minifusion_ws')||'cao');}catch(e){}}
+  try{if(typeof onResize==='function')onResize();else window.dispatchEvent(new Event('resize'));}catch(e){}
+}
+function mfCss(){
+  if(document.getElementById('mfCss'))return;
+  const st=document.createElement('style');st.id='mfCss';
+  st.textContent=[
+  /* --- thèmes --- */
+  'body[data-theme="graphite"]{--bg:#202124;--surface:rgba(46,47,50,.94);--primary:#8ab4f8;--glow:rgba(138,180,248,.3);--accent:#81c995;--text:#e8eaed;--muted:#9aa0a6;--border:rgba(255,255,255,.1)}',
+  'body[data-theme="atelier"]{--bg:#1a1714;--surface:rgba(42,37,32,.92);--primary:#ff9f0a;--glow:rgba(255,159,10,.32);--accent:#ffd60a;--text:#f7f1e8;--muted:#a89f92;--border:rgba(255,200,140,.12)}',
+  'body[data-theme="clair"]{--bg:#e9ecf1;--surface:rgba(255,255,255,.94);--primary:#0a6cff;--glow:rgba(10,108,255,.22);--accent:#1a9e46;--warn:#b07b00;--text:#1c1c1e;--muted:#5f6368;--border:rgba(0,0,0,.12)}',
+  'body[data-theme="clair"] button,body[data-theme="clair"] select,body[data-theme="clair"] input{background:rgba(0,0,0,.035);border-color:rgba(0,0,0,.16);color:var(--text)}',
+  'body[data-theme="clair"] button.primary{background:var(--primary);color:#fff}',
+  'body[data-theme="clair"] .ddMenu,body[data-theme="clair"] .mfPop{background:rgba(255,255,255,.98)!important;color:var(--text)}',
+  'body[data-theme="clair"] .ddMenu button:hover{color:#fff}',
+  'body[data-theme="clair"] kbd,body[data-theme="clair"] .hints span{background:rgba(0,0,0,.05)}',
+  /* Clair : la vue 3D est claire, ses panneaux aussi (arbre, barre de vues, réglages, FAO, onglets) */
+  'body[data-theme="clair"] #treeOverlay,body[data-theme="clair"] #treeToggle,body[data-theme="clair"] #viewbar,body[data-theme="clair"] #setMenu,body[data-theme="clair"] #faoTreeWrap .fao-cnt,body[data-theme="clair"] #faoToggle,body[data-theme="clair"] #faoAddBar,body[data-theme="clair"] #faoViewerBar,body[data-theme="clair"] #mfBrTabs{background:rgba(255,255,255,.9)!important;color:#1c1c1e!important;border-color:rgba(0,0,0,.14)!important;box-shadow:0 6px 20px rgba(0,0,0,.12)!important}',
+  'body[data-theme="clair"] #treeOverlay .ovlTitle,body[data-theme="clair"] #treeOverlay .ovlNote,body[data-theme="clair"] #setMenu .ovlTitle,body[data-theme="clair"] #setMenu label,body[data-theme="clair"] #setMenu .ovlNote,body[data-theme="clair"] #mfBrTabs button{color:#1c1c1e!important}',
+  'body[data-theme="clair"] #treeOverlay .tgroup{color:#9a6700!important}',
+  'body[data-theme="clair"] #mfBrTabs button.on{color:#fff!important}',
+  'body[data-theme="clair"] #vpwrap{box-shadow:0 10px 30px rgba(0,0,0,.12)}',
+  /* esquisse : bandeau d'outils et barre d'état OPAQUES (tous thèmes), couleurs du thème */
+  '#skToolbar{background:var(--bg);background-image:linear-gradient(var(--surface),var(--surface));box-shadow:0 2px 10px rgba(0,0,0,.25);position:relative;z-index:2}',
+  '#skStatus{background:var(--bg);background-image:linear-gradient(var(--surface),var(--surface))}',
+  'body[data-theme="clair"] #sketchOverlay{background:rgba(233,236,241,.6)}',
+  'body[data-theme="clair"] #skSide{background:rgba(255,255,255,.97);color:#1c1c1e}',
+  'body[data-theme="clair"] #skSide .li{background:rgba(0,0,0,.04)}',
+  /* dessin d'esquisse (pensé pour fond sombre) : inversé en Clair, teintes gardées */
+  'body[data-theme="clair"] #skSvg{filter:invert(1) hue-rotate(180deg)}',
+  'body[data-theme="clair"] #skToolbar .con{color:#1a9e46}',
+  'body[data-theme="clair"] #skToolbar .con[data-con="construction"]{color:#6b6b70}',
+  'body[data-theme="clair"] #skToolbar .tool.on,body[data-theme="clair"] #skToolbar .con.on{color:#fff}',
+  'body[data-theme="contraste"]{--bg:#000;--surface:#0b0b0b;--primary:#00a8ff;--glow:rgba(0,168,255,.45);--accent:#00e676;--warn:#ffea00;--text:#fff;--muted:#d0d0d0;--border:rgba(255,255,255,.4)}',
+  'body[data-theme="contraste"] button,body[data-theme="contraste"] select{border-color:rgba(255,255,255,.55)}',
+  'body[data-theme]{background:radial-gradient(1200px 500px at 50% -10%,var(--glow),transparent),var(--bg)}',
+  /* --- boutons communs (thème, interface) --- */
+  '.mfTop{display:flex;gap:6px;align-items:center}',
+  '.mfTop>button{padding:5px 10px;font-size:.78rem}',
+  '.mfPop{position:absolute;z-index:7000;min-width:200px;padding:5px;background:rgba(28,28,32,.97);border:1px solid var(--border);border-radius:10px;box-shadow:0 14px 36px rgba(0,0,0,.5)}',
+  '.mfPop button{display:flex;gap:8px;align-items:center;width:100%;text-align:left;background:none;border:none;padding:7px 10px;border-radius:7px;font-size:.82rem;color:inherit}',
+  '.mfPop button:hover,.mfPop button.on{background:var(--primary);color:#fff}',
+  '.mfSw{width:14px;height:14px;border-radius:4px;border:1px solid rgba(128,128,128,.5);flex:none}',
+  /* --- éléments du mode moderne : invisibles en classique --- */
+  '.mfM{display:none!important}',
+  'body.ui-modern .mfM{display:flex!important}',
+  'body.ui-modern .topbar>.tb,body.ui-modern .topbar>.hints{display:none!important}',
+  'body.ui-modern .topbar{padding:6px 12px;margin-bottom:6px}',
+  /* espaces CAO / FAO */
+  '.mfWs{gap:2px;padding:2px;border-radius:9px;background:rgba(127,127,127,.12)}',
+  '.mfWs button{padding:4px 14px;font-size:.78rem;border:none;background:none;border-radius:7px}',
+  '.mfWs button.on{background:var(--primary);color:#fff}',
+  '.mfQuick button{padding:4px 9px;font-size:.85rem;background:none;border:1px solid transparent}',
+  '.mfSearch{position:relative;flex:1;max-width:340px}',
+  '.mfSearch input{width:100%;padding:6px 10px;border-radius:8px;font-size:.8rem;background:rgba(127,127,127,.12);border:1px solid var(--border);color:var(--text)}',
+  '.mfRes{position:absolute;top:calc(100% + 4px);left:0;right:0;max-height:340px;overflow:auto}',
+  /* ruban */
+  '#mfRibbon{gap:2px;align-items:stretch;flex-wrap:nowrap;overflow-x:auto;padding:6px 8px;margin-bottom:8px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)}',
+  '.mfGrp{display:flex;flex-direction:column;align-items:stretch;padding:0 4px;flex:none;border-right:1px solid var(--border)}',
+  '.mfGrp:last-child{border-right:none}',
+  '.mfGrpB{display:flex;gap:2px;flex:1}',
+  '.mfGrpT{font-size:.6rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:center;margin-top:2px}',
+  '.mfRb{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:46px;padding:3px 4px;white-space:nowrap;border:1px solid transparent;background:none;border-radius:8px;font-size:.66rem;line-height:1.1}',
+  '.mfRb i{font-style:normal;font-size:1.25rem;line-height:1;display:flex;height:24px;align-items:center;opacity:.92}',
+  '.mfRb:hover i{color:var(--primary);opacity:1}',
+  '.mfQuick button,#mfThemeBtn{display:inline-flex;align-items:center;justify-content:center}',
+  '.mfRb:hover{background:rgba(127,127,127,.14)}',
+  'body.ui-modern[data-ws="cao"] #mfRibbon .mfFao,body.ui-modern[data-ws="fao"] #mfRibbon .mfCao{display:none}',
+  /* navigateur : Modèle (arbre) / Usinage (posages) à gauche de la vue */
+  '#mfBrTabs{position:absolute;top:10px;left:4px;z-index:23;gap:2px;padding:2px;border-radius:9px;background:rgba(16,18,22,.82);border:1px solid var(--border)}',
+  '#mfBrTabs button{padding:3px 12px;font-size:.74rem;border:none;background:none;border-radius:7px;color:#e9e9ec}',
+  '#mfBrTabs button.on{background:var(--primary);color:#fff}',
+  'body.ui-modern #viewbar{left:auto;right:92px}',
+  'body.ui-modern #viewbar>button[data-view],body.ui-modern #viewbar>#btnFit{display:none}',
+  /* arbre : juste sous les onglets Modèle / Usinage (la barre de vues est partie à droite) */
+  'body.ui-modern #treeOverlay,body.ui-modern #treeToggle{margin-top:40px!important}',
+  /* menu ⚙ : il s'ouvre sous le bouton, à droite */
+  'body.ui-modern #setMenu{left:auto!important;right:92px}',
+  'body.ui-modern[data-ws="fao"] #treeWrap{display:none!important}',
+  'body.ui-modern[data-ws="cao"] #faoWrap,body.ui-modern[data-ws="cao"] #faoTreeWrap{display:none!important}',
+  'body.ui-modern[data-ws="fao"] #faoAddBar{display:none!important}',
+  'body.ui-modern[data-ws="fao"] #faoWrap{left:4px!important;right:auto!important;top:40px!important;align-items:flex-start!important}',
+  /* panneau Usinage à gauche : bouton de rabat sur son bord gauche, comme l'arbre */
+  'body.ui-modern[data-ws="fao"] #faoTreeWrap{flex-direction:row!important}',
+  '#mfPosTabs{display:flex;gap:3px;flex-wrap:wrap;margin:0 0 6px}',
+  '#mfPosTabs button{padding:3px 10px;font-size:.72rem;border-radius:7px}',
+  '#mfPosTabs button.on{background:var(--primary);border-color:var(--primary);color:#fff}',
+  'body:not(.ui-modern) #mfPosTabs{display:none}',
+  /* barre d'état */
+  '#mfStatus{gap:16px;align-items:center;padding:5px 12px;margin-top:6px;font-size:.72rem;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);white-space:nowrap;overflow:hidden}',
+  '#mfStatus b{color:var(--text);font-weight:600}',
+  '#mfStatus .mfSp{flex:1}',
+  '#mfStatus button{padding:2px 9px;font-size:.7rem}',
+  '#mfStMeas{overflow:hidden;text-overflow:ellipsis;max-width:46vw}',
+  'body.ui-modern aside.right>.panel:nth-child(2),body.ui-modern aside.right>.panel:nth-child(3){display:none}',
+  /* cube de vue */
+  '#mfCube{position:absolute;top:4px;right:4px;z-index:24;width:80px;height:80px}',
+  '#mfCubeHome{position:absolute;top:2px;left:-18px;width:16px;height:16px;padding:0;font-size:10px;line-height:14px;border-radius:4px;background:rgba(40,44,52,.88)}'
+  ].join('\n');
+  document.head.appendChild(st);
+}
+/* ---------- bandeau : 🎨 thème + ▦ interface (les deux modes) ---------- */
+function mfPop(anchor,items){
+  document.querySelectorAll('.mfPop.mfTmp').forEach(p=>p.remove());
+  const p=document.createElement('div');p.className='mfPop mfTmp';
+  items.forEach(it=>{const b=document.createElement('button');b.innerHTML=it.html;if(it.cls)b.className=it.cls;if(it.data)Object.assign(b.dataset,it.data);b.onclick=e=>{e.stopPropagation();p.remove();it.fn();};p.appendChild(b);});
+  document.body.appendChild(p);
+  const r=anchor.getBoundingClientRect();p.style.top=(r.bottom+6+window.scrollY)+'px';p.style.left=Math.max(6,Math.min(window.innerWidth-p.offsetWidth-8,r.right-p.offsetWidth))+'px';
+  setTimeout(()=>{const off=ev=>{if(!p.contains(ev.target)){p.remove();document.removeEventListener('pointerdown',off,true);}};document.addEventListener('pointerdown',off,true);},0);
+  return p;
+}
+function mfTopButtons(){
+  const top=document.querySelector('.topbar');if(!top||document.getElementById('mfThemeBtn'))return;
+  const box=document.createElement('div');box.className='mfTop';box.id='mfTopBox';
+  const th=document.createElement('button');th.id='mfThemeBtn';th.innerHTML=mfI('theme',16);th.title='Couleurs de l’interface';
+  const SW={nuit:['#1c1c1e','#0a84ff'],graphite:['#2e2f32','#8ab4f8'],atelier:['#2a2520','#ff9f0a'],clair:['#e9ecf1','#0a6cff'],contraste:['#000','#00a8ff']};
+  th.onclick=e=>{e.stopPropagation();const cur=document.body.getAttribute('data-theme')||'nuit';
+    mfPop(th,MF_THEMES.map(([k,l])=>({html:'<span class="mfSw" style="background:linear-gradient(135deg,'+SW[k][0]+' 55%,'+SW[k][1]+' 55%)"></span>'+l,cls:'mfThemeOpt'+(k===cur?' on':''),data:{t:k},fn:()=>mfTheme(k)})));};
+  const ui=document.createElement('button');ui.id='mfUiBtn';ui.title='Interface : Classique (actuelle) ou Moderne (espaces CAO/FAO, ruban, recherche, barre d’état, cube de vue)';
+  ui.textContent=document.body.classList.contains('ui-modern')?'▦ Moderne':'▦ Classique';
+  ui.onclick=e=>{e.stopPropagation();const m=document.body.classList.contains('ui-modern');
+    mfPop(ui,[{html:'▦ Classique (actuelle)',cls:m?'':'on',fn:()=>mfUiMode('classique')},{html:'▦ Moderne',cls:m?'on':'',fn:()=>mfUiMode('moderne')}]);};
+  box.appendChild(th);box.appendChild(ui);
+  const pv=document.getElementById('prodVer');
+  if(pv&&pv.parentNode===top){top.insertBefore(box,pv.nextSibling);}else top.appendChild(box);
+}
+/* ---------- icônes au trait (SVG 24×24, couleur du thème) ---------- */
+const MF_IC={
+  sketch:'<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/>',
+  extrude:'<path d="M4 15l8 4 8-4M4 15v-4l8-4 8 4v4M12 19v-8M4 11l8 4 8-4"/><path d="M12 7V2M9.5 4.5L12 2l2.5 2.5"/>',
+  revolve:'<path d="M12 2v20" stroke-dasharray="2 2"/><ellipse cx="12" cy="13" rx="8" ry="3.2"/><path d="M17.5 8.5l2.2 2.4-3 .9"/>',
+  hole:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>',
+  body:'<path d="M12 3l8 4v10l-8 4-8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/>',
+  fillet:'<path d="M4 20V12a8 8 0 0 1 8-8h8"/><path d="M4 20h16V4" stroke-dasharray="2 2"/>',
+  chamfer:'<path d="M4 20V10l6-6h10"/><path d="M4 20h16V4" stroke-dasharray="2 2"/>',
+  face:'<path d="M3 8l6-3v12l-6 3z"/><path d="M12 11h9M18 8l3 3-3 3"/>',
+  draft:'<path d="M8 4h8l4 16H4z"/><path d="M12 4v16" stroke-dasharray="2 2"/>',
+  shell:'<path d="M3 6v14h18V6"/><path d="M7 6v10h10V6"/>',
+  pattern:'<rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/>',
+  combine:'<circle cx="9" cy="12" r="6"/><circle cx="15" cy="12" r="6"/>',
+  params:'<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+  import:'<path d="M12 3v11M8 10l4 4 4-4"/><path d="M4 16v4h16v-4"/>',
+  export:'<path d="M12 14V3M8 7l4-4 4 4"/><path d="M4 16v4h16v-4"/>',
+  new:'<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M12 11v6M9 14h6"/>',
+  open:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  saveas:'<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/><path d="M17 15l3 3"/>',
+  save:'<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>',
+  undo:'<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>',
+  redo:'<path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/>',
+  setup:'<path d="M3 19h18M6 19v-4h12v4"/><path d="M9 15V9h6v6"/><path d="M12 9V4" stroke-dasharray="2 2"/>',
+  tools:'<path d="M10 3h4v8l-1 2v8h-2v-8l-1-2z"/><path d="M10 6l4 1.5M10 9l4 1.5"/>',
+  facing:'<path d="M3 6h18v4H3v4h18v4H3"/>',
+  pocket:'<rect x="3" y="4" width="18" height="16" rx="3"/><rect x="7.5" y="8.5" width="9" height="7" rx="1.5"/>',
+  contour:'<rect x="6" y="7" width="12" height="10" rx="2"/><rect x="2.5" y="3.5" width="19" height="17" rx="4" stroke-dasharray="2.5 2"/>',
+  drill:'<path d="M10 3h4v9l-2 5-2-5z"/><path d="M10 6.5l4 1.5M10 9.5l4 1.5"/><path d="M5 21h14"/>',
+  rough3d:'<path d="M3 19l5-8 4 5 3-4 6 7z"/><path d="M3 14h4M14 9h7" stroke-dasharray="2 2"/>',
+  finish:'<path d="M3 15c2-5 4-5 6 0s4 5 6 0 4-5 6 0"/><path d="M3 9h18" stroke-dasharray="2 2"/>',
+  play:'<path d="M7 4l13 8-13 8z"/>',
+  rapid:'<path d="M13 2L5 13h6l-1 9 8-12h-6z"/>',
+  regen:'<path d="M20 11a8 8 0 0 0-14-5l-2 2M4 13a8 8 0 0 0 14 5l2-2"/><path d="M4 4v4h4M20 20v-4h-4"/>',
+  gcode:'<path d="M6 3h9l3 3v15H6z"/><path d="M9 10h6M9 13h6M9 16h4"/>',
+  theme:'<path d="M12 3a9 9 0 1 0 0 18c1.2 0 2-.8 2-2 0-1.3-1-1.6-1-2.6 0-1 .8-1.4 1.8-1.4H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/>'
+};
+function mfI(k,size){const p=MF_IC[k];if(!p)return null;return '<svg viewBox="0 0 24 24" width="'+(size||20)+'" height="'+(size||20)+'" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+p+'</svg>';}
+/* ---------- mode moderne ---------- */
+let mfBuilt=false;
+function mfClick(id){const b=document.getElementById(id);if(b){b.click();return true;}try{faceEl.textContent='Commande indisponible ici ('+id+').';}catch(e){}return false;}
+const MF_CAO=[
+  ['Esquisse',[['sketch','Esquisse','btnSketch']]],
+  ['Créer',[['extrude','Extrusion','btnExtrude'],['revolve','Révolution','btnRevolve'],['hole','Perçage','btnHole'],['body','Corps','btnBody']]],
+  ['Modifier',[['fillet','Congé','btnFillet'],['chamfer','Chanfrein','btnChamfer'],['face','Face','btnMoveFace'],['draft','Dépouille','btnDraft'],['shell','Coque','btnCoque']]],
+  ['Ensembles',[['pattern','Répétition','btnRepeat'],['combine','Combiner','btnCombine'],['params','Paramètres','btnParams']]],
+  ['Fichier',[['import','Importer','btnImport'],['export','STEP','btnExportStep'],['export','STL','btnExportStl'],['export','OBJ','btnExportObj']]],
+  ['Projet',[['new','Nouveau','btnNew'],['open','Ouvrir','btnLoad'],['saveas','Sous…','btnSaveAs']]]
+];
+const MF_FAO_ICON={facing:'facing',pocket:'pocket',contour:'contour',drill:'drill',rough3d:'rough3d',geofinish:'finish',pocket2:'pocket'};
+function mfFaoAdd(type,nm){
+  try{const op=faoOpDefaults(type);if(!op)return;const s=faoSetup();faoSnapshot('nouvelle opération « '+nm+' »');s.ops.push(op);faoChanged();faoSelectOp(s.id,op.id);}catch(e){}
+}
+function mfRibbon(){
+  const rb=document.createElement('div');rb.id='mfRibbon';rb.className='mfM';
+  const grp=(title,btns,cls)=>{const g=document.createElement('div');g.className='mfGrp '+cls;const bb=document.createElement('div');bb.className='mfGrpB';
+    btns.forEach(([ic,lab,act,tip])=>{const b=document.createElement('button');b.className='mfRb';b.innerHTML='<i>'+(mfI(ic,22)||ic)+'</i>'+lab;
+      const src=typeof act==='string'?document.getElementById(act):null;b.title=tip||(src&&src.title)||lab;
+      b.onclick=()=>{typeof act==='function'?act():mfClick(act);};bb.appendChild(b);});
+    g.appendChild(bb);const t=document.createElement('div');t.className='mfGrpT';t.textContent=title;g.appendChild(t);rb.appendChild(g);};
+  MF_CAO.forEach(([t,bs])=>grp(t,bs,'mfCao'));
+  // FAO : posage, opérations (mêmes fiches que la barre « + Usinage »), simulation, calcul, export
+  grp('Posage',[['setup','Posage',()=>{const b=Array.from(document.querySelectorAll('#faoTreeWrap button')).find(x=>/\+ Posage/.test(x.textContent));if(b)b.click();},'Ajouter un posage'],['tools','Outils','faoToolsBtn']],'mfFao');
+  let ops=[];try{ops=faoAddOpsSpec();}catch(e){}
+  grp('Opérations',ops.map(a=>{const nm=String(a[1]).replace(/^\+ /,'');return [MF_FAO_ICON[a[0]]||'pocket',nm,()=>mfFaoAdd(a[0],nm),'Ajouter « '+nm+' » au posage courant'];}),'mfFao');
+  grp('Simulation',[['play','Usinage','faoVwBtn'],['rapid','Rapides','faoRapBtn']],'mfFao');
+  grp('Calcul',[['regen','Régénérer','faoGenBtn','Tout régénérer']],'mfFao');
+  grp('Export',[['gcode','G-code','faoExportBtn']],'mfFao');
+  return rb;
+}
+function mfWs(w){
+  w=w==='fao'?'fao':'cao';
+  try{document.body.setAttribute('data-ws',w);}catch(e){}
+  mfLS('minifusion_ws',w);
+  document.querySelectorAll('[data-mfws]').forEach(b=>b.classList.toggle('on',b.dataset.mfws===w));
+  if(w==='fao'){try{const t=document.getElementById('faoToggle');const tw=document.getElementById('faoTreeWrap');if(tw&&tw.classList.contains('folded')&&t)t.click();}catch(e){}}
+  try{mfPosTabs();}catch(e){}
+}
+function mfCommands(){
+  // registre de la recherche : boutons des menus, du ruban et des commandes FAO
+  const out=[],seen=new Set();
+  const add=(label,fn,hint)=>{const k=label.toLowerCase();if(!label||seen.has(k))return;seen.add(k);out.push({label,fn,hint:hint||''});};
+  document.querySelectorAll('.ddMenu button').forEach(b=>{const l=(b.textContent||'').replace(/\s+/g,' ').trim();add(l,()=>b.click(),b.title);});
+  document.querySelectorAll('#mfRibbon .mfFao .mfRb').forEach(b=>{const l=(b.textContent||'').trim();add('FAO · '+l,()=>b.click(),b.title);}); // CAO : déjà dans les menus
+  [['Annuler','btnUndo'],['Rétablir','btnRedo'],['Enregistrer','btnSave'],['Régénérer le modèle','btnRebuild'],['Auto-tests','btnSelfTest'],['Tout afficher (cadrer)','btnFit'],['Réglages de visualisation','btnSettings']].forEach(([l,id])=>add(l,()=>mfClick(id)));
+  [['Vue iso','iso'],['Vue de dessus','top'],['Vue de face','front'],['Vue de droite','right']].forEach(([l,v])=>add(l,()=>{try{setView(v);}catch(e){}}));
+  [['Espace CAO','cao'],['Espace FAO','fao']].forEach(([l,w])=>add(l,()=>mfWs(w)));
+  MF_THEMES.forEach(([k,l])=>add('Thème : '+l,()=>mfTheme(k)));
+  add('Interface classique',()=>mfUiMode('classique'));
+  return out;
+}
+function mfSearchBox(){
+  const box=document.createElement('div');box.className='mfSearch mfM';
+  const inp=document.createElement('input');inp.id='mfSearch';inp.placeholder='Rechercher une commande…  Ctrl+K';
+  let res=null,list=[],idx=0;
+  const close=()=>{if(res){res.remove();res=null;}};
+  const draw=()=>{
+    const q=inp.value.trim().toLowerCase();close();if(!q)return;
+    const norm=s=>s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+    const nq=norm(q);
+    list=mfCommands().filter(c=>norm(c.label).indexOf(nq)>=0||norm(c.hint).indexOf(nq)>=0).slice(0,12);
+    if(!list.length)return;idx=Math.min(idx,list.length-1);
+    res=document.createElement('div');res.className='mfPop mfRes';
+    list.forEach((c,i)=>{const b=document.createElement('button');b.textContent=c.label;if(i===idx)b.className='on';b.title=c.hint;b.onmousedown=e=>{e.preventDefault();close();inp.value='';inp.blur();c.fn();};res.appendChild(b);});
+    box.appendChild(res);
+  };
+  inp.oninput=()=>{idx=0;draw();};
+  inp.onkeydown=e=>{
+    if(e.key==='ArrowDown'){idx=Math.min(idx+1,list.length-1);draw();e.preventDefault();}
+    else if(e.key==='ArrowUp'){idx=Math.max(idx-1,0);draw();e.preventDefault();}
+    else if(e.key==='Enter'){const c=list[idx];close();inp.value='';inp.blur();if(c)c.fn();}
+    else if(e.key==='Escape'){close();inp.value='';inp.blur();}
+    e.stopPropagation();
+  };
+  inp.onblur=()=>setTimeout(close,150);
+  box.appendChild(inp);
+  document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&(e.key==='k'||e.key==='K')&&document.body.classList.contains('ui-modern')){e.preventDefault();inp.focus();inp.select();}},true);
+  return box;
+}
+function mfPosTabs(){
+  // onglets de posages, en tête du panneau Usinage
+  const tw=document.getElementById('faoTreeWrap');if(!tw)return;
+  let bar=document.getElementById('mfPosTabs');
+  if(!bar){bar=document.createElement('div');bar.id='mfPosTabs';const tr=document.getElementById('faoTree');if(tr&&tr.parentNode)tr.parentNode.insertBefore(bar,tr);else tw.appendChild(bar);}
+  let r=null;try{r=faoRoot();}catch(e){}if(!r)return;
+  const sig=r.setups.map(s=>s.id+':'+s.name).join('|')+'#'+r.activeSetupId;
+  if(bar.dataset.sig===sig)return;bar.dataset.sig=sig;bar.innerHTML='';
+  r.setups.forEach(s=>{const b=document.createElement('button');b.textContent=s.name;b.title='Posage '+s.name+' — '+(s.machine||'');if(s.id===r.activeSetupId)b.className='on';b.onclick=()=>{try{faoSelectSetup(s.id);}catch(e){}mfPosTabs();};bar.appendChild(b);});
+  const p=document.createElement('button');p.textContent='＋';p.title='Ajouter un posage';p.onclick=()=>{const b=Array.from(document.querySelectorAll('#faoTreeWrap button')).find(x=>/\+ Posage/.test(x.textContent));if(b)b.click();bar.dataset.sig='';mfPosTabs();};bar.appendChild(p);
+}
+function mfStatusBar(){
+  const sb=document.createElement('div');sb.id='mfStatus';sb.className='mfM';
+  sb.innerHTML='<span id="mfStEng">Noyau…</span><span id="mfStMeas"></span><span class="mfSp"></span><span id="mfStSave"></span><button id="mfStRegen" title="Régénérer tout le modèle">⟳ Régénérer</button><span>mm</span><b id="mfStVer"></b>';
+  sb.querySelector('#mfStRegen').onclick=()=>mfClick('btnRebuild');
+  const upd=()=>{
+    if(!document.body.classList.contains('ui-modern'))return;
+    try{
+      const o=(document.getElementById('occtState')||{}).textContent||'';
+      const eng=/prêt/i.test(o)?('Noyau prêt · '+((typeof builtEngine!=='undefined'&&builtEngine)||'')):(o.replace(/^OCCT\s*:\s*/,'').slice(0,60));
+      document.getElementById('mfStEng').textContent=eng;
+      const f=((typeof faceEl!=='undefined'&&faceEl&&faceEl.textContent)||'').split('\n')[0];
+      document.getElementById('mfStMeas').textContent=f;
+      const st=(document.getElementById('stats')||{}).textContent||'';
+      document.getElementById('mfStSave').textContent=/non sauvé/.test(st)?'● non enregistré':(/sauvé/.test(st)?'✓ enregistré':'');
+      document.getElementById('mfStVer').textContent=(typeof APP_VER!=='undefined'?APP_VER:'');
+      mfPosTabs();
+    }catch(e){}
+  };
+  setInterval(upd,500);
+  return sb;
+}
+/* cube de vue : suit la caméra ; clic sur une face = vue depuis cette face */
+function mfViewDir(n){
+  try{
+    const t=controls.target.clone(),d=camera.position.distanceTo(t)||150;
+    camera.position.set(t.x+n[0]*d,t.y+n[1]*d,t.z+n[2]*d);
+    if(Math.abs(n[2])>0.99)camera.position.y-=d*1e-4; // dessus / dessous : léger biais (pas de pôle)
+    controls.update();
+  }catch(e){}
+}
+function mfCube(){
+  // petit rendu three.js séparé : cube étiqueté qui suit l'orientation de la caméra ; clic sur une face
+  const vp=document.getElementById('vpwrap');if(!vp||document.getElementById('mfCube'))return;
+  const c=document.createElement('div');c.id='mfCube';c.className='mfM';
+  const cv=document.createElement('canvas');cv.width=160;cv.height=160;cv.style.cssText='width:80px;height:80px;cursor:pointer';c.appendChild(cv);
+  const h=document.createElement('button');h.id='mfCubeHome';h.textContent='⌂';h.title='Vue iso (tout afficher)';h.onclick=()=>{try{setView('iso');}catch(e){}};c.appendChild(h);
+  vp.appendChild(c);
+  let rd=null;try{rd=new THREE.WebGLRenderer({canvas:cv,alpha:true,antialias:true});rd.setPixelRatio(1);rd.setSize(160,160,false);}catch(e){return;}
+  const sc=new THREE.Scene(),cam=new THREE.PerspectiveCamera(28,1,0.1,50);
+  // ordre des faces BoxGeometry : +X, −X, +Y, −Y, +Z, −Z ; rot = rotation du texte (Z monde vers le haut)
+  const FACES=[['DROITE',[1,0,0],Math.PI/2],['GAUCHE',[-1,0,0],-Math.PI/2],['ARRIÈRE',[0,1,0],Math.PI],['FACE',[0,-1,0],0],['DESSUS',[0,0,1],0],['DESSOUS',[0,0,-1],Math.PI]];
+  const mats=FACES.map(([l,,rot])=>{
+    const k=document.createElement('canvas');k.width=k.height=128;const x=k.getContext('2d');
+    x.fillStyle='#2c313a';x.fillRect(0,0,128,128);x.strokeStyle='rgba(255,255,255,.55)';x.lineWidth=6;x.strokeRect(3,3,122,122);
+    x.fillStyle='#e9e9ec';x.font='700 '+(l.length>6?19:22)+'px sans-serif';x.textAlign='center';x.textBaseline='middle';x.fillText(l,64,64);
+    const t=new THREE.CanvasTexture(k);t.center.set(0.5,0.5);t.rotation=rot;
+    return new THREE.MeshBasicMaterial({map:t});
+  });
+  const cube=new THREE.Mesh(new THREE.BoxGeometry(2,2,2),mats);sc.add(cube);
+  const ax=new THREE.AxesHelper(1.6);ax.position.set(-1.02,-1.02,-1.02);sc.add(ax);
+  let hov=-1;
+  const pickF=e=>{const r=cv.getBoundingClientRect();const v=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
+    const rc=new THREE.Raycaster();rc.setFromCamera(v,cam);const hh=rc.intersectObject(cube,false);return hh.length?hh[0].face.materialIndex:-1;};
+  cv.addEventListener('pointermove',e=>{hov=pickF(e);cv.title=hov>=0?'Vue '+FACES[hov][0].toLowerCase():'';});
+  cv.addEventListener('pointerleave',()=>{hov=-1;});
+  cv.addEventListener('click',e=>{const k=pickF(e);if(k>=0)mfViewDir(FACES[k][1]);});
+  const loop=()=>{
+    requestAnimationFrame(loop);
+    if(!document.body.classList.contains('ui-modern'))return;
+    try{
+      const d=camera.position.clone().sub(controls.target).normalize().multiplyScalar(7.5);
+      cam.position.copy(d);cam.up.copy(camera.up);cam.lookAt(0,0,0);
+      mats.forEach((m,i)=>m.color.set(i===hov?0x5aa9ff:0xffffff));
+      rd.render(sc,cam);
+    }catch(e){}
+  };
+  loop();
+}
+function mfBuildModern(){
+  if(mfBuilt)return;mfBuilt=true;
+  const top=document.querySelector('.topbar');if(!top)return;
+  const brand=top.querySelector('.brand');
+  // espaces + barre rapide + recherche, juste après le logo
+  const ws=document.createElement('div');ws.className='mfWs mfM';
+  [['cao','CAO','Modélisation : esquisses, solides'],['fao','FAO','Usinage : posages, opérations, simulation, G-code']].forEach(([k,l,t])=>{const b=document.createElement('button');b.textContent=l;b.title=t;b.dataset.mfws=k;b.onclick=()=>mfWs(k);ws.appendChild(b);});
+  const q=document.createElement('div');q.className='mfQuick mfM';
+  [['undo','Annuler (Ctrl+Z)','btnUndo'],['redo','Rétablir (Ctrl+Y)','btnRedo'],['save','Enregistrer','btnSave']].forEach(([ic,t,id])=>{const b=document.createElement('button');b.innerHTML=mfI(ic,18);b.title=t;b.onclick=()=>mfClick(id);q.appendChild(b);});
+  const sx=mfSearchBox();
+  const after=brand?brand.nextSibling:top.firstChild;
+  [ws,q,sx].forEach(n=>top.insertBefore(n,after));
+  // ruban sous le bandeau, barre d'état en bas
+  top.parentNode.insertBefore(mfRibbon(),top.nextSibling);
+  const lay=document.querySelector('.layout');
+  if(lay&&lay.parentNode)lay.parentNode.insertBefore(mfStatusBar(),lay.nextSibling);
+  // onglets du navigateur sur la vue
+  const vp=document.getElementById('vpwrap');
+  if(vp){const bt=document.createElement('div');bt.id='mfBrTabs';bt.className='mfM';
+    [['cao','Modèle'],['fao','Usinage']].forEach(([k,l])=>{const b=document.createElement('button');b.textContent=l;b.dataset.mfws=k;b.onclick=()=>mfWs(k);bt.appendChild(b);});
+    vp.appendChild(bt);}
+  mfCube();
+}
+(function(){
+  try{
+    mfCss();
+    mfTheme(mfLS('minifusion_theme')||'nuit');
+    // la scène 3D naît plus tard (src/10, à l'init) : elle appelle mf3D elle-même une fois créée
+    mfTopButtons();
+    if(mfLS('minifusion_ui')==='moderne')mfUiMode('moderne');
+  }catch(e){}
+})();
 
 /* ═══════════════ 98-demarrage-fondu.js — demarrage fondu ═══════════════ */
 /* ---------- Démarrage : attendre le noyau OCCT, puis faire apparaître la pièce en fondu (2026-10-16-015) ----------

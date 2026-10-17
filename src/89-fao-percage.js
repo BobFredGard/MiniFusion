@@ -30,6 +30,11 @@ function faoToolFr(t){
 /* ----- reconnaissance des trous ----- */
 let faoHoleCache={shape:null,list:null};
 function faoHoleShapes(){
+  // 2026-10-16-019 : solides tournés dans le repère du posage actif (trous « verticaux » = selon SON Z)
+  let Fr=null;try{Fr=faoFrameCur||faoFrame(faoSetup());}catch(e){}
+  return faoHoleShapesW().map(function(s){return (Fr&&!Fr.id)?faoShapeToF(s,Fr):s;});
+}
+function faoHoleShapesW(){
   const out=[];
   try{ if(typeof occLive!=='undefined'&&occLive&&occLive.shape)out.push(occLive.shape); }catch(e){}
   try{
@@ -356,7 +361,7 @@ function faoHolePickStart(setupId,opId){
 }
 function faoHolePickExit(){
   faoHolePick=null;
-  try{const o=scene.getObjectByName('faoHoleMarks');if(o)scene.remove(o);}catch(e){}
+  try{const o=faoGet3D('faoHoleMarks');if(o)faoDel3D(o);}catch(e){}
   try{renderer.domElement.style.cursor='default';}catch(e){}
   try{faoRefreshFaoUI();}catch(e){}
 }
@@ -365,8 +370,11 @@ function faoHolePickAt(e){
   if(!faoHolePick)return false;
   const setup=faoSetup(faoHolePick.setupId),op=(setup.ops||[]).find(function(o){return o.id===faoHolePick.opId;});
   if(!op){faoHolePickExit();return false;}
-  const h=pick(e);if(!h)return false;
-  const holes=faoHolesDetect();
+  const h0=pick(e);if(!h0)return false;
+  const Fr=faoOpFrameOf(setup.id,op.id),hq=Fr.id?[h0.point.x,h0.point.y,h0.point.z]:faoToF(Fr,[h0.point.x,h0.point.y,h0.point.z]);
+  const h={point:{x:hq[0],y:hq[1],z:hq[2]}}; // point cliqué en repère de l'opération (sinon du posage)
+  const kF=faoFrameCur;faoFrameCur=Fr.id?null:Fr;let holes=[];
+  try{holes=faoHolesDetect();}finally{faoFrameCur=kF;}
   let best=null,bd=Infinity;
   holes.forEach(function(H){
     if(h.point.z>H.zSurf+0.5||h.point.z<H.zbot-0.5)return;
@@ -412,7 +420,7 @@ function faoHoleToggle(setup,op,d,z){
 function faoHoleMarks(){
   // Anneaux sur les trous reconnus : gris = disponibles, orange = sélectionnés.
   try{
-    const old=scene.getObjectByName('faoHoleMarks');if(old)scene.remove(old);
+    const old=faoGet3D('faoHoleMarks');if(old)faoDel3D(old);
     if(!faoHolePick)return;
     const setup=faoSetup(faoHolePick.setupId),op=(setup.ops||[]).find(function(o){return o.id===faoHolePick.opId;});
     const grp=new THREE.Group();grp.name='faoHoleMarks';
@@ -422,7 +430,7 @@ function faoHoleMarks(){
     faoHolesDetect().forEach(function(H){(op&&faoHoleInSel(op,H)?on:off).push.apply(op&&faoHoleInSel(op,H)?on:off,segOf(H,H.d/2+0.6));});
     if(off.length)grp.add(faoThickSegs(off,0x8e8e93,1,2));
     if(on.length)grp.add(faoThickSegs(on,0xff9f0a,1,3));
-    scene.add(grp);
+    faoAdd3D(grp);
   }catch(e){}
 }
 /* ----- fiche : sections Trous + Cycle ----- */
@@ -467,7 +475,7 @@ function faoDrillSections(setup,op,d){
     rd.appendChild(faoLab('Profondeur'));
     rd.appendChild(faoSel([['full','Plein Ø au fond du trou'],['tip','Pointe au fond'],['manual','Cote manuelle']],op.depthMode||'full',function(v){op.depthMode=v;},
       'Plein Ø : la pointe descend en plus de sa longueur (angle du foret) · Pointe au fond : la pointe s’arrête au fond · Cote manuelle : Z de pointe saisi'));
-    if((op.depthMode||'full')==='manual'){rd.appendChild(faoLab('Z')); rd.appendChild(faoNum(op.zbot,function(v){op.zbot=v;},52,null,'Z de la pointe (mm)'));}
+    if((op.depthMode||'full')==='manual'){rd.appendChild(faoLab('Z')); rd.appendChild(faoNum(faoDsp(op,op.zbot,2),function(v){op.zbot=faoInp(op,v,2);},52,null,'Z de la pointe (mm)'));}
     rd.appendChild(faoLab('Débouchage'));
     rd.appendChild(faoNum(isFinite(+op.brk)?+op.brk:1,function(v){op.brk=Math.max(0,v);},44,0.5,'Trous débouchants : dépassement sous la pièce (mm)'));
   }
@@ -530,8 +538,8 @@ function faoDrillSections(setup,op,d){
       const lst=String(v).split(';').map(function(s){const q=s.split(',').map(function(x){return parseFloat(x);});
         return (q.length>=2&&isFinite(q[0])&&isFinite(q[1]))?[q[0],q[1]]:null;}).filter(function(q){return q;});
       op.pts=lst;},150,'Points X,Y séparés par « ; »'));
-    rp.appendChild(faoLab('Haut'));rp.appendChild(faoNum(op.ztop,function(v){op.ztop=v;},52));
-    rp.appendChild(faoLab('Bas'));rp.appendChild(faoNum(op.zbot,function(v){op.zbot=v;},52));
+    rp.appendChild(faoLab('Haut'));rp.appendChild(faoNum(faoDsp(op,op.ztop,2),function(v){op.ztop=faoInp(op,v,2);},52));
+    rp.appendChild(faoLab('Bas'));rp.appendChild(faoNum(faoDsp(op,op.zbot,2),function(v){op.zbot=faoInp(op,v,2);},52));
     d.appendChild(rp);
   }
 }

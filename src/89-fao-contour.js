@@ -228,8 +228,8 @@ function faoContourRows(d,setup,op){
   }
   d.appendChild(faoH('Hauteurs (mm)'));
   const rZ=faoRow();
-  rZ.appendChild(faoLab('Haut')); rZ.appendChild(faoNum(op.ztop,function(v){op.ztop=v;},56,null,'Haut de la paroi usinée (dessus du brut par défaut).'));
-  rZ.appendChild(faoLab('Bas')); rZ.appendChild(faoNum(op.zbot,function(v){op.zbot=v;},56,null,'Bas de la paroi (arête la plus basse du profil par défaut).'));
+  rZ.appendChild(faoLab('Haut')); rZ.appendChild(faoNum(faoDsp(op,op.ztop,2),function(v){op.ztop=faoInp(op,v,2);},56,null,'Haut de la paroi usinée (dessus du brut par défaut).'));
+  rZ.appendChild(faoLab('Bas')); rZ.appendChild(faoNum(faoDsp(op,op.zbot,2),function(v){op.zbot=faoInp(op,v,2);},56,null,'Bas de la paroi (arête la plus basse du profil par défaut).'));
   d.appendChild(rZ);
   d.appendChild(faoH('Passes (mm)'));
   const rP=faoRow();

@@ -118,6 +118,25 @@ function renderTree(){
     t.appendChild(d);
   };
   if(gfold('origin','⬒ Origine · Z↑ haut · Y arrière')){
+    // 2026-10-16-017 : le REPÈRE (point + 3 axes + 3 plans cliquables) en tête du groupe Origine
+    {
+      const on=!!(axHelper&&axHelper.visible);
+      const d=document.createElement('div');
+      d.className='tnode'+(on?'':' hidden');
+      d.title='Repère de l’origine : point central, axes X/Y/Z et 3 plans cliquables (un clic sur un plan le sélectionne) · 👁 = montrer/masquer';
+      d.innerHTML=`<span class="pdot" style="background:#fff;box-shadow:0 0 0 2px #1c1c1e inset"></span><span class="nm">Repère <span style="color:var(--muted)">· X Y Z + plans</span></span><span class="eye" title="Afficher / masquer le repère">${on?'👁':'🙈'}</span>`;
+      d.onclick=ev=>{
+        if(ev.target&&ev.target.classList&&ev.target.classList.contains('eye')){
+          const v=!(axHelper&&axHelper.visible);
+          if(axHelper)axHelper.visible=v;
+          try{const o=$('optAxes');if(o){o.checked=v;}}catch(e){}
+          try{markDirty();}catch(e){}
+          renderTree();return;
+        }
+        try{faceEl.textContent='Repère de l’origine : cliquez un de ses 3 petits plans dans la vue pour le sélectionner (esquisse dessus, référence).';}catch(e){}
+      };
+      t.appendChild(d);
+    }
     ['XY','XZ','YZ'].forEach(p=>{
       const d=document.createElement('div');
       d.className='tnode'+(sel.kind==='plane'&&sel.id===p?' sel':'')+(originVis[p]?'':' hidden');
