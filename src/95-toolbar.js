@@ -132,14 +132,19 @@ if($('fileWasm'))$('fileWasm').addEventListener('change',async e=>{
 try{if($('optMirror')){$('optMirror').checked=mirrorOn;$('optMirror').onchange=()=>{mirrorOn=$('optMirror').checked;try{localStorage.setItem('minifusion_mirror',mirrorOn?'on':'off');}catch(e){}refreshMirror();};}}catch(e){}
 try{if($('optAxes')){$('optAxes').checked=axHelper?axHelper.visible:true;$('optAxes').onchange=()=>{if(axHelper)axHelper.visible=$('optAxes').checked;markDirty();try{renderTree();}catch(e){}};}}catch(e){}
 try{if($('optZoomInv')){$('optZoomInv').checked=zoomInv;$('optZoomInv').onchange=()=>{zoomInv=$('optZoomInv').checked;if(controls)controls.zoomSpeed=zoomInv?-1:1;try{localStorage.setItem('minifusion_zoominv',zoomInv?'on':'off');}catch(e){}markDirty();};}}catch(e){}
-if($('btnNew'))$('btnNew').onclick=()=>{
-  if(!confirm('Nouveau modèle ? Le document courant non sauvé sera perdu.'))return;
+function docResetEmpty(){
+  // V0.2.3 : remise à zéro COMPLÈTE de l'espace (modes, esquisse, FAO, sélection, caches) —
+  // utilisée par « Nouveau » et avant chaque ouverture de fichier (src/97-fichiers-projets.js)
   try{exitFilletMode(true);}catch(e){}
   if(skEdit)closeSketch(false);
   doc={name:'Sans titre',tint:0,sketches:[],features:[],bodyVis:{},bodies:[],bodySeq:1,activeBody:null};
   try{ if(typeof faoReset==='function')faoReset(); }catch(e){} // FAO : traces, posages et mode lecture à zéro
   sel={kind:null,id:null};selFaces=[];fileHandle=null;uidN=0;builtHash=null;builtEngine=null;builtVersion=-1;
   try{occCkClear();}catch(e){}
+}
+if($('btnNew'))$('btnNew').onclick=()=>{
+  if(!confirm('Nouveau modèle ? Le document courant non sauvé sera perdu.'))return;
+  docResetEmpty();
   markDirty();rebuild();renderProps();showAll();
   faceEl.textContent='Nouveau modèle. Créez une esquisse.';
 };

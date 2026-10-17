@@ -27,7 +27,7 @@ const vm=require('vm');
     "showAll=function(){};",
     "const btn=document.getElementById('btnNew');",
     "att(typeof btn.onclick==='function','btnNew clicable');",
-    "btn.onclick();",
+    "mffAsk=async function(){return 'drop';};await btn.onclick();", // V0.2.3 : Nouveau demande Enregistrer / Ne pas enregistrer → « Ne pas enregistrer »
     // --- après : tout à zéro
     "att(faoVw===null,'apres : mode lecture usinage ferme');",
     "att(faoToolsWin===null,'apres : fenetre outils fermee');",

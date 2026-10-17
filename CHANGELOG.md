@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**266 versions**, de `2026-09-28b` à `V0.2.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**267 versions**, de `2026-09-28b` à `V0.2.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4026,3 +4026,10 @@ Nouveau `src/97-interface-moderne.js`, nouveau test `test_interface_moderne` (28
 - **Bouton de rabat du panneau Usinage** (moderne) : copié sur celui de l'arbre (bord gauche, même forme, même place) ; il ne saute plus au milieu de la vue une fois replié.
 - **Thème Clair** : menus contextuels (arbre, pièce 3D, esquisse, bulles FAO) sur fond clair, lisibles ; fiche FAO et panneau Usinage lisibles (libellés, onglets, champs, cartes).
 - Panneaux « Mesure » / « État » masqués en moderne repérés par leur titre (l'insertion du panneau d'esquisse décalait le repérage par rang).
+
+## V0.2.3 — Fichiers façon logiciel : ouvrir, enregistrer (même fichier), enregistrer sous, récents, dossier de projets
+- **Accès au disque** (Chrome / Edge, Windows et Mac — API d'accès aux fichiers) : vraies fenêtres **Ouvrir** et **Enregistrer sous** ; l'application garde le lien vers le fichier → **Enregistrer** (et `Ctrl+S`) **réécrit le même fichier**, sans nouvelle question ni suffixe « (1) ». **Ouvrir récent** (8 derniers fichiers, liens mémorisés) ; **Dossier de projets** : on choisit une fois le dossier des pièces, la liste de ses `.miniFusion` (triée par date) s'affiche, double-clic = ouvrir, « Enregistrer ici ». Permission redemandée par le navigateur une fois par session. Firefox / Safari : repli (sélecteur pour ouvrir, téléchargement pour enregistrer).
+- **Ouvrir / Nouveau** : si la pièce a des modifications non enregistrées → **Enregistrer / Ne pas enregistrer / Annuler** ; puis l'espace est **vidé** (modes, esquisse, simulation, FAO, sélection, caches — `docResetEmpty`) avant de charger la nouvelle pièce, cadrée.
+- **Bandeau** : nom du fichier + point « ● » tant que des modifications ne sont pas enregistrées (titre de l'onglet aussi). Interface moderne : **tous les boutons de fichier à côté d'« Enregistrer »** (Nouveau, Ouvrir, Ouvrir récent, Enregistrer, Enregistrer sous, Dossier de projets) ; le groupe « Projet » quitte le ruban. Classique : menu Projet + « Ouvrir récent… » et « Dossier de projets… ». Raccourcis `Ctrl+S`, `Ctrl+Maj+S`, `Ctrl+O`.
+- **Esquisse** : menu contextuel — « Coïncident (point sur la droite) » pour point + ligne, « Coïncident (point sur le cercle / l'arc) » pour point + courbe ; le menu se **ferme au clic suivant**, dedans comme dehors.
+Nouveau `src/97-fichiers-projets.js` ; `test_coincident_contrainte` complété (entrées du menu contextuel) ; `test_fao_reset` adapté (Nouveau asynchrone, réponse « Ne pas enregistrer »).

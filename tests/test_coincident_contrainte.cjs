@@ -20,9 +20,17 @@ const r=vm.runInContext(`(function(){const o={};
   skSel={kind:'point',pid:'d'};skSelX=[{kind:'ent',id:'k'}];applyCon('coincident');
   o.oncircle=sk.constraints.some(c=>c.type==='oncircle'&&c.p==='d'&&c.ent==='k');
   o.dR=Math.hypot(sk.points.d.x-30,sk.points.d.y)-5;
+  // menu contextuel : Coïncident proposé pour point + ligne et point + cercle
+  const lab=()=>{const m=document.getElementById('skCtxMenu');const t=[];(function w(n){(n.children||[]).forEach(c=>{if(c.tagName==='BUTTON')t.push(c.textContent);w(c);});})(m);return t.join(' | ');};
+  document.getElementById('skCtxMenu').children=[];
+  skSel={kind:'point',pid:'q'};skSelX=[{kind:'ent',id:'l'}];showSkCtx(10,10);o.menuL=lab();
+  document.getElementById('skCtxMenu').children=[];
+  skSel={kind:'point',pid:'q'};skSelX=[{kind:'ent',id:'k'}];showSkCtx(10,10);o.menuC=lab();
   return o;})()`,ctx);
 A(r.online&&Math.abs(r.py)<1e-6,'1 point + 1 ligne : contrainte « point sur droite », point ramené sur la droite (y='+r.py.toFixed(6)+')');
 A(Math.abs(r.beyond[1])<1e-6&&r.beyond[0]>10,'le point glisse AU-DELÀ du segment (x='+r.beyond[0].toFixed(3)+', y='+r.beyond[1].toFixed(6)+')');
 A(r.pp,'2 points : coïncidence point/point');
 A(r.oncircle&&Math.abs(r.dR)<1e-6,'1 point + 1 cercle : point sur le cercle (écart '+r.dR.toExponential(1)+')');
+A(/Coïncident \(point sur la droite\)/.test(r.menuL),'menu contextuel point + ligne : « Coïncident (point sur la droite) »');
+A(/Coïncident \(point sur le cercle\)/.test(r.menuC),'menu contextuel point + cercle : « Coïncident (point sur le cercle) »');
 console.log(ko?'\n*** '+ko+' PROBLEME(S) ***':'\n*** TOUT PASSE ***');process.exit(ko?1:0);

@@ -326,7 +326,9 @@ svg.addEventListener('contextmenu',e=>{
 document.addEventListener('click',e=>{
   if(e.button!==undefined&&e.button!==0)return; // le relâchement du clic droit (button 2, Chrome le fait suivre d'un click) ne doit jamais refermer le menu qu'il vient d'ouvrir
   const m=$('skCtxMenu'); if(!m||m.style.display==='none') return;
-  if(!m.contains(e.target) && e.target!==svg) hideSkCtx();
+  // V0.2.2 : le PROCHAIN clic gauche ferme le menu, dedans (l'entrée choisie a déjà agi) comme
+  // dehors — y compris sur la zone de dessin
+  hideSkCtx();
 });
 function skEntPids(e){
   if(!e)return[];
@@ -1111,12 +1113,15 @@ function showSkCtx(x,y){
       const p=skEdit.points[pts[0]], l=lines[0], A=skEdit.points[l.p1], B=skEdit.points[l.p2];
       if(p&&A&&B){ const d=distSeg(p.x,p.y,A,B); skPushUndo(); skEdit.dims.push({id:skNewEid(skEdit),type:'distline',line:l.id,p:pts[0],value:+d.toFixed(2)}); afterEdit(); }
     });
+    // V0.2.2 : coïncident point / droite (le point glisse sur toute la droite, prolongement compris)
+    add('⌾ Coïncident (point sur la droite)',()=>applyCon('coincident'));
     add('⊕ Milieu (point au centre)',()=>applyCon('midpoint'));
     add('📌 Fixe',()=>applyCon('fix')); has=true;
   }
   // point + cercle/arc
   if(pts.length===1 && (circles.length===1||arcs.length===1)){
     const c=circles[0]||arcs[0];
+    if(c&&c.pc!==pts[0])add('⌾ Coïncident (point sur '+(circles.length?'le cercle':'l’arc')+')',()=>applyCon('coincident'));
     if(c&&c.pc!==pts[0])add('⌾ Coïncident centre–point',()=>{ skPushUndo(); skEdit.constraints.push({id:skNewEid(skEdit),type:'coincident',a:c.pc,b:pts[0]}); afterEdit(); skStatus('Centre et point coïncidents ⌾.'); });
     add('📌 Fixe',()=>applyCon('fix')); has=true;
   }

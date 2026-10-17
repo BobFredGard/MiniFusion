@@ -102,6 +102,7 @@ function mfCss(){
   '.mfWs button{padding:4px 14px;font-size:.78rem;border:none;background:none;border-radius:7px}',
   '.mfWs button.on{background:var(--primary);color:#fff}',
   '.mfQuick button{padding:4px 9px;font-size:.85rem;background:none;border:1px solid transparent}',
+  '.mfQsep{width:1px;align-self:stretch;margin:3px 4px;background:var(--border)}',
   '.mfSearch{position:relative;flex:1;max-width:340px}',
   '.mfSearch input{width:100%;padding:6px 10px;border-radius:8px;font-size:.8rem;background:rgba(127,127,127,.12);border:1px solid var(--border);color:var(--text)}',
   '.mfRes{position:absolute;top:calc(100% + 4px);left:0;right:0;max-height:340px;overflow:auto}',
@@ -237,6 +238,8 @@ const MF_IC={
   rapid:'<path d="M13 2L5 13h6l-1 9 8-12h-6z"/>',
   regen:'<path d="M20 11a8 8 0 0 0-14-5l-2 2M4 13a8 8 0 0 0 14 5l2-2"/><path d="M4 4v4h4M20 20v-4h-4"/>',
   gcode:'<path d="M6 3h9l3 3v15H6z"/><path d="M9 10h6M9 13h6M9 16h4"/>',
+  recent:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  folder:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 10h18"/>',
   theme:'<path d="M12 3a9 9 0 1 0 0 18c1.2 0 2-.8 2-2 0-1.3-1-1.6-1-2.6 0-1 .8-1.4 1.8-1.4H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/>'
 };
 function mfI(k,size){const p=MF_IC[k];if(!p)return null;return '<svg viewBox="0 0 24 24" width="'+(size||20)+'" height="'+(size||20)+'" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+p+'</svg>';}
@@ -248,8 +251,7 @@ const MF_CAO=[
   ['Créer',[['extrude','Extrusion','btnExtrude'],['revolve','Révolution','btnRevolve'],['hole','Perçage','btnHole'],['body','Corps','btnBody']]],
   ['Modifier',[['fillet','Congé','btnFillet'],['chamfer','Chanfrein','btnChamfer'],['face','Face','btnMoveFace'],['draft','Dépouille','btnDraft'],['shell','Coque','btnCoque']]],
   ['Ensembles',[['pattern','Répétition','btnRepeat'],['combine','Combiner','btnCombine'],['params','Paramètres','btnParams']]],
-  ['Fichier',[['import','Importer','btnImport'],['export','STEP','btnExportStep'],['export','STL','btnExportStl'],['export','OBJ','btnExportObj']]],
-  ['Projet',[['new','Nouveau','btnNew'],['open','Ouvrir','btnLoad'],['saveas','Sous…','btnSaveAs']]]
+  ['Fichier',[['import','Importer','btnImport'],['export','STEP','btnExportStep'],['export','STL','btnExportStl'],['export','OBJ','btnExportObj']]]
 ];
 const MF_FAO_ICON={facing:'facing',pocket:'pocket',contour:'contour',drill:'drill',rough3d:'rough3d',geofinish:'finish',pocket2:'pocket'};
 function mfFaoAdd(type,nm){
@@ -457,7 +459,12 @@ function mfBuildModern(){
   const ws=document.createElement('div');ws.className='mfWs mfM';
   [['cao','CAO','Modélisation : esquisses, solides'],['fao','FAO','Usinage : posages, opérations, simulation, G-code']].forEach(([k,l,t])=>{const b=document.createElement('button');b.textContent=l;b.title=t;b.dataset.mfws=k;b.onclick=()=>mfWs(k);ws.appendChild(b);});
   const q=document.createElement('div');q.className='mfQuick mfM';
-  [['undo','Annuler (Ctrl+Z)','btnUndo'],['redo','Rétablir (Ctrl+Y)','btnRedo'],['save','Enregistrer','btnSave']].forEach(([ic,t,id])=>{const b=document.createElement('button');b.innerHTML=mfI(ic,18);b.title=t;b.onclick=()=>mfClick(id);q.appendChild(b);});
+  [['undo','Annuler (Ctrl+Z)','btnUndo'],['redo','Rétablir (Ctrl+Y)','btnRedo']].forEach(([ic,t,id])=>{const b=document.createElement('button');b.innerHTML=mfI(ic,18);b.title=t;b.onclick=()=>mfClick(id);q.appendChild(b);});
+  // V0.2.3 : TOUS les boutons de fichier à côté d'« Enregistrer » (src/97-fichiers-projets.js)
+  const sp=document.createElement('span');sp.className='mfQsep';q.appendChild(sp);
+  [['new','Nouveau projet',()=>mffNew()],['open','Ouvrir… (Ctrl+O)',()=>mffOpen()],['recent','Ouvrir récent',e=>mffRecentMenu(e.currentTarget)],
+   ['save','Enregistrer (Ctrl+S)',()=>mffSave()],['saveas','Enregistrer sous… (Ctrl+Maj+S)',()=>mffSaveAs()],['folder','Dossier de projets',()=>mffFolderPanel()]].forEach(([ic,t,fn])=>{
+    const b=document.createElement('button');b.innerHTML=mfI(ic,18);b.title=t;b.onclick=e=>{e.stopPropagation();fn(e);};q.appendChild(b);});
   const sx=mfSearchBox();
   const after=brand?brand.nextSibling:top.firstChild;
   [ws,q,sx].forEach(n=>top.insertBefore(n,after));

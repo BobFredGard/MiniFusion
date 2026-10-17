@@ -273,7 +273,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.2.2';
+const APP_VER='V0.2.3';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -10876,7 +10876,9 @@ svg.addEventListener('contextmenu',e=>{
 document.addEventListener('click',e=>{
   if(e.button!==undefined&&e.button!==0)return; // le relâchement du clic droit (button 2, Chrome le fait suivre d'un click) ne doit jamais refermer le menu qu'il vient d'ouvrir
   const m=$('skCtxMenu'); if(!m||m.style.display==='none') return;
-  if(!m.contains(e.target) && e.target!==svg) hideSkCtx();
+  // V0.2.2 : le PROCHAIN clic gauche ferme le menu, dedans (l'entrée choisie a déjà agi) comme
+  // dehors — y compris sur la zone de dessin
+  hideSkCtx();
 });
 function skEntPids(e){
   if(!e)return[];
@@ -11661,12 +11663,15 @@ function showSkCtx(x,y){
       const p=skEdit.points[pts[0]], l=lines[0], A=skEdit.points[l.p1], B=skEdit.points[l.p2];
       if(p&&A&&B){ const d=distSeg(p.x,p.y,A,B); skPushUndo(); skEdit.dims.push({id:skNewEid(skEdit),type:'distline',line:l.id,p:pts[0],value:+d.toFixed(2)}); afterEdit(); }
     });
+    // V0.2.2 : coïncident point / droite (le point glisse sur toute la droite, prolongement compris)
+    add('⌾ Coïncident (point sur la droite)',()=>applyCon('coincident'));
     add('⊕ Milieu (point au centre)',()=>applyCon('midpoint'));
     add('📌 Fixe',()=>applyCon('fix')); has=true;
   }
   // point + cercle/arc
   if(pts.length===1 && (circles.length===1||arcs.length===1)){
     const c=circles[0]||arcs[0];
+    if(c&&c.pc!==pts[0])add('⌾ Coïncident (point sur '+(circles.length?'le cercle':'l’arc')+')',()=>applyCon('coincident'));
     if(c&&c.pc!==pts[0])add('⌾ Coïncident centre–point',()=>{ skPushUndo(); skEdit.constraints.push({id:skNewEid(skEdit),type:'coincident',a:c.pc,b:pts[0]}); afterEdit(); skStatus('Centre et point coïncidents ⌾.'); });
     add('📌 Fixe',()=>applyCon('fix')); has=true;
   }
@@ -32802,14 +32807,19 @@ if($('fileWasm'))$('fileWasm').addEventListener('change',async e=>{
 try{if($('optMirror')){$('optMirror').checked=mirrorOn;$('optMirror').onchange=()=>{mirrorOn=$('optMirror').checked;try{localStorage.setItem('minifusion_mirror',mirrorOn?'on':'off');}catch(e){}refreshMirror();};}}catch(e){}
 try{if($('optAxes')){$('optAxes').checked=axHelper?axHelper.visible:true;$('optAxes').onchange=()=>{if(axHelper)axHelper.visible=$('optAxes').checked;markDirty();try{renderTree();}catch(e){}};}}catch(e){}
 try{if($('optZoomInv')){$('optZoomInv').checked=zoomInv;$('optZoomInv').onchange=()=>{zoomInv=$('optZoomInv').checked;if(controls)controls.zoomSpeed=zoomInv?-1:1;try{localStorage.setItem('minifusion_zoominv',zoomInv?'on':'off');}catch(e){}markDirty();};}}catch(e){}
-if($('btnNew'))$('btnNew').onclick=()=>{
-  if(!confirm('Nouveau modèle ? Le document courant non sauvé sera perdu.'))return;
+function docResetEmpty(){
+  // V0.2.3 : remise à zéro COMPLÈTE de l'espace (modes, esquisse, FAO, sélection, caches) —
+  // utilisée par « Nouveau » et avant chaque ouverture de fichier (src/97-fichiers-projets.js)
   try{exitFilletMode(true);}catch(e){}
   if(skEdit)closeSketch(false);
   doc={name:'Sans titre',tint:0,sketches:[],features:[],bodyVis:{},bodies:[],bodySeq:1,activeBody:null};
   try{ if(typeof faoReset==='function')faoReset(); }catch(e){} // FAO : traces, posages et mode lecture à zéro
   sel={kind:null,id:null};selFaces=[];fileHandle=null;uidN=0;builtHash=null;builtEngine=null;builtVersion=-1;
   try{occCkClear();}catch(e){}
+}
+if($('btnNew'))$('btnNew').onclick=()=>{
+  if(!confirm('Nouveau modèle ? Le document courant non sauvé sera perdu.'))return;
+  docResetEmpty();
   markDirty();rebuild();renderProps();showAll();
   faceEl.textContent='Nouveau modèle. Créez une esquisse.';
 };
@@ -33451,6 +33461,265 @@ function runValidate(){
 // 2026-10-15-009 : plus de bouton « ✓ Valider » séparé — runValidate() EST l'action du
 // bouton unique « ⟳ Régénérer » (src/95), qui remplace Recalculer / Valider / Hard.
 
+/* ═══════════════ 97-fichiers-projets.js — fichiers projets ═══════════════ */
+/* ---------- Fichiers : ouvrir / enregistrer / enregistrer sous, récents, dossier de projets (V0.2.3) ----------
+   Un navigateur n'écrit pas où il veut sur le disque. Chrome et Edge (Windows, Mac) offrent
+   l'API d'accès aux fichiers : vraies fenêtres « Ouvrir » / « Enregistrer sous » du système, et
+   l'application GARDE le lien vers le fichier → Ctrl+S réécrit le même fichier, sans question.
+   Les liens (fichiers récents, dossier de projets) sont mémorisés dans IndexedDB ; le navigateur
+   redemande la permission une fois par session (un clic). Firefox / Safari : repli (sélecteur
+   de fichier pour ouvrir, téléchargement pour enregistrer).
+   Ouvrir / Nouveau : si la pièce a des modifications non enregistrées → Enregistrer / Ne pas
+   enregistrer / Annuler, puis l'espace est VIDÉ (docResetEmpty) avant de charger. */
+const MFF_FS=typeof window!=='undefined'&&typeof window.showOpenFilePicker==='function';
+const MFF_TYPES=[{description:'Projet MiniFusion',accept:{'application/json':['.miniFusion','.json']}}];
+let mffHandle=null,mffName='',mffSavedSig=null,mffFolder=null;
+function mffSig(){
+  // empreinte du DOCUMENT (sans la vue, la sélection ni les replis) : « modifié depuis l'enregistrement »
+  try{const o=JSON.parse(serialise(false));delete o.view;delete o.sel;delete o.fold;delete o.originVis;const s=JSON.stringify(o);
+    let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return (h>>>0).toString(36)+'_'+s.length;}catch(e){return '';}
+}
+function mffModified(){
+  try{const empty=!(doc.sketches||[]).length&&!(doc.features||[]).length;
+    if(mffSavedSig===null)return !empty;return mffSig()!==mffSavedSig;}catch(e){return false;}
+}
+function mffMark(){mffSavedSig=mffSig();mffTitle();}
+function mffTitle(){
+  try{
+    const nm=mffName||((doc&&doc.name)||'Sans titre');const mod=mffModified();
+    const el=document.getElementById('mffName');
+    if(el){el.textContent=(mod?'● ':'')+nm;el.title=(mffHandle?'Fichier : '+mffHandle.name:'Pas encore de fichier sur le disque')+(mod?' — modifications non enregistrées':' — enregistré');el.classList.toggle('mod',mod);}
+    document.title=(mod?'● ':'')+nm+' — MiniFusion';
+  }catch(e){}
+}
+/* ---- boîte de dialogue « Enregistrer les modifications ? » ---- */
+function mffAsk(msg,buttons){
+  // buttons : [[valeur, libellé, primaire?]] → Promise(valeur) ; Échap = 'cancel'
+  return new Promise(res=>{
+    const bg=document.createElement('div');bg.className='mffDlgBg';
+    const d=document.createElement('div');d.className='mffDlg';
+    const p=document.createElement('div');p.className='mffMsg';p.textContent=msg;d.appendChild(p);
+    const row=document.createElement('div');row.className='mffBtns';
+    const done=v=>{document.removeEventListener('keydown',key,true);bg.remove();res(v);};
+    buttons.forEach(([v,l,pr])=>{const b=document.createElement('button');b.textContent=l;if(pr)b.className='primary';b.onclick=()=>done(v);row.appendChild(b);});
+    d.appendChild(row);bg.appendChild(d);document.body.appendChild(bg);
+    const key=e=>{if(e.key==='Escape'){e.preventDefault();done('cancel');}};
+    document.addEventListener('keydown',key,true);
+    setTimeout(()=>{try{row.querySelector('.primary').focus();}catch(e){}},0);
+  });
+}
+async function mffConfirmDiscard(){
+  // true = on peut remplacer la pièce courante
+  if(!mffModified())return true;
+  const nm=mffName||doc.name||'Sans titre';
+  const r=await mffAsk('Enregistrer les modifications de « '+nm+' » ?',[['save','Enregistrer',true],['drop','Ne pas enregistrer'],['cancel','Annuler']]);
+  if(r==='cancel')return false;
+  if(r==='save')return await mffSave();
+  return true;
+}
+/* ---- écriture / lecture ---- */
+async function mffData(){try{return await bundleSerialise();}catch(e){return serialise();}}
+async function mffPerm(h,mode){
+  try{const o={mode:mode||'readwrite'};if((await h.queryPermission(o))==='granted')return true;return (await h.requestPermission(o))==='granted';}catch(e){return false;}
+}
+async function mffWrite(h){
+  const data=await mffData();
+  const w=await h.createWritable();await w.write(data);await w.close();
+}
+function mffBase(n){return String(n||'').replace(/(\.minifusion(\.json)?|\.json)$/i,'');}
+async function mffSave(){
+  // true si enregistré
+  if(mffHandle&&MFF_FS){
+    try{
+      if(!(await mffPerm(mffHandle,'readwrite')))throw new Error('permission refusée');
+      await mffWrite(mffHandle);fileHandle=mffHandle;mffMark();mffRecentAdd(mffHandle);
+      try{autosave();}catch(e){}
+      try{faceEl.textContent='Enregistré dans '+mffHandle.name+' (document + trajectoires).';}catch(e){}
+      return true;
+    }catch(e){try{faceEl.textContent='Enregistrement impossible ('+(e&&e.message||e)+') — « Enregistrer sous… ».';}catch(e2){}}
+  }
+  return await mffSaveAs();
+}
+async function mffSaveAs(){
+  const fname=(mffName||doc.name||'piece').replace(/[\\/:*?"<>|]/g,'_')+'.miniFusion';
+  if(MFF_FS&&window.showSaveFilePicker){
+    try{
+      const o={suggestedName:fname,types:MFF_TYPES};if(mffFolder)o.startIn=mffFolder;else if(mffHandle)o.startIn=mffHandle;
+      const h=await window.showSaveFilePicker(o);
+      await mffWrite(h);
+      mffHandle=h;fileHandle=h;mffName=mffBase(h.name);doc.name=mffName;mffMark();mffRecentAdd(h);
+      try{autosave();renderTree();renderProps();}catch(e){}
+      try{faceEl.textContent='Enregistré sous '+h.name+'.';}catch(e){}
+      return true;
+    }catch(e){if(e&&e.name==='AbortError')return false;try{faceEl.textContent='Enregistrer sous : '+(e&&e.message||e);}catch(e2){}return false;}
+  }
+  // repli : téléchargement
+  try{const data=await mffData();const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'application/json'}));a.download=fname;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);mffMark();return true;}catch(e){return false;}
+}
+async function mffLoadText(txt,name,handle){
+  // vide l'espace PUIS charge (document + trajectoires), sans demander : l'appelant a déjà confirmé
+  try{if(typeof faoVw!=='undefined'&&faoVw&&typeof faoViewerOpen==='function')faoViewerOpen();}catch(e){} // simulation fermée
+  try{docResetEmpty();}catch(e){}
+  const nm=mffBase(name);
+  if(bundleIs(txt))await bundleRestore(txt,{name:nm});
+  else{await deserialise(txt);doc.name=nm;rebuild();}
+  mffHandle=handle||null;fileHandle=mffHandle;mffName=nm;
+  try{renderTree();renderProps();}catch(e){}
+  try{showAll();}catch(e){}
+  mffMark();
+  setTimeout(mffMark,1500); // après le rejeu complet (le document se normalise à l'ouverture)
+  if(handle)mffRecentAdd(handle);
+  try{faceEl.textContent='Ouvert : '+(handle?handle.name:name)+'.';}catch(e){}
+}
+async function mffOpenHandle(h){
+  try{
+    if(!(await mffPerm(h,'read')))throw new Error('permission refusée');
+    const f=await h.getFile();await mffLoadText(await f.text(),f.name,h);return true;
+  }catch(e){alert('Ouverture impossible : '+(e&&e.message||e));return false;}
+}
+async function mffOpen(){
+  if(!(await mffConfirmDiscard()))return;
+  if(MFF_FS){
+    try{
+      const o={types:MFF_TYPES,multiple:false};if(mffFolder)o.startIn=mffFolder;
+      const [h]=await window.showOpenFilePicker(o);if(h)await mffOpenHandle(h);
+    }catch(e){if(!(e&&e.name==='AbortError'))alert('Ouverture impossible : '+(e&&e.message||e));}
+    return;
+  }
+  mffPendingOpen=true;try{document.getElementById('fileProj').click();}catch(e){}
+}
+let mffPendingOpen=false;
+async function mffNew(){
+  if(!(await mffConfirmDiscard()))return;
+  try{if(typeof faoVw!=='undefined'&&faoVw&&typeof faoViewerOpen==='function')faoViewerOpen();}catch(e){}
+  docResetEmpty();mffHandle=null;mffName='';
+  markDirty();rebuild();renderProps();try{renderTree();showAll();}catch(e){}
+  mffSavedSig=null;mffTitle();
+  try{faceEl.textContent='Nouveau modèle. Créez une esquisse.';}catch(e){}
+}
+/* ---- fichiers récents (liens mémorisés) ---- */
+async function mffRecentList(){try{const l=await idbGet('mff:recent');return Array.isArray(l)?l:[];}catch(e){return [];}}
+async function mffRecentAdd(h){
+  try{
+    const l=await mffRecentList();const out=[{name:h.name,h:h,at:Date.now()}];
+    for(const it of l){if(out.length>=8)break;let same=false;try{same=it.h&&(await it.h.isSameEntry(h));}catch(e){}if(!same)out.push(it);}
+    await idbSet('mff:recent',out);
+  }catch(e){}
+}
+async function mffRecentMenu(anchor){
+  const l=await mffRecentList();
+  const items=l.length?l.map(it=>({html:'<span style="opacity:.6">🕘</span> '+it.name.replace(/</g,'&lt;'),fn:async()=>{if(await mffConfirmDiscard())mffOpenHandle(it.h);}})):[{html:'<span style="opacity:.6">Aucun fichier récent</span>',fn:()=>{}}];
+  if(l.length)items.push({html:'<span style="opacity:.6">✕ Vider la liste</span>',fn:()=>{idbSet('mff:recent',[]).catch(()=>{});}});
+  mfPop(anchor,items);
+}
+/* ---- dossier de projets ---- */
+async function mffFolderLoad(){try{const h=await idbGet('mff:folder');if(h)mffFolder=h;}catch(e){}}
+async function mffFolderChoose(){
+  try{const h=await window.showDirectoryPicker({id:'minifusion-projets',mode:'readwrite'});mffFolder=h;await idbSet('mff:folder',h);return h;}catch(e){return null;}
+}
+async function mffFolderPanel(){
+  const old=document.getElementById('mffPanel');if(old){old.remove();return;}
+  if(!MFF_FS){alert('Le dossier de projets demande Chrome ou Edge (API d’accès aux fichiers).');return;}
+  if(!mffFolder)await mffFolderLoad();
+  const pn=document.createElement('div');pn.id='mffPanel';pn.className='mffPanel';
+  const close=()=>pn.remove();
+  const head=document.createElement('div');head.className='mffHead';
+  const t=document.createElement('b');t.textContent='Dossier de projets';head.appendChild(t);
+  const x=document.createElement('button');x.textContent='✕';x.title='Fermer';x.onclick=close;head.appendChild(x);
+  pn.appendChild(head);
+  const body=document.createElement('div');body.className='mffBody';pn.appendChild(body);
+  document.body.appendChild(pn);
+  const draw=async()=>{
+    body.innerHTML='';
+    const bar=document.createElement('div');bar.className='mffBar';
+    const ch=document.createElement('button');ch.textContent=mffFolder?'Changer de dossier…':'Choisir un dossier…';ch.onclick=async()=>{if(await mffFolderChoose())draw();};bar.appendChild(ch);
+    if(mffFolder){const sv=document.createElement('button');sv.className='primary';sv.textContent='Enregistrer ici';sv.title='Enregistrer la pièce courante dans ce dossier';
+      sv.onclick=async()=>{const nm=prompt('Nom du fichier :',(mffName||doc.name||'piece').replace(/[\\/:*?"<>|]/g,'_'));if(!nm)return;
+        try{if(!(await mffPerm(mffFolder,'readwrite')))return;const h=await mffFolder.getFileHandle(mffBase(nm)+'.miniFusion',{create:true});await mffWrite(h);mffHandle=h;fileHandle=h;mffName=mffBase(h.name);doc.name=mffName;mffMark();mffRecentAdd(h);try{renderTree();renderProps();}catch(e){}draw();}catch(e){alert('Enregistrement impossible : '+(e&&e.message||e));}};
+      bar.appendChild(sv);}
+    body.appendChild(bar);
+    if(!mffFolder){const n=document.createElement('div');n.className='mffNote';n.textContent='Choisissez le dossier où vous rangez vos pièces : la liste de ses projets apparaîtra ici (double-clic pour ouvrir).';body.appendChild(n);return;}
+    const path=document.createElement('div');path.className='mffNote';path.textContent='📁 '+mffFolder.name;body.appendChild(path);
+    if(!(await mffPerm(mffFolder,'read'))){const n=document.createElement('div');n.className='mffNote';n.textContent='Permission nécessaire : cliquez « Changer de dossier… » ou rouvrez ce panneau.';body.appendChild(n);return;}
+    const files=[];
+    try{for await(const [nm,h] of mffFolder.entries()){if(h.kind==='file'&&/\.(miniFusion|json)$/i.test(nm)){let t=0;try{t=(await h.getFile()).lastModified;}catch(e){}files.push({nm,h,t});}}}catch(e){}
+    files.sort((a,b)=>b.t-a.t);
+    const list=document.createElement('div');list.className='mffList';
+    if(!files.length){const n=document.createElement('div');n.className='mffNote';n.textContent='Aucun projet (.miniFusion) dans ce dossier.';list.appendChild(n);}
+    files.forEach(f=>{const r=document.createElement('div');r.className='mffRow';if(mffHandle&&mffHandle.name===f.nm)r.classList.add('on');
+      r.innerHTML='<span>'+f.nm.replace(/</g,'&lt;')+'</span><em>'+(f.t?new Date(f.t).toLocaleString('fr'):'')+'</em>';
+      r.title='Double-clic : ouvrir';r.ondblclick=async()=>{if(await mffConfirmDiscard()){await mffOpenHandle(f.h);close();}};list.appendChild(r);});
+    body.appendChild(list);
+  };
+  draw();
+}
+/* ---- branchement : boutons existants, bandeau, raccourcis ---- */
+function mffCss(){
+  if(document.getElementById('mffCss'))return;
+  const st=document.createElement('style');st.id='mffCss';
+  st.textContent=[
+    '.mffDlgBg{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center}',
+    '.mffDlg{min-width:380px;max-width:520px;padding:18px 20px;border-radius:14px;background:var(--surface);background-color:var(--bg);border:1px solid var(--border);box-shadow:0 20px 50px rgba(0,0,0,.5);color:var(--text)}',
+    '.mffMsg{font-size:.95rem;margin-bottom:16px;line-height:1.4}',
+    '.mffBtns{display:flex;gap:8px;justify-content:flex-end}',
+    '#mffName{font-size:.78rem;padding:3px 10px;border-radius:8px;color:var(--muted);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}',
+    '#mffName.mod{color:var(--text)}',
+    '.mffPanel{position:fixed;right:16px;top:72px;z-index:8000;width:380px;max-height:70vh;display:flex;flex-direction:column;border-radius:14px;background-color:var(--bg);border:1px solid var(--border);box-shadow:0 20px 50px rgba(0,0,0,.45);color:var(--text)}',
+    '.mffHead{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border)}',
+    '.mffHead button{padding:2px 8px}',
+    '.mffBody{padding:10px 14px;overflow:auto;display:flex;flex-direction:column;gap:8px}',
+    '.mffBar{display:flex;gap:6px;flex-wrap:wrap}',
+    '.mffNote{font-size:.75rem;color:var(--muted)}',
+    '.mffList{display:flex;flex-direction:column;gap:2px}',
+    '.mffRow{display:flex;justify-content:space-between;gap:10px;padding:6px 8px;border-radius:7px;cursor:pointer;font-size:.8rem}',
+    '.mffRow:hover{background:rgba(127,127,127,.14)}.mffRow.on{background:var(--primary);color:#fff}',
+    '.mffRow em{font-style:normal;font-size:.7rem;opacity:.65;white-space:nowrap}'
+  ].join('\n');
+  document.head.appendChild(st);
+}
+(function(){
+  try{
+    mffCss();
+    const $$=id=>document.getElementById(id);
+    // boutons historiques (menu Projet de l'interface classique) : même logique partout
+    if($$('btnNew'))$$('btnNew').onclick=()=>mffNew();
+    if($$('btnLoad'))$$('btnLoad').onclick=()=>mffOpen();
+    if($$('btnSave'))$$('btnSave').onclick=()=>mffSave();
+    if($$('btnSaveAs'))$$('btnSaveAs').onclick=()=>mffSaveAs();
+    // repli sans API : le sélecteur de fichier historique confirme, vide puis charge
+    const fp=$$('fileProj');
+    if(fp){
+      const nf=fp.cloneNode(true);fp.parentNode.replaceChild(nf,fp); // retire l'ancien gestionnaire
+      nf.addEventListener('change',async e=>{
+        const f=e.target.files[0];e.target.value='';if(!f)return;
+        if(!mffPendingOpen&&!(await mffConfirmDiscard()))return;
+        mffPendingOpen=false;
+        try{await mffLoadText(await f.text(),f.name,null);}catch(err){alert('Projet illisible : '+err.message);}
+      });
+    }
+    // menu Projet (classique) : + Ouvrir récent, Dossier de projets
+    const nb=$$('btnNew'),menu=nb&&nb.parentNode;
+    if(menu&&menu.classList&&menu.classList.contains('ddMenu')&&!$$('btnRecent')){
+      const r=document.createElement('button');r.id='btnRecent';r.innerHTML='<i>🕘</i>Ouvrir récent…';r.title='Fichiers ouverts ou enregistrés récemment';r.onclick=e=>{e.stopPropagation();mffRecentMenu(r);};
+      const f=document.createElement('button');f.id='btnFolder';f.innerHTML='<i>📁</i>Dossier de projets…';f.title='Explorer le dossier où vous rangez vos pièces';f.onclick=()=>mffFolderPanel();
+      menu.appendChild(r);menu.appendChild(f);
+    }
+    // nom du fichier + point « modifié » à côté du logo (les deux interfaces)
+    const brand=document.querySelector('.topbar .brand');
+    if(brand&&!$$('mffName')){const n=document.createElement('span');n.id='mffName';brand.parentNode.insertBefore(n,brand.nextSibling);}
+    setInterval(mffTitle,1000);
+    // raccourcis : Ctrl+S, Ctrl+Maj+S, Ctrl+O
+    document.addEventListener('keydown',e=>{
+      if(!(e.ctrlKey||e.metaKey))return;const k=(e.key||'').toLowerCase();
+      if(k==='s'){e.preventDefault();e.stopPropagation();(e.shiftKey?mffSaveAs:mffSave)();}
+      else if(k==='o'){e.preventDefault();e.stopPropagation();mffOpen();}
+    },true);
+    mffFolderLoad();
+    // brouillon restauré au démarrage : il n'est sur AUCUN fichier → compté « non enregistré »
+    setTimeout(mffTitle,2500);
+  }catch(e){}
+})();
+
 /* ═══════════════ 97-interface-moderne.js — interface moderne ═══════════════ */
 /* ---------- Thèmes de couleur + interface « Moderne » (V0.2.1) ----------
    • Thème (🎨, dans les DEUX interfaces) : Nuit (actuel), Graphite, Atelier, Clair, Contraste —
@@ -33556,6 +33825,7 @@ function mfCss(){
   '.mfWs button{padding:4px 14px;font-size:.78rem;border:none;background:none;border-radius:7px}',
   '.mfWs button.on{background:var(--primary);color:#fff}',
   '.mfQuick button{padding:4px 9px;font-size:.85rem;background:none;border:1px solid transparent}',
+  '.mfQsep{width:1px;align-self:stretch;margin:3px 4px;background:var(--border)}',
   '.mfSearch{position:relative;flex:1;max-width:340px}',
   '.mfSearch input{width:100%;padding:6px 10px;border-radius:8px;font-size:.8rem;background:rgba(127,127,127,.12);border:1px solid var(--border);color:var(--text)}',
   '.mfRes{position:absolute;top:calc(100% + 4px);left:0;right:0;max-height:340px;overflow:auto}',
@@ -33691,6 +33961,8 @@ const MF_IC={
   rapid:'<path d="M13 2L5 13h6l-1 9 8-12h-6z"/>',
   regen:'<path d="M20 11a8 8 0 0 0-14-5l-2 2M4 13a8 8 0 0 0 14 5l2-2"/><path d="M4 4v4h4M20 20v-4h-4"/>',
   gcode:'<path d="M6 3h9l3 3v15H6z"/><path d="M9 10h6M9 13h6M9 16h4"/>',
+  recent:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  folder:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 10h18"/>',
   theme:'<path d="M12 3a9 9 0 1 0 0 18c1.2 0 2-.8 2-2 0-1.3-1-1.6-1-2.6 0-1 .8-1.4 1.8-1.4H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/>'
 };
 function mfI(k,size){const p=MF_IC[k];if(!p)return null;return '<svg viewBox="0 0 24 24" width="'+(size||20)+'" height="'+(size||20)+'" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+p+'</svg>';}
@@ -33702,8 +33974,7 @@ const MF_CAO=[
   ['Créer',[['extrude','Extrusion','btnExtrude'],['revolve','Révolution','btnRevolve'],['hole','Perçage','btnHole'],['body','Corps','btnBody']]],
   ['Modifier',[['fillet','Congé','btnFillet'],['chamfer','Chanfrein','btnChamfer'],['face','Face','btnMoveFace'],['draft','Dépouille','btnDraft'],['shell','Coque','btnCoque']]],
   ['Ensembles',[['pattern','Répétition','btnRepeat'],['combine','Combiner','btnCombine'],['params','Paramètres','btnParams']]],
-  ['Fichier',[['import','Importer','btnImport'],['export','STEP','btnExportStep'],['export','STL','btnExportStl'],['export','OBJ','btnExportObj']]],
-  ['Projet',[['new','Nouveau','btnNew'],['open','Ouvrir','btnLoad'],['saveas','Sous…','btnSaveAs']]]
+  ['Fichier',[['import','Importer','btnImport'],['export','STEP','btnExportStep'],['export','STL','btnExportStl'],['export','OBJ','btnExportObj']]]
 ];
 const MF_FAO_ICON={facing:'facing',pocket:'pocket',contour:'contour',drill:'drill',rough3d:'rough3d',geofinish:'finish',pocket2:'pocket'};
 function mfFaoAdd(type,nm){
@@ -33911,7 +34182,12 @@ function mfBuildModern(){
   const ws=document.createElement('div');ws.className='mfWs mfM';
   [['cao','CAO','Modélisation : esquisses, solides'],['fao','FAO','Usinage : posages, opérations, simulation, G-code']].forEach(([k,l,t])=>{const b=document.createElement('button');b.textContent=l;b.title=t;b.dataset.mfws=k;b.onclick=()=>mfWs(k);ws.appendChild(b);});
   const q=document.createElement('div');q.className='mfQuick mfM';
-  [['undo','Annuler (Ctrl+Z)','btnUndo'],['redo','Rétablir (Ctrl+Y)','btnRedo'],['save','Enregistrer','btnSave']].forEach(([ic,t,id])=>{const b=document.createElement('button');b.innerHTML=mfI(ic,18);b.title=t;b.onclick=()=>mfClick(id);q.appendChild(b);});
+  [['undo','Annuler (Ctrl+Z)','btnUndo'],['redo','Rétablir (Ctrl+Y)','btnRedo']].forEach(([ic,t,id])=>{const b=document.createElement('button');b.innerHTML=mfI(ic,18);b.title=t;b.onclick=()=>mfClick(id);q.appendChild(b);});
+  // V0.2.3 : TOUS les boutons de fichier à côté d'« Enregistrer » (src/97-fichiers-projets.js)
+  const sp=document.createElement('span');sp.className='mfQsep';q.appendChild(sp);
+  [['new','Nouveau projet',()=>mffNew()],['open','Ouvrir… (Ctrl+O)',()=>mffOpen()],['recent','Ouvrir récent',e=>mffRecentMenu(e.currentTarget)],
+   ['save','Enregistrer (Ctrl+S)',()=>mffSave()],['saveas','Enregistrer sous… (Ctrl+Maj+S)',()=>mffSaveAs()],['folder','Dossier de projets',()=>mffFolderPanel()]].forEach(([ic,t,fn])=>{
+    const b=document.createElement('button');b.innerHTML=mfI(ic,18);b.title=t;b.onclick=e=>{e.stopPropagation();fn(e);};q.appendChild(b);});
   const sx=mfSearchBox();
   const after=brand?brand.nextSibling:top.firstChild;
   [ws,q,sx].forEach(n=>top.insertBefore(n,after));
