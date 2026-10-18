@@ -1,4 +1,4 @@
-# Journal des modifications
+﻿# Journal des modifications
 
 Une entrée par version : **cause, correctif, test**. Source de vérité de l'historique.
 Ces entrées vivaient en commentaire dans `fusion_mvp.html` (577 lignes, 50 Ko) : un
@@ -4033,3 +4033,11 @@ Nouveau `src/97-interface-moderne.js`, nouveau test `test_interface_moderne` (28
 - **Bandeau** : nom du fichier + point « ● » tant que des modifications ne sont pas enregistrées (titre de l'onglet aussi). Interface moderne : **tous les boutons de fichier à côté d'« Enregistrer »** (Nouveau, Ouvrir, Ouvrir récent, Enregistrer, Enregistrer sous, Dossier de projets) ; le groupe « Projet » quitte le ruban. Classique : menu Projet + « Ouvrir récent… » et « Dossier de projets… ». Raccourcis `Ctrl+S`, `Ctrl+Maj+S`, `Ctrl+O`.
 - **Esquisse** : menu contextuel — « Coïncident (point sur la droite) » pour point + ligne, « Coïncident (point sur le cercle / l'arc) » pour point + courbe ; le menu se **ferme au clic suivant**, dedans comme dehors.
 Nouveau `src/97-fichiers-projets.js` ; `test_coincident_contrainte` complété (entrées du menu contextuel) ; `test_fao_reset` adapté (Nouveau asynchrone, réponse « Ne pas enregistrer »).
+
+## V0.2.4 - Congés exacts : selects qui répondent, rayons qui se souviennent (Support Pédale R1200RT)
+- **Mémoire de session** : le dernier **rayon** utilisé (congé et chanfrein mémorisés séparément) et le dernier état de la case **« arêtes tangentes »** sont retenus d'un passage en mode Congé au suivant (défauts inchangés au démarrage : R10 congé, R1 chanfrein, tangentes cochées). Avant : le rayon repartait à 10 à CHAQUE entrée — sur une pièce à faces étroites (bord de poche, épaulements de 2 mm), le rayon par défaut rendait l'aperçu muet au premier clic.
+- **Aperçu qui explique** : quand le noyau refuse le lot, le message précise l'avertissement d'OCCT **et le rayon maximal vérifié** (sonde descendante 0,7 → 0,2 × le rayon demandé, comme au rejeu) — ex. « R10 impossible sur 1 arête — max vérifié : R1,4 ; réduisez le rayon ». Avant : absence silencieuse avec pour seul indice « Aperçu indisponible (noyau exact indisponible ou arête sans diagnostic) ». La sonde ne tourne qu'une fois par signature de sélection.
+- **Arêtes tangentes visibles et expliquées** : les raccords lisses (G1 — bornes des congés déjà posés, transitions douces du bossage) sont dessinées en gris SOUS les vives et ont leur propre raycast (seuil plus serré). Un clic dessus répond : « arête TANGENTE — les deux faces se rejoignent en douceur, il n'y a rien à arrondir ici ; cliquez une arête vive ou une face ». Avant : clic ignoré, et le message d'aide parlait d'« arête bleue » alors qu'elles sont noires. Panneau : compteur « N vives · N grises ».
+- **Raycast des vives resserré sur la couche vive seule** : en interrogeant les deux couches, une tangente plus proche gagnait le hit, l'index nul faisait échouer le clic sur une vive pourtant valide sous le curseur (regroupé sous 0,6 mm pour les grises, cible explicite).
+- Panel/header : messages d'aide corrigés (vives noires, tangentes grises, aperçu = le résultat lui-même).
+Tests : chk_syntaxe OK sur le livrable ; test_apercu_diff inchangé au vert (xPreviewShape rend désormais {shape:null,warns} en échec, null aux entrées vides comme avant) ; test_conge_tangent inchangé au vert (tangent persisté).

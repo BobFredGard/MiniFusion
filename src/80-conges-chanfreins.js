@@ -1,6 +1,12 @@
-/* ---------- congés : mode maillage (verticales + périmètres) + mode exact OCCT (toutes arêtes) ---------- */
+﻿/* ---------- congés : mode maillage (verticales + périmètres) + mode exact OCCT (toutes arêtes) ---------- */
 let filMode=null,filHover=null;
 let filModeX=null,xHover=null; // mode exact : sel=[{pos:[x,y,z],r}], edges=occListEdges, radius=défaut
+// 2026-10-18 V0.2.4 : mémoire de SESSION — le dernier rayon utilisé et le dernier état de la
+// case « arêtes tangentes » sont retenus d'un passage en mode Congé au suivant (avant : R10
+// pour congé / R1 pour chanfrein et tangentes cochées À CHAQUE entrée ; sur une pièce à faces
+// étroites comme la pédale, un rayon par défaut trop grand rendait l'aperçu muet au 1ᵉʳ clic).
+// Les défauts bruts (10 / 1, tangentes cochées) restent ceux du démarrage de l'appli.
+const filMemo={r:{fillet:10,chamfer:1},tangent:true};
 let occSkipFeat=null; // id de fonction exclue du rejeu (édition de congé : revoir les arêtes vives AVANT elle)
 function filEdgeKey(fp){return fp.x.toFixed(2)+','+fp.y.toFixed(2);}
 function filletTarget(){
@@ -48,7 +54,7 @@ function enterExactFilletMode(editF,kind){
   // défaut). Un clic = UNE arête ; plus de double-clic qui attrapait une chaîne entière.
   // En édition : la case reste sur l'état PERSISTÉ du congé (f.tangent) — elle ne se
   // remet plus « cochée » en dépit de l'utilisateur à chaque réédition.
-  filModeX={sel:[],seeds:[],tangent:editing?(editing.tangent!==false):true,radius:xIsChamfer(k)?1:10,edges:[],editing:editing?editing.id:null,kind:k}; // défauts : congé 10, chanfrein 1
+  filModeX={sel:[],seeds:[],tangent:editing?(editing.tangent!==false):filMemo.tangent,radius:xIsChamfer(k)?filMemo.r.chamfer:filMemo.r.fillet,edges:[],tang:[],editing:editing?editing.id:null,kind:k}; // défauts 1ᵉʳ usage : congé 10, chanfrein 1, tangentes ON — puis memory de session
   if(editing){
     // Édition : rejeu SANS la fonction (occSkipFeat) → les arêtes vives d'origine redeviennent
     // cliquables (l'arrondi appliqué les a remplacées par des surfaces tangentes).
@@ -64,7 +70,7 @@ function enterExactFilletMode(editF,kind){
     try{rebuild();}catch(e){}
     if(!occLive||!occLive.shape){occSkipFeat=null;filModeX=null;if(tlMark===editing.id)tlSetPtr(null);faceEl.textContent=label+' : recalcul impossible.';return;}
   }
-  try{filModeX.edges=occSharpEdges(occLive.shape).filter(e=>e.sharp);}
+  try{filEdgesReload();}
   catch(e){
     if(editing){occSkipFeat=null;filModeX=null;markDirty();try{rebuild();}catch(e2){}}
     faceEl.textContent=label+' : listage des arêtes impossible ('+e.message+').';return;
@@ -88,7 +94,7 @@ function enterExactFilletMode(editF,kind){
   xPreviewUpdate(); // création comme édition : l'aperçu part dès l'entrée, sur la sélection chargée
   faceEl.textContent=editing
     ?`Édition « ${editing.name} » : ✕ ou clic sur une ligne de la liste = retirer · arête/face 3D = ajouter · ${filModeX.edges.length} arêtes · « Enregistrer » valide, Échap/Annuler restitue.`
-    :`${label} : cliquez des arêtes vives (${filModeX.edges.length}, coutures lisses exclues) ou une face (toute sa boucle) · ${xIsChamfer(k)?'distance':'rayon'} par arête · aperçu rouge avant de valider · Échap = quitter.`;
+    :`${label} : cliquez des arêtes vives (${filModeX.edges.length}, affichées noires — les grises sont des raccords lisses, non arrondissables) ou une face (toute sa boucle) · ${xIsChamfer(k)?'distance':'rayon'} par arête · aperçu avant de valider · Échap = quitter.`;
 }
 function exitExactFilletMode(silent){
   if(!filModeX)return;
@@ -99,6 +105,16 @@ function exitExactFilletMode(silent){
   const o=scene.getObjectByName('filEdges');if(o)scene.remove(o);{const orb=scene.getObjectByName('filRibbons');if(orb)scene.remove(orb);}
   if(wasEditing){tlEditUnlock();markDirty();try{rebuild();}catch(e){}} // lève le verrou : la fonction modifiée ET celles qui suivent sont régénérées
   if(!silent)renderProps();
+}
+/* 2026-10-18 V0.2.4 : listage complet — `edges` = vives (cliquables, noir) et `tang` =
+   tangentes (affichées grises, clic = message explicite ; elles ne deviennent JAMAIS
+   sélectionnables : une arête G1, sans discontinuité, ne peut pas être congée — l'OCCT
+   le refuserait). Avant : absentes du listage, l'utilisateur voyait une arête grise,
+   cliquait, rien ne se passait — et le message d'aide disait « arête bleue » (faux). */
+function filEdgesReload(){
+  const all=occSharpEdges(occLive.shape);
+  filModeX.edges=all.filter(e=>e.sharp);
+  filModeX.tang=all.filter(e=>!e.sharp);
 }
 function xIsSel(i){
   if(!filModeX)return false;
@@ -210,11 +226,13 @@ function xPreviewShape(base,jobs,cham){
   // Forme montrée par l'aperçu : le SOLIDE COMPLET avec congé/chanfrein appliqué, ou
   // null si impossible. Extraite pour être testée telle quelle (test_apercu_diff.cjs),
   // pas recopiée dans le test — la copie dérive, la fonction non.
+  // V0.2.4 : en cas d'échec, les avertissements du noyau sont RENDUS ({shape:null,warns})
+  // — l'appelant affiche pourquoi, au lieu d'un silence total.
   if(!base||!jobs||!jobs.length)return null;
   const warns=[];
   let sh=null;
   try{sh=occFilletRun(base,jobs,warns,cham,{single:!!(filModeX&&filModeX.tangent===false)});}catch(e){sh=null;}
-  return sh?{shape:sh}:null;
+  return sh?{shape:sh}:{shape:null,warns};
 }
 function xPreviewUpdate(){
   try{
@@ -234,7 +252,34 @@ function xPreviewUpdate(){
     });
     if(!jobs.length){xPrevRemove();return;}
     const pv=xPreviewShape(occLive.shape,jobs,cham);
-    if(!pv||!pv.shape){xPrevRemove();return;}
+    if(!pv||!pv.shape){
+      // 2026-10-18 V0.2.4 : échec d'aperçu = message PRÉCIS + rayon maximal vérifié par
+      // sonde descendante (0,7 → 0,2 × le rayon demandé, même mécanique qu'au rejeu).
+      // Avant : repli muet sur « Aperçu indisponible » — avec le rayon par défaut 10 sur
+      // une pièce à faces étroites (pédale), l'utilisateur ne comprenait jamais pourquoi
+      // aucun aperçu n'apparaissait. La sonde ne tourne qu'une fois par signature.
+      if(filModeX._failSig!==sig){
+        filModeX._failSig=sig;filModeX._prevMsg=null;
+        const dp=xIsChamfer(cham)?'D':'R';
+        let msg=(pv&&pv.warns&&pv.warns.length)?pv.warns.join(' · '):'aperçu impossible';
+        try{
+          const rMax=Math.min.apply(null,jobs.map(j=>j.r||0))||0;
+          for(const kk of [0.7,0.5,0.4,0.3,0.2]){
+            const r2=Math.max(0.3,+(rMax*kk).toFixed(2));
+            const w2=[];let t=null;
+            try{t=occFilletRun(occShapeCopy(occLive.shape),jobs.map(j=>({src:j.src,r:r2,mid:j.mid.slice()})),w2,cham,{single:!!(filModeX&&filModeX.tangent===false)});}catch(ex){t=null;}
+            if(t){try{t.delete();}catch(e2){}msg+=' — max vérifié : '+dp+r2+' ; réduisez le rayon';break;}
+          }
+          if(msg.indexOf('max vérifié')<0)msg+=' — aucun rayon testé ne passe (arête trop courte ou faces déjà '+((xIsChamfer(cham))?'chanfreinées':'congées')+' ?)';
+        }catch(err){}
+        if(msg)filModeX._prevMsg=msg; // message figé tant que la sélection ne bouge pas
+        if(filModeX._prevMsg)faceEl.textContent=xLabel(filModeX.kind)+' : '+filModeX._prevMsg;
+      }else if(filModeX._prevMsg){
+        faceEl.textContent=xLabel(filModeX.kind)+' : '+filModeX._prevMsg;
+      }
+      xPrevRemove();
+      return;
+    }
     const sh=pv.shape;
     let g=null,isNew=null;
     try{g=occTessellate(sh,0.5);}catch(e){g=null;}
@@ -261,7 +306,7 @@ function xPreviewUpdate(){
     scene.add(mesh);
     xPrevBody={id:'x_preview',name:'🟠 Aperçu (non validé)',mesh,color:0xff7a1f,visible:true,kind:'ghost',ref:null,ghost:true,preview:true};
     bodies.push(xPrevBody);
-    filModeX._prevSig=sig;
+    filModeX._prevSig=sig; filModeX._prevMsg=null; filModeX._failSig=null; // le congé passe : l'ancien message d'échec s'efface
     try{refreshParts();}catch(e){}
   }catch(e){xPrevRemove();}
 }
@@ -293,6 +338,26 @@ function xPreviewUpdate(){
     l.renderOrder=999;
     l.userData.segEdge=segEdge;
     const grp=new THREE.Group();grp.name='filEdges';grp.add(l);
+    // V0.2.4 : arêtes TANGENTES en dessous des vives — visibles, couleur atténuée, et
+    // raycastables SÉPARÉMENT (exactPickTang) pour donner le bon message au clic.
+    if(filModeX.tang&&filModeX.tang.length){
+      const p2=[],segT=[];
+      filModeX.tang.forEach((e,i)=>{
+        const pp=e.pts||[];
+        for(let k=0;k+1<pp.length;k++){
+          p2.push(pp[k][0],pp[k][1],pp[k][2],pp[k+1][0],pp[k+1][1],pp[k+1][2]);
+          segT.push(i);
+        }
+      });
+      if(p2.length){
+        const g2=new THREE.BufferGeometry();
+        g2.setAttribute('position',new THREE.Float32BufferAttribute(p2,3));
+        const l2=new THREE.LineSegments(g2,new THREE.LineBasicMaterial({color:0x70747b,transparent:true,opacity:0.5,depthTest:true}));
+        l2.renderOrder=998; // SOUS les vives : un clic dans la zone gagne toujours la vive
+        l2.userData.segEdgeT=segT;
+        grp.add(l2);
+      }
+    }
     scene.add(grp);
     paintExact();
     }catch(e){faceEl.textContent=xLabel(filModeX&&filModeX.kind)+' : affichage impossible ('+e.message+').';}
@@ -335,13 +400,34 @@ function exactPick(e){
   const ndc=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
   rayc.setFromCamera(ndc,camera);
   rayc.params.Line.threshold=2;
-  const hits=rayc.intersectObjects(grp.children,false);
+  // V0.2.4 : SÉLECTION = couche des VIVES seulement (children[0]) — les tangentes grises
+  // ont leur propre raycast (exactPickTang) : interroger les 2 couches ici faisait gagner
+  // une tangente plus proche → segEdge indéfini → null, même avec une vive sous le clic.
+  if(!grp.children[0]||!grp.children[0].userData.segEdge)return null;
+  const hits=rayc.intersectObjects([grp.children[0]],false);
   if(!hits.length)return null;
   const segEdge=hits[0].object.userData.segEdge;
   if(!segEdge)return null;
   // LineSegments non indexé : l'index rendu est le sommet de départ (0,2,4…) → seg = index/2
   const i=segEdge[Math.round(hits[0].index/2)];
   return (i!==undefined&&i>=0&&filModeX&&i<filModeX.edges.length)?i:null;
+}
+function exactPickTang(e){
+  // V0.2.4 : raycast sur la couche des arêtes TANGENTES (grp.children[1]) — un clic sur
+  // une arête grise doit répondre (message), pas se taire.
+  try{
+    const grp=scene.getObjectByName('filEdges');if(!grp||!grp.children[1]||!grp.children[1].userData.segEdgeT)return null;
+    const r=renderer.domElement.getBoundingClientRect();
+    const ndc=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
+    rayc.setFromCamera(ndc,camera);
+    rayc.params.Line.threshold=0.6; // plus sévère que les vives : la tangente est la cible EXPLICITE du clic
+    const hits=rayc.intersectObjects([grp.children[1]],false);
+    if(!hits.length)return null;
+    const segT=hits[0].object.userData.segEdgeT;
+    if(!segT)return null;
+    const i=segT[Math.round(hits[0].index/2)];
+    return (i!==undefined&&i>=0&&filModeX&&filModeX.tang&&i<filModeX.tang.length)?i:null;
+  }catch(err){return null;}
 }
 function occFaceEdges(faceOrd,shape){
   // Milieux des arêtes d'une face BRep (par rang, même ordre que la tessellation).
@@ -422,8 +508,14 @@ function exactToggle(e){
     if(!filModeX||!filModeX.edges)return;
     const i=exactPick(e);
     if(i===null||i===undefined||!filModeX.edges[i]){
+      // V0.2.4 : clic sur une arête TANGENTE (grise) — réponse explicite au lieu du silence.
+      if(exactPickTang(e)!==null){
+        faceEl.textContent=xLabel(filModeX.kind)+' : arête TANGENTE (raccord lisse, grise) — les deux faces se rejoignent en douceur, il n\u2019y a rien à '+
+          (xIsChamfer(filModeX.kind)?'chanfreiner':'arrondir')+' ici ; cliquez une arête vive (noire) ou une face (= toute sa boucle).';
+        return;
+      }
       if(exactFaceToggle(e))return;
-      faceEl.textContent=xLabel(filModeX.kind)+' : cliquez une arête bleue (ou une face = toute sa boucle).'+
+      faceEl.textContent=xLabel(filModeX.kind)+' : cliquez une arête vive (noire · jaune au survol) ou une face (= toute sa boucle).'+
         (filModeX.tangent?' Les arêtes tangentes à celle cliquée sont ajoutées automatiquement.':' Clic = cette arête · Ctrl/Cmd+clic = ajouter / retirer.');
       return;
     }
@@ -445,6 +537,7 @@ function exactTangentToggle(startIdx){
   // « arêtes tangentes » et recalcule la sélection à partir des germes.
   if(!filModeX)return;
   filModeX.tangent=!filModeX.tangent;
+  filMemo.tangent=filModeX.tangent; // V0.2.4 : mémoire de session (conservé pour compat.)
   xSelSync();paintExact();renderExactPanel();
   xPreviewUpdate();
   faceEl.textContent=`${xLabel(filModeX.kind)} : arêtes tangentes ${filModeX.tangent?'ajoutées automatiquement':'désactivées'} · ${filModeX.sel.length} arête(s).`;
@@ -523,12 +616,12 @@ function renderExactPanel(){
   const dp=xDimPrefix(k);
   const h=document.createElement('div');h.style.fontSize='.83rem';
   h.innerHTML=ed
-    ?`<b>✏️ Édition — ${ed.name||xLabel(k)}</b><br><span class="note">${filModeX.sel.length} arête(s) retenue(s) · ${filModeX.edges.length} arêtes vivides · ✕ ou clic d'une ligne = retirer, arête/face 3D = ajouter.</span>`
-    :`<b>${xIcon(k)} ${xLabel(k)} OCCT</b> <span class="note">(surfaces analytiques, lisses)</span><br><span class="note">${filModeX.sel.length?filModeX.sel.length+' arête(s) ✅':'Cliquez une arête en 3D (noir · jaune au survol).'} · ${filModeX.edges.length} arêtes détectées.</span>`;
+    ?`<b>✏️ Édition — ${ed.name||xLabel(k)}</b><br><span class="note">${filModeX.sel.length} arête(s) retenue(s) · ${filModeX.edges.length} arêtes vives${(filModeX.tang&&filModeX.tang.length)?' + '+filModeX.tang.length+' grises (raccords lisses, non arrondissables)':''} · ✕ ou clic d'une ligne = retirer, arête/face 3D = ajouter.</span>`
+    :`<b>${xIcon(k)} ${xLabel(k)} OCCT</b> <span class="note">(surfaces analytiques, lisses)</span><br><span class="note">${filModeX.sel.length?filModeX.sel.length+' arête(s) ✅':'Cliquez une arête en 3D (noire · jaune au survol) — les grises sont des raccords lisses, impossibles à arrondir.'} · ${filModeX.edges.length} arêtes vives${(filModeX.tang&&filModeX.tang.length)?' · '+filModeX.tang.length+' grises':''}.</span>`;
   p.appendChild(h);
   const lab=document.createElement('label');lab.textContent=(xIsChamfer(k)?'Distance':'Rayon')+' par défaut (mm)';
   const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=filModeX.radius;inp.style.width='80px';
-  inp.addEventListener('input',()=>{const v=parseFloat(String(inp.value).replace(',','.'));if(v>0&&isFinite(v))filModeX.radius=v;});
+  inp.addEventListener('input',()=>{const v=parseFloat(String(inp.value).replace(',','.'));if(v>0&&isFinite(v)){filModeX.radius=v;filMemo.r[xIsChamfer(k)?'chamfer':'fillet']=v;}});
   inp.addEventListener('click',e=>e.stopPropagation());
   inp.addEventListener('keydown',e=>e.stopPropagation());
   p.appendChild(lab);p.appendChild(inp);
@@ -540,6 +633,7 @@ function renderExactPanel(){
   tc.title='Coché : le calcul suit la chaîne tangente de chaque arête choisie. Décoché : pas de recherche de tangences. Dans les 2 cas, seules les arêtes cliquées sont sélectionnées (Ctrl/Cmd+clic pour plusieurs).';
   tc.addEventListener('change',()=>{
     filModeX.tangent=tc.checked;
+    filMemo.tangent=tc.checked; // V0.2.4 : l'état des tangentes est retenu d'une session à l'autre
     xSelSync();paintExact();renderExactPanel();
     faceEl.textContent=`${xLabel(k)} : arêtes tangentes ${tc.checked?'ajoutées automatiquement (germes en jaune)':'désactivées (clic = une arête · Ctrl/Cmd+clic = plusieurs)'} · ${filModeX.sel.length} arête(s).`;
   });
@@ -561,7 +655,8 @@ function renderExactPanel(){
     const pv=document.createElement('div');pv.className='note';
     pv.style.marginTop='4px';
     pv.textContent=xPrevBody?'🟠 Aperçu : la pièce telle qu’elle sera, les nouvelles faces en orange.'
-                           :'🟠 Aperçu indisponible (noyau exact indisponible ou arête sans diagnostic).';
+                           :(filModeX._prevMsg? '⚠️ Aperçu impossible — '+filModeX._prevMsg
+                           :'🟠 Aperçu indisponible (noyau exact indisponible ou arête sans diagnostic).');
     p.appendChild(pv);
   }
   const lst=document.createElement('div');lst.className='col';lst.style.marginTop='6px';lst.style.maxHeight='220px';lst.style.overflow='auto';

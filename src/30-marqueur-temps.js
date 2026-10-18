@@ -172,7 +172,7 @@ function rebuildInner(projPass){
     bodies=prevBodies;occLive=prevLive;
     try{drawSketchHelpers();}catch(e){}
     if(filMode){try{buildFilletOverlay();}catch(e){}}
-    else if(filModeX&&occLive&&occLive.shape){try{filModeX.edges=occSharpEdges(occLive.shape).filter(e=>e.sharp);}catch(e){}try{buildExactOverlay();}catch(e){}}
+    else if(filModeX&&occLive&&occLive.shape){try{filEdgesReload();}catch(e){}try{buildExactOverlay();}catch(e){}}
     faceEl.textContent+=(faceEl.textContent?'\n':'')+'Rebuild interrompu ('+why+') — dernier état valide conservé.';
     builtHash=null;builtEngine=null;builtVersion=-1;
     refreshParts();renderTree();renderTimeline();autosave();applyClip();occStatus();refreshMirror();buildEdgeOverlay();clearHover();
@@ -187,7 +187,7 @@ function rebuildInner(projPass){
   (doc.features||[]).forEach(f=>{if(f.type==='extrude'&&!f.op)f.op='add';});
   // Voie exacte OCCT (prioritaire) : prismes BRep + Fuse/Cut + tessellation.
   if(occHas()){
-    if(occRebuild()){occEngineMsg='exact OCCT';occStatus();refreshParts();renderTree();renderTimeline();autosave();applyClip();if(filMode)buildFilletOverlay();else if(filModeX){if(occLive&&occLive.shape){try{filModeX.edges=occSharpEdges(occLive.shape).filter(e=>e.sharp);}catch(e){}}buildExactOverlay();}buildEdgeOverlay();refreshMirror();commitPrev();builtEngine='exact';buildDone();projRefreshRerun(projPass);return;}
+    if(occRebuild()){occEngineMsg='exact OCCT';occStatus();refreshParts();renderTree();renderTimeline();autosave();applyClip();if(filMode)buildFilletOverlay();else if(filModeX){if(occLive&&occLive.shape){try{filEdgesReload();}catch(e){}}buildExactOverlay();}buildEdgeOverlay();refreshMirror();commitPrev();builtEngine='exact';buildDone();projRefreshRerun(projPass);return;}
     occEngineMsg='maillage (repli exact impossible — voir Mesure)';
     faceEl.textContent+=(faceEl.textContent?'\n':'')+'OCCT : repli sur le moteur maillage pour ce rebuild.';
     if(bodies.length)clearBodies(); // sécurité : un repli partiel ne doit jamais doubler l'affichage
@@ -299,7 +299,7 @@ function rebuildInner(projPass){
   occStatus();
   if(filWarn.length)faceEl.textContent+=(faceEl.textContent?'\n':'')+filWarn.slice(0,4).join('\n');
   if(filMode)buildFilletOverlay();
-  else if(filModeX){if(occLive&&occLive.shape){try{filModeX.edges=occSharpEdges(occLive.shape).filter(e=>e.sharp);}catch(e){}}buildExactOverlay();}
+else if(filModeX){if(occLive&&occLive.shape){try{filEdgesReload();}catch(e){}}buildExactOverlay();}
   buildEdgeOverlay();refreshMirror();
   commitPrev();builtEngine='mesh';buildDone();projRefreshRerun(projPass);
   }catch(err){
