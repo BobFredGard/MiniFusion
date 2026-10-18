@@ -281,6 +281,7 @@ function mfWs(w){
   document.querySelectorAll('[data-mfws]').forEach(b=>b.classList.toggle('on',b.dataset.mfws===w));
   if(w==='fao'){try{const t=document.getElementById('faoToggle');const tw=document.getElementById('faoTreeWrap');if(tw&&tw.classList.contains('folded')&&t)t.click();}catch(e){}}
   try{mfPosTabs();}catch(e){}
+  try{viewCenterShift();}catch(e){} // V0.2.5 : le pivot suit la zone visible (espace CAO/FAO)
 }
 function mfCommands(){
   // registre de la recherche : boutons des menus, du ruban et des commandes FAO

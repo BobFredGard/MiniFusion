@@ -5553,6 +5553,7 @@ function faoFoldSet(f){ // replier/déplier SANS toucher à localStorage (clic m
   faoTogEl.textContent=faoFolded?'❮':'❯';
   faoTogEl.title=faoFolded?'Déplier le panneau FAO':'Rabattre le panneau FAO sur la droite';
   if(faoAddBarEl)faoAddBarEl.style.display=faoFolded?'none':'';
+  try{viewCenterShift();}catch(e){} // V0.2.5 : le pivot suit la zone visible
 }
 function faoInitUI(){
   if(typeof document==='undefined')return;

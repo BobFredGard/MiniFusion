@@ -1252,6 +1252,20 @@ function occExtrudeDraft(shape,bs,sp,angleDeg){
     return{shape:r.shape,warnings};
   }finally{occDispose(bin);}
 }
+function occSurfNormalAt(surf,u,v){
+  // Normale de surface en (u,v) : [x,y,z] NON orientée (donne min(θ,π−θ) par produit
+  // scalaire) ou null si la surface ne la définit pas. Utilisée uniquement pour
+  // trancher un conflit drapeau/géométrie (congé sur congé) : coût faible.
+  try{
+    const pr=new occt.GeomLProp_SLProps_1(surf,u,v,1,1e-6);
+    let r=null;
+    if(pr.IsNormalDefined()){
+      const N=pr.Normal();r=[N.X(),N.Y(),N.Z()];N.delete();
+    }
+    pr.delete();
+    return r;
+  }catch(err){return null;}
+}
 function occSharpEdges(shape){
   // Arêtes uniques classées : sharp (noire, C0) vs tangente (grise, G1+). Validé par exécution.
   const out=[],bin=[];
@@ -1313,6 +1327,45 @@ function occSharpEdges(shape){
                 try{sharp=(occt.BRep_Tool.Continuity_1(e,faces[fl[0]],faces[fl[1]])===occt.GeomAbs_Shape.GeomAbs_C0);}
                 catch(err){sharp=true;}
               }else sharp=false;
+              // 2026-10-18 V0.2.5 : congé SUR congé — le noyau ne pose PAS le drapeau G1
+              // sur la jonction des deux congés : BRep_Tool répond C0 alors que les
+              // surfaces sont TANGENTES (mesuré sur la pédale : 4 fragments noirs de 2 à
+              // 7 mm, dihédrale mesurée 0.0°, pendant que toutes les vraies arêtes vives
+              // font ≥ 24°). Si le drapeau dit « vive », on INTERROGE la géométrie :
+              // pcurve de l'arête dans chaque face → UV → normale (SLProps) à 3 stations
+              // (25/50/75 %) ; dès QU'UN échantillon dépasse le seuil, on garde « vive »
+              // (test MAX : un congé avec raccord non tangent quelque part reste noir).
+              if(sharp&&fl.length>=2){
+                // le drapeau OCCT dit « vive » : on le MET À L'ÉPREUVE du point de
+                // vue géométrique avant de l'accepter (toutes les paires de faces).
+                let mesure=false,maxA=0;
+                test_paires:
+                for(let i=0;i<fl.length;i++){
+                  for(let j=i+1;j<fl.length;j++){
+                    const E1=faces[fl[i]],E2=faces[fl[j]];
+                    try{
+                      const g1=new occt.BRepAdaptor_Curve2d_2(e,E1);bin.push(g1);
+                      const g2=new occt.BRepAdaptor_Curve2d_2(e,E2);bin.push(g2);
+                      const w0=g1.FirstParameter(),w1=g1.LastParameter();
+                      if(!(w1>w0))continue; // arête vue comme point dans ce couple : rien à mesurer ici
+                      const s1=occt.BRep_Tool.Surface_1(E1,new occt.TopLoc_Location_1());bin.push(s1);
+                      const s2=occt.BRep_Tool.Surface_1(E2,new occt.TopLoc_Location_1());bin.push(s2);
+                      for(const p of [0.25,0.5,0.75]){
+                        const q1=g1.Value(w0+(w1-w0)*p),q2=g2.Value(w0+(w1-w0)*p);
+                        bin.push(q1);bin.push(q2);
+                        const n1=occSurfNormalAt(s1,q1.X(),q1.Y()),n2=occSurfNormalAt(s2,q2.X(),q2.Y());
+                        if(!n1||!n2){mesure=false;break test_paires;} // mesure indisponible : verdict OCCT conservé
+                        mesure=true;
+                        const d=(n1[0]*n2[0]+n1[1]*n2[1]+n1[2]*n2[2])/(Math.hypot(n1[0],n1[1],n1[2])||1)/(Math.hypot(n2[0],n2[1],n2[2])||1);
+                        const th=Math.acos(Math.max(-1,Math.min(1,d)))*180/Math.PI;
+                        const dev=Math.min(th,180-th);
+                        if(dev>maxA)maxA=dev;
+                      }
+                    }catch(err){mesure=false;break test_paires;}
+                  }
+                }
+                if(mesure&&maxA<3)sharp=false; // G1 confirmé sur toute l'arête : TANGENTE (grise)
+              }
               out.push({mid,pts:occCurvePts(ad,u0,u1),len:s.len,sharp});
             }
           }

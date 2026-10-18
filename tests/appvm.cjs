@@ -81,7 +81,8 @@ function mkScene(){
   return o;
 }
 function mkObject(){
-  const o={children:[],position:{x:0,y:0,z:0},rotation:{x:0,y:0,z:0,order:'XYZ'},scale:{x:1,y:1,z:1},
+  const o={children:[],position:{x:0,y:0,z:0,set(nx,ny,nz){this.x=+nx||0;this.y=+ny||0;this.z=+nz||0;},copy(v){if(v){this.x=v.x;this.y=v.y;this.z=v.z;}return this;},setScalar(s){this.x=this.y=this.z=+s||0;},setFromMatrixPosition(){return this;}},rotation:{x:0,y:0,z:0,order:'XYZ'},scale:{x:1,y:1,z:1,setScalar(s){this.x=this.y=this.z=+s||1;}},
+    quaternion:{copy(){return this;},setFromUnitVectors(){return this;},setFromAxisAngle(){return this;},set(){return this;}},
     name:'',visible:true,userData:{},type:'Object3D',isMesh:false,isGroup:false,
     add(){return this;},remove(){return this;},addEventListener(){},removeEventListener(){},
     dispatchEvent(){return true;},traverse(){},raycast(){},updateMatrix(){},dispose(){}};

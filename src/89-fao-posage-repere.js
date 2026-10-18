@@ -50,6 +50,10 @@ let faoOpTriad=null;
 let faoPoseGrp=null,faoPoseTriad=null,faoPoseSig='',faoPoseDots=null,faoPoseHover=-1;
 function faoPoseSetupSel(){
   try{
+    // Espace Modèle (interface moderne, data-ws="cao") : aucun visuel FAO à l'écran —
+    // ni brut, ni repère, ni points cardinaux, même si un posage reste sélectionné.
+    // Interface classique : pas d'attribut, le visuel suit la sélection comme avant.
+    if(document.body.getAttribute('data-ws')==='cao')return null;
     if(typeof sel==='undefined'||!sel||!(sel.kind==='faoSetup'||sel.kind==='faoOp'))return null;
     if(typeof skEdit!=='undefined'&&skEdit)return null;
     const r=faoRoot();
@@ -104,12 +108,28 @@ function faoPoseSync(){
   if(!drawn)try{
     const bg=new THREE.BoxGeometry(st.x1-st.x0,st.y1-st.y0,st.z1-st.z0);
     const box=new THREE.Mesh(bg,new THREE.MeshBasicMaterial({color:0xffb340,transparent:true,opacity:.13,depthWrite:false,side:THREE.DoubleSide}));
-    box.position.set((st.x0+st.x1)/2,(st.y0+st.y1)/2,(st.z0+st.z1)/2);box.raycast=()=>{};box.renderOrder=5;g.add(box);
+    box.position.set((st.x0+st.x1)/2,(st.y0+st.x1)/2,(st.z0+st.z1)/2);box.raycast=()=>{};box.renderOrder=5;g.add(box);
     const e=new THREE.LineSegments(new THREE.EdgesGeometry(bg),new THREE.LineBasicMaterial({color:0xffb340,transparent:true,opacity:.85}));
     e.position.copy(box.position);e.raycast=()=>{};g.add(e);
   }catch(e){}
+  // CUBE DU MODÈLE (corps) : mêmes règles d'affichage que le cube du brut (faces
+  // transparentes + arêtes), en blanc — visible dès qu'un posage est sélectionné,
+  // quelle que soit l'origine choisie (avant : seulement un contour pointillé quand
+  // l'origine était posée sur le modèle). Il encadre le volume réellement usiné.
+  let Bm=null;
+  try{Bm=faoModelBox(setup);}catch(e){Bm=null;}
+  try{
+    const eqSt=Bm&&st&&['x0','y0','z0','x1','y1','z1'].every(k=>Math.abs(+Bm[k]-+st[k])<1e-6);
+    if(Bm&&!eqSt){
+      const mg=new THREE.BoxGeometry(Bm.x1-Bm.x0,Bm.y1-Bm.y0,Bm.z1-Bm.z0);
+      const mo=new THREE.Mesh(mg,new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.10,depthWrite:false,side:THREE.DoubleSide}));
+      mo.position.set((Bm.x0+Bm.x1)/2,(Bm.y0+Bm.y1)/2,(Bm.z0+Bm.z1)/2);mo.raycast=()=>{};mo.renderOrder=5;g.add(mo);
+      const me=new THREE.LineSegments(new THREE.EdgesGeometry(mg),new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:.6}));
+      me.position.copy(mo.position);me.raycast=()=>{};g.add(me);
+    }
+  }catch(e){}
   // points cardinaux de la boîte de référence (brut ou modèle)
-  const B=(spec.src==='model'&&faoModelBox(setup))||st;
+  const B=(spec.src==='model'&&Bm)||st;
   const cylAx=(spec.src!=='model'&&st.cyl)?({x:0,y:1,z:2})[st.cyl.axis]:-1;
   P=FAO_CARD.map(f=>{
     if(cylAx>=0){const u=f[(cylAx+1)%3],v=f[(cylAx+2)%3];if(u!==0.5&&v!==0.5)return null;} // coin de section : hors du cylindre
@@ -123,11 +143,6 @@ function faoPoseSync(){
     ge.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
     const pts=new THREE.Points(ge,new THREE.PointsMaterial({size:8,sizeAttenuation:false,vertexColors:true,depthTest:false,depthWrite:false,transparent:true}));
     pts.renderOrder=995;pts.raycast=()=>{};g.add(pts);
-    if(spec.src==='model'&&B!==st){ // contour du modèle quand l'origine s'y rapporte
-      const mg=new THREE.BoxGeometry(B.x1-B.x0,B.y1-B.y0,B.z1-B.z0);
-      const ml=new THREE.LineSegments(new THREE.EdgesGeometry(mg),new THREE.LineDashedMaterial({color:0xffffff,dashSize:2,gapSize:1.5,transparent:true,opacity:.6}));
-      ml.position.set((B.x0+B.x1)/2,(B.y0+B.y1)/2,(B.z0+B.z1)/2);ml.computeLineDistances();ml.raycast=()=>{};g.add(ml);
-    }
   }catch(e){}
   }
   faoPoseDots=P;

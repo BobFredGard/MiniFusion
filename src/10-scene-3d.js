@@ -76,6 +76,64 @@ function fit(){
   // 2026-10-15-004 : cible fixe 1024×1024 comme viewer_STEP (plus de résolution
   // verticale ; la garde [0,1] du shader règle les bords).
   if(mirrorRT)mirrorDirty=true;
+  try{viewCenterShift();}catch(e){}
+}
+/* V0.2.5 : le CENTRE de rotation suit la zone VISIBLE du grand panneau.
+   Problème : le pivot d'orbite (cible OrbitControls) se projette au centre du CANVAS ;
+   les bandeaux verticaux (arborescence à gauche, barre + panneau FAO à droite en
+   classique) couvrent une moitié de l'écran — la pièce paraît excentrée et « fuit »
+   quand on orbite. Fix : on décale la PROJECTION (camera.setViewOffset) du récentrage
+   d pixels — le pivot se projette alors au milieu de la zone libre, et raycast/mesure/
+   reflet suivent (ils passent tous par la matrice projetée, jamais par des NDC bruts).
+   viewMidOffset : PURE — mesure les bandes et renvoie {W,H,L,R,d} (d = décalage px,
+   positif = contenu à DROITE). Édition d'esquisse : cadre à 0 — la superposition SVG
+   (s2w/w2s) et le fondu 3D partagent le même centrage, ne pas les séparer. */
+function viewMidOffset(){
+  const o={W:0,H:0,L:0,R:0,d:0};
+  const w=$('vpwrap');if(!w)return o;
+  o.W=w.clientWidth||0;o.H=w.clientHeight||0;
+  if(!o.W||!o.H)return o;
+  o.R=o.W; // par défaut : zone libre jusqu'au bord droit du canvas
+  try{if(typeof skEdit!=='undefined'&&skEdit)return o;}catch(e){}
+  try{
+    const cr=w.getBoundingClientRect();
+    const edge=(el,side)=>{ // bandeau de GAUCHE → cote droite ; bandeau de DROITE → cote gauche
+      if(!el)return null;
+      const r=el.getBoundingClientRect();
+      if(!r||r.width<=1||r.height<=1)return null;
+      return side==='l'?r.right-cr.left:r.left-cr.left;
+    };
+    const mod=!!(document.body&&document.body.classList&&document.body.classList.contains('ui-modern'));
+    const ws=mod?document.body.getAttribute('data-ws'):null;
+    // Moderne espace FAO : le panneau Usinage vit À GAUCHE (#faoWrap repoussé) ;
+    // les fiches posage/opération sont hors canvas (aside.right). Classique :
+    // arborescence à gauche, barre + panneau FAO en overlay À DROITE du canvas
+    // (#faoWrap garde sa min-width 270 MÊME replié → mesurer ses ENFANTS).
+    if(mod&&ws==='fao'){
+      const tw=(typeof faoTreeWrapEl!=='undefined'&&faoTreeWrapEl)?faoTreeWrapEl:document.getElementById('faoTreeWrap');
+      const v=edge(tw,'l');if(v!=null)o.L=v;
+    }else{
+      const v=edge(document.getElementById('treeWrap'),'l');if(v!=null)o.L=v;
+      const fw=typeof faoTreeWrapEl!=='undefined'?faoTreeWrapEl:null;
+      const ab=typeof faoAddBarEl!=='undefined'?faoAddBarEl:document.getElementById('faoAddBar');
+      const a=edge(ab,'r'),b2=edge(fw||document.getElementById('faoTreeWrap'),'r');
+      const vr=(a!=null&&b2!=null)?Math.min(a,b2):(a!=null?a:b2);
+      if(vr!=null)o.R=vr;
+    }
+  }catch(e){}
+  o.d=(o.L+o.R)/2-o.W/2;
+  return o;
+}
+function viewCenterShift(){
+  if(!camera)return;
+  const o=viewMidOffset();
+  if(!o.W||!o.H||Math.abs(o.d)<2){ // seuil 2px : un onglet isolé ne vaut pas un re-projet
+    try{if(camera.view&&camera.view.enabled)camera.clearViewOffset();}catch(e){}
+    return;
+  }
+  // offsetX = −d → la frustum se décale de −d : le contenu VA À DROITE de d pixels,
+  // l'ancien centre projeté se retrouve au milieu de la zone visible.
+  try{if(typeof camera.setViewOffset==='function')camera.setViewOffset(o.W,Math.max(1,o.H),-o.d,0,o.W,Math.max(1,o.H));}catch(e){}
 }
 const _mn=new THREE.Vector3(0,0,1),_mrwp=new THREE.Vector3(),_mcwp=new THREE.Vector3(),_mview=new THREE.Vector3();
 const _mrot=new THREE.Matrix4(),_mlook=new THREE.Vector3(),_mtgt=new THREE.Vector3(),_mcu=new THREE.Vector3();

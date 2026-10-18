@@ -273,7 +273,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.2.4';
+const APP_VER='V0.2.5';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -651,6 +651,64 @@ function fit(){
   // 2026-10-15-004 : cible fixe 1024×1024 comme viewer_STEP (plus de résolution
   // verticale ; la garde [0,1] du shader règle les bords).
   if(mirrorRT)mirrorDirty=true;
+  try{viewCenterShift();}catch(e){}
+}
+/* V0.2.5 : le CENTRE de rotation suit la zone VISIBLE du grand panneau.
+   Problème : le pivot d'orbite (cible OrbitControls) se projette au centre du CANVAS ;
+   les bandeaux verticaux (arborescence à gauche, barre + panneau FAO à droite en
+   classique) couvrent une moitié de l'écran — la pièce paraît excentrée et « fuit »
+   quand on orbite. Fix : on décale la PROJECTION (camera.setViewOffset) du récentrage
+   d pixels — le pivot se projette alors au milieu de la zone libre, et raycast/mesure/
+   reflet suivent (ils passent tous par la matrice projetée, jamais par des NDC bruts).
+   viewMidOffset : PURE — mesure les bandes et renvoie {W,H,L,R,d} (d = décalage px,
+   positif = contenu à DROITE). Édition d'esquisse : cadre à 0 — la superposition SVG
+   (s2w/w2s) et le fondu 3D partagent le même centrage, ne pas les séparer. */
+function viewMidOffset(){
+  const o={W:0,H:0,L:0,R:0,d:0};
+  const w=$('vpwrap');if(!w)return o;
+  o.W=w.clientWidth||0;o.H=w.clientHeight||0;
+  if(!o.W||!o.H)return o;
+  o.R=o.W; // par défaut : zone libre jusqu'au bord droit du canvas
+  try{if(typeof skEdit!=='undefined'&&skEdit)return o;}catch(e){}
+  try{
+    const cr=w.getBoundingClientRect();
+    const edge=(el,side)=>{ // bandeau de GAUCHE → cote droite ; bandeau de DROITE → cote gauche
+      if(!el)return null;
+      const r=el.getBoundingClientRect();
+      if(!r||r.width<=1||r.height<=1)return null;
+      return side==='l'?r.right-cr.left:r.left-cr.left;
+    };
+    const mod=!!(document.body&&document.body.classList&&document.body.classList.contains('ui-modern'));
+    const ws=mod?document.body.getAttribute('data-ws'):null;
+    // Moderne espace FAO : le panneau Usinage vit À GAUCHE (#faoWrap repoussé) ;
+    // les fiches posage/opération sont hors canvas (aside.right). Classique :
+    // arborescence à gauche, barre + panneau FAO en overlay À DROITE du canvas
+    // (#faoWrap garde sa min-width 270 MÊME replié → mesurer ses ENFANTS).
+    if(mod&&ws==='fao'){
+      const tw=(typeof faoTreeWrapEl!=='undefined'&&faoTreeWrapEl)?faoTreeWrapEl:document.getElementById('faoTreeWrap');
+      const v=edge(tw,'l');if(v!=null)o.L=v;
+    }else{
+      const v=edge(document.getElementById('treeWrap'),'l');if(v!=null)o.L=v;
+      const fw=typeof faoTreeWrapEl!=='undefined'?faoTreeWrapEl:null;
+      const ab=typeof faoAddBarEl!=='undefined'?faoAddBarEl:document.getElementById('faoAddBar');
+      const a=edge(ab,'r'),b2=edge(fw||document.getElementById('faoTreeWrap'),'r');
+      const vr=(a!=null&&b2!=null)?Math.min(a,b2):(a!=null?a:b2);
+      if(vr!=null)o.R=vr;
+    }
+  }catch(e){}
+  o.d=(o.L+o.R)/2-o.W/2;
+  return o;
+}
+function viewCenterShift(){
+  if(!camera)return;
+  const o=viewMidOffset();
+  if(!o.W||!o.H||Math.abs(o.d)<2){ // seuil 2px : un onglet isolé ne vaut pas un re-projet
+    try{if(camera.view&&camera.view.enabled)camera.clearViewOffset();}catch(e){}
+    return;
+  }
+  // offsetX = −d → la frustum se décale de −d : le contenu VA À DROITE de d pixels,
+  // l'ancien centre projeté se retrouve au milieu de la zone visible.
+  try{if(typeof camera.setViewOffset==='function')camera.setViewOffset(o.W,Math.max(1,o.H),-o.d,0,o.W,Math.max(1,o.H));}catch(e){}
 }
 const _mn=new THREE.Vector3(0,0,1),_mrwp=new THREE.Vector3(),_mcwp=new THREE.Vector3(),_mview=new THREE.Vector3();
 const _mrot=new THREE.Matrix4(),_mlook=new THREE.Vector3(),_mtgt=new THREE.Vector3(),_mcu=new THREE.Vector3();
@@ -2804,6 +2862,20 @@ function occExtrudeDraft(shape,bs,sp,angleDeg){
     return{shape:r.shape,warnings};
   }finally{occDispose(bin);}
 }
+function occSurfNormalAt(surf,u,v){
+  // Normale de surface en (u,v) : [x,y,z] NON orientée (donne min(θ,π−θ) par produit
+  // scalaire) ou null si la surface ne la définit pas. Utilisée uniquement pour
+  // trancher un conflit drapeau/géométrie (congé sur congé) : coût faible.
+  try{
+    const pr=new occt.GeomLProp_SLProps_1(surf,u,v,1,1e-6);
+    let r=null;
+    if(pr.IsNormalDefined()){
+      const N=pr.Normal();r=[N.X(),N.Y(),N.Z()];N.delete();
+    }
+    pr.delete();
+    return r;
+  }catch(err){return null;}
+}
 function occSharpEdges(shape){
   // Arêtes uniques classées : sharp (noire, C0) vs tangente (grise, G1+). Validé par exécution.
   const out=[],bin=[];
@@ -2865,6 +2937,45 @@ function occSharpEdges(shape){
                 try{sharp=(occt.BRep_Tool.Continuity_1(e,faces[fl[0]],faces[fl[1]])===occt.GeomAbs_Shape.GeomAbs_C0);}
                 catch(err){sharp=true;}
               }else sharp=false;
+              // 2026-10-18 V0.2.5 : congé SUR congé — le noyau ne pose PAS le drapeau G1
+              // sur la jonction des deux congés : BRep_Tool répond C0 alors que les
+              // surfaces sont TANGENTES (mesuré sur la pédale : 4 fragments noirs de 2 à
+              // 7 mm, dihédrale mesurée 0.0°, pendant que toutes les vraies arêtes vives
+              // font ≥ 24°). Si le drapeau dit « vive », on INTERROGE la géométrie :
+              // pcurve de l'arête dans chaque face → UV → normale (SLProps) à 3 stations
+              // (25/50/75 %) ; dès QU'UN échantillon dépasse le seuil, on garde « vive »
+              // (test MAX : un congé avec raccord non tangent quelque part reste noir).
+              if(sharp&&fl.length>=2){
+                // le drapeau OCCT dit « vive » : on le MET À L'ÉPREUVE du point de
+                // vue géométrique avant de l'accepter (toutes les paires de faces).
+                let mesure=false,maxA=0;
+                test_paires:
+                for(let i=0;i<fl.length;i++){
+                  for(let j=i+1;j<fl.length;j++){
+                    const E1=faces[fl[i]],E2=faces[fl[j]];
+                    try{
+                      const g1=new occt.BRepAdaptor_Curve2d_2(e,E1);bin.push(g1);
+                      const g2=new occt.BRepAdaptor_Curve2d_2(e,E2);bin.push(g2);
+                      const w0=g1.FirstParameter(),w1=g1.LastParameter();
+                      if(!(w1>w0))continue; // arête vue comme point dans ce couple : rien à mesurer ici
+                      const s1=occt.BRep_Tool.Surface_1(E1,new occt.TopLoc_Location_1());bin.push(s1);
+                      const s2=occt.BRep_Tool.Surface_1(E2,new occt.TopLoc_Location_1());bin.push(s2);
+                      for(const p of [0.25,0.5,0.75]){
+                        const q1=g1.Value(w0+(w1-w0)*p),q2=g2.Value(w0+(w1-w0)*p);
+                        bin.push(q1);bin.push(q2);
+                        const n1=occSurfNormalAt(s1,q1.X(),q1.Y()),n2=occSurfNormalAt(s2,q2.X(),q2.Y());
+                        if(!n1||!n2){mesure=false;break test_paires;} // mesure indisponible : verdict OCCT conservé
+                        mesure=true;
+                        const d=(n1[0]*n2[0]+n1[1]*n2[1]+n1[2]*n2[2])/(Math.hypot(n1[0],n1[1],n1[2])||1)/(Math.hypot(n2[0],n2[1],n2[2])||1);
+                        const th=Math.acos(Math.max(-1,Math.min(1,d)))*180/Math.PI;
+                        const dev=Math.min(th,180-th);
+                        if(dev>maxA)maxA=dev;
+                      }
+                    }catch(err){mesure=false;break test_paires;}
+                  }
+                }
+                if(mesure&&maxA<3)sharp=false; // G1 confirmé sur toute l'arête : TANGENTE (grise)
+              }
               out.push({mid,pts:occCurvePts(ad,u0,u1),len:s.len,sharp});
             }
           }
@@ -20305,6 +20416,7 @@ function faoFoldSet(f){ // replier/déplier SANS toucher à localStorage (clic m
   faoTogEl.textContent=faoFolded?'❮':'❯';
   faoTogEl.title=faoFolded?'Déplier le panneau FAO':'Rabattre le panneau FAO sur la droite';
   if(faoAddBarEl)faoAddBarEl.style.display=faoFolded?'none':'';
+  try{viewCenterShift();}catch(e){} // V0.2.5 : le pivot suit la zone visible
 }
 function faoInitUI(){
   if(typeof document==='undefined')return;
@@ -30116,6 +30228,10 @@ let faoOpTriad=null;
 let faoPoseGrp=null,faoPoseTriad=null,faoPoseSig='',faoPoseDots=null,faoPoseHover=-1;
 function faoPoseSetupSel(){
   try{
+    // Espace Modèle (interface moderne, data-ws="cao") : aucun visuel FAO à l'écran —
+    // ni brut, ni repère, ni points cardinaux, même si un posage reste sélectionné.
+    // Interface classique : pas d'attribut, le visuel suit la sélection comme avant.
+    if(document.body.getAttribute('data-ws')==='cao')return null;
     if(typeof sel==='undefined'||!sel||!(sel.kind==='faoSetup'||sel.kind==='faoOp'))return null;
     if(typeof skEdit!=='undefined'&&skEdit)return null;
     const r=faoRoot();
@@ -30170,12 +30286,28 @@ function faoPoseSync(){
   if(!drawn)try{
     const bg=new THREE.BoxGeometry(st.x1-st.x0,st.y1-st.y0,st.z1-st.z0);
     const box=new THREE.Mesh(bg,new THREE.MeshBasicMaterial({color:0xffb340,transparent:true,opacity:.13,depthWrite:false,side:THREE.DoubleSide}));
-    box.position.set((st.x0+st.x1)/2,(st.y0+st.y1)/2,(st.z0+st.z1)/2);box.raycast=()=>{};box.renderOrder=5;g.add(box);
+    box.position.set((st.x0+st.x1)/2,(st.y0+st.x1)/2,(st.z0+st.z1)/2);box.raycast=()=>{};box.renderOrder=5;g.add(box);
     const e=new THREE.LineSegments(new THREE.EdgesGeometry(bg),new THREE.LineBasicMaterial({color:0xffb340,transparent:true,opacity:.85}));
     e.position.copy(box.position);e.raycast=()=>{};g.add(e);
   }catch(e){}
+  // CUBE DU MODÈLE (corps) : mêmes règles d'affichage que le cube du brut (faces
+  // transparentes + arêtes), en blanc — visible dès qu'un posage est sélectionné,
+  // quelle que soit l'origine choisie (avant : seulement un contour pointillé quand
+  // l'origine était posée sur le modèle). Il encadre le volume réellement usiné.
+  let Bm=null;
+  try{Bm=faoModelBox(setup);}catch(e){Bm=null;}
+  try{
+    const eqSt=Bm&&st&&['x0','y0','z0','x1','y1','z1'].every(k=>Math.abs(+Bm[k]-+st[k])<1e-6);
+    if(Bm&&!eqSt){
+      const mg=new THREE.BoxGeometry(Bm.x1-Bm.x0,Bm.y1-Bm.y0,Bm.z1-Bm.z0);
+      const mo=new THREE.Mesh(mg,new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.10,depthWrite:false,side:THREE.DoubleSide}));
+      mo.position.set((Bm.x0+Bm.x1)/2,(Bm.y0+Bm.y1)/2,(Bm.z0+Bm.z1)/2);mo.raycast=()=>{};mo.renderOrder=5;g.add(mo);
+      const me=new THREE.LineSegments(new THREE.EdgesGeometry(mg),new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:.6}));
+      me.position.copy(mo.position);me.raycast=()=>{};g.add(me);
+    }
+  }catch(e){}
   // points cardinaux de la boîte de référence (brut ou modèle)
-  const B=(spec.src==='model'&&faoModelBox(setup))||st;
+  const B=(spec.src==='model'&&Bm)||st;
   const cylAx=(spec.src!=='model'&&st.cyl)?({x:0,y:1,z:2})[st.cyl.axis]:-1;
   P=FAO_CARD.map(f=>{
     if(cylAx>=0){const u=f[(cylAx+1)%3],v=f[(cylAx+2)%3];if(u!==0.5&&v!==0.5)return null;} // coin de section : hors du cylindre
@@ -30189,11 +30321,6 @@ function faoPoseSync(){
     ge.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
     const pts=new THREE.Points(ge,new THREE.PointsMaterial({size:8,sizeAttenuation:false,vertexColors:true,depthTest:false,depthWrite:false,transparent:true}));
     pts.renderOrder=995;pts.raycast=()=>{};g.add(pts);
-    if(spec.src==='model'&&B!==st){ // contour du modèle quand l'origine s'y rapporte
-      const mg=new THREE.BoxGeometry(B.x1-B.x0,B.y1-B.y0,B.z1-B.z0);
-      const ml=new THREE.LineSegments(new THREE.EdgesGeometry(mg),new THREE.LineDashedMaterial({color:0xffffff,dashSize:2,gapSize:1.5,transparent:true,opacity:.6}));
-      ml.position.set((B.x0+B.x1)/2,(B.y0+B.y1)/2,(B.z0+B.z1)/2);ml.computeLineDistances();ml.raycast=()=>{};g.add(ml);
-    }
   }catch(e){}
   }
   faoPoseDots=P;
@@ -32932,6 +33059,7 @@ function treeFoldSet(f){ // replier/déplier SANS toucher à localStorage (clic 
   if(treeFolded)wrap.classList.add('folded');else wrap.classList.remove('folded');
   tog.textContent=treeFolded?'❮':'❯';
   tog.title=treeFolded?'Déplier l’arborescence':'Replier l’arborescence';
+  try{viewCenterShift();}catch(e){} // V0.2.5 : le pivot suit la zone visible
 }
 (function(){
   const tog=$('treeToggle');
@@ -34099,6 +34227,7 @@ function mfWs(w){
   document.querySelectorAll('[data-mfws]').forEach(b=>b.classList.toggle('on',b.dataset.mfws===w));
   if(w==='fao'){try{const t=document.getElementById('faoToggle');const tw=document.getElementById('faoTreeWrap');if(tw&&tw.classList.contains('folded')&&t)t.click();}catch(e){}}
   try{mfPosTabs();}catch(e){}
+  try{viewCenterShift();}catch(e){} // V0.2.5 : le pivot suit la zone visible (espace CAO/FAO)
 }
 function mfCommands(){
   // registre de la recherche : boutons des menus, du ruban et des commandes FAO

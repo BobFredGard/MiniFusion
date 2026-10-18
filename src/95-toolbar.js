@@ -162,6 +162,7 @@ function treeFoldSet(f){ // replier/déplier SANS toucher à localStorage (clic 
   if(treeFolded)wrap.classList.add('folded');else wrap.classList.remove('folded');
   tog.textContent=treeFolded?'❮':'❯';
   tog.title=treeFolded?'Déplier l’arborescence':'Replier l’arborescence';
+  try{viewCenterShift();}catch(e){} // V0.2.5 : le pivot suit la zone visible
 }
 (function(){
   const tog=$('treeToggle');

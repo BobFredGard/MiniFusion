@@ -14,6 +14,7 @@ const SUITES = [
   "test_apercu_diff",
   "test_apercu_edition",
   "test_conge_reel",
+  "test_conge_sur_conge",
   "test_conge_fond_poche",
   "test_conge_tangent",
   "test_arbre_selection",
@@ -100,7 +101,9 @@ const SUITES = [
   "test_fresh_default",
   "test_hard_phases",
   "test_sk_origin",
-  "test_sk_hv_drag"
+  "test_sk_hv_drag",
+  "test_vue_centre",
+  "test_ws_pose_cao"
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {
