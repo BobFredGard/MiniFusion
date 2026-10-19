@@ -402,12 +402,13 @@ function sketchRestoreCamera(){
     _skPrevCam=null; _skOrtho=null; _skOrigCam=null;
   }catch(e){}
 }
-function findHostForFace(pt,n){
-  // Face porteuse : extrusion antérieure contenant pt (tol 1 mm).
+function findHostForFace(pt,n,tol){
+  // Face porteuse : extrusion antérieure contenant pt (tol 1 mm par défaut).
   //  · TOP/BOTTOM : plan haut/bas, normale ∥ axe d'extrusion — comportement historique.
   //  · SIDE : face latérale = ARÊTE du footprint extrudée (normale ⟂ axe) — le plan SUIT
   //    l'arête quand le profil bouge, et h est clampé à la course → poches latérales suivent.
-  // Null si plan d'origine.
+  // Null si plan d'origine. `tol` : tolérance (mm) pour le réancrage d'un hôte périmé.
+  tol=(tol>0)?tol:1.0;
   let best=null,bd=1e9;
   for(const f of (doc.features||[])){
     if(f.type!=='extrude'||f.visible===false)continue;
@@ -421,7 +422,7 @@ function findHostForFace(pt,n){
       const top=o.clone().addScaledVector(hn,spH.hi),bot=o.clone().addScaledVector(hn,spH.lo);
       const cand=(dot>0)?top:bot; // pt doit être sur TOP si n==hn, BOTTOM si n==-hn
       const mDist=Math.abs(n.dot(new THREE.Vector3().subVectors(pt,cand)));
-      if(mDist>1.0||mDist>bd)continue;
+      if(mDist>tol||mDist>bd)continue;
       // footprint : pt projeté sur le plan de l'esquisse porteuse
       const dx=pt.x-o.x,dy=pt.y-o.y,dz=pt.z-o.z;
       const x=dx*hu.x+dy*hu.y+dz*hu.z,y=dx*hv.x+dy*hv.y+dz*hv.z;
@@ -465,7 +466,7 @@ function findHostForFace(pt,n){
         const dx=pt.x-o.x,dy=pt.y-o.y,dz=pt.z-o.z;
         const x=dx*hu.x+dy*hu.y+dz*hu.z,y=dx*hv.x+dy*hv.y+dz*hv.z,zl=dx*hn.x+dy*hn.y+dz*hn.z;
         const spS=extrudeSpan(f),lo=spS.lo,hi=spS.hi;
-        if(zl<lo-1.0||zl>hi+1.0)continue; // hors course du prisme : ce n'est pas UNE de ses faces
+        if(zl<lo-tol||zl>hi+tol)continue; // hors course du prisme : ce n'est pas UNE de ses faces
         const n2x=n.x*hu.x+n.y*hu.y+n.z*hu.z,n2y=n.x*hv.x+n.y*hv.y+n.z*hv.z;
         if(Math.hypot(n2x,n2y)<0.99)continue; // normale pas dans le plan de l'esquisse porteuse
         let bestE=null,bd2=1e9;
@@ -478,7 +479,7 @@ function findHostForFace(pt,n){
           const t=((x-a.x)*ex+(y-a.y)*ey)/L2;
           const px=a.x+ex*t,py=a.y+ey*t; // projection sur la droite (plan de la face = droite ∞ extrudée)
           const dist=Math.hypot(x-px,y-py);
-          if(dist>1.0||dist>bd2)continue;
+          if(dist>tol||dist>bd2)continue;
           bd2=dist;bestE={en,px,py};
         }
         if(!bestE||bd2>bd)continue;
@@ -559,9 +560,61 @@ function resolveSketchHost(sk){
   // normal/axes de la porteuse : restent ceux de la face (host ne tourne pas en prisme droit)
   return true;
 }
+function reanchorSketchHost(sk){
+  // Hôte PÉRIMÉ : la fonction porteuse a été supprimée/remplacée et sk.host.feat ne
+  // désigne plus rien → l'esquisse restait figée (perçage « comme avant » après un
+  // déplacement de face). On retrouve la face VIVANTE la plus proche, puis on réécrit
+  // sk.host pour que resolveSketchHost la fasse de nouveau suivre le solide.
+  if(!sk||sk.plane!=='FACE')return false;
+  if(sk.host&&sk.host.feat&&doc.features.some(f=>f.id===sk.host.feat))return false; // hôte vivant
+  if(!sk.axN)return false;
+  const name=(sk.host&&sk.host.name)||null;
+  const nv=new THREE.Vector3(+sk.axN[0]||0,+sk.axN[1]||0,+sk.axN[2]||0);
+  if(!(nv.lengthSq()>1e-6))return false;
+  nv.normalize();
+  const set=h=>{
+    sk.host=Object.assign({feat:h.feat.id,tag:h.tag,x:h.x,y:h.y,name:name||entName('face')},
+      (h.tag==='SIDE')?{edge:h.edge,h:h.h}:{});
+    return true;
+  };
+  const tryPt=(p,tol)=>{try{return findHostForFace(new THREE.Vector3(p[0],p[1],p[2]),nv.clone(),tol);}catch(e){return null;}};
+  // 1) l'ORIGINE d'abord : x/y/h sont ceux de l'origine → la position de l'esquisse est
+  //    conservée (l'arête projetée ne sert qu'en secours, ses points pouvant l'avoir quittée).
+  if(sk.origin&&isFinite(sk.origin[0])&&isFinite(sk.origin[1])&&isFinite(sk.origin[2])){
+    for(const tl of [1.0,5.0]){const h=tryPt(sk.origin,tl);if(h&&h.feat)return set(h);}
+  }
+  // 2) sinon les arêtes projetées (srcMid) : on garde l'hôte le plus fréquent.
+  const tally=new Map();
+  for(const en of (sk.entities||[])){
+    if(!(en.proj&&en.srcMid&&isFinite(en.srcMid[0])&&isFinite(en.srcMid[1])&&isFinite(en.srcMid[2])))continue;
+    for(const tl of [1.0,5.0]){
+      const h=tryPt(en.srcMid,tl);if(!h||!h.feat)continue;
+      const key=h.feat.id+'|'+h.tag+'|'+(h.edge||'');
+      const t=tally.get(key)||{n:0,h:h};t.n++;tally.set(key,t);
+      break;
+    }
+  }
+  let best=null,bn=0;
+  for(const t of tally.values())if(t.n>bn){bn=t.n;best=t.h;}
+  return best?set(best):false;
+}
 function resolveAllSketchHosts(){
   // Appelé en tête de chaque rebuild : matérialise toutes les esquisses sur faces.
   let ch=false;
+  for(let pass=0;pass<3;pass++){
+    let any=false;
+    for(const sk of (doc.sketches||[])){
+      if(sk.plane==='FACE'&&sk.host&&sk.host.feat){if(resolveSketchHost(sk))any=true;}
+    }
+    if(!any)break;ch=ch||any;
+  }
+  // hôtes PÉRIMÉS : la fonction porteuse n'existe plus → réancrage sur la face vivante
+  for(const sk of (doc.sketches||[])){
+    if(sk.plane!=='FACE'||!sk.host||!sk.host.feat)continue; // sans hôte : migration plus bas
+    if(doc.features.some(f=>f.id===sk.host.feat))continue;  // hôte vivant : rien à faire
+    if(reanchorSketchHost(sk))ch=true;
+  }
+  // l'hôte réancré vient d'être écrit : matérialise tout de suite les origines
   for(let pass=0;pass<3;pass++){
     let any=false;
     for(const sk of (doc.sketches||[])){

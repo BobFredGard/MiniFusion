@@ -2482,7 +2482,19 @@ function occFinalShape(upto){
   order.forEach(bid=>{
     if(consumed.has(bid))return;
     const r=occReplayBody(bid,byBody[bid]);
-    if(r.shape)perBody.push({bodyId:bid,shape:r.shape});
+    if(r.shape){
+      let sh=r.shape;
+      // 2026-10-19 : quand un congé/chanfrein exact a été appliqué, recoudre les faces de MÊME
+      // surface qu'il a pu scinder (surtout via le repli ARÊTE PAR ARÊTE quand le lot OCCT
+      // échoue) : une face voisine — ou le congé — restait coupée en DEUX par une couture
+      // parasite. occUnify est celui des fusions additives. PAS d'unify sans congé : les
+      // coutures d'esquisse (scission d'une face à un point du profil) restent cliquables —
+      // notamment comme ancre d'un congé (cf. test_conge_fond_poche).
+      if((byBody[bid]||[]).some(f=>f.type==='xfillet')){
+        try{const u=occUnify(occShapeCopy(sh));if(u&&u!==sh){try{sh.delete();}catch(e){}sh=u;}}catch(e){}
+      }
+      perBody.push({bodyId:bid,shape:sh});
+    }
     bin.push(...r.bin);itemShapes.push(...r.itemShapes);
     ghostShapes.push(...r.ghostShapes);msgs.push(...r.msgs);items.push(...r.items);
     imports.push(...r.imports); // imports entrés dans la chaîne exacte (affichés par le corps)

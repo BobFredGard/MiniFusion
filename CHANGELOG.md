@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**272 versions**, de `2026-09-28b` à `V0.3.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**273 versions**, de `2026-09-28b` à `V0.3.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4075,3 +4075,9 @@ Nouveaux tests : test_vue_centre (pivot / décalage de vue : 8 scénarios + cont
 - **Git LFS** : `occt/*.wasm`, `Exemples/*.miniFusion` et `Exemples/*.step` sont suivis par LFS (`.gitattributes`) ; les blobs existants ont été convertis dans l'index. Cloner avec `git lfs install && git lfs pull`.
 - **Deux tests réalignés** : `test_vue_centre` lisait `src/88-fao.js` (supprimé) et lit désormais les 12 morceaux `src/88-fao-*.js` ; `test_repeat_session` sélectionnait le premier champ des propriétés, devenu le nom du document, et ignore désormais `#docNameIn` pour viser le vrai champ de paramètre.
 - Tests : `node build.js --check`, `node tests/chk_syntaxe.cjs`, `node tests/run-fast.cjs` (19/19), `node tools/lint.cjs` (0 erreur) et suite complète `node tests/run.cjs` (103/103).
+
+## V0.3.3 - Réancrage des hôtes d'esquisse orphelins et faces recousues après congé
+- **Hôte périmé d'esquisse** : quand la fonction porteuse d'une esquisse de face (`sk.host.feat`) a été supprimée ou remplacée (déplacement de face, re-création de l'extrusion…), `resolveSketchHost` sortait sans rien faire et l'esquisse restait figée à son origine enregistrée — le perçage restait « comme avant » après un déplacement de face. `resolveAllSketchHosts` réancre désormais l'hôte mort sur la face VIVANTE la plus proche (`reanchorSketchHost`), en privilégiant l'origine de l'esquisse pour conserver sa position ; les arêtes projetées ne servent qu'en secours.
+- **Tolérance paramétrable** : `findHostForFace` accepte une tolérance (1 mm par défaut, 5 mm en secours) au lieu du seuil fixe codé en dur.
+- **Face voisine scindée par un congé** : le repli ARÊTE PAR ARÊTE de `occFilletRun` (quand le lot OCCT échoue) pouvait laisser une face voisine — ou le congé lui-même — coupée en deux par une couture parasite. En fin de rejeu d'un corps, `occFinalShape` applique `occUnify` (comme après les fusions additives) **seulement si un congé/chanfrein exact est présent** : les faces de même surface sont recousues. Sans congé, rien n'est unifié, donc les coutures d'esquisse restent cliquables comme ancre de congé.
+- Tests : nouveau `test_hote_oriphelin` (réancrage des trois esquisses orphelines du support pédale, sans déplacer celles dont l'origine tombe déjà sur une face vivante) ; `test_conge_sur_conge` réaligné (148 arêtes, 85 vives, 63 tangentes : les 5 arêtes recousues étaient des coutures de même surface ; les jonctions tangentes de 2 mm et 3,15 mm restent présentes). Suite complète 104/104.

@@ -15,6 +15,7 @@ const SUITES = [
   "test_apercu_edition",
   "test_conge_reel",
   "test_conge_sur_conge",
+  "test_hote_oriphelin",
   "test_conge_fond_poche",
   "test_conge_tangent",
   "test_arbre_selection",
