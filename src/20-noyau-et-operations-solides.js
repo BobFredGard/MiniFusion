@@ -2434,7 +2434,9 @@ function occReplayBody(bid,list){
     const op=(f.type==='hole')?'cut':(f.op||'add');
     if(op==='cut'){
       // Fantôme tessellé AVANT delete (use-after-delete = crash + repli fantôme).
-      const ghostGeo=(()=>{try{return occTessellate(shape,0.5);}catch(e){msgs.push(`${f.name} : outil illisible`);return null;}})();
+      // Filet hélicoïdal : le fantôme est un simple aperçu → maillage plus grossier
+      // (2× plus rapide), la géométrie exacte et le solide final ne changent pas.
+      const ghostGeo=(()=>{try{return f.type==='hole'?occTessellate(shape,1,0.8):occTessellate(shape,0.5);}catch(e){msgs.push(`${f.name} : outil illisible`);return null;}})();
       if(!result){msgs.push(`${f.name} : découpe dans le vide — ignorée`);if(ghostGeo)ghostShapes.push({geo:ghostGeo,orphan:true,fid:f.id});return;}
       if(ghostGeo)ghostShapes.push({geo:ghostGeo,orphan:false,fid:f.id});
       // Préfixe inchangé : le solide accumulé contient DÉJÀ cette découpe → on saute le

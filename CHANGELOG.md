@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**273 versions**, de `2026-09-28b` à `V0.3.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**274 versions**, de `2026-09-28b` à `V0.3.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4081,3 +4081,14 @@ Nouveaux tests : test_vue_centre (pivot / décalage de vue : 8 scénarios + cont
 - **Tolérance paramétrable** : `findHostForFace` accepte une tolérance (1 mm par défaut, 5 mm en secours) au lieu du seuil fixe codé en dur.
 - **Face voisine scindée par un congé** : le repli ARÊTE PAR ARÊTE de `occFilletRun` (quand le lot OCCT échoue) pouvait laisser une face voisine — ou le congé lui-même — coupée en deux par une couture parasite. En fin de rejeu d'un corps, `occFinalShape` applique `occUnify` (comme après les fusions additives) **seulement si un congé/chanfrein exact est présent** : les faces de même surface sont recousues. Sans congé, rien n'est unifié, donc les coutures d'esquisse restent cliquables comme ancre de congé.
 - Tests : nouveau `test_hote_oriphelin` (réancrage des trois esquisses orphelines du support pédale, sans déplacer celles dont l'origine tombe déjà sur une face vivante) ; `test_conge_sur_conge` réaligné (148 arêtes, 85 vives, 63 tangentes : les 5 arêtes recousues étaient des coutures de même surface ; les jonctions tangentes de 2 mm et 3,15 mm restent présentes). Suite complète 104/104.
+
+## V0.3.4 - Filet taraudé réellement modélisé (ISO, impression 3D)
+- **Cause** : un trou taraudé n'était qu'un perçage au Ø du taraud, recouvert d'un filet purement décoratif (spirale de maillage, `holeThreadOverlay`) — impossible à imprimer, le pas et le profil ISO n'existaient pas dans le solide exact.
+- **Profondeur ISO** : `isoHoleThread(size,p,jeu)` calcule, d'après ISO 68-1 / ISO 965-1, `D1 = d − 1,082532·p` (Ø mineur), `D2 = d − 0,649519·p` (Ø sur flancs) et le profil interne (méplats crête `p/4`, racine `p/8`, flancs à 60°, course axiale `5p/16`). Le **jeu d'impression** est un jeu sur le diamètre (défaut 0,2 mm) : décalage radial `jeu/2`, d'où `rCrete = D1/2 + jeu/2` et `rRacine = D/2 + jeu/2`.
+- **Noyau exact** : `occHoleThreadGroove(P,D,zStart,zLen…)` construit une gorge hélicoïdale d'un pas (rayons crête→racine→crête) et la balaie le long d'une hélice **BSpline lisse** (`GeomAPI_PointsToBSpline_2`) par `BRepOffsetAPI_MakePipeShell` (trièdre Frenet), puis l'ajoute à l'outil du trou dans `occShapeOfHole` : le fût est percé au Ø `max(perçage, rCrete)` et la gorge creuse le filet. Toute polyligne comme spine donnait un solide dégénéré (volume ~0) — d'où la BSpline.
+- **Rapidité** : l'outil de perçage est un **composé** (fût + gorge) découpé en UNE passe OCCT, au lieu d'un fuse explicite de la gorge hélicoïdale (opération la plus coûteuse). Rejeu d'un M8×1,25 fileté : ~4,4 s → ~2,7 s (−40 %), pour un résultat identique (le fantôme d'aperçu du perçage est en plus maillé plus grossièrement).
+- **Jonction hélice/pièce** : la gorge **dépasse l'entrée d'un pas** (et la sortie pour un débouchant) — les faces de cap tombent hors matière, plus de lèvre ni de couture au bord du trou (faces de la pièce : 30 → 26).
+- **Filet « débouchant tout »** : nouveau mode de longueur filetée (à côté de Longueur / Jusqu'à la face / Prochaine face) — le filet suit toute la profondeur de la pièce.
+- **Réglages** : case « Filet » (cosmétique / modélisé) et champ « Jeu d'impression (Ø mm) » dans les propriétés du trou ; `serialise` conserve `thread.model`/`thread.clear` ; le filet modélisé suit le taraudage, la longueur filetée `len`, le lamage/fraisure et le bout (débouchant/borgne). Longueur < un pas ou noyau maillage : repli en trou lisse avec message explicite (`filet modélisé impossible…` / `noyau exact requis…`), et plus de filet cosmétique superposé quand le filet est modélisé.
+- **FAO** : `faoHolesDetect` recolle les bandes cylindriques découpées par la gorge et reconnaît le trou d'office (`modeled`) — sans quoi la couverture angulaire et la classification matière/creux, perturbées par le filet, faisaient disparaître le taraudage de la FAO ; l'association au perçage compare au Ø effectif `max(Ø taraud, D1+jeu)`.
+- Tests : nouveau `test_filet_modele` (bloc 100×60×30, M8×1,25 débouchant 20 mm jeu 0,2 et borgne lamé Ø11×6 modélisé 10 mm jeu 0 : volume et classification de la gorge, matière intacte au-delà du Ø majeur, vide sous le Ø mineur, persistance, repli maillage, reconnaissance FAO, filet « débouchant tout » traversant). Suite complète 105/105.

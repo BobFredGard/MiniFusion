@@ -2,7 +2,7 @@
 
 **CAO paramétrique et FAO dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2 et G-code. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.3.3** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.3.4** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Deux interfaces, cinq thèmes
 
@@ -122,7 +122,7 @@ Le dépôt stocke les gros binaires (`occt/*.wasm`, `Exemples/*.miniFusion`, `Ex
 |---|---|
 | `src/*.js` | **Les sources** (48 fichiers, de l'en-tête à l'initialisation ; la FAO est découpée par domaine : parcours, caches, post-processeurs, simulation, interface, ébauche 3D, contour). C'est ici qu'on travaille. |
 | `fusion_mvp.html` | **Livrable généré** par `node build.js`. On ne l'édite jamais à la main. |
-| `tests/` | Suite Node portable (103 suites, dont certaines sur le noyau OCCT réel) : `node tests/run.cjs` ; sous-ensemble CI : `node tests/run-fast.cjs`. |
+| `tests/` | Suite Node portable (105 suites, dont certaines sur le noyau OCCT réel) : `node tests/run.cjs` ; sous-ensemble CI : `node tests/run-fast.cjs`. |
 | `tools/lint.cjs` | Lint ESLint du script concaténé (même ordre que le build) : `npm run lint` (erreurs) ou `npm run lint:all` (avertissements inclus). |
 | `.github/workflows/ci.yml` | CI : build à jour, syntaxe, tests rapides, lint. |
 | `CHANGELOG.md` | Une entrée par version : cause, correctif, test. |

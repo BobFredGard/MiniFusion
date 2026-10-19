@@ -71,7 +71,7 @@ function mkShapePath(){
   // .curves / .holes réels (tableaux) pour compter les trous.
   return function(){return{curves:[],holes:[],moveTo(){},lineTo(){},absarc(){},closePath(){}};};
 }
-function mkBoxGeometry(){return{dispose(){}};}
+function mkBoxGeometry(){return{dispose(){},applyQuaternion(){return this;},translate(){return this;}};}
 function mkMaterial(){return{dispose(){},side:0,transparent:false};}
 function mkMeshGeometry(){return{dispose(){},getAttribute(){return null;}};}
 function mkScene(){

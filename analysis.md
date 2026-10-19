@@ -1,6 +1,6 @@
 # Analyse du projet MiniFusion
 
-*État au 2026-10-19 — version `V0.3.3`.*
+*État au 2026-10-19 — version `V0.3.4`.*
 
 ## Nature du projet
 
@@ -15,7 +15,7 @@ Le noyau géométrique exact est **OpenCascade (OCCT) compilé en WebAssembly**.
 | `src/*.js` | Sources, **48 fichiers** (~37 000 lignes), concaténés dans l'ordre numérique par `build.js`. |
 | `fusion_mvp.html` | Livrable généré. **Ne jamais l'éditer à la main.** |
 | `build.js` | Concaténation + bandeaux de section ; `--check` échoue si le livrable est périmé. |
-| `tests/` | **103 suites** Node portables (`tests/run.cjs`) + sous-ensemble CI (`tests/run-fast.cjs`). |
+| `tests/` | **105 suites** Node portables (`tests/run.cjs`) + sous-ensemble CI (`tests/run-fast.cjs`). |
 | `tools/lint.cjs` | Lint ESLint du script concaténé, dans l'ordre exact du build. |
 | `threejs/` | three.js, OrbitControls et CSG (MIT). |
 | `occt/` | Noyau OCCT WebAssembly (LGPL), `.wasm` suivis par Git LFS. |
@@ -45,7 +45,7 @@ L'exécution reste **un seul script global** : les fichiers ne sont pas des modu
 1. `node build.js` reconstruit le livrable.
 2. `node build.js --check` vérifie qu'il correspond aux sources.
 3. `node tests/chk_syntaxe.cjs` vérifie la syntaxe du script généré.
-4. `node tests/run.cjs` exécute les 103 suites ; `tests/run-fast.cjs` en exécute 19 pour la CI.
+4. `node tests/run.cjs` exécute les 105 suites ; `tests/run-fast.cjs` en exécute 19 pour la CI.
 5. `npm run lint` vérifie les identifiants non définis ; `npm run lint:all` inclut les avertissements (`catch` vides).
 6. `.github/workflows/ci.yml` enchaîne build, syntaxe, tests rapides et lint.
 

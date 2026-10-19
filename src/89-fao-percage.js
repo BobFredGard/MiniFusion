@@ -96,18 +96,37 @@ function faoHolesDetect(shapes){
   // chaque intervalle Z contigu est un trou à part.
   const segs=new Map();
   groups.forEach(function(G,key){
+    // Filet modélisé : la gorge hélicoïdale découpe la paroi cylindrique en bandes
+    // étroites. On les recolle en UN tronçon continu (sinon la FAO perd le trou).
+    let mod=false;
+    try{
+      (doc.features||[]).forEach(function(f){
+        if(mod||!f||f.type!=='hole'||!f.thread||!f.thread.model)return;
+        const sk=doc.sketches.find(function(q){return q.id===f.sketchId;});if(!sk)return;
+        const th=(typeof isoHoleThread==='function')?isoHoleThread(f.thread.size,f.thread.p,f.thread.clear):null;if(!th)return;
+        const A=holeAxis(f,sk),rb=Math.max((+f.d)/2,th.D1/2+th.c);
+        A.pts.forEach(function(P){if(Math.abs(G.r-rb)<0.03&&Math.hypot(G.x-P.x,G.y-P.y)<0.03)mod=true;});
+      });
+    }catch(e){}
+    if(mod&&G.rng.length>1){
+      const R0=G.rng.slice().sort(function(a,b){return a.lo-b.lo;});
+      G.rng=[{lo:R0[0].lo,hi:R0[R0.length-1].hi,u:Math.PI*2,f:R0[0].f}];
+    }
     const R=G.rng.slice().sort(function(a,b){return a.lo-b.lo;});
     const out=[];
     R.forEach(function(q){const c=out[out.length-1];
       if(c&&q.lo<=c.zHi+0.01){c.zHi=Math.max(c.zHi,q.hi);c.cov+=q.u;c.faces.push(q.f);}
-      else out.push({x:G.x,y:G.y,r:G.r,zLo:q.lo,zHi:q.hi,cov:q.u,faces:[q.f],shape:G.shape});});
+      else out.push({x:G.x,y:G.y,r:G.r,zLo:q.lo,zHi:q.hi,cov:q.u,faces:[q.f],shape:G.shape,modeled:mod});});
     out.forEach(function(g,i){segs.set(key+'#'+i,g);});
   });
   groups.clear();segs.forEach(function(v,k){groups.set(k,v);});
   const holes=[];
   groups.forEach(function(g){
-    if(g.cov<Math.PI*1.5)return; // < 270° : congé, rainure, demi-lune — pas un trou
-    if(!faoHoleIsHole(shapes[g.shape],g))return; // pion / bossage : matière DEDANS
+    // filet modélisé : couverture/classification perturbées par la gorge → trou d'office
+    if(!g.modeled){
+      if(g.cov<Math.PI*1.5)return; // < 270° : congé, rainure, demi-lune — pas un trou
+      if(!faoHoleIsHole(shapes[g.shape],g))return; // pion / bossage : matière DEDANS
+    }
     const h={x:g.x,y:g.y,d:+(2*g.r).toFixed(3),ztop:+g.zHi.toFixed(3),zbot:+g.zLo.toFixed(3),
       through:false,tipAng:0,zSurf:+g.zHi.toFixed(3),chD:0,cb:null,faces:g.faces};
     cones.forEach(function(c){
@@ -153,7 +172,10 @@ function faoHolesDetect(shapes){
       A.pts.forEach(function(P){
         holes.forEach(function(h){
           if(Math.hypot(h.x-P.x,h.y-P.y)>0.02)return;
-          if(Math.abs(h.d-(+f.d))>0.02&&!(f.kind==='cbore'&&Math.abs(h.d-(+f.cbD))<0.02))return;
+          // filet modélisé : le noyau est percé au Ø mineur + jeu, pas au Ø de taraud
+          let de=+f.d;
+          if(f.thread&&f.thread.model){const th=(typeof isoHoleThread==='function')?isoHoleThread(f.thread.size,f.thread.p,f.thread.clear):null;if(th)de=Math.max(+f.d,th.D1+2*th.c);}
+          if(Math.abs(h.d-de)>0.02&&!(f.kind==='cbore'&&Math.abs(h.d-(+f.cbD))<0.02))return;
           h.feat={id:f.id,name:f.name,kind:f.kind||'simple',thread:(f.thread&&f.thread.size)?{size:f.thread.size,p:+f.thread.p,len:+f._thLen||+f.thread.len||0}:null,
             role:(f.kind==='cbore'&&Math.abs(h.d-(+f.cbD))<0.02)?'lamage':'trou'};
         });
