@@ -131,8 +131,14 @@ function occHoleThreadGroove(P,D,zStart,zLen,th,bins){
   const profPt=function(r,z){
     return occBinPush(bins,new occt.gp_Pnt_3(P0.x+U.x*(r-r0)+W.x*z,P0.y+U.y*(r-r0)+W.y*z,P0.z+U.z*(r-r0)+W.z*z));
   };
+  // Bords de FERMETURE du profil décalés de SEAM vers l'extérieur : confondus avec la
+  // racine (r2), ils se superposaient à la facette (0→p/8) de même rayon. Le fil se
+  // recouvrait lui-même et, selon la longueur, MakePipeShell produisait un solide
+  // auto-sécant (volume faux ou négatif) qui faisait échouer les découpes suivantes
+  // (filet débouchant). SEAM est très inférieur à la résolution d'impression.
+  const SEAM=0.03;
   const zs=[0,p/8,p/8+5*p/16,p/8+5*p/16+p/4,p];
-  const rs=[r2,r2,r1,r1,r2];
+  const rs=[r2,r2,r1,r1,r2+SEAM];
   const profPts=zs.map(function(z,i){return profPt(rs[i],z);});
   profPts.push(profPts[0]);
   const pipe=occBinPush(bins,new occt.BRepOffsetAPI_MakePipeShell(makeSpine()));
@@ -203,18 +209,27 @@ function occShapeOfHole(f){
   A.pts.forEach(function(P){
     const zEnd=zEndOf(P);
     const segs=holeProfileSegs(N,zEnd);
+    const body=[];
     segs.forEach(function(sg,i){
-      const z0=sg[0]-(i===0?OVER:0),h=sg[1]+(i===0?OVER:0);
       // 1er segment rallongé de OVER au-dessus du plan : un CÔNE (fraisure) est prolongé
       // sur sa génératrice, sinon le Ø au ras de la face serait trop petit (10,96 pour 11).
+      // Les segments suivants gardent leurs bornes exactes — c'est la FUSION ci-dessous,
+      // et non un recouvrement, qui supprime les opercules internes (lamage/fraisure).
+      const z0=sg[0]-(i===0?OVER:0),h=sg[1]+(i===0?OVER:0);
       const r0=(i===0&&sg[1]>1e-9)?sg[2]+OVER*(sg[2]-sg[3])/sg[1]:sg[2];
       const o=occBinPush(bins,new occt.gp_Pnt_3(P.x+D.x*z0,P.y+D.y*z0,P.z+D.z*z0));
       const ax=occBinPush(bins,new occt.gp_Ax2_3(o,dir));
       let sh=null;
       if(Math.abs(sg[2]-sg[3])<1e-9){const mk=new occt.BRepPrimAPI_MakeCylinder_3(ax,sg[2],h);sh=mk.Shape();try{mk.delete();}catch(e){}}
       else{const mk=new occt.BRepPrimAPI_MakeCone_3(ax,r0,sg[3],h);sh=mk.Shape();try{mk.delete();}catch(e){}}
-      add(sh);
+      body.push(sh);
     });
+    // Les segments du profil (fût, lamage/fraisure, pointe) sont FUSIONNÉS : une découpe
+    // avec un composé laisse les opercules internes (membrane au fond du lamage). La fusion
+    // ne porte que sur ces quelques corps simples — la gorge reste à part dans le composé.
+    let prof=body[0];
+    for(let k=1;k<body.length;k++)prof=occFuse(prof,body[k]);
+    add(prof);
     if(thModel){
       const off=(N.kind==='cbore')?N.cbH:(N.kind==='csink'?Math.max(0,(N.csD-N.d)/2/Math.tan(N.csA*Math.PI/360)):0);
       const L=((f.thread.lenMode||'len')==='through')?Math.max(0,zEnd-off)

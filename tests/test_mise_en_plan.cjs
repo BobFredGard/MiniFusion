@@ -161,6 +161,32 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     shD.views = shD.views.filter(x=>x.id!==idPar && x.parent!==idPar);
     out.projCascade = shD.views.every(x=>x.parent!==idPar);
 
+    // 15) cotes en mm MODÈLE : l'échelle de la vue ne doit pas changer la valeur
+    const shM = doc.mep.sheets[doc.mep.cur];
+    shM.views.length = 0; shM.dims.length = 0;
+    const vScale = mepAddViewStd('front');
+    vScale.scale = 0.5; // vue 1:2
+    const dDist = {id:'dS1',kind:'dist',vid:vScale.id,vid2:null,a:{x:0,y:0},b:{x:10,y:0},off:8,ref:false,tol:null};
+    const dLen  = {id:'dS2',kind:'len', vid:vScale.id,vid2:null,a:{x:0,y:0},b:{x:10,y:0},off:8,ref:false,tol:null};
+    const dDia  = {id:'dS3',kind:'dia', vid:vScale.id,vid2:null,a:{x:0,y:0},b:{x:0,y:5},off:0,ref:false,tol:null};
+    shM.dims.push(dDist,dLen,dDia);
+    out.dimDistModel = mepDimValue(dDist);
+    out.dimLenModel  = mepDimValue(dLen);
+    out.dimDiaModel  = mepDimValue(dDia);
+
+    // 16) flip d'une vue de base : le miroir doit s'appliquer au rejeu
+    const vFlip = mepAddViewStd('front');
+    out.flipAvant = vFlip.v.slice();
+    vFlip.flip = true;
+    mepReprojectView(vFlip.id);
+    out.flipApres = vFlip.v.slice();
+
+    // 17) vue caméra câblée au ruban
+    const nCam = shM.views.length;
+    mepAddCameraViewCmd();
+    const vCam = shM.views[shM.views.length-1];
+    out.cameraAdded = shM.views.length===nCam+1 && !!vCam && vCam.kind==='base' && vCam.vk==='';
+
     return out;
   `;
   const p=vm.runInContext('(async()=>{\n'+body+'\n})()',ctx,{filename:'test_mep.cjs'});
@@ -212,6 +238,12 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.projReprojected,'rejeu : la projection suit la nouvelle base de la mère');
   A(val&&val.projSerialise,'projections sérialisées (clé proj)');
   A(val&&val.projCascade,'suppression de la mère : projections orphelines écartées');
+  A(val&&Math.abs(val.dimDistModel-10)<1e-9,'cote distance en mm modèle malgré une vue 1:2');
+  A(val&&Math.abs(val.dimLenModel-10)<1e-9,'cote longueur en mm modèle malgré une vue 1:2');
+  A(val&&Math.abs(val.dimDiaModel-10)<1e-9,'cote Ø en mm modèle malgré une vue 1:2');
+  A(val&&val.flipApres&&val.flipApres[0]===0&&val.flipApres[1]===0&&val.flipApres[2]===1,
+    'flip d\'une vue de base : v inversé au rejeu');
+  A(val&&val.cameraAdded,'vue Caméra ajoutée (bouton ruban câblé)');
 
   if(ko){console.log('FAIL '+ko+' assertion(s)');process.exit(1);}
   console.log('OK espace PLAN');

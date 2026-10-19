@@ -249,7 +249,9 @@ const MF_IC={
   ruler:'<path d="M3 8h18v8H3z"/><path d="M7 8v3M11 8v4M15 8v3M19 8v4"/>',
   dim:'<path d="M4 12h16M4 9v6M20 9v6"/><path d="M8 10l-2 2 2 2M16 10l2 2-2 2"/>',
   print:'<path d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2"/><rect x="6" y="14" width="12" height="7"/>',
-  sheet:'<path d="M5 3h10l4 4v14H5z"/><path d="M15 3v4h4M8 12h8M8 16h5"/>'
+  sheet:'<path d="M5 3h10l4 4v14H5z"/><path d="M15 3v4h4M8 12h8M8 16h5"/>',
+  camera:'<path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  aux:'<path d="M3 19l6-10 4 6 3-5 5 9z"/><path d="M3 5h18" stroke-dasharray="3 2"/>'
 };
 function mfI(k,size){const p=MF_IC[k];if(!p)return null;return '<svg viewBox="0 0 24 24" width="'+(size||20)+'" height="'+(size||20)+'" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+p+'</svg>';}
 /* ---------- mode moderne ---------- */
@@ -289,6 +291,8 @@ function mfRibbon(){
     ['sketch','Dessus',()=>{try{mepSetActive(true);mepAddViewStd('top');}catch(e){}},'Vue de dessus'],
     ['draft','Côté',()=>{try{mepSetActive(true);mepAddViewStd('right');}catch(e){}},'Vue de côté'],
     ['body','ISO',()=>{try{mepSetActive(true);mepAddViewStd('iso');}catch(e){}},'Axonométrie isométrique'],
+    ['camera','Caméra',()=>{try{mepAddCameraViewCmd();}catch(e){}},'Vue depuis la caméra 3D actuelle'],
+    ['aux','Auxiliaire',()=>{try{mepBeginAuxCmd();}catch(e){}},'Vue auxiliaire depuis une face inclinée sélectionnée en 3D'],
     ['section','Coupe',()=>{try{mepSetActive(true);mepBeginSectionCmd();}catch(e){}},'Vue en coupe (2 clics)'],
     ['detail','Détail',()=>{try{mepSetActive(true);mepBeginDetailCmd();}catch(e){}},'Vue de détail (centre + rayon)']],'mfPlan');
   grp('Dessin',[['sketch','Ligne',()=>mepTool('line')],['pattern','Rectangle',()=>mepTool('rect')],

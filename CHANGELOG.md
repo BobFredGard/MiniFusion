@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**274 versions**, de `2026-09-28b` à `V0.3.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**275 versions**, de `2026-09-28b` à `V0.3.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4092,3 +4092,15 @@ Nouveaux tests : test_vue_centre (pivot / décalage de vue : 8 scénarios + cont
 - **Réglages** : case « Filet » (cosmétique / modélisé) et champ « Jeu d'impression (Ø mm) » dans les propriétés du trou ; `serialise` conserve `thread.model`/`thread.clear` ; le filet modélisé suit le taraudage, la longueur filetée `len`, le lamage/fraisure et le bout (débouchant/borgne). Longueur < un pas ou noyau maillage : repli en trou lisse avec message explicite (`filet modélisé impossible…` / `noyau exact requis…`), et plus de filet cosmétique superposé quand le filet est modélisé.
 - **FAO** : `faoHolesDetect` recolle les bandes cylindriques découpées par la gorge et reconnaît le trou d'office (`modeled`) — sans quoi la couverture angulaire et la classification matière/creux, perturbées par le filet, faisaient disparaître le taraudage de la FAO ; l'association au perçage compare au Ø effectif `max(Ø taraud, D1+jeu)`.
 - Tests : nouveau `test_filet_modele` (bloc 100×60×30, M8×1,25 débouchant 20 mm jeu 0,2 et borgne lamé Ø11×6 modélisé 10 mm jeu 0 : volume et classification de la gorge, matière intacte au-delà du Ø majeur, vide sous le Ø mineur, persistance, repli maillage, reconnaissance FAO, filet « débouchant tout » traversant). Suite complète 105/105.
+
+## V0.3.5 - PLAN : cotes à l'échelle réelle, flip des vues de base, export/impression stylés
+- **Cotes justes à toute échelle** : `mepDimMeasure` renvoyait des mm papier (longueur modèle × `view.scale`, distance papier) ; une vue 1:2 affichait donc la moitié des cotes. Les valeurs longueur/distance/Ø/R sont désormais calculées en **mm modèle** (les ancres et les éléments de géométrie le sont déjà) ; seules les positions restent en mm papier. Tests : vue 1:2 → 10 mm mesurés.
+- **Cotes de longueur** : elles stockaient le point cliqué comme 2ᵉ ancre (`a=b`) → ligne de cote dégénérée. La cote porte maintenant sur les **deux extrémités réelles de l'arête**, et le décalage conserve le **côté du clic** (offset signé).
+- **Flip** : `mepBasisOf` ignorait `flip` pour les vues de base (Face/Dessus/Côté/ISO) ; il inverse désormais `v` aussi pour elles, à l'affichage comme au rejeu.
+- **HLR** : deux extrémités visibles ne garantissaient pas le milieu — une arête traversant derrière un corps restait entièrement visible. Le segment est subdivisé si son **milieu** est masqué.
+- **Export SVG / impression** : les éléments ne portent que des classes alors que la feuille de style `#mepCss` restait dans le `<head>` → traits et cotes sans style (page et cercles noirs). La CSS du plan est désormais **embarquée** dans le SVG exporté et injectée dans la fenêtre d'impression ; l'id `#mepSvg` est retiré du clone pour ne pas écraser les dimensions mm.
+- **Cartouche éditable** : champs Projet / Auteur / Date dans le panneau de planche (échelle et n° de planche restent automatiques).
+- **Vues Caméra et Auxiliaire** : les fonctions existaient mais n'étaient jamais appelées ; boutons « Caméra » (direction de la caméra 3D) et « Auxiliaire » (face inclinée sélectionnée) ajoutés au ruban PLAN.
+- **Lamage / fraisure ouverts sur le perçage** : la découpe en composé du fût et du lamage laissait une **membrane** au fond du lamage (et de la fraisure) — une surface fermait le trou. Les segments du profil sont désormais **fusionnés** en un seul outil : plus d'opercule (13 faces au lieu de 16 sur le trou lamé, aucun disque à Z24/Z27,9).
+- **Filet modélisé robuste** : le bord de fermeture du profil de gorge se superposait à la racine (`r2`) ; `MakePipeShell` produisait alors, selon la longueur, un solide **auto-sécant** (volume faux ou négatif) qui faisait échouer les découpes suivantes — le filet « débouchant tout » disparaissait et le corps final pouvait devenir vide. Le bord est décalé de 0,03 mm (`SEAM`, sous la résolution d'impression) : profil simple, gorge valide à toute longueur.
+- Tests : `test_mise_en_plan` passe à 50 assertions (cotes en mm modèle sur vue 1:2, flip de base, vue caméra) ; `test_filet_modele` à 19 assertions (3ᵉ trou fraisé, fond du lamage et de la fraisure ouverts, filet débouchant). Suite complète 105/105.

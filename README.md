@@ -2,7 +2,7 @@
 
 **CAO paramétrique et FAO dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2 et G-code. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.3.4** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.3.5** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Deux interfaces, cinq thèmes
 
@@ -93,7 +93,7 @@ En esquisse, le bandeau d'outils remplace le ruban et le panneau des contraintes
 ## PLAN
 
 **Mise en plan 2D** (espace PLAN, `src/98-mise-en-plan.js`) : la 3D reste accessible derrière l'overlay.
-- **Planches** A0 à A4, portrait ou paysage, onglets renommables, cadre ISO et cartouche éditable (projet, auteur, date, échelle, n° de planche).
+- **Planches** A0 à A4, portrait ou paysage, onglets renommables, cadre ISO et cartouche éditable (projet, auteur, date ; échelle et n° de planche automatiques).
 - **Vues** Face, Dessus, Côté, ISO, Caméra, Auxiliaire, Coupe et Détail, par corps ou assemblées ; vues projetées du 1er angle liées à leur vue mère.
 - **Arêtes** vives et tangentes du noyau exact, silhouettes de maillage pour les contours, arêtes cachées masquées (HLR de profondeur) et mode gris pointillé par vue.
 - **Cotation** : diamètre, rayon, longueur, distance, angle, tolérances ISO 286, cotes de référence, format numérique français.

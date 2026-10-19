@@ -18,7 +18,7 @@ const {loadApp}=require('./appvm.cjs');
     "  entities:[{id:'l1',t:'line',p1:'a',p2:'b'},{id:'l2',t:'line',p1:'b',p2:'c'},{id:'l3',t:'line',p1:'c',p2:'d'},{id:'l4',t:'line',p1:'d',p2:'a'}],constraints:[],dims:[],seq:20,visible:false};",
     "const mk=(id,pts)=>{const P={},E=[];pts.forEach((q,i)=>{P['h'+i]={x:q[0],y:q[1]};E.push({id:'e'+i,t:'cpoint',p:'h'+i,hole:true});});",
     "  return {id:id,name:id,plane:'XY',origin:[0,0,30],axU:[1,0,0],axV:[0,1,0],axN:[0,0,1],points:P,entities:E,constraints:[],dims:[],seq:30,visible:false};};",
-    "doc.sketches=[box,mk('s1',[[30,30]]),mk('s2',[[70,30]])];",
+    "doc.sketches=[box,mk('s1',[[30,30]]),mk('s2',[[70,30]]),mk('s3',[[50,30]])];",
     "doc.features=[{id:'E',type:'extrude',name:'Bloc',sketchId:'skB',distance:30,op:'add',visible:true}];",
     "doc.bodies=[];delete doc.activeBody;markDirty();rebuild();",
     // M8 × 1,25 débouchant, filet modélisé 20 mm, jeu 0,2
@@ -27,6 +27,9 @@ const {loadApp}=require('./appvm.cjs');
     // M8 × 1,25 borgne avec lamage : le filet commence APRÈS le lamage, jeu 0
     "askHole('s2');const f2=doc.features[doc.features.length-1];f2.kind='cbore';f2.d=tapDrill('M8',1.25);f2.cbD=11;f2.cbH=6;",
     "f2.end='blind';f2.depth=18;f2.tip=0;f2.thread={size:'M8',p:1.25,len:10,lenMode:'len',model:true,clear:0};f2.name=holeName(f2);",
+    // fraisure simple : même profil empilé (cône + fût), sans filet
+    "askHole('s3');const f3=doc.features[doc.features.length-1];f3.kind='csink';f3.d=6.8;f3.csD=11;f3.csA=90;",
+    "f3.end='blind';f3.depth=18;f3.tip=0;f3.name=holeName(f3);",
     "markDirty();rebuild();",
     "A(builtEngine==='exact'&&!doc.features.some(f=>f._err),'1 : rejeu exact du filet modélisé sans erreur');",
     "const vol=occCoqueVolume(occLive.shape),nf=occCoqueNFaces(occLive.shape);",
@@ -52,6 +55,11 @@ const {loadApp}=require('./appvm.cjs');
     "A(q2b<0.02,'4b : sous la longueur filetée du trou lamé, matière intacte ('+Math.round(q2b*100)+' %)');",
     "A(fracOut(70,30,4.75,27)>0.98,'4c : lamage Ø11 toujours vide à Ø9,5');",
     "A(fracOut(70,30,4.5,19)<0.02,'4d : hors du Ø majeur du trou lamé, matière intacte');",
+    // le fond du lamage / de la fraisure doit être OUVERT sur le perçage (pas d'opercule)
+    "A(st(70,30,24)===OUT,'4e : fond du lamage ouvert sur le perçage (pas de membrane)');",
+    "A(st(50,30,27.9)===OUT,'4f : fond de fraisure ouvert sur le perçage (pas de membrane)');",
+    "A(fracOut(50,30,3,20)>0.98,'4g : fraisure, perçage vide sous le cône');",
+    "A(fracOut(50,30,4.5,20)<0.02,'4h : fraisure, matière intacte hors du perçage');",
     // le filet cosmétique n'est plus superposé au filet réel
     "holeThreadOverlay();const ov1=scene.getObjectByName('holeThreads');",
     "A(!ov1||!ov1.children.length,'5 : aucun filet cosmétique superposé quand le filet est modélisé');",

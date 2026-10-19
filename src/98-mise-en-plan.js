@@ -185,8 +185,9 @@
   function mepBasisOf(view){
     if(view.kind==='base'&&MEP_VIEWS[view.vk]){
       const b=MEP_VIEWS[view.vk];
-      if(b.u)return{dir:b.dir.slice(),u:b.u.slice(),v:b.v.slice()};
-      return mepBasisFromDir(b.dir);
+      const r=b.u?{dir:b.dir.slice(),u:b.u.slice(),v:b.v.slice()}:mepBasisFromDir(b.dir);
+      if(view.flip)r.v=[-r.v[0],-r.v[1],-r.v[2]];
+      return r;
     }
     const u=mepNorm(view.u||[1,0,0]);
     const d=mepNorm(view.dir||[0,-1,0]);
@@ -407,7 +408,15 @@
     if(!vis){pushSeg(A,B);return;} // pas de HLR : segment complet
     const sub=(P0,P1,depth)=>{
       const v0=vis(P0),v1=vis(P1);
-      if(v0&&v1){pushSeg(P0,P1);return;}
+      if(v0&&v1){
+        // deux extrémités visibles ne garantissent pas le MILIEU : une arête peut
+        // traverser derrière un autre corps sans que ses bouts soient masqués.
+        if(depth<5){
+          const M=[(P0[0]+P1[0])/2,(P0[1]+P1[1])/2,(P0[2]+P1[2])/2];
+          if(!vis(M)){sub(P0,M,depth+1);sub(M,P1,depth+1);return;}
+        }
+        pushSeg(P0,P1);return;
+      }
       if(!v0&&!v1){
         if(depth>=5){if(hidKind)pushSeg(P0,P1,hidKind);return;}
         const M=[(P0[0]+P1[0])/2,(P0[1]+P1[1])/2,(P0[2]+P1[2])/2];
@@ -1524,18 +1533,21 @@
     return{a,b,v1,v2:d.vid2?mepView(sh,d.vid2):null};
   }
   function mepDimMeasure(sh,d){
+    // Valeurs en mm MODÈLE : les ancres (d.a/d.b) sont déjà en coordonnées modèle,
+    // et les éléments de géométrie le sont aussi. Ne PAS multiplier par view.scale
+    // (ce serait des mm papier → cote fausse dès que l'échelle ≠ 1:1).
     const w=mepDimWorld(sh,d);
     if(!w)return 0;
-    const sc=(w.v1?v1scale(w.v1):1);
+    const modelDist=()=>d.b?Math.hypot(d.b.x-d.a.x,d.b.y-d.a.y):0;
     switch(d.kind){
       case 'len':{
         const e=mepEntByHint(w.v1,d.a.hint);
-        if(e&&e.t==='L')return Math.hypot(e.x2-e.x1,e.y2-e.y1)*(w.v1?v1scale(w.v1):1);
-        return Math.hypot(w.b.x-w.a.x,w.b.y-w.a.y);
+        if(e&&e.t==='L')return Math.hypot(e.x2-e.x1,e.y2-e.y1);
+        return modelDist();
       }
-      case 'dist':return Math.hypot(w.b.x-w.a.x,w.b.y-w.a.y);
-      case 'rad':{const e=mepEntByHint(w.v1,d.a.hint);return e&&(e.t==='C'||e.t==='A')?e.r*(w.v1?v1scale(w.v1):1):Math.hypot(w.b.x-w.a.x,w.b.y-w.a.y);}
-      case 'dia':{const e=mepEntByHint(w.v1,d.a.hint);return e&&(e.t==='C'||e.t==='A')?2*e.r*(w.v1?v1scale(w.v1):1):2*Math.hypot(w.b.x-w.a.x,w.b.y-w.a.y);}
+      case 'dist':return modelDist();
+      case 'rad':{const e=mepEntByHint(w.v1,d.a.hint);return e&&(e.t==='C'||e.t==='A')?e.r:modelDist();}
+      case 'dia':{const e=mepEntByHint(w.v1,d.a.hint);return e&&(e.t==='C'||e.t==='A')?2*e.r:2*modelDist();}
       case 'ang':{
         const e1=d.a.hint?mepEntByHint(w.v1,d.a.hint):null;
         const e2=d.b&&d.b.hint?mepEntByHint(d.vid2?w.v2:w.v1,d.b.hint):null;
@@ -1551,7 +1563,6 @@
       default:return Math.hypot(w.b.x-w.a.x,w.b.y-w.a.y);
     }
   }
-  function v1scale(v){return v&&v.scale?v.scale:1;}
   function mepEntByHint(view,hint){
     if(!view||!hint)return null;
     const g=mepGeoOf(view);
@@ -2500,25 +2511,23 @@
           return;
         }
       }
-      // placement
-      const off=mepDimOff(D.a,D.a,P); // simple : direction a→P
+      // placement : la cote porte sur les DEUX extrémités de l'arête (point cliqué ≠ cote)
       const v=mepView(sh2,D.vid);
       if(v){
         // orienter l'offset perpendiculairement au segment
         const g=mepGeoOf(v);
         const e=g.els[D.a.hint?D.a.hint.i:null];
-        let nx=0,ny=-1;
-        if(e&&e.t==='L'){
-          const dx=(e.x2-e.x1)*v.scale,dy=(e.y2-e.y1)*v.scale,L=Math.hypot(dx,dy)||1;
-          nx=-dy/L;ny=dx/L;
-          // côté du clic
-          const ax=v.x+e.x1*v.scale,ay=v.y+e.y1*v.scale;
-          const side=(P.x-ax)*nx+(P.y-ay)*ny;
-          if(side<0){nx=-nx;ny=-ny;}
-        }
-        const dist=Math.hypot(P.x-(v.x+D.a.x*v.scale),P.y-(v.y+D.a.y*v.scale));
+        let A={x:D.a.x,y:D.a.y},B={x:D.a.x,y:D.a.y};
+        if(e&&e.t==='L'){A={x:e.x1,y:e.y1};B={x:e.x2,y:e.y2};}
+        const ax=v.x+A.x*v.scale,ay=v.y+A.y*v.scale;
+        const bx=v.x+B.x*v.scale,by=v.y+B.y*v.scale;
+        const dx=bx-ax,dy=by-ay,L=Math.hypot(dx,dy);
+        const nx=L>1e-9?-dy/L:0,ny=L>1e-9?dx/L:-1;
+        // côté du clic (signe conservé : la ligne de cote se pose du bon côté)
+        const side=(P.x-ax)*nx+(P.y-ay)*ny;
+        const off=(side<0?-1:1)*Math.max(6,Math.abs(side));
         mepEdit('cote longueur',()=>{
-          sh2.dims.push({id:mepUid('d'),kind:'len',vid:D.vid,vid2:null,a:D.a,b:D.a,off:Math.max(6,dist),ref:shift,tol:null});
+          sh2.dims.push({id:mepUid('d'),kind:'len',vid:D.vid,vid2:null,a:A,b:B,off,ref:shift,tol:null});
         });
       }
       mepSt.dim=null;
@@ -2617,6 +2626,19 @@
     bFmt.style.flex='1';
     const bOri=mkBtn(sh.orient==='landscape'?'⇄':'↕',mepCycleOrient,'Portrait / paysage');
     bOri.style.flex='1';
+    /* — cartouche (projet / auteur / date) — */
+    const tt=sh.title||(sh.title={});
+    const tit=(lab,key,ph)=>{
+      const i=document.createElement('input');
+      i.value=tt[key]!==undefined?tt[key]:'';i.placeholder=ph||'';
+      i.onchange=()=>{mepEdit('cartouche',()=>{tt[key]=i.value;});};
+      r=rowEl();
+      const L=document.createElement('label');L.textContent=lab;
+      r.appendChild(L);r.appendChild(i);
+    };
+    tit('Projet','projet','Nom du projet');
+    tit('Auteur','auteur','—');
+    tit('Date','date',new Date().toLocaleDateString('fr-FR'));
     /* — dessin — */
     h('Dessin 2D');
     r=rowEl();
@@ -2818,12 +2840,17 @@
       const sh=mepSheet();
       const pg=mepPage();
       const clone=mepSvgEl.cloneNode(true);
+      clone.removeAttribute('id'); // ne pas laisser la règle UI #mepSvg{css} écraser les mm
       clone.setAttribute('xmlns',NS);
       clone.setAttribute('viewBox','0 0 '+pg.W+' '+pg.H);
       clone.setAttribute('width',pg.W+'mm');
       clone.setAttribute('height',pg.H+'mm');
       // strip UI helpers
       clone.querySelectorAll('#mepGHlp,.mepDraft').forEach(n=>n.parentNode&&n.parentNode.removeChild(n));
+      // les éléments ne portent que des classes : embarquer la feuille de style PLAN
+      const st=document.createElementNS(NS,'style');
+      st.textContent=css.textContent;
+      clone.insertBefore(st,clone.firstChild);
       const xml='<?xml version="1.0" encoding="UTF-8"?>\n'+new XMLSerializer().serializeToString(clone);
       const blob=new Blob([xml],{type:'image/svg+xml'});
       const a=document.createElement('a');
@@ -2840,6 +2867,7 @@
       const sh=mepSheet();
       const pg=mepPage();
       const clone=mepSvgEl.cloneNode(true);
+      clone.removeAttribute('id'); // idem export : la règle #mepSvg ne doit pas s'appliquer
       clone.setAttribute('xmlns',NS);
       clone.setAttribute('viewBox','0 0 '+pg.W+' '+pg.H);
       clone.style.width='100%';clone.style.height='100%';
@@ -2848,7 +2876,8 @@
       if(!w){mepStatus('Popup bloquée — autorisez les popups pour imprimer.');return;}
       w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>'+sh.name+'</title>'+
         '<style>@page{size:'+(sh.orient==='landscape'?'landscape':'portrait')+' margin:8mm}'+
-        'html,body{margin:0;padding:0;height:100%}svg{width:100%;height:100%}</style></head><body>'+
+        'html,body{margin:0;padding:0;height:100%}svg{width:100%;height:100%}'+
+        css.textContent+'</style></head><body>'+
         new XMLSerializer().serializeToString(clone)+'</body></html>');
       w.document.close();
       setTimeout(()=>{try{w.focus();w.print();}catch(e){}},250);
@@ -2923,8 +2952,12 @@
   window.mepPrint=mepPrint;
   window.mepReprojectAll=()=>mepReproject(null);
   window.mepReprojectView=id=>{mepSetActive(true);return mepReproject(id||mepSt.sel);};
+  // valeur (mm modèle) d'une cote, indépendante de l'échelle de la vue
+  window.mepDimValue=d=>{const sh=mepSheet();return sh?mepDimMeasure(sh,d):0;};
   window.mepSetTool=mepSetTool;
   window.mepAddViewStd=vk=>{mepSetActive(true);return mepAddStandardView(vk);};
+  window.mepAddCameraViewCmd=()=>{mepSetActive(true);return mepAddCameraView();};
+  window.mepBeginAuxCmd=()=>{mepSetActive(true);mepBeginAux();};
   window.mepProjectView=(which,parent)=>{mepSetActive(true);return mepAddProjected(parent||mepView(mepSheet(),mepSt.sel),which);};
   window.mepBeginSectionCmd=()=>{mepSetActive(true);mepBeginSection();};
   window.mepBeginDetailCmd=()=>{mepSetActive(true);mepBeginDetail();};
