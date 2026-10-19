@@ -273,7 +273,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.3.0';
+const APP_VER='V0.3.1';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -34595,12 +34595,13 @@ function viewFadeIn(){
     .mepGrid{stroke:#d8dde3;stroke-width:.4}
     .mepEnt{fill:none;stroke-linecap:round;stroke-linejoin:round}
     .mepSharp{stroke:#1a1a1a;stroke-width:.7}
-    .mepTangent{stroke:#6a6f76;stroke-width:.5}
-    .mepHidden{stroke:#8a9098;stroke-width:.45;stroke-dasharray:2.5 1.8}
+    .mepTangent{stroke:#6a6f76;stroke-width:.35}
+    .mepHidden{stroke:#8a9098;stroke-width:.3;stroke-dasharray:2.5 1.8}
     .mepSect{stroke:#1a1a1a;stroke-width:.85}
     .mepHatch{stroke:#333;stroke-width:.35}
     .mepSel{stroke:#0a84ff!important;stroke-width:1.6!important}
     .mepVB{fill:rgba(10,132,255,.04);stroke:#0a84ff;stroke-width:.8;stroke-dasharray:4 2.5;pointer-events:none}
+    .mepVBSel{fill:none;stroke:#0a84ff;stroke-width:1;pointer-events:none}
     .mepDimL{stroke:#0a84ff;stroke-width:.55;fill:none}
     .mepDimT{font:7px sans-serif;fill:#0a84ff;font-weight:600}
     .mepDimRef{fill:#7a7f86}
@@ -34748,7 +34749,7 @@ function viewFadeIn(){
   /* ═══════════════ E. cache géométrie ═══════════════ */
   const mepGeoCache=new Map(); // viewId → {ver,sig,geo}
   function mepViewSig(v){
-    return[mepRound(v.dir),mepRound(v.u),mepRound(v.v),v.bodyId||'',v.hidden?1:0,v.tangent?1:0,
+    return[mepRound(v.dir),mepRound(v.u),mepRound(v.v),v.bodyId||'',v.mode||'hide',v.tangent?1:0,
       v.section?mepRound(v.section.p)+mepRound(v.section.n):'',v.detail?v.detail.cx+','+v.detail.cy+','+v.detail.r:''].join('|');
   }
   function mepRound(a){return a?Array.from(a).map(x=>(+x).toFixed(3)).join(','):'';}
@@ -34849,10 +34850,96 @@ function viewFadeIn(){
     const meshes=mepMeshesOf(view).filter(b=>b.mesh);
     return p=>mepVisible(p,vd,sec,meshes);
   }
+  /* HLR par tampon de profondeur logiciel : une rasterisation des triangles
+     projetés (garde la profondeur max = surface la plus proche de l'observateur),
+     puis test d'occlusion O(1) par point. Bien plus rapide que le raycast. */
+  function mepDepthVis(view,meshes){
+    try{
+      const W=2048,H=2048;
+      const u=view.u,vv=view.v,dir=view.dir;
+      let minu=1e9,maxu=-1e9,minv=1e9,maxv=-1e9,mind=1e9,maxd=-1e9;
+      const flat=[]; // triangles plats [du,dv,dd × 3]
+      const tmp=new THREE.Vector3();
+      for(let bi=0;bi<meshes.length;bi++){
+        const g=meshes[bi].mesh&&meshes[bi].mesh.geometry;
+        if(!g||!g.attributes||!g.attributes.position)continue;
+        try{meshes[bi].mesh.updateMatrixWorld();}catch(e){}
+        const pos=g.attributes.position,idx=g.index;
+        const nT=idx?idx.count/3:pos.count/3;
+        const mw=meshes[bi].mesh.matrixWorld;
+        const proj=i=>{
+          tmp.set(pos.getX(i),pos.getY(i),pos.getZ(i));
+          try{tmp.applyMatrix4(mw);}catch(e){}
+          const du=tmp.x*u[0]+tmp.y*u[1]+tmp.z*u[2];
+          const dv=tmp.x*vv[0]+tmp.y*vv[1]+tmp.z*vv[2];
+          const dd=tmp.x*dir[0]+tmp.y*dir[1]+tmp.z*dir[2];
+          if(du<minu)minu=du;if(du>maxu)maxu=du;
+          if(dv<minv)minv=dv;if(dv>maxv)maxv=dv;
+          if(dd<mind)mind=dd;if(dd>maxd)maxd=dd;
+          return[du,dv,dd];
+        };
+        for(let t=0;t<nT&&flat.length<360000;t++){
+          const i0=idx?idx.getX(t*3):t*3,i1=idx?idx.getX(t*3+1):t*3+1,i2=idx?idx.getX(t*3+2):t*3+2;
+          const A=proj(i0),B=proj(i1),C=proj(i2);
+          flat.push(A[0],A[1],A[2],B[0],B[1],B[2],C[0],C[1],C[2]);
+        }
+      }
+      if(flat.length<9||!(maxu>minu)||!(maxv>minv))return null;
+      const pad=(maxu-minu+maxv-minv)*0.02+1;
+      minu-=pad;maxu+=pad;minv-=pad;maxv+=pad;
+      const su=W/(maxu-minu),sv=H/(maxv-minv);
+      const buf=new Float32Array(W*H).fill(-1e30);
+      for(let i=0;i<flat.length;i+=9){
+        const ax=(flat[i]-minu)*su,ay=(flat[i+1]-minv)*sv,ad=flat[i+2];
+        const bx=(flat[i+3]-minu)*su,by=(flat[i+4]-minv)*sv,bd2=flat[i+5];
+        const cx=(flat[i+6]-minu)*su,cy=(flat[i+7]-minv)*sv,cd=flat[i+8];
+        const det=(bx-ax)*(cy-ay)-(by-ay)*(cx-ax);
+        if(Math.abs(det)<1e-12)continue;
+        let x0=Math.max(0,Math.floor(Math.min(ax,bx,cx))),x1=Math.min(W-1,Math.ceil(Math.max(ax,bx,cx)));
+        let y0=Math.max(0,Math.floor(Math.min(ay,by,cy))),y1=Math.min(H-1,Math.ceil(Math.max(ay,cy,by)));
+        const inv=1/det;
+        for(let py=y0;py<=y1;py++){
+          for(let px2=x0;px2<=x1;px2++){
+            const lx=px2+0.5-ax,ly=py+0.5-ay;
+            const w1=(lx*(cy-ay)-ly*(cx-ax))*inv;
+            const w2=((bx-ax)*ly-(by-ay)*lx)*inv;
+            const w0=1-w1-w2;
+            if(w0<0||w1<0||w2<0)continue;
+            const dd=w0*ad+w1*bd2+w2*cd;
+            const o=py*W+px2;
+            if(dd>buf[o])buf[o]=dd;
+          }
+        }
+      }
+      const eps=Math.max((maxu-minu)/W,(maxv-minv)/H)*2+(maxd-mind)*1e-5+0.01;
+      // tolérance LOOSE pour les contours (rayons rasants) : couvre l'erreur de
+      // corde du maillage (~0,3-0,6 mm) sans laisser passer un vrai ocoueur
+      // (paroi de perçage : les générateurs internes doivent rester coupés)
+      const eps2=eps+0.3+Math.min(0.6,(maxd-mind)*0.004);
+      const fn=p=>{
+        const du=p[0]*u[0]+p[1]*u[1]+p[2]*u[2];
+        const dv=p[0]*vv[0]+p[1]*vv[1]+p[2]*vv[2];
+        const dd=p[0]*dir[0]+p[1]*dir[1]+p[2]*dir[2];
+        const iu=((du-minu)*su)|0,iv=((dv-minv)*sv)|0;
+        if(iu<0||iv<0||iu>=W||iv>=H)return true;
+        return buf[iv*W+iu]<=dd+eps; // buffer plus proche que le point → caché
+      };
+      fn.loose=p=>{
+        const du=p[0]*u[0]+p[1]*u[1]+p[2]*u[2];
+        const dv=p[0]*vv[0]+p[1]*vv[1]+p[2]*vv[2];
+        const dd=p[0]*dir[0]+p[1]*dir[1]+p[2]*dir[2];
+        const iu=((du-minu)*su)|0,iv=((dv-minv)*sv)|0;
+        if(iu<0||iv<0||iu>=W||iv>=H)return true;
+        return buf[iv*W+iu]<=dd+eps2;
+      };
+      return fn;
+    }catch(e){return null;}
+  }
   /* segment projeté avec découpe des parties cachées */
-  function mepEmitSeg(out,added,A,B,vis,kind,view){
+  function mepEmitSeg(out,added,A,B,vis,kind,view,hidKind){
     // A,B = points monde ; découpe en sous-segments visibles
-    const pushSeg=(P0,P1)=>{
+    // hidKind : si défini, les tronçons cachés sont ÉMIS avec cette classe (pointillés) au lieu d'être jetés
+    const pushSeg=(P0,P1,kk)=>{
       const l0=[mepDot(P0,view.u),mepDot(P0,view.v)],l1=[mepDot(P1,view.u),mepDot(P1,view.v)];
       const dx=l1[0]-l0[0],dy=l1[1]-l0[1];
       if(dx*dx+dy*dy<1e-8)return;
@@ -34860,22 +34947,23 @@ function viewFadeIn(){
       const k2=Math.round(l1[0]*100)+','+Math.round(l1[1]*100)+','+Math.round(l0[0]*100)+','+Math.round(l0[1]*100);
       if(added.has(k)||added.has(k2))return;
       added.add(k);
-      out.push({t:'L',x1:l0[0],y1:l0[1],x2:l1[0],y2:l1[1],k:kind});
+      out.push({t:'L',x1:l0[0],y1:l0[1],x2:l1[0],y2:l1[1],k:kk||kind});
     };
     if(!vis){pushSeg(A,B);return;} // pas de HLR : segment complet
     const sub=(P0,P1,depth)=>{
       const v0=vis(P0),v1=vis(P1);
       if(v0&&v1){pushSeg(P0,P1);return;}
       if(!v0&&!v1){
-        if(depth>=5)return;
+        if(depth>=5){if(hidKind)pushSeg(P0,P1,hidKind);return;}
         const M=[(P0[0]+P1[0])/2,(P0[1]+P1[1])/2,(P0[2]+P1[2])/2];
         if(vis(M)){
           const a=binSearch(P0,M,true),b=binSearch(M,P1,false);
+          if(hidKind){pushSeg(P0,a,hidKind);pushSeg(b,P1,hidKind);}
           pushSeg(a,b);
         }else{sub(P0,M,depth+1);sub(M,P1,depth+1);}
         return;
       }
-      if(depth>=5){if(v0)pushSeg(P0,P1);return;}
+      if(depth>=5){if(v0)pushSeg(P0,P1);else if(hidKind)pushSeg(P0,P1,hidKind);return;}
       const M=[(P0[0]+P1[0])/2,(P0[1]+P1[1])/2,(P0[2]+P1[2])/2];
       sub(v0?P0:M,v0?M:P1,depth+1);
     };
@@ -34902,7 +34990,36 @@ function viewFadeIn(){
     for(let i=0;i<pts.length;i++){
       if(Math.abs(Math.hypot(pts[i][0]-ux,pts[i][1]-uy)-r)>0.03)return null;
     }
-    return{cx:ux,cy:uy,r};
+    /* sweep signé : somme des deltas angulaires consécutifs bornés ±π */
+    const th=i=>Math.atan2(pts[i][1]-uy,pts[i][0]-ux);
+    let sweep=0;
+    for(let i=0;i+1<pts.length;i++){
+      let d=th(i+1)-th(i);
+      while(d>Math.PI)d-=2*Math.PI;
+      while(d<-Math.PI)d+=2*Math.PI;
+      sweep+=d;
+    }
+    return{cx:ux,cy:uy,r,a0:th(0),a1:th(0)+sweep,sweep,full:Math.abs(sweep)>=2*Math.PI*0.97};
+  }
+  /* AABB locale d'une élément projeté (L / C / A) */
+  function mepElAABB(e){
+    if(e.t==='L')return{minx:Math.min(e.x1,e.x2),miny:Math.min(e.y1,e.y2),maxx:Math.max(e.x1,e.x2),maxy:Math.max(e.y1,e.y2)};
+    if(e.t==='C')return{minx:e.cx-e.r,miny:e.cy-e.r,maxx:e.cx+e.r,maxy:e.cy+e.r};
+    if(e.t==='A'){
+      // extrémités + croisements d'axes dans la plage angulaire
+      const pts=[[e.cx+e.r*Math.cos(e.a0),e.cy+e.r*Math.sin(e.a0)],[e.cx+e.r*Math.cos(e.a1),e.cy+e.r*Math.sin(e.a1)]];
+      const lo=Math.min(e.a0,e.a1),hi=Math.max(e.a0,e.a1);
+      for(let k=0;k<4;k++){
+        const t=k*Math.PI/2;
+        let tt=t;
+        while(tt<lo)tt+=2*Math.PI;
+        if(tt<=hi)pts.push([e.cx+e.r*Math.cos(tt),e.cy+e.r*Math.sin(tt)]);
+      }
+      let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
+      pts.forEach(p=>{minx=Math.min(minx,p[0]);maxx=Math.max(maxx,p[0]);miny=Math.min(miny,p[1]);maxy=Math.max(maxy,p[1]);});
+      return{minx,miny,maxx,maxy};
+    }
+    return null;
   }
   /* ═══════════════ H. construction d'une vue ═══════════════ */
   function mepBuildGeo(view){
@@ -34910,9 +35027,56 @@ function viewFadeIn(){
     const b=mepBasisOf(view);view.dir=b.dir;view.u=b.u;view.v=b.v;
     const list=mepMeshesOf(view);
     if(!list.length){geo.src='aucun corps';return geo;}
-    /* HLR optionnel : raycast coûteux — désactivé par défaut, activable via mepSt.hlr */
-    const vis=mepSt.hlr?mepVisFn(view):null;
+    /* mode d'affichage : wire = tout noir ; hide = HLR, cachées supprimées ;
+       dash = HLR, cachées en gris pointillé */
+    const mode=view.mode||'hide';
+    let vis=null,hidKind=null;
+    if(mode!=='wire'){
+      if(view.section)vis=mepVisFn(view); // coupe : raycast avec exclusion du demi-espace
+      else{
+        const mlist=list.filter(b=>b.mesh);
+        vis=mepDepthVis(view,mlist)||mepVisFn(view); // tampon de profondeur, repli raycast
+      }
+      if(vis&&mode==='dash')hidKind='hidden';
+    }
     const added=new Set();
+    /* — silhouettes du maillage : contour extérieur + aide au noircissement — */
+    const silSegs=[];
+    const silGrid=new Map(); // cellule 2 mm → SEGMENTS de silhouette
+    const silAddSeg=pr=>{
+      const L=Math.hypot(pr[1][0]-pr[0][0],pr[1][1]-pr[0][1],pr[1][2]-pr[0][2]);
+      const n=Math.max(1,Math.ceil(L));
+      for(let i=0;i<=n;i++){
+        const t=i/n;
+        const p=[pr[0][0]+(pr[1][0]-pr[0][0])*t,pr[0][1]+(pr[1][1]-pr[0][1])*t,pr[0][2]+(pr[1][2]-pr[0][2])*t];
+        const k=Math.floor(p[0]/2)+','+Math.floor(p[1]/2)+','+Math.floor(p[2]/2);
+        if(!silGrid.has(k))silGrid.set(k,[]);
+        const arr=silGrid.get(k);
+        if(arr[arr.length-1]!==pr)arr.push(pr);
+      }
+    };
+    list.forEach(bd=>{
+      const segs=mepSilhouettes(bd.mesh,view.dir);
+      segs.forEach(pr=>{silSegs.push(pr);silAddSeg(pr);});
+    });
+    const onSil=p=>{
+      // distance point→segment (corde de maillage) : tolérance 1,2 mm
+      const cx=Math.floor(p[0]/2),cy=Math.floor(p[1]/2),cz=Math.floor(p[2]/2);
+      for(let i=-1;i<=1;i++)for(let j=-1;j<=1;j++)for(let k=-1;k<=1;k++){
+        const arr=silGrid.get((cx+i)+','+(cy+j)+','+(cz+k));
+        if(!arr)continue;
+        for(let m=0;m<arr.length;m++){
+          const A=arr[m][0],B=arr[m][1];
+          const ux=B[0]-A[0],uy=B[1]-A[1],uz=B[2]-A[2];
+          const L2=ux*ux+uy*uy+uz*uz;
+          let t=L2>1e-12?((p[0]-A[0])*ux+(p[1]-A[1])*uy+(p[2]-A[2])*uz)/L2:0;
+          t=t<0?0:(t>1?1:t);
+          const dx=p[0]-(A[0]+ux*t),dy=p[1]-(A[1]+uy*t),dz=p[2]-(A[2]+uz*t);
+          if(dx*dx+dy*dy+dz*dz<1.44)return true;
+        }
+      }
+      return false;
+    };
     /* — forme exacte(s) — */
     let shapes=[];
     list.forEach(bd=>{if(bd.shape)shapes.push(bd.shape);});
@@ -34935,24 +35099,55 @@ function viewFadeIn(){
         try{edges=occSharpEdges(sh)||[];}catch(e){edges=[];}
         edges.forEach(e=>{
           if(!e||!e.pts||e.pts.length<2)return;
-          const kind=e.sharp?'sharp':'tangent';
-          if(kind==='tangent'&&!view.tangent)return;
           const wpts=[];
           for(let i=0;i<e.pts.length;i++){
             const p=e.pts[i];const w=(p&&typeof p.x==='number')?[p.x,p.y,p.z]:p;
             if(w)wpts.push(w);
           }
           if(wpts.length<2)return;
+          let kind=e.sharp?'sharp':'tangent';
+          let onContour=false;
+          if(kind==='tangent'){
+            // tangente SUR le contour extérieur (silhouette) → arête vive noire,
+            // visibilité LOOSE (le strict la tue au rasant).
+            // Les arêtes VIVES gardent le test strict : un cerclage de perçage
+            // (sharp) ne doit jamais fuiler à travers une paroi.
+            let hits=0,tested=0;
+            for(let i=0;i<wpts.length;i++){
+              tested++;if(onSil(wpts[i]))hits++;
+            }
+            if(tested&&hits*4>=tested*3){kind='sharp';onContour=true;} // ≥75 % des points sur le contour
+          }
+          if(kind==='tangent'&&!view.tangent)return;
+          // visibilité LOOSE pour tout ce qui n'est PAS une arête vive d'origine :
+          // contours promus ET tangentes de congés (posées SUR la face, tuées au
+          // rasant par le strict à cause de l'erreur de rasterisation).
+          // Les arêtes VIVES (cerclages de perçage) gardent le test strict —
+          // un perçage arrière ne doit jamais fuiler à travers une paroi.
+          const visE=(onContour||kind==='tangent')?(vis&&(vis.loose||vis)):vis;
           const lp=wpts.map(p=>[mepDot(p,view.u),mepDot(p,view.v)]);
           const cir=(kind==='sharp'||kind==='tangent')?mepFitCircle(lp):null;
           if(cir){
-            if(!vis||vis(wpts[0])){
-              const kk='C'+Math.round(cir.cx*100)+','+Math.round(cir.cy*100)+','+Math.round(cir.r*100);
-              if(!added.has(kk)){added.add(kk);geo.els.push({t:'C',cx:cir.cx,cy:cir.cy,r:cir.r,k:view.section?'sect':kind});}
+            // test de visibilité sur 6 points (pas 3) : un cerclage de perçage
+            // partiellement masqué ne doit pas ressortir en noir complet
+            const okV=()=>{
+              if(!visE)return true;
+              const n=wpts.length;
+              for(let s=0;s<6;s++){
+                const pt=wpts[Math.min(n-1,Math.round(s*(n-1)/5))];
+                if(pt&&!visE(pt))return false;
+              }
+              return true;
+            };
+            if(okV()){
+              const kc='C'+Math.round(cir.cx*100)+','+Math.round(cir.cy*100)+','+Math.round(cir.r*100);
+              const ka='A'+kc+','+Math.round(cir.a0*400)+','+Math.round(cir.a1*400);
+              const kk=cir.full?kc:ka;
+              if(!added.has(kk)){added.add(kk);geo.els.push(cir.full?{t:'C',cx:cir.cx,cy:cir.cy,r:cir.r,k:view.section?'sect':kind}:{t:'A',cx:cir.cx,cy:cir.cy,r:cir.r,a0:cir.a0,a1:cir.a1,k:view.section?'sect':kind});}
               return;
             }
           }
-          for(let i=0;i<wpts.length-1;i++)mepEmitSeg(geo.els,added,wpts[i],wpts[i+1],vis,view.section?(vis&&vis(wpts[i])?'sect':'hidden'):(kind==='tangent'?'tangent':'sharp'),view);
+          for(let i=0;i<wpts.length-1;i++)mepEmitSeg(geo.els,added,wpts[i],wpts[i+1],visE,view.section?'sect':(kind==='tangent'?'tangent':'sharp'),view,hidKind);
         });
       });
     }
@@ -34975,16 +35170,17 @@ function viewFadeIn(){
         [[i0,i1],[i1,i2],[i2,i0]].forEach(pr=>{
           const kk=pr[0]<pr[1]?pr[0]+'_'+pr[1]:pr[1]+'_'+pr[0];
           if(seenE.has(kk))return;seenE.add(kk);
-          mepEmitSeg(geo.els,added,wp(pr[0]),wp(pr[1]),vis,'sharp',view);
+          mepEmitSeg(geo.els,added,wp(pr[0]),wp(pr[1]),vis,'sharp',view,hidKind);
         });
       }
       if(!exact)geo.src='maillage';
     });
-    /* — silhouettes (générateurs de cylindres/sphères) — */
-    list.forEach(bd=>{
-      const segs=mepSilhouettes(bd.mesh,view.dir);
-      segs.forEach(pr=>mepEmitSeg(geo.els,added,pr[0],pr[1],vis,view.section?'sect':'sharp',view));
-    });
+    /* — silhouettes (générateurs de cylindres/sphères) :
+       HLR en tolérance LOOSE : les contours rasants survivent à l'erreur de corde
+       du maillage (~0,5 mm), mais un vrai ocoueur (paroi d'un perçage arrière)
+       les coupe — les perçages ne doivent pas ressortir en noir. */
+    const visSil=vis?(vis.loose||vis):null;
+    silSegs.forEach(pr=>mepEmitSeg(geo.els,added,pr[0],pr[1],visSil,view.section?'sect':'sharp',view,hidKind));
     /* — hachures de coupe — */
     if(view.section&&cutShapes.length){
       try{geo.hatch=mepHatchLoops(cutShapes,view,view.section.p,view.section.n);}catch(e){}
@@ -35150,6 +35346,20 @@ function viewFadeIn(){
           }
           for(let i=0;i<N;i++)out.push({t:'L',x1:pts[i][0],y1:pts[i][1],x2:pts[i+1][0],y2:pts[i+1][1],k:e.k});
         }
+      }else if(e.t==='A'){
+        // arc : échantillonne puis rogne comme une polyligne
+        const N=Math.max(8,Math.min(48,Math.round(Math.abs(e.a1-e.a0)*e.r*2)+4)),pts=[];
+        for(let i=0;i<=N;i++){
+          const t=e.a0+(e.a1-e.a0)*i/N;
+          pts.push([e.cx+e.r*Math.cos(t),e.cy+e.r*Math.sin(t)]);
+        }
+        let run=[];
+        const flush=()=>{for(let i=0;i+1<run.length;i++)out.push({t:'L',x1:run[i][0],y1:run[i][1],x2:run[i+1][0],y2:run[i+1][1],k:e.k});run=[];};
+        for(let i=0;i<pts.length;i++){
+          const p=pts[i];
+          if(inC(p[0],p[1]))run.push(p);else flush();
+        }
+        flush();
       }else if(e.t==='P'&&e.pts){
         let run=[];
         const flush=()=>{for(let i=0;i+1<run.length;i++)out.push({t:'L',x1:run[i][0],y1:run[i][1],x2:run[i+1][0],y2:run[i+1][1],k:e.k});run=[];};
@@ -35168,18 +35378,21 @@ function viewFadeIn(){
     for(let i=0;i<26;i++){const L=String.fromCharCode(65+i);if(!used.has(L))return L;}
     return 'V'+sh.views.length;
   }
+  /* AABB d'une géométrie projetée (els L/C/A) */
+  function mepAABBOf(g){
+    let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9,any=false;
+    g.els.forEach(e=>{
+      const b=mepElAABB(e);if(!b)return;
+      minx=Math.min(minx,b.minx);maxx=Math.max(maxx,b.maxx);
+      miny=Math.min(miny,b.miny);maxy=Math.max(maxy,b.maxy);
+      any=true;
+    });
+    return any?{minx,miny,maxx,maxy}:null;
+  }
   function mepPlaceNear(sh,view,gx,gy){
     // évite la superposition : pousse la vue jusqu'à ce qu'elle soit libre
     const pad=18;
-    const bbOf=v=>{
-      const g=mepGeoOf(v);
-      let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9,any=false;
-      g.els.forEach(e=>{
-        if(e.t==='L'){minx=Math.min(minx,e.x1,e.x2);maxx=Math.max(maxx,e.x1,e.x2);miny=Math.min(miny,e.y1,e.y2);maxy=Math.max(maxy,e.y1,e.y2);any=true;}
-        else if(e.t==='C'){minx=Math.min(minx,e.cx-e.r);maxx=Math.max(maxx,e.cx+e.r);miny=Math.min(miny,e.cy-e.r);maxy=Math.max(maxy,e.cy+e.r);any=true;}
-      });
-      return any?{minx,miny,maxx,maxy}:null;
-    };
+    const bbOf=v=>mepAABBOf(mepGeoOf(v));
     view.x=gx;view.y=gy;
     const b=bbOf(view);
     if(!b)return;
@@ -35202,13 +35415,9 @@ function viewFadeIn(){
     view.y=Math.max(pd.iy+8,Math.min(pd.iy+pd.ih-8,view.y));
   }
   function mepAutoScale(sh,view){
-    const g=mepGeoOf(view);
-    let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9,any=false;
-    g.els.forEach(e=>{
-      if(e.t==='L'){minx=Math.min(minx,e.x1,e.x2);maxx=Math.max(maxx,e.x1,e.x2);miny=Math.min(miny,e.y1,e.y2);maxy=Math.max(maxy,e.y1,e.y2);any=true;}
-      else if(e.t==='C'){minx=Math.min(minx,e.cx-e.r);maxx=Math.max(maxx,e.cx+e.r);miny=Math.min(miny,e.cy-e.r);maxy=Math.max(maxy,e.cy+e.r);any=true;}
-    });
-    if(!any)return;
+    const b=mepAABBOf(mepGeoOf(view));
+    if(!b)return;
+    const{minx,miny,maxx,maxy}=b;
     const pd=mepPageDim(sh);
     const w=(maxx-minx)||1,h=(maxy-miny)||1;
     const s=Math.min(1,(pd.iw*0.42)/w,(pd.ih*0.8)/h);
@@ -35220,7 +35429,7 @@ function viewFadeIn(){
   function mepAddView(opts){
     const sh=mepSheet();
     const view=Object.assign({id:mepUid('v'),kind:'base',vk:'front',bodyId:null,
-      dir:[0,-1,0],u:[1,0,0],v:[0,0,-1],x:0,y:0,scale:1,hidden:false,tangent:true,flip:false,
+      dir:[0,-1,0],u:[1,0,0],v:[0,0,-1],x:0,y:0,scale:1,mode:'hide',tangent:true,flip:false,
       label:'',parent:null,section:null,detail:null},opts||{});
     if(view.kind==='base'&&view.vk){
       const b=mepBasisOf(view);view.dir=b.dir;view.u=b.u;view.v=b.v;
@@ -35248,6 +35457,47 @@ function viewFadeIn(){
     }catch(e){}
     const b=mepBasisFromDir(dir);
     return mepAddView({kind:'base',vk:'',dir:b.dir,u:b.u,v:b.v,label:''});
+  }
+  /* ═══════════════ J2. vues projetées (1er angle, méthode européenne) ═══════════════ */
+  /* Règles 1er angle depuis la base du parent (d,u,v) :
+     dessus    → dir=-v , u'=u   (placée SOUS la mère)
+     dessous   → dir= v , u'=u   (placée SUR la mère)
+     gauche    → dir=-u , u'=d   (placée à DROITE de la mère)
+     droit     → dir= u , u'=-d  (placée à GAUCHE de la mère)
+     Puis v'=u'×dir. L'axe libre du glissement est indiqué (axis). */
+  const MEP_PROJ={
+    top:   {dir:b=>[-b.v[0],-b.v[1],-b.v[2]],u:b=>b.u.slice(),lab:'Dessus',axis:'y'},
+    bottom:{dir:b=>b.v.slice(),              u:b=>b.u.slice(),lab:'Dessous',axis:'y'},
+    left:  {dir:b=>[-b.u[0],-b.u[1],-b.u[2]],u:b=>b.dir.slice(),lab:'Côté gauche',axis:'x'},
+    right: {dir:b=>b.u.slice(),              u:b=>[-b.dir[0],-b.dir[1],-b.dir[2]],lab:'Côté droit',axis:'x'}
+  };
+  function mepProjFollow(sh,v,dx,dy){
+    // les projections (et leurs sous-projections) suivent leur mère au glisser
+    sh.views.forEach(c=>{
+      if(c.kind==='proj'&&c.parent===v.id){c.x+=dx;c.y+=dy;mepProjFollow(sh,c,dx,dy);}
+    });
+  }
+  function mepAddProjected(par,which){
+    const def=MEP_PROJ[which];
+    if(!def){mepStatus('Projection inconnue : '+which);return null;}
+    if(!par){mepStatus('Sélectionnez d’abord la vue mère à projeter.');return null;}
+    const b=mepBasisOf(par);
+    const dir=mepNorm(def.dir(b)),u=mepNorm(def.u(b));
+    const v=mepNorm(mepCross(u,dir));
+    const vObj=mepAddView({kind:'proj',vk:'',proj:which,dir,u,v,
+      parent:par.id,label:mepNextLabel(mepSheet()),
+      bodyId:par.bodyId,mode:par.mode,tangent:par.tangent,scale:par.scale});
+    // placement aligné 1er angle : l'axe commun est verrouillé sur la mère
+    mepEdit('placement vue projetée',()=>{
+      vObj.scale=par.scale; // les vues liées partagent TOUJOURS l'échelle de la mère
+      const off=mepViewSpan(par)+mepViewSpan(vObj)+30;
+      if(which==='top'){vObj.x=par.x;vObj.y=par.y+off;}
+      else if(which==='bottom'){vObj.x=par.x;vObj.y=par.y-off;}
+      else if(which==='left'){vObj.x=par.x+off;vObj.y=par.y;}
+      else{vObj.x=par.x-off;vObj.y=par.y;}
+    });
+    mepStatus('Vue projetée « '+def.lab+' » ('+vObj.label+') — 1er angle, alignée sur la mère.');
+    return vObj;
   }
   function mepBeginAux(){
     const s=(typeof selFaces!=='undefined'&&selFaces||[])[0];
@@ -35287,8 +35537,8 @@ function viewFadeIn(){
     const g=mepGeoOf(view);
     let mx=10;
     g.els.forEach(e=>{
-      if(e.t==='L')mx=Math.max(mx,Math.abs(e.x1),Math.abs(e.x2),Math.abs(e.y1),Math.abs(e.y2));
-      else if(e.t==='C')mx=Math.max(mx,Math.abs(e.cx)+e.r,Math.abs(e.cy)+e.r);
+      const b=mepElAABB(e);if(!b)return;
+      mx=Math.max(mx,Math.abs(b.minx),Math.abs(b.maxx),Math.abs(b.miny),Math.abs(b.maxy));
     });
     return mx*Math.max(0.2,view.scale);
   }
@@ -35333,7 +35583,7 @@ function viewFadeIn(){
     const label=mepNextLabel(mepSheet());
     const src=mepBasisOf(par);
     const v=mepAddView({kind:'detail',vk:'',dir:src.dir.slice(),u:src.u.slice(),v:src.v.slice(),
-      parent:par.id,label,scale:2,detail:{cx:C.x,cy:C.y,r:R},bodyId:par.bodyId,hidden:par.hidden,tangent:par.tangent});
+      parent:par.id,label,scale:2,detail:{cx:C.x,cy:C.y,r:R},bodyId:par.bodyId,mode:par.mode,tangent:par.tangent});
     mepEdit('placement vue de détail',()=>{
       const pd=mepPageDim(mepSheet());
       v.x=pd.ix+pd.iw*0.72;v.y=pd.iy+pd.ih*0.3;
@@ -35359,12 +35609,30 @@ function viewFadeIn(){
   }
   function mepReproject(id){
     const sh=mepSheet();
-    const list=id?[mepView(sh,id)]:sh.views;
+    let list=id?[mepView(sh,id)]:sh.views;
+    if(id&&list[0]){
+      // cascade : rejeu aussi les filles (projections, coupes, détails) de cette vue
+      const collect=par=>sh.views.filter(v=>v&&v.parent===par.id);
+      const stack=[list[0]];
+      while(stack.length){
+        const cur=stack.pop();
+        collect(cur).forEach(ch=>{if(list.indexOf(ch)<0){list.push(ch);stack.push(ch);}});
+      }
+    }
     mepEdit('rejeu des vues',()=>{
       list.forEach(v=>{
         if(!v)return;
         if(v.kind==='base'||v.kind==='aux'){
           if(v.vk&&MEP_VIEWS[v.vk]){const b=mepBasisOf(v);v.dir=b.dir;v.u=b.u;v.v=b.v;}
+        }else if(v.kind==='proj'){
+          // rejeu 1er angle : la base suit celle de la mère actuelle
+          const par=mepView(sh,v.parent);
+          const def=MEP_PROJ[v.proj||''];
+          if(par&&def){
+            const b=mepBasisOf(par);
+            v.dir=mepNorm(def.dir(b));v.u=mepNorm(def.u(b));v.v=mepNorm(mepCross(v.u,v.dir));
+            v.scale=par.scale;
+          }
         }else if(v.kind==='section'&&v.section){
           const par=mepView(sh,v.section.pid||v.parent);
           if(par){
@@ -35395,7 +35663,7 @@ function viewFadeIn(){
               const d1=Math.hypot(e.x1-a.x,e.y1-a.y),d2=Math.hypot(e.x2-a.x,e.y2-a.y);
               const dmin=Math.min(d1,d2);
               if(dmin<bd){bd=dmin;best=d1<d2?{x:e.x1,y:e.y1,hint:{t:'seg',i}}:{x:e.x2,y:e.y2,hint:{t:'seg',i}};}
-            }else if(a.hint.t==='ctr'&&e.t==='C'){
+            }else if(a.hint.t==='ctr'&&(e.t==='C'||e.t==='A')){
               const dmin=Math.hypot(e.cx-a.x,e.cy-a.y);
               if(dmin<bd){bd=dmin;best={x:e.cx,y:e.cy,hint:{t:'ctr',i}};}
             }
@@ -35454,8 +35722,8 @@ function viewFadeIn(){
   }
   /* ═══════════════ L. état UI ═══════════════ */
   const mepSt={open:false,sel:null,selDim:null,tool:'select',zoom:1,pan:{x:0,y:0},
-    pick:null,dim:null,sk:null,cutParent:null,cutPts:[],detC:null,hovView:null,skSel:new Set(),
-    hlr:false}; // HLR désactivé par défaut (raycast trop lent)
+    pick:null,dim:null,sk:null,cutParent:null,cutPts:[],detC:null,hovView:null,skSel:new Set()};
+  try{ mepSt.zoomRev=localStorage.getItem('minifusion_mepZoomRev')==='1'; }catch(e){ mepSt.zoomRev=false; } // sens de la molette, mémorisé
   let mepWrapEl=null,mepSvgEl=null,mepSheetEl=null,mepSideEl=null,mepStatusEl=null,mepTabsEl=null;
   let mepToolbarEl=null;
   let mepGFrame=null,mepGSheet=null,mepGHlp=null,mepGridG=null;
@@ -35567,14 +35835,9 @@ function viewFadeIn(){
   }
   function mepFitSheet(){mepSt.zoom=1;mepSt.pan={x:0,y:0};}
   function mepFitViewContent(view){
-    const g=mepGeoOf(view);
-    let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9,any=false;
-    g.els.forEach(e=>{
-      if(e.t==='L'){minx=Math.min(minx,e.x1,e.x2);maxx=Math.max(maxx,e.x1,e.x2);miny=Math.min(miny,e.y1,e.y2);maxy=Math.max(maxy,e.y1,e.y2);any=true;}
-      else if(e.t==='C'){minx=Math.min(minx,e.cx-e.r);maxx=Math.max(maxx,e.cx+e.r);miny=Math.min(miny,e.cy-e.r);maxy=Math.max(maxy,e.cy+e.r);any=true;}
-    });
-    if(!any)return;
-    const s1=mepToSheet(view,minx,miny),s2=mepToSheet(view,maxx,maxy);
+    const b=mepAABBOf(mepGeoOf(view));
+    if(!b)return;
+    const s1=mepToSheet(view,b.minx,b.miny),s2=mepToSheet(view,b.maxx,b.maxy);
     const pg=mepPage(),pad=14;
     const w=(s2.x-s1.x)+pad*2,h=(s2.y-s1.y)+pad*2;
     mepSt.zoom=Math.min(20,Math.max(0.08,Math.min(pg.W/w,pg.H/h)));
@@ -35669,14 +35932,15 @@ function viewFadeIn(){
     if(sh.sk){
       try{mepDrawSk(mk,sh.sk);}catch(e){}
     }
-    /* surbrillance vue survolée */
-    if(mepSt.hovView&&mepSt.hovView!==mepSt.sel){
-      const v=mepView(sh,mepSt.hovView);
-      if(v){
-        const b=mepViewSheetBBox(v);
-        if(b)mk('rect',{x:b.x-4,y:b.y-4,width:b.w+8,height:b.h+8,class:'mepVB'},mepGHlp);
-      }
-    }
+    /* cadre bleu : sélection (plein) + survol (pointillé) */
+    const drawVB=(id,cls)=>{
+      const v=mepView(sh,id);
+      if(!v)return;
+      const b=mepViewSheetBBox(v);
+      if(b)mk('rect',{x:b.x-4,y:b.y-4,width:b.w+8,height:b.h+8,class:cls},mepGHlp);
+    };
+    if(mepSt.sel)drawVB(mepSt.sel,'mepVBSel');
+    if(mepSt.hovView)drawVB(mepSt.hovView,'mepVB');
     /* brouillons d'interaction */
     try{mepDrawDraft(mk);}catch(e){}
     mepToolSync();
@@ -35689,12 +35953,8 @@ function viewFadeIn(){
     return '1:'+mepFmtNum(1/s,2);
   }
   function mepViewSheetBBox(v){
-    const g=mepGeoOf(v);
-    let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9,any=false;
-    g.els.forEach(e=>{
-      if(e.t==='L'){minx=Math.min(minx,e.x1,e.x2);maxx=Math.max(maxx,e.x1,e.x2);miny=Math.min(miny,e.y1,e.y2);maxy=Math.max(maxy,e.y1,e.y2);any=true;}
-      else if(e.t==='C'){minx=Math.min(minx,e.cx-e.r);maxx=Math.max(maxx,e.cx+e.r);miny=Math.min(miny,e.cy-e.r);maxy=Math.max(maxy,e.cy+e.r);any=true;}
-    });
+    const b=mepAABBOf(mepGeoOf(v));
+    let minx=b?b.minx:1e9,miny=b?b.miny:1e9,maxx=b?b.maxx:-1e9,maxy=b?b.maxy:-1e9,any=!!b;
     if(v.detail){minx=Math.min(minx,v.detail.cx-v.detail.r);maxx=Math.max(maxx,v.detail.cx+v.detail.r);miny=Math.min(miny,v.detail.cy-v.detail.r);maxy=Math.max(maxy,v.detail.cy+v.detail.r);any=true;}
     if(!any)return null;
     const s1=mepToSheet(v,minx,miny),s2=mepToSheet(v,maxx,maxy);
@@ -35703,11 +35963,18 @@ function viewFadeIn(){
   function mepDrawView(mk,v,sh){
     const g=mepGeoOf(v);
     const X=lx=>v.x+lx*v.scale,Y=ly=>v.y+ly*v.scale;
-    const sel=mepSt.sel===v.id;
-    const cls=e=>sel?'mepEnt mepSel':(e.k==='hidden'?'mepEnt mepHidden':e.k==='tangent'?'mepEnt mepTangent':e.k==='sect'?'mepEnt mepSect':'mepEnt mepSharp');
+    /* la vue sélectionnée garde ses couleurs : seul le cadre bleu la signale */
+    const cls=e=>(e.k==='hidden'?'mepEnt mepHidden':e.k==='tangent'?'mepEnt mepTangent':e.k==='sect'?'mepEnt mepSect':'mepEnt mepSharp');
     g.els.forEach(e=>{
       if(e.t==='L')mk('line',{x1:+X(e.x1).toFixed(3),y1:+Y(e.y1).toFixed(3),x2:+X(e.x2).toFixed(3),y2:+Y(e.y2).toFixed(3),class:cls(e)});
       else if(e.t==='C')mk('circle',{cx:+X(e.cx).toFixed(3),cy:+Y(e.cy).toFixed(3),r:+(e.r*v.scale).toFixed(3),class:cls(e)});
+      else if(e.t==='A'){
+        const x0=+X(e.cx+e.r*Math.cos(e.a0)).toFixed(3),y0=+Y(e.cy+e.r*Math.sin(e.a0)).toFixed(3);
+        const x1=+X(e.cx+e.r*Math.cos(e.a1)).toFixed(3),y1=+Y(e.cy+e.r*Math.sin(e.a1)).toFixed(3);
+        const rr=+(e.r*v.scale).toFixed(3);
+        const la=Math.abs(e.a1-e.a0)>Math.PI?1:0,sw=e.a1>e.a0?1:0;
+        mk('path',{d:'M'+x0+' '+y0+' A'+rr+' '+rr+' 0 '+la+' '+sw+' '+x1+' '+y1,class:cls(e)});
+      }
       else if(e.t==='P'&&e.pts&&e.pts.length>1){
         for(let i=0;i+1<e.pts.length;i++)
           mk('line',{x1:+X(e.pts[i][0]).toFixed(3),y1:+Y(e.pts[i][1]).toFixed(3),x2:+X(e.pts[i+1][0]).toFixed(3),y2:+Y(e.pts[i+1][1]).toFixed(3),class:cls(e)});
@@ -35812,8 +36079,8 @@ function viewFadeIn(){
         return Math.hypot(w.b.x-w.a.x,w.b.y-w.a.y);
       }
       case 'dist':return Math.hypot(w.b.x-w.a.x,w.b.y-w.a.y);
-      case 'rad':{const e=mepEntByHint(w.v1,d.a.hint);return e&&e.t==='C'?e.r*(w.v1?v1scale(w.v1):1):Math.hypot(w.b.x-w.a.x,w.b.y-w.a.y);}
-      case 'dia':{const e=mepEntByHint(w.v1,d.a.hint);return e&&e.t==='C'?2*e.r*(w.v1?v1scale(w.v1):1):2*Math.hypot(w.b.x-w.a.x,w.b.y-w.a.y);}
+      case 'rad':{const e=mepEntByHint(w.v1,d.a.hint);return e&&(e.t==='C'||e.t==='A')?e.r*(w.v1?v1scale(w.v1):1):Math.hypot(w.b.x-w.a.x,w.b.y-w.a.y);}
+      case 'dia':{const e=mepEntByHint(w.v1,d.a.hint);return e&&(e.t==='C'||e.t==='A')?2*e.r*(w.v1?v1scale(w.v1):1):2*Math.hypot(w.b.x-w.a.x,w.b.y-w.a.y);}
       case 'ang':{
         const e1=d.a.hint?mepEntByHint(w.v1,d.a.hint):null;
         const e2=d.b&&d.b.hint?mepEntByHint(d.vid2?w.v2:w.v1,d.b.hint):null;
@@ -35863,11 +36130,20 @@ function viewFadeIn(){
       const e=mepEntByHint(w.v1,d.a.hint);
       const cx=w.a.x,cy=w.a.y;
       let px=w.b.x,py=w.b.y;
-      if(e&&e.t==='C'){
+      if(e&&(e.t==='C'||e.t==='A')){
         const v=w.v1;
         const cS=mepToSheet(v,e.cx,e.cy);
         const rr=e.r*v.scale;
-        const ang=Math.atan2(py-cS.y,px-cS.x);
+        let ang=Math.atan2(py-cS.y,px-cS.x);
+        if(e.t==='A'){
+          // borne le leader à la plage de l'arc
+          const lo=Math.min(e.a0,e.a1),hi=Math.max(e.a0,e.a1);
+          let an=ang;while(an<lo)an+=2*Math.PI;
+          if(an>hi){
+            const d0=Math.abs(ang-e.a0),d1=Math.abs(ang-e.a1);
+            ang=d0<d1?e.a0:e.a1;
+          }else ang=an;
+        }
         px=cS.x+rr*Math.cos(ang);py=cS.y+rr*Math.sin(ang);
         cx=cS.x;cy=cS.y;
       }
@@ -36182,11 +36458,26 @@ function viewFadeIn(){
             const t=Math.max(0,Math.min(1,((sx-ax)*dx+(sy-ay)*dy)/L2));
             consider(ax+dx*t,ay+dy*t,{t:'onSeg',vid:v.id,i});
           }
-        }else if(e.t==='C'){
+        }else if(e.t==='C'||e.t==='A'){
           const cx=v.x+e.cx*v.scale,cy=v.y+e.cy*v.scale,r=e.r*v.scale;
-          consider(cx,cy,{t:'ctr',vid:v.id,i});
-          const a=Math.atan2(sy-cy,sx-cx);
-          consider(cx+r*Math.cos(a),cy+r*Math.sin(a),{t:'onC',vid:v.id,i});
+          if(e.t==='C'){
+            consider(cx,cy,{t:'ctr',vid:v.id,i});
+            const a=Math.atan2(sy-cy,sx-cx);
+            consider(cx+r*Math.cos(a),cy+r*Math.sin(a),{t:'onC',vid:v.id,i});
+          }else{
+            consider(cx,cy,{t:'ctr',vid:v.id,i});
+            const a=Math.atan2(sy-cy,sx-cx);
+            // borne l'angle à l'arc : projection sur l'arc sinon extrémité la plus proche
+            let aa=a;
+            const lo=Math.min(e.a0,e.a1),hi=Math.max(e.a0,e.a1);
+            let an=a;
+            while(an<lo)an+=2*Math.PI;
+            if(an>hi){
+              const d0=Math.abs(a-e.a0),d1=Math.abs(a-e.a1);
+              aa=d0<d1?e.a0:e.a1;
+            }else aa=an;
+            consider(cx+r*Math.cos(aa),cy+r*Math.sin(aa),{t:'onC',vid:v.id,i});
+          }
         }
       });
     });
@@ -36219,8 +36510,20 @@ function viewFadeIn(){
           }
           const dp=d*v.scale;
           if(dp<bd){bd=dp;best={vid:v.id,i,e,lx,ly};}
-        }else if(e.t==='C'){
-          const d=Math.abs(Math.hypot(lx-e.cx,ly-e.cy)-e.r)*v.scale;
+        }else if(e.t==='C'||e.t==='A'){
+          let d;
+          if(e.t==='C')d=Math.abs(Math.hypot(lx-e.cx,ly-e.cy)-e.r)*v.scale;
+          else{
+            const dx=lx-e.cx,dy=ly-e.cy,dh=Math.hypot(dx,dy);
+            const a=Math.atan2(dy,dx);
+            const lo=Math.min(e.a0,e.a1),hi=Math.max(e.a0,e.a1);
+            let an=a;while(an<lo)an+=2*Math.PI;
+            if(dh<1e-9||an>hi){
+              // hors plage angulaire : distance à l'extrémité la plus proche
+              const p0=[e.cx+e.r*Math.cos(e.a0),e.cy+e.r*Math.sin(e.a0)],p1=[e.cx+e.r*Math.cos(e.a1),e.cy+e.r*Math.sin(e.a1)];
+              d=Math.min(Math.hypot(lx-p0[0],ly-p0[1]),Math.hypot(lx-p1[0],ly-p1[1]))*v.scale;
+            }else d=Math.abs(dh-e.r)*v.scale;
+          }
           if(d<bd){bd=d;best={vid:v.id,i,e,lx,ly};}
         }
       });
@@ -36506,7 +36809,19 @@ function viewFadeIn(){
       if(pk.kind==='viewDrag'){
         const v=mepView(sh,pk.vid);
         if(v){
-          v.x=P.x-pk.ox;v.y=P.y-pk.oy;pk.moved=true;
+          let nx=P.x-pk.ox,ny=P.y-pk.oy;
+          if(v.kind==='proj'){
+            // vue projetée : glissement contraint sur l'axe libre ; l'axe commun reste verrouillé sur la mère
+            const par=mepView(sh,v.parent);
+            const axis=(MEP_PROJ[v.proj||'']||{}).axis||'x';
+            if(par){
+              if(axis==='x')ny=par.y; // côté gauche/droit : hauteur = mère, x libre
+              else nx=par.x;          // dessus/dessous : x = mère, distance libre
+            }
+          }
+          const dx=nx-v.x,dy=ny-v.y;
+          v.x=nx;v.y=ny;pk.moved=true;
+          if(dx||dy)mepProjFollow(sh,v,dx,dy);
           mepRender();
         }
         return;
@@ -36545,7 +36860,10 @@ function viewFadeIn(){
   function mepOnWheel(ev){
     ev.preventDefault();
     const P=mepPt(ev);
-    const k=ev.deltaY<0?1.12:1/1.12;
+    // sens de la molette inversable (paramètre Vue) : deltaY<0 (molette vers le haut)
+    // = zoom avant par défaut ; zoomRev intervertit avant/arrière.
+    const up=ev.deltaY<0;
+    const k=(mepSt.zoomRev?!up:up)?1.12:1/1.12;
     const z0=mepSt.zoom;
     const z1=Math.min(20,Math.max(0.08,z0*k));
     if(z1===z0)return;
@@ -36668,7 +36986,7 @@ function viewFadeIn(){
     if(!tool){
       // 1ᵉʳ clic : identifier la cible
       const hit=mepHitViewEnt(sh,P.x,P.y);
-      if(hit&&hit.e.t==='C'){
+      if(hit&&(hit.e.t==='C'||hit.e.t==='A')){
         // cercle → Ø (ou R si Alt)
         const kind=alt?'rad':'dia';
         mepSt.dim={kind,a:{x:hit.lx,y:hit.ly,hint:{t:'ctr',i:hit.i}},vid:hit.vid,off:8};
@@ -36864,6 +37182,12 @@ function viewFadeIn(){
     r=rowEl();
     const bGrid=mkBtn((mepSt.grid?'▣':'▢')+' grille',()=>{mepSt.grid=!mepSt.grid;mepSideShow();mepRender();},'Grille 10 mm');
     bGrid.style.flex='1';
+    const bZRev=mkBtn((mepSt.zoomRev?'▣':'▢')+' zoom ↕',()=>{
+      mepSt.zoomRev=!mepSt.zoomRev;
+      try{ localStorage.setItem('minifusion_mepZoomRev',mepSt.zoomRev?'1':'0'); }catch(e){}
+      mepSideShow();
+    },'Inverser le sens du zoom de la molette (haut = avant ou arrière)');
+    bZRev.style.flex='1';
     mkBtn('−',()=>mepZoomBy(1/1.3),'Zoom arrière').style.flex='1';
     mkBtn('Ajuster',()=>{mepFitSheet();mepRender();},'Tout la feuille').style.flex='1';
     mkBtn('+',()=>mepZoomBy(1.3),'Zoom avant').style.flex='1';
@@ -36881,7 +37205,8 @@ function viewFadeIn(){
   }
   function mepSideView(root,v,sh){
     const h=document.createElement('h4');
-    h.textContent=v.kind==='section'?'Coupe '+(v.label||''):(v.kind==='detail'?'Détail '+(v.label||''):'Vue '+(v.label||v.vk||''));
+    h.textContent=v.kind==='section'?'Coupe '+(v.label||''):(v.kind==='detail'?'Détail '+(v.label||''):
+      (v.kind==='proj'?'Projection '+(v.label||'')+' ('+((MEP_PROJ[v.proj||'']||{}).lab||'?')+')':'Vue '+(v.label||v.vk||'')));
     root.appendChild(h);
     const row=(lab,el)=>{
       const r=document.createElement('div');r.className='row';
@@ -36925,9 +37250,30 @@ function viewFadeIn(){
       c.onchange=()=>{mepEdit(lab,()=>{v[key]=c.checked;});};
       row(lab,c);
     };
-    mkChk('Arêtes cachées','hidden');
+    // rendu : fil de fer / cachées supprimées (défaut) / cachées en pointillé
+    const modeSel=document.createElement('select');
+    [['wire','Fil de fer (tout)'],['hide','Cachées supprimées'],['dash','Cachées en pointillé']].forEach(([k,l])=>{
+      const o=document.createElement('option');
+      o.value=k;o.textContent=l;
+      if((v.mode||'hide')===k)o.selected=true;
+      modeSel.appendChild(o);
+    });
+    modeSel.onchange=()=>{mepEdit('rendu',()=>{v.mode=modeSel.value;});};
+    row('Rendu',modeSel);
     mkChk('Arêtes tangentielles','tangent');
     mkChk('Inverser (flip)','flip');
+    // projections 1er angle (depuis une vue quelconque sauf coupe/détail)
+    if(v.kind==='base'||v.kind==='aux'||v.kind==='proj'){
+      const pr=document.createElement('div');pr.className='row';
+      [['Dessus','top'],['Dessous','bottom'],['Gauche','left'],['Droit','right']].forEach(([lab,k])=>{
+        const b=document.createElement('button');
+        b.textContent=lab;b.title='Vue projetée (1er angle) : '+MEP_PROJ[k].lab;
+        b.style.flex='1';
+        b.onclick=()=>{mepAddProjected(v,k);};
+        pr.appendChild(b);
+      });
+      row('Projection',pr);
+    }
     // actions
     const act=document.createElement('div');act.className='row';
     const bFit=document.createElement('button');bFit.textContent='Cadrer';
@@ -36940,7 +37286,8 @@ function viewFadeIn(){
     root.appendChild(act);
     const note=document.createElement('div');
     note.className='note';
-    note.textContent=v.section?'Plan de coupe : normale '+mepRound(v.section.n):(v.kind==='detail'?'Détail ×'+mepFmtNum(v.scale,2):'dir '+mepRound(v.dir));
+    note.textContent=v.section?'Plan de coupe : normale '+mepRound(v.section.n):(v.kind==='detail'?'Détail ×'+mepFmtNum(v.scale,2):
+      (v.kind==='proj'?'1er angle — glissement contraint, échelle liée à la mère':'dir '+mepRound(v.dir)));
     root.appendChild(note);
   }
   function mepSideDim(root,d,sh){
@@ -37055,19 +37402,15 @@ function viewFadeIn(){
   }
   /* ═══════════════ X. activation espace + init ═══════════════ */
   function mepAutoViews(){
-    // à l'ouverture : si la planche est vide et qu'il y a des corps, génère Face/Dessus/Côté
+    // à l'ouverture : planche vide + corps → Face + Dessus/Côté droit en PROJECTIONS 1er angle
     const sh=mepSheet();
     if(sh.views.length)return; // planche déjà peuplée : ne rien toucher
     const has=typeof bodies!=='undefined'&&bodies.some(b=>b&&!b.ghost&&b.kind!=='ghost'&&b.mesh&&b.mesh.visible!==false);
     if(!has)return;
     try{
-      mepAddStandardView('front');
-      mepAddStandardView('top');
-      mepAddStandardView('right');
-      // dispose les 3 vues côte à côte
-      const pd=mepPageDim(sh);
-      const n=sh.views.length;
-      sh.views.forEach((v,i)=>{v.x=pd.ix+pd.iw*(0.2+0.3*i);v.y=pd.iy+pd.ih*0.45;});
+      const front=mepAddStandardView('front');
+      mepAddProjected(front,'top');   // dessous de la mère, alignée en x
+      mepAddProjected(front,'right'); // à gauche de la mère, alignée en hauteur
       mepGeoCache.clear();
       mepRender();
     }catch(e){try{console.warn('mepAutoViews',e);}catch(e2){}}
@@ -37124,8 +37467,10 @@ function viewFadeIn(){
   window.mepExport=mepExportSvg;
   window.mepPrint=mepPrint;
   window.mepReprojectAll=()=>mepReproject(null);
+  window.mepReprojectView=id=>{mepSetActive(true);return mepReproject(id||mepSt.sel);};
   window.mepSetTool=mepSetTool;
   window.mepAddViewStd=vk=>{mepSetActive(true);return mepAddStandardView(vk);};
+  window.mepProjectView=(which,parent)=>{mepSetActive(true);return mepAddProjected(parent||mepView(mepSheet(),mepSt.sel),which);};
   window.mepBeginSectionCmd=()=>{mepSetActive(true);mepBeginSection();};
   window.mepBeginDetailCmd=()=>{mepSetActive(true);mepBeginDetail();};
   // auto-init une fois le DOM prêt

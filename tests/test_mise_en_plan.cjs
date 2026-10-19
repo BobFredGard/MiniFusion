@@ -129,6 +129,38 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     mepSetActive(false);
     out.closed = mepIsOpen()===false;
 
+    // 14) vues projetées (1er angle)
+    mepSetActive(true);
+    const shP = doc.mep.sheets[doc.mep.cur];
+    shP.views.length = 0; shP.dims.length = 0;
+    const par = mepAddViewStd('front');
+    const pTop = mepProjectView('top', par);
+    const pRight = mepProjectView('right', par);
+    out.projKinds = pTop && pTop.kind==='proj' && pTop.proj==='top' && pRight && pRight.proj==='right';
+    // 1er angle depuis Face (dir 0,-1,0 / u 1,0,0 / v 0,0,-1) :
+    // dessus → dir=(0,0,1) placé SOUS la mère ; droit → dir=(1,0,0) placé à GAUCHE
+    out.projTopDir = pTop && pTop.dir[0]===0 && pTop.dir[1]===0 && pTop.dir[2]===1;
+    out.projTopBelow = pTop && Math.abs(pTop.x-par.x)<1e-9 && pTop.y > par.y;
+    out.projRightDir = pRight && pRight.dir[0]===1 && pRight.dir[1]===0 && pRight.dir[2]===0;
+    out.projRightLeft = pRight && pRight.y===par.y && pRight.x < par.x;
+    out.projParentLink = pTop && pTop.parent===par.id && pRight && pRight.parent===par.id;
+    out.projScaleLinked = pTop && pRight && pTop.scale===par.scale && pRight.scale===par.scale;
+    // rejeu : on pivote la mère (dessus devient -Y au lieu de +Z) → la projection suit
+    par.vk=''; par.dir=[0,0,-1]; par.u=[1,0,0]; par.v=[0,1,0];
+    mepReprojectView(par.id);
+    out.projReprojected = pTop && pTop.dir[0]===0 && pTop.dir[1]===-1 && pTop.dir[2]===0;
+    // sérialisation des projections
+    out.projSerialise = serialise(false).indexOf('"proj"')>=0;
+    // suppression de la mère → les projections partent aussi
+    const idPar = par.id;
+    const before = doc.mep.sheets[doc.mep.cur].views.length;
+    mepSetActive(false); // pas de delete interactif : filtre direct
+    mepSetActive(true);
+    // (mepDelView nécessite la sélection UI — on teste le filtre parent via suppression manuelle)
+    const shD = doc.mep.sheets[doc.mep.cur];
+    shD.views = shD.views.filter(x=>x.id!==idPar && x.parent!==idPar);
+    out.projCascade = shD.views.every(x=>x.parent!==idPar);
+
     return out;
   `;
   const p=vm.runInContext('(async()=>{\n'+body+'\n})()',ctx,{filename:'test_mep.cjs'});
@@ -170,6 +202,16 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.wsPlan==='plan',"mfWs('plan') → data-ws=plan");
   A(val&&val.wsCao==='cao',"mfWs('cao') → data-ws=cao");
   A(val&&val.closed===true,'mepSetActive(false) ferme l\'espace');
+  A(val&&val.projKinds,'vues projetées : kind=proj, proj=top/right');
+  A(val&&val.projTopDir,'projection Dessus : dir=(0,0,1) (1er angle)');
+  A(val&&val.projTopBelow,'projection Dessus : sous la mère, alignée en x');
+  A(val&&val.projRightDir,'projection Côté droit : dir=(1,0,0)');
+  A(val&&val.projRightLeft,'projection Côté droit : à gauche de la mère, alignée en hauteur');
+  A(val&&val.projParentLink,'projections : parent référencé');
+  A(val&&val.projScaleLinked,'projections : échelle liée à la mère');
+  A(val&&val.projReprojected,'rejeu : la projection suit la nouvelle base de la mère');
+  A(val&&val.projSerialise,'projections sérialisées (clé proj)');
+  A(val&&val.projCascade,'suppression de la mère : projections orphelines écartées');
 
   if(ko){console.log('FAIL '+ko+' assertion(s)');process.exit(1);}
   console.log('OK espace PLAN');

@@ -9,3 +9,5 @@ Backup/
 _probe_*
 *.pdf
 ccvpn.zip
+.claude/
+_tmp_css_scan.js
