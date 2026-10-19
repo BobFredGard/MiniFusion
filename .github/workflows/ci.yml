@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: Build à jour
+        run: node build.js --check
+      - name: Syntaxe du livrable
+        run: node tests/chk_syntaxe.cjs
+      - name: Tests rapides
+        run: node tests/run-fast.cjs
+      - name: Lint (erreurs)
+        run: node tools/lint.cjs

@@ -2694,7 +2694,7 @@ function occRebuild(){
         // Fantôme masqué par défaut (sinon il dépasse là où un congé a rajouté de la matière).
         // Visible quand sa découpe est sélectionnée, ou via 👁 dans Pièces.
         bodies.push({id:'occghost_'+i,name:gh.inexact?`⚠ ${gh.inexact} (maillage — exclu de l'exact)`:'🔧 Outil '+(gh.orphan?'(orphelin)':'(découpe)'),mesh,color:0xff453a,visible:false,kind:'ghost',ref:gh.fid||null,ghost:true});
-      }catch(e){msgs.push('fantôme illisible, ignoré');}
+      }catch(e){FR.msgs.push('fantôme illisible, ignoré');}
     });
     // Imports mesh : affichés tels quels SAUF s'ils sont entrés dans la chaîne exacte
     // (ils SONT alors le corps : un second affichage montrerait le solide deux fois).

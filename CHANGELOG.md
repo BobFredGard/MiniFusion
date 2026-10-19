@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**267 versions**, de `2026-09-28b` à `V0.2.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**272 versions**, de `2026-09-28b` à `V0.3.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4059,3 +4059,19 @@ Nouveaux tests : test_vue_centre (pivot / décalage de vue : 8 scénarios + cont
 - **Sortie** : export SVG de la planche (cadre + cartouche + tout le contenu) ; impression via fenêtre dédiée (`@page` paysage/portrait).
 - Correctif : `mepVisible` / `mepVisFn` (signature), `mepOrtho`, boucle morte silhouettes, `diag` bbox réelle pour les coupes, priorité `upHint`, typo rebind cotes, libellé détail, `mepBeginAux` via normale de face, `mepAddView` annulable (push dans `mepEdit`).
 - Tests : `test_mise_en_plan` (35 assertions : exports, activation, planches, vues Face/Dessus/ISO avec bases exactes, cotes, esquisse, undo, reset, serialise, tolérances, mfWs plan/cao) ; suite complète 103/103.
+
+## V0.3.1 - PLAN : HLR de profondeur et vues projetées liées
+- **Arêtes cachées masquées** : HLR de profondeur par vue, avec un mode gris pointillé sélectionnable par vue ; les contours noirs utilisent les silhouettes de maillage et les arêtes tangentes restent visibles (tolérance LOOSE).
+- **Vues projetées du 1er angle** : une vue projetée est liée à sa vue mère (alignement et cascade lors du déplacement).
+- **Reports** : le snap et l'inférence 2D de l'espace PLAN restent en attente (documenté, pas de régression).
+- Tests : `test_mise_en_plan` complété (42 assertions : HLR, tangentes, vues projetées liées, cascade et alignement).
+
+## V0.3.2 - Maintenance : FAO découpée, lint, CI et Git LFS
+- **FAO découpée sans changer le livrable** : `src/88-fao.js` (12 652 lignes) est réparti en 12 fichiers contigus par domaine (`88-fao-00-entete` à `88-fao-94-selection`). L'ordre de concaténation de `build.js` est conservé et la concaténation a été vérifiée identique (hors espaces) à l'original.
+- **Versions alignées** : `APP_VER`, `package.json`, README et CHANGELOG annoncent la même version ; les compteurs de sources et de suites sont corrigés (48 fichiers, 103 suites).
+- **Lint progressif sans bundler** : `eslint.config.js` + `tools/lint.cjs` assemblent les sources dans l'ordre du build puis lintent le script concaténé. `no-undef` est une erreur, `no-empty` (catch vides) un avertissement ; `npm run lint` masque les avertissements, `npm run lint:all` les affiche.
+- **Deux vrais défauts révélés par le lint** : `PRE` était déclaré dans le `try` mais lu dans le `catch` de `faoChainOk` (message d'erreur silencieusement perdu) ; `msgs` était lu hors portée dans le `catch` des fantômes de `refreshParts` (remplacé par `FR.msgs`). `skOffArm` est désormais déclaré et l'affectation morte `viewChanged` retirée.
+- **CI minimale** : `.github/workflows/ci.yml` vérifie le build à jour, la syntaxe, un sous-ensemble rapide de 19 suites (`tests/run-fast.cjs`) et le lint. La suite complète reste `node tests/run.cjs`.
+- **Git LFS** : `occt/*.wasm`, `Exemples/*.miniFusion` et `Exemples/*.step` sont suivis par LFS (`.gitattributes`) ; les blobs existants ont été convertis dans l'index. Cloner avec `git lfs install && git lfs pull`.
+- **Deux tests réalignés** : `test_vue_centre` lisait `src/88-fao.js` (supprimé) et lit désormais les 12 morceaux `src/88-fao-*.js` ; `test_repeat_session` sélectionnait le premier champ des propriétés, devenu le nom du document, et ignore désormais `#docNameIn` pour viser le vrai champ de paramètre.
+- Tests : `node build.js --check`, `node tests/chk_syntaxe.cjs`, `node tests/run-fast.cjs` (19/19), `node tools/lint.cjs` (0 erreur) et suite complète `node tests/run.cjs` (103/103).

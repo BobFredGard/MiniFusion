@@ -1,15 +1,23 @@
 {
   "name": "fusion2",
-  "version": "1.0.0",
+  "version": "0.3.2",
   "description": "MiniFusion — CAO paramétrique et FAO dans un seul fichier HTML",
   "scripts": {
     "start": "npx serve . -l 3000",
     "build": "node build.js",
     "check": "node build.js --check",
-    "test": "node tests/run.cjs"
+    "test": "node tests/run.cjs",
+    "test:fast": "node tests/run-fast.cjs",
+    "lint": "node tools/lint.cjs",
+    "lint:all": "node tools/lint.cjs --all",
+    "ci": "node build.js --check && node tests/chk_syntaxe.cjs && node tests/run-fast.cjs && node tools/lint.cjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs"
+  "type": "commonjs",
+  "devDependencies": {
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0"
+  }
 }

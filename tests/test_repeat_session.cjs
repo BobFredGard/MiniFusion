@@ -48,7 +48,7 @@ const {loadApp}=require('./appvm.cjs');
     "  sel={kind:'feature',id:fid};renderProps();",
     "  const out=[];const walk=n=>{(n.children||[]).forEach(c=>{if(String(c.tagName).toUpperCase()==='INPUT')out.push(c);walk(c);});};",
     "  $('props').children.slice(before).forEach(c=>{if(String(c.tagName).toUpperCase()==='INPUT')out.push(c);walk(c);});",
-    "  return out;",
+    "  return out.filter(i=>i.id!=='docNameIn');",
     "};",
     // ---------- 1) panneau xmove : distance 5 -> 25 ----------
     "let ins=panelInput('mv_t');",

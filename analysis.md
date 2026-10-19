@@ -1,75 +1,87 @@
-# MiniFusion Project Analysis
+# Analyse du projet MiniFusion
 
-The repository contains a **single‑page web application** that implements a parametric CAD tool called *MiniFusion*.
+*État au 2026-10-19 — version `V0.3.2`.*
 
-## Directory structure
+## Nature du projet
 
-| Folder / file | Purpose |
-|---------------|---------|
-| `fusion_mvp.html` | The only file that must be opened in a browser. It holds an inline `<script>` section that concatenates all `src/*.js` files in order.
-| `src/` | Source modules, split into 14 files (00–99). They are *concatenated in ascending numeric order* during the build.
-| `threejs/` | Three‑D rendering engine (three.js, OrbitControls, CSG). These are bundled separately as a third‑party library.
-| `occt/` | OpenCascade WebAssembly kernel (`opencascade.wasm.wasm`, `opencascade.full.wasm`, `opencascade.full.js`). The project can fall back to a CSG solver when the exact kernel is not available.
-| `README.md`, `CHANGELOG.md`, `package.json`, `build.js`, `Server.bat` | Project metadata and build tools.
-| `Backup/` | Snapshots of previous successful builds used for regression tests.
-| `diff_g_o.txt` | Difference file for verifying the build output.
-| `S:	extbackslash Dropbox	extbackslash Fusion2` | Root of the repository.
+MiniFusion est une application web **mono-page** de **CAO paramétrique et FAO** utilisable hors-ligne. Le livrable est un **HTML unique** (`fusion_mvp.html`, ~2 Mo) généré à partir des sources de `src/`. Aucune installation, aucun compte, aucune dépendance runtime : l'application fonctionne en `file://`, avec un serveur statique facultatif.
 
-## Build & development workflow
+Le noyau géométrique exact est **OpenCascade (OCCT) compilé en WebAssembly**. En cas d'indisponibilité, l'application bascule automatiquement sur un moteur maillage (CSG).
 
-1. **Edit** a source file in `src/` (never touch `fusion_mvp.html`).
-2. Run `node build.js` to concatenate the sources and rebuild `fusion_mvp.html`.
-3. Validate that the build is up‑to‑date by running `node build.js --check`. The script will exit with code 1 if changes in `src/` were not reflected in the HTML.
-4. Use `Server.bat` (or any static file server) to serve the files at `http://localhost:3000`.
-5. For local file access, double‑click `fusion_mvp.html`. It will automatically use the bundled WASM when available.
+## Organisation
 
-## Core modules (src files)
+| Élément | Rôle |
+|---|---|
+| `src/*.js` | Sources, **48 fichiers** (~37 000 lignes), concaténés dans l'ordre numérique par `build.js`. |
+| `fusion_mvp.html` | Livrable généré. **Ne jamais l'éditer à la main.** |
+| `build.js` | Concaténation + bandeaux de section ; `--check` échoue si le livrable est périmé. |
+| `tests/` | **103 suites** Node portables (`tests/run.cjs`) + sous-ensemble CI (`tests/run-fast.cjs`). |
+| `tools/lint.cjs` | Lint ESLint du script concaténé, dans l'ordre exact du build. |
+| `threejs/` | three.js, OrbitControls et CSG (MIT). |
+| `occt/` | Noyau OCCT WebAssembly (LGPL), `.wasm` suivis par Git LFS. |
+| `PostPro/` | Post-processeurs de référence Siemens 840D et Fagor 8065. |
+| `Backup/` | Instantanés locaux par version (non versionnés). |
+| `docs/` | Captures et notes de conception. |
 
-| File | Key responsibilities |
-|------|-----------------------|
-| `00-entete-et-outils.js` | Project metadata, global utilities, UI helpers, constants, and the `APP_VER` marker.
-| `10-scene-3d.js` | Three.js setup: camera, renderer, controls, lighting, environment, mirror plane.
-| `20-noyau-et-operations-solides.js` | OpenCascade kernel integration; handles exact operations (extrude, cut, fillet, etc.).
-| `30-marqueur-temps.js` | Timeline/clock for replaying operations and time‑based controls.
-| `40-interface-arbre-props.js` | Tree view of the model, properties panel, selection logic.
-| `45-annuler-document.js` | Undo/redo stack for the document (sketches, features, operations).
-| `50-esquisse-2d-solveur.js` | 2‑D sketching, constraint solver, SVG export.
-| `60-trim-et-souris.js` | Mouse interaction helpers for trim, control points, and drawing.
-| `70-extrusion.js` | Extrusion operation UI, distance and “to‑face” logic.
-| `75-revolve.js` | Revolution operation, handling axis and angle.
-| `80-conges-chanfreins.js` | Chamfer/fillet logic using both CSG and exact OCCT.
-| `90-picking-mesure-import.js` | 3‑D picking, measurement, import/export utilities.
-| `95-toolbar.js` | Toolbar, shortcuts, and UI commands.
-| `96-noyau-occt-tiers-lgpl.js` | Third‑party OpenCascade wrapper (LGPL) – kept intact.
-| `97-auto-tests.js` | In‑app regression tests for sketches and constraints.
-| `99-init.js` | Bootstrapping – entry point that orchestrates all modules.
+## Architecture des sources
 
-## User experience flow
+- `00` : métadonnées (`APP_VER`), utilitaires, thème, caches.
+- `10`–`20` : scène three.js, rejeu paramétrique, noyau exact OCCT et repli maillage.
+- `30`–`45` : marqueur de temps, arbre/propriétés, annuler/rétablir documentaire.
+- `49`–`60` : esquisse 2D, solveur Levenberg-Marquardt, contraintes, trim et interactions souris.
+- `70`–`88` : fonctions 3D (extrusion, révolution, perçage, congés, chanfreins, dépouille, coque) puis FAO découpée par domaine :
+  - `88-fao-00` à `88-fao-30` : constantes, état, outils, brut, parcours 2,5D ;
+  - `88-fao-40` à `88-fao-50` : zones, plans, caches, dispatch, estimation ;
+  - `88-fao-60` à `88-fao-70` : post-processeurs, prévisualisation, simulation ;
+  - `88-fao-80` à `88-fao-94` : interface, ébauche 3D, suivi de contour, sélection 3+2.
+- `89` : modules FAO spécialisés (contour, crêtes, outils, perçage, posage, torique).
+- `90` : picking, mesure, import/export STEP/STL/OBJ.
+- `95`–`99` : barre d'outils, interface moderne, fichiers/projets, aide, mise en plan, initialisation.
 
-1. **Open** `fusion_mvp.html` → the renderer displays an empty scene.
-2. **Create sketches**: use toolbar actions (line, circle, rectangle, etc.). Sketches are stored in `doc.sketches`.
-3. **Apply constraints**: the solver checks over 12 constraint types and maintains an internal *health panel*.
-4. **Generate features**: extrude, revolve, chamfer, fillet, etc. Each feature is a node in the tree view and triggers a rebuild of the geometry.
-5. **Inspect/measure**: pick entities, view 3‑D dimensions, and export to SVG/STEP.
-6. **Undo / redo**: the document stack (`doc`) records each change.
-7. **Autosave**: on each rebuild, a snapshot is written to `localStorage` so reopening the page restores the last state.
+L'exécution reste **un seul script global** : les fichiers ne sont pas des modules ES, ils partagent la portée du livrable. C'est ce qui permet le double-clic sur le fichier HTML, mais c'est aussi la principale contrainte d'architecture.
 
-## Key design decisions
+## Chaîne de qualité
 
-- **Single‑file delivery**: All JS lives inside one HTML so that opening the file via `file://` is possible, with dynamic WebAssembly loading.
-- **Mirror rendering**: A custom shader provides a real‑time floor reflection, updated only when the camera moves.
-- **Performance optimization**: Document hashing (`_docVersion`) triggers rebuilds only when necessary; caching of geometry and view parameters.
-- **Test-driven**: `97-auto-tests.js` contains a battery of non‑regression tests that run from the in‑app UI; the build script also enforces that `fusion_mvp.html` is regenerated after any source change.
-- **Modular source files**: The numeric prefixes keep the execution order clear and make it trivial to locate new functionality.
-- **OpenCascade fall‑back**: When the exact kernel isn’t available (e.g., in file:// mode), the system automatically switches to a CSG implementation.
+1. `node build.js` reconstruit le livrable.
+2. `node build.js --check` vérifie qu'il correspond aux sources.
+3. `node tests/chk_syntaxe.cjs` vérifie la syntaxe du script généré.
+4. `node tests/run.cjs` exécute les 103 suites ; `tests/run-fast.cjs` en exécute 19 pour la CI.
+5. `npm run lint` vérifie les identifiants non définis ; `npm run lint:all` inclut les avertissements (`catch` vides).
+6. `.github/workflows/ci.yml` enchaîne build, syntaxe, tests rapides et lint.
 
-## Extensions & future work
+Le harnais de test (`tests/appvm.cjs`) exécute le vrai script dans une machine virtuelle Node avec des stubs DOM/THREE ; plusieurs tests chargent en plus le noyau OCCT réel. Le noyau exact n'est toutefois pas couvert à 100 % par la suite Node : les évolutions critiques demandent une validation navigateur.
 
-- Add full STEP import/export via the OCCT WASM.
-- Introduce an Electron wrapper (already listed as a dev dependency). It could expose file‑system dialogs and allow offline operation.
-- Expand the test suite to cover edge cases such as high‑frequency constraints and very large models.
-- Optional: persist user preferences (themes, grid spacing, etc.) in `localStorage`.
+## Points forts
 
----
+- Distribution **sans installation**, adaptée à un usage atelier.
+- Fonctionnalités couvrant CAO, FAO, simulation, G-code et mise en plan.
+- Nombreux tests de non-régression et discipline de build (`--check`).
+- Repli maillage automatique quand OCCT n'est pas disponible.
+- Caches versionnés (géométrie, parcours) et empreinte documentaire pour éviter les rejeux inutiles.
+- Documentation de projet dense (README, CHANGELOG, commentaires de cause à effet).
 
-This document provides an overview of the codebase, the build process, and how the application operates from a developer’s perspective. For specific code‑level inquiries, refer to the individual `src/*.js` modules.
+## Risques et dette restante
+
+- **Monolithe global** : malgré le découpage FAO, le script reste un namespace unique sans modules ni types ; les identifiants publics passent par `window`.
+- **Fichier généré volumineux** : ~2 Mo, difficile à déboguer directement.
+- **1046 avertissements `no-empty`** : les `catch(e){}` silencieux restent nombreux ; le lint les signale sans bloquer la CI.
+- **OCCT non couvert par le harnais Node** : validation navigateur manuelle nécessaire.
+- **Suite complète longue** : exécution sérielle, certains tests chargent le vrai WASM.
+- **Git LFS** : nécessaire pour cloner les `.wasm` et les gros exemples ; un clone sans LFS donnera des pointeurs.
+- **Historique Git** : les anciens blobs volumineux restent dans l'historique ; leur migration complète demanderait une réécriture (`git lfs migrate`).
+
+## État des cinq axes d'amélioration
+
+1. **Documentation et versions** : README, CHANGELOG, `analysis.md` et `package.json` alignés sur `V0.3.2` ; compteurs corrigés.
+2. **Découpage de la FAO** : `88-fao.js` remplacé par 12 fichiers contigus, concaténation vérifiée identique.
+3. **Git LFS** : `.wasm` et gros exemples suivis par LFS ; blobs existants convertis dans l'index.
+4. **CI** : workflow GitHub Actions avec build, syntaxe, tests rapides et lint.
+5. **Lint** : ESLint sans bundler sur le script concaténé ; `no-undef` en erreur, `no-empty` en avertissement. Le lint a déjà révélé deux défauts réels (`PRE` hors portée, `msgs` hors portée), corrigés.
+
+## Priorités suivantes
+
+1. Réduire progressivement les `catch` vides en journalisant l'erreur ou en justifiant l'ignorance.
+2. Découper aussi les gros modules restants (`50-esquisse`, `98-mise-en-plan`) par domaine, toujours en chunks contigus.
+3. Ajouter un test CI navigateur (Playwright) pour les parcours OCCT critiques.
+4. Finaliser la migration LFS de l'historique si le poids du clone devient bloquant.
+5. Maintenir la discipline : toute modification de `src/` suivie de `build`, tests, lint, bump `APP_VER`, CHANGELOG, snapshot et tag.

@@ -1,0 +1,34 @@
+// Sous-ensemble rapide pour la CI : contrôles de structure, solveur, UI et
+// quelques parcours FAO. La suite complète reste `node tests/run.cjs`.
+const { execFileSync } = require('child_process'), path = require('path');
+const SUITES = [
+  'test_highlight_order',
+  'test_fresh_default',
+  'test_validate',
+  'test_raccourcis',
+  'test_precision_affichage',
+  'test_esquisse_contraintes',
+  'test_esquisse_echelle',
+  'test_parametres',
+  'test_interface_moderne',
+  'test_sk_origin',
+  'test_ctx_menu_viewport',
+  'test_prodver_badge',
+  'test_fao_passes',
+  'test_fao_zlim',
+  'test_mise_en_plan',
+  'test_undo_document',
+  'test_conge_tangent',
+  'test_fao_outils',
+  'test_fao_percage'
+];
+let ok = 0; const ko = [];
+for (const s of SUITES) {
+  try {
+    execFileSync(process.execPath, [path.join(__dirname, s + '.cjs')], { stdio: 'inherit', timeout: 5 * 60 * 1000 });
+    ok++;
+  } catch (e) { ko.push(s); }
+}
+console.log('');
+console.log('SUITE RAPIDE: ' + ok + '/' + SUITES.length + ' OK' + (ko.length ? ' — KO: ' + ko.join(', ') : ''));
+process.exit(ko.length ? 1 : 0);

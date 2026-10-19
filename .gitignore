@@ -1,6 +1,7 @@
 .DS_Store
 desktop.ini
 node_modules/
+.lint-bundle.js
 diff_g_o.txt
 fusion_mvp - Copie.html
 *.html.bak_g

@@ -2,11 +2,11 @@
 
 **CAO paramétrique et FAO dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2 et G-code. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.2.3** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.3.2** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Deux interfaces, cinq thèmes
 
-| Classique (l'interface historique) | Moderne (ruban, espaces CAO / FAO, cube de vue) |
+| Classique (l'interface historique) | Moderne (ruban, espaces CAO / FAO / PLAN, cube de vue) |
 |---|---|
 | ![Interface classique](docs/captures/interface-classique.png) | ![Interface moderne](docs/captures/interface-moderne.png) |
 
@@ -15,7 +15,7 @@ Le bouton **▦** en haut à droite bascule d'une interface à l'autre, et le bo
 ![Thème clair](docs/captures/theme-clair.png)
 
 L'interface **Moderne** apporte :
-- les **espaces CAO / FAO** ;
+- les **espaces CAO / FAO / PLAN** ;
 - un **ruban à icônes** ;
 - la **recherche de commandes** (`Ctrl+K`) ;
 - une barre rapide : annuler, rétablir, enregistrer ;
@@ -90,6 +90,16 @@ En esquisse, le bandeau d'outils remplace le ruban et le panneau des contraintes
 
 **G-code** : multi-outils, cycles du dialecte, coordonnées relatives à l'origine du posage. *Validez toujours un premier programme à vide sur la machine.*
 
+## PLAN
+
+**Mise en plan 2D** (espace PLAN, `src/98-mise-en-plan.js`) : la 3D reste accessible derrière l'overlay.
+- **Planches** A0 à A4, portrait ou paysage, onglets renommables, cadre ISO et cartouche éditable (projet, auteur, date, échelle, n° de planche).
+- **Vues** Face, Dessus, Côté, ISO, Caméra, Auxiliaire, Coupe et Détail, par corps ou assemblées ; vues projetées du 1er angle liées à leur vue mère.
+- **Arêtes** vives et tangentes du noyau exact, silhouettes de maillage pour les contours, arêtes cachées masquées (HLR de profondeur) et mode gris pointillé par vue.
+- **Cotation** : diamètre, rayon, longueur, distance, angle, tolérances ISO 286, cotes de référence, format numérique français.
+- **Dessin 2D** : ligne, rectangle, cercle, arc, point, ajustement, mini-solveur de contraintes et accrochages sur la géométrie projetée.
+- **Sortie** : export SVG de la planche et impression. `doc.mep` est persisté avec la pièce et la FAO.
+
 ## Démarrage
 
 ```bat
@@ -104,26 +114,31 @@ npx serve . -l 3000
 
 En `file://` (double-clic sur `fusion_mvp.html`), l'application démarre en mode maillage. Le bouton **⚙ Noyau .wasm…** active le noyau exact, qui est ensuite gardé en cache. Des modèles d'exemple se trouvent dans `Exemples/`.
 
+Le dépôt stocke les gros binaires (`occt/*.wasm`, `Exemples/*.miniFusion`, `Exemples/*.step`) via **Git LFS**. Après un clone : `git lfs install` puis `git lfs pull`.
+
 ## Développement
 
 | Chemin | Rôle |
 |---|---|
-| `src/*.js` | **Les sources** (35 fichiers, de l'en-tête à l'initialisation). C'est ici qu'on travaille. |
+| `src/*.js` | **Les sources** (48 fichiers, de l'en-tête à l'initialisation ; la FAO est découpée par domaine : parcours, caches, post-processeurs, simulation, interface, ébauche 3D, contour). C'est ici qu'on travaille. |
 | `fusion_mvp.html` | **Livrable généré** par `node build.js`. On ne l'édite jamais à la main. |
-| `tests/` | Suite Node portable (99 suites, dont certaines sur le noyau OCCT réel) : `node tests/run.cjs`. |
+| `tests/` | Suite Node portable (103 suites, dont certaines sur le noyau OCCT réel) : `node tests/run.cjs` ; sous-ensemble CI : `node tests/run-fast.cjs`. |
+| `tools/lint.cjs` | Lint ESLint du script concaténé (même ordre que le build) : `npm run lint` (erreurs) ou `npm run lint:all` (avertissements inclus). |
+| `.github/workflows/ci.yml` | CI : build à jour, syntaxe, tests rapides, lint. |
 | `CHANGELOG.md` | Une entrée par version : cause, correctif, test. |
-| `occt/`, `threejs/` | Noyau OpenCascade WebAssembly, rendu three.js. |
+| `occt/`, `threejs/` | Noyau OpenCascade WebAssembly, rendu three.js (stockés via Git LFS pour les `.wasm`). |
 | `PostPro/` | Post-processeurs de référence (Siemens 840D, Fagor 8065). |
-| `Backup/` | Un instantané par version. |
+| `Backup/` | Un instantané par version (non versionné). |
 
 Cycle de livraison :
 1. modifier `src/` ;
 2. `node build.js` ;
-3. `node tests/run.cjs`, qui doit être entièrement vert ;
-4. incrémenter `APP_VER` dans `src/00-entete-et-outils.js` et ajouter une entrée au CHANGELOG ;
-5. `node build.js --check` ;
-6. copier l'instantané dans `Backup/fusion_mvp_V0.x.y.html` ;
-7. commit, push et tag `V0.x.y`.
+3. `node tests/run.cjs`, qui doit être entièrement vert (ou `npm run test:fast` en cours de travail) ;
+4. `npm run lint` ;
+5. incrémenter `APP_VER` dans `src/00-entete-et-outils.js` et ajouter une entrée au CHANGELOG ;
+6. `node build.js --check` ;
+7. copier l'instantané dans `Backup/fusion_mvp_V0.x.y.html` ;
+8. commit, push et tag `V0.x.y`.
 
 **Un seul numéro de version**, celui des tags Git.
 

@@ -201,7 +201,7 @@ function mirrorViewMoved(){
   _msig.x=camera.position.x;_msig.y=camera.position.y;_msig.z=camera.position.z;
   _msig.qx=q.x;_msig.qy=q.y;_msig.qz=q.z;_msig.qw=q.w;
   _msig.fov=camera.fov;_msig.aspect=camera.aspect;_msig.zoom=camera.zoom;
-  if(moved){viewChanged=true;mirrorDirty=true;} // la vue a changé : le reflet devient obsolète
+  if(moved){mirrorDirty=true;} // la vue a changé : le reflet devient obsolète
   return moved;
 }
 

@@ -11,7 +11,9 @@ const {loadApp}=require('./appvm.cjs');
 const APP=path.join(__dirname,'..','fusion_mvp.html');
 const SRC=fs.readFileSync(APP,'utf8');
 const src=f=>fs.readFileSync(path.join(__dirname,'..','src',f),'utf8');
-const S={s10:src('10-scene-3d.js'),s95:src('95-toolbar.js'),s88:src('88-fao.js'),s97:src('97-interface-moderne.js')};
+const faoSrc=fs.readdirSync(path.join(__dirname,'..','src'))
+  .filter(f=>/^88-fao-.*\.js$/.test(f)).sort().map(src).join('\n');
+const S={s10:src('10-scene-3d.js'),s95:src('95-toolbar.js'),s88:faoSrc,s97:src('97-interface-moderne.js')};
 const hasSrc=s=>SRC.indexOf(s)>=0;
 const str=v=>JSON.stringify(v);
 const HOST=[

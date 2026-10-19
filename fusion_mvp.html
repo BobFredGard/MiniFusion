@@ -273,7 +273,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.3.1';
+const APP_VER='V0.3.2';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -776,7 +776,7 @@ function mirrorViewMoved(){
   _msig.x=camera.position.x;_msig.y=camera.position.y;_msig.z=camera.position.z;
   _msig.qx=q.x;_msig.qy=q.y;_msig.qz=q.z;_msig.qw=q.w;
   _msig.fov=camera.fov;_msig.aspect=camera.aspect;_msig.zoom=camera.zoom;
-  if(moved){viewChanged=true;mirrorDirty=true;} // la vue a changé : le reflet devient obsolète
+  if(moved){mirrorDirty=true;} // la vue a changé : le reflet devient obsolète
   return moved;
 }
 
@@ -4304,7 +4304,7 @@ function occRebuild(){
         // Fantôme masqué par défaut (sinon il dépasse là où un congé a rajouté de la matière).
         // Visible quand sa découpe est sélectionnée, ou via 👁 dans Pièces.
         bodies.push({id:'occghost_'+i,name:gh.inexact?`⚠ ${gh.inexact} (maillage — exclu de l'exact)`:'🔧 Outil '+(gh.orphan?'(orphelin)':'(découpe)'),mesh,color:0xff453a,visible:false,kind:'ghost',ref:gh.fid||null,ghost:true});
-      }catch(e){msgs.push('fantôme illisible, ignoré');}
+      }catch(e){FR.msgs.push('fantôme illisible, ignoré');}
     });
     // Imports mesh : affichés tels quels SAUF s'ils sont entrés dans la chaîne exacte
     // (ils SONT alors le corps : un second affichage montrerait le solide deux fois).
@@ -7156,7 +7156,7 @@ function skFitView(){
 function evXY(e){const r=svg.getBoundingClientRect();return s2w(e.clientX-r.left,e.clientY-r.top);}
 let SK_SNAP=5, SK_INF=2.5, SK_PICK=4, SK_PT=5, SK_PICKX=6;
 skUpdateTols();
-let skTool='select',skDraft=null,skMsg='';
+let skTool='select',skDraft=null,skMsg='',skOffArm=null;
 let skDown=null,skChain=null,skInfer=null,skSnapMk=null,skSel=null,skSelX=[],skDrag=null,skDragMoved=false,skDragPushed=false,skDimDrag=null,skPan=null;
 let skBox=null,skDragEnt=null,skDyn=null; // sélection rect · déplacement d'entité · saisie dynamique (longueur/angle)
 let skOffsetD=5; // distance « auto » du menu ⇄ Décaler (contexte) : déclarée ici car le menu la lit AVANT tout usage de l'outil — sinon ReferenceError et menu jamais affiché
@@ -14883,7 +14883,7 @@ function coqueApply(){
   faceEl.textContent='Coque créée : '+nf.name+'. Épaisseur modifiable dans ses propriétés, ou re-sélectionnez les faces.';
 }
 
-/* ═══════════════ 88-fao.js — fao ═══════════════ */
+/* ═══════════════ 88-fao-00-entete.js — fao 00 entete ═══════════════ */
 /* ---------- FAO : fraisage 2.5D + post-processeurs CN ---------- */
 // Module mené EN PARALLÈLE de la partie dessin : il ne touche à aucune géométrie.
 // Il lit les corps affichés (bbox), génère des parcours outil (ébauche/finition
@@ -15111,6 +15111,7 @@ const faoRapideMin=30;
   }catch(e){}
 })();
 
+/* ═══════════════ 88-fao-10-etat.js — fao 10 etat ═══════════════ */
 /* ----- formats numériques (point décimal, comme les .cps : ascii) ----- */
 function faoFmtXYZ(n){ const v=isFinite(+n)?+n:0; return (Math.round(v*1000)/1000).toFixed(3); }
 function faoFmtF(n){ const v=isFinite(+n)&&+n>0?+n:100; return (Math.round(v*10)/10).toFixed(1); }
@@ -15361,6 +15362,7 @@ function faoTouch(){
   try{ faoRenderTree(); }catch(e){}
 }
 
+/* ═══════════════ 88-fao-20-outils-brut.js — fao 20 outils brut ═══════════════ */
 /* ----- bibliothèque d'outils : Vc/fz -> S/F ----- */
 function faoRapide(job){
   // Vitesse des G0 du posage (mm/min) — défaut machine 5000.
@@ -15610,6 +15612,7 @@ function faoStockBodySet(bodyId,setup){
   try{ faoChanged(); }catch(e){}
 }
 
+/* ═══════════════ 88-fao-30-parcours.js — fao 30 parcours ═══════════════ */
 /* ----- niveaux Z (ébauche par passes ap, finition = dernier niveau) ----- */
 function faoFacingAe(stock,D,np){
   // Écart (ae) pour usiner EXACTEMENT np passes sur la largeur du brut + Ø.
@@ -16659,6 +16662,7 @@ function faoClipMovesPoly(moves,lim,r,secuZ,sub,atFn){
   return out;
 }
 
+/* ═══════════════ 88-fao-40-zone-plans.js — fao 40 zone plans ═══════════════ */
 /* ----- ZONE = mur vertical inviolable ---------------------------------------
    Règle d'atelier (affinée jusqu'à la capture) : la zone est un MUR. Rien ne
    s'y usine dehors, et les G0 ne font plus de TOUR « dans le vide » : on ne la
@@ -17153,6 +17157,7 @@ function faoSegClipper(op,job){
   };
 }
 
+/* ═══════════════ 88-fao-50-caches-dispatch.js — fao 50 caches dispatch ═══════════════ */
 /* ----- cache de parcours + de maillage -----
    Une même opération était recalculée 6 à 8 fois PAR INTERACTION souris
    (arbre, aperçu, fiche, stats, temps, viewer…) — pour l'ébauche 3D cela
@@ -18173,6 +18178,8 @@ function faoSeqSafe(job,seule){
   });
   return res;
 }
+
+/* ═══════════════ 88-fao-60-postprocesseurs.js — fao 60 postprocesseurs ═══════════════ */
 /* ================= post-processeurs ================= */
 // Table des machines : `kind` porte le dialecte (commentaires, numérotation,
 // fin de programme) — le corps du programme est commun aux dialectes.
@@ -18782,6 +18789,7 @@ async function faoPreviewGenerateAsync(){
   return n;
 }
 
+/* ═══════════════ 88-fao-70-simulation.js — fao 70 simulation ═══════════════ */
 /* ================= viewer d'usinage (brut + outil, ▶ lecture / ⏸ pause / ⏹ stop) =================
    Cache les traces, fait apparaître la boîte du brut (+ le corps-brut masqué s'il y en a un),
    anime l'outil le long du parcours et dessine un BOUT de trace qui suit la fraise
@@ -20020,6 +20028,7 @@ function faoViewerBarUpdate(){
   }catch(e){}
 }
 
+/* ═══════════════ 88-fao-80-interface.js — fao 80 interface ═══════════════ */
 /* ================= interface (bouton + panneau flottant) ================= */
 // 2026-10-14-004 : POCHE 2.5D ADAPTATIVE — géométrie = arêtes du modèle (bord
 // de la poche, op.limit chaîne, outil entier dedans), vidage par le moteur de
@@ -21955,6 +21964,7 @@ function faoExport(){
   }catch(e){}
 }
 
+/* ═══════════════ 88-fao-90-ebauche3d.js — fao 90 ebauche3d ═══════════════ */
 /* ================= 3D : ébauche par tranches + finition iso-géodésique ================= */
 // Maillage plan : {v:[[x,y,z]], t:[[a,b,c]]} — aucune dépendance THREE : tout ce
 // bloc est pur et testé en Node sur maillages synthétiques. Le lien avec la
@@ -23979,6 +23989,7 @@ function faoYCands(mesh,planes,z,zt,y,r,ivs){
   return out;
 }
 
+/* ═══════════════ 88-fao-92-contour.js — fao 92 contour ═══════════════ */
 /* ===== LOT A — suivi de contour : sections, offset, validation exacte =====
  Chaque passe suit l'intersection modèle/plan OFFSETÉE à la distance d
  (r = D/2 + radial au plus près de la matière) : le centre d'outil reste à
@@ -25821,6 +25832,8 @@ function faoRoughRegions(lines){
   });
   return Object.keys(groups).map(function(k){return groups[k];});
 }
+
+/* ═══════════════ 88-fao-94-selection.js — fao 94 selection ═══════════════ */
 /* ----- entrée en arc tangent sur une paroi (mène à la passe) ----- */
 // Quart de cercle S->W tangent à la direction de paroi (+Y) en W, avec
 // S sur la ligne vidée à ≤10 mm de W (rayon capé à 5). G2 à gauche,
@@ -27458,13 +27471,14 @@ function faoChainPanel(p,setup,op){
   p.appendChild(note);
 }
 function faoChainOk(){
+  let PRE='Chaîne';
   try{
     if(!faoChainMode)return;
     const setup=faoSetup(faoChainMode.setupId);
     const op=(setup.ops||[]).filter(function(o){return o.id===faoChainMode.opId;})[0];
     const isZ=(faoChainMode.kind==='z');
     const is2=(faoChainMode.kind==='chain2');
-    const PRE=isZ?'Limite Z':(is2?'Chaîne (îlot)':'Chaîne');
+    PRE=isZ?'Limite Z':(is2?'Chaîne (îlot)':'Chaîne');
     if(!op){faceEl.textContent=PRE+' : opération introuvable.';faoChainExit();return;}
     if(!faoChainMode.sel.length){faceEl.textContent=PRE+' : aucune arête — limite inchangée.';faoChainExit();return;}
     if(isZ){
