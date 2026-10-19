@@ -137,8 +137,9 @@ function docResetEmpty(){
   // utilisée par « Nouveau » et avant chaque ouverture de fichier (src/97-fichiers-projets.js)
   try{exitFilletMode(true);}catch(e){}
   if(skEdit)closeSketch(false);
-  doc={name:'Sans titre',tint:0,sketches:[],features:[],bodyVis:{},bodies:[],bodySeq:1,activeBody:null};
+  doc={name:'Sans titre',tint:0,sketches:[],features:[],bodyVis:{},bodies:[],bodySeq:1,activeBody:null,mep:null};
   try{ if(typeof faoReset==='function')faoReset(); }catch(e){} // FAO : traces, posages et mode lecture à zéro
+  try{ if(typeof mepReset==='function')mepReset(); }catch(e){} // PLAN : planches vidées (98-mise-en-plan.js)
   sel={kind:null,id:null};selFaces=[];fileHandle=null;uidN=0;builtHash=null;builtEngine=null;builtVersion=-1;
   try{occCkClear();}catch(e){}
 }

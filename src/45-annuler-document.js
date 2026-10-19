@@ -169,6 +169,8 @@ function docUndoUI(){
 window.addEventListener('keydown',e=>{
   const ds=$('sketchOverlay');
   if(ds&&ds.classList.contains('open'))return;   // l'esquisse possède Suppr et Ctrl+Z
+  // Espace PLAN (98) : cède Suppr/Escape au plan ouvert (ses propres handlers en capture)
+  try{if(typeof mepIsOpen==='function'&&mepIsOpen()&&(e.key==='Delete'||e.key==='Backspace'||e.key==='Escape'))return;}catch(e2){}
   const t=e.target;
   if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return;
   const ctrl=e.ctrlKey||e.metaKey;

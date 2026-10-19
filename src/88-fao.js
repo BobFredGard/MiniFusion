@@ -51,12 +51,14 @@ const faoRapideMin=30;
       +'padding-bottom:5px;border-bottom:1px solid rgba(255,255,255,.1)}'
       +'.fao-h::after{content:"";flex:1;height:1px;'
       +'background:linear-gradient(90deg,rgba(255,255,255,.16),transparent)}'
-      /* --- rangées de champs --- */
+      /* --- rangées de champs : label à gauche, contrôle à droite (style PLAN) --- */
       +'.fao-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:4px 0}'
-      +'.fao-lab{color:rgba(255,255,255,.62);font-size:.72rem;white-space:nowrap}'
+      +'.fao-lab{flex:0 0 auto;color:var(--muted);font-size:.72rem;white-space:nowrap}'
+      +'.fao-row>.fao-lab:first-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}'
       /* --- champs de saisie --- */
       +'.fao-in,.fao-sel{background:rgba(0,0,0,.34);border:1px solid rgba(255,255,255,.13);'
-      +'border-radius:7px;color:#f5f5f7;font-size:.75rem;padding:4px 7px;min-width:0}'
+      +'border-radius:7px;color:#f5f5f7;font-size:.75rem;padding:4px 7px;min-width:0;'
+      +'max-width:130px;box-sizing:border-box}'
       +'.fao-in:focus,.fao-sel:focus{outline:none;border-color:#0a84ff;'
       +'box-shadow:0 0 0 3px rgba(10,132,255,.25)}'
       +'.fao-in:disabled{opacity:.5}'
@@ -133,9 +135,9 @@ const faoRapideMin=30;
       +'.fao-tl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:5px 12px}'
       +'.fao-tl-f{display:flex;align-items:center;gap:6px;font-size:.74rem;color:rgba(255,255,255,.85)}'
       +'.fao-tl-f span{flex:1;white-space:nowrap}'
-      +'.fao-tl-f input{width:76px}'
-      +'.fao-tl-f.wide input{width:150px}'
-      +'.fao-tl-f em{font-style:normal;font-size:.64rem;color:rgba(255,255,255,.5);width:44px}'
+      +'.fao-tl-f input,.fao-tl-f select{flex:0 1 auto;min-width:0}'
+      +'.fao-tl-f.wide input,.fao-tl-f.wide select{flex:1 1 140px}'
+      +'.fao-tl-f em{font-style:normal;font-size:.64rem;color:rgba(255,255,255,.5);flex:none}'
       +'.fao-tl-f.def input{color:rgba(255,255,255,.5)}'
       /* --- arbre FAO --- */
       +'.fao-setup{font-weight:700;font-size:.76rem;margin:7px 0 3px;cursor:pointer;'
@@ -5442,14 +5444,14 @@ function faoReset(){
 function faoNum(val,fn,w,step,title){
   const i=document.createElement('input'); i.type='number'; i.className='fao-in';
   // valeur affichée arrondie (1,000000001 → 1) : jamais de chiffres parasites
-  i.value=(typeof val==='number'&&isFinite(val))?String(+val.toFixed(4)):val; i.style.width=Math.max(52,(w||60)+8)+'px'; // sans flèches : la place va à la valeur
+  i.value=(typeof val==='number'&&isFinite(val))?String(+val.toFixed(4)):val;
   if(step)i.step=step;
   if(title)i.title=title;
   i.onchange=function(){ const v=parseFloat(i.value); if(isFinite(v)){ faoSnapshot(title); fn(v); faoChanged(); } };
   return i; }
 function faoTxt(val,fn,w,title){
   const i=document.createElement('input'); i.type='text'; i.className='fao-in';
-  i.value=val; i.style.width=(w||120)+'px';
+  i.value=val;
   if(title)i.title=title;
   i.onchange=function(){ faoSnapshot(title); fn(i.value); faoChanged(); };
   return i; }

@@ -409,8 +409,8 @@ function renderDraftPanel(){
   const p=document.getElementById('props');if(!p)return;
   p.innerHTML='';if(!draftMode)return;
   const ed=draftMode.editing;
-  const h=document.createElement('div');
-  h.innerHTML=ed?'<b>📐 Édition du dépouillage</b>':'<b>📐 Dépouillage (angle de démoulage)</b>';
+  const h=document.createElement('div');h.className='pnl-h';
+  h.innerHTML=ed?'📐 Édition du dépouillage':'📐 Dépouillage (angle de démoulage)';
   p.appendChild(h);
   if(draftMode.phase==='ref'){
     const n=document.createElement('span');n.className='note';
@@ -459,17 +459,17 @@ function renderDraftPanel(){
     p.appendChild(lst);
   }
   // Chaîne tangente : coché par défaut, comme le congé exact.
-  const trow=document.createElement('div');trow.className='row';
+  const trow=document.createElement('div');trow.className='pnl-row';
+  const tlab=document.createElement('label');tlab.textContent='Chaîne tangente';trow.appendChild(tlab);
   const tcb=document.createElement('input');tcb.type='checkbox';tcb.checked=draftMode.tangent!==false;
   tcb.title='En cliquant une face, ajouter aussi ses voisines reliées par des arêtes lisses';
-  const tlab=document.createElement('span');tlab.textContent=' 🔗 Chaîne tangente';
-  trow.appendChild(tcb);trow.appendChild(tlab);p.appendChild(trow);
   tcb.onchange=()=>{draftMode.tangent=tcb.checked;};
+  trow.appendChild(tcb);p.appendChild(trow);
   // Angle : 0 < a < 90, au-delà le dépouillage perd son sens géométrique.
-  const row=document.createElement('div');row.className='row';row.style.marginTop='8px';
-  const lab=document.createElement('label');lab.textContent=' Angle (°) ';
+  const row=document.createElement('div');row.className='pnl-row';row.style.marginTop='8px';
+  const lab=document.createElement('label');lab.textContent='Angle (°)';row.appendChild(lab);
   const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';
-  inp.id='draftAngleIn';inp.style.width='80px';inp.value=String(draftMode.angle).replace('.',',');
+  inp.id='draftAngleIn';inp.value=String(draftMode.angle).replace('.',',');
   inp.onchange=()=>{
     const v=parseFloat(String(inp.value).replace(',','.').replace(/\s/g,''));
     if(!isFinite(v)||v<=0||v>=90){
@@ -481,11 +481,12 @@ function renderDraftPanel(){
     draftMode.angle=v;inp.value=String(v).replace('.',',');
     draftPreviewUpdate();
   };
-  row.appendChild(lab);row.appendChild(inp);
+  row.appendChild(inp);p.appendChild(row);
+  const btns=document.createElement('div');btns.className='pnl-btns';btns.style.marginTop='8px';
   const ok=document.createElement('button');ok.className='primary';
-  ok.textContent=ed?'✔ Enregistrer':'✔ Appliquer';ok.onclick=draftApply;row.appendChild(ok);
+  ok.textContent=ed?'✔ Enregistrer':'✔ Appliquer';ok.onclick=draftApply;btns.appendChild(ok);
   const q=document.createElement('button');q.textContent=ed?'✖ Annuler':'Quitter';q.onclick=()=>exitDraftMode();
-  row.appendChild(q);p.appendChild(row);
+  btns.appendChild(q);p.appendChild(btns);
   const n2=document.createElement('span');n2.className='note';
   n2.textContent='Chaque face retenue doit TOUCHER le plan neutre : elle pivote de cet angle autour de sa '+
     'ligne d\'intersection avec lui, pour ne plus coincer au démontage du moule. Une face parallèle au '+

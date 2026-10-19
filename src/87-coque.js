@@ -259,8 +259,8 @@ function renderCoquePanel(){
   const p=document.getElementById('props');if(!p)return;
   p.innerHTML='';if(!coqueMode)return;
   const ed=coqueMode.editing;
-  const h=document.createElement('div');
-  h.innerHTML=ed?'<b>⚙ Édition de la coque</b>':'<b>⚙ Coque (évidage paroi mince)</b>';
+  const h=document.createElement('div');h.className='pnl-h';
+  h.innerHTML=ed?'⚙ Édition de la coque':'⚙ Coque (évidage paroi mince)';
   p.appendChild(h);
   const nf=(coqueMode.faces||[]).length;
   if(nf){
@@ -292,10 +292,10 @@ function renderCoquePanel(){
     p.appendChild(n);
   }
   // Épaisseur : > 0, et inférieure à la plus petite dimension utile (le moteur refuse sinon).
-  const row=document.createElement('div');row.className='row';row.style.marginTop='8px';
-  const lab=document.createElement('label');lab.textContent=' Paroi (mm) ';
+  const row=document.createElement('div');row.className='pnl-row';row.style.marginTop='8px';
+  const lab=document.createElement('label');lab.textContent='Paroi (mm)';row.appendChild(lab);
   const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';
-  inp.id='coqueThickIn';inp.style.width='80px';inp.value=String(coqueMode.thick).replace('.',',');
+  inp.id='coqueThickIn';inp.value=String(coqueMode.thick).replace('.',',');
   inp.onchange=()=>{
     const v=parseFloat(String(inp.value).replace(',','.').replace(/\s/g,''));
     if(!isFinite(v)||v<=0){
@@ -307,11 +307,12 @@ function renderCoquePanel(){
     coqueMode.thick=v;inp.value=String(v).replace('.',',');
     coquePreviewUpdate();
   };
-  row.appendChild(lab);row.appendChild(inp);
+  row.appendChild(inp);p.appendChild(row);
+  const btns=document.createElement('div');btns.className='pnl-btns';btns.style.marginTop='8px';
   const ok=document.createElement('button');ok.className='primary';
-  ok.textContent=ed?'✔ Enregistrer':'✔ Appliquer';ok.onclick=coqueApply;row.appendChild(ok);
+  ok.textContent=ed?'✔ Enregistrer':'✔ Appliquer';ok.onclick=coqueApply;btns.appendChild(ok);
   const q=document.createElement('button');q.textContent=ed?'✖ Annuler':'Quitter';q.onclick=()=>exitCoqueMode();
-  row.appendChild(q);p.appendChild(row);
+  btns.appendChild(q);p.appendChild(btns);
   const n2=document.createElement('span');n2.className='note';
   n2.textContent='L\'intérieur est creusé de cette épaisseur sous chaque face conservée. '+
     'Une paroi plus épaisse que la plus petite dimension de la pièce est refusée par le moteur.';

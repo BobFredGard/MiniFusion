@@ -117,7 +117,7 @@ function mfCss(){
   '.mfRb:hover i{color:var(--primary);opacity:1}',
   '.mfQuick button,#mfThemeBtn{display:inline-flex;align-items:center;justify-content:center}',
   '.mfRb:hover{background:rgba(127,127,127,.14)}',
-  'body.ui-modern[data-ws="cao"] #mfRibbon .mfFao,body.ui-modern[data-ws="fao"] #mfRibbon .mfCao{display:none}',
+  'body.ui-modern[data-ws="cao"] #mfRibbon .mfFao,body.ui-modern[data-ws="cao"] #mfRibbon .mfPlan,body.ui-modern[data-ws="fao"] #mfRibbon .mfCao,body.ui-modern[data-ws="fao"] #mfRibbon .mfPlan,body.ui-modern[data-ws="plan"] #mfRibbon .mfCao,body.ui-modern[data-ws="plan"] #mfRibbon .mfFao{display:none}',
   /* navigateur : Modèle (arbre) / Usinage (posages) à gauche de la vue */
   '#mfBrTabs{position:absolute;top:10px;left:4px;z-index:23;gap:2px;padding:2px;border-radius:9px;background:rgba(16,18,22,.82);border:1px solid var(--border)}',
   '#mfBrTabs button{padding:3px 12px;font-size:.74rem;border:none;background:none;border-radius:7px;color:#e9e9ec}',
@@ -130,6 +130,7 @@ function mfCss(){
   'body.ui-modern #setMenu{left:auto!important;right:92px}',
   'body.ui-modern[data-ws="fao"] #treeWrap{display:none!important}',
   'body.ui-modern[data-ws="cao"] #faoWrap,body.ui-modern[data-ws="cao"] #faoTreeWrap{display:none!important}',
+  'body.ui-modern[data-ws="plan"] #treeWrap,body.ui-modern[data-ws="plan"] #faoWrap,body.ui-modern[data-ws="plan"] #faoTreeWrap,body.ui-modern[data-ws="plan"] #faoAddBar{display:none!important}',
   'body.ui-modern[data-ws="fao"] #faoAddBar{display:none!important}',
   'body.ui-modern[data-ws="fao"] #faoWrap{left:0!important;right:auto!important;top:40px!important;align-items:flex-start!important}',
   /* panneau Usinage à gauche : bouton de rabat COPIÉ de celui de l'arbre (bord gauche, même
@@ -240,7 +241,15 @@ const MF_IC={
   gcode:'<path d="M6 3h9l3 3v15H6z"/><path d="M9 10h6M9 13h6M9 16h4"/>',
   recent:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
   folder:'<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 10h18"/>',
-  theme:'<path d="M12 3a9 9 0 1 0 0 18c1.2 0 2-.8 2-2 0-1.3-1-1.6-1-2.6 0-1 .8-1.4 1.8-1.4H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/>'
+  theme:'<path d="M12 3a9 9 0 1 0 0 18c1.2 0 2-.8 2-2 0-1.3-1-1.6-1-2.6 0-1 .8-1.4 1.8-1.4H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/>',
+  /* PLAN (98) */
+  plan:'<rect x="3" y="4" width="18" height="14" rx="1"/><path d="M3 15h18M7 18v2M17 18v2M6 8h6M6 11h9"/>',
+  section:'<rect x="3" y="4" width="18" height="14" rx="1"/><path d="M3 11h18" stroke-dasharray="3 2"/><path d="M8 7h3M13 15h3"/>',
+  detail:'<circle cx="10" cy="10" r="6"/><path d="M14.5 14.5L21 21"/><circle cx="10" cy="10" r="2.5"/>',
+  ruler:'<path d="M3 8h18v8H3z"/><path d="M7 8v3M11 8v4M15 8v3M19 8v4"/>',
+  dim:'<path d="M4 12h16M4 9v6M20 9v6"/><path d="M8 10l-2 2 2 2M16 10l2 2-2 2"/>',
+  print:'<path d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2"/><rect x="6" y="14" width="12" height="7"/>',
+  sheet:'<path d="M5 3h10l4 4v14H5z"/><path d="M15 3v4h4M8 12h8M8 16h5"/>'
 };
 function mfI(k,size){const p=MF_IC[k];if(!p)return null;return '<svg viewBox="0 0 24 24" width="'+(size||20)+'" height="'+(size||20)+'" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+p+'</svg>';}
 /* ---------- mode moderne ---------- */
@@ -272,14 +281,32 @@ function mfRibbon(){
   grp('Simulation',[['play','Usinage','faoVwBtn'],['rapid','Rapides','faoRapBtn']],'mfFao');
   grp('Calcul',[['regen','Régénérer','faoGenBtn','Tout régénérer']],'mfFao');
   grp('Export',[['gcode','G-code','faoExportBtn']],'mfFao');
+  // PLAN : ruban dédié (icônes PLAN + actions mepSetTool/mep*)
+  const mepTool=t=>{try{mepSetActive(true);mepSetTool(t);}catch(e){}};
+  grp('Planches',[['sheet','Nouvelle',()=>{try{mepAddSheet();}catch(e){}},'Ajouter une planche'],
+    ['sheet','Dupliquer',()=>{try{const bs=document.querySelectorAll('#mepTabs .mepAdd');if(bs[1])bs[1].click();}catch(e){}},'Dupliquer la planche']],'mfPlan');
+  grp('Vues',[['face','Face',()=>{try{mepSetActive(true);mepAddViewStd('front');}catch(e){}},'Vue de face'],
+    ['sketch','Dessus',()=>{try{mepSetActive(true);mepAddViewStd('top');}catch(e){}},'Vue de dessus'],
+    ['draft','Côté',()=>{try{mepSetActive(true);mepAddViewStd('right');}catch(e){}},'Vue de côté'],
+    ['body','ISO',()=>{try{mepSetActive(true);mepAddViewStd('iso');}catch(e){}},'Axonométrie isométrique'],
+    ['section','Coupe',()=>{try{mepSetActive(true);mepBeginSectionCmd();}catch(e){}},'Vue en coupe (2 clics)'],
+    ['detail','Détail',()=>{try{mepSetActive(true);mepBeginDetailCmd();}catch(e){}},'Vue de détail (centre + rayon)']],'mfPlan');
+  grp('Dessin',[['sketch','Ligne',()=>mepTool('line')],['pattern','Rectangle',()=>mepTool('rect')],
+    ['combine','Cercle',()=>mepTool('circle')],['revolve','Arc',()=>mepTool('arc')],
+    ['hole','Point',()=>mepTool('point')],['chamfer','Ajuster',()=>mepTool('trim')]],'mfPlan');
+  grp('Cotes',[['dim','Cote',()=>mepTool('dim'),'Outil cote unique : Ø, longueur, distance, angle']],'mfPlan');
+  grp('Sortie',[['export','SVG',()=>{try{mepExport();}catch(e){}},'Exporter la planche en SVG'],
+    ['print','Imprimer',()=>{try{mepPrint();}catch(e){}},'Imprimer la planche']],'mfPlan');
   return rb;
 }
 function mfWs(w){
-  w=w==='fao'?'fao':'cao';
+  w=(w==='fao'||w==='plan')?w:'cao';
   try{document.body.setAttribute('data-ws',w);}catch(e){}
   mfLS('minifusion_ws',w);
   document.querySelectorAll('[data-mfws]').forEach(b=>b.classList.toggle('on',b.dataset.mfws===w));
   if(w==='fao'){try{const t=document.getElementById('faoToggle');const tw=document.getElementById('faoTreeWrap');if(tw&&tw.classList.contains('folded')&&t)t.click();}catch(e){}}
+  // espace PLAN (98-mise-en-plan.js) : overlay sur la vue 3D
+  try{if(typeof mepSetActive==='function')mepSetActive(w==='plan');}catch(e){}
   try{mfPosTabs();}catch(e){}
   try{viewCenterShift();}catch(e){} // V0.2.5 : le pivot suit la zone visible (espace CAO/FAO)
 }
@@ -291,7 +318,7 @@ function mfCommands(){
   document.querySelectorAll('#mfRibbon .mfFao .mfRb').forEach(b=>{const l=(b.textContent||'').trim();add('FAO · '+l,()=>b.click(),b.title);}); // CAO : déjà dans les menus
   [['Annuler','btnUndo'],['Rétablir','btnRedo'],['Enregistrer','btnSave'],['Régénérer le modèle','btnRebuild'],['Auto-tests','btnSelfTest'],['Tout afficher (cadrer)','btnFit'],['Réglages de visualisation','btnSettings']].forEach(([l,id])=>add(l,()=>mfClick(id)));
   [['Vue iso','iso'],['Vue de dessus','top'],['Vue de face','front'],['Vue de droite','right']].forEach(([l,v])=>add(l,()=>{try{setView(v);}catch(e){}}));
-  [['Espace CAO','cao'],['Espace FAO','fao']].forEach(([l,w])=>add(l,()=>mfWs(w)));
+  [['Espace CAO','cao'],['Espace FAO','fao'],['Espace PLAN','plan']].forEach(([l,w])=>add(l,()=>mfWs(w)));
   MF_THEMES.forEach(([k,l])=>add('Thème : '+l,()=>mfTheme(k)));
   add('Interface classique',()=>mfUiMode('classique'));
   return out;
@@ -458,7 +485,7 @@ function mfBuildModern(){
   const brand=top.querySelector('.brand');
   // espaces + barre rapide + recherche, juste après le logo
   const ws=document.createElement('div');ws.className='mfWs mfM';
-  [['cao','CAO','Modélisation : esquisses, solides'],['fao','FAO','Usinage : posages, opérations, simulation, G-code']].forEach(([k,l,t])=>{const b=document.createElement('button');b.textContent=l;b.title=t;b.dataset.mfws=k;b.onclick=()=>mfWs(k);ws.appendChild(b);});
+  [['cao','CAO','Modélisation : esquisses, solides'],['fao','FAO','Usinage : posages, opérations, simulation, G-code'],['plan','PLAN','Mise en plan : planches, vues projetées, cotes, dessin 2D']].forEach(([k,l,t])=>{const b=document.createElement('button');b.textContent=l;b.title=t;b.dataset.mfws=k;b.onclick=()=>mfWs(k);ws.appendChild(b);});
   const q=document.createElement('div');q.className='mfQuick mfM';
   [['undo','Annuler (Ctrl+Z)','btnUndo'],['redo','Rétablir (Ctrl+Y)','btnRedo']].forEach(([ic,t,id])=>{const b=document.createElement('button');b.innerHTML=mfI(ic,18);b.title=t;b.onclick=()=>mfClick(id);q.appendChild(b);});
   // V0.2.3 : TOUS les boutons de fichier à côté d'« Enregistrer » (src/97-fichiers-projets.js)
@@ -476,7 +503,7 @@ function mfBuildModern(){
   // onglets du navigateur sur la vue
   const vp=document.getElementById('vpwrap');
   if(vp){const bt=document.createElement('div');bt.id='mfBrTabs';bt.className='mfM';
-    [['cao','Modèle'],['fao','Usinage']].forEach(([k,l])=>{const b=document.createElement('button');b.textContent=l;b.dataset.mfws=k;b.onclick=()=>mfWs(k);bt.appendChild(b);});
+    [['cao','Modèle'],['fao','Usinage'],['plan','Plan']].forEach(([k,l])=>{const b=document.createElement('button');b.textContent=l;b.dataset.mfws=k;b.onclick=()=>mfWs(k);bt.appendChild(b);});
     vp.appendChild(bt);}
   mfCube();
   mfSkWatch();

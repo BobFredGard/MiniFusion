@@ -45,13 +45,22 @@ function combineNewOk(){
   sel={kind:'feature',id:nf.id};markDirty();rebuild();renderTree();renderProps();
 }
 function combineProps(p,f){
-  const box=document.createElement('div');box.className='col';box.style.gap='4px';
+  /* helpers layout PLAN (mêmes classes que renderProps) */
+  const pH=t=>{const h=document.createElement('div');h.className='pnl-h';h.textContent=t;p.appendChild(h);return h;};
+  const pRow=(lab,el)=>{const r=document.createElement('div');r.className='pnl-row';
+    const L=document.createElement('label');L.textContent=lab;r.appendChild(L);
+    if(el)r.appendChild(el);p.appendChild(r);return r;};
+  const pChk=(lab,val,fn)=>{const c=document.createElement('input');c.type='checkbox';c.checked=!!val;
+    c.onchange=()=>fn(c.checked);pRow(lab,c);return c;};
   const apply=()=>{f.name=combineName(f);markDirty();rebuild();renderTree();renderProps();};
-  const sT=combineBodySel(f.body);sT.onchange=()=>{f.body=sT.value;f.tools=(f.tools||[]).filter(t=>t!==f.body);if(!f.tools.length){const o=doc.bodies.find(b=>b.id!==f.body);if(o)f.tools=[o.id];}apply();};combineRow(box,'Corps cible',sT);
-  const sO=combineBodySel((f.tools||[])[0],[f.body]);sO.onchange=()=>{f.tools=[sO.value];apply();};combineRow(box,'Corps outil',sO);
-  const sM=document.createElement('select');COMBINE_MODES.forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;sM.appendChild(o);});sM.value=f.mode||'union';sM.onchange=()=>{f.mode=sM.value;apply();};combineRow(box,'Opération',sM);
-  const kl=document.createElement('label');const k=document.createElement('input');k.type='checkbox';k.checked=!!f.keep;k.onchange=()=>{f.keep=k.checked;apply();};kl.appendChild(k);kl.appendChild(document.createTextNode(' Garder le corps outil'));box.appendChild(kl);
-  p.appendChild(box);
+  pH('Combiner');
+  const sT=combineBodySel(f.body);sT.onchange=()=>{f.body=sT.value;f.tools=(f.tools||[]).filter(t=>t!==f.body);if(!f.tools.length){const o=doc.bodies.find(b=>b.id!==f.body);if(o)f.tools=[o.id];}apply();};
+  pRow('Corps cible',sT);
+  const sO=combineBodySel((f.tools||[])[0],[f.body]);sO.onchange=()=>{f.tools=[sO.value];apply();};
+  pRow('Corps outil',sO);
+  const sM=document.createElement('select');COMBINE_MODES.forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;sM.appendChild(o);});sM.value=f.mode||'union';sM.onchange=()=>{f.mode=sM.value;apply();};
+  pRow('Opération',sM);
+  pChk('Garder le corps outil',!!f.keep,v=>{f.keep=v;apply();});
 }
 // bouton (rangé dans « Modifier le solide » par 96-bandeau-groupes)
 (function(){

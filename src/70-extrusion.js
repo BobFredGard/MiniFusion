@@ -31,28 +31,30 @@ function renderNewExtrude(){
   if(!extNew)return;
   const p=$('props');p.innerHTML='';
   // (note()/info() sont locales à renderProps : on construit les éléments ici)
-  const h=document.createElement('div');h.style.fontSize='.83rem';
-  h.innerHTML=`<b>🧱 Nouvelle extrusion</b><br><span class="note">Esquisse : ${skName(extNew.sketchId)}</span>`;
+  const h=document.createElement('div');h.className='pnl-h';
+  h.innerHTML=`🧱 Nouvelle extrusion — Esquisse : ${skName(extNew.sketchId)}`;
   p.appendChild(h);
   // ── Opération : la liste déroulante demandée (Plot ou Poche) ──
-  const l1=document.createElement('label');l1.textContent='Opération';
+  const r1=document.createElement('div');r1.className='pnl-row';
+  const l1=document.createElement('label');l1.textContent='Opération';r1.appendChild(l1);
   const s1=document.createElement('select');
   s1.innerHTML='<option value="add">➕ Plot — ajoute de la matière (bossage)</option><option value="cut">➖ Poche — retire de la matière</option><option value="new">◧ Nouveau corps — solide séparé</option>';
   s1.value=extNew.op;
   s1.title='Le signe de la distance découle de ce choix : le champ reste toujours positif.';
   s1.onchange=()=>{extNew.op=s1.value;renderNewExtrude();};
-  l1.appendChild(s1);p.appendChild(l1);
+  r1.appendChild(s1);p.appendChild(r1);
   // ── Distance ──
-  const l2=document.createElement('label');l2.textContent=(extNew.op==='cut'?'Profondeur de la poche':'Hauteur du plot')+' (mm)';
-  const i2=document.createElement('input');i2.type='text';i2.inputMode='decimal';i2.value=extNew.dist;i2.style.width='80px';
+  const r2=document.createElement('div');r2.className='pnl-row';
+  const l2=document.createElement('label');l2.textContent=(extNew.op==='cut'?'Profondeur de la poche':'Hauteur du plot')+' (mm)';r2.appendChild(l2);
+  const i2=document.createElement('input');i2.type='text';i2.inputMode='decimal';i2.value=extNew.dist;
   i2.addEventListener('change',()=>{const v=parseFloat(String(i2.value).replace(',','.'));if(isFinite(v)&&v!==0)extNew.dist=Math.abs(v);});
   i2.addEventListener('keydown',e=>{if(e.key==='Enter'){extNewOk();e.stopPropagation();}e.stopPropagation();});
   i2.addEventListener('click',e=>e.stopPropagation());
-  l2.appendChild(i2);p.appendChild(l2);
+  r2.appendChild(i2);p.appendChild(r2);
   const nt=document.createElement('span');nt.className='note';
   nt.textContent='Étendue « Jusqu\'à la face » / « À travers tout » : réglable dans les propriétés de la fonction.';
   p.appendChild(nt);
-  const row=document.createElement('div');row.className='row';row.style.marginTop='8px';
+  const row=document.createElement('div');row.className='pnl-btns';row.style.marginTop='8px';
   const ok=document.createElement('button');ok.className='primary';ok.textContent='✔ Créer';ok.onclick=extNewOk;row.appendChild(ok);
   const no=document.createElement('button');no.textContent='✖ Annuler';no.onclick=extNewCancel;row.appendChild(no);
   p.appendChild(row);

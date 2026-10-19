@@ -108,7 +108,7 @@ function faoPoseSync(){
   if(!drawn)try{
     const bg=new THREE.BoxGeometry(st.x1-st.x0,st.y1-st.y0,st.z1-st.z0);
     const box=new THREE.Mesh(bg,new THREE.MeshBasicMaterial({color:0xffb340,transparent:true,opacity:.13,depthWrite:false,side:THREE.DoubleSide}));
-    box.position.set((st.x0+st.x1)/2,(st.y0+st.x1)/2,(st.z0+st.z1)/2);box.raycast=()=>{};box.renderOrder=5;g.add(box);
+    box.position.set((st.x0+st.x1)/2,(st.y0+st.y1)/2,(st.z0+st.z1)/2);box.raycast=()=>{};box.renderOrder=5;g.add(box);
     const e=new THREE.LineSegments(new THREE.EdgesGeometry(bg),new THREE.LineBasicMaterial({color:0xffb340,transparent:true,opacity:.85}));
     e.position.copy(box.position);e.raycast=()=>{};g.add(e);
   }catch(e){}

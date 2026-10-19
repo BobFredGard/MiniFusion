@@ -614,17 +614,18 @@ function renderExactPanel(){
   const ed=filModeX.editing?doc.features.find(x=>x.id===filModeX.editing):null;
   const k=filModeX.kind||xKindOf(ed);
   const dp=xDimPrefix(k);
-  const h=document.createElement('div');h.style.fontSize='.83rem';
+  const h=document.createElement('div');h.className='pnl-h';
   h.innerHTML=ed
-    ?`<b>✏️ Édition — ${ed.name||xLabel(k)}</b><br><span class="note">${filModeX.sel.length} arête(s) retenue(s) · ${filModeX.edges.length} arêtes vives${(filModeX.tang&&filModeX.tang.length)?' + '+filModeX.tang.length+' grises (raccords lisses, non arrondissables)':''} · ✕ ou clic d'une ligne = retirer, arête/face 3D = ajouter.</span>`
-    :`<b>${xIcon(k)} ${xLabel(k)} OCCT</b> <span class="note">(surfaces analytiques, lisses)</span><br><span class="note">${filModeX.sel.length?filModeX.sel.length+' arête(s) ✅':'Cliquez une arête en 3D (noire · jaune au survol) — les grises sont des raccords lisses, impossibles à arrondir.'} · ${filModeX.edges.length} arêtes vives${(filModeX.tang&&filModeX.tang.length)?' · '+filModeX.tang.length+' grises':''}.</span>`;
+    ?`✏️ Édition — ${ed.name||xLabel(k)} · ${filModeX.sel.length} arête(s) retenue(s) · ${filModeX.edges.length} arêtes vives${(filModeX.tang&&filModeX.tang.length)?' + '+filModeX.tang.length+' grises (raccords lisses, non arrondissables)':''} · ✕ ou clic d'une ligne = retirer, arête/face 3D = ajouter.`
+    :`${xIcon(k)} ${xLabel(k)} OCCT (surfaces analytiques, lisses) · ${filModeX.sel.length?filModeX.sel.length+' arête(s) ✅':'Cliquez une arête en 3D (noire · jaune au survol) — les grises sont des raccords lisses, impossibles à arrondir.'} · ${filModeX.edges.length} arêtes vives${(filModeX.tang&&filModeX.tang.length)?' · '+filModeX.tang.length+' grises':''}.`;
   p.appendChild(h);
-  const lab=document.createElement('label');lab.textContent=(xIsChamfer(k)?'Distance':'Rayon')+' par défaut (mm)';
-  const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=filModeX.radius;inp.style.width='80px';
+  const r1=document.createElement('div');r1.className='pnl-row';
+  const lab=document.createElement('label');lab.textContent=(xIsChamfer(k)?'Distance':'Rayon')+' par défaut (mm)';r1.appendChild(lab);
+  const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=filModeX.radius;
   inp.addEventListener('input',()=>{const v=parseFloat(String(inp.value).replace(',','.'));if(v>0&&isFinite(v)){filModeX.radius=v;filMemo.r[xIsChamfer(k)?'chamfer':'fillet']=v;}});
   inp.addEventListener('click',e=>e.stopPropagation());
   inp.addEventListener('keydown',e=>e.stopPropagation());
-  p.appendChild(lab);p.appendChild(inp);
+  r1.appendChild(inp);p.appendChild(r1);
   // Option « arêtes tangentes » : cochée, chaque arête cliquée entraîne sa chaîne tangente
   // (déduite, pas retenue par l'utilisateur) ; décochée, une arête par clic, rien de plus.
   const tl=document.createElement('label');
@@ -665,7 +666,7 @@ function renderExactPanel(){
     const r=document.createElement('div');r.className='tnode';
     const eLen=(filModeX.edges.find(e=>Math.hypot(e.mid[0]-s.pos[0],e.mid[1]-s.pos[1],e.mid[2]-s.pos[2])<0.75)||{len:0}).len;
     r.innerHTML=`<span>${xIcon(k)}</span><span class="nm">${s.name?`<b>${s.name}</b> · `:''}${dp} <b>${s.r}</b> · L${eLen.toFixed(1)}${s.anchor?' · ⌖':''} · (${s.pos.map(v=>v.toFixed(1)).join(', ')})</span><span title="Retirer">✕</span>`;
-    const num=document.createElement('input');num.type='text';num.inputMode='decimal';num.value=s.r;num.style.width='56px';
+    const num=document.createElement('input');num.type='text';num.inputMode='decimal';num.value=s.r;
     num.onclick=ev=>ev.stopPropagation();
     const ce=()=>{
       const v=parseFloat(String(num.value).replace(',','.'));
@@ -684,7 +685,7 @@ function renderExactPanel(){
     lst.appendChild(r);
   });
   p.appendChild(lst);
-  const row=document.createElement('div');row.className='row';row.style.marginTop='8px';
+  const row=document.createElement('div');row.className='pnl-btns';row.style.marginTop='8px';
   const ok=document.createElement('button');ok.className='primary';ok.textContent=ed?'✔ Enregistrer':'✔ Appliquer';
   ok.onclick=applyExactFillet;row.appendChild(ok);
   const q=document.createElement('button');q.textContent=ed?'✖ Annuler':'Quitter';q.onclick=()=>exitFilletMode();
@@ -874,16 +875,17 @@ function renderFilletPanel(){
   if(!filMode.rims)filMode.rims={top:false,bottom:false};
   const p=$('props');p.innerHTML='';
   const F=doc.features.find(x=>x.id===filMode.target);
-   const h=document.createElement('div');h.style.fontSize='.83rem';
+   const h=document.createElement('div');h.className='pnl-h';
     const nV=filMode.sel.length,hasR=filMode.rims.top||filMode.rims.bottom;
-    h.innerHTML=`<b>⤢ Congé</b> sur <b>${F?F.name:''}</b><br><span class="note">${nV?nV+' verticale(s) ✅ ':''}${hasR?('périmètre '+(filMode.rims.top?'haut ✓ ':'')+(filMode.rims.bottom?'bas ✓':'')+' (arrondi)'):''}${(!nV&&!hasR)?'Cliquez N\u2019importe quelle arête en 3D.':''}<br> verticales = congé esquisse · horizontales = arrondi bevel (haut+bas liés).</span>`;
+    h.innerHTML=`⤢ Congé sur <b>${F?F.name:''}</b> · ${nV?nV+' verticale(s) ✅ ':''}${hasR?('périmètre '+(filMode.rims.top?'haut ✓ ':'')+(filMode.rims.bottom?'bas ✓':'')+' (arrondi)'):''}${(!nV&&!hasR)?'Cliquez N\u2019importe quelle arête en 3D.':''} · verticales = congé esquisse · horizontales = arrondi bevel (haut+bas liés).`;
     p.appendChild(h);
-    const lab=document.createElement('label');lab.textContent='Rayon (mm)';
-    const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=filMode.radius;inp.style.width='80px';
+    const r1=document.createElement('div');r1.className='pnl-row';
+    const lab=document.createElement('label');lab.textContent='Rayon (mm)';r1.appendChild(lab);
+    const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=filMode.radius;
     inp.addEventListener('input',()=>{const v=parseFloat(String(inp.value).replace(',','.'));if(v>0&&isFinite(v))filMode.radius=v;});
     inp.addEventListener('click',e=>e.stopPropagation());
     inp.addEventListener('keydown',e=>e.stopPropagation());
-    p.appendChild(lab);p.appendChild(inp);
+    r1.appendChild(inp);p.appendChild(r1);
     const lst=document.createElement('div');lst.className='col';lst.style.marginTop='6px';
     if(!filMode.sel.length&&!hasR)lst.innerHTML='<span class="note">Cliquez des arêtes ou une face dans la vue 3D.</span>';
     filMode.sel.forEach((s,i)=>{
@@ -899,7 +901,7 @@ function renderFilletPanel(){
       lst.appendChild(r);
     }
     p.appendChild(lst);
-    const row=document.createElement('div');row.className='row';row.style.marginTop='8px';
+    const row=document.createElement('div');row.className='pnl-btns';row.style.marginTop='8px';
   const ok=document.createElement('button');ok.className='primary';ok.textContent='✔ Appliquer';
   ok.onclick=applyFillet;row.appendChild(ok);
   const q=document.createElement('button');q.textContent='Quitter';q.onclick=()=>exitFilletMode();

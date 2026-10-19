@@ -1,5 +1,77 @@
 /* ---------- arbre + timeline + props ---------- */
 let repMode=null;
+// ── CSS panneau Paramètres (aside.right #props) : MÊME style que le panneau
+//    « Paramètres — Plan » de l'espace PLAN (98-mise-en-plan.js) — sections,
+//    rangées label/control, cases alignées, boutons d'action groupés.
+(function(){
+  try{
+    if(typeof document==='undefined'||document.getElementById('cssPropsPlan'))return;
+    const st=document.createElement('style');st.id='cssPropsPlan';
+    st.textContent=
+      /* sections */
+      '#props .pnl-h{margin:10px 0 4px;font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}'+
+      /* rangées label + contrôle */
+      '#props .pnl-row{display:flex;gap:5px;align-items:center;margin:4px 0;flex-wrap:wrap}'+
+      '#props .pnl-row>pnl-lab,#props .pnl-row>label{flex:1;min-width:0;color:var(--muted);font-size:.74rem;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'+
+      '#props .pnl-row>input[type=text],#props .pnl-row>input[type=number],#props .pnl-row>select{max-width:130px;padding:3px 6px;font-size:.72rem;border:1px solid var(--border);border-radius:5px;background:var(--bg);color:var(--text);width:auto;flex:none}'+
+      '#props .pnl-row>input[type=checkbox]{max-width:none;flex:none;margin-left:auto}'+
+      /* boutons d'action (Cadrer / Rejeter / Supprimer…) */
+      '#props .pnl-btns{display:flex;gap:5px;flex-wrap:wrap;margin:6px 0}'+
+      '#props .pnl-btns button{padding:3px 8px;font-size:.71rem;border:1px solid var(--border);background:none;color:var(--text);border-radius:6px;cursor:pointer}'+
+      '#props .pnl-btns button:hover{border-color:var(--primary)}'+
+      '#props .pnl-btns button.danger{border-color:#ff453a;color:#ff453a}'+
+      /* note d'aide */
+      '#props .pnl-note{color:var(--muted);font-size:.68rem;margin:4px 0;line-height:1.35}'+
+      /* les anciens .row/.col du panneau héritent aussi du style compact */
+      '#props .row{display:flex;gap:5px;align-items:center;margin:4px 0;flex-wrap:wrap}'+
+      '#props .row>label{flex:1;min-width:0;color:var(--muted);font-size:.74rem}'+
+      '#props button{padding:3px 8px;font-size:.71rem;border:1px solid var(--border);background:none;color:var(--text);border-radius:6px;cursor:pointer}'+
+      '#props button:hover{border-color:var(--primary)}'+
+      '#props .note{font-size:.68rem;color:var(--muted);margin:4px 0;display:block;line-height:1.35}';
+    (document.head||document.body||document.documentElement).appendChild(st);
+  }catch(e){}
+})();
+// ── Barres de défilement de l'arbre (#treeOverlay) et du panneau FAO
+//    (#faoTreeWrap .fao-cnt) : thème cohérent (pouce = --muted, piste transparente),
+//    MASQUÉES par défaut, visibles 1,2 s à chaque défilement (molette / tactile).
+(function(){
+  try{
+    if(typeof document==='undefined'||document.getElementById('cssScrollbars'))return;
+    const st=document.createElement('style');st.id='cssScrollbars';
+    st.textContent=
+      /* Firefox : barre entièrement masquée par défaut */
+      '#treeOverlay,#faoTreeWrap .fao-cnt{scrollbar-width:none;-ms-overflow-style:none}'+
+      /* WebKit : piste et pouce transparents par défaut, la piste garde sa zone de clic */
+      '#treeOverlay::-webkit-scrollbar,#faoTreeWrap .fao-cnt::-webkit-scrollbar{width:8px;height:8px}'+
+      '#treeOverlay::-webkit-scrollbar-track,#faoTreeWrap .fao-cnt::-webkit-scrollbar-track{background:transparent}'+
+      '#treeOverlay::-webkit-scrollbar-thumb,#faoTreeWrap .fao-cnt::-webkit-scrollbar-thumb{background:transparent;border-radius:4px;transition:background .2s}'+
+      /* classe .sbOn posée 1,2 s au défilement : la barre apparaît dans le thème */
+      '#treeOverlay.sbOn,#faoTreeWrap .fao-cnt.sbOn{scrollbar-width:thin;scrollbar-color:var(--muted) transparent}'+
+      '#treeOverlay.sbOn::-webkit-scrollbar-thumb,#faoTreeWrap .fao-cnt.sbOn::-webkit-scrollbar-thumb{background:var(--muted)}'+
+      '#treeOverlay.sbOn::-webkit-scrollbar-thumb:hover,#faoTreeWrap .fao-cnt.sbOn::-webkit-scrollbar-thumb:hover{background:var(--text)}';
+    (document.head||document.body||document.documentElement).appendChild(st);
+    let t=null;
+    const show=function(el){
+      if(!el||!el.classList)return;
+      el.classList.add('sbOn');
+      if(t)clearTimeout(t);
+      t=setTimeout(function(){ try{ if(el.classList)el.classList.remove('sbOn'); }catch(e){} t=null; },1200);
+    };
+    const bind=function(){
+      try{
+        const a=document.getElementById('treeOverlay');
+        if(a&&!a._sbBound){ a._sbBound=1; a.addEventListener('scroll',function(){show(a);}); }
+      }catch(e){}
+      try{
+        const f=document.querySelector('#faoTreeWrap .fao-cnt');
+        if(f&&!f._sbBound){ f._sbBound=1; f.addEventListener('scroll',function(){show(f);}); }
+      }catch(e){}
+    };
+    if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind);
+    else bind();
+    setTimeout(bind,600);setTimeout(bind,2500); // la FAO est créée plus tard par 88-fao.js
+  }catch(e){}
+})();
 // Marques « source de la répétition » : styles injectés depuis le code, la coque
 // HTML/CSS du livrable généré n'étant jamais éditée à la main (même règle que le
 // bouton Révolution, 30h).
@@ -932,7 +1004,7 @@ function renderRepPanel(){
   const h=document.createElement('div');h.innerHTML='<b>🔁 Répétition</b><br><span class="note">Choisissez les fonctions à répéter ci-dessous (cases à cocher). Dans l\'arbre, un <b>Ctrl+clic</b> sert désormais à la multi-suppression.</span>';p.appendChild(h);
   const row=document.createElement('div');row.className='row';
   const typ=document.createElement('select');[['lin','Linéaire'],['circ','Circulaire'],['mir','Symétrie']].forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];typ.appendChild(op);});typ.value=repMode.type;typ.onchange=()=>{repMode.type=typ.value;renderRepPanel();};row.appendChild(typ);
-  const cnt=document.createElement('input');cnt.type='number';cnt.min='1';cnt.value=repMode.copies;cnt.style.width='64px';cnt.title='Nombre de copies';cnt.onchange=()=>{repMode.copies=repMaxCopies(cnt.value);};row.appendChild(cnt);p.appendChild(row);
+  const cnt=document.createElement('input');cnt.type='number';cnt.min='1';cnt.value=repMode.copies;cnt.title='Nombre de copies';cnt.onchange=()=>{repMode.copies=repMaxCopies(cnt.value);};row.appendChild(cnt);p.appendChild(row);
   const ax=document.createElement('select');['X','Y','Z','Face'].forEach(v=>{const op=document.createElement('option');op.value=v;op.textContent=(repMode.type==='mir'?(v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v):v);ax.appendChild(op);});
   ax.value=repMode.type==='mir'?(repMode.plane==='XY'?'Z':repMode.plane==='XZ'?'Y':repMode.plane==='Face'?'Face':'X'):(repMode.axis||'X');
   ax.onchange=()=>{if(repMode.type==='mir'){repMode.plane=ax.value==='X'?'YZ':ax.value==='Y'?'XZ':ax.value==='Z'?'XY':'Face';delete repMode.planeN;}else{repMode.axis=ax.value;delete repMode.dir;}renderRepPanel();};p.appendChild(ax);
@@ -960,8 +1032,8 @@ function renderRepPanel(){
       bf2.onclick=()=>{repUseSelectedFace2();};p.appendChild(bf2);
     }
   }
-  if(repMode.type==='lin'){const l=document.createElement('label');l.textContent=' Distance (mm)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.dist;inp.style.width='80px';inp.onchange=()=>{repMode.dist=parseFloat(String(inp.value).replace(',','.'))||0;};l.appendChild(inp);p.appendChild(l);}
-  if(repMode.type==='circ'){const l=document.createElement('label');l.textContent=' Angle total (°)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.angle;inp.style.width='80px';inp.onchange=()=>{repMode.angle=parseFloat(String(inp.value).replace(',','.'))||360;};l.appendChild(inp);p.appendChild(l);}
+  if(repMode.type==='lin'){const l=document.createElement('label');l.textContent=' Distance (mm)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.dist;inp.onchange=()=>{repMode.dist=parseFloat(String(inp.value).replace(',','.'))||0;};l.appendChild(inp);p.appendChild(l);}
+  if(repMode.type==='circ'){const l=document.createElement('label');l.textContent=' Angle total (°)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.angle;inp.onchange=()=>{repMode.angle=parseFloat(String(inp.value).replace(',','.'))||360;};l.appendChild(inp);p.appendChild(l);}
   const bf=document.createElement('button');bf.textContent='Utiliser la face sélectionnée';bf.onclick=repUseSelectedFace;p.appendChild(bf);
   // ── FONCTIONS RÉPÉTABLES : la MÊME liste à cocher qu'à l'édition (voir
   // repSourceList). Aucun re-rendu ici : la case garde son état, seul l'arbre se
@@ -972,330 +1044,283 @@ function renderRepPanel(){
 function renderProps(){
   if(typeof extNew!=='undefined'&&extNew)extNew=null; // une sélection annule le formulaire en cours
   if(typeof revNew!=='undefined'&&revNew)revNew=null; // idem pour le formulaire de révolution
-  const p=$('props');p.innerHTML='';p.className='col'; // marqueur FAO retiré hors mode FAO
+  const p=$('props');p.innerHTML='';p.className='col';
   // FAO : les fiches posage/opération vivent dans src/88-fao.js (arbre FAO dédié).
   if(sel&&(sel.kind==='faoSetup'||sel.kind==='faoOp')){
     try{ faoRenderProps(p,sel); }catch(e){}
     return;
   }
-  const nm=document.createElement('div');nm.innerHTML=`<label>Nom du document<input type="text" id="docNameIn" value="${doc.name}"></label>`;
-  p.appendChild(nm);$('docNameIn').onchange=e=>{doc.name=e.target.value;$('docName').textContent=doc.name;markDirty();};
+  /* ── helpers layout PLAN (mêmes classes que #mepSide de 98) ── */
+  const pH=t=>{const h=document.createElement('div');h.className='pnl-h';h.textContent=t;p.appendChild(h);return h;};
+  const pRow=(lab,el)=>{const r=document.createElement('div');r.className='pnl-row';
+    const L=document.createElement('label');L.textContent=lab;r.appendChild(L);
+    if(el)r.appendChild(el);p.appendChild(r);return r;};
+  const pChk=(lab,val,fn)=>{const c=document.createElement('input');c.type='checkbox';c.checked=!!val;
+    c.onchange=()=>fn(c.checked);pRow(lab,c);return c;};
+  const pBtns=list=>{const d=document.createElement('div');d.className='pnl-btns';
+    list.forEach(([t,fn,cls])=>{const b=document.createElement('button');b.textContent=t;
+      if(cls)b.className=cls;b.onclick=fn;d.appendChild(b);});
+    p.appendChild(d);return d;};
+  const pNote=t=>{const n=document.createElement('div');n.className='pnl-note';n.textContent=t;p.appendChild(n);return n;};
+  const pInfo=h=>{const d=document.createElement('div');d.className='pnl-note';d.innerHTML=h;p.appendChild(d);return d;};
+  const pIn=(val,fn)=>{const i=document.createElement('input');i.type='text';i.inputMode='decimal';
+    i.value=val;i.onchange=()=>fn(i.value);return i;};
+  const pSel=(opts,val,fn)=>{const s=document.createElement('select');
+    opts.forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];if(o[2])op.title=o[2];s.appendChild(op);});
+    s.value=val;s.onchange=()=>fn(s.value);return s;};
+  const visDel=f=>pBtns([
+    ['👁 Visible',()=>{f.visible=!(f.visible!==false);markDirty();rebuild();renderTree();renderProps();}],
+    ['🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}, 'danger']]);
+  /* ── nom du document (toujours en haut) ── */
+  const nmIn=document.createElement('input');nmIn.type='text';nmIn.id='docNameIn';nmIn.value=doc.name;
+  nmIn.onchange=e=>{doc.name=e.target.value;$('docName').textContent=doc.name;markDirty();};
+  pRow('Nom du document',nmIn);
   $('docName').textContent=doc.name;
+  /* ═══════ esquisse ═══════ */
   if(sel.kind==='sketch'){
-    const sk=doc.sketches.find(s=>s.id===sel.id);if(!sk){p.appendChild(note('Esquisse supprimée.'));return;}
-    p.appendChild(info(`<b>${sk.name}</b> · plan ${sketchFaceLabel(sk)} · ${sk.entities.length} entités`));
-    p.appendChild(btn('🔧 Éditer l\'esquisse',()=>openSketch(sk.id)));
-    p.appendChild(btn('🧱 Extruder cette esquisse',()=>askExtrude(sk.id)));
-    p.appendChild(toggleBtn('👁 Visible',sk.visible!==false,v=>{sk.visible=v;rebuild();renderTree();}));
-  }else if(sel.kind==='feature'){
-    const f=doc.features.find(x=>x.id===sel.id);if(!f){p.appendChild(note('Fonction supprimée.'));return;}
+    const sk=doc.sketches.find(s=>s.id===sel.id);if(!sk){pNote('Esquisse supprimée.');return;}
+    pH('Esquisse');
+    pInfo(`<b>${sk.name}</b> · plan ${sketchFaceLabel(sk)} · ${sk.entities.length} entités`);
+    pBtns([
+      ['🔧 Éditer',()=>openSketch(sk.id)],
+      ['🧱 Extruder',()=>askExtrude(sk.id)],
+      ['👁 Visible',()=>{sk.visible=sk.visible===false;rebuild();renderTree();renderProps();}]]);
+    return;
+  }
+  /* ═══════ fonction ═══════ */
+  if(sel.kind==='feature'){
+    const f=doc.features.find(x=>x.id===sel.id);if(!f){pNote('Fonction supprimée.');return;}
     if(tlLocked(f)){
-      p.appendChild(info(`⏱ <b>${f.name}</b> est exclue du rejeu : le marqueur temps s'arrête avant elle, elle n'apparaît pas dans la pièce.`));
-      p.appendChild(btn('🔓 Lever le marqueur & éditer',()=>{tlSetPtr(null);markDirty();rebuild();renderTree();renderProps();}));
-      p.appendChild(btn('🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}));
-      p.appendChild(btn('👁 Afficher / masquer',()=>{f.visible=!(f.visible!==false);markDirty();rebuild();renderTree();renderProps();}));
+      pH('Fonction verrouillée');
+      pInfo(`⏱ <b>${f.name}</b> est exclue du rejeu : le marqueur temps s'arrête avant elle.`);
+      pBtns([
+        ['🔓 Lever le marqueur',()=>{tlSetPtr(null);markDirty();rebuild();renderTree();renderProps();}],
+        ['👁 Afficher / masquer',()=>{f.visible=!(f.visible!==false);markDirty();rebuild();renderTree();renderProps();}],
+        ['🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();},'danger']]);
       return;
     }
+    /* — déplacement de face — */
     if(f.type==='xmove'){
-      p.appendChild(info(`<b>${f.name}</b> · 📐 Déplacement d'une face`));
-      if(f.ref){
-        p.appendChild(note('Face visée : centre ('+f.ref.pos.map(v=>(+v).toFixed(1)).join(' ; ')+') mm, normale ('+
-          f.ref.n.map(v=>(+v).toFixed(2)).join(' ; ')+'). La face est retrouvée à chaque rejeu par sa '+
-          'position et sa normale, pas par son numéro — celui-ci change dès qu\'une opération ajoute une face.'));
-      }
-      const d=document.createElement('input');
-      d.type='text';d.inputMode='decimal';
-      d.value=String(+f.dist||0).replace('.',',');
-      d.style.width='90px';parFx(d,f,'dist');
+      pH('Déplacement de face');
+      pInfo(`<b>${f.name}</b>`);
+      if(f.ref)pNote('Face visée : centre ('+f.ref.pos.map(v=>(+v).toFixed(1)).join(' ; ')+') mm, normale ('+f.ref.n.map(v=>(+v).toFixed(2)).join(' ; ')+').');
+      const d=document.createElement('input');d.type='text';d.inputMode='decimal';
+      d.value=String(+f.dist||0).replace('.',',');parFx(d,f,'dist');
       d.addEventListener('change',()=>{
         const v=parseFloat(String(d.value).replace(',','.').replace(/\s/g,''));
         if(!isFinite(v)){d.value=String(+f.dist||0).replace('.',',');return;}
         if(v===+f.dist)return;
         f.dist=Math.abs(v)<1e-9?0:v;f.name=mvName(f);repSyncForFeature(f);
         markDirty();rebuild();renderTree();renderProps();
-        faceEl.textContent=v===0?'Distance nulle : la fonction ne déforme rien.':
-          ('Distance '+f.name.replace('Déplacement de face ','')+' appliquée le long de la normale sortante de la face.');
       });
-      const lab=document.createElement('span');
-      lab.textContent=' Distance (mm) : ';lab.style.marginLeft='8px';
-      p.appendChild(lab);p.appendChild(d);
-      p.appendChild(note('Positif : la face avance. Négatif : elle rentre. 0 : la fonction ne fait rien.'));
-      p.appendChild(btn('📐 Re-sélectionner la face',()=>{exitMoveFaceMode(true);try{if(filMode||filModeX)exitFilletMode(true);}catch(e){}enterMoveFaceMode();}));
-      p.appendChild(btn('👁 Afficher / masquer',()=>{f.visible=!(f.visible!==false);markDirty();rebuild();renderTree();renderProps();}));
-      p.appendChild(btn('🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}));
+      pRow('Distance (mm)',d);
+      pNote('Positif : la face avance. Négatif : elle rentre. 0 : la fonction ne fait rien.');
+      pBtns([
+        ['📐 Re-sélectionner',()=>{exitMoveFaceMode(true);try{if(filMode||filModeX)exitFilletMode(true);}catch(e){}enterMoveFaceMode();}],
+        ...[]]);
+      visDel(f);
       return;
     }
+    /* — dépouillage — */
     if(f.type==='xdraft'){
-      p.appendChild(info(`<b>${f.name}</b> · 📐 Dépouillage · ${(f.faces||[]).length} face(s)`));
-      // Un dépouillage PARTIEL (⚠ dans l'arbre) doit s'expliquer comme un congé partiel :
-      // combien de faces ont été retrouvées sur la pièce courante, lesquelles manquent.
+      pH('Dépouillage');
+      pInfo(`<b>${f.name}</b> · ${(f.faces||[]).length} face(s)`);
       if(f._m&&f._m.t&&f._m.m<f._m.t){
-        const manquant=f._m.t-f._m.m;
-        p.appendChild(info(`<span style="color:var(--warn)">⚠ <b>${f._m.m}/${f._m.t}</b> face(s) retrouvée(s) — ${manquant} perdue(s).</span>`));
-        p.appendChild(note('Les faces sont retrouvées à chaque rejeu par leur position et leur normale. '+
-          'Si la pièce a changé en amont, re-sélectionnez les faces avec le bouton ci-dessous.'));
+        pInfo(`<span style="color:var(--warn)">⚠ <b>${f._m.m}/${f._m.t}</b> face(s) retrouvée(s) — ${f._m.t-f._m.m} perdue(s).</span>`);
+        pNote('Les faces sont retrouvées à chaque rejeu par leur position et leur normale.');
       }
-      if(f.ref){
-        p.appendChild(note('Face de référence (plan neutre, elle reste fixe) : centre ('+
-          f.ref.pos.map(v=>(+v).toFixed(1)).join(' ; ')+') mm, normale ('+
-          f.ref.n.map(v=>(+v).toFixed(2)).join(' ; ')+').'));
-      }
-      const d=document.createElement('input');
-      d.type='text';d.inputMode='decimal';
-      d.value=String(+f.angle||0).replace('.',',');
-      d.style.width='90px';parFx(d,f,'angle');
+      if(f.ref)pNote('Face de référence (plan neutre) : centre ('+f.ref.pos.map(v=>(+v).toFixed(1)).join(' ; ')+') mm.');
+      const d=document.createElement('input');d.type='text';d.inputMode='decimal';
+      d.value=String(+f.angle||0).replace('.',',');parFx(d,f,'angle');
       d.addEventListener('change',()=>{
         const v=parseFloat(String(d.value).replace(',','.').replace(/\s/g,''));
         if(!isFinite(v)){d.value=String(+f.angle||0).replace('.',',');return;}
-        // 0 < a < 90 : au-delà, la dépouille n'a plus de sens géométrique.
-        if(v<=0||v>=90){d.value=String(+f.angle||0).replace('.',',');faceEl.textContent='Angle hors bornes : le dépouillage doit être compris entre 0 et 90° (exclus).';return;}
+        if(v<=0||v>=90){d.value=String(+f.angle||0).replace('.',',');faceEl.textContent='Angle hors bornes : 0 < a < 90°.';return;}
         if(v===+f.angle)return;
-        // Poussé dans l'historique AVANT la modification : l'undo doit ramener l'ancien
-        // angle, sinon le point de contrôle rejoue la mauvaise géométrie.
         docPushUndo();
         f.angle=v;f.name=draftName(f);repSyncForFeature(f);
         markDirty();rebuild();renderTree();renderProps();
-        faceEl.textContent='Dépouillage à '+v.toFixed(1).replace('.',',')+'° appliqué.';
       });
-      const lab=document.createElement('span');
-      lab.textContent=' Angle (°) : ';lab.style.marginLeft='8px';
-      p.appendChild(lab);p.appendChild(d);
-      p.appendChild(note('Angle de démoulage : chaque face retenue pivote de cet angle autour de sa '+
-        'ligne d\'intersection avec le plan neutre, de façon à ce qu\'elle ne coince plus au démontage. '+
-        'Une face doit toucher le plan neutre ; une face qui lui est parallèle est refusée (pivot dégénéré).'));
-      p.appendChild(btn('📐 Re-sélectionner les faces',()=>{exitDraftMode(true);try{if(filMode||filModeX)exitFilletMode(true);}catch(e){}enterDraftMode(f);}));
-      p.appendChild(btn('👁 Afficher / masquer',()=>{f.visible=!(f.visible!==false);markDirty();rebuild();renderTree();renderProps();}));
-      p.appendChild(btn('🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}));
+      pRow('Angle (°)',d);
+      pNote('Angle de démoulage : chaque face retenue pivote de cet angle autour de sa ligne d\'intersection avec le plan neutre.');
+      pBtns([['📐 Re-sélectionner les faces',()=>{exitDraftMode(true);try{if(filMode||filModeX)exitFilletMode(true);}catch(e){}enterDraftMode(f);}]]);
+      visDel(f);
       return;
     }
+    /* — coque — */
     if(f.type==='xshell'){
-      p.appendChild(info(`<b>${f.name}</b> · 🥚 Coque (évidage) · ${(f.faces||[]).length} face(s) retirée(s)`));
-      // Partielle (⚠) : comme dépouillage/congé, on explique combien de faces
-      // d'ouverture ont été retrouvées sur la pièce courante.
+      pH('Coque (évidage)');
+      pInfo(`<b>${f.name}</b> · ${(f.faces||[]).length} face(s) retirée(s)`);
       if(f._m&&f._m.t&&f._m.m<f._m.t){
-        const manquant=f._m.t-f._m.m;
-        p.appendChild(info(`<span style="color:var(--warn)">⚠ <b>${f._m.m}/${f._m.t}</b> face(s) retrouvée(s) — ${manquant} perdue(s).</span>`));
-        p.appendChild(note('Les faces sont retrouvées à chaque rejeu par leur position et leur normale. '+
-          'Si la pièce a changé en amont, re-sélectionnez-les avec le bouton ci-dessous.'));
+        pInfo(`<span style="color:var(--warn)">⚠ <b>${f._m.m}/${f._m.t}</b> face(s) retrouvée(s) — ${f._m.t-f._m.m} perdue(s).</span>`);
       }
-      if((f.faces||[]).length){
-        p.appendChild(note('Ouverture(s) (faces retirées), centres : '+
-          f.faces.map(r=>'('+r.pos.map(v=>(+v).toFixed(1)).join(' ; ')+')').join(' · ')+'.'));
-      }
-      const d=document.createElement('input');
-      d.type='text';d.inputMode='decimal';
-      d.value=String(+f.thick||0).replace('.',',');
-      d.style.width='90px';parFx(d,f,'thick');
+      if((f.faces||[]).length)pNote('Ouverture(s) : '+f.faces.map(r=>'('+r.pos.map(v=>(+v).toFixed(1)).join(' ; ')+')').join(' · '));
+      const d=document.createElement('input');d.type='text';d.inputMode='decimal';
+      d.value=String(+f.thick||0).replace('.',',');parFx(d,f,'thick');
       d.addEventListener('change',()=>{
         const v=parseFloat(String(d.value).replace(',','.').replace(/\s/g,''));
         if(!isFinite(v)){d.value=String(+f.thick||0).replace('.',',');return;}
-        if(!(v>0)){d.value=String(+f.thick||0).replace('.',',');faceEl.textContent='Épaisseur hors bornes : la paroi doit être strictement positive.';return;}
+        if(!(v>0)){d.value=String(+f.thick||0).replace('.',',');faceEl.textContent='La paroi doit être strictement positive.';return;}
         if(v===+f.thick)return;
-        // Poussé dans l'historique AVANT la modification (même règle que l'angle).
         docPushUndo();
         f.thick=v;f.name=shellName(f);repSyncForFeature(f);
         markDirty();rebuild();renderTree();renderProps();
-        faceEl.textContent='Coque à '+String(v).replace('.',',')+' mm appliquée.';
       });
-      const lab=document.createElement('span');
-      lab.textContent=' Paroi (mm) : ';lab.style.marginLeft='8px';
-      p.appendChild(lab);p.appendChild(d);
-      p.appendChild(note('L\'intérieur est creusé de cette épaisseur sous chaque face conservée. '+
-        'Trop épaisse pour la pièce, le moteur la refuse (rien n\'est cassé : réduisez).'));
-      p.appendChild(btn('🥚 Re-sélectionner les faces',()=>{exitCoqueMode(true);try{if(filMode||filModeX)exitFilletMode(true);}catch(e){}enterCoqueMode(f);}));
-      p.appendChild(btn('👁 Afficher / masquer',()=>{f.visible=!(f.visible!==false);markDirty();rebuild();renderTree();renderProps();}));
-      p.appendChild(btn('🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}));
+      pRow('Paroi (mm)',d);
+      pNote('L\'intérieur est creusé de cette épaisseur sous chaque face conservée.');
+      pBtns([['🥚 Re-sélectionner les faces',()=>{exitCoqueMode(true);try{if(filMode||filModeX)exitFilletMode(true);}catch(e){}enterCoqueMode(f);}]]);
+      visDel(f);
       return;
     }
+    /* — en-tête commun (extrude, fillet, xfillet, repeat, hole, revolve, combine…) — */
     const filRims=f.rims||((f.rimTop||f.rimBot)?{top:!!f.rimTop,bottom:!!f.rimBot}:null);
-    p.appendChild(info(`<b>${f.name}</b> · ${f.type==='extrude'?((f.op||'add')==='cut'?'➖ ':'➕ ')+extName(f):((f.type==='fillet')?'Congé R'+f.radius+' · '+(f.corners||[]).length+' verticale(s)'+(filRims&&(filRims.top||filRims.bottom)?' + périmètre '+(filRims.top&&filRims.bottom?'haut+bas':(filRims.top?'haut':'bas')):'')+' sur '+exName(f.target):((f.type==='xfillet')?`${xIcon(xKindOf(f))} ${xLabel(xKindOf(f))} · ${(f.edges||[]).length} arête(s)`:(f.type==='repeat'?'🔁 Répétition':(f.type==='hole'?'⊚ Perçage':(f.type==='revolve'?'Révolution':'Import')))))}`));
-    // Un congé PARTIEL (le triangle ⚠ de l'arbre) doit s'expliquer ici : combien
-    // d'arêtes ont été retrouvées, lesquelles manquent, et pourquoi.
+    const typeLabel=f.type==='extrude'?((f.op||'add')==='cut'?'➖ ':'➕ ')+extName(f)
+      :f.type==='fillet'?'Congé R'+f.radius+' · '+(f.corners||[]).length+' verticale(s)'
+      :f.type==='xfillet'?xLabel(xKindOf(f))+' · '+(f.edges||[]).length+' arête(s)'
+      :f.type==='repeat'?'Répétition'
+      :f.type==='hole'?'Perçage'
+      :f.type==='revolve'?'Révolution'
+      :f.type==='combine'?'Combiner'
+      :'Import';
+    pH(typeLabel);
+    pInfo(`<b>${f.name}</b>`);
     if(f.type==='xfillet'&&f._m&&f._m.t&&f._m.m<f._m.t){
       const manquant=f._m.t-f._m.m;
-      p.appendChild(info(`<span style="color:var(--warn)">⚠ <b>${f._m.m}/${f._m.t}</b> arêtes retrouvées — ${manquant} perdue(s).</span>`));
-      if(f._miss&&f._miss.length){
-        p.appendChild(note('Introuvables, près de : '+f._miss.map(q=>'('+q.join(', ')+')').join('  ')));
-      }
-      // deux causes distinctes, à ne pas confondre :
-      if(f._err)p.appendChild(note(f._err));
-      else p.appendChild(note('La pièce a bougé depuis la sélection : l\'arête n\'existe plus à cet endroit. Re-sélectionnez-la (clic sur l\'arête, ou la boucle entière).'));
-      const div=(f.edges||[]).filter(e=>e._div!==undefined).length;
-      if(div)p.appendChild(note(`${div} arête(s) à ancre divergente : l\'ancre d\'esquisse pointait ailleurs, l\'arête cliquée a été conservée.`));
+      pInfo(`<span style="color:var(--warn)">⚠ <b>${f._m.m}/${f._m.t}</b> arêtes retrouvées — ${manquant} perdue(s).</span>`);
+      if(f._miss&&f._miss.length)pNote('Introuvables, près de : '+f._miss.map(q=>'('+q.join(', ')+')').join('  '));
+      if(f._err)pNote(f._err);
+      else pNote('La pièce a bougé depuis la sélection. Re-sélectionnez l\'arête.');
     }
+    /* — répétition — */
     if(f.type==='repeat'){
-      // Menu de la RÉPÉTITION : paramètres éditables + la MÊME liste de fonctions
-      // répétables qu'à la création, cochée sur les sources actuelles. Cocher ou
-      // décocher régénère les instances puis rejoue (et c'est annulable, Ctrl+Z).
-      // AUCUN re-rendu du panneau ici : la ligne d'en-tête se met à jour sur place,
-      // sinon on détruirait la case en cours de clic (symptôme « je ne peux pas cocher »).
       const majEntete=()=>{
         const k=doc.features.filter(c=>c.repeatId===f.id).length;
         entete.innerHTML=`<b>${f.name}</b> · ${repTypeName(f.mode,f)} · ${f.copies||1} copie(s) · ${k} instance(s)`;
       };
       const entete=document.createElement('div');p.appendChild(entete);majEntete();
       p.appendChild(repSourceList(f.base,function(b){
-        docPushUndo('sources de « '+f.name+' »');
-        f.base=b;
+        docPushUndo('sources de « '+f.name+' »');f.base=b;
         repGenChildren(f);markDirty();rebuild();renderTree();refreshParts();
       },function(){majEntete();}));
-      const row=document.createElement('div');row.className='row';
-      const typ=document.createElement('select');[['lin','Linéaire'],['circ','Circulaire'],['mir','Symétrie']].forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];typ.appendChild(op);});typ.value=f.mode||'lin';
       const applyCfg=()=>{repGenChildren(f);markDirty();rebuild();renderTree();renderProps();refreshParts();};
-      typ.onchange=()=>{f.mode=typ.value;f.name=repTypeName(f.mode,f);applyCfg();};
-      row.appendChild(typ);
-      const cnt=document.createElement('input');cnt.type='number';cnt.min='1';cnt.value=f.copies||1;cnt.style.width='64px';cnt.title='Nombre de copies';
+      const typ=pSel([['lin','Linéaire'],['circ','Circulaire'],['mir','Symétrie']],f.mode||'lin',
+        v=>{f.mode=v;f.name=repTypeName(f.mode,f);applyCfg();});
+      pRow('Type',typ);
+      const cnt=document.createElement('input');cnt.type='number';cnt.min='1';cnt.value=f.copies||1;cnt.title='Nombre de copies';
       cnt.onchange=()=>{f.copies=repMaxCopies(cnt.value);applyCfg();};
-      row.appendChild(cnt);p.appendChild(row);
-      const ax=document.createElement('select');
-      ['X','Y','Z','Face'].forEach(v=>{const op=document.createElement('option');op.value=v;op.textContent=(f.mode==='mir'?(v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v):v);ax.appendChild(op);});
-      ax.value=f.mode==='mir'?(f.plane==='XY'?'Z':f.plane==='XZ'?'Y':f.plane==='Face'?'Face':'X'):(f.axis||'X');
-      ax.onchange=()=>{if(f.mode==='mir'){f.plane=ax.value==='X'?'YZ':ax.value==='Y'?'XZ':ax.value==='Z'?'XY':'Face';delete f.planeN;}else{f.axis=ax.value;delete f.dir;}applyCfg();};
-      p.appendChild(ax);
+      pRow('Copies',cnt);
+      const axOpts=['X','Y','Z','Face'].map(v=>[v,f.mode==='mir'?(v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v):v]);
+      const axCur=f.mode==='mir'?(f.plane==='XY'?'Z':f.plane==='XZ'?'Y':f.plane==='Face'?'Face':'X'):(f.axis||'X');
+      pRow(f.mode==='mir'?'Plan':'Axe',pSel(axOpts,axCur,
+        v=>{if(f.mode==='mir'){f.plane=v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':'Face';delete f.planeN;}else{f.axis=v;delete f.dir;}applyCfg();}));
       if(f.mode==='mir'){
-        // 2ᵉ plan : la passe englobe la base ET la 1ʳᵉ symétrie (symétrie double).
-        const r2=document.createElement('div');r2.className='row';
-        const t2=document.createElement('input');t2.type='checkbox';t2.checked=!!f.plane2;
-        t2.title='Ajouter un 2ᵉ plan : la 1ʳᵉ symétrie est comprise dans la 2ᵉ, ainsi que l\u2019opération initiale';
-        const l2=document.createElement('span');l2.textContent=' 2ᵉ plan (symétrie double)';
-        r2.appendChild(t2);r2.appendChild(l2);p.appendChild(r2);
-        t2.onchange=()=>{
+        pChk('2ᵉ plan (double)',!!f.plane2,v=>{
           docPushUndo('2ᵉ plan de « '+f.name+' »');
-          if(t2.checked){if(!f.plane2)f.plane2=(f.plane||'YZ')==='XZ'?'YZ':'XZ';}
+          if(v){if(!f.plane2)f.plane2=(f.plane||'YZ')==='XZ'?'YZ':'XZ';}
           else{delete f.plane2;delete f.planeN2;}
           f.name=repTypeName(f.mode,f);applyCfg();
-        };
+        });
         if(f.plane2){
-          const ax2=document.createElement('select');
-          ['X','Y','Z','Face'].forEach(v=>{const op=document.createElement('option');op.value=v;op.textContent=(v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v);ax2.appendChild(op);});
-          ax2.value=f.plane2==='XY'?'Z':f.plane2==='XZ'?'Y':f.plane2==='Face'?'Face':'X';
-          ax2.title='2ᵉ plan de symétrie';
-          ax2.onchange=()=>{docPushUndo('2ᵉ plan de « '+f.name+' »');f.plane2=ax2.value==='X'?'YZ':ax2.value==='Y'?'XZ':ax2.value==='Z'?'XY':'Face';delete f.planeN2;applyCfg();};
-          p.appendChild(ax2);
-          p.appendChild(btn('🎯 Face → 2ᵉ plan',()=>repUseFaceFor(f,2)));
+          const ax2=pSel(['X','Y','Z','Face'].map(v=>[v,v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v]),
+            f.plane2==='XY'?'Z':f.plane2==='XZ'?'Y':f.plane2==='Face'?'Face':'X',
+            v=>{docPushUndo('2ᵉ plan');f.plane2=v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':'Face';delete f.planeN2;applyCfg();});
+          pRow('2ᵉ plan',ax2);
+          pBtns([['🎯 Face → 2ᵉ plan',()=>repUseFaceFor(f,2)]]);
         }
-        if(f._samePlane)p.appendChild(note('⚠ Les deux plans sont identiques : la 2ᵉ passe est sans effet.'));
+        if(f._samePlane)pNote('⚠ Les deux plans sont identiques : la 2ᵉ passe est sans effet.');
       }
-      if(f.mode==='lin'){const l=document.createElement('label');l.textContent=' Distance (mm)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=f.dist;inp.style.width='80px';parFx(inp,f,'dist');inp.addEventListener('change',()=>{f.dist=parseFloat(String(inp.value).replace(',','.'))||0;applyCfg();});l.appendChild(inp);p.appendChild(l);}
-      if(f.mode==='circ'){const l=document.createElement('label');l.textContent=' Angle total (°)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=f.angle;inp.style.width='80px';parFx(inp,f,'angle');inp.addEventListener('change',()=>{f.angle=parseFloat(String(inp.value).replace(',','.'))||360;applyCfg();});l.appendChild(inp);p.appendChild(l);}
-      p.appendChild(btn('🎯 Utiliser la face sélectionnée',()=>repUseFaceFor(f)));
-p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.features.forEach(k=>{if(k.repeatId===f.id)k.visible=v;});markDirty();rebuild();}));
-      p.appendChild(btn('🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}));
+      if(f.mode==='lin'){
+        const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=f.dist;parFx(inp,f,'dist');
+        inp.addEventListener('change',()=>{f.dist=parseFloat(String(inp.value).replace(',','.'))||0;applyCfg();});
+        pRow('Distance (mm)',inp);
+      }
+      if(f.mode==='circ'){
+        const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=f.angle;parFx(inp,f,'angle');
+        inp.addEventListener('change',()=>{f.angle=parseFloat(String(inp.value).replace(',','.'))||360;applyCfg();});
+        pRow('Angle total (°)',inp);
+      }
+      pBtns([['🎯 Face sélectionnée',()=>repUseFaceFor(f)]]);
+      visDel(f);
       return;
     }
+    /* — congé simple (fillet legacy) — */
     if(f.type==='fillet'){
-      const lab=document.createElement('label');lab.textContent='Rayon (mm)';
-      const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=f.radius;inp.style.width='80px';parFx(inp,f,'radius');
+      const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=f.radius;parFx(inp,f,'radius');
       const commit=()=>{
         const v=parseFloat(String(inp.value).replace(',','.'));
         if(v>0&&isFinite(v)){f.radius=v;const nc=(f.corners||[]).length+((filRims&&(filRims.top||filRims.bottom))?1:0);f.name=`Congé R${v} (${nc} arête(s))`;markDirty();rebuild();renderProps();}
       };
-      inp.addEventListener('change',commit);
-      inp.addEventListener('blur',commit);
+      inp.addEventListener('change',commit);inp.addEventListener('blur',commit);
       inp.addEventListener('keydown',e=>{if(e.key==='Enter'){commit();inp.blur();}});
-      inp.addEventListener('click',e=>e.stopPropagation());
-      p.appendChild(lab);p.appendChild(inp);
+      pRow('Rayon (mm)',inp);
     }
     if(f.type==='combine'&&typeof combineProps==='function'){combineProps(p,f);}
+    /* — congé exact (xfillet) — */
     if(f.type==='xfillet'){
-      if(f._m)p.appendChild(info(f._m.m>=f._m.t?`✅ ${f._m.m}/${f._m.t} arêtes retrouvées`:`⚠ ${f._m.m}/${f._m.t} arêtes retrouvées — cliquez « Modifier la sélection » (✏️)`));
-      // Échec géométrique (pas d'arête introuvable, mais le rayon refusé par OCCT) : on dit
-      // POURQUOI et QUOI faire, sinon la fonction est simplement « en rouge » sans explication.
-      if(f._err){const e=document.createElement('div');e.style.cssText='font-size:.83rem;color:#ff6b60;background:rgba(255,69,58,.09);border:1px solid rgba(255,69,58,.3);border-radius:6px;padding:5px 7px;margin-top:6px';e.textContent='⚠ '+f._err;p.appendChild(e);}
+      if(f._m)pInfo(f._m.m>=f._m.t?`✅ ${f._m.m}/${f._m.t} arêtes retrouvées`:`⚠ ${f._m.m}/${f._m.t} arêtes retrouvées — cliquez « Modifier la sélection »`);
+      if(f._err){const e=document.createElement('div');e.style.cssText='font-size:.78rem;color:#ff6b60;background:rgba(255,69,58,.09);border:1px solid rgba(255,69,58,.3);border-radius:6px;padding:5px 7px;margin-top:6px';e.textContent='⚠ '+f._err;p.appendChild(e);}
       const lst=document.createElement('div');lst.className='col';lst.style.marginTop='6px';lst.style.maxHeight='180px';lst.style.overflow='auto';
       (f.edges||[]).forEach((s,i)=>{
         const r=document.createElement('div');r.className='tnode';
         const k=xKindOf(f),dp=xDimPrefix(k);
         r.innerHTML=`<span>${xIcon(k)}</span><span class="nm">${s.name?`<b>${s.name}</b> · `:''}${dp} <b>${s.r}</b>${s.anchor?' ⌖':''} · (${s.pos.map(v=>v.toFixed(1)).join(', ')})</span>`;
-        const num=document.createElement('input');num.type='text';num.inputMode='decimal';num.value=s.r;num.style.width='56px';num.title=(f.chamfer?'Distance':'Rayon')+' de cette arête';parFx(num,s,'r');
+        const num=document.createElement('input');num.type='text';num.inputMode='decimal';num.value=s.r;num.title=(f.chamfer?'Distance':'Rayon')+' de cette arête';parFx(num,s,'r');
         num.onclick=ev=>ev.stopPropagation();
-        const c2=()=>{
-          const v=parseFloat(String(num.value).replace(',','.'));
-          if(v>0&&isFinite(v)){s.r=v;repSyncForFeature(f);markDirty();rebuild();renderProps();}
-        };
-        num.addEventListener('change',c2);
-        num.addEventListener('blur',c2);
-        num.addEventListener('keydown',e=>{if(e.key==='Enter'){c2();num.blur();} e.stopPropagation();});
+        const c2=()=>{const v=parseFloat(String(num.value).replace(',','.'));if(v>0&&isFinite(v)){s.r=v;repSyncForFeature(f);markDirty();rebuild();renderProps();}};
+        num.addEventListener('change',c2);num.addEventListener('blur',c2);
+        num.addEventListener('keydown',e=>{if(e.key==='Enter'){c2();num.blur();}e.stopPropagation();});
         r.appendChild(num);
         const x=document.createElement('span');x.textContent='✕';x.title='Retirer';x.style.cursor='pointer';
         x.onclick=ev=>{ev.stopPropagation();f.edges.splice(i,1);f.name=xFeatName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();};
         r.appendChild(x);lst.appendChild(r);
       });
       p.appendChild(lst);
-      p.appendChild(btn('✏️ Modifier la sélection (ajout / retrait)',()=>enterExactFilletMode(f)));
+      pBtns([['✏️ Modifier la sélection',()=>enterExactFilletMode(f)]]);
     }
     if(f.type==='hole'){renderHoleProps(p,f);}
+    /* — révolution — */
     if(f.type==='revolve'){
-      // ── Opération (comme l'extrusion) ──
-      const lo=document.createElement('label');lo.textContent='Opération';
-      const so=document.createElement('select');
-      so.innerHTML=`<option value="add">➕ Plot (ajoute de la matière)</option><option value="cut">➖ Poche (retire de la matière)</option>`;
-      so.value=f.op||'add';
-      so.onchange=()=>{f.op=so.value;f.name=revolveName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();};
-      lo.appendChild(so);p.appendChild(lo);
-      // ── Axe : lignes de l'esquisse + axes système ──
+      const so=pSel([['add','➕ Plot (ajoute)'],['cut','➖ Poche (retire)']],f.op||'add',
+        v=>{f.op=v;f.name=revolveName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();});
+      pRow('Opération',so);
       const skR=doc.sketches.find(x=>x.id===f.sketchId);
-      const la=document.createElement('label');la.textContent='Axe de révolution';
-      const sa=document.createElement('select');
       const lns=(skR&&skR.entities||[]).filter(e=>e.t==='line');
-      sa.innerHTML=lns.map(e=>`<option value="L:${e.id}">${e.construction?'ligne de construction ':'ligne '}${e.id}</option>`).join('')+
-        `<option value="S:X">axe système X</option><option value="S:Y">axe système Y</option><option value="S:Z">axe système Z</option>`;
+      const axeOpts=lns.map(e=>['L:'+e.id,(e.construction?'constr. ':'ligne ')+e.id]).concat([['S:X','axe X'],['S:Y','axe Y'],['S:Z','axe Z']]);
       const curv=(f.axis&&f.axis.k==='line')?'L:'+f.axis.id:'S:'+(f.axis?f.axis.d:'X');
-      sa.value=lns.some(e=>'L:'+e.id===curv)?curv:'S:X';
-      sa.onchange=()=>{const v=sa.value;
-        f.axis=(v[0]==='L')?{k:'line',id:v.slice(2)}:{k:'sys',d:v.slice(2)};
-        f.name=revolveName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();};
-      la.appendChild(sa);p.appendChild(la);
-      // ── Angle ──
-      const lan=document.createElement('label');lan.textContent='Angle (°)';
-      const ian=document.createElement('input');ian.type='text';ian.inputMode='decimal';ian.value=revolveAngle(f);ian.style.width='80px';parFx(ian,f,'angle');
+      pRow('Axe',pSel(axeOpts,lns.some(e=>'L:'+e.id===curv)?curv:'S:X',
+        v=>{f.axis=(v[0]==='L')?{k:'line',id:v.slice(2)}:{k:'sys',d:v.slice(2)};f.name=revolveName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();}));
+      const ian=document.createElement('input');ian.type='text';ian.inputMode='decimal';ian.value=revolveAngle(f);parFx(ian,f,'angle');
       const cn=()=>{const v=parseFloat(String(ian.value).replace(',','.'));
         if(isFinite(v)&&v>0){f.angle=Math.min(360,v);f.name=revolveName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();}};
       ian.addEventListener('change',cn);ian.addEventListener('blur',cn);
       ian.addEventListener('keydown',e=>{if(e.key==='Enter'){cn();ian.blur();}e.stopPropagation();});
-      ian.addEventListener('click',e=>e.stopPropagation());
-      lan.appendChild(ian);p.appendChild(lan);
-      // ── diagnostic : l'axe et le profil sont-ils utilisables ? ──
+      pRow('Angle (°)',ian);
       if(skR){
-        const axR=revolveAxis2D(skR,f);
-        const trR=skLoopTrace(skR);
-        const msgR=[]; // note
-        if(axR.err)msgR.push('⚠ '+axR.err);
-        else if(!trR.solids.length&&!trR.circlesOut.length)msgR.push('⚠ profil non fermé (bouts ouverts en rouge)');
-        else{const sd=revolveSideCheck(skR,trR,axR);
-          msgR.push(sd.ok?('✓ axe « '+axR.label+' » — profil d\'un seul côté, rayon '+sd.rMin.toFixed(1)+' à '+sd.rMax.toFixed(1)+' mm'):('⚠ '+sd.msg));}
-        const nR=document.createElement('span');nR.className='note';nR.style.marginTop='6px';nR.textContent=msgR.join(' ');
-        p.appendChild(nR);
+        const axR=revolveAxis2D(skR,f),trR=skLoopTrace(skR);
+        let msg='';
+        if(axR.err)msg='⚠ '+axR.err;
+        else if(!trR.solids.length&&!trR.circlesOut.length)msg='⚠ profil non fermé';
+        else{const sd=revolveSideCheck(skR,trR,axR);msg=sd.ok?('✓ axe « '+axR.label+' » — rayon '+sd.rMin.toFixed(1)+' à '+sd.rMax.toFixed(1)+' mm'):('⚠ '+sd.msg);}
+        pNote(msg);
       }
-      p.appendChild(btn('🔧 Changer d\'esquisse',()=>askRevokePanel(f)));
-      p.appendChild(btn('🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}));
+      pBtns([['🔧 Changer d\'esquisse',()=>askRevokePanel(f)]]);
     }
+    /* — extrusion — */
     if(f.type==='extrude'){
-      // ── Sens : un côté (classique) ou symétrique/miroir (f.mid = course totale, prisme ±|d|/2)
-      const labM=document.createElement('label');labM.textContent='Sens';
-      const selM=document.createElement('select');
-      selM.innerHTML=`<option value="0">↗ Un côté</option><option value="1">↕ Symétrique (miroir)</option>`;
-      selM.value=f.mid?'1':'0';
-      selM.onchange=()=>{f.mid=(selM.value==='1');f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();};
-      labM.appendChild(selM);p.appendChild(labM);
-      // ── Étendue : Distance / Jusqu'à la face / A travers tout
-      const labU=document.createElement('label');labU.textContent='Étendue';
-      const selU=document.createElement('select');
-      selU.innerHTML=`<option value="dist">📏 Distance</option><option value="upto">🎯 Jusqu'à la face...</option><option value="through">⤴ A travers tout</option>`;
-      selU.value=f.upto?'upto':(f.through?'through':'dist');
-      selU.onchange=()=>{
-        if(selU.value==='upto'){
+      pRow('Sens',pSel([['0','↗ Un côté'],['1','↕ Symétrique']],f.mid?'1':'0',
+        v=>{f.mid=(v==='1');f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();}));
+      const selU=pSel([['dist','📏 Distance'],['upto','🎯 Jusqu\'à la face'],['through','⤴ A travers tout']],
+        f.upto?'upto':(f.through?'through':'dist'),v=>{
+        if(v==='upto'){
           if(!f.upto){
             const me=doc.features.indexOf(f);
             const prevs=doc.features.slice(0,me).filter(x=>x.type==='extrude'&&(x.op||'add')==='add');
-            if(!prevs.length){faceEl.textContent='Jusqu\'à la face : aucune extrusion additive ANTÉRIEURE — ajoutez d\'abord un volume avant cette fonction.';selU.value='dist';return;}
+            if(!prevs.length){faceEl.textContent='Jusqu\'à la face : aucune extrusion additive ANTÉRIEURE.';selU.value='dist';return;}
             f.upto={ex:prevs[prevs.length-1].id,side:1};
           }
-          // Active le mode clic-face immédiatement
-          extPickFace={f};
-          try{renderer.domElement.style.cursor='crosshair';}catch(e){}
-          faceEl.textContent='Cliquez une face du corps cible pour définir la limite (Échap annule).';
-        }else if(selU.value==='through'){
+          extPickFace={f};try{renderer.domElement.style.cursor='crosshair';}catch(e){}
+          faceEl.textContent='Cliquez une face du corps cible (Échap annule).';
+        }else if(v==='through'){
           f.upto=null;f.through=true;f.distance=null;
           f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();
         }else{
@@ -1303,76 +1328,42 @@ p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.fea
           if(!isFinite(f.distance))f.distance=10;
           f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();
         }
-      };
-      labU.appendChild(selU);p.appendChild(labU);
+      });
+      pRow('Étendue',selU);
       if(f.upto){
-        // Mode « jusqu'à la face » : clic face uniquement, l'extrusion va jusqu'à cette face
         const faceInfo=f.upto.faceId;
-        const faceName=faceInfo&&faceInfo.bid?`face #${faceInfo.fi} (${bodies.find(b=>b.id===faceInfo.bid)?.name||'?'})`:'(non définie)';
-        const labF=document.createElement('label');labF.textContent='Face cible';
-        const faceDiv=document.createElement('div');faceDiv.style.cssText='display:flex;gap:4px;align-items:center;';
-        faceDiv.innerHTML=`<span class="note">${faceName}</span>`;
-        labF.appendChild(faceDiv);p.appendChild(labF);
-        p.appendChild(btn('🎯 Changer la face cliquée',()=>{extPickFace={f};try{renderer.domElement.style.cursor='crosshair';}catch(e){}faceEl.textContent='Cliquez une face du corps cible pour changer la cible (Échap annule).';}));
-        p.appendChild(info(`Face : ${faceName} — ${Math.abs(f.distance)} mm — ${(f.op==='cut')?'Poche (soustraction)':'Plot (addition)'}`));
+        const faceName=faceInfo&&faceInfo.bid?`face #${faceInfo.fi}`:'(non définie)';
+        pRow('Face cible',pNote(faceName));
+        pBtns([['🎯 Changer la face',()=>{extPickFace={f};try{renderer.domElement.style.cursor='crosshair';}catch(e){}faceEl.textContent='Cliquez une face (Échap annule).';}]]);
       }else if(f.through){
-        // Mode « A travers tout » : pas de distance, traverse tout le modèle
-        p.appendChild(info(`A travers tout — ${(f.op==='cut')?'Poche (soustraction)':'Plot (addition)'}`));
+        pInfo(`A travers tout — ${(f.op==='cut')?'Poche':'Plot'}`);
       }else{
-        const lab=document.createElement('label');lab.textContent=f.mid?'Course totale (mm)':'Distance (mm)';
-        const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=Math.abs(f.distance);inp.style.width='80px';parFx(inp,f,'distance');
+        const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=Math.abs(f.distance);parFx(inp,f,'distance');
         const cd=()=>{
-          if(f.upto){return}
+          if(f.upto)return;
           const v=parseFloat(String(inp.value).replace(',','.'));
           if(isFinite(v)&&v!==0){extDistSet(f,Math.abs(v)*((f.op||'add')==='cut'?-1:1));repSyncForFeature(f);markDirty();rebuild();renderProps();}
         };
-        inp.addEventListener('change',cd);
-        inp.addEventListener('blur',cd);
-        inp.addEventListener('keydown',e=>{if(e.key==='Enter'){cd();inp.blur();} e.stopPropagation();});
-        inp.addEventListener('click',e=>e.stopPropagation());
-        p.appendChild(lab);p.appendChild(inp);
+        inp.addEventListener('change',cd);inp.addEventListener('blur',cd);
+        inp.addEventListener('keydown',e=>{if(e.key==='Enter'){cd();inp.blur();}e.stopPropagation();});
+        pRow(f.mid?'Course totale (mm)':'Distance (mm)',inp);
       }
-      const lab2=document.createElement('label');lab2.textContent='Opération';
-      const sel2=document.createElement('select');
-      sel2.innerHTML=`<option value="add">➕ Plot (hors pièce → addition)</option><option value="cut">➖ Poche (dans pièce → soustraction)</option><option value="new">◧ Nouveau corps (solide séparé)</option>`;
-      sel2.value=f.newBody?'new':(f.op||'add');
-      sel2.onchange=()=>{
-        // 2026-10-16-009 : « Nouveau corps » = plot dans un corps NEUF ; revenir à Plot/Poche le
-        // remet dans le corps d'origine.
-        if(sel2.value==='new'){if(!f.newBody){f._bodyPrev=f.body;f.body=extNewBody();f.newBody=true;}f.op='add';}
-        else{if(f.newBody){f.body=f._bodyPrev||(doc.bodies[0]&&doc.bodies[0].id);delete f._bodyPrev;delete f.newBody;}f.op=sel2.value;}
-        if(!f.upto && !f.through){
-          // Mode Distance : le signe suit l'opération (Add = +, Cut = -)
-          f.distance=Math.abs(f.distance)*(f.op==='cut'?-1:1);
-        }
+      pRow('Opération',pSel([['add','➕ Plot (addition)'],['cut','➖ Poche (soustraction)'],['new','◧ Nouveau corps']],
+        f.newBody?'new':(f.op||'add'),v=>{
+        if(v==='new'){if(!f.newBody){f._bodyPrev=f.body;f.body=extNewBody();f.newBody=true;}f.op='add';}
+        else{if(f.newBody){f.body=f._bodyPrev||(doc.bodies[0]&&doc.bodies[0].id);delete f._bodyPrev;delete f.newBody;}f.op=v;}
+        if(!f.upto&&!f.through)f.distance=Math.abs(f.distance)*(f.op==='cut'?-1:1);
         f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();
-      };
-      lab2.appendChild(sel2);p.appendChild(lab2);
-      // ── Direction : inversion du sens SANS changer l'opération (Plot reste un ajout,
-      // Poche reste un retrait — seul le côté du plan d'esquisse change). Miroir pur de
-      // la course : tout ce qui dépend d'extrudeSpan suit ensemble.
+      }));
       {
         let cote='±';
-        try{
-          const sp=extrudeSpan(f);
-          if(!(f.mid))cote=(sp.hi>0&&sp.lo>=-1e-9)?'+n':((sp.lo<0&&sp.hi<=1e-9)?'−n':'±');
-        }catch(e){}
-        const row=document.createElement('div');row.className='row';row.style.marginTop='6px';
-        const bf=document.createElement('button');bf.textContent='⇄ Inverser le sens';
-        bf.title='Miroir de la course par rapport au plan d\u2019esquisse. Plot reste Plot, Poche reste Poche.';
-        bf.onclick=()=>{f.flip=!f.flip;f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();};
-        row.appendChild(bf);
-        const tag=document.createElement('span');tag.className='note';
-        tag.textContent='Côté actuel : '+cote+(f.mid?' (symétrique — sans effet)':'')+(f.flip?' (inversé)':'');
-        row.appendChild(tag);p.appendChild(row);
+        try{const sp=extrudeSpan(f);if(!(f.mid))cote=(sp.hi>0&&sp.lo>=-1e-9)?'+n':((sp.lo<0&&sp.hi<=1e-9)?'−n':'±');}catch(e){}
+        pBtns([['⇄ Inverser le sens',()=>{f.flip=!f.flip;f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();}]]);
+        pNote('Côté actuel : '+cote+(f.mid?' (symétrique)':'')+(f.flip?' (inversé)':''));
       }
-      // ── Dépouille : angle signé par rapport au plan d'esquisse (profil exact au plan,
-      // évasé ou rétréci selon le signe). 0 = parois droites.
       {
-        const labD=document.createElement('label');labD.textContent='Dépouille (°)';
         const inpD=document.createElement('input');inpD.type='text';inpD.inputMode='decimal';
-        inpD.value=String(+f.draft||0).replace('.',',');inpD.style.width='70px';
-        inpD.title='Angle signé / plan d\u2019esquisse — le signe donne le sens. 0 = parois droites.';parFx(inpD,f,'draft');
+        inpD.value=String(+f.draft||0).replace('.',',');inpD.title='Angle signé / plan d\'esquisse. 0 = parois droites.';parFx(inpD,f,'draft');
         const cdD=()=>{
           const v=parseFloat(String(inpD.value).replace(',','.').replace(/\s/g,''));
           if(!isFinite(v)){inpD.value=String(+f.draft||0).replace('.',',');return;}
@@ -1380,46 +1371,45 @@ p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;doc.fea
           f.draft=Math.abs(v)<1e-9?0:+v.toFixed(3);
           f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();
         };
-        inpD.addEventListener('change',cdD);
-        inpD.addEventListener('blur',cdD);
+        inpD.addEventListener('change',cdD);inpD.addEventListener('blur',cdD);
         inpD.addEventListener('keydown',e=>{if(e.key==='Enter'){cdD();inpD.blur();}e.stopPropagation();});
-        inpD.addEventListener('click',e=>e.stopPropagation());
-        labD.appendChild(inpD);p.appendChild(labD);
+        pRow('Dépouille (°)',inpD);
       }
-      p.appendChild(btn('🔧 Changer d\'esquisse',()=>askExtrude(null,f)));
+      pBtns([['🔧 Changer d\'esquisse',()=>askExtrude(null,f)]]);
     }
-    p.appendChild(toggleBtn('👁 Visible',f.visible!==false,v=>{f.visible=v;markDirty();rebuild();}));
-    p.appendChild(btn('🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();}));
-  }else if(sel.kind==='body'){
-    // Corps conteneur : son id EST celui de la fiche (doc.bodies) et, en mode
-    // exact, celui des meshes affichés. En mode maillage le mesh porte l'id de la
-    // fonction : on le retrouve par bodyId (bodyIdOfRuntime).
+    visDel(f);
+    return;
+  }
+  /* ═══════ corps ═══════ */
+  if(sel.kind==='body'){
     let e=null;try{e=bodyEntryOf(sel.id);}catch(err){}
     const shown=bodies.filter(x=>!x.ghost&&bodyIdOfRuntime(x)===sel.id);
     const b=shown.find(x=>x.kind==='body')||shown[0]||null;
     const kids=doc.features.filter(f=>!f.repeatId&&f.body===sel.id);
-    p.appendChild(info(b?`<b>${e?e.name:sel.id}</b> · corps affiché · ${kids.length} fonction(s)`:(e?`<b>${e.name}</b> · corps vide · ${kids.length} fonction(s) — esquissez puis extrudez pour le remplir.`:'Corps non reconstruit.')));
-    if(doc.activeBody!==sel.id)p.appendChild(btn('● Activer ce corps',()=>{
+    pH('Corps');
+    pInfo(b?`<b>${e?e.name:sel.id}</b> · ${kids.length} fonction(s)`:(e?`<b>${e.name}</b> · corps vide — esquissez puis extrudez.`:'Corps non reconstruit.'));
+    if(doc.activeBody!==sel.id)pBtns([['● Activer ce corps',()=>{
       doc.activeBody=sel.id;try{dirty=true;}catch(err){}
       renderTree();renderProps();refreshParts();
-      try{faceEl.textContent='« '+((e&&e.name)||sel.id)+' » ACTIF (●) : les nouvelles fonctions naîtront dedans.';}catch(err){}
-    }));
-    // ── Style du corps : UNE source (doc.bodies[].color / .op), la même que le
-    //    clic-droit et le rendu. Plus de couleur ni d'opacité par fonction.
+      try{faceEl.textContent='« '+((e&&e.name)||sel.id)+' » ACTIF : les nouvelles fonctions naîtront dedans.';}catch(err){}
+    }]]);
     p.appendChild(bodyStyleField(sel.id));
-    if(b)p.appendChild(btn('🎯 Isoler',()=>isolate(b.id)));
-    p.appendChild(btn('✅ Tout afficher',showAll));
-    p.appendChild(btn('🗑 Supprimer le corps',()=>delBody(sel.id)));
-  }else if(sel.kind==='plane'){
+    pBtns([
+      ['🎯 Isoler',()=>isolate(b.id)],
+      ['✅ Tout afficher',showAll],
+      ['🗑 Supprimer',()=>delBody(sel.id),'danger']]);
+    return;
+  }
+  /* ═══════ plan d'origine ═══════ */
+  if(sel.kind==='plane'){
     const P=PLANES[sel.id]||{role:'',label:''};
-    p.appendChild(info(`<b>Plan ${sel.id}</b> · ${P.role} — ${P.label}`));
-    p.appendChild(btn('✏️ Esquisse sur ce plan',()=>newSketch(sel.id)));
-    p.appendChild(toggleBtn('👁 Visible',originVis[sel.id]!==false,v=>setOriginVis(sel.id,v)));
-  }else p.appendChild(note('Sélectionnez un plan / esquisse / extrusion / corps dans l\'arbre.'));
-  function note(s){const d=document.createElement('span');d.className='note';d.textContent=s;return d;}
-  function info(h){const d=document.createElement('div');d.style.fontSize='.83rem';d.innerHTML=h;return d;}
-  function btn(s,fn){const b=document.createElement('button');b.textContent=s;b.onclick=fn;return b;}
-  function toggleBtn(s,val,fn){const l=document.createElement('label');const c=document.createElement('input');c.type='checkbox';c.checked=val;c.onchange=()=>fn(c.checked);l.appendChild(c);l.appendChild(document.createTextNode(' '+s));return l;}
+    pH('Plan '+sel.id);
+    pInfo(`${P.role} — ${P.label}`);
+    pBtns([['✏️ Esquisse sur ce plan',()=>newSketch(sel.id)]]);
+    pChk('Visible',originVis[sel.id]!==false,v=>setOriginVis(sel.id,v));
+    return;
+  }
+  pNote('Sélectionnez un plan / esquisse / fonction / corps dans l\'arbre.');
 }
 const skName=id=>(doc.sketches.find(s=>s.id===id)||{name:'?'}).name;
 const exName=id=>(doc.features.find(f=>f.id===id)||{name:'?'}).name;

@@ -314,17 +314,19 @@ function renderNewRevolve(){
   if(!revNew)return;
   const p=$('props');p.innerHTML='';
   const sk=doc.sketches.find(x=>x.id===revNew.sketchId);
-  const h=document.createElement('div');h.style.fontSize='.83rem';
-  h.innerHTML='<b>🔄 Révolution 360°</b><br><span class="note">Esquisse : '+(sk?sk.name:'—')+'</span>';
+  const h=document.createElement('div');h.className='pnl-h';
+  h.innerHTML='🔄 Révolution 360° — Esquisse : '+(sk?sk.name:'—');
   p.appendChild(h);
   // ── Opération (comme l'extrusion) ──
-  const l1=document.createElement('label');l1.textContent='Opération';
+  const r1=document.createElement('div');r1.className='pnl-row';
+  const l1=document.createElement('label');l1.textContent='Opération';r1.appendChild(l1);
   const s1=document.createElement('select');
   s1.innerHTML='<option value="add">➕ Plot — ajoute de la matière</option><option value="cut">➖ Poche — retire de la matière</option>';
   s1.value=revNew.op;s1.onchange=()=>{revNew.op=s1.value;renderNewRevolve();};
-  l1.appendChild(s1);p.appendChild(l1);
+  r1.appendChild(s1);p.appendChild(r1);
   // ── Axe : liste des lignes de l'esquisse + axes système ──
-  const l2=document.createElement('label');l2.textContent='Axe de révolution';
+  const r2=document.createElement('div');r2.className='pnl-row';
+  const l2=document.createElement('label');l2.textContent='Axe de révolution';r2.appendChild(l2);
   const s2=document.createElement('select');
   const lines=(sk&&sk.entities||[]).filter(e=>e.t==='line');
   s2.innerHTML=lines.map(e=>'<option value="L:'+e.id+'">'+(e.construction?'ligne de construction ':'ligne ')+e.id+'</option>').join('')+
@@ -334,14 +336,15 @@ function renderNewRevolve(){
   s2.onchange=()=>{const v=s2.value;
     revNew.axis=v[0]==='L'?{k:'line',id:v.slice(2)}:{k:'sys',d:v.slice(2)};
     renderNewRevolve();};
-  l2.appendChild(s2);p.appendChild(l2);
+  r2.appendChild(s2);p.appendChild(r2);
   // ── Angle ──
-  const l3=document.createElement('label');l3.textContent='Angle (°)';
-  const i3=document.createElement('input');i3.type='text';i3.inputMode='decimal';i3.value=revNew.angle;i3.style.width='80px';
+  const r3=document.createElement('div');r3.className='pnl-row';
+  const l3=document.createElement('label');l3.textContent='Angle (°)';r3.appendChild(l3);
+  const i3=document.createElement('input');i3.type='text';i3.inputMode='decimal';i3.value=revNew.angle;
   i3.addEventListener('change',()=>{const v=parseFloat(String(i3.value).replace(',','.'));if(isFinite(v)&&v>0)revNew.angle=Math.min(360,v);});
   i3.addEventListener('keydown',e=>{if(e.key==='Enter'){revNewOk();e.stopPropagation();}e.stopPropagation();});
   i3.addEventListener('click',e=>e.stopPropagation());
-  l3.appendChild(i3);p.appendChild(l3);
+  r3.appendChild(i3);p.appendChild(r3);
   // ── diagnostic immédiat : l'axe est-il utilisable ? le profil est-il d'un seul côté ? ──
   const note=document.createElement('span');note.className='note';note.style.marginTop='6px';
   if(sk){
@@ -360,7 +363,7 @@ function renderNewRevolve(){
     }
   }
   p.appendChild(note);
-  const row=document.createElement('div');row.className='row';row.style.marginTop='8px';
+  const row=document.createElement('div');row.className='pnl-btns';row.style.marginTop='8px';
   const ok=document.createElement('button');ok.className='primary';ok.textContent='✔ Créer';ok.onclick=revNewOk;row.appendChild(ok);
   const no=document.createElement('button');no.textContent='✖ Annuler';no.onclick=revNewCancel;row.appendChild(no);
   p.appendChild(row);
