@@ -187,6 +187,55 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     const vCam = shM.views[shM.views.length-1];
     out.cameraAdded = shM.views.length===nCam+1 && !!vCam && vCam.kind==='base' && vCam.vk==='';
 
+    // 18) angle obtus : 120° reste 120° (pas de repli à 90°)
+    out.ang120 = mepAngleDeg(0, 120*Math.PI/180);
+    out.ang60  = mepAngleDeg(0, 60*Math.PI/180);
+    out.ang240 = mepAngleDeg(0, 240*Math.PI/180); // plus petit angle = 120°
+
+    // 19) ISO 286 : g6 arbre négatif, G7 alésage positif, ajustement H7/g6
+    out.g6  = mepTolInfo('g6', 20);
+    out.G7  = mepTolInfo('G7', 20);
+    out.fit = mepTolInfo('H7/g6', 20);
+
+    // 20) undo d'un glissement : instantané pris AVANT le déplacement
+    const shU = doc.mep.sheets[doc.mep.cur];
+    shU.views.length = 0; shU.dims.length = 0;
+    const vU = mepAddViewStd('front');
+    let ux = 0, uy = 0;
+    if(vU){
+      ux = vU.x; uy = vU.y;
+      docPushUndo('Plan : déplacement vue');
+      vU.x = ux + 25; vU.y = uy - 10;
+      mepViewDragCommit();
+      docUndo();
+    }
+    const vU2 = doc.mep.sheets[doc.mep.cur].views.find(v=>v.id===(vU&&vU.id));
+    out.dragUndo = !!vU2 && Math.abs(vU2.x-ux)<1e-9 && Math.abs(vU2.y-uy)<1e-9;
+
+    // 21) placement / déplacement des cotes (aperçu et glisser de l'étiquette)
+    const shN = doc.mep.sheets[doc.mep.cur];
+    shN.views.length = 0; shN.dims.length = 0;
+    const vN = mepAddViewStd('front');
+    vN.scale = 1; vN.x = 50; vN.y = 40;
+    const dN = {id:'dN',kind:'dist',vid:vN.id,vid2:null,a:{x:0,y:0},b:{x:10,y:0},off:8,ref:false,tol:null};
+    const tp0 = mepDimTextPos(dN);
+    out.tp0OK = !!tp0 && Math.abs(tp0.x-(vN.x+5))<1e-9 && Math.abs(tp0.y-(vN.y+8))<1e-9;
+    // glisser : l'offset suit la perpendiculaire du curseur
+    mepDimMoveTo(dN,{x:vN.x+5,y:vN.y-3});
+    out.moveOffOK = Math.abs(dN.off+3)<1e-9;
+    const tp1 = mepDimTextPos(dN);
+    out.tp1OK = !!tp1 && Math.abs(tp1.y-(vN.y-3))<1e-9;
+    // off=0 doit être respecté (pas de repli à 8)
+    dN.off = 0;
+    const tp2 = mepDimTextPos(dN);
+    out.tpZeroOK = !!tp2 && Math.abs(tp2.y-vN.y)<1e-9;
+    // Ø : le texte se place exactement au point choisi
+    const dD = {id:'dD',kind:'dia',vid:vN.id,vid2:null,a:{x:0,y:0,hint:{t:'ctr',i:0}},b:{x:0,y:1},off:0,ref:false,tol:null};
+    mepDimMoveTo(dD,{x:vN.x+20,y:vN.y+10});
+    out.diaPlaceOK = !!dD.b && Math.abs(dD.b.x-20)<1e-9 && Math.abs(dD.b.y-10)<1e-9;
+    const tpD = mepDimTextPos(dD);
+    out.diaTextOK = !!tpD && Math.abs(tpD.x-(vN.x+20))<1e-9 && Math.abs(tpD.y-(vN.y+10))<1e-9;
+
     return out;
   `;
   const p=vm.runInContext('(async()=>{\n'+body+'\n})()',ctx,{filename:'test_mep.cjs'});
@@ -244,6 +293,24 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.flipApres&&val.flipApres[0]===0&&val.flipApres[1]===0&&val.flipApres[2]===1,
     'flip d\'une vue de base : v inversé au rejeu');
   A(val&&val.cameraAdded,'vue Caméra ajoutée (bouton ruban câblé)');
+  A(val&&Math.abs(val.ang120-120)<1e-9,'angle 120° non replié à 90°');
+  A(val&&Math.abs(val.ang60-60)<1e-9,'angle 60° inchangé');
+  A(val&&Math.abs(val.ang240-120)<1e-9,'angle 240° → plus petit angle 120°');
+  A(val&&val.g6&&Math.abs(val.g6.hi+0.007)<1e-12&&Math.abs(val.g6.lo+0.020)<1e-12,
+    'ISO 286 : g6 Ø20 = −0,007 / −0,020 (arbre)');
+  A(val&&val.G7&&Math.abs(val.G7.lo-0.007)<1e-12&&Math.abs(val.G7.hi-0.028)<1e-12,
+    'ISO 286 : G7 Ø20 = +0,007 / +0,028 (alésage)');
+  A(val&&val.fit&&val.fit.fit&&
+    Math.abs(val.fit.fit.hole.hi-0.021)<1e-12&&Math.abs(val.fit.fit.hole.lo)<1e-12&&
+    Math.abs(val.fit.fit.shaft.hi+0.007)<1e-12&&Math.abs(val.fit.fit.shaft.lo+0.020)<1e-12,
+    'ISO 286 : ajustement H7/g6 Ø20 (alésage + arbre)');
+  A(val&&val.dragUndo,'undo glissement : position d\'avant restaurée');
+  A(val&&val.tp0OK,'cote linéaire : étiquette à l\'offset demandé');
+  A(val&&val.moveOffOK,'glisser cote : offset perpendiculaire mis à jour');
+  A(val&&val.tp1OK,'glisser cote : étiquette suit le curseur');
+  A(val&&val.tpZeroOK,'cote linéaire : offset 0 respecté (pas de repli à 8)');
+  A(val&&val.diaPlaceOK,'cote Ø : texte placé au point choisi');
+  A(val&&val.diaTextOK,'cote Ø : hit-test sur la position réelle du texte');
 
   if(ko){console.log('FAIL '+ko+' assertion(s)');process.exit(1);}
   console.log('OK espace PLAN');

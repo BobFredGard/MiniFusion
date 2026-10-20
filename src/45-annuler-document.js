@@ -75,6 +75,8 @@ function docApplySnap(snap){
   try{ if(typeof faoRefreshPreview==='function')faoRefreshPreview(); }catch(e){}
   try{buildEdgeOverlay();}catch(e){}
   try{refreshMirror();}catch(e){}
+  // doc.mep vient d'être remplacé en bloc : la planche/overlay PLAN doit suivre.
+  try{if(typeof window!=='undefined'&&typeof window.mepRefresh==='function')window.mepRefresh();}catch(e){}
   return true;
 }
 
