@@ -94,6 +94,7 @@ function mfCss(){
   '.mfSw{width:14px;height:14px;border-radius:4px;border:1px solid rgba(128,128,128,.5);flex:none}',
   /* --- éléments du mode moderne : invisibles en classique --- */
   '.mfM{display:none!important}',
+  '.mfPropsOff{display:none!important}',
   'body.ui-modern .mfM{display:flex!important}',
   'body.ui-modern .topbar>.tb,body.ui-modern .topbar>.hints{display:none!important}',
   'body.ui-modern .topbar{padding:6px 12px;margin-bottom:6px}',
@@ -180,6 +181,19 @@ function mfCss(){
   document.head.appendChild(st);
 }
 /* ---------- bandeau : 🎨 thème + ▦ interface (les deux modes) ---------- */
+function mfCloseMenus(){
+  document.querySelectorAll('.mfPop.mfTmp').forEach(p=>p.remove());
+  document.querySelectorAll('.dd.open').forEach(d=>d.classList.remove('open'));
+  ['ctxMenu','ctxMenu3D','skCtxMenu','mepCtx'].forEach(id=>{const m=document.getElementById(id);if(m)m.style.display='none';});
+  const sm=document.getElementById('setMenu');if(sm)sm.classList.remove('open');
+}
+function mfSyncPropsHost(){
+  const p=document.getElementById('props');if(!p)return;
+  const panel=p.closest?p.closest('.panel'):p.parentNode;if(!panel)return;
+  const hide=document.body.classList.contains('mf-sk')||
+    (typeof mepIsOpen==='function'&&mepIsOpen());
+  panel.classList.toggle('mfPropsOff',!!hide);
+}
 function mfPop(anchor,items){
   document.querySelectorAll('.mfPop.mfTmp').forEach(p=>p.remove());
   const p=document.createElement('div');p.className='mfPop mfTmp';
@@ -256,7 +270,7 @@ const MF_IC={
 function mfI(k,size){const p=MF_IC[k];if(!p)return null;return '<svg viewBox="0 0 24 24" width="'+(size||20)+'" height="'+(size||20)+'" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+p+'</svg>';}
 /* ---------- mode moderne ---------- */
 let mfBuilt=false;
-function mfClick(id){const b=document.getElementById(id);if(b){b.click();return true;}try{faceEl.textContent='Commande indisponible ici ('+id+').';}catch(e){}return false;}
+function mfClick(id){mfCloseMenus();const b=document.getElementById(id);if(b){b.click();return true;}try{faceEl.textContent='Commande indisponible ici ('+id+').';}catch(e){}return false;}
 const MF_CAO=[
   ['Esquisse',[['sketch','Esquisse','btnSketch']]],
   ['Créer',[['extrude','Extrusion','btnExtrude'],['revolve','Révolution','btnRevolve'],['hole','Perçage','btnHole'],['body','Corps','btnBody']]],
@@ -273,7 +287,7 @@ function mfRibbon(){
   const grp=(title,btns,cls)=>{const g=document.createElement('div');g.className='mfGrp '+cls;const bb=document.createElement('div');bb.className='mfGrpB';
     btns.forEach(([ic,lab,act,tip])=>{const b=document.createElement('button');b.className='mfRb';b.innerHTML='<i>'+(mfI(ic,22)||ic)+'</i>'+lab;
       const src=typeof act==='string'?document.getElementById(act):null;b.title=tip||(src&&src.title)||lab;
-      b.onclick=()=>{typeof act==='function'?act():mfClick(act);};bb.appendChild(b);});
+      b.onclick=()=>{mfCloseMenus();typeof act==='function'?act():mfClick(act);};bb.appendChild(b);});
     g.appendChild(bb);const t=document.createElement('div');t.className='mfGrpT';t.textContent=title;g.appendChild(t);rb.appendChild(g);};
   MF_CAO.forEach(([t,bs])=>grp(t,bs,'mfCao'));
   // FAO : posage, opérations (mêmes fiches que la barre « + Usinage »), simulation, calcul, export
@@ -298,12 +312,14 @@ function mfRibbon(){
   grp('Dessin',[['sketch','Ligne',()=>mepTool('line')],['pattern','Rectangle',()=>mepTool('rect')],
     ['combine','Cercle',()=>mepTool('circle')],['revolve','Arc',()=>mepTool('arc')],
     ['hole','Point',()=>mepTool('point')],['chamfer','Ajuster',()=>mepTool('trim')]],'mfPlan');
-  grp('Cotes',[['dim','Cote',()=>mepTool('dim'),'Outil cote unique : Ø, longueur, distance, angle']],'mfPlan');
+  grp('Cotes',[['dim','Cote',()=>mepTool('dim'),'Outil cote unique : Ø, longueur, distance, angle'],
+    ['hole','Perçage',()=>mepTool('hole'),'Cotation perçage : Ø, lamage, fraisure, taraudage']],'mfPlan');
   grp('Sortie',[['export','SVG',()=>{try{mepExport();}catch(e){}},'Exporter la planche en SVG'],
     ['print','Imprimer',()=>{try{mepPrint();}catch(e){}},'Imprimer la planche']],'mfPlan');
   return rb;
 }
 function mfWs(w){
+  mfCloseMenus();
   w=(w==='fao'||w==='plan')?w:'cao';
   try{document.body.setAttribute('data-ws',w);}catch(e){}
   mfLS('minifusion_ws',w);
@@ -312,6 +328,7 @@ function mfWs(w){
   // espace PLAN (98-mise-en-plan.js) : overlay sur la vue 3D
   try{if(typeof mepSetActive==='function')mepSetActive(w==='plan');}catch(e){}
   try{mfPosTabs();}catch(e){}
+  try{mfSyncPropsHost();}catch(e){}
   try{viewCenterShift();}catch(e){} // V0.2.5 : le pivot suit la zone visible (espace CAO/FAO)
 }
 function mfCommands(){
@@ -468,6 +485,7 @@ function mfSkLayout(){
     pnl.appendChild(side);
     if(right)right.insertBefore(pnl,right.firstChild);
     document.body.classList.add('mf-sk');
+    try{mfSyncPropsHost();}catch(e){}
     try{window.dispatchEvent(new Event('resize'));}catch(e){}
   }else if(!want&&mfSkMoved){
     const m=mfSkMoved;mfSkMoved=null;
@@ -476,6 +494,7 @@ function mfSkLayout(){
     const h=document.getElementById('mfSkBar');if(h)h.parentNode.removeChild(h);
     const pn=document.getElementById('mfSkSidePanel');if(pn)pn.parentNode.removeChild(pn);
     document.body.classList.remove('mf-sk');
+    try{mfSyncPropsHost();}catch(e){}
     try{window.dispatchEvent(new Event('resize'));}catch(e){}
   }
 }

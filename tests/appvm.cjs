@@ -155,6 +155,7 @@ function loadApp(){
     crypto:global.crypto||{getRandomValues:(a)=>{for(let i=0;i<a.length;i++)a[i]=Math.floor(Math.random()*256);return a;}}
   };
   sandbox.window=sandbox;sandbox.self=sandbox;sandbox.globalThis=sandbox;
+  sandbox.__MEP_TEST_HOOKS__=true; // expose un petit seam de test (voir 98-mise-en-plan.js)
   sandbox.addEventListener=function(t,fn){evBind('window',t,fn);};sandbox.removeEventListener=function(){};
   sandbox.dispatchEvent=function(ev){evFire('window',ev);return true;};
   sandbox.matchMedia=function(){return{matches:false,addListener(){},removeListener(){},addEventListener(){},removeEventListener(){}};};

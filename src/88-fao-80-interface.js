@@ -694,6 +694,7 @@ function faoOpShortLabel(op){
 }
 function faoSelectSetup(id){
   try{
+    if(typeof mfCloseMenus==='function')mfCloseMenus();
     const r=faoRoot(); r.activeSetupId=id;
     sel={kind:'faoSetup',id:id};
     if(typeof renderTree==='function')renderTree();
@@ -703,6 +704,7 @@ function faoSelectSetup(id){
 }
 function faoSelectOp(setupId,opId){
   try{
+    if(typeof mfCloseMenus==='function')mfCloseMenus();
     const r=faoRoot(); r.activeSetupId=setupId;
     sel={kind:'faoOp',id:opId,setup:setupId};
     if(typeof renderTree==='function')renderTree();

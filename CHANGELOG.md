@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**276 versions**, de `2026-09-28b` à `V0.3.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**277 versions**, de `2026-09-28b` à `V0.3.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4117,3 +4117,10 @@ Nouveaux tests : test_vue_centre (pivot / décalage de vue : 8 scénarios + cont
 - **Placement exact du texte** : les cotes Ø/R placent l'étiquette au point choisi (`b`) et le leader pointe la circonférence ; `mepDimAt` teste la **position réelle** de l'étiquette. L'offset `0` est honoré (l'ancien `d.off||8` forçait 8 mm). Les cotes angulaires sont centrées sur le **sommet réel** (intersection des deux droites) et leur rayon se règle au glisser.
 - **Sélection sans texte bleu** : le SVG du plan interdit la sélection native de texte (`user-select:none`) et les textes d'étiquettes/cotes ne captent plus le pointeur (`pointer-events:none`) ; cliquer/glisser une cote ne surligne plus tous les libellés de vues. Une cote sélectionnée passe en **rouge** (ligne, texte et flèches), et les étiquettes/cotes ont un liseré blanc (`paint-order`) pour rester lisibles au-dessus des traits.
 - Tests : `test_mise_en_plan` à **64 assertions** (+ étiquette linéaire à l'offset demandé, glisser de cote, offset 0, placement Ø et hit-test). `node build.js --check`, lint 0, syntaxe OK, `run-fast` 19/19, suite complète **105/105**.
+
+## V0.3.7 - PLAN : silhouettes cachées non forcées en noir + menus contextuels nettoyés
+
+- **Silhouettes PLAN** : l'heuristique de fermeture des chaînes de silhouette (V0.3.6 de travail) promouvait des arêtes cachées en traits noirs et laissait des fragments incomplets. Elle est retirée : le HLR strict reprend la main et les arêtes cachées restent supprimées (ou pointillées en mode `dash`). Le vide de contour signalé reste à traiter par une méthode ciblée, sans noircir les silhouettes masquées.
+- **Menus** : les menus ouverts (`.dd`, `.mfPop`, menus contextuels, `#setMenu`) sont fermés à chaque changement d'espace CAO/FAO/PLAN, de fonction, d'opération FAO ou d'outil PLAN. Le panneau de propriétés génériques est masqué quand un panneau contextuel PLAN ou une esquisse est affiché : un seul menu de catégorie reste visible, plus d'empilement sous la fonction active.
+- **Sélection PLAN** : changer d'outil efface la vue/cote sélectionnée et rafraîchit le panneau latéral ; la sortie de PLAN efface aussi la sélection.
+- Tests : `test_mise_en_plan`, `build --check`, syntaxe, `run-fast` et lint.

@@ -80,10 +80,11 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     mepAddViewStd('iso');
     const shC = doc.mep.sheets[doc.mep.cur];
     out.viewsCount = shC.views.length;
-    const vf = shC.views[0];
+    const vf = shC.views[0], vIso = shC.views[2];
     out.frontDirOK = vf && vf.dir[0]===0 && vf.dir[1]===-1 && vf.dir[2]===0;
     out.frontUOK = vf && vf.u[0]===1 && vf.u[1]===0 && vf.u[2]===0;
     out.frontVOK = vf && vf.v[0]===0 && vf.v[1]===0 && vf.v[2]===-1;
+    out.isoHeadUp = !!(vIso && vIso.v[2] < -0.5);
     out.vuesPlacees = shC.views.every(v=>isFinite(v.x)&&isFinite(v.y)&&v.scale>0);
 
     // 6) cote de distance
@@ -186,6 +187,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     mepAddCameraViewCmd();
     const vCam = shM.views[shM.views.length-1];
     out.cameraAdded = shM.views.length===nCam+1 && !!vCam && vCam.kind==='base' && vCam.vk==='';
+    out.camHeadUp = !!vCam && vCam.v[2] < 0;
 
     // 18) angle obtus : 120° reste 120° (pas de repli à 90°)
     out.ang120 = mepAngleDeg(0, 120*Math.PI/180);
@@ -235,6 +237,90 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     out.diaPlaceOK = !!dD.b && Math.abs(dD.b.x-20)<1e-9 && Math.abs(dD.b.y-10)<1e-9;
     const tpD = mepDimTextPos(dD);
     out.diaTextOK = !!tpD && Math.abs(tpD.x-(vN.x+20))<1e-9 && Math.abs(tpD.y-(vN.y+10))<1e-9;
+    // défaut : arc → R, cercle → Ø (Alt inverse)
+    out.kindArc = mepDimKindForEnt('A',false);
+    out.kindArcAlt = mepDimKindForEnt('A',true);
+    out.kindCirc = mepDimKindForEnt('C',false);
+    out.kindCircAlt = mepDimKindForEnt('C',true);
+    // rappels : le prolongement doit rester sur la normale au trait (pas de trapèze)
+    dN.off = 8;
+    const gH = mepDimLine(dN);
+    out.extPerpOK = !!gH && Math.abs(gH.a1.x-gH.a.x)<1e-9 && Math.abs(gH.b1.x-gH.b.x)<1e-9;
+    out.extGapOK = !!gH && Math.abs(Math.hypot(gH.sa.x-gH.a.x,gH.sa.y-gH.a.y)-MEP_DIM_STYLE.gap)<1e-9;
+    out.extOverOK = !!gH && Math.abs(Math.hypot(gH.ea.x-gH.a1.x,gH.ea.y-gH.a1.y)-MEP_DIM_STYLE.overrun)<1e-9;
+    out.styleOK = MEP_DIM_STYLE.gap>=1 && MEP_DIM_STYLE.gap<=2
+      && MEP_DIM_STYLE.overrun>=1.5 && MEP_DIM_STYLE.overrun<=2;
+    out.arrowOK = mepArrowGeom().total===MEP_DIM_STYLE.arrowAngle
+      && mepArrowGeom().total>20 && mepArrowGeom().total<46;
+
+    // 22) régression : OCCT répète le premier point à la fin des cercles.
+    // L'ancien fit premier/milieu/dernier était dégénéré et aucun trou n'était
+    // reconnu comme cercle (donc non sélectionnable pour une cote Ø).
+    const circPts=[];
+    for(let i=0;i<=50;i++){
+      const a=i/50*Math.PI*2;
+      circPts.push([3+10*Math.cos(a),-4+10*Math.sin(a)]);
+    }
+    const fc=window.__mepTest.fitCircle(circPts);
+    out.circClosed=!!fc&&fc.full&&Math.abs(fc.r-10)<1e-6
+      &&Math.abs(fc.cx-3)<1e-6&&Math.abs(fc.cy+4)<1e-6;
+    const arcPts=[];
+    for(let i=0;i<=20;i++){
+      const a=i/20*Math.PI/2;
+      arcPts.push([10*Math.cos(a),10*Math.sin(a)]);
+    }
+    const fa=window.__mepTest.fitCircle(arcPts);
+    out.arcOpen=!!fa&&!fa.full&&Math.abs(fa.r-10)<1e-6;
+    const ellPts=[];
+    for(let i=0;i<=50;i++){
+      const a=i/50*Math.PI*2;
+      ellPts.push([10*Math.cos(a),5*Math.sin(a)]);
+    }
+    out.ellipseRejected=!window.__mepTest.fitCircle(ellPts);
+
+    // 23) cote entre 2 entités : ancrage sur les points cliqués (et non le
+    // milieu arbitraire de B), avec les extrémités réelles de la géométrie.
+    const sh2=doc.mep.sheets[doc.mep.cur];
+    sh2.views.length=0; sh2.dims.length=0;
+    const v2=mepAddViewStd('front');
+    v2.scale=1;
+    const eA={t:'L',x1:0,y1:0,x2:10,y2:0},eB={t:'L',x1:0,y1:5,x2:10,y2:5};
+    window.__mepTest.setViewGeo(v2,{src:'test',els:[eA,eB]});
+    const T=window.__mepTest;
+    T.setEntSel([
+      {vid:v2.id,i:0,t:'L',sig:T.entSig(eA),lx:7,ly:0},
+      {vid:v2.id,i:1,t:'L',sig:T.entSig(eB),lx:2,ly:5}
+    ]);
+    const d2=T.dimDraftFromSel();
+    out.twoEntAnchorOK=!!d2&&d2.kind==='dist'
+      &&Math.abs(d2.a.x-4.5)<1e-9&&Math.abs(d2.a.y)<1e-9
+      &&Math.abs(d2.b.x-4.5)<1e-9&&Math.abs(d2.b.y-5)<1e-9;
+    T.setEntSel([
+      {vid:v2.id,i:0,t:'L',sig:T.entSig(eA),lx:9.8,ly:0.2},
+      {vid:v2.id,i:1,t:'L',sig:T.entSig(eB),lx:9.7,ly:4.8}
+    ]);
+    const d3=T.dimDraftFromSel();
+    out.twoEntEndSnapOK=!!d3&&d3.kind==='dist'
+      &&Math.abs(d3.a.x-10)<1e-9&&Math.abs(d3.a.y)<1e-9
+      &&Math.abs(d3.b.x-10)<1e-9&&Math.abs(d3.b.y-5)<1e-9;
+    T.clearDim();
+
+    const hBase={type:'hole',kind:'simple',d:6.6,end:'blind',depth:15,tip:118};
+    out.holeSimpleOK=T.holeText(hBase)==='Ø6,6 ↧15';
+    out.holeCboreOK=T.holeText(Object.assign({},hBase,{kind:'cbore',cbD:11,cbH:6.4}))
+      ==='Ø6,6 ↧15\\nLamage Ø11 ↧6,4';
+    out.holeCsinkOK=T.holeText(Object.assign({},hBase,{kind:'csink',csD:13,csA:90}))
+      ==='Ø6,6 ↧15\\nFraisure Ø13 x 90°';
+    out.holeThroughOK=T.holeText(Object.assign({},hBase,{end:'through'}))==='Ø6,6 déb.';
+    out.holeThreadOK=T.holeText(Object.assign({},hBase,{d:8.5,depth:25,
+      thread:{size:'M10',p:1.25,len:18,lenMode:'len'},_thLen:18}))
+      ==='M10×1,25 ↧18\\nØ8,5 ↧25';
+    const hgA=T.holeCallout(0,0,10,25,-20,'Ø8 déb.\\nLamage Ø11,2 ↧2');
+    const hgB=T.holeCallout(0,0,10,-25,-20,'Ø8 déb.\\nLamage Ø11,2 ↧2');
+    out.holeLeaderUnderOK=!!hgA&&hgA.anchor==='start'&&hgA.u0===hgA.tx
+      &&Math.abs(hgA.lineY-(hgA.y0+(hgA.lines.length-1)*hgA.lh+2.2))<1e-9;
+    out.holeLeaderUnderEndOK=!!hgB&&hgB.anchor==='end'&&hgB.u1===hgB.tx
+      &&Math.abs(hgB.lineY-(hgB.y0+(hgB.lines.length-1)*hgB.lh+2.2))<1e-9;
 
     return out;
   `;
@@ -263,6 +349,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.frontDirOK,'vue Face : dir=(0,-1,0)');
   A(val&&val.frontUOK,'vue Face : u=(1,0,0)');
   A(val&&val.frontVOK,'vue Face : v=(0,0,-1)');
+  A(val&&val.isoHeadUp,'vue ISO : Z monde vers le haut papier');
   A(val&&val.vuesPlacees,'vues placées (x,y,scale valides)');
   A(val&&val.dimsCount===1,'cote de distance injectée');
   A(val&&val.serialiseMepDims,'la cote est sérialisée dans doc.mep');
@@ -293,6 +380,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.flipApres&&val.flipApres[0]===0&&val.flipApres[1]===0&&val.flipApres[2]===1,
     'flip d\'une vue de base : v inversé au rejeu');
   A(val&&val.cameraAdded,'vue Caméra ajoutée (bouton ruban câblé)');
+  A(val&&val.camHeadUp,'vue Caméra : Z monde vers le haut papier');
   A(val&&Math.abs(val.ang120-120)<1e-9,'angle 120° non replié à 90°');
   A(val&&Math.abs(val.ang60-60)<1e-9,'angle 60° inchangé');
   A(val&&Math.abs(val.ang240-120)<1e-9,'angle 240° → plus petit angle 120°');
@@ -311,6 +399,27 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.tpZeroOK,'cote linéaire : offset 0 respecté (pas de repli à 8)');
   A(val&&val.diaPlaceOK,'cote Ø : texte placé au point choisi');
   A(val&&val.diaTextOK,'cote Ø : hit-test sur la position réelle du texte');
+  A(val&&val.kindArc==='rad','arc : cote R par défaut');
+  A(val&&val.kindArcAlt==='dia','arc : Alt (ou menu) → Ø');
+  A(val&&val.kindCirc==='dia','cercle complet : cote Ø par défaut');
+  A(val&&val.kindCircAlt==='rad','cercle complet : Alt (ou menu) → R');
+  A(val&&val.extPerpOK,'rappels : perpendiculaires au trait de cote');
+  A(val&&val.extGapOK,'rappels : vide de 1–2 mm au départ de la pièce');
+  A(val&&val.extOverOK,'rappels : dépassement de 1,5–2 mm après la cote');
+  A(val&&val.styleOK,'paramètres de style cohérents (fichier 98-00-style-plan.js)');
+  A(val&&val.arrowOK,'flèches : angle réduit (< 46°)');
+  A(val&&val.circClosed,'cercle fermé OCCT (point dupliqué) reconnu comme cercle complet');
+  A(val&&val.arcOpen,'arc ouvert non marqué complet');
+  A(val&&val.ellipseRejected,'ellipse non assimilée à un cercle');
+  A(val&&val.twoEntAnchorOK,'cote 2 entités : ancrage aux points cliqués/extrémités');
+  A(val&&val.twoEntEndSnapOK,'cote 2 entités : accrochage exact aux extrémités proches');
+  A(val&&val.holeSimpleOK,'cotation perçage : trou simple (Ø et profondeur)');
+  A(val&&val.holeCboreOK,'cotation perçage : lamage (Ø et profondeur)');
+  A(val&&val.holeCsinkOK,'cotation perçage : fraisure (Ø et angle)');
+  A(val&&val.holeThroughOK,'cotation perçage : trou débouchant');
+  A(val&&val.holeThreadOK,'cotation perçage : taraudage (longueur filetée + profondeur trou)');
+  A(val&&val.holeLeaderUnderOK&&val.holeLeaderUnderEndOK,
+    'cotation perçage : leader et soulignement coïncidents aux 2 orientations');
 
   if(ko){console.log('FAIL '+ko+' assertion(s)');process.exit(1);}
   console.log('OK espace PLAN');
