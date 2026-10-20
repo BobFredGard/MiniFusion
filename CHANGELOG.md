@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**279 versions**, de `2026-09-28b` à `V0.3.9` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**280 versions**, de `2026-09-28b` à `V0.3.10` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4140,3 +4140,11 @@ Nouveaux tests : test_vue_centre (pivot / décalage de vue : 8 scénarios + cont
 - **Étiquette de cote** : le glisser de l'étiquette permet maintenant un décalage gauche/droite le long de la ligne de cote, avec aimantation exacte au centre ; le panneau propose aussi un champ de décalage et le bouton **Centrer**.
 - **Tolérances** : les écarts supérieur et inférieur sont empilés à droite de la valeur nominale (double, ± symétrique et classes ISO 286), au lieu d'être affichés sur une seule ligne. Les textes personnalisés restent prioritaires.
 - Tests : `test_mise_en_plan` complété (axes, inversion des flèches, décalage/centrage de l'étiquette, tolérances empilées), `build.js --check`, syntaxe, lint et `run-fast` **19/19** ; rendu axes et tolérances contrôlé sous Chrome headless.
+
+## V0.3.10 - PLAN : cotes attrapables par n'importe quel trait, tolérances resserrées et affinages de rendu
+
+- **Cotes attrapables en outil Cotation** : après pose, n'importe quel trait rouge (ligne de cote, rappel, leader, arc, soulignement) sélectionne la cote et démarre son déplacement, sans repasser par l'outil Sélection. Le hit-test utilise la géométrie réellement dessinée.
+- **Texte avant Ø/R** : le préfixe se place désormais avant le symbole (`2x Ø20`), pas après (`Ø2x 20`).
+- **Tolérances bilatérales** : la tolérance mini est alignée sur la valeur de cote, la max est surélevée pour laisser **0,45 mm** de jeu ; les soulignements/extensions des cotes de perçage et tolérancées sont raccourcis.
+- **Curseur** : croix noire plus épaisse dans l'espace PLAN.
+- Tests : `test_mise_en_plan` complété (drag par trait, préfixe Ø/R, interligne tolérances), `build.js --check`, syntaxe, lint et `run-fast` **19/19** ; rendu cotes/tolérances contrôlé sous Chrome headless.

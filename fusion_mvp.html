@@ -273,7 +273,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.3.9';
+const APP_VER='V0.3.10';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -34889,7 +34889,7 @@ function viewFadeIn(){
     #mepTabs .mepAdd{border-style:dashed;padding:3px 8px}
     #mepToolbar{display:none}
     #mepBody{flex:1;display:flex;min-height:0}
-    #mepSheet{flex:1;position:relative;overflow:hidden;background:#8e949e;cursor:crosshair;min-width:0}
+    #mepSheet{flex:1;position:relative;overflow:hidden;background:#8e949e;cursor:url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'17'%20height%3D'17'%3E%3Cpath%20d%3D'M8.5%200v17M0%208.5h17'%20stroke%3D'%23000'%20stroke-width%3D'1.5'%2F%3E%3C%2Fsvg%3E") 8 8,crosshair;min-width:0}
     #mepSvg{position:absolute;left:0;top:0;display:block;width:100%;height:100%}
     #mepSide{width:260px;flex:none;border-left:1px solid var(--border);background:var(--surface);overflow-y:auto;padding:8px;font-size:.74rem;display:block}
     #mepSidePanel #mepSide{width:100%;border-left:none;background:transparent}
@@ -36559,6 +36559,7 @@ function viewFadeIn(){
     pick:null,dim:null,entSel:[],sk:null,cutParent:null,cutPts:[],detC:null,hovView:null,hovEnt:null,skSel:new Set()};
   try{ mepSt.zoomRev=localStorage.getItem('minifusion_mepZoomRev')==='1'; }catch(e){ mepSt.zoomRev=false; } // sens de la molette, mémorisé
   let mepWrapEl=null,mepSvgEl=null,mepSheetEl=null,mepSideEl=null,mepStatusEl=null,mepTabsEl=null;
+  const mepDimHits=new Map();
   let mepToolbarEl=null,mepCtxEl=null,mepDefsEl=null;
   let mepGFrame=null,mepGSheet=null,mepGHlp=null,mepGridG=null;
   let mepPxMM=1; // mm papier par pixel écran (à recalculer au rendu)
@@ -36728,6 +36729,7 @@ function viewFadeIn(){
     mepEnsure();
     const sh=mepSheet();
     const pg=mepPage();
+    mepDimHits.clear();
     mepSvgEl.setAttribute('viewBox',pg.vb.map(v=>+v.toFixed(3)).join(' '));
     mepPxMM=mepPxToMm();
     mepGSheet.innerHTML='';
@@ -37409,38 +37411,57 @@ function viewFadeIn(){
     return (n<0?'−':'+')+mepFmtNum(Math.abs(n),3);
   }
   function mepDimTextParts(d,value){
-    if(d.kind==='hole')return{main:d.txt||d.holeText||'',up:'',lo:''};
-    if(d.txt)return{main:d.txt,up:'',lo:''};
+    const pre=d.pre?String(d.pre).trim():'',post=d.post?String(d.post).trim():'';
+    const join=(a,b)=>a&&b?a+' '+b:(a||b);
+    const wrap=s=>join(join(pre,s),post);
+    if(d.kind==='hole')return{main:wrap(d.txt||d.holeText||''),up:'',lo:'',sym:''};
+    if(d.txt)return{main:wrap(d.txt),up:'',lo:'',sym:''};
     const unit=d.kind==='ang'?'°':'';
     const base=mepFmtNum(value,d.kind==='ang'?1:2)+unit;
     const t=d.tol||{};
-    if(t.m==='pm'&&t.s>0)return{main:base,up:mepSignedTol(t.s),lo:mepSignedTol(-t.s)};
-    if(t.m==='dbl')return{main:base,up:mepSignedTol(t.hi),lo:mepSignedTol(t.lo)};
-    if(t.m==='cls'&&t.cls){
-      const rg=mepTolRange(t.cls,value);
-      if(rg&&rg.fit){
-        const h=rg.fit.hole,s=rg.fit.shaft;
-        return{main:base+' '+t.cls+' ('+mepFmtNum(h.hi,3)+'/'+mepFmtNum(h.lo,3)
-          +' ; '+mepFmtNum(s.hi,3)+'/'+mepFmtNum(s.lo,3)+')',up:'',lo:''};
-      }
-      if(rg)return{main:base+' '+t.cls,up:mepSignedTol(rg.hi),lo:mepSignedTol(rg.lo)};
-      return{main:base+' '+t.cls,up:'',lo:''};
+    if(t.m==='pm'&&t.s>0){
+      const sym='±'+mepFmtNum(t.s,3)+(post?' '+post:'');
+      return{main:join(pre,base),sym,up:'',lo:''};
     }
-    return{main:base,up:'',lo:''};
+    if(t.m==='dbl')return{main:wrap(base),up:mepSignedTol(t.hi),lo:mepSignedTol(t.lo),sym:''};
+    if(t.m==='cls'&&t.cls)return{main:wrap(base+' '+t.cls),up:'',lo:'',sym:''};
+    return{main:wrap(base),up:'',lo:'',sym:''};
+  }
+  function mepDimSymbolParts(d,value,sym){
+    const pre=d.pre?String(d.pre).trim():'',post=d.post?String(d.post).trim():'';
+    const p=mepDimTextParts(Object.assign({},d,{pre:'',post:''}),value);
+    const join=(a,b)=>a&&b?a+' '+b:(a||b);
+    const main=join(pre,sym+p.main);
+    if(p.sym)return Object.assign({},p,{main,sym:join(p.sym,post)});
+    return Object.assign({},p,{main:join(main,post)});
   }
   function mepDimText(d,value){
-    const p=mepDimTextParts(d,value);
-    return p.up||p.lo?p.main+' '+p.up+' / '+p.lo:p.main;
+    const p=(d.kind==='dia'||d.kind==='rad')
+      ?mepDimSymbolParts(d,value,d.kind==='dia'?'Ø':'R')
+      :mepDimTextParts(d,value);
+    const main=p.sym?p.main+' '+p.sym:p.main;
+    return p.up||p.lo?main+' '+p.up+' / '+p.lo:main;
   }
-  function mepDimDrawText(mk,T,main,up,lo,x,y,anchor,transform,flip){
+  function mepDimTolLineH(){
+    const th=MEP_DIM_STYLE.textHeight||7;
+    const sub=Math.max(2.8,th*0.68);
+    return Math.max(1.8,sub*0.72+0.45);
+  }
+  function mepDimDrawText(mk,T,main,up,lo,x,y,anchor,transform,flip,sym){
     const attrs={x,y,'text-anchor':anchor};
     if(transform)attrs.transform=transform;
     const t=mk('text',Object.assign(attrs,T));
     t.textContent=main;
+    if(sym){
+      const ts=document.createElementNS(NS,'tspan');
+      ts.setAttribute('font-size',String((MEP_DIM_STYLE.textHeight||7)*0.85));
+      ts.textContent=' '+sym;
+      t.appendChild(ts);
+    }
     if(!up&&!lo)return t;
     const th=MEP_DIM_STYLE.textHeight||7;
     const sub=Math.max(2.8,th*0.68),gap=Math.max(1.2,th*0.22);
-    const lh=sub*1.15;
+    const lh=mepDimTolLineH();
     const mw=Math.max(7,String(main).length*th*0.62);
     const sx=anchor==='middle'?x+mw/2+gap:(anchor==='end'?x+gap:x+mw+gap);
     const st=Object.assign({},T,{x:sx,'text-anchor':'start',
@@ -37448,9 +37469,52 @@ function viewFadeIn(){
     if(transform)st.transform=transform;
     const tu=mk('text',Object.assign({},st,{y:flip?y+lh:y-lh}));
     tu.textContent=up||'';
-    const tl=mk('text',Object.assign({},st,{y:flip?y-lh:y+lh}));
+    const tl=mk('text',Object.assign({},st,{y:y}));
     tl.textContent=lo||'';
     return t;
+  }
+  function mepDimHasStack(d){
+    return !d.txt&&d.tol&&d.tol.m==='dbl';
+  }
+  function mepDimLabelHalf(d,value){
+    const p=mepDimTextParts(d,value);
+    const th=MEP_DIM_STYLE.textHeight||7;
+    const main=d.ref?'('+p.main+')':p.main;
+    const mainHalf=Math.max(7,String(main).length*th*0.62)/2;
+    if(p.sym)return mainHalf+Math.max(1.2,th*0.14)+String(p.sym).length*th*0.85*0.54;
+    if(!p.up&&!p.lo)return mainHalf;
+    const sub=Math.max(2.8,th*0.68),gap=Math.max(1,th*0.15);
+    const tolW=Math.max(String(p.up||'').length,String(p.lo||'').length)*sub*0.54;
+    return mainHalf+gap+tolW;
+  }
+  function mepDimTextAnchorPos(g,d){
+    const th=MEP_DIM_STYLE.textHeight||7;
+    const toff=+d.txtOff||0;
+    const vertical=Math.abs(g.ux)<1e-6;
+    let x=(g.a1.x+g.b1.x)/2+g.ux*toff;
+    let y=(g.a1.y+g.b1.y)/2+g.uy*toff;
+    if(vertical){
+      x-=Math.max(2,th*0.28);
+    }else if(mepDimHasStack(d)){
+      y-=mepDimTolLineH();
+    }else{
+      y-=2;
+    }
+    return{x,y,vertical,toff};
+  }
+  function mepDimLineExtent(g,d,value){
+    const half=g.L/2,toff=+d.txtOff||0;
+    const lh=mepDimLabelHalf(d,value);
+    if(Math.abs(toff)<1e-9)return{start:-half,end:half,half};
+    return{start:Math.min(-half,toff-lh),end:Math.max(half,toff+lh),half};
+  }
+  function mepDimTxtOffSnap(sh,d,v,g){
+    v=+v||0;
+    g=g||mepDimLine(sh,d);
+    if(!g||!g.L)return v;
+    const value=d.value!=null?d.value:mepDimMeasure(sh,d);
+    const lim=Math.max(0,g.L/2-mepDimLabelHalf(d,value));
+    return Math.abs(v)<=lim?0:v;
   }
   function mepHoleCallout(cx,cy,rr,px,py,txt){
     let ux=px-cx,uy=py-cy,ul=Math.hypot(ux,uy);
@@ -37462,7 +37526,7 @@ function viewFadeIn(){
     const lh=8.2,n=lines.length,mid=py+2;
     const y0=mid-(n-1)*lh/2;
     const tx=px,anchor=ux<0?'end':'start';
-    const tw=Math.max(7,...lines.map(s=>Math.max(7,s.length*4.1)));
+    const tw=Math.max(6.5,...lines.map(s=>Math.max(6.5,s.length*3.8)));
     const u0=anchor==='end'?tx-tw:tx,u1=anchor==='end'?tx:tx+tw;
     const lineY=y0+(n-1)*lh+2.2;
     return{ex,ey,lines,lh,y0,tx,anchor,u0,u1,lineY};
@@ -37479,6 +37543,15 @@ function viewFadeIn(){
     const T={class:'mepDimT'+(sel?' mepDimSel':'')+(d.ref?' mepDimRef':'')+(ghost?' mepDimGhost':'')};
     const AR=sel?'url(#mepArrSel)':'url(#mepArr)';
     const ARS=sel?'url(#mepArrSSel)':'url(#mepArrS)';
+    const hit=[];
+    mepDimHits.set(d,hit);
+    const draw=(tag,attrs)=>{
+      if(tag==='line'){
+        const x1=+(attrs&&attrs.x1),y1=+(attrs&&attrs.y1),x2=+(attrs&&attrs.x2),y2=+(attrs&&attrs.y2);
+        if([x1,y1,x2,y2].every(Number.isFinite))hit.push({x1,y1,x2,y2});
+      }
+      return mk(tag,attrs);
+    };
     if(d.kind==='hole'){
       if(d.holeFid&&typeof doc!=='undefined'){
         const f=(doc.features||[]).find(x=>x.id===d.holeFid);
@@ -37491,14 +37564,14 @@ function viewFadeIn(){
         rr=e.r*v.scale;cx=cS.x;cy=cS.y;
       }
       const g=mepHoleCallout(cx,cy,rr,w.b.x,w.b.y,txt);
-      mk('line',Object.assign({x1:g.tx,y1:g.lineY,x2:g.ex,y2:g.ey,'marker-end':AR},L));
-      const t=mk('text',Object.assign({x:g.tx,y:g.y0,'text-anchor':g.anchor},T));
+      draw('line',Object.assign({x1:g.tx,y1:g.lineY,x2:g.ex,y2:g.ey,'marker-end':AR},L));
+      const t=draw('text',Object.assign({x:g.tx,y:g.y0,'text-anchor':g.anchor},T));
       g.lines.forEach((s,k)=>{
         const ts=document.createElementNS(NS,'tspan');
         ts.setAttribute('x',String(g.tx));ts.setAttribute('y',String(g.y0+k*g.lh));
         ts.textContent=s;t.appendChild(ts);
       });
-      mk('line',Object.assign({x1:g.u0,y1:g.lineY,x2:g.u1,y2:g.lineY},L));
+      draw('line',Object.assign({x1:g.u0,y1:g.lineY,x2:g.u1,y2:g.lineY},L));
       return;
     }
     if(d.kind==='dia'||d.kind==='rad'){
@@ -37524,25 +37597,26 @@ function viewFadeIn(){
         }else ang=an;
       }
       const ex=cx+rr*Math.cos(ang),ey=cy+rr*Math.sin(ang);
-      const pp=mepDimTextParts(d,val);
-      const str=(d.kind==='dia'?'Ø':'R')+pp.main;
+      const pp=mepDimSymbolParts(d,val,d.kind==='dia'?'Ø':'R');
+      const str=pp.main;
       // texte sur un trait souligné : le leader part de dessous l'étiquette
       // (plus de vide entre le texte et la flèche).
       const tx=px,ty=py+2;
-      const tw=Math.max(7,str.length*4.3);
+      const symW=pp.sym?(pp.sym.length+1)*(MEP_DIM_STYLE.textHeight||7)*0.85*0.54:0;
+      const tw=Math.max(6.5,str.length*3.8+symW);
       const u0=ux<0?tx-tw:tx,u1=ux<0?tx:tx+tw;
       // leader du texte vers la circonférence, flèche sur l'arête
-      mk('line',Object.assign({x1:tx,y1:ty+1.6,x2:ex,y2:ey,'marker-end':AR},L));
+      draw('line',Object.assign({x1:tx,y1:ty+1.6,x2:ex,y2:ey,'marker-end':AR},L));
       if(d.kind==='dia'){
         // trait de diamètre : part du bord (côté texte) après un vide, traverse
-        // le centre et flèche le bord opposé — il ne part plus du centre.
+        // le centre et flèche le bord opposé - il ne part plus du centre.
         const lg=Math.min(MEP_DIM_STYLE.leaderGap,rr*0.45);
-        mk('line',Object.assign({x1:ex-ux*lg,y1:ey-uy*lg,
+        draw('line',Object.assign({x1:ex-ux*lg,y1:ey-uy*lg,
           x2:cx-rr*Math.cos(ang),y2:cy-rr*Math.sin(ang),'marker-end':ARS},L));
       }
       // trait sous la valeur R/Ø
-      mk('line',Object.assign({x1:u0,y1:ty+1.6,x2:u1,y2:ty+1.6},L));
-      mepDimDrawText(mk,T,str,pp.up,pp.lo,tx,ty,ux<0?'end':'start',null,false);
+      draw('line',Object.assign({x1:u0,y1:ty+1.6,x2:u1,y2:ty+1.6},L));
+      mepDimDrawText(draw,T,str,pp.up,pp.lo,tx,ty,ux<0?'end':'start',null,false,pp.sym);
       return;
     }
     if(d.kind==='ang'){
@@ -37555,10 +37629,16 @@ function viewFadeIn(){
       const sweep=dd>0?1:0;
       const x1=O.x+r*Math.cos(aa),y1=O.y+r*Math.sin(aa);
       const x2=O.x+r*Math.cos(bb),y2=O.y+r*Math.sin(bb);
-      mk('path',Object.assign({d:'M'+x1+','+y1+' A'+r+','+r+' 0 0 '+sweep+' '+x2+','+y2},L));
+      draw('path',Object.assign({d:'M'+x1+','+y1+' A'+r+','+r+' 0 0 '+sweep+' '+x2+','+y2},L));
+      const nSeg=Math.max(6,Math.ceil(Math.abs(dd)*r/3));
+      for(let k=0;k<nSeg;k++){
+        const t0=aa+dd*k/nSeg,t1=aa+dd*(k+1)/nSeg;
+        hit.push({x1:O.x+r*Math.cos(t0),y1:O.y+r*Math.sin(t0),
+          x2:O.x+r*Math.cos(t1),y2:O.y+r*Math.sin(t1)});
+      }
       const mx=O.x+(r+7)*Math.cos(aa+dd/2),my=O.y+(r+7)*Math.sin(aa+dd/2);
       const pp=mepDimTextParts(d,val);
-      mepDimDrawText(mk,T,pp.main,pp.up,pp.lo,mx,my+2,'middle',null,false);
+      mepDimDrawText(draw,T,pp.main,pp.up,pp.lo,mx,my+2,'middle',null,false,pp.sym);
       return;
     }
     /* linear (len / dist) */
@@ -37567,27 +37647,38 @@ function viewFadeIn(){
     const {a1,b1,sa,sb,ea,eb}=g;
     // rappels : perpendiculaires au trait, avec un vide de `gap` au départ de
     // la pièce et un dépassement `over` après la ligne de cote (paramètres).
-    mk('line',Object.assign({x1:sa.x,y1:sa.y,x2:ea.x,y2:ea.y},L));
-    mk('line',Object.assign({x1:sb.x,y1:sb.y,x2:eb.x,y2:eb.y},L));
+    draw('line',Object.assign({x1:sa.x,y1:sa.y,x2:ea.x,y2:ea.y},L));
+    draw('line',Object.assign({x1:sb.x,y1:sb.y,x2:eb.x,y2:eb.y},L));
     // ligne de cote fléchée
     if(d.arr==='out'){
       const ext=Math.max(2,MEP_DIM_STYLE.arrowLen);
-      mk('line',Object.assign({x1:a1.x-g.ux*ext,y1:a1.y-g.uy*ext,
+      draw('line',Object.assign({x1:a1.x-g.ux*ext,y1:a1.y-g.uy*ext,
         x2:a1.x,y2:a1.y,'marker-end':AR},L));
-      mk('line',Object.assign({x1:b1.x,y1:b1.y,
+      draw('line',Object.assign({x1:b1.x,y1:b1.y,
         x2:b1.x+g.ux*ext,y2:b1.y+g.uy*ext,'marker-start':ARS},L));
-      mk('line',Object.assign({x1:a1.x,y1:a1.y,x2:b1.x,y2:b1.y},L));
+      draw('line',Object.assign({x1:a1.x,y1:a1.y,x2:b1.x,y2:b1.y},L));
     }else{
-      mk('line',Object.assign({x1:a1.x,y1:a1.y,x2:b1.x,y2:b1.y,'marker-start':ARS,'marker-end':AR},L));
+      draw('line',Object.assign({x1:a1.x,y1:a1.y,x2:b1.x,y2:b1.y,'marker-start':ARS,'marker-end':AR},L));
     }
-    const toff=+d.txtOff||0;
-    const mx=(a1.x+b1.x)/2+g.ux*toff,my=(a1.y+b1.y)/2+g.uy*toff;
-    const ang=Math.atan2(g.dy,g.dx)*180/Math.PI;
-    const flip=ang>90||ang<-90;
+    const ext=mepDimLineExtent(g,d,val);
+    const midX=(a1.x+b1.x)/2,midY=(a1.y+b1.y)/2;
+    if(ext.end>ext.half+1e-9){
+      draw('line',Object.assign({x1:b1.x,y1:b1.y,
+        x2:midX+g.ux*ext.end,y2:midY+g.uy*ext.end},L));
+    }
+    if(ext.start<-ext.half-1e-9){
+      draw('line',Object.assign({x1:midX+g.ux*ext.start,y1:midY+g.uy*ext.start,
+        x2:a1.x,y2:a1.y},L));
+    }
+    const ap=mepDimTextAnchorPos(g,d);
+    const mx=ap.x,my=ap.y;
+    let ang=Math.atan2(g.dy,g.dx)*180/Math.PI;
+    let flip=ang>90||ang<-90;
+    if(ap.vertical){ang=-90;flip=false;}
     const tr=flip?'rotate('+(ang+180)+' '+mx+' '+my+')':'rotate('+ang+' '+mx+' '+my+')';
     const pp=mepDimTextParts(d,val);
     const main=d.ref?'('+pp.main+')':pp.main;
-    mepDimDrawText(mk,T,main,pp.up,pp.lo,mx,my-2,'middle',tr,flip);
+    mepDimDrawText(draw,T,main,pp.up,pp.lo,mx,my,'middle',tr,flip,pp.sym);
   }
   /* ═══════════════ P. mini-solveur LM autonome (pas de lien skEdit) ═══════════════
      Points variables (x,y) ; contraintes résiduelles + jacobien numérique.
@@ -38135,7 +38226,7 @@ function viewFadeIn(){
       arc:'Arc 3 points : centre, départ, arrivée.',
       point:'Point : cliquez pour placer.',
       trim:'Ajuster : cliquez le tronçon à couper entre 2 intersections.',
-      dim:'Cote : cliquez une arête/cercle · cliquez une 2ᵉ entité pour distance/angle · cliquez dans le vide pour poser · 2 points = distance',
+      dim:'Cote : cliquez une arête/cercle · 2ᵉ entité pour distance/angle · cliquez pour poser · glissez un trait rouge pour déplacer',
       hole:'Perçage : cliquez un cercle de perçage, puis posez l’étiquette.',
       axis:'Axes : cliquez un trou (ou utilisez Alignement / Cercle / Libre dans le panneau).',
       cut2:'Coupe : 2 clics sur la ligne de coupe.',
@@ -38231,6 +38322,15 @@ function viewFadeIn(){
     mepRender();
   }
   function mepToolSync(){/* plus de barre d'outils interne — le panneau latéral gère l'outil actif */}
+  function mepDimDragStart(sh,P,dim){
+    mepSt.selDim=dim.id;mepSt.sel=null;mepSt.entSel=[];
+    const w=mepDimWorld(sh,dim);
+    const tp=mepDimTextPos(sh,dim);
+    const labelHit=!!tp&&Math.hypot(P.x-tp.x,P.y-tp.y)<=18/(mepSt.zoom||1);
+    mepSt.pick={kind:'dimDrag',id:dim.id,sx:P.x,sy:P.y,px0:P.px,py0:P.py,
+      cx:w?w.b.x:null,cy:w?w.b.y:null,off0:dim.off,labelHit,moved:false,undoPushed:false};
+    mepSideShow();mepRender();
+  }
   function mepOnDown(ev){
     if(ev.button===1||(ev.button===0&&ev.altKey)){ // middle / alt = pan
       mepSt.pick={kind:'pan',sx:ev.clientX,sy:ev.clientY,px:mepSt.pan.x,py:mepSt.pan.y};
@@ -38246,15 +38346,7 @@ function viewFadeIn(){
     if(tool==='select'){
       // cote ? → sélection + glisser pour la déplacer
       const dim=mepDimAt(sh,P.x,P.y);
-      if(dim){
-        mepSt.selDim=dim.id;mepSt.sel=null;mepSt.entSel=[];
-        const w=mepDimWorld(sh,dim);
-        const tp=mepDimTextPos(sh,dim);
-        const labelHit=!!tp&&Math.hypot(P.x-tp.x,P.y-tp.y)<=18/(mepSt.zoom||1);
-        mepSt.pick={kind:'dimDrag',id:dim.id,sx:P.x,sy:P.y,px0:P.px,py0:P.py,
-          cx:w?w.b.x:null,cy:w?w.b.y:null,labelHit,moved:false,undoPushed:false};
-        mepSideShow();mepRender();return;
-      }
+      if(dim){mepDimDragStart(sh,P,dim);return;}
       const axis=mepAxisAt(sh,P.x,P.y);
       if(axis){
         mepSt.selAxis={vid:axis.vid,id:axis.id};mepSt.sel=null;mepSt.selDim=null;mepSt.entSel=[];
@@ -38304,6 +38396,12 @@ function viewFadeIn(){
       return;
     }
     if(tool==='dim'){
+      // une cote déjà posée reste attrapable : n'importe quel trait rouge
+      // (ligne, rappel, leader, arc) démarre son déplacement.
+      if(!mepSt.dim){
+        const dim=mepDimAt(sh,P.x,P.y);
+        if(dim){mepDimDragStart(sh,P,dim);return;}
+      }
       // distance point→point en cours : on garde le flux 2 points + placement
       if(mepSt.dim&&mepSt.dim.kind==='dist'&&!mepSt.dim.b){
         mepDimClick(sh,P,ev.ctrlKey||ev.metaKey,ev.shiftKey,ev.altKey);return;
@@ -38520,17 +38618,14 @@ function viewFadeIn(){
     const sh=mepSheet();
     // double-clic sur une flèche → inversion des deux flèches
     const da=mepDimArrowAt(sh,P.x,P.y);
-    if(da){
-      const out=da.arr!=='out';
-      mepEdit('sens des flèches',()=>{da.arr=out?'out':'in';});
-      mepSt.selDim=da.id;mepSt.sel=null;mepSt.entSel=[];
-      mepSideShow();mepRender();
-      mepStatus(out?'Flèches vers l\'extérieur.':'Flèches vers l\'intérieur.');
-      return;
-    }
-    // double-clic sur une cote → texte personnalisé (prioritaire sur la vue)
+    if(da){mepDimToggleArrows(da);return;}
+    // double-clic sur une cote linéaire → inversion des flèches.
+    // Alt+double-clic conserve l'édition du texte personnalisé.
     const d=mepDimAt(sh,P.x,P.y);
     if(d){
+      if((d.kind==='len'||d.kind==='dist')&&!ev.altKey){
+        mepDimToggleArrows(d);return;
+      }
       const t=prompt('Texte de cote (vide = calculé) :',d.txt||'');
       if(t!==null){mepEdit('texte cote',()=>{d.txt=t||undefined;});}
       return;
@@ -38770,9 +38865,15 @@ function viewFadeIn(){
       return{x:g.O.x+(r+7)*Math.cos(g.a1+dd/2),y:g.O.y+(r+7)*Math.sin(g.a1+dd/2)};
     }
     const g=mepDimLine(sh,d,w);
-    const toff=g&&(+d.txtOff||0)||0;
-    return g?{x:(g.a1.x+g.b1.x)/2+g.ux*toff,
-      y:(g.a1.y+g.b1.y)/2+g.uy*toff}:{x:w.a.x,y:w.a.y};
+    return g?mepDimTextAnchorPos(g,d):{x:w.a.x,y:w.a.y};
+  }
+  function mepDimToggleArrows(d){
+    const out=d.arr!=='out';
+    mepEdit('sens des flèches',()=>{d.arr=out?'out':'in';});
+    mepSt.selDim=d.id;mepSt.sel=null;mepSt.entSel=[];
+    mepSideShow();mepRender();
+    mepStatus(out?'Flèches vers l\'extérieur.':'Flèches vers l\'intérieur.');
+    return out;
   }
   function mepDimArrowAt(sh,sx,sy){
     let best=null,bd=8/(mepSt.zoom||1);
@@ -38788,26 +38889,28 @@ function viewFadeIn(){
   }
   function mepDimAt(sh,sx,sy){
     let best=null,bestScore=1e18;
-    const bd=5/mepSt.zoom,bdTxt=18/mepSt.zoom;
+    const bd=6/mepSt.zoom,bdTxt=18/mepSt.zoom;
+    const segDist=(s,x1,y1,x2,y2)=>{
+      const dx=x2-x1,dy=y2-y1,L2=dx*dx+dy*dy;
+      let t=0;
+      if(L2>1e-12)t=Math.max(0,Math.min(1,((s.x-x1)*dx+(s.y-y1)*dy)/L2));
+      return Math.hypot(s.x-(x1+dx*t),s.y-(y1+dy*t));
+    };
+    const P={x:sx,y:sy};
     sh.dims.forEach(d=>{
       const w=mepDimWorld(sh,d);if(!w)return;
-      // cotes linéaires : distance au trait réellement dessiné (pas aux ancres
-      // de la pièce, sinon un clic près de l'arête sélectionnerait la cote).
-      // Ø/R et angle : on vise l'étiquette (le segment a-b n'est pas le tracé).
+      // Tous les traits réellement dessinés (ligne, rappels, leader, arc) sont
+      // enregistrés au rendu : on peut attraper n'importe lequel pour déplacer.
       let d1=1e9;
-      const g=mepDimLine(sh,d,w);
-      if(g){
-        const L2=g.dx*g.dx+g.dy*g.dy;
-        let px=g.a1.x,py=g.a1.y;
-        if(L2>1e-12){
-          const t=Math.max(0,Math.min(1,((sx-g.a1.x)*g.dx+(sy-g.a1.y)*g.dy)/L2));
-          px=g.a1.x+g.dx*t;py=g.a1.y+g.dy*t;
-        }
-        d1=Math.hypot(sx-px,sy-py);
+      const segs=mepDimHits.get(d);
+      if(segs&&segs.length){
+        segs.forEach(s=>{d1=Math.min(d1,segDist(P,s.x1,s.y1,s.x2,s.y2));});
+      }else{
+        const g=mepDimLine(sh,d,w);
+        if(g)d1=segDist(P,g.a1.x,g.a1.y,g.b1.x,g.b1.y);
       }
       const tp=mepDimTextPos(sh,d);
       const d2=tp?Math.hypot(sx-tp.x,sy-tp.y):1e9;
-      // seuils distincts : trait fin (5 px) vs étiquette (18 px)
       if(d1<bd||d2<bdTxt){
         const score=Math.min(d1/bd,d2/bdTxt);
         if(score<bestScore){bestScore=score;best=d;}
@@ -39093,20 +39196,21 @@ function viewFadeIn(){
       if(d.__ghost&&!d.__orientLock)mepDimOrientAt(sh,d,P);
       const o=d.orient||'a';
       const w2=mepDimWorld(sh,d);if(!w2)return false;
-      if(o==='h'||o==='v'){
-        d.off=mepDimOffsetFromPts(w2.a.x,w2.a.y,w2.b.x,w2.b.y,o,P);
-      }else{
-        const dx=w2.b.x-w2.a.x,dy=w2.b.y-w2.a.y,L=Math.hypot(dx,dy);
-        if(L<1e-9)return false;
-        d.off=(P.x-w2.a.x)*(-dy/L)+(P.y-w2.a.y)*(dx/L);
+      if(!(pk&&pk.labelHit)){
+        if(o==='h'||o==='v'){
+          d.off=mepDimOffsetFromPts(w2.a.x,w2.a.y,w2.b.x,w2.b.y,o,P);
+        }else{
+          const dx=w2.b.x-w2.a.x,dy=w2.b.y-w2.a.y,L=Math.hypot(dx,dy);
+          if(L<1e-9)return false;
+          d.off=(P.x-w2.a.x)*(-dy/L)+(P.y-w2.a.y)*(dx/L);
+        }
       }
       if(pk&&pk.labelHit){
         const g=mepDimLine(sh,d,w2);
         if(g){
           const mx=(g.a1.x+g.b1.x)/2,my=(g.a1.y+g.b1.y)/2;
-          let to=(P.x-mx)*g.ux+(P.y-my)*g.uy;
-          if(Math.abs(to)<1.5)to=0;
-          d.txtOff=to;
+          const to=(P.x-mx)*g.ux+(P.y-my)*g.uy;
+          d.txtOff=mepDimTxtOffSnap(sh,d,to,g);
         }
       }
       return true;
@@ -39152,7 +39256,7 @@ function viewFadeIn(){
       sh.dims.push(d);
     });
     mepSideShow();
-    mepStatus('Cote posée — glissez son étiquette pour la déplacer.');
+    mepStatus('Cote posée — glissez n’importe quel trait rouge ou l’étiquette pour la déplacer.');
   }
   function mepDimClick(sh,P,ctrl,shift,alt){
     const tool=mepSt.dim; // état en cours : {kind,a,vid,ent}
@@ -39589,8 +39693,16 @@ function viewFadeIn(){
     const read=document.createElement('div');
     read.className='note';
     read.style.whiteSpace='pre-line';
-    read.textContent=d.kind==='hole'?mepDimText(d,val):(mepFmtNum(val,2)+(d.kind==='ang'?'°':' mm'));
+    read.textContent=mepDimText(d,val);
     root.appendChild(read);
+    const pre=document.createElement('input');
+    pre.type='text';pre.value=d.pre||'';pre.placeholder='ex. 2x';
+    pre.onchange=()=>{mepEdit('texte avant',()=>{d.pre=pre.value.trim()||undefined;});};
+    row('Texte avant',pre);
+    const post=document.createElement('input');
+    post.type='text';post.value=d.post||'';post.placeholder='ex. THRU';
+    post.onchange=()=>{mepEdit('texte après',()=>{d.post=post.value.trim()||undefined;});};
+    row('Texte après',post);
     if(d.kind!=='hole'){
     // mode tolérance
     const sel=document.createElement('select');
@@ -39648,7 +39760,7 @@ function viewFadeIn(){
       to.onchange=()=>{
         let v=+to.value;
         if(!Number.isFinite(v))v=0;
-        if(Math.abs(v)<1.5)v=0;
+        v=mepDimTxtOffSnap(sh,d,v);
         mepEdit('décalage texte',()=>{d.txtOff=v||undefined;});
       };
       row('Décalage texte (mm)',to);
@@ -39828,13 +39940,31 @@ function viewFadeIn(){
       shadeLights:view=>mepShadeLights(view),
       sil:(mesh,dir)=>mepSilhouettes(mesh,dir),
       dimDraftFromSel:()=>mepDimDraftFromSel(),
+      dimAt:(x,y)=>mepDimAt(mepSheet(),x,y),
+      viewBox:()=>mepSvgViewBox(),
+      dimPaperDown:(x,y)=>{
+        const vb=mepSvgViewBox();
+        mepOnDown({button:0,clientX:(x-vb.x)/vb.width*800,
+          clientY:(y-vb.y)/vb.height*600,altKey:false,pointerId:1,preventDefault(){}});
+      },
       dimTextParts:(d,v)=>mepDimTextParts(d,v),
+      dimSymbolParts:(d,v,s)=>mepDimSymbolParts(d,v,s||'Ø'),
+      dimLabelHalf:(d,v)=>mepDimLabelHalf(d,v),
+      dimTolLineH:()=>mepDimTolLineH(),
+      dimExtent:(d,v)=>{
+        const sh=mepSheet();if(!sh)return null;
+        const g=mepDimLine(sh,d);if(!g)return null;
+        return mepDimLineExtent(g,d,v==null?mepDimMeasure(sh,d):v);
+      },
       dimArrowAt:(x,y)=>mepDimArrowAt(mepSheet(),x,y),
+      dimToggleArrows:d=>mepDimToggleArrows(d),
       setOrient:(d,o,draft)=>mepDimSetOrient(d,o,draft),
       setEntSel:a=>{mepSt.entSel=Array.isArray(a)?a.slice():[];},
       entSel:()=>Array.isArray(mepSt.entSel)?mepSt.entSel.slice():[],
       hovEnt:()=>mepSt.hovEnt||null,
       tool:()=>mepSt.tool,
+      pick:()=>mepSt.pick?{kind:mepSt.pick.kind,id:mepSt.pick.id||null}:null,
+      clearPick:()=>{mepSt.pick=null;},
       dimDraft:()=>mepSt.dim?{kind:mepSt.dim.kind,orient:mepSt.dim.orient||'a',off:typeof mepSt.dim.off==='number'?mepSt.dim.off:null,ghost:!!mepSt.dim.__ghost,lock:!!mepSt.dim.__orientLock}:null,
       setViewGeo:(v,geo)=>{mepGeoCache.set(v.id,{
         ver:(typeof _docVersion!=='undefined')?_docVersion:0,sig:mepViewSig(v),geo});},

@@ -253,40 +253,87 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     vN.scale = 1; vN.x = 50; vN.y = 40;
     const dN = {id:'dN',kind:'dist',vid:vN.id,vid2:null,a:{x:0,y:0},b:{x:10,y:0},off:8,ref:false,tol:null};
     const tp0 = mepDimTextPos(dN);
-    out.tp0OK = !!tp0 && Math.abs(tp0.x-(vN.x+5))<1e-9 && Math.abs(tp0.y-(vN.y+8))<1e-9;
+    out.tp0OK = !!tp0 && Math.abs(tp0.x-(vN.x+5))<1e-9 && Math.abs(tp0.y-(vN.y+6))<1e-9;
     // glisser : l'offset suit la perpendiculaire du curseur
     mepDimMoveTo(dN,{x:vN.x+5,y:vN.y-3});
     out.moveOffOK = Math.abs(dN.off+3)<1e-9;
     const tp1 = mepDimTextPos(dN);
-    out.tp1OK = !!tp1 && Math.abs(tp1.y-(vN.y-3))<1e-9;
+    out.tp1OK = !!tp1 && Math.abs(tp1.y-(vN.y-5))<1e-9;
     // off=0 doit être respecté (pas de repli à 8)
     dN.off = 0;
     const tp2 = mepDimTextPos(dN);
-    out.tpZeroOK = !!tp2 && Math.abs(tp2.y-vN.y)<1e-9;
+    out.tpZeroOK = !!tp2 && Math.abs(tp2.y-(vN.y-2))<1e-9;
     // glisser l'étiquette : décalage le long de la cote, puis retour exact au centre
     shN.dims.push(dN);
-    dN.off = 8; dN.txtOff = 0;
-    mepDimMoveTo(dN,{x:vN.x+7,y:vN.y+8},{labelHit:true});
-    out.txtShiftOK = Math.abs(dN.off-8)<1e-9 && Math.abs(dN.txtOff-2)<1e-9;
-    const tpS = mepDimTextPos(dN);
-    out.txtShiftPosOK = !!tpS && Math.abs(tpS.x-(vN.x+7))<1e-9
-      && Math.abs(tpS.y-(vN.y+8))<1e-9;
-    mepDimMoveTo(dN,{x:vN.x+5.5,y:vN.y+8},{labelHit:true});
-    out.txtSnapOK = Math.abs(dN.txtOff)<1e-9;
+    // en outil cotation, une cote posée s'attrape par n'importe quel trait
+    dN.off = 8; dN.txtOff = 0; window.__mepTest.setEntSel([]); mepSetTool('dim'); window.mepRefresh();
+    const gHit = mepDimLine(dN);
+    const extPt = {x:(gHit.sa.x+gHit.ea.x)/2,y:(gHit.sa.y+gHit.ea.y)/2};
+    out.dimAnyLineHitOK = window.__mepTest.dimAt(extPt.x,extPt.y)===dN;
+    window.__mepTest.dimPaperDown(extPt.x,extPt.y);
+    const pkHit = window.__mepTest.pick();
+    out.dimToolDragOK = !!(pkHit&&pkHit.kind==='dimDrag'&&pkHit.id==='dN');
+    window.__mepTest.clearPick(); dN.off = 0;
+    const dT = {id:'dT',kind:'dist',vid:vN.id,vid2:null,a:{x:0,y:0},b:{x:40,y:0},
+      off:8,ref:false,tol:null};
+    dT.txtOff = 0;
+    mepDimMoveTo(dT,{x:vN.x+37,y:vN.y+8},{labelHit:true});
+    out.txtShiftOK = Math.abs(dT.off-8)<1e-9 && Math.abs(dT.txtOff-17)<1e-9;
+    const tpS = mepDimTextPos(dT);
+    out.txtShiftPosOK = !!tpS && Math.abs(tpS.x-(vN.x+37))<1e-9
+      && Math.abs(tpS.y-(vN.y+6))<1e-9;
+    mepDimMoveTo(dT,{x:vN.x+25,y:vN.y+8},{labelHit:true});
+    out.txtSnapOK = Math.abs(dT.txtOff)<1e-9;
+    const extT = window.__mepTest.dimExtent(dT);
+    out.txtExtentOK = !!extT && Math.abs(extT.start+20)<1e-9
+      && Math.abs(extT.end-20)<1e-9;
+    dT.txtOff = 17;
+    const extO = window.__mepTest.dimExtent(dT);
+    out.txtExtendOK = !!extO && extO.end>extO.half+1
+      && extO.end>=17+window.__mepTest.dimLabelHalf(dT,mepDimValue(dT))-1e-9;
+    // texte vertical : toujours à gauche du trait de cote
+    const dV = {id:'dV',kind:'dist',vid:vN.id,vid2:null,a:{x:0,y:0},b:{x:0,y:30},
+      off:8,ref:false,tol:null,orient:'v'};
+    const gV = mepDimLine(dV),tpV = mepDimTextPos(dV);
+    out.vertLeftOK = !!gV && !!tpV && Math.abs(gV.a1.x-gV.b1.x)<1e-9
+      && tpV.x<gV.a1.x-1 && Math.abs(tpV.y-(vN.y+15))<1e-9;
+    const offV=dV.off;
+    mepDimMoveTo(dV,{x:gV.a1.x-8.5,y:vN.y+20},{labelHit:true});
+    const tpV2=mepDimTextPos(dV);
+    out.vertDragOK = Math.abs(dV.off-offV)<1e-9 && Math.abs(dV.txtOff)<1e-9
+      && !!tpV2 && tpV2.x<gV.a1.x-1;
     dN.txtOff = 4;
     const gA = mepDimLine(dN);
     out.arrowHitOK = !!gA && window.__mepTest.dimArrowAt(gA.a1.x,gA.a1.y)===dN;
     dN.arr = 'out';
     out.arrowOutOK = mepDimLine(dN) && dN.arr==='out';
+    dN.arr = 'in';
+    out.dblCoteOK = window.__mepTest.dimToggleArrows(dN)===true && dN.arr==='out';
+    const subGap=Math.max(2.8,(window.__mepTest.dimStyle().textHeight||7)*0.68);
+    out.tolGap45OK = Math.abs(window.__mepTest.dimTolLineH()-(subGap*0.72+0.45))<1e-9;
     dN.txtOff = 0; dN.arr = 'in';
     const ptDbl = window.__mepTest.dimTextParts({kind:'len',tol:{m:'dbl',hi:0.1,lo:-0.05}},20);
     out.tolStackOK = ptDbl.main==='20' && ptDbl.up==='+0.1' && ptDbl.lo==='−0.05';
     const ptPm = window.__mepTest.dimTextParts({kind:'dia',tol:{m:'pm',s:0.1}},20);
-    out.tolPmOK = ptPm.main==='20' && ptPm.up==='+0.1' && ptPm.lo==='−0.1';
+    out.tolPmOK = ptPm.main==='20' && ptPm.sym==='±0.1' && !ptPm.up && !ptPm.lo;
+    const ptPmAff = window.__mepTest.dimTextParts({kind:'len',pre:'2x',post:'THRU',
+      tol:{m:'pm',s:0.1}},20);
+    out.tolPmAffOK = ptPmAff.main==='2x 20' && ptPmAff.sym==='±0.1 THRU';
+    const ptDiaPre = window.__mepTest.dimSymbolParts({kind:'dia',pre:'2x',post:'THRU',
+      tol:{m:'pm',s:0.1}},20,'Ø');
+    out.diaPreOK = ptDiaPre.main==='2x Ø20' && ptDiaPre.sym==='±0.1 THRU';
+    const ptRadPre = window.__mepTest.dimSymbolParts({kind:'rad',pre:'4x',
+      tol:{m:'dbl',hi:0.1,lo:-0.05}},20,'R');
+    out.radPreOK = ptRadPre.main==='4x R20' && ptRadPre.up==='+0.1' && ptRadPre.lo==='−0.05';
     const ptCls = window.__mepTest.dimTextParts({kind:'dia',tol:{m:'cls',cls:'H7'}},20);
-    out.tolClsOK = ptCls.main==='20 H7' && ptCls.up==='+0.021' && ptCls.lo==='+0';
+    out.tolClsOK = ptCls.main==='20 H7' && !ptCls.up && !ptCls.lo;
     const ptTxt = window.__mepTest.dimTextParts({kind:'len',txt:'X',tol:{m:'pm',s:0.1}},20);
     out.tolTxtOK = ptTxt.main==='X' && !ptTxt.up && !ptTxt.lo;
+    const ptAff = window.__mepTest.dimTextParts({kind:'len',pre:'2x',post:'THRU'},20);
+    out.affixOK = ptAff.main==='2x 20 THRU' && !ptAff.up && !ptAff.lo;
+    const ptAffDbl = window.__mepTest.dimTextParts({kind:'len',pre:'2x',post:'THRU',
+      tol:{m:'dbl',hi:0.1,lo:-0.05}},20);
+    out.affixTolOK = ptAffDbl.main==='2x 20 THRU' && ptAffDbl.up==='+0.1' && ptAffDbl.lo==='−0.05';
     // Ø : le texte se place exactement au point choisi
     const dD = {id:'dD',kind:'dia',vid:vN.id,vid2:null,a:{x:0,y:0,hint:{t:'ctr',i:0}},b:{x:0,y:1},off:0,ref:false,tol:null};
     mepDimMoveTo(dD,{x:vN.x+20,y:vN.y+10});
@@ -613,11 +660,21 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.tpZeroOK,'cote linéaire : offset 0 respecté (pas de repli à 8)');
   A(val&&val.txtShiftOK&&val.txtShiftPosOK,'glisser étiquette : décalage gauche/droite');
   A(val&&val.txtSnapOK,'glisser étiquette : retour exact au centre');
+  A(val&&val.txtExtentOK&&val.txtExtendOK,'ligne de cote : prolongée sous l’étiquette décalée');
+  A(val&&val.vertLeftOK,'texte vertical : toujours à gauche de la ligne de cote');
+  A(val&&val.vertDragOK,'texte vertical : glisser l’étiquette ne déplace pas la cote');
+  A(val&&val.dimAnyLineHitOK&&val.dimToolDragOK,'cotation : n’importe quel trait rouge attrape la cote');
   A(val&&val.arrowHitOK&&val.arrowOutOK,'double-clic flèche : détection et inversion');
+  A(val&&val.dblCoteOK,'double-clic sur la cote : inversion des flèches');
   A(val&&val.tolStackOK,'tolérances : écarts supérieur/inférieur empilés');
-  A(val&&val.tolPmOK,'tolérances : ± devient +s / −s empilé');
-  A(val&&val.tolClsOK,'tolérances : classe H7 convertie en écarts empilés');
+  A(val&&val.tolPmOK,'tolérances : ± reste sur la ligne de cote');
+  A(val&&val.tolPmAffOK,'tolérances : ± avec texte avant/après');
+  A(val&&val.diaPreOK&&val.radPreOK,'texte avant placé avant Ø/R');
+  A(val&&val.tolGap45OK,'tolérances : interligne resserré à 0,45');
+  A(val&&val.tolClsOK,'tolérances : classe H7 reste sur la ligne de cote');
   A(val&&val.tolTxtOK,'tolérances : texte personnalisé prioritaire');
+  A(val&&val.affixOK,'texte avant/après ajouté à la cote');
+  A(val&&val.affixTolOK,'texte avant/après conservé avec tolérance empilée');
   A(val&&val.diaPlaceOK,'cote Ø : texte placé au point choisi');
   A(val&&val.diaTextOK,'cote Ø : hit-test sur la position réelle du texte');
   A(val&&val.kindArc==='rad','arc : cote R par défaut');
