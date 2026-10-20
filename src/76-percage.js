@@ -34,7 +34,7 @@ function isoHoleThread(size,p,jeu){
   const c=Math.max(0,+jeu||0)/2,D1=D-1.082532*P;
   return {D:D,P:P,D1:D1,rCrete:D1/2+c,rRacine:D/2+c,c:c};
 }
-function holeThreadLabel(th){ if(!th||!th.size)return ''; const t=isoThread(th.size); return th.size+((t&&+th.p!==t[2])?('×'+String(th.p).replace('.',',')):''); }
+function holeThreadLabel(th){ if(!th||!th.size)return ''; const t=isoThread(th.size); return th.size+((t&&+th.p!==t[2])?('×'+String(th.p)):''); }
 function holePoints(sk){
   // Centres de perçage de l'esquisse (2D) : [{id,x,y}]
   if(!sk)return [];

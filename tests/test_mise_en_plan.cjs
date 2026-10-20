@@ -234,6 +234,18 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     const vU2 = doc.mep.sheets[doc.mep.cur].views.find(v=>v.id===(vU&&vU.id));
     out.dragUndo = !!vU2 && Math.abs(vU2.x-ux)<1e-9 && Math.abs(vU2.y-uy)<1e-9;
 
+    // 20b) une modification purement PLAN (glissement de vue) ne doit pas jeter
+    // le cache de géométrie : sinon chaque geste relance le HLR (latence 50-100 ms).
+    const vCache = mepAddViewStd('front');
+    const fakeGeo = {src:'cache', els:[]};
+    if(vCache){
+      window.__mepTest.setViewGeo(vCache, fakeGeo);
+      const geoBefore = window.__mepTest.geo(vCache);
+      window.mepViewDragCommit();
+      const geoAfter = window.__mepTest.geo(vCache);
+      out.planEditKeepsGeoCache = geoBefore===fakeGeo && geoAfter===fakeGeo;
+    }
+
     // 21) placement / déplacement des cotes (aperçu et glisser de l'étiquette)
     const shN = doc.mep.sheets[doc.mep.cur];
     shN.views.length = 0; shN.dims.length = 0;
@@ -251,6 +263,30 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     dN.off = 0;
     const tp2 = mepDimTextPos(dN);
     out.tpZeroOK = !!tp2 && Math.abs(tp2.y-vN.y)<1e-9;
+    // glisser l'étiquette : décalage le long de la cote, puis retour exact au centre
+    shN.dims.push(dN);
+    dN.off = 8; dN.txtOff = 0;
+    mepDimMoveTo(dN,{x:vN.x+7,y:vN.y+8},{labelHit:true});
+    out.txtShiftOK = Math.abs(dN.off-8)<1e-9 && Math.abs(dN.txtOff-2)<1e-9;
+    const tpS = mepDimTextPos(dN);
+    out.txtShiftPosOK = !!tpS && Math.abs(tpS.x-(vN.x+7))<1e-9
+      && Math.abs(tpS.y-(vN.y+8))<1e-9;
+    mepDimMoveTo(dN,{x:vN.x+5.5,y:vN.y+8},{labelHit:true});
+    out.txtSnapOK = Math.abs(dN.txtOff)<1e-9;
+    dN.txtOff = 4;
+    const gA = mepDimLine(dN);
+    out.arrowHitOK = !!gA && window.__mepTest.dimArrowAt(gA.a1.x,gA.a1.y)===dN;
+    dN.arr = 'out';
+    out.arrowOutOK = mepDimLine(dN) && dN.arr==='out';
+    dN.txtOff = 0; dN.arr = 'in';
+    const ptDbl = window.__mepTest.dimTextParts({kind:'len',tol:{m:'dbl',hi:0.1,lo:-0.05}},20);
+    out.tolStackOK = ptDbl.main==='20' && ptDbl.up==='+0.1' && ptDbl.lo==='−0.05';
+    const ptPm = window.__mepTest.dimTextParts({kind:'dia',tol:{m:'pm',s:0.1}},20);
+    out.tolPmOK = ptPm.main==='20' && ptPm.up==='+0.1' && ptPm.lo==='−0.1';
+    const ptCls = window.__mepTest.dimTextParts({kind:'dia',tol:{m:'cls',cls:'H7'}},20);
+    out.tolClsOK = ptCls.main==='20 H7' && ptCls.up==='+0.021' && ptCls.lo==='+0';
+    const ptTxt = window.__mepTest.dimTextParts({kind:'len',txt:'X',tol:{m:'pm',s:0.1}},20);
+    out.tolTxtOK = ptTxt.main==='X' && !ptTxt.up && !ptTxt.lo;
     // Ø : le texte se place exactement au point choisi
     const dD = {id:'dD',kind:'dia',vid:vN.id,vid2:null,a:{x:0,y:0,hint:{t:'ctr',i:0}},b:{x:0,y:1},off:0,ref:false,tol:null};
     mepDimMoveTo(dD,{x:vN.x+20,y:vN.y+10});
@@ -351,9 +387,23 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
       {vid:v2.id,i:1,t:'L',sig:T.entSig(eB),lx:9.7,ly:4.8}
     ]);
     const d3=T.dimDraftFromSel();
-    out.twoEntEndSnapOK=!!d3&&d3.kind==='dist'
+        out.twoEntEndSnapOK=!!d3&&d3.kind==='dist'
       &&Math.abs(d3.a.x-10)<1e-9&&Math.abs(d3.a.y)<1e-9
       &&Math.abs(d3.b.x-10)<1e-9&&Math.abs(d3.b.y-5)<1e-9;
+    // 23b) entre deux droites parallèles : le rappel part du coin situé côté cote,
+    // pas du point cliqué au milieu de l'arête (sinon le vide de 1,5 mm est caché).
+    v2.x=50;v2.y=40;
+    mepDimMoveTo(d2,{x:v2.x+25,y:v2.y+2.5});
+    const gParV=mepDimLine(d2);
+    out.parExtGapRight = !!gParV&&Math.abs(gParV.sa.x-61.5)<1e-9
+      &&Math.abs(gParV.sb.x-61.5)<1e-9
+      &&Math.abs(gParV.sa.y-40)<1e-9&&Math.abs(gParV.sb.y-45)<1e-9;
+    mepDimMoveTo(d2,{x:v2.x-25,y:v2.y+2.5});
+    const gParL=mepDimLine(d2);
+    out.parExtGapLeft = !!gParL&&Math.abs(gParL.sa.x-48.5)<1e-9
+      &&Math.abs(gParL.sb.x-48.5)<1e-9;
+
+
     const selProbe=[{vid:v2.id,i:0,t:'L',sig:T.entSig(eA),lx:7,ly:0}];
     T.setEntSel(selProbe);
     mepSetTool('select');
@@ -363,21 +413,121 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     out.clearDimEdges = T.entSel().length===0 && T.hovEnt()===null;
 
     const hBase={type:'hole',kind:'simple',d:6.6,end:'blind',depth:15,tip:118};
-    out.holeSimpleOK=T.holeText(hBase)==='Ø6,6 ↧15';
+    out.holeSimpleOK=T.holeText(hBase)==='Ø6.6 ↧15';
     out.holeCboreOK=T.holeText(Object.assign({},hBase,{kind:'cbore',cbD:11,cbH:6.4}))
-      ==='Ø6,6 ↧15\\nLamage Ø11 ↧6,4';
+      ==='Ø6.6 ↧15\\nLamage Ø11 ↧6.4';
     out.holeCsinkOK=T.holeText(Object.assign({},hBase,{kind:'csink',csD:13,csA:90}))
-      ==='Ø6,6 ↧15\\nFraisure Ø13 x 90°';
-    out.holeThroughOK=T.holeText(Object.assign({},hBase,{end:'through'}))==='Ø6,6 déb.';
+      ==='Ø6.6 ↧15\\nFraisure Ø13 x 90°';
+    out.holeThroughOK=T.holeText(Object.assign({},hBase,{end:'through'}))==='Ø6.6 déb.';
     out.holeThreadOK=T.holeText(Object.assign({},hBase,{d:8.5,depth:25,
       thread:{size:'M10',p:1.25,len:18,lenMode:'len'},_thLen:18}))
-      ==='M10×1,25 ↧18\\nØ8,5 ↧25';
+      ==='M10×1.25 ↧18\\nØ8.5 ↧25';
     const hgA=T.holeCallout(0,0,10,25,-20,'Ø8 déb.\\nLamage Ø11,2 ↧2');
     const hgB=T.holeCallout(0,0,10,-25,-20,'Ø8 déb.\\nLamage Ø11,2 ↧2');
     out.holeLeaderUnderOK=!!hgA&&hgA.anchor==='start'&&hgA.u0===hgA.tx
       &&Math.abs(hgA.lineY-(hgA.y0+(hgA.lines.length-1)*hgA.lh+2.2))<1e-9;
     out.holeLeaderUnderEndOK=!!hgB&&hgB.anchor==='end'&&hgB.u1===hgB.tx
       &&Math.abs(hgB.lineY-(hgB.y0+(hgB.lines.length-1)*hgB.lh+2.2))<1e-9;
+
+    // 24) réglages « Paramètres — Plan » : hauteur/couleur des cotes, flèches.
+    window.__mepTest.setViewSel(null);
+    const ctl=window.__mepTest.dimSideControls();
+    out.dimSettingsUI = ctl.num.length>=3 && ctl.color.length>=1;
+    out.dimSettingsDefaults = ctl.num.some(v=>v===7)
+      && ctl.color.some(v=>String(v).toLowerCase()==='#0a84ff');
+    window.__mepTest.setDimStyle({textHeight:9,color:'#ff0000',arrowAngle:45,arrowLen:5});
+    const ag=window.mepArrowGeom();
+    out.dimStyleApplied = ag.total===45 && Math.abs(ag.len-5)<1e-9
+      && window.__mepTest.cssVar('--mepDimH')==='9px'
+      && window.__mepTest.cssVar('--mepDimCol')==='#ff0000';
+    window.__mepTest.resetDimStyle();
+    const ds=window.__mepTest.dimStyle();
+    out.dimStyleReset = ds.textHeight===7 && ds.color==='#0a84ff'
+      && ds.arrowAngle===36 && ds.arrowLen===7 && window.mepArrowGeom().total===36;
+    // séparateur décimal : point (et non virgule) dans les valeurs du plan
+    out.fmtDot = window.__mepTest.fmt(21.1)==='21.1'
+      && window.__mepTest.fmt(1.5)==='1.5'
+      && window.__mepTest.fmt(0.125)==='0.125';
+
+    // 25) ombrage SVG par vue : option visible, cache invalidé, face avant/arrière.
+    window.__mepTest.setViewSel(v2.id);
+    const vctl=window.__mepTest.dimSideControls();
+    out.shadeUI=vctl.check.indexOf('mepChkShade')>=0;
+    out.render3dUI=vctl.check.indexOf('mepChkRender3d')>=0;
+    window.__mepTest.setViewSel(null);
+    const sv={id:'__shade_test__',dir:[0,0,1],u:[1,0,0],v:[0,-1,0],
+      bodyId:'__shade_none__',mode:'wire',shade:false};
+    const fakeShade={src:'fake-shade',els:[]};
+    window.__mepTest.setViewGeo(sv,fakeShade);
+    out.shadeGeoCache=window.__mepTest.geo(sv)===fakeShade;
+    sv.shade=true;
+    const rebuilt=window.__mepTest.geo(sv);
+    out.shadeSig=!!rebuilt&&rebuilt!==fakeShade&&rebuilt.src!=='fake-shade';
+    const rv={id:'__render3d_test__',dir:[0,0,1],u:[1,0,0],v:[0,-1,0],
+      bodyId:'__render3d_none__',mode:'wire',render3d:false};
+    const fakeR3d={src:'fake-render3d',els:[]};
+    window.__mepTest.setViewGeo(rv,fakeR3d);
+    out.render3dGeoCache=window.__mepTest.geo(rv)===fakeR3d;
+    rv.render3d=true;
+    const rr=window.__mepTest.geo(rv);
+    out.render3dSig=!!rr&&rr!==fakeR3d&&rr.src!=='fake-render3d';
+    const ir1=window.__mepTest.imgRect({x:10,y:20,scale:1},{lx:-0.5,ly:-15.5,lw:21,lh:21});
+    const ir2=window.__mepTest.imgRect({x:40,y:5,scale:2},{lx:-0.5,ly:-15.5,lw:21,lh:21});
+    out.render3dFollow=ir1.x===9.5&&ir1.y===4.5&&ir1.w===21&&ir1.h===21
+      &&ir2.x===39&&ir2.y===-26&&ir2.w===42&&ir2.h===42;
+    // 26) axes de perçage : réglages par vue, détection et géométrie manuelle.
+    out.axisUI=vctl.check.indexOf('mepChkAutoAxes')>=0
+      &&vctl.check.indexOf('mepChkAutoPitch')>=0;
+    out.axisDefaults=Array.isArray(v2.axes)&&v2.autoAxes===false&&v2.autoPitch===false;
+    T.setAxisMode('pitch');
+    out.axisModeOK=T.axisMode()==='pitch'&&T.tool()==='axis';
+    T.setAxisMode('hole');
+    const ptsC=[
+      {x:10,y:0,r:1,fid:'h1',pid:'p1'},{x:0,y:10,r:1,fid:'h2',pid:'p2'},
+      {x:-10,y:0,r:1,fid:'h3',pid:'p3'},{x:0,y:-10,r:1,fid:'h4',pid:'p4'}
+    ];
+    const fitC=T.axisFitCircle(ptsC);
+    const grpC=T.axisPitchGroups(ptsC,{scale:1});
+    out.axisFitOK=!!fitC&&Math.abs(fitC.r-10)<1e-9;
+    out.axisPitchOK=grpC.length===1&&grpC[0].pts.length===4;
+    const ptsL=[{x:0,y:0,r:1,fid:'l1',pid:'p1'},{x:10,y:0,r:1,fid:'l2',pid:'p2'},
+      {x:20,y:0,r:1,fid:'l3',pid:'p3'}];
+    out.axisLineOK=T.axisLineGroups(ptsL,{scale:1}).length===1
+      &&T.axisLineGroups([{x:0,y:0,r:1},{x:10,y:0,r:1},{x:5,y:3,r:1}],{scale:1}).length===0;
+    const av={id:'__axis_view__',x:10,y:20,scale:2,u:[1,0,0],v:[0,0,-1],dir:[0,-1,0],axes:[]};
+    const axFree={id:'axFree',kind:'free',a:{x:0,y:0},b:{x:5,y:0}};
+    const fp=T.axisManual(av,axFree);
+    out.axisFreeOK=!!fp&&fp.length===1&&fp[0].t==='L'&&fp[0].x1===0&&fp[0].x2===5;
+    av.axes=[axFree];
+    sh2.views.push(av);
+    const hitAx=T.axisAt(15,20);
+    sh2.views.pop();
+    out.axisHitOK=!!hitAx&&hitAx.id==='axFree';
+    v2.axes=[axFree];v2.autoAxes=true;v2.autoPitch=true;
+    out.axisSerialise=serialise(false).indexOf('axFree')>=0
+      &&serialise(false).indexOf('"autoAxes":true')>=0;
+    v2.axes=[];v2.autoAxes=false;v2.autoPitch=false;
+    mepSetTool('select');
+    const sf=window.__mepTest.shadeTri(sv,[0,0,0],[10,0,0],[0,10,0],0x336699,1);
+    out.shadeTri=!!sf&&sf.p[0][0]===0&&sf.p[1][0]===10&&sf.p[2][1]===-10
+      &&sf.o===1&&/^#[0-9a-f]{6}$/.test(sf.c);
+    out.shadeBack=window.__mepTest.shadeTri(sv,[0,0,0],[0,10,0],[10,0,0],0x336699,1)===null;
+    const st=window.__mepTest.shadeTri(sv,[0,0,0],[10,0,0],[0,10,0],0x336699,0.4);
+    out.shadeOpacity=!!st&&st.o===0.4;
+    // intégration : une maille triangulaire réelle devient une face projetée
+    try{
+      const pos={count:3,getX:i=>[0,10,0][i],getY:i=>[0,0,10][i],getZ:()=>0};
+      const fb={id:'__shade_body__',bodyId:'__shade_body__',color:0x336699,
+        mesh:{geometry:{attributes:{position:pos},index:null},
+          matrixWorld:{elements:[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]},
+          material:{transparent:false,opacity:1},visible:true,updateMatrixWorld(){}}};
+      const nb=bodies.length;bodies.push(fb);
+      const ff=window.__mepTest.shadeFaces({id:'__shade_face__',dir:[0,0,1],
+        u:[1,0,0],v:[0,-1,0],bodyId:'__shade_body__',scale:1,shade:true});
+      bodies.length=nb;
+      out.shadeFaces=ff.length===1&&ff[0].p[1][0]===10&&ff[0].p[2][1]===-10
+        &&ff[0].o===1;
+    }catch(e){out.shadeFaces=false;}
 
     return out;
   `;
@@ -456,10 +606,18 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     Math.abs(val.fit.fit.shaft.hi+0.007)<1e-12&&Math.abs(val.fit.fit.shaft.lo+0.020)<1e-12,
     'ISO 286 : ajustement H7/g6 Ø20 (alésage + arbre)');
   A(val&&val.dragUndo,'undo glissement : position d\'avant restaurée');
+  A(val&&val.planEditKeepsGeoCache,'glissement de vue : cache géométrie conservé (pas de rejeu HLR)');
   A(val&&val.tp0OK,'cote linéaire : étiquette à l\'offset demandé');
   A(val&&val.moveOffOK,'glisser cote : offset perpendiculaire mis à jour');
   A(val&&val.tp1OK,'glisser cote : étiquette suit le curseur');
   A(val&&val.tpZeroOK,'cote linéaire : offset 0 respecté (pas de repli à 8)');
+  A(val&&val.txtShiftOK&&val.txtShiftPosOK,'glisser étiquette : décalage gauche/droite');
+  A(val&&val.txtSnapOK,'glisser étiquette : retour exact au centre');
+  A(val&&val.arrowHitOK&&val.arrowOutOK,'double-clic flèche : détection et inversion');
+  A(val&&val.tolStackOK,'tolérances : écarts supérieur/inférieur empilés');
+  A(val&&val.tolPmOK,'tolérances : ± devient +s / −s empilé');
+  A(val&&val.tolClsOK,'tolérances : classe H7 convertie en écarts empilés');
+  A(val&&val.tolTxtOK,'tolérances : texte personnalisé prioritaire');
   A(val&&val.diaPlaceOK,'cote Ø : texte placé au point choisi');
   A(val&&val.diaTextOK,'cote Ø : hit-test sur la position réelle du texte');
   A(val&&val.kindArc==='rad','arc : cote R par défaut');
@@ -482,6 +640,8 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.ellipseRejected,'ellipse non assimilée à un cercle');
   A(val&&val.twoEntAnchorOK,'cote 2 entités : ancrage aux points cliqués/extrémités');
   A(val&&val.twoEntEndSnapOK,'cote 2 entités : accrochage exact aux extrémités proches');
+  A(val&&val.parExtGapRight&&val.parExtGapLeft,
+    'cote entre droites parallèles : rappels depuis le coin côté cote (vide visible)');
   A(val&&val.holeSimpleOK,'cotation perçage : trou simple (Ø et profondeur)');
   A(val&&val.holeCboreOK,'cotation perçage : lamage (Ø et profondeur)');
   A(val&&val.holeCsinkOK,'cotation perçage : fraisure (Ø et angle)');
@@ -489,6 +649,27 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.holeThreadOK,'cotation perçage : taraudage (longueur filetée + profondeur trou)');
   A(val&&val.holeLeaderUnderOK&&val.holeLeaderUnderEndOK,
     'cotation perçage : leader et soulignement coïncidents aux 2 orientations');
+  A(val&&val.dimSettingsUI,'Paramètres — Plan : réglages de cotation présents');
+  A(val&&val.dimSettingsDefaults,'Paramètres — Plan : hauteur 7 mm et couleur #0a84ff par défaut');
+  A(val&&val.dimStyleApplied,'Paramètres — Plan : hauteur/couleur/flèches appliquées aux cotes');
+  A(val&&val.dimStyleReset,'Paramètres — Plan : réinitialisation du style de cotation');
+  A(val&&val.fmtDot,'valeurs du plan : séparateur décimal = point');
+  A(val&&val.shadeUI,'vue : option Ombrage (faces) présente');
+  A(val&&val.render3dUI,'vue : option Rendu 3D (image) présente');
+  A(val&&val.render3dGeoCache&&val.render3dSig,'rendu 3D : le cache géométrie tient compte du mode');
+  A(val&&val.render3dFollow,'rendu 3D : l\'image suit le déplacement et le zoom de la vue');
+  A(val&&val.axisUI,'axes : les 2 cases automatiques sont présentes');
+  A(val&&val.axisDefaults,'axes : cases et liste manuelle initialisées par vue');
+  A(val&&val.axisModeOK,'axes : modes Trou/Alignement/Cercle/Libre sélectionnables');
+  A(val&&val.axisFitOK&&val.axisPitchOK,'axes : cercle primitif détecté (4 trous équidistants)');
+  A(val&&val.axisLineOK,'axes : alignement détecté, triangle rejeté');
+  A(val&&val.axisFreeOK,'axes : tracé libre en coordonnées locales');
+  A(val&&val.axisHitOK,'axes : sélection au clic d’un axe manuel');
+  A(val&&val.axisSerialise,'axes : réglages et annotations sérialisés');
+  A(val&&val.shadeGeoCache&&val.shadeSig,'ombrage : le cache géométrie tient compte du mode');
+  A(val&&val.shadeTri&&val.shadeBack,'ombrage : faces avant dessinées, faces arrière ignorées');
+  A(val&&val.shadeOpacity,'ombrage : transparence du corps reprise sur les faces');
+  A(val&&val.shadeFaces,'ombrage : les maillages produisent des faces projetées');
 
   if(ko){console.log('FAIL '+ko+' assertion(s)');process.exit(1);}
   console.log('OK espace PLAN');

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**278 versions**, de `2026-09-28b` à `V0.3.8` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**279 versions**, de `2026-09-28b` à `V0.3.9` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4132,3 +4132,11 @@ Nouveaux tests : test_vue_centre (pivot / décalage de vue : 8 scénarios + cont
 - **Lisibilité** : rendu PLAN en `geometricPrecision`, arêtes vives/tangentes plus contrastées, DPR 3D HiDPI (1,25 à 2) et couleurs d'arêtes 3D adoucies.
 - **Espaces** : les visuels FAO (brut, cubes, repères, points cardinaux) ne s'affichent que dans l'espace FAO en interface moderne ; les sélections CAO/FAO sont restaurées au retour et la sélection posage/opération reconstruit correctement les repères.
 - Tests : `npm run ci`, `test_mise_en_plan`, CDP PLAN UI **19/19**, CDP espaces **15/15**, HLR exact validé sur les 3 vues (environ 80 ms contre 49 ms en logiciel sur l'exemple), coupe + hachures et mode pointillé contrôlés.
+
+## V0.3.9 - PLAN : traits d'axe, flèches inversables, étiquette décalable et tolérances empilées
+
+- **Traits d'axe** : détection automatique des trous, axes d'alignement, cercles de perçage et tracé libre. Rendu ISO 128-2 / ISO 15786 en trait mixte rouge, croix de trou en trait fort, dépassements et priorité aux axes manuels ; les vues projetées, coupes et détails héritent des réglages automatiques. Les axes sont sélectionnables, supprimables et sérialisés avec la planche.
+- **Flèches de cote** : un double-clic sur une flèche inverse les deux flèches (intérieures/extérieures). Le réglage est également disponible dans le panneau de la cote et conservé dans le document.
+- **Étiquette de cote** : le glisser de l'étiquette permet maintenant un décalage gauche/droite le long de la ligne de cote, avec aimantation exacte au centre ; le panneau propose aussi un champ de décalage et le bouton **Centrer**.
+- **Tolérances** : les écarts supérieur et inférieur sont empilés à droite de la valeur nominale (double, ± symétrique et classes ISO 286), au lieu d'être affichés sur une seule ligne. Les textes personnalisés restent prioritaires.
+- Tests : `test_mise_en_plan` complété (axes, inversion des flèches, décalage/centrage de l'étiquette, tolérances empilées), `build.js --check`, syntaxe, lint et `run-fast` **19/19** ; rendu axes et tolérances contrôlé sous Chrome headless.
