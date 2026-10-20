@@ -1561,8 +1561,8 @@ function buildEdgeOverlay(){
   const pos=[],col=[];
   for(const d of data){
     const pts=d&&d.pts;if(!pts||pts.length<2)continue;
-    // vive → noire 0x000000 ; tangente → grise 0x8e9399 (couleurs d'origine)
-    const c=d.sharp?[0,0,0]:[0x8e/255,0x93/255,0x99/255];
+    // vive → noire ; tangente → grise douce (plus lisible sur fond sombre)
+    const c=d.sharp?[0.02,0.02,0.025]:[0x9a/255,0x9f/255,0xa6/255];
     const M=(d.mw&&d.mw.elements)||null;
     const put=p=>{
       let x=+p[0],y=+p[1],z=+p[2];

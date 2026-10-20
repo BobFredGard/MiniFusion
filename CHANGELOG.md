@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**277 versions**, de `2026-09-28b` à `V0.3.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**278 versions**, de `2026-09-28b` à `V0.3.8` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4124,3 +4124,11 @@ Nouveaux tests : test_vue_centre (pivot / décalage de vue : 8 scénarios + cont
 - **Menus** : les menus ouverts (`.dd`, `.mfPop`, menus contextuels, `#setMenu`) sont fermés à chaque changement d'espace CAO/FAO/PLAN, de fonction, d'opération FAO ou d'outil PLAN. Le panneau de propriétés génériques est masqué quand un panneau contextuel PLAN ou une esquisse est affiché : un seul menu de catégorie reste visible, plus d'empilement sous la fonction active.
 - **Sélection PLAN** : changer d'outil efface la vue/cote sélectionnée et rafraîchit le panneau latéral ; la sortie de PLAN efface aussi la sélection.
 - Tests : `test_mise_en_plan`, `build --check`, syntaxe, `run-fast` et lint.
+
+## V0.3.8 - PLAN : HLR exact OCCT, cotation orientée et sélections par espace
+
+- **HLR exact OCCT** : `mepHlrExact` utilise `HLRAppli_ReflectLines` et récupère les arêtes exactes `Sharp`, `OutLine` et `Rg1Line`, visibles et cachées. Les contours de révolution, les congés et les occultations ne dépendent plus du maillage ni du tampon de profondeur logiciel. Le mode `dash` conserve les cachées en pointillé, la coupe réutilise la matière coupée et les hachures, et l'ancien HLR reste disponible via la case **HLR exact OCCT** de la vue.
+- **Cotation PLAN** : orientation **Alignée (A) / Horizontale (X) / Verticale (Y)** au clic droit, verrouillage du choix pendant la pose et conservation de l'orientation au déplacement. La sélection d'arêtes et le survol sont effacés après création/pose ; un clic sans déplacement sur une vue ne pré-sélectionne plus d'arête.
+- **Lisibilité** : rendu PLAN en `geometricPrecision`, arêtes vives/tangentes plus contrastées, DPR 3D HiDPI (1,25 à 2) et couleurs d'arêtes 3D adoucies.
+- **Espaces** : les visuels FAO (brut, cubes, repères, points cardinaux) ne s'affichent que dans l'espace FAO en interface moderne ; les sélections CAO/FAO sont restaurées au retour et la sélection posage/opération reconstruit correctement les repères.
+- Tests : `npm run ci`, `test_mise_en_plan`, CDP PLAN UI **19/19**, CDP espaces **15/15**, HLR exact validé sur les 3 vues (environ 80 ms contre 49 ms en logiciel sur l'exemple), coupe + hachures et mode pointillé contrôlés.

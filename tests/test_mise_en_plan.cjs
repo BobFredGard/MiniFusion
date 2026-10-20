@@ -119,11 +119,31 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     }
     out.tolSerialise = serialise(false).indexOf('H7')>=0;
 
+    // 11b) fermeture/réouverture PLAN : la sélection de vue est conservée
+    const shSel = doc.mep.sheets[doc.mep.cur];
+    const vidSel = shSel.views[0].id;
+    out.planSelId = vidSel;
+    __mepTest.setViewSel(vidSel);
+    mepSetActive(false);
+    out.planSelClosed = __mepTest.viewSel();
+    mepSetActive(true);
+    out.planSelReopen = __mepTest.viewSel();
+
     // 12) mfWs('plan')
     out.hasMfWs = typeof mfWs==='function';
     if(typeof mfWs==='function'){
-      try{ mfWs('plan'); out.wsPlan = document.body.getAttribute('data-ws'); }catch(e){ out.wsPlan='ERR:'+e.message; }
+      try{ mfWs('plan'); out.wsPlan = document.body.getAttribute('data-ws'); out.planSelWs = __mepTest.viewSel(); }catch(e){ out.wsPlan='ERR:'+e.message; }
       try{ mfWs('cao'); out.wsCao = document.body.getAttribute('data-ws'); }catch(e){ out.wsCao='ERR'; }
+
+      // 12b) chaque espace retrouve SA sélection au retour
+      sel={kind:'body',id:'bodyTEST'}; treeSel=['bodyTEST'];
+      mfWs('fao'); mfWs('cao');
+      out.wsCaoSel = sel.kind+':'+sel.id;
+      out.wsCaoTree = treeSel.join(',');
+      mfWs('fao');
+      sel={kind:'faoOp',id:'opTEST',setup:'setupTEST'};
+      mfWs('cao'); mfWs('fao');
+      out.wsFaoSel = sel.kind+':'+sel.id;
     }
 
     // 13) espace fermé → data-ws=cao
@@ -253,6 +273,37 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     out.arrowOK = mepArrowGeom().total===MEP_DIM_STYLE.arrowAngle
       && mepArrowGeom().total>20 && mepArrowGeom().total<46;
 
+    // 21b) orientation des cotes lineaires : alignee (a), X (h), Y (v)
+    const dO = {id:'dOrient',kind:'dist',vid:vN.id,vid2:null,
+      a:{x:0,y:0},b:{x:10,y:10},off:8,ref:false,tol:null,__ghost:true};
+    // au-dessus du milieu -> horizontale X
+    mepDimMoveTo(dO,{x:vN.x+5,y:vN.y-25});
+    out.orientH = dO.orient==='h' && Math.abs(mepDimValue(dO)-10)<1e-9;
+    const gOH = mepDimLine(dO);
+    out.orientHLine = !!gOH && Math.abs(gOH.a1.y-gOH.b1.y)<1e-9
+      && Math.abs(gOH.a1.y-(vN.y-25))<1e-9 && Math.abs(gOH.dy)<1e-9;
+    // a droite du milieu -> verticale Y
+    mepDimMoveTo(dO,{x:vN.x+35,y:vN.y+5});
+    out.orientV = dO.orient==='v' && Math.abs(mepDimValue(dO)-10)<1e-9;
+    const gOV = mepDimLine(dO);
+    out.orientVLine = !!gOV && Math.abs(gOV.a1.x-gOV.b1.x)<1e-9
+      && Math.abs(gOV.a1.x-(vN.x+35))<1e-9 && Math.abs(gOV.dx)<1e-9;
+    // perpendiculaire a l'arete oblique -> alignee
+    const nrm=Math.SQRT1_2*20;
+    mepDimMoveTo(dO,{x:vN.x+5-nrm,y:vN.y+5+nrm});
+    out.orientA = dO.orient==='a'
+      && Math.abs(mepDimValue(dO)-Math.hypot(10,10))<1e-9;
+    // remise a l'axe X : la mesure suit l'axe, pas la longueur oblique
+    dO.orient='h';
+    out.orientMeasureX = Math.abs(mepDimValue(dO)-10)<1e-9;
+    // choix explicite pendant la pose : le survol ne doit plus changer l'axe
+    window.__mepTest.setOrient(dO,'v',true);
+    const lock0 = dO.__orientLock===true && dO.orient==='v';
+    mepDimMoveTo(dO,{x:vN.x+5,y:vN.y-25});
+    const gOL = mepDimLine(dO);
+    out.orientLock = lock0 && dO.orient==='v' && !!gOL && Math.abs(gOL.dx)<1e-9
+      && Math.abs(mepDimValue(dO)-10)<1e-9;
+
     // 22) régression : OCCT répète le premier point à la fin des cercles.
     // L'ancien fit premier/milieu/dernier était dégénéré et aucun trou n'était
     // reconnu comme cercle (donc non sélectionnable pour une cote Ø).
@@ -303,7 +354,13 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     out.twoEntEndSnapOK=!!d3&&d3.kind==='dist'
       &&Math.abs(d3.a.x-10)<1e-9&&Math.abs(d3.a.y)<1e-9
       &&Math.abs(d3.b.x-10)<1e-9&&Math.abs(d3.b.y-5)<1e-9;
+    const selProbe=[{vid:v2.id,i:0,t:'L',sig:T.entSig(eA),lx:7,ly:0}];
+    T.setEntSel(selProbe);
+    mepSetTool('select');
+    out.selectClearsEdges = T.entSel().length===0;
+    T.setEntSel(selProbe);
     T.clearDim();
+    out.clearDimEdges = T.entSel().length===0 && T.hovEnt()===null;
 
     const hBase={type:'hole',kind:'simple',d:6.6,end:'blind',depth:15,tip:118};
     out.holeSimpleOK=T.holeText(hBase)==='Ø6,6 ↧15';
@@ -363,6 +420,12 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.hasMfWs,'mfWs présent');
   A(val&&val.wsPlan==='plan',"mfWs('plan') → data-ws=plan");
   A(val&&val.wsCao==='cao',"mfWs('cao') → data-ws=cao");
+  A(val&&val.planSelClosed===val.planSelId,'mepSetActive(false) conserve la sélection PLAN');
+  A(val&&val.planSelReopen===val.planSelId,'mepSetActive(true) restaure la sélection PLAN');
+  A(val&&val.planSelWs===val.planSelId,"mfWs('plan') retrouve la sélection PLAN");
+  A(val&&val.wsCaoSel==='body:bodyTEST','retour CAO : sélection restaurée');
+  A(val&&val.wsCaoTree==='bodyTEST','retour CAO : lot d\'arbre restauré');
+  A(val&&val.wsFaoSel==='faoOp:opTEST','retour FAO : opération restaurée');
   A(val&&val.closed===true,'mepSetActive(false) ferme l\'espace');
   A(val&&val.projKinds,'vues projetées : kind=proj, proj=top/right');
   A(val&&val.projTopDir,'projection Dessus : dir=(0,0,1) (1er angle)');
@@ -408,6 +471,12 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.extOverOK,'rappels : dépassement de 1,5–2 mm après la cote');
   A(val&&val.styleOK,'paramètres de style cohérents (fichier 98-00-style-plan.js)');
   A(val&&val.arrowOK,'flèches : angle réduit (< 46°)');
+  A(val&&val.orientH&&val.orientHLine,'cote lineaire : orientation X (horizontale)');
+  A(val&&val.orientV&&val.orientVLine,'cote lineaire : orientation Y (verticale)');
+  A(val&&val.orientA&&val.orientMeasureX,'cote lineaire : orientation alignee / mesure par axe');
+  A(val&&val.orientLock,'cote lineaire : orientation choisie conservee pendant la pose');
+  A(val&&val.selectClearsEdges,'outil selection : aucune arete pre-selectionnee');
+  A(val&&val.clearDimEdges,'creation de cote : selection d aretes et survol effaces');
   A(val&&val.circClosed,'cercle fermé OCCT (point dupliqué) reconnu comme cercle complet');
   A(val&&val.arcOpen,'arc ouvert non marqué complet');
   A(val&&val.ellipseRejected,'ellipse non assimilée à un cercle');

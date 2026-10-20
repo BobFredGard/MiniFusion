@@ -25,7 +25,10 @@ function buildScene(){
   camera.position.set(90,-90,90);
   renderer=new THREE.WebGLRenderer({canvas:$('viewport'),antialias:true});
   renderer.localClippingEnabled=true;
-  try{renderer.setPixelRatio(1.25);}catch(e){} // comme viewer_STEP : arêtes et reflet plus doux
+  try{
+    const dpr=(typeof window!=='undefined'&&window.devicePixelRatio)||1;
+    renderer.setPixelRatio(Math.min(2,Math.max(1.25,dpr))); // arêtes nettes sur écran HiDPI
+  }catch(e){}
   scene.add(new THREE.HemisphereLight(0xffffff,0x444444,0.75));
   const key=new THREE.DirectionalLight(0xffffff,1.0); key.position.set(60,-40,120); scene.add(key);
   try{if('environment' in scene)scene.environment=makeStudioEnv();}catch(e){} // reflets studio

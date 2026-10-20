@@ -29,6 +29,7 @@ function mfTheme(t){
 function mfUiMode(m){
   m=m==='moderne'?'moderne':'classique';
   try{document.body.classList.toggle('ui-modern',m==='moderne');}catch(e){}
+  if(m!=='moderne')try{document.body.removeAttribute('data-ws');}catch(e){}
   mfLS('minifusion_ui',m);
   try{const b=document.getElementById('mfUiBtn');if(b)b.textContent=m==='moderne'?'▦ Moderne':'▦ Classique';}catch(e){}
   if(m==='moderne'){try{mfBuildModern();mfWs(mfLS('minifusion_ws')||'cao');}catch(e){}}
@@ -318,15 +319,51 @@ function mfRibbon(){
     ['print','Imprimer',()=>{try{mepPrint();}catch(e){}},'Imprimer la planche']],'mfPlan');
   return rb;
 }
+let mfWsCur=null;
+const mfWsSel={cao:null,fao:null};
+function mfSpaceSelSnap(){
+  return {
+    sel:(typeof sel!=='undefined'&&sel&&sel.kind)?Object.assign({},sel):{kind:null,id:null},
+    treeSel:(typeof treeSel!=='undefined'&&Array.isArray(treeSel))?treeSel.slice():[]
+  };
+}
+function mfSpaceSelValid(w,s){
+  if(!s||!s.kind)return false;
+  if(w==='fao')return s.kind==='faoSetup'||s.kind==='faoOp';
+  return s.kind!=='faoSetup'&&s.kind!=='faoOp';
+}
+function mfSpaceDefaultFao(){
+  try{
+    const r=faoRoot();
+    const id=r.activeSetupId||(r.setups&&r.setups[0]&&r.setups[0].id);
+    return id?{kind:'faoSetup',id:id}:null;
+  }catch(e){return null;}
+}
+function mfSpaceRestore(w,snap){
+  let s=(snap&&snap.sel)||null;
+  if(!mfSpaceSelValid(w,s))s=(w==='fao')?mfSpaceDefaultFao():{kind:null,id:null};
+  sel=s?Object.assign({},s):{kind:null,id:null};
+  treeSel=(w!=='fao'&&snap&&Array.isArray(snap.treeSel))?snap.treeSel.slice():[];
+  try{if(typeof renderTree==='function')renderTree();}catch(e){}
+  try{if(typeof renderProps==='function')renderProps();}catch(e){}
+  try{if(typeof refreshParts==='function')refreshParts();}catch(e){}
+  try{if(typeof faoRenderTree==='function')faoRenderTree();}catch(e){}
+}
 function mfWs(w){
   mfCloseMenus();
   w=(w==='fao'||w==='plan')?w:'cao';
+  let prev=mfWsCur;
+  if(!prev)try{prev=document.body.getAttribute('data-ws');}catch(e){}
+  const changed=prev!==w;
+  if(changed&&(prev==='cao'||prev==='fao'))mfWsSel[prev]=mfSpaceSelSnap();
   try{document.body.setAttribute('data-ws',w);}catch(e){}
   mfLS('minifusion_ws',w);
   document.querySelectorAll('[data-mfws]').forEach(b=>b.classList.toggle('on',b.dataset.mfws===w));
   if(w==='fao'){try{const t=document.getElementById('faoToggle');const tw=document.getElementById('faoTreeWrap');if(tw&&tw.classList.contains('folded')&&t)t.click();}catch(e){}}
   // espace PLAN (98-mise-en-plan.js) : overlay sur la vue 3D
   try{if(typeof mepSetActive==='function')mepSetActive(w==='plan');}catch(e){}
+  if(changed&&w!=='plan')mfSpaceRestore(w,mfWsSel[w]);
+  mfWsCur=w;
   try{mfPosTabs();}catch(e){}
   try{mfSyncPropsHost();}catch(e){}
   try{viewCenterShift();}catch(e){} // V0.2.5 : le pivot suit la zone visible (espace CAO/FAO)

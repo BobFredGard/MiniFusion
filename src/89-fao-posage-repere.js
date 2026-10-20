@@ -50,10 +50,11 @@ let faoOpTriad=null;
 let faoPoseGrp=null,faoPoseTriad=null,faoPoseSig='',faoPoseDots=null,faoPoseHover=-1;
 function faoPoseSetupSel(){
   try{
-    // Espace Modèle (interface moderne, data-ws="cao") : aucun visuel FAO à l'écran —
-    // ni brut, ni repère, ni points cardinaux, même si un posage reste sélectionné.
-    // Interface classique : pas d'attribut, le visuel suit la sélection comme avant.
-    if(document.body.getAttribute('data-ws')==='cao')return null;
+    // Interface moderne : les visuels FAO (brut, cubes, repères, points) n'existent
+    // QUE dans l'espace FAO. CAO et PLAN ne doivent jamais les afficher, même si un
+    // posage reste sélectionné. Interface classique : comportement historique.
+    const ws=document.body.getAttribute('data-ws');
+    if(ws==='cao'||ws==='plan')return null;
     if(typeof sel==='undefined'||!sel||!(sel.kind==='faoSetup'||sel.kind==='faoOp'))return null;
     if(typeof skEdit!=='undefined'&&skEdit)return null;
     const r=faoRoot();
@@ -83,12 +84,15 @@ function faoPoseSync(){
   // opération sélectionnée avec son repère propre (3+2) : son repère est dessiné aussi
   let selOp=null;try{if(sel.kind==='faoOp')selOp=(setup.ops||[]).filter(o=>o.id===sel.id)[0]||null;}catch(e){}
   const opF=(selOp&&selOp.frame)?faoFrame({frame:Object.assign({},selOp.frame,{o:null})}):null; // axes seuls : centre commun
-  const sig=[setup.id,opF&&!opF.id?opF.X.concat(opF.Z).map(q=>q.toFixed(6)).join(','):'',st.x0,st.y0,st.z0,st.x1,st.y1,st.z1,st.cyl?JSON.stringify(st.cyl):'',faoStockShape(setup),setup.stockBody,spec.pt.join(','),spec.src,O.b,O.c,faoFrameSig(setup),
+  // La sélection opération/posage fait partie de la signature : même sans repère
+  // propre à l'opération, passer de l'un à l'autre doit reconstruire le groupe.
+  const sig=[setup.id,selOp?('op:'+selOp.id):'setup',opF&&!opF.id?opF.X.concat(opF.Z).map(q=>q.toFixed(6)).join(','):'',st.x0,st.y0,st.z0,st.x1,st.y1,st.z1,st.cyl?JSON.stringify(st.cyl):'',faoStockShape(setup),setup.stockBody,spec.pt.join(','),spec.src,O.b,O.c,faoFrameSig(setup),
     (typeof _docVersion!=='undefined'?_docVersion:0),faoPoseHover].join('|');
   if(sig===faoPoseSig&&faoPoseGrp)return;
   faoPoseSig=sig;faoPoseClear();
   const g=new THREE.Group();g.name='faoPose';
-  // 2026-10-16-020 : dans une OPÉRATION, ni brut ni points d'accroche — seulement les repères
+  // Cubes (brut + modèle) et points cardinaux : UNIQUEMENT quand le posage est
+  // sélectionné. Une opération ne garde que les repères d'orientation.
   let P=null;
   if(!selOp){
   // brut transparent : cylindre, corps (forme réelle) ou boîte
