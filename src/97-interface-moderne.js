@@ -25,6 +25,7 @@ function mfTheme(t){
   mf3D(t);
   mfLS('minifusion_theme',t);
   try{document.querySelectorAll('.mfThemeOpt').forEach(b=>b.classList.toggle('on',b.dataset.t===t));}catch(e){}
+  try{if(typeof window.mepThemeApply==='function')window.mepThemeApply();}catch(e){} // espace PLAN : fond, papier, accent
 }
 function mfUiMode(m){
   m=m==='moderne'?'moderne':'classique';
@@ -314,8 +315,11 @@ function mfRibbon(){
     ['combine','Cercle',()=>mepTool('circle')],['revolve','Arc',()=>mepTool('arc')],
     ['hole','Point',()=>mepTool('point')],['chamfer','Ajuster',()=>mepTool('trim')]],'mfPlan');
   grp('Cotes',[['dim','Cote',()=>mepTool('dim'),'Outil cote unique : Ø, longueur, distance, angle'],
-    ['hole','Perçage',()=>mepTool('hole'),'Cotation perçage : Ø, lamage, fraisure, taraudage']],'mfPlan');
+    ['hole','Perçage',()=>mepTool('hole'),'Cotation perçage : Ø, lamage, fraisure, taraudage'],
+    ['pattern','Perçages auto',()=>{try{mepSetActive(true);mepAutoHoles();}catch(e){}},'Coter toutes les fonctions Perçage (n× si plusieurs trous) — vue sélectionnée, sinon toute la planche']],'mfPlan');
   grp('Sortie',[['export','SVG',()=>{try{mepExport();}catch(e){}},'Exporter la planche en SVG'],
+    ['export','DXF',()=>{try{mepExportDxf();}catch(e){}},'Exporter la planche en DXF R12 (calques CONTOUR, CACHE, AXE, COTES, CADRE…)'],
+    ['print','PDF',()=>{try{mepPrint(true);}catch(e){}},'PDF vectoriel au format exact de la planche (« Enregistrer au format PDF »)'],
     ['print','Imprimer',()=>{try{mepPrint();}catch(e){}},'Imprimer la planche']],'mfPlan');
   return rb;
 }

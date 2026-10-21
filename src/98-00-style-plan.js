@@ -9,5 +9,5 @@ const MEP_DIM_STYLE = {
   arrowAngle: 36,  // ouverture totale de la pointe de flèche (ancien : ~46°)
   arrowLen: 7,     // longueur du marker SVG (unités de trait)
   textHeight: 7,   // hauteur du texte de cote (mm papier)
-  color: '#0a84ff' // couleur des traits et du texte de cote
+  color: 'theme'  // cotes à l'écran : 'theme' = accent du thème, ou '#rrggbb' ; export et impression : noir (ISO)
 };

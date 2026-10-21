@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**280 versions**, de `2026-09-28b` à `V0.3.10` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**281 versions**, de `2026-09-28b` à `V0.3.11` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4148,3 +4148,45 @@ Nouveaux tests : test_vue_centre (pivot / décalage de vue : 8 scénarios + cont
 - **Tolérances bilatérales** : la tolérance mini est alignée sur la valeur de cote, la max est surélevée pour laisser **0,45 mm** de jeu ; les soulignements/extensions des cotes de perçage et tolérancées sont raccourcis.
 - **Curseur** : croix noire plus épaisse dans l'espace PLAN.
 - Tests : `test_mise_en_plan` complété (drag par trait, préfixe Ø/R, interligne tolérances), `build.js --check`, syntaxe, lint et `run-fast` **19/19** ; rendu cotes/tolérances contrôlé sous Chrome headless.
+
+## V0.3.11 - PLAN : souris exacte en X, fond et papier selon le thème, règles, cartouche enrichi, exports PDF/DXF, perçages auto et nomenclature
+### Souris : décalage en X
+- **Cause** : la planche garde ses proportions dans la fenêtre et y est **centrée** (`preserveAspectRatio` « meet ») ; dès que la fenêtre est plus large que la planche (A3 paysage sur écran large), des bandes apparaissent à gauche et à droite. `mepPt` convertissait la souris en mm papier comme si la planche était **étirée** sur toute la largeur → décalage en X croissant vers les bords (49 mm mesurés sur une A3 dans une fenêtre 998 × 529), Y exact : entités et cotes impossibles à attraper. `mepPxToMm` faisait la même hypothèse (tolérances de clic et déplacement de la vue faussés).
+- **Correctif** : conversion par la matrice écran ↔ planche du navigateur (`getScreenCTM`), exacte quels que soient les proportions, le zoom et le centrage ; repli sans matrice = même centrage « meet » calculé à la main ; échelle mm/pixel = celle de la matrice. L'API de test `dimPaperDown` simule ses clics avec le même centrage.
+Vérifié au navigateur (A3 paysage, fenêtre large : écart de 49 mm supprimé) ; `test_mise_en_plan` vert.
+### Intégration aux thèmes
+- **Fond de travail par thème** (Nuit, Graphite, Atelier, Clair, Contraste) et **planche ombrée**. Toutes les couleurs du plan sont des variables CSS posées sur l'espace PLAN ; leurs valeurs par défaut sont la palette d'impression noir sur blanc. Résultat : l'export SVG, l'impression et le PDF restent ISO sans traitement particulier.
+- **Papier sombre** (option « Papier (écran) : Blanc / Sombre ») : planche sombre et traits clairs pour le confort à l'écran. L'export reste en noir sur blanc.
+- **Cotes à l'écran** dans la couleur d'accent du thème (case « thème », par défaut) ou dans une couleur libre. Elles sont **toujours noires à l'export et à l'impression**. L'ancien défaut bleu `#0a84ff` mémorisé est converti en « thème ».
+- Lisibilité selon le fond :
+  - curseur en croix blanche sur fond sombre ;
+  - traits d'axe rouges à l'écran, noirs à l'export ;
+  - hachures, cachés, esquisse et flèches suivent la palette (couleur portée par des classes, plus d'attributs figés).
+### Confort
+- **Règles en mm** en haut et à gauche (Y compté depuis le bas de la planche). Le pas s'adapte au zoom, un repère suit le curseur et les règles se masquent par une case. Les **coordonnées X/Y** du curseur s'affichent en bas à droite.
+- **Double-clic molette** = planche entière ; règles redessinées quand la fenêtre change de taille.
+- **Épaisseurs de trait ISO 128** : préréglages Écran, 0,7/0,35 et 0,5/0,25, ou valeurs libres (épais, fin, caché, cotes). Elles sont posées sur le SVG, donc conservées à l'export.
+### Cartouche enrichi
+- **Deux rangées** :
+  - PROJET | PLANCHE | ÉCHELLE | DATE | DESSINÉ PAR ;
+  - MATIÈRE | TRAITEMENT | TOL. GÉNÉRALES (ISO 2768-f/m/c/v, mK, fH) | INDICE.
+- **Logo** (image réduite à 240 px, stockée dans le fichier).
+- **Tableau des révisions** au-dessus du cartouche : bouton « + Révision », indices A, B, C…, la plus récente en haut. L'INDICE du cartouche reprend la dernière révision.
+### Exports
+- **DXF R12**, lu sur la planche affichée : chaque élément est ramené en mm papier par sa matrice écran.
+  - Calques CONTOUR, TANGENTE, CACHE (DASHED), AXE (CENTER), COTES, HACHURES, CADRE, CARTOUCHE, TEXTE, ESQUISSE.
+  - Origine en bas à gauche.
+  - Cercles et chemins droits exacts ; courbes échantillonnées à 0,25 mm au plus.
+  - Flèches en SOLID ; textes en TEXT, accents en `\U+XXXX`.
+- **PDF** : la fenêtre d'impression prend le **format exact de la planche, sans marge** (`@page` en mm), pour un PDF vectoriel à l'échelle 1:1 via « Enregistrer au format PDF ». Cela corrige aussi l'ancienne règle `@page` invalide (point-virgule manquant). Boutons DXF et PDF dans le ruban et dans le panneau.
+### Perçages auto et nomenclature
+- **« Coter les perçages »** (ruban « Perçages auto » ou panneau) : une étiquette par fonction Perçage et par vue où son axe est vu de bout, préfixée « n× » quand il y a plusieurs trous (ex. `4× M6 déb. / Ø5 déb.`).
+  - Elle se place sur le trou le plus en haut à droite.
+  - Les perçages déjà cotés ne sont pas touchés.
+  - Elle s'applique à la vue sélectionnée, sinon à toute la planche.
+- **Nomenclature** (case dans le panneau) : un tableau REP. | QTÉ | DÉSIGNATION | MATIÈRE | DIMENSIONS est posé au-dessus du cartouche, à gauche, en-tête en bas.
+  - Il liste les corps visibles ; les corps de même nom, dimensions et matière sont regroupés.
+  - Matière par corps, sinon celle du cartouche.
+  - Dimensions issues de la boîte englobante.
+  - La duplication d'une planche garde la nomenclature.
+Vérifié au navigateur : thèmes Nuit/Clair, papier sombre, règles et coordonnées (centre A3 = 210 / 148,5), cartouche avec logo et révisions, DXF retracé à l'identique, « 4× M6 » sur l'exemple Perçages. `test_mise_en_plan` complété (cartouche, révisions, exports) ; `npm run ci` vert.

@@ -6,7 +6,8 @@
 const fs=require('fs'),vm=require('vm'),path=require('path');
 const ROOT=path.join(__dirname,'..');
 const {loadApp}=require('./appvm.cjs');
-const json=fs.readFileSync(path.join(ROOT,'Exemples','Support Pédale Déportée R1200RT 2011.miniFusion'),'utf8');
+// copie FIGÉE du modèle avec hôtes morts : l'exemple de Exemples/ peut être réenregistré (réparé) sans casser ce test
+const json=fs.readFileSync(path.join(ROOT,'tests','fixtures','support_pedale_hotes_morts.miniFusion'),'utf8');
 const raw=JSON.parse(json).doc.sketches;
 const RAW={};raw.forEach(s=>{RAW[s.id]={o:(s.origin||[]).slice(),h:(s.host&&s.host.feat)||null};});
 (async()=>{

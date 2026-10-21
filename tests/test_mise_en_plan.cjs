@@ -481,7 +481,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     const ctl=window.__mepTest.dimSideControls();
     out.dimSettingsUI = ctl.num.length>=3 && ctl.color.length>=1;
     out.dimSettingsDefaults = ctl.num.some(v=>v===7)
-      && ctl.color.some(v=>String(v).toLowerCase()==='#0a84ff');
+      && ctl.color.length>=1 && ctl.check.indexOf('mepDimColTheme')>=0 && window.__mepTest.dimStyle().color==='theme';
     window.__mepTest.setDimStyle({textHeight:9,color:'#ff0000',arrowAngle:45,arrowLen:5});
     const ag=window.mepArrowGeom();
     out.dimStyleApplied = ag.total===45 && Math.abs(ag.len-5)<1e-9
@@ -489,7 +489,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
       && window.__mepTest.cssVar('--mepDimCol')==='#ff0000';
     window.__mepTest.resetDimStyle();
     const ds=window.__mepTest.dimStyle();
-    out.dimStyleReset = ds.textHeight===7 && ds.color==='#0a84ff'
+    out.dimStyleReset = ds.textHeight===7 && ds.color==='theme'
       && ds.arrowAngle===36 && ds.arrowLen===7 && window.mepArrowGeom().total===36;
     // séparateur décimal : point (et non virgule) dans les valeurs du plan
     out.fmtDot = window.__mepTest.fmt(21.1)==='21.1'
@@ -575,6 +575,20 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
       out.shadeFaces=ff.length===1&&ff[0].p[1][0]===10&&ff[0].p[2][1]===-10
         &&ff[0].o===1;
     }catch(e){out.shadeFaces=false;}
+
+    // V0.3.11 : cartouche enrichi (matière, traitement, tol. générales, révisions) + exports
+    try{
+      const sh0=doc.mep.sheets[doc.mep.cur];
+      Object.assign(sh0.title,{matiere:'EN AW-2017',traitement:'Anodisation',tolgen:'ISO 2768-m',
+        revs:[{i:'A',d:'01/10/2026',t:'Création'},{i:'B',d:'21/10/2026',t:'Perçages'}]});
+      const vals=window.__mepTest.titleTexts(sh0),revs=vals;
+      out.cartRich=vals.indexOf('EN AW-2017')>=0&&vals.indexOf('Anodisation')>=0&&vals.indexOf('ISO 2768-m')>=0
+        &&vals.indexOf('B')>=0; // indice = dernière révision
+      out.cartRevs=revs.indexOf('Création')>=0&&revs.indexOf('Perçages')>=0&&revs.indexOf('MODIFICATION')>=0;
+      delete sh0.title.revs;delete sh0.title.matiere;delete sh0.title.traitement;delete sh0.title.tolgen;
+    }catch(e){out.cartRich=false;out.cartErr=String(e);}
+    out.exportsNew=typeof window.mepExportDxf==='function'&&typeof window.mepDxfBuild==='function'
+      &&typeof window.mepAutoHoles==='function'&&typeof window.mepSetPaper==='function';
 
     return out;
   `;
@@ -707,7 +721,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.holeLeaderUnderOK&&val.holeLeaderUnderEndOK,
     'cotation perçage : leader et soulignement coïncidents aux 2 orientations');
   A(val&&val.dimSettingsUI,'Paramètres — Plan : réglages de cotation présents');
-  A(val&&val.dimSettingsDefaults,'Paramètres — Plan : hauteur 7 mm et couleur #0a84ff par défaut');
+  A(val&&val.dimSettingsDefaults,'Paramètres — Plan : hauteur 7 mm et couleur du thème par défaut (V0.3.11)');
   A(val&&val.dimStyleApplied,'Paramètres — Plan : hauteur/couleur/flèches appliquées aux cotes');
   A(val&&val.dimStyleReset,'Paramètres — Plan : réinitialisation du style de cotation');
   A(val&&val.fmtDot,'valeurs du plan : séparateur décimal = point');
@@ -727,6 +741,9 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.shadeTri&&val.shadeBack,'ombrage : faces avant dessinées, faces arrière ignorées');
   A(val&&val.shadeOpacity,'ombrage : transparence du corps reprise sur les faces');
   A(val&&val.shadeFaces,'ombrage : les maillages produisent des faces projetées');
+  A(val&&val.cartRich,'cartouche : matière, traitement, tolérances générales, indice (V0.3.11)'+(val&&val.cartErr?' — '+val.cartErr:''));
+  A(val&&val.cartRevs,'cartouche : tableau des révisions');
+  A(val&&val.exportsNew,'exports DXF, perçages auto et papier présents');
 
   if(ko){console.log('FAIL '+ko+' assertion(s)');process.exit(1);}
   console.log('OK espace PLAN');

@@ -26,7 +26,7 @@
     #mepTabs .mepAdd{border-style:dashed;padding:3px 8px}
     #mepToolbar{display:none}
     #mepBody{flex:1;display:flex;min-height:0}
-    #mepSheet{flex:1;position:relative;overflow:hidden;background:#8e949e;cursor:url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'17'%20height%3D'17'%3E%3Cpath%20d%3D'M8.5%200v17M0%208.5h17'%20stroke%3D'%23000'%20stroke-width%3D'1.5'%2F%3E%3C%2Fsvg%3E") 8 8,crosshair;min-width:0}
+    #mepSheet{flex:1;position:relative;overflow:hidden;background:var(--mepDesk,#8e949e);cursor:url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'17'%20height%3D'17'%3E%3Cpath%20d%3D'M8.5%200v17M0%208.5h17'%20stroke%3D'%23000'%20stroke-width%3D'1.5'%2F%3E%3C%2Fsvg%3E") 8 8,crosshair;min-width:0}
     #mepSvg{position:absolute;left:0;top:0;display:block;width:100%;height:100%}
     #mepSide{width:260px;flex:none;border-left:1px solid var(--border);background:var(--surface);overflow-y:auto;padding:8px;font-size:.74rem;display:block}
     #mepSidePanel #mepSide{width:100%;border-left:none;background:transparent}
@@ -41,43 +41,49 @@
     #mepSide button.danger{border-color:#ff453a;color:#ff453a}
     #mepSide .note{color:var(--muted);font-size:.68rem;margin:4px 0}
     #mepStatus{flex:none;padding:4px 10px;font-size:.7rem;color:var(--muted);border-top:1px solid var(--border);background:var(--surface);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .mepPage{fill:#fff;stroke:#b9c0c9;stroke-width:.5}
-    .mepFrame{stroke:#222;stroke-width:.9;fill:none}
-    .mepFrame2{stroke:#222;stroke-width:.45;fill:none;stroke-dasharray:1.5 2.5;opacity:.6}
-    .mepTitleBlock{stroke:#222;stroke-width:.8;fill:#fff}
-    .mepTitleText{font:6.5px sans-serif;fill:#111}
-    .mepTitleVal{font:7.5px sans-serif;fill:#111;font-weight:600}
-    .mepGrid{stroke:#d8dde3;stroke-width:.4}
+    .mepPage{fill:var(--mepPaper,#fff);stroke:var(--mepPaperEdge,#b9c0c9);stroke-width:.5}
+    #mepSvg .mepPage{filter:drop-shadow(0 1.5px 4px rgba(0,0,0,.35))}
+    #mepSheet.mepCurInv{cursor:url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'17'%20height%3D'17'%3E%3Cpath%20d%3D'M8.5%200v17M0%208.5h17'%20stroke%3D'%23fff'%20stroke-width%3D'1.5'%2F%3E%3C%2Fsvg%3E") 8 8,crosshair}
+    .mepFrame{stroke:var(--mepFrameCol,#222);stroke-width:.9;fill:none}
+    .mepFrame2{stroke:var(--mepFrameCol,#222);stroke-width:.45;fill:none;stroke-dasharray:1.5 2.5;opacity:.6}
+    .mepTitleBlock{stroke:var(--mepFrameCol,#222);stroke-width:.8;fill:var(--mepPaper,#fff)}
+    .mepTitleText{font:5px sans-serif;fill:var(--mepText,#111)}
+    .mepTitleVal{font:7.5px sans-serif;fill:var(--mepText,#111);font-weight:600}
+    .mepRevText{font:3.6px sans-serif;fill:var(--mepText,#111)}
+    .mepGrid{stroke:var(--mepGridCol,#d8dde3);stroke-width:.4}
     .mepEnt{fill:none;stroke-linecap:round;stroke-linejoin:round;shape-rendering:geometricPrecision}
     .mepFace{shape-rendering:geometricPrecision;stroke-linejoin:round}
-    .mepSharp{stroke:#151515;stroke-width:.72}
-    .mepTangent{stroke:#7a8088;stroke-width:.42;stroke-opacity:.92}
-    .mepHidden{stroke:#59606a;stroke-width:.42;stroke-dasharray:3.5 2.5;stroke-linecap:butt}
-    .mepSect{stroke:#151515;stroke-width:.88}
-    .mepHatch{stroke:#333;stroke-width:.35}
+    .mepSharp{stroke:var(--mepInk,#151515);stroke-width:var(--mepLwThick,.72)}
+    .mepTangent{stroke:var(--mepInk2,#7a8088);stroke-width:var(--mepLwThin,.42);stroke-opacity:.92}
+    .mepHidden{stroke:var(--mepHid,#59606a);stroke-width:var(--mepLwHid,.42);stroke-dasharray:3.5 2.5;stroke-linecap:butt}
+    .mepSect{stroke:var(--mepInk,#151515);stroke-width:calc(var(--mepLwThick,.72) * 1.22)}
+    .mepHatch{stroke:var(--mepHatchCol,#333);stroke-width:var(--mepLwHatch,.35)}
     .mepSel{stroke:#0a84ff!important;stroke-width:1.6!important}
     .mepSelEnt{stroke:#ffd60a!important;stroke-width:1.2!important}
     .mepHovEnt{stroke:#00b8ff!important;stroke-width:1.4!important}
     .mepDimGhost{opacity:.85;stroke-dasharray:3 2}
     .mepVB{fill:rgba(10,132,255,.04);stroke:#0a84ff;stroke-width:.8;stroke-dasharray:4 2.5;pointer-events:none}
     .mepVBSel{fill:none;stroke:#0a84ff;stroke-width:1;pointer-events:none}
-    .mepDimL{stroke:var(--mepDimCol,#0a84ff);stroke-width:.55;fill:none}
-    .mepDimT{font-family:sans-serif;font-size:var(--mepDimH,7px);fill:var(--mepDimCol,#0a84ff);font-weight:600;paint-order:stroke;stroke:#fff;stroke-width:1.5;stroke-linejoin:round}
-    .mepDimRef{fill:#7a7f86}
+    .mepDimL{stroke:var(--mepDimCol,#111);stroke-width:var(--mepLwDim,.55);fill:none}
+    .mepDimT{font-family:sans-serif;font-size:var(--mepDimH,7px);fill:var(--mepDimCol,#111);font-weight:600;paint-order:stroke;stroke:var(--mepPaper,#fff);stroke-width:1.5;stroke-linejoin:round}
+    .mepDimRef{fill:var(--mepHid,#7a7f86)}
     .mepDimL.mepDimSel{stroke:#ff3b30!important}
     .mepDimT.mepDimSel{fill:#ff3b30!important}
-    .mepLbl{font:8px sans-serif;fill:#111;font-weight:700;paint-order:stroke;stroke:#fff;stroke-width:1.6;stroke-linejoin:round}
+    .mepLbl{font:8px sans-serif;fill:var(--mepText,#111);font-weight:700;paint-order:stroke;stroke:var(--mepPaper,#fff);stroke-width:1.6;stroke-linejoin:round}
     #mepSvg,#mepSvg *{-webkit-user-select:none;-moz-user-select:none;user-select:none}
     .mepLbl,.mepDimT{pointer-events:none}
     .mepCut{stroke:#0a84ff;stroke-width:1.1;fill:none}
     .mepCutS{stroke:#0a84ff;stroke-width:.5;fill:none}
     .mepSk{fill:none;stroke-linecap:round}
-    .mepSkPt{fill:#fff;stroke-width:.9}
+    .mepSkPt{fill:var(--mepPaper,#fff);stroke-width:.9}
+    .mepSkFull{stroke:var(--mepInk,#151515)}
+    .mepSkFree{stroke:var(--mepSkFreeCol,#0a84ff)}
     .mepDraft{stroke:#ffd60a;stroke-width:.7;stroke-dasharray:3 2;fill:none}
     .mepSnap{fill:none;stroke:#ffd60a;stroke-width:.9}
-    .mepArrowM{fill:#0a84ff}
-    .mepAxis{fill:none;stroke:#e60000;stroke-width:.35;stroke-dasharray:8 2 1.5 2;stroke-linecap:butt;stroke-linejoin:round;pointer-events:none}
-    .mepAxisCross{fill:none;stroke:#e60000;stroke-width:.62;stroke-linecap:butt;pointer-events:none}
+    .mepArrowM{fill:var(--mepDimCol,#111)}
+    .mepArrowSel{fill:#ff3b30}
+    .mepAxis{fill:none;stroke:var(--mepAxisCol,#111);stroke-width:var(--mepLwAxis,.35);stroke-dasharray:8 2 1.5 2;stroke-linecap:butt;stroke-linejoin:round;pointer-events:none}
+    .mepAxisCross{fill:none;stroke:var(--mepAxisCol,#111);stroke-width:.62;stroke-linecap:butt;pointer-events:none}
     .mepAxisSel{stroke:#0066ff!important;stroke-width:1.1!important}
     .mepAxisPick{fill:none;stroke:#ffd60a;stroke-width:1.1;pointer-events:none}
   `;
@@ -175,7 +181,8 @@
       num('textHeight',2,30);
       num('arrowAngle',10,90);
       num('arrowLen',2,30);
-      if(typeof o.color==='string'&&/^#[0-9a-f]{6}$/i.test(o.color))MEP_DIM_STYLE.color=o.color;
+      if(o.color==='theme'||(typeof o.color==='string'&&/^#0a84ff$/i.test(o.color)))MEP_DIM_STYLE.color='theme'; // ancien défaut bleu → couleur du thème
+      else if(typeof o.color==='string'&&/^#[0-9a-f]{6}$/i.test(o.color))MEP_DIM_STYLE.color=o.color;
     }catch(e){}
   }
   function mepDimStyleSave(){
@@ -201,7 +208,8 @@
           try{ if(typeof st.setProperty==='function')st.setProperty(k,v); else st[k]=v; }
           catch(e){ st[k]=v; }
         };
-        set('--mepDimCol',MEP_DIM_STYLE.color||'#0a84ff');
+        const c=MEP_DIM_STYLE.color;
+        set('--mepDimCol',(!c||c==='theme')?'var(--mepAccent,#0a84ff)':c); // écran ; export/impression : noir (ISO)
         set('--mepDimH',(MEP_DIM_STYLE.textHeight||7)+'px');
       }
     }catch(e){}
@@ -1658,9 +1666,9 @@
   function mepDupSheetCmd(){
     const sh=mepSheet();
     mepEdit('duplication de planche',()=>{
-      const c=JSON.parse(JSON.stringify({format:sh.format,orient:sh.orient,title:sh.title,views:sh.views,dims:sh.dims,sk:sh.sk}));
+      const c=JSON.parse(JSON.stringify({format:sh.format,orient:sh.orient,title:sh.title,views:sh.views,dims:sh.dims,sk:sh.sk,bom:sh.bom||null}));
       const ns=mepNewSheet(doc.mep.sheets.length+1);
-      ns.format=c.format;ns.orient=c.orient;ns.title=c.title;
+      ns.format=c.format;ns.orient=c.orient;ns.title=c.title;if(c.bom)ns.bom=c.bom;
       const idMap={};
       c.views.forEach(v=>{const nid=mepUid('v');idMap[v.id]=nid;v.id=nid;v.parent=v.parent?idMap[v.parent]||null:null;
         if(v.section)v.section.pid=idMap[v.section.pid]||null;});
@@ -1694,6 +1702,7 @@
   /* ═══════════════ L. état UI ═══════════════ */
   const mepSt={open:false,sel:null,selDim:null,selAxis:null,tool:'select',axisMode:'hole',axisPick:[],axisFree:null,zoom:1,pan:{x:0,y:0},
     pick:null,dim:null,entSel:[],sk:null,cutParent:null,cutPts:[],detC:null,hovView:null,hovEnt:null,skSel:new Set()};
+  try{if(localStorage.getItem('mep_rulers')==='0')mepSt.rulers=false;}catch(e){} // règles en mm (V0.3.11)
   try{ mepSt.zoomRev=localStorage.getItem('minifusion_mepZoomRev')==='1'; }catch(e){ mepSt.zoomRev=false; } // sens de la molette, mémorisé
   let mepWrapEl=null,mepSvgEl=null,mepSheetEl=null,mepSideEl=null,mepStatusEl=null,mepTabsEl=null;
   const mepDimHits=new Map();
@@ -1710,9 +1719,22 @@
   /* pointeur écran → mm papier */
   function mepPt(ev){
     const r=mepSvgEl.getBoundingClientRect();
+    // V0.3.11 : matrice écran → planche du navigateur. Le viewBox garde les proportions de la
+    // planche et est CENTRÉ (preserveAspectRatio « meet ») : fenêtre plus large que la planche
+    // → bandes à gauche/droite ; l'ancien calcul (étirement sur toute la largeur) décalait X.
+    try{
+      const m=mepSvgEl.getScreenCTM&&mepSvgEl.getScreenCTM();
+      if(m&&typeof DOMPoint==='function'){
+        const q=new DOMPoint(ev.clientX,ev.clientY).matrixTransform(m.inverse());
+        if(isFinite(q.x)&&isFinite(q.y))return{x:q.x,y:q.y,px:ev.clientX-r.left,py:ev.clientY-r.top};
+      }
+    }catch(e){}
     const vb=mepSvgViewBox();
-    const px=(ev.clientX-r.left)/(r.width||1),py=(ev.clientY-r.top)/(r.height||1);
-    return{x:vb.x+px*vb.width,y:vb.y+py*vb.height,px:ev.clientX-r.left,py:ev.clientY-r.top};
+    // repli (sans matrice) : même centrage « meet » calculé à la main
+    const s=Math.min((r.width||1)/vb.width,(r.height||1)/vb.height)||1;
+    const ox=((r.width||0)-vb.width*s)/2,oy=((r.height||0)-vb.height*s)/2;
+    const px=ev.clientX-r.left,py=ev.clientY-r.top;
+    return{x:vb.x+(px-ox)/s,y:vb.y+(py-oy)/s,px,py};
   }
   function mepSvgViewBox(){
     try{
@@ -1724,11 +1746,242 @@
   }
   function mepPxToMm(){
     try{
+      const m=mepSvgEl.getScreenCTM&&mepSvgEl.getScreenCTM();
+      if(m&&isFinite(m.a)&&m.a>0)return 1/m.a; // échelle réelle (centrage « meet » compris)
       const r=mepSvgEl.getBoundingClientRect();
       const vb=mepSvgViewBox();
-      return vb.width/(r.width||1);
+      return Math.max(vb.width/(r.width||1),vb.height/(r.height||1));
     }catch(e){return 1;}
   }
+  /* ═══════════════ palettes d'écran par thème (V0.3.11) ═══════════════
+     Les couleurs du plan sont des variables CSS posées sur #mepWrap ; leurs valeurs PAR DÉFAUT
+     (dans la feuille de style) sont la palette d'IMPRESSION noir sur blanc : l'export SVG et
+     l'impression, hors de #mepWrap, retombent donc d'eux-mêmes sur le plan ISO.
+     desk = fond autour de la planche ; papier « blanc » (défaut) ou « sombre » (confort écran). */
+  const MEP_DESK={nuit:'#2b2e34',graphite:'#303236',atelier:'#2a2622',clair:'#c9ced6',contraste:'#000000'};
+  const MEP_ACC_W={nuit:'#0a6fd8',graphite:'#1a73e8',atelier:'#c85f00',clair:'#0a6cff',contraste:'#0040ff'};
+  const MEP_ACC_D={nuit:'#4da3ff',graphite:'#8ab4f8',atelier:'#ff9f0a',clair:'#4da3ff',contraste:'#00b4ff'};
+  const MEP_PAPER={
+    white:{mepPaper:'#ffffff',mepPaperEdge:'#b9c0c9',mepInk:'#151515',mepInk2:'#6a6f76',mepHid:'#59606a',mepFrameCol:'#222222',
+      mepText:'#111111',mepGridCol:'#d8dde3',mepHatchCol:'#333333',mepAxisCol:'#d40000',mepSkFreeCol:'#0a84ff'},
+    dark:{mepPaper:'#1e2126',mepPaperEdge:'#3a3f47',mepInk:'#e9eaec',mepInk2:'#9aa0a8',mepHid:'#8a9098',mepFrameCol:'#c9ccd1',
+      mepText:'#e9eaec',mepGridCol:'#2c3038',mepHatchCol:'#b0b4ba',mepAxisCol:'#ff5a5a',mepSkFreeCol:'#64d2ff'}
+  };
+  function mepPaperMode(){try{return localStorage.getItem('mep_paper')==='dark'?'dark':'white';}catch(e){return 'white';}}
+  function mepThemeApply(){
+    if(!mepWrapEl||!mepWrapEl.style)return;
+    let th='nuit';try{th=document.body.getAttribute('data-theme')||'nuit';}catch(e){}
+    const pm=mepPaperMode();
+    const v=Object.assign({},MEP_PAPER[pm]);
+    v.mepDesk=MEP_DESK[th]||MEP_DESK.nuit;
+    v.mepAccent=(pm==='dark'?MEP_ACC_D:MEP_ACC_W)[th]||'#0a84ff';
+    if(th==='contraste'&&pm==='dark'){v.mepPaper='#000000';v.mepPaperEdge='#5a5a5a';}
+    const st=mepWrapEl.style;
+    Object.keys(v).forEach(k=>{try{st.setProperty('--'+k,v[k]);}catch(e){st['--'+k]=v[k];}});
+    // curseur en croix blanc si le fond de travail est sombre (tous thèmes sauf Clair)
+    try{if(mepSheetEl&&mepSheetEl.classList)mepSheetEl.classList.toggle('mepCurInv',th!=='clair'||pm==='dark');}catch(e){}
+  }
+  function mepSetPaper(m){
+    try{localStorage.setItem('mep_paper',m==='dark'?'dark':'white');}catch(e){}
+    mepThemeApply();mepRender();
+    mepStatus('Papier '+(m==='dark'?'sombre (écran seulement — export et impression en noir sur blanc)':'blanc')+'.');
+  }
+  /* ═══════════════ cartouche enrichi (V0.3.11) ═══════════════
+     Rangée 1 : PROJET | PLANCHE | ÉCHELLE | DATE | DESSINÉ PAR
+     Rangée 2 : MATIÈRE | TRAITEMENT | TOL. GÉNÉRALES | INDICE
+     Logo à gauche sur les deux rangées ; tableau des révisions posé au-dessus, à droite. */
+  const MEP_TOL_GEN=['','ISO 2768-f','ISO 2768-m','ISO 2768-c','ISO 2768-v','ISO 2768-mK','ISO 2768-fH'];
+  function mepRevs(sh){const t=sh.title||{};return Array.isArray(t.revs)?t.revs:[];}
+  function mepDrawTitle(mk,sh,pd,ty){
+    const tt=sh.title||{},H2=TITLE_H/2;
+    const LW=tt.logo?32:0,x0=pd.ix+LW,iw=pd.iw-LW;
+    if(LW){
+      mk('line',{x1:x0,y1:ty,x2:x0,y2:ty+TITLE_H,class:'mepTitleBlock'});
+      mk('image',{href:tt.logo,x:pd.ix+2,y:ty+2,width:LW-4,height:TITLE_H-4,preserveAspectRatio:'xMidYMid meet'});
+    }
+    mk('line',{x1:x0,y1:ty+H2,x2:pd.ix+pd.iw,y2:ty+H2,class:'mepTitleBlock'});
+    const pw=Math.min(130,iw*0.4);
+    const revs=mepRevs(sh),ind=revs.length?revs[revs.length-1].i:(tt.indice||'—');
+    const row=(y,fields)=>fields.forEach((f,i)=>{
+      const x=f[1];
+      if(i>0)mk('line',{x1:x-2,y1:y,x2:x-2,y2:y+H2,class:'mepTitleBlock'});
+      mk('text',{x,y:y+4.4,class:'mepTitleText'}).textContent=f[0];
+      mk('text',{x,y:y+11,class:'mepTitleVal'}).textContent=String(f[3]||'').slice(0,Math.max(3,Math.floor(f[2]/2.1)));
+    });
+    const wLast=iw-pw-164;
+    row(ty,[['PROJET',x0+4,pw,tt.projet],
+      ['PLANCHE',x0+pw+6,44,(doc.mep.cur+1)+' / '+doc.mep.sheets.length],
+      ['ÉCHELLE',x0+pw+54,40,mepSheetScaleLabel(sh)],
+      ['DATE',x0+pw+98,56,tt.date],
+      ['DESSINÉ PAR',x0+pw+158,wLast,tt.auteur]]);
+    row(ty+H2,[['MATIÈRE',x0+4,pw,tt.matiere||'—'],
+      ['TRAITEMENT',x0+pw+6,88,tt.traitement||'—'],
+      ['TOL. GÉNÉRALES',x0+pw+98,56,tt.tolgen||'—'],
+      ['INDICE',x0+pw+158,wLast,ind]]);
+    // tableau des révisions (le plus récent en haut, comme l'usage)
+    if(revs.length){
+      const RH=5.5,wI=10,wD=22,wT=Math.min(110,pd.iw*0.45),W=wI+wD+wT,xr=pd.ix+pd.iw-W;
+      const n=Math.min(revs.length,8),y0=ty-RH*(n+1);
+      mk('rect',{x:xr,y:y0,width:W,height:RH*(n+1),class:'mepTitleBlock'});
+      [['IND.',xr],['DATE',xr+wI],['MODIFICATION',xr+wI+wD]].forEach(([l,x],k)=>{
+        if(k)mk('line',{x1:x,y1:y0,x2:x,y2:ty,class:'mepTitleBlock'});
+        mk('text',{x:x+1.5,y:y0+3.9,class:'mepRevText'}).textContent=l;});
+      revs.slice(-n).reverse().forEach((r,k)=>{
+        const y=y0+RH*(k+1);
+        mk('line',{x1:xr,y1:y,x2:xr+W,y2:y,class:'mepTitleBlock'});
+        mk('text',{x:xr+1.5,y:y+4,class:'mepRevText'}).textContent=String(r.i||'');
+        mk('text',{x:xr+wI+1.5,y:y+4,class:'mepRevText'}).textContent=String(r.d||'').slice(0,11);
+        mk('text',{x:xr+wI+wD+1.5,y:y+4,class:'mepRevText'}).textContent=String(r.t||'').slice(0,Math.floor(wT/1.7));
+      });
+    }
+  }
+  function mepLogoLoad(cb){
+    // image réduite (≤ 240 px) en dataURL PNG : le plan reste léger dans le fichier .miniFusion
+    const inp=document.createElement('input');inp.type='file';inp.accept='image/*';
+    inp.onchange=()=>{const f=inp.files&&inp.files[0];if(!f)return;const rd=new FileReader();
+      rd.onload=()=>{const im=new Image();im.onload=()=>{
+        const k=Math.min(1,240/Math.max(im.width,im.height)),c=document.createElement('canvas');
+        c.width=Math.max(1,Math.round(im.width*k));c.height=Math.max(1,Math.round(im.height*k));
+        c.getContext('2d').drawImage(im,0,0,c.width,c.height);cb(c.toDataURL('image/png'));};im.src=rd.result;};
+      rd.readAsDataURL(f);};
+    inp.click();
+  }
+  /* ═══════════════ cotation automatique des perçages + nomenclature (V0.3.11) ═══════════════ */
+  function mepAutoHoles(){
+    // une étiquette par fonction Perçage et par vue où son axe est vu de bout ; « n× » si plusieurs trous ;
+    // perçages déjà cotés laissés tels quels ; vue sélectionnée seulement, sinon toute la planche
+    const sh=mepSheet();
+    const views=mepSt.sel?[mepView(sh,mepSt.sel)].filter(Boolean):sh.views.slice();
+    const done=new Set(sh.dims.filter(d=>d.kind==='hole'&&d.holeFid).map(d=>d.holeFid));
+    const add=[];
+    views.forEach(v=>{
+      let g=null;try{g=mepGeoOf(v);}catch(e){return;}
+      const byF=new Map();
+      (g&&g.els||[]).forEach((e,i)=>{
+        if(!e||e.t!=='C')return;
+        let m=null;try{m=mepHoleAt(sh,v.id,e,i);}catch(err){}
+        if(!m||done.has(m.f.id))return;
+        const key=[m.P.x,m.P.y,m.P.z].map(q=>(+q).toFixed(3)).join(',');
+        let F=byF.get(m.f.id);if(!F){F={f:m.f,pts:new Map()};byF.set(m.f.id,F);}
+        const cur=F.pts.get(key),vis=e.k!=='hid';
+        // par trou : un cercle vu de préférence, le plus grand (lamage / fraisure englobe)
+        if(!cur||(vis&&!cur.vis)||(vis===cur.vis&&e.r>cur.e.r))F.pts.set(key,{e,i,vis});
+      });
+      byF.forEach(F=>{
+        const list=[...F.pts.values()];
+        // étiquette sur le trou le plus en haut à droite de la vue
+        list.sort((p,q)=>(q.e.cx-q.e.cy)-(p.e.cx-p.e.cy));
+        const t=list[0],e=t.e,k=e.r+9/Math.max(1e-9,v.scale||1);
+        add.push({id:mepUid('d'),kind:'hole',vid:v.id,vid2:null,a:{x:e.cx,y:e.cy,hint:{t:'ctr',i:t.i}},
+          b:{x:e.cx+k*0.75,y:e.cy-k*0.75},off:0,holeFid:F.f.id,holeText:mepHoleFeatureText(F.f),holeN:list.length,tol:null,ref:false});
+        done.add(F.f.id);
+      });
+    });
+    if(!add.length){mepStatus('Perçages : rien à coter (aucun perçage vu de bout'+(mepSt.sel?' dans cette vue':'')+', ou déjà cotés).');return 0;}
+    mepEdit('cotes de perçage auto',()=>{add.forEach(d=>sh.dims.push(d));});
+    mepStatus(add.length+' cote(s) de perçage posée(s) — glissez une étiquette pour l’ajuster.');
+    return add.length;
+  }
+  function mepBomRows(sh){
+    // corps du document (visibles) ; quantité = corps de même nom et mêmes dimensions
+    const rows=[],bm=(sh.bom&&sh.bom.mat)||{};
+    const rt=typeof bodies!=='undefined'?bodies:[];
+    (doc.bodies||[]).forEach(b=>{
+      const r=rt.find(x=>x&&x.kind==='body'&&x.bodyId===b.id&&x.mesh);
+      if(!r||r.visible===false)return;
+      let dims='';
+      try{const B=new THREE.Box3().setFromObject(r.mesh),S=B.getSize(new THREE.Vector3());
+        dims=[S.x,S.y,S.z].map(v=>mepFmtNum(v,1)).join(' × ');}catch(e){}
+      const name=b.name||b.id,mat=bm[b.id]||(sh.title&&sh.title.matiere)||'';
+      const same=rows.find(q=>q.name===name&&q.dims===dims&&q.mat===mat);
+      if(same)same.qty++;else rows.push({name,dims,mat,qty:1,ids:[b.id]});
+    });
+    rows.forEach((q,i)=>q.rep=i+1);
+    return rows;
+  }
+  function mepDrawBom(mk,sh,pd,ty){
+    if(!sh.bom||!sh.bom.on)return;
+    const rows=mepBomRows(sh);if(!rows.length)return;
+    const RH=5.5,cols=[['REP.',10],['QTÉ',10],['DÉSIGNATION',62],['MATIÈRE',40],['DIMENSIONS (mm)',42]];
+    const W=cols.reduce((s,c)=>s+c[1],0),x0=pd.ix,n=Math.min(rows.length,12),y0=ty-RH*(n+1);
+    mk('rect',{x:x0,y:y0,width:W,height:RH*(n+1),class:'mepTitleBlock'});
+    // en-tête en bas (contre le cartouche), repère 1 juste au-dessus — usage des nomenclatures
+    mk('line',{x1:x0,y1:ty-RH,x2:x0+W,y2:ty-RH,class:'mepTitleBlock'});
+    let x=x0;
+    cols.forEach(([l,w],k)=>{if(k)mk('line',{x1:x,y1:y0,x2:x,y2:ty,class:'mepTitleBlock'});
+      mk('text',{x:x+1.5,y:ty-RH+3.9,class:'mepRevText'}).textContent=l;x+=w;});
+    rows.slice(0,n).forEach((r,k)=>{
+      const y=ty-RH*(k+2);
+      if(k)mk('line',{x1:x0,y1:y+RH,x2:x0+W,y2:y+RH,class:'mepTitleBlock'});
+      let xx=x0;[String(r.rep),String(r.qty),r.name,r.mat||'—',r.dims].forEach((t,c)=>{
+        mk('text',{x:xx+1.5,y:y+4,class:'mepRevText'}).textContent=String(t).slice(0,Math.floor(cols[c][1]/1.7));xx+=cols[c][1];});
+    });
+  }
+  /* ═══════════════ règles mm, coordonnées, épaisseurs de trait (V0.3.11) ═══════════════ */
+  const MEP_RULER=16; // px
+  let mepRulerCv=null,mepCoordEl=null;
+  function mepRulers(){
+    // règles graduées en mm papier (haut et gauche), alignées sur la planche quel que soit le zoom
+    try{
+      if(!mepSheetEl||!mepSvgEl)return;
+      if(!mepRulerCv){
+        mepRulerCv=document.createElement('canvas');mepRulerCv.id='mepRulers';
+        mepRulerCv.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:2';
+        mepSheetEl.appendChild(mepRulerCv);
+        mepCoordEl=document.createElement('div');mepCoordEl.id='mepCoord';
+        mepCoordEl.style.cssText='position:absolute;right:8px;bottom:6px;z-index:3;pointer-events:none;font:600 .7rem monospace;padding:2px 7px;border-radius:6px;background:rgba(0,0,0,.45);color:#fff';
+        mepSheetEl.appendChild(mepCoordEl);
+      }
+      const R=mepSheetEl.getBoundingClientRect();if(!(R.width>0))return;
+      const dpr=window.devicePixelRatio||1;
+      mepRulerCv.width=Math.round(R.width*dpr);mepRulerCv.height=Math.round(R.height*dpr);
+      const g=mepRulerCv.getContext('2d');if(!g)return;
+      g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,R.width,R.height);
+      if(mepSt.rulers===false)return;
+      const m=mepSvgEl.getScreenCTM&&mepSvgEl.getScreenCTM();if(!m)return;
+      const S=m.a,ox=m.e-R.left,oy=m.f-R.top; // écran = S·mm + o (relatif à la zone)
+      const pg=mepPage();
+      let dk=false;try{dk=(document.body.getAttribute('data-theme')||'nuit')!=='clair';}catch(e){}
+      const bg=dk?'rgba(24,26,30,.92)':'rgba(240,242,246,.94)',fg=dk?'#c9ccd1':'#3a3f47',ac=dk?'#4da3ff':'#0a6cff';
+      g.fillStyle=bg;g.fillRect(0,0,R.width,MEP_RULER);g.fillRect(0,0,MEP_RULER,R.height);
+      // pas des graduations selon le zoom : ≥ 6 px entre petites graduations
+      const steps=[1,2,5,10,20,50,100,200];let st=steps.find(v=>v*S>=6)||200;
+      const big=st<=2?10:(st<=10?50:(st<=50?100:500));
+      g.strokeStyle=fg;g.fillStyle=fg;g.lineWidth=1;g.font='9px sans-serif';
+      g.beginPath();
+      for(let x=0;x<=pg.W+1e-6;x+=st){const X=ox+x*S;if(X<MEP_RULER||X>R.width)continue;const M=Math.abs(x%big)<1e-6;const h=M?MEP_RULER:(Math.abs(x%(st*5))<1e-6?9:5);g.moveTo(X+.5,MEP_RULER-h);g.lineTo(X+.5,MEP_RULER);if(M)g.fillText(String(x),X+2,9);}
+      for(let y=0;y<=pg.H+1e-6;y+=st){ // Y graduée depuis le BAS de la planche (convention du dessin)
+        const Y=oy+(pg.H-y)*S;if(Y<MEP_RULER||Y>R.height)continue;const M=Math.abs(y%big)<1e-6;const h=M?MEP_RULER:(Math.abs(y%(st*5))<1e-6?9:5);g.moveTo(MEP_RULER-h,Y+.5);g.lineTo(MEP_RULER,Y+.5);
+        if(M){g.save();g.translate(9,Y-2);g.rotate(-Math.PI/2);g.fillText(String(y),0,0);g.restore();}}
+      g.stroke();
+      // repère du curseur
+      if(mepSt.cursorMm){const cx=ox+mepSt.cursorMm.x*S,cy=oy+mepSt.cursorMm.y*S;g.strokeStyle=ac;g.lineWidth=1.5;g.beginPath();g.moveTo(cx+.5,0);g.lineTo(cx+.5,MEP_RULER);g.moveTo(0,cy+.5);g.lineTo(MEP_RULER,cy+.5);g.stroke();}
+      g.fillStyle=bg;g.fillRect(0,0,MEP_RULER,MEP_RULER);
+    }catch(e){}
+  }
+  function mepCoordShow(P){
+    try{
+      if(!mepCoordEl)return;
+      if(!P){mepCoordEl.style.display='none';mepSt.cursorMm=null;mepRulers();return;}
+      const pg=mepPage();
+      mepSt.cursorMm={x:P.x,y:P.y};
+      mepCoordEl.style.display='';
+      mepCoordEl.textContent='X '+P.x.toFixed(1)+'  Y '+(pg.H-P.y).toFixed(1)+' mm';
+      mepRulers();
+    }catch(e){}
+  }
+  /* épaisseurs de trait (mm papier) : préréglages ISO 128 ; posées sur le SVG → gardées à l'export */
+  const MEP_LW_PRESETS={ecran:{lab:'Écran (fin)',thick:.72,thin:.42,hid:.42,dim:.55},iso7:{lab:'ISO 128 — 0,7 / 0,35',thick:.7,thin:.35,hid:.35,dim:.35},iso5:{lab:'ISO 128 — 0,5 / 0,25',thick:.5,thin:.25,hid:.25,dim:.25}};
+  function mepLwGet(){try{const o=JSON.parse(localStorage.getItem('mep_lw')||'null');if(o&&isFinite(o.thick))return o;}catch(e){}return Object.assign({preset:'ecran'},MEP_LW_PRESETS.ecran);}
+  function mepLwApply(){
+    try{
+      const o=mepLwGet(),st=mepSvgEl&&mepSvgEl.style;if(!st)return;
+      const set=(k,v)=>{try{st.setProperty(k,v);}catch(e){st[k]=v;}};
+      set('--mepLwThick',String(o.thick));set('--mepLwThin',String(o.thin));set('--mepLwHid',String(o.hid));
+      set('--mepLwDim',String(o.dim));set('--mepLwHatch',String(o.thin));set('--mepLwAxis',String(o.thin));
+    }catch(e){}
+  }
+  function mepLwSet(o){try{localStorage.setItem('mep_lw',JSON.stringify(o));}catch(e){}mepLwApply();mepRender();}
   /* ═══════════════ M. construction UI ═══════════════ */
   function mepBuildMarkers(){
     if(!mepDefsEl)return;
@@ -1743,12 +1996,11 @@
       p.setAttribute('d',dir>0
         ?'M0,0 L'+a.len+','+a.h+' L0,'+(a.h*2)+' z'
         :'M'+a.len+',0 L0,'+a.h+' L'+a.len+','+(a.h*2)+' z');
-      p.setAttribute('fill',color);
+      p.setAttribute('class',color==='sel'?'mepArrowSel':'mepArrowM'); // couleur = variable des cotes (noir à l'export)
       mkr.appendChild(p);mepDefsEl.appendChild(mkr);
     };
-    const col=MEP_DIM_STYLE.color||'#0a84ff';
-    mkMarker('mepArr',1,col);mkMarker('mepArrS',-1,col);
-    mkMarker('mepArrSel',1,'#ff3b30');mkMarker('mepArrSSel',-1,'#ff3b30');
+    mkMarker('mepArr',1,'dim');mkMarker('mepArrS',-1,'dim');
+    mkMarker('mepArrSel',1,'sel');mkMarker('mepArrSSel',-1,'sel');
   }
   function mepBuildUI(){
     if(mepWrapEl&&mepWrapEl.parentNode)return;
@@ -1775,6 +2027,10 @@
     mepSvgEl=svg;
     mepSheetEl=sheet;
     mepApplyDimStyle();
+    mepThemeApply();
+    mepLwApply();
+    // la fenêtre change de taille : règles redessinées (la planche se recadre d'elle-même)
+    try{new ResizeObserver(()=>{if(mepSt.open)mepRulers();}).observe(sheet);}catch(e){}
 
     mepSideEl=side;
     mepStatusEl=st;
@@ -1786,7 +2042,7 @@
     mepSvgEl.addEventListener('pointerdown',mepOnDown);
     mepSvgEl.addEventListener('pointermove',mepOnMove);
     mepSvgEl.addEventListener('pointerup',mepOnUp);
-    mepSvgEl.addEventListener('pointerleave',()=>{mepSt.hovView=null;mepSt.hovEnt=null;try{mepRender();}catch(e){}});
+    mepSvgEl.addEventListener('pointerleave',()=>{mepSt.hovView=null;mepSt.hovEnt=null;mepCoordShow(null);try{mepRender();}catch(e){}});
     mepSvgEl.addEventListener('wheel',mepOnWheel,{passive:false});
     mepSvgEl.addEventListener('dblclick',mepOnDbl);
     mepSvgEl.addEventListener('contextmenu',mepOnContext);
@@ -1867,6 +2123,7 @@
     const sh=mepSheet();
     const pg=mepPage();
     mepDimHits.clear();
+    mepThemeApply();
     mepSvgEl.setAttribute('viewBox',pg.vb.map(v=>+v.toFixed(3)).join(' '));
     mepPxMM=mepPxToMm();
     mepGSheet.innerHTML='';
@@ -1885,22 +2142,8 @@
     const ty=pg.H-MARGIN-TITLE_H;
     mk('rect',{x:pd.ix,y:ty,width:pd.iw,height:TITLE_H,class:'mepTitleBlock'});
     mk('line',{x1:pd.ix,y1:ty,x2:pd.ix+pd.iw,y2:ty,class:'mepTitleBlock'});
-    const fields=[
-      ['PROJET',sh.title.projet||'','x',pd.ix+4,'w',Math.min(130,pd.iw*0.4)],
-      ['PLANCHE',(doc.mep.cur+1)+' / '+doc.mep.sheets.length,'x',pd.ix+Math.min(130,pd.iw*0.4)+6,'w',44],
-      ['ÉCHELLE',mepSheetScaleLabel(sh),'x',pd.ix+Math.min(130,pd.iw*0.4)+54,'w',40],
-      ['DATE',sh.title.date||'','x',pd.ix+Math.min(130,pd.iw*0.4)+98,'w',56],
-      ['DESSINÉ PAR',sh.title.auteur||'','x',pd.ix+Math.min(130,pd.iw*0.4)+158,'w',pd.iw-Math.min(130,pd.iw*0.4)-164]
-    ];
-    let lastX=pd.ix;
-    fields.forEach((f,i)=>{
-      const x=f[3];
-      if(i>0)mk('line',{x1:x-2,y1:ty,x2:x-2,y2:ty+TITLE_H,class:'mepTitleBlock'});
-      mk('text',{x,y:ty+7,class:'mepTitleText'}).textContent=f[0];
-      const t=mk('text',{x,y:ty+16,class:'mepTitleVal'});
-      t.textContent=String(f[1]||'').slice(0,f[5]>0?Math.floor(f[5]/2.1):24);
-      lastX=x;
-    });
+    mepDrawTitle(mk,sh,pd,ty);
+    try{mepDrawBom(mk,sh,pd,ty);}catch(e){}
     /* grille */
     if(mepSt.grid){
       for(let x=0;x<=pg.W;x+=10)mk('line',{x1:x,y1:0,x2:x,y2:pg.H,class:'mepGrid'});
@@ -1934,6 +2177,7 @@
     /* brouillons d'interaction */
     try{mepDrawDraft(mk);}catch(e){}
     mepToolSync();
+    mepRulers();
   }
   function mepSheetScaleLabel(sh){
     const vals=sh.views.filter(v=>v.scale!==1).map(v=>v.scale);
@@ -2551,7 +2795,7 @@
     const pre=d.pre?String(d.pre).trim():'',post=d.post?String(d.post).trim():'';
     const join=(a,b)=>a&&b?a+' '+b:(a||b);
     const wrap=s=>join(join(pre,s),post);
-    if(d.kind==='hole')return{main:wrap(d.txt||d.holeText||''),up:'',lo:'',sym:''};
+    if(d.kind==='hole')return{main:wrap((d.holeN>1&&!d.txt?d.holeN+'× ':'')+(d.txt||d.holeText||'')),up:'',lo:'',sym:''};
     if(d.txt)return{main:wrap(d.txt),up:'',lo:'',sym:''};
     const unit=d.kind==='ang'?'°':'';
     const base=mepFmtNum(value,d.kind==='ang'?1:2)+unit;
@@ -2692,7 +2936,7 @@
     if(d.kind==='hole'){
       if(d.holeFid&&typeof doc!=='undefined'){
         const f=(doc.features||[]).find(x=>x.id===d.holeFid);
-        if(f){d.holeText=mepHoleFeatureText(f);txt=d.txt||d.holeText;}
+        if(f){d.holeText=mepHoleFeatureText(f);txt=d.txt||((d.holeN>1?d.holeN+'× ':'')+d.holeText);}
       }
       const e=mepEntByHint(w.v1,d.a.hint);
       let cx=w.a.x,cy=w.a.y,rr=0;
@@ -3236,8 +3480,7 @@
     const sk=sh.sk;if(!sk)return;
     const drawEnt=(e,col,w)=>{
       const cls='mepEnt '+(col||'mepSharp');
-      const st=col==='mepSkFree'?COL.skFree:COL.skFull;
-      const attr={class:cls,stroke:st,'stroke-width':w||0.9};
+      const attr={class:cls,'stroke-width':w||0.9}; // couleur par classe .mepSkFull / .mepSkFree (thème, papier)
       if(e.t==='line'){
         const A=sk.pts[e.p1],B=sk.pts[e.p2];if(!A||!B)return;
         mk('line',Object.assign({x1:A.x,y1:A.y,x2:B.x,y2:B.y},attr));
@@ -3261,7 +3504,7 @@
     Object.keys(sk.pts).forEach(pid=>{
       const p=sk.pts[pid];
       const sel=mepSt.skSel&&mepSt.skSel.has(pid);
-      mk('circle',{cx:p.x,cy:p.y,r:sel?2.2:1.4,class:'mepSkPt',stroke:sel?COL.sel:'#64d2ff',fill:'#fff'});
+      mk('circle',{cx:p.x,cy:p.y,r:sel?2.2:1.4,class:'mepSkPt',stroke:sel?COL.sel:'#64d2ff'});
     });
   }
   function mepDrawAxisDraft(mk){
@@ -3469,6 +3712,11 @@
     mepSideShow();mepRender();
   }
   function mepOnDown(ev){
+    if(ev.button===1){ // double-clic molette = planche entière
+      const now=Date.now();
+      if(mepSt.lastMid&&now-mepSt.lastMid<380){mepSt.lastMid=0;mepFitSheet();mepRender();mepStatus('Planche entière.');ev.preventDefault();return;}
+      mepSt.lastMid=now;
+    }
     if(ev.button===1||(ev.button===0&&ev.altKey)){ // middle / alt = pan
       mepSt.pick={kind:'pan',sx:ev.clientX,sy:ev.clientY,px:mepSt.pan.x,py:mepSt.pan.y};
       mepSvgEl.setPointerCapture(ev.pointerId);
@@ -3616,6 +3864,7 @@
   }
   function mepOnMove(ev){
     const P=mepPt(ev);
+    mepCoordShow(P);
     const sh=mepSheet();
     const pk=mepSt.pick;
     if(pk){
@@ -4565,6 +4814,30 @@
     bFmt.style.flex='1';
     const bOri=mkBtn(sh.orient==='landscape'?'⇄':'↕',mepCycleOrient,'Portrait / paysage');
     bOri.style.flex='1';
+    r=rowEl();
+    {const L=document.createElement('label');L.textContent='Papier (écran)';r.appendChild(L);
+     const pm=mepPaperMode();
+     [['white','Blanc'],['dark','Sombre']].forEach(([m,l])=>{const b=document.createElement('button');b.textContent=l;b.className=pm===m?'active':'';
+       b.title=m==='dark'?'Planche sombre et traits clairs pour le confort à l’écran — export et impression restent en noir sur blanc':'Planche blanche';
+       b.onclick=e=>{e.stopPropagation();mepSetPaper(m);mepSideShow();};r.appendChild(b);});}
+    r=rowEl();
+    {const L=document.createElement('label');L.textContent='Règles en mm';r.appendChild(L);
+     const cb=document.createElement('input');cb.type='checkbox';cb.id='mepRulersOn';cb.checked=mepSt.rulers!==false;
+     cb.onchange=()=>{mepSt.rulers=cb.checked;try{localStorage.setItem('mep_rulers',cb.checked?'1':'0');}catch(e){}mepRulers();};r.appendChild(cb);}
+    r=rowEl();
+    {const L=document.createElement('label');L.textContent='Traits';r.appendChild(L);
+     const sel=document.createElement('select');sel.id='mepLwPreset';const cur=mepLwGet();
+     Object.keys(MEP_LW_PRESETS).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=MEP_LW_PRESETS[k].lab;sel.appendChild(o);});
+     const oc=document.createElement('option');oc.value='perso';oc.textContent='Personnalisé';sel.appendChild(oc);
+     sel.value=cur.preset&&MEP_LW_PRESETS[cur.preset]?cur.preset:'perso';
+     sel.onchange=()=>{const P=MEP_LW_PRESETS[sel.value];if(P){mepLwSet({preset:sel.value,thick:P.thick,thin:P.thin,hid:P.hid,dim:P.dim});mepSideShow();}};
+     r.appendChild(sel);}
+    r=rowEl();
+    {const cur=mepLwGet();
+     [['Épais','thick'],['Fin','thin'],['Caché','hid'],['Cotes','dim']].forEach(([lab,k])=>{
+       const i=document.createElement('input');i.type='number';i.step='0.05';i.min='0.1';i.max='2';i.value=cur[k];i.title=lab+' (mm)';i.style.maxWidth='52px';
+       i.onchange=()=>{const v=Math.min(2,Math.max(.1,+i.value||cur[k]));const o=Object.assign({},mepLwGet(),{preset:'perso'});o[k]=v;mepLwSet(o);mepSideShow();};
+       const L=document.createElement('label');L.textContent=lab;L.style.flex='none';r.appendChild(L);r.appendChild(i);});}
     /* — cartouche (projet / auteur / date) — */
     const tt=sh.title||(sh.title={});
     const tit=(lab,key,ph)=>{
@@ -4578,6 +4851,51 @@
     tit('Projet','projet','Nom du projet');
     tit('Auteur','auteur','—');
     tit('Date','date',new Date().toLocaleDateString('fr-FR'));
+    const rb=(...a)=>r.appendChild(mkBtn(...a)); // bouton dans la rangée courante
+    tit('Matière','matiere','ex. EN AW-2017 / S235');
+    tit('Traitement','traitement','ex. anodisation noire');
+    r=rowEl();
+    {const L=document.createElement('label');L.textContent='Tol. générales';r.appendChild(L);
+     const sel=document.createElement('select');sel.id='mepTolGen';
+     MEP_TOL_GEN.forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v||'—';sel.appendChild(o);});
+     sel.value=MEP_TOL_GEN.indexOf(tt.tolgen||'')>=0?(tt.tolgen||''):'';
+     sel.onchange=()=>mepEdit('tolérances générales',()=>{tt.tolgen=sel.value;});r.appendChild(sel);}
+    r=rowEl();
+    {const L=document.createElement('label');L.textContent='Logo';r.appendChild(L);
+     rb(tt.logo?'Changer…':'Choisir…',()=>mepLogoLoad(u=>{mepEdit('logo',()=>{tt.logo=u;});mepSideShow();}),'Image du cartouche (réduite à 240 px)');
+     if(tt.logo)rb('Retirer',()=>{mepEdit('logo',()=>{delete tt.logo;});mepSideShow();},'Retirer le logo');}
+    /* — révisions (indice = dernière révision) — */
+    const revs=Array.isArray(tt.revs)?tt.revs:[];
+    revs.forEach((rv,k)=>{
+      r=rowEl();
+      const iI=document.createElement('input');iI.value=rv.i||'';iI.style.maxWidth='34px';iI.title='Indice';
+      iI.onchange=()=>mepEdit('révision',()=>{rv.i=iI.value;});
+      const iD=document.createElement('input');iD.value=rv.d||'';iD.style.maxWidth='78px';iD.title='Date';
+      iD.onchange=()=>mepEdit('révision',()=>{rv.d=iD.value;});
+      const iT=document.createElement('input');iT.value=rv.t||'';iT.placeholder='Modification';
+      iT.onchange=()=>mepEdit('révision',()=>{rv.t=iT.value;});
+      r.appendChild(iI);r.appendChild(iD);r.appendChild(iT);
+      rb('×',()=>{mepEdit('révision',()=>{tt.revs.splice(k,1);});mepSideShow();},'Supprimer la révision');
+    });
+    r=rowEl();
+    rb('+ Révision',()=>{mepEdit('révision',()=>{
+      if(!Array.isArray(tt.revs))tt.revs=[];
+      const last=tt.revs.length?String(tt.revs[tt.revs.length-1].i||'A'):'';
+      const nx=!last?'A':(/^[A-Y]$/.test(last)?String.fromCharCode(last.charCodeAt(0)+1):last+"'");
+      tt.revs.push({i:nx,d:new Date().toLocaleDateString('fr-FR'),t:''});});mepSideShow();},'Ajouter une ligne au tableau des révisions');
+    /* — nomenclature (corps visibles ; matière par corps, sinon celle du cartouche) — */
+    r=rowEl();
+    {const L=document.createElement('label');L.textContent='Nomenclature';r.appendChild(L);
+     const cb=document.createElement('input');cb.type='checkbox';cb.id='mepBomOn';cb.checked=!!(sh.bom&&sh.bom.on);
+     cb.onchange=()=>{mepEdit('nomenclature',()=>{sh.bom=Object.assign({mat:{}},sh.bom||{},{on:cb.checked});});mepSideShow();};r.appendChild(cb);}
+    if(sh.bom&&sh.bom.on){
+      mepBomRows(sh).forEach(q=>{
+        r=rowEl();
+        const L=document.createElement('label');L.textContent=q.rep+'. '+q.name+(q.qty>1?' ×'+q.qty:'');r.appendChild(L);
+        const i=document.createElement('input');i.placeholder='Matière';i.value=(sh.bom.mat&&sh.bom.mat[q.ids[0]])||'';
+        i.onchange=()=>mepEdit('nomenclature',()=>{if(!sh.bom.mat)sh.bom.mat={};sh.bom.mat[q.ids[0]]=i.value;});r.appendChild(i);
+      });
+    }
     /* — dessin — */
     h('Dessin 2D');
     r=rowEl();
@@ -4593,6 +4911,8 @@
       b.className=mepSt.tool===t?'active':'';
       b.style.flex='1';
     });
+    r=rowEl();
+    {const b=mkBtn('Coter les perçages',()=>{mepAutoHoles();mepSideShow();},'Étiquette automatique de chaque fonction Perçage (n× si plusieurs trous) — vue sélectionnée, sinon toute la planche');b.style.flex='1';r.appendChild(b);}
     h('Axes');
     r=rowEl();
     [['Trou','hole'],['Alignement','align'],['Cercle','pitch'],['Libre','free']].forEach(([lab,m])=>{
@@ -4626,14 +4946,20 @@
       dimRow(lab+(unit?' ('+unit+')':''),i);
     };
     dimNum('Hauteur du texte','textHeight',2,30,0.5,'mm');
+    // couleur des cotes À L'ÉCRAN : celle du thème (défaut) ou une couleur libre ; l'export et
+    // l'impression sont toujours en noir (plan ISO)
+    const thm=!MEP_DIM_STYLE.color||MEP_DIM_STYLE.color==='theme';
+    const dimTh=document.createElement('input');dimTh.type='checkbox';dimTh.id='mepDimColTheme';dimTh.checked=thm;
     const dimCol=document.createElement('input');
-    dimCol.type='color';dimCol.value=MEP_DIM_STYLE.color;
+    dimCol.type='color';dimCol.value=thm?'#0a84ff':MEP_DIM_STYLE.color;dimCol.disabled=thm;
     const onCol=()=>{
-      MEP_DIM_STYLE.color=dimCol.value;
+      MEP_DIM_STYLE.color=dimTh.checked?'theme':dimCol.value;dimCol.disabled=dimTh.checked;
       mepDimStyleSave();mepApplyDimStyle();mepRender();
     };
-    dimCol.oninput=onCol;dimCol.onchange=onCol;
-    dimRow('Couleur',dimCol);
+    dimCol.oninput=onCol;dimCol.onchange=onCol;dimTh.onchange=onCol;
+    const thL=document.createElement('label');thL.style.cssText='flex:none;display:flex;gap:4px;align-items:center';
+    thL.appendChild(dimTh);thL.appendChild(document.createTextNode('thème'));
+    const colRow=dimRow('Couleur (écran)',dimCol);colRow.appendChild(thL);
     dimNum('Angle des flèches','arrowAngle',10,90,1,'°');
     dimNum('Longueur des flèches','arrowLen',2,30,0.5,'mm');
     r=rowEl();
@@ -4663,6 +4989,8 @@
     mkBtn('⟳ Rejeter',()=>{mepReproject(null);mepStatus('Toutes les vues rejetées.');},'Rejeter toutes les vues').style.flex='1';
     mkBtn('SVG',mepExportSvg,'Exporter la planche en SVG').style.flex='1';
     mkBtn('🖨',mepPrint,'Imprimer la planche').style.flex='1';
+    mkBtn('PDF',()=>mepPrint(true),'PDF vectoriel au format exact de la planche (via « Enregistrer au format PDF »)').style.flex='1';
+    mkBtn('DXF',mepExportDxf,'Exporter la planche en DXF R12 (calques CONTOUR, CACHE, AXE, COTES, CADRE…)').style.flex='1';
     const note=document.createElement('div');
     note.className='note';
     note.textContent=sh.views.length+' vue(s) · '+sh.dims.length+' cote(s) · outil actif : '+
@@ -4924,6 +5252,7 @@
       const pg=mepPage();
       const clone=mepSvgEl.cloneNode(true);
       clone.removeAttribute('id'); // ne pas laisser la règle UI #mepSvg{css} écraser les mm
+      try{clone.style.removeProperty('--mepDimCol');}catch(e){} // cotes en noir (ISO), pas la couleur d'écran
       clone.setAttribute('xmlns',NS);
       clone.setAttribute('viewBox','0 0 '+pg.W+' '+pg.H);
       clone.setAttribute('width',pg.W+'mm');
@@ -4945,26 +5274,187 @@
       mepStatus('SVG exporté : '+a.download);
     }catch(e){mepStatus('Export SVG impossible : '+e.message);}
   }
-  function mepPrint(){
+  /* ═══════════════ export DXF R12 (V0.3.11) ═══════════════
+     Lu sur le SVG VIVANT : chaque élément est ramené en mm papier par sa matrice écran
+     (getScreenCTM · inverse de celle du SVG) — vues, coupes, cotes, cartouche compris.
+     Calques par classe ; Y vers le haut (origine en bas à gauche de la planche) ;
+     cercles exacts, chemins droits exacts, courbes échantillonnées (≤ 0,25 mm),
+     flèches en SOLID, textes en TEXT (accents en \U+XXXX). */
+  const MEP_DXF_LAYERS=[['CONTOUR',7,'CONTINUOUS'],['TANGENTE',9,'CONTINUOUS'],['CACHE',3,'DASHED'],['AXE',1,'CENTER'],
+    ['COTES',4,'CONTINUOUS'],['HACHURES',8,'CONTINUOUS'],['CADRE',7,'CONTINUOUS'],['CARTOUCHE',7,'CONTINUOUS'],
+    ['TEXTE',7,'CONTINUOUS'],['ESQUISSE',5,'CONTINUOUS']];
+  const MEP_DXF_SKIP=['mepPage','mepGrid','mepVB','mepVBSel','mepSnap','mepAxisPick','mepDraft','mepDimGhost','mepFace'];
+  function mepDxfLayer(el){
+    const c=el.classList||{contains:()=>false},has=k=>c.contains(k);
+    if(has('mepHidden'))return 'CACHE';
+    if(has('mepAxis')||has('mepAxisCross'))return 'AXE';
+    if(has('mepDimL')||has('mepDimT')||has('mepDimRef'))return 'COTES';
+    if(has('mepHatch'))return 'HACHURES';
+    if(has('mepTangent'))return 'TANGENTE';
+    if(has('mepTitleText')||has('mepTitleVal')||has('mepRevText'))return 'CARTOUCHE';
+    if(has('mepTitleBlock'))return 'CARTOUCHE';
+    if(has('mepFrame')||has('mepFrame2'))return 'CADRE';
+    if(has('mepSkFree'))return 'ESQUISSE';
+    if(has('mepLbl'))return 'TEXTE';
+    if(el.tagName==='text')return 'TEXTE';
+    return 'CONTOUR';
+  }
+  function mepDxfBuild(){
+    const pg=mepPage(),out=[];
+    const R=v=>(Math.round(v*1e4)/1e4).toString();
+    const g=(c,v)=>{out.push(String(c));out.push(String(v));};
+    const enc=t=>String(t).replace(/[^\x20-\x7e]/g,ch=>'\\U+'+ch.charCodeAt(0).toString(16).toUpperCase().padStart(4,'0'));
+    const M0=mepSvgEl.getScreenCTM().inverse();
+    const mat=el=>{const m=el.getScreenCTM();return m?M0.multiply(m):null;};
+    const P=(m,x,y)=>({x:m.a*x+m.c*y+m.e,y:pg.H-(m.b*x+m.d*y+m.f)}); // mm papier, Y vers le haut
+    const ents=[];
+    const line=(L,a,b)=>{if(Math.hypot(b.x-a.x,b.y-a.y)<1e-6)return;ents.push(['LINE',L,a,b]);};
+    const poly=(L,pts,closed)=>{if(pts.length<2)return;if(pts.length===2&&!closed)return line(L,pts[0],pts[1]);ents.push(['POLY',L,pts,!!closed]);};
+    let tmpSvg=null;
+    const tmpPath=d=>{
+      if(!tmpSvg){tmpSvg=document.createElementNS(NS,'svg');tmpSvg.setAttribute('style','position:absolute;width:0;height:0;overflow:hidden;visibility:hidden');document.body.appendChild(tmpSvg);}
+      const t=document.createElementNS(NS,'path');t.setAttribute('d',d);tmpSvg.appendChild(t);return t;
+    };
+    const arrow=(L,tip,dir,sw,startBody)=>{
+      // tip/dir en coordonnées locales SVG (Y bas), transformées ensuite
+      const a=mepArrowGeom(),len=a.len*sw,h=a.h*sw,l=Math.hypot(dir.x,dir.y)||1,ux=dir.x/l,uy=dir.y/l,s=startBody?1:-1;
+      const bx=tip.x+s*ux*len,by=tip.y+s*uy*len,nx=-uy*h,ny=ux*h;
+      return [tip,{x:bx+nx,y:by+ny},{x:bx-nx,y:by-ny}];
+    };
+    const hidden=el=>{for(let n=el;n&&n!==mepSvgEl;n=n.parentNode){
+      if(n.nodeType!==1)continue;if(n.tagName==='defs'||n.tagName==='marker'||n.id==='mepGHlp')return true;
+      const cs=getComputedStyle(n);if(cs.display==='none'||cs.visibility==='hidden'||+cs.opacity===0)return true;
+      if(n.classList&&MEP_DXF_SKIP.some(k=>n.classList.contains(k)))return true;}return false;};
+    mepSvgEl.querySelectorAll('line,rect,circle,ellipse,path,polyline,polygon,text').forEach(el=>{
+      try{
+        if(hidden(el))return;
+        const m=mat(el);if(!m)return;
+        const L=mepDxfLayer(el),cs=getComputedStyle(el),tag=el.tagName;
+        if(tag==='text'){
+          const txt=(el.textContent||'').trim();if(!txt)return;
+          const fs=parseFloat(cs.fontSize)||5,k=Math.sqrt(Math.abs(m.a*m.d-m.b*m.c))||1;
+          // chaque tspan positionné séparément (tolérances empilées…), sinon le texte entier
+          const parts=[];const kids=[...el.querySelectorAll('tspan')].filter(t=>(t.textContent||'').trim());
+          if(kids.length){let idx=0;el.childNodes.forEach(n=>{const tx=n.textContent||'';if(n.nodeType===1&&tx.trim())parts.push([idx,tx,parseFloat(getComputedStyle(n).fontSize)||fs]);idx+=tx.length;});}
+          else parts.push([0,el.textContent,fs]);
+          const ang=-Math.atan2(m.b,m.a)*180/Math.PI;
+          parts.forEach(([i0,tx,f])=>{
+            let q;try{q=el.getStartPositionOfChar(i0+(tx.length-tx.trimStart().length));}catch(e){q={x:+el.getAttribute('x')||0,y:+el.getAttribute('y')||0};}
+            ents.push(['TEXT',L,P(m,q.x,q.y),f*k*0.7,tx.trim(),ang]);
+          });
+          return;
+        }
+        const stroke=cs.stroke;if(!stroke||stroke==='none'||+cs.strokeOpacity===0||!(parseFloat(cs.strokeWidth)>0))return;
+        const sw=parseFloat(cs.strokeWidth)||0.5;
+        const n=k=>+el.getAttribute(k)||0;
+        let a0=null,a1=null; // extrémités et directions locales pour les flèches
+        if(tag==='line'){
+          const A={x:n('x1'),y:n('y1')},B={x:n('x2'),y:n('y2')};line(L,P(m,A.x,A.y),P(m,B.x,B.y));
+          a0={p:A,d:{x:B.x-A.x,y:B.y-A.y}};a1={p:B,d:{x:B.x-A.x,y:B.y-A.y}};
+        }else if(tag==='rect'){
+          const x=n('x'),y=n('y'),w=n('width'),h=n('height');if(!(w>0&&h>0))return;
+          poly(L,[P(m,x,y),P(m,x+w,y),P(m,x+w,y+h),P(m,x,y+h)],true);
+        }else if(tag==='circle'){
+          const k=Math.sqrt(Math.abs(m.a*m.d-m.b*m.c));ents.push(['CIRCLE',L,P(m,n('cx'),n('cy')),n('r')*k]);
+        }else if(tag==='polyline'||tag==='polygon'){
+          const v=(el.getAttribute('points')||'').trim().split(/[\s,]+/).map(Number);const pts=[];
+          for(let i=0;i+1<v.length;i+=2)pts.push(P(m,v[i],v[i+1]));poly(L,pts,tag==='polygon');
+        }else{ // path, ellipse
+          const d=tag==='path'?(el.getAttribute('d')||''):null;
+          if(d&&/^[\sMLHVZmlhvz0-9.,eE+-]*$/.test(d)&&!/[a-z]/.test(d.replace(/e/g,''))){
+            // chemin droit absolu : sommets exacts
+            const tk=d.match(/[MLHVZ]|-?[\d.]+(?:e[+-]?\d+)?/gi)||[];let i=0,cmd='M',cx=0,cy=0,sx=0,sy=0,cur=[];
+            const flush=cl=>{if(cur.length>1)poly(L,cur.map(q=>P(m,q.x,q.y)),cl);cur=[];};
+            while(i<tk.length){const t=tk[i];if(/^[MLHVZ]$/i.test(t)){cmd=t.toUpperCase();i++;if(cmd==='Z'){flush(true);cx=sx;cy=sy;}continue;}
+              if(cmd==='M'){flush(false);cx=+tk[i];cy=+tk[i+1];i+=2;sx=cx;sy=cy;cur.push({x:cx,y:cy});cmd='L';}
+              else if(cmd==='L'){cx=+tk[i];cy=+tk[i+1];i+=2;cur.push({x:cx,y:cy});}
+              else if(cmd==='H'){cx=+tk[i];i++;cur.push({x:cx,y:cy});}
+              else if(cmd==='V'){cy=+tk[i];i++;cur.push({x:cx,y:cy});}
+              else i++;}
+            flush(false);
+          }else{
+            // courbes : échantillonnage par sous-chemin (pas de trait de liaison entre sous-chemins)
+            const subs=d?(/[a-z]/.test(d.replace(/e/g,''))?[d]:d.split(/(?=M)/)):[null];
+            subs.forEach(sd=>{
+              const t=sd?tmpPath(sd):el;const Lt=t.getTotalLength();if(!(Lt>0))return;
+              const kk=Math.sqrt(Math.abs(m.a*m.d-m.b*m.c))||1,N=Math.min(720,Math.max(2,Math.ceil(Lt*kk/0.25)));
+              let pts=[],prev=null;
+              for(let j=0;j<=N;j++){const q=t.getPointAtLength(Lt*j/N);
+                if(prev&&Math.hypot(q.x-prev.x,q.y-prev.y)>3*Lt/N+0.5){poly(L,pts,false);pts=[];} // saut (m relatif)
+                pts.push(P(m,q.x,q.y));prev=q;}
+              const cl=sd&&/z\s*$/i.test(sd);poly(L,pts,cl);
+              if(sd)t.remove();
+            });
+          }
+          if(d){try{const Lt=el.getTotalLength(),e=Math.min(.05,Lt/10);const q0=el.getPointAtLength(0),q1=el.getPointAtLength(e),r0=el.getPointAtLength(Lt-e),r1=el.getPointAtLength(Lt);
+            a0={p:q0,d:{x:q1.x-q0.x,y:q1.y-q0.y}};a1={p:r1,d:{x:r1.x-r0.x,y:r1.y-r0.y}};}catch(e){}}
+        }
+        // flèches (marqueurs)
+        [['marker-start',a0],['marker-end',a1]].forEach(([att,e])=>{
+          const u=el.getAttribute(att);if(!u||!e)return;const id=(u.match(/#([\w-]+)/)||[])[1]||'';
+          const tri=arrow(L,e.p,e.d,sw,/^mepArrS/.test(id));ents.push(['SOLID',L,tri.map(q=>P(m,q.x,q.y))]);
+        });
+      }catch(e){}
+    });
+    if(tmpSvg)tmpSvg.remove();
+    // en-tête, tables, entités
+    g(0,'SECTION');g(2,'HEADER');g(9,'$ACADVER');g(1,'AC1009');g(9,'$DWGCODEPAGE');g(3,'ANSI_1252');g(9,'$INSUNITS');g(70,4);
+    g(9,'$EXTMIN');g(10,0);g(20,0);g(9,'$EXTMAX');g(10,R(pg.W));g(20,R(pg.H));
+    g(9,'$LIMMIN');g(10,0);g(20,0);g(9,'$LIMMAX');g(10,R(pg.W));g(20,R(pg.H));g(0,'ENDSEC');
+    g(0,'SECTION');g(2,'TABLES');
+    g(0,'TABLE');g(2,'LTYPE');g(70,3);
+    [['CONTINUOUS','Solid line',[]],['DASHED','__ __ __',[3.5,-2.5]],['CENTER','____ _ ____',[8,-2,1.5,-2]]].forEach(([nm,ds,pat])=>{
+      g(0,'LTYPE');g(2,nm);g(70,0);g(3,ds);g(72,65);g(73,pat.length);g(40,R(pat.reduce((s,v)=>s+Math.abs(v),0)));pat.forEach(v=>g(49,R(v)));});
+    g(0,'ENDTAB');
+    g(0,'TABLE');g(2,'LAYER');g(70,MEP_DXF_LAYERS.length);
+    MEP_DXF_LAYERS.forEach(([nm,col,lt])=>{g(0,'LAYER');g(2,nm);g(70,0);g(62,col);g(6,lt);});
+    g(0,'ENDTAB');g(0,'ENDSEC');
+    g(0,'SECTION');g(2,'ENTITIES');
+    const cnt={};
+    ents.forEach(e=>{
+      const [ty,L]=e;cnt[ty]=(cnt[ty]||0)+1;
+      if(ty==='LINE'){g(0,'LINE');g(8,L);g(10,R(e[2].x));g(20,R(e[2].y));g(11,R(e[3].x));g(21,R(e[3].y));}
+      else if(ty==='POLY'){g(0,'POLYLINE');g(8,L);g(66,1);g(10,0);g(20,0);g(70,e[3]?1:0);
+        e[2].forEach(q=>{g(0,'VERTEX');g(8,L);g(10,R(q.x));g(20,R(q.y));});g(0,'SEQEND');g(8,L);}
+      else if(ty==='CIRCLE'){g(0,'CIRCLE');g(8,L);g(10,R(e[2].x));g(20,R(e[2].y));g(40,R(e[3]));}
+      else if(ty==='SOLID'){const t=e[2];g(0,'SOLID');g(8,L);g(10,R(t[0].x));g(20,R(t[0].y));g(11,R(t[1].x));g(21,R(t[1].y));g(12,R(t[2].x));g(22,R(t[2].y));g(13,R(t[2].x));g(23,R(t[2].y));}
+      else if(ty==='TEXT'){g(0,'TEXT');g(8,L);g(10,R(e[2].x));g(20,R(e[2].y));g(40,R(e[3]));g(1,enc(e[4]));if(Math.abs(e[5])>0.01)g(50,R(e[5]));}
+    });
+    g(0,'ENDSEC');g(0,'EOF');
+    return{text:out.join('\r\n')+'\r\n',count:cnt,ents};
+  }
+  function mepExportDxf(){
+    try{
+      const sh=mepSheet();const r=mepDxfBuild();
+      const blob=new Blob([r.text],{type:'application/dxf'});
+      const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+      a.download=(doc.name||'plan').replace(/[^\w.-]+/g,'_')+'_'+sh.name.replace(/\s+/g,'')+'.dxf';
+      document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},400);
+      mepStatus('DXF exporté : '+a.download+' ('+r.ents.length+' entités, calques CONTOUR/CACHE/AXE/COTES…)');
+    }catch(e){mepStatus('Export DXF impossible : '+e.message);}
+  }
+  function mepPrint(pdf){
     try{
       const sh=mepSheet();
       const pg=mepPage();
       const clone=mepSvgEl.cloneNode(true);
       clone.removeAttribute('id'); // idem export : la règle #mepSvg ne doit pas s'appliquer
+      try{clone.style.removeProperty('--mepDimCol');}catch(e){} // cotes en noir (ISO)
       clone.setAttribute('xmlns',NS);
       clone.setAttribute('viewBox','0 0 '+pg.W+' '+pg.H);
-      clone.style.width='100%';clone.style.height='100%';
+      clone.setAttribute('width',pg.W+'mm');clone.setAttribute('height',pg.H+'mm');
       clone.querySelectorAll('#mepGHlp,.mepDraft').forEach(n=>n.parentNode&&n.parentNode.removeChild(n));
       const w=window.open('','_blank');
       if(!w){mepStatus('Popup bloquée — autorisez les popups pour imprimer.');return;}
       w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>'+sh.name+'</title>'+
-        '<style>@page{size:'+(sh.orient==='landscape'?'landscape':'portrait')+' margin:8mm}'+
-        'html,body{margin:0;padding:0;height:100%}svg{width:100%;height:100%}'+
+        // page = format exact de la planche, sans marge : impression / PDF à l'échelle 1:1 réelle
+        '<style>@page{size:'+pg.W+'mm '+pg.H+'mm;margin:0}'+
+        'html,body{margin:0;padding:0}svg{display:block;width:'+pg.W+'mm;height:'+pg.H+'mm}'+
         css.textContent+'</style></head><body>'+
         new XMLSerializer().serializeToString(clone)+'</body></html>');
       w.document.close();
       setTimeout(()=>{try{w.focus();w.print();}catch(e){}},250);
-      mepStatus('Impression ouverte.');
+      mepStatus(pdf===true?'PDF : choisissez « Enregistrer au format PDF » comme imprimante (format '+sh.format+', marges : aucune).':'Impression ouverte.');
     }catch(e){mepStatus('Impression impossible : '+e.message);}
   }
   /* ═══════════════ X. activation espace + init ═══════════════ */
@@ -5032,12 +5522,17 @@
   }catch(e){}
   // exports publics
   window.mepSetActive=mepSetActive;
+  window.mepThemeApply=()=>{try{mepThemeApply();if(mepSt.open)mepRender();}catch(e){}};
+  window.mepSetPaper=mepSetPaper;
   window.mepInit=mepInit;
   window.mepReset=mepReset;
   window.mepIsOpen=()=>mepSt.open;
   window.mepAddSheet=mepAddSheetCmd;
   window.mepExport=mepExportSvg;
   window.mepPrint=mepPrint;
+  window.mepExportDxf=mepExportDxf;
+  window.mepAutoHoles=mepAutoHoles;
+  window.mepDxfBuild=()=>mepDxfBuild(); // texte DXF + entités (sans téléchargement)
   window.mepReprojectAll=()=>mepReproject(null);
   window.mepReprojectView=id=>{mepSetActive(true);return mepReproject(id||mepSt.sel);};
   // valeur (mm modèle) d'une cote, indépendante de l'échelle de la vue
@@ -5057,6 +5552,7 @@
   // points d'entrée réservés aux tests automatisés (jamais activés dans l'app)
   if(window.__MEP_TEST_HOOKS__){
     window.__mepTest={
+      titleTexts:sh=>{const t=[];const mk=(tag)=>{const o={textContent:''};if(tag==='text')t.push(o);return o;};mepDrawTitle(mk,sh,mepPage().pd,100);mepDrawBom(mk,sh,mepPage().pd,100);return t.map(o=>o.textContent);},
       fitCircle:mepFitCircle,
       axisFitCircle:mepAxisFitCircle,
       axisPitchGroups:(holes,view)=>mepAxisPitchGroups(holes,view||{scale:1}),
@@ -5081,8 +5577,11 @@
       viewBox:()=>mepSvgViewBox(),
       dimPaperDown:(x,y)=>{
         const vb=mepSvgViewBox();
-        mepOnDown({button:0,clientX:(x-vb.x)/vb.width*800,
-          clientY:(y-vb.y)/vb.height*600,altKey:false,pointerId:1,preventDefault(){}});
+        // inverse exact de mepPt (zone 800×600 du harnais, planche centrée « meet »)
+        const r=mepSvgEl.getBoundingClientRect(),W=r.width||800,H=r.height||600;
+        const k=Math.min(W/vb.width,H/vb.height)||1,ox=(W-vb.width*k)/2,oy=(H-vb.height*k)/2;
+        mepOnDown({button:0,clientX:(r.left||0)+ox+(x-vb.x)*k,
+          clientY:(r.top||0)+oy+(y-vb.y)*k,altKey:false,pointerId:1,preventDefault(){}});
       },
       dimTextParts:(d,v)=>mepDimTextParts(d,v),
       dimSymbolParts:(d,v,s)=>mepDimSymbolParts(d,v,s||'Ø'),
@@ -5117,7 +5616,7 @@
             const v=+o[k];
             if(Number.isFinite(v))MEP_DIM_STYLE[k]=Math.min(max,Math.max(min,v));
           });
-          if(typeof o.color==='string'&&/^#[0-9a-f]{6}$/i.test(o.color))MEP_DIM_STYLE.color=o.color;
+          if(o.color==='theme'||(typeof o.color==='string'&&/^#[0-9a-f]{6}$/i.test(o.color)))MEP_DIM_STYLE.color=o.color;
         }
         mepDimStyleSave();mepApplyDimStyle();mepRender();
       },
