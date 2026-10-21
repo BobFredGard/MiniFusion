@@ -1190,8 +1190,21 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   // les rapides franchissent librement.
   if(zoneAt){
     const zs=[];
+    // 2026-10-21-007 : zone « 3D » (faces rouges) — une chaîne de cadre n'a que
+    // ses SOMMETS testés : une arête droite de 274 mm le long d'un flanc rouge
+    // traversait le volume interdit entre deux sommets autorisés. Densifiée à
+    // ≤ 1 mm avant le filtre (seulement avec du rouge : parcours inchangés sinon).
+    const dens=function(P,closed){
+      if(!(opt&&opt.zoneDense))return P;
+      const out=[];const n=P.length,m=closed?n:n-1;
+      for(let i=0;i<m;i++){const a=P[i],b=P[(i+1)%n];out.push(a);
+        const L=Math.hypot(b[0]-a[0],b[1]-a[1]),k=Math.ceil(L/1);
+        for(let q=1;q<k;q++)out.push([a[0]+(b[0]-a[0])*q/k,a[1]+(b[1]-a[1])*q/k]);}
+      if(!closed)out.push(P[n-1]);
+      return out;
+    };
     for(let ci=0;ci<rem.length;ci++){
-      const chZ=rem[ci],P=chZ.pts;
+      const chZ=rem[ci],P=dens(rem[ci].pts,!!rem[ci].closed);
       let run=null,split=false;
       for(let pi=0;pi<P.length;pi++){
         if(zoneAt(P[pi][0],P[pi][1])){
@@ -1204,6 +1217,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
         }
       }
       if(!split){zs.push(chZ);continue;} // tout dedans : chaine d'origine (closed conserve)
+      // (chaîne fermée densifiée coupée : le morceau de fin rejoint le début)
       if(run&&run.length>=2)zs.push({pts:run,closed:false,bb:faoPtsBB(run)});
     }
     rem.length=0;
@@ -1631,7 +1645,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     // ESCARGOT : spirale centre -> faces sur le meme plan/levels, memes
     // entrees/travel ; mini-passes et finition restent conventionnelles.
     // 2026-10-08-003 : sens (avalant = sens de coupe constant) porte par opt.
-    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,
+    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,zoneDense:typeof o.protectTip==='function',
       bullFaces:bullC?function(zz){return faoBullRingRuns(bullCtx(L.radial),zz,o.sens==='avalant',true);}:null,
       bullOK:bullC?function(x,y,zz){return bullCtx(L.radial).tipB(x,y)<=zz+1e-6;}:null});
     else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});

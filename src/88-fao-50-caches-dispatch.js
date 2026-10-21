@@ -32,6 +32,11 @@ function faoOpSig(op){
       }else o[k]=v;
     }
   }catch(e){ return op; }
+  // 2026-10-21-007 : version du traitement des faces rouges — seules les
+  // opérations À intouchables changent de parcours (chaînes densifiées sous la
+  // zone 3D, volume « devant la face ») : elles seules sont à régénérer, pas
+  // tout le cache (CACHE_VER inchangé).
+  if(Array.isArray(op&&op.protect)&&op.protect.length)o._redV=2;
   return o;
 }
 let faoMovesFpMap=null;
@@ -735,7 +740,7 @@ function* faoOpMovesIt0(op,job){
     let red=null;
     if(am&&am.mesh&&Array.isArray(op.protect)&&op.protect.length){
       try{ const rb=faoProtectBodiesMesh(job,op); if(rb)am={mesh:faoMeshConcat(am.mesh,rb),box:am.box}; }catch(e){}
-      try{ red=faoFaceMesh(job,op.protect); }catch(e){ red=null; }
+      try{ red=faoProtectMesh(job,op); }catch(e){ red=null; }
     }
     if(am&&am.mesh&&drive){
       const tool=faoToolById(job,op.toolId);

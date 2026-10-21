@@ -207,7 +207,8 @@ function faoSanitiseOps(s){
       const pr=faoFaceListClean(op.protect);
       if(pr.length)op.protect=pr; else delete op.protect;
       if(!pr.length||!(isFinite(+op.protectM)&&+op.protectM>=0))delete op.protectM;
-    }else{ delete op.protect; delete op.protectM; }
+      if(!pr.length||op.protectFront!==true)delete op.protectFront; // 2026-10-21-007
+    }else{ delete op.protect; delete op.protectM; delete op.protectFront; }
     if(op.type==='geofinish'){
       const fb=faoFaceListClean(op.faces);
       if(fb.length)op.faces=fb; else delete op.faces;

@@ -108,6 +108,27 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     const mvN=faoOpMoves(eN,setup);setup.ops=[eC];
     out.cmp={stock:setup.stock,secu:secu,ztop:eC.ztop,zbot:eC.zbot,penProt:through(mvC),penNoProt:through(mvN),nN:mvN.length};
     out.dbg={at:worstAt,modelTip:worstAt?dM.tip(worstAt[0],worstAt[1]):null,prev:mvC.slice(Math.max(0,(worstAt?worstAt[3]:0)-3),(worstAt?worstAt[3]:0)+2)};
+    // ---- D. Ébauche 3D : rouge = flanc x=48,2, « Interdire devant la face » ----
+    // sans la case, l'outil enlève le brut DEVANT le flanc (bande x 48,2→brut)
+    // en restant à la marge de la face ; avec, le volume avant est interdit.
+    // outil (fraise droite D20) qui entre dans le volume AVANT du flanc (prisme jusqu'au brut)
+    const prism=faoFrontPrism(faoFaceMesh(setup,[{b:imp.id,f:side}]),setup.stock);
+    const dP=faoScDropper(prism,'flat',20,0,0);
+    const band=function(mv){let n=0;
+      for(let i=1;i<mv.length;i++){const a=mv[i-1],b=mv[i];if(b.r)continue;
+        const L=Math.hypot(b.x-a.x,b.y-a.y),ns=Math.max(1,Math.ceil(L/0.5));
+        for(let k=1;k<=ns;k++){const t=k/ns,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t,z=a.z+(b.z-a.z)*t;
+          const e=dP.tip(x,y);if(e>-1e8&&z<e-0.05)n++;}}return n;};
+    const eD=faoOpDefaults('rough3d');Object.assign(eD,{toolId:'TT',ap:6,ae:6,radial:0.5,axial:0.5,ztop:setup.stock.z1,zbot:35,minipasses:0,protect:[{b:imp.id,f:side}],protectM:0.5});
+    setup.ops=[eD];faoSanitiseOps(setup);
+    const mvD0=faoOpMoves(eD,setup);
+    const eF=Object.assign({},eD,{id:'front',protectFront:true});setup.ops=[eF];faoSanitiseOps(setup);
+    const mvD1=faoOpMoves(setup.ops[0],setup);
+    const pTF=faoProtectTip(setup,setup.ops[0],bull,0,true);
+    let wF=0,wAt=null;for(let i=1;i<mvD1.length;i++){const a=mvD1[i-1],b=mvD1[i];const L=Math.hypot(b.x-a.x,b.y-a.y),ns=Math.max(1,Math.ceil(L/0.5));
+      for(let k=0;k<=ns;k++){const t=k/ns,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t,z=a.z+(b.z-a.z)*t;const e=pTF(x,y)-z;if(e>wF){wF=e;wAt=[+x.toFixed(1),+y.toFixed(1),+z.toFixed(1),i,b.r?'G0':(b.ent?'ent':'G1'),JSON.stringify(a),JSON.stringify(b)];}}}
+    out.Dat=wAt;
+    out.D={band0:band(mvD0),band1:band(mvD1),n0:mvD0.length,n1:mvD1.length,wF:wF,frontKept:setup.ops[0].protectFront===true};
     out.C={n:mvC.length,worst:worst,worstAt:worstAt,rapUnder:rapUnder,secu:secu};
     return out;
   `;
@@ -140,6 +161,12 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   A(r.C.worst<=0.02,'C : aucune position d’outil à moins de la marge de la face rouge');
   A(r.C.rapUnder===0,'C : aucun rapide sous le dégagement au-dessus du rouge');
   if(process.env.DBG){console.log(JSON.stringify(r.dbg));console.log(JSON.stringify(r.cmp));}
+  console.log('  · D Interdire devant la face : avances sous le bord du flanc, outil sur la bande avant : '+r.D.band0+' sans la case ('+r.D.n0+' mvts) → '+r.D.band1+' avec ('+r.D.n1+' mvts) ; pire empiètement du volume interdit '+r.D.wF.toFixed(3)+' mm');
+  if(r.D.wF>0.02)console.log('    pire en',JSON.stringify(r.Dat));
+  A(r.D.frontKept,'D : option « Interdire devant la face » conservée par le nettoyage');
+  A(r.D.band0>0,'D : sans la case, l’ébauche usine bien le brut devant le flanc rouge (cas du retour utilisateur)');
+  A(r.D.band1===0,'D : avec la case, plus aucune avance devant le flanc rouge');
+  A(r.D.wF<=0.02,'D : aucune position d’outil dans le volume avant + marge');
   console.log(ko?'ÉCHEC '+ko:'OK');
   process.exit(ko?1:0);
 })();

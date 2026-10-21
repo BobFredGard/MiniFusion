@@ -62,12 +62,57 @@ function faoMeshConcat(a,b){
   return {v:a.v.concat(b.v),t:a.t.concat(b.t.map(function(t){return [t[0]+off,t[1]+off,t[2]+off];}))};
 }
 
+/* ----- « Interdire devant la face » (2026-10-21-007) -----
+   Demande : les faces rouges « ne jamais usiner » — en « Tout couvrir », la
+   fraise descendait le long des flancs rouges pour enlever le brut DEVANT eux
+   (Malaxeur Retard : bande de 2,25 mm sur 30,8 m), sans toucher la face. Avec
+   op.protectFront, chaque triangle rouge est prolongé le long de sa normale
+   EXTÉRIEURE jusqu'à la sortie de la boîte du brut : le prisme obtenu (face,
+   face translatée, côtés) rejoint les obstacles rouges — même marge, mêmes
+   règles (aucune position d'outil, rapides par le dégagement). */
+function faoFrontPrism(red,st){
+  if(!red||!red.t||!red.t.length||!st||!faoStockValid(st))return null;
+  const B=[+st.x0,+st.y0,+st.z0,+st.x1,+st.y1,+st.z1];
+  // distance de sortie de la boîte le long de n depuis p (0 si déjà dehors)
+  const exitD=function(p,n){
+    let t=1/0;
+    for(let k=0;k<3;k++){
+      if(n[k]>1e-9)t=Math.min(t,(B[k+3]-p[k])/n[k]);
+      else if(n[k]<-1e-9)t=Math.min(t,(B[k]-p[k])/n[k]);
+    }
+    return (t<1/0&&t>0)?t:0;
+  };
+  const V=[],T=[];
+  const add=function(p){V.push(p);return V.length-1;};
+  for(let i=0;i<red.t.length;i++){
+    const t=red.t[i],A=red.v[t[0]],Bv=red.v[t[1]],C=red.v[t[2]];
+    const ux=Bv[0]-A[0],uy=Bv[1]-A[1],uz=Bv[2]-A[2],wx=C[0]-A[0],wy=C[1]-A[1],wz=C[2]-A[2];
+    let n=[uy*wz-uz*wy,uz*wx-ux*wz,ux*wy-uy*wx];const l=Math.hypot(n[0],n[1],n[2]);
+    if(!(l>1e-12))continue;n=[n[0]/l,n[1]/l,n[2]/l];
+    const L=Math.max(exitD(A,n),exitD(Bv,n),exitD(C,n));
+    if(!(L>1e-6))continue;
+    const P=[A,Bv,C],Q=P.map(function(p){return [p[0]+n[0]*L,p[1]+n[1]*L,p[2]+n[2]*L];});
+    const ip=P.map(add),iq=Q.map(add);
+    T.push([ip[0],ip[1],ip[2]],[iq[0],iq[2],iq[1]]);
+    for(let e=0;e<3;e++){const a=e,b=(e+1)%3;T.push([ip[a],iq[a],iq[b]],[ip[a],iq[b],ip[b]]);}
+  }
+  return T.length?{v:V,t:T}:null;
+}
+// Obstacles rouges de l'opération : faces/solides rouges (+ leur prisme avant
+// si « Interdire devant la face »), repère du posage — null sans rouge.
+function faoProtectMesh(job,op){
+  const red=faoFaceMesh(job,faoFaceList(op,'protect'));
+  if(!red||!(op&&op.protectFront))return red;
+  let st=null;try{st=(job&&job.stock&&faoStockValid(job.stock))?job.stock:faoStock();}catch(e){st=null;}
+  return faoMeshConcat(red,faoFrontPrism(red,st));
+}
+
 /* ----- prédicats pour les générateurs ----- */
 // Finition : position outil (x,y) admise si le rouge ne relève pas l'outil
 // gonflé de la marge (aucun point rouge à moins de m) et, avec du bleu, si
 // l'outil repose sur une face bleue (sa descente sur le bleu seul = sur tout).
 function faoFaceOkAt(job,op,model,tool,laisse){
-  const red=faoFaceMesh(job,faoFaceList(op,'protect'));
+  const red=faoProtectMesh(job,op);
   const blue=faoFaceBlueOp(op)&&op.type==='geofinish'?faoFaceMesh(job,faoFaceList(op,'faces')):null;
   if(!red&&!blue)return null;
   const kind=tool.kind||'ball',D=+tool.d||10,cr=tool.cornerR,L=+laisse||0,m=faoProtectM(op);
@@ -85,7 +130,7 @@ function faoFaceOkAt(job,op,model,tool,laisse){
 // Ébauche 3D / Géodésique : cote de pointe minimale imposée par le rouge
 // (outil gonflé de la marge) — null sans rouge.
 function faoProtectTip(job,op,tool,laisse,flat){
-  const red=faoFaceMesh(job,faoFaceList(op,'protect'));
+  const red=faoProtectMesh(job,op);
   if(!red)return null;
   const kind=flat?'flat':(tool.kind||'ball'),D=+tool.d||10;
   const d=faoScDropper(red,kind,D,flat?0:tool.cornerR,(+laisse||0)+faoProtectM(op));
@@ -208,6 +253,12 @@ function faoFaceListsFiche(d,setup,op){
   if(faoFaceList(op,'protect').length){
     r.appendChild(faoLab('Marge'));
     r.appendChild(faoNum(faoProtectM(op),function(v){op.protectM=Math.max(0,v);},44,0.1,'Distance minimale entre l’outil et les faces intouchables (mm).'));
+    const cf=document.createElement('input');cf.type='checkbox';cf.checked=!!op.protectFront;
+    cf.onchange=function(){faoSnapshot('interdire devant la face');if(cf.checked)op.protectFront=true;else delete op.protectFront;faoChanged();};
+    const lf=document.createElement('label');lf.className='fao-check';
+    lf.title='Aucune passe DEVANT les faces rouges : le volume entre chaque face rouge et le bord du brut, le long de sa normale, est interdit (le brut y reste). Sans la case : l’outil peut usiner jusqu’à la marge de la face.';
+    lf.appendChild(cf);lf.appendChild(document.createTextNode('Interdire devant la face'));
+    r.appendChild(lf);
   }
   d.appendChild(r);
   if(op.type==='geodesic'&&!faoFaceList(op,'faces').length)

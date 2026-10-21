@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**286 versions**, de `2026-09-28b` à `V0.3.16` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**287 versions**, de `2026-09-28b` à `V0.3.17` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4365,3 +4365,11 @@ Retour utilisateur (Malaxeur Retard) : « il perd la sélection de courbes et dr
 - Parcours inchangés (CACHE_VER identique).
 
 `test_fao_chain_step` : saisie rouverte, pièce masquée, posage tourné (2 contrôles échouent sur V0.3.15). Vérifié au navigateur sur Malaxeur Retard. `npm run ci` vert.
+
+## V0.3.17 - FAO : faces rouges « Interdire devant la face »
+Retour utilisateur (Malaxeur Retard) : en zone « Tout couvrir », la fraise descendait le long des flancs rouges pour enlever le brut devant eux (bande de 2,25 mm, 30,8 m d'avance), sans toucher la face.
+- Nouvelle case **« Interdire devant la face »** (section Faces, à côté de la Marge) : chaque face rouge est prolongée le long de sa normale extérieure jusqu'au bord du brut ; ce volume est interdit à l'outil (même marge), le brut y reste. Ébauche 3D, Finition, Géodésique.
+- Correctif : avec des faces rouges, les chaînes de passes (cadre du brut, faces) sont densifiées à 1 mm avant le filtre de zone — une avance rectiligne de 274 mm traversait le volume interdit entre deux sommets autorisés.
+- Seules les opérations à faces rouges sont à régénérer (version dans leur clé de parcours) ; CACHE_VER inchangé.
+
+`test_fao_faces` (cas D) : sans la case, 427 entrées dans le volume avant ; avec, 0. `npm run ci` vert.

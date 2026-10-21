@@ -273,7 +273,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.3.16';
+const APP_VER='V0.3.17';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -15616,7 +15616,8 @@ function faoSanitiseOps(s){
       const pr=faoFaceListClean(op.protect);
       if(pr.length)op.protect=pr; else delete op.protect;
       if(!pr.length||!(isFinite(+op.protectM)&&+op.protectM>=0))delete op.protectM;
-    }else{ delete op.protect; delete op.protectM; }
+      if(!pr.length||op.protectFront!==true)delete op.protectFront; // 2026-10-21-007
+    }else{ delete op.protect; delete op.protectM; delete op.protectFront; }
     if(op.type==='geofinish'){
       const fb=faoFaceListClean(op.faces);
       if(fb.length)op.faces=fb; else delete op.faces;
@@ -17546,6 +17547,11 @@ function faoOpSig(op){
       }else o[k]=v;
     }
   }catch(e){ return op; }
+  // 2026-10-21-007 : version du traitement des faces rouges — seules les
+  // opérations À intouchables changent de parcours (chaînes densifiées sous la
+  // zone 3D, volume « devant la face ») : elles seules sont à régénérer, pas
+  // tout le cache (CACHE_VER inchangé).
+  if(Array.isArray(op&&op.protect)&&op.protect.length)o._redV=2;
   return o;
 }
 let faoMovesFpMap=null;
@@ -18249,7 +18255,7 @@ function* faoOpMovesIt0(op,job){
     let red=null;
     if(am&&am.mesh&&Array.isArray(op.protect)&&op.protect.length){
       try{ const rb=faoProtectBodiesMesh(job,op); if(rb)am={mesh:faoMeshConcat(am.mesh,rb),box:am.box}; }catch(e){}
-      try{ red=faoFaceMesh(job,op.protect); }catch(e){ red=null; }
+      try{ red=faoProtectMesh(job,op); }catch(e){ red=null; }
     }
     if(am&&am.mesh&&drive){
       const tool=faoToolById(job,op.toolId);
@@ -23574,8 +23580,21 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   // les rapides franchissent librement.
   if(zoneAt){
     const zs=[];
+    // 2026-10-21-007 : zone « 3D » (faces rouges) — une chaîne de cadre n'a que
+    // ses SOMMETS testés : une arête droite de 274 mm le long d'un flanc rouge
+    // traversait le volume interdit entre deux sommets autorisés. Densifiée à
+    // ≤ 1 mm avant le filtre (seulement avec du rouge : parcours inchangés sinon).
+    const dens=function(P,closed){
+      if(!(opt&&opt.zoneDense))return P;
+      const out=[];const n=P.length,m=closed?n:n-1;
+      for(let i=0;i<m;i++){const a=P[i],b=P[(i+1)%n];out.push(a);
+        const L=Math.hypot(b[0]-a[0],b[1]-a[1]),k=Math.ceil(L/1);
+        for(let q=1;q<k;q++)out.push([a[0]+(b[0]-a[0])*q/k,a[1]+(b[1]-a[1])*q/k]);}
+      if(!closed)out.push(P[n-1]);
+      return out;
+    };
     for(let ci=0;ci<rem.length;ci++){
-      const chZ=rem[ci],P=chZ.pts;
+      const chZ=rem[ci],P=dens(rem[ci].pts,!!rem[ci].closed);
       let run=null,split=false;
       for(let pi=0;pi<P.length;pi++){
         if(zoneAt(P[pi][0],P[pi][1])){
@@ -23588,6 +23607,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
         }
       }
       if(!split){zs.push(chZ);continue;} // tout dedans : chaine d'origine (closed conserve)
+      // (chaîne fermée densifiée coupée : le morceau de fin rejoint le début)
       if(run&&run.length>=2)zs.push({pts:run,closed:false,bb:faoPtsBB(run)});
     }
     rem.length=0;
@@ -24015,7 +24035,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     // ESCARGOT : spirale centre -> faces sur le meme plan/levels, memes
     // entrees/travel ; mini-passes et finition restent conventionnelles.
     // 2026-10-08-003 : sens (avalant = sens de coupe constant) porte par opt.
-    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,
+    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,zoneDense:typeof o.protectTip==='function',
       bullFaces:bullC?function(zz){return faoBullRingRuns(bullCtx(L.radial),zz,o.sens==='avalant',true);}:null,
       bullOK:bullC?function(x,y,zz){return bullCtx(L.radial).tipB(x,y)<=zz+1e-6;}:null});
     else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
@@ -29735,12 +29755,57 @@ function faoMeshConcat(a,b){
   return {v:a.v.concat(b.v),t:a.t.concat(b.t.map(function(t){return [t[0]+off,t[1]+off,t[2]+off];}))};
 }
 
+/* ----- « Interdire devant la face » (2026-10-21-007) -----
+   Demande : les faces rouges « ne jamais usiner » — en « Tout couvrir », la
+   fraise descendait le long des flancs rouges pour enlever le brut DEVANT eux
+   (Malaxeur Retard : bande de 2,25 mm sur 30,8 m), sans toucher la face. Avec
+   op.protectFront, chaque triangle rouge est prolongé le long de sa normale
+   EXTÉRIEURE jusqu'à la sortie de la boîte du brut : le prisme obtenu (face,
+   face translatée, côtés) rejoint les obstacles rouges — même marge, mêmes
+   règles (aucune position d'outil, rapides par le dégagement). */
+function faoFrontPrism(red,st){
+  if(!red||!red.t||!red.t.length||!st||!faoStockValid(st))return null;
+  const B=[+st.x0,+st.y0,+st.z0,+st.x1,+st.y1,+st.z1];
+  // distance de sortie de la boîte le long de n depuis p (0 si déjà dehors)
+  const exitD=function(p,n){
+    let t=1/0;
+    for(let k=0;k<3;k++){
+      if(n[k]>1e-9)t=Math.min(t,(B[k+3]-p[k])/n[k]);
+      else if(n[k]<-1e-9)t=Math.min(t,(B[k]-p[k])/n[k]);
+    }
+    return (t<1/0&&t>0)?t:0;
+  };
+  const V=[],T=[];
+  const add=function(p){V.push(p);return V.length-1;};
+  for(let i=0;i<red.t.length;i++){
+    const t=red.t[i],A=red.v[t[0]],Bv=red.v[t[1]],C=red.v[t[2]];
+    const ux=Bv[0]-A[0],uy=Bv[1]-A[1],uz=Bv[2]-A[2],wx=C[0]-A[0],wy=C[1]-A[1],wz=C[2]-A[2];
+    let n=[uy*wz-uz*wy,uz*wx-ux*wz,ux*wy-uy*wx];const l=Math.hypot(n[0],n[1],n[2]);
+    if(!(l>1e-12))continue;n=[n[0]/l,n[1]/l,n[2]/l];
+    const L=Math.max(exitD(A,n),exitD(Bv,n),exitD(C,n));
+    if(!(L>1e-6))continue;
+    const P=[A,Bv,C],Q=P.map(function(p){return [p[0]+n[0]*L,p[1]+n[1]*L,p[2]+n[2]*L];});
+    const ip=P.map(add),iq=Q.map(add);
+    T.push([ip[0],ip[1],ip[2]],[iq[0],iq[2],iq[1]]);
+    for(let e=0;e<3;e++){const a=e,b=(e+1)%3;T.push([ip[a],iq[a],iq[b]],[ip[a],iq[b],ip[b]]);}
+  }
+  return T.length?{v:V,t:T}:null;
+}
+// Obstacles rouges de l'opération : faces/solides rouges (+ leur prisme avant
+// si « Interdire devant la face »), repère du posage — null sans rouge.
+function faoProtectMesh(job,op){
+  const red=faoFaceMesh(job,faoFaceList(op,'protect'));
+  if(!red||!(op&&op.protectFront))return red;
+  let st=null;try{st=(job&&job.stock&&faoStockValid(job.stock))?job.stock:faoStock();}catch(e){st=null;}
+  return faoMeshConcat(red,faoFrontPrism(red,st));
+}
+
 /* ----- prédicats pour les générateurs ----- */
 // Finition : position outil (x,y) admise si le rouge ne relève pas l'outil
 // gonflé de la marge (aucun point rouge à moins de m) et, avec du bleu, si
 // l'outil repose sur une face bleue (sa descente sur le bleu seul = sur tout).
 function faoFaceOkAt(job,op,model,tool,laisse){
-  const red=faoFaceMesh(job,faoFaceList(op,'protect'));
+  const red=faoProtectMesh(job,op);
   const blue=faoFaceBlueOp(op)&&op.type==='geofinish'?faoFaceMesh(job,faoFaceList(op,'faces')):null;
   if(!red&&!blue)return null;
   const kind=tool.kind||'ball',D=+tool.d||10,cr=tool.cornerR,L=+laisse||0,m=faoProtectM(op);
@@ -29758,7 +29823,7 @@ function faoFaceOkAt(job,op,model,tool,laisse){
 // Ébauche 3D / Géodésique : cote de pointe minimale imposée par le rouge
 // (outil gonflé de la marge) — null sans rouge.
 function faoProtectTip(job,op,tool,laisse,flat){
-  const red=faoFaceMesh(job,faoFaceList(op,'protect'));
+  const red=faoProtectMesh(job,op);
   if(!red)return null;
   const kind=flat?'flat':(tool.kind||'ball'),D=+tool.d||10;
   const d=faoScDropper(red,kind,D,flat?0:tool.cornerR,(+laisse||0)+faoProtectM(op));
@@ -29881,6 +29946,12 @@ function faoFaceListsFiche(d,setup,op){
   if(faoFaceList(op,'protect').length){
     r.appendChild(faoLab('Marge'));
     r.appendChild(faoNum(faoProtectM(op),function(v){op.protectM=Math.max(0,v);},44,0.1,'Distance minimale entre l’outil et les faces intouchables (mm).'));
+    const cf=document.createElement('input');cf.type='checkbox';cf.checked=!!op.protectFront;
+    cf.onchange=function(){faoSnapshot('interdire devant la face');if(cf.checked)op.protectFront=true;else delete op.protectFront;faoChanged();};
+    const lf=document.createElement('label');lf.className='fao-check';
+    lf.title='Aucune passe DEVANT les faces rouges : le volume entre chaque face rouge et le bord du brut, le long de sa normale, est interdit (le brut y reste). Sans la case : l’outil peut usiner jusqu’à la marge de la face.';
+    lf.appendChild(cf);lf.appendChild(document.createTextNode('Interdire devant la face'));
+    r.appendChild(lf);
   }
   d.appendChild(r);
   if(op.type==='geodesic'&&!faoFaceList(op,'faces').length)
