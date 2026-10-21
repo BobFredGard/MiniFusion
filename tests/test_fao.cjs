@@ -273,7 +273,7 @@ const vm=require('vm');
     //     ni op orpheline (nettoyage du document à l'ouverture — faoSanitiseOps)
     "att(faoOpDefaults('pocket3d')===null,'pocket3d : faoOpDefaults -> null (type retire)');",
     "att(typeof faoGenPocketRough==='undefined','pocket3d : faoGenPocketRough supprimee');",
-    "att(faoAddOpsSpec().length===6&&!faoAddOpsSpec().some(function(a){return a[0]==='pocket3d';}),'barre + : 6 usinages, plus de Debourrage');",
+    "att(faoAddOpsSpec().length===7&&!faoAddOpsSpec().some(function(a){return a[0]==='pocket3d';}),'barre + : 7 usinages (Géodésique 2026-10-21), plus de Debourrage');",
     "const sRem=faoDefaultSetup();sRem.ops=[{id:'k1',type:'pocket3d',on:true},{id:'k2',type:'facing',on:true,z:20}];",
     "faoSanitiseOps(sRem);",
     "att(sRem.ops.length===1&&sRem.ops[0].id==='k2','pocket3d : op retiree du document a la lecture');",

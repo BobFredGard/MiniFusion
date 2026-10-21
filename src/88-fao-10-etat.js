@@ -95,10 +95,10 @@ function faoSanitiseOps(s){
       op.toolId=(s.tools&&s.tools[0]&&s.tools[0].id)||'T1';
     // 31z : laisse unique -> surépaisseurs radiale (XY) + axiale (fond/Z).
     // La géodésique garde `laisse` (le long de la normale, ni radial ni axial).
-    if(op.type!=='geofinish'&&isFinite(+op.laisse)&&(op.radial===undefined&&op.axial===undefined)){
+    if(op.type!=='geofinish'&&op.type!=='geodesic'&&isFinite(+op.laisse)&&(op.radial===undefined&&op.axial===undefined)){
       op.radial=+op.laisse; op.axial=+op.laisse;
     }
-    if(op.type!=='geofinish')delete op.laisse;
+    if(op.type!=='geofinish'&&op.type!=='geodesic')delete op.laisse;
     // 2026-10-13-001 : zone par ESQUISSE — sk (référence) + loop (boucle
     // extraite) doivent TOUJOURS voyager ensemble (jamais de moitié-champ) ;
     // le reste (sk vide en cours de choix) reste toléré comme la chaîne.
@@ -184,7 +184,7 @@ function faoSanitiseOps(s){
     // et seulement sur l'Ebauche 3D et la finition géodésique (2026-10-13-007 :
     // rétro-ingénierie cav.txt — sens opposé alterné sur Crêtes constantes).
     if(faoContourProfil(op)){ if(op.sens!=='avalant'&&op.sens!=='opp')delete op.sens; }
-    else if((op.type!=='rough3d'&&op.type!=='geofinish'&&!faoPocketAdapt(op))||(op.sens!=='avalant'&&op.sens!=='bidir'))delete op.sens;
+    else if((op.type!=='rough3d'&&op.type!=='geofinish'&&op.type!=='geodesic'&&!faoPocketAdapt(op))||(op.sens!=='avalant'&&op.sens!=='bidir'))delete op.sens;
     // 2026-10-13-007 : direction des passes parallèles — 'auto'/'x'/'y'/'ang'
     // sur Crêtes constantes (+ angle fini si 'ang'), absent = auto (axe long).
     if(op.type==='geofinish'){
@@ -200,6 +200,27 @@ function faoSanitiseOps(s){
     delete op.stayMax;
     // 2026-10-04-004 : finition géodésique — limites Z héritées du brut,
     // garde-fou fraise droite recalculée à chaque dispatch (jamais stockée).
+    // 2026-10-21-003 : faces usinables (bleu : Finition, Géodésique) et
+    // intouchables (rouge : + Ébauche 3D) — listes {b,f} / {b,all} valides ;
+    // absentes ou vides = champ retiré (parcours et clés inchangés).
+    if(op.type==='rough3d'||op.type==='geofinish'||op.type==='geodesic'){
+      const pr=faoFaceListClean(op.protect);
+      if(pr.length)op.protect=pr; else delete op.protect;
+      if(!pr.length||!(isFinite(+op.protectM)&&+op.protectM>=0))delete op.protectM;
+    }else{ delete op.protect; delete op.protectM; }
+    if(op.type==='geofinish'){
+      const fb=faoFaceListClean(op.faces);
+      if(fb.length)op.faces=fb; else delete op.faces;
+    }
+    if(op.type!=='geodesic'&&op.type!=='geofinish')delete op.faces;
+    if(op.type!=='geodesic'&&op.type!=='geofinish'&&op.type!=='rough3d')delete op.tangent;
+    // 2026-10-21-001 : géodésique — faces pilotes {b,f} valides, pas borné
+    if(op.type==='geodesic'){
+      op.faces=faoFaceListClean(op.faces).filter(function(q){return !q.all;});
+      if(!(+op.step>0))op.step=1; else op.step=Math.max(0.05,+op.step);
+      op.tangent=op.tangent!==false;
+      if(!(+op.laisse>=0))op.laisse=0;
+    }
     if(op.type==='geofinish'){
       if(!isFinite(+op.ztop))op.ztop=faoStock().z1;
       if(!isFinite(+op.zbot))op.zbot=faoStock().z0;

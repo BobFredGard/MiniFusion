@@ -308,7 +308,9 @@ function faoOpLabel(op,job){
     ?' [limite]'+(op.limit.stale?'⚠':''):'')
     +((op&&op.limit2&&(op.limit2.mode==='rect'||((op.limit2.mode==='chain'||op.limit2.mode==='sketch')&&(op.limit2.loop||[]).length>=3)))
     ?' [îlot]'+(op.limit2.stale?'⚠':''):'')
-    +((op&&op.zlim)?' [Z]'+(op.zlim.stale?'⚠':''):'');
+    +((op&&op.zlim)?' [Z]'+(op.zlim.stale?'⚠':''):'')
+    +((op&&Array.isArray(op.protect)&&op.protect.length)?' ['+op.protect.length+' intouchable'+(op.protect.length>1?'s':'')+']':'')
+    +((op&&op.type==='geofinish'&&Array.isArray(op.faces)&&op.faces.length)?' ['+op.faces.length+' usinable'+(op.faces.length>1?'s':'')+']':'');
   if(t==='facing')return 'Surfaçage Z='+op.z+tag+off+ra+lim;
   if(t==='pocket'&&faoPocketAdapt(op))return 'Poche adaptative '+((op.limit&&op.limit.nEdges)?op.limit.nEdges+' arêtes ':'(bord à sélectionner) ')+op.ztop+' -> '+op.zbot+ra+tag+off;
   if(t==='pocket')return 'Poche ['+op.x0+','+op.y0+' -> '+op.x1+','+op.y1+'] '+op.ztop+' -> '+op.zbot+ra+tag+off+lim;
@@ -317,6 +319,7 @@ function faoOpLabel(op,job){
   if(t==='drill')return 'Perçage '+(op.pts||[]).length+' trou(s) '+op.ztop+' -> '+op.zbot+((+op.peck)>0?' Q'+op.peck:'')+tag+off+lim;
   if(t==='rough3d')return 'Ébauche 3D '+op.ztop+' -> '+op.zbot+' ap '+op.ap+ra+tag+off+lim;
   if(t==='geofinish')return 'Finition pas '+op.step+tag+off+lim;
+  if(t==='geodesic')return 'Géodésique pas '+op.step+' ('+((op.faces||[]).length?(op.faces.length+' face'+(op.faces.length>1?'s':'')):'faces à choisir')+')'+tag+off;
   return t;
 }
 

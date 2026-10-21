@@ -251,6 +251,9 @@ const MF_IC={
   drill:'<path d="M10 3h4v9l-2 5-2-5z"/><path d="M10 6.5l4 1.5M10 9.5l4 1.5"/><path d="M5 21h14"/>',
   rough3d:'<path d="M3 19l5-8 4 5 3-4 6 7z"/><path d="M3 14h4M14 9h7" stroke-dasharray="2 2"/>',
   finish:'<path d="M3 15c2-5 4-5 6 0s4 5 6 0 4-5 6 0"/><path d="M3 9h18" stroke-dasharray="2 2"/>',
+  /* 2026-10-21-003 : Géodésique — surface (triangle arrondi) et passes concentriques
+     depuis ses bords, en bleu de l'appli (même dessin que l'icône Fusion 360) */
+  geodesic:'<path d="M12 3.2c.95 0 1.8.5 2.3 1.35l6.35 11.15c.95 1.7-.25 3.8-2.2 3.8H5.55c-1.95 0-3.15-2.1-2.2-3.8L9.7 4.55C10.2 3.7 11.05 3.2 12 3.2z"/><path d="M12 7.4c.5 0 .95.27 1.2.7l3.85 6.85c.5.9-.15 2-1.2 2H8.15c-1.05 0-1.7-1.1-1.2-2L10.8 8.1c.25-.43.7-.7 1.2-.7z" stroke="#0a84ff"/><path d="M12 11.2l1.9 3.4h-3.8z" stroke="#0a84ff" fill="#0a84ff" fill-opacity=".35"/>',
   play:'<path d="M7 4l13 8-13 8z"/>',
   rapid:'<path d="M13 2L5 13h6l-1 9 8-12h-6z"/>',
   regen:'<path d="M20 11a8 8 0 0 0-14-5l-2 2M4 13a8 8 0 0 0 14 5l2-2"/><path d="M4 4v4h4M20 20v-4h-4"/>',
@@ -302,7 +305,7 @@ const MF_CAO=[
   ['Ensembles',[['pattern','Répétition','btnRepeat'],['combine','Combiner','btnCombine'],['params','Paramètres','btnParams']]],
   ['Fichier',[['import','Importer','btnImport'],['export','STEP','btnExportStep'],['export','STL','btnExportStl'],['export','OBJ','btnExportObj']]]
 ];
-const MF_FAO_ICON={facing:'facing',pocket:'pocket',contour:'contour',drill:'drill',rough3d:'rough3d',geofinish:'finish',pocket2:'pocket'};
+const MF_FAO_ICON={facing:'facing',pocket:'pocket',contour:'contour',drill:'drill',rough3d:'rough3d',geofinish:'finish',geodesic:'geodesic',pocket2:'pocket'};
 function mfFaoAdd(type,nm){
   try{const op=faoOpDefaults(type);if(!op)return;const s=faoSetup();faoSnapshot('nouvelle opération « '+nm+' »');s.ops.push(op);faoChanged();faoSelectOp(s.id,op.id);}catch(e){}
 }

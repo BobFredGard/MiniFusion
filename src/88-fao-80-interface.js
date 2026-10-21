@@ -50,7 +50,7 @@ function faoPocketFloor(mesh,loop,zMin){
 }
 function faoPocketAdapt(op){ return !!(op&&op.type==='pocket'&&op.strat==='adaptive'); }
 // Opérations calculées sur le MAILLAGE du solide (clé de cache liée au solide).
-function faoMeshOp(op){ return !!(op&&(op.type==='rough3d'||op.type==='geofinish'||faoPocketAdapt(op)||
+function faoMeshOp(op){ return !!(op&&(op.type==='rough3d'||op.type==='geofinish'||op.type==='geodesic'||faoPocketAdapt(op)||
   (typeof faoContourProfil==='function'&&faoContourProfil(op)))); }
 function faoOpDefaults(type){
   const s=faoStock(); const job=faoDoc();
@@ -100,16 +100,20 @@ function faoOpDefaults(type){
     // avalant (cav.txt relu anneau par anneau : 30 + 24 anneaux, TOUS dans le
     // même sens par front — la lecture « sens alterné » du 007 était fausse).
     traj:'scallop', sens:'avalant'});
+  // 2026-10-21-001 : GÉODÉSIQUE — faces pilotes à choisir dans la vue (ensemble
+  // de faces tangentes), pas mesuré sur la surface, glissement au contact.
+  if(type==='geodesic')return Object.assign({},base,{type:'geodesic',
+    faces:[], tangent:true, step:+Math.max(0.2,Math.min(1,D*0.05)).toFixed(2), laisse:0, sens:'avalant'});
   // Type retiré (2026-10-06-004 : pocket3d) ou inconnu -> null : pas de fiche,
   // pas d'opération fantôme. Seule la barre « + Usinage » crée des opérations.
-  if(['facing','pocket','contour','drill','rough3d','geofinish'].indexOf(type)<0)return null;
+  if(['facing','pocket','contour','drill','rough3d','geofinish','geodesic'].indexOf(type)<0)return null;
   return Object.assign({},base,{type:type});
 }
 // Les 6 usinages et leur libellé court — source unique des boutons « + » de
 // l'arbre FAO (l'ordre est contractuel : les tests cliquent par index).
 function faoAddOpsSpec(){
   return [['facing','+ Surfaçage'],['pocket','+ Poche'],['contour','+ Contour'],
-    ['drill','+ Perçage'],['rough3d','+ Ébauche 3D'],['geofinish','+ Finition']];
+    ['drill','+ Perçage'],['rough3d','+ Ébauche 3D'],['geofinish','+ Finition'],['geodesic','+ Géodésique']];
 }
 /* ================= interface FAO : arbre + fiches panneau droit ================= */
 // Arbre FAO dédié (overlay dans la vue 3D) : posages > opérations, état on/off,
@@ -679,7 +683,7 @@ function faoRenderTree(){
 }
 function faoOpShortLabel(op){
   const n={facing:'Surfaçage',pocket:'Poche',contour:'Contour',drill:'Perçage',
-    rough3d:'Ébauche 3D',geofinish:'Finition'}[op.type]||op.type;
+    rough3d:'Ébauche 3D',geofinish:'Finition',geodesic:'Géodésique'}[op.type]||op.type;
   if(op.type==='drill'){
     // 2026-10-15-013 : libellé selon le cycle et les trous (« Taraudage M8 (4) »).
     if(op.src!=='model')return n+' ('+(op.pts||[]).length+')';
@@ -964,7 +968,7 @@ function faoOpCardElement(setup,op,i){
   const d=faoCard();
   if(op.on===false)d.style.opacity='0.55';
   const typeName={facing:'Surfaçage',pocket:'Poche',contour:'Contour',drill:'Perçage',
-    rough3d:'Ébauche 3D',geofinish:'Finition'};
+    rough3d:'Ébauche 3D',geofinish:'Finition',geodesic:'Géodésique'};
   const r=faoRow();
   const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=op.on!==false;
   cb.title='Décocher = ignorer cette opération (aperçu, temps, G-code)';
@@ -1277,16 +1281,23 @@ function faoOpCardElement(setup,op,i){
       gdEl.textContent='Diag : '+gd.chains+' chaînes ('+gd.slope+' pentes · '+gd.plate+' plateaux · '+gd.par+' // · '+gd.rest+' restes)'+(gd.flat?'':' · ⚠ aucun plan détecté');
       d.appendChild(gdEl);
     }
+  }else if(op.type==='geodesic'){
+    // 2026-10-21-001 : faces pilotes, pas, sens, surépaisseur (src/89-fao-geodesique.js)
+    faoGeoFiche(d,setup,op);
   }else if(op.type==='drill'){
     // 2026-10-15-011 : cycle, profondeur, ordre + trous du modèle (src/89-fao-percage.js)
     faoDrillSections(setup,op,d);
   }
+  // 2026-10-21-003 : faces usinables (bleu) / intouchables (rouge) — src/89-fao-faces.js
+  try{ faoFaceListsFiche(d,setup,op); }catch(e){}
   if(rp.children.length)d.appendChild(rp); // vide pour l'Ébauche 3D (sections propres)
   if(geoNote)d.appendChild(geoNote);
   // 2026-10-08-002 : plans de l'opération (dégagement / retrait), hérités du
   // posage tant que non modifiés — avant la zone (les plans cadrent tout).
   d.appendChild(faoPlanesCard(setup,op));
   // Limite d'usinage (tout, rectangle, chaîne d'arêtes, ou esquisse).
+  // 2026-10-21-001 : la géodésique n'a pas de zone — ses faces pilotes la font.
+  if(op.type!=='geodesic'){
   d.appendChild(faoH('Zone'));
   const rl=faoRow();
   const limMode=op.limit?(op.limit.mode||'all'):'all';
@@ -1492,6 +1503,7 @@ function faoOpCardElement(setup,op,i){
       'Distance supplémentaire (+) entre l\'outil et l\'îlot, en mm.'));
     d.appendChild(rs2);
   }
+  } // fin zone (hors géodésique)
   // 2026-10-15-010 : onglet « Outil » (vitesse, avances, portée) — avant le bilan.
   try{ d.appendChild(faoOpToolSection(setup,op)); }catch(e){}
   const sf=faoOpCutting(op,setup);

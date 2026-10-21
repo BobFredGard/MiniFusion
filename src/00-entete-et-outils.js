@@ -21,7 +21,7 @@
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.3.13';
+const APP_VER='V0.3.14';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -31,8 +31,15 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-15-009';
+const CACHE_VER='2026-10-21-004';
 function cacheVerOK(v){
+  // 2026-10-21-004 : ébauche 3D — un rampage de descente ne relie plus deux
+  // échantillons séparés par un trou (passage sous la pièce) : les parcours
+  // qui portaient ces ponts (entrées à travers la pièce) changent.
+  // 2026-10-21-002 : ébauche 3D — le domaine des centres d'outil inclut la
+  // BOÎTE DU BRUT (plus seulement celle de la pièce) : les documents dont le
+  // brut déborde de la pièce changent de parcours (bande des flancs enfin
+  // usinée, plus de rapides en matière). Périmés légitimement, à régénérer.
   // 2026-10-11-002 : ébauche 3D — la ZONE voyage dans le REPÈRE (zoneAt
   // transposé sous SENS LONG + rotation de −θ sur l'axe d'une limite oblique,
   // faoLoopAxis) : les documents à zone + brut portrait/changé CHANGENT de

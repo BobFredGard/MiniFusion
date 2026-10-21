@@ -14,7 +14,7 @@ function faoOpMovesStore(op,key,mv){
 }
 function faoOpSig(op){
   const o={};
-  const skip={hidden:1,on:1,geoBlocked:1,geoDiag:1,stale:1,cut:1}; // cut : vitesses/avances (2026-10-15-010) — aucun effet sur le tracé
+  const skip={hidden:1,on:1,geoBlocked:1,geoDiag:1,stale:1,cut:1,tangent:1}; // cut : vitesses/avances (2026-10-15-010) — aucun effet sur le tracé ; tangent : aide à la saisie des faces (2026-10-21-003)
   try{
     for(const k in op){
       if(!Object.prototype.hasOwnProperty.call(op,k)||skip[k])continue;
@@ -360,7 +360,7 @@ function faoMovesSolidFp(){
       const ops=s.ops||[];
       for(let i=0;i<ops.length;i++){
         const t=ops[i]&&ops[i].type;
-        if(t==='rough3d'||t==='geofinish'){ o[s.id]=faoSetupFp(s); return; }
+        if(t==='rough3d'||t==='geofinish'||t==='geodesic'){ o[s.id]=faoSetupFp(s); return; }
       }
     });
   }catch(e){}
@@ -622,6 +622,13 @@ function* faoOpMovesIt0(op,job){
   else if(op.type==='rough3d'||faoPocketAdapt(op)){
     let am=null;
     try{ am=faoActiveMesh(job); }catch(e){ am=null; }
+    // 2026-10-21-003 : intouchables — solides rouges = obstacles du modèle ;
+    // faces/solides rouges = cote de pointe minimale (outil gonflé de la marge)
+    let protTip=null;
+    if(op.type==='rough3d'&&Array.isArray(op.protect)&&op.protect.length&&am&&am.mesh){
+      try{ const rb=faoProtectBodiesMesh(job,op); if(rb)am={mesh:faoMeshConcat(am.mesh,rb),box:am.box}; }catch(e){}
+      try{ protTip=faoProtectTip(job,op,faoToolById(job,op.toolId)||{d:D},faoRA(op).radial,true); }catch(e){ protTip=null; }
+    }
     // bulge supprimé : la sonde (A/B) montrait une garde identique avec ou
     // sans compensation parent — l'arrondi tangent reste hors mur (≥0.48).
     const brutTop=(job&&job.stock&&isFinite(+job.stock.z1))?+job.stock.z1:null;
@@ -642,6 +649,10 @@ function* faoOpMovesIt0(op,job){
         // 2026-10-08-004 : entrée CIRC par défaut (doc sans champ = arc
         // tangent, repli hélice/rampe si pas d'ancre ; 'auto' = legacy).
         entry:op.entry||'circ',entryR:op.entryR,brutTop:brutTop,secu:secu,
+        // 2026-10-21-002 : boîte du brut — élargit le domaine d'usinage quand
+        // le brut déborde de la pièce (bande des flancs jamais usinée avant)
+        stockBox:(job&&job.stock&&faoStockValid&&faoStockValid(job.stock))?job.stock:null,
+        protectTip:protTip,
         zoneAt:zctx?zctx.at:null,
         // 2026-10-11-005 : la limite voyage avec la zone — le REPÈRE de
         // génération (faoLoopAxis) suit l'axe de la chaîne (poche oblique).
@@ -659,10 +670,18 @@ function* faoOpMovesIt0(op,job){
         // (aucune chaine retournee) ; absent/'bidir' = legacy (retournement
         // vers l'extremite la plus proche).
         sens:op.sens});
+    // 2026-10-21-003 : rapides au-dessus des intouchables -> plan de dégagement
+    if(protTip&&mv&&mv.length)mv=faoProtectRapids(mv,protTip,secu);
   }
   else if(op.type==='geofinish'){
     let am=null;
     try{ am=faoActiveMesh(job,true); }catch(e){ am=null; } // 2026-10-14-009 : maillage fin (congés)
+    // 2026-10-21-003 : faces usinables (bleu) / intouchables (rouge)
+    let faceOk=null;
+    if(am&&am.mesh&&((Array.isArray(op.protect)&&op.protect.length)||(Array.isArray(op.faces)&&op.faces.length))){
+      try{ const rb=faoProtectBodiesMesh(job,op); if(rb)am={mesh:faoMeshConcat(am.mesh,rb),box:am.box}; }catch(e){}
+      try{ faceOk=faoFaceOkAt(job,op,am.mesh,faoToolById(job,op.toolId)||{d:D},+op.laisse||0); }catch(e){ faceOk=null; }
+    }
     if(am&&am.mesh){
       const tool=faoToolById(job,op.toolId);
       // 2026-10-12-002 : yield* — la finition cède le fil par chaîne/zone
@@ -670,7 +689,8 @@ function* faoOpMovesIt0(op,job){
       // 2026-10-13-001 : zoneAt injectée — la limite d'op borne le MASQUE du
       // champ géodésique (faces hors zone exclues) ; sans cela, zbot bas +
       // parois du maillage = passes qui descendent sous la face limitée.
-      const zctx=faoZoneCtx(op,job);
+      const zctx0=faoZoneCtx(op,job);
+      const zctx=faceOk?{at:(zctx0&&zctx0.at)?function(x,y){return zctx0.at(x,y)&&faceOk(x,y);}:faceOk}:zctx0;
       // 2026-10-14-001 : trajectoire 'scallop' = CRÊTES CONSTANTES façon
       // Fusion 360 (offsets géodésiques depuis les bords de la zone, lentilles
       // dans les restes, descente outil sans surcoupe) — src/89-fao-cretes.js.
@@ -694,11 +714,37 @@ function* faoOpMovesIt0(op,job){
          // sans ébauche 3D amont, faoGeoEntryMode retombe sur la rampe).
          entry:op.entry||'circ',entryR:op.entryR,hasRrough:faoGeoHasRrough(job,op),
          zoneAt:zctx?zctx.at:null});
+      // parallèle : le masque de faces ne voit que les centres de facettes —
+      // passes recoupées EXACTEMENT au prédicat bleu/rouge (ré-entrée par le haut)
+      if(faceOk&&op.traj!=='scallop'&&mv.length)mv=faoClipMovesPoly(mv,null,0,secu,1,faceOk);
       op.geoBlocked=(tool.kind==='flat'&&!mv.length);
       // 2026-10-13-007 : diag embarqué (fond nu : quelle phase est morte ?) —
       // lu par la fiche op. Stashé AVANT le clip (qui reconstruit les tableaux).
       try{ if(mv&&mv.diag)op.geoDiag=mv.diag; else delete op.geoDiag; }catch(e){}
     }else op.geoBlocked=false;
+  }
+  // 2026-10-21-001 : GÉODÉSIQUE — passes à distance constante SUR les faces
+  // pilotes choisies (op.faces), descente outil sur tout le modèle du posage
+  // (aucune pénétration), glissement au contact — src/89-fao-geodesique.js.
+  else if(op.type==='geodesic'){
+    let am=null,drive=null;
+    try{ am=faoActiveMesh(job,true); }catch(e){ am=null; }
+    try{ drive=faoGeoDrive(job,op); }catch(e){ drive=null; }
+    // 2026-10-21-003 : intouchables — solides rouges = obstacles, faces et
+    // solides rouges = descente de l'outil gonflé de la marge
+    let red=null;
+    if(am&&am.mesh&&Array.isArray(op.protect)&&op.protect.length){
+      try{ const rb=faoProtectBodiesMesh(job,op); if(rb)am={mesh:faoMeshConcat(am.mesh,rb),box:am.box}; }catch(e){}
+      try{ red=faoFaceMesh(job,op.protect); }catch(e){ red=null; }
+    }
+    if(am&&am.mesh&&drive){
+      const tool=faoToolById(job,op.toolId);
+      mv=yield* faoGenGeodesicIt(am.mesh,drive,
+        {step:isFinite(+op.step)?+op.step:1,toolD:D,kind:tool.kind,
+         cornerR:tool.cornerR,laisse:+op.laisse||0,secu:secu,sens:op.sens,
+         protect:red,protectM:faoProtectM(op)});
+      try{ if(mv&&mv.diag)op.geoDiag=mv.diag; else delete op.geoDiag; }catch(e){}
+    }else{ try{ op.geoDiag={nofaces:!drive?1:0}; }catch(e){} }
   }
   // Limite : rect (Liang-Barsky rapide) ou chaîne d'arêtes (clip impair).
   // Phase suivante : chaîne d'arêtes multiples, faces.
@@ -712,7 +758,7 @@ function* faoOpMovesIt0(op,job){
   // 2026-10-14-001 : Crêtes constantes 'scallop' — la zone est déjà la
   // RÉGION du générateur (bord exact par dichotomie) ; le re-clip couperait
   // les arcs d'entrée/sortie tangents au bord et réinjecterait des remontées.
-  const zoneDone=(op.type==='geofinish'&&op.traj==='scallop')||faoContourProfil(op);
+  const zoneDone=(op.type==='geofinish'&&op.traj==='scallop')||op.type==='geodesic'||faoContourProfil(op);
   if(zoneDone){}
   else if(lim&&lim.mode==='rect'&&mv.length){
     const R=faoEffLimit(op,clipR*2);

@@ -1013,6 +1013,26 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   let th=0,guard=0,atCut=false,prevIn=false,px=cx,py=cy;
   // 007 : descente répartie le long de la spirale (rampL>0 = rampage actif)
   let rampL=0,rampK=0,rampTot=0;
+  // 2026-10-21-004 : FIN DE RAMPAGE ANTICIPÉE — un rampage ne continue QUE
+  // vers un point CONTIGU (échantillon précédent légal) et dégagé (segClear).
+  // Avant : après un trou (la spirale / le demi-anneau passe sous la pièce,
+  // hors zone légale) le rampage reliait l'échantillon légal suivant EN LIGNE
+  // DROITE — à travers la pièce (RETARD : allers-retours x −14 ↔ 60 sous la
+  // lentille, jusqu'à 115 mm de corps d'outil dans la matière). La descente
+  // est close au dernier point légal (micro-hélice, sinon plongée claire,
+  // sinon cote atteinte, sûre) et le point suivant reçoit une vraie entrée.
+  const finishRamp=function(){
+    if(rampL>0){
+      const zLast=moves.length?moves[moves.length-1].z:z;
+      if(zLast>z+1e-9){
+        let orbOk=true;
+        for(let k=0;k<8;k++){const a=k/8*2*Math.PI;if(!inside(px+0.5*Math.cos(a),py+0.5*Math.sin(a))){orbOk=false;break;}}
+        if(orbOk)faoHelixEntry(px,py,zLast,z,0.5,D).slice(1).forEach(function(m){moves.push(m);});
+        else if(faoPlungeClear(px,py,moves,z,D,airSp))moves.push({r:0,x:rnd(px),y:rnd(py),z:z});
+      }
+    }
+    rampL=0;
+  };
   while(th<=thMax&&guard++<400000){
     const R=pitch*th/(2*Math.PI);
     const x=cx+R*Math.cos(th), y=cy+R*Math.sin(th);
@@ -1022,6 +1042,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
       // (R=0) : repli sur le pas de l'échantillon.
       let ex=-(y-cy), ey=(x-cx);
       if(Math.hypot(ex,ey)<1e-9){ ex=x-px; ey=y-py; }
+      if(rampL>0&&!(prevIn&&segClear(px,py,x,y)))finishRamp(); // 2026-10-21-004 : jamais de pont
       if(rampL>0){
         // 007 : on CONTINUE le rampage — la fraise descend en avançant sur la
         // spirale (coupe progressive du croissant non balayé, centre légal).
@@ -1048,15 +1069,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   // 007 : fin de spirale pendant un rampage : on termine la descente au
   // dernier point légal — hélice micro-orbite si elle tient, sinon plongée
   // claire (disque déjà balayé), sinon on garde la cote atteinte (sûr).
-  if(rampL>0){
-    const zLast=moves.length?moves[moves.length-1].z:z;
-    if(zLast>z+1e-9){
-      let orbOk=true;
-      for(let k=0;k<8;k++){const a=k/8*2*Math.PI;if(!inside(px+0.5*Math.cos(a),py+0.5*Math.sin(a))){orbOk=false;break;}}
-      if(orbOk)faoHelixEntry(px,py,zLast,z,0.5,D).slice(1).forEach(function(m){moves.push(m);});
-      else if(faoPlungeClear(px,py,moves,z,D,airSp))moves.push({r:0,x:rnd(px),y:rnd(py),z:z});
-    }
-  }
+  finishRamp();
   // --- CÔTÉS (2026-10-11-001) : ARCS CONCENTRIQUES par côté — remplace le
   // zigzag DROIT de la 004 (demande « les passes après la spirale étaient de
   // type circulaire avant et maintenant elles sont droites — cela ne me plaît
@@ -1109,6 +1122,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
         const sg=rev?-1:1;
         let ex=-Math.sin(th)*sg, ey=Math.cos(th)*sg;
         if(Math.hypot(ex,ey)<1e-9){ex=x-px;ey=y-py;}
+        if(rampL>0&&!(prevIn&&segClear(px,py,x,y)))finishRamp(); // 2026-10-21-004 : jamais de pont
         if(rampL>0){
           rampK++;
           const zr=Math.max(z,Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000);
@@ -1425,6 +1439,23 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
   // SENS LONG historique inchangé (miroir si le brut est plus haut que large).
   const thL=faoLoopAxis(o&&o.limit&&o.limit.loop);
   let th=0, swapped=false, M=mesh, BB=B;
+  // 2026-10-21-002 : BRUT PLUS LARGE QUE LA PIÈCE — le domaine des centres
+  // d'outil était la boîte de la PIÈCE ± r : un brut qui déborde (corps brut
+  // RETARD : +2,25 mm sur les flancs plats) laissait une bande jamais usinée le
+  // long des flancs (centres à 58,7 exactement = bande de largeur nulle), que
+  // les rapides de liaison à +5 mm traversaient en pleine matière (40 rapides,
+  // 5,8 m). La boîte du brut (o.stockBox, repère du posage) ÉLARGIT le domaine ;
+  // l'orientation (sens long, axe de zone) reste décidée sur la pièce.
+  // 2026-10-21-003 : INTOUCHABLES — la zone devient « 3D » : un centre d'outil
+  // n'est admis au niveau courant (zCur) que si l'outil gonflé de la marge y
+  // reste au-dessus du rouge (o.protectTip = cote de pointe minimale). Posé
+  // AVANT les transformations de repère (la zone voyage avec elle).
+  let zCur=1/0;
+  if(typeof o.protectTip==='function'){
+    const pT=o.protectTip,zB=(typeof o.zoneAt==='function')?o.zoneAt:null;
+    o=Object.assign({},o,{zoneAt:function(x,y){return (!zB||zB(x,y))&&!(pT(x,y)>zCur+1e-6);}});
+  }
+  const SB=o.stockBox&&isFinite(+o.stockBox.x0)&&isFinite(+o.stockBox.x1)&&isFinite(+o.stockBox.y0)&&isFinite(+o.stockBox.y1)?o.stockBox:null;
   if(thL!==null&&thL!==0){
     th=thL;
     const cs=Math.cos(th), sn=Math.sin(th); // matrice repère = R(−th)
@@ -1438,10 +1469,16 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     }
     M={v:v2,t:mesh.t};
     BB={x0:x0,y0:y0,x1:x1,y1:y1,z0:B.z0,z1:B.z1};
+    if(SB)[[SB.x0,SB.y0],[SB.x1,SB.y0],[SB.x0,SB.y1],[SB.x1,SB.y1]].forEach(function(c){
+      const X=c[0]*cs+c[1]*sn, Y=c[1]*cs-c[0]*sn;
+      if(X<BB.x0)BB.x0=X; if(X>BB.x1)BB.x1=X; if(Y<BB.y0)BB.y0=Y; if(Y>BB.y1)BB.y1=Y;});
   }else if(thL===null&&(B.y1-B.y0)>(B.x1-B.x0)){
     swapped=true;
     M={v:mesh.v.map(function(p){return [p[1],p[0],p[2]];}),t:mesh.t};
     BB={x0:B.y0,y0:B.x0,x1:B.y1,y1:B.x1};
+    if(SB)BB={x0:Math.min(BB.x0,+SB.y0),y0:Math.min(BB.y0,+SB.x0),x1:Math.max(BB.x1,+SB.y1),y1:Math.max(BB.y1,+SB.x1)};
+  }else if(SB){
+    BB=Object.assign({},B,{x0:Math.min(B.x0,+SB.x0),y0:Math.min(B.y0,+SB.y0),x1:Math.max(B.x1,+SB.x1),y1:Math.max(B.y1,+SB.y1)});
   }
   // 2026-10-11-005 — LA ZONE PART DANS LE REPERE AUSSI : `o.zoneAt` est un
   // prédicat MONDE ; livré tel quel dans un repère transposé/pendant, il
@@ -1590,6 +1627,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     // toujours le plan de retrait (secu porte déjà le plan).
     const bandTop=li>0?plan[li-1].z:zt;
     const tvZ=o.remPlan?secu:Math.min(secu,bandTop+5);
+    zCur=L.z;
     // ESCARGOT : spirale centre -> faces sur le meme plan/levels, memes
     // entrees/travel ; mini-passes et finition restent conventionnelles.
     // 2026-10-08-003 : sens (avalant = sens de coupe constant) porte par opt.
@@ -1609,6 +1647,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
       if(h>1e-9)for(let k=1;k<=nb;k++){
         const zm=Math.round((bandTop-k*h/(nb+1))*1000)/1000;
         const s=RA.radial;
+        zCur=zm;
         // 2026-10-14-008 : outil à rayon de coin — la mini-passe (contour de
         // paroi) est calculée au CONTACT RÉEL de l'outil (laisse Parois), à la
         // même place du parcours, au lieu du calcul fraise droite (~1 mm de
@@ -1636,6 +1675,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
         ?Math.max(1,Math.min(9,Math.round(+o.finitProf))):1;
       for(let j=0;j<np;j++){
         const zj=(j===0)?zLow:Math.round((zLow+range*j/np)*1000)/1000;
+        zCur=zj;
         let zA=null;
         for(let i=0;i<plan.length;i++)
           if(plan[i].z>zj+1e-9&&(zA===null||plan[i].z<zA))zA=plan[i].z;
@@ -1654,6 +1694,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
   }
   if(bullC){
     for(let q=0;q<bullJobs.length;q++){const J=bullJobs[q];
+      zCur=J[1];
       faoBullRingLevel(bullCtx(J[0]),J[1],moves,{sens:o.sens,secu:secu,travelZ:J[2],linkMax:bullLink});}
     if(bullJobs.length){const lm=moves[moves.length-1];if(lm&&lm.z<secu-1e-9)moves.push({r:1,x:lm.x,y:lm.y,z:secu});}
     yield frameYield();

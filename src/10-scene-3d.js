@@ -231,6 +231,7 @@ function animate(){
   }
   try{triadUpdateAll();}catch(e){}
   try{if(typeof faoPoseSync==='function')faoPoseSync();}catch(e){}
+  try{if(typeof faoFaceHlSync==='function')faoFaceHlSync();}catch(e){} // faces bleues / rouges de l'op sélectionnée
   renderer.render(scene,camera);
 }
 function showAll(){

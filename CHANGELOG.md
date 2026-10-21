@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**283 versions**, de `2026-09-28b` à `V0.3.13` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**284 versions**, de `2026-09-28b` à `V0.3.14` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4324,5 +4324,26 @@ Vérifié au navigateur, sur l'exemple Perçages :
 - base alignée = projection 1er angle (dessus, dessous, côté) ;
 - style des nouveaux éléments rendu (épaisseur, type, couleur) ;
 - export couleur / noir.
+
+`npm run ci` vert.
+
+## V0.3.14 - FAO : Géodésique, faces usinables / intouchables, Ébauche 3D sans passage dans la matière
+### Nouvelle opération « Géodésique »
+- Rétro-analyse de la Géodésique 3 axes de Fusion 360 (RETARD.step, boule D30) : Scallop depuis une ligne centrale, pas ≤ 0,8, 23 % de l'avance G1 dans le vide aux pointes.
+- miniFusion : passes à distance **géodésique constante sur les faces choisies**, depuis leurs bords vers le centre ; seuls les points touchables en 3 axes ; Z = descente outil sur tout le modèle (aucune pénétration).
+- Passe suivante rejointe en **glissant au contact** (≤ 1,5 pas) ; passes de reste sur la crête et dans les coins aigus ; normales lissées le long des passes.
+- Sur RETARD (pas 0,8) : 1,2 % d'avance hors matière (Fusion : 23 %), ≈ 81 min au lieu de 106, matière restante max 0,0064 mm (crête théorique 0,0053).
+- Icône dédiée (triangle arrondi, passes concentriques).
+### Faces usinables (bleu) / intouchables (rouge), par opération
+- Ébauche 3D (rouge), Finition et Géodésique (bleu + rouge) : « Choisir dans la vue », faces tangentes, Maj+clic = solide entier.
+- Rouge : jamais touché, marge réglable (0,5 mm) ; rapides au-dessus d'une zone rouge par le plan de dégagement ; solides rouges = obstacles.
+- Bleu : Finition limitée aux positions où l'outil repose sur le bleu ; faces pilotes de la Géodésique.
+- Couleurs persistantes tant que l'opération est sélectionnée.
+### Ébauche 3D : corrections de sécurité
+- **Brut plus large que la pièce** : le domaine des centres d'outil inclut la boîte du brut. La bande des flancs n'était jamais usinée et les rapides de liaison la traversaient (Malaxeur Retard : 40 rapides, 5,8 m en matière → 0).
+- **Rampes de descente** : un rampage ne relie plus deux points séparés par un passage sous la pièce (rampes en ligne droite à travers la lentille, jusqu'à 115 mm de corps d'outil dans la matière → 0).
+- CACHE_VER `2026-10-21-004` : parcours d'Ébauche 3D à régénérer.
+
+Tests ajoutés : `test_fao_geodesique`, `test_fao_faces`, `test_fao_ebauche_brut` (fixtures RETARD.step, brut, posage). `test_fao` / `test_fao_barre3d` : 7 usinages.
 
 `npm run ci` vert.
