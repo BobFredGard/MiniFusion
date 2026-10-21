@@ -302,7 +302,8 @@ function mfRibbon(){
   // PLAN : ruban dédié (icônes PLAN + actions mepSetTool/mep*)
   const mepTool=t=>{try{mepSetActive(true);mepSetTool(t);}catch(e){}};
   grp('Planches',[['sheet','Nouvelle',()=>{try{mepAddSheet();}catch(e){}},'Ajouter une planche'],
-    ['sheet','Dupliquer',()=>{try{const bs=document.querySelectorAll('#mepTabs .mepAdd');if(bs[1])bs[1].click();}catch(e){}},'Dupliquer la planche']],'mfPlan');
+    ['sheet','Dupliquer',()=>{try{const bs=document.querySelectorAll('#mepTabs .mepAdd');if(bs[1])bs[1].click();}catch(e){}},'Dupliquer la planche'],
+    ['draft','Cartouche',()=>{try{mepSetActive(true);mepTbEdit();}catch(e){}},'Dessiner / éditer le cartouche (esquisse contrainte, champs matière, TTS, TTH…)']],'mfPlan');
   grp('Vues',[['face','Face',()=>{try{mepSetActive(true);mepAddViewStd('front');}catch(e){}},'Vue de face'],
     ['sketch','Dessus',()=>{try{mepSetActive(true);mepAddViewStd('top');}catch(e){}},'Vue de dessus'],
     ['draft','Côté',()=>{try{mepSetActive(true);mepAddViewStd('right');}catch(e){}},'Vue de côté'],
@@ -313,7 +314,7 @@ function mfRibbon(){
     ['detail','Détail',()=>{try{mepSetActive(true);mepBeginDetailCmd();}catch(e){}},'Vue de détail (centre + rayon)']],'mfPlan');
   grp('Dessin',[['sketch','Ligne',()=>mepTool('line')],['pattern','Rectangle',()=>mepTool('rect')],
     ['combine','Cercle',()=>mepTool('circle')],['revolve','Arc',()=>mepTool('arc')],
-    ['hole','Point',()=>mepTool('point')],['chamfer','Ajuster',()=>mepTool('trim')]],'mfPlan');
+    ['hole','Point',()=>mepTool('point')],['chamfer','Ajuster',()=>mepTool('trim')],['sketch','Texte',()=>mepTool('text'),'Texte libre ou champ (matière, TTS, TTH…)']],'mfPlan');
   grp('Cotes',[['dim','Cote',()=>mepTool('dim'),'Outil cote unique : Ø, longueur, distance, angle'],
     ['hole','Perçage',()=>mepTool('hole'),'Cotation perçage : Ø, lamage, fraisure, taraudage'],
     ['pattern','Perçages auto',()=>{try{mepSetActive(true);mepAutoHoles();}catch(e){}},'Coter toutes les fonctions Perçage (n× si plusieurs trous) — vue sélectionnée, sinon toute la planche']],'mfPlan');

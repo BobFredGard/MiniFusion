@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**281 versions**, de `2026-09-28b` à `V0.3.11` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**282 versions**, de `2026-09-28b` à `V0.3.12` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4190,3 +4190,71 @@ Vérifié au navigateur (A3 paysage, fenêtre large : écart de 49 mm supprimé)
   - Dimensions issues de la boîte englobante.
   - La duplication d'une planche garde la nomenclature.
 Vérifié au navigateur : thèmes Nuit/Clair, papier sombre, règles et coordonnées (centre A3 = 210 / 148,5), cartouche avec logo et révisions, DXF retracé à l'identique, « 4× M6 » sur l'exemple Perçages. `test_mise_en_plan` complété (cartouche, révisions, exports) ; `npm run ci` vert.
+
+## V0.3.12 - PLAN : cartouche dessiné (esquisse contrainte), contraintes 2D, champ TTH, sélection au cadre
+
+### Cartouche personnalisable
+- **TTH** (traitement thermique) ajouté au cartouche. La rangée 2 devient MATIÈRE | TTS | TTH | TOL. GÉNÉRALES | INDICE. Le panneau propose « TTS (surface) » et « TTH (thermique) », avec des listes de saisie (usages courants et valeurs déjà employées, mémorisées localement).
+- **« Dessiner / Éditer le cartouche »** (ruban « Cartouche » ou panneau) : le cartouche devient une **esquisse contrainte**.
+  - Il est ancré au coin bas-droit intérieur du cadre (ISO 7200) : un même modèle sert de l'A4 à l'A0.
+  - Au premier passage, le Standard est converti en esquisse complète : traits épais et fins, séparateurs, libellés et champs, entièrement coté (largeur, hauteurs, positions des séparateurs, placement des textes).
+  - Une cote modifiée fait suivre séparateurs et textes.
+- **Textes et champs** (outil « Texte ») :
+  - texte libre, ou champ : projet, n° de plan, société, planche, échelle, format, date, dessiné/vérifié par, matière, TTS, TTH, tolérances générales, état de surface, masse, indice, ou champ personnalisé ;
+  - réglages : hauteur, maigre ou gras, ancrage début/centre/fin, largeur maxi (le texte trop long est tronqué par « … ») ;
+  - les **valeurs restent sur la planche** : changer de modèle ne perd aucune saisie, et les champs vides s'affichent `{MATIÈRE}` en édition.
+- **Zone logo** (outil dédié) : l'image du cartouche y est ajustée.
+- **Bibliothèque de modèles** (ce navigateur) :
+  - « Enregistrer… », choix du modèle (Standard ou ★ modèles) ;
+  - « Par défaut » pour les nouvelles planches, « Retirer de la bibliothèque » ;
+  - « Repartir du Standard ».
+- La hauteur réservée au cartouche suit l'esquisse. Révisions et nomenclature se posent au-dessus. Export DXF : calque CARTOUCHE.
+### Esquisse 2D contrainte (planche et cartouche)
+- **Solveur** (Levenberg-Marquardt) :
+  - jacobien creux : chaque contrainte ne dérive que ses propres points ;
+  - points fixes exclus des variables ;
+  - pas acceptés seulement s'ils réduisent l'écart.
+- **Nouveaux types de contraintes** : `fix`, `distX`, `distY`, `distPL` (point–ligne), `eqR` (rayons égaux). Arcs pris en charge par tangent, rayon et « sur cercle ».
+- **Outils** :
+  - ligne enchaînée (Échap ou clic droit termine) ;
+  - accrochage sur les points (réutilisés, plus de doublons), les milieux, et « sur ligne / sur cercle » (la contrainte est posée automatiquement) ;
+  - H/V automatiques à ±3° ;
+  - rectangle sur 4 points partagés ;
+  - arc avec extrémités sur le cercle ;
+  - outil Texte.
+- **Sélection** : clic, Maj+clic pour ajouter ; points, traits, textes, contraintes. **Glisser** sous contraintes. Un élément coté ou fixé ne se déforme pas : la barre d'état invite à modifier la cote.
+- **Panneau de contraintes** :
+  - géométriques : Coïncident (fusion des points), Horizontal, Vertical, Parallèle, Perpendiculaire, Égal, Milieu, Sur ligne, Sur cercle, Tangent, Concentrique, Fixe ;
+  - **cotes pilotantes** : Distance, Dist. horizontale, Dist. verticale, Rayon, Angle, posées à la valeur actuelle puis modifiables (champ focalisé) ;
+  - une contrainte contradictoire ou redondante est **refusée** et la géométrie restaurée ;
+  - Suppr supprime la sélection.
+- **Affichage d'édition** (jamais exporté ni imprimé) :
+  - points, et points fixes en rouge ;
+  - glyphes H, V, ∥, ⊥, =, T, M et ancre ;
+  - cotes pilotantes avec leur valeur, placée contre l'élément coté ;
+  - les cotes de placement d'un texte n'apparaissent qu'à sa sélection.
+### Sélection au cadre (planche et cartouche)
+- **De gauche à droite** = fenêtre (cadre bleu plein) : seuls les éléments **entièrement dedans** sont pris.
+- **De droite à gauche** = capture (cadre vert en pointillés) : **tout ce qui touche ou traverse** le cadre est pris.
+- Maj ou Ctrl ajoute à la sélection.
+- **Planche** :
+  - le cadre attrape les éléments d'esquisse, les **vues** et les **cotes** (lot surligné) ;
+  - Suppr ou « Supprimer » efface tout en une seule annulation (les vues filles et leurs cotes suivent) ;
+  - Échap désélectionne.
+- **Cartouche en édition** : le cadre attrape traits, textes, zone logo et points isolés.
+  - Partir d'un texte non sélectionné trace un cadre ; un simple clic le sélectionne ; un texte déjà sélectionné se déplace au glisser.
+- Le cadre démarre sur le fond. Partir d'une vue ou d'un trait garde le comportement habituel (sélection, déplacement).
+### Correctifs
+- L'esquisse de planche n'était **jamais dessinée** : le rendu passait `sh.sk` au lieu de la planche.
+- Le dessin en 2 clics (ligne, rectangle, cercle, arc) **n'aboutissait jamais** : le relâchement du 1er clic effaçait le tracé en cours.
+- Supprimer un trait n'efface plus les points isolés de l'esquisse.
+
+Vérifié au navigateur :
+- conversion du Standard ;
+- glisser bloqué d'un séparateur coté ;
+- cote 286 → 250 mm, les textes suivent ;
+- rectangle accroché au coin du cartouche (3 points neufs, 4 contraintes) ;
+- ligne enchaînée avec H/V et « sur ligne » automatiques ;
+- rendu final et DXF (calque CARTOUCHE, valeurs C45, Nitruration).
+
+`test_mise_en_plan` complété : cartouche Standard → esquisse (26 mm, TTS/TTH), cote de largeur, champs, rectangle + cote pilotante, contrainte refusée, sélection fenêtre/capture. Navigateur : capture de 2 vues, fenêtre d'une seule vue, fenêtre et capture dans le cartouche. `npm run ci` vert.

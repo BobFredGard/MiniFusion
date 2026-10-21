@@ -587,6 +587,47 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
       out.cartRevs=revs.indexOf('Création')>=0&&revs.indexOf('Perçages')>=0&&revs.indexOf('MODIFICATION')>=0;
       delete sh0.title.revs;delete sh0.title.matiere;delete sh0.title.traitement;delete sh0.title.tolgen;
     }catch(e){out.cartRich=false;out.cartErr=String(e);}
+    // V0.3.12 : esquisse contrainte + cartouche dessiné
+    try{
+      const T=window.__mepTest.sk,sh0=doc.mep.sheets[doc.mep.cur];
+      // cartouche Standard converti en esquisse : cohérent, 26 mm de haut, champs TTS/TTH présents
+      const tb=T.fromStd(sh0);sh0.title.tb=tb;
+      const err0=T.solve(tb.sk);
+      out.tbStd=err0<1e-6&&Math.abs(T.tbH(sh0)-26)<1e-6
+        &&tb.sk.ents.some(e=>e.t==='text'&&e.f==='tth')&&tb.sk.ents.some(e=>e.t==='text'&&e.f==='traitement');
+      // la cote pilotante de largeur fait suivre séparateurs et textes
+      const cw=tb.sk.cons.find(c=>c.type==='distX'&&c.b==='o');
+      const W0=cw.val,txt=tb.sk.ents.find(e=>e.t==='text'&&e.f==='projet'),x0=tb.sk.pts[txt.p].x;
+      cw.val=W0-100;const err1=T.solve(tb.sk);
+      out.tbWidth=err1<1e-6&&Math.abs(tb.sk.pts[txt.p].x-(x0+100))<1e-6&&Math.abs(tb.sk.pts.o.x)<1e-12;
+      sh0.title.matiere='C45';sh0.title.tth='Trempe + revenu';
+      const tm=tb.sk.ents.find(e=>e.t==='text'&&e.f==='matiere'),th=tb.sk.ents.find(e=>e.t==='text'&&e.f==='tth');
+      out.tbFields=T.textValue(sh0,tm)==='C45'&&T.textValue(sh0,th)==='Trempe + revenu';
+      sh0.title.tb=null;delete sh0.title.matiere;delete sh0.title.tth;
+      // esquisse de planche : rectangle + cote horizontale pilotante ; contrainte contradictoire refusée
+      const sk0=sh0.sk;sh0.sk=null;
+      T.addRect(sh0,{x:10,y:10},{x:50,y:30});
+      const sk=sh0.sk,top=sk.ents.find(e=>e.t==='line'&&Math.abs(sk.pts[e.p1].y-10)<1e-9&&Math.abs(sk.pts[e.p2].y-10)<1e-9);
+      T.apply(sh0,'distX',['e:'+top.id]);
+      const cx=sk.cons.find(c=>c.type==='distX');
+      T.setVal(sh0,cx,60);
+      const w=Math.abs(sk.pts[top.p2].x-sk.pts[top.p1].x);
+      const right=sk.ents.find(e=>e.t==='line'&&e!==top&&Math.abs(sk.pts[e.p1].x-sk.pts[e.p2].x)<1e-6&&(e.p1===top.p2||e.p2===top.p2));
+      out.skRect=Math.abs(w-60)<1e-4&&!!right&&Math.abs(sk.pts[right.p1].x-sk.pts[right.p2].x)<1e-4;
+      const n0=sk.cons.length;T.apply(sh0,'vertical',['e:'+top.id]);
+      out.skRefuse=sk.cons.length===n0&&Math.abs(sk.pts[top.p1].y-sk.pts[top.p2].y)<1e-4;
+      // sélection au cadre, d'après les coordonnées réelles du rectangle [X0,X1]×[Y0,Y1]
+      const xs=Object.values(sk.pts).map(q=>q.x),ys=Object.values(sk.pts).map(q=>q.y);
+      const X0=Math.min(...xs),X1=Math.max(...xs),Y0=Math.min(...ys),Y1=Math.max(...ys),xm=(X0+X1)/2,ym=(Y0+Y1)/2;
+      const nE=()=>T.sel().filter(k=>k[0]==='e').length;
+      T.box(sh0,X0-5,Y0-5,xm,Y1+5,false);const winPart=nE();       // fenêtre : seul le côté gauche est entièrement dedans
+      T.box(sh0,X0-5,Y0-5,X1+5,Y1+5,false);const winAll=nE();      // fenêtre englobante : 4 traits
+      T.box(sh0,xm,Y0-5,X0-5,Y1+5,false);const crossPart=nE();     // capture : gauche + haut + bas
+      T.box(sh0,xm+2,ym-2,xm-2,ym+2,false);const crossIn=nE();     // capture au milieu : ne touche rien
+      out.boxSel=winPart===1&&winAll===4&&crossPart===3&&crossIn===0;
+      out.boxDbg=[winPart,winAll,crossPart,crossIn].join(',');
+      sh0.sk=sk0;
+    }catch(e){out.skErr=String(e&&e.stack||e);}
     out.exportsNew=typeof window.mepExportDxf==='function'&&typeof window.mepDxfBuild==='function'
       &&typeof window.mepAutoHoles==='function'&&typeof window.mepSetPaper==='function';
 
@@ -743,6 +784,12 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.shadeFaces,'ombrage : les maillages produisent des faces projetées');
   A(val&&val.cartRich,'cartouche : matière, traitement, tolérances générales, indice (V0.3.11)'+(val&&val.cartErr?' — '+val.cartErr:''));
   A(val&&val.cartRevs,'cartouche : tableau des révisions');
+  A(val&&val.tbStd,'cartouche Standard → esquisse cohérente (26 mm, TTS, TTH) (V0.3.12)'+(val&&val.skErr?' — '+val.skErr:''));
+  A(val&&val.tbWidth,'cartouche dessiné : la cote de largeur fait suivre textes et séparateurs, origine fixe');
+  A(val&&val.tbFields,'cartouche dessiné : champs matière / TTH = valeurs de la planche');
+  A(val&&val.skRect,'esquisse : rectangle + cote horizontale pilotante 60 mm');
+  A(val&&val.skRefuse,'esquisse : contrainte contradictoire refusée, géométrie intacte');
+  A(val&&val.boxSel,'sélection au cadre : fenêtre (entièrement dedans) / capture (touche) — '+(val&&val.boxDbg));
   A(val&&val.exportsNew,'exports DXF, perçages auto et papier présents');
 
   if(ko){console.log('FAIL '+ko+' assertion(s)');process.exit(1);}
