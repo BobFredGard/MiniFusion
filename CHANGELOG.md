@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**284 versions**, de `2026-09-28b` à `V0.3.14` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**285 versions**, de `2026-09-28b` à `V0.3.15` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4347,3 +4347,12 @@ Vérifié au navigateur, sur l'exemple Perçages :
 Tests ajoutés : `test_fao_geodesique`, `test_fao_faces`, `test_fao_ebauche_brut` (fixtures RETARD.step, brut, posage). `test_fao` / `test_fao_barre3d` : 7 usinages.
 
 `npm run ci` vert.
+
+## V0.3.15 - FAO : la vue suit le Z du posage (orbite, miroir, vues standard)
+- En espace FAO, le **haut de la vue** est le Z du posage, ou celui de l'opération sélectionnée si elle a son propre repère (3+2) : l'orbite tourne autour de cet axe.
+- **Sol miroir** perpendiculaire à cet axe, collé sous le point le plus bas de la pièce mesuré le long de l'axe ; halo centré sur la pièce projetée.
+- Vues **Dessus / Face / Droite / Iso** exprimées dans ce repère en FAO.
+- CAO et PLAN : Z monde, comme avant. OrbitControls (axe figé à la création) est recréé avec les mêmes réglages quand le haut change.
+- Parcours inchangés (CACHE_VER identique).
+
+Vérifié au navigateur (posage incliné à 45°, opération Z = +X, retour CAO). `npm run ci` vert.

@@ -49,7 +49,7 @@ function buildScene(){
     textureMatrix:{value:mirrorTexMat},uCenter:{value:new THREE.Vector3()},uRadius:{value:1}};
   const fm=new THREE.ShaderMaterial({uniforms:mirrorU,
     vertexShader:'uniform mat4 textureMatrix; varying vec4 vUv; varying vec3 vWorld;\nvoid main(){ vec4 wp = modelMatrix * vec4(position, 1.0); vWorld = wp.xyz; vUv = textureMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader:'uniform vec3 color; uniform sampler2D tDiffuse; uniform vec3 uCenter; uniform float uRadius; varying vec4 vUv; varying vec3 vWorld;\nvoid main(){ if(vUv.w<=1e-4){ gl_FragColor=vec4(color,1.0); return; } vec2 uv = vUv.xy / vUv.w; float eg = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)); if(eg <= 0.0){ gl_FragColor=vec4(color,1.0); return; } vec3 refl = texture2D(tDiffuse, uv).rgb; float d = distance(vWorld.xy, uCenter.xy); float f = exp(-pow(d / max(uRadius * 1.15, 1e-3), 2.0) * 2.0) * 0.85 * smoothstep(0.0, 0.03, eg); gl_FragColor = vec4(mix(color, refl * 0.62, clamp(f, 0.0, 0.85)), 1.0); }'});
+    fragmentShader:'uniform vec3 color; uniform sampler2D tDiffuse; uniform vec3 uCenter; uniform float uRadius; varying vec4 vUv; varying vec3 vWorld;\nvoid main(){ if(vUv.w<=1e-4){ gl_FragColor=vec4(color,1.0); return; } vec2 uv = vUv.xy / vUv.w; float eg = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)); if(eg <= 0.0){ gl_FragColor=vec4(color,1.0); return; } vec3 refl = texture2D(tDiffuse, uv).rgb; float d = distance(vWorld, uCenter); float f = exp(-pow(d / max(uRadius * 1.15, 1e-3), 2.0) * 2.0) * 0.85 * smoothstep(0.0, 0.03, eg); gl_FragColor = vec4(mix(color, refl * 0.62, clamp(f, 0.0, 0.85)), 1.0); }'});
   floorMesh=new THREE.Mesh(new THREE.CircleGeometry(400,48),fm);
   floorMesh.name='floor';floorMesh.position.z=-0.5;scene.add(floorMesh);
   try{if(typeof mf3D==='function')mf3D(document.body.getAttribute('data-theme')||'nuit');}catch(e){} // thème (V0.2.1)
@@ -143,7 +143,7 @@ const _mrot=new THREE.Matrix4(),_mlook=new THREE.Vector3(),_mtgt=new THREE.Vecto
 function updateMirror(){
   // Caméra virtuelle symétrique sous le sol (plan z = floorMesh.z) + matrice de projection reflet.
   if(!mirrorOn||!floorMesh||!mirrorCam)return false;
-  _mrwp.set(0,0,floorMesh.position.z);
+  _mrwp.copy(floorMesh.position);
   _mcwp.setFromMatrixPosition(camera.matrixWorld);
   _mview.subVectors(_mrwp,_mcwp);
   if(_mview.dot(_mn)>0)return false; // caméra sous le sol : pas de reflet
@@ -175,6 +175,10 @@ function updateMirror(){
 }
 function refreshMirror(){
   // Sol sous les corps visibles + halo centré (comme le viewer).
+  // 2026-10-21-005 : le sol est PERPENDICULAIRE au haut de la vue (_mn : Z monde, ou
+  // Z du posage / de l'opération en FAO — viewUpSync) et posé sous le point le plus
+  // bas des corps LE LONG de cet axe (sommets exacts : une boîte englobante penchée
+  // laisserait un vide sous la pièce).
   if(!floorMesh)return;
   mirrorDirty=true; // la cible de reflet est à refaire (position du sol, halo, visibilité)
   floorMesh.visible=mirrorOn;
@@ -182,12 +186,89 @@ function refreshMirror(){
   const box=new THREE.Box3();let n=0;
   bodies.forEach(b=>{if(b.visible&&b.mesh){box.expandByObject(b.mesh);n++;}});
   if(!n||box.isEmpty())return;
+  const U=_mn,sz=box.getSize(new THREE.Vector3()).length();
+  let dmin=Infinity;
+  const up=Math.abs(U.z-1)<1e-9;
+  if(up)dmin=box.min.z;
+  else bodies.forEach(b=>{
+    if(!b.visible||!b.mesh||!b.mesh.geometry)return;
+    const pos=b.mesh.geometry.attributes&&b.mesh.geometry.attributes.position;if(!pos)return;
+    b.mesh.updateMatrixWorld();const M=b.mesh.matrixWorld.elements,a=pos.array,st=Math.max(1,Math.floor(pos.count/60000));
+    for(let i=0;i<pos.count;i+=st){const x=a[i*3],y=a[i*3+1],z=a[i*3+2];
+      const wx=M[0]*x+M[4]*y+M[8]*z+M[12],wy=M[1]*x+M[5]*y+M[9]*z+M[13],wz=M[2]*x+M[6]*y+M[10]*z+M[14];
+      const d=wx*U.x+wy*U.y+wz*U.z;if(d<dmin)dmin=d;}
+  });
+  if(!isFinite(dmin))dmin=box.min.dot(U);
   // 2026-10-16-014 : sol COLLÉ à la pièce (était −0,5 mm) — le reflet de l'arête du bas tombait
   // 1 mm plus bas que le trait en filigrane vu à travers une pièce transparente.
-  floorMesh.position.z=box.min.z-Math.max(0.02,box.getSize(new THREE.Vector3()).length()*1e-4);
-  _mcu.copy(box.getCenter(new THREE.Vector3()));
+  dmin-=Math.max(0.02,sz*1e-4);
+  const c=box.getCenter(new THREE.Vector3());
+  // centre du halo = centre des corps projeté sur le plan du sol
+  _mcu.copy(c).addScaledVector(U,dmin-c.dot(U));
+  floorMesh.position.copy(_mcu);
+  floorMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),U);
+  floorMesh.updateMatrixWorld();
   mirrorU.uCenter.value.copy(_mcu);
-  mirrorU.uRadius.value=Math.max(box.getSize(new THREE.Vector3()).length()/2,1);
+  mirrorU.uRadius.value=Math.max(sz/2,1);
+}
+/* 2026-10-21-005 : HAUT DE LA VUE en FAO — l'orbite (camera.up) et le sol miroir
+   suivent le Z du posage, ou celui de l'opération sélectionnée quand elle a son
+   propre repère (3+2). Hors FAO (CAO, PLAN) : Z monde. OrbitControls fige son axe
+   d'orbite à la création : il est recréé (mêmes réglages, même cible) quand le haut
+   change. Rien ne bouge pendant l'édition d'esquisse (caméra ortho dédiée). */
+function viewFaoActive(){
+  try{
+    const mod=!!(document.body&&document.body.classList&&document.body.classList.contains('ui-modern'));
+    if(mod)return document.body.getAttribute('data-ws')==='fao';
+    return typeof sel!=='undefined'&&!!sel&&(sel.kind==='faoSetup'||sel.kind==='faoOp');
+  }catch(e){return false;}
+}
+// repère de la vue {X,Y,Z} (directions monde) : posage / opération en FAO, monde sinon
+function viewBasis(){
+  const W={X:[1,0,0],Y:[0,1,0],Z:[0,0,1]};
+  try{
+    if(!viewFaoActive()||typeof faoFrame!=='function'||typeof faoRoot!=='function')return W;
+    const r=faoRoot();
+    let sid=r&&r.activeSetupId,opId=null;
+    if(typeof sel!=='undefined'&&sel){
+      if(sel.kind==='faoSetup')sid=sel.id;
+      else if(sel.kind==='faoOp'){sid=sel.setup||sid;opId=sel.id;}
+    }
+    const st=(r.setups||[]).filter(s=>s.id===sid)[0]||(r.setups||[])[0];
+    if(!st)return W;
+    const op=opId?(st.ops||[]).filter(o=>o.id===opId)[0]:null;
+    const of=(op&&typeof faoOpFrame==='function')?faoOpFrame(st,op):null;
+    const F=of||faoFrame(st);
+    if(!F||!F.Z||!F.X||!F.Y)return W;
+    return {X:F.X,Y:F.Y,Z:F.Z};
+  }catch(e){return W;}
+}
+let _viewUpSig='0,0,1';
+function viewControlsRebuild(){
+  const t=controls.target.clone(),o={rot:controls.enableRotate,damp:controls.enableDamping,df:controls.dampingFactor,
+    zs:controls.zoomSpeed,mb:controls.mouseButtons?Object.assign({},controls.mouseButtons):null,obj:controls.object};
+  try{controls.dispose();}catch(e){}
+  controls=new THREE.OrbitControls(o.obj||camera,renderer.domElement);
+  controls.enableDamping=o.damp;controls.dampingFactor=o.df;controls.zoomSpeed=o.zs;controls.enableRotate=o.rot;
+  if(o.mb&&controls.mouseButtons)Object.assign(controls.mouseButtons,o.mb);
+  controls.target.copy(t);controls.update();
+}
+function viewUpSync(){
+  if(!camera||!controls||!renderer)return;
+  try{if(typeof skEdit!=='undefined'&&skEdit)return;}catch(e){}
+  const Z=viewBasis().Z;
+  const l=Math.hypot(Z[0],Z[1],Z[2])||1;
+  const sig=[Z[0]/l,Z[1]/l,Z[2]/l].map(v=>(Math.abs(v)<1e-9?0:Math.round(v*1e6)/1e6)).join(',');
+  if(sig===_viewUpSig)return;
+  _viewUpSig=sig;
+  const U=new THREE.Vector3(Z[0]/l,Z[1]/l,Z[2]/l);
+  camera.up.copy(U);
+  _mn.copy(U);
+  // caméra pile sur l'axe : léger écart, sinon lookAt est indéterminé
+  const off=camera.position.clone().sub(controls.target);
+  if(off.lengthSq()>0&&Math.abs(off.clone().normalize().dot(U))>0.9999)camera.position.addScaledVector(new THREE.Vector3(1,-1,0).normalize(),off.length()*1e-3);
+  viewControlsRebuild();
+  try{refreshMirror();}catch(e){}
 }
 const _msig={x:NaN,y:NaN,z:NaN,qx:NaN,qy:NaN,qz:NaN,qw:NaN,fov:NaN,aspect:NaN,zoom:NaN};
 function mirrorViewMoved(){
@@ -210,6 +291,7 @@ function mirrorViewMoved(){
 
 function animate(){
   requestAnimationFrame(animate);
+  try{viewUpSync();}catch(e){} // 2026-10-21-005 : haut de vue = Z du posage / de l'opération en FAO
   controls.update();updateLabels();
   if(mirrorOn&&floorMesh&&mirrorCam){
     const vu=updateMirror();
@@ -258,15 +340,19 @@ function viewFit(o){
   const s=Math.max(Math.sin(fv*0.5),Math.sin(Math.atan(Math.tan(fv*0.5)*aspect)));
   const d=(r/Math.max(s,0.05))*1.25;
   controls.target.copy(c);
-  camera.position.set(c.x+o[0]*d,c.y+o[1]*d,c.z+o[2]*d);
+  // 2026-10-21-005 : direction exprimée dans le repère de la vue (posage en FAO)
+  const B=viewBasis(),w=[0,1,2].map(k=>B.X[k]*o[0]+B.Y[k]*o[1]+B.Z[k]*o[2]);
+  camera.position.set(c.x+w[0]*d,c.y+w[1]*d,c.z+w[2]*d);
   controls.update();
 }
 function setView(v){
   if(v==='iso'){viewFit([0.6,-0.6,0.6]);return;} // Iso = vue complète isométrique
   const t=controls.target.clone(),d=camera.position.distanceTo(t)||150;
-  if(v==='top')camera.position.set(t.x,t.y,t.z+d); // dessus : on regarde vers -Z
-  if(v==='front')camera.position.set(t.x,t.y-d,t.z); // face : depuis l'avant (Y-), Y part vers l'arrière
-  if(v==='right')camera.position.set(t.x+d,t.y,t.z); // droite : depuis +X
+  // 2026-10-21-005 : axes de la vue = repère du posage / de l'opération en FAO
+  const B=viewBasis(),at=function(a,s){camera.position.set(t.x+a[0]*s*d,t.y+a[1]*s*d,t.z+a[2]*s*d);};
+  if(v==='top'){at(B.Z,1);const e=B.Y;camera.position.x-=e[0]*d*1e-4;camera.position.y-=e[1]*d*1e-4;camera.position.z-=e[2]*d*1e-4;} // dessus : on regarde vers -Z (écart infime : lookAt défini)
+  if(v==='front')at(B.Y,-1); // face : depuis l'avant (Y-), Y part vers l'arrière
+  if(v==='right')at(B.X,1); // droite : depuis +X
   controls.update();
 }
 
