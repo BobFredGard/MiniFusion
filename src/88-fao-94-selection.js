@@ -1276,7 +1276,7 @@ function faoZPlaneCommit(e){
 // À la validation on SNAPSHOTE la boucle XY dans op.limit + les ancres des germes :
 // la limite survit au rejeu (re-suie auto par faoChainReplay) et à la sauvegarde
 // sans OCCT ; arêtes trop déplacées -> stale (alerte) -> re-sélectionner.
-function faoChainEdgesWorld(){
+function faoChainEdgesWorld(opt){
   // Arêtes listables pour la saisie de zone (Chaîne / Chaîne îlot / Limite Z).
   // • composé exact occLive, COMME AVANT (pièce native) ;
   // • + imports STEP affichés : un import SEUL n'entre JAMAIS dans la chaîne
@@ -1313,9 +1313,16 @@ function faoChainEdgesWorld(){
   if(typeof occLive!=='undefined'&&occLive&&occLive.shape){
     try{occSharpEdges(occLive.shape).forEach(function(e){add(e,null);});}catch(e){}
   }
+  // 2026-10-21-006 : opt.all (rejeu des zones) — imports masqués compris, sauf
+  // les corps choisis comme BRUT d'un posage (leurs arêtes ne bornent jamais une zone)
+  const all=!!(opt&&opt.all);
+  const stockIds=new Set();
+  if(all)try{((faoRoot()&&faoRoot().setups)||[]).forEach(function(s){if(s&&s.stockSrc==='body'&&s.stockBody!=null)stockIds.add(String(s.stockBody));});}catch(e){}
   try{
     (typeof bodies!=='undefined'&&bodies?bodies:[]).forEach(function(b){
-      if(!b||b.kind!=='import'||b.visible===false||b.ghost||!b.mesh||b.mesh.visible===false)return;
+      if(!b||b.kind!=='import'||b.ghost||!b.mesh)return;
+      if(all){ if(stockIds.has(String(b.id))||stockIds.has(String(b.ref)))return; }
+      else if(b.visible===false||b.mesh.visible===false)return;
       let ent=null;try{ent=(typeof importGeom!=='undefined'&&importGeom)?importGeom.get(b.ref||b.id):null;}catch(e){}
       const mw=(b.mesh&&b.mesh.matrixWorld)||null;
       if(ent&&ent.edges&&ent.edges.length){ent.edges.forEach(function(e){add(e,mw);});return;}
@@ -1367,12 +1374,20 @@ function faoChainStart(setupId,opId,kind){
     faoChainMode={setupId:setup.id,opId:op.id,edges:edges,seeds:[],
       tangent:isZ?false:(old?!!old.tangent:true),sel:[],
       kind:isZ?'z':(is2?'chain2':'chain')};
+    // 2026-10-21-006 : ROUVRIR la saisie reprend la sélection en cours (droites
+    // ET courbes) — avant, elle repartait vide : modifier une zone obligeait à
+    // tout recliquer (« il perd la sélection de courbes et droites »).
+    try{
+      const oldA=isZ?(op.zlim&&op.zlim.anchors):(old&&old.anchors);
+      if(oldA&&oldA.length){faoChainMode.seeds=faoAnchorSeeds(oldA,edges);faoChainSync();}
+    }catch(e){}
     faoChainHover=null;
     faoChainBuildOverlay();
     if(typeof renderProps==='function')renderProps();
+    const pre=faoChainMode.sel.length?(' · '+faoChainMode.sel.length+' déjà retenue(s), un clic les retire'):'';
     faceEl.textContent=isZ
-      ?('Limite Z : cliquez les arêtes des hauteurs ('+edges.length+' listées) · OK valide, Échap annule.')
-      :(PRE+' : cliquez des arêtes ('+edges.length+' listées) · tangentes auto '+
+      ?('Limite Z : cliquez les arêtes des hauteurs ('+edges.length+' listées)'+pre+' · OK valide, Échap annule.')
+      :(PRE+' : cliquez des arêtes ('+edges.length+' listées)'+pre+' · tangentes auto '+
         (faoChainMode.tangent?'ON':'OFF')+' · OK valide, Échap annule.');
   }catch(e){ try{faceEl.textContent='Chaîne : impossible ('+e.message+').';}catch(e2){} }
 }

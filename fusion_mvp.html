@@ -273,7 +273,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.3.15';
+const APP_VER='V0.3.16';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -16541,6 +16541,26 @@ function faoChainLoopCap(res){
   if(thin[thin.length-1]!==res.loop[res.loop.length-1])thin.push(res.loop[res.loop.length-1]);
   return {loop:thin,closed:res.closed};
 }
+// 2026-10-21-006 : ancres -> indices d'arêtes (même score que faoChainRematch,
+// appariement injectif) ; ancre introuvable = ignorée (pré-sélection de saisie).
+function faoAnchorSeeds(anchors,edges){
+  const used=new Set(),out=[];
+  (anchors||[]).forEach(function(A){
+    if(!A||!A.m||!isFinite(A.m[0]))return;
+    let best=-1,bestS=Infinity;
+    for(let i=0;i<edges.length;i++){
+      if(used.has(i))continue;
+      const e=edges[i];if(!e||!e.pts||e.pts.length<2)continue;
+      const m=(e.mid&&isFinite(e.mid[0]))?e.mid:null;if(!m)continue;
+      const dxy=Math.hypot(m[0]-A.m[0],m[1]-A.m[1]);if(dxy>FAO_CHAIN_TOL)continue;
+      const dz=Math.abs((isFinite(+m[2])?+m[2]:0)-(isFinite(+A.m[2])?+A.m[2]:0));
+      const len=+e.len||0,dl=A.len>1?Math.abs(len-A.len)/A.len:0;if(dl>0.5)continue;
+      const s=dxy+0.1*dz+5*dl;if(s<bestS){bestS=s;best=i;}
+    }
+    if(best>=0){used.add(best);out.push(best);}
+  });
+  return out;
+}
 function faoChainRematch(op,edges,field){
   // Reconstruit la boucle si les ances des germes retrouvent leurs arêtes.
   // Retour {changed, stale, matched, nSel, skipped?} — état dérivé : JAMAIS de
@@ -16689,12 +16709,28 @@ function faoZlimBreak(op){
 function faoRematchAll(setups,edges){
   // Fin de rejeu : une seule passe re-branche chaînes XY (zones ext et
   // intérieure) ET limites Z.
+  // 2026-10-21-006 : les ancres sont saisies DANS LE REPÈRE de l'opération (ou
+  // du posage) — faoChainStart y convertit les arêtes ; le rejeu comparait des
+  // arêtes MONDE : tout posage tourné (Z incliné) rendait la zone obsolète à
+  // chaque recalcul. Arêtes converties par repère (mémo par signature).
   let n=0;
+  const memo=new Map();
+  const inFrame=function(st,op){
+    let Fr=null;
+    try{ Fr=(typeof faoOpFrameOf==='function')?faoOpFrameOf(st.id,op.id):null; }catch(e){ Fr=null; }
+    if(!Fr||Fr.id)return edges;
+    const k=[Fr.X,Fr.Y,Fr.Z,Fr.O||[0,0,0]].map(function(v){return v.map(function(q){return Math.round(q*1e9)/1e9;}).join(',');}).join(';');
+    let E=memo.get(k);
+    if(!E){E=edges.map(function(e){const o=Object.assign({},e);
+      o.pts=(e.pts||[]).map(function(q){return faoToF(Fr,q);}); if(e.mid)o.mid=faoToF(Fr,e.mid); return o;});memo.set(k,E);}
+    return E;
+  };
   ((setups)||[]).forEach(function(st){
     ((st&&st.ops)||[]).forEach(function(op){
-      const r=faoChainRematch(op,edges);
-      const r2=faoChainRematch(op,edges,'limit2');
-      const rz=faoZlimRematch(op,edges);
+      const ed=inFrame(st,op);
+      const r=faoChainRematch(op,ed);
+      const r2=faoChainRematch(op,ed,'limit2');
+      const rz=faoZlimRematch(op,ed);
       if((r&&r.changed)||(r2&&r2.changed)||(rz&&rz.changed))n++;
     });
   });
@@ -16871,7 +16907,9 @@ function faoChainReplay(){
     if(!any)return 0;
     if(typeof occHas==='function'&&!occHas())return 0;
     let edges=null;
-    try{ edges=faoChainEdgesWorld(); }catch(e){ return 0; }
+    // 2026-10-21-006 : imports MASQUÉS compris (hors corps-bruts) — masquer la
+    // pièce puis recalculer rendait la zone obsolète (ses arêtes disparaissaient)
+    try{ edges=faoChainEdgesWorld({all:true}); }catch(e){ return 0; }
     if(!edges||!edges.length)return 0;
     const n=faoRematchAll(F,edges);
     if(n)faoChanged();
@@ -27532,7 +27570,7 @@ function faoZPlaneCommit(e){
 // À la validation on SNAPSHOTE la boucle XY dans op.limit + les ancres des germes :
 // la limite survit au rejeu (re-suie auto par faoChainReplay) et à la sauvegarde
 // sans OCCT ; arêtes trop déplacées -> stale (alerte) -> re-sélectionner.
-function faoChainEdgesWorld(){
+function faoChainEdgesWorld(opt){
   // Arêtes listables pour la saisie de zone (Chaîne / Chaîne îlot / Limite Z).
   // • composé exact occLive, COMME AVANT (pièce native) ;
   // • + imports STEP affichés : un import SEUL n'entre JAMAIS dans la chaîne
@@ -27569,9 +27607,16 @@ function faoChainEdgesWorld(){
   if(typeof occLive!=='undefined'&&occLive&&occLive.shape){
     try{occSharpEdges(occLive.shape).forEach(function(e){add(e,null);});}catch(e){}
   }
+  // 2026-10-21-006 : opt.all (rejeu des zones) — imports masqués compris, sauf
+  // les corps choisis comme BRUT d'un posage (leurs arêtes ne bornent jamais une zone)
+  const all=!!(opt&&opt.all);
+  const stockIds=new Set();
+  if(all)try{((faoRoot()&&faoRoot().setups)||[]).forEach(function(s){if(s&&s.stockSrc==='body'&&s.stockBody!=null)stockIds.add(String(s.stockBody));});}catch(e){}
   try{
     (typeof bodies!=='undefined'&&bodies?bodies:[]).forEach(function(b){
-      if(!b||b.kind!=='import'||b.visible===false||b.ghost||!b.mesh||b.mesh.visible===false)return;
+      if(!b||b.kind!=='import'||b.ghost||!b.mesh)return;
+      if(all){ if(stockIds.has(String(b.id))||stockIds.has(String(b.ref)))return; }
+      else if(b.visible===false||b.mesh.visible===false)return;
       let ent=null;try{ent=(typeof importGeom!=='undefined'&&importGeom)?importGeom.get(b.ref||b.id):null;}catch(e){}
       const mw=(b.mesh&&b.mesh.matrixWorld)||null;
       if(ent&&ent.edges&&ent.edges.length){ent.edges.forEach(function(e){add(e,mw);});return;}
@@ -27623,12 +27668,20 @@ function faoChainStart(setupId,opId,kind){
     faoChainMode={setupId:setup.id,opId:op.id,edges:edges,seeds:[],
       tangent:isZ?false:(old?!!old.tangent:true),sel:[],
       kind:isZ?'z':(is2?'chain2':'chain')};
+    // 2026-10-21-006 : ROUVRIR la saisie reprend la sélection en cours (droites
+    // ET courbes) — avant, elle repartait vide : modifier une zone obligeait à
+    // tout recliquer (« il perd la sélection de courbes et droites »).
+    try{
+      const oldA=isZ?(op.zlim&&op.zlim.anchors):(old&&old.anchors);
+      if(oldA&&oldA.length){faoChainMode.seeds=faoAnchorSeeds(oldA,edges);faoChainSync();}
+    }catch(e){}
     faoChainHover=null;
     faoChainBuildOverlay();
     if(typeof renderProps==='function')renderProps();
+    const pre=faoChainMode.sel.length?(' · '+faoChainMode.sel.length+' déjà retenue(s), un clic les retire'):'';
     faceEl.textContent=isZ
-      ?('Limite Z : cliquez les arêtes des hauteurs ('+edges.length+' listées) · OK valide, Échap annule.')
-      :(PRE+' : cliquez des arêtes ('+edges.length+' listées) · tangentes auto '+
+      ?('Limite Z : cliquez les arêtes des hauteurs ('+edges.length+' listées)'+pre+' · OK valide, Échap annule.')
+      :(PRE+' : cliquez des arêtes ('+edges.length+' listées)'+pre+' · tangentes auto '+
         (faoChainMode.tangent?'ON':'OFF')+' · OK valide, Échap annule.');
   }catch(e){ try{faceEl.textContent='Chaîne : impossible ('+e.message+').';}catch(e2){} }
 }

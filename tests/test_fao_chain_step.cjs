@@ -84,6 +84,30 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     att(op.limit.stale===false,'rejeu : stale=false (ancres retrouvées)');
     att(JSON.stringify(op.limit.loop)===loop0,'rejeu : boucle inchangée');
 
+    // ── C2 (2026-10-21-006) : « il perd la sélection de courbes et droites » ──
+    // rouvrir la saisie reprend la sélection ; OK sans clic = même boucle
+    faoChainStart(setup.id,op.id);
+    att(faoChainMode&&faoChainMode.seeds.length===4&&faoChainMode.sel.length===4,
+        'saisie rouverte : les 4 arêtes déjà retenues sont pré-sélectionnées (obtenu '+(faoChainMode?faoChainMode.sel.length:'∅')+')');
+    faoChainOk();
+    att(JSON.stringify(op.limit.loop)===loop0&&op.limit.nEdges===4,'OK sans clic : boucle et arêtes inchangées');
+    // pièce masquée : le rejeu retrouve quand même ses arêtes (zone non obsolète)
+    imp.visible=false;
+    faoChainReplay();
+    att(op.limit.stale===false,'rejeu avec la pièce MASQUÉE : zone toujours valide');
+    imp.visible=true;
+    // posage tourné (Z incliné) : ancres saisies dans SON repère, rejeu dans le même
+    setup.frame={z:[0,-0.5,0.8660254037844386]};faoStock();
+    faoChainStart(setup.id,op.id);
+    faoChainMode.tangent=false;
+    faoChainMode.seeds=faoChainMode.edges.map(function(e,i){return {e:e,i:i};})
+      .filter(function(o){return Math.abs(faoToW(faoFrame(setup),o.e.mid)[2]-40)<1e-6;}).map(function(o){return o.i;});
+    faoChainSync();faoChainOk();
+    att(op.limit.stale===false&&op.limit.nEdges===4,'posage tourné : chaîne de 4 arêtes saisie');
+    faoChainReplay();
+    att(op.limit.stale===false,'posage tourné : le rejeu garde la zone valide (comparait des arêtes MONDE)');
+    setup.frame={};faoStock();
+
     // ── D. pièce native exacte + STEP côte à côte : les DEUX sources listées ──
     const mk=new occt.BRepPrimAPI_MakeBox_2(new occt.gp_Pnt_3(0,0,0),60,40,20);
     const natif=mk.Shape();

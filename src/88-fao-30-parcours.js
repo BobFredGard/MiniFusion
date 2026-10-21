@@ -610,6 +610,26 @@ function faoChainLoopCap(res){
   if(thin[thin.length-1]!==res.loop[res.loop.length-1])thin.push(res.loop[res.loop.length-1]);
   return {loop:thin,closed:res.closed};
 }
+// 2026-10-21-006 : ancres -> indices d'arêtes (même score que faoChainRematch,
+// appariement injectif) ; ancre introuvable = ignorée (pré-sélection de saisie).
+function faoAnchorSeeds(anchors,edges){
+  const used=new Set(),out=[];
+  (anchors||[]).forEach(function(A){
+    if(!A||!A.m||!isFinite(A.m[0]))return;
+    let best=-1,bestS=Infinity;
+    for(let i=0;i<edges.length;i++){
+      if(used.has(i))continue;
+      const e=edges[i];if(!e||!e.pts||e.pts.length<2)continue;
+      const m=(e.mid&&isFinite(e.mid[0]))?e.mid:null;if(!m)continue;
+      const dxy=Math.hypot(m[0]-A.m[0],m[1]-A.m[1]);if(dxy>FAO_CHAIN_TOL)continue;
+      const dz=Math.abs((isFinite(+m[2])?+m[2]:0)-(isFinite(+A.m[2])?+A.m[2]:0));
+      const len=+e.len||0,dl=A.len>1?Math.abs(len-A.len)/A.len:0;if(dl>0.5)continue;
+      const s=dxy+0.1*dz+5*dl;if(s<bestS){bestS=s;best=i;}
+    }
+    if(best>=0){used.add(best);out.push(best);}
+  });
+  return out;
+}
 function faoChainRematch(op,edges,field){
   // Reconstruit la boucle si les ances des germes retrouvent leurs arêtes.
   // Retour {changed, stale, matched, nSel, skipped?} — état dérivé : JAMAIS de
@@ -758,12 +778,28 @@ function faoZlimBreak(op){
 function faoRematchAll(setups,edges){
   // Fin de rejeu : une seule passe re-branche chaînes XY (zones ext et
   // intérieure) ET limites Z.
+  // 2026-10-21-006 : les ancres sont saisies DANS LE REPÈRE de l'opération (ou
+  // du posage) — faoChainStart y convertit les arêtes ; le rejeu comparait des
+  // arêtes MONDE : tout posage tourné (Z incliné) rendait la zone obsolète à
+  // chaque recalcul. Arêtes converties par repère (mémo par signature).
   let n=0;
+  const memo=new Map();
+  const inFrame=function(st,op){
+    let Fr=null;
+    try{ Fr=(typeof faoOpFrameOf==='function')?faoOpFrameOf(st.id,op.id):null; }catch(e){ Fr=null; }
+    if(!Fr||Fr.id)return edges;
+    const k=[Fr.X,Fr.Y,Fr.Z,Fr.O||[0,0,0]].map(function(v){return v.map(function(q){return Math.round(q*1e9)/1e9;}).join(',');}).join(';');
+    let E=memo.get(k);
+    if(!E){E=edges.map(function(e){const o=Object.assign({},e);
+      o.pts=(e.pts||[]).map(function(q){return faoToF(Fr,q);}); if(e.mid)o.mid=faoToF(Fr,e.mid); return o;});memo.set(k,E);}
+    return E;
+  };
   ((setups)||[]).forEach(function(st){
     ((st&&st.ops)||[]).forEach(function(op){
-      const r=faoChainRematch(op,edges);
-      const r2=faoChainRematch(op,edges,'limit2');
-      const rz=faoZlimRematch(op,edges);
+      const ed=inFrame(st,op);
+      const r=faoChainRematch(op,ed);
+      const r2=faoChainRematch(op,ed,'limit2');
+      const rz=faoZlimRematch(op,ed);
       if((r&&r.changed)||(r2&&r2.changed)||(rz&&rz.changed))n++;
     });
   });
@@ -940,7 +976,9 @@ function faoChainReplay(){
     if(!any)return 0;
     if(typeof occHas==='function'&&!occHas())return 0;
     let edges=null;
-    try{ edges=faoChainEdgesWorld(); }catch(e){ return 0; }
+    // 2026-10-21-006 : imports MASQUÉS compris (hors corps-bruts) — masquer la
+    // pièce puis recalculer rendait la zone obsolète (ses arêtes disparaissaient)
+    try{ edges=faoChainEdgesWorld({all:true}); }catch(e){ return 0; }
     if(!edges||!edges.length)return 0;
     const n=faoRematchAll(F,edges);
     if(n)faoChanged();

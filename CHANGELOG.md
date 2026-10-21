@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**285 versions**, de `2026-09-28b` à `V0.3.15` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**286 versions**, de `2026-09-28b` à `V0.3.16` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4356,3 +4356,12 @@ Tests ajoutés : `test_fao_geodesique`, `test_fao_faces`, `test_fao_ebauche_brut
 - Parcours inchangés (CACHE_VER identique).
 
 Vérifié au navigateur (posage incliné à 45°, opération Z = +X, retour CAO). `npm run ci` vert.
+
+## V0.3.16 - FAO : la zone (chaîne d'arêtes) ne perd plus sa sélection
+Retour utilisateur (Malaxeur Retard) : « il perd la sélection de courbes et droites pour la zone ».
+- **Saisie rouverte** : les arêtes déjà retenues (droites et courbes) sont pré-sélectionnées ; un clic en retire une, « OK » sans clic redonne la même boucle. Avant : sélection vide, tout était à recliquer.
+- **Posage tourné** : le re-suivi de la zone à chaque recalcul compare les arêtes dans le repère de l'opération / du posage, celui de la saisie. Avant : arêtes monde, zone obsolète à chaque recalcul dès que le Z du posage était incliné.
+- **Pièce masquée** : le re-suivi lit aussi les imports masqués (hors corps-brut). Avant : masquer la pièce puis recalculer rendait la zone obsolète.
+- Parcours inchangés (CACHE_VER identique).
+
+`test_fao_chain_step` : saisie rouverte, pièce masquée, posage tourné (2 contrôles échouent sur V0.3.15). Vérifié au navigateur sur Malaxeur Retard. `npm run ci` vert.
