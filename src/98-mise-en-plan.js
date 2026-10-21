@@ -73,6 +73,14 @@
     #mepSvg,#mepSvg *{-webkit-user-select:none;-moz-user-select:none;user-select:none}
     .mepLbl,.mepDimT{pointer-events:none}
     .mepCut{stroke:#0a84ff;stroke-width:1.1;fill:none}
+    .mepCutLine{stroke:var(--mepInk,#151515);stroke-width:var(--mepLwThin,.42);stroke-dasharray:10 2 1.5 2;fill:none}
+    .mepCutEnd{stroke:var(--mepInk,#151515);stroke-width:var(--mepLwThick,.72);fill:none;stroke-linecap:butt}
+    .mepCutArr{stroke:var(--mepInk,#151515);stroke-width:var(--mepLwThin,.42);fill:none}
+    .mepDetailC{stroke:var(--mepInk,#151515);stroke-width:var(--mepLwThin,.42);fill:none}
+    .mepDetailB{stroke:var(--mepInk,#151515);stroke-width:var(--mepLwThin,.42);fill:none;stroke-dasharray:6 1.5 1 1.5}
+    .mepVcGhost{fill:rgba(10,132,255,.06);stroke:#0a84ff;stroke-width:1;stroke-dasharray:5 3;vector-effect:non-scaling-stroke}
+    .mepVcLine{stroke:#0a84ff;stroke-width:1.4;fill:none;vector-effect:non-scaling-stroke}
+    .mepVcTxt{fill:#0a84ff;font:700 4px sans-serif}
     .mepCutS{stroke:#0a84ff;stroke-width:.5;fill:none}
     .mepSk{fill:none;stroke-linecap:round}
     .mepSkPt{fill:var(--mepPaper,#fff);stroke:#64d2ff;stroke-width:1.2;vector-effect:non-scaling-stroke}
@@ -80,6 +88,10 @@
     .mepSkPtFix{stroke:#ff453a}
     .mepTbLine{stroke:var(--mepFrameCol,#222);stroke-width:var(--mepLwThin,.42);fill:none;stroke-linecap:square}
     .mepTbThick{stroke-width:var(--mepLwThick,.72)}
+    .mepSkThick{stroke-width:var(--mepLwThick,.72)}
+    .mepSkThin{stroke-width:var(--mepLwThin,.42)}
+    .mepLtHid{stroke-dasharray:3.5 2.5;stroke-linecap:butt}
+    .mepLtAxis{stroke-dasharray:8 2 1.5 2;stroke-linecap:butt}
     .mepSkSelE{stroke:#ff9f0a!important}
     .mepSkSelT{fill:#ff9f0a!important}
     .mepSkCon{stroke:#0a84ff;fill:none;stroke-width:1;vector-effect:non-scaling-stroke}
@@ -222,7 +234,7 @@
           catch(e){ st[k]=v; }
         };
         const c=MEP_DIM_STYLE.color;
-        set('--mepDimCol',(!c||c==='theme')?'var(--mepAccent,#0a84ff)':c); // écran ; export/impression : noir (ISO)
+        set('--mepDimCol',(!c||c==='theme')?'var(--mepAccent,#0a84ff)':c); // écran et export « Couleur » ; export « Noir » : noir (ISO)
         set('--mepDimH',(MEP_DIM_STYLE.textHeight||7)+'px');
       }
     }catch(e){}
@@ -1424,11 +1436,15 @@
     if(view.kind==='base'&&view.vk){
       const b=mepBasisOf(view);view.dir=b.dir;view.u=b.u;view.v=b.v;
     }
+    const at=view._at,keep=view._keepScale;delete view._at;delete view._keepScale;
     mepEdit('nouvelle vue',()=>{
       sh.views.push(view);
-      mepAutoScale(sh,view);
-      const pd=mepPageDim(sh);
-      mepPlaceNear(sh,view,pd.ix+pd.iw*(0.28+0.16*(sh.views.length%3)),pd.iy+pd.ih*(view.kind==='detail'?0.3:0.45));
+      if(!keep)mepAutoScale(sh,view);
+      if(at)mepViewCenterAt(view,at); // posée à la souris (commandes interactives)
+      else{
+        const pd=mepPageDim(sh);
+        mepPlaceNear(sh,view,pd.ix+pd.iw*(0.28+0.16*(sh.views.length%3)),pd.iy+pd.ih*(view.kind==='detail'?0.3:0.45));
+      }
     });
     mepSelect(view.id);
     return view;
@@ -1464,22 +1480,22 @@
   function mepProjFollow(sh,v,dx,dy){
     // les projections (et leurs sous-projections) suivent leur mère au glisser
     sh.views.forEach(c=>{
-      if(c.kind==='proj'&&c.parent===v.id){c.x+=dx;c.y+=dy;mepProjFollow(sh,c,dx,dy);}
+      if((c.kind==='proj'||c.align)&&c.parent===v.id){c.x+=dx;c.y+=dy;mepProjFollow(sh,c,dx,dy);}
     });
   }
-  function mepAddProjected(par,which){
+  function mepAddProjected(par,which,at){
     const def=MEP_PROJ[which];
     if(!def){mepStatus('Projection inconnue : '+which);return null;}
     if(!par){mepStatus('Sélectionnez d’abord la vue mère à projeter.');return null;}
     const b=mepBasisOf(par);
     const dir=mepNorm(def.dir(b)),u=mepNorm(def.u(b));
     const v=mepNorm(mepCross(u,dir));
-    const vObj=mepAddView({kind:'proj',vk:'',proj:which,dir,u,v,
+    const vObj=mepAddView(Object.assign({kind:'proj',vk:'',proj:which,dir,u,v,
       parent:par.id,label:mepNextLabel(mepSheet()),
       bodyId:par.bodyId,mode:par.mode,tangent:par.tangent,hlrExact:par.hlrExact!==false,scale:par.scale,
-      autoAxes:!!par.autoAxes,autoPitch:!!par.autoPitch});
+      autoAxes:!!par.autoAxes,autoPitch:!!par.autoPitch},at?{_keepScale:1,_at:at}:{}));
     // placement aligné 1er angle : l'axe commun est verrouillé sur la mère
-    mepEdit('placement vue projetée',()=>{
+    if(!at)mepEdit('placement vue projetée',()=>{
       vObj.scale=par.scale; // les vues liées partagent TOUJOURS l'échelle de la mère
       const off=mepViewSpan(par)+mepViewSpan(vObj)+30;
       if(which==='top'){vObj.x=par.x;vObj.y=par.y+off;}
@@ -1533,13 +1549,27 @@
     });
     return mx*Math.max(0.2,view.scale);
   }
-  function mepBeginSection(){
+  function mepBeginSection(){mepVcmdStart('section');}
+  function mepBeginSectionOld(){
     const par=mepView(mepSheet(),mepSt.sel);
     if(!par){mepStatus('Sélectionnez d’abord la vue parente de la coupe.');return;}
     mepSt.tool='cut2';mepSt.cutParent=par.id;mepSt.cutPts=[];
     mepStatus('Coupe : cliquez les DEUX points de la ligne de coupe sur la vue « '+(par.label||par.vk||'vue')+' ».');
   }
-  function mepSectionFromPicks(par,A,B){
+  function mepSectionFromPicks(par,A,B,opt){
+    if(opt&&opt.s){
+      // V0.3.13 : vue alignée sur la mère (base tournée comme une projection), sens = côté de la souris
+      const L=Math.hypot(B.x-A.x,B.y-A.y);if(L<1e-6){mepStatus('Coupe : les deux points sont confondus.');return null;}
+      const t={x:(B.x-A.x)/L,y:(B.y-A.y)/L},np={x:-t.y,y:t.x},Bs=mepPaperBasis(par,t,np,opt.s);
+      const pb=mepBasisOf(par),wA=[pb.u[0]*A.x+pb.v[0]*A.y,pb.u[1]*A.x+pb.v[1]*A.y,pb.u[2]*A.x+pb.v[2]*A.y];
+      const label=mepNextLabel(mepSheet());
+      const v=mepAddView({kind:'section',vk:'',dir:Bs.dir,u:Bs.u,v:Bs.v,parent:par.id,label,
+        bodyId:par.bodyId,mode:par.mode,tangent:par.tangent,hlrExact:par.hlrExact!==false,scale:par.scale,_keepScale:1,_at:opt.at,
+        align:{x:np.x*opt.s,y:np.y*opt.s},autoAxes:!!par.autoAxes,autoPitch:!!par.autoPitch,
+        section:{p:wA,n:Bs.dir.slice(),a:[A.x,A.y],b:[B.x,B.y],pid:par.id,s:opt.s}});
+      mepStatus('Coupe '+label+'-'+label+' posée — glisser contraint sur sa ligne de rappel.');
+      return v;
+    }
     const dirA=mepNorm(par.dir);
     const wA=[par.u[0]*A.x+par.v[0]*A.y,par.u[1]*A.x+par.v[1]*A.y,par.u[2]*A.x+par.v[2]*A.y];
     const wB=[par.u[0]*B.x+par.v[0]*B.y,par.u[1]*B.x+par.v[1]*B.y,par.u[2]*B.x+par.v[2]*B.y];
@@ -1565,19 +1595,20 @@
     mepStatus('Coupe '+label+'-'+label+' créée.');
     return v;
   }
-  function mepBeginDetail(){
+  function mepBeginDetail(){mepVcmdStart('detail');}
+  function mepBeginDetailOld(){
     const par=mepView(mepSheet(),mepSt.sel);
     if(!par){mepStatus('Sélectionnez d’abord la vue parente du détail.');return;}
     mepSt.tool='det2';mepSt.cutParent=par.id;
     mepStatus('Détail : cliquez le CENTRE du cercle de détail, puis le rayon.');
   }
-  function mepDetailFromPicks(par,C,R){
+  function mepDetailFromPicks(par,C,R,opt){
     const label=mepNextLabel(mepSheet());
     const src=mepBasisOf(par);
-    const v=mepAddView({kind:'detail',vk:'',dir:src.dir.slice(),u:src.u.slice(),v:src.v.slice(),
-      parent:par.id,label,scale:2,detail:{cx:C.x,cy:C.y,r:R},bodyId:par.bodyId,mode:par.mode,tangent:par.tangent,hlrExact:par.hlrExact!==false,
-      autoAxes:!!par.autoAxes,autoPitch:!!par.autoPitch});
-    mepEdit('placement vue de détail',()=>{
+    const v=mepAddView(Object.assign({kind:'detail',vk:'',dir:src.dir.slice(),u:src.u.slice(),v:src.v.slice(),
+      parent:par.id,label,scale:opt&&opt.scale||2,detail:{cx:C.x,cy:C.y,r:R},bodyId:par.bodyId,mode:par.mode,tangent:par.tangent,hlrExact:par.hlrExact!==false,
+      autoAxes:!!par.autoAxes,autoPitch:!!par.autoPitch},opt&&opt.at?{_keepScale:1,_at:opt.at}:{}));
+    if(!(opt&&opt.at))mepEdit('placement vue de détail',()=>{
       const pd=mepPageDim(mepSheet());
       v.x=pd.ix+pd.iw*0.72;v.y=pd.iy+pd.ih*0.3;
       let s=2;
@@ -1625,6 +1656,21 @@
             const b=mepBasisOf(par);
             v.dir=mepNorm(def.dir(b));v.u=mepNorm(def.u(b));v.v=mepNorm(mepCross(v.u,v.dir));
             v.scale=par.scale;
+          }
+        }else if(v.kind==='section'&&v.section&&v.section.s){
+          const par=mepView(sh,v.section.pid||v.parent);
+          if(par){
+            const A={x:v.section.a[0],y:v.section.a[1]},B={x:v.section.b[0],y:v.section.b[1]};
+            const L=Math.hypot(B.x-A.x,B.y-A.y)||1,t={x:(B.x-A.x)/L,y:(B.y-A.y)/L},Bs=mepPaperBasis(par,t,{x:-t.y,y:t.x},v.section.s);
+            const pb=mepBasisOf(par);
+            v.section.p=[pb.u[0]*A.x+pb.v[0]*A.y,pb.u[1]*A.x+pb.v[1]*A.y,pb.u[2]*A.x+pb.v[2]*A.y];
+            v.section.n=Bs.dir.slice();v.dir=Bs.dir;v.u=Bs.u;v.v=Bs.v;v.scale=par.scale;
+          }
+        }else if(v.kind==='aux'&&v.auxEdge){
+          const par=mepView(sh,v.auxEdge.pid||v.parent);
+          if(par){
+            const a=v.auxEdge.a,b=v.auxEdge.b,L=Math.hypot(b[0]-a[0],b[1]-a[1])||1,t={x:(b[0]-a[0])/L,y:(b[1]-a[1])/L};
+            const Bs=mepPaperBasis(par,t,{x:-t.y,y:t.x},v.auxEdge.s);v.dir=Bs.dir;v.u=Bs.u;v.v=Bs.v;v.scale=par.scale;
           }
         }else if(v.kind==='section'&&v.section){
           const par=mepView(sh,v.section.pid||v.parent);
@@ -1798,7 +1844,7 @@
   function mepSetPaper(m){
     try{localStorage.setItem('mep_paper',m==='dark'?'dark':'white');}catch(e){}
     mepThemeApply();mepRender();
-    mepStatus('Papier '+(m==='dark'?'sombre (écran seulement — export et impression en noir sur blanc)':'blanc')+'.');
+    mepStatus('Papier '+(m==='dark'?'sombre (écran seulement — export et impression sur papier blanc)':'blanc')+'.');
   }
   /* ═══════════════ cartouche enrichi (V0.3.11) ═══════════════
      Rangée 1 : PROJET | PLANCHE | ÉCHELLE | DATE | DESSINÉ PAR
@@ -2033,10 +2079,20 @@
     if(ang<3||ang>177)mepSkCons(sk,{type:'horizontal',a,b});
     else if(Math.abs(ang-90)<3)mepSkCons(sk,{type:'vertical',a,b});
   }
+  /* style des nouveaux éléments (épaisseur, type, couleur) : réglé dans le panneau, mémorisé */
+  function mepSkStyleCur(){
+    if(!mepSt.skStyle){let o={};try{o=JSON.parse(localStorage.getItem('mep_sk_style')||'{}')||{};}catch(e){}mepSt.skStyle=o;}
+    return mepSt.skStyle;
+  }
+  function mepSkStyled(e){
+    const s=mepSkStyleCur();
+    (e.t==='text'?['col']:['w','lw','lt','col']).forEach(k=>{if(s[k]!==undefined&&s[k]!==null&&s[k]!=='')e[k]=s[k];});
+    return e;
+  }
   function mepSkAddLine(sh,A,B){
     const ctx=mepSkCtx(sh,true),sk=ctx.sk;
     const a=mepSkPtFrom(ctx,A),b=mepSkPtFrom(ctx,B);if(a===b)return null;
-    const e=mepSkEnt(sk,{t:'line',p1:a,p2:b});
+    const e=mepSkEnt(sk,mepSkStyled({t:'line',p1:a,p2:b}));
     mepSkAutoHV(sk,a,b);mepSkSolve(sk,40);
     return{e,a,b};
   }
@@ -2045,8 +2101,8 @@
     const a=mepSkPtFrom(ctx,A),c=mepSkPtFrom(ctx,B);
     const pa=sk.pts[a],pc=sk.pts[c];
     const b=mepSkPt(sk,pc.x,pa.y),d=mepSkPt(sk,pa.x,pc.y);
-    mepSkEnt(sk,{t:'line',p1:a,p2:b});mepSkEnt(sk,{t:'line',p1:b,p2:c});
-    mepSkEnt(sk,{t:'line',p1:c,p2:d});mepSkEnt(sk,{t:'line',p1:d,p2:a});
+    mepSkEnt(sk,mepSkStyled({t:'line',p1:a,p2:b}));mepSkEnt(sk,mepSkStyled({t:'line',p1:b,p2:c}));
+    mepSkEnt(sk,mepSkStyled({t:'line',p1:c,p2:d}));mepSkEnt(sk,mepSkStyled({t:'line',p1:d,p2:a}));
     mepSkCons(sk,{type:'horizontal',a,b});mepSkCons(sk,{type:'vertical',a:b,b:c});
     mepSkCons(sk,{type:'horizontal',a:c,b:d});mepSkCons(sk,{type:'vertical',a:d,b:a});
     mepSkSolve(sk,40);
@@ -2054,7 +2110,7 @@
   function mepSkAddCircle(sh,C,r){
     const ctx=mepSkCtx(sh,true),sk=ctx.sk;
     const c=mepSkPtFrom(ctx,C);
-    return mepSkEnt(sk,{t:'circle',pc:c,r:Math.max(0.1,r)});
+    return mepSkEnt(sk,mepSkStyled({t:'circle',pc:c,r:Math.max(0.1,r)}));
   }
   function mepSkAddArc(sh,C,A,B){
     const ctx=mepSkCtx(sh,true),sk=ctx.sk;
@@ -2062,7 +2118,7 @@
     const r=Math.max(0.1,Math.hypot(A.x-ctx.ox-pc.x,A.y-ctx.oy-pc.y));
     const a0=Math.atan2(A.y-ctx.oy-pc.y,A.x-ctx.ox-pc.x),a1=Math.atan2(B.y-ctx.oy-pc.y,B.x-ctx.ox-pc.x);
     const p1=mepSkPt(sk,pc.x+r*Math.cos(a0),pc.y+r*Math.sin(a0)),p2=mepSkPt(sk,pc.x+r*Math.cos(a1),pc.y+r*Math.sin(a1));
-    const e=mepSkEnt(sk,{t:'arc',pc:c,p1,p2,r,a0,a1});
+    const e=mepSkEnt(sk,mepSkStyled({t:'arc',pc:c,p1,p2,r,a0,a1}));
     mepSkCons(sk,{type:'onCircle',p:p1,ent:e.id});mepSkCons(sk,{type:'onCircle',p:p2,ent:e.id});
     return e;
   }
@@ -2073,7 +2129,7 @@
     const e={t:'text',p,f,h:+mepSt.skTextH||(f==='txt'?3.5:5),st:f==='txt'?'lab':'val',al:'start'};
     if(f==='txt')e.s=mepSt.skTextS||'TEXTE';
     if(f==='perso'){e.k='c'+Date.now().toString(36);e.lab='CHAMP';}
-    return mepSkEnt(sk,e);
+    return mepSkEnt(sk,mepSkStyled(e));
   }
   function mepSkAddLogo(sh,A,B){
     const ctx=mepSkCtx(sh,true),sk=ctx.sk;
@@ -2256,20 +2312,26 @@
     const sk=ctx.sk;if(!sk)return;
     const S=p=>mepSkS(ctx,p),sel=mepSt.skSel||new Set();
     const editing=mode==='tbEdit'||(mode==='sheet'&&mepSkEditing());
-    const lineCls=e=>(mode==='sheet'?'mepEnt mepSkFull':('mepTbLine'+(e.w==='thick'?' mepTbThick':'')))+(sel.has('e:'+e.id)&&editing?' mepSkSelE':'');
+    // style par entité (V0.3.13) : e.w 'thin'|'thick' (défaut : épais sur la planche, fin au cartouche),
+    // e.lw épaisseur libre (mm), e.lt 'hid'|'axis', e.col couleur (#rrggbb, classe mepUc → noir à l'export « Noir »)
+    const wDef=mode==='sheet'?'thick':'thin';
+    const lineCls=e=>{const w=e.w||wDef;
+      return (mode==='sheet'?'mepEnt mepSkFull'+(w==='thick'?' mepSkThick':' mepSkThin'):('mepTbLine'+(w==='thick'?' mepTbThick':'')))+
+        (e.lt==='hid'?' mepLtHid':(e.lt==='axis'?' mepLtAxis':''))+(e.col?' mepUc':'')+(sel.has('e:'+e.id)&&editing?' mepSkSelE':'');};
+    const lineAt=(e,o)=>{o.class=lineCls(e);const st=[];if(+e.lw>0)st.push('stroke-width:'+(+e.lw));if(e.col)st.push('stroke:'+e.col);if(st.length)o.style=st.join(';');return o;};
     sk.ents.forEach(e=>{
       if(e.t==='line'){const A=sk.pts[e.p1],B=sk.pts[e.p2];if(!A||!B)return;const a=S(A),b=S(B);
-        mk('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:lineCls(e)});}
-      else if(e.t==='circle'){const C=sk.pts[e.pc];if(!C)return;const c=S(C);mk('circle',{cx:c.x,cy:c.y,r:e.r,class:lineCls(e),fill:'none'});}
+        mk('line',lineAt(e,{x1:a.x,y1:a.y,x2:b.x,y2:b.y}));}
+      else if(e.t==='circle'){const C=sk.pts[e.pc];if(!C)return;const c=S(C);mk('circle',lineAt(e,{cx:c.x,cy:c.y,r:e.r,fill:'none'}));}
       else if(e.t==='arc'){const C=sk.pts[e.pc],P1=sk.pts[e.p1],P2=sk.pts[e.p2];if(!C||!P1||!P2)return;
         const c=S(C),a0=Math.atan2(P1.y-C.y,P1.x-C.x),a1=Math.atan2(P2.y-C.y,P2.x-C.x);let da=a1-a0;while(da<=0)da+=2*Math.PI;
         const x1=c.x+e.r*Math.cos(a0),y1=c.y+e.r*Math.sin(a0),x2=c.x+e.r*Math.cos(a1),y2=c.y+e.r*Math.sin(a1);
-        mk('path',{d:'M'+x1+','+y1+' A'+e.r+','+e.r+' 0 '+(da>Math.PI?1:0)+' 1 '+x2+','+y2,fill:'none',class:lineCls(e)});}
+        mk('path',lineAt(e,{d:'M'+x1+','+y1+' A'+e.r+','+e.r+' 0 '+(da>Math.PI?1:0)+' 1 '+x2+','+y2,fill:'none'}));}
       else if(e.t==='text'){const P0=sk.pts[e.p];if(!P0)return;const p=S(P0);
         let val=String(mepSkTextValue(sh,e,editing)||'');if(!val)return;
         if(+e.mw>0){const nmax=Math.max(2,Math.floor(+e.mw/((+e.h||3.5)*0.56)));if(val.length>nmax)val=val.slice(0,nmax-1)+'…';}
-        const t=mk('text',{x:p.x,y:p.y,class:(e.st==='val'?'mepTitleVal':'mepTitleText')+(sel.has('e:'+e.id)&&editing?' mepSkSelT':''),
-          style:'font-size:'+(+e.h||3.5)+'px'+(e.b?';font-weight:700':'')+(e.al&&e.al!=='start'?';text-anchor:'+e.al:'')});
+        const t=mk('text',{x:p.x,y:p.y,class:(e.st==='val'?'mepTitleVal':'mepTitleText')+(e.col?' mepUc':'')+(sel.has('e:'+e.id)&&editing?' mepSkSelT':''),
+          style:'font-size:'+(+e.h||3.5)+'px'+(e.b?';font-weight:700':'')+(e.al&&e.al!=='start'?';text-anchor:'+e.al:'')+(e.col?';fill:'+e.col:'')});
         t.textContent=val;}
       else if(e.t==='logo'){const A=sk.pts[e.p1],B=sk.pts[e.p2];if(!A||!B)return;const a=S(A),b=S(B);
         const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y),w=Math.abs(b.x-a.x),h=Math.abs(b.y-a.y);
@@ -2461,6 +2523,229 @@
     K.btn(r,'Désélectionner',()=>{mepSt.lot=null;mepSt.skSel=new Set();mepSideShow();mepRender();},'Échap');
     K.note('Cadre de gauche à droite : éléments entièrement dedans. De droite à gauche : tout ce qui touche le cadre. Maj : ajouter.');
   }
+  /* ═══════════════ commandes de vues interactives (V0.3.13) ═══════════════
+     Projection, Coupe, Détail, Auxiliaire : un état mepSt.vcmd intercepte la souris.
+       projection : vue mère → le curseur choisit le sens (1er angle) ; diagonale = ISO ; enchaînable.
+       coupe      : 2 points sur la vue (accrochage + H/V) → la vue suit la souris, le côté choisit le regard.
+       détail     : centre → rayon → placement libre.
+       auxiliaire : clic sur une arête inclinée → vue perpendiculaire à l'arête, côté = curseur.
+     Coupe et auxiliaire sont ALIGNÉES sur la mère (base tournée comme une projection) : glisser contraint. */
+  function mepPaperBasis(par,t,np,s){
+    // base d'une vue projetée perpendiculairement à la direction papier t de la mère, placée du côté s·np :
+    // u' = tx·E + s·npx·Pd, v' = ty·E + s·npy·Pd (E = t dans le monde, Pd = regard de la mère), dir' = v'×u'
+    const b=mepBasisOf(par);
+    const E=mepNorm([b.u[0]*t.x+b.v[0]*t.y,b.u[1]*t.x+b.v[1]*t.y,b.u[2]*t.x+b.v[2]*t.y]);
+    const Pd=mepNorm(b.dir);
+    const u=mepNorm([t.x*E[0]+s*np.x*Pd[0],t.x*E[1]+s*np.x*Pd[1],t.x*E[2]+s*np.x*Pd[2]]);
+    const v=mepNorm([t.y*E[0]+s*np.y*Pd[0],t.y*E[1]+s*np.y*Pd[1],t.y*E[2]+s*np.y*Pd[2]]);
+    const dir=mepNorm(mepCross(v,u));
+    return{dir,u,v,E};
+  }
+  function mepModelBoxIn(B,scale,bodyId){
+    // boîte englobante des corps (monde) projetée sur la base (u,v) : taille et centre locaux × échelle
+    try{
+      const bb=new THREE.Box3();
+      (typeof bodies!=='undefined'&&bodies||[]).forEach(bd=>{if(bd&&bd.mesh&&bd.kind==='body'&&bd.mesh.visible!==false&&(!bodyId||bd.bodyId===bodyId))bb.expandByObject(bd.mesh);});
+      if(bb.isEmpty())return null;
+      let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;
+      for(let i=0;i<8;i++){const p=[i&1?bb.max.x:bb.min.x,i&2?bb.max.y:bb.min.y,i&4?bb.max.z:bb.min.z];
+        const a=mepDot(p,B.u),b=mepDot(p,B.v);x0=Math.min(x0,a);x1=Math.max(x1,a);y0=Math.min(y0,b);y1=Math.max(y1,b);}
+      return{w:(x1-x0)*scale,h:(y1-y0)*scale};
+    }catch(e){return null;}
+  }
+  function mepParBBC(par){const bb=mepViewSheetBBox(par);return bb?{x:bb.x+bb.w/2,y:bb.y+bb.h/2,w:bb.w,h:bb.h}:{x:par.x,y:par.y,w:40,h:40};}
+  function mepViewCenterAt(view,at){
+    // place la vue pour que le centre de sa géométrie tombe sur « at » (axes verrouillés éventuels)
+    const b=mepAABBOf(mepGeoOf(view));
+    const cx=b?(b.minx+b.maxx)/2:0,cy=b?(b.miny+b.maxy)/2:0;
+    view.x=at.lockX!=null?at.lockX:at.x-cx*view.scale;
+    view.y=at.lockY!=null?at.lockY:at.y-cy*view.scale;
+  }
+  function mepVcmdStart(kind){
+    const sh=mepSheet();
+    mepSetTool('select');
+    const par=mepSt.sel?mepView(sh,mepSt.sel):null;
+    mepSt.vcmd={kind,stage:0,par:par&&(kind!=='detail'||true)?par.id:null,cur:null};
+    if(kind==='proj'&&par)mepSt.vcmd.stage=1;
+    mepVcmdHint();mepRender();
+  }
+  function mepVcmdHint(){
+    const c=mepSt.vcmd;if(!c)return;
+    const m={
+      proj:['Projection : cliquez la vue mère.','Projection : déplacez la souris autour de la vue (droite/gauche/dessus/dessous, diagonale = ISO) et cliquez. Échap termine.'],
+      section:['Coupe : cliquez le 1er point de la ligne de coupe sur une vue.','Coupe : cliquez le 2ᵉ point (Maj = sans alignement H/V).','Coupe : placez la vue — le côté de la souris donne le sens du regard. Échap annule.'],
+      detail:['Détail : cliquez le centre de la zone à agrandir.','Détail : cliquez pour fixer le rayon.','Détail : placez la vue de détail.'],
+      aux:['Auxiliaire : cliquez une arête inclinée d’une vue.','Auxiliaire : placez la vue de part ou d’autre de l’arête. Échap annule.']
+    };
+    mepStatus((m[c.kind]||[])[c.stage]||'');
+  }
+  function mepVcmdCancel(){if(!mepSt.vcmd)return false;mepSt.vcmd=null;mepSt.hovEnt=null;mepStatus('Commande annulée.');mepRender();return true;}
+  function mepVcmdProjWhich(par,P){
+    const c=mepParBBC(par),dx=P.x-c.x,dy=P.y-c.y,ax=Math.abs(dx)-c.w/2,ay=Math.abs(dy)-c.h/2;
+    if(ax<4&&ay<4)return null;
+    if(ax>4&&ay>4&&Math.min(ax,ay)>0.35*Math.max(ax,ay))return'iso';
+    if(ax>ay)return dx>0?'left':'right'; // 1er angle : vue de gauche posée à droite
+    return dy>0?'top':'bottom';           // vue de dessus posée dessous
+  }
+  function mepVcmdGeom(sh,P,shift){
+    // état courant de la commande pour le point P (planche) : position, sens, aperçu
+    const c=mepSt.vcmd,par=c.par?mepView(sh,c.par):null;
+    if(c.kind==='proj'&&par){
+      const w=mepVcmdProjWhich(par,P),bc=mepParBBC(par);
+      if(!w)return null;
+      if(w==='iso'){const ib=mepModelBoxIn(mepBasisFromDir(MEP_VIEWS.iso.dir),par.scale,par.bodyId)||{w:bc.w,h:bc.h};
+        return{which:w,at:{x:P.x,y:P.y},box:{x:P.x,y:P.y,w:ib.w,h:ib.h}};}
+      const lr=w==='left'||w==='right';
+      const at=lr?{x:P.x,y:bc.y}:{x:bc.x,y:P.y};
+      const pb=mepBasisOf(par),def=MEP_PROJ[w],du=mepNorm(def.u(pb)),dd=mepNorm(def.dir(pb));
+      const gb=mepModelBoxIn({u:du,v:mepNorm(mepCross(du,dd))},par.scale,par.bodyId)||{w:bc.w,h:bc.h};
+      return{which:w,at,lock:lr?{lockY:par.y}:{lockX:par.x},box:{x:at.x,y:at.y,w:gb.w,h:gb.h}};
+    }
+    if(c.kind==='section'&&par&&c.A){
+      if(c.stage===1){
+        // 2ᵉ point : alignement H/V automatique à ±8° (Maj : libre)
+        const s=mepSnapPt(P.x,P.y,sh);let B={x:s.x,y:s.y};
+        const A=mepToSheet(par,c.A.x,c.A.y);
+        if(!shift){const a=Math.abs(Math.atan2(B.y-A.y,B.x-A.x)*180/Math.PI);
+          if(a<8||a>172)B.y=A.y;else if(Math.abs(a-90)<8)B.x=A.x;}
+        return{A,B};
+      }
+      const A=mepToSheet(par,c.A.x,c.A.y),B=mepToSheet(par,c.B.x,c.B.y);
+      const L=Math.hypot(B.x-A.x,B.y-A.y)||1,t={x:(B.x-A.x)/L,y:(B.y-A.y)/L},np={x:-t.y,y:t.x};
+      const M={x:(A.x+B.x)/2,y:(A.y+B.y)/2},side=((P.x-M.x)*np.x+(P.y-M.y)*np.y)>=0?1:-1;
+      const bc=mepParBBC(par),d=(P.x-bc.x)*np.x+(P.y-bc.y)*np.y;
+      const at={x:bc.x+np.x*d,y:bc.y+np.y*d};
+      const gb=mepModelBoxIn(mepPaperBasis(par,t,np,side),par.scale,par.bodyId)||{w:bc.w,h:bc.h};
+      return{A,B,t,np,s:side,at,box:{x:at.x,y:at.y,w:gb.w,h:gb.h}};
+    }
+    if(c.kind==='detail'&&par&&c.C){
+      const C=mepToSheet(par,c.C.x,c.C.y);
+      if(c.stage===1)return{C,R:Math.hypot(P.x-C.x,P.y-C.y)};
+      return{C,R:c.R*par.scale,at:{x:P.x,y:P.y},rr:c.R*c.scale};
+    }
+    if(c.kind==='aux'&&par&&c.edge){
+      const e=c.edge,A=mepToSheet(par,e.x1,e.y1),B=mepToSheet(par,e.x2,e.y2);
+      const L=Math.hypot(B.x-A.x,B.y-A.y)||1,t={x:(B.x-A.x)/L,y:(B.y-A.y)/L},np={x:-t.y,y:t.x};
+      const M={x:(A.x+B.x)/2,y:(A.y+B.y)/2},side=((P.x-M.x)*np.x+(P.y-M.y)*np.y)>=0?1:-1;
+      const d=(P.x-M.x)*np.x+(P.y-M.y)*np.y,at={x:M.x+np.x*d,y:M.y+np.y*d};
+      const gb=mepModelBoxIn(mepPaperBasis(par,t,np,side),par.scale,par.bodyId)||{w:Math.max(L,20),h:20};
+      // la vue s'écarte de l'arête : son bord proche ne recouvre pas la mère
+      return{A,B,t,np,s:side,at,box:{x:at.x,y:at.y,w:gb.w,h:gb.h}};
+    }
+    return null;
+  }
+  function mepVcmdDraw(mk){
+    const c=mepSt.vcmd;if(!c||!c.cur)return;
+    const sh=mepSheet(),G=mepVcmdGeom(sh,c.cur,c.shift);
+    const par=c.par?mepView(sh,c.par):null;
+    if(par){const bb=mepViewSheetBBox(par);if(bb)mk('rect',{x:bb.x-4,y:bb.y-4,width:bb.w+8,height:bb.h+8,class:'mepVBSel'},mepGHlp);}
+    if(!G)return;
+    const ghost=b=>mk('rect',{x:b.x-b.w/2,y:b.y-b.h/2,width:b.w,height:b.h,class:'mepVcGhost'},mepGHlp);
+    if(G.box)ghost(G.box);
+    if(c.kind==='proj'&&G.which){
+      const t=mk('text',{x:c.cur.x+4,y:c.cur.y-4,class:'mepVcTxt'},mepGHlp);
+      t.textContent={left:'Côté gauche',right:'Côté droit',top:'Dessus',bottom:'Dessous',iso:'ISO'}[G.which];
+    }
+    if(c.kind==='section'){
+      mk('line',{x1:G.A.x,y1:G.A.y,x2:G.B.x,y2:G.B.y,class:'mepVcLine'},mepGHlp);
+      if(G.np){[G.A,G.B].forEach(Q=>mk('line',{x1:Q.x,y1:Q.y,x2:Q.x+G.np.x*G.s*9,y2:Q.y+G.np.y*G.s*9,class:'mepVcLine','marker-end':'url(#mepArr)'},mepGHlp));}
+    }
+    if(c.kind==='detail'){
+      mk('circle',{cx:G.C.x,cy:G.C.y,r:Math.max(0.5,G.R),class:'mepVcLine'},mepGHlp);
+      if(G.at)mk('circle',{cx:G.at.x,cy:G.at.y,r:G.rr,class:'mepVcGhost'},mepGHlp);
+    }
+    if(c.kind==='aux'){
+      mk('line',{x1:G.A.x,y1:G.A.y,x2:G.B.x,y2:G.B.y,class:'mepVcLine'},mepGHlp);
+      const M={x:(G.A.x+G.B.x)/2,y:(G.A.y+G.B.y)/2};
+      mk('line',{x1:M.x,y1:M.y,x2:M.x+G.np.x*G.s*12,y2:M.y+G.np.y*G.s*12,class:'mepVcLine','marker-end':'url(#mepArr)'},mepGHlp);
+    }
+  }
+  function mepVcmdMove(sh,P,ev){
+    const c=mepSt.vcmd;c.cur={x:P.x,y:P.y};c.shift=!!(ev&&ev.shiftKey);
+    if(c.kind==='aux'&&c.stage===0){
+      const hit=mepHitViewEnt(sh,P.x,P.y);
+      mepSt.hovEnt=hit&&hit.e.t==='L'?{vid:hit.vid,i:hit.i,sig:mepEntSig(hit.e)}:null;
+    }
+    mepRender();
+  }
+  function mepVcmdDown(sh,P,ev){
+    const c=mepSt.vcmd;c.cur={x:P.x,y:P.y};
+    const parOf=()=>c.par?mepView(sh,c.par):null;
+    if(c.kind==='proj'){
+      if(c.stage===0){const v=mepViewAt(sh,P.x,P.y);if(!v){mepStatus('Projection : cliquez sur une vue.');return;}
+        c.par=v.id;c.stage=1;mepSt.sel=v.id;mepVcmdHint();mepRender();return;}
+      const par=parOf(),G=par&&mepVcmdGeom(sh,P);
+      if(!G){mepStatus('Projection : éloignez la souris de la vue mère pour choisir le sens.');return;}
+      let nv=null;
+      if(G.which==='iso'){nv=mepAddView({kind:'base',vk:'iso',bodyId:par.bodyId,label:'',scale:par.scale,_keepScale:1,_at:G.at,
+        mode:par.mode,tangent:par.tangent,hlrExact:par.hlrExact!==false});}
+      else nv=mepAddProjected(par,G.which,Object.assign({},G.at,G.lock));
+      mepSt.sel=par.id; // on reste sur la mère : projections enchaînées
+      mepVcmdHint();mepRender();
+      if(nv)mepStatus('Vue « '+(nv.label||'ISO')+' » posée — autre projection, ou Échap.');
+      return;
+    }
+    if(c.kind==='section'){
+      if(c.stage===0){
+        const v=mepViewAt(sh,P.x,P.y);if(!v){mepStatus('Coupe : cliquez sur une vue.');return;}
+        if(v.kind==='detail'){mepStatus('Coupe : choisissez une vue complète (pas un détail).');return;}
+        const s=mepSnapPt(P.x,P.y,sh);c.par=v.id;c.A=mepFromSheet(v,s.x,s.y);c.stage=1;mepVcmdHint();mepRender();return;
+      }
+      const par=parOf();if(!par)return mepVcmdCancel();
+      if(c.stage===1){
+        const G=mepVcmdGeom(sh,P,ev.shiftKey);
+        if(Math.hypot(G.B.x-G.A.x,G.B.y-G.A.y)<2){mepStatus('Coupe : ligne trop courte.');return;}
+        c.B=mepFromSheet(par,G.B.x,G.B.y);c.stage=2;mepVcmdHint();mepRender();return;
+      }
+      const G=mepVcmdGeom(sh,P);
+      mepSt.vcmd=null;
+      mepSectionFromPicks(par,c.A,c.B,{s:G.s,at:G.at});
+      return;
+    }
+    if(c.kind==='detail'){
+      if(c.stage===0){
+        const v=mepViewAt(sh,P.x,P.y);if(!v){mepStatus('Détail : cliquez dans une vue.');return;}
+        c.par=v.id;c.C=mepFromSheet(v,P.x,P.y);c.stage=1;mepVcmdHint();mepRender();return;
+      }
+      const par=parOf();if(!par)return mepVcmdCancel();
+      if(c.stage===1){
+        const G=mepVcmdGeom(sh,P),R=G.R/par.scale;
+        if(R<0.5){mepStatus('Détail : rayon trop petit.');return;}
+        c.R=R;
+        // échelle : ×2 la mère au minimum, et un diamètre d'environ 70 mm sur la planche
+        const want=Math.max(par.scale*2,Math.min(par.scale*10,35/R));
+        const S=MEP_SCALES.map(x=>x[0]).concat([10]).sort((a,b)=>a-b);
+        c.scale=S.find(x=>x>=want-1e-9)||S[S.length-1];
+        c.stage=2;mepVcmdHint();mepRender();return;
+      }
+      mepSt.vcmd=null;
+      mepDetailFromPicks(par,c.C,c.R,{at:{x:P.x,y:P.y},scale:c.scale});
+      return;
+    }
+    if(c.kind==='aux'){
+      if(c.stage===0){
+        const hit=mepHitViewEnt(sh,P.x,P.y);
+        if(!hit||hit.e.t!=='L'){mepStatus('Auxiliaire : cliquez une ARÊTE droite (inclinée) d’une vue.');return;}
+        const v=mepView(sh,hit.vid);
+        c.par=v.id;c.edge={x1:hit.e.x1,y1:hit.e.y1,x2:hit.e.x2,y2:hit.e.y2};c.stage=1;mepSt.hovEnt=null;mepVcmdHint();mepRender();return;
+      }
+      const par=parOf();if(!par)return mepVcmdCancel();
+      const G=mepVcmdGeom(sh,P);
+      mepSt.vcmd=null;
+      mepAddAuxFromEdge(par,c.edge,G.s,G.at);
+      return;
+    }
+  }
+  function mepAddAuxFromEdge(par,e,s,at){
+    const L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,t={x:(e.x2-e.x1)/L,y:(e.y2-e.y1)/L},np={x:-t.y,y:t.x};
+    const B=mepPaperBasis(par,t,np,s);
+    const v=mepAddView({kind:'aux',vk:'',dir:B.dir,u:B.u,v:B.v,parent:par.id,label:mepNextLabel(mepSheet()),
+      bodyId:par.bodyId,mode:par.mode,tangent:par.tangent,hlrExact:par.hlrExact!==false,scale:par.scale,_keepScale:1,_at:at,
+      align:{x:np.x*s,y:np.y*s},auxEdge:{a:[e.x1,e.y1],b:[e.x2,e.y2],s,pid:par.id},
+      autoAxes:!!par.autoAxes,autoPitch:!!par.autoPitch});
+    mepStatus('Vue auxiliaire « '+v.label+' » posée, perpendiculaire à l’arête — glisser contraint sur sa ligne de rappel.');
+    return v;
+  }
   function mepDrawSk(mk,sh){
     if(sh.sk)mepDrawSkCtx(mk,sh,{sk:sh.sk,ox:0,oy:0,tb:false},'sheet');
   }
@@ -2585,8 +2870,9 @@
     const K=mepPanelKit(root),ctx=mepSkCtx(sh,false),sk=ctx.sk;
     K.h(ctx.tb?'Cartouche — esquisse':'Esquisse de planche');
     mepSideSkTools(root,K,sh);
-    if(!sk)return;
+    if(!sk){mepSideSkStyle(K,null,ctx.tb);return;}
     const s=mepSkSelParts(sk),n=mepSt.skSel.size;
+    if(!n)mepSideSkStyle(K,null,ctx.tb);
     K.h('Sélection ('+n+')');
     // une contrainte seule : nom, valeur (si cote), suppression
     if(s.K.length===1&&n===1){
@@ -2617,11 +2903,7 @@
       [['lab','Libellé'],['val','Valeur']].forEach(([v,l])=>K.btn(r,l,()=>{mepEdit('texte',()=>{e.st=v;});mepSideShow();},v==='lab'?'Texte maigre':'Texte gras',(e.st||'lab')===v?'active':''));
       [['start','⇤'],['middle','↔'],['end','⇥']].forEach(([v,l])=>K.btn(r,l,()=>{mepEdit('texte',()=>{e.al=v;});mepSideShow();},'Ancrage : '+({start:'début',middle:'centre',end:'fin'})[v],(e.al||'start')===v?'active':''));
     }
-    if(ctx.tb&&s.L.length){
-      const r=K.rowEl();K.lab(r,'Trait');
-      [['thin','Fin'],['thick','Épais']].forEach(([v,l])=>K.btn(r,l,()=>{mepEdit('trait',()=>{s.L.forEach(x=>{x.w=v==='thick'?'thick':undefined;});});mepSideShow();},'',
-        s.L.every(x=>(x.w==='thick')===(v==='thick'))?'active':''));
-    }
+    if(s.L.length||s.C.length||s.T.length)mepSideSkStyle(K,[...s.L,...s.C,...s.T],ctx.tb);
     // contraintes applicables
     K.h('Contraintes');
     let r=K.rowEl();
@@ -2635,10 +2917,42 @@
     if(ctx.tb){r=K.rowEl();K.btn(r,'Terminer l’édition du cartouche',()=>mepTbEdit(false),'Échap');}
     K.note('Maj+clic : ajouter à la sélection. Glisser un point ou un trait : l’esquisse suit ses contraintes. Une cote se pose à la valeur actuelle, puis se modifie ici.');
   }
+  function mepSideSkStyle(K,ents,tb){
+    // épaisseur, type de trait et couleur : des éléments sélectionnés, sinon des prochains éléments créés
+    const cur=!ents,S=cur?[mepSkStyleCur()]:ents,wDef=tb?'thin':'thick';
+    const strokes=cur?S:S.filter(x=>x.t!=='text');
+    K.h(cur?'Style des nouveaux éléments':'Style ('+S.length+')');
+    const set=fn=>{
+      if(cur){fn(S[0]);try{localStorage.setItem('mep_sk_style',JSON.stringify(S[0]));}catch(e){}}
+      else mepEdit('style du trait',()=>S.forEach(fn));
+      mepSideShow();
+    };
+    const same=f=>{const v=S.map(f);return v.every(x=>x===v[0])?v[0]:null;};
+    if(strokes.length){
+      let r=K.rowEl();K.lab(r,'Épaisseur');
+      [['thin','Fin'],['thick','Épais']].forEach(([v,l])=>K.btn(r,l,()=>set(x=>{if(x.t==='text')return;x.w=v;delete x.lw;}),
+        'Trait '+(v==='thick'?'épais':'fin')+' de la planche (réglages « Traits »)',strokes.every(x=>!(+x.lw>0)&&(x.w||wDef)===v)?'active':''));
+      r=K.rowEl();K.lab(r,'Épaisseur (mm)');
+      const lw=document.createElement('input');lw.type='number';lw.step='0.05';lw.min='0';lw.max='3';lw.placeholder='auto';
+      const lv=same(x=>+x.lw>0?+x.lw:0);lw.value=lv?lv:'';lw.title='Épaisseur libre en mm papier — vide : Fin / Épais';
+      lw.onchange=()=>{const v=+lw.value;set(x=>{if(x.t==='text')return;if(v>0)x.lw=Math.min(3,Math.max(0.05,v));else delete x.lw;});};
+      r.appendChild(lw);
+      r=K.rowEl();K.lab(r,'Type');
+      [['','Continu'],['hid','Interrompu'],['axis','Mixte']].forEach(([v,l])=>K.btn(r,l,()=>set(x=>{if(x.t==='text')return;if(v)x.lt=v;else delete x.lt;}),
+        v==='hid'?'Trait interrompu (caché)':(v==='axis'?'Trait mixte (axe)':'Trait continu'),strokes.every(x=>(x.lt||'')===v)?'active':''));
+    }
+    const r=K.rowEl();K.lab(r,'Couleur');
+    const c=document.createElement('input');c.type='color';const cv=same(x=>x.col||'');c.value=cv||'#151515';
+    c.title='Couleur du trait (et des textes) — gardée à l’export PDF / SVG en mode « Couleur »';
+    c.onchange=()=>set(x=>{x.col=c.value;});
+    r.appendChild(c);
+    K.btn(r,'Auto',()=>set(x=>{delete x.col;}),'Couleur du thème (encre de la planche)',S.every(x=>!x.col)?'active':'');
+  }
   function mepSideTbEdit(root,sh){
     const K=mepPanelKit(root);
     K.h('Édition du cartouche');
     mepSideSkTools(root,K,sh);
+    mepSideSkStyle(K,null,true);
     const tb=sh.title.tb,sk=tb.sk;
     const H=mepTbH(sh),bb=mepTbBBox(sk);
     K.note('Origine (croix) = coin bas-droit intérieur du cadre : le cartouche garde ses cotes sur tous les formats. Hauteur actuelle : '+mepFmtNum(H,1)+' mm, largeur : '+mepFmtNum(-bb.minx,1)+' mm.');
@@ -2915,11 +3229,12 @@
     if(mepSt.hovView)drawVB(mepSt.hovView,'mepVB');
     /* brouillons d'interaction */
     try{mepDrawDraft(mk);}catch(e){}
+    try{mepVcmdDraw(mk);}catch(e){}
     mepToolSync();
     mepRulers();
   }
   function mepSheetScaleLabel(sh){
-    const vals=sh.views.filter(v=>v.scale!==1).map(v=>v.scale);
+    const vals=sh.views.filter(v=>v.scale!==1&&v.kind!=='detail').map(v=>v.scale); // un détail porte sa propre échelle
     if(!vals.length)return '1:1';
     const s=vals[0];
     if(s>=1)return mepFmtNum(s,2).replace(',0','')+':1';
@@ -3005,32 +3320,39 @@
     });
     /* hachures */
     if(g.hatch&&g.hatch.length)mepDrawHatch(mk,g.hatch,v);
-    /* ligne de coupe sur le parent */
+    /* ligne de coupe sur le parent (ISO 128-44) : trait mixte fin, extrémités épaisses, flèches = sens du regard, lettres */
     if(v.section&&v.section.a&&v.section.pid){
       const par=mepView(sh,v.section.pid);
       if(par){
         const A=mepToSheet(par,v.section.a[0],v.section.a[1]);
         const B=mepToSheet(par,v.section.b[0],v.section.b[1]);
-        mk('line',{x1:A.x,y1:A.y,x2:B.x,y2:B.y,class:'mepCut','stroke-dasharray':'8 2 1.5 2'});
-        const dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy)||1;
-        const nx=-dy/L*6,ny=dx/L*6;
-        [[A,B,1],[B,A,-1]].forEach(([P,Q,s])=>{
-          const ex=P.x+dx/L*7*s,ey=P.y+dy/L*7*s;
-          mk('line',{x1:P.x+nx,y1:P.y+ny,x2:ex,y2:ey,class:'mepCutS','marker-end':'url(#mepArr)'});
-          mk('line',{x1:P.x-nx,y1:P.y-ny,x2:ex,y2:ey,class:'mepCutS','marker-end':'url(#mepArr)'});
+        const dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy)||1,tx=dx/L,ty=dy/L;
+        // sens du regard sur le papier : -dir projeté (= côté où la coupe est posée en 1er angle)
+        const pb=mepBasisOf(par),nd=v.section.n||v.dir;
+        let ax=-mepDot(nd,pb.u),ay=-mepDot(nd,pb.v);const La=Math.hypot(ax,ay);
+        if(La<1e-6){ax=-ty;ay=tx;}else{ax/=La;ay/=La;}
+        mk('line',{x1:A.x,y1:A.y,x2:B.x,y2:B.y,class:'mepCutLine'});
+        [[A,-1],[B,1]].forEach(([P,sg])=>{
+          const ox=P.x+tx*sg*3,oy=P.y+ty*sg*3,ix=P.x-tx*sg*5,iy=P.y-ty*sg*5;
+          mk('line',{x1:ox,y1:oy,x2:ix,y2:iy,class:'mepCutEnd'});
+          mk('line',{x1:ox,y1:oy,x2:ox+ax*9,y2:oy+ay*9,class:'mepCutArr','marker-end':'url(#mepArr)'});
+          if(v.label)mk('text',{x:ox+ax*12+tx*sg*2,y:oy+ay*12+tx*0+3,class:'mepLbl','text-anchor':'middle'}).textContent=v.label;
         });
-        if(v.label){
-          mk('text',{x:(A.x+B.x)/2+nx*1.8,y:(A.y+B.y)/2+ny*1.8+2,class:'mepLbl','text-anchor':'middle'}).textContent=v.label;
-        }
       }
+    }
+    /* contour de la vue de détail */
+    if(v.detail){
+      const C=mepToSheet(v,v.detail.cx,v.detail.cy);
+      mk('circle',{cx:C.x,cy:C.y,r:v.detail.r*v.scale,class:'mepDetailB'});
     }
     /* marqueur détail sur le parent */
     if(v.detail&&v.parent){
       const par=mepView(sh,v.parent);
       if(par){
         const C=mepToSheet(par,v.detail.cx,v.detail.cy);
-        mk('circle',{cx:C.x,cy:C.y,r:v.detail.r*par.scale,class:'mepEnt mepSel','stroke-dasharray':'4 2'});
-        if(v.label)mk('text',{x:C.x,y:C.y-v.detail.r*par.scale-2,class:'mepLbl','text-anchor':'middle'}).textContent=v.label;
+        const rr=v.detail.r*par.scale;
+        mk('circle',{cx:C.x,cy:C.y,r:rr,class:'mepDetailC'});
+        if(v.label)mk('text',{x:C.x+rr*0.75+2,y:C.y-rr*0.75-2,class:'mepLbl','text-anchor':'start'}).textContent=v.label;
       }
     }
         if(v.label){
@@ -4163,7 +4485,8 @@
       const x1=A.x+(B.x-A.x)*t0,y1=A.y+(B.y-A.y)*t0;
       const x2=A.x+(B.x-A.x)*t1,y2=A.y+(B.y-A.y)*t1;
       const pa=mepSkPt(sk,x1,y1),pb=mepSkPt(sk,x2,y2);
-      mepSkEnt(sk,{t:'line',p1:pa,p2:pb});
+      const n={t:'line',p1:pa,p2:pb};['w','lw','lt','col'].forEach(k=>{if(e[k]!==undefined)n[k]=e[k];});
+      mepSkEnt(sk,n);
     };
     mk(0,lo);mk(hi,1);
     mepSkRmEnt(sk,e.id);
@@ -4234,7 +4557,7 @@
     if(next!=='select'&&next!==mepSt.tool){mepSt.sel=null;mepSt.selDim=null;mepSt.selAxis=null;}
     mepSt.tool=next;
     if(next==='select')mepSt.entSel=[];
-    mepSt.pick=null;mepSt.dim=null;mepSt.cutPts=[];mepSt.detC=null;mepSt.hovEnt=null;mepSt.skSel=new Set();mepSt.lot=null;
+    mepSt.pick=null;mepSt.dim=null;mepSt.cutPts=[];mepSt.detC=null;mepSt.hovEnt=null;mepSt.skSel=new Set();mepSt.lot=null;mepSt.vcmd=null;
     mepSt.axisPick=[];mepSt.axisFree=null;
     mepToolSync();
     try{mepSideShow();}catch(e){}
@@ -4396,6 +4719,7 @@
     mepSvgEl.setPointerCapture(ev.pointerId);
     const P=mepPt(ev);
     const sh=mepSheet();
+    if(mepSt.vcmd){mepVcmdDown(sh,P,ev);return;}
     const tool=mepSt.tool;
     if(tool==='select'){
       if(!(ev.shiftKey||ev.ctrlKey||ev.metaKey))mepSt.lot=null;
@@ -4559,6 +4883,7 @@
     const P=mepPt(ev);
     mepCoordShow(P);
     const sh=mepSheet();
+    if(mepSt.vcmd&&!(mepSt.pick&&mepSt.pick.kind==='pan')){mepVcmdMove(sh,P,ev);return;}
     const pk=mepSt.pick;
     if(pk){
       if(pk.kind==='pan'){
@@ -4604,6 +4929,10 @@
             pk.dragStarted=true;
           }
           let nx=P.x-pk.ox,ny=P.y-pk.oy;
+          if(v.align&&v.kind!=='proj'){
+            // coupe / auxiliaire alignées : glissement sur la ligne de rappel
+            const t=(nx-v.x)*v.align.x+(ny-v.y)*v.align.y;nx=v.x+t*v.align.x;ny=v.y+t*v.align.y;
+          }
           if(v.kind==='proj'){
             // vue projetée : glissement contraint sur l'axe libre ; l'axe commun reste verrouillé sur la mère
             const par=mepView(sh,v.parent);
@@ -4774,6 +5103,7 @@
       mepCtxHide();ev.preventDefault();ev.stopPropagation();return;
     }
     if(k==='Escape'){
+      if(mepSt.vcmd){mepVcmdCancel();ev.preventDefault();ev.stopPropagation();return;}
       if(mepSt.pick&&MEP_SK_TOOLS.indexOf(mepSt.pick.kind)>=0){mepSt.pick=null;mepRender();ev.preventDefault();ev.stopPropagation();return;}
       if((mepSt.skSel&&mepSt.skSel.size)||mepSt.lot){mepSt.skSel=new Set();mepSt.lot=null;mepSideShow();mepRender();ev.preventDefault();ev.stopPropagation();return;}
       if(mepSt.tbEdit){if(mepSt.tool!=='select')mepSetTool('select');else mepTbEdit(false);ev.preventDefault();ev.stopPropagation();return;}
@@ -5128,6 +5458,7 @@
   }
   function mepOnContext(ev){
     ev.preventDefault();
+    if(mepSt.vcmd){mepVcmdCancel();return;}
     if(mepSt.pick&&MEP_SK_TOOLS.indexOf(mepSt.pick.kind)>=0){mepSt.pick=null;mepRender();mepStatus('Tracé terminé.');return;}
     const sh=mepSheet();if(!sh)return;
     const canCtx=d=>d&&(d.kind==='dia'||d.kind==='rad'||d.kind==='len'||d.kind==='dist');
@@ -5496,7 +5827,7 @@
     if(mepSt.lot)mepSideLot(mepSideEl,sh);
     else if(mepSt.skSel&&mepSt.skSel.size)mepSideSk(mepSideEl,sh);
     else if(mepSt.tbEdit&&mepTbIsSk(sh))mepSideTbEdit(mepSideEl,sh);
-    else if(mepSt.tool==='text')mepSideSk(mepSideEl,sh);
+    else if(MEP_SK_TOOLS.indexOf(mepSt.tool)>=0&&mepSt.tool!=='trim'&&mepSt.tool!=='logo')mepSideSk(mepSideEl,sh); // outil de dessin : style des nouveaux éléments
     else if(v)mepSideView(mepSideEl,v,sh);
     else if(a)mepSideAxis(mepSideEl,av,a,sh);
     else if(d)mepSideDim(mepSideEl,d,sh);
@@ -5561,8 +5892,14 @@
     {const L=document.createElement('label');L.textContent='Papier (écran)';r.appendChild(L);
      const pm=mepPaperMode();
      [['white','Blanc'],['dark','Sombre']].forEach(([m,l])=>{const b=document.createElement('button');b.textContent=l;b.className=pm===m?'active':'';
-       b.title=m==='dark'?'Planche sombre et traits clairs pour le confort à l’écran — export et impression restent en noir sur blanc':'Planche blanche';
+       b.title=m==='dark'?'Planche sombre et traits clairs pour le confort à l’écran — export et impression restent sur papier blanc':'Planche blanche';
        b.onclick=e=>{e.stopPropagation();mepSetPaper(m);mepSideShow();};r.appendChild(b);});}
+    r=rowEl();
+    {const L=document.createElement('label');L.textContent='Export PDF / SVG';r.appendChild(L);
+     const bw=mepExportBW();
+     [[false,'Couleur'],[true,'Noir']].forEach(([v,l])=>{const b=document.createElement('button');b.textContent=l;b.className=bw===v?'active':'';b.id=v?'mepExpBW':'mepExpCol';
+       b.title=v?'Tout en noir sur blanc (ISO), couleurs d’entités comprises':'Garder les couleurs : cotes, axes, traits colorés (papier blanc)';
+       b.onclick=e=>{e.stopPropagation();mepSetExportBW(v);mepSideShow();};r.appendChild(b);});}
     r=rowEl();
     {const L=document.createElement('label');L.textContent='Règles en mm';r.appendChild(L);
      const cb=document.createElement('input');cb.type='checkbox';cb.id='mepRulersOn';cb.checked=mepSt.rulers!==false;
@@ -5739,8 +6076,8 @@
       dimRow(lab+(unit?' ('+unit+')':''),i);
     };
     dimNum('Hauteur du texte','textHeight',2,30,0.5,'mm');
-    // couleur des cotes À L'ÉCRAN : celle du thème (défaut) ou une couleur libre ; l'export et
-    // l'impression sont toujours en noir (plan ISO)
+    // couleur des cotes : celle du thème (défaut) ou une couleur libre ; l'export et
+    // l'impression la gardent (option « Export PDF / SVG : Noir » pour le plan ISO noir)
     const thm=!MEP_DIM_STYLE.color||MEP_DIM_STYLE.color==='theme';
     const dimTh=document.createElement('input');dimTh.type='checkbox';dimTh.id='mepDimColTheme';dimTh.checked=thm;
     const dimCol=document.createElement('input');
@@ -5752,7 +6089,7 @@
     dimCol.oninput=onCol;dimCol.onchange=onCol;dimTh.onchange=onCol;
     const thL=document.createElement('label');thL.style.cssText='flex:none;display:flex;gap:4px;align-items:center';
     thL.appendChild(dimTh);thL.appendChild(document.createTextNode('thème'));
-    const colRow=dimRow('Couleur (écran)',dimCol);colRow.appendChild(thL);
+    const colRow=dimRow('Couleur',dimCol);colRow.appendChild(thL);
     dimNum('Angle des flèches','arrowAngle',10,90,1,'°');
     dimNum('Longueur des flèches','arrowLen',2,30,0.5,'mm');
     r=rowEl();
@@ -5875,17 +6212,11 @@
       b.onclick=()=>{mepEdit('suppression axes manuels',()=>{v.axes=[];mepSt.selAxis=null;});mepSideShow();};
       row('Axes manuels',b);
     }
-    // projections 1er angle (depuis une vue quelconque sauf coupe/détail)
-    if(v.kind==='base'||v.kind==='aux'||v.kind==='proj'){
-      const pr=document.createElement('div');pr.className='row';
-      [['Dessus','top'],['Dessous','bottom'],['Gauche','left'],['Droit','right']].forEach(([lab,k])=>{
-        const b=document.createElement('button');
-        b.textContent=lab;b.title='Vue projetée (1er angle) : '+MEP_PROJ[k].lab;
-        b.style.flex='1';
-        b.onclick=()=>{mepAddProjected(v,k);};
-        pr.appendChild(b);
-      });
-      row('Projection',pr);
+    // vue alignée sur sa mère (coupe, auxiliaire) : glissement contraint, déliable
+    if(v.align||v._alignOff){
+      const cb=document.createElement('input');cb.type='checkbox';cb.checked=!!v.align;
+      cb.onchange=()=>{mepEdit('alignement vue',()=>{if(cb.checked){v.align=v._alignOff;delete v._alignOff;}else{v._alignOff=v.align;v.align=null;}});mepSideShow();};
+      row('Alignée sur la mère',cb);
     }
     // actions
     const act=document.createElement('div');act.className='row';
@@ -6039,13 +6370,32 @@
     root.appendChild(act);
   }
   /* ═══════════════ W. export SVG / impression ═══════════════ */
+  function mepExportBW(){try{return localStorage.getItem('mep_exp_bw')==='1';}catch(e){return false;}}
+  function mepExportPrep(clone,bw){
+    // Couleur (défaut) : palette papier blanc + accent du thème → cotes, axes et traits colorés gardés.
+    // Noir : tout en noir sur blanc (ISO), couleurs d'entités comprises. Renvoie le CSS à ajouter.
+    if(bw===undefined)bw=mepExportBW();
+    const st=clone.style,set=(k,v)=>{try{st.setProperty(k,v);}catch(e){st[k]=v;}};
+    if(bw){
+      try{st.removeProperty('--mepDimCol');}catch(e){delete st['--mepDimCol'];}
+      return 'line.mepUc,circle.mepUc,path.mepUc{stroke:#111!important}text.mepUc{fill:#111!important}';
+    }
+    let th='nuit';try{th=document.body.getAttribute('data-theme')||'nuit';}catch(e){}
+    const v=MEP_PAPER.white;Object.keys(v).forEach(k=>set('--'+k,v[k]));
+    set('--mepAccent',MEP_ACC_W[th]||'#0a84ff');
+    return '';
+  }
+  function mepSetExportBW(on){
+    try{localStorage.setItem('mep_exp_bw',on?'1':'0');}catch(e){}
+    mepStatus('Export PDF / SVG / impression : '+(on?'noir sur blanc.':'en couleur (cotes, axes et traits colorés gardés).'));
+  }
   function mepExportSvg(){
     try{
       const sh=mepSheet();
       const pg=mepPage();
       const clone=mepSvgEl.cloneNode(true);
       clone.removeAttribute('id'); // ne pas laisser la règle UI #mepSvg{css} écraser les mm
-      try{clone.style.removeProperty('--mepDimCol');}catch(e){} // cotes en noir (ISO), pas la couleur d'écran
+      const xcss=mepExportPrep(clone); // couleur (défaut) ou noir
       clone.setAttribute('xmlns',NS);
       clone.setAttribute('viewBox','0 0 '+pg.W+' '+pg.H);
       clone.setAttribute('width',pg.W+'mm');
@@ -6055,7 +6405,7 @@
       clone.querySelectorAll('.mepSkSelE,.mepSkSelT').forEach(n=>{n.classList.remove('mepSkSelE');n.classList.remove('mepSkSelT');});
       // les éléments ne portent que des classes : embarquer la feuille de style PLAN
       const st=document.createElementNS(NS,'style');
-      st.textContent=css.textContent;
+      st.textContent=css.textContent+xcss;
       clone.insertBefore(st,clone.firstChild);
       const xml='<?xml version="1.0" encoding="UTF-8"?>\n'+new XMLSerializer().serializeToString(clone);
       const blob=new Blob([xml],{type:'image/svg+xml'});
@@ -6081,6 +6431,7 @@
   function mepDxfLayer(el){
     const c=el.classList||{contains:()=>false},has=k=>c.contains(k);
     if(has('mepHidden'))return 'CACHE';
+    if(has('mepCutLine')||has('mepCutEnd')||has('mepCutArr')||has('mepDetailC')||has('mepDetailB'))return 'AXE';
     if(has('mepAxis')||has('mepAxisCross'))return 'AXE';
     if(has('mepDimL')||has('mepDimT')||has('mepDimRef'))return 'COTES';
     if(has('mepHatch'))return 'HACHURES';
@@ -6234,7 +6585,7 @@
       const pg=mepPage();
       const clone=mepSvgEl.cloneNode(true);
       clone.removeAttribute('id'); // idem export : la règle #mepSvg ne doit pas s'appliquer
-      try{clone.style.removeProperty('--mepDimCol');}catch(e){} // cotes en noir (ISO)
+      const xcss=mepExportPrep(clone);
       clone.setAttribute('xmlns',NS);
       clone.setAttribute('viewBox','0 0 '+pg.W+' '+pg.H);
       clone.setAttribute('width',pg.W+'mm');clone.setAttribute('height',pg.H+'mm');
@@ -6246,7 +6597,8 @@
         // page = format exact de la planche, sans marge : impression / PDF à l'échelle 1:1 réelle
         '<style>@page{size:'+pg.W+'mm '+pg.H+'mm;margin:0}'+
         'html,body{margin:0;padding:0}svg{display:block;width:'+pg.W+'mm;height:'+pg.H+'mm}'+
-        css.textContent+'</style></head><body>'+
+        // couleurs imprimées telles quelles (sinon Chrome peut les éclaircir)
+        'svg{-webkit-print-color-adjust:exact;print-color-adjust:exact}'+css.textContent+xcss+'</style></head><body>'+
         new XMLSerializer().serializeToString(clone)+'</body></html>');
       w.document.close();
       setTimeout(()=>{try{w.focus();w.print();}catch(e){}},250);
@@ -6356,7 +6708,11 @@
         addRect:(sh,a,b)=>mepSkAddRect(sh,a,b),addText:(sh,p)=>mepSkAddText(sh,p),textValue:(sh,e)=>mepSkTextValue(sh,e,false),
         merge:(sk,a,b)=>mepSkMerge(sk,a,b),
         box:(sh,x0,y0,x1,y1,add)=>mepBoxSelect(sh,{sx:x0,sy:y0,cur:{x:x1,y:y1}},add),sel:()=>[...mepSt.skSel],
-        lot:()=>mepSt.lot?{views:[...mepSt.lot.views],dims:[...mepSt.lot.dims]}:null},
+        lot:()=>mepSt.lot?{views:[...mepSt.lot.views],dims:[...mepSt.lot.dims]}:null,
+        style:o=>{if(o)mepSt.skStyle=o;return mepSkStyleCur();},
+        draw:sh=>{const r=[];mepDrawSkCtx((tag,a)=>{if(a)r.push(Object.assign({tag},a));return{textContent:''};},sh,{sk:sh.sk,ox:0,oy:0,tb:false},'sheet');return r;}},
+      exportPrep:(clone,bw)=>mepExportPrep(clone,bw),
+      paperBasis:(par,t,np,sg)=>mepPaperBasis(par,t,np,sg),projWhich:(par,P)=>mepVcmdProjWhich(par,P),
       fitCircle:mepFitCircle,
       axisFitCircle:mepAxisFitCircle,
       axisPitchGroups:(holes,view)=>mepAxisPitchGroups(holes,view||{scale:1}),
@@ -6452,7 +6808,8 @@
   }
   window.mepAddViewStd=vk=>{mepSetActive(true);return mepAddStandardView(vk);};
   window.mepAddCameraViewCmd=()=>{mepSetActive(true);return mepAddCameraView();};
-  window.mepBeginAuxCmd=()=>{mepSetActive(true);mepBeginAux();};
+  window.mepBeginAuxCmd=()=>{mepSetActive(true);mepVcmdStart('aux');};
+  window.mepBeginProjCmd=()=>{mepSetActive(true);mepVcmdStart('proj');};
   window.mepProjectView=(which,parent)=>{mepSetActive(true);return mepAddProjected(parent||mepView(mepSheet(),mepSt.sel),which);};
   window.mepBeginSectionCmd=()=>{mepSetActive(true);mepBeginSection();};
   window.mepBeginDetailCmd=()=>{mepSetActive(true);mepBeginDetail();};

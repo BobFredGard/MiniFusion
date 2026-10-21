@@ -626,8 +626,32 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
       T.box(sh0,xm+2,ym-2,xm-2,ym+2,false);const crossIn=nE();     // capture au milieu : ne touche rien
       out.boxSel=winPart===1&&winAll===4&&crossPart===3&&crossIn===0;
       out.boxDbg=[winPart,winAll,crossPart,crossIn].join(',');
+      // V0.3.13 : style des nouveaux éléments (épaisseur libre, type, couleur) → rendu
+      T.style({lw:0.25,lt:'axis',col:'#d40000'});
+      const sl=T.addLine(sh0,{x:100,y:100},{x:140,y:120});
+      T.style({});
+      const at=T.draw(sh0).find(o=>o.tag==='line'&&Math.abs(o.x1-100)<1e-6&&Math.abs(o.y1-100)<1e-6);
+      out.skStyle=!!sl&&sl.e.lw===0.25&&sl.e.col==='#d40000'&&!!at&&/stroke-width:0\.25/.test(at.style||'')&&/stroke:#d40000/.test(at.style||'')&&
+        /mepUc/.test(at.class)&&/mepLtAxis/.test(at.class)&&T.draw(sh0).filter(o=>o.tag==='line'&&/mepSkThick/.test(o.class)&&!/mepUc/.test(o.class)).length===4;
       sh0.sk=sk0;
     }catch(e){out.skErr=String(e&&e.stack||e);}
+    try{
+      const mkSt=()=>{const o={};o.setProperty=(k,v)=>{o[k]=v;};o.removeProperty=k=>{delete o[k];};o['--mepDimCol']='var(--mepAccent,#0a84ff)';return o;};
+      const c1={style:mkSt()},x1=window.__mepTest.exportPrep(c1,false);
+      const c2={style:mkSt()},x2=window.__mepTest.exportPrep(c2,true);
+      out.expCol=x1===''&&!!c1.style['--mepAccent']&&c1.style['--mepAxisCol']==='#d40000'&&!!c1.style['--mepDimCol'];
+      out.expBW=/mepUc\{stroke:#111!important/.test(x2)&&!c2.style['--mepDimCol']&&!c2.style['--mepAccent'];
+    }catch(e){out.expErr=String(e);}
+    // V0.3.13 : base alignée (coupe / auxiliaire) = projection 1er angle quand l'arête est horizontale
+    try{
+      const T=window.__mepTest,front={kind:'base',vk:'front',dir:[0,-1,0],u:[1,0,0],v:[0,0,-1],x:0,y:0,scale:1};
+      const eq=(a,b)=>a.every((q,i)=>Math.abs(q-b[i])<1e-9);
+      const dn=T.paperBasis(front,{x:1,y:0},{x:0,y:1},1),up=T.paperBasis(front,{x:1,y:0},{x:0,y:1},-1);
+      // posée dessous = vue de dessus (dir +Z, u X, v -Y) ; posée dessus = vue de dessous (dir -Z, v +Y)
+      out.paperBasis=eq(dn.dir,[0,0,1])&&eq(dn.u,[1,0,0])&&eq(dn.v,[0,-1,0])&&eq(up.dir,[0,0,-1])&&eq(up.v,[0,1,0]);
+      const lt=T.paperBasis(front,{x:0,y:1},{x:-1,y:0},-1); // arête verticale, posée à droite = côté gauche (dir -X)
+      out.paperBasisSide=eq(lt.dir,[-1,0,0]);
+    }catch(e){out.paperErr=String(e);}
     out.exportsNew=typeof window.mepExportDxf==='function'&&typeof window.mepDxfBuild==='function'
       &&typeof window.mepAutoHoles==='function'&&typeof window.mepSetPaper==='function';
 
@@ -790,6 +814,9 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.skRect,'esquisse : rectangle + cote horizontale pilotante 60 mm');
   A(val&&val.skRefuse,'esquisse : contrainte contradictoire refusée, géométrie intacte');
   A(val&&val.boxSel,'sélection au cadre : fenêtre (entièrement dedans) / capture (touche) — '+(val&&val.boxDbg));
+  A(val&&val.skStyle,'esquisse : épaisseur / type / couleur par élément, rendus (V0.3.13)');
+  A(val&&val.expCol&&val.expBW,'export PDF / SVG : couleurs gardées par défaut, option noir'+(val&&val.expErr?' — '+val.expErr:''));
+  A(val&&val.paperBasis&&val.paperBasisSide,'vues alignées (coupe / auxiliaire) : base = projection 1er angle (V0.3.13)'+(val&&val.paperErr?' — '+val.paperErr:''));
   A(val&&val.exportsNew,'exports DXF, perçages auto et papier présents');
 
   if(ko){console.log('FAIL '+ko+' assertion(s)');process.exit(1);}

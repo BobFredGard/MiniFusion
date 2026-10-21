@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**282 versions**, de `2026-09-28b` à `V0.3.12` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**283 versions**, de `2026-09-28b` à `V0.3.13` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4258,3 +4258,71 @@ Vérifié au navigateur :
 - rendu final et DXF (calque CARTOUCHE, valeurs C45, Nitruration).
 
 `test_mise_en_plan` complété : cartouche Standard → esquisse (26 mm, TTS/TTH), cote de largeur, champs, rectangle + cote pilotante, contrainte refusée, sélection fenêtre/capture. Navigateur : capture de 2 vues, fenêtre d'une seule vue, fenêtre et capture dans le cartouche. `npm run ci` vert.
+
+## V0.3.13 - PLAN : ruban réorganisé, projection à la souris, coupe / détail / auxiliaire interactifs, style des traits, export en couleur
+
+### Ruban PLAN
+- **Une icône dédiée par commande** :
+  - nouvelle et duplication de planche, cartouche ;
+  - vue de base, projection, ISO, auxiliaire, coupe, détail ;
+  - ligne, rectangle, cercle, arc, point, ajuster, texte ;
+  - cote, perçage, perçages auto ;
+  - SVG, DXF, PDF.
+- Auparavant, plusieurs icônes étaient empruntées à la CAO (esquisse, motif, combiner…).
+- **« Dessus » et « Côté » retirés**, remplacés par **« Projection »**. Les boutons de projection du panneau de vue sont supprimés.
+### Projection
+- Depuis la vue sélectionnée (ou cliquée), **la position de la souris choisit la vue**, en 1er angle :
+  - à droite : côté gauche ;
+  - à gauche : côté droit ;
+  - dessous : vue de dessus ;
+  - dessus : vue de dessous ;
+  - en diagonale : ISO.
+- Aperçu à la **taille réelle** (boîte du modèle projetée dans la base de la future vue), aligné sur la mère.
+- Clic pour poser, **enchaînable**, Échap ou clic droit pour terminer.
+### Coupe
+- **2 points sur une vue**, avec accrochage à la géométrie et alignement **H/V automatique à ±8°** (Maj : libre).
+- Puis **la vue suit la souris**, et le côté de la souris donne le sens du regard.
+- La vue en coupe est **alignée sur la mère** : base tournée comme une projection, même échelle, glisser contraint sur la ligne de rappel (case « Alignée sur la mère » pour délier).
+- **Tracé ISO 128-44** : trait mixte fin, extrémités épaisses, flèches dans le sens du regard (vers la vue posée), lettre à chaque extrémité. **Noir à l'export** (avant : bleu d'écran imprimé).
+### Détail
+- Centre, rayon, puis **placement libre à la souris** (aperçu du cercle agrandi).
+- Échelle choisie : au moins ×2 la mère, pour un détail d'environ 70 mm, parmi les échelles normalisées.
+- **Contour du détail** en trait mixte autour de la vue. Le cercle repère sur la mère est un trait fin noir (avant : style « sélection » bleu imprimé), avec sa lettre en haut à droite.
+### Auxiliaire
+- **Clic sur une arête inclinée** d'une vue, puis la vue se pose **perpendiculairement à l'arête**, du côté de la souris. Elle est alignée et contrainte comme une projection.
+- Plus besoin de sélectionner une face en 3D.
+- Le rejeu de la mère recalcule les coupes et auxiliaires alignées.
+### Style des traits dessinés
+- **Épaisseur, type et couleur par élément** (lignes, rectangles, cercles, arcs ; couleur aussi pour les textes), sur la planche comme au cartouche :
+  - Fin / Épais (réglages « Traits » de la planche) ou **épaisseur libre en mm** ;
+  - Continu / Interrompu / Mixte ;
+  - **couleur** libre, ou « Auto » (encre du thème).
+- Sélection : le panneau modifie les éléments choisis. Outil de dessin actif, sans sélection : **style des nouveaux éléments** (mémorisé).
+- « Ajuster » garde le style des tronçons.
+- Les traits de l'esquisse de planche ont maintenant l'épaisseur « trait épais » par défaut (avant : 1 mm, faute de règle).
+### Export PDF / SVG / impression
+- **En couleur par défaut** :
+  - cotes à la couleur choisie (ou celle du thème) ;
+  - axes en rouge ;
+  - traits colorés gardés ;
+  - toujours sur papier blanc, même en papier sombre à l'écran.
+- Option **« Export PDF / SVG : Noir »** (panneau Planche) : tout en noir sur blanc (ISO), couleurs d'éléments comprises.
+- Impression : couleurs imprimées telles quelles (`print-color-adjust: exact`).
+### Divers
+- **Échelle du cartouche** : celle des vues principales. Un détail ne l'impose plus (« 5:1 » s'affichait).
+- DXF : ligne de coupe et repères de détail sur le calque AXE.
+
+Vérifié au navigateur, sur l'exemple Perçages :
+- projections dessous / droite / diagonale ;
+- coupe C-C par les trous (H/V redressé, hachures, flèches vers la vue) ;
+- détail D à 5:1 ;
+- auxiliaire sur l'arête haute de la Face, égale à la vue de dessous ;
+- aperçu « Dessus » de 100 × 65 mm ;
+- planche des 24 icônes.
+
+`test_mise_en_plan` :
+- base alignée = projection 1er angle (dessus, dessous, côté) ;
+- style des nouveaux éléments rendu (épaisseur, type, couleur) ;
+- export couleur / noir.
+
+`npm run ci` vert.

@@ -267,7 +267,29 @@ const MF_IC={
   print:'<path d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2"/><rect x="6" y="14" width="12" height="7"/>',
   sheet:'<path d="M5 3h10l4 4v14H5z"/><path d="M15 3v4h4M8 12h8M8 16h5"/>',
   camera:'<path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
-  aux:'<path d="M3 19l6-10 4 6 3-5 5 9z"/><path d="M3 5h18" stroke-dasharray="3 2"/>'
+  aux:'<path d="M3 19l6-10 4 6 3-5 5 9z"/><path d="M3 5h18" stroke-dasharray="3 2"/>',
+  pSheetNew:'<path d="M5 3h9l4 4v14H5z"/><path d="M14 3v4h4"/><path d="M11.5 11v6M8.5 14h6"/>',
+  pSheetDup:'<path d="M9 3h7l4 4v11H9z"/><path d="M16 3v4h4"/><path d="M5 7v14h11"/>',
+  pTitle:'<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 13h18M11 13v7M16 13v7M11 16.5h10"/>',
+  pViewBase:'<rect x="9" y="5" width="12" height="14" rx="1"/><circle cx="15" cy="12" r="2.5"/><path d="M2 12h4.5M4.5 10l2 2-2 2"/>',
+  pViewProj:'<rect x="3" y="3" width="9" height="9" rx="1"/><rect x="15" y="3" width="6" height="9" rx="1" stroke-dasharray="2 1.6"/><rect x="3" y="15" width="9" height="6" rx="1" stroke-dasharray="2 1.6"/><path d="M12.5 7.5h2M7.5 12.5v2"/>',
+  pViewIso:'<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/>',
+  pViewAux:'<path d="M3 21V11h6l4 4v6z"/><path d="M14 10l4.5-4.5 3 3L17 13z" stroke-dasharray="2 1.6"/><path d="M10.5 12.5l3-3"/>',
+  pViewSection:'<path d="M3 6.5h18" stroke-dasharray="5 1.5 1 1.5"/><path d="M3 4v5M21 4v5" stroke-width="2.4"/><rect x="5" y="11" width="14" height="9" rx="1"/><path d="M7 20l7-9M11 20l7-9M15 20l4-5"/>',
+  pViewDetail:'<circle cx="7.5" cy="8" r="4.5" stroke-dasharray="2 1.6"/><circle cx="15.5" cy="15.5" r="6"/><path d="M11 11l1.5 1.5"/><path d="M13 17.5l2.5-4 2.5 4"/>',
+  pLine:'<path d="M5 19L19 5"/><circle cx="5" cy="19" r="1.8"/><circle cx="19" cy="5" r="1.8"/>',
+  pRect:'<rect x="4" y="6" width="16" height="12"/><circle cx="4" cy="6" r="1.4"/><circle cx="20" cy="18" r="1.4"/>',
+  pCircle:'<circle cx="12" cy="12" r="8"/><path d="M12 12l5.6-5.6"/><circle cx="12" cy="12" r="1.2"/>',
+  pArc:'<path d="M4 17a8 8 0 0 1 16 0"/><circle cx="12" cy="17" r="1.2"/><circle cx="4" cy="17" r="1.4"/><circle cx="20" cy="17" r="1.4"/>',
+  pPoint:'<circle cx="12" cy="12" r="2.4"/><path d="M12 3v5M12 16v5M3 12h5M16 12h5"/>',
+  pTrim:'<circle cx="6" cy="7" r="3"/><circle cx="6" cy="17" r="3"/><path d="M8.5 8.8L20 18M8.5 15.2L20 6"/>',
+  pText:'<path d="M5 7V4h14v3M12 4v16M9 20h6"/>',
+  pDim:'<path d="M4 6v12M20 6v12M4 12h16"/><path d="M7.5 10L4.5 12l3 2M16.5 10l3 2-3 2"/>',
+  pHole:'<circle cx="8" cy="16" r="5"/><path d="M11.5 12.5L16 8h6"/><path d="M17 3.5l3 3"/><circle cx="18.5" cy="5" r="1.8"/>',
+  pHoles:'<circle cx="6" cy="17" r="3"/><circle cx="14" cy="17" r="3"/><path d="M16.2 14.8L20 11h2"/><path d="M3 5h8M3 8.5h6"/><path d="M14 5h3"/>',
+  pSvg:'<path d="M6 3h9l3 3v15H6z"/><text x="12" y="17.6" font-size="6.2" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">SVG</text>',
+  pDxf:'<path d="M6 3h9l3 3v15H6z"/><text x="12" y="17.6" font-size="6.2" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">DXF</text>',
+  pPdf:'<path d="M6 3h9l3 3v15H6z"/><text x="12" y="17.6" font-size="6.2" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">PDF</text>'
 };
 function mfI(k,size){const p=MF_IC[k];if(!p)return null;return '<svg viewBox="0 0 24 24" width="'+(size||20)+'" height="'+(size||20)+'" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+p+'</svg>';}
 /* ---------- mode moderne ---------- */
@@ -301,26 +323,25 @@ function mfRibbon(){
   grp('Export',[['gcode','G-code','faoExportBtn']],'mfFao');
   // PLAN : ruban dédié (icônes PLAN + actions mepSetTool/mep*)
   const mepTool=t=>{try{mepSetActive(true);mepSetTool(t);}catch(e){}};
-  grp('Planches',[['sheet','Nouvelle',()=>{try{mepAddSheet();}catch(e){}},'Ajouter une planche'],
-    ['sheet','Dupliquer',()=>{try{const bs=document.querySelectorAll('#mepTabs .mepAdd');if(bs[1])bs[1].click();}catch(e){}},'Dupliquer la planche'],
-    ['draft','Cartouche',()=>{try{mepSetActive(true);mepTbEdit();}catch(e){}},'Dessiner / éditer le cartouche (esquisse contrainte, champs matière, TTS, TTH…)']],'mfPlan');
-  grp('Vues',[['face','Face',()=>{try{mepSetActive(true);mepAddViewStd('front');}catch(e){}},'Vue de face'],
-    ['sketch','Dessus',()=>{try{mepSetActive(true);mepAddViewStd('top');}catch(e){}},'Vue de dessus'],
-    ['draft','Côté',()=>{try{mepSetActive(true);mepAddViewStd('right');}catch(e){}},'Vue de côté'],
-    ['body','ISO',()=>{try{mepSetActive(true);mepAddViewStd('iso');}catch(e){}},'Axonométrie isométrique'],
+  grp('Planches',[['pSheetNew','Nouvelle',()=>{try{mepAddSheet();}catch(e){}},'Ajouter une planche'],
+    ['pSheetDup','Dupliquer',()=>{try{const bs=document.querySelectorAll('#mepTabs .mepAdd');if(bs[1])bs[1].click();}catch(e){}},'Dupliquer la planche'],
+    ['pTitle','Cartouche',()=>{try{mepSetActive(true);mepTbEdit();}catch(e){}},'Dessiner / éditer le cartouche (esquisse contrainte, champs matière, TTS, TTH…)']],'mfPlan');
+  grp('Vues',[['pViewBase','Face',()=>{try{mepSetActive(true);mepAddViewStd('front');}catch(e){}},'Vue de base (face)'],
+    ['pViewProj','Projection',()=>{try{mepBeginProjCmd();}catch(e){}},'Projections de la vue sélectionnée : déplacez la souris (droite, gauche, dessus, dessous ; diagonale = ISO) et cliquez — enchaînable, Échap termine'],
+    ['pViewIso','ISO',()=>{try{mepSetActive(true);mepAddViewStd('iso');}catch(e){}},'Axonométrie isométrique'],
     ['camera','Caméra',()=>{try{mepAddCameraViewCmd();}catch(e){}},'Vue depuis la caméra 3D actuelle'],
-    ['aux','Auxiliaire',()=>{try{mepBeginAuxCmd();}catch(e){}},'Vue auxiliaire depuis une face inclinée sélectionnée en 3D'],
-    ['section','Coupe',()=>{try{mepSetActive(true);mepBeginSectionCmd();}catch(e){}},'Vue en coupe (2 clics)'],
-    ['detail','Détail',()=>{try{mepSetActive(true);mepBeginDetailCmd();}catch(e){}},'Vue de détail (centre + rayon)']],'mfPlan');
-  grp('Dessin',[['sketch','Ligne',()=>mepTool('line')],['pattern','Rectangle',()=>mepTool('rect')],
-    ['combine','Cercle',()=>mepTool('circle')],['revolve','Arc',()=>mepTool('arc')],
-    ['hole','Point',()=>mepTool('point')],['chamfer','Ajuster',()=>mepTool('trim')],['sketch','Texte',()=>mepTool('text'),'Texte libre ou champ (matière, TTS, TTH…)']],'mfPlan');
-  grp('Cotes',[['dim','Cote',()=>mepTool('dim'),'Outil cote unique : Ø, longueur, distance, angle'],
-    ['hole','Perçage',()=>mepTool('hole'),'Cotation perçage : Ø, lamage, fraisure, taraudage'],
-    ['pattern','Perçages auto',()=>{try{mepSetActive(true);mepAutoHoles();}catch(e){}},'Coter toutes les fonctions Perçage (n× si plusieurs trous) — vue sélectionnée, sinon toute la planche']],'mfPlan');
-  grp('Sortie',[['export','SVG',()=>{try{mepExport();}catch(e){}},'Exporter la planche en SVG'],
-    ['export','DXF',()=>{try{mepExportDxf();}catch(e){}},'Exporter la planche en DXF R12 (calques CONTOUR, CACHE, AXE, COTES, CADRE…)'],
-    ['print','PDF',()=>{try{mepPrint(true);}catch(e){}},'PDF vectoriel au format exact de la planche (« Enregistrer au format PDF »)'],
+    ['pViewAux','Auxiliaire',()=>{try{mepBeginAuxCmd();}catch(e){}},'Vue auxiliaire : cliquez une arête inclinée, puis placez la vue perpendiculairement'],
+    ['pViewSection','Coupe',()=>{try{mepSetActive(true);mepBeginSectionCmd();}catch(e){}},'Vue en coupe : 2 points sur une vue, puis placez la vue (le côté donne le sens du regard)'],
+    ['pViewDetail','Détail',()=>{try{mepSetActive(true);mepBeginDetailCmd();}catch(e){}},'Vue de détail : centre, rayon, puis placement']],'mfPlan');
+  grp('Dessin',[['pLine','Ligne',()=>mepTool('line'),'Ligne enchaînée (Échap termine)'],['pRect','Rectangle',()=>mepTool('rect')],
+    ['pCircle','Cercle',()=>mepTool('circle')],['pArc','Arc',()=>mepTool('arc'),'Arc : centre, départ, arrivée'],
+    ['pPoint','Point',()=>mepTool('point')],['pTrim','Ajuster',()=>mepTool('trim')],['pText','Texte',()=>mepTool('text'),'Texte libre ou champ (matière, TTS, TTH…)']],'mfPlan');
+  grp('Cotes',[['pDim','Cote',()=>mepTool('dim'),'Outil cote unique : Ø, longueur, distance, angle'],
+    ['pHole','Perçage',()=>mepTool('hole'),'Cotation perçage : Ø, lamage, fraisure, taraudage'],
+    ['pHoles','Perçages auto',()=>{try{mepSetActive(true);mepAutoHoles();}catch(e){}},'Coter toutes les fonctions Perçage (n× si plusieurs trous) — vue sélectionnée, sinon toute la planche']],'mfPlan');
+  grp('Sortie',[['pSvg','SVG',()=>{try{mepExport();}catch(e){}},'Exporter la planche en SVG'],
+    ['pDxf','DXF',()=>{try{mepExportDxf();}catch(e){}},'Exporter la planche en DXF R12 (calques CONTOUR, CACHE, AXE, COTES, CADRE…)'],
+    ['pPdf','PDF',()=>{try{mepPrint(true);}catch(e){}},'PDF vectoriel au format exact de la planche (« Enregistrer au format PDF »)'],
     ['print','Imprimer',()=>{try{mepPrint();}catch(e){}},'Imprimer la planche']],'mfPlan');
   return rb;
 }
