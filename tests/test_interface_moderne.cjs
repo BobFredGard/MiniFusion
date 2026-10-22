@@ -19,9 +19,11 @@ const r=vm.runInContext(`(function(){const o=[];
   o.push(MF_THEMES.map(t=>t[0]).join(','));
   mfTheme('atelier');o.push(mfLS('minifusion_theme'));mfTheme('inconnu');o.push(mfLS('minifusion_theme'));
   mfUiMode('moderne');o.push(mfLS('minifusion_ui'));mfUiMode('classique');o.push(mfLS('minifusion_ui'));
+
   return o;})()`,ctx);
 A(r[0],'fonctions thème / interface / espaces / recherche présentes');
 A(r[1]==='nuit,graphite,atelier,clair,contraste','5 thèmes : '+r[1]);
 A(r[2]==='atelier'&&r[3]==='nuit','thème mémorisé ; thème inconnu → Nuit (actuel)');
-A(r[4]==='moderne'&&r[5]==='classique','interface mémorisée : moderne ↔ classique');
+A(r[4]==='moderne'&&r[5]==='moderne','interface : Moderne seule (la demande « classique » reste en moderne)');
+A(/id="mfStWasm"/.test(src)&&/mfClick\('btnOccWasm'\)/.test(src),'barre d’état moderne : bouton « Noyau .wasm… » (1er lancement en mode fichier)');
 console.log(ko?'\n*** '+ko+' PROBLEME(S) ***':'\n*** TOUT PASSE ***');process.exit(ko?1:0);

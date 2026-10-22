@@ -69,13 +69,18 @@
     .mepDimRef{fill:var(--mepHid,#7a7f86)}
     .mepDimL.mepDimSel{stroke:#ff3b30!important}
     .mepDimT.mepDimSel{fill:#ff3b30!important}
-    .mepLbl{font:8px sans-serif;fill:var(--mepText,#111);font-weight:700;paint-order:stroke;stroke:var(--mepPaper,#fff);stroke-width:1.6;stroke-linejoin:round}
+    .mepLbl{font-family:sans-serif;font-size:var(--mepLblH,7px);fill:var(--mepText,#111);font-weight:700;paint-order:stroke;stroke:var(--mepPaper,#fff);stroke-width:1.6;stroke-linejoin:round}
     #mepSvg,#mepSvg *{-webkit-user-select:none;-moz-user-select:none;user-select:none}
     .mepLbl,.mepDimT{pointer-events:none}
     .mepCut{stroke:#0a84ff;stroke-width:1.1;fill:none}
     .mepCutLine{stroke:var(--mepInk,#151515);stroke-width:var(--mepLwThin,.42);stroke-dasharray:10 2 1.5 2;fill:none}
     .mepCutEnd{stroke:var(--mepInk,#151515);stroke-width:var(--mepLwThick,.72);fill:none;stroke-linecap:butt}
     .mepCutArr{stroke:var(--mepInk,#151515);stroke-width:var(--mepLwThin,.42);fill:none}
+    .mepCutLbl{fill:var(--mepInk,#151515)}
+    .mepFrameTxt{font-family:sans-serif;fill:var(--mepText,#111)}
+    .mepCutPrev{fill:none;stroke:#0a84ff;stroke-width:.6;stroke-dasharray:3 1.5;pointer-events:none}
+    .mepCutHot{stroke:#0a84ff!important;stroke-width:.8!important}
+    .mepTtlHov{fill:rgba(10,132,255,.12);stroke:#0a84ff;stroke-width:.3;stroke-dasharray:1 1;pointer-events:none}
     .mepDetailC{stroke:var(--mepInk,#151515);stroke-width:var(--mepLwThin,.42);fill:none}
     .mepDetailB{stroke:var(--mepInk,#151515);stroke-width:var(--mepLwThin,.42);fill:none;stroke-dasharray:6 1.5 1 1.5}
     .mepVcGhost{fill:rgba(10,132,255,.06);stroke:#0a84ff;stroke-width:1;stroke-dasharray:5 3;vector-effect:non-scaling-stroke}
@@ -114,6 +119,7 @@
     .mepSnap{fill:none;stroke:#ffd60a;stroke-width:.9}
     .mepArrowM{fill:var(--mepDimCol,#111)}
     .mepArrowSel{fill:#ff3b30}
+    .mepArrowK{fill:var(--mepInk,#151515)}
     .mepAxis{fill:none;stroke:var(--mepAxisCol,#111);stroke-width:var(--mepLwAxis,.35);stroke-dasharray:8 2 1.5 2;stroke-linecap:butt;stroke-linejoin:round;pointer-events:none}
     .mepAxisCross{fill:none;stroke:var(--mepAxisCol,#111);stroke-width:.62;stroke-linecap:butt;pointer-events:none}
     .mepAxisSel{stroke:#0066ff!important;stroke-width:1.1!important}
@@ -197,6 +203,12 @@
   const MEP_AXIS={overrun:3,tol:0.2,minAlign:3,minPitch:3};
   const MEP_DIM_STYLE_KEY='minifusion_mepDimStyle';
   const MEP_DIM_STYLE_DEF=Object.assign({},MEP_DIM_STYLE);
+  const MEP_TEXT_STYLE_DEF=Object.assign({},MEP_TEXT_STYLE);
+  // écriture ISO 3098 : hauteur des majuscules h (mm papier) ↔ corps de la police (font-size)
+  function mepFs(h){return +((+h||MEP_TEXT_STYLE.noteH)/MEP_TEXT_STYLE.capRatio).toFixed(3);}
+  function mepCapH(fs){return +((+fs||0)*MEP_TEXT_STYLE.capRatio).toFixed(2);}
+  function mepIsoH(h){return MEP_TEXT_STYLE.iso.some(x=>Math.abs(x-h)<0.06);}
+  function mepTextStyleSync(){MEP_DIM_STYLE.textHeight=mepFs(MEP_TEXT_STYLE.dimH);}
   let mepDimStyleLoaded=false;
   function mepDimStyleLoad(){
     if(mepDimStyleLoaded)return;
@@ -210,7 +222,12 @@
         const v=+o[k];
         if(Number.isFinite(v))MEP_DIM_STYLE[k]=Math.min(max,Math.max(min,v));
       };
-      num('textHeight',2,30);
+      const hNum=(k)=>{const v=+o[k];if(o[k]!==undefined&&o[k]!==null&&o[k]!==''&&Number.isFinite(v))MEP_TEXT_STYLE[k]=Math.min(20,Math.max(1.8,v));};
+      hNum('dimH');hNum('lblH');hNum('noteH');
+      // ancien réglage : textHeight = corps de la police → hauteur des majuscules (7 → 5)
+      if(o.dimH===undefined&&Number.isFinite(+o.textHeight)&&+o.textHeight>0)
+        MEP_TEXT_STYLE.dimH=Math.min(20,Math.max(1.8,Math.round(+o.textHeight*MEP_TEXT_STYLE.capRatio*10)/10));
+      mepTextStyleSync();
       num('arrowAngle',10,90);
       num('arrowLen',2,30);
       if(o.color==='theme'||(typeof o.color==='string'&&/^#0a84ff$/i.test(o.color)))MEP_DIM_STYLE.color='theme'; // ancien défaut bleu → couleur du thème
@@ -220,7 +237,7 @@
   function mepDimStyleSave(){
     try{
       localStorage.setItem(MEP_DIM_STYLE_KEY,JSON.stringify({
-        textHeight:MEP_DIM_STYLE.textHeight,
+        dimH:MEP_TEXT_STYLE.dimH,lblH:MEP_TEXT_STYLE.lblH,noteH:MEP_TEXT_STYLE.noteH,
         color:MEP_DIM_STYLE.color,
         arrowAngle:MEP_DIM_STYLE.arrowAngle,
         arrowLen:MEP_DIM_STYLE.arrowLen
@@ -229,6 +246,7 @@
   }
   function mepDimStyleReset(){
     Object.assign(MEP_DIM_STYLE,MEP_DIM_STYLE_DEF);
+    Object.assign(MEP_TEXT_STYLE,MEP_TEXT_STYLE_DEF);mepTextStyleSync();
     mepDimStyleSave();
     mepApplyDimStyle();
   }
@@ -242,7 +260,9 @@
         };
         const c=MEP_DIM_STYLE.color;
         set('--mepDimCol',(!c||c==='theme')?'var(--mepAccent,#0a84ff)':c); // écran et export « Couleur » ; export « Noir » : noir (ISO)
-        set('--mepDimH',(MEP_DIM_STYLE.textHeight||7)+'px');
+        mepTextStyleSync();
+        set('--mepDimH',MEP_DIM_STYLE.textHeight+'px');
+        set('--mepLblH',mepFs(MEP_TEXT_STYLE.lblH)+'px');
       }
     }catch(e){}
     try{mepBuildMarkers();}catch(e){}
@@ -288,14 +308,33 @@
     return{id:'sh'+Date.now().toString(36)+Math.floor(Math.random()*1e4),name:'Planche '+n,
       format:'A3',orient:'landscape',views:[],dims:[],sk:null,
       title:{projet:'MiniFusion — Plan',auteur:'—',date:new Date().toLocaleDateString('fr-FR'),tb:mepTbDefault()},
+      frame:mepFrameUserDef()||undefined,
       seq:1,dseq:1};
   }
   function mepSheet(){const m=mepEnsure();return m.sheets[m.cur];}
+  /* cadre de la planche : marges (mm, bord de feuille → trait du cadre), épaisseur,
+     liseré intérieur, repères de centrage. ISO 5457 : 20 mm à gauche (reliure), 10 ailleurs,
+     trait ≥ 0,7 mm, repères de centrage au milieu des 4 côtés. */
+  // zones : repérage 1…n / A…n en bandes de 50 mm centrées ; trim : coins de coupe (15 mm) ;
+  // col / mcol : couleur du cadre / des repères ('' = encre de la planche)
+  const MEP_FRAME_DEF={l:MARGIN,r:MARGIN,t:MARGIN,b:MARGIN,lw:0.9,inner:true,centre:false,zones:false,trim:false,col:'',mcol:''};
+  const MEP_FRAME_ISO={l:20,r:10,t:10,b:10,lw:0.7,inner:false,centre:true,zones:true,trim:true,col:'',mcol:''};
+  // relevé sur SIRAP-13-001.pdf (plan maison Justet) : trait 1 mm #6B6BA1, repères fins #3E2B2C
+  const MEP_FRAME_JUSTET={l:20,r:10,t:10,b:10,lw:1,inner:false,centre:true,zones:true,trim:true,col:'#6b6ba1',mcol:'#3e2b2c'};
+  const MEP_FRAME_KEYS=['l','r','t','b','lw','inner','centre','zones','trim','col','mcol'];
+  function mepFrameUserDef(){try{const o=JSON.parse(localStorage.getItem('mep_frame_def')||'null');return o&&typeof o==='object'?o:null;}catch(e){return null;}}
+  function mepFrameOf(sh){
+    const f=Object.assign({},MEP_FRAME_DEF,(sh&&sh.frame)||{});
+    ['col','mcol'].forEach(k=>{f[k]=/^#[0-9a-f]{6}$/i.test(f[k]||'')?f[k]:'';});
+    ['l','r','t','b'].forEach(k=>{f[k]=Math.min(40,Math.max(0,+f[k]||0));});
+    f.lw=Math.min(2,Math.max(0.1,+f.lw||MEP_FRAME_DEF.lw));
+    return f;
+  }
+  function mepPageWH(sh){const s=FORMATS[sh.format];return sh.orient==='landscape'?{W:s[1],H:s[0]}:{W:s[0],H:s[1]};}
   function mepPageDim(sh){
-    sh=sh||mepSheet();const s=FORMATS[sh.format];
-    const W=sh.orient==='landscape'?s[1]:s[0],H=sh.orient==='landscape'?s[0]:s[1];
+    sh=sh||mepSheet();const{W,H}=mepPageWH(sh),f=mepFrameOf(sh);
     const th=mepTbH(sh);
-    return{W,H,ix:MARGIN,iy:MARGIN,iw:W-2*MARGIN,ih:H-2*MARGIN-th,th};
+    return{W,H,ix:f.l,iy:f.t,iw:W-f.l-f.r,ih:H-f.t-f.b-th,th,fr:f};
   }
   let mepSeq=0;
   function mepUid(p){return p+(++mepSeq)+'_'+Date.now().toString(36);}
@@ -1664,7 +1703,8 @@
         align:{x:np.x*opt.s,y:np.y*opt.s},autoAxes:!!par.autoAxes,autoPitch:!!par.autoPitch,
         section:Object.assign({p:wA,n:Bs.dir.slice(),a:[A.x,A.y],b:[B.x,B.y],pid:par.id,s:opt.s},
           opt.pts&&opt.pts.length>2?{pts:opt.pts.map(q=>[+(+q.x).toFixed(4),+(+q.y).toFixed(4)])}:{})});
-      mepStatus('Coupe '+label+'-'+label+' posée — glisser contraint sur sa ligne de rappel.');
+      try{mepCutAutoRefs(mepSheet(),v);}catch(e){}
+      mepStatus('Coupe '+label+'-'+label+' posée — glisser contraint sur sa ligne de rappel. Tirer sur la ligne de coupe la brise jusqu’au centre / à la ligne visé(e).');
       return v;
     }
     const dirA=mepNorm(par.dir);
@@ -1978,22 +2018,42 @@
       ['TOL. GÉNÉRALES',x0+pw+98,56,tt.tolgen||'—'],
       ['INDICE',x0+pw+158,wLast,ind]]);
   }
+  /* réglages du tableau des révisions : largeur totale w (mm, 0 = auto), hauteur d'écriture h
+     (ISO 3098), trait lw (mm). Rangés dans le modèle de cartouche dessiné (ils voyagent avec lui :
+     bibliothèque, export .mfcartouche), sinon dans le cartouche de la planche. */
+  const MEP_REV_DEF={w:0,h:2.5,lw:0.8};
+  function mepRevStOwner(sh){const tt=sh.title||(sh.title={});return mepTbIsSk(sh)?tt.tb:tt;}
+  function mepRevSt(sh){
+    const tt=sh.title||{},o=Object.assign({},MEP_REV_DEF,tt.revSt||{},(mepTbIsSk(sh)&&tt.tb.revSt)||{});
+    o.w=Math.max(0,+o.w||0);o.h=Math.min(10,Math.max(1.8,+o.h||MEP_REV_DEF.h));o.lw=Math.min(2,Math.max(0.1,+o.lw||MEP_REV_DEF.lw));
+    return o;
+  }
+  // largeur du cartouche (pour aligner le tableau dessus) : esquisse = encombrement, sinon tout le cadre
+  function mepTbW(sh,pd){
+    if(mepTbIsSk(sh))return Math.max(0,-mepTbBBox(sh.title.tb.sk,mepTbLim(sh)).minx);
+    return pd.iw;
+  }
   function mepDrawRevs(mk,sh,pd,ty){
-    // tableau des révisions (le plus récent en haut, comme l'usage)
+    // tableau des révisions (le plus récent en haut, comme l'usage) : IND. | DATE | NOM | MODIFICATION
     const revs=mepRevs(sh);
     if(revs.length){
-      const RH=5.5,wI=10,wD=22,wT=Math.min(110,pd.iw*0.45),W=wI+wD+wT,xr=pd.ix+pd.iw-W;
-      const n=Math.min(revs.length,8),y0=ty-RH*(n+1);
-      mk('rect',{x:xr,y:y0,width:W,height:RH*(n+1),class:'mepTitleBlock'});
-      [['IND.',xr],['DATE',xr+wI],['MODIFICATION',xr+wI+wD]].forEach(([l,x],k)=>{
-        if(k)mk('line',{x1:x,y1:y0,x2:x,y2:ty,class:'mepTitleBlock'});
-        mk('text',{x:x+1.5,y:y0+3.9,class:'mepRevText'}).textContent=l;});
-      revs.slice(-n).reverse().forEach((r,k)=>{
-        const y=y0+RH*(k+1);
-        mk('line',{x1:xr,y1:y,x2:xr+W,y2:y,class:'mepTitleBlock'});
-        mk('text',{x:xr+1.5,y:y+4,class:'mepRevText'}).textContent=String(r.i||'');
-        mk('text',{x:xr+wI+1.5,y:y+4,class:'mepRevText'}).textContent=String(r.d||'').slice(0,11);
-        mk('text',{x:xr+wI+wD+1.5,y:y+4,class:'mepRevText'}).textContent=String(r.t||'').slice(0,Math.floor(wT/1.7));
+      const st=mepRevSt(sh),k=st.h/2.5,fs=mepFs(st.h),cw=fs*0.6; // cw ≈ largeur moyenne d'un caractère
+      const RH=st.h+3,wI=Math.max(8,10*k),wD=Math.max(18,22*k),wN=Math.max(20,28*k);
+      const Wd=wI+wD+wN+Math.min(110,pd.iw*0.45),W=Math.min(pd.iw,Math.max(wI+wD+wN+15,st.w>0?st.w:Wd));
+      const wT=W-wI-wD-wN,xr=pd.ix+pd.iw-W;
+      const n=Math.min(revs.length,8),y0=ty-RH*(n+1),ly=RH/2+st.h/2; // ligne de base centrée dans la rangée
+      const L=(a)=>Object.assign(a,{class:'mepTitleBlock',style:'stroke-width:'+st.lw});
+      const T=(x,y,t)=>{mk('text',{x,y,class:'mepRevText',style:'font-size:'+fs+'px'}).textContent=t;};
+      mk('rect',L({x:xr,y:y0,width:W,height:RH*(n+1)}));
+      const cols=[['IND.',xr,wI],['DATE',xr+wI,wD],['NOM',xr+wI+wD,wN],['MODIFICATION',xr+wI+wD+wN,wT]];
+      const fit=(t,w)=>{t=String(t||'');const m=Math.max(1,Math.floor((w-2)/cw));return t.length>m?t.slice(0,Math.max(1,m-1))+'…':t;};
+      cols.forEach(([l,x,w],c)=>{
+        if(c)mk('line',L({x1:x,y1:y0,x2:x,y2:ty}));
+        T(x+1.2,y0+ly,fit(l,w));});
+      revs.slice(-n).reverse().forEach((r,j)=>{
+        const y=y0+RH*(j+1);
+        mk('line',L({x1:xr,y1:y,x2:xr+W,y2:y}));
+        [r.i,r.d,r.n,r.t].forEach((v,c)=>T(cols[c][1]+1.2,y+ly,fit(v,cols[c][2])));
       });
     }
   }
@@ -2014,7 +2074,9 @@
     // perçages déjà cotés laissés tels quels ; vue sélectionnée seulement, sinon toute la planche
     const sh=mepSheet();
     const views=mepSt.sel?[mepView(sh,mepSt.sel)].filter(Boolean):sh.views.slice();
-    const done=new Set(sh.dims.filter(d=>d.kind==='hole'&&d.holeFid).map(d=>d.holeFid));
+    // famille : un perçage et ses répétitions (instances) ne font qu'une cote « n× »
+    const fam0=d=>{const f=(doc.features||[]).find(x=>x.id===d.holeFid);return f?mepHoleFam(f):d.holeFid;};
+    const done=new Set(sh.dims.filter(d=>d.kind==='hole'&&d.holeFid).map(fam0));
     const add=[];
     views.forEach(v=>{
       let g=null;try{g=mepGeoOf(v);}catch(e){return;}
@@ -2022,9 +2084,10 @@
       (g&&g.els||[]).forEach((e,i)=>{
         if(!e||e.t!=='C')return;
         let m=null;try{m=mepHoleAt(sh,v.id,e,i);}catch(err){}
-        if(!m||done.has(m.f.id))return;
+        if(!m)return;
+        const fam=mepHoleFam(m.f);if(done.has(fam))return;
         const key=[m.P.x,m.P.y,m.P.z].map(q=>(+q).toFixed(3)).join(',');
-        let F=byF.get(m.f.id);if(!F){F={f:m.f,pts:new Map()};byF.set(m.f.id,F);}
+        let F=byF.get(fam);if(!F){F={f:m.f,fam,pts:new Map()};byF.set(fam,F);}
         const cur=F.pts.get(key),vis=e.k!=='hid';
         // par trou : un cercle vu de préférence, le plus grand (lamage / fraisure englobe)
         if(!cur||(vis&&!cur.vis)||(vis===cur.vis&&e.r>cur.e.r))F.pts.set(key,{e,i,vis});
@@ -2036,7 +2099,7 @@
         const t=list[0],e=t.e,k=e.r+9/Math.max(1e-9,v.scale||1);
         add.push({id:mepUid('d'),kind:'hole',vid:v.id,vid2:null,a:{x:e.cx,y:e.cy,hint:{t:'ctr',i:t.i}},
           b:{x:e.cx+k*0.75,y:e.cy-k*0.75},off:0,holeFid:F.f.id,holeText:mepHoleFeatureText(F.f),holeN:list.length,tol:null,ref:false});
-        done.add(F.f.id);
+        done.add(F.fam);
       });
     });
     if(!add.length){mepStatus('Perçages : rien à coter (aucun perçage vu de bout'+(mepSt.sel?' dans cette vue':'')+', ou déjà cotés).');return 0;}
@@ -2065,7 +2128,11 @@
     if(!sh.bom||!sh.bom.on)return;
     const rows=mepBomRows(sh);if(!rows.length)return;
     const RH=5.5,cols=[['REP.',10],['QTÉ',10],['DÉSIGNATION',62],['MATIÈRE',40],['DIMENSIONS (mm)',42]];
-    const W=cols.reduce((s,c)=>s+c[1],0),x0=pd.ix,n=Math.min(rows.length,12),y0=ty-RH*(n+1);
+    const W=cols.reduce((s,c)=>s+c[1],0),x0=pd.ix,n=Math.min(rows.length,12);
+    // en bas à gauche du cadre, à côté du cartouche dessiné quand la place le permet ; sinon au-dessus
+    const yF=pd.iy+pd.ih+pd.th;
+    if(mepTbIsSk(sh)&&W<=pd.iw-mepTbW(sh,pd)-2)ty=yF;
+    const y0=ty-RH*(n+1);
     mk('rect',{x:x0,y:y0,width:W,height:RH*(n+1),class:'mepTitleBlock'});
     // en-tête en bas (contre le cartouche), repère 1 juste au-dessus — usage des nomenclatures
     mk('line',{x1:x0,y1:ty-RH,x2:x0+W,y2:ty-RH,class:'mepTitleBlock'});
@@ -2116,16 +2183,26 @@
   const MEP_SK_TOOLS=['line','rect','circle','arc','point','trim','text','logo'];
   const mepClone=o=>JSON.parse(JSON.stringify(o));
   function mepTbIsSk(sh){const tb=sh&&sh.title&&sh.title.tb;return!!(tb&&tb.kind==='sk'&&tb.sk&&tb.sk.pts);}
-  function mepTbAnchor(sh){const d=mepPageDim(sh);return{x:d.ix+d.iw,y:d.H-MARGIN};}
-  function mepTbBBox(sk){
+  function mepTbAnchor(sh){const d=mepPageDim(sh);return{x:d.ix+d.iw,y:d.H-d.fr.b};}
+  // lim (facultatif) : {w,h} du cadre — un point au-delà est « égaré » (solveur parti au loin)
+  // et ne compte pas dans l'encombrement, sinon la planche n'a plus de place (révisions hors feuille)
+  function mepTbBBox(sk,lim){
     let minx=0,miny=0;
-    Object.keys(sk.pts||{}).forEach(k=>{const p=sk.pts[k];minx=Math.min(minx,p.x);miny=Math.min(miny,p.y);});
-    (sk.ents||[]).forEach(e=>{if(e.t==='circle'){const c=sk.pts[e.pc];if(c){minx=Math.min(minx,c.x-e.r);miny=Math.min(miny,c.y-e.r);}}
-      else if(e.t==='text'){const p=sk.pts[e.p];if(p)miny=Math.min(miny,p.y-0.75*(+e.h||3.5));}}); // hauteur des capitales ≈ 0,75 × corps
+    const out=p=>!!lim&&(p.x<-lim.w||p.y<-lim.h||p.x>1||p.y>1);
+    Object.keys(sk.pts||{}).forEach(k=>{const p=sk.pts[k];if(out(p))return;minx=Math.min(minx,p.x);miny=Math.min(miny,p.y);});
+    (sk.ents||[]).forEach(e=>{if(e.t==='circle'){const c=sk.pts[e.pc];if(c&&!out(c)){minx=Math.min(minx,c.x-e.r);miny=Math.min(miny,c.y-e.r);}}
+      else if(e.t==='text'){const p=sk.pts[e.p];if(p&&!out(p))miny=Math.min(miny,p.y-0.75*(+e.h||3.5));}}); // hauteur des capitales ≈ 0,75 × corps
     return{minx,miny};
   }
+  function mepTbLim(sh){const{W,H}=mepPageWH(sh),f=mepFrameOf(sh);return{w:W-f.l-f.r,h:H-f.t-f.b};}
+  // points du cartouche hors du cadre (ex. ligne partie à y = −6 400 mm)
+  function mepTbStray(sh){
+    if(!mepTbIsSk(sh))return[];
+    const L=mepTbLim(sh),pts=sh.title.tb.sk.pts;
+    return Object.keys(pts).filter(k=>{const p=pts[k];return p.x<-L.w||p.y<-L.h||p.x>1||p.y>1;});
+  }
   function mepTbH(sh){
-    if(mepTbIsSk(sh))return Math.max(0,-mepTbBBox(sh.title.tb.sk).miny);
+    if(mepTbIsSk(sh)){const L=mepTbLim(sh);return Math.min(L.h*0.6,Math.max(0,-mepTbBBox(sh.title.tb.sk,L).miny));}
     return TITLE_H;
   }
   function mepSkCtx(sh,create){
@@ -2224,7 +2301,7 @@
   function mepSkAddText(sh,pt){
     const ctx=mepSkCtx(sh,true),sk=ctx.sk;
     const p=mepSkPtFrom(ctx,pt),f=mepSt.skTextF||'txt';
-    const e={t:'text',p,f,h:+mepSt.skTextH||(f==='txt'?3.5:5),st:f==='txt'?'lab':'val',al:'start'};
+    const e={t:'text',p,f,h:mepFs(+mepSt.skTextH||MEP_TEXT_STYLE.noteH),st:f==='txt'?'lab':'val',al:'start'}; // e.h = corps ; mepSt.skTextH = majuscules (ISO 3098)
     if(f==='txt')e.s=mepSt.skTextS||'TEXTE';
     if(f==='perso'){e.k='c'+Date.now().toString(36);e.lab='CHAMP';}
     return mepSkEnt(sk,mepSkStyled(e));
@@ -2982,6 +3059,38 @@
   /* ── bibliothèque de modèles (locale à ce navigateur) ── */
   function mepTbLib(){try{const o=JSON.parse(localStorage.getItem('mep_tb_lib')||'{}');return o&&typeof o==='object'?o:{};}catch(e){return{};}}
   function mepTbLibSave(o){try{localStorage.setItem('mep_tb_lib',JSON.stringify(o));}catch(e){}}
+  // sauvegarde externe des modèles : fichier JSON {format:'miniFusion-cartouches',v:1,tbs:{nom:modèle}}
+  function mepTbExportFile(sh){
+    const L=mepTbLib(),tbs={};Object.keys(L).forEach(n=>{tbs[n]=L[n];});
+    if(sh&&mepTbIsSk(sh)){const n=sh.title.tb.name||'Cartouche de la planche';if(!tbs[n])tbs[n]=Object.assign(mepClone(sh.title.tb),{name:n});}
+    const names=Object.keys(tbs);
+    if(!names.length){mepStatus('Aucun cartouche personnalisé à exporter.');return;}
+    const data=JSON.stringify({format:'miniFusion-cartouches',v:1,tbs},null,1);
+    const fname=(names.length===1?names[0]:'cartouches').replace(/[\\/:*?"<>|]+/g,'-')+'.mfcartouche';
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'application/json'}));a.download=fname;
+    document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000);
+    mepStatus(names.length+' cartouche(s) exporté(s) : '+fname);
+  }
+  function mepTbImportFile(){
+    const inp=document.createElement('input');inp.type='file';inp.accept='.mfcartouche,.json,application/json';
+    inp.onchange=()=>{const f=inp.files&&inp.files[0];if(!f)return;const rd=new FileReader();
+      rd.onload=()=>{
+        let o;try{o=JSON.parse(rd.result);}catch(e){mepStatus('Fichier de cartouches illisible.');return;}
+        const tbs=o&&o.format==='miniFusion-cartouches'&&o.tbs?o.tbs:(o&&o.kind==='sk'&&o.sk?{[o.name||f.name.replace(/\.[^.]+$/,'')]:o}:null);
+        if(!tbs){mepStatus('Ce fichier ne contient pas de cartouche miniFusion.');return;}
+        const L=mepTbLib();let n=0;
+        Object.keys(tbs).forEach(k=>{const tb=tbs[k];if(!tb||tb.kind!=='sk'||!tb.sk||!tb.sk.pts)return;
+          let nm=k;if(L[nm]&&JSON.stringify(L[nm])!==JSON.stringify(Object.assign({},tb,{name:nm}))){let i=2;while(L[k+' ('+i+')'])i++;nm=k+' ('+i+')';}
+          L[nm]=Object.assign(mepClone(tb),{name:nm});n++;});
+        mepTbLibSave(L);mepStatus(n+' cartouche(s) importé(s) dans la bibliothèque.');mepSideShow();
+      };rd.readAsText(f);};
+    inp.click();
+  }
+  function mepTbDropStray(sh){
+    const sk=sh.title.tb.sk,gone=new Set(mepTbStray(sh));if(!gone.size)return;
+    sk.ents.filter(e=>['p1','p2','pc','p'].some(q=>gone.has(e[q]))).forEach(e=>mepSkRmEnt(sk,e.id));
+    gone.forEach(k=>{delete sk.pts[k];});mepSkCleanCons(sk);
+  }
   function mepTbDefault(){
     try{const n=localStorage.getItem('mep_tb_def'),L=mepTbLib();if(n&&L[n]&&L[n].sk)return mepClone(L[n]);}catch(e){}
     return null;
@@ -3018,6 +3127,51 @@
     const note=t=>{const n=document.createElement('div');n.className='note';n.textContent=t;root.appendChild(n);};
     return{rowEl,h,btn,lab,note};
   }
+  /* cadre : trait (couleur réglable), liseré, repères de centrage, zones de repérage, coins de coupe.
+     Une couleur imposée porte la classe mepUc : l'export « Noir » la remet en noir. */
+  function mepDrawFrame(mk,pg,pd,fr){
+    const fc=fr.col?';stroke:'+fr.col:'',mc=fr.mcol?';stroke:'+fr.mcol:'',uc=c=>c?' mepUc':'';
+    const x0=pd.ix,y0=pd.iy,x1=pd.ix+pd.iw,y1=pd.iy+pd.ih+pd.th,cx=(x0+x1)/2,cy=(y0+y1)/2,mw=0.2;
+    mk('rect',{x:x0,y:y0,width:x1-x0,height:y1-y0,class:'mepFrame'+uc(fc),style:'stroke-width:'+fr.lw+fc});
+    if(fr.inner)mk('rect',{x:x0+3,y:y0+3,width:x1-x0-6,height:y1-y0-6,class:'mepFrame2'});
+    const L=(a,b,c,d,w)=>mk('line',{x1:a,y1:b,x2:c,y2:d,class:'mepFrame'+uc(mc),style:'stroke-width:'+w+mc});
+    if(fr.trim){ // coins de coupe : équerres de 15 mm sur les bords de la feuille
+      const k=15,W=pg.W,H=pg.H;
+      [[0,0,1,1],[W,0,-1,1],[0,H,1,-1],[W,H,-1,-1]].forEach(([x,y,sx,sy])=>{L(x,y,x+sx*k,y,mw*2);L(x,y,x,y+sy*k,mw*2);});
+    }
+    if(fr.zones){
+      // bandes de 50 mm centrées sur le milieu du cadre ; traits de 5 mm vers l'extérieur
+      const cuts=(a,b,c)=>{const o=[];for(let i=-20;i<=20;i++){const v=c+i*50;if(v>a+1&&v<b-1)o.push(v);}return o;};
+      const xs=cuts(x0,x1,cx),ys=cuts(y0,y1,cy);
+      xs.forEach(x=>{if(fr.centre&&Math.abs(x-cx)<1e-6)return;L(x,y0-5,x,y0,mw);L(x,y1,x,y1+5,mw);});
+      ys.forEach(y=>{if(fr.centre&&Math.abs(y-cy)<1e-6)return;L(x0-5,y,x0,y,mw);L(x1,y,x1+5,y,mw);});
+      const h=3,fs=mepFs(h),tf=fr.mcol?';fill:'+fr.mcol:'';
+      const T=(x,y,t)=>{mk('text',{x,y:y+h/2,class:'mepFrameTxt'+uc(tf),'text-anchor':'middle',style:'font-size:'+fs+'px'+tf}).textContent=t;};
+      const bx=[x0,...xs,x1],by=[y0,...ys,y1];
+      for(let i=0;i+1<bx.length;i++){const m=(bx[i]+bx[i+1])/2;T(m,y0-2.5,String(i+1));T(m,y1+2.5,String(i+1));}
+      for(let j=0;j+1<by.length;j++){const m=(by[j]+by[j+1])/2,c=String.fromCharCode(65+j);T(x0-2.5,m,c);T(x1+2.5,m,c);}
+    }
+    if(fr.centre){ // repères de centrage : à cheval sur le cadre (5 mm de part et d'autre)
+      const w=fr.zones?mw:fr.lw,M=(a,b,c,d)=>mk('line',{x1:a,y1:b,x2:c,y2:d,class:'mepFrame'+uc(fr.zones?mc:fc),style:'stroke-width:'+w+(fr.zones?mc:fc)});
+      M(cx,y0-5,cx,y0+5);M(cx,y1-5,cx,y1+5);M(x0-5,cy,x0+5,cy);M(x1-5,cy,x1+5,cy);
+    }
+  }
+  /* liste déroulante des hauteurs d'écriture ISO 3098 (h = majuscules, mm papier) ;
+     une valeur hors série reste affichée telle quelle */
+  function mepIsoSelect(h,onPick){
+    const sel=document.createElement('select');
+    const vals=MEP_TEXT_STYLE.iso.slice();
+    if(!mepIsoH(h))vals.push(+(+h).toFixed(2));
+    vals.sort((a,b)=>a-b).forEach(x=>{
+      const o=document.createElement('option');o.value=String(x);
+      o.textContent=mepFmtNum(x,2).replace('.',',')+(mepIsoH(x)?(x<2.5?'  (A4 seulement)':''):'  (hors série)');
+      sel.appendChild(o);
+    });
+    const cur=vals.find(x=>Math.abs(x-h)<0.06);sel.value=String(cur!==undefined?cur:vals[0]);
+    sel.title='Hauteur des majuscules h, série ISO 3098 (rapport √2) — épaisseur du trait d’écriture ≈ h/10';
+    sel.onchange=()=>onPick(+sel.value);
+    return sel;
+  }
   function mepSideSkTools(root,K,sh){
     // outils de dessin de l'esquisse active (planche ou cartouche)
     const tools=[['▲','select','Sélection / déplacement (Maj+clic : ajouter)'],['━','line','Ligne (enchaînée, Échap termine)'],['▭','rect','Rectangle'],
@@ -3031,8 +3185,8 @@
       Object.keys(MEP_TB_FIELDS).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=k==='txt'?'Texte libre':(MEP_TB_FIELDS[k].ed||MEP_TB_FIELDS[k].lab)+(MEP_TB_FIELDS[k].auto?' (auto)':'');sel.appendChild(o);});
       sel.value=mepSt.skTextF||'txt';sel.onchange=()=>{mepSt.skTextF=sel.value;mepSideShow();};r2.appendChild(sel);
       if((mepSt.skTextF||'txt')==='txt'){const r3=K.rowEl();K.lab(r3,'Texte');const i=document.createElement('input');i.value=mepSt.skTextS||'TEXTE';i.oninput=()=>{mepSt.skTextS=i.value;};r3.appendChild(i);}
-      const r4=K.rowEl();K.lab(r4,'Hauteur (mm)');const hh=document.createElement('input');hh.type='number';hh.step='0.5';hh.min='1';hh.max='20';
-      hh.value=mepSt.skTextH||((mepSt.skTextF||'txt')==='txt'?3.5:5);hh.onchange=()=>{mepSt.skTextH=Math.max(1,+hh.value||3.5);};r4.appendChild(hh);
+      const r4=K.rowEl();K.lab(r4,'Hauteur h (mm)');
+      r4.appendChild(mepIsoSelect(+mepSt.skTextH||MEP_TEXT_STYLE.noteH,h=>{mepSt.skTextH=h;}));
       K.note('Cliquez pour poser le texte ; il s’accroche aux points et lignes, puis se contraint comme un point.');
     }
   }
@@ -3065,12 +3219,13 @@
       sel.value=e.f||'txt';sel.onchange=()=>{mepEdit('texte',()=>{e.f=sel.value;if(e.f==='txt'&&!e.s)e.s='TEXTE';if(e.f==='perso'&&!e.k){e.k='c'+Date.now().toString(36);e.lab='CHAMP';}});mepSideShow();};r.appendChild(sel);
       if(e.f==='txt'){r=K.rowEl();K.lab(r,'Texte');const i=document.createElement('input');i.value=e.s||'';i.onchange=()=>mepEdit('texte',()=>{e.s=i.value;});r.appendChild(i);}
       if(e.f==='perso'){r=K.rowEl();K.lab(r,'Nom du champ');const i=document.createElement('input');i.value=e.lab||'';i.onchange=()=>{mepEdit('texte',()=>{e.lab=i.value;});mepSideShow();};r.appendChild(i);}
-      r=K.rowEl();K.lab(r,'Hauteur');const hh=document.createElement('input');hh.type='number';hh.step='0.5';hh.min='1';hh.max='30';hh.value=+e.h||3.5;
-      hh.onchange=()=>mepEdit('texte',()=>{e.h=Math.max(1,+hh.value||3.5);});r.appendChild(hh);
-      K.lab(r,'Larg. maxi',false);const mw=document.createElement('input');mw.type='number';mw.step='1';mw.min='0';mw.value=+e.mw||0;mw.title='Largeur maximale (mm) — 0 = libre ; au-delà, le texte est tronqué (…)';
+      r=K.rowEl();K.lab(r,'Hauteur h (mm)');
+      r.appendChild(mepIsoSelect(mepCapH(+e.h||3.5),h=>{mepEdit('texte',()=>{e.h=mepFs(h);});mepSideShow();}));
+      r=K.rowEl();K.lab(r,'Largeur maxi (mm)');const mw=document.createElement('input');mw.type='number';mw.step='1';mw.min='0';mw.value=+e.mw||0;mw.title='Largeur maximale (mm) — 0 = libre ; au-delà, le texte est tronqué (…)';
       mw.onchange=()=>mepEdit('texte',()=>{e.mw=Math.max(0,+mw.value||0)||undefined;});r.appendChild(mw);
-      r=K.rowEl();
+      r=K.rowEl();K.lab(r,'Graisse');
       [['lab','Libellé'],['val','Valeur']].forEach(([v,l])=>K.btn(r,l,()=>{mepEdit('texte',()=>{e.st=v;});mepSideShow();},v==='lab'?'Texte maigre':'Texte gras',(e.st||'lab')===v?'active':''));
+      r=K.rowEl();K.lab(r,'Ancrage');
       [['start','⇤'],['middle','↔'],['end','⇥']].forEach(([v,l])=>K.btn(r,l,()=>{mepEdit('texte',()=>{e.al=v;});mepSideShow();},'Ancrage : '+({start:'début',middle:'centre',end:'fin'})[v],(e.al||'start')===v?'active':''));
     }
     if(s.L.length||s.C.length||s.T.length)mepSideSkStyle(K,[...s.L,...s.C,...s.T],ctx.tb);
@@ -3210,10 +3365,12 @@
       p.setAttribute('d',dir>0
         ?'M0,0 L'+a.len+','+a.h+' L0,'+(a.h*2)+' z'
         :'M'+a.len+',0 L0,'+a.h+' L'+a.len+','+(a.h*2)+' z');
-      p.setAttribute('class',color==='sel'?'mepArrowSel':'mepArrowM'); // couleur = variable des cotes (noir à l'export)
+      // couleur = variable des cotes (noir à l'export) ; flèches de coupe toujours noires
+      p.setAttribute('class',color==='sel'?'mepArrowSel':color==='ink'?'mepArrowK':'mepArrowM');
       mkr.appendChild(p);mepDefsEl.appendChild(mkr);
     };
     mkMarker('mepArr',1,'dim');mkMarker('mepArrS',-1,'dim');
+    mkMarker('mepArrK',1,'ink');
     mkMarker('mepArrSel',1,'sel');mkMarker('mepArrSSel',-1,'sel');
   }
   function mepBuildUI(){
@@ -3331,9 +3488,66 @@
   }
   function mepSelView(){const sh=mepSheet();return mepSt.sel?mepView(sh,mepSt.sel):null;}
   /* ═══════════════ N. rendu ═══════════════ */
+  /* ═══════════════ paramètres PLAN : session + projet + fichier ═══════════════
+     Les réglages (écriture ISO, cotes, traits, export, papier, cadre et cartouche par défaut…)
+     vivent dans localStorage (= la session de ce navigateur) ET dans doc.mep.prefs (= le projet,
+     enregistré dans le .miniFusion). À l'ouverture d'un projet, ses réglages remplacent ceux
+     de la session ; tout changement ensuite est recopié dans le projet. */
+  const MEP_PREF_KEYS=['minifusion_mepDimStyle','mep_lw','mep_exp_bw','mep_paper','mep_rulers','minifusion_mepZoomRev','mep_frame_def','mep_tb_def','mep_sk_style'];
+  let mepPrefsMep=null;
+  function mepPrefsCollect(){
+    const ls={};MEP_PREF_KEYS.forEach(k=>{let v=null;try{v=localStorage.getItem(k);}catch(e){}if(v!==null)ls[k]=v;});
+    return{v:1,ls};
+  }
+  function mepPrefsApply(pr){
+    if(!pr||!pr.ls||typeof pr.ls!=='object')return false;
+    MEP_PREF_KEYS.forEach(k=>{try{const v=pr.ls[k];if(typeof v==='string')localStorage.setItem(k,v);else localStorage.removeItem(k);}catch(e){}});
+    Object.assign(MEP_DIM_STYLE,MEP_DIM_STYLE_DEF);Object.assign(MEP_TEXT_STYLE,MEP_TEXT_STYLE_DEF);mepTextStyleSync();
+    mepDimStyleLoaded=false;mepDimStyleLoad();
+    try{mepSt.rulers=localStorage.getItem('mep_rulers')!=='0';mepSt.zoomRev=localStorage.getItem('minifusion_mepZoomRev')==='1';}catch(e){}
+    try{mepApplyDimStyle();mepLwApply();mepThemeApply();mepRulers();}catch(e){}
+    return true;
+  }
+  function mepPrefsSync(){
+    const m=doc.mep;if(!m)return;
+    const cur=mepPrefsCollect(),js=JSON.stringify(cur);
+    if(m!==mepPrefsMep){ // projet ouvert (ou plan remplacé par annuler / rétablir)
+      mepPrefsMep=m;
+      if(m.prefs&&m.prefs.ls){if(JSON.stringify(m.prefs)!==js){mepPrefsApply(m.prefs);try{mepSideShow();}catch(e){}}}
+      else m.prefs=cur; // ancien projet : il adopte les réglages de la session
+      return;
+    }
+    if(JSON.stringify(m.prefs||null)!==js){ // réglage changé : recopié dans le projet
+      m.prefs=cur;try{dirty=true;}catch(e){}
+      if(mepAutoT)clearTimeout(mepAutoT);
+      mepAutoT=setTimeout(()=>{try{autosave();}catch(e){}},900);
+    }
+  }
+  function mepPrefsExport(){
+    const data=JSON.stringify({format:'miniFusion-plan-params',v:1,prefs:mepPrefsCollect(),tbLib:mepTbLib()},null,1);
+    const nm=String((typeof doc!=='undefined'&&doc.name)||'plan').replace(/[\\/:*?"<>|]+/g,'-')+' - paramètres plan.mfplan';
+    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'application/json'}));a.download=nm;
+    document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000);
+    mepStatus('Paramètres plan exportés : '+nm);
+  }
+  function mepPrefsImport(){
+    const inp=document.createElement('input');inp.type='file';inp.accept='.mfplan,.json,application/json';
+    inp.onchange=()=>{const f=inp.files&&inp.files[0];if(!f)return;const rd=new FileReader();
+      rd.onload=()=>{
+        let o;try{o=JSON.parse(rd.result);}catch(e){mepStatus('Fichier de paramètres illisible.');return;}
+        if(!o||o.format!=='miniFusion-plan-params'||!o.prefs){mepStatus('Ce fichier ne contient pas de paramètres plan miniFusion.');return;}
+        mepPrefsApply(o.prefs);
+        let n=0;if(o.tbLib&&typeof o.tbLib==='object'){const L=mepTbLib();Object.keys(o.tbLib).forEach(k=>{const tb=o.tbLib[k];if(tb&&tb.kind==='sk'&&tb.sk&&!L[k]){L[k]=tb;n++;}});mepTbLibSave(L);}
+        mepSideShow();mepRender();
+        mepStatus('Paramètres plan importés'+(n?' (+ '+n+' cartouche(s) dans la bibliothèque)':'')+' — appliqués à ce projet et à la session.');
+      };rd.readAsText(f);};
+    inp.click();
+  }
   function mepRender(){
     if(!mepWrapEl||!mepSt.open)return;
     mepEnsure();
+    mepPrefsSync();
+    try{mepCutFollowAll(mepSheet());}catch(e){}
     mepAxGen++; // traits d'axe recalculés à chaque rendu
     const sh=mepSheet();
     const pg=mepPage();
@@ -3353,9 +3567,9 @@
     /* feuille + cadre + cartouche */
     mk('rect',{x:0,y:0,width:pg.W,height:pg.H,class:'mepPage'});
     const pd=pg.pd;
-    mk('rect',{x:pd.ix,y:pd.iy,width:pd.iw,height:pd.ih+pd.th,class:'mepFrame'});
-    mk('rect',{x:pd.ix+3,y:pd.iy+3,width:pd.iw-6,height:pd.ih+pd.th-6,class:'mepFrame2'});
-    const ty=pg.H-MARGIN-pd.th;
+    const fr=pd.fr||MEP_FRAME_DEF;
+    mepDrawFrame(mk,pg,pd,fr);
+    const ty=pg.H-fr.b-pd.th;
     if(mepTbIsSk(sh)){
       // cartouche dessiné : esquisse ancrée au coin bas-droit intérieur du cadre
       const A=mepTbAnchor(sh);
@@ -3502,14 +3716,10 @@
       if(par){
         const A=mepToSheet(par,v.section.a[0],v.section.a[1]);
         const B0=mepToSheet(par,v.section.b[0],v.section.b[1]);
-        const dx=B0.x-A.x,dy=B0.y-A.y,L=Math.hypot(dx,dy)||1,tx=dx/L,ty=dy/L;
         // coupe brisée : polyligne, gros traits aux bouts ET aux changements de plan
         const SP=(Array.isArray(v.section.pts)&&v.section.pts.length>2)?v.section.pts.map(q=>mepToSheet(par,q[0],q[1])):null;
         const B=SP?SP[SP.length-1]:B0;
-        // sens du regard sur le papier : -dir projeté (= côté où la coupe est posée en 1er angle)
-        const pb=mepBasisOf(par),nd=v.section.n||v.dir;
-        let ax=-mepDot(nd,pb.u),ay=-mepDot(nd,pb.v);const La=Math.hypot(ax,ay);
-        if(La<1e-6){ax=-ty;ay=tx;}else{ax/=La;ay/=La;}
+        // sens du regard, trait fort, flèche et lettre : mepCutEnds
         if(SP){
           for(let i=0;i+1<SP.length;i++)mk('line',{x1:SP[i].x,y1:SP[i].y,x2:SP[i+1].x,y2:SP[i+1].y,class:'mepCutLine'});
           for(let i=1;i+1<SP.length;i++){ // coude : deux bras épais de 4 mm
@@ -3517,11 +3727,26 @@
               mk('line',{x1:SP[i].x,y1:SP[i].y,x2:SP[i].x+qx/ql*m,y2:SP[i].y+qy/ql*m,class:'mepCutEnd'});});
           }
         }else mk('line',{x1:A.x,y1:A.y,x2:B.x,y2:B.y,class:'mepCutLine'});
-        [[A,-1],[B,1]].forEach(([P,sg])=>{
-          const ox=P.x+tx*sg*3,oy=P.y+ty*sg*3,ix=P.x-tx*sg*5,iy=P.y-ty*sg*5;
-          mk('line',{x1:ox,y1:oy,x2:ix,y2:iy,class:'mepCutEnd'});
-          mk('line',{x1:ox,y1:oy,x2:ox+ax*9,y2:oy+ay*9,class:'mepCutArr','marker-end':'url(#mepArr)'});
-          if(v.label)mk('text',{x:ox+ax*12+tx*sg*2,y:oy+ay*12+tx*0+3,class:'mepLbl','text-anchor':'middle'}).textContent=v.label;
+        {const pk=mepSt.pick;
+         if(pk&&pk.kind==='cutSeg'&&pk.vid===v.id&&pk.prev&&pk.M){
+           const M=JSON.parse(JSON.stringify(pk.M)),q=pk.prev;
+           if(q.kind==='step')M.steps[q.k]=q.s;
+           else if(q.kind==='plane')M.c[q.m]=q.c;
+           else{const lo=q.m?M.steps[q.m-1]:M.s0,hi=q.m===M.c.length-1?M.sE:M.steps[q.m];
+             if((pk.sG-lo)*(hi-pk.sG)>0){M.steps.splice(q.m,0,pk.sG);M.c.splice(q.m+1,0,q.c);}}
+           const Q=(sv,cv)=>mepToSheet(par,M.t.x*sv+M.n.x*cv,M.t.y*sv+M.n.y*cv);
+           const pts=[Q(M.s0,M.c[0])];M.steps.forEach((sv,k)=>{pts.push(Q(sv,M.c[k]),Q(sv,M.c[k+1]));});pts.push(Q(M.sE,M.c[M.c.length-1]));
+           mk('polyline',{points:pts.map(p=>p.x+','+p.y).join(' '),class:'mepCutPrev'});
+         }}
+        mepCutEnds(sh,v).forEach(E=>{
+          // bout déplacé vers l'extérieur : le trait mixte fin se prolonge jusqu'au trait fort
+          if(E.s>0)mk('line',{x1:E.P.x,y1:E.P.y,x2:E.Q.x,y2:E.Q.y,class:'mepCutLine'});
+          mk('line',{x1:E.o.x,y1:E.o.y,x2:E.i.x,y2:E.i.y,class:'mepCutEnd'});
+          // flèche à l'équerre venant de l'arrière, pointe au milieu du trait fort (sens du regard),
+          // lettre posée sur la flèche, côté extérieur
+          const hot=mepSt.cutHov&&mepSt.cutHov.vid===v.id&&mepSt.cutHov.end===E.end;
+          mk('line',{x1:E.tail.x,y1:E.tail.y,x2:E.M.x,y2:E.M.y,class:'mepCutArr'+(hot?' mepCutHot':''),'marker-end':'url(#mepArrK)'});
+          if(v.label)mk('text',{x:E.lbl.x,y:E.lbl.y+MEP_TEXT_STYLE.lblH/2,class:'mepLbl mepCutLbl','text-anchor':'middle'}).textContent=v.label;
         });
       }
     }
@@ -3540,18 +3765,208 @@
         if(v.label)mk('text',{x:C.x+rr*0.75+2,y:C.y-rr*0.75-2,class:'mepLbl','text-anchor':'start'}).textContent=v.label;
       }
     }
-        if(v.label){
-          const bb=mepViewSheetBBox(v);
-          if(bb){
-            let txt=v.label;
-            if(v.kind==='section')txt='COUPE '+v.label+'-'+v.label;
-            else if(v.kind==='detail'){
-              const s=v.scale>=1?(mepFmtNum(v.scale,2)+':1'):('1:'+mepFmtNum(1/v.scale,2));
-              txt='DÉTAIL '+v.label+' ('+s+')';
-            }
-            mk('text',{x:bb.x+bb.w/2,y:bb.y+bb.h+11,class:'mepLbl','text-anchor':'middle'}).textContent=txt;
-          }
-        }
+        {const tg=mepViewTitleGeo(v);
+         if(tg){
+           if(mepSt.ttlHov===v.id||(mepSt.pick&&mepSt.pick.kind==='ttlDrag'&&mepSt.pick.vid===v.id))
+             mk('rect',{x:tg.x-tg.w/2-1,y:tg.y-tg.h-1,width:tg.w+2,height:tg.h+2.2,class:'mepTtlHov'});
+           mk('text',{x:tg.x,y:tg.y,class:'mepLbl','text-anchor':'middle'}).textContent=tg.txt;
+         }}
+  }
+  /* bouts de la ligne de coupe (sur la vue mère) : trait fort, flèche, lettre.
+     v.section.sh = [décalage bout A, bout B] en mm papier le long du trait (>0 : vers l'extérieur),
+     réglé en tirant sur la flèche. Le trait fort va de +3 à −5 mm autour du bout ; la flèche
+     pointe sur son milieu. */
+  function mepCutEnds(sh,v){
+    const par=v.section&&v.section.a&&v.section.pid?mepView(sh,v.section.pid):null;if(!par)return[];
+    const A=mepToSheet(par,v.section.a[0],v.section.a[1]),B0=mepToSheet(par,v.section.b[0],v.section.b[1]);
+    const dx=B0.x-A.x,dy=B0.y-A.y,L=Math.hypot(dx,dy)||1,tx=dx/L,ty=dy/L;
+    const SP=(Array.isArray(v.section.pts)&&v.section.pts.length>2)?v.section.pts.map(q=>mepToSheet(par,q[0],q[1])):null;
+    const B=SP?SP[SP.length-1]:B0;
+    const pb=mepBasisOf(par),nd=v.section.n||v.dir;
+    let ax=-mepDot(nd,pb.u),ay=-mepDot(nd,pb.v);const La=Math.hypot(ax,ay);
+    if(La<1e-6){ax=-ty;ay=tx;}else{ax/=La;ay/=La;}
+    const shf=Array.isArray(v.section.sh)?v.section.sh:[0,0],lh=MEP_TEXT_STYLE.lblH,off=lh/2+1.6;
+    return[[A,-1,0],[B,1,1]].map(([P,sg,end])=>{
+      const s0=+shf[end]||0,ux=tx*sg,uy=ty*sg,Q={x:P.x+ux*s0,y:P.y+uy*s0};
+      const o={x:Q.x+ux*3,y:Q.y+uy*3},i={x:Q.x-ux*5,y:Q.y-uy*5},M={x:Q.x-ux,y:Q.y-uy};
+      const tail={x:M.x-ax*10,y:M.y-ay*10},lbl={x:M.x-ax*6+ux*off,y:M.y-ay*6+uy*off};
+      return{end,P,Q,o,i,M,tail,lbl,s:s0,u:{x:ux,y:uy},a:{x:ax,y:ay},L};
+    });
+  }
+  /* ── édition de la ligne de coupe (brisures) ──
+     Points en repère local de la vue mère ; tronçons pairs = plans de coupe (parallèles au 1er),
+     impairs = marches à l'équerre. Ajouter une brisure : marche au milieu du dernier plan, la fin
+     décalée ; retirer : la dernière marche disparaît, la fin revient sur le plan précédent. */
+  function mepCutPts(v){
+    const s=v.section;if(!s)return null;
+    if(Array.isArray(s.pts)&&s.pts.length>2)return s.pts.map(q=>({x:+q[0],y:+q[1]}));
+    return[{x:+s.a[0],y:+s.a[1]},{x:+s.b[0],y:+s.b[1]}];
+  }
+  function mepCutSetPts(sh,v,P){
+    const s=v.section,par=mepView(sh,s.pid);if(!par||P.length<2)return;
+    const r4=q=>[+(+q.x).toFixed(4),+(+q.y).toFixed(4)];
+    s.a=r4(P[0]);s.b=r4(P[1]);
+    if(P.length>2)s.pts=P.map(r4);else delete s.pts;
+    const pb=mepBasisOf(par),x=s.a[0],y=s.a[1];
+    s.p=[pb.u[0]*x+pb.v[0]*y,pb.u[1]*x+pb.v[1]*y,pb.u[2]*x+pb.v[2]*y]; // plan du 1er tronçon
+  }
+  /* modèle d'une ligne de coupe : repère (t = sens du 1er tronçon, n = normale), plans de coupe
+     c[m] (cote le long de n), marches steps[k] (abscisse le long de t), bouts s0 / sE.
+     v.section.refs[m] = lien du plan m : {t:'hole',fid,pid} (axe d'un perçage), {t:'ax',ak}
+     (trait d'axe), {t:'edge',c} (arête parallèle, suivie au plus près) — la ligne suit la pièce. */
+  function mepCutModel(v){
+    const P=mepCutPts(v);if(!P||P.length<2)return null;
+    const tl=Math.hypot(P[1].x-P[0].x,P[1].y-P[0].y);if(tl<1e-9)return null;
+    const t={x:(P[1].x-P[0].x)/tl,y:(P[1].y-P[0].y)/tl},n={x:-t.y,y:t.x};
+    const S=q=>q.x*t.x+q.y*t.y,C=q=>q.x*n.x+q.y*n.y,c=[],steps=[];
+    for(let j=0;j+1<P.length;j+=2)c.push(C(P[j]));
+    for(let j=1;j+1<P.length;j+=2)steps.push(S(P[j]));
+    const refs=Array.isArray(v.section.refs)?v.section.refs.slice(0,c.length):[];
+    while(refs.length<c.length)refs.push(null);
+    return{t,n,s0:S(P[0]),sE:S(P[P.length-1]),c,steps,refs};
+  }
+  function mepCutFromModel(sh,v,M){
+    const Q=(sv,cv)=>({x:M.t.x*sv+M.n.x*cv,y:M.t.y*sv+M.n.y*cv});
+    const P=[Q(M.s0,M.c[0])];
+    M.steps.forEach((sv,k)=>{P.push(Q(sv,M.c[k]));P.push(Q(sv,M.c[k+1]));});
+    P.push(Q(M.sE,M.c[M.c.length-1]));
+    mepCutSetPts(sh,v,P);
+    v.section.refs=M.refs.map(r=>r||null);
+    if(!v.section.refs.some(Boolean))delete v.section.refs;
+  }
+  function mepCutBreaks(v){const P=mepCutPts(v);return P?Math.max(0,(P.length-2)/2):0;}
+  // repère 3D de la normale n (papier de la vue mère) : sert à savoir si un axe de perçage est dans le plan
+  function mepCutN3(par,n){const b=mepBasisOf(par);return[b.u[0]*n.x+b.v[0]*n.y,b.u[1]*n.x+b.v[1]*n.y,b.u[2]*n.x+b.v[2]*n.y];}
+  // candidats de lien d'un plan : centres de perçage, traits d'axe, arêtes parallèles à t → {ref,c}
+  function mepCutCands(sh,par,M){
+    const out=[],b=mepBasisOf(par),n3=mepCutN3(par,M.n);
+    if(typeof holeAxis==='function')(doc.features||[]).forEach(f=>{
+      if(!f||f.type!=='hole'||f.visible===false)return;
+      const sk=(doc.sketches||[]).find(q=>q.id===f.sketchId);if(!sk)return;
+      let A=null;try{A=holeAxis(f,sk);}catch(e){return;}
+      if(!A||!A.pts||Math.abs(mepDot([A.dir.x,A.dir.y,A.dir.z],n3))>1e-3)return; // axe dans le plan de coupe possible
+      A.pts.forEach(P=>{const w=[P.x,P.y,P.z],lx=mepDot(w,b.u),ly=mepDot(w,b.v);
+        out.push({ref:{t:'hole',fid:f.id,pid:P.id},c:lx*M.n.x+ly*M.n.y,s:lx*M.t.x+ly*M.t.y});});
+    });
+    try{mepAxisLines(sh,par).forEach(e=>{if(e.t!=='L'||!e.ak)return;const dx=e.x2-e.x1,dy=e.y2-e.y1,l=Math.hypot(dx,dy)||1;
+      if(Math.abs((dx*M.n.x+dy*M.n.y)/l)>1e-3)return;
+      out.push({ref:{t:'ax',ak:e.ak},c:e.x1*M.n.x+e.y1*M.n.y});});}catch(e){}
+    try{(mepGeoOf(par).els||[]).forEach(e=>{if(!e||e.t!=='L')return;const dx=e.x2-e.x1,dy=e.y2-e.y1,l=Math.hypot(dx,dy)||1;
+      if(Math.abs((dx*M.n.x+dy*M.n.y)/l)>1e-3)return;
+      const cv=e.x1*M.n.x+e.y1*M.n.y;out.push({ref:{t:'edge',c:+cv.toFixed(4)},c:cv});});}catch(e){}
+    return out;
+  }
+  // cote actuelle d'un lien (null : introuvable — le plan garde sa place)
+  function mepCutRefC(sh,par,M,r){
+    if(!r)return null;
+    if(r.t==='hole'){
+      const f=(doc.features||[]).find(x=>x.id===r.fid);if(!f||typeof holeAxis!=='function')return null;
+      const sk=(doc.sketches||[]).find(q=>q.id===f.sketchId);if(!sk)return null;
+      let A=null;try{A=holeAxis(f,sk);}catch(e){return null;}
+      const P=A&&A.pts&&A.pts.find(q=>q.id===r.pid);if(!P)return null;
+      const b=mepBasisOf(par),w=[P.x,P.y,P.z];
+      return mepDot(w,b.u)*M.n.x+mepDot(w,b.v)*M.n.y;
+    }
+    if(r.t==='ax'){const e=mepAxisLineByKey(sh,par,r.ak);return e&&e.t==='L'?e.x1*M.n.x+e.y1*M.n.y:null;}
+    if(r.t==='edge'){ // arête : la plus proche parallèle (5 mm au plus) — suit les petits déplacements
+      let best=null;mepCutCands(sh,par,M).forEach(q=>{if(q.ref.t!=='edge')return;const d=Math.abs(q.c-r.c);if(d<5&&(!best||d<best.d))best={d,c:q.c};});
+      return best?best.c:null;
+    }
+    return null;
+  }
+  // lien posé sur un plan qui passe déjà par un centre / un axe / une arête (création, glissement)
+  function mepCutAutoRefs(sh,v){
+    const par=mepView(sh,v.section&&v.section.pid),M=par&&mepCutModel(v);if(!M)return;
+    let cands=null;
+    M.c.forEach((cv,m)=>{
+      if(M.refs[m])return;
+      cands=cands||mepCutCands(sh,par,M);
+      const lo=m===0?M.s0:M.steps[m-1],hi=m===M.c.length-1?M.sE:M.steps[m],a=Math.min(lo,hi),b=Math.max(lo,hi);
+      const on=cands.filter(q=>Math.abs(q.c-cv)<0.05);
+      const pick=on.find(q=>q.ref.t==='hole'&&q.s>=a-0.05&&q.s<=b+0.05)||on.find(q=>q.ref.t==='hole')||on.find(q=>q.ref.t==='ax')||on.find(q=>q.ref.t==='edge');
+      if(pick)M.refs[m]=pick.ref;
+    });
+    mepCutFromModel(sh,v,M);
+  }
+  // la ligne suit ses liens (perçage déplacé, esquisse modifiée…) — appelé à chaque rendu
+  function mepCutFollowAll(sh){
+    sh.views.forEach(v=>{
+      if(v.kind!=='section'||!v.section||!Array.isArray(v.section.refs))return;
+      const par=mepView(sh,v.section.pid),M=par&&mepCutModel(v);if(!M)return;
+      let ch=false;
+      M.refs.forEach((r,m)=>{const cv=mepCutRefC(sh,par,M,r);if(cv!=null&&Math.abs(cv-M.c[m])>1e-4){M.c[m]=cv;ch=true;if(r.t==='edge')r.c=+cv.toFixed(4);}});
+      if(ch)mepCutFromModel(sh,v,M);
+    });
+  }
+  function mepCutAddBreak(sh,v){
+    const M=mepCutModel(v);if(!M)return false;
+    const m=M.c.length-1,lo=m?M.steps[m-1]:M.s0,L=Math.abs(M.sE-lo);if(L<1e-6)return false;
+    M.steps.push((lo+M.sE)/2);M.c.push(M.c[m]+Math.max(2,L/4));M.refs.push(null);
+    mepCutFromModel(sh,v,M);mepCutAutoRefs(sh,v);
+    return true;
+  }
+  function mepCutDelBreak(sh,v){
+    const M=mepCutModel(v);if(!M||!M.steps.length)return false;
+    M.steps.pop();M.c.pop();M.refs.pop();
+    mepCutFromModel(sh,v,M);
+    return true;
+  }
+  // brisure en tirant : le morceau du plan m situé après sG part sur le plan cNew (lien ref)
+  function mepCutBreakAt(sh,v,m,sG,cNew,ref){
+    const M=mepCutModel(v);if(!M)return false;
+    const lo=m?M.steps[m-1]:M.s0,hi=m===M.c.length-1?M.sE:M.steps[m];
+    if((sG-lo)*(hi-sG)<=0||Math.abs(cNew-M.c[m])<1e-6)return false;
+    M.steps.splice(m,0,sG);M.c.splice(m+1,0,cNew);M.refs.splice(m+1,0,ref||null);
+    mepCutFromModel(sh,v,M);
+    return true;
+  }
+  // tronçon de ligne de coupe sous le pointeur (vue mère) : {v,j,par} — j pair = plan, impair = marche
+  function mepCutSegAt(sh,px,py){
+    const tol=1.5/(mepSt.zoom||1)+0.4;
+    for(let k=sh.views.length-1;k>=0;k--){const v=sh.views[k];
+      if(v.kind!=='section'||!v.section||!v.section.pid)continue;
+      const par=mepView(sh,v.section.pid),P=par&&mepCutPts(v);if(!P)continue;
+      const S=P.map(q=>mepToSheet(par,q.x,q.y));
+      for(let j=0;j+1<S.length;j++){
+        const ax=S[j].x,ay=S[j].y,vx=S[j+1].x-ax,vy=S[j+1].y-ay,l2=vx*vx+vy*vy||1;
+        const t=Math.max(0,Math.min(1,((px-ax)*vx+(py-ay)*vy)/l2));
+        if(Math.hypot(px-(ax+vx*t),py-(ay+vy*t))<=tol)return{v,j,par};
+      }}
+    return null;
+  }
+  function mepCutArrowAt(sh,px,py){
+    const tol=2/(mepSt.zoom||1)+0.6;
+    for(let k=sh.views.length-1;k>=0;k--){const v=sh.views[k];if(v.kind!=='section'||!v.section)continue;
+      for(const E of mepCutEnds(sh,v)){
+        const vx=E.M.x-E.tail.x,vy=E.M.y-E.tail.y,l2=vx*vx+vy*vy||1,t=Math.max(0,Math.min(1,((px-E.tail.x)*vx+(py-E.tail.y)*vy)/l2));
+        const dS=Math.hypot(px-(E.tail.x+vx*t),py-(E.tail.y+vy*t)),dL=Math.hypot(px-E.lbl.x,py-E.lbl.y);
+        if(dS<=tol||dL<=MEP_TEXT_STYLE.lblH*0.8)return{v,end:E.end,E};
+      }}
+    return null;
+  }
+  /* titre de vue (COUPE A-A, DÉTAIL B…) : centré sur l'axe vertical de la vue (milieu de
+     son encombrement), dessous ou dessus ; seul l'écart se règle à la souris (v.ttl). */
+  function mepViewTitleText(v){
+    if(!v.label)return '';
+    if(v.kind==='section')return 'COUPE '+v.label+'-'+v.label;
+    if(v.kind==='detail'){
+      const s=v.scale>=1?(mepFmtNum(v.scale,2)+':1'):('1:'+mepFmtNum(1/v.scale,2));
+      return 'DÉTAIL '+v.label+' ('+s+')';
+    }
+    return v.label;
+  }
+  function mepViewTitleGeo(v){
+    const txt=mepViewTitleText(v);if(!txt)return null;
+    const bb=mepViewSheetBBox(v);if(!bb)return null;
+    const lh=MEP_TEXT_STYLE.lblH,t=v.ttl||{},gap=Number.isFinite(+t.gap)?+t.gap:5;
+    const x=bb.x+bb.w/2,y=t.side==='above'?bb.y-gap:bb.y+bb.h+gap+lh; // y = ligne de base
+    return{x,y,w:txt.length*mepFs(lh)*0.64,h:lh,txt,bb};
+  }
+  function mepViewTitleAt(sh,px,py){
+    const tol=1.5/(mepSt.zoom||1);
+    for(let i=sh.views.length-1;i>=0;i--){const v=sh.views[i],g=mepViewTitleGeo(v);
+      if(g&&Math.abs(px-g.x)<=g.w/2+tol&&py>=g.y-g.h-tol&&py<=g.y+tol+0.8)return v;}
+    return null;
   }
   function mepDrawHatch(mk,loops,v){
     if(!loops.length)return;
@@ -3730,13 +4145,38 @@
     });
     return best;
   }
+  // famille d'un perçage : la fonction elle-même, ou sa répétition (base + instances) à
+  // spécification égale — les instances d'une répétition sont des fonctions Perçage à part
+  function mepHoleFam(f){
+    if(!f)return '';
+    const rp=(doc.features||[]).find(r=>r&&r.type==='repeat'&&(f.repeatId===r.id||(r.base||[]).indexOf(f.id)>=0));
+    return rp?'rp:'+rp.id+'|'+mepHoleFeatureText(f):f.id;
+  }
+  // nombre de trous de la famille vus de bout dans la vue (un par axe, cercles de lamage /
+  // fraisure / filetage confondus) ; mémorisé par géométrie de vue
+  const mepHoleNCache=new WeakMap();
+  function mepHoleCount(sh,v,fam){
+    let g=null;try{g=mepGeoOf(v);}catch(e){return 0;}
+    if(!g||!g.els)return 0;
+    let C=mepHoleNCache.get(g);if(!C){C=new Map();mepHoleNCache.set(g,C);}
+    if(C.has(fam))return C.get(fam);
+    const pts=new Set();
+    g.els.forEach((e,i)=>{
+      if(!e||e.t!=='C')return;
+      let m=null;try{m=mepHoleAt(sh,v.id,e,i);}catch(err){}
+      if(m&&mepHoleFam(m.f)===fam)pts.add([m.P.x,m.P.y,m.P.z].map(q=>(+q).toFixed(3)).join(','));
+    });
+    C.set(fam,pts.size);
+    return pts.size;
+  }
   function mepHoleDraft(sh,vid,e,i,lx,ly){
     const m=mepHoleAt(sh,vid,e,i);
     if(!m)return null;
+    const hn=mepHoleCount(sh,m.view,mepHoleFam(m.f));
     const b={x:e.cx+e.r*0.9,y:e.cy-e.r*0.9};
     if(lx!=null&&ly!=null)b={x:lx,y:ly};
     return{kind:'hole',vid:vid,vid2:null,a:{x:e.cx,y:e.cy,hint:{t:'ctr',i:i}},
-      b:b,off:0,holeFid:m.f.id,holeText:mepHoleFeatureText(m.f),__ghost:true,tol:null};
+      b:b,off:0,holeFid:m.f.id,holeText:mepHoleFeatureText(m.f),holeN:hn>1?hn:undefined,__ghost:true,tol:null};
   }
   function mepAxisScale(v){return Math.max(1e-9,(v&&+v.scale>0)?+v.scale:1);}
   function mepAxisKey(h){const id=(h&&h.fid||'')+'|'+(h&&h.pid||'');return id!=='|'?id:(+h.x).toFixed(3)+','+(+h.y).toFixed(3);}
@@ -4281,6 +4721,12 @@
     const lim=Math.max(0,g.L/2-mepDimLabelHalf(d,value));
     return Math.abs(v)<=lim?0:v;
   }
+  /* largeur d'un texte de cote (mm papier) : mesurée sur le SVG quand il est affiché,
+     sinon estimée d'après le corps de la police (chiffres et capitales ≈ 0,6 corps, graisse 600) */
+  function mepTxtW(el,str,fs){
+    try{if(el&&typeof el.getComputedTextLength==='function'){const w=el.getComputedTextLength();if(w>0)return w;}}catch(e){}
+    return String(str||'').length*fs*0.6;
+  }
   function mepHoleCallout(cx,cy,rr,px,py,txt){
     let ux=px-cx,uy=py-cy,ul=Math.hypot(ux,uy);
     if(ul<1e-6){ux=1;uy=0;ul=1;}
@@ -4288,12 +4734,14 @@
     const ang=Math.atan2(uy,ux);
     const ex=cx+rr*Math.cos(ang),ey=cy+rr*Math.sin(ang);
     const lines=String(txt||'').split('\n');
-    const lh=8.2,n=lines.length,mid=py+2;
+    // interligne, souligné et largeur suivent la hauteur d'écriture des cotes
+    const fs=MEP_DIM_STYLE.textHeight||7,h=MEP_TEXT_STYLE.dimH;
+    const lh=fs*1.2,n=lines.length,mid=py+h*0.4;
     const y0=mid-(n-1)*lh/2;
     const tx=px,anchor=ux<0?'end':'start';
-    const tw=Math.max(6.5,...lines.map(s=>Math.max(6.5,s.length*3.8)));
+    const tw=Math.max(h,...lines.map(s=>mepTxtW(null,s,fs)));
     const u0=anchor==='end'?tx-tw:tx,u1=anchor==='end'?tx:tx+tw;
-    const lineY=y0+(n-1)*lh+2.2;
+    const lineY=y0+(n-1)*lh+Math.max(0.8,h*0.35);
     return{ex,ey,lines,lh,y0,tx,anchor,u0,u1,lineY};
   }
   function mepDrawDim(mk,d,sh){
@@ -4320,7 +4768,12 @@
     if(d.kind==='hole'){
       if(d.holeFid&&typeof doc!=='undefined'){
         const f=(doc.features||[]).find(x=>x.id===d.holeFid);
-        if(f){d.holeText=mepHoleFeatureText(f);txt=d.txt||((d.holeN>1?d.holeN+'× ':'')+d.holeText);}
+        if(f){
+          d.holeText=mepHoleFeatureText(f);
+          // nombre tenu à jour (répétition modifiée, trous ajoutés à l'esquisse…)
+          const hn=mepHoleCount(sh,w.v1,mepHoleFam(f));if(hn>0)d.holeN=hn;
+          txt=d.txt||((d.holeN>1?d.holeN+'× ':'')+d.holeText);
+        }
       }
       const e=mepEntByHint(w.v1,d.a.hint);
       let cx=w.a.x,cy=w.a.y,rr=0;
@@ -4331,12 +4784,16 @@
       const g=mepHoleCallout(cx,cy,rr,w.b.x,w.b.y,txt);
       draw('line',Object.assign({x1:g.tx,y1:g.lineY,x2:g.ex,y2:g.ey,'marker-end':AR},L));
       const t=draw('text',Object.assign({x:g.tx,y:g.y0,'text-anchor':g.anchor},T));
+      let twM=0;
       g.lines.forEach((s,k)=>{
         const ts=document.createElementNS(NS,'tspan');
         ts.setAttribute('x',String(g.tx));ts.setAttribute('y',String(g.y0+k*g.lh));
         ts.textContent=s;t.appendChild(ts);
+        twM=Math.max(twM,mepTxtW(ts,s,MEP_DIM_STYLE.textHeight||7));
       });
-      draw('line',Object.assign({x1:g.u0,y1:g.lineY,x2:g.u1,y2:g.lineY},L));
+      // souligné à la longueur réelle du texte (police et hauteur réglées)
+      const u0=twM>0?(g.anchor==='end'?g.tx-twM:g.tx):g.u0,u1=twM>0?(g.anchor==='end'?g.tx:g.tx+twM):g.u1;
+      draw('line',Object.assign({x1:u0,y1:g.lineY,x2:u1,y2:g.lineY},L));
       return;
     }
     if(d.kind==='dia'||d.kind==='rad'){
@@ -4366,12 +4823,10 @@
       const str=pp.main;
       // texte sur un trait souligné : le leader part de dessous l'étiquette
       // (plus de vide entre le texte et la flèche).
-      const tx=px,ty=py+2;
-      const symW=pp.sym?(pp.sym.length+1)*(MEP_DIM_STYLE.textHeight||7)*0.85*0.54:0;
-      const tw=Math.max(6.5,str.length*3.8+symW);
-      const u0=ux<0?tx-tw:tx,u1=ux<0?tx:tx+tw;
+      const fs=MEP_DIM_STYLE.textHeight||7,hh=MEP_TEXT_STYLE.dimH,uOff=Math.max(0.8,hh*0.35);
+      const tx=px,ty=py+hh*0.4;
       // leader du texte vers la circonférence, flèche sur l'arête
-      draw('line',Object.assign({x1:tx,y1:ty+1.6,x2:ex,y2:ey,'marker-end':AR},L));
+      draw('line',Object.assign({x1:tx,y1:ty+uOff,x2:ex,y2:ey,'marker-end':AR},L));
       if(d.kind==='dia'){
         // trait de diamètre : part du bord (côté texte) après un vide, traverse
         // le centre et flèche le bord opposé - il ne part plus du centre.
@@ -4379,9 +4834,13 @@
         draw('line',Object.assign({x1:ex-ux*lg,y1:ey-uy*lg,
           x2:cx-rr*Math.cos(ang),y2:cy-rr*Math.sin(ang),'marker-end':ARS},L));
       }
-      // trait sous la valeur R/Ø
-      draw('line',Object.assign({x1:u0,y1:ty+1.6,x2:u1,y2:ty+1.6},L));
-      mepDimDrawText(draw,T,str,pp.up,pp.lo,tx,ty,ux<0?'end':'start',null,false,pp.sym);
+      // trait sous la valeur R/Ø : longueur du texte réel (symbole et tolérances compris)
+      const tEl=mepDimDrawText(draw,T,str,pp.up,pp.lo,tx,ty,ux<0?'end':'start',null,false,pp.sym);
+      let tw=mepTxtW(tEl,str+(pp.sym?' '+pp.sym:''),fs);
+      if(pp.up||pp.lo){const sub=Math.max(2.8,fs*0.68);tw+=Math.max(1.2,fs*0.22)+Math.max(String(pp.up||'').length,String(pp.lo||'').length)*sub*0.6;}
+      tw=Math.max(hh,tw);
+      const u0=ux<0?tx-tw:tx,u1=ux<0?tx:tx+tw;
+      draw('line',Object.assign({x1:u0,y1:ty+uOff,x2:u1,y2:ty+uOff},L));
       return;
     }
     if(d.kind==='ang'){
@@ -4394,7 +4853,16 @@
       const sweep=dd>0?1:0;
       const x1=O.x+r*Math.cos(aa),y1=O.y+r*Math.sin(aa);
       const x2=O.x+r*Math.cos(bb),y2=O.y+r*Math.sin(bb);
-      draw('path',Object.assign({d:'M'+x1+','+y1+' A'+r+','+r+' 0 0 '+sweep+' '+x2+','+y2},L));
+      // rappels : prolongent chaque arête jusqu'à l'arc (vide au départ, dépassement après l'arc)
+      if(g.ext)[[aa,g.ext[0]],[bb,g.ext[1]]].forEach(([a,e])=>{
+        const ux=Math.cos(a),uy=Math.sin(a),gap=MEP_DIM_STYLE.gap,ov=MEP_DIM_STYLE.overrun;
+        let s0=null,s1=null;
+        if(r>e[1]+0.05){s0=e[1]+gap;s1=r+ov;}
+        else if(r<e[0]-0.05){s0=e[0]-gap;s1=r-ov;}
+        if(s0!==null&&Math.abs(s1-s0)>0.2)draw('line',Object.assign({x1:O.x+ux*s0,y1:O.y+uy*s0,x2:O.x+ux*s1,y2:O.y+uy*s1},L));
+      });
+      // arc fléché aux deux bouts (pointes sur les rappels)
+      draw('path',Object.assign({d:'M'+x1+','+y1+' A'+r+','+r+' 0 0 '+sweep+' '+x2+','+y2,'marker-start':ARS,'marker-end':AR},L));
       const nSeg=Math.max(6,Math.ceil(Math.abs(dd)*r/3));
       for(let k=0;k<nSeg;k++){
         const t0=aa+dd*k/nSeg,t1=aa+dd*(k+1)/nSeg;
@@ -5149,6 +5617,25 @@
        const addK=ev.shiftKey||ev.ctrlKey||ev.metaKey;
        if(mepSt.tbEdit){mepSt.pick={kind:'box',sx:P.x,sy:P.y,cur:{x:P.x,y:P.y},px0:P.px,py0:P.py,add:addK};return;}
        if(!addK){if(mepSt.skSel&&mepSt.skSel.size)mepSt.skSel=new Set();mepSt.lot=null;}}
+      // flèche de coupe ? → glisser le bout (trait fort + flèche + lettre) le long de la ligne de coupe
+      {const ca=mepCutArrowAt(sh,P.x,P.y);
+       if(ca){const shf=Array.isArray(ca.v.section.sh)?ca.v.section.sh:[0,0];
+         mepSt.sel=ca.v.id;mepSt.selDim=null;mepSt.selAxis=null;
+         mepSt.pick={kind:'cutDrag',vid:ca.v.id,end:ca.end,s0:+shf[ca.end]||0,sx:P.x,sy:P.y,px0:P.px,py0:P.py,moved:false,undoPushed:false};
+         mepSideShow();mepRender();return;}}
+      // tronçon d'une coupe brisée ? → glisser perpendiculairement à lui-même
+      {const cs=mepCutSegAt(sh,P.x,P.y);
+       if(cs){
+         mepSt.sel=cs.v.id;mepSt.selDim=null;mepSt.selAxis=null;
+         const M=mepCutModel(cs.v),G=mepFromSheet(cs.par,P.x,P.y);
+         mepSt.pick={kind:'cutSeg',vid:cs.v.id,j:cs.j,M,sG:M?G.x*M.t.x+G.y*M.t.y:0,whole:ev.ctrlKey||ev.metaKey,px0:P.px,py0:P.py};
+         mepSideShow();mepRender();return;}}
+      // titre de vue ? → glisser le long de l'axe de la vue
+      {const tv=mepViewTitleAt(sh,P.x,P.y);
+       if(tv){const g=mepViewTitleGeo(tv);
+         mepSt.sel=tv.id;mepSt.selDim=null;mepSt.selAxis=null;
+         mepSt.pick={kind:'ttlDrag',vid:tv.id,dy:P.y-(g.y-g.h/2),px0:P.px,py0:P.py,moved:false,undoPushed:false};
+         mepSideShow();mepRender();return;}}
       // cote ? → sélection + glisser pour la déplacer
       const dim=mepDimAt(sh,P.x,P.y);
       if(dim){mepDimDragStart(sh,P,dim);return;}
@@ -5338,6 +5825,61 @@
         pk.moved=true;
         mepRender();return;
       }
+      if(pk.kind==='cutSeg'){
+        const v=mepView(sh,pk.vid),par=v&&v.section&&mepView(sh,v.section.pid),M=pk.M;
+        if(par&&M){
+          if(!pk.dragStarted){if(Math.hypot(P.px-pk.px0,P.py-pk.py0)<3)return;pk.dragStarted=true;}
+          const L=mepFromSheet(par,P.x,P.y);
+          if(pk.j%2){ // marche : glisse le long du 1er tronçon, entre ses voisines
+            const k=(pk.j-1)/2,lo=k?M.steps[k-1]:M.s0,hi=k===M.steps.length-1?M.sE:M.steps[k+1];
+            let sv=L.x*M.t.x+L.y*M.t.y;const a=Math.min(lo,hi)+0.5,b=Math.max(lo,hi)-0.5;sv=Math.max(a,Math.min(b,Math.round(sv*2)/2));
+            pk.prev={kind:'step',k,s:sv};
+            mepStatus('Ligne de coupe '+(v.label||'')+' : marche déplacée.');
+          }else{ // plan : brisure au point saisi, le morceau suivant s'accroche au centre / à la ligne visé(e)
+            const cv=L.x*M.n.x+L.y*M.n.y,tol=4/(mepSt.zoom||1)/par.scale;
+            let best=null;mepCutCands(sh,par,M).forEach(q=>{const d=Math.abs(q.c-cv);if(d<=tol&&(!best||d<best.d||(d===best.d&&q.ref.t==='hole')))best=Object.assign({d},q);});
+            pk.prev={kind:pk.whole?'plane':'break',m:pk.j/2,c:best?best.c:Math.round(cv*2)/2,ref:best?best.ref:null};
+            mepStatus('Ligne de coupe '+(v.label||'')+' : '+(best?('accrochée '+({hole:'au centre du perçage',ax:'au trait d’axe',edge:'à l’arête'})[best.ref.t]):'position libre (aucun centre ni ligne visé)')
+              +(pk.whole?' — tronçon entier (Ctrl).':' — relâchez pour briser.'));
+          }
+          mepRender();
+        }
+        return;
+      }
+      if(pk.kind==='cutDrag'){
+        const v=mepView(sh,pk.vid),E=v&&mepCutEnds(sh,v)[pk.end];
+        if(E){
+          if(!pk.dragStarted){if(Math.hypot(P.px-pk.px0,P.py-pk.py0)<3)return;pk.dragStarted=true;}
+          // seule la composante le long du trait compte (verticale pour une coupe verticale…)
+          let sv=pk.s0+(P.x-pk.sx)*E.u.x+(P.y-pk.sy)*E.u.y;
+          sv=Math.round(Math.max(-(E.L/2-6),Math.min(150,sv))*2)/2;
+          const shf=Array.isArray(v.section.sh)?v.section.sh.slice():[0,0];
+          if(shf[pk.end]!==sv){
+            if(!pk.undoPushed){try{docPushUndo('Plan : flèche de coupe');}catch(e){}pk.undoPushed=true;}
+            shf[pk.end]=sv;v.section.sh=shf;pk.moved=true;
+            mepStatus('Flèche de coupe '+(v.label||'')+' : décalage '+mepFmtNum(sv,1)+' mm le long du trait.');
+            mepRender();
+          }
+        }
+        return;
+      }
+      if(pk.kind==='ttlDrag'){
+        const v=mepView(sh,pk.vid),g=v&&mepViewTitleGeo(v);
+        if(g){
+          if(!pk.dragStarted){if(Math.hypot(P.px-pk.px0,P.py-pk.py0)<3)return;pk.dragStarted=true;}
+          // centre du titre voulu ; x reste sur l'axe de la vue
+          const tc=P.y-pk.dy,bb=g.bb,lh=g.h,above=tc<bb.y+bb.h/2;
+          const gap=Math.max(1,Math.round((above?bb.y-tc-lh/2:tc-bb.y-bb.h-lh/2)*2)/2);
+          const old=v.ttl||{};
+          if(old.gap!==gap||(old.side||'below')!==(above?'above':'below')){
+            if(!pk.undoPushed){try{docPushUndo('Plan : titre de vue');}catch(e){}pk.undoPushed=true;}
+            v.ttl={side:above?'above':'below',gap};pk.moved=true;
+            mepStatus('Titre de vue : '+(above?'au-dessus':'dessous')+', écart '+mepFmtNum(gap,1)+' mm (centré sur l’axe de la vue).');
+            mepRender();
+          }
+        }
+        return;
+      }
       if(pk.kind==='viewDrag'){
         const v=mepView(sh,pk.vid);
         if(v){
@@ -5462,7 +6004,11 @@
       }
       return;
     }
-    // survol vue (feedback)
+    // survol titre de vue (cadre pointillé) puis vue (feedback)
+    {const tv=mepViewTitleAt(sh,P.x,P.y),tid=tv?tv.id:null;
+     if(tid!==mepSt.ttlHov){mepSt.ttlHov=tid;try{mepRender();}catch(e){}}
+     const ca=mepCutArrowAt(sh,P.x,P.y),ck=ca?{vid:ca.v.id,end:ca.end}:null,o=mepSt.cutHov;
+     if((ck&&(!o||o.vid!==ck.vid||o.end!==ck.end))||(!ck&&o)){mepSt.cutHov=ck;try{mepRender();}catch(e){}}}
     const v=mepViewAt(sh,P.x,P.y);
     const id=v?v.id:null;
     if(id!==mepSt.hovView){mepSt.hovView=id;try{mepRender();}catch(e){}}
@@ -5478,6 +6024,27 @@
     if(pk.kind==='dimDrag'){
       if(pk.moved)mepEdit('déplacement cote',()=>{},true);
       mepSt.pick=null;
+      return;
+    }
+    if(pk.kind==='cutSeg'){
+      const sh=mepSheet(),v=mepView(sh,pk.vid),q=pk.prev;mepSt.pick=null;
+      if(v&&q&&pk.M){
+        if(q.kind==='step')mepEdit('ligne de coupe : marche',()=>{const M=mepCutModel(v);M.steps[q.k]=q.s;mepCutFromModel(sh,v,M);});
+        else if(q.kind==='plane')mepEdit('ligne de coupe : tronçon',()=>{const M=mepCutModel(v);M.c[q.m]=q.c;M.refs[q.m]=q.ref;mepCutFromModel(sh,v,M);});
+        else mepEdit('ligne de coupe : brisure',()=>{if(!mepCutBreakAt(sh,v,q.m,pk.sG,q.c,q.ref))mepStatus('Ligne de coupe : rien à briser ici.');});
+        mepSideShow();
+      }
+      mepRender();
+      return;
+    }
+    if(pk.kind==='cutDrag'){
+      if(pk.moved)mepEdit('flèche de coupe',()=>{},true);
+      mepSt.pick=null;mepRender();
+      return;
+    }
+    if(pk.kind==='ttlDrag'){
+      if(pk.moved)mepEdit('titre de vue',()=>{},true);
+      mepSt.pick=null;mepRender();
       return;
     }
     if(pk.kind==='box'){
@@ -5679,7 +6246,13 @@
       const t=((e2.x1-e1.x1)*by-(e2.y1-e1.y1)*bx)/den;
       ox=e1.x1+ax*t;oy=e1.y1+ay*t;
     }
-    return{O:mepToSheet(w.v1,ox,oy),a1,a2,w};
+    // chaque côté de l'angle part du sommet VERS son arête (et non selon le sens de
+    // saisie du segment) ; ext = portée de l'arête le long du côté (mm papier), pour les rappels
+    const ray=e=>{let dx=(e.x1+e.x2)/2-ox,dy=(e.y1+e.y2)/2-oy;if(Math.hypot(dx,dy)<1e-9){dx=e.x2-e.x1;dy=e.y2-e.y1;}
+      const l=Math.hypot(dx,dy)||1,ux=dx/l,uy=dy/l,s1=(e.x1-ox)*ux+(e.y1-oy)*uy,s2=(e.x2-ox)*ux+(e.y2-oy)*uy;
+      return{a:Math.atan2(uy,ux),ext:[Math.min(s1,s2)*w.v1.scale,Math.max(s1,s2)*w.v1.scale]};};
+    const r1=ray(e1),r2=ray(e2);
+    return{O:mepToSheet(w.v1,ox,oy),a1:r1.a,a2:r2.a,ext:[r1.ext,r2.ext],w};
   }
   function mepAngRadius(d){return Math.max(6,Math.min(80,d.off==null?14:d.off));}
   // Trait de cote linéaire : a1/b1 = extrémités décalées, u = direction de la cote,
@@ -6306,7 +6879,8 @@
     else if(av&&mepSt.selAxis.ak){key='axis';mepSideAxisAuto(mepSideEl,av,mepSt.selAxis.ak,sh);}
     else if(d){key='dim';mepSideDim(mepSideEl,d,sh);}
     else mepSideHome(mepSideEl,sh);
-    mepSideTabs(mepSideEl,key); // 2026-10-22-011 : onglets (comme la FAO)
+    // 2026-10-22-011 : onglets (comme la FAO) — sauf esquisse / cartouche : tout empilé, plus simple à lire
+    if(key!=='sk'&&key!=='tb')mepSideTabs(mepSideEl,key);
     mepSideInject();
   }
   /* injecte #mepSide dans aside.right (Paramètres) — sinon repli sur le plan */
@@ -6392,6 +6966,32 @@
     bFmt.style.flex='1';
     const bOri=mkBtn(sh.orient==='landscape'?'⇄':'↕',mepCycleOrient,'Portrait / paysage');
     bOri.style.flex='1';
+    {const f=mepFrameOf(sh),setF=(o,lab)=>{mepEdit(lab||'cadre',()=>{sh.frame=Object.assign(mepFrameOf(sh),o);});mepSideShow();};
+     r=rowEl();
+     {const L=document.createElement('label');L.textContent='Cadre';r.appendChild(L);
+      const is=P=>MEP_FRAME_KEYS.every(k=>f[k]===P[k]);
+      r.appendChild(mkBtn('Justet',()=>setF(MEP_FRAME_JUSTET,'cadre Justet'),'Comme SIRAP-13-001 : marges 20 / 10 mm, trait 1 mm bleu-gris #6B6BA1, zones 1…8 / A…F, centrage, coins de coupe')).className=is(MEP_FRAME_JUSTET)?'active':'';
+      r.appendChild(mkBtn('ISO 5457',()=>setF(MEP_FRAME_ISO,'cadre ISO 5457'),'Marge 20 mm à gauche (reliure), 10 mm ailleurs, trait 0,7 mm, zones, centrage, coins de coupe')).className=is(MEP_FRAME_ISO)?'active':'';
+      r.appendChild(mkBtn('Classique',()=>setF(MEP_FRAME_DEF,'cadre classique'),'Marges 12 mm, liseré intérieur')).className=is(MEP_FRAME_DEF)?'active':'';}
+     [['Marge gauche (mm)','l'],['Marge droite (mm)','r'],['Marge haute (mm)','t'],['Marge basse (mm)','b'],['Trait du cadre (mm)','lw']].forEach(([lab,k])=>{
+       r=rowEl();const L=document.createElement('label');L.textContent=lab;r.appendChild(L);
+       const i=document.createElement('input');i.type='number';i.step=k==='lw'?'0.05':'1';i.min=k==='lw'?'0.1':'0';i.max=k==='lw'?'2':'40';i.value=f[k];
+       i.onchange=()=>setF({[k]:+i.value});r.appendChild(i);});
+     [['Liseré intérieur','inner'],['Repères de centrage','centre'],['Zones de repérage','zones'],['Coins de coupe','trim']].forEach(([lab,k])=>{
+       r=rowEl();const L=document.createElement('label');L.textContent=lab;r.appendChild(L);
+       const cb=document.createElement('input');cb.type='checkbox';cb.checked=!!f[k];cb.onchange=()=>setF({[k]:cb.checked});r.appendChild(cb);});
+     [['Couleur du cadre','col','#6b6ba1'],['Couleur des repères','mcol','#3e2b2c']].forEach(([lab,k,dv])=>{
+       r=rowEl();const L=document.createElement('label');L.textContent=lab;r.appendChild(L);
+       const c=document.createElement('input');c.type='color';c.value=f[k]||dv;c.disabled=!f[k];c.onchange=()=>setF({[k]:c.value});r.appendChild(c);
+       const a=document.createElement('label');a.style.cssText='flex:none;display:flex;gap:4px;align-items:center';
+       const cb=document.createElement('input');cb.type='checkbox';cb.checked=!f[k];cb.title='Encre de la planche';
+       cb.onchange=()=>setF({[k]:cb.checked?'':c.value});a.appendChild(cb);a.appendChild(document.createTextNode('encre'));r.appendChild(a);});
+     r=rowEl();
+     {const def=mepFrameUserDef(),same=!!def&&MEP_FRAME_KEYS.every(k=>(def[k]===undefined?MEP_FRAME_DEF[k]:def[k])===f[k]);
+      r.appendChild(mkBtn(same?'✓ Cadre par défaut':'Cadre par défaut',()=>{
+        try{if(same)localStorage.removeItem('mep_frame_def');else{const o={};MEP_FRAME_KEYS.forEach(k=>{o[k]=f[k];});localStorage.setItem('mep_frame_def',JSON.stringify(o));}}catch(e){}
+        mepStatus(same?'Cadre par défaut retiré.':'Ce cadre sera celui des nouvelles planches.');mepSideShow();},
+        'Utiliser ce cadre pour les nouvelles planches (ce navigateur)')).style.flex='1';}}
     r=rowEl();
     {const L=document.createElement('label');L.textContent='Papier (écran)';r.appendChild(L);
      const pm=mepPaperMode();
@@ -6480,6 +7080,16 @@
        mepEdit('modèle de cartouche',()=>{tt.tb=v==='std'?null:mepClone(mepTbLib()[v.slice(2)]);});mepSideShow();};
      r.appendChild(sel);}
     r=rowEl();
+    rb('Exporter…',()=>mepTbExportFile(sh),'Enregistrer les modèles de cartouche (bibliothèque + celui de cette planche) dans un fichier .mfcartouche');
+    rb('Importer…',()=>mepTbImportFile(),'Charger des modèles de cartouche depuis un fichier .mfcartouche (ajoutés à la bibliothèque)');
+    {const st=mepTbStray(sh);
+     if(st.length){
+       const n=document.createElement('div');n.className='note';n.style.color='#ff9f0a';
+       n.textContent='⚠ '+st.length+' point(s) du cartouche sont hors de la feuille (solveur parti au loin) : ils sont ignorés pour la hauteur du cartouche.';
+       root.appendChild(n);r=rowEl();
+       rb('Supprimer les éléments hors feuille',()=>{mepEdit('cartouche : éléments hors feuille',()=>mepTbDropStray(sh));mepSideShow();},'Supprime ces points, leurs lignes et leurs contraintes (annulable)');
+     }}
+    r=rowEl();
     rb(mepTbIsSk(sh)?'Éditer le cartouche…':'Dessiner le cartouche…',()=>mepTbEdit(true),'Lignes, rectangles, textes et champs (matière, TTS, TTH…), contraintes et cotes pilotantes');
     if(mepTbIsSk(sh)){
       rb('Enregistrer…',()=>{
@@ -6501,23 +7111,33 @@
     }
     /* — révisions (indice = dernière révision) — */
     const revs=Array.isArray(tt.revs)?tt.revs:[];
+    r=rowEl();{const L=document.createElement('label');L.textContent='Révisions';L.style.fontWeight='600';r.appendChild(L);}
     revs.forEach((rv,k)=>{
-      r=rowEl();
-      const iI=document.createElement('input');iI.value=rv.i||'';iI.style.maxWidth='34px';iI.title='Indice';
-      iI.onchange=()=>mepEdit('révision',()=>{rv.i=iI.value;});
-      const iD=document.createElement('input');iD.value=rv.d||'';iD.style.maxWidth='78px';iD.title='Date';
-      iD.onchange=()=>mepEdit('révision',()=>{rv.d=iD.value;});
-      const iT=document.createElement('input');iT.value=rv.t||'';iT.placeholder='Modification';
-      iT.onchange=()=>mepEdit('révision',()=>{rv.t=iT.value;});
-      r.appendChild(iI);r.appendChild(iD);r.appendChild(iT);
+      // 2 lignes par révision : indice + date (+ suppression), puis nom + modification
+      const inp=(key,ph,w,tip)=>{const i=document.createElement('input');i.value=rv[key]||'';i.placeholder=ph;i.title=tip;if(w)i.style.maxWidth=w;
+        i.onchange=()=>{if(key==='n'){try{localStorage.setItem('mep_rev_nom',i.value);}catch(e){}}mepEdit('révision',()=>{rv[key]=i.value;});};r.appendChild(i);return i;};
+      r=rowEl();inp('i','Ind.','34px','Indice');inp('d','Date','86px','Date');
       rb('×',()=>{mepEdit('révision',()=>{tt.revs.splice(k,1);});mepSideShow();},'Supprimer la révision');
+      r=rowEl();inp('n','Nom','86px','Nom de la personne qui a modifié le plan');inp('t','Modification','','Modification');
     });
     r=rowEl();
     rb('+ Révision',()=>{mepEdit('révision',()=>{
       if(!Array.isArray(tt.revs))tt.revs=[];
       const last=tt.revs.length?String(tt.revs[tt.revs.length-1].i||'A'):'';
       const nx=!last?'A':(/^[A-Y]$/.test(last)?String.fromCharCode(last.charCodeAt(0)+1):last+"'");
-      tt.revs.push({i:nx,d:new Date().toLocaleDateString('fr-FR'),t:''});});mepSideShow();},'Ajouter une ligne au tableau des révisions');
+      let nom='';try{nom=localStorage.getItem('mep_rev_nom')||'';}catch(e){}
+      if(!nom&&tt.auteur&&tt.auteur!=='—')nom=tt.auteur;
+      tt.revs.push({i:nx,d:new Date().toLocaleDateString('fr-FR'),n:nom,t:''});});mepSideShow();},'Ajouter une ligne au tableau des révisions');
+    {const st=mepRevSt(sh),setR=(o,lab)=>{mepEdit(lab||'tableau des révisions',()=>{const ow=mepRevStOwner(sh);ow.revSt=Object.assign({},ow.revSt||{},o);});mepSideShow();};
+     r=rowEl();{const L=document.createElement('label');L.textContent='Largeur totale (mm)';r.appendChild(L);
+      const i=document.createElement('input');i.type='number';i.step='0.5';i.min='0';i.max='800';i.value=st.w||'';i.placeholder='auto';
+      i.title='Largeur totale du tableau des révisions — vide : automatique';i.onchange=()=>setR({w:Math.max(0,+i.value||0)});r.appendChild(i);
+      rb('= cartouche',()=>setR({w:+mepTbW(sh,mepPageDim(sh)).toFixed(2)},'révisions alignées sur le cartouche'),'Même largeur que le cartouche (aligné à droite sur le cadre)');}
+     r=rowEl();{const L=document.createElement('label');L.textContent='Hauteur h (mm)';r.appendChild(L);
+      r.appendChild(mepIsoSelect(st.h,v=>setR({h:v})));}
+     r=rowEl();{const L=document.createElement('label');L.textContent='Trait (mm)';r.appendChild(L);
+      const i=document.createElement('input');i.type='number';i.step='0.05';i.min='0.1';i.max='2';i.value=st.lw;
+      i.title='Épaisseur des traits du tableau des révisions';i.onchange=()=>setR({lw:Math.min(2,Math.max(0.1,+i.value||MEP_REV_DEF.lw))});r.appendChild(i);}}
     /* — nomenclature (corps visibles ; matière par corps, sinon celle du cartouche) — */
     r=rowEl();
     {const L=document.createElement('label');L.textContent='Nomenclature';r.appendChild(L);
@@ -6558,6 +7178,23 @@
       b.style.flex='1';
       r.appendChild(b);
     });
+    /* — écriture (ISO 3098) — */
+    h('Écriture (ISO 3098)');
+    [['Cotes','dimH'],['Repères, titres de vue','lblH'],['Nouveaux textes','noteH']].forEach(([lab,k])=>{
+      r=rowEl();const L=document.createElement('label');L.textContent=lab+' h (mm)';r.appendChild(L);
+      r.appendChild(mepIsoSelect(MEP_TEXT_STYLE[k],v=>{
+        MEP_TEXT_STYLE[k]=v;mepDimStyleSave();mepApplyDimStyle();mepRender();
+        mepStatus('Écriture : '+lab.toLowerCase()+' h = '+mepFmtNum(v,2).replace('.',',')+' mm');
+      }));
+    });
+    r=rowEl();
+    {const b=mkBtn('Valeurs ISO (3,5 / 5 / 3,5)',()=>{
+      MEP_TEXT_STYLE.dimH=3.5;MEP_TEXT_STYLE.lblH=5;MEP_TEXT_STYLE.noteH=3.5;
+      mepDimStyleSave();mepApplyDimStyle();mepSideShow();mepRender();mepStatus('Écriture : valeurs ISO usuelles.');
+    },'Cotes et textes 3,5 mm, repères et titres de vue 5 mm');b.style.flex='1';r.appendChild(b);}
+    {const n=document.createElement('div');n.className='note';
+     n.textContent='h = hauteur des majuscules. Série ISO 3098 : 1,8 · 2,5 · 3,5 · 5 · 7 · 10 · 14 · 20 (rapport √2). Cotes et notes : 3,5 usuel, 2,5 mini (1,8 toléré en A4). Repères de coupe et titres de vue : un cran au-dessus. Même hauteur pour toutes les cotes d’un dessin.';
+     root.appendChild(n);}
     /* — cotation — */
     h('Cotation');
     const dimRow=(lab,el)=>{
@@ -6580,7 +7217,6 @@
       };
       dimRow(lab+(unit?' ('+unit+')':''),i);
     };
-    dimNum('Hauteur du texte','textHeight',2,30,0.5,'mm');
     // couleur des cotes : celle du thème (défaut) ou une couleur libre ; l'export et
     // l'impression la gardent (option « Export PDF / SVG : Noir » pour le plan ISO noir)
     const thm=!MEP_DIM_STYLE.color||MEP_DIM_STYLE.color==='theme';
@@ -6603,6 +7239,14 @@
       mepStatus('Style de cotation réinitialisé.');
     },'Rétablir la hauteur, la couleur et les flèches par défaut');
     bDimReset.style.flex='1';
+    /* — paramètres (projet + session + fichier) — */
+    h('Paramètres');
+    {const n=document.createElement('div');n.className='note';
+     n.textContent='Tous les réglages du plan (écriture, cotes, traits, export, papier, cadre et cartouche par défaut) sont enregistrés avec la pièce (.miniFusion) et gardés pour la session. Ouvrir une pièce reprend ses réglages.';
+     root.appendChild(n);}
+    r=rowEl();
+    r.appendChild(mkBtn('Exporter…',mepPrefsExport,'Sauvegarder les paramètres plan (+ bibliothèque de cartouches) dans un fichier .mfplan')).style.flex='1';
+    r.appendChild(mkBtn('Importer…',mepPrefsImport,'Charger des paramètres plan depuis un fichier .mfplan (appliqués au projet et à la session)')).style.flex='1';
     /* — vue — */
     h('Vue');
 
@@ -6649,6 +7293,18 @@
     inp.value=v.label||'';
     inp.onchange=()=>{mepEdit('libellé',()=>{v.label=inp.value;});};
     row('Libellé',inp);
+    if(v.kind==='section'&&v.section&&v.section.pid){
+      const nb=mepCutBreaks(v),r=row('Brisures ('+nb+')');
+      const bA=document.createElement('button');bA.textContent='+ Brisure';bA.title='Ajoute une marche à l’équerre au milieu du dernier tronçon (la fin de la ligne est décalée)';
+      bA.onclick=e=>{e.stopPropagation();mepEdit('brisure ajoutée',()=>mepCutAddBreak(sh,v));mepSideShow();};r.appendChild(bA);
+      const bD=document.createElement('button');bD.textContent='− Brisure';bD.disabled=!nb;bD.title='Retire la dernière marche : la fin revient sur le plan précédent';
+      bD.onclick=e=>{e.stopPropagation();mepEdit('brisure retirée',()=>mepCutDelBreak(sh,v));mepSideShow();};r.appendChild(bD);
+      {const M=mepCutModel(v),nl=M?M.refs.filter(Boolean).length:0;
+       const n=document.createElement('div');n.className='note';
+       n.textContent='Liens : '+nl+' / '+(M?M.c.length:0)+' plan(s) accroché(s) à un centre de perçage, un trait d’axe ou une arête — la ligne suit la pièce. '
+         +'Tirer sur un tronçon le brise : le morceau s’accroche au centre ou à la ligne visé(e) (Ctrl : déplace le tronçon entier). Une marche glisse le long de la ligne.';
+       root.appendChild(n);}
+    }
     // échelle
     const sel=document.createElement('select');
     MEP_SCALES.forEach(([s,lab])=>{
@@ -6905,7 +7561,7 @@
     const st=clone.style,set=(k,v)=>{try{st.setProperty(k,v);}catch(e){st[k]=v;}};
     if(bw){
       try{st.removeProperty('--mepDimCol');}catch(e){delete st['--mepDimCol'];}
-      return 'line.mepUc,circle.mepUc,path.mepUc{stroke:#111!important}text.mepUc{fill:#111!important}';
+      return 'line.mepUc,circle.mepUc,path.mepUc,rect.mepUc{stroke:#111!important}text.mepUc{fill:#111!important}';
     }
     let th='nuit';try{th=document.body.getAttribute('data-theme')||'nuit';}catch(e){}
     const v=MEP_PAPER.white;Object.keys(v).forEach(k=>set('--'+k,v[k]));
@@ -7013,7 +7669,7 @@
           const ang=-Math.atan2(m.b,m.a)*180/Math.PI;
           parts.forEach(([i0,tx,f])=>{
             let q;try{q=el.getStartPositionOfChar(i0+(tx.length-tx.trimStart().length));}catch(e){q={x:+el.getAttribute('x')||0,y:+el.getAttribute('y')||0};}
-            ents.push(['TEXT',L,P(m,q.x,q.y),f*k*0.7,tx.trim(),ang]);
+            ents.push(['TEXT',L,P(m,q.x,q.y),f*k*MEP_TEXT_STYLE.capRatio,tx.trim(),ang]);
           });
           return;
         }
@@ -7225,9 +7881,11 @@
   // après restauration d'un instantané documentaire : redessiner la planche
   window.mepRefresh=()=>{try{mepRender();}catch(e){}};
   window.mepSetTool=mepSetTool;
+  window.mepSetAxisMode=mepSetAxisMode;
   // points d'entrée réservés aux tests automatisés (jamais activés dans l'app)
   if(window.__MEP_TEST_HOOKS__){
     window.__mepTest={
+      drawRevs:(mk,sh,pd,ty)=>mepDrawRevs(mk,sh,pd,ty),holeFam:f=>mepHoleFam(f),cutAddBreak:(sh,v)=>mepCutAddBreak(sh,v),cutBreakAt:(sh,v,m,sG,c,r)=>mepCutBreakAt(sh,v,m,sG,c,r),cutFollow:sh=>mepCutFollowAll(sh),cutAutoRefs:(sh,v)=>mepCutAutoRefs(sh,v),cutDelBreak:(sh,v)=>mepCutDelBreak(sh,v),prefsCollect:()=>mepPrefsCollect(),prefsApply:p=>mepPrefsApply(p),pageDim:sh=>mepPageDim(sh),
       titleTexts:sh=>{const t=[];const mk=(tag)=>{const o={textContent:''};if(tag==='text')t.push(o);return o;};mepDrawTitle(mk,sh,mepPage().pd,100);mepDrawRevs(mk,sh,mepPage().pd,100);mepDrawBom(mk,sh,mepPage().pd,100);return t.map(o=>o.textContent);},
       sk:{fromStd:sh=>mepTbFromStd(sh),solve:(sk,a)=>mepSkSolve(sk,80,a),residual:(sk,c)=>mepSkResidual(sk,c),
         apply:(sh,id,keys)=>{mepSt.skSel=new Set(keys);mepSkApply(sh,id);},setVal:(sh,c,v)=>mepSkSetVal(sh,c,v),
@@ -7303,14 +7961,15 @@
       setViewSel:id=>{mepSt.sel=id;mepSt.selDim=null;try{mepSideShow();mepRender();}catch(e){}},
       entSig:mepEntSig,
       clearDim:()=>{mepDimClearSelection();mepRender();},
-      dimStyle:()=>({textHeight:MEP_DIM_STYLE.textHeight,color:MEP_DIM_STYLE.color,
+      dimStyle:()=>({textHeight:MEP_DIM_STYLE.textHeight,dimH:MEP_TEXT_STYLE.dimH,lblH:MEP_TEXT_STYLE.lblH,noteH:MEP_TEXT_STYLE.noteH,color:MEP_DIM_STYLE.color,
         arrowAngle:MEP_DIM_STYLE.arrowAngle,arrowLen:MEP_DIM_STYLE.arrowLen}),
       setDimStyle:o=>{
         if(o&&typeof o==='object'){
-          [['textHeight',2,30],['arrowAngle',10,90],['arrowLen',2,30]].forEach(([k,min,max])=>{
+          [['arrowAngle',10,90],['arrowLen',2,30]].forEach(([k,min,max])=>{
             const v=+o[k];
             if(Number.isFinite(v))MEP_DIM_STYLE[k]=Math.min(max,Math.max(min,v));
           });
+          ['dimH','lblH','noteH'].forEach(k=>{const v=+o[k];if(Number.isFinite(v)&&v>0)MEP_TEXT_STYLE[k]=Math.min(20,Math.max(1.8,v));});
           if(o.color==='theme'||(typeof o.color==='string'&&/^#[0-9a-f]{6}$/i.test(o.color)))MEP_DIM_STYLE.color=o.color;
         }
         mepDimStyleSave();mepApplyDimStyle();mepRender();

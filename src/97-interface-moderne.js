@@ -1,7 +1,7 @@
 /* ---------- Thèmes de couleur + interface « Moderne » (V0.2.1) ----------
    • Thème (🎨, dans les DEUX interfaces) : Nuit (actuel), Graphite, Atelier, Clair, Contraste —
      variables CSS sur <body data-theme>, mémorisé (localStorage).
-   • Interface (▦) : « Classique » = l'interface actuelle, intacte ; « Moderne » = espaces CAO / FAO,
+   • Interface : « Moderne » SEULE (2026-10-22 : le mode Classique n'est plus proposé) = espaces CAO / FAO,
      ruban d'outils (icône + libellé), recherche de commandes (Ctrl+K), barre rapide (annuler,
      rétablir, enregistrer), navigateur à onglets (Modèle / Usinage, onglets de posages), barre
      d'état en bas, cube de vue. Le mode moderne n'AJOUTE que des éléments et des règles CSS sous
@@ -28,11 +28,10 @@ function mfTheme(t){
   try{if(typeof window.mepThemeApply==='function')window.mepThemeApply();}catch(e){} // espace PLAN : fond, papier, accent
 }
 function mfUiMode(m){
-  m=m==='moderne'?'moderne':'classique';
+  m='moderne'; // l'interface Classique n'est plus proposée (le DOM classique reste la base du ruban)
   try{document.body.classList.toggle('ui-modern',m==='moderne');}catch(e){}
   if(m!=='moderne')try{document.body.removeAttribute('data-ws');}catch(e){}
   mfLS('minifusion_ui',m);
-  try{const b=document.getElementById('mfUiBtn');if(b)b.textContent=m==='moderne'?'▦ Moderne':'▦ Classique';}catch(e){}
   if(m==='moderne'){try{mfBuildModern();mfWs(mfLS('minifusion_ws')||'cao');}catch(e){}}
   try{mfSkLayout();}catch(e){}
   try{if(typeof onResize==='function')onResize();else window.dispatchEvent(new Event('resize'));}catch(e){}
@@ -213,11 +212,7 @@ function mfTopButtons(){
   const SW={nuit:['#1c1c1e','#0a84ff'],graphite:['#2e2f32','#8ab4f8'],atelier:['#2a2520','#ff9f0a'],clair:['#e9ecf1','#0a6cff'],contraste:['#000','#00a8ff']};
   th.onclick=e=>{e.stopPropagation();const cur=document.body.getAttribute('data-theme')||'nuit';
     mfPop(th,MF_THEMES.map(([k,l])=>({html:'<span class="mfSw" style="background:linear-gradient(135deg,'+SW[k][0]+' 55%,'+SW[k][1]+' 55%)"></span>'+l,cls:'mfThemeOpt'+(k===cur?' on':''),data:{t:k},fn:()=>mfTheme(k)})));};
-  const ui=document.createElement('button');ui.id='mfUiBtn';ui.title='Interface : Classique (actuelle) ou Moderne (espaces CAO/FAO, ruban, recherche, barre d’état, cube de vue)';
-  ui.textContent=document.body.classList.contains('ui-modern')?'▦ Moderne':'▦ Classique';
-  ui.onclick=e=>{e.stopPropagation();const m=document.body.classList.contains('ui-modern');
-    mfPop(ui,[{html:'▦ Classique (actuelle)',cls:m?'':'on',fn:()=>mfUiMode('classique')},{html:'▦ Moderne',cls:m?'on':'',fn:()=>mfUiMode('moderne')}]);};
-  box.appendChild(th);box.appendChild(ui);
+  box.appendChild(th);
   const pv=document.getElementById('prodVer');
   if(pv&&pv.parentNode===top){top.insertBefore(box,pv.nextSibling);}else top.appendChild(box);
 }
@@ -291,6 +286,9 @@ const MF_IC={
   pDim:'<path d="M4 6v12M20 6v12M4 12h16"/><path d="M7.5 10L4.5 12l3 2M16.5 10l3 2-3 2"/>',
   pHole:'<circle cx="8" cy="16" r="5"/><path d="M11.5 12.5L16 8h6"/><path d="M17 3.5l3 3"/><circle cx="18.5" cy="5" r="1.8"/>',
   pHoles:'<circle cx="6" cy="17" r="3"/><circle cx="14" cy="17" r="3"/><path d="M16.2 14.8L20 11h2"/><path d="M3 5h8M3 8.5h6"/><path d="M14 5h3"/>',
+  pAxHole:'<circle cx="12" cy="12" r="6"/><path d="M12 2.5v4M12 9.5v5M12 17.5v4M2.5 12h4M9.5 12h5M17.5 12h4"/>',
+  pAxPitch:'<circle cx="12" cy="12" r="8" stroke-dasharray="4 1.6 1 1.6"/><circle cx="12" cy="4" r="1.8"/><circle cx="18.9" cy="16" r="1.8"/><circle cx="5.1" cy="16" r="1.8"/>',
+  pAxSym:'<path d="M12 2v3.5M12 8v3M12 13.5v3M12 19v3"/><path d="M9 6L4 12l5 6zM15 6l5 6-5 6z"/>',
   pSvg:'<path d="M6 3h9l3 3v15H6z"/><text x="12" y="17.6" font-size="6.2" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">SVG</text>',
   pDxf:'<path d="M6 3h9l3 3v15H6z"/><text x="12" y="17.6" font-size="6.2" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">DXF</text>',
   pPdf:'<path d="M6 3h9l3 3v15H6z"/><text x="12" y="17.6" font-size="6.2" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">PDF</text>'
@@ -343,6 +341,10 @@ function mfRibbon(){
   grp('Cotes',[['pDim','Cote',()=>mepTool('dim'),'Outil cote unique : Ø, longueur, distance, angle'],
     ['pHole','Perçage',()=>mepTool('hole'),'Cotation perçage : Ø, lamage, fraisure, taraudage'],
     ['pHoles','Perçages auto',()=>{try{mepSetActive(true);mepAutoHoles();}catch(e){}},'Coter toutes les fonctions Perçage (n× si plusieurs trous) — vue sélectionnée, sinon toute la planche']],'mfPlan');
+  const mepAx=m=>{try{mepSetActive(true);mepSetAxisMode(m);}catch(e){}};
+  grp('Axes',[['pAxHole','Trou',()=>mepAx('hole'),'Axes (trou) : croix d’axes des trous cliqués'],
+    ['pAxPitch','Cercle',()=>mepAx('pitch'),'Axes (cercle) : cercle primitif des trous répartis'],
+    ['pAxSym','Symétrie',()=>mepAx('sym'),'Axes (symétrie) : axe de symétrie entre deux éléments']],'mfPlan');
   grp('Sortie',[['pSvg','SVG',()=>{try{mepExport();}catch(e){}},'Exporter la planche en SVG'],
     ['pDxf','DXF',()=>{try{mepExportDxf();}catch(e){}},'Exporter la planche en DXF R12 (calques CONTOUR, CACHE, AXE, COTES, CADRE…)'],
     ['pPdf','PDF',()=>{try{mepPrint(true);}catch(e){}},'PDF vectoriel au format exact de la planche (« Enregistrer au format PDF »)'],
@@ -452,14 +454,19 @@ function mfPosTabs(){
 }
 function mfStatusBar(){
   const sb=document.createElement('div');sb.id='mfStatus';sb.className='mfM';
-  sb.innerHTML='<span id="mfStEng">Noyau…</span><span id="mfStMeas"></span><span class="mfSp"></span><span id="mfStSave"></span><button id="mfStRegen" title="Régénérer tout le modèle">⟳ Régénérer</button><span>mm</span><b id="mfStVer"></b>';
+  // ⚙ Noyau .wasm… : le panneau « État » (qui porte ce bouton) est masqué en moderne — au 1er lancement
+  // en mode fichier (file://) le noyau exact ne démarre qu'avec ce bouton, il doit donc rester accessible
+  sb.innerHTML='<button id="mfStWasm" style="display:none" title="Mode fichier (file://) : désignez occt/opencascade.wasm.wasm pour démarrer le noyau exact sans serveur">⚙ Noyau .wasm…</button><span id="mfStEng">Noyau…</span><span id="mfStMeas"></span><span class="mfSp"></span><span id="mfStSave"></span><button id="mfStRegen" title="Régénérer tout le modèle">⟳ Régénérer</button><span>mm</span><b id="mfStVer"></b>';
   sb.querySelector('#mfStRegen').onclick=()=>mfClick('btnRebuild');
+  sb.querySelector('#mfStWasm').onclick=()=>mfClick('btnOccWasm');
   const upd=()=>{
     if(!document.body.classList.contains('ui-modern'))return;
     try{
       const o=(document.getElementById('occtState')||{}).textContent||'';
       const eng=/prêt/i.test(o)?('Noyau prêt · '+((typeof builtEngine!=='undefined'&&builtEngine)||'')):(o.replace(/^OCCT\s*:\s*/,'').slice(0,60));
       document.getElementById('mfStEng').textContent=eng;
+      const wb=document.getElementById('btnOccWasm');
+      document.getElementById('mfStWasm').style.display=(wb&&wb.style.display!=='none'&&!/prêt/i.test(o))?'':'none';
       const f=((typeof faceEl!=='undefined'&&faceEl&&faceEl.textContent)||'').split('\n')[0];
       document.getElementById('mfStMeas').textContent=f;
       const st=(document.getElementById('stats')||{}).textContent||'';
@@ -606,6 +613,6 @@ function mfBuildModern(){
     mfTheme(mfLS('minifusion_theme')||'nuit');
     // la scène 3D naît plus tard (src/10, à l'init) : elle appelle mf3D elle-même une fois créée
     mfTopButtons();
-    if(mfLS('minifusion_ui')==='moderne')mfUiMode('moderne');
+    mfUiMode('moderne'); // toujours, dès le 1er lancement
   }catch(e){}
 })();

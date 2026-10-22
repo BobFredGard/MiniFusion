@@ -287,10 +287,10 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     const extT = window.__mepTest.dimExtent(dT);
     out.txtExtentOK = !!extT && Math.abs(extT.start+20)<1e-9
       && Math.abs(extT.end-20)<1e-9;
-    dT.txtOff = 17;
+    dT.txtOff = 19; // étiquette nettement au-delà du bout (texte ISO h 3,5)
     const extO = window.__mepTest.dimExtent(dT);
     out.txtExtendOK = !!extO && extO.end>extO.half+1
-      && extO.end>=17+window.__mepTest.dimLabelHalf(dT,mepDimValue(dT))-1e-9;
+      && extO.end>=19+window.__mepTest.dimLabelHalf(dT,mepDimValue(dT))-1e-9;
     // texte vertical : toujours à gauche du trait de cote
     const dV = {id:'dV',kind:'dist',vid:vN.id,vid2:null,a:{x:0,y:0},b:{x:0,y:30},
       off:8,ref:false,tol:null,orient:'v'};
@@ -472,9 +472,10 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     const hgA=T.holeCallout(0,0,10,25,-20,'Ø8 déb.\\nLamage Ø11,2 ↧2');
     const hgB=T.holeCallout(0,0,10,-25,-20,'Ø8 déb.\\nLamage Ø11,2 ↧2');
     out.holeLeaderUnderOK=!!hgA&&hgA.anchor==='start'&&hgA.u0===hgA.tx
-      &&Math.abs(hgA.lineY-(hgA.y0+(hgA.lines.length-1)*hgA.lh+2.2))<1e-9;
+      &&Math.abs(hgA.lineY-(hgA.y0+(hgA.lines.length-1)*hgA.lh+1.225))<1e-9
+      &&Math.abs((hgA.u1-hgA.u0)-15*4.888*0.6)<1e-6; // souligné = texte (h 3,5), plus 3,8 mm par caractère
     out.holeLeaderUnderEndOK=!!hgB&&hgB.anchor==='end'&&hgB.u1===hgB.tx
-      &&Math.abs(hgB.lineY-(hgB.y0+(hgB.lines.length-1)*hgB.lh+2.2))<1e-9;
+      &&Math.abs(hgB.lineY-(hgB.y0+(hgB.lines.length-1)*hgB.lh+1.225))<1e-9;
 
     // 24) réglages « Paramètres — Plan » : hauteur/couleur des cotes, flèches.
     window.__mepTest.setViewSel(null);
@@ -482,14 +483,15 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     out.dimSettingsUI = ctl.num.length>=3 && ctl.color.length>=1;
     out.dimSettingsDefaults = ctl.num.some(v=>v===7)
       && ctl.color.length>=1 && ctl.check.indexOf('mepDimColTheme')>=0 && window.__mepTest.dimStyle().color==='theme';
-    window.__mepTest.setDimStyle({textHeight:9,color:'#ff0000',arrowAngle:45,arrowLen:5});
+    // ISO 3098 : h = majuscules ; corps de police = h / 0,716 (5 mm → 6,983)
+    window.__mepTest.setDimStyle({dimH:5,lblH:7,color:'#ff0000',arrowAngle:45,arrowLen:5});
     const ag=window.mepArrowGeom();
     out.dimStyleApplied = ag.total===45 && Math.abs(ag.len-5)<1e-9
-      && window.__mepTest.cssVar('--mepDimH')==='9px'
+      && window.__mepTest.cssVar('--mepDimH')==='6.983px' && window.__mepTest.cssVar('--mepLblH')==='9.777px'
       && window.__mepTest.cssVar('--mepDimCol')==='#ff0000';
     window.__mepTest.resetDimStyle();
     const ds=window.__mepTest.dimStyle();
-    out.dimStyleReset = ds.textHeight===7 && ds.color==='theme'
+    out.dimStyleReset = ds.dimH===3.5 && ds.lblH===5 && ds.noteH===3.5 && Math.abs(ds.textHeight-4.888)<1e-9 && ds.color==='theme'
       && ds.arrowAngle===36 && ds.arrowLen===7 && window.mepArrowGeom().total===36;
     // séparateur décimal : point (et non virgule) dans les valeurs du plan
     out.fmtDot = window.__mepTest.fmt(21.1)==='21.1'
@@ -613,11 +615,67 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     try{
       const sh0=doc.mep.sheets[doc.mep.cur];
       Object.assign(sh0.title,{matiere:'EN AW-2017',traitement:'Anodisation',tolgen:'ISO 2768-m',
-        revs:[{i:'A',d:'01/10/2026',t:'Création'},{i:'B',d:'21/10/2026',t:'Perçages'}]});
+        revs:[{i:'A',d:'01/10/2026',n:'F. Justet',t:'Création'},{i:'B',d:'21/10/2026',t:'Perçages'}]});
       const vals=window.__mepTest.titleTexts(sh0),revs=vals;
       out.cartRich=vals.indexOf('EN AW-2017')>=0&&vals.indexOf('Anodisation')>=0&&vals.indexOf('ISO 2768-m')>=0
         &&vals.indexOf('B')>=0; // indice = dernière révision
       out.cartRevs=revs.indexOf('Création')>=0&&revs.indexOf('Perçages')>=0&&revs.indexOf('MODIFICATION')>=0;
+      out.cartRevNom=revs.indexOf('NOM')>=0&&revs.indexOf('F. Justet')>=0;
+      // largeur totale imposée : le tableau finit au bord droit du cadre et mesure w
+      sh0.title.revSt={w:150,h:3.5,lw:0.5};
+      {const els=[];const mk=(tag,a)=>{const o=Object.assign({tag,textContent:''},a);els.push(o);return o;};
+       const pd=window.__mepTest.pageDim(sh0);window.__mepTest.drawRevs(mk,sh0,pd,200);
+       const R=els.find(o=>o.tag==='rect');
+       out.cartRevW=!!R&&Math.abs(R.width-150)<1e-9&&Math.abs(R.x+R.width-(pd.ix+pd.iw))<1e-9&&/stroke-width:0\.5/.test(R.style)
+         &&els.some(o=>o.tag==='text'&&/font-size:4\.888px/.test(o.style));}
+      delete sh0.title.revSt;
+      // perçage répété : base + instances = une seule famille (cote « n× »)
+      {const F=doc.features,n0=F.length;
+       const h1={id:'tH1',type:'hole',d:6},h2={id:'tH2',type:'hole',d:6,repeatId:'tRp'},h3={id:'tH3',type:'hole',d:6};
+       F.push(h1,{id:'tRp',type:'repeat',base:['tH1']},h2,h3);
+       const T=window.__mepTest;
+       out.holeFamOK=T.holeFam(h1)===T.holeFam(h2)&&T.holeFam(h3)==='tH3';
+       F.splice(n0);}
+      // ligne de coupe : + brisure puis − brisure → retour à la coupe droite
+      {const T=window.__mepTest,pv={id:'tPar',x:50,y:50,scale:1,u:[1,0,0],v:[0,0,-1],dir:[0,-1,0]};
+       const sv={id:'tSec',kind:'section',section:{a:[0,0],b:[20,0],p:[0,0,0],n:[0,0,1],pid:'tPar'}};
+       sh0.views.push(pv,sv);
+       const okA=T.cutAddBreak(sh0,sv)&&sv.section.pts.length===4&&Math.abs(sv.section.pts[3][0]-20)<1e-9&&Math.abs(sv.section.pts[3][1])>1;
+       const okD=T.cutDelBreak(sh0,sv)&&!sv.section.pts&&Math.abs(sv.section.b[0]-20)<1e-9&&Math.abs(sv.section.b[1])<1e-9;
+       sh0.views.splice(sh0.views.indexOf(pv),2);
+       out.cutBreakOK=okA&&okD;}
+      // ligne de coupe associative : brisure accrochée à un perçage, puis le trou bouge → la ligne suit
+      {const T=window.__mepTest,pv={id:'tPar2',x:50,y:50,scale:1,u:[1,0,0],v:[0,0,-1],dir:[0,-1,0]};
+       const sv={id:'tSec2',kind:'section',section:{a:[0,0],b:[40,0],p:[0,0,0],n:[0,0,1],pid:'tPar2'}};
+       const HA=globalThis.holeAxis,hz={z:-8};
+       globalThis.holeAxis=()=>({dir:{x:0,y:1,z:0},pts:[{id:'q1',x:30,y:0,z:hz.z}]});
+       doc.features.push({id:'tHf',type:'hole',sketchId:'tSkH'});doc.sketches.push({id:'tSkH'});
+       sh0.views.push(pv,sv);
+       try{
+         const ok1=T.cutBreakAt(sh0,sv,0,20,8,{t:'hole',fid:'tHf',pid:'q1'})&&JSON.stringify(sv.section.pts)==='[[0,0],[20,0],[20,8],[40,8]]';
+         hz.z=-12;T.cutFollow(sh0);
+         const ok2=JSON.stringify(sv.section.pts)==='[[0,0],[20,0],[20,12],[40,12]]';
+         // coupe droite posée sur l'axe du trou : lien automatique
+         const sv2={id:'tSec3',kind:'section',section:{a:[0,12],b:[40,12],p:[0,0,-12],n:[0,0,1],pid:'tPar2'}};
+         sh0.views.push(sv2);T.cutAutoRefs(sh0,sv2);
+         const ok3=!!(sv2.section.refs&&sv2.section.refs[0]&&sv2.section.refs[0].t==='hole');
+         hz.z=-15;T.cutFollow(sh0);
+         const ok4=Math.abs(sv2.section.a[1]-15)<1e-9&&Math.abs(sv2.section.b[1]-15)<1e-9&&Math.abs(sv2.section.p[2]+15)<1e-9;
+         out.cutAssocOK=ok1&&ok2&&ok3&&ok4;
+         sh0.views.splice(sh0.views.indexOf(sv2),1);
+       }finally{
+         globalThis.holeAxis=HA;sh0.views.splice(sh0.views.indexOf(pv),2);
+         doc.features=doc.features.filter(f=>f.id!=='tHf');doc.sketches=doc.sketches.filter(k=>k.id!=='tSkH');
+       }}
+      // paramètres plan : collectés puis réappliqués (projet ↔ session)
+      {const LS0=globalThis.localStorage,mem={};
+       globalThis.localStorage={getItem:k=>(k in mem?mem[k]:null),setItem:(k,v)=>{mem[k]=String(v);},removeItem:k=>{delete mem[k];}};
+       try{const T=window.__mepTest,p0=T.prefsCollect();
+       T.setDimStyle({dimH:7});const p1=T.prefsCollect();
+       T.prefsApply(p0);const back=T.dimStyle().dimH;
+       T.prefsApply(p1);const again=T.dimStyle().dimH;T.prefsApply(p0);
+       out.prefsOK=/"dimH":7/.test(p1.ls.minifusion_mepDimStyle||'')&&back===3.5&&again===7;}
+       finally{globalThis.localStorage=LS0;}}
       delete sh0.title.revs;delete sh0.title.matiere;delete sh0.title.traitement;delete sh0.title.tolgen;
     }catch(e){out.cartRich=false;out.cartErr=String(e);}
     // V0.3.12 : esquisse contrainte + cartouche dessiné
@@ -839,6 +897,12 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.shadeTri&&val.shadeBack,'ombrage : faces avant dessinées, faces arrière ignorées');
   A(val&&val.shadeOpacity,'ombrage : transparence du corps reprise sur les faces');
   A(val&&val.shadeFaces,'ombrage : les maillages produisent des faces projetées');
+  A(val&&val.cutAssocOK,'ligne de coupe associative : brisure accrochée au perçage, suit le trou déplacé');
+  A(val&&val.cutBreakOK,'ligne de coupe : ajouter puis retirer une brisure');
+  A(val&&val.holeFamOK,'perçage : répétition (base + instances) comptée comme une seule famille');
+  A(val&&val.prefsOK,'paramètres plan : collectés et réappliqués (projet / session / fichier)');
+  A(val&&val.cartRevNom,'révisions : colonne NOM (personne qui a modifié le plan)');
+  A(val&&val.cartRevW,'révisions : largeur totale, hauteur h et trait réglables');
   A(val&&val.cartRich,'cartouche : matière, traitement, tolérances générales, indice (V0.3.11)'+(val&&val.cartErr?' — '+val.cartErr:''));
   A(val&&val.cartRevs,'cartouche : tableau des révisions');
   A(val&&val.tbStd,'cartouche Standard → esquisse cohérente (26 mm, TTS, TTH) (V0.3.12)'+(val&&val.skErr?' — '+val.skErr:''));
