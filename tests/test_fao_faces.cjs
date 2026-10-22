@@ -133,6 +133,11 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
       for(let k=0;k<=ns;k++){const t=k/ns,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t,z=a.z+(b.z-a.z)*t;const e=pTF(x,y)-z;if(e>wF){wF=e;wAt=[+x.toFixed(1),+y.toFixed(1),+z.toFixed(1),i,b.r?'G0':(b.ent?'ent':'G1'),JSON.stringify(a),JSON.stringify(b)];}}}
     out.Dat=wAt;
     out.D={band0:band(mvD0),band1:band(mvD1),n0:mvD0.length,n1:mvD1.length,wF:wF,frontKept:setup.ops[0].protectFront===true};
+    // 2026-10-22-006 : face COURBE (bord cylindrique du moyeu, face 24) — le volume
+    // « devant » ne monte jamais au-dessus de la face (il passait par-dessus le flanc)
+    {const fc=faoFaceMesh(setup,[{b:imp.id,f:24}]);let zF=-1/0;if(fc)for(const p of fc.v)if(p[2]>zF)zF=p[2];
+     const pc=fc?faoFrontPrism(fc,setup.stock):null;let zP=-1/0;if(pc)for(const p of pc.v)if(p[2]>zP)zP=p[2];
+     out.E24={zF:zF,zP:zP,n:pc?pc.t.length:0};}
     // ---- E. minipasses avec faces rouges (2026-10-21-008) : un contour fermé
     // qui COMMENÇAIT hors zone (flanc rouge) était jeté en entier ----
     const eE=faoOpDefaults('rough3d');Object.assign(eE,{toolId:'TT',ap:6,ae:6,radial:0.5,axial:0.5,ztop:setup.stock.z1,zbot:30,minipasses:2,
@@ -184,6 +189,8 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   if(r.D.wF>0.02)console.log('    pire en',JSON.stringify(r.Dat));
   A(r.D.frontKept,'D : option « Interdire devant la face » conservée par le nettoyage');
   A(r.D.band0>0,'D : sans la case, l’ébauche usine bien le brut devant le flanc rouge (cas du retour utilisateur)');
+  console.log('  · face 24 (bord cylindrique) : dessus de la face '+r.E24.zF.toFixed(2)+', dessus du volume « devant » '+r.E24.zP.toFixed(2)+' ('+r.E24.n+' triangles)');
+  A(r.E24.n>0&&r.E24.zP<=r.E24.zF+1e-6,'D : le volume « devant » d’une face courbe ne monte pas au-dessus de la face');
   A(r.D.band1===0,'D : avec la case, plus aucune avance DEVANT le flanc rouge (outil hors de la pièce)');
   A(r.D.wF<=0.02,'D : aucune position d’outil dans le volume avant + marge');
   console.log('  · E minipasses par bande (Z niveau : longueur aux 2 cotes de minipasse, mm) : '+r.E.bands.map(b=>b[0].toFixed(1)+':'+b[1]).join(' · '));

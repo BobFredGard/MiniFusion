@@ -36,7 +36,7 @@ function faoOpSig(op){
   // opérations À intouchables changent de parcours (chaînes densifiées sous la
   // zone 3D, volume « devant la face ») : elles seules sont à régénérer, pas
   // tout le cache (CACHE_VER inchangé).
-  if(Array.isArray(op&&op.protect)&&op.protect.length)o._redV=2;
+  if(Array.isArray(op&&op.protect)&&op.protect.length)o._redV=3; // 2026-10-22-006 : volume « devant » borné (peau du corps-brut, hauteur de la face)
   return o;
 }
 let faoMovesFpMap=null;

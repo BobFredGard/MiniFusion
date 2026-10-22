@@ -127,6 +127,60 @@ function faoRow(){ const d=document.createElement('div');
   d.className='fao-row'; return d; }
 function faoLab(t){ const s=document.createElement('span');
   s.className='fao-lab'; s.textContent=t; return s; }
+// 2026-10-22-007 : MISE EN LIGNE des fiches (retour : « une présentation soignée,
+// la même que le panneau Plan, car c'est l'anarchie ») — chaque rangée
+// « libellé + champ » devient UNE ligne par réglage : libellé à gauche, champ(s)
+// alignés à droite, unité juste après le champ ; case à cocher À DROITE de son
+// libellé ; plusieurs réglages tassés sur une rangée = plusieurs lignes. Les
+// éléments sont DÉPLACÉS (jamais clonés) : leurs gestionnaires restent branchés.
+// Rangées non reconnues (en-tête d'opération, boutons seuls…) : intactes.
+function faoTidyRows(root){
+  if(!root||!root.querySelectorAll)return;
+  const isEl=function(e){return !!(e&&e.nodeType===1);};
+  const has=function(e,c){return isEl(e)&&e.classList&&e.classList.contains(c);};
+  const isLab=function(e){return isEl(e)&&e.tagName==='SPAN'&&has(e,'fao-lab');};
+  const isCtl=function(e){return isEl(e)&&/^(INPUT|SELECT|BUTTON|TEXTAREA)$/.test(e.tagName);};
+  const isCb=function(e){return isCtl(e)&&e.tagName==='INPUT'&&e.type==='checkbox';};
+  const isChk=function(e){return isEl(e)&&e.tagName==='LABEL'&&has(e,'fao-check');};
+  Array.prototype.slice.call(root.querySelectorAll('.fao-row')).forEach(function(row){
+    if(has(row,'fao-line')||!row.parentNode)return;
+    Array.prototype.slice.call(row.children).forEach(function(c){
+      if(has(c,'fao-pair')){while(c.firstChild)row.insertBefore(c.firstChild,c);row.removeChild(c);}});
+    const ch=[];
+    for(let n=row.firstChild;n;n=n.nextSibling){
+      if(n.nodeType===3){if(n.textContent.trim())return;continue;}
+      if(n.nodeType===1)ch.push(n);
+    }
+    const f=ch[0];
+    if(!f||!(isLab(f)||isChk(f)||(isCb(f)&&isLab(ch[1]))))return;
+    const groups=[];let g=null;
+    for(let i=0;i<ch.length;i++){const e=ch[i];
+      if(isChk(e)){g={chk:e,ctl:[]};groups.push(g);continue;}
+      if(has(e,'fao-help')){groups.push({help:e});g=null;continue;}
+      if(isCb(e)&&isLab(ch[i+1])){g={lab:ch[i+1],ctl:[e]};groups.push(g);i++;continue;}
+      // un libellé suivi d'un champ ouvre un réglage ; sinon c'est l'unité du précédent
+      if(isLab(e)&&(!g||g.help||isCtl(ch[i+1]))){g={lab:e,ctl:[]};groups.push(g);continue;}
+      if(!g||g.help){g={lab:null,ctl:[]};groups.push(g);}
+      g.ctl.push(e);
+    }
+    const par=row.parentNode;
+    groups.forEach(function(q){
+      if(q.help){par.insertBefore(q.help,row);return;}
+      const ln=document.createElement('div');ln.className='fao-row fao-line';
+      if(row.style&&row.style.cssText)ln.style.cssText=row.style.cssText;
+      if(row.title)ln.title=row.title;
+      if(q.chk){ln.classList.add('fao-line-chk');ln.appendChild(q.chk);q.ctl.forEach(function(e){ln.appendChild(e);});}
+      else{
+        if(q.lab)ln.appendChild(q.lab);
+        const c=document.createElement('span');c.className='fao-ctl';
+        q.ctl.forEach(function(e){c.appendChild(e);});
+        if(q.ctl.length)ln.appendChild(c);
+      }
+      par.insertBefore(ln,row);
+    });
+    par.removeChild(row);
+  });
+}
 function faoSnapshot(title){
   // Instantané du document AVANT mutation — même discipline que le modèle dessin
   // (45-annuler-document.js) : Ctrl+Z revient à l'état FAO précédent. Le titre du
@@ -966,6 +1020,46 @@ function faoCardTabs(d,op){
   show(sel);
   return nd;
 }
+// 2026-10-22-008 : ONGLETS DE LA FICHE POSAGE (« est-ce que l'on peut mettre des
+// onglets au menu posage ? ») — mêmes onglets que la fiche d'opération : une
+// section (titre .fao-h) = un onglet ; le titre « Posage · nom » reste en tête,
+// l'estimation et la note du bas restent visibles sous les onglets. Onglet
+// choisi mémorisé par posage (faoTabSel).
+function faoSetupTabs(p,setup){
+  const kids=Array.prototype.slice.call(p.children||[]);
+  if(kids.length<4)return;
+  const MAP=[['posage','Général'],['repère','Repère'],['modèle','Modèle'],['brut','Brut'],['plans','Plans'],['machine','Temps']];
+  const nameOf=function(t){t=String(t||'').toLowerCase();for(let i=0;i<MAP.length;i++)if(t.indexOf(MAP[i][0])===0)return MAP[i][1];return null;};
+  const isH=function(el){return !!(el&&el.className==='fao-h');};
+  const groups={},names=[],foot=[];let cur=null,inFoot=false;
+  const title=isH(kids[0])?kids[0]:null;
+  kids.forEach(function(el,i){
+    if(el===title)return;
+    if(!inFoot&&el.classList&&el.classList.contains('fao-stats'))inFoot=true;
+    if(inFoot){foot.push(el);return;}
+    if(isH(el)){const n=nameOf(el.textContent);if(n){cur=n;if(!groups[n]){groups[n]=[];names.push(n);}}}
+    if(i===1&&!cur){cur='Général';groups[cur]=[];names.push(cur);}
+    if(!cur){cur='Général';if(!groups[cur]){groups[cur]=[];names.push(cur);}}
+    groups[cur].push(el);
+  });
+  if(names.length<2)return;
+  const sel=(faoTabSel[setup.id]&&names.indexOf(faoTabSel[setup.id])>=0)?faoTabSel[setup.id]:names[0];
+  const bar=document.createElement('div');bar.className='fao-tabs';
+  const panes={},btns={};
+  const show=function(n){names.forEach(function(k){panes[k].style.display=(k===n)?'':'none';btns[k].className='fao-tab'+(k===n?' on':'');});faoTabSel[setup.id]=n;};
+  names.forEach(function(n){
+    const b=document.createElement('button');b.className='fao-tab';b.textContent=n;b.onclick=function(){show(n);};
+    bar.appendChild(b);btns[n]=b;
+    const pn=document.createElement('div');pn.className='fao-pane';
+    groups[n].forEach(function(el){pn.appendChild(el);});
+    panes[n]=pn;
+  });
+  if(title)p.insertBefore(bar,title.nextSibling);else p.insertBefore(bar,p.firstChild);
+  let at=bar.nextSibling;
+  names.forEach(function(n){p.insertBefore(panes[n],at);});
+  foot.forEach(function(el){p.appendChild(el);});
+  show(sel);
+}
 function faoOpCardElement(setup,op,i){
   const d=faoCard();
   if(op.on===false)d.style.opacity='0.55';
@@ -1616,8 +1710,9 @@ function faoSetupFiche(p,setup){
   if(!bl.length)rB.appendChild(faoLab('Aucun corps (tout le brut).'));
   else{
     const all=setup.bodies==='all';
+    const cbs=[]; // 2026-10-22-007 : cases gardées en main (faoTidyRows éclate la rangée)
     bl.forEach(function(b){
-      const cb=document.createElement('input'); cb.type='checkbox';
+      const cb=document.createElement('input'); cb.type='checkbox'; cbs.push(cb);
       cb.checked=all||(Array.isArray(setup.bodies)&&setup.bodies.indexOf(b.id)>=0);
       const nm=(b.name||b.id)+'';
       const lb=document.createElement('label');
@@ -1628,7 +1723,7 @@ function faoSetupFiche(p,setup){
         faoSnapshot('corps modélisés du posage');
         const checked=[];
         try{
-          Array.from(rB.querySelectorAll('input[type=checkbox]')).forEach(function(x,i){
+          cbs.forEach(function(x,i){
             if(x.checked&&bl[i])checked.push(bl[i].id); });
         }catch(e){}
         setup.bodies=(checked.length===bl.length)?'all':checked;
@@ -1772,21 +1867,21 @@ function faoSetupFiche(p,setup){
   rF.appendChild(faoLab('Bridage'));
   rF.appendChild(faoTxt((setup.fixture&&setup.fixture.note)||'',function(v){
     setup.fixture=setup.fixture||{}; setup.fixture.note=String(v).slice(0,80); },110));
-  rF.appendChild(faoLab('dég.rad.'));
+  rF.appendChild(faoLab('Dégagement radial'));
   rF.appendChild(faoNum(setup.fixture?setup.fixture.radial:5,function(v){
     setup.fixture=setup.fixture||{}; setup.fixture.radial=Math.max(0,v); },44));
-  rF.appendChild(faoLab('ax.'));
+  rF.appendChild(faoLab('Dégagement axial'));
   rF.appendChild(faoNum(setup.fixture?setup.fixture.axial:5,function(v){
     setup.fixture=setup.fixture||{}; setup.fixture.axial=Math.max(0,v); },44));
   p.appendChild(rF);
   // Bornes Z du bridage : références « Haut/Bas du bridage » des plans
   // (2026-10-08-002). Défaut = fond/dessus du brut (non stocké tant qu'édité).
   const rFZ=faoRow();
-  rFZ.appendChild(faoLab('Br. Z0'));
+  rFZ.appendChild(faoLab('Bridage Z bas'));
   rFZ.appendChild(faoNum(isFinite(+setup.fixture.z0)?+setup.fixture.z0:stock.z0,function(v){
     setup.fixture=setup.fixture||{}; setup.fixture.z0=v; },44,1,
     'Bas du bridage (mm, repère monde) — référence « Bas du bridage » des plans. Défaut = fond du brut.'));
-  rFZ.appendChild(faoLab('Z1'));
+  rFZ.appendChild(faoLab('Bridage Z haut'));
   rFZ.appendChild(faoNum(isFinite(+setup.fixture.z1)?+setup.fixture.z1:stock.z1,function(v){
     setup.fixture=setup.fixture||{}; setup.fixture.z1=v; },44,1,
     'Haut du bridage (mm, repère monde) — référence « Haut du bridage » des plans. Défaut = dessus du brut.'));
@@ -1795,6 +1890,7 @@ function faoSetupFiche(p,setup){
   nF.className='fao-help';
   nF.textContent='Bridage mémorisé (phase suivante : évitement dans les parcours).';
   p.appendChild(nF);
+  p.appendChild(faoH('Plans · sortie')); // 2026-10-22-008 : onglet « Plans »
   const rC=faoRow();
   rC.appendChild(faoLab('Sortie'));
   rC.appendChild(faoNum(setup.secu,function(v){ setup.secu=Math.max(0,v); },48,0.5,
@@ -1821,6 +1917,7 @@ function faoSetupFiche(p,setup){
     'Plans en mm par référence (« depuis ») + décalage : dégagement = plan des translations rapides XY, '+
     'retrait = plan des remontées et des changements d\'outil. Opérations : héritent de ces valeurs '+
     'tant qu\'elles ne les touchent pas ; tout plan reste ≥ dessus du brut.'));
+  p.appendChild(faoH('Machine · temps')); // 2026-10-22-008 : onglet « Temps »
   const rV=faoRow();
   rV.appendChild(faoLab('Rapide G0'));
   rV.appendChild(faoNum(faoRapide(setup),function(v){ setup.rapide=Math.max(1,Math.round(v)); },
@@ -1830,11 +1927,11 @@ function faoSetupFiche(p,setup){
     36,100,"Pourcentage de l'avance de coupe appliqué à la plongée (F de plongée des G1 Z)."));
   rV.appendChild(faoLab('% de F'));
   const rA=faoRow();
-  rA.appendChild(faoLab('Accél.'));
+  rA.appendChild(faoLab('Accélération'));
   rA.appendChild(faoNum(faoAccel(setup),function(v){ setup.accel=Math.max(100,Math.round(v)); },
     44,100,"Accélération de la machine (mm/s²) — le temps des rapides vaut d/v + v/A, un rapide court coûte plus que sa longueur."));
   rA.appendChild(faoLab('mm/s²'));
-  rA.appendChild(faoLab('Ch. outil'));
+  rA.appendChild(faoLab('Changement d’outil'));
   rA.appendChild(faoNum(faoToolChg(setup),function(v){ setup.toolChg=Math.max(0,Math.round(v)); },
     40,5,"Durée d'un changement d'outil (secondes) ajoutée à l'estimation pour chaque changement de groupe outil."));
   rA.appendChild(faoLab('s'));
@@ -1882,7 +1979,9 @@ function faoRenderProps(p,s){
       p.appendChild(back);
     }else{
       faoSetupFiche(p,setup);
+      faoSetupTabs(p,setup); // 2026-10-22-008 : onglets du posage
     }
+    faoTidyRows(p); // 2026-10-22-007 : même présentation que le panneau Plan
   }catch(e){}
 }
 

@@ -154,7 +154,7 @@ const vm=require('vm');
     A(!has('Plan Z'),'fiche posage : ancien libellé « Plan Z » retiré');
     A(pt.some(t=>t.indexOf('Plan retrait ou +5')>=0),'fiche posage : option remontées « Plan retrait ou +5 »');
     A(pt.some(t=>t.indexOf('Toujours plan de retrait')>=0),'fiche posage : option remontées « plan de retrait »');
-    A(has('Br. Z0')&&has('Z1'),'fiche posage : bornes de bridage Z0/Z1');
+    A(has('Bridage Z bas')&&has('Bridage Z haut'),'fiche posage : bornes de bridage Z0/Z1');
     A(has(RZ(125))&&has(RZ(50)),'fiche posage : valeurs héritées 125 / 50 (relatives : '+RZ(125)+' / '+RZ(50)+')');
 
     // --- 10. fiche opération : section « Plans » + bouton héritage

@@ -75,6 +75,29 @@ const faoRapideMin=30;
       // bleu, texte blanc gras ; prioritaire sur l'habillage des boutons du thème
       +'.fao-tabs .fao-tab.on,.fao-tabs .fao-tab.on:hover{background:#0a84ff!important;border-color:#0a84ff!important;color:#fff!important;font-weight:700!important;box-shadow:0 0 0 1px rgba(10,132,255,.55),0 0 8px rgba(10,132,255,.45)!important}'
       +'.fao-pair{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}'
+      // 2026-10-22-007 : une ligne par réglage (style du panneau Plan) — faoTidyRows
+      +'.fao-row.fao-line{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:3px 0;min-height:24px}'
+      +'.fao-row.fao-line>.fao-lab{flex:1 0 auto;max-width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-size:.74rem}'
+      +'.fao-ctl{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:0 1 auto;min-width:0;max-width:100%;margin-left:auto}'
+      +'.fao-ctl>.fao-in[type=number],.fao-ctl>input[type=number]{width:66px!important;flex:none}'
+      +'.fao-ctl>.fao-in[type=text]{width:120px}'
+      +'.fao-ctl>.fao-sel,.fao-ctl>select{max-width:160px;min-width:88px}'
+      +'.fao-ctl>input[type=checkbox]{margin:0;flex:none}'
+      +'.fao-ctl>.fao-lab,.fao-ctl>.fao-meta{font-size:.68rem;color:var(--muted);white-space:normal;text-align:right;min-width:0}'
+      +'.fao-line-chk>label.fao-check{flex:1;justify-content:space-between;flex-direction:row-reverse;'
+      +'background:none;border:none;padding:0;border-radius:0;color:var(--text)}'
+      +'.fao-line-chk>label.fao-check:hover{background:none;color:#fff}'
+      +'.fao-line-chk>label.fao-check>input{margin:0}'
+      // 2026-10-22-007 : TEXTES (aides, notes, estimations, infobulle d'onglet) —
+      // un seul style, celui des notes du panneau Plan ; champs texte / listes
+      // à la même hauteur que les champs numériques
+      +'.fao-panel :is(.fao-help,.fao-note,.fao-tip,.fao-stats,.fao-empty,.note){font-size:.68rem!important;'
+      +'color:var(--muted)!important;line-height:1.4;font-style:normal;background:none!important;'
+      +'border:none!important;padding:0!important;margin:5px 0!important;font-family:inherit}'
+      +'.fao-panel .fao-tip{border-left:2px solid rgba(10,132,255,.45)!important;padding-left:7px!important}'
+      +'.fao-panel .fao-meta{font-size:.66rem;color:var(--muted)}'
+      +'.fao-panel :is(.fao-in,.fao-sel){height:26px;line-height:1.2;font-size:.74rem}'
+      +'.fao-panel textarea.fao-in{height:auto;min-height:52px;width:100%;resize:vertical}'
       +'.fao-tip{font-size:.7rem;color:rgba(255,255,255,.58);line-height:1.4;margin-top:8px;'
       +'padding:6px 8px;border-radius:7px;background:rgba(255,255,255,.04);min-height:1.4em}'
       /* --- boutons compacts --- */

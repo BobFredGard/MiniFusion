@@ -273,7 +273,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.3.21';
+const APP_VER='V0.3.22';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -15266,6 +15266,29 @@ const faoRapideMin=30;
       // bleu, texte blanc gras ; prioritaire sur l'habillage des boutons du thème
       +'.fao-tabs .fao-tab.on,.fao-tabs .fao-tab.on:hover{background:#0a84ff!important;border-color:#0a84ff!important;color:#fff!important;font-weight:700!important;box-shadow:0 0 0 1px rgba(10,132,255,.55),0 0 8px rgba(10,132,255,.45)!important}'
       +'.fao-pair{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}'
+      // 2026-10-22-007 : une ligne par réglage (style du panneau Plan) — faoTidyRows
+      +'.fao-row.fao-line{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:3px 0;min-height:24px}'
+      +'.fao-row.fao-line>.fao-lab{flex:1 0 auto;max-width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-size:.74rem}'
+      +'.fao-ctl{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:0 1 auto;min-width:0;max-width:100%;margin-left:auto}'
+      +'.fao-ctl>.fao-in[type=number],.fao-ctl>input[type=number]{width:66px!important;flex:none}'
+      +'.fao-ctl>.fao-in[type=text]{width:120px}'
+      +'.fao-ctl>.fao-sel,.fao-ctl>select{max-width:160px;min-width:88px}'
+      +'.fao-ctl>input[type=checkbox]{margin:0;flex:none}'
+      +'.fao-ctl>.fao-lab,.fao-ctl>.fao-meta{font-size:.68rem;color:var(--muted);white-space:normal;text-align:right;min-width:0}'
+      +'.fao-line-chk>label.fao-check{flex:1;justify-content:space-between;flex-direction:row-reverse;'
+      +'background:none;border:none;padding:0;border-radius:0;color:var(--text)}'
+      +'.fao-line-chk>label.fao-check:hover{background:none;color:#fff}'
+      +'.fao-line-chk>label.fao-check>input{margin:0}'
+      // 2026-10-22-007 : TEXTES (aides, notes, estimations, infobulle d'onglet) —
+      // un seul style, celui des notes du panneau Plan ; champs texte / listes
+      // à la même hauteur que les champs numériques
+      +'.fao-panel :is(.fao-help,.fao-note,.fao-tip,.fao-stats,.fao-empty,.note){font-size:.68rem!important;'
+      +'color:var(--muted)!important;line-height:1.4;font-style:normal;background:none!important;'
+      +'border:none!important;padding:0!important;margin:5px 0!important;font-family:inherit}'
+      +'.fao-panel .fao-tip{border-left:2px solid rgba(10,132,255,.45)!important;padding-left:7px!important}'
+      +'.fao-panel .fao-meta{font-size:.66rem;color:var(--muted)}'
+      +'.fao-panel :is(.fao-in,.fao-sel){height:26px;line-height:1.2;font-size:.74rem}'
+      +'.fao-panel textarea.fao-in{height:auto;min-height:52px;width:100%;resize:vertical}'
       +'.fao-tip{font-size:.7rem;color:rgba(255,255,255,.58);line-height:1.4;margin-top:8px;'
       +'padding:6px 8px;border-radius:7px;background:rgba(255,255,255,.04);min-height:1.4em}'
       /* --- boutons compacts --- */
@@ -17566,7 +17589,7 @@ function faoOpSig(op){
   // opérations À intouchables changent de parcours (chaînes densifiées sous la
   // zone 3D, volume « devant la face ») : elles seules sont à régénérer, pas
   // tout le cache (CACHE_VER inchangé).
-  if(Array.isArray(op&&op.protect)&&op.protect.length)o._redV=2;
+  if(Array.isArray(op&&op.protect)&&op.protect.length)o._redV=3; // 2026-10-22-006 : volume « devant » borné (peau du corps-brut, hauteur de la face)
   return o;
 }
 let faoMovesFpMap=null;
@@ -20608,6 +20631,60 @@ function faoRow(){ const d=document.createElement('div');
   d.className='fao-row'; return d; }
 function faoLab(t){ const s=document.createElement('span');
   s.className='fao-lab'; s.textContent=t; return s; }
+// 2026-10-22-007 : MISE EN LIGNE des fiches (retour : « une présentation soignée,
+// la même que le panneau Plan, car c'est l'anarchie ») — chaque rangée
+// « libellé + champ » devient UNE ligne par réglage : libellé à gauche, champ(s)
+// alignés à droite, unité juste après le champ ; case à cocher À DROITE de son
+// libellé ; plusieurs réglages tassés sur une rangée = plusieurs lignes. Les
+// éléments sont DÉPLACÉS (jamais clonés) : leurs gestionnaires restent branchés.
+// Rangées non reconnues (en-tête d'opération, boutons seuls…) : intactes.
+function faoTidyRows(root){
+  if(!root||!root.querySelectorAll)return;
+  const isEl=function(e){return !!(e&&e.nodeType===1);};
+  const has=function(e,c){return isEl(e)&&e.classList&&e.classList.contains(c);};
+  const isLab=function(e){return isEl(e)&&e.tagName==='SPAN'&&has(e,'fao-lab');};
+  const isCtl=function(e){return isEl(e)&&/^(INPUT|SELECT|BUTTON|TEXTAREA)$/.test(e.tagName);};
+  const isCb=function(e){return isCtl(e)&&e.tagName==='INPUT'&&e.type==='checkbox';};
+  const isChk=function(e){return isEl(e)&&e.tagName==='LABEL'&&has(e,'fao-check');};
+  Array.prototype.slice.call(root.querySelectorAll('.fao-row')).forEach(function(row){
+    if(has(row,'fao-line')||!row.parentNode)return;
+    Array.prototype.slice.call(row.children).forEach(function(c){
+      if(has(c,'fao-pair')){while(c.firstChild)row.insertBefore(c.firstChild,c);row.removeChild(c);}});
+    const ch=[];
+    for(let n=row.firstChild;n;n=n.nextSibling){
+      if(n.nodeType===3){if(n.textContent.trim())return;continue;}
+      if(n.nodeType===1)ch.push(n);
+    }
+    const f=ch[0];
+    if(!f||!(isLab(f)||isChk(f)||(isCb(f)&&isLab(ch[1]))))return;
+    const groups=[];let g=null;
+    for(let i=0;i<ch.length;i++){const e=ch[i];
+      if(isChk(e)){g={chk:e,ctl:[]};groups.push(g);continue;}
+      if(has(e,'fao-help')){groups.push({help:e});g=null;continue;}
+      if(isCb(e)&&isLab(ch[i+1])){g={lab:ch[i+1],ctl:[e]};groups.push(g);i++;continue;}
+      // un libellé suivi d'un champ ouvre un réglage ; sinon c'est l'unité du précédent
+      if(isLab(e)&&(!g||g.help||isCtl(ch[i+1]))){g={lab:e,ctl:[]};groups.push(g);continue;}
+      if(!g||g.help){g={lab:null,ctl:[]};groups.push(g);}
+      g.ctl.push(e);
+    }
+    const par=row.parentNode;
+    groups.forEach(function(q){
+      if(q.help){par.insertBefore(q.help,row);return;}
+      const ln=document.createElement('div');ln.className='fao-row fao-line';
+      if(row.style&&row.style.cssText)ln.style.cssText=row.style.cssText;
+      if(row.title)ln.title=row.title;
+      if(q.chk){ln.classList.add('fao-line-chk');ln.appendChild(q.chk);q.ctl.forEach(function(e){ln.appendChild(e);});}
+      else{
+        if(q.lab)ln.appendChild(q.lab);
+        const c=document.createElement('span');c.className='fao-ctl';
+        q.ctl.forEach(function(e){c.appendChild(e);});
+        if(q.ctl.length)ln.appendChild(c);
+      }
+      par.insertBefore(ln,row);
+    });
+    par.removeChild(row);
+  });
+}
 function faoSnapshot(title){
   // Instantané du document AVANT mutation — même discipline que le modèle dessin
   // (45-annuler-document.js) : Ctrl+Z revient à l'état FAO précédent. Le titre du
@@ -21447,6 +21524,46 @@ function faoCardTabs(d,op){
   show(sel);
   return nd;
 }
+// 2026-10-22-008 : ONGLETS DE LA FICHE POSAGE (« est-ce que l'on peut mettre des
+// onglets au menu posage ? ») — mêmes onglets que la fiche d'opération : une
+// section (titre .fao-h) = un onglet ; le titre « Posage · nom » reste en tête,
+// l'estimation et la note du bas restent visibles sous les onglets. Onglet
+// choisi mémorisé par posage (faoTabSel).
+function faoSetupTabs(p,setup){
+  const kids=Array.prototype.slice.call(p.children||[]);
+  if(kids.length<4)return;
+  const MAP=[['posage','Général'],['repère','Repère'],['modèle','Modèle'],['brut','Brut'],['plans','Plans'],['machine','Temps']];
+  const nameOf=function(t){t=String(t||'').toLowerCase();for(let i=0;i<MAP.length;i++)if(t.indexOf(MAP[i][0])===0)return MAP[i][1];return null;};
+  const isH=function(el){return !!(el&&el.className==='fao-h');};
+  const groups={},names=[],foot=[];let cur=null,inFoot=false;
+  const title=isH(kids[0])?kids[0]:null;
+  kids.forEach(function(el,i){
+    if(el===title)return;
+    if(!inFoot&&el.classList&&el.classList.contains('fao-stats'))inFoot=true;
+    if(inFoot){foot.push(el);return;}
+    if(isH(el)){const n=nameOf(el.textContent);if(n){cur=n;if(!groups[n]){groups[n]=[];names.push(n);}}}
+    if(i===1&&!cur){cur='Général';groups[cur]=[];names.push(cur);}
+    if(!cur){cur='Général';if(!groups[cur]){groups[cur]=[];names.push(cur);}}
+    groups[cur].push(el);
+  });
+  if(names.length<2)return;
+  const sel=(faoTabSel[setup.id]&&names.indexOf(faoTabSel[setup.id])>=0)?faoTabSel[setup.id]:names[0];
+  const bar=document.createElement('div');bar.className='fao-tabs';
+  const panes={},btns={};
+  const show=function(n){names.forEach(function(k){panes[k].style.display=(k===n)?'':'none';btns[k].className='fao-tab'+(k===n?' on':'');});faoTabSel[setup.id]=n;};
+  names.forEach(function(n){
+    const b=document.createElement('button');b.className='fao-tab';b.textContent=n;b.onclick=function(){show(n);};
+    bar.appendChild(b);btns[n]=b;
+    const pn=document.createElement('div');pn.className='fao-pane';
+    groups[n].forEach(function(el){pn.appendChild(el);});
+    panes[n]=pn;
+  });
+  if(title)p.insertBefore(bar,title.nextSibling);else p.insertBefore(bar,p.firstChild);
+  let at=bar.nextSibling;
+  names.forEach(function(n){p.insertBefore(panes[n],at);});
+  foot.forEach(function(el){p.appendChild(el);});
+  show(sel);
+}
 function faoOpCardElement(setup,op,i){
   const d=faoCard();
   if(op.on===false)d.style.opacity='0.55';
@@ -22097,8 +22214,9 @@ function faoSetupFiche(p,setup){
   if(!bl.length)rB.appendChild(faoLab('Aucun corps (tout le brut).'));
   else{
     const all=setup.bodies==='all';
+    const cbs=[]; // 2026-10-22-007 : cases gardées en main (faoTidyRows éclate la rangée)
     bl.forEach(function(b){
-      const cb=document.createElement('input'); cb.type='checkbox';
+      const cb=document.createElement('input'); cb.type='checkbox'; cbs.push(cb);
       cb.checked=all||(Array.isArray(setup.bodies)&&setup.bodies.indexOf(b.id)>=0);
       const nm=(b.name||b.id)+'';
       const lb=document.createElement('label');
@@ -22109,7 +22227,7 @@ function faoSetupFiche(p,setup){
         faoSnapshot('corps modélisés du posage');
         const checked=[];
         try{
-          Array.from(rB.querySelectorAll('input[type=checkbox]')).forEach(function(x,i){
+          cbs.forEach(function(x,i){
             if(x.checked&&bl[i])checked.push(bl[i].id); });
         }catch(e){}
         setup.bodies=(checked.length===bl.length)?'all':checked;
@@ -22253,21 +22371,21 @@ function faoSetupFiche(p,setup){
   rF.appendChild(faoLab('Bridage'));
   rF.appendChild(faoTxt((setup.fixture&&setup.fixture.note)||'',function(v){
     setup.fixture=setup.fixture||{}; setup.fixture.note=String(v).slice(0,80); },110));
-  rF.appendChild(faoLab('dég.rad.'));
+  rF.appendChild(faoLab('Dégagement radial'));
   rF.appendChild(faoNum(setup.fixture?setup.fixture.radial:5,function(v){
     setup.fixture=setup.fixture||{}; setup.fixture.radial=Math.max(0,v); },44));
-  rF.appendChild(faoLab('ax.'));
+  rF.appendChild(faoLab('Dégagement axial'));
   rF.appendChild(faoNum(setup.fixture?setup.fixture.axial:5,function(v){
     setup.fixture=setup.fixture||{}; setup.fixture.axial=Math.max(0,v); },44));
   p.appendChild(rF);
   // Bornes Z du bridage : références « Haut/Bas du bridage » des plans
   // (2026-10-08-002). Défaut = fond/dessus du brut (non stocké tant qu'édité).
   const rFZ=faoRow();
-  rFZ.appendChild(faoLab('Br. Z0'));
+  rFZ.appendChild(faoLab('Bridage Z bas'));
   rFZ.appendChild(faoNum(isFinite(+setup.fixture.z0)?+setup.fixture.z0:stock.z0,function(v){
     setup.fixture=setup.fixture||{}; setup.fixture.z0=v; },44,1,
     'Bas du bridage (mm, repère monde) — référence « Bas du bridage » des plans. Défaut = fond du brut.'));
-  rFZ.appendChild(faoLab('Z1'));
+  rFZ.appendChild(faoLab('Bridage Z haut'));
   rFZ.appendChild(faoNum(isFinite(+setup.fixture.z1)?+setup.fixture.z1:stock.z1,function(v){
     setup.fixture=setup.fixture||{}; setup.fixture.z1=v; },44,1,
     'Haut du bridage (mm, repère monde) — référence « Haut du bridage » des plans. Défaut = dessus du brut.'));
@@ -22276,6 +22394,7 @@ function faoSetupFiche(p,setup){
   nF.className='fao-help';
   nF.textContent='Bridage mémorisé (phase suivante : évitement dans les parcours).';
   p.appendChild(nF);
+  p.appendChild(faoH('Plans · sortie')); // 2026-10-22-008 : onglet « Plans »
   const rC=faoRow();
   rC.appendChild(faoLab('Sortie'));
   rC.appendChild(faoNum(setup.secu,function(v){ setup.secu=Math.max(0,v); },48,0.5,
@@ -22302,6 +22421,7 @@ function faoSetupFiche(p,setup){
     'Plans en mm par référence (« depuis ») + décalage : dégagement = plan des translations rapides XY, '+
     'retrait = plan des remontées et des changements d\'outil. Opérations : héritent de ces valeurs '+
     'tant qu\'elles ne les touchent pas ; tout plan reste ≥ dessus du brut.'));
+  p.appendChild(faoH('Machine · temps')); // 2026-10-22-008 : onglet « Temps »
   const rV=faoRow();
   rV.appendChild(faoLab('Rapide G0'));
   rV.appendChild(faoNum(faoRapide(setup),function(v){ setup.rapide=Math.max(1,Math.round(v)); },
@@ -22311,11 +22431,11 @@ function faoSetupFiche(p,setup){
     36,100,"Pourcentage de l'avance de coupe appliqué à la plongée (F de plongée des G1 Z)."));
   rV.appendChild(faoLab('% de F'));
   const rA=faoRow();
-  rA.appendChild(faoLab('Accél.'));
+  rA.appendChild(faoLab('Accélération'));
   rA.appendChild(faoNum(faoAccel(setup),function(v){ setup.accel=Math.max(100,Math.round(v)); },
     44,100,"Accélération de la machine (mm/s²) — le temps des rapides vaut d/v + v/A, un rapide court coûte plus que sa longueur."));
   rA.appendChild(faoLab('mm/s²'));
-  rA.appendChild(faoLab('Ch. outil'));
+  rA.appendChild(faoLab('Changement d’outil'));
   rA.appendChild(faoNum(faoToolChg(setup),function(v){ setup.toolChg=Math.max(0,Math.round(v)); },
     40,5,"Durée d'un changement d'outil (secondes) ajoutée à l'estimation pour chaque changement de groupe outil."));
   rA.appendChild(faoLab('s'));
@@ -22363,7 +22483,9 @@ function faoRenderProps(p,s){
       p.appendChild(back);
     }else{
       faoSetupFiche(p,setup);
+      faoSetupTabs(p,setup); // 2026-10-22-008 : onglets du posage
     }
+    faoTidyRows(p); // 2026-10-22-007 : même présentation que le panneau Plan
   }catch(e){}
 }
 
@@ -30070,8 +30192,47 @@ function faoMeshConcat(a,b){
    EXTÉRIEURE jusqu'à la sortie de la boîte du brut : le prisme obtenu (face,
    face translatée, côtés) rejoint les obstacles rouges — même marge, mêmes
    règles (aucune position d'outil, rapides par le dégagement). */
-function faoFrontPrism(red,st){
+// 2026-10-22-006 : stockMesh (corps-brut) — le volume avant s'arrête à la PEAU
+// du corps-brut devant la face (premier impact du rayon le long de la normale),
+// plus au bord de la boîte : pour une face courbe (bord cylindrique du moyeu,
+// face 24 de RETARD) le prisme jusqu'à la boîte couvrait l'air au-dessus du
+// flanc jusqu'au bout de la pièce — la fraise ne sortait plus de ce côté.
+function faoRayHitter(mesh,cs){
+  cs=cs>0?cs:4;
+  const V=mesh.v,T=mesh.t,G=new Map();
+  let x0=1/0,y0=1/0,z0=1/0;for(const p of V){if(p[0]<x0)x0=p[0];if(p[1]<y0)y0=p[1];if(p[2]<z0)z0=p[2];}
+  const key=function(i,j,k){return (i*4096+j)*4096+k;};
+  for(let t=0;t<T.length;t++){const A=V[T[t][0]],B=V[T[t][1]],C=V[T[t][2]];
+    const i0=Math.floor((Math.min(A[0],B[0],C[0])-x0)/cs),i1=Math.floor((Math.max(A[0],B[0],C[0])-x0)/cs);
+    const j0=Math.floor((Math.min(A[1],B[1],C[1])-y0)/cs),j1=Math.floor((Math.max(A[1],B[1],C[1])-y0)/cs);
+    const k0=Math.floor((Math.min(A[2],B[2],C[2])-z0)/cs),k1=Math.floor((Math.max(A[2],B[2],C[2])-z0)/cs);
+    for(let i=i0;i<=i1;i++)for(let j=j0;j<=j1;j++)for(let k=k0;k<=k1;k++){const q=key(i,j,k);let a=G.get(q);if(!a){a=[];G.set(q,a);}a.push(t);}}
+  // premier impact (t > tmin) du rayon p + t·n, jusqu'à tmax ; null sinon
+  return function(p,n,tmin,tmax){
+    let best=null;const seen=new Set();
+    for(let s=0;s<=tmax+cs;s+=cs*0.5){
+      if(best!==null&&s>best+cs)break;
+      const x=p[0]+n[0]*s,y=p[1]+n[1]*s,z=p[2]+n[2]*s;
+      const i=Math.floor((x-x0)/cs),j=Math.floor((y-y0)/cs),k=Math.floor((z-z0)/cs);
+      for(let di=-1;di<=1;di++)for(let dj=-1;dj<=1;dj++)for(let dk=-1;dk<=1;dk++){const a=G.get(key(i+di,j+dj,k+dk));if(!a)continue;
+        for(const t of a){if(seen.has(t))continue;seen.add(t);
+          const A=V[T[t][0]],B=V[T[t][1]],C=V[T[t][2]];
+          const e1=[B[0]-A[0],B[1]-A[1],B[2]-A[2]],e2=[C[0]-A[0],C[1]-A[1],C[2]-A[2]];
+          const h=[n[1]*e2[2]-n[2]*e2[1],n[2]*e2[0]-n[0]*e2[2],n[0]*e2[1]-n[1]*e2[0]];
+          const det=e1[0]*h[0]+e1[1]*h[1]+e1[2]*h[2];if(Math.abs(det)<1e-12)continue;
+          const f=1/det,sv=[p[0]-A[0],p[1]-A[1],p[2]-A[2]];
+          const u=f*(sv[0]*h[0]+sv[1]*h[1]+sv[2]*h[2]);if(u<-1e-9||u>1+1e-9)continue;
+          const q=[sv[1]*e1[2]-sv[2]*e1[1],sv[2]*e1[0]-sv[0]*e1[2],sv[0]*e1[1]-sv[1]*e1[0]];
+          const v=f*(n[0]*q[0]+n[1]*q[1]+n[2]*q[2]);if(v<-1e-9||u+v>1+1e-9)continue;
+          const tt=f*(e2[0]*q[0]+e2[1]*q[1]+e2[2]*q[2]);
+          if(tt>tmin&&tt<=tmax&&(best===null||tt<best))best=tt;}}
+    }
+    return best;
+  };
+}
+function faoFrontPrism(red,st,stockMesh){
   if(!red||!red.t||!red.t.length||!st||!faoStockValid(st))return null;
+  const hit=(stockMesh&&stockMesh.t&&stockMesh.t.length)?faoRayHitter(stockMesh,4):null;
   const B=[+st.x0,+st.y0,+st.z0,+st.x1,+st.y1,+st.z1];
   // distance de sortie de la boîte le long de n depuis p (0 si déjà dehors)
   const exitD=function(p,n){
@@ -30089,9 +30250,19 @@ function faoFrontPrism(red,st){
     const ux=Bv[0]-A[0],uy=Bv[1]-A[1],uz=Bv[2]-A[2],wx=C[0]-A[0],wy=C[1]-A[1],wz=C[2]-A[2];
     let n=[uy*wz-uz*wy,uz*wx-ux*wz,ux*wy-uy*wx];const l=Math.hypot(n[0],n[1],n[2]);
     if(!(l>1e-12))continue;n=[n[0]/l,n[1]/l,n[2]/l];
-    const L=Math.max(exitD(A,n),exitD(Bv,n),exitD(C,n));
+    let L=Math.max(exitD(A,n),exitD(Bv,n),exitD(C,n));
+    if(hit){ // peau du corps-brut devant la face (sinon : rien devant, pas de volume)
+      let Lb=0;for(const q of [A,Bv,C]){const t=hit(q,n,1e-4,L);if(t!==null&&t>Lb)Lb=t;}
+      L=Math.min(L,Lb);
+    }
     if(!(L>1e-6))continue;
-    const P=[A,Bv,C],Q=P.map(function(p){return [p[0]+n[0]*L,p[1]+n[1]*L,p[2]+n[2]*L];});
+    // 2026-10-22-006 : jamais AU-DESSUS de la face — « devant » est ce qui est
+    // à la hauteur de la face : la fraise peut toujours passer au-dessus du
+    // rouge (« sortir du flanc rouge sans descendre »). Une normale qui monte
+    // (bord cylindrique du moyeu) faisait monter le volume par-dessus le flanc.
+    const zTop=Math.max(A[2],Bv[2],C[2]);
+    const P=[A,Bv,C],Q=P.map(function(p){let Lp=L;if(n[2]>1e-6)Lp=Math.min(L,Math.max(0,(zTop-p[2])/n[2]));
+      return [p[0]+n[0]*Lp,p[1]+n[1]*Lp,p[2]+n[2]*Lp];});
     const ip=P.map(add),iq=Q.map(add);
     T.push([ip[0],ip[1],ip[2]],[iq[0],iq[2],iq[1]]);
     for(let e=0;e<3;e++){const a=e,b=(e+1)%3;T.push([ip[a],iq[a],iq[b]],[ip[a],iq[b],ip[b]]);}
@@ -30110,7 +30281,8 @@ function faoProtectParts(job,op){
   if(!red)return null;
   if(!(op&&op.protectFront))return {red:red,front:null};
   let st=null;try{st=(job&&job.stock&&faoStockValid(job.stock))?job.stock:faoStock();}catch(e){st=null;}
-  return {red:red,front:faoFrontPrism(red,st)};
+  let sm=null;try{const id=faoStockBodyId(job);if(id!=null)sm=faoFaceMesh(job,[{b:id,all:1}]);}catch(e){sm=null;}
+  return {red:red,front:faoFrontPrism(red,st,sm)};
 }
 // 2026-10-21-013 : « devant la face » = outil DEVANT le flanc — le volume avant
 // ne s'applique que si AUCUNE pièce n'est sous le centre de l'outil. Au-dessus de

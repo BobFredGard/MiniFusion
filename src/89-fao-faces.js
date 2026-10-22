@@ -70,8 +70,47 @@ function faoMeshConcat(a,b){
    EXTÉRIEURE jusqu'à la sortie de la boîte du brut : le prisme obtenu (face,
    face translatée, côtés) rejoint les obstacles rouges — même marge, mêmes
    règles (aucune position d'outil, rapides par le dégagement). */
-function faoFrontPrism(red,st){
+// 2026-10-22-006 : stockMesh (corps-brut) — le volume avant s'arrête à la PEAU
+// du corps-brut devant la face (premier impact du rayon le long de la normale),
+// plus au bord de la boîte : pour une face courbe (bord cylindrique du moyeu,
+// face 24 de RETARD) le prisme jusqu'à la boîte couvrait l'air au-dessus du
+// flanc jusqu'au bout de la pièce — la fraise ne sortait plus de ce côté.
+function faoRayHitter(mesh,cs){
+  cs=cs>0?cs:4;
+  const V=mesh.v,T=mesh.t,G=new Map();
+  let x0=1/0,y0=1/0,z0=1/0;for(const p of V){if(p[0]<x0)x0=p[0];if(p[1]<y0)y0=p[1];if(p[2]<z0)z0=p[2];}
+  const key=function(i,j,k){return (i*4096+j)*4096+k;};
+  for(let t=0;t<T.length;t++){const A=V[T[t][0]],B=V[T[t][1]],C=V[T[t][2]];
+    const i0=Math.floor((Math.min(A[0],B[0],C[0])-x0)/cs),i1=Math.floor((Math.max(A[0],B[0],C[0])-x0)/cs);
+    const j0=Math.floor((Math.min(A[1],B[1],C[1])-y0)/cs),j1=Math.floor((Math.max(A[1],B[1],C[1])-y0)/cs);
+    const k0=Math.floor((Math.min(A[2],B[2],C[2])-z0)/cs),k1=Math.floor((Math.max(A[2],B[2],C[2])-z0)/cs);
+    for(let i=i0;i<=i1;i++)for(let j=j0;j<=j1;j++)for(let k=k0;k<=k1;k++){const q=key(i,j,k);let a=G.get(q);if(!a){a=[];G.set(q,a);}a.push(t);}}
+  // premier impact (t > tmin) du rayon p + t·n, jusqu'à tmax ; null sinon
+  return function(p,n,tmin,tmax){
+    let best=null;const seen=new Set();
+    for(let s=0;s<=tmax+cs;s+=cs*0.5){
+      if(best!==null&&s>best+cs)break;
+      const x=p[0]+n[0]*s,y=p[1]+n[1]*s,z=p[2]+n[2]*s;
+      const i=Math.floor((x-x0)/cs),j=Math.floor((y-y0)/cs),k=Math.floor((z-z0)/cs);
+      for(let di=-1;di<=1;di++)for(let dj=-1;dj<=1;dj++)for(let dk=-1;dk<=1;dk++){const a=G.get(key(i+di,j+dj,k+dk));if(!a)continue;
+        for(const t of a){if(seen.has(t))continue;seen.add(t);
+          const A=V[T[t][0]],B=V[T[t][1]],C=V[T[t][2]];
+          const e1=[B[0]-A[0],B[1]-A[1],B[2]-A[2]],e2=[C[0]-A[0],C[1]-A[1],C[2]-A[2]];
+          const h=[n[1]*e2[2]-n[2]*e2[1],n[2]*e2[0]-n[0]*e2[2],n[0]*e2[1]-n[1]*e2[0]];
+          const det=e1[0]*h[0]+e1[1]*h[1]+e1[2]*h[2];if(Math.abs(det)<1e-12)continue;
+          const f=1/det,sv=[p[0]-A[0],p[1]-A[1],p[2]-A[2]];
+          const u=f*(sv[0]*h[0]+sv[1]*h[1]+sv[2]*h[2]);if(u<-1e-9||u>1+1e-9)continue;
+          const q=[sv[1]*e1[2]-sv[2]*e1[1],sv[2]*e1[0]-sv[0]*e1[2],sv[0]*e1[1]-sv[1]*e1[0]];
+          const v=f*(n[0]*q[0]+n[1]*q[1]+n[2]*q[2]);if(v<-1e-9||u+v>1+1e-9)continue;
+          const tt=f*(e2[0]*q[0]+e2[1]*q[1]+e2[2]*q[2]);
+          if(tt>tmin&&tt<=tmax&&(best===null||tt<best))best=tt;}}
+    }
+    return best;
+  };
+}
+function faoFrontPrism(red,st,stockMesh){
   if(!red||!red.t||!red.t.length||!st||!faoStockValid(st))return null;
+  const hit=(stockMesh&&stockMesh.t&&stockMesh.t.length)?faoRayHitter(stockMesh,4):null;
   const B=[+st.x0,+st.y0,+st.z0,+st.x1,+st.y1,+st.z1];
   // distance de sortie de la boîte le long de n depuis p (0 si déjà dehors)
   const exitD=function(p,n){
@@ -89,9 +128,19 @@ function faoFrontPrism(red,st){
     const ux=Bv[0]-A[0],uy=Bv[1]-A[1],uz=Bv[2]-A[2],wx=C[0]-A[0],wy=C[1]-A[1],wz=C[2]-A[2];
     let n=[uy*wz-uz*wy,uz*wx-ux*wz,ux*wy-uy*wx];const l=Math.hypot(n[0],n[1],n[2]);
     if(!(l>1e-12))continue;n=[n[0]/l,n[1]/l,n[2]/l];
-    const L=Math.max(exitD(A,n),exitD(Bv,n),exitD(C,n));
+    let L=Math.max(exitD(A,n),exitD(Bv,n),exitD(C,n));
+    if(hit){ // peau du corps-brut devant la face (sinon : rien devant, pas de volume)
+      let Lb=0;for(const q of [A,Bv,C]){const t=hit(q,n,1e-4,L);if(t!==null&&t>Lb)Lb=t;}
+      L=Math.min(L,Lb);
+    }
     if(!(L>1e-6))continue;
-    const P=[A,Bv,C],Q=P.map(function(p){return [p[0]+n[0]*L,p[1]+n[1]*L,p[2]+n[2]*L];});
+    // 2026-10-22-006 : jamais AU-DESSUS de la face — « devant » est ce qui est
+    // à la hauteur de la face : la fraise peut toujours passer au-dessus du
+    // rouge (« sortir du flanc rouge sans descendre »). Une normale qui monte
+    // (bord cylindrique du moyeu) faisait monter le volume par-dessus le flanc.
+    const zTop=Math.max(A[2],Bv[2],C[2]);
+    const P=[A,Bv,C],Q=P.map(function(p){let Lp=L;if(n[2]>1e-6)Lp=Math.min(L,Math.max(0,(zTop-p[2])/n[2]));
+      return [p[0]+n[0]*Lp,p[1]+n[1]*Lp,p[2]+n[2]*Lp];});
     const ip=P.map(add),iq=Q.map(add);
     T.push([ip[0],ip[1],ip[2]],[iq[0],iq[2],iq[1]]);
     for(let e=0;e<3;e++){const a=e,b=(e+1)%3;T.push([ip[a],iq[a],iq[b]],[ip[a],iq[b],ip[b]]);}
@@ -110,7 +159,8 @@ function faoProtectParts(job,op){
   if(!red)return null;
   if(!(op&&op.protectFront))return {red:red,front:null};
   let st=null;try{st=(job&&job.stock&&faoStockValid(job.stock))?job.stock:faoStock();}catch(e){st=null;}
-  return {red:red,front:faoFrontPrism(red,st)};
+  let sm=null;try{const id=faoStockBodyId(job);if(id!=null)sm=faoFaceMesh(job,[{b:id,all:1}]);}catch(e){sm=null;}
+  return {red:red,front:faoFrontPrism(red,st,sm)};
 }
 // 2026-10-21-013 : « devant la face » = outil DEVANT le flanc — le volume avant
 // ne s'applique que si AUCUNE pièce n'est sous le centre de l'outil. Au-dessus de

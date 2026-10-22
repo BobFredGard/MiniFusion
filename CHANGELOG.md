@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**291 versions**, de `2026-09-28b` à `V0.3.21` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**292 versions**, de `2026-09-28b` à `V0.3.22` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4420,3 +4420,12 @@ Retours utilisateur (Malaxeur Retard, posage tourné de 11,25° autour de X).
 - CACHE_VER `2026-10-22-005` : ébauches à régénérer.
 
 Tests : `test_fao_brut_corps` (la fraise sort du brut — 0 coupe à plus de 5 mm du corps avant ; minipasses à chaque cote — échouent sur V0.3.20). Suite complète 109/109.
+
+## V0.3.22 - FAO : « devant la face » borné pour les faces courbes, fiches présentées comme le panneau Plan
+Retours utilisateur (Malaxeur Retard).
+- **« Interdire devant la face » sur une face courbe** (bord cylindrique du moyeu, face 24) : le volume avant suivait les normales jusqu'à la boîte du brut et passait PAR-DESSUS le flanc jusqu'au bout de la pièce — la fraise ne sortait plus de ce côté (« 2e côté pas fini »). Le volume avant ne monte plus au-dessus de la face et s'arrête à la peau du corps-brut. RETARD avec la face 24 : colonnes à plus de 3 mm 749 → 301, hélices 52 → 1. Signature des opérations à faces rouges `_redV=3` : seules elles sont à régénérer.
+- **Fiches FAO** (posage, opérations) : même présentation que le panneau Plan — un réglage par ligne, libellé à gauche, champ aligné à droite avec son unité, cases à cocher à droite, lignes chargées repliées sous le libellé ; textes d'aide, notes et estimations dans un seul style ; champs texte et listes à la même hauteur (`faoTidyRows`).
+- **Fiche posage en onglets** : Général, Repère, Modèle, Brut, Plans, Temps (onglet choisi mémorisé par posage) ; l'estimation reste visible sous les onglets. Libellés en clair (« Dégagement radial / axial », « Bridage Z bas / haut », « Accélération », « Changement d'outil »).
+- « Modèle à usiner » : les cases sont gardées en main (la mise en ligne éclatait la rangée relue au clic : aucun corps ne restait coché).
+
+Tests : `test_fao_faces` (volume avant d’une face courbe au plus à la hauteur de la face — échoue sur V0.3.21), `test_fao_planes` (libellés du bridage). `npm run ci` vert.
