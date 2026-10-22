@@ -866,6 +866,28 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   const airSp=function(x,y){
     return x<B.x0-1e-9||x>B.x1+1e-9||y<B.y0-1e-9||y>B.y1+1e-9;
   };
+  // 2026-10-22-003 : ENTRÉE PAR L'EXTÉRIEUR (« quand on peut rentrer par
+  // l'extérieur, en cercle à plat, c'est préférable à l'hélice ») — brut-corps
+  // ou faces rouges : la carte de matière restante dit si le disque d'outil
+  // est hors matière à cette cote ; on y descend alors en rapide jusqu'à
+  // 1 mm, puis à plat, et l'arc tangent entre dans la matière. Sans carte :
+  // inchangé (plongée seulement sur du déjà-balayé ou hors de la boîte).
+  const remPt=(opt&&typeof opt.remPtAt==='function')?opt.remPtAt:null;
+  const airHere=function(x,y){return !!(remPt&&remPt(x,y)<=z+1e-6);};
+  const plungeOK=function(x,y){return airHere(x,y)||faoPlungeClear(x,y,moves,z,D,airSp);};
+  const zoneSafeL=(opt&&typeof opt.zoneSafe==='function')?opt.zoneSafe:null;
+  const airIn=function(x,y){return faoShapeValid(S,x,y,rrM)&&(zoneSafeL?zoneSafeL(x,y):(!zoneAt||zoneAt(x,y)));};
+  const segAir=function(ax,ay,bx,by){
+    const L=Math.hypot(bx-ax,by-ay),n=Math.max(1,Math.ceil(L/0.25));
+    for(let i=0;i<=n;i++){const t=i/n,qx=ax+(bx-ax)*t,qy=ay+(by-ay)*t;
+      if(!faoShapeValid(S,qx,qy,rrSafe))return false;
+      if(airHere(qx,qy)){if(zoneSafeL&&!zoneSafeL(qx,qy))return false;}
+      else if(zoneAt&&!zoneAt(qx,qy))return false;}
+    return true;
+  };
+  const dropAir=function(x,y,zG){
+    if(airHere(x,y)&&zG>z+1+1e-9)moves.push({r:1,x:rnd(x),y:rnd(y),z:rnd(z+1)});
+  };
   // 011 : VIDE D'ABORD (feedback « après la spirale tu rentres en pleine
   // matière en rampe circulaire alors qu'il y a plein de vide avant ») —
   // après la spirale tout le plancher du niveau est du vide : avant toute
@@ -878,7 +900,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   // joignable à cote (mur entre Q et la cible = gouge) : repli hélice /
   // rampe inchangé (marge E0, 1re attaque).
   const voidWay=function(tx,ty){
-    if(!sweptNow)return null;
+    if(!sweptNow&&!remPt)return null;
     const step=Math.max(2,D*0.12),Rmax=Math.min(45,Math.max(18,D*1.6));
     const maxK=Math.ceil(Rmax/step);
     for(let k=1;k<=maxK;k++){
@@ -887,9 +909,13 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
       for(let j=0;j<n;j++){
         const a=j/n*2*Math.PI;
         const qx=tx+rad*Math.cos(a),qy=ty+rad*Math.sin(a);
-        if(!inside(qx,qy))continue;
-        if(!segClear(qx,qy,tx,ty))continue;
-        if(!faoPlungeClear(qx,qy,moves,z,D,airSp))continue;
+        // 2026-10-22-003 : Q dans l'AIR (hors brut-corps) — admis hors de la
+        // zone « avec brut » (zoneSafe : limite + rouge seulement)
+        const qa=airHere(qx,qy);
+        if(qa){if(!airIn(qx,qy)||!segAir(qx,qy,tx,ty))continue;}
+        else{if(!inside(qx,qy))continue;
+          if(!segClear(qx,qy,tx,ty))continue;
+          if(!plungeOK(qx,qy))continue;}
         return {x:qx,y:qy};
       }
     }
@@ -905,8 +931,9 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     const ddx=qx-(prev?prev.x:0), ddy=qy-(prev?prev.y:0);
     if(prev&&!prev.r&&Math.abs(prev.z-z)<1e-9&&
        ddx*ddx+ddy*ddy<linkMax*linkMax&&
-       segClear(prev.x,prev.y,qx,qy)){ pushCut(qx,qy); return; }
+       (segClear(prev.x,prev.y,qx,qy)||(remPt&&segAir(prev.x,prev.y,qx,qy)))){ pushCut(qx,qy); return; }
     const zG=gotoXY(qx,qy);
+    dropAir(qx,qy,zG);
     if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(qx),y:rnd(qy),z:z});
   };
   // 2026-10-10-001 (retour « je ne vois aucune entrée en cercles tangents ») :
@@ -940,14 +967,15 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
         // (1) déjà à la cote : accostage de coupe jusqu'à l'ancre, puis arc.
         if(atZ&&linkNear(prev.x,prev.y,s.sx,s.sy)&&segClear(prev.x,prev.y,s.sx,s.sy)){ pushCut(s.sx,s.sy); emitArc(s); return true; }
         // (2) plongée sûre sur l'ancre (007 : disque déjà balayé/en air).
-        if(faoPlungeClear(s.sx,s.sy,moves,z,D,airSp)){
+        if(plungeOK(s.sx,s.sy)){
           const zG=gotoXY(s.sx,s.sy);
+          dropAir(s.sx,s.sy,zG);
           if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(s.sx),y:rnd(s.sy),z:z});
           emitArc(s);
           return true;
         }
         // (3) vide d'abord (011) : plongée plate sur Q, accostage, arc.
-        if(sweptNow){
+        if(sweptNow||remPt){
           const Qs=voidWay(s.sx,s.sy);
           if(Qs){ arriveVoid(Qs.x,Qs.y); pushCut(s.sx,s.sy); emitArc(s); return true; }
         }
@@ -988,8 +1016,9 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     // plat directement, AVANT toute hélice. Après la spirale le plancher du
     // niveau est du vide partout : une hélice ici serait exactement le
     // « rampe circulaire en pleine matière » du feedback.
-    if(faoPlungeClear(x,y,moves,z,D,airSp)){
+    if(plungeOK(x,y)){
       const zG=gotoXY(x,y);
+      dropAir(x,y,zG);
       if(Math.abs(zG-z)>1e-9)moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:z});
       pushCut(x,y);
       return true;
@@ -1051,7 +1080,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
         let orbOk=true;
         for(let k=0;k<8;k++){const a=k/8*2*Math.PI;if(!inside(px+0.5*Math.cos(a),py+0.5*Math.sin(a))){orbOk=false;break;}}
         if(orbOk)faoHelixEntry(px,py,zLast,z,0.5,D).slice(1).forEach(function(m){moves.push(m);});
-        else if(faoPlungeClear(px,py,moves,z,D,airSp))moves.push({r:0,x:rnd(px),y:rnd(py),z:z});
+        else if(plungeOK(px,py))moves.push({r:0,x:rnd(px),y:rnd(py),z:z});
       }
     }
     rampL=0;
@@ -1540,6 +1569,12 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
   // lieu de 72,5 — les extrémités de la poche n'étaient JAMAIS usinées).
   // 2026-10-21-010 : dessus du brut-corps dans le repère interne (liaisons toriques)
   let stockTopF=(typeof o.stockTopAt==='function')?o.stockTopAt:null;
+  let stockRawF=(typeof o.stockRawAt==='function')?o.stockRawAt:null; // 2026-10-22-003 : non dilaté
+  if(stockRawF&&(th!==0||swapped)){
+    const sR=stockRawF;
+    if(th!==0){const cs=Math.cos(th),sn=Math.sin(th);stockRawF=function(x,y){return sR(x*cs-y*sn,x*sn+y*cs);};}
+    else stockRawF=function(x,y){return sR(y,x);};
+  }
   if(stockTopF&&(th!==0||swapped)){
     const sW=stockTopF;
     if(th!==0){const cs=Math.cos(th),sn=Math.sin(th);stockTopF=function(x,y){return sW(x*cs-y*sn,x*sn+y*cs);};}
@@ -1671,10 +1706,14 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
   if(stockTopF||typeof o.protectTip==='function'){
     const g=1,pad=D;
     const rx0=BB.x0-pad,ry0=BB.y0-pad,rnx=Math.ceil((BB.x1-BB.x0+2*pad)/g)+1,rny=Math.ceil((BB.y1-BB.y0+2*pad)/g)+1;
-    const top=new Float32Array(rnx*rny);
+    const top=new Float32Array(rnx*rny),raw=new Float32Array(rnx*rny);
     const bt=isFinite(+o.brutTop)?+o.brutTop:zt;
+    const SBr=o.stockBox&&isFinite(+o.stockBox.x0)?o.stockBox:null;
     for(let j=0;j<rny;j++)for(let i=0;i<rnx;i++){const x=rx0+i*g,y=ry0+j*g;
-      top[j*rnx+i]=stockTopF?Math.min(bt,stockTopF(x,y)):bt;}
+      top[j*rnx+i]=stockTopF?Math.min(bt,stockTopF(x,y)):bt;
+      // brut non dilaté : corps (repère interne) ; sinon boîte du brut
+      raw[j*rnx+i]=stockRawF?Math.min(bt,stockRawF(x,y))
+        :(SBr&&!(th!==0||swapped)?((x>=+SBr.x0&&x<=+SBr.x1&&y>=+SBr.y0&&y<=+SBr.y1)?bt:-1/0):bt);}
     const rcut=Math.max(0.5,D/2-0.3*(isFinite(+o.cornerR)?+o.cornerR:0));
     let done=0;
     const carve=function(){
@@ -1683,7 +1722,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
         for(let s=0;s<=ns;s++){const t=s/ns,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t,z=Math.max(a.z,b.z);
           const n=Math.ceil(rcut/g),ci=Math.round((x-rx0)/g),cj=Math.round((y-ry0)/g);
           for(let dj=-n;dj<=n;dj++)for(let di=-n;di<=n;di++){if((di*di+dj*dj)*g*g>rcut*rcut)continue;
-            const ii=ci+di,jj=cj+dj;if(ii<0||jj<0||ii>=rnx||jj>=rny)continue;const q=jj*rnx+ii;if(z<top[q])top[q]=z;}}}
+            const ii=ci+di,jj=cj+dj;if(ii<0||jj<0||ii>=rnx||jj>=rny)continue;const q=jj*rnx+ii;if(z<top[q])top[q]=z;if(z<raw[q])raw[q]=z;}}}
       done=moves.length;
     };
     const rb=D/2+0.5,nb=Math.ceil(rb/g);
@@ -1697,7 +1736,14 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
       for(let dj=-nb;dj<=nb;dj++)for(let di=-nb;di<=nb;di++){if((di*di+dj*dj)*g*g>rb*rb)continue;
         const ii=ci+di,jj=cj+dj;if(ii<0||jj<0||ii>=rnx||jj>=rny)continue;const v=top[jj*rnx+ii];if(v>m)m=v;}
       return m;};
-    rem={carve:carve,blocked:blocked,blockedAt:blockedAt,topAt:topAt};
+    // 2026-10-22-003 : ptAt — brut restant le plus haut SOUS LE DISQUE d'outil
+    // (carte NON dilatée du corps-brut, abaissée par les mêmes passes) ;
+    // ≤ z : la fraise est dans l'air à cette cote (entrée par l'extérieur).
+    const ptAt=function(x,y){let m=-1/0;const ci=Math.round((x-rx0)/g),cj=Math.round((y-ry0)/g);
+      for(let dj=-nb;dj<=nb;dj++)for(let di=-nb;di<=nb;di++){if((di*di+dj*dj)*g*g>rb*rb)continue;
+        const ii=ci+di,jj=cj+dj;if(ii<0||jj<0||ii>=rnx||jj>=rny)continue;const v=raw[jj*rnx+ii];if(v>m)m=v;}
+      return m;};
+    rem={carve:carve,blocked:blocked,blockedAt:blockedAt,topAt:topAt,ptAt:ptAt};
   }
   // 2026-10-14-007 : PASSE TORIQUE (src/89-fao-torique.js) — outil à rayon de
   // coin (torique : cornerR ; boule : D/2) : après chaque niveau du moteur
@@ -1713,8 +1759,10 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
   const bullJobs=[];
   // forEach -> for (yield interdit dans une closure) : chaque itération de
   // niveau cède le fil au flux via yield moves (dessin progressif 005).
+  const chunkAt=[]; // 2026-10-22-001 : début de chaque niveau dans moves (ordre par région)
   for(let li=0;li<plan.length;li++){
     const L=plan[li];
+    chunkAt.push(moves.length);
     // Entrée depuis z+pas (rainure du dessus déjà ouverte, descente en avance
     // plongée) : l'hélice ne refait jamais toute la hauteur depuis la sécu.
     const zFrom=Math.min(secu,L.z+ap);
@@ -1730,7 +1778,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     // ESCARGOT : spirale centre -> faces sur le meme plan/levels, memes
     // entrees/travel ; mini-passes et finition restent conventionnelles.
     // 2026-10-08-003 : sens (avalant = sens de coupe constant) porte par opt.
-    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,zoneDense:typeof o.protectTip==='function',stockTop:stockTopF,remBlocked:rem?rem.blocked:null,remTopAt:rem?rem.topAt:null,
+    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,zoneDense:typeof o.protectTip==='function',stockTop:stockTopF,remBlocked:rem?rem.blocked:null,remTopAt:rem?rem.topAt:null,remPtAt:rem?rem.ptAt:null,zoneSafe:o.zoneSafe||null,
       bullFaces:bullC?function(zz){return faoBullRingRuns(bullCtx(L.radial),zz,o.sens==='avalant',true);}:null,
       bullOK:bullC?function(x,y,zz){return bullCtx(L.radial).tipB(x,y)<=zz+1e-6;}:null});
     else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
@@ -1795,6 +1843,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
   }
   if(bullC){
     for(let q=0;q<bullJobs.length;q++){const J=bullJobs[q];
+      chunkAt.push(moves.length);
       zCur=J[1];
       faoBullRingLevel(bullCtx(J[0]),J[1],moves,{sens:o.sens,secu:secu,travelZ:J[2],linkMax:bullLink,minRun:rem?5:0});
       if(rem)rem.carve();}
@@ -1802,11 +1851,126 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     yield frameYield();
   }
   faoSliceCache=null;
+  // 2026-10-22-001 : FINIR UNE RÉGION AVANT L'AUTRE (« au lieu de passer d'un
+  // côté à l'autre ») — réordonnancement des blocs du parcours, voir
+  // faoRegionOrder. Case de la fiche (op.parRegion) ; absente = ordre des
+  // niveaux (documents existants inchangés).
+  if(o.parRegion){
+    const bt=isFinite(+o.brutTop)?+o.brutTop:zt;
+    const nm=faoRegionOrder(moves,chunkAt,D,secu,function(x,y){return stockTopF?Math.min(bt,stockTopF(x,y)):bt;},
+      Math.max(0.5,D/2-0.3*(isFinite(+o.cornerR)?+o.cornerR:0)),BB);
+    if(nm!==moves){moves.length=0;for(let i=0;i<nm.length;i++)moves.push(nm[i]);}
+  }
   // Retour repère -> pièce : même xf que les yields (source unique) — rotation
   // R(+th) si la zone a tourné le repère, miroir SENS LONG si brut portrait
   // sans zone ; in place, strictement équivalent à l'entrée du flux.
   if(xf)for(let i=0;i<moves.length;i++)xf(moves[i]);
   return moves;
+}
+// 2026-10-22-001 : ORDRE PAR RÉGION. Le parcours (niveaux du haut vers le bas)
+// est coupé en BLOCS aux liaisons qui remontent (suites de rapides avec une
+// montée). Empreinte d'un bloc = cases (2 mm) balayées par l'outil (+1 mm).
+// Deux blocs qui partagent une case dépendent l'un de l'autre (l'un enlève la
+// matière au-dessus de l'autre) ; deux régions sans case commune sont
+// indépendantes. RÈGLE : on prend les blocs du niveau le plus haut restant ;
+// dès que les blocs restants se séparent en régions disjointes, on finit
+// chaque région jusqu'en bas (même règle, récursive) avant la suivante —
+// dans l'ordre de première apparition. L'ordre des niveaux est conservé dans
+// chaque région. Liaisons : l'originale si elle suit le même bloc qu'avant et
+// reste au-dessus de la matière restante (carte 1 mm abaissée bloc par bloc,
+// dans le NOUVEL ordre) ; sinon remontée verticale, rapide droit à 2 mm
+// au-dessus de la matière restante sous l'outil (plafonné au plan de
+// sécurité), descente au point d'entrée d'origine.
+function faoRegionOrder(moves,chunkAt,D,secu,topInit,rcut,BB){
+  const n=moves.length;
+  if(n<4||!chunkAt||chunkAt.length<2)return moves;
+  const isTr=new Uint8Array(n);isTr[0]=1;
+  for(let i=1;i<n;){
+    if(!moves[i].r){i++;continue;}
+    let j=i,up=false;
+    while(j<n&&moves[j].r){if(moves[j].z>moves[j-1].z+1e-9)up=true;j++;}
+    if(up)for(let k=i;k<j;k++)isTr[k]=1;
+    i=j;
+  }
+  const blocks=[];
+  for(let i=0;i<n;){
+    if(isTr[i]){i++;continue;}
+    let j=i;while(j<n&&!isTr[j])j++;
+    let ts=i;while(ts>0&&isTr[ts-1])ts--;
+    blocks.push({s:i,e:j,ts:ts});i=j;
+  }
+  const nbk=blocks.length;
+  if(nbk<3)return moves;
+  let ci=0;
+  for(const b of blocks){while(ci+1<chunkAt.length&&chunkAt[ci+1]<=b.s)ci++;b.c=ci;}
+  // empreintes -> graphe des blocs (voisins consécutifs par case : suffisant,
+  // les sous-ensembles explorés sont des suffixes de niveaux d'une région)
+  const g=2,rr=D/2+1,nr=Math.ceil(rr/g)+1;
+  const x0=BB.x0-D-4,y0=BB.y0-D-4,nx=Math.ceil((BB.x1-BB.x0+2*D+8)/g)+1,ny=Math.ceil((BB.y1-BB.y0+2*D+8)/g)+1;
+  const last=new Int32Array(nx*ny).fill(-1);
+  const adj=blocks.map(function(){return new Set();});
+  const disc=[];for(let dj=-nr;dj<=nr;dj++)for(let di=-nr;di<=nr;di++)if((di*di+dj*dj)*g*g<=(rr+g*0.71)*(rr+g*0.71))disc.push([di,dj]);
+  for(let bi=0;bi<nbk;bi++){const b=blocks[bi];const line=new Set();
+    const mark=function(x,y){const i=Math.round((x-x0)/g),j=Math.round((y-y0)/g);if(i>=0&&j>=0&&i<nx&&j<ny)line.add(j*nx+i);};
+    for(let k=b.s;k<b.e;k++){const a=moves[k-1],q=moves[k];const L=Math.hypot(q.x-a.x,q.y-a.y),ns=Math.max(1,Math.ceil(L/g));
+      for(let t=0;t<=ns;t++)mark(a.x+(q.x-a.x)*t/ns,a.y+(q.y-a.y)*t/ns);}
+    const fp=new Set();
+    line.forEach(function(c){const i=c%nx,j=(c-i)/nx;for(const d of disc){const ii=i+d[0],jj=j+d[1];if(ii>=0&&jj>=0&&ii<nx&&jj<ny)fp.add(jj*nx+ii);}});
+    fp.forEach(function(c){const p=last[c];if(p>=0&&p!==bi){adj[p].add(bi);adj[bi].add(p);}last[c]=bi;});
+  }
+  // ordre récursif (pile : régions dans l'ordre de première apparition)
+  const order=[];const inS=new Uint8Array(nbk);
+  const comps=function(S){S.forEach(function(b){inS[b]=1;});const seen=new Uint8Array(nbk);const out=[];
+    for(const b0 of S){if(seen[b0])continue;const C=[];const st=[b0];seen[b0]=1;
+      while(st.length){const b=st.pop();C.push(b);adj[b].forEach(function(q){if(inS[q]&&!seen[q]){seen[q]=1;st.push(q);}});}
+      C.sort(function(a,b){return a-b;});out.push(C);}
+    S.forEach(function(b){inS[b]=0;});return out;};
+  const stack=[[]];for(let b=0;b<nbk;b++)stack[0].push(b);
+  while(stack.length){const S=stack.pop();if(!S.length)continue;
+    const C=comps(S);
+    if(C.length>1){for(let k=C.length-1;k>=0;k--)stack.push(C[k]);continue;}
+    const c0=blocks[S[0]].c;const tail=[];
+    for(const b of S){if(blocks[b].c===c0)order.push(b);else tail.push(b);}
+    if(tail.length)stack.push(tail);
+  }
+  let same=true;for(let k=0;k<nbk;k++)if(order[k]!==k){same=false;break;}
+  if(same)return moves;
+  // carte de la matière restante (1 mm), abaissée dans le nouvel ordre
+  const h=1,rb=D/2+0.5,nh=Math.ceil(rb/h);
+  const hx0=BB.x0-D-2,hy0=BB.y0-D-2,hnx=Math.ceil((BB.x1-BB.x0+2*D+4)/h)+1,hny=Math.ceil((BB.y1-BB.y0+2*D+4)/h)+1;
+  const top=new Float32Array(hnx*hny);
+  for(let j=0;j<hny;j++)for(let i=0;i<hnx;i++)top[j*hnx+i]=topInit(hx0+i*h,hy0+j*h);
+  const nc=Math.ceil(rcut/h);
+  const carve=function(a,b){const L=Math.hypot(b.x-a.x,b.y-a.y),ns=Math.max(1,Math.ceil(L/h)),z=Math.max(a.z,b.z);
+    for(let s=0;s<=ns;s++){const x=a.x+(b.x-a.x)*s/ns,y=a.y+(b.y-a.y)*s/ns,ci=Math.round((x-hx0)/h),cj=Math.round((y-hy0)/h);
+      for(let dj=-nc;dj<=nc;dj++)for(let di=-nc;di<=nc;di++){if((di*di+dj*dj)*h*h>rcut*rcut)continue;
+        const ii=ci+di,jj=cj+dj;if(ii<0||jj<0||ii>=hnx||jj>=hny)continue;const q=jj*hnx+ii;if(z<top[q])top[q]=z;}}};
+  const topAt=function(x,y){let m=-1/0;const ci=Math.round((x-hx0)/h),cj=Math.round((y-hy0)/h);
+    for(let dj=-nh;dj<=nh;dj++)for(let di=-nh;di<=nh;di++){if((di*di+dj*dj)*h*h>rb*rb)continue;
+      const ii=ci+di,jj=cj+dj;if(ii<0||jj<0||ii>=hnx||jj>=hny)continue;const v=top[jj*hnx+ii];if(v>m)m=v;}
+    return m;};
+  const lineTop=function(a,b){const L=Math.hypot(b.x-a.x,b.y-a.y),ns=Math.max(1,Math.ceil(L/h));let m=-1/0;
+    for(let s=0;s<=ns;s++){const v=topAt(a.x+(b.x-a.x)*s/ns,a.y+(b.y-a.y)*s/ns);if(v>m)m=v;}return m;};
+  const segOK=function(a,b){const L=Math.hypot(b.x-a.x,b.y-a.y),ns=Math.max(1,Math.ceil(L/h));
+    for(let s=0;s<=ns;s++){const t=s/ns;if(topAt(a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t)>a.z+(b.z-a.z)*t-0.5)return false;}return true;};
+  const out=[];for(let k=0;k<blocks[0].ts;k++)out.push(moves[k]);
+  if(!out.length)out.push(moves[0]);
+  let prev=-1;
+  for(const bi of order){const b=blocks[bi];const cur=out[out.length-1];
+    let keep=(bi===prev+1);
+    if(keep&&bi>0)for(let k=b.ts;k<b.s;k++)if(!segOK(moves[k-1],moves[k])){keep=false;break;}
+    if(keep){for(let k=(bi===0?Math.max(1,out.length):b.ts);k<b.s;k++)out.push(moves[k]);}
+    else{const P=moves[b.s-1];
+      let H=Math.max(cur.z,P.z,lineTop(cur,P)+2);if(H>secu)H=Math.max(secu,cur.z,P.z);
+      if(H>cur.z+1e-9)out.push({r:1,x:cur.x,y:cur.y,z:H});
+      if(Math.hypot(P.x-cur.x,P.y-cur.y)>1e-9)out.push({r:1,x:P.x,y:P.y,z:H});
+      if(H>P.z+1e-9)out.push(Object.assign({},P,{r:1}));}
+    for(let k=b.s;k<b.e;k++){out.push(moves[k]);if(!moves[k].r&&!moves[k-1].r)carve(moves[k-1],moves[k]);}
+    prev=bi;
+  }
+  if(order[nbk-1]===nbk-1)for(let k=blocks[nbk-1].e;k<n;k++)out.push(moves[k]);
+  else{const lm=out[out.length-1],zEnd=moves[n-1].z;if(lm.z<zEnd-1e-9)out.push({r:1,x:lm.x,y:lm.y,z:zEnd});}
+  return out;
 }
 function faoGenRough3D(mesh,box,ztop,zbot,o){
   // Appel SYNCHRONE (identique à l'ancienne fonction) : draine le générateur

@@ -660,6 +660,8 @@ function* faoOpMovesIt0(op,job){
         protectTip:protTip,
         // 2026-10-21-010 : brut = corps — dessus réel dilaté du rayon d'outil
         stockTopAt:(function(){try{const T=faoStockTop(job,1);return T?T.dil(D/2+RA.radial):null;}catch(e){return null;}})(),
+        // 2026-10-22-003 : dessus NON dilaté (entrées par l'extérieur, à plat)
+        stockRawAt:(function(){try{const T=faoStockTop(job,1);return T?T.at:null;}catch(e){return null;}})(),
         zoneAt:zctx?zctx.at:null,
         // 2026-10-11-005 : la limite voyage avec la zone — le REPÈRE de
         // génération (faoLoopAxis) suit l'axe de la chaîne (poche oblique).
@@ -672,6 +674,8 @@ function* faoOpMovesIt0(op,job){
         // (posage.planes.mode) : les liaisons tiennent secu (le plan) au lieu
         // de remonter à 5 mm au-dessus de la matière (mode 'min5').
         remPlan:!!(job&&job.planes&&job.planes.mode==='plan'),
+        // 2026-10-22-001 : finir une région avant la suivante (faoRegionOrder)
+        parRegion:!!op.parRegion,
         mode:'escargot', // 2026-10-15-002 : mode unique
         // 2026-10-08-003 : sens de passe — 'avalant' = sens de coupe constant
         // (aucune chaine retournee) ; absent/'bidir' = legacy (retournement

@@ -211,14 +211,20 @@ function faoProtectRapids(mv,pT,secu){
   for(let i=0;i<mv.length;i++){
     const b=mv[i],a=i>0?mv[i-1]:null;
     if(!a||!b.r||(a.z>=secu-1e-6&&b.z>=secu-1e-6)){out.push(b);continue;}
+    // 2026-10-22-004 : seulement si le rapide passe à moins de 1 mm de la
+    // pointe d'outil qui toucherait le rouge — et remontée à 2 mm au-dessus
+    // du rouge (plan de dégagement au plus) : survoler un flanc rouge de haut
+    // ne renvoie plus au plan (« pas la peine de remonter au plan de sécurité »).
     const L=Math.hypot(b.x-a.x,b.y-a.y);
-    let hit=false;
-    if(L>1e-9){const ns=Math.max(1,Math.ceil(L));
-      for(let k=0;k<=ns&&!hit;k++){const t=k/ns;if(pT(a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t)>-1e8)hit=true;}}
+    let hit=false,need=-1/0;
+    const ns=Math.max(1,Math.ceil(L));
+    for(let k=0;k<=ns;k++){const t=k/ns;const v=pT(a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t);
+      if(!(v>-1e8))continue;if(v+2>need)need=v+2;if(v>a.z+(b.z-a.z)*t-1)hit=true;}
     if(!hit){out.push(b);continue;}
-    if(a.z<secu-1e-6)out.push({r:1,x:a.x,y:a.y,z:secu});
-    out.push({r:1,x:b.x,y:b.y,z:secu});
-    if(b.z<secu-1e-6)out.push(b);
+    const H=Math.min(secu,Math.max(need,a.z,b.z));
+    if(a.z<H-1e-6)out.push({r:1,x:a.x,y:a.y,z:H});
+    if(L>1e-9||b.z>=H-1e-6)out.push({r:1,x:b.x,y:b.y,z:H});
+    if(b.z<H-1e-6)out.push(b);
     n++;
   }
   try{out.diag=mv.diag;}catch(e){}

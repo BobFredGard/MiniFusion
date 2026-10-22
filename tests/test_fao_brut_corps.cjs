@@ -45,12 +45,12 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     const box={x0:src.stock.x0,y0:src.stock.y0,z0:src.stock.z0,x1:src.stock.x1,y1:src.stock.y1,z1:src.stock.z1};
     const base=Object.assign({},src.ops[0],{id:'bc',ztop:box.z1,zbot:30,minipasses:2,limit:undefined,
       protect:[{b:imp.id,f:1},{b:imp.id,f:3},{b:imp.id,f:6}],protectFront:true});
-    const run=function(solid){
+    const run=function(solid,reg){
       setup.stock=Object.assign({},box);if(solid)setup.stock.solid='stk';
-      setup.ops=[Object.assign({},base,{id:solid?'bc':'bx'})];faoSanitiseOps(setup);
+      setup.ops=[Object.assign({},base,{id:solid?(reg?'br':'bc'):'bx'},reg?{parRegion:true}:{})];faoSanitiseOps(setup);
       return faoOpMoves(setup.ops[0],setup);
     };
-    const mvBox=run(false), mvBody=run(true);
+    const mvBox=run(false), mvReg=run(true,true), mvBody=run(true);
     const T=faoStockTop(setup,1),dil=T.dil(10);
     const air=function(mv){let a=0,c=0;for(let i=1;i<mv.length;i++){const p=mv[i-1],q=mv[i];if(q.r)continue;const L=Math.hypot(q.x-p.x,q.y-p.y,q.z-p.z);
       if(dil((p.x+q.x)/2,(p.y+q.y)/2)>(p.z+q.z)/2+0.05)c+=L;else a+=L;}return [a,c];};
@@ -58,10 +58,12 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     const gm=faoMatterGrid(setup.stock);let full=0;for(let i=0;i<gm.nx*gm.ny;i++)if(gm.h[i]>=box.z1-1e-6)full++;
     // affichage de la matière (2026-10-21-011) : cotes dessinées = Z-map, pas la boîte
     let fullDisp=-1;try{const vw={matterOn:true,t:0,pts:[],dd:[],times:[]};faoViewerMatterEnable(vw);if(vw.mTops){fullDisp=0;for(let i=0;i<vw.mTops.length;i++)if(vw.mTops[i]>=box.z1-1e-6)fullDisp++;}}catch(e){fullDisp='err '+e.message;}
+    // « le brut en Lisse est toujours un rectangle » (2026-10-22-002) : nœuds du heightfield
+    let fullHF=-1;try{const vw={matterOn:true,smooth:true,t:0,pts:[],dd:[],times:[]};faoViewerMatterEnable(vw);if(vw.mH){fullHF=0;const H=vw.mH;for(let k=0;k<H.NV;k++)if(H.pos[k*3+2]>=box.z1-1e-6)fullHF++;fullHF=fullHF/H.NV;}}catch(e){fullHF='err '+e.message;}
     const eP=importStepBuild(new Uint8Array(__part));
     const mP=_faoMeshFromBodyOrig({mesh:{geometry:eP.faoGeo}},600000),mS=_faoMeshFromBodyOrig({mesh:{geometry:eS.faoGeo}},600000);
     return {airBox:air(mvBox),airBody:air(mvBody),nBox:mvBox.length,nBody:mvBody.length,zt:box.z1,
-      sim:{cols:gm.nx*gm.ny,full:full,fullDisp:fullDisp},mP:mP,mS:mS,mv:mvBody.map(m=>[m.r?1:0,m.x,m.y,m.z])};
+      sim:{cols:gm.nx*gm.ny,full:full,fullDisp:fullDisp,fullHF:fullHF},mP:mP,mS:mS,mv:mvBody.map(m=>[m.r?1:0,m.x,m.y,m.z]),mvR:mvReg.map(m=>[m.r?1:0,m.x,m.y,m.z])};
   })()`,ctx);
   const pc=a=>(100*a[0]/(a[0]+a[1])).toFixed(0);
   console.log('  · avance dans le vide : boîte '+(r.airBox[0]/1000).toFixed(1)+' m ('+pc(r.airBox)+' %) → corps '+(r.airBody[0]/1000).toFixed(1)+' m ('+pc(r.airBody)+' %) ; mouvements '+r.nBox+' → '+r.nBody);
@@ -114,10 +116,31 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     console.log('  · au-dessus de la pièce (Z ≥ 30) : '+(100*big/n2).toFixed(1)+' % des points avec plus de 4 mm de brut');
     A(big<0.02*n2,'face vrillée ébauchée partout (moins de 2 % des points à plus de 4 mm de brut)');}
   A(rapH===0,'aucun rapide horizontal dans la matière restante du brut'+(rapHAt?' (pire '+rapH.toFixed(2)+' mm en '+rapHAt.map(v=>+v.toFixed(1)).join(',')+')':''));
+  // 2026-10-22-001 : « finir un côté puis l'autre » (parRegion)
+  {const side=function(m){const seg=[];let cur=null;
+      for(let i=1;i<m.length;i++){const a=m[i-1],b=m[i];if(b[0]){if(b[3]>a[3]+1e-6&&cur){seg.push(cur);cur=null;}continue;}
+        if(!cur)cur={y:0,n:0};cur.y+=b[2];cur.n++;}
+      if(cur)seg.push(cur);const ys=seg.map(q=>q.y/q.n);const ym=(Math.min(...ys)+Math.max(...ys))/2;
+      let sw=0;for(let i=1;i<ys.length;i++)if((ys[i]-ym)*(ys[i-1]-ym)<0)sw++;return sw;};
+    const H2=Float32Array.from(ZS.h),mR=r.mvR;let pen2=0,rap2=0;
+    for(let i=1;i<mR.length;i++){const a=mR[i-1],b=mR[i];const L2=Math.hypot(b[1]-a[1],b[2]-a[2],b[3]-a[3]),ns=Math.max(1,Math.ceil(L2/0.5));
+      const horiz=b[0]&&Math.abs(b[3]-a[3])<1e-6&&Math.hypot(b[1]-a[1],b[2]-a[2])>0.5;
+      for(let k=1;k<=ns;k++){const t=k/ns,x=a[1]+(b[1]-a[1])*t,y=a[2]+(b[2]-a[2])*t,z=a[3]+(b[3]-a[3])*t;
+        if(!b[0])visit(ZP,x,y,z,(c,zc)=>{const e=ZP.h[c]-zc;if(e>0.1)pen2+=L2/ns/((2*n+1)**2);});
+        if(horiz){let d=0;visit(ZS,x,y,z,(c,zc)=>{const e=H2[c]-zc;if(e>d)d=e;});if(d>0.6&&d>rap2)rap2=d;}
+        if(!b[0])visit(ZS,x,y,z,(c,zc)=>{if(zc<H2[c])H2[c]=zc;});}}
+    const s0=side(mv),s1=side(mR);
+    let lenA=0,lenB=0;for(const [m,o] of [[mv,0],[mR,1]])for(let i=1;i<m.length;i++){const a=m[i-1],b=m[i];if(b[0])continue;const L4=Math.hypot(b[1]-a[1],b[2]-a[2],b[3]-a[3]);if(o)lenB+=L4;else lenA+=L4;}
+    console.log('  · une région puis l’autre : changements de côté '+s0+' → '+s1+' ; avance '+(lenA/1000).toFixed(2)+' → '+(lenB/1000).toFixed(2)+' m ; pire rapide '+rap2.toFixed(2)+' mm');
+    A(s1<=0.25*s0,'« Finir une région avant l’autre » : 4 fois moins de changements de côté');
+    A(Math.abs(lenA-lenB)<1e-3*lenA,'même usinage (avance identique, seul l’ordre change)');
+    A(pen2<0.01&&rap2===0,'ordre par région : ni avance dans la pièce ni rapide dans la matière restante');}
   console.log('  · simulation : '+r.sim.full+' colonnes pleines sur '+r.sim.cols);
   A(r.sim.full<0.05*r.sim.cols,'simulation : matière de départ = dessus du corps-brut (pas la boîte pleine)');
   console.log('  · affichage de la matière : '+r.sim.fullDisp+' colonnes dessinées à la hauteur pleine');
   A(typeof r.sim.fullDisp==='number'&&r.sim.fullDisp>=0&&r.sim.fullDisp<0.05*r.sim.cols,'simulation : la matière DESSINÉE suit le corps-brut (dessinait un cube)');
+  console.log('  · rendu lisse : '+(typeof r.sim.fullHF==='number'?(100*r.sim.fullHF).toFixed(1)+' %':r.sim.fullHF)+' des nœuds à la hauteur pleine');
+  A(typeof r.sim.fullHF==='number'&&r.sim.fullHF>=0&&r.sim.fullHF<0.05,'simulation lisse : la matière suit le corps-brut (était un rectangle)');
   console.log(ko?'ÉCHEC '+ko:'OK');
   process.exit(ko?1:0);
 })();

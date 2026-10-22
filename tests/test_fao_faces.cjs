@@ -100,7 +100,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
       const L=Math.hypot(b.x-a.x,b.y-a.y),ns=Math.max(1,Math.ceil(L/0.5));
       for(let k=0;k<=ns;k++){const t=k/ns,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t,z=a.z+(b.z-a.z)*t;
         const e=pT(x,y)-z;if(e>worst){worst=e;worstAt=[x,y,z,i,b.r?'G0':'G1'];}
-        if(b.r&&z<secu-1e-6&&pT(x,y)>-1e8&&L>1e-9)rapUnder++;}}
+        if(b.r&&z<secu-1e-6&&pT(x,y)>z-0.9&&L>1e-9)rapUnder++;}} // 2026-10-22-004 : ≥ 1 mm au-dessus du rouge (plus forcément au plan)
     const dM=faoScDropper(faoActiveMesh(setup).mesh,'flat',20,0,0);
     const through=function(mv){let w=0,at=null;for(let i=1;i<mv.length;i++){const a=mv[i-1],b=mv[i];const L=Math.hypot(b.x-a.x,b.y-a.y),ns=Math.max(1,Math.ceil(L/0.5));
       for(let k=0;k<=ns;k++){const t=k/ns,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t,z=a.z+(b.z-a.z)*t;const e=dM.tip(x,y)-z;if(e>w){w=e;at=[+x.toFixed(1),+y.toFixed(1),+z.toFixed(1),i,b.r?'G0':(b.ent?'ent':'G1')];}}}return [+w.toFixed(3),at];};
@@ -175,10 +175,10 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   console.log('  · B Finition : '+r.B.cut+' points d’usinage, '+r.B.off+' hors de la face bleue');
   A(r.B.cut>100,'B : finition produite ('+r.B.n+' mouvements)');
   A(r.B.off===0,'B : tous les points d’usinage reposent sur la face bleue');
-  console.log('  · C Ébauche 3D : '+r.C.n+' mouvements ; pire empiètement de marge '+r.C.worst.toFixed(3)+' mm'+(r.C.worstAt?' ('+r.C.worstAt.map(v=>typeof v==='number'?+v.toFixed(2):v).join(',')+')':'')+' ; rapides sous dégagement au-dessus du rouge : '+r.C.rapUnder);
+  console.log('  · C Ébauche 3D : '+r.C.n+' mouvements ; pire empiètement de marge '+r.C.worst.toFixed(3)+' mm'+(r.C.worstAt?' ('+r.C.worstAt.map(v=>typeof v==='number'?+v.toFixed(2):v).join(',')+')':'')+' ; rapides à moins de 1 mm au-dessus du rouge : '+r.C.rapUnder);
   A(r.C.n>100,'C : ébauche produite');
   A(r.C.worst<=0.02,'C : aucune position d’outil à moins de la marge de la face rouge');
-  A(r.C.rapUnder===0,'C : aucun rapide sous le dégagement au-dessus du rouge');
+  A(r.C.rapUnder===0,'C : aucun rapide à moins de 1 mm au-dessus du rouge');
   if(process.env.DBG){console.log(JSON.stringify(r.dbg));console.log(JSON.stringify(r.cmp));}
   console.log('  · D Interdire devant la face : avances sous le bord du flanc, outil sur la bande avant : '+r.D.band0+' sans la case ('+r.D.n0+' mvts) → '+r.D.band1+' avec ('+r.D.n1+' mvts) ; pire empiètement du volume interdit '+r.D.wF.toFixed(3)+' mm');
   if(r.D.wF>0.02)console.log('    pire en',JSON.stringify(r.Dat));

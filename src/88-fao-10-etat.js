@@ -167,6 +167,8 @@ function faoSanitiseOps(s){
       else{delete op.finitParois;delete op.finitN;delete op.finitProf;}
       // 2026-10-15-001 : finition du FOND (passe à la cote exacte du fond)
       if(op.finitFond)op.finitFond=true; else delete op.finitFond;
+      // 2026-10-22-001 : ordre par région (absent = niveau par niveau)
+      if(op.parRegion)op.parRegion=true; else delete op.parRegion;
       // 2026-10-07-005 : 'escargot' (spirale centre -> faces) conserve ;
       // tout autre mode inconnu est purge (absent = conventionnel).
       // 2026-10-08-001 : mode trocoïdal SUPPRIME (tracé peu satisfaisant) :

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**289 versions**, de `2026-09-28b` à `V0.3.19` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**290 versions**, de `2026-09-28b` à `V0.3.20` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4401,3 +4401,13 @@ Retours utilisateur (Malaxeur Retard).
 - CACHE_VER `2026-10-21-013` : ébauches à régénérer.
 
 Tests : `test_fao_brut_corps` (descentes pour rien, face vrillée, matière dessinée — échoue sur V0.3.18), `test_fao_faces` (cas D, nouvelle règle). Suite complète 109/109. `npm run ci` vert.
+
+## V0.3.20 - FAO : finir une région avant l'autre, entrées à plat depuis l'air, moins de remontées au plan, simulation lisse au vrai brut
+Retours utilisateur (Malaxeur Retard).
+- **Ébauche 3D — « Finir une région avant l'autre »** (case de la fiche, cochée à la création) : le parcours est coupé en blocs ; dès que les blocs restants se séparent en régions sans matière commune, chaque région est finie jusqu'en bas avant la suivante (règle récursive, ordre des niveaux conservé dans chaque région). Liaisons recontrôlées sur la matière restante dans le nouvel ordre. RETARD : 79 → 16 changements de côté, usinage identique.
+- **Entrées par l'extérieur** (brut-corps) : quand l'air est à portée, la fraise y descend en rapide jusqu'à 1 mm, rejoint la matière à plat puis entre en arc, au lieu de l'hélice. RETARD : 66 → 50 hélices, avance 23,1 → 20,8 m.
+- **Rapides au-dessus des faces rouges** : remontée à 2 mm au-dessus du rouge, et seulement si le rapide en passe à moins de 1 mm — plus au plan de sécurité dès qu'il survole un flanc. RETARD : 425 → 47 remontées au plan, rapides 44,9 → 18,5 m.
+- **Simulation** : le rendu « lisse » part du corps-brut (était un rectangle) ; le rendu « simple » est retiré (bouton ◈ réel ↔ ≈ lisse).
+- CACHE_VER `2026-10-22-004` : ébauches à régénérer.
+
+Tests : `test_fao_brut_corps` (ordre par région : changements de côté, même avance, ni avance dans la pièce ni rapide dans la matière ; rendu lisse au corps-brut), `test_fao` 015bis (cycle à 2 états), `test_fao_faces` C (rapides au moins 1 mm au-dessus du rouge). Suite complète 109/109.

@@ -6,7 +6,7 @@ let faoVw=null, faoVwBar=null, faoVwBarT=null, faoVwBtn=null, faoVwMatterBtn=nul
 // 2026-10-11-007 : le bouton de la barre est à 3 ÉTATS (cycle) —
 //   `reel`  ◈  surface NETTE aux cotes exactes (défaut « forme réelle » de 003)
 //   `lisse` ≈  physique réelle + surface DOUCE (heightfield continu de la 002)
-//   `simple`◇  ancien rendu simple (cylindre, carve Ø/2, colonnes, boîte)
+//   (`simple` — cylindre, carve Ø/2, colonnes, boîte — retiré le 2026-10-22-002)
 // `faoViewerExact` reste la PHYSIQUE réelle (= mode !== 'simple', lue par
 // l'outil/le carve/le brut) ; `faoViewerMode` ajoute le style de SURFACE.
 let faoViewerMode='reel';
@@ -840,6 +840,11 @@ function faoViewerMatterEnable(vw){
     const m2=faoViewerMatterHFBuild(vw);
     if(!m2){ faoViewerMatterDispose(vw); return 0; }
     vw.matter=m2; // le heightfield EST la matière (mêmes noms/dispose que mArr)
+    // 2026-10-22-002 : nœuds à la Z-map de départ (brut-corps, cylindre) — le
+    // heightfield partait de la boîte pleine (« le brut en Lisse est toujours
+    // un rectangle »).
+    const all=[];for(let c=0;c<nc;c++)if(tops[c]<full-1e-9)all.push(c);
+    if(all.length)faoViewerMatterHFUpdate(vw,all);
   }else{
     try{ faoViewerMatterWriteAll(vw); }catch(e){ faoViewerMatterDispose(vw); try{ if(mesh&&scene)faoDel3D(mesh); }catch(e2){} return 0; }
   }
@@ -957,22 +962,20 @@ function faoViewerMatterBarUpdate(){
 function faoViewerExactBarUpdate(){
   try{
     if(faoVwExactBtn){
-      // 2026-10-11-007 : bouton à 3 ÉTATS — ◈ réel → ≈ lisse → ◇ simple → …
-      faoVwExactBtn.textContent=(faoViewerMode==='lisse')?'≈ lisse':(faoViewerExact?'◈ réel':'◇ simple');
+      // 2026-10-22-002 : bouton à 2 ÉTATS — ◈ réel ↔ ≈ lisse (« simple » retiré)
+      faoVwExactBtn.textContent=(faoViewerMode==='lisse')?'≈ lisse':'◈ réel';
       faoVwExactBtn.title=(faoViewerMode==='lisse')
-        ?'Rendu « lisse » : physique réelle (profil de fraise, carve R2, brut au corps) + surface DOUCE (heightfield continu, nœuds moyennés — l\'aspect de la 002) — clic = basculer vers « simple ».'
-        :(faoViewerExact
-        ?'Rendu « forme réelle » : profil de fraise (torique/boule), carve au rayon d\'arête (arrondi R2 au bas des parois), surface NETTE aux cotes exactes et brut au corps réel — clic = basculer vers « lisse ».'
-        :'Rendu « simple » historique : cylindre Ø plat, carve Ø/2, surface en colonnes, boîte du brut — clic = revenir au rendu « réel ».');
+        ?'Rendu « lisse » : physique réelle (profil de fraise, carve R2, brut au corps) + surface DOUCE (heightfield continu, nœuds moyennés) — clic = revenir au rendu « réel ».'
+        :'Rendu « forme réelle » : profil de fraise (torique/boule), carve au rayon d’arête (arrondi R2 au bas des parois), surface NETTE aux cotes exactes et brut au corps réel — clic = basculer vers « lisse ».';
     }
   }catch(e){}
 }
 function faoViewerExactToggle(){
-  // Cycle des 3 versions (2026-10-11-007) : ◈ réel → ≈ lisse → ◇ simple → …
+  // Cycle des versions : ◈ réel ↔ ≈ lisse (2026-10-11-007 ; « simple » retiré 2026-10-22-002).
   // EN COURS de lecture : la matière est reconstruite à la volée (rattrapage
   // 0 → t, temps et lecture préservés) ; outil et brut ne sont reconstruits
   // que si la PHYSIQUE change (« simple » <-> réel/lisse).
-  const order=['reel','lisse','simple'];
+  const order=['reel','lisse']; // 2026-10-22-002 : « simple » retiré
   const i=order.indexOf(faoViewerMode);
   faoViewerModeSet(order[(i<0?0:i+1)%order.length]);
 }
@@ -980,7 +983,7 @@ function faoViewerModeSet(m){
   // m : 'reel' (surface nette, défaut) | 'lisse' (surface douce) | 'simple'
   // (historique). Physique (outil/carve/brut) = mode !== 'simple' (toujours
   // lue via faoViewerExact) ; style de surface = vw.smooth.
-  if(m!=='lisse'&&m!=='simple')m='reel';
+  if(m!=='lisse')m='reel'; // 2026-10-22-002 : « simple » retiré (-> réel)
   faoViewerMode=m;
   faoViewerExact=(m!=='simple');
   faoViewerExactBarUpdate();

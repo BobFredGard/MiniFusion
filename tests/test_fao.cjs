@@ -988,13 +988,7 @@ const vm=require('vm');
     "att(dB15>0.01,'015bis : HFUpdate reecrit les noeuds apres baisse de colonne (delta '+dB15.toFixed(2)+')');",
     "att(faoVw.mTops[cL15]===gL15.h[cL15],'015bis : mTops suit la colonne');",
     "gL15.h[cL15]+=12;faoViewerMatterKill(faoVw,null,[cL15]);",
-    // (2) lisse → SIMPLE : rebuild physique (cylindre Ø plat)
-    "faoViewerExactToggle();",
-    "att(faoViewerMode==='simple'&&faoViewerExact===false&&faoVw.exact===false&&faoVw.smooth===false,'015bis : bascule 2 -> simple');",
-    "att(!faoVw.toolSpin&&!faoVw.mH&&!!faoVw.mArr&&faoVw.mArr.length===(nc15b*30+6)*3,'015bis : simple = cylindre + colonnes (30 verts/col)');",
-    "att(!!faoVw.matter&&!!faoVw.mTops&&faoVw.mTops.length===nc15b,'015bis : matiere reconstruite avec rattrapage 0->t');",
-    "att(!!faoVwExactBtn&&faoVwExactBtn.textContent==='◇ simple','015bis : libelle du bouton = ◇ simple');",
-    // (3) simple → RÉEL : retour au défaut net
+    // (2) lisse → RÉEL (2026-10-22-002 : « simple » retiré, cycle à 2 états)
     "faoViewerExactToggle();",
     "att(faoViewerMode==='reel'&&faoViewerExact===true&&faoVw.exact===true&&faoVw.smooth===false&&!!faoVw.mArr&&faoVw.mH===null&&!!faoVw.toolSpin,'015bis : retour au rendu reel (colonnes nettes)');",
     "att(!!faoVwExactBtn&&faoVwExactBtn.textContent==='◈ réel','015bis : libelle du bouton = ◈ réel');",

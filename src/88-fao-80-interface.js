@@ -84,6 +84,8 @@ function faoOpDefaults(type){
     // 2026-10-08-004 : entrée circulaire (arc tangent) par défaut à la
     // création — 'auto' garde l'hélice/plongée historique des anciens docs.
     entry:'circ', minipasses:0,
+    // 2026-10-22-001 : finir une région avant la suivante (faoRegionOrder)
+    parRegion:true,
     // 2026-10-07-005 : l'ESCARGOT est la 1re selection a la creation
     // (les documents anciens sans mode restent conventionnels).
     mode:'escargot',
@@ -1191,6 +1193,18 @@ function faoOpCardElement(setup,op,i){
       '(écart = hauteur du mur / '+npz+' — dent ≥ écart ; 1 = la dent couvre le mur seule) — '+
       Math.round(op.finitN)+'×'+npz+'× plus de calcul de région sur ces cotes seulement.'));
     d.appendChild(faoH('Trajectoire'));
+    // 2026-10-22-001 : FINIR UNE RÉGION AVANT L'AUTRE — dès que la zone se
+    // sépare en régions indépendantes, chacune est finie jusqu'en bas avant la
+    // suivante (au lieu de passer d'un côté à l'autre à chaque niveau).
+    const rRg=faoRow();
+    const cbRg=document.createElement('input'); cbRg.type='checkbox'; cbRg.checked=!!op.parRegion;
+    cbRg.title='Finir une région avant l’autre : dès que la zone se sépare en régions indépendantes (aucune matière commune), chaque région est usinée jusqu’en bas avant de passer à la suivante. Décochée = niveau par niveau, d’un côté à l’autre.';
+    cbRg.onchange=function(){ faoSnapshot('ordre par région');
+      if(cbRg.checked)op.parRegion=true; else delete op.parRegion;
+      faoChanged(); };
+    rRg.appendChild(cbRg);
+    rRg.appendChild(faoLab('Finir une région avant l’autre'));
+    d.appendChild(rRg);
     const rT2=faoRow();
     rT2.appendChild(faoLab('Arrondi')); rT2.appendChild(faoNum(isFinite(+op.arrondi)?+op.arrondi:0,function(v){op.arrondi=Math.max(0,v);},48,0.5,
       'Rayon d’arrondi des angles vifs (sort en G2/G3, trajectoire fluide). 0 = angles vifs.'));
