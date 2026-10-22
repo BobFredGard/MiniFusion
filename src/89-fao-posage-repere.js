@@ -77,9 +77,10 @@ function faoPoseClear(){
 function faoPoseSync(){
   try{faoRoot3D();}catch(e){} // matrice de la racine FAO = repère du posage actif
   const setup=faoPoseSetupSel();
-  if(!setup){if(faoPoseGrp){faoPoseClear();faoPoseSig='';if(faoPoseTriad)faoPoseTriad.visible=false;}return;}
+  // le sol miroir suit le brut affiché : recalé à chaque apparition / disparition / changement
+  if(!setup){if(faoPoseGrp){faoPoseClear();faoPoseSig='';if(faoPoseTriad)faoPoseTriad.visible=false;try{refreshMirror();}catch(e){}}return;}
   const st=setup.stock;
-  if(!faoStockValid(st)){if(faoPoseGrp)faoPoseClear();faoPoseSig='';return;}
+  if(!faoStockValid(st)){if(faoPoseGrp){faoPoseClear();try{refreshMirror();}catch(e){}}faoPoseSig='';return;}
   const spec=faoOriginSpec(setup),O=faoOrient(setup);
   // opération sélectionnée avec son repère propre (3+2) : son repère est dessiné aussi
   let selOp=null;try{if(sel.kind==='faoOp')selOp=(setup.ops||[]).filter(o=>o.id===sel.id)[0]||null;}catch(e){}
@@ -97,7 +98,7 @@ function faoPoseSync(){
   if(!selOp){
   // brut transparent : cylindre, corps (forme réelle) ou boîte
   let drawn=false;
-  try{const cy=faoStockCylMesh(st,0xffb340,.13);if(cy){g.add(cy);drawn=true;}}catch(e){}
+  try{const cy=faoStockCylMesh(st,0xffb340,.13);if(cy){cy.traverse(o=>{if(o.isMesh)o.userData.faoStock=true;});g.add(cy);drawn=true;}}catch(e){}
   if(!drawn&&faoStockShape(setup)==='solid'){
     try{
       const b=(typeof bodies!=='undefined'&&bodies?bodies:[]).filter(x=>x&&x.id===setup.stockBody)[0];
@@ -105,14 +106,14 @@ function faoPoseSync(){
         const mat=new THREE.MeshBasicMaterial({color:0xffb340,transparent:true,opacity:.16,depthWrite:false,side:THREE.DoubleSide});
         const cl=new THREE.Mesh(b.mesh.geometry,mat);cl.applyMatrix4(b.mesh.matrixWorld);
         try{const Fr=faoFrame(setup);if(!Fr.id)cl.applyMatrix4(new THREE.Matrix4().makeBasis(new THREE.Vector3(...Fr.X),new THREE.Vector3(...Fr.Y),new THREE.Vector3(...Fr.Z)).invert());}catch(e){}cl.raycast=()=>{};cl.renderOrder=5;
-        cl.userData.shared=true;g.add(cl);drawn=true;
+        cl.userData.shared=true;cl.userData.faoStock=true;g.add(cl);drawn=true;
       }
     }catch(e){}
   }
   if(!drawn)try{
     const bg=new THREE.BoxGeometry(st.x1-st.x0,st.y1-st.y0,st.z1-st.z0);
     const box=new THREE.Mesh(bg,new THREE.MeshBasicMaterial({color:0xffb340,transparent:true,opacity:.13,depthWrite:false,side:THREE.DoubleSide}));
-    box.position.set((st.x0+st.x1)/2,(st.y0+st.y1)/2,(st.z0+st.z1)/2);box.raycast=()=>{};box.renderOrder=5;g.add(box);
+    box.position.set((st.x0+st.x1)/2,(st.y0+st.y1)/2,(st.z0+st.z1)/2);box.raycast=()=>{};box.renderOrder=5;box.userData.faoStock=true;g.add(box);
     const e=new THREE.LineSegments(new THREE.EdgesGeometry(bg),new THREE.LineBasicMaterial({color:0xffb340,transparent:true,opacity:.85}));
     e.position.copy(box.position);e.raycast=()=>{};g.add(e);
   }catch(e){}
@@ -169,6 +170,7 @@ function faoPoseSync(){
     faoPoseTriad.userData.px=52; // le posage en plus petit : l'opération domine
   }else{faoOpTriad.visible=false;faoPoseTriad.userData.px=70;}
   faoAdd3D(g);faoPoseGrp=g;
+  try{refreshMirror();}catch(e){}
 }
 function faoPoseNear(e){
   // index du point cardinal le plus proche du curseur (≤ 9 px), sinon -1
@@ -295,6 +297,9 @@ function faoRoot3D(){
       faoRootG.matrix.setPosition(F.O[0],F.O[1],F.O[2]);
       faoRootG.matrixWorldNeedsUpdate=true;faoRootSig=sg;
     }
+    // Interface moderne : parcours, simulation, brut… n'existent à l'écran QUE dans
+    // l'espace FAO — masqués en CAO / PLAN, rendus tels quels au retour (rien n'est détruit).
+    try{const ws=document.body.getAttribute('data-ws');faoRootG.visible=!(ws==='cao'||ws==='plan');}catch(e){}
     return faoRootG;
   }catch(e){return (typeof scene!=='undefined')?scene:null;}
 }

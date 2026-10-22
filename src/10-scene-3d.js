@@ -183,17 +183,25 @@ function refreshMirror(){
   mirrorDirty=true; // la cible de reflet est à refaire (position du sol, halo, visibilité)
   floorMesh.visible=mirrorOn;
   if(!mirrorOn)return;
+  // 2026-10-22 : en FAO, le BRUT affiché (posage sélectionné) compte aussi — le sol
+  // passe sous lui, pas sous la pièce qu'il enveloppe.
+  const ms=[];
+  bodies.forEach(b=>{if(b.visible&&b.mesh)ms.push(b.mesh);});
+  try{
+    if(faoPoseGrp&&faoPoseGrp.parent&&faoPoseGrp.parent.visible!==false)
+      faoPoseGrp.traverse(o=>{if(o.isMesh&&o.userData&&o.userData.faoStock)ms.push(o);});
+  }catch(e){}
   const box=new THREE.Box3();let n=0;
-  bodies.forEach(b=>{if(b.visible&&b.mesh){box.expandByObject(b.mesh);n++;}});
+  ms.forEach(m=>{m.updateWorldMatrix(true,false);box.expandByObject(m);n++;});
   if(!n||box.isEmpty())return;
   const U=_mn,sz=box.getSize(new THREE.Vector3()).length();
   let dmin=Infinity;
   const up=Math.abs(U.z-1)<1e-9;
   if(up)dmin=box.min.z;
-  else bodies.forEach(b=>{
-    if(!b.visible||!b.mesh||!b.mesh.geometry)return;
-    const pos=b.mesh.geometry.attributes&&b.mesh.geometry.attributes.position;if(!pos)return;
-    b.mesh.updateMatrixWorld();const M=b.mesh.matrixWorld.elements,a=pos.array,st=Math.max(1,Math.floor(pos.count/60000));
+  else ms.forEach(m=>{
+    if(!m.geometry)return;
+    const pos=m.geometry.attributes&&m.geometry.attributes.position;if(!pos)return;
+    const M=m.matrixWorld.elements,a=pos.array,st=Math.max(1,Math.floor(pos.count/60000));
     for(let i=0;i<pos.count;i+=st){const x=a[i*3],y=a[i*3+1],z=a[i*3+2];
       const wx=M[0]*x+M[4]*y+M[8]*z+M[12],wy=M[1]*x+M[5]*y+M[9]*z+M[13],wz=M[2]*x+M[6]*y+M[10]*z+M[14];
       const d=wx*U.x+wy*U.y+wz*U.z;if(d<dmin)dmin=d;}

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**294 versions**, de `2026-09-28b` à `V0.3.24` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**295 versions**, de `2026-09-28b` à `V0.3.25` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4450,3 +4450,10 @@ Retours utilisateur (mise en plan, Perçages).
 - **FAO** : l'Ébauche 3D n'entre plus en rapide sous le dessus du brut quand le Haut est plus bas ; test du maillage intermédiaire mis à jour.
 
 Tests : `test_mep_coupe_brisee` (nouveau, OCCT réel : 24 000 mm³ restants, une face hachurée par plan, aucun trait au changement de plan), `test_mise_en_plan` (allongement, croix → trait mixte, accrochage, saisie d'un bout, cote sur axe, coupe depuis un axe hors cadre), `test_suppression_face`. `npm run ci` vert.
+
+## V0.3.25 - FAO : sol miroir sous le brut, parcours masqués hors de l'espace FAO
+Retours utilisateur (Perçages).
+- **Sol miroir sous le brut** : en FAO, quand le brut est affiché (posage sélectionné), le sol se pose sous son point le plus bas le long du Z du posage et le halo se centre sur lui (avant : sous la pièce, à l'intérieur du brut). Recalé à chaque apparition / disparition / changement du brut.
+- **Parcours masqués en CAO / PLAN** (interface moderne) : la racine d'affichage FAO (parcours, simulation, brut, repères) est masquée hors de l'espace FAO et réapparaît telle quelle au retour — rien n'est détruit ni recalculé.
+
+Tests : vérifié dans l'appli sur « Perçages » (sol à Z −10,02 sous le brut Z −10 en FAO, −0,02 sous la pièce en CAO ; parcours masqués puis rendus). `npm run ci` vert.
