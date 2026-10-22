@@ -166,12 +166,17 @@ function faoStockTop(setup,g){
   const at=function(x,y){const i=Math.round((x-x0)/g),j=Math.round((y-y0)/g);
     if(i<0||j<0||i>=nx||j>=ny)return -1/0;return h[j*nx+i];};
   // dessus dilaté par le rayon r : matière du brut quelque part sous le disque d'outil
+  // 2026-10-22-005 : grille dilatée ÉLARGIE de r — bornée à la grille du brut
+  // (+1 mm), la dilatation s'arrêtait au bord du corps : la zone « avec brut »
+  // finissait à 1 mm dehors et la fraise ne sortait jamais du brut (« la fraise
+  // ne sort pas », bouts et flancs non dégagés).
   const dil=function(r){
-    const n=Math.ceil(r/g),out=new Float32Array(nx*ny).fill(-1/0),off=[];
+    const n=Math.ceil(r/g)+1,NX=nx+2*n,NY=ny+2*n,out=new Float32Array(NX*NY).fill(-1/0),off=[];
     for(let dj=-n;dj<=n;dj++)for(let di=-n;di<=n;di++)if((di*di+dj*dj)*g*g<=(r+g*0.71)*(r+g*0.71))off.push([di,dj]);
     for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){const v=h[j*nx+i];if(!(v>-1/0))continue;
-      for(const o of off){const ii=i+o[0],jj=j+o[1];if(ii<0||jj<0||ii>=nx||jj>=ny)continue;const k=jj*nx+ii;if(v>out[k])out[k]=v;}}
-    return function(x,y){const i=Math.round((x-x0)/g),j=Math.round((y-y0)/g);if(i<0||j<0||i>=nx||j>=ny)return -1/0;return out[j*nx+i];};
+      for(const o of off){const ii=i+n+o[0],jj=j+n+o[1];const k=jj*NX+ii;if(v>out[k])out[k]=v;}}
+    const X0=x0-n*g,Y0=y0-n*g;
+    return function(x,y){const i=Math.round((x-X0)/g),j=Math.round((y-Y0)/g);if(i<0||j<0||i>=NX||j>=NY)return -1/0;return out[j*NX+i];};
   };
   return {x0:x0,y0:y0,nx:nx,ny:ny,g:g,h:h,at:at,dil:dil};
 }

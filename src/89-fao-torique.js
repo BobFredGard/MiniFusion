@@ -169,11 +169,27 @@ function faoBullRingLevel(C,z,moves,o){
     let pts=run.pts;
     if(pts.length<2)return;
     const p=last();
-    if(run.closed&&p){ // départ au plus près
-      let bi=0,bd=1/0;for(let i=0;i+1<pts.length;i++){const q=(pts[i][0]-p.x)*(pts[i][0]-p.x)+(pts[i][1]-p.y)*(pts[i][1]-p.y);if(q<bd){bd=q;bi=i;}}
-      const body=pts.slice(bi,pts.length-1).concat(pts.slice(0,bi));pts=body.concat([[body[0][0],body[0][1]],body[1]?[body[1][0],body[1][1]]:[body[0][0],body[0][1]]]);
-    }
-    const E=freePt(pts[0],pts[1],false),X=freePt(pts[pts.length-2],pts[pts.length-1],true);
+    let E=null,X=null;
+    if(run.closed){
+      // départ au plus près — 2026-10-22-005 : sinon au plus près parmi les
+      // points d'où l'entrée est libre (contour fermé autour de la pièce dont
+      // le point le plus proche tombe devant un flanc rouge : il était jeté)
+      const P0=pts,nP=P0.length-1,px=p?p.x:P0[0][0],py=p?p.y:P0[0][1];
+      const ord=[];for(let i=0;i<nP;i++)ord.push(i);
+      ord.sort(function(a,b){return Math.hypot(P0[a][0]-px,P0[a][1]-py)-Math.hypot(P0[b][0]-px,P0[b][1]-py);});
+      const tries=Math.min(ord.length,40),stepT=Math.max(1,Math.floor(ord.length/tries));
+      for(let k=0;k<ord.length&&!E;k+=(k<4?1:stepT)){const bi=ord[k];
+        const body=P0.slice(bi,nP).concat(P0.slice(0,bi));
+        const cand=body.concat([[body[0][0],body[0][1]],body[1]?[body[1][0],body[1][1]]:[body[0][0],body[0][1]]]);
+        const e=freePt(cand[0],cand[1],false),x=e?freePt(cand[cand.length-2],cand[cand.length-1],true):null;
+        if(e&&x){E=e;X=x;pts=cand;}}
+    }else{E=freePt(pts[0],pts[1],false);X=freePt(pts[pts.length-2],pts[pts.length-1],true);}
+    // 2026-10-22-005 : sans sortie latérale libre (bout du contour contre un
+    // flanc rouge, au bord de la zone), la sortie est la REMONTÉE verticale
+    // depuis la dernière coupe — sûre : le corps d'outil occupe déjà la
+    // colonne. La passe était jetée entière (« les minipasses ne traversent
+    // pas la paroi rouge »). L'entrée, elle, exige toujours un point libre.
+    if(E&&!X)X=pts[pts.length-1];
     if(!E||!X)return;
     // liaison : au contact seulement au pas et sur zone usinée, sinon remontée + rapide
     let stay=false;

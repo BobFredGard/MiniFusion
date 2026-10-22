@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**290 versions**, de `2026-09-28b` à `V0.3.20` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**291 versions**, de `2026-09-28b` à `V0.3.21` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4411,3 +4411,12 @@ Retours utilisateur (Malaxeur Retard).
 - CACHE_VER `2026-10-22-004` : ébauches à régénérer.
 
 Tests : `test_fao_brut_corps` (ordre par région : changements de côté, même avance, ni avance dans la pièce ni rapide dans la matière ; rendu lisse au corps-brut), `test_fao` 015bis (cycle à 2 états), `test_fao_faces` C (rapides au moins 1 mm au-dessus du rouge). Suite complète 109/109.
+
+## V0.3.21 - FAO : la fraise sort du brut-corps, minipasses par-dessus les flancs rouges
+Retours utilisateur (Malaxeur Retard, posage tourné de 11,25° autour de X).
+- **La fraise sort du brut** : le dessus du corps-brut dilaté du rayon d'outil était calculé sur la grille du brut (+1 mm) — la zone « avec brut » s'arrêtait à 1 mm dehors : la fraise ne sortait jamais du brut, les bouts n'étaient pas dégagés (« pourquoi on ne va pas plus bas ? », « la fraise ne sort pas »). Grille élargie du rayon. RETARD : bouts dégagés jusqu'à Z −14 (−7 avant).
+- **Minipasses contre les flancs rouges** : sans sortie latérale libre (bout du contour devant un flanc rouge / au bord de la zone), la minipasse sort par remontée verticale depuis la dernière coupe (sûre : le corps d'outil occupe déjà la colonne) — elle était jetée entière. Contours fermés : départ au plus près parmi les points d'entrée libres. Minipasses à toutes les cotes (61,8 et 59,8 manquaient).
+- RETARD : matière laissée sur la pièce 1,09 → 1,05 mm en moyenne, colonnes à plus de 3 mm 270 → 201.
+- CACHE_VER `2026-10-22-005` : ébauches à régénérer.
+
+Tests : `test_fao_brut_corps` (la fraise sort du brut — 0 coupe à plus de 5 mm du corps avant ; minipasses à chaque cote — échouent sur V0.3.20). Suite complète 109/109.

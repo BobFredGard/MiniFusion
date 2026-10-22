@@ -78,7 +78,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   const sous=bands.filter(b=>b[0]<64);
   const manq=[];sous.forEach(b=>b[1].forEach((v,i)=>{if(!(v>5))manq.push(+(b[0]+i+1).toFixed(1));}));
   console.log('  · minipasses (longueur mm par cote, 2 cotes par bande) : '+bands.map(b=>b[0].toFixed(1)+':'+b[1].map(v=>v.toFixed(0)).join('/')).join(' ')+' — cotes manquantes sous la pièce : '+(manq.join(',')||'aucune'));
-  A(manq.length<=3&&manq.every(z=>z>=59),'minipasses présentes à chaque bande (au plus 3 cotes près des bords hauts des flancs rouges)');
+  A(manq.length===0,'minipasses présentes à chaque cote (2026-10-22-005 : sortie par remontée contre le flanc rouge)');
   A(sous.filter(b=>b[0]<57).every(b=>b[1].every(v=>v>5)),'minipasses complètes à toutes les bandes sous Z 57');
   // Z-maps du dessus pièce / brut
   const G=0.5;const zmap=m=>{let x0=1/0,y0=1/0,x1=-1/0,y1=-1/0;for(const p of m.v){x0=Math.min(x0,p[0]);y0=Math.min(y0,p[1]);x1=Math.max(x1,p[0]);y1=Math.max(y1,p[1]);}
@@ -135,6 +135,14 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     A(s1<=0.25*s0,'« Finir une région avant l’autre » : 4 fois moins de changements de côté');
     A(Math.abs(lenA-lenB)<1e-3*lenA,'même usinage (avance identique, seul l’ordre change)');
     A(pen2<0.01&&rap2===0,'ordre par région : ni avance dans la pièce ni rapide dans la matière restante');}
+  // 2026-10-22-005 : la fraise SORT du brut (grille dilatée bornée au corps :
+  // la zone s'arrêtait à 1 mm dehors) — points de coupe à plus de 5 mm du corps
+  {let out5=0,nC=0,far=0;const k5=Math.ceil(5/G);
+    for(let i=1;i<mv.length;i++){const b=mv[i];if(b[0])continue;nC++;const ci=Math.round((b[1]-ZS.x0)/G),cj=Math.round((b[2]-ZS.y0)/G);
+      let any=false;for(let dj=-k5;dj<=k5&&!any;dj++)for(let di=-k5;di<=k5&&!any;di++){if((di*di+dj*dj)*G*G>25)continue;const ii=ci+di,jj=cj+dj;if(ii<0||jj<0||ii>=ZS.nx||jj>=ZS.ny)continue;if(ZS.h[jj*ZS.nx+ii]>-1/0)any=true;}
+      if(!any)out5++;}
+    console.log('  · coupes à plus de 5 mm hors du corps-brut : '+out5+' sur '+nC);
+    A(out5>0,'la fraise sort du brut (au-delà de 5 mm du corps)');}
   console.log('  · simulation : '+r.sim.full+' colonnes pleines sur '+r.sim.cols);
   A(r.sim.full<0.05*r.sim.cols,'simulation : matière de départ = dessus du corps-brut (pas la boîte pleine)');
   console.log('  · affichage de la matière : '+r.sim.fullDisp+' colonnes dessinées à la hauteur pleine');
