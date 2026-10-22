@@ -129,6 +129,21 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
       for(let k=0;k<=ns;k++){const t=k/ns,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t,z=a.z+(b.z-a.z)*t;const e=pTF(x,y)-z;if(e>wF){wF=e;wAt=[+x.toFixed(1),+y.toFixed(1),+z.toFixed(1),i,b.r?'G0':(b.ent?'ent':'G1'),JSON.stringify(a),JSON.stringify(b)];}}}
     out.Dat=wAt;
     out.D={band0:band(mvD0),band1:band(mvD1),n0:mvD0.length,n1:mvD1.length,wF:wF,frontKept:setup.ops[0].protectFront===true};
+    // ---- E. minipasses avec faces rouges (2026-10-21-008) : un contour fermé
+    // qui COMMENÇAIT hors zone (flanc rouge) était jeté en entier ----
+    const eE=faoOpDefaults('rough3d');Object.assign(eE,{toolId:'TT',ap:6,ae:6,radial:0.5,axial:0.5,ztop:setup.stock.z1,zbot:30,minipasses:2,
+      protect:[{b:imp.id,f:side},{b:imp.id,f:3},{b:imp.id,f:6}],protectFront:true});
+    setup.ops=[eE];faoSanitiseOps(setup);
+    const mvE=faoOpMoves(setup.ops[0],setup);
+    const zt=+setup.ops[0].ztop,bands=[];
+    for(let k=1;;k++){const zl=Math.round((zt-6*k)*1000)/1000;if(zl<30-1e-6)break;
+      let L=0;for(const dz of [2,4]){const zm=Math.round((zl+dz)*1000)/1000;
+        for(let i=1;i<mvE.length;i++){const a=mvE[i-1],b=mvE[i];if(b.r||a.r)continue;if(Math.abs(a.z-zm)<1e-6&&Math.abs(b.z-zm)<1e-6)L+=Math.hypot(b.x-a.x,b.y-a.y);}}
+      bands.push([zl,+L.toFixed(1)]);}
+    out.E={bands:bands};
+    // ---- F. rotation du repère autour de X (2026-10-21-009) ----
+    const fz=function(fr){return faoFrame({frame:fr}).Z.map(v=>+v.toFixed(5));};
+    out.F={xp:fz({rx:-11.25}),xm:fz({rx:-11.25,rxAx:'-X'}),none:fz({}),op:(function(){const o2={frame:{z:'+Z',x:'+X',rx:30}};const fr=faoOpFrame(setup,o2);return fr&&fr.rel.Z.map(v=>+v.toFixed(4));})()};
     out.C={n:mvC.length,worst:worst,worstAt:worstAt,rapUnder:rapUnder,secu:secu};
     return out;
   `;
@@ -167,6 +182,13 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   A(r.D.band0>0,'D : sans la case, l’ébauche usine bien le brut devant le flanc rouge (cas du retour utilisateur)');
   A(r.D.band1===0,'D : avec la case, plus aucune avance devant le flanc rouge');
   A(r.D.wF<=0.02,'D : aucune position d’outil dans le volume avant + marge');
+  console.log('  · E minipasses par bande (Z niveau : longueur aux 2 cotes de minipasse, mm) : '+r.E.bands.map(b=>b[0].toFixed(1)+':'+b[1]).join(' · '));
+  A(r.E.bands.length>=3&&r.E.bands.every(b=>b[1]>10),'E : minipasses présentes à CHAQUE bande malgré les flancs rouges');
+  const sn=+Math.sin(11.25*Math.PI/180).toFixed(5),cs=+Math.cos(11.25*Math.PI/180).toFixed(5);
+  A(JSON.stringify(r.F.xp)===JSON.stringify([0,sn,cs]),'F : rotation −11,25° autour de X+ → Z = (0, '+sn+', '+cs+') ('+r.F.xp+')');
+  A(JSON.stringify(r.F.xm)===JSON.stringify([0,-sn,cs]),'F : même angle autour de X− → Z symétrique ('+r.F.xm+')');
+  A(JSON.stringify(r.F.none)===JSON.stringify([0,0,1]),'F : sans rotation, Z inchangé');
+  A(r.F.op&&Math.abs(r.F.op[1]+0.5)<1e-4&&Math.abs(r.F.op[2]-0.866)<1e-3,'F : opération tournée de 30° autour de X → Z (repère du posage) = (0, −0,5, 0,866) ('+r.F.op+')');
   console.log(ko?'ÉCHEC '+ko:'OK');
   process.exit(ko?1:0);
 })();

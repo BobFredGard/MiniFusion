@@ -658,6 +658,8 @@ function* faoOpMovesIt0(op,job){
         // le brut déborde de la pièce (bande des flancs jamais usinée avant)
         stockBox:(job&&job.stock&&faoStockValid&&faoStockValid(job.stock))?job.stock:null,
         protectTip:protTip,
+        // 2026-10-21-010 : brut = corps — dessus réel dilaté du rayon d'outil
+        stockTopAt:(function(){try{const T=faoStockTop(job,1);return T?T.dil(D/2+RA.radial):null;}catch(e){return null;}})(),
         zoneAt:zctx?zctx.at:null,
         // 2026-10-11-005 : la limite voyage avec la zone — le REPÈRE de
         // génération (faoLoopAxis) suit l'axe de la chaîne (poche oblique).

@@ -273,7 +273,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.3.17';
+const APP_VER='V0.3.18';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -283,8 +283,11 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-21-004';
+const CACHE_VER='2026-10-21-008';
 function cacheVerOK(v){
+  // 2026-10-21-008 : ébauche 3D, outil à rayon de coin — un contour fermé qui
+  // commence hors zone n'est plus jeté en entier (minipasses / passes de faces
+  // découpées à la zone) : les parcours à zone ou faces rouges changent.
   // 2026-10-21-004 : ébauche 3D — un rampage de descente ne relie plus deux
   // échantillons séparés par un trou (passage sous la pièce) : les parcours
   // qui portaient ces ponts (entrées à travers la pièce) changent.
@@ -18173,6 +18176,8 @@ function* faoOpMovesIt0(op,job){
         // le brut déborde de la pièce (bande des flancs jamais usinée avant)
         stockBox:(job&&job.stock&&faoStockValid&&faoStockValid(job.stock))?job.stock:null,
         protectTip:protTip,
+        // 2026-10-21-010 : brut = corps — dessus réel dilaté du rayon d'outil
+        stockTopAt:(function(){try{const T=faoStockTop(job,1);return T?T.dil(D/2+RA.radial):null;}catch(e){return null;}})(),
         zoneAt:zctx?zctx.at:null,
         // 2026-10-11-005 : la limite voyage avec la zone — le REPÈRE de
         // génération (faoLoopAxis) suit l'axe de la chaîne (poche oblique).
@@ -19644,6 +19649,20 @@ function faoMatterGrid(s,pas){
           h[k]=top;
           const pzz=pz||p;for(let iz=0;iz<nz;iz++){ if(+s.z0+(iz+0.5)*pzz>top)alive[(iz*ny+iy)*nx+ix]=0; }
         }
+      }
+    }
+  }catch(e){}
+  // 2026-10-21-010 : brut = CORPS — la matière de départ est le dessus réel du
+  // corps-brut (carte des hauteurs), plus la boîte pleine
+  try{
+    const T=(s&&s.solid!=null&&typeof faoStockTop==='function')?faoStockTop(faoSetup(),Math.max(0.5,p*0.5)):null;
+    if(T){
+      const pzz=pz||p;
+      for(let iy=0;iy<ny;iy++)for(let ix=0;ix<nx;ix++){
+        const x=+s.x0+(ix+0.5)*p,y=+s.y0+(iy+0.5)*p,k=iy*nx+ix;
+        let top=T.at(x,y);if(!(top>-1/0))top=+s.z0;
+        top=Math.min(top,full);
+        if(top<full){h[k]=top;for(let iz=0;iz<nz;iz++){if(+s.z0+(iz+0.5)*pzz>top)alive[(iz*ny+iy)*nx+ix]=0;}}
       }
     }
   }catch(e){}
@@ -23136,6 +23155,16 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   const Rcent=Math.min(cx-rx0,rx1-cx,cy-ry0,ry1-cy)+pitch;
   // --- liaisons (copie conventionnelle) : G1 sûre ou translation à vide
   const zTopSafe=Math.max(top,isFinite(+brutTop)?+brutTop:top);
+  // 2026-10-21-010 : BRUT = CORPS — hors de la zone usinable de ce niveau
+  // (faces rouges, zone, brut non atteint), la matière du brut peut rester
+  // au-dessus de tz : un trajet qui la croise passe par le dégagement.
+  const sTop=(opt&&typeof opt.stockTop==='function')?opt.stockTop:null;
+  const stockBlock=function(p,q){
+    if(!sTop||!zoneAt||!tz)return false;
+    const dx=q.x-p.x,dy=q.y-p.y,L=Math.sqrt(dx*dx+dy*dy),n=Math.max(1,Math.ceil(L));
+    for(let i=0;i<=n;i++){const t=i/n,x=p.x+dx*t,y=p.y+dy*t;if(!zoneAt(x,y)&&sTop(x,y)>tz-0.5)return true;}
+    return false;
+  };
   const pathOK=function(p,q){
     if(tz&&tz>=zTopSafe-1e-9)return true;
     const dx=q.x-p.x,dy=q.y-p.y,L=Math.sqrt(dx*dx+dy*dy);
@@ -23174,7 +23203,9 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     if(!moves.length){moves.push({r:1,x:px,y:py,z:secu});return secu;}
     const prev=moves[moves.length-1];
     let zGo=secu;
-    if(tz&&pathOK(prev,{x:px,y:py})){
+    if(tz&&((opt&&opt.remBlocked&&opt.remBlocked(prev,{x:px,y:py},tz))||stockBlock(prev,{x:px,y:py}))){
+      zGo=secu; // 2026-10-21-010 : brut-corps resté hors zone au-dessus de tz
+    }else if(tz&&pathOK(prev,{x:px,y:py})){
       zGo=tz;
     }else if(tz){
       const zN=pathMatTop(prev,{x:px,y:py});
@@ -23855,9 +23886,23 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
   // reste au-dessus du rouge (o.protectTip = cote de pointe minimale). Posé
   // AVANT les transformations de repère (la zone voyage avec elle).
   let zCur=1/0;
-  if(typeof o.protectTip==='function'){
-    const pT=o.protectTip,zB=(typeof o.zoneAt==='function')?o.zoneAt:null;
-    o=Object.assign({},o,{zoneAt:function(x,y){return (!zB||zB(x,y))&&!(pT(x,y)>zCur+1e-6);}});
+  // 2026-10-21-010 : BRUT = CORPS — o.stockTopAt(x,y) = dessus du brut dilaté
+  // du rayon d'outil : un centre n'est admis que s'il reste de la matière du
+  // brut sous le disque AU-DESSUS de la cote (sinon : usinage dans le vide).
+  if(typeof o.protectTip==='function'||typeof o.stockTopAt==='function'){
+    const pT=(typeof o.protectTip==='function')?o.protectTip:null,sT=(typeof o.stockTopAt==='function')?o.stockTopAt:null;
+    const zB=(typeof o.zoneAt==='function')?o.zoneAt:null;
+    // zoneSafe : où l'outil a le DROIT d'être (zone de l'op, rouge) — les points
+    // d'entrée / sortie / liaison dans le vide à côté du brut sont libres ;
+    // zoneAt : où l'on COUPE (en plus : matière du brut sous l'outil)
+    const safe=function(x,y){
+      if(zB&&!zB(x,y))return false;
+      if(pT&&pT(x,y)>zCur+1e-6)return false;
+      return true;};
+    o=Object.assign({},o,{zoneSafe:safe,zoneAt:function(x,y){
+      if(!safe(x,y))return false;
+      if(sT&&zCur<1/0&&!(sT(x,y)>zCur+0.01))return false;
+      return true;}});
   }
   const SB=o.stockBox&&isFinite(+o.stockBox.x0)&&isFinite(+o.stockBox.x1)&&isFinite(+o.stockBox.y0)&&isFinite(+o.stockBox.y1)?o.stockBox:null;
   if(thL!==null&&thL!==0){
@@ -23888,13 +23933,21 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
   // prédicat MONDE ; livré tel quel dans un repère transposé/pendant, il
   // « tournait » de 90° (Cavité inverse : |y| du parcours bloqué à 42,5 au
   // lieu de 72,5 — les extrémités de la poche n'étaient JAMAIS usinées).
+  // 2026-10-21-010 : dessus du brut-corps dans le repère interne (liaisons toriques)
+  let stockTopF=(typeof o.stockTopAt==='function')?o.stockTopAt:null;
+  if(stockTopF&&(th!==0||swapped)){
+    const sW=stockTopF;
+    if(th!==0){const cs=Math.cos(th),sn=Math.sin(th);stockTopF=function(x,y){return sW(x*cs-y*sn,x*sn+y*cs);};}
+    else stockTopF=function(x,y){return sW(y,x);};
+  }
   if(typeof o.zoneAt==='function'&&(th!==0||swapped)){
-    const zW=o.zoneAt;
+    const zW=o.zoneAt,zS=(typeof o.zoneSafe==='function')?o.zoneSafe:null;
     if(th!==0){
       const cs=Math.cos(th), sn=Math.sin(th); // R(+th) : repère -> monde
-      o=Object.assign({},o,{zoneAt:function(x,y){ return zW(x*cs-y*sn, x*sn+y*cs); }});
+      o=Object.assign({},o,{zoneAt:function(x,y){ return zW(x*cs-y*sn, x*sn+y*cs); },
+        zoneSafe:zS?function(x,y){ return zS(x*cs-y*sn, x*sn+y*cs); }:null});
     }else{
-      o=Object.assign({},o,{zoneAt:function(x,y){ return zW(y,x); }});
+      o=Object.assign({},o,{zoneAt:function(x,y){ return zW(y,x); },zoneSafe:zS?function(x,y){ return zS(y,x); }:null});
     }
   }
   // 2026-10-11-005 — APERÇU PROVISOIRE DANS LA POSITION DE LA PIÈCE : pendant
@@ -24004,13 +24057,46 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     }
   }
   faoSliceCache={mesh:M,map:{}};
+  // 2026-10-21-010 : MATIÈRE RESTANTE (brut-corps ou faces rouges) — carte des
+  // hauteurs du brut (pas 1 mm, repère interne) abaissée par les passes émises
+  // à chaque niveau ; les rapides de liaison (spirale, toriques) y sont
+  // contrôlés : la matière laissée hors zone ou non atteinte n'est plus
+  // traversée. Sans brut-corps ni rouge : absente (parcours inchangés).
+  let rem=null;
+  if(stockTopF||typeof o.protectTip==='function'){
+    const g=1,pad=D;
+    const rx0=BB.x0-pad,ry0=BB.y0-pad,rnx=Math.ceil((BB.x1-BB.x0+2*pad)/g)+1,rny=Math.ceil((BB.y1-BB.y0+2*pad)/g)+1;
+    const top=new Float32Array(rnx*rny);
+    const bt=isFinite(+o.brutTop)?+o.brutTop:zt;
+    for(let j=0;j<rny;j++)for(let i=0;i<rnx;i++){const x=rx0+i*g,y=ry0+j*g;
+      top[j*rnx+i]=stockTopF?Math.min(bt,stockTopF(x,y)):bt;}
+    const rcut=Math.max(0.5,D/2-0.3*(isFinite(+o.cornerR)?+o.cornerR:0));
+    let done=0;
+    const carve=function(){
+      for(let k=Math.max(1,done);k<moves.length;k++){const a=moves[k-1],b=moves[k];if(b.r||a.r)continue;
+        const L=Math.hypot(b.x-a.x,b.y-a.y),ns=Math.max(1,Math.ceil(L));
+        for(let s=0;s<=ns;s++){const t=s/ns,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t,z=Math.max(a.z,b.z);
+          const n=Math.ceil(rcut/g),ci=Math.round((x-rx0)/g),cj=Math.round((y-ry0)/g);
+          for(let dj=-n;dj<=n;dj++)for(let di=-n;di<=n;di++){if((di*di+dj*dj)*g*g>rcut*rcut)continue;
+            const ii=ci+di,jj=cj+dj;if(ii<0||jj<0||ii>=rnx||jj>=rny)continue;const q=jj*rnx+ii;if(z<top[q])top[q]=z;}}}
+      done=moves.length;
+    };
+    const rb=D/2+0.5,nb=Math.ceil(rb/g);
+    const blockedAt=function(x,y,zt2){const ci=Math.round((x-rx0)/g),cj=Math.round((y-ry0)/g);
+      for(let dj=-nb;dj<=nb;dj++)for(let di=-nb;di<=nb;di++){if((di*di+dj*dj)*g*g>rb*rb)continue;
+        const ii=ci+di,jj=cj+dj;if(ii<0||jj<0||ii>=rnx||jj>=rny)continue;if(top[jj*rnx+ii]>zt2-0.5)return true;}
+      return false;};
+    const blocked=function(p,q,zt2){const L=Math.hypot(q.x-p.x,q.y-p.y),n=Math.max(1,Math.ceil(L));
+      for(let i=0;i<=n;i++){const t=i/n;if(blockedAt(p.x+(q.x-p.x)*t,p.y+(q.y-p.y)*t,zt2))return true;}return false;};
+    rem={carve:carve,blocked:blocked,blockedAt:blockedAt};
+  }
   // 2026-10-14-007 : PASSE TORIQUE (src/89-fao-torique.js) — outil à rayon de
   // coin (torique : cornerR ; boule : D/2) : après chaque niveau du moteur
   // (inchangé), passe AJOUTÉE au contact exact de l'outil réel là où la
   // fraise droite du calcul restait à distance des faces inclinées.
   const rcT=o.kind==='ball'?D/2:(o.kind==='bull'?Math.min(D/2,+o.cornerR||0):0);
   const bullC=(rcT>1e-3&&typeof faoBullRingSetup==='function')?{}:null;
-  const bullCtx=function(lai){const k=(+lai||0).toFixed(4);if(!bullC[k])bullC[k]=faoBullRingSetup(M,BB,D,rcT,+lai||0,o.zoneAt);return bullC[k];};
+  const bullCtx=function(lai){const k=(+lai||0).toFixed(4);if(!bullC[k]){bullC[k]=faoBullRingSetup(M,BB,D,rcT,+lai||0,o.zoneAt);bullC[k].stockTop=stockTopF;bullC[k].zoneSafe=o.zoneSafe||null;bullC[k].remAt=rem?rem.blockedAt:null;}return bullC[k];};
   const bullLink=1.5*(esc?Math.max(0.5,ae):Math.max(0.5,Math.min(ae,D*0.25)));
   // passes toriques émises APRÈS tout le moteur : le parcours 005 reste
   // strictement identique (insérées entre niveaux, elles déplaçaient le point
@@ -24035,10 +24121,11 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     // ESCARGOT : spirale centre -> faces sur le meme plan/levels, memes
     // entrees/travel ; mini-passes et finition restent conventionnelles.
     // 2026-10-08-003 : sens (avalant = sens de coupe constant) porte par opt.
-    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,zoneDense:typeof o.protectTip==='function',
+    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,zoneDense:typeof o.protectTip==='function',stockTop:stockTopF,remBlocked:rem?rem.blocked:null,
       bullFaces:bullC?function(zz){return faoBullRingRuns(bullCtx(L.radial),zz,o.sens==='avalant',true);}:null,
       bullOK:bullC?function(x,y,zz){return bullCtx(L.radial).tipB(x,y)<=zz+1e-6;}:null});
     else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
+    if(rem)rem.carve();
     if(bullC&&!esc)bullJobs.push([L.radial,L.z,tvZ]); // conventionnel : contour ajouté en fin d'opération
     yield frameYield(); // dessin progressif 005 : pelage du niveau fini
     // MINI-PASSES (retour 4/10) : après le pelage du niveau, contour des parois
@@ -24058,6 +24145,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
         // trop sur les faces inclinées, torique D25 R2).
         if(bullC)faoBullRingLevel(bullCtx(s),zm,moves,{sens:o.sens,secu:secu,travelZ:tvZ,linkMax:bullLink,all:true});
         else faoRoughAdaptiveLevel(M,BB,zm,D,D/2+s,secu,Math.min(secu,bandTop),ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
+        if(rem)rem.carve();
         yield frameYield(); // dessin progressif 005 : mini-passe k
       }
     }
@@ -24099,7 +24187,8 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
   if(bullC){
     for(let q=0;q<bullJobs.length;q++){const J=bullJobs[q];
       zCur=J[1];
-      faoBullRingLevel(bullCtx(J[0]),J[1],moves,{sens:o.sens,secu:secu,travelZ:J[2],linkMax:bullLink});}
+      faoBullRingLevel(bullCtx(J[0]),J[1],moves,{sens:o.sens,secu:secu,travelZ:J[2],linkMax:bullLink});
+      if(rem)rem.carve();}
     if(bullJobs.length){const lm=moves[moves.length-1];if(lm&&lm.z<secu-1e-9)moves.push({r:1,x:lm.x,y:lm.y,z:secu});}
     yield frameYield();
   }
@@ -29800,6 +29889,49 @@ function faoProtectMesh(job,op){
   return faoMeshConcat(red,faoFrontPrism(red,st));
 }
 
+/* ----- BRUT = CORPS (2026-10-21-010) -----
+   Retour : « le brut pris en compte n'est pas la pièce mais un cube, pourtant un
+   corps est bien sélectionné ». L'ébauche et la simulation ne lisaient que la
+   BOÎTE du brut. Carte des hauteurs du DESSUS du corps-brut (repère du posage,
+   pas 1 mm, raster exact des triangles) : la simulation part de cette forme, et
+   l'ébauche n'usine qu'où l'outil rencontre de la matière du brut au-dessus de
+   la cote (dilatation du dessus par le rayon d'outil). */
+function faoStockBodyId(setup){
+  try{
+    if(!setup)return null;
+    if(setup.stock&&setup.stock.solid!=null)return setup.stock.solid;
+    if(setup.stockSrc==='body'&&setup.stockBody!=null&&faoStockShape(setup)==='solid')return setup.stockBody;
+  }catch(e){}
+  return null;
+}
+function faoStockTop(setup,g){
+  const id=faoStockBodyId(setup);if(id==null)return null;
+  const m=faoFaceMesh(setup,[{b:id,all:1}]);if(!m)return null;
+  g=g>0?g:1;
+  let x0=1/0,y0=1/0,x1=-1/0,y1=-1/0;
+  for(const p of m.v){if(p[0]<x0)x0=p[0];if(p[0]>x1)x1=p[0];if(p[1]<y0)y0=p[1];if(p[1]>y1)y1=p[1];}
+  x0-=g;y0-=g;x1+=g;y1+=g;
+  const nx=Math.ceil((x1-x0)/g)+1,ny=Math.ceil((y1-y0)/g)+1,h=new Float32Array(nx*ny).fill(-1/0);
+  for(const t of m.t){const A=m.v[t[0]],B=m.v[t[1]],C=m.v[t[2]];
+    const d=(B[1]-C[1])*(A[0]-C[0])+(C[0]-B[0])*(A[1]-C[1]);if(Math.abs(d)<1e-12)continue;
+    const i0=Math.max(0,Math.floor((Math.min(A[0],B[0],C[0])-x0)/g)),i1=Math.min(nx-1,Math.ceil((Math.max(A[0],B[0],C[0])-x0)/g));
+    const j0=Math.max(0,Math.floor((Math.min(A[1],B[1],C[1])-y0)/g)),j1=Math.min(ny-1,Math.ceil((Math.max(A[1],B[1],C[1])-y0)/g));
+    for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){const x=x0+i*g,y=y0+j*g;
+      const l1=((B[1]-C[1])*(x-C[0])+(C[0]-B[0])*(y-C[1]))/d,l2=((C[1]-A[1])*(x-C[0])+(A[0]-C[0])*(y-C[1]))/d,l3=1-l1-l2;
+      if(l1<-1e-9||l2<-1e-9||l3<-1e-9)continue;const z=l1*A[2]+l2*B[2]+l3*C[2];const k=j*nx+i;if(z>h[k])h[k]=z;}}
+  const at=function(x,y){const i=Math.round((x-x0)/g),j=Math.round((y-y0)/g);
+    if(i<0||j<0||i>=nx||j>=ny)return -1/0;return h[j*nx+i];};
+  // dessus dilaté par le rayon r : matière du brut quelque part sous le disque d'outil
+  const dil=function(r){
+    const n=Math.ceil(r/g),out=new Float32Array(nx*ny).fill(-1/0),off=[];
+    for(let dj=-n;dj<=n;dj++)for(let di=-n;di<=n;di++)if((di*di+dj*dj)*g*g<=(r+g*0.71)*(r+g*0.71))off.push([di,dj]);
+    for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){const v=h[j*nx+i];if(!(v>-1/0))continue;
+      for(const o of off){const ii=i+o[0],jj=j+o[1];if(ii<0||jj<0||ii>=nx||jj>=ny)continue;const k=jj*nx+ii;if(v>out[k])out[k]=v;}}
+    return function(x,y){const i=Math.round((x-x0)/g),j=Math.round((y-y0)/g);if(i<0||j<0||i>=nx||j>=ny)return -1/0;return out[j*nx+i];};
+  };
+  return {x0:x0,y0:y0,nx:nx,ny:ny,g:g,h:h,at:at,dil:dil};
+}
+
 /* ----- prédicats pour les générateurs ----- */
 // Finition : position outil (x,y) admise si le rouge ne relève pas l'outil
 // gonflé de la marge (aucun point rouge à moins de m) et, avec du bleu, si
@@ -31975,7 +32107,13 @@ function faoFrame(setup){
     d=c[0]*Z[0]+c[1]*Z[1]+c[2]*Z[2];Xp=[c[0]-d*Z[0],c[1]-d*Z[1],c[2]-d*Z[2]];L=Math.hypot(Xp[0],Xp[1],Xp[2]);
   }
   X=[Xp[0]/L,Xp[1]/L,Xp[2]/L];
-  const Y=[Z[1]*X[2]-Z[2]*X[1],Z[2]*X[0]-Z[0]*X[2],Z[0]*X[1]-Z[1]*X[0]];
+  let Y=[Z[1]*X[2]-Z[2]*X[1],Z[2]*X[0]-Z[0]*X[2],Z[0]*X[1]-Z[1]*X[0]];
+  // 2026-10-21-009 : ROTATION autour du X du repère (X+ : sens direct, Y vers Z ;
+  // X− : sens inverse), en degrés — ex. posage de Fusion tourné de −11,25°.
+  const ra=(isFinite(+f.rx)&&Math.abs(+f.rx)>1e-9)?(+f.rx)*(f.rxAx==='-X'?-1:1)*Math.PI/180:0;
+  if(ra){const c=Math.cos(ra),s=Math.sin(ra);
+    const Yn=[Y[0]*c+Z[0]*s,Y[1]*c+Z[1]*s,Y[2]*c+Z[2]*s],Zn=[Z[0]*c-Y[0]*s,Z[1]*c-Y[1]*s,Z[2]*c-Y[2]*s];
+    Y=Yn;Z=Zn;}
   // 2026-10-16-020 : origine du repère (monde) — repère d'opération posé sur une face
   const O=(Array.isArray(f.o)&&f.o.length===3&&f.o.every(q=>isFinite(+q)))?f.o.map(Number):[0,0,0];
   const id=Math.abs(X[0]-1)<1e-9&&Math.abs(Y[1]-1)<1e-9&&Math.abs(Z[2]-1)<1e-9&&Math.abs(O[0])<1e-12&&Math.abs(O[1])<1e-12&&Math.abs(O[2])<1e-12;
@@ -32139,6 +32277,7 @@ function faoFrameRows(p,setup){
   };
   row('z','Axe Z','flipZ');
   row('x','Axe X','flipX');
+  faoFrameRotRow(p,f,function(fn){ setup.frame=Object.assign({},setup.frame||{}); fn(setup.frame); faoStock(); },'du posage');
   const F=faoFrame(setup);
   const n=document.createElement('div');n.className='fao-help';
   n.textContent=(F.id?'Repère du posage = repère de la pièce. ':'Repère orienté : Z posage = ('+F.Z.map(q=>q.toFixed(3)).join(', ')+'). ')+
@@ -32148,6 +32287,19 @@ function faoFrameRows(p,setup){
     const w=document.createElement('div');w.className='fao-alert';w.textContent='Cliquez une face ou une arête dans la vue pour l’axe '+faoFramePick.which.toUpperCase()+' (Échap annule).';
     p.appendChild(w);
   }
+}
+// Ligne « Rotation autour de [X+|X−] [angle°] » — edit(fn) applique la modif.
+function faoFrameRotRow(p,f,edit,lab){
+  const r=faoRow();
+  r.appendChild(faoLab('Rotation autour de'));
+  r.appendChild(faoSel([['+X','X+'],['-X','X−']],f.rxAx==='-X'?'-X':'+X',function(v){
+    edit(function(fr){ if(v==='-X')fr.rxAx='-X'; else delete fr.rxAx; });
+  },'Axe de rotation : X du repère '+lab+' (X+ : sens direct, Y vers Z ; X− : sens inverse).'));
+  r.appendChild(faoNum(isFinite(+f.rx)?+f.rx:0,function(v){
+    edit(function(fr){ if(isFinite(v)&&Math.abs(v)>1e-9)fr.rx=+v; else delete fr.rx; });
+  },52,0.25,'Angle de rotation du repère '+lab+' autour de son axe X (degrés), appliqué après le choix des axes Z et X.'));
+  r.appendChild(faoLab('°'));
+  p.appendChild(r);
 }
 function faoFrameFixX(setup){
   // Après un changement de Z : si X lui est (presque) parallèle, on prend l'axe du repère
@@ -32282,6 +32434,7 @@ function faoOpFrameRows(d,setup,op){
     r.appendChild(lb);d.appendChild(r);
   };
   row('z','Axe Z','flipZ');row('x','Axe X','flipX');
+  faoFrameRotRow(d,f,function(fn){ faoOpFrameEdit(setup,op,function(){ op.frame=Object.assign({},op.frame||{}); fn(op.frame); }); },'de l’opération');
   const BC=faoOpBC(setup,op),F=faoFrame({frame:op.frame});
   const n=document.createElement('div');n.className=(BC&&BC.down)?'fao-alert':'fao-help';
   n.textContent=(BC?('Orientation outil : B '+BC.b+'° · C '+BC.c+'° (table C+B) — vérifiez les sens de rotation de votre machine. '):'Même orientation que le posage. ')+
@@ -32486,8 +32639,16 @@ function faoBullRingRuns(C,z,climb,all){
     // d'un seul tenant (une entrée, pas de remontée entre morceaux ; repasse
     // à vide là où la fraise droite touchait déjà)
     if(ch.closed){
-      let useful=false,inZ=true;
-      for(let i=0;i<pts.length;i++){if(C.zoneAt&&!C.zoneAt(pts[i][0],pts[i][1])){inZ=false;break;}if(!useful&&(all||C.tipF(pts[i][0],pts[i][1])>z+0.03))useful=true;}
+      // 2026-10-21-008 : « utile » et « dans la zone » évalués INDÉPENDAMMENT —
+      // la boucle s'arrêtait au 1er point hors zone AVANT d'avoir vu un point
+      // utile : un contour qui COMMENCE hors zone (flanc rouge, limite) était
+      // jeté en entier au lieu d'être découpé (minipasses disparues sous la
+      // 2e bande de Malaxeur Retard).
+      let useful=!!all,inZ=true;
+      for(let i=0;i<pts.length&&(inZ||!useful);i++){
+        if(inZ&&C.zoneAt&&!C.zoneAt(pts[i][0],pts[i][1]))inZ=false;
+        if(!useful&&C.tipF(pts[i][0],pts[i][1])>z+0.03)useful=true;
+      }
       if(!useful)return;
       if(inZ){runs.push({pts:faoSimplifyPts(pts,0.004),closed:true});return;}
     }
@@ -32504,7 +32665,10 @@ function faoBullRingLevel(C,z,moves,o){
   const linkMax=o.linkMax;
   const rnd=function(v){return Math.round(v*1000)/1000;};
   const last=function(){return moves.length?moves[moves.length-1]:null;};
-  const cleared=function(x,y){return C.tipF(x,y)<=z+1e-6&&(!C.zoneAt||C.zoneAt(x,y));};
+  // 2026-10-21-010 : entrées / sorties / liaisons dans la zone SÛRE (le vide
+  // à côté du brut-corps est libre ; zoneAt = zone de coupe, matière comprise)
+  const zSafe=C.zoneSafe||C.zoneAt;
+  const cleared=function(x,y){return C.tipF(x,y)<=z+1e-6&&(!zSafe||zSafe(x,y));};
   const reach=function(x,y){return C.tipB(x,y)<=z+1e-6;};
   // point d'entrée côté usiné : décalé de la passe vers le côté libre
   const freePt=function(P,Q,atEnd){
@@ -32543,8 +32707,16 @@ function faoBullRingLevel(C,z,moves,o){
       // hauteur de déplacement : tv seulement si l'outil y est libre sur tout
       // le trajet (pointe fraise droite <= tv − 0,5), sinon plan de sécurité
       let hz=tv;
+      // 2026-10-21-010 : brut = corps — hors de la zone usinable de ce niveau
+      // (faces rouges, zone, brut non atteint) de la matière du brut peut
+      // rester au-dessus de tv : le trajet passe alors par le dégagement
+      const blocked=function(x,y){
+        if(C.tipF(x,y)>tv-0.5)return true;
+        if(C.remAt&&C.remAt(x,y,tv))return true; // matière restante du brut (2026-10-21-010)
+        return !!(C.stockTop&&C.zoneAt&&!C.zoneAt(x,y)&&C.stockTop(x,y)>tv-0.5);
+      };
       if(p){const L=Math.hypot(E[0]-p.x,E[1]-p.y),ns=Math.max(1,Math.ceil(L));
-        for(let q=0;q<=ns;q++){const t=q/ns;if(C.tipF(p.x+(E[0]-p.x)*t,p.y+(E[1]-p.y)*t)>tv-0.5){hz=secu;break;}}}
+        for(let q=0;q<=ns;q++){const t=q/ns;if(blocked(p.x+(E[0]-p.x)*t,p.y+(E[1]-p.y)*t)){hz=secu;break;}}}
       else hz=secu;
       if(p&&p.z<hz-1e-9)moves.push({r:1,x:p.x,y:p.y,z:hz});
       moves.push({r:1,x:rnd(E[0]),y:rnd(E[1]),z:hz});

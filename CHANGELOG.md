@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**287 versions**, de `2026-09-28b` à `V0.3.17` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**288 versions**, de `2026-09-28b` à `V0.3.18` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4373,3 +4373,20 @@ Retour utilisateur (Malaxeur Retard) : en zone « Tout couvrir », la fraise des
 - Seules les opérations à faces rouges sont à régénérer (version dans leur clé de parcours) ; CACHE_VER inchangé.
 
 `test_fao_faces` (cas D) : sans la case, 427 entrées dans le volume avant ; avec, 0. `npm run ci` vert.
+
+## V0.3.18 - FAO : brut = corps réel, minipasses partout, rotation du repère autour de X
+Retours utilisateur (Malaxeur Retard).
+### Brut = corps
+- L'Ébauche 3D n'usine plus le cube : avec un corps choisi comme brut, un centre d'outil n'est admis que s'il reste de la matière de ce corps sous l'outil au-dessus de la cote (dessus du corps dilaté du rayon d'outil). Malaxeur Retard : avance dans le vide 52,6 m → 2,5 m.
+- **Matière restante suivie** pendant le calcul (carte des hauteurs abaissée par les passes émises) : les liaisons rapides (spirale, passes toriques) qui croiseraient du brut non enlevé (rouge, zone, non atteint) passent par le dégagement.
+- **Simulation** : la matière de départ est le dessus réel du corps-brut, plus la boîte pleine.
+### Minipasses
+- Un contour fermé qui commençait hors zone (flanc rouge) était jeté en entier au lieu d'être découpé.
+- Entrées / sorties des passes toriques dans la zone SÛRE (le vide à côté du brut est libre) — elles étaient refusées avec le brut-corps.
+- Malaxeur Retard : minipasses à 38 bandes sur 39 (avant : les 2 du haut seulement).
+### Repère
+- **Rotation autour de X** (X+ ou X−, en degrés) du repère du posage et de celui d'une opération (fiches « Repère »).
+### Divers
+- CACHE_VER `2026-10-21-008` : parcours d'Ébauche 3D à régénérer.
+
+Tests : `test_fao_brut_corps` (nouveau), `test_fao_faces` (minipasses avec rouge, rotation X). Suite complète 109/109. `npm run ci` vert.

@@ -446,6 +446,20 @@ function faoMatterGrid(s,pas){
       }
     }
   }catch(e){}
+  // 2026-10-21-010 : brut = CORPS — la matière de départ est le dessus réel du
+  // corps-brut (carte des hauteurs), plus la boîte pleine
+  try{
+    const T=(s&&s.solid!=null&&typeof faoStockTop==='function')?faoStockTop(faoSetup(),Math.max(0.5,p*0.5)):null;
+    if(T){
+      const pzz=pz||p;
+      for(let iy=0;iy<ny;iy++)for(let ix=0;ix<nx;ix++){
+        const x=+s.x0+(ix+0.5)*p,y=+s.y0+(iy+0.5)*p,k=iy*nx+ix;
+        let top=T.at(x,y);if(!(top>-1/0))top=+s.z0;
+        top=Math.min(top,full);
+        if(top<full){h[k]=top;for(let iz=0;iz<nz;iz++){if(+s.z0+(iz+0.5)*pzz>top)alive[(iz*ny+iy)*nx+ix]=0;}}
+      }
+    }
+  }catch(e){}
   return {pas:p,pz:pz,nx:nx,ny:ny,nz:nz,n:n,ox:s.x0,oy:s.y0,oz:s.z0,alive:alive,h:h,
           sx1:sx1,sy1:sy1,sz1:sz1,full:full};
 }

@@ -107,6 +107,49 @@ function faoProtectMesh(job,op){
   return faoMeshConcat(red,faoFrontPrism(red,st));
 }
 
+/* ----- BRUT = CORPS (2026-10-21-010) -----
+   Retour : « le brut pris en compte n'est pas la pièce mais un cube, pourtant un
+   corps est bien sélectionné ». L'ébauche et la simulation ne lisaient que la
+   BOÎTE du brut. Carte des hauteurs du DESSUS du corps-brut (repère du posage,
+   pas 1 mm, raster exact des triangles) : la simulation part de cette forme, et
+   l'ébauche n'usine qu'où l'outil rencontre de la matière du brut au-dessus de
+   la cote (dilatation du dessus par le rayon d'outil). */
+function faoStockBodyId(setup){
+  try{
+    if(!setup)return null;
+    if(setup.stock&&setup.stock.solid!=null)return setup.stock.solid;
+    if(setup.stockSrc==='body'&&setup.stockBody!=null&&faoStockShape(setup)==='solid')return setup.stockBody;
+  }catch(e){}
+  return null;
+}
+function faoStockTop(setup,g){
+  const id=faoStockBodyId(setup);if(id==null)return null;
+  const m=faoFaceMesh(setup,[{b:id,all:1}]);if(!m)return null;
+  g=g>0?g:1;
+  let x0=1/0,y0=1/0,x1=-1/0,y1=-1/0;
+  for(const p of m.v){if(p[0]<x0)x0=p[0];if(p[0]>x1)x1=p[0];if(p[1]<y0)y0=p[1];if(p[1]>y1)y1=p[1];}
+  x0-=g;y0-=g;x1+=g;y1+=g;
+  const nx=Math.ceil((x1-x0)/g)+1,ny=Math.ceil((y1-y0)/g)+1,h=new Float32Array(nx*ny).fill(-1/0);
+  for(const t of m.t){const A=m.v[t[0]],B=m.v[t[1]],C=m.v[t[2]];
+    const d=(B[1]-C[1])*(A[0]-C[0])+(C[0]-B[0])*(A[1]-C[1]);if(Math.abs(d)<1e-12)continue;
+    const i0=Math.max(0,Math.floor((Math.min(A[0],B[0],C[0])-x0)/g)),i1=Math.min(nx-1,Math.ceil((Math.max(A[0],B[0],C[0])-x0)/g));
+    const j0=Math.max(0,Math.floor((Math.min(A[1],B[1],C[1])-y0)/g)),j1=Math.min(ny-1,Math.ceil((Math.max(A[1],B[1],C[1])-y0)/g));
+    for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){const x=x0+i*g,y=y0+j*g;
+      const l1=((B[1]-C[1])*(x-C[0])+(C[0]-B[0])*(y-C[1]))/d,l2=((C[1]-A[1])*(x-C[0])+(A[0]-C[0])*(y-C[1]))/d,l3=1-l1-l2;
+      if(l1<-1e-9||l2<-1e-9||l3<-1e-9)continue;const z=l1*A[2]+l2*B[2]+l3*C[2];const k=j*nx+i;if(z>h[k])h[k]=z;}}
+  const at=function(x,y){const i=Math.round((x-x0)/g),j=Math.round((y-y0)/g);
+    if(i<0||j<0||i>=nx||j>=ny)return -1/0;return h[j*nx+i];};
+  // dessus dilaté par le rayon r : matière du brut quelque part sous le disque d'outil
+  const dil=function(r){
+    const n=Math.ceil(r/g),out=new Float32Array(nx*ny).fill(-1/0),off=[];
+    for(let dj=-n;dj<=n;dj++)for(let di=-n;di<=n;di++)if((di*di+dj*dj)*g*g<=(r+g*0.71)*(r+g*0.71))off.push([di,dj]);
+    for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){const v=h[j*nx+i];if(!(v>-1/0))continue;
+      for(const o of off){const ii=i+o[0],jj=j+o[1];if(ii<0||jj<0||ii>=nx||jj>=ny)continue;const k=jj*nx+ii;if(v>out[k])out[k]=v;}}
+    return function(x,y){const i=Math.round((x-x0)/g),j=Math.round((y-y0)/g);if(i<0||j<0||i>=nx||j>=ny)return -1/0;return out[j*nx+i];};
+  };
+  return {x0:x0,y0:y0,nx:nx,ny:ny,g:g,h:h,at:at,dil:dil};
+}
+
 /* ----- prédicats pour les générateurs ----- */
 // Finition : position outil (x,y) admise si le rouge ne relève pas l'outil
 // gonflé de la marge (aucun point rouge à moins de m) et, avec du bleu, si

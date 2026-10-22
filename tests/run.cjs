@@ -40,6 +40,7 @@ const SUITES = [
   "test_fao_geodesique",
   "test_fao_ebauche_brut",
   "test_fao_faces",
+  "test_fao_brut_corps",
   "test_fao_poche",
   "test_fao_contour",
   "test_fao_torique",

@@ -253,7 +253,13 @@ function faoFrame(setup){
     d=c[0]*Z[0]+c[1]*Z[1]+c[2]*Z[2];Xp=[c[0]-d*Z[0],c[1]-d*Z[1],c[2]-d*Z[2]];L=Math.hypot(Xp[0],Xp[1],Xp[2]);
   }
   X=[Xp[0]/L,Xp[1]/L,Xp[2]/L];
-  const Y=[Z[1]*X[2]-Z[2]*X[1],Z[2]*X[0]-Z[0]*X[2],Z[0]*X[1]-Z[1]*X[0]];
+  let Y=[Z[1]*X[2]-Z[2]*X[1],Z[2]*X[0]-Z[0]*X[2],Z[0]*X[1]-Z[1]*X[0]];
+  // 2026-10-21-009 : ROTATION autour du X du repère (X+ : sens direct, Y vers Z ;
+  // X− : sens inverse), en degrés — ex. posage de Fusion tourné de −11,25°.
+  const ra=(isFinite(+f.rx)&&Math.abs(+f.rx)>1e-9)?(+f.rx)*(f.rxAx==='-X'?-1:1)*Math.PI/180:0;
+  if(ra){const c=Math.cos(ra),s=Math.sin(ra);
+    const Yn=[Y[0]*c+Z[0]*s,Y[1]*c+Z[1]*s,Y[2]*c+Z[2]*s],Zn=[Z[0]*c-Y[0]*s,Z[1]*c-Y[1]*s,Z[2]*c-Y[2]*s];
+    Y=Yn;Z=Zn;}
   // 2026-10-16-020 : origine du repère (monde) — repère d'opération posé sur une face
   const O=(Array.isArray(f.o)&&f.o.length===3&&f.o.every(q=>isFinite(+q)))?f.o.map(Number):[0,0,0];
   const id=Math.abs(X[0]-1)<1e-9&&Math.abs(Y[1]-1)<1e-9&&Math.abs(Z[2]-1)<1e-9&&Math.abs(O[0])<1e-12&&Math.abs(O[1])<1e-12&&Math.abs(O[2])<1e-12;
@@ -417,6 +423,7 @@ function faoFrameRows(p,setup){
   };
   row('z','Axe Z','flipZ');
   row('x','Axe X','flipX');
+  faoFrameRotRow(p,f,function(fn){ setup.frame=Object.assign({},setup.frame||{}); fn(setup.frame); faoStock(); },'du posage');
   const F=faoFrame(setup);
   const n=document.createElement('div');n.className='fao-help';
   n.textContent=(F.id?'Repère du posage = repère de la pièce. ':'Repère orienté : Z posage = ('+F.Z.map(q=>q.toFixed(3)).join(', ')+'). ')+
@@ -426,6 +433,19 @@ function faoFrameRows(p,setup){
     const w=document.createElement('div');w.className='fao-alert';w.textContent='Cliquez une face ou une arête dans la vue pour l’axe '+faoFramePick.which.toUpperCase()+' (Échap annule).';
     p.appendChild(w);
   }
+}
+// Ligne « Rotation autour de [X+|X−] [angle°] » — edit(fn) applique la modif.
+function faoFrameRotRow(p,f,edit,lab){
+  const r=faoRow();
+  r.appendChild(faoLab('Rotation autour de'));
+  r.appendChild(faoSel([['+X','X+'],['-X','X−']],f.rxAx==='-X'?'-X':'+X',function(v){
+    edit(function(fr){ if(v==='-X')fr.rxAx='-X'; else delete fr.rxAx; });
+  },'Axe de rotation : X du repère '+lab+' (X+ : sens direct, Y vers Z ; X− : sens inverse).'));
+  r.appendChild(faoNum(isFinite(+f.rx)?+f.rx:0,function(v){
+    edit(function(fr){ if(isFinite(v)&&Math.abs(v)>1e-9)fr.rx=+v; else delete fr.rx; });
+  },52,0.25,'Angle de rotation du repère '+lab+' autour de son axe X (degrés), appliqué après le choix des axes Z et X.'));
+  r.appendChild(faoLab('°'));
+  p.appendChild(r);
 }
 function faoFrameFixX(setup){
   // Après un changement de Z : si X lui est (presque) parallèle, on prend l'axe du repère
@@ -560,6 +580,7 @@ function faoOpFrameRows(d,setup,op){
     r.appendChild(lb);d.appendChild(r);
   };
   row('z','Axe Z','flipZ');row('x','Axe X','flipX');
+  faoFrameRotRow(d,f,function(fn){ faoOpFrameEdit(setup,op,function(){ op.frame=Object.assign({},op.frame||{}); fn(op.frame); }); },'de l’opération');
   const BC=faoOpBC(setup,op),F=faoFrame({frame:op.frame});
   const n=document.createElement('div');n.className=(BC&&BC.down)?'fao-alert':'fao-help';
   n.textContent=(BC?('Orientation outil : B '+BC.b+'° · C '+BC.c+'° (table C+B) — vérifiez les sens de rotation de votre machine. '):'Même orientation que le posage. ')+

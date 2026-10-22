@@ -118,8 +118,16 @@ function faoBullRingRuns(C,z,climb,all){
     // d'un seul tenant (une entrée, pas de remontée entre morceaux ; repasse
     // à vide là où la fraise droite touchait déjà)
     if(ch.closed){
-      let useful=false,inZ=true;
-      for(let i=0;i<pts.length;i++){if(C.zoneAt&&!C.zoneAt(pts[i][0],pts[i][1])){inZ=false;break;}if(!useful&&(all||C.tipF(pts[i][0],pts[i][1])>z+0.03))useful=true;}
+      // 2026-10-21-008 : « utile » et « dans la zone » évalués INDÉPENDAMMENT —
+      // la boucle s'arrêtait au 1er point hors zone AVANT d'avoir vu un point
+      // utile : un contour qui COMMENCE hors zone (flanc rouge, limite) était
+      // jeté en entier au lieu d'être découpé (minipasses disparues sous la
+      // 2e bande de Malaxeur Retard).
+      let useful=!!all,inZ=true;
+      for(let i=0;i<pts.length&&(inZ||!useful);i++){
+        if(inZ&&C.zoneAt&&!C.zoneAt(pts[i][0],pts[i][1]))inZ=false;
+        if(!useful&&C.tipF(pts[i][0],pts[i][1])>z+0.03)useful=true;
+      }
       if(!useful)return;
       if(inZ){runs.push({pts:faoSimplifyPts(pts,0.004),closed:true});return;}
     }
@@ -136,7 +144,10 @@ function faoBullRingLevel(C,z,moves,o){
   const linkMax=o.linkMax;
   const rnd=function(v){return Math.round(v*1000)/1000;};
   const last=function(){return moves.length?moves[moves.length-1]:null;};
-  const cleared=function(x,y){return C.tipF(x,y)<=z+1e-6&&(!C.zoneAt||C.zoneAt(x,y));};
+  // 2026-10-21-010 : entrées / sorties / liaisons dans la zone SÛRE (le vide
+  // à côté du brut-corps est libre ; zoneAt = zone de coupe, matière comprise)
+  const zSafe=C.zoneSafe||C.zoneAt;
+  const cleared=function(x,y){return C.tipF(x,y)<=z+1e-6&&(!zSafe||zSafe(x,y));};
   const reach=function(x,y){return C.tipB(x,y)<=z+1e-6;};
   // point d'entrée côté usiné : décalé de la passe vers le côté libre
   const freePt=function(P,Q,atEnd){
@@ -175,8 +186,16 @@ function faoBullRingLevel(C,z,moves,o){
       // hauteur de déplacement : tv seulement si l'outil y est libre sur tout
       // le trajet (pointe fraise droite <= tv − 0,5), sinon plan de sécurité
       let hz=tv;
+      // 2026-10-21-010 : brut = corps — hors de la zone usinable de ce niveau
+      // (faces rouges, zone, brut non atteint) de la matière du brut peut
+      // rester au-dessus de tv : le trajet passe alors par le dégagement
+      const blocked=function(x,y){
+        if(C.tipF(x,y)>tv-0.5)return true;
+        if(C.remAt&&C.remAt(x,y,tv))return true; // matière restante du brut (2026-10-21-010)
+        return !!(C.stockTop&&C.zoneAt&&!C.zoneAt(x,y)&&C.stockTop(x,y)>tv-0.5);
+      };
       if(p){const L=Math.hypot(E[0]-p.x,E[1]-p.y),ns=Math.max(1,Math.ceil(L));
-        for(let q=0;q<=ns;q++){const t=q/ns;if(C.tipF(p.x+(E[0]-p.x)*t,p.y+(E[1]-p.y)*t)>tv-0.5){hz=secu;break;}}}
+        for(let q=0;q<=ns;q++){const t=q/ns;if(blocked(p.x+(E[0]-p.x)*t,p.y+(E[1]-p.y)*t)){hz=secu;break;}}}
       else hz=secu;
       if(p&&p.z<hz-1e-9)moves.push({r:1,x:p.x,y:p.y,z:hz});
       moves.push({r:1,x:rnd(E[0]),y:rnd(E[1]),z:hz});
