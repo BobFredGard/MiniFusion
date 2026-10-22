@@ -222,7 +222,14 @@ function faoBullRingLevel(C,z,moves,o){
       else hz=secu;
       if(p&&p.z<hz-1e-9)moves.push({r:1,x:p.x,y:p.y,z:hz});
       moves.push({r:1,x:rnd(E[0]),y:rnd(E[1]),z:hz});
-      if(hz>z+1+1e-9)moves.push({r:1,x:rnd(E[0]),y:rnd(E[1]),z:z+1}); // colonne usinée au-dessus de E
+      // colonne usinée au-dessus de E — 2026-10-22-013 : seulement si la matière
+      // restante le confirme (Haut sous le dessus du brut : la peau au-dessus du
+      // Haut n'est jamais usinée, le rapide y entrait de 1 mm) ; sinon descente
+      // en avance depuis la hauteur de déplacement
+      // sans carte (brut en boîte, sans rouge) : au-dessus du Haut rien n'est usiné
+      let zF=z+1;
+      if(!C.remAt&&isFinite(+C.brutTop)&&isFinite(+C.zTop)&&+C.brutTop>+C.zTop+1e-6)zF=Math.max(zF,+C.brutTop+1);
+      if(hz>zF+1e-9&&!(C.remAt&&C.remAt(E[0],E[1],zF)))moves.push({r:1,x:rnd(E[0]),y:rnd(E[1]),z:zF});
       moves.push({r:0,ent:1,x:rnd(E[0]),y:rnd(E[1]),z:z});
     }
     moves.push({r:0,ent:1,x:rnd(pts[0][0]),y:rnd(pts[0][1]),z:z});

@@ -548,8 +548,41 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     av.axes=[axFree];
     sh2.views.push(av);
     const hitAx=T.axisAt(15,20);
-    sh2.views.pop();
     out.axisHitOK=!!hitAx&&hitAx.id==='axFree';
+    // 2026-10-22-013 : tout trait d'axe s'étire (v.axExt), s'accroche et se cote
+    try{
+      av.axes=[];av.axExt={};
+      const autoL=[{t:'L',x1:0,y1:5,x2:10,y2:5,cls:'mepAxisCross'}];
+      let ls=T.axisLines(av,autoL);
+      const ak=ls[0]&&ls[0].ak;
+      av.axExt[ak]=[1,2];
+      ls=T.axisLines(av,autoL);
+      out.axisExtOK=!!ak&&ls[0].ak===ak&&Math.abs(ls[0].x1+1)<1e-9&&Math.abs(ls[0].x2-12)<1e-9
+        &&ls[0].bx1===0&&ls[0].bx2===10&&ls[0].cls==='mepAxis'; // croix allongée → trait d'axe mixte fin
+      const sp=T.snapPt(34.6,30.4);
+      out.axisSnapOK=!!sp.hit&&sp.hit.t==='axEnd'&&Math.abs(sp.x-34)<1e-9&&Math.abs(sp.y-30)<1e-9;
+      out.axisSnapOff=!T.snapPt(34.6,30.4,{noAxes:true}).hit||T.snapPt(34.6,30.4,{noAxes:true}).hit.t!=='axEnd';
+      const ah=T.axisAt(33.8,30.2);
+      out.axisEndHit=!!ah&&ah.ak===ak&&ah.end===2&&ah.id===null;
+      const he=T.hitEnt(20,30.3,{axes:true});
+      out.axisDimHit=!!he&&he.i==='ax:'+ak&&he.e.t==='L'&&!T.hitEnt(20,30.3);
+      const eb=T.entByHint(av,{t:'seg',i:'ax:'+ak});
+      out.axisHintOK=!!eb&&Math.abs(eb.x2-12)<1e-9&&T.entSig(eb)==='X'+ak;
+    }catch(e){out.axisExtOK=false;out.axisExtErr=String(e&&e.stack||e);}
+    // coupe : le 1er point s'accroche au bout d'un axe hors du cadre de sa vue
+    try{
+      av.axes=[{id:'axOut',kind:'free',a:{x:0,y:5},b:{x:40,y:5}}];av.axExt={}; // bout papier (90,30)
+      window.mepBeginSectionCmd();
+      window.__mepTest.dimPaperDown(90.4,30.3);
+      const c=window.__mepTest.vcmd();
+      out.secOutAxis=!!c&&c.kind==='section'&&c.stage===1&&c.par===av.id&&Math.abs(c.A.x-40)<1e-6&&Math.abs(c.A.y-5)<1e-6;
+      if(!out.secOutAxis)out.secOutErr=JSON.stringify(c&&{st:c.stage,par:c.par,A:c.A});
+      window.__mepTest.dimPaperDown(150,31);
+      const c2=window.__mepTest.vcmd();
+      out.secOutAxis2=!!c2&&c2.pts&&c2.pts.length===2;
+      mepSetTool('select');
+    }catch(e){out.secOutAxis=false;out.secOutErr=String(e&&e.stack||e);}
+    sh2.views.pop();
     v2.axes=[axFree];v2.autoAxes=true;v2.autoPitch=true;
     out.axisSerialise=serialise(false).indexOf('axFree')>=0
       &&serialise(false).indexOf('"autoAxes":true')>=0;
@@ -818,6 +851,11 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.expCol&&val.expBW,'export PDF / SVG : couleurs gardées par défaut, option noir'+(val&&val.expErr?' — '+val.expErr:''));
   A(val&&val.paperBasis&&val.paperBasisSide,'vues alignées (coupe / auxiliaire) : base = projection 1er angle (V0.3.13)'+(val&&val.paperErr?' — '+val.paperErr:''));
   A(val&&val.exportsNew,'exports DXF, perçages auto et papier présents');
+  A(val&&val.axisExtOK,'axe : allongement mémorisé par bout (v.axExt) '+(val&&val.axisExtErr||''));
+  A(val&&val.axisSnapOK&&val.axisSnapOff,'axe : extrémités accrochables (flèches de coupe, esquisse)');
+  A(val&&val.axisEndHit,'axe auto : extrémité saisissable pour l’étirer');
+  A(val&&val.secOutAxis&&val.secOutAxis2,'coupe : 1er point accroché au bout d’un axe hors du cadre de la vue '+(val&&val.secOutErr||''));
+  A(val&&val.axisDimHit&&val.axisHintOK,'axe : trait cotable (hint ax:, suit l’allongement)');
 
   if(ko){console.log('FAIL '+ko+' assertion(s)');process.exit(1);}
   console.log('OK espace PLAN');

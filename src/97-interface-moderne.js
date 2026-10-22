@@ -335,7 +335,7 @@ function mfRibbon(){
     ['pViewIso','ISO',()=>{try{mepSetActive(true);mepAddViewStd('iso');}catch(e){}},'Axonométrie isométrique'],
     ['camera','Caméra',()=>{try{mepAddCameraViewCmd();}catch(e){}},'Vue depuis la caméra 3D actuelle'],
     ['pViewAux','Auxiliaire',()=>{try{mepBeginAuxCmd();}catch(e){}},'Vue auxiliaire : cliquez une arête inclinée, puis placez la vue perpendiculairement'],
-    ['pViewSection','Coupe',()=>{try{mepSetActive(true);mepBeginSectionCmd();}catch(e){}},'Vue en coupe : 2 points sur une vue, puis placez la vue (le côté donne le sens du regard)'],
+    ['pViewSection','Coupe',()=>{try{mepSetActive(true);mepBeginSectionCmd();}catch(e){}},'Vue en coupe : points de la ligne sur une vue (2, ou plus pour une coupe brisée à l’équerre), ✓ / Entrée pour valider, ↶ / Retour arrière pour reculer, puis placez la vue (le côté donne le sens du regard)'],
     ['pViewDetail','Détail',()=>{try{mepSetActive(true);mepBeginDetailCmd();}catch(e){}},'Vue de détail : centre, rayon, puis placement']],'mfPlan');
   grp('Dessin',[['pLine','Ligne',()=>mepTool('line'),'Ligne enchaînée (Échap termine)'],['pRect','Rectangle',()=>mepTool('rect')],
     ['pCircle','Cercle',()=>mepTool('circle')],['pArc','Arc',()=>mepTool('arc'),'Arc : centre, départ, arrivée'],

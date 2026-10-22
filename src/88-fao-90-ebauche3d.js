@@ -1763,7 +1763,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
   // fraise droite du calcul restait à distance des faces inclinées.
   const rcT=o.kind==='ball'?D/2:(o.kind==='bull'?Math.min(D/2,+o.cornerR||0):0);
   const bullC=(rcT>1e-3&&typeof faoBullRingSetup==='function')?{}:null;
-  const bullCtx=function(lai){const k=(+lai||0).toFixed(4);if(!bullC[k]){bullC[k]=faoBullRingSetup(M,BB,D,rcT,+lai||0,o.zoneAt);bullC[k].stockTop=stockTopF;bullC[k].zoneSafe=o.zoneSafe||null;bullC[k].remAt=rem?rem.blockedAt:null;}return bullC[k];};
+  const bullCtx=function(lai){const k=(+lai||0).toFixed(4);if(!bullC[k]){bullC[k]=faoBullRingSetup(M,BB,D,rcT,+lai||0,o.zoneAt);bullC[k].stockTop=stockTopF;bullC[k].zoneSafe=o.zoneSafe||null;bullC[k].remAt=rem?rem.blockedAt:null;bullC[k].brutTop=o.brutTop;bullC[k].zTop=zt;}return bullC[k];};
   const bullLink=1.5*(esc?Math.max(0.5,ae):Math.max(0.5,Math.min(ae,D*0.25)));
   // passes toriques émises APRÈS tout le moteur : le parcours 005 reste
   // strictement identique (insérées entre niveaux, elles déplaçaient le point

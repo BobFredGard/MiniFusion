@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**293 versions**, de `2026-09-28b` à `V0.3.23` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**294 versions**, de `2026-09-28b` à `V0.3.24` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4439,3 +4439,14 @@ Retours utilisateur (Malaxeur Retard).
 - **Panneau Plan en onglets** : Planche, Cartouche, Dessin 2D, Axes, Cotation, Vue, Sortie (même style que la FAO, onglet mémorisé).
 
 Tests : `test_mep_step` (nouveau : HLR exact d'un STEP, cylindres, axe de symétrie — échoue sur V0.3.22), `test_fao_faces` / `test_fao_brut_corps` (minipasses comptées entre les vrais niveaux).
+
+## V0.3.24 - Plan : traits d'axe étirables, accrochables et cotables, coupe brisée ; suppression de face
+Retours utilisateur (mise en plan, Perçages).
+- **Tout trait d'axe s'étire** (trou, alignement, cercle de perçage, axes automatiques, cylindres d'un STEP) : poignées aux bouts du trait sélectionné, allongement mémorisé par bout dans la vue (`v.axExt`, suit le modèle). Une croix de centre allongée devient un trait d'axe fin mixte (ISO 128-2). Un bout d'axe se saisit même posé sur un alignement. Suppr / « Longueur d'origine » rend la longueur d'un axe automatique.
+- **Bouts d'axe accrochables** : extrémités, milieux, trait et centre du cercle de perçage entrent dans l'accrochage (ligne de coupe, esquisse de planche, cotes point à point). Le 1er point d'une coupe peut être le bout d'un axe hors du cadre de sa vue ; repère du point accroché pendant le tracé.
+- **Axes cotables** : l'outil Cote prend un trait d'axe comme une arête (longueur, distance, angle, Ø du cercle de perçage) ; la cote suit l'allongement.
+- **Coupe brisée** (ISO 128-44) : la ligne de coupe se pose point par point, chaque tronçon à l'équerre du précédent ; icônes ↶ (dernier point, Retour arrière) et ✓ (valider, Entrée) ; la ligne finit sur un tronçon parallèle au premier. Matière ôtée par un prisme en escalier : chaque plan hachuré, pas de trait au changement de plan ; gros traits aux bouts et aux coudes.
+- **Suppression de face** (touche Suppr sur des faces sélectionnées en 3D, façon Fusion) : les voisines se prolongent (congé → arête vive, trou rebouché) ; faces mémorisées par référence durable.
+- **FAO** : l'Ébauche 3D n'entre plus en rapide sous le dessus du brut quand le Haut est plus bas ; test du maillage intermédiaire mis à jour.
+
+Tests : `test_mep_coupe_brisee` (nouveau, OCCT réel : 24 000 mm³ restants, une face hachurée par plan, aucun trait au changement de plan), `test_mise_en_plan` (allongement, croix → trait mixte, accrochage, saisie d'un bout, cote sur axe, coupe depuis un axe hors cadre), `test_suppression_face`. `npm run ci` vert.

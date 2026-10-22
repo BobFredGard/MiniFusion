@@ -145,12 +145,13 @@ const FIX=path.join(__dirname,'fixtures');
     "att(JSON.stringify(faoOpSig({id:'a',type:'geofinish',traj:'scallop'}))!==JSON.stringify(faoOpSig({id:'a',type:'geofinish',traj:'parallel'})),'sig : scallop ≠ parallel (régénération à la bascule)');",
     // 2026-10-14-009 : la Finition demande le maillage FIN (congés lisses) ;
     // l'Ébauche 3D garde le maillage d'outillage (parcours 005 inchangé)
-    "const keepAM=faoActiveMesh;const asked=[];faoActiveMesh=function(s,fine){asked.push(!!fine);return null;};",
+    // 2026-10-22-009 : l'Ébauche 3D demande le maillage INTERMÉDIAIRE ('mid', 0,05 mm)
+    "const keepAM=faoActiveMesh;const asked=[];faoActiveMesh=function(s,fine){asked.push(fine===undefined?false:fine);return null;};",
     "try{const jf=faoDefaultJob();const og=faoOpDefaults('geofinish');og.id='g1';jf.ops=[og];faoOpMoves(og,jf);const orr=faoOpDefaults('rough3d');orr.id='r1';jf.ops=[orr];asked.push('|');faoOpMoves(orr,jf);}catch(e){}",
     "faoActiveMesh=keepAM;",
     "const ia=asked.indexOf('|');",
     "att(asked.slice(0,ia).some(x=>x===true),'Finition : maillage fin demandé ('+JSON.stringify(asked)+')');",
-    "att(asked.slice(ia+1).every(x=>x===false),'Ébauche 3D : maillage d outillage habituel ('+JSON.stringify(asked)+')');",
+    "att(asked.slice(ia+1).some(x=>x==='mid')&&asked.slice(ia+1).every(x=>x===false||x==='mid'),'Ébauche 3D : maillage intermédiaire demandé ('+JSON.stringify(asked)+')');",
     "att(typeof faoMeshFromBodyFine==='function'&&faoMeshFromBodyFine({kind:'body'})===null,'maillage fin : repli null sans solide exact');",
     "{const kb=(typeof bodies!=='undefined')?bodies:undefined,kF=faoMeshFromBodyFine,kM=faoMeshFromBody;",
     "  try{bodies=[{id:'bF',kind:'body',visible:true}];",

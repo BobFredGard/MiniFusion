@@ -181,6 +181,13 @@ window.addEventListener('keydown',e=>{
     if(k==='z'&&!e.shiftKey){if(docUndoStack.length||docRedoStack.length){e.preventDefault();docUndo();}return;}
     if(k==='y'||(k==='z'&&e.shiftKey)){if(docRedoStack.length){e.preventDefault();docRedo();}return;}
   }
+  // Faces sélectionnées dans la vue 3D (dernier clic dans la vue) : Suppr les retire du
+  // solide (85-suppression-face). Sinon, Suppr supprime la sélection de l'arbre.
+  if(e.key==='Delete'&&typeof delFacesWanted==='function'&&delFacesWanted()){
+    e.preventDefault();
+    deleteSelectedFaces();
+    return;
+  }
   if((e.key==='Delete'||e.key==='Backspace')&&treeSelIds().length){
     e.preventDefault();
     treeDeleteSel();

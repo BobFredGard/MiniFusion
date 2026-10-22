@@ -1095,6 +1095,138 @@ function occApplyMoveFace(result,f){
     return {shape:result,warnings:[`déplacement impossible (${(e&&e.message)||e})`],fatal:true};
   }
 }
+/* ---------- suppression de faces (touche Suppr, façon Fusion) ----------
+   BRepAlgoAPI_Defeaturing retire les faces visées et PROLONGE les faces voisines jusqu'à
+   ce qu'elles se rejoignent : un congé supprimé redonne l'arête vive, un trou supprimé
+   rebouche la face qui le portait. Mesuré : boîte 100x60x40 congée R10 sur une arête
+   verticale, congé supprimé → 6 faces, 240 000 mm³ (la boîte d'origine, au mm³ près). */
+function occSurfKind(f){
+  try{
+    const ad=new occt.BRepAdaptor_Surface_2(f,true);
+    const gt=ad.GetType();try{ad.delete();}catch(e){}
+    const T=occt.GeomAbs_SurfaceType;
+    for(const k in T){if(T[k]===gt)return k.replace('GeomAbs_','');}
+  }catch(e){}
+  return '?';
+}
+function occFaceRefAny(f){
+  // Référence durable de N'IMPORTE quelle face : celle du déplacement (plan/cylindre :
+  // centre + normale + dimensions, suivie par les ancres d'esquisse), sinon centre +
+  // dimensions + type de surface (tores et surfaces libres des congés de coin).
+  const r=occFaceRef(f);if(r){r.st=occSurfKind(f);return r;}
+  const b=occFaceBox(f);if(!b)return null;
+  return {pos:b.pos.map(v=>+v.toFixed(3)),dim:b.dim.map(v=>+v.toFixed(3)),st:occSurfKind(f)};
+}
+function occFindFaceAny(shape,ref){
+  if(!shape||!ref)return null;
+  if(ref.n){
+    const h=occFindFace(shape,ref);
+    if(h||!ref.anchor)return h;
+    // Repli : une extrusion amont a changé de hauteur, la face visée a donc changé de
+    // dimensions et occFindFace la refuse. L'ancre d'esquisse suffit alors : même type de
+    // surface, même normale, la face la mieux placée par rapport à son entité d'esquisse
+    // (les dimensions de la candidate remplacent celles mémorisées).
+    const SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE;
+    const ex=new occt.TopExp_Explorer_2(shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,SH);
+    let best=null,bs=1e18;
+    while(ex.More()){
+      const f=occt.TopoDS.Face_1(ex.Current());
+      let keep=false;
+      try{
+        const n=occFaceOutNormal(f),b=occFaceBox(f);
+        if(n&&b&&(!ref.st||occSurfKind(f)===ref.st)&&n[0]*ref.n[0]+n[1]*ref.n[1]+n[2]*ref.n[2]>=0.9){
+          const s=faceAnchorScore({f,b,n},Object.assign({},ref,{dim:b.dim}));
+          if(s!=null&&s<bs){if(best)try{best.delete();}catch(e){}best=f;bs=s;keep=true;}
+        }
+      }catch(e){}
+      if(!keep)try{f.delete();}catch(e){}
+      ex.Next();
+    }
+    try{ex.delete();}catch(e){}
+    return best;
+  }
+  // Face courbe quelconque : même type de surface, la plus proche (centre + dimensions),
+  // à 2,5 mm au plus — on préfère échouer que retirer une autre face.
+  const SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE;
+  const ex=new occt.TopExp_Explorer_2(shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,SH);
+  let best=null,bs=1e18;
+  while(ex.More()){
+    const f=occt.TopoDS.Face_1(ex.Current());
+    let keep=false;
+    if(!ref.st||occSurfKind(f)===ref.st){
+      const b=occFaceBox(f);
+      if(b){
+        const d=Math.hypot(b.pos[0]-ref.pos[0],b.pos[1]-ref.pos[1],b.pos[2]-ref.pos[2]);
+        const dd=Math.abs(b.dim[0]-ref.dim[0])+Math.abs(b.dim[1]-ref.dim[1])+Math.abs(b.dim[2]-ref.dim[2]);
+        const sc=d+0.1*dd;
+        if(sc<bs){if(best)try{best.delete();}catch(e){}best=f;bs=sc;keep=true;}
+      }
+    }
+    if(!keep)try{f.delete();}catch(e){}
+    ex.Next();
+  }
+  try{ex.delete();}catch(e){}
+  if(best&&bs>2.5){try{best.delete();}catch(e){}return null;}
+  return best;
+}
+function occDeleteFacesOnce(shape,faces){
+  // Retire `faces` (handles sur `shape`) et referme le solide par prolongement des voisines.
+  if(!occt.BRepAlgoAPI_Defeaturing)throw new Error('suppression de face absente de ce noyau');
+  const d=new occt.BRepAlgoAPI_Defeaturing();
+  try{
+    d.SetShape(shape);
+    faces.forEach(h=>d.AddFaceToRemove(h));
+    try{d.SetToFillHistory(false);}catch(e){}
+    d.Build();
+    if(!d.IsDone())throw new Error('les faces voisines ne se rejoignent pas');
+    let r=d.Shape();
+    if(!r||r.IsNull())throw new Error('résultat vide');
+    // Une face que le noyau ne sait pas retirer est GARDÉE sans erreur (IsDone reste vrai) :
+    // on vérifie qu'aucune face visée ne subsiste, sinon l'isolation la désignera.
+    const SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE;
+    const ex=new occt.TopExp_Explorer_2(r,occt.TopAbs_ShapeEnum.TopAbs_FACE,SH);
+    let reste=false;
+    while(ex.More()&&!reste){const c=ex.Current();if(faces.some(h=>c.IsSame(h)))reste=true;ex.Next();}
+    try{ex.delete();}catch(e){}
+    if(reste){try{r.delete();}catch(e){}throw new Error('les faces voisines ne se rejoignent pas');}
+    r=occUnify(r);
+    if(!occCoqueValide(r)){try{r.delete();}catch(e){}throw new Error('solide résultant invalide');}
+    return r;
+  }finally{try{d.delete();}catch(e){}}
+}
+function occApplyDeleteFaces(result,f){
+  // Rejoue la suppression. Retourne {shape,warnings} comme occApplyCoque : les faces sont
+  // retrouvées par référence durable, et celles que le noyau refuse sont écartées une à
+  // une (isolation) plutôt que de tout perdre.
+  const warnings=[];
+  const total=(f.faces||[]).length;
+  if(!total)return{shape:result,warnings:['aucune face à supprimer']};
+  const hs=(f.faces||[]).map(fr=>{try{return occFindFaceAny(result,fr);}catch(e){return null;}}).filter(Boolean);
+  const free=()=>hs.forEach(h=>{try{h.delete();}catch(e){}});
+  f._m={m:hs.length,t:total};
+  if(!hs.length)return{shape:result,warnings:[`aucune des ${total} face(s) n'est retrouvée — la pièce a changé`]};
+  if(hs.length<total)warnings.push(`${total-hs.length} face(s) introuvable(s) sur la pièce courante`);
+  let r=null,echec=null;
+  try{r=occDeleteFacesOnce(result,hs);}catch(e){echec=e;}
+  if(!r&&hs.length>1){
+    const garde=[];
+    for(const h of hs){
+      try{const t=occDeleteFacesOnce(result,garde.concat([h]));try{t.delete();}catch(e){}garde.push(h);}catch(e){}
+    }
+    if(garde.length){
+      try{r=occDeleteFacesOnce(result,garde);}catch(e){echec=e;}
+      if(r){f._m={m:garde.length,t:total};warnings.push(`suppression partielle : ${garde.length}/${total} face(s), ${hs.length-garde.length} refusée(s) par le noyau`);}
+    }
+  }
+  free();
+  if(!r){
+    const m=(echec&&echec.message)||echec;
+    f._m={m:0,t:total};
+    return{shape:result,warnings:[`suppression impossible — ${m}`],fatal:true};
+  }
+  try{result.delete();}catch(e){}
+  return{shape:r,warnings};
+}
 function occListEdges(shape){
   // Données pures par arête (pas de handles conservés) : mid, polyline pts, longueur, src (rang explorateur).
   const out=[],bin=[];
@@ -2232,6 +2364,8 @@ function featSig(f){
     // (centre + normale + dimensions) : sans elle, changer la distance d'un déplacement
     // laisserait la signature inchangée et le point de contrôle réappliquerait l'ancien.
     s+='|d'+(+f.dist||0)+'@'+JSON.stringify(f.ref||null);
+  }else if(f.type==='xdelface'){
+    s+='|'+((f.faces||[]).map(r=>JSON.stringify([r.pos,r.n||r.st,r.dim])).join(';'));
   }else if(f.type==='xdraft'){
     // L'ANGLE fait partie de la géométrie, ainsi que la face de référence (plan neutre)
     // et les faces visées (références durables pos/n/dim). Sans elles, changer l'angle
@@ -2316,7 +2450,7 @@ function occReplayBody(bid,list){
       occCkPut(ckKey,()=>occShapeCopy(result));
       return;
     }
-    if(f.type==='xmove'){
+    if(f.type==='xmove'||f.type==='xdelface'){
       if(!result){msgs.push(`${f.name} : aucun volume à déformer — ignoré`);return;}
       const ckM=occCkGet(ckKey);
       const cpM=ckM?occShapeCopy(ckM):null;
@@ -2325,7 +2459,7 @@ function occReplayBody(bid,list){
         const w=occCkWarn[ckKey];if(w&&w.length)msgs.push(...w.map(x=>`${f.name} : ${x}`));
         return;
       }
-      const r=occApplyMoveFace(result,f);
+      const r=f.type==='xmove'?occApplyMoveFace(result,f):occApplyDeleteFaces(result,f);
       result=r.shape;msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       if(r.warnings.length)occCkWarn[ckKey]=r.warnings.slice();else delete occCkWarn[ckKey];
       occCkPut(ckKey,()=>occShapeCopy(result));

@@ -123,6 +123,7 @@ function featIconOf(f){
   if(f.type==='revolve')return (f.op||'add')==='cut'?'◔':'◍';
   if(f.type==='hole')return '⊚';
   if(f.type==='xmove')return '📐';
+  if(f.type==='xdelface')return ((f._m&&f._m.m<f._m.t)||f._err)?'⚠':'⌫';
   if(f.type==='xdraft')return ((f._m&&f._m.m<f._m.t)||f._err)?'⚠':'📐';
   if(f.type==='xshell')return ((f._m&&f._m.m<f._m.t)||f._err)?'⚠':'🥚';
   return '◧';
@@ -393,6 +394,7 @@ function repCanFeatureHint(f){
   if(f.type==='hole')return 'Perçage · Ø'+(+f.d||0)+(f.thread&&f.thread.size?' · taraudé '+f.thread.size:'')+(f.kind&&f.kind!=='simple'?' · '+f.kind:'');
   if(f.type==='xfillet')return xLabel(xKindOf(f))+' · '+(f.edges||[]).length+' arête(s)';
   if(f.type==='xmove')return 'Déplacement de face · '+(+f.dist||0)+' mm';
+  if(f.type==='xdelface')return 'Suppression · '+(f.faces||[]).length+' face(s)';
   if(f.type==='xdraft')return 'Dépouillage · '+(+f.angle||0).toFixed(1).replace('.',',')+'° · '+(f.faces||[]).length+' face(s)';
   if(f.type==='xshell')return 'Coque · '+String(Math.round((+f.thick||0)*100)/100).replace('.',',')+' mm · '+(f.faces||[]).length+' face(s) retirée(s)';
   return '';
@@ -1169,6 +1171,18 @@ function renderProps(){
       pRow('Paroi (mm)',d);
       pNote('L\'intérieur est creusé de cette épaisseur sous chaque face conservée.');
       pBtns([['🥚 Re-sélectionner les faces',()=>{exitCoqueMode(true);try{if(filMode||filModeX)exitFilletMode(true);}catch(e){}enterCoqueMode(f);}]]);
+      visDel(f);
+      return;
+    }
+    /* — suppression de faces — */
+    if(f.type==='xdelface'){
+      pH('Suppression de face');
+      pInfo(`<b>${f.name}</b>`);
+      if(f._m&&f._m.t&&f._m.m<f._m.t){
+        pInfo(`<span style="color:var(--warn)">⚠ <b>${f._m.m}/${f._m.t}</b> face(s) supprimée(s) — ${f._m.t-f._m.m} perdue(s) ou refusée(s).</span>`);
+      }
+      if((f.faces||[]).length)pNote('Face(s) retirée(s) : '+f.faces.map(r=>'('+r.pos.map(v=>(+v).toFixed(1)).join(' ; ')+')').join(' · '));
+      pNote('Les faces voisines sont prolongées jusqu\'à se rejoindre (congé → arête vive, trou → rebouché). Pour revenir en arrière : Ctrl+Z ou supprimer cette fonction.');
       visDel(f);
       return;
     }

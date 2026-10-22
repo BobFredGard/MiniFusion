@@ -6,6 +6,7 @@ const SUITES = [
   "test_draft_sel",
   "test_xmove",
   "test_coque_sel",
+  "test_suppression_face",
   "test_coque_depouille",
   "test_repeat_mir2",
   "test_repeat_session",
@@ -111,6 +112,7 @@ const SUITES = [
   "test_ws_pose_cao",
   "test_mise_en_plan",
   "test_mep_step",
+  "test_mep_coupe_brisee",
   "test_filet_modele"
 ];
 let ok = 0; const ko = [];
