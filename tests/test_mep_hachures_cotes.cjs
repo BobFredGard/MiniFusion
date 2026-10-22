@@ -139,6 +139,18 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
       bd.shape=mkBox(120,65,20);T.geoClear();
       const p2=T.axisManual(par,ann);out.ax2=p2.length?mid(p2[0]):null;
       par.axes.length=0;
+      // ── 2b. point accroché à un trait d'axe MANUEL : rattachement (cote d'avant) puis suivi de l'axe
+      const annF={id:'__axF__',kind:'free',a:{x:30,y:-10},b:{x:30,y:80}};
+      par.axes.push(annF);
+      const qD={x:30,y:20};
+      T.ptRefresh(par,qD,'v');
+      out.axRef=qD.hint?qD.hint.t+':'+qD.hint.ak:'aucune';
+      annF.a={x:37,y:-10};annF.b={x:37,y:80};T.geoClear(); // l'axe se déplace de 7 mm (cache des traits d'axe vidé, comme après une modification)
+      T.ptRefresh(par,qD,'v');
+      out.axFollow=[+qD.x.toFixed(4),+qD.y.toFixed(4)];
+      const qH={x:30,y:20};T.ptRefresh(par,qH,'h'); // mauvaise direction : pas de rattachement
+      out.axNoH=!qH.hint;
+      par.axes.length=0;
       // ── 3. hachures : défaut historique, puis acier 30° × 2 en rouge
       const loops=[[[0,0],[20,0],[20,10],[0,10]]];
       const draw=c=>{const r=[];T.drawHatch((tag,a)=>{r.push(Object.assign({tag},a));return{};},loops,{x:0,y:0,scale:1},c);return r;};
@@ -248,6 +260,9 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   A(Math.abs(r.ax0-50)<1e-6,'axe de symétrie au milieu des 2 arêtes (x 50)');
   A(Math.abs(r.ax1-70)<1e-6&&r.vert1,'pièce élargie à 140 : l’axe suit ses arêtes (x 70, toujours vertical)');
   A(Math.abs(r.ax2-60)<1e-6,'pièce ramenée à 120 : l’axe suit encore (x 60)');
+  console.log('  · point sur axe : '+r.axRef+' → '+JSON.stringify(r.axFollow));
+  A(r.axRef==='axp:m__axF__.0','point posé sur un axe manuel (vertical) : rattaché à l’axe');
+  A(JSON.stringify(r.axFollow)==='[37,20]'&&r.axNoH,'l’axe se déplace de 7 : le point suit ; axe de mauvaise direction : pas de rattachement');
   console.log('  · hachures : défaut '+r.cfg0+' '+r.n0+' traits '+r.slope0+'° ; réglées '+r.cfg1+' '+r.n1+' traits '+r.slope1+'°');
   A(r.cfg0==='{"pat":"iso","ang":45,"sc":1,"col":""}'&&!r.style0,'hachures par défaut : ISO 128-50 45°, couleur du thème');
   A(r.cfg1==='{"pat":"acier","ang":30,"sc":2,"col":"#ff0000"}'&&r.ser,'réglage commun enregistré dans le document (doc.mep.hatch)');

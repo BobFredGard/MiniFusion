@@ -4417,10 +4417,89 @@
     mepRender();
   }
   /* ═══════════════ O. cotes : mesure, texte, rendu ═══════════════ */
+  /* 2026-10-22-019 : « les cotes, normales et d'ordonnées, ne suivent pas les axes (alignement),
+     elles perdent leurs références » — un point accroché à un trait d'axe garde la référence
+     {t:'axp', ak, f} (clé de l'axe, position le long de son trait d'origine) ou {t:'axc', ak}
+     (centre d'un cercle de perçage) ; il est recalculé à chaque dessin. Un point SANS référence
+     posé pile sur un axe manuel de la bonne direction s'y rattache (cotes d'avant V0.3.29). */
+  function mepAxisRefOf(sh,v,q,ak){
+    const e=mepAxisLineByKey(sh,v,ak);if(!e)return null;
+    if(e.t==='C'||e.t==='A')return{t:'axc',ak};
+    const x1=e.bx1!=null?e.bx1:e.x1,y1=e.by1!=null?e.by1:e.y1,x2=e.bx2!=null?e.bx2:e.x2,y2=e.by2!=null?e.by2:e.y2;
+    const dx=x2-x1,dy=y2-y1,L2=dx*dx+dy*dy;if(!(L2>1e-12))return null;
+    return{t:'axp',ak,f:((q.x-x1)*dx+(q.y-y1)*dy)/L2};
+  }
+  const mepNoAx=new WeakSet();
+  function mepPtRefresh(sh,v,q,pref){
+    // pref : 'v' (axe vertical voulu), 'h' (horizontal), null (indifférent) — pour la migration
+    if(!q||!v)return q;
+    const h=q.hint;
+    if(h&&h.t==='eln'&&h.l){
+      const g=mepGeoOf(v);if(!mepGeoExact(g))return q; // jamais sur le maillage de l'ouverture
+      const e=mepAxisTrackLine(g,h.l,null);if(!e)return q;
+      h.l={x1:e.x1,y1:e.y1,x2:e.x2,y2:e.y2,k:e.k};
+      q.x=e.x1+(e.x2-e.x1)*h.f;q.y=e.y1+(e.y2-e.y1)*h.f;
+      return q;
+    }
+    if(h&&(h.t==='axp'||h.t==='axc')){
+      const e=mepAxisLineByKey(sh,v,h.ak);if(!e)return q; // axe disparu : dernière position connue
+      if(h.t==='axc'){if(e.cx!=null){q.x=e.cx;q.y=e.cy;}return q;}
+      const x1=e.bx1!=null?e.bx1:e.x1,y1=e.by1!=null?e.by1:e.y1,x2=e.bx2!=null?e.bx2:e.x2,y2=e.by2!=null?e.by2:e.y2;
+      q.x=x1+(x2-x1)*h.f;q.y=y1+(y2-y1)*h.f;
+      return q;
+    }
+    if(h||mepNoAx.has(q)||!mepGeoExact(mepGeoOf(v)))return q;
+    // migration : point libre posé pile sur un axe MANUEL (clé « m… », stable) ou une arête de la
+    // pièce, de la bonne direction — d'abord ce qui passe PAR le point (sur le trait), le plus long
+    const dirOk=(dx,dy)=>!(pref==='v'&&Math.abs(dx)>Math.abs(dy)*0.05)&&!(pref==='h'&&Math.abs(dy)>Math.abs(dx)*0.05);
+    const on=(e,dx,dy,L)=>{
+      if(Math.abs((q.x-e.x1)*dy-(q.y-e.y1)*dx)/L>=0.02)return -1;
+      const f=((q.x-e.x1)*dx+(q.y-e.y1)*dy)/(L*L);return f>=-0.02&&f<=1.02?2:1; // 2 = sur le trait
+    };
+    let best=null,bs=-1;
+    mepAxisLines(sh,v).forEach(e=>{
+      if(!e.ak||e.ak[0]!=='m')return;
+      if(e.t==='C'){if(!pref&&Math.hypot(q.x-e.cx,q.y-e.cy)<0.02&&bs<3){bs=3;best=mepAxisRefOf(sh,v,q,e.ak);}return;}
+      if(e.t!=='L')return;
+      const dx=e.x2-e.x1,dy=e.y2-e.y1,L=Math.hypot(dx,dy);if(!(L>1e-9)||!dirOk(dx,dy))return;
+      const k=on(e,dx,dy,L);if(k<0)return;
+      const sc=k+Math.min(0.9,L/1000); // sur le trait d'abord, puis le plus long
+      if(sc>bs){bs=sc;best=mepAxisRefOf(sh,v,q,e.ak);}
+    });
+    if(!best){ // arête de la pièce (suivie comme les droites d'un axe de symétrie)
+      let be=null,bl=0;
+      (mepGeoOf(v).els||[]).forEach(e=>{
+        if(e.t!=='L')return;
+        const dx=e.x2-e.x1,dy=e.y2-e.y1,L=Math.hypot(dx,dy);if(!(L>1e-6)||!dirOk(dx,dy))return;
+        if(on(e,dx,dy,L)===2&&L>bl){bl=L;be=e;}
+      });
+      if(be)best=mepEdgeRefOf(be,q);
+    }
+    if(best)q.hint=best;else mepNoAx.add(q); // une seule recherche par point (mémoire, jamais enregistré)
+    return q;
+  }
+  function mepEdgeRefOf(e,q){
+    const dx=e.x2-e.x1,dy=e.y2-e.y1,L2=dx*dx+dy*dy;
+    return{t:'eln',l:{x1:e.x1,y1:e.y1,x2:e.x2,y2:e.y2,k:e.k},f:L2>1e-12?((q.x-e.x1)*dx+(q.y-e.y1)*dy)/L2:0};
+  }
+  function mepDimPtsRefresh(sh,d){
+    const v1=mepView(sh,d.vid);if(!v1)return;
+    if(d.kind==='ord'){
+      const pr=d.axis==='y'?'h':'v';
+      mepPtRefresh(sh,v1,d.o,pr);d.a=d.b=d.o;(d.pts||[]).forEach(q=>mepPtRefresh(sh,v1,q,pr));
+      return;
+    }
+    if(d.kind!=='dist'&&d.kind!=='note')return;
+    const pr=d.kind==='dist'?(d.orient==='h'?'v':(d.orient==='v'?'h':null)):null;
+    if(d.kind==='dist'&&!pr)return; // distance oblique : pas de migration ambiguë (les références posées restent suivies)
+    mepPtRefresh(sh,v1,d.a,pr);
+    if(d.kind==='dist'&&d.b)mepPtRefresh(sh,d.vid2?mepView(sh,d.vid2):v1,d.b,pr);
+  }
   function mepDimWorld(sh,d){
     // ancrages → mm papier
     const v1=mepView(sh,d.vid);
     if(!v1)return null;
+    try{mepDimPtsRefresh(sh,d);}catch(e){} // points accrochés aux traits d'axe : suivent l'axe
     // longueur d'un trait d'axe : suit son allongement (2026-10-22-013)
     if(d.kind==='len'&&!d.vid2&&d.a&&d.a.hint&&typeof d.a.hint.i==='string'){
       const e=mepEntByHint(v1,d.a.hint);
@@ -4809,6 +4888,7 @@
   }
   function mepAxisManualGeom(sh,v,ann){
     if(!ann)return[];
+    if(ann.kind==='free'&&ann.sym&&ann.a&&ann.b)mepAxisSymMigrate(v,ann); // ancien axe de symétrie figé
     if(ann.kind==='free'){
       if(!ann.a||!ann.b)return[];
       return[{t:'L',x1:ann.a.x,y1:ann.a.y,x2:ann.b.x,y2:ann.b.y,cls:'mepAxis'}];
@@ -5255,14 +5335,19 @@
     });
   }
   // accrochage → point local d'une vue + indice d'entité (re-ancrage au rejeu)
+  function mepSnapHint(sh,v,sn,q){
+    // référence durable d'un point accroché : trait d'axe (suivi à chaque dessin) ou entité (re-ancrage au rejeu)
+    const h=sn&&sn.hit;if(!h)return null;
+    if(h.ak&&(h.t==='axEnd'||h.t==='axMid'||h.t==='onAx'||h.t==='ctr'))return mepAxisRefOf(sh,v,q,h.ak);
+    if(isFinite(h.i)){if(h.t==='end')return{t:'seg',i:h.i};if(h.t==='ctr')return{t:'ctr',i:h.i};
+      if(h.t==='mid'||h.t==='onSeg'){const g=mepGeoOf(v),e=g&&g.els[h.i];if(e&&e.t==='L'&&mepGeoExact(g))return mepEdgeRefOf(e,q);}}
+    return null;
+  }
   function mepSnapLocal(sh,P){
     const sn=mepSnapPt(P.x,P.y,sh),v=sn.hit?mepView(sh,sn.hit.vid):mepViewAt(sh,sn.x,sn.y);
     if(!v)return null;
     const q={x:(sn.x-v.x)/v.scale,y:(sn.y-v.y)/v.scale};
-    if(sn.hit&&isFinite(sn.hit.i)){
-      if(sn.hit.t==='end')q.hint={t:'seg',i:sn.hit.i};
-      else if(sn.hit.t==='ctr')q.hint={t:'ctr',i:sn.hit.i};
-    }
+    const hh=mepSnapHint(sh,v,sn,q);if(hh)q.hint=hh;
     return{v,q};
   }
   function mepOrdDefaultOff(v,axis,o){
@@ -5309,6 +5394,7 @@
   }
   function mepDrawOrd(draw,d,sh,L,T){
     const v=mepView(sh,d.vid);if(!v||!d.o)return;
+    try{mepDimPtsRefresh(sh,d);}catch(e){}
     const hh=MEP_TEXT_STYLE.dimH,gap=Math.max(0.8,MEP_DIM_STYLE.gap||1),oS=mepToSheet(v,d.o.x,d.o.y);
     const line=d.axis==='y'?oS.x+(+d.off||0):oS.y+(+d.off||0);
     const hi=(mepSt.ordPt&&mepSt.ordPt.id===d.id)?mepSt.ordPt.i:null;
@@ -6135,12 +6221,44 @@
      est retrouvée : même direction (± 2°), puis le trait le plus proche en position et
      en longueur ; l1/l2 sont mis à jour (suivi pas à pas des modifications). Aucune
      droite parallèle trouvée : la dernière position connue est gardée. */
+  // coût d'appariement d'un trait e avec un trait mémorisé L (même direction, même nature de trait)
+  function mepAxisTrackCost(L,e){
+    const dx=L.x2-L.x1,dy=L.y2-L.y1,len=Math.hypot(dx,dy);if(!(len>1e-9)||e.t!=='L')return Infinity;
+    if(L.k&&e.k&&L.k!==e.k)return Infinity; // caché ≠ vu ≠ filetage
+    if(!L.k&&(e.k==='thread'||e.k==='threadH'))return Infinity; // ancienne référence : jamais un trait de filetage
+    const ex=e.x2-e.x1,ey=e.y2-e.y1,el=Math.hypot(ex,ey);if(!(el>1e-9))return Infinity;
+    const ux=dx/len,uy=dy/len;
+    if(Math.abs(ux*ey/el-uy*ex/el)>0.035)return Infinity;
+    const cx=(e.x1+e.x2)/2-(L.x1+L.x2)/2,cy=(e.y1+e.y2)/2-(L.y1+L.y2)/2;
+    return Math.abs(cx*uy-cy*ux)+0.5*Math.abs(cx*ux+cy*uy)+0.5*Math.abs(el-len);
+  }
+  /* les 2 droites d'un axe de symétrie suivies ENSEMBLE : même nature, même ordre, écartement
+     non effondré (> 30 % de l'original — un trait coupé en deux n'est pas une paire), somme des
+     déplacements + variation d'écartement minimale — suivies séparément, chacune sautait sur la
+     droite voisine la plus proche (un trait de filetage, l'autre bord du trou…) */
+  function mepAxisTrackPair(geo,l1,l2){
+    const els=((geo&&geo.els)||[]).filter(e=>e.t==='L');
+    const dx=l1.x2-l1.x1,dy=l1.y2-l1.y1,len=Math.hypot(dx,dy);if(!(len>1e-9))return null;
+    const nx=-dy/len,ny=dx/len,off=e=>((e.x1+e.x2)/2)*nx+((e.y1+e.y2)/2)*ny,sep0=off(l2)-off(l1);
+    const c1=els.map(e=>[e,mepAxisTrackCost(l1,e)]).filter(a=>a[1]<Infinity);
+    const c2=els.map(e=>[e,mepAxisTrackCost(l2,e)]).filter(a=>a[1]<Infinity);
+    let best=null,bc=Infinity;
+    c1.forEach(([a,ca])=>c2.forEach(([b,cb])=>{
+      if(a===b||(a.k||'')!==(b.k||''))return; // les 2 droites d'une paire sont de même nature
+      const sep=off(b)-off(a);
+      if(sep*sep0<=0||Math.abs(sep)<0.3*Math.abs(sep0))return;
+      const lim=Math.max(3,0.6*len,0.6*Math.abs(sep0));if(ca>lim||cb>lim)return;
+      const c=ca+cb+Math.abs(sep-sep0);if(c<bc){bc=c;best=[a,b];}
+    }));
+    return best;
+  }
   function mepAxisTrackLine(geo,L,skip){
     const dx=L.x2-L.x1,dy=L.y2-L.y1,len=Math.hypot(dx,dy);if(!(len>1e-9))return null;
     const ux=dx/len,uy=dy/len,mx=(L.x1+L.x2)/2,my=(L.y1+L.y2)/2;
     let best=null,bc=Infinity;
     ((geo&&geo.els)||[]).forEach(e=>{
       if(e.t!=='L'||e===skip)return;
+      if(L.k&&e.k&&L.k!==e.k)return; // même nature de trait
       const ex=e.x2-e.x1,ey=e.y2-e.y1,el=Math.hypot(ex,ey);if(!(el>1e-9))return;
       if(Math.abs(ux*ey/el-uy*ex/el)>0.035)return; // pas parallèle
       const cx=(e.x1+e.x2)/2-mx,cy=(e.y1+e.y2)/2-my;
@@ -6148,15 +6266,41 @@
       const c=perp+0.5*along+0.5*Math.abs(el-len);
       if(c<bc){bc=c;best=e;}
     });
-    return best;
+    // 2026-10-22-019 : trop différent → pas retrouvé (on garde la dernière position connue)
+    return bc<=Math.max(3,0.6*len)?best:null;
+  }
+  // géométrie exacte (noyau) : la seule sur laquelle des références peuvent être MISES À JOUR —
+  // à l'ouverture, les vues passent d'abord par le maillage (arêtes de triangles)
+  function mepGeoExact(g){return !!(g&&/^OCCT/.test(g.src||''));}
+  function mepAxisSymMigrate(v,ann){
+    // axe de symétrie d'avant V0.3.28 (figé : a, b) → 2 droites parallèles symétriques autour de lui
+    const g=mepGeoOf(v);if(!mepGeoExact(g))return;
+    const dx=ann.b.x-ann.a.x,dy=ann.b.y-ann.a.y,L=Math.hypot(dx,dy);if(!(L>1e-9))return;
+    const ux=dx/L,uy=dy/L,sd=e=>{const mx=(e.x1+e.x2)/2-ann.a.x,my=(e.y1+e.y2)/2-ann.a.y;return mx*uy-my*ux;};
+    const par=g.els.filter(e=>{if(e.t!=='L'||e.k==='thread'||e.k==='threadH')return false;const ex=e.x2-e.x1,ey=e.y2-e.y1,el=Math.hypot(ex,ey);
+      return el>1e-6&&Math.abs(ux*ey/el-uy*ex/el)<0.02&&Math.abs(sd(e))>0.01;});
+    let best=null,bd=Infinity;
+    for(let i=0;i<par.length;i++)for(let j=0;j<par.length;j++){
+      const a=par[i],b=par[j],da=sd(a),db=sd(b);
+      if(da<=0||db>=0||Math.abs(da+db)>0.02||(a.k||'')!==(b.k||''))continue;
+      const la=Math.hypot(a.x2-a.x1,a.y2-a.y1),lb=Math.hypot(b.x2-b.x1,b.y2-b.y1);
+      if(Math.abs(la-lb)>0.05)continue;
+      if(da<bd){bd=da;best=[a,b];}
+    }
+    if(!best)return;
+    const ln=e=>({x1:e.x1,y1:e.y1,x2:e.x2,y2:e.y2,k:e.k});
+    ann.kind='sym';ann.l1=ln(best[0]);ann.l2=ln(best[1]);delete ann.a;delete ann.b;delete ann.sym;
   }
   function mepAxisSymTrack(v,ann){
     if(!ann.l1||!ann.l2)return null;
     const geo=mepGeoOf(v);
-    const e1=mepAxisTrackLine(geo,ann.l1,null);
-    const e2=e1?mepAxisTrackLine(geo,ann.l2,e1):null;
-    const ln=e=>({x1:e.x1,y1:e.y1,x2:e.x2,y2:e.y2});
-    if(e1&&e2){ann.l1=ln(e1);ann.l2=ln(e2);} // dérivé de la géométrie : pas d'étape d'annulation
+    const pr=mepAxisTrackPair(geo,ann.l1,ann.l2),e1=pr?pr[0]:null,e2=pr?pr[1]:null;
+    const ln=e=>({x1:e.x1,y1:e.y1,x2:e.x2,y2:e.y2,k:e.k});
+    // « les axes de symétrie ne gardent pas leurs références » : à l'ouverture la vue est d'abord
+    // calculée sur le MAILLAGE, et le suivi réécrivait l1/l2 sur des arêtes de triangles.
+    // Mise à jour seulement sur la géométrie exacte, et sur deux traits retrouvés.
+    if(e1&&e2&&mepGeoExact(geo)){ann.l1=ln(e1);ann.l2=ln(e2);} // dérivé de la géométrie : pas d'étape d'annulation
+    if(!mepGeoExact(geo))return mepAxisSymGeom(ann.l1,ann.l2,v);
     return mepAxisSymGeom(e1||ann.l1,e2||ann.l2,v);
   }
   function mepAxisClick(sh,P){
@@ -6172,7 +6316,7 @@
       const G=mepAxisSymGeom(f.e,hit.e,v);
       if(!G){mepStatus('Axe de symétrie : droites dégénérées.');return;}
       if(!Array.isArray(v.axes))v.axes=[];
-      const ln=e=>({x1:e.x1,y1:e.y1,x2:e.x2,y2:e.y2});
+      const ln=e=>({x1:e.x1,y1:e.y1,x2:e.x2,y2:e.y2,k:e.k});
       mepEdit('axe de symétrie',()=>{v.axes.push({id:mepUid('ax'),kind:'sym',l1:ln(f.e),l2:ln(hit.e)});});
       mepStatus('Axe de symétrie créé — tirez ses extrémités pour l’allonger.');
       return;
@@ -7514,7 +7658,8 @@
       const v=mepViewAt(sh,snap.x,snap.y);
       const lx=v?(snap.x-v.x)/v.scale:0,ly=v?(snap.y-v.y)/v.scale:0;
       if(!v){mepStatus('Cote : cliquez une arête ou un cercle projeté.');return;}
-      mepSt.dim={kind:'dist',a:{x:lx,y:ly},vid:v.id,off:8,__ghost:true};
+      const qa={x:lx,y:ly};{const hh=(snap.hit&&snap.hit.vid===v.id)?mepSnapHint(sh,v,snap,qa):null;if(hh&&(hh.t==='axp'||hh.t==='axc'||hh.t==='eln'))qa.hint=hh;}
+      mepSt.dim={kind:'dist',a:qa,vid:v.id,off:8,__ghost:true};
       mepStatus('Distance : cliquez le 2ᵉ point.');
       return;
     }
@@ -7526,7 +7671,7 @@
       const v=mepView(sh2,D.vid);
       if(!v){mepSt.dim=null;return;}
       const lx=(snap.x-v.x)/v.scale,ly=(snap.y-v.y)/v.scale;
-      D.b={x:lx,y:ly};
+      D.b={x:lx,y:ly};{const hh=(snap.hit&&snap.hit.vid===v.id)?mepSnapHint(sh2,v,snap,D.b):null;if(hh&&(hh.t==='axp'||hh.t==='axc'||hh.t==='eln'))D.b.hint=hh;}
       D._pp=P; // position papier du 2ᵉ clic → futur placement
       mepStatus('Distance : encore un clic pour placer la cote.');
       return;
@@ -8723,7 +8868,7 @@
       holeText:mepHoleFeatureText,
       holeCallout:mepHoleCallout,
       fmt:mepFmtNum,
-      geo:view=>mepGeoOf(view),geoClear:()=>mepGeoCache.clear(),ordClick:(P,ax)=>mepOrdClick(mepSheet(),P,ax),ordEnd:()=>{mepSt.ord=null;},selDim:id=>{mepSt.selDim=id;},holeTolText:(t,tol)=>mepTolMarks(mepHoleTolText(t,tol)),dimText:d=>mepDimText(d,mepDimMeasure(mepSheet(),d)),ordPtAt:(d,P)=>mepOrdPtAt(mepSheet(),d,P),ordDelPt:(d,i)=>mepOrdDelPt(mepSheet(),d,i),ordValue:(d,p)=>mepOrdValue(d,p),drawDim:(mk,d)=>mepDrawDim(mk,d,mepSheet()),dimPressDbl:(P,ev)=>mepDimPressDbl(mepSheet(),P,ev||{}),dimAlignTo:(ref,ids)=>mepDimAlignTo(mepSheet(),ref,ids),perspCam:v=>mepPerspCam(v),threadEls:v=>mepThreadEls(v),oblShear:(sh,v)=>mepOblShear(sh,v),
+      geo:view=>mepGeoOf(view),geoClear:()=>mepGeoCache.clear(),ptRefresh:(v,q,pr)=>mepPtRefresh(mepSheet(),v,q,pr),dimPts:d=>mepDimPtsRefresh(mepSheet(),d),ordClick:(P,ax)=>mepOrdClick(mepSheet(),P,ax),ordEnd:()=>{mepSt.ord=null;},selDim:id=>{mepSt.selDim=id;},holeTolText:(t,tol)=>mepTolMarks(mepHoleTolText(t,tol)),dimText:d=>mepDimText(d,mepDimMeasure(mepSheet(),d)),ordPtAt:(d,P)=>mepOrdPtAt(mepSheet(),d,P),ordDelPt:(d,i)=>mepOrdDelPt(mepSheet(),d,i),ordValue:(d,p)=>mepOrdValue(d,p),drawDim:(mk,d)=>mepDrawDim(mk,d,mepSheet()),dimPressDbl:(P,ev)=>mepDimPressDbl(mepSheet(),P,ev||{}),dimAlignTo:(ref,ids)=>mepDimAlignTo(mepSheet(),ref,ids),perspCam:v=>mepPerspCam(v),threadEls:v=>mepThreadEls(v),oblShear:(sh,v)=>mepOblShear(sh,v),
       imgRect:(view,img)=>mepImg3dRect(view,img),
       shadeTri:(view,A,B,C,col,op)=>mepShadeTri(view,A,B,C,col,op),
       shadeFaces:view=>mepShadedFaces(view),

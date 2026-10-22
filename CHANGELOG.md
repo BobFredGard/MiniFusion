@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**297 versions**, de `2026-09-28b` à `V0.3.28` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**298 versions**, de `2026-09-28b` à `V0.3.29` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4480,3 +4480,11 @@ Retours utilisateur (mise en plan de « Perçages », boîte à outils FAO).
 - **Vues** : projection **perspective** (comme la vue 3D, fuyante = angle de champ ; arêtes exactes, parties cachées calculées sur le maillage) et **oblique cavalière** (angle et coefficient des fuyantes, HLR exact) ; ombrage et rendu 3D suivent la projection.
 
 Tests : `test_mep_hachures_cotes` (nouveau, OCCT réel : cote re-ancrée, glisser, alignement, double-clic, ordonnées, note, axe de symétrie, hachures, ligne de coupe, cavalière, ombrage oblique, filetages, tolérances), `test_fao_percage` (foret à centrer), `test_mise_en_plan` (tolérance ISO, souligné). `npm run ci` vert. Non vérifié à la souris dans l'appli (aperçu bloqué au chargement du noyau) ; la perspective n'est pas couverte par les tests (maillages three.js réels requis).
+
+## V0.3.29 - Plan : axes de symétrie et cotes gardent leurs références ; README avec captures
+Retours utilisateur (« les axes de symétrie ne gardent pas leurs références », « les cotes, normales et d'ordonnées, ne suivent pas les axes d'alignement »).
+- **Axes de symétrie** : à l'ouverture, les vues passent d'abord par le maillage (noyau en chargement) — le suivi y réécrivait les références sur des arêtes de triangles ; elles ne sont plus mises à jour que sur la géométrie exacte. Les 2 droites sont suivies en PAIRE (même nature de trait, même ordre, écartement non effondré) : séparément, l'une sautait sur un trait de filetage voisin (axe à 42,25 au lieu de 45). Les anciens axes de symétrie figés (avant V0.3.28) retrouvent leurs 2 droites et deviennent associatifs.
+- **Cotes accrochées aux axes** : un point accroché à un trait d'axe (distance 2 points, ordonnées, note) garde sa référence (clé de l'axe + position le long du trait, ou centre d'un cercle de perçage) et suit l'axe à chaque dessin ; un point sur une arête de la pièce suit l'arête. Les cotes existantes posées pile sur un axe manuel ou une arête de la bonne direction s'y rattachent à l'ouverture (à enregistrer une fois).
+- **README** : section PLAN réécrite, 4 captures (planche, hachures, perspective, cotation) tirées de « Perçages ».
+
+Tests : vérifié dans l'appli sur « Perçages » (perçages d'angle 80 → 90 → 80 : distances 80/10/10 → 90/5/5 → 80/10/10, ordonnées 40 → 45 → 40, axes de symétrie ±40 → ±45 → ±40, axes de la coupe B-B immobiles) ; `test_mep_hachures_cotes` (point sur axe qui suit, mauvaise direction ignorée, axe entre arêtes d'une pièce qui s'élargit 50 → 70 → 60). `npm run ci` vert. Limite : un axe AUTOMATIQUE a une clé tirée de ses coordonnées — une cote qui s'y accroche garde sa dernière position si le trou bouge.

@@ -92,13 +92,42 @@ En esquisse, le bandeau d'outils remplace le ruban et le panneau des contraintes
 
 ## PLAN
 
-**Mise en plan 2D** (espace PLAN, `src/98-mise-en-plan.js`) : la 3D reste accessible derrière l'overlay.
-- **Planches** A0 à A4, portrait ou paysage, onglets renommables, cadre ISO et cartouche éditable (projet, auteur, date ; échelle et n° de planche automatiques).
-- **Vues** Face, Dessus, Côté, ISO, Caméra, Auxiliaire, Coupe et Détail, par corps ou assemblées ; vues projetées du 1er angle liées à leur vue mère.
-- **Arêtes** vives et tangentes du noyau exact, silhouettes de maillage pour les contours, arêtes cachées masquées (HLR de profondeur) et mode gris pointillé par vue.
-- **Cotation** : diamètre, rayon, longueur, distance, angle, tolérances ISO 286, cotes de référence, format numérique français.
-- **Dessin 2D** : ligne, rectangle, cercle, arc, point, ajustement, mini-solveur de contraintes et accrochages sur la géométrie projetée.
-- **Sortie** : export SVG de la planche et impression. `doc.mep` est persisté avec la pièce et la FAO.
+**Mise en plan 2D** (espace PLAN, `src/98-mise-en-plan.js`) : les planches sont enregistrées avec la pièce et la FAO, et suivent le modèle.
+
+![Planche A3 : vues, coupe B-B, cotation, vue 3D](docs/captures/plan-planche.png)
+
+**Planches**
+- **Formats** A0 à A4, portrait ou paysage, plusieurs planches en onglets (nouvelle, dupliquer).
+- **Cadre** réglable : marges, traits, zones de repérage, repères de centrage ; préréglages **Justet**, **ISO 5457**, Classique.
+- **Cartouche** éditable (esquisse contrainte, champs matière, TTS, TTH…), nomenclature et tableau des révisions.
+- **Écriture ISO 3098** : hauteurs des cotes, des repères et des textes.
+
+**Vues**
+- **Types** : Face, Projection (1er angle, liée à sa vue mère), ISO, Caméra (depuis la 3D), Auxiliaire, **Coupe** et **Détail**, par corps ou en assemblage.
+- **Arêtes exactes** du noyau (HLR OCCT), cachées supprimées ou en pointillé, arêtes tangentes au choix ; ombrage ou rendu 3D de la vue.
+- **Ligne de coupe** droite ou **brisée** (ISO 128-44) : elle suit les perçages et les arêtes auxquels elle est liée. On la tire pour déplacer un tronçon ; **Ctrl + clic** ajoute une brisure, **Maj + clic** l'enlève.
+- **Hachures** (ISO 128-50) : double-clic sur une hachure → motif, angle, échelle, couleur, pour toutes les coupes.
+- **Filetages** (ISO 6410) des perçages taraudés : 3/4 de cercle en bout, fond de filet et fin de filetage en coupe.
+
+![Hachures : motif, angle, échelle, couleur](docs/captures/plan-hachures.png)
+
+**Projection** d'une vue : orthogonale, **perspective comme la vue 3D** (la « fuyante » règle l'angle de champ) ou **cavalière** (angle et coefficient des fuyantes).
+
+![Vue caméra en perspective, réglage de la fuyante](docs/captures/plan-perspective.png)
+
+**Cotation**
+- **Cote** (outil unique) : longueur, distance, Ø, rayon, angle. On tire une cote le long de ses lignes de rappel et sa valeur le long de la ligne ; double-clic = sens des flèches.
+- **Tolérances** : ± symétrique, double, **classe ISO 286** avec ses écarts entre parenthèses (`Ø40 H7 (+0,025 / 0)`) ; cotes de référence.
+- **Perçages** : étiquette depuis la fonction Perçage (Ø, lamage, fraisure, taraudage, n×), avec tolérance ; « Perçages auto » cote toute la planche.
+- **Ordonnées X / Y** : une origine « 0 », des valeurs alignées qui se déplacent ensemble ; on ajoute ou retire une valeur, avec une tolérance par valeur.
+- **Notes** à flèche (texte libre) et **alignement** de cotes sur une cote de référence.
+- **Axes** (ISO 128-2) : trou, alignement, cercle de perçage, symétrie entre deux droites ; ils s'étirent et se cotent.
+
+![Cotation : ordonnées, tolérance ISO 286, perçages, note](docs/captures/plan-cotation.png)
+
+**Dessin 2D** : ligne, rectangle, cercle, arc, point, ajustement, texte ; contraintes et accrochage sur les vues.
+
+**Sortie** : SVG, **DXF R12** (calques CONTOUR, CACHE, AXE, COTES, HACHURES, FILETAGE…), **PDF** au format exact de la planche, impression ; en couleur ou tout en noir.
 
 ## Démarrage
 
