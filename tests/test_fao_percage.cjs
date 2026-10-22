@@ -84,9 +84,16 @@ const {loadApp}=require('./appvm.cjs');
     "op.dwell=0;",
     // ── 7. pointage : foret à centrer + profondeur par Ø de chanfrein
     "op.cycle='spot';faoDrillAutoTool(S,op,5);const ts=faoToolById(S,op.toolId);",
-    "A(ts.kind==='spot'&&faoToolAngle(ts)===90,'7a : pointage → foret à centrer 90°');",
+    "A(ts.kind==='spot'&&faoToolAngle(ts)===90,'7a : pointage → foret à pointer 90°');",
     "op.chD=6;pl=faoDrillPlan(op,S);",
     "A(Math.abs(pl[0].zTip-27)<1e-6,'7b : pointage Ø6 à 90° : 3 mm de profondeur (Z '+pl[0].zTip+')');",
+    // ── 7c. foret à centrer DIN 333 A2,5 (d2 6,3, pilote 3,1) : chanfrein lu sur le cône 60°
+    "const tc={id:'TC',num:99,name:'Foret à centrer A2.5',kind:'center',d:2.5,cornerR:0,flutes:2,vc:20,fz:0.03};S.tools.push(tc);op.toolId='TC';",
+    "A(faoDrillAutoTool(S,op,5)===null&&op.toolId==='TC','7c : pointage : le foret à centrer choisi est gardé');",
+    "pl=faoDrillPlan(op,S);const zc=30-(3.1+(3-1.25)/Math.tan(Math.PI/6));",
+    "A(Math.abs(pl[0].zTip-zc)<1e-6,'7d : foret à centrer A2.5, chanfrein Ø6 : pointe à Z '+pl[0].zTip.toFixed(3));",
+    "const tpc=faoToolTipProfile(tc);",
+    "A(faoToolBodyD(tc)===6.3&&Math.abs(faoTipZAt(tpc,1.25)-1.25/Math.tan(59*Math.PI/180))<1e-9&&Math.abs(faoTipZAt(tpc,3.15)-tpc[3][1])<1e-9,'7e : profil pilote 118° + cône 60° jusqu’au corps Ø6.3');",
     // ── 8. suivi du modèle : trou déplacé → opération suivie
     "op.cycle='drill';S.ops=[op];op.holeSel=[{d:6.8,z:30}];faoDrillResolve(op);",
     "let sh2=new occt.BRepPrimAPI_MakeBox_2(P(0,0,0),100,60,30).Shape();sh2=cut(sh2,cyl(60,35,15,3.4,20));",

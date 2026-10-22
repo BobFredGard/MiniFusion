@@ -36,13 +36,15 @@ function faoToolKeyObj(t){
 const faoR1=function(v){ return Math.round(v*10)/10; };
 function faoToolDims(t){
   // Géométrie complète, défauts plausibles (fraise carbure monobloc) si non saisis.
-  const D=(t&&isFinite(+t.d)&&+t.d>0)?+t.d:10;
+  // Foret à centrer : D = Ø du CORPS d2 (= la queue), coupe courte au-dessus du cône 60°.
+  const D=faoToolBodyD(t), ctr=!!(t&&t.kind==='center');
   const num=function(k,def){ const v=t&&+t[k]; return (isFinite(v)&&v>0)?{v:v,def:false}:{v:def,def:true}; };
-  const lc=num('lc',faoR1(Math.max(D*2.5,3)));
+  const tp=ctr?faoToolTipProfile(t):null;
+  const lc=num('lc',ctr?faoR1(tp[tp.length-1][1]+D*0.4):faoR1(Math.max(D*2.5,3)));
   const dDeg=num('dDeg',D);
   const lDeg=num('lDeg',lc.v);
   const QS=[6,8,10,12,16,20,25,32]; // queues standard (mm)
-  const dq=num('dq',QS.find(function(q){return q>=D;})||Math.ceil(D));
+  const dq=num('dq',ctr?D:(QS.find(function(q){return q>=D;})||Math.ceil(D)));
   const lsm=num('lsm',faoR1(Math.max(lDeg.v+Math.max(8,D),D*3.5)));
   const lt=num('lt',faoR1(Math.max(lsm.v+Math.max(25,dq.v*2.5),50)));
   const dPo=num('dPo',faoR1(dq.v+Math.max(12,dq.v)));
@@ -113,10 +115,24 @@ function faoToolSvg(t){
   // partie coupante (avec bout plat / torique / boule)
   const r=D/2,c2=Math.min(cr,r);
   const p=[];
-  if(t&&(t.kind==='drill'||t.kind==='spot')){
-    const tip=Math.min(faoToolTipLen(t),g.lc.v*0.9);
-    parts.push('<path d="M'+X(-r).toFixed(1)+' '+Y(g.lc.v).toFixed(1)+' L'+X(-r).toFixed(1)+' '+Y(tip).toFixed(1)+' L'+X(0).toFixed(1)+' '+Y(0).toFixed(1)+' L'+X(r).toFixed(1)+' '+Y(tip).toFixed(1)+' L'+X(r).toFixed(1)+' '+Y(g.lc.v).toFixed(1)+'Z" fill="rgba(255,159,10,.28)" stroke="#ff9f0a" stroke-width="1.4"/>');
-    parts.push('<text x="'+(X(r)+4).toFixed(1)+'" y="'+(Y(tip/2)+4).toFixed(1)+'" fill="#ff9f0a" font-size="10">'+faoToolAngle(t)+'°</text>');
+  const tp=faoToolTipProfile(t);
+  let zFl=0; // bas des hélices (au-dessus de la pointe d'un foret)
+  if(tp){
+    // 2026-10-22-001 : profil réel — cône du foret / foret à pointer, pilote + cône 60°
+    // du foret à centrer (DIN 333 A) ; le contour monte par la droite et redescend à gauche.
+    const top=g.lc.v; // profil écrêté à la longueur de coupe
+    const q=tp.map(function(p){ return [p[0],Math.min(p[1],top)]; });
+    const pr=q.map(function(p){ return 'L'+X(p[0]).toFixed(1)+' '+Y(p[1]).toFixed(1); });
+    const pl=q.slice().reverse().map(function(p){ return 'L'+X(-p[0]).toFixed(1)+' '+Y(p[1]).toFixed(1); });
+    parts.push('<path d="M'+X(-r).toFixed(1)+' '+Y(g.lc.v).toFixed(1)+' '+pl.join(' ')+' '+pr.join(' ')+' L'+X(r).toFixed(1)+' '+Y(g.lc.v).toFixed(1)+'Z" fill="rgba(255,159,10,.28)" stroke="#ff9f0a" stroke-width="1.4"/>');
+    zFl=q[q.length-1][1];
+    const a=q[1];
+    parts.push('<text x="'+(X(a[0])+4).toFixed(1)+'" y="'+(Y(a[1]/2)+4).toFixed(1)+'" fill="#ff9f0a" font-size="10">'+faoToolAngle(t)+'°</text>');
+    if(t.kind==='center'){
+      const b=q[2],c=q[3];
+      parts.push('<text x="'+(X((b[0]+c[0])/2)+6).toFixed(1)+'" y="'+(Y((b[1]+c[1])/2)+4).toFixed(1)+'" fill="#ff9f0a" font-size="10">60°</text>');
+      parts.push('<text x="'+(X(-b[0])-6).toFixed(1)+'" y="'+(Y(b[1]/2)+4).toFixed(1)+'" fill="#ff9f0a" font-size="10" text-anchor="end">Ø'+faoR1(2*b[0])+'</text>');
+    }
   }else{
   p.push('M'+X(-r).toFixed(1)+' '+Y(g.lc.v).toFixed(1));
   p.push('L'+X(-r).toFixed(1)+' '+Y(c2).toFixed(1));
@@ -127,7 +143,7 @@ function faoToolSvg(t){
   parts.push('<path d="'+p.join(' ')+'" fill="rgba(255,159,10,.28)" stroke="#ff9f0a" stroke-width="1.4"/>');
   }
   // hélices (décor)
-  for(let k=1;k<4;k++){const z=g.lc.v*k/4;parts.push('<path d="M'+X(-r).toFixed(1)+' '+Y(z).toFixed(1)+' L'+X(r).toFixed(1)+' '+Y(z+Math.min(D,g.lc.v/4)).toFixed(1)+'" stroke="rgba(255,159,10,.45)" stroke-width="1"/>');}
+  for(let k=1;k<4;k++){const z=zFl+(g.lc.v-zFl)*k/4;parts.push('<path d="M'+X(-r).toFixed(1)+' '+Y(z).toFixed(1)+' L'+X(r).toFixed(1)+' '+Y(Math.min(g.lc.v,z+Math.min(D,g.lc.v/4))).toFixed(1)+'" stroke="rgba(255,159,10,.45)" stroke-width="1"/>');}
   // cotes verticales à droite
   const dimV=function(z0,z1,x,txt,col){
     const a=Y(z0),b=Y(z1);
@@ -211,10 +227,10 @@ function faoToolsElement(setup){
   iT.onchange=function(){faoSnapshot('nom d’outil');t.name=String(iT.value||t.name).slice(0,32);faoChanged();rerender();};pT.appendChild(iT);s1.appendChild(pT);
   const pK=document.createElement('label');pK.className='fao-tl-f';pK.innerHTML='<span>Type</span>';
   const sK=document.createElement('select');sK.className='fao-sel';
-  [['flat','Cylindrique'],['bull','Torique'],['ball','Boule'],['drill','Foret'],['spot','Foret à centrer'],['tap','Taraud']].forEach(function(o){const e=document.createElement('option');e.value=o[0];e.textContent=o[1];sK.appendChild(e);});
+  [['flat','Cylindrique'],['bull','Torique'],['ball','Boule'],['drill','Foret'],['spot','Foret à pointer'],['center','Foret à centrer'],['tap','Taraud']].forEach(function(o){const e=document.createElement('option');e.value=o[0];e.textContent=o[1];sK.appendChild(e);});
   sK.value=t.kind||'flat';
   sK.onchange=function(){faoSnapshot('type d’outil');t.kind=sK.value;if(t.kind==='ball')t.cornerR=t.d/2;else if(t.kind!=='bull')t.cornerR=0;
-    if((t.kind==='drill'||t.kind==='spot')&&!(+t.ang>0))t.ang=t.kind==='spot'?90:118;faoChanged();rerender();};
+    if(faoToolIsDrill(t)&&!(+t.ang>0))t.ang=t.kind==='spot'?90:118;faoChanged();rerender();};
   pK.appendChild(sK);s1.appendChild(pK);
   const pM=document.createElement('label');pM.className='fao-tl-f';pM.innerHTML='<span>Matière</span>';
   const sM=document.createElement('select');sM.className='fao-sel';
@@ -223,7 +239,7 @@ function faoToolsElement(setup){
   pM.appendChild(sM);s1.appendChild(pM);
   // géométrie
   const s2=sec('Géométrie (mm) — valeurs grisées = défaut calculé, à préciser');
-  field(s2,'Ø coupe',t.d,false,function(v){set('d',Math.max(0.1,v),'Ø outil');if(t.kind==='ball')t.cornerR=t.d/2;},'Diamètre de coupe',0.1);
+  field(s2,t.kind==='center'?'Ø pilote d1':'Ø coupe',t.d,false,function(v){set('d',Math.max(0.1,v),'Ø outil');if(t.kind==='ball')t.cornerR=t.d/2;},'Diamètre de coupe',0.1);
   if(t.kind==='bull')field(s2,'Rayon de coin',t.cornerR||0,false,function(v){set('cornerR',Math.min(v,t.d/2),'rayon de coin');},'Rayon du coin torique',0.1);
   if(t.kind==='tap'){
     const pT=document.createElement('label');pT.className='fao-tl-f';pT.innerHTML='<span>Filet</span>';
@@ -233,7 +249,13 @@ function faoToolsElement(setup){
     sT.onchange=function(){const q=sT.value.split('|');faoSnapshot('filet du taraud');t.size=q[0];t.p=+q[1];const T=isoThread(q[0]);if(T)t.d=T[1];t.name='Taraud '+holeThreadLabel({size:t.size,p:t.p});faoChanged();rerender();};
     pT.appendChild(sT);s2.appendChild(pT);
   }
-  if(t.kind==='drill'||t.kind==='spot')field(s2,'Angle de pointe',faoToolAngle(t),!(+t.ang>0),function(v){set('ang',Math.min(179,Math.max(30,v)),'angle de pointe');},'Angle de pointe du foret (°) : 118 / 135 / 140 ; foret à centrer 90',1,'°');
+  if(faoToolIsDrill(t))field(s2,'Angle de pointe',faoToolAngle(t),!(+t.ang>0),function(v){set('ang',Math.min(179,Math.max(30,v)),'angle de pointe');},
+    t.kind==='center'?'Angle de pointe du pilote (°) : 118 (DIN 333) — le cône de centrage fait 60°':'Angle de pointe du foret (°) : 118 / 135 / 140 ; foret à pointer 90 (ou 120)',1,'°');
+  if(t.kind==='center'){
+    const cd=faoCenterDims(t);
+    field(s2,'Ø corps d2',cd.d2,!(+t.d2>0),function(v){set('d2',Math.max(v,(+t.d||1)*1.05),'Ø du corps');},'Diamètre du corps (fin du cône 60°) — défaut DIN 333 forme A',0.05);
+    field(s2,'Long. pilote',cd.lp,!(+t.lp>0),function(v){set('lp',v,'longueur du pilote');},'Longueur du pilote d1 depuis la pointe jusqu’au début du cône 60° — défaut DIN 333 forme A',0.1);
+  }
   field(s2,'Dents',t.flutes||2,false,function(v){set('flutes',Math.max(1,Math.round(v)),'nombre de dents');},'Nombre de dents (sert au calcul de F = fz × z × S)',1);
   field(s2,'Long. de coupe Lc',g.lc.v,g.lc.def,function(v){set('lc',v,'longueur de coupe');},'Longueur de la partie coupante (hélices) depuis le bout',0.5);
   field(s2,'Ø dégagement',g.dDeg.v,g.dDeg.def,function(v){set('dDeg',Math.min(v,t.d),'Ø de dégagement');},'Diamètre du col au-dessus de la coupe (≤ Ø coupe) : permet de plonger plus profond que Lc sans frotter',0.1);
@@ -249,7 +271,7 @@ function faoToolsElement(setup){
   field(s3,'S',sf.s,false,function(v){set('vc',+(v*Math.PI*D/1000).toFixed(2),'S (via Vc)');},'Vitesse de rotation (tr/min) — saisir S recalcule Vc',10,'tr/min');
   if(t.kind==='tap'){
     const nt=document.createElement('span');nt.className='fao-meta';nt.textContent='F = pas × S = '+(t.p||'?')+' × '+sf.s+' = '+sf.f+' mm/min (imposée par le filet)';s3.appendChild(nt);
-  }else if(t.kind==='drill'||t.kind==='spot'){
+  }else if(faoToolIsDrill(t)){
     field(s3,'f par tour',faoToolFr(t),!(+t.fr>0),function(v){set('fr',v,'avance par tour');},'Avance par tour du foret (mm/tr) — F = f × S',0.005,'mm/tr');
     field(s3,'F perçage',sf.f,false,function(v){set('fr',+(v/sf.s).toFixed(4),'F (via f/tr)');},'Avance de perçage (mm/min) — saisir F recalcule f/tr',10,'mm/min');
   }else{

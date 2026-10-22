@@ -72,9 +72,10 @@ function faoViewerBuild(setup){
   faoSeqSafe(setup).forEach(function(S){
     const op=S.op;
     const tool=faoToolById(setup,op.toolId);
-    const d=(tool&&isFinite(+tool.d)&&+tool.d>0)?+tool.d:10;
+    const d=tool?faoToolBodyD(tool):10; // Ø du corps (d2 d'un foret à centrer)
     const kind=(tool&&tool.kind)?tool.kind:'flat';
     const cr=faoToolEffCr(tool); // rayon d'arête réel (mm) — forme de coupe par point
+    const tp=faoToolTipProfile(tool); // pointe de foret (mm) — null = fraise
     const sf=tool?faoOpCutting(op,setup):null; // avance de CETTE opération
     const f=(sf&&isFinite(+sf.f)&&+sf.f>0)?+sf.f:1000;
     const mv=S.moves;
@@ -97,7 +98,7 @@ function faoViewerBuild(setup){
     });
     // 2026-10-16-021 : axe outil de l'opération (repère propre 3+2), en repère posage — null = vertical
     const axO=(function(){ try{ const fr=faoOpFrame(setup,op); return fr?fr.rel.Z.slice():null; }catch(e){ return null; } })();
-    if(ext.length)chunks.push({op:op,ext:ext,f:f,d:d,kind:kind,cr:cr,ax:axO});
+    if(ext.length)chunks.push({op:op,ext:ext,f:f,d:d,kind:kind,cr:cr,tp:tp,ax:axO});
   });
   // Encadrement « zone de retrait » (2026-10-08-004) : en tête, l'outil vient
   // de la zone de retrait ; en queue, il y retourne — dans les DEUX cas un
@@ -111,7 +112,7 @@ function faoViewerBuild(setup){
     const eN=chunks[chunks.length-1].ext, lN=eN[eN.length-1];
     if(isFinite(rN)&&rN>lN.z+1e-9)eN.push({x:lN.x,y:lN.y,z:rN,r:1});
   }
-  const pts=[], dd=[], kt=[], cr=[], times=[], lens=[]; // times[i] = temps cumulé EN ARRIVANT au point i
+  const pts=[], dd=[], kt=[], cr=[], tps=[], times=[], lens=[]; // times[i] = temps cumulé EN ARRIVANT au point i
   let total=0, cum=0; // cum = longueur cumulée (fenêtre de trace qui suit la fraise)
   chunks.forEach(function(C){
     let prev=null;
@@ -120,6 +121,7 @@ function faoViewerBuild(setup){
       dd.push(C.d);
       kt.push(C.kind||'flat');
       cr.push(C.cr||0);
+      tps.push(C.tp||null);
       if(prev){
         const len=faoSegLen(prev,m);
         const v=m.r?faoRapide(setup):C.f;
@@ -131,7 +133,7 @@ function faoViewerBuild(setup){
       prev=m;
     });
   });
-  return {pts:pts, dd:dd, kt:kt, cr:cr, times:times, lens:lens, T:total};
+  return {pts:pts, dd:dd, kt:kt, cr:cr, tp:tps, times:times, lens:lens, T:total};
 }
 function faoViewerSeek(vw,t){
   // Position à l'instant t (linéaire entre les points, idx incrémental + retour arrière).
@@ -183,8 +185,9 @@ function faoViewerApply(){
       const i2=Math.min(p.i+1,vw.pts.length-1);
       const kind=vw.kt[i2]||'flat';
       const cr=(vw.cr&&isFinite(+vw.cr[i2]))?+vw.cr[i2]:0;
-      const sig=kind+'@'+(cr/d).toFixed(4)+'#'+faoViewerDetail; // #détail : rebuild au changement de finesse
-      if(sig!==vw.toolSig){ vw.toolSig=sig; faoViewerToolBodySwap(vw,kind,cr,d); }
+      const tp=(vw.tp&&vw.tp[i2])||null;
+      const sig=kind+'@'+(cr/d).toFixed(4)+'#'+faoViewerDetail+faoTipSig(tp); // #détail : rebuild au changement de finesse
+      if(sig!==vw.toolSig){ vw.toolSig=sig; faoViewerToolBodySwap(vw,kind,cr,d,tp); }
     }
   }
   if(vw.line){ // trace qui SUIT la fenêtre : ~40 mm de trajet derrière l'outil
@@ -216,7 +219,7 @@ function faoFluteTh(off,t){
   // hélice droite = évacuation vers le haut).
   return off-2*Math.PI*1.5*t;
 }
-function faoViewerToolFill(spinner,kind,cr,d,H){
+function faoViewerToolFill(spinner,kind,cr,d,H,tp){
   // Corps de la fraise en forme réelle : profil Lathe (plat / torique / boule) +
   // 3 gorges hélicoïdales (tubes fins) qui lisent comme des arêtes de coupe.
   // Coordonnées unitaires (Ø = 1) : le groupe outil met à l'échelle (scale x/z = Ø,
@@ -225,8 +228,9 @@ function faoViewerToolFill(spinner,kind,cr,d,H){
   try{
     const cfg=faoDetailCfg[faoViewerDetail]||faoDetailCfg[1];
     const bh=(isFinite(+H)&&+H>0)?+H:((+d)||10);
-    const arcH=(+cr||0)/bh;
-    const pts=faoToolProfile(kind,cr,d,bh).map(function(p){ return new THREE.Vector2(p[0],p[1]); });
+    const tipH=(tp&&tp.length>1)?tp[tp.length-1][1]:0; // haut de la pointe de foret (mm)
+    const arcH=Math.max((+cr||0),tipH)/bh;
+    const pts=faoToolProfile(kind,cr,d,bh,tp).map(function(p){ return new THREE.Vector2(p[0],p[1]); });
     const lat=new THREE.Mesh(new THREE.LatheGeometry(pts,cfg.lathe),
       new THREE.MeshPhongMaterial({color:0x9ad1ff,emissive:0x112f4d}));
     lat.raycast=function(){};
@@ -249,7 +253,7 @@ function faoViewerToolFill(spinner,kind,cr,d,H){
     }
   }catch(e){}
 }
-function faoViewerToolBodyMake(kind,cr,d,H,exact){
+function faoViewerToolBodyMake(kind,cr,d,H,exact,tp){
   // Corps de fraisier : axe local Y, rotation 90° → vertical, pointe au z=0
   // du groupe outil. exact=false : cylindre Ø plat HISTORIQUE (inchangé byte-à-byte).
   if(!exact){
@@ -266,20 +270,20 @@ function faoViewerToolBodyMake(kind,cr,d,H,exact){
   tb.scale.x=(d>0?d:10); tb.scale.y=H; tb.scale.z=(d>0?d:10);
   tb.position.z=0;
   const spin=new THREE.Group(); // rotation pendant l'avance (gorges qui tournent)
-  faoViewerToolFill(spin,kind,cr,d,H);
+  faoViewerToolFill(spin,kind,cr,d,H,tp);
   tb.add(spin);
   tb.userData.spin=spin;
   return tb;
 }
-function faoViewerToolCreate(exact,kind,cr,d){
+function faoViewerToolCreate(exact,kind,cr,d,tp){
   // Groupe outil : fraisier (voir faoViewerToolBodyMake) + mandrin.
   const H=30;
   const g=new THREE.Group(); g.name='faoViewerTool';
   let body=null, hold=null, spin=null, sig=null;
   try{
-    body=faoViewerToolBodyMake(kind,cr,d,H,!!exact);
+    body=faoViewerToolBodyMake(kind,cr,d,H,!!exact,tp);
     spin=(body&&body.userData)?body.userData.spin:null;
-    sig=exact?(kind+'@'+((+cr||0)/((+d)||10)).toFixed(4)+'#'+faoViewerDetail):null;
+    sig=exact?(kind+'@'+((+cr||0)/((+d)||10)).toFixed(4)+'#'+faoViewerDetail+faoTipSig(tp)):null;
     g.add(body);
     hold=new THREE.Mesh(new THREE.CylinderGeometry(0.9,0.9,1,16),
       new THREE.MeshPhongMaterial({color:0x676c75,flatShading:true}));
@@ -299,14 +303,14 @@ function faoViewerToolDispose(obj){
     });
   }catch(e){}
 }
-function faoViewerToolBodySwap(vw,kind,cr,d){
+function faoViewerToolBodySwap(vw,kind,cr,d,tp){
   // Changement d'outil EN COURS de parcours (T1→T6) : seul le corps est
   // reconstruit (profil + gorges) ; groupe outil et mandrin sont conservés.
   try{
     const parent=vw.tool; if(!parent)return;
     const old=vw.toolBody;
     const H=vw.toolH||30;
-    const tb=faoViewerToolBodyMake(kind,cr,d,H,!!vw.exact);
+    const tb=faoViewerToolBodyMake(kind,cr,d,H,!!vw.exact,tp);
     tb.scale.x=(d>0?d:10); tb.scale.z=(d>0?d:10);
     parent.add(tb);
     if(old){ try{ parent.remove(old); }catch(e){} faoViewerToolDispose(old); }
@@ -464,7 +468,7 @@ function faoMatterGrid(s,pas){
           sx1:sx1,sy1:sy1,sz1:sz1,full:full};
 }
 function faoMatterIdx(g,ix,iy,iz){ return (iz*g.ny+iy)*g.nx+ix; }
-function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r,outCols,cr){
+function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r,outCols,cr,tp){
   // Enlève les voxels dont le CENTRE est à distance ≤ r du segment XY (2D)
   // et z ≥ cote de coupe − pas/2 : la matière SOUS la pointe reste. Retourne les indices tués.
   // Z-map : la hauteur de colonne descend à la cote de coupe — 2026-10-11-002 :
@@ -489,6 +493,10 @@ function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r,outCols,cr){
   const zc=Math.min(az,bz);
   const CR=(isFinite(+cr)&&+cr>0)?Math.min(+cr,+r):0;
   const rc=+r-CR; // rayon du fond plat de l'outil
+  // 2026-10-22-001 : tp = pointe de foret (faoToolTipProfile) — la Z-map dessine le
+  // cône (et le pilote + 60° d'un foret à centrer) au lieu d'un fond plat.
+  const TP=(tp&&tp.length>1&&g.h)?tp:null;
+  const shaped=(CR>0||TP)&&g.h;
   const pzv=g.pz||g.pas;
   const zmin=zc-pzv/2;
   const x0=Math.min(ax,bx)-r, x1=Math.max(ax,bx)+r;
@@ -519,7 +527,9 @@ function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r,outCols,cr){
       // Cote de coupe de CETTE colonne : plate sous le fond de l'outil, arc sous
       // l'arête (CR>0) — la Z-map dessine alors l'arrondi réel du bas de paroi.
       let zcol=z2;
-      if(CR>0&&g.h){
+      if(TP){
+        zcol=Math.max(g.oz, zc+faoTipZAt(TP,Math.sqrt(d2)));
+      }else if(CR>0&&g.h){
         const rho=Math.sqrt(d2);
         if(rho>rc){ const e=rho-rc; zcol=Math.max(g.oz, zc+CR-Math.sqrt(Math.max(0,CR*CR-e*e))); }
       }
@@ -528,8 +538,8 @@ function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r,outCols,cr){
       // vidée par la passe précédente) — c'était le gel « certaines passes
       // n'enlèvent rien » (alternance OK/KO au fil des passes).
       if(tcBuf){ if(tcBuf[c]!==tsg){ tcBuf[c]=tsg; if(g.h&&zcol<g.h[c]){ g.h[c]=zcol; hc[c]=1; } if(outCols)outCols.push(c); } }
-      const zminC=(CR>0&&g.h)?zcol-pzv/2:zmin;
-      const ks0=(CR>0&&g.h)?Math.max(k0,Math.floor((zminC-g.oz)/pzv)):k0;
+      const zminC=shaped?zcol-pzv/2:zmin;
+      const ks0=shaped?Math.max(k0,Math.floor((zminC-g.oz)/pzv)):k0;
       for(let k=ks0;k<=k1;k++){
         const zcell=g.oz+(k+0.5)*pzv;
         if(zcell<zminC)continue;
@@ -541,7 +551,7 @@ function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r,outCols,cr){
   }
   return out;
 }
-function faoMatterCarveTo(g,pts,dd,times,t,outCols,crs){
+function faoMatterCarveTo(g,pts,dd,times,t,outCols,crs,tps){
   // Rattrapage 0 → t : segments complets + segment en cours interpolé (points d'arrivée en coupe).
   // crs (optionnel) : rayon d'arête par point (vd. faoMatterCarveSeg) — rendu « forme réelle ».
   const out=[];
@@ -557,7 +567,7 @@ function faoMatterCarveTo(g,pts,dd,times,t,outCols,crs){
     }
     const r=((isFinite(dd[i+1])&&dd[i+1]>0)?dd[i+1]:10)/2;
     const crv=(crs&&isFinite(+crs[i+1]))?+crs[i+1]:0;
-    const k=pts[i+1].ax?faoMatterCarveTilt(g,a,b,r,pts[i+1].ax,outCols):faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols,crv);
+    const k=pts[i+1].ax?faoMatterCarveTilt(g,a,b,r,pts[i+1].ax,outCols):faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols,crv,tps&&tps[i+1]);
     for(let m=0;m<k.length;m++)out.push(k[m]);
   }
   return out;
@@ -850,7 +860,7 @@ function faoViewerMatterEnable(vw){
   }
   if(vw.t>0){
     const tcols=[];
-    const ks=faoMatterCarveTo(g,vw.pts,vw.dd,vw.times,vw.t,tcols,vw.exact?vw.cr:null);
+    const ks=faoMatterCarveTo(g,vw.pts,vw.dd,vw.times,vw.t,tcols,vw.exact?vw.cr:null,vw.exact?vw.tp:null);
     faoViewerMatterKill(vw,ks,tcols);
   }
   faoViewerMatterHideBodies(vw); // la surface remplace les corps visibles
@@ -898,7 +908,7 @@ function faoViewerMatterKill(vw,ks,cols){
   for(let m=0;m<list.length;m++)faoViewerMatterWriteCol(vw,list[m]);
   try{ vw.matter.geometry.attributes.position.needsUpdate=true; }catch(e){}
 }
-function faoMatterCarveRange(g,pts,dd,times,t,i0,x0,y0,z0,p,outCols,crs){
+function faoMatterCarveRange(g,pts,dd,times,t,i0,x0,y0,z0,p,outCols,crs,tps){
   // INCREMENTAL : taille uniquement depuis le DERNIER point joue (x0,y0,z0,
   // segment i0) jusqu'a la position p (index p.i). Rappatrier 0 -> t a chaque
   // frame coutait O(i) : a 80 000 points d'ebauche 3D, la lecture devenait
@@ -918,7 +928,7 @@ function faoMatterCarveRange(g,pts,dd,times,t,i0,x0,y0,z0,p,outCols,crs){
     const r=((isFinite(dd[i+1])&&dd[i+1]>0)?dd[i+1]:10)/2;
     const crv=(crs&&isFinite(+crs[i+1]))?+crs[i+1]:0;
     const axD=pts[i+1]&&pts[i+1].ax; // le point en cours (p, interpolé) ne porte pas l'axe : celui du segment
-    const k=axD?faoMatterCarveTilt(g,a,b,r,axD,outCols):faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols,crv);
+    const k=axD?faoMatterCarveTilt(g,a,b,r,axD,outCols):faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols,crv,tps&&tps[i+1]);
     for(let m=0;m<k.length;m++)out.push(k[m]);
     a=b;
   }
@@ -933,13 +943,14 @@ function faoViewerMatterStep(vw,p){
   const cols=[];
   const mi=(vw.mPos&&isFinite(+vw.mPos.i))?Math.round(+vw.mPos.i):-1;
   const crs=vw.exact?vw.cr:null; // rayon d'arête (forme réelle) — null = cylindre
+  const tps=vw.exact?vw.tp:null; // pointes de foret (forme réelle)
   if(mi>=0&&mi<=p.i){
     ks=faoMatterCarveRange(g,vw.pts,vw.dd,vw.times,vw.t,mi,
-                           vw.mPos.x,vw.mPos.y,vw.mPos.z,p,cols,crs);
+                           vw.mPos.x,vw.mPos.y,vw.mPos.z,p,cols,crs,tps);
   }else if(mi>p.i){
     ks=null; // retour arriere : la matiere enlevee n'est jamais restituee
   }else{
-    ks=faoMatterCarveTo(g,vw.pts,vw.dd,vw.times,vw.t,cols,crs);
+    ks=faoMatterCarveTo(g,vw.pts,vw.dd,vw.times,vw.t,cols,crs,tps);
   }
   vw.mPos={x:p.x,y:p.y,z:p.z,i:p.i};
   // Tués OU colonnes touchées : la Z-map descend aussi quand aucun voxel ne meurt,
@@ -996,7 +1007,7 @@ function faoViewerModeSet(m){
     vw.toolSig=null;
     try{ // outil : profil réel <-> cylindre plat
       const old=vw.tool;
-      const T=faoViewerToolCreate(vw.exact,(vw.kt&&vw.kt[0])||'flat',(vw.cr&&vw.cr[0])||0,(vw.dd&&vw.dd[0])||10);
+      const T=faoViewerToolCreate(vw.exact,(vw.kt&&vw.kt[0])||'flat',(vw.cr&&vw.cr[0])||0,(vw.dd&&vw.dd[0])||10,(vw.tp&&vw.tp[0])||null);
       vw.tool=T.group; vw.toolBody=T.body; vw.toolHold=T.hold; vw.toolSpin=T.spin; vw.toolSig=T.sig;
       if(old){ try{ faoDel3D(old); }catch(e){} faoViewerToolDispose(old); }
       if(vw.tool)faoAdd3D(vw.tool);
@@ -1041,7 +1052,7 @@ function faoViewerOpen(){
       faoViewerMsg('FAO : aucune trajectoire à jouer — vérifiez le brut et activez au moins une opération.');
       return false; // aucune opération jouable (jamais silencieux)
     }
-    const vw={pts:b.pts, dd:b.dd, kt:b.kt, cr:b.cr, times:b.times, lens:b.lens, T:b.T, t:0, idx:0, drawn:0,
+    const vw={pts:b.pts, dd:b.dd, kt:b.kt, cr:b.cr, tp:b.tp, times:b.times, lens:b.lens, T:b.T, t:0, idx:0, drawn:0,
       playing:false, speed:1, prevVis:true, body:null, tool:null, toolBody:null,
       toolHold:null, toolSpin:null, toolSig:null, line:null, stock:null, toolH:30, _last:0, _looping:false,
       exact:faoViewerExact,
@@ -1063,7 +1074,7 @@ function faoViewerOpen(){
     }catch(e){}
     // 3) outil + trace progressive
     try{
-      const T=faoViewerToolCreate(vw.exact,(b.kt&&b.kt[0])||'flat',(b.cr&&b.cr[0])||0,(b.dd&&b.dd[0])||10);
+      const T=faoViewerToolCreate(vw.exact,(b.kt&&b.kt[0])||'flat',(b.cr&&b.cr[0])||0,(b.dd&&b.dd[0])||10,(b.tp&&b.tp[0])||null);
       vw.tool=T.group; vw.toolBody=T.body; vw.toolHold=T.hold; vw.toolH=T.H;
       vw.toolSpin=T.spin; vw.toolSig=T.sig;
       if(vw.tool)faoAdd3D(vw.tool);

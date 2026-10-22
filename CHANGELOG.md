@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**296 versions**, de `2026-09-28b` à `V0.3.27` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**297 versions**, de `2026-09-28b` à `V0.3.28` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4464,3 +4464,19 @@ Retours utilisateur (« peut-on faire tourner la pièce dans toutes les directio
 - **Centre de rotation sur la pièce** : la rotation tourne autour du centre de la face sélectionnée, sinon du centre des pièces visibles (et du brut en FAO) ; un déplacement au clic droit ne le déplace plus. OrbitControls ne garde que le déplacement et le zoom ; même vitesse et même inertie qu'avant.
 
 Tests : vérifié dans l'appli sur « Perçages » (passage par-dessus le pôle, vue de dessous sans reflet, pivot fixe à l'écran après déplacement dans les deux modes, pivot au centre d'une face sélectionnée). `npm run ci` vert.
+
+## V0.3.28 - Plan : hachures, ordonnées, notes, tolérances, filetages ISO, vues perspective et cavalière ; outils FAO
+Retours utilisateur (mise en plan de « Perçages », boîte à outils FAO).
+- **Outils FAO** : forets et forets à pointer dessinés avec leur pointe réelle (angle de la fiche) dans la fiche, l'outil 3D de la simulation et la matière enlevée ; nouveau type **Foret à centrer** DIN 333 A (pilote d1 + pointe 118°, cône 60° jusqu'au corps d2, cotes de la norme par défaut), profondeur de pointage lue sur le cône 60°. Parcours existants inchangés (CACHE_VER conservé).
+- **Simulation puis PLAN** : quitter l'espace FAO referme la simulation d'usinage, qui masquait les corps — la pièce ne disparaît plus de la mise en plan.
+- **Cotes** : re-ancrage après « reprojeter » sur le trait qui ressemble à l'original (une cote 100 passait à 0 au coin d'un rectangle) ; glisser une cote la déplace à la fois le long des lignes de rappel et le long de sa ligne ; double-clic détecté à l'appui (inversion des flèches à chaque fois) ; outil **Aligner sur une cote** (Maj/Ctrl + clic pour sélectionner plusieurs cotes) ; souligné des cotes de perçage et Ø/R sous les jambages.
+- **Tolérances** : classe ISO 286 suivie de ses écarts entre parenthèses, empilés comme une bilatérale (« Ø20 H7 (+0,021 / 0) »), pile tenue avant le point d'attache quand le texte est calé à droite ; tolérance sur les cotes de perçage (après le Ø).
+- **Notes à flèche** : pointe, texte libre multiligne souligné (comme une étiquette de perçage), double-clic pour l'éditer.
+- **Cotation d'ordonnées** X / Y : origine « 0 », valeurs alignées sur une ligne commune qui se déplacent ensemble, toujours positives ; ajouter des valeurs (groupe sélectionné + outil), supprimer une valeur, tolérance sur une seule valeur.
+- **Hachures** : double-clic sur une hachure → motif (ISO 128-50 général, acier, cuivre/bronze, alliages légers, plastique, plein), angle, échelle, couleur, pour toutes les coupes.
+- **Ligne de coupe** : glisser = déplacer le tronçon, Ctrl + clic = briser au curseur, Maj + clic = retirer la brisure la plus proche.
+- **Axe de symétrie associatif** : il suit ses 2 droites quand la pièce change.
+- **Filetages ISO 6410** des perçages taraudés : 3/4 de cercle en bout, traits du fond de filet en coupe (gris clair, plus fins) + trait fort de fin de filetage, filet caché en interrompu ; calque DXF FILETAGE.
+- **Vues** : projection **perspective** (comme la vue 3D, fuyante = angle de champ ; arêtes exactes, parties cachées calculées sur le maillage) et **oblique cavalière** (angle et coefficient des fuyantes, HLR exact) ; ombrage et rendu 3D suivent la projection.
+
+Tests : `test_mep_hachures_cotes` (nouveau, OCCT réel : cote re-ancrée, glisser, alignement, double-clic, ordonnées, note, axe de symétrie, hachures, ligne de coupe, cavalière, ombrage oblique, filetages, tolérances), `test_fao_percage` (foret à centrer), `test_mise_en_plan` (tolérance ISO, souligné). `npm run ci` vert. Non vérifié à la souris dans l'appli (aperçu bloqué au chargement du noyau) ; la perspective n'est pas couverte par les tests (maillages three.js réels requis).

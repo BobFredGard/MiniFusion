@@ -54,10 +54,54 @@ function faoToolSF(t,setup){
   // Foret / foret à centrer : avance PAR TOUR (F = f × S), pas par dent.
   // Taraud : F = PAS × S (imposé par le filet) — jamais une avance « au choix ».
   const f=(t&&t.kind==='tap'&&+t.p>0)?Math.max(1,Math.round(+t.p*s))
-    :((t&&(t.kind==='drill'||t.kind==='spot'))?Math.max(1,Math.round(faoToolFr(t)*s)):Math.max(1,Math.round(fz*z*s)));
+    :((t&&(t.kind==='drill'||t.kind==='spot'||t.kind==='center'))?Math.max(1,Math.round(faoToolFr(t)*s)):Math.max(1,Math.round(fz*z*s)));
   return {s:s, f:f, plunge:Math.max(1,Math.round(f*faoPlungePct(setup)/100))};
 }
-function faoKindLabel(k){ return k==='ball'?'Boule':(k==='bull'?'Torique':(k==='drill'?'Foret':(k==='spot'?'Foret à centrer':(k==='tap'?'Taraud':'Cylindrique')))); }
+function faoKindLabel(k){ return k==='ball'?'Boule':(k==='bull'?'Torique':(k==='drill'?'Foret':(k==='spot'?'Foret à pointer':(k==='center'?'Foret à centrer':(k==='tap'?'Taraud':'Cylindrique'))))); }
+/* 2026-10-22-001 : FORME DE POINTE des forets (fiche, vue d'usinage, matière).
+   Foret / foret à pointer : cône d'angle `ang` (118° / 90°) jusqu'au Ø.
+   Foret à centrer DIN 333 forme A : pilote d1 (= Ø outil, pointe 118°) de longueur
+   lp, puis cône 60° jusqu'au corps d2 — défauts tirés du tableau de la norme
+   [d1, d2, lp] (lp = longueur du pilote, pointe comprise). */
+const FAO_DIN333A=[[0.5,3.15,0.8],[0.8,3.15,1.1],[1,3.15,1.3],[1.25,3.15,1.6],[1.6,4,2],[2,5,2.5],
+  [2.5,6.3,3.1],[3.15,8,3.9],[4,10,5],[5,12.5,6.3],[6.3,16,8],[8,20,10.1],[10,25,12.8]];
+function faoCenterDims(t){
+  const d1=(t&&+t.d>0)?+t.d:2.5;
+  let row=FAO_DIN333A[0];
+  FAO_DIN333A.forEach(function(q){ if(Math.abs(q[0]-d1)<Math.abs(row[0]-d1))row=q; });
+  const d2=(t&&+t.d2>d1)?+t.d2:Math.max(row[1]*d1/row[0],d1*1.5);
+  const lp=(t&&+t.lp>0)?+t.lp:row[2]*d1/row[0];
+  return {d1:d1,d2:d2,lp:lp};
+}
+function faoToolBodyD(t){
+  // Ø du CORPS (plus grand Ø de la partie coupante) : d2 pour un foret à centrer.
+  const D=(t&&isFinite(+t.d)&&+t.d>0)?+t.d:10;
+  return (t&&t.kind==='center')?faoCenterDims(t).d2:D;
+}
+function faoToolTipProfile(t){
+  // Profil de pointe en mm [[ρ, z], …] depuis la pointe (0,0) jusqu'au Ø du corps ;
+  // null = outil sans pointe (fraises, taraud : bout plat / torique / boule).
+  if(!t||!(t.kind==='drill'||t.kind==='spot'||t.kind==='center'))return null;
+  const half=function(a){ return Math.tan(a*Math.PI/360); };
+  if(t.kind==='center'){
+    const c=faoCenterDims(t),r1=c.d1/2,r2=c.d2/2;
+    const h1=r1/half(faoToolAngle(t));
+    const lp=Math.max(c.lp,h1);
+    return [[0,0],[r1,h1],[r1,lp],[r2,lp+(r2-r1)/Math.tan(Math.PI/6)]];
+  }
+  const r=((+t.d>0)?+t.d:6)/2;
+  return [[0,0],[r,r/half(faoToolAngle(t))]];
+}
+function faoTipZAt(tp,rho){
+  // Hauteur du profil de pointe au rayon ρ (au-delà du dernier point : sa hauteur).
+  if(!(rho>0))return 0;
+  for(let i=1;i<tp.length;i++){
+    const a=tp[i-1],b=tp[i];
+    if(rho<=b[0]+1e-12){ return b[0]>a[0]?a[1]+(b[1]-a[1])*(rho-a[0])/(b[0]-a[0]):a[1]; }
+  }
+  return tp[tp.length-1][1];
+}
+function faoTipSig(tp){ return tp?tp.map(function(p){return p[0].toFixed(3)+','+p[1].toFixed(3);}).join(';'):''; }
 function faoToolEffCr(t){
   // Rayon d'arête ENCORE CHARGEUT (mm) : ball = D/2 plein, bull = cornerR borné
   // à D/2, flat = 0 (bout plat) — la source de vérité de la forme de coupe.
@@ -67,7 +111,7 @@ function faoToolEffCr(t){
   const cr=isFinite(+t.cornerR)?+t.cornerR:0;
   return Math.max(0,Math.min(cr,D/2));
 }
-function faoToolProfile(kind,cr,D,H){
+function faoToolProfile(kind,cr,D,H,tp){
   // Profil de révolution unitaire pour THREE.LatheGeometry (rayon en unités de D,
   // hauteur 0 = pointe → 1 = corps H mm) : bout plat, torique (arc d'arête cr)
   // ou boule — un seul arc couvre torique ET boule (cr = D/2 → hémisphère).
@@ -76,6 +120,12 @@ function faoToolProfile(kind,cr,D,H){
   // boule de D/2 mm). Sans H (tests/ancien), défaut H=D : squelette inchangé.
   const dia=(isFinite(+D)&&+D>0)?+D:10;
   const bh=(isFinite(+H)&&+H>0)?+H:dia;
+  // 2026-10-22-001 : foret — pointe conique / pilote + cône 60° (faoToolTipProfile, mm)
+  if(tp&&tp.length>1){
+    const o=tp.map(function(p){ return [Math.min(0.5,p[0]/dia),Math.min(0.98,p[1]/bh)]; });
+    o.push([0.5,1]);
+    return o;
+  }
   const q=Math.max(0,Math.min(0.5,(+cr||0)/dia)); // rayon arc en unités D
   if(q<=1e-6)return [[0,0],[0.5,0],[0.5,1]];
   const arcH=(+cr||0)/bh; // hauteur arc en unités H (sphère non étirée)

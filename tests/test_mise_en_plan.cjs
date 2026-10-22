@@ -326,7 +326,13 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
       tol:{m:'dbl',hi:0.1,lo:-0.05}},20,'R');
     out.radPreOK = ptRadPre.main==='4x R20' && ptRadPre.up==='+0.1' && ptRadPre.lo==='−0.05';
     const ptCls = window.__mepTest.dimTextParts({kind:'dia',tol:{m:'cls',cls:'H7'}},20);
-    out.tolClsOK = ptCls.main==='20 H7' && !ptCls.up && !ptCls.lo;
+    // classe ISO : écarts entre parenthèses, empilés comme une tolérance bilatérale (2026-10-22-007)
+    const ptCls2 = window.__mepTest.dimTextParts({kind:'len',tol:{m:'cls',cls:'h7'}},20);
+    const ptFit = window.__mepTest.dimTextParts({kind:'dia',tol:{m:'cls',cls:'H7/g6'}},20);
+    const ptClsDia = window.__mepTest.dimSymbolParts({kind:'dia',post:'THRU',tol:{m:'cls',cls:'H7'}},20,'Ø');
+    out.tolClsOK = ptCls.main==='20 H7' && ptCls.up==='+0.021' && ptCls.lo==='0' && ptCls.par===true
+      && ptCls2.up==='0' && ptCls2.lo==='−0.021' && ptFit.main==='20 H7/g6' && !ptFit.up && !ptFit.par
+      && ptClsDia.main==='Ø20 H7' && ptClsDia.post==='THRU';
     const ptTxt = window.__mepTest.dimTextParts({kind:'len',txt:'X',tol:{m:'pm',s:0.1}},20);
     out.tolTxtOK = ptTxt.main==='X' && !ptTxt.up && !ptTxt.lo;
     const ptAff = window.__mepTest.dimTextParts({kind:'len',pre:'2x',post:'THRU'},20);
@@ -472,10 +478,10 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     const hgA=T.holeCallout(0,0,10,25,-20,'Ø8 déb.\\nLamage Ø11,2 ↧2');
     const hgB=T.holeCallout(0,0,10,-25,-20,'Ø8 déb.\\nLamage Ø11,2 ↧2');
     out.holeLeaderUnderOK=!!hgA&&hgA.anchor==='start'&&hgA.u0===hgA.tx
-      &&Math.abs(hgA.lineY-(hgA.y0+(hgA.lines.length-1)*hgA.lh+1.225))<1e-9
+      &&Math.abs(hgA.lineY-(hgA.y0+(hgA.lines.length-1)*hgA.lh+1.95))<1e-9 // souligné : 0,3 h (jambages) + 0,9 (halo), h 3,5
       &&Math.abs((hgA.u1-hgA.u0)-15*4.888*0.6)<1e-6; // souligné = texte (h 3,5), plus 3,8 mm par caractère
     out.holeLeaderUnderEndOK=!!hgB&&hgB.anchor==='end'&&hgB.u1===hgB.tx
-      &&Math.abs(hgB.lineY-(hgB.y0+(hgB.lines.length-1)*hgB.lh+1.225))<1e-9;
+      &&Math.abs(hgB.lineY-(hgB.y0+(hgB.lines.length-1)*hgB.lh+1.95))<1e-9;
 
     // 24) réglages « Paramètres — Plan » : hauteur/couleur des cotes, flèches.
     window.__mepTest.setViewSel(null);

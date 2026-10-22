@@ -14,10 +14,11 @@
      fond, ou cote manuelle ; débouchant : + débouchage (1 mm) ; pointage : Ø de
      chanfrein voulu → profondeur selon l'angle du foret à centrer.
    • ORDRE : plus court chemin (plus proche voisin + 2-opt) ou zigzag.
-   • OUTIL : types « Foret » et « Foret à centrer » (angle de pointe, avance par tour
+   • OUTIL : types « Foret », « Foret à pointer » et « Foret à centrer » DIN 333 A
+     (2026-10-22-001 : pilote + cône 60°) (angle de pointe, avance par tour
      F = f × S) ; sélectionner un groupe affecte le foret du même Ø de la
      bibliothèque, ou le CRÉE. */
-const FAO_DRILL_KINDS={drill:1,spot:1};
+const FAO_DRILL_KINDS={drill:1,spot:1,center:1};
 function faoToolIsDrill(t){ return !!(t&&FAO_DRILL_KINDS[t.kind]); }
 function faoToolAngle(t){ const a=t&&+t.ang; return (isFinite(a)&&a>20&&a<180)?a:(t&&t.kind==='spot'?90:118); }
 function faoToolTipLen(t){ const D=(t&&+t.d>0)?+t.d:6; return (D/2)/Math.tan(faoToolAngle(t)*Math.PI/360); }
@@ -25,7 +26,7 @@ function faoToolFr(t){
   // Avance par tour (mm/tr) d'un foret : saisie, sinon règle d'atelier (carbure).
   const v=t&&+t.fr; if(isFinite(v)&&v>0)return v;
   const D=(t&&+t.d>0)?+t.d:6;
-  return t&&t.kind==='spot'?0.05:Math.round((0.012*D+0.03)*1000)/1000;
+  return t&&(t.kind==='spot'||t.kind==='center')?0.05:Math.round((0.012*D+0.03)*1000)/1000;
 }
 /* ----- reconnaissance des trous ----- */
 let faoHoleCache={shape:null,list:null};
@@ -269,6 +270,12 @@ function faoDrillDepthOf(op,t,h){
     // trou taraudé (entrée du taraud), sinon Ø du trou + 0,4.
     const T=(h.thread&&typeof isoThread==='function')?isoThread(h.thread.size):null;
     const chD=(+op.chD>0)?+op.chD:((h.chD>0)?h.chD:(T?(T[1]+0.4):(h.d+0.4)));
+    if(t&&t.kind==='center'){ // foret à centrer : pilote puis cône 60° (profil réel)
+      // tp = [pointe, bout du cône 118°, haut du pilote, haut du cône 60°] : le chanfrein
+      // se lit sur le cône 60° ; plus petit que le pilote → le pilote entier entre
+      const tp=faoToolTipProfile(t),r1=tp[2][0],lp=tp[2][1],rr=Math.min(chD/2,tp[3][0]);
+      return h.zSurf-(lp+Math.max(0,rr-r1)/Math.tan(Math.PI/6));
+    }
     const Dt=(t&&+t.d>0)?+t.d:10;
     const r=Math.min(chD,Dt)/2;
     return h.zSurf-r/Math.tan(faoToolAngle(t)*Math.PI/360);
@@ -360,13 +367,15 @@ function faoDrillAutoTool(setup,op,d){
       tools.push(tt);mk=true;}
     op.toolId=tt.id;delete op.cut;return {tool:tt,made:mk};
   }
-  if(cur&&cur.kind===want&&(want==='spot'||Math.abs(+cur.d-d)<0.011))return null;
-  let t=tools.find(function(x){return x.kind===want&&(want==='spot'||Math.abs(+x.d-d)<0.011);});
+  // pointage : foret à pointer OU foret à centrer de la bibliothèque
+  const fits=function(x){ return want==='spot'?(x.kind==='spot'||x.kind==='center'):(x.kind===want&&Math.abs(+x.d-d)<0.011); };
+  if(cur&&fits(cur))return null;
+  let t=tools.find(fits);
   let made=false;
   if(!t){
     const n=tools.reduce(function(m,x){return Math.max(m,+x.num||0);},0)+1;
     t=want==='spot'
-      ?{id:'T'+n+'_'+Date.now().toString(36),num:n,name:'Foret à centrer D10',kind:'spot',d:10,cornerR:0,flutes:2,vc:60,fz:0.03,ang:90}
+      ?{id:'T'+n+'_'+Date.now().toString(36),num:n,name:'Foret à pointer D10',kind:'spot',d:10,cornerR:0,flutes:2,vc:60,fz:0.03,ang:90}
       :{id:'T'+n+'_'+Date.now().toString(36),num:n,name:'Foret D'+(+d.toFixed(2)),kind:'drill',d:+d.toFixed(3),cornerR:0,flutes:2,vc:80,fz:0.05,ang:118};
     tools.push(t);made=true;
   }
@@ -492,7 +501,7 @@ function faoDrillSections(setup,op,d){
       const w=document.createElement('div');w.className='fao-note';w.textContent='⚠ Le taraud T'+tt.num+' ('+holeThreadLabel({size:tt.size,p:tt.p})+') ne correspond pas au filet '+holeThreadLabel(th0.thread)+'.';d.appendChild(w);}
   }else if(op.cycle==='spot'){
     rd.appendChild(faoLab('Ø pointage'));
-    rd.appendChild(faoNum((+op.chD)||0,function(v){op.chD=Math.max(0,v);},52,0.1,'Ø du chanfrein laissé par le foret à centrer (0 = chanfrein du modèle, sinon Ø du trou + 0,4)'));
+    rd.appendChild(faoNum((+op.chD)||0,function(v){op.chD=Math.max(0,v);},52,0.1,'Ø du chanfrein laissé par le foret à pointer / à centrer (0 = chanfrein du modèle, sinon Ø du trou + 0,4)'));
   }else{
     rd.appendChild(faoLab('Profondeur'));
     rd.appendChild(faoSel([['full','Plein Ø au fond du trou'],['tip','Pointe au fond'],['manual','Cote manuelle']],op.depthMode||'full',function(v){op.depthMode=v;},
