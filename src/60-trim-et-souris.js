@@ -305,14 +305,17 @@ function trimEntity(sk,ent,cx,cy){
 }
 
 /* ----- interactions souris ----- */
+let skOrbDrag=null; // orbite en cours (clic-molette glissé, comme en 3D) : {px,py}
+let skPanDragged=false; // le clic droit vient de servir à déplacer la vue : pas de menu ni d'annulation
 svg.addEventListener('wheel',e=>{
-  if(!skEdit)return;e.preventDefault();
+  if(!skEdit)return;e.preventDefault();e=skEv(e);
   const r=svg.getBoundingClientRect();
   const k=zoomInv?e.deltaY:-e.deltaY;
   skSetZoom(skView.s*Math.exp(k*0.0012),e.clientX-r.left,e.clientY-r.top);
 },{passive:false});
 svg.addEventListener('contextmenu',e=>{
   e.preventDefault();
+  if(skPanDragged){skPanDragged=false;return;} // fin d'un déplacement au clic droit
   if(!skEdit) return;
   if(skDimPlace){skCancelDraft();skStatus('Placement annulé.');return;} // Échap/clic droit pendant la pose
   const selEnts=skSelectedEnts();
@@ -409,7 +412,7 @@ function skDragComp(sk,seed){
   return {pids:[...pids],ents:[...ents]};
 }
 svg.addEventListener('dblclick',e=>{
-  if(!skEdit||skTool!=='select')return;
+  if(!skEdit||skTool!=='select')return;e=skEv(e);
   const sk=skEdit;
   const r0=svg.getBoundingClientRect();
   const px=e.clientX-r0.left,py=e.clientY-r0.top;
@@ -430,8 +433,13 @@ svg.addEventListener('dblclick',e=>{
 svg.addEventListener('pointerdown',e=>{
   if(!skEdit)return;const sk=skEdit;
   try{svg.setPointerCapture(e.pointerId);}catch(err){}
-  if(e.button===2)return;
-  if(e.button===1){e.preventDefault();skPan={px:e.clientX,py:e.clientY,cx:skView.cx,cy:skView.cy};return;}
+  // Souris comme dans l'espace 3D : clic-molette glissé = ORBITE autour du centre du dessin,
+  // clic droit glissé = DÉPLACEMENT (clic droit sans glisser = menu / annuler, inchangé).
+  // Le clic gauche reste au dessin : jamais de rotation.
+  skPanDragged=false;
+  if(e.button===1){e.preventDefault();skOrbDrag={px:e.clientX,py:e.clientY};return;}
+  e=skEv(e);
+  if(e.button===2){skPan={px:e.clientX,py:e.clientY,cx:skView.cx,cy:skView.cy,moved:false};return;}
   if(e.button!==0||skPan)return;
   const[wx,wy]=evXY(e);
   if(skTool==='select'){
@@ -625,7 +633,10 @@ svg.addEventListener('pointerdown',e=>{
   }
 });
 svg.addEventListener('pointermove',e=>{
-  if(!skEdit)return;const sk=skEdit;const[wx,wy]=evXY(e);
+  if(!skEdit)return;
+  if(skOrbDrag){skOrbDragBy(e.clientX-skOrbDrag.px,e.clientY-skOrbDrag.py);skOrbDrag.px=e.clientX;skOrbDrag.py=e.clientY;return;}
+  e=skEv(e);const sk=skEdit;const[wx,wy]=evXY(e);
+  if(skPan&&!skPan.moved){if(Math.hypot(e.clientX-skPan.px,e.clientY-skPan.py)<4)return;skPan.moved=true;} // seuil : un clic droit court reste un clic
   if(skPan){skView.cx=skPan.cx-(e.clientX-skPan.px)/skView.s;skView.cy=skPan.cy+(e.clientY-skPan.py)/skView.s;drawSketch2D();return;}
   if(skTool==='project'){
     const pr=projectEdgeAt(sk,wx,wy);
@@ -764,7 +775,9 @@ svg.addEventListener('pointermove',e=>{
   }
 });
 svg.addEventListener('pointerup',e=>{
-  if(skPan){skPan=null;return;}
+  if(skOrbDrag){skOrbDrag=null;return;}
+  e=skEv(e);
+  if(skPan){skPanDragged=skPan.moved;skPan=null;return;}
   if(!skEdit||e.button!==0)return;const sk=skEdit;const[wx,wy]=evXY(e);
   if(skDimDrag){skDimDrag=null;drawSketch2D();return;}
   if(skDrag){skDrag=null;skDragPushed=false;skSnapMk=null;renderSkPanel();drawSketch2D();return;}
@@ -1161,6 +1174,13 @@ document.querySelectorAll('#skToolbar .con').forEach(b=>b.onclick=()=>applyCon(b
 $('skZoomIn').onclick=()=>{if(!skEdit)return;const{W,H}=svgSize();skSetZoom(skView.s*1.25,W/2,H/2);};
 $('skZoomOut').onclick=()=>{if(!skEdit)return;const{W,H}=svgSize();skSetZoom(skView.s/1.25,W/2,H/2);};
 $('skFit').onclick=()=>{if(skEdit)skFitView();};
+// Vue 3D inclinée ↔ à plat face devant (l'orbite libre reste au clic-molette glissé et au cube)
+try{$('skOrbit').onclick=()=>{if(!skEdit)return;if(!skOrbIsFront())skOrbFront();else{skOrbFront(true);const n=sketchBasis(skEdit).n;skOrbDragBy(70,Math.abs(n.z)>0.95?-60:60);}};}catch(e){}
+// Ouverture d'esquisse : à plat (face devant) ou vue 3D courante gardée — choix mémorisé
+try{const cb=$('skFlatOpen');if(cb){cb.checked=skFlatOpen;cb.onchange=()=>{skFlatOpen=!!cb.checked;try{localStorage.setItem('minifusion_skFlat',skFlatOpen?'1':'0');}catch(e){}};}}catch(e){}
+// Grille visible / masquée (axes d'origine toujours tracés) — mémorisé pour les esquisses suivantes
+(function(){const b=$('skGrid');if(!b)return;const sync=()=>{b.style.opacity=skShowGrid?'1':'0.45';b.classList.toggle('on',skShowGrid);};sync();
+  b.onclick=()=>{skShowGrid=!skShowGrid;sync();try{localStorage.setItem('minifusion_skGrid',skShowGrid?'1':'0');}catch(e){}if(skEdit)drawSketch2D();};})();
 $('skRefs').onclick=()=>{skShowRefs=!skShowRefs;$('skRefs').style.opacity=skShowRefs?'1':'0.45';if(skEdit)drawSketch2D();};
 window.addEventListener('keydown',e=>{
   if(!$('sketchOverlay').classList.contains('open'))return;
@@ -1175,6 +1195,8 @@ window.addEventListener('keydown',e=>{
     if(e.key==='Escape'){e.preventDefault();skEscapeToSelect();return;}
   }
   if(e.key==='Escape'){e.preventDefault();skEscapeToSelect();return;}
+  // N : à plat dans le plan d'esquisse, face choisie DEVANT et droite (après une orbite)
+  if((e.key==='n'||e.key==='N')&&skEdit&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&!e.shiftKey){e.preventDefault();skOrbFront();return;}
   // 2026-10-16-005 : raccourcis de contraintes (F1…F12) et H = centre de perçage
   if(skEdit&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&skShortcut(e))return;
   if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&(e.key==='z'||e.key==='Z')){e.preventDefault();skUndoTrans();return;}

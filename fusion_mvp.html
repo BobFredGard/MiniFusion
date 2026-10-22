@@ -72,11 +72,11 @@ input[type=range]{accent-color:var(--primary);width:100%}
 .note{font-size:.72rem;color:var(--muted)}code{background:rgba(255,255,255,.08);border-radius:4px;padding:0 5px;font-size:.72rem}
 .measurebar{margin-top:10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:8px 14px;display:grid;grid-template-columns:1.2fr 1fr;gap:8px 16px;flex:none}
 #faceInfo,#stats{font-family:monospace;font-size:.72rem;line-height:1.45;max-height:86px;overflow:auto;background:rgba(10,132,255,.07);border:1px solid rgba(10,132,255,.3);border-radius:8px;padding:6px 10px;white-space:pre-wrap}
-#sketchOverlay{display:none;position:absolute;inset:0;z-index:50;background:rgba(12,12,14,.72);flex-direction:column}
+#sketchOverlay{display:none;position:absolute;inset:0;z-index:50;background:rgba(12,12,14,.12);flex-direction:column}
 #sketchOverlay.open{display:flex}
 #skToolbar{display:flex;gap:8px;align-items:center;padding:10px 14px;flex-wrap:wrap;border-bottom:1px solid var(--border)}
 #skToolbar .tool.on{background:var(--primary);border-color:var(--primary)}
-#skSvg{flex:1;min-width:0;background:rgba(16,16,18,.28);cursor:crosshair;touch-action:none}
+#skSvg{flex:1;min-width:0;background:rgba(16,16,18,.04);cursor:crosshair;touch-action:none}
 #skMain{flex:1;display:flex;min-height:0;position:relative}
 #skSide{width:252px;flex:none;background:rgba(30,30,34,.97);border-left:1px solid var(--border);overflow-y:auto;padding:10px 12px;font-size:.78rem}
 #skSide h4{margin:10px 0 6px;font-size:.66rem;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
@@ -93,6 +93,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
 .skbtn{font-size:.74rem;padding:5px 9px}
 #skToolbar .tool.on{background:var(--primary);border-color:var(--primary)}
 #skToolbar .con.on{background:#30d158;border-color:#30d158}
+#skToolbar #skOrbit.on{background:var(--primary);border-color:var(--primary);color:#fff}
 #skToolbar .tool,#skToolbar .con{padding:5px 7px;line-height:0;min-width:34px;display:inline-flex;align-items:center;justify-content:center}
 #skToolbar .con{color:#30d158}
 #skToolbar .con[data-con="construction"]{color:#c7c7cc}
@@ -210,6 +211,9 @@ input[type=range]{accent-color:var(--primary);width:100%}
         <button id="skZoomIn" title="Zoom + (ou molette)">＋</button>
         <button id="skZoomOut" title="Zoom - (ou molette)">－</button>
         <button id="skFit" title="Cadrer l’esquisse">⌂</button>
+        <button id="skOrbit" title="Vue 3D inclinée — orbite : clic-molette glissé, ou cube de vue · N = à plat">⟳</button>
+        <label style="font-size:.75rem" title="Coché : l’esquisse s’ouvre à plat, face choisie devant · Décoché : la vue 3D courante est gardée (N = à plat)"><input type="checkbox" id="skFlatOpen" checked> À plat</label>
+        <button id="skGrid" title="Afficher / masquer la grille (état mémorisé)">▦</button>
         <button id="skRefs" title="Afficher/masquer les arêtes du solide projetées (repère)">👁</button>
         <button id="skUndo" title="Annuler (Ctrl+Z)">↩</button>
         <button id="skRedo" title="Rétablir (Ctrl+Y)">↪</button>
@@ -274,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.3.29';
+const APP_VER='V0.4.0';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -1014,6 +1018,7 @@ function animate(){
       mirrorDirty=false;
     }
   }
+  try{sketchCamTick();}catch(e){}
   try{triadUpdateAll();}catch(e){}
   try{if(typeof faoPoseSync==='function')faoPoseSync();}catch(e){}
   try{if(typeof faoFaceHlSync==='function')faoFaceHlSync();}catch(e){} // faces bleues / rouges de l'op sélectionnée
@@ -1050,6 +1055,8 @@ function viewFit(o){
   controls.update();
 }
 function setView(v){
+  // esquisse ouverte : la vue d'esquisse s'oriente (le plan reste éditable)
+  try{const SV={iso:[0.6,-0.6,0.6],top:[0,0,1],front:[0,-1,0],right:[1,0,0]};if(SV[v]&&sketchViewDir(SV[v]))return;}catch(e){}
   if(v==='iso'){viewFit([0.6,-0.6,0.6]);return;} // Iso = vue complète isométrique
   viewUpReset(); // orbite libre : la vue normalisée se redresse
   const t=controls.target.clone(),d=camera.position.distanceTo(t)||150;
@@ -1145,56 +1152,215 @@ function ensureSketchBasis(sk){
   if(!sk.origin)sk.origin=[0,0,0];
   return sk;
 }
-let _skPrevCam=null, _skBaseDist=400, _skBaseS=2.2, _skOrtho=null, _skOrigCam=null;
+// Vue d'esquisse ORTHOGRAPHIQUE calée sur le SVG : le point (cx,cy) du plan tombe au centre
+// du SVG, à s px/mm. ORIENTATION LIBRE (skOrb) comme dans l'espace 3D : repère caméra R (droite),
+// U (haut), D (vers la caméra) exprimé dans le repère LOCAL du plan (u,v,n). En orthographique,
+// plan → écran est AFFINE : skOrbL() donne cette application (2×2 autour du centre du SVG),
+// posée sur le groupe racine du dessin SVG et inversée pour la souris — tracé et accroche
+// restent sur le plan d'esquisse quel que soit l'angle de vue.
+//   · skOrbFront() (touche N) : vue À PLAT, face de l'esquisse DEVANT (caméra côté +n) et
+//     DROITE (le Z du monde vers le haut ; plan horizontal : Y vers le haut, comme le cube) ;
+//   · ouverture : à plat, ou vue 3D courante gardée (case « À plat », skFlatOpen) ;
+//   · orbite : clic-molette glissé (comme en 3D), cube de vue, boutons de vue (setView).
+let skOrb={R:[1,0,0],U:[0,1,0],D:[0,0,1]};
+let skFlatOpen=true; // ouverture à plat (sinon la vue 3D courante est gardée) — persisté
+try{if(localStorage.getItem('minifusion_skFlat')==='0')skFlatOpen=false;}catch(e){}
+let _skKeep=false; // session ouverte « vue 3D gardée » : la sortie garde l'orientation
+const SK_ORB_MIN=Math.sin(8*Math.PI/180); // jamais le plan par la tranche (application non inversible)
+function skOrbOn(){return !(Math.abs(skOrb.D[2]-1)<1e-12&&Math.abs(skOrb.U[1]-1)<1e-12);}
+function skOrbL(){ // SVG « vue normale » → SVG affiché, autour du centre du SVG : [l11,l12,l21,l22]
+  if(!skOrbOn())return[1,0,0,1];
+  const R=skOrb.R,U=skOrb.U;
+  return[R[0],-R[1],-U[0],U[1]];
+}
+function skOrbFwd(px,py){ // point SVG normal → point SVG affiché
+  if(!skOrbOn())return[px,py];
+  const{W,H}=svgSize(),L=skOrbL(),x=px-W/2,y=py-H/2;
+  return[W/2+L[0]*x+L[1]*y,H/2+L[2]*x+L[3]*y];
+}
+function skOrbInv(px,py){ // point SVG affiché (souris) → point SVG normal
+  if(!skOrbOn())return[px,py];
+  const{W,H}=svgSize(),L=skOrbL(),x=px-W/2,y=py-H/2,det=(L[0]*L[3]-L[1]*L[2])||1e-9;
+  return[W/2+(L[3]*x-L[1]*y)/det,H/2+(-L[2]*x+L[0]*y)/det];
+}
+function skOrbTransform(){ // attribut transform du groupe racine du SVG (null = vue normale)
+  if(!skOrbOn())return null;
+  const{W,H}=svgSize(),L=skOrbL(),cx=W/2,cy=H/2;
+  return `matrix(${L[0]} ${L[2]} ${L[1]} ${L[3]} ${cx-L[0]*cx-L[1]*cy} ${cy-L[2]*cx-L[3]*cy})`;
+}
+function skOrbUpright(root){
+  // Textes LISIBLES quel que soit l'angle : chaque texte (et le fond d'étiquette de cote, qui
+  // pivote autour du même point) annule la déformation autour de son point d'ancrage ; une
+  // étiquette alignée sur sa ligne de cote reprend l'angle de la ligne À L'ÉCRAN.
+  const L=skOrbL(),det=L[0]*L[3]-L[1]*L[2];if(Math.abs(det)<1e-9)return;
+  const I=[L[3]/det,-L[1]/det,-L[2]/det,L[0]/det];
+  root.querySelectorAll('text,rect').forEach(el=>{
+    const m=/rotate\(\s*([-\d.e]+)[\s,]+([-\d.e]+)[\s,]+([-\d.e]+)\s*\)/.exec(el.getAttribute('transform')||'');
+    let px,py,al=0;
+    if(m){
+      px=+m[2];py=+m[3];const r=(+m[1])*Math.PI/180,dx=Math.cos(r),dy=Math.sin(r);
+      al=Math.atan2(L[2]*dx+L[3]*dy,L[0]*dx+L[1]*dy)*180/Math.PI;
+      if(al>90.01)al-=180;else if(al<-90.01)al+=180;
+    }else{
+      if(el.tagName!=='text')return;
+      px=+el.getAttribute('x');py=+el.getAttribute('y');
+    }
+    if(!isFinite(px)||!isFinite(py))return;
+    const e=px-(I[0]*px+I[1]*py),f=py-(I[2]*px+I[3]*py);
+    el.setAttribute('transform',`matrix(${I[0]} ${I[2]} ${I[1]} ${I[3]} ${e} ${f})`+(al?` rotate(${al} ${px} ${py})`:''));
+  });
+}
+const _v3=a=>new THREE.Vector3(a[0],a[1],a[2]);
+function skOrbLocal(w){const{u,v,n}=sketchBasis(skEdit);return[w.dot(u),w.dot(v),w.dot(n)];}
+function skOrbWorld(a){const{u,v,n}=sketchBasis(skEdit);return new THREE.Vector3().addScaledVector(u,a[0]).addScaledVector(v,a[1]).addScaledVector(n,a[2]);}
+function skOrbBtnSync(){
+  try{const b=$('skOrbit');if(b){const on=!skOrbIsFront();b.classList.toggle('on',on);
+    b.title=on?'Revenir à plat, face de l’esquisse devant (touche N)':'Vue 3D inclinée — orbite : clic-molette glissé, ou cube de vue · N = à plat';}}catch(e){}
+}
+function skOrbFrontUp(){ // haut de la vue à plat, en local : Z du monde projeté (plan horizontal : Y)
+  const{n}=sketchBasis(skEdit);
+  const up=Math.abs(n.z)>0.95?new THREE.Vector3(0,1,0):new THREE.Vector3(0,0,1);
+  const U=skOrbLocal(up);U[2]=0;
+  return Math.hypot(U[0],U[1])>1e-6?U:[0,1,0];
+}
+function skOrbIsFront(){
+  if(!skEdit)return true;
+  const U=skOrbFrontUp(),h=Math.hypot(U[0],U[1]);
+  return Math.abs(skOrb.D[2]-1)<1e-9&&Math.abs(skOrb.U[0]-U[0]/h)<1e-9&&Math.abs(skOrb.U[1]-U[1]/h)<1e-9;
+}
+function skOrbSetFrame(D,U,noDraw){
+  // D, U en LOCAL ; orthonormalisés, jamais le plan par la tranche
+  let d=D.slice(),L=Math.hypot(d[0],d[1],d[2])||1;d=d.map(x=>x/L);
+  if(Math.abs(d[2])<SK_ORB_MIN){
+    const sg=d[2]<0?-1:1,h=Math.hypot(d[0],d[1])||1,c=Math.sqrt(1-SK_ORB_MIN*SK_ORB_MIN);
+    d=[d[0]/h*c,d[1]/h*c,sg*SK_ORB_MIN];
+  }
+  let u=U.slice();const k=u[0]*d[0]+u[1]*d[1]+u[2]*d[2];u=[u[0]-k*d[0],u[1]-k*d[1],u[2]-k*d[2]];
+  L=Math.hypot(u[0],u[1],u[2]);
+  if(L<1e-6){u=Math.abs(d[2])<0.9?[0,0,1]:[0,1,0];const k2=u[0]*d[0]+u[1]*d[1]+u[2]*d[2];u=[u[0]-k2*d[0],u[1]-k2*d[1],u[2]-k2*d[2]];L=Math.hypot(u[0],u[1],u[2]);}
+  u=u.map(x=>x/L);
+  const r=[u[1]*d[2]-u[2]*d[1],u[2]*d[0]-u[0]*d[2],u[0]*d[1]-u[1]*d[0]]; // R = U × D
+  if(Math.abs(d[2]-1)<1e-12&&Math.abs(u[1]-1)<1e-12){d=[0,0,1];u=[0,1,0];r[0]=1;r[1]=0;r[2]=0;}
+  skOrb={R:r,U:u,D:d};
+  skOrbBtnSync();
+  if(skEdit&&!noDraw)drawSketch2D();
+}
+function skOrbFromWorld(Dw,Uw,noDraw){if(skEdit)skOrbSetFrame(skOrbLocal(Dw.clone().normalize()),skOrbLocal(Uw),noDraw);}
+function skOrbFront(noDraw){if(skEdit)skOrbSetFrame([0,0,1],skOrbFrontUp(),noDraw);}
+function skOrbDragBy(dx,dy){
+  // Orbite comme en 3D : tour autour du Z du monde (glisser horizontal), bascule autour de
+  // l'axe droit de la vue (glisser vertical) — pivot au centre du dessin.
+  if(!skEdit)return;
+  const Z=new THREE.Vector3(0,0,1),a=-dx*0.008,b=-dy*0.008;
+  let D=skOrbWorld(skOrb.D),U=skOrbWorld(skOrb.U);
+  D.applyAxisAngle(Z,a);U.applyAxisAngle(Z,a);
+  const R=new THREE.Vector3().crossVectors(U,D).normalize();
+  const D2=D.clone().applyAxisAngle(R,b),U2=U.clone().applyAxisAngle(R,b);
+  // pas de passage par le pôle (la vue se retournerait) ; on peut toujours s'en éloigner
+  const away=Math.abs(D2.z)<Math.abs(D.z)&&(D2.x*D.x+D2.y*D.y)>=0;
+  if(Math.abs(D2.z)<0.995||away){D=D2;U=U2;}
+  skOrbFromWorld(D,U);
+}
+function sketchViewDir(o){
+  // Cube de vue / boutons de vue pendant l'esquisse : on oriente la vue d'esquisse (le plan
+  // reste éditable), Z en haut ; dessus / dessous : Y en haut. true = pris en charge.
+  if(!skEdit||!_skOrtho)return false;
+  const D=new THREE.Vector3(o[0],o[1],o[2]).normalize();
+  skOrbFromWorld(D,Math.abs(D.z)>0.99?new THREE.Vector3(0,1,0):new THREE.Vector3(0,0,1));
+  return true;
+}
+let _skPrevCam=null, _skBaseDist=400, _skBaseS=2.2, _skOrtho=null, _skOrigCam=null, _skLaySig='';
 function sketchAlignCamera(){
   try{
     if(!skEdit||!camera||!controls||!renderer) return;
-    const {n,o,u,v}=sketchBasis(skEdit);
     _skOrigCam=camera;
     _skPrevCam={pos:camera.position.clone(),target:controls.target.clone(),up:camera.up.clone(),rot:controls.enableRotate};
-    const {W,H}=svgSize(); const s=skView.s||2.2; _skBaseS=s;
-    const Wr=renderer.domElement.clientWidth||W, Hr=renderer.domElement.clientHeight||H; // kept for off calc
-    const svgR=svg.getBoundingClientRect(), rendR=renderer.domElement.getBoundingClientRect();
-    const offX=( Wr/2 - (svgR.left - rendR.left) - W/2 ) / s;
-    const offY=( (svgR.top - rendR.top) + H/2 - Hr/2 ) / s;
-    const hw=Wr/(2*s), hh=Hr/(2*s);
-    _skOrtho=new THREE.OrthographicCamera(-hw, hw, hh, -hh, 0.1, 5000);
-    _skOrtho.up.copy(v);
-    const tgt=o.clone().addScaledVector(u, skView.cx + offX).addScaledVector(v, skView.cy + offY);
-    _skOrtho.position.copy(tgt).addScaledVector(n, 500);
-    _skOrtho.lookAt(tgt); _skOrtho.updateProjectionMatrix();
-    camera=_skOrtho; controls.object=camera;
-    controls.target.copy(tgt); controls.enableRotate=false; controls.update();
+    _skBaseS=skView.s||2.2;
+    _skKeep=false;
+    if(!skFlatOpen&&camera.isPerspectiveCamera){
+      // Vue 3D GARDÉE : même direction, même haut, même échelle au point visé ; le centre du
+      // dessin = point du plan sous le centre de la zone d'esquisse (repli : cible projetée).
+      try{
+        const B=sketchBasis(skEdit),Dw=camera.position.clone().sub(controls.target).normalize();
+        const Uw=new THREE.Vector3(0,1,0).applyQuaternion(camera.quaternion);
+        const dist=camera.position.distanceTo(controls.target)||150;
+        const Hr=renderer.domElement.clientHeight||svgSize().H;
+        const s=Hr/(2*dist*Math.tan((camera.fov||45)*Math.PI/360));
+        const svgR=svg.getBoundingClientRect(),rr=renderer.domElement.getBoundingClientRect();
+        const nd=new THREE.Vector2((svgR.left+svgR.width/2-rr.left)/rr.width*2-1,-((svgR.top+svgR.height/2-rr.top)/rr.height*2-1));
+        const rc=new THREE.Raycaster();camera.updateMatrixWorld();rc.setFromCamera(nd,camera);
+        const hit=new THREE.Vector3(),pl=new THREE.Plane().setFromNormalAndCoplanarPoint(B.n,B.o);
+        let P=rc.ray.intersectPlane(pl,hit);
+        if(!P||P.distanceTo(controls.target)>20*dist)P=pl.projectPoint(controls.target,new THREE.Vector3());
+        const d=P.clone().sub(B.o);
+        skView.s=Math.max(SK_SCALE_MIN,Math.min(SK_SCALE_MAX,s));skView.cx=d.dot(B.u);skView.cy=d.dot(B.v);skUpdateTols();
+        skOrbFromWorld(Dw,Uw,true);
+        _skKeep=true;
+      }catch(e){_skKeep=false;}
+    }
+    if(!_skKeep)skOrbFront(true);
+    _skOrtho=new THREE.OrthographicCamera(-1,1,1,-1,0.1,20000);
+    camera=_skOrtho; controls.object=camera; controls.enableRotate=false;
+    drawSketch2D();
   }catch(e){}
+}
+function sketchLayoutSig(){
+  const a=svg.getBoundingClientRect(),b=renderer.domElement.getBoundingClientRect();
+  return [a.left,a.top,a.width,a.height,b.left,b.top,b.width,b.height].map(Math.round).join(',');
 }
 function sketchSyncCamera(){
   try{
     if(!skEdit||!_skOrtho||!controls||!renderer) return;
-    const {n,o,u,v}=sketchBasis(skEdit);
+    const {o,u,v}=sketchBasis(skEdit);
     const {W,H}=svgSize(); const s=skView.s||2.2;
-    const Wr=renderer.domElement.clientWidth||W, Hr=renderer.domElement.clientHeight||H; // kept for off calc
+    const Wr=renderer.domElement.clientWidth||W, Hr=renderer.domElement.clientHeight||H;
     const svgR=svg.getBoundingClientRect(), rendR=renderer.domElement.getBoundingClientRect();
-    const offX=( Wr/2 - (svgR.left - rendR.left) - W/2 ) / s;
-    const offY=( (svgR.top - rendR.top) + H/2 - Hr/2 ) / s; // SVG Y inversé déjà géré par v
-    const hw=Wr/(2*s), hh=Hr/(2*s);
-    _skOrtho.left=-hw; _skOrtho.right=hw; _skOrtho.top=hh; _skOrtho.bottom=-hh;
-    const tgt=o.clone().addScaledVector(u, skView.cx + offX).addScaledVector(v, skView.cy + offY);
-    _skOrtho.position.copy(tgt).addScaledVector(n, 500);
-    _skOrtho.up.copy(v); _skOrtho.lookAt(tgt); _skOrtho.updateProjectionMatrix();
+    _skLaySig=sketchLayoutSig();
+    // centre du SVG dans le canevas → frustum asymétrique : le pivot de l'orbite est le milieu du dessin
+    const scx=(svgR.left-rendR.left)+W/2, scy=(svgR.top-rendR.top)+H/2;
+    _skOrtho.left=-scx/s; _skOrtho.right=(Wr-scx)/s; _skOrtho.top=scy/s; _skOrtho.bottom=-(Hr-scy)/s;
+    const tgt=o.clone().addScaledVector(u, skView.cx).addScaledVector(v, skView.cy);
+    _skOrtho.position.copy(tgt).addScaledVector(skOrbWorld(skOrb.D), 2000);
+    _skOrtho.up.copy(skOrbWorld(skOrb.U)); _skOrtho.lookAt(tgt); _skOrtho.updateProjectionMatrix();
     controls.target.copy(tgt); controls.update();
+  }catch(e){}
+}
+function sketchCamTick(){
+  // La mise en page bouge encore APRÈS l'ouverture (barre d'outils d'esquisse, panneau,
+  // arborescence rabattue) : la caméra calée sur l'ancienne taille montrait la pièce
+  // décalée jusqu'au premier clic. On suit la géométrie réelle à chaque image ; dans la
+  // seconde qui suit une ouverture À PLAT on recadre (cadrage d'ouverture, sur la taille finale).
+  try{
+    if(!skEdit||!_skOrtho)return;
+    if(sketchLayoutSig()===_skLaySig)return;
+    if(!_skKeep&&skOpenAt&&performance.now()-skOpenAt<1000)skFitView();else drawSketch2D();
   }catch(e){}
 }
 function sketchRestoreCamera(){
   try{
+    const keep=_skKeep&&skEdit&&_skOrtho;
+    let K=null;
+    if(keep){ // vue 3D gardée à l'ouverture → la sortie garde aussi l'orientation de l'esquisse
+      const B=sketchBasis(skEdit);
+      K={T:B.o.clone().addScaledVector(B.u,skView.cx).addScaledVector(B.v,skView.cy),D:skOrbWorld(skOrb.D),U:skOrbWorld(skOrb.U)};
+    }
     if(_skOrigCam){ camera=_skOrigCam; controls.object=camera; }
     if(_skPrevCam&&camera&&controls){
-      camera.position.copy(_skPrevCam.pos);
-      controls.target.copy(_skPrevCam.target);
       camera.up.copy(_skPrevCam.up);
       controls.enableRotate=_skPrevCam.rot;
+      if(K&&camera.isPerspectiveCamera){
+        const Hr=renderer.domElement.clientHeight||600;
+        const dist=Hr/(2*(skView.s||2.2)*Math.tan((camera.fov||45)*Math.PI/360));
+        controls.target.copy(K.T);
+        camera.position.copy(K.T).addScaledVector(K.D,dist);
+        if(Math.abs(K.D.dot(camera.up))>0.999)camera.position.addScaledVector(K.U,-dist*1e-4); // pôle : lookAt défini
+      }else{
+        camera.position.copy(_skPrevCam.pos);
+        controls.target.copy(_skPrevCam.target);
+      }
       controls.update();
     }
-    _skPrevCam=null; _skOrtho=null; _skOrigCam=null;
+    _skPrevCam=null; _skOrtho=null; _skOrigCam=null; _skKeep=false; skOrb={R:[1,0,0],U:[0,1,0],D:[0,0,1]};
   }catch(e){}
 }
 function findHostForFace(pt,n,tol){
@@ -3606,6 +3772,7 @@ function buildEdgeOverlay(){
     net.raycast=()=>{};net.renderOrder=990;
     grp.add(veil);grp.add(net);
     scene.add(grp); // jamais pris par le picking (raycast neutre sur les deux passes)
+    try{if(typeof skEdit!=='undefined'&&skEdit&&skEdit._fade)grp.visible=false;}catch(e){} // esquisse ouverte : arêtes propres (skEdgesSync)
   }catch(e){ edgeOverlayErr=e; /* aucun overlay vaut mieux qu'un rendu cassé */ }
 }
 function distSeg2(px,py,ax,ay,bx,by){const dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy||1e-18;let t=((px-ax)*dx+(py-ay)*dy)/L2;t=Math.max(0,Math.min(1,t));return Math.hypot(px-(ax+t*dx),py-(ay+t*dy));}
@@ -6947,6 +7114,9 @@ function newSketchOnFace(){
   const origin=faceSketchOrigin(s.mesh,n,pt,s.faceIndex);
   // axes alignés sur l'esquisse parallèle parente (sinon X global projeté)
   const{u,v}=basisOnFace(n,faceRefU(n));
+  // face verticale / inclinée : v vers le HAUT (Z du monde) — sinon l'esquisse s'ouvrait à l'envers
+  // (face arrière, face −X…). Demi-tour dans le plan : u reste aligné sur le repère parent.
+  if(Math.abs(n.z)<0.95&&v.z<-1e-6){u.negate();v.negate();}
   // host : face porteuse nommée (antériorité) — fait suivre l'esquisse quand la porteuse bouge
   // x/y stockés depuis l'origine (pas le point de clic) pour ne pas dériver
   const host=findHostForFace(origin,n);
@@ -6995,6 +7165,9 @@ function getFaceProps(mesh,fi){
   }catch(e){return null;}
 }
 let skShowRefs=false; // B : violet masqué par défaut — fantôme gris 2D suffit (⧉ projette ce que tu veux)
+// Grille d'esquisse : masquée par défaut (les axes d'origine restent), état mémorisé d'une esquisse à l'autre
+let skShowGrid=false;
+try{skShowGrid=localStorage.getItem('minifusion_skGrid')==='1';}catch(e){}
 function skConsumerIdx(sk){
   // Index (dans les fonctions visibles) de l'extrusion OU de la révolution qui
   // consomme l'esquisse, sinon -1. Le consommateur détermine l'antériorité des
@@ -7026,12 +7199,50 @@ function skApplyFade(){
         b._savedOpacity=b.mesh.material.opacity; b._savedTransparent=b.mesh.material.transparent;
         // Fondu via la MÊME écriture que la slider du corps : la pièce reste lisible
         // (éclat compensé), et un corps déjà translucide devient plus voilé, pas plus sombre.
-        setMatAlpha(b.mesh.material,Math.min(bodyOpOf(b.bodyId||b.id),0.75));
+        // Faces TRÈS atténuées : ce sont les arêtes (skEdgesSync) qui montrent la pièce.
+        setMatAlpha(b.mesh.material,Math.min(bodyOpOf(b.bodyId||b.id),SK_FACE_ALPHA));
       }
     });
   }else if(skEdit._fade==='ghost'){
     bodies.forEach(b=>{ if(!b.ghost&&b.mesh) b.mesh.visible=false; });
   }
+  skEdgesSync();
+}
+// Pièce dans l'esquisse « comme en 3D, en transparence » : faces à peine teintées, TOUTES les
+// arêtes tracées — nettes devant, estompées derrière (vues à travers la matière). Arêtes du
+// solide affiché (mode 'bodies') ou de l'état antérieur rejoué (mode 'ghost', skAnteriorEdges, hors du document : jamais sauvé).
+const SK_FACE_ALPHA=0.2;
+let skAnteriorEdges=null;
+function skEdgesDrop(){
+  const g=scene.getObjectByName('skEdges');
+  if(g){scene.remove(g);try{g.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();});}catch(e){}}
+}
+function skEdgesSync(){
+  skEdgesDrop();
+  if(!skEdit||!skEdit._fade)return;
+  let data=skEdit._fade==='ghost'?(skAnteriorEdges||[]):null;
+  if(!data){const em=edgeMode;edgeMode='on';try{data=edgeOverlayData()||[];}catch(e){data=[];}finally{edgeMode=em;}}
+  const pos=[];
+  for(const d of data){
+    const pts=d&&d.pts;if(!pts||pts.length<2)continue;
+    const M=(d.mw&&d.mw.elements)||null;
+    const put=p=>{let x=+p[0],y=+p[1],z=+p[2];
+      if(M){const X=x,Y=y,Z=z;x=M[0]*X+M[4]*Y+M[8]*Z+M[12];y=M[1]*X+M[5]*Y+M[9]*Z+M[13];z=M[2]*X+M[6]*Y+M[10]*Z+M[14];}
+      pos.push(x,y,z);};
+    for(let i=0;i+1<pts.length;i++){put(pts[i]);put(pts[i+1]);}
+  }
+  if(!pos.length)return;
+  try{
+    const clair=document.body&&document.body.getAttribute('data-theme')==='clair';
+    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    const grp=new THREE.Group();grp.name='skEdges';
+    // gris doux (le blanc pur écrasait l'esquisse) : arêtes vues gris clair, arêtes cachées gris plus sombre
+    const back=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:clair?0xa3a9b2:0x5a616c,transparent:true,opacity:0.5,depthTest:false,depthWrite:false}));
+    const front=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:clair?0x4a5059:0xa4abb5,transparent:true,opacity:0.9,depthTest:true,depthWrite:false}));
+    back.renderOrder=989;front.renderOrder=990;back.raycast=()=>{};front.raycast=()=>{};
+    grp.add(back);grp.add(front);scene.add(grp);
+  }catch(e){}
+  const eo=scene.getObjectByName('edgeOverlay');if(eo)eo.visible=false; // pas de doublon avec les arêtes 3D
 }
 function skBRepPlanarRefs(shape){
   // Vrais contours sur le plan (lignes + arcs/cercles) — pas de polyligne 12 pts
@@ -7410,7 +7621,7 @@ function skBuildRefs(){
   // AVANT la fonction qui consomme cette esquisse — pas la pièce finie.
   // Esquisse jamais consommée : solide fini.
   if(!skEdit){return;}
-  skEdit._refs=[];skEdit._ghost=[];skEdit._refNote='';skEdit._fade=null;
+  skEdit._refs=[];skEdit._ghost=[];skEdit._refNote='';skEdit._fade=null;skAnteriorEdges=null;
   const feats=doc.features.filter(f=>f.visible!==false);
   const idx=skConsumerIdx(skEdit);
   const geomLater=arr=>arr.some(f=>f.type==='extrude'||f.type==='revolve'||f.type==='xfillet'||f.type==='fillet');
@@ -7459,9 +7670,10 @@ function skBuildRefs(){
         try{
         const g=occTessellate(FR.shape,0.5);
         const bcol=((bodies.find(b=>!b.ghost&&b.color)||{}).color)||0xccccd6;
-        const mat=new THREE.MeshStandardMaterial({color:bcol,transparent:true,opacity:0.75,depthTest:true}); // couleur de la pièce, pas de gris fantôme
+        const mat=new THREE.MeshStandardMaterial({color:bcol,transparent:true,opacity:SK_FACE_ALPHA,depthTest:true,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1}); // couleur de la pièce, faces très atténuées
           skAnteriorGhost=new THREE.Mesh(g,mat); skAnteriorGhost.name='skAnteriorGhost'; scene.add(skAnteriorGhost);
         }catch(e){}
+        try{skAnteriorEdges=occSharpEdges(FR.shape)||[];}catch(e){skAnteriorEdges=[];} // arêtes de l'état antérieur (copiées : survivent à occCleanup)
         ok=true;
       }
     }finally{occCleanup(FR,null);}
@@ -7481,6 +7693,7 @@ function skBuildRefs(){
   }
   try{skApplyFade();}catch(e){}
 }
+let skOpenAt=0; // instant d'ouverture : sketchCamTick recadre si la mise en page bouge juste après
 function openSketch(id){
   // 2026-10-16-006 : nouvelle mise en page des cotes R/Ø — les anciens décalages (calés sur
   // l'étiquette à 45°) sont remis à zéro UNE fois par esquisse.
@@ -7515,6 +7728,7 @@ function openSketch(id){
   skUndoStack=[];skRedoStack=[];
   document.querySelectorAll('#skToolbar .tool').forEach(x=>x.classList.toggle('on',x.dataset.tool==='select'));
   $('skTitle').textContent='Esquisse — '+skEdit.name+' (plan '+sketchFaceLabel(skEdit)+')';
+  skOpenAt=performance.now();
   $('sketchOverlay').classList.add('open');exitFilletMode(true);skRefreshHealth();skFitView();sketchAlignCamera();renderSkPanel();skUndoBtn();
   try{$('skStatWrap').style.display='block';}catch(e){}
   // Arborescence (menu des corps) RABATTUE pendant l'édition : le voile de
@@ -7527,6 +7741,7 @@ function openSketch(id){
   try{if(skFaoFoldSave===null)skFaoFoldSave=faoFolded;if(!faoFolded)faoFoldSet(true);}catch(e){}
 }
 function closeSketch(save){
+  skOpenAt=0;
   $('sketchOverlay').classList.remove('open');
   try{$('skStatWrap').style.display='none';}catch(e){}
   sketchRestoreCamera();
@@ -7538,6 +7753,8 @@ function closeSketch(save){
   // Mode de fondu effacé AVANT le rebuild de sortie : sinon buildDone→skApplyFade
   // repose le fondu 0.75 après restauration et la pièce resterait translucide.
   if(skEdit)skEdit._fade=null;
+  skAnteriorEdges=null;
+  try{skEdgesDrop();const eo=scene.getObjectByName('edgeOverlay');if(eo)eo.visible=true;}catch(e){}
   // Sortie : le verrou est TOUJOURS levé (validation comme annulation) pour régénérer
   // la fonction modifiée et celles qui suivent ; sans rebuild de sortie, un verrou posé
   // à l'ouverture laisserait l'arbre bloqué.
@@ -7555,7 +7772,7 @@ const NS='http://www.w3.org/2000/svg';
 function svgSize(){return{ W:svg.clientWidth||800,H:svg.clientHeight||500};}
 function w2s(x,y){const{W,H}=svgSize();const s=skView.s;return[(W/2+(x-skView.cx)*s),(H/2-(y-skView.cy)*s)];}
 function s2w(px,py){const{W,H}=svgSize();const s=skView.s;return[(skView.cx+(px-W/2)/s),(skView.cy-(py-H/2)/s)];}
-let skView={s:2.2,cx:0,cy:0}; // vue 2D : échelle px/mm + centre monde (molette = zoom, clic-molette = pan)
+let skView={s:2.2,cx:0,cy:0}; // vue 2D : échelle px/mm + centre monde (molette = zoom, clic droit glissé = pan, clic-molette glissé = orbite)
 // 2026-10-15-008 : TOUTES les tolérances de pointage sont en PIXELS ÉCRAN (divisées par
 // l'échelle px/mm). Avant, plusieurs appels ajoutaient des mm fixes (SK_PICK+2, +3) :
 // zoomé fort sur une petite pièce, « +2 mm » valait 80 px et la zone des extrémités
@@ -7580,8 +7797,11 @@ function skFitView(){
     const refs=skEdit&&skEdit._refs;
     if(refs&&refs.length){ // esquisse vide : cadrer sur la pièce projetée
       let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;
-      refs.forEach(r=>{if(r.x1<x0)x0=r.x1;if(r.x1>x1)x1=r.x1;if(r.x2<x0)x0=r.x2;if(r.x2>x1)x1=r.x2;
+      refs.forEach(r=>{
+        if(r.type==='circle'&&isFinite(r.cx)&&r.r>0){x0=Math.min(x0,r.cx-r.r);x1=Math.max(x1,r.cx+r.r);y0=Math.min(y0,r.cy-r.r);y1=Math.max(y1,r.cy+r.r);return;} // cercle : pas de x1/x2
+        if(r.x1<x0)x0=r.x1;if(r.x1>x1)x1=r.x1;if(r.x2<x0)x0=r.x2;if(r.x2>x1)x1=r.x2;
         if(r.y1<y0)y0=r.y1;if(r.y1>y1)y1=r.y1;if(r.y2<y0)y0=r.y2;if(r.y2>y1)y1=r.y2;});
+      if(!(x1>x0)&&!(y1>y0)){x0=-SK_DEF_SPAN/2;x1=SK_DEF_SPAN/2;y0=-SK_DEF_SPAN/2;y1=SK_DEF_SPAN/2;} // références sans étendue lisible
       const{W,H}=svgSize(),bw=Math.max(x1-x0,1),bh=Math.max(y1-y0,1);
       skView.s=Math.max(SK_SCALE_MIN,Math.min(SK_SCALE_MAX,Math.min(W/bw,H/bh)*0.7));
       skView.cx=(x0+x1)/2;skView.cy=(y0+y1)/2;
@@ -7598,6 +7818,14 @@ function skFitView(){
   skUpdateTols();if(skEdit)drawSketch2D();
 }
 function evXY(e){const r=svg.getBoundingClientRect();return s2w(e.clientX-r.left,e.clientY-r.top);}
+// Événement souris ramené à la « vue normale » : en orbite, clientX/clientY sont remplacés par
+// le point du plan sous le curseur (application affine inverse). Les gestionnaires du SVG
+// (positions ET écarts de glisser) n'ont donc pas à connaître l'angle de vue.
+function skEv(e){
+  if(!skOrbOn()||!e)return e;
+  const r=svg.getBoundingClientRect(),[x,y]=skOrbInv(e.clientX-r.left,e.clientY-r.top),cx=r.left+x,cy=r.top+y;
+  return new Proxy(e,{get(t,k){if(k==='clientX')return cx;if(k==='clientY')return cy;const v=t[k];return typeof v==='function'?v.bind(t):v;}});
+}
 let SK_SNAP=5, SK_INF=2.5, SK_PICK=4, SK_PT=5, SK_PICKX=6;
 skUpdateTols();
 let skTool='select',skDraft=null,skMsg='',skOffArm=null;
@@ -9222,22 +9450,27 @@ function createRefLine(sk, ref){
 }
 
 /* ----- dessin SVG ----- */
+let skRoot=null; // groupe racine du dessin : porte la transformation affine de l'orbite (null = vue normale)
 function skEl(n,attrs,parent){
   const el=document.createElementNS(NS,n);
   for(const k in attrs)el.setAttribute(k,attrs[k]);
-  (parent||svg).appendChild(el);return el;
+  (parent||skRoot||svg).appendChild(el);return el;
 }
 function drawSketch2D(){
   if(!skEdit)return;const sk=skEdit;
   const{W,H}=svgSize();svg.setAttribute('viewBox',`0 0 ${W} ${H}`);svg.innerHTML='';
-  const[gvx0,gvY1]=s2w(0,0),[gvx1,gvY0]=s2w(W,H); // grille adaptative à l'échelle
+  {const tf=skOrbTransform();skRoot=null;if(tf)skRoot=skEl('g',{transform:tf},svg);}
+  // grille adaptative à l'échelle — en orbite, la zone du plan visible déborde le cadre
+  let gvx0=1e18,gvx1=-1e18,gvY0=1e18,gvY1=-1e18;
+  [[0,0],[W,0],[0,H],[W,H]].forEach(c=>{const[a,b]=skOrbInv(c[0],c[1]),[wx,wy]=s2w(a,b);
+    gvx0=Math.min(gvx0,wx);gvx1=Math.max(gvx1,wx);gvY0=Math.min(gvY0,wy);gvY1=Math.max(gvY1,wy);});
   let gstep=10;const gsteps=[0.001,0.002,0.005,0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,20,50,100,200,500,1000,2000];
   for(const st of gsteps){if(st*skView.s>=16){gstep=st;break;}}
   const kx0=Math.floor(gvx0/gstep),kx1=Math.ceil(gvx1/gstep),ky0=Math.floor(gvY0/gstep),ky1=Math.ceil(gvY1/gstep);
-  if(kx1-kx0<600)for(let k=kx0;k<=kx1;k++){const gx=k*gstep,isAx=Math.abs(gx)<1e-9;
+  if(kx1-kx0<600)for(let k=kx0;k<=kx1;k++){const gx=k*gstep,isAx=Math.abs(gx)<1e-9;if(!isAx&&!skShowGrid)continue; // grille masquée : axes seuls
     const[x1,y1]=w2s(gx,gvY0-gstep),[x2,y2]=w2s(gx,gvY1+gstep);
     skEl('line',{x1,y1,x2,y2,stroke:isAx?'#0a84ff':'#2a2a2e','stroke-width':isAx?1.5:1});}
-  if(ky1-ky0<600)for(let k=ky0;k<=ky1;k++){const gy=k*gstep,isAx=Math.abs(gy)<1e-9;
+  if(ky1-ky0<600)for(let k=ky0;k<=ky1;k++){const gy=k*gstep,isAx=Math.abs(gy)<1e-9;if(!isAx&&!skShowGrid)continue;
     const[x1,y1]=w2s(gvx0-gstep,gy),[x2,y2]=w2s(gvx1+gstep,gy);
     skEl('line',{x1,y1,x2,y2,stroke:isAx?'#0a84ff':'#2a2a2e','stroke-width':isAx?1.5:1});}
   // Fantôme 2D orthographique (pièce derrière, sans perspective) — bouge avec le zoom/pan comme Fusion
@@ -9491,6 +9724,7 @@ function drawSketch2D(){
     const h=skEl('text',{x:sx,y:sy-50,fill:'#8a8f99','font-size':11,'text-anchor':'middle'});
     h.textContent='Tab angle/longueur · Entrée OK · Échap annule';
   }
+  if(skRoot)skOrbUpright(skRoot); // orbite : textes et étiquettes restent lisibles
   if(_skPrevCam) sketchSyncCamera();
 }
 function dimById(sk,id){return (sk.dims||[]).find(d=>d.id===id);}
@@ -9849,7 +10083,7 @@ function editDim(id){
     if(!rr.ok){skUndoStack.pop();skUndoBtn();alert(rr.msg);return;}
     d.value=rr.nv; parApplyAll(); solveSketch(sk);drawSketch2D();renderSkPanel(); return;
   }
-  const [sx,sy]=w2s(pos.x,pos.y);
+  const [sx,sy]=skOrbFwd(...w2s(pos.x,pos.y)); // position affichée (orbite comprise)
   const r=svg.getBoundingClientRect();
   const inp=document.createElement('input');
   inp.type='text'; inp.inputMode='decimal';
@@ -11402,14 +11636,17 @@ function trimEntity(sk,ent,cx,cy){
 }
 
 /* ----- interactions souris ----- */
+let skOrbDrag=null; // orbite en cours (clic-molette glissé, comme en 3D) : {px,py}
+let skPanDragged=false; // le clic droit vient de servir à déplacer la vue : pas de menu ni d'annulation
 svg.addEventListener('wheel',e=>{
-  if(!skEdit)return;e.preventDefault();
+  if(!skEdit)return;e.preventDefault();e=skEv(e);
   const r=svg.getBoundingClientRect();
   const k=zoomInv?e.deltaY:-e.deltaY;
   skSetZoom(skView.s*Math.exp(k*0.0012),e.clientX-r.left,e.clientY-r.top);
 },{passive:false});
 svg.addEventListener('contextmenu',e=>{
   e.preventDefault();
+  if(skPanDragged){skPanDragged=false;return;} // fin d'un déplacement au clic droit
   if(!skEdit) return;
   if(skDimPlace){skCancelDraft();skStatus('Placement annulé.');return;} // Échap/clic droit pendant la pose
   const selEnts=skSelectedEnts();
@@ -11506,7 +11743,7 @@ function skDragComp(sk,seed){
   return {pids:[...pids],ents:[...ents]};
 }
 svg.addEventListener('dblclick',e=>{
-  if(!skEdit||skTool!=='select')return;
+  if(!skEdit||skTool!=='select')return;e=skEv(e);
   const sk=skEdit;
   const r0=svg.getBoundingClientRect();
   const px=e.clientX-r0.left,py=e.clientY-r0.top;
@@ -11527,8 +11764,13 @@ svg.addEventListener('dblclick',e=>{
 svg.addEventListener('pointerdown',e=>{
   if(!skEdit)return;const sk=skEdit;
   try{svg.setPointerCapture(e.pointerId);}catch(err){}
-  if(e.button===2)return;
-  if(e.button===1){e.preventDefault();skPan={px:e.clientX,py:e.clientY,cx:skView.cx,cy:skView.cy};return;}
+  // Souris comme dans l'espace 3D : clic-molette glissé = ORBITE autour du centre du dessin,
+  // clic droit glissé = DÉPLACEMENT (clic droit sans glisser = menu / annuler, inchangé).
+  // Le clic gauche reste au dessin : jamais de rotation.
+  skPanDragged=false;
+  if(e.button===1){e.preventDefault();skOrbDrag={px:e.clientX,py:e.clientY};return;}
+  e=skEv(e);
+  if(e.button===2){skPan={px:e.clientX,py:e.clientY,cx:skView.cx,cy:skView.cy,moved:false};return;}
   if(e.button!==0||skPan)return;
   const[wx,wy]=evXY(e);
   if(skTool==='select'){
@@ -11722,7 +11964,10 @@ svg.addEventListener('pointerdown',e=>{
   }
 });
 svg.addEventListener('pointermove',e=>{
-  if(!skEdit)return;const sk=skEdit;const[wx,wy]=evXY(e);
+  if(!skEdit)return;
+  if(skOrbDrag){skOrbDragBy(e.clientX-skOrbDrag.px,e.clientY-skOrbDrag.py);skOrbDrag.px=e.clientX;skOrbDrag.py=e.clientY;return;}
+  e=skEv(e);const sk=skEdit;const[wx,wy]=evXY(e);
+  if(skPan&&!skPan.moved){if(Math.hypot(e.clientX-skPan.px,e.clientY-skPan.py)<4)return;skPan.moved=true;} // seuil : un clic droit court reste un clic
   if(skPan){skView.cx=skPan.cx-(e.clientX-skPan.px)/skView.s;skView.cy=skPan.cy+(e.clientY-skPan.py)/skView.s;drawSketch2D();return;}
   if(skTool==='project'){
     const pr=projectEdgeAt(sk,wx,wy);
@@ -11861,7 +12106,9 @@ svg.addEventListener('pointermove',e=>{
   }
 });
 svg.addEventListener('pointerup',e=>{
-  if(skPan){skPan=null;return;}
+  if(skOrbDrag){skOrbDrag=null;return;}
+  e=skEv(e);
+  if(skPan){skPanDragged=skPan.moved;skPan=null;return;}
   if(!skEdit||e.button!==0)return;const sk=skEdit;const[wx,wy]=evXY(e);
   if(skDimDrag){skDimDrag=null;drawSketch2D();return;}
   if(skDrag){skDrag=null;skDragPushed=false;skSnapMk=null;renderSkPanel();drawSketch2D();return;}
@@ -12258,6 +12505,13 @@ document.querySelectorAll('#skToolbar .con').forEach(b=>b.onclick=()=>applyCon(b
 $('skZoomIn').onclick=()=>{if(!skEdit)return;const{W,H}=svgSize();skSetZoom(skView.s*1.25,W/2,H/2);};
 $('skZoomOut').onclick=()=>{if(!skEdit)return;const{W,H}=svgSize();skSetZoom(skView.s/1.25,W/2,H/2);};
 $('skFit').onclick=()=>{if(skEdit)skFitView();};
+// Vue 3D inclinée ↔ à plat face devant (l'orbite libre reste au clic-molette glissé et au cube)
+try{$('skOrbit').onclick=()=>{if(!skEdit)return;if(!skOrbIsFront())skOrbFront();else{skOrbFront(true);const n=sketchBasis(skEdit).n;skOrbDragBy(70,Math.abs(n.z)>0.95?-60:60);}};}catch(e){}
+// Ouverture d'esquisse : à plat (face devant) ou vue 3D courante gardée — choix mémorisé
+try{const cb=$('skFlatOpen');if(cb){cb.checked=skFlatOpen;cb.onchange=()=>{skFlatOpen=!!cb.checked;try{localStorage.setItem('minifusion_skFlat',skFlatOpen?'1':'0');}catch(e){}};}}catch(e){}
+// Grille visible / masquée (axes d'origine toujours tracés) — mémorisé pour les esquisses suivantes
+(function(){const b=$('skGrid');if(!b)return;const sync=()=>{b.style.opacity=skShowGrid?'1':'0.45';b.classList.toggle('on',skShowGrid);};sync();
+  b.onclick=()=>{skShowGrid=!skShowGrid;sync();try{localStorage.setItem('minifusion_skGrid',skShowGrid?'1':'0');}catch(e){}if(skEdit)drawSketch2D();};})();
 $('skRefs').onclick=()=>{skShowRefs=!skShowRefs;$('skRefs').style.opacity=skShowRefs?'1':'0.45';if(skEdit)drawSketch2D();};
 window.addEventListener('keydown',e=>{
   if(!$('sketchOverlay').classList.contains('open'))return;
@@ -12272,6 +12526,8 @@ window.addEventListener('keydown',e=>{
     if(e.key==='Escape'){e.preventDefault();skEscapeToSelect();return;}
   }
   if(e.key==='Escape'){e.preventDefault();skEscapeToSelect();return;}
+  // N : à plat dans le plan d'esquisse, face choisie DEVANT et droite (après une orbite)
+  if((e.key==='n'||e.key==='N')&&skEdit&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&!e.shiftKey){e.preventDefault();skOrbFront();return;}
   // 2026-10-16-005 : raccourcis de contraintes (F1…F12) et H = centre de perçage
   if(skEdit&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&skShortcut(e))return;
   if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&(e.key==='z'||e.key==='Z')){e.preventDefault();skUndoTrans();return;}
@@ -36673,7 +36929,7 @@ function mfCss(){
   /* esquisse : bandeau d'outils et barre d'état OPAQUES (tous thèmes), couleurs du thème */
   '#skToolbar{background:var(--bg);background-image:linear-gradient(var(--surface),var(--surface));box-shadow:0 2px 10px rgba(0,0,0,.25);position:relative;z-index:2}',
   '#skStatus{background:var(--bg);background-image:linear-gradient(var(--surface),var(--surface))}',
-  'body[data-theme="clair"] #sketchOverlay{background:rgba(233,236,241,.6)}',
+  'body[data-theme="clair"] #sketchOverlay{background:rgba(233,236,241,.15)}',
   'body[data-theme="clair"] #skSide{background:rgba(255,255,255,.97);color:#1c1c1e}',
   'body[data-theme="clair"] #skSide .li{background:rgba(0,0,0,.04)}',
   /* dessin d'esquisse (pensé pour fond sombre) : inversé en Clair, teintes gardées */
@@ -36775,6 +37031,7 @@ function mfCss(){
   '@media (max-width:900px){.mfSearch{display:none!important}.mfWs button{padding:4px 9px}}',
   /* cube de vue */
   '#mfCube{position:absolute;top:4px;right:4px;z-index:24;width:80px;height:80px}',
+  'body.mf-sk #mfCube{z-index:60}', /* esquisse : cube au-dessus du voile, il oriente la vue d'esquisse */
   '#mfCubeHome{position:absolute;top:2px;left:-18px;width:16px;height:16px;padding:0;font-size:10px;line-height:14px;border-radius:4px;background:rgba(40,44,52,.88)}',
   '#mfOrbit{position:absolute;top:21px;left:-18px;width:16px;height:16px;padding:0;font-size:11px;line-height:14px;border-radius:4px;background:rgba(40,44,52,.88)}',
   '#mfOrbit.on{background:var(--accent,#2f7de1);color:#fff}'
@@ -37089,6 +37346,7 @@ function mfStatusBar(){
 /* cube de vue : suit la caméra ; clic sur une face = vue depuis cette face */
 function mfViewDir(n){
   try{
+    if(typeof sketchViewDir==='function'&&sketchViewDir(n))return; // esquisse : orientation de la vue d'esquisse
     viewUpReset(); // orbite libre : la face choisie revient droite
     const t=controls.target.clone(),d=camera.position.distanceTo(t)||150;
     camera.position.set(t.x+n[0]*d,t.y+n[1]*d,t.z+n[2]*d);
@@ -37149,7 +37407,7 @@ function mfCube(){
    place d'origine (mêmes nœuds, déplacés — leurs gestionnaires restent attachés). */
 const MF_SK_LAB={select:'Sélection',line:'Ligne',rect:'Rectangle',slot:'Oblong',circle:'Cercle',arc:'Arc',cpoint:'Point',hpoint:'Perçage',project:'Projeter',dim:'Cote',coincident:'Coïncident',trim:'Ajuster',offset:'Décalage',chamfer:'Chanfrein',fillet:'Congé',
   h:'Horizontal',v:'Vertical',parallel:'Parallèle',perpendicular:'Perpend.',collinear:'Colinéaire',equal:'Égal',symmetric:'Symétrie',fix:'Fixe',tangent:'Tangence',coaxial:'Coaxial',midpoint:'Milieu',construction:'Constr.',
-  skZoomIn:'Zoom +',skZoomOut:'Zoom −',skFit:'Cadrer',skRefs:'Arêtes',skParams:'Param.',skUndo:'Annuler',skRedo:'Rétablir'};
+  skZoomIn:'Zoom +',skZoomOut:'Zoom −',skFit:'Cadrer',skGrid:'Grille',skRefs:'Arêtes',skParams:'Param.',skUndo:'Annuler',skRedo:'Rétablir'};
 function mfSkLabels(){
   // libellé sous chaque icône (visible seulement dans le bandeau moderne) — icônes et couleurs inchangées
   document.querySelectorAll('#skToolbar button').forEach(b=>{
@@ -37447,7 +37705,11 @@ function viewFadeIn(){
   /* ═══════════════ B. constantes ═══════════════ */
   const NS='http://www.w3.org/2000/svg';
   const FORMATS={A0:[841,1189],A1:[594,841],A2:[420,594],A3:[297,420],A4:[210,297]};
-  const FORMAT_ORDER=['A0','A1','A2','A3','A4'];
+  // liste unique du panneau : A4H, A4V … A0H, A0V (H = paysage, V = portrait) + format manuel (sh.fw × sh.fh mm)
+  const FORMAT_LIST=['A4','A3','A2','A1','A0'].flatMap(f=>[f+'H',f+'V']);
+  const FORMAT_MANUEL='Manuel';
+  function mepFmtCode(sh){return sh.format===FORMAT_MANUEL?FORMAT_MANUEL:sh.format+(sh.orient==='landscape'?'H':'V');}
+  function mepFmtLabel(sh){return sh.format===FORMAT_MANUEL?mepFmtNum(sh.fw,1)+' × '+mepFmtNum(sh.fh,1):mepFmtCode(sh);}
   const MARGIN=12,TITLE_H=26;
   const MEP_SCALES=[[1,'1:1'],[2,'2:1'],[5,'5:1'],[0.5,'1:2'],[0.2,'1:5'],[2.5,'5:2'],[0.25,'1:4'],[0.1,'1:10'],[1.25,'5:4'],[0.4,'2:5']];
   const COL={sharp:'#1a1a1a',tangent:'#6a6f76',hidden:'#8a9098',sect:'#1a1a1a',
@@ -37606,8 +37868,12 @@ function viewFadeIn(){
   function mepNormSheet(sh){
     sh.id=sh.id||('sh'+Math.random().toString(36).slice(2,9));
     sh.name=sh.name||'Planche';
-    sh.format=FORMATS[sh.format]?sh.format:'A3';
+    sh.format=FORMATS[sh.format]||sh.format===FORMAT_MANUEL?sh.format:'A3';
     sh.orient=sh.orient==='portrait'?'portrait':'landscape';
+    if(sh.format===FORMAT_MANUEL){
+      sh.fw=Math.min(5000,Math.max(50,+sh.fw||420));sh.fh=Math.min(5000,Math.max(50,+sh.fh||297));
+      sh.orient=sh.fw>=sh.fh?'landscape':'portrait';
+    }
     sh.views=Array.isArray(sh.views)?sh.views:[];
     sh.views.forEach(v=>{
       if(!v)return;
@@ -37647,7 +37913,9 @@ function viewFadeIn(){
     f.lw=Math.min(2,Math.max(0.1,+f.lw||MEP_FRAME_DEF.lw));
     return f;
   }
-  function mepPageWH(sh){const s=FORMATS[sh.format];return sh.orient==='landscape'?{W:s[1],H:s[0]}:{W:s[0],H:s[1]};}
+  function mepPageWH(sh){
+    if(sh.format===FORMAT_MANUEL)return{W:+sh.fw||420,H:+sh.fh||297};
+    const s=FORMATS[sh.format]||FORMATS.A3;return sh.orient==='landscape'?{W:s[1],H:s[0]}:{W:s[0],H:s[1]};}
   function mepPageDim(sh){
     sh=sh||mepSheet();const{W,H}=mepPageWH(sh),f=mepFrameOf(sh);
     const th=mepTbH(sh);
@@ -39436,9 +39704,10 @@ function viewFadeIn(){
   function mepDupSheetCmd(){
     const sh=mepSheet();
     mepEdit('duplication de planche',()=>{
-      const c=JSON.parse(JSON.stringify({format:sh.format,orient:sh.orient,title:sh.title,views:sh.views,dims:sh.dims,sk:sh.sk,bom:sh.bom||null}));
+      const c=JSON.parse(JSON.stringify({format:sh.format,orient:sh.orient,fw:sh.fw,fh:sh.fh,title:sh.title,views:sh.views,dims:sh.dims,sk:sh.sk,bom:sh.bom||null}));
       const ns=mepNewSheet(doc.mep.sheets.length+1);
       ns.format=c.format;ns.orient=c.orient;ns.title=c.title;if(c.bom)ns.bom=c.bom;
+      if(c.format===FORMAT_MANUEL){ns.fw=c.fw;ns.fh=c.fh;}
       const idMap={};
       c.views.forEach(v=>{const nid=mepUid('v');idMap[v.id]=nid;v.id=nid;v.parent=v.parent?idMap[v.parent]||null:null;
         if(v.section)v.section.pid=idMap[v.section.pid]||null;});
@@ -40708,7 +40977,7 @@ function viewFadeIn(){
     switch(c.f){
       case 'planche':return(doc.mep.cur+1)+' / '+doc.mep.sheets.length;
       case 'echelle':return mepSheetScaleLabel(sh);
-      case 'format':return sh.format+(sh.orient==='landscape'?' paysage':' portrait');
+      case 'format':return sh.format===FORMAT_MANUEL?mepFmtLabel(sh)+' mm':sh.format+(sh.orient==='landscape'?' paysage':' portrait');
       case 'indice':{const rv=mepRevs(sh);return rv.length?rv[rv.length-1].i:(tt.indice||'—');}
       case 'perso':return(tt.cust&&c.k&&tt.cust[c.k])||'';
       default:{const v=tt[c.f];return v!=null&&v!==''?v:(c.f==='projet'||c.f==='date'||c.f==='auteur'?'':'—');}
@@ -41021,17 +41290,23 @@ function viewFadeIn(){
     /* la barre d'outils interne est retirée : ruban (bandeau) + panneau latéral suffisent */
     mepToolSync();
   }
-  function mepCycleFormat(){
+  /* code = 'A3H', 'A4V'… ou FORMAT_MANUEL ; le manuel part des dimensions de la planche actuelle */
+  function mepSetFormat(code){
     const sh=mepSheet();
     mepEdit('format',()=>{
-      const i=FORMAT_ORDER.indexOf(sh.format);
-      sh.format=FORMAT_ORDER[(i+1)%FORMAT_ORDER.length];
+      if(code===FORMAT_MANUEL){
+        if(sh.format!==FORMAT_MANUEL){const{W,H}=mepPageWH(sh);sh.fw=W;sh.fh=H;sh.format=FORMAT_MANUEL;}
+      }else{sh.format=code.slice(0,-1);sh.orient=code.slice(-1)==='H'?'landscape':'portrait';delete sh.fw;delete sh.fh;}
     });
     mepTabsRender();
   }
-  function mepCycleOrient(){
+  function mepSetFormatWH(w,h){
     const sh=mepSheet();
-    mepEdit('orientation',()=>{sh.orient=sh.orient==='landscape'?'portrait':'landscape';});
+    mepEdit('format manuel',()=>{
+      sh.format=FORMAT_MANUEL;
+      sh.fw=Math.min(5000,Math.max(50,+w||sh.fw||420));sh.fh=Math.min(5000,Math.max(50,+h||sh.fh||297));
+      sh.orient=sh.fw>=sh.fh?'landscape':'portrait';
+    });
     mepTabsRender();
   }
   function mepZoomBy(k){
@@ -41060,7 +41335,7 @@ function viewFadeIn(){
     mepTabsEl.innerHTML='';
     doc.mep.sheets.forEach((sh,i)=>{
       const b=document.createElement('button');
-      b.textContent=sh.name+' · '+sh.format;
+      b.textContent=sh.name+' · '+mepFmtCode(sh);
       if(i===doc.mep.cur)b.className='on';
       b.onclick=()=>{doc.mep.cur=i;mepAfterSheetSwitch();};
       b.ondblclick=()=>{
@@ -41080,7 +41355,7 @@ function viewFadeIn(){
     const fmt=document.createElement('span');
     fmt.style.cssText='font-size:.68rem;color:var(--muted);margin-left:8px';
     const sh=mepSheet();
-    fmt.textContent=sh.format+' '+(sh.orient==='landscape'?'paysage':'portrait');
+    fmt.textContent=sh.format===FORMAT_MANUEL?mepFmtLabel(sh)+' mm':sh.format+' '+(sh.orient==='landscape'?'paysage':'portrait');
     mepTabsEl.appendChild(fmt);
   }
   function mepSelView(){const sh=mepSheet();return mepSt.sel?mepView(sh,mepSt.sel):null;}
@@ -45164,10 +45439,19 @@ function viewFadeIn(){
     /* — planche — */
     h('Planche');
     let r=rowEl();
-    const bFmt=mkBtn(sh.format+' ⌄',mepCycleFormat,'Format de la planche (A0…A4)');
-    bFmt.style.flex='1';
-    const bOri=mkBtn(sh.orient==='landscape'?'⇄':'↕',mepCycleOrient,'Portrait / paysage');
-    bOri.style.flex='1';
+    {const L=document.createElement('label');L.textContent='Format';r.appendChild(L);
+     const s=document.createElement('select');s.title='Format de la planche : H = horizontal (paysage), V = vertical (portrait)';
+     FORMAT_LIST.concat(FORMAT_MANUEL).forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;s.appendChild(o);});
+     s.value=mepFmtCode(sh);
+     s.onchange=()=>{mepSetFormat(s.value);mepSideShow();};
+     r.appendChild(s);}
+    if(sh.format===FORMAT_MANUEL){
+      [['Largeur (mm)','fw'],['Hauteur (mm)','fh']].forEach(([lab,k])=>{
+        r=rowEl();const L=document.createElement('label');L.textContent=lab;r.appendChild(L);
+        const i=document.createElement('input');i.type='number';i.step='1';i.min='50';i.max='5000';i.value=sh[k];
+        i.onchange=()=>{mepSetFormatWH(k==='fw'?+i.value:sh.fw,k==='fh'?+i.value:sh.fh);mepSideShow();};
+        r.appendChild(i);});
+    }
     {const f=mepFrameOf(sh),setF=(o,lab)=>{mepEdit(lab||'cadre',()=>{sh.frame=Object.assign(mepFrameOf(sh),o);});mepSideShow();};
      r=rowEl();
      {const L=document.createElement('label');L.textContent='Cadre';r.appendChild(L);
@@ -46049,7 +46333,7 @@ function viewFadeIn(){
         new XMLSerializer().serializeToString(clone)+'</body></html>');
       w.document.close();
       setTimeout(()=>{try{w.focus();w.print();}catch(e){}},250);
-      mepStatus(pdf===true?'PDF : choisissez « Enregistrer au format PDF » comme imprimante (format '+sh.format+', marges : aucune).':'Impression ouverte.');
+      mepStatus(pdf===true?'PDF : choisissez « Enregistrer au format PDF » comme imprimante (format '+mepFmtLabel(sh)+', marges : aucune).':'Impression ouverte.');
     }catch(e){mepStatus('Impression impossible : '+e.message);}
   }
   /* ═══════════════ X. activation espace + init ═══════════════ */

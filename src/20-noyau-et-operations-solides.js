@@ -1723,6 +1723,7 @@ function buildEdgeOverlay(){
     net.raycast=()=>{};net.renderOrder=990;
     grp.add(veil);grp.add(net);
     scene.add(grp); // jamais pris par le picking (raycast neutre sur les deux passes)
+    try{if(typeof skEdit!=='undefined'&&skEdit&&skEdit._fade)grp.visible=false;}catch(e){} // esquisse ouverte : arêtes propres (skEdgesSync)
   }catch(e){ edgeOverlayErr=e; /* aucun overlay vaut mieux qu'un rendu cassé */ }
 }
 function distSeg2(px,py,ax,ay,bx,by){const dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy||1e-18;let t=((px-ax)*dx+(py-ay)*dy)/L2;t=Math.max(0,Math.min(1,t));return Math.hypot(px-(ax+t*dx),py-(ay+t*dy));}

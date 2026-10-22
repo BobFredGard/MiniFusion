@@ -76,7 +76,7 @@ function mfCss(){
   /* esquisse : bandeau d'outils et barre d'état OPAQUES (tous thèmes), couleurs du thème */
   '#skToolbar{background:var(--bg);background-image:linear-gradient(var(--surface),var(--surface));box-shadow:0 2px 10px rgba(0,0,0,.25);position:relative;z-index:2}',
   '#skStatus{background:var(--bg);background-image:linear-gradient(var(--surface),var(--surface))}',
-  'body[data-theme="clair"] #sketchOverlay{background:rgba(233,236,241,.6)}',
+  'body[data-theme="clair"] #sketchOverlay{background:rgba(233,236,241,.15)}',
   'body[data-theme="clair"] #skSide{background:rgba(255,255,255,.97);color:#1c1c1e}',
   'body[data-theme="clair"] #skSide .li{background:rgba(0,0,0,.04)}',
   /* dessin d'esquisse (pensé pour fond sombre) : inversé en Clair, teintes gardées */
@@ -178,6 +178,7 @@ function mfCss(){
   '@media (max-width:900px){.mfSearch{display:none!important}.mfWs button{padding:4px 9px}}',
   /* cube de vue */
   '#mfCube{position:absolute;top:4px;right:4px;z-index:24;width:80px;height:80px}',
+  'body.mf-sk #mfCube{z-index:60}', /* esquisse : cube au-dessus du voile, il oriente la vue d'esquisse */
   '#mfCubeHome{position:absolute;top:2px;left:-18px;width:16px;height:16px;padding:0;font-size:10px;line-height:14px;border-radius:4px;background:rgba(40,44,52,.88)}',
   '#mfOrbit{position:absolute;top:21px;left:-18px;width:16px;height:16px;padding:0;font-size:11px;line-height:14px;border-radius:4px;background:rgba(40,44,52,.88)}',
   '#mfOrbit.on{background:var(--accent,#2f7de1);color:#fff}'
@@ -492,6 +493,7 @@ function mfStatusBar(){
 /* cube de vue : suit la caméra ; clic sur une face = vue depuis cette face */
 function mfViewDir(n){
   try{
+    if(typeof sketchViewDir==='function'&&sketchViewDir(n))return; // esquisse : orientation de la vue d'esquisse
     viewUpReset(); // orbite libre : la face choisie revient droite
     const t=controls.target.clone(),d=camera.position.distanceTo(t)||150;
     camera.position.set(t.x+n[0]*d,t.y+n[1]*d,t.z+n[2]*d);
@@ -552,7 +554,7 @@ function mfCube(){
    place d'origine (mêmes nœuds, déplacés — leurs gestionnaires restent attachés). */
 const MF_SK_LAB={select:'Sélection',line:'Ligne',rect:'Rectangle',slot:'Oblong',circle:'Cercle',arc:'Arc',cpoint:'Point',hpoint:'Perçage',project:'Projeter',dim:'Cote',coincident:'Coïncident',trim:'Ajuster',offset:'Décalage',chamfer:'Chanfrein',fillet:'Congé',
   h:'Horizontal',v:'Vertical',parallel:'Parallèle',perpendicular:'Perpend.',collinear:'Colinéaire',equal:'Égal',symmetric:'Symétrie',fix:'Fixe',tangent:'Tangence',coaxial:'Coaxial',midpoint:'Milieu',construction:'Constr.',
-  skZoomIn:'Zoom +',skZoomOut:'Zoom −',skFit:'Cadrer',skRefs:'Arêtes',skParams:'Param.',skUndo:'Annuler',skRedo:'Rétablir'};
+  skZoomIn:'Zoom +',skZoomOut:'Zoom −',skFit:'Cadrer',skGrid:'Grille',skRefs:'Arêtes',skParams:'Param.',skUndo:'Annuler',skRedo:'Rétablir'};
 function mfSkLabels(){
   // libellé sous chaque icône (visible seulement dans le bandeau moderne) — icônes et couleurs inchangées
   document.querySelectorAll('#skToolbar button').forEach(b=>{

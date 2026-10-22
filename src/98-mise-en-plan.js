@@ -132,7 +132,11 @@
   /* ═══════════════ B. constantes ═══════════════ */
   const NS='http://www.w3.org/2000/svg';
   const FORMATS={A0:[841,1189],A1:[594,841],A2:[420,594],A3:[297,420],A4:[210,297]};
-  const FORMAT_ORDER=['A0','A1','A2','A3','A4'];
+  // liste unique du panneau : A4H, A4V … A0H, A0V (H = paysage, V = portrait) + format manuel (sh.fw × sh.fh mm)
+  const FORMAT_LIST=['A4','A3','A2','A1','A0'].flatMap(f=>[f+'H',f+'V']);
+  const FORMAT_MANUEL='Manuel';
+  function mepFmtCode(sh){return sh.format===FORMAT_MANUEL?FORMAT_MANUEL:sh.format+(sh.orient==='landscape'?'H':'V');}
+  function mepFmtLabel(sh){return sh.format===FORMAT_MANUEL?mepFmtNum(sh.fw,1)+' × '+mepFmtNum(sh.fh,1):mepFmtCode(sh);}
   const MARGIN=12,TITLE_H=26;
   const MEP_SCALES=[[1,'1:1'],[2,'2:1'],[5,'5:1'],[0.5,'1:2'],[0.2,'1:5'],[2.5,'5:2'],[0.25,'1:4'],[0.1,'1:10'],[1.25,'5:4'],[0.4,'2:5']];
   const COL={sharp:'#1a1a1a',tangent:'#6a6f76',hidden:'#8a9098',sect:'#1a1a1a',
@@ -291,8 +295,12 @@
   function mepNormSheet(sh){
     sh.id=sh.id||('sh'+Math.random().toString(36).slice(2,9));
     sh.name=sh.name||'Planche';
-    sh.format=FORMATS[sh.format]?sh.format:'A3';
+    sh.format=FORMATS[sh.format]||sh.format===FORMAT_MANUEL?sh.format:'A3';
     sh.orient=sh.orient==='portrait'?'portrait':'landscape';
+    if(sh.format===FORMAT_MANUEL){
+      sh.fw=Math.min(5000,Math.max(50,+sh.fw||420));sh.fh=Math.min(5000,Math.max(50,+sh.fh||297));
+      sh.orient=sh.fw>=sh.fh?'landscape':'portrait';
+    }
     sh.views=Array.isArray(sh.views)?sh.views:[];
     sh.views.forEach(v=>{
       if(!v)return;
@@ -332,7 +340,9 @@
     f.lw=Math.min(2,Math.max(0.1,+f.lw||MEP_FRAME_DEF.lw));
     return f;
   }
-  function mepPageWH(sh){const s=FORMATS[sh.format];return sh.orient==='landscape'?{W:s[1],H:s[0]}:{W:s[0],H:s[1]};}
+  function mepPageWH(sh){
+    if(sh.format===FORMAT_MANUEL)return{W:+sh.fw||420,H:+sh.fh||297};
+    const s=FORMATS[sh.format]||FORMATS.A3;return sh.orient==='landscape'?{W:s[1],H:s[0]}:{W:s[0],H:s[1]};}
   function mepPageDim(sh){
     sh=sh||mepSheet();const{W,H}=mepPageWH(sh),f=mepFrameOf(sh);
     const th=mepTbH(sh);
@@ -2121,9 +2131,10 @@
   function mepDupSheetCmd(){
     const sh=mepSheet();
     mepEdit('duplication de planche',()=>{
-      const c=JSON.parse(JSON.stringify({format:sh.format,orient:sh.orient,title:sh.title,views:sh.views,dims:sh.dims,sk:sh.sk,bom:sh.bom||null}));
+      const c=JSON.parse(JSON.stringify({format:sh.format,orient:sh.orient,fw:sh.fw,fh:sh.fh,title:sh.title,views:sh.views,dims:sh.dims,sk:sh.sk,bom:sh.bom||null}));
       const ns=mepNewSheet(doc.mep.sheets.length+1);
       ns.format=c.format;ns.orient=c.orient;ns.title=c.title;if(c.bom)ns.bom=c.bom;
+      if(c.format===FORMAT_MANUEL){ns.fw=c.fw;ns.fh=c.fh;}
       const idMap={};
       c.views.forEach(v=>{const nid=mepUid('v');idMap[v.id]=nid;v.id=nid;v.parent=v.parent?idMap[v.parent]||null:null;
         if(v.section)v.section.pid=idMap[v.section.pid]||null;});
@@ -3393,7 +3404,7 @@
     switch(c.f){
       case 'planche':return(doc.mep.cur+1)+' / '+doc.mep.sheets.length;
       case 'echelle':return mepSheetScaleLabel(sh);
-      case 'format':return sh.format+(sh.orient==='landscape'?' paysage':' portrait');
+      case 'format':return sh.format===FORMAT_MANUEL?mepFmtLabel(sh)+' mm':sh.format+(sh.orient==='landscape'?' paysage':' portrait');
       case 'indice':{const rv=mepRevs(sh);return rv.length?rv[rv.length-1].i:(tt.indice||'—');}
       case 'perso':return(tt.cust&&c.k&&tt.cust[c.k])||'';
       default:{const v=tt[c.f];return v!=null&&v!==''?v:(c.f==='projet'||c.f==='date'||c.f==='auteur'?'':'—');}
@@ -3706,17 +3717,23 @@
     /* la barre d'outils interne est retirée : ruban (bandeau) + panneau latéral suffisent */
     mepToolSync();
   }
-  function mepCycleFormat(){
+  /* code = 'A3H', 'A4V'… ou FORMAT_MANUEL ; le manuel part des dimensions de la planche actuelle */
+  function mepSetFormat(code){
     const sh=mepSheet();
     mepEdit('format',()=>{
-      const i=FORMAT_ORDER.indexOf(sh.format);
-      sh.format=FORMAT_ORDER[(i+1)%FORMAT_ORDER.length];
+      if(code===FORMAT_MANUEL){
+        if(sh.format!==FORMAT_MANUEL){const{W,H}=mepPageWH(sh);sh.fw=W;sh.fh=H;sh.format=FORMAT_MANUEL;}
+      }else{sh.format=code.slice(0,-1);sh.orient=code.slice(-1)==='H'?'landscape':'portrait';delete sh.fw;delete sh.fh;}
     });
     mepTabsRender();
   }
-  function mepCycleOrient(){
+  function mepSetFormatWH(w,h){
     const sh=mepSheet();
-    mepEdit('orientation',()=>{sh.orient=sh.orient==='landscape'?'portrait':'landscape';});
+    mepEdit('format manuel',()=>{
+      sh.format=FORMAT_MANUEL;
+      sh.fw=Math.min(5000,Math.max(50,+w||sh.fw||420));sh.fh=Math.min(5000,Math.max(50,+h||sh.fh||297));
+      sh.orient=sh.fw>=sh.fh?'landscape':'portrait';
+    });
     mepTabsRender();
   }
   function mepZoomBy(k){
@@ -3745,7 +3762,7 @@
     mepTabsEl.innerHTML='';
     doc.mep.sheets.forEach((sh,i)=>{
       const b=document.createElement('button');
-      b.textContent=sh.name+' · '+sh.format;
+      b.textContent=sh.name+' · '+mepFmtCode(sh);
       if(i===doc.mep.cur)b.className='on';
       b.onclick=()=>{doc.mep.cur=i;mepAfterSheetSwitch();};
       b.ondblclick=()=>{
@@ -3765,7 +3782,7 @@
     const fmt=document.createElement('span');
     fmt.style.cssText='font-size:.68rem;color:var(--muted);margin-left:8px';
     const sh=mepSheet();
-    fmt.textContent=sh.format+' '+(sh.orient==='landscape'?'paysage':'portrait');
+    fmt.textContent=sh.format===FORMAT_MANUEL?mepFmtLabel(sh)+' mm':sh.format+' '+(sh.orient==='landscape'?'paysage':'portrait');
     mepTabsEl.appendChild(fmt);
   }
   function mepSelView(){const sh=mepSheet();return mepSt.sel?mepView(sh,mepSt.sel):null;}
@@ -7849,10 +7866,19 @@
     /* — planche — */
     h('Planche');
     let r=rowEl();
-    const bFmt=mkBtn(sh.format+' ⌄',mepCycleFormat,'Format de la planche (A0…A4)');
-    bFmt.style.flex='1';
-    const bOri=mkBtn(sh.orient==='landscape'?'⇄':'↕',mepCycleOrient,'Portrait / paysage');
-    bOri.style.flex='1';
+    {const L=document.createElement('label');L.textContent='Format';r.appendChild(L);
+     const s=document.createElement('select');s.title='Format de la planche : H = horizontal (paysage), V = vertical (portrait)';
+     FORMAT_LIST.concat(FORMAT_MANUEL).forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c;s.appendChild(o);});
+     s.value=mepFmtCode(sh);
+     s.onchange=()=>{mepSetFormat(s.value);mepSideShow();};
+     r.appendChild(s);}
+    if(sh.format===FORMAT_MANUEL){
+      [['Largeur (mm)','fw'],['Hauteur (mm)','fh']].forEach(([lab,k])=>{
+        r=rowEl();const L=document.createElement('label');L.textContent=lab;r.appendChild(L);
+        const i=document.createElement('input');i.type='number';i.step='1';i.min='50';i.max='5000';i.value=sh[k];
+        i.onchange=()=>{mepSetFormatWH(k==='fw'?+i.value:sh.fw,k==='fh'?+i.value:sh.fh);mepSideShow();};
+        r.appendChild(i);});
+    }
     {const f=mepFrameOf(sh),setF=(o,lab)=>{mepEdit(lab||'cadre',()=>{sh.frame=Object.assign(mepFrameOf(sh),o);});mepSideShow();};
      r=rowEl();
      {const L=document.createElement('label');L.textContent='Cadre';r.appendChild(L);
@@ -8734,7 +8760,7 @@
         new XMLSerializer().serializeToString(clone)+'</body></html>');
       w.document.close();
       setTimeout(()=>{try{w.focus();w.print();}catch(e){}},250);
-      mepStatus(pdf===true?'PDF : choisissez « Enregistrer au format PDF » comme imprimante (format '+sh.format+', marges : aucune).':'Impression ouverte.');
+      mepStatus(pdf===true?'PDF : choisissez « Enregistrer au format PDF » comme imprimante (format '+mepFmtLabel(sh)+', marges : aucune).':'Impression ouverte.');
     }catch(e){mepStatus('Impression impossible : '+e.message);}
   }
   /* ═══════════════ X. activation espace + init ═══════════════ */

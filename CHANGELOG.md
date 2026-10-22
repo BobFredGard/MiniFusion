@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**298 versions**, de `2026-09-28b` à `V0.3.29` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**299 versions**, de `2026-09-28b` à `V0.4.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4488,3 +4488,16 @@ Retours utilisateur (« les axes de symétrie ne gardent pas leurs références 
 - **README** : section PLAN réécrite, 4 captures (planche, hachures, perspective, cotation) tirées de « Perçages ».
 
 Tests : vérifié dans l'appli sur « Perçages » (perçages d'angle 80 → 90 → 80 : distances 80/10/10 → 90/5/5 → 80/10/10, ordonnées 40 → 45 → 40, axes de symétrie ±40 → ±45 → ±40, axes de la coupe B-B immobiles) ; `test_mep_hachures_cotes` (point sur axe qui suit, mauvaise direction ignorée, axe entre arêtes d'une pièce qui s'élargit 50 → 70 → 60). `npm run ci` vert. Limite : un axe AUTOMATIQUE a une clé tirée de ses coordonnées — une cote qui s'y accroche garde sa dernière position si le trou bouge.
+
+## V0.4.0 - Esquisse façon Fusion 360 : vue 3D dans l'esquisse, pièce en transparence, orbite ; README refait
+Retours utilisateur (« la pièce s'affiche décalée à l'ouverture d'une esquisse », « montrer la pièce comme en 3D, en transparence », « pouvoir tourner la vue d'esquisse », « N me ramène dans le plan, face devant et pas à l'envers »).
+- **Pièce en place dès l'ouverture** : la mise en page bougeait encore après le calage de la caméra (zone de dessin 557 → 809 px, canevas 686 → 650 px) ; la caméra n'était recalée qu'au premier clic. La géométrie de la zone d'esquisse et du canevas est suivie à chaque image (recadrage dans la seconde qui suit l'ouverture). Le cadrage d'une esquisse vide ignorait les références circulaires (zoom ×438 sur une face ronde).
+- **Pièce en transparence** : faces à peine teintées (opacité 0,2), toutes les arêtes tracées (gris clair devant, gris sombre derrière), pour le solide fini comme pour l'état antérieur à la fonction qui consomme l'esquisse ; voile de l'esquisse allégé (72 % → 12 %).
+- **Vue d'esquisse orientable** : caméra orthographique d'orientation libre ; le dessin SVG suit par une application affine (inversée pour la souris) — tracé, accrochage, zoom et déplacement restent exacts sur le plan, textes et cotes restent lisibles. Souris comme en 3D : clic-molette glissé = orbite, clic droit glissé = déplacement, clic gauche = dessin. Cube de vue et vues normalisées actifs pendant l'esquisse ; bouton ⟳ (vue inclinée ↔ à plat).
+- **N / ouverture à plat** : caméra côté extérieur de la face, Z du monde en haut (plan horizontal : Y) ; case **« À plat »** (mémorisée) : décochée, la vue 3D courante est gardée à l'ouverture et à la sortie.
+- **Esquisse sur face verticale** : axe vertical de l'esquisse vers le haut (face arrière, face −X s'ouvraient à l'envers).
+- **Grille d'esquisse** affichable / masquée (bouton ▦, masquée par défaut, mémorisée) ; axes d'origine toujours tracés.
+- **Plan** : liste unique des formats A4H … A0V (H = paysage, V = portrait) et **format manuel** (largeur × hauteur en mm).
+- **README** réécrit (interface unique, esquisse 3D, FAO et PLAN à jour, tableau souris / clavier), capture de l'esquisse en vue 3D.
+
+Tests : vérifié dans l'appli sur « Axe » (écart 3D / esquisse 0 px dès la 1re image ; point du plan sous le curseur = lancer de rayon à 0,001 mm ; zoom au curseur et déplacement exacts en vue inclinée ; ligne tracée en vue inclinée accrochée à l'origine ; vue gardée à l'ouverture = direction de la caméra 3D ; cube DESSUS ; esquisse « rép 3 » redressée ; nouvelle esquisse sur la face −X à l'endroit ; grille mémorisée). `npm run ci` vert.

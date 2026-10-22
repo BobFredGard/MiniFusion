@@ -419,6 +419,7 @@ function animate(){
       mirrorDirty=false;
     }
   }
+  try{sketchCamTick();}catch(e){}
   try{triadUpdateAll();}catch(e){}
   try{if(typeof faoPoseSync==='function')faoPoseSync();}catch(e){}
   try{if(typeof faoFaceHlSync==='function')faoFaceHlSync();}catch(e){} // faces bleues / rouges de l'op sélectionnée
@@ -455,6 +456,8 @@ function viewFit(o){
   controls.update();
 }
 function setView(v){
+  // esquisse ouverte : la vue d'esquisse s'oriente (le plan reste éditable)
+  try{const SV={iso:[0.6,-0.6,0.6],top:[0,0,1],front:[0,-1,0],right:[1,0,0]};if(SV[v]&&sketchViewDir(SV[v]))return;}catch(e){}
   if(v==='iso'){viewFit([0.6,-0.6,0.6]);return;} // Iso = vue complète isométrique
   viewUpReset(); // orbite libre : la vue normalisée se redresse
   const t=controls.target.clone(),d=camera.position.distanceTo(t)||150;
@@ -550,56 +553,215 @@ function ensureSketchBasis(sk){
   if(!sk.origin)sk.origin=[0,0,0];
   return sk;
 }
-let _skPrevCam=null, _skBaseDist=400, _skBaseS=2.2, _skOrtho=null, _skOrigCam=null;
+// Vue d'esquisse ORTHOGRAPHIQUE calée sur le SVG : le point (cx,cy) du plan tombe au centre
+// du SVG, à s px/mm. ORIENTATION LIBRE (skOrb) comme dans l'espace 3D : repère caméra R (droite),
+// U (haut), D (vers la caméra) exprimé dans le repère LOCAL du plan (u,v,n). En orthographique,
+// plan → écran est AFFINE : skOrbL() donne cette application (2×2 autour du centre du SVG),
+// posée sur le groupe racine du dessin SVG et inversée pour la souris — tracé et accroche
+// restent sur le plan d'esquisse quel que soit l'angle de vue.
+//   · skOrbFront() (touche N) : vue À PLAT, face de l'esquisse DEVANT (caméra côté +n) et
+//     DROITE (le Z du monde vers le haut ; plan horizontal : Y vers le haut, comme le cube) ;
+//   · ouverture : à plat, ou vue 3D courante gardée (case « À plat », skFlatOpen) ;
+//   · orbite : clic-molette glissé (comme en 3D), cube de vue, boutons de vue (setView).
+let skOrb={R:[1,0,0],U:[0,1,0],D:[0,0,1]};
+let skFlatOpen=true; // ouverture à plat (sinon la vue 3D courante est gardée) — persisté
+try{if(localStorage.getItem('minifusion_skFlat')==='0')skFlatOpen=false;}catch(e){}
+let _skKeep=false; // session ouverte « vue 3D gardée » : la sortie garde l'orientation
+const SK_ORB_MIN=Math.sin(8*Math.PI/180); // jamais le plan par la tranche (application non inversible)
+function skOrbOn(){return !(Math.abs(skOrb.D[2]-1)<1e-12&&Math.abs(skOrb.U[1]-1)<1e-12);}
+function skOrbL(){ // SVG « vue normale » → SVG affiché, autour du centre du SVG : [l11,l12,l21,l22]
+  if(!skOrbOn())return[1,0,0,1];
+  const R=skOrb.R,U=skOrb.U;
+  return[R[0],-R[1],-U[0],U[1]];
+}
+function skOrbFwd(px,py){ // point SVG normal → point SVG affiché
+  if(!skOrbOn())return[px,py];
+  const{W,H}=svgSize(),L=skOrbL(),x=px-W/2,y=py-H/2;
+  return[W/2+L[0]*x+L[1]*y,H/2+L[2]*x+L[3]*y];
+}
+function skOrbInv(px,py){ // point SVG affiché (souris) → point SVG normal
+  if(!skOrbOn())return[px,py];
+  const{W,H}=svgSize(),L=skOrbL(),x=px-W/2,y=py-H/2,det=(L[0]*L[3]-L[1]*L[2])||1e-9;
+  return[W/2+(L[3]*x-L[1]*y)/det,H/2+(-L[2]*x+L[0]*y)/det];
+}
+function skOrbTransform(){ // attribut transform du groupe racine du SVG (null = vue normale)
+  if(!skOrbOn())return null;
+  const{W,H}=svgSize(),L=skOrbL(),cx=W/2,cy=H/2;
+  return `matrix(${L[0]} ${L[2]} ${L[1]} ${L[3]} ${cx-L[0]*cx-L[1]*cy} ${cy-L[2]*cx-L[3]*cy})`;
+}
+function skOrbUpright(root){
+  // Textes LISIBLES quel que soit l'angle : chaque texte (et le fond d'étiquette de cote, qui
+  // pivote autour du même point) annule la déformation autour de son point d'ancrage ; une
+  // étiquette alignée sur sa ligne de cote reprend l'angle de la ligne À L'ÉCRAN.
+  const L=skOrbL(),det=L[0]*L[3]-L[1]*L[2];if(Math.abs(det)<1e-9)return;
+  const I=[L[3]/det,-L[1]/det,-L[2]/det,L[0]/det];
+  root.querySelectorAll('text,rect').forEach(el=>{
+    const m=/rotate\(\s*([-\d.e]+)[\s,]+([-\d.e]+)[\s,]+([-\d.e]+)\s*\)/.exec(el.getAttribute('transform')||'');
+    let px,py,al=0;
+    if(m){
+      px=+m[2];py=+m[3];const r=(+m[1])*Math.PI/180,dx=Math.cos(r),dy=Math.sin(r);
+      al=Math.atan2(L[2]*dx+L[3]*dy,L[0]*dx+L[1]*dy)*180/Math.PI;
+      if(al>90.01)al-=180;else if(al<-90.01)al+=180;
+    }else{
+      if(el.tagName!=='text')return;
+      px=+el.getAttribute('x');py=+el.getAttribute('y');
+    }
+    if(!isFinite(px)||!isFinite(py))return;
+    const e=px-(I[0]*px+I[1]*py),f=py-(I[2]*px+I[3]*py);
+    el.setAttribute('transform',`matrix(${I[0]} ${I[2]} ${I[1]} ${I[3]} ${e} ${f})`+(al?` rotate(${al} ${px} ${py})`:''));
+  });
+}
+const _v3=a=>new THREE.Vector3(a[0],a[1],a[2]);
+function skOrbLocal(w){const{u,v,n}=sketchBasis(skEdit);return[w.dot(u),w.dot(v),w.dot(n)];}
+function skOrbWorld(a){const{u,v,n}=sketchBasis(skEdit);return new THREE.Vector3().addScaledVector(u,a[0]).addScaledVector(v,a[1]).addScaledVector(n,a[2]);}
+function skOrbBtnSync(){
+  try{const b=$('skOrbit');if(b){const on=!skOrbIsFront();b.classList.toggle('on',on);
+    b.title=on?'Revenir à plat, face de l’esquisse devant (touche N)':'Vue 3D inclinée — orbite : clic-molette glissé, ou cube de vue · N = à plat';}}catch(e){}
+}
+function skOrbFrontUp(){ // haut de la vue à plat, en local : Z du monde projeté (plan horizontal : Y)
+  const{n}=sketchBasis(skEdit);
+  const up=Math.abs(n.z)>0.95?new THREE.Vector3(0,1,0):new THREE.Vector3(0,0,1);
+  const U=skOrbLocal(up);U[2]=0;
+  return Math.hypot(U[0],U[1])>1e-6?U:[0,1,0];
+}
+function skOrbIsFront(){
+  if(!skEdit)return true;
+  const U=skOrbFrontUp(),h=Math.hypot(U[0],U[1]);
+  return Math.abs(skOrb.D[2]-1)<1e-9&&Math.abs(skOrb.U[0]-U[0]/h)<1e-9&&Math.abs(skOrb.U[1]-U[1]/h)<1e-9;
+}
+function skOrbSetFrame(D,U,noDraw){
+  // D, U en LOCAL ; orthonormalisés, jamais le plan par la tranche
+  let d=D.slice(),L=Math.hypot(d[0],d[1],d[2])||1;d=d.map(x=>x/L);
+  if(Math.abs(d[2])<SK_ORB_MIN){
+    const sg=d[2]<0?-1:1,h=Math.hypot(d[0],d[1])||1,c=Math.sqrt(1-SK_ORB_MIN*SK_ORB_MIN);
+    d=[d[0]/h*c,d[1]/h*c,sg*SK_ORB_MIN];
+  }
+  let u=U.slice();const k=u[0]*d[0]+u[1]*d[1]+u[2]*d[2];u=[u[0]-k*d[0],u[1]-k*d[1],u[2]-k*d[2]];
+  L=Math.hypot(u[0],u[1],u[2]);
+  if(L<1e-6){u=Math.abs(d[2])<0.9?[0,0,1]:[0,1,0];const k2=u[0]*d[0]+u[1]*d[1]+u[2]*d[2];u=[u[0]-k2*d[0],u[1]-k2*d[1],u[2]-k2*d[2]];L=Math.hypot(u[0],u[1],u[2]);}
+  u=u.map(x=>x/L);
+  const r=[u[1]*d[2]-u[2]*d[1],u[2]*d[0]-u[0]*d[2],u[0]*d[1]-u[1]*d[0]]; // R = U × D
+  if(Math.abs(d[2]-1)<1e-12&&Math.abs(u[1]-1)<1e-12){d=[0,0,1];u=[0,1,0];r[0]=1;r[1]=0;r[2]=0;}
+  skOrb={R:r,U:u,D:d};
+  skOrbBtnSync();
+  if(skEdit&&!noDraw)drawSketch2D();
+}
+function skOrbFromWorld(Dw,Uw,noDraw){if(skEdit)skOrbSetFrame(skOrbLocal(Dw.clone().normalize()),skOrbLocal(Uw),noDraw);}
+function skOrbFront(noDraw){if(skEdit)skOrbSetFrame([0,0,1],skOrbFrontUp(),noDraw);}
+function skOrbDragBy(dx,dy){
+  // Orbite comme en 3D : tour autour du Z du monde (glisser horizontal), bascule autour de
+  // l'axe droit de la vue (glisser vertical) — pivot au centre du dessin.
+  if(!skEdit)return;
+  const Z=new THREE.Vector3(0,0,1),a=-dx*0.008,b=-dy*0.008;
+  let D=skOrbWorld(skOrb.D),U=skOrbWorld(skOrb.U);
+  D.applyAxisAngle(Z,a);U.applyAxisAngle(Z,a);
+  const R=new THREE.Vector3().crossVectors(U,D).normalize();
+  const D2=D.clone().applyAxisAngle(R,b),U2=U.clone().applyAxisAngle(R,b);
+  // pas de passage par le pôle (la vue se retournerait) ; on peut toujours s'en éloigner
+  const away=Math.abs(D2.z)<Math.abs(D.z)&&(D2.x*D.x+D2.y*D.y)>=0;
+  if(Math.abs(D2.z)<0.995||away){D=D2;U=U2;}
+  skOrbFromWorld(D,U);
+}
+function sketchViewDir(o){
+  // Cube de vue / boutons de vue pendant l'esquisse : on oriente la vue d'esquisse (le plan
+  // reste éditable), Z en haut ; dessus / dessous : Y en haut. true = pris en charge.
+  if(!skEdit||!_skOrtho)return false;
+  const D=new THREE.Vector3(o[0],o[1],o[2]).normalize();
+  skOrbFromWorld(D,Math.abs(D.z)>0.99?new THREE.Vector3(0,1,0):new THREE.Vector3(0,0,1));
+  return true;
+}
+let _skPrevCam=null, _skBaseDist=400, _skBaseS=2.2, _skOrtho=null, _skOrigCam=null, _skLaySig='';
 function sketchAlignCamera(){
   try{
     if(!skEdit||!camera||!controls||!renderer) return;
-    const {n,o,u,v}=sketchBasis(skEdit);
     _skOrigCam=camera;
     _skPrevCam={pos:camera.position.clone(),target:controls.target.clone(),up:camera.up.clone(),rot:controls.enableRotate};
-    const {W,H}=svgSize(); const s=skView.s||2.2; _skBaseS=s;
-    const Wr=renderer.domElement.clientWidth||W, Hr=renderer.domElement.clientHeight||H; // kept for off calc
-    const svgR=svg.getBoundingClientRect(), rendR=renderer.domElement.getBoundingClientRect();
-    const offX=( Wr/2 - (svgR.left - rendR.left) - W/2 ) / s;
-    const offY=( (svgR.top - rendR.top) + H/2 - Hr/2 ) / s;
-    const hw=Wr/(2*s), hh=Hr/(2*s);
-    _skOrtho=new THREE.OrthographicCamera(-hw, hw, hh, -hh, 0.1, 5000);
-    _skOrtho.up.copy(v);
-    const tgt=o.clone().addScaledVector(u, skView.cx + offX).addScaledVector(v, skView.cy + offY);
-    _skOrtho.position.copy(tgt).addScaledVector(n, 500);
-    _skOrtho.lookAt(tgt); _skOrtho.updateProjectionMatrix();
-    camera=_skOrtho; controls.object=camera;
-    controls.target.copy(tgt); controls.enableRotate=false; controls.update();
+    _skBaseS=skView.s||2.2;
+    _skKeep=false;
+    if(!skFlatOpen&&camera.isPerspectiveCamera){
+      // Vue 3D GARDÉE : même direction, même haut, même échelle au point visé ; le centre du
+      // dessin = point du plan sous le centre de la zone d'esquisse (repli : cible projetée).
+      try{
+        const B=sketchBasis(skEdit),Dw=camera.position.clone().sub(controls.target).normalize();
+        const Uw=new THREE.Vector3(0,1,0).applyQuaternion(camera.quaternion);
+        const dist=camera.position.distanceTo(controls.target)||150;
+        const Hr=renderer.domElement.clientHeight||svgSize().H;
+        const s=Hr/(2*dist*Math.tan((camera.fov||45)*Math.PI/360));
+        const svgR=svg.getBoundingClientRect(),rr=renderer.domElement.getBoundingClientRect();
+        const nd=new THREE.Vector2((svgR.left+svgR.width/2-rr.left)/rr.width*2-1,-((svgR.top+svgR.height/2-rr.top)/rr.height*2-1));
+        const rc=new THREE.Raycaster();camera.updateMatrixWorld();rc.setFromCamera(nd,camera);
+        const hit=new THREE.Vector3(),pl=new THREE.Plane().setFromNormalAndCoplanarPoint(B.n,B.o);
+        let P=rc.ray.intersectPlane(pl,hit);
+        if(!P||P.distanceTo(controls.target)>20*dist)P=pl.projectPoint(controls.target,new THREE.Vector3());
+        const d=P.clone().sub(B.o);
+        skView.s=Math.max(SK_SCALE_MIN,Math.min(SK_SCALE_MAX,s));skView.cx=d.dot(B.u);skView.cy=d.dot(B.v);skUpdateTols();
+        skOrbFromWorld(Dw,Uw,true);
+        _skKeep=true;
+      }catch(e){_skKeep=false;}
+    }
+    if(!_skKeep)skOrbFront(true);
+    _skOrtho=new THREE.OrthographicCamera(-1,1,1,-1,0.1,20000);
+    camera=_skOrtho; controls.object=camera; controls.enableRotate=false;
+    drawSketch2D();
   }catch(e){}
+}
+function sketchLayoutSig(){
+  const a=svg.getBoundingClientRect(),b=renderer.domElement.getBoundingClientRect();
+  return [a.left,a.top,a.width,a.height,b.left,b.top,b.width,b.height].map(Math.round).join(',');
 }
 function sketchSyncCamera(){
   try{
     if(!skEdit||!_skOrtho||!controls||!renderer) return;
-    const {n,o,u,v}=sketchBasis(skEdit);
+    const {o,u,v}=sketchBasis(skEdit);
     const {W,H}=svgSize(); const s=skView.s||2.2;
-    const Wr=renderer.domElement.clientWidth||W, Hr=renderer.domElement.clientHeight||H; // kept for off calc
+    const Wr=renderer.domElement.clientWidth||W, Hr=renderer.domElement.clientHeight||H;
     const svgR=svg.getBoundingClientRect(), rendR=renderer.domElement.getBoundingClientRect();
-    const offX=( Wr/2 - (svgR.left - rendR.left) - W/2 ) / s;
-    const offY=( (svgR.top - rendR.top) + H/2 - Hr/2 ) / s; // SVG Y inversé déjà géré par v
-    const hw=Wr/(2*s), hh=Hr/(2*s);
-    _skOrtho.left=-hw; _skOrtho.right=hw; _skOrtho.top=hh; _skOrtho.bottom=-hh;
-    const tgt=o.clone().addScaledVector(u, skView.cx + offX).addScaledVector(v, skView.cy + offY);
-    _skOrtho.position.copy(tgt).addScaledVector(n, 500);
-    _skOrtho.up.copy(v); _skOrtho.lookAt(tgt); _skOrtho.updateProjectionMatrix();
+    _skLaySig=sketchLayoutSig();
+    // centre du SVG dans le canevas → frustum asymétrique : le pivot de l'orbite est le milieu du dessin
+    const scx=(svgR.left-rendR.left)+W/2, scy=(svgR.top-rendR.top)+H/2;
+    _skOrtho.left=-scx/s; _skOrtho.right=(Wr-scx)/s; _skOrtho.top=scy/s; _skOrtho.bottom=-(Hr-scy)/s;
+    const tgt=o.clone().addScaledVector(u, skView.cx).addScaledVector(v, skView.cy);
+    _skOrtho.position.copy(tgt).addScaledVector(skOrbWorld(skOrb.D), 2000);
+    _skOrtho.up.copy(skOrbWorld(skOrb.U)); _skOrtho.lookAt(tgt); _skOrtho.updateProjectionMatrix();
     controls.target.copy(tgt); controls.update();
+  }catch(e){}
+}
+function sketchCamTick(){
+  // La mise en page bouge encore APRÈS l'ouverture (barre d'outils d'esquisse, panneau,
+  // arborescence rabattue) : la caméra calée sur l'ancienne taille montrait la pièce
+  // décalée jusqu'au premier clic. On suit la géométrie réelle à chaque image ; dans la
+  // seconde qui suit une ouverture À PLAT on recadre (cadrage d'ouverture, sur la taille finale).
+  try{
+    if(!skEdit||!_skOrtho)return;
+    if(sketchLayoutSig()===_skLaySig)return;
+    if(!_skKeep&&skOpenAt&&performance.now()-skOpenAt<1000)skFitView();else drawSketch2D();
   }catch(e){}
 }
 function sketchRestoreCamera(){
   try{
+    const keep=_skKeep&&skEdit&&_skOrtho;
+    let K=null;
+    if(keep){ // vue 3D gardée à l'ouverture → la sortie garde aussi l'orientation de l'esquisse
+      const B=sketchBasis(skEdit);
+      K={T:B.o.clone().addScaledVector(B.u,skView.cx).addScaledVector(B.v,skView.cy),D:skOrbWorld(skOrb.D),U:skOrbWorld(skOrb.U)};
+    }
     if(_skOrigCam){ camera=_skOrigCam; controls.object=camera; }
     if(_skPrevCam&&camera&&controls){
-      camera.position.copy(_skPrevCam.pos);
-      controls.target.copy(_skPrevCam.target);
       camera.up.copy(_skPrevCam.up);
       controls.enableRotate=_skPrevCam.rot;
+      if(K&&camera.isPerspectiveCamera){
+        const Hr=renderer.domElement.clientHeight||600;
+        const dist=Hr/(2*(skView.s||2.2)*Math.tan((camera.fov||45)*Math.PI/360));
+        controls.target.copy(K.T);
+        camera.position.copy(K.T).addScaledVector(K.D,dist);
+        if(Math.abs(K.D.dot(camera.up))>0.999)camera.position.addScaledVector(K.U,-dist*1e-4); // pôle : lookAt défini
+      }else{
+        camera.position.copy(_skPrevCam.pos);
+        controls.target.copy(_skPrevCam.target);
+      }
       controls.update();
     }
-    _skPrevCam=null; _skOrtho=null; _skOrigCam=null;
+    _skPrevCam=null; _skOrtho=null; _skOrigCam=null; _skKeep=false; skOrb={R:[1,0,0],U:[0,1,0],D:[0,0,1]};
   }catch(e){}
 }
 function findHostForFace(pt,n,tol){

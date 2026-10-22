@@ -36,6 +36,9 @@ function newSketchOnFace(){
   const origin=faceSketchOrigin(s.mesh,n,pt,s.faceIndex);
   // axes alignés sur l'esquisse parallèle parente (sinon X global projeté)
   const{u,v}=basisOnFace(n,faceRefU(n));
+  // face verticale / inclinée : v vers le HAUT (Z du monde) — sinon l'esquisse s'ouvrait à l'envers
+  // (face arrière, face −X…). Demi-tour dans le plan : u reste aligné sur le repère parent.
+  if(Math.abs(n.z)<0.95&&v.z<-1e-6){u.negate();v.negate();}
   // host : face porteuse nommée (antériorité) — fait suivre l'esquisse quand la porteuse bouge
   // x/y stockés depuis l'origine (pas le point de clic) pour ne pas dériver
   const host=findHostForFace(origin,n);
@@ -84,6 +87,9 @@ function getFaceProps(mesh,fi){
   }catch(e){return null;}
 }
 let skShowRefs=false; // B : violet masqué par défaut — fantôme gris 2D suffit (⧉ projette ce que tu veux)
+// Grille d'esquisse : masquée par défaut (les axes d'origine restent), état mémorisé d'une esquisse à l'autre
+let skShowGrid=false;
+try{skShowGrid=localStorage.getItem('minifusion_skGrid')==='1';}catch(e){}
 function skConsumerIdx(sk){
   // Index (dans les fonctions visibles) de l'extrusion OU de la révolution qui
   // consomme l'esquisse, sinon -1. Le consommateur détermine l'antériorité des
@@ -115,12 +121,50 @@ function skApplyFade(){
         b._savedOpacity=b.mesh.material.opacity; b._savedTransparent=b.mesh.material.transparent;
         // Fondu via la MÊME écriture que la slider du corps : la pièce reste lisible
         // (éclat compensé), et un corps déjà translucide devient plus voilé, pas plus sombre.
-        setMatAlpha(b.mesh.material,Math.min(bodyOpOf(b.bodyId||b.id),0.75));
+        // Faces TRÈS atténuées : ce sont les arêtes (skEdgesSync) qui montrent la pièce.
+        setMatAlpha(b.mesh.material,Math.min(bodyOpOf(b.bodyId||b.id),SK_FACE_ALPHA));
       }
     });
   }else if(skEdit._fade==='ghost'){
     bodies.forEach(b=>{ if(!b.ghost&&b.mesh) b.mesh.visible=false; });
   }
+  skEdgesSync();
+}
+// Pièce dans l'esquisse « comme en 3D, en transparence » : faces à peine teintées, TOUTES les
+// arêtes tracées — nettes devant, estompées derrière (vues à travers la matière). Arêtes du
+// solide affiché (mode 'bodies') ou de l'état antérieur rejoué (mode 'ghost', skAnteriorEdges, hors du document : jamais sauvé).
+const SK_FACE_ALPHA=0.2;
+let skAnteriorEdges=null;
+function skEdgesDrop(){
+  const g=scene.getObjectByName('skEdges');
+  if(g){scene.remove(g);try{g.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();});}catch(e){}}
+}
+function skEdgesSync(){
+  skEdgesDrop();
+  if(!skEdit||!skEdit._fade)return;
+  let data=skEdit._fade==='ghost'?(skAnteriorEdges||[]):null;
+  if(!data){const em=edgeMode;edgeMode='on';try{data=edgeOverlayData()||[];}catch(e){data=[];}finally{edgeMode=em;}}
+  const pos=[];
+  for(const d of data){
+    const pts=d&&d.pts;if(!pts||pts.length<2)continue;
+    const M=(d.mw&&d.mw.elements)||null;
+    const put=p=>{let x=+p[0],y=+p[1],z=+p[2];
+      if(M){const X=x,Y=y,Z=z;x=M[0]*X+M[4]*Y+M[8]*Z+M[12];y=M[1]*X+M[5]*Y+M[9]*Z+M[13];z=M[2]*X+M[6]*Y+M[10]*Z+M[14];}
+      pos.push(x,y,z);};
+    for(let i=0;i+1<pts.length;i++){put(pts[i]);put(pts[i+1]);}
+  }
+  if(!pos.length)return;
+  try{
+    const clair=document.body&&document.body.getAttribute('data-theme')==='clair';
+    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+    const grp=new THREE.Group();grp.name='skEdges';
+    // gris doux (le blanc pur écrasait l'esquisse) : arêtes vues gris clair, arêtes cachées gris plus sombre
+    const back=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:clair?0xa3a9b2:0x5a616c,transparent:true,opacity:0.5,depthTest:false,depthWrite:false}));
+    const front=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color:clair?0x4a5059:0xa4abb5,transparent:true,opacity:0.9,depthTest:true,depthWrite:false}));
+    back.renderOrder=989;front.renderOrder=990;back.raycast=()=>{};front.raycast=()=>{};
+    grp.add(back);grp.add(front);scene.add(grp);
+  }catch(e){}
+  const eo=scene.getObjectByName('edgeOverlay');if(eo)eo.visible=false; // pas de doublon avec les arêtes 3D
 }
 function skBRepPlanarRefs(shape){
   // Vrais contours sur le plan (lignes + arcs/cercles) — pas de polyligne 12 pts
@@ -499,7 +543,7 @@ function skBuildRefs(){
   // AVANT la fonction qui consomme cette esquisse — pas la pièce finie.
   // Esquisse jamais consommée : solide fini.
   if(!skEdit){return;}
-  skEdit._refs=[];skEdit._ghost=[];skEdit._refNote='';skEdit._fade=null;
+  skEdit._refs=[];skEdit._ghost=[];skEdit._refNote='';skEdit._fade=null;skAnteriorEdges=null;
   const feats=doc.features.filter(f=>f.visible!==false);
   const idx=skConsumerIdx(skEdit);
   const geomLater=arr=>arr.some(f=>f.type==='extrude'||f.type==='revolve'||f.type==='xfillet'||f.type==='fillet');
@@ -548,9 +592,10 @@ function skBuildRefs(){
         try{
         const g=occTessellate(FR.shape,0.5);
         const bcol=((bodies.find(b=>!b.ghost&&b.color)||{}).color)||0xccccd6;
-        const mat=new THREE.MeshStandardMaterial({color:bcol,transparent:true,opacity:0.75,depthTest:true}); // couleur de la pièce, pas de gris fantôme
+        const mat=new THREE.MeshStandardMaterial({color:bcol,transparent:true,opacity:SK_FACE_ALPHA,depthTest:true,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1}); // couleur de la pièce, faces très atténuées
           skAnteriorGhost=new THREE.Mesh(g,mat); skAnteriorGhost.name='skAnteriorGhost'; scene.add(skAnteriorGhost);
         }catch(e){}
+        try{skAnteriorEdges=occSharpEdges(FR.shape)||[];}catch(e){skAnteriorEdges=[];} // arêtes de l'état antérieur (copiées : survivent à occCleanup)
         ok=true;
       }
     }finally{occCleanup(FR,null);}
@@ -570,6 +615,7 @@ function skBuildRefs(){
   }
   try{skApplyFade();}catch(e){}
 }
+let skOpenAt=0; // instant d'ouverture : sketchCamTick recadre si la mise en page bouge juste après
 function openSketch(id){
   // 2026-10-16-006 : nouvelle mise en page des cotes R/Ø — les anciens décalages (calés sur
   // l'étiquette à 45°) sont remis à zéro UNE fois par esquisse.
@@ -604,6 +650,7 @@ function openSketch(id){
   skUndoStack=[];skRedoStack=[];
   document.querySelectorAll('#skToolbar .tool').forEach(x=>x.classList.toggle('on',x.dataset.tool==='select'));
   $('skTitle').textContent='Esquisse — '+skEdit.name+' (plan '+sketchFaceLabel(skEdit)+')';
+  skOpenAt=performance.now();
   $('sketchOverlay').classList.add('open');exitFilletMode(true);skRefreshHealth();skFitView();sketchAlignCamera();renderSkPanel();skUndoBtn();
   try{$('skStatWrap').style.display='block';}catch(e){}
   // Arborescence (menu des corps) RABATTUE pendant l'édition : le voile de
@@ -616,6 +663,7 @@ function openSketch(id){
   try{if(skFaoFoldSave===null)skFaoFoldSave=faoFolded;if(!faoFolded)faoFoldSet(true);}catch(e){}
 }
 function closeSketch(save){
+  skOpenAt=0;
   $('sketchOverlay').classList.remove('open');
   try{$('skStatWrap').style.display='none';}catch(e){}
   sketchRestoreCamera();
@@ -627,6 +675,8 @@ function closeSketch(save){
   // Mode de fondu effacé AVANT le rebuild de sortie : sinon buildDone→skApplyFade
   // repose le fondu 0.75 après restauration et la pièce resterait translucide.
   if(skEdit)skEdit._fade=null;
+  skAnteriorEdges=null;
+  try{skEdgesDrop();const eo=scene.getObjectByName('edgeOverlay');if(eo)eo.visible=true;}catch(e){}
   // Sortie : le verrou est TOUJOURS levé (validation comme annulation) pour régénérer
   // la fonction modifiée et celles qui suivent ; sans rebuild de sortie, un verrou posé
   // à l'ouverture laisserait l'arbre bloqué.
@@ -644,7 +694,7 @@ const NS='http://www.w3.org/2000/svg';
 function svgSize(){return{ W:svg.clientWidth||800,H:svg.clientHeight||500};}
 function w2s(x,y){const{W,H}=svgSize();const s=skView.s;return[(W/2+(x-skView.cx)*s),(H/2-(y-skView.cy)*s)];}
 function s2w(px,py){const{W,H}=svgSize();const s=skView.s;return[(skView.cx+(px-W/2)/s),(skView.cy-(py-H/2)/s)];}
-let skView={s:2.2,cx:0,cy:0}; // vue 2D : échelle px/mm + centre monde (molette = zoom, clic-molette = pan)
+let skView={s:2.2,cx:0,cy:0}; // vue 2D : échelle px/mm + centre monde (molette = zoom, clic droit glissé = pan, clic-molette glissé = orbite)
 // 2026-10-15-008 : TOUTES les tolérances de pointage sont en PIXELS ÉCRAN (divisées par
 // l'échelle px/mm). Avant, plusieurs appels ajoutaient des mm fixes (SK_PICK+2, +3) :
 // zoomé fort sur une petite pièce, « +2 mm » valait 80 px et la zone des extrémités
@@ -669,8 +719,11 @@ function skFitView(){
     const refs=skEdit&&skEdit._refs;
     if(refs&&refs.length){ // esquisse vide : cadrer sur la pièce projetée
       let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;
-      refs.forEach(r=>{if(r.x1<x0)x0=r.x1;if(r.x1>x1)x1=r.x1;if(r.x2<x0)x0=r.x2;if(r.x2>x1)x1=r.x2;
+      refs.forEach(r=>{
+        if(r.type==='circle'&&isFinite(r.cx)&&r.r>0){x0=Math.min(x0,r.cx-r.r);x1=Math.max(x1,r.cx+r.r);y0=Math.min(y0,r.cy-r.r);y1=Math.max(y1,r.cy+r.r);return;} // cercle : pas de x1/x2
+        if(r.x1<x0)x0=r.x1;if(r.x1>x1)x1=r.x1;if(r.x2<x0)x0=r.x2;if(r.x2>x1)x1=r.x2;
         if(r.y1<y0)y0=r.y1;if(r.y1>y1)y1=r.y1;if(r.y2<y0)y0=r.y2;if(r.y2>y1)y1=r.y2;});
+      if(!(x1>x0)&&!(y1>y0)){x0=-SK_DEF_SPAN/2;x1=SK_DEF_SPAN/2;y0=-SK_DEF_SPAN/2;y1=SK_DEF_SPAN/2;} // références sans étendue lisible
       const{W,H}=svgSize(),bw=Math.max(x1-x0,1),bh=Math.max(y1-y0,1);
       skView.s=Math.max(SK_SCALE_MIN,Math.min(SK_SCALE_MAX,Math.min(W/bw,H/bh)*0.7));
       skView.cx=(x0+x1)/2;skView.cy=(y0+y1)/2;
@@ -687,6 +740,14 @@ function skFitView(){
   skUpdateTols();if(skEdit)drawSketch2D();
 }
 function evXY(e){const r=svg.getBoundingClientRect();return s2w(e.clientX-r.left,e.clientY-r.top);}
+// Événement souris ramené à la « vue normale » : en orbite, clientX/clientY sont remplacés par
+// le point du plan sous le curseur (application affine inverse). Les gestionnaires du SVG
+// (positions ET écarts de glisser) n'ont donc pas à connaître l'angle de vue.
+function skEv(e){
+  if(!skOrbOn()||!e)return e;
+  const r=svg.getBoundingClientRect(),[x,y]=skOrbInv(e.clientX-r.left,e.clientY-r.top),cx=r.left+x,cy=r.top+y;
+  return new Proxy(e,{get(t,k){if(k==='clientX')return cx;if(k==='clientY')return cy;const v=t[k];return typeof v==='function'?v.bind(t):v;}});
+}
 let SK_SNAP=5, SK_INF=2.5, SK_PICK=4, SK_PT=5, SK_PICKX=6;
 skUpdateTols();
 let skTool='select',skDraft=null,skMsg='',skOffArm=null;
@@ -2311,22 +2372,27 @@ function createRefLine(sk, ref){
 }
 
 /* ----- dessin SVG ----- */
+let skRoot=null; // groupe racine du dessin : porte la transformation affine de l'orbite (null = vue normale)
 function skEl(n,attrs,parent){
   const el=document.createElementNS(NS,n);
   for(const k in attrs)el.setAttribute(k,attrs[k]);
-  (parent||svg).appendChild(el);return el;
+  (parent||skRoot||svg).appendChild(el);return el;
 }
 function drawSketch2D(){
   if(!skEdit)return;const sk=skEdit;
   const{W,H}=svgSize();svg.setAttribute('viewBox',`0 0 ${W} ${H}`);svg.innerHTML='';
-  const[gvx0,gvY1]=s2w(0,0),[gvx1,gvY0]=s2w(W,H); // grille adaptative à l'échelle
+  {const tf=skOrbTransform();skRoot=null;if(tf)skRoot=skEl('g',{transform:tf},svg);}
+  // grille adaptative à l'échelle — en orbite, la zone du plan visible déborde le cadre
+  let gvx0=1e18,gvx1=-1e18,gvY0=1e18,gvY1=-1e18;
+  [[0,0],[W,0],[0,H],[W,H]].forEach(c=>{const[a,b]=skOrbInv(c[0],c[1]),[wx,wy]=s2w(a,b);
+    gvx0=Math.min(gvx0,wx);gvx1=Math.max(gvx1,wx);gvY0=Math.min(gvY0,wy);gvY1=Math.max(gvY1,wy);});
   let gstep=10;const gsteps=[0.001,0.002,0.005,0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,20,50,100,200,500,1000,2000];
   for(const st of gsteps){if(st*skView.s>=16){gstep=st;break;}}
   const kx0=Math.floor(gvx0/gstep),kx1=Math.ceil(gvx1/gstep),ky0=Math.floor(gvY0/gstep),ky1=Math.ceil(gvY1/gstep);
-  if(kx1-kx0<600)for(let k=kx0;k<=kx1;k++){const gx=k*gstep,isAx=Math.abs(gx)<1e-9;
+  if(kx1-kx0<600)for(let k=kx0;k<=kx1;k++){const gx=k*gstep,isAx=Math.abs(gx)<1e-9;if(!isAx&&!skShowGrid)continue; // grille masquée : axes seuls
     const[x1,y1]=w2s(gx,gvY0-gstep),[x2,y2]=w2s(gx,gvY1+gstep);
     skEl('line',{x1,y1,x2,y2,stroke:isAx?'#0a84ff':'#2a2a2e','stroke-width':isAx?1.5:1});}
-  if(ky1-ky0<600)for(let k=ky0;k<=ky1;k++){const gy=k*gstep,isAx=Math.abs(gy)<1e-9;
+  if(ky1-ky0<600)for(let k=ky0;k<=ky1;k++){const gy=k*gstep,isAx=Math.abs(gy)<1e-9;if(!isAx&&!skShowGrid)continue;
     const[x1,y1]=w2s(gvx0-gstep,gy),[x2,y2]=w2s(gvx1+gstep,gy);
     skEl('line',{x1,y1,x2,y2,stroke:isAx?'#0a84ff':'#2a2a2e','stroke-width':isAx?1.5:1});}
   // Fantôme 2D orthographique (pièce derrière, sans perspective) — bouge avec le zoom/pan comme Fusion
@@ -2580,6 +2646,7 @@ function drawSketch2D(){
     const h=skEl('text',{x:sx,y:sy-50,fill:'#8a8f99','font-size':11,'text-anchor':'middle'});
     h.textContent='Tab angle/longueur · Entrée OK · Échap annule';
   }
+  if(skRoot)skOrbUpright(skRoot); // orbite : textes et étiquettes restent lisibles
   if(_skPrevCam) sketchSyncCamera();
 }
 function dimById(sk,id){return (sk.dims||[]).find(d=>d.id===id);}
@@ -2938,7 +3005,7 @@ function editDim(id){
     if(!rr.ok){skUndoStack.pop();skUndoBtn();alert(rr.msg);return;}
     d.value=rr.nv; parApplyAll(); solveSketch(sk);drawSketch2D();renderSkPanel(); return;
   }
-  const [sx,sy]=w2s(pos.x,pos.y);
+  const [sx,sy]=skOrbFwd(...w2s(pos.x,pos.y)); // position affichée (orbite comprise)
   const r=svg.getBoundingClientRect();
   const inp=document.createElement('input');
   inp.type='text'; inp.inputMode='decimal';
