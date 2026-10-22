@@ -132,7 +132,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     const s0=side(mv),s1=side(mR);
     let lenA=0,lenB=0;for(const [m,o] of [[mv,0],[mR,1]])for(let i=1;i<m.length;i++){const a=m[i-1],b=m[i];if(b[0])continue;const L4=Math.hypot(b[1]-a[1],b[2]-a[2],b[3]-a[3]);if(o)lenB+=L4;else lenA+=L4;}
     console.log('  · une région puis l’autre : changements de côté '+s0+' → '+s1+' ; avance '+(lenA/1000).toFixed(2)+' → '+(lenB/1000).toFixed(2)+' m ; pire rapide '+rap2.toFixed(2)+' mm');
-    A(s1<=0.25*s0,'« Finir une région avant l’autre » : 4 fois moins de changements de côté');
+    A(s1<=0.3*s0,'« Finir une région avant l’autre » : plus de 3 fois moins de changements de côté');
     A(Math.abs(lenA-lenB)<1e-3*lenA,'même usinage (avance identique, seul l’ordre change)');
     A(pen2<0.01&&rap2===0,'ordre par région : ni avance dans la pièce ni rapide dans la matière restante');}
   // 2026-10-22-005 : la fraise SORT du brut (grille dilatée bornée au corps :

@@ -273,7 +273,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.3.22';
+const APP_VER='V0.3.23';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -283,8 +283,10 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-22-005';
+const CACHE_VER='2026-10-22-009';
 function cacheVerOK(v){
+  // 2026-10-22-009 : ébauche 3D / contour profil sur maillage intermédiaire
+  // (0,05 mm au lieu de 0,5 mm pour un import STEP) : à régénérer.
   // 2026-10-22-005 : brut-corps dilaté sur grille élargie (la fraise sort du
   // brut d'un rayon) ; minipasses sorties par remontée verticale : à régénérer.
   // 2026-10-22-004 : ébauche 3D — entrées à plat depuis l'air (brut-corps),
@@ -18163,7 +18165,7 @@ function* faoOpMovesIt0(op,job){
       entry:op.entry||'circ',entryR:op.entryR}));
   else if(faoContourProfil(op)){
     let am=null;
-    try{ am=faoActiveMesh(job); }catch(e){ am=null; }
+    try{ am=faoActiveMesh(job,'mid'); }catch(e){ am=null; } // 2026-10-22-009 : maillage intermédiaire
     const L=op.limit;
     if(L&&(L.mode==='chain'||L.mode==='sketch')&&(L.loop||[]).length>=3){
       mv=faoGenContourProfil(am&&am.mesh,L.loop,Object.assign({},base,{
@@ -18179,7 +18181,7 @@ function* faoOpMovesIt0(op,job){
   else if(op.type==='drill')mv=(op.cycle==='helix')?faoGenHelixPlan(faoDrillPlan(op,job),D,op,secu):faoGenDrillPlan(faoDrillPlan(op,job),secu,op); // trous du modèle ou XY (src/89-fao-percage.js) ; helix = fraisage
   else if(op.type==='rough3d'||faoPocketAdapt(op)){
     let am=null;
-    try{ am=faoActiveMesh(job); }catch(e){ am=null; }
+    try{ am=faoActiveMesh(job,'mid'); }catch(e){ am=null; } // 2026-10-22-009 : maillage intermédiaire
     // 2026-10-21-003 : intouchables — solides rouges = obstacles du modèle ;
     // faces/solides rouges = cote de pointe minimale (outil gonflé de la marge)
     let protTip=null;
@@ -22623,6 +22625,17 @@ function faoMeshFromBodyFineCached(b){
   if(m&&faoBodyMeshFineMap){ try{ faoBodyMeshFineMap.set(b,m); }catch(e){} }
   return m;
 }
+// 2026-10-22-009 : maillage intermédiaire (ébauche 3D, contour profil)
+let faoBodyMeshMidMap=null;
+try{ faoBodyMeshMidMap=new WeakMap(); }catch(e){}
+function faoMeshFromBodyMidCached(b){
+  if(typeof faoMeshFromBodyMid!=='function')return null;
+  if(faoBodyMeshMidMap){ const e=faoBodyMeshMidMap.get(b); if(e)return e; }
+  let m=null;
+  try{ m=faoMeshFromBodyMid(b); }catch(e){ m=null; }
+  if(m&&faoBodyMeshMidMap){ try{ faoBodyMeshMidMap.set(b,m); }catch(e){} }
+  return m;
+}
 function faoActiveMesh(setup,fine){
   // Fusion des corps du MODÈLE du posage (setup.bodies : 'all' ou [ids]).
   // fine (2026-10-14-009) : maillage FIN de finition (congés lisses), repli
@@ -22636,7 +22649,8 @@ function faoActiveMesh(setup,fine){
       const b=bodies[bi];
       if(!b||b.ghost||b.visible===false)continue;
       if(only&&only.indexOf(b.id)<0)continue;
-      const mm=(fine&&faoMeshFromBodyFineCached(b))||faoMeshFromBodyCached(b);
+      // fine : true = fin (finition), 'mid' = intermédiaire (ébauche, profil)
+      const mm=(fine==='mid'?faoMeshFromBodyMidCached(b):(fine&&faoMeshFromBodyFineCached(b)))||faoMeshFromBodyCached(b);
       if(!mm)continue;
       const off=V.length;
       for(let i=0;i<mm.v.length;i++){ const p=mm.v[i]; V.push(p);
@@ -35057,6 +35071,35 @@ function faoFineGeo(b){
     return g;
   }catch(e){return null;}
 }
+// 2026-10-22-009 : maillage INTERMÉDIAIRE (ébauche 3D, contour profil) — le
+// maillage d'outillage d'un import STEP est à 0,5 mm / 0,5 rad : autant que la
+// surépaisseur courante (« J'espère que tu prends bien en compte les vraies
+// faces du modèle exact »). 0,05 mm / 0,2 rad : écart à la surface exacte
+// 10 fois plus petit, triangles raisonnables pour le moteur d'ébauche.
+const FAO_MID_DEFL={lin:0.05,ang:0.2};
+function faoMidGeo(b){
+  try{
+    let shape=null,holder=null;
+    if(b&&b.kind==='import'){const e=importGeom.get(b.id);if(e&&e.brep){shape=e.brep;holder=e;}}
+    else if(b&&b.kind==='body'&&b.shape){shape=b.shape;holder=b;}
+    if(!shape)return null;
+    if(holder._faoGeoMid)return holder._faoGeoMid;
+    let g=null;
+    try{occt.BRepTools.Clean(shape);}catch(e){}
+    try{g=occTessellate(shape,FAO_MID_DEFL.lin,FAO_MID_DEFL.ang);}catch(e){g=null;}
+    try{occt.BRepTools.Clean(shape);}catch(e){}
+    if(!g)return null;
+    holder._faoGeoMid=g;
+    return g;
+  }catch(e){return null;}
+}
+function faoMeshFromBodyMid(b){
+  try{
+    const g=faoMidGeo(b);
+    if(g&&_faoMeshFromBodyOrig)return _faoMeshFromBodyOrig({mesh:{geometry:g,matrixWorld:b.mesh&&b.mesh.matrixWorld}},600000);
+  }catch(e){}
+  return null;
+}
 function faoMeshFromBodyFine(b){
   try{
     const g=faoFineGeo(b);
@@ -37817,7 +37860,11 @@ function viewFadeIn(){
     /* — formes exactes et coupe AVANT le HLR : le HLR doit voir la matière
        réellement coupée, pas la pièce entière. — */
     let shapes=[],shapeBodies=[];
-    list.forEach(bd=>{if(bd.shape){shapes.push(bd.shape);shapeBodies.push(bd);}});
+    // 2026-10-22-010 : un import STEP a AUSSI son solide exact (importGeom.brep) —
+    // seul bd.shape était lu : la vue d'un STEP tombait sur le maillage
+    // d'affichage et dessinait ses triangles (« la mise en plan est très
+    // facétisée »). Le BRep importé est dans les coordonnées du maillage.
+    list.forEach(bd=>{const sh=mepExactOf(bd);if(sh){shapes.push(sh);shapeBodies.push(bd);}});
     const exact=shapes.length&&typeof occSharpEdges==='function';
     let cutShapes=shapes;
     if(view.section&&shapes.length){
@@ -37960,7 +38007,7 @@ function viewFadeIn(){
     }
     /* — arêtes de maillage (corps sans noyau exact) — */
     list.forEach(bd=>{
-      if(bd.shape&&exact)return; // déjà traité
+      if(exact&&shapeBodies.indexOf(bd)>=0)return; // déjà traité (solide exact, import compris)
       const g=bd.mesh&&bd.mesh.geometry;if(!g||!g.attributes||!g.attributes.position)return;
       try{bd.mesh.updateMatrixWorld();}catch(e){}
       const pos=g.attributes.position,idx=bd.mesh.geometry.index;
@@ -40077,6 +40124,12 @@ function viewFadeIn(){
       try{ps=mepAxisManualGeom(sh,v,ann);}catch(e){}
       const sel=mepSt.selAxis&&mepSt.selAxis.vid===v.id&&mepSt.selAxis.id===ann.id;
       ps.forEach(p=>mepDrawAxisPrim(mk,p,v,'mepAxisManual'+(sel?' mepAxisSel':'')));
+      // 2026-10-22-012 : poignées d'extrémité (axe libre / de symétrie sélectionné)
+      if(sel&&ann.kind==='free'&&ann.a&&ann.b){
+        const hs=2.2/(mepSt.zoom||1);
+        [ann.a,ann.b].forEach(q=>mk('rect',{x:v.x+q.x*v.scale-hs,y:v.y+q.y*v.scale-hs,width:2*hs,height:2*hs,
+          fill:'#fff',stroke:'#0a84ff','stroke-width':0.6/(mepSt.zoom||1),class:'mepAxisHandle'}));
+      }
     });
   }
   function mepDrawView(mk,v,sh){
@@ -40573,6 +40626,85 @@ function viewFadeIn(){
     }
     return[];
   }
+  /* 2026-10-22-012 : AXES DES CYLINDRES D'UN STEP (« les traits d'axes doivent
+     être possibles sur un cylindre venant d'un STEP ») — un import n'a pas de
+     fonction Perçage : les axes viennent des faces cylindriques de son solide
+     exact (importGeom.brep). Faces coaxiales regroupées (tronçons, demi-
+     cylindres) ; un groupe qui couvre moins d'un demi-tour (congé) est ignoré.
+     Vue en bout : croix de centre ; vue de côté : trait d'axe sur la longueur. */
+  function mepExactOf(bd){
+    if(!bd)return null;
+    if(bd.shape)return bd.shape;
+    try{if(bd.kind==='import'&&typeof importGeom!=='undefined'){const e=importGeom.get(bd.ref||bd.id);if(e&&e.brep)return e.brep;}}catch(e){}
+    return null;
+  }
+  const mepCylCache=new Map(); // id d'import → {shape, list}
+  function mepShapeCyls(bd){
+    const sh=mepExactOf(bd);if(!sh||typeof occt==='undefined'||!occt)return[];
+    const k=bd.ref||bd.id,c=mepCylCache.get(k);
+    if(c&&c.shape===sh)return c.list;
+    const groups=new Map();
+    let ex=null;
+    try{ex=new occt.TopExp_Explorer_2(sh,occt.TopAbs_ShapeEnum.TopAbs_FACE,occt.TopAbs_ShapeEnum.TopAbs_SHAPE);}catch(e){return[];}
+    const T=occt.GeomAbs_SurfaceType;
+    while(ex.More()){
+      let ad=null;
+      try{
+        const f=occt.TopoDS.Face_1(ex.Current());
+        ad=new occt.BRepAdaptor_Surface_2(f,true);
+        if(ad.GetType()===T.GeomAbs_Cylinder){
+          const cy=ad.Cylinder(),ax=cy.Axis(),L=ax.Location(),Dd=ax.Direction();
+          let d=[Dd.X(),Dd.Y(),Dd.Z()];
+          const sgn=Math.abs(d[0])>1e-6?Math.sign(d[0]):(Math.abs(d[1])>1e-6?Math.sign(d[1]):(Math.sign(d[2])||1));
+          const flip=sgn<0;if(flip)d=d.map(x=>-x);
+          const l=[L.X(),L.Y(),L.Z()],ld=mepDot(l,d);
+          const o=[l[0]-d[0]*ld,l[1]-d[1]*ld,l[2]-d[2]*ld]; // pied de l'axe (plan normal passant par 0)
+          const v0=ad.FirstVParameter(),v1=ad.LastVParameter();
+          const t0=ld+(flip?-v1:v0),t1=ld+(flip?-v0:v1);
+          const axk=o.map(x=>x.toFixed(2)).join(',')+'|'+d.map(x=>x.toFixed(3)).join(',');
+          const key=axk+'|'+cy.Radius().toFixed(2); // par axe ET rayon : moyeu, alésage, bouts séparés
+          let g=groups.get(key);
+          if(!g){g={o,d,axk,t0:Math.min(t0,t1),t1:Math.max(t0,t1),r:0,u:0};groups.set(key,g);}
+          g.t0=Math.min(g.t0,t0,t1);g.t1=Math.max(g.t1,t0,t1);
+          g.r=Math.max(g.r,cy.Radius());g.u+=Math.abs(ad.LastUParameter()-ad.FirstUParameter());
+        }
+      }catch(e){}
+      try{if(ad)ad.delete();}catch(e){}
+      ex.Next();
+    }
+    try{ex.delete();}catch(e){}
+    // un rayon qui ne fait pas un demi-tour (congé, arc de contour) ne porte pas d'axe ;
+    // les rayons retenus d'un même axe fusionnent : un trait, une croix (plus grand rayon)
+    const byAx=new Map();
+    [...groups.values()].filter(g=>g.u>=Math.PI*0.95&&g.t1-g.t0>1e-3).forEach(g=>{
+      const a=byAx.get(g.axk);
+      if(!a)byAx.set(g.axk,{o:g.o,d:g.d,t0:g.t0,t1:g.t1,r:g.r,u:g.u});
+      else{a.t0=Math.min(a.t0,g.t0);a.t1=Math.max(a.t1,g.t1);a.r=Math.max(a.r,g.r);}
+    });
+    const list=[...byAx.values()];
+    mepCylCache.set(k,{shape:sh,list});
+    return list;
+  }
+  function mepAxisCylPrims(sh,v){
+    const out=[],b=mepBasisOf(v),over=MEP_AXIS.overrun/mepAxisScale(v);
+    mepMeshesOf(v).forEach(bd=>{
+      if(bd.kind!=='import')return; // corps modélisés : axes des fonctions Perçage
+      mepShapeCyls(bd).forEach(g=>{
+        const facing=mepDot(g.d,b.dir);
+        const P=t=>[g.o[0]+g.d[0]*t,g.o[1]+g.d[1]*t,g.o[2]+g.d[2]*t];
+        if(Math.abs(facing)>0.999){
+          const c=P(g.t0);out.push(...mepAxisCrossPrims(mepDot(c,b.u),mepDot(c,b.v),g.r,v,'mepAxisCross'));
+        }else if(Math.abs(facing)<0.02){
+          const A=P(g.t0),B=P(g.t1);
+          const ax=mepDot(A,b.u),ay=mepDot(A,b.v),bx=mepDot(B,b.u),by=mepDot(B,b.v);
+          const L=Math.hypot(bx-ax,by-ay);if(L<1e-6)return;
+          const ux=(bx-ax)/L,uy=(by-ay)/L;
+          out.push({t:'L',x1:ax-ux*over,y1:ay-uy*over,x2:bx+ux*over,y2:by+uy*over,cls:'mepAxis'});
+        }
+      });
+    });
+    return out;
+  }
   function mepAxisAutoGeom(sh,v){
     const out=[];
     if(!v||(!v.autoAxes&&!v.autoPitch))return out;
@@ -40599,6 +40731,7 @@ function viewFadeIn(){
       mepAxisFeatureHoles(sh,v).forEach(h=>{
         if(!manual.has(mepAxisKey(h))&&Math.abs(h.facing)<0.02)out.push(...mepAxisSideLine(h,v,g));
       });
+      try{out.push(...mepAxisCylPrims(sh,v));}catch(e){} // 2026-10-22-012 : cylindres d'un STEP
     }
     return out;
   }
@@ -41408,10 +41541,11 @@ function viewFadeIn(){
     if(m==='align')return 'Alignement : '+n+' trou(s) sélectionné(s) — cliquez encore ou Entrée pour créer.';
     if(m==='pitch')return 'Cercle de perçage : '+n+' trou(s) sélectionné(s) — cliquez encore ou Entrée pour créer.';
     if(m==='free')return 'Axe libre : cliquez le départ puis l’arrivée.';
+    if(m==='sym')return mepSt.axisSym?'Axe de symétrie : cliquez la 2ᵉ droite.':'Axe de symétrie : cliquez 2 droites (parallèles : axe médian ; sécantes : bissectrice).';
     return 'Axe de trou : cliquez un trou.';
   }
   function mepSetAxisMode(m){
-    mepSt.axisMode=m||'hole';
+    mepSt.axisMode=m||'hole';mepSt.axisSym=null;
     mepSetTool('axis');
     mepStatus(mepAxisModeStatus());
     try{mepSideShow();}catch(e){}
@@ -41456,8 +41590,53 @@ function viewFadeIn(){
     mepStatus('Axe libre créé.');
     return true;
   }
+  /* 2026-10-22-012 : AXE DE SYMÉTRIE entre 2 droites d'une vue (« je dois pouvoir
+     faire un axe symétrique à 2 droites ») — parallèles : axe médian ; sécantes :
+     bissectrice de l'angle qui les contient. Longueur = étendue des 2 droites
+     sur l'axe + dépassement normalisé ; enregistré comme axe libre (a, b) : ses
+     extrémités se tirent à la souris. */
+  function mepAxisSymGeom(e1,e2,v){
+    const A1=[e1.x1,e1.y1],B1=[e1.x2,e1.y2],A2=[e2.x1,e2.y1],B2=[e2.x2,e2.y2];
+    const nrm=d=>{const L=Math.hypot(d[0],d[1]);return L>1e-12?[d[0]/L,d[1]/L]:null;};
+    let d1=nrm([B1[0]-A1[0],B1[1]-A1[1]]),d2=nrm([B2[0]-A2[0],B2[1]-A2[1]]);
+    if(!d1||!d2)return null;
+    const pts=[A1,B1,A2,B2],over=MEP_AXIS.overrun/mepAxisScale(v);
+    const cr=d1[0]*d2[1]-d1[1]*d2[0];
+    let O,u;
+    if(Math.abs(cr)<0.02){ // parallèles : médiane
+      if(d1[0]*d2[0]+d1[1]*d2[1]<0)d2=[-d2[0],-d2[1]];
+      u=nrm([d1[0]+d2[0],d1[1]+d2[1]]);
+      O=[(A1[0]+B1[0]+A2[0]+B2[0])/4,(A1[1]+B1[1]+A2[1]+B2[1])/4];
+    }else{ // sécantes : bissectrice depuis l'intersection X
+      const t=((A2[0]-A1[0])*d2[1]-(A2[1]-A1[1])*d2[0])/cr;
+      const X=[A1[0]+d1[0]*t,A1[1]+d1[1]*t];
+      const away=(A,B,d)=>{const far=Math.hypot(A[0]-X[0],A[1]-X[1])>Math.hypot(B[0]-X[0],B[1]-X[1])?A:B;
+        return (far[0]-X[0])*d[0]+(far[1]-X[1])*d[1]<0?[-d[0],-d[1]]:d;};
+      d1=away(A1,B1,d1);d2=away(A2,B2,d2);
+      u=nrm([d1[0]+d2[0],d1[1]+d2[1]]);if(!u)return null;
+      O=X;
+    }
+    const ts=pts.map(p=>(p[0]-O[0])*u[0]+(p[1]-O[1])*u[1]);
+    const t0=Math.min(...ts)-over,t1=Math.max(...ts)+over;
+    return{a:{x:O[0]+u[0]*t0,y:O[1]+u[1]*t0},b:{x:O[0]+u[0]*t1,y:O[1]+u[1]*t1}};
+  }
   function mepAxisClick(sh,P){
     const mode=mepSt.axisMode||'hole';
+    if(mode==='sym'){
+      const hit=mepHitViewEnt(sh,P.x,P.y);
+      if(!hit||!hit.e||hit.e.t!=='L'){mepStatus('Axe de symétrie : cliquez une droite d’une vue.');return;}
+      if(!mepSt.axisSym){mepSt.axisSym={vid:hit.vid,e:hit.e};mepStatus(mepAxisModeStatus());mepRender();return;}
+      const f=mepSt.axisSym;mepSt.axisSym=null;
+      if(f.vid!==hit.vid){mepStatus('Axe de symétrie : les 2 droites doivent être dans la même vue.');return;}
+      if(f.e===hit.e){mepStatus('Axe de symétrie : cliquez une AUTRE droite.');mepSt.axisSym=f;return;}
+      const v=mepView(sh,hit.vid);if(!v)return;
+      const G=mepAxisSymGeom(f.e,hit.e,v);
+      if(!G){mepStatus('Axe de symétrie : droites dégénérées.');return;}
+      if(!Array.isArray(v.axes))v.axes=[];
+      mepEdit('axe de symétrie',()=>{v.axes.push({id:mepUid('ax'),kind:'free',sym:true,a:G.a,b:G.b});});
+      mepStatus('Axe de symétrie créé — tirez ses extrémités pour l’allonger.');
+      return;
+    }
     if(mode==='free'){
       const snap=mepSnapPt(P.x,P.y,sh),v=mepViewAt(sh,snap.x,snap.y);
       if(!v){mepStatus('Axe libre : cliquez dans une vue.');return;}
@@ -41543,6 +41722,14 @@ function viewFadeIn(){
       const axis=mepAxisAt(sh,P.x,P.y);
       if(axis){
         mepSt.selAxis={vid:axis.vid,id:axis.id};mepSt.sel=null;mepSt.selDim=null;mepSt.entSel=[];
+        // 2026-10-22-012 : axe libre / de symétrie — saisi près d'une extrémité : on la tire
+        const av=mepView(sh,axis.vid),an=axis.ann;
+        if(av&&an&&an.kind==='free'&&an.a&&an.b){
+          const tolE=6/(mepSt.zoom||1);
+          const dA=Math.hypot(av.x+an.a.x*av.scale-P.x,av.y+an.a.y*av.scale-P.y);
+          const dB=Math.hypot(av.x+an.b.x*av.scale-P.x,av.y+an.b.y*av.scale-P.y);
+          if(Math.min(dA,dB)<=tolE)mepSt.pick={kind:'axisEnd',vid:av.id,id:an.id,end:dA<=dB?'a':'b',px0:P.px,py0:P.py,moved:false,undoPushed:false};
+        }
         mepSideShow();mepRender();return;
       }
       const v=mepViewAt(sh,P.x,P.y);
@@ -41749,6 +41936,22 @@ function viewFadeIn(){
         }
         return;
       }
+      if(pk.kind==='axisEnd'){ // 2026-10-22-012 : allonger / raccourcir l'axe, direction conservée
+        const v=mepView(sh,pk.vid),an=v&&(v.axes||[]).find(x=>x.id===pk.id);
+        if(an&&an.a&&an.b){
+          if(!pk.dragStarted){if(Math.hypot(P.px-pk.px0,P.py-pk.py0)<3)return;pk.dragStarted=true;}
+          const fix=pk.end==='a'?an.b:an.a,mov=an[pk.end];
+          const dx=mov.x-fix.x,dy=mov.y-fix.y,L=Math.hypot(dx,dy);
+          if(L>1e-9){
+            const ux=dx/L,uy=dy/L,lx=(P.x-v.x)/v.scale,ly=(P.y-v.y)/v.scale;
+            const t=Math.max(0.5,(lx-fix.x)*ux+(ly-fix.y)*uy);
+            if(!pk.undoPushed){try{docPushUndo('Plan : longueur axe');}catch(e){}pk.undoPushed=true;}
+            an[pk.end]={x:fix.x+ux*t,y:fix.y+uy*t};pk.moved=true;
+          }
+          mepRender();
+        }
+        return;
+      }
       if(pk.kind==='dimDrag'){
         const d=sh.dims.find(x=>x.id===pk.id);
         if(d){
@@ -41807,6 +42010,11 @@ function viewFadeIn(){
   function mepOnUp(ev){
     const pk=mepSt.pick;
     if(!pk)return;
+    if(pk.kind==='axisEnd'){
+      if(pk.moved)mepEdit('longueur axe',()=>{},true);
+      mepSt.pick=null;
+      return;
+    }
     if(pk.kind==='dimDrag'){
       if(pk.moved)mepEdit('déplacement cote',()=>{},true);
       mepSt.pick=null;
@@ -41911,7 +42119,7 @@ function viewFadeIn(){
           else if(pk0.kind==='dimDrag')mepEdit('déplacement cote',()=>{},true);
         }
         mepSt.pick=null;mepSt.dim=null;mepSt.cutPts=[];mepSt.detC=null;
-        mepSt.selAxis=null;mepSt.axisPick=[];mepSt.axisFree=null;
+        mepSt.selAxis=null;mepSt.axisPick=[];mepSt.axisFree=null;mepSt.axisSym=null;
         mepSetTool('select');
         mepRender();
         ev.preventDefault();ev.stopPropagation();
@@ -42620,14 +42828,16 @@ function viewFadeIn(){
     const a=av&&mepSt.selAxis?(av.axes||[]).find(x=>x.id===mepSt.selAxis.id):null;
     mepSideEl.classList.add('open');
     mepSideEl.innerHTML='';
-    if(mepSt.lot)mepSideLot(mepSideEl,sh);
-    else if(mepSt.skSel&&mepSt.skSel.size)mepSideSk(mepSideEl,sh);
-    else if(mepSt.tbEdit&&mepTbIsSk(sh))mepSideTbEdit(mepSideEl,sh);
-    else if(MEP_SK_TOOLS.indexOf(mepSt.tool)>=0&&mepSt.tool!=='trim'&&mepSt.tool!=='logo')mepSideSk(mepSideEl,sh); // outil de dessin : style des nouveaux éléments
-    else if(v)mepSideView(mepSideEl,v,sh);
-    else if(a)mepSideAxis(mepSideEl,av,a,sh);
-    else if(d)mepSideDim(mepSideEl,d,sh);
+    let key='home';
+    if(mepSt.lot){key='lot';mepSideLot(mepSideEl,sh);}
+    else if(mepSt.skSel&&mepSt.skSel.size){key='sk';mepSideSk(mepSideEl,sh);}
+    else if(mepSt.tbEdit&&mepTbIsSk(sh)){key='tb';mepSideTbEdit(mepSideEl,sh);}
+    else if(MEP_SK_TOOLS.indexOf(mepSt.tool)>=0&&mepSt.tool!=='trim'&&mepSt.tool!=='logo'){key='sk';mepSideSk(mepSideEl,sh);} // outil de dessin : style des nouveaux éléments
+    else if(v){key='view';mepSideView(mepSideEl,v,sh);}
+    else if(a){key='axis';mepSideAxis(mepSideEl,av,a,sh);}
+    else if(d){key='dim';mepSideDim(mepSideEl,d,sh);}
     else mepSideHome(mepSideEl,sh);
+    mepSideTabs(mepSideEl,key); // 2026-10-22-011 : onglets (comme la FAO)
     mepSideInject();
   }
   /* injecte #mepSide dans aside.right (Paramètres) — sinon repli sur le plan */
@@ -42663,6 +42873,35 @@ function viewFadeIn(){
     }catch(e){}
   }
   /* panneau par défaut : création de vues + outils + planche */
+  /* 2026-10-22-011 : ONGLETS du panneau (« le menu Mise en plan est à modifier
+     avec des onglets aussi ») — une section (titre h4) = un onglet, même style
+     que les fiches FAO (.fao-tabs/.fao-tab) ; ce qui précède le 1er titre reste
+     en tête. À partir de 3 sections ; onglet choisi mémorisé par panneau. */
+  const mepSideTabSel={};
+  function mepSideTabs(root,key){
+    const kids=[...root.children];
+    const hs=kids.filter(e=>e.tagName==='H4');
+    if(hs.length<3)return;
+    const names=[],groups={};let cur=null;
+    kids.forEach(el=>{
+      if(el.tagName==='H4'){cur=el.textContent.trim()||('Section '+(names.length+1));if(!groups[cur]){groups[cur]=[];names.push(cur);}}
+      if(cur)groups[cur].push(el);
+    });
+    const first=hs[0];
+    const bar=document.createElement('div');bar.className='fao-tabs mep-tabs';
+    root.insertBefore(bar,first);
+    const panes={},btns={};
+    const show=n=>{names.forEach(k=>{panes[k].style.display=k===n?'':'none';btns[k].className='fao-tab'+(k===n?' on':'');});mepSideTabSel[key]=n;};
+    names.forEach(n=>{
+      const b=document.createElement('button');b.className='fao-tab';b.textContent=n;
+      b.onclick=e=>{e.stopPropagation();show(n);};
+      bar.appendChild(b);btns[n]=b;
+      const pn=document.createElement('div');pn.className='mep-pane';
+      groups[n].forEach(el=>pn.appendChild(el));
+      root.appendChild(pn);panes[n]=pn;
+    });
+    show(names.indexOf(mepSideTabSel[key])>=0?mepSideTabSel[key]:names[0]);
+  }
   function mepSideHome(root,sh){
     const mkBtn=(lab,fn,tip)=>{
       const b=document.createElement('button');
@@ -42727,6 +42966,7 @@ function viewFadeIn(){
       const L=document.createElement('label');L.textContent=lab;
       r.appendChild(L);r.appendChild(i);
     };
+    h('Cartouche'); // 2026-10-22-011 : onglet à part (la planche était très longue)
     tit('Projet','projet','Nom du projet');
     tit('Auteur','auteur','—');
     tit('Date','date',new Date().toLocaleDateString('fr-FR'));
@@ -42841,7 +43081,7 @@ function viewFadeIn(){
     {const b=mkBtn('Coter les perçages',()=>{mepAutoHoles();mepSideShow();},'Étiquette automatique de chaque fonction Perçage (n× si plusieurs trous) — vue sélectionnée, sinon toute la planche');b.style.flex='1';r.appendChild(b);}
     h('Axes');
     r=rowEl();
-    [['Trou','hole'],['Alignement','align'],['Cercle','pitch'],['Libre','free']].forEach(([lab,m])=>{
+    [['Trou','hole'],['Alignement','align'],['Cercle','pitch'],['Libre','free'],['Symétrie','sym']].forEach(([lab,m])=>{
       const b=document.createElement('button');
       b.textContent=lab;
       b.className=(mepSt.tool==='axis'&&mepSt.axisMode===m)?'active':'';
@@ -43171,6 +43411,8 @@ function viewFadeIn(){
     // Couleur (défaut) : palette papier blanc + accent du thème → cotes, axes et traits colorés gardés.
     // Noir : tout en noir sur blanc (ISO), couleurs d'entités comprises. Renvoie le CSS à ajouter.
     if(bw===undefined)bw=mepExportBW();
+    // 2026-10-22-012 : les poignées d'axe (interface) ne sortent jamais
+    try{clone.querySelectorAll('.mepAxisHandle').forEach(e=>e.parentNode&&e.parentNode.removeChild(e));}catch(e){}
     const st=clone.style,set=(k,v)=>{try{st.setProperty(k,v);}catch(e){st[k]=v;}};
     if(bw){
       try{st.removeProperty('--mepDimCol');}catch(e){delete st['--mepDimCol'];}
@@ -43514,6 +43756,8 @@ function viewFadeIn(){
       axisPitchGroups:(holes,view)=>mepAxisPitchGroups(holes,view||{scale:1}),
       axisLineGroups:(holes,view)=>mepAxisLineGroups(holes,view||{scale:1}),
       axisAuto:view=>mepAxisAutoGeom(mepSheet(),view),
+      axisSym:(e1,e2,view)=>mepAxisSymGeom(e1,e2,view||{scale:1}),
+      shapeCyls:bd=>mepShapeCyls(bd),
       axisManual:(view,ann)=>mepAxisManualGeom(mepSheet(),view,ann),
       axisAt:(x,y)=>mepAxisAt(mepSheet(),x,y),
       axisMode:()=>mepSt.axisMode,

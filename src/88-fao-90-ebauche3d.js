@@ -56,6 +56,17 @@ function faoMeshFromBodyFineCached(b){
   if(m&&faoBodyMeshFineMap){ try{ faoBodyMeshFineMap.set(b,m); }catch(e){} }
   return m;
 }
+// 2026-10-22-009 : maillage intermédiaire (ébauche 3D, contour profil)
+let faoBodyMeshMidMap=null;
+try{ faoBodyMeshMidMap=new WeakMap(); }catch(e){}
+function faoMeshFromBodyMidCached(b){
+  if(typeof faoMeshFromBodyMid!=='function')return null;
+  if(faoBodyMeshMidMap){ const e=faoBodyMeshMidMap.get(b); if(e)return e; }
+  let m=null;
+  try{ m=faoMeshFromBodyMid(b); }catch(e){ m=null; }
+  if(m&&faoBodyMeshMidMap){ try{ faoBodyMeshMidMap.set(b,m); }catch(e){} }
+  return m;
+}
 function faoActiveMesh(setup,fine){
   // Fusion des corps du MODÈLE du posage (setup.bodies : 'all' ou [ids]).
   // fine (2026-10-14-009) : maillage FIN de finition (congés lisses), repli
@@ -69,7 +80,8 @@ function faoActiveMesh(setup,fine){
       const b=bodies[bi];
       if(!b||b.ghost||b.visible===false)continue;
       if(only&&only.indexOf(b.id)<0)continue;
-      const mm=(fine&&faoMeshFromBodyFineCached(b))||faoMeshFromBodyCached(b);
+      // fine : true = fin (finition), 'mid' = intermédiaire (ébauche, profil)
+      const mm=(fine==='mid'?faoMeshFromBodyMidCached(b):(fine&&faoMeshFromBodyFineCached(b)))||faoMeshFromBodyCached(b);
       if(!mm)continue;
       const off=V.length;
       for(let i=0;i<mm.v.length;i++){ const p=mm.v[i]; V.push(p);

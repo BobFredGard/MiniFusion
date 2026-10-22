@@ -610,7 +610,7 @@ function* faoOpMovesIt0(op,job){
       entry:op.entry||'circ',entryR:op.entryR}));
   else if(faoContourProfil(op)){
     let am=null;
-    try{ am=faoActiveMesh(job); }catch(e){ am=null; }
+    try{ am=faoActiveMesh(job,'mid'); }catch(e){ am=null; } // 2026-10-22-009 : maillage intermédiaire
     const L=op.limit;
     if(L&&(L.mode==='chain'||L.mode==='sketch')&&(L.loop||[]).length>=3){
       mv=faoGenContourProfil(am&&am.mesh,L.loop,Object.assign({},base,{
@@ -626,7 +626,7 @@ function* faoOpMovesIt0(op,job){
   else if(op.type==='drill')mv=(op.cycle==='helix')?faoGenHelixPlan(faoDrillPlan(op,job),D,op,secu):faoGenDrillPlan(faoDrillPlan(op,job),secu,op); // trous du modèle ou XY (src/89-fao-percage.js) ; helix = fraisage
   else if(op.type==='rough3d'||faoPocketAdapt(op)){
     let am=null;
-    try{ am=faoActiveMesh(job); }catch(e){ am=null; }
+    try{ am=faoActiveMesh(job,'mid'); }catch(e){ am=null; } // 2026-10-22-009 : maillage intermédiaire
     // 2026-10-21-003 : intouchables — solides rouges = obstacles du modèle ;
     // faces/solides rouges = cote de pointe minimale (outil gonflé de la marge)
     let protTip=null;

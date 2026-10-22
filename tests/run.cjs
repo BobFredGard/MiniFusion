@@ -110,6 +110,7 @@ const SUITES = [
   "test_vue_centre",
   "test_ws_pose_cao",
   "test_mise_en_plan",
+  "test_mep_step",
   "test_filet_modele"
 ];
 let ok = 0; const ko = [];

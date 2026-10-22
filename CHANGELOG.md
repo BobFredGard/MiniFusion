@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**292 versions**, de `2026-09-28b` à `V0.3.22` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**293 versions**, de `2026-09-28b` à `V0.3.23` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4429,3 +4429,13 @@ Retours utilisateur (Malaxeur Retard).
 - « Modèle à usiner » : les cases sont gardées en main (la mise en ligne éclatait la rangée relue au clic : aucun corps ne restait coché).
 
 Tests : `test_fao_faces` (volume avant d’une face courbe au plus à la hauteur de la face — échoue sur V0.3.21), `test_fao_planes` (libellés du bridage). `npm run ci` vert.
+
+## V0.3.23 - Ébauche sur maillage précis, mise en plan exacte d'un STEP, axes de cylindres et de symétrie, panneau Plan en onglets
+Retours utilisateur (Malaxeur Retard).
+- **FAO — maillage de calcul** : l'ébauche 3D et le contour profil se calculent sur un maillage intermédiaire à 0,05 mm / 0,2 rad du solide exact (le maillage d'outillage d'un STEP était à 0,5 mm / 0,5 rad, autant que la surépaisseur : 554 triangles pour RETARD → 2 708). Finition, Géodésique et faces rouges / bleues : maillage fin à 0,01 mm, inchangé. CACHE_VER `2026-10-22-009`.
+- **Mise en plan d'un STEP** : le HLR exact OCCT lit le solide exact de l'import (seul le corps modélisé l'était) — plus de triangles d'affichage dessinés (« la mise en plan est très facétisée »).
+- **Axes des cylindres d'un STEP** : les axes automatiques lisent les faces cylindriques du solide importé (regroupées par axe et rayon, au moins un demi-tour) — croix en vue de bout, trait d'axe sur la longueur en vue de côté.
+- **Axe de symétrie** (bouton « Symétrie ») : 2 droites d'une vue → axe médian (parallèles) ou bissectrice (sécantes) ; extrémités à poignées, à tirer pour allonger / raccourcir (axes libres aussi). Poignées absentes des exports.
+- **Panneau Plan en onglets** : Planche, Cartouche, Dessin 2D, Axes, Cotation, Vue, Sortie (même style que la FAO, onglet mémorisé).
+
+Tests : `test_mep_step` (nouveau : HLR exact d'un STEP, cylindres, axe de symétrie — échoue sur V0.3.22), `test_fao_faces` / `test_fao_brut_corps` (minipasses comptées entre les vrais niveaux).
