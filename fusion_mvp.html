@@ -273,7 +273,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.3.18';
+const APP_VER='V0.3.19';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -283,8 +283,11 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-21-008';
+const CACHE_VER='2026-10-21-013';
 function cacheVerOK(v){
+  // 2026-10-21-013 : ébauche 3D à brut-corps / faces rouges — départs d'entrée
+  // sur la matière restante, descentes dans le vide en rapide, « devant la face »
+  // seulement devant le flanc, minipasses enchaînées au contact : à régénérer.
   // 2026-10-21-008 : ébauche 3D, outil à rayon de coin — un contour fermé qui
   // commence hors zone n'est plus jeté en entier (minipasses / passes de faces
   // découpées à la zone) : les parcours à zone ou faces rouges changent.
@@ -15255,6 +15258,9 @@ const faoRapideMin=30;
       +'font-size:.74rem;padding:5px 8px;cursor:pointer;border-radius:0}'
       +'.fao-tab:hover{color:#f5f5f7}'
       +'.fao-tab.on{color:#f5f5f7;border-bottom-color:#0a84ff}'
+      // 2026-10-21-014 : onglet ACTIF lisible (retour : « illisible ») — fond plein
+      // bleu, texte blanc gras ; prioritaire sur l'habillage des boutons du thème
+      +'.fao-tabs .fao-tab.on,.fao-tabs .fao-tab.on:hover{background:#0a84ff!important;border-color:#0a84ff!important;color:#fff!important;font-weight:700!important;box-shadow:0 0 0 1px rgba(10,132,255,.55),0 0 8px rgba(10,132,255,.45)!important}'
       +'.fao-pair{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}'
       +'.fao-tip{font-size:.7rem;color:rgba(255,255,255,.58);line-height:1.4;margin-top:8px;'
       +'padding:6px 8px;border-radius:7px;background:rgba(255,255,255,.04);min-height:1.4em}'
@@ -18150,7 +18156,7 @@ function* faoOpMovesIt0(op,job){
     let protTip=null;
     if(op.type==='rough3d'&&Array.isArray(op.protect)&&op.protect.length&&am&&am.mesh){
       try{ const rb=faoProtectBodiesMesh(job,op); if(rb)am={mesh:faoMeshConcat(am.mesh,rb),box:am.box}; }catch(e){}
-      try{ protTip=faoProtectTip(job,op,faoToolById(job,op.toolId)||{d:D},faoRA(op).radial,true); }catch(e){ protTip=null; }
+      try{ protTip=faoProtectTip(job,op,faoToolById(job,op.toolId)||{d:D},faoRA(op).radial,true,am.mesh); }catch(e){ protTip=null; }
     }
     // bulge supprimé : la sonde (A/B) montrait une garde identique avec ou
     // sans compensation parent — l'arrondi tangent reste hors mur (≥0.48).
@@ -18260,14 +18266,14 @@ function* faoOpMovesIt0(op,job){
     let red=null;
     if(am&&am.mesh&&Array.isArray(op.protect)&&op.protect.length){
       try{ const rb=faoProtectBodiesMesh(job,op); if(rb)am={mesh:faoMeshConcat(am.mesh,rb),box:am.box}; }catch(e){}
-      try{ red=faoProtectMesh(job,op); }catch(e){ red=null; }
+      try{ const tl=faoToolById(job,op.toolId)||{d:D,kind:'ball'};red=faoProtectFn(job,op,tl.kind||'ball',+tl.d||D,tl.cornerR,+op.laisse||0,am.mesh); }catch(e){ red=null; }
     }
     if(am&&am.mesh&&drive){
       const tool=faoToolById(job,op.toolId);
       mv=yield* faoGenGeodesicIt(am.mesh,drive,
         {step:isFinite(+op.step)?+op.step:1,toolD:D,kind:tool.kind,
          cornerR:tool.cornerR,laisse:+op.laisse||0,secu:secu,sens:op.sens,
-         protect:red,protectM:faoProtectM(op)});
+         protectFn:red});
       try{ if(mv&&mv.diag)op.geoDiag=mv.diag; else delete op.geoDiag; }catch(e){}
     }else{ try{ op.geoDiag={nofaces:!drive?1:0}; }catch(e){} }
   }
@@ -20037,7 +20043,10 @@ function faoViewerMatterEnable(vw){
   }
   const tops=new Float32Array(nc);
   const full=(g.full!=null)?g.full:(g.sz1!=null?g.sz1:g.oz+g.nz*(g.pz||g.pas));
-  for(let c=0;c<nc;c++)tops[c]=full;
+  // 2026-10-21-011 : cote d'affichage = Z-map de départ (brut-corps, cylindre) —
+  // initialisée à la boîte pleine, la simulation dessinait toujours un cube
+  // (« toujours un cube à la place du brut corps ») ; colonnes vides : rien.
+  for(let c=0;c<nc;c++)tops[c]=g.h?Math.min(full,g.h[c]):full;
   vw.matter=mesh; vw.matterGrid=g; vw.mTops=tops; vw.mArr=arr; vw.mKills=[]; vw.mPos=null; vw.mH=null;
   if(smooth){
     const m2=faoViewerMatterHFBuild(vw);
@@ -23159,6 +23168,17 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   // (faces rouges, zone, brut non atteint), la matière du brut peut rester
   // au-dessus de tz : un trajet qui la croise passe par le dégagement.
   const sTop=(opt&&typeof opt.stockTop==='function')?opt.stockTop:null;
+  // 2026-10-21-012 : MATIÈRE RESTANTE connue (brut-corps / rouge) — le départ des
+  // entrées descend à 1 mm au-dessus de la matière réelle (plus du dessus de la
+  // BOÎTE) et la descente dans le vide se fait en rapide (2 m de plongée lente
+  // dans l'air sur Malaxeur Retard). Sans carte : comportement historique.
+  const remTop=(opt&&typeof opt.remTopAt==='function')?opt.remTopAt:null;
+  const remAdj=function(x,y,h){if(!remTop)return h;const t=remTop(x,y);return t>-1/0?Math.min(h,Math.max(t+1,z)):Math.min(h,z+1);};
+  const descend=function(x,y,zFrom,zTo){
+    if(Math.abs(zFrom-zTo)<=1e-9)return;
+    const fast=!!(remTop&&zTo<zFrom&&!(remTop(x,y)>zTo-0.5));
+    moves.push(fast?{r:1,x:rnd(x),y:rnd(y),z:zTo}:{r:0,x:rnd(x),y:rnd(y),z:zTo});
+  };
   const stockBlock=function(p,q){
     if(!sTop||!zoneAt||!tz)return false;
     const dx=q.x-p.x,dy=q.y-p.y,L=Math.sqrt(dx*dx+dy*dy),n=Math.max(1,Math.ceil(L));
@@ -23360,8 +23380,8 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
           if(!(hUse>0.5&&okOrbPt(s.sx,s.sy,hUse)))continue;
         }
         const zG2=gotoXY(s.sx,s.sy);
-        const hS=Math.max(faoHelixSpot(mesh,s.sx,s.sy,hUse,r,z,brutTop,planes),hFloor);
-        if(Math.abs(zG2-hS)>1e-9)moves.push({r:0,x:rnd(s.sx),y:rnd(s.sy),z:hS});
+        const hS=remAdj(s.sx,s.sy,Math.max(faoHelixSpot(mesh,s.sx,s.sy,hUse,r,z,brutTop,planes),hFloor));
+        descend(s.sx,s.sy,zG2,hS);
         faoHelixEntry(s.sx,s.sy,hS,z,hUse,D).slice(1).forEach(function(m){moves.push(m);});
         pushCut(s.sx,s.sy);
         emitArc(s);
@@ -23407,8 +23427,8 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     const zG=gotoXY(x,y);
     if(insideSil(x,y)){
       const hr=pickHr(x,y);
-      const hStart=Math.max(faoHelixSpot(mesh,x,y,hr>0?hr:0,r,z,brutTop,planes),hFloor);
-      if(Math.abs(zG-hStart)>1e-9)moves.push({r:0,x:rnd(x),y:rnd(y),z:hStart});
+      const hStart=remAdj(x,y,Math.max(faoHelixSpot(mesh,x,y,hr>0?hr:0,r,z,brutTop,planes),hFloor));
+      descend(x,y,zG,hStart);
       if(hr>0){
         faoHelixEntry(x,y,hStart,z,hr,D).slice(1).forEach(function(m){moves.push(m);});
         pushCut(x,y);
@@ -23422,8 +23442,8 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
         return true;
       }
     }
-    const hStart2=Math.max(faoHelixSpot(mesh,x,y,0,r,z,brutTop,planes),hFloor);
-    if(Math.abs(zG-hStart2)>1e-9)moves.push({r:0,x:rnd(x),y:rnd(y),z:hStart2});
+    const hStart2=remAdj(x,y,Math.max(faoHelixSpot(mesh,x,y,0,r,z,brutTop,planes),hFloor));
+    descend(x,y,zG,hStart2);
     rampZ0=hStart2; // l'air vers hStart2 est déjà émis : le rampage continue à z
     return false;
   };
@@ -23709,10 +23729,13 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     // sinon plongée plate sûre 007) ; repli ramp le long de la chaîne.
     const ici=P&&!P.r&&Math.abs(P.z-z)<1e-9;
     const here=ici&&Math.abs(P.x-sx)<1e-9&&Math.abs(P.y-sy)<1e-9;
+    const linkable=ici&&(sx-P.x)*(sx-P.x)+(sy-P.y)*(sy-P.y)<linkMax*linkMax&&linkOK(P.x,P.y,sx,sy);
+    // 2026-10-21-013 : chaîne de moins de 5 mm qui exigerait une entrée (remontée
+    // + descente) : ignorée — seulement avec la matière suivie (brut-corps / rouge)
+    if(!here&&!linkable&&remTop){let Lc=0;for(let q=1;q<seq.length;q++)Lc+=Math.hypot(seq[q][0]-seq[q-1][0],seq[q][1]-seq[q-1][1]);if(ch.closed&&seq.length>1)Lc+=Math.hypot(seq[0][0]-seq[seq.length-1][0],seq[0][1]-seq[seq.length-1][1]);if(Lc<5)continue;}
     if(here){
       pushCut(sx,sy);
-    }else if(ici&&(sx-P.x)*(sx-P.x)+(sy-P.y)*(sy-P.y)<linkMax*linkMax&&
-             linkOK(P.x,P.y,sx,sy)){
+    }else if(linkable){
       pushCut(sx,sy);
     }else if(!entryTo(sx,sy,ex2,ey2)){
       // 2026-10-08-007 : RAMPE le long de la chaîne de faces — la fraise
@@ -24088,7 +24111,11 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
       return false;};
     const blocked=function(p,q,zt2){const L=Math.hypot(q.x-p.x,q.y-p.y),n=Math.max(1,Math.ceil(L));
       for(let i=0;i<=n;i++){const t=i/n;if(blockedAt(p.x+(q.x-p.x)*t,p.y+(q.y-p.y)*t,zt2))return true;}return false;};
-    rem={carve:carve,blocked:blocked,blockedAt:blockedAt};
+    const topAt=function(x,y){let m=-1/0;const ci=Math.round((x-rx0)/g),cj=Math.round((y-ry0)/g);
+      for(let dj=-nb;dj<=nb;dj++)for(let di=-nb;di<=nb;di++){if((di*di+dj*dj)*g*g>rb*rb)continue;
+        const ii=ci+di,jj=cj+dj;if(ii<0||jj<0||ii>=rnx||jj>=rny)continue;const v=top[jj*rnx+ii];if(v>m)m=v;}
+      return m;};
+    rem={carve:carve,blocked:blocked,blockedAt:blockedAt,topAt:topAt};
   }
   // 2026-10-14-007 : PASSE TORIQUE (src/89-fao-torique.js) — outil à rayon de
   // coin (torique : cornerR ; boule : D/2) : après chaque niveau du moteur
@@ -24121,7 +24148,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     // ESCARGOT : spirale centre -> faces sur le meme plan/levels, memes
     // entrees/travel ; mini-passes et finition restent conventionnelles.
     // 2026-10-08-003 : sens (avalant = sens de coupe constant) porte par opt.
-    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,zoneDense:typeof o.protectTip==='function',stockTop:stockTopF,remBlocked:rem?rem.blocked:null,
+    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,zoneDense:typeof o.protectTip==='function',stockTop:stockTopF,remBlocked:rem?rem.blocked:null,remTopAt:rem?rem.topAt:null,
       bullFaces:bullC?function(zz){return faoBullRingRuns(bullCtx(L.radial),zz,o.sens==='avalant',true);}:null,
       bullOK:bullC?function(x,y,zz){return bullCtx(L.radial).tipB(x,y)<=zz+1e-6;}:null});
     else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
@@ -24143,7 +24170,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
         // paroi) est calculée au CONTACT RÉEL de l'outil (laisse Parois), à la
         // même place du parcours, au lieu du calcul fraise droite (~1 mm de
         // trop sur les faces inclinées, torique D25 R2).
-        if(bullC)faoBullRingLevel(bullCtx(s),zm,moves,{sens:o.sens,secu:secu,travelZ:tvZ,linkMax:bullLink,all:true});
+        if(bullC)faoBullRingLevel(bullCtx(s),zm,moves,{sens:o.sens,secu:secu,travelZ:tvZ,linkMax:bullLink,minRun:rem?5:0,dzStay:rem?h:0,all:true});
         else faoRoughAdaptiveLevel(M,BB,zm,D,D/2+s,secu,Math.min(secu,bandTop),ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
         if(rem)rem.carve();
         yield frameYield(); // dessin progressif 005 : mini-passe k
@@ -24177,7 +24204,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
         for(let k=1;k<=nf;k++){
           const off=RA.radial*(nf-k)/nf;
           // 2026-10-14-010 : outil à rayon de coin — anneau au contact réel, en place
-          if(bullC)faoBullRingLevel(bullCtx(off),zj,moves,{sens:o.sens,secu:secu,travelZ:tvJ,linkMax:bullLink,all:true});
+          if(bullC)faoBullRingLevel(bullCtx(off),zj,moves,{sens:o.sens,secu:secu,travelZ:tvJ,linkMax:bullLink,minRun:rem?5:0,all:true});
           else faoRoughAdaptiveLevel(M,BB,zj,D,D/2+off,secu,zF,ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvJ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
           yield frameYield(); // dessin progressif 005 : finition k
         }
@@ -24187,7 +24214,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
   if(bullC){
     for(let q=0;q<bullJobs.length;q++){const J=bullJobs[q];
       zCur=J[1];
-      faoBullRingLevel(bullCtx(J[0]),J[1],moves,{sens:o.sens,secu:secu,travelZ:J[2],linkMax:bullLink});
+      faoBullRingLevel(bullCtx(J[0]),J[1],moves,{sens:o.sens,secu:secu,travelZ:J[2],linkMax:bullLink,minRun:rem?5:0});
       if(rem)rem.carve();}
     if(bullJobs.length){const lm=moves[moves.length-1];if(lm&&lm.z<secu-1e-9)moves.push({r:1,x:lm.x,y:lm.y,z:secu});}
     yield frameYield();
@@ -29883,10 +29910,36 @@ function faoFrontPrism(red,st){
 // Obstacles rouges de l'opération : faces/solides rouges (+ leur prisme avant
 // si « Interdire devant la face »), repère du posage — null sans rouge.
 function faoProtectMesh(job,op){
+  const P=faoProtectParts(job,op);
+  return P?faoMeshConcat(P.red,P.front):null;
+}
+// {red, front} : faces/solides rouges et (option) leur volume avant
+function faoProtectParts(job,op){
   const red=faoFaceMesh(job,faoFaceList(op,'protect'));
-  if(!red||!(op&&op.protectFront))return red;
+  if(!red)return null;
+  if(!(op&&op.protectFront))return {red:red,front:null};
   let st=null;try{st=(job&&job.stock&&faoStockValid(job.stock))?job.stock:faoStock();}catch(e){st=null;}
-  return faoMeshConcat(red,faoFrontPrism(red,st));
+  return {red:red,front:faoFrontPrism(red,st)};
+}
+// 2026-10-21-013 : « devant la face » = outil DEVANT le flanc — le volume avant
+// ne s'applique que si AUCUNE pièce n'est sous le centre de l'outil. Au-dessus de
+// la pièce (face vrillée près du bord haut d'un flanc rouge), le disque peut
+// déborder sur la bande avant : la face vrillée s'usine jusqu'au bord, la
+// fraise ne descend jamais le long du flanc (retour : « je ne veux pas usiner
+// les faces rouges frontalement, mais je dois pouvoir tout usiner sur la face
+// qui vrille »).
+function faoProtectFn(job,op,kind,D,cr,laisse,model){
+  const P=faoProtectParts(job,op);if(!P)return null;
+  const m=faoProtectM(op),L=(+laisse||0)+m;
+  const dR=faoScDropper(P.red,kind,D,kind==='flat'?0:cr,L);
+  const dF=P.front?faoScDropper(P.front,kind,D,kind==='flat'?0:cr,L):null;
+  const below=(dF&&model)?faoScDropper(model,'flat',0.4,0,0):null;
+  return function(x,y){
+    const a=dR.tip(x,y);
+    if(!dF)return a;
+    if(below&&below.tip(x,y)>-1/0)return a; // pièce sous l'outil : pas « devant »
+    const b=dF.tip(x,y);return b>a?b:a;
+  };
 }
 
 /* ----- BRUT = CORPS (2026-10-21-010) -----
@@ -29937,29 +29990,24 @@ function faoStockTop(setup,g){
 // gonflé de la marge (aucun point rouge à moins de m) et, avec du bleu, si
 // l'outil repose sur une face bleue (sa descente sur le bleu seul = sur tout).
 function faoFaceOkAt(job,op,model,tool,laisse){
-  const red=faoProtectMesh(job,op);
   const blue=faoFaceBlueOp(op)&&op.type==='geofinish'?faoFaceMesh(job,faoFaceList(op,'faces')):null;
-  if(!red&&!blue)return null;
-  const kind=tool.kind||'ball',D=+tool.d||10,cr=tool.cornerR,L=+laisse||0,m=faoProtectM(op);
+  const kind=tool.kind||'ball',D=+tool.d||10,cr=tool.cornerR,L=+laisse||0;
+  const pF=faoProtectFn(job,op,kind,D,cr,L,model);
+  if(!pF&&!blue)return null;
   const dA=faoScDropper(model,kind,D,cr,L);
-  const dR=red?faoScDropper(red,kind,D,cr,L+m):null;
   const dB=blue?faoScDropper(blue,kind,D,cr,L):null;
   return function(x,y){
     const a=dA.tip(x,y);
     if(!(a>-1/0))return !blue;
-    if(dR){const r=dR.tip(x,y);if(r>a+1e-4)return false;}
+    if(pF){const r=pF(x,y);if(r>a+1e-4)return false;}
     if(dB){const b=dB.tip(x,y);if(!(b>-1/0)||Math.abs(b-a)>0.005)return false;}
     return true;
   };
 }
 // Ébauche 3D / Géodésique : cote de pointe minimale imposée par le rouge
 // (outil gonflé de la marge) — null sans rouge.
-function faoProtectTip(job,op,tool,laisse,flat){
-  const red=faoProtectMesh(job,op);
-  if(!red)return null;
-  const kind=flat?'flat':(tool.kind||'ball'),D=+tool.d||10;
-  const d=faoScDropper(red,kind,D,flat?0:tool.cornerR,(+laisse||0)+faoProtectM(op));
-  return function(x,y){return d.tip(x,y);};
+function faoProtectTip(job,op,tool,laisse,flat,model){
+  return faoProtectFn(job,op,flat?'flat':(tool.kind||'ball'),+tool.d||10,tool.cornerR,laisse,model||null);
 }
 
 // Ébauche 3D : au-dessus d'une face rouge le brut n'est JAMAIS vidé — un
@@ -30348,7 +30396,11 @@ function* faoGenGeodesicIt(model,drive,o){
   // ne doit jamais les toucher : la descente prend le max des deux (les points
   // relevés par le rouge sortent de la zone touchable, les liaisons passent
   // au-dessus avec la marge)
-  const dropR=(o.protect&&o.protect.t&&o.protect.t.length)?faoScDropper(o.protect,kind,D,o.cornerR,L+(isFinite(+o.protectM)?+o.protectM:0.5)):null;
+  // o.protectFn (x,y) -> cote de pointe minimale imposée par le rouge (marge
+  // comprise, volume avant seulement devant les flancs) — 2026-10-21-013 ;
+  // o.protect (maillage) : forme historique.
+  const dropR=(typeof o.protectFn==='function')?{tip:o.protectFn}
+    :((o.protect&&o.protect.t&&o.protect.t.length)?faoScDropper(o.protect,kind,D,o.cornerR,L+(isFinite(+o.protectM)?+o.protectM:0.5)):null);
   const drop=dropR?{r:drop0.r,Rt:drop0.Rt,L:drop0.L,tip:function(x,y){const a=drop0.tip(x,y),b=dropR.tip(x,y);return b>a?b:a;}}:drop0;
   // centre de la partie sphérique en contact : boule = Rt ; torique = rayon de coin
   const rC=drop.r>0?drop.r:Rt;
@@ -32698,11 +32750,18 @@ function faoBullRingLevel(C,z,moves,o){
     if(!E||!X)return;
     // liaison : au contact seulement au pas et sur zone usinée, sinon remontée + rapide
     let stay=false;
-    if(p&&!p.r&&Math.abs(p.z-z)<1e-6){
+    // 2026-10-21-013 : o.dzStay — enchaînement AU CONTACT d'une cote de
+    // minipasse à la voisine (même endroit, écart de cote ≤ dzStay) au lieu de
+    // remonter puis redescendre pour quelques mm (pointes de RETARD)
+    const dzOk=(o.dzStay>0)?o.dzStay+1e-6:1e-6;
+    if(p&&!p.r&&Math.abs(p.z-z)<dzOk){
       const L=Math.hypot(E[0]-p.x,E[1]-p.y);
       if(L<=linkMax){stay=true;for(let s=1;s<=Math.ceil(L/0.5)&&stay;s++){const t=s/Math.ceil(L/0.5);if(!cleared(p.x+(E[0]-p.x)*t,p.y+(E[1]-p.y)*t))stay=false;}}
     }
-    if(stay)moves.push({r:0,tr:1,x:rnd(E[0]),y:rnd(E[1]),z:z});
+    // 2026-10-21-013 : morceau trop court pour valoir une remontée + descente
+    // (« traits qui descendent pour rien ») — seulement avec brut-corps / rouge
+    if(!stay&&o.minRun>0){let Lr=0;for(let i=1;i<pts.length;i++)Lr+=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]);if(Lr<o.minRun)return;}
+    if(stay){if(Math.abs(p.z-z)>1e-6)moves.push({r:0,tr:1,x:rnd(p.x),y:rnd(p.y),z:z});moves.push({r:0,tr:1,x:rnd(E[0]),y:rnd(E[1]),z:z});}
     else{
       // hauteur de déplacement : tv seulement si l'outil y est libre sur tout
       // le trajet (pointe fraise droite <= tv − 0,5), sinon plan de sécurité
@@ -35726,7 +35785,8 @@ function mfCss(){
   /* fiche FAO (à droite) et panneau Usinage en Clair : textes FAO codés clairs → sombres */
   'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) :is(.fao-lab,.fao-tab,.fao-tip,.fao-help,.fao-empty,.fao-note){color:#5f6368!important}',
   'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) :is(.fao-opnum,.fao-title,.fao-h,.fao-tab:hover){color:#1c1c1e!important}',
-  'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) .fao-tab.on{color:#0a6cff!important}',
+  'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) .fao-tab.on{color:#fff!important;background:#0a6cff!important;border-color:#0a6cff!important}',
+  ':is(aside.right,#faoTreeWrap) .fao-tabs .fao-tab.on{color:#fff!important;background:#0a84ff!important;border-color:#0a84ff!important;font-weight:700!important}',
   'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) .fao-card{background:rgba(0,0,0,.025)!important;border-color:rgba(0,0,0,.12)!important;border-left-color:rgba(10,108,255,.7)!important}',
   'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) .fao-op .badge{color:#0f7a5c!important}',
   'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) .fao-op .hbtn.on{color:#9a6700!important}',

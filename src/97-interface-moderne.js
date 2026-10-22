@@ -57,7 +57,8 @@ function mfCss(){
   /* fiche FAO (à droite) et panneau Usinage en Clair : textes FAO codés clairs → sombres */
   'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) :is(.fao-lab,.fao-tab,.fao-tip,.fao-help,.fao-empty,.fao-note){color:#5f6368!important}',
   'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) :is(.fao-opnum,.fao-title,.fao-h,.fao-tab:hover){color:#1c1c1e!important}',
-  'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) .fao-tab.on{color:#0a6cff!important}',
+  'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) .fao-tab.on{color:#fff!important;background:#0a6cff!important;border-color:#0a6cff!important}',
+  ':is(aside.right,#faoTreeWrap) .fao-tabs .fao-tab.on{color:#fff!important;background:#0a84ff!important;border-color:#0a84ff!important;font-weight:700!important}',
   'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) .fao-card{background:rgba(0,0,0,.025)!important;border-color:rgba(0,0,0,.12)!important;border-left-color:rgba(10,108,255,.7)!important}',
   'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) .fao-op .badge{color:#0f7a5c!important}',
   'body[data-theme="clair"] :is(aside.right,#faoTreeWrap) .fao-op .hbtn.on{color:#9a6700!important}',

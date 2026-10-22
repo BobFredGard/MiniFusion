@@ -831,7 +831,10 @@ function faoViewerMatterEnable(vw){
   }
   const tops=new Float32Array(nc);
   const full=(g.full!=null)?g.full:(g.sz1!=null?g.sz1:g.oz+g.nz*(g.pz||g.pas));
-  for(let c=0;c<nc;c++)tops[c]=full;
+  // 2026-10-21-011 : cote d'affichage = Z-map de départ (brut-corps, cylindre) —
+  // initialisée à la boîte pleine, la simulation dessinait toujours un cube
+  // (« toujours un cube à la place du brut corps ») ; colonnes vides : rien.
+  for(let c=0;c<nc;c++)tops[c]=g.h?Math.min(full,g.h[c]):full;
   vw.matter=mesh; vw.matterGrid=g; vw.mTops=tops; vw.mArr=arr; vw.mKills=[]; vw.mPos=null; vw.mH=null;
   if(smooth){
     const m2=faoViewerMatterHFBuild(vw);

@@ -632,7 +632,7 @@ function* faoOpMovesIt0(op,job){
     let protTip=null;
     if(op.type==='rough3d'&&Array.isArray(op.protect)&&op.protect.length&&am&&am.mesh){
       try{ const rb=faoProtectBodiesMesh(job,op); if(rb)am={mesh:faoMeshConcat(am.mesh,rb),box:am.box}; }catch(e){}
-      try{ protTip=faoProtectTip(job,op,faoToolById(job,op.toolId)||{d:D},faoRA(op).radial,true); }catch(e){ protTip=null; }
+      try{ protTip=faoProtectTip(job,op,faoToolById(job,op.toolId)||{d:D},faoRA(op).radial,true,am.mesh); }catch(e){ protTip=null; }
     }
     // bulge supprimé : la sonde (A/B) montrait une garde identique avec ou
     // sans compensation parent — l'arrondi tangent reste hors mur (≥0.48).
@@ -742,14 +742,14 @@ function* faoOpMovesIt0(op,job){
     let red=null;
     if(am&&am.mesh&&Array.isArray(op.protect)&&op.protect.length){
       try{ const rb=faoProtectBodiesMesh(job,op); if(rb)am={mesh:faoMeshConcat(am.mesh,rb),box:am.box}; }catch(e){}
-      try{ red=faoProtectMesh(job,op); }catch(e){ red=null; }
+      try{ const tl=faoToolById(job,op.toolId)||{d:D,kind:'ball'};red=faoProtectFn(job,op,tl.kind||'ball',+tl.d||D,tl.cornerR,+op.laisse||0,am.mesh); }catch(e){ red=null; }
     }
     if(am&&am.mesh&&drive){
       const tool=faoToolById(job,op.toolId);
       mv=yield* faoGenGeodesicIt(am.mesh,drive,
         {step:isFinite(+op.step)?+op.step:1,toolD:D,kind:tool.kind,
          cornerR:tool.cornerR,laisse:+op.laisse||0,secu:secu,sens:op.sens,
-         protect:red,protectM:faoProtectM(op)});
+         protectFn:red});
       try{ if(mv&&mv.diag)op.geoDiag=mv.diag; else delete op.geoDiag; }catch(e){}
     }else{ try{ op.geoDiag={nofaces:!drive?1:0}; }catch(e){} }
   }

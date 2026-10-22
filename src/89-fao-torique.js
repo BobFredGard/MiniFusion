@@ -177,11 +177,18 @@ function faoBullRingLevel(C,z,moves,o){
     if(!E||!X)return;
     // liaison : au contact seulement au pas et sur zone usinée, sinon remontée + rapide
     let stay=false;
-    if(p&&!p.r&&Math.abs(p.z-z)<1e-6){
+    // 2026-10-21-013 : o.dzStay — enchaînement AU CONTACT d'une cote de
+    // minipasse à la voisine (même endroit, écart de cote ≤ dzStay) au lieu de
+    // remonter puis redescendre pour quelques mm (pointes de RETARD)
+    const dzOk=(o.dzStay>0)?o.dzStay+1e-6:1e-6;
+    if(p&&!p.r&&Math.abs(p.z-z)<dzOk){
       const L=Math.hypot(E[0]-p.x,E[1]-p.y);
       if(L<=linkMax){stay=true;for(let s=1;s<=Math.ceil(L/0.5)&&stay;s++){const t=s/Math.ceil(L/0.5);if(!cleared(p.x+(E[0]-p.x)*t,p.y+(E[1]-p.y)*t))stay=false;}}
     }
-    if(stay)moves.push({r:0,tr:1,x:rnd(E[0]),y:rnd(E[1]),z:z});
+    // 2026-10-21-013 : morceau trop court pour valoir une remontée + descente
+    // (« traits qui descendent pour rien ») — seulement avec brut-corps / rouge
+    if(!stay&&o.minRun>0){let Lr=0;for(let i=1;i<pts.length;i++)Lr+=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]);if(Lr<o.minRun)return;}
+    if(stay){if(Math.abs(p.z-z)>1e-6)moves.push({r:0,tr:1,x:rnd(p.x),y:rnd(p.y),z:z});moves.push({r:0,tr:1,x:rnd(E[0]),y:rnd(E[1]),z:z});}
     else{
       // hauteur de déplacement : tv seulement si l'outil y est libre sur tout
       // le trajet (pointe fraise droite <= tv − 0,5), sinon plan de sécurité

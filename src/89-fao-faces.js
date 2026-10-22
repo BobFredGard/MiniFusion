@@ -101,10 +101,36 @@ function faoFrontPrism(red,st){
 // Obstacles rouges de l'opération : faces/solides rouges (+ leur prisme avant
 // si « Interdire devant la face »), repère du posage — null sans rouge.
 function faoProtectMesh(job,op){
+  const P=faoProtectParts(job,op);
+  return P?faoMeshConcat(P.red,P.front):null;
+}
+// {red, front} : faces/solides rouges et (option) leur volume avant
+function faoProtectParts(job,op){
   const red=faoFaceMesh(job,faoFaceList(op,'protect'));
-  if(!red||!(op&&op.protectFront))return red;
+  if(!red)return null;
+  if(!(op&&op.protectFront))return {red:red,front:null};
   let st=null;try{st=(job&&job.stock&&faoStockValid(job.stock))?job.stock:faoStock();}catch(e){st=null;}
-  return faoMeshConcat(red,faoFrontPrism(red,st));
+  return {red:red,front:faoFrontPrism(red,st)};
+}
+// 2026-10-21-013 : « devant la face » = outil DEVANT le flanc — le volume avant
+// ne s'applique que si AUCUNE pièce n'est sous le centre de l'outil. Au-dessus de
+// la pièce (face vrillée près du bord haut d'un flanc rouge), le disque peut
+// déborder sur la bande avant : la face vrillée s'usine jusqu'au bord, la
+// fraise ne descend jamais le long du flanc (retour : « je ne veux pas usiner
+// les faces rouges frontalement, mais je dois pouvoir tout usiner sur la face
+// qui vrille »).
+function faoProtectFn(job,op,kind,D,cr,laisse,model){
+  const P=faoProtectParts(job,op);if(!P)return null;
+  const m=faoProtectM(op),L=(+laisse||0)+m;
+  const dR=faoScDropper(P.red,kind,D,kind==='flat'?0:cr,L);
+  const dF=P.front?faoScDropper(P.front,kind,D,kind==='flat'?0:cr,L):null;
+  const below=(dF&&model)?faoScDropper(model,'flat',0.4,0,0):null;
+  return function(x,y){
+    const a=dR.tip(x,y);
+    if(!dF)return a;
+    if(below&&below.tip(x,y)>-1/0)return a; // pièce sous l'outil : pas « devant »
+    const b=dF.tip(x,y);return b>a?b:a;
+  };
 }
 
 /* ----- BRUT = CORPS (2026-10-21-010) -----
@@ -155,29 +181,24 @@ function faoStockTop(setup,g){
 // gonflé de la marge (aucun point rouge à moins de m) et, avec du bleu, si
 // l'outil repose sur une face bleue (sa descente sur le bleu seul = sur tout).
 function faoFaceOkAt(job,op,model,tool,laisse){
-  const red=faoProtectMesh(job,op);
   const blue=faoFaceBlueOp(op)&&op.type==='geofinish'?faoFaceMesh(job,faoFaceList(op,'faces')):null;
-  if(!red&&!blue)return null;
-  const kind=tool.kind||'ball',D=+tool.d||10,cr=tool.cornerR,L=+laisse||0,m=faoProtectM(op);
+  const kind=tool.kind||'ball',D=+tool.d||10,cr=tool.cornerR,L=+laisse||0;
+  const pF=faoProtectFn(job,op,kind,D,cr,L,model);
+  if(!pF&&!blue)return null;
   const dA=faoScDropper(model,kind,D,cr,L);
-  const dR=red?faoScDropper(red,kind,D,cr,L+m):null;
   const dB=blue?faoScDropper(blue,kind,D,cr,L):null;
   return function(x,y){
     const a=dA.tip(x,y);
     if(!(a>-1/0))return !blue;
-    if(dR){const r=dR.tip(x,y);if(r>a+1e-4)return false;}
+    if(pF){const r=pF(x,y);if(r>a+1e-4)return false;}
     if(dB){const b=dB.tip(x,y);if(!(b>-1/0)||Math.abs(b-a)>0.005)return false;}
     return true;
   };
 }
 // Ébauche 3D / Géodésique : cote de pointe minimale imposée par le rouge
 // (outil gonflé de la marge) — null sans rouge.
-function faoProtectTip(job,op,tool,laisse,flat){
-  const red=faoProtectMesh(job,op);
-  if(!red)return null;
-  const kind=flat?'flat':(tool.kind||'ball'),D=+tool.d||10;
-  const d=faoScDropper(red,kind,D,flat?0:tool.cornerR,(+laisse||0)+faoProtectM(op));
-  return function(x,y){return d.tip(x,y);};
+function faoProtectTip(job,op,tool,laisse,flat,model){
+  return faoProtectFn(job,op,flat?'flat':(tool.kind||'ball'),+tool.d||10,tool.cornerR,laisse,model||null);
 }
 
 // Ébauche 3D : au-dessus d'une face rouge le brut n'est JAMAIS vidé — un

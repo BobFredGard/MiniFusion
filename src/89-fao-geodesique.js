@@ -207,7 +207,11 @@ function* faoGenGeodesicIt(model,drive,o){
   // ne doit jamais les toucher : la descente prend le max des deux (les points
   // relevés par le rouge sortent de la zone touchable, les liaisons passent
   // au-dessus avec la marge)
-  const dropR=(o.protect&&o.protect.t&&o.protect.t.length)?faoScDropper(o.protect,kind,D,o.cornerR,L+(isFinite(+o.protectM)?+o.protectM:0.5)):null;
+  // o.protectFn (x,y) -> cote de pointe minimale imposée par le rouge (marge
+  // comprise, volume avant seulement devant les flancs) — 2026-10-21-013 ;
+  // o.protect (maillage) : forme historique.
+  const dropR=(typeof o.protectFn==='function')?{tip:o.protectFn}
+    :((o.protect&&o.protect.t&&o.protect.t.length)?faoScDropper(o.protect,kind,D,o.cornerR,L+(isFinite(+o.protectM)?+o.protectM:0.5)):null);
   const drop=dropR?{r:drop0.r,Rt:drop0.Rt,L:drop0.L,tip:function(x,y){const a=drop0.tip(x,y),b=dropR.tip(x,y);return b>a?b:a;}}:drop0;
   // centre de la partie sphérique en contact : boule = Rt ; torique = rayon de coin
   const rC=drop.r>0?drop.r:Rt;

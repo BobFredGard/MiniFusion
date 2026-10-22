@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**288 versions**, de `2026-09-28b` à `V0.3.18` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**289 versions**, de `2026-09-28b` à `V0.3.19` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4390,3 +4390,14 @@ Retours utilisateur (Malaxeur Retard).
 - CACHE_VER `2026-10-21-008` : parcours d'Ébauche 3D à régénérer.
 
 Tests : `test_fao_brut_corps` (nouveau), `test_fao_faces` (minipasses avec rouge, rotation X). Suite complète 109/109. `npm run ci` vert.
+
+## V0.3.19 - FAO : simulation du vrai brut, ébauche sans plongée dans le vide, face vrillée usinée jusqu'aux flancs rouges
+Retours utilisateur (Malaxeur Retard).
+- **Simulation** : la matière DESSINÉE suit le corps-brut — l'affichage partait de la hauteur pleine de la boîte (« toujours un cube à la place du brut corps »).
+- **Ébauche 3D, brut-corps** : départs d'entrée à 1 mm au-dessus de la matière restante (plus du dessus de la boîte), descentes dans le vide en rapide. Avance dans le vide 2,6 m → 0,8 m.
+- **« Interdire devant la face »** : seulement quand l'outil est DEVANT le flanc rouge (aucune pièce sous lui) ; au-dessus de la pièce il peut déborder sur la bande avant — la face qui vrille s'usine jusqu'au bord, la fraise ne descend jamais le long du flanc.
+- **Descentes pour rien** : minipasses enchaînées au contact d'une cote à la voisine ; morceaux < 5 mm qui exigeraient une remontée ignorés. 97 → 9 descentes inutiles ; minipasses à 38 bandes sur 39 jusqu'à Z −49.
+- **Fiches d'usinage** : onglet actif en bleu plein, texte blanc gras (thèmes sombre et clair).
+- CACHE_VER `2026-10-21-013` : ébauches à régénérer.
+
+Tests : `test_fao_brut_corps` (descentes pour rien, face vrillée, matière dessinée — échoue sur V0.3.18), `test_fao_faces` (cas D, nouvelle règle). Suite complète 109/109. `npm run ci` vert.

@@ -750,6 +750,17 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   // (faces rouges, zone, brut non atteint), la matière du brut peut rester
   // au-dessus de tz : un trajet qui la croise passe par le dégagement.
   const sTop=(opt&&typeof opt.stockTop==='function')?opt.stockTop:null;
+  // 2026-10-21-012 : MATIÈRE RESTANTE connue (brut-corps / rouge) — le départ des
+  // entrées descend à 1 mm au-dessus de la matière réelle (plus du dessus de la
+  // BOÎTE) et la descente dans le vide se fait en rapide (2 m de plongée lente
+  // dans l'air sur Malaxeur Retard). Sans carte : comportement historique.
+  const remTop=(opt&&typeof opt.remTopAt==='function')?opt.remTopAt:null;
+  const remAdj=function(x,y,h){if(!remTop)return h;const t=remTop(x,y);return t>-1/0?Math.min(h,Math.max(t+1,z)):Math.min(h,z+1);};
+  const descend=function(x,y,zFrom,zTo){
+    if(Math.abs(zFrom-zTo)<=1e-9)return;
+    const fast=!!(remTop&&zTo<zFrom&&!(remTop(x,y)>zTo-0.5));
+    moves.push(fast?{r:1,x:rnd(x),y:rnd(y),z:zTo}:{r:0,x:rnd(x),y:rnd(y),z:zTo});
+  };
   const stockBlock=function(p,q){
     if(!sTop||!zoneAt||!tz)return false;
     const dx=q.x-p.x,dy=q.y-p.y,L=Math.sqrt(dx*dx+dy*dy),n=Math.max(1,Math.ceil(L));
@@ -951,8 +962,8 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
           if(!(hUse>0.5&&okOrbPt(s.sx,s.sy,hUse)))continue;
         }
         const zG2=gotoXY(s.sx,s.sy);
-        const hS=Math.max(faoHelixSpot(mesh,s.sx,s.sy,hUse,r,z,brutTop,planes),hFloor);
-        if(Math.abs(zG2-hS)>1e-9)moves.push({r:0,x:rnd(s.sx),y:rnd(s.sy),z:hS});
+        const hS=remAdj(s.sx,s.sy,Math.max(faoHelixSpot(mesh,s.sx,s.sy,hUse,r,z,brutTop,planes),hFloor));
+        descend(s.sx,s.sy,zG2,hS);
         faoHelixEntry(s.sx,s.sy,hS,z,hUse,D).slice(1).forEach(function(m){moves.push(m);});
         pushCut(s.sx,s.sy);
         emitArc(s);
@@ -998,8 +1009,8 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     const zG=gotoXY(x,y);
     if(insideSil(x,y)){
       const hr=pickHr(x,y);
-      const hStart=Math.max(faoHelixSpot(mesh,x,y,hr>0?hr:0,r,z,brutTop,planes),hFloor);
-      if(Math.abs(zG-hStart)>1e-9)moves.push({r:0,x:rnd(x),y:rnd(y),z:hStart});
+      const hStart=remAdj(x,y,Math.max(faoHelixSpot(mesh,x,y,hr>0?hr:0,r,z,brutTop,planes),hFloor));
+      descend(x,y,zG,hStart);
       if(hr>0){
         faoHelixEntry(x,y,hStart,z,hr,D).slice(1).forEach(function(m){moves.push(m);});
         pushCut(x,y);
@@ -1013,8 +1024,8 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
         return true;
       }
     }
-    const hStart2=Math.max(faoHelixSpot(mesh,x,y,0,r,z,brutTop,planes),hFloor);
-    if(Math.abs(zG-hStart2)>1e-9)moves.push({r:0,x:rnd(x),y:rnd(y),z:hStart2});
+    const hStart2=remAdj(x,y,Math.max(faoHelixSpot(mesh,x,y,0,r,z,brutTop,planes),hFloor));
+    descend(x,y,zG,hStart2);
     rampZ0=hStart2; // l'air vers hStart2 est déjà émis : le rampage continue à z
     return false;
   };
@@ -1300,10 +1311,13 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     // sinon plongée plate sûre 007) ; repli ramp le long de la chaîne.
     const ici=P&&!P.r&&Math.abs(P.z-z)<1e-9;
     const here=ici&&Math.abs(P.x-sx)<1e-9&&Math.abs(P.y-sy)<1e-9;
+    const linkable=ici&&(sx-P.x)*(sx-P.x)+(sy-P.y)*(sy-P.y)<linkMax*linkMax&&linkOK(P.x,P.y,sx,sy);
+    // 2026-10-21-013 : chaîne de moins de 5 mm qui exigerait une entrée (remontée
+    // + descente) : ignorée — seulement avec la matière suivie (brut-corps / rouge)
+    if(!here&&!linkable&&remTop){let Lc=0;for(let q=1;q<seq.length;q++)Lc+=Math.hypot(seq[q][0]-seq[q-1][0],seq[q][1]-seq[q-1][1]);if(ch.closed&&seq.length>1)Lc+=Math.hypot(seq[0][0]-seq[seq.length-1][0],seq[0][1]-seq[seq.length-1][1]);if(Lc<5)continue;}
     if(here){
       pushCut(sx,sy);
-    }else if(ici&&(sx-P.x)*(sx-P.x)+(sy-P.y)*(sy-P.y)<linkMax*linkMax&&
-             linkOK(P.x,P.y,sx,sy)){
+    }else if(linkable){
       pushCut(sx,sy);
     }else if(!entryTo(sx,sy,ex2,ey2)){
       // 2026-10-08-007 : RAMPE le long de la chaîne de faces — la fraise
@@ -1679,7 +1693,11 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
       return false;};
     const blocked=function(p,q,zt2){const L=Math.hypot(q.x-p.x,q.y-p.y),n=Math.max(1,Math.ceil(L));
       for(let i=0;i<=n;i++){const t=i/n;if(blockedAt(p.x+(q.x-p.x)*t,p.y+(q.y-p.y)*t,zt2))return true;}return false;};
-    rem={carve:carve,blocked:blocked,blockedAt:blockedAt};
+    const topAt=function(x,y){let m=-1/0;const ci=Math.round((x-rx0)/g),cj=Math.round((y-ry0)/g);
+      for(let dj=-nb;dj<=nb;dj++)for(let di=-nb;di<=nb;di++){if((di*di+dj*dj)*g*g>rb*rb)continue;
+        const ii=ci+di,jj=cj+dj;if(ii<0||jj<0||ii>=rnx||jj>=rny)continue;const v=top[jj*rnx+ii];if(v>m)m=v;}
+      return m;};
+    rem={carve:carve,blocked:blocked,blockedAt:blockedAt,topAt:topAt};
   }
   // 2026-10-14-007 : PASSE TORIQUE (src/89-fao-torique.js) — outil à rayon de
   // coin (torique : cornerR ; boule : D/2) : après chaque niveau du moteur
@@ -1712,7 +1730,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     // ESCARGOT : spirale centre -> faces sur le meme plan/levels, memes
     // entrees/travel ; mini-passes et finition restent conventionnelles.
     // 2026-10-08-003 : sens (avalant = sens de coupe constant) porte par opt.
-    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,zoneDense:typeof o.protectTip==='function',stockTop:stockTopF,remBlocked:rem?rem.blocked:null,
+    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,zoneDense:typeof o.protectTip==='function',stockTop:stockTopF,remBlocked:rem?rem.blocked:null,remTopAt:rem?rem.topAt:null,
       bullFaces:bullC?function(zz){return faoBullRingRuns(bullCtx(L.radial),zz,o.sens==='avalant',true);}:null,
       bullOK:bullC?function(x,y,zz){return bullCtx(L.radial).tipB(x,y)<=zz+1e-6;}:null});
     else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
@@ -1734,7 +1752,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
         // paroi) est calculée au CONTACT RÉEL de l'outil (laisse Parois), à la
         // même place du parcours, au lieu du calcul fraise droite (~1 mm de
         // trop sur les faces inclinées, torique D25 R2).
-        if(bullC)faoBullRingLevel(bullCtx(s),zm,moves,{sens:o.sens,secu:secu,travelZ:tvZ,linkMax:bullLink,all:true});
+        if(bullC)faoBullRingLevel(bullCtx(s),zm,moves,{sens:o.sens,secu:secu,travelZ:tvZ,linkMax:bullLink,minRun:rem?5:0,dzStay:rem?h:0,all:true});
         else faoRoughAdaptiveLevel(M,BB,zm,D,D/2+s,secu,Math.min(secu,bandTop),ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
         if(rem)rem.carve();
         yield frameYield(); // dessin progressif 005 : mini-passe k
@@ -1768,7 +1786,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
         for(let k=1;k<=nf;k++){
           const off=RA.radial*(nf-k)/nf;
           // 2026-10-14-010 : outil à rayon de coin — anneau au contact réel, en place
-          if(bullC)faoBullRingLevel(bullCtx(off),zj,moves,{sens:o.sens,secu:secu,travelZ:tvJ,linkMax:bullLink,all:true});
+          if(bullC)faoBullRingLevel(bullCtx(off),zj,moves,{sens:o.sens,secu:secu,travelZ:tvJ,linkMax:bullLink,minRun:rem?5:0,all:true});
           else faoRoughAdaptiveLevel(M,BB,zj,D,D/2+off,secu,zF,ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvJ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
           yield frameYield(); // dessin progressif 005 : finition k
         }
@@ -1778,7 +1796,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
   if(bullC){
     for(let q=0;q<bullJobs.length;q++){const J=bullJobs[q];
       zCur=J[1];
-      faoBullRingLevel(bullCtx(J[0]),J[1],moves,{sens:o.sens,secu:secu,travelZ:J[2],linkMax:bullLink});
+      faoBullRingLevel(bullCtx(J[0]),J[1],moves,{sens:o.sens,secu:secu,travelZ:J[2],linkMax:bullLink,minRun:rem?5:0});
       if(rem)rem.carve();}
     if(bullJobs.length){const lm=moves[moves.length-1];if(lm&&lm.z<secu-1e-9)moves.push({r:1,x:lm.x,y:lm.y,z:secu});}
     yield frameYield();

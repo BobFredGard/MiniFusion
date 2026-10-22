@@ -114,17 +114,21 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     // outil (fraise droite D20) qui entre dans le volume AVANT du flanc (prisme jusqu'au brut)
     const prism=faoFrontPrism(faoFaceMesh(setup,[{b:imp.id,f:side}]),setup.stock);
     const dP=faoScDropper(prism,'flat',20,0,0);
+    // 2026-10-21-013 : « devant » = centre d'outil sans pièce dessous (au-dessus de
+    // la pièce, l'outil peut déborder sur la bande pour finir la face vrillée)
+    const dBelow=faoScDropper(faoActiveMesh(setup).mesh,'flat',0.4,0,0);
     const band=function(mv){let n=0;
       for(let i=1;i<mv.length;i++){const a=mv[i-1],b=mv[i];if(b.r)continue;
         const L=Math.hypot(b.x-a.x,b.y-a.y),ns=Math.max(1,Math.ceil(L/0.5));
         for(let k=1;k<=ns;k++){const t=k/ns,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t,z=a.z+(b.z-a.z)*t;
+          if(dBelow.tip(x,y)>-1/0)continue; // pièce sous l'outil : pas devant le flanc
           const e=dP.tip(x,y);if(e>-1e8&&z<e-0.05)n++;}}return n;};
     const eD=faoOpDefaults('rough3d');Object.assign(eD,{toolId:'TT',ap:6,ae:6,radial:0.5,axial:0.5,ztop:setup.stock.z1,zbot:35,minipasses:0,protect:[{b:imp.id,f:side}],protectM:0.5});
     setup.ops=[eD];faoSanitiseOps(setup);
     const mvD0=faoOpMoves(eD,setup);
     const eF=Object.assign({},eD,{id:'front',protectFront:true});setup.ops=[eF];faoSanitiseOps(setup);
     const mvD1=faoOpMoves(setup.ops[0],setup);
-    const pTF=faoProtectTip(setup,setup.ops[0],bull,0,true);
+    const pTF=faoProtectTip(setup,setup.ops[0],bull,0,true,faoActiveMesh(setup).mesh);
     let wF=0,wAt=null;for(let i=1;i<mvD1.length;i++){const a=mvD1[i-1],b=mvD1[i];const L=Math.hypot(b.x-a.x,b.y-a.y),ns=Math.max(1,Math.ceil(L/0.5));
       for(let k=0;k<=ns;k++){const t=k/ns,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t,z=a.z+(b.z-a.z)*t;const e=pTF(x,y)-z;if(e>wF){wF=e;wAt=[+x.toFixed(1),+y.toFixed(1),+z.toFixed(1),i,b.r?'G0':(b.ent?'ent':'G1'),JSON.stringify(a),JSON.stringify(b)];}}}
     out.Dat=wAt;
@@ -180,7 +184,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   if(r.D.wF>0.02)console.log('    pire en',JSON.stringify(r.Dat));
   A(r.D.frontKept,'D : option « Interdire devant la face » conservée par le nettoyage');
   A(r.D.band0>0,'D : sans la case, l’ébauche usine bien le brut devant le flanc rouge (cas du retour utilisateur)');
-  A(r.D.band1===0,'D : avec la case, plus aucune avance devant le flanc rouge');
+  A(r.D.band1===0,'D : avec la case, plus aucune avance DEVANT le flanc rouge (outil hors de la pièce)');
   A(r.D.wF<=0.02,'D : aucune position d’outil dans le volume avant + marge');
   console.log('  · E minipasses par bande (Z niveau : longueur aux 2 cotes de minipasse, mm) : '+r.E.bands.map(b=>b[0].toFixed(1)+':'+b[1]).join(' · '));
   A(r.E.bands.length>=3&&r.E.bands.every(b=>b[1]>10),'E : minipasses présentes à CHAQUE bande malgré les flancs rouges');

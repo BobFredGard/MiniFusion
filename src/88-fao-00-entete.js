@@ -71,6 +71,9 @@ const faoRapideMin=30;
       +'font-size:.74rem;padding:5px 8px;cursor:pointer;border-radius:0}'
       +'.fao-tab:hover{color:#f5f5f7}'
       +'.fao-tab.on{color:#f5f5f7;border-bottom-color:#0a84ff}'
+      // 2026-10-21-014 : onglet ACTIF lisible (retour : « illisible ») — fond plein
+      // bleu, texte blanc gras ; prioritaire sur l'habillage des boutons du thème
+      +'.fao-tabs .fao-tab.on,.fao-tabs .fao-tab.on:hover{background:#0a84ff!important;border-color:#0a84ff!important;color:#fff!important;font-weight:700!important;box-shadow:0 0 0 1px rgba(10,132,255,.55),0 0 8px rgba(10,132,255,.45)!important}'
       +'.fao-pair{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}'
       +'.fao-tip{font-size:.7rem;color:rgba(255,255,255,.58);line-height:1.4;margin-top:8px;'
       +'padding:6px 8px;border-radius:7px;background:rgba(255,255,255,.04);min-height:1.4em}'

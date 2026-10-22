@@ -56,10 +56,12 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
       if(dil((p.x+q.x)/2,(p.y+q.y)/2)>(p.z+q.z)/2+0.05)c+=L;else a+=L;}return [a,c];};
     // simulation : colonnes de la matière de départ
     const gm=faoMatterGrid(setup.stock);let full=0;for(let i=0;i<gm.nx*gm.ny;i++)if(gm.h[i]>=box.z1-1e-6)full++;
+    // affichage de la matière (2026-10-21-011) : cotes dessinées = Z-map, pas la boîte
+    let fullDisp=-1;try{const vw={matterOn:true,t:0,pts:[],dd:[],times:[]};faoViewerMatterEnable(vw);if(vw.mTops){fullDisp=0;for(let i=0;i<vw.mTops.length;i++)if(vw.mTops[i]>=box.z1-1e-6)fullDisp++;}}catch(e){fullDisp='err '+e.message;}
     const eP=importStepBuild(new Uint8Array(__part));
     const mP=_faoMeshFromBodyOrig({mesh:{geometry:eP.faoGeo}},600000),mS=_faoMeshFromBodyOrig({mesh:{geometry:eS.faoGeo}},600000);
     return {airBox:air(mvBox),airBody:air(mvBody),nBox:mvBox.length,nBody:mvBody.length,zt:box.z1,
-      sim:{cols:gm.nx*gm.ny,full:full},mP:mP,mS:mS,mv:mvBody.map(m=>[m.r?1:0,m.x,m.y,m.z])};
+      sim:{cols:gm.nx*gm.ny,full:full,fullDisp:fullDisp},mP:mP,mS:mS,mv:mvBody.map(m=>[m.r?1:0,m.x,m.y,m.z])};
   })()`,ctx);
   const pc=a=>(100*a[0]/(a[0]+a[1])).toFixed(0);
   console.log('  · avance dans le vide : boîte '+(r.airBox[0]/1000).toFixed(1)+' m ('+pc(r.airBox)+' %) → corps '+(r.airBody[0]/1000).toFixed(1)+' m ('+pc(r.airBody)+' %) ; mouvements '+r.nBox+' → '+r.nBody);
@@ -97,9 +99,25 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
       if(horiz){let d=0;visit(ZS,x,y,z,(c,zc)=>{const e=Hs[c]-zc;if(e>d)d=e;});if(d>0.6&&d>rapH){rapH=d;rapHAt=[x,y,z,i];}}
       if(!b[0])visit(ZS,x,y,z,(c,zc)=>{if(zc<Hs[c])Hs[c]=zc;});}}
   A(pen<0.01,'aucune avance à travers la pièce');
+  // « traits qui descendent pour rien » : descente > 10 mm suivie de < 5 mm d'usinage
+  {const seqs=[];let cur=null;
+    for(let i=1;i<mv.length;i++){const a=mv[i-1],b=mv[i];const L3=Math.hypot(b[1]-a[1],b[2]-a[2],b[3]-a[3]);const vert=Math.hypot(b[1]-a[1],b[2]-a[2])<1e-6;
+      if(b[0]&&b[3]>a[3]+1e-6){if(cur)seqs.push(cur);cur={desc:0,cut:0};continue;}if(!cur)continue;if(vert&&b[3]<a[3])cur.desc+=a[3]-b[3];else if(!b[0])cur.cut+=L3;}
+    if(cur)seqs.push(cur);
+    const inut=seqs.filter(q=>q.desc>10&&q.cut<5).length;
+    console.log('  · descentes pour rien (> 10 mm puis < 5 mm d’usinage) : '+inut+' sur '+seqs.length+' séquences');
+    A(inut<=0.05*seqs.length,'au plus 5 % de descentes pour rien');}
+  // face vrillée : matière restante au-dessus de la pièce (x 1→47,2), après toutes les avances
+  {let n2=0,big=0;for(let j=0;j<ZS.ny;j++)for(let i=0;i<ZS.nx;i++){const x=ZS.x0+i*G,y=ZS.y0+j*G;if(x<1||x>47.2)continue;
+      const ip=Math.round((x-ZP.x0)/G),jp=Math.round((y-ZP.y0)/G);if(ip<0||jp<0||ip>=ZP.nx||jp>=ZP.ny)continue;const zp=ZP.h[jp*ZP.nx+ip];if(!(zp>-1/0)||zp<30)continue;
+      n2++;if(Hs[j*ZS.nx+i]-zp>4)big++;}
+    console.log('  · au-dessus de la pièce (Z ≥ 30) : '+(100*big/n2).toFixed(1)+' % des points avec plus de 4 mm de brut');
+    A(big<0.02*n2,'face vrillée ébauchée partout (moins de 2 % des points à plus de 4 mm de brut)');}
   A(rapH===0,'aucun rapide horizontal dans la matière restante du brut'+(rapHAt?' (pire '+rapH.toFixed(2)+' mm en '+rapHAt.map(v=>+v.toFixed(1)).join(',')+')':''));
   console.log('  · simulation : '+r.sim.full+' colonnes pleines sur '+r.sim.cols);
   A(r.sim.full<0.05*r.sim.cols,'simulation : matière de départ = dessus du corps-brut (pas la boîte pleine)');
+  console.log('  · affichage de la matière : '+r.sim.fullDisp+' colonnes dessinées à la hauteur pleine');
+  A(typeof r.sim.fullDisp==='number'&&r.sim.fullDisp>=0&&r.sim.fullDisp<0.05*r.sim.cols,'simulation : la matière DESSINÉE suit le corps-brut (dessinait un cube)');
   console.log(ko?'ÉCHEC '+ko:'OK');
   process.exit(ko?1:0);
 })();
