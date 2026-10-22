@@ -3,6 +3,10 @@ let mirrorOn=true,mirrorRT=null,mirrorCam=null,mirrorTexMat=null,mirrorU=null,fl
 let zoomInv=false;
 try{const _zi=localStorage.getItem('minifusion_zoominv');if(_zi==='on')zoomInv=true;}catch(e){}
 try{const _mo=localStorage.getItem('minifusion_mirror');if(_mo==='off')mirrorOn=false;}catch(e){}
+// 2026-10-22 : orbite LIBRE (façon Fusion « Free Orbit ») — la pièce tourne dans tous les sens,
+// roulis compris ; contrainte (défaut) = le Z de la vue reste en haut de l'écran.
+let orbitFree=false,_fo=null;
+try{if(localStorage.getItem('minifusion_orbit')==='libre')orbitFree=true;}catch(e){}
 function makeStudioEnv(){
   // Environnement procédural (reflets PBR) : 6 faces dégradé + boîtes lumineuses. Zéro asset externe.
   function face(draw){const c=document.createElement('canvas');c.width=c.height=256;draw(c.getContext('2d'));return c;}
@@ -60,6 +64,7 @@ function buildScene(){
   // Souris : rotation = clic GAUCHE enfoncé, roulette (molette) conservée = rotation aussi,
   // déplacement (pan) = clic DROIT enfoncé. Clic court sans glisser = sélection (gardien >6px).
   if(controls.mouseButtons&&THREE.MOUSE){controls.mouseButtons.LEFT=THREE.MOUSE.ROTATE;controls.mouseButtons.MIDDLE=THREE.MOUSE.ROTATE;controls.mouseButtons.RIGHT=THREE.MOUSE.PAN;}
+  orbitApplyButtons();orbitWire(renderer.domElement); // rotation : pivot sur la pièce (orbitRotate)
   // Dès que l'utilisateur pilote réellement la caméra (glisser bouton enfoncé / roulette),
   // le re-cadrage automatique du démarrage (occtFinishBoot) ne doit plus lui voler sa vue.
   try{
@@ -224,6 +229,101 @@ function refreshMirror(){
    propre repère (3+2). Hors FAO (CAO, PLAN) : Z monde. OrbitControls fige son axe
    d'orbite à la création : il est recréé (mêmes réglages, même cible) quand le haut
    change. Rien ne bouge pendant l'édition d'esquisse (caméra ortho dédiée). */
+/* 2026-10-22 : la ROTATION ne passe plus par OrbitControls (qui ne garde que le pan au clic droit
+   et le zoom) : elle tourne autour d'un PIVOT distinct de la cible — centre de la face
+   sélectionnée, sinon centre des pièces visibles. Un pan ne déplace donc plus le centre de
+   rotation (comme Fusion). Caméra ET cible tournent autour du pivot ; OrbitControls.update()
+   ne fait ensuite que recopier la position et regarder la cible.
+   Contrainte : azimut autour du Z de la vue, élévation bornée avant les pôles, Z en haut.
+   Libre : rotation autour des axes ÉCRAN (haut et droite de la caméra), camera.up suit.
+   Inertie : même amortissement qu'OrbitControls (dampingFactor appliqué à chaque image). */
+function orbitApplyButtons(){
+  if(!controls||!controls.mouseButtons||!THREE.MOUSE)return;
+  controls.mouseButtons.LEFT=-1;controls.mouseButtons.MIDDLE=-1;
+}
+// haut de l'écran = Z de la vue (monde, ou posage / opération en FAO) : vues normalisées, retour en contraint
+function viewUpReset(){
+  if(!camera||!controls)return;
+  camera.up.copy(_mn);
+  const off=camera.position.clone().sub(controls.target);
+  if(off.lengthSq()>0&&Math.abs(off.clone().normalize().dot(_mn))>0.9999){
+    const s=new THREE.Vector3(1,-1,0).normalize();if(Math.abs(s.dot(_mn))>0.9)s.set(0,1,0);
+    camera.position.addScaledVector(s,off.length()*1e-3);
+  }
+}
+function orbitSetMode(free){
+  orbitFree=!!free;
+  try{localStorage.setItem('minifusion_orbit',orbitFree?'libre':'contrainte');}catch(e){}
+  orbitApplyButtons();
+  if(!orbitFree){viewUpReset();try{controls.update();}catch(e){}} // la pièce se redresse
+  try{const o=document.getElementById('optOrbit');if(o)o.value=orbitFree?'libre':'contrainte';}catch(e){}
+  try{if(typeof mfOrbitBtnSync==='function')mfOrbitBtnSync();}catch(e){}
+}
+// pivot : centre de la (première) face sélectionnée, sinon centre des pièces visibles (+ brut en FAO)
+function orbitPivot(){
+  try{
+    if(typeof selFaces!=='undefined'&&selFaces.length&&selFaces[0].mesh&&typeof faceCentroid==='function'){
+      const c=faceCentroid(selFaces[0].mesh,selFaces[0].faceIndex);
+      if(c)return c;
+      if(selFaces[0].point)return selFaces[0].point.clone();
+    }
+  }catch(e){}
+  const box=new THREE.Box3();
+  try{bodies.forEach(b=>{if(b.visible&&b.mesh&&b.mesh.visible!==false)box.expandByObject(b.mesh);});}catch(e){}
+  try{
+    if(typeof faoPoseGrp!=='undefined'&&faoPoseGrp&&faoPoseGrp.parent&&faoPoseGrp.parent.visible!==false)
+      faoPoseGrp.traverse(o=>{if(o.isMesh&&o.visible&&o.userData&&o.userData.faoStock)box.expandByObject(o);});
+  }catch(e){}
+  return box.isEmpty()?controls.target.clone():box.getCenter(new THREE.Vector3());
+}
+function orbitRotate(dx,dy,P){
+  if(!camera||!controls||!renderer)return;
+  const k=2*Math.PI/(renderer.domElement.clientHeight||600)*(controls.rotateSpeed||1); // même vitesse qu'OrbitControls
+  const t=controls.target;
+  if(!P)P=t.clone();
+  camera.updateMatrixWorld();
+  const U=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,1).normalize();
+  const R=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,0).normalize();
+  let q;
+  if(orbitFree){
+    // glisser à droite : la pièce tourne vers la droite ; glisser vers le bas : on passe par-dessus
+    q=new THREE.Quaternion().setFromAxisAngle(U,-dx*k).multiply(new THREE.Quaternion().setFromAxisAngle(R,-dy*k));
+  }else{
+    // élévation autour de la droite écran (horizontale : up = Z de la vue), bornée avant les pôles
+    const d=camera.position.clone().sub(t).normalize();
+    const phi=Math.acos(Math.max(-1,Math.min(1,d.dot(_mn))));
+    const lim=1e-3,a=Math.max(lim,Math.min(Math.PI-lim,phi-dy*k))-phi;
+    q=new THREE.Quaternion().setFromAxisAngle(_mn,-dx*k).multiply(new THREE.Quaternion().setFromAxisAngle(R,a));
+  }
+  const off=camera.position.clone().sub(P).applyQuaternion(q),toff=t.clone().sub(P).applyQuaternion(q);
+  if(orbitFree)camera.up.copy(U.applyQuaternion(q));else camera.up.copy(_mn);
+  camera.position.copy(P).add(off);t.copy(P).add(toff);camera.lookAt(t);
+  viewUserMoved=true;
+}
+// inertie : le reste du glissement s'écoule comme l'amortissement d'OrbitControls
+function orbitTick(){
+  if(!_fo||(!_fo.vx&&!_fo.vy))return;
+  try{if(typeof skEdit!=='undefined'&&skEdit){_fo.vx=_fo.vy=0;return;}}catch(e){}
+  const f=(controls&&controls.enableDamping)?(controls.dampingFactor||0.08):1;
+  orbitRotate(_fo.vx*f,_fo.vy*f,_fo.P);
+  _fo.vx*=1-f;_fo.vy*=1-f;
+  if(Math.abs(_fo.vx)<0.01&&Math.abs(_fo.vy)<0.01){_fo.vx=_fo.vy=0;if(!_fo.down)_fo=null;}
+}
+function orbitWire(el){
+  el.addEventListener('pointerdown',e=>{
+    if(e.button!==0&&e.button!==1)return;
+    if(!controls||controls.enabled===false||!controls.enableRotate)return; // esquisse : caméra figée
+    try{if(typeof skEdit!=='undefined'&&skEdit)return;}catch(err){}
+    _fo={id:e.pointerId,x:e.clientX,y:e.clientY,P:orbitPivot(),vx:0,vy:0,down:true};
+  });
+  window.addEventListener('pointermove',e=>{
+    if(!_fo||!_fo.down||e.pointerId!==_fo.id)return;
+    const dx=e.clientX-_fo.x,dy=e.clientY-_fo.y;_fo.x=e.clientX;_fo.y=e.clientY;
+    _fo.vx+=dx;_fo.vy+=dy;
+  });
+  const fin=e=>{if(_fo&&e.pointerId===_fo.id){_fo.down=false;if(!_fo.vx&&!_fo.vy)_fo=null;}};
+  window.addEventListener('pointerup',fin);window.addEventListener('pointercancel',fin);
+}
 function viewFaoActive(){
   try{
     const mod=!!(document.body&&document.body.classList&&document.body.classList.contains('ui-modern'));
@@ -300,7 +400,7 @@ function mirrorViewMoved(){
 function animate(){
   requestAnimationFrame(animate);
   try{viewUpSync();}catch(e){} // 2026-10-21-005 : haut de vue = Z du posage / de l'opération en FAO
-  controls.update();updateLabels();
+  orbitTick();controls.update();updateLabels();
   if(mirrorOn&&floorMesh&&mirrorCam){
     const vu=updateMirror();
     mirrorViewMoved();
@@ -328,6 +428,7 @@ function showAll(){
   const box=new THREE.Box3();
   bodies.forEach(b=>{if(b.visible)box.expandByObject(b.mesh);});
   doc.sketches.forEach(s=>{const m=scene.getObjectByName('sk_'+s.id);if(m&&s.visible!==false)box.expandByObject(m);});
+  viewUpReset();
   if(box.isEmpty()){camera.position.set(90,-90,90);controls.target.set(0,0,0);}
   else{const c=box.getCenter(new THREE.Vector3()),r=box.getSize(new THREE.Vector3()).length()||50;
     controls.target.copy(c);camera.position.copy(c).add(new THREE.Vector3(r*.7,-r*.6,r*.7));}
@@ -347,7 +448,7 @@ function viewFit(o){
   const fv=((camera.fov||45)*Math.PI/180);
   const s=Math.max(Math.sin(fv*0.5),Math.sin(Math.atan(Math.tan(fv*0.5)*aspect)));
   const d=(r/Math.max(s,0.05))*1.25;
-  controls.target.copy(c);
+  controls.target.copy(c);viewUpReset();
   // 2026-10-21-005 : direction exprimée dans le repère de la vue (posage en FAO)
   const B=viewBasis(),w=[0,1,2].map(k=>B.X[k]*o[0]+B.Y[k]*o[1]+B.Z[k]*o[2]);
   camera.position.set(c.x+w[0]*d,c.y+w[1]*d,c.z+w[2]*d);
@@ -355,6 +456,7 @@ function viewFit(o){
 }
 function setView(v){
   if(v==='iso'){viewFit([0.6,-0.6,0.6]);return;} // Iso = vue complète isométrique
+  viewUpReset(); // orbite libre : la vue normalisée se redresse
   const t=controls.target.clone(),d=camera.position.distanceTo(t)||150;
   // 2026-10-21-005 : axes de la vue = repère du posage / de l'opération en FAO
   const B=viewBasis(),at=function(a,s){camera.position.set(t.x+a[0]*s*d,t.y+a[1]*s*d,t.z+a[2]*s*d);};

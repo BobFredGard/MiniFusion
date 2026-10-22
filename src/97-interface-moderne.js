@@ -178,7 +178,9 @@ function mfCss(){
   '@media (max-width:900px){.mfSearch{display:none!important}.mfWs button{padding:4px 9px}}',
   /* cube de vue */
   '#mfCube{position:absolute;top:4px;right:4px;z-index:24;width:80px;height:80px}',
-  '#mfCubeHome{position:absolute;top:2px;left:-18px;width:16px;height:16px;padding:0;font-size:10px;line-height:14px;border-radius:4px;background:rgba(40,44,52,.88)}'
+  '#mfCubeHome{position:absolute;top:2px;left:-18px;width:16px;height:16px;padding:0;font-size:10px;line-height:14px;border-radius:4px;background:rgba(40,44,52,.88)}',
+  '#mfOrbit{position:absolute;top:21px;left:-18px;width:16px;height:16px;padding:0;font-size:11px;line-height:14px;border-radius:4px;background:rgba(40,44,52,.88)}',
+  '#mfOrbit.on{background:var(--accent,#2f7de1);color:#fff}'
   ].join('\n');
   document.head.appendChild(st);
 }
@@ -481,11 +483,18 @@ function mfStatusBar(){
 /* cube de vue : suit la caméra ; clic sur une face = vue depuis cette face */
 function mfViewDir(n){
   try{
+    viewUpReset(); // orbite libre : la face choisie revient droite
     const t=controls.target.clone(),d=camera.position.distanceTo(t)||150;
     camera.position.set(t.x+n[0]*d,t.y+n[1]*d,t.z+n[2]*d);
     if(Math.abs(n[2])>0.99)camera.position.y-=d*1e-4; // dessus / dessous : léger biais (pas de pôle)
     controls.update();
   }catch(e){}
+}
+function mfOrbitBtnSync(){
+  const b=document.getElementById('mfOrbit');if(!b)return;
+  b.classList.toggle('on',!!orbitFree);
+  b.title=orbitFree?'Orbite LIBRE : la pièce tourne dans tous les sens — cliquer pour l’orbite contrainte (Z en haut)'
+    :'Orbite contrainte : Z reste en haut — cliquer pour l’orbite libre (tour complet)';
 }
 function mfCube(){
   // petit rendu three.js séparé : cube étiqueté qui suit l'orientation de la caméra ; clic sur une face
@@ -493,6 +502,8 @@ function mfCube(){
   const c=document.createElement('div');c.id='mfCube';c.className='mfM';
   const cv=document.createElement('canvas');cv.width=160;cv.height=160;cv.style.cssText='width:80px;height:80px;cursor:pointer';c.appendChild(cv);
   const h=document.createElement('button');h.id='mfCubeHome';h.textContent='⌂';h.title='Vue iso (tout afficher)';h.onclick=()=>{try{setView('iso');}catch(e){}};c.appendChild(h);
+  const ob=document.createElement('button');ob.id='mfOrbit';ob.textContent='⟲';ob.onclick=()=>{try{orbitSetMode(!orbitFree);}catch(e){}};c.appendChild(ob);
+  mfOrbitBtnSync();
   vp.appendChild(c);
   let rd=null;try{rd=new THREE.WebGLRenderer({canvas:cv,alpha:true,antialias:true});rd.setPixelRatio(1);rd.setSize(160,160,false);}catch(e){return;}
   const sc=new THREE.Scene(),cam=new THREE.PerspectiveCamera(28,1,0.1,50);

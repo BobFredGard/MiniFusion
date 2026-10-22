@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**295 versions**, de `2026-09-28b` à `V0.3.25` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**296 versions**, de `2026-09-28b` à `V0.3.27` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4457,3 +4457,10 @@ Retours utilisateur (Perçages).
 - **Parcours masqués en CAO / PLAN** (interface moderne) : la racine d'affichage FAO (parcours, simulation, brut, repères) est masquée hors de l'espace FAO et réapparaît telle quelle au retour — rien n'est détruit ni recalculé.
 
 Tests : vérifié dans l'appli sur « Perçages » (sol à Z −10,02 sous le brut Z −10 en FAO, −0,02 sous la pièce en CAO ; parcours masqués puis rendus). `npm run ci` vert.
+
+## V0.3.27 - Vue 3D : orbite libre, centre de rotation sur la pièce
+Retours utilisateur (« peut-on faire tourner la pièce dans toutes les directions ? », « garder le centre de rotation après un déplacement »).
+- **Orbite libre** (façon Fusion « Free Orbit ») : la pièce tourne dans tous les sens, par-dessus et par-dessous, sans butée aux pôles ; le haut de l'écran suit. Choix par le bouton ⟲ à gauche du cube de vue ou la liste « Orbite » des réglages ⚙ (Contrainte = Z en haut, par défaut / Libre), mémorisé dans le navigateur. ⌂, les faces du cube et les vues normalisées redressent la vue ; le sol miroir reste, vu de dessous il ne reflète plus rien.
+- **Centre de rotation sur la pièce** : la rotation tourne autour du centre de la face sélectionnée, sinon du centre des pièces visibles (et du brut en FAO) ; un déplacement au clic droit ne le déplace plus. OrbitControls ne garde que le déplacement et le zoom ; même vitesse et même inertie qu'avant.
+
+Tests : vérifié dans l'appli sur « Perçages » (passage par-dessus le pôle, vue de dessous sans reflet, pivot fixe à l'écran après déplacement dans les deux modes, pivot au centre d'une face sélectionnée). `npm run ci` vert.
