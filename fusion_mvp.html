@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.4.0';
+const APP_VER='V0.4.1';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -37673,6 +37673,7 @@ function viewFadeIn(){
     .mepSkPt{fill:var(--mepPaper,#fff);stroke:#64d2ff;stroke-width:1.2;vector-effect:non-scaling-stroke}
     .mepSkPtSel{stroke:#ff9f0a;fill:#ff9f0a}
     .mepSkPtFix{stroke:#ff453a}
+    .mepSkPtLk{stroke:#bf5af2;stroke-width:1.6}
     .mepTbLine{stroke:var(--mepFrameCol,#222);stroke-width:var(--mepLwThin,.42);fill:none;stroke-linecap:square}
     .mepTbThick{stroke-width:var(--mepLwThick,.72)}
     .mepSkThick{stroke-width:var(--mepLwThick,.72)}
@@ -39875,11 +39876,14 @@ function viewFadeIn(){
     return pd.iw;
   }
   function mepDrawRevs(mk,sh,pd,ty){
-    // tableau des révisions (le plus récent en haut, comme l'usage) : IND. | DATE | NOM | MODIFICATION
+    // tableau des révisions : en-tête IND. | DATE | NOM | MODIFICATION en bas (contre le cartouche),
+    // la plus récente en haut — comme la nomenclature
     const revs=mepRevs(sh);
     if(revs.length){
       const st=mepRevSt(sh),k=st.h/2.5,fs=mepFs(st.h),cw=fs*0.6; // cw ≈ largeur moyenne d'un caractère
-      const RH=st.h+3,wI=Math.max(8,10*k),wD=Math.max(18,22*k),wN=Math.max(20,28*k);
+      // IND. et DATE jamais tronqués : largeur au plus long texte de la colonne (marge 1,2 mm de chaque côté)
+      const wTx=(l,f)=>revs.reduce((m,r)=>Math.max(m,String(r[f]||'').length),l.length)*cw+3;
+      const RH=st.h+3,wI=Math.max(8,10*k,wTx('IND.','i')),wD=Math.max(18,22*k,wTx('DATE','d')),wN=Math.max(20,28*k);
       const Wd=wI+wD+wN+Math.min(110,pd.iw*0.45),W=Math.min(pd.iw,Math.max(wI+wD+wN+15,st.w>0?st.w:Wd));
       const wT=W-wI-wD-wN,xr=pd.ix+pd.iw-W;
       const n=Math.min(revs.length,8),y0=ty-RH*(n+1),ly=RH/2+st.h/2; // ligne de base centrée dans la rangée
@@ -39890,10 +39894,10 @@ function viewFadeIn(){
       const fit=(t,w)=>{t=String(t||'');const m=Math.max(1,Math.floor((w-2)/cw));return t.length>m?t.slice(0,Math.max(1,m-1))+'…':t;};
       cols.forEach(([l,x,w],c)=>{
         if(c)mk('line',L({x1:x,y1:y0,x2:x,y2:ty}));
-        T(x+1.2,y0+ly,fit(l,w));});
+        T(x+1.2,y0+RH*n+ly,fit(l,w));});
       revs.slice(-n).reverse().forEach((r,j)=>{
-        const y=y0+RH*(j+1);
-        mk('line',L({x1:xr,y1:y,x2:xr+W,y2:y}));
+        const y=y0+RH*j;
+        mk('line',L({x1:xr,y1:y+RH,x2:xr+W,y2:y+RH}));
         [r.i,r.d,r.n,r.t].forEach((v,c)=>T(cols[c][1]+1.2,y+ly,fit(v,cols[c][2])));
       });
     }
@@ -39999,6 +40003,8 @@ function viewFadeIn(){
     projet:{lab:'PROJET',ed:'Projet',ph:'Nom du projet'},
     nplan:{lab:'N° DE PLAN',ed:'N° de plan',ph:'ex. MF-0012'},
     societe:{lab:'SOCIÉTÉ',ed:'Société',ph:''},
+    client:{lab:'CLIENT',ed:'Client',ph:''},
+    quantite:{lab:'QUANTITÉ',ed:'Quantité',ph:'ex. 10'},
     planche:{lab:'PLANCHE',auto:1},
     echelle:{lab:'ÉCHELLE',auto:1},
     format:{lab:'FORMAT',auto:1},
@@ -40016,7 +40022,7 @@ function viewFadeIn(){
   };
   // listes de saisie : usages courants + valeurs déjà employées (mémorisées localement)
   const MEP_TB_LISTS={
-    mat:['EN AW-2017 (AU4G)','EN AW-5083','EN AW-6082','EN AW-7075','S235JR','C45','42CrMo4','X5CrNi18-10 (304)','X2CrNiMo17-12-2 (316L)','CuZn39Pb3 (laiton)','POM-C','PA6','PEHD'],
+    mat:['EN AW-2017 (AU4G)','EN AW-5083','EN AW-6082','EN AW-7075','S235JR','C45','42CrMo4','40CrMnMoS8-6 (40CMD8+S)','X5CrNi18-10 (304)','X2CrNiMo17-12-2 (316L)','CuZn39Pb3 (laiton)','POM-C','PA6','PEHD'],
     tts:['Anodisation naturelle','Anodisation noire','Anodisation dure','Zingage blanc','Zingage noir','Nickelage chimique','Brunissage','Peinture époxy','Passivation','Sans'],
     tth:['Trempe + revenu','Cémentation + trempe','Nitruration','Recuit de détente','Trempe par induction','Sans'],
     ra:['Ra 0,8','Ra 1,6','Ra 3,2','Ra 6,3']
@@ -40053,6 +40059,12 @@ function viewFadeIn(){
   }
   const mepSkS=(ctx,p)=>({x:p.x+ctx.ox,y:p.y+ctx.oy}); // local → planche
   function mepSkEditing(){return!!(mepSt.tbEdit||MEP_SK_TOOLS.indexOf(mepSt.tool)>=0||(mepSt.skSel&&mepSt.skSel.size));}
+  // visibilité des aides d'édition (V0.4.x) : contraintes et cotes pilotantes, chacune masquable
+  function mepSkVis(){
+    if(!mepSt.skVis){let o={};try{o=JSON.parse(localStorage.getItem('mep_sk_vis')||'{}')||{};}catch(e){}
+      mepSt.skVis={cons:o.cons!==false,dims:o.dims!==false};}
+    return mepSt.skVis;
+  }
   function mepSkTol(){return(mepPxMM||0.3)*7;}
   /* ── accrochage (outils de dessin) : points, milieux, sur ligne/cercle, puis géométrie des vues ── */
   function mepSkSnap(sh,P){
@@ -40076,20 +40088,95 @@ function viewFadeIn(){
       });
     }
     if(best)return best;
-    if(!ctx.tb){const s=mepSnapPt(P.x,P.y,sh);return{x:s.x,y:s.y};}
+    if(!ctx.tb){
+      let s=mepSnapPt(P.x,P.y,sh);
+      // « sur le trait / sur le cercle » près d'une extrémité, d'un milieu ou du centre : le point remarquable l'emporte
+      const h=s.hit,v=h&&h.vid&&mepView(sh,h.vid),e=v&&(h.t==='onSeg'||h.t==='onC'||h.t==='onAx')?mepEntByHint(v,{i:h.ak!=null?'ax:'+h.ak:h.i}):null;
+      if(e){
+        const cand=e.t==='L'?[[e.x1,e.y1,'end'],[e.x2,e.y2,'end'],[(e.x1+e.x2)/2,(e.y1+e.y2)/2,'mid']]:(e.t==='C'||e.t==='A'?[[e.cx,e.cy,'ctr']]:[]);
+        let bd=tol;cand.forEach(([x,y,t])=>{const q=mepToSheet(v,x,y),d=Math.hypot(q.x-P.x,q.y-P.y);
+          if(d<bd){bd=d;s={x:q.x,y:q.y,hit:Object.assign({},h,{t:h.ak!=null&&t!=='ctr'?(t==='end'?'axEnd':'axMid'):t})};}});
+      }
+      const vw=mepSkLinkOfHit(sh,s);return vw?{x:s.x,y:s.y,vw}:{x:s.x,y:s.y};
+    }
     return{x:P.x,y:P.y};
+  }
+  /* ── liens esquisse de planche → traits projetés des vues ────────────────────
+     pt.lk = {vid, i (n° d'élément de la géométrie, ou « ax:clé » d'un trait d'axe), k, f|a, g}
+     k : 'p1' | 'p2' | 'mid' | 'f' (fraction f le long du trait) | 'ctr' | 'ang' (angle a sur le cercle) ;
+     g : dernière géométrie connue (repère vue) pour retrouver l'élément si la numérotation change.
+     Le point est fixe pour le solveur et recalé sur la vue avant chaque rendu : l'esquisse suit. */
+  function mepSkLinkGeo(e){return e.t==='L'?{t:'L',x1:e.x1,y1:e.y1,x2:e.x2,y2:e.y2}:{t:'C',cx:e.cx,cy:e.cy,r:e.r};}
+  function mepSkLinkOfHit(sh,s){
+    const h=s&&s.hit;if(!h||!h.vid)return null;
+    const v=mepView(sh,h.vid);if(!v)return null;
+    const i=h.ak!=null?'ax:'+h.ak:h.i;if(i==null)return null;
+    const e=mepEntByHint(v,{i});if(!e||!(e.t==='L'||e.t==='C'||e.t==='A'))return null;
+    const q=mepFromSheet(v,s.x,s.y),lk={vid:v.id,i};
+    if(typeof i==='number')lk.g=mepSkLinkGeo(e);
+    if(e.t==='L'){
+      if(h.t==='mid'||h.t==='axMid')lk.k='mid';
+      else{
+        const d1=Math.hypot(q.x-e.x1,q.y-e.y1),d2=Math.hypot(q.x-e.x2,q.y-e.y2),L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1;
+        if(Math.min(d1,d2)<L*1e-4)lk.k=d1<=d2?'p1':'p2';
+        else{lk.k='f';lk.f=((q.x-e.x1)*(e.x2-e.x1)+(q.y-e.y1)*(e.y2-e.y1))/(L*L);}
+      }
+    }else if(h.t==='ctr')lk.k='ctr';
+    else{lk.k='ang';lk.a=Math.atan2(q.y-e.cy,q.x-e.cx);}
+    return lk;
+  }
+  function mepSkLinkEl(v,lk){
+    if(typeof lk.i==='string')return mepEntByHint(v,{i:lk.i});
+    const g=mepGeoOf(v);if(!mepGeoExact(g))return null; // jamais sur le maillage provisoire de l'ouverture
+    const G=lk.g,fam=e=>e&&(e.t==='L'?'L':(e.t==='C'||e.t==='A'?'C':''));
+    const dist=e=>{ // écart à la dernière géométrie connue (+ sens de parcours pour un trait)
+      if(!G||fam(e)!==G.t)return{d:Infinity};
+      if(G.t==='C')return{d:Math.hypot(e.cx-G.cx,e.cy-G.cy)+Math.abs(e.r-G.r)};
+      const a=Math.hypot(e.x1-G.x1,e.y1-G.y1)+Math.hypot(e.x2-G.x2,e.y2-G.y2),b=Math.hypot(e.x1-G.x2,e.y1-G.y2)+Math.hypot(e.x2-G.x1,e.y2-G.y1);
+      return a<=b?{d:a}:{d:b,sw:1};
+    };
+    let e=g.els[lk.i],r=dist(e);
+    if(!G)return e||null;
+    if(!(r.d<1e-3)){ // numérotation changée ou pièce modifiée : l'élément le plus proche de même nature
+      let bi=-1,br={d:Infinity};
+      g.els.forEach((x,j)=>{const q=dist(x);if(q.d<br.d){br=q;bi=j;}});
+      if(bi<0||!(br.d<3))return null; // disparu : le point garde sa dernière position
+      lk.i=bi;e=g.els[bi];r=br;
+    }
+    if(r.sw){if(lk.k==='p1')lk.k='p2';else if(lk.k==='p2')lk.k='p1';else if(lk.k==='f')lk.f=1-lk.f;}
+    lk.g=mepSkLinkGeo(e);
+    return e;
+  }
+  function mepSkLinkPos(sh,lk){
+    const v=mepView(sh,lk.vid);if(!v)return null;
+    const e=mepSkLinkEl(v,lk);if(!e)return null;
+    let x,y;
+    if(e.t==='L'){const f=lk.k==='p1'?0:lk.k==='p2'?1:lk.k==='mid'?0.5:(+lk.f||0);x=e.x1+(e.x2-e.x1)*f;y=e.y1+(e.y2-e.y1)*f;}
+    else if(lk.k==='ang'){x=e.cx+e.r*Math.cos(+lk.a||0);y=e.cy+e.r*Math.sin(+lk.a||0);}
+    else{x=e.cx;y=e.cy;}
+    return isFinite(x)&&isFinite(y)?mepToSheet(v,x,y):null;
+  }
+  // recale les points liés de l'esquisse de planche ; résout si l'un d'eux a bougé
+  function mepSkLinksRefresh(sh){
+    const sk=sh&&sh.sk;if(!sk||!sk.pts)return;
+    let moved=false;
+    Object.keys(sk.pts).forEach(id=>{const p=sk.pts[id];if(!p.lk)return;
+      let q=null;try{q=mepSkLinkPos(sh,p.lk);}catch(e){q=null;}
+      if(q&&Math.hypot(q.x-p.x,q.y-p.y)>1e-6){p.x=q.x;p.y=q.y;moved=true;}});
+    if(moved)mepSkSolve(sk,60);
   }
   /* ── création ── */
   function mepSkPtFrom(ctx,pt){
     const sk=ctx.sk;
     if(pt.pid&&sk.pts[pt.pid])return pt.pid;
     const id=mepSkPt(sk,pt.x-ctx.ox,pt.y-ctx.oy);
+    if(pt.vw&&!ctx.tb){sk.pts[id].lk=pt.vw;return id;} // tenu par la vue : ni « sur ligne » ni « milieu »
     if(pt.on){mepSkCons(sk,pt.on.t==='line'?{type:'onLine',p:id,ent:pt.on.id}:{type:'onCircle',p:id,ent:pt.on.id});}
     else if(pt.mid&&sk.pts[pt.mid.a]&&sk.pts[pt.mid.b]){mepSkCons(sk,{type:'midpoint',p:id,a:pt.mid.a,b:pt.mid.b});}
     return id;
   }
   function mepSkAutoHV(sk,a,b){
-    const A=sk.pts[a],B=sk.pts[b];if(!A||!B)return;
+    const A=sk.pts[a],B=sk.pts[b];if(!A||!B||(A.lk&&B.lk))return; // 2 points tenus par la vue : elle décide
     const dx=B.x-A.x,dy=B.y-A.y;if(Math.hypot(dx,dy)<1e-6)return;
     const ang=Math.abs(Math.atan2(dy,dx))*180/Math.PI;
     if(ang<3||ang>177)mepSkCons(sk,{type:'horizontal',a,b});
@@ -40167,6 +40254,7 @@ function viewFadeIn(){
   function mepSkMerge(sk,keep,drop){
     if(keep===drop||!sk.pts[keep]||!sk.pts[drop])return;
     if(drop==='o'){const t=keep;keep=drop;drop=t;}
+    if(sk.pts[drop].lk&&!sk.pts[keep].lk&&keep!=='o')sk.pts[keep].lk=sk.pts[drop].lk;
     sk.ents.forEach(e=>['p1','p2','pc','p'].forEach(k=>{if(e[k]===drop)e[k]=keep;}));
     sk.cons.forEach(c=>['a','b','p'].forEach(k=>{if(c[k]===drop)c[k]=keep;}));
     delete sk.pts[drop];
@@ -40181,7 +40269,10 @@ function viewFadeIn(){
     const tol=mepSkTol();
     if(mepSkEditing()){
       let best=null,bd=tol*0.8;
-      Object.keys(sk.pts).forEach(pid=>{const p=mepSkS(ctx,sk.pts[pid]);const d=Math.hypot(p.x-P.x,p.y-P.y);if(d<bd){bd=d;best='p:'+pid;}});
+      // ancres de texte ignorées (le texte se sélectionne et se glisse lui-même) : collées à 2 mm des traits,
+      // elles masquaient la ligne au clic
+      const txt=new Set();sk.ents.forEach(e=>{if(e.t==='text')txt.add(e.p);});
+      Object.keys(sk.pts).forEach(pid=>{if(txt.has(pid))return;const p=mepSkS(ctx,sk.pts[pid]);const d=Math.hypot(p.x-P.x,p.y-P.y);if(d<bd){bd=d;best='p:'+pid;}});
       if(best)return{key:best};
       for(const h of mepSkConHits)if(Math.abs(P.x-h.x)<=h.w/2+tol*0.2&&Math.abs(P.y-h.y)<=h.h/2+tol*0.2)return{key:'c:'+h.id};
     }
@@ -40216,6 +40307,16 @@ function viewFadeIn(){
         else if(e.t==='text'){T.push(e);P.push(e.p);}else O.push(e);}
       else if(k[0]==='c'){const c=sk.cons.find(x=>x.id===id);if(c)K.push(c);}});
     return{P,L,C,T,K,O};
+  }
+  function mepSkDimsOf(sk,s){
+    const ids=new Set(s.P),own=new Set();
+    s.L.forEach(l=>{ids.add(l.id);ids.add(l.p1);ids.add(l.p2);own.add(l.id);own.add(l.p1+'|'+l.p2);own.add(l.p2+'|'+l.p1);});
+    s.C.forEach(c=>{ids.add(c.id);if(c.pc)ids.add(c.pc);own.add(c.id);});
+    // placement des textes (2 / 4,4 / 11 mm du coin de case) : seulement si le texte est lui-même sélectionné
+    const txt=new Set();sk.ents.forEach(e=>{if(e.t==='text'&&!s.T.includes(e))txt.add(e.p);});
+    const D=sk.cons.filter(c=>c.val!=null&&c.type!=='fix'&&[c.a,c.b,c.p,c.ent].some(x=>x&&ids.has(x))&&![c.a,c.b,c.p].some(x=>x&&txt.has(x)));
+    const mine=c=>own.has(c.a)||own.has(c.ent)||own.has(c.a+'|'+c.b);
+    return D.filter(mine).concat(D.filter(c=>!mine(c)));
   }
   function mepSkDeleteSel(sh){
     const ctx=mepSkCtx(sh,false),sk=ctx.sk;if(!sk||!mepSt.skSel.size)return;
@@ -40327,7 +40428,7 @@ function viewFadeIn(){
     // mode : 'sheet' (esquisse de planche), 'tb' (cartouche affiché), 'tbEdit' (cartouche en édition)
     const sk=ctx.sk;if(!sk)return;
     const S=p=>mepSkS(ctx,p),sel=mepSt.skSel||new Set();
-    const editing=mode==='tbEdit'||(mode==='sheet'&&mepSkEditing());
+    const editing=mode==='tbEdit'||(mode==='sheet'&&!mepSt.tbEdit&&mepSkEditing());
     // style par entité (V0.3.13) : e.w 'thin'|'thick' (défaut : épais sur la planche, fin au cartouche),
     // e.lw épaisseur libre (mm), e.lt 'hid'|'axis', e.col couleur (#rrggbb, classe mepUc → noir à l'export « Noir »)
     const wDef=mode==='sheet'?'thick':'thin';
@@ -40360,9 +40461,8 @@ function viewFadeIn(){
     // points, glyphes de contraintes et cotes pilotantes : aide d'édition (jamais exportée)
     const fx=mepSkFixed(sk),z=Math.max(0.6,mepPxMM*3);
     Object.keys(sk.pts).forEach(pid=>{const p=S(sk.pts[pid]),on=sel.has('p:'+pid);
-      mk('circle',{cx:p.x,cy:p.y,r:on?z*1.25:z*0.75,class:'mepSkPt'+(on?' mepSkPtSel':'')+(fx.has(pid)?' mepSkPtFix':'')},mepGHlp);});
+      mk('circle',{cx:p.x,cy:p.y,r:on?z*1.25:z*0.75,class:'mepSkPt'+(on?' mepSkPtSel':'')+(sk.pts[pid].lk?' mepSkPtLk':(fx.has(pid)?' mepSkPtFix':''))},mepGHlp);});
     if(ctx.tb){const o=S({x:0,y:0});mk('path',{d:'M'+(o.x-4)+' '+o.y+'H'+(o.x+4)+'M'+o.x+' '+(o.y-4)+'V'+(o.y+4),class:'mepSkCon'},mepGHlp);}
-    mepSkConHits=[];
     const P=id=>sk.pts[id]?S(sk.pts[id]):null;
     const ent=id=>sk.ents.find(x=>x.id===id);
     const fs=Math.max(2.2,mepPxMM*11);
@@ -40378,7 +40478,11 @@ function viewFadeIn(){
     const fmt=v=>mepFmtNum(Math.abs(v),2);
     const cnt={};
     const txtPt=new Map();sk.ents.forEach(e=>{if(e.t==='text')txtPt.set(e.p,e.id);});
+    const vis=mepSkVis(),DIMS=new Set(['dist','distX','distY','distPL','radius','angle']);
+    const touched=c=>sel.has('c:'+c.id)||[c.a,c.b,c.p].some(id=>id&&sel.has('p:'+id))||[c.a,c.b,c.ent].some(id=>id&&sel.has('e:'+id))
+      ||sk.ents.some(e=>sel.has('e:'+e.id)&&e.t==='line'&&[c.a,c.b,c.p].some(id=>id===e.p1||id===e.p2));
     sk.cons.forEach(c=>{
+      if(!vis[DIMS.has(c.type)?'dims':'cons']&&!touched(c))return; // masquée (l'élément sélectionné garde les siennes)
       const tp=[c.a,c.b,c.p].find(id=>id&&txtPt.has(id));
       if(tp&&!sel.has('e:'+txtPt.get(tp))&&!sel.has('p:'+tp)&&!sel.has('c:'+c.id))return; // placement d'un texte : affiché à sa sélection
       const k=(c.a||c.p||'')+'|'+(c.b||c.ent||'');const n=cnt[k]=(cnt[k]||0)+1;const sh2=(n-1)*fs*1.1;
@@ -40860,6 +40964,7 @@ function viewFadeIn(){
     return v;
   }
   function mepDrawSk(mk,sh){
+    try{mepSkLinksRefresh(sh);}catch(e){}
     if(sh.sk)mepDrawSkCtx(mk,sh,{sk:sh.sk,ox:0,oy:0,tb:false},'sheet');
   }
   /* ── cartouche : modèle Standard → esquisse (point de départ de l'édition) ── */
@@ -41045,6 +41150,10 @@ function viewFadeIn(){
     if(mepSt.tbEdit)tools.push(['🖼','logo','Zone du logo (2 coins)']);
     const r=K.rowEl();
     tools.forEach(([l,t,tip])=>{const b=K.btn(r,l,()=>mepSetTool(t),tip,mepSt.tool===t?'active':'');b.style.flex='1';});
+    {const v=mepSkVis(),rv=K.rowEl();K.lab(rv,'Afficher');
+     [['cons','Contraintes','Glyphes H, V, ∥, ⊥, =, M, ⚓…'],['dims','Cotes','Cotes pilotantes (distances, rayons, angles)']].forEach(([k,l,tip])=>
+       K.btn(rv,l,()=>{v[k]=!v[k];try{localStorage.setItem('mep_sk_vis',JSON.stringify(v));}catch(e){}mepSideShow();mepRender();},
+         (v[k]?'Masquer':'Afficher')+' : '+tip+' — un élément sélectionné garde les siennes',v[k]?'active':''));}
     if(mepSt.tool==='text'){
       const r2=K.rowEl();K.lab(r2,'Champ');
       const sel=document.createElement('select');
@@ -41064,16 +41173,41 @@ function viewFadeIn(){
     const s=mepSkSelParts(sk),n=mepSt.skSel.size;
     if(!n)mepSideSkStyle(K,null,ctx.tb);
     K.h('Sélection ('+n+')');
+    const valIn=(r,c,id)=>{
+      const i=document.createElement('input');i.type='number';i.step=c.type==='angle'?'0.5':'0.1';if(id)i.id=id;
+      i.value=+(c.type==='angle'?Math.abs(c.val)*180/Math.PI:Math.abs(c.val)).toFixed(3);
+      i.onchange=()=>mepSkSetVal(sh,c,+i.value);
+      i.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();i.blur();}};
+      r.appendChild(i);K.lab(r,c.type==='angle'?'°':'mm',false);
+      return i;
+    };
     // une contrainte seule : nom, valeur (si cote), suppression
     if(s.K.length===1&&n===1){
       const c=s.K[0],r=K.rowEl();K.lab(r,MEP_SK_CON_NAMES[c.type]||c.type);
       if(c.val!=null&&c.type!=='fix'){
-        const i=document.createElement('input');i.type='number';i.step=c.type==='angle'?'0.5':'0.1';i.id='mepSkVal';
-        i.value=+(c.type==='angle'?Math.abs(c.val)*180/Math.PI:Math.abs(c.val)).toFixed(3);
-        i.onchange=()=>mepSkSetVal(sh,c,+i.value);
-        i.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();i.blur();}};
-        r.appendChild(i);K.lab(r,c.type==='angle'?'°':'mm',false);
+        const i=valIn(r,c,'mepSkVal');
         if(mepSt.skFocusVal){mepSt.skFocusVal=false;setTimeout(()=>{try{i.focus();i.select();}catch(e){}},30);}
+      }
+    }
+    // points tenus par une vue (accrochage persistant) : origine du lien, détacher
+    {const ids=new Set(s.P);s.L.forEach(l=>{ids.add(l.p1);ids.add(l.p2);});s.C.forEach(c=>{if(c.pc)ids.add(c.pc);});
+     const lk=[...ids].filter(id=>sk.pts[id]&&sk.pts[id].lk);
+     if(lk.length){
+       const nm={p1:'extrémité',p2:'extrémité',mid:'milieu',f:'point du trait',ctr:'centre',ang:'point du cercle'};
+       K.h('Lié à la vue ('+lk.length+')');
+       lk.slice(0,6).forEach(id=>{const L=sk.pts[id].lk,v=mepView(sh,L.vid);
+         K.note((nm[L.k]||'point')+' — vue '+(v?(v.label||v.id):'supprimée')+(typeof L.i==='string'?' (trait d’axe)':''));});
+       const r=K.rowEl();
+       K.btn(r,'Détacher de la vue',()=>{mepEdit('esquisse : détacher de la vue',()=>lk.forEach(id=>{delete sk.pts[id].lk;}));mepSideShow();mepRender();},
+         'Le point garde sa position mais ne suit plus la vue');
+     }}
+    // éléments sélectionnés déjà cotés : leurs cotes pilotantes, modifiables ici (accès direct)
+    if(!s.K.length){
+      const dims=mepSkDimsOf(sk,s);
+      if(dims.length){
+        K.h('Cotes ('+dims.length+')');
+        dims.slice(0,10).forEach(c=>{const r=K.rowEl();K.lab(r,MEP_SK_CON_NAMES[c.type]||c.type);valIn(r,c);
+          const b=K.btn(r,'↗',()=>{mepSt.skSel=new Set(['c:'+c.id]);mepSt.skFocusVal=true;mepSideShow();mepRender();},'Sélectionner cette cote');b.style.flex='0 0 auto';});
       }
     }
     // texte : champ, contenu, hauteur, style, alignement
@@ -41424,6 +41558,7 @@ function viewFadeIn(){
     const sh=mepSheet();
     const pg=mepPage();
     mepDimHits.clear();
+    mepSkConHits=[]; // une seule esquisse en édition à la fois (planche OU cartouche)
     if(mepSt.tbEdit&&!mepTbIsSk(sh))mepSt.tbEdit=false; // autre planche : pas de cartouche dessiné
     mepThemeApply();
     mepSvgEl.setAttribute('viewBox',pg.vb.map(v=>+v.toFixed(3)).join(' '));
@@ -43329,6 +43464,7 @@ function viewFadeIn(){
   function mepSkFixed(sk){
     const s=new Set();if(sk.pts&&sk.pts.o)s.add('o');
     (sk.cons||[]).forEach(c=>{if(c.type==='fix'&&c.p)s.add(c.p);});
+    Object.keys(sk.pts||{}).forEach(id=>{if(sk.pts[id].lk)s.add(id);});
     return s;
   }
   function mepSkConRefs(sk,c){
@@ -45523,6 +45659,10 @@ function viewFadeIn(){
     };
     h('Cartouche'); // 2026-10-22-011 : onglet à part (la planche était très longue)
     tit('Projet','projet','Nom du projet');
+    tit('Client','client','');
+    tit('Société','societe','');
+    tit('Quantité','quantite','ex. 10');
+    tit('N° de plan','nplan','ex. MF-0012');
     tit('Auteur','auteur','—');
     tit('Date','date',new Date().toLocaleDateString('fr-FR'));
     const rb=(...a)=>r.appendChild(mkBtn(...a)); // bouton dans la rangée courante
@@ -45531,7 +45671,7 @@ function viewFadeIn(){
     tit('TTH (thermique)','tth','ex. trempe + revenu 45 HRC','tth');
     // champs supplémentaires utilisés par un cartouche dessiné (n° de plan, société, champs perso…)
     if(mepTbIsSk(sh)){
-      const seen=new Set(['projet','auteur','date','matiere','traitement','tth','tolgen']);
+      const seen=new Set(['projet','client','societe','quantite','nplan','auteur','date','matiere','traitement','tth','tolgen']);
       tt.tb.sk.ents.forEach(e=>{
         if(e.t!=='text'||!e.f||e.f==='txt')return;const F=MEP_TB_FIELDS[e.f];if(!F||F.auto)return;
         const key=e.f==='perso'?'cust:'+e.k:e.f;if(seen.has(key))return;seen.add(key);
@@ -46354,12 +46494,13 @@ function viewFadeIn(){
   function mepSetActive(on){
     if(on)mepEnsure();
     if(on){
+      const was=mepSt.open; // les boutons du ruban repassent par ici : le zoom en cours est gardé
       mepBuildUI();
       mepSt.open=true;
       mepWrapEl.classList.add('open');
       mepTabsRender();
       mepSideShow();
-      mepFitSheet();
+      if(!was)mepFitSheet();
       try{if(typeof mfSyncPropsHost==='function')mfSyncPropsHost();}catch(e){}
       try{mepRender();}catch(e){console.warn(e);}
       mepStatus('Espace PLAN — planches, vues, cotes. '+mepSheet().name);

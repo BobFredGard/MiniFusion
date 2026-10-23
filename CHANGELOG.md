@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**299 versions**, de `2026-09-28b` à `V0.4.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**300 versions**, de `2026-09-28b` à `V0.4.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4501,3 +4501,15 @@ Retours utilisateur (« la pièce s'affiche décalée à l'ouverture d'une esqui
 - **README** réécrit (interface unique, esquisse 3D, FAO et PLAN à jour, tableau souris / clavier), capture de l'esquisse en vue 3D.
 
 Tests : vérifié dans l'appli sur « Axe » (écart 3D / esquisse 0 px dès la 1re image ; point du plan sous le curseur = lancer de rayon à 0,001 mm ; zoom au curseur et déplacement exacts en vue inclinée ; ligne tracée en vue inclinée accrochée à l'origine ; vue gardée à l'ouverture = direction de la caméra 3D ; cube DESSUS ; esquisse « rép 3 » redressée ; nouvelle esquisse sur la face −X à l'endroit ; grille mémorisée). `npm run ci` vert.
+
+## V0.4.1 - Plan : cotes du cartouche, esquisse accrochée aux vues, révisions, champs du cartouche
+Retours utilisateur (« impossible de sélectionner une cote du cartouche », « voir la cote d'une droite cotée », « en-tête des révisions en bas, IND et date en entier », « champs Client, Société, Quantité, N° de plan », « cacher contraintes et cotes séparément », « attacher une ligne / un cercle à une projection », « 40CMD8 », « le choix d'un outil refait un zoom tout »).
+- **Cotes du cartouche sélectionnables** : en édition du cartouche, l'esquisse de planche était aussi dessinée en mode édition, juste après, et vidait la liste des zones cliquables des cotes. Elle ne passe plus en édition pendant celle du cartouche ; la liste est remise à zéro une fois par rendu.
+- **Accès direct aux cotes** : ligne, cercle ou point sélectionné → section « Cotes (n) » dans le panneau, valeurs modifiables sur place, ↗ sélectionne la cote. Les cotes de placement des textes n'y figurent que si le texte est sélectionné. Les ancres de texte (à 2 mm des traits) ne captent plus le clic : le trait se sélectionne.
+- **Afficher : Contraintes / Cotes** : deux bascules indépendantes en édition d'esquisse (planche et cartouche), mémorisées ; l'élément sélectionné garde les siennes.
+- **Esquisse de planche accrochée aux vues** : un point posé sur un trait projeté (extrémité, milieu, centre, point sur trait ou cercle, trait d'axe) garde le lien `lk` ; il est fixe pour le solveur et recalé sur la vue à chaque rendu (élément retrouvé par sa géométrie si la numérotation change). Point lié en violet ; « Détacher de la vue » dans le panneau. Près d'une extrémité, d'un milieu ou d'un centre, le point remarquable l'emporte sur « sur le trait ».
+- **Révisions** : en-tête IND. | DATE | NOM | MODIFICATION en bas, contre le cartouche, la plus récente en haut ; colonnes IND. et DATE à la largeur de leur texte.
+- **Cartouche** : champs Client, Société, Quantité, N° de plan toujours proposés (Client et Quantité aussi en champs de texte du cartouche dessiné) ; matière 40CrMnMoS8-6 (40CMD8+S).
+- **Zoom gardé** au choix d'un outil du ruban PLAN : le recadrage « planche entière » n'a lieu qu'à l'entrée dans l'espace PLAN.
+
+Tests : vérifié dans l'appli (cote 182 sélectionnée ; trait PROJET/PLANCHE → cote 134 modifiée en 140, la colonne suit ; tableau A/B avec en-tête en bas ; bascules Contraintes / Cotes ; sur « Perçages », rectangle depuis le coin de la vue de face et cercle sur un trou, vue déplacée → points liés +25,06 mm, rectangle étiré sous contraintes ; zoom gardé après Ligne puis Cote). `npm run ci` vert. Limites : un point « sur le trait » garde sa fraction (il ne glisse pas) ; le cercle ne reprend pas le rayon du trou.
