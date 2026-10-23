@@ -700,6 +700,13 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
       sh0.title.matiere='C45';sh0.title.tth='Trempe + revenu';
       const tm=tb.sk.ents.find(e=>e.t==='text'&&e.f==='matiere'),th=tb.sk.ents.find(e=>e.t==='text'&&e.f==='tth');
       out.tbFields=T.textValue(sh0,tm)==='C45'&&T.textValue(sh0,th)==='Trempe + revenu';
+      // 2026-10-23 : en édition, un séparateur de cases se saisit même collé au texte de la case (le texte ne le masque plus)
+      T.tbEdit(true);
+      const c1=T.ctx(sh0),txv=tb.sk.ents.find(e=>e.t==='text'&&e.f==='echelle'),pv=tb.sk.pts[txv.p];
+      const sep=tb.sk.ents.find(e=>e.t==='line'&&Math.abs(tb.sk.pts[e.p1].x-(pv.x-2))<1e-6&&Math.abs(tb.sk.pts[e.p2].x-(pv.x-2))<1e-6);
+      const hk=sep&&T.hit(sh0,pv.x-2+1.6+c1.ox,pv.y-2+c1.oy);
+      out.tbHitLine=!!sep&&hk==='e:'+sep.id;out.tbHitDbg=String(hk);
+      T.tbEdit(false);
       sh0.title.tb=null;delete sh0.title.matiere;delete sh0.title.tth;
       // esquisse de planche : rectangle + cote horizontale pilotante ; contrainte contradictoire refusée
       const sk0=sh0.sk;sh0.sk=null;
@@ -730,13 +737,32 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
       const at=T.draw(sh0).find(o=>o.tag==='line'&&Math.abs(o.x1-100)<1e-6&&Math.abs(o.y1-100)<1e-6);
       out.skStyle=!!sl&&sl.e.lw===0.25&&sl.e.col==='#d40000'&&!!at&&/stroke-width:0\.25/.test(at.style||'')&&/stroke:#d40000/.test(at.style||'')&&
         /mepUc/.test(at.class)&&/mepLtAxis/.test(at.class)&&T.draw(sh0).filter(o=>o.tag==='line'&&/mepSkThick/.test(o.class)&&!/mepUc/.test(o.class)).length===4;
+      // 2026-10-23 : Ajuster — segments (pas les droites prolongées), une seule intersection suffit,
+      // extrémités gardées, point de coupe tenu sur l'élément coupant, sans intersection : ligne entière
+      sh0.sk=null;
+      const H=T.addLine(sh0,{x:0,y:50},{x:100,y:50}),V=T.addLine(sh0,{x:40,y:0},{x:40,y:100});
+      const F=T.addLine(sh0,{x:200,y:0},{x:200,y:10}); // loin : ne coupe H que prolongée
+      const sk1=sh0.sk,p1H=H.e.p1,p2H=H.e.p2;
+      T.trim(sh0,80,50); // tronçon droit de H (de x=40 à x=100)
+      const hs=sk1.ents.filter(e=>e.t==='line'&&Math.abs(sk1.pts[e.p1].y-50)<1e-6&&Math.abs(sk1.pts[e.p2].y-50)<1e-6);
+      const left=hs[0],cutP=left&&(left.p1===p1H?left.p2:left.p1);
+      out.trimSeg=hs.length===1&&!!left&&(left.p1===p1H||left.p2===p1H)&&!sk1.pts[p2H]&&Math.abs(sk1.pts[cutP].x-40)<1e-6
+        &&sk1.cons.some(c=>c.type==='onLine'&&c.p===cutP&&c.ent===V.e.id)&&sk1.cons.some(c=>c.type==='horizontal'&&(c.a===cutP||c.b===cutP));
+      const nT=sk1.ents.length;T.trim(sh0,200,5);out.trimAll=sk1.ents.length===nT-1&&!sk1.ents.some(e=>e.id===F.e.id);
+      out.trimDbg=JSON.stringify({n:hs.length,x:cutP&&sk1.pts[cutP]});
+      // 2026-10-23 : détail — un trait qui part du centre sort du cercle au bon croisement (débordait à l'opposé)
+      const cd=T.clipDetail([{t:'L',x1:0,y1:0,x2:20,y2:0,k:'sharp'},{t:'L',x1:-20,y1:3,x2:0,y2:3,k:'sharp'}],{cx:0,cy:0,r:10});
+      out.detClip=cd.length===2&&Math.abs(cd[0].x1)<1e-9&&Math.abs(cd[0].x2-10)<1e-6&&Math.abs(cd[1].x1+Math.sqrt(91))<1e-6&&Math.abs(cd[1].x2)<1e-9;
+      out.detDbg=JSON.stringify(cd.map(e=>[e.x1,e.x2].map(v=>+v.toFixed(3))));
+      out.revIdx=[0,1,25,26,27].map(k=>T.revIdx('A',k)).join()==='A,B,Z,AA,AB'&&T.revIdx('0',0)==='0'&&T.revIdx('1',0)==='1'
+        &&T.revNext('A',[{i:'C'}])==='D'&&T.revNext('A',[{i:'Z'}])==='AA'&&T.revNext('1',[{i:'4'}])==='5'&&T.revNext('0',[])==='0'&&T.revNext('1',[{i:'B'}])==='2';
       sh0.sk=sk0;
     }catch(e){out.skErr=String(e&&e.stack||e);}
     try{
       const mkSt=()=>{const o={};o.setProperty=(k,v)=>{o[k]=v;};o.removeProperty=k=>{delete o[k];};o['--mepDimCol']='var(--mepAccent,#0a84ff)';return o;};
       const c1={style:mkSt()},x1=window.__mepTest.exportPrep(c1,false);
       const c2={style:mkSt()},x2=window.__mepTest.exportPrep(c2,true);
-      out.expCol=x1===''&&!!c1.style['--mepAccent']&&c1.style['--mepAxisCol']==='#d40000'&&!!c1.style['--mepDimCol'];
+      out.expCol=x1===''&&!!c1.style['--mepAccent']&&c1.style['--mepAxisCol']==='#ff0000'&&!!c1.style['--mepDimCol'];
       out.expBW=/mepUc\{stroke:#111!important/.test(x2)&&!c2.style['--mepDimCol']&&!c2.style['--mepAccent'];
     }catch(e){out.expErr=String(e);}
     // V0.3.13 : base alignée (coupe / auxiliaire) = projection 1er angle quand l'arête est horizontale
@@ -918,6 +944,11 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.skRefuse,'esquisse : contrainte contradictoire refusée, géométrie intacte');
   A(val&&val.boxSel,'sélection au cadre : fenêtre (entièrement dedans) / capture (touche) — '+(val&&val.boxDbg));
   A(val&&val.skStyle,'esquisse : épaisseur / type / couleur par élément, rendus (V0.3.13)');
+  A(val&&val.trimSeg,'Ajuster : tronçon entre segments retiré, extrémité gardée, coupe tenue sur la ligne coupante '+(val&&val.trimDbg));
+  A(val&&val.trimAll,'Ajuster : ligne sans intersection (droites prolongées ignorées) retirée entière');
+  A(val&&val.tbHitLine,'cartouche en édition : trait de séparation saisi devant le texte de la case '+(val&&val.tbHitDbg));
+  A(val&&val.revIdx,'révisions : indices en lettres (A…Z, AA) ou chiffres (0… / 1…), suite du dernier');
+  A(val&&val.detClip,'détail : traits qui entrent / sortent du cercle rognés au bon croisement '+(val&&val.detDbg));
   A(val&&val.expCol&&val.expBW,'export PDF / SVG : couleurs gardées par défaut, option noir'+(val&&val.expErr?' — '+val.expErr:''));
   A(val&&val.paperBasis&&val.paperBasisSide,'vues alignées (coupe / auxiliaire) : base = projection 1er angle (V0.3.13)'+(val&&val.paperErr?' — '+val.paperErr:''));
   A(val&&val.exportsNew,'exports DXF, perçages auto et papier présents');

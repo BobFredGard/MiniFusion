@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.4.1';
+const APP_VER='V0.4.2';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -13671,40 +13671,50 @@ function renderHoleProps(p,f){
    réel dessinée DANS le trou (juste en deçà du Ø de perçage, donc visible par
    l'ouverture) sur la longueur filetée, + cercle du Ø nominal à l'entrée. Le solide
    reste percé au Ø du taraud (juste pour la FAO) ; rien n'est modélisé. */
+/* hélices et cercles d'entrée des filets cosmétiques, en points 3D : partagés par la vue 3D
+   et par la mise en plan (ombrage, rendu 3D) — 2026-10-23. Un élément par trou :
+   {bodyId, helix:[[x,y,z]…] (de l'entrée vers le fond), ring:[[x,y,z]…] (fermé), spt (pas angulaires par tour)} */
+function holeThreadPaths(stepsPerTurn,inset){
+  const out=[],spt=stepsPerTurn||24;
+  (doc.features||[]).forEach(function(f){
+    if(!f||f.type!=='hole'||f.visible===false||!f.thread||!f.thread.size)return;
+    if(f.thread.model)return; // le filet est déjà dans le solide exact
+    if(typeof tlLocked==='function'&&tlLocked(f))return;
+    const sk=doc.sketches.find(function(s){return s.id===f.sketchId;});if(!sk)return;
+    const t=isoThread(f.thread.size);if(!t)return;
+    const pz=+f.thread.p||t[2],Rn=t[1]/2,N=holeNorm(f);
+    const rh=Math.max(0.05,N.r-(inset||0.04)); // inset : retrait vers l'axe (paroi facettée du maillage)
+    const len=Math.max(pz,+f._thLen||+f.thread.len||N.depth);
+    const A=holeAxis(f,sk),D=new THREE.Vector3(A.dir.x,A.dir.y,A.dir.z);
+    // repère orthonormé autour de l'axe
+    const ref=Math.abs(D.z)<0.9?new THREE.Vector3(0,0,1):new THREE.Vector3(1,0,0);
+    const U=new THREE.Vector3().crossVectors(D,ref).normalize(),V=new THREE.Vector3().crossVectors(D,U).normalize();
+    const off=(N.kind==='cbore')?N.cbH:0;
+    A.pts.forEach(function(P){
+      const O=new THREE.Vector3(P.x,P.y,P.z),helix=[],ring=[];
+      const turns=len/pz,steps=Math.max(spt,Math.ceil(turns*spt));
+      for(let i=0;i<=steps;i++){
+        const a=i/steps*turns*Math.PI*2,z=off+i/steps*len;
+        const q=O.clone().addScaledVector(D,z).addScaledVector(U,rh*Math.cos(a)).addScaledVector(V,rh*Math.sin(a));
+        helix.push([q.x,q.y,q.z]);
+      }
+      for(let k=0;k<=48;k++){const a=k/48*Math.PI*2;
+        const q=O.clone().addScaledVector(D,off-0.03).addScaledVector(U,Rn*Math.cos(a)).addScaledVector(V,Rn*Math.sin(a));
+        ring.push([q.x,q.y,q.z]);}
+      out.push({bodyId:f.bodyId||null,helix:helix,ring:ring,spt:steps/turns});
+    });
+  });
+  return out;
+}
 function holeThreadOverlay(){
   try{
     const old=scene.getObjectByName('holeThreads');
     if(old){scene.remove(old);old.traverse(function(o){try{if(o.geometry)o.geometry.dispose();}catch(e){}});}
     const grp=new THREE.Group();grp.name='holeThreads';
-    (doc.features||[]).forEach(function(f){
-      if(!f||f.type!=='hole'||f.visible===false||!f.thread||!f.thread.size)return;
-      if(f.thread.model)return; // le filet est déjà dans le solide exact
-      if(typeof tlLocked==='function'&&tlLocked(f))return;
-      const sk=doc.sketches.find(function(s){return s.id===f.sketchId;});if(!sk)return;
-      const t=isoThread(f.thread.size);if(!t)return;
-      const pz=+f.thread.p||t[2],Rn=t[1]/2,N=holeNorm(f);
-      const rh=Math.max(0.05,N.r-0.04);
-      const len=Math.max(pz,+f._thLen||+f.thread.len||N.depth);
-      const A=holeAxis(f,sk),D=new THREE.Vector3(A.dir.x,A.dir.y,A.dir.z);
-      // repère orthonormé autour de l'axe
-      const ref=Math.abs(D.z)<0.9?new THREE.Vector3(0,0,1):new THREE.Vector3(1,0,0);
-      const U=new THREE.Vector3().crossVectors(D,ref).normalize(),V=new THREE.Vector3().crossVectors(D,U).normalize();
-      const off=(N.kind==='cbore')?N.cbH:0;
+    holeThreadPaths().forEach(function(T){
       const helix=[],ring=[];
-      A.pts.forEach(function(P){
-        const O=new THREE.Vector3(P.x,P.y,P.z);
-        const turns=len/pz,steps=Math.max(24,Math.ceil(turns*24));
-        let prev=null;
-        for(let i=0;i<=steps;i++){
-          const a=i/steps*turns*Math.PI*2,z=off+i/steps*len;
-          const q=O.clone().addScaledVector(D,z).addScaledVector(U,rh*Math.cos(a)).addScaledVector(V,rh*Math.sin(a));
-          if(prev)helix.push(prev.x,prev.y,prev.z,q.x,q.y,q.z);prev=q;
-        }
-        let pr=null;
-        for(let k=0;k<=48;k++){const a=k/48*Math.PI*2;
-          const q=O.clone().addScaledVector(D,off-0.03).addScaledVector(U,Rn*Math.cos(a)).addScaledVector(V,Rn*Math.sin(a));
-          if(pr)ring.push(pr.x,pr.y,pr.z,q.x,q.y,q.z);pr=q;}
-      });
+      const seg=function(arr,pts){for(let i=1;i<pts.length;i++){const p=pts[i-1],q=pts[i];arr.push(p[0],p[1],p[2],q[0],q[1],q[2]);}};
+      seg(helix,T.helix);seg(ring,T.ring);
       const mkL=function(arr,col,op,dash){
         const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(arr,3));
         const m=dash?new THREE.LineDashedMaterial({color:col,dashSize:0.8,gapSize:0.6,transparent:true,opacity:op}):new THREE.LineBasicMaterial({color:col,transparent:true,opacity:op});
@@ -37599,7 +37609,7 @@ function viewFadeIn(){
     #mepTabs .mepAdd{border-style:dashed;padding:3px 8px}
     #mepToolbar{display:none}
     #mepBody{flex:1;display:flex;min-height:0}
-    #mepSheet{flex:1;position:relative;overflow:hidden;background:var(--mepDesk,#8e949e);cursor:url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'17'%20height%3D'17'%3E%3Cpath%20d%3D'M8.5%200v17M0%208.5h17'%20stroke%3D'%23000'%20stroke-width%3D'1.5'%2F%3E%3C%2Fsvg%3E") 8 8,crosshair;min-width:0}
+    #mepSheet{flex:1;position:relative;overflow:hidden;background:var(--mepDesk,#8e949e);cursor:url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'23'%20height%3D'23'%3E%3Cpath%20d%3D'M11.5%200v23M0%2011.5h23'%20stroke%3D'%23fff'%20stroke-width%3D'4'%2F%3E%3Cpath%20d%3D'M11.5%200.8v21.4M0.8%2011.5h21.4'%20stroke%3D'%23000'%20stroke-width%3D'1.6'%2F%3E%3C%2Fsvg%3E") 11 11,crosshair;min-width:0}
     #mepSvg{position:absolute;left:0;top:0;display:block;width:100%;height:100%}
     #mepSide{width:260px;flex:none;border-left:1px solid var(--border);background:var(--surface);overflow-y:auto;padding:8px;font-size:.74rem;display:block}
     #mepSidePanel #mepSide{width:100%;border-left:none;background:transparent}
@@ -37616,7 +37626,7 @@ function viewFadeIn(){
     #mepStatus{flex:none;padding:4px 10px;font-size:.7rem;color:var(--muted);border-top:1px solid var(--border);background:var(--surface);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .mepPage{fill:var(--mepPaper,#fff);stroke:var(--mepPaperEdge,#b9c0c9);stroke-width:.5}
     #mepSvg .mepPage{filter:drop-shadow(0 1.5px 4px rgba(0,0,0,.35))}
-    #mepSheet.mepCurInv{cursor:url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'17'%20height%3D'17'%3E%3Cpath%20d%3D'M8.5%200v17M0%208.5h17'%20stroke%3D'%23fff'%20stroke-width%3D'1.5'%2F%3E%3C%2Fsvg%3E") 8 8,crosshair}
+    #mepSheet.mepCurInv{cursor:url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'23'%20height%3D'23'%3E%3Cpath%20d%3D'M11.5%200v23M0%2011.5h23'%20stroke%3D'%23000'%20stroke-width%3D'4'%2F%3E%3Cpath%20d%3D'M11.5%200.8v21.4M0.8%2011.5h21.4'%20stroke%3D'%23fff'%20stroke-width%3D'1.6'%2F%3E%3C%2Fsvg%3E") 11 11,crosshair}
     .mepFrame{stroke:var(--mepFrameCol,#222);stroke-width:.9;fill:none}
     .mepFrame2{stroke:var(--mepFrameCol,#222);stroke-width:.45;fill:none;stroke-dasharray:1.5 2.5;opacity:.6}
     .mepTitleBlock{stroke:var(--mepFrameCol,#222);stroke-width:.8;fill:var(--mepPaper,#fff)}
@@ -37673,6 +37683,7 @@ function viewFadeIn(){
     .mepSkPt{fill:var(--mepPaper,#fff);stroke:#64d2ff;stroke-width:1.2;vector-effect:non-scaling-stroke}
     .mepSkPtSel{stroke:#ff9f0a;fill:#ff9f0a}
     .mepSkPtFix{stroke:#ff453a}
+    .mepSkCst{fill:none;stroke:#ff9f0a;stroke-width:1;stroke-dasharray:4 3;vector-effect:non-scaling-stroke}
     .mepSkPtLk{stroke:#bf5af2;stroke-width:1.6}
     .mepTbLine{stroke:var(--mepFrameCol,#222);stroke-width:var(--mepLwThin,.42);fill:none;stroke-linecap:square}
     .mepTbThick{stroke-width:var(--mepLwThick,.72)}
@@ -37681,6 +37692,7 @@ function viewFadeIn(){
     .mepLtHid{stroke-dasharray:3.5 2.5;stroke-linecap:butt}
     .mepLtAxis{stroke-dasharray:8 2 1.5 2;stroke-linecap:butt}
     .mepSkSelE{stroke:#ff9f0a!important}
+    .mepSkHovE{stroke:#0a84ff!important;stroke-width:.6!important}
     .mepSkSelT{fill:#ff9f0a!important}
     .mepSkCon{stroke:#0a84ff;fill:none;stroke-width:1;vector-effect:non-scaling-stroke}
     .mepSkConBg{fill:rgba(10,132,255,.14);stroke:#0a84ff;stroke-width:.8;vector-effect:non-scaling-stroke}
@@ -37697,6 +37709,8 @@ function viewFadeIn(){
     .mepArrowSel{fill:#ff3b30}
     .mepArrowK{fill:var(--mepInk,#151515)}
     .mepAxis{fill:none;stroke:var(--mepAxisCol,#111);stroke-width:var(--mepLwAxis,.35);stroke-dasharray:8 2 1.5 2;stroke-linecap:butt;stroke-linejoin:round;pointer-events:none}
+    .mepThr3d{stroke:#e8930c;stroke-width:.16;fill:none;stroke-linecap:round;pointer-events:none}
+    .mepThr3dRing{stroke-dasharray:.8 .6}
     .mepAxisCross{fill:none;stroke:var(--mepAxisCol,#111);stroke-width:.62;stroke-linecap:butt;pointer-events:none}
     .mepAxisSel{stroke:#0066ff!important;stroke-width:1.1!important}
     .mepAxisPick{fill:none;stroke:#ffd60a;stroke-width:1.1;pointer-events:none}
@@ -37712,7 +37726,7 @@ function viewFadeIn(){
   function mepFmtCode(sh){return sh.format===FORMAT_MANUEL?FORMAT_MANUEL:sh.format+(sh.orient==='landscape'?'H':'V');}
   function mepFmtLabel(sh){return sh.format===FORMAT_MANUEL?mepFmtNum(sh.fw,1)+' × '+mepFmtNum(sh.fh,1):mepFmtCode(sh);}
   const MARGIN=12,TITLE_H=26;
-  const MEP_SCALES=[[1,'1:1'],[2,'2:1'],[5,'5:1'],[0.5,'1:2'],[0.2,'1:5'],[2.5,'5:2'],[0.25,'1:4'],[0.1,'1:10'],[1.25,'5:4'],[0.4,'2:5']];
+  const MEP_SCALES=[[1,'1:1'],[2,'2:1'],[5,'5:1'],[0.5,'1:2'],[0.2,'1:5'],[2.5,'5:2'],[0.25,'1:4'],[0.1,'1:10'],[1.25,'5:4'],[0.4,'2:5'],[0.75,'3:4']];
   const COL={sharp:'#1a1a1a',tangent:'#6a6f76',hidden:'#8a9098',sect:'#1a1a1a',
     skFree:'#64d2ff',skFull:'#e8e8ea',sel:'#ff9f0a',ok:'#30d158',err:'#ff453a',snap:'#ffd60a',ref:'#bf5af2'};
   /* vues standard : dir = DE la pièce VERS l'observateur ; u = droite papier ; v = bas papier */
@@ -37991,7 +38005,7 @@ function viewFadeIn(){
   const mepGeoCache=new Map(); // viewId → {ver,sig,geo}
   function mepViewSig(v){
     let s=[mepRound(v.dir),mepRound(v.u),mepRound(v.v),v.bodyId||'',v.mode||'hide',v.tangent?1:0,
-      v.hlrExact===false?'soft':'exact',v.shade?1:0,v.render3d?1:0,
+      v.hlrExact===false?'soft':'exact',v.shade?1:0,v.render3d?(v.mirror?'1m':1):0,
       v.section?mepRound(v.section.p)+mepRound(v.section.n)+(v.section.pts?JSON.stringify(v.section.pts):''):'',v.detail?v.detail.cx+','+v.detail.cy+','+v.detail.r:'',mepOblOf(v)?'obl:'+mepOblOf(v).a+','+mepOblOf(v).k:'',mepPerspOf(v)?'persp:'+mepPerspOf(v).fov:''].join('|');
     /* l'ombrage et le rendu 3D dépendent de la couleur/opacité des corps :
        ces réglages ne changent pas _docVersion, donc on les met dans la clé
@@ -38313,6 +38327,34 @@ function viewFadeIn(){
     faces.sort((a,b)=>a.d-b.d); // peintre : du plus loin au plus proche
     return faces;
   }
+  /* filets cosmétiques en ombrage (2026-10-23) : l'hélice de la vue 3D, projetée comme les faces ;
+     seuls les morceaux visibles (lancer de rayon vers l'observateur) sont gardés. En descendant
+     dans le trou, un tour entièrement caché arrête l'hélice : plus bas, tout l'est aussi. */
+  function mepThreadSegs(view){
+    if(typeof holeThreadPaths!=='function')return[];
+    const meshes=mepMeshesOf(view);if(!meshes.length)return[];
+    const d=view.dir,u=view.u,v=view.v;
+    const O=mepOblOf(view),kc=O?O.k*Math.cos(O.a*Math.PI/180):0,ks=O?O.k*Math.sin(O.a*Math.PI/180):0;
+    const q=O?[d[0]+kc*u[0]-ks*v[0],d[1]+kc*u[1]-ks*v[1],d[2]+kc*u[2]-ks*v[2]]:d;
+    const ql=Math.hypot(q[0],q[1],q[2])||1,qn=[q[0]/ql,q[1]/ql,q[2]/ql];
+    const K=mepPerspOf(view)?(view._pk||(view._pk=mepPerspCam(view))):null;
+    const P=K?(p=>K.proj(p)):O?(p=>{const w=-mepDot(p,d);return[mepDot(p,u)+kc*w,mepDot(p,v)-ks*w];}):(p=>[mepDot(p,u),mepDot(p,v)]);
+    const toEye=p=>{if(!K)return qn;const e=[K.E[0]-p[0],K.E[1]-p[1],K.E[2]-p[2]],l=Math.hypot(e[0],e[1],e[2])||1;return[e[0]/l,e[1]/l,e[2]/l];};
+    const vis=(a,b)=>{const m=[(a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2];return mepVisible(m,toEye(m),null,meshes);};
+    const out=[];
+    holeThreadPaths(16,0.12).forEach(T=>{ // 0,12 mm vers l'axe : hors des facettes de la paroi
+      if(view.bodyId&&T.bodyId&&T.bodyId!==view.bodyId)return;
+      const H=T.helix,per=Math.max(4,Math.round(T.spt||16));
+      let hidRun=0;
+      for(let i=1;i<H.length;i++){
+        if(vis(H[i-1],H[i])){const a=P(H[i-1]),b=P(H[i]);out.push([a[0],a[1],b[0],b[1],0]);hidRun=0;}
+        else if(++hidRun>=per&&i>per)break;
+      }
+      const R=T.ring;
+      for(let i=1;i<R.length;i++)if(vis(R[i-1],R[i])){const a=P(R[i-1]),b=P(R[i]);out.push([a[0],a[1],b[0],b[1],1]);}
+    });
+    return out;
+  }
   /* ═══════════════ D2. rendu 3D bitmap d'une vue ═══════════════ */
   /* Rendu orthographique hors écran, aligné sur la base papier de la vue :
     la caméra regarde le long de view.dir, avec up=-view.v. L'image obtenue
@@ -38324,6 +38366,10 @@ function viewFadeIn(){
       const list=mepMeshesOf(view);
       if(!list.length)return null;
       const b=mepBasisOf(view);view.dir=b.dir;view.u=b.u;view.v=b.v;
+      // miroir (option de la vue) : reflet de la pièce seule sous son point le plus bas (Z monde),
+      // estompé vers le bas sur 60 % de sa hauteur — ni sol ni ombre ; le reflet entre dans le cadre
+      const mir=!!view.mirror;
+      let fz=Infinity,tz=-Infinity;
       const u=b.u,vv=b.v,dir=b.dir;
       const O=mepOblOf(view),kc=O?O.k*Math.cos(O.a*Math.PI/180):0,ks=O?O.k*Math.sin(O.a*Math.PI/180):0;
       let minu=1e9,maxu=-1e9,minv=1e9,maxv=-1e9,mind=1e9,maxd=-1e9,n=0;
@@ -38343,6 +38389,7 @@ function viewFadeIn(){
           const px=mw?(mw[0]*x+mw[4]*y+mw[8]*z+mw[12]):x;
           const py=mw?(mw[1]*x+mw[5]*y+mw[9]*z+mw[13]):y;
           const pz=mw?(mw[2]*x+mw[6]*y+mw[10]*z+mw[14]):z;
+          if(pz<fz)fz=pz;if(pz>tz)tz=pz;
           const du=px*u[0]+py*u[1]+pz*u[2];
           const dv=px*vv[0]+py*vv[1]+pz*vv[2];
           const dd=px*dir[0]+py*dir[1]+pz*dir[2];
@@ -38356,6 +38403,23 @@ function viewFadeIn(){
         }
       }
       if(!n||!(maxu>minu)||!(maxv>minv))return null;
+      const fadeL=Math.max(1,(tz-fz)*0.6);
+      if(mir&&isFinite(fz)){ // 2e passe : sommets réfléchis (z -> 2 fz - z, bornés à la zone de fondu), cadre élargi au reflet
+        for(let bi=0;bi<list.length;bi++){
+          const mesh=list[bi]&&list[bi].mesh,g=mesh&&mesh.geometry;if(!g||!g.attributes||!g.attributes.position)continue;
+          const pos=g.attributes.position,mw=mesh.matrixWorld&&mesh.matrixWorld.elements,st=Math.max(1,Math.floor(pos.count/20000));
+          for(let j=0;j<pos.count;j+=st){
+            const x=pos.getX(j),y=pos.getY(j),z=pos.getZ(j);
+            const px=mw?(mw[0]*x+mw[4]*y+mw[8]*z+mw[12]):x,py=mw?(mw[1]*x+mw[5]*y+mw[9]*z+mw[13]):y;
+            const pz=Math.max(fz-fadeL,2*fz-(mw?(mw[2]*x+mw[6]*y+mw[10]*z+mw[14]):z));
+            const du=px*u[0]+py*u[1]+pz*u[2],dv=px*vv[0]+py*vv[1]+pz*vv[2],dd=px*dir[0]+py*dir[1]+pz*dir[2];
+            if(du<minu)minu=du;if(du>maxu)maxu=du;if(dv<minv)minv=dv;if(dv>maxv)maxv=dv;if(dd<mind)mind=dd;if(dd>maxd)maxd=dd;
+            let su=du-kc*dd,sv=dv+ks*dd;
+            if(K){const q=K.proj([px,py,pz]);su=q[0];sv=q[1];}
+            if(su<su0)su0=su;if(su>su1)su1=su;if(sv<sv0)sv0=sv;if(sv>sv1)sv1=sv;
+          }
+        }
+      }
       const pad=Math.max(0.5,(maxu-minu+maxv-minv)*0.012);
       const l=su0-pad,r=su1+pad,t=sv0-pad,btm=sv1+pad;
       const aspect=(r-l)/Math.max(1e-9,btm-t);
@@ -38407,6 +38471,22 @@ function viewFadeIn(){
         let o=bd.mesh;
         while(o){keep.add(o);o=o.parent;}
       });
+      // filets cosmétiques des trous de la vue (comme la 3D) : groupe temporaire
+      let thrGrp=null;
+      try{
+        if(typeof holeThreadPaths==='function'){
+          const hel=[],rng=[],seg=(arr,pts)=>{for(let i=1;i<pts.length;i++){const p=pts[i-1],q=pts[i];arr.push(p[0],p[1],p[2],q[0],q[1],q[2]);}};
+          holeThreadPaths().forEach(T=>{if(view.bodyId&&T.bodyId&&T.bodyId!==view.bodyId)return;seg(hel,T.helix);seg(rng,T.ring);});
+          if(hel.length){
+            thrGrp=new THREE.Group();
+            const mkL=(arr,dash)=>{const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(arr,3));
+              const m=dash?new THREE.LineDashedMaterial({color:0xe8930c,dashSize:0.8,gapSize:0.6}):new THREE.LineBasicMaterial({color:0xe8930c});
+              const l=new THREE.LineSegments(g,m);if(dash&&l.computeLineDistances)l.computeLineDistances();return l;};
+            thrGrp.add(mkL(hel,false));if(rng.length)thrGrp.add(mkL(rng,true));
+            scene.add(thrGrp);thrGrp.traverse(o=>keep.add(o));
+          }
+        }
+      }catch(e){thrGrp=null;}
       scene.traverse(o=>{
         if(o&&o.isLight){let p=o;while(p){keep.add(p);p=p.parent;}}
       });
@@ -38421,6 +38501,29 @@ function viewFadeIn(){
       const oldVp=renderer.getViewport?renderer.getViewport(new THREE.Vector4()):null;
       const oldBg=scene.background;
       let rt=null;
+      // reflet : copie symétrique de chaque corps (même géométrie), opacité décroissante vers le bas
+      const mirObjs=[];
+      if(mir&&isFinite(fz)){
+        try{
+          const M=new THREE.Matrix4().makeTranslation(0,0,fz).multiply(new THREE.Matrix4().makeScale(1,1,-1)).multiply(new THREE.Matrix4().makeTranslation(0,0,-fz));
+          list.forEach(bd=>{
+            const src=bd.mesh;if(!src||!src.geometry)return;
+            const mats=(Array.isArray(src.material)?src.material:[src.material]).map(m0=>{
+              const m=m0.clone();m.transparent=true;m.depthWrite=true;
+              m.onBeforeCompile=sh=>{
+                sh.uniforms.uFz={value:fz};sh.uniforms.uFl={value:fadeL};
+                sh.vertexShader='varying float vMz;\n'+sh.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\n vMz=(modelMatrix*vec4(transformed,1.0)).z;');
+                sh.fragmentShader='uniform float uFz; uniform float uFl; varying float vMz;\n'+sh.fragmentShader.replace('#include <dithering_fragment>',
+                  '#include <dithering_fragment>\n { float t=clamp((uFz-vMz)/uFl,0.0,1.0); gl_FragColor.a*=0.5*(1.0-t)*(1.0-t); }');
+              };
+              m.customProgramCacheKey=()=>'mepMirror';
+              return m;});
+            const o=new THREE.Mesh(src.geometry,Array.isArray(src.material)?mats:mats[0]);
+            o.matrixAutoUpdate=false;o.matrix.copy(M).multiply(src.matrixWorld);o.matrixWorld.copy(o.matrix);o.renderOrder=-1;
+            scene.add(o);keep.add(o);mirObjs.push(o);
+          });
+        }catch(e){}
+      }
       try{
         scene.background=null;
         rt=new THREE.WebGLRenderTarget(W,H,{minFilter:THREE.LinearFilter,
@@ -38447,6 +38550,11 @@ function viewFadeIn(){
           const src=(H-1-y)*row;
           img.data.set(buf.subarray(src,src+row),y*row);
         }
+        // fond transparent (0,0,0,0) : un pixel semi-transparent (reflet, bords lissés) est stocké
+        // « couleur × alpha » — on rend la couleur vraie, sinon le PNG l'assombrit (reflet gris)
+        const px=img.data;
+        for(let i=0;i<px.length;i+=4){const a=px[i+3];if(a>0&&a<255){const k=255/a;
+          px[i]=Math.min(255,px[i]*k);px[i+1]=Math.min(255,px[i+1]*k);px[i+2]=Math.min(255,px[i+2]*k);}}
         ctx.putImageData(img,0,0);
         const url=cv.toDataURL('image/png');
         if(!url||url.length<16)return null;
@@ -38456,6 +38564,8 @@ function viewFadeIn(){
           lw:+(r-l).toFixed(3),lh:+(btm-t).toFixed(3)};
       }finally{
         for(let i=0;i<saved.length;i++)saved[i][0].visible=saved[i][1];
+        if(thrGrp){try{scene.remove(thrGrp);thrGrp.traverse(o=>{try{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();}catch(e){}});}catch(e){}}
+        mirObjs.forEach(o=>{try{scene.remove(o);(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.dispose());}catch(e){}});
         scene.background=oldBg;
         try{if(oldClear)renderer.setClearColor(oldClear,oldAlpha);}catch(e){}
         renderer.autoClear=oldAuto;
@@ -38839,6 +38949,7 @@ function viewFadeIn(){
     }
     if(view.shade&&!view.render3d&&!view.section&&!view.detail){
       try{geo.faces=mepShadedFaces(view);}catch(e){geo.faces=[];}
+      try{geo.thr3d=mepThreadSegs(view);}catch(e){geo.thr3d=[];}
     }
     if(view.section&&cutShapes.length){
       const st=view._step;
@@ -39259,8 +39370,8 @@ function viewFadeIn(){
       const segsOut=[];
       const inside0=inC(x1,y1),inside1=inC(x2,y2);
       if(inside0&&inside1)segsOut.push([x1,y1,x2,y2]);
-      else if(inside0)segsOut.push([x1,y1,x1+dx*t0,y1+dy*t0]);
-      else if(inside1)segsOut.push([x1+dx*t1,y1+dy*t1,x2,y2]);
+      else if(inside0)segsOut.push([x1,y1,x1+dx*t1,y1+dy*t1]); // part de l'intérieur : sort au 2ᵉ croisement (t1 > 0)
+      else if(inside1)segsOut.push([x1+dx*t0,y1+dy*t0,x2,y2]); // finit dedans : entre au 1er (t0 < 1)
       else if(t0>0&&t1<1)segsOut.push([x1+dx*t0,y1+dy*t0,x1+dx*t1,y1+dy*t1]);
       return segsOut;
     };
@@ -39803,9 +39914,9 @@ function viewFadeIn(){
   const MEP_ACC_D={nuit:'#4da3ff',graphite:'#8ab4f8',atelier:'#ff9f0a',clair:'#4da3ff',contraste:'#00b4ff'};
   const MEP_PAPER={
     white:{mepPaper:'#ffffff',mepPaperEdge:'#b9c0c9',mepInk:'#151515',mepInk2:'#6a6f76',mepHid:'#59606a',mepFrameCol:'#222222',
-      mepText:'#111111',mepGridCol:'#d8dde3',mepHatchCol:'#333333',mepThreadCol:'#a4a9b0',mepAxisCol:'#d40000',mepSkFreeCol:'#0a84ff'},
+      mepText:'#111111',mepGridCol:'#d8dde3',mepHatchCol:'#333333',mepThreadCol:'#a4a9b0',mepAxisCol:'#ff0000',mepSkFreeCol:'#0a84ff'},
     dark:{mepPaper:'#1e2126',mepPaperEdge:'#3a3f47',mepInk:'#e9eaec',mepInk2:'#9aa0a8',mepHid:'#8a9098',mepFrameCol:'#c9ccd1',
-      mepText:'#e9eaec',mepGridCol:'#2c3038',mepHatchCol:'#b0b4ba',mepThreadCol:'#6c727a',mepAxisCol:'#ff5a5a',mepSkFreeCol:'#64d2ff'}
+      mepText:'#e9eaec',mepGridCol:'#2c3038',mepHatchCol:'#b0b4ba',mepThreadCol:'#6c727a',mepAxisCol:'#ff0000',mepSkFreeCol:'#64d2ff'}
   };
   function mepPaperMode(){try{return localStorage.getItem('mep_paper')==='dark'?'dark':'white';}catch(e){return 'white';}}
   function mepThemeApply(){
@@ -39874,6 +39985,18 @@ function viewFadeIn(){
   function mepTbW(sh,pd){
     if(mepTbIsSk(sh))return Math.max(0,-mepTbBBox(sh.title.tb.sk,mepTbLim(sh)).minx);
     return pd.iw;
+  }
+  // indice de la k-ième révision (k = 0…) : 'A' → A…Z, AA, AB… ; '0' → 0, 1… ; '1' → 1, 2…
+  function mepRevIdx(fmt,k){
+    if(fmt==='0'||fmt==='1')return String(k+(fmt==='1'?1:0));
+    let s='',n=k+1;while(n>0){n--;s=String.fromCharCode(65+n%26)+s;n=Math.floor(n/26);}return s;
+  }
+  // indice suivant : suite du dernier s'il est dans le format (indice saisi à la main respecté), sinon le rang
+  function mepRevNext(fmt,revs){
+    const last=revs.length?String(revs[revs.length-1].i||'').trim():'';
+    if(fmt==='0'||fmt==='1'){if(/^\d+$/.test(last))return String(+last+1);}
+    else if(/^[A-Z]+$/.test(last)){let n=0;for(const c of last)n=n*26+(c.charCodeAt(0)-64);return mepRevIdx('A',n);}
+    return mepRevIdx(fmt,revs.length);
   }
   function mepDrawRevs(mk,sh,pd,ty){
     // tableau des révisions : en-tête IND. | DATE | NOM | MODIFICATION en bas (contre le cartouche),
@@ -40036,8 +40159,10 @@ function viewFadeIn(){
   function mepTbBBox(sk,lim){
     let minx=0,miny=0;
     const out=p=>!!lim&&(p.x<-lim.w||p.y<-lim.h||p.x>1||p.y>1);
-    Object.keys(sk.pts||{}).forEach(k=>{const p=sk.pts[k];if(out(p))return;minx=Math.min(minx,p.x);miny=Math.min(miny,p.y);});
-    (sk.ents||[]).forEach(e=>{if(e.t==='circle'){const c=sk.pts[e.pc];if(c&&!out(c)){minx=Math.min(minx,c.x-e.r);miny=Math.min(miny,c.y-e.r);}}
+    const real=new Set(),cstP=new Set();
+    (sk.ents||[]).forEach(e=>['p1','p2','pc','p'].forEach(k=>{if(e[k])(e.cst?cstP:real).add(e[k]);}));
+    Object.keys(sk.pts||{}).forEach(k=>{const p=sk.pts[k];if(out(p)||(cstP.has(k)&&!real.has(k)))return;minx=Math.min(minx,p.x);miny=Math.min(miny,p.y);});
+    (sk.ents||[]).forEach(e=>{if(e.t==='circle'&&!e.cst){const c=sk.pts[e.pc];if(c&&!out(c)){minx=Math.min(minx,c.x-e.r);miny=Math.min(miny,c.y-e.r);}}
       else if(e.t==='text'){const p=sk.pts[e.p];if(p&&!out(p))miny=Math.min(miny,p.y-0.75*(+e.h||3.5));}}); // hauteur des capitales ≈ 0,75 × corps
     return{minx,miny};
   }
@@ -40189,7 +40314,7 @@ function viewFadeIn(){
   }
   function mepSkStyled(e){
     const s=mepSkStyleCur();
-    (e.t==='text'?['col']:['w','lw','lt','col']).forEach(k=>{if(s[k]!==undefined&&s[k]!==null&&s[k]!=='')e[k]=s[k];});
+    (e.t==='text'?['col']:['w','lw','lt','col','cst']).forEach(k=>{if(s[k]!==undefined&&s[k]!==null&&s[k]!=='')e[k]=s[k];});
     return e;
   }
   function mepSkAddLine(sh,A,B){
@@ -40276,7 +40401,9 @@ function viewFadeIn(){
       if(best)return{key:best};
       for(const h of mepSkConHits)if(Math.abs(P.x-h.x)<=h.w/2+tol*0.2&&Math.abs(P.y-h.y)<=h.h/2+tol*0.2)return{key:'c:'+h.id};
     }
-    let best=null,bd=tol*0.7;
+    // traits et cercles d'abord (tolérance 7 px) ; un texte ou le logo ne gagne que si aucun trait n'est
+    // à portée — les textes couvrent presque toutes les cases du cartouche et masquaient leurs bords
+    let best=null,bd=tol,bestT=null;
     sk.ents.forEach(e=>{
       let d=Infinity;
       if(e.t==='line'){const A=sk.pts[e.p1],B=sk.pts[e.p2];if(!A||!B)return;const a=mepSkS(ctx,A),b=mepSkS(ctx,B);
@@ -40285,11 +40412,12 @@ function viewFadeIn(){
       else if(e.t==='circle'||e.t==='arc'){const C=sk.pts[e.pc];if(!C)return;const c=mepSkS(ctx,C);d=Math.abs(Math.hypot(P.x-c.x,P.y-c.y)-e.r);}
       else if(e.t==='text'){const p0=sk.pts[e.p];if(!p0)return;const p=mepSkS(ctx,p0),h=+e.h||3.5,w=Math.max(h,String(mepSkTextValue(sh,e,true)).length*h*0.56);
         const x0=e.al==='middle'?p.x-w/2:(e.al==='end'?p.x-w:p.x);
-        if(P.x>=x0-1&&P.x<=x0+w+1&&P.y>=p.y-h-1&&P.y<=p.y+1)d=0;}
+        if(P.x>=x0-0.5&&P.x<=x0+w+0.5&&P.y>=p.y-h-0.5&&P.y<=p.y+0.5&&!bestT)bestT='e:'+e.id;return;}
       else if(e.t==='logo'){const A=sk.pts[e.p1],B=sk.pts[e.p2];if(!A||!B)return;const a=mepSkS(ctx,A),b=mepSkS(ctx,B);
-        if(P.x>=Math.min(a.x,b.x)&&P.x<=Math.max(a.x,b.x)&&P.y>=Math.min(a.y,b.y)&&P.y<=Math.max(a.y,b.y))d=tol*0.5;}
+        if(P.x>=Math.min(a.x,b.x)&&P.x<=Math.max(a.x,b.x)&&P.y>=Math.min(a.y,b.y)&&P.y<=Math.max(a.y,b.y)&&!bestT)bestT='e:'+e.id;return;}
       if(d<bd){bd=d;best='e:'+e.id;}
     });
+    best=best||bestT;
     return best?{key:best}:null;
   }
   function mepSkSelect(key,add){
@@ -40427,23 +40555,28 @@ function viewFadeIn(){
   function mepDrawSkCtx(mk,sh,ctx,mode){
     // mode : 'sheet' (esquisse de planche), 'tb' (cartouche affiché), 'tbEdit' (cartouche en édition)
     const sk=ctx.sk;if(!sk)return;
-    const S=p=>mepSkS(ctx,p),sel=mepSt.skSel||new Set();
+    const S=p=>mepSkS(ctx,p),sel=mepSt.skSel||new Set(),hov=mepSt.skHov;
     const editing=mode==='tbEdit'||(mode==='sheet'&&!mepSt.tbEdit&&mepSkEditing());
     // style par entité (V0.3.13) : e.w 'thin'|'thick' (défaut : épais sur la planche, fin au cartouche),
     // e.lw épaisseur libre (mm), e.lt 'hid'|'axis', e.col couleur (#rrggbb, classe mepUc → noir à l'export « Noir »)
     const wDef=mode==='sheet'?'thick':'thin';
+    // e.cst : élément de construction — pointillé d'aide en édition (calque d'aide, jamais exporté), invisible sinon
     const lineCls=e=>{const w=e.w||wDef;
+      if(e.cst)return'mepSkCst'+(sel.has('e:'+e.id)?' mepSkSelE':(hov==='e:'+e.id?' mepSkHovE':''));
       return (mode==='sheet'?'mepEnt mepSkFull'+(w==='thick'?' mepSkThick':' mepSkThin'):('mepTbLine'+(w==='thick'?' mepTbThick':'')))+
-        (e.lt==='hid'?' mepLtHid':(e.lt==='axis'?' mepLtAxis':''))+(e.col?' mepUc':'')+(sel.has('e:'+e.id)&&editing?' mepSkSelE':'');};
-    const lineAt=(e,o)=>{o.class=lineCls(e);const st=[];if(+e.lw>0)st.push('stroke-width:'+(+e.lw));if(e.col)st.push('stroke:'+e.col);if(st.length)o.style=st.join(';');return o;};
+        (e.lt==='hid'?' mepLtHid':(e.lt==='axis'?' mepLtAxis':''))+(e.col?' mepUc':'')+(sel.has('e:'+e.id)&&editing?' mepSkSelE':(hov==='e:'+e.id&&editing?' mepSkHovE':''));};
+    const lineAt=(e,o)=>{o.class=lineCls(e);if(e.cst)return o;const st=[];if(+e.lw>0)st.push('stroke-width:'+(+e.lw));if(e.col)st.push('stroke:'+e.col);if(st.length)o.style=st.join(';');return o;};
     sk.ents.forEach(e=>{
+      const cst=!!e.cst&&(e.t==='line'||e.t==='circle'||e.t==='arc');
+      if(cst&&!editing)return;
+      const mkE=(tag,o)=>cst?mk(tag,o,mepGHlp):mk(tag,o);
       if(e.t==='line'){const A=sk.pts[e.p1],B=sk.pts[e.p2];if(!A||!B)return;const a=S(A),b=S(B);
-        mk('line',lineAt(e,{x1:a.x,y1:a.y,x2:b.x,y2:b.y}));}
-      else if(e.t==='circle'){const C=sk.pts[e.pc];if(!C)return;const c=S(C);mk('circle',lineAt(e,{cx:c.x,cy:c.y,r:e.r,fill:'none'}));}
+        mkE('line',lineAt(e,{x1:a.x,y1:a.y,x2:b.x,y2:b.y}));}
+      else if(e.t==='circle'){const C=sk.pts[e.pc];if(!C)return;const c=S(C);mkE('circle',lineAt(e,{cx:c.x,cy:c.y,r:e.r,fill:'none'}));}
       else if(e.t==='arc'){const C=sk.pts[e.pc],P1=sk.pts[e.p1],P2=sk.pts[e.p2];if(!C||!P1||!P2)return;
         const c=S(C),a0=Math.atan2(P1.y-C.y,P1.x-C.x),a1=Math.atan2(P2.y-C.y,P2.x-C.x);let da=a1-a0;while(da<=0)da+=2*Math.PI;
         const x1=c.x+e.r*Math.cos(a0),y1=c.y+e.r*Math.sin(a0),x2=c.x+e.r*Math.cos(a1),y2=c.y+e.r*Math.sin(a1);
-        mk('path',lineAt(e,{d:'M'+x1+','+y1+' A'+e.r+','+e.r+' 0 '+(da>Math.PI?1:0)+' 1 '+x2+','+y2,fill:'none'}));}
+        mkE('path',lineAt(e,{d:'M'+x1+','+y1+' A'+e.r+','+e.r+' 0 '+(da>Math.PI?1:0)+' 1 '+x2+','+y2,fill:'none'}));}
       else if(e.t==='text'){const P0=sk.pts[e.p];if(!P0)return;const p=S(P0);
         let val=String(mepSkTextValue(sh,e,editing)||'');if(!val)return;
         if(+e.mw>0){const nmax=Math.max(2,Math.floor(+e.mw/((+e.h||3.5)*0.56)));if(val.length>nmax)val=val.slice(0,nmax-1)+'…';}
@@ -41265,6 +41398,12 @@ function viewFadeIn(){
       r=K.rowEl();K.lab(r,'Type');
       [['','Continu'],['hid','Interrompu'],['axis','Mixte']].forEach(([v,l])=>K.btn(r,l,()=>set(x=>{if(x.t==='text')return;if(v)x.lt=v;else delete x.lt;}),
         v==='hid'?'Trait interrompu (caché)':(v==='axis'?'Trait mixte (axe)':'Trait continu'),strokes.every(x=>(x.lt||'')===v)?'active':''));
+      const geo=strokes.filter(x=>cur||x.t==='line'||x.t==='circle'||x.t==='arc');
+      if(geo.length){
+        r=K.rowEl();K.lab(r,'Construction');const on=geo.every(x=>!!x.cst);
+        K.btn(r,on?'Oui':'Non',()=>set(x=>{if(!cur&&!(x.t==='line'||x.t==='circle'||x.t==='arc'))return;if(on)delete x.cst;else x.cst=true;}),
+          'Élément de construction : pointillé en édition, invisible sur la planche, à l’impression et à l’export',on?'active':'');
+      }
     }
     const r=K.rowEl();K.lab(r,'Couleur');
     const c=document.createElement('input');c.type='color';const cv=same(x=>x.col||'');c.value=cv||'#151515';
@@ -41413,7 +41552,7 @@ function viewFadeIn(){
     mepSvgEl.addEventListener('pointerdown',mepOnDown);
     mepSvgEl.addEventListener('pointermove',mepOnMove);
     mepSvgEl.addEventListener('pointerup',mepOnUp);
-    mepSvgEl.addEventListener('pointerleave',()=>{mepSt.hovView=null;mepSt.hovEnt=null;mepCoordShow(null);try{mepRender();}catch(e){}});
+    mepSvgEl.addEventListener('pointerleave',()=>{mepSt.hovView=null;mepSt.hovEnt=null;mepSt.skHov=null;mepCoordShow(null);try{mepRender();}catch(e){}});
     mepSvgEl.addEventListener('wheel',mepOnWheel,{passive:false});
     mepSvgEl.addEventListener('dblclick',mepOnDbl);
     mepSvgEl.addEventListener('contextmenu',mepOnContext);
@@ -41692,6 +41831,8 @@ function viewFadeIn(){
     }
     /* faces ombrées derrière les arêtes */
     if(g.faces&&g.faces.length)mepDrawFaces(mk,g.faces,v);
+    if(g.thr3d&&g.thr3d.length)g.thr3d.forEach(t=>mk('line',{x1:+X(t[0]).toFixed(3),y1:+Y(t[1]).toFixed(3),x2:+X(t[2]).toFixed(3),y2:+Y(t[3]).toFixed(3),
+      class:'mepThr3d'+(t[4]?' mepThr3dRing':'')}));
     mepDrawAxes(mk,v,sh);
     /* la vue sélectionnée garde ses couleurs : seul le cadre bleu la signale */
     const selEnt=(e,ei)=>mepSt.entSel&&mepSt.entSel.some(s=>
@@ -43686,53 +43827,54 @@ function viewFadeIn(){
   /* ═══════════════ R. dessin 2D (esquisse de planche) ═══════════════ */
   /* ajuster (trim) : retire le tronçon entre 2 intersections */
   function mepSkTrim(sh,sx,sy){
+    // Ajuster (comme Fusion) : le tronçon cliqué, entre les intersections voisines, disparaît ;
+    // sans intersection, toute la ligne. Intersections avec les SEGMENTS, cercles et arcs (pas les
+    // droites prolongées) ; les morceaux gardent leurs extrémités (liaisons et contraintes), les points
+    // de coupe restent sur l'élément coupant, l'horizontale / verticale d'origine est reportée.
     const ctx=mepSkCtx(sh,true),sk=ctx.sk; // esquisse de planche ou cartouche en édition
     sx-=ctx.ox;sy-=ctx.oy;
-    // chercher segment d'esquisse
-    let best=null,bd=4/mepSt.zoom;
+    let best=null,bd=Math.max(1.5,mepSkTol());
     sk.ents.forEach(e=>{
       if(e.t!=='line')return;
       const A=sk.pts[e.p1],B=sk.pts[e.p2];if(!A||!B)return;
       const dx=B.x-A.x,dy=B.y-A.y,L2=dx*dx+dy*dy;
       if(L2<1e-12)return;
       const t=Math.max(0,Math.min(1,((sx-A.x)*dx+(sy-A.y)*dy)/L2));
-      const px=A.x+dx*t,py=A.y+dy*t;
-      const d=Math.hypot(sx-px,sy-py);
+      const d=Math.hypot(sx-(A.x+dx*t),sy-(A.y+dy*t));
       if(d<bd){bd=d;best={e,t,A,B};}
     });
-    if(!best)return false;
-    const{e,t,A,B}=best;
-    // intersections avec les autres entités
-    const xs=[];
+    if(!best){mepStatus('Ajuster : cliquez le tronçon de ligne à retirer.');return false;}
+    const{e,t,A,B}=best,L=Math.hypot(B.x-A.x,B.y-A.y),eps=1e-4/Math.max(L,1e-9)+1e-6;
+    const xs=[]; // {t, ent}
+    const onArc=(o,C,x,y)=>{if(o.t!=='arc')return true;
+      const P1=sk.pts[o.p1],P2=sk.pts[o.p2];if(!P1||!P2)return true;
+      const a0=Math.atan2(P1.y-C.y,P1.x-C.x),a1=Math.atan2(P2.y-C.y,P2.x-C.x),a=Math.atan2(y-C.y,x-C.x);
+      const n=v=>{while(v<0)v+=2*Math.PI;while(v>=2*Math.PI)v-=2*Math.PI;return v;};
+      return n(a-a0)<=n(a1-a0)+1e-6;};
     sk.ents.forEach(o=>{
-      if(o===e)return;
+      if(o===e||o.cst&&!e.cst)return; // une construction ne coupe pas un trait réel
       if(o.t==='line'){
         const C=sk.pts[o.p1],D=sk.pts[o.p2];if(!C||!D)return;
-        const ip=(typeof interLineLine==='function')?interLineLine(A,B,C,D):null;
-        if(ip&&ip.t>0.001&&ip.t<0.999)xs.push(ip.t);
-      }else if(o.t==='circle'){
+        const ip=interLineLine(A,B,C,D);
+        if(ip&&ip.u>=-1e-6&&ip.u<=1+1e-6&&ip.t>eps&&ip.t<1-eps)xs.push({t:ip.t,o});
+      }else if(o.t==='circle'||o.t==='arc'){
         const cc=sk.pts[o.pc];if(!cc)return;
-        const pts=(typeof interLineCircle==='function')?interLineCircle(A,B,cc,o.r):[];
-        pts.forEach(p=>{if(p.t>0.001&&p.t<0.999)xs.push(p.t);});
+        interLineCircle(A,B,cc,o.r).forEach(q=>{if(q.t>eps&&q.t<1-eps&&onArc(o,cc,q.x,q.y))xs.push({t:q.t,o});});
       }
     });
-    xs.sort((a,b)=>a-b);
-    if(xs.length<2){mepStatus('Ajuster : aucune intersection de part et d’autre du tronçon.');return false;}
-    // tronçon cliqué = entre les 2 intersections bornant t
-    let lo=-0.01,hi=1.01;
-    xs.forEach(v=>{if(v<t)lo=Math.max(lo,v);else hi=Math.min(hi,v);});
-    if(hi-lo<1e-4)return false;
-    // remplace la ligne par 2 sous-lignes
-    const mk=(t0,t1)=>{
-      if(t1-t0<1e-4)return;
-      const x1=A.x+(B.x-A.x)*t0,y1=A.y+(B.y-A.y)*t0;
-      const x2=A.x+(B.x-A.x)*t1,y2=A.y+(B.y-A.y)*t1;
-      const pa=mepSkPt(sk,x1,y1),pb=mepSkPt(sk,x2,y2);
-      const n={t:'line',p1:pa,p2:pb};['w','lw','lt','col'].forEach(k=>{if(e[k]!==undefined)n[k]=e[k];});
-      mepSkEnt(sk,n);
-    };
-    mk(0,lo);mk(hi,1);
+    let lo=null,hi=null;
+    xs.forEach(q=>{if(q.t<t){if(!lo||q.t>lo.t)lo=q;}else if(!hi||q.t<hi.t)hi=q;});
+    const hv=sk.cons.find(c=>(c.type==='horizontal'||c.type==='vertical')&&((c.a===e.p1&&c.b===e.p2)||(c.a===e.p2&&c.b===e.p1)));
+    const style=n=>{['w','lw','lt','col','cst'].forEach(k=>{if(e[k]!==undefined)n[k]=e[k];});return n;};
+    const cut=q=>{const id=mepSkPt(sk,A.x+(B.x-A.x)*q.t,A.y+(B.y-A.y)*q.t);
+      mepSkCons(sk,q.o.t==='line'?{type:'onLine',p:id,ent:q.o.id}:{type:'onCircle',p:id,ent:q.o.id});return id;};
+    const piece=(a,b)=>{mepSkEnt(sk,style({t:'line',p1:a,p2:b}));if(hv)mepSkCons(sk,{type:hv.type,a,b});};
+    if(lo)piece(e.p1,cut(lo));
+    if(hi)piece(cut(hi),e.p2);
     mepSkRmEnt(sk,e.id);
+    mepSkCleanCons(sk);
+    mepSkSolve(sk,60);
+    mepStatus(lo||hi?'Ajuster : tronçon retiré.':'Ajuster : aucune intersection — ligne entière retirée.');
     return true;
   }
   /* ═══════════════ S. rendu esquisse + brouillons ═══════════════ */
@@ -44560,6 +44702,12 @@ function viewFadeIn(){
       }
       return;
     }
+    // survol d'esquisse (cartouche en édition, ou esquisse de planche active) : élément visé surligné
+    if(mepSt.tool==='select'&&(mepSt.tbEdit||(mepSt.skSel&&mepSt.skSel.size))){
+      const hk=mepSkHit(sh,P),key=hk?hk.key:null;
+      if(key!==mepSt.skHov){mepSt.skHov=key;try{mepRender();}catch(e){}}
+      if(mepSt.tbEdit)return;
+    }else if(mepSt.skHov){mepSt.skHov=null;try{mepRender();}catch(e){}}
     // survol titre de vue (cadre pointillé) puis vue (feedback)
     {const tv=mepViewTitleAt(sh,P.x,P.y),tid=tv?tv.id:null;
      if(tid!==mepSt.ttlHov){mepSt.ttlHov=tid;try{mepRender();}catch(e){}}
@@ -44793,6 +44941,15 @@ function viewFadeIn(){
       return; // ne pas voler le reste
     }
     if(k==='F'){try{mepFitSheet();mepRender();}catch(e){}}
+    if((k==='x'||k==='X')&&mepSt.skSel&&mepSt.skSel.size){ // X : lignes / cercles / arcs sélectionnés ↔ construction
+      const sh=mepSheet(),ctx=mepSkCtx(sh,false),sk=ctx.sk;
+      const es=sk?mepSkSelParts(sk):null,G=es?es.L.concat(es.C):[];
+      if(G.length){const on=!G.every(e=>!!e.cst);
+        mepEdit(on?'construction':'trait normal',()=>G.forEach(e=>{if(on)e.cst=true;else delete e.cst;}));
+        mepStatus(G.length+' élément(s) '+(on?'en construction (invisibles hors édition)':'redevenu(s) normal(aux)')+'.');
+        mepSideShow();mepRender();}
+      ev.preventDefault();ev.stopPropagation();return;
+    }
     if(k==='v'||k==='V')mepSetTool('select');
     if(k==='l'||k==='L')mepSetTool('line');
     if(k==='r'||k==='R')mepSetTool(ev.shiftKey?'rect':'dim'); // R seul = outil cote (rayon via clic)
@@ -45737,7 +45894,13 @@ function viewFadeIn(){
     }
     /* — révisions (indice = dernière révision) — */
     const revs=Array.isArray(tt.revs)?tt.revs:[];
-    r=rowEl();{const L=document.createElement('label');L.textContent='Révisions';L.style.fontWeight='600';r.appendChild(L);}
+    r=rowEl();{const L=document.createElement('label');L.textContent='Révisions';L.style.fontWeight='600';r.appendChild(L);
+     // indices : lettres (A, B, C…) ou chiffres (0, 1, 2… / 1, 2, 3…) ; changer renumérote les révisions existantes
+     const fs=document.createElement('select');fs.id='mepRevFmt';fs.title='Indices des révisions : lettres ou chiffres (renumérote les révisions existantes)';
+     [['A','A, B, C…'],['0','0, 1, 2…'],['1','1, 2, 3…']].forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;fs.appendChild(o);});
+     fs.value=tt.revFmt||'A';
+     fs.onchange=()=>{mepEdit('indices des révisions',()=>{tt.revFmt=fs.value;(tt.revs||[]).forEach((rv,k)=>{rv.i=mepRevIdx(fs.value,k);});});mepSideShow();};
+     r.appendChild(fs);}
     revs.forEach((rv,k)=>{
       // 2 lignes par révision : indice + date (+ suppression), puis nom + modification
       const inp=(key,ph,w,tip)=>{const i=document.createElement('input');i.value=rv[key]||'';i.placeholder=ph;i.title=tip;if(w)i.style.maxWidth=w;
@@ -45749,8 +45912,7 @@ function viewFadeIn(){
     r=rowEl();
     rb('+ Révision',()=>{mepEdit('révision',()=>{
       if(!Array.isArray(tt.revs))tt.revs=[];
-      const last=tt.revs.length?String(tt.revs[tt.revs.length-1].i||'A'):'';
-      const nx=!last?'A':(/^[A-Y]$/.test(last)?String.fromCharCode(last.charCodeAt(0)+1):last+"'");
+      const nx=mepRevNext(tt.revFmt||'A',tt.revs);
       let nom='';try{nom=localStorage.getItem('mep_rev_nom')||'';}catch(e){}
       if(!nom&&tt.auteur&&tt.auteur!=='—')nom=tt.auteur;
       tt.revs.push({i:nx,d:new Date().toLocaleDateString('fr-FR'),n:nom,t:''});});mepSideShow();},'Ajouter une ligne au tableau des révisions');
@@ -45933,7 +46095,7 @@ function viewFadeIn(){
     }
     // échelle
     const sel=document.createElement('select');
-    MEP_SCALES.forEach(([s,lab])=>{
+    MEP_SCALES.slice().sort((a,b)=>b[0]-a[0]).forEach(([s,lab])=>{ // de 5:1 à 1:10
       const o=document.createElement('option');
       o.value=s;o.textContent=lab;
       if(Math.abs(s-v.scale)<1e-6)o.selected=true;
@@ -45976,12 +46138,14 @@ function viewFadeIn(){
     if(v.kind!=='section'&&v.kind!=='detail'){
       let chkShade,chk3d;
       chkShade=mkChk('Ombrage (faces)','shade','mepChkShade',on=>{
-        if(on){v.render3d=false;if(chk3d)chk3d.checked=false;}
+        if(on){v.render3d=false;if(chk3d)chk3d.checked=false;setTimeout(()=>{try{mepSideShow();}catch(e){}},0);}
       });
       chk3d=mkChk('Rendu 3D (image)','render3d','mepChkRender3d',on=>{
         if(on){v.shade=false;if(chkShade)chkShade.checked=false;}
+        setTimeout(()=>{try{mepSideShow();}catch(e){}},0); // case « Miroir » : seulement en rendu 3D
       });
       chk3d.title='Rendu de la vue depuis la 3D (couleurs et transparence des corps)';
+      if(v.render3d){const cm=mkChk('Miroir','mirror','mepChkMirror');cm.title='Reflet de la pièce sous elle-même, estompé vers le bas (sans sol ni ombre)';}
     }
     if(v.kind==='base'){
       // projection oblique (cavalière) : angle et coefficient des fuyantes
@@ -46272,7 +46436,7 @@ function viewFadeIn(){
       clone.setAttribute('height',pg.H+'mm');
       // strip UI helpers
       clone.querySelectorAll('#mepGHlp,.mepDraft').forEach(n=>n.parentNode&&n.parentNode.removeChild(n));
-      clone.querySelectorAll('.mepSkSelE,.mepSkSelT').forEach(n=>{n.classList.remove('mepSkSelE');n.classList.remove('mepSkSelT');});
+      clone.querySelectorAll('.mepSkSelE,.mepSkSelT,.mepSkHovE').forEach(n=>{n.classList.remove('mepSkSelE');n.classList.remove('mepSkSelT');n.classList.remove('mepSkHovE');});
       // les éléments ne portent que des classes : embarquer la feuille de style PLAN
       const st=document.createElementNS(NS,'style');
       st.textContent=css.textContent+xcss;
@@ -46461,7 +46625,7 @@ function viewFadeIn(){
       clone.setAttribute('viewBox','0 0 '+pg.W+' '+pg.H);
       clone.setAttribute('width',pg.W+'mm');clone.setAttribute('height',pg.H+'mm');
       clone.querySelectorAll('#mepGHlp,.mepDraft').forEach(n=>n.parentNode&&n.parentNode.removeChild(n));
-      clone.querySelectorAll('.mepSkSelE,.mepSkSelT').forEach(n=>{n.classList.remove('mepSkSelE');n.classList.remove('mepSkSelT');});
+      clone.querySelectorAll('.mepSkSelE,.mepSkSelT,.mepSkHovE').forEach(n=>{n.classList.remove('mepSkSelE');n.classList.remove('mepSkSelT');n.classList.remove('mepSkHovE');});
       const w=window.open('','_blank');
       if(!w){mepStatus('Popup bloquée — autorisez les popups pour imprimer.');return;}
       w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>'+sh.name+'</title>'+
@@ -46578,7 +46742,7 @@ function viewFadeIn(){
       titleTexts:sh=>{const t=[];const mk=(tag)=>{const o={textContent:''};if(tag==='text')t.push(o);return o;};mepDrawTitle(mk,sh,mepPage().pd,100);mepDrawRevs(mk,sh,mepPage().pd,100);mepDrawBom(mk,sh,mepPage().pd,100);return t.map(o=>o.textContent);},
       sk:{fromStd:sh=>mepTbFromStd(sh),solve:(sk,a)=>mepSkSolve(sk,80,a),residual:(sk,c)=>mepSkResidual(sk,c),
         apply:(sh,id,keys)=>{mepSt.skSel=new Set(keys);mepSkApply(sh,id);},setVal:(sh,c,v)=>mepSkSetVal(sh,c,v),
-        tbH:sh=>mepTbH(sh),tbEdit:on=>mepTbEdit(on),ctx:sh=>mepSkCtx(sh,true),addLine:(sh,a,b)=>mepSkAddLine(sh,a,b),
+        tbH:sh=>mepTbH(sh),tbEdit:on=>mepTbEdit(on),ctx:sh=>mepSkCtx(sh,true),addLine:(sh,a,b)=>mepSkAddLine(sh,a,b),trim:(sh,x,y)=>mepSkTrim(sh,x,y),clipDetail:(els,det)=>mepClipDetail(els,det),revIdx:(f,k)=>mepRevIdx(f,k),revNext:(f,r)=>mepRevNext(f,r),hit:(sh,x,y)=>{const h=mepSkHit(sh,{x,y});return h?h.key:null;},
         addRect:(sh,a,b)=>mepSkAddRect(sh,a,b),addText:(sh,p)=>mepSkAddText(sh,p),textValue:(sh,e)=>mepSkTextValue(sh,e,false),
         merge:(sk,a,b)=>mepSkMerge(sk,a,b),
         box:(sh,x0,y0,x1,y1,add)=>mepBoxSelect(sh,{sx:x0,sy:y0,cur:{x:x1,y:y1}},add),sel:()=>[...mepSt.skSel],

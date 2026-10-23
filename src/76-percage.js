@@ -441,40 +441,50 @@ function renderHoleProps(p,f){
    réel dessinée DANS le trou (juste en deçà du Ø de perçage, donc visible par
    l'ouverture) sur la longueur filetée, + cercle du Ø nominal à l'entrée. Le solide
    reste percé au Ø du taraud (juste pour la FAO) ; rien n'est modélisé. */
+/* hélices et cercles d'entrée des filets cosmétiques, en points 3D : partagés par la vue 3D
+   et par la mise en plan (ombrage, rendu 3D) — 2026-10-23. Un élément par trou :
+   {bodyId, helix:[[x,y,z]…] (de l'entrée vers le fond), ring:[[x,y,z]…] (fermé), spt (pas angulaires par tour)} */
+function holeThreadPaths(stepsPerTurn,inset){
+  const out=[],spt=stepsPerTurn||24;
+  (doc.features||[]).forEach(function(f){
+    if(!f||f.type!=='hole'||f.visible===false||!f.thread||!f.thread.size)return;
+    if(f.thread.model)return; // le filet est déjà dans le solide exact
+    if(typeof tlLocked==='function'&&tlLocked(f))return;
+    const sk=doc.sketches.find(function(s){return s.id===f.sketchId;});if(!sk)return;
+    const t=isoThread(f.thread.size);if(!t)return;
+    const pz=+f.thread.p||t[2],Rn=t[1]/2,N=holeNorm(f);
+    const rh=Math.max(0.05,N.r-(inset||0.04)); // inset : retrait vers l'axe (paroi facettée du maillage)
+    const len=Math.max(pz,+f._thLen||+f.thread.len||N.depth);
+    const A=holeAxis(f,sk),D=new THREE.Vector3(A.dir.x,A.dir.y,A.dir.z);
+    // repère orthonormé autour de l'axe
+    const ref=Math.abs(D.z)<0.9?new THREE.Vector3(0,0,1):new THREE.Vector3(1,0,0);
+    const U=new THREE.Vector3().crossVectors(D,ref).normalize(),V=new THREE.Vector3().crossVectors(D,U).normalize();
+    const off=(N.kind==='cbore')?N.cbH:0;
+    A.pts.forEach(function(P){
+      const O=new THREE.Vector3(P.x,P.y,P.z),helix=[],ring=[];
+      const turns=len/pz,steps=Math.max(spt,Math.ceil(turns*spt));
+      for(let i=0;i<=steps;i++){
+        const a=i/steps*turns*Math.PI*2,z=off+i/steps*len;
+        const q=O.clone().addScaledVector(D,z).addScaledVector(U,rh*Math.cos(a)).addScaledVector(V,rh*Math.sin(a));
+        helix.push([q.x,q.y,q.z]);
+      }
+      for(let k=0;k<=48;k++){const a=k/48*Math.PI*2;
+        const q=O.clone().addScaledVector(D,off-0.03).addScaledVector(U,Rn*Math.cos(a)).addScaledVector(V,Rn*Math.sin(a));
+        ring.push([q.x,q.y,q.z]);}
+      out.push({bodyId:f.bodyId||null,helix:helix,ring:ring,spt:steps/turns});
+    });
+  });
+  return out;
+}
 function holeThreadOverlay(){
   try{
     const old=scene.getObjectByName('holeThreads');
     if(old){scene.remove(old);old.traverse(function(o){try{if(o.geometry)o.geometry.dispose();}catch(e){}});}
     const grp=new THREE.Group();grp.name='holeThreads';
-    (doc.features||[]).forEach(function(f){
-      if(!f||f.type!=='hole'||f.visible===false||!f.thread||!f.thread.size)return;
-      if(f.thread.model)return; // le filet est déjà dans le solide exact
-      if(typeof tlLocked==='function'&&tlLocked(f))return;
-      const sk=doc.sketches.find(function(s){return s.id===f.sketchId;});if(!sk)return;
-      const t=isoThread(f.thread.size);if(!t)return;
-      const pz=+f.thread.p||t[2],Rn=t[1]/2,N=holeNorm(f);
-      const rh=Math.max(0.05,N.r-0.04);
-      const len=Math.max(pz,+f._thLen||+f.thread.len||N.depth);
-      const A=holeAxis(f,sk),D=new THREE.Vector3(A.dir.x,A.dir.y,A.dir.z);
-      // repère orthonormé autour de l'axe
-      const ref=Math.abs(D.z)<0.9?new THREE.Vector3(0,0,1):new THREE.Vector3(1,0,0);
-      const U=new THREE.Vector3().crossVectors(D,ref).normalize(),V=new THREE.Vector3().crossVectors(D,U).normalize();
-      const off=(N.kind==='cbore')?N.cbH:0;
+    holeThreadPaths().forEach(function(T){
       const helix=[],ring=[];
-      A.pts.forEach(function(P){
-        const O=new THREE.Vector3(P.x,P.y,P.z);
-        const turns=len/pz,steps=Math.max(24,Math.ceil(turns*24));
-        let prev=null;
-        for(let i=0;i<=steps;i++){
-          const a=i/steps*turns*Math.PI*2,z=off+i/steps*len;
-          const q=O.clone().addScaledVector(D,z).addScaledVector(U,rh*Math.cos(a)).addScaledVector(V,rh*Math.sin(a));
-          if(prev)helix.push(prev.x,prev.y,prev.z,q.x,q.y,q.z);prev=q;
-        }
-        let pr=null;
-        for(let k=0;k<=48;k++){const a=k/48*Math.PI*2;
-          const q=O.clone().addScaledVector(D,off-0.03).addScaledVector(U,Rn*Math.cos(a)).addScaledVector(V,Rn*Math.sin(a));
-          if(pr)ring.push(pr.x,pr.y,pr.z,q.x,q.y,q.z);pr=q;}
-      });
+      const seg=function(arr,pts){for(let i=1;i<pts.length;i++){const p=pts[i-1],q=pts[i];arr.push(p[0],p[1],p[2],q[0],q[1],q[2]);}};
+      seg(helix,T.helix);seg(ring,T.ring);
       const mkL=function(arr,col,op,dash){
         const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(arr,3));
         const m=dash?new THREE.LineDashedMaterial({color:col,dashSize:0.8,gapSize:0.6,transparent:true,opacity:op}):new THREE.LineBasicMaterial({color:col,transparent:true,opacity:op});

@@ -2,7 +2,7 @@
 
 **CAO paramétrique, FAO et mise en plan dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2, G-code et planches cotées ISO. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.4.1** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.4.2** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Sommaire
 

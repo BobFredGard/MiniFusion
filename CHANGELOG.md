@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**300 versions**, de `2026-09-28b` à `V0.4.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**301 versions**, de `2026-09-28b` à `V0.4.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4513,3 +4513,18 @@ Retours utilisateur (« impossible de sélectionner une cote du cartouche », «
 - **Zoom gardé** au choix d'un outil du ruban PLAN : le recadrage « planche entière » n'a lieu qu'à l'entrée dans l'espace PLAN.
 
 Tests : vérifié dans l'appli (cote 182 sélectionnée ; trait PROJET/PLANCHE → cote 134 modifiée en 140, la colonne suit ; tableau A/B avec en-tête en bas ; bascules Contraintes / Cotes ; sur « Perçages », rectangle depuis le coin de la vue de face et cercle sur un trou, vue déplacée → points liés +25,06 mm, rectangle étiré sous contraintes ; zoom gardé après Ligne puis Cote). `npm run ci` vert. Limites : un point « sur le trait » garde sa fraction (il ne glisse pas) ; le cercle ne reprend pas le rayon du trou.
+
+## V0.4.2 - Plan : filets et miroir en rendu, construction, Ajuster, détails, indices de révision
+Retours utilisateur (« rouge des axes pas assez rouge », « filets des trous taraudés en Rendu 3D et Ombrage », « miroir avec case à cocher, sans ombre, fondu en bas », « échelle 3:4 », « construction invisible hors édition, touche X », « croix du curseur peu visible en clair », « mal à attraper les lignes du cartouche », « Ajuster ne fonctionne pas », « vues de détail étranges », « indices en lettres ou chiffres »).
+- **Axes** en `#ff0000` (le rouge du cadre du cartouche), papier blanc et sombre.
+- **Filets cosmétiques** : `holeThreadPaths` (76-percage) partagé par la 3D et le plan. Rendu 3D : hélice et cercle d'entrée rendus avec la pièce. Ombrage : hélice projetée comme les faces, morceaux visibles seulement (lancer de rayon ; un tour entièrement caché arrête la descente ; hélice décalée de 0,12 mm vers l'axe, hors des facettes de la paroi).
+- **Miroir** (case de la vue, en Rendu 3D) : copie symétrique de chaque corps sous son point le plus bas, opacité 0,5 décroissante sur 60 % de la hauteur ; cadre de l'image élargi au reflet. Pixels semi-transparents de l'image rendus en couleur vraie (le fond transparent les assombrissait : « ombre » grise, bords lissés foncés).
+- **Échelle 3:4** ; liste des échelles triée de 5:1 à 1:10 (choix automatique inchangé).
+- **Construction** (lignes, cercles, arcs) : pointillé orange en édition, sur le calque d'aide (jamais imprimé ni exporté), invisible sinon, hors de l'encombrement du cartouche ; réglage « Construction » du style, touche **X** sur une sélection (sans sélection, X reste l'outil Axe).
+- **Curseur du PLAN** : croix 23 px à liseré (cœur noir et halo blanc en clair, l'inverse en sombre).
+- **Sélection dans le cartouche** : traits, cercles et arcs prioritaires sur les textes et le logo (tolérance 7 px) ; l'élément survolé est surligné en édition.
+- **Ajuster** réécrit : intersections avec les segments (et plus les droites prolongées), cercles et arcs ; une seule intersection suffit ; sans intersection, ligne entière retirée ; extrémités d'origine gardées, point de coupe tenu sur l'élément coupant, horizontale / verticale reportée.
+- **Vues de détail** : un trait qui commence ou finit dans le cercle était rogné du mauvais côté (bords du coin tracés vers l'extérieur).
+- **Indices de révision** : A, B, C… (puis AA), 0, 1, 2… ou 1, 2, 3… ; changer de format renumérote ; « + Révision » suit le dernier indice.
+
+Tests : `test_mise_en_plan` (Ajuster : tronçon retiré, extrémité gardée, coupe tenue sur la ligne, droite prolongée ignorée ; détail rogné au bon croisement ; indices A…Z/AA, 0…, 1…, suite du dernier ; séparateur du cartouche saisi devant le texte de sa case). Vérifié dans l'appli sur « Perçages » (filets M6 en rendu 3D et en ombrage, reflet bleu estompé sans ombre, construction par X puis invisible hors édition, curseur pris par le navigateur). `npm run ci` vert. Non vu à l'écran : surlignage au survol, Ajuster et détail corrigé dans l'appli (navigateur intégré bloqué).
