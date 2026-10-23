@@ -15,3 +15,7 @@ _tmp_css_scan.js
 
 # post-processeurs Autodesk (.cps) : sous licence Autodesk, gardés en local seulement
 PostPro/*.cps
+
+# tests navigateur (Playwright) : rapports et traces
+test-results/
+playwright-report/

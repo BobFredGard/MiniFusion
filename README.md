@@ -190,7 +190,7 @@ Le dépôt stocke les gros binaires (`occt/*.wasm`, `Exemples/*.miniFusion`, `Ex
 Cycle de livraison :
 1. modifier `src/` ;
 2. `node build.js` ;
-3. `npm run ci` (build à jour, syntaxe, tests rapides, lint), qui doit être vert ; la suite complète `node tests/run.cjs` quand c'est utile ;
+3. `npm run ci` (build à jour, syntaxe, tests rapides, lint), qui doit être vert ; la suite complète `node tests/run.cjs` quand c'est utile ; `npm run test:browser` pour les parcours critiques dans un vrai Chromium headless (noyau OCCT réel : ouverture d'Axe, esquisse → extrusion, FAO → G-code ; une fois : `npx playwright install chromium`, et `git lfs pull` pour les `.wasm`) ;
 4. incrémenter `APP_VER` dans `src/00-entete-et-outils.js` et `version` dans `package.json`, ajouter une entrée au CHANGELOG ;
 5. commit, push et tag annoté `V0.x.y`.
 

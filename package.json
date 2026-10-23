@@ -8,6 +8,7 @@
     "check": "node build.js --check",
     "test": "node tests/run.cjs",
     "test:fast": "node tests/run-fast.cjs",
+    "test:browser": "playwright test -c tests/browser/playwright.config.cjs",
     "lint": "node tools/lint.cjs",
     "lint:all": "node tools/lint.cjs --all",
     "ci": "node build.js --check && node tests/chk_syntaxe.cjs && node tests/run-fast.cjs && node tools/lint.cjs"
@@ -17,6 +18,7 @@
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "eslint": "^10.13.0",
     "globals": "^17.13.0"
   }
