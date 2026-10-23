@@ -2,7 +2,6 @@
 desktop.ini
 node_modules/
 .lint-bundle.js
-diff_g_o.txt
 fusion_mvp - Copie.html
 *.html.bak_g
 occt/*.bak
@@ -11,7 +10,6 @@ _probe_*
 *.pdf
 ccvpn.zip
 .claude/
-_tmp_css_scan.js
 
 # post-processeurs Autodesk (.cps) : sous licence Autodesk, gardés en local seulement
 PostPro/*.cps
@@ -19,3 +17,6 @@ PostPro/*.cps
 # tests navigateur (Playwright) : rapports et traces
 test-results/
 playwright-report/
+# fichiers d’échange Chrome (File System Access) et doublons de synchronisation Dropbox
+*.crswap
+*(Copie en conflit*

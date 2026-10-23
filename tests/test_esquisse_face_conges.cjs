@@ -30,7 +30,7 @@ const json=fs.readFileSync(path.join(ROOT,'tests','fixtures','face-congé.json')
     'const refs=()=>{const r=(skEdit&&skEdit._refs)||[];const o={n:r.length,arc:0,circle:0,line:0};',
     '  r.forEach(e=>{if(e.type==="arc")o.arc++;else if(e.type==="circle")o.circle++;else o.line++;});return o};',
     'const transOk=()=>bodies.filter(b=>!b.ghost).every(b=>{const m=b.mesh&&b.mesh.material;',
-    '  return m&&Math.abs(m.opacity-0.75)<1e-6;});',
+    '  return m&&Math.abs(m.opacity-SK_FACE_ALPHA)<1e-6;});',
     'await deserialise('+JSON.stringify(json)+',{rebuild:false});',
     'occCkClear();markDirty();rebuild();',
     // ── A : esquisse sur la face haute → modèle complet, congés dans les refs ──
@@ -40,7 +40,7 @@ const json=fs.readFileSync(path.join(ROOT,'tests','fixtures','face-congé.json')
     'A(faceCount()===10,"A2 : solide complet AVEC les 4 congés (10 faces) — obtenu "+faceCount());',
     'A(refs().arc>=4,"A3 : les arcs des congés figurent dans la référence — "+JSON.stringify(refs()));',
     'A(String(skEdit&&skEdit._refNote||"").indexOf("solide fini")>=0,"A4 : note « solide fini » vraie (modèle complet)");',
-    'A(skEdit&&skEdit._fade==="bodies"&&transOk(),"A5 : fondu translucide 0.75 actif");',
+    'A(skEdit&&skEdit._fade==="bodies"&&transOk(),"A5 : fondu translucide SK_FACE_ALPHA actif");',
     'closeSketch(false);',
     'A(tlMark===null,"A6 : verrou levé à la fermeture");',
     // ── B : esquisse XY libre — non-régression (déjà complet) ──

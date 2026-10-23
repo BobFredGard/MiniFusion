@@ -22,7 +22,9 @@ const SUITES = [
   'test_fao_outils',
   'test_fao_percage',
   'test_repeat_circ_tour',
-  'test_esquisse_angle'
+  'test_esquisse_angle',
+  'test_esquisse_transparence',
+  'test_esquisse_face_conges'
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {

@@ -15,7 +15,6 @@ const HTML=path.join(ROOT,'fusion_mvp.html');
 const SRC=path.join(ROOT,'src');
 const parts=fs.readdirSync(SRC).filter(f=>/^\d\d-.*\.js$/.test(f)).sort();
 if(!parts.length){console.error('src/ est vide');process.exit(1);}
-const banner=re=>{const i=re.exec(fs.readFileSync(HTML,'utf8'));return i?i[1]:null;};
 
 const old=fs.readFileSync(HTML,'utf8');
 const lines=old.split(/\r?\n/);

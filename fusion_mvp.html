@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.4.7';
+const APP_VER='V0.4.8';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -5062,7 +5062,7 @@ function buildDone(){
   // « Tout régénérer » pressé PENDANT le rejeu (corps encore en repli d'image) :
   // le solide est enfin là, on exécute maintenant (sinon la clé ecrirait sur le repli).
   try{ if(typeof faoRegenFlush==='function')faoRegenFlush(); }catch(e){}
-  // Session d'esquisse ouverte : le rejeu régénère les matériaux — le fondu 0.75 (et le
+  // Session d'esquisse ouverte : le rejeu régénère les matériaux — le fondu SK_FACE_ALPHA (et le
   // masquage des corps en mode fantôme) serait perdu. skApplyFade est inerte hors session.
   try{if(typeof skApplyFade==='function')skApplyFade();}catch(e){}
   if(_postT)clearTimeout(_postT);
@@ -7231,7 +7231,7 @@ function skFadeSaveRestore(){
 }
 function skApplyFade(){
   // (Re)pose le fondu de la session d'esquisse sur l'état ACTUELLEMENT affiché.
-  // skEdit._fade : 'bodies' = corps en fondu 0.75 · 'ghost' = corps masqués +
+  // skEdit._fade : 'bodies' = corps en fondu SK_FACE_ALPHA · 'ghost' = corps masqués +
   // fantôme antérieur · null = rien (hors session). Re-appelé après chaque rebuild :
   // le rejeu régénère les matériaux et volerait sinon le fondu.
   if(!skEdit)return;
@@ -7756,7 +7756,7 @@ function openSketch(id){
     if(s0&&(s0.dims||[]).some(d=>!d.chk))skCheckNewDims(s0);}catch(e){}
   skEdit=doc.sketches.find(s=>s.id===id);if(!skEdit)return;
   migrateSketch(skEdit);
-  // 1) VERROU puis REBUILD puis REFS (l'ordre compte) : skBuildRefs pose le fondu 0.75 et
+  // 1) VERROU puis REBUILD puis REFS (l'ordre compte) : skBuildRefs pose le fondu SK_FACE_ALPHA et
   // les références sur les meshes — avant, il s'appuyait sur l'ancien état (matériaux neufs
   // ensuite → corps opaque) et sur des corps encore en état final (écran vide).
   //   · esquisse consommée  : verrou avant la consommatrice (état qui la précède, Fusion) ;
@@ -7796,7 +7796,7 @@ function closeSketch(save){
     if(b._savedOpacity!=null&&b.mesh&&b.mesh.material){ b.mesh.material.opacity=b._savedOpacity; b.mesh.material.transparent=b._savedTransparent; delete b._savedOpacity; delete b._savedTransparent; }
   });
   // Mode de fondu effacé AVANT le rebuild de sortie : sinon buildDone→skApplyFade
-  // repose le fondu 0.75 après restauration et la pièce resterait translucide.
+  // repose le fondu SK_FACE_ALPHA après restauration et la pièce resterait translucide.
   if(skEdit)skEdit._fade=null;
   skAnteriorEdges=null;
   try{skEdgesDrop();const eo=scene.getObjectByName('edgeOverlay');if(eo)eo.visible=true;}catch(e){}
@@ -12630,7 +12630,7 @@ window.addEventListener('keydown',e=>{
 });
 /* ----- boutons Congé / Chanfrein : créés ici (coque HTML générée, jamais éditée),
    APRES la liaison générique des .tool (ci-dessus) → handler dédié uniquement.
-   Même pattern que btnDraft/btnCoque côté 3D. Raccourcis F/H dans shortcuts.js. */
+   Même pattern que btnDraft/btnCoque côté 3D. Raccourci F dans 99-raccourcis-esquisse.js. */
 (function(){
   const bar=document.getElementById('skToolbar');if(!bar)return;
   const mk=(tool,icon,title)=>{
@@ -36205,7 +36205,7 @@ const AIDE_SECTIONS=[
     ['F8','Concentricité'],['F9','Colinéaire'],['F10','Symétrie (2 lignes + axe)'],['F12','Blocage'],
     ['X','Construction ↔ profil'],['Clic droit','Menu : contraintes, congé, axe de rotation…']]],
   ['Esquisse — tracé et cotes',[
-    ['H','Centre de perçage'],['Ligne','Le 2e clic enchaîne la ligne suivante'],
+    ['H','Centre de perçage'],['L C R B','Ligne · cercle · rectangle · oblong'],['P T D','Projection · ajuster · cote'],['F O','Congé · décalage'],['Ligne','Le 2e clic enchaîne la ligne suivante'],
     ['Ctrl/Cmd + rectangle','Rectangle par le centre'],['Ctrl/Cmd + clic','Multi-sélection'],
     ['Chiffres pendant une ligne','Longueur saisie (Tab = angle)'],['Double-clic sur une cote','Modifier la valeur'],
     ['nom = valeur','Nommer une cote (ex. Longueur = 80)'],['Longueur/2','Expression ƒx (cotes nommées, paramètres)'],
@@ -47377,7 +47377,25 @@ try{
   });
 }catch(e){try{builtVersion=-1;builtHash=null;builtEngine=null;rebuild();if(occtReady)showAll();faoMovesPreloadSoon(true);}catch(e2){}}
 log('Prêt. Esquisse → Extrusion → Export. Même navigation que le viewer.');
+
+/* ═══════════════ 99-raccourcis-esquisse.js — raccourcis esquisse ═══════════════ */
+// Raccourcis clavier esquisse : une lettre = un outil de la barre d'esquisse.
+// Ex-shortcuts.js (chargé à part, hors lint et tests), intégré au build le 2026-10-23 en
+// dernière position pour garder l'ordre d'enregistrement d'origine. H n'y figure plus :
+// H = centre de perçage (skShortcut, 60-trim-et-souris.js) ; l'ancien H → chanfrein
+// cliquait le chanfrein juste avant que skShortcut ne bascule sur le point de perçage.
+document.addEventListener('keydown',function(e){
+  if(e.target&&(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.isContentEditable))return;
+  if(e.ctrlKey||e.altKey||e.metaKey)return;
+  if(typeof skEdit==='undefined'||!skEdit)return;      // hors édition d'esquisse : on ignore
+  const k=e.key.toLowerCase();
+  const map={l:'line',c:'circle',r:'rect',b:'slot',p:'project',t:'trim',d:'dim',f:'fillet',o:'offset'};
+  if(!(k in map))return;
+  const btn=document.querySelector('#skToolbar .tool[data-tool="'+map[k]+'"]');
+  if(!btn)return;
+  e.preventDefault();
+  btn.click(); // délègue au handler existant de la barre d'outils (annule le brouillon, change d'outil, statut)
+});
 </script>
-<script src="shortcuts.js"></script>
 </body>
 </html>

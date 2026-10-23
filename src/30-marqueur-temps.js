@@ -91,7 +91,7 @@ function buildDone(){
   // « Tout régénérer » pressé PENDANT le rejeu (corps encore en repli d'image) :
   // le solide est enfin là, on exécute maintenant (sinon la clé ecrirait sur le repli).
   try{ if(typeof faoRegenFlush==='function')faoRegenFlush(); }catch(e){}
-  // Session d'esquisse ouverte : le rejeu régénère les matériaux — le fondu 0.75 (et le
+  // Session d'esquisse ouverte : le rejeu régénère les matériaux — le fondu SK_FACE_ALPHA (et le
   // masquage des corps en mode fantôme) serait perdu. skApplyFade est inerte hors session.
   try{if(typeof skApplyFade==='function')skApplyFade();}catch(e){}
   if(_postT)clearTimeout(_postT);
