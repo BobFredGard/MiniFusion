@@ -17,14 +17,9 @@ jobs:
           node-version: '20'
           cache: npm
       - run: npm ci
-      - name: Build à jour
-        run: node build.js --check
-      - name: Syntaxe du livrable
-        run: node tests/chk_syntaxe.cjs
-      - name: Tests rapides
-        run: node tests/run-fast.cjs
-      - name: Lint (erreurs)
-        run: node tools/lint.cjs
+      - name: CI complet (build, syntaxe, 115 suites, lint)
+        run: npm run ci:full
+        timeout-minutes: 30
 
   # Parcours critiques dans un vrai Chromium headless (noyau OCCT WebAssembly réel) :
   # ouverture d'Exemples/Axe.miniFusion, esquisse → extrusion, FAO → G-code.
