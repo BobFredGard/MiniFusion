@@ -1318,10 +1318,11 @@
        • autres vues de côté : filet caché (traits interrompus fins), en mode « cachées en pointillé ».
      Fond de filet (k 'thread') : gris clair et plus fin que le trait fin (.mepThread).
      Filet modélisé (impression 3D) : sa géométrie réelle est déjà dessinée — rien d'ajouté.
-     Vue oblique / détail : rien (convention définie pour les vues orthogonales). */
+     Vue oblique / perspective : rien (convention définie pour les vues orthogonales). Détail : comme sa
+     vue mère (même base), rogné ensuite par le cercle du détail (mepFinishGeo). */
   function mepThreadEls(view){
     const out=[];
-    if(!view||view.detail||mepOblOf(view)||mepPerspOf(view)||typeof holeAxis!=='function'||typeof isoThread!=='function')return out;
+    if(!view||mepOblOf(view)||mepPerspOf(view)||typeof holeAxis!=='function'||typeof isoThread!=='function')return out;
     const b=mepBasisOf(view),dot=mepDot;
     const planes=view.section?((view._step&&view._step.planes)||[view.section.p]):null;
     const nS=view.section?mepNorm(view.section.n):null;

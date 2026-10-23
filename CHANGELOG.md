@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**301 versions**, de `2026-09-28b` à `V0.4.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**302 versions**, de `2026-09-28b` à `V0.4.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4528,3 +4528,9 @@ Retours utilisateur (« rouge des axes pas assez rouge », « filets des trous t
 - **Indices de révision** : A, B, C… (puis AA), 0, 1, 2… ou 1, 2, 3… ; changer de format renumérote ; « + Révision » suit le dernier indice.
 
 Tests : `test_mise_en_plan` (Ajuster : tronçon retiré, extrémité gardée, coupe tenue sur la ligne, droite prolongée ignorée ; détail rogné au bon croisement ; indices A…Z/AA, 0…, 1…, suite du dernier ; séparateur du cartouche saisi devant le texte de sa case). Vérifié dans l'appli sur « Perçages » (filets M6 en rendu 3D et en ombrage, reflet bleu estompé sans ombre, construction par X puis invisible hors édition, curseur pris par le navigateur). `npm run ci` vert. Non vu à l'écran : surlignage au survol, Ajuster et détail corrigé dans l'appli (navigateur intégré bloqué).
+
+## V0.4.3 - Plan : taraudages dans les vues de détail
+Retour utilisateur (« pour les détails, il faut mettre les indications de taraudage aussi »).
+- **Vues de détail** : la représentation conventionnelle des filetages (3/4 de cercle fin en bout, fond de filet de côté) était volontairement écartée des détails. Elle est reprise de la vue mère (même base), puis rognée par le cercle du détail comme le reste.
+
+Tests : `test_mep_hachures_cotes` (détail de la vue de dessus : même 3/4 de cercle M8 que la vue mère). `npm run ci` vert.

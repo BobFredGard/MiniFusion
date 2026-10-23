@@ -213,6 +213,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
       const sum=l=>l.map(e=>e.t==='A'?['A',r2(e.cx),r2(e.cy),e.r,r2(e.a1-e.a0),e.k]:['L',r2(e.x1),r2(e.y1),r2(e.x2),r2(e.y2),e.k]);
       out.thTop=JSON.stringify(sum(T.threadEls(vTop)));
       out.thBot=T.threadEls(vBot).length;
+      out.thDet=JSON.stringify(sum(T.threadEls(Object.assign({},vTop,{id:'__vd__',kind:'detail',parent:'__vt__',detail:{cx:30,cy:-20,r:10}})))); // 2026-10-23 : détails aussi
       out.thSec=JSON.stringify(sum(T.threadEls(vSec)));
       out.thFr=JSON.stringify(T.threadEls(vFr).map(e=>e.k));
       vFr.mode='hide';out.thFrHide=T.threadEls(vFr).length;
@@ -285,6 +286,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   A(r.shadeObl==='[[60,0],[74.142,-14.142],[74.142,-34.142]]'&&r.shadeOrtho===null,'ombrage : face de chant en orthogonale, vue et cisaillée en cavalière');
   console.log('  · filetage : dessus '+r.thTop+' ; coupe '+r.thSec+' ; face '+r.thFr);
   A(r.thTop==='[["A",30,-20,4,4.712,"thread"]]','vue en bout (entrée vue) : 3/4 de cercle fin au Ø nominal 8');
+  A(r.thDet===r.thTop,'vue de détail : même représentation du filetage que sa vue mère');
   A(r.thBot===0,'vue de dessous (trou borgne, entrée cachée) : pas de 3/4 de cercle');
   A(r.thSec==='[["L",26,20,26,8,"thread"],["L",34,20,34,8,"thread"],["L",26,8,34,8,"sharp"]]','coupe par l’axe : 2 traits fins au Ø 8 sur 12 + trait fort de fin de filetage');
   A(r.thFr==='["threadH","threadH","threadH"]'&&r.thFrHide===0,'vue de face : filet caché en interrompu (mode pointillé), rien en cachées supprimées');
