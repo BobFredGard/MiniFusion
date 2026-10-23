@@ -700,6 +700,15 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
       sh0.title.matiere='C45';sh0.title.tth='Trempe + revenu';
       const tm=tb.sk.ents.find(e=>e.t==='text'&&e.f==='matiere'),th=tb.sk.ents.find(e=>e.t==='text'&&e.f==='tth');
       out.tbFields=T.textValue(sh0,tm)==='C45'&&T.textValue(sh0,th)==='Trempe + revenu';
+      out.tbFormat=T.textValue(sh0,{t:'text',f:'format'})==='A3-H'; // 2026-10-23 : A3-H / A4-V…
+      // 2026-10-23 : cotes du cartouche en édition — séparateurs des 2 rangées (même abscisse) : 8 cotes, aucune superposée
+      {const skS=sh0.sk;sh0.sk=tb.sk;window.mepSetTool('line');
+       const R=T.draw(sh0).filter(o=>o.tag==='rect'&&/mepSkConBg/.test(o.class||''));
+       window.mepSetTool('select');sh0.sk=skS;
+       const nX=tb.sk.cons.filter(c=>c.type==='distX'&&c.a!=='o'&&!tb.sk.ents.some(e=>e.t==='text'&&(e.p===c.b||e.p===c.a))).length;
+       let ov=0;for(let i=0;i<R.length;i++)for(let j=i+1;j<R.length;j++){const A1=R[i],B1=R[j];
+         if(+A1.x<+B1.x+ +B1.width-0.05&&+B1.x<+A1.x+ +A1.width-0.05&&+A1.y<+B1.y+ +B1.height-0.05&&+B1.y<+A1.y+ +A1.height-0.05)ov++;}
+       out.tbDimsAll=nX>=8&&ov===0;out.tbDimsDbg=nX+' cotes X, '+R.length+' étiquettes, '+ov+' chevauchement(s)';}
       // 2026-10-23 : en édition, un séparateur de cases se saisit même collé au texte de la case (le texte ne le masque plus)
       T.tbEdit(true);
       const c1=T.ctx(sh0),txv=tb.sk.ents.find(e=>e.t==='text'&&e.f==='echelle'),pv=tb.sk.pts[txv.p];
@@ -947,6 +956,8 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.trimSeg,'Ajuster : tronçon entre segments retiré, extrémité gardée, coupe tenue sur la ligne coupante '+(val&&val.trimDbg));
   A(val&&val.trimAll,'Ajuster : ligne sans intersection (droites prolongées ignorées) retirée entière');
   A(val&&val.tbHitLine,'cartouche en édition : trait de séparation saisi devant le texte de la case '+(val&&val.tbHitDbg));
+  A(val&&val.tbDimsAll,'cartouche en édition : toutes les cotes visibles, aucune étiquette superposée ('+(val&&val.tbDimsDbg)+')');
+  A(val&&val.tbFormat,'cartouche : champ FORMAT écrit A3-H (A4-V…)');
   A(val&&val.revIdx,'révisions : indices en lettres (A…Z, AA) ou chiffres (0… / 1…), suite du dernier');
   A(val&&val.detClip,'détail : traits qui entrent / sortent du cercle rognés au bon croisement '+(val&&val.detDbg));
   A(val&&val.expCol&&val.expBW,'export PDF / SVG : couleurs gardées par défaut, option noir'+(val&&val.expErr?' — '+val.expErr:''));

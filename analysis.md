@@ -19,7 +19,7 @@ Le noyau géométrique exact est **OpenCascade (OCCT) compilé en WebAssembly**.
 | `tools/lint.cjs` | Lint ESLint du script concaténé, dans l'ordre exact du build. |
 | `threejs/` | three.js, OrbitControls et CSG (MIT). |
 | `occt/` | Noyau OCCT WebAssembly (LGPL), `.wasm` suivis par Git LFS. |
-| `PostPro/` | Post-processeurs de référence Siemens 840D et Fagor 8065. |
+| `PostPro/` | Fiches machines (une par machine, intégrées par build.js). |
 | `Backup/` | Instantanés locaux par version (non versionnés). |
 | `docs/` | Captures et notes de conception. |
 

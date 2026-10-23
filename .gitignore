@@ -12,3 +12,6 @@ _probe_*
 ccvpn.zip
 .claude/
 _tmp_css_scan.js
+
+# post-processeurs Autodesk (.cps) : sous licence Autodesk, gardés en local seulement
+PostPro/*.cps

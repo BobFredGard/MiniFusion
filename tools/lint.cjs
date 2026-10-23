@@ -15,8 +15,12 @@ if (!parts.length) {
   process.exit(1);
 }
 
+// fiches machines PostPro/*.js : au même endroit que dans build.js (après 88-fao-60)
+const POSTPRO = path.join(ROOT, 'PostPro');
+const machines = fs.existsSync(POSTPRO) ? fs.readdirSync(POSTPRO).filter(f => /\.js$/.test(f)).sort() : [];
 const code = parts
-  .map(f => fs.readFileSync(path.join(SRC, f), 'utf8').replace(/\s+$/, ''))
+  .flatMap(f => [path.join(SRC, f)].concat(f === '88-fao-60-postprocesseurs.js' ? machines.map(m => path.join(POSTPRO, m)) : []))
+  .map(p => fs.readFileSync(p, 'utf8').replace(/\s+$/, ''))
   .join('\n\n');
 
 // Les modules exposent des fonctions par `window.nom = ...` (ex. espace PLAN)

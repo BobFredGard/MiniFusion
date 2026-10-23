@@ -2605,7 +2605,7 @@
   // visibilité des aides d'édition (V0.4.x) : contraintes et cotes pilotantes, chacune masquable
   function mepSkVis(){
     if(!mepSt.skVis){let o={};try{o=JSON.parse(localStorage.getItem('mep_sk_vis')||'{}')||{};}catch(e){}
-      mepSt.skVis={cons:o.cons!==false,dims:o.dims!==false};}
+      mepSt.skVis={cons:o.cons!==false,dims:o.dims!==false,txt:o.txt===true};}
     return mepSt.skVis;
   }
   function mepSkTol(){return(mepPxMM||0.3)*7;}
@@ -3009,6 +3009,7 @@
           if(!logo){const t=mk('text',{x:x+w/2,y:y+h/2+1,class:'mepSkConT','text-anchor':'middle'},mepGHlp);t.textContent='LOGO';}}}
     });
     if(!editing)return;
+    mepSkConHits=[]; // une seule esquisse en édition par rendu : ses étiquettes repartent de zéro
     // points, glyphes de contraintes et cotes pilotantes : aide d'édition (jamais exportée)
     const fx=mepSkFixed(sk),z=Math.max(0.6,mepPxMM*3);
     Object.keys(sk.pts).forEach(pid=>{const p=S(sk.pts[pid]),on=sel.has('p:'+pid);
@@ -3019,6 +3020,8 @@
     const fs=Math.max(2.2,mepPxMM*11);
     const glyph=(c,x,y,txt)=>{
       const w=Math.max(fs*0.9,String(txt).length*fs*0.6)+1,h=fs+0.8,on=sel.has('c:'+c.id);
+      // une étiquette n'en recouvre jamais une autre : décalée vers le bas jusqu'à une place libre
+      for(let k=0;k<8&&mepSkConHits.some(o=>Math.abs(o.x-x)<(o.w+w)/2-0.05&&Math.abs(o.y-y)<(o.h+h)/2-0.05);k++)y+=h+0.2;
       mk('rect',{x:x-w/2,y:y-h/2,width:w,height:h,rx:0.8,class:'mepSkConBg'+(on?' mepSkConSel':'')},mepGHlp);
       const t=mk('text',{x,y:y+fs*0.36,class:'mepSkConT','text-anchor':'middle',style:'font-size:'+fs.toFixed(2)+'px'},mepGHlp);t.textContent=txt;
       mepSkConHits.push({id:c.id,x,y,w,h});
@@ -3035,7 +3038,7 @@
     sk.cons.forEach(c=>{
       if(!vis[DIMS.has(c.type)?'dims':'cons']&&!touched(c))return; // masquée (l'élément sélectionné garde les siennes)
       const tp=[c.a,c.b,c.p].find(id=>id&&txtPt.has(id));
-      if(tp&&!sel.has('e:'+txtPt.get(tp))&&!sel.has('p:'+tp)&&!sel.has('c:'+c.id))return; // placement d'un texte : affiché à sa sélection
+      if(tp&&!vis.txt&&!sel.has('e:'+txtPt.get(tp))&&!sel.has('p:'+tp)&&!sel.has('c:'+c.id))return; // placement d'un texte : affiché à sa sélection (ou option « Textes »)
       const k=(c.a||c.p||'')+'|'+(c.b||c.ent||'');const n=cnt[k]=(cnt[k]||0)+1;const sh2=(n-1)*fs*1.1;
       try{
         if(c.type==='horizontal'||c.type==='vertical'){
@@ -3051,15 +3054,16 @@
         else if(c.type==='fix'){const p=P(c.p);if(p)glyph(c,p.x-fs*0.9,p.y+fs*1.1,'⚓');}
         else if(c.type==='dist'||c.type==='distX'||c.type==='distY'){
           const a=P(c.a),b=P(c.b);if(!a||!b)return;
+          // ligne de cote au niveau de l'élément coté (b), rappel pointillé depuis la référence (a) :
+          // deux points cotés à la même abscisse sur deux rangées n'ont plus leurs cotes superposées
           let x1=a.x,y1=a.y,x2=b.x,y2=b.y;
-          if(c.type==='distX'){y2=y1;}else if(c.type==='distY'){x2=x1;}
+          if(c.type==='distX'){y1=b.y;}else if(c.type==='distY'){x1=b.x;}
           mk('line',{x1,y1,x2,y2,class:'mepSkDimL'},mepGHlp);
-          if(c.type==='distX')mk('line',{x1:b.x,y1:b.y,x2,y2,class:'mepSkDimL',  'stroke-dasharray':'0.8 0.8'},mepGHlp);
-          if(c.type==='distY')mk('line',{x1:b.x,y1:b.y,x2,y2,class:'mepSkDimL','stroke-dasharray':'0.8 0.8'},mepGHlp);
+          if(c.type!=='dist'&&(Math.abs(x1-a.x)>1e-6||Math.abs(y1-a.y)>1e-6))mk('line',{x1:a.x,y1:a.y,x2:x1,y2:y1,class:'mepSkDimL','stroke-dasharray':'0.8 0.8'},mepGHlp);
           // étiquette contre l'élément coté (extrémité b) : les cotes cumulées depuis un même point ne s'empilent pas
           const lw=String(fmt(c.val)).length*fs*0.3+fs*0.6;
-          if(c.type==='distX')glyph(c,x2-Math.sign(x2-x1||1)*lw,y1-fs*0.9+sh2,fmt(c.val));
-          else if(c.type==='distY')glyph(c,x1+lw+sh2,y2-Math.sign(y2-y1||1)*fs*0.9,fmt(c.val));
+          if(c.type==='distX')glyph(c,x2-Math.sign(x2-x1||1)*lw,y2-fs*0.9+sh2,fmt(c.val));
+          else if(c.type==='distY')glyph(c,x2+lw+sh2,y2-Math.sign(y2-y1||1)*fs*0.9,fmt(c.val));
           else glyph(c,(x1+x2)/2,(y1+y2)/2-fs*0.9+sh2,fmt(c.val));
         }else if(c.type==='distPL'){
           const p=P(c.p),L=ent(c.ent);if(!p||!L)return;const a=P(L.p1),b=P(L.p2);if(!a||!b)return;
@@ -3633,7 +3637,7 @@
     switch(c.f){
       case 'planche':return(doc.mep.cur+1)+' / '+doc.mep.sheets.length;
       case 'echelle':return mepSheetScaleLabel(sh);
-      case 'format':return sh.format===FORMAT_MANUEL?mepFmtLabel(sh)+' mm':sh.format+(sh.orient==='landscape'?' paysage':' portrait');
+      case 'format':return sh.format===FORMAT_MANUEL?mepFmtLabel(sh)+' mm':sh.format+(sh.orient==='landscape'?'-H':'-V'); // A3-H, A4-V…
       case 'indice':{const rv=mepRevs(sh);return rv.length?rv[rv.length-1].i:(tt.indice||'—');}
       case 'perso':return(tt.cust&&c.k&&tt.cust[c.k])||'';
       default:{const v=tt[c.f];return v!=null&&v!==''?v:(c.f==='projet'||c.f==='date'||c.f==='auteur'?'':'—');}
@@ -3702,7 +3706,8 @@
     const r=K.rowEl();
     tools.forEach(([l,t,tip])=>{const b=K.btn(r,l,()=>mepSetTool(t),tip,mepSt.tool===t?'active':'');b.style.flex='1';});
     {const v=mepSkVis(),rv=K.rowEl();K.lab(rv,'Afficher');
-     [['cons','Contraintes','Glyphes H, V, ∥, ⊥, =, M, ⚓…'],['dims','Cotes','Cotes pilotantes (distances, rayons, angles)']].forEach(([k,l,tip])=>
+     [['cons','Contraintes','Glyphes H, V, ∥, ⊥, =, M, ⚓…'],['dims','Cotes','Cotes pilotantes (distances, rayons, angles)'],
+      ['txt','Textes','Cotes et contraintes de placement des textes (sinon visibles à la sélection du texte)']].forEach(([k,l,tip])=>
        K.btn(rv,l,()=>{v[k]=!v[k];try{localStorage.setItem('mep_sk_vis',JSON.stringify(v));}catch(e){}mepSideShow();mepRender();},
          (v[k]?'Masquer':'Afficher')+' : '+tip+' — un élément sélectionné garde les siennes',v[k]?'active':''));}
     if(mepSt.tool==='text'){

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**302 versions**, de `2026-09-28b` à `V0.4.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**303 versions**, de `2026-09-28b` à `V0.4.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4534,3 +4534,11 @@ Retour utilisateur (« pour les détails, il faut mettre les indications de tara
 - **Vues de détail** : la représentation conventionnelle des filetages (3/4 de cercle fin en bout, fond de filet de côté) était volontairement écartée des détails. Elle est reprise de la vue mère (même base), puis rognée par le cercle du détail comme le reste.
 
 Tests : `test_mep_hachures_cotes` (détail de la vue de dessus : même 3/4 de cercle M8 que la vue mère). `npm run ci` vert.
+
+## V0.4.4 - FAO : une fiche par machine dans PostPro/ ; Plan : FORMAT A3-H, cotes du cartouche toutes visibles
+Retours utilisateur (« enlever les 3 .cps Autodesk de GitHub », « un fichier PostPro par machine, modifiable facilement », « FORMAT du cartouche en A3-H / A4-V », « je ne vois pas toutes les cotes dans l'édition du cartouche »).
+- **PostPro** : les `.cps` d'Autodesk ne sont plus suivis par Git (`git rm --cached`, `PostPro/*.cps` dans `.gitignore`) — gardés en local, toujours présents dans l'historique des anciens commits. Une fiche par machine : `PostPro/siemens-630.js`, `siemens-1520.js`, `fagor-8065.js`, chacune `faoMachine({…})` (id, nom, dialecte, extension, axes, numérotation, codes d'arrosage, changement d'outil, broche, fin de programme ; modèles `{T}`, `{S}`, `{ZRETR}`, `{NAME}`). `build.js` (et le lint) les insèrent juste après `88-fao-60-postprocesseurs.js`, qui garde les dialectes (en-tête, cycles, 3+2). Le 3+2 suit `axes` (3 = jamais commandé) au lieu du seul Fagor.
+- **Cartouche** : le champ FORMAT écrit `A3-H`, `A4-V`… (format manuel : dimensions en mm).
+- **Édition du cartouche** : les cotes horizontales/verticales sont tracées au niveau du point coté (rappel pointillé vers la référence) — les séparateurs des deux rangées, à la même abscisse, avaient leurs cotes superposées sur la ligne du haut ; une étiquette qui en recouvre une autre descend jusqu'à une place libre ; bascule « Textes » pour voir aussi les cotes de placement des textes.
+
+Tests : G-code avant / après comparé pour les 3 machines (arrosage, centre outil, sans arrosage, 3+2) : identique ; tests FAO post verts. `test_mise_en_plan` (FORMAT A3-H ; cartouche Standard en édition : 9 cotes X, 24 étiquettes, 0 chevauchement). `npm run ci` vert. Non vu à l'écran (navigateur intégré indisponible).

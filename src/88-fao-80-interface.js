@@ -1696,10 +1696,11 @@ function faoSetupFiche(p,setup){
   p.appendChild(r32);
   p.appendChild(faoHelp('Ancien réglage 3+2 du posage (orientation par défaut de ses opérations). Le 3+2 se règle maintenant par opération : onglet « Repère » de l’opération. « 3 axes » le retire.'));
   }
-  if((FAO_POSTS[setup.machine||setup.post]||{}).kind==='fagor'&&(O.b!==0||O.c!==0)){
+  const PM=FAO_POSTS[setup.machine||setup.post]||{};
+  if(PM.axes===3&&(O.b!==0||O.c!==0)){
     const w32=document.createElement('div');
     w32.className='fao-alert';
-    w32.textContent='⚠ Fagor 8065 = machine 3 axes : cette indexation 3+2 sera IGNORÉE à l\'export (programme émis à plat, aucun B/C).';
+    w32.textContent='⚠ '+PM.label+' = machine 3 axes : cette indexation 3+2 sera IGNORÉE à l\'export (programme émis à plat, aucun B/C).';
     p.appendChild(w32);
   }
   // Modèle : corps à usiner

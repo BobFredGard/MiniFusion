@@ -2,7 +2,7 @@
 
 **CAO paramétrique, FAO et mise en plan dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2, G-code et planches cotées ISO. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.4.3** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.4.4** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Sommaire
 
@@ -184,7 +184,7 @@ Le dépôt stocke les gros binaires (`occt/*.wasm`, `Exemples/*.miniFusion`, `Ex
 | `.github/workflows/ci.yml` | CI : build à jour, syntaxe, tests rapides, lint. |
 | `CHANGELOG.md` | Une entrée par version : cause, correctif, test. |
 | `occt/`, `threejs/` | Noyau OpenCascade WebAssembly, rendu three.js (`.wasm` via Git LFS). |
-| `PostPro/` | Post-processeurs de référence (Siemens 840D, Fagor 8065). |
+| `PostPro/` | Une fiche par machine (`siemens-630.js`, `siemens-1520.js`, `fagor-8065.js`) : nom, extension, dialecte, axes, codes M, changement d'outil, fin de programme. Nouvelle machine = copier une fiche, la modifier, `npm run build`. |
 | `docs/` | Captures du README, analyses (crêtes constantes). |
 
 Cycle de livraison :

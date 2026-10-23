@@ -2,8 +2,8 @@
 // Module mené EN PARALLÈLE de la partie dessin : il ne touche à aucune géométrie.
 // Il lit les corps affichés (bbox), génère des parcours outil (ébauche/finition
 // 2.5D : surfaçage, poche, contour, perçage) et post-processe en
-// G-code pour Siemens SINUMERIK 840D (variantes 630 / 1520, cf. PostPro/*.cps)
-// et Fagor 8065 (cf. PostPro/fagor-8065.cps).
+// G-code pour Siemens SINUMERIK 840D (variantes 630 / 1520) et Fagor 8065 — une fiche par
+// machine dans PostPro/*.js (réglages), dialectes dans 88-fao-60-postprocesseurs.js.
 //
 // Référence atelier CAV-75-25.mpf (T6 D=25 CR=2, S8000, F5000/6000, ZMIN=-24.108)
 // — parcours détaillé conservé dans le changelog. L'ancienne opération

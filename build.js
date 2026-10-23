@@ -26,10 +26,20 @@ const head=lines.slice(0,iOpen).join('\n');
 const tail=lines.slice(iClose+1).join('\n'); // la ligne </script> est reconstruite
 
 // le corps de chaque fichier source, precedé de son bandeau de section
-const chunks=parts.map(f=>{
+// Fiches machines (post-processeurs) : PostPro/*.js, une par machine, insérées juste après
+// src/88-fao-60-postprocesseurs.js (qui définit faoMachine) — 2026-10-23
+const POSTPRO=path.join(ROOT,'PostPro');
+const POST_AFTER='88-fao-60-postprocesseurs.js';
+const machines=fs.existsSync(POSTPRO)?fs.readdirSync(POSTPRO).filter(f=>/\.js$/.test(f)).sort():[];
+const chunks=[];
+parts.forEach(f=>{
   const body=fs.readFileSync(path.join(SRC,f),'utf8').replace(/\s+$/,'');
   const titre=f.replace(/^\d\d-/,'').replace(/\.js$/,'').replace(/-/g,' ');
-  return '/* ═══════════════ '+f+' — '+titre+' ═══════════════ */\n'+body;
+  chunks.push('/* ═══════════════ '+f+' — '+titre+' ═══════════════ */\n'+body);
+  if(f===POST_AFTER)machines.forEach(m=>{
+    chunks.push('/* ═══════════════ PostPro/'+m+' — fiche machine ═══════════════ */\n'+
+      fs.readFileSync(path.join(POSTPRO,m),'utf8').replace(/\s+$/,''));
+  });
 });
 // CRLF pur : convention du projet (le fichier d'origine est en CRLF)
 const out=(head+'\n<script>\n'+chunks.join('\n\n')+'\n</script>\n'+tail).replace(/\r\n/g,'\n').replace(/\n/g,'\r\n');
@@ -45,5 +55,5 @@ if(process.argv.indexOf('--check')>=0){
 }
 if(out===old){console.log('✓ rien à reconstruire ('+parts.length+' fichiers source)');process.exit(0);}
 fs.writeFileSync(HTML,out,'utf8');
-console.log('✓ fusion_mvp.html reconstruit : '+parts.length+' fichiers, '+
+console.log('✓ fusion_mvp.html reconstruit : '+parts.length+' fichiers + '+machines.length+' machine(s), '+
   out.split(/\r?\n/).length+' lignes, '+(out.length/1024).toFixed(0)+' Ko');

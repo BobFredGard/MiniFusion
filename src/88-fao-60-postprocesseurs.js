@@ -1,11 +1,27 @@
 /* ================= post-processeurs ================= */
-// Table des machines : `kind` porte le dialecte (commentaires, numérotation,
-// fin de programme) — le corps du programme est commun aux dialectes.
-const FAO_POSTS={
-  siemens630:{label:'Siemens 840D · 630', ext:'mpf', parkX:'X-200', kind:'siemens'},
-  siemens1520:{label:'Siemens 840D · 1520', ext:'mpf', parkX:'X-430', kind:'siemens'},
-  fagor8065:{label:'Fagor 8065', ext:'nc', kind:'fagor'}
+// Table des machines : UN FICHIER PAR MACHINE dans PostPro/*.js (2026-10-23), intégré au
+// livrable par build.js juste après ce fichier ; chacun appelle faoMachine({…}).
+// `kind` porte le dialecte (en-tête, commentaires, cycles) — le corps du programme est
+// commun ; le reste (axes, numérotation, codes M, changement d'outil, fin) vient du fichier.
+const FAO_POSTS={};
+const FAO_POST_DEF={
+  siemens:{ext:'mpf',axes:5,numbers:null,coolant:{flood:'M7',through:'M8',off:'M9'},
+    toolChange:['T{T} D1','M6'],spindle:'S{S} M3',end:['G0 SUPA Z600 D0','M30']},
+  fagor:{ext:'nc',axes:3,numbers:{start:10,step:5},coolant:{flood:'M08',through:'M08',off:'M09'},
+    toolChange:['T{T} D1 M06'],spindle:'S{S} M03',end:['G0 Z{ZRETR}','#MSG[""]','M30']}
 };
+function faoMachine(def){
+  if(!def||!def.id)return;
+  const kind=def.kind==='fagor'?'fagor':'siemens',D=FAO_POST_DEF[kind];
+  FAO_POSTS[def.id]=Object.assign({},D,def,{kind:kind,label:def.label||def.id,
+    coolant:Object.assign({},D.coolant,def.coolant||{})});
+}
+// lignes d'un modèle de la fiche machine : {T}, {S}, {ZRETR}, {NAME}
+function faoPostLines(tpl,v){
+  return (Array.isArray(tpl)?tpl:(tpl?[tpl]:[])).map(function(l){
+    return String(l).replace(/\{(\w+)\}/g,function(m,k){return v[k]!==undefined?String(v[k]):m;});
+  });
+}
 function faoToday(){ try{ return new Date().toISOString().slice(0,10); }catch(e){ return ''; } }
 
 function faoArcWords(m,ox,oy,oz){
@@ -56,8 +72,9 @@ function faoDrillCycle(op,job,oz){
 // un pur déplacement XY garde l'avance de coupe (correctif du bug Fagor).
 function faoPost(job,postId){
   const id=postId||(job&&(job.machine||job.post))||'siemens630';
-  const post=FAO_POSTS[id]||FAO_POSTS.siemens630;
+  const post=FAO_POSTS[id]||FAO_POSTS.siemens630||FAO_POSTS[Object.keys(FAO_POSTS)[0]];
   const fag=post.kind==='fagor';
+  const ax3=post.axes===3; // machine sans axe rotatif : 3+2 jamais commandé
   const name=faoProgName(job.name);
   const wcs=job.wcs||'G54';
   const OG=faoOriginPoint(job), ox=OG[0], oy=OG[1], oz=OG[2];
@@ -79,7 +96,7 @@ function faoPost(job,postId){
   const warns=[];
   if(sousBrut)warns.push(sousBrut+' move(s) de coupe sous le brut (Zmin '+
     faoFmtXYZ(zMin)+' < fond du brut '+faoFmtXYZ(z0)+')');
-  if(ori32&&fag)warns.push('3+2 (B'+ORI.b+' C'+ORI.c+') : Fagor 8065 = machine 3 axes — indexation '+
+  if(ori32&&ax3)warns.push('3+2 (B'+ORI.b+' C'+ORI.c+') : '+post.label+' = machine 3 axes — indexation '+
     'IGNORÉE : B/C non commandés, programme émis en 3 axes (la pièce ne sera PAS inclinée). '+
     'Remettre 3 axes ou exporter sur Siemens.');
   const staleCh=(job.ops||[]).filter(function(o){
@@ -88,11 +105,11 @@ function faoPost(job,postId){
   }).length;
   if(staleCh)warns.push(staleCh+' opération(s) : limite « chaîne »/« esquisse »/îlot/Z obsolète (arêtes du modèle '+
     'non retrouvées ou esquisse modifiée) — re-sélectionner / re-choisir avant export');
-  const L=[]; let n=10;
-  const nc=function(s){ if(fag){ L.push('N'+n+' '+s); n+=5; } else L.push(s); };
+  const L=[], NUM=post.numbers; let n=NUM?+NUM.start||10:0;
+  const nc=function(s){ if(NUM){ L.push('N'+n+' '+s); n+=+NUM.step||5; } else L.push(s); };
   const cmt=function(s){ L.push(fag?('( '+s+' )'):('; '+s)); };
-  const cool=fag?((job.coolant==='off')?null:'M08')
-                :((job.coolant==='off')?'M9':(job.coolant==='through'?'M8':'M7'));
+  const CO=post.coolant;
+  const cool=(job.coolant==='off')?null:(job.coolant==='through'?CO.through:CO.flood);
   // G40 (annule la compensation d'outil) + G80 (annule les cycles en canneau) en
   // entête : programme démarré proprement, jamais laissé d'un usage précédent.
   if(fag){
@@ -114,7 +131,7 @@ function faoPost(job,postId){
   // Fagor 8065 = machine 3 AXES uniquement : aucun axe rotatif — ne JAMAIS
   // commander B/C (alarme CN) ni laisser croire à une inclinaison : à plat.
   if(ori32){
-    if(fag){
+    if(ax3){
       cmt('3+2 : B'+faoFmtXYZ(ORI.b)+' C'+faoFmtXYZ(ORI.c)+
         ' demandé — machine 3 axes : B/C NON commandés, usinage à plat (voir avertissement)');
     }else{
@@ -126,7 +143,7 @@ function faoPost(job,postId){
   let qi=0, prev=null;
   // 2026-10-16-020 : orientation 3+2 PAR OPÉRATION (repère propre de l'opération) ;
   // l'ancien 3+2 du posage reste l'orientation par défaut.
-  let oriCur={b:ORI.b,c:ORI.c}, traOn=ori32&&!fag, fagWarn=false;
+  let oriCur={b:ORI.b,c:ORI.c}, traOn=ori32&&!ax3, fagWarn=false;
   groups.forEach(function(g,gi){
     const t=g.tool;
     const S=faoFmtS(t.s), F=faoFmtF(t.f), FP=faoFmtF(t.plunge);
@@ -137,14 +154,14 @@ function faoPost(job,postId){
       const qb=g.blocks[bi]&&g.blocks[bi].op;
       if(qb&&qb.on!==false){ retrCur=faoRetractAbs(qb,job); break; }
     }
-    if(gi>0){ nc(fag?'M09':'M9'); nc('G0 Z'+faoFmtXYZ(retrPrev-oz)); }
+    if(gi>0){ nc(CO.off); nc('G0 Z'+faoFmtXYZ(retrPrev-oz)); }
     retrPrev=retrCur;
     const toolF=faoToolById(job,t.id)||{};
     cmt('OUTIL T'+(t.num||1)+' '+faoKindLabel(toolF.kind)+
       ' D'+faoFmtXYZ(t.d)+' S'+S+' F'+F);
-    if(fag){ nc('T'+(t.num||1)+' D1 M06'); }else{ nc('T'+(t.num||1)+' D1'); nc('M6'); }
-    nc('S'+S+(fag?' M03':' M3'));
-    if(cool&&cool!=='M9')nc(cool);
+    faoPostLines(post.toolChange,{T:t.num||1,NAME:name}).forEach(nc);
+    faoPostLines(post.spindle,{S:S}).forEach(nc);
+    if(cool)nc(cool);
     let sCur=S;
     g.blocks.forEach(function(b){
       // 2026-10-15-010 : conditions de coupe de CETTE opération (fiche outil ou
@@ -159,9 +176,9 @@ function faoPost(job,postId){
       if(fag){ try{ nc('#MSG["'+faoOpAscii(faoOpLabel(b.op,job))+'"]'); }catch(e){} }
       const OB=faoOpBC(job,b.op)||{b:ORI.b,c:ORI.c};
       if(OB.b!==oriCur.b||OB.c!==oriCur.c){
-        if(fag){
+        if(ax3){
           cmt('3+2 : B'+faoFmtXYZ(OB.b)+' C'+faoFmtXYZ(OB.c)+' demandé — machine 3 axes : B/C NON commandés');
-          if(!fagWarn){ fagWarn=true; warns.push('Repère d’opération incliné : Fagor 8065 = machine 3 axes — orientation B/C ignorée à l’export.'); }
+          if(!fagWarn){ fagWarn=true; warns.push('Repère d’opération incliné : '+post.label+' = machine 3 axes — orientation B/C ignorée à l’export.'); }
         }else{
           nc('G0 Z'+faoFmtXYZ(safe-oz)); // dégagement AVANT de réorienter l'outil
           if(prev)prev={x:prev.x,y:prev.y,z:safe};
@@ -275,16 +292,10 @@ function faoPost(job,postId){
   });
   // 3+2 : annuler la transformation AVANT les coordonnées machine de fin (SUPA/park).
   if(traOn)nc('TRAFOOF');
-  if(fag){
-    nc('M09');
-    nc('G0 Z'+faoFmtXYZ(retrPrev-oz));
-    nc('#MSG[""]'); // 2026-10-13-007 : efface le message op (cav.txt N243150)
-  }else{
-    nc('M9');
-    nc('G0 SUPA Z600 D0');
-    nc('G0 '+post.parkX);
-  }
-  nc('M30');
+  nc(CO.off);
+  // fin de la fiche machine (Fagor : retrait + #MSG[""] qui efface le message op — cav.txt N243150 ;
+  // Siemens : SUPA Z600 + parc machine)
+  faoPostLines(post.end,{ZRETR:faoFmtXYZ(retrPrev-oz),NAME:name}).forEach(nc);
   return {code:L.join('\n')+'\n', ext:post.ext, warns:warns};
 }
 
