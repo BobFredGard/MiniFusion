@@ -21,7 +21,8 @@ const SUITES = [
   'test_conge_tangent',
   'test_fao_outils',
   'test_fao_percage',
-  'test_repeat_circ_tour'
+  'test_repeat_circ_tour',
+  'test_esquisse_angle'
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {

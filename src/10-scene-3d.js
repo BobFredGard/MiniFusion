@@ -311,10 +311,12 @@ function orbitTick(){
 }
 function orbitWire(el){
   // 2026-10-23 : Ctrl + molette enfoncée = DÉPLACEMENT, comme le clic droit. Écouteur en
-  // CAPTURE : il passe avant OrbitControls, qui lit alors la molette comme « pan » pour ce geste.
+  // CAPTURE : il passe avant OrbitControls et règle la molette pour ce seul geste.
   el.addEventListener('pointerdown',e=>{
     if(e.button!==1||!controls||!controls.mouseButtons||!THREE.MOUSE)return;
-    controls.mouseButtons.MIDDLE=(e.ctrlKey||e.metaKey)?THREE.MOUSE.PAN:-1;
+    // OrbitControls INVERSE le rôle avec Ctrl/Maj (PAN + Ctrl = rotation, ROTATE + Ctrl = déplacement) :
+    // la molette est donc déclarée ROTATE pour ce geste, ce qui donne bien un déplacement
+    controls.mouseButtons.MIDDLE=(e.ctrlKey||e.metaKey)?THREE.MOUSE.ROTATE:-1;
   },true);
   el.addEventListener('pointerdown',e=>{
     if(e.button!==0&&e.button!==1)return;

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**305 versions**, de `2026-09-28b` à `V0.4.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**306 versions**, de `2026-09-28b` à `V0.4.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4560,3 +4560,11 @@ Retour utilisateur (« Ctrl + bouton molette enfoncé → déplacement de la 3D 
 - **Test** `test_repeat_circ_tour` rendu indépendant de l'état du fichier d'exemple (document ancien format reconstitué).
 
 Tests : vérifié dans l'appli (geste simulé : Ctrl + molette déplace la cible comme le clic droit, 8,1 contre 9,1 ; molette seule réglée sur l'orbite). `npm run ci` vert.
+
+## V0.4.7 - Esquisse : cotes d'angle fiables ; Ctrl + molette = vrai déplacement
+Retours utilisateur (« cotes angulaires : marche pas bien » — Crochet.miniFusion, « test angle : angle de 10° pas respecté », « Ctrl + molette enfoncée = déplacement comme le clic droit »).
+- **Lignes disjointes** : le sommet d'une cote d'angle est l'INTERSECTION des deux droites (comme Fusion) — l'ancien pseudo-sommet (milieu des milieux) faisait piloter au solveur un angle dépendant de la position des segments : la cote faisait pivoter les lignes dès sa pose. Valeur posée = secteur réel, sens mémorisé aussi pour les disjointes.
+- **Entraxe ou angle** : entraxe seulement entre lignes VRAIMENT parallèles (contrainte ∥ ou colinéaire, toutes deux ─ ou │, écart < 0,5°) ; l'ancienne tolérance de 3° posait un entraxe en mm entre lignes presque parallèles (« 10 » tapé comme un angle). À l'ouverture d'une esquisse, un tel entraxe devient une cote d'angle à la valeur mesurée (rien ne bouge).
+- **Ctrl + molette** : OrbitControls inverse le rôle d'un bouton avec Ctrl (PAN + Ctrl = rotation) — la molette est déclarée ROTATE pour ce geste, ce qui donne le déplacement (V0.4.6 tournait au lieu de déplacer).
+
+Tests : nouveau `test_esquisse_angle` (fixtures `crochet.miniFusion`, `test-angle.miniFusion`) : cote disjointe = angle réel sans déplacement ; entraxe « 10 » → angle 7,03° puis 10,000° tenu avec les entraxes 585 / 115 ; jamais d'entraxe entre sécantes. Vérifié dans l'appli : Ctrl + molette = clic droit (déplacement 22,654, rotation 0°). `npm run ci` vert.

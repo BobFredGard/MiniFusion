@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.4.6';
+const APP_VER='V0.4.7';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -910,10 +910,12 @@ function orbitTick(){
 }
 function orbitWire(el){
   // 2026-10-23 : Ctrl + molette enfoncée = DÉPLACEMENT, comme le clic droit. Écouteur en
-  // CAPTURE : il passe avant OrbitControls, qui lit alors la molette comme « pan » pour ce geste.
+  // CAPTURE : il passe avant OrbitControls et règle la molette pour ce seul geste.
   el.addEventListener('pointerdown',e=>{
     if(e.button!==1||!controls||!controls.mouseButtons||!THREE.MOUSE)return;
-    controls.mouseButtons.MIDDLE=(e.ctrlKey||e.metaKey)?THREE.MOUSE.PAN:-1;
+    // OrbitControls INVERSE le rôle avec Ctrl/Maj (PAN + Ctrl = rotation, ROTATE + Ctrl = déplacement) :
+    // la molette est donc déclarée ROTATE pour ce geste, ce qui donne bien un déplacement
+    controls.mouseButtons.MIDDLE=(e.ctrlKey||e.metaKey)?THREE.MOUSE.ROTATE:-1;
   },true);
   el.addEventListener('pointerdown',e=>{
     if(e.button!==0&&e.button!==1)return;
@@ -7736,6 +7738,8 @@ function skBuildRefs(){
 }
 let skOpenAt=0; // instant d'ouverture : sketchCamTick recadre si la mise en page bouge juste après
 function openSketch(id){
+  try{const sg=doc.sketches.find(x=>x.id===id);const ng=sg?skGapToAngle(sg):0;
+    if(ng)setTimeout(()=>{try{skStatus(ng+' cote(s) d’entraxe entre lignes non parallèles changée(s) en cote(s) d’angle (valeur mesurée).');}catch(e){}},0);}catch(e){}
   // 2026-10-16-006 : nouvelle mise en page des cotes R/Ø — les anciens décalages (calés sur
   // l'étiquette à 45°) sont remis à zéro UNE fois par esquisse.
   try{const s1=doc.sketches.find(x=>x.id===id);if(s1&&!s1.rdV){(s1.dims||[]).forEach(d=>{if(d.type==='radius'||d.type==='diameter'){delete d.ox;delete d.oy;}});s1.rdV=1;}}catch(e){}
@@ -7953,6 +7957,7 @@ function migrateSketch(sk){
 }
 function cleanupSk(sk){
   ensureOrigin(sk); // origine permanente : rétablie si absente
+  skGapToAngle(sk);
   const keep=new Set([skChain,skArcC,skCoinA,skPendPt,skDrag,skDown&&skDown.pid,SK_ORIGIN].filter(Boolean));
   const ref=new Set();
   (sk.entities||[]).forEach(e=>{['p1','p2','p','pc','pa','pb'].forEach(k=>{if(e[k])ref.add(e[k]);});});
@@ -7994,6 +7999,34 @@ function cleanupSk(sk){
     }
     return true;
   });
+}
+// 2026-10-23 : deux lignes sont « parallèles » pour une cote d'entraxe seulement si elles le
+// sont VRAIMENT : contrainte ∥ / colinéaire, toutes deux ─ ou toutes deux │, ou écart < 0,5°.
+// Avant, une tolérance de 3° faisait poser un entraxe (mm) entre deux lignes presque parallèles
+// au moment du clic — l'utilisateur y tapait un angle (« 10 ») qui n'était jamais un angle.
+const SK_PARALLEL_HARD=0.5*Math.PI/180;
+function skParallelPair(sk,A,B){
+  if(!A||!B)return false;
+  if(skHasParallel(sk,A.id,B.id))return true;
+  if((sk.constraints||[]).some(c=>c.type==='collinear'&&((c.a===A.id&&c.b===B.id)||(c.a===B.id&&c.b===A.id))))return true;
+  if((hasHV(sk,A.id,'h')&&hasHV(sk,B.id,'h'))||(hasHV(sk,A.id,'v')&&hasHV(sk,B.id,'v')))return true;
+  const va=skLinesAngle(sk,A,B);
+  return va!==null&&va<SK_PARALLEL_HARD;
+}
+// un entraxe entre deux lignes NON parallèles n'a pas de sens (posé avec l'ancienne tolérance
+// de 3°) → cote d'angle à la valeur mesurée : rien ne bouge, l'angle se règle ensuite
+function skGapToAngle(sk){
+  let n=0;
+  try{(sk.dims||[]).forEach(d=>{
+    if(d.type!=='gap')return;
+    const A=entById(sk,d.a),B=entById(sk,d.b);if(!A||!B||A.t!=='line'||B.t!=='line')return;
+    if(skParallelPair(sk,A,B))return;
+    const fr=angleFrame(sk,{a:A.id,b:B.id});if(!fr)return;
+    const ad=Math.abs(fr.delta);if(ad<0.03||Math.PI-ad<0.03)return;
+    d.type='angle';d.value=+ad.toFixed(6);d.ccw=fr.delta>0?1:0;
+    delete d.sgn;delete d.sl;delete d.orient;delete d.w;n++;
+  });}catch(e){}
+  return n;
 }
 function hasHV(sk,lineId,t){return (sk.constraints||[]).some(c=>c.type===t&&c.line===lineId);}
 function skHasPerp(sk,aId,bId){return (sk.constraints||[]).some(c=>c.type==='perpendicular'&&((c.a===aId&&c.b===bId)||(c.a===bId&&c.b===aId)));}
@@ -9932,7 +9965,7 @@ function hitDimLine(sk,px,py){ // px,py pixels écran SVG → id de cote si le c
   }
   return null;
 }
-function angleVertex(sk,d){ // sommet commun ou milieu du segment joignant les milieux
+function angleVertex(sk,d){ // sommet commun, sinon INTERSECTION des deux droites (comme Fusion)
   const A=entById(sk,d.a),B=entById(sk,d.b);
   if(!A||!B||A.t!=='line'||B.t!=='line')return null;
   const P=sk.points;
@@ -9940,6 +9973,15 @@ function angleVertex(sk,d){ // sommet commun ou milieu du segment joignant les m
   if(sh&&P[sh])return P[sh];
   const A1=P[A.p1],A2=P[A.p2],B1=P[B.p1],B2=P[B.p2];
   if(!A1||!A2||!B1||!B2)return null;
+  // 2026-10-23 : lignes disjointes — l'ancien pseudo-sommet (milieu des milieux) donnait un
+  // « angle » qui dépendait de la position des segments : le solveur pilotait autre chose que
+  // l'angle des droites et la cote faisait pivoter les lignes dès sa création.
+  const ax=A2.x-A1.x,ay=A2.y-A1.y,bx=B2.x-B1.x,by=B2.y-B1.y,cr=ax*by-ay*bx;
+  const la=Math.hypot(ax,ay),lb=Math.hypot(bx,by);
+  if(la>1e-12&&lb>1e-12&&Math.abs(cr)/(la*lb)>1e-4){
+    const t=((B1.x-A1.x)*by-(B1.y-A1.y)*bx)/cr;
+    return{x:A1.x+ax*t,y:A1.y+ay*t};
+  }
   return{x:((A1.x+A2.x)/2+(B1.x+B2.x)/2)/2,y:((A1.y+A2.y)/2+(B1.y+B2.y)/2)/2};
 }
 function hitDimLabel(sk,px,py){ // px,py en pixels écran SVG → id de cote ou null (boîte tournée pour les cotes linéaires)
@@ -10865,8 +10907,9 @@ function skShareVertex(sk,A,B){
 // lignes disjointes → angle entre les directions, seul sens défini (le pseudo-sommet
 // d'angleFrame donnerait un nombre arbitraire).
 function skAngleForDim(sk,A,B){
-  if(skShareVertex(sk,A,B)){
-    const fr=angleFrame(sk,{a:A.id,b:B.id});
+  // sommet commun OU intersection des droites : le secteur réel d'angleFrame, celui que le
+  // solveur pilote et que l'arc dessine (2026-10-23 : aussi pour les lignes disjointes)
+  {const fr=angleFrame(sk,{a:A.id,b:B.id});
     if(fr)return Math.abs(fr.delta);
   }
   const v=skLinesAngle(sk,A,B);
@@ -10905,7 +10948,7 @@ function tryExtendDim(dd,ent,pid){ // pose type Fusion : pendant qu'une cote vit
       // parallèles sans sommet commun étaient classées « angle » (Esquisse 5 : 175.74°
       // au lieu d'un entraxe de 3.037 mm).
       const va=skLinesAngle(sk,src,ent);
-      const par=(va!==null&&va<SK_PARALLEL_TOL);
+      const par=(va!==null&&skParallelPair(sk,src,ent));
       if(par){
         dd.type='gap';dd.a=src.id;dd.b=ent.id;delete dd.line;delete dd.w;
         dd.value=+lineGap(sk,src,ent).toFixed(2);
@@ -10991,7 +11034,7 @@ function dimClick(x,y,shift){
         // même règle qu'au clic simple : parallélisme sur les DIRECTIONS, angle sur le
         // secteur réel quand les lignes partagent un sommet.
         const va=skLinesAngle(sk,A,B);
-        const par=(va!==null&&va<SK_PARALLEL_TOL);
+        const par=(va!==null&&skParallelPair(sk,A,B));
         let newId=null;
         if(par){
           const dup=findDupDim(sk,{type:'gap',a:A.id,b:B.id});
@@ -11003,7 +11046,7 @@ function dimClick(x,y,shift){
           skStatus('Cote entraxe créée'+(aIsRef||bIsRef?' (dont 3D)':'')+' — déplacez puis cliquez pour poser.');
         }else{
           const ad=skAngleForDim(sk,A,B);
-          const ccw=skShareVertex(sk,A,B)?((angleFrame(sk,{a:A.id,b:B.id})||{delta:0}).delta>0?1:0):0;
+          const ccw=(angleFrame(sk,{a:A.id,b:B.id})||{delta:0}).delta>0?1:0; // sens du secteur réel (disjointes comprises)
           const dup=findDupDim(sk,{type:'angle',a:A.id,b:B.id});
           if(dup){skDimLine=null;skDimRef=null;reuseDim(dup);return;}
           skPushUndo();
