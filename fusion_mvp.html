@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.4.4';
+const APP_VER='V0.4.5';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -3468,6 +3468,24 @@ function occSharpEdges(shape){
     const fx=new occt.TopExp_Explorer_2(shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,SH);bin.push(fx);
     while(fx.More()){const f=occt.TopoDS.Face_1(fx.Current());bin.push(f);faces.push(f);fx.Next();}
     const fmap=new Map();
+    // 2026-10-23 : COUTURES — une face de révolution (cylindre, cône…) est bordée deux fois par
+    // la même arête (sa couture) : vue deux fois DANS LA MÊME FACE. Ce n'est pas une arête de la
+    // pièce : ni tracée ni sélectionnable. Idem pour la jonction de deux morceaux du MÊME
+    // cylindre (perçage repassé, découpe coaxiale) : un seul cylindre à l'écran.
+    const seam=new Set(),cyl=faces.map(f=>{
+      try{const ad=new occt.BRepAdaptor_Surface_2(f,true);bin.push(ad);
+        if(ad.GetType()!==occt.GeomAbs_SurfaceType.GeomAbs_Cylinder)return null;
+        const C=ad.Cylinder(),A=C.Axis(),d=A.Direction(),o=A.Location();
+        return{r:C.Radius(),d:[d.X(),d.Y(),d.Z()],o:[o.X(),o.Y(),o.Z()]};
+      }catch(err){return null;}
+    });
+    const sameCyl=fl=>{
+      if(fl.length!==2)return false;const a=cyl[fl[0]],b=cyl[fl[1]];if(!a||!b)return false;
+      if(Math.abs(a.r-b.r)>1e-6)return false;
+      const c=a.d[0]*b.d[0]+a.d[1]*b.d[1]+a.d[2]*b.d[2];if(Math.abs(Math.abs(c)-1)>1e-9)return false;
+      const w=[b.o[0]-a.o[0],b.o[1]-a.o[1],b.o[2]-a.o[2]],t=w[0]*a.d[0]+w[1]*a.d[1]+w[2]*a.d[2];
+      return Math.hypot(w[0]-t*a.d[0],w[1]-t*a.d[1],w[2]-t*a.d[2])<1e-6; // même axe
+    };
     faces.forEach((f,fi)=>{
       const ee=new occt.TopExp_Explorer_2(f,occt.TopAbs_ShapeEnum.TopAbs_EDGE,SH);bin.push(ee);
       while(ee.More()){
@@ -3480,7 +3498,7 @@ function occSharpEdges(shape){
             if(s.len>1e-6){
               const k=ekey([m.X(),m.Y(),m.Z()],s.len);
               if(!fmap.has(k))fmap.set(k,[]);
-              if(!fmap.get(k).includes(fi))fmap.get(k).push(fi);
+              if(!fmap.get(k).includes(fi))fmap.get(k).push(fi);else seam.add(k); // 2ᵉ passage dans la même face
             }
           }
         }catch(err){}
@@ -3504,6 +3522,7 @@ function occSharpEdges(shape){
               seen.add(kk);
               let sharp=true;
               const fl=fmap.get(kk)||[];
+              if((seam.has(kk)&&fl.length<=1)||sameCyl(fl)){ex.Next();continue;} // couture : pas une arête
               if(fl.length>=2){
                 try{sharp=(occt.BRep_Tool.Continuity_1(e,faces[fl[0]],faces[fl[1]])===occt.GeomAbs_Shape.GeomAbs_C0);}
                 catch(err){sharp=true;}
@@ -5757,16 +5776,20 @@ function repRot(v,axis,deg){
   const u=repNorm(axis),t=deg*Math.PI/180,c=Math.cos(t),s=Math.sin(t),uxv=repCross(u,v),ud=repDot(u,v);
   return repAdd(repAdd(repScale(v,c),repScale(uxv,s)),repScale(u,ud*(1-c)));
 }
+// pas angulaire d'une répétition circulaire (2026-10-23) : sur un tour complet, l'angle se
+// partage entre original + copies (6 trous à 60°) — la dernière copie ne retombe plus sur
+// l'original ; sur un secteur, original et dernière copie sont aux deux bornes.
+function repCircStep(c){const a=+c.angle||360,n=+c.copies||1;return Math.abs(a)>=360-1e-9?a/(n+1):a/n;}
 function repTransformPoint(p,i,cfg){const c=cfg||repMode,t=c.mode||c.type;
   const v=[+(p&&p[0]||0),+(p&&p[1]||0),+(p&&p[2]||0)];
   if(t==='lin')return repAdd(v,repScale(repAxisVec(c),(+c.dist||0)*i));
-  if(t==='circ')return repRot(v,repAxisVec(c),(+c.angle||360)*i/(+c.copies||1));
+  if(t==='circ')return repRot(v,repAxisVec(c),repCircStep(c)*i);
   const n=repPlaneN(c);return repAdd(v,repScale(n,-2*repDot(v,n)));
 }
 function repTransformVec(v,i,cfg){const c=cfg||repMode,t=c.mode||c.type;
   const a=[+(v&&v[0]||0),+(v&&v[1]||0),+(v&&v[2]||0)];
   if(t==='lin')return a;
-  if(t==='circ')return repRot(a,repAxisVec(c),(+c.angle||360)*i/(+c.copies||1));
+  if(t==='circ')return repRot(a,repAxisVec(c),repCircStep(c)*i);
   const n=repPlaneN(c);return repAdd(a,repScale(n,-2*repDot(a,n)));
 }
 let repGenBusy=false; // garde-fou : une régénération ne s'emboîte jamais (rejeu non borné)
@@ -5993,6 +6016,13 @@ function docSanitise(){
   const repIds=new Set(doc.features.filter(f=>f.type==='repeat').map(f=>f.id));
   doc.features=doc.features.filter(f=>{if(f.repeatId&&!repIds.has(f.repeatId)){orph++;return false;}return true;});
   doc.features.forEach(f=>{if(f.type==='repeat'){const c=repMaxCopies(f.copies);if(c!==Math.floor(+f.copies||1))cap++;f.copies=c;}});
+  // 2026-10-23 : répétition circulaire sur un tour complet — l'ancien pas (360°/copies) posait la
+  // dernière copie SUR l'original (perçage doublé, paroi scindée). Le nouveau pas partage le tour
+  // entre original + copies : on retire cette copie superflue, la pièce garde ses positions.
+  doc.features.forEach(f=>{
+    if(f.type!=='repeat'||f.q)return;f.q=1;
+    if(f.mode==='circ'&&Math.abs(+f.angle||360)>=360-1e-9&&f.copies>=2){f.copies--;cap++;try{repGenChildren(f);}catch(e){}}
+  });
   const used=new Set(doc.features.map(f=>f.sketchId).filter(Boolean));
   doc.sketches=(doc.sketches||[]).filter(x=>{
     if(used.has(x.id))return true;
@@ -6259,7 +6289,7 @@ function applyRepPattern(){
   // La répétition devient une FONCTION réelle (type 'repeat') : elle garde ses paramètres,
   // ses fonctions sources (base) et ses instances (children, créées par repGenChildren).
   const rp={id:uid('rp'),type:'repeat',name:repTypeName(repMode.type,repMode),mode:repMode.type,
-    copies:repMaxCopies(repMode.copies),dist:repMode.dist,angle:repMode.angle,
+    copies:repMaxCopies(repMode.copies),q:1,dist:repMode.dist,angle:repMode.angle,
     axis:repMode.axis,plane:repMode.plane,dir:repMode.dir,planeN:repMode.planeN,
     plane2:repMode.plane2||undefined,planeN2:repMode.planeN2||undefined,
     base:base.map(f=>f.id),children:[],visible:true};
@@ -6288,7 +6318,10 @@ function renderRepPanel(){
   const h=document.createElement('div');h.innerHTML='<b>🔁 Répétition</b><br><span class="note">Choisissez les fonctions à répéter ci-dessous (cases à cocher). Dans l\'arbre, un <b>Ctrl+clic</b> sert désormais à la multi-suppression.</span>';p.appendChild(h);
   const row=document.createElement('div');row.className='row';
   const typ=document.createElement('select');[['lin','Linéaire'],['circ','Circulaire'],['mir','Symétrie']].forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];typ.appendChild(op);});typ.value=repMode.type;typ.onchange=()=>{repMode.type=typ.value;renderRepPanel();};row.appendChild(typ);
-  const cnt=document.createElement('input');cnt.type='number';cnt.min='1';cnt.value=repMode.copies;cnt.title='Nombre de copies';cnt.onchange=()=>{repMode.copies=repMaxCopies(cnt.value);};row.appendChild(cnt);p.appendChild(row);
+  // 2026-10-23 : QUANTITÉ, original compris (6 = l'original + 5 copies) ; stocké : copies = quantité − 1
+  const cnt=document.createElement('input');cnt.type='number';cnt.min='2';cnt.value=(+repMode.copies||1)+1;cnt.title='Quantité, original compris (6 = l’original + 5 copies)';cnt.onchange=()=>{repMode.copies=repMaxCopies((+cnt.value||2)-1);cnt.value=repMode.copies+1;};
+  if(repMode.type==='mir'){cnt.disabled=true;cnt.value=2;}
+  row.appendChild(cnt);p.appendChild(row);
   const ax=document.createElement('select');['X','Y','Z','Face'].forEach(v=>{const op=document.createElement('option');op.value=v;op.textContent=(repMode.type==='mir'?(v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v):v);ax.appendChild(op);});
   ax.value=repMode.type==='mir'?(repMode.plane==='XY'?'Z':repMode.plane==='XZ'?'Y':repMode.plane==='Face'?'Face':'X'):(repMode.axis||'X');
   ax.onchange=()=>{if(repMode.type==='mir'){repMode.plane=ax.value==='X'?'YZ':ax.value==='Y'?'XZ':ax.value==='Z'?'XY':'Face';delete repMode.planeN;}else{repMode.axis=ax.value;delete repMode.dir;}renderRepPanel();};p.appendChild(ax);
@@ -6502,9 +6535,10 @@ function renderProps(){
       const typ=pSel([['lin','Linéaire'],['circ','Circulaire'],['mir','Symétrie']],f.mode||'lin',
         v=>{f.mode=v;f.name=repTypeName(f.mode,f);applyCfg();});
       pRow('Type',typ);
-      const cnt=document.createElement('input');cnt.type='number';cnt.min='1';cnt.value=f.copies||1;cnt.title='Nombre de copies';
-      cnt.onchange=()=>{f.copies=repMaxCopies(cnt.value);applyCfg();};
-      pRow('Copies',cnt);
+      // 2026-10-23 : QUANTITÉ, original compris (6 = l'original + 5 copies) ; stocké : copies = quantité − 1
+      const cnt=document.createElement('input');cnt.type='number';cnt.min='2';cnt.value=(+f.copies||1)+1;cnt.title='Quantité, original compris (6 = l’original + 5 copies)';
+      cnt.onchange=()=>{f.copies=repMaxCopies((+cnt.value||2)-1);applyCfg();};
+      if(f.mode!=='mir')pRow('Quantité',cnt);
       const axOpts=['X','Y','Z','Face'].map(v=>[v,f.mode==='mir'?(v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v):v]);
       const axCur=f.mode==='mir'?(f.plane==='XY'?'Z':f.plane==='XZ'?'Y':f.plane==='Face'?'Face':'X'):(f.axis||'X');
       pRow(f.mode==='mir'?'Plan':'Axe',pSel(axOpts,axCur,
@@ -37240,6 +37274,7 @@ const MF_IC={
   pAxPitch:'<circle cx="12" cy="12" r="8" stroke-dasharray="4 1.6 1 1.6"/><circle cx="12" cy="4" r="1.8"/><circle cx="18.9" cy="16" r="1.8"/><circle cx="5.1" cy="16" r="1.8"/>',
   pAxSym:'<path d="M12 2v3.5M12 8v3M12 13.5v3M12 19v3"/><path d="M9 6L4 12l5 6zM15 6l5 6-5 6z"/>',
   pSvg:'<path d="M6 3h9l3 3v15H6z"/><text x="12" y="17.6" font-size="6.2" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">SVG</text>',
+  pDxfIn:'<path d="M6 3h9l3 3v15H6z"/><path d="M12 6.5v6.5M9.5 10.5L12 13l2.5-2.5"/><text x="12" y="19.6" font-size="4.6" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">DXF</text>',
   pDxf:'<path d="M6 3h9l3 3v15H6z"/><text x="12" y="17.6" font-size="6.2" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">DXF</text>',
   pPdf:'<path d="M6 3h9l3 3v15H6z"/><text x="12" y="17.6" font-size="6.2" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">PDF</text>'
 };
@@ -37284,7 +37319,8 @@ function mfRibbon(){
     ['camera','Caméra',()=>{try{mepAddCameraViewCmd();}catch(e){}},'Vue depuis la caméra 3D actuelle'],
     ['pViewAux','Auxiliaire',()=>{try{mepBeginAuxCmd();}catch(e){}},'Vue auxiliaire : cliquez une arête inclinée, puis placez la vue perpendiculairement'],
     ['pViewSection','Coupe',()=>{try{mepSetActive(true);mepBeginSectionCmd();}catch(e){}},'Vue en coupe : points de la ligne sur une vue (2, ou plus pour une coupe brisée à l’équerre), ✓ / Entrée pour valider, ↶ / Retour arrière pour reculer, puis placez la vue (le côté donne le sens du regard)'],
-    ['pViewDetail','Détail',()=>{try{mepSetActive(true);mepBeginDetailCmd();}catch(e){}},'Vue de détail : centre, rayon, puis placement']],'mfPlan');
+    ['pViewDetail','Détail',()=>{try{mepSetActive(true);mepBeginDetailCmd();}catch(e){}},'Vue de détail : centre, rayon, puis placement'],
+    ['pDxfIn','DXF',()=>{try{mepSetActive(true);mepImportDxf();}catch(e){}},'Importer un DXF comme vue : on peut la coter, y accrocher lignes, cercles, axes…']],'mfPlan');
   grp('Dessin',[['pLine','Ligne',()=>mepTool('line'),'Ligne enchaînée (Échap termine)'],['pRect','Rectangle',()=>mepTool('rect')],
     ['pCircle','Cercle',()=>mepTool('circle')],['pArc','Arc',()=>mepTool('arc'),'Arc : centre, départ, arrivée'],
     ['pPoint','Point',()=>mepTool('point')],['pTrim','Ajuster',()=>mepTool('trim')],['pText','Texte',()=>mepTool('text'),'Texte libre ou champ (matière, TTS, TTH…)']],'mfPlan');
@@ -37458,8 +37494,8 @@ function mfCube(){
   const cv=document.createElement('canvas');cv.width=160;cv.height=160;cv.style.cssText='width:80px;height:80px;cursor:pointer';c.appendChild(cv);
   const h=document.createElement('button');h.id='mfCubeHome';h.textContent='⌂';h.title='Vue iso (tout afficher)';h.onclick=()=>{try{setView('iso');}catch(e){}};c.appendChild(h);
   const ob=document.createElement('button');ob.id='mfOrbit';ob.textContent='⟲';ob.onclick=()=>{try{orbitSetMode(!orbitFree);}catch(e){}};c.appendChild(ob);
-  mfOrbitBtnSync();
   vp.appendChild(c);
+  mfOrbitBtnSync(); // APRÈS l'insertion : le bouton n'est trouvable par son id qu'une fois dans la page (état gardé au rechargement)
   let rd=null;try{rd=new THREE.WebGLRenderer({canvas:cv,alpha:true,antialias:true});rd.setPixelRatio(1);rd.setSize(160,160,false);}catch(e){return;}
   const sc=new THREE.Scene(),cam=new THREE.PerspectiveCamera(28,1,0.1,50);
   // ordre des faces BoxGeometry : +X, −X, +Y, −Y, +Z, −Z ; rot = rotation du texte (Z monde vers le haut)
@@ -37610,6 +37646,208 @@ const MEP_DIM_STYLE = {
   textHeight: +(MEP_TEXT_STYLE.dimH / MEP_TEXT_STYLE.capRatio).toFixed(3), // CORPS du texte de cote, dérivé de MEP_TEXT_STYLE.dimH
   color: 'theme'  // cotes à l'écran : 'theme' = accent du thème, ou '#rrggbb' ; export et impression : noir (ISO)
 };
+
+/* ═══════════════ 98-01-import-dxf.js — 01 import dxf ═══════════════ */
+/* ═══════════════ import DXF pour la mise en plan (2026-10-23) ═══════════════
+   mepDxfParse(texte) → {els, units, k, n, skipped, bbox} : géométrie 2D d'un DXF ASCII
+   (R12 à 2018) en millimètres, dans le repère des vues du plan (y vers le BAS, origine
+   au centre de l'encombrement) — les mêmes éléments que la géométrie projetée d'une vue :
+     L {x1,y1,x2,y2,k}  ·  C {cx,cy,r,k}  ·  A {cx,cy,r,a0,a1,k}  ·  P {pts:[[x,y]…],k}
+   k : 'sharp' (trait continu) ou 'hidden' (type de ligne interrompu : HIDDEN, DASHED…).
+   Lus : LINE, CIRCLE, ARC, LWPOLYLINE / POLYLINE (renflements → arcs), ELLIPSE, SPLINE
+   (NURBS échantillonnée), INSERT (blocs, imbriqués, échelle, rotation, miroir).
+   Ignorés (comptés dans skipped) : textes, hachures, solides, points…
+   COTES (2026-10-23) : leur graphisme n'entre jamais dans la vue (texte, ligne de cote, flèches,
+   lignes de rappel) — entités DIMENSION / LEADER, blocs de cote « *D… », calques de cotation
+   (COTE, COTATION, DIM…). Les DIMENSION linéaires, alignées, rayons et diamètres sont rendues
+   dans `dims` (repère de la vue) pour devenir des cotes natives du plan :
+     {kind:'lin', orient:'h'|'v'|'a', a:[x,y], b:[x,y], p:[x,y]}   (p : point de la ligne de cote)
+     {kind:'dia'|'rad', c:[x,y], r, t:[x,y]}                         (t : position du texte)
+   Pur (aucun DOM) : testable sous Node. */
+function mepDxfParse(txt){
+  const lines=String(txt||'').split(/\r\n|\r|\n/);
+  const P=[];
+  for(let i=0;i+1<lines.length;i+=2){
+    const c=parseInt(lines[i].trim(),10);
+    if(!isFinite(c))continue;
+    P.push([c,lines[i+1].replace(/\s+$/,'')]);
+  }
+  // en-tête : unités ($INSUNITS) ; sections BLOCKS et ENTITIES : entités groupées par code 0
+  let units=0;
+  const blocks={},ents=[];
+  let sec='',cur=null,blk=null,inBlk=false;
+  for(let i=0;i<P.length;i++){
+    const[c,v]=P[i];
+    if(c===0&&v==='SECTION'){sec=(P[i+1]&&P[i+1][0]===2)?P[i+1][1].trim():'';i++;continue;}
+    if(c===0&&v==='ENDSEC'){sec='';cur=null;continue;}
+    if(sec==='HEADER'){if(c===9&&v.trim()==='$INSUNITS'){const q=P[i+1];if(q&&q[0]===70)units=+q[1];}continue;}
+    if(sec!=='BLOCKS'&&sec!=='ENTITIES')continue;
+    if(c===0){
+      const t=v.trim();
+      if(sec==='BLOCKS'&&t==='BLOCK'){blk={name:'',bx:0,by:0,ents:[]};inBlk=true;cur={t:'BLOCK',g:[]};continue;}
+      if(sec==='BLOCKS'&&t==='ENDBLK'){if(blk&&blk.name)blocks[blk.name]=blk;blk=null;inBlk=false;cur=null;continue;}
+      cur={t,g:[]};
+      if(sec==='BLOCKS'&&inBlk&&blk)blk.ents.push(cur);else if(sec==='ENTITIES')ents.push(cur);
+      continue;
+    }
+    if(!cur)continue;
+    if(cur.t==='BLOCK'&&blk){if(c===2)blk.name=v.trim();else if(c===10)blk.bx=+v;else if(c===20)blk.by=+v;continue;}
+    cur.g.push([c,v]);
+  }
+  const K=({1:25.4,2:304.8,4:1,5:10,6:1000,8:1e-6,9:0.0254,10:914.4,11:1e-7,12:1e-6,13:1e-3,14:100})[units]||1;
+  const out=[],skipped={};
+  const skip=t=>{skipped[t]=(skipped[t]||0)+1;};
+  const num=(e,c,d)=>{for(const q of e.g)if(q[0]===c)return +q[1];return d;};
+  const str=(e,c)=>{for(const q of e.g)if(q[0]===c)return q[1].trim();return '';};
+  const kind=e=>/HIDDEN|DASH|CACHE|INTERROMPU|DOT/i.test(str(e,6))?'hidden':'sharp';
+  // calque de cotation : son contenu (lignes de cote, rappels, flèches) n'est pas de la pièce
+  const dimLayer=e=>/(^|[^A-Z])(COT|DIM)/i.test(str(e,8));
+  const dimsW=[];
+  // transformations affines 2D : [a,b,c,d,e,f] → x' = a x + c y + e ; y' = b x + d y + f
+  const mul=(M,N)=>[M[0]*N[0]+M[2]*N[1],M[1]*N[0]+M[3]*N[1],M[0]*N[2]+M[2]*N[3],M[1]*N[2]+M[3]*N[3],
+    M[0]*N[4]+M[2]*N[5]+M[4],M[1]*N[4]+M[3]*N[5]+M[5]];
+  const tp=(M,x,y)=>[M[0]*x+M[2]*y+M[4],M[1]*x+M[3]*y+M[5]];
+  const I=[1,0,0,1,0,0];
+  // repère objet (OCS) : extrusion −Z = miroir en X (cas courant des DXF exportés à l'envers)
+  const ocs=e=>num(e,230,1)<0?[-1,0,0,1,0,0]:I;
+  const det=M=>M[0]*M[3]-M[1]*M[2];
+  const scl=M=>Math.sqrt(Math.abs(det(M)));
+  const pushL=(M,x1,y1,x2,y2,k)=>{const a=tp(M,x1,y1),b=tp(M,x2,y2);out.push({t:'L',x1:a[0],y1:a[1],x2:b[0],y2:b[1],k});};
+  // arc DXF (angles en radians, sens trigonométrique) → transformé ; miroir : sens inversé
+  const pushA=(M,cx,cy,r,s,e,k)=>{
+    while(e<=s)e+=2*Math.PI;
+    const c=tp(M,cx,cy),R=r*scl(M);
+    const ps=tp(M,cx+r*Math.cos(s),cy+r*Math.sin(s)),pe=tp(M,cx+r*Math.cos(e),cy+r*Math.sin(e));
+    let a0=Math.atan2(ps[1]-c[1],ps[0]-c[0]),a1=Math.atan2(pe[1]-c[1],pe[0]-c[0]);
+    if(det(M)<0){const t=a0;a0=a1;a1=t;}
+    while(a1<=a0)a1+=2*Math.PI;
+    if(e-s>=2*Math.PI-1e-9)out.push({t:'C',cx:c[0],cy:c[1],r:R,k});
+    else out.push({t:'A',cx:c[0],cy:c[1],r:R,s:a0,e:a1,k});
+  };
+  const pushPts=(M,pts,closed,k)=>{const q=pts.map(p=>tp(M,p[0],p[1]));if(closed&&q.length>2)q.push(q[0].slice());if(q.length>1)out.push({t:'P',pts:q,k});};
+  // segment de polyligne avec renflement (bulge = tan(angle/4)) → ligne ou arc
+  const seg=(M,p,q,bu,k)=>{
+    if(!bu||Math.abs(bu)<1e-9){pushL(M,p[0],p[1],q[0],q[1],k);return;}
+    const th=4*Math.atan(bu),dx=q[0]-p[0],dy=q[1]-p[1],ch=Math.hypot(dx,dy);if(ch<1e-12)return;
+    const r=ch/(2*Math.sin(Math.abs(th)/2)),mx=(p[0]+q[0])/2,my=(p[1]+q[1])/2;
+    const h=(ch/2)/Math.tan(th/2); // décalage du centre sur la normale gauche de p→q (signe compris)
+    const cx=mx-dy/ch*h,cy=my+dx/ch*h;
+    let s=Math.atan2(p[1]-cy,p[0]-cx),e=Math.atan2(q[1]-cy,q[0]-cx);
+    if(bu<0){const t=s;s=e;e=t;}
+    pushA(M,cx,cy,r,s,e,k);
+  };
+  // NURBS par de Boor, échantillonnée
+  const nurbs=(deg,ctrl,knots,w)=>{
+    const n=ctrl.length;if(n<2)return ctrl.slice();
+    if(!knots||knots.length!==n+deg+1){knots=[];for(let i=0;i<n+deg+1;i++)knots.push(i<=deg?0:(i>=n?n-deg:i-deg));}
+    const W=(w&&w.length===n)?w:ctrl.map(()=>1),t0=knots[deg],t1=knots[n],N=Math.max(24,n*8),pts=[];
+    for(let s=0;s<=N;s++){
+      const t=Math.min(t1-1e-12,t0+(t1-t0)*s/N);
+      let k=deg;while(k<n-1&&t>=knots[k+1])k++;
+      const d=[];for(let j=0;j<=deg;j++){const c=ctrl[k-deg+j],ww=W[k-deg+j];d.push([c[0]*ww,c[1]*ww,ww]);}
+      for(let r=1;r<=deg;r++)for(let j=deg;j>=r;j--){
+        const i=k-deg+j,den=knots[i+deg-r+1]-knots[i],a=den>1e-12?(t-knots[i])/den:0;
+        d[j]=[(1-a)*d[j-1][0]+a*d[j][0],(1-a)*d[j-1][1]+a*d[j][1],(1-a)*d[j-1][2]+a*d[j][2]];
+      }
+      pts.push([d[deg][0]/d[deg][2],d[deg][1]/d[deg][2]]);
+    }
+    return pts;
+  };
+  const doEnts=(list,M,depth)=>{
+    for(let i=0;i<list.length;i++){
+      const e=list[i],k=kind(e),Mo=mul(M,ocs(e));
+      if(e.t!=='DIMENSION'&&e.t!=='SEQEND'&&e.t!=='VERTEX'&&dimLayer(e)){skip('cotation (calque '+str(e,8)+')');
+        if(e.t==='POLYLINE')while(i+1<list.length&&list[i+1].t!=='SEQEND')i++;continue;}
+      switch(e.t){
+        case 'DIMENSION':{
+          // points de définition en coordonnées générales (10, 13, 14, 15) ; texte (11) en OCS
+          const ty=num(e,70,0)&7,P_=c=>tp(M,num(e,c,0),num(e,c+10,0));
+          if(ty===0||ty===1){
+            const a=P_(13),b=P_(14),pl=P_(10),rot=((num(e,50,0)%180)+180)%180;
+            const orient=ty===1?'a':(Math.abs(rot)<1e-6?'h':(Math.abs(rot-90)<1e-6?'v':null));
+            if(orient)dimsW.push({kind:'lin',orient,a,b,p:pl});else skip('cote tournée');
+          }else if(ty===3||ty===4){
+            const p10=P_(10),p15=P_(15),t11=tp(Mo,num(e,11,0),num(e,21,0));
+            const c=ty===4?p10:[(p10[0]+p15[0])/2,(p10[1]+p15[1])/2],r=Math.hypot(p15[0]-c[0],p15[1]-c[1]);
+            dimsW.push({kind:ty===4?'rad':'dia',c,r,t:t11});
+          }else skip('cote angulaire / ordonnée');
+          break;
+        }
+        case 'LINE':pushL(M,num(e,10,0),num(e,20,0),num(e,11,0),num(e,21,0),k);break;
+        case 'CIRCLE':pushA(Mo,num(e,10,0),num(e,20,0),num(e,40,0),0,2*Math.PI,k);break;
+        case 'ARC':pushA(Mo,num(e,10,0),num(e,20,0),num(e,40,0),num(e,50,0)*Math.PI/180,num(e,51,360)*Math.PI/180,k);break;
+        case 'LWPOLYLINE':{
+          const V=[];let v=null;
+          e.g.forEach(([c,x])=>{if(c===10){v=[+x,0,0];V.push(v);}else if(c===20&&v)v[1]=+x;else if(c===42&&v)v[2]=+x;});
+          const closed=(num(e,70,0)&1)===1;
+          for(let j=0;j+1<V.length;j++)seg(Mo,V[j],V[j+1],V[j][2],k);
+          if(closed&&V.length>2)seg(Mo,V[V.length-1],V[0],V[V.length-1][2],k);
+          break;
+        }
+        case 'POLYLINE':{
+          const flag=num(e,70,0);if(flag&(16|64)){skip('POLYLINE 3D');break;}
+          const V=[];let j=i+1;
+          for(;j<list.length&&list[j].t!=='SEQEND';j++)if(list[j].t==='VERTEX')V.push([num(list[j],10,0),num(list[j],20,0),num(list[j],42,0)]);
+          i=j; // VERTEX… SEQEND consommés
+          for(let q=0;q+1<V.length;q++)seg(Mo,V[q],V[q+1],V[q][2],k);
+          if((flag&1)&&V.length>2)seg(Mo,V[V.length-1],V[0],V[V.length-1][2],k);
+          break;
+        }
+        case 'ELLIPSE':{
+          const cx=num(e,10,0),cy=num(e,20,0),mx=num(e,11,1),my=num(e,21,0),ra=num(e,40,1);
+          let s=num(e,41,0),t=num(e,42,2*Math.PI);while(t<=s)t+=2*Math.PI;
+          const R=Math.hypot(mx,my),an=Math.atan2(my,mx);
+          if(Math.abs(ra-1)<1e-9){pushA(Mo,cx,cy,R,s+an,t+an,k);break;}
+          const N=Math.max(16,Math.ceil((t-s)/(Math.PI/48))),pts=[];
+          for(let q=0;q<=N;q++){const u=s+(t-s)*q/N,x=R*Math.cos(u),y=R*ra*Math.sin(u);
+            pts.push([cx+x*Math.cos(an)-y*Math.sin(an),cy+x*Math.sin(an)+y*Math.cos(an)]);}
+          pushPts(Mo,pts,false,k);break;
+        }
+        case 'SPLINE':{
+          const deg=num(e,71,3),ctrl=[],fit=[],knots=[],w=[];let c1=null,f1=null;
+          e.g.forEach(([c,x])=>{
+            if(c===10){c1=[+x,0];ctrl.push(c1);}else if(c===20&&c1)c1[1]=+x;
+            else if(c===11){f1=[+x,0];fit.push(f1);}else if(c===21&&f1)f1[1]=+x;
+            else if(c===40)knots.push(+x);else if(c===41)w.push(+x);});
+          const pts=ctrl.length>deg?nurbs(deg,ctrl,knots,w):fit;
+          pushPts(Mo,pts,(num(e,70,0)&1)===1&&ctrl.length<=deg,k);break;
+        }
+        case 'INSERT':{
+          if(/^\*D/i.test(str(e,2))){skip('cotation (bloc '+str(e,2)+')');break;} // bloc de cote anonyme
+          const b=blocks[str(e,2)];if(!b||depth>8){skip('INSERT');break;}
+          const sx=num(e,41,1),sy=num(e,42,1),ro=num(e,50,0)*Math.PI/180,co=Math.cos(ro),si=Math.sin(ro);
+          // insertion · rotation · échelle · −point de base du bloc (rangées / colonnes : 1 seule copie)
+          let T=[co*sx,si*sx,-si*sy,co*sy,num(e,10,0),num(e,20,0)];
+          T=mul(T,[1,0,0,1,-b.bx,-b.by]);
+          doEnts(b.ents,mul(Mo,T),depth+1);break;
+        }
+        case 'SEQEND':case 'VERTEX':case 'ATTRIB':break;
+        default:skip(e.t);
+      }
+    }
+  };
+  doEnts(ents,[K,0,0,K,0,0],0);
+  // repère des vues : y vers le bas, centré sur l'encombrement
+  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+  const bb=(x,y)=>{if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;};
+  out.forEach(e=>{
+    if(e.t==='L'){bb(e.x1,e.y1);bb(e.x2,e.y2);}
+    else if(e.t==='C'){bb(e.cx-e.r,e.cy-e.r);bb(e.cx+e.r,e.cy+e.r);}
+    else if(e.t==='A'){for(let q=0;q<=32;q++){const a=e.s+(e.e-e.s)*q/32;bb(e.cx+e.r*Math.cos(a),e.cy+e.r*Math.sin(a));}}
+    else if(e.t==='P')e.pts.forEach(p=>bb(p[0],p[1]));
+  });
+  if(!out.length){x0=y0=x1=y1=0;}
+  const mx=(x0+x1)/2,my=(y0+y1)/2,R=v=>Math.round(v*1e6)/1e6;
+  const els=out.map(e=>{
+    if(e.t==='L')return{t:'L',x1:R(e.x1-mx),y1:R(my-e.y1),x2:R(e.x2-mx),y2:R(my-e.y2),k:e.k};
+    if(e.t==='C')return{t:'C',cx:R(e.cx-mx),cy:R(my-e.cy),r:R(e.r),k:e.k};
+    if(e.t==='A')return{t:'A',cx:R(e.cx-mx),cy:R(my-e.cy),r:R(e.r),a0:R(-e.s),a1:R(-e.e),k:e.k}; // y retourné : sens horaire
+    return{t:'P',pts:e.pts.map(p=>[R(p[0]-mx),R(my-p[1])]),k:e.k};
+  });
+  const Q=p=>[R(p[0]-mx),R(my-p[1])];
+  const dims=dimsW.map(d=>d.kind==='lin'?{kind:'lin',orient:d.orient,a:Q(d.a),b:Q(d.b),p:Q(d.p)}:{kind:d.kind,c:Q(d.c),r:R(d.r),t:Q(d.t)});
+  return{els,dims,units:K,n:els.length,skipped,bbox:{w:R(x1-x0),h:R(y1-y0)},origin:{x:R(mx),y:R(my)}};
+}
 
 /* ═══════════════ 98-demarrage-fondu.js — demarrage fondu ═══════════════ */
 /* ---------- Démarrage : attendre le noyau OCCT, puis faire apparaître la pièce en fondu (2026-10-16-015) ----------
@@ -38085,7 +38323,7 @@ function viewFadeIn(){
   /* ═══════════════ E. cache géométrie ═══════════════ */
   const mepGeoCache=new Map(); // viewId → {ver,sig,geo}
   function mepViewSig(v){
-    let s=[mepRound(v.dir),mepRound(v.u),mepRound(v.v),v.bodyId||'',v.mode||'hide',v.tangent?1:0,
+    let s=[v.kind==='dxf'?'dxf:'+((v.dxf&&v.dxf.rev)||0):'',mepRound(v.dir),mepRound(v.u),mepRound(v.v),v.bodyId||'',v.mode||'hide',v.tangent?1:0,
       v.hlrExact===false?'soft':'exact',v.shade?1:0,v.render3d?(v.mirror?'1m':1):0,
       v.section?mepRound(v.section.p)+mepRound(v.section.n)+(v.section.pts?JSON.stringify(v.section.pts):''):'',v.detail?v.detail.cx+','+v.detail.cy+','+v.detail.r:'',mepOblOf(v)?'obl:'+mepOblOf(v).a+','+mepOblOf(v).k:'',mepPerspOf(v)?'persp:'+mepPerspOf(v).fov:''].join('|');
     /* l'ombrage et le rendu 3D dépendent de la couleur/opacité des corps :
@@ -38887,6 +39125,11 @@ function viewFadeIn(){
       pts.forEach(p=>{minx=Math.min(minx,p[0]);maxx=Math.max(maxx,p[0]);miny=Math.min(miny,p[1]);maxy=Math.max(maxy,p[1]);});
       return{minx,miny,maxx,maxy};
     }
+    if(e.t==='P'&&e.pts&&e.pts.length){
+      let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
+      e.pts.forEach(p=>{minx=Math.min(minx,p[0]);maxx=Math.max(maxx,p[0]);miny=Math.min(miny,p[1]);maxy=Math.max(maxy,p[1]);});
+      return{minx,miny,maxx,maxy};
+    }
     return null;
   }
   /* ═══════════════ G2. HLR exact OCCT ═══════════════ */
@@ -39046,6 +39289,11 @@ function viewFadeIn(){
   }
   /* ═══════════════ H. construction d'une vue ═══════════════ */
   function mepBuildGeo(view){
+    // vue DXF (2026-10-23) : géométrie importée telle quelle ; un détail pris dessus la rogne
+    {const par=view.kind==='detail'&&view.parent?mepView(mepSheet(),view.parent):null,dv=view.kind==='dxf'?view:(par&&par.kind==='dxf'?par:null);
+     if(dv){let els=((dv.dxf&&dv.dxf.els)||[]).map(e=>e.t==='P'?{t:'P',pts:e.pts.map(q=>q.slice()),k:e.k}:Object.assign({},e));
+       if(view!==dv&&view.detail)els=mepClipDetail(els,view.detail);
+       return{els,hatch:[],src:'dxf'};}}
     const geo={els:[],hatch:[],src:''};
     const b=mepBasisOf(view);view.dir=b.dir;view.u=b.u;view.v=b.v;
     const list=mepMeshesOf(view);
@@ -39576,6 +39824,62 @@ function viewFadeIn(){
     });
     mepSelect(view.id);
     return view;
+  }
+  /* ═══════════════ vue DXF importée (2026-10-23) ═══════════════
+     Le DXF est lu par mepDxfParse (src/98-01-import-dxf.js) et rangé DANS la vue (doc.mep) :
+     le projet reste autonome. Cotes, axes, accrochage et esquisse de planche s'y appliquent
+     comme sur une vue projetée ; un détail peut y être pris. */
+  function mepDxfPick(cb){
+    const inp=document.createElement('input');inp.type='file';inp.accept='.dxf,application/dxf,image/vnd.dxf';
+    inp.onchange=()=>{const f=inp.files&&inp.files[0];if(!f)return;
+      const rd=new FileReader();
+      rd.onload=()=>{let r=null;try{r=mepDxfParse(String(rd.result||''));}catch(e){r=null;}
+        if(!r||!r.n){mepStatus('DXF : aucun élément géométrique lisible dans « '+f.name+' ».');return;}
+        cb(r,f.name.replace(/\.[^.]+$/,''));};
+      rd.readAsText(f);};
+    inp.click();
+  }
+  function mepDxfSkipText(r){
+    const k=Object.keys(r.skipped||{});
+    return k.length?' — ignorés : '+k.map(t=>r.skipped[t]+' '+t).join(', '):'';
+  }
+  function mepDxfData(r,name,rev){return{name,els:r.els,n:r.n,bbox:r.bbox,units:r.units,skipped:r.skipped,rev};}
+  // cotes DIMENSION du DXF → cotes natives (distance h / v / alignée, Ø, R accrochés au cercle)
+  function mepDxfDims(sh,v,r){
+    const out=[];let miss=0;
+    const els=(v.dxf&&v.dxf.els)||[],S=q=>mepToSheet(v,q[0],q[1]);
+    (r.dims||[]).forEach(D=>{
+      if(D.kind==='lin'){
+        const A=S(D.a),B=S(D.b),Pl=S(D.p);
+        if(Math.hypot(B.x-A.x,B.y-A.y)<1e-9){miss++;return;}
+        out.push({id:mepUid('d'),kind:'dist',vid:v.id,vid2:null,a:{x:D.a[0],y:D.a[1]},b:{x:D.b[0],y:D.b[1]},
+          orient:D.orient,off:mepDimOffsetFromPts(A.x,A.y,B.x,B.y,D.orient,Pl),ref:false,tol:null});
+      }else{
+        const i=els.findIndex(e=>(e.t==='C'||e.t==='A')&&Math.hypot(e.cx-D.c[0],e.cy-D.c[1])<1e-3&&Math.abs(e.r-D.r)<1e-3);
+        if(i<0){miss++;return;}
+        out.push({id:mepUid('d'),kind:D.kind,vid:v.id,vid2:null,a:{x:els[i].cx,y:els[i].cy,hint:{t:'ctr',i}},b:{x:D.t[0],y:D.t[1]},ref:false,tol:null});
+      }
+    });
+    if(out.length)mepEdit('cotes du DXF',()=>{out.forEach(d=>sh.dims.push(d));});
+    return{n:out.length,miss};
+  }
+  function mepImportDxf(){
+    mepDxfPick((r,name)=>{
+      const sh=mepSheet();
+      const v=mepAddView({kind:'dxf',vk:'',label:'',dxf:mepDxfData(r,name,1),mode:'wire',tangent:false,hlrExact:false});
+      const cd=mepDxfDims(sh,v,r);
+      mepStatus('DXF « '+name+' » importé : '+r.n+' élément(s), '+mepFmtNum(r.bbox.w,1)+' × '+mepFmtNum(r.bbox.h,1)+' mm'+
+        (cd.n?' ; '+cd.n+' cote(s) reprise(s) en cotes du plan':'')+(cd.miss?' ('+cd.miss+' non reprise(s))':'')+mepDxfSkipText(r)+'.');
+      mepSideShow();mepRender();return v;
+    });
+  }
+  function mepDxfReplace(v){
+    mepDxfPick((r,name)=>{
+      mepEdit('DXF remplacé',()=>{v.dxf=mepDxfData(r,name,((v.dxf&&v.dxf.rev)||0)+1);});
+      mepGeoCache.delete(v.id);
+      mepStatus('DXF de la vue remplacé par « '+name+' » ('+r.n+' élément(s))'+mepDxfSkipText(r)+'. Les cotes gardent leurs n° d’éléments.');
+      mepSideShow();mepRender();
+    });
   }
   function mepSelect(id){mepSt.sel=id;mepSt.selDim=null;mepSt.selAxis=null;mepSideShow();}
   /* ═══════════════ J. commandes de vues ═══════════════ */
@@ -43329,7 +43633,7 @@ function viewFadeIn(){
   function mepOrdPtAt(sh,d,P){
     const v=mepView(sh,d.vid);if(!v)return -1;
     let best=-1,bd=Infinity;
-    [d.o].concat(d.pts||[]).forEach((q,k)=>{const S=mepToSheet(v,q.x,q.y),e=d.axis==='y'?Math.abs(S.y-P.y):Math.abs(S.x-P.x);if(e<bd){bd=e;best=k-1;}});
+    [d.o].concat(d.pts||[]).forEach((q,k)=>{const S=mepToSheet(v,q.x,q.y),j=(+q.jog||0)*v.scale,e=d.axis==='y'?Math.abs(S.y+j-P.y):Math.abs(S.x+j-P.x);if(e<bd){bd=e;best=k-1;}});
     return best;
   }
   function mepOrdDelPt(sh,d,i){
@@ -43351,6 +43655,8 @@ function viewFadeIn(){
     const hh=MEP_TEXT_STYLE.dimH,gap=Math.max(0.8,MEP_DIM_STYLE.gap||1),oS=mepToSheet(v,d.o.x,d.o.y);
     const line=d.axis==='y'?oS.x+(+d.off||0):oS.y+(+d.off||0);
     const hi=(mepSt.ordPt&&mepSt.ordPt.id===d.id)?mepSt.ordPt.i:null;
+    // une valeur désignée : elle seule en rouge (le reste du groupe en couleur normale), Suppr la retire
+    if(hi!==null){const un=c=>String(c||'').replace(/\s*mepDimSel\b/g,'');L=Object.assign({},L,{class:un(L.class)});T=Object.assign({},T,{class:un(T.class)});}
     const Ls=Object.assign({},L,{class:L.class+' mepDimSel'}),Ts=Object.assign({},T,{class:T.class+' mepDimSel'});
     [d.o].concat(d.pts||[]).forEach((p,k)=>{
       const on=hi!==null&&k-1===hi,L1=on?Ls:L,T1=on?Ts:T;
@@ -43362,14 +43668,22 @@ function viewFadeIn(){
         if(!pp){const a={x,y,'text-anchor':anchor};if(tr)a.transform=tr;draw('text',Object.assign(a,T1)).textContent=s;return;}
         mepDimDrawText(draw,T1,pp.main,pp.up,pp.lo,x,y,anchor,tr,false,pp.sym,pp.par,pp.post);
       };
+      // cassure (2026-10-23) : rappel droit, coude oblique sur 3 mm, puis droit jusqu'à la ligne des valeurs
+      const J=(k>0&&+p.jog)?+p.jog*v.scale:0;
       if(d.axis==='y'){
-        const sg=line<P.x?-1:1;
-        draw('line',Object.assign({x1:P.x+sg*gap,y1:P.y,x2:line,y2:P.y},L1));
-        put(line+sg*1,P.y+hh*0.5,sg<0?'end':'start',null);
+        const sg=line<P.x?-1:1,y2=P.y+J;
+        if(J&&Math.abs(line-P.x)>8){const b1=line-sg*7,b2=line-sg*4;
+          draw('line',Object.assign({x1:P.x+sg*gap,y1:P.y,x2:b1,y2:P.y},L1));draw('line',Object.assign({x1:b1,y1:P.y,x2:b2,y2:y2},L1));
+          draw('line',Object.assign({x1:b2,y1:y2,x2:line,y2:y2},L1));}
+        else draw('line',Object.assign({x1:P.x+sg*gap,y1:P.y,x2:line,y2:P.y},L1));
+        put(line+sg*1,(J&&Math.abs(line-P.x)>8?y2:P.y)+hh*0.5,sg<0?'end':'start',null);
       }else{
-        const sg=line<P.y?-1:1,x=P.x+hh*0.5,y=line+sg*1;
-        draw('line',Object.assign({x1:P.x,y1:P.y+sg*gap,x2:P.x,y2:line},L1));
-        put(x,y,sg<0?'start':'end','rotate(-90 '+x.toFixed(3)+' '+y.toFixed(3)+')');
+        const sg=line<P.y?-1:1,x2=P.x+J,ok=J&&Math.abs(line-P.y)>8,xt=(ok?x2:P.x)+hh*0.5,y=line+sg*1;
+        if(ok){const b1=line-sg*7,b2=line-sg*4;
+          draw('line',Object.assign({x1:P.x,y1:P.y+sg*gap,x2:P.x,y2:b1},L1));draw('line',Object.assign({x1:P.x,y1:b1,x2:x2,y2:b2},L1));
+          draw('line',Object.assign({x1:x2,y1:b2,x2:x2,y2:line},L1));}
+        else draw('line',Object.assign({x1:P.x,y1:P.y+sg*gap,x2:P.x,y2:line},L1));
+        put(xt,y,sg<0?'start':'end','rotate(-90 '+xt.toFixed(3)+' '+y.toFixed(3)+')');
       }
     });
   }
@@ -44226,7 +44540,7 @@ function viewFadeIn(){
   }
   // géométrie exacte (noyau) : la seule sur laquelle des références peuvent être MISES À JOUR —
   // à l'ouverture, les vues passent d'abord par le maillage (arêtes de triangles)
-  function mepGeoExact(g){return !!(g&&/^OCCT/.test(g.src||''));}
+  function mepGeoExact(g){return !!(g&&(/^OCCT/.test(g.src||'')||g.src==='dxf'));} // DXF : géométrie exacte et figée
   function mepAxisSymMigrate(v,ann){
     // axe de symétrie d'avant V0.3.28 (figé : a, b) → 2 droites parallèles symétriques autour de lui
     const g=mepGeoOf(v);if(!mepGeoExact(g))return;
@@ -44308,9 +44622,17 @@ function viewFadeIn(){
     mepRender();
   }
   function mepToolSync(){/* plus de barre d'outils interne — le panneau latéral gère l'outil actif */}
-  function mepDimDragStart(sh,P,dim){
+  function mepDimDragStart(sh,P,dim,ev){
     mepSt.selDim=dim.id;mepSt.sel=null;mepSt.entSel=[];
     mepSt.ordPt=dim.kind==='ord'?{id:dim.id,i:mepOrdPtAt(sh,dim,P)}:null;
+    // ordonnée + Ctrl : cassure — glisser décale la valeur le long de l'axe (ligne de rappel coudée),
+    // Ctrl + clic sans glisser la retire
+    if(dim.kind==='ord'&&ev&&(ev.ctrlKey||ev.metaKey)&&mepSt.ordPt.i>=0){
+      const q=dim.pts[mepSt.ordPt.i];
+      mepSt.pick={kind:'dimDrag',id:dim.id,sx:P.x,sy:P.y,px0:P.px,py0:P.py,jog:{i:mepSt.ordPt.i,j0:+q.jog||0},moved:false,undoPushed:false};
+      mepStatus('Cassure : glissez pour dégager la valeur (Ctrl + clic sans glisser : la retire).');
+      mepSideShow();mepRender();return;
+    }
     const w=mepDimWorld(sh,dim);
     const tp=mepDimTextPos(sh,dim);
     const labelHit=!!tp&&Math.hypot(P.x-tp.x,P.y-tp.y)<=18/(mepSt.zoom||1);
@@ -44346,7 +44668,8 @@ function viewFadeIn(){
           :'Aligner : aucune cote parallèle à la référence.');
         mepSt.selDim=ref.id;mepSideShow();mepRender();return;
       }
-      {const dA=(ev.shiftKey||ev.ctrlKey||ev.metaKey)?mepDimAt(sh,P.x,P.y):null;
+      {let dA=(ev.shiftKey||ev.ctrlKey||ev.metaKey)?mepDimAt(sh,P.x,P.y):null;
+       if(dA&&dA.kind==='ord'&&(ev.ctrlKey||ev.metaKey)&&!ev.shiftKey){mepDimDragStart(sh,P,dA,ev);return;} // Ctrl : cassure d'ordonnée
        if(dA){ // Maj/Ctrl + clic sur une cote : sélection multiple (la cote déjà active y entre aussi)
          const lot=mepSt.lot||{views:new Set(),dims:new Set()};
          if(mepSt.selDim&&mepSt.selDim!==dA.id&&!lot.dims.size)lot.dims.add(mepSt.selDim);
@@ -44399,7 +44722,7 @@ function viewFadeIn(){
       // cote ? → sélection + glisser pour la déplacer (2ᵉ appui rapproché = double-clic)
       if(mepDimPressDbl(sh,P,ev))return;
       const dim=mepDimAt(sh,P.x,P.y);
-      if(dim){mepDimDragStart(sh,P,dim);return;}
+      if(dim){mepDimDragStart(sh,P,dim,ev);return;}
       const axis=mepAxisAt(sh,P.x,P.y);
       if(axis){
         mepSt.selAxis={vid:axis.vid,id:axis.id,ak:axis.ak};mepSt.sel=null;mepSt.selDim=null;mepSt.entSel=[];
@@ -44475,7 +44798,7 @@ function viewFadeIn(){
       if(!mepSt.dim){
         if(mepDimPressDbl(sh,P,ev))return;
         const dim=mepDimAt(sh,P.x,P.y);
-        if(dim){mepDimDragStart(sh,P,dim);return;}
+        if(dim){mepDimDragStart(sh,P,dim,ev);return;}
       }
       // distance point→point en cours : on garde le flux 2 points + placement
       if(mepSt.dim&&mepSt.dim.kind==='dist'&&!mepSt.dim.b){
@@ -44813,7 +45136,11 @@ function viewFadeIn(){
       return;
     }
     if(pk.kind==='dimDrag'){
-      if(pk.moved)mepEdit('déplacement cote',()=>{},true);
+      if(pk.moved)mepEdit(pk.jog?'cassure d’ordonnée':'déplacement cote',()=>{},true);
+      else if(pk.jog){ // Ctrl + clic sans glisser : cassure retirée
+        const sh=mepSheet(),d=sh.dims.find(x=>x.id===pk.id),q=d&&d.pts&&d.pts[pk.jog.i];
+        if(q&&q.jog){mepEdit('cassure retirée',()=>{delete q.jog;});mepStatus('Cassure retirée.');}
+      }
       mepSt.pick=null;
       return;
     }
@@ -45587,6 +45914,13 @@ function viewFadeIn(){
       d.b={x:(sx-v.x)/v.scale,y:(sy-v.y)/v.scale};
       return true;
     }
+    if(d.kind==='ord'&&pk&&pk.jog){ // cassure : la valeur glisse le long de l'axe
+      const q=d.pts&&d.pts[pk.jog.i];if(!q)return false;
+      const v1=mepView(sh,d.vid),sc=(v1&&v1.scale)||1;
+      q.jog=+(pk.jog.j0+(d.axis==='y'?P.y-pk.sy:P.x-pk.sx)/sc).toFixed(3); // mm vue (suit l'échelle)
+      if(Math.abs(q.jog)<1e-3)delete q.jog;
+      return true;
+    }
     if(d.kind==='ord'&&pk&&pk.off0!=null){ // tout le groupe glisse perpendiculairement à l'axe
       d.off=(+pk.off0||0)+(d.axis==='y'?P.x-pk.sx:P.y-pk.sy);
       return true;
@@ -46153,7 +46487,7 @@ function viewFadeIn(){
   }
   function mepSideView(root,v,sh){
     const h=document.createElement('h4');
-    h.textContent=v.kind==='section'?'Coupe '+(v.label||''):(v.kind==='detail'?'Détail '+(v.label||''):
+    h.textContent=v.kind==='dxf'?'Vue DXF « '+((v.dxf&&v.dxf.name)||'?')+' »':v.kind==='section'?'Coupe '+(v.label||''):(v.kind==='detail'?'Détail '+(v.label||''):
       (v.kind==='proj'?'Projection '+(v.label||'')+' ('+((MEP_PROJ[v.proj||'']||{}).lab||'?')+')':'Vue '+(v.label||v.vk||'')));
     root.appendChild(h);
     const row=(lab,el)=>{
@@ -46190,6 +46524,18 @@ function viewFadeIn(){
     });
     sel.onchange=()=>{mepEdit('échelle',()=>{v.scale=+sel.value;});};
     row('Échelle',sel);
+    if(v.kind==='dxf'){
+      const D=v.dxf||{},act=document.createElement('div');act.className='row';
+      const bR=document.createElement('button');bR.textContent='Remplacer le DXF…';bR.title='Charger un autre DXF dans cette vue (cotes et position gardées)';bR.onclick=()=>mepDxfReplace(v);
+      const bF=document.createElement('button');bF.textContent='Cadrer';bF.onclick=()=>mepFitViewContent(v);
+      const bD=document.createElement('button');bD.textContent='Supprimer';bD.className='danger';bD.onclick=()=>mepDelView(v.id);
+      [bR,bF,bD].forEach(b=>act.appendChild(b));root.appendChild(act);
+      const n=document.createElement('div');n.className='note';
+      n.textContent=(D.n||0)+' élément(s), '+mepFmtNum((D.bbox&&D.bbox.w)||0,1)+' × '+mepFmtNum((D.bbox&&D.bbox.h)||0,1)+' mm (vraie grandeur)'+
+        mepDxfSkipText(D)+'. Cotes, axes, perçages et esquisse de planche (lignes, cercles…) s’y accrochent comme sur une vue projetée ; Détail possible.';
+      root.appendChild(n);
+      return;
+    }
     // corps
     const body=document.createElement('select');
     const o0=document.createElement('option');o0.value='';o0.textContent='Assemblée';
@@ -46821,6 +47167,7 @@ function viewFadeIn(){
   // après restauration d'un instantané documentaire : redessiner la planche
   window.mepRefresh=()=>{try{mepRender();}catch(e){}};
   window.mepSetTool=mepSetTool;
+  window.mepImportDxf=mepImportDxf;
   window.mepSetAxisMode=mepSetAxisMode;
   // points d'entrée réservés aux tests automatisés (jamais activés dans l'app)
   if(window.__MEP_TEST_HOOKS__){
@@ -46859,7 +47206,7 @@ function viewFadeIn(){
       holeText:mepHoleFeatureText,
       holeCallout:mepHoleCallout,
       fmt:mepFmtNum,
-      geo:view=>mepGeoOf(view),geoClear:()=>mepGeoCache.clear(),ptRefresh:(v,q,pr)=>mepPtRefresh(mepSheet(),v,q,pr),dimPts:d=>mepDimPtsRefresh(mepSheet(),d),ordClick:(P,ax)=>mepOrdClick(mepSheet(),P,ax),ordEnd:()=>{mepSt.ord=null;},selDim:id=>{mepSt.selDim=id;},holeTolText:(t,tol)=>mepTolMarks(mepHoleTolText(t,tol)),dimText:d=>mepDimText(d,mepDimMeasure(mepSheet(),d)),ordPtAt:(d,P)=>mepOrdPtAt(mepSheet(),d,P),ordDelPt:(d,i)=>mepOrdDelPt(mepSheet(),d,i),ordValue:(d,p)=>mepOrdValue(d,p),drawDim:(mk,d)=>mepDrawDim(mk,d,mepSheet()),dimPressDbl:(P,ev)=>mepDimPressDbl(mepSheet(),P,ev||{}),dimAlignTo:(ref,ids)=>mepDimAlignTo(mepSheet(),ref,ids),perspCam:v=>mepPerspCam(v),threadEls:v=>mepThreadEls(v),oblShear:(sh,v)=>mepOblShear(sh,v),
+      geo:view=>mepGeoOf(view),geoClear:()=>mepGeoCache.clear(),dxfView:(txt,name)=>{const r=mepDxfParse(txt);const v=mepAddView({kind:'dxf',vk:'',label:'',dxf:mepDxfData(r,name||'t',1),mode:'wire'});v._dims=mepDxfDims(mepSheet(),v,r);return v;},dimMeasure:d=>mepDimMeasure(mepSheet(),d),ptRefresh:(v,q,pr)=>mepPtRefresh(mepSheet(),v,q,pr),dimPts:d=>mepDimPtsRefresh(mepSheet(),d),ordClick:(P,ax)=>mepOrdClick(mepSheet(),P,ax),ordEnd:()=>{mepSt.ord=null;},ordPick:(d,i)=>{mepSt.selDim=d?d.id:null;mepSt.ordPt=d?{id:d.id,i}:null;},selDim:id=>{mepSt.selDim=id;},holeTolText:(t,tol)=>mepTolMarks(mepHoleTolText(t,tol)),dimText:d=>mepDimText(d,mepDimMeasure(mepSheet(),d)),ordPtAt:(d,P)=>mepOrdPtAt(mepSheet(),d,P),ordDelPt:(d,i)=>mepOrdDelPt(mepSheet(),d,i),ordValue:(d,p)=>mepOrdValue(d,p),drawDim:(mk,d)=>mepDrawDim(mk,d,mepSheet()),dimPressDbl:(P,ev)=>mepDimPressDbl(mepSheet(),P,ev||{}),dimAlignTo:(ref,ids)=>mepDimAlignTo(mepSheet(),ref,ids),perspCam:v=>mepPerspCam(v),threadEls:v=>mepThreadEls(v),oblShear:(sh,v)=>mepOblShear(sh,v),
       imgRect:(view,img)=>mepImg3dRect(view,img),
       shadeTri:(view,A,B,C,col,op)=>mepShadeTri(view,A,B,C,col,op),
       shadeFaces:view=>mepShadedFaces(view),

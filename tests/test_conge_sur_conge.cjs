@@ -4,6 +4,9 @@
 // (V0.3.3 : le rejeu recoud les faces jumelles qu'un congé a scindées — occUnify en fin
 //  de corps quand un xfillet est présent — d'où 148 arêtes au lieu de 153 ; les jonctions
 //  tangentes de 2 mm et 3,15 mm restent présentes et bien grises.)
+// (2026-10-23 : les COUTURES des faces de révolution et la jonction de deux morceaux du MÊME
+//  cylindre ne sont plus des arêtes — 143 arêtes, 58 tangentes ; la jonction de 2 mm était
+//  entre deux morceaux d'un même congé cylindrique : elle disparaît au lieu d'être grise.)
 const fs=require('fs'),vm=require('vm'),path=require('path');
 const ROOT=path.join(__dirname,'..');
 globalThis.__dirname=path.join(ROOT,'occt');
@@ -35,7 +38,7 @@ const json=fs.readFileSync(path.join(ROOT,'Exemples','Support Pédale Déportée
   const o=await vm.runInContext('(async()=>{'+body+'})()',ctx);
   console.log('arêtes classifiées : '+o.tot+' — vives : '+o.vives+' — tangentes : '+o.tangentes);
   console.log('fragments reconvertis en grises (t=2mm : '+o.t0+', t=3.15mm : '+o.t315+', 7mm vives restantes : '+o.v700+')');
-  const bon=(o.tot===148&&o.vives===85&&o.tangentes===63&&o.t0&&o.t315&&!o.v700);
+  const bon=(o.tot===143&&o.vives===85&&o.tangentes===58&&!o.t0&&o.t315&&!o.v700);
   console.log(bon?'TOUT EST CONFORME':'ÉCART — TOUTE SUITE ROUGE');
   process.exit(bon?0:1);
 })().catch(e=>{console.log('FATAL',String((e&&e.message)||e).slice(0,600));process.exit(1);});

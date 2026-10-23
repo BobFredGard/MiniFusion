@@ -20,7 +20,8 @@ const SUITES = [
   'test_undo_document',
   'test_conge_tangent',
   'test_fao_outils',
-  'test_fao_percage'
+  'test_fao_percage',
+  'test_repeat_circ_tour'
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {

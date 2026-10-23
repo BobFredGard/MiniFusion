@@ -115,6 +115,11 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
         T.selDim(dD.id);window.mepSetTool('ordx');
         T.ordClick({x:200,y:165,px:0,py:0},'x');T.ordEnd();window.mepSetTool('select');
         out.ordAdd=(sh.dims.length-nBefore)+'|'+(dD.pts.length-ptsBefore);
+        // 2026-10-23 : valeur désignée seule en rouge ; cassure = rappel coudé (3 traits), valeur décalée
+        T.ordPick(dD,0);const rS=recD(dD);T.ordPick(null);
+        const red=rS.lines.filter(l=>/mepDimSel/.test(l.class||'')).length,redT=rS.texts.filter(t=>/mepDimSel/.test(t.class||'')).length;
+        const n0=recD(dD).lines.length;dD.pts[0].jog=8;const rJ=recD(dD);delete dD.pts[0].jog;
+        out.ordPick=red===1&&redT>=1&&redT<rS.texts.length&&rJ.lines.length===n0+2;out.ordPickDbg=red+'/'+redT+' traits rouges, '+n0+'→'+rJ.lines.length+' traits avec cassure';
         // perçage : tolérance posée après le 1er Ø de l'étiquette
         out.holeTol=[T.holeTolText('Ø8 ↧12',{m:'cls',cls:'H7'}),T.holeTolText('M10×1.25 ↧18\\nØ8.5 ↧25',{m:'pm',s:0.05}),
           T.holeTolText('Ø6.6 déb.',{m:'dbl',hi:0.1,lo:-0.05}),T.holeTolText('Ø6.6 déb.',null)].join(' | ');
@@ -285,6 +290,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   console.log('  · ombrage oblique : '+r.shadeObl);
   A(r.shadeObl==='[[60,0],[74.142,-14.142],[74.142,-34.142]]'&&r.shadeOrtho===null,'ombrage : face de chant en orthogonale, vue et cisaillée en cavalière');
   console.log('  · filetage : dessus '+r.thTop+' ; coupe '+r.thSec+' ; face '+r.thFr);
+  A(r.ordPick,'ordonnées : valeur désignée seule en rouge, cassure en 3 traits ('+r.ordPickDbg+')');
   A(r.thTop==='[["A",30,-20,4,4.712,"thread"]]','vue en bout (entrée vue) : 3/4 de cercle fin au Ø nominal 8');
   A(r.thDet===r.thTop,'vue de détail : même représentation du filetage que sa vue mère');
   A(r.thBot===0,'vue de dessous (trou borgne, entrée cachée) : pas de 3/4 de cercle');

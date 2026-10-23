@@ -1419,6 +1419,24 @@ function occSharpEdges(shape){
     const fx=new occt.TopExp_Explorer_2(shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,SH);bin.push(fx);
     while(fx.More()){const f=occt.TopoDS.Face_1(fx.Current());bin.push(f);faces.push(f);fx.Next();}
     const fmap=new Map();
+    // 2026-10-23 : COUTURES — une face de révolution (cylindre, cône…) est bordée deux fois par
+    // la même arête (sa couture) : vue deux fois DANS LA MÊME FACE. Ce n'est pas une arête de la
+    // pièce : ni tracée ni sélectionnable. Idem pour la jonction de deux morceaux du MÊME
+    // cylindre (perçage repassé, découpe coaxiale) : un seul cylindre à l'écran.
+    const seam=new Set(),cyl=faces.map(f=>{
+      try{const ad=new occt.BRepAdaptor_Surface_2(f,true);bin.push(ad);
+        if(ad.GetType()!==occt.GeomAbs_SurfaceType.GeomAbs_Cylinder)return null;
+        const C=ad.Cylinder(),A=C.Axis(),d=A.Direction(),o=A.Location();
+        return{r:C.Radius(),d:[d.X(),d.Y(),d.Z()],o:[o.X(),o.Y(),o.Z()]};
+      }catch(err){return null;}
+    });
+    const sameCyl=fl=>{
+      if(fl.length!==2)return false;const a=cyl[fl[0]],b=cyl[fl[1]];if(!a||!b)return false;
+      if(Math.abs(a.r-b.r)>1e-6)return false;
+      const c=a.d[0]*b.d[0]+a.d[1]*b.d[1]+a.d[2]*b.d[2];if(Math.abs(Math.abs(c)-1)>1e-9)return false;
+      const w=[b.o[0]-a.o[0],b.o[1]-a.o[1],b.o[2]-a.o[2]],t=w[0]*a.d[0]+w[1]*a.d[1]+w[2]*a.d[2];
+      return Math.hypot(w[0]-t*a.d[0],w[1]-t*a.d[1],w[2]-t*a.d[2])<1e-6; // même axe
+    };
     faces.forEach((f,fi)=>{
       const ee=new occt.TopExp_Explorer_2(f,occt.TopAbs_ShapeEnum.TopAbs_EDGE,SH);bin.push(ee);
       while(ee.More()){
@@ -1431,7 +1449,7 @@ function occSharpEdges(shape){
             if(s.len>1e-6){
               const k=ekey([m.X(),m.Y(),m.Z()],s.len);
               if(!fmap.has(k))fmap.set(k,[]);
-              if(!fmap.get(k).includes(fi))fmap.get(k).push(fi);
+              if(!fmap.get(k).includes(fi))fmap.get(k).push(fi);else seam.add(k); // 2ᵉ passage dans la même face
             }
           }
         }catch(err){}
@@ -1455,6 +1473,7 @@ function occSharpEdges(shape){
               seen.add(kk);
               let sharp=true;
               const fl=fmap.get(kk)||[];
+              if((seam.has(kk)&&fl.length<=1)||sameCyl(fl)){ex.Next();continue;} // couture : pas une arête
               if(fl.length>=2){
                 try{sharp=(occt.BRep_Tool.Continuity_1(e,faces[fl[0]],faces[fl[1]])===occt.GeomAbs_Shape.GeomAbs_C0);}
                 catch(err){sharp=true;}

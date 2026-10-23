@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**303 versions**, de `2026-09-28b` à `V0.4.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**304 versions**, de `2026-09-28b` à `V0.4.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4542,3 +4542,13 @@ Retours utilisateur (« enlever les 3 .cps Autodesk de GitHub », « un fichier 
 - **Édition du cartouche** : les cotes horizontales/verticales sont tracées au niveau du point coté (rappel pointillé vers la référence) — les séparateurs des deux rangées, à la même abscisse, avaient leurs cotes superposées sur la ligne du haut ; une étiquette qui en recouvre une autre descend jusqu'à une place libre ; bascule « Textes » pour voir aussi les cotes de placement des textes.
 
 Tests : G-code avant / après comparé pour les 3 machines (arrosage, centre outil, sans arrosage, 3+2) : identique ; tests FAO post verts. `test_mise_en_plan` (FORMAT A3-H ; cartouche Standard en édition : 9 cotes X, 24 étiquettes, 0 chevauchement). `npm run ci` vert. Non vu à l'écran (navigateur intégré indisponible).
+
+## V0.4.5 - Plan : import DXF, ordonnées unitaires et cassure ; CAO : coutures masquées, répétition « quantité »
+Retours utilisateur (« importer un DXF dans la mise en plan et le coter », « cotes du DXF : natives ou supprimées », « ordonnées : sélection unitaire en rouge, Suppr, cassure avec Ctrl », « pourquoi ce cylindre coupé en 2 ? », « enlever l'arête verticale des cylindres », « 6, c'est l'original + 5 », « l'icône verte ne garde pas son statut »).
+- **Import DXF** (PLAN → Vues → DXF) : `src/98-01-import-dxf.js` (`mepDxfParse`, pur) lit LINE, CIRCLE, ARC, LWPOLYLINE / POLYLINE (renflements → arcs), ELLIPSE, SPLINE (NURBS), INSERT (blocs imbriqués, échelle, rotation, miroir), unités `$INSUNITS`, types de trait interrompus → cachés. Nouvelle vue `kind:'dxf'` : géométrie rangée dans le projet, exacte pour l'accrochage, la cotation, les axes, l'esquisse liée ; détail possible ; « Remplacer le DXF… ». Graphisme des cotes jamais dessiné (DIMENSION, blocs `*D…`, calques COT / DIM) ; DIMENSION linéaires, alignées, Ø et R → cotes natives du plan.
+- **Ordonnées** : valeur désignée seule en rouge (le groupe en couleur normale), Suppr la retire ; Ctrl + glisser = cassure (rappel coudé, valeur décalée le long de l'axe), Ctrl + clic la retire.
+- **Coutures** : la couture des faces de révolution et la jonction de deux morceaux du même cylindre ne sont plus des arêtes (ni tracées, ni sélectionnables).
+- **Répétition** : champ « Quantité » original compris (stocké : copies = quantité − 1) ; circulaire sur un tour complet : pas = 360° / quantité (l'ancien pas 360° / copies posait la dernière copie SUR l'original : perçage doublé, paroi scindée) ; anciens projets réparés au chargement (copie superflue retirée, positions gardées).
+- **Bouton ⟲ (orbite libre)** : l'état était bien mémorisé mais le bouton se colorait avant d'être dans la page.
+
+Tests : `test_mise_en_plan` (vue DXF : polyligne, cercle, texte ignoré, coin accroché ; cotes du DXF retirées, 80 et Ø10 reprises) ; `test_mep_hachures_cotes` (valeur d'ordonnée seule en rouge, cassure 3 traits) ; `test_conge_sur_conge` réaligné (143 arêtes, 58 tangentes, vives 85 inchangées) ; nouveau `test_repeat_circ_tour` (pas 60° pour 6, secteur 90°, « Perçages » 6 → 5 copies, aucune à 360°). Bouton ⟲ vérifié dans l'appli après rechargement. `npm run ci` vert. Non vus à l'écran : import d'un vrai DXF, ordonnées à la souris.

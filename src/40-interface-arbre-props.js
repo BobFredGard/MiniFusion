@@ -475,16 +475,20 @@ function repRot(v,axis,deg){
   const u=repNorm(axis),t=deg*Math.PI/180,c=Math.cos(t),s=Math.sin(t),uxv=repCross(u,v),ud=repDot(u,v);
   return repAdd(repAdd(repScale(v,c),repScale(uxv,s)),repScale(u,ud*(1-c)));
 }
+// pas angulaire d'une répétition circulaire (2026-10-23) : sur un tour complet, l'angle se
+// partage entre original + copies (6 trous à 60°) — la dernière copie ne retombe plus sur
+// l'original ; sur un secteur, original et dernière copie sont aux deux bornes.
+function repCircStep(c){const a=+c.angle||360,n=+c.copies||1;return Math.abs(a)>=360-1e-9?a/(n+1):a/n;}
 function repTransformPoint(p,i,cfg){const c=cfg||repMode,t=c.mode||c.type;
   const v=[+(p&&p[0]||0),+(p&&p[1]||0),+(p&&p[2]||0)];
   if(t==='lin')return repAdd(v,repScale(repAxisVec(c),(+c.dist||0)*i));
-  if(t==='circ')return repRot(v,repAxisVec(c),(+c.angle||360)*i/(+c.copies||1));
+  if(t==='circ')return repRot(v,repAxisVec(c),repCircStep(c)*i);
   const n=repPlaneN(c);return repAdd(v,repScale(n,-2*repDot(v,n)));
 }
 function repTransformVec(v,i,cfg){const c=cfg||repMode,t=c.mode||c.type;
   const a=[+(v&&v[0]||0),+(v&&v[1]||0),+(v&&v[2]||0)];
   if(t==='lin')return a;
-  if(t==='circ')return repRot(a,repAxisVec(c),(+c.angle||360)*i/(+c.copies||1));
+  if(t==='circ')return repRot(a,repAxisVec(c),repCircStep(c)*i);
   const n=repPlaneN(c);return repAdd(a,repScale(n,-2*repDot(a,n)));
 }
 let repGenBusy=false; // garde-fou : une régénération ne s'emboîte jamais (rejeu non borné)
@@ -711,6 +715,13 @@ function docSanitise(){
   const repIds=new Set(doc.features.filter(f=>f.type==='repeat').map(f=>f.id));
   doc.features=doc.features.filter(f=>{if(f.repeatId&&!repIds.has(f.repeatId)){orph++;return false;}return true;});
   doc.features.forEach(f=>{if(f.type==='repeat'){const c=repMaxCopies(f.copies);if(c!==Math.floor(+f.copies||1))cap++;f.copies=c;}});
+  // 2026-10-23 : répétition circulaire sur un tour complet — l'ancien pas (360°/copies) posait la
+  // dernière copie SUR l'original (perçage doublé, paroi scindée). Le nouveau pas partage le tour
+  // entre original + copies : on retire cette copie superflue, la pièce garde ses positions.
+  doc.features.forEach(f=>{
+    if(f.type!=='repeat'||f.q)return;f.q=1;
+    if(f.mode==='circ'&&Math.abs(+f.angle||360)>=360-1e-9&&f.copies>=2){f.copies--;cap++;try{repGenChildren(f);}catch(e){}}
+  });
   const used=new Set(doc.features.map(f=>f.sketchId).filter(Boolean));
   doc.sketches=(doc.sketches||[]).filter(x=>{
     if(used.has(x.id))return true;
@@ -977,7 +988,7 @@ function applyRepPattern(){
   // La répétition devient une FONCTION réelle (type 'repeat') : elle garde ses paramètres,
   // ses fonctions sources (base) et ses instances (children, créées par repGenChildren).
   const rp={id:uid('rp'),type:'repeat',name:repTypeName(repMode.type,repMode),mode:repMode.type,
-    copies:repMaxCopies(repMode.copies),dist:repMode.dist,angle:repMode.angle,
+    copies:repMaxCopies(repMode.copies),q:1,dist:repMode.dist,angle:repMode.angle,
     axis:repMode.axis,plane:repMode.plane,dir:repMode.dir,planeN:repMode.planeN,
     plane2:repMode.plane2||undefined,planeN2:repMode.planeN2||undefined,
     base:base.map(f=>f.id),children:[],visible:true};
@@ -1006,7 +1017,10 @@ function renderRepPanel(){
   const h=document.createElement('div');h.innerHTML='<b>🔁 Répétition</b><br><span class="note">Choisissez les fonctions à répéter ci-dessous (cases à cocher). Dans l\'arbre, un <b>Ctrl+clic</b> sert désormais à la multi-suppression.</span>';p.appendChild(h);
   const row=document.createElement('div');row.className='row';
   const typ=document.createElement('select');[['lin','Linéaire'],['circ','Circulaire'],['mir','Symétrie']].forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];typ.appendChild(op);});typ.value=repMode.type;typ.onchange=()=>{repMode.type=typ.value;renderRepPanel();};row.appendChild(typ);
-  const cnt=document.createElement('input');cnt.type='number';cnt.min='1';cnt.value=repMode.copies;cnt.title='Nombre de copies';cnt.onchange=()=>{repMode.copies=repMaxCopies(cnt.value);};row.appendChild(cnt);p.appendChild(row);
+  // 2026-10-23 : QUANTITÉ, original compris (6 = l'original + 5 copies) ; stocké : copies = quantité − 1
+  const cnt=document.createElement('input');cnt.type='number';cnt.min='2';cnt.value=(+repMode.copies||1)+1;cnt.title='Quantité, original compris (6 = l’original + 5 copies)';cnt.onchange=()=>{repMode.copies=repMaxCopies((+cnt.value||2)-1);cnt.value=repMode.copies+1;};
+  if(repMode.type==='mir'){cnt.disabled=true;cnt.value=2;}
+  row.appendChild(cnt);p.appendChild(row);
   const ax=document.createElement('select');['X','Y','Z','Face'].forEach(v=>{const op=document.createElement('option');op.value=v;op.textContent=(repMode.type==='mir'?(v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v):v);ax.appendChild(op);});
   ax.value=repMode.type==='mir'?(repMode.plane==='XY'?'Z':repMode.plane==='XZ'?'Y':repMode.plane==='Face'?'Face':'X'):(repMode.axis||'X');
   ax.onchange=()=>{if(repMode.type==='mir'){repMode.plane=ax.value==='X'?'YZ':ax.value==='Y'?'XZ':ax.value==='Z'?'XY':'Face';delete repMode.planeN;}else{repMode.axis=ax.value;delete repMode.dir;}renderRepPanel();};p.appendChild(ax);
@@ -1220,9 +1234,10 @@ function renderProps(){
       const typ=pSel([['lin','Linéaire'],['circ','Circulaire'],['mir','Symétrie']],f.mode||'lin',
         v=>{f.mode=v;f.name=repTypeName(f.mode,f);applyCfg();});
       pRow('Type',typ);
-      const cnt=document.createElement('input');cnt.type='number';cnt.min='1';cnt.value=f.copies||1;cnt.title='Nombre de copies';
-      cnt.onchange=()=>{f.copies=repMaxCopies(cnt.value);applyCfg();};
-      pRow('Copies',cnt);
+      // 2026-10-23 : QUANTITÉ, original compris (6 = l'original + 5 copies) ; stocké : copies = quantité − 1
+      const cnt=document.createElement('input');cnt.type='number';cnt.min='2';cnt.value=(+f.copies||1)+1;cnt.title='Quantité, original compris (6 = l’original + 5 copies)';
+      cnt.onchange=()=>{f.copies=repMaxCopies((+cnt.value||2)-1);applyCfg();};
+      if(f.mode!=='mir')pRow('Quantité',cnt);
       const axOpts=['X','Y','Z','Face'].map(v=>[v,f.mode==='mir'?(v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v):v]);
       const axCur=f.mode==='mir'?(f.plane==='XY'?'Z':f.plane==='XZ'?'Y':f.plane==='Face'?'Face':'X'):(f.axis||'X');
       pRow(f.mode==='mir'?'Plan':'Axe',pSel(axOpts,axCur,

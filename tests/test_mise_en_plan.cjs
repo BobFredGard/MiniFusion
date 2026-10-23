@@ -784,6 +784,30 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
       const lt=T.paperBasis(front,{x:0,y:1},{x:-1,y:0},-1); // arête verticale, posée à droite = côté gauche (dir -X)
       out.paperBasisSide=eq(lt.dir,[-1,0,0]);
     }catch(e){out.paperErr=String(e);}
+    // 2026-10-23 : vue DXF importée — géométrie, accrochage exact (lien qui suit la vue), détail
+    try{
+      const T=window.__mepTest,sh=doc.mep.sheets[doc.mep.cur];
+      const D=['0','SECTION','2','HEADER','9','$INSUNITS','70','4','0','ENDSEC','0','SECTION','2','ENTITIES',
+        '0','LWPOLYLINE','90','4','70','1','10','0','20','0','10','80','20','0','10','80','20','40','10','0','20','40',
+        '0','CIRCLE','10','20','20','20','40','5','0','TEXT','10','0','20','0','1','X',
+        '0','DIMENSION','8','COTES','2','*D1','10','80','20','-10','13','0','23','0','14','80','24','0','50','0','70','32',
+        '0','DIMENSION','8','COTES','2','*D2','10','15','20','20','15','25','25','20','11','30','21','30','70','35',
+        '0','LINE','8','COTES','10','0','20','0','11','0','21','-12','0','INSERT','2','*D1','10','0','20','0',
+        '0','ENDSEC','0','EOF'].join(String.fromCharCode(10));
+      const v=T.dxfView(D,'plaque'),g=T.geo(v);
+      const Ls=g.els.filter(e=>e.t==='L'),C=g.els.find(e=>e.t==='C');
+      out.dxfGeo=g.src==='dxf'&&Ls.length===4&&!!C&&Math.abs(C.r-5)<1e-9&&Math.abs(C.cx+20)<1e-9&&Math.abs(C.cy)<1e-9&&v.dxf.skipped.TEXT===1;
+      // coin haut-gauche de la plaque (DXF 0,40 → vue −40,−20) : accroché comme une extrémité de vue
+      const s0=T.snapPt(v.x-40*v.scale,v.y-20*v.scale);
+      out.dxfSnap=!!(s0&&s0.hit&&s0.hit.vid===v.id&&s0.hit.t==='end');
+      out.dxfDbg=JSON.stringify({n:g.els.length,s:s0&&s0.hit});
+      // cotes du DXF : rien de dessiné (calque COTES, bloc *D1) ; DIMENSION → cotes natives 80 (horizontale) et Ø10 sur le cercle
+      const nd=sh.dims.filter(d=>d.vid===v.id),dl=nd.find(d=>d.kind==='dist'),dd=nd.find(d=>d.kind==='dia');
+      out.dxfDims=g.els.length===5&&nd.length===2&&!!dl&&dl.orient==='h'&&Math.abs(T.dimMeasure(dl)-80)<1e-6&&!!dd&&dd.a.hint&&dd.a.hint.i===g.els.indexOf(C)&&Math.abs(T.dimMeasure(dd)-10)<1e-6;
+      out.dxfDimsDbg=JSON.stringify({els:g.els.length,dims:nd.map(d=>[d.kind,d.orient,+T.dimMeasure(d).toFixed(3)]),sk:v.dxf.skipped});
+      delete v._dims;sh.dims=sh.dims.filter(d=>d.vid!==v.id);
+      sh.views=sh.views.filter(x=>x.id!==v.id);
+    }catch(e){out.dxfErr=String(e&&e.stack||e);}
     out.exportsNew=typeof window.mepExportDxf==='function'&&typeof window.mepDxfBuild==='function'
       &&typeof window.mepAutoHoles==='function'&&typeof window.mepSetPaper==='function';
 
@@ -957,6 +981,9 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.trimAll,'Ajuster : ligne sans intersection (droites prolongées ignorées) retirée entière');
   A(val&&val.tbHitLine,'cartouche en édition : trait de séparation saisi devant le texte de la case '+(val&&val.tbHitDbg));
   A(val&&val.tbDimsAll,'cartouche en édition : toutes les cotes visibles, aucune étiquette superposée ('+(val&&val.tbDimsDbg)+')');
+  A(val&&val.dxfGeo,'vue DXF : polyligne fermée → 4 traits, cercle R5 centré, texte ignoré et compté '+(val&&(val.dxfErr||val.dxfDbg)));
+  A(val&&val.dxfDims,'vue DXF : cotes du DXF non dessinées, DIMENSION reprises en cotes du plan (80 et Ø10) '+(val&&val.dxfDimsDbg));
+  A(val&&val.dxfSnap,'vue DXF : coin accroché comme une extrémité de vue (cotes, esquisse liée)');
   A(val&&val.tbFormat,'cartouche : champ FORMAT écrit A3-H (A4-V…)');
   A(val&&val.revIdx,'révisions : indices en lettres (A…Z, AA) ou chiffres (0… / 1…), suite du dernier');
   A(val&&val.detClip,'détail : traits qui entrent / sortent du cercle rognés au bon croisement '+(val&&val.detDbg));

@@ -421,7 +421,7 @@
   /* ═══════════════ E. cache géométrie ═══════════════ */
   const mepGeoCache=new Map(); // viewId → {ver,sig,geo}
   function mepViewSig(v){
-    let s=[mepRound(v.dir),mepRound(v.u),mepRound(v.v),v.bodyId||'',v.mode||'hide',v.tangent?1:0,
+    let s=[v.kind==='dxf'?'dxf:'+((v.dxf&&v.dxf.rev)||0):'',mepRound(v.dir),mepRound(v.u),mepRound(v.v),v.bodyId||'',v.mode||'hide',v.tangent?1:0,
       v.hlrExact===false?'soft':'exact',v.shade?1:0,v.render3d?(v.mirror?'1m':1):0,
       v.section?mepRound(v.section.p)+mepRound(v.section.n)+(v.section.pts?JSON.stringify(v.section.pts):''):'',v.detail?v.detail.cx+','+v.detail.cy+','+v.detail.r:'',mepOblOf(v)?'obl:'+mepOblOf(v).a+','+mepOblOf(v).k:'',mepPerspOf(v)?'persp:'+mepPerspOf(v).fov:''].join('|');
     /* l'ombrage et le rendu 3D dépendent de la couleur/opacité des corps :
@@ -1223,6 +1223,11 @@
       pts.forEach(p=>{minx=Math.min(minx,p[0]);maxx=Math.max(maxx,p[0]);miny=Math.min(miny,p[1]);maxy=Math.max(maxy,p[1]);});
       return{minx,miny,maxx,maxy};
     }
+    if(e.t==='P'&&e.pts&&e.pts.length){
+      let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
+      e.pts.forEach(p=>{minx=Math.min(minx,p[0]);maxx=Math.max(maxx,p[0]);miny=Math.min(miny,p[1]);maxy=Math.max(maxy,p[1]);});
+      return{minx,miny,maxx,maxy};
+    }
     return null;
   }
   /* ═══════════════ G2. HLR exact OCCT ═══════════════ */
@@ -1382,6 +1387,11 @@
   }
   /* ═══════════════ H. construction d'une vue ═══════════════ */
   function mepBuildGeo(view){
+    // vue DXF (2026-10-23) : géométrie importée telle quelle ; un détail pris dessus la rogne
+    {const par=view.kind==='detail'&&view.parent?mepView(mepSheet(),view.parent):null,dv=view.kind==='dxf'?view:(par&&par.kind==='dxf'?par:null);
+     if(dv){let els=((dv.dxf&&dv.dxf.els)||[]).map(e=>e.t==='P'?{t:'P',pts:e.pts.map(q=>q.slice()),k:e.k}:Object.assign({},e));
+       if(view!==dv&&view.detail)els=mepClipDetail(els,view.detail);
+       return{els,hatch:[],src:'dxf'};}}
     const geo={els:[],hatch:[],src:''};
     const b=mepBasisOf(view);view.dir=b.dir;view.u=b.u;view.v=b.v;
     const list=mepMeshesOf(view);
@@ -1912,6 +1922,62 @@
     });
     mepSelect(view.id);
     return view;
+  }
+  /* ═══════════════ vue DXF importée (2026-10-23) ═══════════════
+     Le DXF est lu par mepDxfParse (src/98-01-import-dxf.js) et rangé DANS la vue (doc.mep) :
+     le projet reste autonome. Cotes, axes, accrochage et esquisse de planche s'y appliquent
+     comme sur une vue projetée ; un détail peut y être pris. */
+  function mepDxfPick(cb){
+    const inp=document.createElement('input');inp.type='file';inp.accept='.dxf,application/dxf,image/vnd.dxf';
+    inp.onchange=()=>{const f=inp.files&&inp.files[0];if(!f)return;
+      const rd=new FileReader();
+      rd.onload=()=>{let r=null;try{r=mepDxfParse(String(rd.result||''));}catch(e){r=null;}
+        if(!r||!r.n){mepStatus('DXF : aucun élément géométrique lisible dans « '+f.name+' ».');return;}
+        cb(r,f.name.replace(/\.[^.]+$/,''));};
+      rd.readAsText(f);};
+    inp.click();
+  }
+  function mepDxfSkipText(r){
+    const k=Object.keys(r.skipped||{});
+    return k.length?' — ignorés : '+k.map(t=>r.skipped[t]+' '+t).join(', '):'';
+  }
+  function mepDxfData(r,name,rev){return{name,els:r.els,n:r.n,bbox:r.bbox,units:r.units,skipped:r.skipped,rev};}
+  // cotes DIMENSION du DXF → cotes natives (distance h / v / alignée, Ø, R accrochés au cercle)
+  function mepDxfDims(sh,v,r){
+    const out=[];let miss=0;
+    const els=(v.dxf&&v.dxf.els)||[],S=q=>mepToSheet(v,q[0],q[1]);
+    (r.dims||[]).forEach(D=>{
+      if(D.kind==='lin'){
+        const A=S(D.a),B=S(D.b),Pl=S(D.p);
+        if(Math.hypot(B.x-A.x,B.y-A.y)<1e-9){miss++;return;}
+        out.push({id:mepUid('d'),kind:'dist',vid:v.id,vid2:null,a:{x:D.a[0],y:D.a[1]},b:{x:D.b[0],y:D.b[1]},
+          orient:D.orient,off:mepDimOffsetFromPts(A.x,A.y,B.x,B.y,D.orient,Pl),ref:false,tol:null});
+      }else{
+        const i=els.findIndex(e=>(e.t==='C'||e.t==='A')&&Math.hypot(e.cx-D.c[0],e.cy-D.c[1])<1e-3&&Math.abs(e.r-D.r)<1e-3);
+        if(i<0){miss++;return;}
+        out.push({id:mepUid('d'),kind:D.kind,vid:v.id,vid2:null,a:{x:els[i].cx,y:els[i].cy,hint:{t:'ctr',i}},b:{x:D.t[0],y:D.t[1]},ref:false,tol:null});
+      }
+    });
+    if(out.length)mepEdit('cotes du DXF',()=>{out.forEach(d=>sh.dims.push(d));});
+    return{n:out.length,miss};
+  }
+  function mepImportDxf(){
+    mepDxfPick((r,name)=>{
+      const sh=mepSheet();
+      const v=mepAddView({kind:'dxf',vk:'',label:'',dxf:mepDxfData(r,name,1),mode:'wire',tangent:false,hlrExact:false});
+      const cd=mepDxfDims(sh,v,r);
+      mepStatus('DXF « '+name+' » importé : '+r.n+' élément(s), '+mepFmtNum(r.bbox.w,1)+' × '+mepFmtNum(r.bbox.h,1)+' mm'+
+        (cd.n?' ; '+cd.n+' cote(s) reprise(s) en cotes du plan':'')+(cd.miss?' ('+cd.miss+' non reprise(s))':'')+mepDxfSkipText(r)+'.');
+      mepSideShow();mepRender();return v;
+    });
+  }
+  function mepDxfReplace(v){
+    mepDxfPick((r,name)=>{
+      mepEdit('DXF remplacé',()=>{v.dxf=mepDxfData(r,name,((v.dxf&&v.dxf.rev)||0)+1);});
+      mepGeoCache.delete(v.id);
+      mepStatus('DXF de la vue remplacé par « '+name+' » ('+r.n+' élément(s))'+mepDxfSkipText(r)+'. Les cotes gardent leurs n° d’éléments.');
+      mepSideShow();mepRender();
+    });
   }
   function mepSelect(id){mepSt.sel=id;mepSt.selDim=null;mepSt.selAxis=null;mepSideShow();}
   /* ═══════════════ J. commandes de vues ═══════════════ */
@@ -5665,7 +5731,7 @@
   function mepOrdPtAt(sh,d,P){
     const v=mepView(sh,d.vid);if(!v)return -1;
     let best=-1,bd=Infinity;
-    [d.o].concat(d.pts||[]).forEach((q,k)=>{const S=mepToSheet(v,q.x,q.y),e=d.axis==='y'?Math.abs(S.y-P.y):Math.abs(S.x-P.x);if(e<bd){bd=e;best=k-1;}});
+    [d.o].concat(d.pts||[]).forEach((q,k)=>{const S=mepToSheet(v,q.x,q.y),j=(+q.jog||0)*v.scale,e=d.axis==='y'?Math.abs(S.y+j-P.y):Math.abs(S.x+j-P.x);if(e<bd){bd=e;best=k-1;}});
     return best;
   }
   function mepOrdDelPt(sh,d,i){
@@ -5687,6 +5753,8 @@
     const hh=MEP_TEXT_STYLE.dimH,gap=Math.max(0.8,MEP_DIM_STYLE.gap||1),oS=mepToSheet(v,d.o.x,d.o.y);
     const line=d.axis==='y'?oS.x+(+d.off||0):oS.y+(+d.off||0);
     const hi=(mepSt.ordPt&&mepSt.ordPt.id===d.id)?mepSt.ordPt.i:null;
+    // une valeur désignée : elle seule en rouge (le reste du groupe en couleur normale), Suppr la retire
+    if(hi!==null){const un=c=>String(c||'').replace(/\s*mepDimSel\b/g,'');L=Object.assign({},L,{class:un(L.class)});T=Object.assign({},T,{class:un(T.class)});}
     const Ls=Object.assign({},L,{class:L.class+' mepDimSel'}),Ts=Object.assign({},T,{class:T.class+' mepDimSel'});
     [d.o].concat(d.pts||[]).forEach((p,k)=>{
       const on=hi!==null&&k-1===hi,L1=on?Ls:L,T1=on?Ts:T;
@@ -5698,14 +5766,22 @@
         if(!pp){const a={x,y,'text-anchor':anchor};if(tr)a.transform=tr;draw('text',Object.assign(a,T1)).textContent=s;return;}
         mepDimDrawText(draw,T1,pp.main,pp.up,pp.lo,x,y,anchor,tr,false,pp.sym,pp.par,pp.post);
       };
+      // cassure (2026-10-23) : rappel droit, coude oblique sur 3 mm, puis droit jusqu'à la ligne des valeurs
+      const J=(k>0&&+p.jog)?+p.jog*v.scale:0;
       if(d.axis==='y'){
-        const sg=line<P.x?-1:1;
-        draw('line',Object.assign({x1:P.x+sg*gap,y1:P.y,x2:line,y2:P.y},L1));
-        put(line+sg*1,P.y+hh*0.5,sg<0?'end':'start',null);
+        const sg=line<P.x?-1:1,y2=P.y+J;
+        if(J&&Math.abs(line-P.x)>8){const b1=line-sg*7,b2=line-sg*4;
+          draw('line',Object.assign({x1:P.x+sg*gap,y1:P.y,x2:b1,y2:P.y},L1));draw('line',Object.assign({x1:b1,y1:P.y,x2:b2,y2:y2},L1));
+          draw('line',Object.assign({x1:b2,y1:y2,x2:line,y2:y2},L1));}
+        else draw('line',Object.assign({x1:P.x+sg*gap,y1:P.y,x2:line,y2:P.y},L1));
+        put(line+sg*1,(J&&Math.abs(line-P.x)>8?y2:P.y)+hh*0.5,sg<0?'end':'start',null);
       }else{
-        const sg=line<P.y?-1:1,x=P.x+hh*0.5,y=line+sg*1;
-        draw('line',Object.assign({x1:P.x,y1:P.y+sg*gap,x2:P.x,y2:line},L1));
-        put(x,y,sg<0?'start':'end','rotate(-90 '+x.toFixed(3)+' '+y.toFixed(3)+')');
+        const sg=line<P.y?-1:1,x2=P.x+J,ok=J&&Math.abs(line-P.y)>8,xt=(ok?x2:P.x)+hh*0.5,y=line+sg*1;
+        if(ok){const b1=line-sg*7,b2=line-sg*4;
+          draw('line',Object.assign({x1:P.x,y1:P.y+sg*gap,x2:P.x,y2:b1},L1));draw('line',Object.assign({x1:P.x,y1:b1,x2:x2,y2:b2},L1));
+          draw('line',Object.assign({x1:x2,y1:b2,x2:x2,y2:line},L1));}
+        else draw('line',Object.assign({x1:P.x,y1:P.y+sg*gap,x2:P.x,y2:line},L1));
+        put(xt,y,sg<0?'start':'end','rotate(-90 '+xt.toFixed(3)+' '+y.toFixed(3)+')');
       }
     });
   }
@@ -6562,7 +6638,7 @@
   }
   // géométrie exacte (noyau) : la seule sur laquelle des références peuvent être MISES À JOUR —
   // à l'ouverture, les vues passent d'abord par le maillage (arêtes de triangles)
-  function mepGeoExact(g){return !!(g&&/^OCCT/.test(g.src||''));}
+  function mepGeoExact(g){return !!(g&&(/^OCCT/.test(g.src||'')||g.src==='dxf'));} // DXF : géométrie exacte et figée
   function mepAxisSymMigrate(v,ann){
     // axe de symétrie d'avant V0.3.28 (figé : a, b) → 2 droites parallèles symétriques autour de lui
     const g=mepGeoOf(v);if(!mepGeoExact(g))return;
@@ -6644,9 +6720,17 @@
     mepRender();
   }
   function mepToolSync(){/* plus de barre d'outils interne — le panneau latéral gère l'outil actif */}
-  function mepDimDragStart(sh,P,dim){
+  function mepDimDragStart(sh,P,dim,ev){
     mepSt.selDim=dim.id;mepSt.sel=null;mepSt.entSel=[];
     mepSt.ordPt=dim.kind==='ord'?{id:dim.id,i:mepOrdPtAt(sh,dim,P)}:null;
+    // ordonnée + Ctrl : cassure — glisser décale la valeur le long de l'axe (ligne de rappel coudée),
+    // Ctrl + clic sans glisser la retire
+    if(dim.kind==='ord'&&ev&&(ev.ctrlKey||ev.metaKey)&&mepSt.ordPt.i>=0){
+      const q=dim.pts[mepSt.ordPt.i];
+      mepSt.pick={kind:'dimDrag',id:dim.id,sx:P.x,sy:P.y,px0:P.px,py0:P.py,jog:{i:mepSt.ordPt.i,j0:+q.jog||0},moved:false,undoPushed:false};
+      mepStatus('Cassure : glissez pour dégager la valeur (Ctrl + clic sans glisser : la retire).');
+      mepSideShow();mepRender();return;
+    }
     const w=mepDimWorld(sh,dim);
     const tp=mepDimTextPos(sh,dim);
     const labelHit=!!tp&&Math.hypot(P.x-tp.x,P.y-tp.y)<=18/(mepSt.zoom||1);
@@ -6682,7 +6766,8 @@
           :'Aligner : aucune cote parallèle à la référence.');
         mepSt.selDim=ref.id;mepSideShow();mepRender();return;
       }
-      {const dA=(ev.shiftKey||ev.ctrlKey||ev.metaKey)?mepDimAt(sh,P.x,P.y):null;
+      {let dA=(ev.shiftKey||ev.ctrlKey||ev.metaKey)?mepDimAt(sh,P.x,P.y):null;
+       if(dA&&dA.kind==='ord'&&(ev.ctrlKey||ev.metaKey)&&!ev.shiftKey){mepDimDragStart(sh,P,dA,ev);return;} // Ctrl : cassure d'ordonnée
        if(dA){ // Maj/Ctrl + clic sur une cote : sélection multiple (la cote déjà active y entre aussi)
          const lot=mepSt.lot||{views:new Set(),dims:new Set()};
          if(mepSt.selDim&&mepSt.selDim!==dA.id&&!lot.dims.size)lot.dims.add(mepSt.selDim);
@@ -6735,7 +6820,7 @@
       // cote ? → sélection + glisser pour la déplacer (2ᵉ appui rapproché = double-clic)
       if(mepDimPressDbl(sh,P,ev))return;
       const dim=mepDimAt(sh,P.x,P.y);
-      if(dim){mepDimDragStart(sh,P,dim);return;}
+      if(dim){mepDimDragStart(sh,P,dim,ev);return;}
       const axis=mepAxisAt(sh,P.x,P.y);
       if(axis){
         mepSt.selAxis={vid:axis.vid,id:axis.id,ak:axis.ak};mepSt.sel=null;mepSt.selDim=null;mepSt.entSel=[];
@@ -6811,7 +6896,7 @@
       if(!mepSt.dim){
         if(mepDimPressDbl(sh,P,ev))return;
         const dim=mepDimAt(sh,P.x,P.y);
-        if(dim){mepDimDragStart(sh,P,dim);return;}
+        if(dim){mepDimDragStart(sh,P,dim,ev);return;}
       }
       // distance point→point en cours : on garde le flux 2 points + placement
       if(mepSt.dim&&mepSt.dim.kind==='dist'&&!mepSt.dim.b){
@@ -7149,7 +7234,11 @@
       return;
     }
     if(pk.kind==='dimDrag'){
-      if(pk.moved)mepEdit('déplacement cote',()=>{},true);
+      if(pk.moved)mepEdit(pk.jog?'cassure d’ordonnée':'déplacement cote',()=>{},true);
+      else if(pk.jog){ // Ctrl + clic sans glisser : cassure retirée
+        const sh=mepSheet(),d=sh.dims.find(x=>x.id===pk.id),q=d&&d.pts&&d.pts[pk.jog.i];
+        if(q&&q.jog){mepEdit('cassure retirée',()=>{delete q.jog;});mepStatus('Cassure retirée.');}
+      }
       mepSt.pick=null;
       return;
     }
@@ -7923,6 +8012,13 @@
       d.b={x:(sx-v.x)/v.scale,y:(sy-v.y)/v.scale};
       return true;
     }
+    if(d.kind==='ord'&&pk&&pk.jog){ // cassure : la valeur glisse le long de l'axe
+      const q=d.pts&&d.pts[pk.jog.i];if(!q)return false;
+      const v1=mepView(sh,d.vid),sc=(v1&&v1.scale)||1;
+      q.jog=+(pk.jog.j0+(d.axis==='y'?P.y-pk.sy:P.x-pk.sx)/sc).toFixed(3); // mm vue (suit l'échelle)
+      if(Math.abs(q.jog)<1e-3)delete q.jog;
+      return true;
+    }
     if(d.kind==='ord'&&pk&&pk.off0!=null){ // tout le groupe glisse perpendiculairement à l'axe
       d.off=(+pk.off0||0)+(d.axis==='y'?P.x-pk.sx:P.y-pk.sy);
       return true;
@@ -8489,7 +8585,7 @@
   }
   function mepSideView(root,v,sh){
     const h=document.createElement('h4');
-    h.textContent=v.kind==='section'?'Coupe '+(v.label||''):(v.kind==='detail'?'Détail '+(v.label||''):
+    h.textContent=v.kind==='dxf'?'Vue DXF « '+((v.dxf&&v.dxf.name)||'?')+' »':v.kind==='section'?'Coupe '+(v.label||''):(v.kind==='detail'?'Détail '+(v.label||''):
       (v.kind==='proj'?'Projection '+(v.label||'')+' ('+((MEP_PROJ[v.proj||'']||{}).lab||'?')+')':'Vue '+(v.label||v.vk||'')));
     root.appendChild(h);
     const row=(lab,el)=>{
@@ -8526,6 +8622,18 @@
     });
     sel.onchange=()=>{mepEdit('échelle',()=>{v.scale=+sel.value;});};
     row('Échelle',sel);
+    if(v.kind==='dxf'){
+      const D=v.dxf||{},act=document.createElement('div');act.className='row';
+      const bR=document.createElement('button');bR.textContent='Remplacer le DXF…';bR.title='Charger un autre DXF dans cette vue (cotes et position gardées)';bR.onclick=()=>mepDxfReplace(v);
+      const bF=document.createElement('button');bF.textContent='Cadrer';bF.onclick=()=>mepFitViewContent(v);
+      const bD=document.createElement('button');bD.textContent='Supprimer';bD.className='danger';bD.onclick=()=>mepDelView(v.id);
+      [bR,bF,bD].forEach(b=>act.appendChild(b));root.appendChild(act);
+      const n=document.createElement('div');n.className='note';
+      n.textContent=(D.n||0)+' élément(s), '+mepFmtNum((D.bbox&&D.bbox.w)||0,1)+' × '+mepFmtNum((D.bbox&&D.bbox.h)||0,1)+' mm (vraie grandeur)'+
+        mepDxfSkipText(D)+'. Cotes, axes, perçages et esquisse de planche (lignes, cercles…) s’y accrochent comme sur une vue projetée ; Détail possible.';
+      root.appendChild(n);
+      return;
+    }
     // corps
     const body=document.createElement('select');
     const o0=document.createElement('option');o0.value='';o0.textContent='Assemblée';
@@ -9157,6 +9265,7 @@
   // après restauration d'un instantané documentaire : redessiner la planche
   window.mepRefresh=()=>{try{mepRender();}catch(e){}};
   window.mepSetTool=mepSetTool;
+  window.mepImportDxf=mepImportDxf;
   window.mepSetAxisMode=mepSetAxisMode;
   // points d'entrée réservés aux tests automatisés (jamais activés dans l'app)
   if(window.__MEP_TEST_HOOKS__){
@@ -9195,7 +9304,7 @@
       holeText:mepHoleFeatureText,
       holeCallout:mepHoleCallout,
       fmt:mepFmtNum,
-      geo:view=>mepGeoOf(view),geoClear:()=>mepGeoCache.clear(),ptRefresh:(v,q,pr)=>mepPtRefresh(mepSheet(),v,q,pr),dimPts:d=>mepDimPtsRefresh(mepSheet(),d),ordClick:(P,ax)=>mepOrdClick(mepSheet(),P,ax),ordEnd:()=>{mepSt.ord=null;},selDim:id=>{mepSt.selDim=id;},holeTolText:(t,tol)=>mepTolMarks(mepHoleTolText(t,tol)),dimText:d=>mepDimText(d,mepDimMeasure(mepSheet(),d)),ordPtAt:(d,P)=>mepOrdPtAt(mepSheet(),d,P),ordDelPt:(d,i)=>mepOrdDelPt(mepSheet(),d,i),ordValue:(d,p)=>mepOrdValue(d,p),drawDim:(mk,d)=>mepDrawDim(mk,d,mepSheet()),dimPressDbl:(P,ev)=>mepDimPressDbl(mepSheet(),P,ev||{}),dimAlignTo:(ref,ids)=>mepDimAlignTo(mepSheet(),ref,ids),perspCam:v=>mepPerspCam(v),threadEls:v=>mepThreadEls(v),oblShear:(sh,v)=>mepOblShear(sh,v),
+      geo:view=>mepGeoOf(view),geoClear:()=>mepGeoCache.clear(),dxfView:(txt,name)=>{const r=mepDxfParse(txt);const v=mepAddView({kind:'dxf',vk:'',label:'',dxf:mepDxfData(r,name||'t',1),mode:'wire'});v._dims=mepDxfDims(mepSheet(),v,r);return v;},dimMeasure:d=>mepDimMeasure(mepSheet(),d),ptRefresh:(v,q,pr)=>mepPtRefresh(mepSheet(),v,q,pr),dimPts:d=>mepDimPtsRefresh(mepSheet(),d),ordClick:(P,ax)=>mepOrdClick(mepSheet(),P,ax),ordEnd:()=>{mepSt.ord=null;},ordPick:(d,i)=>{mepSt.selDim=d?d.id:null;mepSt.ordPt=d?{id:d.id,i}:null;},selDim:id=>{mepSt.selDim=id;},holeTolText:(t,tol)=>mepTolMarks(mepHoleTolText(t,tol)),dimText:d=>mepDimText(d,mepDimMeasure(mepSheet(),d)),ordPtAt:(d,P)=>mepOrdPtAt(mepSheet(),d,P),ordDelPt:(d,i)=>mepOrdDelPt(mepSheet(),d,i),ordValue:(d,p)=>mepOrdValue(d,p),drawDim:(mk,d)=>mepDrawDim(mk,d,mepSheet()),dimPressDbl:(P,ev)=>mepDimPressDbl(mepSheet(),P,ev||{}),dimAlignTo:(ref,ids)=>mepDimAlignTo(mepSheet(),ref,ids),perspCam:v=>mepPerspCam(v),threadEls:v=>mepThreadEls(v),oblShear:(sh,v)=>mepOblShear(sh,v),
       imgRect:(view,img)=>mepImg3dRect(view,img),
       shadeTri:(view,A,B,C,col,op)=>mepShadeTri(view,A,B,C,col,op),
       shadeFaces:view=>mepShadedFaces(view),

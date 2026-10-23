@@ -296,6 +296,7 @@ const MF_IC={
   pAxPitch:'<circle cx="12" cy="12" r="8" stroke-dasharray="4 1.6 1 1.6"/><circle cx="12" cy="4" r="1.8"/><circle cx="18.9" cy="16" r="1.8"/><circle cx="5.1" cy="16" r="1.8"/>',
   pAxSym:'<path d="M12 2v3.5M12 8v3M12 13.5v3M12 19v3"/><path d="M9 6L4 12l5 6zM15 6l5 6-5 6z"/>',
   pSvg:'<path d="M6 3h9l3 3v15H6z"/><text x="12" y="17.6" font-size="6.2" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">SVG</text>',
+  pDxfIn:'<path d="M6 3h9l3 3v15H6z"/><path d="M12 6.5v6.5M9.5 10.5L12 13l2.5-2.5"/><text x="12" y="19.6" font-size="4.6" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">DXF</text>',
   pDxf:'<path d="M6 3h9l3 3v15H6z"/><text x="12" y="17.6" font-size="6.2" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">DXF</text>',
   pPdf:'<path d="M6 3h9l3 3v15H6z"/><text x="12" y="17.6" font-size="6.2" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">PDF</text>'
 };
@@ -340,7 +341,8 @@ function mfRibbon(){
     ['camera','Caméra',()=>{try{mepAddCameraViewCmd();}catch(e){}},'Vue depuis la caméra 3D actuelle'],
     ['pViewAux','Auxiliaire',()=>{try{mepBeginAuxCmd();}catch(e){}},'Vue auxiliaire : cliquez une arête inclinée, puis placez la vue perpendiculairement'],
     ['pViewSection','Coupe',()=>{try{mepSetActive(true);mepBeginSectionCmd();}catch(e){}},'Vue en coupe : points de la ligne sur une vue (2, ou plus pour une coupe brisée à l’équerre), ✓ / Entrée pour valider, ↶ / Retour arrière pour reculer, puis placez la vue (le côté donne le sens du regard)'],
-    ['pViewDetail','Détail',()=>{try{mepSetActive(true);mepBeginDetailCmd();}catch(e){}},'Vue de détail : centre, rayon, puis placement']],'mfPlan');
+    ['pViewDetail','Détail',()=>{try{mepSetActive(true);mepBeginDetailCmd();}catch(e){}},'Vue de détail : centre, rayon, puis placement'],
+    ['pDxfIn','DXF',()=>{try{mepSetActive(true);mepImportDxf();}catch(e){}},'Importer un DXF comme vue : on peut la coter, y accrocher lignes, cercles, axes…']],'mfPlan');
   grp('Dessin',[['pLine','Ligne',()=>mepTool('line'),'Ligne enchaînée (Échap termine)'],['pRect','Rectangle',()=>mepTool('rect')],
     ['pCircle','Cercle',()=>mepTool('circle')],['pArc','Arc',()=>mepTool('arc'),'Arc : centre, départ, arrivée'],
     ['pPoint','Point',()=>mepTool('point')],['pTrim','Ajuster',()=>mepTool('trim')],['pText','Texte',()=>mepTool('text'),'Texte libre ou champ (matière, TTS, TTH…)']],'mfPlan');
@@ -514,8 +516,8 @@ function mfCube(){
   const cv=document.createElement('canvas');cv.width=160;cv.height=160;cv.style.cssText='width:80px;height:80px;cursor:pointer';c.appendChild(cv);
   const h=document.createElement('button');h.id='mfCubeHome';h.textContent='⌂';h.title='Vue iso (tout afficher)';h.onclick=()=>{try{setView('iso');}catch(e){}};c.appendChild(h);
   const ob=document.createElement('button');ob.id='mfOrbit';ob.textContent='⟲';ob.onclick=()=>{try{orbitSetMode(!orbitFree);}catch(e){}};c.appendChild(ob);
-  mfOrbitBtnSync();
   vp.appendChild(c);
+  mfOrbitBtnSync(); // APRÈS l'insertion : le bouton n'est trouvable par son id qu'une fois dans la page (état gardé au rechargement)
   let rd=null;try{rd=new THREE.WebGLRenderer({canvas:cv,alpha:true,antialias:true});rd.setPixelRatio(1);rd.setSize(160,160,false);}catch(e){return;}
   const sc=new THREE.Scene(),cam=new THREE.PerspectiveCamera(28,1,0.1,50);
   // ordre des faces BoxGeometry : +X, −X, +Y, −Y, +Z, −Z ; rot = rotation du texte (Z monde vers le haut)

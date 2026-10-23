@@ -10,6 +10,7 @@ const SUITES = [
   "test_coque_depouille",
   "test_repeat_mir2",
   "test_repeat_session",
+  "test_repeat_circ_tour",
   "test_mirror_arc",
   "test_extrude_flip_draft",
   "test_apercu_diff",
