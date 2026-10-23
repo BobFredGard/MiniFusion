@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**307 versions**, de `2026-09-28b` à `V0.4.8` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**308 versions**, de `2026-09-28b` à `V0.4.9` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4578,3 +4578,15 @@ Retours utilisateur (« analyse le projet dans son entièreté », puis « recal
 - **Dépôt** : `git gc`, paquet orphelin du 27 septembre supprimé, `git lfs prune` (15 anciens objets, 48 Mo) : `.git` passe de 318 à 191 Mo.
 
 Tests : les 2 suites recalées vertes ; suite complète 113/115 avant correction, les 2 échecs étant ceux-ci. Vérifié dans l'appli : en esquisse L → ligne, C → cercle, F → congé, O → décalage, H → centre de perçage ; aide à jour ; aucune erreur console. `npm run ci` vert.
+
+## V0.4.9 - Tests navigateur réels (Playwright, Chromium headless)
+Demande : vérifier dans un vrai navigateur ce que les tests VM (stubs DOM/THREE) ne voient pas — le noyau OCCT WebAssembly et le rendu.
+- **`npm run test:browser`** (`tests/browser/`) : sert le dépôt en http (petit serveur statique sans dépendance, MIME wasm / ESM), attend le noyau OCCT, puis trois parcours cliqués comme un utilisateur dans l'interface moderne :
+  1. ouvrir `Exemples/Axe.miniFusion` → solide exact, 55 faces dont les 2 tores du congé, volume de référence 78 916,27 mm³ ;
+  2. esquisse (rectangle tracé à la souris) → extrusion 12 mm → prisme exact (6 plans, volume l × h × 12) ;
+  3. FAO : surfaçage sur l'Axe → « Régénérer » → G-code réellement téléchargé (G54, T1 / M6, passes G1, M30).
+  Toute erreur JS non rattrapée ou boîte de dialogue fait échouer le test ; des pointeurs Git LFS à la place des `.wasm` sont signalés d'emblée.
+- **Playwright** en devDependency uniquement (aucune dépendance runtime) ; une fois : `npx playwright install chromium`.
+- **CI** : job séparé `browser-test` (checkout LFS, Chromium `--with-deps`, rapport en artefact en cas d'échec) ; `build-test` inchangé.
+
+Tests : `npm run test:browser` 3/3 en local (~17 s). `npm run ci` : 22/23 — `test_repeat_circ_tour` échoue sur un clone propre, indépendamment de cette version : il lit `Exemples/Perçages.miniFusion`, dont seule la copie locale non commitée contient la répétition circulaire.
