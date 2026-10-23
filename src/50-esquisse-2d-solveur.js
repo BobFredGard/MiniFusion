@@ -110,7 +110,7 @@ function skFadeSaveRestore(){
 }
 function skApplyFade(){
   // (Re)pose le fondu de la session d'esquisse sur l'état ACTUELLEMENT affiché.
-  // skEdit._fade : 'bodies' = corps en fondu 0.75 · 'ghost' = corps masqués +
+  // skEdit._fade : 'bodies' = corps en fondu SK_FACE_ALPHA · 'ghost' = corps masqués +
   // fantôme antérieur · null = rien (hors session). Re-appelé après chaque rebuild :
   // le rejeu régénère les matériaux et volerait sinon le fondu.
   if(!skEdit)return;
@@ -635,7 +635,7 @@ function openSketch(id){
     if(s0&&(s0.dims||[]).some(d=>!d.chk))skCheckNewDims(s0);}catch(e){}
   skEdit=doc.sketches.find(s=>s.id===id);if(!skEdit)return;
   migrateSketch(skEdit);
-  // 1) VERROU puis REBUILD puis REFS (l'ordre compte) : skBuildRefs pose le fondu 0.75 et
+  // 1) VERROU puis REBUILD puis REFS (l'ordre compte) : skBuildRefs pose le fondu SK_FACE_ALPHA et
   // les références sur les meshes — avant, il s'appuyait sur l'ancien état (matériaux neufs
   // ensuite → corps opaque) et sur des corps encore en état final (écran vide).
   //   · esquisse consommée  : verrou avant la consommatrice (état qui la précède, Fusion) ;
@@ -675,7 +675,7 @@ function closeSketch(save){
     if(b._savedOpacity!=null&&b.mesh&&b.mesh.material){ b.mesh.material.opacity=b._savedOpacity; b.mesh.material.transparent=b._savedTransparent; delete b._savedOpacity; delete b._savedTransparent; }
   });
   // Mode de fondu effacé AVANT le rebuild de sortie : sinon buildDone→skApplyFade
-  // repose le fondu 0.75 après restauration et la pièce resterait translucide.
+  // repose le fondu SK_FACE_ALPHA après restauration et la pièce resterait translucide.
   if(skEdit)skEdit._fade=null;
   skAnteriorEdges=null;
   try{skEdgesDrop();const eo=scene.getObjectByName('edgeOverlay');if(eo)eo.visible=true;}catch(e){}

@@ -1,4 +1,4 @@
-// 2026-10-02-002 : esquisse — corps visibles en TRANSLUCIDE (0.75) et verrou à la bonne place.
+// 2026-10-02-002 : esquisse — corps visibles en TRANSLUCIDE (SK_FACE_ALPHA, 0.2 depuis V0.4.0) et verrou à la bonne place.
 // Régressions couvertes (diagnostic hors-repo avant correction) :
 //  1) le fondu était posé AVANT le rejeu : skBuildRefs() tournait avant tlEditLock()+rebuild(),
 //     les matériaux étaient ensuite régénérés → la pièce restait OPAQUE en édition ;
@@ -11,7 +11,7 @@
 // sur face, bug test.json — la porteuse est antérieure donc toujours rejouée) ; esquisse
 // libre → aucun verrou ; fermeture → corps restaurés (opacité 1) sans fuite du mode de fondu.
 // Harnais : THREE est un stub Node (mkMaterial n'a PAS d'opacity) — « restauré » se dit
-// donc « transparent=false et opacity absente ou ≈1 », jamais 0.75.
+// donc « transparent=false et opacity absente ou ≈1 », jamais SK_FACE_ALPHA.
 const {loadApp}=require('./appvm.cjs');
 (async()=>{
   const {ctx}=loadApp();
@@ -43,7 +43,7 @@ const {loadApp}=require('./appvm.cjs');
     'A(skEdit&&skEdit._fade==="bodies","T1 : mode de fondu actif (\\"bodies\\")");',
     'A(live().length===1,"T1 : le corps est la (un seul)");',
     'A(visOk(),"T1 : corps visible");',
-    'A(opacOk(0.75),"T1 : corps TRANSLUCIDE a 0.75 (avant fix : opaque — le fondu partait avec le rejeu)");',
+    'A(opacOk(SK_FACE_ALPHA),"T1 : corps TRANSLUCIDE (SK_FACE_ALPHA) (avant fix : opaque — le fondu partait avec le rejeu)");',
     'closeSketch(false);',
     // ── T2 : esquisse POSÉE SUR FACE, dernière fonction → aucun verrou, modèle complet ──
     'const sk2={id:"s2",name:"E2",plane:"FACE",origin:[0,0,40],axU:[1,0,0],axV:[0,1,0],axN:[0,0,1],',
@@ -54,7 +54,7 @@ const {loadApp}=require('./appvm.cjs');
     'out.t2={tlMark:tlMark,nb:live().length,op:mat(live()[0])?live()[0].mesh.material.opacity:null,note:skEdit._refNote};',
     'A(tlMark===null,"T2 : hote en derniere fonction -> aucun verrou (avant fix : verrou sur la porteuse = corps exclu du rejeu)");',
     'A(live().length===1,"T2 : la face esquissee existe toujours (1 corps, avant fix : 0)");',
-    'A(visOk()&&opacOk(0.75),"T2 : corps visible et translucide");',
+    'A(visOk()&&opacOk(SK_FACE_ALPHA),"T2 : corps visible et translucide");',
     'A(String(skEdit._refNote||"").indexOf("solide fini")>=0,"T2 : note de reference presente");',
     'closeSketch(false);',
     // ── T3 : une fonction existe APRÈS la porteuse → modèle complet, aucun verrou ──
@@ -67,7 +67,7 @@ const {loadApp}=require('./appvm.cjs');
     'out.t3={tlMark:tlMark,ids:live().map(b=>b.id)};',
     'A(tlMark===null,"T3 : esquisse sur face -> MODELE COMPLET (aucun verrou, la porteuse est anterieure) — tlMark="+tlMark);',
     'A(live().some(b=>b.id==="ex_t"),"T3 : le corps qui porte la face existe toujours");',
-    'A(visOk()&&opacOk(0.75),"T3 : corps visible et translucide");',
+    'A(visOk()&&opacOk(SK_FACE_ALPHA),"T3 : corps visible et translucide");',
     'closeSketch(false);',
     // ── T4 : esquisse CONSOMMÉE → verrou AVANT la consommatrice, corps en fondu ──
     'doc.sketches.push(rect("s5","E5"));ensureSketchBasis(doc.sketches[doc.sketches.length-1]);',
@@ -77,11 +77,11 @@ const {loadApp}=require('./appvm.cjs');
     'out.t4={tlMark:tlMark,op:mat(live()[0])?live()[0].mesh.material.opacity:null,nb:live().length};',
     'A(tlMark==="ex5","T4 : verrou avant la consommatrice (etat anterieur, comme Fusion)");',
     'A(live().length>0&&visOk(),"T4 : les corps anterieurs sont visibles");',
-    'A(opacOk(0.75),"T4 : corps translucides apres rejeu (avant fix : OPAQUES)");',
+    'A(opacOk(SK_FACE_ALPHA),"T4 : corps translucides apres rejeu (avant fix : OPAQUES)");',
     // ── T5 : un rebuild PENDANT la session repose le fondu (regression buildDone) ──
     'live().forEach(b=>{b.mesh.material.opacity=1;b.mesh.material.transparent=false;});',
     'safeRebuild("t5");',
-    'A(bodies.length>0&&visOk()&&opacOk(0.75),"T5 : rebuild en session -> fondu 0.75 repose (sinon la piece redevient opaque)");',
+    'A(bodies.length>0&&visOk()&&opacOk(SK_FACE_ALPHA),"T5 : rebuild en session -> fondu SK_FACE_ALPHA repose (sinon la piece redevient opaque)");',
     // ── T6 : fermeture → restauration complete, aucun fantome ──
     'closeSketch(false);',
     'out.t6={tlMark:tlMark,nb:bodies.length,op:mat(live()[0])?live()[0].mesh.material.opacity:null,',
@@ -89,7 +89,7 @@ const {loadApp}=require('./appvm.cjs');
     '  fade:(doc.sketches.find(s=>s.id==="s5")||{})._fade,ghost:(typeof skAnteriorGhost!=="undefined"&&skAnteriorGhost)?1:0};',
     'A(tlMark===null,"T6 : verrou leve a la fermeture");',
     'A(visOk(),"T6 : corps visibles apres fermeture");',
-    'A(opacRestored(),"T6 : opacite RESTAUREE (transparent=false, plus 0.75) — pas de fuite du fondu");',
+    'A(opacRestored(),"T6 : opacite RESTAUREE (transparent=false, plus en fondu) — pas de fuite du fondu");',
     'A((doc.sketches.find(s=>s.id==="s5")||{})._fade==null,"T6 : mode de fondu efface");',
     'A(out.t6.ghost===0,"T6 : fantome anterieur detruit");',
     'return out;'

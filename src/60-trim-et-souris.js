@@ -1215,7 +1215,7 @@ window.addEventListener('keydown',e=>{
 });
 /* ----- boutons Congé / Chanfrein : créés ici (coque HTML générée, jamais éditée),
    APRES la liaison générique des .tool (ci-dessus) → handler dédié uniquement.
-   Même pattern que btnDraft/btnCoque côté 3D. Raccourcis F/H dans shortcuts.js. */
+   Même pattern que btnDraft/btnCoque côté 3D. Raccourci F dans 99-raccourcis-esquisse.js. */
 (function(){
   const bar=document.getElementById('skToolbar');if(!bar)return;
   const mk=(tool,icon,title)=>{

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**306 versions**, de `2026-09-28b` à `V0.4.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**307 versions**, de `2026-09-28b` à `V0.4.8` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4568,3 +4568,13 @@ Retours utilisateur (« cotes angulaires : marche pas bien » — Crochet.miniFu
 - **Ctrl + molette** : OrbitControls inverse le rôle d'un bouton avec Ctrl (PAN + Ctrl = rotation) — la molette est déclarée ROTATE pour ce geste, ce qui donne le déplacement (V0.4.6 tournait au lieu de déplacer).
 
 Tests : nouveau `test_esquisse_angle` (fixtures `crochet.miniFusion`, `test-angle.miniFusion`) : cote disjointe = angle réel sans déplacement ; entraxe « 10 » → angle 7,03° puis 10,000° tenu avec les entraxes 585 / 115 ; jamais d'entraxe entre sécantes. Vérifié dans l'appli : Ctrl + molette = clic droit (déplacement 22,654, rotation 0°). `npm run ci` vert.
+
+## V0.4.8 - Ménage : tests d'esquisse recalés, raccourcis intégrés au build, dépôt allégé
+Retours utilisateur (« analyse le projet dans son entièreté », puis « recale les 2 tests, range la racine, intègre shortcuts.js en réglant la touche H, git gc, prune LFS »).
+- **Tests d'esquisse** : `test_esquisse_transparence` et `test_esquisse_face_conges` attendaient encore le fondu 0.75 d'avant la V0.4.0 (pièce en transparence 0.2) ; ils lisent maintenant `SK_FACE_ALPHA` et font partie de la suite rapide (CI : 23 suites). Commentaires « fondu 0.75 » corrigés dans `30-marqueur-temps.js` et `50-esquisse-2d-solveur.js`.
+- **Raccourcis d'esquisse** : `shortcuts.js`, chargé à part (hors lint et tests), devient `src/99-raccourcis-esquisse.js`. La touche **H** n'y déclenche plus le chanfrein : elle cliquait l'outil chanfrein juste avant que H ne bascule sur le centre de perçage. H = centre de perçage seulement. L'aide intégrée liste les lettres d'outils (L C R B, P T D, F O).
+- **Racine** : `_probe_style.html` / `.png` sortis du dépôt ; `_tmp_css_scan.js`, `diff_g_o.txt`, une copie en conflit Dropbox et un `.crswap` supprimés ; `.gitignore` ignore `*.crswap` et les copies en conflit. `banner` inutilisé retiré de `build.js`.
+- **Documentation** : `analysis.md` réécrit pour V0.4.8 ; README (54 fichiers source, lettres d'outils) ; `package-lock.json` réaligné (il indiquait 0.3.5).
+- **Dépôt** : `git gc`, paquet orphelin du 27 septembre supprimé, `git lfs prune` (15 anciens objets, 48 Mo) : `.git` passe de 318 à 191 Mo.
+
+Tests : les 2 suites recalées vertes ; suite complète 113/115 avant correction, les 2 échecs étant ceux-ci. Vérifié dans l'appli : en esquisse L → ligne, C → cercle, F → congé, O → décalage, H → centre de perçage ; aide à jour ; aucune erreur console. `npm run ci` vert.
