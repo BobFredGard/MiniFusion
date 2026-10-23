@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**304 versions**, de `2026-09-28b` à `V0.4.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**305 versions**, de `2026-09-28b` à `V0.4.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4552,3 +4552,11 @@ Retours utilisateur (« importer un DXF dans la mise en plan et le coter », « 
 - **Bouton ⟲ (orbite libre)** : l'état était bien mémorisé mais le bouton se colorait avant d'être dans la page.
 
 Tests : `test_mise_en_plan` (vue DXF : polyligne, cercle, texte ignoré, coin accroché ; cotes du DXF retirées, 80 et Ø10 reprises) ; `test_mep_hachures_cotes` (valeur d'ordonnée seule en rouge, cassure 3 traits) ; `test_conge_sur_conge` réaligné (143 arêtes, 58 tangentes, vives 85 inchangées) ; nouveau `test_repeat_circ_tour` (pas 60° pour 6, secteur 90°, « Perçages » 6 → 5 copies, aucune à 360°). Bouton ⟲ vérifié dans l'appli après rechargement. `npm run ci` vert. Non vus à l'écran : import d'un vrai DXF, ordonnées à la souris.
+
+## V0.4.6 - Vue 3D et esquisse : Ctrl + molette enfoncée = déplacement
+Retour utilisateur (« Ctrl + bouton molette enfoncé → déplacement de la 3D comme pour le bouton de droite »).
+- **Vue 3D** : un écouteur en capture, avant OrbitControls, règle la molette sur « pan » quand Ctrl (ou Cmd) est enfoncé, sinon la laisse à l'orbite maison ; l'orbite ne démarre pas sur ce geste.
+- **Esquisse** : Ctrl + molette enfoncée ouvre le même déplacement que le clic droit (la molette seule reste l'orbite).
+- **Test** `test_repeat_circ_tour` rendu indépendant de l'état du fichier d'exemple (document ancien format reconstitué).
+
+Tests : vérifié dans l'appli (geste simulé : Ctrl + molette déplace la cible comme le clic droit, 8,1 contre 9,1 ; molette seule réglée sur l'orbite). `npm run ci` vert.

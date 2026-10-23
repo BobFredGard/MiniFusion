@@ -437,6 +437,8 @@ svg.addEventListener('pointerdown',e=>{
   // clic droit glissé = DÉPLACEMENT (clic droit sans glisser = menu / annuler, inchangé).
   // Le clic gauche reste au dessin : jamais de rotation.
   skPanDragged=false;
+  if(e.button===1&&(e.ctrlKey||e.metaKey)){ // Ctrl + molette enfoncée = déplacement, comme le clic droit
+    e.preventDefault();e=skEv(e);skPan={px:e.clientX,py:e.clientY,cx:skView.cx,cy:skView.cy,moved:false};return;}
   if(e.button===1){e.preventDefault();skOrbDrag={px:e.clientX,py:e.clientY};return;}
   e=skEv(e);
   if(e.button===2){skPan={px:e.clientX,py:e.clientY,cx:skView.cx,cy:skView.cy,moved:false};return;}

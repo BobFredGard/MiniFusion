@@ -310,8 +310,15 @@ function orbitTick(){
   if(Math.abs(_fo.vx)<0.01&&Math.abs(_fo.vy)<0.01){_fo.vx=_fo.vy=0;if(!_fo.down)_fo=null;}
 }
 function orbitWire(el){
+  // 2026-10-23 : Ctrl + molette enfoncée = DÉPLACEMENT, comme le clic droit. Écouteur en
+  // CAPTURE : il passe avant OrbitControls, qui lit alors la molette comme « pan » pour ce geste.
+  el.addEventListener('pointerdown',e=>{
+    if(e.button!==1||!controls||!controls.mouseButtons||!THREE.MOUSE)return;
+    controls.mouseButtons.MIDDLE=(e.ctrlKey||e.metaKey)?THREE.MOUSE.PAN:-1;
+  },true);
   el.addEventListener('pointerdown',e=>{
     if(e.button!==0&&e.button!==1)return;
+    if(e.button===1&&(e.ctrlKey||e.metaKey))return; // Ctrl + molette : déplacement (OrbitControls)
     if(!controls||controls.enabled===false||!controls.enableRotate)return; // esquisse : caméra figée
     try{if(typeof skEdit!=='undefined'&&skEdit)return;}catch(err){}
     _fo={id:e.pointerId,x:e.clientX,y:e.clientY,P:orbitPivot(),vx:0,vy:0,down:true};

@@ -11,11 +11,14 @@ let ko=0;const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('
   const o=await vm.runInContext(`(async()=>{
     const out={};
     out.stepTour=repCircStep({angle:360,copies:5});out.stepSect=repCircStep({angle:90,copies:3});
-    const raw=JSON.parse(${JSON.stringify(json)});const d0=raw.doc||raw;
-    const rp0=(d0.features||[]).find(f=>f.type==='repeat'&&f.mode==='circ');
-    out.before=rp0?{copies:rp0.copies,kids:d0.features.filter(f=>f.repeatId===rp0.id).length}:null;
+    const raw=JSON.parse(${JSON.stringify(json)});
     if(raw.doc)await bundleRestore(${JSON.stringify(json)},{rebuild:false});else await deserialise(${JSON.stringify(json)},{rebuild:false});
     const rp=doc.features.find(f=>f.type==='repeat'&&f.mode==='circ');
+    // document « ancien format » reconstitué (indépendant de l'état du fichier d'exemple) :
+    // sans drapeau q, une copie de plus — celle que l'ancien pas posait sur l'original
+    delete rp.q;rp.copies++;repGenChildren(rp);
+    out.before={copies:rp.copies,kids:doc.features.filter(f=>f.repeatId===rp.id).length};
+    docSanitise();
     out.after=rp?{copies:rp.copies,q:rp.q,kids:doc.features.filter(f=>f.repeatId===rp.id).length}:null;
     // angles des copies autour de l'axe : aucun à 0 / 360° (sur l'original)
     out.angs=rp?Array.from({length:rp.copies},(_,i)=>+(repCircStep(rp)*(i+1)).toFixed(3)):[];
