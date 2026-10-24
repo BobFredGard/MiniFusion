@@ -1,6 +1,6 @@
 # Analyse du projet MiniFusion
 
-*État au 2026-10-23 — version `V0.4.7`.*
+*État au 2026-10-24 — version `V0.4.9`.*
 
 ## Nature du projet
 
@@ -16,7 +16,7 @@ Le noyau géométrique exact est **OpenCascade (OCCT) compilé en WebAssembly**.
 | `PostPro/*.js` | Fiches machines (Fagor 8065, Siemens 630 et 1520), insérées par `build.js` après `88-fao-60-postprocesseurs.js`. Les `.cps` Autodesk restent locaux. |
 | `fusion_mvp.html` | Livrable généré. **Ne jamais l'éditer à la main.** |
 | `build.js` | Concaténation + bandeaux de section ; `--check` échoue si le livrable est périmé. |
-| `tests/` | **115 suites** Node (`tests/run.cjs`) + **23** en CI (`tests/run-fast.cjs`). |
+| `tests/` | **115 suites** Node (`tests/run.cjs`, toutes en CI) + **23** rapides (`tests/run-fast.cjs`) ; parcours navigateur Playwright dans `tests/browser/`. |
 | `tools/lint.cjs` | Lint ESLint du script concaténé, dans l'ordre exact du build. |
 | `threejs/` | three.js, OrbitControls et CSG (MIT). |
 | `occt/` | Noyau OCCT WebAssembly (LGPL), `.wasm` suivis par Git LFS. |
@@ -45,9 +45,10 @@ L'exécution reste **un seul script global** : les fichiers ne sont pas des modu
 3. `node tests/chk_syntaxe.cjs` vérifie la syntaxe du script généré.
 4. `node tests/run.cjs` exécute les 115 suites **en parallèle** (pool de processus, plus longues d'abord ; ~3,5 min au lieu de ~20 en série sur 8 cœurs) ; `tests/run-fast.cjs` en exécute 23.
 5. `npm run lint` vérifie les identifiants non définis ; `npm run lint:all` inclut les avertissements (`catch` vides).
-6. `npm run ci` et `.github/workflows/ci.yml` enchaînent build, syntaxe, tests rapides et lint (~1 min).
+6. `npm run ci` enchaîne build, syntaxe, tests rapides et lint (~1 min) ; `npm run ci:full` fait de même avec les 115 suites.
+7. `.github/workflows/ci.yml` lance à chaque push `npm run ci:full`, puis `npm run test:browser` : parcours critiques dans un vrai Chromium headless avec le noyau OCCT réel (ouverture d'`Axe.miniFusion`, esquisse → extrusion, FAO → G-code).
 
-Le harnais de test (`tests/appvm.cjs`) exécute le vrai script dans une machine virtuelle Node avec des stubs DOM/THREE ; plusieurs tests chargent en plus le noyau OCCT réel. Le noyau exact n'est toutefois pas couvert à 100 % par la suite Node : les évolutions critiques demandent une validation navigateur.
+Le harnais de test (`tests/appvm.cjs`) exécute le vrai script dans une machine virtuelle Node avec des stubs DOM/THREE ; environ 70 suites chargent en plus le noyau OCCT réel. Ce qu'il ne voit pas (rendu WebGL, interface cliquée, chargement du `.wasm` par le navigateur) est couvert par les tests Playwright, sur quelques parcours seulement.
 
 ## Points forts
 
@@ -60,18 +61,18 @@ Le harnais de test (`tests/appvm.cjs`) exécute le vrai script dans une machine 
 
 ## Risques et dette restante
 
-- **Suite complète rarement lancée** : la CI n'exécute que 23 suites sur 115. Deux tests d'esquisse sont restés en échec de V0.4.0 à V0.4.7 sans être vus (corrigés le 2026-10-23 et ajoutés à la suite rapide). Lancer `npm test` avant chaque tag.
+- **Suites FAO lentes** : sept suites (`test_fao_brut_corps`, `_ebauche_brut`, `_bornage`, `_couverture`, `_securite`, `_faces`, `_torique`) durent 85 à 145 s chacune et fixent la durée minimale de la suite parallèle, quel que soit le nombre de cœurs.
 - **1288 avertissements `no-empty`** (1046 en V0.3.5) : les `catch(e){}` silencieux augmentent au lieu de diminuer.
 - **Gros fichiers** : `98-mise-en-plan.js` (~9 400 lignes), `50-esquisse-2d-solveur.js` (~4 000), `20-noyau-et-operations-solides.js` (~2 900).
 - **Monolithe global** : namespace unique sans modules ni types ; les identifiants publics passent par `window`.
-- **OCCT non couvert par le harnais Node** : validation navigateur manuelle nécessaire.
-- **Dépôt dans Dropbox** : la synchronisation crée des copies en conflit et peut abîmer `.git` (pack sans index constaté) ; `.git` pèse ~318 Mo.
+- **Couverture navigateur étroite** : trois parcours Playwright seulement ; le reste de l'interface réelle se valide à la main.
+- **Dépôt dans Dropbox** : la synchronisation crée des copies en conflit et peut abîmer `.git` (pack sans index constaté) ; `.git` pèse ~213 Mo, et `Backup/` (~227 Mo) et `occt/*.bak` (~50 Mo), ignorés par Git, sont quand même synchronisés.
 - **CHANGELOG volumineux** (~650 Ko, 306 versions).
 
 ## Priorités suivantes
 
-1. Lancer la suite complète avant chaque tag (par ex. un script `npm run ci:full`).
-2. Réduire les `catch` vides en journalisant l'erreur ou en justifiant l'ignorance.
-3. Découper `98-mise-en-plan.js` et `50-esquisse-2d-solveur.js` par domaine, en chunks contigus.
-4. Ajouter un test CI navigateur (Playwright) pour les parcours OCCT critiques.
+1. Réduire les `catch` vides en journalisant l'erreur ou en justifiant l'ignorance.
+2. Découper `98-mise-en-plan.js` et `50-esquisse-2d-solveur.js` par domaine, en chunks contigus.
+3. Découper les sept suites FAO lentes pour descendre la suite complète sous 2 min.
+4. Étendre les parcours Playwright (mise en plan, congés, 3+2).
 5. Envisager de sortir le dépôt de Dropbox.
