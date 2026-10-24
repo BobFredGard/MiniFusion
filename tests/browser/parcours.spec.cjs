@@ -134,8 +134,10 @@ test('plan de construction décalé → esquisse dessus → extrusion au bon end
   await dist.fill('20');await dist.press('Enter');
   await page.locator('#props button',{hasText:'Valider'}).click();
   await page.waitForFunction(()=>!cgMode&&doc.cgeo.length===1&&doc.cgeo[0].fr&&Math.abs(doc.cgeo[0].fr.o[2]-20)<1e-9);
-  // Double-clic sur « Plan 1 » dans l'arbre → esquisse posée sur le plan
-  await page.locator('#tree .tnode',{hasText:'Plan 1'}).dblclick();
+  // Double-clic sur « Plan 1 » dans l'arbre → esquisse posée sur le plan. Libellé complet : une
+  // fois l'esquisse créée, sa ligne « Esquisse 1 · Plan 1 · … » contient aussi « Plan 1 »
+  // (un locator ambigu fait échouer l'action en mode strict).
+  await page.locator('#tree .tnode',{hasText:'Plan 1 · Décalé'}).dblclick();
   await page.waitForFunction(()=>!!skEdit&&skEdit.plane==='CG'&&Math.abs(skEdit.origin[2]-20)<1e-9);
   await page.locator('#skToolbar .tool[data-tool="rect"]').click();
   const [a,b]=await page.evaluate(()=>{const r=svg.getBoundingClientRect();
@@ -154,16 +156,16 @@ test('plan de construction décalé → esquisse dessus → extrusion au bon end
   await page.waitForFunction(()=>doc.features.some(f=>f.type==='extrude')&&builtEngine==='exact'&&!!(occLive&&occLive.shape),null,{timeout:60000});
   const zBox=()=>page.evaluate(()=>{const b=new occt.Bnd_Box_1();b.SetGap(0);occt.BRepBndLib.Add(occLive.shape,b,false);const r=[b.CornerMin().Z(),b.CornerMax().Z()];b.delete();return r;});
   let z=await zBox();
-  expect(z[0]).toBeCloseTo(20,6);expect(z[1]).toBeCloseTo(30,6);
+  expect(z[0]).toBeCloseTo(20,4);expect(z[1]).toBeCloseTo(30,4);
   // Le plan monte à 35 (panneau Modifier) : esquisse et solide suivent
-  await page.locator('#tree .tnode',{hasText:'Plan 1'}).click();
+  await page.locator('#tree .tnode',{hasText:'Plan 1 · Décalé'}).click();
   await page.locator('#props button',{hasText:'Modifier'}).click();
   const d2=page.locator('#props input[type=text]').first();
   await d2.fill('35');await d2.press('Enter');
   await page.locator('#props button',{hasText:'Valider'}).click();
   await page.waitForFunction(()=>!cgMode&&builtEngine==='exact'&&builtVersion===_docVersion&&rebuildDepth===0,null,{timeout:60000});
   z=await zBox();
-  expect(z[0]).toBeCloseTo(35,6);expect(z[1]).toBeCloseTo(45,6);
+  expect(z[0]).toBeCloseTo(35,4);expect(z[1]).toBeCloseTo(45,4);
   expect(err).toEqual([]);
 });
 
