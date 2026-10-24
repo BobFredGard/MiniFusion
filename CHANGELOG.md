@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**311 versions**, de `2026-09-28b` à `V0.6.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**312 versions**, de `2026-09-28b` à `V0.6.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4620,3 +4620,12 @@ Demande : « implémenter un assemblage » (étapes 2 à 4). Choix : pièces dan
 - **Arbre et bandeau de timeline** : les esquisses des instances de répétition (« … (rép 3) ») ne sont plus listées (retour utilisateur).
 
 Tests : `test_assemblage_modele` (fichier d'une pièce inchangé, bascule de pièce qui garde FAO / PLAN / construction / annuler, aller-retour du fichier, alignement avec retournement / rotation / décalage au µm, associativité, cycle, suppression, annuler, rotations du placement ; aussi en suite rapide) ; parcours Playwright « deux pièces, aligner un repère, la pièce suit une modification », rejoué à la main dans Chromium (pied posé en 20 ; 15 ; 20, puis 35 après le socle rehaussé). Suite complète 119/119. Vérifié dans le navigateur : vue d'assemblage, contexte en mode pièce, manipulateur (+12 mm, Ctrl+Z / Ctrl+Y), enregistrement et réouverture, insertion d'`Axe.miniFusion` (55 faces, 78 916,27 mm³), FAO depuis l'assemblage.
+
+## V0.6.1 - Composants imbriqués, façon Fusion 360
+Demande : « un miniFusion comme Fusion 360, avec un repère de base et de la géométrie de base, puis des pièces avec leurs repères et leur géométrie propre, et des pièces dans les pièces ». Étape 1 sur 5 (suivent : composants liés à un fichier externe, références entre composants, liaisons, mise en plan d'assemblage). Choix : deux modes par composant (Modéliser / Placer).
+- **Tout est composant** (`src/46-assemblage-modele.js`) : le fichier est la racine (une pièce complète), chaque composant porte ses occurrences enfants. Instance éditée = chemin d'occurrences depuis la racine (`asm.path`) ; `doc` reste le composant actif. Repère monde d'une instance (`asmWorld`), parcours (`asmInstances`), cycles de contenance refusés (`asmContains`).
+- **Alignements par chemins relatifs** au composant porteur : cible = sa géométrie de base (origine, repères de construction) ou un repère de n'importe quel descendant ; résolus de bas en haut (la disposition interne d'un enfant ne dépend pas de son parent).
+- **Fichier** : bloc `asm` v2 (`root`, `path`, `comps` avec leurs occurrences). Un fichier sans composant est inchangé ; un assemblage V0.6.0 (v1) est migré à l'ouverture (racine vide portant les occurrences, alignements convertis) ; une version antérieure ouvre le composant actif. Fichier abîmé : occurrence qui ferait un cycle écartée, composant inaccessible rattaché à la racine.
+- **Interface** (`src/47-assemblage-interface.js`, `src/48-assemblage-placement.js`) : modes Modéliser / Placer à tous les niveaux, dessin récursif dans le repère de l'instance éditée (descendants figés, reste en fantômes), fil d'Ariane et hiérarchie complète dans l'arbre, Échap remonte, ruban « Composants » (Placer, Composant, Occurrence, Insérer). Insérer garde la structure du fichier inséré (identifiants renouvelés, alignements internes suivis).
+
+Tests : `test_composants_modele` (trois niveaux, repère monde, alignement sur la géométrie de base et sur un repère deux niveaux plus bas, ordre de bas en haut, associativité, cycles refusés, activation par chemin, aller-retour, fichier abîmé, insertion imbriquée ; aussi en suite rapide), `test_assemblage_modele` adapté (et relecture d'un fichier V0.6.0). Parcours Playwright « composants : racine avec un repère de base, composant aligné qui suit, sous-composant », rejoué à la main dans Chromium (composant posé en 20 ; 15 ; 20 puis 35 après la racine rehaussée ; fil d'Ariane Socle › Composant 1 › Composant 2). Vérifié dans le navigateur : assemblage V0.6.0 enregistré rouvert et migré, Axe inséré dans un composant (trois niveaux), clic sur un petit-enfant = son ancêtre direct sélectionné, enregistrement et réouverture en mode Placer.

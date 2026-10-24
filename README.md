@@ -2,13 +2,13 @@
 
 **CAO paramétrique, assemblage, FAO et mise en plan dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2, G-code et planches cotées ISO. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.6.0** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.6.1** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Sommaire
 
 - [Interface](#interface)
 - [CAO](#cao) : esquisse, fonctions 3D, corps, mesures, fichiers
-- [Assemblage](#assemblage) : pièces, occurrences, placement par repères
+- [Composants](#composants) : composants imbriqués, occurrences, placement par repères
 - [FAO](#fao) : posage, brut, opérations, simulation, 3+2, G-code
 - [PLAN](#plan) : planches, vues, coupes, cotation, sorties
 - [Souris et clavier](#souris-et-clavier)
@@ -83,16 +83,26 @@ Historique rejouable, arborescence et marqueur de temps. **Bandeau de timeline**
 - **Repère pièce** : point central, axes et 3 petits plans cliquables (esquisse dessus) ; chaque élément se masque séparément.
 - **Fichiers** : import STEP / STL ; export STEP / STL / OBJ (aussi pour un seul corps) ; projet **`.miniFusion`** (document, parcours FAO, planches) ; sauvegarde locale automatique.
 
-## Assemblage
+## Composants
 
-Un fichier peut contenir **plusieurs pièces**, placées dans une **vue d'assemblage** (groupe **Assemblage** du ruban). Un fichier d'une seule pièce reste exactement comme avant.
-- **Pièce** : nouvelle pièce, on entre aussitôt dedans. **Insérer** : copie les pièces d'un autre fichier `.miniFusion` (pièce seule ou assemblage). **Occurrence** : la même pièce, une fois de plus.
-- **Éditer une pièce** : double-clic sur son occurrence (vue ou arbre). On l'édite comme une pièce seule (CAO, FAO, PLAN), les autres occurrences en fantôme autour ; « 🧩 Assemblage › pièce » en tête de l'arbre, ou le bouton Assemblage, pour revenir.
-- **Placer** :
-  - **manipulateur** sur l'occurrence sélectionnée : flèches = déplacer, anneaux = tourner (pas de 1 mm et de 5°, Maj = libre) ;
-  - **panneau** : position X / Y / Z, rotations de ±90° ;
-  - **Aligner un repère** : un repère de la pièce (son origine ou un repère de construction) posé sur l'origine de l'assemblage ou sur un repère d'une autre occurrence, avec retournement, rotation et décalage. **Associatif** : si une pièce change, son repère bouge et les pièces alignées suivent.
-- **Fixer** une occurrence (📌), **masquer**, **renommer**, **supprimer** (la dernière occurrence emporte sa pièce). Ctrl+Z / Ctrl+Y annulent les opérations d'assemblage dans la vue d'assemblage.
+Comme dans Fusion 360, **tout est composant**. Le fichier est le **composant racine** : une pièce complète (esquisses, construction, corps, FAO, PLAN) qui peut porter des **composants enfants**, eux-mêmes pièces complètes avec leurs propres enfants, à n'importe quelle profondeur. Un fichier sans composant reste exactement comme avant ; un assemblage de V0.6.0 s'ouvre tel quel (ses pièces deviennent des composants d'une racine vide).
+
+Deux modes pour le composant actif (groupe **Composants** du ruban) :
+- **Modéliser** : on l'édite comme une pièce seule (CAO, FAO, PLAN) ; ses sous-composants sont visibles mais figés, le reste de l'assemblage en fantôme autour ;
+- **Placer** : on déplace ses composants enfants (clic n'importe où sur un enfant = le sélectionner).
+
+Navigation :
+- **double-clic** sur un composant (vue ou arbre) : on le modélise ;
+- **fil d'Ariane** « 🧩 Racine › Châssis › Roue » en tête de l'arbre : un clic remonte à ce niveau ; **Échap** en mode Placer (rien de sélectionné) remonte d'un niveau ;
+- section **Composants** de l'arbre : toute la hiérarchie, double-clic pour aller n'importe où.
+
+Commandes :
+- **Composant** : nouveau composant dans le composant actif, on entre aussitôt dedans ;
+- **Occurrence** : le même composant, une fois de plus ;
+- **Insérer** : copie un autre fichier `.miniFusion` comme composant du composant actif (sa racine avec sa géométrie, ses sous-composants imbriqués) ;
+- **placer** : manipulateur (flèches = déplacer, anneaux = tourner, pas de 1 mm et de 5°, Maj = libre), panneau (position X / Y / Z, rotations de ±90°) ;
+- **Aligner un repère** : un repère du composant (son origine, un repère de construction, le sien ou celui d'un sous-composant) posé sur un repère du composant actif (sa **géométrie de base** : origine, repères de construction) ou d'un autre de ses composants, à toute profondeur, avec retournement, rotation et décalage. **Associatif** : si un composant change, son repère bouge et les composants alignés suivent ;
+- **Fixer** (📌), **masquer**, **renommer**, **supprimer** (la dernière occurrence emporte son composant). Ctrl+Z / Ctrl+Y annulent les opérations de placement en mode Placer.
 
 ## FAO
 

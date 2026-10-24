@@ -1414,9 +1414,9 @@ function meshesToOBJ(meshes){
 function serialise(pretty){
   // pretty=1 (défaut) pour l'export fichier lisible ; compact pour l'autosave local
   // (~40 % de volume en moins à sérialiser et à écrire à chaque sauvegarde).
-  // V0.6.0 : la pièce active reste au premier niveau (un fichier d'une seule pièce est
-  // inchangé, une version antérieure ouvre la pièce active) ; les autres pièces et les
-  // occurrences sont dans le bloc asm (46-assemblage-modele.js).
+  // V0.6.0 / V0.6.1 : le composant actif reste au premier niveau (un fichier sans composant
+  // enfant est inchangé, une version antérieure ouvre le composant actif) ; les autres
+  // composants et les occurrences sont dans le bloc asm (46-assemblage-modele.js).
   const o=serialiseObj(doc,true);
   const a=asmSerial();if(a)o.asm=a;
   return JSON.stringify(o,null,pretty===false?null:2);
@@ -1719,8 +1719,9 @@ async function bundleStoreCaches(b){
   // embarquait celles de TOUS les documents du navigateur d'origine : ~70 Mo).
   const miens=new Set();
   try{
-    // pièce active + autres pièces d'un assemblage (V0.6.0)
-    const frs=[b.doc&&b.doc.fao].concat(((b.doc&&b.doc.asm&&b.doc.asm.parts)||[]).map(p=>p&&p.doc&&p.doc.fao));
+    // composant actif + autres composants (V0.6.1 : comps ; V0.6.0 : parts)
+    const A=b.doc&&b.doc.asm;
+    const frs=[b.doc&&b.doc.fao].concat(((A&&(A.comps||A.parts))||[]).map(p=>p&&p.doc&&p.doc.fao));
     frs.forEach(function(fr){(((fr&&fr.setups)||[])).forEach(function(st){
       ((st&&st.ops)||[]).forEach(function(op){ miens.add('faoMoves:'+((st&&st.id)||'_')+':'+((op&&op.id)||'_')); });
     });});

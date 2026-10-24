@@ -1,6 +1,6 @@
 # Analyse du projet MiniFusion
 
-*État au 2026-10-24 — version `V0.6.0`.*
+*État au 2026-10-24 — version `V0.6.1`.*
 
 ## Nature du projet
 
@@ -29,7 +29,7 @@ Le noyau géométrique exact est **OpenCascade (OCCT) compilé en WebAssembly**.
 - `00` : métadonnées (`APP_VER`, `CACHE_VER`), utilitaires, thème, caches.
 - `10`–`20` : scène three.js, repère, rejeu paramétrique, noyau exact OCCT et repli maillage.
 - `30`–`45` : marqueur de temps, arbre/propriétés, bandeau de timeline (`41`), annuler/rétablir documentaire.
-- `46`–`48` : assemblage (modèle et pièce active, vue d'assemblage, placement). `doc` reste la pièce globale : c'est la **pièce active**, l'assemblage vit à côté (`asm`).
+- `46`–`48` : composants (arbre de composants imbriqués et composant actif, modes Modéliser / Placer, placement). `doc` reste la pièce globale : c'est le **composant actif**, l'arbre vit à côté (`asm`).
 - `49`–`60` : esquisse 2D, solveur Levenberg-Marquardt, paramètres, trim et interactions souris.
 - `78`–`79` : géométrie de construction (modèle et résolution, puis affichage, saisie, panneau).
 - `70`–`87` : fonctions 3D (extrusion, révolution, perçage, combiner, congés, chanfreins, faces, dépouille, coque).

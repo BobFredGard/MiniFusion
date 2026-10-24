@@ -26,7 +26,8 @@ const SUITES = [
   'test_esquisse_transparence',
   'test_esquisse_face_conges',
   'test_construction_modele',
-  'test_assemblage_modele'
+  'test_assemblage_modele',
+  'test_composants_modele'
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {

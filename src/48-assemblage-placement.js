@@ -1,11 +1,12 @@
-/* ---------- assemblage : placement des occurrences (V0.6.0) ----------
-   Trois façons de placer une occurrence dans la vue d'assemblage :
+/* ---------- composants : placement des occurrences (V0.6.0 → V0.6.1) ----------
+   Trois façons de placer une occurrence (enfant direct du composant actif, mode Placer) :
      · manipulateur 3D (occurrence libre sélectionnée) : flèches = translation le long des
-       axes de l'assemblage, anneaux = rotation autour d'eux, pivot = origine de l'occurrence ;
-       pas de 1 mm et de 5° (Maj = libre) ; un geste = une étape d'annulation ;
+       axes du composant actif, anneaux = rotation autour d'eux, pivot = origine de
+       l'occurrence ; pas de 1 mm et de 5° (Maj = libre) ; un geste = une étape d'annulation ;
      · panneau : position X/Y/Z, rotations de ±90° / angle saisi autour de X, Y, Z ;
-     · ALIGNER : un repère de la pièce (son origine ou un repère de construction) posé sur un
-       repère cible (origine de l'assemblage, ou repère d'une autre occurrence), avec
+     · ALIGNER : un repère du composant (son origine ou un repère de construction, le sien ou
+       celui d'un sous-composant) posé sur un repère cible (géométrie de base du composant
+       actif, ou repère d'un autre de ses composants, à toute profondeur), avec
        retournement, rotation et décalage — associatif (46 : asmResolve).
    Une occurrence fixée ou alignée n'a pas de manipulateur (sa position est imposée). */
 let asmGz=null;       // groupe du manipulateur (dans asmScene)
@@ -120,10 +121,8 @@ function asmPlacementProps(p,o){
     const go=()=>{const x=parseFloat(String(i.value).replace(',','.'));if(isFinite(x))fn(x);};i.addEventListener('change',go);i.addEventListener('keydown',e=>{if(e.key==='Enter')go();});return i;};
   p.appendChild(mk('div','pnl-h','Placement'));
   if(o.align){
-    const a=o.align,src=a.src?((asmPart(o.part).doc.cgeo||[]).find(c=>c.id===a.src)||{}).name:'Origine';
-    const d=a.dst&&a.dst.occ?asmOcc(a.dst.occ):null;
-    const dn=d?d.name+' › '+(a.dst.cg?((asmPart(d.part).doc.cgeo||[]).find(c=>c.id===a.dst.cg)||{}).name:'Origine'):'Origine de l’assemblage';
-    p.appendChild(mk('div','pnl-note','🔗 '+(src||'?')+' → '+(dn||'?')));
+    const a=o.align,owner=asmOccOwner(o.id);
+    p.appendChild(mk('div','pnl-note','🔗 '+asmRelName(o.comp,a.src)+' → '+asmRelName(owner&&owner.id,a.dst)));
     const c=document.createElement('input');c.type='checkbox';c.checked=!!a.flip;
     c.onchange=()=>{asmPush('alignement');a.flip=c.checked;asmResolve();asmNotify();};Row('Retourner',c);
     Row('Rotation (°)',num(a.rz||0,v=>{asmPush('alignement');a.rz=v;asmResolve();asmNotify();}));
@@ -145,20 +144,42 @@ function asmPlacementProps(p,o){
   }
   const b=mk('div','pnl-btns');const al=mk('button','primary','🔗 Aligner un repère…');al.onclick=()=>asmAlignStart(o.id);b.appendChild(al);p.appendChild(b);
 }
-/* ── Aligner ── */
-function asmFramesOf(occ){
-  // Repères candidats d'une occurrence : origine + repères de construction de sa pièce
-  const p=asmPart(occ.part);if(!p)return [];
-  const out=[{cg:null,name:'Origine',F:asmPartFrame(p.id,null)}];
-  (p.doc.cgeo||[]).forEach(c=>{if(c&&c.kind==='frame'&&c.fr)out.push({cg:c.id,name:c.name,F:asmPartFrame(p.id,c.id)});});
+/* ── Aligner ──
+   Repères candidats, en coordonnées du composant actif (le porteur) :
+     · à poser : origine et repères de construction du composant de l'occurrence ET de ses
+       sous-composants (chemin relatif à ce composant) ;
+     · cible : ceux du porteur lui-même (sa géométrie de base) et de ses autres descendants
+       (chemin relatif au porteur). */
+function asmRelKey(r){return r?(r.path||[]).join('/')+'|'+(r.cg||''):'';}
+function asmRelName(cid,r){
+  // « Châssis:1 › Roue:2 › Repère A » ; chemin vide = le composant cid lui-même
+  if(!r)return '?';
+  let c=asmComp(cid);const parts=[];
+  for(const id of (r.path||[])){const o=c&&c.occ.find(q=>q.id===id);if(!o)return '?';parts.push(o.name);c=asmComp(o.comp);}
+  if(!c)return '?';
+  const fn=r.cg?((c.doc.cgeo||[]).find(k=>k.id===r.cg)||{}).name||'?':(r.path&&r.path.length?'Origine':'Origine de « '+c.name+' »');
+  return parts.concat(fn).join(' › ');
+}
+function asmFramesUnder(cid,skip){
+  // Repères de cid et de son sous-arbre : [{rel:{path,cg}, name, F (repère de cid)}] ;
+  // skip : occurrence enfant directe dont le sous-arbre est exclu
+  const out=[];
+  asmInstances(cid).forEach(inst=>{
+    if(skip&&inst.path[0]===skip)return;
+    const c=asmComp(inst.comp);if(!c)return;
+    const one=(cg,F)=>out.push({rel:{path:inst.path,cg},name:asmRelName(cid,{path:inst.path,cg}),F:asmCompose(inst.F,F)});
+    one(null,asmFr0());
+    (c.doc.cgeo||[]).forEach(k=>{if(k&&k.kind==='frame'&&k.fr)one(k.id,asmCompFrame(c.id,k.id));});
+  });
   return out;
 }
+function asmFramesOf(occ){return asmFramesUnder(occ.comp,null);} // à poser (repère du composant de l'occurrence)
 function asmAlignStart(id){
   const o=asmOcc(id);if(!o)return;
   if(o.fixed){try{faceEl.textContent='Occurrence fixée : libérez-la pour l’aligner.';}catch(e){}return;}
   asmAlign={occ:o.id,step:'src',src:undefined,dst:undefined,flip:false,rz:0,off:[0,0,0],saved:JSON.parse(JSON.stringify({fr:o.fr,align:o.align}))};
   asmAlignRefresh();
-  try{faceEl.textContent='Aligner « '+o.name+' » : choisissez le repère de la pièce à poser (panneau ou clic sur un repère).';}catch(e){}
+  try{faceEl.textContent='Aligner « '+o.name+' » : choisissez le repère du composant à poser (panneau ou clic sur un repère).';}catch(e){}
 }
 function asmAlignPreview(){
   const A=asmAlign,o=A&&asmOcc(A.occ);if(!o)return;
@@ -181,11 +202,9 @@ function asmAlignMarks(){
     t.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(...Fw.x),new THREE.Vector3(...Fw.y),new THREE.Vector3(...Fw.z)));
     const s=new THREE.Mesh(new THREE.SphereGeometry(0.16,12,8),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false,colorWrite:false}));
     s.userData.am=key;t.add(s);G.add(t);};
-  if(A.step==='src'){asmFramesOf(me).forEach(f=>put(asmCompose(me.fr,f.F),'s|'+(f.cg||''),A.src===f.cg));}
-  else{
-    put(asmFr0(),'d||',A.dst&&!A.dst.occ);
-    asm.occ.forEach(q=>{if(q.id===me.id||q.visible===false)return;asmFramesOf(q).forEach(f=>put(asmCompose(q.fr,f.F),'d|'+q.id+'|'+(f.cg||''),A.dst&&A.dst.occ===q.id&&A.dst.cg===f.cg));});
-  }
+  A.keys={};
+  if(A.step==='src'){asmFramesOf(me).forEach((f,i)=>{const k='s'+i;A.keys[k]=f.rel;put(asmCompose(me.fr,f.F),k,asmRelKey(A.src)===asmRelKey(f.rel));});}
+  else{asmFramesUnder(asm.active,me.id).forEach((f,i)=>{const k='d'+i;A.keys[k]=f.rel;put(f.F,k,asmRelKey(A.dst)===asmRelKey(f.rel));});}
 }
 function asmAlignPickAt(e){
   // Clic dans la vue pendant Aligner : repère candidat le plus proche → true si consommé
@@ -195,13 +214,13 @@ function asmAlignPickAt(e){
   const ms=[];G.traverse(m=>{if(m.isMesh&&m.userData.am)ms.push(m);});
   const h=rayc.intersectObjects(ms,false)[0];
   if(!h){try{faceEl.textContent='Cliquez une triade (repère), ou choisissez dans le panneau.';}catch(err){}return true;}
-  const k=h.object.userData.am.split('|');
-  if(k[0]==='s')asmAlignSetSrc(k[1]||null);else asmAlignSetDst(k[1]||null,k[2]||null);
+  const k=h.object.userData.am,rel=asmAlign.keys&&asmAlign.keys[k];if(!rel)return true;
+  if(k[0]==='s')asmAlignSetSrc(rel);else asmAlignSetDst(rel);
   return true;
 }
-function asmAlignSetSrc(cg){if(!asmAlign)return;asmAlign.src=cg;asmAlign.step='dst';asmAlignRefresh();
-  try{faceEl.textContent='Aligner : choisissez maintenant le repère cible (origine de l’assemblage ou repère d’une autre occurrence).';}catch(e){}}
-function asmAlignSetDst(occ,cg){if(!asmAlign)return;asmAlign.dst={occ:occ||null,cg:cg||null};asmAlignRefresh();
+function asmAlignSetSrc(rel){if(!asmAlign)return;asmAlign.src={path:rel.path.slice(),cg:rel.cg};asmAlign.step='dst';asmAlignRefresh();
+  try{faceEl.textContent='Aligner : choisissez maintenant le repère cible (géométrie du composant actif, ou repère d’un autre composant).';}catch(e){}}
+function asmAlignSetDst(rel){if(!asmAlign)return;asmAlign.dst={path:rel.path.slice(),cg:rel.cg};asmAlignRefresh();
   try{faceEl.textContent='Aligner : réglez retourner / rotation / décalage puis ✓.';}catch(e){}}
 function asmAlignCommit(){
   const A=asmAlign,o=A&&asmOcc(A.occ);if(!o)return;
@@ -211,7 +230,7 @@ function asmAlignCommit(){
   asmPush('aligner « '+o.name+' »');
   o.fr=now.fr;o.align=now.align;
   asmAlign=null;asmAlignMarks();asmResolve();asmNotify();asmGizmoDraw();
-  try{faceEl.textContent=o.name+' alignée'+(o.st==='warn'?' — ⚠ '+o.msg:'')+'. Elle suivra les repères si les pièces changent.';}catch(e){}
+  try{faceEl.textContent=o.name+' alignée'+(o.st==='warn'?' — ⚠ '+o.msg:'')+'. Elle suivra les repères si les composants changent.';}catch(e){}
 }
 function asmAlignCancel(){
   const A=asmAlign,o=A&&asmOcc(A.occ);asmAlign=null;
@@ -227,13 +246,12 @@ function asmAlignProps(p){
     const go=()=>{const x=parseFloat(String(i.value).replace(',','.'));if(isFinite(x)){fn(x);asmAlignRefresh();}};i.addEventListener('change',go);i.addEventListener('keydown',e=>{if(e.key==='Enter')go();});return i;};
   const choice=(lab,on,fn)=>{const b=mk('button','mini',lab);if(on)b.style.outline='2px solid var(--accent, #0a84ff)';b.onclick=fn;return b;};
   p.appendChild(mk('div','pnl-h','🔗 Aligner « '+o.name+' »'));
-  p.appendChild(mk('div','pnl-note','1. Repère de la pièce à poser'));
-  const r1=mk('div','pnl-btns');asmFramesOf(me).forEach(f=>r1.appendChild(choice(f.name,A.src===f.cg&&A.src!==undefined,()=>asmAlignSetSrc(f.cg))));p.appendChild(r1);
+  p.appendChild(mk('div','pnl-note','1. Repère du composant à poser'));
+  const r1=mk('div','pnl-btns');asmFramesOf(me).forEach(f=>r1.appendChild(choice(f.name,A.src!==undefined&&asmRelKey(A.src)===asmRelKey(f.rel),()=>asmAlignSetSrc(f.rel))));p.appendChild(r1);
   if(A.src!==undefined){
     p.appendChild(mk('div','pnl-note','2. Repère cible'));
     const r2=mk('div','pnl-btns');
-    r2.appendChild(choice('Origine de l’assemblage',A.dst&&!A.dst.occ,()=>asmAlignSetDst(null,null)));
-    asm.occ.forEach(q=>{if(q.id===me.id)return;asmFramesOf(q).forEach(f=>r2.appendChild(choice(q.name+' › '+f.name,A.dst&&A.dst.occ===q.id&&A.dst.cg===f.cg,()=>asmAlignSetDst(q.id,f.cg))));});
+    asmFramesUnder(asm.active,me.id).forEach(f=>r2.appendChild(choice(f.name,A.dst!==undefined&&asmRelKey(A.dst)===asmRelKey(f.rel),()=>asmAlignSetDst(f.rel))));
     p.appendChild(r2);
   }
   if(A.dst!==undefined){
@@ -246,8 +264,12 @@ function asmAlignProps(p){
   const ok=mk('button','primary','✓ Valider');ok.onclick=asmAlignCommit;b.appendChild(ok);
   const no=mk('button',null,'Annuler');no.onclick=asmAlignCancel;b.appendChild(no);p.appendChild(b);
 }
-function asmTreePick(id){
-  // Clic sur une occurrence dans l'arbre pendant Aligner (étape cible) : son origine → true
-  if(!asmAlign||asmAlign.step!=='dst'||id===asmAlign.occ)return false;
-  asmAlignSetDst(id,null);return true;
+function asmTreePick(path){
+  // Clic sur une instance dans l'arbre pendant Aligner (étape cible) : son origine → true.
+  // path absolu ; seules les instances du sous-arbre actif, hors l'occurrence placée, conviennent.
+  if(!asmAlign||asmAlign.step!=='dst')return false;
+  const P=asm.path,n=P.length;
+  if(path.length<=n||!P.every((q,i)=>path[i]===q))return true;
+  const rel=path.slice(n);if(rel[0]===asmAlign.occ)return true;
+  asmAlignSetDst({path:rel,cg:null});return true;
 }

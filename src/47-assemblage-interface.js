@@ -1,20 +1,22 @@
-/* ---------- assemblage : affichage, navigation, arbre, panneau (V0.6.0) ----------
-   Le modèle est dans 46-assemblage-modele.js. Ici :
-     · asmScene       scène SÉPARÉE de la vue d'assemblage : la scène de la pièce n'est pas
-                      touchée (rien à masquer ni à restaurer) ; animate() rend l'une ou l'autre ;
-     · instantanés    maillages de chaque pièce (géométries clonées en fin de rejeu), affichés
-                      par occurrence avec sa matrice ; une pièce inactive ne change pas, son
-                      instantané reste valable (refait seulement repli maillage → exact) ;
-     · contexte       en mode pièce, les autres occurrences en fantômes non sélectionnables,
-                      placées par rapport à l'occurrence éditée (la pièce reste dans son repère) ;
-     · navigation     entrer / sortir de l'assemblage, éditer une pièce (double-clic) ;
-     · arbre, panneau occurrences, fixer, nouvelle pièce, nouvelle occurrence, supprimer. */
+/* ---------- composants : affichage, navigation, arbre, panneau (V0.6.0 → V0.6.1) ----------
+   Le modèle est dans 46-assemblage-modele.js. Deux modes pour le composant actif (celui de
+   l'instance éditée, asm.path) :
+     · MODÉLISER (asmMode 'part') : la scène de la pièce, inchangée ; le reste de l'arbre est
+       dessiné autour (groupe asmCtx) : descendants du composant actif FIGÉS (pleins, non
+       sélectionnables), le reste en fantômes ;
+     · PLACER (asmMode 'asm') : scène SÉPARÉE asmScene (celle de la pièce n'est jamais touchée) ;
+       la géométrie propre du composant actif est pleine, ses ENFANTS DIRECTS sont sélectionnables
+       (un clic n'importe où dans le sous-arbre d'un enfant sélectionne cet enfant), le reste en
+       fantômes. Manipulateur et Aligner (48) s'appliquent à ces enfants.
+   Dans les deux modes, tout est dessiné dans le repère de l'instance éditée : la caméra ne
+   saute pas d'un mode à l'autre. Instantanés : maillages de chaque composant (ses corps
+   propres, géométries clonées en fin de rejeu), refaits seulement repli maillage → exact. */
 let asmScene=null,asmTri=null;
-let asmSelId=null;      // occurrence sélectionnée (vue d'assemblage)
-let asmEditOcc=null;    // occurrence par laquelle on est entré dans la pièce (contexte)
+let asmSelId=null;      // occurrence sélectionnée (mode Placer) : enfant direct du composant actif
 let asmBuilding=false;  // instantanés en cours : pas de dessin intermédiaire
+let asmTreeOpen=true;   // section « Composants » de l'arbre dépliée
 const ASM_SEL_COL=0x0a84ff;
-function asmOn(){return !!asm&&(asm.parts.length>1||asm.occ.length>1);}
+function asmOn(){return !!asm&&asm.comps.some(c=>c.occ.length>0);}
 function asmSceneGet(){
   if(asmScene)return asmScene;
   asmScene=new THREE.Scene();
@@ -25,7 +27,7 @@ function asmSceneGet(){
   return asmScene;
 }
 function asmRenderScene(){
-  // Scène à rendre (animate) : l'assemblage en vue d'assemblage, sinon la pièce
+  // Scène à rendre (animate) : mode Placer → asmScene, sinon la pièce
   if(asmMode==='asm'&&asmScene){asmScene.background=scene.background;return asmScene;}
   return scene;
 }
@@ -35,12 +37,13 @@ function asmMat4(F){
   m.setPosition(F.o[0],F.o[1],F.o[2]);
   return m;
 }
+const asmEsc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 /* ── instantanés d'affichage ── */
 function asmCaptureActive(){
-  // Fin de rejeu (buildDone) : maillages de la pièce active, clonés (le rejeu suivant libère
-  // les originaux). Seulement en assemblage — une pièce seule ne paie rien.
+  // Fin de rejeu (buildDone) : maillages du composant actif, clonés (le rejeu suivant libère
+  // les originaux). Seulement avec des composants — une pièce seule ne paie rien.
   if(!asm||(!asmOn()&&!asm._force))return;
-  const p=asmActivePart();if(!p)return;
+  const c=asmActiveComp();if(!c)return;
   const items=[];
   (bodies||[]).forEach(b=>{
     if(!b||b.ghost||!b.mesh||!b.mesh.geometry||b.visible===false)return;
@@ -51,72 +54,77 @@ function asmCaptureActive(){
       items.push({geo:g,color:(m.color&&m.color.getHex)?m.color.getHex():0x9a9aa0,op:(m.transparent&&m.opacity<1)?m.opacity:1});
     }catch(e){}
   });
-  if(p._snap)asmSnapFree(p._snap);
-  p._snap={items,exact:builtEngine==='exact',hash:(()=>{try{return docHash();}catch(e){return '';}})()};
-  // la pièce vient d'être rejouée : ses repères ont pu bouger → les alignements suivent
+  if(c._snap)asmSnapFree(c._snap);
+  c._snap={items,exact:builtEngine==='exact',hash:(()=>{try{return docHash();}catch(e){return '';}})()};
+  // le composant vient d'être rejoué : ses repères ont pu bouger → les alignements suivent
   try{if(asmResolve()){dirty=true;autosave();}}catch(e){}
   if(!asmBuilding){try{asmCtxDraw();}catch(e){}if(asmMode==='asm'){try{asmDraw();}catch(e){}}}
 }
 function asmSnapFree(s){(s&&s.items||[]).forEach(it=>{try{it.geo.dispose();}catch(e){}});}
 function asmBuildSnapshots(){
-  // Rejoue chaque pièce sans instantané (ou en repli maillage alors que le noyau exact est
-  // prêt), puis revient à la pièce active. Synchrone : rebuild() construit et capture
+  // Rejoue chaque composant sans instantané (ou en repli maillage alors que le noyau exact est
+  // prêt), puis revient au composant actif. Synchrone : rebuild() construit et capture
   // (buildDone) avant de rendre la main.
   if(!asm)return;
-  const back=asm.active,exact=typeof occHas==='function'&&occHas();
-  const need=p=>!p._snap||(exact&&!p._snap.exact);
+  const back=asm.active,backPath=asm.path.slice(),exact=typeof occHas==='function'&&occHas();
+  const need=c=>!c._snap||(exact&&!c._snap.exact);
   let n=0;
   asmBuilding=true;
   try{
-    for(const p of asm.parts.slice()){if(p.id!==back&&need(p)){asmActivate(p.id);n++;}}
-    if(n)asmActivate(back);
-    else{const a=asmActivePart();if(a&&need(a)){builtVersion=-1;try{rebuild();}catch(e){}}}
+    for(const c of asm.comps.slice()){if(c.id!==back&&need(c)){asmActivate(c.id);n++;}}
+    if(n)asmActivate(back,backPath);
+    else{const a=asmActiveComp();if(a&&need(a)){builtVersion=-1;try{rebuild();}catch(e){}}}
   }finally{asmBuilding=false;}
   try{asmCtxDraw();}catch(e){}
   if(asmMode==='asm'){try{asmDraw();}catch(e){}}
 }
-/* ── dessin de la vue d'assemblage ── */
-function asmDraw(){
-  const S=asmSceneGet(),G=S.getObjectByName('asmOcc');
-  for(const o of [...G.children]){G.remove(o);o.traverse(m=>{try{if(m.material)m.material.dispose();}catch(e){}});}
+/* ── dessin : l'arbre entier, dans le repère de l'instance éditée ── */
+function asmClear(G){for(const o of [...G.children]){G.remove(o);o.traverse(m=>{try{if(m.material)m.material.dispose();}catch(e){}});}}
+function asmFill(G,placer){
+  // placer : mode Placer (enfants directs sélectionnables) ; sinon contexte du mode Modéliser
   if(!asm)return;
-  asm.occ.forEach(o=>{
-    if(o.visible===false)return;
-    const p=asmPart(o.part);if(!p||!p._snap)return;
-    const g=new THREE.Group();g.name='occ_'+o.id;g.userData.occ=o.id;
-    g.matrixAutoUpdate=false;g.matrix.copy(asmMat4(o.fr));
-    const on=asmSelId===o.id;
-    p._snap.items.forEach(it=>{
-      const mat=new THREE.MeshStandardMaterial({color:it.color,metalness:.35,roughness:.4,transparent:it.op<1,opacity:it.op,
+  const P=asm.path,n=P.length;
+  const V=asmInverse(asmWorld(P)||asmFr0());
+  const hidden=path=>{let c=asmRoot();for(const id of path){const o=c&&c.occ.find(q=>q.id===id);if(!o||o.visible===false)return true;c=asmComp(o.comp);}return false;};
+  asmInstances(asm.root).forEach(inst=>{
+    const c=asmComp(inst.comp);if(!c||!c._snap||!c._snap.items.length||hidden(inst.path))return;
+    const mine=inst.path.length>=n&&P.every((id,i)=>inst.path[i]===id); // dans le sous-arbre actif
+    const self=mine&&inst.path.length===n;
+    if(self&&!placer)return; // le composant actif EST la scène de la pièce
+    const key=mine&&!self?inst.path[n]:null; // enfant direct auquel appartient l'instance
+    const kind=!mine?'ghost':(self||!placer)?'solid':'pick';
+    const g=new THREE.Group();g.matrixAutoUpdate=false;g.matrix.copy(asmMat4(asmCompose(V,inst.F)));
+    if(kind==='pick'){g.userData.occ=key;g.name='occ_'+key;}
+    const on=kind==='pick'&&asmSelId===key;
+    c._snap.items.forEach(it=>{
+      let mat;
+      if(kind==='ghost')mat=new THREE.MeshStandardMaterial({color:it.color,transparent:true,opacity:0.18,depthWrite:false,metalness:.2,roughness:.6});
+      else mat=new THREE.MeshStandardMaterial({color:it.color,metalness:.35,roughness:.4,
+        transparent:it.op<1||(!placer&&!self),opacity:(!placer&&!self)?Math.min(it.op,0.6):it.op,
         emissive:on?ASM_SEL_COL:0x000000,emissiveIntensity:on?0.35:0});
-      const m=new THREE.Mesh(it.geo,mat);m.userData.occ=o.id;g.add(m);
+      const m=new THREE.Mesh(it.geo,mat);
+      if(kind==='pick')m.userData.occ=key;else{m.raycast=()=>{};if(kind==='ghost')m.renderOrder=-1;}
+      g.add(m);
     });
     G.add(g);
   });
   G.updateMatrixWorld(true);
+}
+function asmDraw(){
+  const S=asmSceneGet(),G=S.getObjectByName('asmOcc');
+  asmClear(G);
+  if(!asm)return;
+  asmFill(G,true);
   try{asmGizmoDraw();}catch(e){} // manipulateur de l'occurrence sélectionnée (48)
 }
 function asmCtxDraw(){
-  // Mode pièce : les autres occurrences en fantômes, dans le repère de l'occurrence éditée
+  // Mode Modéliser : le reste de l'arbre autour de la pièce (descendants figés, autres en fantômes)
   if(typeof scene==='undefined'||!scene)return;
   let G=scene.getObjectByName('asmCtx');
-  if(G){for(const o of [...G.children]){G.remove(o);o.traverse(m=>{try{if(m.material)m.material.dispose();}catch(e){}});}}
+  if(G)asmClear(G);
   if(!asmOn()||asmMode==='asm')return;
   if(!G){G=new THREE.Group();G.name='asmCtx';scene.add(G);}
-  const me=asmOcc(asmEditOcc)&&asmOcc(asmEditOcc).part===asm.active?asmOcc(asmEditOcc):asmPartOccs(asm.active)[0];
-  if(!me)return;
-  const inv=asmMat4(asmInverse(me.fr));
-  asm.occ.forEach(o=>{
-    if(o.id===me.id||o.visible===false)return;
-    const p=asmPart(o.part);if(!p||!p._snap)return;
-    const g=new THREE.Group();g.matrixAutoUpdate=false;g.matrix.multiplyMatrices(inv,asmMat4(o.fr));
-    p._snap.items.forEach(it=>{
-      const m=new THREE.Mesh(it.geo,new THREE.MeshStandardMaterial({color:it.color,transparent:true,opacity:0.18,depthWrite:false,metalness:.2,roughness:.6}));
-      m.raycast=()=>{};m.renderOrder=-1;g.add(m);
-    });
-    G.add(g);
-  });
-  G.updateMatrixWorld(true);
+  asmFill(G,false);
 }
 function asmFit(){
   const S=asmSceneGet(),box=new THREE.Box3();
@@ -128,52 +136,77 @@ function asmFit(){
   controls.update();
 }
 /* ── navigation ── */
-function asmEnter(){
-  // Vue d'assemblage (crée l'assemblage autour de la pièce si besoin)
-  if(typeof skEdit!=='undefined'&&skEdit){try{faceEl.textContent='Fermez d’abord l’esquisse.';}catch(e){}return;}
+function asmShow(path,mode,selId){
+  // Va à l'instance (chemin absolu), en mode 'part' (Modéliser) ou 'asm' (Placer)
+  if(typeof skEdit!=='undefined'&&skEdit){try{faceEl.textContent='Fermez d’abord l’esquisse.';}catch(e){}return false;}
   asmEnsure();
-  asmLeavePart();
-  if(!asmActivePart()._snap){
-    // pièce seule jusqu'ici : aucune capture faite (asmOn faux) → on la force
-    asm._force=true;builtVersion=-1;try{rebuild();}catch(e){}asm._force=false;
+  const p=asmPathOK(path)?path.slice():[];
+  const moved=p.join('/')!==asm.path.join('/');
+  if(mode==='asm'){
+    asmLeavePart();
+    if(asmPathComp(p)!==asm.active||moved)asmActivatePath(p);
+    if(!asmActiveComp()._snap){
+      // composant jamais capturé (pièce seule jusqu'ici) : on force la capture
+      asm._force=true;builtVersion=-1;try{rebuild();}catch(e){}asm._force=false;
+    }
+    asmBuildSnapshots();
+    asmResolve();
+    const first=asmMode!=='asm';
+    asmMode='asm';
+    try{document.body.setAttribute('data-asm','1');}catch(e){}
+    const kids=asmActiveComp().occ;
+    asmSelId=selId&&kids.some(o=>o.id===selId)?selId:(asmSelId&&kids.some(o=>o.id===asmSelId)?asmSelId:null);
+    asmDraw();asmCtxDraw();
+    if(first||moved)asmFit();
+    try{renderTree();renderProps();docUndoUI();}catch(e){}
+    const c=asmActiveComp();
+    try{faceEl.textContent='Placer les composants de « '+c.name+' » : clic = sélectionner · double-clic = modéliser'+(asm.path.length?' · Échap = remonter':'')+'.';}catch(e){}
+  }else{
+    asmMode='part';
+    try{document.body.removeAttribute('data-asm');}catch(e){}
+    asmActivatePath(p);
+    asmCtxDraw();
+    try{renderTree();renderProps();docUndoUI();if(moved)showAll();}catch(e){}
+    const c=asmActiveComp(),o=asmOcc(asm.path[asm.path.length-1]);
+    try{faceEl.textContent='Modéliser « '+c.name+' »'+(o?' ('+o.name+')':'')+(asmOn()?' · le reste de l’assemblage est autour. « Placer » pour déplacer ses composants.':'');}catch(e){}
   }
-  asmBuildSnapshots();
-  asmResolve();
-  asmMode='asm';
-  try{document.body.setAttribute('data-asm','1');}catch(e){}
-  if(!asmSelId||!asmOcc(asmSelId))asmSelId=asmEditOcc&&asmOcc(asmEditOcc)?asmEditOcc:null;
-  asmDraw();asmCtxDraw();asmFit();
-  try{renderTree();renderProps();docUndoUI();}catch(e){}
-  try{faceEl.textContent='Assemblage : clic = sélectionner une occurrence · double-clic = éditer sa pièce.';}catch(e){}
+  return true;
+}
+function asmEnter(){
+  // Mode Placer. Un composant sans enfants n'a rien à placer : on remonte à son porteur,
+  // l'occurrence d'où l'on vient sélectionnée (le « retour à l'assemblage » de V0.6.0).
+  asmEnsure();
+  const c=asmActiveComp();
+  if(c&&!c.occ.length&&asm.path.length)return asmShow(asm.path.slice(0,-1),'asm',asm.path[asm.path.length-1]);
+  return asmShow(asm.path,'asm');
 }
 function asmExit(occId){
-  // Retour en mode pièce : la pièce de l'occurrence (ou la pièce active)
+  // Mode Modéliser : un enfant direct (occId), sinon le composant actif
   if(!asm)return;
-  const o=asmOcc(occId)||asmOcc(asmSelId)||asmPartOccs(asm.active)[0];
-  asmMode='part';
-  try{document.body.removeAttribute('data-asm');}catch(e){}
-  asmEditOcc=o?o.id:null;
-  if(o&&o.part!==asm.active)asmActivate(o.part);
-  asmCtxDraw();
-  try{renderTree();renderProps();docUndoUI();showAll();}catch(e){}
-  const p=asmActivePart();
-  try{faceEl.textContent='Pièce « '+(p?p.name:'')+' » — '+(o?o.name:'')+(asmOn()?' · les autres pièces sont en fantôme. « Assemblage » pour revenir.':'');}catch(e){}
+  const c=asmActiveComp(),o=occId&&c&&c.occ.find(q=>q.id===occId);
+  asmShow(o?asm.path.concat(o.id):asm.path,'part');
+}
+function asmUp(){
+  // Remonte au porteur, en mode Placer, l'occurrence d'où l'on vient sélectionnée
+  if(!asm||!asm.path.length)return false;
+  return asmShow(asm.path.slice(0,-1),'asm',asm.path[asm.path.length-1]);
 }
 function asmToggle(){if(asmMode==='asm')asmExit();else asmEnter();}
 function asmOnChange(viewOnly){
   // Appelé par le modèle (46) après toute modification de l'assemblage (viewOnly : bascule)
   if(!viewOnly){try{dirty=true;autosave();}catch(e){}}
   if(asmBuilding)return;
-  if(asmMode==='asm'){try{asmDraw();renderTree();renderProps();}catch(e){}}
+  // chaque étape protégée à part : un dessin raté ne doit pas laisser l'arbre périmé
+  if(asmMode==='asm'){try{asmDraw();}catch(e){}try{renderTree();}catch(e){}try{renderProps();}catch(e){}}
   else{try{asmCtxDraw();}catch(e){}}
 }
-/* ── sélection dans la vue d'assemblage ── */
+/* ── sélection en mode Placer ── */
 function asmPickAt(e){
   const S=asmSceneGet();
   const r=renderer.domElement.getBoundingClientRect();
   const ndc=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
   rayc.setFromCamera(ndc,camera);
-  const ms=[];S.getObjectByName('asmOcc').traverse(m=>{if(m.isMesh)ms.push(m);});
+  const ms=[];S.getObjectByName('asmOcc').traverse(m=>{if(m.isMesh&&m.userData.occ)ms.push(m);});
   const h=rayc.intersectObjects(ms,false)[0];
   return h?h.object.userData.occ:null;
 }
@@ -183,13 +216,13 @@ function asmClick(e){
   asmSelId=id;
   asmDraw();renderTree();renderProps();
   const o=asmOcc(id);
-  try{faceEl.textContent=o?(o.name+' — pièce « '+((asmPart(o.part)||{}).name||'')+' »'+(o.fixed?' · fixée':'')+(o.align?' · alignée':'')+'\nDouble-clic = éditer la pièce.'):'Aucune occurrence ici.';}catch(err){}
+  try{faceEl.textContent=o?(o.name+' — composant « '+((asmComp(o.comp)||{}).name||'')+' »'+(o.fixed?' · fixée':'')+(o.align?' · alignée':'')+'\nDouble-clic = modéliser ce composant.'):'Aucun composant ici.';}catch(err){}
 }
 function asmDblClick(e){
   const id=asmPickAt(e);if(id)asmExit(id);
 }
 function asmKey(e){
-  // Clavier en vue d'assemblage → true si consommé
+  // Clavier en mode Placer → true si consommé
   if(asmMode!=='asm')return false;
   const t=e.target;if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return false;
   const ctrl=e.ctrlKey||e.metaKey,k=String(e.key||'').toLowerCase();
@@ -197,24 +230,29 @@ function asmKey(e){
   if(ctrl&&(k==='y'||(k==='z'&&e.shiftKey))){e.preventDefault();asmRedo();return true;}
   if((e.key==='Delete'||e.key==='Backspace')&&asmSelId){e.preventDefault();asmAskDelete(asmSelId);return true;}
   if(e.key==='Escape'&&asmAlign){asmAlignCancel();return true;}
-  if(e.key==='Escape'){if(asmSelId){asmSelId=null;asmDraw();renderTree();renderProps();}return true;}
+  if(e.key==='Escape'){
+    if(asmSelId){asmSelId=null;asmDraw();renderTree();renderProps();}
+    else asmUp();
+    return true;
+  }
   return false;
 }
 /* ── commandes ── */
-function asmCmdNewPart(){
-  if(asmMode!=='asm')asmEnter();
-  const r=asmNewPart();
-  // on entre aussitôt dans la pièce neuve (vide : rien à voir dans l'assemblage)
-  asmExit(r.occ.id);
-  try{faceEl.textContent='Nouvelle pièce « '+r.part.name+' » : créez une esquisse. « Assemblage » pour revenir.';}catch(e){}
+function asmCmdNewComp(){
+  // Nouveau composant, enfant du composant actif ; on entre aussitôt dedans
+  if(typeof skEdit!=='undefined'&&skEdit){try{faceEl.textContent='Fermez d’abord l’esquisse.';}catch(e){}return;}
+  asmEnsure();asmLeavePart();
+  const r=asmNewComp();if(!r)return;
+  asmShow(asm.path.concat(r.occ.id),'part');
+  try{faceEl.textContent='Nouveau composant « '+r.comp.name+' » dans « '+r.owner.name+' » : créez une esquisse. « Placer » pour le positionner.';}catch(e){}
 }
 function asmCmdNewOcc(){
   const src=asmOcc(asmSelId);
-  if(!src){try{faceEl.textContent='Nouvelle occurrence : sélectionnez d’abord une occurrence de la pièce à répéter.';}catch(e){}return;}
+  if(!src){try{faceEl.textContent='Nouvelle occurrence : sélectionnez d’abord le composant à répéter (mode Placer).';}catch(e){}return;}
   const fr=JSON.parse(JSON.stringify(src.fr));
-  const p=asmPart(src.part),b=p&&p._snap?asmSnapBox(p._snap):null;
+  const c=asmComp(src.comp),b=c&&c._snap?asmSnapBox(c._snap):null;
   fr.o[0]+=b?Math.max(10,1.2*(b.max.x-b.min.x)):50; // décalée le long de X pour qu'on la voie
-  const o=asmAddOcc(src.part,fr);
+  const o=asmAddOcc(src.comp,fr);if(!o)return;
   asmSelId=o.id;asmNotify();
   try{faceEl.textContent='Occurrence '+o.name+' ajoutée (décalée en X). Placez-la, ou alignez un repère.';}catch(e){}
 }
@@ -225,57 +263,95 @@ function asmToggleFixed(id){
 }
 function asmAskDelete(id){
   const o=asmOcc(id);if(!o)return;
-  const seule=asmPartOccs(o.part).length===1;
-  if(seule&&asm.parts.length===1){try{faceEl.textContent='C’est la seule pièce : rien à supprimer.';}catch(e){}return;}
-  if(!confirm('Supprimer l’occurrence « '+o.name+' » ?'+(seule?'\nC’est la dernière de sa pièce : la pièce « '+((asmPart(o.part)||{}).name||'')+' » sera supprimée (Ctrl+Z pour annuler).':'')))return;
+  const c=asmComp(o.comp),seule=asmCompOccs(o.comp).length===1;
+  if(!confirm('Supprimer l’occurrence « '+o.name+' » ?'+(seule?'\nC’est la dernière du composant « '+((c||{}).name||'')+' » : il sera supprimé avec ses sous-composants (Ctrl+Z pour annuler).':'')))return;
   asmDeleteOcc(id);if(asmSelId===id)asmSelId=null;asmNotify();
 }
 function asmRename(id){
   const o=asmOcc(id);if(!o)return;
-  const p=asmPart(o.part);
-  const n=prompt('Nom de la pièce (toutes ses occurrences) :',p?p.name:'');if(!n||!p)return;
-  asmPush('renommer');const old=p.name;p.name=n;
-  asm.occ.forEach(q=>{if(q.part===p.id)q.name=q.name.replace(new RegExp('^'+old.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')),n);});
-  if(p.doc)p.doc.name=n;
+  const c=asmComp(o.comp);
+  const n=prompt('Nom du composant (toutes ses occurrences) :',c?c.name:'');if(!n||!c)return;
+  asmPush('renommer');const old=c.name;c.name=n;
+  asmCompOccs(c.id).forEach(q=>{q.name=q.name.replace(new RegExp('^'+old.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')),n);});
+  if(c.doc)c.doc.name=n;
   asmNotify();
 }
 /* ── arbre ── */
-function asmTreeRender(t){
-  // Arbre de la vue d'assemblage (renderTree le délègue ici)
-  const row=(html,cls,title)=>{const d=document.createElement('div');d.className=cls;d.innerHTML=html;if(title)d.title=title;t.appendChild(d);return d;};
-  row('<span>🧩 Assemblage · '+String(asm.name||'').replace(/</g,'&lt;')+'</span>','tgroup');
-  row('<span class="pdot" style="background:#fff;box-shadow:0 0 0 2px #1c1c1e inset"></span><span class="nm">Origine de l’assemblage</span>','tnode','Repère de l’assemblage : cible d’un alignement');
-  row('<span>📦 Occurrences ('+asm.occ.length+') · '+asm.parts.length+' pièce(s)</span>','tgroup');
-  asm.occ.forEach(o=>{
-    const p=asmPart(o.part)||{};
-    const badges=(o.fixed?' <span title="Fixée">📌</span>':'')+(o.align?' <span title="Alignée sur un repère">🔗</span>':'')+(o.st==='warn'?' <span style="color:var(--warn)" title="'+String(o.msg||'').replace(/"/g,'&quot;')+'">⚠</span>':'');
-    const d=row('<span>📦</span><span class="nm">'+String(o.name).replace(/</g,'&lt;')+badges+(p.id===asm.active?' <span style="color:var(--muted)">· active</span>':'')+'</span><span class="eye" title="Afficher / masquer">'+(o.visible===false?'🙈':'👁')+'</span>',
-      'tnode'+(asmSelId===o.id?' sel':'')+(o.visible===false?' hidden':''),'Clic = sélectionner · double-clic = éditer la pièce · clic droit = menu');
+function asmBreadcrumb(t){
+  // En tête de l'arbre (les deux modes) : fil d'Ariane, puis la hiérarchie des composants
+  if(!asmOn())return;
+  const d=document.createElement('div');d.className='tnode asmCrumb';d.style.cssText='font-weight:600;flex-wrap:wrap;gap:2px';
+  const seg=(txt,path,next,on)=>{const s=document.createElement('span');s.className='nm';s.textContent=txt;
+    s.style.cssText='cursor:pointer;flex:none'+(on?';color:var(--primary)':'');s.title=on?'Composant actif':'Placer les composants de « '+txt+' »';
+    s.onclick=ev=>{ev.stopPropagation();asmShow(path,'asm',next);};return s;};
+  const ic=document.createElement('span');ic.textContent='🧩';d.appendChild(ic);
+  let c=asmRoot();
+  d.appendChild(seg(c.name,[],asm.path[0],!asm.path.length));
+  asm.path.forEach((id,i)=>{
+    const o=c.occ.find(q=>q.id===id);if(!o)return;c=asmComp(o.comp);
+    const sp=document.createElement('span');sp.textContent='›';sp.style.color='var(--muted)';d.appendChild(sp);
+    d.appendChild(seg(c.name,asm.path.slice(0,i+1),asm.path[i+1],i===asm.path.length-1));
+  });
+  const m=document.createElement('span');m.style.cssText='margin-left:auto;color:var(--muted);font-weight:400';
+  m.textContent=asmMode==='asm'?'placer':'modéliser';d.appendChild(m);
+  t.appendChild(d);
+  asmCompsSection(t);
+}
+function asmCompsSection(t){
+  // Hiérarchie complète ; le sous-arbre actif en clair, ses enfants directs actionnables
+  const all=asmInstances(asm.root).filter(i=>i.path.length);
+  const h=document.createElement('div');h.className='tgroup';h.style.cursor='pointer';
+  h.innerHTML='<span>'+(asmTreeOpen?'▾':'▸')+' 📦 Composants ('+all.length+')</span>';
+  h.title=all.length+' occurrence(s) de '+(asm.comps.length-1)+' composant(s) sous la racine';
+  h.onclick=()=>{asmTreeOpen=!asmTreeOpen;renderTree();};
+  t.appendChild(h);
+  if(!asmTreeOpen)return;
+  const P=asm.path,n=P.length;
+  all.forEach(inst=>{
+    const id=inst.path[inst.path.length-1],o=asmOcc(id),c=asmComp(inst.comp)||{};if(!o)return;
+    const mine=inst.path.length>n&&P.every((q,i)=>inst.path[i]===q);
+    const direct=mine&&inst.path.length===n+1;
+    const self=inst.path.length===n&&P.every((q,i)=>inst.path[i]===q);
+    const badges=(o.fixed?' <span title="Fixée">📌</span>':'')+(o.align?' <span title="Alignée sur un repère">🔗</span>':'')+
+      (o.st==='warn'?' <span style="color:var(--warn)" title="'+asmEsc(o.msg)+'">⚠</span>':'')+
+      (c.occ&&c.occ.length?' <span style="color:var(--muted)" title="Sous-composants">('+c.occ.length+')</span>':'');
+    const d=document.createElement('div');
+    d.className='tnode'+(direct&&asmMode==='asm'&&asmSelId===id?' sel':'')+(o.visible===false?' hidden':'');
+    d.style.paddingLeft=(6+12*(inst.depth-1))+'px';
+    if(!mine&&!self)d.style.opacity='0.55';
+    d.innerHTML='<span>'+(self?'✏️':'📦')+'</span><span class="nm">'+asmEsc(o.name)+badges+(self?' <span style="color:var(--muted)">· actif</span>':'')+'</span>'+
+      '<span class="eye" title="Afficher / masquer">'+(o.visible===false?'🙈':'👁')+'</span>';
+    d.title=direct?'Clic = sélectionner · double-clic = modéliser · clic droit = menu':'Double-clic = modéliser ce composant';
     d.onclick=ev=>{
-      if(ev.target&&ev.target.classList&&ev.target.classList.contains('eye')){asmPush('visibilité');o.visible=!(o.visible!==false);asmNotify();return;}
-      {const f=globalThis.asmTreePick;if(typeof f==='function'&&f(o.id))return;} // saisie d'un alignement (lot C)
-      asmSelId=o.id;asmDraw();renderTree();renderProps();
+      if(ev.target&&ev.target.classList&&ev.target.classList.contains('eye')){asmPush('visibilité');o.visible=!(o.visible!==false);asmNotify();renderTree();return;}
+      {const f=globalThis.asmTreePick;if(typeof f==='function'&&f(inst.path))return;} // saisie d'un alignement (48)
+      if(direct){if(asmMode!=='asm'){asmShow(P,'asm',id);return;}asmSelId=id;asmDraw();renderTree();renderProps();}
     };
-    d.ondblclick=()=>asmExit(o.id);
-    d.oncontextmenu=e=>{e.preventDefault();asmSelId=o.id;asmDraw();renderTree();renderProps();
-      try{mfPop({getBoundingClientRect:()=>({left:e.clientX,right:e.clientX+190,top:e.clientY-6,bottom:e.clientY-6,width:190,height:0})},[
-        {html:'✏️ Éditer la pièce',fn:()=>asmExit(o.id)},
-        {html:'➕ Nouvelle occurrence',fn:()=>asmCmdNewOcc()},
-        {html:o.fixed?'📌 Libérer':'📌 Fixer',fn:()=>asmToggleFixed(o.id)},
-        {html:'🏷 Renommer la pièce',fn:()=>asmRename(o.id)},
-        {html:'🗑 Supprimer',fn:()=>asmAskDelete(o.id)}]);}catch(err){}
+    d.ondblclick=()=>asmShow(inst.path,'part');
+    d.oncontextmenu=e=>{e.preventDefault();
+      const items=[{html:'✏️ Modéliser ce composant',fn:()=>asmShow(inst.path,'part')}];
+      if(c.occ&&c.occ.length)items.push({html:'🧩 Placer ses composants',fn:()=>asmShow(inst.path,'asm')});
+      if(direct){
+        if(asmMode==='asm'){asmSelId=id;asmDraw();renderTree();renderProps();}
+        items.push({html:'➕ Nouvelle occurrence',fn:()=>{if(asmMode!=='asm')asmShow(P,'asm',id);asmSelId=id;asmCmdNewOcc();}},
+          {html:o.fixed?'📌 Libérer':'📌 Fixer',fn:()=>asmToggleFixed(id)},
+          {html:'🏷 Renommer le composant',fn:()=>asmRename(id)},
+          {html:'🗑 Supprimer',fn:()=>asmAskDelete(id)});
+      }
+      try{mfPop({getBoundingClientRect:()=>({left:e.clientX,right:e.clientX+200,top:e.clientY-6,bottom:e.clientY-6,width:200,height:0})},items);}catch(err){}
     };
+    t.appendChild(d);
   });
 }
-function asmBreadcrumb(t){
-  // Mode pièce : « 🧩 Assemblage › pièce » en tête de l'arbre, pour revenir
-  if(!asmOn())return;
-  const p=asmActivePart(),o=asmOcc(asmEditOcc);
-  const d=document.createElement('div');d.className='tnode';d.style.cssText='font-weight:600;cursor:pointer';
-  d.innerHTML='<span>🧩</span><span class="nm">Assemblage › '+String(p?p.name:'').replace(/</g,'&lt;')+(o?' <span style="color:var(--muted)">('+String(o.name).replace(/</g,'&lt;')+')</span>':'')+'</span><span title="Retour à l’assemblage">↩</span>';
-  d.title='Revenir à la vue d’assemblage';
-  d.onclick=()=>asmEnter();
-  t.appendChild(d);
+function asmTreeRender(t){
+  // Arbre du mode Placer (renderTree le délègue ici)
+  asmBreadcrumb(t);
+  const c=asmActiveComp();
+  const row=(html,cls,title)=>{const d=document.createElement('div');d.className=cls;d.innerHTML=html;if(title)d.title=title;t.appendChild(d);return d;};
+  row('<span>🧩 '+asmEsc(c.name)+' · placer ses composants</span>','tgroup');
+  row('<span class="pdot" style="background:#fff;box-shadow:0 0 0 2px #1c1c1e inset"></span><span class="nm">Origine de « '+asmEsc(c.name)+' »</span>','tnode','Repère du composant : cible d’un alignement');
+  (c.doc.cgeo||[]).forEach(k=>{if(k&&k.kind==='frame')row('<span>⌖</span><span class="nm">'+asmEsc(k.name)+'</span>','tnode','Repère de construction du composant : cible d’un alignement');});
+  if(!c.occ.length)row('<span class="nm" style="color:var(--muted)">Aucun composant : « Nouveau composant » ou « Insérer ».</span>','tnode');
 }
 /* ── panneau ── */
 function asmRenderProps(p){
@@ -284,35 +360,42 @@ function asmRenderProps(p){
   const Note=t=>p.appendChild(mk('div','pnl-note',t));
   const Btns=list=>{const d=mk('div','pnl-btns');list.forEach(([t,fn,cls])=>{const b=mk('button',cls||null,t);b.onclick=fn;d.appendChild(b);});p.appendChild(d);return d;};
   if(typeof asmAlign!=='undefined'&&asmAlign){asmAlignProps(p);return;} // commande Aligner (48)
+  const c=asmActiveComp();
   const o=asmOcc(asmSelId);
-  if(!o){
-    H('🧩 Assemblage');
-    Note(asm.parts.length+' pièce(s), '+asm.occ.length+' occurrence(s). Cliquez une occurrence (vue ou arbre) ; double-clic = éditer sa pièce.');
-    Btns([['➕ Nouvelle pièce',asmCmdNewPart,'primary'],['↩ Retour à la pièce',()=>asmExit()]]);
+  if(!o||!c.occ.includes(o)){
+    H('🧩 '+c.name);
+    Note(c.occ.length+' composant(s) placé(s) ici, '+asm.comps.length+' composant(s) dans le fichier. Cliquez un composant (vue ou arbre) ; double-clic = le modéliser.');
+    const l=[['➕ Nouveau composant',asmCmdNewComp,'primary'],['📥 Insérer…',asmCmdInsert],['✏️ Modéliser « '+c.name+' »',()=>asmExit()]];
+    if(asm.path.length)l.push(['↑ Remonter',asmUp]);
+    Btns(l);
     return;
   }
-  const pt=asmPart(o.part)||{};
+  const cc=asmComp(o.comp)||{};
   H('📦 '+o.name);
-  Note('Pièce « '+pt.name+' »'+(pt.id===asm.active?' (pièce active)':'')+' · '+asmPartOccs(o.part).length+' occurrence(s)');
+  Note('Composant « '+cc.name+' » · '+asmCompOccs(o.comp).length+' occurrence(s)'+(cc.occ&&cc.occ.length?' · '+cc.occ.length+' sous-composant(s)':''));
   if(o.st==='warn')Note('⚠ '+o.msg);
   const f=v=>v.map(x=>(+x).toFixed(2).replace('.',',')).join(' ; ');
   Note('Position : '+f(o.fr.o)+' · Z : '+f(o.fr.z));
-  {const f=globalThis.asmPlacementProps;if(typeof f==='function')f(p,o);} // placement (lot C)
-  Btns([['✏️ Éditer la pièce',()=>asmExit(o.id),'primary'],['➕ Occurrence',asmCmdNewOcc],[o.fixed?'📌 Libérer':'📌 Fixer',()=>asmToggleFixed(o.id)],['🗑 Supprimer',()=>asmAskDelete(o.id),'danger']]);
+  {const g=globalThis.asmPlacementProps;if(typeof g==='function')g(p,o);} // placement (48)
+  const l=[['✏️ Modéliser',()=>asmExit(o.id),'primary']];
+  if(cc.occ&&cc.occ.length)l.push(['🧩 Placer ses composants',()=>asmShow(asm.path.concat(o.id),'asm')]);
+  l.push(['➕ Occurrence',asmCmdNewOcc],[o.fixed?'📌 Libérer':'📌 Fixer',()=>asmToggleFixed(o.id)],['🗑 Supprimer',()=>asmAskDelete(o.id),'danger']);
+  Btns(l);
 }
 function asmAfterLoad(){
-  // Fin d'ouverture (deserialise) : instantanés des pièces, puis vue d'assemblage si le
-  // fichier a été enregistré dedans ; sinon contexte en fantômes autour de la pièce
+  // Fin d'ouverture (deserialise) : instantanés des composants, puis mode Placer si le
+  // fichier a été enregistré dedans ; sinon le reste de l'arbre autour du composant actif
   try{document.body.removeAttribute('data-asm');}catch(e){}
-  asmSelId=null;asmEditOcc=null;
+  asmSelId=null;
   if(!asmOn()){try{asmCtxDraw();}catch(e){}return;}
   const want=!!asm._wantAsm;asm._wantAsm=false;
   setTimeout(()=>{
     try{asmBuildSnapshots();}catch(e){}
+    // asmEnter : un composant sans enfants (fichier V0.6.0 : la pièce active) → son porteur
     if(want){try{asmEnter();}catch(e){}}else{try{asmCtxDraw();renderTree();}catch(e){}}
   },0);
 }
-/* ── insérer un fichier .miniFusion (ses pièces deviennent des pièces de l'assemblage) ── */
+/* ── insérer un fichier .miniFusion (copie : il devient un composant du composant actif) ── */
 async function asmCmdInsert(){
   if(asmMode!=='asm')asmEnter();
   let txt=null,name='';
@@ -328,49 +411,48 @@ async function asmCmdInsert(){
   }catch(e){if(!(e&&e.name==='AbortError'))alert('Lecture impossible : '+(e&&e.message||e));return;}
   if(txt!=null)await asmInsertText(txt,name);
 }
+function asmTreeOfFile(top){
+  // Arbre de composants d'un fichier (pièce seule, V0.6.0 ou V0.6.1), sans toucher à l'état
+  const topDoc=docFromSerial(top);
+  const t=top.asm?asmTreeFromSerial(top.asm,topDoc):null;
+  return t||{name:top.name,root:'_r',comps:[{id:'_r',kind:'comp',name:String(top.name||'Composant'),doc:topDoc,occ:[],link:null}],active:'_r'};
+}
 async function asmInsertText(txt,name){
-  // Copie les pièces d'un projet (pièce seule ou assemblage) : nouvelles pièces et
-  // occurrences, placées à droite de l'existant ; les alignements internes au fichier
-  // suivent, ceux sur SON origine deviennent une position libre.
+  // Copie un projet (pièce seule ou assemblage) : sa racine devient un composant enfant du
+  // composant actif, avec sa géométrie ; ses sous-composants restent imbriqués, ses
+  // alignements internes suivent (identifiants renouvelés).
   let b;try{b=JSON.parse(txt);}catch(e){alert('Fichier illisible.');return false;}
   const top=(b&&b.bundle===1&&b.doc)?b.doc:b; // ancien .minifusion.json : document nu
   if(!top||!Array.isArray(top.features)){alert('Ce n’est pas un projet MiniFusion.');return false;}
-  const srcParts=(top.asm&&Array.isArray(top.asm.parts)&&top.asm.parts.length)?top.asm.parts:[{id:'_top',name:top.name,doc:null}];
-  // Déjà inséré ? Mêmes identifiants de fonctions qu'une pièce présente : les caches FAO
-  // (clés par posage / opération) seraient partagés entre deux pièces indépendantes.
-  const ids=new Set();srcParts.forEach(sp=>((sp.doc==null?top:sp.doc).features||[]).forEach(f=>{if(f&&f.id)ids.add(f.id);}));
+  const t=asmTreeOfFile(top);
+  // Déjà inséré ? Mêmes identifiants de fonctions qu'un composant présent : les caches FAO
+  // (clés par posage / opération) seraient partagés entre deux composants indépendants.
+  const ids=new Set();t.comps.forEach(c=>(c.doc.features||[]).forEach(f=>{if(f&&f.id)ids.add(f.id);}));
   asmEnsure();
-  const dup=ids.size&&asm.parts.some(p=>(p.doc.features||[]).some(f=>ids.has(f.id)));
-  if(dup&&!confirm('Ce fichier semble déjà présent dans l’assemblage (mêmes fonctions).\nLe réinsérer crée une pièce INDÉPENDANTE, dont les parcours FAO partagent leur cache avec l’autre.\nPour répéter la même pièce, utilisez plutôt « Occurrence ».\n\nInsérer quand même ?'))return false;
+  const dup=ids.size&&asm.comps.some(c=>(c.doc.features||[]).some(f=>ids.has(f.id)));
+  if(dup&&!confirm('Ce fichier semble déjà présent dans l’assemblage (mêmes fonctions).\nLe réinsérer crée un composant INDÉPENDANT, dont les parcours FAO partagent leur cache avec l’autre.\nPour répéter le même composant, utilisez plutôt « Occurrence ».\n\nInsérer quand même ?'))return false;
   if(b&&b.bundle===1){try{await bundleStoreCaches(b);}catch(e){}}
+  const owner=asmActiveComp();
   asmPush('insérer « '+(name||top.name||'fichier')+' »');
-  const base=String(name||top.name||'Pièce').replace(/\.(miniFusion|minifusion|json)$/,'').replace(/\.minifusion$/i,'');
-  const map={},neuves=[];
-  srcParts.forEach(sp=>{
-    const nm=srcParts.length>1?String(sp.name||base):base;
-    const d=docFromSerial(sp.doc==null?top:sp.doc);d.name=nm;
-    const p={id:uid('pc'),kind:'part',name:nm,doc:d};
-    map[sp.id]=p.id;asm.parts.push(p);neuves.push(p);
+  const base=String(name||top.name||'Composant').replace(/\.(miniFusion|minifusion|json)$/,'').replace(/\.minifusion$/i,'');
+  // identifiants neufs : composants, occurrences, chemins des alignements
+  const cm={},om={};
+  t.comps.forEach(c=>{cm[c.id]=uid('cp');c.occ.forEach(o=>{om[o.id]=uid('oc');});});
+  const rp=path=>(path||[]).map(id=>om[id]||id);
+  const neufs=t.comps.map(c=>{
+    const nm=c.id===t.root?base:c.name;c.doc.name=nm;
+    return {id:cm[c.id],kind:'comp',name:nm,doc:c.doc,link:null,occ:c.occ.map(o=>Object.assign({},o,{id:om[o.id],comp:cm[o.comp],
+      align:o.align?Object.assign({},o.align,{src:{path:rp(o.align.src.path),cg:o.align.src.cg},dst:{path:rp(o.align.dst.path),cg:o.align.dst.cg}}):null}))};
   });
-  const box=new THREE.Box3();asmSceneGet().getObjectByName('asmOcc').traverse(m=>{if(m.isMesh)box.expandByObject(m);});
-  const dx=box.isEmpty()?0:box.max.x+20;
-  const srcOcc=(top.asm&&Array.isArray(top.asm.occ)&&top.asm.occ.length)?top.asm.occ:[{id:'_o',part:'_top',name:base+':1',fr:asmFr0(),align:null}];
-  const occMap={},nouv=[];
-  srcOcc.forEach(so=>{
-    const pid=map[so.part];if(!pid)return;
-    const fr=(so.fr&&Array.isArray(so.fr.o))?JSON.parse(JSON.stringify(so.fr)):asmFr0();
-    const o={id:uid('oc'),part:pid,name:String(so.name||(asmPart(pid).name+':1')),fr,fixed:false,visible:so.visible!==false,
-      align:so.align?JSON.parse(JSON.stringify(so.align)):null,st:'ok',msg:''};
-    occMap[so.id]=o.id;nouv.push(o);
-  });
-  nouv.forEach(o=>{
-    if(o.align){const t=o.align.dst&&o.align.dst.occ;if(t&&occMap[t])o.align.dst.occ=occMap[t];else o.align=null;}
-    o.fr.o[0]+=dx;asm.occ.push(o);
-  });
+  neufs.forEach(c=>asm.comps.push(c));
+  // à droite de ce qui est déjà affiché
+  let dx=0;try{const box=new THREE.Box3();asmSceneGet().getObjectByName('asmOcc').traverse(m=>{if(m.isMesh)box.expandByObject(m);});if(!box.isEmpty())dx=box.max.x+20;}catch(e){}
+  const o=asmNewOccObj(cm[t.root],base+':1',{o:[dx,0,0],x:[1,0,0],y:[0,1,0],z:[0,0,1]});
+  owner.occ.push(o);
   try{asmBuildSnapshots();}catch(e){}
   asmResolve();
-  asmSelId=nouv.length?nouv[0].id:null;
+  asmSelId=o.id;
   asmNotify();
-  try{faceEl.textContent='Inséré : '+neuves.length+' pièce(s), '+nouv.length+' occurrence(s) depuis « '+(name||base)+' ». Placez-les ou alignez un repère.';}catch(e){}
+  try{faceEl.textContent='Inséré : « '+base+' » ('+neufs.length+' composant(s)) dans « '+owner.name+' ». Placez-le ou alignez un repère.';}catch(e){}
   return true;
 }
