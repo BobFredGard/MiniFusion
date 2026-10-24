@@ -2443,7 +2443,7 @@ function occReplayBody(bid,list){
   // corps A ne retire jamais de matière au corps B (Fusion). Les clés de cache sont
   // préfixées du corps : deux corps aux signatures identiques ne se partagent rien.
   const bin=[],itemShapes=[],imports=[];let result=null;const msgs=[],ghostShapes=[];
-  let ckKey=bid+'|'+(occSkipFeat||'')+'|'; // signature cumulée du préfixe — SANS marqueur upto :
+  let ckKey=asmCkPrefix()+bid+'|'+(occSkipFeat||'')+'|'; // signature cumulée du préfixe — SANS marqueur upto :
   // ALL et UPn parcourent les MÊMES préfixes cumulatifs ; un marqueur dans la clé privait
   // les projections (upto<n) de tous les points de contrôle posés par le rejeu complet.
   const items=[]; // extrudes réussies, dans l'ordre (affichage nA/nC)

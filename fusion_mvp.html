@@ -4502,7 +4502,7 @@ function occReplayBody(bid,list){
   // corps A ne retire jamais de matière au corps B (Fusion). Les clés de cache sont
   // préfixées du corps : deux corps aux signatures identiques ne se partagent rien.
   const bin=[],itemShapes=[],imports=[];let result=null;const msgs=[],ghostShapes=[];
-  let ckKey=bid+'|'+(occSkipFeat||'')+'|'; // signature cumulée du préfixe — SANS marqueur upto :
+  let ckKey=asmCkPrefix()+bid+'|'+(occSkipFeat||'')+'|'; // signature cumulée du préfixe — SANS marqueur upto :
   // ALL et UPn parcourent les MÊMES préfixes cumulatifs ; un marqueur dans la clé privait
   // les projections (upto<n) de tous les points de contrôle posés par le rejeu complet.
   const items=[]; // extrudes réussies, dans l'ordre (affichage nA/nC)
@@ -7313,6 +7313,269 @@ window.addEventListener('keydown',e=>{
     faceEl.textContent='Sélection multiple annulée.';
   }
 });
+
+/* ═══════════════ 46-assemblage-modele.js — assemblage modele ═══════════════ */
+/* ---------- assemblage : pièces, occurrences, pièce active (V0.6.0) ----------
+   Tout le code travaille sur UNE pièce globale `doc` (~650 accès) : on la garde, elle
+   devient la PIÈCE ACTIVE, et l'assemblage vit à côté. Un document d'une seule pièce
+   n'a pas d'assemblage (asm = null, fichier identique à avant) ; asmEnsure() le crée
+   à la première pièce ajoutée.
+     asm.parts[] : {id, kind:'part' ('asm' réservé aux sous-assemblages), name, doc}
+                   doc = l'objet pièce complet ; celui de la pièce active EST `doc`.
+     asm.occ[]   : {id, part, name, fr:{o,x,y,z}, fixed, visible, align|null, st, msg}
+                   fr = position de l'occurrence (repère direct dans l'assemblage).
+     align       : {src:cgId|null, dst:{occ:occId|null, cg:cgId|null}, flip, rz, off:[x,y,z]}
+                   repère src de la pièce posé sur le repère cible (origine de
+                   l'assemblage, ou repère d'une autre occurrence) — associatif : si
+                   une pièce change, son repère bouge et asmResolve() replace tout.
+   Changer de pièce (asmActivate) ne passe PAS par docResetEmpty : faoReset supprime
+   doc.fao. On ferme les modes, on range l'état d'exécution de la pièce (annuler,
+   marqueur temps, sélection) dans part._rt, on bascule `doc`, on rejoue. */
+let asm=null;
+let asmMode='part'; // 'part' : édition de la pièce active · 'asm' : vue d'assemblage (47)
+let asmUndoStack=[],asmRedoStack=[];
+const ASM_UNDO_MAX=40;
+function asmFr0(){return {o:[0,0,0],x:[1,0,0],y:[0,1,0],z:[0,0,1]};}
+function asmEmptyDoc(name){
+  return {name:name||'Pièce',tint:0,sketches:[],features:[],cgeo:[],bodyVis:{},bodies:[],bodySeq:1,activeBody:null,mep:null};
+}
+/* ── accès ── */
+function asmSync(){
+  // La pièce active doit toujours être `doc` (deserialise, docResetEmpty le remplacent)
+  if(!asm)return;
+  const p=asm.parts.find(q=>q.id===asm.active)||asm.parts[0];
+  if(p&&p.doc!==doc)p.doc=doc;
+  if(p)asm.active=p.id;
+}
+function asmPart(id){return asm?asm.parts.find(p=>p.id===id)||null:null;}
+function asmOcc(id){return asm?asm.occ.find(o=>o.id===id)||null:null;}
+function asmActivePart(){asmSync();return asm?asmPart(asm.active):null;}
+function asmPartOccs(pid){return asm?asm.occ.filter(o=>o.part===pid):[];}
+function asmEnsure(){
+  // Crée l'assemblage autour de la pièce courante (une occurrence fixée à l'origine)
+  if(asm){asmSync();return asm;}
+  const pid=uid('pc'),nm=doc.name||'Pièce 1';
+  asm={name:nm,parts:[{id:pid,kind:'part',name:nm,doc}],
+    occ:[{id:uid('oc'),part:pid,name:nm+':1',fr:asmFr0(),fixed:true,visible:true,align:null,st:'ok',msg:''}],
+    active:pid};
+  return asm;
+}
+function asmHasContent(){
+  // Faut-il écrire un bloc asm ? (sinon : fichier strictement identique à une pièce seule)
+  if(!asm)return false;
+  if(asm.parts.length>1||asm.occ.length>1)return true;
+  const o=asm.occ[0];if(!o)return false;
+  const I=asmFr0();
+  return !['o','x','y','z'].every(k=>o.fr[k].every((v,i)=>Math.abs(v-I[k][i])<1e-12));
+}
+function asmOccName(pid){
+  const p=asmPart(pid),base=(p&&p.name)||'Pièce';
+  let n=0;asmPartOccs(pid).forEach(o=>{const m=/:(\d+)$/.exec(o.name||'');if(m)n=Math.max(n,+m[1]);});
+  return base+':'+(n+1);
+}
+/* ── repères (algèbre des déplacements rigides, tableaux [x,y,z]) ── */
+function asmApply(F,p){return [F.o[0]+F.x[0]*p[0]+F.y[0]*p[1]+F.z[0]*p[2],F.o[1]+F.x[1]*p[0]+F.y[1]*p[1]+F.z[1]*p[2],F.o[2]+F.x[2]*p[0]+F.y[2]*p[1]+F.z[2]*p[2]];}
+function asmRot(F,v){return [F.x[0]*v[0]+F.y[0]*v[1]+F.z[0]*v[2],F.x[1]*v[0]+F.y[1]*v[1]+F.z[1]*v[2],F.x[2]*v[0]+F.y[2]*v[1]+F.z[2]*v[2]];}
+function asmCompose(A,B){return {o:asmApply(A,B.o),x:asmRot(A,B.x),y:asmRot(A,B.y),z:asmRot(A,B.z)};}
+function asmInverse(F){
+  // R⁻¹ = Rᵀ : les axes de l'inverse sont les LIGNES de R
+  const x=[F.x[0],F.y[0],F.z[0]],y=[F.x[1],F.y[1],F.z[1]],z=[F.x[2],F.y[2],F.z[2]];
+  const o=[-(x[0]*F.o[0]+y[0]*F.o[1]+z[0]*F.o[2]),-(x[1]*F.o[0]+y[1]*F.o[1]+z[1]*F.o[2]),-(x[2]*F.o[0]+y[2]*F.o[1]+z[2]*F.o[2])];
+  return {o,x,y,z};
+}
+function asmRound(F){const r=v=>v.map(a=>{const b=Math.round(a*1e9)/1e9;return Object.is(b,-0)?0:b;});return {o:r(F.o),x:r(F.x),y:r(F.y),z:r(F.z)};}
+function asmPartFrame(pid,cgId){
+  // Repère d'une pièce dans SES coordonnées : origine (null) ou repère de construction
+  if(!cgId)return asmFr0();
+  const p=asmPart(pid);if(!p||!p.doc)return null;
+  const c=(p.doc.cgeo||[]).find(k=>k&&k.id===cgId&&k.kind==='frame');
+  return c&&c.fr?{o:c.fr.o.slice(),x:c.fr.x.slice(),y:c.fr.y.slice(),z:c.fr.z.slice()}:null;
+}
+function asmAlignTarget(a){
+  // Repère cible dans l'assemblage, retournement / rotation / décalage compris
+  let T;
+  if(!a.dst||!a.dst.occ)T=asmFr0();
+  else{
+    const d=asmOcc(a.dst.occ);if(!d)return null;
+    const Fp=asmPartFrame(d.part,a.dst.cg);if(!Fp)return null;
+    T=asmCompose(d.fr,Fp);
+  }
+  // retournement : demi-tour autour du X cible (Z et Y inversés) ; rotation autour du Z cible
+  let L=asmFr0();
+  if(a.flip)L={o:[0,0,0],x:[1,0,0],y:[0,-1,0],z:[0,0,-1]};
+  const r=(+a.rz||0)*Math.PI/180;
+  if(r){const c=Math.cos(r),s=Math.sin(r);L=asmCompose({o:[0,0,0],x:[c,s,0],y:[-s,c,0],z:[0,0,1]},L);}
+  const off=Array.isArray(a.off)?a.off.map(v=>+v||0):[0,0,0];
+  L.o=off;
+  return asmCompose(T,L);
+}
+function asmResolve(){
+  // Place les occurrences alignées, dans l'ordre des dépendances. → true si une a bougé
+  if(!asm)return false;
+  let ch=false;
+  const todo=asm.occ.filter(o=>o.align);
+  asm.occ.forEach(o=>{if(!o.align){o.st='ok';o.msg='';}});
+  const done=new Set(asm.occ.filter(o=>!o.align).map(o=>o.id));
+  let progress=true;
+  while(todo.length&&progress){
+    progress=false;
+    for(let i=0;i<todo.length;i++){
+      const o=todo[i],a=o.align,dep=a.dst&&a.dst.occ;
+      if(dep&&!done.has(dep)&&asmOcc(dep))continue; // cible pas encore placée
+      todo.splice(i,1);i--;progress=true;done.add(o.id);
+      const T=asmAlignTarget(a),S=asmPartFrame(o.part,a.src);
+      if(!T||!S){o.st='warn';o.msg=!S?'repère de la pièce introuvable':'repère cible introuvable';continue;}
+      const M=asmRound(asmCompose(T,asmInverse(S)));
+      if(['o','x','y','z'].some(k=>M[k].some((v,j)=>Math.abs(v-o.fr[k][j])>1e-9))){o.fr=M;ch=true;}
+      o.st='ok';o.msg='';
+    }
+  }
+  todo.forEach(o=>{o.st='warn';o.msg='alignement circulaire : position mémorisée';});
+  return ch;
+}
+/* ── pièces et occurrences ── */
+function asmNewPart(name){
+  asmEnsure();
+  asmPush('nouvelle pièce');
+  const nm=name||('Pièce '+(asm.parts.length+1));
+  const p={id:uid('pc'),kind:'part',name:nm,doc:asmEmptyDoc(nm)};
+  asm.parts.push(p);
+  const o={id:uid('oc'),part:p.id,name:nm+':1',fr:asmFr0(),fixed:false,visible:true,align:null,st:'ok',msg:''};
+  asm.occ.push(o);
+  return {part:p,occ:o};
+}
+function asmAddOcc(pid,fr){
+  asmEnsure();if(!asmPart(pid))return null;
+  asmPush('nouvelle occurrence');
+  const o={id:uid('oc'),part:pid,name:asmOccName(pid),fr:fr?asmRound(fr):asmFr0(),fixed:false,visible:true,align:null,st:'ok',msg:''};
+  asm.occ.push(o);
+  return o;
+}
+function asmDeleteOcc(id){
+  // Supprimer la dernière occurrence d'une pièce supprime la pièce (pas la dernière pièce)
+  const o=asmOcc(id);if(!o)return false;
+  const seule=asmPartOccs(o.part).length===1;
+  if(seule&&asm.parts.length===1)return false;
+  asmPush('suppression de « '+o.name+' »');
+  asm.occ=asm.occ.filter(q=>q.id!==id);
+  asm.occ.forEach(q=>{if(q.align&&q.align.dst&&q.align.dst.occ===id){q.align=null;}}); // gardent leur position
+  if(seule){
+    if(asm.active===o.part){const autre=asm.parts.find(p=>p.id!==o.part);if(autre)asmActivate(autre.id);}
+    asm.parts=asm.parts.filter(p=>p.id!==o.part);
+  }
+  asmResolve();
+  return true;
+}
+/* ── pièce active ── */
+function asmLeavePart(){
+  // Ferme tout ce qui tient un état sur la pièce courante, SANS toucher à son document
+  try{if(typeof skEdit!=='undefined'&&skEdit)closeSketch(true);}catch(e){}
+  try{if(typeof cgMode!=='undefined'&&cgMode)cgCancel();}catch(e){}
+  try{if(filMode)exitFilletMode(true);}catch(e){}
+  try{if(filModeX)exitExactFilletMode(true);}catch(e){}
+  try{if(typeof draftMode!=='undefined'&&draftMode)exitDraftMode(true);}catch(e){}
+  try{if(typeof coqueMode!=='undefined'&&coqueMode)exitCoqueMode(true);}catch(e){}
+  try{if(typeof repMode!=='undefined'&&repMode)exitRepMode();}catch(e){}
+  try{if(typeof mvMode!=='undefined'&&mvMode)exitMoveFaceMode(true);}catch(e){}
+  try{if(typeof extNew!=='undefined'&&extNew)extNew=null;}catch(e){}
+  try{if(typeof revNew!=='undefined'&&revNew)revNew=null;}catch(e){}
+  try{if(typeof faoVw!=='undefined'&&faoVw)faoViewerClose();}catch(e){}
+  try{if(typeof faoToolsWin!=='undefined'&&faoToolsWin)faoToolsWindowClose();}catch(e){}
+  try{if(typeof mepIsOpen==='function'&&mepIsOpen()&&typeof mepReset==='function')mepReset();}catch(e){}
+  const p=asmActivePart();
+  if(p)p._rt={undo:docUndoStack,redo:docRedoStack,tl:tlMark,sel:Object.assign({},sel),abody:doc.activeBody};
+}
+function asmActivate(pid){
+  // Bascule la pièce active : son document devient `doc`, son état d'exécution revient
+  asmEnsure();
+  const p=asmPart(pid);if(!p)return false;
+  if(p.id===asm.active&&p.doc===doc)return true;
+  asmLeavePart();
+  asm.active=p.id;doc=p.doc;
+  const rt=p._rt||{};
+  docUndoStack=rt.undo||[];docRedoStack=rt.redo||[];
+  tlMark=rt.tl||null;
+  sel=rt.sel&&rt.sel.kind?rt.sel:{kind:null,id:null};
+  if(typeof treeSel!=='undefined')treeSel=[];
+  occSkipFeat=null;
+  builtVersion=-1;builtHash=null;builtEngine=null;_hashMemo=null;
+  try{markDirty();rebuild();}catch(e){}
+  try{renderTree();renderProps();docUndoUI();}catch(e){}
+  try{if(typeof faoRefreshFaoUI==='function')faoRefreshFaoUI();}catch(e){}
+  try{if(typeof faoRefreshPreview==='function')faoRefreshPreview();}catch(e){}
+  try{buildEdgeOverlay();}catch(e){}
+  asmNotify();
+  return true;
+}
+function asmCkPrefix(){
+  // Points de contrôle du noyau : clés préfixées par la pièce (deux pièces peuvent avoir un
+  // corps « b1 » aux signatures identiques). Pièce seule : aucun préfixe (inchangé).
+  return asm&&asm.parts.length>1?asm.active+'§':'';
+}
+/* ── annuler / rétablir de l'ASSEMBLAGE (positions, pièces, occurrences) ── */
+function asmSnap(){
+  // Occurrences copiées ; pièces par RÉFÉRENCE (leurs documents ont leur propre annulation)
+  return asm?{occ:JSON.parse(JSON.stringify(asm.occ)),parts:asm.parts.slice(),active:asm.active}:null;
+}
+function asmPush(label){
+  const s=asmSnap();if(!s)return;
+  asmUndoStack.push({snap:s,label:label||'assemblage'});
+  while(asmUndoStack.length>ASM_UNDO_MAX)asmUndoStack.shift();
+  asmRedoStack.length=0;
+}
+function asmRestore(s){
+  asm.occ=s.occ;asm.parts=s.parts;
+  if(!asmPart(asm.active)||!asm.parts.some(p=>p.doc===doc)){const a=asmPart(s.active)||asm.parts[0];if(a)asmActivate(a.id);}
+  asmResolve();asmNotify();
+}
+function asmUndo(){
+  const e=asmUndoStack.pop();if(!e||!asm)return false;
+  asmRedoStack.push({snap:asmSnap(),label:e.label});asmRestore(e.snap);
+  try{faceEl.textContent='↩ Annulé : '+e.label;}catch(err){}
+  return true;
+}
+function asmRedo(){
+  const e=asmRedoStack.pop();if(!e||!asm)return false;
+  asmUndoStack.push({snap:asmSnap(),label:e.label});asmRestore(e.snap);
+  try{faceEl.textContent='↪ Rétabli : '+e.label;}catch(err){}
+  return true;
+}
+function asmNotify(){
+  // Prévient l'interface d'assemblage (47) — sans en dépendre : le modèle se teste seul
+  const f=globalThis.asmOnChange;if(typeof f==='function'){try{f();}catch(e){}}
+}
+/* ── sauvegarde : bloc asm dans le fichier (doc = pièce active, compatibilité) ── */
+function asmSerial(){
+  if(!asmHasContent())return null;
+  asmSync();
+  const occ=asm.occ.map(o=>({id:o.id,part:o.part,name:o.name,fr:o.fr,fixed:!!o.fixed,visible:o.visible!==false,align:o.align||null}));
+  const parts=asm.parts.map(p=>({id:p.id,kind:p.kind||'part',name:p.name,doc:p.doc===doc?null:serialiseObj(p.doc,false)}));
+  return {v:1,name:asm.name,active:asm.active,mode:asmMode,occ,parts};
+}
+function asmFromSerial(a){
+  // Reconstruit l'assemblage à l'ouverture ; `doc` (déjà chargé) est la pièce active
+  asm=null;asmMode='part';asmUndoStack=[];asmRedoStack=[];
+  if(!a||!Array.isArray(a.parts)||!Array.isArray(a.occ)||!a.parts.length)return false;
+  const parts=a.parts.filter(p=>p&&typeof p.id==='string').map(p=>({id:p.id,kind:p.kind==='asm'?'asm':'part',name:String(p.name||p.id),
+    doc:p.doc==null?doc:docFromSerial(p.doc)}));
+  if(!parts.some(p=>p.doc===doc)){parts[0].doc=doc;} // fichier abîmé : la pièce active reste la pièce chargée
+  const ids=new Set(parts.map(p=>p.id));
+  const okFr=f=>f&&['o','x','y','z'].every(k=>Array.isArray(f[k])&&f[k].length===3&&f[k].every(v=>isFinite(+v)));
+  const occ=a.occ.filter(o=>o&&typeof o.id==='string'&&ids.has(o.part)).map(o=>({id:o.id,part:o.part,name:String(o.name||o.id),
+    fr:okFr(o.fr)?{o:o.fr.o.map(Number),x:o.fr.x.map(Number),y:o.fr.y.map(Number),z:o.fr.z.map(Number)}:asmFr0(),
+    fixed:!!o.fixed,visible:o.visible!==false,align:(o.align&&typeof o.align==='object')?o.align:null,st:'ok',msg:''}));
+  // une pièce sans occurrence en reçoit une (sinon elle serait invisible et inaccessible)
+  parts.forEach(p=>{if(!occ.some(o=>o.part===p.id))occ.push({id:uid('oc'),part:p.id,name:p.name+':1',fr:asmFr0(),fixed:false,visible:true,align:null,st:'ok',msg:''});});
+  const act=parts.find(p=>p.doc===doc);
+  asm={name:String(a.name||doc.name||'Assemblage'),parts,occ,active:act.id};
+  asmMode=a.mode==='asm'?'asm':'part';
+  asmResolve();
+  return true;
+}
+function asmAllDocs(){
+  // Tous les documents de pièce (pièce seule : [doc]) — trajectoires FAO, imports du bundle
+  return asm?asm.parts.map(p=>p.doc).filter(Boolean):[doc];
+}
 
 /* ═══════════════ 49-esquisse-registre-icones.js — esquisse registre icones ═══════════════ */
 /* ============ Esquisse : registre des contraintes + jeu d'icônes ============
@@ -36866,7 +37129,27 @@ function meshesToOBJ(meshes){
 function serialise(pretty){
   // pretty=1 (défaut) pour l'export fichier lisible ; compact pour l'autosave local
   // (~40 % de volume en moins à sérialiser et à écrire à chaque sauvegarde).
-  return JSON.stringify({app:'MiniFusion',v:1,name:doc.name,tint:doc.tint||0,entNames:doc.entNames||null,originVis,view:collectView(),bodyVis:doc.bodyVis||{},bodies:(doc.bodies||[]).map(e=>({id:e.id,name:e.name,c:e.c,color:e.color,op:e.op,gl:e.gl,open:e.open!==false})),bodySeq:doc.bodySeq||0,activeBody:doc.activeBody||null,fold:{sk:!!(doc.fold&&doc.fold.sk),origin:!!(doc.fold&&doc.fold.origin)},fao:doc.fao||null,mep:doc.mep||null,params:(doc.params||[]).map(p=>({name:p.name,expr:p.expr,value:p.value})),sel:{kind:sel.kind,id:sel.id},sketches:doc.sketches.map(s=>{const c=Object.assign({},s);delete c._refs;return c;}),features:doc.features.map(({_mesh,_m,...r})=>r),cgeo:(doc.cgeo||[]).map(cgClean)},null,pretty===false?null:2);
+  // V0.6.0 : la pièce active reste au premier niveau (un fichier d'une seule pièce est
+  // inchangé, une version antérieure ouvre la pièce active) ; les autres pièces et les
+  // occurrences sont dans le bloc asm (46-assemblage-modele.js).
+  const o=serialiseObj(doc,true);
+  const a=asmSerial();if(a)o.asm=a;
+  return JSON.stringify(o,null,pretty===false?null:2);
+}
+function serialiseObj(d,ui){
+  // Objet d'une pièce. ui : état d'interface (repère, vue, sélection) — pièce active seulement
+  // (undefined → clé absente du JSON : l'ordre et le contenu restent ceux d'avant).
+  return {app:'MiniFusion',v:1,name:d.name,tint:d.tint||0,entNames:d.entNames||null,originVis:ui?originVis:undefined,view:ui?collectView():undefined,bodyVis:d.bodyVis||{},bodies:(d.bodies||[]).map(e=>({id:e.id,name:e.name,c:e.c,color:e.color,op:e.op,gl:e.gl,open:e.open!==false})),bodySeq:d.bodySeq||0,activeBody:d.activeBody||null,fold:{sk:!!(d.fold&&d.fold.sk),origin:!!(d.fold&&d.fold.origin)},fao:d.fao||null,mep:d.mep||null,params:(d.params||[]).map(p=>({name:p.name,expr:p.expr,value:p.value})),sel:ui?{kind:sel.kind,id:sel.id}:undefined,sketches:(d.sketches||[]).map(s=>{const c=Object.assign({},s);delete c._refs;return c;}),features:(d.features||[]).map(({_mesh,_m,...r})=>r),cgeo:(d.cgeo||[]).map(cgClean)};
+}
+function docFromSerial(o){
+  // Document de pièce à partir de son objet sérialisé (ouverture, pièces d'un assemblage)
+  const d={name:o.name||'Sans titre',tint:o.tint||0,entNames:o.entNames||null,sketches:o.sketches||[],features:o.features||[],cgeo:Array.isArray(o.cgeo)?o.cgeo.filter(cgValid):[],bodyVis:o.bodyVis||{},bodies:Array.isArray(o.bodies)?o.bodies.filter(e=>e&&typeof e.id==='string').map(e=>({id:e.id,name:String(e.name||e.id),c:Array.isArray(e.c)&&e.c.length===3?e.c.slice():null,color:isFinite(+e.color)?+e.color:undefined,op:(e.op>0&&e.op<1)?+e.op:undefined,gl:(e.gl>0&&e.gl<1)?+e.gl:undefined,open:e.open!==false})):[],
+    bodySeq:o.bodySeq>0?Math.floor(o.bodySeq):1,activeBody:(typeof o.activeBody==='string')?o.activeBody:null,fold:(o.fold&&typeof o.fold==='object')?{sk:!!o.fold.sk,origin:!!o.fold.origin}:{},fao:o.fao||null,mep:o.mep||null,params:Array.isArray(o.params)?o.params.filter(p=>p&&typeof p.name==='string'):[]};
+  let mx=0;
+  (d.bodies||[]).forEach(e=>{const m=/^b(\d+)$/.exec(e.id||'');if(m)mx=Math.max(mx,+m[1]);});
+  if(!(d.bodySeq>mx))d.bodySeq=mx+1;
+  if(d.activeBody&&!d.bodies.some(e=>e.id===d.activeBody))d.activeBody=null;
+  return d;
 }
 function docHash(){
   // Empreinte du paramétrique rejouable (imports éphémères exclus : non persistés).
@@ -36995,8 +37278,9 @@ addEventListener('beforeunload',()=>{autosaveFlush();});
 addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')autosaveFlush();});
 async function deserialise(json,opts){
   try{if(typeof viewFadeOut==='function')viewFadeOut();}catch(e){} // 2026-10-16-015 : fondu à l'ouverture
-  const o=JSON.parse(json);doc={name:o.name||'Sans titre',tint:o.tint||0,entNames:o.entNames||null,sketches:o.sketches||[],features:o.features||[],cgeo:Array.isArray(o.cgeo)?o.cgeo.filter(cgValid):[],bodyVis:o.bodyVis||{},bodies:Array.isArray(o.bodies)?o.bodies.filter(e=>e&&typeof e.id==='string').map(e=>({id:e.id,name:String(e.name||e.id),c:Array.isArray(e.c)&&e.c.length===3?e.c.slice():null,color:isFinite(+e.color)?+e.color:undefined,op:(e.op>0&&e.op<1)?+e.op:undefined,gl:(e.gl>0&&e.gl<1)?+e.gl:undefined,open:e.open!==false})):[],
-    bodySeq:o.bodySeq>0?Math.floor(o.bodySeq):1,activeBody:(typeof o.activeBody==='string')?o.activeBody:null,fold:(o.fold&&typeof o.fold==='object')?{sk:!!o.fold.sk,origin:!!o.fold.origin}:{},fao:o.fao||null,mep:o.mep||null,params:Array.isArray(o.params)?o.params.filter(p=>p&&typeof p.name==='string'):[]};
+  const o=JSON.parse(json);doc=docFromSerial(o);
+  // V0.6.0 : assemblage (autres pièces + occurrences) — absent d'un fichier d'une seule pièce
+  try{asmFromSerial(o.asm);}catch(e){asm=null;}
   // Les numéros de corps ne sont jamais réemployés : le compteur repart au-delà
   // du plus grand Corps N déjà connu (anciens fichiers sans bodySeq : on le déduit).
   try{
@@ -37078,10 +37362,11 @@ async function bundleMoves(){
   if(!faoMovesReady())return out;
   const miens=new Set();
   try{
-    const r=faoRoot();
-    (((r&&r.setups)||[])).forEach(function(st){
+    // V0.6.0 : toutes les pièces de l'assemblage (la pièce active passe par faoRoot)
+    const roots=[faoRoot()].concat(asmAllDocs().filter(d=>d!==doc).map(d=>d.fao).filter(Boolean));
+    roots.forEach(function(r){(((r&&r.setups)||[])).forEach(function(st){
       ((st&&st.ops)||[]).forEach(function(op){ miens.add('faoMoves:'+((st&&st.id)||'_')+':'+((op&&op.id)||'_')); });
-    });
+    });});
   }catch(e){}
   if(!miens.size)return out;
   try{
@@ -37096,7 +37381,7 @@ async function bundleMoves(){
 async function bundleImports(){
   // Fichiers d'origine des imports (base64) : sans eux, le STEP manquait à l'ouverture.
   const out={};
-  for(const f of (doc.features||[])){
+  for(const f of [].concat(...asmAllDocs().map(d=>d.features||[]))){ // toutes les pièces (V0.6.0)
     if(!f||f.type!=='import'||!f.src||!f.src.key||out[f.src.key])continue;
     try{const u8=await importSrcGet(f.src.key);if(u8)out[f.src.key]=importU8ToB64(u8);}catch(e){}
   }
@@ -37142,10 +37427,11 @@ async function bundleRestore(txt,opts){
   // embarquait celles de TOUS les documents du navigateur d'origine : ~70 Mo).
   const miens=new Set();
   try{
-    const fr=b.doc&&b.doc.fao;
-    (((fr&&fr.setups)||[])).forEach(function(st){
+    // pièce active + autres pièces d'un assemblage (V0.6.0)
+    const frs=[b.doc&&b.doc.fao].concat(((b.doc&&b.doc.asm&&b.doc.asm.parts)||[]).map(p=>p&&p.doc&&p.doc.fao));
+    frs.forEach(function(fr){(((fr&&fr.setups)||[])).forEach(function(st){
       ((st&&st.ops)||[]).forEach(function(op){ miens.add('faoMoves:'+((st&&st.id)||'_')+':'+((op&&op.id)||'_')); });
-    });
+    });});
   }catch(e){}
   const ancienFao=!!(b.doc.fao&&typeof b.doc.fao==='object'&&!Array.isArray(b.doc.fao.setups)); // pré-posages : ids inconnus ici
   const ks=Object.keys(moves).filter(function(k){return ancienFao||miens.has(k);});
@@ -37433,6 +37719,7 @@ function docResetEmpty(){
   try{ if(typeof faoReset==='function')faoReset(); }catch(e){} // FAO : traces, posages et mode lecture à zéro
   try{ if(typeof mepReset==='function')mepReset(); }catch(e){} // PLAN : planches vidées (98-mise-en-plan.js)
   sel={kind:null,id:null};selFaces=[];fileHandle=null;uidN=0;builtHash=null;builtEngine=null;builtVersion=-1;
+  asm=null;asmMode='part';asmUndoStack=[];asmRedoStack=[]; // assemblage (46)
   try{occCkClear();}catch(e){}
 }
 if($('btnNew'))$('btnNew').onclick=()=>{

@@ -1408,7 +1408,27 @@ function meshesToOBJ(meshes){
 function serialise(pretty){
   // pretty=1 (défaut) pour l'export fichier lisible ; compact pour l'autosave local
   // (~40 % de volume en moins à sérialiser et à écrire à chaque sauvegarde).
-  return JSON.stringify({app:'MiniFusion',v:1,name:doc.name,tint:doc.tint||0,entNames:doc.entNames||null,originVis,view:collectView(),bodyVis:doc.bodyVis||{},bodies:(doc.bodies||[]).map(e=>({id:e.id,name:e.name,c:e.c,color:e.color,op:e.op,gl:e.gl,open:e.open!==false})),bodySeq:doc.bodySeq||0,activeBody:doc.activeBody||null,fold:{sk:!!(doc.fold&&doc.fold.sk),origin:!!(doc.fold&&doc.fold.origin)},fao:doc.fao||null,mep:doc.mep||null,params:(doc.params||[]).map(p=>({name:p.name,expr:p.expr,value:p.value})),sel:{kind:sel.kind,id:sel.id},sketches:doc.sketches.map(s=>{const c=Object.assign({},s);delete c._refs;return c;}),features:doc.features.map(({_mesh,_m,...r})=>r),cgeo:(doc.cgeo||[]).map(cgClean)},null,pretty===false?null:2);
+  // V0.6.0 : la pièce active reste au premier niveau (un fichier d'une seule pièce est
+  // inchangé, une version antérieure ouvre la pièce active) ; les autres pièces et les
+  // occurrences sont dans le bloc asm (46-assemblage-modele.js).
+  const o=serialiseObj(doc,true);
+  const a=asmSerial();if(a)o.asm=a;
+  return JSON.stringify(o,null,pretty===false?null:2);
+}
+function serialiseObj(d,ui){
+  // Objet d'une pièce. ui : état d'interface (repère, vue, sélection) — pièce active seulement
+  // (undefined → clé absente du JSON : l'ordre et le contenu restent ceux d'avant).
+  return {app:'MiniFusion',v:1,name:d.name,tint:d.tint||0,entNames:d.entNames||null,originVis:ui?originVis:undefined,view:ui?collectView():undefined,bodyVis:d.bodyVis||{},bodies:(d.bodies||[]).map(e=>({id:e.id,name:e.name,c:e.c,color:e.color,op:e.op,gl:e.gl,open:e.open!==false})),bodySeq:d.bodySeq||0,activeBody:d.activeBody||null,fold:{sk:!!(d.fold&&d.fold.sk),origin:!!(d.fold&&d.fold.origin)},fao:d.fao||null,mep:d.mep||null,params:(d.params||[]).map(p=>({name:p.name,expr:p.expr,value:p.value})),sel:ui?{kind:sel.kind,id:sel.id}:undefined,sketches:(d.sketches||[]).map(s=>{const c=Object.assign({},s);delete c._refs;return c;}),features:(d.features||[]).map(({_mesh,_m,...r})=>r),cgeo:(d.cgeo||[]).map(cgClean)};
+}
+function docFromSerial(o){
+  // Document de pièce à partir de son objet sérialisé (ouverture, pièces d'un assemblage)
+  const d={name:o.name||'Sans titre',tint:o.tint||0,entNames:o.entNames||null,sketches:o.sketches||[],features:o.features||[],cgeo:Array.isArray(o.cgeo)?o.cgeo.filter(cgValid):[],bodyVis:o.bodyVis||{},bodies:Array.isArray(o.bodies)?o.bodies.filter(e=>e&&typeof e.id==='string').map(e=>({id:e.id,name:String(e.name||e.id),c:Array.isArray(e.c)&&e.c.length===3?e.c.slice():null,color:isFinite(+e.color)?+e.color:undefined,op:(e.op>0&&e.op<1)?+e.op:undefined,gl:(e.gl>0&&e.gl<1)?+e.gl:undefined,open:e.open!==false})):[],
+    bodySeq:o.bodySeq>0?Math.floor(o.bodySeq):1,activeBody:(typeof o.activeBody==='string')?o.activeBody:null,fold:(o.fold&&typeof o.fold==='object')?{sk:!!o.fold.sk,origin:!!o.fold.origin}:{},fao:o.fao||null,mep:o.mep||null,params:Array.isArray(o.params)?o.params.filter(p=>p&&typeof p.name==='string'):[]};
+  let mx=0;
+  (d.bodies||[]).forEach(e=>{const m=/^b(\d+)$/.exec(e.id||'');if(m)mx=Math.max(mx,+m[1]);});
+  if(!(d.bodySeq>mx))d.bodySeq=mx+1;
+  if(d.activeBody&&!d.bodies.some(e=>e.id===d.activeBody))d.activeBody=null;
+  return d;
 }
 function docHash(){
   // Empreinte du paramétrique rejouable (imports éphémères exclus : non persistés).
@@ -1537,8 +1557,9 @@ addEventListener('beforeunload',()=>{autosaveFlush();});
 addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')autosaveFlush();});
 async function deserialise(json,opts){
   try{if(typeof viewFadeOut==='function')viewFadeOut();}catch(e){} // 2026-10-16-015 : fondu à l'ouverture
-  const o=JSON.parse(json);doc={name:o.name||'Sans titre',tint:o.tint||0,entNames:o.entNames||null,sketches:o.sketches||[],features:o.features||[],cgeo:Array.isArray(o.cgeo)?o.cgeo.filter(cgValid):[],bodyVis:o.bodyVis||{},bodies:Array.isArray(o.bodies)?o.bodies.filter(e=>e&&typeof e.id==='string').map(e=>({id:e.id,name:String(e.name||e.id),c:Array.isArray(e.c)&&e.c.length===3?e.c.slice():null,color:isFinite(+e.color)?+e.color:undefined,op:(e.op>0&&e.op<1)?+e.op:undefined,gl:(e.gl>0&&e.gl<1)?+e.gl:undefined,open:e.open!==false})):[],
-    bodySeq:o.bodySeq>0?Math.floor(o.bodySeq):1,activeBody:(typeof o.activeBody==='string')?o.activeBody:null,fold:(o.fold&&typeof o.fold==='object')?{sk:!!o.fold.sk,origin:!!o.fold.origin}:{},fao:o.fao||null,mep:o.mep||null,params:Array.isArray(o.params)?o.params.filter(p=>p&&typeof p.name==='string'):[]};
+  const o=JSON.parse(json);doc=docFromSerial(o);
+  // V0.6.0 : assemblage (autres pièces + occurrences) — absent d'un fichier d'une seule pièce
+  try{asmFromSerial(o.asm);}catch(e){asm=null;}
   // Les numéros de corps ne sont jamais réemployés : le compteur repart au-delà
   // du plus grand Corps N déjà connu (anciens fichiers sans bodySeq : on le déduit).
   try{
@@ -1620,10 +1641,11 @@ async function bundleMoves(){
   if(!faoMovesReady())return out;
   const miens=new Set();
   try{
-    const r=faoRoot();
-    (((r&&r.setups)||[])).forEach(function(st){
+    // V0.6.0 : toutes les pièces de l'assemblage (la pièce active passe par faoRoot)
+    const roots=[faoRoot()].concat(asmAllDocs().filter(d=>d!==doc).map(d=>d.fao).filter(Boolean));
+    roots.forEach(function(r){(((r&&r.setups)||[])).forEach(function(st){
       ((st&&st.ops)||[]).forEach(function(op){ miens.add('faoMoves:'+((st&&st.id)||'_')+':'+((op&&op.id)||'_')); });
-    });
+    });});
   }catch(e){}
   if(!miens.size)return out;
   try{
@@ -1638,7 +1660,7 @@ async function bundleMoves(){
 async function bundleImports(){
   // Fichiers d'origine des imports (base64) : sans eux, le STEP manquait à l'ouverture.
   const out={};
-  for(const f of (doc.features||[])){
+  for(const f of [].concat(...asmAllDocs().map(d=>d.features||[]))){ // toutes les pièces (V0.6.0)
     if(!f||f.type!=='import'||!f.src||!f.src.key||out[f.src.key])continue;
     try{const u8=await importSrcGet(f.src.key);if(u8)out[f.src.key]=importU8ToB64(u8);}catch(e){}
   }
@@ -1684,10 +1706,11 @@ async function bundleRestore(txt,opts){
   // embarquait celles de TOUS les documents du navigateur d'origine : ~70 Mo).
   const miens=new Set();
   try{
-    const fr=b.doc&&b.doc.fao;
-    (((fr&&fr.setups)||[])).forEach(function(st){
+    // pièce active + autres pièces d'un assemblage (V0.6.0)
+    const frs=[b.doc&&b.doc.fao].concat(((b.doc&&b.doc.asm&&b.doc.asm.parts)||[]).map(p=>p&&p.doc&&p.doc.fao));
+    frs.forEach(function(fr){(((fr&&fr.setups)||[])).forEach(function(st){
       ((st&&st.ops)||[]).forEach(function(op){ miens.add('faoMoves:'+((st&&st.id)||'_')+':'+((op&&op.id)||'_')); });
-    });
+    });});
   }catch(e){}
   const ancienFao=!!(b.doc.fao&&typeof b.doc.fao==='object'&&!Array.isArray(b.doc.fao.setups)); // pré-posages : ids inconnus ici
   const ks=Object.keys(moves).filter(function(k){return ancienFao||miens.has(k);});

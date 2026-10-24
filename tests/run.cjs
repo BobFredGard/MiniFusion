@@ -131,6 +131,7 @@ const SUITES = [
   "test_mep_hachures_cotes",
   "test_filet_modele",
   "test_construction_modele",
+  "test_assemblage_modele",
   "test_construction_esquisse"
 ];
 const TIMEOUT = 20 * 60 * 1000;
