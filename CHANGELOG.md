@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**309 versions**, de `2026-09-28b` à `V0.5.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**310 versions**, de `2026-09-28b` à `V0.5.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4601,3 +4601,12 @@ Demande : « implémenter un assemblage » — étape 1 de la feuille de route :
 - **Tests** : la suite complète `node tests/run.cjs` tourne en parallèle (pool de processus, plus longues d'abord, chrono par suite : ~3,5 min au lieu de ~20 en série sur 8 cœurs).
 
 Tests : `test_construction_modele` (15 méthodes au µm, chaînes, ƒx, sauvegarde, annuler, suppression, marqueur ; aussi en suite rapide) et `test_construction_esquisse` (vrai noyau : plan sur la face du dessus → plot à z 55, bloc rehaussé → plan et plot suivent, axe d'un cylindre, sommet qui suit, repli sans noyau). Suite complète 117/117. Nouveau parcours Playwright « plan décalé → esquisse → extrusion → plan déplacé », non exécuté sur ce poste (Playwright non installé) ; le même parcours a été vérifié à la main dans le navigateur (z 20..30 puis 35..45, Ctrl+Z).
+
+## V0.5.1 - Bandeau de timeline façon Fusion 360
+Demande : « pour l'arborescence et le fil des opérations, un bandeau horizontal des opérations à la Fusion 360 ? ».
+- **`src/41-bandeau-timeline.js`** : bandeau en bas de la vue 3D de l'espace CAO, une icône par étape dans l'ordre du fil — fonctions, esquisses juste avant leur fonction consommatrice, éléments de construction après leur fonction d'ancrage. Survol = nom ; clic = sélection (partagée avec l'arbre) ; double-clic = édition ; ⚠ marqués.
+- **Marqueur temps** glissable dans le bandeau, et boutons ⏮ ◀ ▶ ⏭ ; les étapes au-delà sont grisées.
+- **Glisser-déposer** d'une fonction pour la réordonner dans son corps, avec les mêmes règles que ▲▼ (blocs de répétition entiers) : `featMove` est découpé en `featMoveRaw` (pur) et `featMoveApply`, le glisser enchaîne les crans sur une copie et ne laisse qu'une étape d'annulation.
+- Masqué hors de l'espace CAO et pendant l'édition d'une esquisse ; suit chaque rejeu et chaque changement de sélection (`renderTimeline` en fin de `renderTree`). L'ancien panneau `#timeline` à puces est remplacé.
+
+Tests : nouveau `test_timeline_bandeau` (ordre des étapes, marqueur, glisser). Suite complète 118/118 après fusion dans `main` ; vérifié dans le navigateur (5 thèmes par la session qui l'a développé, puis après fusion avec un plan de construction, une esquisse et une extrusion).

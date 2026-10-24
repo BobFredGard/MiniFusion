@@ -2,7 +2,7 @@
 
 **CAO paramétrique, FAO et mise en plan dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2, G-code et planches cotées ISO. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.5.0** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.5.1** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Sommaire
 
@@ -68,7 +68,7 @@ Groupe **Construire** du ruban (et `Ctrl+K`) : des références à la manière d
 
 ### Fonctions 3D
 
-Historique rejouable, arborescence et marqueur de temps.
+Historique rejouable, arborescence et marqueur de temps. **Bandeau de timeline** en bas de la vue 3D, à la manière de Fusion 360 : une icône par étape (fonctions, esquisses, construction), clic = sélection, double-clic = édition, marqueur temps glissable (⏮ ◀ ▶ ⏭), glisser-déposer d'une fonction pour la réordonner dans son corps.
 - **Extrusion** : ajout ou découpe, sur une distance, jusqu'à une face ou à travers tout, en symétrique, avec dépouille ; elle peut créer un **nouveau corps**.
 - **Révolution** autour d'une ligne de l'esquisse ou d'un axe X / Y / Z.
 - **Perçage** simple, lamé, fraisé ou taraudé (filet ISO réellement modélisé), débouchant ou borgne, répétable.
@@ -188,7 +188,7 @@ Le dépôt stocke les gros binaires (`occt/*.wasm`, `Exemples/*.miniFusion`, `Ex
 
 | Chemin | Rôle |
 |---|---|
-| `src/*.js` | **Les sources** (56 fichiers, de l'en-tête à l'initialisation ; la FAO est découpée par domaine : parcours, caches, post-processeurs, simulation, interface, ébauche 3D, contour, géodésique, crêtes, perçage). C'est ici qu'on travaille. |
+| `src/*.js` | **Les sources** (57 fichiers, de l'en-tête à l'initialisation ; la FAO est découpée par domaine : parcours, caches, post-processeurs, simulation, interface, ébauche 3D, contour, géodésique, crêtes, perçage). C'est ici qu'on travaille. |
 | `fusion_mvp.html` | **Livrable généré** par `node build.js` (le HTML et le CSS de base vivent dans ce fichier, hors de la balise `<script>`). On n'édite jamais le script à la main. |
 | `tests/` | Suite Node portable (plus de 100 suites, dont certaines sur le noyau OCCT réel) : `node tests/run.cjs`, en parallèle (`-j N` pour la taille du pool, `--verbose` pour toutes les sorties) ; sous-ensemble rapide : `node tests/run-fast.cjs`. |
 | `tools/lint.cjs` | Lint ESLint du script concaténé (même ordre que le build) : `npm run lint` (erreurs) ou `npm run lint:all`. |
