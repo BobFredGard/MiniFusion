@@ -1,6 +1,18 @@
 // Lance toute la suite Node du dépôt : `node tests/run.cjs` (ou `npm test`).
 // Chaque suite sort 0 si verte. Portable : aucun chemin absolu (voir paths via ROOT).
-const { execFileSync } = require('child_process'), path = require('path');
+//
+// Suites lancées EN PARALLÈLE (pool de processus) : ~70 d'entre elles recompilent le
+// noyau OCCT (.wasm de 66 Mo), ce qui prenait ~25 min en série. Chaque suite reste un
+// processus isolé ; sa sortie est mise en mémoire et affichée d'un bloc quand elle échoue
+// (ou toujours avec --verbose), pour que les journaux ne s'entremêlent pas.
+//   node tests/run.cjs              pool automatique (cœurs et mémoire)
+//   node tests/run.cjs -j 1         en série, comme avant
+//   node tests/run.cjs --verbose    affiche aussi la sortie des suites vertes
+//   TEST_JOBS=4 node tests/run.cjs  taille du pool par variable d'environnement
+// Les durées de la dernière exécution (tests/.durees.json, non versionné) servent à
+// lancer les suites les plus longues en premier : la fin du pool n'attend plus un
+// retardataire démarré trop tard.
+const { spawn } = require('child_process'), path = require('path'), fs = require('fs'), os = require('os');
 const SUITES = [
   "test_highlight_order",
   "test_draft_sel",
@@ -118,13 +130,64 @@ const SUITES = [
   "test_mep_hachures_cotes",
   "test_filet_modele"
 ];
-let ok = 0; const ko = [];
-for (const s of SUITES) {
-  try {
-    execFileSync(process.execPath, [path.join(__dirname, s + '.cjs')], { stdio: 'inherit', timeout: 20 * 60 * 1000 });
-    ok++;
-  } catch (e) { ko.push(s); }
+const TIMEOUT = 20 * 60 * 1000;
+const DUREES = path.join(__dirname, '.durees.json');
+const argv = process.argv.slice(2);
+const VERBOSE = argv.includes('--verbose');
+const iJ = argv.findIndex(a => a === '-j' || a === '--jobs');
+// Taille du pool : un cœur laissé libre, et ~600 Mo de mémoire DISPONIBLE par processus
+// (pic mesuré : ~550 Mo pour une suite qui charge le noyau OCCT). Au-delà, la machine
+// swappe et tout ralentit ; -j N force la valeur.
+const auto = Math.max(1, Math.min(os.cpus().length - 1, Math.floor(os.freemem() / (600 * 1024 ** 2))));
+const JOBS = Math.max(1, parseInt(iJ >= 0 ? argv[iJ + 1] : process.env.TEST_JOBS, 10) || auto);
+
+let anciennes = {};
+try { anciennes = JSON.parse(fs.readFileSync(DUREES, 'utf8')); } catch (e) { /* première exécution : ordre de la liste */ }
+// Plus longues d'abord ; une suite inconnue passe en tête (elle peut être longue).
+const file = SUITES.slice().sort((a, b) => (anciennes[b] ?? Infinity) - (anciennes[a] ?? Infinity));
+
+const sec = ms => (ms / 1000).toFixed(1).replace('.', ',') + ' s';
+const res = {};
+const t0 = Date.now();
+let fini = 0;
+
+function lancer(s) {
+  return new Promise(resolve => {
+    const debut = Date.now(), sortie = [];
+    const p = spawn(process.execPath, [path.join(__dirname, s + '.cjs')], { stdio: ['ignore', 'pipe', 'pipe'] });
+    p.stdout.on('data', d => sortie.push(d));
+    p.stderr.on('data', d => sortie.push(d));
+    const minuterie = setTimeout(() => { sortie.push(Buffer.from('\n✗ délai dépassé (' + sec(TIMEOUT) + ')\n')); p.kill(); }, TIMEOUT);
+    p.on('close', code => {
+      clearTimeout(minuterie);
+      const ms = Date.now() - debut, vert = code === 0;
+      res[s] = { vert, ms };
+      fini++;
+      if (!vert || VERBOSE) {
+        console.log('\n──── ' + s + ' ────');
+        process.stdout.write(Buffer.concat(sortie));
+      }
+      console.log((vert ? '✓ ' : '✗ ') + s + ' — ' + sec(ms) + '  [' + fini + '/' + SUITES.length + ']');
+      resolve();
+    });
+  });
 }
-console.log('');
-console.log('SUITE: ' + ok + '/' + SUITES.length + ' OK' + (ko.length ? ' — KO: ' + ko.join(', ') : ''));
-process.exit(ko.length ? 1 : 0);
+
+async function ouvrier() { for (let s; (s = file.shift());) await lancer(s); }
+
+console.log('SUITE : ' + SUITES.length + ' suites, ' + JOBS + ' en parallèle');
+Promise.all(Array.from({ length: Math.min(JOBS, SUITES.length) }, ouvrier)).then(() => {
+  const total = Date.now() - t0;
+  const ko = SUITES.filter(s => !res[s].vert);
+  const cumul = SUITES.reduce((n, s) => n + res[s].ms, 0);
+  const durees = {};
+  SUITES.forEach(s => { durees[s] = res[s].ms; });
+  try { fs.writeFileSync(DUREES, JSON.stringify(durees, null, 1)); } catch (e) { console.log('(durées non enregistrées : ' + e.message + ')'); }
+  console.log('');
+  console.log('Plus lentes :');
+  SUITES.slice().sort((a, b) => res[b].ms - res[a].ms).slice(0, 10)
+    .forEach(s => console.log('  ' + sec(res[s].ms).padStart(9) + '  ' + s));
+  console.log('Durée : ' + sec(total) + ' (cumul des suites ' + sec(cumul) + ', ' + JOBS + ' en parallèle)');
+  console.log('SUITE: ' + (SUITES.length - ko.length) + '/' + SUITES.length + ' OK' + (ko.length ? ' — KO: ' + ko.join(', ') : ''));
+  process.exit(ko.length ? 1 : 0);
+});

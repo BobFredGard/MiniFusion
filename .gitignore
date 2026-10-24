@@ -20,3 +20,5 @@ playwright-report/
 # fichiers d’échange Chrome (File System Access) et doublons de synchronisation Dropbox
 *.crswap
 *(Copie en conflit*
+# durées des suites Node (ordre du pool de tests/run.cjs)
+tests/.durees.json

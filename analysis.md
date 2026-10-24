@@ -43,7 +43,7 @@ L'exécution reste **un seul script global** : les fichiers ne sont pas des modu
 1. `node build.js` reconstruit le livrable.
 2. `node build.js --check` vérifie qu'il correspond aux sources.
 3. `node tests/chk_syntaxe.cjs` vérifie la syntaxe du script généré.
-4. `node tests/run.cjs` exécute les 115 suites ; `tests/run-fast.cjs` en exécute 23 pour la CI.
+4. `node tests/run.cjs` exécute les 115 suites **en parallèle** (pool de processus, plus longues d'abord ; ~3,5 min au lieu de ~20 en série sur 8 cœurs) ; `tests/run-fast.cjs` en exécute 23.
 5. `npm run lint` vérifie les identifiants non définis ; `npm run lint:all` inclut les avertissements (`catch` vides).
 6. `npm run ci` et `.github/workflows/ci.yml` enchaînent build, syntaxe, tests rapides et lint (~1 min).
 

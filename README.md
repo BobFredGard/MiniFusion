@@ -179,7 +179,7 @@ Le dépôt stocke les gros binaires (`occt/*.wasm`, `Exemples/*.miniFusion`, `Ex
 |---|---|
 | `src/*.js` | **Les sources** (54 fichiers, de l'en-tête à l'initialisation ; la FAO est découpée par domaine : parcours, caches, post-processeurs, simulation, interface, ébauche 3D, contour, géodésique, crêtes, perçage). C'est ici qu'on travaille. |
 | `fusion_mvp.html` | **Livrable généré** par `node build.js` (le HTML et le CSS de base vivent dans ce fichier, hors de la balise `<script>`). On n'édite jamais le script à la main. |
-| `tests/` | Suite Node portable (plus de 100 suites, dont certaines sur le noyau OCCT réel) : `node tests/run.cjs` ; sous-ensemble CI : `node tests/run-fast.cjs`. |
+| `tests/` | Suite Node portable (plus de 100 suites, dont certaines sur le noyau OCCT réel) : `node tests/run.cjs`, en parallèle (`-j N` pour la taille du pool, `--verbose` pour toutes les sorties) ; sous-ensemble rapide : `node tests/run-fast.cjs`. |
 | `tools/lint.cjs` | Lint ESLint du script concaténé (même ordre que le build) : `npm run lint` (erreurs) ou `npm run lint:all`. |
 | `.github/workflows/ci.yml` | CI : build à jour, syntaxe, tests rapides, lint. |
 | `CHANGELOG.md` | Une entrée par version : cause, correctif, test. |
