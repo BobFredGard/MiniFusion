@@ -77,6 +77,7 @@ const SUITES = [
   "test_fao_bundle",
   "test_fao_stale_why",
   "test_corps",
+  "test_timeline_bandeau",
   "test_corps_iso",
   "test_corps_style",
   "test_import_vie",

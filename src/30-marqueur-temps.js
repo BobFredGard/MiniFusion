@@ -181,7 +181,7 @@ function rebuildInner(projPass){
     else if(filModeX&&occLive&&occLive.shape){try{filEdgesReload();}catch(e){}try{buildExactOverlay();}catch(e){}}
     faceEl.textContent+=(faceEl.textContent?'\n':'')+'Rebuild interrompu ('+why+') — dernier état valide conservé.';
     builtHash=null;builtEngine=null;builtVersion=-1;
-    refreshParts();renderTree();renderTimeline();autosave();applyClip();occStatus();refreshMirror();buildEdgeOverlay();clearHover();
+    refreshParts();renderTree();autosave();applyClip();occStatus();refreshMirror();buildEdgeOverlay();clearHover();
   };
   clearMeasure();if(selGroup){scene.remove(selGroup);selGroup=null;}selFaces=[];
   // nettoie prévisu esquisses 3D
@@ -193,7 +193,7 @@ function rebuildInner(projPass){
   (doc.features||[]).forEach(f=>{if(f.type==='extrude'&&!f.op)f.op='add';});
   // Voie exacte OCCT (prioritaire) : prismes BRep + Fuse/Cut + tessellation.
   if(occHas()){
-    if(occRebuild()){occEngineMsg='exact OCCT';occStatus();refreshParts();renderTree();renderTimeline();autosave();applyClip();if(filMode)buildFilletOverlay();else if(filModeX){if(occLive&&occLive.shape){try{filEdgesReload();}catch(e){}}buildExactOverlay();}buildEdgeOverlay();refreshMirror();commitPrev();builtEngine='exact';buildDone();projRefreshRerun(projPass);return;}
+    if(occRebuild()){occEngineMsg='exact OCCT';occStatus();refreshParts();renderTree();autosave();applyClip();if(filMode)buildFilletOverlay();else if(filModeX){if(occLive&&occLive.shape){try{filEdgesReload();}catch(e){}}buildExactOverlay();}buildEdgeOverlay();refreshMirror();commitPrev();builtEngine='exact';buildDone();projRefreshRerun(projPass);return;}
     occEngineMsg='maillage (repli exact impossible — voir Mesure)';
     faceEl.textContent+=(faceEl.textContent?'\n':'')+'OCCT : repli sur le moteur maillage pour ce rebuild.';
     if(bodies.length)clearBodies(); // sécurité : un repli partiel ne doit jamais doubler l'affichage
@@ -301,7 +301,7 @@ function rebuildInner(projPass){
     });
   }
   phAdd('maillage',performance.now()-_tm);
-  refreshParts();renderTree();renderTimeline();autosave();applyClip();
+  refreshParts();renderTree();autosave();applyClip();
   occStatus();
   if(filWarn.length)faceEl.textContent+=(faceEl.textContent?'\n':'')+filWarn.slice(0,4).join('\n');
   if(filMode)buildFilletOverlay();
@@ -310,7 +310,7 @@ else if(filModeX){if(occLive&&occLive.shape){try{filEdgesReload();}catch(e){}}bu
   commitPrev();builtEngine='mesh';buildDone();projRefreshRerun(projPass);
   }catch(err){
     try{rollbackPrev(String((err&&err.message)||err));}catch(e2){faceEl.textContent+='\n[Rebuild] échec critique.';
-      try{refreshParts();renderTree();renderTimeline();applyClip();occStatus();}catch(e3){}}
+      try{refreshParts();renderTree();applyClip();occStatus();}catch(e3){}}
     return;
   }
 }

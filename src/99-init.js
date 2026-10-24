@@ -1,7 +1,7 @@
 /* ---------- init ---------- */
 window.addEventListener('error',e=>{try{statsEl.textContent+='\n[ERREUR] '+(e.message||e.error);}catch(_){}});
 try{$('appVerLive').textContent=APP_VER;}catch(e){}
-buildScene();renderTree();renderTimeline();renderProps();refreshParts();
+buildScene();renderTree();renderProps();refreshParts();
 try{const auto=localStorage.getItem('minifusion_auto');if(auto){deserialise(auto,{rebuild:false});renderProps();faceEl.textContent='Brouillon local restauré.';}}catch(e){}
 // Le cache d'affichage n'est qu'un DÉCOR : il redonne une image, pas un modèle. Sans rejeu,
 // il n'y a pas de solide exact (occLive) — donc ni congé, ni esquisse sur face, ni sélection
