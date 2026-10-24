@@ -225,7 +225,11 @@ function cgSlot(el,ctx,i,type,opt){
   const r=el.refs[i];
   if(!r){if(opt)return null;throw new Error('référence '+(i+1)+' manquante');}
   const g=cgEvalRef(r,ctx);
-  if(!g){if(r.k==='cg')throw new Error('référence '+(i+1)+' supprimée ou non résolue');throw new Error('référence '+(i+1)+' introuvable — la pièce a changé');}
+  if(!g){
+    if(r.k==='cg')throw new Error('référence '+(i+1)+' supprimée ou non résolue');
+    if((r.k==='face'||r.k==='edge'||r.k==='vtx')&&!(typeof occHas==='function'&&occHas()))throw new Error('noyau exact indisponible : position mémorisée');
+    throw new Error('référence '+(i+1)+' introuvable — la pièce a changé');
+  }
   if(!g[type])throw new Error('référence '+(i+1)+' : ce n’est pas un '+({plane:'plan',axis:'axe',point:'point',frame:'repère'})[type]);
   return g[type];
 }
@@ -391,10 +395,101 @@ function cgResolveAll(){
 function cgKindLabel(el){return el?(CG_KINDS[el.kind]||{lab:'?'}).lab:'?';}
 function cgHowLabel(el){const H=el&&CG_HOW[el.kind]&&CG_HOW[el.kind][el.how];return H?H.lab:'?';}
 /* ── géométrie du modèle : faces, arêtes, sommets (noyau exact) ── */
+function cgShapeFor(ctx){
+  // Solide sur lequel résoudre : pendant le rejeu, celui qui précède l'élément (antériorité,
+  // occFinalShape mis en cache par position le temps de la passe) ; à la création ou dans
+  // l'aperçu, le solide affiché — celui sur lequel l'utilisateur vient de cliquer.
+  if(ctx&&ctx.shapes&&ctx.self&&(doc.cgeo||[]).indexOf(ctx.self)>=0){
+    const up=cgUpto(ctx.self);
+    if(!ctx.shapes.has(up)){let FR=null;try{FR=occFinalShape(up);}catch(e){FR=null;}ctx.shapes.set(up,FR);}
+    const FR=ctx.shapes.get(up);
+    return FR&&FR.shape&&!FR.shape.IsNull()?FR.shape:null;
+  }
+  return (occLive&&occLive.shape)?occLive.shape:null;
+}
+function cgEdgesOf(shape,ctx){
+  // Arêtes (données pures : mid, pts, len) — une seule énumération par solide et par passe
+  if(ctx){ctx.edges=ctx.edges||new Map();if(ctx.edges.has(shape))return ctx.edges.get(shape);}
+  let L=[];try{L=occListEdges(shape);}catch(e){L=[];}
+  if(ctx)ctx.edges.set(shape,L);
+  return L;
+}
+function cgFindEdge(edges,se){
+  // Même nommage persistant que les congés exacts : ancre d'esquisse (suit les éditions),
+  // départagée par la dernière position connue ; sinon la plus proche de même longueur.
+  if(!se.anchor){try{const a=xAnchorFor(se.pos);if(a)se.anchor=a;}catch(e){}}
+  const dist=i=>{const m=edges[i].mid;return Math.hypot(m[0]-se.pos[0],m[1]-se.pos[1],m[2]-se.pos[2]);};
+  let anc=[];try{anc=se.anchor?xAnchorMatch(se,edges):[];}catch(e){anc=[];}
+  if(anc.length){anc.sort((a,b)=>dist(a)-dist(b));return anc[0];}
+  let best=-1,bd=2.5;
+  edges.forEach((e,i)=>{
+    const d=dist(i);if(d>bd)return;
+    if(se.len>0&&Math.abs(e.len-se.len)>Math.max(2,0.35*se.len))return;
+    bd=d;best=i;
+  });
+  return best;
+}
+function cgEdgeGeom(P){
+  // Droite → {line:{a,b}} ; cercle ou arc → {circ:{c,n,r}} ; sinon null
+  if(!P||P.length<2)return null;
+  const a=P[0],b=P[P.length-1],d=cgSub(b,a),L=cgLen(d);
+  if(L>1e-9){
+    let dev=0;for(const q of P){dev=Math.max(dev,cgLen(cgCross(cgSub(q,a),d))/L);}
+    if(dev<=Math.max(1e-4,0.002*L))return {line:{a,b}};
+  }
+  if(P.length<5)return null;
+  const p0=P[0],p1=P[Math.floor(P.length/3)],p2=P[Math.floor(2*P.length/3)];
+  const u=cgSub(p1,p0),w=cgSub(p2,p0),n=cgCross(u,w),nn=cgDot(n,n);
+  if(nn<1e-12)return null;
+  // centre du cercle circonscrit (3D)
+  const c=cgAdd(p0,cgMul(cgAdd(cgMul(cgCross(n,u),cgDot(w,w)),cgMul(cgCross(w,n),cgDot(u,u))),1/(2*nn)));
+  const r=cgLen(cgSub(p0,c));
+  for(const q of P){if(Math.abs(cgLen(cgSub(q,c))-r)>Math.max(0.02,0.01*r))return null;}
+  return {circ:{c,n:cgUnit(n),r}};
+}
 function cgEvalModelRef(ref,ctx){
-  // Références à la pièce (face / arête / sommet) : résolues sur le solide rejoué jusqu'à
-  // l'élément (occFinalShape). Sans noyau exact : null → l'élément garde sa position (⚠).
-  void ref;void ctx;
+  // Références à la pièce (face / arête / sommet), résolues sur le solide qui précède l'élément.
+  // Sans noyau exact, ou référence introuvable : null → l'élément garde sa position (⚠).
+  if(!ref||!(typeof occHas==='function'&&occHas()))return null;
+  const shape=cgShapeFor(ctx);if(!shape)return null;
+  if(ref.k==='face'){
+    let f=null,ad=null;
+    try{
+      f=occFindFaceAny(shape,ref.ref);if(!f)return null;
+      const b=occFaceBox(f);if(!b)return null;
+      ad=new occt.BRepAdaptor_Surface_2(f,true);
+      const T=occt.GeomAbs_SurfaceType,gt=ad.GetType();
+      if(gt===T.GeomAbs_Plane){
+        const n=occFaceOutNormal(f);if(!n)return null;
+        const B=cgBasisN(n,null);
+        return {plane:{o:b.pos,u:B.u,v:B.v,n:B.n},point:{o:b.pos}};
+      }
+      if(gt===T.GeomAbs_Cylinder||gt===T.GeomAbs_Cone){
+        const ax=(gt===T.GeomAbs_Cylinder?ad.Cylinder():ad.Cone()).Axis();
+        const d=cgUnit([ax.Direction().X(),ax.Direction().Y(),ax.Direction().Z()]),lo=[ax.Location().X(),ax.Location().Y(),ax.Location().Z()];
+        const o=cgAdd(lo,cgMul(d,cgDot(cgSub(b.pos,lo),d))); // au droit du centre de la face
+        return {axis:{o,d},point:{o}};
+      }
+      return {point:{o:b.pos}};
+    }catch(e){return null;}
+    finally{try{if(ad)ad.delete();}catch(e){}try{if(f)f.delete();}catch(e){}}
+  }
+  if(ref.k==='edge'||ref.k==='vtx'){
+    const edges=cgEdgesOf(shape,ctx);
+    const i=cgFindEdge(edges,ref);if(i<0)return null;
+    const E=edges[i];
+    ref.pos=E.mid.map(v=>+v.toFixed(4));ref.len=+E.len.toFixed(4); // la référence suit l'arête (comme un congé)
+    if(ref.k==='vtx'){
+      const a=E.pts[0],b=E.pts[E.pts.length-1],q=ref.vpos||a;
+      const o=(cgLen(cgSub(a,q))<=cgLen(cgSub(b,q)))?a:b;
+      ref.vpos=o.map(v=>+v.toFixed(4));
+      return {point:{o}};
+    }
+    const G=cgEdgeGeom(E.pts);if(!G)return {point:{o:E.mid}};
+    if(G.line)return {axis:{o:E.mid,d:cgSub(G.line.b,G.line.a)},point:{o:E.mid}};
+    const B=cgBasisN(G.circ.n,null);
+    return {point:{o:G.circ.c},axis:{o:G.circ.c,d:G.circ.n},plane:{o:G.circ.c,u:B.u,v:B.v,n:B.n}};
+  }
   return null;
 }
 function cgShapesRelease(ctx){

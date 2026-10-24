@@ -129,7 +129,8 @@ const SUITES = [
   "test_mep_coupe_brisee",
   "test_mep_hachures_cotes",
   "test_filet_modele",
-  "test_construction_modele"
+  "test_construction_modele",
+  "test_construction_esquisse"
 ];
 const TIMEOUT = 20 * 60 * 1000;
 const DUREES = path.join(__dirname, '.durees.json');

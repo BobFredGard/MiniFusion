@@ -180,11 +180,13 @@ function cgEdit(id){
   sel={kind:null,id:null};
   cgRefresh();
 }
-function cgNextSlot(){
-  // Active le premier emplacement obligatoire vide (sinon aucun : tout est saisi)
+function cgNextSlot(from){
+  // Active le premier emplacement obligatoire vide ; sinon l'emplacement FACULTATIF qui suit
+  // celui qu'on vient de remplir (direction X d'un repère…) ; sinon aucun : tout est saisi.
   if(!cgMode)return;
-  const S=CG_HOW[cgMode.draft.kind][cgMode.draft.how].slots;
-  const i=S.findIndex((s,k)=>!s[2]&&!cgMode.draft.refs[k]);
+  const S=CG_HOW[cgMode.draft.kind][cgMode.draft.how].slots,R=cgMode.draft.refs;
+  let i=S.findIndex((s,k)=>!s[2]&&!R[k]);
+  if(i<0&&from!=null)i=S.findIndex((s,k)=>k>from&&s[2]&&!R[k]);
   cgMode.slot=i>=0?i:null;
   try{renderer.domElement.style.cursor=cgMode.slot!=null?'crosshair':'default';}catch(e){}
 }
@@ -211,6 +213,7 @@ function cgCancel(){
   cgMode=null;
   try{renderer.domElement.style.cursor='default';}catch(e){}
   cgRefresh();
+  try{faceEl.textContent='Construction : annulé.';}catch(e){}
 }
 function cgCommit(){
   if(!cgMode)return;
@@ -258,8 +261,9 @@ function cgRefAccept(ref){
   }
   const g=cgEvalRef(ref,{});
   if(!g||!g[s[0]]){try{faceEl.textContent=s[1]+' : ce n’est pas '+({plane:'un plan',axis:'un axe',point:'un point',frame:'un repère'})[s[0]]+'. Cliquez '+cgSlotHint(s[0])+'.';}catch(e){}return false;}
-  d.refs[cgMode.slot]=ref;
-  cgNextSlot();cgRefresh();
+  const k=cgMode.slot;
+  d.refs[k]=ref;
+  cgNextSlot(k);cgRefresh();
   return true;
 }
 function cgPickCommit(e){
@@ -275,9 +279,69 @@ function cgPickCommit(e){
   try{faceEl.textContent='Rien de reconnu ici — cliquez '+cgSlotHint(CG_HOW[cgMode.draft.kind][cgMode.draft.how].slots[cgMode.slot][0])+'.';}catch(err){}
 }
 function cgPickModelRef(e,draft,slot){
-  // Référence sur la pièce (face, arête, sommet) — noyau exact, complétée au lot 4
-  void e;void draft;void slot;
+  // Référence sur la pièce sous le curseur, selon le TYPE attendu par l'emplacement :
+  //   point : sommet (≤ 12 px d'une extrémité d'arête), centre d'une arête circulaire, sinon
+  //           l'extrémité la plus proche ;  axe : arête droite ou circulaire (axe du cercle),
+  //           face cylindrique ou conique ;  plan : face plane, ou plan d'une arête circulaire.
+  if(!(typeof occHas==='function'&&occHas())||!occLive||!occLive.shape)return null;
+  const type=(CG_HOW[draft.kind][draft.how].slots[slot]||[])[0];
+  const h=pick(e);
+  {
+    const E=cgEdgeUnder(e,h);
+    if(E){
+      const G=cgEdgeGeom(E.pts);
+      const base={pos:E.mid.map(v=>+v.toFixed(4)),len:+E.len.toFixed(4)};
+      try{const a=xAnchorFor(E.mid);if(a)base.anchor=a;}catch(err){}
+      if(type==='point'){
+        const r=renderer.domElement.getBoundingClientRect();
+        const scr=p=>{const v=new THREE.Vector3(p[0],p[1],p[2]).project(camera);return [r.left+(v.x+1)/2*r.width,r.top+(1-v.y)/2*r.height];};
+        const ends=[E.pts[0],E.pts[E.pts.length-1]].map(p=>{const s=scr(p);return {p,d:Math.hypot(s[0]-e.clientX,s[1]-e.clientY)};}).sort((x,y)=>x.d-y.d);
+        if(G&&G.circ&&ends[0].d>12)return Object.assign({k:'edge',name:'Centre · '+entName('edge')},base);
+        return Object.assign({k:'vtx',vpos:ends[0].p.map(v=>+v.toFixed(4)),name:'Sommet · '+entName('edge')},base);
+      }
+      if(type==='axis'&&G)return Object.assign({k:'edge',name:entName('edge')},base);
+      if(type==='plane'&&G&&G.circ)return Object.assign({k:'edge',name:'Plan du cercle · '+entName('edge')},base);
+    }
+  }
+  if(h&&(type==='plane'||type==='axis')){
+    let hit=null;
+    try{
+      hit=occFaceOfHit(h.object,h.faceIndex);if(!hit||!hit.face)return null;
+      const st=occSurfKind(hit.face);
+      if(type==='plane'&&st!=='Plane')return null;
+      if(type==='axis'&&st!=='Cylinder'&&st!=='Cone')return null;
+      const fr=occFaceRefAny(hit.face);if(!fr)return null;
+      return {k:'face',ref:fr,name:entName('face')};
+    }catch(err){return null;}
+    finally{try{if(hit&&hit.face)hit.face.delete();}catch(err){}}
+  }
   return null;
+}
+function cgEdgeUnder(e,faceHit){
+  // Arête EXACTE (occListEdges) à ≤ 7 px du curseur, indépendante de l'affichage des arêtes
+  // (edgeHoverSegs n'existe que lorsqu'elles sont dessinées). Une arête cachée derrière la
+  // face survolée est ignorée, comme pour la sélection d'arêtes.
+  const edges=cgEdgesOf(occLive.shape,null);if(!edges.length)return null;
+  const r=renderer.domElement.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+  const v=new THREE.Vector3(),toS=p=>{v.set(p[0],p[1],p[2]).project(camera);return [(v.x+1)/2*r.width,(1-v.y)/2*r.height,v.z];};
+  let best=null,bd=7;
+  for(const E of edges){
+    let a=toS(E.pts[0]);
+    for(let k=1;k<E.pts.length;k++){
+      const b=toS(E.pts[k]);
+      if(Math.abs(a[2])<1&&Math.abs(b[2])<1){
+        const dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy||1e-9;
+        const t=Math.max(0,Math.min(1,((mx-a[0])*dx+(my-a[1])*dy)/L2));
+        const d=Math.hypot(mx-(a[0]+t*dx),my-(a[1]+t*dy));
+        if(d<bd){
+          const P0=E.pts[k-1],P1=E.pts[k],w=new THREE.Vector3(P0[0]+(P1[0]-P0[0])*t,P0[1]+(P1[1]-P0[1])*t,P0[2]+(P1[2]-P0[2])*t);
+          if(!faceHit||camera.position.distanceTo(w)<=faceHit.distance*1.004+0.3){bd=d;best=E;}
+        }
+      }
+      a=b;
+    }
+  }
+  return best;
 }
 function cgTreePick(ref){
   // Clic dans l'arbre pendant une saisie → true si consommé
