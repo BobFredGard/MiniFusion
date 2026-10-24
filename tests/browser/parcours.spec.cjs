@@ -315,7 +315,7 @@ test('liaisons : pivot tel que construit, piloté au curseur, limites',async({pa
   expect(x[0]).toBeCloseTo(0.5,6);expect(x[1]).toBeCloseTo(Math.sqrt(3)/2,6);
   // limite haute 30° : bloqué à 30
   const max=page.locator('#props input[placeholder=max]').first();
-  await max.fill('30');await max.dispatchEvent('change');
+  await max.fill('30');await max.press('Tab'); // « change » natif, une seule fois
   x=await page.evaluate(()=>asmRoot().occ[1].fr.x);
   expect(x[0]).toBeCloseTo(Math.sqrt(3)/2,6);expect(x[1]).toBeCloseTo(0.5,6);
   // Ctrl+Z : la limite part, retour à 60°

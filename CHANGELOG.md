@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**317 versions**, de `2026-09-28b` à `V0.6.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**318 versions**, de `2026-09-28b` à `V0.6.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4672,3 +4672,12 @@ Idées SolidCraft (interférences, propriétés de masse par composant), dans le
 - **Commande** « Inspecter » (ruban Composants), panneau de résultats (matière par composant, une étape d'annulation), relancer / fermer ; fermé en changeant de composant.
 
 Tests : `test_composants_inspection` (noyau réel : pièce multicorps seule — interférence 1 000 mm³ ; deux composants — 86,4 g d'aluminium + 39,25 g d'acier, centres de gravité, interférence ; relance depuis le cache sans rejeu ; colonne écartée — plus d'interférence ; deux occurrences superposées — 5 000 mm³). Vérifié dans le navigateur : socle et colonne, volume commun en rouge, centre de gravité.
+
+## V0.6.7 - Mise en plan d'assemblage
+Étape 5 du plan « composants façon Fusion 360 ».
+- **Vue « Assemblage »** (`src/48-composants-plan.js`, `src/98-mise-en-plan.js`) : le PLAN travaille sur des corps (maillage + solide exact) ; une vue `asm` reçoit ceux du composant actif plus un corps par corps de chaque instance placée (`asmPlanBodies`) — solide exact copié et transformé, maillage tiré du solide (repli : l'instantané d'affichage). Les solides des autres composants viennent d'un **rejeu silencieux** (`asmExactQuiet` : document échangé le temps du calcul, sans activation — activer fermerait le PLAN), en cache. HLR exact, coupes, détails : inchangés. La clé de cache de la vue inclut l'empreinte de l'assemblage (placements, composants) : une occurrence qui bouge la recalcule.
+- **Nomenclature par composant** (`asmBomRows`) : 1er niveau, tous niveaux, pièces seules ; quantité = nombre d'instances, dimensions (instantané), matière du composant ou saisie au plan.
+- **Bulles** (`sh.balloons`) : automatiques sur la première vue d'assemblage, accrochées au centre de la première instance de chaque composant, numéro = ligne de la nomenclature (renumérotées avec elle).
+- Correctif (V0.6.5) : changer une limite de liaison sans changer sa valeur n'empile plus d'étape d'annulation (le parcours Playwright des liaisons échouait sur un double « change »).
+
+Tests : `test_composants_plan` (noyau réel : trois corps placés sans activer de composant, volumes, positions, cache ; HLR exact de la vue, recalculée quand une occurrence bouge ; nomenclature 1er niveau / tous niveaux / pièces seules, matière ; bulles numérotées et renumérotées). Vérifié dans le navigateur : vue de face d'un socle et de deux colonnes, nomenclature et bulles sur la planche.

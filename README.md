@@ -2,7 +2,7 @@
 
 **CAO paramétrique, assemblage, FAO et mise en plan dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2, G-code et planches cotées ISO. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.6.6** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.6.7** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Sommaire
 
@@ -114,6 +114,11 @@ Convertir une pièce multicorps en assemblage, sans rien remodéliser :
 - **Insérer** propose **Lier** (recommandé) ou **Copier**. Un fichier du **dossier de projets** est retrouvé par son chemin, sur n'importe quel PC qui synchronise ce dossier (Dropbox) ; hors du dossier, le lien ne vaut que sur cet ordinateur. Le fichier hôte garde une copie : il s'ouvre même sans la source (⚠).
 - **Édition sur place** : on modélise un composant lié comme un autre (✎ dans l'arbre) ; à l'enregistrement de l'assemblage (Ctrl+S), sa source est réécrite d'abord (trajectoires FAO de la source gardées).
 - **Mise à jour** : à l'ouverture, au retour sur l'onglet et par 🔄 dans l'arbre (le premier clic autorise l'accès au dossier) : une source changée ailleurs est rechargée, les alignements suivent. Modifiée des deux côtés : **Garder les miennes**, **Prendre la source** ou **Rompre le lien**.
+**Mise en plan d'assemblage** (espace PLAN du composant actif) :
+- une vue peut montrer **🧩 Assemblage (avec les composants)** (liste « Corps » de la vue) : le composant et toutes ses instances, en lignes cachées exactes (HLR OCCT), coupes et détails compris ; elle suit les placements ;
+- **nomenclature** par composant : corps du composant (comme avant), composants du 1er niveau, de tous les niveaux, ou pièces seules ; quantités, dimensions, matière (celle du composant, ou saisie au plan) ;
+- **bulles automatiques** sur la première vue d'assemblage : numérotées comme la nomenclature, et renumérotées avec elle.
+
 **Inspecter** (ruban Composants, noyau exact) : sur le composant actif et tout ce qu'il contient — ou sur une pièce multicorps seule.
 - **Propriétés physiques** : volume, masse et centre de gravité par corps et au total (sphère jaune) ; la **matière** se choisit par composant (acier par défaut, inox, aluminium, laiton, bronze, cuivre, fonte, titane, PLA, ABS, PETG, nylon, POM, chêne).
 - **Interférences** : volume commun entre deux corps (même pièce ou composants différents), en rouge dans la vue, avec son volume.
@@ -238,7 +243,7 @@ Le dépôt stocke les gros binaires (`occt/*.wasm`, `Exemples/*.miniFusion`, `Ex
 
 | Chemin | Rôle |
 |---|---|
-| `src/*.js` | **Les sources** (63 fichiers, de l'en-tête à l'initialisation ; la FAO est découpée par domaine : parcours, caches, post-processeurs, simulation, interface, ébauche 3D, contour, géodésique, crêtes, perçage). C'est ici qu'on travaille. |
+| `src/*.js` | **Les sources** (64 fichiers, de l'en-tête à l'initialisation ; la FAO est découpée par domaine : parcours, caches, post-processeurs, simulation, interface, ébauche 3D, contour, géodésique, crêtes, perçage). C'est ici qu'on travaille. |
 | `fusion_mvp.html` | **Livrable généré** par `node build.js` (le HTML et le CSS de base vivent dans ce fichier, hors de la balise `<script>`). On n'édite jamais le script à la main. |
 | `tests/` | Suite Node portable (plus de 100 suites, dont certaines sur le noyau OCCT réel) : `node tests/run.cjs`, en parallèle (`-j N` pour la taille du pool, `--verbose` pour toutes les sorties) ; sous-ensemble rapide : `node tests/run-fast.cjs`. |
 | `tools/lint.cjs` | Lint ESLint du script concaténé (même ordre que le build) : `npm run lint` (erreurs) ou `npm run lint:all`. |

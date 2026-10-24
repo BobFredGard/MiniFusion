@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.6.6';
+const APP_VER='V0.6.7';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -9099,7 +9099,9 @@ function asmDofRow(p,o,k){
   t.addEventListener('change',()=>{const x=parseFloat(String(t.value).replace(',','.'));if(isFinite(x))set(x,false);});
   const lm=(i,ph)=>{const e=document.createElement('input');e.type='text';e.placeholder=ph;e.style.width='38px';e.title=(i?'Limite haute':'Limite basse')+' (vide = libre)';
     e.value=lim?String(lim[i]).replace('.',','):'';
-    e.addEventListener('change',()=>{asmPush('limites');const x=parseFloat(String(e.value).replace(',','.'));a.lim=a.lim||{};
+    e.addEventListener('change',()=>{const x=parseFloat(String(e.value).replace(',','.'));
+      const was=a.lim&&a.lim[k];if(isFinite(x)?(was&&was[i]===x):!was)return; // rien ne change : pas d'étape d'annulation
+      asmPush('limites');a.lim=a.lim||{};
       const cur=a.lim[k]||[rot?-180:-100,rot?180:100];
       if(isFinite(x)){cur[i]=x;a.lim[k]=cur;}else delete a.lim[k];
       asmResolve();asmNotify();});return e;};
@@ -9615,6 +9617,114 @@ function asmInspectProps(p){
   const cl=mk('button',null,'Fermer');cl.onclick=()=>{asmInspectClear();renderProps();};b.appendChild(cl);
   p.appendChild(b);
   return true;
+}
+
+/* ═══════════════ 48-composants-plan.js — composants plan ═══════════════ */
+/* ---------- mise en plan d'assemblage (V0.6.7) ----------
+   Le PLAN d'un composant (doc.mep, 98-mise-en-plan.js) peut montrer « Assemblage » : le composant
+   ET tout ce qu'il contient. Le PLAN travaille sur des corps (maillage + solide exact) : on lui
+   fournit, en plus des corps du composant actif, un « corps » par corps de chaque instance placée
+   (solide exact copié, transformé, maillage tiré du solide — repli : l'instantané d'affichage).
+   Les solides des autres composants viennent d'un rejeu SILENCIEUX (doc échangé le temps du
+   calcul, sans activation : activer fermerait le PLAN), gardés en cache (c._exact).
+   Nomenclature par composant (premier niveau / tous niveaux / pièces seules), bulles. */
+let asmPlanCache=null; // {sig, list}
+function asmPlanOn(){return !!asm&&!!asmActiveComp()&&asmActiveComp().occ.length>0;}
+function asmPlanInstances(){
+  // Instances sous le composant actif (lui exclu), visibles
+  const base=asmActiveComp();if(!base)return [];
+  const hidden=path=>{let c=base;for(const id of path){const o=c&&c.occ.find(q=>q.id===id);if(!o||o.visible===false)return true;c=asmComp(o.comp);}return false;};
+  return asmInstances(base.id).filter(i=>i.path.length&&!hidden(i.path));
+}
+function asmPlanSig(){
+  if(!asmPlanOn())return '';
+  return asmHash(JSON.stringify(asmPlanInstances().map(i=>{const c=asmComp(i.comp);
+    return [i.path.join('/'),asmRound(i.F),c&&c._snap?c._snap.hash:'',c&&c._stale?1:0];})));
+}
+function asmExactQuiet(c){
+  // Solides exacts d'un composant SANS l'activer : document échangé le temps du rejeu
+  const d0=doc,a0=asm.active,s0=occSkipFeat;
+  let out=[];
+  try{doc=c.doc;asm.active=c.id;occSkipFeat=null;out=asmExactActive();}
+  finally{doc=d0;asm.active=a0;occSkipFeat=s0;}
+  return out;
+}
+function asmExactOfQuiet(c){
+  const h=c._snap?c._snap.hash:'';
+  if(c._exact&&c._exact.hash===h&&h&&!c._stale)return c._exact.list;
+  asmExactFree(c);
+  const list=c.doc===doc?asmExactActive():asmExactQuiet(c);
+  c._exact={hash:h,list};
+  return list;
+}
+function asmPlanFree(){
+  if(!asmPlanCache)return;
+  asmPlanCache.list.forEach(b=>{try{b.mesh.geometry.dispose();b.mesh.material.dispose();}catch(e){}try{if(b.shape)b.shape.delete();}catch(e){}});
+  asmPlanCache=null;
+}
+function asmPlanBodies(){
+  // Corps à projeter pour une vue « Assemblage » : ceux du composant actif + ceux des instances
+  const own=((typeof bodies!=='undefined'&&bodies)||[]).filter(b=>b&&!b.ghost&&b.kind!=='ghost'&&b.mesh&&b.mesh.visible!==false);
+  if(!asmPlanOn())return own;
+  const sig=asmPlanSig();
+  if(asmPlanCache&&asmPlanCache.sig===sig)return own.concat(asmPlanCache.list);
+  asmPlanFree();
+  const exact=typeof occHas==='function'&&occHas();
+  const list=[];
+  asmPlanInstances().forEach(I=>{
+    const c=asmComp(I.comp);if(!c)return;
+    const key='asm:'+I.path.join('/');
+    let done=false;
+    if(exact){
+      try{
+        asmExactOfQuiet(c).forEach(b=>{
+          const sh=asmPlaced(b.shape,I.F);
+          let geo=null;try{geo=occTessellate(sh,0.3,0.4);}catch(e){}
+          if(!geo){try{sh.delete();}catch(e){}return;}
+          const e=(c.doc.bodies||[]).find(x=>x.id===b.id)||{};
+          const col=e.color>0?e.color:0x9a9aa0;
+          const mesh=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:col}));
+          list.push({kind:'body',id:key+':'+b.id,bodyId:key+':'+b.id,name:c.name+' · '+b.name,mesh,shape:sh,color:col,asmComp:c.id,asmPath:I.path});
+          done=true;
+        });
+      }catch(e){}
+    }
+    if(!done&&c._snap){
+      // repli maillage : l'instantané d'affichage, placé
+      c._snap.items.forEach((it,k)=>{
+        const g=it.geo.clone();g.applyMatrix4(asmMat4(I.F));
+        const mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:it.color}));
+        list.push({kind:'body',id:key+':m'+k,bodyId:key+':m'+k,name:c.name,mesh,shape:null,color:it.color,asmComp:c.id,asmPath:I.path});
+      });
+    }
+  });
+  asmPlanCache={sig,list};
+  return own.concat(list);
+}
+function asmBomRows(lvl){
+  // Nomenclature des composants : 'comp1' (premier niveau), 'all' (tous niveaux), 'parts'
+  // (pièces seules : composants sans sous-composants). → [{rep,name,qty,mat,dims,ids:[compId]}]
+  const base=asmActiveComp();if(!base)return [];
+  let inst=asmPlanInstances();
+  if(lvl==='comp1')inst=inst.filter(i=>i.path.length===1);
+  if(lvl==='parts')inst=inst.filter(i=>{const c=asmComp(i.comp);return c&&!c.occ.length;});
+  const rows=[];
+  inst.forEach(i=>{
+    let r=rows.find(q=>q.ids[0]===i.comp);
+    if(r){r.qty++;return;}
+    const c=asmComp(i.comp);let dims='';
+    try{if(c._snap&&c._snap.items.length){const b=asmSnapBox(c._snap),S=b.getSize(new THREE.Vector3());dims=[S.x,S.y,S.z].map(v=>(+v).toFixed(1).replace('.',',')).join(' × ');}}catch(e){}
+    rows.push({name:c.name,qty:1,mat:asmMatOf(c).name,dims,ids:[c.id]});
+  });
+  rows.forEach((q,k)=>q.rep=k+1);
+  return rows;
+}
+function asmBalloonAnchor(cid){
+  // Point d'accroche d'une bulle : centre de l'instantané de la première instance du composant
+  const I=asmPlanInstances().find(i=>i.comp===cid);if(!I)return null;
+  const c=asmComp(cid);let p=[0,0,0];
+  try{if(c._snap&&c._snap.items.length){const b=asmSnapBox(c._snap),m=b.getCenter(new THREE.Vector3());p=[m.x,m.y,m.z];}}catch(e){}
+  return asmApply(I.F,p);
 }
 
 /* ═══════════════ 49-esquisse-registre-icones.js — esquisse registre icones ═══════════════ */
@@ -42118,7 +42228,7 @@ function viewFadeIn(){
   function mepViewSig(v){
     let s=[v.kind==='dxf'?'dxf:'+((v.dxf&&v.dxf.rev)||0):'',mepRound(v.dir),mepRound(v.u),mepRound(v.v),v.bodyId||'',v.mode||'hide',v.tangent?1:0,
       v.hlrExact===false?'soft':'exact',v.shade?1:0,v.render3d?(v.mirror?'1m':1):0,
-      v.section?mepRound(v.section.p)+mepRound(v.section.n)+(v.section.pts?JSON.stringify(v.section.pts):''):'',v.detail?v.detail.cx+','+v.detail.cy+','+v.detail.r:'',mepOblOf(v)?'obl:'+mepOblOf(v).a+','+mepOblOf(v).k:'',mepPerspOf(v)?'persp:'+mepPerspOf(v).fov:''].join('|');
+      v.section?mepRound(v.section.p)+mepRound(v.section.n)+(v.section.pts?JSON.stringify(v.section.pts):''):'',v.detail?v.detail.cx+','+v.detail.cy+','+v.detail.r:'',mepOblOf(v)?'obl:'+mepOblOf(v).a+','+mepOblOf(v).k:'',mepPerspOf(v)?'persp:'+mepPerspOf(v).fov:'',v.asm?'asm:'+asmPlanSig():''].join('|');
     /* l'ombrage et le rendu 3D dépendent de la couleur/opacité des corps :
        ces réglages ne changent pas _docVersion, donc on les met dans la clé
        de cache. Le thème influe aussi sur l'environnement du rendu 3D. */
@@ -42332,6 +42442,8 @@ function viewFadeIn(){
   /* ═══════════════ G. HLR ═══════════════ */
   let mepRC=null;
   function mepMeshesOf(view){
+    // vue « Assemblage » (V0.6.7) : corps du composant actif + ceux de ses instances (48-composants-plan)
+    if(view&&view.asm&&asmPlanOn())return asmPlanBodies();
     const out=[];const list=(typeof bodies!=='undefined'&&bodies)||[];
     list.forEach(b=>{
       if(!b||b.ghost||b.kind==='ghost'||!b.mesh||b.mesh.visible===false)return;
@@ -44255,6 +44367,11 @@ function viewFadeIn(){
     return add.length;
   }
   function mepBomRows(sh){
+    // V0.6.7 : nomenclature des COMPOSANTS (premier niveau / tous niveaux / pièces seules)
+    if(sh.bom&&sh.bom.lvl&&sh.bom.lvl!=='corps'&&asmPlanOn()){
+      const bm=sh.bom.mat||{};
+      return asmBomRows(sh.bom.lvl).map(r=>Object.assign(r,{mat:bm[r.ids[0]]||r.mat}));
+    }
     // corps du document (visibles) ; quantité = corps de même nom et mêmes dimensions
     const rows=[],bm=(sh.bom&&sh.bom.mat)||{};
     const rt=typeof bodies!=='undefined'?bodies:[];
@@ -44270,6 +44387,36 @@ function viewFadeIn(){
     });
     rows.forEach((q,i)=>q.rep=i+1);
     return rows;
+  }
+  /* bulles (V0.6.7) : {view, comp, p (point 3D du composant actif), dx, dy (décalage papier)} ;
+     le numéro est celui de la ligne du composant dans la nomenclature (renuméroté avec elle) */
+  function mepBalloonsAuto(sh){
+    const v=(sh.views||[]).find(x=>x.asm);if(!v)return 0;
+    const rows=mepBomRows(sh);
+    const c0=mepToSheet(v,0,0);
+    sh.balloons=[];
+    rows.forEach(r=>{
+      const p=asmBalloonAnchor(r.ids[0]);if(!p)return;
+      const l=mepLocal(v,p),A=mepToSheet(v,l[0],l[1]);
+      let dx=A.x-c0.x,dy=A.y-c0.y;const n=Math.hypot(dx,dy);
+      if(!(n>1)){dx=18;dy=-14;}else{dx=dx/n*18;dy=dy/n*18;} // accroche au centre de la vue : en haut à droite
+      sh.balloons.push({id:'bl'+(sh.balloons.length+1),view:v.id,comp:r.ids[0],p,dx:+dx.toFixed(2),dy:+dy.toFixed(2)});
+    });
+    return sh.balloons.length;
+  }
+  function mepDrawBalloons(mk,sh){
+    if(!Array.isArray(sh.balloons)||!sh.balloons.length)return;
+    const rows=mepBomRows(sh);
+    sh.balloons.forEach(b=>{
+      const v=mepView(sh,b.view);if(!v)return;
+      const row=rows.find(r=>r.ids&&r.ids[0]===b.comp);if(!row)return;
+      const l=mepLocal(v,b.p),A=mepToSheet(v,l[0],l[1]),B={x:A.x+(+b.dx||0),y:A.y+(+b.dy||0)},R=3.6;
+      const d=Math.hypot(B.x-A.x,B.y-A.y)||1,E={x:B.x-(B.x-A.x)/d*R,y:B.y-(B.y-A.y)/d*R};
+      mk('line',{x1:A.x,y1:A.y,x2:E.x,y2:E.y,class:'mepTitleBlock'});
+      mk('circle',{cx:A.x,cy:A.y,r:0.6,class:'mepTitleBlock',fill:'currentColor'});
+      mk('circle',{cx:B.x,cy:B.y,r:R,class:'mepTitleBlock'});
+      const tx=mk('text',{x:B.x,y:B.y+1.3,class:'mepRevText','text-anchor':'middle'});tx.textContent=String(row.rep);
+    });
   }
   function mepDrawBom(mk,sh,pd,ty){
     if(!sh.bom||!sh.bom.on)return;
@@ -45924,6 +46071,7 @@ function viewFadeIn(){
     sh.dims.forEach(d=>{
       try{mepDrawDim(mk,d,sh);}catch(e){}
     });
+    try{mepDrawBalloons(mk,sh);}catch(e){} // bulles de nomenclature (V0.6.7)
     /* cote en cours de placement : aperçu vivant (suit la souris) */
     if(mepSt.dim&&mepSt.dim.__ghost!==false&&!(mepSt.dim.kind==='dist'&&!mepSt.dim.b)){
       try{mepDrawDim(mk,mepSt.dim,sh);}catch(e){}
@@ -50145,6 +50293,19 @@ function viewFadeIn(){
     {const L=document.createElement('label');L.textContent='Nomenclature';r.appendChild(L);
      const cb=document.createElement('input');cb.type='checkbox';cb.id='mepBomOn';cb.checked=!!(sh.bom&&sh.bom.on);
      cb.onchange=()=>{mepEdit('nomenclature',()=>{sh.bom=Object.assign({mat:{}},sh.bom||{},{on:cb.checked});});mepSideShow();};r.appendChild(cb);}
+    if(sh.bom&&sh.bom.on&&(asmPlanOn()||(sh.bom.lvl&&sh.bom.lvl!=='corps'))){
+      r=rowEl();
+      const L=document.createElement('label');L.textContent='Contenu';r.appendChild(L);
+      const s=document.createElement('select');
+      [['corps','Corps du composant'],['comp1','Composants (1er niveau)'],['all','Composants (tous niveaux)'],['parts','Pièces seules']].forEach(([k,l])=>{
+        const o=document.createElement('option');o.value=k;o.textContent=l;if((sh.bom.lvl||'corps')===k)o.selected=true;s.appendChild(o);});
+      s.onchange=()=>{mepEdit('nomenclature',()=>{sh.bom.lvl=s.value;});mepSideShow();};r.appendChild(s);
+      if(sh.bom.lvl&&sh.bom.lvl!=='corps'){
+        r=rowEl();
+        mkBtn('Bulles automatiques',()=>{mepEdit('bulles',()=>{mepBalloonsAuto(sh);});mepSideShow();},'Une bulle par ligne de la nomenclature, sur la première vue « Assemblage » de la planche');
+        mkBtn('Effacer les bulles',()=>{mepEdit('bulles',()=>{sh.balloons=[];});mepSideShow();},'Retire toutes les bulles de la planche');
+      }
+    }
     if(sh.bom&&sh.bom.on){
       mepBomRows(sh).forEach(q=>{
         r=rowEl();
@@ -50333,6 +50494,7 @@ function viewFadeIn(){
     const body=document.createElement('select');
     const o0=document.createElement('option');o0.value='';o0.textContent='Assemblée';
     body.appendChild(o0);
+    if(asmPlanOn()||v.asm){const oa=document.createElement('option');oa.value='__asm';oa.textContent='🧩 Assemblage (avec les composants)';if(v.asm)oa.selected=true;body.appendChild(oa);}
     try{
       (doc.bodies||[]).forEach(b=>{
         const o=document.createElement('option');
@@ -50341,7 +50503,7 @@ function viewFadeIn(){
         body.appendChild(o);
       });
     }catch(e){}
-    body.onchange=()=>{mepEdit('corps',()=>{v.bodyId=body.value||null;});};
+    body.onchange=()=>{mepEdit('corps',()=>{v.asm=body.value==='__asm';v.bodyId=v.asm?null:(body.value||null);});};
     row('Corps',body);
     // cases
     const mkChk=(lab,key,id,after)=>{
@@ -50965,6 +51127,7 @@ function viewFadeIn(){
   // points d'entrée réservés aux tests automatisés (jamais activés dans l'app)
   if(window.__MEP_TEST_HOOKS__){
     window.__mepTest={
+      bomRows:sh=>mepBomRows(sh),balloonsAuto:sh=>mepBalloonsAuto(sh),drawBalloons:(mk,sh)=>mepDrawBalloons(mk,sh),meshesOf:v=>mepMeshesOf(v),addView:o=>mepAddView(o),sheet:()=>mepSheet(),viewSig:v=>mepViewSig(v), // V0.6.7
       drawRevs:(mk,sh,pd,ty)=>mepDrawRevs(mk,sh,pd,ty),holeFam:f=>mepHoleFam(f),cutAddBreak:(sh,v)=>mepCutAddBreak(sh,v),cutBreakAt:(sh,v,m,sG,c,r)=>mepCutBreakAt(sh,v,m,sG,c,r),cutFollow:sh=>mepCutFollowAll(sh),cutAutoRefs:(sh,v)=>mepCutAutoRefs(sh,v),cutDelBreak:(sh,v)=>mepCutDelBreak(sh,v),cutDelBreakAt:(sh,v,j,sG)=>mepCutDelBreakAt(sh,v,j,sG),cutBreakClick:(sh,v,m,sG)=>mepCutBreakClick(sh,v,m,sG),cutModel:v=>mepCutModel(v),prefsCollect:()=>mepPrefsCollect(),prefsApply:p=>mepPrefsApply(p),pageDim:sh=>mepPageDim(sh),
       titleTexts:sh=>{const t=[];const mk=(tag)=>{const o={textContent:''};if(tag==='text')t.push(o);return o;};mepDrawTitle(mk,sh,mepPage().pd,100);mepDrawRevs(mk,sh,mepPage().pd,100);mepDrawBom(mk,sh,mepPage().pd,100);return t.map(o=>o.textContent);},
       sk:{fromStd:sh=>mepTbFromStd(sh),solve:(sk,a)=>mepSkSolve(sk,80,a),residual:(sk,c)=>mepSkResidual(sk,c),

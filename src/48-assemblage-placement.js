@@ -349,7 +349,9 @@ function asmDofRow(p,o,k){
   t.addEventListener('change',()=>{const x=parseFloat(String(t.value).replace(',','.'));if(isFinite(x))set(x,false);});
   const lm=(i,ph)=>{const e=document.createElement('input');e.type='text';e.placeholder=ph;e.style.width='38px';e.title=(i?'Limite haute':'Limite basse')+' (vide = libre)';
     e.value=lim?String(lim[i]).replace('.',','):'';
-    e.addEventListener('change',()=>{asmPush('limites');const x=parseFloat(String(e.value).replace(',','.'));a.lim=a.lim||{};
+    e.addEventListener('change',()=>{const x=parseFloat(String(e.value).replace(',','.'));
+      const was=a.lim&&a.lim[k];if(isFinite(x)?(was&&was[i]===x):!was)return; // rien ne change : pas d'étape d'annulation
+      asmPush('limites');a.lim=a.lim||{};
       const cur=a.lim[k]||[rot?-180:-100,rot?180:100];
       if(isFinite(x)){cur[i]=x;a.lim[k]=cur;}else delete a.lim[k];
       asmResolve();asmNotify();});return e;};

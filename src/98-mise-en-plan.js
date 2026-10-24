@@ -423,7 +423,7 @@
   function mepViewSig(v){
     let s=[v.kind==='dxf'?'dxf:'+((v.dxf&&v.dxf.rev)||0):'',mepRound(v.dir),mepRound(v.u),mepRound(v.v),v.bodyId||'',v.mode||'hide',v.tangent?1:0,
       v.hlrExact===false?'soft':'exact',v.shade?1:0,v.render3d?(v.mirror?'1m':1):0,
-      v.section?mepRound(v.section.p)+mepRound(v.section.n)+(v.section.pts?JSON.stringify(v.section.pts):''):'',v.detail?v.detail.cx+','+v.detail.cy+','+v.detail.r:'',mepOblOf(v)?'obl:'+mepOblOf(v).a+','+mepOblOf(v).k:'',mepPerspOf(v)?'persp:'+mepPerspOf(v).fov:''].join('|');
+      v.section?mepRound(v.section.p)+mepRound(v.section.n)+(v.section.pts?JSON.stringify(v.section.pts):''):'',v.detail?v.detail.cx+','+v.detail.cy+','+v.detail.r:'',mepOblOf(v)?'obl:'+mepOblOf(v).a+','+mepOblOf(v).k:'',mepPerspOf(v)?'persp:'+mepPerspOf(v).fov:'',v.asm?'asm:'+asmPlanSig():''].join('|');
     /* l'ombrage et le rendu 3D dépendent de la couleur/opacité des corps :
        ces réglages ne changent pas _docVersion, donc on les met dans la clé
        de cache. Le thème influe aussi sur l'environnement du rendu 3D. */
@@ -637,6 +637,8 @@
   /* ═══════════════ G. HLR ═══════════════ */
   let mepRC=null;
   function mepMeshesOf(view){
+    // vue « Assemblage » (V0.6.7) : corps du composant actif + ceux de ses instances (48-composants-plan)
+    if(view&&view.asm&&asmPlanOn())return asmPlanBodies();
     const out=[];const list=(typeof bodies!=='undefined'&&bodies)||[];
     list.forEach(b=>{
       if(!b||b.ghost||b.kind==='ghost'||!b.mesh||b.mesh.visible===false)return;
@@ -2560,6 +2562,11 @@
     return add.length;
   }
   function mepBomRows(sh){
+    // V0.6.7 : nomenclature des COMPOSANTS (premier niveau / tous niveaux / pièces seules)
+    if(sh.bom&&sh.bom.lvl&&sh.bom.lvl!=='corps'&&asmPlanOn()){
+      const bm=sh.bom.mat||{};
+      return asmBomRows(sh.bom.lvl).map(r=>Object.assign(r,{mat:bm[r.ids[0]]||r.mat}));
+    }
     // corps du document (visibles) ; quantité = corps de même nom et mêmes dimensions
     const rows=[],bm=(sh.bom&&sh.bom.mat)||{};
     const rt=typeof bodies!=='undefined'?bodies:[];
@@ -2575,6 +2582,36 @@
     });
     rows.forEach((q,i)=>q.rep=i+1);
     return rows;
+  }
+  /* bulles (V0.6.7) : {view, comp, p (point 3D du composant actif), dx, dy (décalage papier)} ;
+     le numéro est celui de la ligne du composant dans la nomenclature (renuméroté avec elle) */
+  function mepBalloonsAuto(sh){
+    const v=(sh.views||[]).find(x=>x.asm);if(!v)return 0;
+    const rows=mepBomRows(sh);
+    const c0=mepToSheet(v,0,0);
+    sh.balloons=[];
+    rows.forEach(r=>{
+      const p=asmBalloonAnchor(r.ids[0]);if(!p)return;
+      const l=mepLocal(v,p),A=mepToSheet(v,l[0],l[1]);
+      let dx=A.x-c0.x,dy=A.y-c0.y;const n=Math.hypot(dx,dy);
+      if(!(n>1)){dx=18;dy=-14;}else{dx=dx/n*18;dy=dy/n*18;} // accroche au centre de la vue : en haut à droite
+      sh.balloons.push({id:'bl'+(sh.balloons.length+1),view:v.id,comp:r.ids[0],p,dx:+dx.toFixed(2),dy:+dy.toFixed(2)});
+    });
+    return sh.balloons.length;
+  }
+  function mepDrawBalloons(mk,sh){
+    if(!Array.isArray(sh.balloons)||!sh.balloons.length)return;
+    const rows=mepBomRows(sh);
+    sh.balloons.forEach(b=>{
+      const v=mepView(sh,b.view);if(!v)return;
+      const row=rows.find(r=>r.ids&&r.ids[0]===b.comp);if(!row)return;
+      const l=mepLocal(v,b.p),A=mepToSheet(v,l[0],l[1]),B={x:A.x+(+b.dx||0),y:A.y+(+b.dy||0)},R=3.6;
+      const d=Math.hypot(B.x-A.x,B.y-A.y)||1,E={x:B.x-(B.x-A.x)/d*R,y:B.y-(B.y-A.y)/d*R};
+      mk('line',{x1:A.x,y1:A.y,x2:E.x,y2:E.y,class:'mepTitleBlock'});
+      mk('circle',{cx:A.x,cy:A.y,r:0.6,class:'mepTitleBlock',fill:'currentColor'});
+      mk('circle',{cx:B.x,cy:B.y,r:R,class:'mepTitleBlock'});
+      const tx=mk('text',{x:B.x,y:B.y+1.3,class:'mepRevText','text-anchor':'middle'});tx.textContent=String(row.rep);
+    });
   }
   function mepDrawBom(mk,sh,pd,ty){
     if(!sh.bom||!sh.bom.on)return;
@@ -4229,6 +4266,7 @@
     sh.dims.forEach(d=>{
       try{mepDrawDim(mk,d,sh);}catch(e){}
     });
+    try{mepDrawBalloons(mk,sh);}catch(e){} // bulles de nomenclature (V0.6.7)
     /* cote en cours de placement : aperçu vivant (suit la souris) */
     if(mepSt.dim&&mepSt.dim.__ghost!==false&&!(mepSt.dim.kind==='dist'&&!mepSt.dim.b)){
       try{mepDrawDim(mk,mepSt.dim,sh);}catch(e){}
@@ -8450,6 +8488,19 @@
     {const L=document.createElement('label');L.textContent='Nomenclature';r.appendChild(L);
      const cb=document.createElement('input');cb.type='checkbox';cb.id='mepBomOn';cb.checked=!!(sh.bom&&sh.bom.on);
      cb.onchange=()=>{mepEdit('nomenclature',()=>{sh.bom=Object.assign({mat:{}},sh.bom||{},{on:cb.checked});});mepSideShow();};r.appendChild(cb);}
+    if(sh.bom&&sh.bom.on&&(asmPlanOn()||(sh.bom.lvl&&sh.bom.lvl!=='corps'))){
+      r=rowEl();
+      const L=document.createElement('label');L.textContent='Contenu';r.appendChild(L);
+      const s=document.createElement('select');
+      [['corps','Corps du composant'],['comp1','Composants (1er niveau)'],['all','Composants (tous niveaux)'],['parts','Pièces seules']].forEach(([k,l])=>{
+        const o=document.createElement('option');o.value=k;o.textContent=l;if((sh.bom.lvl||'corps')===k)o.selected=true;s.appendChild(o);});
+      s.onchange=()=>{mepEdit('nomenclature',()=>{sh.bom.lvl=s.value;});mepSideShow();};r.appendChild(s);
+      if(sh.bom.lvl&&sh.bom.lvl!=='corps'){
+        r=rowEl();
+        mkBtn('Bulles automatiques',()=>{mepEdit('bulles',()=>{mepBalloonsAuto(sh);});mepSideShow();},'Une bulle par ligne de la nomenclature, sur la première vue « Assemblage » de la planche');
+        mkBtn('Effacer les bulles',()=>{mepEdit('bulles',()=>{sh.balloons=[];});mepSideShow();},'Retire toutes les bulles de la planche');
+      }
+    }
     if(sh.bom&&sh.bom.on){
       mepBomRows(sh).forEach(q=>{
         r=rowEl();
@@ -8638,6 +8689,7 @@
     const body=document.createElement('select');
     const o0=document.createElement('option');o0.value='';o0.textContent='Assemblée';
     body.appendChild(o0);
+    if(asmPlanOn()||v.asm){const oa=document.createElement('option');oa.value='__asm';oa.textContent='🧩 Assemblage (avec les composants)';if(v.asm)oa.selected=true;body.appendChild(oa);}
     try{
       (doc.bodies||[]).forEach(b=>{
         const o=document.createElement('option');
@@ -8646,7 +8698,7 @@
         body.appendChild(o);
       });
     }catch(e){}
-    body.onchange=()=>{mepEdit('corps',()=>{v.bodyId=body.value||null;});};
+    body.onchange=()=>{mepEdit('corps',()=>{v.asm=body.value==='__asm';v.bodyId=v.asm?null:(body.value||null);});};
     row('Corps',body);
     // cases
     const mkChk=(lab,key,id,after)=>{
@@ -9270,6 +9322,7 @@
   // points d'entrée réservés aux tests automatisés (jamais activés dans l'app)
   if(window.__MEP_TEST_HOOKS__){
     window.__mepTest={
+      bomRows:sh=>mepBomRows(sh),balloonsAuto:sh=>mepBalloonsAuto(sh),drawBalloons:(mk,sh)=>mepDrawBalloons(mk,sh),meshesOf:v=>mepMeshesOf(v),addView:o=>mepAddView(o),sheet:()=>mepSheet(),viewSig:v=>mepViewSig(v), // V0.6.7
       drawRevs:(mk,sh,pd,ty)=>mepDrawRevs(mk,sh,pd,ty),holeFam:f=>mepHoleFam(f),cutAddBreak:(sh,v)=>mepCutAddBreak(sh,v),cutBreakAt:(sh,v,m,sG,c,r)=>mepCutBreakAt(sh,v,m,sG,c,r),cutFollow:sh=>mepCutFollowAll(sh),cutAutoRefs:(sh,v)=>mepCutAutoRefs(sh,v),cutDelBreak:(sh,v)=>mepCutDelBreak(sh,v),cutDelBreakAt:(sh,v,j,sG)=>mepCutDelBreakAt(sh,v,j,sG),cutBreakClick:(sh,v,m,sG)=>mepCutBreakClick(sh,v,m,sG),cutModel:v=>mepCutModel(v),prefsCollect:()=>mepPrefsCollect(),prefsApply:p=>mepPrefsApply(p),pageDim:sh=>mepPageDim(sh),
       titleTexts:sh=>{const t=[];const mk=(tag)=>{const o={textContent:''};if(tag==='text')t.push(o);return o;};mepDrawTitle(mk,sh,mepPage().pd,100);mepDrawRevs(mk,sh,mepPage().pd,100);mepDrawBom(mk,sh,mepPage().pd,100);return t.map(o=>o.textContent);},
       sk:{fromStd:sh=>mepTbFromStd(sh),solve:(sk,a)=>mepSkSolve(sk,80,a),residual:(sk,c)=>mepSkResidual(sk,c),
