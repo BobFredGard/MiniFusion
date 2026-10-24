@@ -144,6 +144,7 @@ function docResetEmpty(){
   try{ if(typeof mepReset==='function')mepReset(); }catch(e){} // PLAN : planches vidées (98-mise-en-plan.js)
   sel={kind:null,id:null};selFaces=[];fileHandle=null;uidN=0;builtHash=null;builtEngine=null;builtVersion=-1;
   asm=null;asmMode='part';asmUndoStack=[];asmRedoStack=[]; // assemblage (46)
+  try{document.body.removeAttribute('data-asm');asmCtxDraw();}catch(e){}
   try{occCkClear();}catch(e){}
 }
 if($('btnNew'))$('btnNew').onclick=()=>{

@@ -120,6 +120,8 @@ function mfCss(){
   '.mfRb:hover i{color:var(--primary);opacity:1}',
   '.mfQuick button,#mfThemeBtn{display:inline-flex;align-items:center;justify-content:center}',
   '.mfRb:hover{background:rgba(127,127,127,.14)}',
+  // vue d'assemblage : seuls les groupes d'assemblage, pas de bandeau de timeline (fil de PIÈCE)
+  'body.ui-modern[data-asm="1"] #mfRibbon .mfCao:not(.mfAsmG),body[data-asm="1"] #mfTl{display:none!important}'+
   'body.ui-modern[data-ws="cao"] #mfRibbon .mfFao,body.ui-modern[data-ws="cao"] #mfRibbon .mfPlan,body.ui-modern[data-ws="fao"] #mfRibbon .mfCao,body.ui-modern[data-ws="fao"] #mfRibbon .mfPlan,body.ui-modern[data-ws="plan"] #mfRibbon .mfCao,body.ui-modern[data-ws="plan"] #mfRibbon .mfFao{display:none}',
   /* navigateur : Modèle (arbre) / Usinage (posages) à gauche de la vue */
   '#mfBrTabs{position:absolute;top:10px;left:4px;z-index:23;gap:2px;padding:2px;border-radius:9px;background:rgba(16,18,22,.82);border:1px solid var(--border)}',
@@ -302,6 +304,9 @@ const MF_IC={
   cgAxis:'<path d="M4 20L20 4" stroke-dasharray="3 2"/><circle cx="12" cy="12" r="2.2"/>',
   cgPoint:'<circle cx="12" cy="12" r="3.2"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/>',
   cgFrame:'<path d="M6 18V5M6 18h13M6 18l-3.5 3.5"/><path d="M4.5 7L6 5l1.5 2M17 16.5l2 1.5-2 1.5"/>',
+  asmView:'<path d="M3 8l5-3 5 3v6l-5 3-5-3z"/><path d="M11 13l5-3 5 3v6l-5 3-5-3z"/><path d="M8 11v6M16 16v6"/>',
+  asmPart:'<path d="M4 8l8-4 8 4v8l-8 4-8-4z"/><path d="M4 8l8 4 8-4M12 12v8"/>',
+  asmOcc:'<path d="M3 9l6-3 6 3v6l-6 3-6-3z"/><path d="M17 10v8M13 14h8"/>',
   pPdf:'<path d="M6 3h9l3 3v15H6z"/><text x="12" y="17.6" font-size="6.2" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">PDF</text>'
 };
 function mfI(k,size){const p=MF_IC[k];if(!p)return null;return '<svg viewBox="0 0 24 24" width="'+(size||20)+'" height="'+(size||20)+'" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+p+'</svg>';}
@@ -332,6 +337,10 @@ function mfRibbon(){
       b.onclick=()=>{mfCloseMenus();typeof act==='function'?act():mfClick(act);};bb.appendChild(b);});
     g.appendChild(bb);const t=document.createElement('div');t.className='mfGrpT';t.textContent=title;g.appendChild(t);rb.appendChild(g);};
   MF_CAO.forEach(([t,bs])=>grp(t,bs,'mfCao'));
+  // V0.6.0 : assemblage (46/47) — seul groupe CAO visible en vue d'assemblage (mfAsmG)
+  grp('Assemblage',[['asmView','Assemblage',()=>asmToggle(),'Vue d’assemblage ↔ édition de la pièce'],
+    ['asmPart','Pièce',()=>asmCmdNewPart(),'Nouvelle pièce dans l’assemblage (on entre aussitôt dedans)'],
+    ['asmOcc','Occurrence',()=>{if(asmMode!=='asm')asmEnter();asmCmdNewOcc();},'Nouvelle occurrence de la pièce sélectionnée']],'mfCao mfAsmG');
   // FAO : posage, opérations (mêmes fiches que la barre « + Usinage »), simulation, calcul, export
   grp('Posage',[['setup','Posage',()=>{const b=Array.from(document.querySelectorAll('#faoTreeWrap button')).find(x=>/\+ Posage/.test(x.textContent));if(b)b.click();},'Ajouter un posage'],['tools','Outils','faoToolsBtn']],'mfFao');
   let ops=[];try{ops=faoAddOpsSpec();}catch(e){}
@@ -404,6 +413,8 @@ function mfSpaceRestore(w,snap){
 function mfWs(w){
   mfCloseMenus();
   w=(w==='fao'||w==='plan')?w:'cao';
+  // FAO et PLAN sont des espaces de PIÈCE : depuis la vue d'assemblage, on entre dans la pièce
+  try{if(asmMode==='asm'&&w!=='cao')asmExit();}catch(e){}
   let prev=mfWsCur;
   if(!prev)try{prev=document.body.getAttribute('data-ws');}catch(e){}
   const changed=prev!==w;

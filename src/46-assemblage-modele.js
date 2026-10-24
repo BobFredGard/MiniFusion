@@ -182,12 +182,13 @@ function asmActivate(pid){
   if(typeof treeSel!=='undefined')treeSel=[];
   occSkipFeat=null;
   builtVersion=-1;builtHash=null;builtEngine=null;_hashMemo=null;
-  try{markDirty();rebuild();}catch(e){}
+  // _docVersion++ et non markDirty() : changer de pièce n'est pas une modification du document
+  try{_docVersion++;rebuild();}catch(e){}
   try{renderTree();renderProps();docUndoUI();}catch(e){}
   try{if(typeof faoRefreshFaoUI==='function')faoRefreshFaoUI();}catch(e){}
   try{if(typeof faoRefreshPreview==='function')faoRefreshPreview();}catch(e){}
   try{buildEdgeOverlay();}catch(e){}
-  asmNotify();
+  asmNotify(true);
   return true;
 }
 function asmCkPrefix(){
@@ -223,9 +224,10 @@ function asmRedo(){
   try{faceEl.textContent='↪ Rétabli : '+e.label;}catch(err){}
   return true;
 }
-function asmNotify(){
-  // Prévient l'interface d'assemblage (47) — sans en dépendre : le modèle se teste seul
-  const f=globalThis.asmOnChange;if(typeof f==='function'){try{f();}catch(e){}}
+function asmNotify(viewOnly){
+  // Prévient l'interface d'assemblage (47) — sans en dépendre : le modèle se teste seul.
+  // viewOnly : rien n'a changé dans le document (bascule de pièce), juste l'affichage.
+  const f=globalThis.asmOnChange;if(typeof f==='function'){try{f(!!viewOnly);}catch(e){}}
 }
 /* ── sauvegarde : bloc asm dans le fichier (doc = pièce active, compatibilité) ── */
 function asmSerial(){
@@ -251,7 +253,9 @@ function asmFromSerial(a){
   parts.forEach(p=>{if(!occ.some(o=>o.part===p.id))occ.push({id:uid('oc'),part:p.id,name:p.name+':1',fr:asmFr0(),fixed:false,visible:true,align:null,st:'ok',msg:''});});
   const act=parts.find(p=>p.doc===doc);
   asm={name:String(a.name||doc.name||'Assemblage'),parts,occ,active:act.id};
-  asmMode=a.mode==='asm'?'asm':'part';
+  // la vue d'assemblage demande les instantanés de toutes les pièces : rétablie après le
+  // chargement (asmAfterLoad, 47), on ouvre donc toujours en mode pièce
+  asmMode='part';asm._wantAsm=a.mode==='asm';
   asmResolve();
   return true;
 }

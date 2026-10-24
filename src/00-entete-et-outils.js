@@ -145,6 +145,8 @@ async function occtFinishBoot(){
     // rechargement de la page, le cache était valide, le rejeu sauté, occLive absent —
     // plus aucun congé, plus aucune esquisse sur face, plus aucune sélection de face.
     try{faceEl.textContent='Noyau prêt — recalcul exact…';builtVersion=-1;builtHash=null;builtEngine=null;rebuild();}catch(e){}
+    // Assemblage : les autres pièces, capturées en repli maillage, sont refaites en exact (47)
+    try{if(asmOn())asmBuildSnapshots();}catch(e){}
     // Imports STEP du document (F5, ouverture avant le noyau) : rejoués depuis leur source.
     try{if(typeof importRestorePending==='function')importRestorePending();}catch(e){}
     // Re-cadrage après bascule exact : le 1er cadrage (chargement) s'est fait sur le repli

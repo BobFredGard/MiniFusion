@@ -96,6 +96,8 @@ function buildDone(){
   try{if(typeof skApplyFade==='function')skApplyFade();}catch(e){}
   // Géométrie de construction (79) : dessinée sur la pièce reconstruite (taille des plans)
   try{cgDraw();}catch(e){}
+  // Assemblage (47) : instantané d'affichage de la pièce active + fantômes de contexte
+  try{asmCaptureActive();}catch(e){}
   if(_postT)clearTimeout(_postT);
   _postT=setTimeout(()=>{_postT=null;
     try{builtHash=docHash();}catch(e){}

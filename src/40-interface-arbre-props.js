@@ -130,6 +130,9 @@ function featIconOf(f){
 }
 function renderTree(){
   const t=$('tree');t.innerHTML='';
+  // Assemblage (47) : arbre des occurrences en vue d'assemblage, fil d'Ariane en mode pièce
+  if(asmMode==='asm'&&asm){asmTreeRender(t);try{renderTimeline();}catch(e){}return;}
+  asmBreadcrumb(t);
   const g=(s)=>{const d=document.createElement('div');d.className='tgroup';d.textContent=s;t.appendChild(d);};
   // Groupe repliable (Origine, Esquisses) : même triangle ▶/▼ que les répétitions,
   // état persisté dans doc.fold. Ouvert par défaut (comportement actuel inchangé).
@@ -1087,6 +1090,7 @@ function renderProps(){
     try{ faoRenderProps(p,sel); }catch(e){}
     return;
   }
+  if(asmMode==='asm'&&asm){try{asmRenderProps(p);}catch(e){}return;} // vue d'assemblage (47)
   // Géométrie de construction (79) : création / modification en cours, ou élément sélectionné
   if(cgMode||(sel&&sel.kind==='cg')){try{cgRenderProps(p);}catch(e){}return;}
   /* ── helpers layout PLAN (mêmes classes que #mepSide de 98) ── */

@@ -3,6 +3,7 @@ function wirePick(){
   const el=renderer.domElement;let dx=0,dy=0;
   el.addEventListener('pointerdown',e=>{dx=e.clientX;dy=e.clientY;});
   el.addEventListener('pointerup',e=>{
+    if(asmMode==='asm'){if(e.button===0&&Math.hypot(e.clientX-dx,e.clientY-dy)<=6)asmClick(e);return;} // vue d'assemblage (47)
     if(extPickFace){if(e.button===0)extPickFaceCommit(e);return;} // mode « vers un objet »
     if(cgMode&&cgMode.slot!=null){if(Math.hypot(e.clientX-dx,e.clientY-dy)<=6&&e.button===0)cgPickCommit(e);return;} // construction : référence de l'emplacement actif
     if(Math.hypot(e.clientX-dx,e.clientY-dy)>6)return;
@@ -25,6 +26,7 @@ function wirePick(){
     else if((e.ctrlKey||e.metaKey)&&e.button===0)faceSelect(e,true);
     else if(e.ctrlKey&&e.button===2)recenter(e);
   });
+   el.addEventListener('dblclick',e=>{if(asmMode==='asm')asmDblClick(e);}); // double-clic = éditer la pièce
    el.addEventListener('pointermove',hoverMove);
    el.addEventListener('pointerleave',()=>clearHover());
    el.addEventListener('pointermove',e=>{
@@ -615,6 +617,7 @@ function edgeHoverDraw(P,grp,color){
   m.renderOrder=997;m.raycast=()=>{};grp.add(m);
 }
 function hoverMove(e){
+  if(asmMode==='asm')return; // vue d'assemblage : la scène de la pièce n'est pas affichée
   // Pré-sélection lumineuse au survol (comme le viewer), ~15 Hz max, jamais en orbite/clic.
   if(filMode||filModeX||skEdit||faoChainMode)return;
   if(e.buttons!==0)return;
@@ -1619,6 +1622,7 @@ async function deserialise(json,opts){
   // aucune operation, alors que sa fleche reste ▼ : « le posage est la, pas ses ops »).
   try{ if(typeof faoRefreshFaoUI==='function')faoRefreshFaoUI(); }catch(e){}
   try{if(typeof viewFadeIn==='function')viewFadeIn();}catch(e){}
+  try{asmAfterLoad();}catch(e){} // assemblage : instantanés, vue rétablie (47)
 }
 /* ---------- conteneur .miniFusion : document + cache de trajectoires ----------
    Demandé : « un fichier dédié qui encapsule le json ET son cache ». Le document

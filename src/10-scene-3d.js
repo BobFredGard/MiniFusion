@@ -433,7 +433,7 @@ function animate(){
   try{cgPaintIfNeeded();}catch(e){} // construction : la surbrillance suit la sélection
   try{if(typeof faoPoseSync==='function')faoPoseSync();}catch(e){}
   try{if(typeof faoFaceHlSync==='function')faoFaceHlSync();}catch(e){} // faces bleues / rouges de l'op sélectionnée
-  renderer.render(scene,camera);
+  renderer.render(asmRenderScene(),camera); // vue d'assemblage : sa propre scène (47)
 }
 function showAll(){
   const box=new THREE.Box3();

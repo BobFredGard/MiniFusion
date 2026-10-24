@@ -83,6 +83,7 @@ function docApplySnap(snap){
 }
 
 function docUndo(){
+  if(asmMode==='asm'){const r=asmUndo();docUndoUI();return r;} // vue d'assemblage : son annulation (46)
   if(!docUndoStack.length){docUndoUI();return false;}
   const cur=docSnap();
   const e=docUndoStack.pop();
@@ -99,6 +100,7 @@ function docUndo(){
 }
 
 function docRedo(){
+  if(asmMode==='asm'){const r=asmRedo();docUndoUI();return r;}
   if(!docRedoStack.length){docUndoUI();return false;}
   const cur=docSnap();
   const e=docRedoStack.pop();
@@ -116,17 +118,18 @@ function docRedo(){
 
 function docUndoUI(){
   const u=$('btnUndo'),r=$('btnRedo');
+  const US=asmMode==='asm'?asmUndoStack:docUndoStack,RS=asmMode==='asm'?asmRedoStack:docRedoStack;
   if(u){
-    const n=docUndoStack.length;
+    const n=US.length;
     u.textContent=n?('↩ Annuler ('+n+')'):'↩ Annuler';
     u.disabled=!n;
-    u.title=n?('Annuler : '+docUndoStack[n-1].label+'  (Ctrl+Z)'):'Rien à annuler';
+    u.title=n?('Annuler : '+US[n-1].label+'  (Ctrl+Z)'):'Rien à annuler';
   }
   if(r){
-    const n=docRedoStack.length;
+    const n=RS.length;
     r.textContent=n?('↪ Rétablir ('+n+')'):'↪ Rétablir';
     r.disabled=!n;
-    r.title=n?('Rétablir : '+docRedoStack[n-1].label+'  (Ctrl+Y)'):'Rien à rétablir';
+    r.title=n?('Rétablir : '+RS[n-1].label+'  (Ctrl+Y)'):'Rien à rétablir';
   }
 }
 
@@ -171,6 +174,7 @@ function docUndoUI(){
 // Ctrl+Z / Ctrl+Y hors esquisse : l'undo de tracé (50) garde la main quand
 // l'esquisse est ouverte, et un champ de saisie a toujours priorité.
 window.addEventListener('keydown',e=>{
+  if(asmKey(e))return; // vue d'assemblage : Ctrl+Z, Suppr, Échap (47)
   const ds=$('sketchOverlay');
   if(ds&&ds.classList.contains('open'))return;   // l'esquisse possède Suppr et Ctrl+Z
   // Espace PLAN (98) : cède Suppr/Escape au plan ouvert (ses propres handlers en capture)
