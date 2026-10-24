@@ -1,6 +1,6 @@
 # Analyse du projet MiniFusion
 
-*État au 2026-10-24 — version `V0.4.9`.*
+*État au 2026-10-24 — version `V0.5.0`.*
 
 ## Nature du projet
 
@@ -12,7 +12,7 @@ Le noyau géométrique exact est **OpenCascade (OCCT) compilé en WebAssembly**.
 
 | Élément | Rôle |
 |---|---|
-| `src/*.js` | Sources, **54 fichiers** (~47 000 lignes), concaténés dans l'ordre numérique par `build.js`. |
+| `src/*.js` | Sources, **56 fichiers** (~48 000 lignes), concaténés dans l'ordre numérique par `build.js`. |
 | `PostPro/*.js` | Fiches machines (Fagor 8065, Siemens 630 et 1520), insérées par `build.js` après `88-fao-60-postprocesseurs.js`. Les `.cps` Autodesk restent locaux. |
 | `fusion_mvp.html` | Livrable généré. **Ne jamais l'éditer à la main.** |
 | `build.js` | Concaténation + bandeaux de section ; `--check` échoue si le livrable est périmé. |
@@ -30,6 +30,7 @@ Le noyau géométrique exact est **OpenCascade (OCCT) compilé en WebAssembly**.
 - `10`–`20` : scène three.js, repère, rejeu paramétrique, noyau exact OCCT et repli maillage.
 - `30`–`45` : marqueur de temps, arbre/propriétés, annuler/rétablir documentaire.
 - `49`–`60` : esquisse 2D, solveur Levenberg-Marquardt, paramètres, trim et interactions souris.
+- `78`–`79` : géométrie de construction (modèle et résolution, puis affichage, saisie, panneau).
 - `70`–`87` : fonctions 3D (extrusion, révolution, perçage, combiner, congés, chanfreins, faces, dépouille, coque).
 - `88-fao-00` à `88-fao-94` : FAO découpée par domaine (état, outils, brut, parcours 2,5D, zones, caches, post-processeurs, simulation, interface, ébauche 3D, contour, sélection 3+2).
 - `89` : modules FAO spécialisés (contour, crêtes, faces, géodésique, outils, perçage, posage, torique).

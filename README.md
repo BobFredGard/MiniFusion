@@ -2,7 +2,7 @@
 
 **CAO paramétrique, FAO et mise en plan dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2, G-code et planches cotées ISO. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.4.9** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.5.0** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Sommaire
 
@@ -54,6 +54,17 @@ Une seule interface, organisée en **trois espaces** : **CAO**, **FAO** et **PLA
 - **Raccourcis** `F1`–`F12` (contraintes), `H` (centre de perçage), `L` `C` `R` `B` `P` `T` `D` `F` `O` (outils), `X` (construction), `N` (à plat), plus une aide intégrée.
 
 ![Pièce de révolution, congés, chanfreins, perçages répétés](docs/captures/cao-axe.png)
+
+### Géométrie de construction
+
+Groupe **Construire** du ruban (et `Ctrl+K`) : des références à la manière de Fusion 360, rangées dans le groupe **📐 Construction** de l'arborescence et placées dans le fil des fonctions.
+- **Plans** : décalé, à un angle autour d'un axe, par 3 points, médian entre deux plans parallèles, normal à un axe.
+- **Axes** : sur une arête droite, une face cylindrique ou conique, un axe ; par 2 points ; intersection de 2 plans ; normal à un plan.
+- **Points** : sommet, centre d'une arête circulaire, point d'esquisse ; coordonnées dans un repère ; intersection axe / plan.
+- **Repères** : origine + direction Z + direction X, sur un plan ou une face, ou par 3 points ; décalages et rotation autour de Z.
+- Les références se désignent **dans la vue** (faces, arêtes, sommets, éléments de construction) **ou dans l'arbre** (plans et axes X / Y / Z de l'origine). Valeurs en **ƒx**, aperçu en direct, ✓ pour valider.
+- **Esquisse dessus** : double-clic sur un plan (ou un plan de repère) dans l'arbre, ou bouton Esquisse. L'esquisse suit le plan quand il bouge.
+- **Associatif** : un plan posé sur une face suit la pièce quand une cote change. Si une référence disparaît, ou sans noyau exact, l'élément garde sa dernière position et affiche ⚠.
 
 ### Fonctions 3D
 
@@ -177,7 +188,7 @@ Le dépôt stocke les gros binaires (`occt/*.wasm`, `Exemples/*.miniFusion`, `Ex
 
 | Chemin | Rôle |
 |---|---|
-| `src/*.js` | **Les sources** (54 fichiers, de l'en-tête à l'initialisation ; la FAO est découpée par domaine : parcours, caches, post-processeurs, simulation, interface, ébauche 3D, contour, géodésique, crêtes, perçage). C'est ici qu'on travaille. |
+| `src/*.js` | **Les sources** (56 fichiers, de l'en-tête à l'initialisation ; la FAO est découpée par domaine : parcours, caches, post-processeurs, simulation, interface, ébauche 3D, contour, géodésique, crêtes, perçage). C'est ici qu'on travaille. |
 | `fusion_mvp.html` | **Livrable généré** par `node build.js` (le HTML et le CSS de base vivent dans ce fichier, hors de la balise `<script>`). On n'édite jamais le script à la main. |
 | `tests/` | Suite Node portable (plus de 100 suites, dont certaines sur le noyau OCCT réel) : `node tests/run.cjs`, en parallèle (`-j N` pour la taille du pool, `--verbose` pour toutes les sorties) ; sous-ensemble rapide : `node tests/run-fast.cjs`. |
 | `tools/lint.cjs` | Lint ESLint du script concaténé (même ordre que le build) : `npm run lint` (erreurs) ou `npm run lint:all`. |

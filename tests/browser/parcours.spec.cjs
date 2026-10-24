@@ -123,6 +123,50 @@ test('esquisse rectangle → extrusion : prisme exact',async({page})=>{
   expect(err).toEqual([]);
 });
 
+test('plan de construction décalé → esquisse dessus → extrusion au bon endroit',async({page})=>{
+  const err=await demarrer(page);
+  // Ruban « Plan » → référence = Plan XY (clic dans l'arbre) → distance 20 → ✓
+  await ruban(page,'Plan').click();
+  await page.waitForFunction(()=>!!cgMode&&cgMode.draft.kind==='plane'&&cgMode.slot===0);
+  await page.locator('#tree .tnode',{hasText:'Plan XY'}).click();
+  await page.waitForFunction(()=>cgMode&&cgMode.draft.refs[0]&&cgMode.draft.refs[0].id==='XY');
+  const dist=page.locator('#props input[type=text]').first();
+  await dist.fill('20');await dist.press('Enter');
+  await page.locator('#props button',{hasText:'Valider'}).click();
+  await page.waitForFunction(()=>!cgMode&&doc.cgeo.length===1&&doc.cgeo[0].fr&&Math.abs(doc.cgeo[0].fr.o[2]-20)<1e-9);
+  // Double-clic sur « Plan 1 » dans l'arbre → esquisse posée sur le plan
+  await page.locator('#tree .tnode',{hasText:'Plan 1'}).dblclick();
+  await page.waitForFunction(()=>!!skEdit&&skEdit.plane==='CG'&&Math.abs(skEdit.origin[2]-20)<1e-9);
+  await page.locator('#skToolbar .tool[data-tool="rect"]').click();
+  const [a,b]=await page.evaluate(()=>{const r=svg.getBoundingClientRect();
+    return [w2s(-15,-10),w2s(25,10)].map(([x,y])=>[x+r.left,y+r.top]);});
+  await page.mouse.click(a[0],a[1]);
+  await page.mouse.move((a[0]+b[0])/2,(a[1]+b[1])/2,{steps:4});
+  await page.mouse.move(b[0],b[1],{steps:4});
+  await page.mouse.click(b[0],b[1]);
+  await page.locator('#skOk').click();
+  await page.waitForFunction(()=>!skEdit);
+  await ruban(page,'Extrusion').click();
+  await page.locator('#props select').first().selectOption('add');
+  const d=page.locator('#props input[type=text]').first();
+  await d.fill('10');await d.dispatchEvent('change');
+  await page.locator('#props button',{hasText:'Créer'}).click();
+  await page.waitForFunction(()=>doc.features.some(f=>f.type==='extrude')&&builtEngine==='exact'&&!!(occLive&&occLive.shape),null,{timeout:60000});
+  const zBox=()=>page.evaluate(()=>{const b=new occt.Bnd_Box_1();b.SetGap(0);occt.BRepBndLib.Add(occLive.shape,b,false);const r=[b.CornerMin().Z(),b.CornerMax().Z()];b.delete();return r;});
+  let z=await zBox();
+  expect(z[0]).toBeCloseTo(20,6);expect(z[1]).toBeCloseTo(30,6);
+  // Le plan monte à 35 (panneau Modifier) : esquisse et solide suivent
+  await page.locator('#tree .tnode',{hasText:'Plan 1'}).click();
+  await page.locator('#props button',{hasText:'Modifier'}).click();
+  const d2=page.locator('#props input[type=text]').first();
+  await d2.fill('35');await d2.press('Enter');
+  await page.locator('#props button',{hasText:'Valider'}).click();
+  await page.waitForFunction(()=>!cgMode&&builtEngine==='exact'&&builtVersion===_docVersion&&rebuildDepth===0,null,{timeout:60000});
+  z=await zBox();
+  expect(z[0]).toBeCloseTo(35,6);expect(z[1]).toBeCloseTo(45,6);
+  expect(err).toEqual([]);
+});
+
 test('FAO : surfaçage sur l\'Axe → parcours → G-code',async({page})=>{
   const err=await demarrer(page);
   await ouvrirAxe(page);

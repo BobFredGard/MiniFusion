@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**308 versions**, de `2026-09-28b` à `V0.4.9` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**309 versions**, de `2026-09-28b` à `V0.5.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4590,3 +4590,14 @@ Demande : vérifier dans un vrai navigateur ce que les tests VM (stubs DOM/THREE
 - **CI** : job séparé `browser-test` (checkout LFS, Chromium `--with-deps`, rapport en artefact en cas d'échec) ; `build-test` inchangé.
 
 Tests : `npm run test:browser` 3/3 en local (~17 s). `npm run ci` : 22/23 — `test_repeat_circ_tour` échoue sur un clone propre, indépendamment de cette version : il lit `Exemples/Perçages.miniFusion`, dont seule la copie locale non commitée contient la répétition circulaire.
+
+## V0.5.0 - Géométrie de construction : plans, axes, points, repères ; esquisse dessus
+Demande : « implémenter un assemblage » — étape 1 de la feuille de route : la géométrie de construction de la pièce, avec esquisse dessus (les repères serviront au placement des pièces).
+- **Modèle** (`src/78-construction-modele.js`) : liste `doc.cgeo`, à part des fonctions 3D (`doc.features` reste « ce qui fait le solide »). Chaque élément est ancré dans le fil par `at` (fonction après laquelle il est évalué ; il se raccroche à la précédente si elle disparaît) et garde son repère résolu `fr`, persisté. 15 méthodes : plan décalé, à un angle, 3 points, médian, normal ; axe sur référence, 2 points, intersection, normal ; point sur référence, coordonnées, intersection ; repère Z/X, sur un plan, 3 points.
+- **Références** : origine (plans, axes X/Y/Z, point O), autre élément (et plans ou axes d'un repère), point d'esquisse, et géométrie de la pièce résolue sur le solide qui **précède** l'élément, avec le nommage persistant existant (faces : `occFindFaceAny` ; arêtes : ancre d'esquisse comme les congés exacts ; sommets qui suivent leur arête).
+- **Interface** (`src/79-construction-interface.js`) : groupe « Construire » du ruban et `Ctrl+K`, panneau de création / modification (méthode, références désignées dans la vue ou l'arbre, ƒx, inverser, aperçu), dessin 3D (plans à la taille de la pièce, axes, points, repères à taille constante), groupe « 📐 Construction » de l'arbre, axes X/Y/Z de l'origine, menu contextuel, suppression avec avertissement.
+- **Esquisse dessus** (`plane:'CG'`) : la base est recopiée de l'élément à chaque rejeu ; l'esquisse et ses fonctions suivent le plan. Annuler / rétablir, sauvegarde, ƒx, marqueur temps couverts. L'empreinte d'un document sans construction est inchangée (pas de rejeu forcé des caches).
+- **Sans noyau exact** ou **référence perdue** : position mémorisée, ⚠ et message dans l'arbre.
+- **Tests** : la suite complète `node tests/run.cjs` tourne en parallèle (pool de processus, plus longues d'abord, chrono par suite : ~3,5 min au lieu de ~20 en série sur 8 cœurs).
+
+Tests : `test_construction_modele` (15 méthodes au µm, chaînes, ƒx, sauvegarde, annuler, suppression, marqueur ; aussi en suite rapide) et `test_construction_esquisse` (vrai noyau : plan sur la face du dessus → plot à z 55, bloc rehaussé → plan et plot suivent, axe d'un cylindre, sommet qui suit, repli sans noyau). Suite complète 117/117. Nouveau parcours Playwright « plan décalé → esquisse → extrusion → plan déplacé », non exécuté sur ce poste (Playwright non installé) ; le même parcours a été vérifié à la main dans le navigateur (z 20..30 puis 35..45, Ctrl+Z).
