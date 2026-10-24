@@ -29,7 +29,8 @@ const SUITES = [
   'test_assemblage_modele',
   'test_composants_modele',
   'test_composants_lies',
-  'test_composants_references'
+  'test_composants_references',
+  'test_composants_liaisons'
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {

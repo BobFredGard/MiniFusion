@@ -232,6 +232,7 @@ function asmKey(e){
   if(ctrl&&(k==='y'||(k==='z'&&e.shiftKey))){e.preventDefault();asmRedo();return true;}
   if((e.key==='Delete'||e.key==='Backspace')&&asmSelId){e.preventDefault();asmAskDelete(asmSelId);return true;}
   if(e.key==='Escape'&&asmAlign){asmAlignCancel();return true;}
+  if(e.key==='Escape'&&asmAnim){asmAnimStop();return true;} // animation d'une liaison (48)
   if(e.key==='Escape'){
     if(asmSelId){asmSelId=null;asmDraw();renderTree();renderProps();}
     else asmUp();
@@ -323,7 +324,7 @@ function asmCompsSection(t){
     const mine=inst.path.length>n&&P.every((q,i)=>inst.path[i]===q);
     const direct=mine&&inst.path.length===n+1;
     const self=inst.path.length===n&&P.every((q,i)=>inst.path[i]===q);
-    const badges=(o.fixed?' <span title="Fixée">📌</span>':'')+(o.align?' <span title="Alignée sur un repère">🔗</span>':'')+
+    const badges=(o.fixed?' <span title="Fixée">📌</span>':'')+(o.align?(o.align.type?' <span title="Liaison '+asmEsc((ASM_JOINTS[o.align.type]||{}).lab||'')+'">⚙</span>':' <span title="Alignée sur un repère">🔗</span>'):'')+
       (o.st==='warn'?' <span style="color:var(--warn)" title="'+asmEsc(o.msg)+'">⚠</span>':'')+
       (c.occ&&c.occ.length?' <span style="color:var(--muted)" title="Sous-composants">('+c.occ.length+')</span>':'')+asmLinkBadge(c);
     const d=document.createElement('div');
@@ -380,6 +381,7 @@ function asmRenderProps(p){
     const l=[['➕ Nouveau composant',asmCmdNewComp,'primary'],['📥 Insérer…',asmCmdInsert],['✏️ Modéliser « '+c.name+' »',()=>asmExit()]];
     if(asm.path.length)l.push(['↑ Remonter',asmUp]);
     Btns(l);
+    asmJointsProps(p); // piloter les liaisons (48)
     return;
   }
   const cc=asmComp(o.comp)||{};

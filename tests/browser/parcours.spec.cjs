@@ -290,6 +290,42 @@ test('composants liés : lier l\'Axe, modifier sur place, la source est réécri
   expect(err).toEqual([]);
 });
 
+test('liaisons : pivot tel que construit, piloté au curseur, limites',async({page})=>{
+  const err=await demarrer(page);
+  // Deux corps → deux composants (par script) ; la liaison, elle, se crée et se pilote au panneau
+  await page.evaluate(()=>{
+    const mkSk=(name,pts)=>{newSketch('XY');const sk=skEdit;sk.name=name;const P=pts.map(([x,y])=>addPoint(sk,x,y));
+      for(let i=0;i<P.length;i++)sk.entities.push({id:'L'+i,t:'line',p1:P[i],p2:P[(i+1)%P.length]});closeSketch(true);return sk;};
+    const a=mkSk('Bâti',[[-20,-20],[20,-20],[20,20],[-20,20]]);addFeature({id:uid('ex'),type:'extrude',name:'Bâti',sketchId:a.id,op:'add',distance:10});
+    const b=mkSk('Bras',[[0,-4],[60,-4],[60,4],[0,4]]);extNew={sketchId:b.id,op:'new',dist:5};extNewOk();
+    doc.bodies[0].name='Bâti';doc.bodies[1].name='Bras';markDirty();rebuild();
+  });
+  await page.waitForFunction(()=>builtEngine==='exact'&&rebuildDepth===0&&builtVersion===_docVersion&&doc.bodies.length===2,null,{timeout:60000});
+  await page.evaluate(()=>{asmCompsFromBodies(doc.bodies.map(e=>e.id));markDirty();rebuild();});
+  await ruban(page,'Placer').click();
+  await page.waitForFunction(()=>asmMode==='asm'&&asmRoot().occ.length===2);
+  await page.locator('#tree .tnode',{hasText:'Bras:1'}).click();
+  await page.locator('#props button',{hasText:'Liaison telle que construite'}).click();
+  await page.getByText('⚙ Pivot · axe Z de l’occurrence',{exact:true}).click();
+  await page.waitForFunction(()=>{const o=asmRoot().occ[1];return o.align&&o.align.type==='revolute';});
+  // curseur : 60°
+  const rng=page.locator('#props input[type=range]').first();
+  await rng.evaluate(e=>{e.value='60';e.dispatchEvent(new Event('input'));e.dispatchEvent(new Event('change'));});
+  let x=await page.evaluate(()=>asmRoot().occ[1].fr.x);
+  expect(x[0]).toBeCloseTo(0.5,6);expect(x[1]).toBeCloseTo(Math.sqrt(3)/2,6);
+  // limite haute 30° : bloqué à 30
+  const max=page.locator('#props input[placeholder=max]').first();
+  await max.fill('30');await max.dispatchEvent('change');
+  x=await page.evaluate(()=>asmRoot().occ[1].fr.x);
+  expect(x[0]).toBeCloseTo(Math.sqrt(3)/2,6);expect(x[1]).toBeCloseTo(0.5,6);
+  // Ctrl+Z : la limite part, retour à 60°
+  await page.evaluate(()=>{try{document.activeElement.blur();}catch(e){}}); // le raccourci ne vaut pas dans un champ
+  await page.keyboard.press('Control+z');
+  x=await page.evaluate(()=>asmRoot().occ[1].fr.x);
+  expect(x[0]).toBeCloseTo(0.5,6);
+  expect(err).toEqual([]);
+});
+
 test('FAO : surfaçage sur l\'Axe → parcours → G-code',async({page})=>{
   const err=await demarrer(page);
   await ouvrirAxe(page);

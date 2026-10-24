@@ -15,30 +15,52 @@ let asmAlign=null;    // commande Aligner en cours {occ, step:'src'|'dst', src, 
 const ASM_AX=[[1,0,0],[0,1,0],[0,0,1]],ASM_AX_COL=[0xff453a,0x30d158,0x0a84ff];
 function asmMovable(o){return !!o&&!o.fixed&&!o.align;}
 /* ── manipulateur ── */
+function asmGizmoSpec(o){
+  // Ce que le manipulateur propose : occurrence libre → 3 flèches + 3 anneaux le long des axes
+  // du composant actif ; occurrence LIÉE → seulement ses degrés de liberté, dans le repère de
+  // la liaison (V0.6.5). → {O, ax:[3 vecteurs], h:[{kind,ax,dof?}]} ou null
+  if(!o)return null;
+  if(asmMovable(o)){
+    const h=[];[0,1,2].forEach(i=>{h.push({kind:'move',ax:i},{kind:'rot',ax:i});});
+    return {O:o.fr.o,ax:ASM_AX,h};
+  }
+  const a=o.align;if(!a||!asmDofs(a).length)return null;
+  const owner=asmOccOwner(o.id);const T=owner&&asmJointTarget(owner.id,a);if(!T)return null;
+  const q=a.q||{},I={x:0,y:1,z:2};
+  const O=asmApply(T,[asmDofClamp(a,'tx',q.tx),asmDofClamp(a,'ty',q.ty),asmDofClamp(a,'tz',q.tz)]);
+  const h=asmDofs(a).map(k=>({kind:asmDofIsRot(k)?'rot':'move',ax:I[k[1]],dof:k}));
+  return {O,ax:[T.x,T.y,T.z],h};
+}
 function asmGizmoDraw(){
-  // (Re)dessine le manipulateur sur l'occurrence sélectionnée libre ; taille constante à
-  // l'écran (rangé dans TRIADS, comme les repères : triadUpdateAll le met à l'échelle)
+  // (Re)dessine le manipulateur de l'occurrence sélectionnée ; taille constante à l'écran
+  // (rangé dans TRIADS, comme les repères : triadUpdateAll le met à l'échelle)
   const S=asmSceneGet();
   if(asmGz){S.remove(asmGz);const i=TRIADS.indexOf(asmGz);if(i>=0)TRIADS.splice(i,1);asmGz.traverse(m=>{try{if(m.geometry)m.geometry.dispose();if(m.material)m.material.dispose();}catch(e){}});asmGz=null;}
   const o=asmOcc(asmSelId);
-  if(asmMode!=='asm'||!asmMovable(o)||asmAlign)return;
+  if(asmMode!=='asm'||asmAlign)return;
+  const G=asmGizmoSpec(o);if(!G)return;
   const g=new THREE.Group();g.name='asmGizmo';g.userData.px=110;
   const mat=c=>new THREE.MeshBasicMaterial({color:c,depthTest:false,transparent:true,opacity:0.95});
-  ASM_AX.forEach((a,i)=>{
-    const d=new THREE.Vector3(a[0],a[1],a[2]),q=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),d);
-    const sh=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.8,8),mat(ASM_AX_COL[i]));sh.quaternion.copy(q);sh.position.copy(d.clone().multiplyScalar(0.4));
-    const tp=new THREE.Mesh(new THREE.ConeGeometry(0.07,0.2,14),mat(ASM_AX_COL[i]));tp.quaternion.copy(q);tp.position.copy(d.clone().multiplyScalar(0.9));
-    // poignée de saisie (invisible, plus large que la flèche)
-    const hd=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,1.0,8),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false,colorWrite:false}));
-    hd.quaternion.copy(q);hd.position.copy(d.clone().multiplyScalar(0.55));hd.userData.gz={kind:'move',ax:i};
-    [sh,tp].forEach(m=>{m.renderOrder=999;m.raycast=()=>{};});
-    const ring=new THREE.Mesh(new THREE.TorusGeometry(0.62,0.012,8,64),mat(ASM_AX_COL[i]));
-    ring.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1),d));ring.renderOrder=999;ring.raycast=()=>{};
-    const rh=new THREE.Mesh(new THREE.TorusGeometry(0.62,0.06,6,48),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false,colorWrite:false}));
-    rh.quaternion.copy(ring.quaternion);rh.userData.gz={kind:'rot',ax:i};
-    g.add(sh,tp,hd,ring,rh);
+  G.h.forEach(hd=>{
+    const i=hd.ax,a=G.ax[i],d=new THREE.Vector3(a[0],a[1],a[2]).normalize();
+    if(hd.kind==='move'){
+      const q=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),d);
+      const sh=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.8,8),mat(ASM_AX_COL[i]));sh.quaternion.copy(q);sh.position.copy(d.clone().multiplyScalar(0.4));
+      const tp=new THREE.Mesh(new THREE.ConeGeometry(0.07,0.2,14),mat(ASM_AX_COL[i]));tp.quaternion.copy(q);tp.position.copy(d.clone().multiplyScalar(0.9));
+      // poignée de saisie (invisible, plus large que la flèche)
+      const hh=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,1.0,8),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false,colorWrite:false}));
+      hh.quaternion.copy(q);hh.position.copy(d.clone().multiplyScalar(0.55));hh.userData.gz=hd;
+      [sh,tp].forEach(m=>{m.renderOrder=999;m.raycast=()=>{};});
+      g.add(sh,tp,hh);
+    }else{
+      const ring=new THREE.Mesh(new THREE.TorusGeometry(0.62,0.012,8,64),mat(ASM_AX_COL[i]));
+      ring.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1),d));ring.renderOrder=999;ring.raycast=()=>{};
+      const rh=new THREE.Mesh(new THREE.TorusGeometry(0.62,0.06,6,48),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false,colorWrite:false}));
+      rh.quaternion.copy(ring.quaternion);rh.userData.gz=hd;
+      g.add(ring,rh);
+    }
   });
-  g.position.set(o.fr.o[0],o.fr.o[1],o.fr.o[2]);
+  g.position.set(G.O[0],G.O[1],G.O[2]);
   S.add(g);TRIADS.push(g);asmGz=g;
 }
 function asmRay(e){
@@ -65,17 +87,17 @@ function asmRotFr(F,O,a,ang){
 function asmGizmoDown(e){
   // Capture (document) : avant OrbitControls — un clic sur le manipulateur ne fait pas tourner la vue
   if(asmMode!=='asm'||!asmGz||e.button!==0||!renderer||e.target!==renderer.domElement)return;
-  const o=asmOcc(asmSelId);if(!asmMovable(o))return;
+  const o=asmOcc(asmSelId),G=asmGizmoSpec(o);if(!G)return;
   const ray=asmRay(e);rayc.ray.copy(ray);
   asmGz.updateMatrixWorld(true);
   const hs=[];asmGz.traverse(m=>{if(m.isMesh&&m.userData.gz)hs.push(m);});
   const h=rayc.intersectObjects(hs,false)[0];if(!h)return;
   e.preventDefault();e.stopPropagation();
-  const gz=h.object.userData.gz,O=new THREE.Vector3(o.fr.o[0],o.fr.o[1],o.fr.o[2]),a=new THREE.Vector3(...ASM_AX[gz.ax]);
-  asmDrag={kind:gz.kind,ax:gz.ax,occ:o.id,fr0:JSON.parse(JSON.stringify(o.fr)),O,a,moved:false};
+  const gz=h.object.userData.gz,O=new THREE.Vector3(G.O[0],G.O[1],G.O[2]),a=new THREE.Vector3(...G.ax[gz.ax]).normalize();
+  asmDrag={kind:gz.kind,ax:gz.ax,dof:gz.dof||null,occ:o.id,fr0:JSON.parse(JSON.stringify(o.fr)),q0:o.align?Object.assign({},o.align.q||{}):null,O,a,moved:false};
   if(gz.kind==='move')asmDrag.t0=asmAxisParam(ray,O,a);
   else{const p=asmPlaneHit(ray,O,a);asmDrag.p0=p?p.sub(O):null;}
-  asmPush(gz.kind==='move'?'déplacer « '+o.name+' »':'tourner « '+o.name+' »');
+  asmPush((gz.dof?'piloter « ':gz.kind==='move'?'déplacer « ':'tourner « ')+o.name+' »');
   try{controls.enabled=false;}catch(err){}
   window.addEventListener('pointermove',asmGizmoMove,true);
   window.addEventListener('pointerup',asmGizmoUp,true);
@@ -84,17 +106,26 @@ function asmGizmoMove(e){
   const D=asmDrag;if(!D)return;
   const o=asmOcc(D.occ);if(!o)return;
   const ray=asmRay(e),free=e.shiftKey;
+  let d=0,sd=0;
   if(D.kind==='move'){
     const t=asmAxisParam(ray,D.O,D.a);if(t==null||D.t0==null)return;
-    let d=t-D.t0;if(!free)d=Math.round(d);
-    o.fr=asmRound({o:[D.fr0.o[0]+D.a.x*d,D.fr0.o[1]+D.a.y*d,D.fr0.o[2]+D.a.z*d],x:D.fr0.x,y:D.fr0.y,z:D.fr0.z});
-    try{faceEl.textContent=o.name+' : '+'XYZ'[D.ax]+' '+(d>=0?'+':'')+d.toFixed(free?2:0).replace('.',',')+' mm (Maj = libre)';}catch(err){}
+    d=t-D.t0;if(!free)d=Math.round(d);
   }else{
     const p=asmPlaneHit(ray,D.O,D.a);if(!p||!D.p0)return;
     const v=p.sub(D.O);
-    let ang=Math.atan2(D.a.dot(new THREE.Vector3().crossVectors(D.p0,v)),D.p0.dot(v));
-    const deg=ang*180/Math.PI;const sd=free?deg:Math.round(deg/5)*5;ang=sd*Math.PI/180;
-    o.fr=asmRotFr(D.fr0,D.fr0.o,[D.a.x,D.a.y,D.a.z],ang);
+    const deg=Math.atan2(D.a.dot(new THREE.Vector3().crossVectors(D.p0,v)),D.p0.dot(v))*180/Math.PI;
+    sd=free?deg:Math.round(deg/5)*5;
+  }
+  if(D.dof){
+    // liaison : la valeur du degré de liberté, dans ses limites
+    const a=o.align;a.q=a.q||{};
+    a.q[D.dof]=asmDofClamp(a,D.dof,(+D.q0[D.dof]||0)+(D.kind==='move'?d:sd));
+    try{faceEl.textContent=o.name+' : '+ASM_DOF_LAB[D.dof]+' '+(+a.q[D.dof]).toFixed(free?2:0).replace('.',',')+(D.kind==='move'?' mm':'°')+' (Maj = libre)';}catch(err){}
+  }else if(D.kind==='move'){
+    o.fr=asmRound({o:[D.fr0.o[0]+D.a.x*d,D.fr0.o[1]+D.a.y*d,D.fr0.o[2]+D.a.z*d],x:D.fr0.x,y:D.fr0.y,z:D.fr0.z});
+    try{faceEl.textContent=o.name+' : '+'XYZ'[D.ax]+' '+(d>=0?'+':'')+d.toFixed(free?2:0).replace('.',',')+' mm (Maj = libre)';}catch(err){}
+  }else{
+    o.fr=asmRotFr(D.fr0,D.fr0.o,[D.a.x,D.a.y,D.a.z],sd*Math.PI/180);
     try{faceEl.textContent=o.name+' : rotation '+'XYZ'[D.ax]+' '+sd.toFixed(free?1:0).replace('.',',')+'° (Maj = libre)';}catch(err){}
   }
   D.moved=true;
@@ -108,7 +139,8 @@ function asmGizmoUp(){
   if(!D)return;
   // simple clic, ou geste revenu au point de départ : pas d'étape d'annulation
   const o=asmOcc(D.occ);
-  if(!D.moved||(o&&JSON.stringify(o.fr)===JSON.stringify(D.fr0))){asmUndoStack.pop();try{asmDraw();}catch(e){}return;}
+  const same=o&&JSON.stringify(o.fr)===JSON.stringify(D.fr0)&&(!D.dof||JSON.stringify((o.align&&o.align.q)||{})===JSON.stringify(D.q0||{}));
+  if(!D.moved||same){asmUndoStack.pop();try{asmDraw();}catch(e){}return;}
   asmNotify();
 }
 try{document.addEventListener('pointerdown',asmGizmoDown,true);}catch(e){} // tests VM : document simplifié
@@ -122,14 +154,32 @@ function asmPlacementProps(p,o){
   p.appendChild(mk('div','pnl-h','Placement'));
   if(o.align){
     const a=o.align,owner=asmOccOwner(o.id);
-    p.appendChild(mk('div','pnl-note','🔗 '+asmRelName(o.comp,a.src)+' → '+asmRelName(owner&&owner.id,a.dst)));
-    const c=document.createElement('input');c.type='checkbox';c.checked=!!a.flip;
-    c.onchange=()=>{asmPush('alignement');a.flip=c.checked;asmResolve();asmNotify();};Row('Retourner',c);
-    Row('Rotation (°)',num(a.rz||0,v=>{asmPush('alignement');a.rz=v;asmResolve();asmNotify();}));
-    ['X','Y','Z'].forEach((k,i)=>Row('Décalage '+k+' (mm)',num((a.off||[0,0,0])[i]||0,v=>{asmPush('alignement');a.off=(a.off||[0,0,0]).slice();a.off[i]=v;asmResolve();asmNotify();})));
+    const J=ASM_JOINTS[a.type||'rigid'];
+    p.appendChild(mk('div','pnl-note','🔗 '+(a.rel?'Telle que construite':asmRelName(o.comp,a.src)+' → '+asmRelName(owner&&owner.id,a.dst))));
+    // type de liaison
+    const ty=document.createElement('select');
+    Object.keys(ASM_JOINTS).forEach(k=>{const op=document.createElement('option');op.value=k;op.textContent=ASM_JOINTS[k].lab;if(k===(a.type||'rigid'))op.selected=true;ty.appendChild(op);});
+    ty.onchange=()=>{asmPush('liaison');if(ty.value==='rigid')delete a.type;else a.type=ty.value;a.q=a.q||{};asmResolve();asmNotify();};
+    Row('Liaison',ty);
+    if(!a.rel){
+      const c=document.createElement('input');c.type='checkbox';c.checked=!!a.flip;
+      c.onchange=()=>{asmPush('alignement');a.flip=c.checked;asmResolve();asmNotify();};Row('Retourner',c);
+      Row('Rotation (°)',num(a.rz||0,v=>{asmPush('alignement');a.rz=v;asmResolve();asmNotify();}));
+      ['X','Y','Z'].forEach((k,i)=>Row('Décalage '+k+' (mm)',num((a.off||[0,0,0])[i]||0,v=>{asmPush('alignement');a.off=(a.off||[0,0,0]).slice();a.off[i]=v;asmResolve();asmNotify();})));
+    }
+    // degrés de liberté : curseur, valeur, limites
+    J.dof.forEach(k=>asmDofRow(p,o,k));
     const b=mk('div','pnl-btns');
-    const rm=mk('button',null,'Supprimer l’alignement');rm.title='L’occurrence garde sa position actuelle et redevient libre';
-    rm.onclick=()=>{asmPush('supprimer l’alignement');o.align=null;asmNotify();};b.appendChild(rm);p.appendChild(b);
+    if(J.dof.length){
+      const cap=mk('button','mini','📌 Capturer la position');cap.title='Cette position devient la position de repos de la liaison';
+      cap.onclick=()=>{asmPush('capturer la position');a.q0=Object.assign({},a.q||{});asmNotify();};b.appendChild(cap);
+      const rv=mk('button','mini','↺ Rétablir');rv.title='Revenir à la position de repos';
+      rv.onclick=()=>{asmPush('rétablir la position');a.q=Object.assign({},a.q0||{});asmResolve();asmNotify();};b.appendChild(rv);
+      const an=mk('button','mini',asmAnim&&asmAnim.occ===o.id?'■ Arrêter':'▶ Animer');an.title='Piloter la liaison entre ses limites (sinon sur un tour / ±50 mm)';
+      an.onclick=()=>{if(asmAnim&&asmAnim.occ===o.id)asmAnimStop();else asmAnimStart(o.id,J.dof[0]);renderProps();};b.appendChild(an);
+    }
+    const rm=mk('button',null,'Supprimer la liaison');rm.title='L’occurrence garde sa position actuelle et redevient libre';
+    rm.onclick=()=>{asmPush('supprimer la liaison');asmAnimStop();o.align=null;asmNotify();};b.appendChild(rm);p.appendChild(b);
     return;
   }
   if(o.fixed){p.appendChild(mk('div','pnl-note','📌 Fixée : libérez-la pour la déplacer.'));}
@@ -142,7 +192,9 @@ function asmPlacementProps(p,o){
     p.appendChild(rw);
     p.appendChild(mk('div','pnl-note','Manipulateur : flèches = déplacer, anneaux = tourner (pas 1 mm / 5°, Maj = libre).'));
   }
-  const b=mk('div','pnl-btns');const al=mk('button','primary','🔗 Aligner un repère…');al.onclick=()=>asmAlignStart(o.id);b.appendChild(al);p.appendChild(b);
+  const b=mk('div','pnl-btns');const al=mk('button','primary','🔗 Aligner un repère…');al.onclick=()=>asmAlignStart(o.id);b.appendChild(al);
+  if(!o.fixed){const jb=mk('button',null,'⚙ Liaison telle que construite…');jb.title='Une liaison à la position actuelle (pivot, glissière…), autour d’un axe de l’occurrence';jb.onclick=()=>asmAsBuiltMenu(o,jb);b.appendChild(jb);}
+  p.appendChild(b);
 }
 /* ── Aligner ──
    Repères candidats, en coordonnées du composant actif (le porteur) :
@@ -272,4 +324,88 @@ function asmTreePick(path){
   if(path.length<=n||!P.every((q,i)=>path[i]===q))return true;
   const rel=path.slice(n);if(rel[0]===asmAlign.occ)return true;
   asmAlignSetDst({path:rel,cg:null});return true;
+}
+/* ── liaisons : curseurs, piloter, animer (V0.6.5) ── */
+let asmAnim=null; // {occ, k, dir, last, raf}
+function asmDofIsRot(k){return k[0]==='r';}
+function asmDofRow(p,o,k){
+  // Une ligne par degré de liberté : curseur (dans les limites), valeur, limites min / max
+  const a=o.align,rot=asmDofIsRot(k),lim=a.lim&&a.lim[k];
+  const mk=(tag,cls,txt)=>{const d=document.createElement(tag);if(cls)d.className=cls;if(txt!=null)d.textContent=txt;return d;};
+  const r=mk('div','pnl-row');r.appendChild(mk('label',null,ASM_DOF_LAB[k]+(rot?' (°)':' (mm)')));
+  const w=mk('span');w.style.cssText='display:flex;gap:4px;align-items:center;flex-wrap:wrap;justify-content:flex-end';
+  const s=document.createElement('input');s.type='range';s.style.width='110px';
+  s.min=String(lim?Math.min(lim[0],lim[1]):(rot?-180:-100));s.max=String(lim?Math.max(lim[0],lim[1]):(rot?180:100));s.step=rot?'1':'0.5';
+  const v=(a.q&&a.q[k])||0;s.value=String(v);
+  const t=document.createElement('input');t.type='text';t.inputMode='decimal';t.style.width='52px';t.value=String(+(+v).toFixed(2)).replace('.',',');
+  let pushed=false;
+  const set=(x,live)=>{
+    if(!pushed){asmPush('piloter « '+o.name+' »');pushed=true;}
+    a.q=a.q||{};a.q[k]=asmDofClamp(a,k,x);asmResolve();
+    if(live){try{asmDraw();asmCtxDraw();}catch(e){}t.value=String(+(+a.q[k]).toFixed(2)).replace('.',',');}
+    else{pushed=false;asmNotify();}
+  };
+  s.addEventListener('input',()=>set(+s.value,true));s.addEventListener('change',()=>set(+s.value,false));
+  t.addEventListener('change',()=>{const x=parseFloat(String(t.value).replace(',','.'));if(isFinite(x))set(x,false);});
+  const lm=(i,ph)=>{const e=document.createElement('input');e.type='text';e.placeholder=ph;e.style.width='38px';e.title=(i?'Limite haute':'Limite basse')+' (vide = libre)';
+    e.value=lim?String(lim[i]).replace('.',','):'';
+    e.addEventListener('change',()=>{asmPush('limites');const x=parseFloat(String(e.value).replace(',','.'));a.lim=a.lim||{};
+      const cur=a.lim[k]||[rot?-180:-100,rot?180:100];
+      if(isFinite(x)){cur[i]=x;a.lim[k]=cur;}else delete a.lim[k];
+      asmResolve();asmNotify();});return e;};
+  w.appendChild(s);w.appendChild(t);w.appendChild(lm(0,'min'));w.appendChild(lm(1,'max'));
+  r.appendChild(w);p.appendChild(r);
+}
+function asmAnimTick(A,dt){
+  // Un pas d'animation (dt en s) : aller-retour entre les limites, sinon un tour / ±50 mm
+  const q=asmOcc(A.occ);if(!q||!q.align)return false;
+  const a=q.align,rot=asmDofIsRot(A.k),l=a.lim&&a.lim[A.k];
+  const sp=rot?90:20; // °/s, mm/s
+  a.q=a.q||{};let v=(+a.q[A.k]||0)+A.dir*sp*dt;
+  const lo=l?Math.min(l[0],l[1]):(rot?-Infinity:-50),hi=l?Math.max(l[0],l[1]):(rot?Infinity:50);
+  if(v>hi){v=hi;A.dir=-1;}if(v<lo){v=lo;A.dir=1;}
+  if(rot&&!l&&Math.abs(v)>360)v=v%360;
+  a.q[A.k]=v;asmResolve();
+  return true;
+}
+function asmAnimStart(occId,k){
+  asmAnimStop();
+  const o=asmOcc(occId);if(!o||!o.align)return;
+  asmPush('animer « '+o.name+' »');
+  asmAnim={occ:occId,k,dir:1,last:0};
+  const step=ts=>{
+    const A=asmAnim;if(!A)return;
+    if(asmMode!=='asm'){asmAnimStop();return;}
+    const dt=A.last?Math.min(0.1,(ts-A.last)/1000):0;A.last=ts;
+    if(!asmAnimTick(A,dt)){asmAnimStop();return;}
+    try{asmDraw();}catch(e){}
+    A.raf=requestAnimationFrame(step);
+  };
+  asmAnim.raf=requestAnimationFrame(step);
+  try{faceEl.textContent='Animation de « '+o.name+' » ('+ASM_DOF_LAB[k]+') — ■ ou Échap pour arrêter.';}catch(e){}
+}
+function asmAnimStop(){
+  if(!asmAnim)return;
+  try{cancelAnimationFrame(asmAnim.raf);}catch(e){}
+  asmAnim=null;asmNotify();
+}
+function asmJointsProps(p){
+  // « Piloter les liaisons » : toutes les liaisons du composant actif, leurs curseurs
+  const c=asmActiveComp();if(!c)return;
+  const L=c.occ.filter(o=>o.align&&asmDofs(o.align).length);
+  if(!L.length)return;
+  const mk=(tag,cls,txt)=>{const d=document.createElement(tag);if(cls)d.className=cls;if(txt!=null)d.textContent=txt;return d;};
+  p.appendChild(mk('div','pnl-h','⚙ Liaisons ('+L.length+')'));
+  L.forEach(o=>{p.appendChild(mk('div','pnl-note',o.name+' · '+ASM_JOINTS[o.align.type].lab));asmDofs(o.align).forEach(k=>asmDofRow(p,o,k));});
+}
+function asmAsBuiltMenu(o,anchor){
+  // Liaison « telle que construite » : type et axe de l'occurrence (rien ne bouge)
+  const items=[];
+  ['revolute','slider','cylindrical','planar','ball'].forEach(t=>{
+    const axes=ASM_JOINTS[t].dof.length===3?['z']:['z','x','y'];
+    axes.forEach(ax=>items.push({html:'⚙ '+ASM_JOINTS[t].lab+(axes.length>1?' · axe '+ax.toUpperCase()+' de l’occurrence':''),fn:()=>{
+      asmPush('liaison telle que construite');o.align=asmAsBuilt(o,t,ax);asmResolve();asmNotify();
+      try{faceEl.textContent='Liaison '+ASM_JOINTS[t].lab.toLowerCase()+' à la position actuelle : faites-la jouer au manipulateur ou au curseur.';}catch(e){}}}));
+  });
+  try{const r=anchor.getBoundingClientRect();mfPop({getBoundingClientRect:()=>r},items);}catch(e){}
 }

@@ -167,7 +167,60 @@ function asmAlignNorm(a){
     if(isDst&&r&&typeof r==='object')return {path:r.occ?[r.occ]:[],cg:r.occ&&typeof r.cg==='string'?r.cg:null}; // V0.6.0 : {occ, cg}
     return {path:[],cg:typeof r==='string'?r:null}; // V0.6.0 : src = cgId | null
   };
-  return {src:rel(a.src,false),dst:rel(a.dst,true),flip:!!a.flip,rz:+a.rz||0,off:Array.isArray(a.off)?a.off.map(v=>+v||0):[0,0,0]};
+  const out={src:rel(a.src,false),dst:rel(a.dst,true),flip:!!a.flip,rz:+a.rz||0,off:Array.isArray(a.off)?a.off.map(v=>+v||0):[0,0,0]};
+  // liaison (V0.6.5) : type, valeurs des degrés de liberté, limites, position de repos ;
+  // rel / sfr : repères explicites d'une liaison « telle que construite »
+  if(ASM_JOINTS[a.type]&&a.type!=='rigid')out.type=a.type;
+  const num=o=>{const r={};if(o&&typeof o==='object')Object.keys(o).forEach(k=>{if(ASM_DOF_KEYS.includes(k)&&isFinite(+o[k]))r[k]=+o[k];});return r;};
+  if(a.q)out.q=num(a.q);if(a.q0)out.q0=num(a.q0);
+  if(a.lim&&typeof a.lim==='object'){out.lim={};Object.keys(a.lim).forEach(k=>{const l=a.lim[k];if(ASM_DOF_KEYS.includes(k)&&Array.isArray(l)&&l.length===2&&l.every(v=>isFinite(+v)))out.lim[k]=[+l[0],+l[1]];});}
+  const okFr=f=>f&&['o','x','y','z'].every(k=>Array.isArray(f[k])&&f[k].length===3&&f[k].every(v=>isFinite(+v)));
+  if(okFr(a.rel))out.rel=a.rel;if(okFr(a.sfr))out.sfr=a.sfr;
+  return out;
+}
+/* ── liaisons mécaniques (V0.6.5) ──
+   Une liaison est un alignement qui laisse des degrés de liberté, autour / le long des axes du
+   repère de liaison (celui de la cible, retournement / rotation / décalage compris) :
+     M = T · J(q) · S⁻¹   (rigide : J = identité — l'alignement de V0.6.0)
+   Résolution directe, dans l'ordre des dépendances : chaque occurrence a au plus une liaison
+   vers ce qui la porte ; une boucle fermée donne ⚠ (pas de solveur). */
+const ASM_JOINTS={
+  rigid:{lab:'Rigide',dof:[]},
+  revolute:{lab:'Pivot',dof:['rz']},
+  slider:{lab:'Glissière',dof:['tz']},
+  cylindrical:{lab:'Pivot glissant',dof:['rz','tz']},
+  planar:{lab:'Plan',dof:['tx','ty','rz']},
+  ball:{lab:'Rotule',dof:['rx','ry','rz']}
+};
+const ASM_DOF_KEYS=['tx','ty','tz','rx','ry','rz'];
+const ASM_DOF_LAB={tx:'Translation X',ty:'Translation Y',tz:'Translation Z',rx:'Rotation X',ry:'Rotation Y',rz:'Rotation Z'};
+function asmDofs(a){return (ASM_JOINTS[(a&&a.type)||'rigid']||ASM_JOINTS.rigid).dof;}
+function asmDofClamp(a,k,v){
+  const l=a&&a.lim&&a.lim[k];v=+v||0;
+  return l?Math.min(Math.max(v,Math.min(l[0],l[1])),Math.max(l[0],l[1])):v;
+}
+function asmJointFrame(a){
+  // J(q) : translation (tx, ty, tz) puis rotations Rz·Ry·Rx (degrés), limites appliquées
+  const q={};asmDofs(a).forEach(k=>{q[k]=asmDofClamp(a,k,a.q&&a.q[k]);});
+  const r=k=>(q[k]||0)*Math.PI/180;
+  const Rx=t=>({o:[0,0,0],x:[1,0,0],y:[0,Math.cos(t),Math.sin(t)],z:[0,-Math.sin(t),Math.cos(t)]});
+  const Ry=t=>({o:[0,0,0],x:[Math.cos(t),0,-Math.sin(t)],y:[0,1,0],z:[Math.sin(t),0,Math.cos(t)]});
+  const Rz=t=>({o:[0,0,0],x:[Math.cos(t),Math.sin(t),0],y:[-Math.sin(t),Math.cos(t),0],z:[0,0,1]});
+  const R=asmCompose(Rz(r('rz')),asmCompose(Ry(r('ry')),Rx(r('rx'))));
+  R.o=[q.tx||0,q.ty||0,q.tz||0];
+  return R;
+}
+function asmJointTarget(ownerId,a){
+  // Repère de liaison côté cible (dans le repère du porteur)
+  if(a.rel){const T=asmRelFrame(ownerId,a.dst);return T?asmCompose(T,a.rel):null;}
+  return asmAlignTarget(ownerId,a);
+}
+function asmAsBuilt(o,type,axis){
+  // Liaison « telle que construite » : à la position actuelle, autour / le long d'un axe de
+  // l'occurrence (x, y, z) passant par son origine — rien ne bouge à la création
+  const R={x:{o:[0,0,0],x:[0,1,0],y:[0,0,1],z:[1,0,0]},y:{o:[0,0,0],x:[0,0,1],y:[1,0,0],z:[0,1,0]},z:asmFr0()}[axis||'z']||asmFr0();
+  return {src:{path:[],cg:null},dst:{path:[],cg:null},flip:false,rz:0,off:[0,0,0],type:ASM_JOINTS[type]?type:'revolute',
+    q:{},q0:{},rel:asmRound(asmCompose(o.fr,R)),sfr:R};
 }
 function asmAlignTarget(ownerId,a){
   // Repère cible dans le repère du porteur, retournement / rotation / décalage compris
@@ -194,9 +247,9 @@ function asmResolveIn(owner){
       if(dep&&dep!==o.id&&!done.has(dep)&&owner.occ.some(q=>q.id===dep))continue; // cible pas encore placée
       todo.splice(i,1);i--;progress=true;done.add(o.id);
       if(dep===o.id){o.st='warn';o.msg='la cible est dans l’occurrence elle-même';continue;}
-      const T=asmAlignTarget(owner.id,a),S=asmRelFrame(o.comp,a.src);
+      const T=asmJointTarget(owner.id,a),S=a.sfr||asmRelFrame(o.comp,a.src);
       if(!T||!S){o.st='warn';o.msg=!S?'repère du composant introuvable':'repère cible introuvable';continue;}
-      const M=asmRound(asmCompose(T,asmInverse(S)));
+      const M=asmRound(asmCompose(T,asmCompose(asmJointFrame(a),asmInverse(S))));
       if(['o','x','y','z'].some(k=>M[k].some((v,j)=>Math.abs(v-o.fr[k][j])>1e-9))){o.fr=M;ch=true;}
       o.st='ok';o.msg='';
     }

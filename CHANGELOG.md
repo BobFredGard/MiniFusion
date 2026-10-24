@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**315 versions**, de `2026-09-28b` à `V0.6.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**316 versions**, de `2026-09-28b` à `V0.6.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4656,3 +4656,10 @@ Tests : `test_composants_lies` (dossier de projets simulé en mémoire : lier, s
 - **Interface** (`src/79-construction-interface.js`) : la méthode n'apparaît que s'il existe une autre instance ; liste des éléments visés (même type + origine), « Figer » dans le panneau de l'élément. Hors périmètre : faces et arêtes d'un autre composant (un composant inactif n'a qu'un maillage d'affichage) — y poser d'abord un plan de construction.
 
 Tests : `test_composants_references` (plan repris avec la position du socle, esquisse dessus, suivi composant actif / inactif, socle modifié, deux instances et contexte, figer / libérer, fichier, élément visé supprimé, circulaire après trois passes ; aussi en suite rapide). Vérifié dans le navigateur avec le noyau exact : plan du dessus du socle repris dans la colonne, esquisse et extrusion dessus ; socle rehaussé (20 → 30) : la colonne inactive suit.
+
+## V0.6.5 - Liaisons mécaniques
+Étape 4 du plan « composants façon Fusion 360 » + idées SolidCraft (liaison telle que construite, capturer / rétablir la position, piloter les liaisons).
+- **Modèle** (`src/46-assemblage-modele.js`) : une liaison est un alignement qui garde des degrés de liberté — `type` (rigide, pivot, glissière, pivot glissant, plan, rotule), `q` (valeurs), `lim` (limites), `q0` (repos) ; M = T · J(q) · S⁻¹, J = translation puis Rz·Ry·Rx, limites appliquées (`asmJointFrame`). Résolution directe dans l'ordre des dépendances, boucle fermée → ⚠. **Telle que construite** (`asmAsBuilt`) : repères explicites (`rel`, `sfr`) pris à la position actuelle, autour d'un axe de l'occurrence. Un alignement sans type reste rigide (fichiers V0.6.x inchangés).
+- **Interface** (`src/48-assemblage-placement.js`) : type au panneau, curseur + valeur + limites par degré de liberté (une étape d'annulation par geste), Capturer la position / Rétablir, ▶ Animer (aller-retour entre les limites, Échap arrête), « Liaison telle que construite… » sur une occurrence libre, panneau du composant : toutes ses liaisons à piloter. **Manipulateur contraint** : seulement les degrés de liberté de la liaison, dans son repère et ses limites. Pastille ⚙ dans l'arbre.
+
+Tests : `test_composants_liaisons` (rigide = l'alignement, pivot 30°, limites, glissière, pivot glissant, plan, rotule, chaîne de deux liaisons, boucle ⚠, telle que construite autour de Z et de X de l'occurrence, fichier, animation aux butées, manipulateur ; aussi en suite rapide). Parcours Playwright « liaisons : pivot tel que construit, piloté au curseur, limites ». Vérifié dans le navigateur : bras sur bâti, pivot tel que construit, curseur à 60°, limite 30°, Ctrl+Z.
