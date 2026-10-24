@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**313 versions**, de `2026-09-28b` à `V0.6.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**314 versions**, de `2026-09-28b` à `V0.6.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4638,3 +4638,13 @@ Demande : idées reprises de SolidCraft (« Create Components from Bodies », «
 - **Annulation** : une étape d'assemblage peut emporter des documents (`asmPush(label, docs)`) ; horloge commune `undoTick` (45) : Ctrl+Z / Ctrl+Y en mode Modéliser défont / refont la conversion quand c'est l'opération la plus récente (boutons et raccourcis).
 
 Tests : `test_composants_corps` (modèle : refus croisés, déplacé / copié, combinaison, identifiants et corps renouvelés, paramètres, ancrage ; noyau réel : bloc 32 000 mm³ + colonne 12 566,4 mm³ → composant à la même place, mêmes volumes ; Ctrl+Z / Ctrl+Y par le vrai raccourci ; esquisse libre déplacée, esquisse utilisée refusée, composant neuf). Parcours Playwright « composants depuis les corps : clic droit sur un corps, même place, Ctrl+Z ». Vérifié dans le navigateur : trois corps convertis (couleurs conservées), esquisse libre déplacée vers « Colonne » par le menu, Ctrl+Z / Ctrl+Y au clavier.
+
+## V0.6.3 - Composants liés à un fichier, édités sur place
+Étape 2 du plan « composants façon Fusion 360 » (choix : édition sur place, la source est réécrite) + idées SolidCraft (extraire vers un fichier, remplacer par un lien, relier la source, mettre à jour les liens).
+- **Modèle** (`src/47-composants-lies.js`) : `comp.link` = {rel (chemin dans le dossier de projets), key (handle en IndexedDB hors du dossier), sig (empreinte du texte de la source à la dernière synchro), map (ids de la source renouvelés dans l'hôte), srcRoot, pend (modifié ici, pas encore écrit)} ; les sous-composants venus du fichier portent `of` (liens imbriqués compris). Un composant ne s'ajoute dans un composant lié que s'il en fait partie ; ceux qu'on y crée en font partie.
+- **Charger** (`asmLinkLoad`) : la racine de la source remplace le CONTENU du composant lié (même objet, il peut être actif), ses sous-composants sont mis à jour en gardant leurs identifiants : les alignements de l'hôte suivent. Caches du bundle (trajectoires, imports) restaurés.
+- **Vérifier** (`asmLinksCheck`) : ouverture, retour sur l'onglet, bouton 🔄 de l'arbre (geste : autorisation du dossier). Conflit : garder les miennes / prendre la source / rompre. **Écrire** (`asmLinksWrite`, appelé par `mffWrite` avant l'hôte) : enveloppe de la source gardée (bundle : trajectoires, imports), écrasement confirmé si elle a aussi changé.
+- **« Modifié ici »** : empreinte du sous-arbre comparée à celle prise APRÈS le rejeu des composants (la première activation normalise un document sans que ce soit une modification) ; `pend` enregistré dans l'hôte, la modification survit à une réouverture.
+- **Commandes** : Insérer → Lier / Copier ; clic droit (arbre, panneau) : Extraire vers un fichier, Remplacer par un lien, Relier la source, Rompre le lien, Mettre à jour les liens ; même source liée deux fois → occurrence. Pastilles 🔗 ✎ ⚠.
+
+Tests : `test_composants_lies` (dossier de projets simulé en mémoire : lier, source modifiée → mise à jour et alignement suivi, édition sur place → source réécrite, conflit ×3, hôte rouvert « modifié ici », source introuvable, même source deux fois, assemblage lié avec sous-composant, extraire, Ctrl+S de l'hôte ; aussi en suite rapide). Parcours Playwright avec le stockage privé du navigateur (OPFS : vraies API de fichiers). Vérifié dans le navigateur avec OPFS : Axe lié, modifié sur place (bundle réécrit), source modifiée ailleurs → « Mis à jour depuis le disque ».

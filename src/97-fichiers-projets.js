@@ -59,6 +59,8 @@ async function mffPerm(h,mode){
   try{const o={mode:mode||'readwrite'};if((await h.queryPermission(o))==='granted')return true;return (await h.requestPermission(o))==='granted';}catch(e){return false;}
 }
 async function mffWrite(h){
+  // composants liés modifiés ici : leurs sources d'abord (47-composants-lies)
+  try{if(asm&&asmLinked().length)await asmLinksWrite();}catch(e){}
   const data=await mffData();
   const w=await h.createWritable();await w.write(data);await w.close();
 }

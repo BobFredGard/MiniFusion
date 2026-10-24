@@ -343,7 +343,7 @@ function mfRibbon(){
     ['asmPart','Composant',()=>asmCmdNewComp(),'Nouveau composant dans le composant actif (on entre aussitôt dedans)'],
     ['asmOcc','Occurrence',()=>{if(asmMode!=='asm')asmEnter();asmCmdNewOcc();},'Nouvelle occurrence du composant sélectionné'],
     ['asmFromBodies','Depuis corps',()=>asmCmdFromBodies(),'Créer un composant depuis le corps sélectionné (ou depuis chaque corps) : la pièce multicorps devient un assemblage, sans rien remodéliser'],
-    ['import','Insérer',()=>asmCmdInsert(),'Insérer un fichier .miniFusion (copie) comme composant du composant actif']],'mfCao mfAsmG');
+    ['import','Insérer',()=>asmCmdInsert(),'Insérer un fichier .miniFusion comme composant du composant actif : lié (modifiable ici, la source suit) ou copié']],'mfCao mfAsmG');
   // FAO : posage, opérations (mêmes fiches que la barre « + Usinage »), simulation, calcul, export
   grp('Posage',[['setup','Posage',()=>{const b=Array.from(document.querySelectorAll('#faoTreeWrap button')).find(x=>/\+ Posage/.test(x.textContent));if(b)b.click();},'Ajouter un posage'],['tools','Outils','faoToolsBtn']],'mfFao');
   let ops=[];try{ops=faoAddOpsSpec();}catch(e){}

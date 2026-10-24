@@ -149,6 +149,7 @@ function asmCompsFromBodies(ids){
     if(!p.ok){out.refused.push({body:b,name:name(b),why:p.why});return;}
     const nm=name(b);
     const c={id:uid('cp'),kind:'comp',name:nm,doc:asmEmptyDoc(nm),occ:[],link:null};
+    {const L=asmLinkOwner(src);if(L)c.of=L.id;} // dans un composant lié : il en fait partie
     asmSplitApply(d,c.doc,p);
     asm.comps.push(c);
     const o=asmNewOccObj(c.id,nm+':1');src.occ.push(o);
@@ -169,6 +170,7 @@ function asmMoveToComp(sel,targetId,newName){
   asmPush('déplacer vers « '+nm+' »',T?[src.id,T.id]:[src.id]);
   if(!T){
     T={id:uid('cp'),kind:'comp',name:nm,doc:asmEmptyDoc(nm),occ:[],link:null};
+    {const L=asmLinkOwner(src);if(L)T.of=L.id;}
     asm.comps.push(T);src.occ.push(asmNewOccObj(T.id,nm+':1'));
   }
   const r=asmSplitApply(src.doc,T.doc,p);

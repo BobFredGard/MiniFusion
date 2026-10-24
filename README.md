@@ -2,7 +2,7 @@
 
 **CAO paramétrique, assemblage, FAO et mise en plan dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2, G-code et planches cotées ISO. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.6.2** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.6.3** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Sommaire
 
@@ -110,6 +110,12 @@ Convertir une pièce multicorps en assemblage, sans rien remodéliser :
 - une esquisse ou une construction utilisée aussi par ce qui reste est **copiée**, sinon **déplacée**. L'opération est **refusée, avec la raison**, quand ce qui part s'appuie sur ce qui reste (esquisse posée sur une face d'un autre corps, combinaison entre corps) ou l'inverse ;
 - une seule étape d'annulation : Ctrl+Z en mode Modéliser la défait entièrement.
 
+**Composants liés** (Chrome / Edge) : un composant peut venir d'un autre fichier `.miniFusion` et rester LIÉ à lui.
+- **Insérer** propose **Lier** (recommandé) ou **Copier**. Un fichier du **dossier de projets** est retrouvé par son chemin, sur n'importe quel PC qui synchronise ce dossier (Dropbox) ; hors du dossier, le lien ne vaut que sur cet ordinateur. Le fichier hôte garde une copie : il s'ouvre même sans la source (⚠).
+- **Édition sur place** : on modélise un composant lié comme un autre (✎ dans l'arbre) ; à l'enregistrement de l'assemblage (Ctrl+S), sa source est réécrite d'abord (trajectoires FAO de la source gardées).
+- **Mise à jour** : à l'ouverture, au retour sur l'onglet et par 🔄 dans l'arbre (le premier clic autorise l'accès au dossier) : une source changée ailleurs est rechargée, les alignements suivent. Modifiée des deux côtés : **Garder les miennes**, **Prendre la source** ou **Rompre le lien**.
+- Clic droit sur un composant : **Extraire vers un fichier…** (il devient lié à ce fichier), **Remplacer par un lien…**, **Relier la source…** (fichier déplacé ou renommé), **Rompre le lien** (copie locale), **Mettre à jour les liens**. Lier deux fois la même source donne une nouvelle occurrence.
+
 ## FAO
 
 ![Posage : brut, points cardinaux, repère](docs/captures/fao-posage.png)
@@ -216,7 +222,7 @@ Le dépôt stocke les gros binaires (`occt/*.wasm`, `Exemples/*.miniFusion`, `Ex
 
 | Chemin | Rôle |
 |---|---|
-| `src/*.js` | **Les sources** (61 fichiers, de l'en-tête à l'initialisation ; la FAO est découpée par domaine : parcours, caches, post-processeurs, simulation, interface, ébauche 3D, contour, géodésique, crêtes, perçage). C'est ici qu'on travaille. |
+| `src/*.js` | **Les sources** (62 fichiers, de l'en-tête à l'initialisation ; la FAO est découpée par domaine : parcours, caches, post-processeurs, simulation, interface, ébauche 3D, contour, géodésique, crêtes, perçage). C'est ici qu'on travaille. |
 | `fusion_mvp.html` | **Livrable généré** par `node build.js` (le HTML et le CSS de base vivent dans ce fichier, hors de la balise `<script>`). On n'édite jamais le script à la main. |
 | `tests/` | Suite Node portable (plus de 100 suites, dont certaines sur le noyau OCCT réel) : `node tests/run.cjs`, en parallèle (`-j N` pour la taille du pool, `--verbose` pour toutes les sorties) ; sous-ensemble rapide : `node tests/run-fast.cjs`. |
 | `tools/lint.cjs` | Lint ESLint du script concaténé (même ordre que le build) : `npm run lint` (erreurs) ou `npm run lint:all`. |

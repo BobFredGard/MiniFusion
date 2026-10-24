@@ -254,6 +254,42 @@ test('composants depuis les corps : clic droit sur un corps, même place, Ctrl+Z
   expect(err).toEqual([]);
 });
 
+test('composants liés : lier l\'Axe, modifier sur place, la source est réécrite, puis suivie',async({page})=>{
+  const err=await demarrer(page);
+  // Le stockage privé du navigateur (OPFS) sert de dossier de projets : mêmes API de fichiers
+  // que le vrai dossier, sans fenêtre de dialogue à piloter.
+  const axe=require('fs').readFileSync(require('path').join(__dirname,'..','..','Exemples','Axe.miniFusion'),'utf8');
+  const r1=await page.evaluate(async axe=>{
+    const dir=await (await navigator.storage.getDirectory()).getDirectoryHandle('mf-pw',{create:true});
+    const h=await dir.getFileHandle('Axe.miniFusion',{create:true});
+    const w=await h.createWritable();await w.write(axe);await w.close();
+    mffFolder=dir;doc.name='Banc';asmEnsure();
+    const L=await asmLinkInsert(h,axe,'Axe.miniFusion');
+    return {rel:L.link.rel,dirty:asmLinkDirty(L),feats:L.doc.features.length};
+  },axe);
+  expect(r1).toEqual({rel:'Axe.miniFusion',dirty:false,feats:13});
+  await expect(page.locator('#tree .tnode',{hasText:'Axe:1'})).toContainText('🔗');
+  // modifier sur place : un repère de construction dans l'Axe, puis enregistrer (sources d'abord)
+  const r2=await page.evaluate(async()=>{
+    const L=asmLinked()[0];
+    L.doc.cgeo.push({id:'rp',kind:'frame',how:'zx',name:'Repère PW',refs:[],p:{},at:null,visible:true,fr:{o:[1,2,3],x:[1,0,0],y:[0,1,0],z:[0,0,1]},st:'ok',msg:''});
+    const d=asmLinkDirty(L);await asmLinksWrite();
+    const h=await mffFolder.getFileHandle('Axe.miniFusion');const b=JSON.parse(await (await h.getFile()).text());
+    return {d,bundle:b.bundle,rp:(b.doc.cgeo||[]).some(c=>c.id==='rp'),apres:asmLinkDirty(L)};
+  });
+  expect(r2).toEqual({d:true,bundle:1,rp:true,apres:false});
+  // la source change ailleurs : vérification → mise à jour
+  const r3=await page.evaluate(async()=>{
+    const h=await mffFolder.getFileHandle('Axe.miniFusion');const b=JSON.parse(await (await h.getFile()).text());
+    b.doc.cgeo=b.doc.cgeo.filter(c=>c.id!=='rp');
+    const w=await h.createWritable();await w.write(JSON.stringify(b));await w.close();
+    const r=await asmLinksCheck(false);
+    return {u:r.updated,rp:asmLinked()[0].doc.cgeo.some(c=>c.id==='rp')};
+  });
+  expect(r3).toEqual({u:['Axe'],rp:false});
+  expect(err).toEqual([]);
+});
+
 test('FAO : surfaçage sur l\'Axe → parcours → G-code',async({page})=>{
   const err=await demarrer(page);
   await ouvrirAxe(page);

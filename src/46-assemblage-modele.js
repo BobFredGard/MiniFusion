@@ -5,7 +5,9 @@
    Tout le code travaille sur UNE pièce globale `doc` (~650 accès) : on la garde, elle devient
    le COMPOSANT ACTIF. Un document sans enfants n'a pas d'assemblage (asm = null, fichier
    identique à avant) ; asmEnsure() le crée au premier composant ajouté.
-     asm.comps[] : {id, kind:'comp', name, doc, occ:[], link:null}
+     asm.comps[] : {id, kind:'comp', name, doc, occ:[], link:null|{…}, of?}
+                   link = composant lié à un fichier (47-composants-lies.js) ; of = id du
+                   composant lié dont il fait partie (sous-composant venu de son fichier).
                    doc = l'objet pièce complet ; celui du composant actif EST `doc`.
                    occ = occurrences ENFANTS DIRECTES de ce composant (placées dans son repère).
      occ         : {id, comp, name, fr:{o,x,y,z}, fixed, visible, align|null, st, msg}
@@ -75,7 +77,16 @@ function asmContains(a,b){
     const c=asmComp(id);return !!c&&c.occ.some(o=>go(o.comp));};
   return go(a);
 }
-function asmCanPlace(cid,ownerId){return !!asmComp(cid)&&!!asmComp(ownerId)&&!asmContains(cid,ownerId);}
+function asmLinkOwner(c){
+  // Composant lié qui possède c (lui-même s'il est lié, sinon celui dont il vient) ou null
+  if(!c)return null;if(c.link)return c;return c.of?asmComp(c.of):null;
+}
+function asmCanPlace(cid,ownerId){
+  const c=asmComp(cid),o=asmComp(ownerId);if(!c||!o||asmContains(cid,ownerId))return false;
+  // dans un composant lié, seulement ses propres sous-composants (son fichier les décrit)
+  const L=asmLinkOwner(o);
+  return !L||c.of===L.id;
+}
 /* ── repères (algèbre des déplacements rigides, tableaux [x,y,z]) ── */
 function asmApply(F,p){return [F.o[0]+F.x[0]*p[0]+F.y[0]*p[1]+F.z[0]*p[2],F.o[1]+F.x[1]*p[0]+F.y[1]*p[1]+F.z[1]*p[2],F.o[2]+F.x[2]*p[0]+F.y[2]*p[1]+F.z[2]*p[2]];}
 function asmRot(F,v){return [F.x[0]*v[0]+F.y[0]*v[1]+F.z[0]*v[2],F.x[1]*v[0]+F.y[1]*v[1]+F.z[1]*v[2],F.x[2]*v[0]+F.y[2]*v[1]+F.z[2]*v[2]];}
@@ -215,6 +226,7 @@ function asmNewComp(name,ownerId){
   asmPush('nouveau composant');
   const nm=name||('Composant '+asm.comps.length);
   const c={id:uid('cp'),kind:'comp',name:nm,doc:asmEmptyDoc(nm),occ:[],link:null};
+  const L=asmLinkOwner(owner);if(L)c.of=L.id; // créé dans un composant lié : il en fait partie
   asm.comps.push(c);
   const o=asmNewOccObj(c.id,nm+':1');
   owner.occ.push(o);
@@ -396,8 +408,16 @@ function asmSerial(){
   if(!asmHasContent())return null;
   asmSync();
   const comps=asm.comps.map(c=>({id:c.id,kind:'comp',name:c.name,doc:c.doc===doc?null:serialiseObj(c.doc,false),
-    occ:c.occ.map(asmOccSerial),link:c.link||null}));
+    occ:c.occ.map(asmOccSerial),link:asmLinkSerial(c.link,c),of:c.of||undefined}));
   return {v:2,name:asm.name,root:asm.root,active:asm.active,path:asm.path.slice(),mode:asmMode,comps};
+}
+function asmLinkSerial(l,c){
+  // Lien enregistré sans son état d'exécution (st, msg) ; pend : modifié ici et pas encore écrit
+  // dans sa source (l'empreinte de référence est recalculée à l'ouverture, 47-composants-lies)
+  if(!l||typeof l!=='object')return null;
+  const o={};Object.keys(l).forEach(k=>{if(k!=='st'&&k!=='msg'&&k!=='pend'&&k!=='base'&&k[0]!=='_')o[k]=l[k];});
+  if(c){try{if(asmLinkDirty(c))o.pend=true;}catch(e){}}
+  return o;
 }
 function asmTreeFromSerial(a,topDoc,mkDoc){
   // Arbre de composants depuis un bloc asm (v2, ou v1 de V0.6.0 migré) ; topDoc = document du
@@ -413,7 +433,7 @@ function asmTreeFromSerial(a,topDoc,mkDoc){
   if(Array.isArray(a.comps)&&a.comps.length){
     comps=a.comps.filter(c=>c&&typeof c.id==='string').map(c=>({id:c.id,kind:'comp',name:String(c.name||c.id),
       doc:c.doc==null?topDoc:mkDoc(c.doc),occ:(Array.isArray(c.occ)?c.occ:[]).filter(o=>o&&typeof o.id==='string').map(o=>occOf(o,'comp')),
-      link:(c.link&&typeof c.link==='object')?c.link:null}));
+      link:(c.link&&typeof c.link==='object')?c.link:null,of:typeof c.of==='string'?c.of:undefined}));
     root=comps.some(c=>c.id===a.root)?a.root:comps[0].id;
   }else if(Array.isArray(a.parts)&&a.parts.length&&Array.isArray(a.occ)){
     // V0.6.0 (v1) : un seul niveau, sans géométrie d'assemblage → racine vide portant les occurrences

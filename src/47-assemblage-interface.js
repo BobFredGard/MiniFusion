@@ -306,6 +306,15 @@ function asmCompsSection(t){
   h.title=all.length+' occurrence(s) de '+(asm.comps.length-1)+' composant(s) sous la racine';
   h.onclick=()=>{asmTreeOpen=!asmTreeOpen;renderTree();};
   t.appendChild(h);
+  // composants liés : vérifier les sources (et autoriser l'accès : il faut un clic)
+  const nl=asmLinked().length;
+  if(nl){
+    const w=asmLinked().some(L=>L.link.st==='warn');
+    const r=document.createElement('div');r.className='tnode';r.style.cursor='pointer';
+    r.innerHTML='<span>🔗</span><span class="nm">'+nl+' composant(s) lié(s)'+(w?' <span style="color:var(--warn)">⚠</span>':'')+'</span><span title="Vérifier les sources">🔄</span>';
+    r.title='Clic = vérifier les sources sur le disque (et autoriser l’accès au dossier de projets)';
+    r.onclick=()=>asmLinksCheck(true);t.appendChild(r);
+  }
   if(!asmTreeOpen)return;
   const P=asm.path,n=P.length;
   all.forEach(inst=>{
@@ -315,7 +324,7 @@ function asmCompsSection(t){
     const self=inst.path.length===n&&P.every((q,i)=>inst.path[i]===q);
     const badges=(o.fixed?' <span title="Fixée">📌</span>':'')+(o.align?' <span title="Alignée sur un repère">🔗</span>':'')+
       (o.st==='warn'?' <span style="color:var(--warn)" title="'+asmEsc(o.msg)+'">⚠</span>':'')+
-      (c.occ&&c.occ.length?' <span style="color:var(--muted)" title="Sous-composants">('+c.occ.length+')</span>':'');
+      (c.occ&&c.occ.length?' <span style="color:var(--muted)" title="Sous-composants">('+c.occ.length+')</span>':'')+asmLinkBadge(c);
     const d=document.createElement('div');
     d.className='tnode'+(direct&&asmMode==='asm'&&asmSelId===id?' sel':'')+(o.visible===false?' hidden':'');
     d.style.paddingLeft=(6+12*(inst.depth-1))+'px';
@@ -339,6 +348,7 @@ function asmCompsSection(t){
           {html:'🏷 Renommer le composant',fn:()=>asmRename(id)},
           {html:'🗑 Supprimer',fn:()=>asmAskDelete(id)});
       }
+      items.push(...asmLinkMenu(c)); // composants liés (47-composants-lies)
       try{mfPop({getBoundingClientRect:()=>({left:e.clientX,right:e.clientX+200,top:e.clientY-6,bottom:e.clientY-6,width:200,height:0})},items);}catch(err){}
     };
     t.appendChild(d);
@@ -374,6 +384,8 @@ function asmRenderProps(p){
   const cc=asmComp(o.comp)||{};
   H('📦 '+o.name);
   Note('Composant « '+cc.name+' » · '+asmCompOccs(o.comp).length+' occurrence(s)'+(cc.occ&&cc.occ.length?' · '+cc.occ.length+' sous-composant(s)':''));
+  if(cc.link)Note('🔗 Lié à '+(cc.link.rel||cc.link.name)+(asmLinkDirty(cc)?' · ✎ modifié ici (écrit à l’enregistrement)':'')+(cc.link.st==='warn'?' · ⚠ '+cc.link.msg:''));
+  else if(cc.of)Note('🔗 Fait partie d’un composant lié.');
   if(o.st==='warn')Note('⚠ '+o.msg);
   const f=v=>v.map(x=>(+x).toFixed(2).replace('.',',')).join(' ; ');
   Note('Position : '+f(o.fr.o)+' · Z : '+f(o.fr.z));
@@ -382,6 +394,7 @@ function asmRenderProps(p){
   if(cc.occ&&cc.occ.length)l.push(['🧩 Placer ses composants',()=>asmShow(asm.path.concat(o.id),'asm')]);
   l.push(['➕ Occurrence',asmCmdNewOcc],[o.fixed?'📌 Libérer':'📌 Fixer',()=>asmToggleFixed(o.id)],['🗑 Supprimer',()=>asmAskDelete(o.id),'danger']);
   Btns(l);
+  {const lm=asmLinkMenu(cc);if(lm.length)Btns(lm.map(x=>[x.html,x.fn]));}
 }
 function asmAfterLoad(){
   // Fin d'ouverture (deserialise) : instantanés des composants, puis mode Placer si le
@@ -394,11 +407,14 @@ function asmAfterLoad(){
     try{asmBuildSnapshots();}catch(e){}
     // asmEnter : un composant sans enfants (fichier V0.6.0 : la pièce active) → son porteur
     if(want){try{asmEnter();}catch(e){}}else{try{asmCtxDraw();renderTree();}catch(e){}}
+    // composants liés : sources vérifiées sans rien demander (l'autorisation demande un clic)
+    if(asmLinked().length){try{asmLinkRebase();asmLinksCheck(false);}catch(e){}}
   },0);
 }
 /* ── insérer un fichier .miniFusion (copie : il devient un composant du composant actif) ── */
 async function asmCmdInsert(){
   if(asmMode!=='asm')asmEnter();
+  if(MFF_FS)return asmCmdLinkInsert(); // Chrome / Edge : Lier ou Copier (47-composants-lies)
   let txt=null,name='';
   try{
     if(MFF_FS){
@@ -445,6 +461,7 @@ async function asmInsertText(txt,name){
     return {id:cm[c.id],kind:'comp',name:nm,doc:c.doc,link:null,occ:c.occ.map(o=>Object.assign({},o,{id:om[o.id],comp:cm[o.comp],
       align:o.align?Object.assign({},o.align,{src:{path:rp(o.align.src.path),cg:o.align.src.cg},dst:{path:rp(o.align.dst.path),cg:o.align.dst.cg}}):null}))};
   });
+  {const L=asmLinkOwner(owner);if(L)neufs.forEach(c=>{c.of=L.id;});} // inséré dans un composant lié : il en fait partie
   neufs.forEach(c=>asm.comps.push(c));
   // à droite de ce qui est déjà affiché
   let dx=0;try{const box=new THREE.Box3();asmSceneGet().getObjectByName('asmOcc').traverse(m=>{if(m.isMesh)box.expandByObject(m);});if(!box.isEmpty())dx=box.max.x+20;}catch(e){}

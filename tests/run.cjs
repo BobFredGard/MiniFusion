@@ -135,6 +135,7 @@ const SUITES = [
   "test_assemblage_modele",
   "test_composants_modele",
   "test_composants_corps",
+  "test_composants_lies",
   "test_construction_esquisse"
 ];
 const TIMEOUT = 20 * 60 * 1000;
