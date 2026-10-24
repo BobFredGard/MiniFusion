@@ -53,6 +53,8 @@ function asmCaptureActive(){
   });
   if(p._snap)asmSnapFree(p._snap);
   p._snap={items,exact:builtEngine==='exact',hash:(()=>{try{return docHash();}catch(e){return '';}})()};
+  // la pièce vient d'être rejouée : ses repères ont pu bouger → les alignements suivent
+  try{if(asmResolve()){dirty=true;autosave();}}catch(e){}
   if(!asmBuilding){try{asmCtxDraw();}catch(e){}if(asmMode==='asm'){try{asmDraw();}catch(e){}}}
 }
 function asmSnapFree(s){(s&&s.items||[]).forEach(it=>{try{it.geo.dispose();}catch(e){}});}
@@ -92,6 +94,7 @@ function asmDraw(){
     G.add(g);
   });
   G.updateMatrixWorld(true);
+  try{asmGizmoDraw();}catch(e){} // manipulateur de l'occurrence sélectionnée (48)
 }
 function asmCtxDraw(){
   // Mode pièce : les autres occurrences en fantômes, dans le repère de l'occurrence éditée
@@ -135,6 +138,7 @@ function asmEnter(){
     asm._force=true;builtVersion=-1;try{rebuild();}catch(e){}asm._force=false;
   }
   asmBuildSnapshots();
+  asmResolve();
   asmMode='asm';
   try{document.body.setAttribute('data-asm','1');}catch(e){}
   if(!asmSelId||!asmOcc(asmSelId))asmSelId=asmEditOcc&&asmOcc(asmEditOcc)?asmEditOcc:null;
@@ -174,6 +178,7 @@ function asmPickAt(e){
   return h?h.object.userData.occ:null;
 }
 function asmClick(e){
+  if(asmAlignPickAt(e))return; // commande Aligner : clic = repère (48)
   const id=asmPickAt(e);
   asmSelId=id;
   asmDraw();renderTree();renderProps();
@@ -191,6 +196,7 @@ function asmKey(e){
   if(ctrl&&k==='z'&&!e.shiftKey){e.preventDefault();asmUndo();return true;}
   if(ctrl&&(k==='y'||(k==='z'&&e.shiftKey))){e.preventDefault();asmRedo();return true;}
   if((e.key==='Delete'||e.key==='Backspace')&&asmSelId){e.preventDefault();asmAskDelete(asmSelId);return true;}
+  if(e.key==='Escape'&&asmAlign){asmAlignCancel();return true;}
   if(e.key==='Escape'){if(asmSelId){asmSelId=null;asmDraw();renderTree();renderProps();}return true;}
   return false;
 }
@@ -277,6 +283,7 @@ function asmRenderProps(p){
   const H=t=>p.appendChild(mk('div','pnl-h',t));
   const Note=t=>p.appendChild(mk('div','pnl-note',t));
   const Btns=list=>{const d=mk('div','pnl-btns');list.forEach(([t,fn,cls])=>{const b=mk('button',cls||null,t);b.onclick=fn;d.appendChild(b);});p.appendChild(d);return d;};
+  if(typeof asmAlign!=='undefined'&&asmAlign){asmAlignProps(p);return;} // commande Aligner (48)
   const o=asmOcc(asmSelId);
   if(!o){
     H('🧩 Assemblage');

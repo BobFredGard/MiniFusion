@@ -74,6 +74,11 @@ const vm=require('vm');
     att(oA.st==='warn'&&oB.st==='warn'&&/circulaire/.test(oA.msg),'cycle : les deux ⚠');
     att(JSON.stringify(oA.fr)===keep,'cycle : position mémorisée');
     oA.align=null;oB.align={src:'fb',dst:{occ:oA.id,cg:'fa'},flip:false,rz:0,off:[0,0,0]};asmResolve();
+    // ── rotation de placement (48) : +90° autour de Z de l'assemblage, pivot = origine de l'occurrence
+    const Rz=asmRotFr({o:[5,0,0],x:[1,0,0],y:[0,1,0],z:[0,0,1]},[5,0,0],[0,0,1],Math.PI/2);
+    V(Rz.o,[5,0,0],'rotation : pivot fixe');V(Rz.x,[0,1,0],'rotation +90° Z : X → Y');V(Rz.y,[-1,0,0],'rotation +90° Z : Y → −X');
+    const Rp=asmRotFr({o:[5,0,0],x:[1,0,0],y:[0,1,0],z:[0,0,1]},[0,0,0],[0,0,1],Math.PI);
+    V(Rp.o,[-5,0,0],'rotation autour d un autre pivot : l origine tourne');
     // ── sauvegarde / ouverture ──
     const js1=serialise();
     const o1=JSON.parse(js1);
