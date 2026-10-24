@@ -66,6 +66,8 @@ function parHolders(){
   (doc.features||[]).forEach(f=>{if(!f||f.repeatId)return;out.push({h:f,f}); // instances de répétition : elles suivent leur source
     if(f.thread&&typeof f.thread==='object')out.push({h:f.thread,f});
     (Array.isArray(f.edges)?f.edges:[]).forEach(s=>{if(s&&typeof s==='object')out.push({h:s,f});});});
+  // géométrie de construction : distances, angles, décalages (cg.p) — 78-construction-modele.js
+  (doc.cgeo||[]).forEach(c=>{if(c&&c.p&&typeof c.p==='object')out.push({h:c.p,f:c});});
   return out;
 }
 function parHolderVal(h,k){const v=+h[k];return k==='distance'?Math.abs(v):v;}

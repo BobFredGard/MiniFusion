@@ -132,6 +132,9 @@ function rebuildInner(projPass){
   // « Vers un objet » : résolution de la distance (antériorité) AVANT les hôtes de faces.
   (doc.features||[]).forEach(f=>{if(f.type==='extrude'&&f.upto){try{resolveExtrudeUpto(f);}catch(e){}}});
   try{resolveAllSketchHosts();}catch(e){}
+  // Géométrie de construction (78) : résolue dans l'ordre timeline, elle recopie sa base dans
+  // les esquisses posées dessus — qui peuvent porter à leur tour des esquisses sur faces.
+  try{if(typeof cgResolveAll==='function'&&cgResolveAll())resolveAllSketchHosts();}catch(e){}
   // 2026-10-15-009 : les INSTANCES de symétrie/répétition suivent leurs sources pendant
   // le rejeu (elles n'étaient régénérées qu'à l'édition manuelle de la source : une
   // source déplacée par une projection ou une face porteuse laissait la copie périmée).

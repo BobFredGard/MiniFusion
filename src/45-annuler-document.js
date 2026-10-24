@@ -28,6 +28,7 @@ function docSnap(){
     const c=Object.assign({},doc);
     c.sketches=(doc.sketches||[]).map(s=>{const o=Object.assign({},s);delete o._refs;return o;});
     c.features=(doc.features||[]).map(({_mesh,_m,...r})=>r);
+    c.cgeo=(doc.cgeo||[]).map(cgClean);
     return JSON.stringify(c);
   }catch(e){return null;}
 }
@@ -55,6 +56,7 @@ function docApplySnap(snap){
   Object.keys(d).forEach(k=>{doc[k]=d[k];});
   if(!Array.isArray(doc.sketches))doc.sketches=[];
   if(!Array.isArray(doc.features))doc.features=[];
+  if(!Array.isArray(doc.cgeo))doc.cgeo=[];
   sel={kind:null,id:null};
   if(typeof treeSel!=='undefined')treeSel=[];
   try{if(filMode)exitFilletMode(true);}catch(e){}

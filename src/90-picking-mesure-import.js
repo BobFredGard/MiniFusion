@@ -1404,7 +1404,7 @@ function meshesToOBJ(meshes){
 function serialise(pretty){
   // pretty=1 (défaut) pour l'export fichier lisible ; compact pour l'autosave local
   // (~40 % de volume en moins à sérialiser et à écrire à chaque sauvegarde).
-  return JSON.stringify({app:'MiniFusion',v:1,name:doc.name,tint:doc.tint||0,entNames:doc.entNames||null,originVis,view:collectView(),bodyVis:doc.bodyVis||{},bodies:(doc.bodies||[]).map(e=>({id:e.id,name:e.name,c:e.c,color:e.color,op:e.op,gl:e.gl,open:e.open!==false})),bodySeq:doc.bodySeq||0,activeBody:doc.activeBody||null,fold:{sk:!!(doc.fold&&doc.fold.sk),origin:!!(doc.fold&&doc.fold.origin)},fao:doc.fao||null,mep:doc.mep||null,params:(doc.params||[]).map(p=>({name:p.name,expr:p.expr,value:p.value})),sel:{kind:sel.kind,id:sel.id},sketches:doc.sketches.map(s=>{const c=Object.assign({},s);delete c._refs;return c;}),features:doc.features.map(({_mesh,_m,...r})=>r)},null,pretty===false?null:2);
+  return JSON.stringify({app:'MiniFusion',v:1,name:doc.name,tint:doc.tint||0,entNames:doc.entNames||null,originVis,view:collectView(),bodyVis:doc.bodyVis||{},bodies:(doc.bodies||[]).map(e=>({id:e.id,name:e.name,c:e.c,color:e.color,op:e.op,gl:e.gl,open:e.open!==false})),bodySeq:doc.bodySeq||0,activeBody:doc.activeBody||null,fold:{sk:!!(doc.fold&&doc.fold.sk),origin:!!(doc.fold&&doc.fold.origin)},fao:doc.fao||null,mep:doc.mep||null,params:(doc.params||[]).map(p=>({name:p.name,expr:p.expr,value:p.value})),sel:{kind:sel.kind,id:sel.id},sketches:doc.sketches.map(s=>{const c=Object.assign({},s);delete c._refs;return c;}),features:doc.features.map(({_mesh,_m,...r})=>r),cgeo:(doc.cgeo||[]).map(cgClean)},null,pretty===false?null:2);
 }
 function docHash(){
   // Empreinte du paramétrique rejouable (imports éphémères exclus : non persistés).
@@ -1414,7 +1414,8 @@ function docHash(){
     const stripSketch=sk=>{const c=Object.assign({},sk);delete c._refs;delete c._health;delete c._audit;return c;};
     const stripFeat=({_mesh,_m,...r})=>r;
     if(_hashMemo&&_hashVer===_docVersion)return _hashMemo; // même version → empreinte déjà calculée
-    const s=JSON.stringify({s:doc.sketches.map(stripSketch),f:(doc.features||[]).filter(f=>f.type!=='import').map(stripFeat),t:doc.tint||0});
+    const stripCg=c=>{const o=cgClean(c);delete o.st;delete o.msg;delete o.ai;return o;};
+    const s=JSON.stringify({s:doc.sketches.map(stripSketch),f:(doc.features||[]).filter(f=>f.type!=='import').map(stripFeat),t:doc.tint||0,...((doc.cgeo&&doc.cgeo.length)?{c:doc.cgeo.map(stripCg)}:{})}); // construction : seulement si présente (empreinte des anciens documents inchangée)
     let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}
     _hashMemo=(h>>>0).toString(36)+'_'+s.length;_hashVer=_docVersion;return _hashMemo;
   }catch(e){return 'x';}
@@ -1532,7 +1533,7 @@ addEventListener('beforeunload',()=>{autosaveFlush();});
 addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')autosaveFlush();});
 async function deserialise(json,opts){
   try{if(typeof viewFadeOut==='function')viewFadeOut();}catch(e){} // 2026-10-16-015 : fondu à l'ouverture
-  const o=JSON.parse(json);doc={name:o.name||'Sans titre',tint:o.tint||0,entNames:o.entNames||null,sketches:o.sketches||[],features:o.features||[],bodyVis:o.bodyVis||{},bodies:Array.isArray(o.bodies)?o.bodies.filter(e=>e&&typeof e.id==='string').map(e=>({id:e.id,name:String(e.name||e.id),c:Array.isArray(e.c)&&e.c.length===3?e.c.slice():null,color:isFinite(+e.color)?+e.color:undefined,op:(e.op>0&&e.op<1)?+e.op:undefined,gl:(e.gl>0&&e.gl<1)?+e.gl:undefined,open:e.open!==false})):[],
+  const o=JSON.parse(json);doc={name:o.name||'Sans titre',tint:o.tint||0,entNames:o.entNames||null,sketches:o.sketches||[],features:o.features||[],cgeo:Array.isArray(o.cgeo)?o.cgeo.filter(cgValid):[],bodyVis:o.bodyVis||{},bodies:Array.isArray(o.bodies)?o.bodies.filter(e=>e&&typeof e.id==='string').map(e=>({id:e.id,name:String(e.name||e.id),c:Array.isArray(e.c)&&e.c.length===3?e.c.slice():null,color:isFinite(+e.color)?+e.color:undefined,op:(e.op>0&&e.op<1)?+e.op:undefined,gl:(e.gl>0&&e.gl<1)?+e.gl:undefined,open:e.open!==false})):[],
     bodySeq:o.bodySeq>0?Math.floor(o.bodySeq):1,activeBody:(typeof o.activeBody==='string')?o.activeBody:null,fold:(o.fold&&typeof o.fold==='object')?{sk:!!o.fold.sk,origin:!!o.fold.origin}:{},fao:o.fao||null,mep:o.mep||null,params:Array.isArray(o.params)?o.params.filter(p=>p&&typeof p.name==='string'):[]};
   // Les numéros de corps ne sont jamais réemployés : le compteur repart au-delà
   // du plus grand Corps N déjà connu (anciens fichiers sans bodySeq : on le déduit).
@@ -1558,6 +1559,7 @@ async function deserialise(json,opts){
     if(o.sel.kind==='plane'&&PLANES[o.sel.id])sel={kind:'plane',id:o.sel.id};
     else if(o.sel.kind==='sketch'&&doc.sketches.some(s=>s.id===o.sel.id))sel={kind:'sketch',id:o.sel.id};
     else if(o.sel.kind==='feature'&&doc.features.some(f=>f.id===o.sel.id))sel={kind:'feature',id:o.sel.id};
+    else if(o.sel.kind==='cg'&&cgGet(o.sel.id))sel={kind:'cg',id:o.sel.id};
     else if(o.sel.kind==='body'&&(doc.bodies||[]).some(e=>e.id===o.sel.id))sel={kind:'body',id:o.sel.id};
   }
   // Imports STEP/STL : la fonction RESTE (même id → corps, enlèvements et FAO

@@ -24,7 +24,8 @@ const SUITES = [
   'test_repeat_circ_tour',
   'test_esquisse_angle',
   'test_esquisse_transparence',
-  'test_esquisse_face_conges'
+  'test_esquisse_face_conges',
+  'test_construction_modele'
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {
