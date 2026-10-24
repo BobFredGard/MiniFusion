@@ -232,8 +232,11 @@ function renderTree(){
     });
   }
   cgTreeRows(t); // 📐 Construction (79)
-  if(gfold('sk','✏️ Esquisses ('+doc.sketches.length+')')){
-    doc.sketches.forEach(s=>node('✏️',s.name+' · '+sketchFaceLabel(s)+' · '+s.entities.length+' traits','sketch',s.id,s.visible,()=>openSketch(s.id)));
+  // Les esquisses des INSTANCES de répétition (« … (rép 3) ») sont dérivées et régénérées :
+  // elles ne s'éditent pas, l'arbre ne les montre pas (on modifie l'esquisse source).
+  const skVis=doc.sketches.filter(s=>!skIsRepCopy(s));
+  if(gfold('sk','✏️ Esquisses ('+skVis.length+')')){
+    skVis.forEach(s=>node('✏️',s.name+' · '+sketchFaceLabel(s)+' · '+s.entities.length+' traits','sketch',s.id,s.visible,()=>openSketch(s.id)));
   }
   if(tlMark!=null){
     const mi=tlIdx();
@@ -380,6 +383,11 @@ function renderTree(){
 // Fonction répétable : extrusion ou congé/chanfrein exact. NI une répétition, NI une
 // instance de répétition (une instance est déjà générée : la répéter empilerait des
 // clones sans sens, et la liste à cocher la proposait).
+function skIsRepCopy(sk){
+  // Esquisse utilisée UNIQUEMENT par des instances de répétition (copie générée) → true
+  const F=doc.features||[];
+  return !!sk&&F.some(f=>f.repeatId&&f.sketchId===sk.id)&&!F.some(f=>!f.repeatId&&f.sketchId===sk.id);
+}
 function repCanFeature(id){
   const f=doc.features.find(x=>x.id===id);
   if(!f)return false;

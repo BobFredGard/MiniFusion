@@ -57,6 +57,7 @@ function tlbSteps(){
     S.push({kind:'cg',id:c.id,o:c,key,sub:k,warn:c.st==='warn'});
   });
   (doc.sketches||[]).forEach((sk,k)=>{
+    if(skIsRepCopy(sk))return; // copie d'une répétition : comme ses fonctions d'instance, hors du fil
     const h=tlHostFeatureOfSketch(sk);let key;
     if(h&&h.sketchId===sk.id)key=4*at(h.id)+1;                                  // consommée : juste avant sa fonction
     else if(sk.plane==='CG'&&sk.cg&&cgKey[sk.cg.id]!=null)key=cgKey[sk.cg.id];    // sur un élément de construction : après lui
