@@ -169,6 +169,56 @@ test('plan de construction décalé → esquisse dessus → extrusion au bon end
   expect(err).toEqual([]);
 });
 
+test('assemblage : deux pièces, aligner un repère, la pièce suit une modification',async({page})=>{
+  const err=await demarrer(page);
+  // Géométrie des pièces par script (le tracé à la souris est couvert plus haut) ; les
+  // commandes d'assemblage, elles, sont cliquées dans le ruban, l'arbre et le panneau.
+  const bloc=(w,h,d)=>page.evaluate(([w,h,d])=>{
+    newSketch('XY');const sk=skEdit;const P=[[0,0],[w,0],[w,h],[0,h]].map(([x,y])=>addPoint(sk,x,y));
+    for(let i=0;i<4;i++)sk.entities.push({id:'L'+i,t:'line',p1:P[i],p2:P[(i+1)%4]});
+    closeSketch(true);
+    addFeature({id:uid('ex'),type:'extrude',name:'Bloc',sketchId:sk.id,op:'add',distance:d});markDirty();rebuild();
+  },[w,h,d]);
+  const pret=()=>page.waitForFunction(()=>builtEngine==='exact'&&rebuildDepth===0&&builtVersion===_docVersion&&!!(occLive&&occLive.shape),null,{timeout:60000});
+  // Pièce 1 : socle 40 × 30 × 20, repère sur la face du DESSUS (référence de face)
+  await bloc(40,30,20);await pret();
+  await page.evaluate(()=>{
+    doc.name='Socle';
+    const fs=[];const x=new occt.TopExp_Explorer_2(occLive.shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,occt.TopAbs_ShapeEnum.TopAbs_SHAPE);
+    while(x.More()){fs.push(occt.TopoDS.Face_1(x.Current()));x.Next();}x.delete();
+    const top=fs.map(f=>occFaceRefAny(f)).filter(r=>r&&r.n&&r.n[2]>0.99).sort((a,b)=>b.pos[2]-a.pos[2])[0];
+    cgNew('frame','face',[{k:'face',ref:top,name:'Dessus'}],{});markDirty();rebuild();
+  });
+  await pret();
+  // Ruban « Pièce » : nouvelle pièce, on est dedans
+  await ruban(page,'Pièce').click();
+  await page.waitForFunction(()=>asm&&asm.parts.length===2&&asmMode==='part'&&doc.features.length===0);
+  await bloc(10,10,60);await pret();
+  await page.evaluate(()=>{cgNew('frame','zx',[{k:'o',id:'O'},{k:'o',id:'Z'}],{dx:5,dy:5});markDirty();rebuild();});
+  await pret();
+  // Vue d'assemblage
+  await ruban(page,'Assemblage').click();
+  await page.waitForFunction(()=>asmMode==='asm'&&asmScene.getObjectByName('asmOcc').children.length===2);
+  await page.locator('#tree .tnode',{hasText:'Pièce 2:1'}).click();
+  await page.locator('#props button',{hasText:'Aligner un repère'}).click();
+  await page.locator('#props button',{hasText:'Repère 1'}).first().click();   // repère de la pièce à poser
+  await page.locator('#props button',{hasText:'Socle:1 › Repère 1'}).click(); // repère cible
+  await page.locator('#props button',{hasText:'Valider'}).click();
+  const pied=()=>page.evaluate(()=>{const o=asm.occ.find(q=>q.name==='Pièce 2:1');return asmCompose(o.fr,asmPartFrame(o.part,o.align&&o.align.src)).o;});
+  let o=await pied();
+  expect(o[0]).toBeCloseTo(20,6);expect(o[1]).toBeCloseTo(15,6);expect(o[2]).toBeCloseTo(20,6);
+  // Double-clic sur le socle dans l'arbre → on l'édite (hauteur 35), retour : la pièce 2 suit
+  await page.locator('#tree .tnode',{hasText:'Socle:1'}).dblclick();
+  await page.waitForFunction(()=>asmMode==='part'&&doc.name==='Socle');
+  await page.evaluate(()=>{const f=doc.features.find(x=>x.type==='extrude');docPushUndo('hauteur');f.distance=35;markDirty();rebuild();});
+  await pret();
+  await ruban(page,'Assemblage').click();
+  await page.waitForFunction(()=>asmMode==='asm');
+  o=await pied();
+  expect(o[2]).toBeCloseTo(35,6);
+  expect(err).toEqual([]);
+});
+
 test('FAO : surfaçage sur l\'Axe → parcours → G-code',async({page})=>{
   const err=await demarrer(page);
   await ouvrirAxe(page);

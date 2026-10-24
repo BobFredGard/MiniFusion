@@ -1699,6 +1699,34 @@ function bundleReport(){
       +' — « Tout régénérer » une fois, puis re-enregistrer le fichier.';
   }catch(e){}
 }
+async function bundleStoreCaches(b){
+  // Caches d'un bundle inséré dans un assemblage (47) : trajectoires FAO (IndexedDB) et sources
+  // des imports — même logique que le début de bundleRestore, volontairement NON partagée :
+  // une attente asynchrone de plus avant deserialise change l'ordre avec la restauration des
+  // imports (test_conge_sur_conge le voit). → nombre de trajectoires gardées.
+  const moves=b.moves||{};
+  // Seulement les trajectoires des opérations du document (un ancien fichier
+  // embarquait celles de TOUS les documents du navigateur d'origine : ~70 Mo).
+  const miens=new Set();
+  try{
+    // pièce active + autres pièces d'un assemblage (V0.6.0)
+    const frs=[b.doc&&b.doc.fao].concat(((b.doc&&b.doc.asm&&b.doc.asm.parts)||[]).map(p=>p&&p.doc&&p.doc.fao));
+    frs.forEach(function(fr){(((fr&&fr.setups)||[])).forEach(function(st){
+      ((st&&st.ops)||[]).forEach(function(op){ miens.add('faoMoves:'+((st&&st.id)||'_')+':'+((op&&op.id)||'_')); });
+    });});
+  }catch(e){}
+  const ancienFao=!!(b.doc.fao&&typeof b.doc.fao==='object'&&!Array.isArray(b.doc.fao.setups)); // pré-posages : ids inconnus ici
+  const ks=Object.keys(moves).filter(function(k){return ancienFao||miens.has(k);});
+  if(ks.length&&faoMovesReady()){
+    for(let i=0;i<ks.length;i++){ try{ await idbSet(ks[i],moves[ks[i]]); }catch(e){} }
+  }
+  // Sources des imports AVANT le document : deserialise les rejoue aussitôt.
+  const im=(b.imports&&typeof b.imports==='object')?b.imports:{};
+  for(const k of Object.keys(im)){
+    try{if(typeof im[k]==='string')await importSrcPut(k,importB64ToU8(im[k]));}catch(e){}
+  }
+  return ks.length;
+}
 async function bundleRestore(txt,opts){
   // Trajectoires d'abord (IndexedDB), document ensuite (deserialise relance la
   // lecture), puis mémoire amorcée : fonctionne aussi SANS IndexedDB.

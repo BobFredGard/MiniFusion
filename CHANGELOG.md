@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**310 versions**, de `2026-09-28b` à `V0.5.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**311 versions**, de `2026-09-28b` à `V0.6.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4610,3 +4610,13 @@ Demande : « pour l'arborescence et le fil des opérations, un bandeau horizonta
 - Masqué hors de l'espace CAO et pendant l'édition d'une esquisse ; suit chaque rejeu et chaque changement de sélection (`renderTimeline` en fin de `renderTree`). L'ancien panneau `#timeline` à puces est remplacé.
 
 Tests : nouveau `test_timeline_bandeau` (ordre des étapes, marqueur, glisser). Suite complète 118/118 après fusion dans `main` ; vérifié dans le navigateur (5 thèmes par la session qui l'a développé, puis après fusion avec un plan de construction, une esquisse et une extrusion).
+
+## V0.6.0 - Assemblage : pièces, occurrences, placement par repères
+Demande : « implémenter un assemblage » (étapes 2 à 4). Choix : pièces dans le même fichier, placement par repères et manipulateur (pas encore de liaisons ni de solveur), sous-assemblages prévus dans le format.
+- **Pièce active** (`src/46-assemblage-modele.js`) : le code travaille sur une pièce globale `doc` (~650 accès) ; elle reste, et devient la pièce active. `asm` porte les pièces (documents complets) et les occurrences (position, fixée, visible, alignement). Changer de pièce ferme les modes SANS `docResetEmpty` (qui supprime `doc.fao`), range annuler / marqueur temps / sélection de la pièce, bascule `doc`, rejoue ; à la première activation, mêmes réparations qu'à l'ouverture d'un fichier. Points de contrôle du noyau préfixés par la pièce.
+- **Fichier** : la pièce active reste au premier niveau (un fichier d'une seule pièce est strictement identique, une version antérieure ouvre la pièce active), les autres pièces et les occurrences dans un bloc `asm`. Bundle : trajectoires FAO et imports de toutes les pièces. L'insertion stocke ceux du fichier inséré (`bundleStoreCaches`), sans toucher à `bundleRestore` : y ajouter une attente asynchrone changeait l'ordre avec la restauration des imports STEP (`test_conge_sur_conge` passait de 143 à 155 arêtes) — course préexistante, à examiner.
+- **Vue d'assemblage** (`src/47-assemblage-interface.js`) : scène séparée (celle de la pièce n'est jamais touchée), instantanés d'affichage de chaque pièce (géométries clonées en fin de rejeu, refaites en exact quand le noyau est prêt), arbre des occurrences, panneau, ruban réduit au groupe Assemblage. En mode pièce : autres occurrences en fantômes, fil d'Ariane. Insérer un fichier (copie de ses pièces, alerte si déjà inséré), nouvelle pièce, nouvelle occurrence, fixer, renommer, supprimer, Ctrl+Z dédié. FAO / PLAN restent des espaces de pièce.
+- **Placement** (`src/48-assemblage-placement.js`) : manipulateur 3D (translation et rotation le long des axes de l'assemblage, pas 1 mm / 5°, Maj = libre, un geste = une annulation), position et rotations ±90° au panneau, **Aligner** un repère de la pièce sur l'origine ou sur un repère d'une autre occurrence (retourner, rotation, décalage), associatif : recalculé à chaque rejeu d'une pièce.
+- **Arbre et bandeau de timeline** : les esquisses des instances de répétition (« … (rép 3) ») ne sont plus listées (retour utilisateur).
+
+Tests : `test_assemblage_modele` (fichier d'une pièce inchangé, bascule de pièce qui garde FAO / PLAN / construction / annuler, aller-retour du fichier, alignement avec retournement / rotation / décalage au µm, associativité, cycle, suppression, annuler, rotations du placement ; aussi en suite rapide) ; parcours Playwright « deux pièces, aligner un repère, la pièce suit une modification », rejoué à la main dans Chromium (pied posé en 20 ; 15 ; 20, puis 35 après le socle rehaussé). Suite complète 119/119. Vérifié dans le navigateur : vue d'assemblage, contexte en mode pièce, manipulateur (+12 mm, Ctrl+Z / Ctrl+Y), enregistrement et réouverture, insertion d'`Axe.miniFusion` (55 faces, 78 916,27 mm³), FAO depuis l'assemblage.

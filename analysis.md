@@ -1,6 +1,6 @@
 # Analyse du projet MiniFusion
 
-*État au 2026-10-24 — version `V0.5.1`.*
+*État au 2026-10-24 — version `V0.6.0`.*
 
 ## Nature du projet
 
@@ -12,7 +12,7 @@ Le noyau géométrique exact est **OpenCascade (OCCT) compilé en WebAssembly**.
 
 | Élément | Rôle |
 |---|---|
-| `src/*.js` | Sources, **57 fichiers** (~48 300 lignes), concaténés dans l'ordre numérique par `build.js`. |
+| `src/*.js` | Sources, **60 fichiers** (~49 300 lignes), concaténés dans l'ordre numérique par `build.js`. |
 | `PostPro/*.js` | Fiches machines (Fagor 8065, Siemens 630 et 1520), insérées par `build.js` après `88-fao-60-postprocesseurs.js`. Les `.cps` Autodesk restent locaux. |
 | `fusion_mvp.html` | Livrable généré. **Ne jamais l'éditer à la main.** |
 | `build.js` | Concaténation + bandeaux de section ; `--check` échoue si le livrable est périmé. |
@@ -29,6 +29,7 @@ Le noyau géométrique exact est **OpenCascade (OCCT) compilé en WebAssembly**.
 - `00` : métadonnées (`APP_VER`, `CACHE_VER`), utilitaires, thème, caches.
 - `10`–`20` : scène three.js, repère, rejeu paramétrique, noyau exact OCCT et repli maillage.
 - `30`–`45` : marqueur de temps, arbre/propriétés, bandeau de timeline (`41`), annuler/rétablir documentaire.
+- `46`–`48` : assemblage (modèle et pièce active, vue d'assemblage, placement). `doc` reste la pièce globale : c'est la **pièce active**, l'assemblage vit à côté (`asm`).
 - `49`–`60` : esquisse 2D, solveur Levenberg-Marquardt, paramètres, trim et interactions souris.
 - `78`–`79` : géométrie de construction (modèle et résolution, puis affichage, saisie, panneau).
 - `70`–`87` : fonctions 3D (extrusion, révolution, perçage, combiner, congés, chanfreins, faces, dépouille, coque).

@@ -312,3 +312,65 @@ function asmAfterLoad(){
     if(want){try{asmEnter();}catch(e){}}else{try{asmCtxDraw();renderTree();}catch(e){}}
   },0);
 }
+/* ── insérer un fichier .miniFusion (ses pièces deviennent des pièces de l'assemblage) ── */
+async function asmCmdInsert(){
+  if(asmMode!=='asm')asmEnter();
+  let txt=null,name='';
+  try{
+    if(MFF_FS){
+      const o={types:MFF_TYPES,multiple:false};if(mffFolder)o.startIn=mffFolder;
+      const [h]=await window.showOpenFilePicker(o);if(!h)return;
+      const f=await h.getFile();txt=await f.text();name=f.name;
+    }else{
+      const f=await new Promise(res=>{const i=document.createElement('input');i.type='file';i.accept='.miniFusion,.json';i.onchange=()=>res(i.files&&i.files[0]);i.click();});
+      if(!f)return;txt=await f.text();name=f.name;
+    }
+  }catch(e){if(!(e&&e.name==='AbortError'))alert('Lecture impossible : '+(e&&e.message||e));return;}
+  if(txt!=null)await asmInsertText(txt,name);
+}
+async function asmInsertText(txt,name){
+  // Copie les pièces d'un projet (pièce seule ou assemblage) : nouvelles pièces et
+  // occurrences, placées à droite de l'existant ; les alignements internes au fichier
+  // suivent, ceux sur SON origine deviennent une position libre.
+  let b;try{b=JSON.parse(txt);}catch(e){alert('Fichier illisible.');return false;}
+  const top=(b&&b.bundle===1&&b.doc)?b.doc:b; // ancien .minifusion.json : document nu
+  if(!top||!Array.isArray(top.features)){alert('Ce n’est pas un projet MiniFusion.');return false;}
+  const srcParts=(top.asm&&Array.isArray(top.asm.parts)&&top.asm.parts.length)?top.asm.parts:[{id:'_top',name:top.name,doc:null}];
+  // Déjà inséré ? Mêmes identifiants de fonctions qu'une pièce présente : les caches FAO
+  // (clés par posage / opération) seraient partagés entre deux pièces indépendantes.
+  const ids=new Set();srcParts.forEach(sp=>((sp.doc==null?top:sp.doc).features||[]).forEach(f=>{if(f&&f.id)ids.add(f.id);}));
+  asmEnsure();
+  const dup=ids.size&&asm.parts.some(p=>(p.doc.features||[]).some(f=>ids.has(f.id)));
+  if(dup&&!confirm('Ce fichier semble déjà présent dans l’assemblage (mêmes fonctions).\nLe réinsérer crée une pièce INDÉPENDANTE, dont les parcours FAO partagent leur cache avec l’autre.\nPour répéter la même pièce, utilisez plutôt « Occurrence ».\n\nInsérer quand même ?'))return false;
+  if(b&&b.bundle===1){try{await bundleStoreCaches(b);}catch(e){}}
+  asmPush('insérer « '+(name||top.name||'fichier')+' »');
+  const base=String(name||top.name||'Pièce').replace(/\.(miniFusion|minifusion|json)$/,'').replace(/\.minifusion$/i,'');
+  const map={},neuves=[];
+  srcParts.forEach(sp=>{
+    const nm=srcParts.length>1?String(sp.name||base):base;
+    const d=docFromSerial(sp.doc==null?top:sp.doc);d.name=nm;
+    const p={id:uid('pc'),kind:'part',name:nm,doc:d};
+    map[sp.id]=p.id;asm.parts.push(p);neuves.push(p);
+  });
+  const box=new THREE.Box3();asmSceneGet().getObjectByName('asmOcc').traverse(m=>{if(m.isMesh)box.expandByObject(m);});
+  const dx=box.isEmpty()?0:box.max.x+20;
+  const srcOcc=(top.asm&&Array.isArray(top.asm.occ)&&top.asm.occ.length)?top.asm.occ:[{id:'_o',part:'_top',name:base+':1',fr:asmFr0(),align:null}];
+  const occMap={},nouv=[];
+  srcOcc.forEach(so=>{
+    const pid=map[so.part];if(!pid)return;
+    const fr=(so.fr&&Array.isArray(so.fr.o))?JSON.parse(JSON.stringify(so.fr)):asmFr0();
+    const o={id:uid('oc'),part:pid,name:String(so.name||(asmPart(pid).name+':1')),fr,fixed:false,visible:so.visible!==false,
+      align:so.align?JSON.parse(JSON.stringify(so.align)):null,st:'ok',msg:''};
+    occMap[so.id]=o.id;nouv.push(o);
+  });
+  nouv.forEach(o=>{
+    if(o.align){const t=o.align.dst&&o.align.dst.occ;if(t&&occMap[t])o.align.dst.occ=occMap[t];else o.align=null;}
+    o.fr.o[0]+=dx;asm.occ.push(o);
+  });
+  try{asmBuildSnapshots();}catch(e){}
+  asmResolve();
+  asmSelId=nouv.length?nouv[0].id:null;
+  asmNotify();
+  try{faceEl.textContent='Inséré : '+neuves.length+' pièce(s), '+nouv.length+' occurrence(s) depuis « '+(name||base)+' ». Placez-les ou alignez un repère.';}catch(e){}
+  return true;
+}

@@ -1,13 +1,14 @@
 # MiniFusion
 
-**CAO paramétrique, FAO et mise en plan dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2, G-code et planches cotées ISO. On ouvre la page et on travaille : il n'y a ni installation ni compte.
+**CAO paramétrique, assemblage, FAO et mise en plan dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2, G-code et planches cotées ISO. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.5.1** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.6.0** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Sommaire
 
 - [Interface](#interface)
 - [CAO](#cao) : esquisse, fonctions 3D, corps, mesures, fichiers
+- [Assemblage](#assemblage) : pièces, occurrences, placement par repères
 - [FAO](#fao) : posage, brut, opérations, simulation, 3+2, G-code
 - [PLAN](#plan) : planches, vues, coupes, cotation, sorties
 - [Souris et clavier](#souris-et-clavier)
@@ -81,6 +82,17 @@ Historique rejouable, arborescence et marqueur de temps. **Bandeau de timeline**
 - **Mesures** : face à face, Ø, entraxe, et mesure entre 2 arêtes avec `Ctrl+clic`.
 - **Repère pièce** : point central, axes et 3 petits plans cliquables (esquisse dessus) ; chaque élément se masque séparément.
 - **Fichiers** : import STEP / STL ; export STEP / STL / OBJ (aussi pour un seul corps) ; projet **`.miniFusion`** (document, parcours FAO, planches) ; sauvegarde locale automatique.
+
+## Assemblage
+
+Un fichier peut contenir **plusieurs pièces**, placées dans une **vue d'assemblage** (groupe **Assemblage** du ruban). Un fichier d'une seule pièce reste exactement comme avant.
+- **Pièce** : nouvelle pièce, on entre aussitôt dedans. **Insérer** : copie les pièces d'un autre fichier `.miniFusion` (pièce seule ou assemblage). **Occurrence** : la même pièce, une fois de plus.
+- **Éditer une pièce** : double-clic sur son occurrence (vue ou arbre). On l'édite comme une pièce seule (CAO, FAO, PLAN), les autres occurrences en fantôme autour ; « 🧩 Assemblage › pièce » en tête de l'arbre, ou le bouton Assemblage, pour revenir.
+- **Placer** :
+  - **manipulateur** sur l'occurrence sélectionnée : flèches = déplacer, anneaux = tourner (pas de 1 mm et de 5°, Maj = libre) ;
+  - **panneau** : position X / Y / Z, rotations de ±90° ;
+  - **Aligner un repère** : un repère de la pièce (son origine ou un repère de construction) posé sur l'origine de l'assemblage ou sur un repère d'une autre occurrence, avec retournement, rotation et décalage. **Associatif** : si une pièce change, son repère bouge et les pièces alignées suivent.
+- **Fixer** une occurrence (📌), **masquer**, **renommer**, **supprimer** (la dernière occurrence emporte sa pièce). Ctrl+Z / Ctrl+Y annulent les opérations d'assemblage dans la vue d'assemblage.
 
 ## FAO
 
@@ -188,7 +200,7 @@ Le dépôt stocke les gros binaires (`occt/*.wasm`, `Exemples/*.miniFusion`, `Ex
 
 | Chemin | Rôle |
 |---|---|
-| `src/*.js` | **Les sources** (57 fichiers, de l'en-tête à l'initialisation ; la FAO est découpée par domaine : parcours, caches, post-processeurs, simulation, interface, ébauche 3D, contour, géodésique, crêtes, perçage). C'est ici qu'on travaille. |
+| `src/*.js` | **Les sources** (60 fichiers, de l'en-tête à l'initialisation ; la FAO est découpée par domaine : parcours, caches, post-processeurs, simulation, interface, ébauche 3D, contour, géodésique, crêtes, perçage). C'est ici qu'on travaille. |
 | `fusion_mvp.html` | **Livrable généré** par `node build.js` (le HTML et le CSS de base vivent dans ce fichier, hors de la balise `<script>`). On n'édite jamais le script à la main. |
 | `tests/` | Suite Node portable (plus de 100 suites, dont certaines sur le noyau OCCT réel) : `node tests/run.cjs`, en parallèle (`-j N` pour la taille du pool, `--verbose` pour toutes les sorties) ; sous-ensemble rapide : `node tests/run-fast.cjs`. |
 | `tools/lint.cjs` | Lint ESLint du script concaténé (même ordre que le build) : `npm run lint` (erreurs) ou `npm run lint:all`. |

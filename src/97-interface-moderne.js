@@ -340,7 +340,8 @@ function mfRibbon(){
   // V0.6.0 : assemblage (46/47) — seul groupe CAO visible en vue d'assemblage (mfAsmG)
   grp('Assemblage',[['asmView','Assemblage',()=>asmToggle(),'Vue d’assemblage ↔ édition de la pièce'],
     ['asmPart','Pièce',()=>asmCmdNewPart(),'Nouvelle pièce dans l’assemblage (on entre aussitôt dedans)'],
-    ['asmOcc','Occurrence',()=>{if(asmMode!=='asm')asmEnter();asmCmdNewOcc();},'Nouvelle occurrence de la pièce sélectionnée']],'mfCao mfAsmG');
+    ['asmOcc','Occurrence',()=>{if(asmMode!=='asm')asmEnter();asmCmdNewOcc();},'Nouvelle occurrence de la pièce sélectionnée'],
+    ['import','Insérer',()=>asmCmdInsert(),'Insérer les pièces d’un fichier .miniFusion (copie) dans l’assemblage']],'mfCao mfAsmG');
   // FAO : posage, opérations (mêmes fiches que la barre « + Usinage »), simulation, calcul, export
   grp('Posage',[['setup','Posage',()=>{const b=Array.from(document.querySelectorAll('#faoTreeWrap button')).find(x=>/\+ Posage/.test(x.textContent));if(b)b.click();},'Ajouter un posage'],['tools','Outils','faoToolsBtn']],'mfFao');
   let ops=[];try{ops=faoAddOpsSpec();}catch(e){}

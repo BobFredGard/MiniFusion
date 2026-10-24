@@ -175,6 +175,13 @@ function asmActivate(pid){
   if(p.id===asm.active&&p.doc===doc)return true;
   asmLeavePart();
   asm.active=p.id;doc=p.doc;
+  if(!p._sane){
+    // Première activation : mêmes réparations qu'à l'ouverture d'un fichier (deserialise) —
+    // instances de répétition en double ou en trop, puis régénération (elles sont dérivées)
+    p._sane=true;
+    try{docSanitise();}catch(e){}
+    try{doc.features.filter(f=>f.type==='repeat').forEach(f=>{try{repGenChildren(f);}catch(e){}});}catch(e){}
+  }
   const rt=p._rt||{};
   docUndoStack=rt.undo||[];docRedoStack=rt.redo||[];
   tlMark=rt.tl||null;
