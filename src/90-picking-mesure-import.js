@@ -1126,15 +1126,18 @@ async function importSTL(file){
   const id=importAttach(file.name.replace(/\.[^.]+$/,''),'stl',u8,entry,file.name);
   sel={kind:'feature',id};markDirty();rebuild();showAll();
 }
-let _importRestoring=false;
+let _importRestoring=null; // restauration en cours (promesse), sinon null
 async function importRestorePending(){
   // Rejoue les imports du document à partir de leur source persistée. Appelée à
-  // l'ouverture (deserialise) et quand le noyau OCCT devient prêt (F5).
-  if(_importRestoring)return 0;
+  // l'ouverture (deserialise, qui l'ATTEND) et quand le noyau OCCT devient prêt (F5).
+  // Restauration déjà en cours (noyau prêt pendant une ouverture) : on l'attend puis on
+  // relance — elle visait peut-être l'ANCIEN document, dont elle saute les fonctions
+  // (« document remplacé ») ; avant, l'appel rendait 0 et le nouveau document restait sans STEP.
+  while(_importRestoring){try{await _importRestoring;}catch(e){}}
   const todo=(doc.features||[]).filter(f=>f&&f.type==='import'&&!f._mesh&&!importGeom.has(f.id)&&f.src&&f.src.key);
   if(!todo.length)return 0;
   if(todo.some(f=>f.src.fmt!=='stl')&&!occHas())return 0; // occtFinishBoot relancera
-  _importRestoring=true;let n=0;const miss=[];
+  let fin;_importRestoring=new Promise(r=>{fin=r;});let n=0;const miss=[];
   try{
     for(const f of todo){
       const u8=await importSrcGet(f.src.key);
@@ -1145,7 +1148,7 @@ async function importRestorePending(){
         importGeom.set(f.id,e);f._mesh=e.mesh;n++;
       }catch(err){miss.push(f.name);}
     }
-  }finally{_importRestoring=false;}
+  }finally{_importRestoring=null;fin();}
   if(n){builtVersion=-1;builtHash=null;builtEngine=null;rebuild();if(!viewUserMoved)showAll();}
   if(miss.length)try{faceEl.textContent='Import(s) sans source : '+miss.join(', ')+' — réimportez le fichier (même nom : il se rebranche sur la fonction existante).';}catch(e){}
   return n;
@@ -1561,6 +1564,12 @@ addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')
 async function deserialise(json,opts){
   try{if(typeof viewFadeOut==='function')viewFadeOut();}catch(e){} // 2026-10-16-015 : fondu à l'ouverture
   const o=JSON.parse(json);doc=docFromSerial(o);
+  // Document REMPLACÉ : nouvelle version (sans markDirty, ce n'est pas une modification). Sans
+  // elle, ouvrir un fichier juste après un rejeu (brouillon restauré, autre fichier ouvert)
+  // laissait buildKeyUpToDate() vrai : le rejeu était sauté et la pièce PRÉCÉDENTE restait
+  // affichée (mesuré : Axe ouvert, solide de Crochet 7 609,69 mm³) ; docHash() resservait aussi
+  // l'empreinte mémorisée de l'ancien document.
+  _docVersion++;
   // V0.6.0 : assemblage (autres pièces + occurrences) — absent d'un fichier d'une seule pièce
   try{asmFromSerial(o.asm);}catch(e){asm=null;}
   // Les numéros de corps ne sont jamais réemployés : le compteur repart au-delà
@@ -1592,8 +1601,9 @@ async function deserialise(json,opts){
   }
   // Imports STEP/STL : la fonction RESTE (même id → corps, enlèvements et FAO
   // gardent leur cible) ; sa géométrie est rejouée depuis la source persistée
-  // (importRestorePending, fin de fonction). Ancien fichier sans source : la
-  // fonction attend une réimportation du même nom.
+  // (importRestorePending, ATTENDUE en fin de fonction : `await deserialise` rend la main
+  // imports rejoués, quel que soit l'ordre des micro-tâches). Ancien fichier sans source :
+  // la fonction attend une réimportation du même nom.
   const sansSrc=doc.features.filter(f=>f.type==='import'&&!(f.src&&f.src.key)).map(f=>f.name);
   occCkClear(); // document remplacé : les points de contrôle ne valent plus rien
   const rep=docSanitise();
@@ -1612,7 +1622,7 @@ async function deserialise(json,opts){
   if(!opts||opts.rebuild!==false){rebuild();renderProps();showAll();}
   else renderProps();
   if(sansSrc.length)alert(sansSrc.length+' import(s) enregistré(s) sans leur fichier (ancien format) : '+sansSrc.join(', ')+'.\nRéimportez le STEP/STL (même nom, ou confirmez le rebranchement) : il reprend la fonction existante, usinages conservés. Puis ré-enregistrez.');
-  try{importRestorePending();}catch(e){}
+  const pImp=importRestorePending(); // lancée ICI (même ordre qu'avant), attendue à la fin
   // Parcours d'outils : on lit d'abord le cache persisté (IndexedDB), on ne
   // recalcule que ce qui manque — l'ouverture ne reprend plus les ~90 s du calcul.
   try{ if(typeof faoMovesReset==='function')faoMovesReset(); }catch(e){}
@@ -1623,6 +1633,7 @@ async function deserialise(json,opts){
   try{ if(typeof faoRefreshFaoUI==='function')faoRefreshFaoUI(); }catch(e){}
   try{if(typeof viewFadeIn==='function')viewFadeIn();}catch(e){}
   try{asmAfterLoad();}catch(e){} // assemblage : instantanés, vue rétablie (47)
+  try{await pImp;}catch(e){}
 }
 /* ---------- conteneur .miniFusion : document + cache de trajectoires ----------
    Demandé : « un fichier dédié qui encapsule le json ET son cache ». Le document
@@ -1700,10 +1711,9 @@ function bundleReport(){
   }catch(e){}
 }
 async function bundleStoreCaches(b){
-  // Caches d'un bundle inséré dans un assemblage (47) : trajectoires FAO (IndexedDB) et sources
-  // des imports — même logique que le début de bundleRestore, volontairement NON partagée :
-  // une attente asynchrone de plus avant deserialise change l'ordre avec la restauration des
-  // imports (test_conge_sur_conge le voit). → nombre de trajectoires gardées.
+  // Caches d'un bundle : trajectoires FAO (IndexedDB) et sources des imports. Partagée par
+  // l'ouverture (bundleRestore) et l'insertion dans un assemblage (47). → nombre de
+  // trajectoires gardées.
   const moves=b.moves||{};
   // Seulement les trajectoires des opérations du document (un ancien fichier
   // embarquait celles de TOUS les documents du navigateur d'origine : ~70 Mo).
@@ -1734,27 +1744,7 @@ async function bundleRestore(txt,opts){
   if(!b||b.bundle!==1||!b.doc)return false;
   const moves=b.moves||{};
   if(opts&&opts.name&&b.doc&&typeof b.doc==='object')b.doc.name=opts.name;
-  // Seulement les trajectoires des opérations du document (un ancien fichier
-  // embarquait celles de TOUS les documents du navigateur d'origine : ~70 Mo).
-  const miens=new Set();
-  try{
-    // pièce active + autres pièces d'un assemblage (V0.6.0)
-    const frs=[b.doc&&b.doc.fao].concat(((b.doc&&b.doc.asm&&b.doc.asm.parts)||[]).map(p=>p&&p.doc&&p.doc.fao));
-    frs.forEach(function(fr){(((fr&&fr.setups)||[])).forEach(function(st){
-      ((st&&st.ops)||[]).forEach(function(op){ miens.add('faoMoves:'+((st&&st.id)||'_')+':'+((op&&op.id)||'_')); });
-    });});
-  }catch(e){}
-  const ancienFao=!!(b.doc.fao&&typeof b.doc.fao==='object'&&!Array.isArray(b.doc.fao.setups)); // pré-posages : ids inconnus ici
-  const ks=Object.keys(moves).filter(function(k){return ancienFao||miens.has(k);});
-  if(ks.length&&faoMovesReady()){
-    for(let i=0;i<ks.length;i++){ try{ await idbSet(ks[i],moves[ks[i]]); }catch(e){} }
-  }
-  faoBundleMovesN=ks.length;
-  // Sources des imports AVANT le document : deserialise les rejoue aussitôt.
-  const im=(b.imports&&typeof b.imports==='object')?b.imports:{};
-  for(const k of Object.keys(im)){
-    try{if(typeof im[k]==='string')await importSrcPut(k,importB64ToU8(im[k]));}catch(e){}
-  }
+  faoBundleMovesN=await bundleStoreCaches(b); // trajectoires puis sources des imports, AVANT le document
   faoBundleWantReport=true;   // consomme par faoMovesDone() (fin de lecture)
   try{ setTimeout(function(){
         try{ if(faoBundleWantReport&&!faoMovesPending()){ faoBundleWantReport=false; bundleReport(); } }

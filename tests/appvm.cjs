@@ -156,6 +156,11 @@ function loadApp(){
   };
   sandbox.window=sandbox;sandbox.self=sandbox;sandbox.globalThis=sandbox;
   sandbox.__MEP_TEST_HOOKS__=true; // expose un petit seam de test (voir 98-mise-en-plan.js)
+  // Démarrage asynchrone du noyau (96) NEUTRALISÉ : les tests injectent eux-mêmes le noyau
+  // (occt=…;occtReady=true). Sans cette garde, ce démarrage échouait en « file: » une
+  // micro-tâche plus tard et remettait occtReady=false : toute attente du test avant son
+  // rejeu (await null de plus dans bundleRestore…) le faisait passer en repli maillage.
+  sandbox.__occBootDone=true;
   sandbox.addEventListener=function(t,fn){evBind('window',t,fn);};sandbox.removeEventListener=function(){};
   sandbox.dispatchEvent=function(ev){evFire('window',ev);return true;};
   sandbox.matchMedia=function(){return{matches:false,addListener(){},removeListener(){},addEventListener(){},removeEventListener(){}};};

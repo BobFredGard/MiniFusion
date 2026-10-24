@@ -82,6 +82,7 @@ const SUITES = [
   "test_corps_style",
   "test_import_vie",
   "test_import_persist",
+  "test_ouverture_deterministe",
   "test_esquisse_colineaire",
   "test_esquisse_echelle",
   "test_regeneration_chaine",
