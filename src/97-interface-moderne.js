@@ -298,6 +298,10 @@ const MF_IC={
   pSvg:'<path d="M6 3h9l3 3v15H6z"/><text x="12" y="17.6" font-size="6.2" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">SVG</text>',
   pDxfIn:'<path d="M6 3h9l3 3v15H6z"/><path d="M12 6.5v6.5M9.5 10.5L12 13l2.5-2.5"/><text x="12" y="19.6" font-size="4.6" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">DXF</text>',
   pDxf:'<path d="M6 3h9l3 3v15H6z"/><text x="12" y="17.6" font-size="6.2" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">DXF</text>',
+  cgPlane:'<path d="M3 16l5-9h13l-5 9z"/><path d="M12 11.5v-7M10 6.5l2-2 2 2"/>',
+  cgAxis:'<path d="M4 20L20 4" stroke-dasharray="3 2"/><circle cx="12" cy="12" r="2.2"/>',
+  cgPoint:'<circle cx="12" cy="12" r="3.2"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/>',
+  cgFrame:'<path d="M6 18V5M6 18h13M6 18l-3.5 3.5"/><path d="M4.5 7L6 5l1.5 2M17 16.5l2 1.5-2 1.5"/>',
   pPdf:'<path d="M6 3h9l3 3v15H6z"/><text x="12" y="17.6" font-size="6.2" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">PDF</text>'
 };
 function mfI(k,size){const p=MF_IC[k];if(!p)return null;return '<svg viewBox="0 0 24 24" width="'+(size||20)+'" height="'+(size||20)+'" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+p+'</svg>';}
@@ -307,6 +311,11 @@ function mfClick(id){mfCloseMenus();const b=document.getElementById(id);if(b){b.
 const MF_CAO=[
   ['Esquisse',[['sketch','Esquisse','btnSketch']]],
   ['Créer',[['extrude','Extrusion','btnExtrude'],['revolve','Révolution','btnRevolve'],['hole','Perçage','btnHole'],['body','Corps','btnBody']]],
+  // V0.5.0 : géométrie de construction (78/79)
+  ['Construire',[['cgPlane','Plan',()=>cgStart('plane'),'Plan de construction : décalé, à un angle, par 3 points, médian, normal à un axe'],
+    ['cgAxis','Axe',()=>cgStart('axis'),'Axe de construction : arête, cylindre, 2 points, intersection de plans, normal à un plan'],
+    ['cgPoint','Point',()=>cgStart('point'),'Point de construction : sommet, centre, coordonnées, intersection axe / plan'],
+    ['cgFrame','Repère',()=>cgStart('frame'),'Repère de construction : origine + Z + X, sur un plan ou une face, par 3 points']]],
   ['Modifier',[['fillet','Congé','btnFillet'],['chamfer','Chanfrein','btnChamfer'],['face','Face','btnMoveFace'],['draft','Dépouille','btnDraft'],['shell','Coque','btnCoque']]],
   ['Ensembles',[['pattern','Répétition','btnRepeat'],['combine','Combiner','btnCombine'],['params','Paramètres','btnParams']]],
   ['Fichier',[['import','Importer','btnImport'],['export','STEP','btnExportStep'],['export','STL','btnExportStl'],['export','OBJ','btnExportObj']]]
@@ -421,6 +430,7 @@ function mfCommands(){
   document.querySelectorAll('.ddMenu button').forEach(b=>{const l=(b.textContent||'').replace(/\s+/g,' ').trim();add(l,()=>b.click(),b.title);});
   document.querySelectorAll('#mfRibbon .mfFao .mfRb').forEach(b=>{const l=(b.textContent||'').trim();add('FAO · '+l,()=>b.click(),b.title);}); // CAO : déjà dans les menus
   [['Annuler','btnUndo'],['Rétablir','btnRedo'],['Enregistrer','btnSave'],['Régénérer le modèle','btnRebuild'],['Auto-tests','btnSelfTest'],['Tout afficher (cadrer)','btnFit'],['Réglages de visualisation','btnSettings']].forEach(([l,id])=>add(l,()=>mfClick(id)));
+  [['Plan de construction','plane'],['Axe de construction','axis'],['Point de construction','point'],['Repère de construction','frame']].forEach(([l,k])=>add(l,()=>cgStart(k),'Construire'));
   [['Vue iso','iso'],['Vue de dessus','top'],['Vue de face','front'],['Vue de droite','right']].forEach(([l,v])=>add(l,()=>{try{setView(v);}catch(e){}}));
   [['Espace CAO','cao'],['Espace FAO','fao'],['Espace PLAN','plan']].forEach(([l,w])=>add(l,()=>mfWs(w)));
   MF_THEMES.forEach(([k,l])=>add('Thème : '+l,()=>mfTheme(k)));

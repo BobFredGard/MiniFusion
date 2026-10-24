@@ -34,6 +34,7 @@ $('btnSketch').onclick=()=>{
   if(skEdit)return;
   if(selFaces&&selFaces.length){newSketchOnFace();return;}
   if(sel.kind==='plane'&&typeof sel.id==='string'&&PLANES[sel.id]){newSketch(sel.id);return;}
+  if(sel.kind==='cg'&&cgGet(sel.id)){newSketchOnCg(sel.id,sel.sub||null);return;} // construction (78/79)
   newSketch('XY');
 };
 $('btnExtrude').onclick=()=>askExtrude(sel.kind==='sketch'?sel.id:null);

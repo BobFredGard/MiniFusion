@@ -3,6 +3,8 @@ let skEdit=null, skAnteriorGhost=null;
 let skTreeFoldSave=null; // arborescence : état avant l'ouverture (null = rien à restaurer)
 let skFaoFoldSave=null;  // menu FAO : ouvert avant l'entrée ? (null = rien à restaurer)
 function newSketch(preset){
+  // élément de construction sélectionné (plan, plan d'un repère) : l'esquisse se pose dessus
+  if(preset==null&&sel&&sel.kind==='cg'&&cgGet(sel.id)){newSketchOnCg(sel.id,sel.sub||null);return;}
   const isPlane=p=>typeof p==='string'&&['XY','XZ','YZ'].includes(p.toUpperCase());
   let pl=isPlane(preset)?preset.toUpperCase():((sel.kind==='plane'&&isPlane(sel.id))?sel.id:null);
   if(!pl)pl='XY'; // défaut plan XY (plus de prompt) — double-clic sur un plan de l'arborescence = esquisse dessus
@@ -12,8 +14,25 @@ function newSketch(preset){
 }
 function sketchFaceLabel(sk){
   if(!sk)return '?';
+  if(sk.plane==='CG'){const el=sk.cg&&cgGet(sk.cg.id);return (el?el.name:'construction ?')+(sk.cg&&sk.cg.sub?' · '+sk.cg.sub:'');}
   if(sk.plane==='FACE'&&sk.origin)return 'FACE @('+sk.origin.map(v=>(+v).toFixed(1)).join(', ')+')'+(sk.host&&sk.host.name?' · '+sk.host.name:'');
   return sk.plane;
+}
+function newSketchOnCg(id,sub){
+  // Esquisse sur un plan de construction, ou sur un plan (XY, XZ, YZ) d'un repère de construction.
+  // plane:'CG' : origin/axU/axV/axN sont recopiés de l'élément à chaque rejeu (cgSyncSketch) —
+  // l'esquisse suit le plan quand il bouge. Le reste du code ne voit qu'une base, comme une face.
+  if(skEdit)return;
+  const el=cgGet(id);if(!el)return;
+  if(el.kind==='frame'&&!(sub&&CG_O_PLANES[sub]))sub='XY';
+  if(el.kind!=='plane'&&el.kind!=='frame'){try{faceEl.textContent='Esquisse : choisissez un plan (ou un plan de repère), pas un '+cgKindLabel(el).toLowerCase()+'.';}catch(e){}return;}
+  if(el.kind==='plane')sub=null;
+  const sk={id:uid('sk'),name:'Esquisse '+(doc.sketches.length+1),plane:'CG',cg:sub?{id,sub}:{id},
+    entities:[],points:{},constraints:[],dims:[],seq:1,visible:true,origin:[0,0,0]};
+  cgSyncSketch(sk);
+  if(!sk.axN){try{faceEl.textContent='Esquisse : « '+el.name+' » n’est pas résolu ('+(el.msg||'référence perdue')+').';}catch(e){}return;}
+  doc.sketches.push(sk);markDirty();rebuild();openSketch(sk.id);
+  try{faceEl.textContent='Esquisse '+sk.name+' posée sur '+sketchFaceLabel(sk)+' — elle suivra le plan s’il bouge.';}catch(e){}
 }
 function newSketchOnFace(){
   if(skEdit)return;
@@ -503,7 +522,7 @@ function projNames(pr){
 function skRefMeshes(meshes){
   // 1) BRep exact si dispo (même tangents) — sinon 2) maillage
   try{
-    if(skEdit&&skEdit.plane==='FACE'&&occHas()&&occLive&&occLive.shape){
+    if(skEdit&&(skEdit.plane==='FACE'||skEdit.plane==='CG')&&occHas()&&occLive&&occLive.shape){
       const br=skBRepPlanarRefs(occLive.shape);
       if(br&&br.length) return br;
     }

@@ -94,6 +94,8 @@ function buildDone(){
   // Session d'esquisse ouverte : le rejeu régénère les matériaux — le fondu SK_FACE_ALPHA (et le
   // masquage des corps en mode fantôme) serait perdu. skApplyFade est inerte hors session.
   try{if(typeof skApplyFade==='function')skApplyFade();}catch(e){}
+  // Géométrie de construction (79) : dessinée sur la pièce reconstruite (taille des plans)
+  try{cgDraw();}catch(e){}
   if(_postT)clearTimeout(_postT);
   _postT=setTimeout(()=>{_postT=null;
     try{builtHash=docHash();}catch(e){}
@@ -174,6 +176,7 @@ function rebuildInner(projPass){
     for(const o of [...scene.children]){if(!prevSet.has(o)){scene.remove(o);if(o.isMesh&&o.geometry){try{o.geometry.dispose();}catch(e){}}}}
     bodies=prevBodies;occLive=prevLive;
     try{drawSketchHelpers();}catch(e){}
+    try{cgDraw();}catch(e){}
     if(filMode){try{buildFilletOverlay();}catch(e){}}
     else if(filModeX&&occLive&&occLive.shape){try{filEdgesReload();}catch(e){}try{buildExactOverlay();}catch(e){}}
     faceEl.textContent+=(faceEl.textContent?'\n':'')+'Rebuild interrompu ('+why+') — dernier état valide conservé.';

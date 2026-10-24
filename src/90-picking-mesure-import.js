@@ -4,6 +4,7 @@ function wirePick(){
   el.addEventListener('pointerdown',e=>{dx=e.clientX;dy=e.clientY;});
   el.addEventListener('pointerup',e=>{
     if(extPickFace){if(e.button===0)extPickFaceCommit(e);return;} // mode « vers un objet »
+    if(cgMode&&cgMode.slot!=null){if(Math.hypot(e.clientX-dx,e.clientY-dy)<=6&&e.button===0)cgPickCommit(e);return;} // construction : référence de l'emplacement actif
     if(Math.hypot(e.clientX-dx,e.clientY-dy)>6)return;
     if(filMode){if(e.button===0&&!e.ctrlKey)filletToggle(e);return;}
     if(filModeX){if(e.button===0)exactToggle(e);return;} // Ctrl/Cmd+clic = ajouter / retirer une arête
@@ -130,6 +131,7 @@ function filletTangentChain(sk, startCorner){
   faceEl.textContent=`Congé : chaîne tangente 2D ${visited.size} coin(s) sélectionnée.`;
 }
   window.addEventListener('keydown',e=>{if(e.key==='Escape'){
+    if(cgEscape())return; // construction : saisie de référence, puis panneau
     if(extPickFace){extPickFace=null;try{renderer.domElement.style.cursor='default';}catch(e2){}faceEl.textContent='Vers un objet : annulé.';return;}
     if(faoPlanePick){faoPlaneCancel();faceEl.textContent='Plan : annulé.';return;}
     if(typeof faoFramePick!=='undefined'&&faoFramePick){faoFramePickCancel();faceEl.textContent='Axe du posage : annulé.';return;}
@@ -270,6 +272,7 @@ function faceSelect(e,second){
   // 2026-10-16-017 : plans du repère (dessinés devant la pièce) prioritaires
   if(!second){const tp=triadPickPlane(e);if(tp){clearMeasure();sel={kind:'plane',id:tp};renderTree();renderProps();refreshParts();faceEl.textContent=`Plan ${tp} — ${PLANES[tp].label}
 Bouton « Esquisse » (ou double-clic dans l'arbre) pour dessiner dessus.`;return;}}
+  if(!second&&cgSelectAt(e))return; // construction (79) : plans, axes, points, repères
   const h=pick(e);
   try{const eh=edgeHoverPick(e,h);if(eh){edgeSelect(e,eh,second);return;}}catch(err){}
   if(second&&selEdges.length&&!selFaces.length){selEdges=[];}
@@ -757,6 +760,7 @@ function showCtx3D(x,y,bid){ctxTarget={kind:'body',id:bid};const _bd=bodies.find
 function hideCtx3D(){$('ctxMenu3D').style.display='none';}
 document.querySelectorAll('#ctxMenu button').forEach(b=>b.onclick=()=>{
   const t=ctxTarget;hideCtx();if(!t)return;
+  if(t.kind==='cg'){cgCtxAct(b.dataset.act,t);return;} // construction (79)
   if(b.dataset.act==='rename'){
     const n=prompt('Nouveau nom :',curName(t));if(!n)return;
     if(t.kind==='sketch')doc.sketches.find(s=>s.id===t.id).name=n;
@@ -947,7 +951,7 @@ function ctxGlassRow(menu){
 // pas (aucun écrasement de onclick) et le stub de test ne la passe pas non plus.
 ctxStepBtn=ctxStepBtnMake('ctxMenu');
 ctxStepBtn3d=ctxStepBtnMake('ctxMenu3D');
-const curName=t=>{if(t.kind==='plane')return 'Plan '+t.id;if(t.kind==='sketch')return(doc.sketches.find(s=>s.id===t.id)||{}).name;if(t.kind==='feature')return(doc.features.find(f=>f.id===t.id)||{}).name;if(t.kind==='body')return String((bodies.find(b=>b.id===t.id)||{}).name||'').replace(/ · .*$/,'');return'';};
+const curName=t=>{if(t.kind==='plane')return 'Plan '+t.id;if(t.kind==='cg')return (cgGet(t.id)||{}).name;if(t.kind==='sketch')return(doc.sketches.find(s=>s.id===t.id)||{}).name;if(t.kind==='feature')return(doc.features.find(f=>f.id===t.id)||{}).name;if(t.kind==='body')return String((bodies.find(b=>b.id===t.id)||{}).name||'').replace(/ · .*$/,'');return'';};
 
 /* ---------- coupe ---------- */
 function applyClip(){

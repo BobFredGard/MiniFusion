@@ -430,6 +430,7 @@ function animate(){
   }
   try{sketchCamTick();}catch(e){}
   try{triadUpdateAll();}catch(e){}
+  try{cgPaintIfNeeded();}catch(e){} // construction : la surbrillance suit la sélection
   try{if(typeof faoPoseSync==='function')faoPoseSync();}catch(e){}
   try{if(typeof faoFaceHlSync==='function')faoFaceHlSync();}catch(e){} // faces bleues / rouges de l'op sélectionnée
   renderer.render(scene,camera);

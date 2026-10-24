@@ -206,6 +206,7 @@ function renderTree(){
           try{markDirty();}catch(e){}
           renderTree();return;
         }
+        if(cgTreePick({k:'o',id:'O'}))return; // construction : l'origine comme point / repère
         try{faceEl.textContent='Repère de l’origine : cliquez un de ses 3 petits plans dans la vue pour le sélectionner (esquisse dessus, référence).';}catch(e){}
       };
       t.appendChild(d);
@@ -215,12 +216,22 @@ function renderTree(){
       d.className='tnode'+(sel.kind==='plane'&&sel.id===p?' sel':'')+(originVis[p]?'':' hidden');
       d.title='Clic = sélectionner · double-clic = esquisse dessus · 👁 = montrer/masquer · '+PLANES[p].label;
       d.innerHTML=`<span class="pdot" style="background:${PLANES[p].css}"></span><span class="nm">Plan ${p} <span style="color:var(--muted)">· ${PLANES[p].role}</span></span><span class="eye" title="Afficher / masquer le plan">👁</span>`;
-      d.onclick=ev=>{if(ev.target&&ev.target.classList&&ev.target.classList.contains('eye')){setOriginVis(p,!originVis[p]);return;}sel={kind:'plane',id:p};renderTree();renderProps();refreshParts();};
+      d.onclick=ev=>{if(ev.target&&ev.target.classList&&ev.target.classList.contains('eye')){setOriginVis(p,!originVis[p]);return;}if(cgTreePick({k:'o',id:p}))return;sel={kind:'plane',id:p};renderTree();renderProps();refreshParts();};
       d.ondblclick=()=>{sel={kind:'plane',id:p};newSketch(p);};
       d.oncontextmenu=e=>{e.preventDefault();showCtx(e.clientX,e.clientY,{kind:'plane',id:p});};
       t.appendChild(d);
     });
+    // V0.5.0 : axes de l'origine — références de la géométrie de construction (axe, angle, repère)
+    [['X','#ff453a','droite'],['Y','#30d158','arrière'],['Z','#0a84ff','haut']].forEach(([a,c,r])=>{
+      const d=document.createElement('div');
+      d.className='tnode'+(sel.kind==='originAxis'&&sel.id===a?' sel':'');
+      d.title='Axe '+a+' de l’origine — référence d’un plan à un angle, d’un axe, d’un repère';
+      d.innerHTML=`<span class="pdot" style="background:${c};border-radius:1px;height:3px;margin-top:5px"></span><span class="nm">Axe ${a} <span style="color:var(--muted)">· ${r}</span></span>`;
+      d.onclick=()=>{if(cgTreePick({k:'o',id:a}))return;sel={kind:'originAxis',id:a};renderTree();renderProps();};
+      t.appendChild(d);
+    });
   }
+  cgTreeRows(t); // 📐 Construction (79)
   if(gfold('sk','✏️ Esquisses ('+doc.sketches.length+')')){
     doc.sketches.forEach(s=>node('✏️',s.name+' · '+sketchFaceLabel(s)+' · '+s.entities.length+' traits','sketch',s.id,s.visible,()=>openSketch(s.id)));
   }
@@ -1066,6 +1077,8 @@ function renderProps(){
     try{ faoRenderProps(p,sel); }catch(e){}
     return;
   }
+  // Géométrie de construction (79) : création / modification en cours, ou élément sélectionné
+  if(cgMode||(sel&&sel.kind==='cg')){try{cgRenderProps(p);}catch(e){}return;}
   /* ── helpers layout PLAN (mêmes classes que #mepSide de 98) ── */
   const pH=t=>{const h=document.createElement('div');h.className='pnl-h';h.textContent=t;p.appendChild(h);return h;};
   const pRow=(lab,el)=>{const r=document.createElement('div');r.className='pnl-row';
@@ -1429,12 +1442,19 @@ function renderProps(){
       ['🗑 Supprimer',()=>delBody(sel.id),'danger']]);
     return;
   }
+  /* ═══════ axe d'origine ═══════ */
+  if(sel.kind==='originAxis'){
+    pH('Axe '+sel.id+' de l’origine');
+    pInfo('Référence des constructions : plan à un angle, axe, repère.');
+    pBtns([['▱ Plan normal à cet axe',()=>{const a=sel.id;cgStart('plane');if(cgMode){cgSetHow('normal');cgMode.draft.refs[0]={k:'o',id:a};cgNextSlot();cgRefresh();}}]]);
+    return;
+  }
   /* ═══════ plan d'origine ═══════ */
   if(sel.kind==='plane'){
     const P=PLANES[sel.id]||{role:'',label:''};
     pH('Plan '+sel.id);
     pInfo(`${P.role} — ${P.label}`);
-    pBtns([['✏️ Esquisse sur ce plan',()=>newSketch(sel.id)]]);
+    pBtns([['✏️ Esquisse sur ce plan',()=>newSketch(sel.id)],['▱ Plan décalé',()=>cgStart('plane')]]);
     pChk('Visible',originVis[sel.id]!==false,v=>setOriginVis(sel.id,v));
     return;
   }
