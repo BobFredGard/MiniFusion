@@ -375,17 +375,7 @@ function renderTree(){
     if(open)doc.features.forEach(f=>{if(!f.repeatId&&bodyOf(f)===be.id)featNode(f);});
   });
   updateOriginPlanes();
-}
-function renderTimeline(){
-  const tl=$('timeline');if(!tl)return; // panneau retiré : l'arborescence fait foi
-  tl.innerHTML='';
-  doc.features.forEach((f,i)=>{
-    const c=document.createElement('span');c.className='chip';c.textContent=`${i+1} · ${f.name}`;
-    c.title='Clic = sélectionner';c.onclick=()=>{sel={kind:'feature',id:f.id};renderTree();renderProps();refreshParts();};
-    if(f.type==='extrude'&&(f.op||'add')==='cut'){c.style.borderColor='#ff453a';c.style.background='rgba(255,69,58,.18)';c.title='Découpe (soustractive) — clic = sélectionner';}
-    tl.appendChild(c);
-  });
-  if(!doc.features.length)tl.innerHTML='<span class="note">Vide — créez une esquisse puis une extrusion.</span>';
+  try{renderTimeline();}catch(e){} // bandeau de timeline (41) : suit chaque rendu de l'arbre (sélection, rejeu)
 }
 // Fonction répétable : extrusion ou congé/chanfrein exact. NI une répétition, NI une
 // instance de répétition (une instance est déjà générée : la répéter empilerait des
@@ -839,11 +829,11 @@ function bodyToggleEnabled(id){
   doc.features.forEach(k=>{if(k.repeatId&&k.body===id)k.visible=vis;});
   markDirty();rebuild();renderTree();
 }
-function featBlockOf(f){
+function featBlockOf(f,F){
   // Bloc déplaçable d'un cran : fonction simple ([i,i]) ou répétition + ses
   // instances ([i,j], contiguës par construction de repGenChildren). Une instance
-  // seule n'est jamais déplaçable (dérivée) : null.
-  const F=doc.features;
+  // seule n'est jamais déplaçable (dérivée) : null. F = liste de travail (doc.features par défaut).
+  F=F||doc.features;
   const i=F.indexOf(f);
   if(!f||i<0||f.repeatId)return null;
   if(f.type!=='repeat')return [i,i];
@@ -852,15 +842,13 @@ function featBlockOf(f){
   for(let k=i+1;k<=j;k++){const o=F[k];if(!o||o.repeatId!==f.id)return null;}
   return [i,j];
 }
-function featMove(id,dir){
-  // Décale un bloc d'un cran DANS SON CORPS (ordre de rejeu du corps), en sautant
-  // les fonctions des autres corps et les blocs voisins entiers. L'ordre global
-  // n'a de sens que par corps depuis les corps conteneurs : A2 peut passer devant
-  // A1 même si B1 est entre les deux. Annulable (une étape). Retourne true si fait.
-  const F=doc.features;
+function featMoveRaw(F,id,dir){
+  // Cœur de featMove sur une liste de travail F (modifiée en place) : décale le bloc d'un
+  // cran DANS SON CORPS, sans annulation ni rejeu. Partagé avec le glisser-déposer du
+  // bandeau de timeline (41), qui enchaîne les crans sur une copie. Retourne true si fait.
   const f=F.find(x=>x.id===id);
   if(!f||(dir!==1&&dir!==-1))return false;
-  const bl=featBlockOf(f);
+  const bl=featBlockOf(f,F);
   if(!bl)return false;
   const mine=f.body, L=bl[1]-bl[0]+1;
   const topAt=k=>{ // début du bloc contenant l'index k (conteneur ou fonction simple)
@@ -879,7 +867,6 @@ function featMove(id,dir){
       k=s-1; // saute le bloc entier d'un autre corps
     }
     if(at<0)return false;
-    docPushUndo('déplacement de « '+f.name+' »');
     const seg=F.splice(bl[0],L);
     F.splice(at,0,...seg);
   }else{
@@ -892,11 +879,26 @@ function featMove(id,dir){
       k=e+1; // saute le bloc entier d'un autre corps
     }
     if(at<0)return false;
-    docPushUndo('déplacement de « '+f.name+' »');
     const seg=F.splice(bl[0],L);
     F.splice(at-L+after,0,...seg);
   }
+  return true;
+}
+function featMoveApply(A,label){
+  // Pose un nouvel ordre de doc.features (même tableau, même contenu) : une étape d'annulation + rejeu
+  docPushUndo(label);
+  doc.features.splice(0,doc.features.length,...A);
   markDirty();rebuild();renderTree();renderProps();
+}
+function featMove(id,dir){
+  // Décale un bloc d'un cran DANS SON CORPS (ordre de rejeu du corps), en sautant
+  // les fonctions des autres corps et les blocs voisins entiers. L'ordre global
+  // n'a de sens que par corps depuis les corps conteneurs : A2 peut passer devant
+  // A1 même si B1 est entre les deux. Annulable (une étape). Retourne true si fait.
+  const A=doc.features.slice();
+  if(!featMoveRaw(A,id,dir))return false;
+  const f=doc.features.find(x=>x.id===id);
+  featMoveApply(A,'déplacement de « '+f.name+' »');
   return true;
 }
 function delBody(id){
