@@ -723,7 +723,8 @@ function showCtx(x,y,t){ctxTarget=t;$('ctxMenu').style.display='block';ctxPlace(
   try{ if(ctxStepBtn)ctxStepBtn.style.display=(t&&t.kind==='body')?'':'none'; }catch(e){}
   // style du corps : le menu du CORPS porte la couleur et la transparence (même
   // source que le panneau et que la vue 3D) — masqué ailleurs, comme l'export STEP.
-  try{ ctxStyleShow('ctxMenu',!!(t&&t.kind==='body')); ctxStyleSync(); }catch(e){}}
+  try{ ctxStyleShow('ctxMenu',!!(t&&t.kind==='body')); ctxStyleSync(); }catch(e){}
+  try{ asmCtxSync(t,x,y); }catch(e){}} // composant depuis ce corps, déplacer vers un composant (48)
 function hideCtx(){$('ctxMenu').style.display='none';}
 function ctxBodyId(t){
   // Cible du clic-droit → CORPS conteneur. L'id affiché n'est PAS toujours celui

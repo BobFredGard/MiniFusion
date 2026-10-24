@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**312 versions**, de `2026-09-28b` à `V0.6.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**313 versions**, de `2026-09-28b` à `V0.6.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4629,3 +4629,12 @@ Demande : « un miniFusion comme Fusion 360, avec un repère de base et de la g�
 - **Interface** (`src/47-assemblage-interface.js`, `src/48-assemblage-placement.js`) : modes Modéliser / Placer à tous les niveaux, dessin récursif dans le repère de l'instance éditée (descendants figés, reste en fantômes), fil d'Ariane et hiérarchie complète dans l'arbre, Échap remonte, ruban « Composants » (Placer, Composant, Occurrence, Insérer). Insérer garde la structure du fichier inséré (identifiants renouvelés, alignements internes suivis).
 
 Tests : `test_composants_modele` (trois niveaux, repère monde, alignement sur la géométrie de base et sur un repère deux niveaux plus bas, ordre de bas en haut, associativité, cycles refusés, activation par chemin, aller-retour, fichier abîmé, insertion imbriquée ; aussi en suite rapide), `test_assemblage_modele` adapté (et relecture d'un fichier V0.6.0). Parcours Playwright « composants : racine avec un repère de base, composant aligné qui suit, sous-composant », rejoué à la main dans Chromium (composant posé en 20 ; 15 ; 20 puis 35 après la racine rehaussée ; fil d'Ariane Socle › Composant 1 › Composant 2). Vérifié dans le navigateur : assemblage V0.6.0 enregistré rouvert et migré, Axe inséré dans un composant (trois niveaux), clic sur un petit-enfant = son ancêtre direct sélectionné, enregistrement et réouverture en mode Placer.
+
+## V0.6.2 - Composants depuis les corps, déplacer vers un composant
+Demande : idées reprises de SolidCraft (« Create Components from Bodies », « Move Bodies / Sketches to Component ») — convertir une pièce multicorps en assemblage sans la remodéliser.
+- **Dépendances** (`src/48-composants-depuis-corps.js`) : tout se cite par identifiant ; `asmIdsIn` parcourt chaque élément (fonction, esquisse, construction) — esquisse d'une fonction, fonction hôte d'une esquisse sur face, plan de construction, sources d'une répétition, corps outils d'une combinaison. L'ancrage d'une construction dans le fil (`at`) n'est pas une dépendance (recalé au transfert). `asmSplitPlan` refuse, avec la raison, quand ce qui part s'appuie sur ce qui reste ou l'inverse ; une esquisse / construction nécessaire est déplacée si plus rien ne la cite, sinon copiée.
+- **Transfert** (`asmSplitApply`) : identifiants renouvelés s'ils existent déjà dans la cible (la fonction suit son esquisse), corps renumérotés, fiche du corps (nom, couleur, visibilité), paramètres manquants, construction ancrée au bon endroit. Les couleurs automatiques (rang du corps) sont figées : retirer un corps ne repeint ni lui ni les suivants.
+- **Commandes** : ruban « Depuis corps » (corps sélectionné, sinon chacun), clic droit sur un corps (« Créer un composant depuis ce corps », « Déplacer vers un composant… ») ou une esquisse (« Déplacer vers un composant… », vers un composant existant ou neuf). Composant neuf à l'identité : rien ne bouge. Cible placée ailleurs : avertissement (la géométrie garde ses coordonnées).
+- **Annulation** : une étape d'assemblage peut emporter des documents (`asmPush(label, docs)`) ; horloge commune `undoTick` (45) : Ctrl+Z / Ctrl+Y en mode Modéliser défont / refont la conversion quand c'est l'opération la plus récente (boutons et raccourcis).
+
+Tests : `test_composants_corps` (modèle : refus croisés, déplacé / copié, combinaison, identifiants et corps renouvelés, paramètres, ancrage ; noyau réel : bloc 32 000 mm³ + colonne 12 566,4 mm³ → composant à la même place, mêmes volumes ; Ctrl+Z / Ctrl+Y par le vrai raccourci ; esquisse libre déplacée, esquisse utilisée refusée, composant neuf). Parcours Playwright « composants depuis les corps : clic droit sur un corps, même place, Ctrl+Z ». Vérifié dans le navigateur : trois corps convertis (couleurs conservées), esquisse libre déplacée vers « Colonne » par le menu, Ctrl+Z / Ctrl+Y au clavier.

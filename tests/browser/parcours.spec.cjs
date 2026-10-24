@@ -227,6 +227,33 @@ test('composants : racine avec un repère de base, composant aligné qui suit, s
   expect(err).toEqual([]);
 });
 
+test('composants depuis les corps : clic droit sur un corps, même place, Ctrl+Z',async({page})=>{
+  const err=await demarrer(page);
+  // Deux corps par script ; la conversion, elle, passe par le clic droit de l'arbre
+  await page.evaluate(()=>{
+    const mkSk=(name,pts)=>{newSketch('XY');const sk=skEdit;sk.name=name;const P=pts.map(([x,y])=>addPoint(sk,x,y));
+      for(let i=0;i<P.length;i++)sk.entities.push({id:'L'+i,t:'line',p1:P[i],p2:P[(i+1)%P.length]});closeSketch(true);return sk;};
+    const a=mkSk('Esquisse socle',[[-20,-20],[20,-20],[20,20],[-20,20]]);
+    addFeature({id:uid('ex'),type:'extrude',name:'Socle',sketchId:a.id,op:'add',distance:20});
+    const b=mkSk('Esquisse colonne',[[30,-5],[40,-5],[40,5],[30,5]]);extNew={sketchId:b.id,op:'new',dist:50};extNewOk();
+    doc.bodies[1].name='Colonne';markDirty();rebuild();
+  });
+  await page.waitForFunction(()=>builtEngine==='exact'&&rebuildDepth===0&&builtVersion===_docVersion&&doc.bodies.length===2,null,{timeout:60000});
+  await page.locator('#tree .tnode.bh',{hasText:'Colonne'}).click({button:'right'});
+  await page.locator('#ctxMenu button',{hasText:'Créer un composant depuis ce corps'}).click();
+  await page.waitForFunction(()=>asm&&asm.comps.length===2&&asmRoot().occ.length===1&&doc.bodies.length===1,null,{timeout:60000});
+  const r=await page.evaluate(()=>{const c=asm.comps.find(q=>q.name==='Colonne');
+    return {ident:asmIsIdentity(asmRoot().occ[0].fr),feats:c.doc.features.length,sk:c.doc.sketches.map(s=>s.name),root:doc.features.length};});
+  expect(r).toEqual({ident:true,feats:1,sk:['Esquisse colonne'],root:1});
+  await expect(page.locator('#tree .tnode',{hasText:'Colonne:1'})).toBeVisible();
+  // Ctrl+Z en mode pièce : la conversion est annulée d'un coup
+  await page.keyboard.press('Control+z');
+  await page.waitForFunction(()=>asm.comps.length===1&&doc.bodies.length===2&&doc.features.length===2);
+  await page.keyboard.press('Control+y');
+  await page.waitForFunction(()=>asm.comps.length===2&&doc.bodies.length===1);
+  expect(err).toEqual([]);
+});
+
 test('FAO : surfaçage sur l\'Axe → parcours → G-code',async({page})=>{
   const err=await demarrer(page);
   await ouvrirAxe(page);

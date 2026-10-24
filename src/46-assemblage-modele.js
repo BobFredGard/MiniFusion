@@ -321,35 +321,67 @@ function asmCkPrefix(){
   // avoir un corps « b1 » aux signatures identiques). Composant seul : aucun préfixe (inchangé).
   return asm&&asm.comps.length>1?asm.active+'§':'';
 }
-/* ── annuler / rétablir de l'ASSEMBLAGE (positions, composants, occurrences) ── */
-function asmSnap(){
-  // Occurrences copiées ; composants par RÉFÉRENCE (leurs documents ont leur propre annulation)
+/* ── annuler / rétablir de l'ASSEMBLAGE (positions, composants, occurrences) ──
+   Les documents des composants ont leur propre annulation ; une opération qui modifie AUSSI
+   des documents (composant depuis un corps, déplacer vers un composant) les nomme (docs) :
+   leur contenu est alors pris dans l'instantané, et Ctrl+Z en mode pièce passe par ici quand
+   elle est la plus récente (horloge undoTick, 45). */
+function asmDocSnapOf(d){
+  // Comme docSnap (45), pour n'importe quel document : sans les transitoires
+  const c=Object.assign({},d);
+  c.sketches=(d.sketches||[]).map(s=>{const o=Object.assign({},s);delete o._refs;return o;});
+  c.features=(d.features||[]).map(({_mesh,_m,...r})=>r);
+  c.cgeo=(d.cgeo||[]).map(cgClean);
+  return JSON.stringify(c);
+}
+function asmSnap(docIds){
+  // Occurrences copiées ; composants par RÉFÉRENCE ; documents nommés copiés
   if(!asm)return null;
   const occ={};asm.comps.forEach(c=>{occ[c.id]=JSON.parse(JSON.stringify(c.occ));});
-  return {occ,comps:asm.comps.slice(),active:asm.active,path:asm.path.slice()};
+  const docs={};(docIds||[]).forEach(id=>{const c=asmComp(id);if(c&&c.doc)docs[id]=asmDocSnapOf(c.doc);});
+  return {occ,comps:asm.comps.slice(),active:asm.active,path:asm.path.slice(),docs};
 }
-function asmPush(label){
-  const s=asmSnap();if(!s)return;
-  asmUndoStack.push({snap:s,label:label||'assemblage'});
+function asmPush(label,docIds){
+  const s=asmSnap(docIds);if(!s)return;
+  asmUndoStack.push({snap:s,label:label||'assemblage',docIds:docIds||[],t:++undoTick});
   while(asmUndoStack.length>ASM_UNDO_MAX)asmUndoStack.shift();
   asmRedoStack.length=0;
 }
+function asmUndoFirst(redo){
+  // Mode pièce : la dernière opération est-elle une opération d'assemblage qui a modifié ce
+  // document ? (sinon Ctrl+Z reste l'annulation du document)
+  if(!asm)return false;
+  const A=redo?asmRedoStack:asmUndoStack,D=redo?docRedoStack:docUndoStack;
+  const a=A[A.length-1],d=D[D.length-1];
+  return !!a&&(a.docIds||[]).includes(asm.active)&&(!d||(a.t||0)>(d.t||0));
+}
 function asmRestore(s){
   asm.comps=s.comps;asm.comps.forEach(c=>{if(s.occ[c.id])c.occ=s.occ[c.id];});
+  const touched=[];
+  Object.keys(s.docs||{}).forEach(id=>{
+    const c=asmComp(id);if(!c)return;
+    if(c.doc===doc){try{docApplySnap(s.docs[id]);}catch(e){}}
+    else{try{const d=JSON.parse(s.docs[id]);Object.keys(d).forEach(k=>{c.doc[k]=d[k];});}catch(e){}}
+    touched.push(c);
+  });
   if(!asmComp(asm.active)||!asm.comps.some(c=>c.doc===doc)||!asmPathOK(asm.path)){
     asmActivatePath(asmPathOK(s.path)?s.path:[]);
   }
+  touched.forEach(c=>{
+    if(c.doc===doc){try{builtVersion=-1;builtHash=null;markDirty();rebuild();}catch(e){}}
+    else c._stale=true; // instantané d'affichage à refaire (47)
+  });
   asmResolve();asmNotify();
 }
 function asmUndo(){
   const e=asmUndoStack.pop();if(!e||!asm)return false;
-  asmRedoStack.push({snap:asmSnap(),label:e.label});asmRestore(e.snap);
+  asmRedoStack.push({snap:asmSnap(e.docIds),label:e.label,docIds:e.docIds,t:++undoTick});asmRestore(e.snap);
   try{faceEl.textContent='↩ Annulé : '+e.label;}catch(err){}
   return true;
 }
 function asmRedo(){
   const e=asmRedoStack.pop();if(!e||!asm)return false;
-  asmUndoStack.push({snap:asmSnap(),label:e.label});asmRestore(e.snap);
+  asmUndoStack.push({snap:asmSnap(e.docIds),label:e.label,docIds:e.docIds,t:++undoTick});asmRestore(e.snap);
   try{faceEl.textContent='↪ Rétabli : '+e.label;}catch(err){}
   return true;
 }

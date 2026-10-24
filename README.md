@@ -2,7 +2,7 @@
 
 **CAO paramétrique, assemblage, FAO et mise en plan dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2, G-code et planches cotées ISO. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.6.1** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.6.2** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Sommaire
 
@@ -103,6 +103,12 @@ Commandes :
 - **placer** : manipulateur (flèches = déplacer, anneaux = tourner, pas de 1 mm et de 5°, Maj = libre), panneau (position X / Y / Z, rotations de ±90°) ;
 - **Aligner un repère** : un repère du composant (son origine, un repère de construction, le sien ou celui d'un sous-composant) posé sur un repère du composant actif (sa **géométrie de base** : origine, repères de construction) ou d'un autre de ses composants, à toute profondeur, avec retournement, rotation et décalage. **Associatif** : si un composant change, son repère bouge et les composants alignés suivent ;
 - **Fixer** (📌), **masquer**, **renommer**, **supprimer** (la dernière occurrence emporte son composant). Ctrl+Z / Ctrl+Y annulent les opérations de placement en mode Placer.
+
+Convertir une pièce multicorps en assemblage, sans rien remodéliser :
+- **Depuis corps** (ruban), ou clic droit sur un corps → **Créer un composant depuis ce corps** : le corps et tout ce qui le construit (ses fonctions, les esquisses et la construction dont elles dépendent, les paramètres) passent dans un composant neuf, à la même place, avec sa couleur. Sans corps sélectionné, « Depuis corps » convertit chaque corps ;
+- clic droit sur un corps ou une esquisse → **Déplacer vers un composant…** : vers un composant existant, ou neuf ;
+- une esquisse ou une construction utilisée aussi par ce qui reste est **copiée**, sinon **déplacée**. L'opération est **refusée, avec la raison**, quand ce qui part s'appuie sur ce qui reste (esquisse posée sur une face d'un autre corps, combinaison entre corps) ou l'inverse ;
+- une seule étape d'annulation : Ctrl+Z en mode Modéliser la défait entièrement.
 
 ## FAO
 
@@ -210,7 +216,7 @@ Le dépôt stocke les gros binaires (`occt/*.wasm`, `Exemples/*.miniFusion`, `Ex
 
 | Chemin | Rôle |
 |---|---|
-| `src/*.js` | **Les sources** (60 fichiers, de l'en-tête à l'initialisation ; la FAO est découpée par domaine : parcours, caches, post-processeurs, simulation, interface, ébauche 3D, contour, géodésique, crêtes, perçage). C'est ici qu'on travaille. |
+| `src/*.js` | **Les sources** (61 fichiers, de l'en-tête à l'initialisation ; la FAO est découpée par domaine : parcours, caches, post-processeurs, simulation, interface, ébauche 3D, contour, géodésique, crêtes, perçage). C'est ici qu'on travaille. |
 | `fusion_mvp.html` | **Livrable généré** par `node build.js` (le HTML et le CSS de base vivent dans ce fichier, hors de la balise `<script>`). On n'édite jamais le script à la main. |
 | `tests/` | Suite Node portable (plus de 100 suites, dont certaines sur le noyau OCCT réel) : `node tests/run.cjs`, en parallèle (`-j N` pour la taille du pool, `--verbose` pour toutes les sorties) ; sous-ensemble rapide : `node tests/run-fast.cjs`. |
 | `tools/lint.cjs` | Lint ESLint du script concaténé (même ordre que le build) : `npm run lint` (erreurs) ou `npm run lint:all`. |

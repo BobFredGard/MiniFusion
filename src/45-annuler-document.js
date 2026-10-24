@@ -35,12 +35,16 @@ function docSnap(){
 
 // À appeler AVANT de muter le document. Un instantané identique au précédent est
 // ignoré : inutile d'empiler « rien n'a changé » (glisser, commits répétés).
+// Horloge commune aux annulations du document et de l'assemblage (46) : une opération
+// d'assemblage qui modifie aussi le document (composant depuis un corps) s'annule par
+// Ctrl+Z en mode pièce, dans l'ordre où elle a été faite.
+let undoTick=0;
 function docPushUndo(label){
   const s=docSnap();
   if(s==null)return;
   const top=docUndoStack[docUndoStack.length-1];
   if(top&&top.snap===s)return;
-  docUndoStack.push({snap:s,label:label||'opération'});
+  docUndoStack.push({snap:s,label:label||'opération',t:++undoTick});
   while(docUndoStack.length>DOC_UNDO_MAX)docUndoStack.shift();
   docRedoStack.length=0;
   docUndoUI();
@@ -83,11 +87,11 @@ function docApplySnap(snap){
 }
 
 function docUndo(){
-  if(asmMode==='asm'){const r=asmUndo();docUndoUI();return r;} // vue d'assemblage : son annulation (46)
+  if(asmMode==='asm'||asmUndoFirst(false)){const r=asmUndo();docUndoUI();return r;} // assemblage : son annulation (46)
   if(!docUndoStack.length){docUndoUI();return false;}
   const cur=docSnap();
   const e=docUndoStack.pop();
-  if(cur!=null)docRedoStack.push({snap:cur,label:e.label});
+  if(cur!=null)docRedoStack.push({snap:cur,label:e.label,t:++undoTick});
   if(!docApplySnap(e.snap)){ // instantané illisible : on ne le perd pas
     docUndoStack.push(e);
     faceEl.textContent='↩ Annulation impossible (instantané illisible).';
@@ -100,11 +104,11 @@ function docUndo(){
 }
 
 function docRedo(){
-  if(asmMode==='asm'){const r=asmRedo();docUndoUI();return r;}
+  if(asmMode==='asm'||asmUndoFirst(true)){const r=asmRedo();docUndoUI();return r;}
   if(!docRedoStack.length){docUndoUI();return false;}
   const cur=docSnap();
   const e=docRedoStack.pop();
-  if(cur!=null)docUndoStack.push({snap:cur,label:e.label});
+  if(cur!=null)docUndoStack.push({snap:cur,label:e.label,t:++undoTick});
   if(!docApplySnap(e.snap)){
     docRedoStack.push(e);
     faceEl.textContent='↪ Rétablissement impossible (instantané illisible).';
@@ -118,7 +122,9 @@ function docRedo(){
 
 function docUndoUI(){
   const u=$('btnUndo'),r=$('btnRedo');
-  const US=asmMode==='asm'?asmUndoStack:docUndoStack,RS=asmMode==='asm'?asmRedoStack:docRedoStack;
+  // mode Placer : l'annulation de l'assemblage ; mode pièce : celle du document, sauf si la
+  // dernière opération est une opération d'assemblage qui l'a modifié (46 : asmUndoFirst)
+  const US=asmMode==='asm'||asmUndoFirst(false)?asmUndoStack:docUndoStack,RS=asmMode==='asm'||asmUndoFirst(true)?asmRedoStack:docRedoStack;
   if(u){
     const n=US.length;
     u.textContent=n?('↩ Annuler ('+n+')'):'↩ Annuler';
@@ -184,8 +190,8 @@ window.addEventListener('keydown',e=>{
   const ctrl=e.ctrlKey||e.metaKey;
   if(ctrl&&!e.altKey){
     const k=String(e.key||'').toLowerCase();
-    if(k==='z'&&!e.shiftKey){if(docUndoStack.length||docRedoStack.length){e.preventDefault();docUndo();}return;}
-    if(k==='y'||(k==='z'&&e.shiftKey)){if(docRedoStack.length){e.preventDefault();docRedo();}return;}
+    if(k==='z'&&!e.shiftKey){if(docUndoStack.length||docRedoStack.length||asmUndoFirst(false)){e.preventDefault();docUndo();}return;}
+    if(k==='y'||(k==='z'&&e.shiftKey)){if(docRedoStack.length||asmUndoFirst(true)){e.preventDefault();docRedo();}return;}
   }
   // Faces sélectionnées dans la vue 3D (dernier clic dans la vue) : Suppr les retire du
   // solide (85-suppression-face). Sinon, Suppr supprime la sélection de l'arbre.

@@ -307,6 +307,7 @@ const MF_IC={
   asmView:'<path d="M3 8l5-3 5 3v6l-5 3-5-3z"/><path d="M11 13l5-3 5 3v6l-5 3-5-3z"/><path d="M8 11v6M16 16v6"/>',
   asmPart:'<path d="M4 8l8-4 8 4v8l-8 4-8-4z"/><path d="M4 8l8 4 8-4M12 12v8"/>',
   asmOcc:'<path d="M3 9l6-3 6 3v6l-6 3-6-3z"/><path d="M17 10v8M13 14h8"/>',
+  asmFromBodies:'<path d="M3 14l5-3 5 3v5l-5 3-5-3z"/><path d="M14 6l4-2 4 2v4l-4 2-4-2z"/><path d="M12 12l3-3M15 9h-2.5M15 9v2.5"/>',
   pPdf:'<path d="M6 3h9l3 3v15H6z"/><text x="12" y="17.6" font-size="6.2" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">PDF</text>'
 };
 function mfI(k,size){const p=MF_IC[k];if(!p)return null;return '<svg viewBox="0 0 24 24" width="'+(size||20)+'" height="'+(size||20)+'" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+p+'</svg>';}
@@ -341,6 +342,7 @@ function mfRibbon(){
   grp('Composants',[['asmView','Placer',()=>asmToggle(),'Modéliser le composant actif ↔ placer ses composants'],
     ['asmPart','Composant',()=>asmCmdNewComp(),'Nouveau composant dans le composant actif (on entre aussitôt dedans)'],
     ['asmOcc','Occurrence',()=>{if(asmMode!=='asm')asmEnter();asmCmdNewOcc();},'Nouvelle occurrence du composant sélectionné'],
+    ['asmFromBodies','Depuis corps',()=>asmCmdFromBodies(),'Créer un composant depuis le corps sélectionné (ou depuis chaque corps) : la pièce multicorps devient un assemblage, sans rien remodéliser'],
     ['import','Insérer',()=>asmCmdInsert(),'Insérer un fichier .miniFusion (copie) comme composant du composant actif']],'mfCao mfAsmG');
   // FAO : posage, opérations (mêmes fiches que la barre « + Usinage »), simulation, calcul, export
   grp('Posage',[['setup','Posage',()=>{const b=Array.from(document.querySelectorAll('#faoTreeWrap button')).find(x=>/\+ Posage/.test(x.textContent));if(b)b.click();},'Ajouter un posage'],['tools','Outils','faoToolsBtn']],'mfFao');

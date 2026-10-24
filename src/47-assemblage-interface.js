@@ -56,6 +56,7 @@ function asmCaptureActive(){
   });
   if(c._snap)asmSnapFree(c._snap);
   c._snap={items,exact:builtEngine==='exact',hash:(()=>{try{return docHash();}catch(e){return '';}})()};
+  delete c._stale;
   // le composant vient d'être rejoué : ses repères ont pu bouger → les alignements suivent
   try{if(asmResolve()){dirty=true;autosave();}}catch(e){}
   if(!asmBuilding){try{asmCtxDraw();}catch(e){}if(asmMode==='asm'){try{asmDraw();}catch(e){}}}
@@ -67,7 +68,7 @@ function asmBuildSnapshots(){
   // (buildDone) avant de rendre la main.
   if(!asm)return;
   const back=asm.active,backPath=asm.path.slice(),exact=typeof occHas==='function'&&occHas();
-  const need=c=>!c._snap||(exact&&!c._snap.exact);
+  const need=c=>!c._snap||c._stale||(exact&&!c._snap.exact); // _stale : document changé de l'extérieur (48)
   let n=0;
   asmBuilding=true;
   try{
