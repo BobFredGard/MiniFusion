@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**318 versions**, de `2026-09-28b` à `V0.6.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**319 versions**, de `2026-09-28b` à `V0.7.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4681,3 +4681,9 @@ Tests : `test_composants_inspection` (noyau réel : pièce multicorps seule — 
 - Correctif (V0.6.5) : changer une limite de liaison sans changer sa valeur n'empile plus d'étape d'annulation (le parcours Playwright des liaisons échouait sur un double « change »).
 
 Tests : `test_composants_plan` (noyau réel : trois corps placés sans activer de composant, volumes, positions, cache ; HLR exact de la vue, recalculée quand une occurrence bouge ; nomenclature 1er niveau / tous niveaux / pièces seules, matière ; bulles numérotées et renumérotées). Vérifié dans le navigateur : vue de face d'un socle et de deux colonnes, nomenclature et bulles sur la planche.
+
+## V0.7.0 - Tests de référence
+Fin de la série « composants façon Fusion 360 » (V0.6.1 à V0.6.7) ; première étape de la série V0.7 (idée SolidCraft : pièces de référence aux valeurs connues).
+- **12 pièces de référence** (`tests/oracle/cas.cjs`) décrites par une petite recette (esquisses rectangle / cercle / polygone / axe / centres de perçage sur un plan quelconque ; extrusion, découpe, nouveau corps, révolution 360° et 90°, perçage borgne à pointe, lamage, combiner union / intersection) et leurs valeurs **calculées à la main** — formules dans le fichier : volume, surface, centre de gravité (ou sa distance à l'axe), encombrement. Aucune valeur ne vient d'un logiciel de CAO.
+- **`test_oracle`** construit chaque recette dans MiniFusion (noyau exact), mesure avec `BRepGProp` (volume, surface, centre de gravité) et `BRepBndLib.AddOptimal` (encombrement exact) ; tolérance 10⁻⁶ (relatif pour volume et surface, mm pour le reste). Écarts mesurés : ≤ 4·10⁻¹⁵. Vérifié qu'une valeur attendue fausse (48 001 au lieu de 48 000 mm³) est refusée.
+- **`docs/oracle.md`** : tableau des pièces, résultats, écarts et formules, régénéré par `npm run oracle`.
