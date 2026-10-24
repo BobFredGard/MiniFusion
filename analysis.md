@@ -1,6 +1,6 @@
 # Analyse du projet MiniFusion
 
-*État au 2026-10-25 — version `V0.6.5`.*
+*État au 2026-10-25 — version `V0.6.6`.*
 
 ## Nature du projet
 
@@ -12,7 +12,7 @@ Le noyau géométrique exact est **OpenCascade (OCCT) compilé en WebAssembly**.
 
 | Élément | Rôle |
 |---|---|
-| `src/*.js` | Sources, **62 fichiers** (~50 000 lignes), concaténés dans l'ordre numérique par `build.js`. |
+| `src/*.js` | Sources, **63 fichiers** (~50 500 lignes), concaténés dans l'ordre numérique par `build.js`. |
 | `PostPro/*.js` | Fiches machines (Fagor 8065, Siemens 630 et 1520), insérées par `build.js` après `88-fao-60-postprocesseurs.js`. Les `.cps` Autodesk restent locaux. |
 | `fusion_mvp.html` | Livrable généré. **Ne jamais l'éditer à la main.** |
 | `build.js` | Concaténation + bandeaux de section ; `--check` échoue si le livrable est périmé. |

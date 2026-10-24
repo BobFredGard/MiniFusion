@@ -1090,6 +1090,7 @@ function renderProps(){
     try{ faoRenderProps(p,sel); }catch(e){}
     return;
   }
+  if(asmInspect){try{if(asmInspectProps(p))return;}catch(e){}} // résultats d'inspection (48)
   if(asmMode==='asm'&&asm){try{asmRenderProps(p);}catch(e){}return;} // vue d'assemblage (47)
   // Géométrie de construction (79) : création / modification en cours, ou élément sélectionné
   if(cgMode||(sel&&sel.kind==='cg')){try{cgRenderProps(p);}catch(e){}return;}

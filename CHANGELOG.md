@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**316 versions**, de `2026-09-28b` à `V0.6.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**317 versions**, de `2026-09-28b` à `V0.6.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4663,3 +4663,12 @@ Tests : `test_composants_references` (plan repris avec la position du socle, esq
 - **Interface** (`src/48-assemblage-placement.js`) : type au panneau, curseur + valeur + limites par degré de liberté (une étape d'annulation par geste), Capturer la position / Rétablir, ▶ Animer (aller-retour entre les limites, Échap arrête), « Liaison telle que construite… » sur une occurrence libre, panneau du composant : toutes ses liaisons à piloter. **Manipulateur contraint** : seulement les degrés de liberté de la liaison, dans son repère et ses limites. Pastille ⚙ dans l'arbre.
 
 Tests : `test_composants_liaisons` (rigide = l'alignement, pivot 30°, limites, glissière, pivot glissant, plan, rotule, chaîne de deux liaisons, boucle ⚠, telle que construite autour de Z et de X de l'occurrence, fichier, animation aux butées, manipulateur ; aussi en suite rapide). Parcours Playwright « liaisons : pivot tel que construit, piloté au curseur, limites ». Vérifié dans le navigateur : bras sur bâti, pivot tel que construit, curseur à 60°, limite 30°, Ctrl+Z.
+
+## V0.6.6 - Inspection : interférences, propriétés physiques
+Idées SolidCraft (interférences, propriétés de masse par composant), dans le plan « composants façon Fusion 360 ».
+- **Formes exactes de l'assemblage** (`src/48-composants-inspection.js`) : par composant, copies des solides d'un rejeu frais (`occFinalShape` : les solides affichés peuvent avoir été remplacés par un rejeu), gardées en cache (`c._exact`) tant que l'empreinte du composant ne change pas ; les autres composants sont activés le temps de la copie, puis retour au composant actif. Placées par instance (`gp_Trsf` / `BRepBuilderAPI_Transform`).
+- **Propriétés physiques** : `BRepGProp` (volume, centre de gravité) par corps ; masse = volume × masse volumique de la matière du composant (`doc.mat`, acier par défaut, liste de 14 matières) ; total et centre de gravité pondéré, sphère jaune dans la vue.
+- **Interférences** : toutes les paires de corps distincts (même pièce comprise), tri par boîtes englobantes puis `BRepAlgoAPI_Common` ; volume commun > 0,001 mm³ montré en rouge.
+- **Commande** « Inspecter » (ruban Composants), panneau de résultats (matière par composant, une étape d'annulation), relancer / fermer ; fermé en changeant de composant.
+
+Tests : `test_composants_inspection` (noyau réel : pièce multicorps seule — interférence 1 000 mm³ ; deux composants — 86,4 g d'aluminium + 39,25 g d'acier, centres de gravité, interférence ; relance depuis le cache sans rejeu ; colonne écartée — plus d'interférence ; deux occurrences superposées — 5 000 mm³). Vérifié dans le navigateur : socle et colonne, volume commun en rouge, centre de gravité.

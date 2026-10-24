@@ -142,6 +142,7 @@ function asmShow(path,mode,selId){
   // Va à l'instance (chemin absolu), en mode 'part' (Modéliser) ou 'asm' (Placer)
   if(typeof skEdit!=='undefined'&&skEdit){try{faceEl.textContent='Fermez d’abord l’esquisse.';}catch(e){}return false;}
   asmEnsure();
+  try{asmInspectClear();}catch(e){} // résultats d'inspection : propres à une vue (48)
   const p=asmPathOK(path)?path.slice():[];
   const moved=p.join('/')!==asm.path.join('/');
   if(mode==='asm'){
