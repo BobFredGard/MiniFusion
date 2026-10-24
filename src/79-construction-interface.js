@@ -149,6 +149,23 @@ function cgSelectAt(e){
   return true;
 }
 /* ── création / modification ── */
+function cgExtKey(g){return (g.path||[]).join('/')+'|'+(g.cg||'')+'|'+(g.o||'');}
+function cgExtCandidates(kind){
+  // Éléments d'autres instances de l'assemblage (même type, et ceux de l'origine) → [{path,cg,o,label}]
+  if(!asm||!asmOn())return [];
+  const out=[],me=asm.path.join('/');
+  const O={plane:['XY','XZ','YZ'],axis:['X','Y','Z'],point:['O'],frame:['O']}[kind]||[];
+  const lab={XY:'Plan XY',XZ:'Plan XZ',YZ:'Plan YZ',X:'Axe X',Y:'Axe Y',Z:'Axe Z',O:'Origine'};
+  asmInstances(asm.root).forEach(inst=>{
+    if(inst.path.join('/')===me)return; // pas sa propre instance
+    const c=asmComp(inst.comp);if(!c)return;
+    const names=[];let q=asmRoot();inst.path.forEach(id=>{const o=q.occ.find(z=>z.id===id);names.push(o?o.name:'?');q=o?asmComp(o.comp):q;});
+    const nm=inst.path.length?names.join(' › '):c.name+' (racine)';
+    O.forEach(o=>out.push({path:inst.path,cg:null,o,label:nm+' › '+lab[o]}));
+    (c.doc.cgeo||[]).forEach(k=>{if(k&&k.fr&&k.kind===kind)out.push({path:inst.path,cg:k.id,o:null,label:nm+' › '+k.name});});
+  });
+  return out;
+}
 function cgDraftOf(kind,how){
   return {id:'cg_brouillon',kind,how,name:'',refs:[],p:cgDefaults(kind,how),at:null,visible:true,fr:null,st:'ok',msg:''};
 }
@@ -225,10 +242,12 @@ function cgCommit(){
     const el=cgGet(cgMode.editId);if(!el){cgCancel();return;}
     docPushUndo('modification de « '+el.name+' »');
     el.how=d.how;el.refs=d.refs.map(r=>r?JSON.parse(JSON.stringify(r)):null);el.p=JSON.parse(JSON.stringify(d.p||{}));
+    if(d.how==='ext'&&d.ext)el.ext=JSON.parse(JSON.stringify(d.ext));else delete el.ext;
     if(d.name)el.name=d.name;
     id=el.id;
   }else{
     const el=cgNew(d.kind,d.how,d.refs,d.p,d.name||null);
+    if(d.ext){el.ext=JSON.parse(JSON.stringify(d.ext));try{cgResolveOne(el,{});}catch(e){}}
     id=el.id;
   }
   cgMode=null;
@@ -382,6 +401,13 @@ function cgRenderProps(p){
     Note(cgKindLabel(el)+' · '+cgHowLabel(el)+(sel.sub?' · plan '+sel.sub+' du repère':''));
     if(el.st==='warn')Note('⚠ '+el.msg);
     (el.refs||[]).forEach((r,i)=>{if(r){const s=(CG_HOW[el.kind][el.how].slots[i]||[0,'Référence'])[1];Note(s+' : '+cgRefLabel(r));}});
+    if(el.how==='ext'&&el.ext){
+      const g=cgExtCandidates(el.kind).find(x=>cgExtKey(x)===cgExtKey(el.ext));
+      Note('Depuis : '+(g?g.label:'(élément visé introuvable)'));
+      const fz=document.createElement('input');fz.type='checkbox';fz.checked=!!el.ext.frozen;
+      fz.onchange=()=>{docPushUndo(fz.checked?'figer « '+el.name+' »':'libérer « '+el.name+' »');el.ext.frozen=fz.checked;markDirty();rebuild();cgRefresh();};
+      Row('Figer (ne suit plus)',fz);
+    }
     if(el.fr){const f=v=>v.map(x=>(+x).toFixed(3).replace('.',',')).join(' ; ');
       Note('Origine : '+f(el.fr.o)+(el.kind==='point'?'':' · '+(el.kind==='axis'?'direction':'normale Z')+' : '+f(el.fr.z)));}
     const can=el.kind==='plane'||(el.kind==='frame'&&sel.sub&&CG_O_PLANES[sel.sub]);
@@ -399,7 +425,8 @@ function cgRenderProps(p){
   H(K.ic+' '+(cgMode.editId?'Modifier « '+((cgGet(cgMode.editId)||{}).name||'')+' »':'Nouveau '+K.lab.toLowerCase()));
   // méthode
   const s=document.createElement('select');
-  Object.keys(CG_HOW[d.kind]).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=CG_HOW[d.kind][k].lab;if(k===d.how)o.selected=true;s.appendChild(o);});
+  Object.keys(CG_HOW[d.kind]).forEach(k=>{if(k==='ext'&&k!==d.how&&!cgExtCandidates(d.kind).length)return; // pas d'autre instance
+    const o=document.createElement('option');o.value=k;o.textContent=CG_HOW[d.kind][k].lab;if(k===d.how)o.selected=true;s.appendChild(o);});
   s.onchange=()=>cgSetHow(s.value);
   Row('Méthode',s);
   // références
@@ -413,6 +440,16 @@ function cgRenderProps(p){
     if(d.refs[i]){const x=mk('button','mini','✕');x.title='Retirer';x.onclick=()=>{d.refs[i]=null;cgMode.slot=i;cgRefresh();};w.appendChild(x);}
     Row(sl[1],w);
   });
+  // référence externe : l'élément visé, dans une autre instance de l'assemblage
+  if(HW.ext){
+    const L=cgExtCandidates(d.kind),cur=d.ext?cgExtKey(d.ext):'';
+    const s2=document.createElement('select');s2.style.maxWidth='190px';
+    const o0=document.createElement('option');o0.value='';o0.textContent='— choisir —';s2.appendChild(o0);
+    L.forEach((g,i)=>{const o=document.createElement('option');o.value=String(i);o.textContent=g.label;if(cgExtKey(g)===cur)o.selected=true;s2.appendChild(o);});
+    s2.onchange=()=>{const g=L[+s2.value];d.ext=g?{ctx:asm.path.slice(),path:g.path.slice(),cg:g.cg,o:g.o,frozen:false}:null;cgRefresh();};
+    Row('Élément visé',s2);
+    Note('Associatif : suit l’autre composant quand il change ou se déplace (« Figer » ensuite pour l’arrêter).');
+  }
   // valeurs (ƒx)
   Object.keys(HW.par||{}).forEach(k=>{
     const P=HW.par[k],inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.style.width='80px';

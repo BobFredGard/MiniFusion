@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**314 versions**, de `2026-09-28b` à `V0.6.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**315 versions**, de `2026-09-28b` à `V0.6.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4648,3 +4648,11 @@ Tests : `test_composants_corps` (modèle : refus croisés, déplacé / copié, c
 - **Commandes** : Insérer → Lier / Copier ; clic droit (arbre, panneau) : Extraire vers un fichier, Remplacer par un lien, Relier la source, Rompre le lien, Mettre à jour les liens ; même source liée deux fois → occurrence. Pastilles 🔗 ✎ ⚠.
 
 Tests : `test_composants_lies` (dossier de projets simulé en mémoire : lier, source modifiée → mise à jour et alignement suivi, édition sur place → source réécrite, conflit ×3, hôte rouvert « modifié ici », source introuvable, même source deux fois, assemblage lié avec sous-composant, extraire, Ctrl+S de l'hôte ; aussi en suite rapide). Parcours Playwright avec le stockage privé du navigateur (OPFS : vraies API de fichiers). Vérifié dans le navigateur avec OPFS : Axe lié, modifié sur place (bundle réécrit), source modifiée ailleurs → « Mis à jour depuis le disque ».
+
+## V0.6.4 - Références entre composants
+Étape 3 du plan « composants façon Fusion 360 ».
+- **Construction « Depuis un autre composant »** (méthode `ext` des plans, axes, points et repères, `src/78-construction-modele.js`) : `el.ext` = {ctx (instance où l'on travaille), path (instance visée), cg (élément de construction) | o (XY, XZ, YZ, X, Y, Z, O), frozen, last} ; valeur = inv(monde(ctx)) · monde(path) · élément (`asmExtFrame`, `src/46-assemblage-modele.js`). Paramètres et inversion habituels (décalages et rotation d'un repère). Esquisse posée dessus, alignement dessus : comme n'importe quel élément.
+- **Suivi** (`asmExtSync`) : après un placement ou le rejeu d'un composant, ceux dont une référence externe a bougé sont rejoués (l'actif, ou les autres en arrière-plan avec leur instantané), jusqu'à stabilité ; trois passes au plus, sinon ⚠ « références circulaires ». Figée : garde sa position. Élément visé disparu : position mémorisée, ⚠.
+- **Interface** (`src/79-construction-interface.js`) : la méthode n'apparaît que s'il existe une autre instance ; liste des éléments visés (même type + origine), « Figer » dans le panneau de l'élément. Hors périmètre : faces et arêtes d'un autre composant (un composant inactif n'a qu'un maillage d'affichage) — y poser d'abord un plan de construction.
+
+Tests : `test_composants_references` (plan repris avec la position du socle, esquisse dessus, suivi composant actif / inactif, socle modifié, deux instances et contexte, figer / libérer, fichier, élément visé supprimé, circulaire après trois passes ; aussi en suite rapide). Vérifié dans le navigateur avec le noyau exact : plan du dessus du socle repris dans la colonne, esquisse et extrusion dessus ; socle rehaussé (20 → 30) : la colonne inactive suit.

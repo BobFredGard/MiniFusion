@@ -32,25 +32,32 @@ const CG_HOW={
     angle:{lab:'À un angle',slots:[['plane','Plan ou face'],['axis','Axe de rotation']],par:{a:{lab:'Angle',def:30,unit:'°'}},flip:true},
     '3pts':{lab:'Par 3 points',slots:[['point','Point 1'],['point','Point 2'],['point','Point 3']],flip:true},
     mid:{lab:'Médian',slots:[['plane','Plan 1'],['plane','Plan 2']],flip:true},
-    normal:{lab:'Normal à un axe',slots:[['axis','Axe'],['point','Point',1]],flip:true}
+    normal:{lab:'Normal à un axe',slots:[['axis','Axe'],['point','Point',1]],flip:true},
+    ext:{lab:'Depuis un autre composant',slots:[],ext:true,flip:true}
   },
   axis:{
     ref:{lab:'Arête, cylindre ou axe',slots:[['axis','Arête droite, cylindre ou axe']],flip:true},
     '2pts':{lab:'Par 2 points',slots:[['point','Point 1'],['point','Point 2']],flip:true},
     inter:{lab:'Intersection de 2 plans',slots:[['plane','Plan 1'],['plane','Plan 2']],flip:true},
-    normal:{lab:'Normal à un plan',slots:[['plane','Plan ou face'],['point','Point']],flip:true}
+    normal:{lab:'Normal à un plan',slots:[['plane','Plan ou face'],['point','Point']],flip:true},
+    ext:{lab:'Depuis un autre composant',slots:[],ext:true,flip:true}
   },
   point:{
     ref:{lab:'Sommet, centre ou point d’esquisse',slots:[['point','Point']]},
     xyz:{lab:'Coordonnées',slots:[['frame','Repère (origine si vide)',1]],par:{dx:{lab:'X',def:0,unit:'mm'},dy:{lab:'Y',def:0,unit:'mm'},dz:{lab:'Z',def:0,unit:'mm'}}},
-    inter:{lab:'Intersection axe / plan',slots:[['axis','Axe'],['plane','Plan ou face']]}
+    inter:{lab:'Intersection axe / plan',slots:[['axis','Axe'],['plane','Plan ou face']]},
+    ext:{lab:'Depuis un autre composant',slots:[],ext:true}
   },
   frame:{
     zx:{lab:'Origine, Z et X',slots:[['point','Origine'],['axis','Direction Z'],['axis','Direction X',1]],par:CG_FR_PAR,flip:true},
     face:{lab:'Sur un plan ou une face',slots:[['plane','Plan ou face'],['axis','Direction X',1]],par:CG_FR_PAR,flip:true},
-    '3pts':{lab:'Par 3 points',slots:[['point','Origine'],['point','Point sur X'],['point','Point dans XY']],par:CG_FR_PAR,flip:true}
+    '3pts':{lab:'Par 3 points',slots:[['point','Origine'],['point','Point sur X'],['point','Point dans XY']],par:CG_FR_PAR,flip:true},
+    ext:{lab:'Depuis un autre composant',slots:[],ext:true,par:CG_FR_PAR,flip:true}
   }
 };
+// ext (V0.6.4) : référence à un élément (ou à l'origine) d'une AUTRE instance de l'assemblage,
+// el.ext = {ctx (instance où l'on travaille), path (instance visée), cg | o, frozen, last} —
+// résolue par asmExtFrame (46) ; figée, elle garde sa position.
 const CG_DEF_HOW={plane:'offset',axis:'ref',point:'xyz',frame:'zx'};
 /* ── vecteurs (tableaux [x,y,z]) : le modèle ne dépend pas de three.js ── */
 const cgAdd=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
@@ -241,6 +248,9 @@ function cgBuild(el,ctx){
   const S=(i,t,opt)=>cgSlot(el,ctx,i,t,opt);
   const flip=!!(el.p&&el.p.flip);
   let fr=null,warn='';
+  // référence externe (ext) : repère de l'élément visé, exprimé dans ce composant
+  if(el.how==='ext'&&el.ext&&el.ext.frozen&&el.fr)return {fr:el.fr,warn:''};
+  const X=()=>{const F=asmExtFrame(el);if(!F)throw new Error('référence externe introuvable : position mémorisée');el.ext.last=cgRound(F);return F;};
   if(el.kind==='plane'){
     if(el.how==='offset'){
       const P=S(0,'plane');
@@ -268,6 +278,8 @@ function cgBuild(el,ctx){
       const A=S(0,'axis'),Pt=S(1,'point',true),n=cgUnit(A.d);
       const B=cgBasisN(n,null);
       fr=cgFrPlane(Pt?Pt.o:A.o,B.u,B.v,n);
+    }else if(el.how==='ext'){
+      const F=X();fr=cgFrPlane(F.o,F.x,F.y,F.z);
     }
     if(fr&&flip){fr.y=cgMul(fr.y,-1);fr.z=cgMul(fr.z,-1);}
   }else if(el.kind==='axis'){
@@ -289,7 +301,7 @@ function cgBuild(el,ctx){
       const P=S(0,'plane'),Pt=S(1,'point'),n=cgUnit(P.n);
       o=cgSub(Pt.o,cgMul(n,cgDot(cgSub(Pt.o,P.o),n))); // pied sur le plan
       d=n;
-    }
+    }else if(el.how==='ext'){const F=X();o=F.o;d=F.z;}
     if(d&&flip)d=cgMul(d,-1);
     fr=cgFrAxis(o,d);
   }else if(el.kind==='point'){
@@ -302,7 +314,7 @@ function cgBuild(el,ctx){
       const A=S(0,'axis'),P=S(1,'plane'),d=cgUnit(A.d),n=cgUnit(P.n),den=cgDot(n,d);
       if(Math.abs(den)<1e-9)throw new Error('axe parallèle au plan : pas d’intersection');
       o=cgAdd(A.o,cgMul(d,cgDot(n,cgSub(P.o,A.o))/den));
-    }
+    }else if(el.how==='ext')o=X().o;
     fr={o:cgArr(o),x:[1,0,0],y:[0,1,0],z:[0,0,1]};
   }else if(el.kind==='frame'){
     let O,R;
@@ -318,7 +330,7 @@ function cgBuild(el,ctx){
       if(cgLen(X)<1e-9)throw new Error('origine et point sur X confondus');
       if(cgLen(Z)<1e-9*Math.max(1,cgLen(X)*cgLen(cgSub(c,a))))throw new Error('points alignés : plan XY indéfini');
       O=a;R=cgOrtho(Z,X);
-    }
+    }else if(el.how==='ext'){const F=X();O=F.o;R={x:F.x,y:F.y,z:F.z};}
     warn=R.warn||'';
     let x=R.x,y=R.y,z=R.z;
     if(flip){z=cgMul(z,-1);y=cgMul(y,-1);}

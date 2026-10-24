@@ -475,3 +475,65 @@ function asmAllDocs(){
   // Tous les documents de composant (pièce seule : [doc]) — trajectoires FAO, imports du bundle
   return asm?asm.comps.map(c=>c.doc).filter(Boolean):[doc];
 }
+/* ── références entre composants (V0.6.4) : construction « Depuis un autre composant » ──
+   el.ext = {ctx (chemin de l'instance où l'on travaille), path (instance visée), cg (élément de
+   construction visé) | o (élément d'origine : XY, XZ, YZ, X, Y, Z, O), frozen, last (dernier
+   repère lu)} ; valeur = inv(monde(ctx)) · monde(path) · élément. ctx lève l'ambiguïté quand le
+   composant a plusieurs instances (le principe de Fusion : la référence est prise « en contexte »). */
+let asmExtBusy=false;
+function asmExtGeom(cid,e){
+  // Repère de l'élément visé dans le repère de son composant
+  if(e.cg){
+    const c=asmComp(cid);const k=c&&(c.doc.cgeo||[]).find(q=>q&&q.id===e.cg);
+    return k&&k.fr?{o:k.fr.o.slice(),x:k.fr.x.slice(),y:k.fr.y.slice(),z:k.fr.z.slice()}:null;
+  }
+  const P=CG_O_PLANES[e.o];
+  if(P)return {o:[0,0,0],x:P.u.slice(),y:P.v.slice(),z:P.n.slice()};
+  if(e.o==='X')return {o:[0,0,0],x:[0,1,0],y:[0,0,1],z:[1,0,0]};
+  if(e.o==='Y')return {o:[0,0,0],x:[0,0,1],y:[1,0,0],z:[0,1,0]};
+  return asmFr0(); // Z, O
+}
+function asmExtCtx(e,cid){
+  // Instance de référence du composant qui porte l'élément
+  if(Array.isArray(e.ctx)&&asmPathComp(e.ctx)===cid)return e.ctx;
+  if(cid===asm.active&&asmPathComp(asm.path)===cid)return asm.path;
+  return asmFirstPath(cid);
+}
+function asmExtFrame(el,cid){
+  // Repère de la référence externe dans le composant cid (par défaut : le composant actif)
+  const e=el&&el.ext;if(!asm||!e||!Array.isArray(e.path))return null;
+  cid=cid||asm.active;
+  const ctx=asmExtCtx(e,cid),T=asmPathComp(e.path);
+  if(!ctx||!T)return null;
+  const G=asmExtGeom(T,e),Wt=asmWorld(e.path),Wc=asmWorld(ctx);
+  if(!G||!Wt||!Wc)return null;
+  return asmRound(asmCompose(asmInverse(Wc),asmCompose(Wt,G)));
+}
+function asmExtStale(){
+  // Composants dont une référence externe a bougé depuis leur dernier rejeu
+  const out=[];if(!asm)return out;
+  asm.comps.forEach(c=>{(c.doc.cgeo||[]).forEach(el=>{
+    if(!el||el.how!=='ext'||!el.ext||el.ext.frozen)return;
+    const F=asmExtFrame(el,c.id);
+    if(F&&!cgSameFr(cgRound(F),el.ext.last||null)&&!out.includes(c))out.push(c);
+  });});
+  return out;
+}
+function asmExtSync(){
+  // Rejoue les composants dont une référence externe a bougé (placement, autre composant
+  // modifié), jusqu'à stabilité — trois passes au plus, sinon ⚠ « circulaire ». → true si rejoué
+  if(!asm||asmExtBusy)return false;
+  asmExtBusy=true;let any=false;
+  try{
+    for(let pass=0;pass<3;pass++){
+      const st=asmExtStale();if(!st.length)return any;
+      any=true;
+      st.forEach(c=>{if(c.doc===doc){try{builtVersion=-1;builtHash=null;markDirty();rebuild();}catch(e){}}else c._stale=true;});
+      try{asmBuildSnapshots();}catch(e){}
+      asmResolve();
+    }
+    asmExtStale().forEach(c=>(c.doc.cgeo||[]).forEach(el=>{if(el&&el.how==='ext'&&el.ext&&!el.ext.frozen){el.st='warn';el.msg='références circulaires entre composants : position mémorisée';}}));
+  }finally{asmExtBusy=false;}
+  return any;
+}
+function asmExtSyncSoon(){if(!asmExtBusy&&asm){try{setTimeout(()=>{try{if(asmExtStale().length){asmExtSync();asmNotify(true);}}catch(e){}},0);}catch(e){}}}

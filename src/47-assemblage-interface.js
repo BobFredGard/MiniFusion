@@ -59,6 +59,7 @@ function asmCaptureActive(){
   delete c._stale;
   // le composant vient d'être rejoué : ses repères ont pu bouger → les alignements suivent
   try{if(asmResolve()){dirty=true;autosave();}}catch(e){}
+  asmExtSyncSoon(); // ce composant a pu bouger des éléments visés par d'autres (46)
   if(!asmBuilding){try{asmCtxDraw();}catch(e){}if(asmMode==='asm'){try{asmDraw();}catch(e){}}}
 }
 function asmSnapFree(s){(s&&s.items||[]).forEach(it=>{try{it.geo.dispose();}catch(e){}});}
@@ -195,7 +196,7 @@ function asmUp(){
 function asmToggle(){if(asmMode==='asm')asmExit();else asmEnter();}
 function asmOnChange(viewOnly){
   // Appelé par le modèle (46) après toute modification de l'assemblage (viewOnly : bascule)
-  if(!viewOnly){try{dirty=true;autosave();}catch(e){}}
+  if(!viewOnly){try{dirty=true;autosave();}catch(e){}asmExtSyncSoon();} // références externes (46)
   if(asmBuilding)return;
   // chaque étape protégée à part : un dessin raté ne doit pas laisser l'arbre périmé
   if(asmMode==='asm'){try{asmDraw();}catch(e){}try{renderTree();}catch(e){}try{renderProps();}catch(e){}}

@@ -2,7 +2,7 @@
 
 **CAO paramétrique, assemblage, FAO et mise en plan dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2, G-code et planches cotées ISO. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.6.3** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.6.4** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Sommaire
 
@@ -114,6 +114,11 @@ Convertir une pièce multicorps en assemblage, sans rien remodéliser :
 - **Insérer** propose **Lier** (recommandé) ou **Copier**. Un fichier du **dossier de projets** est retrouvé par son chemin, sur n'importe quel PC qui synchronise ce dossier (Dropbox) ; hors du dossier, le lien ne vaut que sur cet ordinateur. Le fichier hôte garde une copie : il s'ouvre même sans la source (⚠).
 - **Édition sur place** : on modélise un composant lié comme un autre (✎ dans l'arbre) ; à l'enregistrement de l'assemblage (Ctrl+S), sa source est réécrite d'abord (trajectoires FAO de la source gardées).
 - **Mise à jour** : à l'ouverture, au retour sur l'onglet et par 🔄 dans l'arbre (le premier clic autorise l'accès au dossier) : une source changée ailleurs est rechargée, les alignements suivent. Modifiée des deux côtés : **Garder les miennes**, **Prendre la source** ou **Rompre le lien**.
+**Références entre composants** : dans un composant, un plan, un axe, un point ou un repère de construction peut reprendre un élément d'un AUTRE composant (méthode **Depuis un autre composant** : un de ses plans, axes, points ou repères de construction, ou de son origine). On y pose une esquisse, on extrude jusqu'à lui, on aligne dessus… comme sur un élément du composant.
+- **Associatif** : si l'autre composant change ou se déplace, l'élément suit, et le composant est rejoué (même inactif) ; **Figer** l'arrête à sa position.
+- La référence est prise **en contexte** : depuis l'instance où l'on travaille (un composant présent deux fois garde la position vue depuis la première).
+- Élément visé supprimé : position gardée, ⚠ ; références circulaires (un placement qui dépend d'une référence qui dépend de ce placement) : ⚠ après trois passes.
+
 - Clic droit sur un composant : **Extraire vers un fichier…** (il devient lié à ce fichier), **Remplacer par un lien…**, **Relier la source…** (fichier déplacé ou renommé), **Rompre le lien** (copie locale), **Mettre à jour les liens**. Lier deux fois la même source donne une nouvelle occurrence.
 
 ## FAO
