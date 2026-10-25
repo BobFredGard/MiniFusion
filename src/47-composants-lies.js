@@ -188,7 +188,7 @@ async function asmLinksWrite(){
         if(c!=='over'){out.failed.push(L.name+' (non écrite)');continue;}
       }
       const txt=asmLinkText(L,cur);
-      const w=await r.h.createWritable();await w.write(txt);await w.close();
+      await mffWriteSafe(r.h,txt); // V0.8.3 : contrôle, copie .bak de la source, écriture abandonnée en cas d'erreur
       delete L.link.pend;L.link.sig=asmHash(txt);L.link.base=asmSubtreeSig(L);L.link.st='ok';L.link.msg='';
       out.written.push(L.name);
     }catch(e){out.failed.push(L.name+' ('+(e&&e.message||e)+')');}

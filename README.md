@@ -2,7 +2,7 @@
 
 **CAO paramétrique, assemblage, FAO et mise en plan dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2, G-code et planches cotées ISO. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.8.2** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.8.3** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Sommaire
 
@@ -86,6 +86,7 @@ Historique rejouable, arborescence et marqueur de temps. **Bandeau de timeline**
 - **Mesures** : face à face, Ø, entraxe, et mesure entre 2 arêtes avec `Ctrl+clic`.
 - **Repère pièce** : point central, axes et 3 petits plans cliquables (esquisse dessus) ; chaque élément se masque séparément.
 - **Fichiers** : import STEP / STL ; export STEP / STL / OBJ (aussi pour un seul corps) ; projet **`.miniFusion`** (document, parcours FAO, planches) ; sauvegarde locale automatique.
+- **Enregistrement sûr** : le contenu est contrôlé avant d'écrire (un enregistrement raté ne remplace jamais un bon fichier), l'écriture est abandonnée en cas d'erreur, et la **version précédente** est gardée : `nom.miniFusion.bak` à côté du fichier quand il est dans le dossier de projets, et toujours dans le navigateur. Menu Projet → **Copie de secours…** pour la rouvrir (Ctrl+S la remet dans le fichier).
 
 ## Composants
 

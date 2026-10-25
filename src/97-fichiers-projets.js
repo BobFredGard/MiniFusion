@@ -62,17 +62,100 @@ async function mffWrite(h){
   // composants liés modifiés ici : leurs sources d'abord (47-composants-lies)
   try{if(asm&&asmLinked().length)await asmLinksWrite();}catch(e){}
   const data=await mffData();
-  const w=await h.createWritable();await w.write(data);await w.close();
+  return await mffWriteSafe(h,data);
+}
+/* ---- enregistrement sûr (V0.8.3) ----
+   1. le contenu est CONTRÔLÉ avant d'écrire (non vide, lisible, c'est bien un projet) : un
+      enregistrement raté ne remplace jamais un bon fichier ;
+   2. la version précédente est COPIÉE : « nom.miniFusion.bak » à côté du fichier quand il est
+      dans le dossier de projets (le navigateur n'écrit qu'où on lui a donné accès), et toujours
+      dans le stockage du navigateur (IndexedDB, une copie par fichier) ;
+   3. l'écriture passe par le fichier d'échange du navigateur, qui ne remplace l'original qu'à la
+      fermeture ; en cas d'erreur elle est abandonnée (l'original reste intact) ;
+   4. relecture : la taille écrite doit être celle du contenu, sinon la copie est remise. */
+function mffCheckData(txt){
+  // → message d'erreur, ou '' si le contenu est un projet lisible
+  if(typeof txt!=='string'||txt.length<20)return 'contenu vide';
+  let o;try{o=JSON.parse(txt);}catch(e){return 'contenu illisible ('+(e&&e.message||e)+')';}
+  if(!o||typeof o!=='object')return 'contenu illisible';
+  const d=o.doc&&typeof o.doc==='object'?o.doc:o; // bundle : {doc, …} ; document : {app, …}
+  if(d.app!=='MiniFusion'&&!Array.isArray(d.features)&&!Array.isArray(d.sketches))return 'ce n’est pas un projet MiniFusion';
+  return '';
+}
+async function mffDirOf(h){
+  // Dossier qui contient h, s'il est dans le dossier de projets (sinon null)
+  try{
+    if(!mffFolder||typeof mffFolder.resolve!=='function')return null;
+    const path=await mffFolder.resolve(h);if(!Array.isArray(path)||!path.length)return null;
+    let d=mffFolder;for(const n of path.slice(0,-1))d=await d.getDirectoryHandle(n);
+    return d;
+  }catch(e){return null;}
+}
+async function mffBackup(h,old){
+  // Copie de la version précédente → {disk: nom du .bak ou '', idb: bool}
+  const out={disk:'',idb:false};
+  try{await idbSet('mff:bak:'+h.name,{name:h.name,at:Date.now(),txt:old});out.idb=true;}catch(e){}
+  try{
+    const d=await mffDirOf(h);
+    if(d){const b=await d.getFileHandle(h.name+'.bak',{create:true});const w=await b.createWritable();
+      try{await w.write(old);await w.close();out.disk=b.name;}catch(e){try{await w.abort();}catch(e2){}}}
+  }catch(e){}
+  return out;
+}
+async function mffWriteSafe(h,data,opt){
+  // → {bak:{disk,idb}} ; lève une erreur si rien n'a été écrit (l'original est alors intact)
+  const bad=mffCheckData(data);if(bad)throw new Error('enregistrement annulé : '+bad+' — le fichier sur le disque n’a pas été touché');
+  let old=null;try{old=await (await h.getFile()).text();}catch(e){old=null;}
+  let bak={disk:'',idb:false};
+  if(old&&old!==data&&!(opt&&opt.noBak))bak=await mffBackup(h,old);
+  const w=await h.createWritable();
+  try{await w.write(data);await w.close();}
+  catch(e){try{await w.abort();}catch(e2){}throw e;}
+  try{
+    const f=await h.getFile(),n=typeof Blob!=='undefined'?new Blob([data]).size:data.length;
+    if(typeof f.size==='number'&&f.size!==n){
+      if(old){const w2=await h.createWritable();await w2.write(old);await w2.close();}
+      throw new Error('relecture : '+f.size+' octets au lieu de '+n+(old?' — version précédente remise':''));
+    }
+  }catch(e){if(/relecture/.test(e&&e.message||''))throw e;}
+  mffLastBak=bak;
+  return {bak};
+}
+let mffLastBak=null;
+async function mffBakFind(h){
+  // Copies de secours du fichier courant : sur le disque (.bak) et dans le navigateur
+  const out=[];if(!h)return out;
+  try{const d=await mffDirOf(h);if(d){const b=await d.getFileHandle(h.name+'.bak');const f=await b.getFile();
+    out.push({where:'disk',label:'📁 '+b.name,at:f.lastModified||0,txt:async()=>await f.text()});}}catch(e){}
+  try{const r=await idbGet('mff:bak:'+h.name);if(r&&typeof r.txt==='string')out.push({where:'idb',label:'🗄 copie du navigateur',at:r.at||0,txt:async()=>r.txt});}catch(e){}
+  return out.sort((a,b)=>b.at-a.at);
+}
+async function mffBakOpen(c){
+  // Ouvre une copie de secours À LA PLACE du document, rattachée au même fichier : Ctrl+S la
+  // réécrit (et la version actuelle devient à son tour la copie)
+  if(!(await mffConfirmDiscard()))return false;
+  const txt=await c.txt(),bad=mffCheckData(txt);if(bad){alert('Copie de secours illisible : '+bad);return false;}
+  const h=mffHandle;await mffLoadText(txt,h?h.name:'copie',h);
+  mffSavedSig=null;setTimeout(()=>{mffSavedSig='__copie__';mffTitle();},1600); // « modifié » : le disque a l'autre version
+  try{faceEl.textContent='Copie de secours ouverte ('+new Date(c.at).toLocaleString('fr')+') — Ctrl+S pour la remettre dans '+(h?h.name:'le fichier')+'.';}catch(e){}
+  return true;
+}
+async function mffBakMenu(anchor){
+  const L=await mffBakFind(mffHandle);
+  const items=L.length?L.map(c=>({html:c.label.replace(/</g,'&lt;')+' <span style="opacity:.6">'+(c.at?new Date(c.at).toLocaleString('fr'):'')+'</span>',fn:()=>mffBakOpen(c)}))
+    :[{html:'<span style="opacity:.6">'+(mffHandle?'Aucune copie de secours pour ce fichier':'Pas encore de fichier sur le disque')+'</span>',fn:()=>{}}];
+  mfPop(anchor,items);
 }
 function mffBase(n){return String(n||'').replace(/(\.minifusion(\.json)?|\.json)$/i,'');}
 async function mffSave(){
   // true si enregistré
-  if(mffHandle&&MFF_FS){
+  if(mffHandle&&(MFF_FS||typeof mffHandle.createWritable==='function')){ // un lien qui sait écrire suffit
     try{
       if(!(await mffPerm(mffHandle,'readwrite')))throw new Error('permission refusée');
-      await mffWrite(mffHandle);fileHandle=mffHandle;mffMark();mffRecentAdd(mffHandle);
+      const r=await mffWrite(mffHandle);fileHandle=mffHandle;mffMark();mffRecentAdd(mffHandle);
       try{autosave();}catch(e){}
-      try{faceEl.textContent='Enregistré dans '+mffHandle.name+' (document + trajectoires).';}catch(e){}
+      const bk=r&&r.bak&&r.bak.disk?' — version précédente : '+r.bak.disk:(r&&r.bak&&r.bak.idb?' — version précédente gardée dans le navigateur':'');
+      try{faceEl.textContent='Enregistré dans '+mffHandle.name+' (document + trajectoires)'+bk+'.';}catch(e){}
       return true;
     }catch(e){try{faceEl.textContent='Enregistrement impossible ('+(e&&e.message||e)+') — « Enregistrer sous… ».';}catch(e2){}}
   }
@@ -240,7 +323,8 @@ function mffCss(){
     if(menu&&menu.classList&&menu.classList.contains('ddMenu')&&!$$('btnRecent')){
       const r=document.createElement('button');r.id='btnRecent';r.innerHTML='<i>🕘</i>Ouvrir récent…';r.title='Fichiers ouverts ou enregistrés récemment';r.onclick=e=>{e.stopPropagation();mffRecentMenu(r);};
       const f=document.createElement('button');f.id='btnFolder';f.innerHTML='<i>📁</i>Dossier de projets…';f.title='Explorer le dossier où vous rangez vos pièces';f.onclick=()=>mffFolderPanel();
-      menu.appendChild(r);menu.appendChild(f);
+      const k=document.createElement('button');k.id='btnBak';k.innerHTML='<i>🛟</i>Copie de secours…';k.title='Version précédente du fichier, gardée à chaque enregistrement (.bak à côté du fichier dans le dossier de projets, et dans le navigateur)';k.onclick=e=>{e.stopPropagation();mffBakMenu(k);};
+      menu.appendChild(r);menu.appendChild(f);menu.appendChild(k);
     }
     // nom du fichier + point « modifié » à côté du logo (les deux interfaces)
     const brand=document.querySelector('.topbar .brand');

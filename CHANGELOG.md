@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**331 versions**, de `2026-09-28b` à `V0.8.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**332 versions**, de `2026-09-28b` à `V0.8.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4801,3 +4801,15 @@ Même principe que l'extrusion dynamique (V0.7.6), étendu aux trois autres fonc
 - **Bulles éditables** : une bulle se sélectionne et **se glisse** (une étape d'annulation), `Suppr` la retire ; **＋ Bulle** (panneau de la nomenclature) pose une bulle sur la pièce cliquée dans une vue « Assemblage » (Échap pour finir), refusée si la pièce n'est pas dans la nomenclature au niveau choisi.
 - `occTriPos` : triangulation brute séparée de `occTessellate` (les rayons des bulles n'ont pas besoin de THREE).
 - **Tests** : `test_composants_plan_bulles` (noyau réel : hachures groupées par composant, variantes, case ; accroche sur la face avant vue de face et sur le dessus vue de dessus, bulles écartées, hors de la vue, traits libres, bulle sous le curseur, ＋ Bulle, refus hors nomenclature) ; `test_mep_hachures_cotes` mis à jour (réglage par défaut). Vérifié dans le navigateur : coupe d'un socle et de deux colonnes (hachures 45° / 135°), bulles automatiques, glisser, Suppr, ＋ Bulle.
+
+## V0.8.3 - Enregistrement sûr et copie de secours
+Idée SolidCraft de la série V0.7 : un enregistrement ne doit jamais faire perdre le fichier.
+- **`mffWriteSafe`** (`src/97-fichiers-projets.js`) pour tous les enregistrements de projets (Ctrl+S, Enregistrer sous, Enregistrer ici) et l'écriture des sources des composants liés :
+  1. **contrôle du contenu** avant d'écrire (non vide, JSON lisible, c'est bien un projet MiniFusion) — sinon « enregistrement annulé », le fichier sur le disque n'est pas touché ;
+  2. **copie de la version précédente** (si le contenu change) : `nom.miniFusion.bak` à côté du fichier quand il est dans le dossier de projets (le navigateur n'écrit que là où on lui a donné accès), et toujours dans le navigateur (IndexedDB, une copie par fichier) ;
+  3. écriture par le **fichier d'échange** du navigateur (l'original n'est remplacé qu'à la fermeture) ; une erreur **abandonne** l'écriture, l'original reste intact ;
+  4. **relecture** : une taille différente du contenu remet la version précédente et le signale.
+- Message d'enregistrement : « … — version précédente : Bride.miniFusion.bak ».
+- Menu Projet → **🛟 Copie de secours…** : copies du fichier courant (disque, navigateur) avec leur date ; en ouvrir une la charge à la place du document, rattachée au même fichier, marquée « modifiée » — Ctrl+S la remet (la version actuelle devient à son tour la copie).
+- Ctrl+S réécrit le fichier dès que le lien sait écrire (avant : seulement si l'API avait été détectée au chargement).
+- **Tests** : `test_enregistrement_sur` (système de fichiers simulé : contenus refusés, premier enregistrement, .bak et copie du navigateur, contenu inchangé, contenu vide, écriture en échec, fichier tronqué à la relecture, fichier hors du dossier, Ctrl+S complet, copies proposées, ouverture d'une copie) ; suites complète et rapide.
