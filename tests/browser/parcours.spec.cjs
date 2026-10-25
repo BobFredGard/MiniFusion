@@ -414,6 +414,44 @@ test('apparence en mode Placer : arêtes, intensité et transparence d’une occ
   expect(err).toEqual([]);
 });
 
+test('mode Placer : la vue tourne autour de la pièce choisie ou du repère de référence',async({page})=>{
+  const err=await demarrer(page);
+  await page.evaluate(()=>{
+    const mkSk=(name,pts)=>{newSketch('XY');const sk=skEdit;sk.name=name;const P=pts.map(([x,y])=>addPoint(sk,x,y));
+      for(let i=0;i<P.length;i++)sk.entities.push({id:'L'+i,t:'line',p1:P[i],p2:P[(i+1)%P.length]});closeSketch(true);return sk;};
+    const a=mkSk('Socle',[[-20,-20],[20,-20],[20,20],[-20,20]]);addFeature({id:uid('ex'),type:'extrude',name:'Socle',sketchId:a.id,op:'add',distance:20});
+    newSketch('XY');const b=skEdit;b.name='Goupille';b.entities.push({id:'C0',t:'circle',pc:addPoint(b,60,0),r:5});closeSketch(true);
+    extNew={sketchId:b.id,op:'new',dist:30};extNewOk();
+    doc.bodies[0].name='Socle';doc.bodies[1].name='Goupille';markDirty();rebuild();
+  });
+  await page.waitForFunction(()=>builtEngine==='exact'&&rebuildDepth===0&&builtVersion===_docVersion&&doc.bodies.length===2,null,{timeout:60000});
+  await page.evaluate(()=>{asmCompsFromBodies(doc.bodies.map(e=>e.id));markDirty();rebuild();});
+  await ruban(page,'Placer').click();
+  await page.waitForFunction(()=>asmMode==='asm'&&asmRoot().occ.length===2);
+  const pivot=()=>page.evaluate(()=>{const p=orbitPivot();return [p.x,p.y,p.z];});
+  const proche=(a,b)=>a.forEach((v,i)=>expect(v).toBeCloseTo(b[i],3));
+  proche(await pivot(),[22.5,0,15]);                       // rien de choisi : centre des pièces placées
+  await page.locator('#tree .tnode',{hasText:'Goupille:1'}).click();
+  proche(await pivot(),[60,0,15]);                         // la goupille sélectionnée
+  await page.locator('#tree .tnode',{hasText:'Origine de'}).click();
+  proche(await pivot(),[0,0,0]);                           // le repère de référence cliqué
+  await expect(page.locator('#tree .tnode.sel',{hasText:'Origine de'})).toHaveCount(1);
+  await page.locator('#tree .tnode',{hasText:'Goupille:1'}).click();
+  // vraie rotation à la souris, dans le vide : la goupille reste au même endroit de l'écran
+  const ecran=()=>page.evaluate(()=>{const q=orbitPivot().project(camera),r=renderer.domElement.getBoundingClientRect();
+    return [r.left+(q.x+1)/2*r.width,r.top+(1-q.y)/2*r.height];});
+  const avant=await ecran(),cam0=await page.evaluate(()=>camera.position.toArray());
+  const box=await page.evaluate(()=>{const r=renderer.domElement.getBoundingClientRect();return {x:r.left,y:r.top,width:r.width,height:r.height};});
+  await page.mouse.move(box.x+40,box.y+box.height-40);await page.mouse.down();
+  for(let i=1;i<=10;i++)await page.mouse.move(box.x+40+12*i,box.y+box.height-40-4*i);
+  await page.mouse.up();
+  await page.waitForTimeout(1500); // inertie
+  const apres=await ecran(),cam1=await page.evaluate(()=>camera.position.toArray());
+  expect(Math.hypot(cam1[0]-cam0[0],cam1[1]-cam0[1],cam1[2]-cam0[2])).toBeGreaterThan(1); // la vue a tourné
+  expect(Math.abs(apres[0]-avant[0])).toBeLessThan(1.5);expect(Math.abs(apres[1]-avant[1])).toBeLessThan(1.5);
+  expect(err).toEqual([]);
+});
+
 test('FAO : surfaçage sur l\'Axe → parcours → G-code',async({page})=>{
   const err=await demarrer(page);
   await ouvrirAxe(page);

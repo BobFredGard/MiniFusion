@@ -13,6 +13,7 @@
    propres, géométries clonées en fin de rejeu), refaits seulement repli maillage → exact. */
 let asmScene=null,asmTri=null;
 let asmSelId=null;      // occurrence sélectionnée (mode Placer) : enfant direct du composant actif
+let asmPivot=null;      // V0.7.4 : repère choisi dans l'arbre comme centre de rotation {cg|null, name}
 let asmBuilding=false;  // instantanés en cours : pas de dessin intermédiaire
 let asmTreeOpen=true;   // section « Composants » de l'arbre dépliée
 const ASM_SEL_COL=0x0a84ff;
@@ -101,6 +102,7 @@ function asmFill(G,placer){
     const kind=!mine?'ghost':(self||!placer)?'solid':'pick';
     const g=new THREE.Group();g.matrixAutoUpdate=false;g.matrix.copy(asmMat4(asmCompose(V,inst.F)));
     g.userData.path=inst.path; // chemin absolu : points d'accroche (48-assemblage-accroches)
+    g.userData.kind=kind;      // centre de rotation : les fantômes ne comptent pas (asmOrbitPivot)
     if(kind==='pick'){g.userData.occ=key;g.name='occ_'+key;}
     const on=kind==='pick'&&asmSelId===key;
     // mode Placer : apparence de l'occurrence (couleur, transparence, arêtes — 48-assemblage-apparence)
@@ -139,6 +141,27 @@ function asmCtxDraw(){
   if(!G){G=new THREE.Group();G.name='asmCtx';scene.add(G);}
   asmFill(G,false);
 }
+function asmOrbitPivot(){
+  // V0.7.4 — centre de rotation en mode Placer, comme en Modéliser (face choisie, sinon les pièces) :
+  // repère choisi dans l'arbre (origine ou repère de construction du composant actif), sinon
+  // l'occurrence sélectionnée, sinon le centre de ce qui est placé (fantômes exclus)
+  if(asmMode!=='asm'||!asm)return null;
+  if(asmPivot){const F=asmPivot.cg?asmCompFrame(asm.active,asmPivot.cg):asmFr0();if(F)return new THREE.Vector3(F.o[0],F.o[1],F.o[2]);}
+  const G=asmSceneGet().getObjectByName('asmOcc');if(!G)return null;
+  const box=new THREE.Box3();
+  const take=g=>g.traverse(m=>{if(m.isMesh&&m.geometry)box.expandByObject(m);});
+  if(asmSelId){const g=G.children.find(x=>x.userData&&x.userData.occ===asmSelId);if(g)take(g);}
+  if(box.isEmpty())G.children.forEach(g=>{if(g.userData&&g.userData.kind!=='ghost')take(g);});
+  return box.isEmpty()?null:box.getCenter(new THREE.Vector3());
+}
+function asmPivotPick(cg,name){
+  // Clic sur un repère de l'arbre : il devient (ou cesse d'être) le centre de rotation
+  const same=asmPivot&&(asmPivot.cg||null)===(cg||null);
+  asmPivot=same?null:{cg:cg||null,name};
+  if(asmPivot)asmSelId=null;
+  try{faceEl.textContent=asmPivot?'Rotation de la vue autour de « '+name+' » (clic à nouveau ou Échap : autour des pièces).':'Rotation de la vue autour des pièces.';}catch(e){}
+  try{asmDraw();renderTree();renderProps();}catch(e){}
+}
 function asmFit(){
   const S=asmSceneGet(),box=new THREE.Box3();
   S.getObjectByName('asmOcc').traverse(m=>{if(m.isMesh)box.expandByObject(m);});
@@ -154,6 +177,7 @@ function asmShow(path,mode,selId){
   if(typeof skEdit!=='undefined'&&skEdit){try{faceEl.textContent='Fermez d’abord l’esquisse.';}catch(e){}return false;}
   asmEnsure();
   try{asmInspectClear();}catch(e){} // résultats d'inspection : propres à une vue (48)
+  asmPivot=null; // repère choisi comme centre de rotation : propre au composant quitté
   const p=asmPathOK(path)?path.slice():[];
   const moved=p.join('/')!==asm.path.join('/');
   if(mode==='asm'){
@@ -227,7 +251,7 @@ function asmPickAt(e){
 function asmClick(e){
   if(asmAlignPickAt(e))return; // commande Aligner : clic = repère (48)
   const id=asmPickAt(e);
-  asmSelId=id;
+  asmSelId=id;if(id)asmPivot=null; // une pièce cliquée redevient le centre de rotation
   asmDraw();renderTree();renderProps();
   const o=asmOcc(id);
   try{faceEl.textContent=o?(o.name+' — composant « '+((asmComp(o.comp)||{}).name||'')+' »'+(o.fixed?' · fixée':'')+(o.align?' · alignée':'')+'\nDouble-clic = modéliser ce composant.'):'Aucun composant ici.';}catch(err){}
@@ -247,6 +271,7 @@ function asmKey(e){
   if(e.key==='Escape'&&asmAnim){asmAnimStop();return true;} // animation d'une liaison (48)
   if(e.key==='Escape'){
     if(asmSelId){asmSelId=null;asmDraw();renderTree();renderProps();}
+    else if(asmPivot){asmPivotPick(asmPivot.cg,asmPivot.name);}
     else asmUp();
     return true;
   }
@@ -349,7 +374,7 @@ function asmCompsSection(t){
     d.onclick=ev=>{
       if(ev.target&&ev.target.classList&&ev.target.classList.contains('eye')){asmPush('visibilité');o.visible=!(o.visible!==false);asmNotify();renderTree();return;}
       {const f=globalThis.asmTreePick;if(typeof f==='function'&&f(inst.path))return;} // saisie d'un alignement (48)
-      if(direct){if(asmMode!=='asm'){asmShow(P,'asm',id);return;}asmSelId=id;asmDraw();renderTree();renderProps();}
+      if(direct){if(asmMode!=='asm'){asmShow(P,'asm',id);return;}asmSelId=id;asmPivot=null;asmDraw();renderTree();renderProps();}
     };
     d.ondblclick=()=>asmShow(inst.path,'part');
     d.oncontextmenu=e=>{e.preventDefault();
@@ -374,8 +399,11 @@ function asmTreeRender(t){
   const c=asmActiveComp();
   const row=(html,cls,title)=>{const d=document.createElement('div');d.className=cls;d.innerHTML=html;if(title)d.title=title;t.appendChild(d);return d;};
   row('<span>🧩 '+asmEsc(c.name)+' · placer ses composants</span>','tgroup');
-  row('<span class="pdot" style="background:#fff;box-shadow:0 0 0 2px #1c1c1e inset"></span><span class="nm">Origine de « '+asmEsc(c.name)+' »</span>','tnode','Repère du composant : cible d’un alignement');
-  (c.doc.cgeo||[]).forEach(k=>{if(k&&k.kind==='frame')row('<span>⌖</span><span class="nm">'+asmEsc(k.name)+'</span>','tnode','Repère de construction du composant : cible d’un alignement');});
+  // V0.7.4 : un clic sur un repère en fait le centre de rotation de la vue
+  const piv=(cg,name,r)=>{r.style.cursor='pointer';if(asmPivot&&(asmPivot.cg||null)===(cg||null))r.className+=' sel';r.onclick=()=>asmPivotPick(cg,name);};
+  const on='Origine de « '+c.name+' »';
+  piv(null,on,row('<span class="pdot" style="background:#fff;box-shadow:0 0 0 2px #1c1c1e inset"></span><span class="nm">'+asmEsc(on)+'</span>','tnode','Repère du composant : cible d’un alignement · clic = la vue tourne autour'));
+  (c.doc.cgeo||[]).forEach(k=>{if(k&&k.kind==='frame')piv(k.id,k.name,row('<span>⌖</span><span class="nm">'+asmEsc(k.name)+'</span>','tnode','Repère de construction du composant : cible d’un alignement · clic = la vue tourne autour'));});
   if(!c.occ.length)row('<span class="nm" style="color:var(--muted)">Aucun composant : « Nouveau composant » ou « Insérer ».</span>','tnode');
 }
 /* ── panneau ── */

@@ -261,6 +261,8 @@ function orbitSetMode(free){
 }
 // pivot : centre de la (première) face sélectionnée, sinon centre des pièces visibles (+ brut en FAO)
 function orbitPivot(){
+  // mode Placer (V0.7.4) : repère choisi, occurrence sélectionnée ou centre des pièces placées
+  try{if(typeof asmOrbitPivot==='function'){const p=asmOrbitPivot();if(p)return p;}}catch(e){}
   try{
     if(typeof selFaces!=='undefined'&&selFaces.length&&selFaces[0].mesh&&typeof faceCentroid==='function'){
       const c=faceCentroid(selFaces[0].mesh,selFaces[0].faceIndex);

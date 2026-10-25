@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**322 versions**, de `2026-09-28b` à `V0.7.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**323 versions**, de `2026-09-28b` à `V0.7.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4713,3 +4713,8 @@ Le mode Placer montre les pièces comme le mode Modéliser, avec une apparence p
 - **Apparence par occurrence** (panneau de l'occurrence, section « Apparence (mode Placer) ») : RÉUTILISE les réglages d'un corps — « Intensité » (15–100 %, la pièce s'estompe), « Transparence » (0–90 %, verre : on voit l'intérieur) — appliqués par les mêmes fonctions (`setMatAlpha`, passes de verre `glassDepthMask`) ; arêtes « comme le bouton » / toujours / jamais. La couleur reste celle des corps, la même dans tous les modes. Sans réglage, chaque corps garde ceux de sa fiche (intensité et transparence comprises, désormais capturées). Réglage en direct pendant le glisser, une seule étape d'annulation ; « Appliquer à toutes les occurrences » ; « Par défaut ».
 - **Héritage** : l'apparence vaut pour l'occurrence et tout ce qu'elle contient, l'occurrence la plus profonde l'emporte champ par champ. Le mode Modéliser n'en tient pas compte. Enregistrée avec l'assemblage (`occ.look`, relue avec les bornes des corps).
 - **Tests** : `test_composants_apparence` (modèle : héritage, arêtes, bornes, fichier, annulation, glisser en une étape, segments) et un parcours Playwright (arêtes affichées, pas de couleur par mode, intensité 50 %, transparence 50 % avec passes de verre et voile, arêtes « Jamais », mode Modéliser inchangé).
+
+## V0.7.4 - Rotation de la vue en mode Placer
+En mode Placer, la vue tournait autour d'un point sans rapport avec ce qu'on voit : le pivot d'orbite (`orbitPivot`) prenait la face sélectionnée ou les corps de la pièce ACTIVE (la racine d'un assemblage n'en a souvent aucun), sinon la cible de la caméra, qu'un déplacement de la vue décale.
+- **Pivot du mode Placer** (`asmOrbitPivot`), comme en Modéliser (face choisie, sinon les pièces) : le repère de référence cliqué dans l'arbre — origine du composant actif ou un de ses repères de construction (ligne en surbrillance ; clic à nouveau ou Échap pour le quitter) —, sinon l'occurrence sélectionnée (centre de sa boîte), sinon le centre des pièces placées (fantômes exclus). Sélectionner une pièce (arbre ou vue) la reprend comme centre ; changer de composant oublie le repère choisi.
+- **Test** : parcours Playwright — pivots (pièces, goupille, origine) et vraie rotation à la souris : la goupille sélectionnée reste au même endroit de l'écran.
