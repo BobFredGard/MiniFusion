@@ -140,6 +140,7 @@ function parNameCheck(nm,selfDim,selfParam,selfH,selfK){
   return true;
 }
 function parRename(oldN,newN){
+  try{if(typeof cfgRename==='function')cfgRename(oldN,newN);}catch(e){} // V0.8.4 : colonne de configuration
   // renomme partout dans les expressions (mot entier)
   if(!oldN||!newN||oldN===newN)return;
   const re=new RegExp('\\b'+oldN+'\\b','g');
@@ -287,6 +288,7 @@ function openParamsDlg(){
       });
     });
     box.appendChild(tbl);
+    try{cfgSection(box,render);}catch(e){} // V0.8.4 : configurations (52-configurations)
     const bar=document.createElement('div');bar.style.cssText='display:flex;gap:8px;justify-content:flex-end;margin-top:12px';
     const add=document.createElement('button');add.textContent='+ Paramètre';
     add.onclick=()=>{let k=1;while(parAll().has('P'+k))k++;doc.params.push({name:'P'+k,expr:'10',value:10});parAfterChange();render();};

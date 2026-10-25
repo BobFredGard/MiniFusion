@@ -42,6 +42,7 @@ const SUITES = [
   'test_composants_references',
   'test_composants_aretes_esquisse',
   'test_enregistrement_sur',
+  'test_configurations',
   'test_composants_liaisons'
 ];
 let ok = 0; const ko = [];

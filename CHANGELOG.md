@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**332 versions**, de `2026-09-28b` à `V0.8.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**333 versions**, de `2026-09-28b` à `V0.8.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4813,3 +4813,11 @@ Idée SolidCraft de la série V0.7 : un enregistrement ne doit jamais faire perd
 - Menu Projet → **🛟 Copie de secours…** : copies du fichier courant (disque, navigateur) avec leur date ; en ouvrir une la charge à la place du document, rattachée au même fichier, marquée « modifiée » — Ctrl+S la remet (la version actuelle devient à son tour la copie).
 - Ctrl+S réécrit le fichier dès que le lien sait écrire (avant : seulement si l'API avait été détectée au chargement).
 - **Tests** : `test_enregistrement_sur` (système de fichiers simulé : contenus refusés, premier enregistrement, .bak et copie du navigateur, contenu inchangé, contenu vide, écriture en échec, fichier tronqué à la relecture, fichier hors du dossier, Ctrl+S complet, copies proposées, ouverture d'une copie) ; suites complète et rapide.
+
+## V0.8.4 - Configurations (tables de variantes)
+Idée SolidCraft de la série V0.7 : plusieurs variantes d'une même pièce dans un seul fichier.
+- **`doc.configs`** (nouveau `src/52-configurations.js`) : une colonne par valeur nommée du modèle (paramètre libre, cote nommée, valeur nommée d'une fonction — ƒx), une ligne par variante : la valeur de chaque colonne (nombre ou expression ; vide = inchangée) et les **fonctions supprimées** dans cette variante.
+- **Activer** une variante (sélecteur « ⚙ Configuration » en tête de l'arbre, ou ◉ dans la table) : valeurs écrites dans les expressions, fonctions pilotées par la table supprimées / rétablies (les autres ne sont pas touchées), régénération ; **une étape d'annulation**. Message : valeurs absentes du modèle, expressions fausses (⚠).
+- **Fenêtre ƒx → Configurations** : « + Configuration » (nouvelle variante = l'état actuel), « + Colonne… », cellules éditables (la variante active se met à jour aussitôt), fonctions supprimées par variante (cases), « Mémoriser l'état actuel », retrait d'une colonne ou d'une variante. Renommer une valeur nommée renomme sa colonne.
+- **Fichier** : la table est enregistrée et relue (noms invalides écartés) ; le document porte les valeurs de la variante active — une version antérieure l'ouvre telle quelle.
+- **Tests** : `test_configurations` (table depuis l'état, activation, esquisse et extrusion qui suivent, fonction supprimée / rétablie, fonction hors table intacte, annulation, mémoriser, colonne absente, expression fausse, expression d'une autre valeur, renommage, fichier, arbre, fenêtre ƒx) ; suites complète et rapide.

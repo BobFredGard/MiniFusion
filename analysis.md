@@ -1,6 +1,6 @@
 # Analyse du projet MiniFusion
 
-*État au 2026-10-25 — version `V0.8.3`.*
+*État au 2026-10-25 — version `V0.8.4`.*
 
 ## Nature du projet
 
@@ -12,7 +12,7 @@ Le noyau géométrique exact est **OpenCascade (OCCT) compilé en WebAssembly**.
 
 | Élément | Rôle |
 |---|---|
-| `src/*.js` | Sources, **72 fichiers** (~53 200 lignes), concaténés dans l'ordre numérique par `build.js`. |
+| `src/*.js` | Sources, **73 fichiers** (~53 400 lignes), concaténés dans l'ordre numérique par `build.js`. |
 | `PostPro/*.js` | Fiches machines (Fagor 8065, Siemens 630 et 1520), insérées par `build.js` après `88-fao-60-postprocesseurs.js`. Les `.cps` Autodesk restent locaux. |
 | `fusion_mvp.html` | Livrable généré. **Ne jamais l'éditer à la main.** |
 | `build.js` | Concaténation + bandeaux de section ; `--check` échoue si le livrable est périmé. |
@@ -30,7 +30,7 @@ Le noyau géométrique exact est **OpenCascade (OCCT) compilé en WebAssembly**.
 - `10`–`20` : scène three.js, repère, rejeu paramétrique, noyau exact OCCT et repli maillage.
 - `30`–`45` : marqueur de temps, arbre/propriétés, bandeau de timeline (`41`), annuler/rétablir documentaire.
 - `46`–`48` : composants (arbre de composants imbriqués et composant actif, modes Modéliser / Placer, placement). `doc` reste la pièce globale : c'est le **composant actif**, l'arbre vit à côté (`asm`). `48-composants-depuis-corps.js` : extraire un corps (ou une esquisse) et tout ce qui le construit vers un composant. `47-composants-lies.js` : composants liés à un fichier (dossier de projets, édition sur place, mise à jour). Arêtes des autres composants projetables dans une esquisse (`asmSkExt*`, 46).
-- `49`–`60` : esquisse 2D, solveur Levenberg-Marquardt, paramètres, trim et interactions souris.
+- `49`–`60` : esquisse 2D, solveur Levenberg-Marquardt, paramètres (`51`), configurations (`52`, tables de variantes), trim et interactions souris.
 - `78`–`79` : géométrie de construction (modèle et résolution, puis affichage, saisie, panneau).
 - `70`–`87` : fonctions 3D (extrusion, révolution, perçage, combiner, congés, chanfreins, faces, dépouille, coque). `70-extrusion-dynamique.js` et `71-fenetre-dynamique.js` : fenêtre dynamique (aperçu immédiat, poignée dans la vue, champ flottant, Annuler / OK) de l’extrusion, puis de la révolution, du perçage et du congé.
 - `88-fao-00` à `88-fao-94` : FAO découpée par domaine (état, outils, brut, parcours 2,5D, zones, caches, post-processeurs, simulation — `70` grille et lecture, `75` cavités des posages 3+2 en voxels (repli sans WebGL2), `76` rendu GPU instancié, `77` cartes par orientation et lancer de rayons —, interface, ébauche 3D, contour, sélection 3+2).
