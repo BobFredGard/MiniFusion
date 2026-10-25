@@ -155,6 +155,10 @@ function faoSanitiseOps(s){
     if(op.type==='contour'&&op.strat==='profil'){
       if(op.cside!=='ext'&&op.cside!=='int')delete op.cside;
       ['nR','fin','leadR','overlap','tabN','tabW','tabH'].forEach(function(k){if(k in op&&!(isFinite(+op[k])&&+op[k]>=0))delete op[k];});
+    }else if(op.type==='chamfer'){ // V0.7.9 : chanfrein — côté, entrées, recouvrement, largeur, décalage de pointe
+      if(op.cside!=='ext'&&op.cside!=='int'&&op.cside!=='auto')delete op.cside;
+      ['leadR','overlap','w','tipOff','z'].forEach(function(k){if(k in op&&!(isFinite(+op[k])&&(k==='z'||+op[k]>=0)))delete op[k];});
+      ['nR','fin','tabN','tabW','tabH'].forEach(function(k){delete op[k];});
     }else ['cside','nR','fin','leadR','overlap','tabN','tabW','tabH'].forEach(function(k){delete op[k];});
     if(op.type==='rough3d'||faoPocketAdapt(op)){const mp=+op.minipasses;op.minipasses=isFinite(mp)&&mp>0?Math.min(50,Math.round(mp)):0;
       // 2026-10-07-001/002 : finition des parois (N contours « Parois » -> 0,
@@ -185,7 +189,7 @@ function faoSanitiseOps(s){
     // 2026-10-08-003 : sens de passe — seuls 'avalant' et 'bidir' survivent,
     // et seulement sur l'Ebauche 3D et la finition géodésique (2026-10-13-007 :
     // rétro-ingénierie cav.txt — sens opposé alterné sur Crêtes constantes).
-    if(faoContourProfil(op)){ if(op.sens!=='avalant'&&op.sens!=='opp')delete op.sens; }
+    if(faoContourProfil(op)||op.type==='chamfer'){ if(op.sens!=='avalant'&&op.sens!=='opp')delete op.sens; }
     else if((op.type!=='rough3d'&&op.type!=='geofinish'&&op.type!=='geodesic'&&!faoPocketAdapt(op))||(op.sens!=='avalant'&&op.sens!=='bidir'))delete op.sens;
     // 2026-10-13-007 : direction des passes parallèles — 'auto'/'x'/'y'/'ang'
     // sur Crêtes constantes (+ angle fini si 'ang'), absent = auto (axe long).

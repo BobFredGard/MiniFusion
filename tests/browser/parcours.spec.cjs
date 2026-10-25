@@ -489,7 +489,7 @@ test('miroir : sous le brut en simulation d’usinage (Axe, brut plus bas que la
     const box=new THREE.Box3();[faoVw.stock,faoVw.matter].forEach(g=>{if(g)box.expandByObject(g);});
     return {sol:floorMesh.position.z,brut:box.min.z};});
   expect(r).not.toBeNull();
-  expect(r.brut).toBeCloseTo(-40,3);
+  expect(Math.abs(r.brut+40)).toBeLessThan(0.1); // V0.7.9 : fantôme du brut 0,06 mm à l'extérieur de la matière
   expect(r.sol).toBeLessThan(r.brut);expect(r.sol).toBeGreaterThan(r.brut-0.5); // le brut est AU-DESSUS du miroir
   expect(err).toEqual([]);
 });

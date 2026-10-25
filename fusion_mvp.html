@@ -277,7 +277,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.7.8';
+const APP_VER='V0.7.9';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -21112,6 +21112,10 @@ function faoSanitiseOps(s){
     if(op.type==='contour'&&op.strat==='profil'){
       if(op.cside!=='ext'&&op.cside!=='int')delete op.cside;
       ['nR','fin','leadR','overlap','tabN','tabW','tabH'].forEach(function(k){if(k in op&&!(isFinite(+op[k])&&+op[k]>=0))delete op[k];});
+    }else if(op.type==='chamfer'){ // V0.7.9 : chanfrein — côté, entrées, recouvrement, largeur, décalage de pointe
+      if(op.cside!=='ext'&&op.cside!=='int'&&op.cside!=='auto')delete op.cside;
+      ['leadR','overlap','w','tipOff','z'].forEach(function(k){if(k in op&&!(isFinite(+op[k])&&(k==='z'||+op[k]>=0)))delete op[k];});
+      ['nR','fin','tabN','tabW','tabH'].forEach(function(k){delete op[k];});
     }else ['cside','nR','fin','leadR','overlap','tabN','tabW','tabH'].forEach(function(k){delete op[k];});
     if(op.type==='rough3d'||faoPocketAdapt(op)){const mp=+op.minipasses;op.minipasses=isFinite(mp)&&mp>0?Math.min(50,Math.round(mp)):0;
       // 2026-10-07-001/002 : finition des parois (N contours « Parois » -> 0,
@@ -21142,7 +21146,7 @@ function faoSanitiseOps(s){
     // 2026-10-08-003 : sens de passe — seuls 'avalant' et 'bidir' survivent,
     // et seulement sur l'Ebauche 3D et la finition géodésique (2026-10-13-007 :
     // rétro-ingénierie cav.txt — sens opposé alterné sur Crêtes constantes).
-    if(faoContourProfil(op)){ if(op.sens!=='avalant'&&op.sens!=='opp')delete op.sens; }
+    if(faoContourProfil(op)||op.type==='chamfer'){ if(op.sens!=='avalant'&&op.sens!=='opp')delete op.sens; }
     else if((op.type!=='rough3d'&&op.type!=='geofinish'&&op.type!=='geodesic'&&!faoPocketAdapt(op))||(op.sens!=='avalant'&&op.sens!=='bidir'))delete op.sens;
     // 2026-10-13-007 : direction des passes parallèles — 'auto'/'x'/'y'/'ang'
     // sur Crêtes constantes (+ angle fini si 'ang'), absent = auto (axe long).
@@ -21289,7 +21293,7 @@ function faoToolSF(t,setup){
     :((t&&(t.kind==='drill'||t.kind==='spot'||t.kind==='center'))?Math.max(1,Math.round(faoToolFr(t)*s)):Math.max(1,Math.round(fz*z*s)));
   return {s:s, f:f, plunge:Math.max(1,Math.round(f*faoPlungePct(setup)/100))};
 }
-function faoKindLabel(k){ return k==='ball'?'Boule':(k==='bull'?'Torique':(k==='drill'?'Foret':(k==='spot'?'Foret à pointer':(k==='center'?'Foret à centrer':(k==='tap'?'Taraud':'Cylindrique'))))); }
+function faoKindLabel(k){ return k==='ball'?'Boule':(k==='bull'?'Torique':(k==='drill'?'Foret':(k==='spot'?'Foret à pointer':(k==='center'?'Foret à centrer':(k==='tap'?'Taraud':(k==='chamfer'?'Fraise à chanfreiner':'Cylindrique')))))); }
 /* 2026-10-22-001 : FORME DE POINTE des forets (fiche, vue d'usinage, matière).
    Foret / foret à pointer : cône d'angle `ang` (118° / 90°) jusqu'au Ø.
    Foret à centrer DIN 333 forme A : pilote d1 (= Ø outil, pointe 118°) de longueur
@@ -21313,8 +21317,12 @@ function faoToolBodyD(t){
 function faoToolTipProfile(t){
   // Profil de pointe en mm [[ρ, z], …] depuis la pointe (0,0) jusqu'au Ø du corps ;
   // null = outil sans pointe (fraises, taraud : bout plat / torique / boule).
-  if(!t||!(t.kind==='drill'||t.kind==='spot'||t.kind==='center'))return null;
+  if(!t||!(t.kind==='drill'||t.kind==='spot'||t.kind==='center'||t.kind==='chamfer'))return null;
   const half=function(a){ return Math.tan(a*Math.PI/360); };
+  if(t.kind==='chamfer'){ // V0.7.9 : fraise à chanfreiner — pointe plate Ø dt, cône jusqu'au Ø
+    const R=((+t.d>0)?+t.d:6)/2,rt=Math.max(0,Math.min(R*0.9,isFinite(+t.dt)&&+t.dt>=0?+t.dt/2:0.25));
+    return rt>0?[[0,0],[rt,0],[R,(R-rt)/half(faoToolAngle(t))]]:[[0,0],[R,R/half(faoToolAngle(t))]];
+  }
   if(t.kind==='center'){
     const c=faoCenterDims(t),r1=c.d1/2,r2=c.d2/2;
     const h1=r1/half(faoToolAngle(t));
@@ -22643,6 +22651,7 @@ function faoZoneCtx(op,job){
   // faoZoneCuts (clip extérieur exact, puis clip îlot).
   const lim=op&&op.limit, lim2=op&&op.limit2;
   if(!lim&&!lim2)return null;
+  if(op&&op.type==='chamfer')return null; // V0.7.9 : ses arêtes sont son profil, pas une zone
   const tool=faoToolById(job,op&&op.toolId);
   const D=(tool&&+tool.d>0)?+tool.d:10;
   // 2026-10-13-006 : rayon de garantie zone. Géofinish boule/torique : les
@@ -23756,6 +23765,11 @@ function* faoOpMovesIt0(op,job){
       radial:RA.radial,axial:RA.axial,
       // 2026-10-08-004 : entrée circulaire par défaut (rayon d'entrée op.).
       entry:op.entry||'circ',entryR:op.entryR}));
+  else if(op.type==='chamfer'){ // src/89-fao-chanfrein.js
+    let am=null;
+    try{ am=faoActiveMesh(job,'mid'); }catch(e){ am=null; }
+    mv=faoGenChamfer(am&&am.mesh,op,job,secu);
+  }
   else if(faoContourProfil(op)){
     let am=null;
     try{ am=faoActiveMesh(job,'mid'); }catch(e){ am=null; } // 2026-10-22-009 : maillage intermédiaire
@@ -23917,7 +23931,7 @@ function* faoOpMovesIt0(op,job){
   // 2026-10-14-001 : Crêtes constantes 'scallop' — la zone est déjà la
   // RÉGION du générateur (bord exact par dichotomie) ; le re-clip couperait
   // les arcs d'entrée/sortie tangents au bord et réinjecterait des remontées.
-  const zoneDone=(op.type==='geofinish'&&op.traj==='scallop')||op.type==='geodesic'||faoContourProfil(op);
+  const zoneDone=(op.type==='geofinish'&&op.traj==='scallop')||op.type==='geodesic'||faoContourProfil(op)||op.type==='chamfer';
   if(zoneDone){}
   else if(lim&&lim.mode==='rect'&&mv.length){
     const R=faoEffLimit(op,clipR*2);
@@ -24556,6 +24570,7 @@ function faoOpLabel(op,job){
   if(t==='facing')return 'Surfaçage Z='+op.z+tag+off+ra+lim;
   if(t==='pocket'&&faoPocketAdapt(op))return 'Poche adaptative '+((op.limit&&op.limit.nEdges)?op.limit.nEdges+' arêtes ':'(bord à sélectionner) ')+op.ztop+' -> '+op.zbot+ra+tag+off;
   if(t==='pocket')return 'Poche ['+op.x0+','+op.y0+' -> '+op.x1+','+op.y1+'] '+op.ztop+' -> '+op.zbot+ra+tag+off+lim;
+  if(t==='chamfer')return 'Chanfrein '+((op.limit&&op.limit.nEdges)?op.limit.nEdges+' arêtes ':'(arêtes à sélectionner) ')+(+op.w||0.5)+' mm'+tag+off;
   if(t==='contour'&&faoContourProfil(op))return 'Contour '+((op.limit&&op.limit.nEdges)?op.limit.nEdges+' arêtes ':'(profil à sélectionner) ')+op.ztop+' -> '+op.zbot+ra+tag+off;
   if(t==='contour')return 'Contour ['+op.x0+','+op.y0+' -> '+op.x1+','+op.y1+'] '+op.ztop+' -> '+op.zbot+ra+tag+off+lim;
   if(t==='drill')return 'Perçage '+(op.pts||[]).length+' trou(s) '+op.ztop+' -> '+op.zbot+((+op.peck)>0?' Q'+op.peck:'')+tag+off+lim;
@@ -24966,6 +24981,9 @@ function faoViewerRapNext(){
 // 0,5/0,788 mm l'arc fondait à l'œil) — la promesse « byte-identique » du niveau 1
 // est abandonnée (cf. CHANGELOG 2026-10-11-004).
 let faoViewerDetail=1, faoVwDetailSel=null, faoVwHideBody=false, faoVwHideHold=false;
+// V0.7.9 : case « brut » — masque le fantôme jaune du brut d'origine (mémorisée)
+let faoVwHideStock=false;
+try{faoVwHideStock=localStorage.getItem('minifusion_faoBrutMasque')==='1';}catch(e){}
 /* V0.7.9 : ASPECT de la matière simulée — beige (historique) ou aluminium (« j'usine souvent de
    l'aluminium ») : couleur, reflet et brillance appliqués aux cinq rendus (colonnes, tableau de
    sommets, lisse, cavités, lancer de rayons). Choix dans la barre de lecture, mémorisé. */
@@ -25609,6 +25627,8 @@ function faoViewerHoldApply(){
   // Case « corps outil » (mandrin gris) : cachée pendant la lecture, l'outil
   // (fraisier) reste seul visible.
   try{ if(faoVw&&faoVw.toolHold)faoVw.toolHold.visible=!faoVwHideHold; }catch(e){}
+  // V0.7.9 : case « brut » — fantôme du brut d'origine (boîte jaune translucide)
+  try{ if(faoVw&&faoVw.stock)faoVw.stock.visible=!faoVwHideStock; }catch(e){}
 }
 function faoViewerMatterDispose(vw,keepGrid){
   // keepGrid (V0.7.7) : bascule réel ↔ lisse — la grille taillée, sa position de lecture et ses
@@ -26288,6 +26308,10 @@ function faoViewerBarShow(){
       'Corps de l\'outil : masque le mandrin gris au-dessus de la fraise — la fraise seule reste visible.',
       function(){ return faoVwHideHold; },
       function(v){ faoVwHideHold=v; faoViewerHoldApply(); });
+    mkChk('brut',
+      'Brut d\'origine : masque le fantôme jaune translucide du brut — la matière usinée reste visible.',
+      function(){ return faoVwHideStock; },
+      function(v){ faoVwHideStock=v; try{localStorage.setItem('minifusion_faoBrutMasque',v?'1':'0');}catch(e){} faoViewerHoldApply(); try{ refreshMirror(); }catch(e){} });
     const t=document.createElement('span');
     t.style.cssText='font-family:monospace;min-width:118px;text-align:center;color:rgba(255,255,255,.85);';
     t.textContent='00:00 / 00:00';
@@ -26920,7 +26944,7 @@ function faoPocketFloor(mesh,loop,zMin){
 function faoPocketAdapt(op){ return !!(op&&op.type==='pocket'&&op.strat==='adaptive'); }
 // Opérations calculées sur le MAILLAGE du solide (clé de cache liée au solide).
 function faoMeshOp(op){ return !!(op&&(op.type==='rough3d'||op.type==='geofinish'||op.type==='geodesic'||faoPocketAdapt(op)||
-  (typeof faoContourProfil==='function'&&faoContourProfil(op)))); }
+  (typeof faoContourProfil==='function'&&faoContourProfil(op))||op.type==='chamfer')); }
 function faoOpDefaults(type){
   const s=faoStock(); const job=faoDoc();
   const tool=(job.tools&&job.tools[0])||{id:'T1',d:10};
@@ -26977,13 +27001,22 @@ function faoOpDefaults(type){
     faces:[], tangent:true, step:+Math.max(0.2,Math.min(1,D*0.05)).toFixed(2), laisse:0, sens:'avalant'});
   // Type retiré (2026-10-06-004 : pocket3d) ou inconnu -> null : pas de fiche,
   // pas d'opération fantôme. Seule la barre « + Usinage » crée des opérations.
+  // V0.7.9 : CHANFREIN — chaîne d'arêtes du haut, largeur, décalage de pointe (src/89-fao-chanfrein.js)
+  if(type==='chamfer'){
+    const ct=(job.tools||[]).find(function(t){return t&&(t.kind==='chamfer'||t.kind==='spot');});
+    return Object.assign({},base,{type:'chamfer',toolId:ct?ct.id:base.toolId,
+      limit:{mode:'chain',loop:[],closed:false,nEdges:0,tangent:true,side:'center',extra:0},
+      w:0.5,tipOff:0.3,cside:'auto',sens:'avalant',overlap:1});
+  }
   if(['facing','pocket','contour','drill','rough3d','geofinish','geodesic'].indexOf(type)<0)return null;
   return Object.assign({},base,{type:type});
 }
 // Les 6 usinages et leur libellé court — source unique des boutons « + » de
 // l'arbre FAO (l'ordre est contractuel : les tests cliquent par index).
 function faoAddOpsSpec(){
-  return [['facing','+ Surfaçage'],['pocket','+ Poche'],['contour','+ Contour'],
+  // V0.7.9 : la Poche (redondante avec l'Ébauche 3D) cède sa place au Chanfrein ; les poches des
+  // fichiers existants restent lisibles et calculées
+  return [['facing','+ Surfaçage'],['chamfer','+ Chanfrein'],['contour','+ Contour'],
     ['drill','+ Perçage'],['rough3d','+ Ébauche 3D'],['geofinish','+ Finition'],['geodesic','+ Géodésique']];
 }
 /* ================= interface FAO : arbre + fiches panneau droit ================= */
@@ -27607,7 +27640,7 @@ function faoRenderTree(){
   }catch(e){}
 }
 function faoOpShortLabel(op){
-  const n={facing:'Surfaçage',pocket:'Poche',contour:'Contour',drill:'Perçage',
+  const n={facing:'Surfaçage',pocket:'Poche',chamfer:'Chanfrein',contour:'Contour',drill:'Perçage',
     rough3d:'Ébauche 3D',geofinish:'Finition',geodesic:'Géodésique'}[op.type]||op.type;
   if(op.type==='drill'){
     // 2026-10-15-013 : libellé selon le cycle et les trous (« Taraudage M8 (4) »).
@@ -27932,7 +27965,7 @@ function faoSetupTabs(p,setup){
 function faoOpCardElement(setup,op,i){
   const d=faoCard();
   if(op.on===false)d.style.opacity='0.55';
-  const typeName={facing:'Surfaçage',pocket:'Poche',contour:'Contour',drill:'Perçage',
+  const typeName={facing:'Surfaçage',pocket:'Poche',chamfer:'Chanfrein',contour:'Contour',drill:'Perçage',
     rough3d:'Ébauche 3D',geofinish:'Finition',geodesic:'Géodésique'};
   const r=faoRow();
   const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=op.on!==false;
@@ -28011,6 +28044,8 @@ function faoOpCardElement(setup,op,i){
     rp.appendChild(faoLab('Sortie'));
     rp.appendChild(faoNum(isFinite(+setup.secu)?+setup.secu:5,function(v){ setup.secu=Math.max(0,v); },44,0.5,
       'Sortie de pièce (mm hors matière — réglage du POSAGE, commun à toutes les opérations) : (1) dépassement XY en bout de ligne — l’outil sort de la pièce avant son demi-tour, (2) plafond des remontées locales du mode « Remontées : plan retrait ou +5 mm ». Généralement 5 à 10.'));
+  }else if(op.type==='chamfer'){
+    faoChamferRows(d,setup,op); // src/89-fao-chanfrein.js
   }else if(faoContourProfil(op)){
     faoContourRows(d,setup,op);
   }else if((op.type==='pocket'&&!faoPocketAdapt(op))||op.type==='contour'){
@@ -28301,7 +28336,7 @@ function faoOpCardElement(setup,op,i){
     rl.appendChild(faoNum(faoDsp(op,L.x1,0),function(v){L.x1=faoInp(op,v,0);},52,null,'Rectangle : coin X maxi (mm)'));
     rl.appendChild(faoNum(faoDsp(op,L.y1,1),function(v){L.y1=faoInp(op,v,1);},52,null,'Rectangle : coin Y maxi (mm)'));
   }
-  const geoOwn=faoPocketAdapt(op)||faoContourProfil(op); // bord / profil : section propre
+  const geoOwn=faoPocketAdapt(op)||faoContourProfil(op)||op.type==='chamfer'; // bord / profil / arêtes : section propre
   if(!geoOwn&&!(op.type==='drill'&&op.src==='model'))d.appendChild(rl); // trous du modèle : pas de zone
   if(limMode==='chain'&&op.limit&&!geoOwn){
     const rc=faoRow();
@@ -28361,7 +28396,7 @@ function faoOpCardElement(setup,op,i){
       d.appendChild(ws);
     }
   }
-  if((limMode==='rect'||limMode==='chain'||limMode==='sketch')&&op.limit&&!faoContourProfil(op)){
+  if((limMode==='rect'||limMode==='chain'||limMode==='sketch')&&op.limit&&!faoContourProfil(op)&&op.type!=='chamfer'){
     const rs=faoRow();
     rs.appendChild(faoLab('Outil'));
     rs.appendChild(faoSel([
@@ -28412,7 +28447,7 @@ function faoOpCardElement(setup,op,i){
     rl2.appendChild(faoNum(faoDsp(op,L2.x1,0),function(v){L2.x1=faoInp(op,v,0);},52,null,'Îlot : coin X maxi (mm)'));
     rl2.appendChild(faoNum(faoDsp(op,L2.y1,1),function(v){L2.y1=faoInp(op,v,1);},52,null,'Îlot : coin Y maxi (mm)'));
   }
-  if(!faoContourProfil(op)&&!(op.type==='drill'&&op.src==='model'))d.appendChild(rl2); // trous du modèle : ni zone ni îlot
+  if(!faoContourProfil(op)&&op.type!=='chamfer'&&!(op.type==='drill'&&op.src==='model'))d.appendChild(rl2); // trous du modèle, chanfrein : ni zone ni îlot
   if(lim2Mode==='chain'&&op.limit2){
     const rc2=document.createElement('div');
     rc2.className='fao-row';
@@ -34824,6 +34859,12 @@ function faoChainOk(){
     if(is2)op.limit2=L; else op.limit=L;
     // 2026-10-14-004 : poche adaptative — bord = outil entier dedans ; haut =
     // dessus du brut, bas = fond détecté sous la boucle (sauf lien Z d'arêtes).
+    if(!is2&&op.type==='chamfer'){ // V0.7.9 : cote de l'arête = la plus haute de la sélection (repère de l'opération)
+      let zh=-1/0;
+      faoChainMode.sel.forEach(function(i){const e=faoChainMode.edges[i];(e&&e.pts||[]).forEach(function(p){if(isFinite(+p[2])&&+p[2]>zh)zh=+p[2];});});
+      if(zh>-1/0)op.z=Math.round(zh*1000)/1000;
+      L.side='center';
+    }
     if(!is2&&faoContourProfil(op)&&!op.zlim){
       // contour : bas = arête la plus basse de la sélection (bas de paroi),
       // haut = dessus du brut
@@ -34854,6 +34895,114 @@ function faoChainOk(){
   }catch(e){ try{faceEl.textContent=PRE+' : validation impossible ('+e.message+').';}catch(e2){} }
 }
 try{ faoInitUI(); }catch(e){}
+
+/* ═══════════════ 89-fao-chanfrein.js — fao chanfrein ═══════════════ */
+/* ---------- FAO : opération CHANFREIN (V0.7.9) ----------
+   « L'opération Poche n'a pas l'air utile car l'Ébauche 3D fait aussi bien le travail. Il faudrait la
+   transformer en opération à chanfreiner. » La Poche reste lisible et calculée (anciens fichiers),
+   mais le ruban propose Chanfrein à sa place.
+   Arêtes : une CHAÎNE d'arêtes du haut de la paroi (même saisie que le Contour). Outil : fraise à
+   chanfreiner (angle, Ø de pointe) ou foret à pointer (pointe vive). Réglages : largeur du chanfrein
+   (sur le dessus), décalage de pointe (la pointe descend sous le chanfrein pour couper avec le flanc).
+   Géométrie, outil de demi-angle θ, pointe plate de rayon rt, largeur a, décalage t :
+     jambe sur la paroi   b = a / tan θ
+     pointe à             z = Z arête − b − t
+     axe décalé de        d = rt + t·tan θ   (vers le vide, depuis l'arête)
+     contact haut à       ρ = d + a ≤ Ø/2 de l'outil (sinon ⚠ : outil trop petit)
+   Le parcours est un contour à la distance d, à la cote de pointe, une passe, avec entrées et sorties
+   tangentes (faoGenContourProfil) — côté de l'outil déduit de la matière (bossage ou alésage). */
+function faoChamferToolOk(t){ return !!(t&&(t.kind==='chamfer'||t.kind==='spot')); }
+function faoChamferTool(t){
+  // {rt, th (rad, demi-angle), R} d'un outil à chanfreiner ; null = outil sans cône
+  if(!faoChamferToolOk(t))return null;
+  const ang=faoToolAngle(t),R=((+t.d>0)?+t.d:6)/2;
+  const rt=t.kind==='chamfer'?Math.max(0,Math.min(R*0.9,isFinite(+t.dt)&&+t.dt>=0?+t.dt/2:0.25)):0;
+  return {rt:rt,th:ang*Math.PI/360,R:R,ang:ang};
+}
+function faoChamferGeom(op,t){
+  // -> {a, b, t, d, zTip, rho, R, ok, warn} ; null sans outil conique ou sans arête
+  const T=faoChamferTool(t);if(!T)return null;
+  const zTop=+op.z;if(!isFinite(zTop))return null;
+  const a=Math.max(0.01,isFinite(+op.w)?+op.w:0.5);
+  const off=Math.max(0,isFinite(+op.tipOff)?+op.tipOff:0.3);
+  const tn=Math.tan(T.th);
+  const b=a/tn,d=T.rt+off*tn,rho=d+a;
+  const g={a:a,b:b,t:off,d:d,zTip:zTop-b-off,rho:rho,R:T.R,ang:T.ang,rt:T.rt,ok:rho<=T.R+1e-9,warn:''};
+  if(!g.ok)g.warn='outil trop petit : le contact haut du chanfrein est à Ø'+(2*rho).toFixed(2)+', l’outil fait Ø'+(2*T.R).toFixed(2);
+  return g;
+}
+function faoGenChamfer(mesh,op,job,secu){
+  const L=op&&op.limit;
+  if(!L||!(L.loop||[]).length||L.loop.length<3)return [];
+  const t=faoToolById(job,op.toolId),G=faoChamferGeom(op,t);
+  if(!G)return [];
+  const mv=faoGenContourProfil(mesh,L.loop,{
+    toolD:2*Math.max(0.05,G.d),ztop:+op.z,zbot:G.zTip,ap:1e6,nR:1,fin:0,ae:1,
+    side:op.cside==='ext'||op.cside==='int'?op.cside:null,sens:op.sens==='opp'?'opp':'climb',
+    leadR:isFinite(+op.leadR)&&+op.leadR>0?+op.leadR:Math.max(1,Math.min(4,G.rho)),
+    overlap:isFinite(+op.overlap)&&+op.overlap>=0?+op.overlap:1,tabN:0,secu:secu});
+  try{ if(mv&&mv.diag){ mv.diag.chamfer={zTip:+G.zTip.toFixed(3),d:+G.d.toFixed(3),b:+G.b.toFixed(3),rho:+G.rho.toFixed(3)}; op.geoDiag=mv.diag; } }catch(e){}
+  return mv;
+}
+function faoChamferToolMake(setup,op){
+  // crée (ou reprend) une fraise à chanfreiner Ø6 90° et l'affecte à l'opération
+  const tools=setup.tools||(setup.tools=[]);
+  let t=tools.find(function(x){return x&&x.kind==='chamfer';});
+  if(!t){
+    const n=tools.reduce(function(m,x){return Math.max(m,+x.num||0);},0)+1;
+    t={id:'T'+n+'_'+Date.now().toString(36),num:n,name:'Fraise à chanfreiner D6 90°',kind:'chamfer',d:6,ang:90,dt:0.5,cornerR:0,flutes:2,vc:150,fz:0.03};
+    tools.push(t);
+  }
+  op.toolId=t.id;
+  return t;
+}
+function faoChamferRows(d,setup,op){
+  const t=faoToolById(setup,op.toolId);
+  d.appendChild(faoH('Arêtes à chanfreiner'));
+  const L=(op.limit&&op.limit.mode==='chain')?op.limit:null;
+  const has=!!(L&&(L.loop||[]).length>=3);
+  const gd=op.geoDiag||{};
+  const rc=faoRow();
+  const info=document.createElement('span');info.className='fao-meta';
+  info.textContent=has
+    ?(L.nEdges||'?')+' arête(s), boucle '+(L.closed?'fermée':'refermée')+(isFinite(+op.z)?' à Z '+faoDsp(op,+op.z,2):'')+
+      (gd.side?' · outil '+(gd.side==='ext'?'à l’EXTÉRIEUR (arête de bossage)':'à l’INTÉRIEUR (arête de poche / de trou)'):'')
+    :'aucune arête — cliquez les arêtes du HAUT à chanfreiner';
+  rc.appendChild(info);
+  rc.appendChild(faoMini(has?'Re-sélectionner':'Sélectionner les arêtes',function(){ faoChainStart(setup.id,op.id); },
+    'Cliquez les arêtes du haut de la paroi à chanfreiner (contour d’un bossage, bord d’une poche ou d’un trou). La cote de l’arête est prise sur la sélection.'));
+  d.appendChild(rc);
+  d.appendChild(faoH('Chanfrein'));
+  const r1=faoRow();
+  r1.appendChild(faoLab('Largeur'));
+  r1.appendChild(faoNum(isFinite(+op.w)?+op.w:0.5,function(v){op.w=Math.max(0.01,v);},48,0.1,'Largeur du chanfrein sur la face du dessus (mm). La hauteur sur la paroi suit l’angle de l’outil (90° : égale à la largeur).'));
+  r1.appendChild(faoLab('Décalage de pointe'));
+  r1.appendChild(faoNum(isFinite(+op.tipOff)?+op.tipOff:0.3,function(v){op.tipOff=Math.max(0,v);},48,0.1,'La pointe descend de cette valeur sous le chanfrein : le flanc coupe, pas la pointe (fragile). 0,2 à 0,5 mm.'));
+  d.appendChild(r1);
+  const r2=faoRow();
+  r2.appendChild(faoLab('Côté'));
+  r2.appendChild(faoSel([['auto','Auto (matière)'],['ext','Extérieur'],['int','Intérieur']],op.cside||'auto',function(v){op.cside=v;},'Côté de l’outil par rapport aux arêtes : déduit de la matière par défaut'));
+  r2.appendChild(faoLab('Sens'));
+  r2.appendChild(faoSel([['avalant','Avalant'],['opp','Opposition']],op.sens==='opp'?'opp':'avalant',function(v){op.sens=v;},'Sens de coupe'));
+  d.appendChild(r2);
+  // outil et géométrie
+  const G=faoChamferGeom(op,t);
+  const n=document.createElement('div');
+  if(!faoChamferToolOk(t)){
+    n.className='fao-alert';
+    n.textContent='⚠ L’outil T'+(t?t.num:'?')+' ('+(t?faoKindLabel(t.kind):'?')+') n’a pas de cône : choisissez une fraise à chanfreiner ou un foret à pointer.';
+    d.appendChild(n);
+    const rb=faoRow();
+    rb.appendChild(faoMini('Créer une fraise à chanfreiner Ø6 90°',function(){ faoSnapshot('outil de chanfrein'); faoChamferToolMake(setup,op); faoChanged(); try{renderProps();}catch(e){} },
+      'Ajoute à la liste d’outils une fraise à chanfreiner Ø6 à 90° (pointe Ø0,5) et l’affecte à cette opération.'));
+    d.appendChild(rb);
+  }else if(G){
+    n.className=G.ok?'fao-help':'fao-alert';
+    n.textContent=(G.ok?'':'⚠ '+G.warn+'. ')+'Outil '+G.ang+'°'+(G.rt>0?' pointe Ø'+(2*G.rt).toFixed(2):' pointe vive')+
+      ' : chanfrein '+G.a.toFixed(2)+' × '+G.b.toFixed(2)+' mm ; pointe à Z '+faoDsp(op,G.zTip,2)+', axe à '+G.d.toFixed(3)+' mm de l’arête ; contact haut sur Ø'+(2*G.rho).toFixed(2)+'.';
+    d.appendChild(n);
+  }
+}
 
 /* ═══════════════ 89-fao-contour.js — fao contour ═══════════════ */
 /* ================================================================
@@ -37850,10 +37999,11 @@ function faoToolsElement(setup){
   iT.onchange=function(){faoSnapshot('nom d’outil');t.name=String(iT.value||t.name).slice(0,32);faoChanged();rerender();};pT.appendChild(iT);s1.appendChild(pT);
   const pK=document.createElement('label');pK.className='fao-tl-f';pK.innerHTML='<span>Type</span>';
   const sK=document.createElement('select');sK.className='fao-sel';
-  [['flat','Cylindrique'],['bull','Torique'],['ball','Boule'],['drill','Foret'],['spot','Foret à pointer'],['center','Foret à centrer'],['tap','Taraud']].forEach(function(o){const e=document.createElement('option');e.value=o[0];e.textContent=o[1];sK.appendChild(e);});
+  [['flat','Cylindrique'],['bull','Torique'],['ball','Boule'],['chamfer','Fraise à chanfreiner'],['drill','Foret'],['spot','Foret à pointer'],['center','Foret à centrer'],['tap','Taraud']].forEach(function(o){const e=document.createElement('option');e.value=o[0];e.textContent=o[1];sK.appendChild(e);});
   sK.value=t.kind||'flat';
   sK.onchange=function(){faoSnapshot('type d’outil');t.kind=sK.value;if(t.kind==='ball')t.cornerR=t.d/2;else if(t.kind!=='bull')t.cornerR=0;
-    if(faoToolIsDrill(t)&&!(+t.ang>0))t.ang=t.kind==='spot'?90:118;faoChanged();rerender();};
+    if(faoToolIsDrill(t)&&!(+t.ang>0))t.ang=t.kind==='spot'?90:118;
+    if(t.kind==='chamfer'){ if(!(+t.ang>0))t.ang=90; if(!(+t.dt>=0))t.dt=0.5; }faoChanged();rerender();};
   pK.appendChild(sK);s1.appendChild(pK);
   const pM=document.createElement('label');pM.className='fao-tl-f';pM.innerHTML='<span>Matière</span>';
   const sM=document.createElement('select');sM.className='fao-sel';
@@ -37878,6 +38028,10 @@ function faoToolsElement(setup){
     const cd=faoCenterDims(t);
     field(s2,'Ø corps d2',cd.d2,!(+t.d2>0),function(v){set('d2',Math.max(v,(+t.d||1)*1.05),'Ø du corps');},'Diamètre du corps (fin du cône 60°) — défaut DIN 333 forme A',0.05);
     field(s2,'Long. pilote',cd.lp,!(+t.lp>0),function(v){set('lp',v,'longueur du pilote');},'Longueur du pilote d1 depuis la pointe jusqu’au début du cône 60° — défaut DIN 333 forme A',0.1);
+  }
+  if(t.kind==='chamfer'){ // V0.7.9
+    field(s2,'Angle',faoToolAngle(t),!(+t.ang>0),function(v){set('ang',Math.min(150,Math.max(30,v)),'angle de la fraise à chanfreiner');},'Angle inclus du cône (°) : 90 pour un chanfrein à 45°, 60, 120…',1,'°');
+    field(s2,'Ø de pointe',isFinite(+t.dt)?+t.dt:0.5,!(+t.dt>=0),function(v){set('dt',Math.max(0,Math.min(v,(+t.d||6)*0.9)),'Ø de pointe');},'Diamètre du méplat en bout de la fraise à chanfreiner (0 = pointe vive)',0.1);
   }
   field(s2,'Dents',t.flutes||2,false,function(v){set('flutes',Math.max(1,Math.round(v)),'nombre de dents');},'Nombre de dents (sert au calcul de F = fz × z × S)',1);
   field(s2,'Long. de coupe Lc',g.lc.v,g.lc.def,function(v){set('lc',v,'longueur de coupe');},'Longueur de la partie coupante (hélices) depuis le bout',0.5);
@@ -38017,7 +38171,7 @@ function faoOpReachWarn(op,setup,t,g){
      bibliothèque, ou le CRÉE. */
 const FAO_DRILL_KINDS={drill:1,spot:1,center:1};
 function faoToolIsDrill(t){ return !!(t&&FAO_DRILL_KINDS[t.kind]); }
-function faoToolAngle(t){ const a=t&&+t.ang; return (isFinite(a)&&a>20&&a<180)?a:(t&&t.kind==='spot'?90:118); }
+function faoToolAngle(t){ const a=t&&+t.ang; return (isFinite(a)&&a>20&&a<180)?a:(t&&(t.kind==='spot'||t.kind==='chamfer')?90:118); }
 function faoToolTipLen(t){ const D=(t&&+t.d>0)?+t.d:6; return (D/2)/Math.tan(faoToolAngle(t)*Math.PI/360); }
 function faoToolFr(t){
   // Avance par tour (mm/tr) d'un foret : saisie, sinon règle d'atelier (carbure).
@@ -43119,7 +43273,7 @@ const MF_CAO=[
   ['Ensembles',[['pattern','Répétition','btnRepeat'],['combine','Combiner','btnCombine'],['params','Paramètres','btnParams']]],
   ['Fichier',[['import','Importer','btnImport'],['export','STEP','btnExportStep'],['export','STL','btnExportStl'],['export','OBJ','btnExportObj']]]
 ];
-const MF_FAO_ICON={facing:'facing',pocket:'pocket',contour:'contour',drill:'drill',rough3d:'rough3d',geofinish:'finish',geodesic:'geodesic',pocket2:'pocket'};
+const MF_FAO_ICON={facing:'facing',pocket:'pocket',chamfer:'chamfer',contour:'contour',drill:'drill',rough3d:'rough3d',geofinish:'finish',geodesic:'geodesic',pocket2:'pocket'};
 function mfFaoAdd(type,nm){
   try{const op=faoOpDefaults(type);if(!op)return;const s=faoSetup();faoSnapshot('nouvelle opération « '+nm+' »');s.ops.push(op);faoChanged();faoSelectOp(s.id,op.id);}catch(e){}
 }

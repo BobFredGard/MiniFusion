@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**327 versions**, de `2026-09-28b` à `V0.7.8` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**328 versions**, de `2026-09-28b` à `V0.7.9` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4770,3 +4770,9 @@ Palier 2 de la qualité de simulation (« rien ne fonctionne vraiment correcteme
 - **Aspect de la matière simulée : beige ou aluminium** (« j'usine souvent de l'aluminium ») : sélecteur dans la barre de lecture, à côté de la finesse ; couleur, reflet et brillance appliqués aux cinq rendus (colonnes, tableau de sommets, lisse, cavités, lancer de rayons), changement immédiat, choix mémorisé (`minifusion_faoMatiere`). Test : `test_simulation_rendu` (14 à 17).
 - **Lancer de rayons : faces de la boîte du brut légèrement reculées en profondeur** — coplanaires avec le fantôme du brut, elles donnaient des dents de scie à la jonction (conflit entre profondeur rasterisée et profondeur calculée).
 - **Fantôme du brut 0,06 mm à l'extérieur de la matière** : coplanaire avec ses faces extérieures, il se disputait la profondeur avec le lancer de rayons (dents de scie et bandes sombres à la jonction, « pas super efficace ») ; le recul en profondeur ne suffisait pas.
+
+## V0.7.9 - Opération Chanfrein, case « brut » de la simulation
+- **Opération Chanfrein** (nouveau `src/89-fao-chanfrein.js`) à la place de la Poche dans le ruban et la barre « + » (« la Poche n'a pas l'air utile car l'Ébauche 3D fait aussi bien le travail ; il faudrait la transformer en opération à chanfreiner ») ; les poches des anciens fichiers restent lisibles et calculées. Arêtes : chaîne d'arêtes du HAUT (même saisie que le Contour ; la cote de l'arête est prise sur la sélection). Réglages : largeur (sur le dessus), décalage de pointe (le flanc coupe, pas la pointe), côté (auto d'après la matière : bossage → extérieur, poche ou trou → intérieur), sens. Géométrie : jambe paroi = largeur / tan(demi-angle), pointe à Z arête − jambe − décalage, axe à (rayon de pointe + décalage × tan) de l'arête ; contact haut vérifié contre le Ø de l'outil (⚠ outil trop petit). Parcours : une passe à la cote de pointe avec entrées / sorties tangentes (générateur du Contour profil).
+- **Fraise à chanfreiner** : nouveau type d'outil (angle inclus, Ø de pointe) avec profil de pointe (méplat puis cône) pour la simulation ; le foret à pointer (pointe vive) convient aussi. Bouton « Créer une fraise à chanfreiner Ø6 90° » dans la fiche quand l'outil n'a pas de cône.
+- **Case « brut »** dans la barre de lecture : masque le fantôme jaune du brut d'origine (mémorisée).
+- **Tests** : `test_fao_chanfrein` (ruban, défauts, outil, géométrie 90° / 60°, outil trop petit, foret à pointer, parcours d'un bossage et d'un bord de trou, libellé G-code, simulation d'un chanfrein 45° de 1 mm, fiche, pas de zone) ; parcours Playwright du miroir ajusté au fantôme élargi.

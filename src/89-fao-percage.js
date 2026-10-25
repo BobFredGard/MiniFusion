@@ -20,7 +20,7 @@
      bibliothèque, ou le CRÉE. */
 const FAO_DRILL_KINDS={drill:1,spot:1,center:1};
 function faoToolIsDrill(t){ return !!(t&&FAO_DRILL_KINDS[t.kind]); }
-function faoToolAngle(t){ const a=t&&+t.ang; return (isFinite(a)&&a>20&&a<180)?a:(t&&t.kind==='spot'?90:118); }
+function faoToolAngle(t){ const a=t&&+t.ang; return (isFinite(a)&&a>20&&a<180)?a:(t&&(t.kind==='spot'||t.kind==='chamfer')?90:118); }
 function faoToolTipLen(t){ const D=(t&&+t.d>0)?+t.d:6; return (D/2)/Math.tan(faoToolAngle(t)*Math.PI/360); }
 function faoToolFr(t){
   // Avance par tour (mm/tr) d'un foret : saisie, sinon règle d'atelier (carbure).

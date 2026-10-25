@@ -1703,6 +1703,12 @@ function faoChainOk(){
     if(is2)op.limit2=L; else op.limit=L;
     // 2026-10-14-004 : poche adaptative — bord = outil entier dedans ; haut =
     // dessus du brut, bas = fond détecté sous la boucle (sauf lien Z d'arêtes).
+    if(!is2&&op.type==='chamfer'){ // V0.7.9 : cote de l'arête = la plus haute de la sélection (repère de l'opération)
+      let zh=-1/0;
+      faoChainMode.sel.forEach(function(i){const e=faoChainMode.edges[i];(e&&e.pts||[]).forEach(function(p){if(isFinite(+p[2])&&+p[2]>zh)zh=+p[2];});});
+      if(zh>-1/0)op.z=Math.round(zh*1000)/1000;
+      L.side='center';
+    }
     if(!is2&&faoContourProfil(op)&&!op.zlim){
       // contour : bas = arête la plus basse de la sélection (bas de paroi),
       // haut = dessus du brut

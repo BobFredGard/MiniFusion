@@ -227,10 +227,11 @@ function faoToolsElement(setup){
   iT.onchange=function(){faoSnapshot('nom d’outil');t.name=String(iT.value||t.name).slice(0,32);faoChanged();rerender();};pT.appendChild(iT);s1.appendChild(pT);
   const pK=document.createElement('label');pK.className='fao-tl-f';pK.innerHTML='<span>Type</span>';
   const sK=document.createElement('select');sK.className='fao-sel';
-  [['flat','Cylindrique'],['bull','Torique'],['ball','Boule'],['drill','Foret'],['spot','Foret à pointer'],['center','Foret à centrer'],['tap','Taraud']].forEach(function(o){const e=document.createElement('option');e.value=o[0];e.textContent=o[1];sK.appendChild(e);});
+  [['flat','Cylindrique'],['bull','Torique'],['ball','Boule'],['chamfer','Fraise à chanfreiner'],['drill','Foret'],['spot','Foret à pointer'],['center','Foret à centrer'],['tap','Taraud']].forEach(function(o){const e=document.createElement('option');e.value=o[0];e.textContent=o[1];sK.appendChild(e);});
   sK.value=t.kind||'flat';
   sK.onchange=function(){faoSnapshot('type d’outil');t.kind=sK.value;if(t.kind==='ball')t.cornerR=t.d/2;else if(t.kind!=='bull')t.cornerR=0;
-    if(faoToolIsDrill(t)&&!(+t.ang>0))t.ang=t.kind==='spot'?90:118;faoChanged();rerender();};
+    if(faoToolIsDrill(t)&&!(+t.ang>0))t.ang=t.kind==='spot'?90:118;
+    if(t.kind==='chamfer'){ if(!(+t.ang>0))t.ang=90; if(!(+t.dt>=0))t.dt=0.5; }faoChanged();rerender();};
   pK.appendChild(sK);s1.appendChild(pK);
   const pM=document.createElement('label');pM.className='fao-tl-f';pM.innerHTML='<span>Matière</span>';
   const sM=document.createElement('select');sM.className='fao-sel';
@@ -255,6 +256,10 @@ function faoToolsElement(setup){
     const cd=faoCenterDims(t);
     field(s2,'Ø corps d2',cd.d2,!(+t.d2>0),function(v){set('d2',Math.max(v,(+t.d||1)*1.05),'Ø du corps');},'Diamètre du corps (fin du cône 60°) — défaut DIN 333 forme A',0.05);
     field(s2,'Long. pilote',cd.lp,!(+t.lp>0),function(v){set('lp',v,'longueur du pilote');},'Longueur du pilote d1 depuis la pointe jusqu’au début du cône 60° — défaut DIN 333 forme A',0.1);
+  }
+  if(t.kind==='chamfer'){ // V0.7.9
+    field(s2,'Angle',faoToolAngle(t),!(+t.ang>0),function(v){set('ang',Math.min(150,Math.max(30,v)),'angle de la fraise à chanfreiner');},'Angle inclus du cône (°) : 90 pour un chanfrein à 45°, 60, 120…',1,'°');
+    field(s2,'Ø de pointe',isFinite(+t.dt)?+t.dt:0.5,!(+t.dt>=0),function(v){set('dt',Math.max(0,Math.min(v,(+t.d||6)*0.9)),'Ø de pointe');},'Diamètre du méplat en bout de la fraise à chanfreiner (0 = pointe vive)',0.1);
   }
   field(s2,'Dents',t.flutes||2,false,function(v){set('flutes',Math.max(1,Math.round(v)),'nombre de dents');},'Nombre de dents (sert au calcul de F = fz × z × S)',1);
   field(s2,'Long. de coupe Lc',g.lc.v,g.lc.def,function(v){set('lc',v,'longueur de coupe');},'Longueur de la partie coupante (hélices) depuis le bout',0.5);

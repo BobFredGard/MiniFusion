@@ -57,7 +57,7 @@ function faoToolSF(t,setup){
     :((t&&(t.kind==='drill'||t.kind==='spot'||t.kind==='center'))?Math.max(1,Math.round(faoToolFr(t)*s)):Math.max(1,Math.round(fz*z*s)));
   return {s:s, f:f, plunge:Math.max(1,Math.round(f*faoPlungePct(setup)/100))};
 }
-function faoKindLabel(k){ return k==='ball'?'Boule':(k==='bull'?'Torique':(k==='drill'?'Foret':(k==='spot'?'Foret à pointer':(k==='center'?'Foret à centrer':(k==='tap'?'Taraud':'Cylindrique'))))); }
+function faoKindLabel(k){ return k==='ball'?'Boule':(k==='bull'?'Torique':(k==='drill'?'Foret':(k==='spot'?'Foret à pointer':(k==='center'?'Foret à centrer':(k==='tap'?'Taraud':(k==='chamfer'?'Fraise à chanfreiner':'Cylindrique')))))); }
 /* 2026-10-22-001 : FORME DE POINTE des forets (fiche, vue d'usinage, matière).
    Foret / foret à pointer : cône d'angle `ang` (118° / 90°) jusqu'au Ø.
    Foret à centrer DIN 333 forme A : pilote d1 (= Ø outil, pointe 118°) de longueur
@@ -81,8 +81,12 @@ function faoToolBodyD(t){
 function faoToolTipProfile(t){
   // Profil de pointe en mm [[ρ, z], …] depuis la pointe (0,0) jusqu'au Ø du corps ;
   // null = outil sans pointe (fraises, taraud : bout plat / torique / boule).
-  if(!t||!(t.kind==='drill'||t.kind==='spot'||t.kind==='center'))return null;
+  if(!t||!(t.kind==='drill'||t.kind==='spot'||t.kind==='center'||t.kind==='chamfer'))return null;
   const half=function(a){ return Math.tan(a*Math.PI/360); };
+  if(t.kind==='chamfer'){ // V0.7.9 : fraise à chanfreiner — pointe plate Ø dt, cône jusqu'au Ø
+    const R=((+t.d>0)?+t.d:6)/2,rt=Math.max(0,Math.min(R*0.9,isFinite(+t.dt)&&+t.dt>=0?+t.dt/2:0.25));
+    return rt>0?[[0,0],[rt,0],[R,(R-rt)/half(faoToolAngle(t))]]:[[0,0],[R,R/half(faoToolAngle(t))]];
+  }
   if(t.kind==='center'){
     const c=faoCenterDims(t),r1=c.d1/2,r2=c.d2/2;
     const h1=r1/half(faoToolAngle(t));

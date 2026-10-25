@@ -42,6 +42,9 @@ function faoViewerRapNext(){
 // 0,5/0,788 mm l'arc fondait à l'œil) — la promesse « byte-identique » du niveau 1
 // est abandonnée (cf. CHANGELOG 2026-10-11-004).
 let faoViewerDetail=1, faoVwDetailSel=null, faoVwHideBody=false, faoVwHideHold=false;
+// V0.7.9 : case « brut » — masque le fantôme jaune du brut d'origine (mémorisée)
+let faoVwHideStock=false;
+try{faoVwHideStock=localStorage.getItem('minifusion_faoBrutMasque')==='1';}catch(e){}
 /* V0.7.9 : ASPECT de la matière simulée — beige (historique) ou aluminium (« j'usine souvent de
    l'aluminium ») : couleur, reflet et brillance appliqués aux cinq rendus (colonnes, tableau de
    sommets, lisse, cavités, lancer de rayons). Choix dans la barre de lecture, mémorisé. */
@@ -685,6 +688,8 @@ function faoViewerHoldApply(){
   // Case « corps outil » (mandrin gris) : cachée pendant la lecture, l'outil
   // (fraisier) reste seul visible.
   try{ if(faoVw&&faoVw.toolHold)faoVw.toolHold.visible=!faoVwHideHold; }catch(e){}
+  // V0.7.9 : case « brut » — fantôme du brut d'origine (boîte jaune translucide)
+  try{ if(faoVw&&faoVw.stock)faoVw.stock.visible=!faoVwHideStock; }catch(e){}
 }
 function faoViewerMatterDispose(vw,keepGrid){
   // keepGrid (V0.7.7) : bascule réel ↔ lisse — la grille taillée, sa position de lecture et ses
@@ -1364,6 +1369,10 @@ function faoViewerBarShow(){
       'Corps de l\'outil : masque le mandrin gris au-dessus de la fraise — la fraise seule reste visible.',
       function(){ return faoVwHideHold; },
       function(v){ faoVwHideHold=v; faoViewerHoldApply(); });
+    mkChk('brut',
+      'Brut d\'origine : masque le fantôme jaune translucide du brut — la matière usinée reste visible.',
+      function(){ return faoVwHideStock; },
+      function(v){ faoVwHideStock=v; try{localStorage.setItem('minifusion_faoBrutMasque',v?'1':'0');}catch(e){} faoViewerHoldApply(); try{ refreshMirror(); }catch(e){} });
     const t=document.createElement('span');
     t.style.cssText='font-family:monospace;min-width:118px;text-align:center;color:rgba(255,255,255,.85);';
     t.textContent='00:00 / 00:00';

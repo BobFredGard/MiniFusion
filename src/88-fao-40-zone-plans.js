@@ -23,6 +23,7 @@ function faoZoneCtx(op,job){
   // faoZoneCuts (clip extérieur exact, puis clip îlot).
   const lim=op&&op.limit, lim2=op&&op.limit2;
   if(!lim&&!lim2)return null;
+  if(op&&op.type==='chamfer')return null; // V0.7.9 : ses arêtes sont son profil, pas une zone
   const tool=faoToolById(job,op&&op.toolId);
   const D=(tool&&+tool.d>0)?+tool.d:10;
   // 2026-10-13-006 : rayon de garantie zone. Géofinish boule/torique : les

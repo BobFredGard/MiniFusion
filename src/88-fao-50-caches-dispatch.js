@@ -627,6 +627,11 @@ function* faoOpMovesIt0(op,job){
       radial:RA.radial,axial:RA.axial,
       // 2026-10-08-004 : entrée circulaire par défaut (rayon d'entrée op.).
       entry:op.entry||'circ',entryR:op.entryR}));
+  else if(op.type==='chamfer'){ // src/89-fao-chanfrein.js
+    let am=null;
+    try{ am=faoActiveMesh(job,'mid'); }catch(e){ am=null; }
+    mv=faoGenChamfer(am&&am.mesh,op,job,secu);
+  }
   else if(faoContourProfil(op)){
     let am=null;
     try{ am=faoActiveMesh(job,'mid'); }catch(e){ am=null; } // 2026-10-22-009 : maillage intermédiaire
@@ -788,7 +793,7 @@ function* faoOpMovesIt0(op,job){
   // 2026-10-14-001 : Crêtes constantes 'scallop' — la zone est déjà la
   // RÉGION du générateur (bord exact par dichotomie) ; le re-clip couperait
   // les arcs d'entrée/sortie tangents au bord et réinjecterait des remontées.
-  const zoneDone=(op.type==='geofinish'&&op.traj==='scallop')||op.type==='geodesic'||faoContourProfil(op);
+  const zoneDone=(op.type==='geofinish'&&op.traj==='scallop')||op.type==='geodesic'||faoContourProfil(op)||op.type==='chamfer';
   if(zoneDone){}
   else if(lim&&lim.mode==='rect'&&mv.length){
     const R=faoEffLimit(op,clipR*2);
