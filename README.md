@@ -2,7 +2,7 @@
 
 **CAO paramétrique, assemblage, FAO et mise en plan dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2, G-code et planches cotées ISO. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.8.1** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.8.2** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Sommaire
 
@@ -123,7 +123,8 @@ Convertir une pièce multicorps en assemblage, sans rien remodéliser :
 **Mise en plan d'assemblage** (espace PLAN du composant actif) :
 - une vue peut montrer **🧩 Assemblage (avec les composants)** (liste « Corps » de la vue) : le composant et toutes ses instances, en lignes cachées exactes (HLR OCCT), coupes et détails compris ; elle suit les placements ;
 - **nomenclature** par composant : corps du composant (comme avant), composants du 1er niveau, de tous les niveaux, ou pièces seules ; quantités, dimensions, matière (celle du composant, ou saisie au plan) ;
-- **bulles automatiques** sur la première vue d'assemblage : numérotées comme la nomenclature, et renumérotées avec elle.
+- **bulles automatiques** sur la première vue d'assemblage : numérotées comme la nomenclature, et renumérotées avec elle. Chaque bulle s'accroche sur une partie **visible** de sa pièce et se range autour de la vue, sans que son trait passe au-dessus d'une autre pièce ni sur le titre de la vue. Une bulle **se glisse**, `Suppr` la retire, **＋ Bulle** en pose une sur la pièce cliquée.
+- **Coupes d'assemblage** : les vues dérivées (coupe, projetée, détail, auxiliaire) d'une vue « Assemblage » montrent l'assemblage ; **une hachure par pièce** (45° / 135°, puis pas différent), réglable dans la fenêtre des hachures.
 
 **Inspecter** (ruban Composants, noyau exact) : sur le composant actif et tout ce qu'il contient — ou sur une pièce multicorps seule.
 - **Propriétés physiques** : volume, masse et centre de gravité par corps et au total (sphère jaune) ; la **matière** se choisit par composant (acier par défaut, inox, aluminium, laiton, bronze, cuivre, fonte, titane, PLA, ABS, PETG, nylon, POM, chêne).

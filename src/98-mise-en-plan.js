@@ -1367,6 +1367,7 @@
     });
     return out;
   }
+  let mepCutKeys=null; // V0.8.2 : pièce de chaque forme coupée de la vue en cours de calcul
   function mepFinishGeo(geo,view,cutShapes){
     try{const th=mepThreadEls(view);if(th.length)geo.els=geo.els.concat(th);}catch(e){try{console.warn('mep filetage',e);}catch(e2){}}
     if(view.render3d&&!view.section&&!view.detail){
@@ -1377,8 +1378,15 @@
       try{geo.thr3d=mepThreadSegs(view);}catch(e){geo.thr3d=[];}
     }
     if(view.section&&cutShapes.length){
-      const st=view._step;
-      try{geo.hatch=mepHatchLoops(cutShapes,view,st?st.planes:view.section.p,view.section.n);}catch(e){}
+      const st=view._step,P0=st?st.planes:view.section.p;
+      // V0.8.2 : une boucle de hachures par pièce (composant d'assemblage, ou corps) — chaque
+      // pièce coupée reçoit sa variante (angle alterné, pas) au dessin, comme l'usage le veut
+      const keys=mepCutKeys&&mepCutKeys.length===cutShapes.length?mepCutKeys:null,U=keys?[...new Set(keys)]:[];
+      if(U.length>1){
+        geo.hatch=[];geo.hatchG=[];
+        U.forEach((k,i)=>{try{const L=mepHatchLoops(cutShapes.filter((s,j)=>keys[j]===k),view,P0,view.section.n);
+          if(L.length){geo.hatchG.push({k:i,loops:L});geo.hatch=geo.hatch.concat(L);}}catch(e){}});
+      }else{try{geo.hatch=mepHatchLoops(cutShapes,view,P0,view.section.n);}catch(e){}}
       if(st)geo.els=mepDropStepEdges(geo.els,view,st);
     }
     if(view.detail&&view.parent){
@@ -1415,6 +1423,8 @@
     // facétisée »). Le BRep importé est dans les coordonnées du maillage.
     list.forEach(bd=>{const sh=mepExactOf(bd);if(sh){shapes.push(sh);shapeBodies.push(bd);}});
     const exact=shapes.length&&typeof occSharpEdges==='function';
+    // V0.8.2 : pièce de chaque forme (hachures par pièce) — même ordre que cutShapes
+    mepCutKeys=shapeBodies.map(bd=>bd&&bd.asmComp?'c:'+bd.asmComp:'b:'+((bd&&(bd.bodyId||bd.id))||''));
     let cutShapes=shapes;
     if(view.section&&shapes.length){
       view._sec={p0:view.section.p,gaze:mepNorm(view.section.n)};
@@ -2024,7 +2034,7 @@
     const v=mepNorm(mepCross(u,dir));
     const vObj=mepAddView(Object.assign({kind:'proj',vk:'',proj:which,dir,u,v,
       parent:par.id,label:mepNextLabel(mepSheet()),
-      bodyId:par.bodyId,mode:par.mode,tangent:par.tangent,hlrExact:par.hlrExact!==false,scale:par.scale,
+      bodyId:par.bodyId,asm:!!par.asm,mode:par.mode,tangent:par.tangent,hlrExact:par.hlrExact!==false,scale:par.scale,
       autoAxes:!!par.autoAxes,autoPitch:!!par.autoPitch},at?{_keepScale:1,_at:at}:{}));
     // placement aligné 1er angle : l'axe commun est verrouillé sur la mère
     if(!at)mepEdit('placement vue projetée',()=>{
@@ -2096,7 +2106,7 @@
       const pb=mepBasisOf(par),wA=[pb.u[0]*A.x+pb.v[0]*A.y,pb.u[1]*A.x+pb.v[1]*A.y,pb.u[2]*A.x+pb.v[2]*A.y];
       const label=mepNextLabel(mepSheet());
       const v=mepAddView({kind:'section',vk:'',dir:Bs.dir,u:Bs.u,v:Bs.v,parent:par.id,label,
-        bodyId:par.bodyId,mode:par.mode,tangent:par.tangent,hlrExact:par.hlrExact!==false,scale:par.scale,_keepScale:1,_at:opt.at,
+        bodyId:par.bodyId,asm:!!par.asm,mode:par.mode,tangent:par.tangent,hlrExact:par.hlrExact!==false,scale:par.scale,_keepScale:1,_at:opt.at,
         align:{x:np.x*opt.s,y:np.y*opt.s},autoAxes:!!par.autoAxes,autoPitch:!!par.autoPitch,
         section:Object.assign({p:wA,n:Bs.dir.slice(),a:[A.x,A.y],b:[B.x,B.y],pid:par.id,s:opt.s},
           opt.pts&&opt.pts.length>2?{pts:opt.pts.map(q=>[+(+q.x).toFixed(4),+(+q.y).toFixed(4)])}:{})});
@@ -2116,7 +2126,7 @@
     n=[n[0]/Ln,n[1]/Ln,n[2]/Ln];
     const label=mepNextLabel(mepSheet());
     const b=mepBasisFromDir(n);
-    const v=mepAddView({kind:'section',vk:'',dir:b.dir,u:b.u,v:b.v,parent:par.id,label,
+    const v=mepAddView({kind:'section',vk:'',dir:b.dir,u:b.u,v:b.v,parent:par.id,label,bodyId:par.bodyId,asm:!!par.asm, // V0.8.2 : la coupe d'une vue d'assemblage voit l'assemblage
       autoAxes:!!par.autoAxes,autoPitch:!!par.autoPitch,
       section:{p:wA.slice(),n:n.slice(),a:[A.x,A.y],b:[B.x,B.y],pid:par.id}});
     // décalage le long de la ligne de coupe, sur le papier du parent
@@ -2140,7 +2150,7 @@
     const label=mepNextLabel(mepSheet());
     const src=mepBasisOf(par);
     const v=mepAddView(Object.assign({kind:'detail',vk:'',dir:src.dir.slice(),u:src.u.slice(),v:src.v.slice(),
-      parent:par.id,label,scale:opt&&opt.scale||2,detail:{cx:C.x,cy:C.y,r:R},bodyId:par.bodyId,mode:par.mode,tangent:par.tangent,hlrExact:par.hlrExact!==false,
+      parent:par.id,label,scale:opt&&opt.scale||2,detail:{cx:C.x,cy:C.y,r:R},bodyId:par.bodyId,asm:!!par.asm,mode:par.mode,tangent:par.tangent,hlrExact:par.hlrExact!==false,
       autoAxes:!!par.autoAxes,autoPitch:!!par.autoPitch},opt&&opt.at?{_keepScale:1,_at:opt.at}:{}));
     if(!(opt&&opt.at))mepEdit('placement vue de détail',()=>{
       const pd=mepPageDim(mepSheet());
@@ -2586,18 +2596,87 @@
   /* bulles (V0.6.7) : {view, comp, p (point 3D du composant actif), dx, dy (décalage papier)} ;
      le numéro est celui de la ligne du composant dans la nomenclature (renuméroté avec elle) */
   function mepBalloonsAuto(sh){
+    // V0.8.2 : accroche sur la surface VISIBLE de la pièce (asmBalloonVisible ; repli : centre de
+    // sa boîte), bulles rangées sur un cadre autour de la vue, dans l'ordre du tour, écartées
+    // d'au moins un diamètre et demi — plus de bulles empilées ni de traits qui se croisent
     const v=(sh.views||[]).find(x=>x.asm);if(!v)return 0;
     const rows=mepBomRows(sh);
-    const c0=mepToSheet(v,0,0);
     sh.balloons=[];
+    const L=[];
     rows.forEach(r=>{
-      const p=asmBalloonAnchor(r.ids[0]);if(!p)return;
-      const l=mepLocal(v,p),A=mepToSheet(v,l[0],l[1]);
-      let dx=A.x-c0.x,dy=A.y-c0.y;const n=Math.hypot(dx,dy);
-      if(!(n>1)){dx=18;dy=-14;}else{dx=dx/n*18;dy=dy/n*18;} // accroche au centre de la vue : en haut à droite
-      sh.balloons.push({id:'bl'+(sh.balloons.length+1),view:v.id,comp:r.ids[0],p,dx:+dx.toFixed(2),dy:+dy.toFixed(2)});
+      let C=[];try{C=asmBalloonCands(r.ids[0],v,7);}catch(e){C=[];}
+      if(!C.length){const p=asmBalloonAnchor(r.ids[0]);if(!p)return;C=[{p,d:0}];}
+      L.push({r,C});
+    });
+    mepBalloonLayout(v,L).forEach(q=>{
+      sh.balloons.push({id:'bl'+(sh.balloons.length+1),view:v.id,comp:q.r.ids[0],p:q.p,dx:+(q.B.x-q.A.x).toFixed(2),dy:+(q.B.y-q.A.y).toFixed(2)});
     });
     return sh.balloons.length;
+  }
+  function mepBalloonLayout(v,L){
+    // Position des bulles sur un cadre à 9 mm de la boîte de la vue : direction centre → accroche,
+    // puis tri le long du cadre et écart minimal (périmètre parcouru dans le sens horaire)
+    let bb=mepViewSheetBBox(v)||{x:v.x-20,y:v.y-20,w:40,h:40},TT=null;
+    try{const T=mepViewTitleGeo(v);if(T){TT={x0:T.x-T.w/2-1.5,x1:T.x+T.w/2+1.5,below:T.y>bb.y+bb.h/2}; // le titre de la vue (« Face », « COUPE A-A ») fait partie du cadre à éviter
+      const tx0=Math.min(bb.x,T.x-T.w/2),ty0=Math.min(bb.y,T.y-T.h),tx1=Math.max(bb.x+bb.w,T.x+T.w/2),ty1=Math.max(bb.y+bb.h,T.y+0.8);
+      bb={x:tx0,y:ty0,w:tx1-tx0,h:ty1-ty0};}}catch(e){}
+    const G=9,x0=bb.x-G,y0=bb.y-G,W=bb.w+2*G,H=bb.h+2*G,P=2*(W+H);
+    const C={x:bb.x+bb.w/2,y:bb.y+bb.h/2};
+    const toS=(x,y)=>{ // point du cadre → abscisse le long du cadre
+      if(Math.abs(y-y0)<1e-6)return x-x0;if(Math.abs(x-(x0+W))<1e-6)return W+(y-y0);
+      if(Math.abs(y-(y0+H))<1e-6)return W+H+(x0+W-x);return 2*W+H+(y0+H-y);};
+    const fromS=s=>{s=((s%P)+P)%P;if(s<W)return{x:x0+s,y:y0};s-=W;if(s<H)return{x:x0+W,y:y0+s};s-=H;if(s<W)return{x:x0+W-s,y:y0+H};s-=W;return{x:x0,y:y0+H-s};};
+    L.forEach(q=>{
+      // accroche (point visible de la pièce) et côté du cadre choisis ENSEMBLE : le trait le plus
+      // court qui ne passe au-dessus d'aucune autre pièce (rayons le long du trait), puis le plus
+      // proche du centre de la pièce ; le côté du titre est écarté quand le trait le traverserait
+      const cid=q.r.ids[0];let best=null;
+      (q.C||[]).forEach(K=>{
+        const l=mepLocal(v,K.p),A=mepToSheet(v,l[0],l[1]);
+        [[A.x,y0,A.y-y0,'t'],[x0+W,A.y,x0+W-A.x,'r'],[A.x,y0+H,y0+H-A.y,'b'],[x0,A.y,A.x-x0,'l']].forEach(c=>{
+          if(TT&&c[3]===(TT.below?'b':'t')&&A.x>=TT.x0&&A.x<=TT.x1)return;
+          const sc=c[2]+0.25*(K.d||0)*v.scale;
+          if(best&&best.free&&sc>=best.sc)return;
+          let free=true;
+          for(let k=1;k<=8&&free;k++){const f=k/8,Q=mepFromSheet(v,A.x+(c[0]-A.x)*f,A.y+(c[1]-A.y)*f);
+            let h=null;try{h=asmPlanHit(v.dir,v.u,v.v,Q.x,Q.y);}catch(e){}
+            if(h&&h.comp!==cid)free=false;}
+          if(!best||(free&&!best.free)||(free===best.free&&sc<best.sc))best={sc,free,A,p:K.p,c};
+        });
+      });
+      if(!best){q.A={x:C.x,y:C.y};q.s=0;return;}
+      q.A=best.A;q.p=best.p;
+      q.s=toS(Math.min(x0+W,Math.max(x0,best.c[0])),Math.min(y0+H,Math.max(y0,best.c[1])));
+    });
+    L.sort((a,b)=>a.s-b.s);
+    const gap=11; // 1,5 diamètre de bulle
+    for(let k=1;k<L.length;k++)if(L[k].s<L[k-1].s+gap)L[k].s=L[k-1].s+gap;
+    if(L.length*gap<=P&&L.length>1&&L[L.length-1].s>L[0].s+P-gap){ // le tour se referme : recentre
+      const over=L[L.length-1].s-(L[0].s+P-gap);L.forEach(q=>{q.s-=over/2;});}
+    L.forEach(q=>{q.B=fromS(q.s);});
+    return L;
+  }
+  function mepBalloonAt(sh,x,y){
+    // bulle dont le cercle contient le point (la dernière dessinée d'abord)
+    const B=Array.isArray(sh.balloons)?sh.balloons:[];
+    for(let k=B.length-1;k>=0;k--){const b=B[k],v=mepView(sh,b.view);if(!v)continue;
+      const l=mepLocal(v,b.p),A=mepToSheet(v,l[0],l[1]);
+      if(Math.hypot(x-(A.x+(+b.dx||0)),y-(A.y+(+b.dy||0)))<=4.4)return b;}
+    return null;
+  }
+  function mepBalloonAddAt(sh,x,y){
+    // V0.8.2 : outil « ＋ Bulle » — la pièce sous le clic (vue d'assemblage) reçoit une bulle
+    const v=mepViewAt(sh,x,y);
+    if(!v||!v.asm)return {ok:false,msg:'＋ Bulle : cliquez une pièce dans une vue « Assemblage ».'};
+    const l=mepFromSheet(v,x,y),h=asmPlanHit(v.dir,v.u,v.v,l.x,l.y);
+    if(!h||!h.comp)return {ok:false,msg:'＋ Bulle : aucune pièce de l’assemblage sous le clic.'};
+    const row=mepBomRows(sh).find(r=>r.ids&&r.ids.indexOf(h.comp)>=0);
+    if(!row)return {ok:false,msg:'＋ Bulle : cette pièce n’est pas dans la nomenclature (niveau choisi).'};
+    if(!Array.isArray(sh.balloons))sh.balloons=[];
+    let n=sh.balloons.length+1;while(sh.balloons.some(b=>b.id==='bl'+n))n++;
+    const b={id:'bl'+n,view:v.id,comp:row.ids[0],p:h.p,dx:12,dy:-12};
+    sh.balloons.push(b);
+    return {ok:true,b,msg:'Bulle '+row.rep+' ('+row.name+') ajoutée — glissez-la pour la placer.'};
   }
   function mepDrawBalloons(mk,sh){
     if(!Array.isArray(sh.balloons)||!sh.balloons.length)return;
@@ -2609,7 +2688,8 @@
       const d=Math.hypot(B.x-A.x,B.y-A.y)||1,E={x:B.x-(B.x-A.x)/d*R,y:B.y-(B.y-A.y)/d*R};
       mk('line',{x1:A.x,y1:A.y,x2:E.x,y2:E.y,class:'mepTitleBlock'});
       mk('circle',{cx:A.x,cy:A.y,r:0.6,class:'mepTitleBlock',fill:'currentColor'});
-      mk('circle',{cx:B.x,cy:B.y,r:R,class:'mepTitleBlock'});
+      const cB=mk('circle',{cx:B.x,cy:B.y,r:R,class:'mepTitleBlock'});
+      if(mepSt.selBl===b.id)cB.setAttribute('style','stroke:#2f7ff0;stroke-width:.5'); // V0.8.2 : bulle sélectionnée
       const tx=mk('text',{x:B.x,y:B.y+1.3,class:'mepRevText','text-anchor':'middle'});tx.textContent=String(row.rep);
     });
   }
@@ -3542,7 +3622,7 @@
       const par=parOf(),G=par&&mepVcmdGeom(sh,P);
       if(!G){mepStatus('Projection : éloignez la souris de la vue mère pour choisir le sens.');return;}
       let nv=null;
-      if(G.which==='iso'){nv=mepAddView({kind:'base',vk:'iso',bodyId:par.bodyId,label:'',scale:par.scale,_keepScale:1,_at:G.at,
+      if(G.which==='iso'){nv=mepAddView({kind:'base',vk:'iso',bodyId:par.bodyId,asm:!!par.asm,label:'',scale:par.scale,_keepScale:1,_at:G.at,
         mode:par.mode,tangent:par.tangent,hlrExact:par.hlrExact!==false});}
       else nv=mepAddProjected(par,G.which,Object.assign({},G.at,G.lock));
       mepSt.sel=par.id; // on reste sur la mère : projections enchaînées
@@ -3615,7 +3695,7 @@
     const L=Math.hypot(e.x2-e.x1,e.y2-e.y1)||1,t={x:(e.x2-e.x1)/L,y:(e.y2-e.y1)/L},np={x:-t.y,y:t.x};
     const B=mepPaperBasis(par,t,np,s);
     const v=mepAddView({kind:'aux',vk:'',dir:B.dir,u:B.u,v:B.v,parent:par.id,label:mepNextLabel(mepSheet()),
-      bodyId:par.bodyId,mode:par.mode,tangent:par.tangent,hlrExact:par.hlrExact!==false,scale:par.scale,_keepScale:1,_at:at,
+      bodyId:par.bodyId,asm:!!par.asm,mode:par.mode,tangent:par.tangent,hlrExact:par.hlrExact!==false,scale:par.scale,_keepScale:1,_at:at,
       align:{x:np.x*s,y:np.y*s},auxEdge:{a:[e.x1,e.y1],b:[e.x2,e.y2],s,pid:par.id},
       autoAxes:!!par.autoAxes,autoPitch:!!par.autoPitch});
     mepStatus('Vue auxiliaire « '+v.label+' » posée, perpendiculaire à l’arête — glisser contraint sur sa ligne de rappel.');
@@ -4384,7 +4464,8 @@
       }
     });
     /* hachures */
-    if(g.hatch&&g.hatch.length)mepDrawHatch(mk,g.hatch,v);
+    if(g.hatchG&&g.hatchG.length>1&&mepHatchCfg().parts)g.hatchG.forEach(G=>mepDrawHatch(mk,G.loops,v,mepHatchVar(G.k))); // V0.8.2 : par pièce
+    else if(g.hatch&&g.hatch.length)mepDrawHatch(mk,g.hatch,v);
     /* ligne de coupe sur le parent (ISO 128-44) : trait mixte fin, extrémités épaisses, flèches = sens du regard, lettres */
     if(v.section&&v.section.a&&v.section.pid){
       const par=mepView(sh,v.section.pid);
@@ -4687,7 +4768,15 @@
     const ang=isFinite(+h.ang)&&h.ang!==null&&h.ang!==''?((+h.ang%180)+180)%180:45;
     const sc=(+h.sc>0)?Math.min(10,Math.max(0.1,+h.sc)):1;
     const col=(typeof h.col==='string'&&/^#[0-9a-f]{6}$/i.test(h.col))?h.col:'';
-    return{pat,ang,sc,col};
+    return{pat,ang,sc,col,parts:h.parts!==false};
+  }
+  function mepHatchVar(k,cfg){
+    // V0.8.2 : variante de la k-ième pièce d'une coupe — angle alterné (45° / 135°), puis pas
+    // élargi, puis resserré : deux pièces voisines ne se confondent pas
+    const H=Object.assign({},cfg||mepHatchCfg());
+    H.ang=((H.ang+(k%2?90:0))%180+180)%180;
+    H.sc=H.sc*[1,1,1.6,1.6,0.65,0.65][k%6];
+    return H;
   }
   function mepHatchLines(loops,deg,sp,phase){
     /* rotation puis scanline pair-impair (trous inclus) */
@@ -4792,6 +4881,10 @@
     cI.oninput=()=>{w.col=cI.value;cB.checked=false;draw();};
     cB.onchange=()=>{w.col=cB.checked?'':cI.value;draw();};
     cw.appendChild(cI);cw.appendChild(cD);row('Couleur',cw);
+    // V0.8.2 : une hachure par pièce dans les coupes d'assemblage (et de pièces multicorps)
+    const pL=document.createElement('label');pL.style.cssText='display:flex;align-items:center;gap:6px;margin:6px 0 0';
+    const pB=document.createElement('input');pB.type='checkbox';pB.id='mepHatchParts';pB.checked=w.parts!==false;
+    pB.onchange=()=>{w.parts=pB.checked;};pL.appendChild(pB);pL.appendChild(document.createTextNode(' Une hachure par pièce (angle alterné)'));box.appendChild(pL);
     const bt=document.createElement('div');bt.style.cssText='display:flex;justify-content:flex-end;gap:8px;margin-top:10px';
     const close=()=>{try{box.remove();}catch(e){}if(mepHatchDlgEl===box)mepHatchDlgEl=null;};
     const bC=document.createElement('button');bC.type='button';bC.textContent='Annuler';bC.onclick=close;
@@ -4804,7 +4897,7 @@
   }
   function mepHatchApply(cfg){
     mepEnsure();
-    mepEdit('hachures',()=>{doc.mep.hatch={pat:cfg.pat,ang:cfg.ang,sc:cfg.sc,col:cfg.col||''};});
+    mepEdit('hachures',()=>{doc.mep.hatch={pat:cfg.pat,ang:cfg.ang,sc:cfg.sc,col:cfg.col||''};if(cfg.parts===false)doc.mep.hatch.parts=false;});
     const H=mepHatchCfg(),P=MEP_HATCH_PATS.find(p=>p[0]===H.pat);
     mepStatus('Hachures : '+(P?P[1]:H.pat)+(H.pat==='plein'?'':' · '+H.ang+'° · échelle '+H.sc)+' — toutes les coupes.');
     mepRender();
@@ -6849,6 +6942,18 @@
            mepSideShow();mepRender();return;}
          mepSt.pick={kind:'cutSeg',vid:cs.v.id,j:cs.j,M,sG,brk:ev.ctrlKey||ev.metaKey,px0:P.px,py0:P.py};
          mepSideShow();mepRender();return;}}
+      // V0.8.2 : outil « ＋ Bulle » (clic sur une pièce d'une vue d'assemblage)
+      if(mepSt.blAdd){let r=null;mepEdit('bulle ajoutée',()=>{r=mepBalloonAddAt(sh,P.x,P.y);});
+        if(r&&r.ok){mepSt.selBl=r.b.id;mepSt.sel=null;mepSt.selDim=null;mepSt.selAxis=null;}
+        mepStatus(r?r.msg:'');mepSideShow();mepRender();return;}
+      // V0.8.2 : bulle ? → sélection + glisser pour la placer (Suppr la retire)
+      {const bl=mepBalloonAt(sh,P.x,P.y);
+       if(bl){const v=mepView(sh,bl.view),l=mepLocal(v,bl.p),A=mepToSheet(v,l[0],l[1]);
+         mepSt.selBl=bl.id;mepSt.sel=null;mepSt.selDim=null;mepSt.selAxis=null;
+         mepSt.pick={kind:'blDrag',id:bl.id,ox:P.x-(A.x+(+bl.dx||0)),oy:P.y-(A.y+(+bl.dy||0)),ax:A.x,ay:A.y,px0:P.px,py0:P.py,moved:false,undoPushed:false};
+         mepStatus('Bulle : glissez pour la placer, Suppr pour la retirer.');
+         mepSideShow();mepRender();return;}
+       if(mepSt.selBl){mepSt.selBl=null;}}
       // titre de vue ? → glisser le long de l'axe de la vue
       {const tv=mepViewTitleAt(sh,P.x,P.y);
        if(tv){const g=mepViewTitleGeo(tv);
@@ -7106,6 +7211,16 @@
         }
         return;
       }
+      if(pk.kind==='blDrag'){ // V0.8.2 : bulle glissée
+        const b=(sh.balloons||[]).find(q=>q.id===pk.id);
+        if(b){
+          if(!pk.dragStarted){if(Math.hypot(P.px-pk.px0,P.py-pk.py0)<3)return;pk.dragStarted=true;}
+          if(!pk.undoPushed){try{docPushUndo('Plan : bulle');}catch(e){}pk.undoPushed=true;}
+          b.dx=+(P.x-pk.ox-pk.ax).toFixed(2);b.dy=+(P.y-pk.oy-pk.ay).toFixed(2);pk.moved=true;
+          mepRender();
+        }
+        return;
+      }
       if(pk.kind==='ttlDrag'){
         const v=mepView(sh,pk.vid),g=v&&mepViewTitleGeo(v);
         if(g){
@@ -7306,6 +7421,11 @@
       mepSt.pick=null;mepRender();
       return;
     }
+    if(pk.kind==='blDrag'){ // V0.8.2
+      if(pk.moved)mepEdit('bulle',()=>{},true);
+      mepSt.pick=null;mepRender();
+      return;
+    }
     if(pk.kind==='box'){
       mepSt.pick=null;
       const sh=mepSheet();
@@ -7413,6 +7533,7 @@
       mepCtxHide();ev.preventDefault();ev.stopPropagation();return;
     }
     if((k==='Escape'||k==='Enter')&&mepSt.ord){mepSt.ord=null;mepSetTool('select');mepStatus('Cotation d’ordonnées terminée.');ev.preventDefault();ev.stopPropagation();return;}
+    if(k==='Escape'&&mepSt.blAdd){mepSt.blAdd=false;mepStatus('＋ Bulle terminé.');mepSideShow();ev.preventDefault();ev.stopPropagation();return;} // V0.8.2
     if(k==='Escape'){
       if(mepSt.alignDims){mepSt.alignDims=null;mepStatus('Alignement annulé.');ev.preventDefault();ev.stopPropagation();return;}
       if(mepSt.vcmd){mepVcmdCancel();ev.preventDefault();ev.stopPropagation();return;}
@@ -7450,6 +7571,10 @@
       if(mepSt.selDim&&mepSt.ordPt&&mepSt.ordPt.id===mepSt.selDim&&mepSt.ordPt.i>=0){
         mepOrdDelPt(sh,sh.dims.find(d=>d.id===mepSt.selDim),mepSt.ordPt.i);
         ev.preventDefault();ev.stopPropagation();return;
+      }
+      if(mepSt.selBl&&(sh.balloons||[]).some(b=>b.id===mepSt.selBl)){ // V0.8.2 : bulle sélectionnée
+        mepEdit('suppression bulle',()=>{sh.balloons=sh.balloons.filter(b=>b.id!==mepSt.selBl);mepSt.selBl=null;});
+        mepSideShow();mepRender();ev.preventDefault();ev.stopPropagation();return;
       }
       if(mepSt.selDim){
         mepEdit('suppression cote',()=>{sh.dims=sh.dims.filter(d=>d.id!==mepSt.selDim);mepSt.selDim=null;});
@@ -8499,6 +8624,9 @@
         r=rowEl();
         mkBtn('Bulles automatiques',()=>{mepEdit('bulles',()=>{mepBalloonsAuto(sh);});mepSideShow();},'Une bulle par ligne de la nomenclature, sur la première vue « Assemblage » de la planche');
         mkBtn('Effacer les bulles',()=>{mepEdit('bulles',()=>{sh.balloons=[];});mepSideShow();},'Retire toutes les bulles de la planche');
+        mkBtn(mepSt.blAdd?'＋ Bulle (actif)':'＋ Bulle',()=>{mepSt.blAdd=!mepSt.blAdd;
+          mepStatus(mepSt.blAdd?'＋ Bulle : cliquez une pièce dans une vue « Assemblage » (Échap pour finir).':'＋ Bulle terminé.');mepSideShow();},
+          'Ajoute une bulle sur la pièce cliquée ; une bulle se glisse, Suppr la retire');
       }
     }
     if(sh.bom&&sh.bom.on){
@@ -9322,7 +9450,7 @@
   // points d'entrée réservés aux tests automatisés (jamais activés dans l'app)
   if(window.__MEP_TEST_HOOKS__){
     window.__mepTest={
-      bomRows:sh=>mepBomRows(sh),balloonsAuto:sh=>mepBalloonsAuto(sh),drawBalloons:(mk,sh)=>mepDrawBalloons(mk,sh),meshesOf:v=>mepMeshesOf(v),addView:o=>mepAddView(o),sheet:()=>mepSheet(),viewSig:v=>mepViewSig(v), // V0.6.7
+      bomRows:sh=>mepBomRows(sh),balloonsAuto:sh=>mepBalloonsAuto(sh),balloonAt:(x,y)=>mepBalloonAt(mepSheet(),x,y),viewBBox:v=>mepViewSheetBBox(v),balloonAdd:(x,y)=>mepBalloonAddAt(mepSheet(),x,y),hatchVar:(k,c)=>mepHatchVar(k,c),st:()=>mepSt,drawBalloons:(mk,sh)=>mepDrawBalloons(mk,sh),meshesOf:v=>mepMeshesOf(v),addView:o=>mepAddView(o),sheet:()=>mepSheet(),viewSig:v=>mepViewSig(v), // V0.6.7
       drawRevs:(mk,sh,pd,ty)=>mepDrawRevs(mk,sh,pd,ty),holeFam:f=>mepHoleFam(f),cutAddBreak:(sh,v)=>mepCutAddBreak(sh,v),cutBreakAt:(sh,v,m,sG,c,r)=>mepCutBreakAt(sh,v,m,sG,c,r),cutFollow:sh=>mepCutFollowAll(sh),cutAutoRefs:(sh,v)=>mepCutAutoRefs(sh,v),cutDelBreak:(sh,v)=>mepCutDelBreak(sh,v),cutDelBreakAt:(sh,v,j,sG)=>mepCutDelBreakAt(sh,v,j,sG),cutBreakClick:(sh,v,m,sG)=>mepCutBreakClick(sh,v,m,sG),cutModel:v=>mepCutModel(v),prefsCollect:()=>mepPrefsCollect(),prefsApply:p=>mepPrefsApply(p),pageDim:sh=>mepPageDim(sh),
       titleTexts:sh=>{const t=[];const mk=(tag)=>{const o={textContent:''};if(tag==='text')t.push(o);return o;};mepDrawTitle(mk,sh,mepPage().pd,100);mepDrawRevs(mk,sh,mepPage().pd,100);mepDrawBom(mk,sh,mepPage().pd,100);return t.map(o=>o.textContent);},
       sk:{fromStd:sh=>mepTbFromStd(sh),solve:(sk,a)=>mepSkSolve(sk,80,a),residual:(sk,c)=>mepSkResidual(sk,c),

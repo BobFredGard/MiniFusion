@@ -858,6 +858,17 @@ function smoothNormals(pos,creaseDeg){
 }
 function occTessellate(shape,defl,ang){
   // BRep -> THREE.BufferGeometry (non indexé, normales plates). Validé par exécution.
+  const T=occTriPos(shape,defl,ang),pos=T.pos;
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  try{g.setAttribute('normal',new THREE.Float32BufferAttribute(smoothNormals(pos,35),3));}
+  catch(e){g.computeVertexNormals();}
+  g.userData.occGroups=T.groups; // triangle -> face BRep (clic-face en mode exact)
+  return g;
+}
+function occTriPos(shape,defl,ang){
+  // BRep -> triangles bruts {pos:[x,y,z × 3 par triangle], groups:[{f,start,count}]} (V0.8.2 :
+  // aussi pour les rayons des bulles de la mise en plan, qui n'ont pas besoin de THREE)
   defl=defl||0.5;ang=ang||0.5;
   new occt.BRepMesh_IncrementalMesh_2(shape,defl,false,ang,false);
   const pos=[],groups=[];
@@ -898,12 +909,7 @@ function occTessellate(shape,defl,ang){
     ex.Next();
   }
   try{ex.delete();}catch(e){}
-  const g=new THREE.BufferGeometry();
-  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
-  try{g.setAttribute('normal',new THREE.Float32BufferAttribute(smoothNormals(pos,35),3));}
-  catch(e){g.computeVertexNormals();}
-  g.userData.occGroups=groups; // triangle -> face BRep (clic-face en mode exact)
-  return g;
+  return {pos,groups};
 }
 let occLive=null; // solide BRep affiché conservé pour le picking d'arêtes exact
 function occDropLive(){if(occLive){try{occLive.shape.delete();}catch(e){}occLive=null;}}

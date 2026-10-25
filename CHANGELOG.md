@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**330 versions**, de `2026-09-28b` à `V0.8.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**331 versions**, de `2026-09-28b` à `V0.8.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4792,3 +4792,12 @@ Même principe que l'extrusion dynamique (V0.7.6), étendu aux trois autres fonc
 - **Associatif** : l'entité projetée garde l'instance visée, son contexte et une signature (repère de l'instance + état de son composant). Si l'autre composant se déplace ou change, le composant qui porte l'esquisse est signalé (`asmExtStale`) et rejoué, même inactif ; l'arête est retrouvée par son milieu mémorisé, comme une projection ordinaire. Fonctionne aussi sans noyau (instantanés).
 - **Correctif — cercle complet projeté en ligne nulle** : le cercle était ajusté sur le premier point, le milieu et le dernier ; sur une arête circulaire fermée (trou d'un perçage), le premier et le dernier sont confondus. Ajustement sur les points à 0, 1/3 et 2/3 du parcours (pièce et composants).
 - **Tests** : `test_composants_aretes_esquisse` (sans noyau : listes candidates, repère, ligne, arc, cercle complet, suivi composant actif et inactif, exclusion du composant actif, fichier) ; `test_composants_aretes_occ` (noyau réel : socle percé et goupille, projection du perçage, déplacement, changement de diamètre).
+
+## V0.8.2 - Mise en plan d'assemblage : coupes et bulles
+- **Correctif — coupe d'une vue « Assemblage » vide** : les vues dérivées (coupe, projetée, détail, auxiliaire, ISO) ne reprenaient que le corps de leur mère, pas l'option « Assemblage » ; la coupe d'un assemblage ne montrait que les corps du composant actif (rien, à la racine). Elles héritent désormais de l'assemblage.
+- **Une hachure par pièce** dans les coupes : les boucles de hachures sont groupées par pièce (composant d'assemblage, ou corps) ; chaque pièce reçoit sa variante — 45°, 135°, puis pas × 1,6, puis × 0,65 —, deux instances du même composant gardent la même (usage du dessin d'ensemble). Case « Une hachure par pièce » dans la fenêtre des hachures (cochée par défaut).
+- **Bulles accrochées sur la pièce visible** : l'accroche est un point de la pièce réellement vu dans la vue (rayons le long du regard sur les solides exacts placés, ceux du composant actif cachant aussi) — plus le centre de sa boîte, qui pouvait tomber dans le vide ou sur une autre pièce.
+- **Bulles rangées autour de la vue** : sur un cadre à 9 mm de la vue (titre compris), accroche et côté choisis ensemble — le trait le plus court qui ne passe au-dessus d'aucune autre pièce ni sur le titre —, puis écartées d'au moins 11 mm le long du cadre.
+- **Bulles éditables** : une bulle se sélectionne et **se glisse** (une étape d'annulation), `Suppr` la retire ; **＋ Bulle** (panneau de la nomenclature) pose une bulle sur la pièce cliquée dans une vue « Assemblage » (Échap pour finir), refusée si la pièce n'est pas dans la nomenclature au niveau choisi.
+- `occTriPos` : triangulation brute séparée de `occTessellate` (les rayons des bulles n'ont pas besoin de THREE).
+- **Tests** : `test_composants_plan_bulles` (noyau réel : hachures groupées par composant, variantes, case ; accroche sur la face avant vue de face et sur le dessus vue de dessus, bulles écartées, hors de la vue, traits libres, bulle sous le curseur, ＋ Bulle, refus hors nomenclature) ; `test_mep_hachures_cotes` mis à jour (réglage par défaut). Vérifié dans le navigateur : coupe d'un socle et de deux colonnes (hachures 45° / 135°), bulles automatiques, glisser, Suppr, ＋ Bulle.

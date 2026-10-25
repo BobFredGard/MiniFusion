@@ -144,6 +144,7 @@ const SUITES = [
   "test_composants_references",
   "test_composants_aretes_esquisse",
   "test_composants_aretes_occ",
+  "test_composants_plan_bulles",
   "test_composants_liaisons",
   "test_composants_inspection",
   "test_composants_plan",

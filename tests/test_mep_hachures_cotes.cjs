@@ -270,7 +270,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   A(r.axRef==='axp:m__axF__.0','point posé sur un axe manuel (vertical) : rattaché à l’axe');
   A(JSON.stringify(r.axFollow)==='[37,20]'&&r.axNoH,'l’axe se déplace de 7 : le point suit ; axe de mauvaise direction : pas de rattachement');
   console.log('  · hachures : défaut '+r.cfg0+' '+r.n0+' traits '+r.slope0+'° ; réglées '+r.cfg1+' '+r.n1+' traits '+r.slope1+'°');
-  A(r.cfg0==='{"pat":"iso","ang":45,"sc":1,"col":""}'&&!r.style0,'hachures par défaut : ISO 128-50 45°, couleur du thème');
+  A(r.cfg0==='{"pat":"iso","ang":45,"sc":1,"col":"","parts":true}'&&!r.style0,'hachures par défaut : ISO 128-50 45°, couleur du thème, une hachure par pièce (V0.8.2)');
   A(r.cfg1==='{"pat":"acier","ang":30,"sc":2,"col":"#ff0000"}'&&r.ser,'réglage commun enregistré dans le document (doc.mep.hatch)');
   A(r.style1&&r.n1>0&&Math.abs(r.slope0)!==Math.abs(r.slope1),'acier 30° rouge : traits recolorés et réorientés');
   A(r.plein,'motif plein : une surface remplie (pair-impair)');
