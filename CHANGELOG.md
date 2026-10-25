@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**338 versions**, de `2026-09-28b` à `V0.8.9` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**339 versions**, de `2026-09-28b` à `V0.9.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4852,3 +4852,11 @@ Dernière étape de la série V0.8 (« toutes tes idées ») : piloter MiniFusio
 - **Tri-dexel** : chaque famille de rayons devient une texture (couches de 2 intervalles par rayon, 1 à 4 couches selon la pièce, ajoutées quand des rayons débordent) ; le vertex shader fabrique chaque facette à partir de son numéro d'instance (position, orientation), les extrémités vides se replient. Les normales (pentes vers les rayons voisins) sont précalculées dans une seconde texture, **seulement pour les rayons touchés et leurs voisins**. Après une taille, seuls les rayons modifiés sont écrits (journal des rayons). Sur Perçages : rafraîchissement **~100 ms → 1 ms** en moyenne (10 ms au pire), 2,4 M de facettes instanciées, image 0,6 ms. Repli sans WebGL2 : l'ancien maillage.
 - **Distance** : plus de triangles — le champ (tronqué à ±4 pas) est une **texture 3D sur 8 bits** (6 Mo), interpolée par la carte ; une boîte de la taille du brut porte un shader de **lancer de rayons** (pas = distance lue, dichotomie au contact, normale = gradient du champ, profondeur écrite). Après une taille, seule la région touchée est reconvertie. Rafraîchissement 1,4 ms en moyenne ; image 5,9 ms → ~0,1 ms. Plus de « transparence » bleue de la pièce là où la matière tombe sur sa surface (profondeur calculée). Repli sans WebGL2 : surface nets.
 - Tests : `test_simulation_moteurs` inchangé (taille) ; vérifié dans le navigateur (Perçages : images, lecture, console).
+
+## V0.9.0 - Simulation : taille sur la carte graphique (cartes et distance)
+« Le Tri-Dexel n'est pas optimum. Je préfère garder Distance et Cartes. Il faut juste faire en sorte que ces 2 modes utilisent complètement le GPU. »
+- **Tri-dexel** retiré du sélecteur (le code reste ; `faoSimEngine='dexel'` le rappelle pour comparer).
+- **Distance — taille GPU** (`src/88-fao-78`) : le champ est une texture 3D sur 8 bits qui sert aussi de cible de rendu (`WebGL3DRenderTarget`). Chaque pas d'outil est une instance (pointe de a à b à cote constante le long de l'axe de l'outil — vertical, 3+2 ou oblique, même calcul exact dans le repère de l'outil — profil tabulé dans un atlas) ; une couche du champ = un dessin de toutes les instances, le mélange **MAX** fait la taille max(d, −d_outil) sans relecture. Champ initial du brut copié une fois. Perçages : rattrapage **2,3 s → 0,57 s**, pas de lecture **13 → 2,1 ms**, mémoire **41 → 6 Mo** ; volume 199 125 mm³ (processeur 199 203, 0,04 %).
+- **Cartes — taille GPU** (nouveau `src/88-fao-79-cartes-gpu.js`) : chaque carte (posage, une par orientation 3+2) est une cible à trois textures écrites ensemble — hauteur (R32F), normale de l'outil (RGBA32F), direction radiale (RG32F) — plus une profondeur = hauteur normalisée. Un pas d'outil est une instance (son rectangle dans la carte) ; le fragment calcule la cote de coupe de sa colonne (dessous de l'outil : fond, arrondi, pointe) et sa normale ; le **test de profondeur** garde la plus basse avec SA normale et SA direction radiale. Les rendus existants (colonnes instanciées, lancer de rayons) lisent ces textures. Perçages : rattrapage **1,8 s → 74 ms**, pas de lecture **7 → 0,2 ms**, bascule réel ↔ lisse ~70 ms ; 7 texels sur 206 250 diffèrent du calcul JavaScript (tous au bord exact d'un trou : arrondi 32 / 64 bits).
+- Sans WebGL2 ni cibles flottantes : la taille en JavaScript, inchangée (tests en VM).
+- Correctif en chemin : en GLSL 3, three.js r147 ne déclare pas la sortie du fragment — les shaders la déclarent (`layout(location=…) out`).

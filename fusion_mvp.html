@@ -277,7 +277,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.8.9';
+const APP_VER='V0.9.0';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -26446,6 +26446,7 @@ function faoViewerMatterDispose(vw,keepGrid){
   try{ faoMatterGpuDispose(vw); }catch(e){} // rendu GPU (src/88-fao-76)
   try{ faoMatterRmDispose(vw); }catch(e){} // lancer de rayons (src/88-fao-77)
   try{ faoEngDispose(vw); }catch(e){} // moteurs tri-dexel / distance (src/88-fao-78)
+  try{ faoCarteGDispose(vw); }catch(e){} // taille des cartes sur la carte graphique (src/88-fao-79)
   try{ if(vw.matter&&typeof scene!=='undefined'&&scene)faoDel3D(vw.matter); }catch(e){}
   try{ if(vw.matter&&vw.matter.geometry&&vw.matter.geometry.dispose)vw.matter.geometry.dispose(); }catch(e){}
   vw.matter=null; vw.mKills=[]; vw.mTops=null; vw.mArr=null; vw.mNrm=null; vw.mH=null;
@@ -26667,7 +26668,7 @@ function faoViewerMatterEnable(vw,keepGrid){
   // 2026-10-11-007 « ≈ lisse » (3e version du bouton, vw.smooth) : heightfield
   // continu — nœud = moyenne des 4 cellules adjacentes (flou d'une maille sur
   // les traces assumé, cf. 003), normales lissées, murs de bord + fond.
-  keepGrid=!!(keepGrid&&vw&&vw.matterGrid);
+  keepGrid=!!(keepGrid&&vw&&vw.matterGrid&&!vw.cg); // taillée sur la carte graphique (src/88-fao-79) : la grille du processeur n'est pas à jour
   faoViewerMatterDispose(vw,keepGrid);
   if(!vw||vw.matterOn===false)return 0;
   const s=faoStock(); if(!faoStockValid(s))return 0;
@@ -26728,10 +26729,17 @@ function faoViewerMatterEnable(vw,keepGrid){
     vw.vox=faoViewerVoxWanted(vw)&&!vw.rm; vw.voxAt=0; vw.voxDirty=false; // cartes par orientation : plus de voxels ni de complément
     vw.cav=vw.vox?new Uint8Array(nc):null; vw.cavN=0; // colonnes creusées (src/88-fao-75)
   }
+  // V0.9.0 : rendu sur la carte graphique (colonnes ou lancer de rayons) → la TAILLE aussi (src/88-fao-79)
+  if(!keepGrid&&(vw.rm||vw.gpu)&&typeof faoCarteGOn==='function'&&faoCarteGOn()){
+    try{ faoCarteGInit(vw,g); }catch(e){ try{faoCarteGDispose(vw);}catch(e2){} try{console.warn('taille GPU des cartes indisponible',e);}catch(e3){} }
+  }
   if(vw.t>0&&!keepGrid){
-    const tcols=[];
-    const ks=faoMatterCarveTo(g,vw.pts,vw.dd,vw.times,vw.t,tcols,vw.exact?vw.cr:null,vw.exact?vw.tp:null);
-    faoViewerMatterKill(vw,ks,tcols);
+    if(vw.cg){ faoCarteGCatch(vw); }
+    else{
+      const tcols=[];
+      const ks=faoMatterCarveTo(g,vw.pts,vw.dd,vw.times,vw.t,tcols,vw.exact?vw.cr:null,vw.exact?vw.tp:null);
+      faoViewerMatterKill(vw,ks,tcols);
+    }
   }
   if(vw.vox)faoViewerVoxRefresh(vw,true);
   faoViewerMatterHideBodies(vw); // la surface remplace les corps visibles
@@ -26813,6 +26821,7 @@ function faoViewerMatterStep(vw,p){
   // INCREMENTAL : on ne repart JAMAIS de 0 sauf au tout premier appel.
   if(vw&&vw.eng){ if(vw.matterOn!==false)faoEngStep(vw,p); return; } // moteur tri-dexel / distance (src/88-fao-78)
   if(!vw||vw.matterOn===false||!vw.matterGrid||!vw.matter)return;
+  if(vw.cg){ faoCarteGStep(vw,p); return; } // taille sur la carte graphique (src/88-fao-79)
   const g=vw.matterGrid;
   let ks=null;
   const cols=[];
@@ -27705,13 +27714,15 @@ function faoMatterRmDispose(vw){
      sans escalier.
    Même outil que les cartes : rayon, arrondi d'arête, pointe (profil de révolution), axe du
    posage ou incliné (3+2). Le moteur ne change rien aux parcours ni au G-code. */
-const FAO_ENGINES={cartes:'cartes',dexel:'tri-dexel',sdf:'distance'};
+// V0.9.0 : « le Tri-Dexel n'est pas optimum, je préfère garder Distance et Cartes » — le tri-dexel
+// quitte le sélecteur (le code reste, essayé en V0.8.7–V0.8.9 ; faoSimEngine='dexel' le rappelle)
+const FAO_ENGINES={cartes:'cartes',sdf:'distance'};
 let faoSimEngine='cartes';
 try{const k=localStorage.getItem('minifusion_faoMoteur');if(k&&FAO_ENGINES[k])faoSimEngine=k;}catch(e){}
 let faoVwEngSel=null;
 function faoEngWanted(){return faoSimEngine==='dexel'||faoSimEngine==='sdf';}
 function faoEngineSet(k){
-  if(!FAO_ENGINES[k])return;
+  if(!FAO_ENGINES[k]&&k!=='dexel')return;
   faoSimEngine=k;
   try{localStorage.setItem('minifusion_faoMoteur',k);}catch(e){}
   try{if(faoVwEngSel&&faoVwEngSel.value!==k)faoVwEngSel.value=k;}catch(e){}
@@ -28343,7 +28354,145 @@ function faoSdfGSync(E){
   const S=E.D,G=E.sg,g=S.gb;if(!g)return;
   faoSdfGConvert(S,G.B,g[0],g[1],g[2],g[3],g[4],g[5]);S.gb=null;S.dirty.clear();G.tex.needsUpdate=true;
 }
-function faoSdfGDispose(E){const G=E&&E.sg;if(!G)return;try{G.tex.dispose();G.geo.dispose();}catch(e){}E.sg=null;}
+function faoSdfGDispose(E){const G=E&&E.sg;if(!G)return;try{if(G.tex)G.tex.dispose();G.geo.dispose();}catch(e){}E.sg=null;}
+/* ── taille sur la carte graphique (V0.9.0) : « que ces 2 modes utilisent complètement le GPU » ──
+   Le champ est une texture 3D sur 8 bits qui sert aussi de CIBLE de rendu (WebGL3DRenderTarget).
+   Chaque pas d'outil est une INSTANCE : sa pointe de a à b (à hauteur constante le long de l'axe
+   A de l'outil — vertical, 3+2 ou oblique, même calcul exact dans le repère de l'outil), l'outil
+   (profil tabulé dans un atlas), sa boîte. Une couche du champ = UN appel de dessin avec toutes
+   les instances : chacune couvre sa boîte, le fragment calcule la distance du voxel à l'outil et
+   le mélange MAX fait la taille, max(d, −d_outil), sans relecture. Le processeur ne fait plus que
+   découper les segments et préparer les instances ; le champ initial du brut est copié une fois. */
+const FAO_SDFC_VS=[
+  'in vec3 iA; in vec3 iB; in vec4 iAx; in vec3 iMin; in vec3 iMax;',
+  'uniform vec3 uLo; uniform vec3 uN; uniform float uP; uniform float uZ;',
+  'flat out vec3 vA; flat out vec3 vB; flat out vec4 vAx;',
+  'void main(){',
+  '  vA=iA; vB=iB; vAx=iAx;',
+  '  if(uZ<iMin.z||uZ>iMax.z){ gl_Position=vec4(2.0,2.0,2.0,1.0); return; }', // couche hors de la boîte : rien
+  '  vec2 g0=floor((iMin.xy-uLo.xy)/uP); vec2 g1=ceil((iMax.xy-uLo.xy)/uP)+1.0;',
+  '  vec2 g=mix(g0,g1,position.xy); vec2 ndc=clamp(g/uN.xy,0.0,1.0)*2.0-1.0;',
+  '  gl_Position=vec4(ndc,0.0,1.0);',
+  '}'].join('\n');
+const FAO_SDFC_FS=[
+  'precision highp sampler2D;',
+  'out highp vec4 sdOut;', // GLSL 3 : three.js r147 ne déclare pas la sortie du fragment
+  'uniform sampler2D uTab; uniform vec4 uTP[64];', // par outil : (R, htop, ligne 0, nr) (q, h0, nh, 0)
+  'uniform vec3 uLo; uniform float uP; uniform float uK; uniform float uTR;',
+  'flat in vec3 vA; flat in vec3 vB; flat in vec4 vAx;',
+  'float tab(int r0,int nr,int nh,float fr,float fh){',
+  '  int ir=min(nr-2,int(floor(fr))); int jh=min(nh-2,int(floor(fh))); float tr=fr-float(ir); float th=fh-float(jh);',
+  '  float a=texelFetch(uTab,ivec2(ir,r0+jh),0).r; float b=texelFetch(uTab,ivec2(ir+1,r0+jh),0).r;',
+  '  float c=texelFetch(uTab,ivec2(ir,r0+jh+1),0).r; float d=texelFetch(uTab,ivec2(ir+1,r0+jh+1),0).r;',
+  '  return mix(mix(a,b,tr),mix(c,d,tr),th);',
+  '}',
+  'void main(){',
+  '  vec3 X=uLo+vec3(floor(gl_FragCoord.xy),uK)*uP; vec3 A=vAx.xyz; int ti=int(vAx.w+0.5);',
+  '  vec4 P0=uTP[2*ti]; vec4 P1=uTP[2*ti+1]; float R=P0.x; float htop=P0.y;',
+  '  float h=dot(X-vA,A); vec3 Xp=X-A*h; vec3 d=vB-vA; float L2=dot(d,d);',
+  '  float s=(L2>1e-12)?clamp(dot(Xp-vA,d)/L2,0.0,1.0):0.0; float rho=length(Xp-(vA+d*s));',
+  '  float dt;',
+  '  if(rho>R+uTR||h<P1.y)discard;',
+  '  if(h>htop+uTR)dt=rho-R;',
+  '  else dt=tab(int(P0.z+0.5),int(P0.w+0.5),int(P1.z+0.5),rho/P1.x,(h-P1.y)/P1.x);',
+  '  if(dt>=uTR)discard;',
+  '  sdOut=vec4(clamp(0.5-dt/(2.0*uTR),0.0,1.0),0.0,0.0,1.0);', // max(d, −d_outil), encodé comme le champ
+  '}'].join('\n');
+function faoSdfCSupported(){
+  try{return faoDexGSupported()&&typeof THREE.WebGL3DRenderTarget==='function'&&THREE.MaxEquation!=null;}catch(e){return false;}
+}
+function faoSdfCInit(E){
+  // cible 3D, champ initial copié, matériaux de taille et de copie
+  const S=E.D,n=S.n;
+  const rt=new THREE.WebGL3DRenderTarget(n[0],n[1],n[2]);
+  rt.depthBuffer=false;rt.stencilBuffer=false;
+  const tx=rt.texture;tx.format=THREE.RedFormat;tx.type=THREE.UnsignedByteType;tx.minFilter=THREE.LinearFilter;tx.magFilter=THREE.LinearFilter;
+  tx.wrapS=tx.wrapT=tx.wrapR=THREE.ClampToEdgeWrapping;tx.generateMipmaps=false;
+  const B=new Uint8Array(n[0]*n[1]*n[2]);faoSdfGConvert(S,B,0,n[0]-1,0,n[1]-1,0,n[2]-1);
+  const src=new THREE.Data3DTexture(B,n[0],n[1],n[2]);src.format=THREE.RedFormat;src.type=THREE.UnsignedByteType;src.unpackAlignment=1;src.needsUpdate=true;
+  const quad=new THREE.BufferGeometry();quad.setAttribute('position',new THREE.BufferAttribute(new Float32Array([0,0,0,1,0,0,1,1,0,0,0,0,1,1,0,0,1,0]),3));
+  const cam=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+  // copie du brut : une couche à la fois
+  const cp=new THREE.ShaderMaterial({glslVersion:THREE.GLSL3,depthTest:false,depthWrite:false,uniforms:{uSrc:{value:src},uK:{value:0}},
+    vertexShader:'void main(){ gl_Position=vec4(position.xy*2.0-1.0,0.0,1.0); }',
+    fragmentShader:'precision highp sampler3D; uniform sampler3D uSrc; uniform float uK; out highp vec4 sdOut;\nvoid main(){ sdOut=vec4(texelFetch(uSrc,ivec3(ivec2(gl_FragCoord.xy),int(uK+0.5)),0).r,0.0,0.0,1.0); }'});
+  const cs=new THREE.Scene();const cm=new THREE.Mesh(quad,cp);cm.frustumCulled=false;cs.add(cm);
+  const ac=renderer.autoClear,prev=renderer.getRenderTarget();renderer.autoClear=false;
+  try{for(let k=0;k<n[2];k++){cp.uniforms.uK.value=k;cp.uniformsNeedUpdate=true;renderer.setRenderTarget(rt,k);renderer.render(cs,cam);}}
+  finally{renderer.setRenderTarget(prev);renderer.autoClear=ac;}
+  src.dispose();cp.dispose();
+  // matériau de taille
+  const U={uTab:{value:null},uTP:{value:Array.from({length:64},()=>new THREE.Vector4())},uLo:{value:new THREE.Vector3(S.lo[0],S.lo[1],S.lo[2])},
+    uN:{value:new THREE.Vector3(n[0],n[1],n[2])},uP:{value:S.p},uZ:{value:0},uK:{value:0},uTR:{value:S.TR}};
+  const mat=new THREE.ShaderMaterial({glslVersion:THREE.GLSL3,uniforms:U,vertexShader:FAO_SDFC_VS,fragmentShader:FAO_SDFC_FS,
+    depthTest:false,depthWrite:false,blending:THREE.CustomBlending,blendEquation:THREE.MaxEquation,blendSrc:THREE.OneFactor,blendDst:THREE.OneFactor});
+  const base=new THREE.BufferGeometry();base.setAttribute('position',new THREE.BufferAttribute(new Float32Array([0,0,0,1,0,0,1,1,0,0,0,0,1,1,0,0,1,0]),3));
+  E.sc={rt,mat,U,cam,scene:new THREE.Scene(),base,geo:null,mesh:null,q:[],tools:new Map(),tab:null,tabDirty:false};
+  quad.dispose();
+  // F du processeur n'est plus tenu à jour : la vérité est sur la carte graphique
+  return rt.texture;
+}
+function faoSdfCTool(E,T){
+  // indice de l'outil dans l'atlas des profils (ajouté si nouveau)
+  const C=E.sc;let i=C.tools.get(T.key);if(i!=null)return i;
+  if(C.tools.size>=32){C.tools.clear();} // ne devrait pas arriver : 32 outils dans un programme
+  i=C.tools.size;C.tools.set(T.key,i);C.tabDirty=true;
+  (C.T=C.T||[])[i]=faoSdfToolTable(T,E.D.p,E.D.TR);return i;
+}
+function faoSdfCAtlas(E){
+  const C=E.sc;C.tabDirty=false;let W=2,H=0;const L=C.T.slice(0,C.tools.size);
+  L.forEach(tt=>{W=Math.max(W,tt.nr);H+=tt.nh;});
+  const data=new Float32Array(W*Math.max(1,H));let row=0;
+  L.forEach((tt,i)=>{for(let j=0;j<tt.nh;j++)for(let r=0;r<tt.nr;r++)data[(row+j)*W+r]=tt.tab[j*tt.nr+r];
+    C.U.uTP.value[2*i].set(tt.R,tt.htop,row,tt.nr);C.U.uTP.value[2*i+1].set(tt.q,tt.h0,tt.nh,0);row+=tt.nh;});
+  if(C.tab)C.tab.dispose();
+  const tx=new THREE.DataTexture(data,W,Math.max(1,H),THREE.RedFormat,THREE.FloatType);
+  tx.magFilter=THREE.NearestFilter;tx.minFilter=THREE.NearestFilter;tx.generateMipmaps=false;tx.unpackAlignment=1;tx.needsUpdate=true;
+  C.tab=tx;C.U.uTab.value=tx;
+}
+function faoSdfCQueue(E,a,b,r,cr,tp,ax){
+  // un segment de coupe → instances (pas à hauteur constante le long de l'axe de l'outil)
+  const S=E.D,T=faoEngTool(r,cr,tp),ti=faoSdfCTool(E,T),q=E.sc.q;
+  let A=ax?ax.slice():[0,0,1];const L=Math.hypot(A[0],A[1],A[2])||1;A=A.map(v=>v/L);
+  const pa=[a.x,a.y,a.z],pb=[b.x,b.y,b.z],wa=pa[0]*A[0]+pa[1]*A[1]+pa[2]*A[2],wb=pb[0]*A[0]+pb[1]*A[1]+pb[2]*A[2];
+  const dw=Math.abs(wb-wa),st=Math.max(0.02,S.p/4),n=dw>st?Math.min(400,Math.ceil(dw/st)):1;
+  const H=faoEngExitH(E.stock,wa<wb?pa:pb,A,T.r),e=T.r+S.TR;
+  for(let s=0;s<n;s++){
+    const t0=s/n,t1=(s+1)/n,p0=[0,1,2].map(i=>pa[i]+(pb[i]-pa[i])*t0),p1=[0,1,2].map(i=>pa[i]+(pb[i]-pa[i])*t1);
+    const w0=wa+(wb-wa)*t0,w1=wa+(wb-wa)*t1,tc=Math.min(w0,w1);
+    const A0=p0.map((v,i)=>v-A[i]*(w0-tc)),B0=p1.map((v,i)=>v-A[i]*(w1-tc)); // les deux bouts à la cote de pointe la plus profonde
+    const mn=[0,0,0],mx=[0,0,0];
+    for(let i=0;i<3;i++){const ends=[A0[i],B0[i],A0[i]+A[i]*H,B0[i]+A[i]*H];mn[i]=Math.min(...ends)-e;mx[i]=Math.max(...ends)+e;}
+    q.push(A0[0],A0[1],A0[2],B0[0],B0[1],B0[2],A[0],A[1],A[2],ti,mn[0],mn[1],mn[2],mx[0],mx[1],mx[2]);
+  }
+}
+function faoSdfCFlush(E){
+  // instances en attente → une passe par couche touchée (mélange MAX dans la cible 3D)
+  const C=E.sc,S=E.D,q=C.q,cnt=q.length/16;if(!cnt)return 0;
+  if(C.tabDirty||!C.tab)faoSdfCAtlas(E);
+  const a3=(o)=>{const f=new Float32Array(cnt*3);for(let i=0;i<cnt;i++){f[i*3]=q[i*16+o];f[i*3+1]=q[i*16+o+1];f[i*3+2]=q[i*16+o+2];}return f;};
+  const ax=new Float32Array(cnt*4);let zmin=Infinity,zmax=-Infinity;
+  for(let i=0;i<cnt;i++){for(let j=0;j<4;j++)ax[i*4+j]=q[i*16+6+j];if(q[i*16+12]<zmin)zmin=q[i*16+12];if(q[i*16+15]>zmax)zmax=q[i*16+15];}
+  const geo=new THREE.InstancedBufferGeometry();geo.setAttribute('position',C.base.getAttribute('position'));
+  geo.setAttribute('iA',new THREE.InstancedBufferAttribute(a3(0),3));geo.setAttribute('iB',new THREE.InstancedBufferAttribute(a3(3),3));
+  geo.setAttribute('iAx',new THREE.InstancedBufferAttribute(ax,4));
+  geo.setAttribute('iMin',new THREE.InstancedBufferAttribute(a3(10),3));geo.setAttribute('iMax',new THREE.InstancedBufferAttribute(a3(13),3));
+  geo.instanceCount=cnt;
+  if(C.mesh){C.scene.remove(C.mesh);try{C.geo.dispose();}catch(e){}}
+  const m=new THREE.Mesh(geo,C.mat);m.frustumCulled=false;C.scene.add(m);C.mesh=m;C.geo=geo;
+  q.length=0;
+  const k0=Math.max(0,Math.floor((zmin-S.lo[2])/S.p)),k1=Math.min(S.n[2]-1,Math.ceil((zmax-S.lo[2])/S.p));
+  const ac=renderer.autoClear,prev=renderer.getRenderTarget();renderer.autoClear=false;
+  try{for(let k=k0;k<=k1;k++){C.U.uK.value=k;C.U.uZ.value=S.lo[2]+k*S.p;C.mat.uniformsNeedUpdate=true;renderer.setRenderTarget(C.rt,k);renderer.render(C.scene,C.cam);}}
+  finally{renderer.setRenderTarget(prev);renderer.autoClear=ac;}
+  S.ver++;
+  return k1-k0+1;
+}
+function faoSdfCDispose(E){
+  const C=E&&E.sc;if(!C)return;
+  try{C.rt.dispose();C.mat.dispose();C.base.dispose();if(C.geo)C.geo.dispose();if(C.tab)C.tab.dispose();}catch(e){}
+  E.sc=null;
+}
 /* ═══════════════ branchement dans la simulation ═══════════════ */
 function faoEngPas(s){
   const cfg=(typeof faoDetailCfg!=='undefined'&&faoDetailCfg[faoViewerDetail])||{B:200000,F:0.4};
@@ -28358,18 +28507,21 @@ function faoEngEnable(vw){
   const p=faoEngPas(s),D=faoSimEngine==='dexel'?faoDexCreate(s,p):faoSdfCreate(s,p);
   const E={kind:D.kind,D,p,stock:s,group:null,mesh:null,chunks:new Map(),tris:0,facets:0,shown:-1,timer:null,stats:{}};
   vw.eng=E;vw.vox=false;vw.cav=null;
-  if(vw.t>0)faoEngSegments(vw,null,(a,b,r,cr,tp,ax)=>faoEngCarve(D,a,b,r,cr,tp,ax));
+  E.gpuCut=D.kind==='sdf'&&typeof THREE!=='undefined'&&faoSdfCSupported()&&typeof renderer!=='undefined'&&!!renderer;
+  if(E.gpuCut){try{faoSdfGBuild(E,s);faoSdfCInit(E);E.sg.tex.dispose();E.sg.tex=E.sc.rt.texture;faoSdfGU.sdT.value=E.sc.rt.texture;}catch(e){E.gpuCut=false;faoSdfCDispose(E);try{console.warn('taille GPU indisponible',e);}catch(e2){}}}
+  if(vw.t>0)faoEngSegments(vw,null,E.gpuCut?(a,b,r,cr,tp,ax)=>faoSdfCQueue(E,a,b,r,cr,tp,ax):(a,b,r,cr,tp,ax)=>faoEngCarve(D,a,b,r,cr,tp,ax));
+  if(E.gpuCut){faoSdfCFlush(E);D.F=null;E.mesh=E.sg.mesh;if(typeof scene!=='undefined'&&scene)faoAdd3D(E.mesh);vw.matter=E.mesh;}
   const t1=(typeof performance!=='undefined'?performance:Date).now();
-  faoEngRefresh(vw,true);
+  if(!E.gpuCut)faoEngRefresh(vw,true);
   const t2=(typeof performance!=='undefined'?performance:Date).now();
   E.stats={pas:p,carveMs:Math.round(t1-t0),meshMs:Math.round(t2-t1),
     cells:D.kind==='dexel'?D.rays:D.n[0]*D.n[1]*D.n[2],elems:D.kind==='dexel'?E.facets:E.tris,
-    mo:Math.round((D.kind==='dexel'?(E.g?D.rays*(16+32)*1.5+D.rays*40:E.facets*28+D.rays*40):D.F.length*(E.sg?5:4)+E.tris*30)/1e6)};
+    mo:Math.round((D.kind==='dexel'?(E.g?D.rays*(16+32)*1.5+D.rays*40:E.facets*28+D.rays*40):(E.gpuCut?D.n[0]*D.n[1]*D.n[2]:D.F.length*(E.sg?5:4)+E.tris*30))/1e6)};
   if(D.kind==='sdf'&&E.sg)E.stats.elems=0;
   vw.mPos=null;
   faoViewerMatterHideBodies(vw);
   try{faoViewerMsg('Simulation, moteur '+FAO_ENGINES[faoSimEngine]+' : pas '+p.toFixed(2)+' mm, '+(E.stats.cells/1000).toFixed(0)+' k '+(D.kind==='dexel'?'rayons':'échantillons')+
-    ', '+((E.g||E.sg)?'rendu GPU'+(E.g?' ('+(E.stats.elems/1000).toFixed(0)+' k facettes)':' (lancer de rayons)'):(E.stats.elems/1000).toFixed(0)+' k '+(D.kind==='dexel'?'facettes':'triangles'))+', taille '+(E.stats.carveMs/1000).toFixed(1)+' s + maillage '+(E.stats.meshMs/1000).toFixed(1)+' s, ~'+E.stats.mo+' Mo.');}catch(e){}
+    ', '+(E.gpuCut?'taille et rendu GPU':(E.g||E.sg)?'rendu GPU'+(E.g?' ('+(E.stats.elems/1000).toFixed(0)+' k facettes)':' (lancer de rayons)'):(E.stats.elems/1000).toFixed(0)+' k '+(D.kind==='dexel'?'facettes':'triangles'))+', taille '+(E.stats.carveMs/1000).toFixed(1)+' s + maillage '+(E.stats.meshMs/1000).toFixed(1)+' s, ~'+E.stats.mo+' Mo.');}catch(e){}
   return E.stats.cells;
 }
 function faoEngRefresh(vw,force){
@@ -28401,19 +28553,168 @@ function faoEngRefresh(vw,force){
 function faoEngStep(vw,p){
   const E=vw.eng;if(!E)return;
   const mi=(vw.mPos&&isFinite(+vw.mPos.i))?Math.round(+vw.mPos.i):-1;
-  const cut=(a,b,r,cr,tp,ax)=>faoEngCarve(E.D,a,b,r,cr,tp,ax);
+  const cut=E.gpuCut?(a,b,r,cr,tp,ax)=>faoSdfCQueue(E,a,b,r,cr,tp,ax):(a,b,r,cr,tp,ax)=>faoEngCarve(E.D,a,b,r,cr,tp,ax);
   if(mi>=0&&mi<=p.i)faoEngSegments(vw,{i:mi,x:vw.mPos.x,y:vw.mPos.y,z:vw.mPos.z,p},cut);
   else if(mi<0)faoEngSegments(vw,null,cut);
   vw.mPos={x:p.x,y:p.y,z:p.z,i:p.i};
+  if(E.gpuCut){faoSdfCFlush(E);return;} // la taille EST l'affichage : rien d'autre à refaire
   faoEngRefresh(vw,false);
 }
 function faoEngDispose(vw){
   const E=vw&&vw.eng;if(!E)return;
   try{if(E.timer)clearTimeout(E.timer);}catch(e){}
-  try{if(E.g){faoDel3D(E.mesh);faoDexGDispose(E);}else if(E.sg){faoDel3D(E.mesh);faoSdfGDispose(E);}else if(E.mesh){faoDel3D(E.mesh);E.mesh.geometry.dispose();}}catch(e){}
+  try{if(E.g){faoDel3D(E.mesh);faoDexGDispose(E);}else if(E.sg){faoDel3D(E.mesh);if(E.sc){E.sg.tex=null;faoSdfCDispose(E);}faoSdfGDispose(E);}else if(E.mesh){faoDel3D(E.mesh);E.mesh.geometry.dispose();}}catch(e){}
   try{if(E.group){faoDel3D(E.group);E.chunks.forEach(m=>{try{m.geometry.dispose();}catch(e){}});}}catch(e){}
   if(vw.matter===E.mesh||vw.matter===E.group)vw.matter=null;
   vw.eng=null;
+}
+
+/* ═══════════════ 88-fao-79-cartes-gpu.js — fao 79 cartes gpu ═══════════════ */
+/* ---------- Simulation, moteur « cartes » : taille sur la carte graphique (V0.9.0) ----------
+   « Il faut juste faire en sorte que ces 2 modes utilisent complètement le GPU. » Le rendu des
+   cartes était déjà sur la carte graphique (colonnes instanciées, lancer de rayons), la TAILLE
+   restait en JavaScript. Ici chaque carte (celle du posage, une par orientation 3+2) est une cible
+   de rendu à trois textures écrites ensemble — hauteur (R32F), normale de l'outil (RGBA32F),
+   direction radiale (RG32F) — plus une PROFONDEUR : la hauteur normalisée. Un pas d'outil est une
+   instance (son rectangle dans la carte) ; le fragment calcule la cote de coupe de sa colonne
+   (dessous de l'outil au rayon ρ : fond, arrondi, pointe) et l'écrit comme profondeur : le test
+   de profondeur garde la plus basse, avec SA normale et SA direction radiale (ce que faisait
+   faoMatterCarveSeg). Les textures sont lues telles quelles par les rendus existants.
+   Hors WebGL2 ou sans cibles flottantes : la taille en JavaScript (src/88-fao-70). */
+function faoCarteGOn(){
+  try{return typeof renderer!=='undefined'&&renderer&&renderer.capabilities&&renderer.capabilities.isWebGL2&&
+    !!renderer.extensions.get('EXT_color_buffer_float')&&typeof THREE.WebGLMultipleRenderTargets==='function';}catch(e){return false;}
+}
+const FAO_CGC_VS=[
+  'in vec4 iSeg; in vec4 iZ;', // (ax, ay, bx, by) dans la carte ; (cote de pointe, rayon, ligne de l'outil, 0)
+  'uniform vec4 uG; uniform vec2 uN;', // ox, oy, pas, fond ; nx, ny
+  'flat out vec4 vSeg; flat out vec4 vZ;',
+  'void main(){ vSeg=iSeg; vZ=iZ; float r=iZ.y;',
+  '  vec2 mn=min(iSeg.xy,iSeg.zw)-r; vec2 mx=max(iSeg.xy,iSeg.zw)+r;',
+  '  vec2 g0=floor((mn-uG.xy)/uG.z); vec2 g1=floor((mx-uG.xy)/uG.z)+1.0;',
+  '  vec2 g=mix(g0,g1,position.xy); gl_Position=vec4(clamp(g/uN,0.0,1.0)*2.0-1.0,0.0,1.0);',
+  '}'].join('\n');
+const FAO_CGC_FS=[
+  'precision highp sampler2D;',
+  'layout(location=0) out highp vec4 oH; layout(location=1) out highp vec4 oN; layout(location=2) out highp vec4 oW;',
+  'uniform sampler2D uTab; uniform vec4 uG; uniform vec2 uZr;', // uG.w : fond de la carte ; uZr : cote basse, étendue (profondeur)
+  'flat in vec4 vSeg; flat in vec4 vZ;',
+  'float hs(int row,int i){ return texelFetch(uTab,ivec2(i,row),0).r; }',
+  'void main(){',
+  '  vec2 c=floor(gl_FragCoord.xy); vec2 P=uG.xy+(c+0.5)*uG.z;',
+  '  vec2 a=vSeg.xy; vec2 d=vSeg.zw-a; float L2=dot(d,d); float t=(L2>0.0)?clamp(dot(P-a,d)/L2,0.0,1.0):0.0;',
+  '  vec2 q=a+d*t; vec2 w=P-q; float rho=length(w); float r=vZ.y;',
+  '  if(rho>r)discard;',
+  '  int row=int(vZ.z+0.5); float f=rho/r*48.0; int i=min(47,int(floor(f))); float u=f-float(i);',
+  '  float h0=hs(row,i); float h1=hs(row,i+1); float zcol=max(uG.w,vZ.x+mix(h0,h1,u));',
+  '  float s=(h1-h0)/(r/48.0); vec2 ux=(rho>1e-9)?w/rho:vec2(0.0);',
+  '  vec3 n=normalize(vec3(-s*ux,1.0));', // normale de la surface de l'outil (vers le vide)
+  '  gl_FragDepth=clamp((zcol-uZr.x)/uZr.y,0.0,1.0);',
+  '  oH=vec4(zcol,0.0,0.0,1.0); oN=vec4(n,0.0); oW=vec4((rho>1e-9)?-ux:vec2(0.0),0.0,1.0);',
+  '}'].join('\n');
+function faoCarteGTex(arr,nx,ny,fmt){
+  const t=new THREE.DataTexture(arr,nx,ny,fmt,THREE.FloatType);
+  t.magFilter=THREE.NearestFilter;t.minFilter=THREE.NearestFilter;t.generateMipmaps=false;t.flipY=false;t.unpackAlignment=1;t.needsUpdate=true;return t;
+}
+function faoCarteGInit(vw,g){
+  // une cible par carte, remplie depuis l'état de départ (brut, cylindre, corps), puis rebranchée
+  const maps=[g].concat((g.maps&&g.maps.list)||[]);
+  const quad=new THREE.BufferGeometry();quad.setAttribute('position',new THREE.BufferAttribute(new Float32Array([0,0,0,1,0,0,1,1,0,0,0,0,1,1,0,0,1,0]),3));
+  const cam=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+  const C={maps:[],quad,cam,scene:new THREE.Scene(),tools:new Map(),hsT:null,tabDirty:true,rows:[],mat:null,geo:null,mesh:null};
+  // copie de départ : profondeur = hauteur normalisée, toujours écrite
+  const cpMat=new THREE.ShaderMaterial({glslVersion:THREE.GLSL3,depthTest:true,depthWrite:true,depthFunc:THREE.AlwaysDepth,
+    uniforms:{sH:{value:null},sN:{value:null},sW:{value:null},uZr:{value:new THREE.Vector2()}},
+    vertexShader:'void main(){ gl_Position=vec4(position.xy*2.0-1.0,0.0,1.0); }',
+    fragmentShader:['precision highp sampler2D;','layout(location=0) out highp vec4 oH; layout(location=1) out highp vec4 oN; layout(location=2) out highp vec4 oW;',
+      'uniform sampler2D sH; uniform sampler2D sN; uniform sampler2D sW; uniform vec2 uZr;',
+      'void main(){ ivec2 c=ivec2(gl_FragCoord.xy); float h=texelFetch(sH,c,0).r;',
+      '  gl_FragDepth=clamp((h-uZr.x)/uZr.y,0.0,1.0); oH=vec4(h,0.0,0.0,1.0); oN=texelFetch(sN,c,0); oW=vec4(texelFetch(sW,c,0).rg,0.0,1.0); }'].join('\n')});
+  const cs=new THREE.Scene(),cm=new THREE.Mesh(quad,cpMat);cm.frustumCulled=false;cs.add(cm);
+  const ac=renderer.autoClear,prev=renderer.getRenderTarget();renderer.autoClear=false;
+  try{
+    maps.forEach((m,i)=>{
+      const rt=new THREE.WebGLMultipleRenderTargets(m.nx,m.ny,3);
+      rt.depthBuffer=true;
+      [[THREE.RedFormat],[THREE.RGBAFormat],[THREE.RGFormat]].forEach((f,k)=>{const t=rt.texture[k];t.format=f[0];t.type=THREE.FloatType;
+        t.minFilter=THREE.NearestFilter;t.magFilter=THREE.NearestFilter;t.generateMipmaps=false;});
+      const zlo=m.oz-1,zr=Math.max(1,(m.full!=null?m.full:m.sz1)-m.oz+2);
+      const sH=faoCarteGTex(m.h,m.nx,m.ny,THREE.RedFormat),sN=faoCarteGTex(m.nrm,m.nx,m.ny,THREE.RGBAFormat),sW=faoCarteGTex(m.wn,m.nx,m.ny,THREE.RGFormat);
+      cpMat.uniforms.sH.value=sH;cpMat.uniforms.sN.value=sN;cpMat.uniforms.sW.value=sW;cpMat.uniforms.uZr.value.set(zlo,zr);cpMat.uniformsNeedUpdate=true;
+      renderer.setRenderTarget(rt);renderer.clear(true,true,false);renderer.render(cs,cam);
+      sH.dispose();sN.dispose();sW.dispose();
+      C.maps.push({m,rt,zlo,zr,key:i?m.key:null,q:[]});
+    });
+  }finally{renderer.setRenderTarget(prev);renderer.autoClear=ac;}
+  cpMat.dispose();
+  C.mat=new THREE.ShaderMaterial({glslVersion:THREE.GLSL3,vertexShader:FAO_CGC_VS,fragmentShader:FAO_CGC_FS,depthTest:true,depthWrite:true,depthFunc:THREE.LessDepth,
+    uniforms:{uTab:{value:null},uG:{value:new THREE.Vector4()},uN:{value:new THREE.Vector2()},uZr:{value:new THREE.Vector2()}}});
+  vw.cg=C;
+  faoCarteGBind(vw);
+  return C;
+}
+function faoCarteGBind(vw){
+  // les rendus existants lisent les textures de la carte graphique
+  const C=vw.cg;if(!C)return;
+  if(vw.rm&&typeof faoRmU!=='undefined'&&faoRmU){C.maps.forEach((M,i)=>{faoRmU['rmH'+i].value=M.rt.texture[0];faoRmU['rmN'+i].value=M.rt.texture[1];faoRmU['rmW'+i].value=M.rt.texture[2];});
+    for(let i=C.maps.length;i<FAO_RM_MAX;i++){faoRmU['rmH'+i].value=C.maps[0].rt.texture[0];faoRmU['rmN'+i].value=C.maps[0].rt.texture[1];faoRmU['rmW'+i].value=C.maps[0].rt.texture[2];}}
+  if(vw.gpu&&typeof faoGpuU!=='undefined'&&faoGpuU){const M=C.maps[0];faoGpuU.faoH.value=M.rt.texture[0];faoGpuU.faoN.value=M.rt.texture[1];faoGpuU.faoW.value=M.rt.texture[2];}
+}
+function faoCarteGTool(C,r,cr,tp){
+  const T=faoEngTool(r,cr,tp);let row=C.tools.get(T.key);if(row!=null)return row;
+  row=C.rows.length;C.rows.push(T);C.tools.set(T.key,row);C.tabDirty=true;return row;
+}
+function faoCarteGQueue(vw,a,b,r,cr,tp,ax){
+  // segment → pas à cote constante dans la carte de son orientation (même découpe que faoMatterCarveSeg)
+  const C=vw.cg;let M=C.maps[0],A=a,B=b;
+  if(ax&&!faoEngIsVertAx(ax)){const key=faoMapKey(ax);M=C.maps.find(x=>x.key===key);if(!M)return;
+    const m=M.m,to=p=>({x:p.x*m.U[0]+p.y*m.U[1]+p.z*m.U[2],y:p.x*m.V[0]+p.y*m.V[1]+p.z*m.V[2],z:p.x*m.A[0]+p.y*m.A[1]+p.z*m.A[2]});A=to(a);B=to(b);}
+  const row=faoCarteGTool(C,r,cr,tp),dz=Math.abs(B.z-A.z),n=dz>FAO_CARVE_DZ?Math.min(400,Math.ceil(dz/FAO_CARVE_DZ)):1,q=M.q;
+  for(let s=0;s<n;s++){const t0=s/n,t1=(s+1)/n;
+    q.push(A.x+(B.x-A.x)*t0,A.y+(B.y-A.y)*t0,A.x+(B.x-A.x)*t1,A.y+(B.y-A.y)*t1,Math.min(A.z+(B.z-A.z)*t0,A.z+(B.z-A.z)*t1),r,row,0);}
+}
+function faoEngIsVertAx(ax){const L=Math.hypot(ax[0],ax[1],ax[2])||1;return ax[2]/L>0.99999;}
+function faoCarteGFlush(vw){
+  // pas en attente → un dessin instancié par carte (test de profondeur : la coupe la plus basse gagne)
+  const C=vw.cg;if(!C)return 0;let tot=0;
+  if(C.tabDirty){
+    const W=49,H=Math.max(1,C.rows.length),d=new Float32Array(W*H);C.rows.forEach((T,i)=>{for(let k=0;k<=48;k++)d[i*W+k]=T.hs[k];});
+    if(C.hsT)C.hsT.dispose();C.hsT=faoCarteGTex(d,W,H,THREE.RedFormat);C.mat.uniforms.uTab.value=C.hsT;C.tabDirty=false;
+  }
+  const ac=renderer.autoClear,prev=renderer.getRenderTarget();renderer.autoClear=false;
+  try{
+    C.maps.forEach(M=>{
+      const q=M.q,cnt=q.length/8;if(!cnt)return;tot+=cnt;
+      const seg=new Float32Array(cnt*4),zz=new Float32Array(cnt*4);
+      for(let i=0;i<cnt;i++){for(let j=0;j<4;j++){seg[i*4+j]=q[i*8+j];zz[i*4+j]=q[i*8+4+j];}}
+      q.length=0;
+      const geo=new THREE.InstancedBufferGeometry();geo.setAttribute('position',C.quad.getAttribute('position'));
+      geo.setAttribute('iSeg',new THREE.InstancedBufferAttribute(seg,4));geo.setAttribute('iZ',new THREE.InstancedBufferAttribute(zz,4));geo.instanceCount=cnt;
+      if(C.mesh){C.scene.remove(C.mesh);try{C.geo.dispose();}catch(e){}}
+      const mesh=new THREE.Mesh(geo,C.mat);mesh.frustumCulled=false;C.scene.add(mesh);C.mesh=mesh;C.geo=geo;
+      const m=M.m,U=C.mat.uniforms;U.uG.value.set(m.ox,m.oy,m.pas,m.oz);U.uN.value.set(m.nx,m.ny);U.uZr.value.set(M.zlo,M.zr);C.mat.uniformsNeedUpdate=true;
+      renderer.setRenderTarget(M.rt);renderer.render(C.scene,C.cam);
+    });
+  }finally{renderer.setRenderTarget(prev);renderer.autoClear=ac;}
+  return tot;
+}
+function faoCarteGCatch(vw){
+  // rattrapage 0 → t : tous les segments joués, une passe par carte
+  faoEngSegments(vw,null,(a,b,r,cr,tp,ax)=>faoCarteGQueue(vw,a,b,r,cr,tp,ax));
+  return faoCarteGFlush(vw);
+}
+function faoCarteGStep(vw,p){
+  const mi=(vw.mPos&&isFinite(+vw.mPos.i))?Math.round(+vw.mPos.i):-1;
+  const cut=(a,b,r,cr,tp,ax)=>faoCarteGQueue(vw,a,b,r,cr,tp,ax);
+  if(mi>=0&&mi<=p.i)faoEngSegments(vw,{i:mi,x:vw.mPos.x,y:vw.mPos.y,z:vw.mPos.z,p},cut);
+  else if(mi<0)faoEngSegments(vw,null,cut);
+  vw.mPos={x:p.x,y:p.y,z:p.z,i:p.i};
+  faoCarteGFlush(vw);
+}
+function faoCarteGDispose(vw){
+  const C=vw&&vw.cg;if(!C)return;
+  try{C.maps.forEach(M=>M.rt.dispose());C.mat.dispose();C.quad.dispose();if(C.geo)C.geo.dispose();if(C.hsT)C.hsT.dispose();}catch(e){}
+  vw.cg=null;
 }
 
 /* ═══════════════ 88-fao-80-interface.js — fao 80 interface ═══════════════ */

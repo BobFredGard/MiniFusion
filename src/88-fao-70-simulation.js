@@ -699,6 +699,7 @@ function faoViewerMatterDispose(vw,keepGrid){
   try{ faoMatterGpuDispose(vw); }catch(e){} // rendu GPU (src/88-fao-76)
   try{ faoMatterRmDispose(vw); }catch(e){} // lancer de rayons (src/88-fao-77)
   try{ faoEngDispose(vw); }catch(e){} // moteurs tri-dexel / distance (src/88-fao-78)
+  try{ faoCarteGDispose(vw); }catch(e){} // taille des cartes sur la carte graphique (src/88-fao-79)
   try{ if(vw.matter&&typeof scene!=='undefined'&&scene)faoDel3D(vw.matter); }catch(e){}
   try{ if(vw.matter&&vw.matter.geometry&&vw.matter.geometry.dispose)vw.matter.geometry.dispose(); }catch(e){}
   vw.matter=null; vw.mKills=[]; vw.mTops=null; vw.mArr=null; vw.mNrm=null; vw.mH=null;
@@ -920,7 +921,7 @@ function faoViewerMatterEnable(vw,keepGrid){
   // 2026-10-11-007 « ≈ lisse » (3e version du bouton, vw.smooth) : heightfield
   // continu — nœud = moyenne des 4 cellules adjacentes (flou d'une maille sur
   // les traces assumé, cf. 003), normales lissées, murs de bord + fond.
-  keepGrid=!!(keepGrid&&vw&&vw.matterGrid);
+  keepGrid=!!(keepGrid&&vw&&vw.matterGrid&&!vw.cg); // taillée sur la carte graphique (src/88-fao-79) : la grille du processeur n'est pas à jour
   faoViewerMatterDispose(vw,keepGrid);
   if(!vw||vw.matterOn===false)return 0;
   const s=faoStock(); if(!faoStockValid(s))return 0;
@@ -981,10 +982,17 @@ function faoViewerMatterEnable(vw,keepGrid){
     vw.vox=faoViewerVoxWanted(vw)&&!vw.rm; vw.voxAt=0; vw.voxDirty=false; // cartes par orientation : plus de voxels ni de complément
     vw.cav=vw.vox?new Uint8Array(nc):null; vw.cavN=0; // colonnes creusées (src/88-fao-75)
   }
+  // V0.9.0 : rendu sur la carte graphique (colonnes ou lancer de rayons) → la TAILLE aussi (src/88-fao-79)
+  if(!keepGrid&&(vw.rm||vw.gpu)&&typeof faoCarteGOn==='function'&&faoCarteGOn()){
+    try{ faoCarteGInit(vw,g); }catch(e){ try{faoCarteGDispose(vw);}catch(e2){} try{console.warn('taille GPU des cartes indisponible',e);}catch(e3){} }
+  }
   if(vw.t>0&&!keepGrid){
-    const tcols=[];
-    const ks=faoMatterCarveTo(g,vw.pts,vw.dd,vw.times,vw.t,tcols,vw.exact?vw.cr:null,vw.exact?vw.tp:null);
-    faoViewerMatterKill(vw,ks,tcols);
+    if(vw.cg){ faoCarteGCatch(vw); }
+    else{
+      const tcols=[];
+      const ks=faoMatterCarveTo(g,vw.pts,vw.dd,vw.times,vw.t,tcols,vw.exact?vw.cr:null,vw.exact?vw.tp:null);
+      faoViewerMatterKill(vw,ks,tcols);
+    }
   }
   if(vw.vox)faoViewerVoxRefresh(vw,true);
   faoViewerMatterHideBodies(vw); // la surface remplace les corps visibles
@@ -1066,6 +1074,7 @@ function faoViewerMatterStep(vw,p){
   // INCREMENTAL : on ne repart JAMAIS de 0 sauf au tout premier appel.
   if(vw&&vw.eng){ if(vw.matterOn!==false)faoEngStep(vw,p); return; } // moteur tri-dexel / distance (src/88-fao-78)
   if(!vw||vw.matterOn===false||!vw.matterGrid||!vw.matter)return;
+  if(vw.cg){ faoCarteGStep(vw,p); return; } // taille sur la carte graphique (src/88-fao-79)
   const g=vw.matterGrid;
   let ks=null;
   const cols=[];
