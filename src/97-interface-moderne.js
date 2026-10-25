@@ -151,6 +151,14 @@ function mfCss(){
   '#mfStatus{gap:16px;align-items:center;padding:5px 12px;margin-top:6px;font-size:.72rem;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);white-space:nowrap;overflow:hidden}',
   '#mfStatus b{color:var(--text);font-weight:600}',
   '#mfStatus .mfSp{flex:1}',
+  /* V0.7.6 : dans le bandeau supérieur */
+  '.topbar #mfStatus{margin:0;border:none;background:none;padding:0 4px;flex:1 1 auto;min-width:0;gap:10px}',
+  '.topbar #mfStatus #mfStMeas{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}',
+  '.topbar #mfStatus .mfSp,.topbar #mfStatus #mfStSave,.topbar #mfStatus #mfStVer{display:none}',
+  '.topbar #mfStatus #mfStEng{flex:0 1 auto;max-width:200px;overflow:hidden;text-overflow:ellipsis;padding:2px 8px;border-radius:6px;background:rgba(127,127,127,.12)}',
+  'body.ui-modern .topbar{flex-wrap:nowrap}',
+  'body.ui-modern .topbar .brand{flex:none;white-space:nowrap}',
+  '@media (max-width:1100px){body.ui-modern .topbar{flex-wrap:wrap}.topbar #mfStatus{flex-basis:100%;order:9}}',
   '#mfStatus button{padding:2px 9px;font-size:.7rem}',
   '#mfStMeas{overflow:hidden;text-overflow:ellipsis;max-width:46vw}',
   'body.ui-modern aside.right>.panel.mfHideM{display:none}', /* Mesure et État : repérés par leur titre (voir mfBuildModern) */
@@ -163,6 +171,8 @@ function mfCss(){
   '.mfSkLab{display:none}',
   'body.ui-modern.mf-sk #skToolbar{flex-wrap:wrap;overflow:visible;gap:2px;align-items:stretch;row-gap:4px}',
   'body.ui-modern.mf-sk #skToolbar #skClear{margin-left:auto}',
+  /* V0.7.6 : Zoom +/− (molette) et Annuler/Rétablir (Ctrl+Z / Ctrl+Y, flèches du bandeau du haut) en double : masqués */
+  'body.ui-modern.mf-sk #skToolbar #skZoomIn,body.ui-modern.mf-sk #skToolbar #skZoomOut,body.ui-modern.mf-sk #skToolbar #skUndo,body.ui-modern.mf-sk #skToolbar #skRedo{display:none!important}',
   'body.ui-modern.mf-sk #skTitle{display:none}',
   'body.ui-modern.mf-sk #skToolbar .tool,body.ui-modern.mf-sk #skToolbar .con,body.ui-modern.mf-sk #skToolbar #skZoomIn,body.ui-modern.mf-sk #skToolbar #skZoomOut,body.ui-modern.mf-sk #skToolbar #skFit,body.ui-modern.mf-sk #skToolbar #skRefs,body.ui-modern.mf-sk #skToolbar #skParams,body.ui-modern.mf-sk #skToolbar #skUndo,body.ui-modern.mf-sk #skToolbar #skRedo{flex-direction:column;gap:3px;min-width:37px;padding:4px 2px 3px;line-height:1;border-color:transparent;background:none;flex:none}',
   'body.ui-modern.mf-sk #skToolbar .tool:hover,body.ui-modern.mf-sk #skToolbar .con:hover{background:rgba(127,127,127,.14)}',
@@ -504,11 +514,11 @@ function mfStatusBar(){
     try{
       const o=(document.getElementById('occtState')||{}).textContent||'';
       const eng=/prêt/i.test(o)?('Noyau prêt · '+((typeof builtEngine!=='undefined'&&builtEngine)||'')):(o.replace(/^OCCT\s*:\s*/,'').slice(0,60));
-      document.getElementById('mfStEng').textContent=eng;
+      const se=document.getElementById('mfStEng');se.textContent=eng;se.title=o; // texte complet en bulle
       const wb=document.getElementById('btnOccWasm');
       document.getElementById('mfStWasm').style.display=(wb&&wb.style.display!=='none'&&!/prêt/i.test(o))?'':'none';
       const f=((typeof faceEl!=='undefined'&&faceEl&&faceEl.textContent)||'').split('\n')[0];
-      document.getElementById('mfStMeas').textContent=f;
+      const ms=document.getElementById('mfStMeas');ms.textContent=f;ms.title=(typeof faceEl!=='undefined'&&faceEl&&faceEl.textContent)||'';
       const st=(document.getElementById('stats')||{}).textContent||'';
       document.getElementById('mfStSave').textContent=/non sauvé/.test(st)?'● non enregistré':(/sauvé/.test(st)?'✓ enregistré':'');
       document.getElementById('mfStVer').textContent=(typeof APP_VER!=='undefined'?APP_VER:'');
@@ -642,11 +652,11 @@ function mfBuildModern(){
     const b=document.createElement('button');b.innerHTML=mfI(ic,18);b.title=t;b.onclick=e=>{e.stopPropagation();fn(e);};q.appendChild(b);});
   const sx=mfSearchBox();
   const after=brand?brand.nextSibling:top.firstChild;
-  [ws,q,sx].forEach(n=>top.insertBefore(n,after));
-  // ruban sous le bandeau, barre d'état en bas
+  // V0.7.6 : la barre d'état (noyau, message, Régénérer, unité) vit DANS le bandeau supérieur,
+  // après la recherche — plus de barre en bas : la vue 3D descend jusqu'en bas de la fenêtre
+  [ws,q,sx,mfStatusBar()].forEach(n=>top.insertBefore(n,after));
+  // ruban sous le bandeau
   top.parentNode.insertBefore(mfRibbon(),top.nextSibling);
-  const lay=document.querySelector('.layout');
-  if(lay&&lay.parentNode)lay.parentNode.insertBefore(mfStatusBar(),lay.nextSibling);
   // onglets du navigateur sur la vue
   const vp=document.getElementById('vpwrap');
   if(vp){const bt=document.createElement('div');bt.id='mfBrTabs';bt.className='mfM';

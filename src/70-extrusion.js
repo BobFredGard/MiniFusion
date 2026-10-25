@@ -22,9 +22,9 @@ if(editF){
   markDirty();rebuild();renderProps();
   return;
 }
-extNew={sketchId:skId,op:'add',dist:20};
-sel={kind:null,id:null};
-renderNewExtrude();
+// V0.7.6 : extrusion DYNAMIQUE — la fonction naît tout de suite (aperçu = résultat), flèche et
+// fenêtre à icônes ; OK / Annuler (70-extrusion-dynamique). Le formulaire extNew reste pour les scripts.
+extDynNew(skId);
 }
 let extNew=null; // extrusion en cours de création (formulaire du panneau)
 function renderNewExtrude(){

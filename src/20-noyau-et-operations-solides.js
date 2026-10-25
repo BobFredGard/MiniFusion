@@ -1671,6 +1671,12 @@ function glassDepthMask(b){
   if(!pre||pre.geometry!==me.geometry){drop('glassMask');
     pre=new THREE.Mesh(me.geometry,new THREE.MeshBasicMaterial(Object.assign({colorWrite:false,depthWrite:true,depthTest:true,transparent:true},po)));
     pre.renderOrder=1;pre.raycast=()=>{};pre.name='glassPre';me.add(pre);me.userData.glassMask=pre;}
+  // V0.7.6 : la passe de profondeur MARQUE (stencil = 1) les pixels où cette pièce est devant
+  // tout ce qui est déjà dessiné ; la passe intérieure (profondeur « plus loin ») ne dessine que
+  // là. Sans cela, une pièce transparente placée DANS une pièce opaque (assemblage, ou deux corps)
+  // se voyait à travers elle : « plus loin que la profondeur » valait aussi derrière l'autre pièce.
+  try{const pm=pre.material;pm.stencilWrite=true;pm.stencilRef=1;pm.stencilFunc=THREE.AlwaysStencilFunc;
+    pm.stencilZPass=THREE.ReplaceStencilOp;pm.stencilFail=THREE.KeepStencilOp;pm.stencilZFail=THREE.KeepStencilOp;}catch(e){}
   if(!(ge<0.999)){drop('glassIn');try{pre.material.clippingPlanes=mat.clippingPlanes||null;}catch(e){}mat.depthFunc=THREE.LessEqualDepth;me.renderOrder=3;return;}
   if(!inn||inn.geometry!==me.geometry){drop('glassIn');
     inn=new THREE.Mesh(me.geometry,new THREE.MeshStandardMaterial(Object.assign({transparent:true,depthWrite:false,depthTest:true,depthFunc:THREE.GreaterDepth},po)));
@@ -1679,6 +1685,8 @@ function glassDepthMask(b){
   // la même opacité que la surface (poids visible = ge·(1−ge) : 30 % → 0,13 · 90 % → 0,19)
   const aIn=ge;
   const im=inn.material;
+  try{im.stencilWrite=true;im.stencilRef=1;im.stencilFunc=THREE.EqualStencilFunc; // seulement là où la pièce est devant
+    im.stencilZPass=THREE.KeepStencilOp;im.stencilFail=THREE.KeepStencilOp;im.stencilZFail=THREE.KeepStencilOp;}catch(e){}
   try{im.color.copy(mat.color);im.emissive.copy(mat.emissive);im.roughness=mat.roughness;im.metalness=mat.metalness;}catch(e){}
   try{const cp=mat.clippingPlanes||null;im.clippingPlanes=cp;pre.material.clippingPlanes=cp;}catch(e){} // plan de coupe respecté
   im.opacity=aIn;inn.visible=aIn>0.004;im.needsUpdate=true;
@@ -2399,7 +2407,8 @@ function featSig(f){
     const q=r=>r?((r.pos||[]).map(v=>(+v).toFixed(2)).join(',')+'/'+(r.n||[]).map(v=>(+v).toFixed(3)).join(',')+'/'+(r.dim||[]).map(v=>(+v).toFixed(2)).join(',')):'?';
     s+='|t'+(+f.thick||0)+'|'+((f.faces||[]).map(q).join(';'));
   }else if(f.type==='repeat'){
-    s+='|'+(f.base||[]).join(',')+'|'+(+f.copies||1)+'|'+(+f.dist||0)+'|'+(+f.angle||0)+'|'+(f.axis||f.plane||'')+'|'+JSON.stringify(f.planeN||null)+'|'+(f.plane2||'')+'|'+JSON.stringify(f.planeN2||null);
+    s+='|'+(f.base||[]).join(',')+'|'+(+f.copies||1)+'|'+(+f.dist||0)+'|'+(+f.angle||0)+'|'+(f.axis||f.plane||'')+'|'+JSON.stringify(f.planeN||null)+'|'+(f.plane2||'')+'|'+JSON.stringify(f.planeN2||null)
+      +'|'+JSON.stringify(f.dir||null)+'|'+(f.lin2?[f.axis2,JSON.stringify(f.dir2||null),+f.copies2||1,+f.dist2||0].join(','):''); // 2ᵉ direction (grille)
   }
   // Filet (2026-10-02-011) : la fonction ENTIÈRE entre dans la signature — toute
   // propriété, connue ou future, invalide le suffixe dès qu'elle bouge, donc jamais

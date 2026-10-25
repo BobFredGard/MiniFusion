@@ -492,6 +492,48 @@ test('miroir : sous le brut en simulation d’usinage (Axe, brut plus bas que la
   expect(err).toEqual([]);
 });
 
+test('extrusion dynamique : aperçu immédiat, flèche à la souris, champ de cote, Annuler / OK',async({page})=>{
+  const err=await demarrer(page);
+  await page.evaluate(()=>{
+    newSketch('XY');const sk=skEdit;sk.name='Profil';const P=[[-25,-15],[25,-15],[25,15],[-25,15]].map(([x,y])=>addPoint(sk,x,y));
+    for(let i=0;i<4;i++)sk.entities.push({id:'L'+i,t:'line',p1:P[i],p2:P[(i+1)%4]});closeSketch(true);
+    sel={kind:'sketch',id:sk.id};
+  });
+  const pret=()=>page.waitForFunction(()=>builtEngine==='exact'&&rebuildDepth===0&&builtVersion===_docVersion,null,{timeout:60000});
+  const vol=()=>page.evaluate(()=>Math.round(bodies.filter(b=>b.shape).reduce((s,b)=>s+occCoqueVolume(b.shape),0)));
+  await ruban(page,'Extrusion').click();
+  await pret();
+  // aperçu immédiat : la fonction existe déjà, flèche et champ de cote affichés
+  await page.waitForFunction(()=>doc.features.length===1&&extArrow&&extArrow.visible);
+  expect(await vol()).toBe(30000);                                   // 50 × 30 × 20
+  await expect(page.locator('.extDistLbl')).toBeVisible();
+  await expect(page.locator('#props .extSegBtn')).toHaveCount(9);   // opération, direction, étendue en icônes
+  // la flèche, tirée vers le haut à la souris
+  const pt=await page.evaluate(()=>{const f=doc.features[0],G=extArrowGeom(f),r=renderer.domElement.getBoundingClientRect();
+    const s=p=>{const q=p.project(camera);return [r.left+(q.x+1)/2*r.width,r.top+(1-q.y)/2*r.height];};
+    const L=extArrow.scale.x;return {a:s(G.C.clone().addScaledVector(G.n,G.end+L*0.4)),b:s(G.C.clone().addScaledVector(G.n,45))};});
+  await page.mouse.move(pt.a[0],pt.a[1]);await page.mouse.down();
+  for(let i=1;i<=10;i++)await page.mouse.move(pt.a[0]+(pt.b[0]-pt.a[0])*i/10,pt.a[1]+(pt.b[1]-pt.a[1])*i/10);
+  await page.mouse.up();
+  await pret();
+  const d=await page.evaluate(()=>doc.features[0].distance);
+  expect(d).toBeGreaterThan(35);expect(d).toBeLessThan(55);expect(Number.isInteger(d)).toBe(true); // pas de 1 mm
+  // le champ de cote dans la vue : 30 + Entrée
+  await page.locator('.extDistIn').fill('30');await page.locator('.extDistIn').press('Enter');
+  await pret();
+  expect(await vol()).toBe(45000);
+  // Annuler : la fonction disparaît, sans étape d'annulation laissée
+  await page.locator('#props button.extDynCancel').click();
+  await pret();
+  expect(await page.evaluate(()=>({n:doc.features.length,u:docUndoStack.length}))).toEqual({n:0,u:0});
+  // de nouveau, puis OK
+  await page.evaluate(()=>{sel={kind:'sketch',id:doc.sketches[0].id};});
+  await ruban(page,'Extrusion').click();await pret();
+  await page.locator('#props button.extDynOk').click();
+  expect(await page.evaluate(()=>({n:doc.features.length,sel:sel.kind,fleche:!!(extArrow&&extArrow.visible)}))).toEqual({n:1,sel:null,fleche:false});
+  expect(err).toEqual([]);
+});
+
 test('FAO : surfaçage sur l\'Axe → parcours → G-code',async({page})=>{
   const err=await demarrer(page);
   await ouvrirAxe(page);

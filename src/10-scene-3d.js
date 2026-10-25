@@ -427,7 +427,7 @@ function animate(){
       const _mh=[];
       scene.traverse(o=>{
         if(!o.visible||o===scene)return;
-        if(o.isLine||o.isLineSegments||o.isPoints||o.isSprite||o===axHelper||(o.userData&&o.userData.triad)||(o.material&&o.material.isShaderMaterial)||(o.material&&o.material.transparent&&o.material.opacity<0.6)){o.visible=false;_mh.push(o);}
+        if(o.isLine||o.isLineSegments||o.isPoints||o.isSprite||o===axHelper||(o.userData&&(o.userData.triad||o.userData.noMirror))||(o.material&&o.material.isShaderMaterial)||(o.material&&o.material.transparent&&o.material.opacity<0.6)){o.visible=false;_mh.push(o);}
       });
       renderer.setRenderTarget(mirrorRT);renderer.clear();renderer.render(scene,mirrorCam);
       for(const o of _mh)o.visible=true;
@@ -439,6 +439,7 @@ function animate(){
   try{sketchCamTick();}catch(e){}
   try{triadUpdateAll();}catch(e){}
   try{cgPaintIfNeeded();}catch(e){} // construction : la surbrillance suit la sélection
+  try{if(typeof extDynTick==='function')extDynTick();}catch(e){} // extrusion dynamique : flèche et cote (70)
   try{if(typeof faoPoseSync==='function')faoPoseSync();}catch(e){}
   try{if(typeof faoFaceHlSync==='function')faoFaceHlSync();}catch(e){} // faces bleues / rouges de l'op sélectionnée
   renderer.render(asmRenderScene(),camera); // vue d'assemblage : sa propre scène (47)

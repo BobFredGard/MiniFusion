@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.7.5';
+const APP_VER='V0.7.6';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -1028,7 +1028,7 @@ function animate(){
       const _mh=[];
       scene.traverse(o=>{
         if(!o.visible||o===scene)return;
-        if(o.isLine||o.isLineSegments||o.isPoints||o.isSprite||o===axHelper||(o.userData&&o.userData.triad)||(o.material&&o.material.isShaderMaterial)||(o.material&&o.material.transparent&&o.material.opacity<0.6)){o.visible=false;_mh.push(o);}
+        if(o.isLine||o.isLineSegments||o.isPoints||o.isSprite||o===axHelper||(o.userData&&(o.userData.triad||o.userData.noMirror))||(o.material&&o.material.isShaderMaterial)||(o.material&&o.material.transparent&&o.material.opacity<0.6)){o.visible=false;_mh.push(o);}
       });
       renderer.setRenderTarget(mirrorRT);renderer.clear();renderer.render(scene,mirrorCam);
       for(const o of _mh)o.visible=true;
@@ -1040,6 +1040,7 @@ function animate(){
   try{sketchCamTick();}catch(e){}
   try{triadUpdateAll();}catch(e){}
   try{cgPaintIfNeeded();}catch(e){} // construction : la surbrillance suit la sélection
+  try{if(typeof extDynTick==='function')extDynTick();}catch(e){} // extrusion dynamique : flèche et cote (70)
   try{if(typeof faoPoseSync==='function')faoPoseSync();}catch(e){}
   try{if(typeof faoFaceHlSync==='function')faoFaceHlSync();}catch(e){} // faces bleues / rouges de l'op sélectionnée
   renderer.render(asmRenderScene(),camera); // vue d'assemblage : sa propre scène (47)
@@ -3740,6 +3741,12 @@ function glassDepthMask(b){
   if(!pre||pre.geometry!==me.geometry){drop('glassMask');
     pre=new THREE.Mesh(me.geometry,new THREE.MeshBasicMaterial(Object.assign({colorWrite:false,depthWrite:true,depthTest:true,transparent:true},po)));
     pre.renderOrder=1;pre.raycast=()=>{};pre.name='glassPre';me.add(pre);me.userData.glassMask=pre;}
+  // V0.7.6 : la passe de profondeur MARQUE (stencil = 1) les pixels où cette pièce est devant
+  // tout ce qui est déjà dessiné ; la passe intérieure (profondeur « plus loin ») ne dessine que
+  // là. Sans cela, une pièce transparente placée DANS une pièce opaque (assemblage, ou deux corps)
+  // se voyait à travers elle : « plus loin que la profondeur » valait aussi derrière l'autre pièce.
+  try{const pm=pre.material;pm.stencilWrite=true;pm.stencilRef=1;pm.stencilFunc=THREE.AlwaysStencilFunc;
+    pm.stencilZPass=THREE.ReplaceStencilOp;pm.stencilFail=THREE.KeepStencilOp;pm.stencilZFail=THREE.KeepStencilOp;}catch(e){}
   if(!(ge<0.999)){drop('glassIn');try{pre.material.clippingPlanes=mat.clippingPlanes||null;}catch(e){}mat.depthFunc=THREE.LessEqualDepth;me.renderOrder=3;return;}
   if(!inn||inn.geometry!==me.geometry){drop('glassIn');
     inn=new THREE.Mesh(me.geometry,new THREE.MeshStandardMaterial(Object.assign({transparent:true,depthWrite:false,depthTest:true,depthFunc:THREE.GreaterDepth},po)));
@@ -3748,6 +3755,8 @@ function glassDepthMask(b){
   // la même opacité que la surface (poids visible = ge·(1−ge) : 30 % → 0,13 · 90 % → 0,19)
   const aIn=ge;
   const im=inn.material;
+  try{im.stencilWrite=true;im.stencilRef=1;im.stencilFunc=THREE.EqualStencilFunc; // seulement là où la pièce est devant
+    im.stencilZPass=THREE.KeepStencilOp;im.stencilFail=THREE.KeepStencilOp;im.stencilZFail=THREE.KeepStencilOp;}catch(e){}
   try{im.color.copy(mat.color);im.emissive.copy(mat.emissive);im.roughness=mat.roughness;im.metalness=mat.metalness;}catch(e){}
   try{const cp=mat.clippingPlanes||null;im.clippingPlanes=cp;pre.material.clippingPlanes=cp;}catch(e){} // plan de coupe respecté
   im.opacity=aIn;inn.visible=aIn>0.004;im.needsUpdate=true;
@@ -4468,7 +4477,8 @@ function featSig(f){
     const q=r=>r?((r.pos||[]).map(v=>(+v).toFixed(2)).join(',')+'/'+(r.n||[]).map(v=>(+v).toFixed(3)).join(',')+'/'+(r.dim||[]).map(v=>(+v).toFixed(2)).join(',')):'?';
     s+='|t'+(+f.thick||0)+'|'+((f.faces||[]).map(q).join(';'));
   }else if(f.type==='repeat'){
-    s+='|'+(f.base||[]).join(',')+'|'+(+f.copies||1)+'|'+(+f.dist||0)+'|'+(+f.angle||0)+'|'+(f.axis||f.plane||'')+'|'+JSON.stringify(f.planeN||null)+'|'+(f.plane2||'')+'|'+JSON.stringify(f.planeN2||null);
+    s+='|'+(f.base||[]).join(',')+'|'+(+f.copies||1)+'|'+(+f.dist||0)+'|'+(+f.angle||0)+'|'+(f.axis||f.plane||'')+'|'+JSON.stringify(f.planeN||null)+'|'+(f.plane2||'')+'|'+JSON.stringify(f.planeN2||null)
+      +'|'+JSON.stringify(f.dir||null)+'|'+(f.lin2?[f.axis2,JSON.stringify(f.dir2||null),+f.copies2||1,+f.dist2||0].join(','):''); // 2ᵉ direction (grille)
   }
   // Filet (2026-10-02-011) : la fonction ENTIÈRE entre dans la signature — toute
   // propriété, connue ou future, invalide le suffixe dès qu'elle bouge, donc jamais
@@ -5804,7 +5814,7 @@ function enterRepMode(){
   faceEl.textContent='Répétition : cochez les fonctions à répéter dans la liste ci-dessus, puis Appliquer. Astuce : la repetition est depliee dans l arbre et ses sources sont marquees ◀.';
 }
 function exitRepMode(){repMode=null;renderTree();renderProps();}
-function repTypeName(m,f){if(m==='mir'&&f&&f.plane2)return 'Symétrie double';return m==='mir'?'Symétrie':m==='circ'?'Circulaire':'Linéaire';}
+function repTypeName(m,f){if(m==='mir'&&f&&f.plane2)return 'Symétrie double';if(m==='lin'&&f&&f.lin2)return 'Linéaire 2 directions';return m==='mir'?'Symétrie':m==='circ'?'Circulaire':'Linéaire';}
 function repAxisVec(cfg){const c=cfg||repMode;const a=c&&c.axis;if(c&&c.dir)return repNorm(c.dir);if(a==='Y')return[0,1,0];if(a==='Z')return[0,0,1];return[1,0,0];}
 function repPlaneN(cfg){const c=cfg||repMode;if(c&&c.planeN)return repNorm(c.planeN);const p=c&&c.plane;if(p==='XY')return[0,0,1];if(p==='XZ')return[0,1,0];return[1,0,0];}
 function repNorm(a){const l=Math.hypot(a[0],a[1],a[2])||1;return[a[0]/l,a[1]/l,a[2]/l];}
@@ -5822,9 +5832,21 @@ function repRot(v,axis,deg){
 function repCircStep(c){const a=+c.angle||360,n=+c.copies||1;return Math.abs(a)>=360-1e-9?a/(n+1):a/n;}
 function repTransformPoint(p,i,cfg){const c=cfg||repMode,t=c.mode||c.type;
   const v=[+(p&&p[0]||0),+(p&&p[1]||0),+(p&&p[2]||0)];
-  if(t==='lin')return repAdd(v,repScale(repAxisVec(c),(+c.dist||0)*i));
+  if(t==='lin')return repAdd(v,c._off?c._off:repScale(repAxisVec(c),(+c.dist||0)*i)); // _off : décalage d'une case de grille
   if(t==='circ')return repRot(v,repAxisVec(c),repCircStep(c)*i);
   const n=repPlaneN(c);return repAdd(v,repScale(n,-2*repDot(v,n)));
+}
+// Répétition linéaire à DEUX directions (grille) : 2ᵉ axe (rp.axis2 X/Y/Z/Face + rp.dir2), quantité
+// rp.copies2 (stockée − 1, comme copies), pas rp.dist2. Une instance par case (i, j) hors (0, 0).
+function repAxis2Vec(c){return repAxisVec({axis:c&&c.axis2,dir:c&&c.dir2});}
+function repLinCells(rp){
+  // Cases de la grille, original exclu : [{i, j, off}] — 200 instances au plus (REPEAT_MAX)
+  const n1=repMaxCopies(rp.copies),out=[];
+  const d1=repScale(repAxisVec(rp),+rp.dist||0);
+  if(!rp.lin2){for(let i=1;i<=n1;i++)out.push({i,j:0,off:repScale(d1,i)});return out;}
+  const n2=repMaxCopies(rp.copies2),d2=repScale(repAxis2Vec(rp),+rp.dist2||0);
+  for(let j=0;j<=n2;j++)for(let i=0;i<=n1;i++){if(!i&&!j)continue;if(out.length>=REPEAT_MAX)return out;out.push({i,j,off:repAdd(repScale(d1,i),repScale(d2,j))});}
+  return out;
 }
 function repTransformVec(v,i,cfg){const c=cfg||repMode,t=c.mode||c.type;
   const a=[+(v&&v[0]||0),+(v&&v[1]||0),+(v&&v[2]||0)];
@@ -5970,11 +5992,15 @@ function repGenChildren(rp){
   rp.children=[];
   const kids=(rp.mode==='mir')?kids1.concat(kids2):[];
   if(rp.mode!=='mir'){
-    for(let i=1;i<=n;i++){
+    // linéaire : une instance par case de grille (une seule direction = une ligne), décalage explicite
+    const cells=rp.mode==='lin'?repLinCells(rp):null;
+    const N=cells?cells.length:n;
+    for(let i=1;i<=N;i++){
       const skMap={},featMap={};
+      const cfg=cells?Object.assign({},rp,{_off:cells[i-1].off}):rp;
       base.forEach(f=>{
         const c=take(i,f.type,f.id);
-        const nf=repCloneFeature(f,i,skMap,featMap,rp,c||null);
+        const nf=repCloneFeature(f,i,skMap,featMap,cfg,c||null);
         if(nf){nf.repeatId=rp.id;nf.repIndex=i;if(c)reuse.set(i+'|'+f.id,c);rp.children.push(nf.id);kids.push(nf);}
       });
     }
@@ -6012,7 +6038,7 @@ function repSyncForFeature(f){
 }
 const repGenSigs=new Map(); // id de répétition -> signature des sources au dernier régénéré
 function repSourceSig(rp){
-  let s=JSON.stringify([rp.mode,rp.copies,rp.dist,rp.angle,rp.axis,rp.plane,rp.planeN,rp.plane2,rp.planeN2,rp.base]);
+  let s=JSON.stringify([rp.mode,rp.copies,rp.dist,rp.angle,rp.axis,rp.plane,rp.planeN,rp.plane2,rp.planeN2,rp.base,rp.dir,rp.lin2,rp.axis2,rp.dir2,rp.copies2,rp.dist2]);
   (rp.base||[]).forEach(id=>{const f=doc.features.find(x=>x.id===id);s+='#'+(f?featSig(f):'?');});
   return s;
 }
@@ -6323,14 +6349,38 @@ function treeDeleteSel(){
   try{refreshMirror();}catch(e){}
   faceEl.textContent='🗑 Supprimé : '+tous.map(noms).join(', ')+'  —  Ctrl+Z pour annuler.';
 }
+function repPickedDir(faceOnly){
+  // Direction choisie dans la vue : ARÊTE sélectionnée (droite : sa direction ; cercle / arc : son
+  // axe), sinon normale de la FACE sélectionnée. faceOnly : symétrie (un plan = une normale de face).
+  // → {a:[x,y,z], what} | null
+  try{
+    if(!faceOnly&&typeof selEdges!=='undefined'&&selEdges&&selEdges.length){
+      const G=selEdges[selEdges.length-1].G;
+      const v=G&&(G.kind==='line'?G.u:(G.kind==='circle'?G.axis:null));
+      if(v)return {a:[v.x,v.y,v.z],what:G.kind==='line'?'arête':(G.closed?'axe du cercle':'axe de l’arc')};
+    }
+    if(selFaces&&selFaces.length){const s=selFaces[0],n=faceNormalWorld(s.mesh,s.faceIndex);if(n)return {a:[n.x,n.y,n.z],what:'face'};}
+  }catch(e){}
+  try{faceEl.textContent=faceOnly?'Sélectionnez d’abord une face (clic dans la vue).':'Sélectionnez d’abord une face ou une arête (clic dans la vue).';}catch(e){}
+  return null;
+}
+function repFlipDir(rp,which){
+  // Inverse une direction (le sens d'une arête choisie est arbitraire) : la direction devient
+  // explicite (« Face / arête ») et opposée — X/Y/Z compris ; circulaire : sens de rotation inversé
+  docPushUndo('inverser la direction de « '+rp.name+' »');
+  if(which===2){rp.dir2=repScale(repAxis2Vec(rp),-1);rp.axis2='Face';}
+  else{rp.dir=repScale(repAxisVec(rp),-1);rp.axis='Face';}
+  repGenChildren(rp);markDirty();rebuild();renderTree();renderProps();refreshParts();
+}
 function repUseFaceFor(rp,which){
-  if(!selFaces||!selFaces.length)return;
-  const s=selFaces[0],n=faceNormalWorld(s.mesh,s.faceIndex);if(!n)return;
-  const a=[n.x,n.y,n.z];
+  const P=repPickedDir(rp.mode==='mir');if(!P)return;
+  const a=P.a;
+  docPushUndo('direction de « '+rp.name+' »');
+  try{faceEl.textContent=(which===2?'2ᵉ direction':(rp.mode==='mir'?'Plan':'Direction'))+' : '+P.what+' sélectionnée.';}catch(e){}
   if(rp.mode==='mir'){
     if(which===2){rp.plane2='Face';rp.planeN2=a;}
     else{rp.plane='Face';rp.planeN=a;}
-  }else{rp.axis='Face';rp.dir=a;}
+  }else if(which===2){rp.axis2='Face';rp.dir2=a;}else{rp.axis='Face';rp.dir=a;}
   repGenChildren(rp);markDirty();rebuild();renderTree();renderProps();refreshParts();
 }
 function applyRepPattern(){
@@ -6344,6 +6394,9 @@ function applyRepPattern(){
     copies:repMaxCopies(repMode.copies),q:1,dist:repMode.dist,angle:repMode.angle,
     axis:repMode.axis,plane:repMode.plane,dir:repMode.dir,planeN:repMode.planeN,
     plane2:repMode.plane2||undefined,planeN2:repMode.planeN2||undefined,
+    lin2:repMode.type==='lin'&&repMode.lin2?true:undefined,axis2:repMode.type==='lin'&&repMode.lin2?repMode.axis2:undefined,
+    dir2:repMode.type==='lin'&&repMode.lin2?repMode.dir2:undefined,copies2:repMode.type==='lin'&&repMode.lin2?repMaxCopies(repMode.copies2):undefined,
+    dist2:repMode.type==='lin'&&repMode.lin2?(+repMode.dist2||0):undefined,
     base:base.map(f=>f.id),children:[],visible:true};
   addFeature(rp);
   const nb=repGenChildren(rp);
@@ -6353,16 +6406,17 @@ function applyRepPattern(){
   faceEl.textContent='Répétition : '+nb+' fonction(s) copiée(s) — « '+rp.name+' » — les sources se cochent dans le panneau, à la création comme à l\'édition.';
 }
 function repUseSelectedFace(){
-  if(!repMode||!selFaces||!selFaces.length)return;
-  const s=selFaces[0],n=faceNormalWorld(s.mesh,s.faceIndex);if(!n)return;
-  const a=[n.x,n.y,n.z];
+  if(!repMode)return;
+  const P=repPickedDir(repMode.type==='mir');if(!P)return;
+  const a=P.a;
   if(repMode.type==='mir'){repMode.plane='Face';repMode.planeN=a;}else{repMode.axis='Face';repMode.dir=a;}
   renderRepPanel();
 }
 function repUseSelectedFace2(){
-  if(!repMode||repMode.type!=='mir'||!selFaces||!selFaces.length)return;
-  const s=selFaces[0],n=faceNormalWorld(s.mesh,s.faceIndex);if(!n)return;
-  repMode.plane2='Face';repMode.planeN2=[n.x,n.y,n.z];
+  if(!repMode||(repMode.type!=='mir'&&repMode.type!=='lin'))return;
+  const P=repPickedDir(repMode.type==='mir');if(!P)return;
+  if(repMode.type==='lin'){repMode.axis2='Face';repMode.dir2=P.a;}
+  else{repMode.plane2='Face';repMode.planeN2=P.a;}
   renderRepPanel();
 }
 function renderRepPanel(){
@@ -6374,9 +6428,12 @@ function renderRepPanel(){
   const cnt=document.createElement('input');cnt.type='number';cnt.min='2';cnt.value=(+repMode.copies||1)+1;cnt.title='Quantité, original compris (6 = l’original + 5 copies)';cnt.onchange=()=>{repMode.copies=repMaxCopies((+cnt.value||2)-1);cnt.value=repMode.copies+1;};
   if(repMode.type==='mir'){cnt.disabled=true;cnt.value=2;}
   row.appendChild(cnt);p.appendChild(row);
-  const ax=document.createElement('select');['X','Y','Z','Face'].forEach(v=>{const op=document.createElement('option');op.value=v;op.textContent=(repMode.type==='mir'?(v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v):v);ax.appendChild(op);});
+  const ax=document.createElement('select');['X','Y','Z','Face'].forEach(v=>{const op=document.createElement('option');op.value=v;op.textContent=(repMode.type==='mir'?(v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v):(v==='Face'?'Face / arête':v));ax.appendChild(op);});
   ax.value=repMode.type==='mir'?(repMode.plane==='XY'?'Z':repMode.plane==='XZ'?'Y':repMode.plane==='Face'?'Face':'X'):(repMode.axis||'X');
   ax.onchange=()=>{if(repMode.type==='mir'){repMode.plane=ax.value==='X'?'YZ':ax.value==='Y'?'XZ':ax.value==='Z'?'XY':'Face';delete repMode.planeN;}else{repMode.axis=ax.value;delete repMode.dir;}renderRepPanel();};p.appendChild(ax);
+  const bf=document.createElement('button');bf.textContent=repMode.type==='mir'?'🎯 Face sélectionnée → plan':'🎯 Face / arête sélectionnée → direction';
+  bf.title=repMode.type==='mir'?'Plan de symétrie : normale de la face sélectionnée':'Direction de l’arête sélectionnée (axe d’un cercle ou d’un arc), sinon normale de la face sélectionnée';
+  bf.onclick=repUseSelectedFace;p.appendChild(bf);
   if(repMode.type==='mir'){
     // Symétrie DOUBLE : un 2ᵉ plan dont la passe englobe la base ET la 1ʳᵉ symétrie.
     // Absent par défaut (compatibilité : une symétrie existante reste simple).
@@ -6401,9 +6458,26 @@ function renderRepPanel(){
       bf2.onclick=()=>{repUseSelectedFace2();};p.appendChild(bf2);
     }
   }
-  if(repMode.type==='lin'){const l=document.createElement('label');l.textContent=' Distance (mm)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.dist;inp.onchange=()=>{repMode.dist=parseFloat(String(inp.value).replace(',','.'))||0;};l.appendChild(inp);p.appendChild(l);}
+  if(repMode.type==='lin'){const l=document.createElement('label');l.textContent=' Distance (mm)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.dist;inp.onchange=()=>{repMode.dist=parseFloat(String(inp.value).replace(',','.'))||0;};l.appendChild(inp);p.appendChild(l);
+    // 2ᵉ DIRECTION (grille) : axe, quantité (original compris), pas
+    const r2=document.createElement('div');r2.className='row';
+    const t2=document.createElement('input');t2.type='checkbox';t2.checked=!!repMode.lin2;t2.className='rep2Chk';
+    t2.title='Ajouter une 2ᵉ direction : la ligne de la 1ʳᵉ direction est répétée le long de la 2ᵉ (grille)';
+    const l2=document.createElement('span');l2.textContent=' 2ᵉ direction (grille)';r2.appendChild(t2);r2.appendChild(l2);p.appendChild(r2);
+    t2.onchange=()=>{repMode.lin2=t2.checked;
+      if(t2.checked){if(!repMode.axis2)repMode.axis2=(repMode.axis||'X')==='X'?'Y':'X';if(!repMode.copies2)repMode.copies2=1;if(repMode.dist2==null)repMode.dist2=repMode.dist||10;}
+      renderRepPanel();};
+    if(repMode.lin2){
+      const ax2=document.createElement('select');['X','Y','Z','Face'].forEach(v=>{const op=document.createElement('option');op.value=v;op.textContent=v==='Face'?'Face / arête':v;ax2.appendChild(op);});
+      ax2.value=repMode.axis2||'Y';ax2.title='Axe de la 2ᵉ direction';ax2.onchange=()=>{repMode.axis2=ax2.value;delete repMode.dir2;renderRepPanel();};p.appendChild(ax2);
+      const c2=document.createElement('input');c2.type='number';c2.min='2';c2.value=(+repMode.copies2||1)+1;c2.title='Quantité dans la 2ᵉ direction, original compris';
+      c2.onchange=()=>{repMode.copies2=repMaxCopies((+c2.value||2)-1);c2.value=repMode.copies2+1;};p.appendChild(c2);
+      const ld=document.createElement('label');ld.textContent=' Distance 2 (mm)';const i2=document.createElement('input');i2.type='text';i2.inputMode='decimal';i2.value=repMode.dist2;
+      i2.onchange=()=>{repMode.dist2=parseFloat(String(i2.value).replace(',','.'))||0;};ld.appendChild(i2);p.appendChild(ld);
+      const bf2=document.createElement('button');bf2.textContent='🎯 Face / arête → 2ᵉ direction';bf2.title='Prend la direction de l’arête sélectionnée (axe d’un cercle) ou la normale de la face sélectionnée';bf2.onclick=()=>repUseSelectedFace2();p.appendChild(bf2);
+    }
+  }
   if(repMode.type==='circ'){const l=document.createElement('label');l.textContent=' Angle total (°)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.angle;inp.onchange=()=>{repMode.angle=parseFloat(String(inp.value).replace(',','.'))||360;};l.appendChild(inp);p.appendChild(l);}
-  const bf=document.createElement('button');bf.textContent='Utiliser la face sélectionnée';bf.onclick=repUseSelectedFace;p.appendChild(bf);
   // ── FONCTIONS RÉPÉTABLES : la MÊME liste à cocher qu'à l'édition (voir
   // repSourceList). Aucun re-rendu ici : la case garde son état, seul l'arbre se
   // rafraîchit (le compteur se met à jour sur place, dans la liste).
@@ -6588,6 +6662,9 @@ function renderProps(){
         repGenChildren(f);markDirty();rebuild();renderTree();refreshParts();
       },function(){majEntete();}));
       const applyCfg=()=>{repGenChildren(f);markDirty();rebuild();renderTree();renderProps();refreshParts();};
+      // 🎯 / ⇄ sur la LIGNE de l'axe qu'ils règlent (et non en bas du panneau)
+      const icoBtns=(row,list)=>{list.forEach(([ic,tip,fn])=>{const b=document.createElement('button');b.className='mini repDirBtn';b.textContent=ic;b.title=tip;b.style.cssText='padding:1px 6px;margin-left:4px;flex:none';b.onclick=fn;row.appendChild(b);});return row;};
+      const pickTip='Prendre la direction de la sélection dans la vue : arête droite (sa direction), cercle ou arc (son axe), sinon face (sa normale)';
       const typ=pSel([['lin','Linéaire'],['circ','Circulaire'],['mir','Symétrie']],f.mode||'lin',
         v=>{f.mode=v;f.name=repTypeName(f.mode,f);applyCfg();});
       pRow('Type',typ);
@@ -6595,10 +6672,12 @@ function renderProps(){
       const cnt=document.createElement('input');cnt.type='number';cnt.min='2';cnt.value=(+f.copies||1)+1;cnt.title='Quantité, original compris (6 = l’original + 5 copies)';
       cnt.onchange=()=>{f.copies=repMaxCopies((+cnt.value||2)-1);applyCfg();};
       if(f.mode!=='mir')pRow('Quantité',cnt);
-      const axOpts=['X','Y','Z','Face'].map(v=>[v,f.mode==='mir'?(v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v):v]);
+      const axOpts=['X','Y','Z','Face'].map(v=>[v,f.mode==='mir'?(v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v):(v==='Face'?'Face / arête':v)]);
       const axCur=f.mode==='mir'?(f.plane==='XY'?'Z':f.plane==='XZ'?'Y':f.plane==='Face'?'Face':'X'):(f.axis||'X');
-      pRow(f.mode==='mir'?'Plan':'Axe',pSel(axOpts,axCur,
-        v=>{if(f.mode==='mir'){f.plane=v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':'Face';delete f.planeN;}else{f.axis=v;delete f.dir;}applyCfg();}));
+      icoBtns(pRow(f.mode==='mir'?'Plan':'Axe',pSel(axOpts,axCur,
+        v=>{if(f.mode==='mir'){f.plane=v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':'Face';delete f.planeN;}else{f.axis=v;delete f.dir;}applyCfg();})),
+        f.mode==='mir'?[['🎯','Prendre le plan de la face sélectionnée dans la vue (sa normale)',()=>repUseFaceFor(f)]]
+          :[['🎯',pickTip,()=>repUseFaceFor(f)],['⇄','Inverser la direction',()=>repFlipDir(f,1)]]);
       if(f.mode==='mir'){
         pChk('2ᵉ plan (double)',!!f.plane2,v=>{
           docPushUndo('2ᵉ plan de « '+f.name+' »');
@@ -6610,22 +6689,40 @@ function renderProps(){
           const ax2=pSel(['X','Y','Z','Face'].map(v=>[v,v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v]),
             f.plane2==='XY'?'Z':f.plane2==='XZ'?'Y':f.plane2==='Face'?'Face':'X',
             v=>{docPushUndo('2ᵉ plan');f.plane2=v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':'Face';delete f.planeN2;applyCfg();});
-          pRow('2ᵉ plan',ax2);
-          pBtns([['🎯 Face → 2ᵉ plan',()=>repUseFaceFor(f,2)]]);
+          icoBtns(pRow('2ᵉ plan',ax2),[['🎯','Prendre le 2ᵉ plan de la face sélectionnée dans la vue (sa normale)',()=>repUseFaceFor(f,2)]]);
         }
         if(f._samePlane)pNote('⚠ Les deux plans sont identiques : la 2ᵉ passe est sans effet.');
       }
+      if(f.mode!=='mir')pNote('🎯 : sélectionnez une arête (ou une face) dans la vue, puis cliquez 🎯 — la direction devient « Face / arête ». ⇄ : sens opposé.');
       if(f.mode==='lin'){
         const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=f.dist;parFx(inp,f,'dist');
         inp.addEventListener('change',()=>{f.dist=parseFloat(String(inp.value).replace(',','.'))||0;applyCfg();});
         pRow('Distance (mm)',inp);
+        // 2ᵉ DIRECTION (grille)
+        pChk('2ᵉ direction (grille)',!!f.lin2,v=>{
+          docPushUndo('2ᵉ direction de « '+f.name+' »');
+          if(v){f.lin2=true;if(!f.axis2)f.axis2=(f.axis||'X')==='X'?'Y':'X';if(!f.copies2)f.copies2=1;if(f.dist2==null)f.dist2=f.dist||10;}
+          else{delete f.lin2;}
+          f.name=repTypeName(f.mode,f);applyCfg();
+        });
+        if(f.lin2){
+          icoBtns(pRow('2ᵉ axe',pSel(['X','Y','Z','Face'].map(v=>[v,v==='Face'?'Face / arête':v]),f.axis2||'Y',v=>{docPushUndo('2ᵉ direction');f.axis2=v;delete f.dir2;applyCfg();})),
+            [['🎯',pickTip,()=>repUseFaceFor(f,2)],['⇄','Inverser la 2ᵉ direction',()=>repFlipDir(f,2)]]);
+          const c2=document.createElement('input');c2.type='number';c2.min='2';c2.value=(+f.copies2||1)+1;c2.title='Quantité dans la 2ᵉ direction, original compris';
+          c2.onchange=()=>{docPushUndo('2ᵉ direction');f.copies2=repMaxCopies((+c2.value||2)-1);applyCfg();};
+          pRow('Quantité 2',c2);
+          const i2=document.createElement('input');i2.type='text';i2.inputMode='decimal';i2.value=f.dist2;parFx(i2,f,'dist2');
+          i2.addEventListener('change',()=>{docPushUndo('2ᵉ direction');f.dist2=parseFloat(String(i2.value).replace(',','.'))||0;applyCfg();});
+          pRow('Distance 2 (mm)',i2);
+          const tot=(repMaxCopies(f.copies)+1)*(repMaxCopies(f.copies2)+1);
+          pNote('Grille '+(repMaxCopies(f.copies)+1)+' × '+(repMaxCopies(f.copies2)+1)+' = '+tot+' exemplaires, original compris'+(tot-1>REPEAT_MAX?' — limité à '+REPEAT_MAX+' copies':'')+'.');
+        }
       }
       if(f.mode==='circ'){
         const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=f.angle;parFx(inp,f,'angle');
         inp.addEventListener('change',()=>{f.angle=parseFloat(String(inp.value).replace(',','.'))||360;applyCfg();});
         pRow('Angle total (°)',inp);
       }
-      pBtns([['🎯 Face sélectionnée',()=>repUseFaceFor(f)]]);
       visDel(f);
       return;
     }
@@ -6693,75 +6790,8 @@ function renderProps(){
     }
     /* — extrusion — */
     if(f.type==='extrude'){
-      pRow('Sens',pSel([['0','↗ Un côté'],['1','↕ Symétrique']],f.mid?'1':'0',
-        v=>{f.mid=(v==='1');f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();}));
-      const selU=pSel([['dist','📏 Distance'],['upto','🎯 Jusqu\'à la face'],['through','⤴ A travers tout']],
-        f.upto?'upto':(f.through?'through':'dist'),v=>{
-        if(v==='upto'){
-          if(!f.upto){
-            const me=doc.features.indexOf(f);
-            const prevs=doc.features.slice(0,me).filter(x=>x.type==='extrude'&&(x.op||'add')==='add');
-            if(!prevs.length){faceEl.textContent='Jusqu\'à la face : aucune extrusion additive ANTÉRIEURE.';selU.value='dist';return;}
-            f.upto={ex:prevs[prevs.length-1].id,side:1};
-          }
-          extPickFace={f};try{renderer.domElement.style.cursor='crosshair';}catch(e){}
-          faceEl.textContent='Cliquez une face du corps cible (Échap annule).';
-        }else if(v==='through'){
-          f.upto=null;f.through=true;f.distance=null;
-          f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();
-        }else{
-          f.upto=null;f.through=false;
-          if(!isFinite(f.distance))f.distance=10;
-          f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();
-        }
-      });
-      pRow('Étendue',selU);
-      if(f.upto){
-        const faceInfo=f.upto.faceId;
-        const faceName=faceInfo&&faceInfo.bid?`face #${faceInfo.fi}`:'(non définie)';
-        pRow('Face cible',pNote(faceName));
-        pBtns([['🎯 Changer la face',()=>{extPickFace={f};try{renderer.domElement.style.cursor='crosshair';}catch(e){}faceEl.textContent='Cliquez une face (Échap annule).';}]]);
-      }else if(f.through){
-        pInfo(`A travers tout — ${(f.op==='cut')?'Poche':'Plot'}`);
-      }else{
-        const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=Math.abs(f.distance);parFx(inp,f,'distance');
-        const cd=()=>{
-          if(f.upto)return;
-          const v=parseFloat(String(inp.value).replace(',','.'));
-          if(isFinite(v)&&v!==0){extDistSet(f,Math.abs(v)*((f.op||'add')==='cut'?-1:1));repSyncForFeature(f);markDirty();rebuild();renderProps();}
-        };
-        inp.addEventListener('change',cd);inp.addEventListener('blur',cd);
-        inp.addEventListener('keydown',e=>{if(e.key==='Enter'){cd();inp.blur();}e.stopPropagation();});
-        pRow(f.mid?'Course totale (mm)':'Distance (mm)',inp);
-      }
-      pRow('Opération',pSel([['add','➕ Plot (addition)'],['cut','➖ Poche (soustraction)'],['new','◧ Nouveau corps']],
-        f.newBody?'new':(f.op||'add'),v=>{
-        if(v==='new'){if(!f.newBody){f._bodyPrev=f.body;f.body=extNewBody();f.newBody=true;}f.op='add';}
-        else{if(f.newBody){f.body=f._bodyPrev||(doc.bodies[0]&&doc.bodies[0].id);delete f._bodyPrev;delete f.newBody;}f.op=v;}
-        if(!f.upto&&!f.through)f.distance=Math.abs(f.distance)*(f.op==='cut'?-1:1);
-        f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();
-      }));
-      {
-        let cote='±';
-        try{const sp=extrudeSpan(f);if(!(f.mid))cote=(sp.hi>0&&sp.lo>=-1e-9)?'+n':((sp.lo<0&&sp.hi<=1e-9)?'−n':'±');}catch(e){}
-        pBtns([['⇄ Inverser le sens',()=>{f.flip=!f.flip;f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();}]]);
-        pNote('Côté actuel : '+cote+(f.mid?' (symétrique)':'')+(f.flip?' (inversé)':''));
-      }
-      {
-        const inpD=document.createElement('input');inpD.type='text';inpD.inputMode='decimal';
-        inpD.value=String(+f.draft||0).replace('.',',');inpD.title='Angle signé / plan d\'esquisse. 0 = parois droites.';parFx(inpD,f,'draft');
-        const cdD=()=>{
-          const v=parseFloat(String(inpD.value).replace(',','.').replace(/\s/g,''));
-          if(!isFinite(v)){inpD.value=String(+f.draft||0).replace('.',',');return;}
-          if(v===(+f.draft||0))return;
-          f.draft=Math.abs(v)<1e-9?0:+v.toFixed(3);
-          f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();
-        };
-        inpD.addEventListener('change',cdD);inpD.addEventListener('blur',cdD);
-        inpD.addEventListener('keydown',e=>{if(e.key==='Enter'){cdD();inpD.blur();}e.stopPropagation();});
-        pRow('Dépouille (°)',inpD);
-      }
-      pBtns([['🔧 Changer d\'esquisse',()=>askExtrude(null,f)]]);
+      // V0.7.6 : fenêtre de l'extrusion dynamique — boutons à icônes, flèche dans la vue (70-extrusion-dynamique)
+      extDynPanel(p,f);
     }
     visDel(f);
     return;
@@ -6894,7 +6924,7 @@ let tlbEl=null,tlbDrag=null,tlbNoClick=false;
       '#mfTl .tlbC button{padding:2px 5px;min-width:22px;font-size:.72rem;line-height:1.2;background:none;border:1px solid transparent;border-radius:6px;color:var(--text)}'+
       '#mfTl .tlbC button:hover{border-color:var(--border);color:var(--primary)}'+
       '#mfTl .tlbR{display:flex;align-items:center;gap:3px;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;padding:5px 4px 3px;scrollbar-width:thin}'+
-      '#mfTl .tlbS{flex:none;position:relative;display:flex;align-items:center;justify-content:center;min-width:28px;height:28px;padding:0 3px;box-sizing:border-box;'+
+      '#mfTl .tlbS{flex:none;position:relative;display:flex;align-items:center;justify-content:center;min-width:34px;height:32px;padding:0 4px;box-sizing:border-box;'+
         'border-radius:7px;border:1px solid var(--border);background:rgba(127,127,127,.1);cursor:pointer;font-size:.95rem;line-height:1;white-space:nowrap}'+
       '#mfTl .tlbS.sk{background:rgba(255,159,10,.13)}'+
       '#mfTl .tlbS.cg{background:rgba(255,214,10,.1);border-style:dashed}'+
@@ -7003,7 +7033,37 @@ function tlbMoveTo(id,g,S){
   featMoveApply(A,'déplacement de « '+f.name+' »');
   return true;
 }
+// V0.7.6 : les icônes du RUBAN (SVG, 97-interface-moderne) au lieu de caractères — la même image
+// que la commande qui a créé l'étape ; vert = ajout de matière, rouge + « − » = enlèvement
+const TLB_COL={add:'#30d158',cut:'#ff453a',sk:'#ff9f0a',mod:'#64d2ff',rep:'#bf5af2',cg:'#ffd60a'};
+function tlbSvgKey(s){
+  const f=s.o;
+  if(s.kind==='sketch')return ['sketch','sk'];
+  if(s.kind==='cg')return [{plane:'cgPlane',axis:'cgAxis',point:'cgPoint',frame:'cgFrame'}[f.kind]||'cgPlane','cg'];
+  const cut=(f.op||'add')==='cut';
+  switch(f.type){
+    case 'extrude':return ['extrude',cut?'cut':'add',cut];
+    case 'revolve':return ['revolve',cut?'cut':'add',cut];
+    case 'hole':return ['hole','cut'];
+    case 'xfillet':{let k='';try{k=xKindOf(f);}catch(e){}return [/cham/i.test(k)?'chamfer':'fillet','mod'];}
+    case 'fillet':return ['fillet','mod'];
+    case 'repeat':return ['pattern','rep'];
+    case 'combine':return ['combine',f.mode==='cut'?'cut':'mod',f.mode==='cut'];
+    case 'xmove':case 'xdelface':return ['face','mod'];
+    case 'xdraft':return ['draft','mod'];
+    case 'xshell':return ['shell','cut'];
+    case 'import':return ['import','mod'];
+  }
+  return null;
+}
 function tlbIcon(s){
+  let k=null;try{k=tlbSvgKey(s);}catch(e){k=null;}
+  const svg=k&&typeof mfI==='function'?mfI(k[0],22):null;
+  if(svg){
+    const col=tlbIsSel(s)?'':'color:'+TLB_COL[k[1]]+';';
+    return '<span class="tlbI" style="'+col+'display:inline-flex;position:relative">'+svg+
+      (k[2]?'<b style="position:absolute;right:-4px;bottom:-5px;font-size:12px;line-height:1;font-weight:900">−</b>':'')+'</span>';
+  }
   if(s.kind==='feature')return featIconOf(s.o);
   if(s.kind==='sketch')return '✏️';
   return (CG_KINDS[s.o.kind]||{ic:'◇'}).ic;
@@ -7252,6 +7312,12 @@ function docRedo(){
 
 function docUndoUI(){
   const u=$('btnUndo'),r=$('btnRedo');
+  // V0.7.6 : pendant une esquisse, les flèches suivent l'annulation des TRACÉS (skUndoStack)
+  if(typeof skEdit!=='undefined'&&skEdit&&typeof skUndoStack!=='undefined'){
+    if(u){const n=skUndoStack.length;u.textContent=n?('↩ Annuler ('+n+')'):'↩ Annuler';u.disabled=!n;u.title=n?'Annuler le dernier tracé (Ctrl+Z)':'Rien à annuler';}
+    if(r){const n=skRedoStack.length;r.textContent=n?('↪ Rétablir ('+n+')'):'↪ Rétablir';r.disabled=!n;r.title=n?'Rétablir le tracé (Ctrl+Y)':'Rien à rétablir';}
+    return;
+  }
   // mode Placer : l'annulation de l'assemblage ; mode pièce : celle du document, sauf si la
   // dernière opération est une opération d'assemblage qui l'a modifié (46 : asmUndoFirst)
   const US=asmMode==='asm'||asmUndoFirst(false)?asmUndoStack:docUndoStack,RS=asmMode==='asm'||asmUndoFirst(true)?asmRedoStack:docRedoStack;
@@ -7283,12 +7349,14 @@ function docUndoUI(){
     u.id='btnUndo';
     u.textContent='↩ Annuler';
     u.title='Annuler la dernière modification du modèle (Ctrl+Z)';
-    u.onclick=()=>docUndo();
+    // V0.7.6 : pendant une esquisse, la flèche annule le dernier tracé (comme Ctrl+Z) — le bandeau
+    // Esquisse n'a plus ses propres boutons Annuler / Rétablir
+    u.onclick=()=>{if(typeof skEdit!=='undefined'&&skEdit&&typeof skUndoTrans==='function')return skUndoTrans();docUndo();};
     const r=document.createElement('button');
     r.id='btnRedo';
     r.textContent='↪ Rétablir';
     r.title='Rétablir la modification annulée (Ctrl+Y)';
-    r.onclick=()=>docRedo();
+    r.onclick=()=>{if(typeof skEdit!=='undefined'&&skEdit&&typeof skRedoTrans==='function')return skRedoTrans();docRedo();};
     row.appendChild(u);row.appendChild(r);
     hote.parentNode.parentNode.insertBefore(row,hote.parentNode.nextSibling);
     docUndoUI();
@@ -11059,7 +11127,8 @@ function closeSketch(save){
   if(skEdit)tlEditUnlock();
   if(save&&skEdit){try{parApplyAll();}catch(e){}solveSketch(skEdit);cleanupSk(skEdit);repSyncForSketch(skEdit.id);markDirty();rebuild();projRefreshRerun(0);sel={kind:'sketch',id:skEdit.id};renderTree();renderProps();}
   else if(skEdit){markDirty();try{rebuild();}catch(e){}renderTree();renderProps();}
-  skEdit=null;skSel=null;skSelX=[];skChain=null;skArcC=null;skArcPa=null;skDraft=null;skDown=null;skDrag=null;skDimDrag=null;skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
+  skEdit=null;try{docUndoUI();}catch(e){} // V0.7.6 : les flèches du haut reviennent au document
+  skSel=null;skSelX=[];skChain=null;skArcC=null;skArcPa=null;skDraft=null;skDown=null;skDrag=null;skDimDrag=null;skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
   // Arborescence re-dépliée à la sortie, sauf si l'état antérieur était
   // rabattu (choix manuel de l'utilisateur conservé).
   try{if(skTreeFoldSave===false)treeFoldSet(false);skTreeFoldSave=null;}catch(e){}
@@ -13892,7 +13961,7 @@ function skPushUndo(){if(!skEdit)return;skUndoStack.push(skSnap());if(skUndoStac
 function skRestore(s){skEdit.points=s.points;skEdit.entities=s.entities;skEdit.constraints=s.constraints;skEdit.dims=s.dims;solveSketch(skEdit);cleanupSk(skEdit);skRefreshHealth();drawSketch2D();renderSkPanel();skUndoBtn();}
 function skUndoTrans(){if(!skEdit||!skUndoStack.length){skStatus('Rien à annuler.');return;}skRedoStack.push(skSnap());skRestore(skUndoStack.pop());skStatus('Annulé ↩.');}
 function skRedoTrans(){if(!skEdit||!skRedoStack.length){skStatus('Rien à rétablir.');return;}skUndoStack.push(skSnap());skRestore(skRedoStack.pop());skStatus('Rétabli ↪.');}
-function skUndoBtn(){const u=$('skUndo'),r=$('skRedo');if(u)u.disabled=!skUndoStack.length;if(r)r.disabled=!skRedoStack.length;}
+function skUndoBtn(){const u=$('skUndo'),r=$('skRedo');if(u)u.disabled=!skUndoStack.length;if(r)r.disabled=!skRedoStack.length;try{docUndoUI();}catch(e){}} // V0.7.6 : flèches du haut
 /* ----- santé d'esquisse (docteur) : bouts ouverts, doublons, dégénérés, croisements ----- */
 function skRefreshHealth(){if(skEdit){skEdit._health=skHealth(skEdit);skEdit._audit=skAudit(skEdit);}}
 /* ----- audit du solveur : résidu mesuré + libertés comptées + pires violations ----- */
@@ -16073,6 +16142,300 @@ window.addEventListener('keydown',e=>{
   mk('offset','⇄','Décalage (O) : sélectionnez lignes/cercles/arcs, cliquez le CÔTÉ → copies // et cotes');
 })();
 
+/* ═══════════════ 70-extrusion-dynamique.js — extrusion dynamique ═══════════════ */
+/* ---------- extrusion dynamique (V0.7.6) ----------
+   Comme les logiciels de CAO récents (Fusion 360, SolidCraft) :
+     · APERÇU IMMÉDIAT : « Extrusion » crée tout de suite une VRAIE fonction (20 mm), rejouée par
+       le noyau exact — l'aperçu est exactement le résultat ;
+     · FLÈCHE À TIRER au centre du profil, le long de la normale de l'esquisse (pas de 1 mm, Maj =
+       libre ; tirer de l'autre côté inverse le sens) et CHAMP « Distance » flottant à côté ;
+     · PANNEAU À ICÔNES : opération, direction, étendue en boutons ; distance ; « ▸ Options »
+       repliables (dépouille) ; Annuler / OK.
+   La même fenêtre sert à modifier une extrusion : elle s'ouvre dès qu'une extrusion est
+   sélectionnée. OK valide (et désélectionne) ; Annuler remet le document EXACTEMENT comme à
+   l'ouverture (création : la fonction disparaît ; modification : valeurs d'avant) et retire les
+   étapes d'annulation prises entre-temps. */
+let extDyn=null;          // session : {id, snap (document à l'ouverture), len (pile d'annulation), isNew}
+let extDynOptOpen=false;  // « ▸ Options » déplié (mémorisé entre deux ouvertures)
+function extDynFeature(){
+  if(typeof sel==='undefined'||!sel||sel.kind!=='feature')return null;
+  const f=(doc.features||[]).find(x=>x&&x.id===sel.id);
+  return f&&f.type==='extrude'?f:null;
+}
+function extDynEnsure(){
+  // Session de la fenêtre : ouverte à la première sélection d'une extrusion
+  const f=extDynFeature();
+  if(!f){extDyn=null;return null;}
+  if(!extDyn||extDyn.id!==f.id)extDyn={id:f.id,isNew:false,snap:docSnap(),len:docUndoStack.length};
+  return f;
+}
+function extDynNew(skId){
+  // « Extrusion » : la fonction naît tout de suite (aperçu = résultat), fenêtre ouverte
+  const snap=docSnap(),len=docUndoStack.length;
+  const nf={id:uid('ex'),type:'extrude',name:'',sketchId:skId,distance:20,op:'add',visible:true,mid:false,upto:null};
+  nf.name=extName(nf);
+  addFeature(nf);
+  const s=doc.sketches.find(x=>x.id===skId);if(s)s.visible=false;
+  sel={kind:'feature',id:nf.id};
+  extDyn={id:nf.id,isNew:true,snap,len};
+  markDirty();rebuild();renderTree();renderProps();
+  try{faceEl.textContent='Extrusion : tirez la flèche ou tapez la distance, puis OK (Échap = annuler).';}catch(e){}
+  return nf;
+}
+function extDynSet(label,fn){
+  // Une modification depuis la fenêtre : une étape d'annulation, rejeu, panneau à jour
+  const f=extDynFeature();if(!f)return;
+  docPushUndo(label||('modification de « '+f.name+' »'));
+  fn(f);
+  f.name=extName(f);
+  try{repSyncForFeature(f);}catch(e){}
+  markDirty();rebuild();renderTree();renderProps();
+}
+function extDynClose(){extDyn=null;extDynHide();}
+function extDynOk(){
+  extDynClose();sel={kind:null,id:null};
+  try{renderTree();renderProps();}catch(e){}
+  try{faceEl.textContent='Extrusion validée.';}catch(e){}
+}
+function extDynCancel(){
+  const E=extDyn;extDynClose();
+  if(!E){sel={kind:null,id:null};try{renderTree();renderProps();}catch(e){}return;}
+  const changed=E.isNew||docUndoStack.length>E.len;
+  if(changed){
+    docApplySnap(E.snap); // rejoue, arbre et panneau à jour
+    docUndoStack.length=Math.min(docUndoStack.length,E.len);docRedoStack.length=0;
+    try{docUndoUI();}catch(e){}
+  }
+  sel={kind:null,id:null};try{renderTree();renderProps();}catch(e){}
+  try{faceEl.textContent=E.isNew?'Extrusion annulée.':'Modifications annulées.';}catch(e){}
+}
+/* ── panneau ── */
+function extSeg(opts,val,fn){
+  // Boutons à icône (icône au-dessus, libellé dessous) : un choix lisible d'un coup d'œil
+  const d=document.createElement('div');d.className='pnl-btns extSeg';d.style.cssText='gap:4px;flex-wrap:wrap';
+  opts.forEach(([v,ic,lab,tip,on])=>{
+    const b=document.createElement('button');b.className='mini extSegBtn';b.dataset.v=v;b.title=tip||lab;
+    b.innerHTML='<span style="font-size:16px;line-height:1.1">'+ic+'</span><span>'+lab+'</span>';
+    const act=on!=null?on:v===val;
+    b.style.cssText='display:flex;flex-direction:column;align-items:center;gap:2px;padding:5px 6px;min-width:62px;font-size:10.5px'+
+      (act?';outline:2px solid var(--accent, #0a84ff);color:var(--primary)':'');
+    b.onclick=()=>fn(v,act);
+    d.appendChild(b);
+  });
+  return d;
+}
+function extDynPanel(p,f){
+  // Fenêtre de l'extrusion (création et modification), dans le panneau des propriétés
+  extDynEnsure();
+  const E=extDyn;
+  const mk=(tag,cls,txt)=>{const d=document.createElement(tag);if(cls)d.className=cls;if(txt!=null)d.textContent=txt;return d;};
+  const sec=(lab,el)=>{const w=mk('div','extSec');w.style.cssText='margin:6px 0 2px';const l=mk('div','pnl-note',lab);l.style.cssText='margin:0 0 3px;font-weight:600';w.appendChild(l);w.appendChild(el);p.appendChild(w);return w;};
+  if(E&&E.isNew)p.appendChild(mk('div','pnl-note','Aperçu : la pièce montrée EST le résultat. Tirez la flèche ou tapez la distance.'));
+  // profil
+  const pr=mk('div','pnl-btns');pr.style.cssText='align-items:center;gap:6px';
+  pr.appendChild(mk('span','pnl-note','✏️ '+skName(f.sketchId)));
+  const ch=mk('button','mini','🔧 Changer');ch.title='Extruder une autre esquisse';ch.onclick=()=>askExtrude(null,f);pr.appendChild(ch);
+  sec('Profil',pr);
+  // opération
+  sec('Opération',extSeg([['add','➕','Plot','Ajoute de la matière (bossage)'],['cut','➖','Poche','Retire de la matière'],['new','◧','Nouveau corps','Solide séparé']],
+    f.newBody?'new':(f.op||'add'),v=>extDynSet('opération de « '+f.name+' »',g=>{
+      if(v==='new'){if(!g.newBody){g._bodyPrev=g.body;g.body=extNewBody();g.newBody=true;}g.op='add';}
+      else{if(g.newBody){g.body=g._bodyPrev||(doc.bodies[0]&&doc.bodies[0].id);delete g._bodyPrev;delete g.newBody;}g.op=v;}
+      if(!g.upto&&!g.through)g.distance=Math.abs(g.distance||20)*(g.op==='cut'?-1:1);
+      ghostHide=(g.op==='cut')?g.id:null;
+    })));
+  // direction
+  sec('Direction',extSeg([['one','↗','Un côté','Depuis le plan de l’esquisse, d’un seul côté'],['mid','↕','Symétrique','De part et d’autre du plan (la distance est la course totale)'],
+    ['flip','⇄','Inverser','Inverser le sens',!!f.flip]],f.mid?'mid':'one',(v)=>{
+    if(v==='flip')extDynSet('inverser « '+f.name+' »',g=>{g.flip=!g.flip;});
+    else extDynSet('direction de « '+f.name+' »',g=>{g.mid=(v==='mid');});
+  }));
+  // étendue
+  sec('Étendue',extSeg([['dist','📏','Distance','Une distance donnée'],['upto','🎯','Jusqu’à la face','S’arrête sur une face du corps cible'],['through','⤴','À travers tout','Traverse tout le solide']],
+    f.upto?'upto':(f.through?'through':'dist'),v=>{
+    if(v==='upto'){
+      if(!f.upto){
+        const me=doc.features.indexOf(f);
+        const prevs=doc.features.slice(0,me).filter(x=>x.type==='extrude'&&(x.op||'add')==='add');
+        if(!prevs.length){try{faceEl.textContent='Jusqu’à la face : aucune extrusion additive ANTÉRIEURE.';}catch(e){}return;}
+        docPushUndo('étendue de « '+f.name+' »');f.upto={ex:prevs[prevs.length-1].id,side:1};
+      }
+      extPickFace={f};try{renderer.domElement.style.cursor='crosshair';}catch(e){}
+      try{faceEl.textContent='Cliquez une face du corps cible (Échap annule).';}catch(e){}
+      renderProps();
+    }else if(v==='through')extDynSet('étendue de « '+f.name+' »',g=>{g.upto=null;g.through=true;g.distance=null;});
+    else extDynSet('étendue de « '+f.name+' »',g=>{g.upto=null;g.through=false;if(!isFinite(g.distance)||g.distance===null)g.distance=10*(g.op==='cut'?-1:1);});
+  }));
+  // distance / face cible
+  if(f.upto){
+    const w=mk('div','pnl-btns');w.style.cssText='align-items:center;gap:6px';
+    w.appendChild(mk('span','pnl-note',f.upto.faceId&&f.upto.faceId.bid?'Face #'+f.upto.faceId.fi:'Face : (à cliquer)'));
+    const b=mk('button','mini','🎯 Changer la face');b.onclick=()=>{extPickFace={f};try{renderer.domElement.style.cursor='crosshair';}catch(e){}try{faceEl.textContent='Cliquez une face (Échap annule).';}catch(e){}};w.appendChild(b);
+    sec('Face cible',w);
+  }else if(!f.through){
+    const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.className='extDynDist';inp.style.width='90px';
+    inp.value=String(Math.abs(+f.distance||0)).replace('.',',');
+    try{parFx(inp,f,'distance');}catch(e){}
+    const cd=()=>{
+      const v=parseFloat(String(inp.value).replace(',','.'));
+      if(isFinite(v)&&v!==0&&Math.abs(Math.abs(v)-Math.abs(+f.distance||0))>1e-9)
+        extDynSet('distance de « '+f.name+' »',g=>extDistSet(g,Math.abs(v)*((g.op||'add')==='cut'?-1:1)));
+    };
+    inp.addEventListener('change',cd);
+    inp.addEventListener('keydown',e=>{if(e.key==='Enter'){cd();inp.blur();}e.stopPropagation();});
+    const w=mk('div','pnl-btns');w.style.cssText='align-items:center;gap:6px';w.appendChild(inp);w.appendChild(mk('span','pnl-note','mm'+(f.mid?' (course totale)':'')));
+    sec('Distance',w);
+  }
+  // options repliables
+  const det=document.createElement('details');det.className='extOpt';det.open=extDynOptOpen;det.style.cssText='margin:8px 0 4px';
+  det.addEventListener('toggle',()=>{extDynOptOpen=det.open;});
+  const sm=document.createElement('summary');sm.textContent='Options';sm.style.cssText='cursor:pointer;font-weight:600;color:var(--muted)';det.appendChild(sm);
+  const r=mk('div','pnl-row');r.appendChild(mk('label',null,'Dépouille (°)'));
+  const inpD=document.createElement('input');inpD.type='text';inpD.inputMode='decimal';inpD.style.width='70px';inpD.className='extDynDraft';
+  inpD.value=String(+f.draft||0).replace('.',',');inpD.title='Angle signé / plan d’esquisse. 0 = parois droites.';
+  try{parFx(inpD,f,'draft');}catch(e){}
+  const cdD=()=>{const v=parseFloat(String(inpD.value).replace(',','.').replace(/\s/g,''));
+    if(!isFinite(v)){inpD.value=String(+f.draft||0).replace('.',',');return;}
+    if(v===(+f.draft||0))return;
+    extDynSet('dépouille de « '+f.name+' »',g=>{g.draft=Math.abs(v)<1e-9?0:+v.toFixed(3);});};
+  inpD.addEventListener('change',cdD);inpD.addEventListener('keydown',e=>{if(e.key==='Enter'){cdD();inpD.blur();}e.stopPropagation();});
+  r.appendChild(inpD);det.appendChild(r);
+  p.appendChild(det);
+  // Annuler / OK
+  const b=mk('div','pnl-btns');b.style.cssText='justify-content:flex-end;gap:6px;margin-top:6px';
+  const no=mk('button',null,'Annuler');no.className='extDynCancel';no.title=E&&E.isNew?'Retirer cette extrusion':'Revenir aux valeurs d’avant';no.onclick=extDynCancel;b.appendChild(no);
+  const ok=mk('button','primary','OK');ok.classList.add('extDynOk');ok.onclick=extDynOk;b.appendChild(ok);
+  p.appendChild(b);
+}
+/* ── flèche et champ de cote dans la vue ── */
+let extArrow=null,extDrag=null,extLabel=null,extWired=false,extSwallow=0,extRebuildPending=false;
+function extArrowGeom(f){
+  // Centre du profil (boîte des entités de l'esquisse), normale, bout de l'extrusion (le long de n)
+  const sk=doc.sketches.find(s=>s.id===f.sketchId);if(!sk||!sk.points)return null;
+  let x0=1e18,y0=1e18,x1=-1e18,y1=-1e18;const add=(x,y)=>{x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);};
+  (sk.entities||[]).forEach(e=>{if(!e||e.construction)return;const P=sk.points;
+    if(e.t==='line'){[e.p1,e.p2].forEach(id=>{const q=P[id];if(q)add(q.x,q.y);});}
+    else if((e.t==='circle'||e.t==='arc')&&P[e.pc]){const q=P[e.pc],r=+e.r||0;add(q.x-r,q.y-r);add(q.x+r,q.y+r);}});
+  if(!(x1>=x0))return null;
+  const B=sketchBasis(sk),cx=(x0+x1)/2,cy=(y0+y1)/2;
+  const C=B.o.clone().addScaledVector(B.u,cx).addScaledVector(B.v,cy),n=B.n.clone().normalize();
+  const sp=extrudeSpan(f);
+  const end=f.mid?sp.hi:(Math.abs(sp.hi)>=Math.abs(sp.lo)?sp.hi:sp.lo);
+  return {C,n,end,size:Math.max(x1-x0,y1-y0)};
+}
+function extArrowBuild(){
+  const g=new THREE.Group();g.name='extArrow';g.userData.noMirror=true;
+  const mat=new THREE.MeshBasicMaterial({color:0x0a84ff,depthTest:false,transparent:true,opacity:0.95});
+  const shaft=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,0.75,10),mat);shaft.position.y=0.375;
+  const tip=new THREE.Mesh(new THREE.ConeGeometry(0.11,0.28,16),mat);tip.position.y=0.86;
+  const hit=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,1.05,8),new THREE.MeshBasicMaterial({visible:false}));hit.position.y=0.52;
+  [shaft,tip,hit].forEach(m=>{m.renderOrder=999;m.userData.extArrow=true;m.userData.noMirror=true;g.add(m);});
+  const dot=new THREE.Mesh(new THREE.SphereGeometry(0.07,12,8),new THREE.MeshBasicMaterial({color:0xffffff,depthTest:false}));dot.renderOrder=999;dot.userData.noMirror=true;g.add(dot);
+  scene.add(g);return g;
+}
+function extDynHide(){
+  if(extArrow)extArrow.visible=false;
+  if(extLabel)extLabel.style.display='none';
+}
+function extLabelEl(){
+  if(extLabel)return extLabel;
+  const w=document.createElement('div');w.className='extDistLbl';
+  w.style.cssText='position:fixed;z-index:40;display:none;align-items:center;gap:6px;padding:3px 7px;border-radius:7px;background:var(--panel, #1e1e22);border:1px solid var(--line, #3a3a40);box-shadow:0 2px 10px rgba(0,0,0,.35);font-size:12px;color:var(--fg, #ddd)';
+  const l=document.createElement('span');l.textContent='Distance';w.appendChild(l);
+  const i=document.createElement('input');i.type='text';i.inputMode='decimal';i.className='extDistIn';i.style.cssText='width:64px;font-size:12px;padding:1px 4px';
+  i.addEventListener('keydown',e=>{e.stopPropagation();
+    if(e.key==='Enter'){const f=extDynFeature();const v=parseFloat(String(i.value).replace(',','.').replace(/\s*mm$/,''));
+      if(f&&isFinite(v)&&v!==0)extDynSet('distance de « '+f.name+' »',g=>extDistSet(g,Math.abs(v)*((g.op||'add')==='cut'?-1:1)));i.blur();}
+    else if(e.key==='Escape')i.blur();});
+  w.appendChild(i);const u=document.createElement('span');u.textContent='mm';w.appendChild(u);
+  document.body.appendChild(w);extLabel=w;return w;
+}
+function extDynTick(){
+  // À chaque image : la flèche suit l'extrusion sélectionnée, garde une taille constante à l'écran
+  if(!extWired)extWire();
+  const f=extDynFeature();
+  const busy=(typeof skEdit!=='undefined'&&skEdit)||(typeof asmMode!=='undefined'&&asmMode==='asm')||(typeof filMode!=='undefined'&&filMode)||(typeof filModeX!=='undefined'&&filModeX);
+  if(!f||f.upto||f.through||busy||f.visible===false){if(extDyn&&!f)extDyn=null;extDynHide();return;}
+  const G=extArrowGeom(f);if(!G){extDynHide();return;}
+  if(!extArrow)extArrow=extArrowBuild();
+  const dir=G.end<0?G.n.clone().negate():G.n.clone();
+  const P=G.C.clone().addScaledVector(G.n,G.end);
+  const L=Math.max(1e-3,camera.position.distanceTo(P)*0.11);
+  extArrow.position.copy(P);extArrow.scale.setScalar(L);
+  extArrow.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
+  extArrow.visible=true;
+  // champ de cote : à côté de la pointe
+  const w=extLabelEl(),inp=w.querySelector('input');
+  const T=P.clone().addScaledVector(dir,L*0.9).project(camera),r=renderer.domElement.getBoundingClientRect();
+  if(T.z>1||T.z<-1){w.style.display='none';return;}
+  w.style.display='flex';
+  w.style.left=Math.round(r.left+(T.x+1)/2*r.width+14)+'px';w.style.top=Math.round(r.top+(1-T.y)/2*r.height-14)+'px';
+  if(document.activeElement!==inp)inp.value=String(+Math.abs(+f.distance||0).toFixed(3)).replace('.',',');
+}
+function extRayAxis(e,C,n){
+  // Paramètre, le long de l'axe (C, n), du point le plus proche du rayon souris
+  const r=renderer.domElement.getBoundingClientRect();
+  const ndc=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
+  rayc.setFromCamera(ndc,camera);
+  const d=rayc.ray.direction,w0=rayc.ray.origin.clone().sub(C);
+  const b=d.dot(n),den=1-b*b;if(den<1e-6)return null;
+  return (n.dot(w0)-b*d.dot(w0))/den;
+}
+function extDragApply(t,free){
+  // Nouvelle course depuis la position de la souris sur l'axe : pas de 1 mm (Maj : libre),
+  // l'autre côté du plan inverse le sens (une extrusion symétrique n'a pas de sens)
+  const f=extDynFeature();if(!f||!extDrag)return;
+  let m=f.mid?2*Math.abs(t):Math.abs(t);
+  m=free?Math.round(m*100)/100:Math.round(m);
+  if(!(m>=0.1))m=f.mid?2:1;
+  if(!extDrag.pushed){docPushUndo('distance de « '+f.name+' »');extDrag.pushed=true;}
+  extDistSet(f,m*((f.op||'add')==='cut'?-1:1));
+  if(!f.mid){
+    const G=extArrowGeom(f);
+    if(G&&G.end*t<0)f.flip=!f.flip; // le bout est passé de l'autre côté du plan
+  }
+  f.name=extName(f);
+  if(!extRebuildPending){extRebuildPending=true;requestAnimationFrame(()=>{extRebuildPending=false;try{markDirty();rebuild();}catch(e){}});}
+}
+function extWire(){
+  if(typeof renderer==='undefined'||!renderer||!renderer.domElement)return;
+  extWired=true;const el=renderer.domElement;
+  el.addEventListener('pointerdown',e=>{
+    if(e.button!==0||!extArrow||!extArrow.visible)return;
+    const f=extDynFeature();if(!f)return;
+    const r=el.getBoundingClientRect();
+    rayc.setFromCamera(new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1),camera);
+    extArrow.updateMatrixWorld(true);
+    const ms=[];extArrow.traverse(m=>{if(m.isMesh&&m.userData.extArrow)ms.push(m);});
+    if(!rayc.intersectObjects(ms,false).length)return;
+    e.stopImmediatePropagation();e.preventDefault();
+    const G=extArrowGeom(f);if(!G)return;
+    extDrag={C:G.C,n:G.n,pushed:false,id:e.pointerId};
+    try{el.setPointerCapture(e.pointerId);}catch(err){}
+    try{el.style.cursor='grabbing';}catch(err){}
+  },true);
+  el.addEventListener('pointermove',e=>{
+    if(!extDrag)return;e.stopImmediatePropagation();
+    const t=extRayAxis(e,extDrag.C,extDrag.n);if(t!=null)extDragApply(t,e.shiftKey);
+  },true);
+  const up=e=>{
+    if(!extDrag)return;e.stopImmediatePropagation();
+    const D=extDrag;extDrag=null;extSwallow=Date.now();
+    try{el.releasePointerCapture(D.id);}catch(err){}
+    try{el.style.cursor='';}catch(err){}
+    if(D.pushed){try{const f=extDynFeature();if(f)repSyncForFeature(f);}catch(err){}markDirty();rebuild();renderTree();renderProps();}
+  };
+  el.addEventListener('pointerup',up,true);
+  el.addEventListener('click',e=>{if(Date.now()-extSwallow<350){e.stopImmediatePropagation();e.preventDefault();}},true);
+}
+// Échap : annule la fenêtre de l'extrusion (sauf pendant une saisie ou le choix d'une face)
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape'||!extDyn||!extDynFeature())return;
+  if(typeof extPickFace!=='undefined'&&extPickFace)return;
+  const a=document.activeElement;if(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.tagName==='SELECT'))return;
+  e.stopImmediatePropagation();e.preventDefault();extDynCancel();
+},true);
+
 /* ═══════════════ 70-extrusion.js — extrusion ═══════════════ */
 /* ---------- extrusion ---------- */
 function askExtrude(presetSketchId,editF){
@@ -16098,9 +16461,9 @@ if(editF){
   markDirty();rebuild();renderProps();
   return;
 }
-extNew={sketchId:skId,op:'add',dist:20};
-sel={kind:null,id:null};
-renderNewExtrude();
+// V0.7.6 : extrusion DYNAMIQUE — la fonction naît tout de suite (aperçu = résultat), flèche et
+// fenêtre à icônes ; OK / Annuler (70-extrusion-dynamique). Le formulaire extNew reste pour les scripts.
+extDynNew(skId);
 }
 let extNew=null; // extrusion en cours de création (formulaire du panneau)
 function renderNewExtrude(){
@@ -41705,6 +42068,14 @@ function mfCss(){
   '#mfStatus{gap:16px;align-items:center;padding:5px 12px;margin-top:6px;font-size:.72rem;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);white-space:nowrap;overflow:hidden}',
   '#mfStatus b{color:var(--text);font-weight:600}',
   '#mfStatus .mfSp{flex:1}',
+  /* V0.7.6 : dans le bandeau supérieur */
+  '.topbar #mfStatus{margin:0;border:none;background:none;padding:0 4px;flex:1 1 auto;min-width:0;gap:10px}',
+  '.topbar #mfStatus #mfStMeas{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}',
+  '.topbar #mfStatus .mfSp,.topbar #mfStatus #mfStSave,.topbar #mfStatus #mfStVer{display:none}',
+  '.topbar #mfStatus #mfStEng{flex:0 1 auto;max-width:200px;overflow:hidden;text-overflow:ellipsis;padding:2px 8px;border-radius:6px;background:rgba(127,127,127,.12)}',
+  'body.ui-modern .topbar{flex-wrap:nowrap}',
+  'body.ui-modern .topbar .brand{flex:none;white-space:nowrap}',
+  '@media (max-width:1100px){body.ui-modern .topbar{flex-wrap:wrap}.topbar #mfStatus{flex-basis:100%;order:9}}',
   '#mfStatus button{padding:2px 9px;font-size:.7rem}',
   '#mfStMeas{overflow:hidden;text-overflow:ellipsis;max-width:46vw}',
   'body.ui-modern aside.right>.panel.mfHideM{display:none}', /* Mesure et État : repérés par leur titre (voir mfBuildModern) */
@@ -41717,6 +42088,8 @@ function mfCss(){
   '.mfSkLab{display:none}',
   'body.ui-modern.mf-sk #skToolbar{flex-wrap:wrap;overflow:visible;gap:2px;align-items:stretch;row-gap:4px}',
   'body.ui-modern.mf-sk #skToolbar #skClear{margin-left:auto}',
+  /* V0.7.6 : Zoom +/− (molette) et Annuler/Rétablir (Ctrl+Z / Ctrl+Y, flèches du bandeau du haut) en double : masqués */
+  'body.ui-modern.mf-sk #skToolbar #skZoomIn,body.ui-modern.mf-sk #skToolbar #skZoomOut,body.ui-modern.mf-sk #skToolbar #skUndo,body.ui-modern.mf-sk #skToolbar #skRedo{display:none!important}',
   'body.ui-modern.mf-sk #skTitle{display:none}',
   'body.ui-modern.mf-sk #skToolbar .tool,body.ui-modern.mf-sk #skToolbar .con,body.ui-modern.mf-sk #skToolbar #skZoomIn,body.ui-modern.mf-sk #skToolbar #skZoomOut,body.ui-modern.mf-sk #skToolbar #skFit,body.ui-modern.mf-sk #skToolbar #skRefs,body.ui-modern.mf-sk #skToolbar #skParams,body.ui-modern.mf-sk #skToolbar #skUndo,body.ui-modern.mf-sk #skToolbar #skRedo{flex-direction:column;gap:3px;min-width:37px;padding:4px 2px 3px;line-height:1;border-color:transparent;background:none;flex:none}',
   'body.ui-modern.mf-sk #skToolbar .tool:hover,body.ui-modern.mf-sk #skToolbar .con:hover{background:rgba(127,127,127,.14)}',
@@ -42058,11 +42431,11 @@ function mfStatusBar(){
     try{
       const o=(document.getElementById('occtState')||{}).textContent||'';
       const eng=/prêt/i.test(o)?('Noyau prêt · '+((typeof builtEngine!=='undefined'&&builtEngine)||'')):(o.replace(/^OCCT\s*:\s*/,'').slice(0,60));
-      document.getElementById('mfStEng').textContent=eng;
+      const se=document.getElementById('mfStEng');se.textContent=eng;se.title=o; // texte complet en bulle
       const wb=document.getElementById('btnOccWasm');
       document.getElementById('mfStWasm').style.display=(wb&&wb.style.display!=='none'&&!/prêt/i.test(o))?'':'none';
       const f=((typeof faceEl!=='undefined'&&faceEl&&faceEl.textContent)||'').split('\n')[0];
-      document.getElementById('mfStMeas').textContent=f;
+      const ms=document.getElementById('mfStMeas');ms.textContent=f;ms.title=(typeof faceEl!=='undefined'&&faceEl&&faceEl.textContent)||'';
       const st=(document.getElementById('stats')||{}).textContent||'';
       document.getElementById('mfStSave').textContent=/non sauvé/.test(st)?'● non enregistré':(/sauvé/.test(st)?'✓ enregistré':'');
       document.getElementById('mfStVer').textContent=(typeof APP_VER!=='undefined'?APP_VER:'');
@@ -42196,11 +42569,11 @@ function mfBuildModern(){
     const b=document.createElement('button');b.innerHTML=mfI(ic,18);b.title=t;b.onclick=e=>{e.stopPropagation();fn(e);};q.appendChild(b);});
   const sx=mfSearchBox();
   const after=brand?brand.nextSibling:top.firstChild;
-  [ws,q,sx].forEach(n=>top.insertBefore(n,after));
-  // ruban sous le bandeau, barre d'état en bas
+  // V0.7.6 : la barre d'état (noyau, message, Régénérer, unité) vit DANS le bandeau supérieur,
+  // après la recherche — plus de barre en bas : la vue 3D descend jusqu'en bas de la fenêtre
+  [ws,q,sx,mfStatusBar()].forEach(n=>top.insertBefore(n,after));
+  // ruban sous le bandeau
   top.parentNode.insertBefore(mfRibbon(),top.nextSibling);
-  const lay=document.querySelector('.layout');
-  if(lay&&lay.parentNode)lay.parentNode.insertBefore(mfStatusBar(),lay.nextSibling);
   // onglets du navigateur sur la vue
   const vp=document.getElementById('vpwrap');
   if(vp){const bt=document.createElement('div');bt.id='mfBrTabs';bt.className='mfM';

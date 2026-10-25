@@ -32,6 +32,7 @@ const SUITES = [
   'test_assemblage_modele',
   'test_composants_modele',
   'test_composants_apparence',
+  'test_extrusion_dynamique',
   'test_composants_lies',
   'test_composants_references',
   'test_composants_liaisons'

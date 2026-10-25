@@ -475,7 +475,7 @@ function enterRepMode(){
   faceEl.textContent='Répétition : cochez les fonctions à répéter dans la liste ci-dessus, puis Appliquer. Astuce : la repetition est depliee dans l arbre et ses sources sont marquees ◀.';
 }
 function exitRepMode(){repMode=null;renderTree();renderProps();}
-function repTypeName(m,f){if(m==='mir'&&f&&f.plane2)return 'Symétrie double';return m==='mir'?'Symétrie':m==='circ'?'Circulaire':'Linéaire';}
+function repTypeName(m,f){if(m==='mir'&&f&&f.plane2)return 'Symétrie double';if(m==='lin'&&f&&f.lin2)return 'Linéaire 2 directions';return m==='mir'?'Symétrie':m==='circ'?'Circulaire':'Linéaire';}
 function repAxisVec(cfg){const c=cfg||repMode;const a=c&&c.axis;if(c&&c.dir)return repNorm(c.dir);if(a==='Y')return[0,1,0];if(a==='Z')return[0,0,1];return[1,0,0];}
 function repPlaneN(cfg){const c=cfg||repMode;if(c&&c.planeN)return repNorm(c.planeN);const p=c&&c.plane;if(p==='XY')return[0,0,1];if(p==='XZ')return[0,1,0];return[1,0,0];}
 function repNorm(a){const l=Math.hypot(a[0],a[1],a[2])||1;return[a[0]/l,a[1]/l,a[2]/l];}
@@ -493,9 +493,21 @@ function repRot(v,axis,deg){
 function repCircStep(c){const a=+c.angle||360,n=+c.copies||1;return Math.abs(a)>=360-1e-9?a/(n+1):a/n;}
 function repTransformPoint(p,i,cfg){const c=cfg||repMode,t=c.mode||c.type;
   const v=[+(p&&p[0]||0),+(p&&p[1]||0),+(p&&p[2]||0)];
-  if(t==='lin')return repAdd(v,repScale(repAxisVec(c),(+c.dist||0)*i));
+  if(t==='lin')return repAdd(v,c._off?c._off:repScale(repAxisVec(c),(+c.dist||0)*i)); // _off : décalage d'une case de grille
   if(t==='circ')return repRot(v,repAxisVec(c),repCircStep(c)*i);
   const n=repPlaneN(c);return repAdd(v,repScale(n,-2*repDot(v,n)));
+}
+// Répétition linéaire à DEUX directions (grille) : 2ᵉ axe (rp.axis2 X/Y/Z/Face + rp.dir2), quantité
+// rp.copies2 (stockée − 1, comme copies), pas rp.dist2. Une instance par case (i, j) hors (0, 0).
+function repAxis2Vec(c){return repAxisVec({axis:c&&c.axis2,dir:c&&c.dir2});}
+function repLinCells(rp){
+  // Cases de la grille, original exclu : [{i, j, off}] — 200 instances au plus (REPEAT_MAX)
+  const n1=repMaxCopies(rp.copies),out=[];
+  const d1=repScale(repAxisVec(rp),+rp.dist||0);
+  if(!rp.lin2){for(let i=1;i<=n1;i++)out.push({i,j:0,off:repScale(d1,i)});return out;}
+  const n2=repMaxCopies(rp.copies2),d2=repScale(repAxis2Vec(rp),+rp.dist2||0);
+  for(let j=0;j<=n2;j++)for(let i=0;i<=n1;i++){if(!i&&!j)continue;if(out.length>=REPEAT_MAX)return out;out.push({i,j,off:repAdd(repScale(d1,i),repScale(d2,j))});}
+  return out;
 }
 function repTransformVec(v,i,cfg){const c=cfg||repMode,t=c.mode||c.type;
   const a=[+(v&&v[0]||0),+(v&&v[1]||0),+(v&&v[2]||0)];
@@ -641,11 +653,15 @@ function repGenChildren(rp){
   rp.children=[];
   const kids=(rp.mode==='mir')?kids1.concat(kids2):[];
   if(rp.mode!=='mir'){
-    for(let i=1;i<=n;i++){
+    // linéaire : une instance par case de grille (une seule direction = une ligne), décalage explicite
+    const cells=rp.mode==='lin'?repLinCells(rp):null;
+    const N=cells?cells.length:n;
+    for(let i=1;i<=N;i++){
       const skMap={},featMap={};
+      const cfg=cells?Object.assign({},rp,{_off:cells[i-1].off}):rp;
       base.forEach(f=>{
         const c=take(i,f.type,f.id);
-        const nf=repCloneFeature(f,i,skMap,featMap,rp,c||null);
+        const nf=repCloneFeature(f,i,skMap,featMap,cfg,c||null);
         if(nf){nf.repeatId=rp.id;nf.repIndex=i;if(c)reuse.set(i+'|'+f.id,c);rp.children.push(nf.id);kids.push(nf);}
       });
     }
@@ -683,7 +699,7 @@ function repSyncForFeature(f){
 }
 const repGenSigs=new Map(); // id de répétition -> signature des sources au dernier régénéré
 function repSourceSig(rp){
-  let s=JSON.stringify([rp.mode,rp.copies,rp.dist,rp.angle,rp.axis,rp.plane,rp.planeN,rp.plane2,rp.planeN2,rp.base]);
+  let s=JSON.stringify([rp.mode,rp.copies,rp.dist,rp.angle,rp.axis,rp.plane,rp.planeN,rp.plane2,rp.planeN2,rp.base,rp.dir,rp.lin2,rp.axis2,rp.dir2,rp.copies2,rp.dist2]);
   (rp.base||[]).forEach(id=>{const f=doc.features.find(x=>x.id===id);s+='#'+(f?featSig(f):'?');});
   return s;
 }
@@ -994,14 +1010,38 @@ function treeDeleteSel(){
   try{refreshMirror();}catch(e){}
   faceEl.textContent='🗑 Supprimé : '+tous.map(noms).join(', ')+'  —  Ctrl+Z pour annuler.';
 }
+function repPickedDir(faceOnly){
+  // Direction choisie dans la vue : ARÊTE sélectionnée (droite : sa direction ; cercle / arc : son
+  // axe), sinon normale de la FACE sélectionnée. faceOnly : symétrie (un plan = une normale de face).
+  // → {a:[x,y,z], what} | null
+  try{
+    if(!faceOnly&&typeof selEdges!=='undefined'&&selEdges&&selEdges.length){
+      const G=selEdges[selEdges.length-1].G;
+      const v=G&&(G.kind==='line'?G.u:(G.kind==='circle'?G.axis:null));
+      if(v)return {a:[v.x,v.y,v.z],what:G.kind==='line'?'arête':(G.closed?'axe du cercle':'axe de l’arc')};
+    }
+    if(selFaces&&selFaces.length){const s=selFaces[0],n=faceNormalWorld(s.mesh,s.faceIndex);if(n)return {a:[n.x,n.y,n.z],what:'face'};}
+  }catch(e){}
+  try{faceEl.textContent=faceOnly?'Sélectionnez d’abord une face (clic dans la vue).':'Sélectionnez d’abord une face ou une arête (clic dans la vue).';}catch(e){}
+  return null;
+}
+function repFlipDir(rp,which){
+  // Inverse une direction (le sens d'une arête choisie est arbitraire) : la direction devient
+  // explicite (« Face / arête ») et opposée — X/Y/Z compris ; circulaire : sens de rotation inversé
+  docPushUndo('inverser la direction de « '+rp.name+' »');
+  if(which===2){rp.dir2=repScale(repAxis2Vec(rp),-1);rp.axis2='Face';}
+  else{rp.dir=repScale(repAxisVec(rp),-1);rp.axis='Face';}
+  repGenChildren(rp);markDirty();rebuild();renderTree();renderProps();refreshParts();
+}
 function repUseFaceFor(rp,which){
-  if(!selFaces||!selFaces.length)return;
-  const s=selFaces[0],n=faceNormalWorld(s.mesh,s.faceIndex);if(!n)return;
-  const a=[n.x,n.y,n.z];
+  const P=repPickedDir(rp.mode==='mir');if(!P)return;
+  const a=P.a;
+  docPushUndo('direction de « '+rp.name+' »');
+  try{faceEl.textContent=(which===2?'2ᵉ direction':(rp.mode==='mir'?'Plan':'Direction'))+' : '+P.what+' sélectionnée.';}catch(e){}
   if(rp.mode==='mir'){
     if(which===2){rp.plane2='Face';rp.planeN2=a;}
     else{rp.plane='Face';rp.planeN=a;}
-  }else{rp.axis='Face';rp.dir=a;}
+  }else if(which===2){rp.axis2='Face';rp.dir2=a;}else{rp.axis='Face';rp.dir=a;}
   repGenChildren(rp);markDirty();rebuild();renderTree();renderProps();refreshParts();
 }
 function applyRepPattern(){
@@ -1015,6 +1055,9 @@ function applyRepPattern(){
     copies:repMaxCopies(repMode.copies),q:1,dist:repMode.dist,angle:repMode.angle,
     axis:repMode.axis,plane:repMode.plane,dir:repMode.dir,planeN:repMode.planeN,
     plane2:repMode.plane2||undefined,planeN2:repMode.planeN2||undefined,
+    lin2:repMode.type==='lin'&&repMode.lin2?true:undefined,axis2:repMode.type==='lin'&&repMode.lin2?repMode.axis2:undefined,
+    dir2:repMode.type==='lin'&&repMode.lin2?repMode.dir2:undefined,copies2:repMode.type==='lin'&&repMode.lin2?repMaxCopies(repMode.copies2):undefined,
+    dist2:repMode.type==='lin'&&repMode.lin2?(+repMode.dist2||0):undefined,
     base:base.map(f=>f.id),children:[],visible:true};
   addFeature(rp);
   const nb=repGenChildren(rp);
@@ -1024,16 +1067,17 @@ function applyRepPattern(){
   faceEl.textContent='Répétition : '+nb+' fonction(s) copiée(s) — « '+rp.name+' » — les sources se cochent dans le panneau, à la création comme à l\'édition.';
 }
 function repUseSelectedFace(){
-  if(!repMode||!selFaces||!selFaces.length)return;
-  const s=selFaces[0],n=faceNormalWorld(s.mesh,s.faceIndex);if(!n)return;
-  const a=[n.x,n.y,n.z];
+  if(!repMode)return;
+  const P=repPickedDir(repMode.type==='mir');if(!P)return;
+  const a=P.a;
   if(repMode.type==='mir'){repMode.plane='Face';repMode.planeN=a;}else{repMode.axis='Face';repMode.dir=a;}
   renderRepPanel();
 }
 function repUseSelectedFace2(){
-  if(!repMode||repMode.type!=='mir'||!selFaces||!selFaces.length)return;
-  const s=selFaces[0],n=faceNormalWorld(s.mesh,s.faceIndex);if(!n)return;
-  repMode.plane2='Face';repMode.planeN2=[n.x,n.y,n.z];
+  if(!repMode||(repMode.type!=='mir'&&repMode.type!=='lin'))return;
+  const P=repPickedDir(repMode.type==='mir');if(!P)return;
+  if(repMode.type==='lin'){repMode.axis2='Face';repMode.dir2=P.a;}
+  else{repMode.plane2='Face';repMode.planeN2=P.a;}
   renderRepPanel();
 }
 function renderRepPanel(){
@@ -1045,9 +1089,12 @@ function renderRepPanel(){
   const cnt=document.createElement('input');cnt.type='number';cnt.min='2';cnt.value=(+repMode.copies||1)+1;cnt.title='Quantité, original compris (6 = l’original + 5 copies)';cnt.onchange=()=>{repMode.copies=repMaxCopies((+cnt.value||2)-1);cnt.value=repMode.copies+1;};
   if(repMode.type==='mir'){cnt.disabled=true;cnt.value=2;}
   row.appendChild(cnt);p.appendChild(row);
-  const ax=document.createElement('select');['X','Y','Z','Face'].forEach(v=>{const op=document.createElement('option');op.value=v;op.textContent=(repMode.type==='mir'?(v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v):v);ax.appendChild(op);});
+  const ax=document.createElement('select');['X','Y','Z','Face'].forEach(v=>{const op=document.createElement('option');op.value=v;op.textContent=(repMode.type==='mir'?(v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v):(v==='Face'?'Face / arête':v));ax.appendChild(op);});
   ax.value=repMode.type==='mir'?(repMode.plane==='XY'?'Z':repMode.plane==='XZ'?'Y':repMode.plane==='Face'?'Face':'X'):(repMode.axis||'X');
   ax.onchange=()=>{if(repMode.type==='mir'){repMode.plane=ax.value==='X'?'YZ':ax.value==='Y'?'XZ':ax.value==='Z'?'XY':'Face';delete repMode.planeN;}else{repMode.axis=ax.value;delete repMode.dir;}renderRepPanel();};p.appendChild(ax);
+  const bf=document.createElement('button');bf.textContent=repMode.type==='mir'?'🎯 Face sélectionnée → plan':'🎯 Face / arête sélectionnée → direction';
+  bf.title=repMode.type==='mir'?'Plan de symétrie : normale de la face sélectionnée':'Direction de l’arête sélectionnée (axe d’un cercle ou d’un arc), sinon normale de la face sélectionnée';
+  bf.onclick=repUseSelectedFace;p.appendChild(bf);
   if(repMode.type==='mir'){
     // Symétrie DOUBLE : un 2ᵉ plan dont la passe englobe la base ET la 1ʳᵉ symétrie.
     // Absent par défaut (compatibilité : une symétrie existante reste simple).
@@ -1072,9 +1119,26 @@ function renderRepPanel(){
       bf2.onclick=()=>{repUseSelectedFace2();};p.appendChild(bf2);
     }
   }
-  if(repMode.type==='lin'){const l=document.createElement('label');l.textContent=' Distance (mm)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.dist;inp.onchange=()=>{repMode.dist=parseFloat(String(inp.value).replace(',','.'))||0;};l.appendChild(inp);p.appendChild(l);}
+  if(repMode.type==='lin'){const l=document.createElement('label');l.textContent=' Distance (mm)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.dist;inp.onchange=()=>{repMode.dist=parseFloat(String(inp.value).replace(',','.'))||0;};l.appendChild(inp);p.appendChild(l);
+    // 2ᵉ DIRECTION (grille) : axe, quantité (original compris), pas
+    const r2=document.createElement('div');r2.className='row';
+    const t2=document.createElement('input');t2.type='checkbox';t2.checked=!!repMode.lin2;t2.className='rep2Chk';
+    t2.title='Ajouter une 2ᵉ direction : la ligne de la 1ʳᵉ direction est répétée le long de la 2ᵉ (grille)';
+    const l2=document.createElement('span');l2.textContent=' 2ᵉ direction (grille)';r2.appendChild(t2);r2.appendChild(l2);p.appendChild(r2);
+    t2.onchange=()=>{repMode.lin2=t2.checked;
+      if(t2.checked){if(!repMode.axis2)repMode.axis2=(repMode.axis||'X')==='X'?'Y':'X';if(!repMode.copies2)repMode.copies2=1;if(repMode.dist2==null)repMode.dist2=repMode.dist||10;}
+      renderRepPanel();};
+    if(repMode.lin2){
+      const ax2=document.createElement('select');['X','Y','Z','Face'].forEach(v=>{const op=document.createElement('option');op.value=v;op.textContent=v==='Face'?'Face / arête':v;ax2.appendChild(op);});
+      ax2.value=repMode.axis2||'Y';ax2.title='Axe de la 2ᵉ direction';ax2.onchange=()=>{repMode.axis2=ax2.value;delete repMode.dir2;renderRepPanel();};p.appendChild(ax2);
+      const c2=document.createElement('input');c2.type='number';c2.min='2';c2.value=(+repMode.copies2||1)+1;c2.title='Quantité dans la 2ᵉ direction, original compris';
+      c2.onchange=()=>{repMode.copies2=repMaxCopies((+c2.value||2)-1);c2.value=repMode.copies2+1;};p.appendChild(c2);
+      const ld=document.createElement('label');ld.textContent=' Distance 2 (mm)';const i2=document.createElement('input');i2.type='text';i2.inputMode='decimal';i2.value=repMode.dist2;
+      i2.onchange=()=>{repMode.dist2=parseFloat(String(i2.value).replace(',','.'))||0;};ld.appendChild(i2);p.appendChild(ld);
+      const bf2=document.createElement('button');bf2.textContent='🎯 Face / arête → 2ᵉ direction';bf2.title='Prend la direction de l’arête sélectionnée (axe d’un cercle) ou la normale de la face sélectionnée';bf2.onclick=()=>repUseSelectedFace2();p.appendChild(bf2);
+    }
+  }
   if(repMode.type==='circ'){const l=document.createElement('label');l.textContent=' Angle total (°)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.angle;inp.onchange=()=>{repMode.angle=parseFloat(String(inp.value).replace(',','.'))||360;};l.appendChild(inp);p.appendChild(l);}
-  const bf=document.createElement('button');bf.textContent='Utiliser la face sélectionnée';bf.onclick=repUseSelectedFace;p.appendChild(bf);
   // ── FONCTIONS RÉPÉTABLES : la MÊME liste à cocher qu'à l'édition (voir
   // repSourceList). Aucun re-rendu ici : la case garde son état, seul l'arbre se
   // rafraîchit (le compteur se met à jour sur place, dans la liste).
@@ -1259,6 +1323,9 @@ function renderProps(){
         repGenChildren(f);markDirty();rebuild();renderTree();refreshParts();
       },function(){majEntete();}));
       const applyCfg=()=>{repGenChildren(f);markDirty();rebuild();renderTree();renderProps();refreshParts();};
+      // 🎯 / ⇄ sur la LIGNE de l'axe qu'ils règlent (et non en bas du panneau)
+      const icoBtns=(row,list)=>{list.forEach(([ic,tip,fn])=>{const b=document.createElement('button');b.className='mini repDirBtn';b.textContent=ic;b.title=tip;b.style.cssText='padding:1px 6px;margin-left:4px;flex:none';b.onclick=fn;row.appendChild(b);});return row;};
+      const pickTip='Prendre la direction de la sélection dans la vue : arête droite (sa direction), cercle ou arc (son axe), sinon face (sa normale)';
       const typ=pSel([['lin','Linéaire'],['circ','Circulaire'],['mir','Symétrie']],f.mode||'lin',
         v=>{f.mode=v;f.name=repTypeName(f.mode,f);applyCfg();});
       pRow('Type',typ);
@@ -1266,10 +1333,12 @@ function renderProps(){
       const cnt=document.createElement('input');cnt.type='number';cnt.min='2';cnt.value=(+f.copies||1)+1;cnt.title='Quantité, original compris (6 = l’original + 5 copies)';
       cnt.onchange=()=>{f.copies=repMaxCopies((+cnt.value||2)-1);applyCfg();};
       if(f.mode!=='mir')pRow('Quantité',cnt);
-      const axOpts=['X','Y','Z','Face'].map(v=>[v,f.mode==='mir'?(v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v):v]);
+      const axOpts=['X','Y','Z','Face'].map(v=>[v,f.mode==='mir'?(v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v):(v==='Face'?'Face / arête':v)]);
       const axCur=f.mode==='mir'?(f.plane==='XY'?'Z':f.plane==='XZ'?'Y':f.plane==='Face'?'Face':'X'):(f.axis||'X');
-      pRow(f.mode==='mir'?'Plan':'Axe',pSel(axOpts,axCur,
-        v=>{if(f.mode==='mir'){f.plane=v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':'Face';delete f.planeN;}else{f.axis=v;delete f.dir;}applyCfg();}));
+      icoBtns(pRow(f.mode==='mir'?'Plan':'Axe',pSel(axOpts,axCur,
+        v=>{if(f.mode==='mir'){f.plane=v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':'Face';delete f.planeN;}else{f.axis=v;delete f.dir;}applyCfg();})),
+        f.mode==='mir'?[['🎯','Prendre le plan de la face sélectionnée dans la vue (sa normale)',()=>repUseFaceFor(f)]]
+          :[['🎯',pickTip,()=>repUseFaceFor(f)],['⇄','Inverser la direction',()=>repFlipDir(f,1)]]);
       if(f.mode==='mir'){
         pChk('2ᵉ plan (double)',!!f.plane2,v=>{
           docPushUndo('2ᵉ plan de « '+f.name+' »');
@@ -1281,22 +1350,40 @@ function renderProps(){
           const ax2=pSel(['X','Y','Z','Face'].map(v=>[v,v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v]),
             f.plane2==='XY'?'Z':f.plane2==='XZ'?'Y':f.plane2==='Face'?'Face':'X',
             v=>{docPushUndo('2ᵉ plan');f.plane2=v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':'Face';delete f.planeN2;applyCfg();});
-          pRow('2ᵉ plan',ax2);
-          pBtns([['🎯 Face → 2ᵉ plan',()=>repUseFaceFor(f,2)]]);
+          icoBtns(pRow('2ᵉ plan',ax2),[['🎯','Prendre le 2ᵉ plan de la face sélectionnée dans la vue (sa normale)',()=>repUseFaceFor(f,2)]]);
         }
         if(f._samePlane)pNote('⚠ Les deux plans sont identiques : la 2ᵉ passe est sans effet.');
       }
+      if(f.mode!=='mir')pNote('🎯 : sélectionnez une arête (ou une face) dans la vue, puis cliquez 🎯 — la direction devient « Face / arête ». ⇄ : sens opposé.');
       if(f.mode==='lin'){
         const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=f.dist;parFx(inp,f,'dist');
         inp.addEventListener('change',()=>{f.dist=parseFloat(String(inp.value).replace(',','.'))||0;applyCfg();});
         pRow('Distance (mm)',inp);
+        // 2ᵉ DIRECTION (grille)
+        pChk('2ᵉ direction (grille)',!!f.lin2,v=>{
+          docPushUndo('2ᵉ direction de « '+f.name+' »');
+          if(v){f.lin2=true;if(!f.axis2)f.axis2=(f.axis||'X')==='X'?'Y':'X';if(!f.copies2)f.copies2=1;if(f.dist2==null)f.dist2=f.dist||10;}
+          else{delete f.lin2;}
+          f.name=repTypeName(f.mode,f);applyCfg();
+        });
+        if(f.lin2){
+          icoBtns(pRow('2ᵉ axe',pSel(['X','Y','Z','Face'].map(v=>[v,v==='Face'?'Face / arête':v]),f.axis2||'Y',v=>{docPushUndo('2ᵉ direction');f.axis2=v;delete f.dir2;applyCfg();})),
+            [['🎯',pickTip,()=>repUseFaceFor(f,2)],['⇄','Inverser la 2ᵉ direction',()=>repFlipDir(f,2)]]);
+          const c2=document.createElement('input');c2.type='number';c2.min='2';c2.value=(+f.copies2||1)+1;c2.title='Quantité dans la 2ᵉ direction, original compris';
+          c2.onchange=()=>{docPushUndo('2ᵉ direction');f.copies2=repMaxCopies((+c2.value||2)-1);applyCfg();};
+          pRow('Quantité 2',c2);
+          const i2=document.createElement('input');i2.type='text';i2.inputMode='decimal';i2.value=f.dist2;parFx(i2,f,'dist2');
+          i2.addEventListener('change',()=>{docPushUndo('2ᵉ direction');f.dist2=parseFloat(String(i2.value).replace(',','.'))||0;applyCfg();});
+          pRow('Distance 2 (mm)',i2);
+          const tot=(repMaxCopies(f.copies)+1)*(repMaxCopies(f.copies2)+1);
+          pNote('Grille '+(repMaxCopies(f.copies)+1)+' × '+(repMaxCopies(f.copies2)+1)+' = '+tot+' exemplaires, original compris'+(tot-1>REPEAT_MAX?' — limité à '+REPEAT_MAX+' copies':'')+'.');
+        }
       }
       if(f.mode==='circ'){
         const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=f.angle;parFx(inp,f,'angle');
         inp.addEventListener('change',()=>{f.angle=parseFloat(String(inp.value).replace(',','.'))||360;applyCfg();});
         pRow('Angle total (°)',inp);
       }
-      pBtns([['🎯 Face sélectionnée',()=>repUseFaceFor(f)]]);
       visDel(f);
       return;
     }
@@ -1364,75 +1451,8 @@ function renderProps(){
     }
     /* — extrusion — */
     if(f.type==='extrude'){
-      pRow('Sens',pSel([['0','↗ Un côté'],['1','↕ Symétrique']],f.mid?'1':'0',
-        v=>{f.mid=(v==='1');f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();}));
-      const selU=pSel([['dist','📏 Distance'],['upto','🎯 Jusqu\'à la face'],['through','⤴ A travers tout']],
-        f.upto?'upto':(f.through?'through':'dist'),v=>{
-        if(v==='upto'){
-          if(!f.upto){
-            const me=doc.features.indexOf(f);
-            const prevs=doc.features.slice(0,me).filter(x=>x.type==='extrude'&&(x.op||'add')==='add');
-            if(!prevs.length){faceEl.textContent='Jusqu\'à la face : aucune extrusion additive ANTÉRIEURE.';selU.value='dist';return;}
-            f.upto={ex:prevs[prevs.length-1].id,side:1};
-          }
-          extPickFace={f};try{renderer.domElement.style.cursor='crosshair';}catch(e){}
-          faceEl.textContent='Cliquez une face du corps cible (Échap annule).';
-        }else if(v==='through'){
-          f.upto=null;f.through=true;f.distance=null;
-          f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();
-        }else{
-          f.upto=null;f.through=false;
-          if(!isFinite(f.distance))f.distance=10;
-          f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();
-        }
-      });
-      pRow('Étendue',selU);
-      if(f.upto){
-        const faceInfo=f.upto.faceId;
-        const faceName=faceInfo&&faceInfo.bid?`face #${faceInfo.fi}`:'(non définie)';
-        pRow('Face cible',pNote(faceName));
-        pBtns([['🎯 Changer la face',()=>{extPickFace={f};try{renderer.domElement.style.cursor='crosshair';}catch(e){}faceEl.textContent='Cliquez une face (Échap annule).';}]]);
-      }else if(f.through){
-        pInfo(`A travers tout — ${(f.op==='cut')?'Poche':'Plot'}`);
-      }else{
-        const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=Math.abs(f.distance);parFx(inp,f,'distance');
-        const cd=()=>{
-          if(f.upto)return;
-          const v=parseFloat(String(inp.value).replace(',','.'));
-          if(isFinite(v)&&v!==0){extDistSet(f,Math.abs(v)*((f.op||'add')==='cut'?-1:1));repSyncForFeature(f);markDirty();rebuild();renderProps();}
-        };
-        inp.addEventListener('change',cd);inp.addEventListener('blur',cd);
-        inp.addEventListener('keydown',e=>{if(e.key==='Enter'){cd();inp.blur();}e.stopPropagation();});
-        pRow(f.mid?'Course totale (mm)':'Distance (mm)',inp);
-      }
-      pRow('Opération',pSel([['add','➕ Plot (addition)'],['cut','➖ Poche (soustraction)'],['new','◧ Nouveau corps']],
-        f.newBody?'new':(f.op||'add'),v=>{
-        if(v==='new'){if(!f.newBody){f._bodyPrev=f.body;f.body=extNewBody();f.newBody=true;}f.op='add';}
-        else{if(f.newBody){f.body=f._bodyPrev||(doc.bodies[0]&&doc.bodies[0].id);delete f._bodyPrev;delete f.newBody;}f.op=v;}
-        if(!f.upto&&!f.through)f.distance=Math.abs(f.distance)*(f.op==='cut'?-1:1);
-        f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();
-      }));
-      {
-        let cote='±';
-        try{const sp=extrudeSpan(f);if(!(f.mid))cote=(sp.hi>0&&sp.lo>=-1e-9)?'+n':((sp.lo<0&&sp.hi<=1e-9)?'−n':'±');}catch(e){}
-        pBtns([['⇄ Inverser le sens',()=>{f.flip=!f.flip;f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();}]]);
-        pNote('Côté actuel : '+cote+(f.mid?' (symétrique)':'')+(f.flip?' (inversé)':''));
-      }
-      {
-        const inpD=document.createElement('input');inpD.type='text';inpD.inputMode='decimal';
-        inpD.value=String(+f.draft||0).replace('.',',');inpD.title='Angle signé / plan d\'esquisse. 0 = parois droites.';parFx(inpD,f,'draft');
-        const cdD=()=>{
-          const v=parseFloat(String(inpD.value).replace(',','.').replace(/\s/g,''));
-          if(!isFinite(v)){inpD.value=String(+f.draft||0).replace('.',',');return;}
-          if(v===(+f.draft||0))return;
-          f.draft=Math.abs(v)<1e-9?0:+v.toFixed(3);
-          f.name=extName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();
-        };
-        inpD.addEventListener('change',cdD);inpD.addEventListener('blur',cdD);
-        inpD.addEventListener('keydown',e=>{if(e.key==='Enter'){cdD();inpD.blur();}e.stopPropagation();});
-        pRow('Dépouille (°)',inpD);
-      }
-      pBtns([['🔧 Changer d\'esquisse',()=>askExtrude(null,f)]]);
+      // V0.7.6 : fenêtre de l'extrusion dynamique — boutons à icônes, flèche dans la vue (70-extrusion-dynamique)
+      extDynPanel(p,f);
     }
     visDel(f);
     return;

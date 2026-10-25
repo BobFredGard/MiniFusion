@@ -147,6 +147,8 @@ const SUITES = [
   "test_composants_plan",
   "test_composants_accroches",
   "test_composants_apparence",
+  "test_extrusion_dynamique",
+  "test_repeat_lin2",
   "test_oracle",
   "test_construction_esquisse"
 ];

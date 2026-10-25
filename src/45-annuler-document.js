@@ -122,6 +122,12 @@ function docRedo(){
 
 function docUndoUI(){
   const u=$('btnUndo'),r=$('btnRedo');
+  // V0.7.6 : pendant une esquisse, les flèches suivent l'annulation des TRACÉS (skUndoStack)
+  if(typeof skEdit!=='undefined'&&skEdit&&typeof skUndoStack!=='undefined'){
+    if(u){const n=skUndoStack.length;u.textContent=n?('↩ Annuler ('+n+')'):'↩ Annuler';u.disabled=!n;u.title=n?'Annuler le dernier tracé (Ctrl+Z)':'Rien à annuler';}
+    if(r){const n=skRedoStack.length;r.textContent=n?('↪ Rétablir ('+n+')'):'↪ Rétablir';r.disabled=!n;r.title=n?'Rétablir le tracé (Ctrl+Y)':'Rien à rétablir';}
+    return;
+  }
   // mode Placer : l'annulation de l'assemblage ; mode pièce : celle du document, sauf si la
   // dernière opération est une opération d'assemblage qui l'a modifié (46 : asmUndoFirst)
   const US=asmMode==='asm'||asmUndoFirst(false)?asmUndoStack:docUndoStack,RS=asmMode==='asm'||asmUndoFirst(true)?asmRedoStack:docRedoStack;
@@ -153,12 +159,14 @@ function docUndoUI(){
     u.id='btnUndo';
     u.textContent='↩ Annuler';
     u.title='Annuler la dernière modification du modèle (Ctrl+Z)';
-    u.onclick=()=>docUndo();
+    // V0.7.6 : pendant une esquisse, la flèche annule le dernier tracé (comme Ctrl+Z) — le bandeau
+    // Esquisse n'a plus ses propres boutons Annuler / Rétablir
+    u.onclick=()=>{if(typeof skEdit!=='undefined'&&skEdit&&typeof skUndoTrans==='function')return skUndoTrans();docUndo();};
     const r=document.createElement('button');
     r.id='btnRedo';
     r.textContent='↪ Rétablir';
     r.title='Rétablir la modification annulée (Ctrl+Y)';
-    r.onclick=()=>docRedo();
+    r.onclick=()=>{if(typeof skEdit!=='undefined'&&skEdit&&typeof skRedoTrans==='function')return skRedoTrans();docRedo();};
     row.appendChild(u);row.appendChild(r);
     hote.parentNode.parentNode.insertBefore(row,hote.parentNode.nextSibling);
     docUndoUI();

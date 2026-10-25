@@ -704,7 +704,8 @@ function closeSketch(save){
   if(skEdit)tlEditUnlock();
   if(save&&skEdit){try{parApplyAll();}catch(e){}solveSketch(skEdit);cleanupSk(skEdit);repSyncForSketch(skEdit.id);markDirty();rebuild();projRefreshRerun(0);sel={kind:'sketch',id:skEdit.id};renderTree();renderProps();}
   else if(skEdit){markDirty();try{rebuild();}catch(e){}renderTree();renderProps();}
-  skEdit=null;skSel=null;skSelX=[];skChain=null;skArcC=null;skArcPa=null;skDraft=null;skDown=null;skDrag=null;skDimDrag=null;skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
+  skEdit=null;try{docUndoUI();}catch(e){} // V0.7.6 : les flèches du haut reviennent au document
+  skSel=null;skSelX=[];skChain=null;skArcC=null;skArcPa=null;skDraft=null;skDown=null;skDrag=null;skDimDrag=null;skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
   // Arborescence re-dépliée à la sortie, sauf si l'état antérieur était
   // rabattu (choix manuel de l'utilisateur conservé).
   try{if(skTreeFoldSave===false)treeFoldSet(false);skTreeFoldSave=null;}catch(e){}
@@ -3537,7 +3538,7 @@ function skPushUndo(){if(!skEdit)return;skUndoStack.push(skSnap());if(skUndoStac
 function skRestore(s){skEdit.points=s.points;skEdit.entities=s.entities;skEdit.constraints=s.constraints;skEdit.dims=s.dims;solveSketch(skEdit);cleanupSk(skEdit);skRefreshHealth();drawSketch2D();renderSkPanel();skUndoBtn();}
 function skUndoTrans(){if(!skEdit||!skUndoStack.length){skStatus('Rien à annuler.');return;}skRedoStack.push(skSnap());skRestore(skUndoStack.pop());skStatus('Annulé ↩.');}
 function skRedoTrans(){if(!skEdit||!skRedoStack.length){skStatus('Rien à rétablir.');return;}skUndoStack.push(skSnap());skRestore(skRedoStack.pop());skStatus('Rétabli ↪.');}
-function skUndoBtn(){const u=$('skUndo'),r=$('skRedo');if(u)u.disabled=!skUndoStack.length;if(r)r.disabled=!skRedoStack.length;}
+function skUndoBtn(){const u=$('skUndo'),r=$('skRedo');if(u)u.disabled=!skUndoStack.length;if(r)r.disabled=!skRedoStack.length;try{docUndoUI();}catch(e){}} // V0.7.6 : flèches du haut
 /* ----- santé d'esquisse (docteur) : bouts ouverts, doublons, dégénérés, croisements ----- */
 function skRefreshHealth(){if(skEdit){skEdit._health=skHealth(skEdit);skEdit._audit=skAudit(skEdit);}}
 /* ----- audit du solveur : résidu mesuré + libertés comptées + pires violations ----- */

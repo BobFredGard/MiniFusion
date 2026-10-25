@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**324 versions**, de `2026-09-28b` à `V0.7.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**325 versions**, de `2026-09-28b` à `V0.7.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4728,3 +4728,19 @@ Le sol miroir (`refreshMirror`) se pose sous le point le plus bas de ce qui est 
 - **Nom de la racine** : un composant porte le nom de son document — la racine restait « Sans titre » dans un fichier « Test Assemblage » (nom changé à l’ouverture, à « Enregistrer sous » ou dans « Nom du document » sans passer par « Renommer ») ; les occurrences suivent.
 - **Mode Modéliser = mêmes attributs visuels que le mode Placer** : les composants affichés autour de la pièce (sous-composants et le reste de l'assemblage) gardent leurs arêtes, l'intensité et la transparence de leurs corps et l'apparence réglée sur leur occurrence (même rendu verre) — au lieu d'être figés à 60 % (descendants) ou en fantôme à 18 % (le reste), sans arêtes. Ils restent non sélectionnables. Le bouton « Arêtes » les redessine aussi. La section du panneau devient « Apparence (assemblage) ».
 - **Tests** : deux parcours Playwright (goupille 25 mm sous le socle en mode Modéliser ; brut de l'Axe descendu à −40 en simulation : le brut reste au-dessus du miroir).
+
+## V0.7.6 - Extrusion dynamique
+Créer et modifier une extrusion comme dans Fusion 360 ou SolidCraft (nouveau `src/70-extrusion-dynamique.js`).
+- **Aperçu immédiat** : « Extrusion » crée tout de suite une VRAIE fonction de 20 mm, rejouée par le noyau exact — l'aperçu est exactement le résultat ; l'esquisse est masquée comme après une extrusion.
+- **Flèche à tirer** au centre du profil, le long de la normale de l'esquisse, de taille constante à l'écran : pas de 1 mm (Maj : libre), tirer de l'autre côté du plan inverse le sens ; une seule étape d'annulation par glisser. **Champ « Distance »** flottant à côté de la pointe : on tape la valeur, Entrée.
+- **Fenêtre à icônes** (panneau) : profil (« Changer »), opération (➕ Plot · ➖ Poche · ◧ Nouveau corps), direction (↗ Un côté · ↕ Symétrique · ⇄ Inverser), étendue (📏 Distance · 🎯 Jusqu'à la face · ⤴ À travers tout), distance, « ▸ Options » repliables (dépouille), **Annuler / OK**.
+- **La même fenêtre pour modifier** : elle s'ouvre dès qu'une extrusion est sélectionnée, avec sa flèche. **OK** valide (et désélectionne) ; **Annuler** (ou Échap) remet le document EXACTEMENT comme à l'ouverture — création : la fonction disparaît ; modification : valeurs d'avant — et retire les étapes d'annulation prises entre-temps. Chaque réglage reste une étape d'annulation.
+- Le formulaire `extNew` / `extNewOk` reste pour les scripts et les tests.
+- **Transparence : une pièce transparente DANS une pièce opaque ne se voit plus à travers elle** (édition d’un composant, ou deux corps d’une pièce) : la passe « intérieur » du rendu verre (profondeur « plus loin ») passait aussi derrière l’autre pièce. Sa passe de profondeur marque désormais (stencil) les pixels où la pièce est devant, et l’intérieur ne se dessine que là ; à travers une pièce elle-même transparente, l’intérieur reste visible.
+- **Répétition linéaire à deux directions (grille)** : case « 2ᵉ direction (grille) » à la création et dans le panneau — 2ᵉ axe (X, Y, Z ou « Face / arête »), quantité (original compris), distance ; la ligne de la 1ʳᵉ direction est répétée le long de la 2ᵉ, une instance par case (200 au plus), nom « Linéaire 2 directions ». Les instances gardent leurs identifiants d’un rejeu à l’autre, comme avant.
+- **Directions depuis une arête** : le bouton 🎯, sur la ligne de chaque axe (1ʳᵉ et 2ᵉ direction), prend la direction d’une ARÊTE droite sélectionnée, l’axe d’un cercle ou d’un arc, sinon la normale de la face (la symétrie reste sur une face) ; ⇄, à côté, retourne cette direction (le sens d’une arête est arbitraire).
+- **Tests** : `test_repeat_lin2` (OCCT réel : plaque percée, grille 3 × 2 puis 3 × 3, volumes exacts calculés à la main, 2ᵉ direction depuis une arête et depuis l’axe d’un cercle, ⇄ Inverser, relecture, retour à une seule direction).
+- **Timeline plus lisible** : chaque étape montre l’icône SVG de la commande du ruban qui l’a créée (esquisse, extrusion, révolution, perçage, congé, chanfrein, répétition, combiner, face, dépouille, coque, import ; plan, axe, point, repère de construction) au lieu d’un caractère ; vert = ajout de matière, rouge avec « − » = enlèvement, couleurs propres aux esquisses, modifications et répétitions ; étapes un peu plus grandes (32 px).
+- **Barre d’état dans le bandeau supérieur** : état du noyau, message en cours (tronqué, texte complet en bulle), Régénérer et unité passent dans le bandeau, après la recherche ; plus de barre en bas : la vue 3D descend jusqu’en bas de la fenêtre. Écran étroit (< 1 100 px) : 2ᵉ ligne du bandeau. « enregistré » et la version, déjà dans le bandeau, ne sont plus doublés.
+- **Bandeau Esquisse** : Zoom + / Zoom − (molette) et Annuler / Rétablir retirés ; pendant une esquisse, les flèches Annuler / Rétablir du bandeau du haut annulent les TRACÉS (comme Ctrl+Z / Ctrl+Y), puis reviennent au document à la fermeture.
+- **Tests** : `test_extrusion_dynamique` (session : création, OK, Annuler en création et en modification, étapes d'annulation) et un parcours Playwright à la souris (aperçu 30 000 mm³, flèche tirée au pas de 1 mm, champ de cote 30 → 45 000 mm³, Annuler, OK).

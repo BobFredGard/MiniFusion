@@ -22,7 +22,7 @@ let tlbEl=null,tlbDrag=null,tlbNoClick=false;
       '#mfTl .tlbC button{padding:2px 5px;min-width:22px;font-size:.72rem;line-height:1.2;background:none;border:1px solid transparent;border-radius:6px;color:var(--text)}'+
       '#mfTl .tlbC button:hover{border-color:var(--border);color:var(--primary)}'+
       '#mfTl .tlbR{display:flex;align-items:center;gap:3px;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;padding:5px 4px 3px;scrollbar-width:thin}'+
-      '#mfTl .tlbS{flex:none;position:relative;display:flex;align-items:center;justify-content:center;min-width:28px;height:28px;padding:0 3px;box-sizing:border-box;'+
+      '#mfTl .tlbS{flex:none;position:relative;display:flex;align-items:center;justify-content:center;min-width:34px;height:32px;padding:0 4px;box-sizing:border-box;'+
         'border-radius:7px;border:1px solid var(--border);background:rgba(127,127,127,.1);cursor:pointer;font-size:.95rem;line-height:1;white-space:nowrap}'+
       '#mfTl .tlbS.sk{background:rgba(255,159,10,.13)}'+
       '#mfTl .tlbS.cg{background:rgba(255,214,10,.1);border-style:dashed}'+
@@ -131,7 +131,37 @@ function tlbMoveTo(id,g,S){
   featMoveApply(A,'déplacement de « '+f.name+' »');
   return true;
 }
+// V0.7.6 : les icônes du RUBAN (SVG, 97-interface-moderne) au lieu de caractères — la même image
+// que la commande qui a créé l'étape ; vert = ajout de matière, rouge + « − » = enlèvement
+const TLB_COL={add:'#30d158',cut:'#ff453a',sk:'#ff9f0a',mod:'#64d2ff',rep:'#bf5af2',cg:'#ffd60a'};
+function tlbSvgKey(s){
+  const f=s.o;
+  if(s.kind==='sketch')return ['sketch','sk'];
+  if(s.kind==='cg')return [{plane:'cgPlane',axis:'cgAxis',point:'cgPoint',frame:'cgFrame'}[f.kind]||'cgPlane','cg'];
+  const cut=(f.op||'add')==='cut';
+  switch(f.type){
+    case 'extrude':return ['extrude',cut?'cut':'add',cut];
+    case 'revolve':return ['revolve',cut?'cut':'add',cut];
+    case 'hole':return ['hole','cut'];
+    case 'xfillet':{let k='';try{k=xKindOf(f);}catch(e){}return [/cham/i.test(k)?'chamfer':'fillet','mod'];}
+    case 'fillet':return ['fillet','mod'];
+    case 'repeat':return ['pattern','rep'];
+    case 'combine':return ['combine',f.mode==='cut'?'cut':'mod',f.mode==='cut'];
+    case 'xmove':case 'xdelface':return ['face','mod'];
+    case 'xdraft':return ['draft','mod'];
+    case 'xshell':return ['shell','cut'];
+    case 'import':return ['import','mod'];
+  }
+  return null;
+}
 function tlbIcon(s){
+  let k=null;try{k=tlbSvgKey(s);}catch(e){k=null;}
+  const svg=k&&typeof mfI==='function'?mfI(k[0],22):null;
+  if(svg){
+    const col=tlbIsSel(s)?'':'color:'+TLB_COL[k[1]]+';';
+    return '<span class="tlbI" style="'+col+'display:inline-flex;position:relative">'+svg+
+      (k[2]?'<b style="position:absolute;right:-4px;bottom:-5px;font-size:12px;line-height:1;font-weight:900">−</b>':'')+'</span>';
+  }
   if(s.kind==='feature')return featIconOf(s.o);
   if(s.kind==='sketch')return '✏️';
   return (CG_KINDS[s.o.kind]||{ic:'◇'}).ic;
