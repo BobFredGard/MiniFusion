@@ -374,6 +374,46 @@ test('points d’accroche : goupille posée par son axe sur le coin d’un socle
   expect(err).toEqual([]);
 });
 
+test('apparence en mode Placer : arêtes, intensité et transparence d’une occurrence',async({page})=>{
+  const err=await demarrer(page);
+  await page.evaluate(()=>{
+    const mkSk=(name,pts)=>{newSketch('XY');const sk=skEdit;sk.name=name;const P=pts.map(([x,y])=>addPoint(sk,x,y));
+      for(let i=0;i<P.length;i++)sk.entities.push({id:'L'+i,t:'line',p1:P[i],p2:P[(i+1)%P.length]});closeSketch(true);return sk;};
+    const a=mkSk('Socle',[[-20,-20],[20,-20],[20,20],[-20,20]]);addFeature({id:uid('ex'),type:'extrude',name:'Socle',sketchId:a.id,op:'add',distance:20});
+    newSketch('XY');const b=skEdit;b.name='Goupille';b.entities.push({id:'C0',t:'circle',pc:addPoint(b,30,0),r:5});closeSketch(true);
+    extNew={sketchId:b.id,op:'new',dist:30};extNewOk();
+    doc.bodies[0].name='Socle';doc.bodies[1].name='Goupille';markDirty();rebuild();
+  });
+  await page.waitForFunction(()=>builtEngine==='exact'&&rebuildDepth===0&&builtVersion===_docVersion&&doc.bodies.length===2,null,{timeout:60000});
+  await page.evaluate(()=>{asmCompsFromBodies(doc.bodies.map(e=>e.id));markDirty();rebuild();});
+  await page.evaluate(()=>{edgeMode='on';}); // bouton « Arêtes » allumé
+  await ruban(page,'Placer').click();
+  await page.waitForFunction(()=>asmMode==='asm'&&asmRoot().occ.length===2);
+  const etat=()=>page.evaluate(()=>{const o=asmRoot().occ.find(q=>/Goupille/.test(q.name)),r={mats:[],aretes:0,verre:false,voile:false};
+    asmSceneGet().getObjectByName('asmOcc').traverse(m=>{if(!m.parent||m.parent.userData.occ!==o.id)return;
+      if(m.userData.asmEdges){r.aretes++;r.voile=m.children.length===2;}
+      else if(m.isMesh){r.mats.push([m.material.color.getHex(),+m.material.opacity.toFixed(3)]);r.verre=r.verre||!!(m.userData.glassIn);}});return r;});
+  let e=await etat();
+  expect(e.aretes).toBe(1);   // arêtes de la goupille, comme en Modéliser
+  const couleur=e.mats[0][0]; // celle du corps : elle ne change pas
+  await page.locator('#tree .tnode',{hasText:'Goupille:1'}).click();
+  expect(await page.locator('#props .asmLookCol').count()).toBe(0); // pas de couleur par mode
+  await page.locator('#props .asmLookOp').evaluate(i=>{i.value='50';i.dispatchEvent(new Event('input'));i.dispatchEvent(new Event('change'));});
+  e=await etat();
+  expect(e.mats[0]).toEqual([couleur,0.5]);   // « Intensité » 50 % : comme un corps (setMatAlpha)
+  // « Transparence » 50 % : les passes de verre de la pièce, et le voile des arêtes arrière
+  await page.locator('#props .asmLookGl').evaluate(i=>{i.value='50';i.dispatchEvent(new Event('input'));i.dispatchEvent(new Event('change'));});
+  e=await etat();
+  expect(e.verre).toBe(true);expect(e.voile).toBe(true);
+  await page.locator('#props .asmLookEdges').selectOption('off');
+  e=await etat();
+  expect(e.aretes).toBe(0);
+  // le mode Modéliser n'en tient pas compte : pas de verre sur la goupille en contexte
+  const modeliser=await page.evaluate(()=>{asmExit();let v=false;const g=scene.getObjectByName('asmCtx');if(g)g.traverse(m=>{if(m.isMesh&&m.userData&&m.userData.glassIn)v=true;});return v;});
+  expect(modeliser).toBe(false);
+  expect(err).toEqual([]);
+});
+
 test('FAO : surfaçage sur l\'Axe → parcours → G-code',async({page})=>{
   const err=await demarrer(page);
   await ouvrirAxe(page);

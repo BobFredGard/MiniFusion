@@ -146,7 +146,11 @@ function asmGizmoUp(){
 try{document.addEventListener('pointerdown',asmGizmoDown,true);}catch(e){} // tests VM : document simplifié
 /* ── panneau de placement ── */
 function asmPlacementProps(p,o){
-  // Section « Placement » du panneau d'occurrence (appelée par asmRenderProps, 47)
+  // Sections « Placement » puis « Apparence (mode Placer) » du panneau d'occurrence (asmRenderProps, 47)
+  asmPlacementCore(p,o);
+  try{asmLookProps(p,o);}catch(e){}
+}
+function asmPlacementCore(p,o){
   const mk=(tag,cls,txt)=>{const d=document.createElement(tag);if(cls)d.className=cls;if(txt!=null)d.textContent=txt;return d;};
   const Row=(lab,ctl)=>{const r=mk('div','pnl-row');r.appendChild(mk('label',null,lab));if(ctl)r.appendChild(ctl);p.appendChild(r);return r;};
   const num=(v,fn,w)=>{const i=document.createElement('input');i.type='text';i.inputMode='decimal';i.style.width=(w||64)+'px';i.value=String(+(+v).toFixed(3)).replace('.',',');

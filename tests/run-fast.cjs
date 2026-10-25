@@ -31,6 +31,7 @@ const SUITES = [
   'test_construction_modele',
   'test_assemblage_modele',
   'test_composants_modele',
+  'test_composants_apparence',
   'test_composants_lies',
   'test_composants_references',
   'test_composants_liaisons'

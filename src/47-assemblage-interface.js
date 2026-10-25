@@ -51,11 +51,14 @@ function asmCaptureActive(){
       b.mesh.updateMatrixWorld(true);
       const g=b.mesh.geometry.clone();g.applyMatrix4(b.mesh.matrixWorld);
       const m=b.mesh.material||{};
-      items.push({geo:g,color:(m.color&&m.color.getHex)?m.color.getHex():0x9a9aa0,op:(m.transparent&&m.opacity<1)?m.opacity:1});
+      // intensité et transparence du CORPS (fiche doc.bodies), pas l'opacité calculée de sa matière
+      const bid=bodyIdOfRuntime(b);
+      items.push({geo:g,color:(m.color&&m.color.getHex)?m.color.getHex():0x9a9aa0,op:bid?bodyOpOf(bid):1,gl:bid?bodyGlassOf(bid):1});
     }catch(e){}
   });
   if(c._snap)asmSnapFree(c._snap);
-  c._snap={items,exact:builtEngine==='exact',hash:(()=>{try{return docHash();}catch(e){return '';}})()};
+  const edges=asmEdgeCapture(); // arêtes pour le mode Placer (48-assemblage-apparence)
+  c._snap={items,edges,exact:builtEngine==='exact',hash:(()=>{try{return docHash();}catch(e){return '';}})()};
   delete c._stale;
   // le composant vient d'être rejoué : ses repères ont pu bouger → les alignements suivent
   try{if(asmResolve()){dirty=true;autosave();}}catch(e){}
@@ -63,7 +66,7 @@ function asmCaptureActive(){
   asmSnapSyncSoon(); // … ou des faces visées par des points d'accroche (48)
   if(!asmBuilding){try{asmCtxDraw();}catch(e){}if(asmMode==='asm'){try{asmDraw();}catch(e){}}}
 }
-function asmSnapFree(s){(s&&s.items||[]).forEach(it=>{try{it.geo.dispose();}catch(e){}});}
+function asmSnapFree(s){(s&&s.items||[]).forEach(it=>{try{it.geo.dispose();}catch(e){}});try{if(s&&s.edges)s.edges.dispose();}catch(e){}}
 function asmBuildSnapshots(){
   // Rejoue chaque composant sans instantané (ou en repli maillage alors que le noyau exact est
   // prêt), puis revient au composant actif. Synchrone : rebuild() construit et capture
@@ -100,16 +103,22 @@ function asmFill(G,placer){
     g.userData.path=inst.path; // chemin absolu : points d'accroche (48-assemblage-accroches)
     if(kind==='pick'){g.userData.occ=key;g.name='occ_'+key;}
     const on=kind==='pick'&&asmSelId===key;
+    // mode Placer : apparence de l'occurrence (couleur, transparence, arêtes — 48-assemblage-apparence)
+    const look=placer?asmLookOf(inst.path):{};
     c._snap.items.forEach(it=>{
       let mat;
       if(kind==='ghost')mat=new THREE.MeshStandardMaterial({color:it.color,transparent:true,opacity:0.18,depthWrite:false,metalness:.2,roughness:.6});
+      else if(placer)mat=asmLookMat(it,look,on); // couleur, intensité, transparence (48-assemblage-apparence)
       else mat=new THREE.MeshStandardMaterial({color:it.color,metalness:.35,roughness:.4,
-        transparent:it.op<1||(!placer&&!self),opacity:(!placer&&!self)?Math.min(it.op,0.6):it.op,
+        transparent:it.op<1||!self,opacity:!self?Math.min(it.op,0.6):it.op,
         emissive:on?ASM_SEL_COL:0x000000,emissiveIntensity:on?0.35:0});
       const m=new THREE.Mesh(it.geo,mat);
       if(kind==='pick')m.userData.occ=key;else{m.raycast=()=>{};if(kind==='ghost')m.renderOrder=-1;}
       g.add(m);
+      if(placer&&kind!=='ghost'){try{glassDepthMask({mesh:m});}catch(e){}} // passes de verre, comme une pièce
     });
+    if(placer&&kind!=='ghost'&&c._snap.edges&&asmEdgesShown(look))
+      g.add(asmEdgeLines(c._snap.edges,c._snap.items.some(it=>(look.gl!=null?look.gl:(it.gl||1))<0.999)));
     G.add(g);
   });
   G.updateMatrixWorld(true);

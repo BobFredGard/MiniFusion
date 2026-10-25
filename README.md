@@ -2,7 +2,7 @@
 
 **CAO paramétrique, assemblage, FAO et mise en plan dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2, G-code et planches cotées ISO. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.7.2** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.7.3** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Sommaire
 
@@ -101,6 +101,7 @@ Commandes :
 - **Occurrence** : le même composant, une fois de plus ;
 - **Insérer** : copie un autre fichier `.miniFusion` comme composant du composant actif (sa racine avec sa géométrie, ses sous-composants imbriqués) ;
 - **placer** : manipulateur (flèches = déplacer, anneaux = tourner, pas de 1 mm et de 5°, Maj = libre), panneau (position X / Y / Z, rotations de ±90°) ;
+- **Apparence en mode Placer** : les arêtes s'affichent comme en Modéliser (bouton « Arêtes »). Chaque occurrence a ses propres réglages, ceux d'un corps — « Intensité », « Transparence » (même rendu verre : perçages et arêtes cachées visibles) — et ses arêtes ; la couleur reste celle des corps, la même partout (comme le bouton, toujours, jamais) ; valables pour tout ce qu'elle contient, sans effet sur le mode Modéliser, « Appliquer à toutes les occurrences » ;
 - **Aligner un repère** : un repère du composant (son origine, un repère de construction, le sien ou celui d'un sous-composant) posé sur un repère du composant actif (sa **géométrie de base** : origine, repères de construction) ou d'un autre de ses composants, à toute profondeur, avec retournement, rotation et décalage. **Points d'accroche** : au lieu d'un repère, on clique une face d'un composant et on choisit un point de sa géométrie — centre et points cardinaux d'une face plane (nord, sud, est, ouest, coins), début, milieu ou fin de l'axe d'un cylindre, centre d'un cercle ou d'un arc, milieu ou extrémités d'une arête ; Z suit la normale de la face ou l'axe. **Associatif** : si un composant change, son repère ou sa face bouge et les composants alignés suivent (face disparue : ⚠, position gardée) ;
 - **Fixer** (📌), **masquer**, **renommer**, **supprimer** (la dernière occurrence emporte son composant). Ctrl+Z / Ctrl+Y annulent les opérations de placement en mode Placer.
 
