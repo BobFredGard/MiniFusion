@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**336 versions**, de `2026-09-28b` à `V0.8.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**337 versions**, de `2026-09-28b` à `V0.8.8` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4842,3 +4842,7 @@ Dernière étape de la série V0.8 (« toutes tes idées ») : piloter MiniFusio
 - **Champ de distance** : distance signée tronquée sur une grille 3D (6,4 M d'échantillons, pas 0,37 mm sur Perçages) ; taille = max(d, −d_outil), d_outil tabulé dans le plan (ρ, h) du profil ; surface extraite par « surface nets » par blocs de 16³ (seuls les blocs touchés sont refaits), normales = gradient du champ. Surfaces lisses sans marches, arêtes adoucies à l'échelle du pas.
 - **Mesures sur Perçages** (8 984 points, 1 530 en 3+2), rattrapage complet : cartes 0,9 s ; tri-dexel 2,0 s (23 s avant la permutation des axes et la borne des couches) ; distance 2,3 s ; lecture : 7 / 15 / 13 ms par pas. Volume restant : tri-dexel 199 230 mm³, distance 199 203 mm³ (0,01 %).
 - **Tests** : `test_simulation_moteurs` (volumes calculés à la main : rainure fraise plate, rainure fraise boule, perçage 3+2 par la tranche, outil couché vers −Y, outil oblique 45° — les deux moteurs d'accord —, trois familles de rayons d'accord, contre-dépouille, surface du brut, profil d'outil, choix du moteur).
+
+## V0.8.8 - Carte graphique dédiée demandée
+« Tri-dexel utilise le GPU AMD et pas NVIDIA. » Les trois moteurs de simulation partagent le même contexte WebGL : tous tournaient sur la Radeon intégrée, MiniFusion ne demandant aucune préférence (`powerPreference: default`).
+- La vue 3D demande désormais la carte **la plus puissante** (`powerPreference: 'high-performance'`, `src/10-scene-3d.js`). Sous Windows, Chrome choisit pourtant d'après le réglage du système : Paramètres → Système → Écran → Graphiques → Google Chrome → **Hautes performances**, puis redémarrer Chrome ; `chrome://gpu` montre la carte utilisée.

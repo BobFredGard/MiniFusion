@@ -27,7 +27,7 @@ function buildScene(){
   camera=new THREE.PerspectiveCamera(50,1.5,0.1,5000);
   camera.up.set(0,0,1); // convention CAO : Z vers le haut, Y vers l'arrière, X à droite
   camera.position.set(90,-90,90);
-  renderer=new THREE.WebGLRenderer({canvas:$('viewport'),antialias:true});
+  renderer=new THREE.WebGLRenderer({canvas:$('viewport'),antialias:true,powerPreference:'high-performance'}); // V0.8.8 : carte graphique dédiée (NVIDIA) plutôt que l'intégrée sur un portable hybride
   renderer.localClippingEnabled=true;
   try{
     const dpr=(typeof window!=='undefined'&&window.devicePixelRatio)||1;
