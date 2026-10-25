@@ -221,7 +221,7 @@ function faoPlaneEff(job,op){
   return {clear:clear,retr:retr,mode:P.mode==='plan'?'plan':'min5',
     ownClear:!!O.clear,ownRetr:!!O.retr};
 }
-function faoZoneStrip(moves,ctx,secu){
+function faoZoneStrip(moves,ctx,secu,job){
   // 2026-10-10-002 : test de franchissement de la boîte brut (utilisé par le
   // garde-brut ci-dessous) : true si le segment a->b ENTRE dans la boîte sb
   // (au moins une extrémité dedans ET l'autre dehors, ou intersection non
@@ -269,7 +269,7 @@ function faoZoneStrip(moves,ctx,secu){
   // rapides (faoZoneStrip) — on ne duplique pas la logique.
   if(!ctx){
   try{
-    const sb=faoStock();
+    const sb=(job&&job.stock&&faoStockValid(job.stock))?job.stock:faoStock(); // brut du job : repère 3+2 compris
     if(sb&&isFinite(sb.x0)&&isFinite(sb.x1)&&isFinite(sb.y0)&&isFinite(sb.y1)){
       const inB=function(x,y){
         return x>=sb.x0-1e-9&&x<=sb.x1+1e-9&&y>=sb.y0-1e-9&&y<=sb.y1+1e-9;
@@ -361,7 +361,7 @@ function faoZoneServe(ch,op,job,secu){
   if(!ch||!Array.isArray(ch.mv))return ch?ch.mv:null;
   const ctx=faoZoneCtx(op,job);
   if(!ctx)return ch.mv;
-  const mv=faoZoneStrip(ch.mv,ctx,secu);
+  const mv=faoZoneStrip(ch.mv,ctx,secu,job);
   if(mv!==ch.mv)ch.mv=mv;
   return ch.mv;
 }
@@ -384,7 +384,7 @@ function faoZoneCuts(moves,op,job,secu){
     }
     return ctx.cross(a,b);
   };
-  const m0=faoZoneStrip(moves,ctx,secu);
+  const m0=faoZoneStrip(moves,ctx,secu,job);
   // --- 1) diagnostic : la coupe est-elle entièrement dedans ?
   let prev=null, bust=false;
   for(let i=0;i<m0.length&&!bust;i++){
@@ -420,7 +420,7 @@ function faoZoneCuts(moves,op,job,secu){
   else if(ctx.lim2)
     cut=faoClipMovesPoly(cut,ctx.lim2,ctx.D/2,secu,2,
       function(x,y){ return !faoLimInside(x,y,ctx.lim2,ctx.D/2); });
-  return faoZoneStrip(cut,ctx,secu);
+  return faoZoneStrip(cut,ctx,secu,job);
 }
 /* ----- affichage : la COUPE ne sort jamais de la zone (l'aperçu le garantit)
    même sur un tracé en cache. Les rapides, eux, sont dessinés tels quels —

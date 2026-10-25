@@ -356,10 +356,13 @@ function faoOpReachWarn(op,setup,t,g){
   // longueur de coupe, à la longueur dégagée et à la sortie sous mandrin.
   const mv=(typeof faoMovesStat==='function')?faoMovesStat(op,setup):null;
   if(!mv||!mv.length)return null;
+  // repère 3+2 : profondeur mesurée le long du Z de l'OPÉRATION, depuis le brut qu'elle voit
+  let fr=null;try{fr=faoOpFrame(setup,op);}catch(e){fr=null;}
+  const zOf=function(m){return fr?faoToF(fr,faoToW(fr.P,[+m.x,+m.y,+m.z]))[2]:+m.z;};
   let zmin=Infinity;
-  for(let i=0;i<mv.length;i++){const m=mv[i];if(m&&!m.r&&isFinite(+m.z)&&+m.z<zmin)zmin=+m.z;}
+  for(let i=0;i<mv.length;i++){const m=mv[i];if(m&&!m.r&&isFinite(+m.z)){const z=zOf(m);if(z<zmin)zmin=z;}}
   if(!isFinite(zmin))return null;
-  let top=null;try{const st=faoStock();top=(st&&isFinite(+st.z1))?+st.z1:null;}catch(e){}
+  let top=null;try{const st=fr?faoOpView(setup,op).stock:faoStock();top=(st&&isFinite(+st.z1))?+st.z1:null;}catch(e){}
   if(top===null||!isFinite(top))return null;
   const prof=faoR1(top-zmin);
   if(prof>g.lsm.v)return '⚠ Profondeur usinée '+prof+' mm > longueur sous mandrin '+g.lsm.v+' mm : COLLISION du mandrin — sortez l’outil ou changez d’outil.';

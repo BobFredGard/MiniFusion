@@ -487,9 +487,20 @@ function faoOpBC(job,op){
   const o=faoOrientFromNormal(fr.rel.Z[0],fr.rel.Z[1],fr.rel.Z[2]);
   return {b:o.b,c:o.c,down:o.down};
 }
+let faoOpJobMemo=new WeakMap();
 function faoOpJob(job,op,fr){
-  // posage « vu » dans le repère de l'opération : même posage, autre repère, brut ramené
+  // posage « vu » dans le repère de l'opération : même posage, autre repère, brut ramené.
+  // Mémorisé par opération (clé de cache, contrôles « à jour ? » : appelé souvent).
+  let sig=null;
+  try{sig=JSON.stringify([fr.X,fr.Y,fr.Z,fr.O,op.z,op.ztop,job.stock,job.marge,faoBodyGen,job.bodies||null]);
+    const m=faoOpJobMemo.get(op);if(m&&m.job===job&&m.sig===sig)return m.jo;}catch(e){sig=null;}
+  const jo=faoOpJob0(job,op,fr);
+  if(sig!==null)try{faoOpJobMemo.set(op,{job:job,sig:sig,jo:jo});}catch(e){}
+  return jo;
+}
+function faoOpJob0(job,op,fr){
   const jo=Object.create(job);
+  Object.defineProperty(jo,'__opJob',{value:op,enumerable:false}); // posage vu par CETTE opération
   jo.frame={z:fr.Z.slice(),x:fr.X.slice(),o:fr.O.slice()};
   jo.originZero=true; // coordonnées de l'opération : Z0 = son origine (= celle du posage)
   try{
@@ -515,6 +526,17 @@ function faoOpJob(job,op,fr){
     }
   }catch(e){}
   return jo;
+}
+function faoOpView(setup,op){
+  // posage VU par l'opération : repère propre (3+2) → brut et maillage dans SES coordonnées ;
+  // sinon le posage lui-même. Pour les valeurs automatiques des fiches (hauteurs, rectangles).
+  try{const fr=faoOpFrame(setup,op);return fr?faoOpJob(setup,op,fr):setup;}catch(e){return setup;}
+}
+function faoOpMatrix(setup,op){
+  // matrice THREE repère opération → repère posage (null = repère du posage) : dessins de saisie
+  try{const fr=faoOpFrame(setup,op);if(!fr||typeof THREE==='undefined')return null;
+    const Pw=fr.P,o=faoToF(Pw,fr.O),x=faoRotF(Pw,fr.X),y=faoRotF(Pw,fr.Y),z=faoRotF(Pw,fr.Z);
+    const m=new THREE.Matrix4();m.makeBasis(new THREE.Vector3(...x),new THREE.Vector3(...y),new THREE.Vector3(...z));m.setPosition(o[0],o[1],o[2]);return m;}catch(e){return null;}
 }
 function faoPtOpToPos(fr,p){return faoToF(fr.P,faoToW(fr,p));}
 function faoMovesOpToPos(mv,fr){
@@ -542,6 +564,43 @@ function faoMovesOpToPos(mv,fr){
   for(const k in mv)if(!/^\d+$/.test(k))out[k]=mv[k]; // diag, etc.
   out.opFrame=true;
   return out;
+}
+function faoSeqSafeOp(job,op,fr,mv,prev){
+  // Rapides d'une opération au repère propre (3+2), mouvements en repère posage :
+  //  - entre deux points : retrait / translation / plongée au plan de dégagement de
+  //    l'opération, le long de SON Z (plus de remontée selon le Z du posage) ;
+  //  - entrée : au plan de sécurité du posage au-dessus du point d'entrée, puis le long
+  //    du Z de l'opération depuis son plan de retrait ;
+  //  - sortie : le long du Z de l'opération jusqu'à son plan de retrait, puis au plan du posage.
+  const jo=faoOpJob(job,op,fr),safeO=faoClearAbs(op,jo);
+  const retrO=Math.max(safeO,faoRetractAbs(op,jo)); // entrée / sortie : jusqu'au plan de RETRAIT de l'opération
+  const hop=faoClearAbs(null,job);
+  const toO=function(p){const q=faoToF(fr,faoToW(fr.P,[+p.x,+p.y,+p.z]));return {r:p.r?1:0,x:q[0],y:q[1],z:q[2]};};
+  const toP=function(p){const w=faoPtOpToPos(fr,[p.x,p.y,p.z]);return {r:1,x:w[0],y:w[1],z:w[2]};};
+  const out=[];
+  const put=function(J){const l=out.length?out[out.length-1]:prev;
+    if(l&&Math.abs(l.x-J.x)<1e-9&&Math.abs(l.y-J.y)<1e-9&&Math.abs(l.z-J.z)<1e-9)return;out.push(J);};
+  let pO=null;
+  for(let i=0;i<mv.length;i++){
+    const m=mv[i];
+    if(!m||!isFinite(+m.x)){out.push(m);continue;}
+    const mO=toO(m);
+    if(!pO){
+      const e=toP({x:mO.x,y:mO.y,z:Math.max(mO.z,retrO)});
+      const zh=Math.max(hop,e.z,prev?+prev.z:-Infinity);
+      if(prev)put({r:1,x:prev.x,y:prev.y,z:zh});
+      put({r:1,x:e.x,y:e.y,z:zh});put(e);
+    }else{
+      const ins=faoSafeAhead(pO,mO,safeO);
+      if(ins)ins.forEach(function(J){put(toP(J));});
+    }
+    out.push(m);pO=mO;
+  }
+  if(pO){
+    const e=toP({x:pO.x,y:pO.y,z:Math.max(pO.z,retrO)});put(e);
+    put({r:1,x:e.x,y:e.y,z:Math.max(hop,e.z)});
+  }
+  return {out:out,prev:out.length?out[out.length-1]:prev};
 }
 function* faoOpMovesIt(op,job){
   const fr=faoOpFrame(job,op);
@@ -598,6 +657,11 @@ function faoOpTopZ(setup,op){
   try{const fr=faoOpFrame(setup,op);const st=fr?faoOpJob(setup,op,fr).stock:setup.stock;return (st&&isFinite(+st.z1))?+st.z1:null;}catch(e){return null;}
 }
 function faoOpFrameEdit(setup,op,fn,onFace){
+  faoOpFrameEdit0(setup,op,fn,onFace);
+  // perçage « trous du modèle » : les trous choisis se retrouvent dans le NOUVEAU repère
+  if(op&&op.type==='drill'){try{faoDrillResolve(op);}catch(e){}}
+}
+function faoOpFrameEdit0(setup,op,fn,onFace){
   // change le repère de l'opération en gardant ses hauteurs RELATIVES au dessus du brut ;
   // repère posé sur une face (onFace) : la face devient le dessus (Z0)
   if(onFace){ // onFace = point cliqué (repère posage) : sa cote le long du Z de l'opération = hauteur de travail
@@ -634,35 +698,68 @@ function faoInp(op,v,i){
   if(v===''||v===null||v===undefined||!isFinite(+v))return v;
   return Math.round((+v+faoOffOf(op)[i])*1e6)/1e6;
 }
-/* ---------- Simulation : outil INCLINÉ (opération 3+2) (2026-10-16-021) ----------
-   La matière simulée est une Z-map (une hauteur par colonne, vue du Z du posage). Un outil
-   incliné n'est plus un cylindre vertical : on balaie son ENVELOPPE INFÉRIEURE — le disque du
-   bout (incliné) et les génératrices du corps — par de petits segments verticaux décalés, chacun
-   taillé comme un fin cylindre vertical. La matière sous le disque incliné reste intacte. */
+/* ---------- Simulation : outil INCLINÉ (opération 3+2) (2026-10-16-021, revu V0.7.6) ----------
+   La matière simulée est une Z-map (une hauteur par colonne, vue du Z du posage) doublée de
+   voxels. Un outil incliné est un cylindre (bout plat, corps illimité le long de son axe) : pour
+   chaque colonne, la verticale coupe le volume balayé en intervalles de Z. Les voxels de ces
+   intervalles meurent ; la hauteur de la colonne ne descend QUE si la coupe débouche sur son
+   dessus (chanfrein, dressage incliné). Un trou sur la tranche reste donc dans la matière,
+   sans « cheminée » verticale jusqu'au-dessus du brut. */
+function faoTiltColIv(px,py,S,A,r,H,out){
+  // intervalle de Z où la verticale (px,py) traverse le cylindre {S + h·A + ρ, 0≤h≤H, |ρ|≤r}
+  const wx=px-S[0],wy=py-S[1],wz=-S[2];
+  const wa=wx*A[0]+wy*A[1]+wz*A[2];
+  const p=[wx-wa*A[0],wy-wa*A[1],wz-wa*A[2]],q=[-A[2]*A[0],-A[2]*A[1],1-A[2]*A[2]];
+  const qq=q[0]*q[0]+q[1]*q[1]+q[2]*q[2],pq=p[0]*q[0]+p[1]*q[1]+p[2]*q[2],pp=p[0]*p[0]+p[1]*p[1]+p[2]*p[2]-r*r;
+  let lo=-Infinity,hi=Infinity;
+  if(qq<1e-12){ if(pp>0)return; }
+  else{ const D=pq*pq-qq*pp;if(D<0)return;const sD=Math.sqrt(D);lo=(-pq-sD)/qq;hi=(-pq+sD)/qq; }
+  if(Math.abs(A[2])>1e-12){ let z1=(0-wa)/A[2],z2=(H-wa)/A[2];if(z1>z2){const x=z1;z1=z2;z2=x;}lo=Math.max(lo,z1);hi=Math.min(hi,z2); }
+  else if(wa<0||wa>H)return;
+  if(hi>lo)out.push([lo,hi]);
+}
 function faoMatterCarveTilt(g,a,b,r,ax,outCols){
   const out=[];
   try{
     let A=ax.slice();const L=Math.hypot(A[0],A[1],A[2])||1;A=A.map(q=>q/L);
-    const t=Math.abs(A[2])<0.9?[0,0,1]:[1,0,0];
-    let u=[A[1]*t[2]-A[2]*t[1],A[2]*t[0]-A[0]*t[2],A[0]*t[1]-A[1]*t[0]];const lu=Math.hypot(...u);u=u.map(q=>q/lu);
-    const v=[A[1]*u[2]-A[2]*u[1],A[2]*u[0]-A[0]*u[2],A[0]*u[1]-A[1]*u[0]];
-    const pas=Math.max(+g.pas||0.5,r/8),rr=Math.max((+g.pas||0.5)*0.55,pas*0.55);
-    const offs=[];
-    for(let i=-r;i<=r+1e-9;i+=pas)for(let j=-r;j<=r+1e-9;j+=pas){ // disque du bout
-      if(i*i+j*j>r*r)continue;offs.push([u[0]*i+v[0]*j,u[1]*i+v[1]*j,u[2]*i+v[2]*j]);}
-    const H=Math.max(4*r,8); // hauteur de corps balayée (au-delà : rarement de la matière)
-    for(let k=0;k<16;k++){const c=Math.cos(k*Math.PI/8),s=Math.sin(k*Math.PI/8); // corps
-      for(let h=pas;h<=H+1e-9;h+=pas)offs.push([A[0]*h+r*(u[0]*c+v[0]*s),A[1]*h+r*(u[1]*c+v[1]*s),A[2]*h+r*(u[2]*c+v[2]*s)]);}
-    // segment EN PENTE (passe qui descend le chanfrein) : la taille d'un segment se fait à sa
-    // cote la plus basse — on le découpe en petits pas de hauteur, sinon des marches apparaissent
-    const n=Math.max(1,Math.min(400,Math.ceil(Math.abs(b.z-a.z)/Math.max(0.05,(+g.pas||0.5)*0.4))));
-    for(let s=0;s<n;s++){
-      const t0=s/n,t1=(s+1)/n;
-      const ax0=a.x+(b.x-a.x)*t0,ay0=a.y+(b.y-a.y)*t0,az0=a.z+(b.z-a.z)*t0;
-      const bx1=a.x+(b.x-a.x)*t1,by1=a.y+(b.y-a.y)*t1,bz1=a.z+(b.z-a.z)*t1;
-      for(const o of offs){
-        const k=faoMatterCarveSeg(g,ax0+o[0],ay0+o[1],az0+o[2],bx1+o[0],by1+o[1],bz1+o[2],rr,outCols,0);
-        for(let m=0;m<k.length;m++)out.push(k[m]);
+    const pz=g.pz||g.pas;
+    const H=Math.hypot(g.nx*g.pas,g.ny*g.pas,g.nz*pz)+2*r; // corps : traverse toute la grille
+    // échantillons du bout le long du segment ; plongée le long de l'axe : le bout le plus profond suffit
+    const d=[b.x-a.x,b.y-a.y,b.z-a.z],dl=Math.hypot(d[0],d[1],d[2]);
+    const da=dl>1e-12?(d[0]*A[0]+d[1]*A[1]+d[2]*A[2])/dl:1;
+    let S=[];
+    if(dl<1e-9||Math.abs(Math.abs(da)-1)<1e-9)S=[da>=0?[a.x,a.y,a.z]:[b.x,b.y,b.z]];
+    else{const n=Math.max(1,Math.min(400,Math.ceil(dl/Math.max(0.05,(+g.pas||0.5)*0.5))));
+      for(let s=0;s<=n;s++){const f=s/n;S.push([a.x+d[0]*f,a.y+d[1]*f,a.z+d[2]*f]);}}
+    // emprise : bouts ± r, plus le corps le long de A
+    let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
+    [[a.x,a.y,a.z],[b.x,b.y,b.z]].forEach(function(P){[0,H].forEach(function(h){
+      const X=P[0]+A[0]*h,Y=P[1]+A[1]*h;x0=Math.min(x0,X);x1=Math.max(x1,X);y0=Math.min(y0,Y);y1=Math.max(y1,Y);});});
+    x0-=r;x1+=r;y0-=r;y1+=r;
+    const i0=Math.max(0,Math.floor((x0-g.ox)/g.pas)),i1=Math.min(g.nx-1,Math.floor((x1-g.ox)/g.pas));
+    const j0=Math.max(0,Math.floor((y0-g.oy)/g.pas)),j1=Math.min(g.ny-1,Math.floor((y1-g.oy)/g.pas));
+    const zTop=g.oz+g.nz*pz;
+    for(let j=j0;j<=j1;j++){
+      const py=g.oy+(j+0.5)*g.pas;
+      for(let i=i0;i<=i1;i++){
+        const px=g.ox+(i+0.5)*g.pas,c=j*g.nx+i;
+        const iv=[];for(let s=0;s<S.length;s++)faoTiltColIv(px,py,S[s],A,r,H,iv);
+        if(!iv.length)continue;
+        iv.sort(function(u,v){return u[0]-v[0];});
+        const m=[iv[0].slice()];
+        for(let n=1;n<iv.length;n++){const l=m[m.length-1];if(iv[n][0]<=l[1]+1e-9)l[1]=Math.max(l[1],iv[n][1]);else m.push(iv[n].slice());}
+        if(m[m.length-1][1]<g.oz||m[0][0]>zTop)continue;
+        let touched=false;
+        m.forEach(function(I){
+          const k0=Math.max(0,Math.ceil((I[0]-g.oz)/pz-0.5)),k1=Math.min(g.nz-1,Math.floor((I[1]-g.oz)/pz-0.5));
+          for(let k=k0;k<=k1;k++){const idx=faoMatterIdx(g,i,j,k);if(g.alive[idx]){g.alive[idx]=0;out.push(idx);touched=true;}}
+        });
+        // la Z-map descend si un intervalle débouche sur le dessus de la colonne ; outil plutôt
+        // vertical (≤ 60°) : le surplomb au-dessus du corps (non représentable) est aussi enlevé
+        if(g.h){const h0=g.h[c];
+          for(let n=m.length-1;n>=0;n--){const I=m[n];
+            if((I[1]>=h0-1e-6||A[2]>=0.5)&&I[0]<h0){const z=Math.max(g.oz,I[0]);if(z<g.h[c]){g.h[c]=z;if(g.hc)g.hc[c]=1;touched=true;}break;}}}
+        if(touched&&outCols)outCols.push(c);
       }
     }
   }catch(e){}

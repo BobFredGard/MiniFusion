@@ -180,8 +180,9 @@ function faoPost(job,postId){
           cmt('3+2 : B'+faoFmtXYZ(OB.b)+' C'+faoFmtXYZ(OB.c)+' demandé — machine 3 axes : B/C NON commandés');
           if(!fagWarn){ fagWarn=true; warns.push('Repère d’opération incliné : '+post.label+' = machine 3 axes — orientation B/C ignorée à l’export.'); }
         }else{
-          nc('G0 Z'+faoFmtXYZ(safe-oz)); // dégagement AVANT de réorienter l'outil
-          if(prev)prev={x:prev.x,y:prev.y,z:safe};
+          const zr=Math.max(safe,prev?+prev.z:safe); // déjà au-dessus après un 3+2 : ne pas redescendre
+          nc('G0 Z'+faoFmtXYZ(zr-oz)); // dégagement AVANT de réorienter l'outil
+          if(prev)prev={x:prev.x,y:prev.y,z:zr};
           if(OB.b!==0||OB.c!==0){
             if(!traOn){ nc('TRAORI(1)'); traOn=true; }
             nc('G0 B'+faoFmtXYZ(OB.b)+' C'+faoFmtXYZ(OB.c));
@@ -265,10 +266,10 @@ function faoPost(job,postId){
         }
         return;
       }
-      let first=true;
+      let first=true; const b32=!!(b.op&&faoOpFrame(job,b.op));
       sq.moves.forEach(function(m){
         // Plan de sécurité : retrait sur place -> translation au plan -> plongée.
-        const ins=faoSafeAhead(prev,m,safeB);
+        const ins=b32?null:faoSafeAhead(prev,m,safeB); // 3+2 : déjà fait le long de son Z (faoSeqSafeOp)
         if(ins)for(let q=0;q<ins.length;q++){
           const J=ins[q];
           nc('G0 X'+faoFmtXYZ(J.x-ox)+' Y'+faoFmtXYZ(J.y-oy)+' Z'+faoFmtXYZ(J.z-oz));

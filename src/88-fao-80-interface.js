@@ -34,8 +34,32 @@ function faoPocketGeoRows(d,setup,op){
 // de triangles dedans, outil entier dedans), borné au brut ; aucun triangle
 // (poche débouchante) -> bas du brut.
 function faoPocketFloor(mesh,loop,zMin){
-  let zf=1/0;
+  // Fond de poche : la plus basse des faces quasi horizontales tournées vers le haut, sous la
+  // boucle ET VUES DU DESSUS (aucune matière au-dessus) — une facette de paroi d'un trou
+  // transversal, cachée dans la matière, n'est pas un fond (repère 3+2 : trous verticaux du
+  // posage vus de côté).
   const V=mesh.v;
+  let lx0=1/0,ly0=1/0,lx1=-1/0,ly1=-1/0;
+  (loop||[]).forEach(function(p){if(p[0]<lx0)lx0=p[0];if(p[0]>lx1)lx1=p[0];if(p[1]<ly0)ly0=p[1];if(p[1]>ly1)ly1=p[1];});
+  let top=null,g=1,nx=0,ny=0;
+  if(lx1>lx0&&ly1>ly0){
+    g=Math.max(0.2,Math.hypot(lx1-lx0,ly1-ly0)/300);
+    nx=Math.ceil((lx1-lx0)/g)+1;ny=Math.ceil((ly1-ly0)/g)+1;top=new Float32Array(nx*ny).fill(-1/0);
+    for(let i=0;i<mesh.t.length;i++){
+      const T=mesh.t[i],A=V[T[0]],B=V[T[1]],C=V[T[2]];
+      const d=(B[1]-C[1])*(A[0]-C[0])+(C[0]-B[0])*(A[1]-C[1]);if(Math.abs(d)<1e-12)continue;
+      const i0=Math.max(0,Math.floor((Math.min(A[0],B[0],C[0])-lx0)/g)),i1=Math.min(nx-1,Math.ceil((Math.max(A[0],B[0],C[0])-lx0)/g));
+      const j0=Math.max(0,Math.floor((Math.min(A[1],B[1],C[1])-ly0)/g)),j1=Math.min(ny-1,Math.ceil((Math.max(A[1],B[1],C[1])-ly0)/g));
+      for(let j=j0;j<=j1;j++)for(let k=i0;k<=i1;k++){const x=lx0+k*g,y=ly0+j*g;
+        const l1=((B[1]-C[1])*(x-C[0])+(C[0]-B[0])*(y-C[1]))/d,l2=((C[1]-A[1])*(x-C[0])+(A[0]-C[0])*(y-C[1]))/d,l3=1-l1-l2;
+        if(l1<-1e-9||l2<-1e-9||l3<-1e-9)continue;const z=l1*A[2]+l2*B[2]+l3*C[2];const q=j*nx+k;if(z>top[q])top[q]=z;}
+    }
+  }
+  const seen=function(x,y,z){ // rien au-dessus de (x,y,z) ?
+    if(!top)return true;const k=Math.round((x-lx0)/g),j=Math.round((y-ly0)/g);
+    if(k<0||j<0||k>=nx||j>=ny)return true;const h=top[j*nx+k];return !(h>z+0.05);
+  };
+  let zf=1/0;
   for(let i=0;i<mesh.t.length;i++){
     const t=mesh.t[i],A=V[t[0]],B=V[t[1]],C=V[t[2]];
     const cx=(A[0]+B[0]+C[0])/3,cy=(A[1]+B[1]+C[1])/3,cz=(A[2]+B[2]+C[2])/3;
@@ -44,7 +68,7 @@ function faoPocketFloor(mesh,loop,zMin){
     const ux=B[0]-A[0],uy=B[1]-A[1],uz=B[2]-A[2],wx=C[0]-A[0],wy=C[1]-A[1],wz=C[2]-A[2];
     const nz=ux*wy-uy*wx,nl=Math.hypot(uy*wz-uz*wy,uz*wx-ux*wz,nz);
     if(!(nl>0)||nz/nl<0.98)continue;
-    if(cz>=zMin-1e-9)zf=cz;
+    if(cz>=zMin-1e-9&&seen(cx,cy,cz))zf=cz;
   }
   return zf<1/0?Math.round(zf*1000)/1000:zMin;
 }
@@ -1112,7 +1136,7 @@ function faoOpCardElement(setup,op,i){
     // affiché en lecture seule à droite. Un ancien document piloté par « Passes »
     // (np≥2) est lu tel quel (écart affiché = H/(np−1)) ; saisir l'écart bascule
     // définitivement en pilotage par écart (op.np=null).
-    const stF=faoStock();
+    const stF=faoOpView(setup,op).stock||faoStock();
     const tF=faoToolById(setup,op.toolId);
     const dF=(tF&&isFinite(+tF.d)&&+tF.d>0)?+tF.d:10;
     const npOn=isFinite(+op.np)&&+op.np>=2;
@@ -1412,7 +1436,7 @@ function faoOpCardElement(setup,op,i){
   rl.appendChild(faoLab('Zone'));
   rl.appendChild(faoSel([['all','Tout usiner'],['rect','Rectangle'],['chain','Chaîne d\'arêtes'],['sketch','Esquisse']],limMode,function(v){
     if(v==='rect'){
-      const s=faoStock();
+      const s=faoOpView(setup,op).stock||faoStock(); // repère 3+2 : brut vu par l'opération
       op.limit={mode:'rect',x0:s.x0,y0:s.y0,x1:s.x1,y1:s.y1,side:'center',extra:0};
     }else if(v==='chain'){
       const old=op.limit&&op.limit.mode==='chain'?op.limit:null;
@@ -1519,7 +1543,7 @@ function faoOpCardElement(setup,op,i){
     ['sketch','Esquisse','Îlot délimité par un contour d\'esquisse — re-extrait à chaque rejeu.']],
     lim2Mode,function(v){
       if(v==='rect'){
-        const s=faoStock();
+        const s=faoOpView(setup,op).stock||faoStock(); // repère 3+2 : brut vu par l'opération
         const cx=((+s.x0)+(+s.x1))/2, cy=((+s.y0)+(+s.y1))/2;
         const w=Math.max(2,Math.min((+s.x1)-(+s.x0),(+s.y1)-(+s.y0))*0.15);
         op.limit2={mode:'rect',x0:Math.round((cx-w)*100)/100,y0:Math.round((cy-w)*100)/100,

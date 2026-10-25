@@ -1494,6 +1494,9 @@ function faoChainBuildOverlay(){
     mesh.userData.segs=segs;
     halo.onBeforeRender=mesh.onBeforeRender;
     const grp=new THREE.Group(); grp.name='faoChainEdges'; grp.add(mesh); grp.add(halo); // [0] = trait (pointage)
+    // arêtes en coordonnées de l'OPÉRATION (repère 3+2) : le groupe les ramène dans le posage
+    try{ const M=faoOpMatrix(faoSetup(faoChainMode.setupId),(faoSetup(faoChainMode.setupId).ops||[]).filter(function(o){return o.id===faoChainMode.opId;})[0]);
+      if(M){ grp.matrixAutoUpdate=false; grp.matrix.copy(M); } }catch(e){}
     faoAdd3D(grp);
     faoChainPaint();
   }catch(e){ try{faceEl.textContent='Chaîne : affichage impossible ('+e.message+').';}catch(e2){} }
@@ -1548,7 +1551,7 @@ function faoChainPick(e){
     }catch(err){}
     camera.updateMatrixWorld();
     const PV=new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
-    let RW=null; try{ grp.updateMatrixWorld(true); RW=grp.parent?grp.parent.matrixWorld:null; if(RW)PV.multiply(RW); }catch(err){} // segments en repère posage
+    let RW=null; try{ grp.updateMatrixWorld(true); RW=grp.matrixWorld; if(RW)PV.multiply(RW); }catch(err){} // segments en repère de l'opération (ou du posage)
     const cpw=camera.position,cp=RW?cpw.clone().applyMatrix4(RW.clone().invert()):cpw,va=new THREE.Vector4(),vb=new THREE.Vector4();
     const TOL=10;let best=null,bestD=TOL*TOL,bestZ=Infinity;
     for(let k=0;k<segEdge.length;k++){
@@ -1706,7 +1709,7 @@ function faoChainOk(){
       try{
         let zl=1/0;
         faoChainMode.sel.forEach(function(i){const e=faoChainMode.edges[i];(e&&e.pts||[]).forEach(function(p){if(isFinite(+p[2])&&+p[2]<zl)zl=+p[2];});});
-        const st=faoStock();
+        const st=faoOpView(setup,op).stock||faoStock(); // repère 3+2 : brut vu par l'opération
         op.ztop=+st.z1;
         if(zl<1/0&&zl<+st.z1-1e-6)op.zbot=Math.round(zl*1000)/1000;
       }catch(e){}
@@ -1715,8 +1718,9 @@ function faoChainOk(){
       L.side='in';
       if(!op.zlim){
         try{
-          const st=faoStock();
-          const am=faoActiveMesh(setup);
+          const ov=faoOpView(setup,op); // repère 3+2 : brut et pièce vus par l'opération
+          const st=ov.stock||faoStock();
+          const am=faoActiveMesh(ov);
           op.ztop=+st.z1;
           op.zbot=(am&&am.mesh)?faoPocketFloor(am.mesh,L.loop,+st.z0):+st.z0;
         }catch(e){}

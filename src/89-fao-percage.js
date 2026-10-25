@@ -229,12 +229,21 @@ function faoHoleThread(h,setup){
   if(i&&i.thread&&i.thread.size)return {size:i.thread.size,p:+i.thread.p,len:0,src:'STEP'};
   return null;
 }
+function faoWithOpFrame(op,fn){
+  // Exécute fn avec les trous vus dans le repère PROPRE de l'opération (onglet Repère, 3+2) :
+  // un perçage sur la tranche voit les trous de la tranche « verticaux ». Sans repère propre :
+  // celui du posage. fn(Fr) — Fr = repère de l'opération, ou null.
+  let Fr=null;try{const s=faoSetupOfOp(op);Fr=s?faoOpFrame(s,op):null;}catch(e){Fr=null;}
+  const k=faoFrameCur;faoFrameCur=Fr||null;
+  try{return fn(Fr);}finally{faoFrameCur=k;}
+}
 function faoDrillResolve(op){
   // Re-résout les trous sélectionnés sur le modèle COURANT (suit les modifications).
   // Retourne true si op.holes a changé. Sans modèle exact : instantané conservé.
   if(!op||op.type!=='drill'||op.src!=='model')return false;
-  const shapes=faoHoleShapes();if(!shapes.length)return false;
-  const all=faoHolesDetect(shapes);
+  // trous vus dans le repère de l'opération : ceux qu'on y a choisis s'y retrouvent
+  const all=faoWithOpFrame(op,function(){const shapes=faoHoleShapes();return shapes.length?faoHolesDetect(shapes):null;});
+  if(!all)return false;
   const setup=faoSetupOfOp(op);
   const nh=all.filter(function(h){return faoHoleInSel(op,h);}).map(function(h){
     const o={x:h.x,y:h.y,d:h.d,ztop:h.ztop,zbot:h.zbot,zSurf:h.zSurf,through:h.through,tipAng:h.tipAng,chD:h.chD};
@@ -417,6 +426,13 @@ function faoHolePickAt(e){
   faoHoleMarks();
   return true;
 }
+function faoDrillInherit(from,to){
+  // Opération de perçage née d'une autre (nouveau Ø, gamme) : même repère 3+2 et mêmes
+  // hauteurs — les trous choisis l'ont été dans CE repère.
+  if(from&&from.frame)to.frame=JSON.parse(JSON.stringify(from.frame));
+  ['z','ztop','zbot'].forEach(function(k){if(from&&from[k]!==undefined)to[k]=from[k];});
+  return to;
+}
 function faoHoleToggle(setup,op,d,z){
   faoSnapshot('sélection de trous');
   // UN diamètre par opération de perçage (un foret) : ajouter un autre Ø crée une
@@ -428,6 +444,7 @@ function faoHoleToggle(setup,op,d,z){
   if(cyc!=='spot'&&other&&!already){
     const no=faoOpDefaults('drill');
     ['cycle','depthMode','brk','order','peck','dwell'].forEach(function(k){if(op[k]!==undefined)no[k]=op[k];});
+    faoDrillInherit(op,no);
     no.holeSel=[{d:+(+d).toFixed(3),z:+(+z).toFixed(3)}];
     const idx=(setup.ops||[]).indexOf(op);
     setup.ops.splice(idx<0?setup.ops.length:idx+1,0,no);
@@ -458,7 +475,13 @@ function faoHoleMarks(){
     const segOf=function(H,r){const a=[];const N=40;for(let k=0;k<N;k++){const t0=k/N*Math.PI*2,t1=(k+1)/N*Math.PI*2;
       a.push(H.x+r*Math.cos(t0),H.y+r*Math.sin(t0),H.zSurf+0.05,H.x+r*Math.cos(t1),H.y+r*Math.sin(t1),H.zSurf+0.05);}return a;};
     const on=[],off=[];
-    faoHolesDetect().forEach(function(H){(op&&faoHoleInSel(op,H)?on:off).push.apply(op&&faoHoleInSel(op,H)?on:off,segOf(H,H.d/2+0.6));});
+    // trous du repère de l'opération ; anneaux ramenés dans le repère du posage pour le dessin
+    faoWithOpFrame(op,function(Fr){
+      faoHolesDetect().forEach(function(H){
+        let s=segOf(H,H.d/2+0.6);
+        if(Fr){const o=[];for(let i=0;i<s.length;i+=3){const w=faoPtOpToPos(Fr,[s[i],s[i+1],s[i+2]]);o.push(w[0],w[1],w[2]);}s=o;}
+        (op&&faoHoleInSel(op,H)?on:off).push.apply(op&&faoHoleInSel(op,H)?on:off,s);});
+    });
     if(off.length)grp.add(faoThickSegs(off,0x8e8e93,1,2));
     if(on.length)grp.add(faoThickSegs(on,0xff9f0a,1,3));
     faoAdd3D(grp);
@@ -529,7 +552,7 @@ function faoDrillSections(setup,op,d){
     if(faoHolePick)faoHolePickExit();else faoHolePickStart(setup.id,op.id);},'Cliquer un trou de la pièce : tous les trous de même Ø et même départ'));
   d.appendChild(rs);
   if(op.src==='model'){
-    const holes=faoHolesDetect();
+    const holes=faoWithOpFrame(op,function(){return faoHolesDetect();}); // repère de l'opération (3+2)
     if(!holes.length){const n=document.createElement('div');n.className='fao-empty';n.textContent='Aucun trou vertical reconnu sur le modèle (noyau exact requis).';d.appendChild(n);}
     faoHoleGroups(holes).forEach(function(g){
       const r=faoRow();
@@ -592,7 +615,7 @@ function faoDrillGamme(setup,op){
   const idx=Math.max(0,setup.ops.indexOf(op));
   setup.ops.splice(idx,1);
   const made=[];let at=idx;
-  const push=function(o){setup.ops.splice(at++,0,o);faoDrillResolve(o);made.push(o);return o;};
+  const push=function(o){faoDrillInherit(op,o);setup.ops.splice(at++,0,o);faoDrillResolve(o);made.push(o);return o;};
   // 1. pointage (tous les Ø)
   if(plain.length){
     const sp=Object.assign(faoOpDefaults('drill'),base,{cycle:'spot',holeSel:plain.map(function(s){return {d:s.d,z:s.z};})});

@@ -103,14 +103,22 @@ function faoOpMovesKey(op,job){
     // cle calculee hors de cette voie (migration, appel direct) voyait un op
     // SANS minipasses/laisse puis un op AVEC -> « cle differente » a chaque
     // ouverture alors que RIEN n'avait bouge. Idempotent : aucun effet de bord.
-    if(job&&Array.isArray(job.ops))faoSanitiseOps(job);
+    // repère propre (3+2) : la clé est TOUJOURS celle du posage vu par l'opération — qu'on la
+    // calcule avec le posage (lecture du cache, F5, contrôles) ou pendant le calcul (faoOpJob)
+    try{ if(op&&op.frame&&!(job&&job.__opJob===op)&&typeof faoOpFrame==='function'){ const fr=faoOpFrame(job,op); if(fr)job=faoOpJob(job,op,fr); } }catch(e){}
+    const inh=!!(job&&job.__opJob);
+    // champs du VRAI posage, dans SON ordre (nettoyage compris : jamais sur le posage vu par
+    // l'opération, qui en garderait une copie et changerait l'ordre de la clé d'une session à l'autre)
+    const base=inh?Object.getPrototypeOf(job):job;
+    if(base&&Array.isArray(base.ops))faoSanitiseOps(base);
     const js={};
-    for(const k in job){
-      if(!Object.prototype.hasOwnProperty.call(job,k)||k==='ops'||k==='open')continue;
+    for(const k in base){
+      if(!Object.prototype.hasOwnProperty.call(base,k)||k==='ops'||k==='open')continue;
       if(k==='name'||k==='id')continue; // libelle / identifiant : jamais une trajectoire
       if(k==='holeInfo')continue; // nature des trous d'un STEP (taraudé…) : aucun effet sur les tracés
-      js[k]=job[k];
+      js[k]=job[k]; // posage vu par l'opération : son brut (repère de l'opération)
     }
+    if(inh){ js.stock=job.stock; js.opFrame=job.frame; js.originZero=true; }
     // Seul l'outil de CETTE operation influence ses parcours : modifier T3 ne
     // doit pas rendre perimes les traces des operations qui tournent en T1.
     // 2026-10-15-010 : sous-ensemble HISTORIQUE de la fiche (faoToolKeyObj) — les champs
@@ -364,8 +372,9 @@ function faoMovesSolidFp(){
       if(!s)return;
       const ops=s.ops||[];
       for(let i=0;i<ops.length;i++){
-        const t=ops[i]&&ops[i].type;
-        if(t==='rough3d'||t==='geofinish'||t==='geodesic'){ o[s.id]=faoSetupFp(s); return; }
+        // toute opération calculée sur le maillage (poche adaptative et contour profil compris :
+        // sans eux, leur parcours n'était jamais relu au F5 une fois le solide exact arrivé)
+        if(ops[i]&&faoMeshOp(ops[i])){ o[s.id]=faoSetupFp(s); return; }
       }
     });
   }catch(e){}
@@ -503,6 +512,9 @@ function faoMovesDone(){
       try{ if(typeof bundleReport==='function')bundleReport(); }catch(e){}
     }
     try{ faoRegenFlush(); }catch(e){}
+    // triangles ⚠ de l'arbre : redessinés après CHAQUE lecture (une relecture au F5, solide exact
+    // arrivé, laissait « à régénérer » des parcours pourtant retrouvés)
+    try{ if(typeof faoRenderTree==='function')faoRenderTree(); }catch(e){}
     const a=(typeof document!=='undefined'&&document)?document.activeElement:null;
     if(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.isContentEditable))return;
     if(typeof sel==='undefined'||!sel||!(sel.kind==='faoOp'||sel.kind==='faoSetup'))return;
@@ -541,6 +553,13 @@ function faoMovesPreloadSoon(force){
    renvoie « rien » et le panneau affiche « … » — il se remplit tout seul. */
 function faoOpMovesTry(op,job){
   try{
+    // repère propre (3+2) : parcours mémorisé dans le repère de l'opération → ramené dans le posage
+    let fr=null;try{fr=(op&&op.frame&&!(job&&job.__opJob)&&typeof faoOpFrame==='function')?faoOpFrame(job,op):null;}catch(e){fr=null;}
+    if(fr){
+      const jo=faoOpJob(job,op,fr),k=faoFrameCur;faoFrameCur=fr;let r=null;
+      try{r=faoOpMovesTry(op,jo);}finally{faoFrameCur=k;}
+      return r===null||r===undefined?r:faoMovesOpToPos(r,fr);
+    }
     if(faoMeshOp(op)){ try{ faoActiveMesh(job); }catch(e){} }
     const ck=faoOpMovesKey(op,job);
     if(ck===null)return null;
@@ -1058,6 +1077,9 @@ function faoSeqSafe(job,seule){
       mv=faoOpMovesTry(op,job);
       if(mv===null){ res.push({op:op,moves:[],absent:true}); return; }
     }else mv=faoOpMoves(op,job)||[];
+    // repère propre (3+2) : dégagements le long du Z de L'OPÉRATION (src/89-fao-posage-repere.js)
+    const fr=(function(){try{return faoOpFrame(job,op);}catch(e){return null;}})();
+    if(fr&&mv.length){const q=faoSeqSafeOp(job,op,fr,mv,prev);prev=q.prev;res.push({op:op,moves:q.out});return;}
     const out=[];
     for(let i=0;i<mv.length;i++){
       const m=mv[i];

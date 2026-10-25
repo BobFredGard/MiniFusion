@@ -22840,7 +22840,7 @@ function faoPlaneEff(job,op){
   return {clear:clear,retr:retr,mode:P.mode==='plan'?'plan':'min5',
     ownClear:!!O.clear,ownRetr:!!O.retr};
 }
-function faoZoneStrip(moves,ctx,secu){
+function faoZoneStrip(moves,ctx,secu,job){
   // 2026-10-10-002 : test de franchissement de la boîte brut (utilisé par le
   // garde-brut ci-dessous) : true si le segment a->b ENTRE dans la boîte sb
   // (au moins une extrémité dedans ET l'autre dehors, ou intersection non
@@ -22888,7 +22888,7 @@ function faoZoneStrip(moves,ctx,secu){
   // rapides (faoZoneStrip) — on ne duplique pas la logique.
   if(!ctx){
   try{
-    const sb=faoStock();
+    const sb=(job&&job.stock&&faoStockValid(job.stock))?job.stock:faoStock(); // brut du job : repère 3+2 compris
     if(sb&&isFinite(sb.x0)&&isFinite(sb.x1)&&isFinite(sb.y0)&&isFinite(sb.y1)){
       const inB=function(x,y){
         return x>=sb.x0-1e-9&&x<=sb.x1+1e-9&&y>=sb.y0-1e-9&&y<=sb.y1+1e-9;
@@ -22980,7 +22980,7 @@ function faoZoneServe(ch,op,job,secu){
   if(!ch||!Array.isArray(ch.mv))return ch?ch.mv:null;
   const ctx=faoZoneCtx(op,job);
   if(!ctx)return ch.mv;
-  const mv=faoZoneStrip(ch.mv,ctx,secu);
+  const mv=faoZoneStrip(ch.mv,ctx,secu,job);
   if(mv!==ch.mv)ch.mv=mv;
   return ch.mv;
 }
@@ -23003,7 +23003,7 @@ function faoZoneCuts(moves,op,job,secu){
     }
     return ctx.cross(a,b);
   };
-  const m0=faoZoneStrip(moves,ctx,secu);
+  const m0=faoZoneStrip(moves,ctx,secu,job);
   // --- 1) diagnostic : la coupe est-elle entièrement dedans ?
   let prev=null, bust=false;
   for(let i=0;i<m0.length&&!bust;i++){
@@ -23039,7 +23039,7 @@ function faoZoneCuts(moves,op,job,secu){
   else if(ctx.lim2)
     cut=faoClipMovesPoly(cut,ctx.lim2,ctx.D/2,secu,2,
       function(x,y){ return !faoLimInside(x,y,ctx.lim2,ctx.D/2); });
-  return faoZoneStrip(cut,ctx,secu);
+  return faoZoneStrip(cut,ctx,secu,job);
 }
 /* ----- affichage : la COUPE ne sort jamais de la zone (l'aperçu le garantit)
    même sur un tracé en cache. Les rapides, eux, sont dessinés tels quels —
@@ -23217,14 +23217,22 @@ function faoOpMovesKey(op,job){
     // cle calculee hors de cette voie (migration, appel direct) voyait un op
     // SANS minipasses/laisse puis un op AVEC -> « cle differente » a chaque
     // ouverture alors que RIEN n'avait bouge. Idempotent : aucun effet de bord.
-    if(job&&Array.isArray(job.ops))faoSanitiseOps(job);
+    // repère propre (3+2) : la clé est TOUJOURS celle du posage vu par l'opération — qu'on la
+    // calcule avec le posage (lecture du cache, F5, contrôles) ou pendant le calcul (faoOpJob)
+    try{ if(op&&op.frame&&!(job&&job.__opJob===op)&&typeof faoOpFrame==='function'){ const fr=faoOpFrame(job,op); if(fr)job=faoOpJob(job,op,fr); } }catch(e){}
+    const inh=!!(job&&job.__opJob);
+    // champs du VRAI posage, dans SON ordre (nettoyage compris : jamais sur le posage vu par
+    // l'opération, qui en garderait une copie et changerait l'ordre de la clé d'une session à l'autre)
+    const base=inh?Object.getPrototypeOf(job):job;
+    if(base&&Array.isArray(base.ops))faoSanitiseOps(base);
     const js={};
-    for(const k in job){
-      if(!Object.prototype.hasOwnProperty.call(job,k)||k==='ops'||k==='open')continue;
+    for(const k in base){
+      if(!Object.prototype.hasOwnProperty.call(base,k)||k==='ops'||k==='open')continue;
       if(k==='name'||k==='id')continue; // libelle / identifiant : jamais une trajectoire
       if(k==='holeInfo')continue; // nature des trous d'un STEP (taraudé…) : aucun effet sur les tracés
-      js[k]=job[k];
+      js[k]=job[k]; // posage vu par l'opération : son brut (repère de l'opération)
     }
+    if(inh){ js.stock=job.stock; js.opFrame=job.frame; js.originZero=true; }
     // Seul l'outil de CETTE operation influence ses parcours : modifier T3 ne
     // doit pas rendre perimes les traces des operations qui tournent en T1.
     // 2026-10-15-010 : sous-ensemble HISTORIQUE de la fiche (faoToolKeyObj) — les champs
@@ -23478,8 +23486,9 @@ function faoMovesSolidFp(){
       if(!s)return;
       const ops=s.ops||[];
       for(let i=0;i<ops.length;i++){
-        const t=ops[i]&&ops[i].type;
-        if(t==='rough3d'||t==='geofinish'||t==='geodesic'){ o[s.id]=faoSetupFp(s); return; }
+        // toute opération calculée sur le maillage (poche adaptative et contour profil compris :
+        // sans eux, leur parcours n'était jamais relu au F5 une fois le solide exact arrivé)
+        if(ops[i]&&faoMeshOp(ops[i])){ o[s.id]=faoSetupFp(s); return; }
       }
     });
   }catch(e){}
@@ -23617,6 +23626,9 @@ function faoMovesDone(){
       try{ if(typeof bundleReport==='function')bundleReport(); }catch(e){}
     }
     try{ faoRegenFlush(); }catch(e){}
+    // triangles ⚠ de l'arbre : redessinés après CHAQUE lecture (une relecture au F5, solide exact
+    // arrivé, laissait « à régénérer » des parcours pourtant retrouvés)
+    try{ if(typeof faoRenderTree==='function')faoRenderTree(); }catch(e){}
     const a=(typeof document!=='undefined'&&document)?document.activeElement:null;
     if(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.isContentEditable))return;
     if(typeof sel==='undefined'||!sel||!(sel.kind==='faoOp'||sel.kind==='faoSetup'))return;
@@ -23655,6 +23667,13 @@ function faoMovesPreloadSoon(force){
    renvoie « rien » et le panneau affiche « … » — il se remplit tout seul. */
 function faoOpMovesTry(op,job){
   try{
+    // repère propre (3+2) : parcours mémorisé dans le repère de l'opération → ramené dans le posage
+    let fr=null;try{fr=(op&&op.frame&&!(job&&job.__opJob)&&typeof faoOpFrame==='function')?faoOpFrame(job,op):null;}catch(e){fr=null;}
+    if(fr){
+      const jo=faoOpJob(job,op,fr),k=faoFrameCur;faoFrameCur=fr;let r=null;
+      try{r=faoOpMovesTry(op,jo);}finally{faoFrameCur=k;}
+      return r===null||r===undefined?r:faoMovesOpToPos(r,fr);
+    }
     if(faoMeshOp(op)){ try{ faoActiveMesh(job); }catch(e){} }
     const ck=faoOpMovesKey(op,job);
     if(ck===null)return null;
@@ -24172,6 +24191,9 @@ function faoSeqSafe(job,seule){
       mv=faoOpMovesTry(op,job);
       if(mv===null){ res.push({op:op,moves:[],absent:true}); return; }
     }else mv=faoOpMoves(op,job)||[];
+    // repère propre (3+2) : dégagements le long du Z de L'OPÉRATION (src/89-fao-posage-repere.js)
+    const fr=(function(){try{return faoOpFrame(job,op);}catch(e){return null;}})();
+    if(fr&&mv.length){const q=faoSeqSafeOp(job,op,fr,mv,prev);prev=q.prev;res.push({op:op,moves:q.out});return;}
     const out=[];
     for(let i=0;i<mv.length;i++){
       const m=mv[i];
@@ -24373,8 +24395,9 @@ function faoPost(job,postId){
           cmt('3+2 : B'+faoFmtXYZ(OB.b)+' C'+faoFmtXYZ(OB.c)+' demandé — machine 3 axes : B/C NON commandés');
           if(!fagWarn){ fagWarn=true; warns.push('Repère d’opération incliné : '+post.label+' = machine 3 axes — orientation B/C ignorée à l’export.'); }
         }else{
-          nc('G0 Z'+faoFmtXYZ(safe-oz)); // dégagement AVANT de réorienter l'outil
-          if(prev)prev={x:prev.x,y:prev.y,z:safe};
+          const zr=Math.max(safe,prev?+prev.z:safe); // déjà au-dessus après un 3+2 : ne pas redescendre
+          nc('G0 Z'+faoFmtXYZ(zr-oz)); // dégagement AVANT de réorienter l'outil
+          if(prev)prev={x:prev.x,y:prev.y,z:zr};
           if(OB.b!==0||OB.c!==0){
             if(!traOn){ nc('TRAORI(1)'); traOn=true; }
             nc('G0 B'+faoFmtXYZ(OB.b)+' C'+faoFmtXYZ(OB.c));
@@ -24458,10 +24481,10 @@ function faoPost(job,postId){
         }
         return;
       }
-      let first=true;
+      let first=true; const b32=!!(b.op&&faoOpFrame(job,b.op));
       sq.moves.forEach(function(m){
         // Plan de sécurité : retrait sur place -> translation au plan -> plongée.
-        const ins=faoSafeAhead(prev,m,safeB);
+        const ins=b32?null:faoSafeAhead(prev,m,safeB); // 3+2 : déjà fait le long de son Z (faoSeqSafeOp)
         if(ins)for(let q=0;q<ins.length;q++){
           const J=ins[q];
           nc('G0 X'+faoFmtXYZ(J.x-ox)+' Y'+faoFmtXYZ(J.y-oy)+' Z'+faoFmtXYZ(J.z-oz));
@@ -26193,8 +26216,32 @@ function faoPocketGeoRows(d,setup,op){
 // de triangles dedans, outil entier dedans), borné au brut ; aucun triangle
 // (poche débouchante) -> bas du brut.
 function faoPocketFloor(mesh,loop,zMin){
-  let zf=1/0;
+  // Fond de poche : la plus basse des faces quasi horizontales tournées vers le haut, sous la
+  // boucle ET VUES DU DESSUS (aucune matière au-dessus) — une facette de paroi d'un trou
+  // transversal, cachée dans la matière, n'est pas un fond (repère 3+2 : trous verticaux du
+  // posage vus de côté).
   const V=mesh.v;
+  let lx0=1/0,ly0=1/0,lx1=-1/0,ly1=-1/0;
+  (loop||[]).forEach(function(p){if(p[0]<lx0)lx0=p[0];if(p[0]>lx1)lx1=p[0];if(p[1]<ly0)ly0=p[1];if(p[1]>ly1)ly1=p[1];});
+  let top=null,g=1,nx=0,ny=0;
+  if(lx1>lx0&&ly1>ly0){
+    g=Math.max(0.2,Math.hypot(lx1-lx0,ly1-ly0)/300);
+    nx=Math.ceil((lx1-lx0)/g)+1;ny=Math.ceil((ly1-ly0)/g)+1;top=new Float32Array(nx*ny).fill(-1/0);
+    for(let i=0;i<mesh.t.length;i++){
+      const T=mesh.t[i],A=V[T[0]],B=V[T[1]],C=V[T[2]];
+      const d=(B[1]-C[1])*(A[0]-C[0])+(C[0]-B[0])*(A[1]-C[1]);if(Math.abs(d)<1e-12)continue;
+      const i0=Math.max(0,Math.floor((Math.min(A[0],B[0],C[0])-lx0)/g)),i1=Math.min(nx-1,Math.ceil((Math.max(A[0],B[0],C[0])-lx0)/g));
+      const j0=Math.max(0,Math.floor((Math.min(A[1],B[1],C[1])-ly0)/g)),j1=Math.min(ny-1,Math.ceil((Math.max(A[1],B[1],C[1])-ly0)/g));
+      for(let j=j0;j<=j1;j++)for(let k=i0;k<=i1;k++){const x=lx0+k*g,y=ly0+j*g;
+        const l1=((B[1]-C[1])*(x-C[0])+(C[0]-B[0])*(y-C[1]))/d,l2=((C[1]-A[1])*(x-C[0])+(A[0]-C[0])*(y-C[1]))/d,l3=1-l1-l2;
+        if(l1<-1e-9||l2<-1e-9||l3<-1e-9)continue;const z=l1*A[2]+l2*B[2]+l3*C[2];const q=j*nx+k;if(z>top[q])top[q]=z;}
+    }
+  }
+  const seen=function(x,y,z){ // rien au-dessus de (x,y,z) ?
+    if(!top)return true;const k=Math.round((x-lx0)/g),j=Math.round((y-ly0)/g);
+    if(k<0||j<0||k>=nx||j>=ny)return true;const h=top[j*nx+k];return !(h>z+0.05);
+  };
+  let zf=1/0;
   for(let i=0;i<mesh.t.length;i++){
     const t=mesh.t[i],A=V[t[0]],B=V[t[1]],C=V[t[2]];
     const cx=(A[0]+B[0]+C[0])/3,cy=(A[1]+B[1]+C[1])/3,cz=(A[2]+B[2]+C[2])/3;
@@ -26203,7 +26250,7 @@ function faoPocketFloor(mesh,loop,zMin){
     const ux=B[0]-A[0],uy=B[1]-A[1],uz=B[2]-A[2],wx=C[0]-A[0],wy=C[1]-A[1],wz=C[2]-A[2];
     const nz=ux*wy-uy*wx,nl=Math.hypot(uy*wz-uz*wy,uz*wx-ux*wz,nz);
     if(!(nl>0)||nz/nl<0.98)continue;
-    if(cz>=zMin-1e-9)zf=cz;
+    if(cz>=zMin-1e-9&&seen(cx,cy,cz))zf=cz;
   }
   return zf<1/0?Math.round(zf*1000)/1000:zMin;
 }
@@ -27271,7 +27318,7 @@ function faoOpCardElement(setup,op,i){
     // affiché en lecture seule à droite. Un ancien document piloté par « Passes »
     // (np≥2) est lu tel quel (écart affiché = H/(np−1)) ; saisir l'écart bascule
     // définitivement en pilotage par écart (op.np=null).
-    const stF=faoStock();
+    const stF=faoOpView(setup,op).stock||faoStock();
     const tF=faoToolById(setup,op.toolId);
     const dF=(tF&&isFinite(+tF.d)&&+tF.d>0)?+tF.d:10;
     const npOn=isFinite(+op.np)&&+op.np>=2;
@@ -27571,7 +27618,7 @@ function faoOpCardElement(setup,op,i){
   rl.appendChild(faoLab('Zone'));
   rl.appendChild(faoSel([['all','Tout usiner'],['rect','Rectangle'],['chain','Chaîne d\'arêtes'],['sketch','Esquisse']],limMode,function(v){
     if(v==='rect'){
-      const s=faoStock();
+      const s=faoOpView(setup,op).stock||faoStock(); // repère 3+2 : brut vu par l'opération
       op.limit={mode:'rect',x0:s.x0,y0:s.y0,x1:s.x1,y1:s.y1,side:'center',extra:0};
     }else if(v==='chain'){
       const old=op.limit&&op.limit.mode==='chain'?op.limit:null;
@@ -27678,7 +27725,7 @@ function faoOpCardElement(setup,op,i){
     ['sketch','Esquisse','Îlot délimité par un contour d\'esquisse — re-extrait à chaque rejeu.']],
     lim2Mode,function(v){
       if(v==='rect'){
-        const s=faoStock();
+        const s=faoOpView(setup,op).stock||faoStock(); // repère 3+2 : brut vu par l'opération
         const cx=((+s.x0)+(+s.x1))/2, cy=((+s.y0)+(+s.y1))/2;
         const w=Math.max(2,Math.min((+s.x1)-(+s.x0),(+s.y1)-(+s.y0))*0.15);
         op.limit2={mode:'rect',x0:Math.round((cx-w)*100)/100,y0:Math.round((cy-w)*100)/100,
@@ -33905,6 +33952,9 @@ function faoChainBuildOverlay(){
     mesh.userData.segs=segs;
     halo.onBeforeRender=mesh.onBeforeRender;
     const grp=new THREE.Group(); grp.name='faoChainEdges'; grp.add(mesh); grp.add(halo); // [0] = trait (pointage)
+    // arêtes en coordonnées de l'OPÉRATION (repère 3+2) : le groupe les ramène dans le posage
+    try{ const M=faoOpMatrix(faoSetup(faoChainMode.setupId),(faoSetup(faoChainMode.setupId).ops||[]).filter(function(o){return o.id===faoChainMode.opId;})[0]);
+      if(M){ grp.matrixAutoUpdate=false; grp.matrix.copy(M); } }catch(e){}
     faoAdd3D(grp);
     faoChainPaint();
   }catch(e){ try{faceEl.textContent='Chaîne : affichage impossible ('+e.message+').';}catch(e2){} }
@@ -33959,7 +34009,7 @@ function faoChainPick(e){
     }catch(err){}
     camera.updateMatrixWorld();
     const PV=new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
-    let RW=null; try{ grp.updateMatrixWorld(true); RW=grp.parent?grp.parent.matrixWorld:null; if(RW)PV.multiply(RW); }catch(err){} // segments en repère posage
+    let RW=null; try{ grp.updateMatrixWorld(true); RW=grp.matrixWorld; if(RW)PV.multiply(RW); }catch(err){} // segments en repère de l'opération (ou du posage)
     const cpw=camera.position,cp=RW?cpw.clone().applyMatrix4(RW.clone().invert()):cpw,va=new THREE.Vector4(),vb=new THREE.Vector4();
     const TOL=10;let best=null,bestD=TOL*TOL,bestZ=Infinity;
     for(let k=0;k<segEdge.length;k++){
@@ -34117,7 +34167,7 @@ function faoChainOk(){
       try{
         let zl=1/0;
         faoChainMode.sel.forEach(function(i){const e=faoChainMode.edges[i];(e&&e.pts||[]).forEach(function(p){if(isFinite(+p[2])&&+p[2]<zl)zl=+p[2];});});
-        const st=faoStock();
+        const st=faoOpView(setup,op).stock||faoStock(); // repère 3+2 : brut vu par l'opération
         op.ztop=+st.z1;
         if(zl<1/0&&zl<+st.z1-1e-6)op.zbot=Math.round(zl*1000)/1000;
       }catch(e){}
@@ -34126,8 +34176,9 @@ function faoChainOk(){
       L.side='in';
       if(!op.zlim){
         try{
-          const st=faoStock();
-          const am=faoActiveMesh(setup);
+          const ov=faoOpView(setup,op); // repère 3+2 : brut et pièce vus par l'opération
+          const st=ov.stock||faoStock();
+          const am=faoActiveMesh(ov);
           op.ztop=+st.z1;
           op.zbot=(am&&am.mesh)?faoPocketFloor(am.mesh,L.loop,+st.z0):+st.z0;
         }catch(e){}
@@ -37265,10 +37316,13 @@ function faoOpReachWarn(op,setup,t,g){
   // longueur de coupe, à la longueur dégagée et à la sortie sous mandrin.
   const mv=(typeof faoMovesStat==='function')?faoMovesStat(op,setup):null;
   if(!mv||!mv.length)return null;
+  // repère 3+2 : profondeur mesurée le long du Z de l'OPÉRATION, depuis le brut qu'elle voit
+  let fr=null;try{fr=faoOpFrame(setup,op);}catch(e){fr=null;}
+  const zOf=function(m){return fr?faoToF(fr,faoToW(fr.P,[+m.x,+m.y,+m.z]))[2]:+m.z;};
   let zmin=Infinity;
-  for(let i=0;i<mv.length;i++){const m=mv[i];if(m&&!m.r&&isFinite(+m.z)&&+m.z<zmin)zmin=+m.z;}
+  for(let i=0;i<mv.length;i++){const m=mv[i];if(m&&!m.r&&isFinite(+m.z)){const z=zOf(m);if(z<zmin)zmin=z;}}
   if(!isFinite(zmin))return null;
-  let top=null;try{const st=faoStock();top=(st&&isFinite(+st.z1))?+st.z1:null;}catch(e){}
+  let top=null;try{const st=fr?faoOpView(setup,op).stock:faoStock();top=(st&&isFinite(+st.z1))?+st.z1:null;}catch(e){}
   if(top===null||!isFinite(top))return null;
   const prof=faoR1(top-zmin);
   if(prof>g.lsm.v)return '⚠ Profondeur usinée '+prof+' mm > longueur sous mandrin '+g.lsm.v+' mm : COLLISION du mandrin — sortez l’outil ou changez d’outil.';
@@ -37509,12 +37563,21 @@ function faoHoleThread(h,setup){
   if(i&&i.thread&&i.thread.size)return {size:i.thread.size,p:+i.thread.p,len:0,src:'STEP'};
   return null;
 }
+function faoWithOpFrame(op,fn){
+  // Exécute fn avec les trous vus dans le repère PROPRE de l'opération (onglet Repère, 3+2) :
+  // un perçage sur la tranche voit les trous de la tranche « verticaux ». Sans repère propre :
+  // celui du posage. fn(Fr) — Fr = repère de l'opération, ou null.
+  let Fr=null;try{const s=faoSetupOfOp(op);Fr=s?faoOpFrame(s,op):null;}catch(e){Fr=null;}
+  const k=faoFrameCur;faoFrameCur=Fr||null;
+  try{return fn(Fr);}finally{faoFrameCur=k;}
+}
 function faoDrillResolve(op){
   // Re-résout les trous sélectionnés sur le modèle COURANT (suit les modifications).
   // Retourne true si op.holes a changé. Sans modèle exact : instantané conservé.
   if(!op||op.type!=='drill'||op.src!=='model')return false;
-  const shapes=faoHoleShapes();if(!shapes.length)return false;
-  const all=faoHolesDetect(shapes);
+  // trous vus dans le repère de l'opération : ceux qu'on y a choisis s'y retrouvent
+  const all=faoWithOpFrame(op,function(){const shapes=faoHoleShapes();return shapes.length?faoHolesDetect(shapes):null;});
+  if(!all)return false;
   const setup=faoSetupOfOp(op);
   const nh=all.filter(function(h){return faoHoleInSel(op,h);}).map(function(h){
     const o={x:h.x,y:h.y,d:h.d,ztop:h.ztop,zbot:h.zbot,zSurf:h.zSurf,through:h.through,tipAng:h.tipAng,chD:h.chD};
@@ -37697,6 +37760,13 @@ function faoHolePickAt(e){
   faoHoleMarks();
   return true;
 }
+function faoDrillInherit(from,to){
+  // Opération de perçage née d'une autre (nouveau Ø, gamme) : même repère 3+2 et mêmes
+  // hauteurs — les trous choisis l'ont été dans CE repère.
+  if(from&&from.frame)to.frame=JSON.parse(JSON.stringify(from.frame));
+  ['z','ztop','zbot'].forEach(function(k){if(from&&from[k]!==undefined)to[k]=from[k];});
+  return to;
+}
 function faoHoleToggle(setup,op,d,z){
   faoSnapshot('sélection de trous');
   // UN diamètre par opération de perçage (un foret) : ajouter un autre Ø crée une
@@ -37708,6 +37778,7 @@ function faoHoleToggle(setup,op,d,z){
   if(cyc!=='spot'&&other&&!already){
     const no=faoOpDefaults('drill');
     ['cycle','depthMode','brk','order','peck','dwell'].forEach(function(k){if(op[k]!==undefined)no[k]=op[k];});
+    faoDrillInherit(op,no);
     no.holeSel=[{d:+(+d).toFixed(3),z:+(+z).toFixed(3)}];
     const idx=(setup.ops||[]).indexOf(op);
     setup.ops.splice(idx<0?setup.ops.length:idx+1,0,no);
@@ -37738,7 +37809,13 @@ function faoHoleMarks(){
     const segOf=function(H,r){const a=[];const N=40;for(let k=0;k<N;k++){const t0=k/N*Math.PI*2,t1=(k+1)/N*Math.PI*2;
       a.push(H.x+r*Math.cos(t0),H.y+r*Math.sin(t0),H.zSurf+0.05,H.x+r*Math.cos(t1),H.y+r*Math.sin(t1),H.zSurf+0.05);}return a;};
     const on=[],off=[];
-    faoHolesDetect().forEach(function(H){(op&&faoHoleInSel(op,H)?on:off).push.apply(op&&faoHoleInSel(op,H)?on:off,segOf(H,H.d/2+0.6));});
+    // trous du repère de l'opération ; anneaux ramenés dans le repère du posage pour le dessin
+    faoWithOpFrame(op,function(Fr){
+      faoHolesDetect().forEach(function(H){
+        let s=segOf(H,H.d/2+0.6);
+        if(Fr){const o=[];for(let i=0;i<s.length;i+=3){const w=faoPtOpToPos(Fr,[s[i],s[i+1],s[i+2]]);o.push(w[0],w[1],w[2]);}s=o;}
+        (op&&faoHoleInSel(op,H)?on:off).push.apply(op&&faoHoleInSel(op,H)?on:off,s);});
+    });
     if(off.length)grp.add(faoThickSegs(off,0x8e8e93,1,2));
     if(on.length)grp.add(faoThickSegs(on,0xff9f0a,1,3));
     faoAdd3D(grp);
@@ -37809,7 +37886,7 @@ function faoDrillSections(setup,op,d){
     if(faoHolePick)faoHolePickExit();else faoHolePickStart(setup.id,op.id);},'Cliquer un trou de la pièce : tous les trous de même Ø et même départ'));
   d.appendChild(rs);
   if(op.src==='model'){
-    const holes=faoHolesDetect();
+    const holes=faoWithOpFrame(op,function(){return faoHolesDetect();}); // repère de l'opération (3+2)
     if(!holes.length){const n=document.createElement('div');n.className='fao-empty';n.textContent='Aucun trou vertical reconnu sur le modèle (noyau exact requis).';d.appendChild(n);}
     faoHoleGroups(holes).forEach(function(g){
       const r=faoRow();
@@ -37872,7 +37949,7 @@ function faoDrillGamme(setup,op){
   const idx=Math.max(0,setup.ops.indexOf(op));
   setup.ops.splice(idx,1);
   const made=[];let at=idx;
-  const push=function(o){setup.ops.splice(at++,0,o);faoDrillResolve(o);made.push(o);return o;};
+  const push=function(o){faoDrillInherit(op,o);setup.ops.splice(at++,0,o);faoDrillResolve(o);made.push(o);return o;};
   // 1. pointage (tous les Ø)
   if(plain.length){
     const sp=Object.assign(faoOpDefaults('drill'),base,{cycle:'spot',holeSel:plain.map(function(s){return {d:s.d,z:s.z};})});
@@ -38466,9 +38543,20 @@ function faoOpBC(job,op){
   const o=faoOrientFromNormal(fr.rel.Z[0],fr.rel.Z[1],fr.rel.Z[2]);
   return {b:o.b,c:o.c,down:o.down};
 }
+let faoOpJobMemo=new WeakMap();
 function faoOpJob(job,op,fr){
-  // posage « vu » dans le repère de l'opération : même posage, autre repère, brut ramené
+  // posage « vu » dans le repère de l'opération : même posage, autre repère, brut ramené.
+  // Mémorisé par opération (clé de cache, contrôles « à jour ? » : appelé souvent).
+  let sig=null;
+  try{sig=JSON.stringify([fr.X,fr.Y,fr.Z,fr.O,op.z,op.ztop,job.stock,job.marge,faoBodyGen,job.bodies||null]);
+    const m=faoOpJobMemo.get(op);if(m&&m.job===job&&m.sig===sig)return m.jo;}catch(e){sig=null;}
+  const jo=faoOpJob0(job,op,fr);
+  if(sig!==null)try{faoOpJobMemo.set(op,{job:job,sig:sig,jo:jo});}catch(e){}
+  return jo;
+}
+function faoOpJob0(job,op,fr){
   const jo=Object.create(job);
+  Object.defineProperty(jo,'__opJob',{value:op,enumerable:false}); // posage vu par CETTE opération
   jo.frame={z:fr.Z.slice(),x:fr.X.slice(),o:fr.O.slice()};
   jo.originZero=true; // coordonnées de l'opération : Z0 = son origine (= celle du posage)
   try{
@@ -38494,6 +38582,17 @@ function faoOpJob(job,op,fr){
     }
   }catch(e){}
   return jo;
+}
+function faoOpView(setup,op){
+  // posage VU par l'opération : repère propre (3+2) → brut et maillage dans SES coordonnées ;
+  // sinon le posage lui-même. Pour les valeurs automatiques des fiches (hauteurs, rectangles).
+  try{const fr=faoOpFrame(setup,op);return fr?faoOpJob(setup,op,fr):setup;}catch(e){return setup;}
+}
+function faoOpMatrix(setup,op){
+  // matrice THREE repère opération → repère posage (null = repère du posage) : dessins de saisie
+  try{const fr=faoOpFrame(setup,op);if(!fr||typeof THREE==='undefined')return null;
+    const Pw=fr.P,o=faoToF(Pw,fr.O),x=faoRotF(Pw,fr.X),y=faoRotF(Pw,fr.Y),z=faoRotF(Pw,fr.Z);
+    const m=new THREE.Matrix4();m.makeBasis(new THREE.Vector3(...x),new THREE.Vector3(...y),new THREE.Vector3(...z));m.setPosition(o[0],o[1],o[2]);return m;}catch(e){return null;}
 }
 function faoPtOpToPos(fr,p){return faoToF(fr.P,faoToW(fr,p));}
 function faoMovesOpToPos(mv,fr){
@@ -38521,6 +38620,43 @@ function faoMovesOpToPos(mv,fr){
   for(const k in mv)if(!/^\d+$/.test(k))out[k]=mv[k]; // diag, etc.
   out.opFrame=true;
   return out;
+}
+function faoSeqSafeOp(job,op,fr,mv,prev){
+  // Rapides d'une opération au repère propre (3+2), mouvements en repère posage :
+  //  - entre deux points : retrait / translation / plongée au plan de dégagement de
+  //    l'opération, le long de SON Z (plus de remontée selon le Z du posage) ;
+  //  - entrée : au plan de sécurité du posage au-dessus du point d'entrée, puis le long
+  //    du Z de l'opération depuis son plan de retrait ;
+  //  - sortie : le long du Z de l'opération jusqu'à son plan de retrait, puis au plan du posage.
+  const jo=faoOpJob(job,op,fr),safeO=faoClearAbs(op,jo);
+  const retrO=Math.max(safeO,faoRetractAbs(op,jo)); // entrée / sortie : jusqu'au plan de RETRAIT de l'opération
+  const hop=faoClearAbs(null,job);
+  const toO=function(p){const q=faoToF(fr,faoToW(fr.P,[+p.x,+p.y,+p.z]));return {r:p.r?1:0,x:q[0],y:q[1],z:q[2]};};
+  const toP=function(p){const w=faoPtOpToPos(fr,[p.x,p.y,p.z]);return {r:1,x:w[0],y:w[1],z:w[2]};};
+  const out=[];
+  const put=function(J){const l=out.length?out[out.length-1]:prev;
+    if(l&&Math.abs(l.x-J.x)<1e-9&&Math.abs(l.y-J.y)<1e-9&&Math.abs(l.z-J.z)<1e-9)return;out.push(J);};
+  let pO=null;
+  for(let i=0;i<mv.length;i++){
+    const m=mv[i];
+    if(!m||!isFinite(+m.x)){out.push(m);continue;}
+    const mO=toO(m);
+    if(!pO){
+      const e=toP({x:mO.x,y:mO.y,z:Math.max(mO.z,retrO)});
+      const zh=Math.max(hop,e.z,prev?+prev.z:-Infinity);
+      if(prev)put({r:1,x:prev.x,y:prev.y,z:zh});
+      put({r:1,x:e.x,y:e.y,z:zh});put(e);
+    }else{
+      const ins=faoSafeAhead(pO,mO,safeO);
+      if(ins)ins.forEach(function(J){put(toP(J));});
+    }
+    out.push(m);pO=mO;
+  }
+  if(pO){
+    const e=toP({x:pO.x,y:pO.y,z:Math.max(pO.z,retrO)});put(e);
+    put({r:1,x:e.x,y:e.y,z:Math.max(hop,e.z)});
+  }
+  return {out:out,prev:out.length?out[out.length-1]:prev};
 }
 function* faoOpMovesIt(op,job){
   const fr=faoOpFrame(job,op);
@@ -38577,6 +38713,11 @@ function faoOpTopZ(setup,op){
   try{const fr=faoOpFrame(setup,op);const st=fr?faoOpJob(setup,op,fr).stock:setup.stock;return (st&&isFinite(+st.z1))?+st.z1:null;}catch(e){return null;}
 }
 function faoOpFrameEdit(setup,op,fn,onFace){
+  faoOpFrameEdit0(setup,op,fn,onFace);
+  // perçage « trous du modèle » : les trous choisis se retrouvent dans le NOUVEAU repère
+  if(op&&op.type==='drill'){try{faoDrillResolve(op);}catch(e){}}
+}
+function faoOpFrameEdit0(setup,op,fn,onFace){
   // change le repère de l'opération en gardant ses hauteurs RELATIVES au dessus du brut ;
   // repère posé sur une face (onFace) : la face devient le dessus (Z0)
   if(onFace){ // onFace = point cliqué (repère posage) : sa cote le long du Z de l'opération = hauteur de travail
@@ -38613,35 +38754,68 @@ function faoInp(op,v,i){
   if(v===''||v===null||v===undefined||!isFinite(+v))return v;
   return Math.round((+v+faoOffOf(op)[i])*1e6)/1e6;
 }
-/* ---------- Simulation : outil INCLINÉ (opération 3+2) (2026-10-16-021) ----------
-   La matière simulée est une Z-map (une hauteur par colonne, vue du Z du posage). Un outil
-   incliné n'est plus un cylindre vertical : on balaie son ENVELOPPE INFÉRIEURE — le disque du
-   bout (incliné) et les génératrices du corps — par de petits segments verticaux décalés, chacun
-   taillé comme un fin cylindre vertical. La matière sous le disque incliné reste intacte. */
+/* ---------- Simulation : outil INCLINÉ (opération 3+2) (2026-10-16-021, revu V0.7.6) ----------
+   La matière simulée est une Z-map (une hauteur par colonne, vue du Z du posage) doublée de
+   voxels. Un outil incliné est un cylindre (bout plat, corps illimité le long de son axe) : pour
+   chaque colonne, la verticale coupe le volume balayé en intervalles de Z. Les voxels de ces
+   intervalles meurent ; la hauteur de la colonne ne descend QUE si la coupe débouche sur son
+   dessus (chanfrein, dressage incliné). Un trou sur la tranche reste donc dans la matière,
+   sans « cheminée » verticale jusqu'au-dessus du brut. */
+function faoTiltColIv(px,py,S,A,r,H,out){
+  // intervalle de Z où la verticale (px,py) traverse le cylindre {S + h·A + ρ, 0≤h≤H, |ρ|≤r}
+  const wx=px-S[0],wy=py-S[1],wz=-S[2];
+  const wa=wx*A[0]+wy*A[1]+wz*A[2];
+  const p=[wx-wa*A[0],wy-wa*A[1],wz-wa*A[2]],q=[-A[2]*A[0],-A[2]*A[1],1-A[2]*A[2]];
+  const qq=q[0]*q[0]+q[1]*q[1]+q[2]*q[2],pq=p[0]*q[0]+p[1]*q[1]+p[2]*q[2],pp=p[0]*p[0]+p[1]*p[1]+p[2]*p[2]-r*r;
+  let lo=-Infinity,hi=Infinity;
+  if(qq<1e-12){ if(pp>0)return; }
+  else{ const D=pq*pq-qq*pp;if(D<0)return;const sD=Math.sqrt(D);lo=(-pq-sD)/qq;hi=(-pq+sD)/qq; }
+  if(Math.abs(A[2])>1e-12){ let z1=(0-wa)/A[2],z2=(H-wa)/A[2];if(z1>z2){const x=z1;z1=z2;z2=x;}lo=Math.max(lo,z1);hi=Math.min(hi,z2); }
+  else if(wa<0||wa>H)return;
+  if(hi>lo)out.push([lo,hi]);
+}
 function faoMatterCarveTilt(g,a,b,r,ax,outCols){
   const out=[];
   try{
     let A=ax.slice();const L=Math.hypot(A[0],A[1],A[2])||1;A=A.map(q=>q/L);
-    const t=Math.abs(A[2])<0.9?[0,0,1]:[1,0,0];
-    let u=[A[1]*t[2]-A[2]*t[1],A[2]*t[0]-A[0]*t[2],A[0]*t[1]-A[1]*t[0]];const lu=Math.hypot(...u);u=u.map(q=>q/lu);
-    const v=[A[1]*u[2]-A[2]*u[1],A[2]*u[0]-A[0]*u[2],A[0]*u[1]-A[1]*u[0]];
-    const pas=Math.max(+g.pas||0.5,r/8),rr=Math.max((+g.pas||0.5)*0.55,pas*0.55);
-    const offs=[];
-    for(let i=-r;i<=r+1e-9;i+=pas)for(let j=-r;j<=r+1e-9;j+=pas){ // disque du bout
-      if(i*i+j*j>r*r)continue;offs.push([u[0]*i+v[0]*j,u[1]*i+v[1]*j,u[2]*i+v[2]*j]);}
-    const H=Math.max(4*r,8); // hauteur de corps balayée (au-delà : rarement de la matière)
-    for(let k=0;k<16;k++){const c=Math.cos(k*Math.PI/8),s=Math.sin(k*Math.PI/8); // corps
-      for(let h=pas;h<=H+1e-9;h+=pas)offs.push([A[0]*h+r*(u[0]*c+v[0]*s),A[1]*h+r*(u[1]*c+v[1]*s),A[2]*h+r*(u[2]*c+v[2]*s)]);}
-    // segment EN PENTE (passe qui descend le chanfrein) : la taille d'un segment se fait à sa
-    // cote la plus basse — on le découpe en petits pas de hauteur, sinon des marches apparaissent
-    const n=Math.max(1,Math.min(400,Math.ceil(Math.abs(b.z-a.z)/Math.max(0.05,(+g.pas||0.5)*0.4))));
-    for(let s=0;s<n;s++){
-      const t0=s/n,t1=(s+1)/n;
-      const ax0=a.x+(b.x-a.x)*t0,ay0=a.y+(b.y-a.y)*t0,az0=a.z+(b.z-a.z)*t0;
-      const bx1=a.x+(b.x-a.x)*t1,by1=a.y+(b.y-a.y)*t1,bz1=a.z+(b.z-a.z)*t1;
-      for(const o of offs){
-        const k=faoMatterCarveSeg(g,ax0+o[0],ay0+o[1],az0+o[2],bx1+o[0],by1+o[1],bz1+o[2],rr,outCols,0);
-        for(let m=0;m<k.length;m++)out.push(k[m]);
+    const pz=g.pz||g.pas;
+    const H=Math.hypot(g.nx*g.pas,g.ny*g.pas,g.nz*pz)+2*r; // corps : traverse toute la grille
+    // échantillons du bout le long du segment ; plongée le long de l'axe : le bout le plus profond suffit
+    const d=[b.x-a.x,b.y-a.y,b.z-a.z],dl=Math.hypot(d[0],d[1],d[2]);
+    const da=dl>1e-12?(d[0]*A[0]+d[1]*A[1]+d[2]*A[2])/dl:1;
+    let S=[];
+    if(dl<1e-9||Math.abs(Math.abs(da)-1)<1e-9)S=[da>=0?[a.x,a.y,a.z]:[b.x,b.y,b.z]];
+    else{const n=Math.max(1,Math.min(400,Math.ceil(dl/Math.max(0.05,(+g.pas||0.5)*0.5))));
+      for(let s=0;s<=n;s++){const f=s/n;S.push([a.x+d[0]*f,a.y+d[1]*f,a.z+d[2]*f]);}}
+    // emprise : bouts ± r, plus le corps le long de A
+    let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
+    [[a.x,a.y,a.z],[b.x,b.y,b.z]].forEach(function(P){[0,H].forEach(function(h){
+      const X=P[0]+A[0]*h,Y=P[1]+A[1]*h;x0=Math.min(x0,X);x1=Math.max(x1,X);y0=Math.min(y0,Y);y1=Math.max(y1,Y);});});
+    x0-=r;x1+=r;y0-=r;y1+=r;
+    const i0=Math.max(0,Math.floor((x0-g.ox)/g.pas)),i1=Math.min(g.nx-1,Math.floor((x1-g.ox)/g.pas));
+    const j0=Math.max(0,Math.floor((y0-g.oy)/g.pas)),j1=Math.min(g.ny-1,Math.floor((y1-g.oy)/g.pas));
+    const zTop=g.oz+g.nz*pz;
+    for(let j=j0;j<=j1;j++){
+      const py=g.oy+(j+0.5)*g.pas;
+      for(let i=i0;i<=i1;i++){
+        const px=g.ox+(i+0.5)*g.pas,c=j*g.nx+i;
+        const iv=[];for(let s=0;s<S.length;s++)faoTiltColIv(px,py,S[s],A,r,H,iv);
+        if(!iv.length)continue;
+        iv.sort(function(u,v){return u[0]-v[0];});
+        const m=[iv[0].slice()];
+        for(let n=1;n<iv.length;n++){const l=m[m.length-1];if(iv[n][0]<=l[1]+1e-9)l[1]=Math.max(l[1],iv[n][1]);else m.push(iv[n].slice());}
+        if(m[m.length-1][1]<g.oz||m[0][0]>zTop)continue;
+        let touched=false;
+        m.forEach(function(I){
+          const k0=Math.max(0,Math.ceil((I[0]-g.oz)/pz-0.5)),k1=Math.min(g.nz-1,Math.floor((I[1]-g.oz)/pz-0.5));
+          for(let k=k0;k<=k1;k++){const idx=faoMatterIdx(g,i,j,k);if(g.alive[idx]){g.alive[idx]=0;out.push(idx);touched=true;}}
+        });
+        // la Z-map descend si un intervalle débouche sur le dessus de la colonne ; outil plutôt
+        // vertical (≤ 60°) : le surplomb au-dessus du corps (non représentable) est aussi enlevé
+        if(g.h){const h0=g.h[c];
+          for(let n=m.length-1;n>=0;n--){const I=m[n];
+            if((I[1]>=h0-1e-6||A[2]>=0.5)&&I[0]<h0){const z=Math.max(g.oz,I[0]);if(z<g.h[c]){g.h[c]=z;if(g.hc)g.hc[c]=1;touched=true;}break;}}}
+        if(touched&&outCols)outCols.push(c);
       }
     }
   }catch(e){}

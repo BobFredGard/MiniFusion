@@ -24,6 +24,7 @@ const SUITES = [
   'test_conge_tangent',
   'test_fao_outils',
   'test_fao_percage',
+  'test_fao_32_fiches',
   'test_repeat_circ_tour',
   'test_esquisse_angle',
   'test_esquisse_transparence',
