@@ -70,7 +70,8 @@ function faoMatterLookSet(k){
   const ms=[];
   try{ if(vw&&vw.matter)ms.push(vw.matter.material); if(vw&&vw.voxMat)ms.push(vw.voxMat); if(vw&&vw.mH&&vw.mH.mesh)ms.push(vw.mH.mesh.material);
        if(vw&&vw.gpu&&vw.gpu.mesh)vw.gpu.mesh.traverse(function(o){if(o.material)ms.push(o.material);});
-       if(typeof faoGpuMat!=='undefined'&&faoGpuMat)ms.push(faoGpuMat); if(typeof faoRmMat!=='undefined'&&faoRmMat)ms.push(faoRmMat); }catch(e){}
+       if(typeof faoGpuMat!=='undefined'&&faoGpuMat)ms.push(faoGpuMat); if(typeof faoRmMat!=='undefined'&&faoRmMat)ms.push(faoRmMat);
+       if(typeof faoDexMat!=='undefined'&&faoDexMat)ms.push(faoDexMat); if(typeof faoSdfMat!=='undefined'&&faoSdfMat)ms.push(faoSdfMat); }catch(e){}
   ms.forEach(function(m){ if(m&&m.color)faoMatterStyle(m); });
   faoViewerMsg('FAO : matière simulée en '+FAO_LOOKS[k].label+'.');
 }
@@ -697,6 +698,7 @@ function faoViewerMatterDispose(vw,keepGrid){
   try{ faoViewerVoxDispose(vw,keepGrid); }catch(e){} // cavités 3+2 (src/88-fao-75)
   try{ faoMatterGpuDispose(vw); }catch(e){} // rendu GPU (src/88-fao-76)
   try{ faoMatterRmDispose(vw); }catch(e){} // lancer de rayons (src/88-fao-77)
+  try{ faoEngDispose(vw); }catch(e){} // moteurs tri-dexel / distance (src/88-fao-78)
   try{ if(vw.matter&&typeof scene!=='undefined'&&scene)faoDel3D(vw.matter); }catch(e){}
   try{ if(vw.matter&&vw.matter.geometry&&vw.matter.geometry.dispose)vw.matter.geometry.dispose(); }catch(e){}
   vw.matter=null; vw.mKills=[]; vw.mTops=null; vw.mArr=null; vw.mNrm=null; vw.mH=null;
@@ -922,6 +924,8 @@ function faoViewerMatterEnable(vw,keepGrid){
   faoViewerMatterDispose(vw,keepGrid);
   if(!vw||vw.matterOn===false)return 0;
   const s=faoStock(); if(!faoStockValid(s))return 0;
+  // V0.8.7 : moteurs « palier 3 » à l'essai (tri-dexel, champ de distance — src/88-fao-78)
+  if(typeof faoEngWanted==='function'&&faoEngWanted())return faoEngEnable(vw);
   // V0.7.8 : orientations inclinées + WebGL2 → cartes par orientation et lancer de rayons (src/88-fao-77) ;
   // la grille du posage n'a alors pas besoin de couches fines (plus de voxels)
   const rm=faoViewerVoxWanted(vw)&&(typeof faoMatterRmSupported==='function')&&faoMatterRmSupported();
@@ -1060,6 +1064,7 @@ function faoMatterCarveRange(g,pts,dd,times,t,i0,x0,y0,z0,p,outCols,crs,tps){
 function faoViewerMatterStep(vw,p){
   // À chaque frame : enleve la matière du segment balayé (ou rattrapage si saut).
   // INCREMENTAL : on ne repart JAMAIS de 0 sauf au tout premier appel.
+  if(vw&&vw.eng){ if(vw.matterOn!==false)faoEngStep(vw,p); return; } // moteur tri-dexel / distance (src/88-fao-78)
   if(!vw||vw.matterOn===false||!vw.matterGrid||!vw.matter)return;
   const g=vw.matterGrid;
   let ks=null;
@@ -1349,6 +1354,16 @@ function faoViewerBarShow(){
     ls.value=faoMatterLook;
     ls.onchange=function(){ faoMatterLookSet(ls.value); };
     bar.appendChild(ls); faoVwLookSel=ls;
+    // V0.8.7 : moteur de matière (cartes de hauteurs / tri-dexel / champ de distance) — à comparer
+    if(typeof FAO_ENGINES!=='undefined'){
+      const es=document.createElement('select');
+      es.title='Moteur de simulation de la matière : cartes de hauteurs (défaut), tri-dexel ou champ de distance (essai, palier 3)';
+      es.style.fontSize='.75rem';
+      Object.keys(FAO_ENGINES).forEach(function(k){ const op=document.createElement('option'); op.value=k; op.textContent='moteur : '+FAO_ENGINES[k]; es.appendChild(op); });
+      es.value=faoSimEngine;
+      es.onchange=function(){ faoEngineSet(es.value); };
+      bar.appendChild(es); faoVwEngSel=es;
+    }
     const mkChk=function(label,title,get,set){
       const lb=document.createElement('label');
       lb.style.cssText='display:flex;gap:4px;align-items:center;cursor:pointer;user-select:none;white-space:nowrap;';

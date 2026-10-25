@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**335 versions**, de `2026-09-28b` à `V0.8.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**336 versions**, de `2026-09-28b` à `V0.8.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4835,3 +4835,10 @@ Dernière étape de la série V0.8 (« toutes tes idées ») : piloter MiniFusio
 - **Cause** : un modèle de cartouche ne gardait que l'esquisse (traits, textes fixes, emplacements des champs) ; le **logo** et les **valeurs** des champs (projet, société, client, n° de plan, auteur, matière, TTS, TTH, tolérances, champs perso…) vivent sur la planche et n'étaient ni enregistrés ni exportés. Le cartouche Standard ne pouvait pas être enregistré du tout.
 - **Correctif** (`mepTbPack` / `mepTbUnpack`, `src/98-mise-en-plan.js`) : « Enregistrer… », « Exporter… » (.mfcartouche) et le modèle par défaut emportent l'esquisse, le logo, les valeurs et les champs perso ; les rappeler (liste « Modèle », « Importer… », nouvelle planche) remet tout. La date et les champs calculés (planche, échelle, indice) restent ceux de la planche. Le cartouche Standard s'enregistre et s'exporte comme un dessiné. L'export prend le cartouche de la planche tel qu'il est, même s'il porte le nom d'un modèle déjà en bibliothèque. Les anciens modèles (sans valeurs) se rappellent comme avant.
 - **Tests** : `test_cartouche_modele` (Standard et dessiné : logo, valeurs, champs perso, date gardée, pas de doublon, ancien modèle, aller-retour du fichier .mfcartouche).
+
+## V0.8.7 - Simulation : moteurs tri-dexel et champ de distance (palier 3, à l'essai)
+« On essaye et on garde les deux options avant d'en choisir une. » Deux moteurs de matière de type industriel (nouveau `src/88-fao-78-moteurs-volume.js`), choisis dans la barre de lecture (« moteur : cartes / tri-dexel / distance », mémorisé) ; les cartes de hauteurs restent le défaut.
+- **Tri-dexel** : trois jeux de rayons parallèles à X, Y et Z (pas 0,2 mm au niveau normal), chacun avec ses intervalles de matière ; taille exacte le long de chaque rayon. Outil parallèle à un axe (vertical, ou 3+2 à 90°, dans les deux sens) : calcul analytique dans le repère permuté de l'outil — sur un rayon le long de l'outil, dessous du profil (fond, arrondi, pointe) ; sur un rayon perpendiculaire, « gélule » (disque du profil balayé le long du pas) ; couches bornées par la matière restante. Outil oblique : intersection rayon / solide de révolution (convexe) aux positions échantillonnées. Contre-dépouilles conservées (matière au-dessus d'un vide). Rendu : une facette par extrémité d'intervalle (870 k facettes instanciées sur Perçages), normales lissées par les rayons voisins ; arêtes vives.
+- **Champ de distance** : distance signée tronquée sur une grille 3D (6,4 M d'échantillons, pas 0,37 mm sur Perçages) ; taille = max(d, −d_outil), d_outil tabulé dans le plan (ρ, h) du profil ; surface extraite par « surface nets » par blocs de 16³ (seuls les blocs touchés sont refaits), normales = gradient du champ. Surfaces lisses sans marches, arêtes adoucies à l'échelle du pas.
+- **Mesures sur Perçages** (8 984 points, 1 530 en 3+2), rattrapage complet : cartes 0,9 s ; tri-dexel 2,0 s (23 s avant la permutation des axes et la borne des couches) ; distance 2,3 s ; lecture : 7 / 15 / 13 ms par pas. Volume restant : tri-dexel 199 230 mm³, distance 199 203 mm³ (0,01 %).
+- **Tests** : `test_simulation_moteurs` (volumes calculés à la main : rainure fraise plate, rainure fraise boule, perçage 3+2 par la tranche, outil couché vers −Y, outil oblique 45° — les deux moteurs d'accord —, trois familles de rayons d'accord, contre-dépouille, surface du brut, profil d'outil, choix du moteur).

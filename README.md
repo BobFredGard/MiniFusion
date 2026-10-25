@@ -2,7 +2,7 @@
 
 **CAO paramétrique, assemblage, FAO et mise en plan dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2, G-code et planches cotées ISO. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.8.6** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.8.7** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Sommaire
 
@@ -170,6 +170,7 @@ Convertir une pièce multicorps en assemblage, sans rien remodéliser :
 - **Faces usinables (bleu) / intouchables (rouge)** par opération, avec marge et **« Interdire devant la face »** : la fraise ne descend jamais le long d'un flanc rouge.
 - **Zones** : rectangle, chaîne d'arêtes du modèle ou esquisse, avec îlots ; hauteurs par références (dessus du brut, haut ou bas du modèle, bridage, face cliquée, origine).
 - **Simulation** : outil réel, matière enlevée au fil des passes à partir du vrai brut, rendu réel ou lisse, temps estimé. La matière est éclairée d'après la **forme de l'outil** (fond, arrondi, pointe, parois) et dessinée par la **carte graphique** (maille de 0,2 mm). En 3+2, chaque orientation d'outil a sa **carte de hauteurs** et la matière est rendue par **lancer de rayons** : les cavités latérales sont aussi nettes que le dessus.
+- **Moteur de simulation** (barre de lecture, à l'essai) : **cartes** (défaut, ci-dessus), **tri-dexel** (trois jeux de rayons X / Y / Z, taille exacte le long de chaque rayon, contre-dépouilles et orientations quelconques, arêtes vives) ou **distance** (champ de distance signée, surfaces lisses sans marches, arêtes légèrement adoucies). Mêmes outils, mêmes parcours ; le choix est mémorisé.
 - **Cache des parcours** : rien n'est recalculé tant que la géométrie ne change pas.
 
 ![3+2 : surfaçage d'un chanfrein, outil incliné](docs/captures/fao-3plus2.png)
@@ -267,7 +268,7 @@ Le dépôt stocke les gros binaires (`occt/*.wasm`, `Exemples/*.miniFusion`, `Ex
 
 | Chemin | Rôle |
 |---|---|
-| `src/*.js` | **Les sources** (74 fichiers, de l'en-tête à l'initialisation ; la FAO est découpée par domaine : parcours, caches, post-processeurs, simulation, interface, ébauche 3D, contour, géodésique, crêtes, perçage). C'est ici qu'on travaille. |
+| `src/*.js` | **Les sources** (75 fichiers, de l'en-tête à l'initialisation ; la FAO est découpée par domaine : parcours, caches, post-processeurs, simulation, interface, ébauche 3D, contour, géodésique, crêtes, perçage). C'est ici qu'on travaille. |
 | `fusion_mvp.html` | **Livrable généré** par `node build.js` (le HTML et le CSS de base vivent dans ce fichier, hors de la balise `<script>`). On n'édite jamais le script à la main. |
 | `tests/` | Suite Node portable (plus de 100 suites, dont certaines sur le noyau OCCT réel) : `node tests/run.cjs`, en parallèle (`-j N` pour la taille du pool, `--verbose` pour toutes les sorties) ; sous-ensemble rapide : `node tests/run-fast.cjs`. |
 | `tests/oracle/` | **Tests de référence** : pièces aux valeurs calculées à la main (volume, surface, centre de gravité, encombrement), vérifiées à chaque version par `test_oracle` ; tableau dans [docs/oracle.md](docs/oracle.md), régénéré par `npm run oracle`. |
