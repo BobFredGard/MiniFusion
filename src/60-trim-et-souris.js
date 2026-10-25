@@ -633,7 +633,7 @@ svg.addEventListener('pointerdown',e=>{
   if(skTool==='project'){
     // OCCT donne les arêtes BRep exactes (vives ET de tangence) ; sans noyau on garde le
     // repli sur les références projetées (corps visibles) — dégradé, mais utilisable.
-    if(!(occHas()&&occLive&&occLive.shape)&&!((sk._refs||[]).length)){
+    if(!(occHas()&&occLive&&occLive.shape)&&!((sk._refs||[]).length)&&!(typeof asmSkExtLists==='function'&&asmSkExtLists().length)){
       skStatus('Projeter : noyau OCCT requis (⚙ Noyau .wasm ou serveur) et solide visible.');
       return;
     }
@@ -696,7 +696,7 @@ svg.addEventListener('pointermove',e=>{
     const pr=projectEdgeAt(sk,wx,wy);
     const k=pr?JSON.stringify(pr):'null', ko=skProjectHover?JSON.stringify(skProjectHover):'null';
     if(k!==ko){ skProjectHover=pr; drawSketch2D(); }
-    if(pr) skStatus('⧉ '+(pr.type==='circle'?'Cercle':pr.type==='arc'?'Arc':'Arête')+' — clic pour projeter en construction.');
+    if(pr) skStatus('⧉ '+(pr.type==='circle'?'Cercle':pr.type==='arc'?'Arc':'Arête')+(pr.ext?' de « '+(pr.extName||'composant')+' » (suit ce composant)':'')+' — clic pour projeter en construction.');
     else skStatus('⧉ Survolez une arête 3D (même hors plan) — elle s\'illumine en orange.');
     return;
   }

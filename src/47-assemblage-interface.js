@@ -59,7 +59,8 @@ function asmCaptureActive(){
   });
   if(c._snap)asmSnapFree(c._snap);
   const edges=asmEdgeCapture(); // arêtes pour le mode Placer (48-assemblage-apparence)
-  c._snap={items,edges,exact:builtEngine==='exact',hash:(()=>{try{return docHash();}catch(e){return '';}})()};
+  const pedges=asmSkCaptureEdges(); // V0.8.1 : arêtes exactes, projetables dans les esquisses des autres (46)
+  c._snap={items,edges,pedges,exact:builtEngine==='exact',hash:(()=>{try{return docHash();}catch(e){return '';}})()};
   delete c._stale;
   // le composant vient d'être rejoué : ses repères ont pu bouger → les alignements suivent
   try{if(asmResolve()){dirty=true;autosave();}}catch(e){}

@@ -288,7 +288,7 @@ function projEdgesFor(sk){
   if(pk!=null&&edges){_projEdgePersist.set(pk,edges);while(_projEdgePersist.size>24)_projEdgePersist.delete(_projEdgePersist.keys().next().value);}
   return edges;
 }
-function findClosestProjectedEdge(sk,x,y,preferMid,wantType){
+function findClosestProjectedEdge(sk,x,y,preferMid,wantType,edgesOver){
   // sans tolérance, cherche l'arête projetée la plus proche (antériorité).
   // preferMid : milieu 3D mémorisé à la projection — l'arête source d'origine prime
   // (si le solide bouge, on reste sur LA bonne arête et on rafraîchit le lien).
@@ -297,7 +297,7 @@ function findClosestProjectedEdge(sk,x,y,preferMid,wantType){
   let best=null,bd=1e9, srcMid=null;
   let bTy=null,bTyd=1e9,bTySrc=null; // meilleur candidat EXIGÉ par le type de l'entité
   const basis=sketchBasis(sk),u=basis.u,v=basis.v,o=basis.o;
-  const edgesAll=projEdgesFor(sk);
+  const edgesAll=edgesOver!==undefined?edgesOver:projEdgesFor(sk); // V0.8.1 : arêtes d'un autre composant
   {
   for(const edges of (edgesAll?[edgesAll]:[])){
     try{
@@ -314,7 +314,8 @@ function findClosestProjectedEdge(sk,x,y,preferMid,wantType){
           // reconstruit pr comme projectEdgeAt mais sans tol
           let isCirc=false,cx=0,cy=0,r=0;
           if(pts2.length>=6){
-            const p0=pts2[0],p1=pts2[Math.floor(pts2.length/2)],p2=pts2[pts2.length-1];
+            // 0, 1/3, 2/3 : un cercle complet a son dernier point sur le premier (V0.8.1 : donnait une ligne nulle)
+            const p0=pts2[0],p1=pts2[Math.floor(pts2.length/3)],p2=pts2[Math.floor(2*pts2.length/3)];
             const d2=2*(p0[0]*(p1[1]-p2[1])+p1[0]*(p2[1]-p0[1])+p2[0]*(p0[1]-p1[1]));
             if(Math.abs(d2)>1e-9){
               const sq0=p0[0]*p0[0]+p0[1]*p0[1],sq1=p1[0]*p1[0]+p1[1]*p1[1],sq2=p2[0]*p2[0]+p2[1]*p2[1];
@@ -359,10 +360,17 @@ function updateAssociativeProjections0(sk){
     // de profil fixée par l'utilisateur n'est pas une projection).
     const isProj=e.proj||e.isProj||(e.construction&&e.t==='line'&&sk.constraints.some(c=>c.type==='fix'&&c.p===e.p1)&&sk.constraints.some(c=>c.type==='fix'&&c.p===e.p2));
     if(!isProj) continue;
+    // V0.8.1 : arête d'un autre composant — ses arêtes, vues depuis ce composant
+    let EO;
+    if(e.ext){
+      if(typeof asmSkExtEdges!=='function')continue;
+      EO=asmSkExtEdges(e.ext);if(!EO)continue;
+      const sg=asmSkExtSig(e.ext);if(sg!=null)e.ext.sig=sg;
+    }
     if(e.t==='line'){
       const A=sk.points[e.p1], B=sk.points[e.p2]; if(!A||!B) continue;
       const mx=(A.x+B.x)/2, my=(A.y+B.y)/2;
-      const pr=findClosestProjectedEdge(sk,mx,my,e.srcMid,'line');
+      const pr=findClosestProjectedEdge(sk,mx,my,e.srcMid,'line',EO);
       if(!pr||pr.type!=='line') continue;
       if(pr.srcMid)e.srcMid=pr.srcMid;
       const d1=Math.hypot(A.x-pr.x1,A.y-pr.y1)+Math.hypot(B.x-pr.x2,B.y-pr.y2);
@@ -376,14 +384,14 @@ function updateAssociativeProjections0(sk){
       }
     } else if(e.t==='circle'){
       const C=sk.points[e.pc]; if(!C) continue;
-      const pr=findClosestProjectedEdge(sk,C.x,C.y,e.srcMid,'circle');
+      const pr=findClosestProjectedEdge(sk,C.x,C.y,e.srcMid,'circle',EO);
       if(!pr||pr.type!=='circle') continue;
       if(pr.srcMid)e.srcMid=pr.srcMid;
       if(Math.hypot(C.x-pr.cx,C.y-pr.cy)>0.02 || Math.abs(e.r-pr.r)>0.02){ C.x=pr.cx; C.y=pr.cy; e.r=pr.r; changed=true; }
     } else if(e.t==='arc'){
       const C=sk.points[e.pc], A=sk.points[e.pa], B=sk.points[e.pb]; if(!C||!A||!B) continue;
       const mx=(A.x+B.x)/2, my=(A.y+B.y)/2;
-      const pr=findClosestProjectedEdge(sk,mx,my,e.srcMid,'arc');
+      const pr=findClosestProjectedEdge(sk,mx,my,e.srcMid,'arc',EO);
       if(!pr||pr.type!=='arc') continue;
       if(pr.srcMid)e.srcMid=pr.srcMid;
       if(Math.hypot(C.x-pr.cx,C.y-pr.cy)>0.02 || Math.hypot(A.x-pr.x1,A.y-pr.y1)>0.02 || Math.hypot(B.x-pr.x2,B.y-pr.y2)>0.02 || Math.abs(e.r-pr.r)>0.02){
@@ -419,8 +427,9 @@ function updateAllProjections(){
 function projPreUpdate(){
   // Avant le rejeu principal : seulement si le noyau exact est prêt et qu'au moins une
   // esquisse porte des projections associatives (sinon : rien à faire, aucun coût).
-  if(!(typeof occHas==='function'&&occHas()))return false;
-  const any=(doc.sketches||[]).some(sk=>(sk.entities||[]).some(e=>e&&(e.proj||e.isProj)));
+  const ext=(doc.sketches||[]).some(sk=>(sk.entities||[]).some(e=>e&&e.proj&&e.ext)); // V0.8.1 : sans noyau, des instantanés
+  if(!(typeof occHas==='function'&&occHas())&&!ext)return false;
+  const any=ext||(doc.sketches||[]).some(sk=>(sk.entities||[]).some(e=>e&&(e.proj||e.isProj)));
   if(!any)return false;
   return updateAllProjections();
 }
@@ -431,6 +440,7 @@ function projectEdgeAt(sk,x,y){
   let best=null,bd=1e9,srcMid=null;
   const basis=sketchBasis(sk),u=basis.u,v=basis.v,n=basis.n,o=basis.o;
   const candShapes=[];let FRk=null;
+  const candExt=(typeof asmSkExtLists==='function')?(()=>{try{return asmSkExtLists();}catch(e){return [];}})():[]; // V0.8.1
   // 1) solide antérieur exact si esquisse consommée, sinon solide fini
   try{
     const idx=skConsumerIdx(sk);
@@ -443,15 +453,16 @@ function projectEdgeAt(sk,x,y){
   }catch(e){}
   // 2) BRep exact : teste chaque arête sur le plan
   try{
-  for(const sh of candShapes){
+  for(const sh of candShapes.concat(candExt)){
     try{
-      const edges=occListEdges(sh);
+      const edges=sh&&sh.edges?sh.edges:occListEdges(sh);
       for(const e of edges){
         const pts2=e.pts.map(p=>[(p[0]-o.x)*u.x+(p[1]-o.y)*u.y+(p[2]-o.z)*u.z, (p[0]-o.x)*v.x+(p[1]-o.y)*v.y+(p[2]-o.z)*v.z]);
         // cercle ? (3 points → centre)
         let isCirc=false,cx=0,cy=0,r=0,arcA1=0,arcA2=0;
         if(pts2.length>=6){
-          const p0=pts2[0],p1=pts2[Math.floor(pts2.length/2)],p2=pts2[pts2.length-1];
+          // 0, 1/3, 2/3 : un cercle complet a son dernier point sur le premier (V0.8.1)
+          const p0=pts2[0],p1=pts2[Math.floor(pts2.length/3)],p2=pts2[Math.floor(2*pts2.length/3)];
           const d=2*(p0[0]*(p1[1]-p2[1])+p1[0]*(p2[1]-p0[1])+p2[0]*(p0[1]-p1[1]));
           if(Math.abs(d)>1e-9){
             const sq0=p0[0]*p0[0]+p0[1]*p0[1],sq1=p1[0]*p1[0]+p1[1]*p1[1],sq2=p2[0]*p2[0]+p2[1]*p2[1];
@@ -461,7 +472,7 @@ function projectEdgeAt(sk,x,y){
             if(r>0.5){
               let dev=0;
               for(const p of pts2){const dd=Math.abs(Math.hypot(p[0]-cx,p[1]-cy)-r); if(dd>dev)dev=dd;}
-              if(dev<0.35){ isCirc=true; arcA1=Math.atan2(p0[1]-cy,p0[0]-cx); arcA2=Math.atan2(p2[1]-cy,p2[0]-cx); }
+              if(dev<0.35){ isCirc=true; arcA1=Math.atan2(p0[1]-cy,p0[0]-cx); arcA2=Math.atan2(pts2[pts2.length-1][1]-cy,pts2[pts2.length-1][0]-cx); }
             }
           }
         }
@@ -499,7 +510,7 @@ function projectEdgeAt(sk,x,y){
           } else best={type:'line',x1:pts2[0][0],y1:pts2[0][1],x2:pts2[pts2.length-1][0],y2:pts2[pts2.length-1][1]};
         }
       }
-      if(best){if(srcMid)best.srcMid=srcMid;return best;}
+      if(best){if(srcMid)best.srcMid=srcMid;if(sh&&sh.ext){best.ext={ctx:sh.ext.ctx.slice(),path:sh.ext.path.slice()};best.extName=sh.name;}return best;}
     }catch(e){}
   }
   // 3) repli violet (toujours dispo, même sans BRep)
@@ -517,7 +528,9 @@ function projNames(pr){
   // Noms persistants d'une projection : « Projetée N » + « Arête M » (arête source 3D
   // mémorisée via srcMid — rebranchée après rejeu par updateAssociativeProjections).
   const srcMid=(pr&&pr.srcMid&&pr.srcMid.length===3)?pr.srcMid.slice():null;
-  return {projName:entName('proj'),srcName:srcMid?entName('edge'):null,srcMid};
+  const o={projName:entName('proj'),srcName:srcMid?entName('edge'):null,srcMid};
+  if(pr&&pr.ext){o.ext={ctx:pr.ext.ctx.slice(),path:pr.ext.path.slice()};try{o.ext.sig=asmSkExtSig(o.ext);}catch(e){}} // V0.8.1
+  return o;
 }
 function skRefMeshes(meshes){
   // 1) BRep exact si dispo (même tangents) — sinon 2) maillage

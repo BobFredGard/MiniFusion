@@ -583,7 +583,59 @@ function asmExtStale(){
     const F=asmExtFrame(el,c.id);
     if(F&&!cgSameFr(cgRound(F),el.ext.last||null)&&!out.includes(c))out.push(c);
   });});
+  // V0.8.1 : arêtes d'autres composants projetées dans une esquisse
+  asm.comps.forEach(c=>{if(out.includes(c))return;
+    if((c.doc.sketches||[]).some(sk=>(sk.entities||[]).some(e=>{
+      if(!e||!e.ext||!e.proj)return false;const s=asmSkExtSig(e.ext,c.id);return s!=null&&s!==e.ext.sig;})))out.push(c);});
   return out;
+}
+/* ── arêtes des autres composants dans une esquisse (V0.8.1) ──
+   Projeter (esquisse) propose aussi les arêtes exactes des autres instances de l'assemblage,
+   lues dans leur instantané (_snap.pedges, capturé à la fin de leur rejeu). Entité projetée :
+   e.ext = {ctx (instance où l'on travaille), path (instance visée), sig (dernière lecture)} ;
+   associative comme une projection ordinaire (srcMid), rejouée quand l'instance visée bouge ou
+   que son composant change (asmExtStale). Les instances du composant actif sont exclues (il se
+   viserait lui-même). */
+function asmSkXf(ctx,path){const Wt=asmWorld(path),Wc=asmWorld(ctx);return Wt&&Wc?asmCompose(asmInverse(Wc),Wt):null;}
+function asmSkExtCtx(x,cid){return Array.isArray(x.ctx)&&asmPathComp(x.ctx)===cid?x.ctx:asmExtCtx({},cid);}
+function asmSkExtEdges(x,cid){
+  // Arêtes ({pts, mid}) de l'instance x.path, dans le repère du composant cid (actif par défaut)
+  if(!asm||!x||!Array.isArray(x.path))return null;
+  cid=cid||asm.active;
+  const T=asmPathComp(x.path),c=asmComp(T),E=c&&c._snap&&c._snap.pedges;
+  if(!E||!E.length||T===cid)return null;
+  const ctx=asmSkExtCtx(x,cid),F=ctx&&asmSkXf(ctx,x.path);if(!F)return null;
+  return E.map(e=>({pts:e.pts.map(p=>asmApply(F,p)),mid:e.mid?asmApply(F,e.mid):null}));
+}
+function asmSkExtSig(x,cid){
+  // Signature de ce que voit la projection : repère de l'instance visée + état de son composant
+  if(!asm||!x||!Array.isArray(x.path))return null;
+  cid=cid||asm.active;
+  const T=asmPathComp(x.path),c=asmComp(T);if(!c||!c._snap||!c._snap.pedges)return null;
+  const ctx=asmSkExtCtx(x,cid),F=ctx&&asmSkXf(ctx,x.path);if(!F)return null;
+  const r=v=>v.map(a=>Math.round(a*1e4)/1e4).join(',');
+  return [r(F.o),r(F.x),r(F.y),r(F.z),c._snap.hash||''].join('|');
+}
+function asmSkExtLists(){
+  // Listes candidates de l'outil Projeter : chaque instance visible hors composant actif
+  if(!asm||!asmOn())return [];
+  const out=[],P=asm.path;
+  const hidden=path=>{let c=asmRoot();for(const id of path){const o=c&&c.occ.find(q=>q.id===id);if(!o||o.visible===false)return true;c=asmComp(o.comp);}return false;};
+  asmInstances(asm.root).forEach(inst=>{
+    if(inst.comp===asm.active||hidden(inst.path))return;
+    const x={ctx:P.slice(),path:inst.path.slice()},ed=asmSkExtEdges(x);
+    if(ed&&ed.length)out.push({edges:ed,ext:x,name:(asmComp(inst.comp)||{}).name||''});
+  });
+  return out;
+}
+function asmSkCaptureEdges(){
+  // Arêtes exactes du composant actif (fin de rejeu), données pures pour les esquisses des autres
+  try{
+    if(!(typeof occHas==='function'&&occHas()&&occLive&&occLive.shape))return null;
+    const E=occListEdges(occLive.shape);if(!E||!E.length)return null;
+    const r=p=>p.map(a=>Math.round(a*1e6)/1e6);
+    return E.slice(0,8000).map(e=>({pts:e.pts.map(r),mid:e.mid?r(e.mid):null}));
+  }catch(e){return null;}
 }
 function asmExtSync(){
   // Rejoue les composants dont une référence externe a bougé (placement, autre composant

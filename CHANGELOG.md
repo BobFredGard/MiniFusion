@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**329 versions**, de `2026-09-28b` à `V0.8.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**330 versions**, de `2026-09-28b` à `V0.8.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4785,3 +4785,10 @@ Même principe que l'extrusion dynamique (V0.7.6), étendu aux trois autres fonc
 - **Icônes** pour le type de perçage (simple, lamage, fraisure) et sa fin (borgne, jusqu'à la face, débouchant, tout) ; champ « Rayon (toutes) » / « Distance (toutes) » pour le congé et le chanfrein.
 - Correctif : `package-lock.json` — les versions de deux dépendances eslint avaient été remplacées par le numéro de l'application lors des passages de version.
 - **Tests** : `test_fenetre_dynamique` (création immédiate, annulation sans trace, poignée d'angle et sens de rotation, profil invalide → formulaire, flèche et annulation du perçage, débouchant sans flèche, rayon du congé et annulation) ; suites complète et rapide.
+
+## V0.8.1 - Arêtes des autres composants dans une esquisse
+- **Projeter** (esquisse) propose aussi les arêtes exactes des autres composants de l'assemblage — lignes, arcs, cercles —, exprimées dans le repère du composant actif depuis l'instance où l'on travaille (comme les références de construction de V0.6.4). Le survol nomme le composant visé. Les instances du composant actif sont exclues (il se viserait lui-même).
+- **Arêtes capturées à la fin du rejeu** de chaque composant (`_snap.pedges`, données pures, 8 000 au plus), à côté de son instantané d'affichage : pas de rejeu des autres composants pour projeter.
+- **Associatif** : l'entité projetée garde l'instance visée, son contexte et une signature (repère de l'instance + état de son composant). Si l'autre composant se déplace ou change, le composant qui porte l'esquisse est signalé (`asmExtStale`) et rejoué, même inactif ; l'arête est retrouvée par son milieu mémorisé, comme une projection ordinaire. Fonctionne aussi sans noyau (instantanés).
+- **Correctif — cercle complet projeté en ligne nulle** : le cercle était ajusté sur le premier point, le milieu et le dernier ; sur une arête circulaire fermée (trou d'un perçage), le premier et le dernier sont confondus. Ajustement sur les points à 0, 1/3 et 2/3 du parcours (pièce et composants).
+- **Tests** : `test_composants_aretes_esquisse` (sans noyau : listes candidates, repère, ligne, arc, cercle complet, suivi composant actif et inactif, exclusion du composant actif, fichier) ; `test_composants_aretes_occ` (noyau réel : socle percé et goupille, projection du perçage, déplacement, changement de diamètre).

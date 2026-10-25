@@ -1,6 +1,6 @@
 # Analyse du projet MiniFusion
 
-*État au 2026-10-25 — version `V0.8.0`.*
+*État au 2026-10-25 — version `V0.8.1`.*
 
 ## Nature du projet
 
@@ -29,7 +29,7 @@ Le noyau géométrique exact est **OpenCascade (OCCT) compilé en WebAssembly**.
 - `00` : métadonnées (`APP_VER`, `CACHE_VER`), utilitaires, thème, caches.
 - `10`–`20` : scène three.js, repère, rejeu paramétrique, noyau exact OCCT et repli maillage.
 - `30`–`45` : marqueur de temps, arbre/propriétés, bandeau de timeline (`41`), annuler/rétablir documentaire.
-- `46`–`48` : composants (arbre de composants imbriqués et composant actif, modes Modéliser / Placer, placement). `doc` reste la pièce globale : c'est le **composant actif**, l'arbre vit à côté (`asm`). `48-composants-depuis-corps.js` : extraire un corps (ou une esquisse) et tout ce qui le construit vers un composant. `47-composants-lies.js` : composants liés à un fichier (dossier de projets, édition sur place, mise à jour).
+- `46`–`48` : composants (arbre de composants imbriqués et composant actif, modes Modéliser / Placer, placement). `doc` reste la pièce globale : c'est le **composant actif**, l'arbre vit à côté (`asm`). `48-composants-depuis-corps.js` : extraire un corps (ou une esquisse) et tout ce qui le construit vers un composant. `47-composants-lies.js` : composants liés à un fichier (dossier de projets, édition sur place, mise à jour). Arêtes des autres composants projetables dans une esquisse (`asmSkExt*`, 46).
 - `49`–`60` : esquisse 2D, solveur Levenberg-Marquardt, paramètres, trim et interactions souris.
 - `78`–`79` : géométrie de construction (modèle et résolution, puis affichage, saisie, panneau).
 - `70`–`87` : fonctions 3D (extrusion, révolution, perçage, combiner, congés, chanfreins, faces, dépouille, coque). `70-extrusion-dynamique.js` et `71-fenetre-dynamique.js` : fenêtre dynamique (aperçu immédiat, poignée dans la vue, champ flottant, Annuler / OK) de l’extrusion, puis de la révolution, du perçage et du congé.
