@@ -348,13 +348,15 @@ function askHole(presetSketchId){
     }
   }catch(e){}
   nf.name=holeName(nf);
+  const snap0=docSnap(),len0=docUndoStack.length; // V0.8.0 : Annuler retire le perçage
   docPushUndo('perçage');
   addFeature(nf);
+  try{ fdynStart(nf,snap0,len0); }catch(e){}
   if(sk.visible!==false)sk.visible=false;
   ghostHide=nf.id;
   sel={kind:'feature',id:nf.id};
   markDirty();rebuild();renderTree();renderProps();
-  faceEl.textContent='Perçage créé : '+nf.name+' — réglez type, taraudage et profondeur dans Paramètres.';
+  faceEl.textContent='Perçage : tirez la flèche ou tapez la profondeur, réglez le type, puis OK (Échap = annuler).';
 }
 /* ----- panneau de la fonction ----- */
 function renderHoleProps(p,f){
@@ -387,7 +389,10 @@ function renderHoleProps(p,f){
   pH('Perçage');
   pNote(nP+' centre(s) dans « '+(sk?sk.name:'?')+' »'+(nP?'':' — ajoutez-en avec l\'outil ⊕ de l\'esquisse'));
   /* type */
-  pRow('Type',sel([['simple','Simple'],['cbore','Lamage'],['csink','Fraisure']],f.kind||'simple',function(v){f.kind=v;}));
+  // V0.8.0 : type en icônes (fenêtre dynamique)
+  const segT=extSeg([['simple','⊚','Simple','Trou cylindrique'],['cbore','⊡','Lamage','Lamage pour tête de vis'],['csink','⊽','Fraisure','Fraisure conique']],f.kind||'simple',
+    function(v){docPushUndo('perçage');f.kind=v;go();});
+  pRow('Type',segT);
   /* taraudage */
   const thOpts=[['','Aucun (trou lisse)']];
   ISO_THREADS.forEach(function(t){thOpts.push([t[0]+'|'+t[2],t[0]+' (pas '+String(t[2]).replace('.',',')+')']);
@@ -426,8 +431,10 @@ function renderHoleProps(p,f){
   if(f.kind==='cbore'){pRow('Ø lamage',num(f.cbD,function(v){f.cbD=v;},0,f,'cbD'));pRow('Profondeur lamage',num(f.cbH,function(v){f.cbH=v;},0,f,'cbH'));}
   if(f.kind==='csink'){pRow('Ø fraisure',num(f.csD,function(v){f.csD=v;},0,f,'csD'));pRow('Angle (°)',sel([['90','90°'],['82','82° (UNC)'],['100','100°'],['120','120°']],String(f.csA||90),function(v){f.csA=+v;}));}
   /* fin */
-  pRow('Fin',sel([['blind','Distance (borgne)'],['upto','Jusqu\'à la face…'],['next','Débouchant (prochaine face)'],['through','Débouchant tout']],f.end||'blind',function(v){
-    f.end=v;if(v==='upto'&&!f.uptoPlane)setTimeout(function(){holeFacePickStart(f.id,'end');},0);}));
+  // V0.8.0 : fin en icônes
+  pRow('Fin',extSeg([['blind','📏','Borgne','Profondeur donnée (flèche dans la vue)'],['upto','🎯','Jusqu’à la face','S’arrête sur une face choisie'],
+    ['next','⤓','Débouchant','Jusqu’à la prochaine face'],['through','⤴','Tout','Traverse tout']],f.end||'blind',
+    function(v){docPushUndo('perçage');f.end=v;if(v==='upto'&&!f.uptoPlane)setTimeout(function(){holeFacePickStart(f.id,'end');},0);go();}));
   if(f.end==='upto')pBtns([['Sélectionner la face',function(){holeFacePickStart(f.id,'end');}]]);
   if(!f.end||f.end==='blind'){
     pRow('Profondeur (plein Ø)',num(f.depth,function(v){f.depth=v;},0,f,'depth'));

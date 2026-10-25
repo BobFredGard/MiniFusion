@@ -206,6 +206,7 @@ function extLabelEl(){
   document.body.appendChild(w);extLabel=w;return w;
 }
 function extDynTick(){
+  try{ fdynTick(); }catch(e){} // V0.8.0 : poignées de la révolution, du perçage, du congé (71-fenetre-dynamique)
   // À chaque image : la flèche suit l'extrusion sélectionnée, garde une taille constante à l'écran
   if(!extWired)extWire();
   const f=extDynFeature();

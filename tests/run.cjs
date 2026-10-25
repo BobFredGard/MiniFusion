@@ -148,6 +148,7 @@ const SUITES = [
   "test_composants_accroches",
   "test_composants_apparence",
   "test_extrusion_dynamique",
+  "test_fenetre_dynamique",
   "test_repeat_lin2",
   "test_fao_percage_tranche",
   "test_fao_32_fiches",

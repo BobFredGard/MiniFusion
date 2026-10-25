@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**328 versions**, de `2026-09-28b` à `V0.7.9` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**329 versions**, de `2026-09-28b` à `V0.8.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4776,3 +4776,12 @@ Palier 2 de la qualité de simulation (« rien ne fonctionne vraiment correcteme
 - **Fraise à chanfreiner** : nouveau type d'outil (angle inclus, Ø de pointe) avec profil de pointe (méplat puis cône) pour la simulation ; le foret à pointer (pointe vive) convient aussi. Bouton « Créer une fraise à chanfreiner Ø6 90° » dans la fiche quand l'outil n'a pas de cône.
 - **Case « brut »** dans la barre de lecture : masque le fantôme jaune du brut d'origine (mémorisée).
 - **Tests** : `test_fao_chanfrein` (ruban, défauts, outil, géométrie 90° / 60°, outil trop petit, foret à pointer, parcours d'un bossage et d'un bord de trou, libellé G-code, simulation d'un chanfrein 45° de 1 mm, fiche, pas de zone) ; parcours Playwright du miroir ajusté au fantôme élargi.
+
+## V0.8.0 - Fenêtre dynamique pour la révolution, le perçage et le congé
+Même principe que l'extrusion dynamique (V0.7.6), étendu aux trois autres fonctions qui se règlent par une valeur (nouveau `src/71-fenetre-dynamique.js`).
+- **Aperçu immédiat** : « Révolution » crée tout de suite la fonction (360°, axe de l'esquisse) et la sélectionne ; le formulaire ne reste que si le profil ou l'axe ne conviennent pas (il dit ce qui manque). Perçage et congé exact ouvrent aussi la fenêtre à la création.
+- **Poignées dans la vue** : angle de la révolution (bouton qui tourne autour de l'axe, sens direct comme OCCT, arc tracé), profondeur du perçage borgne (flèche dans l'axe du trou, vers la matière ; pas de flèche en débouchant), rayon du congé (flèche sur la première arête, règle toutes les arêtes). Champ flottant à côté de la poignée (Entrée valide).
+- **Annuler / OK** au pied du panneau, Échap = Annuler : en création la fonction disparaît, en modification les valeurs d'avant reviennent ; le document est rendu exactement tel qu'à l'ouverture et les étapes d'annulation de la session sont retirées.
+- **Icônes** pour le type de perçage (simple, lamage, fraisure) et sa fin (borgne, jusqu'à la face, débouchant, tout) ; champ « Rayon (toutes) » / « Distance (toutes) » pour le congé et le chanfrein.
+- Correctif : `package-lock.json` — les versions de deux dépendances eslint avaient été remplacées par le numéro de l'application lors des passages de version.
+- **Tests** : `test_fenetre_dynamique` (création immédiate, annulation sans trace, poignée d'angle et sens de rotation, profil invalide → formulaire, flèche et annulation du perçage, débouchant sans flèche, rayon du congé et annulation) ; suites complète et rapide.

@@ -306,7 +306,11 @@ function askRevolve(presetSketchId){
   // axe par défaut : 1re ligne de CONSTRUCTION de l'esquisse (l'axe du sketch), sinon 1re ligne
   const cands=(sk.entities||[]).filter(e=>e.t==='line');
   const def=cands.find(e=>e.axis)||cands.find(e=>e.construction)||cands[0]||null; // ⟲ axe de rotation d'abord
-  revNew={sketchId:skId,axis:def?{k:'line',id:def.id}:{k:'sys',d:'X'},op:'add',angle:360};
+  const axis=def?{k:'line',id:def.id}:{k:'sys',d:'X'};
+  // V0.8.0 : aperçu immédiat (fenêtre dynamique) quand l'axe et le profil sont valables ;
+  // sinon le formulaire, qui dit ce qui manque
+  try{ if(fdynRevolveNew(skId,axis))return; }catch(e){}
+  revNew={sketchId:skId,axis:axis,op:'add',angle:360};
   sel={kind:null,id:null};
   renderNewRevolve();
 }

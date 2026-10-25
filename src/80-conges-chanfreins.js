@@ -721,7 +721,9 @@ function applyExactFillet(){
   }
   const nf={id:uid('xf'),type:'xfillet',name:xLabel(k)+' ('+filModeX.sel.length+' arête(s))',edges:mkEdges(),visible:true,tangent:filModeX.tangent!==false};
   if(xIsChamfer(k))nf.chamfer=true;
+  const snap0=docSnap(),len0=docUndoStack.length; // V0.8.0 : Annuler retire le congé
   addFeature(nf);
+  try{ fdynStart(nf,snap0,len0); }catch(e){}
   sel={kind:'feature',id:nf.id};
   exitFilletMode(true);markDirty();rebuild();renderProps();
 }

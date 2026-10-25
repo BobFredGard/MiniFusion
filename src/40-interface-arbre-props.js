@@ -1420,35 +1420,16 @@ function renderProps(){
       });
       p.appendChild(lst);
       pBtns([['✏️ Modifier la sélection',()=>enterExactFilletMode(f)]]);
-    }
-    if(f.type==='hole'){renderHoleProps(p,f);}
-    /* — révolution — */
-    if(f.type==='revolve'){
-      const so=pSel([['add','➕ Plot (ajoute)'],['cut','➖ Poche (retire)']],f.op||'add',
-        v=>{f.op=v;f.name=revolveName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();});
-      pRow('Opération',so);
-      const skR=doc.sketches.find(x=>x.id===f.sketchId);
-      const lns=(skR&&skR.entities||[]).filter(e=>e.t==='line');
-      const axeOpts=lns.map(e=>['L:'+e.id,(e.construction?'constr. ':'ligne ')+e.id]).concat([['S:X','axe X'],['S:Y','axe Y'],['S:Z','axe Z']]);
-      const curv=(f.axis&&f.axis.k==='line')?'L:'+f.axis.id:'S:'+(f.axis?f.axis.d:'X');
-      pRow('Axe',pSel(axeOpts,lns.some(e=>'L:'+e.id===curv)?curv:'S:X',
-        v=>{f.axis=(v[0]==='L')?{k:'line',id:v.slice(2)}:{k:'sys',d:v.slice(2)};f.name=revolveName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();}));
-      const ian=document.createElement('input');ian.type='text';ian.inputMode='decimal';ian.value=revolveAngle(f);parFx(ian,f,'angle');
-      const cn=()=>{const v=parseFloat(String(ian.value).replace(',','.'));
-        if(isFinite(v)&&v>0){f.angle=Math.min(360,v);f.name=revolveName(f);repSyncForFeature(f);markDirty();rebuild();renderProps();}};
-      ian.addEventListener('change',cn);ian.addEventListener('blur',cn);
-      ian.addEventListener('keydown',e=>{if(e.key==='Enter'){cn();ian.blur();}e.stopPropagation();});
-      pRow('Angle (°)',ian);
-      if(skR){
-        const axR=revolveAxis2D(skR,f),trR=skLoopTrace(skR);
-        let msg='';
-        if(axR.err)msg='⚠ '+axR.err;
-        else if(!trR.solids.length&&!trR.circlesOut.length)msg='⚠ profil non fermé';
-        else{const sd=revolveSideCheck(skR,trR,axR);msg=sd.ok?('✓ axe « '+axR.label+' » — rayon '+sd.rMin.toFixed(1)+' à '+sd.rMax.toFixed(1)+' mm'):('⚠ '+sd.msg);}
-        pNote(msg);
+      // V0.8.0 : une valeur pour toutes les arêtes (comme la flèche dans la vue), OK / Annuler
+      if((f.edges||[]).length){
+        const all=fdynNumIn(+(f.edges[0].r)||1,v=>fdynSet((f.chamfer?'distance':'rayon')+' de « '+f.name+' »',g=>{(g.edges||[]).forEach(s=>{s.r=v;});}),'fdynAll',80);
+        pRow((f.chamfer?'Distance':'Rayon')+' (toutes)',all);
       }
-      pBtns([['🔧 Changer d\'esquisse',()=>askRevokePanel(f)]]);
+      fdynFoot(p,f);
     }
+    if(f.type==='hole'){fdynEnsure(f);renderHoleProps(p,f);fdynFoot(p,f);} // V0.8.0 : OK / Annuler, flèche de profondeur
+    /* — révolution — V0.8.0 : fenêtre dynamique (71-fenetre-dynamique) */
+    if(f.type==='revolve'){ fdynRevolvePanel(p,f); }
     /* — extrusion — */
     if(f.type==='extrude'){
       // V0.7.6 : fenêtre de l'extrusion dynamique — boutons à icônes, flèche dans la vue (70-extrusion-dynamique)

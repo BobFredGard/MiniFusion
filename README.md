@@ -2,7 +2,7 @@
 
 **CAO paramétrique, assemblage, FAO et mise en plan dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2, G-code et planches cotées ISO. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.7.6** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.8.0** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Sommaire
 
@@ -74,9 +74,9 @@ Groupe **Construire** du ruban (et `Ctrl+K`) : des références à la manière d
 
 Historique rejouable, arborescence et marqueur de temps. **Bandeau de timeline** en bas de la vue 3D, à la manière de Fusion 360 : une étape par fonction, esquisse ou élément de construction, avec **l'icône de la commande du ruban** qui l'a créée — **vert** pour un ajout de matière, **rouge avec « − »** pour un enlèvement ; clic = sélection, double-clic = édition, marqueur temps glissable (⏮ ◀ ▶ ⏭), glisser-déposer d'une fonction pour la réordonner dans son corps.
 - **Extrusion dynamique** : ajout ou découpe, sur une distance, jusqu'à une face ou à travers tout, en symétrique, avec dépouille ; elle peut créer un **nouveau corps**. Elle **apparaît tout de suite** (l'aperçu est le résultat) ; une **flèche se tire dans la vue** (pas de 1 mm, Maj = libre, de l'autre côté du plan = sens inversé) et un champ **« Distance »** flotte à côté. La fenêtre présente opération, direction et étendue en **boutons à icônes**, la dépouille dans « ▸ Options », **Annuler / OK** (Échap annule). Sélectionner une extrusion rouvre la même fenêtre pour la modifier.
-- **Révolution** autour d'une ligne de l'esquisse ou d'un axe X / Y / Z.
-- **Perçage** simple, lamé, fraisé ou taraudé (filet ISO réellement modélisé), débouchant ou borgne, répétable.
-- **Congés et chanfreins exacts** sur les arêtes cliquées, en suivant la chaîne tangente ou sur l'arête seule ; aperçu avec les nouvelles faces en orange.
+- **Révolution** autour d'une ligne de l'esquisse ou d'un axe X / Y / Z, en **fenêtre dynamique** comme l'extrusion : elle apparaît tout de suite, une **poignée d'angle** tourne autour de l'axe dans la vue, Annuler / OK.
+- **Perçage** simple, lamé, fraisé ou taraudé (filet ISO réellement modélisé), débouchant ou borgne, répétable ; type et fin en **boutons à icônes**, **flèche de profondeur** dans la vue (trou borgne), Annuler / OK.
+- **Congés et chanfreins exacts** sur les arêtes cliquées, en suivant la chaîne tangente ou sur l'arête seule ; aperçu avec les nouvelles faces en orange ; **flèche de rayon** dans la vue et champ « Rayon (toutes) », Annuler / OK.
 - **Répétition** : linéaire, à **une ou deux directions (grille)**, circulaire, symétrie simple ou double. Chaque direction se règle sur X / Y / Z ou sur la sélection de la vue avec **🎯**, sur la ligne de son axe — **arête** droite (sa direction), **cercle ou arc** (son axe) ou **face** (sa normale) — et **⇄** l'inverse.
 - **Modifier le solide** : déplacer une face (push / pull), **supprimer une face** (`Suppr`, les voisines se prolongent : congé → arête vive, trou rebouché), dépouille, coque, **combiner** des corps (union, soustraction, intersection).
 
