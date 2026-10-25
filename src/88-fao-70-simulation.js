@@ -379,7 +379,10 @@ function faoViewerStockCreate(){
     if(cy){ g.add(cy); return g; }
   }catch(e){}
   try{
-    const bg=new THREE.BoxGeometry(s.x1-s.x0, s.y1-s.y0, s.z1-s.z0);
+    // V0.7.9 : fantôme 0,06 mm à l'EXTÉRIEUR de la matière — coplanaire avec ses faces extérieures
+    // (lancer de rayons), il se disputait la profondeur : dents de scie, bandes sombres à la jonction
+    const E=0.06;
+    const bg=new THREE.BoxGeometry(s.x1-s.x0+2*E, s.y1-s.y0+2*E, s.z1-s.z0+2*E);
     const mat=function(){ return new THREE.MeshBasicMaterial({color:0xffd60a,transparent:true,opacity:.12,depthWrite:false}); };
     const box=new THREE.Mesh(bg,mat());
     box.raycast=function(){};
