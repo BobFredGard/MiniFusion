@@ -2,7 +2,7 @@
 
 **CAO paramétrique, assemblage, FAO et mise en plan dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2, G-code et planches cotées ISO. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.8.4** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.8.5** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Sommaire
 
@@ -250,15 +250,29 @@ En `file://` (double-clic sur `fusion_mvp.html`), l'application démarre en mode
 
 Le dépôt stocke les gros binaires (`occt/*.wasm`, `Exemples/*.miniFusion`, `Exemples/*.step`) via **Git LFS**. Après un clone : `git lfs install` puis `git lfs pull`.
 
+## Scripts et pilotage par Claude (MCP)
+
+- **Script JSON** (menu Projet → 📜) : une liste de commandes exécutées sur le document — `new`, `param`, `sketch` (rectangles, cercles, polygones, lignes sur XY / XZ / YZ, décalés), `extrude`, `revolve`, `config`, `info` (fonctions, paramètres, corps : volume, centre, boîte), `undo`. Le script est **atomique** (défait en entier à la première erreur) et compte pour **une** étape d'annulation.
+
+```json
+[{"op":"param","name":"L","expr":"60"},
+ {"op":"sketch","id":"s1","plane":"XY","shapes":[{"rect":[0,0,60,40]},{"circle":[30,20,6]}]},
+ {"op":"extrude","sketch":"s1","distance":10},
+ {"op":"info"}]
+```
+
+- **Serveur MCP** `tools/mcp-minifusion.cjs` (Node, sans dépendance) : Claude — ou tout client MCP — envoie des scripts à la page et lit l'état du modèle. Outils : `minifusion_run_script`, `minifusion_info`, `minifusion_commands`. Installation dans Claude Code : `claude mcp add minifusion -- node <chemin>/tools/mcp-minifusion.cjs`. Puis, dans MiniFusion, menu Projet → **🔌 Pilotage (MCP)…** : la page se relie au serveur (WebSocket sur 127.0.0.1:47811, `MINIFUSION_PORT` pour changer ; pages distantes refusées). Recliquer coupe le lien.
+
 ## Développement
 
 | Chemin | Rôle |
 |---|---|
-| `src/*.js` | **Les sources** (64 fichiers, de l'en-tête à l'initialisation ; la FAO est découpée par domaine : parcours, caches, post-processeurs, simulation, interface, ébauche 3D, contour, géodésique, crêtes, perçage). C'est ici qu'on travaille. |
+| `src/*.js` | **Les sources** (74 fichiers, de l'en-tête à l'initialisation ; la FAO est découpée par domaine : parcours, caches, post-processeurs, simulation, interface, ébauche 3D, contour, géodésique, crêtes, perçage). C'est ici qu'on travaille. |
 | `fusion_mvp.html` | **Livrable généré** par `node build.js` (le HTML et le CSS de base vivent dans ce fichier, hors de la balise `<script>`). On n'édite jamais le script à la main. |
 | `tests/` | Suite Node portable (plus de 100 suites, dont certaines sur le noyau OCCT réel) : `node tests/run.cjs`, en parallèle (`-j N` pour la taille du pool, `--verbose` pour toutes les sorties) ; sous-ensemble rapide : `node tests/run-fast.cjs`. |
 | `tests/oracle/` | **Tests de référence** : pièces aux valeurs calculées à la main (volume, surface, centre de gravité, encombrement), vérifiées à chaque version par `test_oracle` ; tableau dans [docs/oracle.md](docs/oracle.md), régénéré par `npm run oracle`. |
 | `tools/lint.cjs` | Lint ESLint du script concaténé (même ordre que le build) : `npm run lint` (erreurs) ou `npm run lint:all`. |
+| `tools/mcp-minifusion.cjs` | Serveur MCP (stdio) relié à la page par WebSocket local : pilotage de MiniFusion par scripts JSON. |
 | `.github/workflows/ci.yml` | CI : build à jour, syntaxe, tests rapides, lint. |
 | `CHANGELOG.md` | Une entrée par version : cause, correctif, test. |
 | `occt/`, `threejs/` | Noyau OpenCascade WebAssembly, rendu three.js (`.wasm` via Git LFS). |

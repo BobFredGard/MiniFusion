@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**333 versions**, de `2026-09-28b` à `V0.8.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**334 versions**, de `2026-09-28b` à `V0.8.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4821,3 +4821,11 @@ Idée SolidCraft de la série V0.7 : plusieurs variantes d'une même pièce dans
 - **Fenêtre ƒx → Configurations** : « + Configuration » (nouvelle variante = l'état actuel), « + Colonne… », cellules éditables (la variante active se met à jour aussitôt), fonctions supprimées par variante (cases), « Mémoriser l'état actuel », retrait d'une colonne ou d'une variante. Renommer une valeur nommée renomme sa colonne.
 - **Fichier** : la table est enregistrée et relue (noms invalides écartés) ; le document porte les valeurs de la variante active — une version antérieure l'ouvre telle quelle.
 - **Tests** : `test_configurations` (table depuis l'état, activation, esquisse et extrusion qui suivent, fonction supprimée / rétablie, fonction hors table intacte, annulation, mémoriser, colonne absente, expression fausse, expression d'une autre valeur, renommage, fichier, arbre, fenêtre ƒx) ; suites complète et rapide.
+
+## V0.8.5 - Scripts JSON et serveur MCP
+Dernière étape de la série V0.8 (« toutes tes idées ») : piloter MiniFusion par commandes, y compris depuis Claude.
+- **Scripts JSON** (nouveau `src/53-scripts.js`, `mfScriptRun`) : `new`, `param`, `sketch` (rect, circle, poly, line ; plans XY / XZ / YZ décalés), `extrude` (ajout, découpe, symétrique), `revolve` (axe X / Y / Z, angle), `config`, `info` (esquisses, fonctions, paramètres, configurations, corps : volume exact, centre de gravité, boîte), `undo`. Une esquisse se vise par l'id du script, son id ou son nom. **Atomique** : la première erreur remet le document tel qu'avant et donne le numéro de la commande ; **une** étape d'annulation pour tout le script. Fenêtre « 📜 Script JSON… » (menu Projet), dernier script mémorisé.
+- **Serveur MCP** `tools/mcp-minifusion.cjs` (Node, aucune dépendance) : JSON-RPC sur stdio (initialize, tools/list, tools/call, ping) ; outils `minifusion_run_script`, `minifusion_info`, `minifusion_commands` (syntaxe). Relais vers la page par un WebSocket écrit à la main (RFC 6455) sur **127.0.0.1:47811** (`MINIFUSION_PORT`) ; seules les pages locales (localhost, file://) sont acceptées.
+- **Pont** (menu Projet → « 🔌 Pilotage (MCP)… ») : la page se relie au serveur **seulement à la demande de l'utilisateur** (adresse locale obligatoire), exécute les scripts reçus et rend les résultats ; le bouton montre l'état et le nombre de scripts reçus ; recliquer coupe le lien.
+- **Correctif — coupe partielle** (« Perçages : problème de coupe sur Coupe B-B ») : le demi-espace qui coupe la pièce était un carré centré sur le PREMIER point de la ligne de coupe, de demi-côté « demi-diagonale de la pièce + 20 mm » ; une ligne tracée depuis le bord de la pièce (X −50) ne coupait rien au-delà de X 30,5 — hachures arrêtées net, matière de droite absente de la coupe. Le carré est centré sur le centre de la pièce projeté dans le plan de coupe (boîte des corps et de la forme coupée), le prisme allongé d'autant. `window.mepDebugGeo(id)` : géométrie d'une vue, pour le diagnostic en console.
+- **Tests** : `test_scripts` (noyau réel : plaque percée au volume exact, boîte, centre, paramètres, offset, une étape d'annulation, atomicité, op inconnue, forme fausse, expression fausse, JSON illisible, révolution d'une bague, configuration) ; `test_mcp_serveur` (processus réel : initialize, outils, sans page, origine distante refusée, page locale et file://, script transmis — trame longue —, état, erreurs) ; `test_scripts` (15) : coupe tracée depuis le bord, hachures de bout en bout. Vérifié de bout en bout dans Chrome : page reliée, `minifusion_info` par MCP.

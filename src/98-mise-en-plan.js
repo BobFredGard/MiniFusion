@@ -1688,17 +1688,26 @@
       if(Lu<1e-6)return null;
       U=[U[0]/Lu,U[1]/Lu,U[2]/Lu];
       const V=mepCross(n,U);
-      let diag=0;
+      let diag=0,C=null;
       try{ // boîte englobante des corps visibles → demi-espace assez grand
         const bb=new THREE.Box3();
         const list=(typeof bodies!=='undefined'&&bodies)||[];
         list.forEach(bd=>{
           if(bd&&bd.mesh&&bd.mesh.visible!==false&&!bd.ghost){bb.expandByObject(bd.mesh);diag=Math.max(diag,bb.getSize(new THREE.Vector3()).length());}
         });
+        if(!bb.isEmpty()){const m=bb.getCenter(new THREE.Vector3());C=[m.x,m.y,m.z];}
       }catch(e){}
+      // la forme coupée peut venir d'ailleurs (instances d'un assemblage) : sa boîte compte aussi
+      try{const B=asmBox(shape);if(B&&B.max[0]>=B.min[0]){const d=Math.hypot(B.max[0]-B.min[0],B.max[1]-B.min[1],B.max[2]-B.min[2]);
+        if(d>diag){diag=d;C=[0,1,2].map(i=>(B.min[i]+B.max[i])/2);}}}catch(e){}
       if(!(diag>1))diag=400;
+      // V0.8.5 : carré centré sur le CENTRE de la pièce projeté dans le plan de coupe — centré sur
+      // le 1er point de la ligne (souvent au bord de la pièce), il n'en couvrait qu'une partie :
+      // Perçages, coupe B-B tracée depuis X -50 : rien de coupé au-delà de X 30,5
+      let Q=p0;
+      if(C){const h=(C[0]-p0[0])*n[0]+(C[1]-p0[1])*n[1]+(C[2]-p0[2])*n[2];Q=[C[0]-n[0]*h,C[1]-n[1]*h,C[2]-n[2]*h];}
       const A=diag/2+20;
-      const cor=[[-A,-A],[A,-A],[A,A],[-A,A]].map(c=>[p0[0]+U[0]*c[0]+V[0]*c[1],p0[1]+U[1]*c[0]+V[1]*c[1],p0[2]+U[2]*c[0]+V[2]*c[1]]);
+      const cor=[[-A,-A],[A,-A],[A,A],[-A,A]].map(c=>[Q[0]+U[0]*c[0]+V[0]*c[1],Q[1]+U[1]*c[0]+V[1]*c[1],Q[2]+U[2]*c[0]+V[2]*c[1]]);
       const poly=new occt.BRepBuilderAPI_MakePolygon_1();
       cor.forEach(q=>{const pt=new occt.gp_Pnt_3(q[0],q[1],q[2]);try{poly.Add_1(pt);}catch(e){try{pt.delete();}catch(e2){}}});
       try{poly.Close();}catch(e){}
@@ -1706,7 +1715,7 @@
       const fm=new occt.BRepBuilderAPI_MakeFace_15(poly.Wire(),true);
       fm.Build();
       if(!fm.IsDone())return null;
-      const dep=diag*2;
+      const dep=diag*2+(C?Math.abs((C[0]-p0[0])*n[0]+(C[1]-p0[1])*n[1]+(C[2]-p0[2])*n[2]):0);
       const vec=new occt.gp_Vec_4(n[0]*dep,n[1]*dep,n[2]*dep);
       const pr=new occt.BRepPrimAPI_MakePrism_1(fm.Face(),vec,false,true);
       pr.Build();
@@ -9444,6 +9453,7 @@
   window.mepViewDragCommit=()=>mepEdit('déplacement vue',()=>{},true);
   // après restauration d'un instantané documentaire : redessiner la planche
   window.mepRefresh=()=>{try{mepRender();}catch(e){}};
+  window.mepDebugGeo=id=>{let v=null;((doc.mep&&doc.mep.sheets)||[]).forEach(s=>{v=v||(s.views||[]).find(x=>x.id===id);});return v?mepGeoOf(v):null;}; // diagnostic (console)
   window.mepSetTool=mepSetTool;
   window.mepImportDxf=mepImportDxf;
   window.mepSetAxisMode=mepSetAxisMode;
