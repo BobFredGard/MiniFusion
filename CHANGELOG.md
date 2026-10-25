@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**320 versions**, de `2026-09-28b` à `V0.7.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**321 versions**, de `2026-09-28b` à `V0.7.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4699,3 +4699,10 @@ Reproduit sur l'esquisse du Crochet (`Exemples/Crochet.miniFusion`) : en V0.7.0,
 - **Harnais** : `test_esquisse_crochet` (39 modifications de cote et 102 glissers aller-retour sur la fixture du Crochet ; 49 échecs en V0.7.0), `test_esquisse_moindre_deplacement`, `test_esquisse_retour_arriere` et `test_esquisse_aleatoire` (12 graines × 40 opérations aléatoires : cotes, contraintes, suppressions, glissers, annulations ; l'esquisse reste saine, un refus laisse les coordonnées intactes, l'aller-retour JSON ne la fait pas bouger — il a trouvé un défaut de la restauration, corrigé).
 - **« Impossible de coter un angle comme il faut »** — Cavité Usinage, esquisse 11 (face) : la cote de 20° entre l'épaulement e50 et le flanc e51 est géométriquement impossible (longueur de e51 = 16,5 − 6/tan θ − 8·tan(θ/2) = −1,39 mm ; limite ≈ 21,6°) ; V0.7.0 la laissait fausse de ~19° sans le dire, et n'atteignait pas non plus 22°–24° (120 itérations). Désormais 24° et 30° sont résolus à la longueur calculée à la main, 20° est refusé avec les cotes en défaut (`test_esquisse_angle_cavite`, fixture `cavite_esquisse11.json`). Le message de refus cite jusqu'à 3 éléments en défaut.
 - Esquisses d'exemple inchangées, sauf cette esquisse 11, déjà contradictoire dans le fichier et inutilisée.
+
+## V0.7.2 - Points d'accroche d'assemblage
+Aligner un composant (et le lier) non plus seulement par ses repères, mais par sa géométrie, comme les points d'accroche de Fusion 360 (nouveau `src/48-assemblage-accroches.js`).
+- **Clic sur une face** pendant « Aligner » (la pièce à poser à l'étape 1, la cible à l'étape 2 — composant actif ou autre composant, à toute profondeur) : ses points d'accroche s'affichent (sphères vertes ; jaunes pour ceux des arêtes) et dans le panneau ; un clic en choisit un.
+- **Points proposés**, lus sur la forme EXACTE du composant (cache `c._exact`, rejeu silencieux si besoin) : face plane → centre de surface et 8 points cardinaux du rectangle englobant (nord, sud, est, ouest, coins ; vue de l'extérieur, face horizontale : est = +X du composant, sinon nord = vers le haut) ; face cylindrique → début, milieu, fin de l'axe (axe orienté dans le sens positif du composant) ; arêtes de la face → milieu et extrémités d'une arête droite, centre d'un cercle (ses deux demi-arcs reconnus) ou d'un arc. Z = normale sortante de la face ou axe. L'origine de chaque composant reste proposée (triade).
+- **Associatif** : la référence (`rel.sn`) garde la signature de la face (type, centre, normale ou axe, rayon), le point visé et le dernier repère calculé. Quand le composant visé est rejoué, la face est retrouvée (même type, même orientation, centre le plus proche), le point recalculé, et l'occurrence alignée suit ; face disparue → ⚠ « point d'accroche introuvable », position mémorisée, puis rétablie si la face revient. Enregistré dans le fichier, relu à l'ouverture.
+- **Tests** : `test_composants_accroches` (OCCT réel, 18 contrôles : socle 40×40×20 percé Ø8 et goupille Ø10×30 — centre de surface calculé à la main avec le perçage, points cardinaux, centre du perçage, axe ; goupille posée sur le coin nord-est puis sur le perçage ; socle 60×60 puis 25 de haut : elle suit ; face disparue puis revenue ; enregistrement) et un parcours Playwright à la souris (clic sur le cylindre, point du bas de l'axe, clic sur le dessus du socle, « nord-est », socle remonté à 35 : la goupille suit).

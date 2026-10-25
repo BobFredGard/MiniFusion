@@ -326,6 +326,54 @@ test('liaisons : pivot tel que construit, piloté au curseur, limites',async({pa
   expect(err).toEqual([]);
 });
 
+test('points d’accroche : goupille posée par son axe sur le coin d’un socle, qui suit le socle',async({page})=>{
+  const err=await demarrer(page);
+  // Socle 40×40×20 et goupille Ø10×30 → deux composants (par script) ; l'alignement, lui, se fait
+  // à la souris : clic sur le cylindre, point du bas de l'axe, clic sur le dessus du socle, « nord-est »
+  await page.evaluate(()=>{
+    const mkSk=(name,pts)=>{newSketch('XY');const sk=skEdit;sk.name=name;const P=pts.map(([x,y])=>addPoint(sk,x,y));
+      for(let i=0;i<P.length;i++)sk.entities.push({id:'L'+i,t:'line',p1:P[i],p2:P[(i+1)%P.length]});closeSketch(true);return sk;};
+    const a=mkSk('Socle',[[-20,-20],[20,-20],[20,20],[-20,20]]);addFeature({id:uid('ex'),type:'extrude',name:'Socle',sketchId:a.id,op:'add',distance:20});
+    newSketch('XY');const b=skEdit;b.name='Goupille';b.entities.push({id:'C0',t:'circle',pc:addPoint(b,60,0),r:5});closeSketch(true);
+    extNew={sketchId:b.id,op:'new',dist:30};extNewOk();
+    doc.bodies[0].name='Socle';doc.bodies[1].name='Goupille';markDirty();rebuild();
+  });
+  await page.waitForFunction(()=>builtEngine==='exact'&&rebuildDepth===0&&builtVersion===_docVersion&&doc.bodies.length===2,null,{timeout:60000});
+  await page.evaluate(()=>{asmCompsFromBodies(doc.bodies.map(e=>e.id));markDirty();rebuild();});
+  await ruban(page,'Placer').click();
+  await page.waitForFunction(()=>asmMode==='asm'&&asmRoot().occ.length===2);
+  await page.locator('#tree .tnode',{hasText:'Goupille:1'}).click();
+  await page.locator('#props button',{hasText:'Aligner un repère'}).click();
+  // position à l'écran d'un point (coordonnées de la racine = celles de la scène Placer)
+  const ecran=async p=>page.evaluate(q=>{const v=new THREE.Vector3(q[0],q[1],q[2]).project(camera),r=renderer.domElement.getBoundingClientRect();
+    return [r.left+(v.x+1)/2*r.width,r.top+(1-v.y)/2*r.height];},p);
+  // le flanc de la goupille, du côté de la caméra
+  const flanc=await page.evaluate(()=>{const c=camera.position,d=Math.hypot(c.x-60,c.y)||1;return [60+4.5*(c.x-60)/d,4.5*c.y/d,15];});
+  let [x,y]=await ecran(flanc);await page.mouse.click(x,y);
+  await page.waitForFunction(()=>asmAlign&&asmAlign.face&&asmAlign.face.items.length===3);
+  // le point du bas de l'axe (début), cliqué dans la vue
+  const bas=await page.evaluate(()=>{const it=asmAlign.face.items.find(q=>q.w==='a0'),me=asmOcc(asmAlign.occ);
+    return asmCompose(me.fr,it.fr).o;});
+  expect(bas[2]).toBeCloseTo(0,6);
+  [x,y]=await ecran(bas);await page.mouse.click(x,y);
+  await page.waitForFunction(()=>asmAlign&&asmAlign.step==='dst'&&asmAlign.src&&asmAlign.src.sn&&asmAlign.src.sn.w==='a0');
+  // le dessus du socle, puis « nord-est » dans le panneau
+  [x,y]=await ecran([-8,-8,20]);await page.mouse.click(x,y);
+  await page.waitForFunction(()=>asmAlign&&asmAlign.face&&asmAlign.face.items.some(q=>q.w==='ne'));
+  await page.locator('#props button',{hasText:/^nord-est$/}).click();
+  await page.locator('#props button',{hasText:'Valider'}).click();
+  const pos=()=>page.evaluate(()=>{const o=asmRoot().occ[1],F=o.fr,at=p=>[0,1,2].map(i=>F.o[i]+F.x[i]*p[0]+F.y[i]*p[1]+F.z[i]*p[2]);
+    return {bas:at([60,0,0]),haut:at([60,0,30]),st:o.st};});
+  let r=await pos();
+  [20,20,20].forEach((v,i)=>expect(r.bas[i]).toBeCloseTo(v,6));expect(r.haut[2]).toBeCloseTo(50,6);expect(r.st).toBe('ok');
+  // le socle grandit (35 de haut) : la goupille suit
+  await page.evaluate(()=>{const S=asm.comps.find(c=>c.name==='Socle');asmShow([asmCompOccs(S.id)[0].id],'part');
+    doc.features.find(f=>f.type==='extrude').distance=35;markDirty();rebuild();asmShow([],'asm');});
+  await page.waitForFunction(()=>Math.abs(asmRoot().occ[1].fr.o[2]-35)<1e-6,null,{timeout:30000});
+  r=await pos();expect(r.bas[2]).toBeCloseTo(35,6);expect(r.st).toBe('ok');
+  expect(err).toEqual([]);
+});
+
 test('FAO : surfaçage sur l\'Axe → parcours → G-code',async({page})=>{
   const err=await demarrer(page);
   await ouvrirAxe(page);

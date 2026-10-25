@@ -145,6 +145,7 @@ const SUITES = [
   "test_composants_liaisons",
   "test_composants_inspection",
   "test_composants_plan",
+  "test_composants_accroches",
   "test_oracle",
   "test_construction_esquisse"
 ];

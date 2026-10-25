@@ -202,14 +202,14 @@ function asmPlacementProps(p,o){
        sous-composants (chemin relatif à ce composant) ;
      · cible : ceux du porteur lui-même (sa géométrie de base) et de ses autres descendants
        (chemin relatif au porteur). */
-function asmRelKey(r){return r?(r.path||[]).join('/')+'|'+(r.cg||''):'';}
+function asmRelKey(r){return r?(r.path||[]).join('/')+'|'+(r.cg||'')+(r.sn?'|'+asmSnapKey(r.sn):''):'';}
 function asmRelName(cid,r){
   // « Châssis:1 › Roue:2 › Repère A » ; chemin vide = le composant cid lui-même
   if(!r)return '?';
   let c=asmComp(cid);const parts=[];
   for(const id of (r.path||[])){const o=c&&c.occ.find(q=>q.id===id);if(!o)return '?';parts.push(o.name);c=asmComp(o.comp);}
   if(!c)return '?';
-  const fn=r.cg?((c.doc.cgeo||[]).find(k=>k.id===r.cg)||{}).name||'?':(r.path&&r.path.length?'Origine':'Origine de « '+c.name+' »');
+  const fn=r.sn?(r.path&&r.path.length?'':c.name+' · ')+(r.sn.name||'Point d’accroche'):r.cg?((c.doc.cgeo||[]).find(k=>k.id===r.cg)||{}).name||'?':(r.path&&r.path.length?'Origine':'Origine de « '+c.name+' »');
   return parts.concat(fn).join(' › ');
 }
 function asmFramesUnder(cid,skip){
@@ -229,9 +229,9 @@ function asmFramesOf(occ){return asmFramesUnder(occ.comp,null);} // à poser (re
 function asmAlignStart(id){
   const o=asmOcc(id);if(!o)return;
   if(o.fixed){try{faceEl.textContent='Occurrence fixée : libérez-la pour l’aligner.';}catch(e){}return;}
-  asmAlign={occ:o.id,step:'src',src:undefined,dst:undefined,flip:false,rz:0,off:[0,0,0],saved:JSON.parse(JSON.stringify({fr:o.fr,align:o.align}))};
+  asmAlign={occ:o.id,step:'src',src:undefined,dst:undefined,flip:false,rz:0,off:[0,0,0],face:null,saved:JSON.parse(JSON.stringify({fr:o.fr,align:o.align}))};
   asmAlignRefresh();
-  try{faceEl.textContent='Aligner « '+o.name+' » : choisissez le repère du composant à poser (panneau ou clic sur un repère).';}catch(e){}
+  try{faceEl.textContent='Aligner « '+o.name+' » : choisissez le repère du composant à poser — clic sur une triade, ou sur une face pour ses points d’accroche.';}catch(e){}
 }
 function asmAlignPreview(){
   const A=asmAlign,o=A&&asmOcc(A.occ);if(!o)return;
@@ -257,6 +257,10 @@ function asmAlignMarks(){
   A.keys={};
   if(A.step==='src'){asmFramesOf(me).forEach((f,i)=>{const k='s'+i;A.keys[k]=f.rel;put(asmCompose(me.fr,f.F),k,asmRelKey(A.src)===asmRelKey(f.rel));});}
   else{asmFramesUnder(asm.active,me.id).forEach((f,i)=>{const k='d'+i;A.keys[k]=f.rel;put(f.F,k,asmRelKey(A.dst)===asmRelKey(f.rel));});}
+  // points d'accroche (V0.7.2) : ceux de la face cliquée, et la triade des points retenus
+  try{asmSnapMarks(put,G);}catch(e){}
+  if(A.src&&A.src.sn){const F=asmRelFrame(me.comp,A.src);if(F)put(asmCompose(me.fr,F),'xs',true);}
+  if(A.dst&&A.dst.sn){const F=asmRelFrame(asm.active,A.dst);if(F)put(F,'xd',true);}
 }
 function asmAlignPickAt(e){
   // Clic dans la vue pendant Aligner : repère candidat le plus proche → true si consommé
@@ -265,14 +269,17 @@ function asmAlignPickAt(e){
   rayc.ray.copy(asmRay(e));G.updateMatrixWorld(true);
   const ms=[];G.traverse(m=>{if(m.isMesh&&m.userData.am)ms.push(m);});
   const h=rayc.intersectObjects(ms,false)[0];
-  if(!h){try{faceEl.textContent='Cliquez une triade (repère), ou choisissez dans le panneau.';}catch(err){}return true;}
+  if(h&&h.object.userData.am[0]==='p'){asmSnapChoose(+h.object.userData.am.slice(1));return true;} // point d'accroche
+  if(!h||h.object.userData.am[0]==='x'){
+    if(asmSnapPick(e))return true; // face d'une instance : ses points d'accroche
+    try{faceEl.textContent='Cliquez une triade (repère) ou une face (points d’accroche), ou choisissez dans le panneau.';}catch(err){}return true;}
   const k=h.object.userData.am,rel=asmAlign.keys&&asmAlign.keys[k];if(!rel)return true;
   if(k[0]==='s')asmAlignSetSrc(rel);else asmAlignSetDst(rel);
   return true;
 }
-function asmAlignSetSrc(rel){if(!asmAlign)return;asmAlign.src={path:rel.path.slice(),cg:rel.cg};asmAlign.step='dst';asmAlignRefresh();
-  try{faceEl.textContent='Aligner : choisissez maintenant le repère cible (géométrie du composant actif, ou repère d’un autre composant).';}catch(e){}}
-function asmAlignSetDst(rel){if(!asmAlign)return;asmAlign.dst={path:rel.path.slice(),cg:rel.cg};asmAlignRefresh();
+function asmAlignSetSrc(rel){if(!asmAlign)return;asmAlign.src={path:rel.path.slice(),cg:rel.cg};if(rel.sn)asmAlign.src.sn=rel.sn;asmAlign.step='dst';asmAlign.face=null;asmAlignRefresh();
+  try{faceEl.textContent='Aligner : choisissez maintenant la cible — repère, ou face (points d’accroche) du composant actif ou d’un autre composant.';}catch(e){}}
+function asmAlignSetDst(rel){if(!asmAlign)return;asmAlign.dst={path:rel.path.slice(),cg:rel.cg};if(rel.sn)asmAlign.dst.sn=rel.sn;asmAlign.face=null;asmAlignRefresh();
   try{faceEl.textContent='Aligner : réglez retourner / rotation / décalage puis ✓.';}catch(e){}}
 function asmAlignCommit(){
   const A=asmAlign,o=A&&asmOcc(A.occ);if(!o)return;
@@ -298,13 +305,20 @@ function asmAlignProps(p){
     const go=()=>{const x=parseFloat(String(i.value).replace(',','.'));if(isFinite(x)){fn(x);asmAlignRefresh();}};i.addEventListener('change',go);i.addEventListener('keydown',e=>{if(e.key==='Enter')go();});return i;};
   const choice=(lab,on,fn)=>{const b=mk('button','mini',lab);if(on)b.style.outline='2px solid var(--accent, #0a84ff)';b.onclick=fn;return b;};
   p.appendChild(mk('div','pnl-h','🔗 Aligner « '+o.name+' »'));
-  p.appendChild(mk('div','pnl-note','1. Repère du composant à poser'));
-  const r1=mk('div','pnl-btns');asmFramesOf(me).forEach(f=>r1.appendChild(choice(f.name,A.src!==undefined&&asmRelKey(A.src)===asmRelKey(f.rel),()=>asmAlignSetSrc(f.rel))));p.appendChild(r1);
+  // points d'accroche de la face cliquée (V0.7.2)
+  const faceList=side=>{const f=A.face;if(!f||f.side!==side)return;
+    p.appendChild(mk('div','pnl-note','Points d’accroche — '+asmSnapFaceName(f.F)+' :'));
+    const r=mk('div','pnl-btns');f.items.forEach((it,i)=>r.appendChild(choice(it.name,false,()=>asmSnapChoose(i))));p.appendChild(r);};
+  p.appendChild(mk('div','pnl-note','1. Repère du composant à poser (ou clic sur une de ses faces : points d’accroche)'));
+  const r1=mk('div','pnl-btns');asmFramesOf(me).forEach(f=>r1.appendChild(choice(f.name,A.src!==undefined&&asmRelKey(A.src)===asmRelKey(f.rel),()=>asmAlignSetSrc(f.rel))));
+  if(A.src&&A.src.sn)r1.appendChild(choice(asmRelName(me.comp,A.src),true,()=>{}));
+  p.appendChild(r1);faceList('src');
   if(A.src!==undefined){
-    p.appendChild(mk('div','pnl-note','2. Repère cible'));
+    p.appendChild(mk('div','pnl-note','2. Repère cible (ou clic sur une face : points d’accroche)'));
     const r2=mk('div','pnl-btns');
     asmFramesUnder(asm.active,me.id).forEach(f=>r2.appendChild(choice(f.name,A.dst!==undefined&&asmRelKey(A.dst)===asmRelKey(f.rel),()=>asmAlignSetDst(f.rel))));
-    p.appendChild(r2);
+    if(A.dst&&A.dst.sn)r2.appendChild(choice(asmRelName(asm.active,A.dst),true,()=>{}));
+    p.appendChild(r2);faceList('dst');
   }
   if(A.dst!==undefined){
     const c=document.createElement('input');c.type='checkbox';c.checked=A.flip;c.onchange=()=>{A.flip=c.checked;asmAlignRefresh();};Row('Retourner (Z opposés)',c);

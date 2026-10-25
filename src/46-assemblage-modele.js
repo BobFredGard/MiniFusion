@@ -119,7 +119,8 @@ function asmPathFrame(cid,path){
 function asmRelFrame(cid,rel){
   // Repère {path, cg} relatif au composant cid, exprimé dans le repère de cid
   const r=asmPathFrame(cid,rel&&rel.path);if(!r)return null;
-  const G=asmCompFrame(r.comp,rel&&rel.cg);
+  // point d'accroche de la géométrie (V0.7.2, 48-assemblage-accroches) ou repère
+  const G=rel&&rel.sn?asmSnapFrame(r.comp,rel.sn):asmCompFrame(r.comp,rel&&rel.cg);
   return G?asmCompose(r.F,G):null;
 }
 function asmWorld(path){
@@ -162,8 +163,18 @@ function asmInstances(cid){
 function asmAlignNorm(a){
   // Alignement sous sa forme V0.6.1 (src / dst = {path, cg}) ; null si inutilisable
   if(!a||typeof a!=='object')return null;
+  const okFr=f=>f&&['o','x','y','z'].every(k=>Array.isArray(f[k])&&f[k].length===3&&f[k].every(v=>isFinite(+v)));
+  const okV=v=>Array.isArray(v)&&v.length===3&&v.every(x=>isFinite(+x));
+  const sn=s=>{ // point d'accroche (V0.7.2) : signature de face, point, arête, dernier repère
+    if(!s||typeof s!=='object'||!okFr(s.fr)||typeof s.w!=='string'||!s.f||!okV(s.f.c)||!okV(s.f.n)||(s.f.k!=='plane'&&s.f.k!=='cyl'))return null;
+    const o={f:{k:s.f.k,c:s.f.c.map(Number),n:s.f.n.map(Number)},w:s.w,fr:s.fr,name:typeof s.name==='string'?s.name:'Point d’accroche'};
+    if(s.f.k==='cyl'&&isFinite(+s.f.r))o.f.r=+s.f.r;
+    if(s.e&&(s.e.k==='line'||s.e.k==='circ')&&okV(s.e.m)){o.e={k:s.e.k,m:s.e.m.map(Number)};if(isFinite(+s.e.r))o.e.r=+s.e.r;}
+    return o;
+  };
   const rel=(r,isDst)=>{
-    if(r&&typeof r==='object'&&Array.isArray(r.path))return {path:r.path.filter(x=>typeof x==='string'),cg:typeof r.cg==='string'?r.cg:null};
+    if(r&&typeof r==='object'&&Array.isArray(r.path)){const o={path:r.path.filter(x=>typeof x==='string'),cg:typeof r.cg==='string'?r.cg:null};
+      const s=sn(r.sn);if(s){o.sn=s;o.cg=null;}return o;}
     if(isDst&&r&&typeof r==='object')return {path:r.occ?[r.occ]:[],cg:r.occ&&typeof r.cg==='string'?r.cg:null}; // V0.6.0 : {occ, cg}
     return {path:[],cg:typeof r==='string'?r:null}; // V0.6.0 : src = cgId | null
   };
@@ -174,7 +185,6 @@ function asmAlignNorm(a){
   const num=o=>{const r={};if(o&&typeof o==='object')Object.keys(o).forEach(k=>{if(ASM_DOF_KEYS.includes(k)&&isFinite(+o[k]))r[k]=+o[k];});return r;};
   if(a.q)out.q=num(a.q);if(a.q0)out.q0=num(a.q0);
   if(a.lim&&typeof a.lim==='object'){out.lim={};Object.keys(a.lim).forEach(k=>{const l=a.lim[k];if(ASM_DOF_KEYS.includes(k)&&Array.isArray(l)&&l.length===2&&l.every(v=>isFinite(+v)))out.lim[k]=[+l[0],+l[1]];});}
-  const okFr=f=>f&&['o','x','y','z'].every(k=>Array.isArray(f[k])&&f[k].length===3&&f[k].every(v=>isFinite(+v)));
   if(okFr(a.rel))out.rel=a.rel;if(okFr(a.sfr))out.sfr=a.sfr;
   return out;
 }
@@ -248,7 +258,9 @@ function asmResolveIn(owner){
       todo.splice(i,1);i--;progress=true;done.add(o.id);
       if(dep===o.id){o.st='warn';o.msg='la cible est dans l’occurrence elle-même';continue;}
       const T=asmJointTarget(owner.id,a),S=a.sfr||asmRelFrame(o.comp,a.src);
-      if(!T||!S){o.st='warn';o.msg=!S?'repère du composant introuvable':'repère cible introuvable';continue;}
+      if(!T||!S){const snap=(!S?a.src:a.dst)&&(!S?a.src:a.dst).sn;
+        o.st='warn';o.msg=snap?'point d’accroche introuvable (« '+snap.name+' » : la face a disparu ?) — position mémorisée'
+          :!S?'repère du composant introuvable':'repère cible introuvable';continue;}
       const M=asmRound(asmCompose(T,asmCompose(asmJointFrame(a),asmInverse(S))));
       if(['o','x','y','z'].some(k=>M[k].some((v,j)=>Math.abs(v-o.fr[k][j])>1e-9))){o.fr=M;ch=true;}
       o.st='ok';o.msg='';

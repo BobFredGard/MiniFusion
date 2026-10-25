@@ -60,6 +60,7 @@ function asmCaptureActive(){
   // le composant vient d'être rejoué : ses repères ont pu bouger → les alignements suivent
   try{if(asmResolve()){dirty=true;autosave();}}catch(e){}
   asmExtSyncSoon(); // ce composant a pu bouger des éléments visés par d'autres (46)
+  asmSnapSyncSoon(); // … ou des faces visées par des points d'accroche (48)
   if(!asmBuilding){try{asmCtxDraw();}catch(e){}if(asmMode==='asm'){try{asmDraw();}catch(e){}}}
 }
 function asmSnapFree(s){(s&&s.items||[]).forEach(it=>{try{it.geo.dispose();}catch(e){}});}
@@ -96,6 +97,7 @@ function asmFill(G,placer){
     const key=mine&&!self?inst.path[n]:null; // enfant direct auquel appartient l'instance
     const kind=!mine?'ghost':(self||!placer)?'solid':'pick';
     const g=new THREE.Group();g.matrixAutoUpdate=false;g.matrix.copy(asmMat4(asmCompose(V,inst.F)));
+    g.userData.path=inst.path; // chemin absolu : points d'accroche (48-assemblage-accroches)
     if(kind==='pick'){g.userData.occ=key;g.name='occ_'+key;}
     const on=kind==='pick'&&asmSelId===key;
     c._snap.items.forEach(it=>{
@@ -413,6 +415,7 @@ function asmAfterLoad(){
     if(want){try{asmEnter();}catch(e){}}else{try{asmCtxDraw();renderTree();}catch(e){}}
     // composants liés : sources vérifiées sans rien demander (l'autorisation demande un clic)
     if(asmLinked().length){try{asmLinkRebase();asmLinksCheck(false);}catch(e){}}
+    try{asmSnapSyncSoon();}catch(e){} // points d'accroche : faces relues sur la forme exacte
   },0);
 }
 /* ── insérer un fichier .miniFusion (copie : il devient un composant du composant actif) ── */
