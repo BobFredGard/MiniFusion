@@ -107,12 +107,13 @@ test('esquisse rectangle → extrusion : prisme exact',async({page})=>{
   expect(sk.w).toBeGreaterThan(40);expect(sk.h).toBeGreaterThan(15);
   await page.locator('#skOk').click();
   await page.waitForFunction(()=>!skEdit);
-  // Extrusion : formulaire du panneau (Plot, 12 mm) puis « Créer »
+  // Extrusion DYNAMIQUE (V0.7.6) : elle naît tout de suite (Plot) ; distance 12 dans la fenêtre, puis OK
   await ruban(page,'Extrusion').click();
-  await page.locator('#props select').first().selectOption('add');
-  const dist=page.locator('#props input[type=text]').first();
+  await page.waitForFunction(()=>doc.features.some(f=>f.type==='extrude')&&extDyn&&extDyn.isNew);
+  const dist=page.locator('#props input.extDynDist');
   await dist.fill('12');await dist.dispatchEvent('change');
-  await page.locator('#props button',{hasText:'Créer'}).click();
+  await page.waitForFunction(()=>doc.features.find(f=>f.type==='extrude').distance===12);
+  await page.locator('#props button.extDynOk').click();
   await page.waitForFunction(()=>doc.features.some(f=>f.type==='extrude')&&builtEngine==='exact'&&!!(occLive&&occLive.shape),null,{timeout:60000});
   const f=await page.evaluate(()=>{const f=doc.features.find(x=>x.type==='extrude');return {op:f.op,d:f.distance};});
   expect(f).toEqual({op:'add',d:12});
@@ -148,11 +149,12 @@ test('plan de construction décalé → esquisse dessus → extrusion au bon end
   await page.mouse.click(b[0],b[1]);
   await page.locator('#skOk').click();
   await page.waitForFunction(()=>!skEdit);
-  await ruban(page,'Extrusion').click();
-  await page.locator('#props select').first().selectOption('add');
-  const d=page.locator('#props input[type=text]').first();
+  await ruban(page,'Extrusion').click(); // extrusion dynamique : distance dans la fenêtre, OK
+  await page.waitForFunction(()=>doc.features.some(f=>f.type==='extrude')&&extDyn&&extDyn.isNew);
+  const d=page.locator('#props input.extDynDist');
   await d.fill('10');await d.dispatchEvent('change');
-  await page.locator('#props button',{hasText:'Créer'}).click();
+  await page.waitForFunction(()=>doc.features.find(f=>f.type==='extrude').distance===10);
+  await page.locator('#props button.extDynOk').click();
   await page.waitForFunction(()=>doc.features.some(f=>f.type==='extrude')&&builtEngine==='exact'&&!!(occLive&&occLive.shape),null,{timeout:60000});
   const zBox=()=>page.evaluate(()=>{const b=new occt.Bnd_Box_1();b.SetGap(0);occt.BRepBndLib.Add(occLive.shape,b,false);const r=[b.CornerMin().Z(),b.CornerMax().Z()];b.delete();return r;});
   let z=await zBox();

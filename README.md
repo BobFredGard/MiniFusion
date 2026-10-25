@@ -19,17 +19,19 @@ Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le 
 ![Interface](docs/captures/interface-moderne.png)
 
 Une seule interface, organisée en **trois espaces** : **CAO**, **FAO** et **PLAN**.
-- **Ruban à icônes** propre à chaque espace, **recherche de commandes** (`Ctrl+K`), barre rapide (annuler, rétablir, enregistrer).
-- **Navigateur Modèle / Usinage** avec des **onglets de posages**, et panneau de propriétés à droite.
-- **Barre d'état** : noyau, mesure, enregistrement, version ; au premier lancement, le bouton **Noyau .wasm…** y active le noyau exact.
+- **Bandeau supérieur** : espaces CAO / FAO / PLAN, barre rapide (annuler, rétablir, fichiers), **recherche de commandes** (`Ctrl+K`), puis l'**état** — noyau, message en cours (texte complet au survol), **Régénérer**, unité —, le nom du document (● = non enregistré) et la version. Au premier lancement, le bouton **Noyau .wasm…** y active le noyau exact. Sur un écran étroit, l'état passe sur une 2ᵉ ligne du bandeau.
+- **Ruban à icônes** propre à chaque espace, sous le bandeau.
+- **Navigateur Modèle / Usinage** avec des **onglets de posages**, et panneau de propriétés à droite. Pas de barre en bas : la **vue 3D descend jusqu'en bas** de la fenêtre.
+- **Fenêtres de fonctions à icônes** (extrusion pour commencer) : les choix (opération, direction, étendue) en boutons à icône plutôt qu'en listes, les réglages rares dans « ▸ Options », **Annuler / OK**.
 - **Cinq thèmes** (bouton palette) : **Nuit**, **Graphite**, **Atelier**, **Clair** (vue 3D claire comprise) et **Contraste élevé**. Le choix est mémorisé.
 
 ![Thème clair](docs/captures/theme-clair.png)
 
 **Vue 3D**
 - **Cube de vue** cliquable (faces, ⌂ = vue iso complète) et vues Dessus / Face / Droite / Iso.
-- **Orbite contrainte** (Z en haut) ou **orbite libre** dans tous les sens, au choix par le bouton ⟲ du cube ; le **centre de rotation** est la face sélectionnée, sinon le centre des pièces visibles.
-- **Sol miroir** sous la pièce (sous le brut en FAO). En FAO, le haut de la vue est le Z du posage ou de l'opération.
+- **Orbite contrainte** (Z en haut) ou **orbite libre** dans tous les sens, au choix par le bouton ⟲ du cube ; le **centre de rotation** est la face sélectionnée, sinon le centre des pièces visibles (en mode Placer : la pièce sélectionnée ou le repère cliqué dans l'arbre).
+- **Sol miroir** sous la dernière pièce visible (composants autour de la pièce compris ; sous le brut en FAO, simulation comprise). En FAO, le haut de la vue est le Z du posage ou de l'opération.
+- **Transparence « verre »** : une pièce transparente montre son intérieur, mais jamais à travers une pièce opaque qui la cache.
 
 ## CAO
 
@@ -42,6 +44,7 @@ Une seule interface, organisée en **trois espaces** : **CAO**, **FAO** et **PLA
 - **Orbite** pendant le dessin : **clic-molette glissé**, cube de vue, ou bouton **⟳** (vue inclinée ↔ à plat). La touche **N** remet la vue à plat dans le plan de l'esquisse. Le tracé, l'accrochage, le zoom et le déplacement restent exacts sur le plan sous tous les angles, et les cotes restent lisibles.
 - La **pièce est affichée en transparence** : faces légèrement teintées, toutes les arêtes tracées comme en 3D (gris clair devant, gris plus sombre derrière). Pour une esquisse consommée par une fonction, c'est l'état de la pièce **avant** cette fonction.
 - **Grille** affichable ou masquée (bouton **▦**, masquée par défaut, choix mémorisé) ; les axes de l'origine restent toujours visibles. L'accroche au pas (« Grille 1 mm ») marche dans les deux cas.
+- **Bandeau Esquisse** sans boutons en double : le zoom se fait à la molette ; pendant une esquisse, les flèches ↩ ↪ du bandeau supérieur (et `Ctrl+Z` / `Ctrl+Y`) annulent et rétablissent les **tracés**.
 - Une esquisse posée sur une face verticale a son axe vertical vers le haut : elle ne s'ouvre plus à l'envers.
 
 ![Esquisse en vue 3D inclinée : pièce en transparence, arêtes visibles et cachées](docs/captures/cao-esquisse-3d.jpg)
@@ -49,8 +52,6 @@ Une seule interface, organisée en **trois espaces** : **CAO**, **FAO** et **PLA
 **Dessin et contraintes**
 - **Outils** : ligne, rectangle (coin ou centre), oblong, cercle, arc, points de construction et de perçage, **projection associative** d'arêtes 3D, congé, chanfrein et décalage 2D, ajustement (trim).
 - **Contraintes** (13) : horizontal, vertical, parallèle, perpendiculaire, colinéaire, égal, symétrie (y compris par rapport à une droite infinie), tangence (le côté se choisit), coaxial, milieu, fixe, coïncident, construction.
-- **Répétition** linéaire (une ou deux directions : grille), circulaire, symétrie (simple ou double) ; directions sur X / Y / Z, une face ou une arête (axe d’un cercle), ⇄ pour inverser ;
-- **Extrusion dynamique** : l’extrusion apparaît tout de suite (aperçu = résultat), une flèche se tire dans la vue (pas de 1 mm, Maj = libre, de l’autre côté = sens inversé) et un champ « Distance » flotte à côté ; la fenêtre présente opération, direction et étendue en boutons à icônes, les options repliées, Annuler / OK — la même fenêtre sert à modifier une extrusion sélectionnée ;
 - **Solveur** : moindres carrés (Levenberg-Marquardt) au **moindre déplacement** : le reste de l'esquisse bouge le moins possible, un point tenu sur une courbe glisse. Un **glisser avance par petits pas**, chacun résolu depuis le précédent, sans sauter vers la solution symétrique ; au bord de ce que la géométrie peut atteindre, elle s'arrête. Une **cote ou une contrainte impossible est refusée** : l'esquisse reste telle quelle et la barre d'état dit pourquoi. Le panneau « Santé » affiche les degrés de liberté réels ; l'esquisse est bleue (sous-contrainte) ou blanche (totalement contrainte).
 - **Cotes pilotées** : longueur, Ø, rayon, distance, angle, entraxe ; cotes de référence ; saisie dynamique de la longueur et de l'angle pendant le tracé.
 - **Paramètres nommés** (`nom = valeur`) et **expressions ƒx**, dans les cotes comme dans les champs des fonctions 3D.
@@ -71,12 +72,13 @@ Groupe **Construire** du ruban (et `Ctrl+K`) : des références à la manière d
 
 ### Fonctions 3D
 
-Historique rejouable, arborescence et marqueur de temps. **Bandeau de timeline** en bas de la vue 3D, à la manière de Fusion 360 : une icône par étape (fonctions, esquisses, construction), clic = sélection, double-clic = édition, marqueur temps glissable (⏮ ◀ ▶ ⏭), glisser-déposer d'une fonction pour la réordonner dans son corps.
-- **Extrusion** : ajout ou découpe, sur une distance, jusqu'à une face ou à travers tout, en symétrique, avec dépouille ; elle peut créer un **nouveau corps**.
+Historique rejouable, arborescence et marqueur de temps. **Bandeau de timeline** en bas de la vue 3D, à la manière de Fusion 360 : une étape par fonction, esquisse ou élément de construction, avec **l'icône de la commande du ruban** qui l'a créée — **vert** pour un ajout de matière, **rouge avec « − »** pour un enlèvement ; clic = sélection, double-clic = édition, marqueur temps glissable (⏮ ◀ ▶ ⏭), glisser-déposer d'une fonction pour la réordonner dans son corps.
+- **Extrusion dynamique** : ajout ou découpe, sur une distance, jusqu'à une face ou à travers tout, en symétrique, avec dépouille ; elle peut créer un **nouveau corps**. Elle **apparaît tout de suite** (l'aperçu est le résultat) ; une **flèche se tire dans la vue** (pas de 1 mm, Maj = libre, de l'autre côté du plan = sens inversé) et un champ **« Distance »** flotte à côté. La fenêtre présente opération, direction et étendue en **boutons à icônes**, la dépouille dans « ▸ Options », **Annuler / OK** (Échap annule). Sélectionner une extrusion rouvre la même fenêtre pour la modifier.
 - **Révolution** autour d'une ligne de l'esquisse ou d'un axe X / Y / Z.
 - **Perçage** simple, lamé, fraisé ou taraudé (filet ISO réellement modélisé), débouchant ou borgne, répétable.
 - **Congés et chanfreins exacts** sur les arêtes cliquées, en suivant la chaîne tangente ou sur l'arête seule ; aperçu avec les nouvelles faces en orange.
-- **Modifier le solide** : déplacer une face (push / pull), **supprimer une face** (`Suppr`, les voisines se prolongent : congé → arête vive, trou rebouché), dépouille, coque, répétition linéaire, circulaire ou par symétrie, **combiner** des corps (union, soustraction, intersection).
+- **Répétition** : linéaire, à **une ou deux directions (grille)**, circulaire, symétrie simple ou double. Chaque direction se règle sur X / Y / Z ou sur la sélection de la vue avec **🎯**, sur la ligne de son axe — **arête** droite (sa direction), **cercle ou arc** (son axe) ou **face** (sa normale) — et **⇄** l'inverse.
+- **Modifier le solide** : déplacer une face (push / pull), **supprimer une face** (`Suppr`, les voisines se prolongent : congé → arête vive, trou rebouché), dépouille, coque, **combiner** des corps (union, soustraction, intersection).
 
 ### Corps, mesures, fichiers
 
@@ -90,12 +92,12 @@ Historique rejouable, arborescence et marqueur de temps. **Bandeau de timeline**
 Comme dans Fusion 360, **tout est composant**. Le fichier est le **composant racine** : une pièce complète (esquisses, construction, corps, FAO, PLAN) qui peut porter des **composants enfants**, eux-mêmes pièces complètes avec leurs propres enfants, à n'importe quelle profondeur. Un fichier sans composant reste exactement comme avant ; un assemblage de V0.6.0 s'ouvre tel quel (ses pièces deviennent des composants d'une racine vide).
 
 Deux modes pour le composant actif (groupe **Composants** du ruban) :
-- **Modéliser** : on l'édite comme une pièce seule (CAO, FAO, PLAN) ; ses sous-composants sont visibles mais figés, le reste de l'assemblage en fantôme autour ;
+- **Modéliser** : on l'édite comme une pièce seule (CAO, FAO, PLAN) ; le reste de l'assemblage est affiché autour **comme en mode Placer** (arêtes, intensité, transparence), non sélectionnable ;
 - **Placer** : on déplace ses composants enfants (clic n'importe où sur un enfant = le sélectionner).
 
 Navigation :
 - **double-clic** sur un composant (vue ou arbre) : on le modélise ;
-- **fil d'Ariane** « 🧩 Racine › Châssis › Roue » en tête de l'arbre : un clic remonte à ce niveau ; **Échap** en mode Placer (rien de sélectionné) remonte d'un niveau ;
+- **fil d'Ariane** « 🧩 Racine › Châssis › Roue » en tête de l'arbre (la racine porte le nom du fichier) : un clic remonte à ce niveau **dans le mode en cours** ; ses boutons **✏️ Modéliser** et **🧩 Placer** changent de mode sans quitter la pièce (Placer depuis une pièce sans sous-composants : l'assemblage qui la contient, elle sélectionnée) ; **Échap** en mode Placer (rien de sélectionné) remonte d'un niveau ;
 - section **Composants** de l'arbre : toute la hiérarchie, double-clic pour aller n'importe où.
 
 Commandes :
@@ -225,6 +227,7 @@ Convertir une pièce multicorps en assemblage, sans rien remodéliser :
 | Clic droit glissé | déplacement | **déplacement** |
 | Clic droit court | menu contextuel | menu contextuel / annuler l'action |
 | Molette | zoom | zoom sous le curseur |
+| Flèche bleue (extrusion sélectionnée) | glisser = distance (pas de 1 mm, Maj = libre) ; `Échap` annule la fenêtre | — |
 | Clavier | `Ctrl+K` commandes, `Suppr` supprimer une face | `N` à plat, `Échap` fin d'outil, `F1`–`F12`, `H`, `X`, `Ctrl+Z` / `Ctrl+Y` |
 
 ## Démarrage
