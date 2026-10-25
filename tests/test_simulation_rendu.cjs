@@ -46,6 +46,12 @@ const R=String.raw`
    const nW=[vw.mNrm[oe],vw.mNrm[oe+1],vw.mNrm[oe+2]];
    A(nW[0]<-0.99&&near(nW[2],0),'11 : paroi de la colonne haute vers la basse : normale = direction radiale de la colonne basse ('+nW.map(v=>v.toFixed(2))+')');
    const zq=[vw.mArr[oe+2],vw.mArr[oe+5],vw.mArr[oe+8]];A(Math.max(...zq)-Math.min(...zq)>5,'12 : … et le quad est bien déplié (de Z'+Math.min(...zq).toFixed(1)+' à Z'+Math.max(...zq).toFixed(1)+')');}
+  // 6. segment en pente : la surface suit la pente (avant : taillée à la cote la plus basse du segment)
+  {const g=faoMatterGrid({x0:0,y0:0,z0:0,x1:40,y1:20,z1:20},0.5);
+   faoMatterCarveSeg(g,5,10,18,35,10,8,2,null,0,null); // fraise plate Ø4, descend de 10 mm sur 30 mm
+   // la surface suit la pente décalée du rayon (le bord aval de la fraise plate, plus bas, passe en dernier)
+   let errMax=0;for(let x=8;x<=31;x+=0.5){const c=col(g,x,10);const att=18-(x+2-5)/3;errMax=Math.max(errMax,Math.abs(g.h[c]-att));}
+   A(errMax<0.2,'13 : segment en pente (30 mm, −10 mm) : surface à '+errMax.toFixed(3)+' mm de la pente attendue (avant : toute la longueur à la cote basse, 10 mm d’écart)');}
   return out;
 `;
 (async()=>{

@@ -114,6 +114,7 @@ const FAO_RM_FS=[
   '    float lo=tPrev; float hi=t;',
   '    for(int k=0;k<8;k++){ float m=0.5*(lo+hi); float b; int a; if(rmInside(ro+rd*m,a,b)){hi=m;act=a;} else lo=m; }',
   '    p=ro+rd*hi; vec3 pp=ro+rd*lo;',
+  '    { int ac=-1; float bc=-1e9; for(int i=0;i<4;i++){ if(i>=rmCount)break; float mo=rmMargin(i,pp); if(mo>bc){bc=mo;ac=i;} } if(bc>0.0)act=ac; }', // carte franchie : la plus violée juste dehors (une paroi du posage près d'un trou latéral n'est pas la carte latérale)
   '    vec2 uv=rmUV(act,p); ivec2 c=rmCell(act,uv); float hc=rmHf(act,c); float w=dot(p,rmA[act]);',
   '    if(w>hc-1.5*pas){ rmTop=1.0; vec3 nl=(rmSmooth>0.5)?rmNsmooth(act,uv,hc,pas):rmNf(act,c).xyz; n=nl.x*rmU[act]+nl.y*rmV[act]+nl.z*rmA[act]; }', // dessus : normale de l'outil (lisse : interpolée)
   '    else{', // paroi : direction radiale de la colonne basse (celle d'où vient le rayon)

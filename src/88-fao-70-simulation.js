@@ -487,7 +487,22 @@ function faoMatterNrmSet(g,c,dx,dy,d2,rc,CR,TP){
   const L=Math.hypot(nx,ny,nz)||1,o=c*4;g.nrm[o]=nx/L;g.nrm[o+1]=ny/L;g.nrm[o+2]=nz/L;
   if(rho>1e-9){g.wn[c*2]=-ux;g.wn[c*2+1]=-uy;}
 }
+const FAO_CARVE_DZ=0.05; // mm — pas de hauteur d'un segment en pente
 function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r,outCols,cr,tp){
+  // V0.7.8 : segment EN PENTE — la taille se fait à la cote la plus BASSE du segment ; un segment
+  // de finition de 0,4 mm sur une pente de 30° creusait 0,2 mm de trop à une extrémité (ondulations
+  // de 20 à 50 µm sur les bossages de Cavité Usinage, « crevasses »). Découpé en pas de hauteur.
+  const dz=Math.abs(bz-az);
+  if(!(dz>FAO_CARVE_DZ))return faoMatterCarveSeg0(g,ax,ay,az,bx,by,bz,r,outCols,cr,tp);
+  const n=Math.min(400,Math.ceil(dz/FAO_CARVE_DZ)),out=[];
+  for(let s=0;s<n;s++){
+    const t0=s/n,t1=(s+1)/n;
+    const k=faoMatterCarveSeg0(g,ax+(bx-ax)*t0,ay+(by-ay)*t0,az+(bz-az)*t0,ax+(bx-ax)*t1,ay+(by-ay)*t1,az+(bz-az)*t1,r,outCols,cr,tp);
+    for(let m=0;m<k.length;m++)out.push(k[m]);
+  }
+  return out;
+}
+function faoMatterCarveSeg0(g,ax,ay,az,bx,by,bz,r,outCols,cr,tp){
   // Enlève les voxels dont le CENTRE est à distance ≤ r du segment XY (2D)
   // et z ≥ cote de coupe − pas/2 : la matière SOUS la pointe reste. Retourne les indices tués.
   // Z-map : la hauteur de colonne descend à la cote de coupe — 2026-10-11-002 :

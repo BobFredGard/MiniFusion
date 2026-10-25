@@ -23059,6 +23059,20 @@ function faoPolyCross(ax,ay,bx,by,loop){
   return false;
 }
 function faoSegClipper(op,job){
+  // V0.7.8 : opération au repère propre (3+2) — la zone est dans le repère de l'OPÉRATION, les
+  // segments de l'aperçu dans celui du posage : sans conversion, toute la coupe était rejetée
+  // (« pas de spirale verte » sur l'ébauche 3D de l'oblong), seuls les rapides restaient.
+  let fr=null;try{fr=(typeof faoOpFrame==='function')?faoOpFrame(job,op):null;}catch(e){fr=null;}
+  if(!fr)return faoSegClipper0(op,job);
+  const inner=faoSegClipper0(op,faoOpJob(job,op,fr));if(!inner)return null;
+  const toO=function(x,y,z){return faoToF(fr,faoToW(fr.P,[x,y,z]));};
+  return function(ax,ay,az,bx,by,bz,push){
+    const A=toO(ax,ay,az),B=toO(bx,by,bz);
+    inner(A[0],A[1],A[2],B[0],B[1],B[2],function(x1,y1,z1,x2,y2,z2){
+      const P=faoPtOpToPos(fr,[x1,y1,z1]),Q=faoPtOpToPos(fr,[x2,y2,z2]);push(P[0],P[1],P[2],Q[0],Q[1],Q[2]);});
+  };
+}
+function faoSegClipper0(op,job){
   // -> fn(ax,ay,az,bx,by,bz,push) qui ne pousse que la partie DANS la zone,
   //    ou null : opération sans zone (affichage inchangé, cas par défaut).
   // Usage réservé aux segments de COUPE (cf. faoRefreshPreview) : un rapide
@@ -25397,7 +25411,22 @@ function faoMatterNrmSet(g,c,dx,dy,d2,rc,CR,TP){
   const L=Math.hypot(nx,ny,nz)||1,o=c*4;g.nrm[o]=nx/L;g.nrm[o+1]=ny/L;g.nrm[o+2]=nz/L;
   if(rho>1e-9){g.wn[c*2]=-ux;g.wn[c*2+1]=-uy;}
 }
+const FAO_CARVE_DZ=0.05; // mm — pas de hauteur d'un segment en pente
 function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r,outCols,cr,tp){
+  // V0.7.8 : segment EN PENTE — la taille se fait à la cote la plus BASSE du segment ; un segment
+  // de finition de 0,4 mm sur une pente de 30° creusait 0,2 mm de trop à une extrémité (ondulations
+  // de 20 à 50 µm sur les bossages de Cavité Usinage, « crevasses »). Découpé en pas de hauteur.
+  const dz=Math.abs(bz-az);
+  if(!(dz>FAO_CARVE_DZ))return faoMatterCarveSeg0(g,ax,ay,az,bx,by,bz,r,outCols,cr,tp);
+  const n=Math.min(400,Math.ceil(dz/FAO_CARVE_DZ)),out=[];
+  for(let s=0;s<n;s++){
+    const t0=s/n,t1=(s+1)/n;
+    const k=faoMatterCarveSeg0(g,ax+(bx-ax)*t0,ay+(by-ay)*t0,az+(bz-az)*t0,ax+(bx-ax)*t1,ay+(by-ay)*t1,az+(bz-az)*t1,r,outCols,cr,tp);
+    for(let m=0;m<k.length;m++)out.push(k[m]);
+  }
+  return out;
+}
+function faoMatterCarveSeg0(g,ax,ay,az,bx,by,bz,r,outCols,cr,tp){
   // Enlève les voxels dont le CENTRE est à distance ≤ r du segment XY (2D)
   // et z ≥ cote de coupe − pas/2 : la matière SOUS la pointe reste. Retourne les indices tués.
   // Z-map : la hauteur de colonne descend à la cote de coupe — 2026-10-11-002 :
@@ -26677,6 +26706,7 @@ const FAO_RM_FS=[
   '    float lo=tPrev; float hi=t;',
   '    for(int k=0;k<8;k++){ float m=0.5*(lo+hi); float b; int a; if(rmInside(ro+rd*m,a,b)){hi=m;act=a;} else lo=m; }',
   '    p=ro+rd*hi; vec3 pp=ro+rd*lo;',
+  '    { int ac=-1; float bc=-1e9; for(int i=0;i<4;i++){ if(i>=rmCount)break; float mo=rmMargin(i,pp); if(mo>bc){bc=mo;ac=i;} } if(bc>0.0)act=ac; }', // carte franchie : la plus violée juste dehors (une paroi du posage près d'un trou latéral n'est pas la carte latérale)
   '    vec2 uv=rmUV(act,p); ivec2 c=rmCell(act,uv); float hc=rmHf(act,c); float w=dot(p,rmA[act]);',
   '    if(w>hc-1.5*pas){ rmTop=1.0; vec3 nl=(rmSmooth>0.5)?rmNsmooth(act,uv,hc,pas):rmNf(act,c).xyz; n=nl.x*rmU[act]+nl.y*rmV[act]+nl.z*rmA[act]; }', // dessus : normale de l'outil (lisse : interpolée)
   '    else{', // paroi : direction radiale de la colonne basse (celle d'où vient le rayon)

@@ -439,6 +439,20 @@ function faoPolyCross(ax,ay,bx,by,loop){
   return false;
 }
 function faoSegClipper(op,job){
+  // V0.7.8 : opération au repère propre (3+2) — la zone est dans le repère de l'OPÉRATION, les
+  // segments de l'aperçu dans celui du posage : sans conversion, toute la coupe était rejetée
+  // (« pas de spirale verte » sur l'ébauche 3D de l'oblong), seuls les rapides restaient.
+  let fr=null;try{fr=(typeof faoOpFrame==='function')?faoOpFrame(job,op):null;}catch(e){fr=null;}
+  if(!fr)return faoSegClipper0(op,job);
+  const inner=faoSegClipper0(op,faoOpJob(job,op,fr));if(!inner)return null;
+  const toO=function(x,y,z){return faoToF(fr,faoToW(fr.P,[x,y,z]));};
+  return function(ax,ay,az,bx,by,bz,push){
+    const A=toO(ax,ay,az),B=toO(bx,by,bz);
+    inner(A[0],A[1],A[2],B[0],B[1],B[2],function(x1,y1,z1,x2,y2,z2){
+      const P=faoPtOpToPos(fr,[x1,y1,z1]),Q=faoPtOpToPos(fr,[x2,y2,z2]);push(P[0],P[1],P[2],Q[0],Q[1],Q[2]);});
+  };
+}
+function faoSegClipper0(op,job){
   // -> fn(ax,ay,az,bx,by,bz,push) qui ne pousse que la partie DANS la zone,
   //    ou null : opération sans zone (affichage inchangé, cas par défaut).
   // Usage réservé aux segments de COUPE (cf. faoRefreshPreview) : un rapide

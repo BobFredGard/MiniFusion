@@ -94,6 +94,16 @@ const R=String.raw`
       '24 : rendu réel = Z-map + complément ('+nw.length+' colonnes creusées, '+(ov.n/3)+' triangles contre '+(r1.n/3)+' en surface complète) : même face X1 percée ('+tot.toFixed(1)+' mm²)');}
    const vw={pts:[{x:0,y:0,z:0},{x:1,y:0,z:0,ax:[1,0,0]}]};
    A(faoViewerVoxWanted(vw)&&!faoViewerVoxWanted({pts:[{x:0,y:0,z:0}]}),'23 : cavités dessinées seulement si le parcours a un outil incliné (posage sans 3+2 : Z-map inchangée)');}
+  // aperçu : le clippeur de zone d'une opération 3+2 garde la coupe (zone dans le repère de l'opération)
+  {const pk=faoOpDefaults('pocket');pk.frame={z:'+X',x:'+Y',flipZ:false,flipX:false};pk.ztop=55;pk.zbot=44;s.ops=[pk];
+   pk.limit={mode:'chain',loop:[[-18,-17],[18,-17],[18,-3],[-18,-3],[-18,-17]],closed:true,side:'in',extra:0};
+   const clip=faoSegClipper(pk,s);const got=[];
+   // segment de coupe au MILIEU de l'oblong (la zone d'une poche est resserrée du rayon d'outil), en
+   // coordonnées du posage : x = 50 (face X1), y de −5 à 5, z = 15 (op : u=y, v=z−25 → v=−10)
+   if(clip)clip(50,-5,15,50,5,15,function(x1,y1,z1,x2,y2,z2){got.push([x1,y1,z1,x2,y2,z2]);});
+   A(!!clip&&got.length===1&&Math.abs(got[0][0]-50)<1e-9&&Math.abs(got[0][1]+5)<1e-9&&Math.abs(got[0][4]-5)<1e-9&&Math.abs(got[0][2]-15)<1e-9,'25 : aperçu 3+2 — un segment de coupe dans la zone est gardé, rendu dans le repère du posage (avant : toute la coupe rejetée, seuls les rapides restaient)');
+   const out=[];if(clip)clip(50,-10,30,50,10,30,function(){out.push(1);});
+   A(out.length===0,'26 : … et un segment hors de la zone (Z30, au-dessus de l’oblong) est rejeté');}
   // F5 : relecture relancée quand le solide exact arrive, pour TOUTE opération calculée sur le maillage
   {const s2=faoDefaultSetup();s2.stock={x0:0,y0:0,z0:0,x1:10,y1:10,z1:10};const pk=faoOpDefaults('pocket');s2.ops=[pk];faoRoot().setups=[s2];
    const src=String(faoMovesSolidFp);
