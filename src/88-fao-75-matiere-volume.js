@@ -31,7 +31,7 @@ function faoVoxMarkCav(vw,ks){
   for(let n=0;n<ks.length;n++){
     const idx=ks[n],c=idx%L;if(cav[c])continue;
     const k=(idx/L)|0,zc=g.oz+(k+0.5)*pz,hc=g.h?g.h[c]:g.oz+g.nz*pz;
-    if(zc<hc-pz){cav[c]=1;out.push(c);}
+    if(zc<hc-pz){cav[c]=1;out.push(c);if(g.nrm)g.nrm[c*4+3]=1;}
   }
   return out;
 }
@@ -129,7 +129,8 @@ function faoViewerVoxRefresh(vw,force){
     geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(r.pos),3));
     geo.setAttribute('normal',new THREE.BufferAttribute(new Float32Array(r.nrm),3));
     if(!vw.voxMesh){
-      const m=new THREE.Mesh(geo,vw.matter.material);
+      if(!vw.voxMat)vw.voxMat=new THREE.MeshPhongMaterial({color:0x9c846a,side:THREE.DoubleSide});
+      const m=new THREE.Mesh(geo,vw.voxMat);
       m.name='faoMatterCav';m.raycast=function(){};m.frustumCulled=false;
       if(typeof scene!=='undefined'&&scene)faoAdd3D(m);
       vw.voxMesh=m;
@@ -159,6 +160,21 @@ function faoViewerVoxFoldHF(vw,c){
   if(H.idx){const o=c*6;for(let q=0;q<6;q++)H.idx[o+q]=H.idx[o];}
   return true;
 }
+function faoViewerVoxFoldAll(vw){
+  // Surface lisse reconstruite (bascule réel → lisse, grille conservée) : les cellules déjà
+  // marquées autour des cavités sont repliées à nouveau, sinon la pente lissée les recouvre.
+  const H=vw&&vw.mH,g=vw&&vw.matterGrid,cav=vw&&vw.cav;if(!H||!g||!cav)return 0;
+  if(!vw.cavDraw){ // taille faite en rendu réel : couronne (colonne creusée + 8 voisines) à reconstruire
+    const L=g.nx*g.ny,D=new Uint8Array(L);
+    for(let c=0;c<L;c++){if(!cav[c])continue;const i=c%g.nx,j=(c/g.nx)|0;
+      for(let dj=-1;dj<=1;dj++)for(let di=-1;di<=1;di++){const ii=i+di,jj=j+dj;if(ii<0||jj<0||ii>=g.nx||jj>=g.ny)continue;D[jj*g.nx+ii]=1;}}
+    vw.cavDraw=D;
+  }
+  const D=vw.cavDraw;
+  let n=0;for(let c=0;c<D.length;c++)if(D[c]&&faoViewerVoxFoldHF(vw,c))n++;
+  if(n)try{ H.geo.attributes.position.needsUpdate=true; if(H.geo.index)H.geo.index.needsUpdate=true; }catch(e){}
+  return n;
+}
 function faoViewerVoxKill(vw,ks){
   // Après une taille : colonnes nouvellement creusées → flancs Z-map repliés, complément à refaire.
   const nw=faoVoxMarkCav(vw,ks);
@@ -178,8 +194,10 @@ function faoViewerVoxKill(vw,ks){
   vw.cavN=(vw.cavN||0)+nw.length;
   if(vw.cavN&&(nw.length||(ks&&ks.length))){ vw.voxDirty=true; faoViewerVoxRefresh(vw,false); }
 }
-function faoViewerVoxDispose(vw){
+function faoViewerVoxDispose(vw,keepGrid){
   try{ if(vw.voxT){ clearTimeout(vw.voxT); vw.voxT=null; } }catch(e){}
   try{ if(vw.voxMesh){ if(typeof scene!=='undefined'&&scene)faoDel3D(vw.voxMesh); if(vw.voxMesh.geometry&&vw.voxMesh.geometry.dispose)vw.voxMesh.geometry.dispose(); } }catch(e){}
-  vw.voxMesh=null; vw.cav=null; vw.cavDraw=null; vw.vox=false;
+  try{ if(vw.voxMat)vw.voxMat.dispose(); }catch(e){}
+  vw.voxMesh=null; vw.voxMat=null;
+  if(!keepGrid){ vw.cav=null; vw.cavDraw=null; vw.vox=false; } else { vw.voxAt=0; vw.voxDirty=true; }
 }

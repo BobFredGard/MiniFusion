@@ -799,7 +799,8 @@ function faoMatterCarveTilt(g,a,b,r,ax,outCols,tp){
         // vertical (≤ 60°) : le surplomb au-dessus du corps (non représentable) est aussi enlevé
         if(g.h){const h0=g.h[c];
           for(let n=m.length-1;n>=0;n--){const I=m[n];
-            if((I[1]>=h0-1e-6||A[2]>=0.5)&&I[0]<h0){const z=Math.max(g.oz,I[0]);if(z<g.h[c]){g.h[c]=z;if(g.hc)g.hc[c]=1;touched=true;}break;}}}
+            if((I[1]>=h0-1e-6||A[2]>=0.5)&&I[0]<h0){const z=Math.max(g.oz,I[0]);if(z<g.h[c]){g.h[c]=z;if(g.hc)g.hc[c]=1;touched=true;
+              if(g.nrm){const o=c*4;g.nrm[o]=A[0];g.nrm[o+1]=A[1];g.nrm[o+2]=A[2];g.wn[c*2]=0;g.wn[c*2+1]=0;}}break;}}}
         if(touched&&outCols)outCols.push(c);
       }
     }

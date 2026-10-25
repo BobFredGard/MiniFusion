@@ -165,7 +165,7 @@ Convertir une pièce multicorps en assemblage, sans rien remodéliser :
 - **Finition** (passes parallèles ou à crête constante) et **Géodésique** (passes à distance constante sur les faces choisies, depuis leurs bords, rejointes en glissant au contact).
 - **Faces usinables (bleu) / intouchables (rouge)** par opération, avec marge et **« Interdire devant la face »** : la fraise ne descend jamais le long d'un flanc rouge.
 - **Zones** : rectangle, chaîne d'arêtes du modèle ou esquisse, avec îlots ; hauteurs par références (dessus du brut, haut ou bas du modèle, bridage, face cliquée, origine).
-- **Simulation** : outil réel, matière enlevée au fil des passes à partir du vrai brut, rendu réel ou lisse, temps estimé.
+- **Simulation** : outil réel, matière enlevée au fil des passes à partir du vrai brut, rendu réel ou lisse, temps estimé. La matière est éclairée d'après la **forme de l'outil** (fond, arrondi, pointe, parois) et dessinée par la **carte graphique** (maille de 0,2 mm) ; en 3+2, les cavités usinées sur les côtés se voient.
 - **Cache des parcours** : rien n'est recalculé tant que la géométrie ne change pas.
 
 ![3+2 : surfaçage d'un chanfrein, outil incliné](docs/captures/fao-3plus2.png)

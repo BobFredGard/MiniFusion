@@ -413,7 +413,9 @@ function faoMatterGrid(s,pas,fineZ){
     // 32 couches Z max (n <= 13M au niveau haut, budget 400000).
     const X=s.x1-s.x0, Y=s.y1-s.y0, H=s.z1-s.z0;
     const cfg=faoDetailCfg[faoViewerDetail]||faoDetailCfg[1];
-    const B=cfg.B, F=cfg.F;
+    // V0.7.7 : rendu GPU (src/88-fao-76) → maille XY deux fois plus fine, budget × 4
+    const fine=(typeof faoMatterFine==='function')&&faoMatterFine();
+    const B=cfg.B*(fine?4:1), F=cfg.F*(fine?0.5:1);
     p=Math.max(F,Math.sqrt((X*Y)/B));
     nx=Math.max(1,Math.ceil(X/p)); ny=Math.max(1,Math.ceil(Y/p));
     it=0;
@@ -431,6 +433,10 @@ function faoMatterGrid(s,pas,fineZ){
   // au voxel) — mise à jour par CarveSeg, lue par colTop pour le rendu.
   const nc=nx*ny;
   const h=new Float32Array(nc);
+  // V0.7.7 : éclairage depuis l'OUTIL — normale de la surface taillée par colonne (dessus) et
+  // direction radiale du dernier passage (parois), écrites par faoMatterCarveSeg / CarveTilt
+  const nrm=new Float32Array(nc*4);for(let i=0;i<nc;i++)nrm[i*4+2]=1; // xyz + a = colonne creusée (3+2)
+  const wn=new Float32Array(nc*2);
   // Extents RÉELS du brut (nx*pas peut dépasser x1 d'ici, d'un seul côté — le
   // rendu et la hauteur init sont calés sur x1/y1/z1 exacts, jamais sur la grille).
   const sx1=+s.x1, sy1=+s.y1, sz1=+s.z1;
@@ -467,10 +473,20 @@ function faoMatterGrid(s,pas,fineZ){
       }
     }
   }catch(e){}
-  return {pas:p,pz:pz,nx:nx,ny:ny,nz:nz,n:n,ox:s.x0,oy:s.y0,oz:s.z0,alive:alive,h:h,
+  return {pas:p,pz:pz,nx:nx,ny:ny,nz:nz,n:n,ox:s.x0,oy:s.y0,oz:s.z0,alive:alive,h:h,nrm:nrm,wn:wn,
           sx1:sx1,sy1:sy1,sz1:sz1,full:full};
 }
 function faoMatterIdx(g,ix,iy,iz){ return (iz*g.ny+iy)*g.nx+ix; }
+function faoMatterNrmSet(g,c,dx,dy,d2,rc,CR,TP){
+  // V0.7.7 : normale de la surface de l'OUTIL au point taillé (vers le vide) — fond plat, arrondi
+  // d'arête (tore), cône de pointe — et direction radiale vers l'axe (parois des colonnes voisines)
+  const rho=Math.sqrt(d2);let ux=0,uy=0;if(rho>1e-9){ux=dx/rho;uy=dy/rho;}
+  let nx=0,ny=0,nz=1;
+  if(TP){const e=1e-3,s=(faoTipZAt(TP,rho+e)-faoTipZAt(TP,Math.max(0,rho-e)))/(2*e);nx=-s*ux;ny=-s*uy;}
+  else if(CR>0&&rho>rc){const e=Math.min(rho-rc,CR);nx=-e*ux/CR;ny=-e*uy/CR;nz=Math.sqrt(Math.max(0,CR*CR-e*e))/CR;}
+  const L=Math.hypot(nx,ny,nz)||1,o=c*4;g.nrm[o]=nx/L;g.nrm[o+1]=ny/L;g.nrm[o+2]=nz/L;
+  if(rho>1e-9){g.wn[c*2]=-ux;g.wn[c*2+1]=-uy;}
+}
 function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r,outCols,cr,tp){
   // Enlève les voxels dont le CENTRE est à distance ≤ r du segment XY (2D)
   // et z ≥ cote de coupe − pas/2 : la matière SOUS la pointe reste. Retourne les indices tués.
@@ -540,7 +556,7 @@ function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r,outCols,cr,tp){
       // voxel vivant n'est tué (cote entre deux centres de voxels, ou colonne déjà
       // vidée par la passe précédente) — c'était le gel « certaines passes
       // n'enlèvent rien » (alternance OK/KO au fil des passes).
-      if(tcBuf){ if(tcBuf[c]!==tsg){ tcBuf[c]=tsg; if(g.h&&zcol<g.h[c]){ g.h[c]=zcol; hc[c]=1; } if(outCols)outCols.push(c); } }
+      if(tcBuf){ if(tcBuf[c]!==tsg){ tcBuf[c]=tsg; if(g.h&&zcol<g.h[c]){ g.h[c]=zcol; hc[c]=1; if(g.nrm)faoMatterNrmSet(g,c,px-qx,py-qy,d2,rc,CR,TP); } if(outCols)outCols.push(c); } }
       const zminC=shaped?zcol-pzv/2:zmin;
       const ks0=shaped?Math.max(k0,Math.floor((zminC-g.oz)/pzv)):k0;
       for(let k=ks0;k<=k1;k++){
@@ -618,11 +634,15 @@ function faoViewerHoldApply(){
   // (fraisier) reste seul visible.
   try{ if(faoVw&&faoVw.toolHold)faoVw.toolHold.visible=!faoVwHideHold; }catch(e){}
 }
-function faoViewerMatterDispose(vw){
-  try{ faoViewerVoxDispose(vw); }catch(e){} // cavités 3+2 (src/88-fao-75)
+function faoViewerMatterDispose(vw,keepGrid){
+  // keepGrid (V0.7.7) : bascule réel ↔ lisse — la grille taillée, sa position de lecture et ses
+  // colonnes creusées restent ; seuls les maillages sont refaits (plus de retaille 0 → t).
+  try{ faoViewerVoxDispose(vw,keepGrid); }catch(e){} // cavités 3+2 (src/88-fao-75)
+  try{ faoMatterGpuDispose(vw); }catch(e){} // rendu GPU (src/88-fao-76)
   try{ if(vw.matter&&typeof scene!=='undefined'&&scene)faoDel3D(vw.matter); }catch(e){}
   try{ if(vw.matter&&vw.matter.geometry&&vw.matter.geometry.dispose)vw.matter.geometry.dispose(); }catch(e){}
-  vw.matter=null; vw.matterGrid=null; vw.mKills=[]; vw.mPos=null; vw.mTops=null; vw.mArr=null; vw.mH=null;
+  vw.matter=null; vw.mKills=[]; vw.mTops=null; vw.mArr=null; vw.mNrm=null; vw.mH=null;
+  if(!keepGrid){ vw.matterGrid=null; vw.mPos=null; }
 }
 function faoMatterColTop(g,c){
   // Hauteur de surface de la colonne c (= iy*nx+ix) : Z-map continue (cote exacte),
@@ -634,9 +654,13 @@ function faoMatterColTop(g,c){
 }
 function faoMatterPut(a,o,x,y,z){ a[o]=x; a[o+1]=y; a[o+2]=z; return o+3; }
 function faoMatterMark(rw,list,c){ if(c<0||c>=rw.length||rw[c])return; rw[c]=1; list.push(c); }
+function faoMatterPutN(a,n,o,x,y,z,v){ a[o]=x; a[o+1]=y; a[o+2]=z; if(n){ n[o]=v[0]; n[o+1]=v[1]; n[o+2]=v[2]; } return o+3; }
 function faoViewerMatterWriteCol(vw,c){
   // 30 verts (top 2 tri + 4 côtés) de la colonne c écrits dans vw.mArr (diff seul).
-  const g=vw.matterGrid, a=vw.mArr, T=vw.mTops;
+  // V0.7.7 : normales explicites (vw.mNrm) — dessus : normale de l'outil (g.nrm) ; paroi vers une
+  // voisine plus basse : direction radiale du passage qui a taillé cette voisine (g.wn), sinon la
+  // face ; bords du brut : la face. Les parois rondes s'éclairent en continu (plus de stries).
+  const g=vw.matterGrid, a=vw.mArr, N=vw.mNrm, T=vw.mTops;
   if(!g||!a||!T)return;
   const nx=g.nx, ny=g.ny, pas=g.pas, ox=g.ox, oy=g.oy, oz=g.oz;
   const sx1=(g.sx1!=null)?g.sx1:ox+nx*pas, sy1=(g.sy1!=null)?g.sy1:oy+ny*pas;
@@ -651,33 +675,43 @@ function faoViewerMatterWriteCol(vw,c){
   const zS=(iy<ny-1?T[c+nx]:oz); const s2=cv?zt:(zS<zt?zS:zt);
   const zW=(ix>0?T[c-1]:oz); const w2=cv?zt:(zW<zt?zW:zt);
   const zE=(ix<nx-1?T[c+1]:oz); const e2=cv?zt:(zE<zt?zE:zt);
+  const nr=g.nrm, wn=g.wn;
+  const tn=nr?[nr[c*4],nr[c*4+1],nr[c*4+2]]:[0,0,1];
+  const wall=function(nb,fx,fy){
+    if(nb>=0&&wn){ const wx=wn[nb*2], wy=wn[nb*2+1]; if(wx*wx+wy*wy>0.5&&wx*fx+wy*fy>0.2)return [wx,wy,0]; }
+    return [fx,fy,0];
+  };
+  const vN=wall(iy>0?c-nx:-1,0,-1), vS=wall(iy<ny-1?c+nx:-1,0,1), vW=wall(ix>0?c-1:-1,-1,0), vE=wall(ix<nx-1?c+1:-1,1,0);
   let o=c*90;
   // top
-  o=faoMatterPut(a,o,x0,y0,zt); o=faoMatterPut(a,o,x1,y0,zt); o=faoMatterPut(a,o,x1,y1,zt);
-  o=faoMatterPut(a,o,x0,y0,zt); o=faoMatterPut(a,o,x1,y1,zt); o=faoMatterPut(a,o,x0,y1,zt);
+  o=faoMatterPutN(a,N,o,x0,y0,zt,tn); o=faoMatterPutN(a,N,o,x1,y0,zt,tn); o=faoMatterPutN(a,N,o,x1,y1,zt,tn);
+  o=faoMatterPutN(a,N,o,x0,y0,zt,tn); o=faoMatterPutN(a,N,o,x1,y1,zt,tn); o=faoMatterPutN(a,N,o,x0,y1,zt,tn);
+  // faces tournées vers l'extérieur (sens direct vu depuis leur normale) : avec des normales
+  // explicites, une face arrière verrait sa normale retournée (DoubleSide) et s'assombrirait
   // côté -Y
-  o=faoMatterPut(a,o,x0,y0,n2); o=faoMatterPut(a,o,x0,y0,zt); o=faoMatterPut(a,o,x1,y0,zt);
-  o=faoMatterPut(a,o,x0,y0,n2); o=faoMatterPut(a,o,x1,y0,zt); o=faoMatterPut(a,o,x1,y0,n2);
+  o=faoMatterPutN(a,N,o,x0,y0,n2,vN); o=faoMatterPutN(a,N,o,x1,y0,n2,vN); o=faoMatterPutN(a,N,o,x1,y0,zt,vN);
+  o=faoMatterPutN(a,N,o,x0,y0,n2,vN); o=faoMatterPutN(a,N,o,x1,y0,zt,vN); o=faoMatterPutN(a,N,o,x0,y0,zt,vN);
   // côté +Y
-  o=faoMatterPut(a,o,x0,y1,s2); o=faoMatterPut(a,o,x1,y1,s2); o=faoMatterPut(a,o,x1,y1,zt);
-  o=faoMatterPut(a,o,x0,y1,s2); o=faoMatterPut(a,o,x1,y1,zt); o=faoMatterPut(a,o,x0,y1,zt);
+  o=faoMatterPutN(a,N,o,x1,y1,s2,vS); o=faoMatterPutN(a,N,o,x0,y1,s2,vS); o=faoMatterPutN(a,N,o,x0,y1,zt,vS);
+  o=faoMatterPutN(a,N,o,x1,y1,s2,vS); o=faoMatterPutN(a,N,o,x0,y1,zt,vS); o=faoMatterPutN(a,N,o,x1,y1,zt,vS);
   // côté -X
-  o=faoMatterPut(a,o,x0,y0,w2); o=faoMatterPut(a,o,x0,y0,zt); o=faoMatterPut(a,o,x0,y1,zt);
-  o=faoMatterPut(a,o,x0,y0,w2); o=faoMatterPut(a,o,x0,y1,zt); o=faoMatterPut(a,o,x0,y1,w2);
+  o=faoMatterPutN(a,N,o,x0,y1,w2,vW); o=faoMatterPutN(a,N,o,x0,y0,w2,vW); o=faoMatterPutN(a,N,o,x0,y0,zt,vW);
+  o=faoMatterPutN(a,N,o,x0,y1,w2,vW); o=faoMatterPutN(a,N,o,x0,y0,zt,vW); o=faoMatterPutN(a,N,o,x0,y1,zt,vW);
   // côté +X
-  o=faoMatterPut(a,o,x1,y0,e2); o=faoMatterPut(a,o,x1,y1,e2); o=faoMatterPut(a,o,x1,y1,zt);
-  o=faoMatterPut(a,o,x1,y0,e2); o=faoMatterPut(a,o,x1,y1,zt); o=faoMatterPut(a,o,x1,y0,zt);
+  o=faoMatterPutN(a,N,o,x1,y0,e2,vE); o=faoMatterPutN(a,N,o,x1,y1,e2,vE); o=faoMatterPutN(a,N,o,x1,y1,zt,vE);
+  o=faoMatterPutN(a,N,o,x1,y0,e2,vE); o=faoMatterPutN(a,N,o,x1,y1,zt,vE); o=faoMatterPutN(a,N,o,x1,y0,zt,vE);
 }
 function faoViewerMatterWriteAll(vw){
   const g=vw.matterGrid; if(!g||!vw.mArr||!vw.mTops)return;
   const nc=g.nx*g.ny;
   for(let c=0;c<nc;c++)faoViewerMatterWriteCol(vw,c);
   // fond plein du brut (6 verts, statique) — clampé aux extents réels du brut
-  const a=vw.mArr, oz=g.oz;
+  const a=vw.mArr, oz=g.oz, N=vw.mNrm;
+  if(N){ for(let q=nc*90;q<nc*90+18;q+=3){ N[q]=0; N[q+1]=0; N[q+2]=-1; } }
   const X0=g.ox, X1=(g.sx1!=null)?g.sx1:g.ox+g.nx*g.pas, Y0=g.oy, Y1=(g.sy1!=null)?g.sy1:g.oy+g.ny*g.pas;
   let o=nc*90;
-  o=faoMatterPut(a,o,X0,Y0,oz); o=faoMatterPut(a,o,X1,Y0,oz); o=faoMatterPut(a,o,X1,Y1,oz);
-  o=faoMatterPut(a,o,X0,Y0,oz); o=faoMatterPut(a,o,X1,Y1,oz); o=faoMatterPut(a,o,X0,Y1,oz);
+  o=faoMatterPut(a,o,X0,Y0,oz); o=faoMatterPut(a,o,X1,Y1,oz); o=faoMatterPut(a,o,X1,Y0,oz); // vu de dessous : sens direct
+  o=faoMatterPut(a,o,X0,Y0,oz); o=faoMatterPut(a,o,X0,Y1,oz); o=faoMatterPut(a,o,X1,Y1,oz);
 }
 /* ---- surface : « nette » (défaut) OU « lisse » (3e version du bouton) ----
    2026-10-11-003 avait SUPPRIMÉ le heightfield de 002 (nœud = moyenne des 4
@@ -818,7 +852,7 @@ function faoViewerMatterHFUpdate(vw,chg){
     if(attr&&attr.position&&attr.normal){ attr.position.needsUpdate=true; attr.normal.needsUpdate=true; }
   }catch(e){}
 }
-function faoViewerMatterEnable(vw){
+function faoViewerMatterEnable(vw,keepGrid){
   // (Re)construit la surface Z-map pleine du brut + rattrapage 0 → t courant.
   // Retourne le nb de voxels suivis.
   // 2026-10-11-003 « surface nette » (défaut, modes réel ET simple) : la colonne
@@ -826,19 +860,26 @@ function faoViewerMatterEnable(vw){
   // 2026-10-11-007 « ≈ lisse » (3e version du bouton, vw.smooth) : heightfield
   // continu — nœud = moyenne des 4 cellules adjacentes (flou d'une maille sur
   // les traces assumé, cf. 003), normales lissées, murs de bord + fond.
-  faoViewerMatterDispose(vw);
+  keepGrid=!!(keepGrid&&vw&&vw.matterGrid);
+  faoViewerMatterDispose(vw,keepGrid);
   if(!vw||vw.matterOn===false)return 0;
   const s=faoStock(); if(!faoStockValid(s))return 0;
-  const g=faoMatterGrid(s,0,faoViewerVoxWanted(vw)); if(!g)return 0; // 3+2 : couches fines (src/88-fao-75)
+  const g=keepGrid?vw.matterGrid:faoMatterGrid(s,0,faoViewerVoxWanted(vw)); if(!g)return 0; // 3+2 : couches fines (src/88-fao-75)
   const nc=g.nx*g.ny;
   const smooth=!!vw.smooth; // « ≈ lisse » : heightfield continu au lieu des colonnes
   let mesh=null, arr=null;
-  if(!smooth){
+  const gpu=!smooth&&(typeof faoMatterGpuSupported==='function')&&faoMatterGpuSupported();
+  if(gpu){
+    try{ mesh=faoMatterGpuBuild(vw,g); if(typeof scene!=='undefined'&&scene)faoAdd3D(mesh); }catch(e){ mesh=null; vw.gpu=null; }
+  }
+  if(!smooth&&!mesh){
     try{
       arr=new Float32Array((nc*30+6)*3);
+      vw.mNrm=new Float32Array((nc*30+6)*3); // V0.7.7 : normales depuis l'outil
       const geo=new THREE.BufferGeometry();
       geo.setAttribute('position',new THREE.BufferAttribute(arr,3));
-      const mat=new THREE.MeshPhongMaterial({color:0x9c846a,flatShading:true,side:THREE.DoubleSide});
+      geo.setAttribute('normal',new THREE.BufferAttribute(vw.mNrm,3));
+      const mat=new THREE.MeshPhongMaterial({color:0x9c846a,side:THREE.DoubleSide});
       mesh=new THREE.Mesh(geo,mat);
       mesh.name='faoMatter';
       mesh.raycast=function(){};
@@ -852,7 +893,7 @@ function faoViewerMatterEnable(vw){
   // initialisée à la boîte pleine, la simulation dessinait toujours un cube
   // (« toujours un cube à la place du brut corps ») ; colonnes vides : rien.
   for(let c=0;c<nc;c++)tops[c]=g.h?Math.min(full,g.h[c]):full;
-  vw.matter=mesh; vw.matterGrid=g; vw.mTops=tops; vw.mArr=arr; vw.mKills=[]; vw.mPos=null; vw.mH=null;
+  vw.matter=mesh; vw.matterGrid=g; vw.mTops=tops; vw.mArr=arr; vw.mKills=[]; vw.mPos=keepGrid?vw.mPos:null; vw.mH=null; // grille conservée : position de lecture gardée (sinon retaille 0 → t)
   if(smooth){
     const m2=faoViewerMatterHFBuild(vw);
     if(!m2){ faoViewerMatterDispose(vw); return 0; }
@@ -862,13 +903,16 @@ function faoViewerMatterEnable(vw){
     // un rectangle »).
     const all=[];for(let c=0;c<nc;c++)if(tops[c]<full-1e-9)all.push(c);
     if(all.length)faoViewerMatterHFUpdate(vw,all);
-  }else{
+    if(keepGrid)try{ faoViewerVoxFoldAll(vw); }catch(e){} // cavités 3+2 déjà creusées : cellules repliées (src/88-fao-75)
+  }else if(!vw.gpu){
     try{ faoViewerMatterWriteAll(vw); }catch(e){ faoViewerMatterDispose(vw); try{ if(mesh&&scene)faoDel3D(mesh); }catch(e2){} return 0; }
   }
   // V0.7.6 : outil incliné (3+2) quelque part dans le parcours → cavités sous la surface dessinées
-  vw.vox=faoViewerVoxWanted(vw); vw.voxAt=0; vw.voxDirty=false;
-  vw.cav=vw.vox?new Uint8Array(nc):null; vw.cavN=0; // colonnes creusées (src/88-fao-75)
-  if(vw.t>0){
+  if(!keepGrid){
+    vw.vox=faoViewerVoxWanted(vw); vw.voxAt=0; vw.voxDirty=false;
+    vw.cav=vw.vox?new Uint8Array(nc):null; vw.cavN=0; // colonnes creusées (src/88-fao-75)
+  }
+  if(vw.t>0&&!keepGrid){
     const tcols=[];
     const ks=faoMatterCarveTo(g,vw.pts,vw.dd,vw.times,vw.t,tcols,vw.exact?vw.cr:null,vw.exact?vw.tp:null);
     faoViewerMatterKill(vw,ks,tcols);
@@ -882,7 +926,7 @@ function faoViewerMatterKill(vw,ks,cols){
   // dont la Z-map a baissé sans kill), réécrit leurs verts + ceux des 4 voisins.
   // 2026-10-11-003 « net » : unifié sur WriteCol — cote EXACTE de chaque colonne ;
   // 2026-10-11-007 « lisse » : branche HFUpdate (nœuds moyennés + normales).
-  if(!vw||!vw.matter||!vw.matterGrid||!vw.mTops||(!vw.mArr&&!vw.mH))return;
+  if(!vw||!vw.matter||!vw.matterGrid||!vw.mTops||(!vw.mArr&&!vw.mH&&!vw.gpu))return; // gpu (V0.7.7) : textures
   if((!ks||!ks.length)&&(!cols||!cols.length))return;
   if(vw.vox)faoViewerVoxKill(vw,ks); // posage 3+2 : cavités sous la surface (src/88-fao-75)
   const g=vw.matterGrid, nc=g.nx*g.ny, T=vw.mTops;
@@ -908,6 +952,7 @@ function faoViewerMatterKill(vw,ks,cols){
     try{ faoViewerMatterHFUpdate(vw,chg); }catch(e){}
     return;
   }
+  if(vw.gpu){ faoMatterGpuUpdate(vw); return; } // rendu GPU : textures renvoyées (src/88-fao-76)
   const rw=new Uint8Array(nc), list=[];
   for(let m=0;m<chg.length;m++){
     const c=chg[m], ix=c%g.nx;
@@ -918,7 +963,7 @@ function faoViewerMatterKill(vw,ks,cols){
     if(c+g.nx<nc)faoMatterMark(rw,list,c+g.nx);
   }
   for(let m=0;m<list.length;m++)faoViewerMatterWriteCol(vw,list[m]);
-  try{ vw.matter.geometry.attributes.position.needsUpdate=true; }catch(e){}
+  try{ vw.matter.geometry.attributes.position.needsUpdate=true; if(vw.matter.geometry.attributes.normal)vw.matter.geometry.attributes.normal.needsUpdate=true; }catch(e){}
 }
 function faoMatterCarveRange(g,pts,dd,times,t,i0,x0,y0,z0,p,outCols,crs,tps){
   // INCREMENTAL : taille uniquement depuis le DERNIER point joue (x0,y0,z0,
@@ -1031,7 +1076,7 @@ function faoViewerModeSet(m){
       if(vw.stock)faoAdd3D(vw.stock);
     }catch(e){}
   }
-  try{ if(vw.matterOn!==false)faoViewerMatterEnable(vw); }catch(e){} // rattrapage 0 → t
+  try{ if(vw.matterOn!==false)faoViewerMatterEnable(vw,!phys); }catch(e){} // grille conservée (V0.7.7) ; physique changée : retaille 0 → t
   try{ faoViewerApply(); }catch(e){}
   faoViewerMsg('FAO : rendu '+({reel:'forme réelle — surface NETTE aux cotes exactes',
     lisse:'lisse — physique réelle + surface DOUCE (heightfield)',

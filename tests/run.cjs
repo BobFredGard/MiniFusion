@@ -151,6 +151,7 @@ const SUITES = [
   "test_repeat_lin2",
   "test_fao_percage_tranche",
   "test_fao_32_fiches",
+  "test_simulation_rendu",
   "test_oracle",
   "test_construction_esquisse"
 ];
