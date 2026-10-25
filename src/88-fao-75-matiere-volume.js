@@ -129,7 +129,7 @@ function faoViewerVoxRefresh(vw,force){
     geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(r.pos),3));
     geo.setAttribute('normal',new THREE.BufferAttribute(new Float32Array(r.nrm),3));
     if(!vw.voxMesh){
-      if(!vw.voxMat)vw.voxMat=new THREE.MeshPhongMaterial({color:0x9c846a,side:THREE.DoubleSide});
+      if(!vw.voxMat)vw.voxMat=faoMatterStyle(new THREE.MeshPhongMaterial({color:0x9c846a,side:THREE.DoubleSide}));
       const m=new THREE.Mesh(geo,vw.voxMat);
       m.name='faoMatterCav';m.raycast=function(){};m.frustumCulled=false;
       if(typeof scene!=='undefined'&&scene)faoAdd3D(m);

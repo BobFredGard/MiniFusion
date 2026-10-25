@@ -52,7 +52,7 @@ function faoMatterGpuMat(){
   faoGpuU={faoH:{value:null},faoN:{value:null},faoW:{value:null},
     faoG:{value:new THREE.Vector4()},faoS:{value:new THREE.Vector2()},faoNX:{value:new THREE.Vector2()}};
   const U=faoGpuU;
-  const mat=new THREE.MeshPhongMaterial({color:0x9c846a,side:THREE.FrontSide});
+  const mat=faoMatterStyle(new THREE.MeshPhongMaterial({color:0x9c846a,side:THREE.FrontSide}));
   mat.onBeforeCompile=function(sh){
     Object.assign(sh.uniforms,U);
     sh.vertexShader=FAO_GPU_VS+'\n'+sh.vertexShader
@@ -82,7 +82,7 @@ function faoMatterGpuBuild(vw,g){
   // fond plein du brut (statique), tourné vers le bas
   try{
     const bg=new THREE.PlaneGeometry(sx1-g.ox,sy1-g.oy);bg.rotateX(Math.PI);
-    const bm=new THREE.Mesh(bg,new THREE.MeshPhongMaterial({color:0x9c846a,side:THREE.FrontSide}));
+    const bm=new THREE.Mesh(bg,faoMatterStyle(new THREE.MeshPhongMaterial({color:0x9c846a,side:THREE.FrontSide})));
     bm.position.set((g.ox+sx1)/2,(g.oy+sy1)/2,g.oz);bm.raycast=function(){};bm.frustumCulled=false;bm.name='faoMatterFond';
     mesh.add(bm);
   }catch(e){}

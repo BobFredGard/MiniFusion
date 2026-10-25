@@ -75,7 +75,7 @@ const FAO_RM_FS=[
   'uniform int rmCount; uniform vec3 rmMin; uniform vec3 rmMax; uniform float rmSmooth; uniform int rmDebug;',
   'uniform mat4 rmInvModel; uniform mat4 rmModelView; uniform mat4 rmProj; uniform mat3 rmNormalMat;',
   'varying vec3 vRmPos;',
-  'vec3 rmN; vec4 rmPv; float rmDepth; vec3 rmDbg; float rmIt; float rmTop;',
+  'vec3 rmN; vec4 rmPv; float rmDepth; vec3 rmDbg; float rmIt; float rmTop; vec3 rmWdbg;',
   'float rmHf(int i, ivec2 c){ if(i==0)return texelFetch(rmH0,c,0).r; if(i==1)return texelFetch(rmH1,c,0).r; if(i==2)return texelFetch(rmH2,c,0).r; return texelFetch(rmH3,c,0).r; }',
   'vec4 rmNf(int i, ivec2 c){ if(i==0)return texelFetch(rmN0,c,0); if(i==1)return texelFetch(rmN1,c,0); if(i==2)return texelFetch(rmN2,c,0); return texelFetch(rmN3,c,0); }',
   'vec2 rmWf(int i, ivec2 c){ if(i==0)return texelFetch(rmW0,c,0).rg; if(i==1)return texelFetch(rmW1,c,0).rg; if(i==2)return texelFetch(rmW2,c,0).rg; return texelFetch(rmW3,c,0).rg; }',
@@ -101,7 +101,7 @@ const FAO_RM_FS=[
   '  float tIn=max(max(tmn.x,tmn.y),tmn.z); float tOut=min(min(tmx.x,tmx.y),tmx.z);',
   '  float tStart=max(tIn,0.0); if(tOut<=tStart)discard;',
   '  float pas=rmP[0].z; float t=tStart+1e-4; float tPrev=t; bool hit=false; int act=0; int first=1;',
-  '  rmIt=0.0; rmTop=0.0;',
+  '  rmIt=0.0; rmTop=0.0; rmWdbg=vec3(0.5,0.5,0.0);',
   '  for(int k=0;k<1400;k++){ if(t>tOut)break; vec3 p=ro+rd*t; float best; int a; rmIt+=1.0;',
   '    if(rmInside(p,a,best)){ hit=true; act=a; break; }',
   '    first=0; float st=max(pas*0.6, min(best*0.5, 3.0)); tPrev=t; t+=st; }',
@@ -119,22 +119,24 @@ const FAO_RM_FS=[
   '    if(w>hc-1.5*pas){ rmTop=1.0; vec3 nl=(rmSmooth>0.5)?rmNsmooth(act,uv,hc,pas):rmNf(act,c).xyz; n=nl.x*rmU[act]+nl.y*rmV[act]+nl.z*rmA[act]; }', // dessus : normale de l'outil (lisse : interpolée)
   '    else{', // paroi : direction radiale de la colonne basse (celle d'où vient le rayon)
   '      ivec2 cq=rmCell(act,rmUV(act,pp)); vec2 wn=rmWf(act,cq); vec2 lat=vec2(dot(pp-p,rmU[act]),dot(pp-p,rmV[act]));',
+  '      rmWdbg=vec3(wn*0.5+0.5,0.0);',
   '      if(!(dot(wn,wn)>0.5)){', // colonne sans direction : la plus basse des 4 voisines qui en a une
   '        float hb=1e9; for(int s=0;s<4;s++){ ivec2 d=(s==0)?ivec2(-1,0):((s==1)?ivec2(1,0):((s==2)?ivec2(0,-1):ivec2(0,1)));',
   '          ivec2 cn=ivec2(clamp(vec2(c+d),vec2(0.0),rmNxy[act]-1.0)); vec2 w2=rmWf(act,cn); float h2=rmHf(act,cn);',
   '          if(dot(w2,w2)>0.5&&h2<hc-0.5*pas&&h2<hb){hb=h2;wn=w2;} } }',
-  '      if(dot(wn,wn)>0.5&&dot(wn,lat)>-0.2)n=wn.x*rmU[act]+wn.y*rmV[act];',
+  '      if(dot(wn,wn)>0.5&&dot(wn,lat)>-0.2){ n=wn.x*rmU[act]+wn.y*rmV[act]; rmWdbg.z=0.25; }',
   '      else{', // gradient de la carte (paroi en escalier, mais toujours tournée vers le vide)
   '        float hx=rmHf(act,ivec2(clamp(vec2(c)+vec2(1.0,0.0),vec2(0.0),rmNxy[act]-1.0)))-rmHf(act,ivec2(clamp(vec2(c)-vec2(1.0,0.0),vec2(0.0),rmNxy[act]-1.0)));',
   '        float hy=rmHf(act,ivec2(clamp(vec2(c)+vec2(0.0,1.0),vec2(0.0),rmNxy[act]-1.0)))-rmHf(act,ivec2(clamp(vec2(c)-vec2(0.0,1.0),vec2(0.0),rmNxy[act]-1.0)));',
   '        vec3 gN=-hx*rmU[act]-hy*rmV[act]+2.0*pas*rmA[act]; vec3 l3=lat.x*rmU[act]+lat.y*rmV[act];',
-  '        n=(dot(gN,gN)>1e-12)?normalize(gN):((dot(l3,l3)>1e-12)?normalize(l3):rmA[act]); }',
+  '        n=(dot(gN,gN)>1e-12)?normalize(gN):((dot(l3,l3)>1e-12)?normalize(l3):rmA[act]); rmWdbg.z=1.0; }',
   '    }',
   '  }',
   '  rmN=normalize(rmNormalMat*normalize(n)); rmPv=rmModelView*vec4(p,1.0);',
   '  vec2 uvd=rmUV(act,p); ivec2 cd=rmCell(act,uvd); float hcd=rmHf(act,cd); float wd=dot(p,rmA[act]);',
-  '  rmDbg=vec3(0.0); if(rmDebug==1)rmDbg=vec3(act==0?1.0:0.0,act==1?1.0:0.0,act==2?1.0:0.0); else if(rmDebug==2)rmDbg=normalize(n)*0.5+0.5; else if(rmDebug==3)rmDbg=vec3(fract(length(p-ro)/10.0)); else if(rmDebug==4)rmDbg=vec3(rmIt/200.0,rmTop,float(first)); else if(rmDebug==5)rmDbg=rmNf(act,cd).xyz*0.5+0.5; else if(rmDebug==6)rmDbg=vec3(clamp((hcd-wd)/(1.5*pas),0.0,1.0),clamp((wd-hcd)/(1.5*pas),0.0,1.0),0.0); else if(rmDebug==7)rmDbg=vec3(clamp(rmMargin(1,p)*0.1+0.5,0.0,1.0),clamp(rmMargin(2,p)*0.1+0.5,0.0,1.0),clamp(rmMargin(0,p)*0.1+0.5,0.0,1.0)); else if(rmDebug==8)rmDbg=vec3(clamp((rmH(1,rmUV(1,p))-rmHf(1,rmCell(1,rmUV(1,p))))*2.0+0.5,0.0,1.0),clamp((rmH(0,rmUV(0,p))-rmHf(0,rmCell(0,rmUV(0,p))))*2.0+0.5,0.0,1.0),0.0);',
+  '  rmDbg=vec3(0.0); if(rmDebug==1)rmDbg=vec3(act==0?1.0:0.0,act==1?1.0:0.0,act==2?1.0:0.0); else if(rmDebug==2)rmDbg=normalize(n)*0.5+0.5; else if(rmDebug==3)rmDbg=vec3(fract(length(p-ro)/10.0)); else if(rmDebug==4)rmDbg=vec3(rmIt/200.0,rmTop,float(first)); else if(rmDebug==5)rmDbg=rmNf(act,cd).xyz*0.5+0.5; else if(rmDebug==6)rmDbg=vec3(clamp((hcd-wd)/(1.5*pas),0.0,1.0),clamp((wd-hcd)/(1.5*pas),0.0,1.0),0.0); else if(rmDebug==7)rmDbg=vec3(clamp(rmMargin(1,p)*0.1+0.5,0.0,1.0),clamp(rmMargin(2,p)*0.1+0.5,0.0,1.0),clamp(rmMargin(0,p)*0.1+0.5,0.0,1.0)); else if(rmDebug==9)rmDbg=rmWdbg; else if(rmDebug==8)rmDbg=vec3(clamp((rmH(1,rmUV(1,p))-rmHf(1,rmCell(1,rmUV(1,p))))*2.0+0.5,0.0,1.0),clamp((rmH(0,rmUV(0,p))-rmHf(0,rmCell(0,rmUV(0,p))))*2.0+0.5,0.0,1.0),0.0);',
   '  vec4 clip=rmProj*rmPv; rmDepth=(clip.z/clip.w)*0.5+0.5;',
+  '  if(first==1&&tIn>0.0)rmDepth+=2e-6;', // face de la boîte du brut : coplanaire avec le fantôme du brut → léger recul (plus de dents de scie)
   '}'
 ].join('\n');
 let faoRmMat=null, faoRmU=null;
@@ -149,7 +151,7 @@ function faoMatterRmMat(){
   U.rmCount={value:1};U.rmDebug={value:0};U.rmMin={value:new THREE.Vector3()};U.rmMax={value:new THREE.Vector3()};U.rmSmooth={value:0};
   U.rmInvModel={value:new THREE.Matrix4()};U.rmModelView={value:new THREE.Matrix4()};U.rmProj={value:new THREE.Matrix4()};U.rmNormalMat={value:new THREE.Matrix3()};
   faoRmU=U;
-  const mat=new THREE.MeshPhongMaterial({color:0x9c846a,side:THREE.BackSide});
+  const mat=faoMatterStyle(new THREE.MeshPhongMaterial({color:0x9c846a,side:THREE.BackSide}));
   mat.onBeforeCompile=function(sh){
     Object.assign(sh.uniforms,U);
     sh.vertexShader='varying vec3 vRmPos;\n'+sh.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\n vRmPos = position;');

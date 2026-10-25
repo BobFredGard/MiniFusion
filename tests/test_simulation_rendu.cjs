@@ -52,6 +52,15 @@ const R=String.raw`
    // la surface suit la pente décalée du rayon (le bord aval de la fraise plate, plus bas, passe en dernier)
    let errMax=0;for(let x=8;x<=31;x+=0.5){const c=col(g,x,10);const att=18-(x+2-5)/3;errMax=Math.max(errMax,Math.abs(g.h[c]-att));}
    A(errMax<0.2,'13 : segment en pente (30 mm, −10 mm) : surface à '+errMax.toFixed(3)+' mm de la pente attendue (avant : toute la longueur à la cote basse, 10 mm d’écart)');}
+  // 7. aspect de la matière : beige (défaut) ou aluminium, appliqué aux matériaux et mémorisé
+  {A(faoMatterLook==='beige'&&FAO_LOOKS.alu&&FAO_LOOKS.alu.shininess>FAO_LOOKS.beige.shininess,'14 : aspect par défaut beige ; aluminium plus brillant');
+   const m={color:{setHex(v){this.v=v;}},specular:{setHex(v){this.v=v;}},shininess:0};
+   const calls=[];let __s=null;try{if(typeof localStorage!=='undefined'&&localStorage){__s=localStorage.setItem;localStorage.setItem=function(k,v){calls.push(k+'='+v);};}}catch(e){}
+   faoMatterLookSet('alu');faoMatterStyle(m);
+   try{if(__s)localStorage.setItem=__s;}catch(e){}
+   A(m.color.v===FAO_LOOKS.alu.color&&m.specular.v===FAO_LOOKS.alu.specular&&m.shininess===80,'15 : faoMatterLookSet(alu) : couleur, reflet et brillance de l’aluminium appliqués');
+   A(calls.some(c=>c==='minifusion_faoMatiere=alu'),'16 : choix mémorisé (minifusion_faoMatiere = alu)');
+   faoMatterLookSet('beige');A(faoMatterLook==='beige','17 : retour au beige');}
   return out;
 `;
 (async()=>{

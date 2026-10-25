@@ -42,6 +42,35 @@ function faoViewerRapNext(){
 // 0,5/0,788 mm l'arc fondait à l'œil) — la promesse « byte-identique » du niveau 1
 // est abandonnée (cf. CHANGELOG 2026-10-11-004).
 let faoViewerDetail=1, faoVwDetailSel=null, faoVwHideBody=false, faoVwHideHold=false;
+/* V0.7.9 : ASPECT de la matière simulée — beige (historique) ou aluminium (« j'usine souvent de
+   l'aluminium ») : couleur, reflet et brillance appliqués aux cinq rendus (colonnes, tableau de
+   sommets, lisse, cavités, lancer de rayons). Choix dans la barre de lecture, mémorisé. */
+const FAO_LOOKS={
+  beige:{label:'beige',color:0x9c846a,specular:0x111111,shininess:30},
+  alu:{label:'aluminium',color:0xc3c7cc,specular:0x8a8e94,shininess:80}};
+let faoMatterLook='beige';
+try{const k=localStorage.getItem('minifusion_faoMatiere');if(k&&FAO_LOOKS[k])faoMatterLook=k;}catch(e){}
+function faoMatterStyle(mat){
+  // applique l'aspect courant à un matériau de matière (et le renvoie)
+  const L=FAO_LOOKS[faoMatterLook]||FAO_LOOKS.beige;
+  try{ mat.color.setHex(L.color); if(mat.specular)mat.specular.setHex(L.specular); if('shininess' in mat)mat.shininess=L.shininess; mat.needsUpdate=true; }catch(e){}
+  return mat;
+}
+let faoVwLookSel=null;
+function faoMatterLookSet(k){
+  if(!FAO_LOOKS[k])return;
+  faoMatterLook=k;
+  try{localStorage.setItem('minifusion_faoMatiere',k);}catch(e){}
+  try{ if(faoVwLookSel&&faoVwLookSel.value!==k)faoVwLookSel.value=k; }catch(e){}
+  // matériaux vivants
+  const vw=(typeof faoVw!=='undefined')?faoVw:null;
+  const ms=[];
+  try{ if(vw&&vw.matter)ms.push(vw.matter.material); if(vw&&vw.voxMat)ms.push(vw.voxMat); if(vw&&vw.mH&&vw.mH.mesh)ms.push(vw.mH.mesh.material);
+       if(vw&&vw.gpu&&vw.gpu.mesh)vw.gpu.mesh.traverse(function(o){if(o.material)ms.push(o.material);});
+       if(typeof faoGpuMat!=='undefined'&&faoGpuMat)ms.push(faoGpuMat); if(typeof faoRmMat!=='undefined'&&faoRmMat)ms.push(faoRmMat); }catch(e){}
+  ms.forEach(function(m){ if(m&&m.color)faoMatterStyle(m); });
+  faoViewerMsg('FAO : matière simulée en '+FAO_LOOKS[k].label+'.');
+}
 const faoDetailCfg=[
   {B:8000, F:2.0,  lathe:12, tub:16, rad:4},
   {B:200000,F:0.4, lathe:24, tub:36, rad:6},
@@ -808,7 +837,7 @@ function faoViewerMatterHFBuild(vw){
     geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
     geo.setAttribute('normal',new THREE.BufferAttribute(nrm,3));
     geo.setIndex(new THREE.BufferAttribute(idx,1));
-    const mesh=new THREE.Mesh(geo,new THREE.MeshPhongMaterial({color:0x9c846a,side:THREE.DoubleSide}));
+    const mesh=new THREE.Mesh(geo,faoMatterStyle(new THREE.MeshPhongMaterial({color:0x9c846a,side:THREE.DoubleSide})));
     mesh.name='faoMatter';
     mesh.raycast=function(){};
     mesh.frustumCulled=false;
@@ -907,7 +936,7 @@ function faoViewerMatterEnable(vw,keepGrid){
       const geo=new THREE.BufferGeometry();
       geo.setAttribute('position',new THREE.BufferAttribute(arr,3));
       geo.setAttribute('normal',new THREE.BufferAttribute(vw.mNrm,3));
-      const mat=new THREE.MeshPhongMaterial({color:0x9c846a,side:THREE.DoubleSide});
+      const mat=faoMatterStyle(new THREE.MeshPhongMaterial({color:0x9c846a,side:THREE.DoubleSide}));
       mesh=new THREE.Mesh(geo,mat);
       mesh.name='faoMatter';
       mesh.raycast=function(){};
@@ -1304,6 +1333,14 @@ function faoViewerBarShow(){
     ds.value=String(faoViewerDetail);
     ds.onchange=function(){ faoViewerDetailSet(+ds.value); };
     bar.appendChild(ds); faoVwDetailSel=ds;
+    // V0.7.9 : aspect de la matière (beige / aluminium)
+    const ls=document.createElement('select');
+    ls.title='Aspect de la matière simulée : beige (historique) ou aluminium';
+    ls.style.fontSize='.75rem';
+    Object.keys(FAO_LOOKS).forEach(function(k){ const op=document.createElement('option'); op.value=k; op.textContent=FAO_LOOKS[k].label; ls.appendChild(op); });
+    ls.value=faoMatterLook;
+    ls.onchange=function(){ faoMatterLookSet(ls.value); };
+    bar.appendChild(ls); faoVwLookSel=ls;
     const mkChk=function(label,title,get,set){
       const lb=document.createElement('label');
       lb.style.cssText='display:flex;gap:4px;align-items:center;cursor:pointer;user-select:none;white-space:nowrap;';
