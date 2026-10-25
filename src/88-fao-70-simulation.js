@@ -71,7 +71,7 @@ function faoMatterLookSet(k){
   try{ if(vw&&vw.matter)ms.push(vw.matter.material); if(vw&&vw.voxMat)ms.push(vw.voxMat); if(vw&&vw.mH&&vw.mH.mesh)ms.push(vw.mH.mesh.material);
        if(vw&&vw.gpu&&vw.gpu.mesh)vw.gpu.mesh.traverse(function(o){if(o.material)ms.push(o.material);});
        if(typeof faoGpuMat!=='undefined'&&faoGpuMat)ms.push(faoGpuMat); if(typeof faoRmMat!=='undefined'&&faoRmMat)ms.push(faoRmMat);
-       if(typeof faoDexMat!=='undefined'&&faoDexMat)ms.push(faoDexMat); if(typeof faoSdfMat!=='undefined'&&faoSdfMat)ms.push(faoSdfMat); }catch(e){}
+       if(typeof faoDexMat!=='undefined'&&faoDexMat)ms.push(faoDexMat); if(typeof faoDexGMats!=='undefined')faoDexGMats.forEach(function(m){if(m)ms.push(m);}); if(typeof faoSdfMat!=='undefined'&&faoSdfMat)ms.push(faoSdfMat); }catch(e){}
   ms.forEach(function(m){ if(m&&m.color)faoMatterStyle(m); });
   faoViewerMsg('FAO : matière simulée en '+FAO_LOOKS[k].label+'.');
 }

@@ -163,7 +163,7 @@ function faoDexCreate(s,p){
   const lo=[+s.x0,+s.y0,+s.z0],hi=[+s.x1,+s.y1,+s.z1];
   const n=[0,1,2].map(i=>Math.max(1,Math.ceil((hi[i]-lo[i])/p-1e-9)));
   const sx=Object.assign({},s,{_top:faoEngStockTop(s,p)});
-  const D={kind:'dexel',p,lo,hi,n,L:[null,null,null],ver:0,rays:0};
+  const D={kind:'dexel',p,lo,hi,n,L:[null,null,null],ver:0,rays:0,chg:[]}; // chg : (famille, rayon) modifiés depuis le dernier affichage
   for(let k=0;k<3;k++){
     const u=FAO_DEX_UV[k][0],v=FAO_DEX_UV[k][1],nu=n[u],nv=n[v],A=new Array(nu*nv);
     for(let jv=0;jv<nv;jv++)for(let iu=0;iu<nu;iu++)A[jv*nu+iu]=faoEngStockIv(sx,k,u,v,lo[u]+(iu+0.5)*p,lo[v]+(jv+0.5)*p,p);
@@ -199,7 +199,7 @@ function faoDexCarveFlat(D,w,sg,au,av,bu,bv,tc,T){
     for(let i=ur[0];i<=ur[1];i++){const cu=lo[U]+(i+0.5)*p,d2=faoEngSegD2(cu,cv,au,av,bu,bv);if(d2>r*r)continue;ii[U]=i;
       const c=idx(w),o=LW[c];if(!o.length)continue;const hm=T.hmin(Math.sqrt(d2));
       if(sg>0){if(o[o.length-1]>ext)ext=o[o.length-1];}else if(o[0]<ext)ext=o[0];
-      const nw=sg>0?faoDexSub(o,tc+hm,BIG):faoDexSub(o,-BIG,tc-hm);if(nw!==o){LW[c]=nw;ch=true;}}}
+      const nw=sg>0?faoDexSub(o,tc+hm,BIG):faoDexSub(o,-BIG,tc-hm);if(nw!==o){LW[c]=nw;ch=true;D.chg.push(w,c);}}}
   // couches le long de w (du côté du corps)
   if(ext===Infinity||ext===-Infinity){if(ch)D.ver++;return;} // plus de matière sous l'outil
   const wr=sg>0?faoDexRange(lo[w],p,n[w],tc+T.h0,ext+p):faoDexRange(lo[w],p,n[w],ext-p,tc-T.h0);
@@ -212,10 +212,10 @@ function faoDexCarveFlat(D,w,sg,au,av,bu,bv,tc,T){
     for(let l=wr[0];l<=wr[1];l++){const h=sg*(lo[w]+(l+0.5)*p-tc),R=T.rmax(h);if(R<0)continue;ii[w]=l;const top=h>=T.htop;
       for(let j=vr[0];j<=vr[1];j++){ii[V]=j;const c=idx(U),o=LU[c];if(!o.length)continue;
         let ck=null;if(top)ck=fullU[j-vr[0]];else if(faoStadX(au,av,bu,bv,R,lo[V]+(j+0.5)*p,cU))ck=cU;if(!ck)continue;
-        const nw=faoDexSub(o,ck[0],ck[1]);if(nw!==o){LU[c]=nw;ch=true;}}
+        const nw=faoDexSub(o,ck[0],ck[1]);if(nw!==o){LU[c]=nw;ch=true;D.chg.push(U,c);}}
       for(let i=ur[0];i<=ur[1];i++){ii[U]=i;const c=idx(V),o=LV[c];if(!o.length)continue;
         let ck=null;if(top)ck=fullV[i-ur[0]];else if(faoStadX(av,au,bv,bu,R,lo[U]+(i+0.5)*p,cV))ck=cV;if(!ck)continue;
-        const nw=faoDexSub(o,ck[0],ck[1]);if(nw!==o){LV[c]=nw;ch=true;}}
+        const nw=faoDexSub(o,ck[0],ck[1]);if(nw!==o){LV[c]=nw;ch=true;D.chg.push(V,c);}}
     }
   }
   if(ch)D.ver++;
@@ -251,7 +251,7 @@ function faoDexCarveTilt(D,s,P,A,T){
     for(let jv=vr[0];jv<=vr[1];jv++){const cv=lo[v]+(jv+0.5)*p;
       for(let iu=ur[0];iu<=ur[1];iu++){const cu=lo[u]+(iu+0.5)*p,c=jv*n[u]+iu,o=Lk[c];if(!o.length)continue;
         const I=faoEngRayTool(k,u,v,cu,cv,P,A,T,H);if(!I)continue;
-        const nw=faoDexSub(o,I[0],I[1]);if(nw!==o){Lk[c]=nw;ch=true;}}}}
+        const nw=faoDexSub(o,I[0],I[1]);if(nw!==o){Lk[c]=nw;ch=true;D.chg.push(k,c);}}}}
   if(ch)D.ver++;
 }
 function faoDexVolume(D,k){
@@ -286,16 +286,18 @@ function faoDexNear(arr,e,sg,p){
   for(let j=(sg>0?1:0);j<arr.length;j+=2){const d=Math.abs(arr[j]-e);if(d<bd){bd=d;best=arr[j];}}
   return best;
 }
-function faoDexArrays(D){
-  // tableaux d'instances : position, normale, famille (+3 = entrée de matière)
-  const p=D.p,lo=D.lo,n=D.n;let cnt=0;
-  for(let k=0;k<3;k++){const L=D.L[k];for(let i=0;i<L.length;i++)cnt+=L[i].length;}
+function faoDexArrays(D,over){
+  // tableaux d'instances : position, normale, famille (+3 = entrée de matière). over (rendu GPU) :
+  // seulement les extrémités au-delà de la 4e des rayons listés (les 4 premières sont dans les textures)
+  const p=D.p,lo=D.lo,n=D.n,j0=over?4:0;let cnt=0;
+  for(let k=0;k<3;k++){const L=D.L[k];if(over)over[k].forEach(c=>{cnt+=Math.max(0,L[c].length-4);});else for(let i=0;i<L.length;i++)cnt+=L[i].length;}
   const pos=new Float32Array(cnt*3),nrm=new Float32Array(cnt*3),kk=new Float32Array(cnt);let o=0;
   for(let k=0;k<3;k++){const u=FAO_DEX_UV[k][0],v=FAO_DEX_UV[k][1],nu=n[u],nv=n[v],L=D.L[k];
-    for(let jv=0;jv<nv;jv++)for(let iu=0;iu<nu;iu++){const a=L[jv*nu+iu];if(!a.length)continue;
+    const cells=over?[...over[k]]:null,nc=over?cells.length:nu*nv;
+    for(let q=0;q<nc;q++){const cid=over?cells[q]:q,iu=cid%nu,jv=(cid-iu)/nu,a=L[cid];if(a.length<=j0)continue;
       const cu=lo[u]+(iu+0.5)*p,cv=lo[v]+(jv+0.5)*p;
       const Lm=iu>0?L[jv*nu+iu-1]:null,Lp=iu<nu-1?L[jv*nu+iu+1]:null,Lb=jv>0?L[(jv-1)*nu+iu]:null,Lt=jv<nv-1?L[(jv+1)*nu+iu]:null;
-      for(let j=0;j<a.length;j++){const e=a[j],sg=(j&1)?1:-1;
+      for(let j=j0;j<a.length;j++){const e=a[j],sg=(j&1)?1:-1;
         // pente le long de u et de v (différences centrées, sinon d'un côté)
         const em=faoDexNear(Lm,e,sg,p),ep=faoDexNear(Lp,e,sg,p),eb=faoDexNear(Lb,e,sg,p),et=faoDexNear(Lt,e,sg,p);
         let du=0,dv=0;
@@ -307,8 +309,8 @@ function faoDexArrays(D){
     }}
   return {pos,nrm,kk,count:o};
 }
-function faoDexMeshBuild(E){
-  const D=E.D,A=faoDexArrays(D);
+function faoDexMeshBuild(E,over){
+  const D=E.D,A=faoDexArrays(D,over);
   const geo=new THREE.InstancedBufferGeometry();
   geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array([-.5,-.5,0,.5,-.5,0,.5,.5,0,-.5,-.5,0,.5,.5,0,-.5,.5,0]),3));
   geo.setAttribute('iPos',new THREE.InstancedBufferAttribute(A.pos,3));
@@ -317,8 +319,131 @@ function faoDexMeshBuild(E){
   geo.instanceCount=A.count;
   const mat=faoDexMaterial();faoDexU.dexP.value=D.p;
   const mesh=new THREE.Mesh(geo,mat);mesh.name='faoMatterDexel';mesh.raycast=function(){};mesh.frustumCulled=false;
-  E.facets=A.count;
+  if(!over)E.facets=A.count;
   return mesh;
+}
+/* ── rendu GPU (V0.8.9) : « Tri-dexel lague pas mal » ──
+   Avant : à chaque rafraîchissement, 870 k facettes et leurs normales refaites en JavaScript puis
+   renvoyées en entier. Ici chaque famille de rayons est une TEXTURE (RGBA flottant : les 2 premiers
+   intervalles de chaque rayon) ; le vertex shader fabrique la facette de chaque extrémité à partir de
+   gl_InstanceID — position, orientation, normale lissée par les rayons voisins (4 lectures) —, et
+   une extrémité vide se replie en un point. Après une taille, seuls les rayons modifiés sont écrits
+   dans les textures. Les rares rayons à plus de 2 intervalles ont leurs extrémités suivantes dans un
+   petit maillage complémentaire (calcul JavaScript). Sans WebGL2 : l'ancien rendu. */
+const FAO_DEXG_VS=[
+  'uniform sampler2D dexT; uniform sampler2D dexNT; uniform vec2 dexN; uniform float dexK; uniform vec3 dexLo; uniform float dexP; uniform float dexL;',
+  'vec3 dP; vec3 dN;',
+  'void faoDexG(){',
+  '  int k=int(dexK+0.5); int nu=int(dexN.x+0.5); int nv=int(dexN.y+0.5);',
+  '  int id=gl_InstanceID; int q=id/4; int slot=id-q*4; int rays=nu*nv; int lay=q/rays; int ray=q-lay*rays; int iv=ray/nu; int iu=ray-iv*nu;',
+  '  float e=texelFetch(dexT,ivec2(iu,iv+lay*nv),0)[slot];',
+  '  if(e>1e8){ dP=vec3(0.0); dN=vec3(0.0,0.0,1.0); return; }', // extrémité vide : facette repliée
+  '  vec4 G=texelFetch(dexNT,ivec2(2*iu+slot/2,iv+lay*nv),0);', // pentes (du, dv) précalculées
+  '  vec2 g=((slot&1)==0)?G.xy:G.zw;',
+  '  float sg=((slot&1)==1)?1.0:-1.0;',
+  '  vec3 eu=(k==0)?vec3(0.0,1.0,0.0):vec3(1.0,0.0,0.0); vec3 ev=(k==2)?vec3(0.0,1.0,0.0):vec3(0.0,0.0,1.0);',
+  '  vec3 ek=(k==0)?vec3(1.0,0.0,0.0):((k==1)?vec3(0.0,1.0,0.0):vec3(0.0,0.0,1.0));',
+  '  float cu=dot(dexLo,eu)+(float(iu)+0.5)*dexP; float cv=dot(dexLo,ev)+(float(iv)+0.5)*dexP;',
+  '  dN=normalize(sg*(ek-g.x*eu-g.y*ev));',
+  '  float f=((k==1)?-1.0:1.0)*sg;',
+  '  dP=eu*cu+ev*cv+ek*e+(position.x*f*eu+position.y*ev)*dexP*1.04;',
+  '}'].join('\n');
+const faoDexGMats=[];
+function faoDexGSupported(){
+  try{return !!(typeof renderer!=='undefined'&&renderer&&renderer.capabilities&&renderer.capabilities.isWebGL2&&THREE.InstancedBufferGeometry&&THREE.DataTexture);}catch(e){return false;}
+}
+function faoDexGMaterial(k){
+  // un matériau par famille (uniforms propres), programme partagé
+  if(faoDexGMats[k])return faoDexGMats[k];
+  const U={dexT:{value:null},dexNT:{value:null},dexN:{value:new THREE.Vector2()},dexK:{value:k},dexLo:{value:new THREE.Vector3()},dexP:{value:0.2},dexL:{value:1}};
+  const mat=faoMatterStyle(new THREE.MeshPhongMaterial({color:0x9c846a,side:THREE.FrontSide}));
+  mat.onBeforeCompile=function(sh){Object.assign(sh.uniforms,U);
+    sh.vertexShader=FAO_DEXG_VS+'\n'+sh.vertexShader.replace('#include <beginnormal_vertex>','faoDexG();\n vec3 objectNormal = dN;').replace('#include <begin_vertex>','vec3 transformed = dP;');};
+  mat.customProgramCacheKey=function(){return 'faoDexG';};
+  mat.userData.U=U;faoDexGMats[k]=mat;return mat;
+}
+const FAO_DEXG_LMAX=4; // au plus 4 couches de 2 intervalles par rayon dans les textures
+function faoDexGWrite(E,k,c){
+  // les 2·L premiers intervalles du rayon c dans la texture de la famille k ; au-delà : maillage complémentaire
+  const G=E.g,a=E.D.L[k][c],d=G.data[k],L=G.L[k],rays=G.rays[k],cap=4*L;
+  for(let l=0;l<L;l++){const o=(l*rays+c)*4;for(let j=0;j<4;j++){const q=l*4+j;d[o+j]=q<a.length?a[q]:1e9;}}
+  if(a.length>cap){if(!G.over[k].has(c))G.over[k].add(c);G.overDirty=true;}
+  else if(G.over[k].delete(c))G.overDirty=true;
+  G.dirty[k]=true;
+}
+function faoDexGNorm(E,k,c){
+  // pentes (du, dv) de chaque extrémité du rayon c d'après les rayons voisins → texture des normales
+  const G=E.g,D=E.D,p=D.p,u=FAO_DEX_UV[k][0],v=FAO_DEX_UV[k][1],nu=D.n[u],nv=D.n[v],Lk=D.L[k],a=Lk[c],L=G.L[k],rays=G.rays[k],nd=G.ndata[k];
+  const iu=c%nu,jv=(c-iu)/nu,Lm=iu>0?Lk[c-1]:null,Lp=iu<nu-1?Lk[c+1]:null,Lb=jv>0?Lk[c-nu]:null,Lt=jv<nv-1?Lk[c+nu]:null;
+  for(let j=0;j<4*L;j++){
+    const o=((Math.floor(j/4)*rays+c)*4+(j%4))*2; // 2 flottants par extrémité
+    if(j>=a.length){nd[o]=0;nd[o+1]=0;continue;}
+    const e=a[j],sg=(j&1)?1:-1,em=faoDexNear(Lm,e,sg,p),ep=faoDexNear(Lp,e,sg,p),eb=faoDexNear(Lb,e,sg,p),et=faoDexNear(Lt,e,sg,p);
+    let du=0,dv=0;
+    if(ep===ep&&em===em)du=(ep-em)/(2*p);else if(ep===ep)du=(ep-e)/p;else if(em===em)du=(e-em)/p;
+    if(et===et&&eb===eb)dv=(et-eb)/(2*p);else if(et===et)dv=(et-e)/p;else if(eb===eb)dv=(e-eb)/p;
+    nd[o]=du;nd[o+1]=dv;
+  }
+}
+function faoDexGFamily(E,k,L){
+  // (re)construit la texture et le maillage instancié de la famille k avec L couches
+  const D=E.D,G=E.g,u=FAO_DEX_UV[k][0],v=FAO_DEX_UV[k][1],nu=D.n[u],nv=D.n[v],rays=nu*nv;
+  if(G.tex[k]){try{G.tex[k].dispose();G.ntex[k].dispose();}catch(e){}}
+  if(G.mesh[k]){G.group.remove(G.mesh[k]);try{G.mesh[k].geometry.dispose();}catch(e){}}
+  G.L[k]=L;G.rays[k]=rays;G.data[k]=new Float32Array(rays*4*L);G.ndata[k]=new Float32Array(rays*8*L);G.over[k].clear();
+  for(let c=0;c<rays;c++)faoDexGWrite(E,k,c);
+  for(let c=0;c<rays;c++)faoDexGNorm(E,k,c);
+  const nt=new THREE.DataTexture(G.ndata[k],nu*2,nv*L,THREE.RGBAFormat,THREE.FloatType);
+  nt.magFilter=THREE.NearestFilter;nt.minFilter=THREE.NearestFilter;nt.generateMipmaps=false;nt.flipY=false;nt.unpackAlignment=1;nt.needsUpdate=true;G.ntex[k]=nt;
+  const tx=new THREE.DataTexture(G.data[k],nu,nv*L,THREE.RGBAFormat,THREE.FloatType);
+  tx.magFilter=THREE.NearestFilter;tx.minFilter=THREE.NearestFilter;tx.generateMipmaps=false;tx.flipY=false;tx.unpackAlignment=1;tx.needsUpdate=true;
+  G.tex[k]=tx;
+  const geo=new THREE.InstancedBufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(G.quad,3));geo.setIndex([0,1,2,0,2,3]);geo.instanceCount=rays*4*L; // 4 sommets par facette
+  const mat=faoDexGMaterial(k),U=mat.userData.U;U.dexT.value=tx;U.dexNT.value=nt;U.dexN.value.set(nu,nv);U.dexLo.value.set(D.lo[0],D.lo[1],D.lo[2]);U.dexP.value=D.p;U.dexL.value=L;
+  const m=new THREE.Mesh(geo,mat);m.raycast=function(){};m.frustumCulled=false;G.group.add(m);G.mesh[k]=m;
+  G.dirty[k]=false;
+}
+function faoDexGNeed(E,k){ // couches nécessaires pour la famille k (rayon le plus découpé)
+  let mx=0;const L=E.D.L[k];for(let c=0;c<L.length;c++)if(L[c].length>mx)mx=L[c].length;
+  return Math.max(1,Math.min(FAO_DEXG_LMAX,Math.ceil(mx/4)));
+}
+function faoDexGBuild(E){
+  const D=E.D,grp=new THREE.Group();grp.name='faoMatterDexel';
+  const G={tex:[],ntex:[],data:[],ndata:[],mesh:[],L:[1,1,1],rays:[0,0,0],over:[new Set(),new Set(),new Set()],dirty:[false,false,false],overDirty:false,overMesh:null,group:grp,
+    quad:new Float32Array([-.5,-.5,0,.5,-.5,0,.5,.5,0,-.5,.5,0])};E.g=G;
+  for(let k=0;k<3;k++)faoDexGFamily(E,k,faoDexGNeed(E,k));
+  faoDexGOver(E);
+  E.facets=G.rays.reduce((s,r,k)=>s+r*4*G.L[k],0);
+  return grp;
+}
+function faoDexGOver(E){
+  // maillage complémentaire : extrémités au-delà de la 4e (rayons à plus de 2 intervalles)
+  const G=E.g;G.overDirty=false;
+  if(G.overMesh){G.group.remove(G.overMesh);try{G.overMesh.geometry.dispose();}catch(e){}G.overMesh=null;}
+  if(!G.over.some(s=>s.size))return;
+  const m=faoDexMeshBuild(E,G.over);G.group.add(m);G.overMesh=m;
+}
+function faoDexGSync(E){
+  // après une taille : rayons modifiés écrits dans les textures, textures renvoyées ; une famille dont
+  // trop de rayons débordent gagne des couches (texture refaite une fois)
+  const D=E.D,G=E.g,ch=D.chg,re=[new Set(),new Set(),new Set()];
+  for(let i=0;i<ch.length;i+=2){const k=ch[i],c=ch[i+1];faoDexGWrite(E,k,c);
+    // normales : le rayon et ses 4 voisins
+    const nu=D.n[FAO_DEX_UV[k][0]],r=re[k],iu=c%nu;r.add(c);if(iu>0)r.add(c-1);if(iu<nu-1)r.add(c+1);if(c>=nu)r.add(c-nu);if(c+nu<G.rays[k])r.add(c+nu);}
+  ch.length=0;
+  for(let k=0;k<3;k++)if(re[k].size){re[k].forEach(c=>faoDexGNorm(E,k,c));G.ntex[k].needsUpdate=true;}
+  for(let k=0;k<3;k++){
+    if(G.over[k].size>256&&G.L[k]<FAO_DEXG_LMAX){const L=faoDexGNeed(E,k);if(L>G.L[k]){faoDexGFamily(E,k,L);G.overDirty=true;continue;}}
+    if(G.dirty[k]){G.tex[k].needsUpdate=true;G.dirty[k]=false;}
+  }
+  if(G.overDirty)faoDexGOver(E);
+  E.facets=G.rays.reduce((s,r,k)=>s+r*4*G.L[k],0);
+}
+function faoDexGDispose(E){
+  const G=E&&E.g;if(!G)return;
+  for(let k=0;k<3;k++){try{G.tex[k].dispose();G.ntex[k].dispose();}catch(e){}try{G.mesh[k].geometry.dispose();}catch(e){}}
+  try{if(G.overMesh)G.overMesh.geometry.dispose();}catch(e){}
+  E.g=null;
 }
 /* ═══════════════ CHAMP DE DISTANCE ═══════════════ */
 const FAO_SDF_C=16; // cellules par bloc et par axe (maillage refait par blocs)
@@ -363,6 +488,8 @@ function faoSdfMark(S,i0,i1,j0,j1,k0,k1){
   const C=FAO_SDF_C,f=(a,m)=>Math.max(0,Math.min(m-1,Math.floor(a/C)));
   const a0=f(i0-1,S.nch[0]),a1=f(i1+1,S.nch[0]),b0=f(j0-1,S.nch[1]),b1=f(j1+1,S.nch[1]),c0=f(k0-1,S.nch[2]),c1=f(k1+1,S.nch[2]);
   for(let c=c0;c<=c1;c++)for(let b=b0;b<=b1;b++)for(let a=a0;a<=a1;a++)S.dirty.add((c*S.nch[1]+b)*S.nch[0]+a);
+  const g=S.gb;if(!g)S.gb=[i0,i1,j0,j1,k0,k1];
+  else{if(i0<g[0])g[0]=i0;if(i1>g[1])g[1]=i1;if(j0<g[2])g[2]=j0;if(j1>g[3])g[3]=j1;if(k0<g[4])g[4]=k0;if(k1>g[5])g[5]=k1;}
 }
 function faoSdfCarveFlat(S,w,sg,au,av,bu,bv,tc,T){
   // outil parallèle à l'axe w (corps du côté sg) : distance au profil évaluée en (ρ dans le plan (U, V), h le long de w)
@@ -443,6 +570,88 @@ function faoSdfMeshSync(E){
     E.group.add(m);E.chunks.set(id,m);E.tris+=m.userData.tris;
   });
 }
+/* ── rendu GPU du champ (V0.8.9) : « il faut que le GPU soit bien pris en compte » ──
+   Le champ (tronqué à ±4 pas) devient une TEXTURE 3D sur 8 bits (6 Mo sur Perçages), interpolée
+   par la carte ; une boîte de la taille du brut porte un shader qui marche le long du rayon de
+   chaque pixel au pas de la distance lue (sphere tracing), affine le point de contact par
+   dichotomie, prend la normale au gradient du champ et écrit la profondeur. Plus aucun triangle :
+   après une taille, seule la région touchée est reconvertie. Repli sans WebGL2 : surface nets. */
+const FAO_SDFG_FS=[
+  'precision highp sampler3D;',
+  'uniform sampler3D sdT; uniform vec3 sdLo; uniform vec3 sdN3; uniform float sdP; uniform float sdTR;',
+  'uniform vec3 sdMin; uniform vec3 sdMax; uniform mat4 sdInvModel; uniform mat4 sdModelView; uniform mat4 sdProj; uniform mat3 sdNormalMat;',
+  'varying vec3 vSdPos;',
+  'vec3 sdNv; vec4 sdPv; float sdDepth;',
+  'float sdF(vec3 p){ vec3 uvw=((p-sdLo)/sdP+0.5)/sdN3; return (texture(sdT,uvw).r*2.0-1.0)*sdTR; }',
+  'void sdMarch(){',
+  '  vec3 ro=(sdInvModel*vec4(cameraPosition,1.0)).xyz; vec3 rd=normalize(vSdPos-ro);',
+  '  vec3 ird=1.0/rd; vec3 t0=(sdMin-ro)*ird; vec3 t1=(sdMax-ro)*ird; vec3 tmn=min(t0,t1); vec3 tmx=max(t0,t1);',
+  '  float tIn=max(max(tmn.x,tmn.y),tmn.z); float tOut=min(min(tmx.x,tmx.y),tmx.z);',
+  '  float tS=max(tIn,0.0); if(tOut<=tS)discard;',
+  '  float t=tS+1e-4; float tPrev=t; bool hit=false; bool first=true; float d=0.0;',
+  '  for(int k=0;k<600;k++){ if(t>tOut)break; d=sdF(ro+rd*t); if(d<0.0){hit=true;break;} first=false; tPrev=t; t+=max(d*0.8,sdP*0.3); }',
+  '  if(!hit)discard;',
+  '  float hi=t;',
+  '  if(!first){ float lo=tPrev; for(int k=0;k<10;k++){ float m=0.5*(lo+hi); if(sdF(ro+rd*m)<0.0)hi=m; else lo=m; } }',
+  '  vec3 p=ro+rd*hi; float e=sdP*0.75;',
+  '  vec3 g=vec3(sdF(p+vec3(e,0.0,0.0))-sdF(p-vec3(e,0.0,0.0)),sdF(p+vec3(0.0,e,0.0))-sdF(p-vec3(0.0,e,0.0)),sdF(p+vec3(0.0,0.0,e))-sdF(p-vec3(0.0,0.0,e)));',
+  '  vec3 n=(dot(g,g)>1e-12)?normalize(g):-rd;',
+  '  sdNv=normalize(sdNormalMat*n); sdPv=sdModelView*vec4(p,1.0);',
+  '  vec4 clip=sdProj*sdPv; sdDepth=(clip.z/clip.w)*0.5+0.5;',
+  '  if(first&&tIn>0.0)sdDepth+=2e-6;', // face du brut : coplanaire avec le fantôme du brut → léger recul
+  '}'].join('\n');
+let faoSdfGMat=null,faoSdfGU=null;
+function faoSdfGMaterial(){
+  if(faoSdfGMat)return faoSdfGMat;
+  const U={sdT:{value:null},sdLo:{value:new THREE.Vector3()},sdN3:{value:new THREE.Vector3()},sdP:{value:0.4},sdTR:{value:1.6},
+    sdMin:{value:new THREE.Vector3()},sdMax:{value:new THREE.Vector3()},sdInvModel:{value:new THREE.Matrix4()},sdModelView:{value:new THREE.Matrix4()},
+    sdProj:{value:new THREE.Matrix4()},sdNormalMat:{value:new THREE.Matrix3()}};
+  faoSdfGU=U;
+  const mat=faoMatterStyle(new THREE.MeshPhongMaterial({color:0x9c846a,side:THREE.BackSide}));
+  mat.onBeforeCompile=function(sh){
+    Object.assign(sh.uniforms,U);
+    sh.vertexShader='varying vec3 vSdPos;\n'+sh.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\n vSdPos = position;');
+    sh.fragmentShader=FAO_SDFG_FS+'\n'+sh.fragmentShader
+      .replace('#include <clipping_planes_fragment>','sdMarch();\n#include <clipping_planes_fragment>')
+      .replace('#include <normal_fragment_begin>','vec3 normal = sdNv;\n vec3 geometryNormal = normal;')
+      .replace('geometry.position = - vViewPosition;','geometry.position = sdPv.xyz;')
+      .replace('normalize( vViewPosition );','normalize( -sdPv.xyz );')
+      .replace('#include <dithering_fragment>','#include <dithering_fragment>\n gl_FragDepth = sdDepth;');
+  };
+  mat.customProgramCacheKey=function(){return 'faoSdfG';};
+  faoSdfGMat=mat;return mat;
+}
+function faoSdfGConvert(S,B,i0,i1,j0,j1,k0,k1){
+  // champ flottant → octets (−TR … +TR → 0 … 255) sur une région
+  const n=S.n,F=S.F,TR=S.TR,s=127.5/TR;
+  for(let k=k0;k<=k1;k++)for(let j=j0;j<=j1;j++){let o=(k*n[1]+j)*n[0]+i0;for(let i=i0;i<=i1;i++,o++){const v=Math.round(F[o]*s+127.5);B[o]=v<0?0:(v>255?255:v);}}
+}
+function faoSdfGBuild(E,s){
+  const S=E.D,n=S.n,B=new Uint8Array(n[0]*n[1]*n[2]);
+  faoSdfGConvert(S,B,0,n[0]-1,0,n[1]-1,0,n[2]-1);S.gb=null;S.dirty.clear();S.all=false;
+  const tx=new THREE.Data3DTexture(B,n[0],n[1],n[2]);
+  tx.format=THREE.RedFormat;tx.type=THREE.UnsignedByteType;tx.minFilter=THREE.LinearFilter;tx.magFilter=THREE.LinearFilter;
+  tx.wrapS=tx.wrapT=tx.wrapR=THREE.ClampToEdgeWrapping;tx.unpackAlignment=1;tx.generateMipmaps=false;tx.needsUpdate=true;
+  const mat=faoSdfGMaterial(),U=faoSdfGU;
+  U.sdT.value=tx;U.sdLo.value.set(S.lo[0],S.lo[1],S.lo[2]);U.sdN3.value.set(n[0],n[1],n[2]);U.sdP.value=S.p;U.sdTR.value=S.TR;
+  // boîte : le brut, un demi-pas de marge (le champ va jusqu'à deux pas au-delà)
+  const m=S.p*0.5,x0=+s.x0-m,y0=+s.y0-m,z0=+s.z0-m,x1=+s.x1+m,y1=+s.y1+m,z1=+s.z1+m;
+  U.sdMin.value.set(x0,y0,z0);U.sdMax.value.set(x1,y1,z1);
+  const geo=new THREE.BoxGeometry(x1-x0,y1-y0,z1-z0);geo.translate((x0+x1)/2,(y0+y1)/2,(z0+z1)/2);
+  const mesh=new THREE.Mesh(geo,mat);mesh.name='faoMatterSdf';mesh.raycast=function(){};mesh.frustumCulled=false;
+  mesh.onBeforeRender=function(renderer,scene,camera){
+    try{mesh.updateMatrixWorld();U.sdInvModel.value.copy(mesh.matrixWorld).invert();
+      U.sdModelView.value.multiplyMatrices(camera.matrixWorldInverse,mesh.matrixWorld);
+      U.sdProj.value.copy(camera.projectionMatrix);U.sdNormalMat.value.getNormalMatrix(U.sdModelView.value);}catch(e){}
+  };
+  E.sg={tex:tx,B,geo,mesh};E.tris=0;
+  return mesh;
+}
+function faoSdfGSync(E){
+  const S=E.D,G=E.sg,g=S.gb;if(!g)return;
+  faoSdfGConvert(S,G.B,g[0],g[1],g[2],g[3],g[4],g[5]);S.gb=null;S.dirty.clear();G.tex.needsUpdate=true;
+}
+function faoSdfGDispose(E){const G=E&&E.sg;if(!G)return;try{G.tex.dispose();G.geo.dispose();}catch(e){}E.sg=null;}
 /* ═══════════════ branchement dans la simulation ═══════════════ */
 function faoEngPas(s){
   const cfg=(typeof faoDetailCfg!=='undefined'&&faoDetailCfg[faoViewerDetail])||{B:200000,F:0.4};
@@ -463,25 +672,34 @@ function faoEngEnable(vw){
   const t2=(typeof performance!=='undefined'?performance:Date).now();
   E.stats={pas:p,carveMs:Math.round(t1-t0),meshMs:Math.round(t2-t1),
     cells:D.kind==='dexel'?D.rays:D.n[0]*D.n[1]*D.n[2],elems:D.kind==='dexel'?E.facets:E.tris,
-    mo:Math.round((D.kind==='dexel'?E.facets*28+D.rays*40:D.F.length*4+E.tris*30)/1e6)};
+    mo:Math.round((D.kind==='dexel'?(E.g?D.rays*(16+32)*1.5+D.rays*40:E.facets*28+D.rays*40):D.F.length*(E.sg?5:4)+E.tris*30)/1e6)};
+  if(D.kind==='sdf'&&E.sg)E.stats.elems=0;
   vw.mPos=null;
   faoViewerMatterHideBodies(vw);
   try{faoViewerMsg('Simulation, moteur '+FAO_ENGINES[faoSimEngine]+' : pas '+p.toFixed(2)+' mm, '+(E.stats.cells/1000).toFixed(0)+' k '+(D.kind==='dexel'?'rayons':'échantillons')+
-    ', '+(E.stats.elems/1000).toFixed(0)+' k '+(D.kind==='dexel'?'facettes':'triangles')+', taille '+(E.stats.carveMs/1000).toFixed(1)+' s + maillage '+(E.stats.meshMs/1000).toFixed(1)+' s, ~'+E.stats.mo+' Mo.');}catch(e){}
+    ', '+((E.g||E.sg)?'rendu GPU'+(E.g?' ('+(E.stats.elems/1000).toFixed(0)+' k facettes)':' (lancer de rayons)'):(E.stats.elems/1000).toFixed(0)+' k '+(D.kind==='dexel'?'facettes':'triangles'))+', taille '+(E.stats.carveMs/1000).toFixed(1)+' s + maillage '+(E.stats.meshMs/1000).toFixed(1)+' s, ~'+E.stats.mo+' Mo.');}catch(e){}
   return E.stats.cells;
 }
 function faoEngRefresh(vw,force){
   // maillage remis à jour — au plus ~7 fois par seconde pendant la lecture, toujours à la fin
   const E=vw&&vw.eng;if(!E||typeof THREE==='undefined')return;
   const now=(typeof performance!=='undefined'?performance:Date).now();
-  if(!force&&E.last&&now-E.last<140){if(!E.timer)E.timer=setTimeout(()=>{E.timer=null;faoEngRefresh(vw,true);},150);return;}
+  const gap=E.g?40:140; // rendu GPU : écrire quelques rayons coûte peu, rafraîchir plus souvent
+  if(!force&&E.last&&now-E.last<gap){if(!E.timer)E.timer=setTimeout(()=>{E.timer=null;faoEngRefresh(vw,true);},gap+10);return;}
   E.last=now;
   try{
-    if(E.kind==='dexel'){
+    if(E.kind==='dexel'&&(E.g||(!E.mesh&&faoDexGSupported()))){
+      if(!E.g){const grp=faoDexGBuild(E);E.mesh=grp;E.D.chg.length=0;E.shown=E.D.ver;if(typeof scene!=='undefined'&&scene)faoAdd3D(grp);vw.matter=grp;}
+      else if(E.shown!==E.D.ver){faoDexGSync(E);E.shown=E.D.ver;}
+    }else if(E.kind==='dexel'){
+      E.D.chg.length=0;
       if(E.shown===E.D.ver&&E.mesh)return;
       const m=faoDexMeshBuild(E);
       if(E.mesh){try{faoDel3D(E.mesh);E.mesh.geometry.dispose();}catch(e){}}
       E.mesh=m;E.shown=E.D.ver;if(typeof scene!=='undefined'&&scene)faoAdd3D(m);vw.matter=m;
+    }else if(E.sg||(!E.group&&faoDexGSupported())){
+      if(!E.sg){const m=faoSdfGBuild(E,E.stock);E.mesh=m;if(typeof scene!=='undefined'&&scene)faoAdd3D(m);vw.matter=m;}
+      else faoSdfGSync(E);
     }else{
       if(!E.group){E.group=new THREE.Group();E.group.name='faoMatterSdf';if(typeof scene!=='undefined'&&scene)faoAdd3D(E.group);vw.matter=E.group;}
       if(E.D.all||E.D.dirty.size)faoSdfMeshSync(E);
@@ -500,7 +718,7 @@ function faoEngStep(vw,p){
 function faoEngDispose(vw){
   const E=vw&&vw.eng;if(!E)return;
   try{if(E.timer)clearTimeout(E.timer);}catch(e){}
-  try{if(E.mesh){faoDel3D(E.mesh);E.mesh.geometry.dispose();}}catch(e){}
+  try{if(E.g){faoDel3D(E.mesh);faoDexGDispose(E);}else if(E.sg){faoDel3D(E.mesh);faoSdfGDispose(E);}else if(E.mesh){faoDel3D(E.mesh);E.mesh.geometry.dispose();}}catch(e){}
   try{if(E.group){faoDel3D(E.group);E.chunks.forEach(m=>{try{m.geometry.dispose();}catch(e){}});}}catch(e){}
   if(vw.matter===E.mesh||vw.matter===E.group)vw.matter=null;
   vw.eng=null;

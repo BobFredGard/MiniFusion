@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**337 versions**, de `2026-09-28b` à `V0.8.8` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**338 versions**, de `2026-09-28b` à `V0.8.9` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4846,3 +4846,9 @@ Dernière étape de la série V0.8 (« toutes tes idées ») : piloter MiniFusio
 ## V0.8.8 - Carte graphique dédiée demandée
 « Tri-dexel utilise le GPU AMD et pas NVIDIA. » Les trois moteurs de simulation partagent le même contexte WebGL : tous tournaient sur la Radeon intégrée, MiniFusion ne demandant aucune préférence (`powerPreference: default`).
 - La vue 3D demande désormais la carte **la plus puissante** (`powerPreference: 'high-performance'`, `src/10-scene-3d.js`). Sous Windows, Chrome choisit pourtant d'après le réglage du système : Paramètres → Système → Écran → Graphiques → Google Chrome → **Hautes performances**, puis redémarrer Chrome ; `chrome://gpu` montre la carte utilisée.
+
+## V0.8.9 - Tri-dexel et distance rendus par la carte graphique
+« Tri-Dexel lague pas mal pourtant le rendu a l'air cool, regarde ce que tu peux faire via GPU » ; « le mode Distance est meilleur en qualité perçue […] là aussi, il faut que le GPU soit bien pris en compte ».
+- **Tri-dexel** : chaque famille de rayons devient une texture (couches de 2 intervalles par rayon, 1 à 4 couches selon la pièce, ajoutées quand des rayons débordent) ; le vertex shader fabrique chaque facette à partir de son numéro d'instance (position, orientation), les extrémités vides se replient. Les normales (pentes vers les rayons voisins) sont précalculées dans une seconde texture, **seulement pour les rayons touchés et leurs voisins**. Après une taille, seuls les rayons modifiés sont écrits (journal des rayons). Sur Perçages : rafraîchissement **~100 ms → 1 ms** en moyenne (10 ms au pire), 2,4 M de facettes instanciées, image 0,6 ms. Repli sans WebGL2 : l'ancien maillage.
+- **Distance** : plus de triangles — le champ (tronqué à ±4 pas) est une **texture 3D sur 8 bits** (6 Mo), interpolée par la carte ; une boîte de la taille du brut porte un shader de **lancer de rayons** (pas = distance lue, dichotomie au contact, normale = gradient du champ, profondeur écrite). Après une taille, seule la région touchée est reconvertie. Rafraîchissement 1,4 ms en moyenne ; image 5,9 ms → ~0,1 ms. Plus de « transparence » bleue de la pièce là où la matière tombe sur sa surface (profondeur calculée). Repli sans WebGL2 : surface nets.
+- Tests : `test_simulation_moteurs` inchangé (taille) ; vérifié dans le navigateur (Perçages : images, lecture, console).
