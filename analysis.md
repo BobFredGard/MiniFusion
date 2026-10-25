@@ -33,7 +33,7 @@ Le noyau géométrique exact est **OpenCascade (OCCT) compilé en WebAssembly**.
 - `49`–`60` : esquisse 2D, solveur Levenberg-Marquardt, paramètres, trim et interactions souris.
 - `78`–`79` : géométrie de construction (modèle et résolution, puis affichage, saisie, panneau).
 - `70`–`87` : fonctions 3D (extrusion, révolution, perçage, combiner, congés, chanfreins, faces, dépouille, coque).
-- `88-fao-00` à `88-fao-94` : FAO découpée par domaine (état, outils, brut, parcours 2,5D, zones, caches, post-processeurs, simulation — `70` grille et lecture, `75` cavités des posages 3+2, `76` rendu GPU instancié —, interface, ébauche 3D, contour, sélection 3+2).
+- `88-fao-00` à `88-fao-94` : FAO découpée par domaine (état, outils, brut, parcours 2,5D, zones, caches, post-processeurs, simulation — `70` grille et lecture, `75` cavités des posages 3+2 en voxels (repli sans WebGL2), `76` rendu GPU instancié, `77` cartes par orientation et lancer de rayons —, interface, ébauche 3D, contour, sélection 3+2).
 - `89` : modules FAO spécialisés (contour, crêtes, faces, géodésique, outils, perçage, posage, torique).
 - `90` : picking, mesure, import/export STEP/STL/OBJ.
 - `95`–`99` : barre d'outils, aide, interface moderne, fichiers/projets, mise en plan (+ style, import DXF), initialisation, raccourcis d'esquisse (`99-raccourcis-esquisse.js`, ex-`shortcuts.js`).

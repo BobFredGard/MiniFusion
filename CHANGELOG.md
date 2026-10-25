@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**326 versions**, de `2026-09-28b` à `V0.7.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**327 versions**, de `2026-09-28b` à `V0.7.8` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4754,3 +4754,13 @@ Palier 1 de la qualité de simulation (« un moyen de gagner en qualité ? » �
 - **Maille deux fois plus fine** quand le rendu GPU est là : 0,2 mm au niveau normal (0,12 mm au niveau haut), budget de colonnes × 4 ; en 3+2, couches Z aussi fines. Pièce Perçages : 550 × 375 colonnes (× 175 couches), 2 M de triangles, ~95 images/s en statique et ~75 en lecture ×20 ; saut à la fin du parcours ≈ 2,5 s (retaille complète à cette finesse).
 - **Bascule réel ↔ lisse sans retailler** : la grille taillée, la position de lecture et les colonnes creusées sont conservées, seul le maillage est refait (1,8 s → 0,2 s) ; le programme GPU est compilé une fois ; les cellules lisses autour des cavités 3+2 sont repliées à nouveau.
 - **Tests** : `test_simulation_rendu` (normales plate / torique / foret / 3+2, parois éclairées par la direction radiale, repli hors WebGL2, shader) ; suites complète et rapide.
+
+## V0.7.8 - Simulation : une carte de hauteurs par orientation d'outil, lancer de rayons
+Palier 2 de la qualité de simulation (« rien ne fonctionne vraiment correctement » en 3+2 → cavités latérales en voxels, marches, complément reconstruit).
+- **Une carte par orientation** (nouveau `src/88-fao-77-matiere-cartes.js`) : chaque orientation d'outil du parcours (le Z du posage, puis le Z de chaque opération au repère propre) a sa carte de hauteurs dans son repère (U, V, A). L'opération inclinée y taille exactement comme une opération verticale — même `faoMatterCarveSeg`, même pointe de foret, même arrondi, mêmes normales et directions radiales. La matière est l'intersection des cartes (et de la boîte du brut). Au plus 3 orientations en plus du posage.
+- **Rendu par lancer de rayons** : la boîte du brut (faces arrière) porte un shader qui marche le long du rayon (pas adaptatif borné par la marge la plus grande, bissection), teste l'intersection des cartes et écrit la profondeur (`gl_FragDepth`) — l'outil et la scène s'y intersectent normalement. La carte active au point touché donne la normale : celle de l'outil sur un dessus, la direction radiale de la colonne basse sur une paroi (repli : voisines, puis gradient), la face du brut à l'entrée. Plus de voxels, plus de complément, plus de couches fines : la grille du posage reste à 32 couches.
+- **Mode « lisse »** : géométrie exacte (texel le plus proche), normales interpolées entre les texels voisins de hauteur proche — surfaces courbes douces, arêtes nettes, sans surface moyennée à part.
+- **Mesures (pièce Perçages, 2 cartes : −Y 550 × 175, +X 375 × 175)** : activation en fin de parcours 0,3 s (2,5 s avant), ~120 images/s, bascule réel ↔ lisse ~15 ms, lecture ×20 fluide avec cartes renvoyées au fil des passes.
+- Hors WebGL2 : voxels et complément comme avant. Diagnostic d'atelier : `faoRmU.rmDebug.value` 1–8 (carte active, normale, distance, itérations, marges).
+- Correctif : au surfaçage, une passe qui recouvre à la même cote laissait la normale inclinée de l'arrondi précédent → la normale la plus plate gagne.
+- **Tests** : `test_simulation_cartes` (orientations, repère de carte, étendue, taille dans la carte, rattrapage, limites, shader, repli) ; suites complète et rapide.

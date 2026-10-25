@@ -152,6 +152,7 @@ const SUITES = [
   "test_fao_percage_tranche",
   "test_fao_32_fiches",
   "test_simulation_rendu",
+  "test_simulation_cartes",
   "test_oracle",
   "test_construction_esquisse"
 ];

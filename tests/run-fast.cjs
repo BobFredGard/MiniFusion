@@ -26,6 +26,7 @@ const SUITES = [
   'test_fao_percage',
   'test_fao_32_fiches',
   'test_simulation_rendu',
+  'test_simulation_cartes',
   'test_repeat_circ_tour',
   'test_esquisse_angle',
   'test_esquisse_transparence',

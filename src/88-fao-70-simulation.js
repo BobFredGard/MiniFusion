@@ -556,7 +556,12 @@ function faoMatterCarveSeg(g,ax,ay,az,bx,by,bz,r,outCols,cr,tp){
       // voxel vivant n'est tué (cote entre deux centres de voxels, ou colonne déjà
       // vidée par la passe précédente) — c'était le gel « certaines passes
       // n'enlèvent rien » (alternance OK/KO au fil des passes).
-      if(tcBuf){ if(tcBuf[c]!==tsg){ tcBuf[c]=tsg; if(g.h&&zcol<g.h[c]){ g.h[c]=zcol; hc[c]=1; if(g.nrm)faoMatterNrmSet(g,c,px-qx,py-qy,d2,rc,CR,TP); } if(outCols)outCols.push(c); } }
+      if(tcBuf){ if(tcBuf[c]!==tsg){ tcBuf[c]=tsg;
+        if(g.h&&zcol<g.h[c]){ g.h[c]=zcol; hc[c]=1; if(g.nrm)faoMatterNrmSet(g,c,px-qx,py-qy,d2,rc,CR,TP); }
+        // même cote (passe voisine qui recouvre) : la normale la plus PLATE gagne — sinon l'arrondi
+        // de la passe précédente laissait une bande de normales inclinées sous un dessus plat
+        else if(g.h&&g.nrm&&zcol<=g.h[c]+1e-6){ const nz0=g.nrm[c*4+2]; if(nz0<0.9999){ const keep=[g.nrm[c*4],g.nrm[c*4+1],nz0]; faoMatterNrmSet(g,c,px-qx,py-qy,d2,rc,CR,TP); if(g.nrm[c*4+2]<nz0){ g.nrm[c*4]=keep[0]; g.nrm[c*4+1]=keep[1]; g.nrm[c*4+2]=keep[2]; } } }
+        if(outCols)outCols.push(c); } }
       const zminC=shaped?zcol-pzv/2:zmin;
       const ks0=shaped?Math.max(k0,Math.floor((zminC-g.oz)/pzv)):k0;
       for(let k=ks0;k<=k1;k++){
@@ -586,7 +591,7 @@ function faoMatterCarveTo(g,pts,dd,times,t,outCols,crs,tps){
     }
     const r=((isFinite(dd[i+1])&&dd[i+1]>0)?dd[i+1]:10)/2;
     const crv=(crs&&isFinite(+crs[i+1]))?+crs[i+1]:0;
-    const k=pts[i+1].ax?faoMatterCarveTilt(g,a,b,r,pts[i+1].ax,outCols,tps&&tps[i+1]):faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols,crv,tps&&tps[i+1]);
+    const k=pts[i+1].ax?(g.maps?faoMatterCarveAx(g,a,b,r,pts[i+1].ax,outCols,crv,tps&&tps[i+1]):faoMatterCarveTilt(g,a,b,r,pts[i+1].ax,outCols,tps&&tps[i+1])):faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols,crv,tps&&tps[i+1]);
     for(let m=0;m<k.length;m++)out.push(k[m]);
   }
   return out;
@@ -639,6 +644,7 @@ function faoViewerMatterDispose(vw,keepGrid){
   // colonnes creusées restent ; seuls les maillages sont refaits (plus de retaille 0 → t).
   try{ faoViewerVoxDispose(vw,keepGrid); }catch(e){} // cavités 3+2 (src/88-fao-75)
   try{ faoMatterGpuDispose(vw); }catch(e){} // rendu GPU (src/88-fao-76)
+  try{ faoMatterRmDispose(vw); }catch(e){} // lancer de rayons (src/88-fao-77)
   try{ if(vw.matter&&typeof scene!=='undefined'&&scene)faoDel3D(vw.matter); }catch(e){}
   try{ if(vw.matter&&vw.matter.geometry&&vw.matter.geometry.dispose)vw.matter.geometry.dispose(); }catch(e){}
   vw.matter=null; vw.mKills=[]; vw.mTops=null; vw.mArr=null; vw.mNrm=null; vw.mH=null;
@@ -864,15 +870,22 @@ function faoViewerMatterEnable(vw,keepGrid){
   faoViewerMatterDispose(vw,keepGrid);
   if(!vw||vw.matterOn===false)return 0;
   const s=faoStock(); if(!faoStockValid(s))return 0;
-  const g=keepGrid?vw.matterGrid:faoMatterGrid(s,0,faoViewerVoxWanted(vw)); if(!g)return 0; // 3+2 : couches fines (src/88-fao-75)
+  // V0.7.8 : orientations inclinées + WebGL2 → cartes par orientation et lancer de rayons (src/88-fao-77) ;
+  // la grille du posage n'a alors pas besoin de couches fines (plus de voxels)
+  const rm=faoViewerVoxWanted(vw)&&(typeof faoMatterRmSupported==='function')&&faoMatterRmSupported();
+  const g=keepGrid?vw.matterGrid:faoMatterGrid(s,0,faoViewerVoxWanted(vw)&&!rm); if(!g)return 0; // 3+2 sans WebGL2 : couches fines (src/88-fao-75)
+  if(rm&&!g.maps)faoMapsInit(g,faoMapsAxes(vw.pts));
   const nc=g.nx*g.ny;
   const smooth=!!vw.smooth; // « ≈ lisse » : heightfield continu au lieu des colonnes
   let mesh=null, arr=null;
-  const gpu=!smooth&&(typeof faoMatterGpuSupported==='function')&&faoMatterGpuSupported();
+  if(rm){
+    try{ mesh=faoMatterRmBuild(vw,g,smooth); if(typeof scene!=='undefined'&&scene)faoAdd3D(mesh); }catch(e){ mesh=null; vw.rm=null; }
+  }
+  const gpu=!mesh&&!smooth&&(typeof faoMatterGpuSupported==='function')&&faoMatterGpuSupported();
   if(gpu){
     try{ mesh=faoMatterGpuBuild(vw,g); if(typeof scene!=='undefined'&&scene)faoAdd3D(mesh); }catch(e){ mesh=null; vw.gpu=null; }
   }
-  if(!smooth&&!mesh){
+  if(!smooth&&!mesh&&!vw.rm){
     try{
       arr=new Float32Array((nc*30+6)*3);
       vw.mNrm=new Float32Array((nc*30+6)*3); // V0.7.7 : normales depuis l'outil
@@ -894,7 +907,7 @@ function faoViewerMatterEnable(vw,keepGrid){
   // (« toujours un cube à la place du brut corps ») ; colonnes vides : rien.
   for(let c=0;c<nc;c++)tops[c]=g.h?Math.min(full,g.h[c]):full;
   vw.matter=mesh; vw.matterGrid=g; vw.mTops=tops; vw.mArr=arr; vw.mKills=[]; vw.mPos=keepGrid?vw.mPos:null; vw.mH=null; // grille conservée : position de lecture gardée (sinon retaille 0 → t)
-  if(smooth){
+  if(smooth&&!vw.rm){
     const m2=faoViewerMatterHFBuild(vw);
     if(!m2){ faoViewerMatterDispose(vw); return 0; }
     vw.matter=m2; // le heightfield EST la matière (mêmes noms/dispose que mArr)
@@ -904,12 +917,12 @@ function faoViewerMatterEnable(vw,keepGrid){
     const all=[];for(let c=0;c<nc;c++)if(tops[c]<full-1e-9)all.push(c);
     if(all.length)faoViewerMatterHFUpdate(vw,all);
     if(keepGrid)try{ faoViewerVoxFoldAll(vw); }catch(e){} // cavités 3+2 déjà creusées : cellules repliées (src/88-fao-75)
-  }else if(!vw.gpu){
+  }else if(!vw.gpu&&!vw.rm){
     try{ faoViewerMatterWriteAll(vw); }catch(e){ faoViewerMatterDispose(vw); try{ if(mesh&&scene)faoDel3D(mesh); }catch(e2){} return 0; }
   }
   // V0.7.6 : outil incliné (3+2) quelque part dans le parcours → cavités sous la surface dessinées
   if(!keepGrid){
-    vw.vox=faoViewerVoxWanted(vw); vw.voxAt=0; vw.voxDirty=false;
+    vw.vox=faoViewerVoxWanted(vw)&&!vw.rm; vw.voxAt=0; vw.voxDirty=false; // cartes par orientation : plus de voxels ni de complément
     vw.cav=vw.vox?new Uint8Array(nc):null; vw.cavN=0; // colonnes creusées (src/88-fao-75)
   }
   if(vw.t>0&&!keepGrid){
@@ -926,8 +939,8 @@ function faoViewerMatterKill(vw,ks,cols){
   // dont la Z-map a baissé sans kill), réécrit leurs verts + ceux des 4 voisins.
   // 2026-10-11-003 « net » : unifié sur WriteCol — cote EXACTE de chaque colonne ;
   // 2026-10-11-007 « lisse » : branche HFUpdate (nœuds moyennés + normales).
-  if(!vw||!vw.matter||!vw.matterGrid||!vw.mTops||(!vw.mArr&&!vw.mH&&!vw.gpu))return; // gpu (V0.7.7) : textures
-  if((!ks||!ks.length)&&(!cols||!cols.length))return;
+  if(!vw||!vw.matter||!vw.matterGrid||!vw.mTops||(!vw.mArr&&!vw.mH&&!vw.gpu&&!vw.rm))return; // gpu / rm : textures
+  if((!ks||!ks.length)&&(!cols||!cols.length)&&!(vw.rm&&faoMapsDirty(vw.matterGrid)))return;
   if(vw.vox)faoViewerVoxKill(vw,ks); // posage 3+2 : cavités sous la surface (src/88-fao-75)
   const g=vw.matterGrid, nc=g.nx*g.ny, T=vw.mTops;
   const seen=new Uint8Array(nc), chg=[];
@@ -947,6 +960,7 @@ function faoViewerMatterKill(vw,ks,cols){
   if(cols){
     for(let n=0;n<cols.length;n++)mark(cols[n]);
   }
+  if(vw.rm){ faoMatterRmUpdate(vw,chg.length>0); return; } // lancer de rayons : textures des cartes renvoyées (src/88-fao-77)
   if(!chg.length)return;
   if(vw.mH){ // « ≈ lisse » : réécriture des NŒUDS (moyennes) + normales — diff seul
     try{ faoViewerMatterHFUpdate(vw,chg); }catch(e){}
@@ -985,7 +999,7 @@ function faoMatterCarveRange(g,pts,dd,times,t,i0,x0,y0,z0,p,outCols,crs,tps){
     const r=((isFinite(dd[i+1])&&dd[i+1]>0)?dd[i+1]:10)/2;
     const crv=(crs&&isFinite(+crs[i+1]))?+crs[i+1]:0;
     const axD=pts[i+1]&&pts[i+1].ax; // le point en cours (p, interpolé) ne porte pas l'axe : celui du segment
-    const k=axD?faoMatterCarveTilt(g,a,b,r,axD,outCols,tps&&tps[i+1]):faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols,crv,tps&&tps[i+1]);
+    const k=axD?(g.maps?faoMatterCarveAx(g,a,b,r,axD,outCols,crv,tps&&tps[i+1]):faoMatterCarveTilt(g,a,b,r,axD,outCols,tps&&tps[i+1])):faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols,crv,tps&&tps[i+1]);
     for(let m=0;m<k.length;m++)out.push(k[m]);
     a=b;
   }
@@ -1012,7 +1026,7 @@ function faoViewerMatterStep(vw,p){
   vw.mPos={x:p.x,y:p.y,z:p.z,i:p.i};
   // Tués OU colonnes touchées : la Z-map descend aussi quand aucun voxel ne meurt,
   // le mesh doit suivre à chaque passe (sinon la matière ré-apparaît au pass suivant).
-  if((ks&&ks.length)||cols.length)faoViewerMatterKill(vw,ks,cols);
+  if((ks&&ks.length)||cols.length||(vw.rm&&faoMapsDirty(g)))faoViewerMatterKill(vw,ks,cols); // cartes d'orientation changées (src/88-fao-77)
 }
 function faoViewerMatterToggle(){
   const vw=faoVw; if(!vw)return;
