@@ -408,9 +408,9 @@ test('apparence en mode Placer : arêtes, intensité et transparence d’une occ
   await page.locator('#props .asmLookEdges').selectOption('off');
   e=await etat();
   expect(e.aretes).toBe(0);
-  // le mode Modéliser n'en tient pas compte : pas de verre sur la goupille en contexte
+  // V0.7.5 : le mode Modéliser montre la goupille, autour de la pièce, avec la même apparence (verre)
   const modeliser=await page.evaluate(()=>{asmExit();let v=false;const g=scene.getObjectByName('asmCtx');if(g)g.traverse(m=>{if(m.isMesh&&m.userData&&m.userData.glassIn)v=true;});return v;});
-  expect(modeliser).toBe(false);
+  expect(modeliser).toBe(true);
   expect(err).toEqual([]);
 });
 
@@ -449,6 +449,46 @@ test('mode Placer : la vue tourne autour de la pièce choisie ou du repère de r
   const apres=await ecran(),cam1=await page.evaluate(()=>camera.position.toArray());
   expect(Math.hypot(cam1[0]-cam0[0],cam1[1]-cam0[1],cam1[2]-cam0[2])).toBeGreaterThan(1); // la vue a tourné
   expect(Math.abs(apres[0]-avant[0])).toBeLessThan(1.5);expect(Math.abs(apres[1]-avant[1])).toBeLessThan(1.5);
+  expect(err).toEqual([]);
+});
+
+test('miroir : sous la dernière pièce visible (assemblage, mode Modéliser)',async({page})=>{
+  const err=await demarrer(page);
+  // 1. assemblage, mode Modéliser : la goupille (autre composant, 25 mm plus bas) compte
+  await page.evaluate(()=>{
+    mirrorOn=true;
+    const mkSk=(name,pts)=>{newSketch('XY');const sk=skEdit;sk.name=name;const P=pts.map(([x,y])=>addPoint(sk,x,y));
+      for(let i=0;i<P.length;i++)sk.entities.push({id:'L'+i,t:'line',p1:P[i],p2:P[(i+1)%P.length]});closeSketch(true);return sk;};
+    const a=mkSk('Socle',[[-20,-20],[20,-20],[20,20],[-20,20]]);addFeature({id:uid('ex'),type:'extrude',name:'Socle',sketchId:a.id,op:'add',distance:20});
+    newSketch('XY');const b=skEdit;b.name='Goupille';b.entities.push({id:'C0',t:'circle',pc:addPoint(b,60,0),r:5});closeSketch(true);
+    extNew={sketchId:b.id,op:'new',dist:30};extNewOk();
+    doc.bodies[0].name='Socle';doc.bodies[1].name='Goupille';markDirty();rebuild();
+  });
+  await page.waitForFunction(()=>builtEngine==='exact'&&rebuildDepth===0&&builtVersion===_docVersion&&doc.bodies.length===2,null,{timeout:60000});
+  const sol=await page.evaluate(async()=>{
+    const res=asmCompsFromBodies(doc.bodies.map(e=>e.id));markDirty();rebuild();
+    const oP=asmCompOccs(res.made[1].comp.id)[0];oP.fr={o:[0,0,-25],x:[1,0,0],y:[0,1,0],z:[0,0,1]};asmNotify();
+    asmEnter();await new Promise(r=>setTimeout(r,300));
+    asmShow([asmCompOccs(res.made[0].comp.id)[0].id],'part');await new Promise(r=>setTimeout(r,500));
+    return floorMesh.position.z;});
+  expect(sol).toBeLessThan(-25);expect(sol).toBeGreaterThan(-25.5); // sous la goupille, pas sous le socle (0)
+  expect(err).toEqual([]);
+});
+
+test('miroir : sous le brut en simulation d’usinage (Axe, brut plus bas que la pièce)',async({page})=>{
+  const err=await demarrer(page);
+  await ouvrirAxe(page);
+  await page.locator('[data-mfws="fao"]').first().click();
+  await ruban(page,'Surfaçage').click();
+  await page.waitForFunction(()=>faoDoc().ops.some(o=>o.type==='facing'));
+  const r=await page.evaluate(async()=>{
+    mirrorOn=true;const job=faoDoc();job.stockSrc='manual';job.stock={x0:-40,y0:-40,z0:-40,x1:40,y1:40,z1:30};
+    if(!faoViewerOpen())return null;await new Promise(q=>setTimeout(q,300));
+    const box=new THREE.Box3();[faoVw.stock,faoVw.matter].forEach(g=>{if(g)box.expandByObject(g);});
+    return {sol:floorMesh.position.z,brut:box.min.z};});
+  expect(r).not.toBeNull();
+  expect(r.brut).toBeCloseTo(-40,3);
+  expect(r.sol).toBeLessThan(r.brut);expect(r.sol).toBeGreaterThan(r.brut-0.5); // le brut est AU-DESSUS du miroir
   expect(err).toEqual([]);
 });
 

@@ -146,7 +146,7 @@ function asmGizmoUp(){
 try{document.addEventListener('pointerdown',asmGizmoDown,true);}catch(e){} // tests VM : document simplifié
 /* ── panneau de placement ── */
 function asmPlacementProps(p,o){
-  // Sections « Placement » puis « Apparence (mode Placer) » du panneau d'occurrence (asmRenderProps, 47)
+  // Sections « Placement » puis « Apparence (assemblage) » du panneau d'occurrence (asmRenderProps, 47)
   asmPlacementCore(p,o);
   try{asmLookProps(p,o);}catch(e){}
 }

@@ -153,7 +153,7 @@ if($('btnNew'))$('btnNew').onclick=()=>{
   markDirty();rebuild();renderProps();showAll();
   faceEl.textContent='Nouveau modèle. Créez une esquisse.';
 };
-try{if($('optEdges')){$('optEdges').value=edgeMode;$('optEdges').onchange=()=>{edgeMode=$('optEdges').value;try{localStorage.setItem('minifusion_edges',edgeMode);}catch(e){}buildEdgeOverlay();try{if(typeof asmMode!=='undefined'&&asmMode==='asm')asmDraw();}catch(e){}};}}catch(e){}
+try{if($('optEdges')){$('optEdges').value=edgeMode;$('optEdges').onchange=()=>{edgeMode=$('optEdges').value;try{localStorage.setItem('minifusion_edges',edgeMode);}catch(e){}buildEdgeOverlay();try{if(typeof asmMode!=='undefined'){if(asmMode==='asm')asmDraw();else asmCtxDraw();}}catch(e){}};}}catch(e){}
 $('clipOn').onchange=applyClip;$('clipPos').oninput=applyClip;$('clipFlip').onchange=applyClip;
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>setView(b.dataset.view));
 // --- arborescence dans la vue 3D : onglet de repli + menu réglages ---

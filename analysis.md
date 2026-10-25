@@ -1,6 +1,6 @@
 # Analyse du projet MiniFusion
 
-*État au 2026-10-25 — version `V0.7.4`.*
+*État au 2026-10-25 — version `V0.7.5`.*
 
 ## Nature du projet
 

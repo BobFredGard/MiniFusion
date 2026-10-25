@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**323 versions**, de `2026-09-28b` à `V0.7.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**324 versions**, de `2026-09-28b` à `V0.7.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4718,3 +4718,13 @@ Le mode Placer montre les pièces comme le mode Modéliser, avec une apparence p
 En mode Placer, la vue tournait autour d'un point sans rapport avec ce qu'on voit : le pivot d'orbite (`orbitPivot`) prenait la face sélectionnée ou les corps de la pièce ACTIVE (la racine d'un assemblage n'en a souvent aucun), sinon la cible de la caméra, qu'un déplacement de la vue décale.
 - **Pivot du mode Placer** (`asmOrbitPivot`), comme en Modéliser (face choisie, sinon les pièces) : le repère de référence cliqué dans l'arbre — origine du composant actif ou un de ses repères de construction (ligne en surbrillance ; clic à nouveau ou Échap pour le quitter) —, sinon l'occurrence sélectionnée (centre de sa boîte), sinon le centre des pièces placées (fantômes exclus). Sélectionner une pièce (arbre ou vue) la reprend comme centre ; changer de composant oublie le repère choisi.
 - **Test** : parcours Playwright — pivots (pièces, goupille, origine) et vraie rotation à la souris : la goupille sélectionnée reste au même endroit de l'écran.
+
+## V0.7.5 - Miroir sous la dernière pièce visible, et sous le brut en simulation
+Le sol miroir (`refreshMirror`) se pose sous le point le plus bas de ce qui est AFFICHÉ.
+- **Mode Modéliser dans un assemblage** : les autres composants affichés autour de la pièce (figés ou en fantôme, groupe `asmCtx`) comptent désormais — un composant plus bas que la pièce active ne traverse plus le miroir ; le sol est recalculé quand cet affichage change (`asmCtxDraw`).
+- **Seulement le visible** : un corps (ou un objet) dont lui-même ou un parent est masqué ne retient plus le sol sous lui.
+- **FAO, simulation d'usinage** : le brut du simulateur et la matière usinée (`faoVw.stock`, `faoVw.matter`) comptent ; le sol est recalculé à l'ouverture et à la fermeture de la simulation et quand la case « corps pièce » change. Avant, il restait sous la pièce : un brut plus bas que la pièce traversait le miroir (Axe, brut descendu à −40 : sol −28 → −40,02).
+- **Fil d’Ariane de l’assemblage** (en tête de l’arbre) : le libellé « modéliser » / « placer » devient deux boutons, « ✏️ Modéliser » et « 🧩 Placer », qui basculent d’un mode à l’autre SANS quitter la pièce : « Placer » depuis une pièce sans sous-composants remonte à l’assemblage qui la contient, elle sélectionnée ; « Modéliser » depuis Placer reprend la pièce sélectionnée. Boutons fins (18 px). Un clic sur un nom du fil d’Ariane remonte à ce composant DANS LE MODE EN COURS : en Modéliser, on sort simplement de l’édition de la pièce (avant : passage en mode Placer).
+- **Nom de la racine** : un composant porte le nom de son document — la racine restait « Sans titre » dans un fichier « Test Assemblage » (nom changé à l’ouverture, à « Enregistrer sous » ou dans « Nom du document » sans passer par « Renommer ») ; les occurrences suivent.
+- **Mode Modéliser = mêmes attributs visuels que le mode Placer** : les composants affichés autour de la pièce (sous-composants et le reste de l'assemblage) gardent leurs arêtes, l'intensité et la transparence de leurs corps et l'apparence réglée sur leur occurrence (même rendu verre) — au lieu d'être figés à 60 % (descendants) ou en fantôme à 18 % (le reste), sans arêtes. Ils restent non sélectionnables. Le bouton « Arêtes » les redessine aussi. La section du panneau devient « Apparence (assemblage) ».
+- **Tests** : deux parcours Playwright (goupille 25 mm sous le socle en mode Modéliser ; brut de l'Axe descendu à −40 en simulation : le brut reste au-dessus du miroir).

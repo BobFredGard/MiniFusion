@@ -2,7 +2,8 @@
    Le mode Placer dessine les instantanés des composants (47). Ils gardent désormais leurs
    ARÊTES (vives noires, tangentes grises — les mêmes que l'overlay du mode Modéliser, lues sur
    la forme exacte au moment de la capture), affichées quand le bouton « Arêtes » est actif.
-   APPARENCE PAR OCCURRENCE, propre au mode Placer (le mode Modéliser n'en tient pas compte) :
+   APPARENCE PAR OCCURRENCE, la même en mode Placer et en mode Modéliser (composants affichés autour
+   de la pièce — V0.7.5) :
    o.look = {op (« Intensité » 0,15…1), gl (« Transparence » 0,1…1), edges ('on' | 'off' ; absent
    = comme le bouton « Arêtes »)} — les réglages d'un corps (bodyStyleField), rendus de la même
    façon (setMatAlpha, passes de verre glassDepthMask, voile des arêtes arrière). La COULEUR reste
@@ -86,11 +87,11 @@ function asmSetLook(o,patch,label,live){
   asmNotify();
 }
 function asmLookProps(p,o){
-  // Section « Apparence (mode Placer) » : les réglages du corps (bodyStyleField) « Intensité » et
+  // Section « Apparence (assemblage) » : les réglages du corps (bodyStyleField) « Intensité » et
   // « Transparence », plus les arêtes, pour cette occurrence (la couleur reste celle des corps)
   const mk=(tag,cls,txt)=>{const d=document.createElement(tag);if(cls)d.className=cls;if(txt!=null)d.textContent=txt;return d;};
   const c=asmComp(o.comp),L=o.look||{},it0=(c&&c._snap&&c._snap.items[0])||{};
-  p.appendChild(mk('div','pnl-h','Apparence (mode Placer)'));
+  p.appendChild(mk('div','pnl-h','Apparence (assemblage)'));
   const holder=document.createElement('div');holder.className='col';
   // intensité / transparence : mêmes bornes et mêmes effets que pour un corps
   const slider=(title,cls,min,max,val,tip,fn)=>{
@@ -119,5 +120,5 @@ function asmLookProps(p,o){
   b.appendChild(all);
   if(o.look){const rs=mk('button','mini','Par défaut');rs.title='Intensité et transparence des corps ; arêtes selon le bouton';rs.onclick=()=>{asmPush('apparence');o.look=null;asmNotify();};b.appendChild(rs);}
   p.appendChild(b);
-  p.appendChild(mk('div','pnl-note','Vaut pour ce qu’elle contient ; sans effet en mode Modéliser. La couleur reste celle des corps (réglée en Modéliser), la même partout.'));
+  p.appendChild(mk('div','pnl-note','Vaut pour ce qu’elle contient, en mode Placer comme en mode Modéliser (autour de la pièce). La couleur reste celle des corps, la même partout.'));
 }

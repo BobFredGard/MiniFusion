@@ -472,6 +472,7 @@ function asmOccSerial(o){const s={id:o.id,comp:o.comp,name:o.name,fr:o.fr,fixed:
 function asmSerial(){
   if(!asmHasContent())return null;
   asmSync();
+  try{asmNamesSync();}catch(e){} // noms des composants = noms de leurs documents (47)
   const comps=asm.comps.map(c=>({id:c.id,kind:'comp',name:c.name,doc:c.doc===doc?null:serialiseObj(c.doc,false),
     occ:c.occ.map(asmOccSerial),link:asmLinkSerial(c.link,c),of:c.of||undefined}));
   return {v:2,name:asm.name,root:asm.root,active:asm.active,path:asm.path.slice(),mode:asmMode,comps};

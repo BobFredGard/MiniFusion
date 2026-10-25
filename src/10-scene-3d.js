@@ -190,12 +190,18 @@ function refreshMirror(){
   if(!mirrorOn)return;
   // 2026-10-22 : en FAO, le BRUT affiché (posage sélectionné) compte aussi — le sol
   // passe sous lui, pas sous la pièce qu'il enveloppe.
-  const ms=[];
-  bodies.forEach(b=>{if(b.visible&&b.mesh)ms.push(b.mesh);});
+  // V0.7.5 : seulement ce qui est réellement AFFICHÉ (objet et parents visibles) — un corps masqué
+  // (case, simulation) ne retient plus le sol sous lui ; le sol passe sous la dernière pièce visible
+  const ms=[],shown=o=>{for(let p=o;p;p=p.parent)if(p.visible===false)return false;return true;};
+  bodies.forEach(b=>{if(b.visible&&b.mesh&&shown(b.mesh))ms.push(b.mesh);});
   try{
     if(faoPoseGrp&&faoPoseGrp.parent&&faoPoseGrp.parent.visible!==false)
-      faoPoseGrp.traverse(o=>{if(o.isMesh&&o.userData&&o.userData.faoStock)ms.push(o);});
+      faoPoseGrp.traverse(o=>{if(o.isMesh&&o.userData&&o.userData.faoStock&&shown(o))ms.push(o);});
   }catch(e){}
+  // V0.7.5 : assemblage en mode Modéliser — les autres composants affichés autour de la pièce
+  try{const g=scene.getObjectByName('asmCtx');if(g)g.traverse(o=>{if(o.isMesh&&shown(o))ms.push(o);});}catch(e){}
+  // V0.7.5 : FAO en simulation — le brut et la matière usinée du simulateur (88-fao-70)
+  try{if(typeof faoVw!=='undefined'&&faoVw)[faoVw.stock,faoVw.matter].forEach(g=>{if(g&&g.traverse)g.traverse(o=>{if(o.isMesh&&shown(o))ms.push(o);});});}catch(e){}
   const box=new THREE.Box3();let n=0;
   ms.forEach(m=>{m.updateWorldMatrix(true,false);box.expandByObject(m);n++;});
   if(!n||box.isEmpty())return;

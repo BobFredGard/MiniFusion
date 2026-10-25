@@ -99,27 +99,27 @@ function asmFill(G,placer){
     const self=mine&&inst.path.length===n;
     if(self&&!placer)return; // le composant actif EST la scène de la pièce
     const key=mine&&!self?inst.path[n]:null; // enfant direct auquel appartient l'instance
-    const kind=!mine?'ghost':(self||!placer)?'solid':'pick';
+    // V0.7.5 : en mode Modéliser, le reste de l'assemblage est dessiné comme en mode Placer (arêtes,
+    // apparence de l'occurrence), non sélectionnable ; en Placer, hors du sous-arbre actif : fantôme
+    const kind=!mine&&placer?'ghost':(self||!placer)?'solid':'pick';
     const g=new THREE.Group();g.matrixAutoUpdate=false;g.matrix.copy(asmMat4(asmCompose(V,inst.F)));
     g.userData.path=inst.path; // chemin absolu : points d'accroche (48-assemblage-accroches)
     g.userData.kind=kind;      // centre de rotation : les fantômes ne comptent pas (asmOrbitPivot)
     if(kind==='pick'){g.userData.occ=key;g.name='occ_'+key;}
     const on=kind==='pick'&&asmSelId===key;
-    // mode Placer : apparence de l'occurrence (couleur, transparence, arêtes — 48-assemblage-apparence)
-    const look=placer?asmLookOf(inst.path):{};
+    // apparence de l'occurrence (intensité, transparence, arêtes — 48-assemblage-apparence),
+    // la même en mode Placer et en mode Modéliser (V0.7.5)
+    const look=asmLookOf(inst.path);
     c._snap.items.forEach(it=>{
       let mat;
       if(kind==='ghost')mat=new THREE.MeshStandardMaterial({color:it.color,transparent:true,opacity:0.18,depthWrite:false,metalness:.2,roughness:.6});
-      else if(placer)mat=asmLookMat(it,look,on); // couleur, intensité, transparence (48-assemblage-apparence)
-      else mat=new THREE.MeshStandardMaterial({color:it.color,metalness:.35,roughness:.4,
-        transparent:it.op<1||!self,opacity:!self?Math.min(it.op,0.6):it.op,
-        emissive:on?ASM_SEL_COL:0x000000,emissiveIntensity:on?0.35:0});
+      else mat=asmLookMat(it,look,on); // couleur des corps, intensité, transparence (48-assemblage-apparence)
       const m=new THREE.Mesh(it.geo,mat);
       if(kind==='pick')m.userData.occ=key;else{m.raycast=()=>{};if(kind==='ghost')m.renderOrder=-1;}
       g.add(m);
-      if(placer&&kind!=='ghost'){try{glassDepthMask({mesh:m});}catch(e){}} // passes de verre, comme une pièce
+      if(kind!=='ghost'){try{glassDepthMask({mesh:m});}catch(e){}} // passes de verre, comme une pièce
     });
-    if(placer&&kind!=='ghost'&&c._snap.edges&&asmEdgesShown(look))
+    if(kind!=='ghost'&&c._snap.edges&&asmEdgesShown(look))
       g.add(asmEdgeLines(c._snap.edges,c._snap.items.some(it=>(look.gl!=null?look.gl:(it.gl||1))<0.999)));
     G.add(g);
   });
@@ -133,13 +133,14 @@ function asmDraw(){
   try{asmGizmoDraw();}catch(e){} // manipulateur de l'occurrence sélectionnée (48)
 }
 function asmCtxDraw(){
-  // Mode Modéliser : le reste de l'arbre autour de la pièce (descendants figés, autres en fantômes)
+  // Mode Modéliser : le reste de l'arbre autour de la pièce, dessiné comme en mode Placer (V0.7.5)
   if(typeof scene==='undefined'||!scene)return;
   let G=scene.getObjectByName('asmCtx');
   if(G)asmClear(G);
   if(!asmOn()||asmMode==='asm')return;
   if(!G){G=new THREE.Group();G.name='asmCtx';scene.add(G);}
   asmFill(G,false);
+  try{refreshMirror();}catch(e){} // V0.7.5 : le sol passe sous les composants affichés autour de la pièce
 }
 function asmOrbitPivot(){
   // V0.7.4 — centre de rotation en mode Placer, comme en Modéliser (face choisie, sinon les pièces) :
@@ -317,13 +318,29 @@ function asmRename(id){
   asmNotify();
 }
 /* ── arbre ── */
+function asmNamesSync(){
+  // V0.7.5 : un composant porte le nom de son document. Celui-ci change sans passer par
+  // « Renommer » (ouverture, « Enregistrer sous », champ « Nom du document ») : la racine restait
+  // « Sans titre » dans un fichier « Test Assemblage ». Les occurrences suivent, comme asmRename.
+  if(!asm)return;
+  asm.comps.forEach(c=>{
+    const n=c&&c.doc&&typeof c.doc.name==='string'?c.doc.name.trim():'';
+    if(!n||n===c.name)return;
+    const old=c.name;c.name=n;
+    if(old)asmCompOccs(c.id).forEach(q=>{q.name=q.name.replace(new RegExp('^'+old.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')),n);});
+  });
+}
 function asmBreadcrumb(t){
   // En tête de l'arbre (les deux modes) : fil d'Ariane, puis la hiérarchie des composants
   if(!asmOn())return;
+  asmNamesSync();
   const d=document.createElement('div');d.className='tnode asmCrumb';d.style.cssText='font-weight:600;flex-wrap:wrap;gap:2px';
   const seg=(txt,path,next,on)=>{const s=document.createElement('span');s.className='nm';s.textContent=txt;
-    s.style.cssText='cursor:pointer;flex:none'+(on?';color:var(--primary)':'');s.title=on?'Composant actif':'Placer les composants de « '+txt+' »';
-    s.onclick=ev=>{ev.stopPropagation();asmShow(path,'asm',next);};return s;};
+    // V0.7.5 : un clic remonte à ce composant DANS LE MODE EN COURS (on sort de l'édition de la
+    // pièce sans basculer en mode Placer) ; les boutons Modéliser / Placer changent de mode
+    s.style.cssText='cursor:pointer;flex:none'+(on?';color:var(--primary)':'');
+    s.title=on?'Composant actif':(asmMode==='asm'?'Placer les composants de « '+txt+' »':'Modéliser « '+txt+' » (sortir de l’édition de la pièce)');
+    s.onclick=ev=>{ev.stopPropagation();if(!on)asmShow(path,asmMode==='asm'?'asm':'part',next);};return s;};
   const ic=document.createElement('span');ic.textContent='🧩';d.appendChild(ic);
   let c=asmRoot();
   d.appendChild(seg(c.name,[],asm.path[0],!asm.path.length));
@@ -332,8 +349,20 @@ function asmBreadcrumb(t){
     const sp=document.createElement('span');sp.textContent='›';sp.style.color='var(--muted)';d.appendChild(sp);
     d.appendChild(seg(c.name,asm.path.slice(0,i+1),asm.path[i+1],i===asm.path.length-1));
   });
-  const m=document.createElement('span');m.style.cssText='margin-left:auto;color:var(--muted);font-weight:400';
-  m.textContent=asmMode==='asm'?'placer':'modéliser';d.appendChild(m);
+  // V0.7.5 : les deux modes du composant actif, en boutons (était un simple libellé)
+  const sw=document.createElement('span');sw.className='asmModeSw';sw.style.cssText='margin-left:auto;display:flex;gap:2px;font-weight:400';
+  [['part','✏️ Modéliser','Modéliser la pièce : esquisses, fonctions, corps (en mode Placer : la pièce sélectionnée)'],['asm','🧩 Placer','Placer les pièces dans l’assemblage : déplacer, aligner, liaisons (depuis une pièce sans sous-composants : l’assemblage qui la contient, elle sélectionnée)']].forEach(([k,lab,tip])=>{
+    const b=document.createElement('button');b.className='mini asmModeBtn';b.dataset.mode=k;b.textContent=lab;b.title=tip;
+    b.style.cssText='padding:0 6px;height:18px;min-height:0;line-height:16px;font-size:11px;border-radius:5px'; // fins : ils tiennent dans la ligne du fil d'Ariane
+    const on=asmMode===k;if(on){b.style.outline='2px solid var(--accent, #0a84ff)';b.style.color='var(--primary)';}
+    // aller-retour sans quitter la pièce : Placer depuis une pièce sans sous-composants → l'assemblage
+    // qui la contient, elle sélectionnée ; Modéliser depuis Placer → la pièce sélectionnée
+    b.onclick=ev=>{ev.stopPropagation();if(on)return;
+      const P=asm.path.slice();
+      if(k==='asm'){if(!asmActiveComp().occ.length&&P.length)asmShow(P.slice(0,-1),'asm',P[P.length-1]);else asmShow(P,'asm');}
+      else asmShow(asmSelId?P.concat(asmSelId):P,'part');};
+    sw.appendChild(b);});
+  d.appendChild(sw);
   t.appendChild(d);
   asmCompsSection(t);
 }

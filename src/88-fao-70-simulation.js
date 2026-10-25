@@ -608,6 +608,7 @@ function faoViewerPieceBodyApply(){
       if(vw.matterOn!==false)faoViewerMatterHideBodies(vw); // matière ON : invariant
     }
   }catch(e){}
+  try{ refreshMirror(); }catch(e){} // V0.7.5 : corps masqués pendant la lecture : le sol suit
 }
 function faoViewerHoldApply(){
   // Case « corps outil » (mandrin gris) : cachée pendant la lecture, l'outil
@@ -1090,6 +1091,7 @@ function faoViewerOpen(){
     faoViewerMatterBarUpdate();
     faoViewerPieceBodyApply(); // état des cases (persistées entre deux ouvertures)
     faoViewerHoldApply();
+    try{ refreshMirror(); }catch(e){} // V0.7.5 : le sol passe sous le brut simulé
     return true;
   }catch(e){
     // Rollback complet : JAMAIS d'état « mi-ouvert » bloqué (aucune trace, aucun ✕).
@@ -1115,6 +1117,7 @@ function faoViewerClose(){
   }
   try{ if(faoVwBar)faoVwBar.style.display='none'; }catch(e){}
   faoViewerBtnUpdate();
+  try{ refreshMirror(); }catch(e){} // V0.7.5 : le brut simulé parti, le sol revient sous les pièces
 }
 function faoViewerStart(){
   if(faoVw&&faoVw.playing)return true;
