@@ -2,7 +2,7 @@
 
 **CAO paramétrique, assemblage, FAO et mise en plan dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2, G-code et planches cotées ISO. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.7.0** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.7.1** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Sommaire
 
@@ -49,7 +49,7 @@ Une seule interface, organisée en **trois espaces** : **CAO**, **FAO** et **PLA
 **Dessin et contraintes**
 - **Outils** : ligne, rectangle (coin ou centre), oblong, cercle, arc, points de construction et de perçage, **projection associative** d'arêtes 3D, congé, chanfrein et décalage 2D, ajustement (trim).
 - **Contraintes** (13) : horizontal, vertical, parallèle, perpendiculaire, colinéaire, égal, symétrie (y compris par rapport à une droite infinie), tangence (le côté se choisit), coaxial, milieu, fixe, coïncident, construction.
-- **Solveur** : moindres carrés (Levenberg-Marquardt). Le panneau « Santé » affiche les degrés de liberté réels ; l'esquisse est bleue (sous-contrainte) ou blanche (totalement contrainte).
+- **Solveur** : moindres carrés (Levenberg-Marquardt) au **moindre déplacement** : le reste de l'esquisse bouge le moins possible, un point tenu sur une courbe glisse. Un **glisser avance par petits pas**, chacun résolu depuis le précédent, sans sauter vers la solution symétrique ; au bord de ce que la géométrie peut atteindre, elle s'arrête. Une **cote ou une contrainte impossible est refusée** : l'esquisse reste telle quelle et la barre d'état dit pourquoi. Le panneau « Santé » affiche les degrés de liberté réels ; l'esquisse est bleue (sous-contrainte) ou blanche (totalement contrainte).
 - **Cotes pilotées** : longueur, Ø, rayon, distance, angle, entraxe ; cotes de référence ; saisie dynamique de la longueur et de l'angle pendant le tracé.
 - **Paramètres nommés** (`nom = valeur`) et **expressions ƒx**, dans les cotes comme dans les champs des fonctions 3D.
 - **Raccourcis** `F1`–`F12` (contraintes), `H` (centre de perçage), `L` `C` `R` `B` `P` `T` `D` `F` `O` (outils), `X` (construction), `N` (à plat), plus une aide intégrée.

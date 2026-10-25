@@ -805,7 +805,13 @@ function skNewPid(sk){sk.seq=sk.seq||1;return 'p'+(sk.seq++);}
 function skNewEid(sk){sk.seq=sk.seq||1;return 'e'+(sk.seq++);}
 function addPoint(sk,x,y){const id=skNewPid(sk);skPts(sk)[id]={x,y};return id;}
 function pidAt(sk,x,y){let best=null,bd=0.01;Object.keys(skPts(sk)).forEach(pid=>{const p=sk.points[pid];const d=Math.hypot(p.x-x,p.y-y);if(d<bd){bd=d;best=pid;}});return best||addPoint(sk,x,y);}
-function entById(sk,id){return (sk.entities||[]).find(e=>e.id===id);}
+// V0.7.1 : pendant une résolution (sklsSolveLM), les entités ne changent pas — index par id et
+// points fixés calculés une fois (le résidu est évalué des milliers de fois). Hors résolution : recherche.
+let skLmCtx=null; // {sk, ents:Map id→entité, fix:Set}
+function entById(sk,id){
+  if(skLmCtx&&skLmCtx.sk===sk){const e=skLmCtx.ents.get(id);if(e!==undefined)return e;}
+  return (sk.entities||[]).find(e=>e.id===id);
+}
 // 2026-10-15-009 : CÔTÉ des cotes à distance perpendiculaire (entraxe, point ↔ ligne).
 // Écrites (d² − w²)/2w, elles admettaient ±w : quand une référence bougeait (projection
 // associative), le solveur pouvait rejoindre la solution MIROIR — « Cavité Usinage » :
@@ -987,6 +993,7 @@ function skDedupConstraints(sk){
 
 /* ----- solveur par relaxation (contraintes + cotes pilotantes) ----- */
 function skFixed(sk){
+  if(skLmCtx&&skLmCtx.sk===sk)return new Set(skLmCtx.fix);
   const f=new Set();
   (sk.constraints||[]).forEach(c=>{
     if(c.type==='fix'&&c.p)f.add(c.p);
@@ -1393,13 +1400,22 @@ function sklsBuild(sk,fix){
   const pts=[],rad=[],r0={};
   Object.keys(sk.points).forEach(pid=>{if(fix.has(pid))return;pts.push(pid);});
   (sk.entities||[]).forEach(e=>{if((e.t==='circle'||e.t==='arc')&&!rLocked(sk,e)){rad.push(e.id);r0[e.id]=e.r;}});
-  return{pts,rad,r0,n:2*pts.length+rad.length};
+  // V0.7.1 : points tenus sur une courbe (sur ligne / sur cercle) — moins chers à déplacer :
+  // ils GLISSENT sur la courbe au lieu d'entraîner les extrémités de celle-ci
+  const slide=new Set();(sk.constraints||[]).forEach(c=>{if(c&&(c.type==='online'||c.type==='oncircle')&&c.p)slide.add(c.p);});
+  return{pts,rad,r0,slide,n:2*pts.length+rad.length};
 }
 function sklsApply(sk,B,x){
   B.pts.forEach((pid,i)=>{const p=sk.points[pid];if(p){p.x=x[2*i];p.y=x[2*i+1];}});
   B.rad.forEach((eid,j)=>{const e=entById(sk,eid);if(e)e.r=Math.max(x[2*B.pts.length+j],0.01);});
 }
 const SK_GEO_W=300; // poids des contraintes géométriques face aux cotes (LM)
+const SK_SLIDE_W=0.01; // coût relatif du déplacement d'un point tenu sur une courbe (LM)
+// structure du Jacobien creux, par esquisse (WeakMap : jamais enregistrée dans le fichier)
+const SK_JPAT=new WeakMap();
+function sklsSig(sk,B,m){ // signature de la structure : inconnues, lignes, contraintes et cotes
+  return m+'|'+B.pts.join(',')+'|'+B.rad.join(',')+'|'+(sk.constraints||[]).map(c=>c&&c.id).join(',')+'|'+(sk.dims||[]).map(d=>d.id+(d.ref?'r':'')).join(',');
+}
 let skForRank=false; // analyse de rang seulement : équations implicites ajoutées (pied des congés)
 function sklsCollect(sk,out,B){
   // résidu vectoriel complet : cotes + contraintes + structure des arcs + ancrage des rayons libres.
@@ -1420,7 +1436,9 @@ function sklsCollect(sk,out,B){
     if(d.type==='angle'){
       const fr=angleFrame(sk,d);if(fr){
         const TAU=Math.PI*2,want=angleWant(d,fr.delta);
-        let e=want-fr.delta;if(e>Math.PI)e-=TAU;else if(e<-Math.PI)e+=TAU;push(e);
+        let e=want-fr.delta;if(e>Math.PI)e-=TAU;else if(e<-Math.PI)e+=TAU;
+        // V0.7.1 : résidu en mm (arc au plus long rayon, skAngScale) — en radians il ne pesait rien face aux mm
+        push(e*skAngScale(fr));
       }
     }
     if(d.type==='gap'){
@@ -1563,7 +1581,13 @@ function sklsCollect(sk,out,B){
   }
   return out;
 }
-function sklsSolveLM(sk,B,x,iters){
+function sklsSolveLM(sk,B,x,iters,deadline){
+  const prev=skLmCtx,fix=skFixed(sk),ents=new Map();
+  (sk.entities||[]).forEach(e=>{if(e&&!ents.has(e.id))ents.set(e.id,e);}); // 1re occurrence, comme find
+  skLmCtx={sk,ents,fix};
+  try{return sklsSolveLMCore(sk,B,x,iters,deadline);}finally{skLmCtx=prev;}
+}
+function sklsSolveLMCore(sk,B,x,iters,deadline){
   // Levenberg–Marquardt numérique sur le résidu vectoriel F (construit par sklsCollect).
   // Minimise ‖F‖². Jacobien J colonne par colonne (différences finies centrées),
   // système normal (JᵀJ+λ·diag)·δ = −JᵀF résolu par Cholesky.
@@ -1582,49 +1606,105 @@ function sklsSolveLM(sk,B,x,iters){
   // objectif initial
   apply();let cur=saveBest();
   if(!isFinite(cur)||cur>1e15){restoreBest();return false;} // état initial aberrant
+  // V0.7.1 : amortissement au MOINDRE DÉPLACEMENT (λ·W, W = 1 par inconnue) et non par la
+  // diagonale de JᵀJ (Marquardt) : parmi les pas qui réduisent autant le résidu, le plus court
+  // en mm. Avec la diagonale, une inconnue que les résidus « voient peu » était bon marché :
+  // un point tenu sur une ligne faisait pivoter l'autre bout de la ligne au lieu de glisser.
+  // Un point sur courbe coûte SK_SLIDE_W fois moins : c'est lui qui glisse.
+  const W=new Float64Array(n).fill(1);
+  if(B.slide&&B.slide.size)B.pts.forEach((pid,i)=>{if(B.slide.has(pid)){W[2*i]=SK_SLIDE_W;W[2*i+1]=SK_SLIDE_W;}});
   let lam=1e-3;
+  // V0.7.1 : JACOBIEN CREUX par colonnes groupées (Curtis–Powell–Reid). Une contrainte ne lit que
+  // 2 à 6 inconnues : les colonnes qui n'ont AUCUNE ligne en commun sont décalées ensemble, et
+  // chaque ligne n'y voit bouger que sa propre inconnue — même dérivée qu'une par une, pour
+  // 2·(nombre de groupes) évaluations du résidu au lieu de 2n. La structure (lignes non nulles de
+  // chaque colonne) est relevée sur un Jacobien complet, gardée par esquisse tant que sa
+  // signature ne change pas. Avant de s'arrêter SANS avoir convergé après des itérations creuses,
+  // un Jacobien complet est recalculé et réuni à la structure (une dérivée nulle par hasard au
+  // relevé y entre) : l'arrêt est décidé sur un Jacobien complet, comme avant.
+  let pat=null,groups=null,sig=null,needFull=false,sparseUsed=false;
+  const regroup=()=>{
+    const order=[...Array(n).keys()].sort((a,b)=>pat[b].length-pat[a].length);
+    const used=[];groups=[];
+    order.forEach(j=>{let g=0;
+      for(;g<groups.length;g++){const u=used[g];if(pat[j].every(r=>!u[r]))break;}
+      if(g===groups.length){groups.push([]);used.push(new Uint8Array(f.length));}
+      groups[g].push(j);pat[j].forEach(r=>{used[g][r]=1;});});
+    SK_JPAT.set(sk,{sig,pat});
+  };
   for(let it=0;it<iters;it++){
+    if(deadline&&it>0&&Date.now()>deadline)break; // budget de temps (prolongation)
     collect(f);
     const m=f.length;
     if(!m)return true;
+    if(cur<1e-24)break; // déjà résolue (‖F‖ < 1e-12) : aucun Jacobien à calculer
+    if(sig===null){sig=sklsSig(sk,B,m);const c=SK_JPAT.get(sk);if(c&&c.sig===sig){pat=c.pat.map(a=>a.slice());regroup();}}
     const J=new Float64Array(m*n);
-    let nR=0;
-    for(let j=0;j<n;j++){
-      const xj=x[j],h=Math.max(1e-7,Math.abs(xj)*1e-6);
-      x[j]=xj+h;apply();sklsCollect(sk,fph,B);const fp=[];for(let r=0;r<fph.length;r++)fp[r]=fph[r];
-      x[j]=xj-h;apply();sklsCollect(sk,fmi,B);const fm=[];for(let r=0;r<fmi.length;r++)fm[r]=fmi[r];
-      x[j]=xj;apply();
-      nR=fp.length;
-      for(let r=0;r<nR&&r<m;r++)J[r*n+j]=(fp[r]-fm[r])/(2*h);
+    let nR=m;
+    const full=!pat||needFull;needFull=false;
+    if(full){
+      sparseUsed=false;
+      for(let j=0;j<n;j++){
+        const xj=x[j],h=Math.max(1e-7,Math.abs(xj)*1e-6);
+        x[j]=xj+h;apply();sklsCollect(sk,fph,B);const fp=fph.slice();
+        x[j]=xj-h;apply();sklsCollect(sk,fmi,B);const fm=fmi.slice();
+        x[j]=xj;apply();
+        nR=fp.length;if(fm.length!==nR)nR=-1;
+        for(let r=0;r<nR&&r<m;r++)J[r*n+j]=(fp[r]-fm[r])/(2*h);
+      }
+      if(nR===m){
+        const np=[];for(let j=0;j<n;j++){const s=new Set(pat?pat[j]:[]);for(let r=0;r<m;r++)if(J[r*n+j]!==0)s.add(r);np.push([...s].sort((a,b)=>a-b));}
+        pat=np;regroup();
+      }
+    }else{
+      sparseUsed=true;
+      const x0=x.slice(),hs=new Float64Array(n);for(let j=0;j<n;j++)hs[j]=Math.max(1e-7,Math.abs(x0[j])*1e-6);
+      for(const G of groups){
+        for(const j of G)x[j]=x0[j]+hs[j];apply();sklsCollect(sk,fph,B);
+        for(const j of G)x[j]=x0[j]-hs[j];apply();sklsCollect(sk,fmi,B);
+        for(const j of G)x[j]=x0[j];
+        if(fph.length!==m||fmi.length!==m){nR=-1;break;}
+        for(const j of G){const h2=2*hs[j];for(const r of pat[j])J[r*n+j]=(fph[r]-fmi[r])/h2;}
+      }
+      apply();
+      if(nR!==m){pat=null;SK_JPAT.delete(sk);it--;continue;} // structure changée : Jacobien complet
     }
     if(nR!==m){break;} // structure instable : on garde le meilleur état atteint
     // g=JᵀF ; H≈JᵀJ
-    const g=new Float64Array(n),H=new Float64Array(n*n);
-    for(let i=0;i<n;i++){let s=0;for(let r=0;r<m;r++)s+=J[r*n+i]*f[r];g[i]=s;}
-    for(let i=0;i<n;i++)for(let j=0;j<=i;j++){
-      let s=0;for(let r=0;r<m;r++)s+=J[r*n+i]*J[r*n+j];
-      H[i*n+j]=s;if(j<i)H[j*n+i]=s;
+    // ligne par ligne sur les seules dérivées non nulles (2 à 6 par ligne) : m·k² au lieu de n²·m
+    const g=new Float64Array(n),H=new Float64Array(n*n),nzi=new Int32Array(n),nzv=new Float64Array(n);
+    for(let r=0;r<m;r++){
+      let k=0;const o=r*n,fr=f[r];
+      for(let j=0;j<n;j++){const v=J[o+j];if(v!==0){nzi[k]=j;nzv[k]=v;k++;}}
+      for(let a=0;a<k;a++){const i=nzi[a],va=nzv[a];g[i]+=va*fr;const oi=i*n;for(let b=0;b<k;b++)H[oi+nzi[b]]+=va*nzv[b];}
     }
-    const A=new Float64Array(n*n);
-    for(let i=0;i<n;i++)for(let j=0;j<n;j++)A[i*n+j]=H[i*n+j];
-    for(let i=0;i<n;i++)A[i*n+i]+=lam*(Math.abs(H[i*n+i])+1e-6);
-    const dg=new Float64Array(n);for(let i=0;i<n;i++)dg[i]=-g[i];
-    if(!cholSolve(A,dg,n)){lam*=10;if(lam>1e12){restoreBest();break;}continue;}
-    const xsv=new Float64Array(n);for(let i=0;i<n;i++)xsv[i]=x[i];
-    for(let i=0;i<n;i++)x[i]+=dg[i];apply();
-    const e2=saveBest();
-    if(isFinite(e2)&&e2<=cur){
-      const imp=cur-e2;
-      cur=e2;
-      lam=Math.max(lam*0.3,1e-8);
-      if(imp<1e-10*Math.max(1e-12,cur)||cur<1e-14)break;
-    }else{
-      for(let i=0;i<n;i++)x[i]=xsv[i];apply();
-      // refus : si l'écart n'est que du bruit (point déjà stationnaire) → convergence
-      if(isFinite(e2)&&e2-cur<1e-10*Math.max(1e-12,cur))break;
-      lam*=10;
-      if(lam>1e12){restoreBest();break;}
+    // V0.7.1 : un pas refusé est REDEMANDÉ avec un amortissement plus fort sur le MÊME Jacobien
+    // (le point n'a pas bougé) — avant, chaque refus recalculait les 2n évaluations du résidu.
+    const A=new Float64Array(n*n),dg=new Float64Array(n),xsv=new Float64Array(n);
+    let accepted=false,stop=false;
+    while(!accepted&&!stop){
+      for(let i=0;i<n*n;i++)A[i]=H[i];
+      for(let i=0;i<n;i++)A[i*n+i]+=lam*W[i]+1e-9;
+      for(let i=0;i<n;i++)dg[i]=-g[i];
+      if(!cholSolve(A,dg,n)){lam*=10;if(lam>1e12){restoreBest();stop=true;}continue;}
+      for(let i=0;i<n;i++)xsv[i]=x[i];
+      for(let i=0;i<n;i++)x[i]+=dg[i];apply();
+      const e2=saveBest();
+      if(isFinite(e2)&&e2<=cur){
+        const imp=cur-e2;
+        cur=e2;accepted=true;
+        lam=Math.max(lam*0.3,1e-8);
+        if(imp<1e-10*Math.max(1e-12,cur)||cur<1e-14)stop=true;
+      }else{
+        for(let i=0;i<n;i++)x[i]=xsv[i];apply();
+        // refus : si l'écart n'est que du bruit (point déjà stationnaire) → convergence
+        if(isFinite(e2)&&e2-cur<1e-10*Math.max(1e-12,cur)){stop=true;break;}
+        lam*=10;
+        if(lam>1e12){restoreBest();stop=true;}
+      }
     }
+    if(stop&&sparseUsed&&cur>=1e-14){needFull=true;lam=Math.min(lam,1e-3);continue;} // pas convergé : vérifier sur un Jacobien complet
+    if(stop)break;
   }
   restoreBest();
   return true;
@@ -1685,6 +1765,34 @@ function skSolveFinal(sk,anchor){
   if(rES<best.r-1e-9)best={r:rES,snap:skSnapCoords(sk)};
   skRestoreCoords(sk,best.snap);
 }
+// V0.7.1 : une esquisse est RÉSOLUE quand aucune cote ni contrainte n'est violée de plus que le
+// seuil d'alerte de l'audit (lignes rouges, 0,05 mm).
+const SK_OK_RES=0.05;
+function skResid(sk){try{const r=skAudit(sk).residual;return isFinite(r)?r:Infinity;}catch(e){return Infinity;}}
+function skWorstViol(sk){
+  // les éléments en défaut (3 au plus, du plus grand écart au plus petit) : le conflit en a au moins deux
+  try{const a=(skAudit(sk).all||[]).filter(o=>o.viol>SK_OK_RES).sort((p,q)=>q.viol-p.viol).slice(0,3);
+    return a.map(w=>w.desc+' en défaut de '+(w.viol<100?w.viol.toFixed(2):'plus de 100')+' mm').join(', ');}catch(e){return '';}
+}
+function skSolveOrRevert(sk,label){
+  // V0.7.1 : ÉCHEC = RETOUR ARRIÈRE. Après une modification précédée de skPushUndo : résout ;
+  // si l'esquisse était résolue avant et ne l'est plus, la modification est annulée et
+  // l'esquisse revient EXACTEMENT à son état précédent (au lieu de garder la « moins mauvaise »
+  // solution, souvent déformée ou retournée). Une esquisse déjà en défaut n'est pas bloquée.
+  const before=skUndoStack[skUndoStack.length-1];
+  solveSketch(sk);
+  if(sk!==skEdit||!before||skResid(sk)<=SK_OK_RES)return true;
+  if(skResid({points:before.points,entities:before.entities,constraints:before.constraints,dims:before.dims})>SK_OK_RES)return true;
+  const why=skWorstViol(sk);
+  // restauration SANS nouvelle résolution (skRestore résout) : coordonnées exactement celles d'avant
+  skUndoStack.pop();
+  skEdit.points=before.points;skEdit.entities=before.entities;skEdit.constraints=before.constraints;skEdit.dims=before.dims;
+  try{skRefreshHealth();}catch(e){}
+  skUndoBtn();
+  try{if(typeof parApplyAll==='function')parApplyAll();}catch(e){}
+  skMsg='⛔ '+label+' impossible'+(why?' ('+why+')':'')+' : esquisse laissée telle quelle.';skStatus(skMsg);
+  return false;
+}
 /* solveur principal : essaie le moindres carrés (LM) ET la relaxation, puis garde le meilleur
    des deux (mesuré par le résidu d'audit maximal). C'est le LM qui relève les systèmes
    bien posés ; la relaxation conserve les cas qu'elle résolvait déjà (sous/pluridéterminés). */
@@ -1704,6 +1812,13 @@ function solveSketch(sk,iters,anchor){
       B.pts.forEach((pid,i)=>{const p=sk.points[pid];x[2*i]=p.x;x[2*i+1]=p.y;});
       B.rad.forEach((eid,j)=>{const e=entById(sk,eid);x[2*B.pts.length+j]=e?e.r:1;});
       sklsSolveLM(sk,B,x,iters);
+      // V0.7.1 : pas encore convergé (système mal conditionné : congés égaux, tangences ×300 face
+      // aux cotes) → on PROLONGE depuis le point atteint, jusqu'à 8× le budget et 400 ms au plus
+      // (pas pendant un glisser, dont les pas à 40 itérations doivent rester rapides).
+      // Ex. Cavité Usinage, esquisse 11 : angle de 24° résolu en ~500 itérations, pas en 120.
+      {const fr=[];sklsCollect(sk,fr,B);let mx=0;for(let i=0;i<fr.length;i++)mx=Math.max(mx,Math.abs(fr[i]));
+        if(mx>1e-6&&iters>=100){B.pts.forEach((pid,i)=>{const p=sk.points[pid];x[2*i]=p.x;x[2*i+1]=p.y;});B.rad.forEach((eid,j)=>{const e=entById(sk,eid);x[2*B.pts.length+j]=e?e.r:1;});
+          sklsSolveLM(sk,B,x,iters*8,Date.now()+400);}}
       skSolveFinal(sk,anchor);
       try{const r=skAudit(sk).score||0;if(isFinite(r)){lsSnap=skSnapCoords(sk);lsRes=r;}}catch(e){}
     }
@@ -3062,7 +3177,7 @@ function editDim(id){
     skPushUndo();
     const rr=parDimCommit(sk,d,v);
     if(!rr.ok){skUndoStack.pop();skUndoBtn();alert(rr.msg);return;}
-    d.value=rr.nv; parApplyAll(); solveSketch(sk);drawSketch2D();renderSkPanel(); return;
+    d.value=rr.nv; parApplyAll(); skSolveOrRevert(sk,'Cote');drawSketch2D();renderSkPanel(); return;
   }
   const [sx,sy]=skOrbFwd(...w2s(pos.x,pos.y)); // position affichée (orbite comprise)
   const r=svg.getBoundingClientRect();
@@ -3088,8 +3203,8 @@ function editDim(id){
     if(!rr.ok){ skUndoStack.pop();skUndoBtn(); skStatus(rr.msg); drawSketch2D(); return; }
     const nv=rr.nv;
     skFirstDimScale(sk,d,nv); // 11. esquisse encore libre : toute la forme suit, à l'échelle
-    d.value=nv; parApplyAll(); solveSketch(sk);drawSketch2D();renderSkPanel();
-    if(d.name)skStatus('Cote nommée « '+d.name+' » — utilisable dans les autres cotes (ƒx).');
+    d.value=nv; parApplyAll(); const ok=skSolveOrRevert(sk,'Cote');drawSketch2D();renderSkPanel();
+    if(ok&&d.name)skStatus('Cote nommée « '+d.name+' » — utilisable dans les autres cotes (ƒx).');
   };
   inp.addEventListener('keydown',e=>{
     if(e.key==='Enter'){ commit(false); }
@@ -3174,7 +3289,7 @@ function renderSkPanel(){
     const r=document.createElement('div');r.className='skrow';
     const l=document.createElement('label');l.textContent=lab;r.appendChild(l);
     const i=document.createElement('input');i.type='number';i.step='0.5';i.value=(+val).toFixed(2);
-    i.onchange=()=>{const f=parseFloat(i.value);if(isFinite(f)){skPushUndo();fn(f);solveSketch(sk);drawSketch2D();renderSkPanel();}};
+    i.onchange=()=>{const f=parseFloat(i.value);if(isFinite(f)){skPushUndo();fn(f);skSolveOrRevert(sk,'Valeur');drawSketch2D();renderSkPanel();}};
     r.appendChild(i);box.appendChild(r);
   };
   const addBtn=(label,fn)=>{
@@ -3290,8 +3405,8 @@ function applyCon(type){
       if(has(c=>c.type==='oncircle'&&c.p===p&&c.ent===e.id)){skStatus('Point déjà sur ce cercle.');return;}
       skPushUndo();sk.constraints.push({id:skNewEid(sk),type:'oncircle',p,ent:e.id});
     }else{skStatus('Coïncident : sélectionnez 2 points, ou 1 point + 1 ligne (il glissera sur toute la droite), ou 1 point + 1 cercle/arc (Ctrl/Cmd+clic pour le 2ᵉ).');return;}
-    skMsg='';solveSketch(sk);drawSketch2D();renderSkPanel();
-    skStatus(pts.length===2?'Points coïncidents ⌖.':(lines.length?'Point sur la droite ⌖ — il peut glisser au-delà du segment.':'Point sur la courbe ⌖.'));
+    skMsg='';const ok=skSolveOrRevert(sk,'Contrainte');drawSketch2D();renderSkPanel();
+    if(ok)skStatus(pts.length===2?'Points coïncidents ⌖.':(lines.length?'Point sur la droite ⌖ — il peut glisser au-delà du segment.':'Point sur la courbe ⌖.'));
     return;
   }
   if(type==='h'||type==='v'){
@@ -3344,8 +3459,8 @@ function applyCon(type){
     skPushUndo();
     sk.constraints.push({id:skNewEid(sk),type:'collinear',a:a.id,b:b.id});
     sk.constraints=skDedupConstraints(sk); // la ∥ éventuelle sur cette paire devient redondante
-    skMsg='';solveSketch(sk);drawSketch2D();renderSkPanel();
-    skStatus('Colinéaire — les 2 lignes portées par la même droite.');
+    skMsg='';const ok=skSolveOrRevert(sk,'Contrainte');drawSketch2D();renderSkPanel();
+    if(ok)skStatus('Colinéaire — les 2 lignes portées par la même droite.');
     return;
   }
   if(type==='symmetric'){
@@ -3369,25 +3484,25 @@ function applyCon(type){
   if(type==='midpoint'){
     const pts=[];if(skSel&&skSel.kind==='point')pts.push(skSel.pid);
     skSelX.forEach(s=>{if(s.kind==='point'&&!pts.includes(s.pid))pts.push(s.pid);});
-    const finish=()=>{skMsg='';solveSketch(sk);drawSketch2D();renderSkPanel();};
+    const finish=()=>{skMsg='';const ok=skSolveOrRevert(sk,'Contrainte');drawSketch2D();renderSkPanel();return ok;};
     if(lines.length===2&&pts.length===0){
       const[a,b]=lines;
       if(a.id===b.id){skStatus('Milieu : sélectionnez 2 lignes distinctes.');return;}
       if((sk.constraints||[]).some(c=>c.type==='midpoint'&&((c.a===a.id&&c.b===b.id)||(c.a===b.id&&c.b===a.id)))){skStatus('Milieux égaux déjà posés ⊕.');return;}
       skPushUndo();
       sk.constraints.push({id:skNewEid(sk),type:'midpoint',a:a.id,b:b.id});
-      finish();skStatus('Milieux égaux ⊕ — les 2 lignes se centrent l\u2019une sur l\u2019autre.');
+      if(finish())skStatus('Milieux égaux ⊕ — les 2 lignes se centrent l\u2019une sur l\u2019autre.');
     }else if(lines.length===1&&pts.length===1){
       if((sk.constraints||[]).some(c=>c.type==='midpoint'&&c.p===pts[0]&&c.line===lines[0].id)){skStatus('Point au milieu déjà posé ⊕.');return;}
       skPushUndo();
       sk.constraints.push({id:skNewEid(sk),type:'midpoint',p:pts[0],line:lines[0].id});
-      finish();skStatus('Point au milieu de la ligne ⊕ — la ligne reste entière.');
+      if(finish())skStatus('Point au milieu de la ligne ⊕ — la ligne reste entière.');
     }else{
       skStatus('Milieu ⊕ : sélectionnez 2 lignes (milieux égaux) ou 1 point + 1 ligne (point au centre).');
     }
     return;
   }
-  skMsg='';solveSketch(sk);drawSketch2D();renderSkPanel();
+  skMsg='';skSolveOrRevert(sk,'Contrainte');drawSketch2D();renderSkPanel();
 }
 function deleteSkSel(){
   // Supprime la sélection SIMPLE ou MULTIPLE (fenêtre, Ctrl/Cmd+clic) : entités, points
@@ -3442,7 +3557,7 @@ function skAudit(sk){
         const want=angleWant(d,fr.delta);
         let e=want-fr.delta;
         if(e>Math.PI)e-=TAU;else if(e<-Math.PI)e+=TAU;
-        push(d.id,'angle',Math.abs(e));}}
+        push(d.id,'angle',Math.abs(e)*skAngScale(fr));}}
     if(d.type==='gap'){const A=entById(sk,d.a),B=entById(sk,d.b);
       if(A&&B&&A.t==='line'&&B.t==='line'){const P0=sk.points;
         const A1=P0[A.p1],A2=P0[A.p2],B1=P0[B.p1],B2=P0[B.p2];
@@ -3751,8 +3866,12 @@ function angleFrame(sk,d){
   const sA=Math.atan2(fA.y-V.y,fA.x-V.x),sB=Math.atan2(fB.y-V.y,fB.x-V.x);
   const TAU=Math.PI*2;
   let delta=(sB-sA)%TAU;if(delta<=-Math.PI)delta+=TAU;else if(delta>Math.PI)delta-=TAU;
-  return{V,sA,sB,delta};
+  // rA/rB : longueurs des rayons du secteur — échelle (mm) du résidu d'angle
+  return{V,sA,sB,delta,rA:Math.hypot(fA.x-V.x,fA.y-V.y),rB:Math.hypot(fB.x-V.x,fB.y-V.y)};
 }
+// échelle (mm) d'un écart d'angle : au bout du PLUS LONG rayon, là où il se voit (au plus court, un
+// côté écrasé ramenait l'écart en radians et un angle faux de 2,6° passait sous le seuil d'alerte)
+function skAngScale(fr){return Math.max(1,fr.rA||0,fr.rB||0);}
 function createAngleDim(sk,A,B){ // cote d'angle depuis le secteur RÉEL |delta|∈(0,π) — jamais l'angle aigu lineAngle (=renversement)
   if(!sk||!A||!B||A.t!=='line'||B.t!=='line')return null;
   const fr=angleFrame(sk,{a:A.id,b:B.id});

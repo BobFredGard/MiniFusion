@@ -347,6 +347,58 @@ function skSymCenters(sk){
   (sk.constraints||[]).forEach(c=>{if(c&&c.type==='symmetric'){const M=entById(sk,c.mid);if(M&&M.t==='line'){[M.p1,M.p2].forEach(p=>{cnt[p]=(cnt[p]||0)+1;});}}});
   return Object.keys(cnt).filter(p=>cnt[p]>=2&&sk.points[p]);
 }
+// V0.7.1 : GLISSER PAR PETITS PAS. Une esquisse contrainte a souvent plusieurs solutions
+// pour une même position du curseur (congé dedans ou dehors, arc retourné…) ; résolue depuis
+// loin, l'itération peut atterrir sur n'importe laquelle — l'esquisse « décroche ». Le chemin
+// du curseur depuis la dernière position résolue est donc découpé en pas courts devant la plus
+// petite cote / le plus petit rayon, chacun résolu depuis le résultat du précédent. Un pas qui
+// laisse l'esquisse non résolue est divisé par deux ; en deçà d'un huitième de pas, la géométrie
+// s'arrête au bord de ce qu'elle peut atteindre — l'écran ne montre jamais un état non résolu.
+const SK_DRAG_FRAC=0.25,SK_DRAG_MAX_STEPS=24,SK_DRAG_MAX_SOLVES=40;
+let skDragWalk=null; // {last:coords résolues, r:résidu, at:{x,y} position du curseur atteinte, step:mm}
+function skDragStep(sk,pids){
+  // longueur de pas : fraction de la plus petite longueur pilotante (cotes, rayons, lignes touchées)
+  let m=Infinity;const take=v=>{v=Math.abs(+v);if(v>1e-6&&v<m)m=v;};
+  (sk.dims||[]).forEach(d=>{if(d.ref||d.type==='angle')return;take(d.type==='diameter'?d.value/2:d.value);});
+  (sk.entities||[]).forEach(e=>{
+    if(e.t==='circle'||e.t==='arc')take(e.r);
+    else if(e.t==='line'&&(pids.indexOf(e.p1)>=0||pids.indexOf(e.p2)>=0)){const A=sk.points[e.p1],B=sk.points[e.p2];if(A&&B)take(Math.hypot(B.x-A.x,B.y-A.y));}
+  });
+  const px=(typeof skView!=='undefined'&&skView&&skView.s>0)?2/skView.s:0.05; // jamais moins de 2 px
+  return Math.max(isFinite(m)?m*SK_DRAG_FRAC:1,px,1e-3);
+}
+function skBranchVecs(sk){
+  // vecteurs qui distinguent une solution de sa symétrique : lignes, rayons vers les bouts d'arc, cotes point-point
+  const P=sk.points,V=[],add=(a,b)=>{const A=P[a],B=P[b];V.push(A&&B?[B.x-A.x,B.y-A.y]:null);};
+  (sk.entities||[]).forEach(e=>{if(e.t==='line')add(e.p1,e.p2);else if(e.t==='arc'){add(e.pc,e.pa);add(e.pc,e.pb);}});
+  (sk.dims||[]).forEach(d=>{if(d.type==='distance')add(d.a,d.b);});
+  return V;
+}
+function skBranchJump(V0,V1){
+  // saut de branche : une composante change de signe alors qu'elle portait plus de la moitié du
+  // vecteur avant ET après. Une rotation continue ne retourne une composante qu'en passant près de 0.
+  for(let i=0;i<V0.length&&i<V1.length;i++){const a=V0[i],b=V1[i];if(!a||!b)continue;
+    const la=Math.hypot(a[0],a[1]),lb=Math.hypot(b[0],b[1]);if(!(la>1e-6&&lb>1e-6))continue;
+    for(let k=0;k<2;k++)if(a[k]*b[k]<0&&Math.abs(a[k])>0.5*la&&Math.abs(b[k])>0.5*lb)return true;}
+  return false;
+}
+function skDragWalkTo(sk,from,to,place,anchor,pids){
+  // marche de from vers to (positions du curseur) ; place(q) pose la géométrie tirée en q
+  let st=skDragWalk;
+  if(!st){st=skDragWalk={last:skSnapCoords(sk),r:skResid(sk),vec:skBranchVecs(sk),at:{x:from.x,y:from.y},step:skDragStep(sk,pids)};}
+  const a=st.at,D=Math.hypot(to.x-a.x,to.y-a.y);
+  if(!(D>1e-9)){skRestoreCoords(sk,st.last);return;}
+  const S=Math.max(st.step,D/SK_DRAG_MAX_STEPS),hMax=Math.min(1,S/D);
+  let t=0,h=hMax,n=0,at=a;
+  while(t<1-1e-12&&n<SK_DRAG_MAX_SOLVES){
+    const nt=Math.min(1,t+h),q={x:a.x+(to.x-a.x)*nt,y:a.y+(to.y-a.y)*nt};
+    skRestoreCoords(sk,st.last);place(q);solveSketch(sk,40,anchor);n++;
+    const r=skResid(sk),vec=skBranchVecs(sk);
+    if(r<=Math.max(SK_OK_RES,st.r+1e-6)&&!skBranchJump(st.vec,vec)){st.last=skSnapCoords(sk);st.r=r;st.vec=vec;at=q;t=nt;h=Math.min(hMax,h*2);}
+    else{h/=2;if(h*D<S/8)break;} // bord de ce que la géométrie atteint : on s'y arrête
+  }
+  st.at=at;skRestoreCoords(sk,st.last);
+}
 function skDragHold(sk,anchor){
   // 2026-10-16-003 : pendant un glisser, le CENTRE de symétrie reste en place (sauf s'il est
   // lui-même saisi) → un rectangle par le centre s'étire symétriquement, comme Fusion.
@@ -462,10 +514,10 @@ svg.addEventListener('pointerdown',e=>{
       if((nShared>1||coin)&&(isCtr||skDragRigid(sk,skDragComp(sk,[pid])))){
         const comp=skDragComp(sk,[pid]);
         const orig={};comp.pids.forEach(p=>{if(sk.points[p])orig[p]={x:sk.points[p].x,y:sk.points[p].y};});
-        skDragEnt={x0:wx,y0:wy,pids:comp.pids,orig,anchor:comp.pids.filter(p=>!skFixed(sk).has(p)),pushed:false};
+        skDragWalk=null;skDragEnt={x0:wx,y0:wy,pids:comp.pids,orig,anchor:comp.pids.filter(p=>!skFixed(sk).has(p)),pushed:false};
         renderSkPanel();drawSketch2D();return;
       }
-      skDrag=pid;skDragMoved=false;skDragPushed=false;renderSkPanel();drawSketch2D();return;
+      skDrag=pid;skDragWalk=null;skDragMoved=false;skDragPushed=false;renderSkPanel();drawSketch2D();return;
     }
     if(e.detail===2) return;
     const dlId=hitDimLine(sk,e.clientX-r0.left,e.clientY-r0.top); // ligne de cote : glisser = repositionner
@@ -485,7 +537,7 @@ svg.addEventListener('pointerdown',e=>{
       const rigid=skDragRigid(sk,comp0);
       const comp=rigid?comp0:{pids:skEntPids(ent).filter(p=>p&&sk.points[p]),ents:[ent.id]};
       const orig={};comp.pids.forEach(p=>{if(sk.points[p])orig[p]={x:sk.points[p].x,y:sk.points[p].y};});
-      skDragEnt={x0:wx,y0:wy,pids:comp.pids,orig,anchor:comp.pids.filter(p=>!skFixed(sk).has(p)),pushed:false,rigid};
+      skDragWalk=null;skDragEnt={x0:wx,y0:wy,pids:comp.pids,orig,anchor:comp.pids.filter(p=>!skFixed(sk).has(p)),pushed:false,rigid};
       renderSkPanel();drawSketch2D();return;
     }
     // clic sur le vide → boîte de sélection (gauche→droite : dedans · droite→gauche : croisé)
@@ -661,8 +713,9 @@ svg.addEventListener('pointermove',e=>{
     let nx=wx,ny=wy;
     if(s){nx=s.x;ny=s.y;skSnapMk={x:nx,y:ny};}
     else{if($('skSnap').checked){nx=skSnapVal(nx);ny=skSnapVal(ny);}skSnapMk=null;}
-    sk.points[skDrag]={x:nx,y:ny};skDragMoved=true;
-    solveSketch(sk,40,skDragHold(sk,[skDrag]));drawSketch2D();return;
+    const pid=skDrag,p0=sk.points[pid];skDragMoved=true;
+    skDragWalkTo(sk,{x:p0.x,y:p0.y},{x:nx,y:ny},q=>{sk.points[pid]={x:q.x,y:q.y};},skDragHold(sk,[pid]),[pid]);
+    drawSketch2D();return;
   }
   if(skDragEnt){
     const dx=wx-skDragEnt.x0,dy=wy-skDragEnt.y0;
@@ -672,11 +725,11 @@ svg.addEventListener('pointermove',e=>{
       if(!anyFree){skStatus('Entité fixée 🔒 — retirez « Fixe » pour la déplacer.');return;}
       skPushUndo();skDragEnt.pushed=true;
     }
-    skDragEnt.pids.forEach(p=>{
-      if(skFixed(sk).has(p))return;
-      const o=skDragEnt.orig[p];if(o)sk.points[p]={x:o.x+dx,y:o.y+dy};
-    });
-    solveSketch(sk,40,skDragEnt.rigid?skDragEnt.anchor:skDragHold(sk,skDragEnt.anchor));drawSketch2D();return;
+    const E=skDragEnt,fx=skFixed(sk);
+    const place=q=>{E.pids.forEach(p=>{if(fx.has(p))return;const o=E.orig[p];if(o)sk.points[p]={x:o.x+q.x,y:o.y+q.y};});};
+    if(E.rigid){place({x:dx,y:dy});solveSketch(sk,40,E.anchor);} // bloc indéformable : simple translation
+    else skDragWalkTo(sk,{x:0,y:0},{x:dx,y:dy},place,skDragHold(sk,E.anchor),E.pids);
+    drawSketch2D();return;
   }
   if(skDimDrag){
     const dd=dimById(sk,skDimDrag.id);if(!dd){skDimDrag=null;return;}
@@ -782,8 +835,8 @@ svg.addEventListener('pointerup',e=>{
   if(skPan){skPanDragged=skPan.moved;skPan=null;return;}
   if(!skEdit||e.button!==0)return;const sk=skEdit;const[wx,wy]=evXY(e);
   if(skDimDrag){skDimDrag=null;drawSketch2D();return;}
-  if(skDrag){skDrag=null;skDragPushed=false;skSnapMk=null;renderSkPanel();drawSketch2D();return;}
-  if(skDragEnt){const moved=skDragEnt.pushed;skDragEnt=null;if(moved){solveSketch(sk,60);renderSkPanel();skStatus('Entité déplacée.');}drawSketch2D();return;}
+  if(skDrag){skDrag=null;skDragWalk=null;skDragPushed=false;skSnapMk=null;renderSkPanel();drawSketch2D();return;}
+  if(skDragEnt){const moved=skDragEnt.pushed;skDragEnt=null;skDragWalk=null;if(moved){solveSketch(sk,60);renderSkPanel();skStatus('Entité déplacée.');}drawSketch2D();return;}
   if(skBox){
     const w=skBox;skBox=null;
     if(Math.hypot(w.x1-w.x0,w.y1-w.y0)*skView.s>5){
@@ -962,7 +1015,7 @@ function skEscapeToSelect(){
 function skCancelDraft(){
   skFilletSess=null;skCornerPick=null; // nouvelle passe de congés : nouvelle cote
   if(skDimPlace&&skEdit){skEdit.dims=skEdit.dims.filter(x=>x.id!==skDimPlace.id);skDimPlace=null;} // Échap pendant le placement annule la cote
-  skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skPendPt=null;skCoinA=null;skCornA=null;skOffArm=null;skDraft=null;skDown=null;skDrag=null;skDragEnt=null;skBox=null;skDyn=null;skDimDrag=null;skPan=null;skInfer=null;skMsg='';skDimLine=null;skDimRef=null;skProjectHover=null;hideSkCtx();if(skEdit){cleanupSk(skEdit);drawSketch2D();renderSkPanel();}}
+  skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skPendPt=null;skCoinA=null;skCornA=null;skOffArm=null;skDraft=null;skDown=null;skDrag=null;skDragEnt=null;skDragWalk=null;skBox=null;skDyn=null;skDimDrag=null;skPan=null;skInfer=null;skMsg='';skDimLine=null;skDimRef=null;skProjectHover=null;hideSkCtx();if(skEdit){cleanupSk(skEdit);drawSketch2D();renderSkPanel();}}
 function skMinLen(){
   // 2026-10-16-001 : longueur mini d'un tracé = 3 px ÉCRAN (et non 0,5 mm fixe) —
   // zoomer permet de dessiner des lignes / cercles aussi petits que voulu.
