@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**334 versions**, de `2026-09-28b` à `V0.8.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**335 versions**, de `2026-09-28b` à `V0.8.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4829,3 +4829,9 @@ Dernière étape de la série V0.8 (« toutes tes idées ») : piloter MiniFusio
 - **Pont** (menu Projet → « 🔌 Pilotage (MCP)… ») : la page se relie au serveur **seulement à la demande de l'utilisateur** (adresse locale obligatoire), exécute les scripts reçus et rend les résultats ; le bouton montre l'état et le nombre de scripts reçus ; recliquer coupe le lien.
 - **Correctif — coupe partielle** (« Perçages : problème de coupe sur Coupe B-B ») : le demi-espace qui coupe la pièce était un carré centré sur le PREMIER point de la ligne de coupe, de demi-côté « demi-diagonale de la pièce + 20 mm » ; une ligne tracée depuis le bord de la pièce (X −50) ne coupait rien au-delà de X 30,5 — hachures arrêtées net, matière de droite absente de la coupe. Le carré est centré sur le centre de la pièce projeté dans le plan de coupe (boîte des corps et de la forme coupée), le prisme allongé d'autant. `window.mepDebugGeo(id)` : géométrie d'une vue, pour le diagnostic en console.
 - **Tests** : `test_scripts` (noyau réel : plaque percée au volume exact, boîte, centre, paramètres, offset, une étape d'annulation, atomicité, op inconnue, forme fausse, expression fausse, JSON illisible, révolution d'une bague, configuration) ; `test_mcp_serveur` (processus réel : initialize, outils, sans page, origine distante refusée, page locale et file://, script transmis — trame longue —, état, erreurs) ; `test_scripts` (15) : coupe tracée depuis le bord, hachures de bout en bout. Vérifié de bout en bout dans Chrome : page reliée, `minifusion_info` par MCP.
+
+## V0.8.6 - Modèle de cartouche complet
+« L'export d'un cartouche n'exporte pas le texte et les images ; Enregistrer fait la même chose : le cartouche est vide au rappel. »
+- **Cause** : un modèle de cartouche ne gardait que l'esquisse (traits, textes fixes, emplacements des champs) ; le **logo** et les **valeurs** des champs (projet, société, client, n° de plan, auteur, matière, TTS, TTH, tolérances, champs perso…) vivent sur la planche et n'étaient ni enregistrés ni exportés. Le cartouche Standard ne pouvait pas être enregistré du tout.
+- **Correctif** (`mepTbPack` / `mepTbUnpack`, `src/98-mise-en-plan.js`) : « Enregistrer… », « Exporter… » (.mfcartouche) et le modèle par défaut emportent l'esquisse, le logo, les valeurs et les champs perso ; les rappeler (liste « Modèle », « Importer… », nouvelle planche) remet tout. La date et les champs calculés (planche, échelle, indice) restent ceux de la planche. Le cartouche Standard s'enregistre et s'exporte comme un dessiné. L'export prend le cartouche de la planche tel qu'il est, même s'il porte le nom d'un modèle déjà en bibliothèque. Les anciens modèles (sans valeurs) se rappellent comme avant.
+- **Tests** : `test_cartouche_modele` (Standard et dessiné : logo, valeurs, champs perso, date gardée, pas de doublon, ancien modèle, aller-retour du fichier .mfcartouche).

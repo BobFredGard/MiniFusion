@@ -44,6 +44,7 @@ const SUITES = [
   'test_enregistrement_sur',
   'test_configurations',
   'test_mcp_serveur',
+  'test_cartouche_modele',
   'test_composants_liaisons'
 ];
 let ok = 0; const ko = [];

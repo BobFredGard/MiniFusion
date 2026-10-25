@@ -322,7 +322,7 @@
   function mepNewSheet(n){
     return{id:'sh'+Date.now().toString(36)+Math.floor(Math.random()*1e4),name:'Planche '+n,
       format:'A3',orient:'landscape',views:[],dims:[],sk:null,
-      title:{projet:'MiniFusion — Plan',auteur:'—',date:new Date().toLocaleDateString('fr-FR'),tb:mepTbDefault()},
+      title:mepTbUnpack({projet:'MiniFusion — Plan',auteur:'—',date:new Date().toLocaleDateString('fr-FR'),tb:null},mepTbDefault()),
       frame:mepFrameUserDef()||undefined,
       seq:1,dseq:1};
   }
@@ -3774,15 +3774,43 @@
     mepStatus(on?'Édition du cartouche : outils Ligne, Rectangle, Cercle, Arc, Texte/Champ ; sélectionnez pour contraindre. Échap ou « Terminer » pour sortir.':'Cartouche enregistré sur la planche.');
     mepSideShow();mepRender();
   }
+  /* ── modèle COMPLET d'un cartouche (V0.8.6) ──
+     « l'export n'emporte pas les textes ni les images » : un modèle ne gardait que l'esquisse
+     (traits, textes fixes, emplacements des champs). Il emporte désormais aussi le LOGO et les
+     VALEURS des champs (projet, client, société, n° de plan, auteur, matière, TTS, TTH,
+     tolérances, champs perso…), et le cartouche Standard s'enregistre comme les autres
+     ({kind:'std'}). Rappeler un modèle remet tout ; la date et les champs calculés restent ceux
+     de la planche. */
+  function mepTbValKeys(){return ['projet','client','societe','quantite','nplan','auteur','verif','matiere','traitement','tth','tolgen','etat','masse','revFmt'];} // fonction : sûre même appelée avant cette ligne (nouvelle planche)
+  function mepTbPack(sh,name){
+    const tt=sh.title||{};
+    const o=mepTbIsSk(sh)?mepClone(tt.tb):{kind:'std',revSt:tt.revSt?mepClone(tt.revSt):undefined};
+    o.name=name||o.name||(o.kind==='std'?'Standard':'Cartouche');
+    if(tt.logo)o.logo=tt.logo;else delete o.logo;
+    const v={};mepTbValKeys().forEach(k=>{if(tt[k]!=null&&tt[k]!=='')v[k]=tt[k];});o.vals=v;
+    if(tt.cust&&Object.keys(tt.cust).length)o.cust=mepClone(tt.cust);else delete o.cust;
+    return o;
+  }
+  function mepTbOk(o){return !!o&&((o.kind==='sk'&&o.sk&&o.sk.pts)||o.kind==='std');}
+  function mepTbUnpack(tt,o){
+    // Applique le modèle o (paquet complet, ou ancien modèle sans valeurs) au titre tt → tt
+    tt=tt||{};if(!mepTbOk(o))return tt;
+    const tb=mepClone(o);delete tb.logo;delete tb.vals;delete tb.cust;
+    if(o.kind==='std'){tt.tb=null;if(tb.revSt)tt.revSt=tb.revSt;}else tt.tb=tb;
+    if(o.logo)tt.logo=o.logo;
+    if(o.vals&&typeof o.vals==='object')mepTbValKeys().forEach(k=>{if(o.vals[k]!=null)tt[k]=o.vals[k];});
+    if(o.cust&&typeof o.cust==='object')tt.cust=Object.assign({},tt.cust||{},mepClone(o.cust));
+    return tt;
+  }
   /* ── bibliothèque de modèles (locale à ce navigateur) ── */
   function mepTbLib(){try{const o=JSON.parse(localStorage.getItem('mep_tb_lib')||'{}');return o&&typeof o==='object'?o:{};}catch(e){return{};}}
   function mepTbLibSave(o){try{localStorage.setItem('mep_tb_lib',JSON.stringify(o));}catch(e){}}
   // sauvegarde externe des modèles : fichier JSON {format:'miniFusion-cartouches',v:1,tbs:{nom:modèle}}
   function mepTbExportFile(sh){
     const L=mepTbLib(),tbs={};Object.keys(L).forEach(n=>{tbs[n]=L[n];});
-    if(sh&&mepTbIsSk(sh)){const n=sh.title.tb.name||'Cartouche de la planche';if(!tbs[n])tbs[n]=Object.assign(mepClone(sh.title.tb),{name:n});}
+    if(sh){const n=(mepTbIsSk(sh)&&sh.title.tb.name)||'Cartouche de la planche';tbs[n]=mepTbPack(sh,n);} // complet : logo, valeurs
     const names=Object.keys(tbs);
-    if(!names.length){mepStatus('Aucun cartouche personnalisé à exporter.');return;}
+    if(!names.length){mepStatus('Aucun cartouche à exporter.');return;}
     const data=JSON.stringify({format:'miniFusion-cartouches',v:1,tbs},null,1);
     const fname=(names.length===1?names[0]:'cartouches').replace(/[\\/:*?"<>|]+/g,'-')+'.mfcartouche';
     const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'application/json'}));a.download=fname;
@@ -3794,10 +3822,10 @@
     inp.onchange=()=>{const f=inp.files&&inp.files[0];if(!f)return;const rd=new FileReader();
       rd.onload=()=>{
         let o;try{o=JSON.parse(rd.result);}catch(e){mepStatus('Fichier de cartouches illisible.');return;}
-        const tbs=o&&o.format==='miniFusion-cartouches'&&o.tbs?o.tbs:(o&&o.kind==='sk'&&o.sk?{[o.name||f.name.replace(/\.[^.]+$/,'')]:o}:null);
+        const tbs=o&&o.format==='miniFusion-cartouches'&&o.tbs?o.tbs:(mepTbOk(o)?{[o.name||f.name.replace(/\.[^.]+$/,'')]:o}:null);
         if(!tbs){mepStatus('Ce fichier ne contient pas de cartouche miniFusion.');return;}
         const L=mepTbLib();let n=0;
-        Object.keys(tbs).forEach(k=>{const tb=tbs[k];if(!tb||tb.kind!=='sk'||!tb.sk||!tb.sk.pts)return;
+        Object.keys(tbs).forEach(k=>{const tb=tbs[k];if(!mepTbOk(tb))return;
           let nm=k;if(L[nm]&&JSON.stringify(L[nm])!==JSON.stringify(Object.assign({},tb,{name:nm}))){let i=2;while(L[k+' ('+i+')'])i++;nm=k+' ('+i+')';}
           L[nm]=Object.assign(mepClone(tb),{name:nm});n++;});
         mepTbLibSave(L);mepStatus(n+' cartouche(s) importé(s) dans la bibliothèque.');mepSideShow();
@@ -3810,7 +3838,7 @@
     gone.forEach(k=>{delete sk.pts[k];});mepSkCleanCons(sk);
   }
   function mepTbDefault(){
-    try{const n=localStorage.getItem('mep_tb_def'),L=mepTbLib();if(n&&L[n]&&L[n].sk)return mepClone(L[n]);}catch(e){}
+    try{const n=localStorage.getItem('mep_tb_def'),L=mepTbLib();if(n&&mepTbOk(L[n]))return mepClone(L[n]);}catch(e){}
     return null;
   }
   function mepTbRemember(list,v){
@@ -8549,9 +8577,10 @@
      add('std','Standard');Object.keys(lib).forEach(n=>add('l:'+n,'★ '+n));
      let cur='std';
      if(mepTbIsSk(sh)){cur=tt.tb.name&&lib[tt.tb.name]?'l:'+tt.tb.name:'cur';if(cur==='cur')add('cur',(tt.tb.name||'Personnalisé')+' (cette planche)');}
+     else if(tt.tbName&&lib[tt.tbName]&&lib[tt.tbName].kind==='std')cur='l:'+tt.tbName;
      sel.value=cur;
      sel.onchange=()=>{const v=sel.value;if(v==='cur')return;
-       mepEdit('modèle de cartouche',()=>{tt.tb=v==='std'?null:mepClone(mepTbLib()[v.slice(2)]);});mepSideShow();};
+       mepEdit('modèle de cartouche',()=>{if(v==='std'){tt.tb=null;delete tt.tbName;}else{const o=mepTbLib()[v.slice(2)];mepTbUnpack(tt,o);if(o&&o.kind==='std')tt.tbName=o.name;else delete tt.tbName;}});mepSideShow();};
      r.appendChild(sel);}
     r=rowEl();
     rb('Exporter…',()=>mepTbExportFile(sh),'Enregistrer les modèles de cartouche (bibliothèque + celui de cette planche) dans un fichier .mfcartouche');
@@ -8565,21 +8594,24 @@
      }}
     r=rowEl();
     rb(mepTbIsSk(sh)?'Éditer le cartouche…':'Dessiner le cartouche…',()=>mepTbEdit(true),'Lignes, rectangles, textes et champs (matière, TTS, TTH…), contraintes et cotes pilotantes');
-    if(mepTbIsSk(sh)){
+    {
+      const curName=mepTbIsSk(sh)?tt.tb.name:tt.tbName;
       rb('Enregistrer…',()=>{
-        const n=(prompt('Nom du modèle de cartouche (bibliothèque de ce navigateur) :',tt.tb.name||'Mon cartouche')||'').trim();if(!n)return;
-        const L=mepTbLib();L[n]=Object.assign(mepClone(tt.tb),{name:n});mepTbLibSave(L);
-        mepEdit('modèle de cartouche',()=>{tt.tb.name=n;});mepStatus('Modèle « '+n+' » enregistré.');mepSideShow();},
-        'Ajouter ce cartouche à la bibliothèque : réutilisable dans toutes les pièces');
+        const n=(prompt('Nom du modèle de cartouche (bibliothèque de ce navigateur) :',curName||'Mon cartouche')||'').trim();if(!n)return;
+        const L=mepTbLib();L[n]=mepTbPack(sh,n);mepTbLibSave(L);
+        mepEdit('modèle de cartouche',()=>{if(mepTbIsSk(sh))tt.tb.name=n;else tt.tbName=n;});
+        mepStatus('Modèle « '+n+' » enregistré (traits, textes, logo et valeurs des champs).');mepSideShow();},
+        'Ajouter ce cartouche à la bibliothèque — traits, textes, logo et valeurs des champs : réutilisable dans toutes les pièces');
       const lib=mepTbLib();
-      if(tt.tb.name&&lib[tt.tb.name]){
+      if(curName&&lib[curName]){
+        const tbN=curName;
         let def='';try{def=localStorage.getItem('mep_tb_def')||'';}catch(e){}
         r=rowEl();
-        rb(def===tt.tb.name?'✓ Par défaut':'Par défaut',()=>{try{if(def===tt.tb.name)localStorage.removeItem('mep_tb_def');else localStorage.setItem('mep_tb_def',tt.tb.name);}catch(e){}mepSideShow();},'Modèle des nouvelles planches');
+        rb(def===tbN?'✓ Par défaut':'Par défaut',()=>{try{if(def===tbN)localStorage.removeItem('mep_tb_def');else localStorage.setItem('mep_tb_def',tbN);}catch(e){}mepSideShow();},'Modèle des nouvelles planches');
         rb('Retirer de la bibliothèque',()=>{
-          if(!confirm('Retirer « '+tt.tb.name+' » de la bibliothèque ? La planche garde son cartouche.'))return;
-          const L=mepTbLib();delete L[tt.tb.name];mepTbLibSave(L);
-          try{if(localStorage.getItem('mep_tb_def')===tt.tb.name)localStorage.removeItem('mep_tb_def');}catch(e){}
+          if(!confirm('Retirer « '+tbN+' » de la bibliothèque ? La planche garde son cartouche.'))return;
+          const L=mepTbLib();delete L[tbN];mepTbLibSave(L);
+          try{if(localStorage.getItem('mep_tb_def')===tbN)localStorage.removeItem('mep_tb_def');}catch(e){}
           mepSideShow();});
       }
     }
@@ -9460,7 +9492,7 @@
   // points d'entrée réservés aux tests automatisés (jamais activés dans l'app)
   if(window.__MEP_TEST_HOOKS__){
     window.__mepTest={
-      bomRows:sh=>mepBomRows(sh),balloonsAuto:sh=>mepBalloonsAuto(sh),balloonAt:(x,y)=>mepBalloonAt(mepSheet(),x,y),viewBBox:v=>mepViewSheetBBox(v),balloonAdd:(x,y)=>mepBalloonAddAt(mepSheet(),x,y),hatchVar:(k,c)=>mepHatchVar(k,c),st:()=>mepSt,drawBalloons:(mk,sh)=>mepDrawBalloons(mk,sh),meshesOf:v=>mepMeshesOf(v),addView:o=>mepAddView(o),sheet:()=>mepSheet(),viewSig:v=>mepViewSig(v), // V0.6.7
+      bomRows:sh=>mepBomRows(sh),balloonsAuto:sh=>mepBalloonsAuto(sh),tbPack:(sh,n)=>mepTbPack(sh,n),tbUnpack:(tt,o)=>mepTbUnpack(tt,o),tbLib:()=>mepTbLib(),newSheet:n=>mepNewSheet(n),balloonAt:(x,y)=>mepBalloonAt(mepSheet(),x,y),viewBBox:v=>mepViewSheetBBox(v),balloonAdd:(x,y)=>mepBalloonAddAt(mepSheet(),x,y),hatchVar:(k,c)=>mepHatchVar(k,c),st:()=>mepSt,drawBalloons:(mk,sh)=>mepDrawBalloons(mk,sh),meshesOf:v=>mepMeshesOf(v),addView:o=>mepAddView(o),sheet:()=>mepSheet(),viewSig:v=>mepViewSig(v), // V0.6.7
       drawRevs:(mk,sh,pd,ty)=>mepDrawRevs(mk,sh,pd,ty),holeFam:f=>mepHoleFam(f),cutAddBreak:(sh,v)=>mepCutAddBreak(sh,v),cutBreakAt:(sh,v,m,sG,c,r)=>mepCutBreakAt(sh,v,m,sG,c,r),cutFollow:sh=>mepCutFollowAll(sh),cutAutoRefs:(sh,v)=>mepCutAutoRefs(sh,v),cutDelBreak:(sh,v)=>mepCutDelBreak(sh,v),cutDelBreakAt:(sh,v,j,sG)=>mepCutDelBreakAt(sh,v,j,sG),cutBreakClick:(sh,v,m,sG)=>mepCutBreakClick(sh,v,m,sG),cutModel:v=>mepCutModel(v),prefsCollect:()=>mepPrefsCollect(),prefsApply:p=>mepPrefsApply(p),pageDim:sh=>mepPageDim(sh),
       titleTexts:sh=>{const t=[];const mk=(tag)=>{const o={textContent:''};if(tag==='text')t.push(o);return o;};mepDrawTitle(mk,sh,mepPage().pd,100);mepDrawRevs(mk,sh,mepPage().pd,100);mepDrawBom(mk,sh,mepPage().pd,100);return t.map(o=>o.textContent);},
       sk:{fromStd:sh=>mepTbFromStd(sh),solve:(sk,a)=>mepSkSolve(sk,80,a),residual:(sk,c)=>mepSkResidual(sk,c),
