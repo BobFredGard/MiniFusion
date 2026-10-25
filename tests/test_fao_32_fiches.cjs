@@ -57,6 +57,43 @@ const R=String.raw`
    A(faoOpMovesKey(f,s)!==k,'14 : un réglage hérité du posage (plans) périme bien le parcours 3+2');
    const k1=faoOpMovesKey(f,s),jo=faoOpJob(s,f,faoOpFrame(s,f));jo.planes=JSON.parse(JSON.stringify(s.planes)); // copie (ancien nettoyage)
    A(faoOpMovesKey(f,s)===k1,'15 : clé 3+2 stable : une copie des plans sur le posage vu par l’opération ne change pas l’ordre de la clé (avant : perdu au F5)');}
+  // changer l'axe X (ou tourner) le repère : la zone choisie reste au même endroit de la pièce
+  {const pk=faoOpDefaults('pocket');pk.frame={z:'+X',x:'+Y',flipZ:false,flipX:false};pk.ztop=55;pk.zbot=44;s.ops=[pk];
+   pk.limit={mode:'chain',loop:[[-18,-17],[18,-17],[18,-3],[-18,-3],[-18,-17]],closed:true,side:'in',extra:0,anchors:[{m:[0,-10,50],len:5}]};
+   const W=()=>{const fr=faoOpFrame(s,pk);return pk.limit.loop.map(q=>faoPtOpToPos(fr,[q[0],q[1],44]));};
+   const w0=W(),a0=faoPtOpToPos(faoOpFrame(s,pk),pk.limit.anchors[0].m);
+   faoOpFrameEdit(s,pk,()=>{pk.frame=Object.assign({},pk.frame,{x:'-Z'});});
+   const w1=W(),a1=faoPtOpToPos(faoOpFrame(s,pk),pk.limit.anchors[0].m);
+   const d=Math.max(...w0.map((p,i)=>Math.hypot(p[0]-w1[i][0],p[1]-w1[i][1],p[2]-w1[i][2])),Math.hypot(a0[0]-a1[0],a0[1]-a1[1],a0[2]-a1[2]));
+   A(d<1e-6&&!pk.limit.stale,'18 : axe X passé de +Y à −Z : boucle et ancres suivent, même place sur la pièce (écart '+d.toExponential(1)+') — avant : poche tournée hors de l’oblong');
+   faoOpFrameEdit(s,pk,()=>{pk.frame=Object.assign({},pk.frame,{z:'-Y',x:'+X'});});
+   A(pk.limit.stale===true,'19 : Z de l’opération changé : la zone n’est plus dans le plan de travail → ⚠ à revoir');}
+  // simulation : un trou horizontal (outil le long de −X) se voit
+  {const g=faoMatterGrid({x0:0,y0:0,z0:0,x1:20,y1:10,z1:10},0.5);
+   const area=(r,f)=>{let a=0;for(let t=0;t<r.n;t+=3){const o=t*3;if(!f(r.nrm[o],r.nrm[o+1],r.nrm[o+2],[r.pos[o],r.pos[o+3],r.pos[o+6]],[r.pos[o+1],r.pos[o+4],r.pos[o+7]],[r.pos[o+2],r.pos[o+5],r.pos[o+8]]))continue;
+     const ux=r.pos[o+3]-r.pos[o],uy=r.pos[o+4]-r.pos[o+1],uz=r.pos[o+5]-r.pos[o+2],vx=r.pos[o+6]-r.pos[o],vy=r.pos[o+7]-r.pos[o+1],vz=r.pos[o+8]-r.pos[o+2];
+     a+=Math.hypot(uy*vz-uz*vy,uz*vx-ux*vz,ux*vy-uy*vx)/2;}return a;};
+   const wallX1=r=>area(r,(nx,ny,nz,X)=>nx>0.5&&X.every(x=>Math.abs(x-20)<1e-6));
+   const r0=faoVoxBuild(g);
+   const top0=area(r0,(nx,ny,nz,X,Y,Z)=>nz>0.5&&Z.every(z=>Math.abs(z-10)<1e-6));
+   A(Math.abs(wallX1(r0)-100)<1e-6&&Math.abs(top0-200)<1e-6,'20 : brut plein en volume : face X1 = 10 × 10, dessus = 20 × 10 ('+wallX1(r0).toFixed(2)+', '+top0.toFixed(2)+')');
+   faoMatterCarveTilt(g,{x:25,y:5,z:5},{x:12,y:5,z:5},2,[1,0,0],null);
+   const r1=faoVoxBuild(g);
+   const top1=area(r1,(nx,ny,nz,X,Y,Z)=>nz>0.5&&Z.every(z=>Math.abs(z-10)<1e-6));
+   const floor=area(r1,(nx,ny,nz,X,Y,Z)=>nz>0.5&&Z.every(z=>z<9)&&X.every(x=>x>11.5));
+   const ceil=area(r1,(nx,ny,nz,X,Y,Z)=>nz<-0.5&&Z.every(z=>z>1)&&X.every(x=>x>11.5));
+   A(Math.abs(top1-200)<1e-6,'21 : trou horizontal : le dessus du brut reste intact (pas de cheminée)');
+   A(wallX1(r1)<100-8&&floor>4&&ceil>4,'22 : trou horizontal VISIBLE : face X1 percée ('+(100-wallX1(r1)).toFixed(1)+' mm² ouverts), fond '+floor.toFixed(1)+' et plafond '+ceil.toFixed(1)+' mm² dans la matière');
+   {const g2=faoMatterGrid({x0:0,y0:0,z0:0,x1:20,y1:10,z1:10},0.5);
+    const ks=faoMatterCarveTilt(g2,{x:25,y:5,z:5},{x:12,y:5,z:5},2,[1,0,0],null);
+    const v2={matterGrid:g2,cav:new Uint8Array(g2.nx*g2.ny)};const nw=faoVoxMarkCav(v2,ks);
+    const ov=faoVoxBuild(g2,v2.cav);
+    let zmapWall=0;for(let j=0;j<g2.ny;j++){const c=j*g2.nx+g2.nx-1;if(!v2.cav[c])zmapWall+=g2.h[c]*g2.pas;}
+    const tot=zmapWall+wallX1(ov);
+    A(nw.length>0&&nw.length<g2.nx*g2.ny/5&&Math.abs(tot-wallX1(r1))<1e-6&&ov.n<r1.n/3,
+      '24 : rendu réel = Z-map + complément ('+nw.length+' colonnes creusées, '+(ov.n/3)+' triangles contre '+(r1.n/3)+' en surface complète) : même face X1 percée ('+tot.toFixed(1)+' mm²)');}
+   const vw={pts:[{x:0,y:0,z:0},{x:1,y:0,z:0,ax:[1,0,0]}]};
+   A(faoViewerVoxWanted(vw)&&!faoViewerVoxWanted({pts:[{x:0,y:0,z:0}]}),'23 : cavités dessinées seulement si le parcours a un outil incliné (posage sans 3+2 : Z-map inchangée)');}
   // F5 : relecture relancée quand le solide exact arrive, pour TOUTE opération calculée sur le maillage
   {const s2=faoDefaultSetup();s2.stock={x0:0,y0:0,z0:0,x1:10,y1:10,z1:10};const pk=faoOpDefaults('pocket');s2.ops=[pk];faoRoot().setups=[s2];
    const src=String(faoMovesSolidFp);

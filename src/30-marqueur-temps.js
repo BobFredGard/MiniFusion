@@ -57,9 +57,11 @@ function addFeature(f){ // insertion au niveau du marqueur si actif (nouveautés
 // (aucun sous-ensemble réutilisé). Passer à false active le rejeu rapide par points de contrôle.
 let hardPh=null; // {rep,purge,rejeu,aff,hotes,replay,mesh,maillage,proj} — rempli pendant hardRefresh()
 const phAdd=(k,ms)=>{if(hardPh)hardPh[k]=(hardPh[k]||0)+ms;}; // nul hors rafraîchissement dur
-let freshHard=false; // défaut = REJEU RAPIDE (2026-10-02-013) : le filet featSig (-011)
-// prouve que le rapide est aussi juste que le complet ; la préférence ⚙ reste persistée.
-try{const _fh=localStorage.getItem('minifusion_freshHard');if(_fh!==null)freshHard=_fh==='1';}catch(e){}
+let freshHard=false; // REJEU RAPIDE toujours (2026-10-02-013 : le filet featSig -011 prouve que le
+// rapide est aussi juste que le complet). V0.7.6 : la case ⚙ « Rafraîchissement dur à chaque
+// modification » est supprimée — true ne sert plus qu'aux tests (comparaison au rejeu complet) ;
+// le bouton ponctuel « Rafraîchissement dur » reste. L'ancienne préférence est effacée.
+try{localStorage.removeItem('minifusion_freshHard');}catch(e){}
 let rebuildDepth=0;
 // 2026-10-15-009 : passes de régénération jusqu'à CONVERGENCE (projections → instances →
 // faces porteuses → solide…). Une chaîne cote → face → projection → symétrie → face →

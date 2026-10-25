@@ -5,17 +5,19 @@
 // filet du lot 2026-10-02-011 (JSON.stringify de la fonction entière) invalide
 // désormais toute propriété qui bouge, donc le rapide est aussi juste que le
 // complet (prouvé par test_cache_exact) et ~4× plus rapide : le défaut bascule
-// à false. La préférence utilisateur (⚙ optFresh) reste persistée telle quelle.
-// 1) structure : défaut literal false + lecture de préférence ==='1' (l'ancien
-// idiome !=='0', qui signifiait « défaut dur », doit avoir disparu) ;
+// à false. V0.7.6 : la case ⚙ « Rafraîchissement dur à chaque modification »
+// (optFresh) est SUPPRIMÉE — le rejeu rapide est toujours utilisé ; freshHard=true
+// ne sert plus qu'aux tests. Le bouton ponctuel « Rafraîchissement dur » reste.
+// 1) structure : défaut littéral false, plus de lecture de préférence, ancienne
+// préférence effacée, plus de case dans la page ni de câblage ;
 // 2) comportement : freshHard===false au chargement, rebuild() par défaut ne
-// jette PAS les points de contrôle, freshHard=true repurge, et le réglage
-// optFresh bascule avec persistance localStorage + messages faceEl.
+// jette PAS les points de contrôle, freshHard=true (tests) repurge.
 const vm=require('vm');
 const {loadApp}=require('./appvm.cjs');
 (async()=>{
   const {ctx,sandbox}=loadApp();
   const src30=require('fs').readFileSync(require('path').join(__dirname,'..','src','30-marqueur-temps.js'),'utf8');
+  const html=require('fs').readFileSync(require('path').join(__dirname,'..','fusion_mvp.html'),'utf8');
   const body=[
     "const out={fails:[],log:[]};",
     "const A=(c,m)=>{if(!c)out.fails.push(m);};",
@@ -23,7 +25,8 @@ const {loadApp}=require('./appvm.cjs');
     // ═══ 1) structure : le défaut est bien passé à false ═══
     "A(/let freshHard=false;/.test(__src30),'src/30 : le défaut littéral « freshHard=false » est absent — le rejeu rapide doit être le défaut');",
     "A(__src30.indexOf(\"!=='0'\")<0,\"src/30 : l'ancien idiome !=='0' (défaut dur) subsiste — la préférence absente doit signifier « rapide »\");",
-    "A(/===?'1'/.test(__src30),\"src/30 : lecture de préférence ==='1' absente — la case ⚙ optFresh cochée doit reposer le mode dur\");",
+    "A(__src30.indexOf('localStorage.getItem')<0&&__src30.indexOf('removeItem')>=0&&__src30.indexOf('minifusion_freshHard')>=0,\"src/30 : l'ancienne préférence est encore lue (ou pas effacée) — une case cochée autrefois forcerait le mode dur\");",
+    "A(__html.indexOf('optFresh')<0&&__html.indexOf('Rafraîchissement dur à chaque modification')<0,'la case ⚙ « Rafraîchissement dur à chaque modification » est encore dans la page');",
     // ═══ 2) comportement ═══
     "A(typeof freshHard!=='undefined','freshHard invisible dans le contexte');",
     "A(freshHard===false,'freshHard au chargement = '+freshHard+' — le rejeu rapide (false) doit être le défaut');",
@@ -35,28 +38,14 @@ const {loadApp}=require('./appvm.cjs');
     "nPurge=0;freshHard=true;markDirty();rebuild();",
     "A(nPurge===1,'freshHard=true : rebuild() doit purger avant le rejeu (observé '+nPurge+')');",
     "step('mode dur : purge='+nPurge);",
-    "const fr=$('optFresh');",
-    "A(!!fr&&typeof fr.onchange==='function','réglage ⚙ optFresh non câblé (src/95)');",
-    "const calls=[];let __s=null;",
-    "try{if(typeof localStorage!=='undefined'&&localStorage){__s=localStorage.setItem;localStorage.setItem=function(k,v){calls.push(k+'='+v);};}}catch(e){}",
-    "if(fr&&typeof fr.onchange==='function'){",
-    "  fr.checked=true;fr.onchange();",
-    "  A(freshHard===true,'optFresh coché : freshHard='+freshHard+' (attendu true)');",
-    "  A(/Rafraîchissement dur/.test(faceEl.textContent),'message faceEl du mode dur absent');",
-    "  A(calls.some(c=>c==='minifusion_freshHard=1'),'persistance localStorage « 1 » absente ('+calls.join(', ')+')');",
-    "  fr.checked=false;fr.onchange();",
-    "  A(freshHard===false,'optFresh décoché : freshHard='+freshHard+' (attendu false)');",
-    "  A(/Rejeu rapide/.test(faceEl.textContent),'message faceEl du mode rapide absent');",
-    "  A(calls.some(c=>c==='minifusion_freshHard=0'),'persistance localStorage « 0 » absente ('+calls.join(', ')+')');",
-    "  step('toggle : dur puis rapide, stocké ['+calls.join(', ')+']');",
-    "}",
-    "try{if(typeof localStorage!=='undefined'&&localStorage&&__s)localStorage.setItem=__s;}catch(e){}",
+    "freshHard=false;",
+    "A(!/optFresh/.test(String(typeof initToolbar==='function'?initToolbar:'')),'src/95 : câblage optFresh encore présent');",
     "occCkClear=__c;",
     "if(out.fails.length){out.log.push('');out.log.push('ECHECS ('+out.fails.length+') :');out.fails.forEach(m=>out.log.push('  x '+m));}",
     "else out.log.push('TOUT EST CONFORME');",
     "return out.log.join(String.fromCharCode(10));"
   ].join('\n');
-  sandbox.__src30=src30;
+  sandbox.__src30=src30;sandbox.__html=html;
   const r=await vm.runInContext('(async()=>{'+body+'})()',ctx,{filename:'freshdefault.js'});
   console.log('=== rejeu rapide par défaut (freshHard) ===');
   console.log(r);

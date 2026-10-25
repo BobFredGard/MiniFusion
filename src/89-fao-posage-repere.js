@@ -657,9 +657,39 @@ function faoOpTopZ(setup,op){
   try{const fr=faoOpFrame(setup,op);const st=fr?faoOpJob(setup,op,fr).stock:setup.stock;return (st&&isFinite(+st.z1))?+st.z1:null;}catch(e){return null;}
 }
 function faoOpFrameEdit(setup,op,fn,onFace){
+  let fr0=null,zr=0;try{fr0=faoOpFrame(setup,op);zr=isFinite(+op.zbot)?+op.zbot:0;}catch(e){}
   faoOpFrameEdit0(setup,op,fn,onFace);
+  // la géométrie déjà choisie (zones, rectangles, ancres, points) suit le NOUVEAU repère
+  try{faoOpGeomRemap(setup,op,fr0,faoOpFrame(setup,op),zr);}catch(e){}
   // perçage « trous du modèle » : les trous choisis se retrouvent dans le NOUVEAU repère
   if(op&&op.type==='drill'){try{faoDrillResolve(op);}catch(e){}}
+}
+function faoOpGeomRemap(setup,op,fr0,fr1,zr){
+  // Coordonnées de l'opération : ancien repère → monde → nouveau (null = repère du posage).
+  // Boucles et rectangles sont plans (XY de l'opération) : pris à la cote zr. Z changé : ils
+  // ne sont plus dans le plan de travail → zone « à revoir » (⚠).
+  if(!op||(!fr0&&!fr1))return;
+  const P=faoFrame(setup);
+  const M=function(p){const w=fr0?faoToW(fr0,p):faoToW(P,p);return fr1?faoToF(fr1,w):faoToF(P,w);};
+  const r6=function(v){return Math.round(v*1e6)/1e6;};
+  const Z0=fr0?fr0.Z:faoRotW(P,[0,0,1]),Z1=fr1?fr1.Z:faoRotW(P,[0,0,1]);
+  const zSame=Math.abs(Z0[0]*Z1[0]+Z0[1]*Z1[1]+Z0[2]*Z1[2])>0.9999;
+  const xy=function(q){const m=M([+q[0],+q[1],zr]);return [r6(m[0]),r6(m[1])];};
+  const rect=function(o){if(![o.x0,o.y0,o.x1,o.y1].every(function(v){return isFinite(+v);}))return;
+    const c=[[o.x0,o.y0],[o.x1,o.y0],[o.x1,o.y1],[o.x0,o.y1]].map(xy);
+    o.x0=Math.min.apply(null,c.map(function(q){return q[0];}));o.x1=Math.max.apply(null,c.map(function(q){return q[0];}));
+    o.y0=Math.min.apply(null,c.map(function(q){return q[1];}));o.y1=Math.max.apply(null,c.map(function(q){return q[1];}));};
+  const anc=function(A){(A||[]).forEach(function(a){if(a&&Array.isArray(a.m)&&a.m.length===3){const m=M(a.m.map(Number));a.m=[r6(m[0]),r6(m[1]),r6(m[2])];}});};
+  [op.limit,op.limit2].forEach(function(L){
+    if(!L||typeof L!=='object')return;
+    if(Array.isArray(L.loop)&&L.loop.length)L.loop=L.loop.map(xy);
+    if(L.mode==='rect')rect(L);
+    anc(L.anchors);
+    if(!zSame&&L.mode!=='all'&&((L.loop||[]).length||L.mode==='rect'))L.stale=true;
+  });
+  if(op.zlim)anc(op.zlim.anchors);
+  if(op.type==='pocket'||op.type==='contour')rect(op);
+  if(Array.isArray(op.pts)&&op.pts.length)op.pts=op.pts.map(xy);
 }
 function faoOpFrameEdit0(setup,op,fn,onFace){
   // change le repère de l'opération en gardant ses hauteurs RELATIVES au dessus du brut ;
@@ -718,7 +748,9 @@ function faoTiltColIv(px,py,S,A,r,H,out){
   else if(wa<0||wa>H)return;
   if(hi>lo)out.push([lo,hi]);
 }
-function faoMatterCarveTilt(g,a,b,r,ax,outCols){
+function faoMatterCarveTilt(g,a,b,r,ax,outCols,tp){
+  // tp (faoToolTipProfile) : pointe de foret / foret à centrer — sans lui, le corps entier
+  // taillait à plat : un pointage sur la tranche creusait un cratère au Ø du corps.
   const out=[];
   try{
     let A=ax.slice();const L=Math.hypot(A[0],A[1],A[2])||1;A=A.map(q=>q/L);
@@ -739,11 +771,20 @@ function faoMatterCarveTilt(g,a,b,r,ax,outCols){
     const i0=Math.max(0,Math.floor((x0-g.ox)/g.pas)),i1=Math.min(g.nx-1,Math.floor((x1-g.ox)/g.pas));
     const j0=Math.max(0,Math.floor((y0-g.oy)/g.pas)),j1=Math.min(g.ny-1,Math.floor((y1-g.oy)/g.pas));
     const zTop=g.oz+g.nz*pz;
+    // pointe : pile de disques (rayon ρ, à partir de la hauteur tipZ(ρ) depuis la pointe)
+    let discs=[[r,0]];
+    if(tp&&tp.length>1){
+      const rs=new Set();for(let q=1;q<=6;q++)rs.add(r*q/6);
+      tp.forEach(function(p){if(p[0]>0&&p[0]<=r+1e-9)rs.add(+p[0]);});
+      discs=Array.from(rs).sort(function(u,v){return u-v;}).map(function(rho){return [rho,faoTipZAt(tp,rho)];});
+    }
     for(let j=j0;j<=j1;j++){
       const py=g.oy+(j+0.5)*g.pas;
       for(let i=i0;i<=i1;i++){
         const px=g.ox+(i+0.5)*g.pas,c=j*g.nx+i;
-        const iv=[];for(let s=0;s<S.length;s++)faoTiltColIv(px,py,S[s],A,r,H,iv);
+        const iv=[];
+        for(let s=0;s<S.length;s++)for(let q=0;q<discs.length;q++){const D=discs[q];
+          faoTiltColIv(px,py,[S[s][0]+A[0]*D[1],S[s][1]+A[1]*D[1],S[s][2]+A[2]*D[1]],A,D[0],H-D[1],iv);}
         if(!iv.length)continue;
         iv.sort(function(u,v){return u[0]-v[0];});
         const m=[iv[0].slice()];

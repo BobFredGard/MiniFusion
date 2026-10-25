@@ -57,7 +57,15 @@ const {loadApp}=require('./appvm.cjs');
       let low=0;for(let c=0;c<g.nx*g.ny;c++)if(g.h[c]<30-1e-6)low++;
       const deep=k.some(idx=>{const ix=idx%g.nx,iy=Math.floor(idx/g.nx)%g.ny;return Math.abs(g.ox+(ix+0.5)*g.pas-50)<1&&g.oy+(iy+0.5)*g.pas>13;});
       const past=k.some(idx=>{const iy=Math.floor(idx/g.nx)%g.ny;return g.oy+(iy+0.5)*g.pas>15.5;});
-      A(low===0&&k.length>0&&deep&&!past,'6d : simulation — trou de la tranche creusé jusqu’à Y15 ('+k.length+' voxels), aucune colonne abaissée (avant : cheminée jusqu’au dessus)');}
+      A(low===0&&k.length>0&&deep&&!past,'6d : simulation — trou de la tranche creusé jusqu’à Y15 ('+k.length+' voxels), aucune colonne abaissée (avant : cheminée jusqu’au dessus)');
+      // pointe de foret : cône, pas un cylindre plat — un POINTAGE de 2 mm sur la tranche ne creuse
+      // pas un cratère au Ø du corps
+      const g2=faoMatterGrid({x0:0,y0:0,z0:0,x1:100,y1:60,z1:30},0.5),g3=faoMatterGrid({x0:0,y0:0,z0:0,x1:100,y1:60,z1:30},0.5);
+      const tp=[[0,0],[5,5/Math.tan(59*Math.PI/180)]]; // foret à centrer : corps Ø10, pointe 118°
+      const kFlat=faoMatterCarveTilt(g2,{x:50,y:-5,z:15},{x:50,y:2,z:15},5,[0,-1,0],null);
+      const kTip=faoMatterCarveTilt(g3,{x:50,y:-5,z:15},{x:50,y:2,z:15},5,[0,-1,0],null,tp);
+      const rimTip=kTip.filter(idx=>{const ix=idx%g3.nx,iy=Math.floor(idx/g3.nx)%g3.ny,iz=Math.floor(idx/(g3.nx*g3.ny));const y=g3.oy+(iy+0.5)*g3.pas;return y>0.3&&Math.hypot(g3.ox+(ix+0.5)*g3.pas-50,g3.oz+(iz+0.5)*g3.pz-15)>3;}).length;
+      A(kTip.length>0&&kTip.length<kFlat.length*0.5&&rimTip===0,'6e : pointage sur la tranche avec la pointe du foret : '+kTip.length+' voxels (cône) contre '+kFlat.length+' à plat — plus de cratère au Ø du corps');}
     // repère repassé à celui du posage puis remis : les trous choisis sont re-résolus
     faoOpFrameEdit(S,op,()=>{delete op.frame;});
     A(op.holes.length===0,'7 : repère du posage → le trou de la tranche n’y est plus vu ('+op.holes.length+')');

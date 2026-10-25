@@ -198,20 +198,6 @@ function treeFoldSet(f){ // replier/déplier SANS toucher à localStorage (clic 
     addEventListener('click',close);
     addEventListener('keydown',e=>{if(e.key==='Escape')close();});
     if($('setFit'))$('setFit').onclick=()=>{showAll();close();};
-    const fr=$('optFresh');
-    if(fr){
-      fr.checked=!!freshHard;
-      fr.onchange=()=>{
-        freshHard=fr.checked;
-        try{localStorage.setItem('minifusion_freshHard',freshHard?'1':'0');}catch(e){}
-        faceEl.textContent=freshHard
-          ?'Rafraîchissement dur activé : chaque modification reconstruit le modèle entier.'
-          :'Rejeu rapide activé : les parties inchangées de la timeline sont réutilisées (moins frais, ~4× plus rapide).';
-        try{occCkClear();}catch(e){}
-        builtVersion=-1;_hashMemo=null;_hashVer=-1;
-        markDirty();rebuild();renderProps();
-      };
-    }
   }
 })();
 $('skOk').onclick=()=>closeSketch(true);$('skCancel').onclick=()=>closeSketch(false);

@@ -389,7 +389,7 @@ function faoViewerLineCreate(vw){
 /* ---- matière usinée (surface Z-map) : elle disparaît sous l'outil ----
    Logique pure (grille + carve) : testable sans scène ; THREE reste derrière
    des try/catch. Grille ≈ 40k voxels max sur la bbox du brut. */
-function faoMatterGrid(s,pas){
+function faoMatterGrid(s,pas,fineZ){
   if(!s||!(s.x1>s.x0)||!(s.y1>s.y0)||!(s.z1>s.z0))return null;
   let p=+pas;
   let nx=0,ny=0,nz=0,n=0,it=0,pz=0;
@@ -419,6 +419,9 @@ function faoMatterGrid(s,pas){
     it=0;
     while(nx*ny>B&&it++<8){ p*=1.1; nx=Math.max(1,Math.ceil(X/p)); ny=Math.max(1,Math.ceil(Y/p)); }
     nz=Math.max(1,Math.min(32,Math.ceil(H/Math.max(p,1e-6))));
+    // V0.7.6 : posage 3+2 — les cavités latérales se dessinent voxel par voxel : couches aussi
+    // fines que la maille XY (32 couches = marches de ~1 mm sur les parois des trous de la tranche)
+    if(fineZ)nz=Math.max(nz,Math.min(Math.ceil(H/Math.max(p,1e-6)),Math.floor(4e7/Math.max(1,nx*ny))));
     n=nx*ny*nz;
     pz=H/nz;
   }
@@ -567,7 +570,7 @@ function faoMatterCarveTo(g,pts,dd,times,t,outCols,crs,tps){
     }
     const r=((isFinite(dd[i+1])&&dd[i+1]>0)?dd[i+1]:10)/2;
     const crv=(crs&&isFinite(+crs[i+1]))?+crs[i+1]:0;
-    const k=pts[i+1].ax?faoMatterCarveTilt(g,a,b,r,pts[i+1].ax,outCols):faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols,crv,tps&&tps[i+1]);
+    const k=pts[i+1].ax?faoMatterCarveTilt(g,a,b,r,pts[i+1].ax,outCols,tps&&tps[i+1]):faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols,crv,tps&&tps[i+1]);
     for(let m=0;m<k.length;m++)out.push(k[m]);
   }
   return out;
@@ -616,6 +619,7 @@ function faoViewerHoldApply(){
   try{ if(faoVw&&faoVw.toolHold)faoVw.toolHold.visible=!faoVwHideHold; }catch(e){}
 }
 function faoViewerMatterDispose(vw){
+  try{ faoViewerVoxDispose(vw); }catch(e){} // cavités 3+2 (src/88-fao-75)
   try{ if(vw.matter&&typeof scene!=='undefined'&&scene)faoDel3D(vw.matter); }catch(e){}
   try{ if(vw.matter&&vw.matter.geometry&&vw.matter.geometry.dispose)vw.matter.geometry.dispose(); }catch(e){}
   vw.matter=null; vw.matterGrid=null; vw.mKills=[]; vw.mPos=null; vw.mTops=null; vw.mArr=null; vw.mH=null;
@@ -641,10 +645,12 @@ function faoViewerMatterWriteCol(vw,c){
   if(!(x1>x0)||!(y1>y0))return; // colonne au-delà des extents réels (ne rien écrire)
   const zt=T[c];
   // côté replié (z2=zt → quad nul) si le voisin est plus haut : jamais deux faces coplanaires
-  const zN=(iy>0?T[c-nx]:oz); const n2=zN<zt?zN:zt;
-  const zS=(iy<ny-1?T[c+nx]:oz); const s2=zS<zt?zS:zt;
-  const zW=(ix>0?T[c-1]:oz); const w2=zW<zt?zW:zt;
-  const zE=(ix<nx-1?T[c+1]:oz); const e2=zE<zt?zE:zt;
+  // colonne creusée (posage 3+2) : flancs repliés, dessinés voxel par voxel (src/88-fao-75)
+  const cv=!!(vw.cav&&vw.cav[c]);
+  const zN=(iy>0?T[c-nx]:oz); const n2=cv?zt:(zN<zt?zN:zt);
+  const zS=(iy<ny-1?T[c+nx]:oz); const s2=cv?zt:(zS<zt?zS:zt);
+  const zW=(ix>0?T[c-1]:oz); const w2=cv?zt:(zW<zt?zW:zt);
+  const zE=(ix<nx-1?T[c+1]:oz); const e2=cv?zt:(zE<zt?zE:zt);
   let o=c*90;
   // top
   o=faoMatterPut(a,o,x0,y0,zt); o=faoMatterPut(a,o,x1,y0,zt); o=faoMatterPut(a,o,x1,y1,zt);
@@ -823,7 +829,7 @@ function faoViewerMatterEnable(vw){
   faoViewerMatterDispose(vw);
   if(!vw||vw.matterOn===false)return 0;
   const s=faoStock(); if(!faoStockValid(s))return 0;
-  const g=faoMatterGrid(s); if(!g)return 0;
+  const g=faoMatterGrid(s,0,faoViewerVoxWanted(vw)); if(!g)return 0; // 3+2 : couches fines (src/88-fao-75)
   const nc=g.nx*g.ny;
   const smooth=!!vw.smooth; // « ≈ lisse » : heightfield continu au lieu des colonnes
   let mesh=null, arr=null;
@@ -859,11 +865,15 @@ function faoViewerMatterEnable(vw){
   }else{
     try{ faoViewerMatterWriteAll(vw); }catch(e){ faoViewerMatterDispose(vw); try{ if(mesh&&scene)faoDel3D(mesh); }catch(e2){} return 0; }
   }
+  // V0.7.6 : outil incliné (3+2) quelque part dans le parcours → cavités sous la surface dessinées
+  vw.vox=faoViewerVoxWanted(vw); vw.voxAt=0; vw.voxDirty=false;
+  vw.cav=vw.vox?new Uint8Array(nc):null; vw.cavN=0; // colonnes creusées (src/88-fao-75)
   if(vw.t>0){
     const tcols=[];
     const ks=faoMatterCarveTo(g,vw.pts,vw.dd,vw.times,vw.t,tcols,vw.exact?vw.cr:null,vw.exact?vw.tp:null);
     faoViewerMatterKill(vw,ks,tcols);
   }
+  if(vw.vox)faoViewerVoxRefresh(vw,true);
   faoViewerMatterHideBodies(vw); // la surface remplace les corps visibles
   return g.n;
 }
@@ -874,6 +884,7 @@ function faoViewerMatterKill(vw,ks,cols){
   // 2026-10-11-007 « lisse » : branche HFUpdate (nœuds moyennés + normales).
   if(!vw||!vw.matter||!vw.matterGrid||!vw.mTops||(!vw.mArr&&!vw.mH))return;
   if((!ks||!ks.length)&&(!cols||!cols.length))return;
+  if(vw.vox)faoViewerVoxKill(vw,ks); // posage 3+2 : cavités sous la surface (src/88-fao-75)
   const g=vw.matterGrid, nc=g.nx*g.ny, T=vw.mTops;
   const seen=new Uint8Array(nc), chg=[];
   const mark=function(c){
@@ -929,7 +940,7 @@ function faoMatterCarveRange(g,pts,dd,times,t,i0,x0,y0,z0,p,outCols,crs,tps){
     const r=((isFinite(dd[i+1])&&dd[i+1]>0)?dd[i+1]:10)/2;
     const crv=(crs&&isFinite(+crs[i+1]))?+crs[i+1]:0;
     const axD=pts[i+1]&&pts[i+1].ax; // le point en cours (p, interpolé) ne porte pas l'axe : celui du segment
-    const k=axD?faoMatterCarveTilt(g,a,b,r,axD,outCols):faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols,crv,tps&&tps[i+1]);
+    const k=axD?faoMatterCarveTilt(g,a,b,r,axD,outCols,tps&&tps[i+1]):faoMatterCarveSeg(g,a.x,a.y,a.z,b.x,b.y,b.z,r,outCols,crv,tps&&tps[i+1]);
     for(let m=0;m<k.length;m++)out.push(k[m]);
     a=b;
   }
