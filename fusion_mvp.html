@@ -277,7 +277,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.10.1';
+const APP_VER='V0.11.0';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -2161,6 +2161,15 @@ const MAT_LIB=[
 ];
 const MAT_BY_KEY=Object.create(null);
 MAT_LIB.forEach(m=>{MAT_BY_KEY[m.k]=m;});
+// relief par défaut de l'atelier RENDU (98-rendu-reliefs) : t type, e échelle (mm), d direction
+const MAT_REL={acier:{t:'stries'},inox:{t:'brosse'},'acier-zingue':{t:'grain',e:0.15},fonte:{t:'sable',e:0.12},
+  alu:{t:'stries'},'alu-sable':{t:'sable'},'alu-anod-nat':{t:'sable'},'alu-anod-noir':{t:'sable'},'alu-anod-rouge':{t:'sable'},
+  'alu-anod-bleu':{t:'sable'},'alu-anod-or':{t:'sable'},'alu-anod-titane':{t:'sable'},titane:{t:'brosse'},
+  'abs-noir':{t:'grain'},'abs-blanc':{t:'grain'},'abs-gris':{t:'grain'},'pla-mat':{t:'couches',d:'z'},'pla-brillant':{t:'couches',d:'z'},
+  petg:{t:'couches',d:'z'},pom:{t:'grain',e:0.15},'pa-nylon':{t:'grain'},'pe-hd':{t:'grain'},caoutchouc:{t:'grain',e:0.4},
+  silicone:{t:'grain',e:0.4},tpu:{t:'couches',d:'z'},'peint-mat':{t:'grain',e:0.2},'peint-epoxy':{t:'grain',e:0.6},
+  'bois-hetre':{t:'bois'},'bois-chene':{t:'bois',e:3},'bois-noyer':{t:'bois',e:2.6},mdf:{t:'grain',e:0.5},'verre-depoli':{t:'sable',e:0.05}};
+Object.keys(MAT_REL).forEach(k=>{if(MAT_BY_KEY[k])MAT_BY_KEY[k].rel=MAT_REL[k];});
 function matDef(k){return(k&&MAT_BY_KEY[k])||null;}
 function bodyMatOf(id){ // clé du matériau d'un corps (null = aucun)
   try{const e=bodyEntryOf(id);return(e&&matDef(e.mat))?e.mat:null;}catch(err){return null;}
@@ -2217,13 +2226,19 @@ function fmtMasse(g){return g>=1000?(g/1000).toFixed(g>=10000?1:2).replace('.','
    Lues par l'atelier RENDU (98-rendu) et par les environnements de rendu de la vue
    (98-rendu-vue) ; jamais par l'affichage CAO, l'usinage ni la mise en plan. */
 function renduNorm(r){ // relu d'un fichier : champs valides seulement ; null si vide
-  if(!r||typeof r!=='object'||!r.corps||typeof r.corps!=='object')return null;
-  const c={};
-  Object.keys(r.corps).forEach(id=>{const e=r.corps[id];if(!e||typeof e!=='object')return;
+  if(!r||typeof r!=='object')return null;
+  const c={},out={};
+  if(r.corps&&typeof r.corps==='object')Object.keys(r.corps).forEach(id=>{const e=r.corps[id];if(!e||typeof e!=='object')return;
     const o={};if(e.mat===''||matDef(e.mat))o.mat=e.mat; /* '' = « sans matériau » voulu pour le rendu */
     if(isFinite(+e.col)&&+e.col>=0&&+e.col<=0xffffff)o.col=+e.col;
+    const rl=typeof relNorm==='function'?relNorm(e.rel):null;if(rl)o.rel=rl; // relief (98-rendu-reliefs, V0.11.0)
     if(Object.keys(o).length)c[id]=o;});
-  return Object.keys(c).length?{corps:c}:null;
+  if(Object.keys(c).length)out.corps=c;
+  // vues enregistrées de l'atelier (V0.11.0) : {n nom, p position, t cible, u haut, f focale}
+  const v3=a=>Array.isArray(a)&&a.length===3&&a.every(x=>isFinite(+x));
+  if(Array.isArray(r.cams)){const cs=r.cams.filter(k=>k&&v3(k.p)&&v3(k.t)).slice(0,40).map(k=>({n:String(k.n||'Vue').slice(0,40),p:k.p.map(Number),t:k.t.map(Number),
+    u:v3(k.u)?k.u.map(Number):[0,0,1],f:isFinite(+k.f)&&+k.f>=12&&+k.f<=300?+k.f:50}));if(cs.length)out.cams=cs;}
+  return Object.keys(out).length?out:null;
 }
 function renderLookOwn(id){try{return(doc&&doc.rendu&&doc.rendu.corps&&doc.rendu.corps[id])||null;}catch(e){return null;}}
 function renderLookOf(id){
@@ -2231,22 +2246,25 @@ function renderLookOf(id){
   const r=renderLookOwn(id);
   const mat=r&&r.mat!==undefined?r.mat:bodyMatOf(id);
   const color=r&&r.col!=null?r.col:bodyColorOf(id);
-  return {mat:matDef(mat)?mat:null,color,own:!!r};
+  return {mat:matDef(mat)?mat:null,color,rel:r&&r.rel?r.rel:null,own:!!r};
 }
-function setRenderLook(id,k,col){
-  // matériau k (null = aucun) et couleur col (null = celle du matériau, sinon celle de la CAO)
+function setRenderLook(id,k,col,rel){
+  // matériau k (null = aucun), couleur col (null = celle du matériau, sinon celle de la CAO), relief rel
+  // (undefined : on garde le relief choisi si le matériau ne change pas ; null : celui du matériau)
   if(!id||!doc)return false;
-  const m=matDef(k);
+  const m=matDef(k),prev=renderLookOwn(id);
   const o={mat:m?m.k:''}; // '' : sans matériau, même si le corps en a un en CAO
   o.col=col!=null?col:(m?m.col:bodyColorOf(id));
-  if(!doc.rendu||!doc.rendu.corps)doc.rendu={corps:{}};
+  const rl=rel!==undefined?rel:(prev&&prev.rel&&prev.mat===o.mat?prev.rel:null);
+  if(rl&&typeof relNorm==='function'&&relNorm(rl))o.rel=relNorm(rl);
+  if(!doc.rendu)doc.rendu={};if(!doc.rendu.corps)doc.rendu.corps={}; // garde les vues enregistrées (cams)
   doc.rendu.corps[id]=o;
   return true;
 }
 function clearRenderLook(id){ // revient à l'apparence CAO
   if(!doc||!doc.rendu||!doc.rendu.corps)return false;
   delete doc.rendu.corps[id];
-  if(!Object.keys(doc.rendu.corps).length)doc.rendu=null;
+  if(!Object.keys(doc.rendu.corps).length){delete doc.rendu.corps;if(!doc.rendu.cams)doc.rendu=null;}
   return true;
 }
 
@@ -9208,7 +9226,7 @@ function asmFill(G,placer){
       if(kind==='ghost')mat=new THREE.MeshStandardMaterial({color:it.color,transparent:true,opacity:0.18,depthWrite:false,metalness:.2,roughness:.6});
       else mat=asmLookMat(it,look,on); // couleur des corps, intensité, transparence (48-assemblage-apparence)
       const m=new THREE.Mesh(it.geo,mat);const ro=it.bid?asmOccRenduOf(inst.path,it.bid):null; // apparence de rendu choisie dans le rendu d'assemblage (occurrence)
-      m.userData.rd={mat:ro?ro.mat:(it.rl?it.rl.mat:null),color:ro?ro.col:(it.rl?it.rl.color:it.color),cmat:it.cm||null,ccol:it.color,ghost:kind==='ghost',
+      m.userData.rd={mat:ro?ro.mat:(it.rl?it.rl.mat:null),color:ro?ro.col:(it.rl?it.rl.color:it.color),rel:ro?ro.rel:(it.rl?it.rl.rel:null),cmat:it.cm||null,ccol:it.color,ghost:kind==='ghost',
         bid:it.bid||null,comp:inst.comp,occ:inst.path.length?inst.path[inst.path.length-1]:null}; // apparence de rendu (98-rendu, 98-rendu-vue)
       if(kind==='pick')m.userData.occ=key;else{m.raycast=()=>{};if(kind==='ghost')m.renderOrder=-1;}
       g.add(m);
@@ -10355,13 +10373,14 @@ function asmOccRenduOf(path,bid){
     c=asmComp(o.comp);
   }
   if(!out)return null;
-  return {mat:matDef(out.mat)?out.mat:null,col:out.col};
+  return {mat:matDef(out.mat)?out.mat:null,col:out.col,rel:out.rel||null};
 }
-function asmSetOccRendu(o,bid,k,col,all){
-  // matériau k (null = aucun), couleur col (null = celle du matériau) ; all : toutes les occurrences du composant
+function asmSetOccRendu(o,bid,k,col,all,rel){
+  // matériau k (null = aucun), couleur col (null = celle du matériau), relief rel (V0.11.0, null : celui
+  // du matériau) ; all : toutes les occurrences du composant
   if(!o)return;
   asmPush('apparence de rendu');
-  const m=matDef(k),e={mat:m?m.k:'',col:col!=null?col:(m?m.col:0x9a9aa0)};
+  const m=matDef(k),e={mat:m?m.k:'',col:col!=null?col:(m?m.col:0x9a9aa0)};if(rel)e.rel=rel;
   (all?asmCompOccs(o.comp):[o]).forEach(q=>{const r=q.rendu&&q.rendu.corps?{corps:Object.assign({},q.rendu.corps)}:{corps:{}};
     r.corps[bid]=Object.assign({},e);q.rendu=renduNorm(r);});
   asmNotify();
@@ -57738,6 +57757,95 @@ function viewFadeIn(){
   else try{mepInit();}catch(e){}
 })();
 
+/* ═══════════════ 98-rendu-reliefs.js — rendu reliefs ═══════════════ */
+/* ---------- reliefs procéduraux de l'atelier RENDU (V0.11.0, phase 2) ----------
+   Brossé, sablé, moleté, veinage bois, grain, stries d'usinage, couches d'impression 3D : calculés
+   dans le shader des matières (onBeforeCompile), sans image ni coordonnées de texture — les pièces
+   de CAO n'en ont pas. Le motif est une hauteur h(p) en mm, p = position dans le repère de la
+   pièce (il colle à la pièce quand on la tourne) ; la normale est inclinée par les dérivées écran de
+   h (bump mapping, comme bumpMap de three). Un motif plus fin que le pixel s'atténue (fwidth) et
+   cède la place à un peu de rugosité : pas de moiré, et l'affinage progressif lisse le reste.
+   Relief d'un corps : apparence de rendu {rel:{t, e (échelle en mm), d ('x'|'y'|'z')}} (12-materiaux),
+   sinon celui de son matériau (MAT_LIB[].rel), sinon aucun. */
+const REL_TYPES=[['','Selon le matériau'],['aucun','Aucun'],['brosse','Brossé'],['sable','Sablé / microbillé'],['molete','Moleté'],
+  ['bois','Veinage bois'],['grain','Grain (plastique, peinture)'],['stries','Stries d’usinage'],['couches','Couches d’impression 3D']];
+// e : échelle par défaut (mm) · a : profondeur (mm) · r : rugosité ajoutée quand le motif est plus fin que le pixel
+const REL_DEF={brosse:{e:0.12,a:0.006,r:0.06},sable:{e:0.07,a:0.006,r:0.16},molete:{e:1.0,a:0.16,r:0.02},bois:{e:2.2,a:0.012,r:0.04},
+  grain:{e:0.3,a:0.008,r:0.08},stries:{e:0.2,a:0.004,r:0.04},couches:{e:0.2,a:0.03,r:0.05}};
+const REL_ID={brosse:1,sable:2,molete:3,bois:4,grain:5,stries:6,couches:7};
+function relOf(look,def){
+  // relief effectif {t, e, d} d'un corps, ou null
+  const r=(look&&look.rel)||{};
+  let t=r.t;if(!t)t=def&&def.rel?def.rel.t:'aucun';
+  if(!REL_ID[t])return null;
+  const dd=def&&def.rel&&def.rel.t===t?def.rel:{};
+  return {t,e:r.e>0?r.e:(dd.e>0?dd.e:REL_DEF[t].e),d:r.d||dd.d||'x'};
+}
+function relNorm(r){ // relu d'un fichier : champs valides seulement ; null si vide
+  if(!r||typeof r!=='object')return null;
+  const o={};
+  if(r.t==='aucun'||REL_ID[r.t])o.t=r.t;
+  if(isFinite(+r.e)&&+r.e>0.005&&+r.e<50)o.e=+(+r.e).toFixed(3);
+  if(r.d==='x'||r.d==='y'||r.d==='z')o.d=r.d;
+  return Object.keys(o).length?o:null;
+}
+const REL_VS_HEAD='varying vec3 vRelP;\nvarying vec3 vRelN;\n';
+const REL_FS_HEAD=[
+  'varying vec3 vRelP;varying vec3 vRelN;',
+  'uniform float uRelT;uniform float uRelF;uniform float uRelA;uniform float uRelR;uniform vec3 uRelD;',
+  'float relHash(vec3 p){p=fract(p*0.3183099+0.1);p*=17.0;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}',
+  'float relNoise(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.0-2.0*f);',
+  '  return mix(mix(mix(relHash(i),relHash(i+vec3(1,0,0)),f.x),mix(relHash(i+vec3(0,1,0)),relHash(i+vec3(1,1,0)),f.x),f.y),',
+  '             mix(mix(relHash(i+vec3(0,0,1)),relHash(i+vec3(1,0,1)),f.x),mix(relHash(i+vec3(0,1,1)),relHash(i+vec3(1,1,1)),f.x),f.y),f.z);}',
+  'float relFbm(vec3 x){return relNoise(x)*0.6+relNoise(x*2.03+7.1)*0.3+relNoise(x*4.1+3.7)*0.1;}',
+  'float relTri(float x){return abs(fract(x)-0.5)*2.0;}',
+  // hauteur du motif (0..1) et, pour le bois, teinte (0..1) ; p en mm, D axe du motif
+  'float relH(vec3 p,out float wood){',
+  '  vec3 D=normalize(uRelD);vec3 q=p-D*dot(p,D);float f=uRelF;wood=0.5;int t=int(uRelT+0.5);',
+  '  if(t==1){float w=dot(p,D);return relFbm(q*f+D*(w*f*0.015))*0.55+relNoise(q*f*0.18+D*(w*f*0.004))*0.45;}', // brossé : traits fins + traînées plus larges le long de D
+  '  if(t==2){return relFbm(p*f)*0.7+relNoise(p*f*0.25)*0.3;}',                               // sablé
+  '  if(t==3){vec3 a=normalize(cross(D,vec3(0.31,0.57,0.76)));vec3 b=cross(D,a);',            // moleté : pointes de diamant
+  '    float u=dot(p,a),v=dot(p,b),w=dot(p,D);',
+  '    return 1.0-max(relTri((w+u+v)*f*0.7071),relTri((w-u-v)*f*0.7071));}',
+  '  if(t==4){float r=length(q)+relFbm(p*f*0.35)*1.6/f;wood=relTri(r*f);return wood;}',       // bois : cernes autour de D
+  '  if(t==5){return relFbm(p*f)*0.75+relNoise(p*f*0.3)*0.25;}',                              // grain
+  '  if(t==6){return relTri(length(q)*f);}',                                                 // stries : cercles autour de D
+  '  if(t==7){return pow(relTri(dot(p,D)*f),0.6);}',                                         // couches : plans perpendiculaires à D
+  '  return 0.0;}',
+  'vec3 relPerturb(vec3 surf_pos,vec3 surf_norm,vec2 dHdxy,float faceDirection){',              // perturbNormalArb (three, bumpmap)
+  '  vec3 vSigmaX=dFdx(surf_pos.xyz);vec3 vSigmaY=dFdy(surf_pos.xyz);vec3 vN=surf_norm;',
+  '  vec3 R1=cross(vSigmaY,vN);vec3 R2=cross(vN,vSigmaX);float fDet=dot(vSigmaX,R1)*faceDirection;',
+  '  vec3 vGrad=sign(fDet)*(dHdxy.x*R1+dHdxy.y*R2);return normalize(abs(fDet)*surf_norm-vGrad);}',
+  ''].join('\n');
+function relApply(mat,rel){
+  // branche le relief rel ({t,e,d}) sur une MeshPhysicalMaterial de l'atelier ; rel null : rien
+  if(!rel)return mat;
+  const P=REL_DEF[rel.t],D=rel.d==='y'?[0,1,0]:rel.d==='z'?[0,0,1]:[1,0,0];
+  const U={uRelT:{value:REL_ID[rel.t]},uRelF:{value:1/rel.e},uRelA:{value:P.a*(rel.e/P.e)},uRelR:{value:P.r},uRelD:{value:new THREE.Vector3(D[0],D[1],D[2])}};
+  mat.userData.rel=U;
+  mat.onBeforeCompile=function(sh){
+    Object.assign(sh.uniforms,U);
+    sh.vertexShader=REL_VS_HEAD+sh.vertexShader
+      .replace('#include <begin_vertex>','#include <begin_vertex>\n  vRelP = transformed; vRelN = objectNormal;');
+    sh.fragmentShader=REL_FS_HEAD+sh.fragmentShader
+      .replace('#include <color_fragment>','#include <color_fragment>\n'+
+        '  float relWood; float relHv = relH( vRelP, relWood );\n'+
+        // visibilité : motifs aléatoires jugés sur leurs composantes larges (l'affinage moyenne le reste) ;
+        // motifs réguliers (moleté, stries, couches) sur leur pas — sinon moiré
+        '  int relT = int( uRelT + 0.5 ); float relK = ( relT == 3 || relT == 6 || relT == 7 ) ? 1.0 : 0.3;\n'+
+        '  float relFw = relK * ( fwidth( vRelP.x * uRelF ) + fwidth( vRelP.y * uRelF ) + fwidth( vRelP.z * uRelF ) );\n'+
+        '  float relVis = 1.0 - smoothstep( 0.35, 1.2, relFw );\n'+                              // motif plus fin que le pixel : il s'estompe
+        '  if( int( uRelT + 0.5 ) == 4 ) diffuseColor.rgb *= mix( 0.62, 1.08, mix( 0.5, relWood, max( relVis, 0.35 ) ) );')
+      .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\n'+
+        '  roughnessFactor = clamp( roughnessFactor + uRelR * ( 1.0 - relVis ) + uRelR * 0.4 * relVis * ( relHv - 0.5 ), 0.03, 1.0 );')
+      .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\n'+
+        '  normal = relPerturb( - vViewPosition, normal, vec2( dFdx( relHv ), dFdy( relHv ) ) * uRelA * relVis, faceDirection );');
+  };
+  mat.customProgramCacheKey=function(){return 'rdRelief';};
+  mat.needsUpdate=true;
+  return mat;
+}
+
 /* ═══════════════ 98-rendu-vue.js — rendu vue ═══════════════ */
 /* ---------- environnements de RENDU dans la vue CAO (V0.10.0) ----------
    Réglages de vue ⚙ → « Environnement » : « Actuel (CAO) » (fond du thème, sol miroir, couleurs
@@ -57931,28 +58039,36 @@ function vEnvTick(){
 })();
 
 /* ═══════════════ 98-rendu.js — rendu ═══════════════ */
-/* ---------- atelier RENDU (V0.10.0, phase 1) ----------
+/* ---------- atelier RENDU (V0.10.0 phase 1 · V0.11.0 phase 2) ----------
    Une image soignée de la pièce ou de l'assemblage, en 1920×1080 (ou 4K), enregistrée en PNG.
    Ouvert par le bouton RENDU du bandeau (à côté de PLAN) ou l'appareil photo de la barre de vue.
    L'atelier a SA scène et SON moteur WebGL (la vue CAO n'est jamais touchée) : les maillages
    affichés sont copiés tels quels (rien n'est recalculé), chacun reçoit une matière physique tirée
-   de la bibliothèque (12-materiaux : doc.bodies[].mat, couleur du corps). La transparence de la
-   CAO (aide à la visualisation) est ignorée : seul le matériau (verres) rend transparent.
+   de la bibliothèque (12-materiaux) selon son APPARENCE DE RENDU (doc.rendu, o.rendu en assemblage,
+   sinon matériau et couleur de la CAO). La transparence de la CAO (aide à la visualisation) est
+   ignorée : seul le matériau (verres) rend transparent.
    - Ambiances : environnements de reflets générés à la volée (ciel dégradé + boîtes à lumière,
      filtrés par PMREM) — aucune image externe, l'application reste un seul fichier.
-   - Fond : dégradé, uni ou transparent (PNG détouré) ; ombre portée douce au sol (VSM).
-   - Appareil photo : focale en mm (capteur 24×36, cadre 16:9), exposition en EV, rendu des tons.
-   - Sortie : suréchantillonnage ×2 puis réduction (bords lisses), téléchargement PNG.
+   - Reliefs procéduraux par corps : brossé, sablé, moleté, bois… (98-rendu-reliefs).
+   - AFFINAGE PROGRESSIF (V0.11.0) : chaque passe est rendue dans une cible flottante, avec un léger
+     décalage de l'image (bords lisses), de la lampe (ombre douce : vraie pénombre) et de l'objectif
+     (profondeur de champ) ; la moyenne des passes est gardée. L'exposition, les tons et le fond sont
+     appliqués à l'affichage (rdShow). Aperçu : jusqu'à RD_PREVIEW passes dès que la vue est immobile ;
+     image : 16, 64 ou 256 passes à la taille finale.
+   - Appareil photo : focale en mm (capteur 24×36, cadre 16:9), ouverture f/ et mise au point au clic,
+     exposition en EV, rendu des tons ; vues enregistrées avec la pièce (doc.rendu.cams).
    Réglages retenus dans le navigateur (localStorage), pas dans le document. */
 const RD_LS='minifusion_rendu';
-const RD_DEF={amb:'studio',envRot:0,envInt:1,lum:1,fond:'degrade',fc1:'#f2f3f5',fc2:'#c3c7ce',sol:'ombre',ombre:0.45,douceur:6,
-  focale:50,ev:0,tons:'aces',res:'1080',qual:2,aretes:'non',solOn:true,solCol:'',miroir:true,ombreOn:true}; // solCol '' = couleur du bas du fond
+const RD_DEF={amb:'studio',envRot:0,envInt:1,lum:1,fond:'degrade',fc1:'#f2f3f5',fc2:'#c3c7ce',ombre:0.45,douceur:6,
+  focale:50,ev:0,tons:'aces',res:'1080',ech:64,aretes:'non',solOn:true,solCol:'',miroir:true,ombreOn:true,ouv:0,map:0}; // solCol '' = couleur du bas du fond ; ouv 0 = tout net ; map 0 = mise au point sur la cible
 const RD_AMB=[
   ['studio','Studio (softbox)'],['clair','Studio lumineux'],['atelier','Atelier (lumière chaude)'],['exterieur','Extérieur (ciel)'],['noir','Scène noire (contre-jour)']];
+const RD_PREVIEW=64; // passes de l'aperçu
 let rd=null; // état de l'atelier ouvert (null = fermé)
 function rdSettings(){
   let s={};try{s=JSON.parse(localStorage.getItem(RD_LS)||'{}')||{};}catch(e){s={};}
   if(typeof s.sol==='string'){s.ombreOn=s.sol==='ombre';delete s.sol;} // réglage d'avant les cases Sol / Miroir / Ombre
+  delete s.qual; // V0.10.0 : suréchantillonnage ×2, remplacé par le nombre de passes (ech)
   return Object.assign({},RD_DEF,s);
 }
 function rdSave(){try{localStorage.setItem(RD_LS,JSON.stringify(rd.st));}catch(e){}}
@@ -58015,22 +58131,12 @@ function rdBuildEnv(){
   rd.envRT=rt;rd.scene.environment=rt.texture;
   rd.keyDir=key;
 }
-/* ── fond ── */
-function rdBackground(){
-  const st=rd.st;
-  if(rd.bgTex){rd.bgTex.dispose();rd.bgTex=null;}
-  if(st.fond==='transparent'){rd.scene.background=null;rd.r.setClearColor(0x000000,0);return;}
-  const c=document.createElement('canvas');c.width=16;c.height=512;
-  const x=c.getContext('2d'),g=x.createLinearGradient(0,0,0,512);
-  g.addColorStop(0,st.fc1);g.addColorStop(1,st.fond==='uni'?st.fc1:st.fc2);
-  x.fillStyle=g;x.fillRect(0,0,16,512);
-  const t=new THREE.CanvasTexture(c);t.encoding=THREE.sRGBEncoding;
-  rd.bgTex=t;rd.scene.background=t;rd.r.setClearColor(0x000000,1);
-}
+/* ── fond : composé à l'affichage (rdShow), jamais dans la scène — les passes ont un fond transparent ── */
+function rdBackground(){rd.scene.background=null;}
 /* ── objets : maillages affichés + matières physiques ── */
 function rdShown(o){for(let p=o;p;p=p.parent)if(p.visible===false)return false;return true;}
 function rdSources(){
-  // [{mesh, id (corps de la pièce active, sinon null), mat, color}]
+  // [{mesh, id (corps de la pièce active, sinon null), mat, color, rel}]
   const out=[];
   const asmS=(typeof asmMode!=='undefined'&&asmMode==='asm'&&typeof asmScene!=='undefined'&&asmScene)?asmScene:null;
   if(!asmS){
@@ -58038,14 +58144,14 @@ function rdSources(){
       if(!b||b.ghost||!b.mesh||!b.mesh.geometry||b.visible===false||!rdShown(b.mesh))return;
       const id=bodyIdOfRuntime(b);
       const L=id?renderLookOf(id):null; // apparence de RENDU (sinon celle de la CAO) — 12-materiaux
-      out.push({mesh:b.mesh,id,mat:L?L.mat:null,color:L?L.color:(b.color||0x9a9aa0)});
+      out.push({mesh:b.mesh,id,mat:L?L.mat:null,color:L?L.color:(b.color||0x9a9aa0),rel:L?L.rel:null});
     });
   }
   const root=asmS||scene; // assemblage autour de la pièce (asmCtx) ou mode Placer : maillages repérés par userData.rd (47)
   root.traverse(o=>{
     const r=o.isMesh&&o.userData&&o.userData.rd;
     if(!r||r.ghost||!o.geometry||!rdShown(o))return;
-    out.push({mesh:o,id:null,mat:r.mat,color:r.color,bid:r.bid||null,comp:r.comp||null,occ:r.occ||null});
+    out.push({mesh:o,id:null,mat:r.mat,color:r.color,rel:r.rel||null,bid:r.bid||null,comp:r.comp||null,occ:r.occ||null});
   });
   return out;
 }
@@ -58077,7 +58183,7 @@ function rdMaterial(src){
     envMapIntensity:rd.st.envInt,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1}); // décalage : les arêtes restent devant les faces
   if(d&&d.trans){m.transmission=d.trans;m.ior=d.ior||1.5;m.thickness=4;m.attenuationColor=rdLin(src.color);m.attenuationDistance=d.trans<1?8:60;m.color.setRGB(1,1,1);}
   if(d&&d.sheen){m.sheen=d.sheen;m.sheenRoughness=0.8;m.sheenColor=new THREE.Color(0.35,0.35,0.35);}
-  return m;
+  return relApply(m,relOf({rel:src.rel},d)); // relief du corps, sinon celui du matériau (98-rendu-reliefs)
 }
 function rdBuildObjects(){
   if(rd.group){rd.scene.remove(rd.group);rd.group.traverse(o=>{if(o.material)o.material.dispose();if(o.geometry)o.geometry.dispose();});}
@@ -58102,26 +58208,37 @@ function rdFloor(){
     rd.floor=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.ShadowMaterial({opacity:0.4}));
     rd.floor.receiveShadow=true;rd.scene.add(rd.floor);
     rd.key=new THREE.DirectionalLight(0xffffff,1);rd.key.castShadow=true;
-    rd.key.shadow.mapSize.set(4096,4096);rd.key.shadow.bias=-0.0005; // fixe : la recréer casse le flou VSM (mapPass)
+    rd.key.shadow.mapSize.set(4096,4096);rd.key.shadow.bias=-0.0004;
     rd.scene.add(rd.key);rd.scene.add(rd.key.target);
   }
   rd.floor.visible=!!st.ombreOn;
   rdDisk(c,R,b.min.z);
   rd.floor.scale.set(R*12,R*12,1);rd.floor.position.set(c.x,c.y,b.min.z-R*0.002);
   rd.floor.material.opacity=st.ombre;
-  // lumière principale : direction de l'ambiance, tournée avec elle
-  const a=(rd.keyDir[0]+st.envRot)*Math.PI/180,e=rd.keyDir[1]*Math.PI/180,D=R*4;
-  rd.key.position.set(c.x+D*Math.cos(e)*Math.cos(a),c.y+D*Math.cos(e)*Math.sin(a),c.z+D*Math.sin(e));
+  // lumière principale : direction de l'ambiance, tournée avec elle ; rdSunJitter la promène dans un cône
+  rd.keyBase={c,R,a:(rd.keyDir[0]+st.envRot)*Math.PI/180,e:rd.keyDir[1]*Math.PI/180};
+  rdSunJitter(-1);
   rd.key.target.position.copy(c);rd.key.target.updateMatrixWorld();
   rd.key.intensity=st.lum*(st.amb==='noir'?0.6:1.4);
   const sc=rd.key.shadow.camera;sc.left=-R*1.6;sc.right=R*1.6;sc.top=R*1.6;sc.bottom=-R*1.6;sc.near=R*0.5;sc.far=R*8;sc.updateProjectionMatrix();
-  rd.key.shadow.radius=st.douceur;rd.key.shadow.blurSamples=24;
-  rd.key.shadow.needsUpdate=true;
+}
+function rdHalton(i,b){let f=1,r=0;i=i+1;while(i>0){f/=b;r+=f*(i%b);i=Math.floor(i/b);}return r;}
+function rdDisk2(i,b1,b2){ // point uniforme dans le disque unité (suite de Halton : couverture régulière)
+  const u=rdHalton(i,b1),v=rdHalton(i,b2),r=Math.sqrt(u),t=2*Math.PI*v;return [r*Math.cos(t),r*Math.sin(t)];
+}
+function rdSunJitter(i){
+  // i < 0 : direction de base ; sinon un point du disque de la lampe (rayon angulaire = « Douceur »)
+  const K=rd.keyBase;if(!K)return;
+  let a=K.a,e=K.e;
+  if(i>=0){const s=rd.st.douceur*0.4*Math.PI/180,[u,v]=rdDisk2(i,5,7);a+=u*s/Math.max(0.2,Math.cos(e));e+=v*s;}
+  const D=K.R*4;
+  rd.key.position.set(K.c.x+D*Math.cos(e)*Math.cos(a),K.c.y+D*Math.cos(e)*Math.sin(a),K.c.z+D*Math.sin(e));
+  rd.key.updateMatrixWorld();
 }
 /* ── sol et miroir (cases « Sol », « Miroir » — comme la vue CAO, 10-scene-3d / 98-rendu-vue) ──
    Disque à bords fondus dans le fond ; reflet plan : caméra symétrique sous le sol rendue dans une
-   cible (fond transparent), relue par projection. La cible est linéaire et sans tons : le shader du
-   sol applique exposition, ACES et sRGB, comme les matières à l'écran. */
+   cible (fond transparent), relue par projection. Tout est LINÉAIRE ici : les tons, l'exposition et
+   le sRGB sont appliqués une seule fois, à l'affichage (rdShow). */
 function rdSolHex(){
   const st=rd.st;if(st.solCol)return st.solCol;
   return st.fond==='degrade'?st.fc2:st.fond==='uni'?st.fc1:'#9a9ea6';
@@ -58129,16 +58246,17 @@ function rdSolHex(){
 function rdDisk(c,R,z){
   const st=rd.st;
   if(!rd.disk){
-    rd.mirRT=new THREE.WebGLRenderTarget(2048,2048,{samples:4});
+    rd.mirRT=new THREE.WebGLRenderTarget(2048,2048,{samples:4,type:THREE.HalfFloatType});
     rd.mirCam=new THREE.PerspectiveCamera();rd.mirMat=new THREE.Matrix4();
     const U={color:{value:new THREE.Color()},tRefl:{value:rd.mirRT.texture},texM:{value:rd.mirMat},uC:{value:new THREE.Vector3()},
-      uR:{value:1},uDisk:{value:1},uRefl:{value:1},uExpo:{value:1}};
+      uR:{value:1},uDisk:{value:1},uRefl:{value:1}};
     rd.disk=new THREE.Mesh(new THREE.CircleGeometry(1,128),new THREE.ShaderMaterial({uniforms:U,transparent:true,depthWrite:false,
       vertexShader:'uniform mat4 texM; varying vec4 vUv; varying vec3 vW;\nvoid main(){ vec4 wp = modelMatrix * vec4(position, 1.0); vW = wp.xyz; vUv = texM * vec4(position, 1.0); gl_Position = projectionMatrix * viewMatrix * wp; }',
-      fragmentShader:VENV_GLSL+'uniform vec3 color; uniform sampler2D tRefl; uniform vec3 uC; uniform float uR; uniform float uDisk; uniform float uRefl; uniform float uExpo; varying vec4 vUv; varying vec3 vW;\n'+
+      fragmentShader:'uniform vec3 color; uniform sampler2D tRefl; uniform vec3 uC; uniform float uR; uniform float uDisk; uniform float uRefl; varying vec4 vUv; varying vec3 vW;\n'+
         'void main(){ float d = distance(vW, uC); float a = uDisk > 0.5 ? 1.0 - smoothstep(uR * 1.6, uR * 5.5, d) : 0.0; vec3 refl = vec3(0.0); float ra = 0.0; float f = 0.0; '+
-        'if(uRefl > 0.5 && vUv.w > 1e-4){ vec2 uv = vUv.xy / vUv.w; if(uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0){ vec4 r4 = texture2D(tRefl, uv); refl = LinearTosRGB(vec4(vEnvAces(r4.rgb * uExpo), 1.0)).rgb; ra = r4.a; f = exp(-pow(d / max(uR * 1.2, 1e-3), 2.0) * 1.6) * 0.8; } } '+
-        'if(uDisk > 0.5){ gl_FragColor = vec4(mix(color, refl, clamp(f * ra * 0.7, 0.0, 1.0)), a); return; } gl_FragColor = vec4(refl, ra * f * 0.6); }'}));
+        'if(uRefl > 0.5 && vUv.w > 1e-4){ vec2 uv = vUv.xy / vUv.w; if(uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0){ vec4 r4 = texture2D(tRefl, uv); ra = r4.a; refl = ra > 1e-4 ? r4.rgb / ra : vec3(0.0); f = exp(-pow(d / max(uR * 1.2, 1e-3), 2.0) * 1.6) * 0.8; } } '+
+        'vec3 base = pow(color, vec3(2.2)); '+ // couleur choisie (sRGB) → linéaire
+        'if(uDisk > 0.5){ gl_FragColor = vec4(mix(base, refl, clamp(f * ra * 0.7, 0.0, 1.0)), a); return; } gl_FragColor = vec4(refl, ra * f * 0.6); }'}));
     rd.disk.renderOrder=-3;rd.scene.add(rd.disk);
     rd.floor.renderOrder=-2; // l'ombre par-dessus le sol et le reflet
   }
@@ -58149,18 +58267,20 @@ function rdDisk(c,R,z){
   U.uDisk.value=st.solOn?1:0;U.uRefl.value=st.miroir?1:0;
   rd.floorZ=z;
 }
-function rdMirror(){ // passe reflet, avant chaque image
+const _rdV1=new THREE.Vector3(),_rdV2=new THREE.Vector3();
+function rdMirror(){ // passe reflet, avant chaque passe : caméra RÉELLE de la passe (décalages compris)
   if(!rd.disk||!rd.disk.visible||!rd.st.miroir)return;
-  const z0=rd.floorZ,cam=rd.cam,mc=rd.mirCam,t=rd.ctl.target;
+  const z0=rd.floorZ,cam=rd.cam,mc=rd.mirCam;
+  const dir=_rdV1.set(0,0,-1).applyQuaternion(cam.quaternion),up=_rdV2.set(0,1,0).applyQuaternion(cam.quaternion);
+  const tx=cam.position.x+dir.x*100,ty=cam.position.y+dir.y*100,tz=cam.position.z+dir.z*100;
   mc.position.set(cam.position.x,cam.position.y,2*z0-cam.position.z);
-  mc.up.set(cam.up.x,cam.up.y,-cam.up.z);mc.lookAt(t.x,t.y,2*z0-t.z);
-  mc.fov=cam.fov;mc.aspect=cam.aspect;mc.near=cam.near;mc.far=cam.far;mc.updateProjectionMatrix();mc.updateMatrixWorld();
+  mc.up.set(up.x,up.y,-up.z);mc.lookAt(tx,ty,2*z0-tz);
+  mc.projectionMatrix.copy(cam.projectionMatrix);mc.projectionMatrixInverse.copy(cam.projectionMatrixInverse);mc.updateMatrixWorld();
   rd.mirMat.set(0.5,0,0,0.5, 0,0.5,0,0.5, 0,0,0.5,0.5, 0,0,0,1).multiply(mc.projectionMatrix).multiply(mc.matrixWorldInverse).multiply(rd.disk.matrixWorld);
-  rd.disk.material.uniforms.uExpo.value=rd.r.toneMappingExposure;
-  const bg=rd.scene.background,ca=rd.r.getClearAlpha(),hid=[rd.disk,rd.floor,rd.edges].filter(o=>o&&o.visible);
-  hid.forEach(o=>{o.visible=false;});rd.scene.background=null;rd.r.setClearAlpha(0);
-  rd.r.setRenderTarget(rd.mirRT);rd.r.clear();rd.r.render(rd.scene,mc);rd.r.setRenderTarget(null);
-  rd.scene.background=bg;rd.r.setClearAlpha(ca);hid.forEach(o=>{o.visible=true;});
+  const hid=[rd.disk,rd.floor,rd.edges].filter(o=>o&&o.visible);
+  hid.forEach(o=>{o.visible=false;});
+  rd.r.setRenderTarget(rd.mirRT);rd.r.setClearColor(0x000000,0);rd.r.clear();rd.r.render(rd.scene,mc);
+  hid.forEach(o=>{o.visible=true;});
 }
 /* ── appareil photo ── */
 function rdFov(f){return 2*Math.atan(18/f/(16/9))*180/Math.PI;} // capteur 36 mm de large, cadre 16:9
@@ -58169,9 +58289,10 @@ function rdApplyCam(){
   cam.fov=rdFov(st.focale);cam.aspect=16/9;
   const d=cam.position.distanceTo(rd.ctl.target);
   cam.near=Math.max(0.05,d-R*4)*0.5;cam.far=d+R*30;cam.updateProjectionMatrix();
-  rd.r.toneMappingExposure=Math.pow(2,st.ev);
-  rd.r.toneMapping={aces:THREE.ACESFilmicToneMapping,lin:THREE.LinearToneMapping,doux:THREE.ReinhardToneMapping,cine:THREE.CineonToneMapping}[st.tons]||THREE.ACESFilmicToneMapping;
   rd.group.traverse(o=>{if(o.material)o.material.envMapIntensity=st.envInt;});
+}
+function rdFocusDist(){ // distance de mise au point (mm) : point cliqué, sinon la cible
+  return rd.st.map>0?rd.st.map:rd.cam.position.distanceTo(rd.ctl.target);
 }
 function rdFrame(){ // cadre la pièce entière dans le 16:9 en gardant la direction de vue
   const cam=rd.cam,c=rd.box.getCenter(new THREE.Vector3()),R=rd.box.getSize(new THREE.Vector3()).length()*0.5||50;
@@ -58187,10 +58308,106 @@ function rdSetFocale(f){ // garde la taille de la pièce à l'écran : on recule
   const k=Math.tan(rdFov(o)*Math.PI/360)/Math.tan(rdFov(f)*Math.PI/360);
   const off=cam.position.clone().sub(t).multiplyScalar(k); // AVANT de toucher à la position (sinon distance 0)
   cam.position.copy(t).add(off);
+  if(rd.st.map>0)rd.st.map*=k; // la mise au point suit le recul
   rd.st.focale=f;rd.ctl.update();rdApplyCam();
 }
 function rdFromView(){ // reprend la vue CAO (direction et cible), puis cadre
-  rd.cam.position.copy(camera.position);rd.ctl.target.copy(controls.target);rd.ctl.update();rdFrame();
+  rd.cam.position.copy(camera.position);rd.ctl.target.copy(controls.target);rd.ctl.update();rd.st.map=0;rdFrame();
+}
+/* ── vues enregistrées (doc.rendu.cams, avec la pièce) ── */
+function rdCams(){return (typeof doc!=='undefined'&&doc&&doc.rendu&&doc.rendu.cams)||[];}
+function rdCamAdd(){
+  rdUndo();
+  if(!doc.rendu)doc.rendu={};
+  const cs=doc.rendu.cams||(doc.rendu.cams=[]);
+  let n=cs.length+1;while(cs.some(k=>k.n==='Vue '+n))n++;
+  cs.push({n:'Vue '+n,p:rd.cam.position.toArray().map(v=>+v.toFixed(3)),t:rd.ctl.target.toArray().map(v=>+v.toFixed(3)),u:[0,0,1],f:rd.st.focale});
+  markDirty();rdPanel();rdMsg('« Vue '+n+' » enregistrée avec la pièce.');
+}
+function rdCamGo(k){
+  rd.cam.position.fromArray(k.p);rd.ctl.target.fromArray(k.t);rd.st.focale=k.f;rd.st.map=0;
+  rd.ctl.update();rdApplyCam();rdReset();rdSave();rdPanel();
+}
+function rdCamDel(i){
+  const cs=rdCams();if(!cs[i])return;
+  rdUndo();const n=cs[i].n;cs.splice(i,1);
+  if(!cs.length){delete doc.rendu.cams;if(!doc.rendu.corps)doc.rendu=null;}
+  markDirty();rdPanel();rdMsg('« '+n+' » supprimée.');
+}
+/* ── affinage progressif ── */
+const RD_QV='varying vec2 vUv;\nvoid main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
+function rdAccInit(w,h){
+  const A=rd.acc||(rd.acc={n:0});
+  if(!A.cam){
+    A.cam=new THREE.OrthographicCamera(-1,1,1,-1,0,1);A.quad=new THREE.Mesh(new THREE.PlaneGeometry(2,2));A.quad.frustumCulled=false;
+    A.sc=new THREE.Scene();A.sc.add(A.quad);
+    A.mix=new THREE.ShaderMaterial({uniforms:{tA:{value:null},tS:{value:null},k:{value:1}},depthTest:false,depthWrite:false,vertexShader:RD_QV,
+      fragmentShader:'uniform sampler2D tA; uniform sampler2D tS; uniform float k; varying vec2 vUv;\nvoid main(){ gl_FragColor = mix(texture2D(tA, vUv), texture2D(tS, vUv), k); }'});
+    A.out=new THREE.ShaderMaterial({uniforms:{tA:{value:null},uExpo:{value:1},uTone:{value:0},uBg:{value:1},uC1:{value:new THREE.Color()},uC2:{value:new THREE.Color()}},
+      depthTest:false,depthWrite:false,vertexShader:RD_QV,
+      fragmentShader:VENV_GLSL+'uniform sampler2D tA; uniform float uExpo; uniform float uTone; uniform float uBg; uniform vec3 uC1; uniform vec3 uC2; varying vec2 vUv;\n'+
+        'vec3 rdTone(vec3 c){ c *= uExpo; if(uTone < 0.5) return vEnvAces(c); if(uTone < 1.5) return clamp(c / (1.0 + c), 0.0, 1.0); '+
+        'if(uTone < 2.5){ c = max(vec3(0.0), c - 0.004); return pow((c * (6.2 * c + 0.5)) / (c * (6.2 * c + 1.7) + 0.06), vec3(2.2)); } return clamp(c, 0.0, 1.0); }\n'+
+        'void main(){ vec4 a = texture2D(tA, vUv); vec3 c = a.a > 1e-4 ? a.rgb / a.a : vec3(0.0); vec3 col = LinearTosRGB(vec4(rdTone(c), 1.0)).rgb; '+
+        'if(uBg > 1.5){ gl_FragColor = vec4(col * a.a, a.a); return; } '+ // fond transparent : alpha prémultiplié (PNG détouré)
+        'vec3 bg = uBg > 0.5 ? mix(uC2, uC1, vUv.y) : uC1; gl_FragColor = vec4(mix(bg, col, clamp(a.a, 0.0, 1.0)), 1.0); }'});
+  }
+  if(A.w!==w||A.h!==h||!A.s){
+    ['s','a','b'].forEach(k=>{if(A[k])A[k].dispose();});
+    A.s=new THREE.WebGLRenderTarget(w,h,{type:THREE.HalfFloatType,samples:4});
+    A.a=new THREE.WebGLRenderTarget(w,h,{type:THREE.HalfFloatType,depthBuffer:false});
+    A.b=new THREE.WebGLRenderTarget(w,h,{type:THREE.HalfFloatType,depthBuffer:false});
+    A.w=w;A.h=h;A.n=0;
+  }
+  return A;
+}
+const _rdP0=new THREE.Vector3(),_rdQ0=new THREE.Quaternion(),_rdU0=new THREE.Vector3();
+function rdSample(){
+  // une passe : décalages (image, objectif, lampe) → cible s → moyenne dans a
+  const A=rd.acc,cam=rd.cam,st=rd.st,i=A.n,jit=i>0; // la 1re passe est nette et centrée (aperçu pendant le glisser)
+  _rdP0.copy(cam.position);_rdQ0.copy(cam.quaternion);_rdU0.copy(cam.up);
+  if(jit){
+    if(st.ouv>0){ // profondeur de champ : point de la pupille (diamètre = focale / ouverture), visée sur le plan net
+      const dir=_rdV1.set(0,0,-1).applyQuaternion(_rdQ0),fp=_rdP0.clone().addScaledVector(dir,rdFocusDist());
+      const rad=st.focale/st.ouv/2,[u,v]=rdDisk2(i,11,13);
+      const R=new THREE.Vector3(1,0,0).applyQuaternion(_rdQ0),U=new THREE.Vector3(0,1,0).applyQuaternion(_rdQ0);
+      cam.position.copy(_rdP0).addScaledVector(R,u*rad).addScaledVector(U,v*rad);cam.up.copy(U);cam.lookAt(fp);
+    }
+    cam.setViewOffset(A.w,A.h,rdHalton(i,2)-0.5,rdHalton(i,3)-0.5,A.w,A.h); // bords : décalage sous le pixel
+    rdSunJitter(i);
+  }else rdSunJitter(-1);
+  cam.updateMatrixWorld();
+  rd.r.shadowMap.needsUpdate=true;
+  rdMirror();
+  rd.r.setRenderTarget(A.s);rd.r.setClearColor(0x000000,0);rd.r.clear();rd.r.render(rd.scene,cam);
+  A.mix.uniforms.tA.value=A.a.texture;A.mix.uniforms.tS.value=A.s.texture;A.mix.uniforms.k.value=1/(i+1);
+  A.quad.material=A.mix;rd.r.setRenderTarget(A.b);rd.r.render(A.sc,A.cam);
+  const t=A.a;A.a=A.b;A.b=t;A.n++;
+  rd.r.setRenderTarget(null);
+  if(jit){cam.clearViewOffset();cam.position.copy(_rdP0);cam.quaternion.copy(_rdQ0);cam.up.copy(_rdU0);cam.updateMatrixWorld();}
+}
+function rdShow(){
+  const A=rd.acc,st=rd.st,U=A.out.uniforms;
+  U.tA.value=A.a.texture;U.uExpo.value=Math.pow(2,st.ev);U.uTone.value={aces:0,doux:1,cine:2,lin:3}[st.tons]||0;
+  U.uBg.value=st.fond==='transparent'?2:st.fond==='degrade'?1:0;U.uC1.value.set(st.fc1);U.uC2.value.set(st.fc2);
+  A.quad.material=A.out;rd.r.setRenderTarget(null);rd.r.render(A.sc,A.cam);
+}
+function rdCount(){if(rd&&rd.cnt&&rd.acc)rd.cnt.textContent='Affinage : '+rd.acc.n+' / '+RD_PREVIEW+(rd.st.ouv>0?' · f/'+String(rd.st.ouv).replace('.',',')+' · net à '+Math.round(rdFocusDist())+' mm':'');}
+function rdLoop(){
+  rd&&(rd.raf=0);
+  if(!rd||rd.busy||!rd.acc)return;
+  const A=rd.acc;
+  if(A.n===0||!rd.drag){
+    const k=A.n===0?1:2;
+    for(let j=0;j<k&&A.n<RD_PREVIEW;j++)rdSample();
+    rdShow();rdCount();
+  }
+  if(A.n<RD_PREVIEW&&!rd.drag)rd.raf=requestAnimationFrame(rdLoop);
+}
+function rdReset(){ // la scène ou la vue a changé : l'aperçu repart de zéro
+  if(!rd||!rd.acc)return;
+  rd.acc.n=0;
+  if(!rd.raf)rd.raf=requestAnimationFrame(rdLoop);
 }
 /* ── rendu ── */
 function rdLayout(){
@@ -58199,44 +58416,58 @@ function rdLayout(){
   let w=W,h=Math.round(W*9/16);if(h>H){h=H;w=Math.round(H*16/9);}
   rd.r.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
   rd.r.setSize(w,h,false);rd.canvas.style.width=w+'px';rd.canvas.style.height=h+'px';
-  rdDraw();
+  const sz=rd.r.getDrawingBufferSize(new THREE.Vector2());
+  rdAccInit(sz.x,sz.y);rdReset();
 }
-function rdDraw(){if(rd){try{rdMirror();rd.r.render(rd.scene,rd.cam);}catch(e){}}}
+function rdDraw(){rdReset();}
 function rdRefresh(what){
   if(!rd)return;
   if(what==='env')rdBuildEnv();
   if(what==='fond')rdBackground();
   if(what==='objets')rdBuildObjects();
-  rdFloor();rdApplyCam();rdDraw();rdSave();
+  rdFloor();rdApplyCam();rdReset();rdSave();
 }
 async function rdExport(){
   if(!rd||rd.busy)return;rd.busy=true;
-  const st=rd.st,W=st.res==='2160'?3840:1920,H=st.res==='2160'?2160:1080;
-  const ss=(st.qual>1&&W*2<=8192&&st.aretes!=='cao')?2:1; // arêtes : traits de 1 px, la réduction ×2 les estomperait
+  if(rd.raf){cancelAnimationFrame(rd.raf);rd.raf=0;}
+  const st=rd.st,W=st.res==='2160'?3840:1920,H=st.res==='2160'?2160:1080,N=Math.max(1,+st.ech||64);
   const btn=rd.panel.querySelector('.rdGo');if(btn){btn.disabled=true;btn.textContent='Calcul en cours…';}
   await new Promise(r=>setTimeout(r,30)); // laisse le bouton se redessiner
-  let url=null;
+  let url=null;const t0=performance.now();
   try{
-    rd.r.setPixelRatio(1);rd.r.setSize(W*ss,H*ss,false);
-    rdMirror();rd.r.render(rd.scene,rd.cam);
-    const out=document.createElement('canvas');out.width=W;out.height=H;
-    const x=out.getContext('2d');x.imageSmoothingEnabled=true;x.imageSmoothingQuality='high';
-    x.drawImage(rd.canvas,0,0,W,H);
-    const blob=await new Promise(r=>out.toBlob(r,'image/png'));
+    rd.r.setPixelRatio(1);rd.r.setSize(W,H,false);
+    rdAccInit(W,H);rd.acc.n=0;
+    for(let i=0;i<N;i++){
+      rdSample();
+      if(i%4===3||i===N-1){if(btn)btn.textContent='Calcul : '+Math.round(100*(i+1)/N)+' %  ('+(i+1)+' / '+N+' passes)';await new Promise(r=>setTimeout(r,0));}
+    }
+    rdShow();
+    const blob=await new Promise(r=>rd.canvas.toBlob(r,'image/png'));
     if(!blob)throw new Error('image vide');
     url=URL.createObjectURL(blob);
     const nm=String((typeof doc!=='undefined'&&doc&&doc.name)||'piece').replace(/[\\/:*?"<>|]+/g,'-');
     const a=document.createElement('a');a.href=url;a.download=nm+' - rendu '+W+'x'+H+'.png';document.body.appendChild(a);a.click();a.remove();
-    rdMsg('Image '+W+'×'+H+' enregistrée ('+(blob.size/1048576).toFixed(1).replace('.',',')+' Mo).');
+    rdMsg('Image '+W+'×'+H+' enregistrée : '+N+' passes en '+((performance.now()-t0)/1000).toFixed(1).replace('.',',')+' s ('+(blob.size/1048576).toFixed(1).replace('.',',')+' Mo).');
   }catch(e){rdMsg('Rendu impossible : '+(e&&e.message||e));}
   finally{
+    rd.busy=false;
     rdLayout();
     if(btn){btn.disabled=false;btn.textContent='Rendre et enregistrer le PNG';}
     if(url)setTimeout(()=>URL.revokeObjectURL(url),20000);
-    rd.busy=false;
   }
 }
 function rdMsg(t){if(rd&&rd.msg)rd.msg.textContent=t||'';}
+function rdPick(ev){
+  // clic sans glisser sur la pièce : mise au point à cette distance (le long de l'axe de visée)
+  const r=rd.canvas.getBoundingClientRect();
+  const m=new THREE.Vector2((ev.clientX-r.left)/r.width*2-1,-((ev.clientY-r.top)/r.height*2-1));
+  const ray=new THREE.Raycaster();ray.setFromCamera(m,rd.cam);
+  const hit=ray.intersectObjects(rd.group.children,false)[0];if(!hit)return;
+  const dir=_rdV1.set(0,0,-1).applyQuaternion(rd.cam.quaternion);
+  rd.st.map=Math.max(1,hit.point.clone().sub(rd.cam.position).dot(dir));
+  rdReset();rdSave();
+  rdMsg(rd.st.ouv>0?'Mise au point à '+Math.round(rd.st.map)+' mm.':'Mise au point à '+Math.round(rd.st.map)+' mm — choisissez une ouverture (f/…) pour voir le flou.');
+}
 /* ── interface ── */
 function rdCss(){
   if(document.getElementById('rdCss'))return;
@@ -58245,6 +58476,7 @@ function rdCss(){
     '#rdView{flex:1;display:flex;align-items:center;justify-content:center;position:relative;min-width:0;background:repeating-conic-gradient(#1a1a1c 0% 25%,#141416 0% 50%) 50%/22px 22px}',
     '#rdView canvas{box-shadow:0 10px 40px rgba(0,0,0,.55);cursor:grab;outline:1px solid rgba(255,255,255,.08)}',
     '#rdView .rdHint{position:absolute;left:14px;bottom:10px;color:#98989d;font-size:.74rem}',
+    '#rdView .rdCnt{position:absolute;right:14px;bottom:10px;color:#98989d;font-size:.74rem;font-variant-numeric:tabular-nums}',
     '#rdPanel{width:350px;flex:none;overflow:auto;background:var(--bg,#1c1c1e);border-left:1px solid var(--border,rgba(255,255,255,.09));padding:10px 14px 18px}',
     '#rdPanel h2{font-size:1rem;margin:2px 0 8px;display:flex;align-items:center;gap:8px}',
     '#rdPanel h2 .rdX{margin-left:auto;background:none;border:1px solid var(--border);color:inherit;border-radius:7px;padding:2px 9px;cursor:pointer}',
@@ -58262,13 +58494,19 @@ function rdCss(){
     '#rdPanel .rdMat{display:flex;align-items:center;gap:6px;margin:4px 0}',
     '#rdPanel .rdMat>span{flex:0 0 90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
     '#rdPanel .rdMat>select{flex:1;min-width:0}',
+    '#rdPanel .rdRel{display:flex;align-items:center;gap:5px;margin:0 0 8px 20px}',
+    '#rdPanel .rdRel>select:first-child{flex:1;min-width:0}',
+    '#rdPanel .rdRel>input{width:56px}',
+    '#rdPanel .rdCam{display:inline-flex;border:1px solid var(--border);border-radius:7px;overflow:hidden}',
+    '#rdPanel .rdCam>button{background:var(--surface,#2c2c2e);border:none;color:inherit;padding:4px 8px;cursor:pointer}',
+    '#rdPanel .rdCam>button+button{border-left:1px solid var(--border);color:var(--muted,#98989d)}',
     '#rdPanel .rdNote{color:var(--muted,#98989d);font-size:.74rem;margin:6px 0}',
     '#rdPanel .rdMsg{color:var(--accent,#30d158);font-size:.76rem;margin-top:8px;min-height:1em}'
   ].join('\n');
   document.head.appendChild(s);
 }
 function rdPanel(){
-  const st=rd.st,p=rd.panel;p.innerHTML='';
+  const st=rd.st,p=rd.panel,sc0=p.scrollTop;p.innerHTML='';
   const el=(tag,cls,txt)=>{const d=document.createElement(tag);if(cls)d.className=cls;if(txt!=null)d.textContent=txt;return d;};
   const row=(lab,node,val)=>{const r=el('div','rdRow');r.appendChild(el('label',null,lab));r.appendChild(node);if(val)r.appendChild(val);p.appendChild(r);return r;};
   const select=(opts,cur,fn)=>{const s=el('select');opts.forEach(([v,t])=>{const o=el('option',null,t);o.value=v;if(String(v)===String(cur))o.selected=true;s.appendChild(o);});s.onchange=()=>fn(s.value);return s;};
@@ -58308,26 +58546,42 @@ function rdPanel(){
     p.appendChild(r);
   }
   slider('Ombre','ombre',0,1,0.05,v=>Math.round(v*100)+' %',null);
-  slider('Douceur','douceur',1,20,1,v=>String(v),null);
+  slider('Douceur','douceur',0,20,1,v=>v?String(v):'nette',null).title='Taille de la lampe : pénombre de l’ombre, calculée passe après passe';
   row('Arêtes',select([['non','Sans (photo)'],['cao','Comme la CAO (vives noires, tangentes grises)']],st.aretes,v=>{st.aretes=v;rdBuildEdges();rdRefresh();}));
   // appareil photo
   p.appendChild(el('h3',null,'Appareil photo'));
   const fv=el('span','rdV',st.focale+' mm');
   const fs=el('input');fs.type='range';fs.min=14;fs.max=200;fs.step=1;fs.value=st.focale;
-  fs.oninput=()=>{rdSetFocale(+fs.value);fv.textContent=rd.st.focale+' mm';rdDraw();rdSave();};
+  fs.oninput=()=>{rdSetFocale(+fs.value);fv.textContent=rd.st.focale+' mm';rdReset();rdSave();};
   row('Focale',fs,fv);
   const fb=el('div','rdBtns');
   [24,35,50,85,135].forEach(f=>{const q=el('button','rdB',f+' mm');q.title=f<35?'Grand angle':f>60?'Téléobjectif : peu de déformation, rendu « catalogue »':'Normal';
-    q.onclick=()=>{rdSetFocale(f);fs.value=f;fv.textContent=f+' mm';rdDraw();rdSave();};fb.appendChild(q);});
+    q.onclick=()=>{rdSetFocale(f);fs.value=f;fv.textContent=f+' mm';rdReset();rdSave();};fb.appendChild(q);});
   p.appendChild(fb);
+  row('Ouverture',select([['0','Tout net'],['1.4','f/1,4'],['2','f/2'],['2.8','f/2,8'],['4','f/4'],['5.6','f/5,6'],['8','f/8'],['11','f/11'],['16','f/16'],['22','f/22']],st.ouv,
+    v=>{st.ouv=+v;rdReset();rdSave();rdCount();})).title='Profondeur de champ : plus le nombre est petit, plus le flou est fort (diamètre de la pupille = focale / ouverture)';
+  const mp=el('div','rdBtns');
+  const mpt=el('span','rdNote',st.map>0?'Net à '+Math.round(st.map)+' mm (point cliqué)':'Net sur la cible — cliquez sur la pièce pour choisir le point net');mpt.style.margin='0';
+  mp.appendChild(mpt);
+  if(st.map>0){const b=el('button','rdB','Sur la cible');b.onclick=()=>{st.map=0;rdReset();rdSave();rdPanel();};mp.appendChild(b);}
+  p.appendChild(mp);
   slider('Exposition','ev',-3,3,0.1,v=>(v>0?'+':'')+v.toFixed(1).replace('.',',')+' EV',null);
-  row('Rendu des tons',select([['aces','Film (ACES)'],['doux','Doux (Reinhard)'],['cine','Cinéon'],['lin','Neutre (linéaire)']],st.tons,v=>{st.tons=v;rd.group.traverse(o=>{if(o.material)o.material.needsUpdate=true;});rdRefresh();}));
+  row('Rendu des tons',select([['aces','Film (ACES)'],['doux','Doux (Reinhard)'],['cine','Cinéon'],['lin','Neutre (linéaire)']],st.tons,v=>{st.tons=v;rdRefresh();}));
   const vb=el('div','rdBtns');
-  const b1=el('button','rdB','Cadrer la pièce');b1.onclick=()=>{rdFrame();rdDraw();};vb.appendChild(b1);
-  const b2=el('button','rdB','Reprendre la vue CAO');b2.onclick=()=>{rdFromView();rdDraw();};vb.appendChild(b2);
+  const b1=el('button','rdB','Cadrer la pièce');b1.onclick=()=>{rdFrame();rdReset();};vb.appendChild(b1);
+  const b2=el('button','rdB','Reprendre la vue CAO');b2.onclick=()=>{rdFromView();rdReset();rdPanel();};vb.appendChild(b2);
   p.appendChild(vb);
+  // vues enregistrées
+  p.appendChild(el('h3',null,'Vues enregistrées'));
+  const cv=el('div','rdBtns');
+  rdCams().forEach((k,i)=>{const w=el('span','rdCam');
+    const g=el('button',null,k.n);g.title='Aller à cette vue (focale '+k.f+' mm)';g.onclick=()=>rdCamGo(k);
+    const d=el('button',null,'×');d.title='Supprimer « '+k.n+' »';d.onclick=()=>rdCamDel(i);
+    w.appendChild(g);w.appendChild(d);cv.appendChild(w);});
+  const ca=el('button','rdB','+ Enregistrer la vue');ca.title='Position, cible et focale, enregistrées avec la pièce';ca.onclick=rdCamAdd;cv.appendChild(ca);
+  p.appendChild(cv);
   // matériaux
-  p.appendChild(el('h3',null,'Matériaux'));
+  p.appendChild(el('h3',null,'Matériaux et reliefs'));
   const ids=[];(rd.srcs||[]).forEach(s=>{if(s.id&&ids.indexOf(s.id)<0)ids.push(s.id);});
   ids.forEach(id=>{
     const e=bodyEntryOf(id),b=(bodies||[]).find(q=>bodyIdOfRuntime(q)===id);
@@ -58341,19 +58595,38 @@ function rdPanel(){
     const z=el('button','rdB','↺');z.title=L.own?'Reprendre le matériau et la couleur de la CAO':'Apparence de la CAO (rien de propre au rendu)';z.disabled=!L.own;z.style.opacity=L.own?'':'.35';
     z.onclick=()=>{rdUndo();clearRenderLook(id);done();};r.appendChild(z);
     p.appendChild(r);
+    p.appendChild(rdRelRow(el,select,L.rel,matDef(L.mat),rel=>{rdUndo();const L2=renderLookOf(id);setRenderLook(id,L2.mat,L2.color,rel);done();}));
   });
   const asmView=(rd.srcs||[]).some(x=>!x.id&&x.comp);
   if(!ids.length&&!asmView)p.appendChild(el('div','rdNote','Aucun corps de la pièce active à l’écran.'));
-  rdAsmPanel(p,el);
-  if(ids.length)p.appendChild(el('div','rdNote','Apparence propre au RENDU, enregistrée avec la pièce : la CAO garde ses couleurs. Au départ, le rendu reprend le matériau et la couleur de la CAO (↺ pour y revenir).'));
+  rdAsmPanel(p,el,select);
+  if(ids.length)p.appendChild(el('div','rdNote','Apparence propre au RENDU, enregistrée avec la pièce : la CAO garde ses couleurs. Au départ, le rendu reprend le matériau et la couleur de la CAO (↺ pour y revenir). Relief : motif calculé, échelle en mm, direction X / Y / Z de la pièce.'));
   // sortie
   p.appendChild(el('h3',null,'Image'));
   row('Format',select([['1080','1920 × 1080 (Full HD)'],['2160','3840 × 2160 (4K)']],st.res,v=>{st.res=v;rdSave();}));
-  row('Qualité',select([['2','Haute (suréchantillonnage ×2)'],['1','Brouillon (rapide)']],st.qual,v=>{st.qual=+v;rdSave();}));
+  row('Qualité',select([['16','Brouillon (16 passes)'],['64','Bonne (64 passes)'],['256','Haute (256 passes)']],st.ech,v=>{st.ech=+v;rdSave();}))
+    .title='Nombre de passes moyennées : bords, ombres douces et profondeur de champ plus lisses';
   const go=el('button','rdGo','Rendre et enregistrer le PNG');go.onclick=rdExport;p.appendChild(go);
   rd.msg=el('div','rdMsg');p.appendChild(rd.msg);
+  p.scrollTop=sc0;
 }
-function rdAsmPanel(p,el){
+function rdRelRow(el,select,rel0,dm,fn){
+  // ligne « relief » d'un corps : type (selon le matériau / aucun / brossé…), direction, échelle (mm)
+  const eff=relOf({rel:rel0},dm);
+  const r=el('div','rdRel');
+  const t=select(REL_TYPES.map(([v,l])=>[v,v===''?'Relief : '+(dm&&dm.rel?(REL_TYPES.find(q=>q[0]===dm.rel.t)||['',''])[1].toLowerCase():'aucun'):l]),(rel0&&rel0.t)||'',
+    v=>fn(relNorm(Object.assign({},rel0||{},{t:v||undefined}))));
+  t.title='Relief calculé sur la surface (sans image)';
+  r.appendChild(t);
+  if(eff){
+    const d=select([['x','X'],['y','Y'],['z','Z']],eff.d,v=>fn(relNorm(Object.assign({},rel0||{},{d:v}))));d.title='Direction du motif (axes de la pièce)';
+    const e=el('input');e.type='number';e.step='0.01';e.min='0.01';e.value=String(eff.e);e.title='Échelle du motif (mm)';
+    e.onchange=()=>{if(+e.value>0)fn(relNorm(Object.assign({},rel0||{},{e:+e.value})));};
+    r.appendChild(d);r.appendChild(e);r.appendChild(el('span','rdNote','mm'));
+  }
+  return r;
+}
+function rdAsmPanel(p,el,select){
   // Rendu d'assemblage (mode Assembler) : apparence de rendu par OCCURRENCE, corps par corps
   // (o.rendu, 48-assemblage-apparence) ; ⇉ = la même pour toutes les occurrences du composant
   const seen=new Set(),rows=[];
@@ -58369,17 +58642,20 @@ function rdAsmPanel(p,el){
       const L=renderLookOf(s.bid);
       const sel=matSelect(L.mat,k=>{rdUndo();setRenderLook(s.bid,k,null);markDirty();rdAsmRedraw();},'Sans matériau');
       const ci=el('input');ci.type='color';ci.value=cssHex(L.color);ci.onchange=()=>{rdUndo();setRenderLook(s.bid,renderLookOf(s.bid).mat,parseInt(ci.value.slice(1),16));markDirty();rdAsmRedraw();};
-      r.appendChild(sel);r.appendChild(ci);p.appendChild(r);return;
+      r.appendChild(sel);r.appendChild(ci);p.appendChild(r);
+      p.appendChild(rdRelRow(el,select,L.rel,matDef(L.mat),rel=>{rdUndo();const L2=renderLookOf(s.bid);setRenderLook(s.bid,L2.mat,L2.color,rel);markDirty();rdAsmRedraw();}));
+      return;
     }
     const own=!!(o.rendu&&o.rendu.corps&&o.rendu.corps[s.bid]);
     const sel=matSelect(s.mat,k=>{asmSetOccRendu(o,s.bid,k,null,false);rdAsmRedraw();},'Sans matériau');
     const ci=el('input');ci.type='color';ci.value=cssHex(s.color);ci.title='Couleur de rendu de cette occurrence';
-    ci.onchange=()=>{asmSetOccRendu(o,s.bid,s.mat,parseInt(ci.value.slice(1),16),false);rdAsmRedraw();};
+    ci.onchange=()=>{asmSetOccRendu(o,s.bid,s.mat,parseInt(ci.value.slice(1),16),false,s.rel);rdAsmRedraw();};
     const all=el('button','rdB','⇉');all.title='Même apparence pour toutes les occurrences de « '+((c&&c.name)||'?')+' »';
-    all.onclick=()=>{asmSetOccRendu(o,s.bid,s.mat,s.color,true);rdAsmRedraw();};
+    all.onclick=()=>{asmSetOccRendu(o,s.bid,s.mat,s.color,true,s.rel);rdAsmRedraw();};
     const z=el('button','rdB','↺');z.title='Reprendre l’apparence de la pièce';z.disabled=!own;z.style.opacity=own?'':'.35';
     z.onclick=()=>{asmClearOccRendu(o,s.bid,false);rdAsmRedraw();};
     r.appendChild(sel);r.appendChild(ci);r.appendChild(all);r.appendChild(z);p.appendChild(r);
+    p.appendChild(rdRelRow(el,select,s.rel,matDef(s.mat),rel=>{asmSetOccRendu(o,s.bid,s.mat,s.color,false,rel);rdAsmRedraw();}));
   });
   p.appendChild(el('div','rdNote','Rendu d’assemblage : apparence par occurrence, enregistrée avec l’assemblage (⇉ : toutes les occurrences du composant, ↺ : celle de la pièce). La vue CAO garde les couleurs de la CAO.'));
 }
@@ -58396,21 +58672,28 @@ function rdOpen(){
   const ov=document.createElement('div');ov.id='rdOverlay';
   const view=document.createElement('div');view.id='rdView';
   const canvas=document.createElement('canvas');view.appendChild(canvas);
-  const hint=document.createElement('div');hint.className='rdHint';hint.textContent='Glisser : tourner · clic droit : déplacer · molette : avancer / reculer — le cadre est l’image finale (16:9)';view.appendChild(hint);
+  const hint=document.createElement('div');hint.className='rdHint';hint.textContent='Glisser : tourner · clic droit : déplacer · molette : avancer / reculer · clic sur la pièce : mise au point — le cadre est l’image finale (16:9)';view.appendChild(hint);
+  const cnt=document.createElement('div');cnt.className='rdCnt';view.appendChild(cnt);
   const panel=document.createElement('div');panel.id='rdPanel';
   ov.appendChild(view);ov.appendChild(panel);document.body.appendChild(ov);
   let r;
-  try{r=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true,preserveDrawingBuffer:true,powerPreference:'high-performance'});}
+  try{r=new THREE.WebGLRenderer({canvas,antialias:false,alpha:true,preserveDrawingBuffer:true,powerPreference:'high-performance'});}
   catch(e){ov.remove();alert('Rendu indisponible : WebGL refusé par le navigateur.');return;}
-  r.outputEncoding=THREE.sRGBEncoding;r.toneMapping=THREE.ACESFilmicToneMapping;
-  r.shadowMap.enabled=true;r.shadowMap.type=THREE.VSMShadowMap;
+  // passes linéaires (cibles flottantes) ; tons et sRGB à l'affichage seulement (rdShow)
+  r.outputEncoding=THREE.LinearEncoding;r.toneMapping=THREE.NoToneMapping;
+  r.shadowMap.enabled=true;r.shadowMap.type=THREE.PCFSoftShadowMap;r.shadowMap.autoUpdate=false;
   const cam=new THREE.PerspectiveCamera(30,16/9,0.1,10000);cam.up.set(0,0,1);
   cam.position.copy(camera.position);
   const ctl=new THREE.OrbitControls(cam,canvas);
   ctl.target.copy(controls.target);ctl.enableDamping=false;
   if(ctl.mouseButtons&&THREE.MOUSE){ctl.mouseButtons.LEFT=THREE.MOUSE.ROTATE;ctl.mouseButtons.MIDDLE=THREE.MOUSE.DOLLY;ctl.mouseButtons.RIGHT=THREE.MOUSE.PAN;}
-  ctl.addEventListener('change',()=>{if(rd&&!rd.busy){rdApplyCam();rdDraw();}});
-  rd={ov,view,canvas,panel,r,cam,ctl,scene:new THREE.Scene(),pmrem:new THREE.PMREMGenerator(r),st:rdSettings(),keyDir:[-55,45]};
+  ctl.addEventListener('change',()=>{if(rd&&!rd.busy){rdApplyCam();rdReset();}});
+  ctl.addEventListener('start',()=>{if(rd)rd.drag=true;});
+  ctl.addEventListener('end',()=>{if(rd){rd.drag=false;rdReset();}});
+  let down=null;
+  canvas.addEventListener('pointerdown',e=>{down=e.button===0?{x:e.clientX,y:e.clientY}:null;});
+  canvas.addEventListener('pointerup',e=>{if(down&&rd&&!rd.busy&&Math.hypot(e.clientX-down.x,e.clientY-down.y)<4){try{rdPick(e);rdPanel();}catch(err){}}down=null;});
+  rd={ov,view,canvas,panel,r,cam,ctl,cnt,scene:new THREE.Scene(),pmrem:new THREE.PMREMGenerator(r),st:rdSettings(),keyDir:[-55,45],drag:false,raf:0};
   rdBuildObjects();rdBuildEnv();rdBackground();rdFloor();
   rdFromView();
   rdPanel();
@@ -58421,13 +58704,15 @@ function rdOpen(){
 }
 function rdClose(){
   if(!rd)return;
+  if(rd.raf)cancelAnimationFrame(rd.raf);
   window.removeEventListener('resize',rd.onResize);document.removeEventListener('keydown',rdKey,true);
   try{rd.ctl.dispose();}catch(e){}
   try{if(rd.group)rd.group.traverse(o=>{if(o.material)o.material.dispose();if(o.geometry)o.geometry.dispose();});}catch(e){}
   try{if(rd.edges)rd.edges.traverse(o=>{if(o.material)o.material.dispose();if(o.geometry)o.geometry.dispose();});}catch(e){}
-  try{if(rd.envRT)rd.envRT.dispose();if(rd.bgTex)rd.bgTex.dispose();rd.pmrem.dispose();}catch(e){}
+  try{if(rd.envRT)rd.envRT.dispose();rd.pmrem.dispose();}catch(e){}
   try{if(rd.floor){rd.floor.geometry.dispose();rd.floor.material.dispose();}if(rd.key&&rd.key.shadow.map)rd.key.shadow.map.dispose();}catch(e){}
   try{if(rd.disk){rd.disk.geometry.dispose();rd.disk.material.dispose();rd.mirRT.dispose();}}catch(e){}
+  try{const A=rd.acc;if(A){['s','a','b'].forEach(k=>{if(A[k])A[k].dispose();});A.quad.geometry.dispose();A.mix.dispose();A.out.dispose();}}catch(e){}
   try{rd.r.dispose();rd.r.forceContextLoss();}catch(e){}
   rd.ov.remove();rd=null;
   document.querySelectorAll('[data-mfrd]').forEach(b=>b.classList.remove('on'));

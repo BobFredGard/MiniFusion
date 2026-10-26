@@ -68,6 +68,15 @@ const MAT_LIB=[
 ];
 const MAT_BY_KEY=Object.create(null);
 MAT_LIB.forEach(m=>{MAT_BY_KEY[m.k]=m;});
+// relief par défaut de l'atelier RENDU (98-rendu-reliefs) : t type, e échelle (mm), d direction
+const MAT_REL={acier:{t:'stries'},inox:{t:'brosse'},'acier-zingue':{t:'grain',e:0.15},fonte:{t:'sable',e:0.12},
+  alu:{t:'stries'},'alu-sable':{t:'sable'},'alu-anod-nat':{t:'sable'},'alu-anod-noir':{t:'sable'},'alu-anod-rouge':{t:'sable'},
+  'alu-anod-bleu':{t:'sable'},'alu-anod-or':{t:'sable'},'alu-anod-titane':{t:'sable'},titane:{t:'brosse'},
+  'abs-noir':{t:'grain'},'abs-blanc':{t:'grain'},'abs-gris':{t:'grain'},'pla-mat':{t:'couches',d:'z'},'pla-brillant':{t:'couches',d:'z'},
+  petg:{t:'couches',d:'z'},pom:{t:'grain',e:0.15},'pa-nylon':{t:'grain'},'pe-hd':{t:'grain'},caoutchouc:{t:'grain',e:0.4},
+  silicone:{t:'grain',e:0.4},tpu:{t:'couches',d:'z'},'peint-mat':{t:'grain',e:0.2},'peint-epoxy':{t:'grain',e:0.6},
+  'bois-hetre':{t:'bois'},'bois-chene':{t:'bois',e:3},'bois-noyer':{t:'bois',e:2.6},mdf:{t:'grain',e:0.5},'verre-depoli':{t:'sable',e:0.05}};
+Object.keys(MAT_REL).forEach(k=>{if(MAT_BY_KEY[k])MAT_BY_KEY[k].rel=MAT_REL[k];});
 function matDef(k){return(k&&MAT_BY_KEY[k])||null;}
 function bodyMatOf(id){ // clé du matériau d'un corps (null = aucun)
   try{const e=bodyEntryOf(id);return(e&&matDef(e.mat))?e.mat:null;}catch(err){return null;}
@@ -124,13 +133,19 @@ function fmtMasse(g){return g>=1000?(g/1000).toFixed(g>=10000?1:2).replace('.','
    Lues par l'atelier RENDU (98-rendu) et par les environnements de rendu de la vue
    (98-rendu-vue) ; jamais par l'affichage CAO, l'usinage ni la mise en plan. */
 function renduNorm(r){ // relu d'un fichier : champs valides seulement ; null si vide
-  if(!r||typeof r!=='object'||!r.corps||typeof r.corps!=='object')return null;
-  const c={};
-  Object.keys(r.corps).forEach(id=>{const e=r.corps[id];if(!e||typeof e!=='object')return;
+  if(!r||typeof r!=='object')return null;
+  const c={},out={};
+  if(r.corps&&typeof r.corps==='object')Object.keys(r.corps).forEach(id=>{const e=r.corps[id];if(!e||typeof e!=='object')return;
     const o={};if(e.mat===''||matDef(e.mat))o.mat=e.mat; /* '' = « sans matériau » voulu pour le rendu */
     if(isFinite(+e.col)&&+e.col>=0&&+e.col<=0xffffff)o.col=+e.col;
+    const rl=typeof relNorm==='function'?relNorm(e.rel):null;if(rl)o.rel=rl; // relief (98-rendu-reliefs, V0.11.0)
     if(Object.keys(o).length)c[id]=o;});
-  return Object.keys(c).length?{corps:c}:null;
+  if(Object.keys(c).length)out.corps=c;
+  // vues enregistrées de l'atelier (V0.11.0) : {n nom, p position, t cible, u haut, f focale}
+  const v3=a=>Array.isArray(a)&&a.length===3&&a.every(x=>isFinite(+x));
+  if(Array.isArray(r.cams)){const cs=r.cams.filter(k=>k&&v3(k.p)&&v3(k.t)).slice(0,40).map(k=>({n:String(k.n||'Vue').slice(0,40),p:k.p.map(Number),t:k.t.map(Number),
+    u:v3(k.u)?k.u.map(Number):[0,0,1],f:isFinite(+k.f)&&+k.f>=12&&+k.f<=300?+k.f:50}));if(cs.length)out.cams=cs;}
+  return Object.keys(out).length?out:null;
 }
 function renderLookOwn(id){try{return(doc&&doc.rendu&&doc.rendu.corps&&doc.rendu.corps[id])||null;}catch(e){return null;}}
 function renderLookOf(id){
@@ -138,21 +153,24 @@ function renderLookOf(id){
   const r=renderLookOwn(id);
   const mat=r&&r.mat!==undefined?r.mat:bodyMatOf(id);
   const color=r&&r.col!=null?r.col:bodyColorOf(id);
-  return {mat:matDef(mat)?mat:null,color,own:!!r};
+  return {mat:matDef(mat)?mat:null,color,rel:r&&r.rel?r.rel:null,own:!!r};
 }
-function setRenderLook(id,k,col){
-  // matériau k (null = aucun) et couleur col (null = celle du matériau, sinon celle de la CAO)
+function setRenderLook(id,k,col,rel){
+  // matériau k (null = aucun), couleur col (null = celle du matériau, sinon celle de la CAO), relief rel
+  // (undefined : on garde le relief choisi si le matériau ne change pas ; null : celui du matériau)
   if(!id||!doc)return false;
-  const m=matDef(k);
+  const m=matDef(k),prev=renderLookOwn(id);
   const o={mat:m?m.k:''}; // '' : sans matériau, même si le corps en a un en CAO
   o.col=col!=null?col:(m?m.col:bodyColorOf(id));
-  if(!doc.rendu||!doc.rendu.corps)doc.rendu={corps:{}};
+  const rl=rel!==undefined?rel:(prev&&prev.rel&&prev.mat===o.mat?prev.rel:null);
+  if(rl&&typeof relNorm==='function'&&relNorm(rl))o.rel=relNorm(rl);
+  if(!doc.rendu)doc.rendu={};if(!doc.rendu.corps)doc.rendu.corps={}; // garde les vues enregistrées (cams)
   doc.rendu.corps[id]=o;
   return true;
 }
 function clearRenderLook(id){ // revient à l'apparence CAO
   if(!doc||!doc.rendu||!doc.rendu.corps)return false;
   delete doc.rendu.corps[id];
-  if(!Object.keys(doc.rendu.corps).length)doc.rendu=null;
+  if(!Object.keys(doc.rendu.corps).length){delete doc.rendu.corps;if(!doc.rendu.cams)doc.rendu=null;}
   return true;
 }

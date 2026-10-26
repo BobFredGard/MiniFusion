@@ -54,6 +54,23 @@ if(/(^|[^.\w])(scene|renderer|camera)\s*=[^=]/m.test(rendu))staticKo.push('98-re
     "setBodyGlass(id,0.7);att(bodyGlassEff(id)===0.7,'réglage Transparence du corps prioritaire');setBodyGlass(id,1);",
     "MAT_LIB.forEach(m=>att(!m.trans||(m.gv>0&&m.gv<1),m.k+' : un verre doit avoir sa transparence de vue (gv)'));",
     "setBodyMat(id,'alu');",
+    // --- reliefs (V0.11.0) : données, défauts des matériaux, apparence de rendu
+    "MAT_LIB.forEach(m=>{if(m.rel)att(!!REL_ID[m.rel.t],m.k+' : relief par défaut inconnu');});",
+    "att(relOf(null,matDef('inox')).t==='brosse'&&relOf(null,matDef('inox')).e===REL_DEF.brosse.e,'inox : brossé par défaut');",
+    "att(relOf(null,matDef('pla-mat')).d==='z','PLA : couches selon Z');",
+    "att(relOf({rel:{t:'aucun'}},matDef('inox'))===null,'relief « aucun » : rien');",
+    "att(relOf({rel:{e:0.5,d:'y'}},matDef('inox')).t==='brosse'&&relOf({rel:{e:0.5,d:'y'}},matDef('inox')).e===0.5,'relief : échelle et direction propres, type du matériau');",
+    "att(relOf(null,matDef('laiton'))===null,'laiton : sans relief');",
+    "att(relNorm({t:'zz',e:-1,d:'w'})===null&&relNorm({t:'molete',e:1.2,d:'z'}).t==='molete','relNorm');",
+    "setRenderLook(id,'inox',null,{t:'molete',e:1,d:'z'});att(renderLookOf(id).rel.t==='molete','rendu : relief propre enregistré');",
+    "setRenderLook(id,'inox',0x112233);att(renderLookOf(id).rel&&renderLookOf(id).rel.t==='molete','rendu : changer la couleur garde le relief');",
+    "setRenderLook(id,'laiton',null);att(!renderLookOf(id).rel,'rendu : changer de matériau reprend le relief du matériau');",
+    // --- vues enregistrées : relues, gardées quand on revient à l'apparence CAO
+    "doc.rendu.cams=[{n:'Vue 1',p:[1,2,3],t:[0,0,0],f:85},{n:'x',p:[1,2]}];",
+    "const _sv=JSON.parse(JSON.stringify(serialiseObj(doc,false)));att(_sv.rendu.cams.length===1&&_sv.rendu.cams[0].f===85&&_sv.rendu.cams[0].u[2]===1,'vues : enregistrées, invalides écartées');",
+    "clearRenderLook(id);att(doc.rendu&&doc.rendu.cams&&doc.rendu.cams.length===2,'↺ : les vues enregistrées restent');doc.rendu=null;",
+    // --- affinage : suite de Halton dans [0,1[, points dans le disque unité
+    "let _hk=true;for(let i=0;i<200;i++){const h=rdHalton(i,2),[u,v]=rdDisk2(i,5,7);if(!(h>=0&&h<1)||u*u+v*v>1+1e-9)_hk=false;}att(_hk,'Halton / disque');",
     // --- apparence de RENDU : séparée de la CAO
     "att(renderLookOf(id).mat==='alu'&&!renderLookOf(id).own,'rendu : reprend la CAO par défaut');",
     "setRenderLook(id,'laiton',null);",
@@ -101,6 +118,11 @@ if(/(^|[^.\w])(scene|renderer|camera)\s*=[^=]/m.test(rendu))staticKo.push('98-re
   else console.log("volume d'un pavé 10×20×30 : 6000 mm³ ✓");
   // environnements de rendu de la vue : les lignes du shader retouchées existent bien dans three r147
   const frag=vm.runInContext('THREE.ShaderChunk.meshphysical_frag',c3);
+  // reliefs : ancrages du shader présents dans three r147 (sinon le relief serait silencieusement absent)
+  const vert=vm.runInContext('THREE.ShaderChunk.meshphysical_vert',c3);
+  ['#include <beginnormal_vertex>','#include <begin_vertex>'].forEach(t=>{if(vert.indexOf(t)<0)staticKo.push('relApply : « '+t+' » absent du shader de three.js');});
+  if(vert.indexOf('#include <beginnormal_vertex>')>vert.indexOf('#include <begin_vertex>'))staticKo.push('relApply : objectNormal doit précéder begin_vertex');
+  ['#include <color_fragment>','#include <normal_fragment_maps>'].forEach(t=>{if(frag.indexOf(t)<0)staticKo.push('relApply : « '+t+' » absent du shader de three.js');});
   ['vec4 diffuseColor = vec4( diffuse, opacity );','vec3 totalEmissiveRadiance = emissive;','#include <roughnessmap_fragment>','#include <metalnessmap_fragment>','#include <encodings_fragment>']
     .forEach(t=>{if(frag.indexOf(t)<0)staticKo.push('vEnvPatch : « '+t+' » absent du shader de three.js');});
   // focale : la pièce garde sa taille à l'écran (l'appareil recule), jamais distance 0 (bug V0.10.0)

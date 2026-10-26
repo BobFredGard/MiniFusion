@@ -137,13 +137,14 @@ function asmOccRenduOf(path,bid){
     c=asmComp(o.comp);
   }
   if(!out)return null;
-  return {mat:matDef(out.mat)?out.mat:null,col:out.col};
+  return {mat:matDef(out.mat)?out.mat:null,col:out.col,rel:out.rel||null};
 }
-function asmSetOccRendu(o,bid,k,col,all){
-  // matériau k (null = aucun), couleur col (null = celle du matériau) ; all : toutes les occurrences du composant
+function asmSetOccRendu(o,bid,k,col,all,rel){
+  // matériau k (null = aucun), couleur col (null = celle du matériau), relief rel (V0.11.0, null : celui
+  // du matériau) ; all : toutes les occurrences du composant
   if(!o)return;
   asmPush('apparence de rendu');
-  const m=matDef(k),e={mat:m?m.k:'',col:col!=null?col:(m?m.col:0x9a9aa0)};
+  const m=matDef(k),e={mat:m?m.k:'',col:col!=null?col:(m?m.col:0x9a9aa0)};if(rel)e.rel=rel;
   (all?asmCompOccs(o.comp):[o]).forEach(q=>{const r=q.rendu&&q.rendu.corps?{corps:Object.assign({},q.rendu.corps)}:{corps:{}};
     r.corps[bid]=Object.assign({},e);q.rendu=renduNorm(r);});
   asmNotify();
