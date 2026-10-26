@@ -277,7 +277,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.11.2';
+const APP_VER='V0.11.3';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -338,7 +338,7 @@ const statsEl=$('stats'), faceEl=$('faceInfo');
 const log=s=>{statsEl.textContent=s;};
 let scene,camera,renderer,controls,rayc=new THREE.Raycaster();
 let bodies=[]; // {id,name,mesh,color,visible,transparent,kind,ref}
-let doc={name:'Sans titre',sketches:[],features:[],cgeo:[],bodyVis:{},bodies:[],bodySeq:1,activeBody:null,mep:null}; // features: {id,type:'extrude'|'import',name,sketchId?,distance?,visible} ; bodies: identités multi-corps persistées (Corps 1, Corps 2… — centroïdes, jamais de handles) ; mep: espace PLAN (98-mise-en-plan.js) ; cgeo: géométrie de construction (78-construction-modele.js)
+let doc={name:'Sans titre',sketches:[],features:[],cgeo:[],bodyVis:{},bodies:[],bodySeq:1,activeBody:null,mep:null}; // features: {id,type:'extrude'|'import',name,sketchId?,distance?,visible} ; bodies: identités multi-corps persistées (Corps 1, Corps 2… — centroïdes, jamais de handles) ; mep: espace PLAN (98-mep-*.js) ; cgeo: géométrie de construction (78-construction-modele.js)
 let uidN=0; const uid=p=>p+'_'+(++uidN)+'_'+Date.now().toString(36);
 function entName(kind){
   // Nom persistant unique d'une référence (Arête 1, Face 2, Projetée 3) — compteur
@@ -5725,7 +5725,7 @@ function drawSketchHelpers(){
 /* ---------- arbre + timeline + props ---------- */
 let repMode=null;
 // ── CSS panneau Paramètres (aside.right #props) : MÊME style que le panneau
-//    « Paramètres — Plan » de l'espace PLAN (98-mise-en-plan.js) — sections,
+//    « Paramètres — Plan » de l'espace PLAN (98-mep-*.js) — sections,
 //    rangées label/control, cases alignées, boutons d'action groupés.
 (function(){
   try{
@@ -8121,7 +8121,7 @@ function antWarnMap(F){
 
 /* ═══════════════ 45-annuler-document.js — annuler document ═══════════════ */
 /* ---------- annuler / rétablir au niveau du DOCUMENT ---------- */
-// L'undo existant (skUndoStack, dans 50-esquisse) ne couvre QUE le tracé d'une
+// L'undo existant (skUndoStack, dans 50-esquisse-5-panneau-audit) ne couvre QUE le tracé d'une
 // esquisse. Ici : toute opération qui MODIFIE le modèle — création, suppression,
 // changement de paramètre — empile un instantané du document.
 //
@@ -11296,7 +11296,7 @@ function asmInspectProps(p){
 
 /* ═══════════════ 48-composants-plan.js — composants plan ═══════════════ */
 /* ---------- mise en plan d'assemblage (V0.6.7) ----------
-   Le PLAN d'un composant (doc.mep, 98-mise-en-plan.js) peut montrer « Assemblage » : le composant
+   Le PLAN d'un composant (doc.mep, 98-mep-*.js) peut montrer « Assemblage » : le composant
    ET tout ce qu'il contient. Le PLAN travaille sur des corps (maillage + solide exact) : on lui
    fournit, en plus des corps du composant actif, un « corps » par corps de chaque instance placée
    (solide exact copié, transformé, maillage tiré du solide — repli : l'instantané d'affichage).
@@ -11588,7 +11588,8 @@ function skPairLineType(t){ const r=SK_CON[t]; return !!(r&&r.pairLines); }
   }catch(e){}
 })();
 
-/* ═══════════════ 50-esquisse-2d-solveur.js — esquisse 2d solveur ═══════════════ */
+/* ═══════════════ 50-esquisse-1-ouverture-references.js — esquisse 1 ouverture references ═══════════════ */
+// Esquisse 2D (1/5) : création, références projetées, ouverture/fermeture, vue SVG, état d'édition.
 /* ---------- esquisse 2D ---------- */
 let skEdit=null, skAnteriorGhost=null;
 let skTreeFoldSave=null; // arborescence : état avant l'ouverture (null = rien à restaurer)
@@ -12386,6 +12387,8 @@ let skDimPlace=null; // placement de cote : {id} → la cote suit le curseur jus
 let skPendPt=null,skCoinA=null,skCornA=null,skArcC=null,skArcA1=null,skArcPa=null;
 let skProjectHover=null; // ⧉ : arête projetable sous le curseur (preview orange)
 
+/* ═══════════════ 50-esquisse-2-modele-solveur.js — esquisse 2 modele solveur ═══════════════ */
+// Esquisse 2D (2/5) : modèle à points partagés, contraintes, solveurs (relaxation, moindres carrés LM).
 /* ----- modèle points partagés (coïncidence structurelle) ----- */
 function skPts(sk){return sk.points||(sk.points={});}
 const SK_ORIGIN='O'; // point d'origine permanent (0,0) — toujours fixe, jamais supprimé ni GC
@@ -13521,6 +13524,8 @@ function entLocked(sk,e,fix){
   return false;
 }
 
+/* ═══════════════ 50-esquisse-3-edition-geometrie.js — esquisse 3 edition geometrie ═══════════════ */
+// Esquisse 2D (3/5) : accrochages, trim/split, congés/chanfreins d'angle, décalage, sélection.
 /* ----- snaps / proximités ----- */
 function nearestPoint(sk,x,y,maxD,exclude){
   let best=null,bd=maxD;
@@ -14143,6 +14148,8 @@ function createRefLine(sk, ref){
   return eid;
 }
 
+/* ═══════════════ 50-esquisse-4-dessin-cotes.js — esquisse 4 dessin cotes ═══════════════ */
+// Esquisse 2D (4/5) : dessin SVG et cotes.
 /* ----- dessin SVG ----- */
 let skRoot=null; // groupe racine du dessin : porte la transformation affine de l'orbite (null = vue normale)
 function skEl(n,attrs,parent){
@@ -14843,6 +14850,8 @@ function skFirstDimScale(sk,d,nv){
   return true;
 }
 
+/* ═══════════════ 50-esquisse-5-panneau-audit.js — esquisse 5 panneau audit ═══════════════ */
+// Esquisse 2D (5/5) : panneau latéral, annuler/rétablir, santé, audit et degrés de liberté, pose des cotes.
 /* ----- panneau latéral esquisse ----- */
 function skStatus(msg){skMsg=msg||'';const el=$('skStatus');if(el)el.textContent=skMsg||skDefaultStatus();}
 function skDefaultStatus(){
@@ -46045,7 +46054,7 @@ function docResetEmpty(){
   if(skEdit)closeSketch(false);
   doc={name:'Sans titre',tint:0,sketches:[],features:[],cgeo:[],bodyVis:{},bodies:[],bodySeq:1,activeBody:null,mep:null};
   try{ if(typeof faoReset==='function')faoReset(); }catch(e){} // FAO : traces, posages et mode lecture à zéro
-  try{ if(typeof mepReset==='function')mepReset(); }catch(e){} // PLAN : planches vidées (98-mise-en-plan.js)
+  try{ if(typeof mepReset==='function')mepReset(); }catch(e){} // PLAN : planches vidées (98-mep-*.js)
   sel={kind:null,id:null};selFaces=[];fileHandle=null;uidN=0;builtHash=null;builtEngine=null;builtVersion=-1;
   asm=null;asmMode='part';asmUndoStack=[];asmRedoStack=[]; // assemblage (46)
   try{document.body.removeAttribute('data-asm');asmCtxDraw();}catch(e){}
@@ -47478,7 +47487,7 @@ function mfWs(w){
   // quitter l'espace FAO la referme (corps rendus), sinon la mise en plan n'avait plus de pièce
   if(w!=='fao'){try{if(typeof faoVw!=='undefined'&&faoVw&&typeof faoViewerClose==='function')faoViewerClose();}catch(e){}}
   if(w==='fao'){try{const t=document.getElementById('faoToggle');const tw=document.getElementById('faoTreeWrap');if(tw&&tw.classList.contains('folded')&&t)t.click();}catch(e){}}
-  // espace PLAN (98-mise-en-plan.js) : overlay sur la vue 3D
+  // espace PLAN (98-mep-*.js) : overlay sur la vue 3D
   try{if(typeof mepSetActive==='function')mepSetActive(w==='plan');}catch(e){}
   if(changed&&w!=='plan')mfSpaceRestore(w,mfWsSel[w]);
   mfWsCur=w;
@@ -48005,8 +48014,8 @@ function viewFadeIn(){
   }catch(e){}
 })();
 
-/* ═══════════════ 98-mise-en-plan.js — mise en plan ═══════════════ */
-/* ═══════════════ src/98-mise-en-plan.js — Espace Plan : mise en plan 2D ═══════════════
+/* ═══════════════ 98-mep-00-modele.js — mep 00 modele ═══════════════ */
+/* ═══════════════ src/98-mep-00-modele.js — Espace Plan : mise en plan 2D ═══════════════
    Espace « PLAN » (3ᵉ espace CAO / FAO / PLAN, overlay par-dessus la fenêtre 3D) :
    • planches multiples (A0→A4, portrait/paysage), cadre ISO + cartouche éditable ;
    • vues projetées PAR CORPS ou assemblée : face/dessus/côté/ISO/caméra, auxiliaires,
@@ -48019,7 +48028,10 @@ function viewFadeIn(){
    • dessin 2D façon esquisse : ligne/rect/cercle/arc/point/ajuster + contraintes et
      solveur moindres carrés, ancrage des points sur la géométrie projetée ;
    • tout vit dans doc.mep → sauvegardé AVEC la pièce et la FAO (autosave, bundle
-     .miniFusion, annuler/rétablir). */
+     .miniFusion, annuler/rétablir).
+   Le module est réparti dans les fichiers 98-mep-*.js : la fonction englobante (et son
+   « use strict ») ouverte ici se ferme à la fin de 98-mep-95-export-init.js. Ces fichiers
+   ne se lisent qu'assemblés, comme le font déjà le build, le lint et les tests. */
 (function(){
   'use strict';
 
@@ -48426,6 +48438,9 @@ function viewFadeIn(){
   function mepLocal(view,p){return[mepDot(p,view.u),mepDot(p,view.v)];}
   function mepToSheet(view,lx,ly){return{x:view.x+lx*view.scale,y:view.y+ly*view.scale};}
   function mepFromSheet(view,sx,sy){return{x:(sx-view.x)/view.scale,y:(sy-view.y)/view.scale};}
+
+/* ═══════════════ 98-mep-10-projection-hlr.js — mep 10 projection hlr ═══════════════ */
+// Espace PLAN — suite de la fonction englobante ouverte dans 98-mep-00-modele.js (état privé partagé, fermée dans 98-mep-95-export-init.js) : cache géométrie, silhouettes, HLR (maillage et OCCT exact), rendu bitmap.
   /* ═══════════════ E. cache géométrie ═══════════════ */
   const mepGeoCache=new Map(); // viewId → {ver,sig,geo}
   function mepViewSig(v){
@@ -49447,6 +49462,9 @@ function viewFadeIn(){
     }
     return geo;
   }
+
+/* ═══════════════ 98-mep-20-vues.js — mep 20 vues ═══════════════ */
+// Espace PLAN — suite de la fonction englobante ouverte dans 98-mep-00-modele.js (état privé partagé, fermée dans 98-mep-95-export-init.js) : construction, création et commandes des vues, vues DXF et projetées.
   /* ═══════════════ H. construction d'une vue ═══════════════ */
   function mepBuildGeo(view){
     // vue DXF (2026-10-23) : géométrie importée telle quelle ; un détail pris dessus la rogne
@@ -50361,6 +50379,9 @@ function viewFadeIn(){
       });
     });
   }
+
+/* ═══════════════ 98-mep-30-planches-cartouche.js — mep 30 planches cartouche ═══════════════ */
+// Espace PLAN — suite de la fonction englobante ouverte dans 98-mep-00-modele.js (état privé partagé, fermée dans 98-mep-95-export-init.js) : planches, état UI, palettes, cartouche, cotation auto des perçages et nomenclature.
   /* ═══════════════ K. planches ═══════════════ */
   function mepAddSheetCmd(){
     mepEnsure();
@@ -50776,6 +50797,9 @@ function viewFadeIn(){
         mk('text',{x:xx+1.5,y:y+4,class:'mepRevText'}).textContent=String(t).slice(0,Math.floor(cols[c][1]/1.7));xx+=cols[c][1];});
     });
   }
+
+/* ═══════════════ 98-mep-40-esquisse-planche.js — mep 40 esquisse planche ═══════════════ */
+// Espace PLAN — suite de la fonction englobante ouverte dans 98-mep-00-modele.js (état privé partagé, fermée dans 98-mep-95-export-init.js) : esquisse 2D de planche : accrochage, liens, création, sélection, contraintes, rendu.
   /* ═══════════════ esquisse 2D contrainte + cartouche dessiné (V0.3.12) ═══════════════
      Deux esquisses partagent les mêmes outils :
        • l'esquisse de PLANCHE (sh.sk, mm papier) ;
@@ -51467,6 +51491,9 @@ function viewFadeIn(){
     }
     K.note('Cadre de gauche à droite : éléments entièrement dedans. De droite à gauche : tout ce qui touche le cadre. Maj : ajouter. Maj/Ctrl + clic sur une cote : l’ajoute ou la retire.');
   }
+
+/* ═══════════════ 98-mep-50-vues-interactives.js — mep 50 vues interactives ═══════════════ */
+// Espace PLAN — suite de la fonction englobante ouverte dans 98-mep-00-modele.js (état privé partagé, fermée dans 98-mep-95-export-init.js) : commandes de vues interactives, modèles de cartouche, panneaux, règles.
   /* ═══════════════ commandes de vues interactives (V0.3.13) ═══════════════
      Projection, Coupe, Détail, Auxiliaire : un état mepSt.vcmd intercepte la souris.
        projection : vue mère → le curseur choisit le sens (1er angle) ; diagonale = ISO ; enchaînable.
@@ -52185,6 +52212,9 @@ function viewFadeIn(){
     }catch(e){}
   }
   function mepLwSet(o){try{localStorage.setItem('mep_lw',JSON.stringify(o));}catch(e){}mepLwApply();mepRender();}
+
+/* ═══════════════ 98-mep-60-interface-parametres.js — mep 60 interface parametres ═══════════════ */
+// Espace PLAN — suite de la fonction englobante ouverte dans 98-mep-00-modele.js (état privé partagé, fermée dans 98-mep-95-export-init.js) : construction UI, paramètres PLAN, édition de la ligne de coupe.
   /* ═══════════════ M. construction UI ═══════════════ */
   function mepBuildMarkers(){
     if(!mepDefsEl)return;
@@ -52991,6 +53021,9 @@ function viewFadeIn(){
     mepStatus('Hachures : '+(P?P[1]:H.pat)+(H.pat==='plein'?'':' · '+H.ang+'° · échelle '+H.sc)+' — toutes les coupes.');
     mepRender();
   }
+
+/* ═══════════════ 98-mep-70-cotes.js — mep 70 cotes ═══════════════ */
+// Espace PLAN — suite de la fonction englobante ouverte dans 98-mep-00-modele.js (état privé partagé, fermée dans 98-mep-95-export-init.js) : cotes : mesure, texte, rendu.
   /* ═══════════════ O. cotes : mesure, texte, rendu ═══════════════ */
   /* 2026-10-22-019 : « les cotes, normales et d'ordonnées, ne suivent pas les axes (alignement),
      elles perdent leurs références » — un point accroché à un trait d'axe garde la référence
@@ -54232,6 +54265,9 @@ function viewFadeIn(){
     const main=d.ref?'('+pp.main+')':pp.main;
     mepDimDrawText(draw,T,main,pp.up,pp.lo,mx,my,'middle',tr,flip,pp.sym,pp.par,pp.post);
   }
+
+/* ═══════════════ 98-mep-75-esquisse-solveur-dessin.js — mep 75 esquisse solveur dessin ═══════════════ */
+// Espace PLAN — suite de la fonction englobante ouverte dans 98-mep-00-modele.js (état privé partagé, fermée dans 98-mep-95-export-init.js) : mini-solveur LM, outils et rendu de l'esquisse de planche.
   /* ═══════════════ P. mini-solveur LM autonome (pas de lien skEdit) ═══════════════
      Points variables (x,y) ; contraintes résiduelles + jacobien numérique.
      Assez pour ligne/rect/cercle/arc + horiz/vert/paral/perp/égale/distance/rayon/angle. */
@@ -54700,6 +54736,9 @@ function viewFadeIn(){
       if(a&&b)mk('line',Object.assign({x1:a.x,y1:a.y,x2:b.x,y2:b.y},dashed));
     }
   }
+
+/* ═══════════════ 98-mep-80-souris.js — mep 80 souris ═══════════════ */
+// Espace PLAN — suite de la fonction englobante ouverte dans 98-mep-00-modele.js (état privé partagé, fermée dans 98-mep-95-export-init.js) : interactions souris.
   /* ═══════════════ T. interactions souris ═══════════════ */
   function mepSetTool(t){
     mepCtxHide();
@@ -56115,6 +56154,9 @@ function viewFadeIn(){
     }
     mepCtxHide();
   }
+
+/* ═══════════════ 98-mep-85-cote-unique.js — mep 85 cote unique ═══════════════ */
+// Espace PLAN — suite de la fonction englobante ouverte dans 98-mep-00-modele.js (état privé partagé, fermée dans 98-mep-95-export-init.js) : outil cote unique.
   /* ═══════════════ U. outil cote unique ═══════════════ */
   /* pré-sélection : clic dans le vide = désélection ; clic sur arête/cercle = (dé)sélection */
   function mepEntSig(e){
@@ -56496,6 +56538,9 @@ function viewFadeIn(){
     const nx=-dy/L,ny=dx/L;
     return Math.abs((P.x-a.x)*nx+(P.y-a.y)*ny)||8;
   }
+
+/* ═══════════════ 98-mep-90-proprietes.js — mep 90 proprietes ═══════════════ */
+// Espace PLAN — suite de la fonction englobante ouverte dans 98-mep-00-modele.js (état privé partagé, fermée dans 98-mep-95-export-init.js) : panneau propriétés.
   /* ═══════════════ V. panneau propriétés ═══════════════ */
   function mepSideShow(){
     if(!mepSideEl)return;
@@ -57301,6 +57346,9 @@ function viewFadeIn(){
     act.appendChild(bDel);
     root.appendChild(act);
   }
+
+/* ═══════════════ 98-mep-95-export-init.js — mep 95 export init ═══════════════ */
+// Espace PLAN — suite de la fonction englobante ouverte dans 98-mep-00-modele.js (état privé partagé, fermée dans 98-mep-95-export-init.js) : export SVG/DXF, impression, activation de l'espace et init.
   /* ═══════════════ W. export SVG / impression ═══════════════ */
   function mepExportBW(){try{return localStorage.getItem('mep_exp_bw')==='1';}catch(e){return false;}}
   function mepExportPrep(clone,bw){

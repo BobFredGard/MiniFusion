@@ -1,4 +1,4 @@
-// V0.6.7 : mise en plan d'assemblage (48-composants-plan.js + 98-mise-en-plan.js), noyau OCCT réel.
+// V0.6.7 : mise en plan d'assemblage (48-composants-plan.js + 98-mep-*.js), noyau OCCT réel.
 // Socle + deux colonnes (deux occurrences du même composant) : vue « Assemblage » (corps des
 // instances, solides exacts placés, sans activer de composant), HLR exact qui voit les trois
 // solides, cache de la vue invalidé quand une occurrence bouge, nomenclature par composant

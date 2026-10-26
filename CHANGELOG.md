@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**357 versions**, de `2026-09-28b` à `V0.11.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**358 versions**, de `2026-09-28b` à `V0.11.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5017,3 +5017,10 @@ Suite de V0.9.7 : « que reste-t-il à faire ? » — dans l'ordre proposé ; «
 - **Pied toujours visible** (`rdFoot`) : format et nombre de passes retenus, bouton « Rendre et enregistrer le PNG », message du dernier rendu.
 - **Matériaux** : par corps, nom (et ↺, ⇉ en assemblage) puis matériau + couleur, puis relief — sur des lignes séparées, lisibles à cette largeur. Libellés raccourcis (Lampe, Douceur, Tons, Ombre) : aucun n'est coupé.
 - **Tests** : suite rapide. Vérifié dans l'application sur Support Pédale : les six blocs, aucun libellé tronqué, rendu et affinage inchangés.
+
+## V0.11.3 - Découpage des deux plus gros fichiers : mise en plan en 13 fichiers, esquisse 2D en 5
+« Reste-t-il des js à réduire ? ou diviser ? » ; « les 2, ça vaut quand même le coup ». Aucun changement de comportement : les morceaux remis bout à bout redonnent les fichiers d'origine à l'identique (lignes vides de bord exceptées).
+- **Esquisse 2D** : `src/50-esquisse-2d-solveur.js` (4 154 lignes) devient `50-esquisse-1-ouverture-references`, `-2-modele-solveur` (contraintes, relaxation, moindres carrés LM), `-3-edition-geometrie` (accrochages, trim/split, congés d'angle, décalage), `-4-dessin-cotes`, `-5-panneau-audit` (annuler, santé, degrés de liberté, pose des cotes) — 620 à 1 135 lignes chacun.
+- **Mise en plan** : `src/98-mise-en-plan.js` (9 763 lignes) devient 13 fichiers `98-mep-00-modele` … `98-mep-95-export-init`, coupés sur les sections A à X — 380 à 1 415 lignes. La fonction englobante et son `'use strict'` sont conservées : ouverte dans `98-mep-00`, fermée à la fin de `98-mep-95` ; ces fichiers ne se lisent qu'assemblés (build, lint et tests le font déjà). L'ordre d'assemblage est inchangé.
+- **Références** : `test_sk_offset_contraintes` lit désormais `50-esquisse-3-edition-geometrie.js` ; commentaires et `analysis.md` mis à jour.
+- **Tests** : suite complète 165/166 ; `test_esquisse_regles` échoue à l'identique sur le livrable V0.11.2 (antérieur au découpage).

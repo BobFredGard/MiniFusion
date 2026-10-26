@@ -1,4 +1,4 @@
-// 2026-10-19 : espace PLAN (98-mise-en-plan.js) — modèle doc.mep, persistance, planches, vues, cotes, esquisse.
+// 2026-10-19 : espace PLAN (98-mep-*.js) — modèle doc.mep, persistance, planches, vues, cotes, esquisse.
 // On ne passe pas par deserialise() (déclenche un rebuild complet incompatible du harnais partiel) ;
 // la persistance est vérifiée sur serialise() + l'état de doc.mep directement.
 const fs=require('fs'),vm=require('vm'),path=require('path');

@@ -447,7 +447,7 @@ function mfWs(w){
   // quitter l'espace FAO la referme (corps rendus), sinon la mise en plan n'avait plus de pièce
   if(w!=='fao'){try{if(typeof faoVw!=='undefined'&&faoVw&&typeof faoViewerClose==='function')faoViewerClose();}catch(e){}}
   if(w==='fao'){try{const t=document.getElementById('faoToggle');const tw=document.getElementById('faoTreeWrap');if(tw&&tw.classList.contains('folded')&&t)t.click();}catch(e){}}
-  // espace PLAN (98-mise-en-plan.js) : overlay sur la vue 3D
+  // espace PLAN (98-mep-*.js) : overlay sur la vue 3D
   try{if(typeof mepSetActive==='function')mepSetActive(w==='plan');}catch(e){}
   if(changed&&w!=='plan')mfSpaceRestore(w,mfWsSel[w]);
   mfWsCur=w;

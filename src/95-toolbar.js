@@ -142,7 +142,7 @@ function docResetEmpty(){
   if(skEdit)closeSketch(false);
   doc={name:'Sans titre',tint:0,sketches:[],features:[],cgeo:[],bodyVis:{},bodies:[],bodySeq:1,activeBody:null,mep:null};
   try{ if(typeof faoReset==='function')faoReset(); }catch(e){} // FAO : traces, posages et mode lecture à zéro
-  try{ if(typeof mepReset==='function')mepReset(); }catch(e){} // PLAN : planches vidées (98-mise-en-plan.js)
+  try{ if(typeof mepReset==='function')mepReset(); }catch(e){} // PLAN : planches vidées (98-mep-*.js)
   sel={kind:null,id:null};selFaces=[];fileHandle=null;uidN=0;builtHash=null;builtEngine=null;builtVersion=-1;
   asm=null;asmMode='part';asmUndoStack=[];asmRedoStack=[]; // assemblage (46)
   try{document.body.removeAttribute('data-asm');asmCtxDraw();}catch(e){}

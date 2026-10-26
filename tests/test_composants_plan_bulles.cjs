@@ -1,5 +1,5 @@
 // V0.8.2 : mise en plan d'assemblage — hachures par pièce et bulles (48-composants-plan.js +
-// 98-mise-en-plan.js), noyau OCCT réel. Socle + deux colonnes (deux occurrences du même
+// 98-mep-*.js), noyau OCCT réel. Socle + deux colonnes (deux occurrences du même
 // composant). Coupe : une famille de hachures par composant (les deux colonnes partagent la
 // leur), variante d'angle alternée ; case « une hachure par pièce ». Bulles : accrochées sur la
 // surface VISIBLE (face avant vue de face, dessus de la colonne vu de dessus), rangées autour de

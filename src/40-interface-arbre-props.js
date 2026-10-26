@@ -1,7 +1,7 @@
 /* ---------- arbre + timeline + props ---------- */
 let repMode=null;
 // ── CSS panneau Paramètres (aside.right #props) : MÊME style que le panneau
-//    « Paramètres — Plan » de l'espace PLAN (98-mise-en-plan.js) — sections,
+//    « Paramètres — Plan » de l'espace PLAN (98-mep-*.js) — sections,
 //    rangées label/control, cases alignées, boutons d'action groupés.
 (function(){
   try{

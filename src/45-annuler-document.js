@@ -1,5 +1,5 @@
 /* ---------- annuler / rétablir au niveau du DOCUMENT ---------- */
-// L'undo existant (skUndoStack, dans 50-esquisse) ne couvre QUE le tracé d'une
+// L'undo existant (skUndoStack, dans 50-esquisse-5-panneau-audit) ne couvre QUE le tracé d'une
 // esquisse. Ici : toute opération qui MODIFIE le modèle — création, suppression,
 // changement de paramètre — empile un instantané du document.
 //

@@ -17,7 +17,7 @@ const {loadApp}=require('./appvm.cjs');
 (async()=>{
   const {ctx,sandbox,loadErr}=loadApp();
   if(loadErr)console.log('  (harnais : buildScene interrompu — comportement normal du stub)');
-  const src50=require('fs').readFileSync(require('path').join(__dirname,'..','src','50-esquisse-2d-solveur.js'),'utf8');
+  const src50=require('fs').readFileSync(require('path').join(__dirname,'..','src','50-esquisse-3-edition-geometrie.js'),'utf8');
   const body=[
     "const out={fails:[],log:[]};",
     "const A=(c,m)=>{if(!c)out.fails.push(m);};",

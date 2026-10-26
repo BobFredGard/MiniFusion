@@ -66,7 +66,7 @@ Le harnais de test (`tests/appvm.cjs`) exécute le vrai script dans une machine 
 
 - **Suites FAO lentes** : sept suites (`test_fao_brut_corps`, `_ebauche_brut`, `_bornage`, `_couverture`, `_securite`, `_faces`, `_torique`) durent 85 à 145 s chacune et fixent la durée minimale de la suite parallèle, quel que soit le nombre de cœurs.
 - **1288 avertissements `no-empty`** (1046 en V0.3.5) : les `catch(e){}` silencieux augmentent au lieu de diminuer.
-- **Gros fichiers** : `98-mise-en-plan.js` (~9 400 lignes), `50-esquisse-2d-solveur.js` (~4 000), `20-noyau-et-operations-solides.js` (~2 900).
+- **Gros fichiers** : la mise en plan (13 fichiers `98-mep-*.js`, 380 à 1 415 lignes) et l'esquisse 2D (5 fichiers `50-esquisse-*.js`) sont découpées ; le plus gros reste `20-noyau-et-operations-solides.js` (~3 100 lignes). Les fichiers `98-mep-*` partagent une fonction englobante et ne se lisent qu'assemblés.
 - **Monolithe global** : namespace unique sans modules ni types ; les identifiants publics passent par `window`.
 - **Couverture navigateur étroite** : trois parcours Playwright seulement ; le reste de l'interface réelle se valide à la main.
 - **Dépôt dans Dropbox** : la synchronisation crée des copies en conflit et peut abîmer `.git` (pack sans index constaté) ; `.git` pèse ~213 Mo, et `Backup/` (~227 Mo) et `occt/*.bak` (~50 Mo), ignorés par Git, sont quand même synchronisés.
@@ -75,7 +75,7 @@ Le harnais de test (`tests/appvm.cjs`) exécute le vrai script dans une machine 
 ## Priorités suivantes
 
 1. Réduire les `catch` vides en journalisant l'erreur ou en justifiant l'ignorance.
-2. Découper `98-mise-en-plan.js` et `50-esquisse-2d-solveur.js` par domaine, en chunks contigus.
+2. ~~Découper la mise en plan et le solveur d'esquisse~~ : fait en V0.11.3.
 3. Découper les sept suites FAO lentes pour descendre la suite complète sous 2 min.
 4. Étendre les parcours Playwright (mise en plan, congés, 3+2).
 5. Envisager de sortir le dépôt de Dropbox.

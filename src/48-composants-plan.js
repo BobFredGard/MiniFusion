@@ -1,5 +1,5 @@
 /* ---------- mise en plan d'assemblage (V0.6.7) ----------
-   Le PLAN d'un composant (doc.mep, 98-mise-en-plan.js) peut montrer « Assemblage » : le composant
+   Le PLAN d'un composant (doc.mep, 98-mep-*.js) peut montrer « Assemblage » : le composant
    ET tout ce qu'il contient. Le PLAN travaille sur des corps (maillage + solide exact) : on lui
    fournit, en plus des corps du composant actif, un « corps » par corps de chaque instance placée
    (solide exact copié, transformé, maillage tiré du solide — repli : l'instantané d'affichage).

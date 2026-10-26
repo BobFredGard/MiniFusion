@@ -21,7 +21,7 @@
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.11.2';
+const APP_VER='V0.11.3';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -82,7 +82,7 @@ const statsEl=$('stats'), faceEl=$('faceInfo');
 const log=s=>{statsEl.textContent=s;};
 let scene,camera,renderer,controls,rayc=new THREE.Raycaster();
 let bodies=[]; // {id,name,mesh,color,visible,transparent,kind,ref}
-let doc={name:'Sans titre',sketches:[],features:[],cgeo:[],bodyVis:{},bodies:[],bodySeq:1,activeBody:null,mep:null}; // features: {id,type:'extrude'|'import',name,sketchId?,distance?,visible} ; bodies: identités multi-corps persistées (Corps 1, Corps 2… — centroïdes, jamais de handles) ; mep: espace PLAN (98-mise-en-plan.js) ; cgeo: géométrie de construction (78-construction-modele.js)
+let doc={name:'Sans titre',sketches:[],features:[],cgeo:[],bodyVis:{},bodies:[],bodySeq:1,activeBody:null,mep:null}; // features: {id,type:'extrude'|'import',name,sketchId?,distance?,visible} ; bodies: identités multi-corps persistées (Corps 1, Corps 2… — centroïdes, jamais de handles) ; mep: espace PLAN (98-mep-*.js) ; cgeo: géométrie de construction (78-construction-modele.js)
 let uidN=0; const uid=p=>p+'_'+(++uidN)+'_'+Date.now().toString(36);
 function entName(kind){
   // Nom persistant unique d'une référence (Arête 1, Face 2, Projetée 3) — compteur

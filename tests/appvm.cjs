@@ -155,7 +155,7 @@ function loadApp(){
     crypto:global.crypto||{getRandomValues:(a)=>{for(let i=0;i<a.length;i++)a[i]=Math.floor(Math.random()*256);return a;}}
   };
   sandbox.window=sandbox;sandbox.self=sandbox;sandbox.globalThis=sandbox;
-  sandbox.__MEP_TEST_HOOKS__=true; // expose un petit seam de test (voir 98-mise-en-plan.js)
+  sandbox.__MEP_TEST_HOOKS__=true; // expose un petit seam de test (voir 98-mep-*.js)
   // Démarrage asynchrone du noyau (96) NEUTRALISÉ : les tests injectent eux-mêmes le noyau
   // (occt=…;occtReady=true). Sans cette garde, ce démarrage échouait en « file: » une
   // micro-tâche plus tard et remettait occtReady=false : toute attente du test avant son
