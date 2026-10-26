@@ -1,6 +1,6 @@
 {
   "name": "fusion2",
-  "version": "0.11.8",
+  "version": "0.11.9",
   "description": "MiniFusion — CAO paramétrique et FAO dans un seul fichier HTML",
   "scripts": {
     "start": "npx serve . -l 3000",
@@ -9,6 +9,7 @@
     "test": "node tests/run.cjs",
     "test:fast": "node tests/run-fast.cjs",
     "test:browser": "playwright test -c tests/browser/playwright.config.cjs",
+    "test:gpu": "playwright test -c tests/browser/playwright.config.cjs --project=gpu",
     "oracle": "node tests/test_oracle.cjs --ecrire",
     "parcours": "node tests/parcours/run.cjs",
     "lint": "node tools/lint.cjs",

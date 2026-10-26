@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**363 versions**, de `2026-09-28b` à `V0.11.8` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**364 versions**, de `2026-09-28b` à `V0.11.9` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5057,3 +5057,10 @@ Ctrl+Z / Ctrl+Y doivent couvrir tout ce qui modifie le document (CAO, FAO, mise 
 - **Esquisse** (`skCheckpoint`, `skBaseSync`, `src/50-esquisse-5`) : même filet sur les tracés sans `skPushUndo`. Ouvrir puis fermer une esquisse sans rien toucher ne laisse plus d'étape vide ; une session d'esquisse modifiée = une étape du document (« esquisse « … » »).
 - **Un seul routage du clavier** (`undoDispatch`, en capture sur window) : les gestionnaires propres à l'esquisse, l'assemblage et la mise en plan ne traitent plus Ctrl+Z eux-mêmes. Un champ en cours de frappe garde son Ctrl+Z ; un champ seulement focalisé (valeur validée) le rend au document. Ouvrir un autre document vide l'historique ; le rendu nomme ses étapes (vue enregistrée / supprimée).
 - **Tests** : `test_undo_filet` (nouveau, suites rapide et complète) ; parcours navigateur « extrusion dynamique » : compte des étapes à partir de l'esquisse.
+
+## V0.11.9 - Tests sur la vraie carte graphique ; taille GPU fidèle au bord des fraises boule
+« Ne peut-on pas inclure certains tests avec CUDA tout en gardant ceux du CPU ». La simulation est en WebGL2 (pas CUDA) : les tests VM n'en ont pas et ne voyaient que les replis JavaScript, et le Chromium de Playwright tournait sur SwiftShader (GPU émulé par le processeur).
+- **Projet Playwright `gpu`** (`tests/browser/playwright.config.cjs`, `npm run test:gpu`) : Chromium lancé avec ANGLE Direct3D 11, sur la carte réelle. Le projet `chromium` reste sur SwiftShader ; les tests VM et `npm run ci` sont inchangés.
+- **`tests/browser/gpu.spec.cjs`** (nouveau) : WebGL2 réel (pas SwiftShader), rendu et taille GPU disponibles ; puis, sur l'Axe (surfaçage 1,5 mm + finition à la boule D8), la carte taillée par les shaders est relue et comparée cellule par cellule (118 800) à la taille JavaScript du même parcours.
+- **Défaut trouvé et corrigé** (`src/88-fao-79-cartes-gpu.js`, `faoCarteGProfil`) : le shader lisait le profil de l'outil dans la table régulière de 48 points de `faoEngTool`, interpolée linéairement. Au bord d'une boule la pente devient verticale : la table surestimait la hauteur et le GPU laissait jusqu'à 0,205 mm de matière (1 170 cellules au-delà de 0,1 mm). Table propre au GPU, points resserrés vers le bord (ρᵢ = r·(1 − (1 − i/48)²)) : écart maximal 0,0009 mm, aucune cellule au-delà de 0,01 mm. Parcours inchangés (CACHE_VER intact) ; les moteurs tri-dexel / distance gardent leur table.
+- **Tests** : `npm run test:gpu` 2/2 (RTX 5070 Ti), suite rapide.

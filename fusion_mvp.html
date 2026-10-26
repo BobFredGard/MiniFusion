@@ -277,7 +277,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.11.8';
+const APP_VER='V0.11.9';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -31524,9 +31524,10 @@ const FAO_CGC_FS=[
   '  vec2 a=vSeg.xy; vec2 d=vSeg.zw-a; float L2=dot(d,d); float t=(L2>0.0)?clamp(dot(P-a,d)/L2,0.0,1.0):0.0;',
   '  vec2 q=a+d*t; vec2 w=P-q; float rho=length(w); float r=vZ.y;',
   '  if(rho>r)discard;',
-  '  int row=int(vZ.z+0.5); float f=rho/r*48.0; int i=min(47,int(floor(f))); float u=f-float(i);',
+  '  int row=int(vZ.z+0.5); float f=(1.0-sqrt(max(0.0,1.0-rho/r)))*48.0; int i=min(47,int(floor(f))); float u=f-float(i);',
   '  float h0=hs(row,i); float h1=hs(row,i+1); float zcol=max(uG.w,vZ.x+mix(h0,h1,u));',
-  '  float s=(h1-h0)/(r/48.0); vec2 ux=(rho>1e-9)?w/rho:vec2(0.0);',
+  '  float q0=1.0-float(i)/48.0; float q1=1.0-float(i+1)/48.0; float s=(h1-h0)/max(1e-9,r*(q0*q0-q1*q1));', // pente sur l'intervalle de la table
+  '  vec2 ux=(rho>1e-9)?w/rho:vec2(0.0);',
   '  vec3 n=normalize(vec3(-s*ux,1.0));', // normale de la surface de l'outil (vers le vide)
   '  gl_FragDepth=clamp((zcol-uZr.x)/uZr.y,0.0,1.0);',
   '  oH=vec4(zcol,0.0,0.0,1.0); oN=vec4(n,0.0); oW=vec4((rho>1e-9)?-ux:vec2(0.0),0.0,1.0);',
@@ -31581,7 +31582,20 @@ function faoCarteGBind(vw){
 }
 function faoCarteGTool(C,r,cr,tp){
   const T=faoEngTool(r,cr,tp);let row=C.tools.get(T.key);if(row!=null)return row;
-  row=C.rows.length;C.rows.push(T);C.tools.set(T.key,row);C.tabDirty=true;return row;
+  row=C.rows.length;C.rows.push(faoCarteGProfil(r,cr,tp));C.tools.set(T.key,row);C.tabDirty=true;return row;
+}
+function faoCarteGProfil(r,cr,tp){
+  // Dessous de l'outil sur 49 points RESSERRÉS vers le bord : ρ_i = r·(1 − (1 − i/48)²). Au bord
+  // d'une boule (ou de l'arrondi d'un tore) la pente devient verticale, h ≈ √(r − ρ) : la table
+  // régulière de faoEngTool, interpolée linéairement, y surestimait la hauteur de ~0,2 mm (R4) et
+  // la taille GPU laissait de la matière que la taille JavaScript (arc exact) enlevait.
+  // En u = 1 − √(1 − ρ/r), le profil redevient lisse (tests/browser/gpu.spec.cjs).
+  r=+r||5;
+  const CR=(isFinite(+cr)&&+cr>0)?Math.min(+cr,r):0,TP=(tp&&tp.length>1)?tp:null,rc=r-CR,hs=new Float64Array(49);
+  for(let i=0;i<=48;i++){const q=1-i/48,rho=r*(1-q*q);let h=0;
+    if(TP)h=faoTipZAt(TP,rho);else if(CR>0&&rho>rc){const e=Math.min(rho-rc,CR);h=CR-Math.sqrt(Math.max(0,CR*CR-e*e));}
+    hs[i]=i?Math.max(hs[i-1],h):h;}
+  return {hs};
 }
 function faoCarteGQueue(vw,a,b,r,cr,tp,ax){
   // segment → pas à cote constante dans la carte de son orientation (même découpe que faoMatterCarveSeg)

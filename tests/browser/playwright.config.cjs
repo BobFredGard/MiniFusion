@@ -25,7 +25,13 @@ module.exports=defineConfig({
     screenshot:'only-on-failure',
     acceptDownloads:true
   },
-  projects:[{name:'chromium',use:{...devices['Desktop Chrome'],viewport:{width:1400,height:900}}}],
+  projects:[
+    // Parcours : WebGL sur SwiftShader (GPU émulé par le processeur), comme une CI sans carte.
+    {name:'chromium',testIgnore:/gpu\.spec\.cjs$/,use:{...devices['Desktop Chrome'],viewport:{width:1400,height:900}}},
+    // Carte graphique réelle : ANGLE Direct3D 11 au lieu de SwiftShader (`npm run test:gpu`).
+    {name:'gpu',testMatch:/gpu\.spec\.cjs$/,use:{...devices['Desktop Chrome'],viewport:{width:1400,height:900},
+      launchOptions:{args:['--use-angle=d3d11','--enable-gpu','--ignore-gpu-blocklist']}}}
+  ],
   webServer:{
     command:'node tests/browser/serveur.cjs '+PORT,
     cwd:require('path').join(__dirname,'..','..'),
