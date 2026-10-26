@@ -222,6 +222,12 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
       out.thSec=JSON.stringify(sum(T.threadEls(vSec)));
       out.thFr=JSON.stringify(T.threadEls(vFr).map(e=>e.k));
       vFr.mode='hide';out.thFrHide=T.threadEls(vFr).length;
+      // coupe ⟂ à l'axe : le 3/4 de cercle seulement si le plan TRAVERSE la partie filetée (z 8 → 20)
+      const vH=z=>({id:'__vh'+z+'__',kind:'section',dir:[0,0,1],u:[1,0,0],v:[0,-1,0],x:0,y:0,scale:1,mode:'hide',axes:[],
+        section:{p:[0,0,z],n:[0,0,1],a:[0,0],b:[60,0]}});
+      out.thH14=JSON.stringify(sum(T.threadEls(vH(14))));
+      out.thH4=T.threadEls(vH(4)).length;
+      out.thH25=T.threadEls(vH(25)).length;
       doc.features[0].thread.lenMode='through';out.thThru=T.threadEls(vSec).length;
       doc.features[0].thread.model=true;out.thModel=T.threadEls(vTop).length;
       holeAxis=hA0;holeNorm=hN0;doc.features=F0;doc.sketches=S0;
@@ -296,6 +302,8 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   A(r.thBot===0,'vue de dessous (trou borgne, entrée cachée) : pas de 3/4 de cercle');
   A(r.thSec==='[["L",26,20,26,8,"thread"],["L",34,20,34,8,"thread"],["L",26,8,34,8,"sharp"]]','coupe par l’axe : 2 traits fins au Ø 8 sur 12 + trait fort de fin de filetage');
   A(r.thFr==='["threadH","threadH","threadH"]'&&r.thFrHide===0,'vue de face : filet caché en interrompu (mode pointillé), rien en cachées supprimées');
+  A(r.thH14==='[["A",30,-20,4,4.712,"thread"]]','coupe ⟂ à l’axe à travers le taraudage : 3/4 de cercle');
+  A(r.thH4===0&&r.thH25===0,'coupe ⟂ à l’axe hors du taraudage (enfoui ou ôté) : pas de cercle fantôme ('+r.thH4+'/'+r.thH25+')');
   A(r.thThru===2,'filetage débouchant : pas de trait de fin de filetage');
   A(r.thModel===0,'filet modélisé : rien d’ajouté (géométrie réelle)');
   console.log('  · Ø40 H7 calé à droite : texte x '+r.endMainX+', « ) » x '+r.endClose+', pile '+(+r.endW).toFixed(2));

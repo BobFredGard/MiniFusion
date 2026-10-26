@@ -1349,15 +1349,24 @@
         const w=[P.x,P.y,P.z];
         const at=t=>{const q=[w[0]+D[0]*t,w[1]+D[1]*t,w[2]+D[2]*t];return[dot(q,b.u),dot(q,b.v)];};
         if(Math.abs(facing)>0.999){
-          // en bout : entrée vue (perçage qui s'éloigne de l'observateur) ou filetage débouchant
-          if(!(facing<0||thru||view.section))return;
+          // en bout : entrée vue (perçage qui s'éloigne de l'observateur) ou filetage débouchant.
+          // En coupe : seulement si la partie filetée TRAVERSE le plan de coupe — un taraudage
+          // enfoui dans la matière restante, ou ôté avec la matière enlevée, n'est pas vu
+          // (« des cercles fantômes […] qui ne sont même pas visibles en pointillés »).
+          if(planes){
+            const s=(p0,t)=>dot(nS,[w[0]+D[0]*t-p0[0],w[1]+D[1]*t-p0[1],w[2]+D[2]*t-p0[2]]);
+            if(!planes.some(p0=>s(p0,off)*s(p0,off+L)<=0))return;
+          }else if(!(facing<0||thru))return;
           const c=at(0);
           out.push({t:'A',cx:c[0],cy:c[1],r:R,a0:0,a1:1.5*Math.PI,k:'thread'});
           return;
         }
         if(Math.abs(facing)>0.02)return; // axe oblique à la vue : pas de convention simple
         const d2=[dot(D,b.u),dot(D,b.v)],l2=Math.hypot(d2[0],d2[1])||1,nx=-d2[1]/l2,ny=d2[0]/l2;
-        const inCut=!!(planes&&Math.abs(dot(nS,D))<0.02&&planes.some(p0=>Math.abs(dot(nS,[w[0]-p0[0],w[1]-p0[1],w[2]-p0[2]]))<R));
+        // coupé = le plan passe DANS le perçage (rayon du foret) : entre le foret et le Ø nominal,
+        // la coupe ne montre aucun trou — pas de fond de filet isolé
+        const rCut=Math.min(R,(+N.d>0?N.d/2:R));
+        const inCut=!!(planes&&Math.abs(dot(nS,D))<0.02&&planes.some(p0=>Math.abs(dot(nS,[w[0]-p0[0],w[1]-p0[1],w[2]-p0[2]]))<rCut));
         if(!inCut&&view.mode!=='dash')return; // filet caché : seulement en « cachées en pointillé »
         const k=inCut?'thread':'threadH';
         const a=at(off),e=at(off+L);

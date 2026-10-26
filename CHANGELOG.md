@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**351 versions**, de `2026-09-28b` à `V0.9.12` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**352 versions**, de `2026-09-28b` à `V0.9.13` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4965,3 +4965,9 @@ Suite de V0.9.7 : « que reste-t-il à faire ? » — dans l'ordre proposé ; «
 - **Ø automatique** : une distance entre les deux génératrices d'un même cylindre (`mepCylDiaBetween`), ou une cote linéaire perpendiculaire à l'axe d'un cylindre, centrée sur lui, dans sa longueur et de longueur 2R (`mepCylDiaSeg` — arête du cercle d'extrémité vue de profil, points de part et d'autre) reçoit le préfixe « Ø » (`d.dsym`, `mepDimAutoDia` à la pose). Pas de Ø entre faces planes, génératrice + face, bout de cône, hors de la longueur du cylindre.
 - **Cote d'angle** : le curseur choisit le secteur coté parmi les 4 que forment les deux droites (θ / 180 − θ, `mepAngSector`, `mepAngSectorAt`, `d.q`) ; double-clic = angle rentrant 360 − θ ↔ saillant (`mepDimToggleBig`, `d.big`), arc dessiné en grand arc ; la valeur affichée est celle du secteur dessiné.
 - **Tests** : `test_mep_cylindre` (nouveau, noyau réel : génératrices d'un seul trait, Ø entre génératrices, droite seule → Ø, cas sans Ø ; ajouté à `run.cjs`) ; `test_mise_en_plan` (4 secteurs et rentrants, soudure avec sommet à 3 arêtes gardé, texte « Ø20 », secteur au curseur).
+
+## V0.9.13 - Mise en plan : plus de filetages fantômes dans les coupes
+« On voit apparaître des cercles "fantômes" concernant les trous taraudés qui ne sont même pas visibles en pointillés, du coup pas la peine de voir le 1/4 de cercle ou la ligne de fond de filet ».
+- **Trou vu dans l'axe, en coupe** (`src/98-mise-en-plan.js`, `mepThreadEls`) : le 3/4 de cercle était dessiné dès que la vue était une coupe. Il ne l'est plus que si la partie filetée TRAVERSE le plan de coupe ; un taraudage enfoui dans la matière restante, ou ôté avec la matière enlevée, n'est plus représenté.
+- **Trou vu de côté, en coupe** : les traits de fond de filet ne sont dessinés que si le plan passe dans le perçage (rayon du foret), et non plus dès qu'il passe à moins du rayon nominal — entre les deux, la coupe ne montre aucun trou.
+- **Tests** : `test_mep_hachures_cotes` (M8 fileté de z 8 à z 20 : coupe en z 14 → 3/4 de cercle ; coupes en z 4 et z 25 → rien). Contrôlé sur « Perçages.miniFusion » : les coupes A et B ne gardent que les traits des trous coupés.
