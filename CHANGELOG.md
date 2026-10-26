@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**355 versions**, de `2026-09-28b` à `V0.11.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**356 versions**, de `2026-09-28b` à `V0.11.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5004,3 +5004,9 @@ Suite de V0.9.7 : « que reste-t-il à faire ? » — dans l'ordre proposé ; «
 - **Profondeur de champ** : ouverture f/1,4 … f/22 (« Tout net » par défaut), pupille = focale / ouverture ; clic sans glisser sur la pièce = mise au point à cette distance (`rdPick`), « Sur la cible » pour revenir ; la mise au point suit le recul quand la focale change.
 - **Vues enregistrées** : position, cible et focale, enregistrées avec la pièce (`doc.rendu.cams`, `renduNorm`) ; aller, supprimer ; ↺ d'un corps ne les efface pas.
 - **Tests** : `test_materiaux` étendu (reliefs : défauts valides, priorités, normalisation, relief gardé au changement de couleur et repris au changement de matériau ; ancrages du shader présents dans three r147 ; vues enregistrées relues, invalides écartées, gardées au ↺ ; suite de Halton et disque). Vérifié dans l'application sur Support Pédale : inox brossé, alu moleté, chêne, PLA en couches, alu anodisé rouge à f/4 avec mise au point au clic, PNG transparent (RGBA), vue enregistrée retrouvée.
+
+## V0.11.1 - Vue 3D : état du noyau et message écrits sur la vue, au-dessus de la timeline ; bandeau supérieur réordonné
+« Il faudrait écrire ces données, sans bandeau inférieur, sur la vue 3D, en bas à droite, juste au dessus de la time line ».
+- **Noyau + message sur la vue** (`src/97-interface-moderne.js`, `#mfVpInfo`) : « Noyau prêt · exact » et le message d'état (face survolée, mesure…) quittent le bandeau supérieur ; ils sont écrits directement sur la vue 3D, en bas à droite, sans fond (halo de la couleur du thème pour rester lisibles), transparents à la souris. En CAO hors esquisse et hors assemblage, juste au-dessus de la timeline ; ailleurs (FAO, PLAN, esquisse, assemblage), contre le bas de la vue. Les éléments `#mfStEng` / `#mfStMeas` sont déplacés tels quels : leur mise à jour (`mfStatusBar`) ne change pas.
+- **Bandeau supérieur** : le nom du fichier (`#mffName`) vient juste après la recherche, « ⟳ Régénérer » (`#mfStRegen`) passe à droite, l'unité « mm » disparaît (`#mfStatus`, vide et extensible, fait le ressort entre les deux).
+- **Tests** : suite rapide. Vérifié dans l'application : texte à 63 px du bas en CAO (timeline en dessous), à 11 px en FAO, à 15 px du bord droit.

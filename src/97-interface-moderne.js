@@ -159,8 +159,13 @@ function mfCss(){
   'body.ui-modern .topbar{flex-wrap:nowrap}',
   'body.ui-modern .topbar .brand{flex:none;white-space:nowrap}',
   '@media (max-width:1100px){body.ui-modern .topbar{flex-wrap:wrap}.topbar #mfStatus{flex-basis:100%;order:9}}',
-  '#mfStatus button{padding:2px 9px;font-size:.7rem}',
+  '#mfStatus button,.topbar #mfStRegen{padding:2px 9px;font-size:.7rem}',
   '#mfStMeas{overflow:hidden;text-overflow:ellipsis;max-width:46vw}',
+  /* V0.11.1 : noyau + message d'état écrits sur la vue 3D, en bas à droite, sans bandeau, juste au-dessus de la timeline */
+  '#mfVpInfo{position:absolute;right:14px;bottom:10px;z-index:21;gap:12px;align-items:baseline;max-width:70%;font-size:.72rem;color:var(--text);opacity:.85;white-space:nowrap;pointer-events:none;text-shadow:0 0 3px var(--bg),0 0 6px var(--bg)}',
+  'body.ui-modern[data-ws="cao"]:not(.mf-sk):not([data-asm="1"]) #mfVpInfo{bottom:62px}',
+  '#mfVpInfo #mfStEng{flex:none;color:var(--muted)}',
+  '#mfVpInfo #mfStMeas{min-width:0;max-width:none;overflow:hidden;text-overflow:ellipsis}',
   'body.ui-modern aside.right>.panel.mfHideM{display:none}', /* Mesure et État : repérés par leur titre (voir mfBuildModern) */
   /* esquisse (moderne) : bandeau d'esquisse à la place du ruban, panneau latéral à droite */
   'body.ui-modern.mf-sk #mfRibbon{display:none!important}',
@@ -508,7 +513,7 @@ function mfStatusBar(){
   const sb=document.createElement('div');sb.id='mfStatus';sb.className='mfM';
   // ⚙ Noyau .wasm… : le panneau « État » (qui porte ce bouton) est masqué en moderne — au 1er lancement
   // en mode fichier (file://) le noyau exact ne démarre qu'avec ce bouton, il doit donc rester accessible
-  sb.innerHTML='<button id="mfStWasm" style="display:none" title="Mode fichier (file://) : désignez occt/opencascade.wasm.wasm pour démarrer le noyau exact sans serveur">⚙ Noyau .wasm…</button><span id="mfStEng">Noyau…</span><span id="mfStMeas"></span><span class="mfSp"></span><span id="mfStSave"></span><button id="mfStRegen" title="Régénérer tout le modèle">⟳ Régénérer</button><span>mm</span><b id="mfStVer"></b>';
+  sb.innerHTML='<button id="mfStWasm" style="display:none" title="Mode fichier (file://) : désignez occt/opencascade.wasm.wasm pour démarrer le noyau exact sans serveur">⚙ Noyau .wasm…</button><span id="mfStEng">Noyau…</span><span id="mfStMeas"></span><span class="mfSp"></span><span id="mfStSave"></span><button id="mfStRegen" title="Régénérer tout le modèle">⟳ Régénérer</button><b id="mfStVer"></b>';
   sb.querySelector('#mfStRegen').onclick=()=>mfClick('btnRebuild');
   sb.querySelector('#mfStWasm').onclick=()=>mfClick('btnOccWasm');
   const upd=()=>{
@@ -659,6 +664,10 @@ function mfBuildModern(){
   // V0.7.6 : la barre d'état (noyau, message, Régénérer, unité) vit DANS le bandeau supérieur,
   // après la recherche — plus de barre en bas : la vue 3D descend jusqu'en bas de la fenêtre
   [ws,q,sx,mfStatusBar()].forEach(n=>top.insertBefore(n,after));
+  // 2026-10-26 : nom du fichier à la place de Régénérer (après la recherche), Régénérer à droite ;
+  // plus d'unité « mm » (#mfStatus, vide et extensible, fait le ressort entre les deux)
+  {const st=document.getElementById('mfStatus'),nm=document.getElementById('mffName'),rg=document.getElementById('mfStRegen');
+   if(st&&nm)top.insertBefore(nm,st);if(st&&rg)top.insertBefore(rg,st.nextSibling);}
   // ruban sous le bandeau
   top.parentNode.insertBefore(mfRibbon(),top.nextSibling);
   // onglets du navigateur sur la vue
@@ -666,6 +675,10 @@ function mfBuildModern(){
   if(vp){const bt=document.createElement('div');bt.id='mfBrTabs';bt.className='mfM';
     [['cao','Modèle'],['fao','Usinage'],['plan','Plan']].forEach(([k,l])=>{const b=document.createElement('button');b.textContent=l;b.dataset.mfws=k;b.onclick=()=>mfWs(k);bt.appendChild(b);});
     vp.appendChild(bt);}
+  // V0.11.1 : noyau + message (face survolée, mesure…) sur la vue, en bas à droite — plus dans le bandeau
+  if(vp){const vi=document.createElement('div');vi.id='mfVpInfo';vi.className='mfM';
+    ['mfStEng','mfStMeas'].forEach(id=>{const n=document.getElementById(id);if(n)vi.appendChild(n);});
+    vp.appendChild(vi);}
   mfCube();
   mfSkWatch();
   // panneaux « Mesure » et « État » (remplacés par la barre d'état) repérés par leur titre
