@@ -22,3 +22,4 @@ playwright-report/
 *(Copie en conflit*
 # durées des suites Node (ordre du pool de tests/run.cjs)
 tests/.durees.json
+*.miniFusion.bak
