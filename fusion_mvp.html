@@ -277,7 +277,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.9.8';
+const APP_VER='V0.9.9';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -4758,7 +4758,15 @@ function occReplayBody(bid,list){
       if(importSeul)return; // seul : affichage d'origine (mesh + nom du fichier)
       const e=(typeof importGeom!=='undefined')?importGeom.get(f.id):null;
       const bp=e&&e.brep;
-      if(!bp){msgs.push(`${f.name} : solide exact indisponible (import STL) — combinaison réservée au repli maillage`);return;}
+      if(!bp){
+        // 2026-10-26 : la clé des points de contrôle ne disait pas si le STEP était là. Au
+        // rechargement (Ctrl+R), le noyau rejoue AVANT importRestorePending : les points
+        // mémorisés SANS le STEP étaient ensuite repris tels quels, une fois le STEP
+        // restauré → seule l'opération restait affichée. Marque d'absence dans la clé.
+        ckKey+='!'+f.id+';';
+        msgs.push(`${f.name} : `+(f.src&&f.src.fmt==='step'?'STEP en cours de restauration':'solide exact indisponible (import STL) — combinaison réservée au repli maillage'));
+        return;
+      }
       shape=occShapeCopy(bp); // COPIE : la table reste propriétaire de son BRep
       if(!shape){msgs.push(`${f.name} : copie exacte impossible — ignoré`);return;}
       imports.push(f.id);
@@ -44418,7 +44426,10 @@ async function importRestorePending(){
       }catch(err){miss.push(f.name);}
     }
   }finally{_importRestoring=null;fin();}
-  if(n){builtVersion=-1;builtHash=null;builtEngine=null;rebuild();if(!viewUserMoved)showAll();}
+  if(n){
+    builtVersion=-1;builtHash=null;builtEngine=null;rebuild();if(!viewUserMoved)showAll();
+    try{const t=faceEl.textContent.replace(/\n?[^\n]*STEP en cours de restauration/g,'');faceEl.textContent=(t?t+'\n':'')+n+' import(s) restauré(s).';}catch(e){}
+  }
   if(miss.length)try{faceEl.textContent='Import(s) sans source : '+miss.join(', ')+' — réimportez le fichier (même nom : il se rebranche sur la fonction existante).';}catch(e){}
   return n;
 }

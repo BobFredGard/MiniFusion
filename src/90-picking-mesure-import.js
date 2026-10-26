@@ -1150,7 +1150,10 @@ async function importRestorePending(){
       }catch(err){miss.push(f.name);}
     }
   }finally{_importRestoring=null;fin();}
-  if(n){builtVersion=-1;builtHash=null;builtEngine=null;rebuild();if(!viewUserMoved)showAll();}
+  if(n){
+    builtVersion=-1;builtHash=null;builtEngine=null;rebuild();if(!viewUserMoved)showAll();
+    try{const t=faceEl.textContent.replace(/\n?[^\n]*STEP en cours de restauration/g,'');faceEl.textContent=(t?t+'\n':'')+n+' import(s) restauré(s).';}catch(e){}
+  }
   if(miss.length)try{faceEl.textContent='Import(s) sans source : '+miss.join(', ')+' — réimportez le fichier (même nom : il se rebranche sur la fonction existante).';}catch(e){}
   return n;
 }

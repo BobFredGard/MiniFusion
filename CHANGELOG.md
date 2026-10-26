@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**347 versions**, de `2026-09-28b` à `V0.9.8` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**348 versions**, de `2026-09-28b` à `V0.9.9` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4936,3 +4936,9 @@ Suite de V0.9.7 : « que reste-t-il à faire ? » — dans l'ordre proposé ; «
   - double-clic sur une fonction en lecture seule : modéliser son composant ET la sélectionner.
 - **Libellés** : les boutons « Placer » (fil d'Ariane de l'arbre, ruban) deviennent « Assembler ».
 - **Tests** : `test_arbre_v2` (références `xe` : axe, centre, sommet, arête disparue ; fonction vers un autre corps ; Repères en mode Assembler ; lot vidé ; double-clic en lecture seule) ; parcours Playwright sur « Assembler ».
+
+## V0.9.9 - Import STEP : le STEP ne disparaît plus après Ctrl+R / Régénérer quand une opération s'y applique
+« À l'import tout fonctionne… quand je rajoute ou enlève de la matière on voit l'ajout ou le retrait, puis il suffit d'un Régénérer et le STEP n'est plus visible, sauf l'opération » ; « c'est aussi après un Ctrl+R, dans Chrome ».
+- **Cause** : au rechargement, le noyau prêt rejoue le modèle (`occtFinishBoot`) AVANT que `importRestorePending` ait relu le STEP dans l'IndexedDB. Ce rejeu se fait sans le STEP (« solide exact indisponible ») et pose ses points de contrôle sous une clé qui ne disait pas si le STEP était là ; une fois le STEP restauré, le rejeu reprenait ces points → seul le bloc ajouté restait affiché.
+- **Correctif** (`src/20-noyau-et-operations-solides.js`, `occReplayBody`) : un import sans solide exact marque la clé (`!<id>`) — rien de ce qui est calculé sans lui n'est repris quand il revient. Message : « STEP en cours de restauration » au lieu de « (import STL) » ; remplacé par « N import(s) restauré(s). » à la fin de `importRestorePending` (`src/90-picking-mesure-import.js`).
+- **Tests** : `test_import_regen` (Régénérer ×2, rechargement simulé puis restauration ; ajouté à `run.cjs` — il ne reproduit pas l'ancien défaut dans le harnais Node). Vérifié dans l'application : boîte STEP + bloc ajouté, rechargement → 28 triangles, boîte 0→60 × 0→35 (avant : le bloc seul), puis Régénérer → idem.

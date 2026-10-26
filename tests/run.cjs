@@ -128,6 +128,7 @@ const SUITES = [
   "test_precision_affichage",
   "test_fao_lock",
   "test_bool_import",
+  "test_import_regen",
   "test_ctx_step",
   "test_ctx_menu_viewport",
   "test_fao_reset",

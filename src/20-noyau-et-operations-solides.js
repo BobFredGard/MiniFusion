@@ -2689,7 +2689,15 @@ function occReplayBody(bid,list){
       if(importSeul)return; // seul : affichage d'origine (mesh + nom du fichier)
       const e=(typeof importGeom!=='undefined')?importGeom.get(f.id):null;
       const bp=e&&e.brep;
-      if(!bp){msgs.push(`${f.name} : solide exact indisponible (import STL) — combinaison réservée au repli maillage`);return;}
+      if(!bp){
+        // 2026-10-26 : la clé des points de contrôle ne disait pas si le STEP était là. Au
+        // rechargement (Ctrl+R), le noyau rejoue AVANT importRestorePending : les points
+        // mémorisés SANS le STEP étaient ensuite repris tels quels, une fois le STEP
+        // restauré → seule l'opération restait affichée. Marque d'absence dans la clé.
+        ckKey+='!'+f.id+';';
+        msgs.push(`${f.name} : `+(f.src&&f.src.fmt==='step'?'STEP en cours de restauration':'solide exact indisponible (import STL) — combinaison réservée au repli maillage'));
+        return;
+      }
       shape=occShapeCopy(bp); // COPIE : la table reste propriétaire de son BRep
       if(!shape){msgs.push(`${f.name} : copie exacte impossible — ignoré`);return;}
       imports.push(f.id);
