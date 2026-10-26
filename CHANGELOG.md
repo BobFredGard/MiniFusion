@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**356 versions**, de `2026-09-28b` à `V0.11.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**357 versions**, de `2026-09-28b` à `V0.11.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5010,3 +5010,10 @@ Suite de V0.9.7 : « que reste-t-il à faire ? » — dans l'ordre proposé ; «
 - **Noyau + message sur la vue** (`src/97-interface-moderne.js`, `#mfVpInfo`) : « Noyau prêt · exact » et le message d'état (face survolée, mesure…) quittent le bandeau supérieur ; ils sont écrits directement sur la vue 3D, en bas à droite, sans fond (halo de la couleur du thème pour rester lisibles), transparents à la souris. En CAO hors esquisse et hors assemblage, juste au-dessus de la timeline ; ailleurs (FAO, PLAN, esquisse, assemblage), contre le bas de la vue. Les éléments `#mfStEng` / `#mfStMeas` sont déplacés tels quels : leur mise à jour (`mfStatusBar`) ne change pas.
 - **Bandeau supérieur** : le nom du fichier (`#mffName`) vient juste après la recherche, « ⟳ Régénérer » (`#mfStRegen`) passe à droite, l'unité « mm » disparaît (`#mfStatus`, vide et extensible, fait le ressort entre les deux).
 - **Tests** : suite rapide. Vérifié dans l'application : texte à 63 px du bas en CAO (timeline en dessous), à 11 px en FAO, à 15 px du bord droit.
+
+## V0.11.2 - Panneau Rendu : habillage de la mise en plan, une seule page en blocs encadrés
+« Pour le menu Rendu, mettre la même cosmétique que pour les menus de la mise en plan, on gagnera de la place » ; « je ne voulais pas forcément des onglets, juste une seule page bien délimitée pour comprendre ce que l'on touche ».
+- **Panneau** (`src/98-rendu.js`, `rdCss`, `rdPanel`) : carte « Paramètres — Rendu » comme le panneau du PLAN, lignes compactes (libellé à gauche, réglage à droite), boutons segmentés (fond, arêtes, format, nombre de passes, focales). Une seule page découpée en blocs encadrés et titrés : Ambiance · Fond et sol (sous-parties Sol, Dessin) · Appareil photo · Vues enregistrées · Matériaux et reliefs · Image (`RD_TABS`). Largeur 350 → 290 px : l'image s'agrandit.
+- **Pied toujours visible** (`rdFoot`) : format et nombre de passes retenus, bouton « Rendre et enregistrer le PNG », message du dernier rendu.
+- **Matériaux** : par corps, nom (et ↺, ⇉ en assemblage) puis matériau + couleur, puis relief — sur des lignes séparées, lisibles à cette largeur. Libellés raccourcis (Lampe, Douceur, Tons, Ombre) : aucun n'est coupé.
+- **Tests** : suite rapide. Vérifié dans l'application sur Support Pédale : les six blocs, aucun libellé tronqué, rendu et affinage inchangés.

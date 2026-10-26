@@ -430,144 +430,180 @@ function rdPick(ev){
 /* ── interface ── */
 function rdCss(){
   if(document.getElementById('rdCss'))return;
+  // V0.11.2 : même habillage que le panneau de la mise en plan (carte « Paramètres », lignes compactes,
+  // boutons segmentés), une seule page en blocs encadrés — moins de place, l'image s'agrandit
   const s=document.createElement('style');s.id='rdCss';s.textContent=[
-    '#rdOverlay{position:fixed;inset:0;z-index:9000;display:flex;background:#101012;color:var(--text,#f5f5f7);font-size:.82rem}',
+    '#rdOverlay{position:fixed;inset:0;z-index:9000;display:flex;background:#101012;color:var(--text,#f5f5f7);font-size:.74rem}',
     '#rdView{flex:1;display:flex;align-items:center;justify-content:center;position:relative;min-width:0;background:repeating-conic-gradient(#1a1a1c 0% 25%,#141416 0% 50%) 50%/22px 22px}',
     '#rdView canvas{box-shadow:0 10px 40px rgba(0,0,0,.55);cursor:grab;outline:1px solid rgba(255,255,255,.08)}',
-    '#rdView .rdHint{position:absolute;left:14px;bottom:10px;color:#98989d;font-size:.74rem}',
-    '#rdView .rdCnt{position:absolute;right:14px;bottom:10px;color:#98989d;font-size:.74rem;font-variant-numeric:tabular-nums}',
-    '#rdPanel{width:350px;flex:none;overflow:auto;background:var(--bg,#1c1c1e);border-left:1px solid var(--border,rgba(255,255,255,.09));padding:10px 14px 18px}',
-    '#rdPanel h2{font-size:1rem;margin:2px 0 8px;display:flex;align-items:center;gap:8px}',
-    '#rdPanel h2 .rdX{margin-left:auto;background:none;border:1px solid var(--border);color:inherit;border-radius:7px;padding:2px 9px;cursor:pointer}',
-    '#rdPanel h3{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted,#98989d);margin:14px 0 6px;font-weight:600}',
-    '#rdPanel .rdRow{display:flex;align-items:center;gap:8px;margin:5px 0}',
-    '#rdPanel .rdRow>label{flex:0 0 96px;color:var(--muted,#98989d)}',
-    '#rdPanel .rdRow>select,#rdPanel .rdRow>input[type=range]{flex:1;min-width:0}',
-    '#rdPanel .rdRow>.rdV{min-width:46px;text-align:right;font-variant-numeric:tabular-nums}',
-    '#rdPanel input[type=color]{width:36px;height:24px;padding:0;border:none;background:none}',
-    '#rdPanel .rdBtns{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}',
-    '#rdPanel button.rdB{background:var(--surface,#2c2c2e);border:1px solid var(--border);color:inherit;border-radius:7px;padding:4px 9px;cursor:pointer}',
-    '#rdPanel button.rdB.on{background:var(--primary,#0a84ff);color:#fff;border-color:transparent}',
-    '#rdPanel .rdGo{width:100%;margin-top:10px;padding:9px;border:none;border-radius:9px;background:var(--primary,#0a84ff);color:#fff;font-weight:600;cursor:pointer}',
+    '#rdView .rdHint{position:absolute;left:14px;bottom:10px;color:#98989d;font-size:.72rem}',
+    '#rdView .rdCnt{position:absolute;right:14px;bottom:10px;color:#98989d;font-size:.72rem;font-variant-numeric:tabular-nums}',
+    '#rdPanel{width:290px;flex:none;display:flex;flex-direction:column;background:var(--bg,#1c1c1e);padding:8px;gap:8px;min-height:0}',
+    '#rdPanel .rdCard{flex:1;min-height:0;overflow-y:auto;padding:8px 10px}',
+    '#rdPanel .rdHead{display:flex;align-items:center;gap:6px}',
+    '#rdPanel .rdHead .panel-title{flex:1;margin:0}',
+    '#rdPanel .rdHead button{padding:2px 8px;font-size:.7rem;border:1px solid var(--border);background:none;color:var(--text);border-radius:6px;cursor:pointer}',
+    '#rdPanel .rdSec{border:1px solid var(--border);border-radius:8px;padding:6px 8px 7px;margin:8px 0 0;background:rgba(127,127,127,.04)}',
+    '#rdPanel .rdSec>h4.rdSecT{margin:0 0 5px;padding-bottom:4px;border-bottom:1px solid var(--border);font-size:.7rem;color:var(--text);letter-spacing:.06em}',
+    '#rdPanel h4{margin:8px 0 3px;font-size:.66rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}',
+    '#rdPanel .rdRow{display:flex;gap:5px;align-items:center;margin:4px 0;min-height:22px}',
+    '#rdPanel .rdRow>label{flex:1;min-width:0;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '#rdPanel select,#rdPanel input[type=number]{max-width:132px;padding:3px 6px;font-size:.72rem;border:1px solid var(--border);border-radius:5px;background:var(--bg);color:var(--text)}',
+    '#rdPanel .rdRow>select{flex:0 1 128px;min-width:0}',
+    '#rdPanel .rdRow.rdWrap{flex-wrap:wrap;justify-content:space-between;row-gap:3px}',
+    '#rdPanel input[type=range]{flex:0 1 96px;min-width:0;margin:0}',
+    '#rdPanel .rdV{min-width:36px;text-align:right;font-variant-numeric:tabular-nums;color:var(--text)}',
+    '#rdPanel input[type=color]{width:30px;height:20px;padding:0;border:1px solid var(--border);border-radius:4px;background:none;flex:none}',
+    '#rdPanel input[type=checkbox]{margin:0;flex:none}',
+    '#rdPanel button.rdB{padding:3px 8px;font-size:.71rem;border:1px solid var(--border);background:none;color:var(--text);border-radius:6px;cursor:pointer}',
+    '#rdPanel button.rdB:hover,#rdPanel .rdSeg button:hover{border-color:var(--primary,#0a84ff)}',
+    '#rdPanel button.rdB.active{background:var(--primary,#0a84ff);border-color:var(--primary,#0a84ff);color:#fff}',
+    '#rdPanel .rdSeg{display:inline-flex;flex-wrap:wrap;gap:3px;justify-content:flex-end}',
+    '#rdPanel .rdSeg button{padding:3px 7px;font-size:.7rem;border:1px solid var(--border);background:none;color:var(--text);border-radius:6px;cursor:pointer}',
+    '#rdPanel .rdSeg button.active{background:var(--primary,#0a84ff);border-color:var(--primary,#0a84ff);color:#fff;font-weight:600}',
+    '#rdPanel .rdBtns{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0}',
+    '#rdPanel .rdChk{display:inline-flex;align-items:center;gap:3px;color:var(--text);white-space:nowrap;cursor:pointer}',
+    '#rdPanel .rdMat{display:flex;align-items:center;gap:4px;margin:6px 0 2px}',
+    '#rdPanel .rdMat>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-weight:600}',
+    '#rdPanel .rdMat2{display:flex;align-items:center;gap:4px;margin:2px 0}',
+    '#rdPanel .rdMat2>select{flex:1;min-width:0;max-width:none}',
+    '#rdPanel .rdRel{display:flex;align-items:center;gap:4px;margin:2px 0 6px}',
+    '#rdPanel .rdRel>select:first-child{flex:1;min-width:0;max-width:none}',
+    '#rdPanel .rdRel>input{width:52px}',
+    '#rdPanel .rdOcc{margin:10px 0 0;font-weight:700;color:var(--text);border-top:1px solid var(--border);padding-top:6px}',
+    '#rdPanel .rdCam{display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}',
+    '#rdPanel .rdCam>button{background:none;border:none;color:var(--text);padding:3px 8px;font-size:.71rem;cursor:pointer}',
+    '#rdPanel .rdCam>button+button{border-left:1px solid var(--border);color:var(--muted)}',
+    '#rdPanel .rdNote{color:var(--muted);font-size:.68rem;margin:4px 0;line-height:1.35}',
+    '#rdPanel .rdFoot{flex:none;padding:8px 10px}',
+    '#rdPanel .rdGo{width:100%;padding:7px;border:none;border-radius:8px;background:var(--primary,#0a84ff);color:#fff;font-weight:600;font-size:.76rem;cursor:pointer}',
     '#rdPanel .rdGo:disabled{opacity:.6;cursor:wait}',
-    '#rdPanel .rdMat{display:flex;align-items:center;gap:6px;margin:4px 0}',
-    '#rdPanel .rdMat>span{flex:0 0 90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-    '#rdPanel .rdMat>select{flex:1;min-width:0}',
-    '#rdPanel .rdRel{display:flex;align-items:center;gap:5px;margin:0 0 8px 20px}',
-    '#rdPanel .rdRel>select:first-child{flex:1;min-width:0}',
-    '#rdPanel .rdRel>input{width:56px}',
-    '#rdPanel .rdCam{display:inline-flex;border:1px solid var(--border);border-radius:7px;overflow:hidden}',
-    '#rdPanel .rdCam>button{background:var(--surface,#2c2c2e);border:none;color:inherit;padding:4px 8px;cursor:pointer}',
-    '#rdPanel .rdCam>button+button{border-left:1px solid var(--border);color:var(--muted,#98989d)}',
-    '#rdPanel .rdNote{color:var(--muted,#98989d);font-size:.74rem;margin:6px 0}',
-    '#rdPanel .rdMsg{color:var(--accent,#30d158);font-size:.76rem;margin-top:8px;min-height:1em}'
+    '#rdPanel .rdMsg{color:var(--accent,#30d158);font-size:.7rem;margin-top:6px;min-height:1em}',
+    '#rdPanel .rdFootRow{display:flex;gap:5px;align-items:center;margin-bottom:6px;color:var(--muted)}',
+    '#rdPanel .rdFootRow>span{flex:1}'
   ].join('\n');
   document.head.appendChild(s);
 }
+const RD_TABS=[['amb','Ambiance'],['fond','Fond et sol'],['cam','Appareil photo'],['vues','Vues enregistrées'],['mat','Matériaux et reliefs'],['img','Image']]; // blocs du panneau, dans l'ordre
 function rdPanel(){
-  const st=rd.st,p=rd.panel,sc0=p.scrollTop;p.innerHTML='';
+  const st=rd.st,p=rd.panel;
+  const sc0=rd.card?rd.card.scrollTop:0;p.innerHTML='';
   const el=(tag,cls,txt)=>{const d=document.createElement(tag);if(cls)d.className=cls;if(txt!=null)d.textContent=txt;return d;};
-  const row=(lab,node,val)=>{const r=el('div','rdRow');r.appendChild(el('label',null,lab));r.appendChild(node);if(val)r.appendChild(val);p.appendChild(r);return r;};
+  const card=el('div','panel rdCard');p.appendChild(card);rd.card=card;
+  const head=el('div','rdHead');head.appendChild(el('p','panel-title','Paramètres — Rendu'));
+  const x=el('button',null,'Fermer');x.title='Revenir à la modélisation (Échap)';x.onclick=rdClose;head.appendChild(x);card.appendChild(head);
+  // une seule page : un bloc encadré et titré par sujet (V0.11.2, habillage de la mise en plan)
+  let pane=card;
+  const row=(lab,...nodes)=>{const r=el('div','rdRow');r.appendChild(el('label',null,lab));nodes.forEach(n=>{if(n)r.appendChild(n);});pane.appendChild(r);return r;};
   const select=(opts,cur,fn)=>{const s=el('select');opts.forEach(([v,t])=>{const o=el('option',null,t);o.value=v;if(String(v)===String(cur))o.selected=true;s.appendChild(o);});s.onchange=()=>fn(s.value);return s;};
+  const seg=(opts,cur,fn)=>{const d=el('div','rdSeg');opts.forEach(([v,t,tip])=>{const b=el('button',String(v)===String(cur)?'active':null,t);if(tip)b.title=tip;
+    b.onclick=()=>fn(v);d.appendChild(b);});return d;};
   const slider=(lab,k,min,max,step,fmt,what)=>{
     const r=el('input');r.type='range';r.min=min;r.max=max;r.step=step;r.value=st[k];
     const v=el('span','rdV',fmt(+st[k]));
     r.oninput=()=>{st[k]=+r.value;v.textContent=fmt(st[k]);rdRefresh(what);};
     return row(lab,r,v);
   };
-  const h=el('h2');h.appendChild(el('span',null,'Rendu'));
-  const x=el('button','rdX','Fermer');x.title='Revenir à la modélisation (Échap)';x.onclick=rdClose;h.appendChild(x);p.appendChild(h);
-  // ambiance
-  p.appendChild(el('h3',null,'Ambiance'));
-  row('Lumière',select(RD_AMB,st.amb,v=>{st.amb=v;rdRefresh('env');}));
-  slider('Rotation','envRot',0,360,5,v=>v+'°','env');
-  slider('Reflets','envInt',0,3,0.05,v=>v.toFixed(2).replace('.',','),null);
-  slider('Lampe princ.','lum',0,3,0.05,v=>v.toFixed(2).replace('.',','),null);
-  // fond et sol
-  p.appendChild(el('h3',null,'Fond et sol'));
-  const c1=el('input');c1.type='color';c1.value=st.fc1;c1.title='Haut du fond (ou fond uni)';
-  const c2=el('input');c2.type='color';c2.value=st.fc2;c2.title='Bas du dégradé';
-  const fr=row('Fond',select([['degrade','Dégradé'],['uni','Uni'],['transparent','Transparent (PNG détouré)']],st.fond,v=>{st.fond=v;c2.style.display=v==='degrade'?'':'none';rdRefresh('fond');}));
-  fr.appendChild(c1);fr.appendChild(c2);c2.style.display=st.fond==='degrade'?'':'none';
-  c1.oninput=()=>{st.fc1=c1.value;rdRefresh('fond');};c2.oninput=()=>{st.fc2=c2.value;rdRefresh('fond');};
-  const pres=el('div','rdBtns');
-  [['Blanc','#f2f3f5','#c3c7ce'],['Gris','#9aa0a8','#4b5058'],['Ardoise','#3a4049','#121417'],['Noir','#121214','#000000'],['Bleu nuit','#24324a','#0b111c']].forEach(([n,a,b])=>{
-    const q=el('button','rdB',n);q.onclick=()=>{st.fc1=a;st.fc2=b;if(st.fond==='transparent')st.fond='degrade';rdPanel();rdRefresh('fond');};pres.appendChild(q);});
-  p.appendChild(pres);
-  { // Sol (et sa couleur) · Miroir · Ombre : trois cases, comme dans la vue CAO
-    const r=el('div','rdRow');r.appendChild(el('label',null,'Sol'));
-    const box=(lab,k,tip)=>{const l=el('label');l.style.cssText='flex:none;color:inherit;display:flex;align-items:center;gap:3px';l.title=tip;
-      const c=el('input');c.type='checkbox';c.checked=!!st[k];c.onchange=()=>{st[k]=c.checked;rdRefresh();};l.appendChild(c);l.appendChild(document.createTextNode(lab));r.appendChild(l);};
-    box('Sol','solOn','Disque sous la pièce, bords fondus dans le fond');
-    const sc=el('input');sc.type='color';sc.value=rdSolHex();sc.title='Couleur du sol (par défaut : bas du fond)';sc.oninput=()=>{st.solCol=sc.value;rdRefresh();};r.appendChild(sc);
-    box('Miroir','miroir','Reflet de la pièce au sol, avec ou sans disque');
-    box('Ombre','ombreOn','Ombre portée sur le sol');
-    p.appendChild(r);
+  const chk=(lab,k,tip)=>{const l=el('label','rdChk');l.title=tip||'';const c=el('input');c.type='checkbox';c.checked=!!st[k];
+    c.onchange=()=>{st[k]=c.checked;rdRefresh();};l.appendChild(c);l.appendChild(document.createTextNode(lab));return l;};
+  RD_TABS.forEach(([t,lab])=>{
+  pane=el('div','rdSec');pane.appendChild(el('h4','rdSecT',lab));card.appendChild(pane);
+  if(t==='amb'){
+    row('Lumière',select(RD_AMB,st.amb,v=>{st.amb=v;rdRefresh('env');}));
+    slider('Rotation','envRot',0,360,5,v=>v+'°','env');
+    slider('Reflets','envInt',0,3,0.05,v=>v.toFixed(2).replace('.',','),null);
+    slider('Lampe','lum',0,3,0.05,v=>v.toFixed(2).replace('.',','),null);
+    slider('Douceur','douceur',0,20,1,v=>v?String(v):'nette',null).title='Taille de la lampe : pénombre de l’ombre, calculée passe après passe';
+    slider('Exposition','ev',-3,3,0.1,v=>(v>0?'+':'')+v.toFixed(1).replace('.',',')+' EV',null);
+    row('Tons',select([['aces','Film (ACES)'],['doux','Doux (Reinhard)'],['cine','Cinéon'],['lin','Neutre (linéaire)']],st.tons,v=>{st.tons=v;rdRefresh();}));
+  }else if(t==='fond'){
+    row('Fond',seg([['degrade','Dégradé'],['uni','Uni'],['transparent','Transp.','Transparent : PNG détouré']],st.fond,v=>{st.fond=v;rdRefresh('fond');rdPanel();}));
+    if(st.fond!=='transparent'){
+      const c1=el('input');c1.type='color';c1.value=st.fc1;c1.title=st.fond==='degrade'?'Haut du dégradé':'Couleur du fond';c1.oninput=()=>{st.fc1=c1.value;rdRefresh('fond');};
+      let c2=null;if(st.fond==='degrade'){c2=el('input');c2.type='color';c2.value=st.fc2;c2.title='Bas du dégradé';c2.oninput=()=>{st.fc2=c2.value;rdRefresh('fond');};}
+      row('Couleurs',c1,c2);
+    }
+    const pres=el('div','rdBtns');
+    [['Blanc','#f2f3f5','#c3c7ce'],['Gris','#9aa0a8','#4b5058'],['Ardoise','#3a4049','#121417'],['Noir','#121214','#000000'],['Bleu nuit','#24324a','#0b111c']].forEach(([n,a,b])=>{
+      const q=el('button','rdB',n);q.onclick=()=>{st.fc1=a;st.fc2=b;if(st.fond==='transparent')st.fond='degrade';rdPanel();rdRefresh('fond');};pres.appendChild(q);});
+    pane.appendChild(pres);
+    pane.appendChild(el('h4',null,'Sol'));
+    { // Sol (et sa couleur) · Miroir · Ombre : trois cases, comme dans la vue CAO
+      const r=el('div','rdRow rdWrap');
+      r.appendChild(chk('Sol','solOn','Disque sous la pièce, bords fondus dans le fond'));
+      const sc=el('input');sc.type='color';sc.value=rdSolHex();sc.title='Couleur du sol (par défaut : bas du fond)';sc.oninput=()=>{st.solCol=sc.value;rdRefresh();};r.appendChild(sc);
+      r.appendChild(chk('Miroir','miroir','Reflet de la pièce au sol, avec ou sans disque'));
+      r.appendChild(chk('Ombre','ombreOn','Ombre portée sur le sol'));
+      pane.appendChild(r);
+    }
+    slider('Ombre','ombre',0,1,0.05,v=>Math.round(v*100)+' %',null);
+    pane.appendChild(el('h4',null,'Dessin'));
+    row('Arêtes',seg([['non','Sans','Photo'],['cao','CAO','Comme la CAO : vives noires, tangentes grises']],st.aretes,v=>{st.aretes=v;rdBuildEdges();rdRefresh();rdPanel();}));
+  }else if(t==='cam'){
+    const fv=el('span','rdV',st.focale+' mm');
+    const fs=el('input');fs.type='range';fs.min=14;fs.max=200;fs.step=1;fs.value=st.focale;
+    fs.oninput=()=>{rdSetFocale(+fs.value);fv.textContent=rd.st.focale+' mm';rdReset();rdSave();};
+    row('Focale',fs,fv);
+    pane.appendChild(seg([24,35,50,85,135].map(f=>[f,String(f),f<35?'Grand angle':f>60?'Téléobjectif : peu de déformation, rendu « catalogue »':'Normal']),st.focale,
+      f=>{rdSetFocale(+f);rdReset();rdSave();rdPanel();})).style.cssText='display:flex;justify-content:flex-end;margin:0 0 6px';
+    row('Ouverture',select([['0','Tout net'],['1.4','f/1,4'],['2','f/2'],['2.8','f/2,8'],['4','f/4'],['5.6','f/5,6'],['8','f/8'],['11','f/11'],['16','f/16'],['22','f/22']],st.ouv,
+      v=>{st.ouv=+v;rdReset();rdSave();rdCount();})).title='Profondeur de champ : plus le nombre est petit, plus le flou est fort (diamètre de la pupille = focale / ouverture)';
+    const mb=st.map>0?el('button','rdB','Sur la cible'):null;
+    if(mb)mb.onclick=()=>{st.map=0;rdReset();rdSave();rdPanel();};
+    row('Mise au point',el('span','rdV',st.map>0?Math.round(st.map)+' mm':'cible'),mb).title='Cliquez sur la pièce (sans glisser) pour y placer la mise au point';
+    pane.appendChild(el('div','rdNote','Clic sur la pièce : mise au point à cet endroit (visible avec une ouverture f/…).'));
+    const vb=el('div','rdBtns');
+    const b1=el('button','rdB','Cadrer la pièce');b1.onclick=()=>{rdFrame();rdReset();};vb.appendChild(b1);
+    const b2=el('button','rdB','Reprendre la vue CAO');b2.onclick=()=>{rdFromView();rdReset();rdPanel();};vb.appendChild(b2);
+    pane.appendChild(vb);
+  }else if(t==='vues'){
+    const cv=el('div','rdBtns');
+    rdCams().forEach((k,i)=>{const w=el('span','rdCam');
+      const g=el('button',null,k.n);g.title='Aller à cette vue (focale '+k.f+' mm)';g.onclick=()=>rdCamGo(k);
+      const d=el('button',null,'×');d.title='Supprimer « '+k.n+' »';d.onclick=()=>rdCamDel(i);
+      w.appendChild(g);w.appendChild(d);cv.appendChild(w);});
+    if(!rdCams().length)pane.appendChild(el('div','rdNote','Aucune vue enregistrée.'));
+    pane.appendChild(cv);
+    const ca=el('button','rdB','+ Enregistrer la vue');ca.title='Position, cible et focale, enregistrées avec la pièce';ca.onclick=rdCamAdd;
+    const r=el('div','rdBtns');r.appendChild(ca);pane.appendChild(r);
+  }else if(t==='mat'){
+    const ids=[];(rd.srcs||[]).forEach(s=>{if(s.id&&ids.indexOf(s.id)<0)ids.push(s.id);});
+    ids.forEach(id=>{
+      const e=bodyEntryOf(id),b=(bodies||[]).find(q=>bodyIdOfRuntime(q)===id);
+      const L=renderLookOf(id);
+      const done=()=>{markDirty();rdRefresh('objets');rdPanel();};
+      const r=el('div','rdMat');const n=el('span',null,(e&&e.name)||(b&&b.name)||id);n.title=n.textContent;r.appendChild(n);
+      const z=el('button','rdB','↺');z.title=L.own?'Reprendre le matériau et la couleur de la CAO':'Apparence de la CAO (rien de propre au rendu)';z.disabled=!L.own;z.style.opacity=L.own?'':'.35';
+      z.onclick=()=>{rdUndo();clearRenderLook(id);done();};r.appendChild(z);pane.appendChild(r);
+      const r2=el('div','rdMat2');
+      const s=matSelect(L.mat,k=>{rdUndo();setRenderLook(id,k,null);done();},'Sans matériau');
+      const ci=el('input');ci.type='color';ci.value=cssHex(L.color);ci.title='Couleur de rendu (la pièce CAO garde la sienne)';
+      ci.onchange=()=>{const v=parseInt(ci.value.slice(1),16);if(v>=0){rdUndo();setRenderLook(id,renderLookOf(id).mat,v);done();}};
+      r2.appendChild(s);r2.appendChild(ci);pane.appendChild(r2);
+      pane.appendChild(rdRelRow(el,select,L.rel,matDef(L.mat),rel=>{rdUndo();const L2=renderLookOf(id);setRenderLook(id,L2.mat,L2.color,rel);done();}));
+    });
+    const asmView=(rd.srcs||[]).some(x=>!x.id&&x.comp);
+    if(!ids.length&&!asmView)pane.appendChild(el('div','rdNote','Aucun corps de la pièce active à l’écran.'));
+    rdAsmPanel(pane,el,select);
+    if(ids.length)pane.appendChild(el('div','rdNote','Apparence propre au RENDU, enregistrée avec la pièce : la CAO garde ses couleurs (↺ pour y revenir). Relief : motif calculé, direction X / Y / Z de la pièce, échelle en mm.'));
+  }else if(t==='img'){
+    row('Format',seg([['1080','1920 × 1080'],['2160','4K','3840 × 2160']],st.res,v=>{st.res=v;rdSave();rdPanel();rdFoot();}));
+    row('Qualité',seg([['16','16','Brouillon : 16 passes'],['64','64','Bonne : 64 passes'],['256','256','Haute : 256 passes']],st.ech,v=>{st.ech=+v;rdSave();rdPanel();rdFoot();}))
+      .title='Nombre de passes moyennées : bords, ombres douces et profondeur de champ plus lisses';
+    pane.appendChild(el('div','rdNote','Passes : 16 brouillon · 64 bonne · 256 haute. Le fond transparent (onglet Fond et sol) donne un PNG détouré.'));
   }
-  slider('Ombre','ombre',0,1,0.05,v=>Math.round(v*100)+' %',null);
-  slider('Douceur','douceur',0,20,1,v=>v?String(v):'nette',null).title='Taille de la lampe : pénombre de l’ombre, calculée passe après passe';
-  row('Arêtes',select([['non','Sans (photo)'],['cao','Comme la CAO (vives noires, tangentes grises)']],st.aretes,v=>{st.aretes=v;rdBuildEdges();rdRefresh();}));
-  // appareil photo
-  p.appendChild(el('h3',null,'Appareil photo'));
-  const fv=el('span','rdV',st.focale+' mm');
-  const fs=el('input');fs.type='range';fs.min=14;fs.max=200;fs.step=1;fs.value=st.focale;
-  fs.oninput=()=>{rdSetFocale(+fs.value);fv.textContent=rd.st.focale+' mm';rdReset();rdSave();};
-  row('Focale',fs,fv);
-  const fb=el('div','rdBtns');
-  [24,35,50,85,135].forEach(f=>{const q=el('button','rdB',f+' mm');q.title=f<35?'Grand angle':f>60?'Téléobjectif : peu de déformation, rendu « catalogue »':'Normal';
-    q.onclick=()=>{rdSetFocale(f);fs.value=f;fv.textContent=f+' mm';rdReset();rdSave();};fb.appendChild(q);});
-  p.appendChild(fb);
-  row('Ouverture',select([['0','Tout net'],['1.4','f/1,4'],['2','f/2'],['2.8','f/2,8'],['4','f/4'],['5.6','f/5,6'],['8','f/8'],['11','f/11'],['16','f/16'],['22','f/22']],st.ouv,
-    v=>{st.ouv=+v;rdReset();rdSave();rdCount();})).title='Profondeur de champ : plus le nombre est petit, plus le flou est fort (diamètre de la pupille = focale / ouverture)';
-  const mp=el('div','rdBtns');
-  const mpt=el('span','rdNote',st.map>0?'Net à '+Math.round(st.map)+' mm (point cliqué)':'Net sur la cible — cliquez sur la pièce pour choisir le point net');mpt.style.margin='0';
-  mp.appendChild(mpt);
-  if(st.map>0){const b=el('button','rdB','Sur la cible');b.onclick=()=>{st.map=0;rdReset();rdSave();rdPanel();};mp.appendChild(b);}
-  p.appendChild(mp);
-  slider('Exposition','ev',-3,3,0.1,v=>(v>0?'+':'')+v.toFixed(1).replace('.',',')+' EV',null);
-  row('Rendu des tons',select([['aces','Film (ACES)'],['doux','Doux (Reinhard)'],['cine','Cinéon'],['lin','Neutre (linéaire)']],st.tons,v=>{st.tons=v;rdRefresh();}));
-  const vb=el('div','rdBtns');
-  const b1=el('button','rdB','Cadrer la pièce');b1.onclick=()=>{rdFrame();rdReset();};vb.appendChild(b1);
-  const b2=el('button','rdB','Reprendre la vue CAO');b2.onclick=()=>{rdFromView();rdReset();rdPanel();};vb.appendChild(b2);
-  p.appendChild(vb);
-  // vues enregistrées
-  p.appendChild(el('h3',null,'Vues enregistrées'));
-  const cv=el('div','rdBtns');
-  rdCams().forEach((k,i)=>{const w=el('span','rdCam');
-    const g=el('button',null,k.n);g.title='Aller à cette vue (focale '+k.f+' mm)';g.onclick=()=>rdCamGo(k);
-    const d=el('button',null,'×');d.title='Supprimer « '+k.n+' »';d.onclick=()=>rdCamDel(i);
-    w.appendChild(g);w.appendChild(d);cv.appendChild(w);});
-  const ca=el('button','rdB','+ Enregistrer la vue');ca.title='Position, cible et focale, enregistrées avec la pièce';ca.onclick=rdCamAdd;cv.appendChild(ca);
-  p.appendChild(cv);
-  // matériaux
-  p.appendChild(el('h3',null,'Matériaux et reliefs'));
-  const ids=[];(rd.srcs||[]).forEach(s=>{if(s.id&&ids.indexOf(s.id)<0)ids.push(s.id);});
-  ids.forEach(id=>{
-    const e=bodyEntryOf(id),b=(bodies||[]).find(q=>bodyIdOfRuntime(q)===id);
-    const r=el('div','rdMat');const n=el('span',null,(e&&e.name)||(b&&b.name)||id);n.title=n.textContent;r.appendChild(n);
-    const L=renderLookOf(id);
-    const ci=el('input');ci.type='color';ci.value=cssHex(L.color);ci.title='Couleur de rendu (la pièce CAO garde la sienne)';
-    const done=()=>{markDirty();rdRefresh('objets');rdPanel();};
-    const s=matSelect(L.mat,k=>{rdUndo();setRenderLook(id,k,null);done();},'Sans matériau');
-    ci.onchange=()=>{const v=parseInt(ci.value.slice(1),16);if(v>=0){rdUndo();setRenderLook(id,renderLookOf(id).mat,v);done();}};
-    r.appendChild(s);r.appendChild(ci);
-    const z=el('button','rdB','↺');z.title=L.own?'Reprendre le matériau et la couleur de la CAO':'Apparence de la CAO (rien de propre au rendu)';z.disabled=!L.own;z.style.opacity=L.own?'':'.35';
-    z.onclick=()=>{rdUndo();clearRenderLook(id);done();};r.appendChild(z);
-    p.appendChild(r);
-    p.appendChild(rdRelRow(el,select,L.rel,matDef(L.mat),rel=>{rdUndo();const L2=renderLookOf(id);setRenderLook(id,L2.mat,L2.color,rel);done();}));
   });
-  const asmView=(rd.srcs||[]).some(x=>!x.id&&x.comp);
-  if(!ids.length&&!asmView)p.appendChild(el('div','rdNote','Aucun corps de la pièce active à l’écran.'));
-  rdAsmPanel(p,el,select);
-  if(ids.length)p.appendChild(el('div','rdNote','Apparence propre au RENDU, enregistrée avec la pièce : la CAO garde ses couleurs. Au départ, le rendu reprend le matériau et la couleur de la CAO (↺ pour y revenir). Relief : motif calculé, échelle en mm, direction X / Y / Z de la pièce.'));
-  // sortie
-  p.appendChild(el('h3',null,'Image'));
-  row('Format',select([['1080','1920 × 1080 (Full HD)'],['2160','3840 × 2160 (4K)']],st.res,v=>{st.res=v;rdSave();}));
-  row('Qualité',select([['16','Brouillon (16 passes)'],['64','Bonne (64 passes)'],['256','Haute (256 passes)']],st.ech,v=>{st.ech=+v;rdSave();}))
-    .title='Nombre de passes moyennées : bords, ombres douces et profondeur de champ plus lisses';
-  const go=el('button','rdGo','Rendre et enregistrer le PNG');go.onclick=rdExport;p.appendChild(go);
-  rd.msg=el('div','rdMsg');p.appendChild(rd.msg);
-  p.scrollTop=sc0;
+  // pied, toujours visible : format retenu + bouton
+  const foot=el('div','panel rdFoot');p.appendChild(foot);rd.foot=foot;
+  rdFoot();
+  card.scrollTop=sc0;
+}
+function rdFoot(){
+  const f=rd.foot;if(!f)return;const st=rd.st,msg=rd.msg?rd.msg.textContent:'';f.innerHTML='';
+  const r=document.createElement('div');r.className='rdFootRow';
+  const s=document.createElement('span');s.textContent=(st.res==='2160'?'3840 × 2160':'1920 × 1080')+' · '+(+st.ech||64)+' passes'+(st.fond==='transparent'?' · détouré':'');r.appendChild(s);f.appendChild(r);
+  const go=document.createElement('button');go.className='rdGo';go.textContent='Rendre et enregistrer le PNG';go.onclick=rdExport;f.appendChild(go);
+  rd.msg=document.createElement('div');rd.msg.className='rdMsg';rd.msg.textContent=msg;f.appendChild(rd.msg);
 }
 function rdRelRow(el,select,rel0,dm,fn){
   // ligne « relief » d'un corps : type (selon le matériau / aucun / brossé…), direction, échelle (mm)
@@ -594,26 +630,28 @@ function rdAsmPanel(p,el,select){
   let last=null;
   rows.forEach(s=>{
     const c=asmComp(s.comp),o=s.occ?asmOcc(s.occ):null;
-    if(s.occ!==last){last=s.occ;const h=el('div','rdNote',(o?o.name:(c&&c.name)||'?'));h.style.cssText='margin:8px 0 2px;color:inherit;font-weight:600';p.appendChild(h);}
+    if(s.occ!==last){last=s.occ;p.appendChild(el('div','rdOcc',(o?o.name:(c&&c.name)||'?')));}
     const be=c&&c.doc&&(c.doc.bodies||[]).find(e=>e&&e.id===s.bid);
-    const r=el('div','rdMat');const n=el('span',null,(be&&be.name)||s.bid);n.title=n.textContent;r.appendChild(n);
+    const r=el('div','rdMat');const n=el('span',null,(be&&be.name)||s.bid);n.title=n.textContent;r.appendChild(n);p.appendChild(r);
+    const r2=el('div','rdMat2');p.appendChild(r2);
     if(!o){ // le composant ouvert lui-même (racine) : apparence de rendu de sa pièce
       const L=renderLookOf(s.bid);
       const sel=matSelect(L.mat,k=>{rdUndo();setRenderLook(s.bid,k,null);markDirty();rdAsmRedraw();},'Sans matériau');
       const ci=el('input');ci.type='color';ci.value=cssHex(L.color);ci.onchange=()=>{rdUndo();setRenderLook(s.bid,renderLookOf(s.bid).mat,parseInt(ci.value.slice(1),16));markDirty();rdAsmRedraw();};
-      r.appendChild(sel);r.appendChild(ci);p.appendChild(r);
+      r2.appendChild(sel);r2.appendChild(ci);
       p.appendChild(rdRelRow(el,select,L.rel,matDef(L.mat),rel=>{rdUndo();const L2=renderLookOf(s.bid);setRenderLook(s.bid,L2.mat,L2.color,rel);markDirty();rdAsmRedraw();}));
       return;
     }
     const own=!!(o.rendu&&o.rendu.corps&&o.rendu.corps[s.bid]);
-    const sel=matSelect(s.mat,k=>{asmSetOccRendu(o,s.bid,k,null,false);rdAsmRedraw();},'Sans matériau');
-    const ci=el('input');ci.type='color';ci.value=cssHex(s.color);ci.title='Couleur de rendu de cette occurrence';
-    ci.onchange=()=>{asmSetOccRendu(o,s.bid,s.mat,parseInt(ci.value.slice(1),16),false,s.rel);rdAsmRedraw();};
     const all=el('button','rdB','⇉');all.title='Même apparence pour toutes les occurrences de « '+((c&&c.name)||'?')+' »';
     all.onclick=()=>{asmSetOccRendu(o,s.bid,s.mat,s.color,true,s.rel);rdAsmRedraw();};
     const z=el('button','rdB','↺');z.title='Reprendre l’apparence de la pièce';z.disabled=!own;z.style.opacity=own?'':'.35';
     z.onclick=()=>{asmClearOccRendu(o,s.bid,false);rdAsmRedraw();};
-    r.appendChild(sel);r.appendChild(ci);r.appendChild(all);r.appendChild(z);p.appendChild(r);
+    r.appendChild(all);r.appendChild(z);
+    const sel=matSelect(s.mat,k=>{asmSetOccRendu(o,s.bid,k,null,false);rdAsmRedraw();},'Sans matériau');
+    const ci=el('input');ci.type='color';ci.value=cssHex(s.color);ci.title='Couleur de rendu de cette occurrence';
+    ci.onchange=()=>{asmSetOccRendu(o,s.bid,s.mat,parseInt(ci.value.slice(1),16),false,s.rel);rdAsmRedraw();};
+    r2.appendChild(sel);r2.appendChild(ci);
     p.appendChild(rdRelRow(el,select,s.rel,matDef(s.mat),rel=>{asmSetOccRendu(o,s.bid,s.mat,s.color,false,rel);rdAsmRedraw();}));
   });
   p.appendChild(el('div','rdNote','Rendu d’assemblage : apparence par occurrence, enregistrée avec l’assemblage (⇉ : toutes les occurrences du composant, ↺ : celle de la pièce). La vue CAO garde les couleurs de la CAO.'));
