@@ -32,6 +32,7 @@ const SUITES = [
   "test_highlight_order",
   "test_draft_sel",
   "test_xmove",
+  "test_deplacer_corps",
   "test_coque_sel",
   "test_suppression_face",
   "test_coque_depouille",

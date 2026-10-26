@@ -16,6 +16,7 @@ function wirePick(){
     if(typeof faoFramePick!=='undefined'&&faoFramePick){if(e.button===0&&!e.ctrlKey)faoFramePickCommit(e);return;} // axe Z / X du posage
     if(typeof faoFacePick!=='undefined'&&faoFacePick){if(e.button===0&&!e.ctrlKey)faoFacePickCommit(e);return;} // faces usinables / intouchables
     if(faoZPlanePick){if(e.button===0&&!e.ctrlKey)faoZPlaneCommit(e);return;}
+    if(typeof bmPick!=='undefined'&&bmPick){if(e.button===0&&!e.ctrlKey)bmPickAt(e);return;} // Déplacer un corps : point / axe (85)
     if(mvMode){if(e.button===0&&!e.ctrlKey)mvFaceCommit(e);return;}
     if(draftMode){if(e.button===0&&!e.ctrlKey)draftToggle(e);return;}
     if(coqueMode){if(e.button===0&&!e.ctrlKey)coqueToggle(e);return;}
@@ -33,6 +34,7 @@ function wirePick(){
       if(extPickFace){renderer.domElement.style.cursor='crosshair';return;}
       if(faoPlanePick){renderer.domElement.style.cursor='crosshair';return;}
       if(faoZPlanePick){renderer.domElement.style.cursor='crosshair';return;}
+    if(typeof bmPick!=='undefined'&&bmPick){renderer.domElement.style.cursor='crosshair';return;}
     if(mvMode){mvFaceHover(e);renderer.domElement.style.cursor='pointer';return;}
     if(draftMode){draftHover(e);return;}
     if(coqueMode){coqueHover(e);return;}
@@ -143,6 +145,7 @@ function filletTangentChain(sk, startCorner){
     if(faoChainMode){faoChainExit(true);return;}
     if(typeof faoHolePick!=='undefined'&&faoHolePick){faoHolePickExit();return;}
     if(typeof holeFacePick!=='undefined'&&holeFacePick){holeFacePickCancel();faceEl.textContent='Perçage : sélection de face annulée.';return;}
+    if(typeof bmPick!=='undefined'&&bmPick){bmPickExit(false);return;}
     if(mvMode){exitMoveFaceMode();return;}
     if(draftMode){exitDraftMode();return;}
     if(coqueMode){exitCoqueMode();return;}clearMeasure();clearHover();hideCtx();hideCtx3D();}});
@@ -724,7 +727,8 @@ function showCtx(x,y,t){ctxTarget=t;$('ctxMenu').style.display='block';ctxPlace(
   // style du corps : le menu du CORPS porte la couleur et la transparence (même
   // source que le panneau et que la vue 3D) — masqué ailleurs, comme l'export STEP.
   try{ ctxStyleShow('ctxMenu',!!(t&&t.kind==='body')); ctxStyleSync(); }catch(e){}
-  try{ asmCtxSync(t,x,y); }catch(e){}} // composant depuis ce corps, déplacer vers un composant (48)
+  try{ asmCtxSync(t,x,y); }catch(e){} // composant depuis ce corps, déplacer vers un composant (48)
+  try{ bmCtxSync('ctxMenu',t); }catch(e){}} // déplacer le corps (85)
 function hideCtx(){$('ctxMenu').style.display='none';}
 function ctxBodyId(t){
   // Cible du clic-droit → CORPS conteneur. L'id affiché n'est PAS toujours celui
@@ -760,6 +764,7 @@ function showCtx3D(x,y,bid){ctxTarget={kind:'body',id:bid};const _bd=bodies.find
     ctxStyleShow('ctxMenu3D',!!(bid&&!_bd.ghost));
     ctxStyleSync();
   }catch(e){}
+  try{ bmCtxSync('ctxMenu3D',bid?ctxTarget:null); }catch(e){} // déplacer le corps (85)
   $('ctxMenu3D').style.display='block';ctxPlace($('ctxMenu3D'),x,y);}
 function hideCtx3D(){$('ctxMenu3D').style.display='none';}
 document.querySelectorAll('#ctxMenu button').forEach(b=>b.onclick=()=>{

@@ -381,7 +381,8 @@ function treeComps(L,P){
           if(c.occ&&c.occ.length)items.push({html:'🧩 Placer ses composants',fn:()=>asmShow(inst.path,'asm')});
           if(direct){
             if(asmMode==='asm'){asmSelId=id;asmDraw();renderTree();renderProps();}
-            items.push({html:'➕ Nouvelle occurrence',fn:()=>{if(asmMode!=='asm')asmShow(AP,'asm',id);asmSelId=id;asmCmdNewOcc();}},
+            items.push({html:'✥ Déplacer',fn:()=>asmCmdMoveOcc(AP,id)},
+              {html:'➕ Nouvelle occurrence',fn:()=>{if(asmMode!=='asm')asmShow(AP,'asm',id);asmSelId=id;asmCmdNewOcc();}},
               {html:o.fixed?'📌 Libérer':'📌 Fixer',fn:()=>asmToggleFixed(id)},
               {html:'🏷 Renommer le composant',fn:()=>asmRename(id)},
               {html:'🗑 Supprimer',fn:()=>asmAskDelete(id)});

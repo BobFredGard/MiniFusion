@@ -153,6 +153,7 @@ function tlbSvgKey(s){
     case 'xmove':case 'xdelface':return ['face','mod'];
     case 'xdraft':return ['draft','mod'];
     case 'xshell':return ['shell','cut'];
+    case 'bmove':return ['move','mod'];
     case 'import':return ['import','mod'];
   }
   return null;

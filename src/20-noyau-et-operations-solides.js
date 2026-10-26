@@ -2541,6 +2541,9 @@ function featSig(f){
     // (centre + normale + dimensions) : sans elle, changer la distance d'un déplacement
     // laisserait la signature inchangée et le point de contrôle réappliquerait l'ancien.
     s+='|d'+(+f.dist||0)+'@'+JSON.stringify(f.ref||null);
+  }else if(f.type==='bmove'){
+    // Déplacer un corps : ses étapes (translations, rotations, point à point) font la géométrie
+    s+='|'+JSON.stringify(f.steps||[]);
   }else if(f.type==='xdelface'){
     s+='|'+((f.faces||[]).map(r=>JSON.stringify([r.pos,r.n||r.st,r.dim])).join(';'));
   }else if(f.type==='xdraft'){
@@ -2628,8 +2631,8 @@ function occReplayBody(bid,list){
       occCkPut(ckKey,()=>occShapeCopy(result));
       return;
     }
-    if(f.type==='xmove'||f.type==='xdelface'){
-      if(!result){msgs.push(`${f.name} : aucun volume à déformer — ignoré`);return;}
+    if(f.type==='xmove'||f.type==='xdelface'||f.type==='bmove'){
+      if(!result){msgs.push(`${f.name} : aucun volume à `+(f.type==='bmove'?'déplacer':'déformer')+` — ignoré`);return;}
       const ckM=occCkGet(ckKey);
       const cpM=ckM?occShapeCopy(ckM):null;
       if(cpM){
@@ -2637,7 +2640,7 @@ function occReplayBody(bid,list){
         const w=occCkWarn[ckKey];if(w&&w.length)msgs.push(...w.map(x=>`${f.name} : ${x}`));
         return;
       }
-      const r=f.type==='xmove'?occApplyMoveFace(result,f):occApplyDeleteFaces(result,f);
+      const r=f.type==='xmove'?occApplyMoveFace(result,f):f.type==='bmove'?occApplyBodyMove(result,f):occApplyDeleteFaces(result,f); // bmove : 85-deplacer-corps
       result=r.shape;msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       if(r.warnings.length)occCkWarn[ckKey]=r.warnings.slice();else delete occCkWarn[ckKey];
       occCkPut(ckKey,()=>occShapeCopy(result));

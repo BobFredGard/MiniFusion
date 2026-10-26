@@ -14,6 +14,17 @@ let asmDrag=null;     // geste en cours {kind:'move'|'rot', ax, o0, fr0, t0|p0, 
 let asmAlign=null;    // commande Aligner en cours {occ, step:'src'|'dst', src, dst, flip, rz, off, saved}
 const ASM_AX=[[1,0,0],[0,1,0],[0,0,1]],ASM_AX_COL=[0xff453a,0x30d158,0x0a84ff];
 function asmMovable(o){return !!o&&!o.fixed&&!o.align;}
+function asmCmdMoveOcc(path,id){
+  // « ✥ Déplacer » (menu de l'arbre) : mode Placer, occurrence sélectionnée, manipulateur —
+  // sauf si elle est bloquée (fixée, ou placée par une liaison / un alignement)
+  const o=asmOcc(id);if(!o)return;
+  if(asmMode!=='asm'){if(asmShow(path,'asm',id)===false)return;}
+  else{asmSelId=id;asmPivot=null;asmDraw();asmGizmoDraw();renderTree();renderProps();}
+  const dof=o.align&&asmDofs(o.align).length;
+  try{faceEl.textContent=o.fixed?'« '+o.name+' » est fixée : libérez-la (📌 Libérer) pour la déplacer.'
+    :o.align?(dof?'« '+o.name+' » est liée : seuls ses degrés de liberté se pilotent (manipulateur ou curseurs).':'« '+o.name+' » est alignée (rigide) : supprimez la liaison pour la déplacer librement.')
+    :'Déplacer « '+o.name+' » : flèches = translation, anneaux = rotation (pas 1 mm / 5°, Maj = libre), ou Position X / Y / Z dans le panneau.';}catch(e){}
+}
 /* ── manipulateur ── */
 function asmGizmoSpec(o){
   // Ce que le manipulateur propose : occurrence libre → 3 flèches + 3 anneaux le long des axes

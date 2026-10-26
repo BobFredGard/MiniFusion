@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**349 versions**, de `2026-09-28b` à `V0.9.10` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**350 versions**, de `2026-09-28b` à `V0.9.11` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4951,3 +4951,10 @@ Suite de V0.9.7 : « que reste-t-il à faire ? » — dans l'ordre proposé ; «
 - **Déplacements** : `featMoveRaw` refuse un cran qui crée un nouveau lien vers l'aval (`antNewViolation`) et dit pourquoi (`featMoveWhy`) : « ⛔ Déplacement refusé : « X » doit rester après « Y » (raison) ». Glisser dans l'arbre ou la timeline : refus entier, pas d'arrêt à mi-chemin. Un défaut existant ne bloque pas les autres déplacements, et celui qui le répare est permis.
 - **Défauts existants** : ⚠ dans l'arbre (hors du nom, donc jamais tronqué ; raison en infobulle) et une ligne au journal à l'ouverture ; rien n'est corrigé d'office. Exemples suivis : un seul défaut, Support Pédale (« Extrusion Esquisse 5 (face) » consomme une esquisse posée sur « Découpe Esquisse 4 », placée après elle).
 - **Tests** : nouveau `test_anteriorite` (liens, sources en amont avec et sans marqueur, source en aval marquée ⚠, refus ▲▼ et glisser, « jusqu'à », lien souple refusé mais non signalé, défaut toléré et réparable, ⚠ de l'arbre, fichier réel Support Pédale) ; `test_arbre_v2` : le glisser-déposer déplaçait la source d'une répétition sous la répétition, maintenant refusé et vérifié comme tel. Vérifié dans l'application sur Support Pédale.
+
+## V0.9.11 - Déplacer un corps : translation, rotation autour d'un axe, point à point ; « Déplacer » sur un composant
+« Déplacer corps / composant (si pas bloqué) » ; « une rotation autour d'un axe choisi, une translation, soit suivant une direction, soit d'un point à un autre point, comme le centre d'une pièce ou d'un cercle au centre d'un repère » ; « Fusion 360 a ce type de fonction très pratique pour positionner un STEP entrant ».
+- **Fonction de la timeline `bmove`** (`src/85-deplacer-corps.js`, nouveau) : « ✥ Déplacer un corps » (groupe Ensembles, ruban, clic droit sur un corps dans l'arbre ou la vue). Étapes enchaînées dans l'ordre, modifiables, montées (▲) ou supprimées : translation X Y Z ; translation suivant une direction (axes X / Y / Z, axe ou repère de construction, arête droite, axe d'un cercle ou d'un cylindre, normale d'une face ; ⇄ inverse) ; rotation autour d'un axe choisi de même (X / Y / Z par l'origine ou par le centre du corps ; ±90°, 180°) ; point à point (points d'accroche de la face cliquée — centre, coins, milieux et bouts d'arêtes, centres de cercles —, origine, centre de gravité d'un corps, points et repères de construction). Points et axes figés en coordonnées, comme Fusion. Échap annule une saisie.
+- **Noyau** (`src/20-noyau-et-operations-solides.js`) : rejeu exact par `BRepBuilderAPI_Transform` (`occApplyBodyMove`), mêmes points de contrôle que le déplacement de face ; signature = les étapes et leur ordre. Un STEP importé entre alors dans la chaîne exacte et se déplace avec son BRep.
+- **Composant** : « ✥ Déplacer » dans le menu d'une occurrence (`asmCmdMoveOcc`, `src/48-assemblage-placement.js`) — mode Assembler, manipulateur ; fixée ou alignée rigide : message pour la libérer ; liée : seuls ses degrés de liberté.
+- **Tests** : `test_deplacer_corps` (14 contrôles, noyau réel : translation, direction, rotations, point à point, enchaînement, extrusion après déplacement, enregistrement, cache). Vérifié dans l'application : clic sur la face d'un bloc percé → 10 points d'accroche, centre du trou (30 ; 10 ; 10) → origine, puis rotation autour de Y par le centre.

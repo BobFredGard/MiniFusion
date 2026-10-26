@@ -241,6 +241,7 @@ const MF_IC={
   fillet:'<path d="M4 20V12a8 8 0 0 1 8-8h8"/><path d="M4 20h16V4" stroke-dasharray="2 2"/>',
   chamfer:'<path d="M4 20V10l6-6h10"/><path d="M4 20h16V4" stroke-dasharray="2 2"/>',
   face:'<path d="M3 8l6-3v12l-6 3z"/><path d="M12 11h9M18 8l3 3-3 3"/>',
+  move:'<path d="M12 3v18M3 12h18"/><path d="M9.5 5.5L12 3l2.5 2.5M9.5 18.5L12 21l2.5-2.5M5.5 9.5L3 12l2.5 2.5M18.5 9.5L21 12l-2.5 2.5"/>',
   draft:'<path d="M8 4h8l4 16H4z"/><path d="M12 4v16" stroke-dasharray="2 2"/>',
   shell:'<path d="M3 6v14h18V6"/><path d="M7 6v10h10V6"/>',
   pattern:'<rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/>',
@@ -334,7 +335,7 @@ const MF_CAO=[
     ['cgPoint','Point',()=>cgStart('point'),'Point de construction : sommet, centre, coordonnées, intersection axe / plan'],
     ['cgFrame','Repère',()=>cgStart('frame'),'Repère de construction : origine + Z + X, sur un plan ou une face, par 3 points']]],
   ['Modifier',[['fillet','Congé','btnFillet'],['chamfer','Chanfrein','btnChamfer'],['face','Face','btnMoveFace'],['draft','Dépouille','btnDraft'],['shell','Coque','btnCoque']]],
-  ['Ensembles',[['pattern','Répétition','btnRepeat'],['combine','Combiner','btnCombine'],['params','Paramètres','btnParams']]],
+  ['Ensembles',[['pattern','Répétition','btnRepeat'],['combine','Combiner','btnCombine'],['move','Déplacer','btnBodyMove'],['params','Paramètres','btnParams']]],
   ['Fichier',[['import','Importer','btnImport'],['export','STEP','btnExportStep'],['export','STL','btnExportStl'],['export','OBJ','btnExportObj']]]
 ];
 const MF_FAO_ICON={facing:'facing',pocket:'pocket',chamfer:'chamfer',contour:'contour',drill:'drill',rough3d:'rough3d',geofinish:'finish',geodesic:'geodesic',pocket2:'pocket'};

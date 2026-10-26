@@ -123,6 +123,7 @@ function featIconOf(f){
   if(f.type==='revolve')return (f.op||'add')==='cut'?'◔':'◍';
   if(f.type==='hole')return '⊚';
   if(f.type==='xmove')return '📐';
+  if(f.type==='bmove')return '✥';
   if(f.type==='xdelface')return ((f._m&&f._m.m<f._m.t)||f._err)?'⚠':'⌫';
   if(f.type==='xdraft')return ((f._m&&f._m.m<f._m.t)||f._err)?'⚠':'📐';
   if(f.type==='xshell')return ((f._m&&f._m.m<f._m.t)||f._err)?'⚠':'🥚';
@@ -163,6 +164,7 @@ function repCanFeatureHint(f){
   if(f.type==='hole')return 'Perçage · Ø'+(+f.d||0)+(f.thread&&f.thread.size?' · taraudé '+f.thread.size:'')+(f.kind&&f.kind!=='simple'?' · '+f.kind:'');
   if(f.type==='xfillet')return xLabel(xKindOf(f))+' · '+(f.edges||[]).length+' arête(s)';
   if(f.type==='xmove')return 'Déplacement de face · '+(+f.dist||0)+' mm';
+  if(f.type==='bmove')return 'Déplacer un corps · '+(f.steps||[]).length+' étape(s)';
   if(f.type==='xdelface')return 'Suppression · '+(f.faces||[]).length+' face(s)';
   if(f.type==='xdraft')return 'Dépouillage · '+(+f.angle||0).toFixed(1).replace('.',',')+'° · '+(f.faces||[]).length+' face(s)';
   if(f.type==='xshell')return 'Coque · '+String(Math.round((+f.thick||0)*100)/100).replace('.',',')+' mm · '+(f.faces||[]).length+' face(s) retirée(s)';
@@ -1000,6 +1002,9 @@ function renderProps(){
         ['🗑 Supprimer',()=>{treeSel=[f.id];sel={kind:'feature',id:f.id};treeDeleteSel();},'danger']]);
       return;
     }
+    if(typeof bmPick!=='undefined'&&bmPick&&bmPick.fid!==f.id)bmPickExit(true); // saisie d'un autre Déplacer (85)
+    /* — déplacer un corps (85) — */
+    if(f.type==='bmove'){bmoveProps(p,f);visDel(f);return;}
     /* — déplacement de face — */
     if(f.type==='xmove'){
       pH('Déplacement de face');

@@ -94,6 +94,7 @@
     [null,'Ensembles'],
     ['btnRepeat','\u{1F501}','Répétition (linéaire, circulaire, symétrie) (M)'],
     ['btnCombine','⊕','Combiner des corps (union, soustraction, intersection)'],
+    ['btnBodyMove','✥','Déplacer un corps (translation, rotation, point à point)'],
     '#',
     [null,'Paramètres'],
     ['btnParams','ƒx','Paramètres (cotes et valeurs nommées)']
