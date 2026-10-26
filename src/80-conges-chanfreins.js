@@ -112,7 +112,7 @@ function exitExactFilletMode(silent){
    le refuserait). Avant : absentes du listage, l'utilisateur voyait une arête grise,
    cliquait, rien ne se passait — et le message d'aide disait « arête bleue » (faux). */
 function filEdgesReload(){
-  const all=occSharpEdges(occLive.shape);
+  const all=occVisibleSharpEdges(); // V0.11.7 : un corps caché n'offre plus ses arêtes
   filModeX.edges=all.filter(e=>e.sharp);
   filModeX.tang=all.filter(e=>!e.sharp);
 }

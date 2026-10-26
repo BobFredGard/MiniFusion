@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**361 versions**, de `2026-09-28b` à `V0.11.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**362 versions**, de `2026-09-28b` à `V0.11.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5043,3 +5043,10 @@ Avant, un clic seul REMPLAÇAIT la sélection par l'arête cliquée et il fallai
 - **Sélection** (`src/80-conges-chanfreins.js`, `exactToggle`) : clic = ajouter l'arête, clic sur une arête déjà choisie = la retirer, dans tous les cas. Avec « arêtes tangentes », chaque arête choisie entraîne toujours sa chaîne tangente.
 - **Aide** : barre d'état, bulle de la case « arêtes tangentes », note du panneau et commentaire du clic 3D (`src/90-picking-mesure-import.js`) ne parlent plus de Ctrl.
 - **Tests** : suite rapide. Vérifié dans l'application sur un bloc : trois clics seuls donnent 1, 2 puis 1 arête(s).
+
+## V0.11.7 - Corps caché : ses arêtes disparaissent aussi (overlay, survol, congés)
+« Quand je cache un corps, seule la peau est cachée, mais pas les arêtes du corps caché. Il faut améliorer cela car tout est lié et ce n'est pas facile ni gérable ». L'overlay « Arêtes » lisait le composé OCCT ENTIER dès qu'un corps exact était visible ; et l'œil d'un corps ne reconstruisait pas l'overlay (seul le clic droit « Masquer » le faisait).
+- **Un seul test de visibilité** (`src/20-noyau-et-operations-solides.js`, `bodyShown`) : overlay, voile des arêtes arrière, survol et choix d'arêtes (`edgeHoverSegs`), congés / chanfreins (`filEdgesReload`) le lisent tous — un corps caché n'offre plus ses arêtes nulle part.
+- **Arêtes des corps montrés** (`occVisibleSharpEdges`) : tous montrés → composé `occLive`, à l'identique ; sinon corps par corps (`b.shape`), mémorisé tant que le sous-solide est le même — cacher / montrer ne relance pas la classification.
+- **L'overlay suit la visibilité** (`src/10-scene-3d.js`, `refreshParts`) : signature de visibilité comparée à celle du dernier overlay ; s'il y a un écart, reconstruction différée et unique, quel que soit le chemin (œil, clic droit, brut FAO, annuler, rejeu). Pas de double calcul dans un rejeu.
+- **Tests** : `test_corps_cache_aretes` (nouveau, suites rapide et complète). Vérifié dans l'application : clic sur l'œil du 2ᵉ corps d'un bloc scindé → overlay de 20 à 12 arêtes, aucun trait flottant.

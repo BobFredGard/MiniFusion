@@ -1757,6 +1757,31 @@ function occApplyDraft(result,f){
 }
 let edgeMode='off'; // 'off' | 'on' : surlignage vives noires / tangentes grises
 try{const em=localStorage.getItem('minifusion_edges');if(em==='on'||em==='off')edgeMode=em;}catch(e){}
+// V0.11.7 : UN SEUL test « ce corps est-il montré ? » — peau, arêtes, survol et choix d'arêtes,
+// congés : tout lit ici. Cacher un corps (œil, clic droit, brut FAO) cache donc tout ce qui en dépend.
+function bodyShown(b){return !!(b&&b.visible!==false&&!b.ghost&&b.mesh&&b.mesh.visible!==false);}
+// Arêtes classées des corps exacts MONTRÉS. Tous montrés → le composé occLive (inchangé) ;
+// sinon, corps par corps (sous-solide b.shape), mémorisé tant que ce sous-solide est le même :
+// cacher / montrer ne relance pas la classification.
+const bodyEdgeMemo=new Map(); // id du corps → {shape, edges}
+function occVisibleSharpEdges(){
+  if(!(occLive&&occLive.shape))return [];
+  const ex=bodies.filter(b=>b&&b.kind==='body'&&!b.ghost);
+  if(ex.every(bodyShown)||ex.some(b=>!b.shape))return occSharpEdges(occLive.shape);
+  const out=[];
+  ex.forEach(b=>{
+    if(!bodyShown(b))return;
+    let m=bodyEdgeMemo.get(b.id);
+    if(!m||m.shape!==b.shape){m={shape:b.shape,edges:occSharpEdges(b.shape)||[]};bodyEdgeMemo.set(b.id,m);}
+    out.push.apply(out,m.edges);
+  });
+  for(const [id,m] of bodyEdgeMemo)if(!ex.some(b=>b.id===id&&b.shape===m.shape))bodyEdgeMemo.delete(id); // sous-solides libérés
+  return out;
+}
+// Signature de visibilité au moment du dernier overlay : refreshParts() le reconstruit dès
+// qu'elle change, quel que soit le chemin qui a caché / montré le corps.
+let edgeOverlayVisSig=null;
+function bodyVisSig(){return bodies.filter(b=>b&&!b.ghost).map(b=>b.id+(bodyShown(b)?'+':'-')).join(',');}
 function edgeOverlayData(){
   // POLYLIGNES de l'overlay « Arêtes » : {pts:[[x,y,z]…], sharp, mw?}.
   // • corps exacts → classification C0/G1 RÉELLE sur le composé occLive (inchangé) ;
@@ -1767,10 +1792,10 @@ function edgeOverlayData(){
   //   ou document sans corps exact — comportement d'origine, inchangé.
   const out=[];
   if(edgeMode!=='on')return out;
-  const vis=b=>!!(b&&b.visible!==false&&!b.ghost&&b.mesh&&b.mesh.visible!==false);
+  const vis=bodyShown;
   const exact=!!(occLive&&occLive.shape&&bodies.some(b=>b.kind==='body'&&vis(b)));
   if(exact){
-    try{occSharpEdges(occLive.shape).forEach(e=>{if(e&&e.pts&&e.pts.length>1)out.push({pts:e.pts,sharp:!!e.sharp});});}catch(e){}
+    try{occVisibleSharpEdges().forEach(e=>{if(e&&e.pts&&e.pts.length>1)out.push({pts:e.pts,sharp:!!e.sharp});});}catch(e){}
   }
   bodies.forEach(b=>{
     if(!vis(b))return;
@@ -1854,6 +1879,7 @@ function buildEdgeOverlay(){
     try{old.traverse(o=>{if(o&&o.geometry&&o.geometry.dispose)o.geometry.dispose();});}catch(e){}
   }
   try{(typeof bodies!=='undefined'?bodies:[]).forEach(b=>glassDepthMask(b));}catch(e){} // passes de transparence (arêtes affichées ou non)
+  try{edgeOverlayVisSig=bodyVisSig();}catch(e){}
   if(edgeMode!=='on')return;
   // 2026-10-16-001 : arêtes RENTRANTES (épaulement, fond de poche) invisibles — dans le creux,
   // les 2 faces voisines sont à la même profondeur que le trait et le masquent. On recule
@@ -1899,7 +1925,7 @@ function buildEdgeOverlay(){
     veil.raycast=()=>{};veil.renderOrder=0.5;
     // 2026-10-16-013 : arêtes ARRIÈRE uniquement s'il y a un corps en TRANSPARENCE (filigrane) —
     // en opaque comme avec la seule « Intensité », plus aucune arête arrière.
-    veil.visible=(typeof bodies!=='undefined'?bodies:[]).some(b=>b&&!b.ghost&&b.mesh&&b.mesh.visible!==false&&b.mesh.material&&b.mesh.material.userData&&typeof b.mesh.material.userData.glass==='number'&&b.mesh.material.userData.glass<0.999);
+    veil.visible=(typeof bodies!=='undefined'?bodies:[]).some(b=>bodyShown(b)&&b.mesh.material&&b.mesh.material.userData&&typeof b.mesh.material.userData.glass==='number'&&b.mesh.material.userData.glass<0.999);
     const net=new THREE.LineSegments(g,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,depthWrite:false}));
     net.raycast=()=>{};net.renderOrder=990;
     grp.add(veil);grp.add(net);

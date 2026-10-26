@@ -565,7 +565,7 @@ function clearHover(){
 // curseur est à ≤ 6 px d'elle ; une arête cachée derrière la face survolée est ignorée.
 let edgeHoverCache={key:'',segs:null};
 function edgeHoverSegs(){
-  const key=(typeof _docVersion!=='undefined'?_docVersion:0)+'|'+bodies.length+'|'+bodies.filter(b=>b.visible).map(b=>b.id).join(',');
+  const key=(typeof _docVersion!=='undefined'?_docVersion:0)+'|'+bodyVisSig();
   if(edgeHoverCache.key===key&&edgeHoverCache.segs)return edgeHoverCache.segs;
   let data=[];try{data=edgeOverlayData()||[];}catch(e){data=[];}
   const out=[];

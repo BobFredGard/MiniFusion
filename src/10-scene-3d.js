@@ -527,6 +527,7 @@ function updateGhostVis(){
     b.visible=on;b.mesh.visible=on;
   });
 }
+let refreshEdgesPending=false;
 function refreshParts(){
   try{const _e=$('optEdges');if(_e&&_e.value!==edgeMode)_e.value=edgeMode;}catch(e){}
   try{
@@ -541,12 +542,15 @@ function refreshParts(){
     if(typeof faoVw!=='undefined'&&faoVw&&faoVw.hideBodies)faoVw.hideBodies.forEach(b=>{if(b&&b.mesh)b.mesh.visible=false;});
   }catch(e){}
   updateGhostVis();
+  // V0.11.7 : visibilité d'un corps changée (œil, clic droit, brut FAO, annuler…) → ses arêtes
+  // suivent. Différé : dans un rejeu, buildEdgeOverlay() passe juste après et la signature
+  // est alors déjà à jour — aucun double calcul.
+  if(!refreshEdgesPending)try{if(bodyVisSig()!==edgeOverlayVisSig){refreshEdgesPending=true;
+    setTimeout(()=>{refreshEdgesPending=false;try{if(bodyVisSig()!==edgeOverlayVisSig)buildEdgeOverlay();}catch(e){}},0);}}catch(e){}
   // La liste « Pièces » a été retirée de l'interface : les corps se pilotent depuis
   // l'arborescence (œil sur la fonction) ou par le clic droit dans la vue 3D.
   // La visibilité mémorisée par corps reste appliquée, et l'œil d'une FONCTION la pilote
   // désormais aussi — sinon un corps masqué resterait invisible sans moyen de le rendre.
-  // La liste « Pièces » a été retirée de l'interface : les corps se pilotent depuis
-  // l'arborescence (œil sur la fonction) ou par le clic droit dans la vue 3D.
   const vis=bodies.filter(b=>b.visible);
   let tris=0;scene.traverse(o=>{if(o.isMesh&&o.visible&&o.geometry&&o.geometry.attributes&&o.geometry.attributes.position)tris+=(o.geometry.index?o.geometry.index.count:o.geometry.attributes.position.count)/3;});
   log(`Corps: ${bodies.length} (${vis.length} visibles) · Tris≈${Math.round(tris).toLocaleString('fr')} · ${dirty?'● non sauvé':'✓ sauvé'}`);

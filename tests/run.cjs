@@ -125,6 +125,7 @@ const SUITES = [
   "test_corps_combiner",
   "test_scinder",
   "test_cylindre_unique",
+  "test_corps_cache_aretes",
   "test_conge_arete_seule",
   "test_posage_repere",
   "test_interface_moderne",
