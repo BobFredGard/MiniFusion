@@ -106,15 +106,16 @@ function tlbMoveTo(id,g,S){
   // dépasse pas la cible (fonction qui suit l'interstice en descendant, celle qui le précède en
   // montant). Une seule étape d'annulation, un seul rejeu. Retourne true si l'ordre a changé.
   S=S||tlbSteps();
+  featMoveWhy=null;
   const f=(doc.features||[]).find(x=>x.id===id);
   const si=S.findIndex(s=>s.kind==='feature'&&s.id===id);
   if(!f||f.repeatId||si<0)return false;
-  let A=doc.features.slice();
+  let A=doc.features.slice(),refus=null;
   if(g>si){ // vers la droite : avant T (null = fin du fil)
     const T=tlbGapFeature(S,g,id);
     for(let n=0;n<A.length;n++){
       const B=A.slice();
-      if(!featMoveRaw(B,id,1))break;
+      if(!featMoveRaw(B,id,1)){refus=featMoveWhy;break;}
       if(T&&B.indexOf(f)>B.indexOf(T))break;
       A=B;
     }
@@ -122,11 +123,13 @@ function tlbMoveTo(id,g,S){
     const P=tlbGapBefore(S,g,id);
     for(let n=0;n<A.length;n++){
       const B=A.slice();
-      if(!featMoveRaw(B,id,-1))break;
+      if(!featMoveRaw(B,id,-1)){refus=featMoveWhy;break;}
       if(P&&B.indexOf(f)<B.indexOf(P))break;
       A=B;
     }
   }
+  // un cran refusé (antériorité, 43) annule tout le déplacement : pas d'arrêt à mi-chemin
+  if(refus){try{faceEl.textContent='⛔ Déplacement refusé : '+refus;}catch(e){}return false;}
   if(A.every((x,i)=>x===doc.features[i]))return false;
   featMoveApply(A,'déplacement de « '+f.name+' »');
   return true;
@@ -248,7 +251,7 @@ function tlbDragEnd(){
   const S=tlbSteps();
   if(D.t==='mark'){if(!tlbSetMark(tlbGapFeature(S,D.gap)))renderTimeline();}
   else if(!tlbMoveTo(D.id,D.gap,S)){
-    try{faceEl.textContent='Déplacement impossible ici : une fonction reste dans son corps, une répétition se déplace en bloc.';}catch(e){}
+    if(!featMoveWhy)try{faceEl.textContent='Déplacement impossible ici : une fonction reste dans son corps, une répétition se déplace en bloc.';}catch(e){}
     renderTimeline();
   }
 }

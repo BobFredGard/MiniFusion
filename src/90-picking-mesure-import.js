@@ -1614,6 +1614,8 @@ async function deserialise(json,opts){
   if(rep.dup||rep.orph||rep.sk||rep.cap){try{log('Document réparé : '+rep.dup+' instance(s) en double, '+rep.orph+' instance(s) orpheline(s), '+rep.sk+' esquisse(s) d’instance abandonnée(s), '+rep.cap+' répétition(s) plafonnée(s) à '+REPEAT_MAX+' copies.');}catch(e){}}
   if(rep.ren){try{log('Nom de congé/chanfrein réaligné sur la géométrie réelle : '+rep.ren+' fonction(s) (des arêtes avaient été perdues).');}catch(e){}}
   if(rep.dup||rep.orph){try{doc.features.filter(f=>f.type==='repeat').forEach(f=>repGenChildren(f));}catch(e){}}
+  // Antériorité (43) : signalée, jamais corrigée d'office (⚠ dans l'arbre)
+  try{const av=antViolations();if(av.length)log('⚠ Antériorité : '+av.length+' lien(s) vers une fonction placée plus loin — '+av.map(antMsg).join(' '));}catch(e){}
   // Les instances d'une répétition sont DÉRIVÉES : on les régénère à l'ouverture, toujours.
   // Sans cela, un fichier enregistré par une version qui miroirait mal les congés
   // conservait des clones à 80-100 mm du mauvais côté, et le triangle ⚠ revenait à

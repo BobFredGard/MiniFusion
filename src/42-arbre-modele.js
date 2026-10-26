@@ -135,6 +135,9 @@ function treePlacer(){
 }
 // Contenu de la pièce ACTIVE (`doc`) : origine, construction, esquisses, corps et fonctions
 function treePart(L){
+  // ⚠ d'antériorité (43) : fonctions qui s'appuient sur une fonction placée après elles
+  const ANT=antWarnMap();
+  const antTag=id=>{const w=ANT.get(id);return w?'<span class="antwarn" style="color:var(--warn);flex:none;margin-left:4px" title="Antériorité : '+w.join(' ; ').replace(/"/g,'&quot;')+' — déplacez l’une ou l’autre pour rétablir l’ordre">⚠</span>':'';};
   // Section repliable (Origine, Esquisses) : un nœud comme les autres, état dans doc.fold
   // (défaut : defFold) ; jamais repliée sur ce qu'on sélectionne, ni pendant une recherche
   const gfold=(k,icon,label,tip,defFold)=>{
@@ -153,7 +156,7 @@ function treePart(L){
     const mvOk=kind==='feature'&&(function(){const _f=doc.features.find(x=>x.id===id);return !!(_f&&!_f.repeatId);})();
     const mv=mvOk?' <span class="mv" data-d="-1" title="Monter dans le corps">▲</span><span class="mv" data-d="1" title="Descendre dans le corps">▼</span>':'';
     const on={
-      mv:dd=>{if(!featMove(id,dd)){try{faceEl.textContent='Déjà en tête / en fin de corps — rien à décaler.';}catch(e){}}},
+      mv:dd=>{if(!featMove(id,dd))featMoveFail();},
       eye:()=>{
         if(kind==='plane'){setOriginVis(id,!originVis[id]);return;}
         if(kind==='sketch'){const s=doc.sketches.find(x=>x.id===id);if(s){s.visible=!(s.visible!==false);markDirty();rebuild();renderTree();}}
@@ -174,7 +177,7 @@ function treePart(L){
     if(dbl)on.dbl=dbl;
     const dd=kind==='sketch'?{drag:{kind:'sketch',id}}:(mvOk?{drag:{kind:'feature',id},drop:treeDropFeat(id)}:{});
     L.push(Object.assign(dd,{lvl:1,cls:'tnode'+(estSel?' sel':'')+(visible===false?' hidden':'')+(lk?' locked':''),
-      html:`<span>${icon}</span><span class="nm">${name}</span>${mv}<span class="eye" title="Afficher / masquer">`+(visible===false?'🙈':'👁')+`</span>`,
+      html:`<span>${icon}</span><span class="nm">${name}</span>${kind==='feature'?antTag(id):''}${mv}<span class="eye" title="Afficher / masquer">`+(visible===false?'🙈':'👁')+`</span>`,
       title:kind==='sketch'?(info?info+' — ':'')+'Clic = sélectionner · double-clic = modifier l’esquisse · 👁 = afficher/masquer':
         kind==='feature'?'Clic = sélectionner · double-clic = éditer congé/chanfrein exact · 👁 = afficher/masquer · ▲▼ = décaler dans le corps':undefined,
       on}));
@@ -248,11 +251,11 @@ function treePart(L){
       L.push({drag:{kind:'feature',id:f.id},drop:treeDropFeat(f.id),lvl:1,cls:'tnode'+((sel.kind==='feature'&&sel.id===f.id)||treeSel.indexOf(f.id)>=0?' sel':'')+(f.visible===false?' hidden':'')+(tlLocked(f)?' locked':''),
         html:`<span class="tri" title="Déplier / replier les fonctions copiées">${open?'▼':'▶'}</span><span>🔁</span><span class="nm">${f.name} · ${repTypeName(f.mode,f)} · ${vkids.length} instance(s)`+
           (srcs.length?` <span class="repsrc" title="Sources : ${srcNames.join(', ')}">◀ ${srcs.length}</span>`:' <span class="repsrc vide" title="Aucune source choisie">◀ 0</span>')+
-          `</span> <span class="mv" data-d="-1" title="Monter dans le corps (bloc entier)">▲</span><span class="mv" data-d="1" title="Descendre dans le corps (bloc entier)">▼</span><span class="eye" title="Afficher / masquer">`+(f.visible===false?'🙈':'👁')+`</span>`,
+          `</span>`+antTag(f.id)+` <span class="mv" data-d="-1" title="Monter dans le corps (bloc entier)">▲</span><span class="mv" data-d="1" title="Descendre dans le corps (bloc entier)">▼</span><span class="eye" title="Afficher / masquer">`+(f.visible===false?'🙈':'👁')+`</span>`,
         title:'Clic = sélectionner · ▶/▼ = montrer/masquer les fonctions copiées · ▲▼ = décaler le bloc dans le corps'+
           (srcs.length?(' · sources : '+srcNames.join(', ')):' · AUCUNE source : la répétition ne produit rien'),
         on:{
-          mv:dd=>{if(!featMove(f.id,dd)){try{faceEl.textContent='Déjà en tête / en fin de corps — rien à décaler.';}catch(e){}}},
+          mv:dd=>{if(!featMove(f.id,dd))featMoveFail();},
           tri:()=>{f.open=!f.open;renderTree();renderProps();},
           eye:()=>{f.visible=!(f.visible!==false);doc.features.forEach(k=>{if(k.repeatId===f.id)k.visible=f.visible;});markDirty();rebuild();renderTree();},
           click:ev=>{
@@ -524,16 +527,18 @@ function treeJoints(L,all,lv){
    composant = « Déplacer vers un composant » (asmCmdMoveTo, 48). */
 let treeDrag=null; // {kind:'feature'|'sketch'|'body', id} pendant un glisser
 function treeFeatMoveTo(id,targetId){
+  featMoveWhy=null;
   const F=doc.features,f=F.find(x=>x.id===id),T=F.find(x=>x.id===targetId);
   if(!f||!T||f===T||f.repeatId||T.repeatId||f.body!==T.body)return false;
   const dir=F.indexOf(T)>F.indexOf(f)?1:-1;
-  let A=F.slice();
+  let A=F.slice(),refus=null;
   for(let n=0;n<F.length;n++){
     // on avance tant que la fonction n'a pas dépassé la cible (après elle en descendant,
-    // avant elle en montant)
+    // avant elle en montant) ; un cran refusé (antériorité) annule tout le déplacement
     if(dir>0?A.indexOf(f)>A.indexOf(T):A.indexOf(f)<A.indexOf(T))break;
-    const B=A.slice();if(!featMoveRaw(B,id,dir))break;A=B;
+    const B=A.slice();if(!featMoveRaw(B,id,dir)){refus=featMoveWhy;break;}A=B;
   }
+  if(refus){try{faceEl.textContent='⛔ Déplacement refusé : '+refus;}catch(e){}return false;}
   if(A.every((x,i)=>x===F[i]))return false;
   featMoveApply(A,'déplacement de « '+f.name+' »');
   return true;
@@ -566,7 +571,7 @@ function treeDropFeat(targetId){
       const a=doc.features.find(x=>x.id===D.id),b=doc.features.find(x=>x.id===targetId);
       return !!(a&&b&&!a.repeatId&&!b.repeatId&&a.body===b.body);
     },
-    fn:D=>{if(!treeFeatMoveTo(D.id,targetId)){try{faceEl.textContent='Rien à déplacer.';}catch(e){}}}
+    fn:D=>{if(!treeFeatMoveTo(D.id,targetId)&&!featMoveWhy){try{faceEl.textContent='Rien à déplacer.';}catch(e){}}} // refus : son message reste
   };
 }
 function treeDropComp(cid){

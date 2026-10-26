@@ -147,6 +147,14 @@ function repCanFeature(id){
   if(f.type==='repeat')return false;
   return f.type==='extrude'||f.type==='xfillet'||f.type==='hole'; // 2026-10-16-005 : perçages répétables
 }
+// Antériorité (43) : une répétition ne répète que ce qui la PRÉCÈDE — fonctions placées avant
+// elle, ou, à la création (rp absent), avant son point d'insertion (marqueur de temps).
+function repAmont(id,rp){
+  const F=doc.features,i=F.findIndex(x=>x.id===id);
+  if(i<0)return false;
+  const m=tlIdx(),lim=rp?F.indexOf(rp):(m<0?F.length:m);
+  return lim<0||i<lim;
+}
 // Ce qu'une fonction apporte comme source de répétition — sert d'infobulle dans la
 // liste à cocher, pour qu'on sache ce qu'on coche.
 function repCanFeatureHint(f){
@@ -171,9 +179,11 @@ function repCanFeatureHint(f){
 // détaché et l'état visuel retombe — d'où le symptôme « je peux décocher mais pas
 // cocher » (décocher « marche » seulement parce que l'image est déjà celle attendue).
 // On met donc à jour le compteur SUR PLACE, et on ne rafraîchit que le modèle et la 3D.
-function repSourceList(base,onChange,onTick){
+function repSourceList(base,onChange,onTick,rp){
+  // rp = la répétition modifiée (absente à la création) : seules les fonctions en amont sont
+  // proposées ; une source déjà cochée en aval (ancien fichier) reste visible, marquée ⚠.
   const box=document.createElement('div');box.className='col';box.style.marginTop='6px';
-  const cand=doc.features.filter(f=>repCanFeature(f.id));
+  const cand=doc.features.filter(f=>repCanFeature(f.id)&&(repAmont(f.id,rp)||(base||[]).indexOf(f.id)>=0));
   const t=document.createElement('div');t.className='note';t.style.marginBottom='2px';
   const estDedans=id=>cand.some(f=>f.id===id);
   const majCompteur=()=>{
@@ -183,7 +193,7 @@ function repSourceList(base,onChange,onTick){
   box.appendChild(t);
   if(!cand.length){
     const w=document.createElement('span');w.className='note';
-    w.textContent='Aucune fonction répétable pour l\'instant (extrusion, découpe, congé ou chanfrein).';
+    w.textContent='Aucune fonction répétable en amont (extrusion, découpe, perçage, congé ou chanfrein placés avant la répétition).';
     box.appendChild(w);
     return box;
   }
@@ -208,8 +218,10 @@ function repSourceList(base,onChange,onTick){
       }
     };
     const s=document.createElement('span');
-    s.textContent=featIconOf(f)+' '+f.name;
-    s.title=repCanFeatureHint(f);
+    const aval=!repAmont(f.id,rp);
+    s.textContent=(aval?'⚠ ':'')+featIconOf(f)+' '+f.name;
+    s.title=aval?'Placée APRÈS la répétition : une répétition ne doit répéter que des fonctions antérieures — décochez-la.':repCanFeatureHint(f);
+    if(aval)s.style.color='var(--warn)';
     l.appendChild(c);l.appendChild(s);
     box.appendChild(l);
   });
@@ -219,7 +231,7 @@ function enterRepMode(){
   if(skEdit)return;
   if(filMode||filModeX)exitFilletMode(true);
   repMode={type:'lin',copies:2,dist:20,angle:360,axis:'X',plane:'YZ',feats:[]};
-  if(sel.kind==='feature'&&repCanFeature(sel.id))repMode.feats.push(sel.id);
+  if(sel.kind==='feature'&&repCanFeature(sel.id)&&repAmont(sel.id,null))repMode.feats.push(sel.id);
   renderTree();renderRepPanel();
   faceEl.textContent='Répétition : cochez les fonctions à répéter dans la liste ci-dessus, puis Appliquer. Astuce : la repetition est depliee dans l arbre et ses sources sont marquees ◀.';
 }
@@ -633,10 +645,27 @@ function featBlockOf(f,F){
   for(let k=i+1;k<=j;k++){const o=F[k];if(!o||o.repeatId!==f.id)return null;}
   return [i,j];
 }
+let featMoveWhy=null; // raison du dernier refus de featMoveRaw (antériorité), null = aucun
 function featMoveRaw(F,id,dir){
   // Cœur de featMove sur une liste de travail F (modifiée en place) : décale le bloc d'un
   // cran DANS SON CORPS, sans annulation ni rejeu. Partagé avec le glisser-déposer du
   // bandeau de timeline (41), qui enchaîne les crans sur une copie. Retourne true si fait.
+  // Un cran qui ferait passer une fonction avant ce dont elle dépend (43, antériorité) est
+  // refusé : F reste intact et featMoveWhy dit pourquoi.
+  featMoveWhy=null;
+  const G=F.slice();
+  if(!featMoveStep(G,id,dir))return false;
+  const v=antNewViolation(F,G);
+  if(v){featMoveWhy=antMsg(v);return false;}
+  F.splice(0,F.length,...G);
+  return true;
+}
+function featMoveFail(){
+  // Message d'un ▲▼ qui n'a rien fait : refus d'antériorité, sinon bout du corps
+  try{faceEl.textContent=featMoveWhy?'⛔ Déplacement refusé : '+featMoveWhy:'Déjà en tête / en fin de corps — rien à décaler.';}catch(e){}
+}
+function featMoveStep(F,id,dir){
+  // Un cran, sans contrôle d'antériorité (voir featMoveRaw)
   const f=F.find(x=>x.id===id);
   if(!f||(dir!==1&&dir!==-1))return false;
   const bl=featBlockOf(f,F);
@@ -810,7 +839,7 @@ function repUseFaceFor(rp,which){
 }
 function applyRepPattern(){
   if(!repMode)return;
-  const ids=(repMode.feats||[]).filter(repCanFeature);
+  const ids=(repMode.feats||[]).filter(id=>repCanFeature(id)&&repAmont(id,null));
   if(!ids.length){faceEl.textContent='Répétition : cochez au moins une fonction à répéter dans la liste ci-dessus.';return;}
   const base=ids.map(id=>doc.features.find(f=>f.id===id)).filter(Boolean).sort((a,b)=>doc.features.indexOf(a)-doc.features.indexOf(b));
   // La répétition devient une FONCTION réelle (type 'repeat') : elle garde ses paramètres,
@@ -1085,7 +1114,7 @@ function renderProps(){
       p.appendChild(repSourceList(f.base,function(b){
         docPushUndo('sources de « '+f.name+' »');f.base=b;
         repGenChildren(f);markDirty();rebuild();renderTree();refreshParts();
-      },function(){majEntete();}));
+      },function(){majEntete();},f));
       const applyCfg=()=>{repGenChildren(f);markDirty();rebuild();renderTree();renderProps();refreshParts();};
       // 🎯 / ⇄ sur la LIGNE de l'axe qu'ils règlent (et non en bas du panneau)
       const icoBtns=(row,list)=>{list.forEach(([ic,tip,fn])=>{const b=document.createElement('button');b.className='mini repDirBtn';b.textContent=ic;b.title=tip;b.style.cssText='padding:1px 6px;margin-left:4px;flex:none';b.onclick=fn;row.appendChild(b);});return row;};
