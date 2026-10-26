@@ -1669,7 +1669,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
           if(z>=f-1e-9&&z<target-1e-9)p.splice(j,1);   // coupait dans la laisse
           else if(Math.abs(z-target)<=1e-9)atT=true;
         }
-        if(!atT)p.push({z:target,radial:RA.radial});    // haut de laisse exact
+        if(!atT)p.push({z:target,radial:RA.radial,pose:1}); // haut de laisse exact
         // 2026-10-15-001 : FINIR LE FOND — avec une surépaisseur Fond > 0, une
         // passe à la cote EXACTE du fond enlève la laisse ; la finition des
         // parois (dernière passe latérale) se fait alors à cette hauteur.
@@ -1772,9 +1772,33 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
   // forEach -> for (yield interdit dans une closure) : chaque itération de
   // niveau cède le fil au flux via yield moves (dessin progressif 005).
   const chunkAt=[]; // 2026-10-22-001 : début de chaque niveau dans moves (ordre par région)
+  // 2026-10-26 : POSE DE FOND = MINI-PASSE DE PLUS (« pour me caler avec le
+  // fond, une mini-passe de plus qui combine passe et minipasse ») — un fond
+  // hors grille (Cavité Usinage : épaulement à 46, grille 45/40…) était une
+  // passe COMPLÈTE, et le niveau de grille suivant repassait partout pour
+  // 1 mm. La pose n'usine plus que là où le niveau de grille suivant est
+  // bloqué par la pièce (l'épaulement) ; ce niveau prend la cavité à ap, et
+  // ses mini-passes couvrent toute la tranche depuis le niveau au-dessus de
+  // la pose (la pose n'a pas de mini-passes à elle).
+  const gridBelow=function(li){
+    for(let j=li+1;j<plan.length;j++)if(!plan[j].pose&&!plan[j].fond)return plan[j];
+    return null;};
+  const bandTopOf=function(li){
+    for(let j=li-1;j>=0;j--)if(!plan[j].pose)return plan[j].z;
+    return zt;};
+  const aeS=Math.max(0.5,Math.min(ae,D*0.25));
   for(let li=0;li<plan.length;li++){
     const L=plan[li];
     chunkAt.push(moves.length);
+    let zoneL=o.zoneAt;
+    if(L.pose){
+      const N=gridBelow(li);
+      if(N){
+        const SN=faoShadowShape(M,faoShadowPlanes(M,N.z,Math.max(zt,isFinite(+o.brutTop)?+o.brutTop:N.z)),BB,D/2+N.radial,aeS);
+        const rN=Math.max(0.01,D/2+N.radial-0.005),zA=o.zoneAt;
+        zoneL=function(x,y){return (!zA||zA(x,y))&&!faoShapeValid(SN,x,y,rN);};
+      }
+    }
     // Entrée depuis z+pas (rainure du dessus déjà ouverte, descente en avance
     // plongée) : l'hélice ne refait jamais toute la hauteur depuis la sécu.
     const zFrom=Math.min(secu,L.z+ap);
@@ -1784,16 +1808,16 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     // 2026-10-08-002 : remontées réglables — mode 'min5' (défaut) = local à
     // 5 mm au-dessus de la bande (was 2 mm) borné par secu ; mode 'plan' =
     // toujours le plan de retrait (secu porte déjà le plan).
-    const bandTop=li>0?plan[li-1].z:zt;
+    const bandTop=bandTopOf(li);
     const tvZ=o.remPlan?secu:Math.min(secu,bandTop+5);
     zCur=L.z;
     // ESCARGOT : spirale centre -> faces sur le meme plan/levels, memes
     // entrees/travel ; mini-passes et finition restent conventionnelles.
     // 2026-10-08-003 : sens (avalant = sens de coupe constant) porte par opt.
-    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,zoneDense:typeof o.protectTip==='function',stockTop:stockTopF,remBlocked:rem?rem.blocked:null,remTopAt:rem?rem.topAt:null,remPtAt:rem?rem.ptAt:null,zoneSafe:o.zoneSafe||null,
+    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:zoneL,zoneDense:typeof o.protectTip==='function',stockTop:stockTopF,remBlocked:rem?rem.blocked:null,remTopAt:rem?rem.topAt:null,remPtAt:rem?rem.ptAt:null,zoneSafe:o.zoneSafe||null,
       bullFaces:bullC?function(zz){return faoBullRingRuns(bullCtx(L.radial),zz,o.sens==='avalant',true);}:null,
       bullOK:bullC?function(x,y,zz){return bullCtx(L.radial).tipB(x,y)<=zz+1e-6;}:null});
-    else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
+    else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:zoneL});
     if(rem)rem.carve();
     if(bullC&&!esc)bullJobs.push([L.radial,L.z,tvZ]); // conventionnel : contour ajouté en fin d'opération
     yield frameYield(); // dessin progressif 005 : pelage du niveau fini
@@ -1802,7 +1826,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     // du dessus (strictement entre les deux, jamais dessus), décalage radial
     // ENTIER (= marge finale de paroi — s=0 laissait le contour collé à la
     // cote théorique : gouge sur les parois inclinées, cf. A3).
-    if(nb){
+    if(nb&&!L.pose){
       const h=bandTop-L.z;
       if(h>1e-9)for(let k=1;k<=nb;k++){
         const zm=Math.round((bandTop-k*h/(nb+1))*1000)/1000;

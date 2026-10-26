@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**340 versions**, de `2026-09-28b` à `V0.9.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**341 versions**, de `2026-09-28b` à `V0.9.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4868,3 +4868,10 @@ Dernière étape de la série V0.8 (« toutes tes idées ») : piloter MiniFusio
 - Réglage par machine `swivel: 'traori'` (`PostPro/siemens-*.js`) : ancienne sortie `TRAORI` + B/C inchangée.
 - **Avance F modale** (Siemens et Fagor) : le mot F n'est écrit que lorsqu'il change, et de nouveau après chaque changement d'outil. Perçages : 47 mots F pour ~3 600 lignes de mouvement.
 - Tests : nouveau `test_post_cycle800` (angles ZYX sur 50 repères quelconques, ligne CYCLE800, ordre outil / pivotement, dégagements 1520 / 630, Z du plan incliné, arc rendu en G3, F jamais répété, réglage TRAORI, ancien 3+2 du posage) ; `test_fao`, `test_posage_repere`, `test_fao_taraudage` adaptés. *Signe des angles à valider à vide sur la machine (face inclinée simple).*
+
+## V0.9.2 - Ébauche 3D : un fond hors grille devient une mini-passe de plus
+« Sur Cavité Usinage, l'opération Ébauche 3D, la 1ʳᵉ passe se fait à la bonne profondeur, mais pas la 2ⁿᵈ » ; « pour me caler avec le fond, je fais une mini-passe de plus […] qui combine passe et minipasse ». Haut 50, Bas 20, ap 5 : la grille vaut 45, 40… ; l'épaulement plat de la pièce à 46 ajoutait une pose de fond qui était une passe **complète** (cavité comprise), puis le niveau 45 repassait partout pour **1 mm** (3,07 m de coupe), avec des mini-passes de 0,17 mm entre 46 et 45.
+- **Pose de fond limitée** (`src/88-fao-90-ebauche3d.js`) : un niveau ajouté pour un fond hors grille (`pose:1`) n'usine que là où le niveau de grille suivant est **bloqué par la pièce** (complément de sa forme admissible) — l'épaulement seul. Ce niveau prend la cavité à ap ; ses mini-passes couvrent la tranche depuis le niveau de grille au-dessus de la pose, qui n'a plus de mini-passes à elle. Grille, fonds alignés et laisse « Fond » inchangés.
+- **Cavité Usinage** : passe à 46 3,12 → **0,52 m** (anneau de l'épaulement), passe à 45 pour 5 mm, mini-passes 49,17 · 48,33 · 47,50 · 46,67 · 45,83 ; coupe totale 38,9 → **33,1 m** (−15 %), niveaux 40 à 20 inchangés.
+- `CACHE_VER` 2026-10-26-001 (parcours d'ébauche changés : tout est régénéré).
+- **Tests** : nouveau `test_fao_pose_fond` (suite rapide ; solide en terrasses manifold : cadre 10, épaulement 8, cavité 0 — aucune coupe à 8 au cœur de la cavité, épaulement usiné, cavité prise au niveau 5, niveaux 8 / 5, mini-passes 8,75 · 7,5 · 6,25) — échoue sur l'ancien moteur ; suite complète 153/153.

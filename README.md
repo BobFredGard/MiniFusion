@@ -2,7 +2,7 @@
 
 **CAO paramétrique, assemblage, FAO et mise en plan dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2, G-code et planches cotées ISO. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.9.0** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.9.2** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Sommaire
 
@@ -165,7 +165,7 @@ Convertir une pièce multicorps en assemblage, sans rien remodéliser :
 ### Opérations
 
 - **Surfaçage**, **Chanfrein** (arêtes cliquées, largeur, décalage de pointe ; fraise à chanfreiner ou foret à pointer — la Poche des anciens fichiers reste calculée), **Contour** (avec attaches), **Perçage** (cycles 81 / 82 / 83, débourrage, brise-copeaux, taraudage, fraisage hélicoïdal, pointage).
-- **Ébauche 3D** : niveaux en Z, minipasses entre les niveaux, entrées par l'extérieur quand l'air est à portée, sinon en hélice ; option **« Finir une région avant l'autre »** ; calcul sur un maillage précis (0,05 mm) du solide exact.
+- **Ébauche 3D** : niveaux en Z, minipasses entre les niveaux, fond plat hors grille usiné par une passe limitée à l'épaulement, entrées par l'extérieur quand l'air est à portée, sinon en hélice ; option **« Finir une région avant l'autre »** ; calcul sur un maillage précis (0,05 mm) du solide exact.
 - **Finition** (passes parallèles ou à crête constante) et **Géodésique** (passes à distance constante sur les faces choisies, depuis leurs bords, rejointes en glissant au contact).
 - **Faces usinables (bleu) / intouchables (rouge)** par opération, avec marge et **« Interdire devant la face »** : la fraise ne descend jamais le long d'un flanc rouge.
 - **Zones** : rectangle, chaîne d'arêtes du modèle ou esquisse, avec îlots ; hauteurs par références (dessus du brut, haut ou bas du modèle, bridage, face cliquée, origine).

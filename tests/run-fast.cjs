@@ -19,6 +19,7 @@ const SUITES = [
   'test_prodver_badge',
   'test_fao_passes',
   'test_fao_zlim',
+  'test_fao_pose_fond',
   'test_mise_en_plan',
   'test_undo_document',
   'test_conge_tangent',
