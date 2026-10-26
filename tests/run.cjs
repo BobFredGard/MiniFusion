@@ -161,6 +161,7 @@ const SUITES = [
   "test_mep_step",
   "test_mep_coupe_brisee",
   "test_mep_hachures_cotes",
+  "test_mep_cylindre",
   "test_filet_modele",
   "test_construction_modele",
   "test_assemblage_modele",

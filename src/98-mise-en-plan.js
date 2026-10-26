@@ -1368,7 +1368,42 @@
     return out;
   }
   let mepCutKeys=null; // V0.8.2 : pièce de chaque forme coupée de la vue en cours de calcul
+  /* Traits colinéaires bout à bout → un seul trait (« les lignes projetées appartenant à un
+     cercle sont des multilignes ! Une seule suffit ») : le HLR exact rend la génératrice d'un
+     cylindre comme une courbe discrétisée, le HLR maillage la découpe au test de visibilité.
+     On ne soude qu'aux nœuds de degré 2 (aucun autre trait ni arc n'y aboutit) : deux arêtes
+     réelles alignées séparées par un sommet où arrive une 3ᵉ arête restent distinctes. */
+  function mepMergeCollinear(els){
+    const key=(x,y)=>Math.round(x*500)+','+Math.round(y*500); // 0,002 mm
+    const deg=new Map(),at=new Map();
+    const bump=(x,y)=>{const k=key(x,y);deg.set(k,(deg.get(k)||0)+1);return k;};
+    els.forEach((e,i)=>{
+      if(e.t==='L'){[[e.x1,e.y1],[e.x2,e.y2]].forEach(p=>{const k=bump(p[0],p[1]);if(!at.has(k))at.set(k,[]);at.get(k).push(i);});}
+      else if(e.t==='A'){bump(e.cx+e.r*Math.cos(e.a0),e.cy+e.r*Math.sin(e.a0));bump(e.cx+e.r*Math.cos(e.a1),e.cy+e.r*Math.sin(e.a1));}
+    });
+    const dead=new Set();
+    const tryEnd=(i,end)=>{ // end 1 : (x1,y1), 2 : (x2,y2) ; true si le trait a été prolongé
+      const e=els[i],px=end===1?e.x1:e.x2,py=end===1?e.y1:e.y2,k=key(px,py);
+      if(deg.get(k)!==2)return false;
+      const j=(at.get(k)||[]).find(n=>n!==i&&!dead.has(n));
+      if(j==null)return false;
+      const f=els[j];if(f.k!==e.k)return false;
+      const fj=key(f.x1,f.y1)===k?2:(key(f.x2,f.y2)===k?1:0);if(!fj)return false;
+      const fx=fj===1?f.x1:f.x2,fy=fj===1?f.y1:f.y2; // bout lointain de j
+      const ox=end===1?e.x2:e.x1,oy=end===1?e.y2:e.y1; // bout opposé de i
+      const dx=fx-ox,dy=fy-oy,L=Math.hypot(dx,dy);if(L<1e-9)return false;
+      const dev=Math.abs((px-ox)*dy-(py-oy)*dx)/L; // écart du nœud à la droite fusionnée
+      if(dev>0.002||((px-ox)*dx+(py-oy)*dy)<=0||((fx-px)*dx+(fy-py)*dy)<=0)return false;
+      dead.add(j);
+      if(end===1){e.x1=fx;e.y1=fy;}else{e.x2=fx;e.y2=fy;}
+      const nk=key(fx,fy),arr=at.get(nk);if(arr)arr.push(i);
+      return true;
+    };
+    els.forEach((e,i)=>{if(e.t!=='L'||dead.has(i))return;while(tryEnd(i,1)||tryEnd(i,2));});
+    return dead.size?els.filter((e,i)=>!dead.has(i)):els;
+  }
   function mepFinishGeo(geo,view,cutShapes){
+    try{geo.els=mepMergeCollinear(geo.els);}catch(e){}
     try{const th=mepThreadEls(view);if(th.length)geo.els=geo.els.concat(th);}catch(e){try{console.warn('mep filetage',e);}catch(e2){}}
     if(view.render3d&&!view.section&&!view.detail){
       try{geo.img3d=mepRender3dImage(view);}catch(e){geo.img3d=null;}
@@ -5064,12 +5099,9 @@
       case 'rad':{const e=mepEntByHint(w.v1,d.a.hint);return e&&(e.t==='C'||e.t==='A')?e.r:modelDist();}
       case 'dia':{const e=mepEntByHint(w.v1,d.a.hint);return e&&(e.t==='C'||e.t==='A')?2*e.r:2*modelDist();}
       case 'ang':{
-        const e1=d.a.hint?mepEntByHint(w.v1,d.a.hint):null;
-        const e2=d.b&&d.b.hint?mepEntByHint(d.vid2?w.v2:w.v1,d.b.hint):null;
-        if(e1&&e1.t==='L'&&e2&&e2.t==='L'){
-          const d1=Math.atan2(e1.y2-e1.y1,e1.x2-e1.x1),d2=Math.atan2(e2.y2-e2.y1,e2.x2-e2.x1);
-          return mepAngleDeg(d1,d2);
-        }
+        // valeur = secteur dessiné (θ, 180−θ ou rentrant 360−θ selon d.q / d.big)
+        const g=mepAngGeom(sh,d);
+        if(g)return Math.abs(g.dd)*180/Math.PI;
         const a1=Math.atan2(w.a.y-(w.b?w.b.y:w.a.y),w.a.x-(w.b?w.b.x:w.a.x));
         return Math.abs(a1*180/Math.PI);
       }
@@ -5487,12 +5519,62 @@
     const byAx=new Map();
     [...groups.values()].filter(g=>g.u>=Math.PI*0.95&&g.t1-g.t0>1e-3).forEach(g=>{
       const a=byAx.get(g.axk);
-      if(!a)byAx.set(g.axk,{o:g.o,d:g.d,t0:g.t0,t1:g.t1,r:g.r,u:g.u});
-      else{a.t0=Math.min(a.t0,g.t0);a.t1=Math.max(a.t1,g.t1);a.r=Math.max(a.r,g.r);}
+      if(!a)byAx.set(g.axk,{o:g.o,d:g.d,t0:g.t0,t1:g.t1,r:g.r,u:g.u,rs:[g.r]});
+      else{a.t0=Math.min(a.t0,g.t0);a.t1=Math.max(a.t1,g.t1);a.r=Math.max(a.r,g.r);a.rs.push(g.r);}
     });
     const list=[...byAx.values()];
     mepCylCache.set(k,{shape:sh,list});
     return list;
+  }
+  /* Deux traits parallèles d'une vue = génératrices d'un même cylindre (axe dans le plan de
+     la vue, à mi-distance, rayon = demi-écart) → la distance est un diamètre : « Ø ». */
+  function mepCylDiaBetween(v,e1,e2){
+    if(!v||!e1||!e2||e1.t!=='L'||e2.t!=='L'||mepOblOf(v)||mepPerspOf(v))return false;
+    const b=mepBasisOf(v),tol=0.01;
+    const l1=Math.hypot(e1.x2-e1.x1,e1.y2-e1.y1);if(l1<1e-9)return false;
+    const ux=(e1.x2-e1.x1)/l1,uy=(e1.y2-e1.y1)/l1;
+    const off=(e,ox,oy)=>(e.x1-ox)*-uy+(e.y1-oy)*ux; // distance signée à la droite (o, u)
+    const gap=Math.abs(off(e2,e1.x1,e1.y1));if(gap<1e-6)return false;
+    return mepMeshesOf(v).some(bd=>mepShapeCyls(bd).some(g=>{
+      if(Math.abs(mepDot(g.d,b.dir))>0.02)return false;
+      let dx=mepDot(g.d,b.u),dy=mepDot(g.d,b.v);const L=Math.hypot(dx,dy);if(L<1e-9)return false;
+      dx/=L;dy/=L;
+      if(Math.abs(dx*uy-dy*ux)>1e-3)return false; // axe parallèle aux traits
+      const ox=mepDot(g.o,b.u),oy=mepDot(g.o,b.v);
+      const s1=off(e1,ox,oy),s2=off(e2,ox,oy);
+      return (g.rs||[g.r]).some(r=>Math.abs(gap-2*r)<tol&&Math.abs(Math.abs(s1)-r)<tol&&Math.abs(Math.abs(s2)-r)<tol&&s1*s2<0);
+    }));
+  }
+  /* « Même une droite issue de la projection d'un cylindre doit avoir un Ø » : une mesure A→B
+     (repère de la vue) perpendiculaire à l'axe d'un cylindre du plan de vue, centrée sur cet
+     axe, dans sa longueur, et de longueur 2R est un diamètre — arête du cercle d'extrémité vu
+     de profil, distance entre génératrices, points pris de part et d'autre. */
+  function mepCylDiaSeg(v,A,B){
+    if(!v||!A||!B||mepOblOf(v)||mepPerspOf(v))return false;
+    const len=Math.hypot(B.x-A.x,B.y-A.y);if(len<1e-6)return false;
+    const b=mepBasisOf(v),tol=0.01,mx=(A.x+B.x)/2,my=(A.y+B.y)/2;
+    return mepMeshesOf(v).some(bd=>mepShapeCyls(bd).some(g=>{
+      if(Math.abs(mepDot(g.d,b.dir))>0.02)return false;
+      let dx=mepDot(g.d,b.u),dy=mepDot(g.d,b.v);const L=Math.hypot(dx,dy);if(L<1e-9)return false;
+      dx/=L;dy/=L;
+      if(Math.abs(((B.x-A.x)*dx+(B.y-A.y)*dy)/len)>1e-3)return false; // ⟂ à l'axe
+      const ox=mepDot(g.o,b.u),oy=mepDot(g.o,b.v);
+      if(Math.abs((mx-ox)*-dy+(my-oy)*dx)>tol)return false; // milieu sur l'axe
+      const t=((mx-ox)*dx+(my-oy)*dy)/L; // abscisse le long de l'axe (unités modèle)
+      if(t<g.t0-tol||t>g.t1+tol)return false;
+      return (g.rs||[g.r]).some(r=>Math.abs(len-2*r)<tol);
+    }));
+  }
+  // cote linéaire posée : Ø automatique si elle mesure un diamètre de cylindre
+  function mepDimAutoDia(sh,d){
+    if(!d||d.dsym||d.txt||(d.kind!=='len'&&d.kind!=='dist')||d.vid2&&d.vid2!==d.vid)return;
+    const v=mepView(sh,d.vid);if(!v)return;
+    let A=d.a,B=d.b;
+    if(d.kind==='len'&&d.a&&d.a.hint){const e=mepEntByHint(v,d.a.hint);if(e&&e.t==='L'){A={x:e.x1,y:e.y1};B={x:e.x2,y:e.y2};}}
+    if(!A||!B)return;
+    const o=d.orient||'a';
+    if(o==='h')B={x:B.x,y:A.y};else if(o==='v')B={x:A.x,y:B.y};
+    try{if(mepCylDiaSeg(v,A,B))d.dsym='Ø';}catch(e){}
   }
   function mepAxisCylPrims(sh,v){
     const out=[],b=mepBasisOf(v),over=MEP_AXIS.overrun/mepAxisScale(v);
@@ -5640,6 +5722,8 @@
     return (n<0?'−':'+')+mepFmtNum(Math.abs(n),3);
   }
   function mepDimTextParts(d,value){
+    // distance entre génératrices d'un cylindre : préfixe Ø comme une cote de diamètre
+    if(d.dsym&&!d.txt&&d.kind!=='dia'&&d.kind!=='rad')return mepDimSymbolParts(Object.assign({},d,{dsym:''}),value,d.dsym);
     const pre=d.pre?String(d.pre).trim():'',post=d.post?String(d.post).trim():'';
     const join=(a,b)=>a&&b?a+' '+b:(a||b);
     const wrap=s=>join(join(pre,s),post);
@@ -6067,10 +6151,8 @@
       const g=mepAngGeom(sh,d);
       if(!g)return;
       const O=g.O,r=mepAngRadius(d);
-      let aa=g.a1,bb=g.a2,dd=bb-aa;
-      while(dd<=-Math.PI)dd+=2*Math.PI;
-      while(dd>Math.PI)dd-=2*Math.PI;
-      const sweep=dd>0?1:0;
+      const aa=g.a1,bb=g.a2,dd=g.dd;
+      const sweep=dd>0?1:0,large=Math.abs(dd)>Math.PI?1:0;
       const x1=O.x+r*Math.cos(aa),y1=O.y+r*Math.sin(aa);
       const x2=O.x+r*Math.cos(bb),y2=O.y+r*Math.sin(bb);
       // rappels : prolongent chaque arête jusqu'à l'arc (vide au départ, dépassement après l'arc)
@@ -6082,7 +6164,7 @@
         if(s0!==null&&Math.abs(s1-s0)>0.2)draw('line',Object.assign({x1:O.x+ux*s0,y1:O.y+uy*s0,x2:O.x+ux*s1,y2:O.y+uy*s1},L));
       });
       // arc fléché aux deux bouts (pointes sur les rappels)
-      draw('path',Object.assign({d:'M'+x1+','+y1+' A'+r+','+r+' 0 0 '+sweep+' '+x2+','+y2,'marker-start':ARS,'marker-end':AR},L));
+      draw('path',Object.assign({d:'M'+x1+','+y1+' A'+r+','+r+' 0 '+large+' '+sweep+' '+x2+','+y2,'marker-start':ARS,'marker-end':AR},L));
       const nSeg=Math.max(6,Math.ceil(Math.abs(dd)*r/3));
       for(let k=0;k<nSeg;k++){
         const t0=aa+dd*k/nSeg,t1=aa+dd*(k+1)/nSeg;
@@ -7517,12 +7599,14 @@
     mepRender();
   }
   // double-clic sur une cote (true si traité) : flèche → inversion des deux flèches ;
-  // cote linéaire → inversion des flèches ; Alt (ou autre cote) → texte personnalisé
+  // cote linéaire → inversion des flèches ; angle → angle rentrant (360 − θ) ↔ saillant ;
+  // Alt (ou autre cote) → texte personnalisé
   function mepDimDblAction(sh,P,alt){
     const da=mepDimArrowAt(sh,P.x,P.y);
-    if(da){mepDimToggleArrows(da);return true;}
-    const d=mepDimAt(sh,P.x,P.y);
+    if(da&&da.kind!=='ang'){mepDimToggleArrows(da);return true;}
+    const d=da||mepDimAt(sh,P.x,P.y);
     if(!d)return false;
+    if(d.kind==='ang'&&!alt){mepDimToggleBig(d);return true;}
     if(d.kind==='note'){mepNoteEdit(sh,d);return true;}
     if(d.kind==='ord')return true;
     if((d.kind==='len'||d.kind==='dist')&&!alt){mepDimToggleArrows(d);return true;}
@@ -7695,7 +7779,7 @@
     const ax=e1.x2-e1.x1,ay=e1.y2-e1.y1,bx=e2.x2-e2.x1,by=e2.y2-e2.y1;
     const a1=Math.atan2(ay,ax),a2=Math.atan2(by,bx);
     // vues différentes : coordonnées non comparables → arc centré sur la ligne A
-    if(d.vid2&&d.vid2!==d.vid)return{O:w.a,a1,a2,w};
+    if(d.vid2&&d.vid2!==d.vid)return mepAngSector(d,{O:w.a,a1,a2,w});
     const den=ax*by-ay*bx;
     let ox=e1.x1,oy=e1.y1;
     if(Math.abs(den)>1e-9){
@@ -7708,7 +7792,32 @@
       const l=Math.hypot(dx,dy)||1,ux=dx/l,uy=dy/l,s1=(e.x1-ox)*ux+(e.y1-oy)*uy,s2=(e.x2-ox)*ux+(e.y2-oy)*uy;
       return{a:Math.atan2(uy,ux),ext:[Math.min(s1,s2)*w.v1.scale,Math.max(s1,s2)*w.v1.scale]};};
     const r1=ray(e1),r2=ray(e2);
-    return{O:mepToSheet(w.v1,ox,oy),a1:r1.a,a2:r2.a,ext:[r1.ext,r2.ext],w};
+    return mepAngSector(d,{O:mepToSheet(w.v1,ox,oy),a1:r1.a,a2:r2.a,ext:[r1.ext,r2.ext],w});
+  }
+  /* Secteur coté parmi les 4 que forment les deux droites (θ, 180−θ, θ, 180−θ) : d.q = bit 0
+     → côté A retourné, bit 1 → côté B retourné ; d.big → angle rentrant (360 − secteur).
+     b1/b2 = côtés de base (avant retournement), pour le choix du secteur au curseur.
+     dd = balayage signé de a1 vers a2 (|dd| = valeur cotée, en radians). */
+  function mepAngSector(d,g){
+    const q=(+d.q||0)&3,flip=(a,e)=>({a:a+Math.PI,e:e?[-e[1],-e[0]]:e});
+    let s1={a:g.a1,e:g.ext&&g.ext[0]},s2={a:g.a2,e:g.ext&&g.ext[1]};
+    if(q&1)s1=flip(s1.a,s1.e);
+    if(q&2)s2=flip(s2.a,s2.e);
+    let dd=s2.a-s1.a;
+    while(dd<=-Math.PI)dd+=2*Math.PI;
+    while(dd>Math.PI)dd-=2*Math.PI;
+    if(d.big)dd=dd>0?dd-2*Math.PI:dd+2*Math.PI;
+    return Object.assign(g,{b1:g.a1,b2:g.a2,a1:s1.a,a2:s2.a,dd,ext:g.ext?[s1.e,s2.e]:g.ext});
+  }
+  // secteur (0..3) qui contient la direction φ (depuis le sommet), côtés de base b1/b2
+  function mepAngSectorAt(b1,b2,phi){
+    for(let q=0;q<4;q++){
+      const s1=b1+((q&1)?Math.PI:0),s2=b2+((q&2)?Math.PI:0);
+      let dd=s2-s1;while(dd<=-Math.PI)dd+=2*Math.PI;while(dd>Math.PI)dd-=2*Math.PI;
+      let t=(phi-s1)*(dd>=0?1:-1);t=((t%(2*Math.PI))+2*Math.PI)%(2*Math.PI);
+      if(t<=Math.abs(dd)+1e-9)return q;
+    }
+    return 0;
   }
   function mepAngRadius(d){return Math.max(6,Math.min(80,d.off==null?14:d.off));}
   // Trait de cote linéaire : a1/b1 = extrémités décalées, u = direction de la cote,
@@ -7817,14 +7926,23 @@
     }
     if(d.kind==='ang'){
       const g=mepAngGeom(sh,d);if(!g)return{x:w.b.x,y:w.b.y};
-      let dd=g.a2-g.a1;
-      while(dd<=-Math.PI)dd+=2*Math.PI;
-      while(dd>Math.PI)dd-=2*Math.PI;
-      const r=mepAngRadius(d);
+      const dd=g.dd,r=mepAngRadius(d);
       return{x:g.O.x+(r+7)*Math.cos(g.a1+dd/2),y:g.O.y+(r+7)*Math.sin(g.a1+dd/2)};
     }
     const g=mepDimLine(sh,d,w);
     return g?mepDimTextAnchorPos(g,d):{x:w.a.x,y:w.a.y};
+  }
+  // angle rentrant ↔ saillant : l'arc garde le même côté (le secteur opposé est retourné)
+  function mepDimToggleBig(d){
+    const big=!d.big;
+    mepEdit(big?'angle rentrant':'angle saillant',()=>{
+      if(big)d.big=true;else delete d.big;
+      const q=((+d.q||0)&3)^3;if(q)d.q=q;else delete d.q;
+    });
+    mepSt.selDim=d.id;mepSt.sel=null;mepSt.entSel=[];
+    mepSideShow();mepRender();
+    mepStatus(big?'Angle rentrant (360° − θ) — double-clic pour revenir.':'Angle saillant.');
+    return big;
   }
   function mepDimToggleArrows(d){
     const out=d.arr!=='out';
@@ -8119,9 +8237,11 @@
         const ax0=Ae.x1+ax*t,ay0=Ae.y1+ay*t;
         let tb=((ax0-Be.x1)*bx+(ay0-Be.y1)*by)/(lb*lb);
         tb=tb<0?0:(tb>1?1:tb);
+        // génératrices d'un même cylindre : la distance est un diamètre
+        let cyl=false;try{cyl=mepCylDiaBetween(Av,Ae,Be);}catch(e){}
         return Object.assign(base,{kind:'dist',vid:Av.id,vid2:null,
           a:{x:ax0,y:ay0,hint:{t:'seg',i:Ai}},
-          b:{x:Be.x1+bx*tb,y:Be.y1+by*tb,hint:{t:'seg',i:Bi}}});
+          b:{x:Be.x1+bx*tb,y:Be.y1+by*tb,hint:{t:'seg',i:Bi}}},cyl?{dsym:'Ø'}:{});
 
       }
       return Object.assign(base,{kind:'ang',off:14,vid:Av.id,vid2:Bv.id,
@@ -8194,10 +8314,16 @@
       }
       return true;
     }
-    // angle : le curseur règle le rayon de l'arc (centré sur le sommet réel).
+    // angle : le curseur règle le rayon de l'arc (centré sur le sommet réel) et choisit
+    // le secteur coté parmi les 4 (θ / 180−θ) ; en rentrant, le secteur du curseur est
+    // celui du milieu de l'arc, donc on cote le complément du secteur OPPOSÉ.
     if(d.kind==='ang'){
-      const g=mepAngGeom(sh,d);
+      let g=mepAngGeom(sh,d);
       if(!g)return false;
+      if(Math.hypot(P.x-g.O.x,P.y-g.O.y)>1e-6){
+        const q=mepAngSectorAt(g.b1,g.b2,Math.atan2(P.y-g.O.y,P.x-g.O.x))^(d.big?3:0);
+        if(q!==((+d.q||0)&3)){if(q)d.q=q;else delete d.q;g=mepAngGeom(sh,d)||g;}
+      }
       // l'étiquette est à r+7 : le curseur doit la suivre, pas l'arc
       d.off=Math.max(6,Math.min(80,Math.hypot(P.x-g.O.x,P.y-g.O.y)-7));
       return true;
@@ -8243,6 +8369,7 @@
     mepDimClearSelection();
     mepSt.selDim=id;mepSt.sel=null;
     mepEdit('cote '+(d.kind==='hole'?'perçage':d.kind==='dia'?'Ø':d.kind==='rad'?'R':d.kind==='ang'?'angle':d.kind==='len'?'longueur':'distance'),()=>{
+      mepDimAutoDia(sh,d);
       sh.dims.push(d);
     });
     mepSideShow();
@@ -8284,7 +8411,9 @@
       mepDimMoveTo(sh2,D,P);
       const off=D.off,orient=D.orient||'a';
       mepEdit('cote distance',()=>{
-        sh2.dims.push({id:mepUid('d'),kind:'dist',vid,vid2:null,a,b,off,orient,ref:shift,tol:null});
+        const nd={id:mepUid('d'),kind:'dist',vid,vid2:null,a,b,off,orient,ref:shift,tol:null};
+        mepDimAutoDia(sh2,nd);
+        sh2.dims.push(nd);
       });
       mepDimClearSelection();mepSt.selDim=null;mepSt.sel=null;mepRender();
       mepStatus('Cote posée.');
@@ -8316,7 +8445,9 @@
         const orient=mepDimOrientFromPts(ax,ay,bx,by,P);
         const off=mepDimClampOff(mepDimOffsetFromPts(ax,ay,bx,by,orient,P),6);
         mepEdit('cote longueur',()=>{
-          sh2.dims.push({id:mepUid('d'),kind:'len',vid:D.vid,vid2:null,a:A,b:B,off,orient,ref:shift,tol:null});
+          const nd={id:mepUid('d'),kind:'len',vid:D.vid,vid2:null,a:A,b:B,off,orient,ref:shift,tol:null};
+          mepDimAutoDia(sh2,nd);
+          sh2.dims.push(nd);
         });
       }
       mepDimClearSelection();mepSt.selDim=null;mepSt.sel=null;mepRender();
@@ -9478,6 +9609,8 @@
   window.mepDimLine=d=>{const sh=mepSheet();return sh?mepDimLine(sh,d):null;};
   window.mepDimMoveTo=(d,P,pk)=>{const sh=mepSheet();return sh?mepDimMoveTo(sh,d,P,pk):false;};
   window.mepAngleDeg=mepAngleDeg;
+  window.mepMergeCollinear=mepMergeCollinear;window.mepCylDiaBetween=mepCylDiaBetween;window.mepCylDiaSeg=mepCylDiaSeg;window.mepDimText=window.mepDimText||mepDimText;
+  window.mepAngSector=mepAngSector;window.mepAngSectorAt=mepAngSectorAt;
   window.mepDimKindForEnt=mepDimKindForEnt;
   window.mepArrowGeom=mepArrowGeom;
   window.mepTolInfo=(cls,nom)=>mepTolRange(cls,nom);
@@ -9492,7 +9625,7 @@
   // points d'entrée réservés aux tests automatisés (jamais activés dans l'app)
   if(window.__MEP_TEST_HOOKS__){
     window.__mepTest={
-      bomRows:sh=>mepBomRows(sh),balloonsAuto:sh=>mepBalloonsAuto(sh),tbPack:(sh,n)=>mepTbPack(sh,n),tbUnpack:(tt,o)=>mepTbUnpack(tt,o),tbLib:()=>mepTbLib(),newSheet:n=>mepNewSheet(n),balloonAt:(x,y)=>mepBalloonAt(mepSheet(),x,y),viewBBox:v=>mepViewSheetBBox(v),balloonAdd:(x,y)=>mepBalloonAddAt(mepSheet(),x,y),hatchVar:(k,c)=>mepHatchVar(k,c),st:()=>mepSt,drawBalloons:(mk,sh)=>mepDrawBalloons(mk,sh),meshesOf:v=>mepMeshesOf(v),addView:o=>mepAddView(o),sheet:()=>mepSheet(),viewSig:v=>mepViewSig(v), // V0.6.7
+      bomRows:sh=>mepBomRows(sh),autoDia:(sh,d)=>mepDimAutoDia(sh,d),balloonsAuto:sh=>mepBalloonsAuto(sh),tbPack:(sh,n)=>mepTbPack(sh,n),tbUnpack:(tt,o)=>mepTbUnpack(tt,o),tbLib:()=>mepTbLib(),newSheet:n=>mepNewSheet(n),balloonAt:(x,y)=>mepBalloonAt(mepSheet(),x,y),viewBBox:v=>mepViewSheetBBox(v),balloonAdd:(x,y)=>mepBalloonAddAt(mepSheet(),x,y),hatchVar:(k,c)=>mepHatchVar(k,c),st:()=>mepSt,drawBalloons:(mk,sh)=>mepDrawBalloons(mk,sh),meshesOf:v=>mepMeshesOf(v),addView:o=>mepAddView(o),sheet:()=>mepSheet(),viewSig:v=>mepViewSig(v), // V0.6.7
       drawRevs:(mk,sh,pd,ty)=>mepDrawRevs(mk,sh,pd,ty),holeFam:f=>mepHoleFam(f),cutAddBreak:(sh,v)=>mepCutAddBreak(sh,v),cutBreakAt:(sh,v,m,sG,c,r)=>mepCutBreakAt(sh,v,m,sG,c,r),cutFollow:sh=>mepCutFollowAll(sh),cutAutoRefs:(sh,v)=>mepCutAutoRefs(sh,v),cutDelBreak:(sh,v)=>mepCutDelBreak(sh,v),cutDelBreakAt:(sh,v,j,sG)=>mepCutDelBreakAt(sh,v,j,sG),cutBreakClick:(sh,v,m,sG)=>mepCutBreakClick(sh,v,m,sG),cutModel:v=>mepCutModel(v),prefsCollect:()=>mepPrefsCollect(),prefsApply:p=>mepPrefsApply(p),pageDim:sh=>mepPageDim(sh),
       titleTexts:sh=>{const t=[];const mk=(tag)=>{const o={textContent:''};if(tag==='text')t.push(o);return o;};mepDrawTitle(mk,sh,mepPage().pd,100);mepDrawRevs(mk,sh,mepPage().pd,100);mepDrawBom(mk,sh,mepPage().pd,100);return t.map(o=>o.textContent);},
       sk:{fromStd:sh=>mepTbFromStd(sh),solve:(sk,a)=>mepSkSolve(sk,80,a),residual:(sk,c)=>mepSkResidual(sk,c),

@@ -213,6 +213,15 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     out.ang120 = mepAngleDeg(0, 120*Math.PI/180);
     out.ang60  = mepAngleDeg(0, 60*Math.PI/180);
     out.ang240 = mepAngleDeg(0, 240*Math.PI/180); // plus petit angle = 120°
+    // 18b) les 4 secteurs de deux droites à 60° (θ, 180−θ) et l'angle rentrant (360−θ)
+    const R=Math.PI/180,secDeg=(q,big)=>Math.abs(mepAngSector({q,big},{a1:0,a2:60*R}).dd)/R;
+    out.angSect = [0,1,2,3].map(q=>secDeg(q,false)).concat([0,1,2,3].map(q=>secDeg(q,true)));
+    // 18c) génératrice discrétisée → un seul trait ; nœud de degré 3 (arête réelle) gardé
+    const ml=mepMergeCollinear([{t:'L',x1:0,y1:5,x2:3,y2:5,k:'sharp'},{t:'L',x1:3,y1:5,x2:7,y2:5,k:'sharp'},{t:'L',x1:7,y1:5,x2:10,y2:5,k:'sharp'},
+      {t:'L',x1:10,y1:5,x2:20,y2:5,k:'sharp'},{t:'L',x1:10,y1:5,x2:10,y2:0,k:'sharp'},{t:'L',x1:20,y1:5,x2:25,y2:6,k:'sharp'}]);
+    out.mergeL = ml.map(e=>[e.x1,e.x2].join('-')).join(' ');
+    out.dsymTxt = mepDimText({kind:'dist',dsym:'Ø'},20);
+    out.angSectAt = [30,120,210,300].map(a=>mepAngSectorAt(0,60*R,a*R));
 
     // 19) ISO 286 : g6 arbre négatif, G7 alésage positif, ajustement H7/g6
     out.g6  = mepTolInfo('g6', 20);
@@ -879,6 +888,10 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&Math.abs(val.ang120-120)<1e-9,'angle 120° non replié à 90°');
   A(val&&Math.abs(val.ang60-60)<1e-9,'angle 60° inchangé');
   A(val&&Math.abs(val.ang240-120)<1e-9,'angle 240° → plus petit angle 120°');
+  A(val&&val.angSect&&[60,120,120,60,300,240,240,300].every((x,i)=>Math.abs(val.angSect[i]-x)<1e-9),"cote d'angle : 4 secteurs θ / 180−θ et rentrants 360−θ ("+(val&&val.angSect)+")");
+  A(val&&val.mergeL==='0-10 10-20 10-10 20-25','traits colinéaires bout à bout soudés, sommet à 3 arêtes gardé ('+(val&&val.mergeL)+')');
+  A(val&&val.dsymTxt==='Ø20','distance entre génératrices de cylindre : Ø20 ('+(val&&val.dsymTxt)+')');
+  A(val&&String(val.angSectAt)==='0,1,3,2',"cote d'angle : secteur choisi au curseur ("+(val&&val.angSectAt)+")");
   A(val&&val.g6&&Math.abs(val.g6.hi+0.007)<1e-12&&Math.abs(val.g6.lo+0.020)<1e-12,
     'ISO 286 : g6 Ø20 = −0,007 / −0,020 (arbre)');
   A(val&&val.G7&&Math.abs(val.G7.lo-0.007)<1e-12&&Math.abs(val.G7.hi-0.028)<1e-12,

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**350 versions**, de `2026-09-28b` à `V0.9.11` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**351 versions**, de `2026-09-28b` à `V0.9.12` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4958,3 +4958,10 @@ Suite de V0.9.7 : « que reste-t-il à faire ? » — dans l'ordre proposé ; «
 - **Noyau** (`src/20-noyau-et-operations-solides.js`) : rejeu exact par `BRepBuilderAPI_Transform` (`occApplyBodyMove`), mêmes points de contrôle que le déplacement de face ; signature = les étapes et leur ordre. Un STEP importé entre alors dans la chaîne exacte et se déplace avec son BRep.
 - **Composant** : « ✥ Déplacer » dans le menu d'une occurrence (`asmCmdMoveOcc`, `src/48-assemblage-placement.js`) — mode Assembler, manipulateur ; fixée ou alignée rigide : message pour la libérer ; liée : seuls ses degrés de liberté.
 - **Tests** : `test_deplacer_corps` (14 contrôles, noyau réel : translation, direction, rotations, point à point, enchaînement, extrusion après déplacement, enregistrement, cache). Vérifié dans l'application : clic sur la face d'un bloc percé → 10 points d'accroche, centre du trou (30 ; 10 ; 10) → origine, puis rotation autour de Y par le centre.
+
+## V0.9.12 - Mise en plan : génératrices d'un seul trait, Ø automatique sur un cylindre, cote d'angle sur les 4 secteurs et angle rentrant
+« Les lignes projetées appartenant à un cercle sont des multilignes ! Une seule suffit » ; « reconnaître automatiquement que c'est depuis un cylindre et donc mettre un Ø avant » ; « même une droite issue de la projection d'un cylindre doit avoir un Ø ».
+- **Traits colinéaires soudés** (`src/98-mise-en-plan.js`, `mepMergeCollinear`, appelé par `mepFinishGeo`) : les morceaux bout à bout d'une génératrice (HLR exact discrétisé, HLR maillage découpé) deviennent un seul trait ; on ne soude qu'aux nœuds de degré 2 — deux arêtes réelles alignées séparées par un sommet où arrive une 3ᵉ arête restent distinctes.
+- **Ø automatique** : une distance entre les deux génératrices d'un même cylindre (`mepCylDiaBetween`), ou une cote linéaire perpendiculaire à l'axe d'un cylindre, centrée sur lui, dans sa longueur et de longueur 2R (`mepCylDiaSeg` — arête du cercle d'extrémité vue de profil, points de part et d'autre) reçoit le préfixe « Ø » (`d.dsym`, `mepDimAutoDia` à la pose). Pas de Ø entre faces planes, génératrice + face, bout de cône, hors de la longueur du cylindre.
+- **Cote d'angle** : le curseur choisit le secteur coté parmi les 4 que forment les deux droites (θ / 180 − θ, `mepAngSector`, `mepAngSectorAt`, `d.q`) ; double-clic = angle rentrant 360 − θ ↔ saillant (`mepDimToggleBig`, `d.big`), arc dessiné en grand arc ; la valeur affichée est celle du secteur dessiné.
+- **Tests** : `test_mep_cylindre` (nouveau, noyau réel : génératrices d'un seul trait, Ø entre génératrices, droite seule → Ø, cas sans Ø ; ajouté à `run.cjs`) ; `test_mise_en_plan` (4 secteurs et rentrants, soudure avec sommet à 3 arêtes gardé, texte « Ø20 », secteur au curseur).
