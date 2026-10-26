@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**364 versions**, de `2026-09-28b` à `V0.11.9` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**365 versions**, de `2026-09-28b` à `V0.11.10` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5064,3 +5064,9 @@ Ctrl+Z / Ctrl+Y doivent couvrir tout ce qui modifie le document (CAO, FAO, mise 
 - **`tests/browser/gpu.spec.cjs`** (nouveau) : WebGL2 réel (pas SwiftShader), rendu et taille GPU disponibles ; puis, sur l'Axe (surfaçage 1,5 mm + finition à la boule D8), la carte taillée par les shaders est relue et comparée cellule par cellule (118 800) à la taille JavaScript du même parcours.
 - **Défaut trouvé et corrigé** (`src/88-fao-79-cartes-gpu.js`, `faoCarteGProfil`) : le shader lisait le profil de l'outil dans la table régulière de 48 points de `faoEngTool`, interpolée linéairement. Au bord d'une boule la pente devient verticale : la table surestimait la hauteur et le GPU laissait jusqu'à 0,205 mm de matière (1 170 cellules au-delà de 0,1 mm). Table propre au GPU, points resserrés vers le bord (ρᵢ = r·(1 − (1 − i/48)²)) : écart maximal 0,0009 mm, aucune cellule au-delà de 0,01 mm. Parcours inchangés (CACHE_VER intact) ; les moteurs tri-dexel / distance gardent leur table.
 - **Tests** : `npm run test:gpu` 2/2 (RTX 5070 Ti), suite rapide.
+
+## V0.11.10 - Parcours navigateur « mode Placer » : pivot comparé à 0,005 près
+Premier passage complet des tests navigateur sur le livrable courant (jusqu'ici un vieux serveur de test resté ouvert servait une copie V0.4.9 sur le port 3123) : 16/17, le pivot de la goupille sort à 60,003 au lieu de 60.
+- **Cause** : en mode Placer, le pivot vient de la boîte englobante du maillage AFFICHÉ de la pièce ; depuis V0.11.5 (cercle extrudé = un seul cylindre) celui de la goupille n'est plus exactement symétrique. Écart de 3 µm, invisible à l'écran.
+- **Test** (`tests/browser/parcours.spec.cjs`) : `toBeCloseTo(…, 2)` (écart < 0,005) au lieu de 3 (< 0,0005). Le test vérifie toujours que la vue tourne autour de la bonne pièce (60 contre 22,5 ou 0).
+- **Tests** : navigateur 17/17 (15 parcours SwiftShader + 2 sur la carte réelle), suite complète 171/171, suite rapide.

@@ -431,7 +431,8 @@ test('mode Placer : la vue tourne autour de la pièce choisie ou du repère de r
   await ruban(page,'Assembler').click();
   await page.waitForFunction(()=>asmMode==='asm'&&asmRoot().occ.length===2);
   const pivot=()=>page.evaluate(()=>{const p=orbitPivot();return [p.x,p.y,p.z];});
-  const proche=(a,b)=>a.forEach((v,i)=>expect(v).toBeCloseTo(b[i],3));
+  // à 0,005 près : le pivot vient de la boîte du maillage affiché (goupille : 60,003 depuis V0.11.5)
+  const proche=(a,b)=>a.forEach((v,i)=>expect(v).toBeCloseTo(b[i],2));
   proche(await pivot(),[22.5,0,15]);                       // rien de choisi : centre des pièces placées
   await page.locator('#tree .tnode.tocc',{hasText:'Goupille:1'}).click();
   proche(await pivot(),[60,0,15]);                         // la goupille sélectionnée
