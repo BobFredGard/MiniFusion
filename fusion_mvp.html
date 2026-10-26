@@ -277,7 +277,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.9.5';
+const APP_VER='V0.9.6';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -4270,7 +4270,20 @@ function occApplyXFillets(base,xfils){
   if(!jobs.length)return{shape:base,warnings:warns};
   const js=jobs.map(j=>({src:edges[j.bi].src,r:j.r,mid:edges[j.bi].mid.slice()}));
   const single=(xfils||[]).length>0&&(xfils||[]).every(x=>x&&x.tangent===false); // case décochée : arête seule
-  const s=occFilletRun(base,js,warns,chamfer,{single});
+  const wA=[];
+  // reprise déjà calculée sur ce même solide (rejeu puis affichage) : le calcul exact, qui
+  // échouerait encore, n'est pas retenté (~0,3 s par congé)
+  let rN=occNurbsMemoGet(occNurbsMemoKey(js,chamfer,single,edges));
+  let s=rN?null:occFilletRun(base,js,wA,chamfer,{single});
+  if(!s&&!rN)rN=occFilletNurbs(base,js,chamfer,single,edges);
+  if(rN){
+    s=rN.shape;
+    // les refus « isolé impossible » de la voie analytique ne concernent plus le résultat
+    const qui=`${xfils.map(x=>x.name||lab).join(', ')} : ${lab} ${dp}${xNum(Math.min.apply(null,js.map(j=>j.r)))} refusé par le noyau sur les surfaces exactes — calculé en NURBS`;
+    warns.push(rN.local
+      ?`${qui} dans un bloc autour des arêtes, recollé au corps (faces de ce bloc en NURBS et scindées à son bord : esquisse sur ces faces et reconnaissance FAO peuvent en souffrir)`
+      :`${qui} sur une copie du corps entier (faces de ce corps en NURBS à partir d'ici : esquisse sur face plane, reconnaissance FAO et cotes de cercles en aval peuvent ne plus fonctionner)`);
+  }else warns.push(...wA);
   if(!s){
     // ÉCHEC : l'appli ne peut pas appliquer la fonction, mais « rouge + refus muet » est le
     // pire des messages. On cherche le plus grand rayon qui MARCHE (échelle descendante, chemin
@@ -4295,6 +4308,136 @@ function occApplyXFillets(base,xfils){
   xfils.forEach(xf=>{delete xf._err;}); // plus d'erreur : le rayon courant passe
   try{base.delete();}catch(e){}
   return{shape:s,warnings:warns};
+}
+function occFilletNurbs(base,js,chamfer,single,edges){
+  // REPRISE DE DERNIER RECOURS (2026-10-26) : le même arrondi sur des surfaces converties en
+  // NURBS (BRepBuilderAPI_NurbsConvert). Cavité Test : le congé R3,3 au pied de la nervure
+  // ne passait qu'à la longueur 80 du bloc — 70, 79, 81, 100, même RETOUR à 80 : exception dans
+  // BRepFilletAPI_MakeFillet. Les deux solides découpés autour de la nervure étaient identiques
+  // à 1e-8 mm (sommets, arêtes, tolérances) : seul le PARAMÉTRAGE des surfaces analytiques
+  // diffère (origine du cylindre R10 qui suit le bout de poche). ShapeFix, UnifySameDomain,
+  // tolérances, régularité, forme de congé, SetParams, germe, rayon ±1e-5..0,6 : rien n'y fait ;
+  // en NURBS l'arrondi passe partout.
+  // 1) LOCALE : seul un bloc autour de la chaîne (boîte des arêtes + R + 1 mm) est converti et
+  //    arrondi, puis recollé au reste du corps resté analytique (fusion en mode collage). Le corps
+  //    entier en NURBS coûtait 6,8 s de conversion par congé (rejeu Cavité Test 2,9 → 12..20 s) ;
+  //    ici ~0,8 s, volume ajouté 38,58 mm³ contre 38,66 pour le congé exact à 80. Garde-fous :
+  //    les faces de coupe du bloc doivent sortir intactes de l'arrondi (sinon il a débordé du
+  //    bloc), le recollage doit rendre un solide valide, de même nombre de solides, au bilan de
+  //    faces exact (voir plus bas).
+  // 2) CORPS ENTIER si la reprise locale échoue (lent, tout le corps reste NURBS en aval) —
+  //    Cavité Test à 70 : le bloc englobe les raccords BSpline des coins de poche et le découpage
+  //    échoue quelle que soit la marge (r+1, r+1,37, r+2,13 essayées).
+  // Mesures Cavité Test (rejeu après la cote) : exact à 80 ≈ 3 s ; reprise locale ≈ 7 s puis
+  // 2,5 s (mémoire) ; corps entier ≈ 18 s.
+  // → {shape,local} ou null. Arêtes relocalisées par leur milieu (index changés par la conversion).
+  const nSol=sh=>{let n=0;try{const x=new occt.TopExp_Explorer_2(sh,occt.TopAbs_ShapeEnum.TopAbs_SOLID,occt.TopAbs_ShapeEnum.TopAbs_SHAPE);while(x.More()){n++;x.Next();}x.delete();}catch(e){}return n;};
+  const del=(...l)=>l.forEach(h=>{try{if(h)h.delete();}catch(e){}});
+  const filletNurbs=sh=>{
+    let nb=null;
+    try{
+      const nc=new occt.BRepBuilderAPI_NurbsConvert_2(sh,false);
+      try{nb=occShapeCopy(nc.Shape());}finally{del(nc);}
+      if(!nb||nb.IsNull())return null;
+      const E=occListEdges(nb),js2=[];
+      for(const j of js){
+        let b=null,bd=1e-3;
+        E.forEach(e=>{const d=Math.hypot(e.mid[0]-j.mid[0],e.mid[1]-j.mid[1],e.mid[2]-j.mid[2]);if(d<bd){bd=d;b=e;}});
+        if(!b){del(nb);return null;}
+        js2.push({src:b.src,r:j.r,mid:j.mid.slice()});
+      }
+      const w=[];
+      const s=occFilletRun(nb,js2,w,chamfer,{single});
+      // résultat PARTIEL (arête par arête) refusé : la reprise doit rendre la fonction entière
+      if(!s||w.some(m=>/partiel|impossible|introuvable/.test(m))){if(s&&s!==nb)del(s);del(nb);return null;}
+      if(s!==nb)del(nb);
+      return s;
+    }catch(e){del(nb);return null;}
+  };
+  const local=()=>{
+    const bin=[];
+    try{
+      const lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9];
+      js.forEach(j=>{const e=(edges||[]).find(x=>x.src===j.src);(e?e.pts:[j.mid]).forEach(q=>{for(let k=0;k<3;k++){lo[k]=Math.min(lo[k],q[k]);hi[k]=Math.max(hi[k],q[k]);}});});
+      const m=Math.max.apply(null,js.map(j=>j.r))+1;
+      for(let k=0;k<3;k++){lo[k]-=m;hi[k]+=m;}
+      const bx=occBinPush(bin,new occt.BRepPrimAPI_MakeBox_3(occBinPush(bin,new occt.gp_Pnt_3(lo[0],lo[1],lo[2])),occBinPush(bin,new occt.gp_Pnt_3(hi[0],hi[1],hi[2])))).Shape();
+      // UNE passe (Splitter : corps coupé par le bloc, solides triés dedans / dehors) au lieu de
+      // Common + Cut — deux booléens sur le corps entier, ~0,6 s chacun
+      let loc=null,rest=null;const tri=Math.min(0.5,m/4);
+      try{
+        const L1=occBinPush(bin,new occt.TopTools_ListOfShape_1());L1.Append_1(base);
+        const L2=occBinPush(bin,new occt.TopTools_ListOfShape_1());L2.Append_1(bx);
+        const SP=occBinPush(bin,new occt.BRepAlgoAPI_Splitter_1());SP.SetArguments(L1);SP.SetTools(L2);
+        try{SP.Build();}catch(e){SP.Build(new occt.Message_ProgressRange());}
+        if(SP.IsDone()){
+          const ins=[],out=[];
+          const x=occBinPush(bin,new occt.TopExp_Explorer_2(SP.Shape(),occt.TopAbs_ShapeEnum.TopAbs_SOLID,occt.TopAbs_ShapeEnum.TopAbs_SHAPE));
+          while(x.More()){const so=x.Current();const bb=new occt.Bnd_Box_1();occt.BRepBndLib.Add(so,bb,false);
+            const q=bb.CornerMin(),z=bb.CornerMax(),A=[q.X(),q.Y(),q.Z()],Z=[z.X(),z.Y(),z.Z()];bb.delete();
+            // boîte OCCT gonflée (tolérances, pôles des BSplines) : marge de tri m/4 — un solide
+            // du dehors déborde du bloc de toute la taille du corps, pas de quelques dixièmes
+            ([0,1,2].every(k=>A[k]>=lo[k]-tri&&Z[k]<=hi[k]+tri)?ins:out).push(occBinPush(bin,occShapeCopy(so)));x.Next();}
+          if(ins.length&&out.length){loc=occCompoundOf(ins);rest=occCompoundOf(out);if(ins.length>1)bin.push(loc);if(out.length>1)bin.push(rest);}
+        }
+      }catch(e){loc=rest=null;}
+      if(!loc||!rest){loc=occBinPush(bin,occCommon(base,bx));rest=occBinPush(bin,occCut(base,bx));}
+      // aire des faces posées sur les plans du bloc (faces de coupe) : l'arrondi ne doit pas les toucher
+      const coupe=sh=>{let a=0;const x=new occt.TopExp_Explorer_2(sh,occt.TopAbs_ShapeEnum.TopAbs_FACE,occt.TopAbs_ShapeEnum.TopAbs_SHAPE);
+        while(x.More()){const f=occt.TopoDS.Face_1(x.Current());const G=new occt.GProp_GProps_1();occt.BRepGProp.SurfaceProperties_1(f,G,false,false);
+          const c=G.CentreOfMass(),q=[c.X(),c.Y(),c.Z()];
+          if([0,1,2].some(k=>Math.abs(q[k]-lo[k])<1e-6||Math.abs(q[k]-hi[k])<1e-6))a+=G.Mass();
+          G.delete();x.Next();}
+        x.delete();return a;};
+      const f=filletNurbs(loc);if(!f)return null;bin.push(f);
+      const a0=coupe(loc),a1=coupe(f);
+      if(!(Math.abs(a1-a0)<=1e-6*Math.max(1,a0)))return null; // l'arrondi a débordé du bloc
+      let g=null;
+      try{
+        const L1=occBinPush(bin,new occt.TopTools_ListOfShape_1());L1.Append_1(rest);
+        const L2=occBinPush(bin,new occt.TopTools_ListOfShape_1());L2.Append_1(f);
+        const F=occBinPush(bin,new occt.BRepAlgoAPI_Fuse_1());F.SetArguments(L1);F.SetTools(L2);
+        F.SetGlue(occt.BOPAlgo_GlueEnum.BOPAlgo_GlueShift); // le bloc et le reste ne se touchent que par les faces de coupe
+        try{F.Build();}catch(e){F.Build(new occt.Message_ProgressRange());}
+        if(F.IsDone())g=occShapeCopy(F.Shape());
+      }catch(e){g=null;}
+      // BILAN DE FACES : en collage, recollé = reste + bloc − faces de coupe (des deux côtés).
+      // Marge large mesurée : 49 faces au lieu de 53 et +2 375 mm³ d'un solide pourtant « valide ».
+      // Pas de bilan de volume (intégrer le corps entier coûtait 7 s par rejeu) ni d'unification
+      // (UnifySameDomain a déformé un recollage : +1,19 mm³) — faces scindées au bord du bloc.
+      const nF=sh=>{let n=0;const x=new occt.TopExp_Explorer_2(sh,occt.TopAbs_ShapeEnum.TopAbs_FACE,occt.TopAbs_ShapeEnum.TopAbs_SHAPE);while(x.More()){n++;x.Next();}x.delete();return n;};
+      const nCaps=sh=>{let n=0;const x=new occt.TopExp_Explorer_2(sh,occt.TopAbs_ShapeEnum.TopAbs_FACE,occt.TopAbs_ShapeEnum.TopAbs_SHAPE);
+        while(x.More()){const bb=new occt.Bnd_Box_1();occt.BRepBndLib.Add(x.Current(),bb,false);const q=bb.CornerMin(),z=bb.CornerMax(),A=[q.X(),q.Y(),q.Z()],Z=[z.X(),z.Y(),z.Z()];
+          if([0,1,2].some(k=>[lo[k],hi[k]].some(c=>Math.abs(A[k]-c)<1e-4&&Math.abs(Z[k]-c)<1e-4)))n++;
+          bb.delete();x.Next();}
+        x.delete();return n;};
+      const sain=sh=>!!sh&&nF(sh)===nF(rest)+nF(f)-nCaps(rest)-nCaps(f)&&nSol(sh)===nSol(base)&&occCoqueValide(sh);
+      if(sain(g))return g;
+      // collage refusé (Cavité Test à 70 : 2 solides, invalide) → fusion ordinaire
+      del(g);g=null;try{g=occFuse(rest,f);}catch(e){g=null;}
+      if(sain(g))return g;
+      del(g);return null;
+    }catch(e){return null;}finally{occDispose(bin);}
+  };
+  // MÉMOIRE : le rejeu puis l'affichage (occFinalShape) rejouent le même congé sur le même
+  // solide — chaque reprise (~1,5 s) était payée deux fois. Clé : arêtes demandées (milieu,
+  // rayon), nombre d'arêtes du corps et somme de leurs longueurs ; résultat rendu en copie.
+  const key=occNurbsMemoKey(js,chamfer,single,edges);
+  const hit=occNurbsMemoGet(key);if(hit)return hit;
+  const g=local();
+  const r=g?{shape:g,local:true}:(()=>{const s=filletNurbs(base);return s?{shape:s,local:false}:null;})();
+  if(r){const c=occShapeCopy(r.shape);if(c){OCC_NURBS_MEMO.unshift({key,shape:c,local:r.local});
+    while(OCC_NURBS_MEMO.length>8){const o=OCC_NURBS_MEMO.pop();try{o.shape.delete();}catch(e){}}}}
+  return r;
+}
+const OCC_NURBS_MEMO=[]; // reprises NURBS récentes {key, shape, local} (voir occFilletNurbs)
+function occNurbsMemoKey(js,chamfer,single,edges){
+  return (chamfer?'C':'F')+(single?'1':'t')+'|'+(edges||[]).length+'|'+(edges||[]).reduce((a,e)=>a+e.len,0).toFixed(6)
+    +'|'+js.map(j=>j.mid.map(v=>v.toFixed(5)).join(',')+'@'+j.r).join(';');
+}
+function occNurbsMemoGet(key){
+  const hit=OCC_NURBS_MEMO.find(o=>o.key===key);if(!hit)return null;
+  const c=occShapeCopy(hit.shape);return c?{shape:c,local:hit.local}:null;
 }
 function occXDefl(){
   // Finesse adaptative : les petits rayons exigent une déflection fine pour un aspect lisse.

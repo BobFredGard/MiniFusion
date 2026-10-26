@@ -173,6 +173,32 @@ const reel=fs.readFileSync(path.join(ROOT,'tests','fixtures','symetrie_conges_cg
     // rejeu à froid (cache vidé) : même résultat
     occCkClear();const m2=mesure();
     att(Math.abs(m2.v-m.v)<1e-6&&m2.f===m.f,'fichier réel : rejeu à froid différent ('+f2(m2.v)+', '+m2.f+' faces)');
+    // LONGUEUR MODIFIÉE (retour utilisateur 2026-10-26) : longueur du rectangle de l'Esquisse 1
+    // 80 → 81, 100, 70 puis RETOUR à 80. Le R3,3 au pied de la nervure ne passait qu'à 80 ;
+    // ailleurs le noyau refusait la chaîne et le congé (et ses 3 copies) tombait en erreur.
+    // Reprise NURBS : tous les congés passent, avec l'avertissement dans le journal.
+    const sk1=doc.sketches.find(s=>s.name==='Esquisse 1'),dL=sk1.dims.find(d=>d.type==='length'&&d.value===80);
+    let vPrec=null;
+    for(const L of [81,100,70,80]){
+      dL.value=L;solveSketch(sk1);occCkClear();
+      markDirty();rebuild();const FR=occFinalShape(null);const v=vol(FR.shape),ns=cnt(FR.shape,'TopAbs_SOLID');
+      const msgs=FR.msgs||[];try{FR.shape.delete();}catch(e){}
+      const tag='longueur '+L;
+      const fx=doc.features.filter(f=>f.type==='xfillet'&&f.visible!==false);
+      fx.forEach(f=>att(f._m&&f._m.m===f._m.t&&!f._err,tag+' : '+f.name+(f.repeatId?' (copie)':'')+' '+(f._m?f._m.m+'/'+f._m.t:'?')+' '+(f._err||'')));
+      att(fx.filter(f=>f.repeatId).length===6,tag+' : 6 congés copiés attendus');
+      att(ns===m.s,tag+' : '+ns+' solide(s) au lieu de '+m.s);
+      const nurbs=msgs.filter(x=>/calculé en NURBS/.test(x)).length;
+      // reprise LOCALE (bloc autour de la chaîne) ; à 70 les coins de poche entrent dans le bloc → corps entier
+      if(L===81||L===100)att(msgs.some(x=>/calculé en NURBS dans un bloc/.test(x)),tag+' : reprise LOCALE attendue (corps entier converti ?)');
+      if(L!==80)att(nurbs>0,tag+' : reprise NURBS attendue (avertissement absent)');
+      att(!msgs.some(x=>/impossible|introuvable|divergente/.test(x)),tag+' : avertissements '+JSON.stringify(msgs.filter(x=>/impossible|introuvable|divergente/.test(x))));
+      // bloc de 60 × 30 : ±1 mm de longueur ≈ ±1 800 mm³ moins la poche ; retour à 80 ≈ volume
+      // d'origine (reprise locale : 96 371,5 contre 96 370,3)
+      if(L===81)att(v>m.v+500&&v<m.v+1800,tag+' : volume '+f2(v)+' (origine '+f2(m.v)+')');
+      if(L===80)att(Math.abs(v-m.v)<5,tag+' (retour) : volume '+f2(v)+' au lieu de ~'+f2(m.v));
+      p(tag+' : vol '+f2(v)+', solides '+ns+', reprise(s) NURBS '+nurbs);
+    }
   }
   if(ATT.length){p('');p('ECHECS ('+ATT.length+') :');ATT.forEach(m=>p('  ✗ '+m));}
   else{p('');p('TOUT EST CONFORME');}
