@@ -2693,9 +2693,31 @@ function legacyPrismGeos(f,warnArr){
   const m=new THREE.Matrix4().makeBasis(u,v,n);m.setPosition(o);
   let bevelR=0;fils.forEach(fi=>{const r=fi.rims||(fi.rimTop||fi.rimBot?{top:!!fi.rimTop,bottom:!!fi.rimBot}:null);if(r&&(r.top&&r.bottom)&&fi.radius>bevelR)bevelR=fi.radius;});
   // simple face = pas de bevel symétrique : l'indépendant haut OU bas se fait en exact OCCT (⤢)
-  const sp=extrudeSpan(f),len=Math.max(1e-6,sp.hi-sp.lo);
+  const sp=Object.assign({},extrudeSpan(f));
+  // V0.9.3 : DÉCOUPE EN MAILLAGE — l'outil posé pile sur la face hôte (esquisse sur la
+  // face du dessus) a des faces coplanaires à celles du corps : le CSG (BSP) ne sait pas
+  // trancher et rend un solide cassé (Cavité Test en file:// : bloc absent, parois de
+  // poche seules). L'outil dépasse de 0,01 mm du côté du plan d'esquisse ; la profondeur
+  // de la découpe est inchangée.
+  if((f.op||'add')==='cut'){const eps=0.01;if(Math.abs(sp.hi)<1e-9)sp.hi=eps;if(Math.abs(sp.lo)<1e-9)sp.lo=-eps;}
+  const len=Math.max(1e-6,sp.hi-sp.lo);
   if(bevelR>0){bevelR=Math.min(bevelR,len/2.2,8);if(bevelR<0.05)bevelR=0;}
   const geos=[];
+  // V0.9.3 : CONTOUR NETTOYÉ — le dernier point d'un contour arc/droite retombait à
+  // ~1e-15 mm du premier (Cavité Test, coins R8) : 8 triangles d'aire nulle dans le
+  // prisme, sur lesquels le CSG (BSP) se perd — découpe rendue comme un solide cassé.
+  // Points consécutifs confondus (< 1e-6 mm) retirés, contour et trous redessinés en
+  // polylignes à la même finesse que ExtrudeGeometry (curveSegments 48).
+  const clean=function(pts){
+    const out=[];
+    for(const q of pts)if(!out.length||Math.hypot(q.x-out[out.length-1].x,q.y-out[out.length-1].y)>1e-6)out.push(q);
+    while(out.length>2&&Math.hypot(out[0].x-out[out.length-1].x,out[0].y-out[out.length-1].y)<=1e-6)out.pop();
+    return out;};
+  built.shapes=built.shapes.map(function(s0){
+    if(typeof s0.extractPoints!=='function')return s0; // stub du banc VM
+    const ex=s0.extractPoints(48),s=new THREE.Shape(clean(ex.shape));
+    ex.holes.forEach(function(h){s.holes.push(new THREE.Path(clean(h)));});
+    return s;});
   built.shapes.forEach(shape=>{
     const g=bevelR>0
       ?new THREE.ExtrudeGeometry(shape,{depth:Math.max(0.5,len-bevelR),bevelEnabled:true,bevelThickness:bevelR,bevelSize:Math.max(0.05,bevelR*0.9),bevelSegments:4,curveSegments:48})

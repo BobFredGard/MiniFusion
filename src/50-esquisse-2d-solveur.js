@@ -3678,7 +3678,12 @@ function skJacobian(sk,skipDim){
   const B=sklsBuild(sk,fix);B.r0={};
   // TOUS les rayons sont des inconnues ici (sklsBuild écarte ceux qu'une cote verrouille :
   // la cote de rayon d'un congé paraissait alors « redondante » → passée en référence à tort).
-  (sk.entities||[]).forEach(e=>{if((e.t==='circle'||e.t==='arc')&&B.rad.indexOf(e.id)<0)B.rad.push(e.id);});
+  // Exception : un cercle / arc FIXÉ (« Fixe » sur l'entité : projections, intersections) a un
+  // rayon CONSTANT pour le solveur — en faire une inconnue sans équation laissait 1 DDL
+  // fantôme : l'arc et tout ce qui s'y appuie (point sur cercle, tangence) restaient bleus
+  // alors que l'esquisse était entièrement contrainte (Cavité Test, Esquisse 3).
+  const rFixed=e=>(sk.constraints||[]).some(c=>c.type==='fix'&&c.ent===e.id);
+  (sk.entities||[]).forEach(e=>{if((e.t==='circle'||e.t==='arc')&&B.rad.indexOf(e.id)<0&&!rFixed(e))B.rad.push(e.id);});
   B.n=2*B.pts.length+B.rad.length;
   const n=B.n;if(!n)return{B,J:[],m:0,n:0};
   const x=new Float64Array(n);

@@ -277,7 +277,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.9.4';
+const APP_VER='V0.9.5';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -4762,9 +4762,31 @@ function legacyPrismGeos(f,warnArr){
   const m=new THREE.Matrix4().makeBasis(u,v,n);m.setPosition(o);
   let bevelR=0;fils.forEach(fi=>{const r=fi.rims||(fi.rimTop||fi.rimBot?{top:!!fi.rimTop,bottom:!!fi.rimBot}:null);if(r&&(r.top&&r.bottom)&&fi.radius>bevelR)bevelR=fi.radius;});
   // simple face = pas de bevel symétrique : l'indépendant haut OU bas se fait en exact OCCT (⤢)
-  const sp=extrudeSpan(f),len=Math.max(1e-6,sp.hi-sp.lo);
+  const sp=Object.assign({},extrudeSpan(f));
+  // V0.9.3 : DÉCOUPE EN MAILLAGE — l'outil posé pile sur la face hôte (esquisse sur la
+  // face du dessus) a des faces coplanaires à celles du corps : le CSG (BSP) ne sait pas
+  // trancher et rend un solide cassé (Cavité Test en file:// : bloc absent, parois de
+  // poche seules). L'outil dépasse de 0,01 mm du côté du plan d'esquisse ; la profondeur
+  // de la découpe est inchangée.
+  if((f.op||'add')==='cut'){const eps=0.01;if(Math.abs(sp.hi)<1e-9)sp.hi=eps;if(Math.abs(sp.lo)<1e-9)sp.lo=-eps;}
+  const len=Math.max(1e-6,sp.hi-sp.lo);
   if(bevelR>0){bevelR=Math.min(bevelR,len/2.2,8);if(bevelR<0.05)bevelR=0;}
   const geos=[];
+  // V0.9.3 : CONTOUR NETTOYÉ — le dernier point d'un contour arc/droite retombait à
+  // ~1e-15 mm du premier (Cavité Test, coins R8) : 8 triangles d'aire nulle dans le
+  // prisme, sur lesquels le CSG (BSP) se perd — découpe rendue comme un solide cassé.
+  // Points consécutifs confondus (< 1e-6 mm) retirés, contour et trous redessinés en
+  // polylignes à la même finesse que ExtrudeGeometry (curveSegments 48).
+  const clean=function(pts){
+    const out=[];
+    for(const q of pts)if(!out.length||Math.hypot(q.x-out[out.length-1].x,q.y-out[out.length-1].y)>1e-6)out.push(q);
+    while(out.length>2&&Math.hypot(out[0].x-out[out.length-1].x,out[0].y-out[out.length-1].y)<=1e-6)out.pop();
+    return out;};
+  built.shapes=built.shapes.map(function(s0){
+    if(typeof s0.extractPoints!=='function')return s0; // stub du banc VM
+    const ex=s0.extractPoints(48),s=new THREE.Shape(clean(ex.shape));
+    ex.holes.forEach(function(h){s.holes.push(new THREE.Path(clean(h)));});
+    return s;});
   built.shapes.forEach(shape=>{
     const g=bevelR>0
       ?new THREE.ExtrudeGeometry(shape,{depth:Math.max(0.5,len-bevelR),bevelEnabled:true,bevelThickness:bevelR,bevelSize:Math.max(0.05,bevelR*0.9),bevelSegments:4,curveSegments:48})
@@ -5877,12 +5899,20 @@ function repCloneSketch(sk,i,skMap,featMap,cfg,reuse){
   ns.axU=repTransformVec(ns.axU,i,cfg).map(v=>+v.toFixed(9));
   ns.axV=repTransformVec(ns.axV,i,cfg).map(v=>+v.toFixed(9));
   ns.axN=repTransformVec(ns.axN,i,cfg).map(v=>+v.toFixed(9));
+  // 2026-10-26 : esquisse posée sur un PLAN DE CONSTRUCTION (plane 'CG') — la copie ne doit
+  // pas garder le lien : cgResolveAll recopiait à chaque rejeu la base du plan porteur dans
+  // l'esquisse clonée, effaçant la transformée (la nervure « symétrique » retombait SUR
+  // l'originale, ses congés copiés cherchaient des arêtes absentes). La copie devient une
+  // esquisse libre au repère déjà transformé ; si le plan bouge, la source suit (cgSyncSketch),
+  // sa signature change et repSyncStale régénère la copie.
+  if(ns.plane==='CG'){ns.plane='FACE';delete ns.cg;}
   if(ns.host&&ns.host.feat&&featMap[ns.host.feat])ns.host.feat=featMap[ns.host.feat];else delete ns.host;
   if(reuse){
     const keep=reuse.id;
     for(const k of Object.keys(reuse))if(!(k in ns))delete reuse[k];
     Object.assign(reuse,ns);reuse.id=keep;
     if(!reuse.host)delete reuse.host;
+    skMap[sk.id]=keep; // les congés de la passe y retrouvent l'esquisse de leur ancre
     return keep;
   }
   ns.id=uid('sk');
@@ -5909,7 +5939,14 @@ function repCloneFeature(f,i,skMap,featMap,cfg,reuse){
       // congruence cherchait alors l'arête du mauvais côté de la pièce, s'accrochait à
       // celle d'origine (d'où « ancre divergente ignorée (pointait 37,9 mm du clic) »)
       // et finissait en `_err` — le triangle ⚠ de l'arbre.
-      const o=Object.assign({},s,{anchor:null});
+      // 2026-10-26 : l'ANCRE suit aussi — elle est en repère d'esquisse (point/entité, z,
+      // côté), donc valable telle quelle sur l'esquisse CLONÉE (mêmes ids, repère miroir).
+      // La remettre à null laissait xAnchorFor ré-ancrer la copie sur la meilleure esquisse
+      // venue : souvent l'esquisse SOURCE ou la plaque (far:1) ; le congé copié partait sur
+      // l'arête d'origine ou une arête de 0,6 mm (« le dernier congé fait des misères »).
+      // Ancre sur une esquisse hors répétition : sans équivalent dans la copie → null.
+      const a=s.anchor&&s.anchor.sk&&skMap[s.anchor.sk]?Object.assign({},s.anchor,{sk:skMap[s.anchor.sk]}):null;
+      const o=Object.assign({},s,{anchor:a});
       o.pos=repTransformPoint(s.pos,i,cfg).map(v=>+v.toFixed(6));
       o.pos0=repTransformPoint(s.pos0||s.pos,i,cfg).map(v=>+v.toFixed(6));
       delete o._div; // divergence herdée de la source : sans rapport avec le clone
@@ -14230,7 +14267,12 @@ function skJacobian(sk,skipDim){
   const B=sklsBuild(sk,fix);B.r0={};
   // TOUS les rayons sont des inconnues ici (sklsBuild écarte ceux qu'une cote verrouille :
   // la cote de rayon d'un congé paraissait alors « redondante » → passée en référence à tort).
-  (sk.entities||[]).forEach(e=>{if((e.t==='circle'||e.t==='arc')&&B.rad.indexOf(e.id)<0)B.rad.push(e.id);});
+  // Exception : un cercle / arc FIXÉ (« Fixe » sur l'entité : projections, intersections) a un
+  // rayon CONSTANT pour le solveur — en faire une inconnue sans équation laissait 1 DDL
+  // fantôme : l'arc et tout ce qui s'y appuie (point sur cercle, tangence) restaient bleus
+  // alors que l'esquisse était entièrement contrainte (Cavité Test, Esquisse 3).
+  const rFixed=e=>(sk.constraints||[]).some(c=>c.type==='fix'&&c.ent===e.id);
+  (sk.entities||[]).forEach(e=>{if((e.t==='circle'||e.t==='arc')&&B.rad.indexOf(e.id)<0&&!rFixed(e))B.rad.push(e.id);});
   B.n=2*B.pts.length+B.rad.length;
   const n=B.n;if(!n)return{B,J:[],m:0,n:0};
   const x=new Float64Array(n);

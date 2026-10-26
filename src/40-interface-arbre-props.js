@@ -531,12 +531,20 @@ function repCloneSketch(sk,i,skMap,featMap,cfg,reuse){
   ns.axU=repTransformVec(ns.axU,i,cfg).map(v=>+v.toFixed(9));
   ns.axV=repTransformVec(ns.axV,i,cfg).map(v=>+v.toFixed(9));
   ns.axN=repTransformVec(ns.axN,i,cfg).map(v=>+v.toFixed(9));
+  // 2026-10-26 : esquisse posée sur un PLAN DE CONSTRUCTION (plane 'CG') — la copie ne doit
+  // pas garder le lien : cgResolveAll recopiait à chaque rejeu la base du plan porteur dans
+  // l'esquisse clonée, effaçant la transformée (la nervure « symétrique » retombait SUR
+  // l'originale, ses congés copiés cherchaient des arêtes absentes). La copie devient une
+  // esquisse libre au repère déjà transformé ; si le plan bouge, la source suit (cgSyncSketch),
+  // sa signature change et repSyncStale régénère la copie.
+  if(ns.plane==='CG'){ns.plane='FACE';delete ns.cg;}
   if(ns.host&&ns.host.feat&&featMap[ns.host.feat])ns.host.feat=featMap[ns.host.feat];else delete ns.host;
   if(reuse){
     const keep=reuse.id;
     for(const k of Object.keys(reuse))if(!(k in ns))delete reuse[k];
     Object.assign(reuse,ns);reuse.id=keep;
     if(!reuse.host)delete reuse.host;
+    skMap[sk.id]=keep; // les congés de la passe y retrouvent l'esquisse de leur ancre
     return keep;
   }
   ns.id=uid('sk');
@@ -563,7 +571,14 @@ function repCloneFeature(f,i,skMap,featMap,cfg,reuse){
       // congruence cherchait alors l'arête du mauvais côté de la pièce, s'accrochait à
       // celle d'origine (d'où « ancre divergente ignorée (pointait 37,9 mm du clic) »)
       // et finissait en `_err` — le triangle ⚠ de l'arbre.
-      const o=Object.assign({},s,{anchor:null});
+      // 2026-10-26 : l'ANCRE suit aussi — elle est en repère d'esquisse (point/entité, z,
+      // côté), donc valable telle quelle sur l'esquisse CLONÉE (mêmes ids, repère miroir).
+      // La remettre à null laissait xAnchorFor ré-ancrer la copie sur la meilleure esquisse
+      // venue : souvent l'esquisse SOURCE ou la plaque (far:1) ; le congé copié partait sur
+      // l'arête d'origine ou une arête de 0,6 mm (« le dernier congé fait des misères »).
+      // Ancre sur une esquisse hors répétition : sans équivalent dans la copie → null.
+      const a=s.anchor&&s.anchor.sk&&skMap[s.anchor.sk]?Object.assign({},s.anchor,{sk:skMap[s.anchor.sk]}):null;
+      const o=Object.assign({},s,{anchor:a});
       o.pos=repTransformPoint(s.pos,i,cfg).map(v=>+v.toFixed(6));
       o.pos0=repTransformPoint(s.pos0||s.pos,i,cfg).map(v=>+v.toFixed(6));
       delete o._div; // divergence herdée de la source : sans rapport avec le clone

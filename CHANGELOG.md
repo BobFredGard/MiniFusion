@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**343 versions**, de `2026-09-28b` à `V0.9.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**344 versions**, de `2026-09-28b` à `V0.9.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4893,3 +4893,10 @@ Dernière étape de la série V0.8 (« toutes tes idées ») : piloter MiniFusio
 - **Non-régression des parcours** (`npm run parcours`, nouveau `tests/parcours/`) : chaque opération active des exemples suivis par Git est recalculée sans les trajectoires du fichier (noyau OCCT réel, un processus par opération, cœurs P d'abord) et son résumé — mouvements, coupe, rapides, remontées, Z mini / maxi, temps estimé, longueur à plat par cote — comparé à `tests/parcours/reference.json` ; `--ecrire` accepte (tableau `docs/parcours.md`), `--fichier`, `APP_FILE` pour une autre version. 23 opérations (Cavité Usinage, Malaxeur Retard, Perçages, Poche et Contour) en ~75 s, reproductibles ; parcours vide = erreur. Référence écrite avec la V0.9.2 (identique au moteur actuel). Contrôle : la V0.9.1 est signalée sur Cavité Usinage (niveau 46 520 → 3 331 mm, coupe +17 %).
 - Correctif du banc : `atob` / `btoa` absents du bac à sable — les sources STEP de Malaxeur Retard n'étaient pas rejouées (parcours vides).
 - `Exemples/Cavité Usinage.miniFusion` : version enregistrée après la V0.9.2 (base de la référence).
+
+## V0.9.5 - Symétrie et congés sur plan de construction, arc fixé sans DDL fantôme, poche du moteur maillage
+« Le dernier congé, dans la symétrie, fait des misères des fois » ; « mon esquisse 3 devrait être toute blanche » ; Cavité Test sans noyau exact : bloc absent, parois de la poche seules.
+- **Symétrie + congés** (`src/40-interface-arbre-props.js`) — cause : l'esquisse copiée d'une esquisse posée sur un **plan de construction** gardait son lien `cg` ; `cgResolveAll` la recalait à chaque rejeu sur le plan source, la nervure « symétrique » retombait sur l'originale et ses congés copiés s'accrochaient au hasard (arête source, arête de 0,6 mm, volume nul). La copie devient une esquisse libre au repère transformé (la source suit le plan, la copie est régénérée). L'**ancre** du congé copié suit aussi (même esquisse clonée) au lieu d'être remise à zéro et ré-ancrée sur l'esquisse source ou la plaque.
+- **Arc / cercle fixé** (`src/50-esquisse-2d-solveur.js`) : l'analyse de rang des couleurs prenait le rayon d'un arc portant « Fixe » (projections, intersections) comme inconnue sans équation — 1 DDL fantôme, l'arc et ce qui s'y appuie restaient bleus. Rayon fixé exclu ; un arc non fixé garde son DDL.
+- **Moteur maillage** (`src/20-noyau-et-operations-solides.js`, sans noyau exact) : contour nettoyé (le dernier point d'un contour arc / droite retombait à ~1e-15 mm du premier : triangles d'aire nulle, CSG perdu) et outil de découpe qui dépasse de 0,01 mm du plan d'esquisse posé sur la face (faces coplanaires) ; profondeur inchangée. Cavité Test : 83 027,8 mm³ comme le noyau exact.
+- **Tests** : nouveaux `test_symetrie_conges` (noyau OCCT réel : volume et faces ×2, chaque congé copié apparié sur l'image miroir de son arête, ordre et nombre des congés, congé après la symétrie, cote amont modifiée, double symétrie, plan de construction, fichier réel) et `test_esquisse_arc_fixe_ddl` (Esquisse 3 : 0 DDL, toutes les entités blanches ; sans « Fixe » le DDL revient) ; parcours Playwright « moteur maillage : poche à coins arrondis » (Cavité Test). Exemple `Exemples/Cavité Test.miniFusion` ajouté.

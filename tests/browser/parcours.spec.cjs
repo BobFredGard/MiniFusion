@@ -570,3 +570,31 @@ test('FAO : surfaçage sur l\'Axe → parcours → G-code',async({page})=>{
   expect(await page.evaluate(()=>faceEl.textContent)).toContain(dl.suggestedFilename()+' exporté');
   expect(err).toEqual([]);
 });
+
+// V0.9.3 : moteur maillage (noyau OCCT non lancé, file:// sans .wasm) — Cavité Test :
+// bloc 80 × 60 × 30, poche 68 × 48 à coins R8 sur la face du dessus, découpe 19 mm.
+// Le dernier point du contour retombait sur le premier (1e-15 mm) : triangles d'aire
+// nulle, CSG perdu, bloc absent et parois de poche seules à l'écran.
+test('moteur maillage : poche à coins arrondis sur une face (Cavité Test)',async({page})=>{
+  const err=await demarrer(page);
+  const json=fs.readFileSync(path.join(RACINE,'tests','fixtures','cavite_test_poche.json'),'utf8');
+  const r=await page.evaluate(async(j)=>{
+    await deserialise(j,{});
+    occtReady=false;occCkClear();markDirty();rebuild();
+    const b=bodies.find(x=>x.id==='csg_result');if(!b)return null;
+    const g=b.mesh.geometry,p=g.attributes.position.array,ix=g.index?g.index.array:null;
+    const n=(ix?ix.length:p.length/3)/3;let v=0,x0=1e9,x1=-1e9;
+    for(let t=0;t<n;t++){const a=(ix?ix[3*t]:3*t)*3,b2=(ix?ix[3*t+1]:3*t+1)*3,c=(ix?ix[3*t+2]:3*t+2)*3;
+      v+=(p[a]*(p[b2+1]*p[c+2]-p[b2+2]*p[c+1])-p[a+1]*(p[b2]*p[c+2]-p[b2+2]*p[c])+p[a+2]*(p[b2]*p[c+1]-p[b2+1]*p[c]))/6;}
+    for(let i=0;i<p.length;i+=3){x0=Math.min(x0,p[i]);x1=Math.max(x1,p[i]);}
+    return {moteur:builtEngine,volume:v,x0,x1};
+  },json);
+  expect(r,'solide combiné du moteur maillage').not.toBeNull();
+  expect(r.moteur).toBe('mesh');
+  expect(r.x0).toBeLessThan(-39.9);   // le bloc est là (il disparaissait)
+  expect(r.x1).toBeGreaterThan(39.9);
+  // 144 000 − 3 209,07 × 19 = 83 027,8 mm³ (valeur du noyau exact)
+  expect(r.volume).toBeGreaterThan(83027.8*0.995);
+  expect(r.volume).toBeLessThan(83027.8*1.005);
+  expect(err).toEqual([]);
+});
