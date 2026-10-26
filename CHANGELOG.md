@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**341 versions**, de `2026-09-28b` à `V0.9.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**342 versions**, de `2026-09-28b` à `V0.9.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4875,3 +4875,12 @@ Dernière étape de la série V0.8 (« toutes tes idées ») : piloter MiniFusio
 - **Cavité Usinage** : passe à 46 3,12 → **0,52 m** (anneau de l'épaulement), passe à 45 pour 5 mm, mini-passes 49,17 · 48,33 · 47,50 · 46,67 · 45,83 ; coupe totale 38,9 → **33,1 m** (−15 %), niveaux 40 à 20 inchangés.
 - `CACHE_VER` 2026-10-26-001 (parcours d'ébauche changés : tout est régénéré).
 - **Tests** : nouveau `test_fao_pose_fond` (suite rapide ; solide en terrasses manifold : cadre 10, épaulement 8, cavité 0 — aucune coupe à 8 au cœur de la cavité, épaulement usiné, cavité prise au niveau 5, niveaux 8 / 5, mini-passes 8,75 · 7,5 · 6,25) — échoue sur l'ancien moteur ; suite complète 153/153.
+
+## V0.9.3 - Esquisse : Intersection (faces / corps ∩ plan) ; cote entre 2 points
+« Dans l'esquisse, il faut ajouter l'intersection avec les faces et le plan d'esquisse ou le solide en entier » ; « la commande Intersection aura comme raccourci la lettre I ». Puis : « j'aimerais pouvoir sélectionner 2 points dans l'esquisse lors de la cotation et ce sont toujours les droites qui sont sélectionnées à la place des points ! »
+- **Intersection** (nouveau `src/62-esquisse-intersection.js`, bouton après ⧉ Projeter, touche **I**), comme Créer > Projeter/Inclure > Intersection de Fusion : section **exacte** (`BRepAlgoAPI_Section` par le plan d'esquisse) du solide vu par l'esquisse (même antériorité que les projections). Les courbes de section s'affichent en bleu clair ; **clic** = la face visée, **Ctrl+clic** = plusieurs faces puis **Entrée**, **Maj+clic** (ou clic sur le corps dans l'arbre) = le corps entier ; clic droit : tous les corps, corps sous le curseur, option « géométrie normale (profil) ». Une création = une étape d'annulation.
+- Courbes créées comme des projections : référence (`proj`), **construction** par défaut, points **fixés** et **partagés** aux jonctions (contour fermé, utilisable en profil), nom « Intersection N ». Droites, arcs et cercles exacts ; ellipses et B-splines en polyligne régulière (même découpage au rejeu). Les deux demi-faces d'un trou (couture du cylindre) donnent **un cercle**.
+- **Associatif** : chaque entité mémorise sa source (`isect` : faces par `occFaceRefAny`, ou corps par un point) ; au rejeu `updateAssociativeProjections` recalcule la section et rebranche l'entité sur la courbe de même type la plus proche de son milieu 3D (cache par préfixe de timeline, comme les arêtes projetées).
+- Sans noyau exact : section du **maillage** affiché (approchée, figée), signalée dans le statut ; sans corps qui coupe le plan, message clair.
+- **Cote entre 2 points** — cause : `dimClick` testait les droites **avant** les points, un clic sur l'extrémité d'une droite cotait toujours sa longueur. Correctif (`src/50-esquisse-2d-solveur.js`) : un point à moins de 10 px (extrémité, centre, origine) passe avant la droite qui le porte, au 1er clic comme lors de la conversion d'une cote vivante (longueur → distance point↔droite, Ø → distance centre↔point) ; clic au milieu d'une droite = toujours sa longueur.
+- **Tests** : nouveau `test_esquisse_intersection` (noyau OCCT réel, bloc 100×60×40 percé Ø20 : plan médian = rectangle 320 + cercle R10, plan par l'axe du trou = 8 lignes / 320, face seule, corps entier, Ctrl+clic + Entrée, annuler/rétablir, points partagés et fixés, suivi après bloc 120 → 360 et hauteur 50 → 400, arbre, menu, géométrie normale, repli maillage) ; nouveau `test_cote_points` (2 coins → 116,62, milieu de droite → longueur, conversions point↔droite et centre↔point) — échoue sur l'ancien `dimClick` ; les deux dans la suite rapide (47/47).

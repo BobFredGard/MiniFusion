@@ -21,7 +21,7 @@
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.9.2';
+const APP_VER='V0.9.3';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -88,8 +88,8 @@ function entName(kind){
   // Nom persistant unique d'une référence (Arête 1, Face 2, Projetée 3) — compteur
   // par type, jamais réemployé même si la référence est supprimée (l'identité reste stable).
   doc.entNames=doc.entNames||{};
-  const k=(kind==='face')?'face':(kind==='proj')?'proj':'edge';
-  const lab=(k==='edge')?'Arête ':(k==='face')?'Face ':'Projetée ';
+  const k=(kind==='face')?'face':(kind==='proj')?'proj':(kind==='isect')?'isect':'edge';
+  const lab=(k==='edge')?'Arête ':(k==='face')?'Face ':(k==='isect')?'Intersection ':'Projetée ';
   doc.entNames[k]=(doc.entNames[k]||0)+1;
   return lab+doc.entNames[k];
 }

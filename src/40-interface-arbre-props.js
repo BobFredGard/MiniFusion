@@ -372,6 +372,8 @@ function renderTree(){
       if(ev.target&&ev.target.classList&&ev.target.classList.contains('eye')){
         bodyToggleVis(be.id);return;
       }
+      // Intersection en cours d'esquisse : le corps cliqué dans l'arbre est coupé par le plan
+      if(typeof skEdit!=='undefined'&&skEdit&&skTool==='isect'&&typeof skIsectFromBody==='function'&&skIsectFromBody(be.id))return;
       treeSel=[];
       sel={kind:'body',id:be.id};
       try{if(doc.activeBody!==be.id){doc.activeBody=be.id;dirty=true;}}catch(e){}

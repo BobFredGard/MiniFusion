@@ -43,6 +43,8 @@ const SUITES = [
   "test_esquisse_face_conges",
   "test_esquisse_fao_cache",
   "test_esquisse_projection",
+  "test_esquisse_intersection",
+  "test_cote_points",
   "test_proj_arc_sens",
   "test_esquisse_contraintes",
   "test_fao",

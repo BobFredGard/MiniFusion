@@ -317,6 +317,7 @@ svg.addEventListener('contextmenu',e=>{
   e.preventDefault();
   if(skPanDragged){skPanDragged=false;return;} // fin d'un déplacement au clic droit
   if(!skEdit) return;
+  if(skTool==='isect'){skIsectCtx(e.clientX,e.clientY);return;} // menu de l'outil Intersection
   if(skDimPlace){skCancelDraft();skStatus('Placement annulé.');return;} // Échap/clic droit pendant la pose
   const selEnts=skSelectedEnts();
   const hasSel = selEnts.length>0 || (skSel&&skSel.kind==='point') || skSelX.length>0;
@@ -666,6 +667,7 @@ svg.addEventListener('pointerdown',e=>{
     }
     afterEdit();return;
   }
+  if(skTool==='isect'){skIsectClickAt(sk,wx,wy,e);return;}
   if(skTool==='trim'){
     const ent=nearestEntity(sk,wx,wy,SK_PICKX,true);
     if(!ent){skStatus('Ajuster : cliquez un tronçon de ligne, d’arc ou de cercle près d’une intersection.');return;}
@@ -700,6 +702,7 @@ svg.addEventListener('pointermove',e=>{
     else skStatus('⧉ Survolez une arête 3D (même hors plan) — elle s\'illumine en orange.');
     return;
   }
+  if(skTool==='isect'){skIsectHoverAt(sk,wx,wy,!!e.shiftKey);return;}
   if(skTool==='offset'&&skOffArm){
     // Distance vivante pendant le placement (sans aperçu géométrique : le clic fige).
     const sel=skSelectedEnts().filter(e=>(e.t==='line'||e.t==='circle'||e.t==='arc')&&!e.ref);
@@ -1015,7 +1018,7 @@ function skEscapeToSelect(){
 function skCancelDraft(){
   skFilletSess=null;skCornerPick=null; // nouvelle passe de congés : nouvelle cote
   if(skDimPlace&&skEdit){skEdit.dims=skEdit.dims.filter(x=>x.id!==skDimPlace.id);skDimPlace=null;} // Échap pendant le placement annule la cote
-  skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skPendPt=null;skCoinA=null;skCornA=null;skOffArm=null;skDraft=null;skDown=null;skDrag=null;skDragEnt=null;skDragWalk=null;skBox=null;skDyn=null;skDimDrag=null;skPan=null;skInfer=null;skMsg='';skDimLine=null;skDimRef=null;skProjectHover=null;hideSkCtx();if(skEdit){cleanupSk(skEdit);drawSketch2D();renderSkPanel();}}
+  skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skPendPt=null;skCoinA=null;skCornA=null;skOffArm=null;skDraft=null;skDown=null;skDrag=null;skDragEnt=null;skDragWalk=null;skBox=null;skDyn=null;skDimDrag=null;skPan=null;skInfer=null;skMsg='';skDimLine=null;skDimRef=null;skProjectHover=null;if(typeof skIsectReset==='function')skIsectReset();hideSkCtx();if(skEdit){cleanupSk(skEdit);drawSketch2D();renderSkPanel();}}
 function skMinLen(){
   // 2026-10-16-001 : longueur mini d'un tracé = 3 px ÉCRAN (et non 0,5 mm fixe) —
   // zoomer permet de dessiner des lignes / cercles aussi petits que voulu.
@@ -1250,6 +1253,7 @@ window.addEventListener('keydown',e=>{
     if(e.key==='Escape'){e.preventDefault();skEscapeToSelect();return;}
   }
   if(e.key==='Escape'){e.preventDefault();skEscapeToSelect();return;}
+  if(e.key==='Enter'&&skEdit&&skTool==='isect'){e.preventDefault();skIsectValidate();return;}
   // N : à plat dans le plan d'esquisse, face choisie DEVANT et droite (après une orbite)
   if((e.key==='n'||e.key==='N')&&skEdit&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&!e.shiftKey){e.preventDefault();skOrbFront();return;}
   // 2026-10-16-005 : raccourcis de contraintes (F1…F12) et H = centre de perçage

@@ -8,7 +8,7 @@ const AIDE_SECTIONS=[
     ['F8','Concentricité'],['F9','Colinéaire'],['F10','Symétrie (2 lignes + axe)'],['F12','Blocage'],
     ['X','Construction ↔ profil'],['Clic droit','Menu : contraintes, congé, axe de rotation…']]],
   ['Esquisse — tracé et cotes',[
-    ['H','Centre de perçage'],['L C R B','Ligne · cercle · rectangle · oblong'],['P T D','Projection · ajuster · cote'],['F O','Congé · décalage'],['Ligne','Le 2e clic enchaîne la ligne suivante'],
+    ['H','Centre de perçage'],['L C R B','Ligne · cercle · rectangle · oblong'],['P I','Projection · intersection (faces / corps ∩ plan)'],['T D','Ajuster · cote'],['F O','Congé · décalage'],['Ligne','Le 2e clic enchaîne la ligne suivante'],
     ['Ctrl/Cmd + rectangle','Rectangle par le centre'],['Ctrl/Cmd + clic','Multi-sélection'],
     ['Chiffres pendant une ligne','Longueur saisie (Tab = angle)'],['Double-clic sur une cote','Modifier la valeur'],
     ['nom = valeur','Nommer une cote (ex. Longueur = 80)'],['Longueur/2','Expression ƒx (cotes nommées, paramètres)'],

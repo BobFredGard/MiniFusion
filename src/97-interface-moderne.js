@@ -590,7 +590,7 @@ function mfCube(){
    modélisation (sous le bandeau du haut) et le panneau latéral (santé, sélection, contraintes,
    cotes) passe dans le panneau de droite. Fermeture / retour en classique : tout revient à sa
    place d'origine (mêmes nœuds, déplacés — leurs gestionnaires restent attachés). */
-const MF_SK_LAB={select:'Sélection',line:'Ligne',rect:'Rectangle',slot:'Oblong',circle:'Cercle',arc:'Arc',cpoint:'Point',hpoint:'Perçage',project:'Projeter',dim:'Cote',coincident:'Coïncident',trim:'Ajuster',offset:'Décalage',chamfer:'Chanfrein',fillet:'Congé',
+const MF_SK_LAB={select:'Sélection',line:'Ligne',rect:'Rectangle',slot:'Oblong',circle:'Cercle',arc:'Arc',cpoint:'Point',hpoint:'Perçage',project:'Projeter',isect:'Intersection',dim:'Cote',coincident:'Coïncident',trim:'Ajuster',offset:'Décalage',chamfer:'Chanfrein',fillet:'Congé',
   h:'Horizontal',v:'Vertical',parallel:'Parallèle',perpendicular:'Perpend.',collinear:'Colinéaire',equal:'Égal',symmetric:'Symétrie',fix:'Fixe',tangent:'Tangence',coaxial:'Coaxial',midpoint:'Milieu',construction:'Constr.',
   skZoomIn:'Zoom +',skZoomOut:'Zoom −',skFit:'Cadrer',skGrid:'Grille',skRefs:'Arêtes',skParams:'Param.',skUndo:'Annuler',skRedo:'Rétablir'};
 function mfSkLabels(){

@@ -358,6 +358,8 @@ function updateAssociativeProjections0(sk){
     // décrochait — « Cavité Usinage » : 50 → 55, le fond suivait, pas la poche.
     // Le repli « ligne aux 2 bouts fixes » ne vaut QUE pour la construction (une ligne
     // de profil fixée par l'utilisateur n'est pas une projection).
+    // Intersection ⨯ (62-esquisse-intersection.js) : section de sa source, recalculée
+    if(e.isect){if(typeof skIsectTrack==='function'&&skIsectTrack(sk,e))changed=true;continue;}
     const isProj=e.proj||e.isProj||(e.construction&&e.t==='line'&&sk.constraints.some(c=>c.type==='fix'&&c.p===e.p1)&&sk.constraints.some(c=>c.type==='fix'&&c.p===e.p2));
     if(!isProj) continue;
     // V0.8.1 : arête d'un autre composant — ses arêtes, vues depuis ce composant
@@ -2770,6 +2772,8 @@ function drawSketch2D(){
       skEl('circle',{cx:a,cy:b,r:4,fill:'#ff9f0a'}); skEl('circle',{cx:c,cy:d,r:4,fill:'#ff9f0a'});
     }
   }
+  // ⨯ Intersection : courbes de section candidates / retenues / survolées
+  if(skTool==='isect'&&typeof skIsectDraw==='function'){try{skIsectDraw(sk);}catch(e){}}
   // brouillon + cote live (longueur/angle comme Fusion)
   if(skDraft){
     const d=skDraft;
@@ -3972,6 +3976,8 @@ function tryExtendDim(dd,ent,pid){ // pose type Fusion : pendant qu'une cote vit
   };
   if(dd.type==='length'){
     const src=entById(sk,dd.line);if(!src)return false;
+    // un point (hors extrémités de la ligne cotée) passe avant la ligne qui le porte
+    if(pid&&pid!==src.p1&&pid!==src.p2)return toDistLine(pid,dd.line);
     if(ent&&ent.t==='line'&&ent.id!==dd.line){ // 2ᵉ ligne → entraxe (//) ou angle (sécantes)
       skPushUndo();
       // Parallélisme décidé sur les VECTEURS DE DIRECTION (skLinesAngle), pas sur un
@@ -4000,6 +4006,15 @@ function tryExtendDim(dd,ent,pid){ // pose type Fusion : pendant qu'une cote vit
   }
   if(dd.type==='diameter'||dd.type==='radius'){
     const src=entById(sk,dd.ent);if(!src||!src.pc)return false;
+    // un point (extrémité de ligne, origine…) passe avant la ligne : distance centre ↔ point
+    if(pid&&pid!==src.pc&&pid!==src.pa&&pid!==src.pb&&!(ent&&(ent.t==='circle'||ent.t==='arc')&&ent.pc===pid)){
+      const A=sk.points[src.pc],B=sk.points[pid];
+      if(A&&B){skPushUndo();
+        dd.type='distance';dd.a=src.pc;dd.b=pid;delete dd.ent;delete dd.w;delete dd.sl;
+        dd.value=+Math.hypot(B.x-A.x,B.y-A.y).toFixed(2);
+        afterEdit();skStatus('Converti en distance centres ⟷ '+dd.value.toFixed(2)+' — cliquez pour poser.');
+        return true;}
+    }
     if(ent&&(ent.t==='circle'||ent.t==='arc')&&ent.id!==dd.ent&&ent.pc){ // 2ᵉ cercle → entraxe centres
       const A=sk.points[src.pc],B=sk.points[ent.pc];if(!A||!B)return false;
       skPushUndo();
@@ -4105,6 +4120,11 @@ function dimClick(x,y,shift){
     skPendPt=null;afterEdit();return;
   }
   const ent=nearestEntity(sk,x,y,SK_PICK);
+  // 2026-10-26 : un POINT sous le curseur (extrémité, centre, origine) passe AVANT la ligne
+  // qui le porte, comme dans Fusion et l'outil Sélection — sinon cliquer l'extrémité d'une
+  // droite cotait toujours la droite et la cote entre 2 points était impossible.
+  const pidFirst=nearestPoint(sk,x,y,SK_PT);
+  if(pidFirst){skPendPt=pidFirst;skStatus('Cote distance : cliquez un second point.');drawSketch2D();return;}
   if(ent&&ent.t==='line'){skDimLine=null;skDimRef=null;skPushUndo();const newId=skNewEid(sk);
     sk.dims.push({id:newId,type:'length',line:ent.id,value:+lineLen(sk,ent).toFixed(2)});
     skDimPlace={id:newId};skStatus('Cote longueur — déplacez puis cliquez pour poser.');afterEdit();return;}
