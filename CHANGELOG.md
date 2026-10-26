@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**346 versions**, de `2026-09-28b` à `V0.9.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**347 versions**, de `2026-09-28b` à `V0.9.8` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4922,3 +4922,17 @@ Dernière étape de la série V0.8 (« toutes tes idées ») : piloter MiniFusio
   - **Lisibilité** : sections sobres au lieu des bandeaux (Origine repliée par défaut, ouverte sur sélection d'un plan ou pendant une saisie de construction), esquisses au nom seul (plan, face, traits en infobulle), retrait 14 px par niveau avec trait, colonnes triangle / icône fixes, ▲▼ et ⏻ au survol, panneau 300 px. Construction : ses éléments sont des enfants de la section (`cgTreeModel`, `src/79-construction-interface.js`).
 - **Construction** : un plan ou un axe peut viser une **face d'un autre composant** (mode Modéliser d'un assemblage) — face plane → plan, cylindrique / conique → axe. Chaque composant capture ses faces exactes à la fin de son rejeu (`_snap.pfaces`, `src/46-assemblage-modele.js` / 47) ; la référence `xf` se résout dans le composant actif comme les arêtes projetées (V0.8.1), suit l'occurrence déplacée ou modifiée (`asmExtStale`), se retrouve par sa géométrie si sa référence durable change, garde sa position (⚠) si la face disparaît (`src/78-construction-modele.js`). Les autres composants restent non cliquables hors saisie (`cgPickOtherComp`).
 - **Tests** : `test_arbre_v2` (sortie figée de l'arbre `fixtures/arbre_reference.json` ; répartiteur ; composants imbriqués ; ×N ; liaisons ; recherche ; glisser-déposer ; références `xf` : plan, axe, repli géométrique, face disparue) ; `test_tree_filter` adapté (plus de bandeau « Corps / Fonctions », le compte filtré reste sur l'en-tête du corps) ; sélecteurs d'occurrence précisés dans le parcours Playwright (`.tocc`). Vérifié dans l'application : plan à 10 mm d'une face de Base, qui suit Base déplacée de 5 mm.
+
+## V0.9.8 - Références d'arêtes et sommets d'autres composants ; arbre : liaisons nommées, fonction vers un autre corps, Repères en mode Assembler ; « Placer » devient « Assembler »
+Suite de V0.9.7 : « que reste-t-il à faire ? » — dans l'ordre proposé ; « on peut renommer les 2 icônes Placer par Assembler ».
+- **Tests navigateur** : Playwright installé, les 15 parcours passent avec l'arbre unifié (sélecteur « Origine de » sans les lignes de liaison).
+- **Références de faces (V0.9.7) vérifiées** : axe sur la face cylindrique de Goupille exactement sur l'axe ; enregistrer / rouvrir : référence intacte, même repère ; capture des faces 14 ms pour 113 faces (Cavité Usinage).
+- **Arêtes et sommets d'autres composants** (`src/46-assemblage-modele.js` `asmXeEval`, `src/79-construction-interface.js` `cgPickOtherEdge`) : référence `xe` lue dans la capture d'arêtes (V0.8.1) — point = sommet ou centre d'un cercle, axe = arête droite ou axe d'un cercle, plan = plan d'un cercle ; suit l'arête (la plus proche, longueur voisine), péremption avec `asmExtStale`, position mémorisée (⚠) si elle disparaît.
+- **Arbre** (`src/42-arbre-modele.js`) :
+  - ligne de liaison : cible nommée comme dans le panneau de placement (`asmRelName` : « Base:1 › Cylindre Ø15 · début de l'axe ») ;
+  - **fonction déposée sur l'en-tête d'un autre corps** : extrusion, révolution, perçage s'y appliquent (une étape d'annulation) ; congés, dépouilles, coques, répétitions, combinaisons refusés (références de leur corps) ;
+  - **mode Assembler** : origine et repères du composant actif en section « ⌖ Repères » sous sa ligne (centre de rotation au clic, trouvés par la recherche) ; `asmTreeRender` ne sert plus qu'à un assemblage sans occurrence ;
+  - un clic sur un plan, un axe ou un élément de construction vide le lot Ctrl+clic (le corps qui le contenait se replie de nouveau) ;
+  - double-clic sur une fonction en lecture seule : modéliser son composant ET la sélectionner.
+- **Libellés** : les boutons « Placer » (fil d'Ariane de l'arbre, ruban) deviennent « Assembler ».
+- **Tests** : `test_arbre_v2` (références `xe` : axe, centre, sommet, arête disparue ; fonction vers un autre corps ; Repères en mode Assembler ; lot vidé ; double-clic en lecture seule) ; parcours Playwright sur « Assembler ».

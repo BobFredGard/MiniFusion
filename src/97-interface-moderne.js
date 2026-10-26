@@ -350,7 +350,7 @@ function mfRibbon(){
     g.appendChild(bb);const t=document.createElement('div');t.className='mfGrpT';t.textContent=title;g.appendChild(t);rb.appendChild(g);};
   MF_CAO.forEach(([t,bs])=>grp(t,bs,'mfCao'));
   // V0.6.0 / V0.6.1 : composants (46/47) — seul groupe CAO visible en mode Placer (mfAsmG)
-  grp('Composants',[['asmView','Placer',()=>asmToggle(),'Modéliser le composant actif ↔ placer ses composants'],
+  grp('Composants',[['asmView','Assembler',()=>asmToggle(),'Modéliser le composant actif ↔ placer ses composants'],
     ['asmPart','Composant',()=>asmCmdNewComp(),'Nouveau composant dans le composant actif (on entre aussitôt dedans)'],
     ['asmOcc','Occurrence',()=>{if(asmMode!=='asm')asmEnter();asmCmdNewOcc();},'Nouvelle occurrence du composant sélectionné'],
     ['asmInspect','Inspecter',()=>asmCmdInspect(),'Interférences entre corps / composants, masses (matière par composant) et centre de gravité'],

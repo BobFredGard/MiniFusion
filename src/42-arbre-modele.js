@@ -65,8 +65,7 @@ function treeModel(){
     if(!uni)L.push({raw:asmTreeRender,keep:true});
     else{
       L.push({raw:asmBreadcrumb,keep:true});
-      treeComps(L,null);
-      L.push({raw:t=>asmTreeRender(t,{noCrumb:true})});
+      treeComps(L,treePlacer()); // mode Placer : les repères du composant actif, sous sa ligne
     }
     return treeQuery?treeFilter(L,treeQuery):L;
   }
@@ -114,6 +113,25 @@ function treeFilter(L,q){
   });
   if(!flat.some((x,i)=>hit[i]))out.push({cls:'tnode',text:'Aucun résultat pour « '+q+' ».',style:{color:'var(--muted)',cursor:'default'}});
   return out;
+}
+let treePlacerOpen=true; // section « Repères » du mode Placer dépliée
+function treePlacer(){
+  // Mode Placer : origine et repères de construction du composant actif — cibles d'un alignement,
+  // clic = la vue tourne autour (asmPivotPick, 47). Imbriqués sous la ligne du composant actif.
+  const L=[],c=asmActiveComp();if(!c)return L;
+  const open=treePlacerOpen||!!treeQuery;
+  L.push({lvl:0,cls:'tnode tsec',title:'Repères du composant : cibles d’un alignement · clic sur un repère = la vue tourne autour',
+    html:'<span class="tri" title="Déplier / replier">'+(open?'▼':'▶')+'</span><span>⌖</span><span class="nm">Repères</span>',
+    on:{click:()=>{treePlacerOpen=!treePlacerOpen;renderTree();}}});
+  if(open){
+    const one=(cg,name,icon,title)=>L.push({lvl:1,cls:'tnode'+(asmPivot&&(asmPivot.cg||null)===(cg||null)?' sel':''),style:{cursor:'pointer'},
+      html:icon+'<span class="nm">'+asmEsc(name)+'</span>',title,on:{click:()=>asmPivotPick(cg,name)}});
+    const on='Origine de « '+c.name+' »';
+    one(null,on,'<span class="pdot" style="background:#fff;box-shadow:0 0 0 2px #1c1c1e inset"></span>','Repère du composant : cible d’un alignement · clic = la vue tourne autour');
+    (c.doc.cgeo||[]).forEach(k=>{if(k&&k.kind==='frame')one(k.id,k.name,'<span>⌖</span>','Repère de construction du composant : cible d’un alignement · clic = la vue tourne autour');});
+  }
+  if(!c.occ.length)L.push({lvl:0,cls:'tnode',html:'<span class="nm" style="color:var(--muted)">Aucun composant : « Nouveau composant » ou « Insérer ».</span>'});
+  return L;
 }
 // Contenu de la pièce ACTIVE (`doc`) : origine, construction, esquisses, corps et fonctions
 function treePart(L){
@@ -186,7 +204,7 @@ function treePart(L){
         html:`<span class="pdot" style="background:${PLANES[p].css}"></span><span class="nm">Plan ${p} <span style="color:var(--muted)">· ${PLANES[p].role}</span></span><span class="eye" title="Afficher / masquer le plan">👁</span>`,
         on:{
           eye:()=>setOriginVis(p,!originVis[p]),
-          click:()=>{if(cgTreePick({k:'o',id:p}))return;sel={kind:'plane',id:p};renderTree();renderProps();refreshParts();},
+          click:()=>{if(cgTreePick({k:'o',id:p}))return;treeSel=[];sel={kind:'plane',id:p};renderTree();renderProps();refreshParts();},
           dbl:()=>{sel={kind:'plane',id:p};newSketch(p);},
           ctx:e=>showCtx(e.clientX,e.clientY,{kind:'plane',id:p})}});
     });
@@ -194,7 +212,7 @@ function treePart(L){
       L.push({lvl:1,cls:'tnode'+(sel.kind==='originAxis'&&sel.id===a?' sel':''),
         title:'Axe '+a+' de l’origine — référence d’un plan à un angle, d’un axe, d’un repère',
         html:`<span class="pdot" style="background:${c};border-radius:1px;height:3px;margin-top:5px"></span><span class="nm">Axe ${a} <span style="color:var(--muted)">· ${r}</span></span>`,
-        on:{click:()=>{if(cgTreePick({k:'o',id:a}))return;sel={kind:'originAxis',id:a};renderTree();renderProps();}}});
+        on:{click:()=>{if(cgTreePick({k:'o',id:a}))return;treeSel=[];sel={kind:'originAxis',id:a};renderTree();renderProps();}}});
     });
   }
   cgTreeModel(L); // 📐 Construction (79) : section + éléments en enfants
@@ -277,7 +295,7 @@ function treePart(L){
     try{ visVue=!(doc.bodyVis&&doc.bodyVis[be.id]===false); }catch(e){}
     const enRejeu=bodyEnabledOf(be.id);
     const bcol=bodyTextColor(be);
-    L.push({drag:{kind:'body',id:be.id},lvl:0,cls:'tnode bh'+((sel.kind==='body'&&sel.id===be.id)?' sel':'')+(visVue?'':' hidden')+(enRejeu?'':' off'),
+    L.push({drag:{kind:'body',id:be.id},drop:treeDropBody(be.id),lvl:0,cls:'tnode bh'+((sel.kind==='body'&&sel.id===be.id)?' sel':'')+(visVue?'':' hidden')+(enRejeu?'':' off'),
       style:{boxShadow:'inset 3px 0 0 '+(bcol||'#9a9aa0')},
       html:'<span class="tri" title="Déplier / replier les fonctions du corps">'+(open?'▼':'▶')+'</span><span title="Corps — '+(be.name||'')+'">🧱</span>'+
         '<span class="nm"'+(bcol?(' style="color:'+bcol+'"'):'')+'>'+be.name+(estActif?' ●':'')+' · '+kidsVis.length+' fonction(s)</span>'+
@@ -431,13 +449,21 @@ function treeComps(L,P){
   if(open0)kids(asm.root,[],2);
   treeJoints(L,all,1);
 }
+function treeOpenFeature(path,fid){
+  // Modéliser le composant de l'instance, puis y sélectionner la fonction (double-clic en lecture seule)
+  if(asmShow(path,'part')===false)return;
+  const f=(doc.features||[]).find(x=>x.id===fid);if(!f)return;
+  treeSel=[fid];sel={kind:'feature',id:fid};
+  renderTree();renderProps();refreshParts();
+}
 function treeCompContent(L,inst,c,lv){
   // Contenu d'un composant NON édité : lecture seule, grisé ; double-clic = le modéliser
   const D=c.doc||{};
   const on={click:()=>{try{faceEl.textContent='Lecture seule : double-clic pour modéliser « '+(c.name||'')+' ».';}catch(e){}},dbl:()=>asmShow(inst.path,'part')};
-  const ro=(d,icon,label,meta,sec)=>L.push({lvl:lv+d,cls:'tnode'+(sec?' tsec':''),style:{opacity:'0.55'},
+  const ro=(d,icon,label,meta,sec,fid)=>L.push({lvl:lv+d,cls:'tnode'+(sec?' tsec':''),style:{opacity:'0.55'},
     html:'<span>'+icon+'</span><span class="nm">'+asmEsc(label)+(meta?' <span style="color:var(--muted)">'+asmEsc(meta)+'</span>':'')+'</span>',
-    title:'Lecture seule — double-clic = modéliser « '+(c.name||'')+' »',on});
+    title:'Lecture seule — double-clic = modéliser « '+(c.name||'')+' »'+(fid?' et sélectionner cette fonction':''),
+    on:fid?{click:on.click,dbl:()=>treeOpenFeature(inst.path,fid)}:on});
   ro(0,'⬒','Origine','',true);
   const CG=(D.cgeo||[]).filter(k=>k&&k.kind);
   if(CG.length)ro(0,'📐','Construction','('+CG.length+')',true);
@@ -449,7 +475,7 @@ function treeCompContent(L,inst,c,lv){
   B.forEach(b=>{
     const k=F.filter(f=>!f.repeatId&&bOf(f)===b.id);
     ro(0,'🧱',b.name,'· '+k.length+' fonction(s)',true);
-    k.forEach(f=>ro(1,featIconOf(f),f.name));
+    k.forEach(f=>ro(1,featIconOf(f),f.name,'',false,f.id));
   });
 }
 /* ── dossier Liaisons ──
@@ -475,15 +501,9 @@ function treeJoints(L,all,lv){
   J.forEach(({o,owner})=>{
     const a=o.align,typed=!!(a.type&&ASM_JOINTS[a.type]);
     const lab=typed?ASM_JOINTS[a.type].lab:'Rigide';
-    // cible : chemin d'occurrences dans le porteur, puis repère (origine ou repère de construction)
-    const dp=(a.dst&&a.dst.path)||[];
-    let cible=dp.map(id=>{const q=asmOcc(id);return q?q.name:'?';}).join(' › ');
-    if(a.dst&&a.dst.cg){
-      const cc=dp.length?asmComp((asmOcc(dp[dp.length-1])||{}).comp):asmComp((all.find(i=>same(i.path,owner))||{}).comp);
-      const k=cc&&cc.doc&&(cc.doc.cgeo||[]).find(x=>x&&x.id===a.dst.cg);
-      cible+=(cible?' · ':'')+(k?k.name:'repère');
-    }
-    if(!cible)cible='origine du porteur';
+    // cible : libellé du panneau de placement (48 : asmRelName) — chemin, repère ou point d'accroche
+    const ownerC=(all.find(i=>same(i.path,owner))||{}).comp;
+    const cible=a.rel?'telle que construite':(typeof asmRelName==='function'?asmRelName(ownerC,a.dst):'?');
     const dof=typed?asmDofs(a).map(k=>{const v=+((a.q||{})[k])||0;return k+' '+String(+v.toFixed(2)).replace('.',',')+(k[0]==='r'?'°':' mm');}).join(', '):'';
     const selOk=asmMode==='asm'&&asmSelId===o.id&&same(owner,AP);
     L.push({lvl:lv+1,cls:'tnode tjoint'+(selOk?' sel':''),
@@ -517,6 +537,27 @@ function treeFeatMoveTo(id,targetId){
   if(A.every((x,i)=>x===F[i]))return false;
   featMoveApply(A,'déplacement de « '+f.name+' »');
   return true;
+}
+// Fonction déposée sur l'en-tête d'un AUTRE corps : elle s'y applique désormais (f.body), à sa
+// place dans l'ordre de rejeu ; une étape d'annulation. Seules les fonctions qui ne visent pas des
+// faces ou arêtes précises de leur corps : extrusion, révolution, perçage (un congé, une
+// dépouille, une coque, une répétition, une combinaison y perdraient leurs références).
+const TREE_TO_BODY=['extrude','revolve','hole'];
+function treeFeatToBody(id,bodyId){
+  const f=doc.features.find(x=>x.id===id),b=(doc.bodies||[]).find(x=>x.id===bodyId);
+  if(!f||!b||f.repeatId||f.body===bodyId)return false;
+  if(TREE_TO_BODY.indexOf(f.type)<0){try{faceEl.textContent='« '+f.name+' » vise des faces ou arêtes de son corps : elle ne change pas de corps (seules extrusion, révolution et perçage le peuvent).';}catch(e){}return false;}
+  docPushUndo('« '+f.name+' » vers « '+b.name+' »');
+  f.body=bodyId;
+  markDirty();rebuild();renderTree();renderProps();
+  try{faceEl.textContent='« '+f.name+' » s’applique maintenant à « '+b.name+' ».';}catch(e){}
+  return true;
+}
+function treeDropBody(bodyId){
+  return {
+    accept:D=>{if(D.kind!=='feature')return false;const f=doc.features.find(x=>x.id===D.id);return !!(f&&!f.repeatId&&f.body!==bodyId);},
+    fn:D=>treeFeatToBody(D.id,bodyId)
+  };
 }
 function treeDropFeat(targetId){
   return {

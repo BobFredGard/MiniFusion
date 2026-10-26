@@ -586,7 +586,7 @@ function asmExtStale(){
   // faces d'autres composants, références d'éléments de construction
   asm.comps.forEach(c=>{if(out.includes(c))return;
     if((c.doc.cgeo||[]).some(el=>(el&&el.refs||[]).some(r=>{
-      if(!r||r.k!=='xf')return false;const s=asmXfSig(r,c.id);return s!=null&&s!==r.sig;})))out.push(c);});
+      if(!r||(r.k!=='xf'&&r.k!=='xe'))return false;const s=asmXfSig(r,c.id);return s!=null&&s!==r.sig;})))out.push(c);});
   // V0.8.1 : arêtes d'autres composants projetées dans une esquisse
   asm.comps.forEach(c=>{if(out.includes(c))return;
     if((c.doc.sketches||[]).some(sk=>(sk.entities||[]).some(e=>{
@@ -705,6 +705,43 @@ function asmXfEval(ref,cid){
   ref.sig=asmXfSig(ref,cid);
   if(e.plane){const o=P(e.plane.o),B=cgBasisN(V(e.plane.n),null);return {plane:{o,u:B.u,v:B.v,n:B.n},point:{o}};}
   const o=P(e.axis.o);return {axis:{o,d:cgUnit(V(e.axis.d))},point:{o}};
+}
+/* Arête ou sommet d'un AUTRE composant (capture _snap.pedges, V0.8.1) comme référence de
+   construction : ref = {k:'xe', ctx, path, sub:'edge'|'vtx', pos, len, vpos, name, sig} — pos,
+   len, vpos dans le repère du composant visé, mis à jour à chaque lecture (la référence suit
+   l'arête, comme celles de la pièce : arête la plus proche, de longueur voisine). */
+function asmXeFind(E,ref){
+  let best=null,bd=2.5;
+  E.forEach(e=>{
+    const m=e.mid||e.pts[Math.floor(e.pts.length/2)],d=Math.hypot(m[0]-ref.pos[0],m[1]-ref.pos[1],m[2]-ref.pos[2]);
+    if(d>bd)return;
+    let L=0;for(let i=1;i<e.pts.length;i++)L+=Math.hypot(e.pts[i][0]-e.pts[i-1][0],e.pts[i][1]-e.pts[i-1][1],e.pts[i][2]-e.pts[i-1][2]);
+    if(ref.len>0&&Math.abs(L-ref.len)>Math.max(2,0.35*ref.len))return;
+    bd=d;best={e,m,L};
+  });
+  return best;
+}
+function asmXeEval(ref,cid){
+  // Géométrie {point, axis?, plane?} de l'arête / du sommet visé, dans le repère du composant cid
+  if(!asm||!ref||!Array.isArray(ref.path)||!ref.pos)return null;
+  cid=cid||asm.active;
+  const T=asmPathComp(ref.path),c=asmComp(T);
+  if(!c||T===cid||!c._snap||!c._snap.pedges)return null;
+  const hit=asmXeFind(c._snap.pedges,ref);if(!hit)return null;
+  const ctx=asmSkExtCtx(ref,cid),F=ctx&&asmSkXf(ctx,ref.path);if(!F)return null;
+  const P=p=>asmApply(F,p),V=v=>{const q=asmApply(F,v);return [q[0]-F.o[0],q[1]-F.o[1],q[2]-F.o[2]];};
+  const r4=v=>v.map(a=>+(+a).toFixed(4));
+  ref.pos=r4(hit.m);ref.len=+hit.L.toFixed(4);ref.sig=asmXfSig(ref,cid);
+  const pts=hit.e.pts;
+  if(ref.sub==='vtx'){
+    const a=pts[0],b=pts[pts.length-1],q=ref.vpos||a;
+    const o=Math.hypot(a[0]-q[0],a[1]-q[1],a[2]-q[2])<=Math.hypot(b[0]-q[0],b[1]-q[1],b[2]-q[2])?a:b;
+    ref.vpos=r4(o);return {point:{o:P(o)}};
+  }
+  const G=cgEdgeGeom(pts);if(!G)return {point:{o:P(hit.m)}};
+  if(G.line)return {axis:{o:P(hit.m),d:cgUnit(V(cgSub(G.line.b,G.line.a)))},point:{o:P(hit.m)}};
+  const o=P(G.circ.c),B=cgBasisN(V(G.circ.n),null);
+  return {point:{o},axis:{o,d:B.n},plane:{o,u:B.u,v:B.v,n:B.n}};
 }
 function asmExtSync(){
   // Rejoue les composants dont une référence externe a bougé (placement, autre composant

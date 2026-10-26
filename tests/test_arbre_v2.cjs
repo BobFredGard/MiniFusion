@@ -109,7 +109,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     grp.onclick(ev('tri'));v2=rendu2();
     out.grpOuvert=v2.top.filter(function(r){return /Vis:[0-9]/.test(r.innerHTML||'');}).length===3;
     out.dossierLiaisons=v2.top.findIndex(function(r){return /tsec/.test(r.className||'')&&/Liaisons/.test(r.innerHTML||'')&&/(1)/.test(r.innerHTML||'');})>=0;
-    const lj=v2.top.find(function(r){return /tjoint/.test(r.className||'')&&/Pivot <span[^>]*>Bride:1 → origine du porteur/.test(r.innerHTML||'')&&/rz 35°/.test(r.title||'');});
+    const lj=v2.top.find(function(r){return /tjoint/.test(r.className||'')&&/Pivot <span[^>]*>Bride:1 → Origine de/.test(r.innerHTML||'')&&/rz 35°/.test(r.title||'');});
     out.ligneLiaison=!!lj;
     let vj=null;const as1=asmShow;asmShow=function(p,m,id){vj=p.join('/')+':'+m+':'+id;};
     if(lj)lj.onclick(ev(''));out.clicLiaison=vj===':asm:'+nb.occ.id;asmShow=as1;
@@ -150,8 +150,31 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     const g2=cgEvalRef(Object.assign({},xr,{ref:{id:'autre'}}));out.xfRepli=!!(g2&&g2.plane)&&g2.plane.o.join(',')==='10,0,5';
     const g3=cgEvalRef({k:'xf',ctx:[],path:[nb.occ.id],ref:{id:'zz'},loc:{plane:{o:[0,0,5],n:[1,0,0]}}});out.xfAbsente=g3===null;
     const g4=cgEvalRef({k:'xf',ctx:[],path:[nb.occ.id],ref:{id:'C1'},loc:{axis:{o:[3,0,0],d:[0,0,1]}}});out.xfAxe=!!(g4&&g4.axis)&&g4.axis.o.join(',')==='13,0,0';
+    // ── arête / sommet d'un autre composant (46 : asmXeEval)
+    const circ=[];for(let i=0;i<=24;i++){const t=i/24*2*Math.PI;circ.push([3+2*Math.cos(t),2*Math.sin(t),7]);}
+    nb.comp._snap.pedges=[{pts:[[0,0,0],[0,0,10]],mid:[0,0,5]},{pts:circ,mid:circ[12]}];
+    const xa=cgEvalRef({k:'xe',ctx:[],path:[nb.occ.id],sub:'edge',pos:[0,0,5],len:10});
+    out.xeAxe=!!(xa&&xa.axis)&&xa.axis.o.join(',')==='10,0,5'&&Math.abs(Math.abs(xa.axis.d[2])-1)<1e-9;
+    const xc=cgEvalRef({k:'xe',ctx:[],path:[nb.occ.id],sub:'edge',pos:circ[12].slice(),len:12.5});
+    out.xeCentre=!!(xc&&xc.point)&&Math.hypot(xc.point.o[0]-13,xc.point.o[1],xc.point.o[2]-7)<1e-6&&!!xc.plane;
+    const xv=cgEvalRef({k:'xe',ctx:[],path:[nb.occ.id],sub:'vtx',pos:[0,0,5],len:10,vpos:[0,0,9]});
+    out.xeSommet=!!(xv&&xv.point)&&xv.point.o.join(',')==='10,0,10';
+    out.xeAbsente=cgEvalRef({k:'xe',ctx:[],path:[nb.occ.id],sub:'edge',pos:[50,50,50],len:10})===null;
+    // ── fonction déposée sur l'en-tête d'un autre corps (treeFeatToBody)
+    out.memeCorpsRefuse=!treeDropBody('b1').accept({kind:'feature',id:'E1'});
+    out.versAutreCorps=treeFeatToBody('E3','b1')===true&&doc.features.find(function(x){return x.id==='E3';}).body==='b1';
+    out.repRefusee=treeFeatToBody('RP','b2')===false&&doc.features.find(function(x){return x.id==='RP';}).body==='b1';
+    // ── un clic sur un plan de l'origine vide le lot Ctrl+clic (sinon le corps ne se replie plus)
+    doc.fold={origin:false};treeSel=['E1','E2'];v2=rendu2();
+    const pxy=v2.all.find(function(r){return /Plan XY/.test(r.innerHTML||'')&&r.onclick;});
+    if(pxy)pxy.onclick(ev(''));out.planVideLot=!!pxy&&treeSel.length===0&&sel.kind==='plane';
+    // ── double-clic sur une fonction en lecture seule : modéliser ET la sélectionner
+    let ofv=null;const as2=asmShow;asmShow=function(p,m){ofv=p.join('/')+':'+m;return true;};
+    treeInstOpen.add(nb.occ.id);v2=rendu2();
+    const coll2=v2.all.find(function(r){return /Collerette/.test(txt(r))&&r.ondblclick;});
+    if(coll2)coll2.ondblclick();out.ouvreFonction=ofv===nb.occ.id+':part';asmShow=as2;
     asmMode='asm';
-    try{v2=rendu2();out.placer=v2.all.some(function(r){return /placer ses composants/.test(txt(r));})&&v2.top.some(function(r){return /Bride:1/.test(r.innerHTML||'');});}catch(e){out.placer='ERR '+e.message;}
+    try{v2=rendu2();const box=v2.top.find(function(r){return r.className==='tgroupbox';});var ri=v2.top.findIndex(function(r){return /tactive/.test(r.className||'');});out.placer=!!box&&v2.top.indexOf(box)===ri+1&&tout(box,[]).some(function(r){return /Repères/.test(txt(r));})&&tout(box,[]).some(function(r){return /Origine de/.test(txt(r));})&&v2.top.some(function(r){return /Bride:1/.test(r.innerHTML||'');});}catch(e){out.placer='ERR '+e.message;}
     asmMode='part';
     return out;`;
   vm.runInContext('var __REF='+fs.readFileSync(path.join(__dirname,'fixtures','arbre_reference.json'),'utf8'),ctx);
@@ -176,12 +199,12 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(o.brideFerme,'le composant non édité est replié (▶), son contenu absent');
   A(o.brideOuvert,'▶ : son contenu apparaît en lecture seule (grisé : corps et fonctions)');
   A(o.dblModele,'double-clic sur ce contenu : asmShow(chemin, « part ») comme aujourd\'hui');
-  A(o.placer===true,'mode Placer : hiérarchie + lignes « placer ses composants »');
+  A(o.placer===true,'mode Placer : section « Repères » (origine, repères) imbriquée sous le composant actif');
   console.log('  — lot 2 : ×N, liaisons, recherche');
   A(o.grpFerme,'3 occurrences identiques → une ligne « Vis ×3 » repliée');
   A(o.grpOuvert,'▶ : les 3 occurrences apparaissent');
   A(o.dossierLiaisons,'section « ⚙ Liaisons (1) »');
-  A(o.ligneLiaison,'ligne de liaison : Pivot · Bride:1 → origine du porteur · rz 35°');
+  A(o.ligneLiaison,'ligne de liaison : Pivot · Bride:1 → Origine de « racine » (libellé du panneau), rz 35° en infobulle');
   A(o.clicLiaison,'clic sur la liaison : asmShow(porteur, « asm », occurrence)');
   A(o.rechAccent,'recherche sans accent : « percage » trouve « Perçage Ø6 », marquée');
   A(o.rechParents,'recherche : parents gardés, le reste masqué');
@@ -196,6 +219,15 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(o.xfRepli,'référence durable perdue : retrouvée par la géométrie mémorisée');
   A(o.xfAbsente,'face disparue : null (l’élément garde sa position, ⚠)');
   A(o.xfAxe,'face cylindrique : axe exprimé dans le composant actif');
+  A(o.xeAxe,'arête droite d’un autre composant : axe exprimé dans le composant actif');
+  A(o.xeCentre,'arête circulaire : centre (et plan du cercle)');
+  A(o.xeSommet,'sommet : l’extrémité la plus proche de la position mémorisée');
+  A(o.xeAbsente,'arête disparue : null (position mémorisée, ⚠)');
+  A(o.memeCorpsRefuse,'fonction déposée sur son propre corps : refusée');
+  A(o.versAutreCorps,'extrusion déposée sur un autre corps : elle s’y applique');
+  A(o.repRefusee,'répétition (références de son corps) : ne change pas de corps');
+  A(o.planVideLot,'clic sur un plan de l’origine : le lot Ctrl+clic est vidé');
+  A(o.ouvreFonction,'double-clic sur une fonction en lecture seule : modéliser son composant (puis la sélectionner)');
   A(o.corpsVersComp,'corps déposé sur un composant : asmCmdMoveTo(« body », corps, composant)');
   console.log(ko?'\n*** '+ko+' PROBLEME(S) ***':'\n*** TOUT PASSE ***');
   process.exit(ko?1:0);

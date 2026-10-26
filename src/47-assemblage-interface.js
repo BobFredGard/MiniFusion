@@ -354,7 +354,7 @@ function asmBreadcrumb(t){
   });
   // V0.7.5 : les deux modes du composant actif, en boutons (était un simple libellé)
   const sw=document.createElement('span');sw.className='asmModeSw';sw.style.cssText='margin-left:auto;display:flex;gap:2px;font-weight:400';
-  [['part','✏️ Modéliser','Modéliser la pièce : esquisses, fonctions, corps (en mode Placer : la pièce sélectionnée)'],['asm','🧩 Placer','Placer les pièces dans l’assemblage : déplacer, aligner, liaisons (depuis une pièce sans sous-composants : l’assemblage qui la contient, elle sélectionnée)']].forEach(([k,lab,tip])=>{
+  [['part','✏️ Modéliser','Modéliser la pièce : esquisses, fonctions, corps (en mode Placer : la pièce sélectionnée)'],['asm','🧩 Assembler','Placer les pièces dans l’assemblage : déplacer, aligner, liaisons (depuis une pièce sans sous-composants : l’assemblage qui la contient, elle sélectionnée)']].forEach(([k,lab,tip])=>{
     const b=document.createElement('button');b.className='mini asmModeBtn';b.dataset.mode=k;b.textContent=lab;b.title=tip;
     b.style.cssText='padding:0 6px;height:18px;min-height:0;line-height:16px;font-size:11px;border-radius:5px'; // fins : ils tiennent dans la ligne du fil d'Ariane
     const on=asmMode===k;if(on){b.style.outline='2px solid var(--accent, #0a84ff)';b.style.color='var(--primary)';}
@@ -368,10 +368,9 @@ function asmBreadcrumb(t){
   d.appendChild(sw);
   t.appendChild(d);
 }
-function asmTreeRender(t,opt){
-  // Lignes du mode Placer (repères du composant actif) ; opt.noCrumb : l'arbre (42) a déjà
-  // dessiné le fil d'Ariane et la hiérarchie
-  if(!(opt&&opt.noCrumb))asmBreadcrumb(t);
+function asmTreeRender(t){
+  // Mode Placer d'un assemblage encore SANS occurrence (sinon : 42, treePlacer sous le composant actif)
+  asmBreadcrumb(t);
   const c=asmActiveComp();
   const row=(html,cls,title)=>{const d=document.createElement('div');d.className=cls;d.innerHTML=html;if(title)d.title=title;t.appendChild(d);return d;};
   row('<span>🧩 '+asmEsc(c.name)+' · placer ses composants</span>','tgroup');

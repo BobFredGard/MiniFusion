@@ -277,7 +277,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.9.7';
+const APP_VER='V0.9.8';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -7172,8 +7172,7 @@ function treeModel(){
     if(!uni)L.push({raw:asmTreeRender,keep:true});
     else{
       L.push({raw:asmBreadcrumb,keep:true});
-      treeComps(L,null);
-      L.push({raw:t=>asmTreeRender(t,{noCrumb:true})});
+      treeComps(L,treePlacer()); // mode Placer : les repères du composant actif, sous sa ligne
     }
     return treeQuery?treeFilter(L,treeQuery):L;
   }
@@ -7221,6 +7220,25 @@ function treeFilter(L,q){
   });
   if(!flat.some((x,i)=>hit[i]))out.push({cls:'tnode',text:'Aucun résultat pour « '+q+' ».',style:{color:'var(--muted)',cursor:'default'}});
   return out;
+}
+let treePlacerOpen=true; // section « Repères » du mode Placer dépliée
+function treePlacer(){
+  // Mode Placer : origine et repères de construction du composant actif — cibles d'un alignement,
+  // clic = la vue tourne autour (asmPivotPick, 47). Imbriqués sous la ligne du composant actif.
+  const L=[],c=asmActiveComp();if(!c)return L;
+  const open=treePlacerOpen||!!treeQuery;
+  L.push({lvl:0,cls:'tnode tsec',title:'Repères du composant : cibles d’un alignement · clic sur un repère = la vue tourne autour',
+    html:'<span class="tri" title="Déplier / replier">'+(open?'▼':'▶')+'</span><span>⌖</span><span class="nm">Repères</span>',
+    on:{click:()=>{treePlacerOpen=!treePlacerOpen;renderTree();}}});
+  if(open){
+    const one=(cg,name,icon,title)=>L.push({lvl:1,cls:'tnode'+(asmPivot&&(asmPivot.cg||null)===(cg||null)?' sel':''),style:{cursor:'pointer'},
+      html:icon+'<span class="nm">'+asmEsc(name)+'</span>',title,on:{click:()=>asmPivotPick(cg,name)}});
+    const on='Origine de « '+c.name+' »';
+    one(null,on,'<span class="pdot" style="background:#fff;box-shadow:0 0 0 2px #1c1c1e inset"></span>','Repère du composant : cible d’un alignement · clic = la vue tourne autour');
+    (c.doc.cgeo||[]).forEach(k=>{if(k&&k.kind==='frame')one(k.id,k.name,'<span>⌖</span>','Repère de construction du composant : cible d’un alignement · clic = la vue tourne autour');});
+  }
+  if(!c.occ.length)L.push({lvl:0,cls:'tnode',html:'<span class="nm" style="color:var(--muted)">Aucun composant : « Nouveau composant » ou « Insérer ».</span>'});
+  return L;
 }
 // Contenu de la pièce ACTIVE (`doc`) : origine, construction, esquisses, corps et fonctions
 function treePart(L){
@@ -7293,7 +7311,7 @@ function treePart(L){
         html:`<span class="pdot" style="background:${PLANES[p].css}"></span><span class="nm">Plan ${p} <span style="color:var(--muted)">· ${PLANES[p].role}</span></span><span class="eye" title="Afficher / masquer le plan">👁</span>`,
         on:{
           eye:()=>setOriginVis(p,!originVis[p]),
-          click:()=>{if(cgTreePick({k:'o',id:p}))return;sel={kind:'plane',id:p};renderTree();renderProps();refreshParts();},
+          click:()=>{if(cgTreePick({k:'o',id:p}))return;treeSel=[];sel={kind:'plane',id:p};renderTree();renderProps();refreshParts();},
           dbl:()=>{sel={kind:'plane',id:p};newSketch(p);},
           ctx:e=>showCtx(e.clientX,e.clientY,{kind:'plane',id:p})}});
     });
@@ -7301,7 +7319,7 @@ function treePart(L){
       L.push({lvl:1,cls:'tnode'+(sel.kind==='originAxis'&&sel.id===a?' sel':''),
         title:'Axe '+a+' de l’origine — référence d’un plan à un angle, d’un axe, d’un repère',
         html:`<span class="pdot" style="background:${c};border-radius:1px;height:3px;margin-top:5px"></span><span class="nm">Axe ${a} <span style="color:var(--muted)">· ${r}</span></span>`,
-        on:{click:()=>{if(cgTreePick({k:'o',id:a}))return;sel={kind:'originAxis',id:a};renderTree();renderProps();}}});
+        on:{click:()=>{if(cgTreePick({k:'o',id:a}))return;treeSel=[];sel={kind:'originAxis',id:a};renderTree();renderProps();}}});
     });
   }
   cgTreeModel(L); // 📐 Construction (79) : section + éléments en enfants
@@ -7384,7 +7402,7 @@ function treePart(L){
     try{ visVue=!(doc.bodyVis&&doc.bodyVis[be.id]===false); }catch(e){}
     const enRejeu=bodyEnabledOf(be.id);
     const bcol=bodyTextColor(be);
-    L.push({drag:{kind:'body',id:be.id},lvl:0,cls:'tnode bh'+((sel.kind==='body'&&sel.id===be.id)?' sel':'')+(visVue?'':' hidden')+(enRejeu?'':' off'),
+    L.push({drag:{kind:'body',id:be.id},drop:treeDropBody(be.id),lvl:0,cls:'tnode bh'+((sel.kind==='body'&&sel.id===be.id)?' sel':'')+(visVue?'':' hidden')+(enRejeu?'':' off'),
       style:{boxShadow:'inset 3px 0 0 '+(bcol||'#9a9aa0')},
       html:'<span class="tri" title="Déplier / replier les fonctions du corps">'+(open?'▼':'▶')+'</span><span title="Corps — '+(be.name||'')+'">🧱</span>'+
         '<span class="nm"'+(bcol?(' style="color:'+bcol+'"'):'')+'>'+be.name+(estActif?' ●':'')+' · '+kidsVis.length+' fonction(s)</span>'+
@@ -7538,13 +7556,21 @@ function treeComps(L,P){
   if(open0)kids(asm.root,[],2);
   treeJoints(L,all,1);
 }
+function treeOpenFeature(path,fid){
+  // Modéliser le composant de l'instance, puis y sélectionner la fonction (double-clic en lecture seule)
+  if(asmShow(path,'part')===false)return;
+  const f=(doc.features||[]).find(x=>x.id===fid);if(!f)return;
+  treeSel=[fid];sel={kind:'feature',id:fid};
+  renderTree();renderProps();refreshParts();
+}
 function treeCompContent(L,inst,c,lv){
   // Contenu d'un composant NON édité : lecture seule, grisé ; double-clic = le modéliser
   const D=c.doc||{};
   const on={click:()=>{try{faceEl.textContent='Lecture seule : double-clic pour modéliser « '+(c.name||'')+' ».';}catch(e){}},dbl:()=>asmShow(inst.path,'part')};
-  const ro=(d,icon,label,meta,sec)=>L.push({lvl:lv+d,cls:'tnode'+(sec?' tsec':''),style:{opacity:'0.55'},
+  const ro=(d,icon,label,meta,sec,fid)=>L.push({lvl:lv+d,cls:'tnode'+(sec?' tsec':''),style:{opacity:'0.55'},
     html:'<span>'+icon+'</span><span class="nm">'+asmEsc(label)+(meta?' <span style="color:var(--muted)">'+asmEsc(meta)+'</span>':'')+'</span>',
-    title:'Lecture seule — double-clic = modéliser « '+(c.name||'')+' »',on});
+    title:'Lecture seule — double-clic = modéliser « '+(c.name||'')+' »'+(fid?' et sélectionner cette fonction':''),
+    on:fid?{click:on.click,dbl:()=>treeOpenFeature(inst.path,fid)}:on});
   ro(0,'⬒','Origine','',true);
   const CG=(D.cgeo||[]).filter(k=>k&&k.kind);
   if(CG.length)ro(0,'📐','Construction','('+CG.length+')',true);
@@ -7556,7 +7582,7 @@ function treeCompContent(L,inst,c,lv){
   B.forEach(b=>{
     const k=F.filter(f=>!f.repeatId&&bOf(f)===b.id);
     ro(0,'🧱',b.name,'· '+k.length+' fonction(s)',true);
-    k.forEach(f=>ro(1,featIconOf(f),f.name));
+    k.forEach(f=>ro(1,featIconOf(f),f.name,'',false,f.id));
   });
 }
 /* ── dossier Liaisons ──
@@ -7582,15 +7608,9 @@ function treeJoints(L,all,lv){
   J.forEach(({o,owner})=>{
     const a=o.align,typed=!!(a.type&&ASM_JOINTS[a.type]);
     const lab=typed?ASM_JOINTS[a.type].lab:'Rigide';
-    // cible : chemin d'occurrences dans le porteur, puis repère (origine ou repère de construction)
-    const dp=(a.dst&&a.dst.path)||[];
-    let cible=dp.map(id=>{const q=asmOcc(id);return q?q.name:'?';}).join(' › ');
-    if(a.dst&&a.dst.cg){
-      const cc=dp.length?asmComp((asmOcc(dp[dp.length-1])||{}).comp):asmComp((all.find(i=>same(i.path,owner))||{}).comp);
-      const k=cc&&cc.doc&&(cc.doc.cgeo||[]).find(x=>x&&x.id===a.dst.cg);
-      cible+=(cible?' · ':'')+(k?k.name:'repère');
-    }
-    if(!cible)cible='origine du porteur';
+    // cible : libellé du panneau de placement (48 : asmRelName) — chemin, repère ou point d'accroche
+    const ownerC=(all.find(i=>same(i.path,owner))||{}).comp;
+    const cible=a.rel?'telle que construite':(typeof asmRelName==='function'?asmRelName(ownerC,a.dst):'?');
     const dof=typed?asmDofs(a).map(k=>{const v=+((a.q||{})[k])||0;return k+' '+String(+v.toFixed(2)).replace('.',',')+(k[0]==='r'?'°':' mm');}).join(', '):'';
     const selOk=asmMode==='asm'&&asmSelId===o.id&&same(owner,AP);
     L.push({lvl:lv+1,cls:'tnode tjoint'+(selOk?' sel':''),
@@ -7624,6 +7644,27 @@ function treeFeatMoveTo(id,targetId){
   if(A.every((x,i)=>x===F[i]))return false;
   featMoveApply(A,'déplacement de « '+f.name+' »');
   return true;
+}
+// Fonction déposée sur l'en-tête d'un AUTRE corps : elle s'y applique désormais (f.body), à sa
+// place dans l'ordre de rejeu ; une étape d'annulation. Seules les fonctions qui ne visent pas des
+// faces ou arêtes précises de leur corps : extrusion, révolution, perçage (un congé, une
+// dépouille, une coque, une répétition, une combinaison y perdraient leurs références).
+const TREE_TO_BODY=['extrude','revolve','hole'];
+function treeFeatToBody(id,bodyId){
+  const f=doc.features.find(x=>x.id===id),b=(doc.bodies||[]).find(x=>x.id===bodyId);
+  if(!f||!b||f.repeatId||f.body===bodyId)return false;
+  if(TREE_TO_BODY.indexOf(f.type)<0){try{faceEl.textContent='« '+f.name+' » vise des faces ou arêtes de son corps : elle ne change pas de corps (seules extrusion, révolution et perçage le peuvent).';}catch(e){}return false;}
+  docPushUndo('« '+f.name+' » vers « '+b.name+' »');
+  f.body=bodyId;
+  markDirty();rebuild();renderTree();renderProps();
+  try{faceEl.textContent='« '+f.name+' » s’applique maintenant à « '+b.name+' ».';}catch(e){}
+  return true;
+}
+function treeDropBody(bodyId){
+  return {
+    accept:D=>{if(D.kind!=='feature')return false;const f=doc.features.find(x=>x.id===D.id);return !!(f&&!f.repeatId&&f.body!==bodyId);},
+    fn:D=>treeFeatToBody(D.id,bodyId)
+  };
 }
 function treeDropFeat(targetId){
   return {
@@ -8524,7 +8565,7 @@ function asmExtStale(){
   // faces d'autres composants, références d'éléments de construction
   asm.comps.forEach(c=>{if(out.includes(c))return;
     if((c.doc.cgeo||[]).some(el=>(el&&el.refs||[]).some(r=>{
-      if(!r||r.k!=='xf')return false;const s=asmXfSig(r,c.id);return s!=null&&s!==r.sig;})))out.push(c);});
+      if(!r||(r.k!=='xf'&&r.k!=='xe'))return false;const s=asmXfSig(r,c.id);return s!=null&&s!==r.sig;})))out.push(c);});
   // V0.8.1 : arêtes d'autres composants projetées dans une esquisse
   asm.comps.forEach(c=>{if(out.includes(c))return;
     if((c.doc.sketches||[]).some(sk=>(sk.entities||[]).some(e=>{
@@ -8643,6 +8684,43 @@ function asmXfEval(ref,cid){
   ref.sig=asmXfSig(ref,cid);
   if(e.plane){const o=P(e.plane.o),B=cgBasisN(V(e.plane.n),null);return {plane:{o,u:B.u,v:B.v,n:B.n},point:{o}};}
   const o=P(e.axis.o);return {axis:{o,d:cgUnit(V(e.axis.d))},point:{o}};
+}
+/* Arête ou sommet d'un AUTRE composant (capture _snap.pedges, V0.8.1) comme référence de
+   construction : ref = {k:'xe', ctx, path, sub:'edge'|'vtx', pos, len, vpos, name, sig} — pos,
+   len, vpos dans le repère du composant visé, mis à jour à chaque lecture (la référence suit
+   l'arête, comme celles de la pièce : arête la plus proche, de longueur voisine). */
+function asmXeFind(E,ref){
+  let best=null,bd=2.5;
+  E.forEach(e=>{
+    const m=e.mid||e.pts[Math.floor(e.pts.length/2)],d=Math.hypot(m[0]-ref.pos[0],m[1]-ref.pos[1],m[2]-ref.pos[2]);
+    if(d>bd)return;
+    let L=0;for(let i=1;i<e.pts.length;i++)L+=Math.hypot(e.pts[i][0]-e.pts[i-1][0],e.pts[i][1]-e.pts[i-1][1],e.pts[i][2]-e.pts[i-1][2]);
+    if(ref.len>0&&Math.abs(L-ref.len)>Math.max(2,0.35*ref.len))return;
+    bd=d;best={e,m,L};
+  });
+  return best;
+}
+function asmXeEval(ref,cid){
+  // Géométrie {point, axis?, plane?} de l'arête / du sommet visé, dans le repère du composant cid
+  if(!asm||!ref||!Array.isArray(ref.path)||!ref.pos)return null;
+  cid=cid||asm.active;
+  const T=asmPathComp(ref.path),c=asmComp(T);
+  if(!c||T===cid||!c._snap||!c._snap.pedges)return null;
+  const hit=asmXeFind(c._snap.pedges,ref);if(!hit)return null;
+  const ctx=asmSkExtCtx(ref,cid),F=ctx&&asmSkXf(ctx,ref.path);if(!F)return null;
+  const P=p=>asmApply(F,p),V=v=>{const q=asmApply(F,v);return [q[0]-F.o[0],q[1]-F.o[1],q[2]-F.o[2]];};
+  const r4=v=>v.map(a=>+(+a).toFixed(4));
+  ref.pos=r4(hit.m);ref.len=+hit.L.toFixed(4);ref.sig=asmXfSig(ref,cid);
+  const pts=hit.e.pts;
+  if(ref.sub==='vtx'){
+    const a=pts[0],b=pts[pts.length-1],q=ref.vpos||a;
+    const o=Math.hypot(a[0]-q[0],a[1]-q[1],a[2]-q[2])<=Math.hypot(b[0]-q[0],b[1]-q[1],b[2]-q[2])?a:b;
+    ref.vpos=r4(o);return {point:{o:P(o)}};
+  }
+  const G=cgEdgeGeom(pts);if(!G)return {point:{o:P(hit.m)}};
+  if(G.line)return {axis:{o:P(hit.m),d:cgUnit(V(cgSub(G.line.b,G.line.a)))},point:{o:P(hit.m)}};
+  const o=P(G.circ.c),B=cgBasisN(V(G.circ.n),null);
+  return {point:{o},axis:{o,d:B.n},plane:{o,u:B.u,v:B.v,n:B.n}};
 }
 function asmExtSync(){
   // Rejoue les composants dont une référence externe a bougé (placement, autre composant
@@ -9020,7 +9098,7 @@ function asmBreadcrumb(t){
   });
   // V0.7.5 : les deux modes du composant actif, en boutons (était un simple libellé)
   const sw=document.createElement('span');sw.className='asmModeSw';sw.style.cssText='margin-left:auto;display:flex;gap:2px;font-weight:400';
-  [['part','✏️ Modéliser','Modéliser la pièce : esquisses, fonctions, corps (en mode Placer : la pièce sélectionnée)'],['asm','🧩 Placer','Placer les pièces dans l’assemblage : déplacer, aligner, liaisons (depuis une pièce sans sous-composants : l’assemblage qui la contient, elle sélectionnée)']].forEach(([k,lab,tip])=>{
+  [['part','✏️ Modéliser','Modéliser la pièce : esquisses, fonctions, corps (en mode Placer : la pièce sélectionnée)'],['asm','🧩 Assembler','Placer les pièces dans l’assemblage : déplacer, aligner, liaisons (depuis une pièce sans sous-composants : l’assemblage qui la contient, elle sélectionnée)']].forEach(([k,lab,tip])=>{
     const b=document.createElement('button');b.className='mini asmModeBtn';b.dataset.mode=k;b.textContent=lab;b.title=tip;
     b.style.cssText='padding:0 6px;height:18px;min-height:0;line-height:16px;font-size:11px;border-radius:5px'; // fins : ils tiennent dans la ligne du fil d'Ariane
     const on=asmMode===k;if(on){b.style.outline='2px solid var(--accent, #0a84ff)';b.style.color='var(--primary)';}
@@ -9034,10 +9112,9 @@ function asmBreadcrumb(t){
   d.appendChild(sw);
   t.appendChild(d);
 }
-function asmTreeRender(t,opt){
-  // Lignes du mode Placer (repères du composant actif) ; opt.noCrumb : l'arbre (42) a déjà
-  // dessiné le fil d'Ariane et la hiérarchie
-  if(!(opt&&opt.noCrumb))asmBreadcrumb(t);
+function asmTreeRender(t){
+  // Mode Placer d'un assemblage encore SANS occurrence (sinon : 42, treePlacer sous le composant actif)
+  asmBreadcrumb(t);
   const c=asmActiveComp();
   const row=(html,cls,title)=>{const d=document.createElement('div');d.className=cls;d.innerHTML=html;if(title)d.title=title;t.appendChild(d);return d;};
   row('<span>🧩 '+asmEsc(c.name)+' · placer ses composants</span>','tgroup');
@@ -19834,6 +19911,7 @@ function cgEvalRef(ref,ctx){
   }
   // Face d'un AUTRE composant de l'assemblage (46 : asmXfEval)
   if(ref.k==='xf')return typeof asmXfEval==='function'?asmXfEval(ref):null;
+  if(ref.k==='xe')return typeof asmXeEval==='function'?asmXeEval(ref):null;
   // Géométrie du modèle (faces, arêtes, sommets) : noyau exact
   return cgEvalModelRef(ref,ctx);
 }
@@ -19845,6 +19923,7 @@ function cgSlot(el,ctx,i,type,opt){
   if(!g){
     if(r.k==='cg')throw new Error('référence '+(i+1)+' supprimée ou non résolue');
     if(r.k==='xf')throw new Error('référence '+(i+1)+' : face de l’autre composant introuvable — position mémorisée');
+    if(r.k==='xe')throw new Error('référence '+(i+1)+' : arête de l’autre composant introuvable — position mémorisée');
     if((r.k==='face'||r.k==='edge'||r.k==='vtx')&&!(typeof occHas==='function'&&occHas()))throw new Error('noyau exact indisponible : position mémorisée');
     throw new Error('référence '+(i+1)+' introuvable — la pièce a changé');
   }
@@ -20469,7 +20548,7 @@ function cgPickOtherComp(e,draft,slot,bodyHit){
   // en temps normal (asmFill) : on les vise ici, pendant la saisie seulement. → ref 'xf' ou null
   if(typeof asm==='undefined'||!asm||!asmOn()||asmMode==='asm')return null;
   const type=(CG_HOW[draft.kind][draft.how].slots[slot]||[])[0];
-  if(type!=='plane'&&type!=='axis')return null;
+  if(type!=='plane'&&type!=='axis'&&type!=='point')return null;
   const G=scene.getObjectByName('asmCtx');if(!G)return null;
   try{
     const r=renderer.domElement.getBoundingClientRect();
@@ -20477,7 +20556,11 @@ function cgPickOtherComp(e,draft,slot,bodyHit){
     G.updateMatrixWorld(true);
     const hits=[];G.traverse(m=>{if(m.isMesh&&m.visible!==false)THREE.Mesh.prototype.raycast.call(m,rayc,hits);});
     hits.sort((a,b)=>a.distance-b.distance);
-    const h=hits[0];if(!h||!h.face)return null;
+    const h=hits[0];
+    // arête ou sommet d'un autre composant à ≤ 7 px (non masqué par une surface plus proche)
+    {const near=Math.min(h?h.distance:Infinity,bodyHit?bodyHit.distance:Infinity);
+     const xe=cgPickOtherEdge(e,type,near);if(xe)return xe;}
+    if(type==='point'||!h||!h.face)return null;
     if(bodyHit&&bodyHit.distance<h.distance-1e-6)return null; // la pièce active est devant
     let g=h.object;while(g&&!(g.userData&&g.userData.path))g=g.parent;if(!g)return null;
     const path=g.userData.path.slice(),T=asmPathComp(path),c=asmComp(T);
@@ -20503,6 +20586,48 @@ function cgPickOtherComp(e,draft,slot,bodyHit){
     const loc=best.plane?{plane:best.plane}:{axis:best.axis};
     return {k:'xf',ctx,path,ref:best.ref,loc,name:(best.plane?'Face':'Axe de face')+' · '+nm,sig:null};
   }catch(err){return null;}
+}
+function cgPickOtherEdge(e,type,surfDist){
+  // Arête des autres instances (asmSkExtLists : arêtes exactes vues depuis l'instance active) sous
+  // le curseur → ref 'xe' : point = sommet (ou centre d'un cercle), axe = droite ou axe d'un
+  // cercle, plan = plan d'un cercle ; null sinon
+  const lists=asmSkExtLists();if(!lists.length)return null;
+  const r=renderer.domElement.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+  const v=new THREE.Vector3(),toS=p=>{v.set(p[0],p[1],p[2]).project(camera);return [(v.x+1)/2*r.width,(1-v.y)/2*r.height,v.z];};
+  let best=null,bd=7;
+  lists.forEach(Lx=>Lx.edges.forEach((E,ei)=>{
+    let a=toS(E.pts[0]);
+    for(let k=1;k<E.pts.length;k++){
+      const b=toS(E.pts[k]);
+      if(Math.abs(a[2])<1&&Math.abs(b[2])<1){
+        const dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy||1e-9;
+        const t=Math.max(0,Math.min(1,((mx-a[0])*dx+(my-a[1])*dy)/L2));
+        const d=Math.hypot(mx-(a[0]+t*dx),my-(a[1]+t*dy));
+        if(d<bd){
+          const P0=E.pts[k-1],P1=E.pts[k],w=new THREE.Vector3(P0[0]+(P1[0]-P0[0])*t,P0[1]+(P1[1]-P0[1])*t,P0[2]+(P1[2]-P0[2])*t);
+          if(camera.position.distanceTo(w)<=surfDist*1.004+0.3){bd=d;best={Lx,E,ei};}
+        }
+      }
+      a=b;
+    }
+  }));
+  if(!best)return null;
+  const {Lx,E}=best,x=Lx.ext,Gm=cgEdgeGeom(E.pts);
+  const Fi=asmInverse(asmSkXf(x.ctx,x.path)),loc=p=>asmApply(Fi,p).map(a=>+a.toFixed(4));
+  const raw=asmComp(asmPathComp(x.path))._snap.pedges[best.ei];
+  let L=0;for(let i=1;i<raw.pts.length;i++)L+=Math.hypot(raw.pts[i][0]-raw.pts[i-1][0],raw.pts[i][1]-raw.pts[i-1][1],raw.pts[i][2]-raw.pts[i-1][2]);
+  const mid=raw.mid||raw.pts[Math.floor(raw.pts.length/2)];
+  const nm=(asmOcc(x.path[x.path.length-1])||{}).name||Lx.name;
+  const base={k:'xe',ctx:x.ctx.slice(),path:x.path.slice(),pos:mid.map(a=>+a.toFixed(4)),len:+L.toFixed(4),sig:null};
+  if(type==='point'){
+    const ends=[E.pts[0],E.pts[E.pts.length-1]].map((p,i)=>{const s=toS(p);return {i,d:Math.hypot(s[0]-mx,s[1]-my)};}).sort((p,q)=>p.d-q.d);
+    if(Gm&&Gm.circ&&ends[0].d>12)return Object.assign(base,{sub:'edge',name:'Centre · '+nm});
+    const end=ends[0].i?raw.pts[raw.pts.length-1]:raw.pts[0];
+    return Object.assign(base,{sub:'vtx',vpos:end.map(a=>+a.toFixed(4)),name:'Sommet · '+nm});
+  }
+  if(type==='axis'&&Gm)return Object.assign(base,{sub:'edge',name:(Gm.circ?'Axe du cercle':'Arête')+' · '+nm});
+  if(type==='plane'&&Gm&&Gm.circ)return Object.assign(base,{sub:'edge',name:'Plan du cercle · '+nm});
+  return null;
 }
 function cgEdgeUnder(e,faceHit){
   // Arête EXACTE (occListEdges) à ≤ 7 px du curseur, indépendante de l'affichage des arêtes
@@ -20665,7 +20790,7 @@ function cgTreeModel(L){
         eye:()=>{el.visible=!(el.visible!==false);try{dirty=true;}catch(e){}cgDraw();renderTree();},
         click:()=>{
           if(cgTreePick({k:'cg',id:el.id}))return;
-          sel={kind:'cg',id:el.id};renderTree();renderProps();cgDraw();
+          treeSel=[];sel={kind:'cg',id:el.id};renderTree();renderProps();cgDraw();
         },
         dbl:()=>{
           if(cgMode)return;
@@ -46498,7 +46623,7 @@ function mfRibbon(){
     g.appendChild(bb);const t=document.createElement('div');t.className='mfGrpT';t.textContent=title;g.appendChild(t);rb.appendChild(g);};
   MF_CAO.forEach(([t,bs])=>grp(t,bs,'mfCao'));
   // V0.6.0 / V0.6.1 : composants (46/47) — seul groupe CAO visible en mode Placer (mfAsmG)
-  grp('Composants',[['asmView','Placer',()=>asmToggle(),'Modéliser le composant actif ↔ placer ses composants'],
+  grp('Composants',[['asmView','Assembler',()=>asmToggle(),'Modéliser le composant actif ↔ placer ses composants'],
     ['asmPart','Composant',()=>asmCmdNewComp(),'Nouveau composant dans le composant actif (on entre aussitôt dedans)'],
     ['asmOcc','Occurrence',()=>{if(asmMode!=='asm')asmEnter();asmCmdNewOcc();},'Nouvelle occurrence du composant sélectionné'],
     ['asmInspect','Inspecter',()=>asmCmdInspect(),'Interférences entre corps / composants, masses (matière par composant) et centre de gravité'],
