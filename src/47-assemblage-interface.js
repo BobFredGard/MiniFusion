@@ -54,7 +54,7 @@ function asmCaptureActive(){
       const m=b.mesh.material||{};
       // intensité et transparence du CORPS (fiche doc.bodies), pas l'opacité calculée de sa matière
       const bid=bodyIdOfRuntime(b);
-      items.push({geo:g,color:(m.color&&m.color.getHex)?m.color.getHex():0x9a9aa0,op:bid?bodyOpOf(bid):1,gl:bid?bodyGlassOf(bid):1});
+      items.push({geo:g,color:(m.color&&m.color.getHex)?m.color.getHex():0x9a9aa0,bid:bid||null,op:bid?bodyOpOf(bid):1,gl:bid?bodyGlassEff(bid):1,rl:bid?renderLookOf(bid):null,cm:bid?bodyMatOf(bid):null}); // rl : apparence de RENDU (atelier) ; cm : matériau CAO (vue) — 12-materiaux, V0.10.0
     }catch(e){}
   });
   if(c._snap)asmSnapFree(c._snap);
@@ -116,7 +116,9 @@ function asmFill(G,placer){
       let mat;
       if(kind==='ghost')mat=new THREE.MeshStandardMaterial({color:it.color,transparent:true,opacity:0.18,depthWrite:false,metalness:.2,roughness:.6});
       else mat=asmLookMat(it,look,on); // couleur des corps, intensité, transparence (48-assemblage-apparence)
-      const m=new THREE.Mesh(it.geo,mat);
+      const m=new THREE.Mesh(it.geo,mat);const ro=it.bid?asmOccRenduOf(inst.path,it.bid):null; // apparence de rendu choisie dans le rendu d'assemblage (occurrence)
+      m.userData.rd={mat:ro?ro.mat:(it.rl?it.rl.mat:null),color:ro?ro.col:(it.rl?it.rl.color:it.color),cmat:it.cm||null,ccol:it.color,ghost:kind==='ghost',
+        bid:it.bid||null,comp:inst.comp,occ:inst.path.length?inst.path[inst.path.length-1]:null}; // apparence de rendu (98-rendu, 98-rendu-vue)
       if(kind==='pick')m.userData.occ=key;else{m.raycast=()=>{};if(kind==='ghost')m.renderOrder=-1;}
       g.add(m);
       if(kind!=='ghost'){try{glassDepthMask({mesh:m});}catch(e){}} // passes de verre, comme une pièce

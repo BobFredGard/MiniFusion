@@ -460,6 +460,7 @@ function mfCommands(){
   [['Plan de construction','plane'],['Axe de construction','axis'],['Point de construction','point'],['Repère de construction','frame']].forEach(([l,k])=>add(l,()=>cgStart(k),'Construire'));
   [['Vue iso','iso'],['Vue de dessus','top'],['Vue de face','front'],['Vue de droite','right']].forEach(([l,v])=>add(l,()=>{try{setView(v);}catch(e){}}));
   [['Espace CAO','cao'],['Espace FAO','fao'],['Espace PLAN','plan']].forEach(([l,w])=>add(l,()=>mfWs(w)));
+  add('Rendu (image réaliste)',()=>{try{rdOpen();}catch(e){}});
   MF_THEMES.forEach(([k,l])=>add('Thème : '+l,()=>mfTheme(k)));
   add('Interface classique',()=>mfUiMode('classique'));
   return out;
@@ -644,6 +645,8 @@ function mfBuildModern(){
   // espaces + barre rapide + recherche, juste après le logo
   const ws=document.createElement('div');ws.className='mfWs mfM';
   [['cao','CAO','Modélisation : esquisses, solides'],['fao','FAO','Usinage : posages, opérations, simulation, G-code'],['plan','PLAN','Mise en plan : planches, vues projetées, cotes, dessin 2D']].forEach(([k,l,t])=>{const b=document.createElement('button');b.textContent=l;b.title=t;b.dataset.mfws=k;b.onclick=()=>mfWs(k);ws.appendChild(b);});
+  // V0.10.0 : RENDU — atelier plein écran par-dessus l'espace en cours (98-rendu)
+  {const b=document.createElement('button');b.textContent='RENDU';b.title='Rendu : image réaliste 1920×1080 — matériaux, ambiances, appareil photo';b.dataset.mfrd='1';b.onclick=()=>{try{rdOpen();}catch(e){}};ws.appendChild(b);}
   const q=document.createElement('div');q.className='mfQuick mfM';
   [['undo','Annuler (Ctrl+Z)','btnUndo'],['redo','Rétablir (Ctrl+Y)','btnRedo']].forEach(([ic,t,id])=>{const b=document.createElement('button');b.innerHTML=mfI(ic,18);b.title=t;b.onclick=()=>mfClick(id);q.appendChild(b);});
   // V0.2.3 : TOUS les boutons de fichier à côté d'« Enregistrer » (src/97-fichiers-projets.js)

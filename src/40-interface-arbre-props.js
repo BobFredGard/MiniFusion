@@ -1283,6 +1283,26 @@ function bodyStyleField(id){
   // qu'on a. Tout est appliqué en direct (applyBodyStyleLive) : le glisser ne
   // déclenche aucun rejeu, il n'y a donc rien à « valider » à la fin.
   const holder=document.createElement('div');holder.className='col';
+  // V0.10.0 : matériau (bibliothèque 12-materiaux) — donne la couleur, la masse estimée et l'aspect du RENDU
+  const wrapM=document.createElement('div');wrapM.className='skrow';
+  const labM=document.createElement('label');labM.textContent='Matériau';labM.style.flex='1';
+  const selM=matSelect(bodyMatOf(id),k=>{
+    setBodyMat(id,k);applyBodyStyleLive(id);
+    try{buildEdgeOverlay();}catch(e){} // verre : voile des arêtes arrière (comme le réglage Transparence)
+    try{renderTree();}catch(e){}
+    try{ctxStyleSync();}catch(e){}
+    markDirty();renderProps();
+  });
+  selM.style.flex='2';selM.style.minWidth='0';
+  selM.title='Matériau du corps : sa couleur à l’écran, sa masse estimée et son aspect dans l’atelier RENDU';
+  wrapM.appendChild(labM);wrapM.appendChild(selM);holder.appendChild(wrapM);
+  const md=matDef(bodyMatOf(id));
+  if(md&&md.rho){
+    const vol=bodyVolumeMm3(id);
+    if(vol>0){const n=document.createElement('div');n.className='pnl-note';
+      n.textContent='Masse ≈ '+fmtMasse(vol/1000*md.rho)+'  ('+md.rho.toString().replace('.',',')+' g/cm³ · '+(vol/1000).toFixed(1).replace('.',',')+' cm³)';
+      holder.appendChild(n);}
+  }
   const wrap=document.createElement('div');wrap.className='skrow';
   const lab=document.createElement('label');lab.textContent='Couleur du corps';lab.style.flex='1';
   const inp=document.createElement('input');

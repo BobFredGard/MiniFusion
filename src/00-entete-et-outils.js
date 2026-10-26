@@ -21,7 +21,7 @@
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.9.13';
+const APP_VER='V0.10.0';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -253,7 +253,7 @@ function applyBodyStyle(mat,id){ // couleur + transparence d'une matière depuis
   if(!mat)return mat;
   const c=bodyColorOf(id);
   if(mat.color&&mat.color.setHex)mat.color.setHex(c);
-  return setMatAlpha(mat,bodyOpOf(id),bodyGlassOf(id));
+  return setMatAlpha(mat,bodyOpOf(id),typeof bodyGlassEff==='function'?bodyGlassEff(id):bodyGlassOf(id)); // V0.10.0 : un corps en verre est transparent (12-materiaux)
 }
 function applyBodyStyleLive(id){ // application IMMÉDIATE pendant le glisser (aucun rejeu)
   try{

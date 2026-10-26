@@ -166,7 +166,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
       <p class="ovlTitle">Vues</p>
       <div class="setRow"><button data-view="iso">Iso</button><button data-view="top">Dessus</button><button data-view="front">Face</button><button data-view="right">Droite</button><button id="setFit">Tout afficher</button></div>
       <p class="ovlTitle">Affichage</p>
-      <div class="setRow"><label><input type="checkbox" id="optMirror" checked> Sol miroir</label></div>
+      <div class="setRow"><label title="Disque sous la pièce, à la couleur du thème (ou de l'ambiance de rendu)"><input type="checkbox" id="optFloor" checked> Sol</label> <label title="Reflet de la pièce au sol, avec ou sans disque"><input type="checkbox" id="optMirror" checked> Miroir</label></div>
       <div class="setRow"><label>Arêtes <select id="optEdges" title="Sans arêtes : ombrage pur · Avec arêtes : vives noires, tangentes gris clair"><option value="off">Masquées</option><option value="on">Vives noires / tangentes grises</option></select></label></div>
       <div class="setRow"><label><input type="checkbox" id="optAxes" checked> Repère (axes XYZ)</label></div>
       <div class="setRow"><label><input type="checkbox" id="optZoomInv"> Inverser le zoom</label></div>
@@ -277,7 +277,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.9.13';
+const APP_VER='V0.10.0';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -509,7 +509,7 @@ function applyBodyStyle(mat,id){ // couleur + transparence d'une matière depuis
   if(!mat)return mat;
   const c=bodyColorOf(id);
   if(mat.color&&mat.color.setHex)mat.color.setHex(c);
-  return setMatAlpha(mat,bodyOpOf(id),bodyGlassOf(id));
+  return setMatAlpha(mat,bodyOpOf(id),typeof bodyGlassEff==='function'?bodyGlassEff(id):bodyGlassOf(id)); // V0.10.0 : un corps en verre est transparent (12-materiaux)
 }
 function applyBodyStyleLive(id){ // application IMMÉDIATE pendant le glisser (aucun rejeu)
   try{
@@ -603,6 +603,8 @@ let mirrorOn=true,mirrorRT=null,mirrorCam=null,mirrorTexMat=null,mirrorU=null,fl
 let zoomInv=false;
 try{const _zi=localStorage.getItem('minifusion_zoominv');if(_zi==='on')zoomInv=true;}catch(e){}
 try{const _mo=localStorage.getItem('minifusion_mirror');if(_mo==='off')mirrorOn=false;}catch(e){}
+let floorOn=true; // V0.10.0 : case « Sol » (disque du thème) — « Miroir » (mirrorOn) = le reflet seul, indépendant
+try{if(localStorage.getItem('minifusion_sol')==='off')floorOn=false;}catch(e){}
 // 2026-10-22 : orbite LIBRE (façon Fusion « Free Orbit ») — la pièce tourne dans tous les sens,
 // roulis compris ; contrainte (défaut) = le Z de la vue reste en haut de l'écran.
 let orbitFree=false,_fo=null;
@@ -650,10 +652,11 @@ function buildScene(){
   mirrorCam=new THREE.PerspectiveCamera();
   mirrorTexMat=new THREE.Matrix4();
   mirrorU={color:{value:new THREE.Color(0x141519)},tDiffuse:{value:mirrorRT.texture},
-    textureMatrix:{value:mirrorTexMat},uCenter:{value:new THREE.Vector3()},uRadius:{value:1}};
+    textureMatrix:{value:mirrorTexMat},uCenter:{value:new THREE.Vector3()},uRadius:{value:1},
+    uDisk:{value:1},uRefl:{value:1},uFade:{value:0},uReflK:{value:0.62}}; // floorSync : Sol, Miroir, bords fondus (ambiance de rendu)
   const fm=new THREE.ShaderMaterial({uniforms:mirrorU,
     vertexShader:'uniform mat4 textureMatrix; varying vec4 vUv; varying vec3 vWorld;\nvoid main(){ vec4 wp = modelMatrix * vec4(position, 1.0); vWorld = wp.xyz; vUv = textureMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader:'uniform vec3 color; uniform sampler2D tDiffuse; uniform vec3 uCenter; uniform float uRadius; varying vec4 vUv; varying vec3 vWorld;\nvoid main(){ if(vUv.w<=1e-4){ gl_FragColor=vec4(color,1.0); return; } vec2 uv = vUv.xy / vUv.w; float eg = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)); if(eg <= 0.0){ gl_FragColor=vec4(color,1.0); return; } vec3 refl = texture2D(tDiffuse, uv).rgb; float d = distance(vWorld, uCenter); float f = exp(-pow(d / max(uRadius * 1.15, 1e-3), 2.0) * 2.0) * 0.85 * smoothstep(0.0, 0.03, eg); gl_FragColor = vec4(mix(color, refl * 0.62, clamp(f, 0.0, 0.85)), 1.0); }'});
+    fragmentShader:'uniform vec3 color; uniform sampler2D tDiffuse; uniform vec3 uCenter; uniform float uRadius; uniform float uDisk; uniform float uRefl; uniform float uFade; uniform float uReflK; varying vec4 vUv; varying vec3 vWorld;\nvoid main(){ float d = distance(vWorld, uCenter); float a = uDisk > 0.5 ? (uFade > 0.5 ? 1.0 - smoothstep(uRadius * 1.5, uRadius * 5.0, d) : 1.0) : 0.0; vec3 refl = vec3(0.0); float ra = 0.0; float f = 0.0; if(uRefl > 0.5 && vUv.w > 1e-4){ vec2 uv = vUv.xy / vUv.w; float eg = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)); if(eg > 0.0){ vec4 r4 = texture2D(tDiffuse, uv); refl = r4.rgb; ra = r4.a; f = exp(-pow(d / max(uRadius * 1.15, 1e-3), 2.0) * 2.0) * 0.85 * smoothstep(0.0, 0.03, eg); } } if(uDisk > 0.5){ gl_FragColor = vec4(mix(color, refl * uReflK, clamp(f, 0.0, 0.85) * ra), a); return; } gl_FragColor = vec4(refl, ra * clamp(f, 0.0, 0.85) * 0.55); }'});
   floorMesh=new THREE.Mesh(new THREE.CircleGeometry(400,48),fm);
   floorMesh.name='floor';floorMesh.position.z=-0.5;scene.add(floorMesh);
   try{if(typeof mf3D==='function')mf3D(document.body.getAttribute('data-theme')||'nuit');}catch(e){} // thème (V0.2.1)
@@ -778,6 +781,19 @@ function updateMirror(){
   mirrorTexMat.multiply(floorMesh.matrixWorld);
   return true;
 }
+function floorSync(){
+  // V0.10.0 : deux cases — « Sol » : disque à la couleur du thème (ou de l'ambiance de rendu, 98-rendu-vue,
+  // bords fondus dans le fond) ; « Miroir » : le reflet de la pièce, avec ou sans disque.
+  if(!floorMesh||!mirrorU)return;
+  const env=typeof vEnvActive==='function'&&vEnvActive();
+  // bords toujours fondus dans le fond (le disque s'arrêtait net à 400 mm, visible en thème Clair)
+  mirrorU.uDisk.value=floorOn?1:0;mirrorU.uRefl.value=mirrorOn?1:0;mirrorU.uFade.value=1;mirrorU.uReflK.value=env?0.8:0.62;
+  const fm=floorMesh.material,tr=true;
+  if(fm.transparent!==tr){fm.transparent=tr;fm.depthWrite=!tr;fm.needsUpdate=true;}
+  floorMesh.renderOrder=tr?-3:0;
+  floorMesh.visible=floorOn||mirrorOn;
+  mirrorDirty=true;
+}
 function refreshMirror(){
   // Sol sous les corps visibles + halo centré (comme le viewer).
   // 2026-10-21-005 : le sol est PERPENDICULAIRE au haut de la vue (_mn : Z monde, ou
@@ -786,8 +802,8 @@ function refreshMirror(){
   // laisserait un vide sous la pièce).
   if(!floorMesh)return;
   mirrorDirty=true; // la cible de reflet est à refaire (position du sol, halo, visibilité)
-  floorMesh.visible=mirrorOn;
-  if(!mirrorOn)return;
+  floorSync();
+  if(!floorMesh.visible)return;
   // 2026-10-22 : en FAO, le BRUT affiché (posage sélectionné) compte aussi — le sol
   // passe sous lui, pas sous la pièce qu'il enveloppe.
   // V0.7.5 : seulement ce qui est réellement AFFICHÉ (objet et parents visibles) — un corps masqué
@@ -829,6 +845,7 @@ function refreshMirror(){
   floorMesh.updateMatrixWorld();
   mirrorU.uCenter.value.copy(_mcu);
   mirrorU.uRadius.value=Math.max(sz/2,1);
+  const _fs=Math.max(1,sz*3/400);floorMesh.scale.set(_fs,_fs,1); // disque assez grand pour que son fondu reste dans le disque
 }
 /* 2026-10-21-005 : HAUT DE LA VUE en FAO — l'orbite (camera.up) et le sol miroir
    suivent le Z du posage, ou celui de l'opération sélectionnée quand elle a son
@@ -842,7 +859,7 @@ function refreshMirror(){
    ne fait ensuite que recopier la position et regarder la cible.
    Contrainte : azimut autour du Z de la vue, élévation bornée avant les pôles, Z en haut.
    Libre : rotation autour des axes ÉCRAN (haut et droite de la caméra), camera.up suit.
-   Inertie : même amortissement qu'OrbitControls (dampingFactor appliqué à chaque image). */
+   Inertie : 20 % du reste par image (ORBIT_ROT_DAMP, V0.10.0 ; OrbitControls : 8 % pour le pan et le zoom). */
 function orbitApplyButtons(){
   if(!controls||!controls.mouseButtons||!THREE.MOUSE)return;
   controls.mouseButtons.LEFT=-1;controls.mouseButtons.MIDDLE=-1;
@@ -908,11 +925,14 @@ function orbitRotate(dx,dy,P){
   camera.position.copy(P).add(off);t.copy(P).add(toff);camera.lookAt(t);
   viewUserMoved=true;
 }
-// inertie : le reste du glissement s'écoule comme l'amortissement d'OrbitControls
+// inertie : le reste du glissement s'écoule à chaque image. V0.10.0 : 20 % par image (était 8 %,
+// l'amortissement d'OrbitControls) — la pièce suit la souris de plus près, avec une inertie plus courte ;
+// l'atelier RENDU, lui, suit la souris sans inertie. Le pan et le zoom gardent 8 %.
+const ORBIT_ROT_DAMP=0.2;
 function orbitTick(){
   if(!_fo||(!_fo.vx&&!_fo.vy))return;
   try{if(typeof skEdit!=='undefined'&&skEdit){_fo.vx=_fo.vy=0;return;}}catch(e){}
-  const f=(controls&&controls.enableDamping)?(controls.dampingFactor||0.08):1;
+  const f=(controls&&controls.enableDamping)?ORBIT_ROT_DAMP:1;
   orbitRotate(_fo.vx*f,_fo.vy*f,_fo.P);
   _fo.vx*=1-f;_fo.vy*=1-f;
   if(Math.abs(_fo.vx)<0.01&&Math.abs(_fo.vy)<0.01){_fo.vx=_fo.vy=0;if(!_fo.down)_fo=null;}
@@ -1018,10 +1038,11 @@ function animate(){
   requestAnimationFrame(animate);
   try{viewUpSync();}catch(e){} // 2026-10-21-005 : haut de vue = Z du posage / de l'opération en FAO
   orbitTick();controls.update();updateLabels();
-  if(mirrorOn&&floorMesh&&mirrorCam){
-    const vu=updateMirror();
+  try{if(typeof vEnvTick==='function')vEnvTick();}catch(e){} // V0.10.0 : environnement de rendu (98-rendu-vue)
+  if(mirrorOn&&floorMesh&&mirrorCam){ // aussi sous une ambiance de rendu : sinon le sol montrait le dernier reflet calculé, figé
+    const vu=updateMirror();mirrorU.uRefl.value=vu?1:0; // caméra sous le sol : pas de reflet (il resterait figé)
     mirrorViewMoved();
-    if(vu&&mirrorDirty){
+    if(vu){const _fv=floorMesh.visible; // V0.10.0 : à CHAQUE image — un reflet recalculé au seul mouvement de caméra restait figé (survol, sélection, couleur, pièce modifiée)
       floorMesh.visible=false;
       // Seuls les SOLIDES se reflètent (comme viewer_STEP) : traits, aides et plans masqués.
       const _mh=[];
@@ -1029,10 +1050,13 @@ function animate(){
         if(!o.visible||o===scene)return;
         if(o.isLine||o.isLineSegments||o.isPoints||o.isSprite||o===axHelper||(o.userData&&(o.userData.triad||o.userData.noMirror))||(o.material&&o.material.isShaderMaterial)||(o.material&&o.material.transparent&&o.material.opacity<0.6)){o.visible=false;_mh.push(o);}
       });
+      const _bg=scene.background,_ca=renderer.getClearAlpha();
+      scene.background=null;renderer.setClearAlpha(0); // alpha 0 hors de la pièce : seul le reflet de la pièce se pose sur le sol (plus de tache du fond)
       renderer.setRenderTarget(mirrorRT);renderer.clear();renderer.render(scene,mirrorCam);
+      scene.background=_bg;renderer.setClearAlpha(_ca);
       for(const o of _mh)o.visible=true;
       renderer.setRenderTarget(null);
-      floorMesh.visible=true;
+      floorMesh.visible=_fv;
       mirrorDirty=false;
     }
   }
@@ -2064,6 +2088,166 @@ function triadHoverAt(e){
   const p=triadPickPlane(e);
   if(p!==triadHover){triadHover=p;triadPaint(axHelper);}
   return p;
+}
+
+/* ═══════════════ 12-materiaux.js — materiaux ═══════════════ */
+/* ---------- bibliothèque de matériaux (V0.10.0) ----------
+   UNE liste pour toute l'application : la CAO s'en sert pour la COULEUR d'un corps (et une
+   masse estimée), l'atelier RENDU (98-rendu) pour l'aspect physique (métal, rugosité, vernis,
+   transmission). Un corps porte la clé du matériau dans sa fiche : doc.bodies[].mat.
+   Choisir un matériau donne au corps la couleur du matériau ; on peut ensuite changer la
+   couleur à la main (alu anodisé rouge, ABS jaune…) : le matériau garde son FINI.
+   Champs : k clé stable (enregistrée dans les fichiers — ne jamais renommer), nom, fam famille,
+   col couleur de base, metal 0..1, rough 0..1, cc vernis 0..1, ccr rugosité du vernis,
+   trans transmission 0..1 (verres), ior, rho densité g/cm³, sheen velours (élastomères), gv « Transparence »
+   de la vue CAO pour un verre (verre approché : setMatAlpha, 0,1 = clair … 1 = opaque). */
+const MAT_FAMS=['Aciers et fontes','Aluminium','Métaux non ferreux','Plastiques','Élastomères','Peintures','Bois','Verres et transparents'];
+const MAT_LIB=[
+  // aciers et fontes
+  {k:'acier',nom:'Acier usiné',fam:'Aciers et fontes',col:0x9ea3a8,metal:1,rough:0.32,rho:7.85},
+  {k:'acier-poli',nom:'Acier poli',fam:'Aciers et fontes',col:0xc4c8cc,metal:1,rough:0.12,rho:7.85},
+  {k:'inox',nom:'Inox brossé',fam:'Aciers et fontes',col:0xb9bcbf,metal:1,rough:0.26,rho:7.9},
+  {k:'inox-miroir',nom:'Inox poli miroir',fam:'Aciers et fontes',col:0xdadcde,metal:1,rough:0.04,rho:7.9},
+  {k:'acier-noir',nom:'Acier bruni (noir)',fam:'Aciers et fontes',col:0x2a2b2d,metal:0.9,rough:0.38,rho:7.85},
+  {k:'acier-zingue',nom:'Acier zingué',fam:'Aciers et fontes',col:0xc9cdd2,metal:1,rough:0.3,rho:7.85},
+  {k:'fonte',nom:'Fonte',fam:'Aciers et fontes',col:0x5d5f62,metal:0.85,rough:0.6,rho:7.2},
+  // aluminium
+  {k:'alu',nom:'Aluminium usiné',fam:'Aluminium',col:0xd3d6d9,metal:1,rough:0.28,rho:2.7},
+  {k:'alu-poli',nom:'Aluminium poli',fam:'Aluminium',col:0xe6e8ea,metal:1,rough:0.08,rho:2.7},
+  {k:'alu-sable',nom:'Aluminium microbillé',fam:'Aluminium',col:0xc8cbce,metal:1,rough:0.55,rho:2.7},
+  {k:'alu-anod-nat',nom:'Alu anodisé naturel',fam:'Aluminium',col:0xbfc2c5,metal:0.9,rough:0.42,rho:2.7},
+  {k:'alu-anod-noir',nom:'Alu anodisé noir',fam:'Aluminium',col:0x1f2023,metal:0.75,rough:0.42,rho:2.7},
+  {k:'alu-anod-rouge',nom:'Alu anodisé rouge',fam:'Aluminium',col:0xb3121c,metal:0.8,rough:0.38,rho:2.7},
+  {k:'alu-anod-bleu',nom:'Alu anodisé bleu',fam:'Aluminium',col:0x1d54b8,metal:0.8,rough:0.38,rho:2.7},
+  {k:'alu-anod-or',nom:'Alu anodisé or',fam:'Aluminium',col:0xc9a13b,metal:0.85,rough:0.36,rho:2.7},
+  {k:'alu-anod-titane',nom:'Alu anodisé gris titane',fam:'Aluminium',col:0x6e7177,metal:0.85,rough:0.4,rho:2.7},
+  // non ferreux
+  {k:'laiton',nom:'Laiton',fam:'Métaux non ferreux',col:0xd6b25e,metal:1,rough:0.24,rho:8.5},
+  {k:'bronze',nom:'Bronze',fam:'Métaux non ferreux',col:0xb07a45,metal:1,rough:0.32,rho:8.8},
+  {k:'cuivre',nom:'Cuivre',fam:'Métaux non ferreux',col:0xd9825b,metal:1,rough:0.22,rho:8.96},
+  {k:'titane',nom:'Titane',fam:'Métaux non ferreux',col:0xa7a59f,metal:1,rough:0.34,rho:4.43},
+  {k:'or',nom:'Or',fam:'Métaux non ferreux',col:0xf2c45a,metal:1,rough:0.14,rho:19.3},
+  {k:'chrome',nom:'Chrome',fam:'Métaux non ferreux',col:0xe8eaec,metal:1,rough:0.03,rho:7.19},
+  // plastiques
+  {k:'abs-noir',nom:'ABS noir',fam:'Plastiques',col:0x1b1c1e,metal:0,rough:0.45,cc:0.15,ccr:0.4,rho:1.05},
+  {k:'abs-blanc',nom:'ABS blanc',fam:'Plastiques',col:0xeeeeea,metal:0,rough:0.45,cc:0.15,ccr:0.4,rho:1.05},
+  {k:'abs-gris',nom:'ABS gris',fam:'Plastiques',col:0x7a7d82,metal:0,rough:0.48,rho:1.05},
+  {k:'pla-mat',nom:'PLA mat (impression 3D)',fam:'Plastiques',col:0xff7a1f,metal:0,rough:0.7,rho:1.24},
+  {k:'pla-brillant',nom:'PLA brillant',fam:'Plastiques',col:0x0a84ff,metal:0,rough:0.25,cc:0.4,ccr:0.2,rho:1.24},
+  {k:'petg',nom:'PETG',fam:'Plastiques',col:0x30d158,metal:0,rough:0.3,cc:0.3,ccr:0.2,rho:1.27},
+  {k:'pom',nom:'POM (Delrin)',fam:'Plastiques',col:0xf4f2ec,metal:0,rough:0.35,rho:1.41},
+  {k:'pa-nylon',nom:'Polyamide (nylon)',fam:'Plastiques',col:0xe9e4d4,metal:0,rough:0.6,rho:1.14},
+  {k:'pe-hd',nom:'Polyéthylène HD',fam:'Plastiques',col:0xf1f1ee,metal:0,rough:0.5,rho:0.95},
+  // élastomères
+  {k:'caoutchouc',nom:'Caoutchouc noir',fam:'Élastomères',col:0x18191a,metal:0,rough:0.85,sheen:0.3,rho:1.2},
+  {k:'silicone',nom:'Silicone',fam:'Élastomères',col:0xd84a3a,metal:0,rough:0.6,sheen:0.2,rho:1.15},
+  {k:'tpu',nom:'TPU souple',fam:'Élastomères',col:0x3a3d42,metal:0,rough:0.65,sheen:0.2,rho:1.21},
+  // peintures
+  {k:'peint-mat',nom:'Peinture mate',fam:'Peintures',col:0x2e3a46,metal:0,rough:0.8},
+  {k:'peint-satin',nom:'Peinture satinée',fam:'Peintures',col:0xd8d4cc,metal:0,rough:0.45,cc:0.3,ccr:0.35},
+  {k:'peint-laque',nom:'Laque brillante',fam:'Peintures',col:0xc8102e,metal:0,rough:0.3,cc:1,ccr:0.03},
+  {k:'peint-metal',nom:'Peinture métallisée',fam:'Peintures',col:0x2c4f86,metal:0.6,rough:0.35,cc:1,ccr:0.03},
+  {k:'peint-epoxy',nom:'Poudre époxy texturée',fam:'Peintures',col:0x1f2a22,metal:0,rough:0.7,cc:0.1,ccr:0.6},
+  // bois
+  {k:'bois-hetre',nom:'Hêtre',fam:'Bois',col:0xd9b48a,metal:0,rough:0.65,rho:0.72},
+  {k:'bois-chene',nom:'Chêne',fam:'Bois',col:0xa77a4b,metal:0,rough:0.6,rho:0.75},
+  {k:'bois-noyer',nom:'Noyer verni',fam:'Bois',col:0x5c3a24,metal:0,rough:0.4,cc:0.6,ccr:0.1,rho:0.65},
+  {k:'mdf',nom:'MDF',fam:'Bois',col:0xb39a76,metal:0,rough:0.85,rho:0.75},
+  // verres et transparents
+  {k:'verre',nom:'Verre',fam:'Verres et transparents',col:0xf4fbff,metal:0,rough:0.02,trans:1,ior:1.5,rho:2.5,gv:0.12},
+  {k:'verre-depoli',nom:'Verre dépoli',fam:'Verres et transparents',col:0xf0f6f8,metal:0,rough:0.35,trans:1,ior:1.5,rho:2.5,gv:0.5},
+  {k:'pmma',nom:'PMMA (plexiglas)',fam:'Verres et transparents',col:0xf7fbff,metal:0,rough:0.03,trans:1,ior:1.49,rho:1.19,gv:0.12},
+  {k:'pc-fume',nom:'Polycarbonate fumé',fam:'Verres et transparents',col:0x5a5f66,metal:0,rough:0.05,trans:0.85,ior:1.58,rho:1.2,gv:0.3}
+];
+const MAT_BY_KEY=Object.create(null);
+MAT_LIB.forEach(m=>{MAT_BY_KEY[m.k]=m;});
+function matDef(k){return(k&&MAT_BY_KEY[k])||null;}
+function bodyMatOf(id){ // clé du matériau d'un corps (null = aucun)
+  try{const e=bodyEntryOf(id);return(e&&matDef(e.mat))?e.mat:null;}catch(err){return null;}
+}
+function bodyGlassEff(id){
+  // transparence AFFICHÉE dans la vue : le réglage « Transparence » du corps s'il en a un, sinon
+  // celle de son matériau (verre approché : la vue CAO ne calcule pas la transmission, l'atelier si)
+  const g=bodyGlassOf(id);if(g<0.999)return g;
+  const d=matDef(bodyMatOf(id));return d&&d.gv?d.gv:1;
+}
+function setBodyMat(id,k){ // matériau + sa couleur de base (la couleur reste modifiable ensuite)
+  if(!id)return false;const e=bodyEntry(id);if(!e)return false;
+  const m=matDef(k);
+  if(!m){delete e.mat;return true;}
+  e.mat=m.k;e.color=m.col;
+  return true;
+}
+function matSelect(cur,onPick,noneLabel){
+  // liste déroulante groupée par famille, la même partout (fiche du corps, atelier RENDU)
+  const s=document.createElement('select');
+  const o0=document.createElement('option');o0.value='';o0.textContent=noneLabel||'— Aucun —';s.appendChild(o0);
+  MAT_FAMS.forEach(f=>{
+    const g=document.createElement('optgroup');g.label=f;
+    g.style.color='#5b5b63';g.style.background='#ececf0';g.style.fontStyle='normal'; // la liste déroulante est claire : titre de famille lisible quel que soit le thème
+    MAT_LIB.filter(m=>m.fam===f).forEach(m=>{const o=document.createElement('option');o.value=m.k;o.textContent=m.nom;o.style.color='#1c1c1e';o.style.background='#fff';if(m.k===cur)o.selected=true;g.appendChild(o);});
+    s.appendChild(g);
+  });
+  s.onchange=()=>onPick(s.value||null);
+  return s;
+}
+function meshVolumeMm3(mesh){
+  // volume d'un maillage fermé (somme des tétraèdres signés), en mm³, dans le repère du monde
+  try{
+    const g=mesh&&mesh.geometry;const P=g&&g.attributes&&g.attributes.position;if(!P)return 0;
+    mesh.updateMatrixWorld(true);
+    const M=mesh.matrixWorld,a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3();
+    const I=g.index,n=I?I.count:P.count;let v=0;
+    for(let i=0;i+2<n;i+=3){
+      const i0=I?I.getX(i):i,i1=I?I.getX(i+1):i+1,i2=I?I.getX(i+2):i+2;
+      a.fromBufferAttribute(P,i0).applyMatrix4(M);b.fromBufferAttribute(P,i1).applyMatrix4(M);c.fromBufferAttribute(P,i2).applyMatrix4(M);
+      v+=a.dot(b.clone().cross(c));
+    }
+    return Math.abs(v/6);
+  }catch(err){return 0;}
+}
+function bodyVolumeMm3(id){ // somme des maillages affichés du corps
+  let v=0;
+  try{(bodies||[]).forEach(b=>{if(b&&!b.ghost&&b.mesh&&bodyIdOfRuntime(b)===id)v+=meshVolumeMm3(b.mesh);});}catch(err){}
+  return v;
+}
+function fmtMasse(g){return g>=1000?(g/1000).toFixed(g>=10000?1:2).replace('.',',')+' kg':g.toFixed(g>=100?0:1).replace('.',',')+' g';}
+/* ── apparences de RENDU (V0.10.0) : propres au rendu, la pièce CAO garde les siennes ──
+   doc.rendu = {corps:{[id du corps]:{mat?, col?}}} — un champ absent = celui de la CAO ; mat '' = aucun.
+   Lues par l'atelier RENDU (98-rendu) et par les environnements de rendu de la vue
+   (98-rendu-vue) ; jamais par l'affichage CAO, l'usinage ni la mise en plan. */
+function renduNorm(r){ // relu d'un fichier : champs valides seulement ; null si vide
+  if(!r||typeof r!=='object'||!r.corps||typeof r.corps!=='object')return null;
+  const c={};
+  Object.keys(r.corps).forEach(id=>{const e=r.corps[id];if(!e||typeof e!=='object')return;
+    const o={};if(e.mat===''||matDef(e.mat))o.mat=e.mat; /* '' = « sans matériau » voulu pour le rendu */
+    if(isFinite(+e.col)&&+e.col>=0&&+e.col<=0xffffff)o.col=+e.col;
+    if(Object.keys(o).length)c[id]=o;});
+  return Object.keys(c).length?{corps:c}:null;
+}
+function renderLookOwn(id){try{return(doc&&doc.rendu&&doc.rendu.corps&&doc.rendu.corps[id])||null;}catch(e){return null;}}
+function renderLookOf(id){
+  // {mat, color, own} : l'apparence du rendu, sinon celle de la CAO (matériau + couleur du corps)
+  const r=renderLookOwn(id);
+  const mat=r&&r.mat!==undefined?r.mat:bodyMatOf(id);
+  const color=r&&r.col!=null?r.col:bodyColorOf(id);
+  return {mat:matDef(mat)?mat:null,color,own:!!r};
+}
+function setRenderLook(id,k,col){
+  // matériau k (null = aucun) et couleur col (null = celle du matériau, sinon celle de la CAO)
+  if(!id||!doc)return false;
+  const m=matDef(k);
+  const o={mat:m?m.k:''}; // '' : sans matériau, même si le corps en a un en CAO
+  o.col=col!=null?col:(m?m.col:bodyColorOf(id));
+  if(!doc.rendu||!doc.rendu.corps)doc.rendu={corps:{}};
+  doc.rendu.corps[id]=o;
+  return true;
+}
+function clearRenderLook(id){ // revient à l'apparence CAO
+  if(!doc||!doc.rendu||!doc.rendu.corps)return false;
+  delete doc.rendu.corps[id];
+  if(!Object.keys(doc.rendu.corps).length)doc.rendu=null;
+  return true;
 }
 
 /* ═══════════════ 20-noyau-et-operations-solides.js — noyau et operations solides ═══════════════ */
@@ -6805,6 +6989,26 @@ function bodyStyleField(id){
   // qu'on a. Tout est appliqué en direct (applyBodyStyleLive) : le glisser ne
   // déclenche aucun rejeu, il n'y a donc rien à « valider » à la fin.
   const holder=document.createElement('div');holder.className='col';
+  // V0.10.0 : matériau (bibliothèque 12-materiaux) — donne la couleur, la masse estimée et l'aspect du RENDU
+  const wrapM=document.createElement('div');wrapM.className='skrow';
+  const labM=document.createElement('label');labM.textContent='Matériau';labM.style.flex='1';
+  const selM=matSelect(bodyMatOf(id),k=>{
+    setBodyMat(id,k);applyBodyStyleLive(id);
+    try{buildEdgeOverlay();}catch(e){} // verre : voile des arêtes arrière (comme le réglage Transparence)
+    try{renderTree();}catch(e){}
+    try{ctxStyleSync();}catch(e){}
+    markDirty();renderProps();
+  });
+  selM.style.flex='2';selM.style.minWidth='0';
+  selM.title='Matériau du corps : sa couleur à l’écran, sa masse estimée et son aspect dans l’atelier RENDU';
+  wrapM.appendChild(labM);wrapM.appendChild(selM);holder.appendChild(wrapM);
+  const md=matDef(bodyMatOf(id));
+  if(md&&md.rho){
+    const vol=bodyVolumeMm3(id);
+    if(vol>0){const n=document.createElement('div');n.className='pnl-note';
+      n.textContent='Masse ≈ '+fmtMasse(vol/1000*md.rho)+'  ('+md.rho.toString().replace('.',',')+' g/cm³ · '+(vol/1000).toFixed(1).replace('.',',')+' cm³)';
+      holder.appendChild(n);}
+  }
   const wrap=document.createElement('div');wrap.className='skrow';
   const lab=document.createElement('label');lab.textContent='Couleur du corps';lab.style.flex='1';
   const inp=document.createElement('input');
@@ -8589,7 +8793,7 @@ function asmNotify(viewOnly){
   const f=globalThis.asmOnChange;if(typeof f==='function'){try{f(!!viewOnly);}catch(e){}}
 }
 /* ── sauvegarde : bloc asm (v2) dans le fichier (doc = composant actif, compatibilité) ── */
-function asmOccSerial(o){const s={id:o.id,comp:o.comp,name:o.name,fr:o.fr,fixed:!!o.fixed,visible:o.visible!==false,align:o.align||null};if(o.look)s.look=o.look;return s;}
+function asmOccSerial(o){const s={id:o.id,comp:o.comp,name:o.name,fr:o.fr,fixed:!!o.fixed,visible:o.visible!==false,align:o.align||null};if(o.look)s.look=o.look;if(o.rendu)s.rendu=o.rendu;return s;}
 function asmSerial(){
   if(!asmHasContent())return null;
   asmSync();
@@ -8615,7 +8819,7 @@ function asmTreeFromSerial(a,topDoc,mkDoc){
   const okFr=f=>f&&['o','x','y','z'].every(k=>Array.isArray(f[k])&&f[k].length===3&&f[k].every(v=>isFinite(+v)));
   const fr=f=>okFr(f)?{o:f.o.map(Number),x:f.x.map(Number),y:f.y.map(Number),z:f.z.map(Number)}:asmFr0();
   const occOf=(o,cidKey)=>({id:String(o.id),comp:String(o[cidKey]),name:String(o.name||o.id),fr:fr(o.fr),fixed:!!o.fixed,
-    visible:o.visible!==false,align:asmAlignNorm(o.align),look:asmLookNorm(o.look),st:'ok',msg:''});
+    visible:o.visible!==false,align:asmAlignNorm(o.align),look:asmLookNorm(o.look),rendu:(typeof renduNorm==='function'?renduNorm(o.rendu):null)||undefined,st:'ok',msg:''});
   let comps,root;
   if(Array.isArray(a.comps)&&a.comps.length){
     comps=a.comps.filter(c=>c&&typeof c.id==='string').map(c=>({id:c.id,kind:'comp',name:String(c.name||c.id),
@@ -8940,7 +9144,7 @@ function asmCaptureActive(){
       const m=b.mesh.material||{};
       // intensité et transparence du CORPS (fiche doc.bodies), pas l'opacité calculée de sa matière
       const bid=bodyIdOfRuntime(b);
-      items.push({geo:g,color:(m.color&&m.color.getHex)?m.color.getHex():0x9a9aa0,op:bid?bodyOpOf(bid):1,gl:bid?bodyGlassOf(bid):1});
+      items.push({geo:g,color:(m.color&&m.color.getHex)?m.color.getHex():0x9a9aa0,bid:bid||null,op:bid?bodyOpOf(bid):1,gl:bid?bodyGlassEff(bid):1,rl:bid?renderLookOf(bid):null,cm:bid?bodyMatOf(bid):null}); // rl : apparence de RENDU (atelier) ; cm : matériau CAO (vue) — 12-materiaux, V0.10.0
     }catch(e){}
   });
   if(c._snap)asmSnapFree(c._snap);
@@ -9002,7 +9206,9 @@ function asmFill(G,placer){
       let mat;
       if(kind==='ghost')mat=new THREE.MeshStandardMaterial({color:it.color,transparent:true,opacity:0.18,depthWrite:false,metalness:.2,roughness:.6});
       else mat=asmLookMat(it,look,on); // couleur des corps, intensité, transparence (48-assemblage-apparence)
-      const m=new THREE.Mesh(it.geo,mat);
+      const m=new THREE.Mesh(it.geo,mat);const ro=it.bid?asmOccRenduOf(inst.path,it.bid):null; // apparence de rendu choisie dans le rendu d'assemblage (occurrence)
+      m.userData.rd={mat:ro?ro.mat:(it.rl?it.rl.mat:null),color:ro?ro.col:(it.rl?it.rl.color:it.color),cmat:it.cm||null,ccol:it.color,ghost:kind==='ghost',
+        bid:it.bid||null,comp:inst.comp,occ:inst.path.length?inst.path[inst.path.length-1]:null}; // apparence de rendu (98-rendu, 98-rendu-vue)
       if(kind==='pick')m.userData.occ=key;else{m.raycast=()=>{};if(kind==='ghost')m.renderOrder=-1;}
       g.add(m);
       if(kind!=='ghost'){try{glassDepthMask({mesh:m});}catch(e){}} // passes de verre, comme une pièce
@@ -10132,6 +10338,39 @@ function asmLookProps(p,o){
   if(o.look){const rs=mk('button','mini','Par défaut');rs.title='Intensité et transparence des corps ; arêtes selon le bouton';rs.onclick=()=>{asmPush('apparence');o.look=null;asmNotify();};b.appendChild(rs);}
   p.appendChild(b);
   p.appendChild(mk('div','pnl-note','Vaut pour ce qu’elle contient, en mode Placer comme en mode Modéliser (autour de la pièce). La couleur reste celle des corps, la même partout.'));
+}
+/* ---------- apparence de RENDU par occurrence (V0.10.0) ----------
+   « Pour l'assemblage, les textures/couleurs sont choisies par Rendu d'assemblage » : dans l'atelier
+   RENDU ouvert sur l'assemblage (mode Assembler), chaque occurrence peut recevoir, corps par corps,
+   un matériau et une couleur de rendu : o.rendu = {corps:{[id du corps]:{mat, col}}} (renduNorm,
+   12-materiaux), enregistré avec l'assemblage, annulable. Elle vaut pour ce que l'occurrence
+   contient ; l'occurrence la plus profonde qui en a une l'emporte, puis l'apparence de rendu de la
+   pièce (doc.rendu), puis la couleur de la CAO. La vue CAO n'en tient pas compte. */
+function asmOccRenduOf(path,bid){
+  let out=null,c=asmRoot();
+  for(const id of (path||[])){
+    const o=c&&c.occ.find(q=>q.id===id);if(!o)break;
+    const r=o.rendu&&o.rendu.corps&&o.rendu.corps[bid];if(r)out=r;
+    c=asmComp(o.comp);
+  }
+  if(!out)return null;
+  return {mat:matDef(out.mat)?out.mat:null,col:out.col};
+}
+function asmSetOccRendu(o,bid,k,col,all){
+  // matériau k (null = aucun), couleur col (null = celle du matériau) ; all : toutes les occurrences du composant
+  if(!o)return;
+  asmPush('apparence de rendu');
+  const m=matDef(k),e={mat:m?m.k:'',col:col!=null?col:(m?m.col:0x9a9aa0)};
+  (all?asmCompOccs(o.comp):[o]).forEach(q=>{const r=q.rendu&&q.rendu.corps?{corps:Object.assign({},q.rendu.corps)}:{corps:{}};
+    r.corps[bid]=Object.assign({},e);q.rendu=renduNorm(r);});
+  asmNotify();
+}
+function asmClearOccRendu(o,bid,all){
+  if(!o)return;
+  asmPush('apparence de rendu');
+  (all?asmCompOccs(o.comp):[o]).forEach(q=>{if(!q.rendu||!q.rendu.corps)return;
+    const r={corps:Object.assign({},q.rendu.corps)};delete r.corps[bid];q.rendu=renduNorm(r);if(!q.rendu)delete q.rendu;});
+  asmNotify();
 }
 
 /* ═══════════════ 48-assemblage-placement.js — assemblage placement ═══════════════ */
@@ -45148,12 +45387,12 @@ function serialise(pretty){
 function serialiseObj(d,ui){
   // Objet d'une pièce. ui : état d'interface (repère, vue, sélection) — pièce active seulement
   // (undefined → clé absente du JSON : l'ordre et le contenu restent ceux d'avant).
-  return {app:'MiniFusion',v:1,name:d.name,tint:d.tint||0,entNames:d.entNames||null,originVis:ui?originVis:undefined,view:ui?collectView():undefined,bodyVis:d.bodyVis||{},bodies:(d.bodies||[]).map(e=>({id:e.id,name:e.name,c:e.c,color:e.color,op:e.op,gl:e.gl,open:e.open!==false})),bodySeq:d.bodySeq||0,activeBody:d.activeBody||null,fold:{sk:!!(d.fold&&d.fold.sk),origin:!!(d.fold&&d.fold.origin)},fao:d.fao||null,mep:d.mep||null,params:(d.params||[]).map(p=>({name:p.name,expr:p.expr,value:p.value})),configs:(typeof cfgNorm==='function'?cfgNorm(d.configs):null)||undefined,sel:ui?{kind:sel.kind,id:sel.id}:undefined,sketches:(d.sketches||[]).map(s=>{const c=Object.assign({},s);delete c._refs;return c;}),features:(d.features||[]).map(({_mesh,_m,...r})=>r),cgeo:(d.cgeo||[]).map(cgClean)};
+  return {app:'MiniFusion',v:1,name:d.name,tint:d.tint||0,entNames:d.entNames||null,originVis:ui?originVis:undefined,view:ui?collectView():undefined,bodyVis:d.bodyVis||{},bodies:(d.bodies||[]).map(e=>({id:e.id,name:e.name,c:e.c,color:e.color,mat:e.mat||undefined,op:e.op,gl:e.gl,open:e.open!==false})),bodySeq:d.bodySeq||0,activeBody:d.activeBody||null,fold:{sk:!!(d.fold&&d.fold.sk),origin:!!(d.fold&&d.fold.origin)},fao:d.fao||null,mep:d.mep||null,rendu:(typeof renduNorm==='function'?renduNorm(d.rendu):null)||undefined,params:(d.params||[]).map(p=>({name:p.name,expr:p.expr,value:p.value})),configs:(typeof cfgNorm==='function'?cfgNorm(d.configs):null)||undefined,sel:ui?{kind:sel.kind,id:sel.id}:undefined,sketches:(d.sketches||[]).map(s=>{const c=Object.assign({},s);delete c._refs;return c;}),features:(d.features||[]).map(({_mesh,_m,...r})=>r),cgeo:(d.cgeo||[]).map(cgClean)};
 }
 function docFromSerial(o){
   // Document de pièce à partir de son objet sérialisé (ouverture, pièces d'un assemblage)
-  const d={name:o.name||'Sans titre',tint:o.tint||0,entNames:o.entNames||null,sketches:o.sketches||[],features:o.features||[],cgeo:Array.isArray(o.cgeo)?o.cgeo.filter(cgValid):[],bodyVis:o.bodyVis||{},bodies:Array.isArray(o.bodies)?o.bodies.filter(e=>e&&typeof e.id==='string').map(e=>({id:e.id,name:String(e.name||e.id),c:Array.isArray(e.c)&&e.c.length===3?e.c.slice():null,color:isFinite(+e.color)?+e.color:undefined,op:(e.op>0&&e.op<1)?+e.op:undefined,gl:(e.gl>0&&e.gl<1)?+e.gl:undefined,open:e.open!==false})):[],
-    bodySeq:o.bodySeq>0?Math.floor(o.bodySeq):1,activeBody:(typeof o.activeBody==='string')?o.activeBody:null,fold:(o.fold&&typeof o.fold==='object')?{sk:!!o.fold.sk,origin:!!o.fold.origin}:{},fao:o.fao||null,mep:o.mep||null,params:Array.isArray(o.params)?o.params.filter(p=>p&&typeof p.name==='string'):[],configs:(typeof cfgNorm==='function'?cfgNorm(o.configs):null)};
+  const d={name:o.name||'Sans titre',tint:o.tint||0,entNames:o.entNames||null,sketches:o.sketches||[],features:o.features||[],cgeo:Array.isArray(o.cgeo)?o.cgeo.filter(cgValid):[],bodyVis:o.bodyVis||{},bodies:Array.isArray(o.bodies)?o.bodies.filter(e=>e&&typeof e.id==='string').map(e=>({id:e.id,name:String(e.name||e.id),c:Array.isArray(e.c)&&e.c.length===3?e.c.slice():null,color:isFinite(+e.color)?+e.color:undefined,mat:(typeof matDef==='function'&&matDef(e.mat))?e.mat:undefined,op:(e.op>0&&e.op<1)?+e.op:undefined,gl:(e.gl>0&&e.gl<1)?+e.gl:undefined,open:e.open!==false})):[],
+    bodySeq:o.bodySeq>0?Math.floor(o.bodySeq):1,activeBody:(typeof o.activeBody==='string')?o.activeBody:null,fold:(o.fold&&typeof o.fold==='object')?{sk:!!o.fold.sk,origin:!!o.fold.origin}:{},fao:o.fao||null,mep:o.mep||null,rendu:(typeof renduNorm==='function'?renduNorm(o.rendu):null),params:Array.isArray(o.params)?o.params.filter(p=>p&&typeof p.name==='string'):[],configs:(typeof cfgNorm==='function'?cfgNorm(o.configs):null)};
   let mx=0;
   (d.bodies||[]).forEach(e=>{const m=/^b(\d+)$/.exec(e.id||'');if(m)mx=Math.max(mx,+m[1]);});
   if(!(d.bodySeq>mx))d.bodySeq=mx+1;
@@ -45734,6 +45973,7 @@ if($('fileWasm'))$('fileWasm').addEventListener('change',async e=>{
   catch(err){occBaseMsg='OCCT : lecture impossible ('+err.message+')';occStatus();}
   e.target.value='';
 });
+try{if($('optFloor')){$('optFloor').checked=floorOn;$('optFloor').onchange=()=>{floorOn=$('optFloor').checked;try{localStorage.setItem('minifusion_sol',floorOn?'on':'off');}catch(e){}refreshMirror();};}}catch(e){}
 try{if($('optMirror')){$('optMirror').checked=mirrorOn;$('optMirror').onchange=()=>{mirrorOn=$('optMirror').checked;try{localStorage.setItem('minifusion_mirror',mirrorOn?'on':'off');}catch(e){}refreshMirror();};}}catch(e){}
 try{if($('optAxes')){$('optAxes').checked=axHelper?axHelper.visible:true;$('optAxes').onchange=()=>{if(axHelper)axHelper.visible=$('optAxes').checked;markDirty();try{renderTree();}catch(e){}};}}catch(e){}
 try{if($('optZoomInv')){$('optZoomInv').checked=zoomInv;$('optZoomInv').onchange=()=>{zoomInv=$('optZoomInv').checked;if(controls)controls.zoomSpeed=zoomInv?-1:1;try{localStorage.setItem('minifusion_zoominv',zoomInv?'on':'off');}catch(e){}markDirty();};}}catch(e){}
@@ -47191,6 +47431,7 @@ function mfCommands(){
   [['Plan de construction','plane'],['Axe de construction','axis'],['Point de construction','point'],['Repère de construction','frame']].forEach(([l,k])=>add(l,()=>cgStart(k),'Construire'));
   [['Vue iso','iso'],['Vue de dessus','top'],['Vue de face','front'],['Vue de droite','right']].forEach(([l,v])=>add(l,()=>{try{setView(v);}catch(e){}}));
   [['Espace CAO','cao'],['Espace FAO','fao'],['Espace PLAN','plan']].forEach(([l,w])=>add(l,()=>mfWs(w)));
+  add('Rendu (image réaliste)',()=>{try{rdOpen();}catch(e){}});
   MF_THEMES.forEach(([k,l])=>add('Thème : '+l,()=>mfTheme(k)));
   add('Interface classique',()=>mfUiMode('classique'));
   return out;
@@ -47375,6 +47616,8 @@ function mfBuildModern(){
   // espaces + barre rapide + recherche, juste après le logo
   const ws=document.createElement('div');ws.className='mfWs mfM';
   [['cao','CAO','Modélisation : esquisses, solides'],['fao','FAO','Usinage : posages, opérations, simulation, G-code'],['plan','PLAN','Mise en plan : planches, vues projetées, cotes, dessin 2D']].forEach(([k,l,t])=>{const b=document.createElement('button');b.textContent=l;b.title=t;b.dataset.mfws=k;b.onclick=()=>mfWs(k);ws.appendChild(b);});
+  // V0.10.0 : RENDU — atelier plein écran par-dessus l'espace en cours (98-rendu)
+  {const b=document.createElement('button');b.textContent='RENDU';b.title='Rendu : image réaliste 1920×1080 — matériaux, ambiances, appareil photo';b.dataset.mfrd='1';b.onclick=()=>{try{rdOpen();}catch(e){}};ws.appendChild(b);}
   const q=document.createElement('div');q.className='mfQuick mfM';
   [['undo','Annuler (Ctrl+Z)','btnUndo'],['redo','Rétablir (Ctrl+Y)','btnRedo']].forEach(([ic,t,id])=>{const b=document.createElement('button');b.innerHTML=mfI(ic,18);b.title=t;b.onclick=()=>mfClick(id);q.appendChild(b);});
   // V0.2.3 : TOUS les boutons de fichier à côté d'« Enregistrer » (src/97-fichiers-projets.js)
@@ -57452,6 +57695,714 @@ function viewFadeIn(){
   // auto-init une fois le DOM prêt
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{try{mepInit();}catch(e){}});
   else try{mepInit();}catch(e){}
+})();
+
+/* ═══════════════ 98-rendu-vue.js — rendu vue ═══════════════ */
+/* ---------- environnements de RENDU dans la vue CAO (V0.10.0) ----------
+   Réglages de vue ⚙ → « Environnement » : « Actuel (CAO) » (fond du thème, sol miroir, couleurs
+   de la CAO) ou une ambiance de l'atelier RENDU (98-rendu) — Studio, Studio lumineux, Atelier,
+   Extérieur, Scène noire — pour modéliser avec le rendu : reflets de l'ambiance, ombre douce au
+   sol, fond dégradé. La pièce garde la COULEUR et le MATÉRIAU de la CAO (doc.bodies) : l'apparence de
+   rendu (doc.rendu) ne sert qu'à l'atelier RENDU. Les arêtes, esquisses, surbrillances restent celles de la CAO.
+   Comment : seules les matières des CORPS sont retouchées (onBeforeCompile) — couleur, métal et
+   rugosité lus dans des uniformes (mat.color n'est jamais modifiée : la CAO la relit), puis tons
+   ACES et sortie sRGB dans leur shader. Le moteur garde sa sortie linéaire : tout le reste de la
+   scène s'affiche exactement comme avant. Espace CAO seulement (FAO, PLAN : environnement actuel). */
+const VENV_LIST=[['actuel','Actuel (CAO)'],['studio','Studio'],['clair','Studio lumineux'],['atelier','Atelier'],['exterieur','Extérieur'],['noir','Scène noire']];
+const VENV_SOL={studio:'#b4b8bf',clair:'#e2e4e8',atelier:'#272b31',exterieur:'#7d8894',noir:'#0b0b0d'}; // couleur du sol (case « Sol »)
+const VENV_FOND={studio:['#d3d6db','#9a9fa7'],clair:['#f4f5f7','#cdd1d7'],atelier:['#3a4049','#121417'],exterieur:['#b7c5d4','#6a7684'],noir:['#1b1b1e','#000000']};
+let vEnv='actuel';
+try{const v=localStorage.getItem('minifusion_env');if(v&&VENV_LIST.some(x=>x[0]===v))vEnv=v;}catch(e){}
+const vEnvS={on:false,amb:null,rt:null,key:null,bg:null,pmrem:null,sun:null,floor:null,mats:new Set()};
+const VENV_GLSL=[
+  'uniform vec3 uEnvCol;uniform float uEnvMet;uniform float uEnvRou;uniform float uEnvGlass;',
+  'vec3 vEnvRrt(vec3 v){vec3 a=v*(v+0.0245786)-0.000090537;vec3 b=v*(0.983729*v+0.4329510)+0.238081;return a/b;}',
+  'vec3 vEnvAces(vec3 c){',
+  '  const mat3 I=mat3(vec3(0.59719,0.07600,0.02840),vec3(0.35458,0.90834,0.13383),vec3(0.04823,0.01566,0.83777));',
+  '  const mat3 O=mat3(vec3(1.60475,-0.10208,-0.00327),vec3(-0.53108,1.10813,-0.07276),vec3(-0.07367,-0.00605,1.07602));',
+  '  c*=1.0/0.6;c=I*c;c=vEnvRrt(c);c=O*c;return clamp(c,0.0,1.0);}',''].join('\n');
+function vEnvActive(){return vEnvS.on;}
+function vEnvSet(k){
+  vEnv=VENV_LIST.some(x=>x[0]===k)?k:'actuel';
+  try{localStorage.setItem('minifusion_env',vEnv);}catch(e){}
+  const s=document.getElementById('optEnv');if(s)s.value=vEnv;
+}
+/* ── matières des corps ── */
+function vEnvPatch(m){
+  if(!m||!m.isMeshStandardMaterial||m.userData.vEnv)return;
+  const U={uEnvCol:{value:new THREE.Color()},uEnvMet:{value:0.35},uEnvRou:{value:0.4},uEnvGlass:{value:0}};
+  m.userData.vEnv={U,obc:m.onBeforeCompile,key:m.customProgramCacheKey,env:m.envMap,ei:m.envMapIntensity};
+  m.onBeforeCompile=function(sh){
+    Object.assign(sh.uniforms,U);
+    sh.fragmentShader=VENV_GLSL+sh.fragmentShader
+      .replace('vec4 diffuseColor = vec4( diffuse, opacity );','vec4 diffuseColor = vec4( pow( uEnvCol, vec3( 2.2 ) ), opacity );')
+      .replace('vec3 totalEmissiveRadiance = emissive;','vec3 totalEmissiveRadiance = pow( emissive, vec3( 2.2 ) );')
+      .replace('#include <roughnessmap_fragment>','float roughnessFactor = uEnvRou;')
+      .replace('#include <metalnessmap_fragment>','float metalnessFactor = uEnvMet;')
+      .replace('#include <encodings_fragment>',
+        // verre approché : plus opaque et plus réfléchissant sur les bords (Fresnel)
+        'gl_FragColor.a = clamp( gl_FragColor.a + uEnvGlass * 0.6 * pow( 1.0 - abs( dot( normalize( normal ), normalize( vViewPosition ) ) ), 3.0 ), 0.0, 1.0 );'+
+        'gl_FragColor.rgb = vEnvAces( gl_FragColor.rgb ); gl_FragColor = LinearTosRGB( gl_FragColor );');
+  };
+  m.customProgramCacheKey=function(){return 'vEnvPhoto';};
+  m.envMap=vEnvS.rt.texture;m.envMapIntensity=1;
+  m.needsUpdate=true;vEnvS.mats.add(m);
+}
+function vEnvUnpatch(m){
+  const s=m&&m.userData&&m.userData.vEnv;if(!s)return;
+  m.onBeforeCompile=s.obc;m.customProgramCacheKey=s.key;m.envMap=s.env;m.envMapIntensity=s.ei;
+  delete m.userData.vEnv;m.needsUpdate=true;
+}
+function vEnvMeshes(cb){
+  // corps de la pièce (hors modes congé / dépouille / coque : leur matière est celle de l'outil)
+  (bodies||[]).forEach(b=>{
+    if(!b||b.ghost||!b.mesh||!b.mesh.material)return;
+    if(b._xSaved!=null||b._dSaved!=null||b._cSaved!=null)return;
+    const id=bodyIdOfRuntime(b),L={mat:id?bodyMatOf(id):null,color:id?bodyColorOf(id):(b.color||0x9a9aa0)}; // vue CAO : couleur et matériau de la CAO (l'apparence de rendu ne sert qu'à l'atelier)
+    cb(b.mesh,L);
+    // passe intérieure d'un corps transparent (glassDepthMask, src/20) : même apparence
+    b.mesh.children.forEach(c=>{if(c.isMesh&&c.material&&c.material.isMeshStandardMaterial)cb(c,L);});
+  });
+  // autres composants (autour de la pièce, ou mode Assembler) : apparence capturée (47, userData.rd)
+  const visit=root=>{if(!root)return;root.traverse(o=>{const r=o.isMesh&&o.userData&&o.userData.rd;if(r&&!r.ghost)cb(o,{mat:r.cmat||null,color:r.ccol!=null?r.ccol:r.color});});};
+  visit(scene.getObjectByName('asmCtx'));
+  try{if(asmMode==='asm'&&asmScene)visit(asmScene.getObjectByName('asmOcc'));}catch(e){}
+}
+/* ── ambiance, fond, sol ── */
+function vEnvBg(){
+  const f=VENV_FOND[vEnv]||VENV_FOND.studio;
+  const c=document.createElement('canvas');c.width=16;c.height=512;
+  const x=c.getContext('2d'),g=x.createLinearGradient(0,0,0,512);g.addColorStop(0,f[0]);g.addColorStop(1,f[1]);
+  x.fillStyle=g;x.fillRect(0,0,16,512);
+  if(vEnvS.bg)vEnvS.bg.dispose();
+  vEnvS.bg=new THREE.CanvasTexture(c); // sortie linéaire du moteur : les couleurs s'affichent telles quelles
+  scene.background=vEnvS.bg;
+}
+function vEnvOn(){
+  if(!vEnvS.pmrem)vEnvS.pmrem=new THREE.PMREMGenerator(renderer);
+  if(vEnvS.amb!==vEnv){
+    const old=vEnvS.rt,{rt,key}=rdEnvTex(vEnvS.pmrem,vEnv,0);
+    vEnvS.rt=rt;vEnvS.key=key;vEnvS.amb=vEnv;
+    vEnvS.mats.forEach(m=>{if(m.userData&&m.userData.vEnv)m.envMap=rt.texture;});
+    if(old)old.dispose();
+    vEnvBg();
+  }
+  if(vEnvS.on)return;
+  vEnvS.on=true;
+  if(scene.background!==vEnvS.bg)vEnvBg();
+  try{floorSync();}catch(e){} // sol : couleur de l'ambiance, bords fondus (10-scene-3d)
+}
+function vEnvOff(){
+  vEnvS.on=false;
+  vEnvS.mats.forEach(vEnvUnpatch);vEnvS.mats.clear();
+  scene.background=new THREE.Color();
+  try{mf3D(document.body.getAttribute('data-theme')||'nuit');}catch(e){} // fond et sol du thème
+  if(vEnvS.bg){vEnvS.bg.dispose();vEnvS.bg=null;}
+  if(vEnvS.rt){vEnvS.rt.dispose();vEnvS.rt=null;}vEnvS.amb=null;
+  try{floorSync();}catch(e){}
+}
+/* ── ombre portée (case « Ombre », tous les environnements de l'espace CAO) ──
+   Lampe d'OMBRE seulement (intensité 0 : l'éclairage reste celui de la vue) + plan qui la reçoit. */
+let vShadowOn=true;
+try{if(localStorage.getItem('minifusion_ombre')==='off')vShadowOn=false;}catch(e){}
+function vShadowStart(){
+  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.VSMShadowMap;
+  const sun=new THREE.DirectionalLight(0xffffff,0);sun.name='vEnvSun';sun.castShadow=true;
+  sun.shadow.mapSize.set(2048,2048);sun.shadow.radius=6;sun.shadow.blurSamples=16;sun.shadow.bias=-0.0005;
+  scene.add(sun);scene.add(sun.target);vEnvS.sun=sun;
+  const fl=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.ShadowMaterial({opacity:0.35}));
+  fl.name='vEnvFloor';fl.receiveShadow=true;fl.raycast=()=>{};fl.userData.noMirror=true;fl.renderOrder=-2;
+  scene.add(fl);vEnvS.floor=fl;
+}
+function vShadowStop(){
+  try{(bodies||[]).forEach(b=>{if(b&&b.mesh)b.mesh.castShadow=false;});}catch(e){}
+  try{const g=scene.getObjectByName('asmCtx');if(g)g.traverse(o=>{if(o.isMesh)o.castShadow=false;});}catch(e){}
+  if(vEnvS.sun){scene.remove(vEnvS.sun.target);scene.remove(vEnvS.sun);if(vEnvS.sun.shadow.map)vEnvS.sun.shadow.map.dispose();vEnvS.sun=null;}
+  if(vEnvS.floor){scene.remove(vEnvS.floor);vEnvS.floor.geometry.dispose();vEnvS.floor.material.dispose();vEnvS.floor=null;}
+  renderer.shadowMap.enabled=false;
+}
+function vCaoWs(){
+  if(typeof scene==='undefined'||!scene||typeof renderer==='undefined'||!renderer)return false;
+  const ws=document.body&&document.body.getAttribute('data-ws');
+  return !ws||ws==='cao';
+}
+const _vEnvBox=new THREE.Box3(),_vEnvC=new THREE.Vector3(),_vEnvSz=new THREE.Vector3();
+function vEnvTick(){
+  // appelée à chaque image (animate, 10-scene-3d) : suit l'espace de travail, les corps et leurs apparences
+  const cao=vCaoWs(),envW=cao&&vEnv!=='actuel',shW=cao&&vShadowOn;
+  // sol et reflet SUIVENT la pièce (déplacée, modifiée, composant placé) : recalés toutes les 15 images
+  vEnvS.n=(vEnvS.n||0)+1;
+  if(cao&&vEnvS.n%15===0&&(floorOn||mirrorOn)){try{refreshMirror();}catch(e){}}
+  if(envW){if(!vEnvS.on||vEnvS.amb!==vEnv)vEnvOn();}else if(vEnvS.on)vEnvOff();
+  if(shW&&!vEnvS.sun)vShadowStart();else if(!shW&&vEnvS.sun)vShadowStop();
+  if(!envW&&!shW)return;
+  if(envW&&mirrorU)mirrorU.color.value.set(VENV_SOL[vEnv]||VENV_SOL.studio); // sol à la couleur de l'ambiance
+  const box=_vEnvBox.makeEmpty();
+  vEnvMeshes((m,L)=>{
+    const mat=m.material;if(!mat||!mat.isMeshStandardMaterial)return;
+    if(envW){
+      vEnvPatch(mat);const U=mat.userData.vEnv&&mat.userData.vEnv.U;
+      if(U){
+        const d=matDef(L.mat);
+        U.uEnvCol.value.setHex(L.color);
+        U.uEnvGlass.value=0;
+        if(d&&d.trans){U.uEnvMet.value=0;U.uEnvRou.value=d.rough;U.uEnvGlass.value=1;} // verre approché : lisse, reflets nets, bords plus opaques
+        else if(mat.transparent){U.uEnvMet.value=mat.metalness;U.uEnvRou.value=mat.roughness;} // transparence CAO : réglages de setMatAlpha
+        else{U.uEnvMet.value=d?d.metal:0.15;U.uEnvRou.value=d?d.rough:0.42;}
+        if(mat.envMap!==vEnvS.rt.texture)mat.envMap=vEnvS.rt.texture;
+      }
+    }
+    const dv=matDef(L.mat);
+    m.castShadow=shW&&m.name!=='glassIn'&&!(dv&&dv.trans); // un corps transparent (réglage CAO) porte aussi son ombre ; sa passe intérieure et le verre, non
+    if(shW&&m.parent&&rdShown(m))box.expandByObject(m);
+  });
+  const fl=vEnvS.floor,sun=vEnvS.sun;if(!shW||!fl||!sun)return;
+  fl.visible=!box.isEmpty();if(box.isEmpty())return;
+  const dark=!envW||vEnv==='noir'||vEnv==='atelier';fl.material.opacity=dark?0.55:0.32;
+  box.getCenter(_vEnvC);const R=box.getSize(_vEnvSz).length()*0.5||50;
+  fl.scale.set(R*14,R*14,1);fl.position.set(_vEnvC.x,_vEnvC.y,box.min.z-R*0.002);
+  const k=envW?vEnvS.key:[-34,59]; // environnement actuel : direction de la lampe de la vue (10-scene-3d)
+  const a=k[0]*Math.PI/180,e=k[1]*Math.PI/180,D=R*4;
+  sun.position.set(_vEnvC.x+D*Math.cos(e)*Math.cos(a),_vEnvC.y+D*Math.cos(e)*Math.sin(a),_vEnvC.z+D*Math.sin(e));
+  sun.target.position.copy(_vEnvC);sun.target.updateMatrixWorld();
+  const sc=sun.shadow.camera;
+  if(sc.right!==R*1.6||sc.far!==R*8){sc.left=-R*1.6;sc.right=R*1.6;sc.top=R*1.6;sc.bottom=-R*1.6;sc.near=R*0.5;sc.far=R*8;sc.updateProjectionMatrix();}
+}
+(function(){
+  // ⚙ Réglages de visualisation → Affichage : liste « Environnement », en tête
+  try{
+    const mi=document.getElementById('optMirror'),row0=mi&&mi.closest('.setRow');
+    if(!row0||document.getElementById('optEnv'))return;
+    const row=document.createElement('div');row.className='setRow';
+    const lab=document.createElement('label');lab.textContent='Environnement ';
+    const s=document.createElement('select');s.id='optEnv';
+    s.title='Actuel : fond du thème · ambiances : éclairage et reflets de l’atelier RENDU, fond dégradé, pour modéliser — la pièce garde ses couleurs et matériaux CAO — espace CAO';
+    VENV_LIST.forEach(([k,t])=>{const o=document.createElement('option');o.value=k;o.textContent=t;if(k===vEnv)o.selected=true;s.appendChild(o);});
+    s.onchange=()=>vEnvSet(s.value);
+    lab.appendChild(s);row.appendChild(lab);
+    row0.parentNode.insertBefore(row,row0);
+    const lo=document.createElement('label');lo.title='Ombre portée de la pièce sur le sol (espace CAO)';
+    const co=document.createElement('input');co.type='checkbox';co.id='optShadow';co.checked=vShadowOn;
+    co.onchange=()=>{vShadowOn=co.checked;try{localStorage.setItem('minifusion_ombre',vShadowOn?'on':'off');}catch(e){}};
+    lo.appendChild(co);lo.appendChild(document.createTextNode(' Ombre'));
+    row0.appendChild(document.createTextNode(' '));row0.appendChild(lo);
+  }catch(e){}
+})();
+
+/* ═══════════════ 98-rendu.js — rendu ═══════════════ */
+/* ---------- atelier RENDU (V0.10.0, phase 1) ----------
+   Une image soignée de la pièce ou de l'assemblage, en 1920×1080 (ou 4K), enregistrée en PNG.
+   Ouvert par le bouton RENDU du bandeau (à côté de PLAN) ou l'appareil photo de la barre de vue.
+   L'atelier a SA scène et SON moteur WebGL (la vue CAO n'est jamais touchée) : les maillages
+   affichés sont copiés tels quels (rien n'est recalculé), chacun reçoit une matière physique tirée
+   de la bibliothèque (12-materiaux : doc.bodies[].mat, couleur du corps). La transparence de la
+   CAO (aide à la visualisation) est ignorée : seul le matériau (verres) rend transparent.
+   - Ambiances : environnements de reflets générés à la volée (ciel dégradé + boîtes à lumière,
+     filtrés par PMREM) — aucune image externe, l'application reste un seul fichier.
+   - Fond : dégradé, uni ou transparent (PNG détouré) ; ombre portée douce au sol (VSM).
+   - Appareil photo : focale en mm (capteur 24×36, cadre 16:9), exposition en EV, rendu des tons.
+   - Sortie : suréchantillonnage ×2 puis réduction (bords lisses), téléchargement PNG.
+   Réglages retenus dans le navigateur (localStorage), pas dans le document. */
+const RD_LS='minifusion_rendu';
+const RD_DEF={amb:'studio',envRot:0,envInt:1,lum:1,fond:'degrade',fc1:'#f2f3f5',fc2:'#c3c7ce',sol:'ombre',ombre:0.45,douceur:6,
+  focale:50,ev:0,tons:'aces',res:'1080',qual:2,aretes:'non',solOn:true,solCol:'',miroir:true,ombreOn:true}; // solCol '' = couleur du bas du fond
+const RD_AMB=[
+  ['studio','Studio (softbox)'],['clair','Studio lumineux'],['atelier','Atelier (lumière chaude)'],['exterieur','Extérieur (ciel)'],['noir','Scène noire (contre-jour)']];
+let rd=null; // état de l'atelier ouvert (null = fermé)
+function rdSettings(){
+  let s={};try{s=JSON.parse(localStorage.getItem(RD_LS)||'{}')||{};}catch(e){s={};}
+  if(typeof s.sol==='string'){s.ombreOn=s.sol==='ombre';delete s.sol;} // réglage d'avant les cases Sol / Miroir / Ombre
+  return Object.assign({},RD_DEF,s);
+}
+function rdSave(){try{localStorage.setItem(RD_LS,JSON.stringify(rd.st));}catch(e){}}
+/* ── ambiances : scène d'environnement → PMREM ── */
+function rdLin(hex){return new THREE.Color(hex).convertSRGBToLinear();}
+function rdEnvScene(amb){
+  // Z en haut (convention CAO) : ciel = sphère à dégradé vertical, lumières = panneaux émissifs (HDR > 1)
+  const S=new THREE.Scene();
+  const sky=(top,hor,bot)=>{
+    const g=new THREE.SphereGeometry(100,48,24);g.rotateX(Math.PI/2); // pôles sur Z
+    const P=g.attributes.position,col=[];
+    const T=new THREE.Color(top),H=new THREE.Color(hor),B=new THREE.Color(bot),c=new THREE.Color();
+    for(let i=0;i<P.count;i++){const z=P.getZ(i)/100;
+      if(z>=0)c.copy(H).lerp(T,Math.pow(z,0.6));else c.copy(H).lerp(B,Math.pow(-z,0.5));
+      col.push(c.r,c.g,c.b);}
+    g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
+    S.add(new THREE.Mesh(g,new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.BackSide})));
+  };
+  const panel=(az,el,dist,w,h,inten,tint)=>{ // az, el en degrés ; panneau tourné vers le centre
+    const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({side:THREE.DoubleSide}));
+    m.material.color.set(tint==null?0xffffff:tint).multiplyScalar(inten);
+    const a=az*Math.PI/180,e=el*Math.PI/180;
+    m.position.set(dist*Math.cos(e)*Math.cos(a),dist*Math.cos(e)*Math.sin(a),dist*Math.sin(e));
+    m.up.set(0,0,1);m.lookAt(0,0,0);S.add(m);
+  };
+  let key=[-60,40]; // direction de la lumière principale (az, el) : ombre portée
+  if(amb==='clair'){
+    sky(0xf4f5f7,0xd9dce1,0x8e939b);
+    panel(90,80,30,40,40,3);panel(-60,35,30,22,30,5);panel(30,25,30,20,26,3);panel(150,20,30,40,8,2.5);
+    key=[-60,40];
+  }else if(amb==='atelier'){
+    sky(new THREE.Color(0x6a5a48),new THREE.Color(0x4a3d30),new THREE.Color(0x1d1813));
+    panel(-40,30,30,10,34,7,0xffd9a8);panel(-15,30,30,10,34,7,0xffd9a8);panel(140,55,30,30,12,2.5,0xfff1dc);panel(60,10,30,30,10,1.2,0xffe2bd);
+    key=[-28,32];
+  }else if(amb==='exterieur'){
+    sky(new THREE.Color(0x2f5fb3).multiplyScalar(1.4),new THREE.Color(0xdde8f2).multiplyScalar(1.5),new THREE.Color(0x4a4236));
+    panel(-45,50,40,5,5,120,0xfff2d6); // soleil
+    key=[-45,50];
+  }else if(amb==='noir'){
+    sky(0x050506,0x0b0b0d,0x020203);
+    panel(160,20,30,7,44,24);panel(-160,20,30,7,44,24);panel(90,75,30,34,18,5);panel(-70,15,30,26,20,1.2);
+    key=[90,70];
+  }else{ // studio
+    sky(new THREE.Color(0x45484d),new THREE.Color(0x26282c),new THREE.Color(0x0c0d0f)); // murs sombres : les métaux gardent du contraste
+    panel(90,75,30,36,36,8);panel(-55,30,30,20,28,12);panel(40,20,30,16,24,4);panel(170,25,30,6,36,10);
+    key=[-55,45];
+  }
+  return {S,key};
+}
+function rdEnvTex(pmrem,amb,rot){ // ambiance → {rt (PMREM), key (direction de la lampe)} — aussi pour la vue (98-rendu-vue)
+  const {S,key}=rdEnvScene(amb);
+  S.rotation.z=(rot||0)*Math.PI/180;S.updateMatrixWorld(true);
+  const rt=pmrem.fromScene(S,0.02);
+  S.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();});
+  return {rt,key};
+}
+function rdBuildEnv(){
+  const {rt,key}=rdEnvTex(rd.pmrem,rd.st.amb,rd.st.envRot);
+  if(rd.envRT)rd.envRT.dispose();
+  rd.envRT=rt;rd.scene.environment=rt.texture;
+  rd.keyDir=key;
+}
+/* ── fond ── */
+function rdBackground(){
+  const st=rd.st;
+  if(rd.bgTex){rd.bgTex.dispose();rd.bgTex=null;}
+  if(st.fond==='transparent'){rd.scene.background=null;rd.r.setClearColor(0x000000,0);return;}
+  const c=document.createElement('canvas');c.width=16;c.height=512;
+  const x=c.getContext('2d'),g=x.createLinearGradient(0,0,0,512);
+  g.addColorStop(0,st.fc1);g.addColorStop(1,st.fond==='uni'?st.fc1:st.fc2);
+  x.fillStyle=g;x.fillRect(0,0,16,512);
+  const t=new THREE.CanvasTexture(c);t.encoding=THREE.sRGBEncoding;
+  rd.bgTex=t;rd.scene.background=t;rd.r.setClearColor(0x000000,1);
+}
+/* ── objets : maillages affichés + matières physiques ── */
+function rdShown(o){for(let p=o;p;p=p.parent)if(p.visible===false)return false;return true;}
+function rdSources(){
+  // [{mesh, id (corps de la pièce active, sinon null), mat, color}]
+  const out=[];
+  const asmS=(typeof asmMode!=='undefined'&&asmMode==='asm'&&typeof asmScene!=='undefined'&&asmScene)?asmScene:null;
+  if(!asmS){
+    (bodies||[]).forEach(b=>{
+      if(!b||b.ghost||!b.mesh||!b.mesh.geometry||b.visible===false||!rdShown(b.mesh))return;
+      const id=bodyIdOfRuntime(b);
+      const L=id?renderLookOf(id):null; // apparence de RENDU (sinon celle de la CAO) — 12-materiaux
+      out.push({mesh:b.mesh,id,mat:L?L.mat:null,color:L?L.color:(b.color||0x9a9aa0)});
+    });
+  }
+  const root=asmS||scene; // assemblage autour de la pièce (asmCtx) ou mode Placer : maillages repérés par userData.rd (47)
+  root.traverse(o=>{
+    const r=o.isMesh&&o.userData&&o.userData.rd;
+    if(!r||r.ghost||!o.geometry||!rdShown(o))return;
+    out.push({mesh:o,id:null,mat:r.mat,color:r.color,bid:r.bid||null,comp:r.comp||null,occ:r.occ||null});
+  });
+  return out;
+}
+function rdUndo(){try{if(typeof docPushUndo==='function')docPushUndo('apparence de rendu');}catch(e){}}
+function rdBuildEdges(){
+  // Arêtes « comme la CAO » (vives noires, tangentes grises) : la pièce active par edgeOverlayData
+  // (asmEdgeCapture, même si le bouton « Arêtes » est éteint), les autres composants par leurs
+  // groupes d'arêtes déjà dessinés (48-assemblage-apparence). Copies : rien n'est partagé avec la CAO.
+  if(rd.edges){rd.scene.remove(rd.edges);rd.edges.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();});rd.edges=null;}
+  if(rd.st.aretes!=='cao')return;
+  const G=new THREE.Group();
+  const add=(geo,M)=>{const l=new THREE.LineSegments(geo,new THREE.LineBasicMaterial({vertexColors:true,toneMapped:false}));
+    if(M){l.matrixAutoUpdate=false;l.matrix.copy(M);}G.add(l);};
+  const asmS=(typeof asmMode!=='undefined'&&asmMode==='asm'&&typeof asmScene!=='undefined'&&asmScene)?asmScene:null;
+  if(!asmS){try{const g=asmEdgeCapture();if(g)add(g,null);}catch(e){}}
+  (asmS||scene).traverse(o=>{
+    if(!(o.userData&&o.userData.asmEdges)||!rdShown(o))return;
+    o.updateMatrixWorld(true);
+    o.children.forEach(c=>{if(c.isLineSegments&&c.material&&c.material.vertexColors&&c.geometry)add(c.geometry.clone(),c.matrixWorld);});
+  });
+  rd.edges=G;rd.scene.add(G);
+}
+function rdMaterial(src){
+  const d=matDef(src.mat);
+  const m=new THREE.MeshPhysicalMaterial({
+    color:rdLin(src.color),
+    metalness:d?d.metal:0.15,roughness:d?d.rough:0.42,
+    clearcoat:d&&d.cc?d.cc:(d?0:0.25),clearcoatRoughness:d&&d.ccr!=null?d.ccr:0.25,
+    envMapIntensity:rd.st.envInt,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1}); // décalage : les arêtes restent devant les faces
+  if(d&&d.trans){m.transmission=d.trans;m.ior=d.ior||1.5;m.thickness=4;m.attenuationColor=rdLin(src.color);m.attenuationDistance=d.trans<1?8:60;m.color.setRGB(1,1,1);}
+  if(d&&d.sheen){m.sheen=d.sheen;m.sheenRoughness=0.8;m.sheenColor=new THREE.Color(0.35,0.35,0.35);}
+  return m;
+}
+function rdBuildObjects(){
+  if(rd.group){rd.scene.remove(rd.group);rd.group.traverse(o=>{if(o.material)o.material.dispose();if(o.geometry)o.geometry.dispose();});}
+  const G=new THREE.Group();rd.srcs=rdSources();
+  rd.srcs.forEach(s=>{
+    s.mesh.updateMatrixWorld(true);
+    const m=new THREE.Mesh(s.mesh.geometry.clone(),rdMaterial(s)); // copie : un rejeu de la CAO libère ses maillages
+    m.matrixAutoUpdate=false;m.matrix.copy(s.mesh.matrixWorld);
+    m.castShadow=true;m.receiveShadow=false; // seul le sol reçoit l'ombre (pas d'acné sur les faces)
+    G.add(m);
+  });
+  G.updateMatrixWorld(true);
+  rd.group=G;rd.scene.add(G);
+  rdBuildEdges();
+  const box=new THREE.Box3().setFromObject(G);
+  if(box.isEmpty())box.set(new THREE.Vector3(-50,-50,0),new THREE.Vector3(50,50,50));
+  rd.box=box;
+}
+function rdFloor(){
+  const st=rd.st,b=rd.box,c=b.getCenter(new THREE.Vector3()),R=b.getSize(new THREE.Vector3()).length()*0.5||50;
+  if(!rd.floor){
+    rd.floor=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.ShadowMaterial({opacity:0.4}));
+    rd.floor.receiveShadow=true;rd.scene.add(rd.floor);
+    rd.key=new THREE.DirectionalLight(0xffffff,1);rd.key.castShadow=true;
+    rd.key.shadow.mapSize.set(4096,4096);rd.key.shadow.bias=-0.0005; // fixe : la recréer casse le flou VSM (mapPass)
+    rd.scene.add(rd.key);rd.scene.add(rd.key.target);
+  }
+  rd.floor.visible=!!st.ombreOn;
+  rdDisk(c,R,b.min.z);
+  rd.floor.scale.set(R*12,R*12,1);rd.floor.position.set(c.x,c.y,b.min.z-R*0.002);
+  rd.floor.material.opacity=st.ombre;
+  // lumière principale : direction de l'ambiance, tournée avec elle
+  const a=(rd.keyDir[0]+st.envRot)*Math.PI/180,e=rd.keyDir[1]*Math.PI/180,D=R*4;
+  rd.key.position.set(c.x+D*Math.cos(e)*Math.cos(a),c.y+D*Math.cos(e)*Math.sin(a),c.z+D*Math.sin(e));
+  rd.key.target.position.copy(c);rd.key.target.updateMatrixWorld();
+  rd.key.intensity=st.lum*(st.amb==='noir'?0.6:1.4);
+  const sc=rd.key.shadow.camera;sc.left=-R*1.6;sc.right=R*1.6;sc.top=R*1.6;sc.bottom=-R*1.6;sc.near=R*0.5;sc.far=R*8;sc.updateProjectionMatrix();
+  rd.key.shadow.radius=st.douceur;rd.key.shadow.blurSamples=24;
+  rd.key.shadow.needsUpdate=true;
+}
+/* ── sol et miroir (cases « Sol », « Miroir » — comme la vue CAO, 10-scene-3d / 98-rendu-vue) ──
+   Disque à bords fondus dans le fond ; reflet plan : caméra symétrique sous le sol rendue dans une
+   cible (fond transparent), relue par projection. La cible est linéaire et sans tons : le shader du
+   sol applique exposition, ACES et sRGB, comme les matières à l'écran. */
+function rdSolHex(){
+  const st=rd.st;if(st.solCol)return st.solCol;
+  return st.fond==='degrade'?st.fc2:st.fond==='uni'?st.fc1:'#9a9ea6';
+}
+function rdDisk(c,R,z){
+  const st=rd.st;
+  if(!rd.disk){
+    rd.mirRT=new THREE.WebGLRenderTarget(2048,2048,{samples:4});
+    rd.mirCam=new THREE.PerspectiveCamera();rd.mirMat=new THREE.Matrix4();
+    const U={color:{value:new THREE.Color()},tRefl:{value:rd.mirRT.texture},texM:{value:rd.mirMat},uC:{value:new THREE.Vector3()},
+      uR:{value:1},uDisk:{value:1},uRefl:{value:1},uExpo:{value:1}};
+    rd.disk=new THREE.Mesh(new THREE.CircleGeometry(1,128),new THREE.ShaderMaterial({uniforms:U,transparent:true,depthWrite:false,
+      vertexShader:'uniform mat4 texM; varying vec4 vUv; varying vec3 vW;\nvoid main(){ vec4 wp = modelMatrix * vec4(position, 1.0); vW = wp.xyz; vUv = texM * vec4(position, 1.0); gl_Position = projectionMatrix * viewMatrix * wp; }',
+      fragmentShader:VENV_GLSL+'uniform vec3 color; uniform sampler2D tRefl; uniform vec3 uC; uniform float uR; uniform float uDisk; uniform float uRefl; uniform float uExpo; varying vec4 vUv; varying vec3 vW;\n'+
+        'void main(){ float d = distance(vW, uC); float a = uDisk > 0.5 ? 1.0 - smoothstep(uR * 1.6, uR * 5.5, d) : 0.0; vec3 refl = vec3(0.0); float ra = 0.0; float f = 0.0; '+
+        'if(uRefl > 0.5 && vUv.w > 1e-4){ vec2 uv = vUv.xy / vUv.w; if(uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0){ vec4 r4 = texture2D(tRefl, uv); refl = LinearTosRGB(vec4(vEnvAces(r4.rgb * uExpo), 1.0)).rgb; ra = r4.a; f = exp(-pow(d / max(uR * 1.2, 1e-3), 2.0) * 1.6) * 0.8; } } '+
+        'if(uDisk > 0.5){ gl_FragColor = vec4(mix(color, refl, clamp(f * ra * 0.7, 0.0, 1.0)), a); return; } gl_FragColor = vec4(refl, ra * f * 0.6); }'}));
+    rd.disk.renderOrder=-3;rd.scene.add(rd.disk);
+    rd.floor.renderOrder=-2; // l'ombre par-dessus le sol et le reflet
+  }
+  const U=rd.disk.material.uniforms;
+  rd.disk.visible=!!(st.solOn||st.miroir);
+  rd.disk.scale.set(R*8,R*8,1);rd.disk.position.set(c.x,c.y,z-R*0.001);rd.disk.updateMatrixWorld();
+  U.color.value.set(rdSolHex());U.uC.value.set(c.x,c.y,z);U.uR.value=R;
+  U.uDisk.value=st.solOn?1:0;U.uRefl.value=st.miroir?1:0;
+  rd.floorZ=z;
+}
+function rdMirror(){ // passe reflet, avant chaque image
+  if(!rd.disk||!rd.disk.visible||!rd.st.miroir)return;
+  const z0=rd.floorZ,cam=rd.cam,mc=rd.mirCam,t=rd.ctl.target;
+  mc.position.set(cam.position.x,cam.position.y,2*z0-cam.position.z);
+  mc.up.set(cam.up.x,cam.up.y,-cam.up.z);mc.lookAt(t.x,t.y,2*z0-t.z);
+  mc.fov=cam.fov;mc.aspect=cam.aspect;mc.near=cam.near;mc.far=cam.far;mc.updateProjectionMatrix();mc.updateMatrixWorld();
+  rd.mirMat.set(0.5,0,0,0.5, 0,0.5,0,0.5, 0,0,0.5,0.5, 0,0,0,1).multiply(mc.projectionMatrix).multiply(mc.matrixWorldInverse).multiply(rd.disk.matrixWorld);
+  rd.disk.material.uniforms.uExpo.value=rd.r.toneMappingExposure;
+  const bg=rd.scene.background,ca=rd.r.getClearAlpha(),hid=[rd.disk,rd.floor,rd.edges].filter(o=>o&&o.visible);
+  hid.forEach(o=>{o.visible=false;});rd.scene.background=null;rd.r.setClearAlpha(0);
+  rd.r.setRenderTarget(rd.mirRT);rd.r.clear();rd.r.render(rd.scene,mc);rd.r.setRenderTarget(null);
+  rd.scene.background=bg;rd.r.setClearAlpha(ca);hid.forEach(o=>{o.visible=true;});
+}
+/* ── appareil photo ── */
+function rdFov(f){return 2*Math.atan(18/f/(16/9))*180/Math.PI;} // capteur 36 mm de large, cadre 16:9
+function rdApplyCam(){
+  const st=rd.st,cam=rd.cam,R=rd.box.getSize(new THREE.Vector3()).length()*0.5||50;
+  cam.fov=rdFov(st.focale);cam.aspect=16/9;
+  const d=cam.position.distanceTo(rd.ctl.target);
+  cam.near=Math.max(0.05,d-R*4)*0.5;cam.far=d+R*30;cam.updateProjectionMatrix();
+  rd.r.toneMappingExposure=Math.pow(2,st.ev);
+  rd.r.toneMapping={aces:THREE.ACESFilmicToneMapping,lin:THREE.LinearToneMapping,doux:THREE.ReinhardToneMapping,cine:THREE.CineonToneMapping}[st.tons]||THREE.ACESFilmicToneMapping;
+  rd.group.traverse(o=>{if(o.material)o.material.envMapIntensity=st.envInt;});
+}
+function rdFrame(){ // cadre la pièce entière dans le 16:9 en gardant la direction de vue
+  const cam=rd.cam,c=rd.box.getCenter(new THREE.Vector3()),R=rd.box.getSize(new THREE.Vector3()).length()*0.5||50;
+  const vf=rdFov(rd.st.focale)*Math.PI/180,hf=2*Math.atan(Math.tan(vf/2)*16/9);
+  const d=R/Math.sin(Math.min(vf,hf)/2)*1.08;
+  const dir=cam.position.clone().sub(rd.ctl.target);if(dir.lengthSq()<1e-9)dir.set(1,-1,0.8);
+  dir.normalize();rd.ctl.target.copy(c);cam.position.copy(c).addScaledVector(dir,d);
+  rd.ctl.update();rdApplyCam();
+}
+function rdSetFocale(f){ // garde la taille de la pièce à l'écran : on recule quand la focale s'allonge
+  f=Math.max(12,Math.min(300,+f||50));
+  const o=rd.st.focale,t=rd.ctl.target,cam=rd.cam;
+  const k=Math.tan(rdFov(o)*Math.PI/360)/Math.tan(rdFov(f)*Math.PI/360);
+  const off=cam.position.clone().sub(t).multiplyScalar(k); // AVANT de toucher à la position (sinon distance 0)
+  cam.position.copy(t).add(off);
+  rd.st.focale=f;rd.ctl.update();rdApplyCam();
+}
+function rdFromView(){ // reprend la vue CAO (direction et cible), puis cadre
+  rd.cam.position.copy(camera.position);rd.ctl.target.copy(controls.target);rd.ctl.update();rdFrame();
+}
+/* ── rendu ── */
+function rdLayout(){
+  if(!rd)return;
+  const host=rd.view,W=Math.max(200,host.clientWidth-24),H=Math.max(120,host.clientHeight-24);
+  let w=W,h=Math.round(W*9/16);if(h>H){h=H;w=Math.round(H*16/9);}
+  rd.r.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  rd.r.setSize(w,h,false);rd.canvas.style.width=w+'px';rd.canvas.style.height=h+'px';
+  rdDraw();
+}
+function rdDraw(){if(rd){try{rdMirror();rd.r.render(rd.scene,rd.cam);}catch(e){}}}
+function rdRefresh(what){
+  if(!rd)return;
+  if(what==='env')rdBuildEnv();
+  if(what==='fond')rdBackground();
+  if(what==='objets')rdBuildObjects();
+  rdFloor();rdApplyCam();rdDraw();rdSave();
+}
+async function rdExport(){
+  if(!rd||rd.busy)return;rd.busy=true;
+  const st=rd.st,W=st.res==='2160'?3840:1920,H=st.res==='2160'?2160:1080;
+  const ss=(st.qual>1&&W*2<=8192&&st.aretes!=='cao')?2:1; // arêtes : traits de 1 px, la réduction ×2 les estomperait
+  const btn=rd.panel.querySelector('.rdGo');if(btn){btn.disabled=true;btn.textContent='Calcul en cours…';}
+  await new Promise(r=>setTimeout(r,30)); // laisse le bouton se redessiner
+  let url=null;
+  try{
+    rd.r.setPixelRatio(1);rd.r.setSize(W*ss,H*ss,false);
+    rdMirror();rd.r.render(rd.scene,rd.cam);
+    const out=document.createElement('canvas');out.width=W;out.height=H;
+    const x=out.getContext('2d');x.imageSmoothingEnabled=true;x.imageSmoothingQuality='high';
+    x.drawImage(rd.canvas,0,0,W,H);
+    const blob=await new Promise(r=>out.toBlob(r,'image/png'));
+    if(!blob)throw new Error('image vide');
+    url=URL.createObjectURL(blob);
+    const nm=String((typeof doc!=='undefined'&&doc&&doc.name)||'piece').replace(/[\\/:*?"<>|]+/g,'-');
+    const a=document.createElement('a');a.href=url;a.download=nm+' - rendu '+W+'x'+H+'.png';document.body.appendChild(a);a.click();a.remove();
+    rdMsg('Image '+W+'×'+H+' enregistrée ('+(blob.size/1048576).toFixed(1).replace('.',',')+' Mo).');
+  }catch(e){rdMsg('Rendu impossible : '+(e&&e.message||e));}
+  finally{
+    rdLayout();
+    if(btn){btn.disabled=false;btn.textContent='Rendre et enregistrer le PNG';}
+    if(url)setTimeout(()=>URL.revokeObjectURL(url),20000);
+    rd.busy=false;
+  }
+}
+function rdMsg(t){if(rd&&rd.msg)rd.msg.textContent=t||'';}
+/* ── interface ── */
+function rdCss(){
+  if(document.getElementById('rdCss'))return;
+  const s=document.createElement('style');s.id='rdCss';s.textContent=[
+    '#rdOverlay{position:fixed;inset:0;z-index:9000;display:flex;background:#101012;color:var(--text,#f5f5f7);font-size:.82rem}',
+    '#rdView{flex:1;display:flex;align-items:center;justify-content:center;position:relative;min-width:0;background:repeating-conic-gradient(#1a1a1c 0% 25%,#141416 0% 50%) 50%/22px 22px}',
+    '#rdView canvas{box-shadow:0 10px 40px rgba(0,0,0,.55);cursor:grab;outline:1px solid rgba(255,255,255,.08)}',
+    '#rdView .rdHint{position:absolute;left:14px;bottom:10px;color:#98989d;font-size:.74rem}',
+    '#rdPanel{width:350px;flex:none;overflow:auto;background:var(--bg,#1c1c1e);border-left:1px solid var(--border,rgba(255,255,255,.09));padding:10px 14px 18px}',
+    '#rdPanel h2{font-size:1rem;margin:2px 0 8px;display:flex;align-items:center;gap:8px}',
+    '#rdPanel h2 .rdX{margin-left:auto;background:none;border:1px solid var(--border);color:inherit;border-radius:7px;padding:2px 9px;cursor:pointer}',
+    '#rdPanel h3{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted,#98989d);margin:14px 0 6px;font-weight:600}',
+    '#rdPanel .rdRow{display:flex;align-items:center;gap:8px;margin:5px 0}',
+    '#rdPanel .rdRow>label{flex:0 0 96px;color:var(--muted,#98989d)}',
+    '#rdPanel .rdRow>select,#rdPanel .rdRow>input[type=range]{flex:1;min-width:0}',
+    '#rdPanel .rdRow>.rdV{min-width:46px;text-align:right;font-variant-numeric:tabular-nums}',
+    '#rdPanel input[type=color]{width:36px;height:24px;padding:0;border:none;background:none}',
+    '#rdPanel .rdBtns{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}',
+    '#rdPanel button.rdB{background:var(--surface,#2c2c2e);border:1px solid var(--border);color:inherit;border-radius:7px;padding:4px 9px;cursor:pointer}',
+    '#rdPanel button.rdB.on{background:var(--primary,#0a84ff);color:#fff;border-color:transparent}',
+    '#rdPanel .rdGo{width:100%;margin-top:10px;padding:9px;border:none;border-radius:9px;background:var(--primary,#0a84ff);color:#fff;font-weight:600;cursor:pointer}',
+    '#rdPanel .rdGo:disabled{opacity:.6;cursor:wait}',
+    '#rdPanel .rdMat{display:flex;align-items:center;gap:6px;margin:4px 0}',
+    '#rdPanel .rdMat>span{flex:0 0 90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '#rdPanel .rdMat>select{flex:1;min-width:0}',
+    '#rdPanel .rdNote{color:var(--muted,#98989d);font-size:.74rem;margin:6px 0}',
+    '#rdPanel .rdMsg{color:var(--accent,#30d158);font-size:.76rem;margin-top:8px;min-height:1em}'
+  ].join('\n');
+  document.head.appendChild(s);
+}
+function rdPanel(){
+  const st=rd.st,p=rd.panel;p.innerHTML='';
+  const el=(tag,cls,txt)=>{const d=document.createElement(tag);if(cls)d.className=cls;if(txt!=null)d.textContent=txt;return d;};
+  const row=(lab,node,val)=>{const r=el('div','rdRow');r.appendChild(el('label',null,lab));r.appendChild(node);if(val)r.appendChild(val);p.appendChild(r);return r;};
+  const select=(opts,cur,fn)=>{const s=el('select');opts.forEach(([v,t])=>{const o=el('option',null,t);o.value=v;if(String(v)===String(cur))o.selected=true;s.appendChild(o);});s.onchange=()=>fn(s.value);return s;};
+  const slider=(lab,k,min,max,step,fmt,what)=>{
+    const r=el('input');r.type='range';r.min=min;r.max=max;r.step=step;r.value=st[k];
+    const v=el('span','rdV',fmt(+st[k]));
+    r.oninput=()=>{st[k]=+r.value;v.textContent=fmt(st[k]);rdRefresh(what);};
+    return row(lab,r,v);
+  };
+  const h=el('h2');h.appendChild(el('span',null,'Rendu'));
+  const x=el('button','rdX','Fermer');x.title='Revenir à la modélisation (Échap)';x.onclick=rdClose;h.appendChild(x);p.appendChild(h);
+  // ambiance
+  p.appendChild(el('h3',null,'Ambiance'));
+  row('Lumière',select(RD_AMB,st.amb,v=>{st.amb=v;rdRefresh('env');}));
+  slider('Rotation','envRot',0,360,5,v=>v+'°','env');
+  slider('Reflets','envInt',0,3,0.05,v=>v.toFixed(2).replace('.',','),null);
+  slider('Lampe princ.','lum',0,3,0.05,v=>v.toFixed(2).replace('.',','),null);
+  // fond et sol
+  p.appendChild(el('h3',null,'Fond et sol'));
+  const c1=el('input');c1.type='color';c1.value=st.fc1;c1.title='Haut du fond (ou fond uni)';
+  const c2=el('input');c2.type='color';c2.value=st.fc2;c2.title='Bas du dégradé';
+  const fr=row('Fond',select([['degrade','Dégradé'],['uni','Uni'],['transparent','Transparent (PNG détouré)']],st.fond,v=>{st.fond=v;c2.style.display=v==='degrade'?'':'none';rdRefresh('fond');}));
+  fr.appendChild(c1);fr.appendChild(c2);c2.style.display=st.fond==='degrade'?'':'none';
+  c1.oninput=()=>{st.fc1=c1.value;rdRefresh('fond');};c2.oninput=()=>{st.fc2=c2.value;rdRefresh('fond');};
+  const pres=el('div','rdBtns');
+  [['Blanc','#f2f3f5','#c3c7ce'],['Gris','#9aa0a8','#4b5058'],['Ardoise','#3a4049','#121417'],['Noir','#121214','#000000'],['Bleu nuit','#24324a','#0b111c']].forEach(([n,a,b])=>{
+    const q=el('button','rdB',n);q.onclick=()=>{st.fc1=a;st.fc2=b;if(st.fond==='transparent')st.fond='degrade';rdPanel();rdRefresh('fond');};pres.appendChild(q);});
+  p.appendChild(pres);
+  { // Sol (et sa couleur) · Miroir · Ombre : trois cases, comme dans la vue CAO
+    const r=el('div','rdRow');r.appendChild(el('label',null,'Sol'));
+    const box=(lab,k,tip)=>{const l=el('label');l.style.cssText='flex:none;color:inherit;display:flex;align-items:center;gap:3px';l.title=tip;
+      const c=el('input');c.type='checkbox';c.checked=!!st[k];c.onchange=()=>{st[k]=c.checked;rdRefresh();};l.appendChild(c);l.appendChild(document.createTextNode(lab));r.appendChild(l);};
+    box('Sol','solOn','Disque sous la pièce, bords fondus dans le fond');
+    const sc=el('input');sc.type='color';sc.value=rdSolHex();sc.title='Couleur du sol (par défaut : bas du fond)';sc.oninput=()=>{st.solCol=sc.value;rdRefresh();};r.appendChild(sc);
+    box('Miroir','miroir','Reflet de la pièce au sol, avec ou sans disque');
+    box('Ombre','ombreOn','Ombre portée sur le sol');
+    p.appendChild(r);
+  }
+  slider('Ombre','ombre',0,1,0.05,v=>Math.round(v*100)+' %',null);
+  slider('Douceur','douceur',1,20,1,v=>String(v),null);
+  row('Arêtes',select([['non','Sans (photo)'],['cao','Comme la CAO (vives noires, tangentes grises)']],st.aretes,v=>{st.aretes=v;rdBuildEdges();rdRefresh();}));
+  // appareil photo
+  p.appendChild(el('h3',null,'Appareil photo'));
+  const fv=el('span','rdV',st.focale+' mm');
+  const fs=el('input');fs.type='range';fs.min=14;fs.max=200;fs.step=1;fs.value=st.focale;
+  fs.oninput=()=>{rdSetFocale(+fs.value);fv.textContent=rd.st.focale+' mm';rdDraw();rdSave();};
+  row('Focale',fs,fv);
+  const fb=el('div','rdBtns');
+  [24,35,50,85,135].forEach(f=>{const q=el('button','rdB',f+' mm');q.title=f<35?'Grand angle':f>60?'Téléobjectif : peu de déformation, rendu « catalogue »':'Normal';
+    q.onclick=()=>{rdSetFocale(f);fs.value=f;fv.textContent=f+' mm';rdDraw();rdSave();};fb.appendChild(q);});
+  p.appendChild(fb);
+  slider('Exposition','ev',-3,3,0.1,v=>(v>0?'+':'')+v.toFixed(1).replace('.',',')+' EV',null);
+  row('Rendu des tons',select([['aces','Film (ACES)'],['doux','Doux (Reinhard)'],['cine','Cinéon'],['lin','Neutre (linéaire)']],st.tons,v=>{st.tons=v;rd.group.traverse(o=>{if(o.material)o.material.needsUpdate=true;});rdRefresh();}));
+  const vb=el('div','rdBtns');
+  const b1=el('button','rdB','Cadrer la pièce');b1.onclick=()=>{rdFrame();rdDraw();};vb.appendChild(b1);
+  const b2=el('button','rdB','Reprendre la vue CAO');b2.onclick=()=>{rdFromView();rdDraw();};vb.appendChild(b2);
+  p.appendChild(vb);
+  // matériaux
+  p.appendChild(el('h3',null,'Matériaux'));
+  const ids=[];(rd.srcs||[]).forEach(s=>{if(s.id&&ids.indexOf(s.id)<0)ids.push(s.id);});
+  ids.forEach(id=>{
+    const e=bodyEntryOf(id),b=(bodies||[]).find(q=>bodyIdOfRuntime(q)===id);
+    const r=el('div','rdMat');const n=el('span',null,(e&&e.name)||(b&&b.name)||id);n.title=n.textContent;r.appendChild(n);
+    const L=renderLookOf(id);
+    const ci=el('input');ci.type='color';ci.value=cssHex(L.color);ci.title='Couleur de rendu (la pièce CAO garde la sienne)';
+    const done=()=>{markDirty();rdRefresh('objets');rdPanel();};
+    const s=matSelect(L.mat,k=>{rdUndo();setRenderLook(id,k,null);done();},'Sans matériau');
+    ci.onchange=()=>{const v=parseInt(ci.value.slice(1),16);if(v>=0){rdUndo();setRenderLook(id,renderLookOf(id).mat,v);done();}};
+    r.appendChild(s);r.appendChild(ci);
+    const z=el('button','rdB','↺');z.title=L.own?'Reprendre le matériau et la couleur de la CAO':'Apparence de la CAO (rien de propre au rendu)';z.disabled=!L.own;z.style.opacity=L.own?'':'.35';
+    z.onclick=()=>{rdUndo();clearRenderLook(id);done();};r.appendChild(z);
+    p.appendChild(r);
+  });
+  const asmView=(rd.srcs||[]).some(x=>!x.id&&x.comp);
+  if(!ids.length&&!asmView)p.appendChild(el('div','rdNote','Aucun corps de la pièce active à l’écran.'));
+  rdAsmPanel(p,el);
+  if(ids.length)p.appendChild(el('div','rdNote','Apparence propre au RENDU, enregistrée avec la pièce : la CAO garde ses couleurs. Au départ, le rendu reprend le matériau et la couleur de la CAO (↺ pour y revenir).'));
+  // sortie
+  p.appendChild(el('h3',null,'Image'));
+  row('Format',select([['1080','1920 × 1080 (Full HD)'],['2160','3840 × 2160 (4K)']],st.res,v=>{st.res=v;rdSave();}));
+  row('Qualité',select([['2','Haute (suréchantillonnage ×2)'],['1','Brouillon (rapide)']],st.qual,v=>{st.qual=+v;rdSave();}));
+  const go=el('button','rdGo','Rendre et enregistrer le PNG');go.onclick=rdExport;p.appendChild(go);
+  rd.msg=el('div','rdMsg');p.appendChild(rd.msg);
+}
+function rdAsmPanel(p,el){
+  // Rendu d'assemblage (mode Assembler) : apparence de rendu par OCCURRENCE, corps par corps
+  // (o.rendu, 48-assemblage-apparence) ; ⇉ = la même pour toutes les occurrences du composant
+  const seen=new Set(),rows=[];
+  (rd.srcs||[]).forEach(s=>{if(s.id||!s.comp||!s.bid)return;const k=(s.occ||'')+'|'+s.bid;if(seen.has(k))return;seen.add(k);rows.push(s);});
+  if(!rows.length){if((rd.srcs||[]).some(s=>!s.id))p.appendChild(el('div','rdNote','Autres composants : apparence choisie en mode Assembler (atelier ouvert sur l’assemblage).'));return;}
+  let last=null;
+  rows.forEach(s=>{
+    const c=asmComp(s.comp),o=s.occ?asmOcc(s.occ):null;
+    if(s.occ!==last){last=s.occ;const h=el('div','rdNote',(o?o.name:(c&&c.name)||'?'));h.style.cssText='margin:8px 0 2px;color:inherit;font-weight:600';p.appendChild(h);}
+    const be=c&&c.doc&&(c.doc.bodies||[]).find(e=>e&&e.id===s.bid);
+    const r=el('div','rdMat');const n=el('span',null,(be&&be.name)||s.bid);n.title=n.textContent;r.appendChild(n);
+    if(!o){ // le composant ouvert lui-même (racine) : apparence de rendu de sa pièce
+      const L=renderLookOf(s.bid);
+      const sel=matSelect(L.mat,k=>{rdUndo();setRenderLook(s.bid,k,null);markDirty();rdAsmRedraw();},'Sans matériau');
+      const ci=el('input');ci.type='color';ci.value=cssHex(L.color);ci.onchange=()=>{rdUndo();setRenderLook(s.bid,renderLookOf(s.bid).mat,parseInt(ci.value.slice(1),16));markDirty();rdAsmRedraw();};
+      r.appendChild(sel);r.appendChild(ci);p.appendChild(r);return;
+    }
+    const own=!!(o.rendu&&o.rendu.corps&&o.rendu.corps[s.bid]);
+    const sel=matSelect(s.mat,k=>{asmSetOccRendu(o,s.bid,k,null,false);rdAsmRedraw();},'Sans matériau');
+    const ci=el('input');ci.type='color';ci.value=cssHex(s.color);ci.title='Couleur de rendu de cette occurrence';
+    ci.onchange=()=>{asmSetOccRendu(o,s.bid,s.mat,parseInt(ci.value.slice(1),16),false);rdAsmRedraw();};
+    const all=el('button','rdB','⇉');all.title='Même apparence pour toutes les occurrences de « '+((c&&c.name)||'?')+' »';
+    all.onclick=()=>{asmSetOccRendu(o,s.bid,s.mat,s.color,true);rdAsmRedraw();};
+    const z=el('button','rdB','↺');z.title='Reprendre l’apparence de la pièce';z.disabled=!own;z.style.opacity=own?'':'.35';
+    z.onclick=()=>{asmClearOccRendu(o,s.bid,false);rdAsmRedraw();};
+    r.appendChild(sel);r.appendChild(ci);r.appendChild(all);r.appendChild(z);p.appendChild(r);
+  });
+  p.appendChild(el('div','rdNote','Rendu d’assemblage : apparence par occurrence, enregistrée avec l’assemblage (⇉ : toutes les occurrences du composant, ↺ : celle de la pièce). La vue CAO garde les couleurs de la CAO.'));
+}
+function rdAsmRedraw(){ // l'assemblage redessine ses instances (userData.rd), puis l'atelier les reprend
+  try{asmDraw();}catch(e){}try{asmCtxDraw();}catch(e){}
+  rdRefresh('objets');rdPanel();
+}
+function rdKey(e){if(rd&&e.key==='Escape'&&!rd.busy){e.stopPropagation();e.preventDefault();rdClose();}}
+function rdOpen(){
+  if(rd)return;
+  try{if(typeof skEdit!=='undefined'&&skEdit){faceEl.textContent='Terminez l’esquisse avant d’ouvrir le rendu.';return;}}catch(e){}
+  try{if(typeof mfCloseMenus==='function')mfCloseMenus();}catch(e){}
+  rdCss();
+  const ov=document.createElement('div');ov.id='rdOverlay';
+  const view=document.createElement('div');view.id='rdView';
+  const canvas=document.createElement('canvas');view.appendChild(canvas);
+  const hint=document.createElement('div');hint.className='rdHint';hint.textContent='Glisser : tourner · clic droit : déplacer · molette : avancer / reculer — le cadre est l’image finale (16:9)';view.appendChild(hint);
+  const panel=document.createElement('div');panel.id='rdPanel';
+  ov.appendChild(view);ov.appendChild(panel);document.body.appendChild(ov);
+  let r;
+  try{r=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true,preserveDrawingBuffer:true,powerPreference:'high-performance'});}
+  catch(e){ov.remove();alert('Rendu indisponible : WebGL refusé par le navigateur.');return;}
+  r.outputEncoding=THREE.sRGBEncoding;r.toneMapping=THREE.ACESFilmicToneMapping;
+  r.shadowMap.enabled=true;r.shadowMap.type=THREE.VSMShadowMap;
+  const cam=new THREE.PerspectiveCamera(30,16/9,0.1,10000);cam.up.set(0,0,1);
+  cam.position.copy(camera.position);
+  const ctl=new THREE.OrbitControls(cam,canvas);
+  ctl.target.copy(controls.target);ctl.enableDamping=false;
+  if(ctl.mouseButtons&&THREE.MOUSE){ctl.mouseButtons.LEFT=THREE.MOUSE.ROTATE;ctl.mouseButtons.MIDDLE=THREE.MOUSE.DOLLY;ctl.mouseButtons.RIGHT=THREE.MOUSE.PAN;}
+  ctl.addEventListener('change',()=>{if(rd&&!rd.busy){rdApplyCam();rdDraw();}});
+  rd={ov,view,canvas,panel,r,cam,ctl,scene:new THREE.Scene(),pmrem:new THREE.PMREMGenerator(r),st:rdSettings(),keyDir:[-55,45]};
+  rdBuildObjects();rdBuildEnv();rdBackground();rdFloor();
+  rdFromView();
+  rdPanel();
+  rd.onResize=()=>rdLayout();window.addEventListener('resize',rd.onResize);
+  document.addEventListener('keydown',rdKey,true);
+  document.querySelectorAll('[data-mfrd]').forEach(b=>b.classList.add('on'));
+  requestAnimationFrame(rdLayout);
+}
+function rdClose(){
+  if(!rd)return;
+  window.removeEventListener('resize',rd.onResize);document.removeEventListener('keydown',rdKey,true);
+  try{rd.ctl.dispose();}catch(e){}
+  try{if(rd.group)rd.group.traverse(o=>{if(o.material)o.material.dispose();if(o.geometry)o.geometry.dispose();});}catch(e){}
+  try{if(rd.edges)rd.edges.traverse(o=>{if(o.material)o.material.dispose();if(o.geometry)o.geometry.dispose();});}catch(e){}
+  try{if(rd.envRT)rd.envRT.dispose();if(rd.bgTex)rd.bgTex.dispose();rd.pmrem.dispose();}catch(e){}
+  try{if(rd.floor){rd.floor.geometry.dispose();rd.floor.material.dispose();}if(rd.key&&rd.key.shadow.map)rd.key.shadow.map.dispose();}catch(e){}
+  try{if(rd.disk){rd.disk.geometry.dispose();rd.disk.material.dispose();rd.mirRT.dispose();}}catch(e){}
+  try{rd.r.dispose();rd.r.forceContextLoss();}catch(e){}
+  rd.ov.remove();rd=null;
+  document.querySelectorAll('[data-mfrd]').forEach(b=>b.classList.remove('on'));
+  try{renderProps();}catch(e){} // la fiche du corps reprend un matériau changé dans l'atelier
+}
+(function(){
+  // appareil photo dans la barre de vue (à gauche du ⚙)
+  try{
+    const vb=document.getElementById('viewbar'),st=document.getElementById('btnSettings');
+    if(vb&&!document.getElementById('btnRender')){
+      const b=document.createElement('button');b.id='btnRender';b.dataset.mfrd='1';b.title='Rendu : image réaliste 1920×1080 (matériaux, ambiance, appareil photo)';
+      b.innerHTML='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+      b.onclick=()=>rdOpen();
+      vb.insertBefore(b,st||null);
+    }
+  }catch(e){}
 })();
 
 /* ═══════════════ 99-init.js — init ═══════════════ */

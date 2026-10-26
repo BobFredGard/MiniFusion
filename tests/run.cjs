@@ -104,6 +104,7 @@ const SUITES = [
   "test_timeline_bandeau",
   "test_corps_iso",
   "test_corps_style",
+  "test_materiaux",
   "test_import_vie",
   "test_import_persist",
   "test_ouverture_deterministe",

@@ -122,3 +122,36 @@ function asmLookProps(p,o){
   p.appendChild(b);
   p.appendChild(mk('div','pnl-note','Vaut pour ce qu’elle contient, en mode Placer comme en mode Modéliser (autour de la pièce). La couleur reste celle des corps, la même partout.'));
 }
+/* ---------- apparence de RENDU par occurrence (V0.10.0) ----------
+   « Pour l'assemblage, les textures/couleurs sont choisies par Rendu d'assemblage » : dans l'atelier
+   RENDU ouvert sur l'assemblage (mode Assembler), chaque occurrence peut recevoir, corps par corps,
+   un matériau et une couleur de rendu : o.rendu = {corps:{[id du corps]:{mat, col}}} (renduNorm,
+   12-materiaux), enregistré avec l'assemblage, annulable. Elle vaut pour ce que l'occurrence
+   contient ; l'occurrence la plus profonde qui en a une l'emporte, puis l'apparence de rendu de la
+   pièce (doc.rendu), puis la couleur de la CAO. La vue CAO n'en tient pas compte. */
+function asmOccRenduOf(path,bid){
+  let out=null,c=asmRoot();
+  for(const id of (path||[])){
+    const o=c&&c.occ.find(q=>q.id===id);if(!o)break;
+    const r=o.rendu&&o.rendu.corps&&o.rendu.corps[bid];if(r)out=r;
+    c=asmComp(o.comp);
+  }
+  if(!out)return null;
+  return {mat:matDef(out.mat)?out.mat:null,col:out.col};
+}
+function asmSetOccRendu(o,bid,k,col,all){
+  // matériau k (null = aucun), couleur col (null = celle du matériau) ; all : toutes les occurrences du composant
+  if(!o)return;
+  asmPush('apparence de rendu');
+  const m=matDef(k),e={mat:m?m.k:'',col:col!=null?col:(m?m.col:0x9a9aa0)};
+  (all?asmCompOccs(o.comp):[o]).forEach(q=>{const r=q.rendu&&q.rendu.corps?{corps:Object.assign({},q.rendu.corps)}:{corps:{}};
+    r.corps[bid]=Object.assign({},e);q.rendu=renduNorm(r);});
+  asmNotify();
+}
+function asmClearOccRendu(o,bid,all){
+  if(!o)return;
+  asmPush('apparence de rendu');
+  (all?asmCompOccs(o.comp):[o]).forEach(q=>{if(!q.rendu||!q.rendu.corps)return;
+    const r={corps:Object.assign({},q.rendu.corps)};delete r.corps[bid];q.rendu=renduNorm(r);if(!q.rendu)delete q.rendu;});
+  asmNotify();
+}

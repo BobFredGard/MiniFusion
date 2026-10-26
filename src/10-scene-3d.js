@@ -3,6 +3,8 @@ let mirrorOn=true,mirrorRT=null,mirrorCam=null,mirrorTexMat=null,mirrorU=null,fl
 let zoomInv=false;
 try{const _zi=localStorage.getItem('minifusion_zoominv');if(_zi==='on')zoomInv=true;}catch(e){}
 try{const _mo=localStorage.getItem('minifusion_mirror');if(_mo==='off')mirrorOn=false;}catch(e){}
+let floorOn=true; // V0.10.0 : case « Sol » (disque du thème) — « Miroir » (mirrorOn) = le reflet seul, indépendant
+try{if(localStorage.getItem('minifusion_sol')==='off')floorOn=false;}catch(e){}
 // 2026-10-22 : orbite LIBRE (façon Fusion « Free Orbit ») — la pièce tourne dans tous les sens,
 // roulis compris ; contrainte (défaut) = le Z de la vue reste en haut de l'écran.
 let orbitFree=false,_fo=null;
@@ -50,10 +52,11 @@ function buildScene(){
   mirrorCam=new THREE.PerspectiveCamera();
   mirrorTexMat=new THREE.Matrix4();
   mirrorU={color:{value:new THREE.Color(0x141519)},tDiffuse:{value:mirrorRT.texture},
-    textureMatrix:{value:mirrorTexMat},uCenter:{value:new THREE.Vector3()},uRadius:{value:1}};
+    textureMatrix:{value:mirrorTexMat},uCenter:{value:new THREE.Vector3()},uRadius:{value:1},
+    uDisk:{value:1},uRefl:{value:1},uFade:{value:0},uReflK:{value:0.62}}; // floorSync : Sol, Miroir, bords fondus (ambiance de rendu)
   const fm=new THREE.ShaderMaterial({uniforms:mirrorU,
     vertexShader:'uniform mat4 textureMatrix; varying vec4 vUv; varying vec3 vWorld;\nvoid main(){ vec4 wp = modelMatrix * vec4(position, 1.0); vWorld = wp.xyz; vUv = textureMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader:'uniform vec3 color; uniform sampler2D tDiffuse; uniform vec3 uCenter; uniform float uRadius; varying vec4 vUv; varying vec3 vWorld;\nvoid main(){ if(vUv.w<=1e-4){ gl_FragColor=vec4(color,1.0); return; } vec2 uv = vUv.xy / vUv.w; float eg = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)); if(eg <= 0.0){ gl_FragColor=vec4(color,1.0); return; } vec3 refl = texture2D(tDiffuse, uv).rgb; float d = distance(vWorld, uCenter); float f = exp(-pow(d / max(uRadius * 1.15, 1e-3), 2.0) * 2.0) * 0.85 * smoothstep(0.0, 0.03, eg); gl_FragColor = vec4(mix(color, refl * 0.62, clamp(f, 0.0, 0.85)), 1.0); }'});
+    fragmentShader:'uniform vec3 color; uniform sampler2D tDiffuse; uniform vec3 uCenter; uniform float uRadius; uniform float uDisk; uniform float uRefl; uniform float uFade; uniform float uReflK; varying vec4 vUv; varying vec3 vWorld;\nvoid main(){ float d = distance(vWorld, uCenter); float a = uDisk > 0.5 ? (uFade > 0.5 ? 1.0 - smoothstep(uRadius * 1.5, uRadius * 5.0, d) : 1.0) : 0.0; vec3 refl = vec3(0.0); float ra = 0.0; float f = 0.0; if(uRefl > 0.5 && vUv.w > 1e-4){ vec2 uv = vUv.xy / vUv.w; float eg = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)); if(eg > 0.0){ vec4 r4 = texture2D(tDiffuse, uv); refl = r4.rgb; ra = r4.a; f = exp(-pow(d / max(uRadius * 1.15, 1e-3), 2.0) * 2.0) * 0.85 * smoothstep(0.0, 0.03, eg); } } if(uDisk > 0.5){ gl_FragColor = vec4(mix(color, refl * uReflK, clamp(f, 0.0, 0.85) * ra), a); return; } gl_FragColor = vec4(refl, ra * clamp(f, 0.0, 0.85) * 0.55); }'});
   floorMesh=new THREE.Mesh(new THREE.CircleGeometry(400,48),fm);
   floorMesh.name='floor';floorMesh.position.z=-0.5;scene.add(floorMesh);
   try{if(typeof mf3D==='function')mf3D(document.body.getAttribute('data-theme')||'nuit');}catch(e){} // thème (V0.2.1)
@@ -178,6 +181,19 @@ function updateMirror(){
   mirrorTexMat.multiply(floorMesh.matrixWorld);
   return true;
 }
+function floorSync(){
+  // V0.10.0 : deux cases — « Sol » : disque à la couleur du thème (ou de l'ambiance de rendu, 98-rendu-vue,
+  // bords fondus dans le fond) ; « Miroir » : le reflet de la pièce, avec ou sans disque.
+  if(!floorMesh||!mirrorU)return;
+  const env=typeof vEnvActive==='function'&&vEnvActive();
+  // bords toujours fondus dans le fond (le disque s'arrêtait net à 400 mm, visible en thème Clair)
+  mirrorU.uDisk.value=floorOn?1:0;mirrorU.uRefl.value=mirrorOn?1:0;mirrorU.uFade.value=1;mirrorU.uReflK.value=env?0.8:0.62;
+  const fm=floorMesh.material,tr=true;
+  if(fm.transparent!==tr){fm.transparent=tr;fm.depthWrite=!tr;fm.needsUpdate=true;}
+  floorMesh.renderOrder=tr?-3:0;
+  floorMesh.visible=floorOn||mirrorOn;
+  mirrorDirty=true;
+}
 function refreshMirror(){
   // Sol sous les corps visibles + halo centré (comme le viewer).
   // 2026-10-21-005 : le sol est PERPENDICULAIRE au haut de la vue (_mn : Z monde, ou
@@ -186,8 +202,8 @@ function refreshMirror(){
   // laisserait un vide sous la pièce).
   if(!floorMesh)return;
   mirrorDirty=true; // la cible de reflet est à refaire (position du sol, halo, visibilité)
-  floorMesh.visible=mirrorOn;
-  if(!mirrorOn)return;
+  floorSync();
+  if(!floorMesh.visible)return;
   // 2026-10-22 : en FAO, le BRUT affiché (posage sélectionné) compte aussi — le sol
   // passe sous lui, pas sous la pièce qu'il enveloppe.
   // V0.7.5 : seulement ce qui est réellement AFFICHÉ (objet et parents visibles) — un corps masqué
@@ -229,6 +245,7 @@ function refreshMirror(){
   floorMesh.updateMatrixWorld();
   mirrorU.uCenter.value.copy(_mcu);
   mirrorU.uRadius.value=Math.max(sz/2,1);
+  const _fs=Math.max(1,sz*3/400);floorMesh.scale.set(_fs,_fs,1); // disque assez grand pour que son fondu reste dans le disque
 }
 /* 2026-10-21-005 : HAUT DE LA VUE en FAO — l'orbite (camera.up) et le sol miroir
    suivent le Z du posage, ou celui de l'opération sélectionnée quand elle a son
@@ -242,7 +259,7 @@ function refreshMirror(){
    ne fait ensuite que recopier la position et regarder la cible.
    Contrainte : azimut autour du Z de la vue, élévation bornée avant les pôles, Z en haut.
    Libre : rotation autour des axes ÉCRAN (haut et droite de la caméra), camera.up suit.
-   Inertie : même amortissement qu'OrbitControls (dampingFactor appliqué à chaque image). */
+   Inertie : 20 % du reste par image (ORBIT_ROT_DAMP, V0.10.0 ; OrbitControls : 8 % pour le pan et le zoom). */
 function orbitApplyButtons(){
   if(!controls||!controls.mouseButtons||!THREE.MOUSE)return;
   controls.mouseButtons.LEFT=-1;controls.mouseButtons.MIDDLE=-1;
@@ -308,11 +325,14 @@ function orbitRotate(dx,dy,P){
   camera.position.copy(P).add(off);t.copy(P).add(toff);camera.lookAt(t);
   viewUserMoved=true;
 }
-// inertie : le reste du glissement s'écoule comme l'amortissement d'OrbitControls
+// inertie : le reste du glissement s'écoule à chaque image. V0.10.0 : 20 % par image (était 8 %,
+// l'amortissement d'OrbitControls) — la pièce suit la souris de plus près, avec une inertie plus courte ;
+// l'atelier RENDU, lui, suit la souris sans inertie. Le pan et le zoom gardent 8 %.
+const ORBIT_ROT_DAMP=0.2;
 function orbitTick(){
   if(!_fo||(!_fo.vx&&!_fo.vy))return;
   try{if(typeof skEdit!=='undefined'&&skEdit){_fo.vx=_fo.vy=0;return;}}catch(e){}
-  const f=(controls&&controls.enableDamping)?(controls.dampingFactor||0.08):1;
+  const f=(controls&&controls.enableDamping)?ORBIT_ROT_DAMP:1;
   orbitRotate(_fo.vx*f,_fo.vy*f,_fo.P);
   _fo.vx*=1-f;_fo.vy*=1-f;
   if(Math.abs(_fo.vx)<0.01&&Math.abs(_fo.vy)<0.01){_fo.vx=_fo.vy=0;if(!_fo.down)_fo=null;}
@@ -418,10 +438,11 @@ function animate(){
   requestAnimationFrame(animate);
   try{viewUpSync();}catch(e){} // 2026-10-21-005 : haut de vue = Z du posage / de l'opération en FAO
   orbitTick();controls.update();updateLabels();
-  if(mirrorOn&&floorMesh&&mirrorCam){
-    const vu=updateMirror();
+  try{if(typeof vEnvTick==='function')vEnvTick();}catch(e){} // V0.10.0 : environnement de rendu (98-rendu-vue)
+  if(mirrorOn&&floorMesh&&mirrorCam){ // aussi sous une ambiance de rendu : sinon le sol montrait le dernier reflet calculé, figé
+    const vu=updateMirror();mirrorU.uRefl.value=vu?1:0; // caméra sous le sol : pas de reflet (il resterait figé)
     mirrorViewMoved();
-    if(vu&&mirrorDirty){
+    if(vu){const _fv=floorMesh.visible; // V0.10.0 : à CHAQUE image — un reflet recalculé au seul mouvement de caméra restait figé (survol, sélection, couleur, pièce modifiée)
       floorMesh.visible=false;
       // Seuls les SOLIDES se reflètent (comme viewer_STEP) : traits, aides et plans masqués.
       const _mh=[];
@@ -429,10 +450,13 @@ function animate(){
         if(!o.visible||o===scene)return;
         if(o.isLine||o.isLineSegments||o.isPoints||o.isSprite||o===axHelper||(o.userData&&(o.userData.triad||o.userData.noMirror))||(o.material&&o.material.isShaderMaterial)||(o.material&&o.material.transparent&&o.material.opacity<0.6)){o.visible=false;_mh.push(o);}
       });
+      const _bg=scene.background,_ca=renderer.getClearAlpha();
+      scene.background=null;renderer.setClearAlpha(0); // alpha 0 hors de la pièce : seul le reflet de la pièce se pose sur le sol (plus de tache du fond)
       renderer.setRenderTarget(mirrorRT);renderer.clear();renderer.render(scene,mirrorCam);
+      scene.background=_bg;renderer.setClearAlpha(_ca);
       for(const o of _mh)o.visible=true;
       renderer.setRenderTarget(null);
-      floorMesh.visible=true;
+      floorMesh.visible=_fv;
       mirrorDirty=false;
     }
   }
