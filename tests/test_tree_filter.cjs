@@ -145,7 +145,9 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   // 0) sans marqueur : tout est listé, aucun bandeau
   A(o.s0.alpha&&o.s0.poche&&o.s0.rep&&o.s0.copie1&&o.s0.copie2&&o.s0.sortie,'0) sans marqueur : les 6 lignes sont là (got '+JSON.stringify(o.s0).slice(0,120)+'…)');
   A(o.s0.bandeau===0,'0) sans marqueur : aucun bandeau ⏱');
-  A(/Fonctions \(6\)/.test(o.s0.groupe),'0) sans marqueur : en-tête groupe = (6) — got « '+o.s0.groupe+' »');
+  // Le bandeau « Corps / Fonctions (n) » a disparu (arbre lisible) : le compte filtré est porté
+  // par l'en-tête de chaque corps, vérifié ci-dessous.
+  A(o.s0.groupe==='','0) plus de bandeau « Corps / Fonctions » — got « '+o.s0.groupe+' »');
   A(/· 4 fonction\(s\)/.test(o.s0.corps),'0) sans marqueur : en-tête corps = 4 fonctions — got « '+o.s0.corps.replace(/<[^>]*>/g,'')+' »');
 
   // 1) marqueur avant Sortie : Sortie filtrée, les 5 autres visibles, bandeau + marqueur
@@ -155,7 +157,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(/<b>5<\/b> fonction\(s\) rejouée\(s\)/.test(o.t1.bandeau),'1) bandeau : 5 fonctions rejouées');
   A(/marqueur ici/.test(o.t1.marqueur),'1) ligne marqueur présente');
   A(/1 fonction\(s\) masquée/.test(o.t1.marqueur),'1) ligne marqueur annonce la fonction masquée — got « '+o.t1.marqueur+' »');
-  A(/Fonctions \(5\)/.test(o.t1.groupe),'1) en-tête groupe filtré = (5) — got « '+o.t1.groupe+' »');
+  A(o.t1.groupe==='','1) plus de bandeau « Corps / Fonctions » — got « '+o.t1.groupe+' »');
   A(/· 3 fonction\(s\)/.test(o.t1.corps),'1) en-tête corps filtré = 3 fonctions — got « '+o.t1.corps.replace(/<[^>]*>/g,'')+' »');
 
   // 2) marqueur sur une instance : instances suivantes + Sortie filtrées, rép 0 instance(s)
@@ -171,7 +173,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(o.t3.tlMark===null,'3) tlMark levé après le bouton — got '+o.t3.tlMark);
   A(o.t3suite.sortie&&o.t3suite.copie1&&o.t3suite.copie2&&o.t3suite.alpha&&o.t3suite.rep,'3) toutes les lignes sont revenues');
   A(o.t3suite.bandeau===0,'3) bandeau disparu après levée');
-  A(/Fonctions \(6\)/.test(o.t3suite.groupe),'3) en-tête groupe = (6) après levée — got « '+o.t3suite.groupe+' »');
+  A(o.t3suite.groupe==='','3) plus de bandeau « Corps / Fonctions » après levée — got « '+o.t3suite.groupe+' »');
 
   console.log('');
   if(ko){console.log('ECHECS ('+ko+')');process.exit(1);}

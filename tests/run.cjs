@@ -50,6 +50,7 @@ const SUITES = [
   "test_conge_fond_poche",
   "test_conge_tangent",
   "test_arbre_selection",
+  "test_arbre_v2",
   "test_undo_document",
   "test_undo_aller_retour",
   "test_revolve",

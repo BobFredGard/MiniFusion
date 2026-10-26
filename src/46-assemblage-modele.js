@@ -583,6 +583,10 @@ function asmExtStale(){
     const F=asmExtFrame(el,c.id);
     if(F&&!cgSameFr(cgRound(F),el.ext.last||null)&&!out.includes(c))out.push(c);
   });});
+  // faces d'autres composants, références d'éléments de construction
+  asm.comps.forEach(c=>{if(out.includes(c))return;
+    if((c.doc.cgeo||[]).some(el=>(el&&el.refs||[]).some(r=>{
+      if(!r||r.k!=='xf')return false;const s=asmXfSig(r,c.id);return s!=null&&s!==r.sig;})))out.push(c);});
   // V0.8.1 : arêtes d'autres composants projetées dans une esquisse
   asm.comps.forEach(c=>{if(out.includes(c))return;
     if((c.doc.sketches||[]).some(sk=>(sk.entities||[]).some(e=>{
@@ -636,6 +640,71 @@ function asmSkCaptureEdges(){
     const r=p=>p.map(a=>Math.round(a*1e6)/1e6);
     return E.slice(0,8000).map(e=>({pts:e.pts.map(r),mid:e.mid?r(e.mid):null}));
   }catch(e){return null;}
+}
+/* ── faces des autres composants comme références de construction ──
+   Chaque composant capture, à la fin de son rejeu, ses faces planes et cylindriques/coniques
+   (_snap.pfaces : géométrie dans SON repère + référence durable occFaceRefAny). Une référence
+   ref = {k:'xf', ctx (instance où l'on travaille), path (instance visée), ref, loc, name, sig}
+   se résout dans le composant actif via asmSkXf, comme les arêtes projetées (V0.8.1) : elle suit
+   quand l'instance visée bouge ou que son composant change (asmExtStale), et garde sa dernière
+   position (⚠) si la face a disparu. */
+function asmSkCaptureFaces(){
+  try{
+    if(!(typeof occHas==='function'&&occHas()&&occLive&&occLive.shape))return null;
+    const out=[],SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE,T=occt.GeomAbs_SurfaceType;
+    const r=p=>p.map(a=>Math.round(a*1e6)/1e6);
+    const ex=new occt.TopExp_Explorer_2(occLive.shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,SH);
+    try{
+      while(ex.More()&&out.length<4000){
+        let f=null,ad=null;
+        try{
+          f=occt.TopoDS.Face_1(ex.Current());
+          ad=new occt.BRepAdaptor_Surface_2(f,true);
+          const gt=ad.GetType(),b=occFaceBox(f);
+          if(b&&gt===T.GeomAbs_Plane){
+            const n=occFaceOutNormal(f);
+            if(n)out.push({ref:occFaceRefAny(f),plane:{o:r(b.pos),n:r(n)}});
+          }else if(b&&(gt===T.GeomAbs_Cylinder||gt===T.GeomAbs_Cone)){
+            const S=gt===T.GeomAbs_Cylinder?ad.Cylinder():ad.Cone(),ax=S.Axis();
+            const d=[ax.Direction().X(),ax.Direction().Y(),ax.Direction().Z()],lo=[ax.Location().X(),ax.Location().Y(),ax.Location().Z()];
+            const t=(b.pos[0]-lo[0])*d[0]+(b.pos[1]-lo[1])*d[1]+(b.pos[2]-lo[2])*d[2];
+            out.push({ref:occFaceRefAny(f),axis:{o:r([lo[0]+d[0]*t,lo[1]+d[1]*t,lo[2]+d[2]*t]),d:r(d),rad:gt===T.GeomAbs_Cylinder?+S.Radius().toFixed(6):null}});
+          }
+        }catch(e){}
+        finally{try{if(ad)ad.delete();}catch(e){}try{if(f)f.delete();}catch(e){}}
+        ex.Next();
+      }
+    }finally{try{ex.delete();}catch(e){}}
+    return out;
+  }catch(e){return null;}
+}
+function asmXfFind(Fs,ref){
+  // Face visée dans la capture courante : même référence durable, sinon la plus proche de la
+  // géométrie mémorisée (même type, même direction) — la face a pu changer de taille
+  if(!Fs||!ref)return null;
+  const k=JSON.stringify(ref.ref||null);
+  const same=Fs.find(e=>JSON.stringify(e.ref||null)===k);if(same)return same;
+  const L=ref.loc||{},dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+  let best=null,bd=Infinity;
+  Fs.forEach(e=>{
+    if(L.plane&&e.plane&&dot(L.plane.n,e.plane.n)>0.999){const d=Math.abs(dot(sub(e.plane.o,L.plane.o),L.plane.n));if(d<bd){bd=d;best=e;}}
+    if(L.axis&&e.axis&&Math.abs(dot(L.axis.d,e.axis.d))>0.999){const w=sub(e.axis.o,L.axis.o),t=dot(w,L.axis.d),d=Math.hypot(w[0]-L.axis.d[0]*t,w[1]-L.axis.d[1]*t,w[2]-L.axis.d[2]*t);if(d<bd){bd=d;best=e;}}
+  });
+  return bd<1?best:null; // au-delà d'1 mm : ce n'est plus la même face
+}
+function asmXfSig(ref,cid){return asmSkExtSig({ctx:ref.ctx,path:ref.path},cid);}
+function asmXfEval(ref,cid){
+  // Géométrie {plane|axis, point} de la face visée, dans le repère du composant cid (actif)
+  if(!asm||!ref||!Array.isArray(ref.path))return null;
+  cid=cid||asm.active;
+  const T=asmPathComp(ref.path),c=asmComp(T);
+  if(!c||T===cid||!c._snap||!c._snap.pfaces)return null;
+  const e=asmXfFind(c._snap.pfaces,ref);if(!e)return null;
+  const ctx=asmSkExtCtx(ref,cid),F=ctx&&asmSkXf(ctx,ref.path);if(!F)return null;
+  const P=p=>asmApply(F,p),V=v=>{const q=asmApply(F,v);return [q[0]-F.o[0],q[1]-F.o[1],q[2]-F.o[2]];};
+  ref.sig=asmXfSig(ref,cid);
+  if(e.plane){const o=P(e.plane.o),B=cgBasisN(V(e.plane.n),null);return {plane:{o,u:B.u,v:B.v,n:B.n},point:{o}};}
+  const o=P(e.axis.o);return {axis:{o,d:cgUnit(V(e.axis.d))},point:{o}};
 }
 function asmExtSync(){
   // Rejoue les composants dont une référence externe a bougé (placement, autre composant

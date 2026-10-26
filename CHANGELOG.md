@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**345 versions**, de `2026-09-28b` à `V0.9.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**346 versions**, de `2026-09-28b` à `V0.9.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4911,3 +4911,14 @@ Dernière étape de la série V0.8 (« toutes tes idées ») : piloter MiniFusio
   - **Temps de rejeu** Cavité Test après la cote : exact à 80 ≈ 3 s ; reprise locale ≈ 7 s puis 2,5 s ; corps entier ≈ 18 s (la conversion du corps entier coûte 6,8 s ; première version, corps entier pour chaque congé : 12 à 20 s).
   - Avertissement au journal (bloc ou corps entier en NURBS : esquisse sur ces faces, reconnaissance FAO, cotes de cercles peuvent en souffrir) ; les refus « isolé impossible » du calcul exact ne sont plus affichés quand la reprise réussit.
 - **Test** : `test_symetrie_conges`, fichier réel — longueur 81, 100, 70 puis retour à 80 : tous les congés appariés sans erreur (dont les 6 copies), un solide, avertissement NURBS présent (reprise locale à 81 et 100), aucun « impossible / introuvable », volume cohérent (retour à 80 à 5 mm³ près). Échoue sans le correctif (4 congés en erreur).
+
+## V0.9.7 - Arbre unifié de l'assemblage ; faces des autres composants comme références de construction
+« J'aimerais une origine par pièce… avec plusieurs pièces, l'arbre va devenir compliqué » ; « la propal que tu m'as montrée était bien plus lisible » ; « je n'ai pu sélectionner que les plans du repère et pas des faces des composants ».
+- **Arbre** (`src/42-arbre-modele.js`, nouveau ; `renderTree` de `src/40-interface-arbre-props.js` y délègue) : l'arbre est décrit par un modèle (`treeModel` : lignes avec niveau, actions, glisser / déposer) puis dessiné par un seul dessinateur (`treeDraw`) et un seul répartiteur de clics (`treeDispatch`) — fin des gestionnaires recopiés par type de ligne. L'ancien `renderTree` et la section `asmCompsSection` (`src/47-assemblage-interface.js`) sont retirés.
+  - **Assemblage** : la hiérarchie des composants EST l'arbre — racine, son contenu, 📦 Composants, ⚙ Liaisons. La pièce modélisée s'imbrique sous son occurrence (barre bleue) ; les autres se déplient en lecture seule (grisé, double-clic = la modéliser). Occurrences identiques regroupées « ×N » (≥ 3). Pastilles « 📌 fixe », « ⚙ Pivot », « ⚙ Rigide », « ⚠ ».
+  - **Liaisons** : une ligne par occurrence placée (type, occurrence → cible, degrés de liberté en infobulle) ; clic = la piloter en mode Placer.
+  - **Recherche** en tête de l'arbre (sans accents ni casse, parents gardés, tout déplié, Échap vide) ; les raccourcis ne voient pas la frappe.
+  - **Glisser-déposer** : fonction sur une autre du même corps (crans `featMoveRaw`, une étape d'annulation), corps ou esquisse sur un composant (`asmCmdMoveTo`).
+  - **Lisibilité** : sections sobres au lieu des bandeaux (Origine repliée par défaut, ouverte sur sélection d'un plan ou pendant une saisie de construction), esquisses au nom seul (plan, face, traits en infobulle), retrait 14 px par niveau avec trait, colonnes triangle / icône fixes, ▲▼ et ⏻ au survol, panneau 300 px. Construction : ses éléments sont des enfants de la section (`cgTreeModel`, `src/79-construction-interface.js`).
+- **Construction** : un plan ou un axe peut viser une **face d'un autre composant** (mode Modéliser d'un assemblage) — face plane → plan, cylindrique / conique → axe. Chaque composant capture ses faces exactes à la fin de son rejeu (`_snap.pfaces`, `src/46-assemblage-modele.js` / 47) ; la référence `xf` se résout dans le composant actif comme les arêtes projetées (V0.8.1), suit l'occurrence déplacée ou modifiée (`asmExtStale`), se retrouve par sa géométrie si sa référence durable change, garde sa position (⚠) si la face disparaît (`src/78-construction-modele.js`). Les autres composants restent non cliquables hors saisie (`cgPickOtherComp`).
+- **Tests** : `test_arbre_v2` (sortie figée de l'arbre `fixtures/arbre_reference.json` ; répartiteur ; composants imbriqués ; ×N ; liaisons ; recherche ; glisser-déposer ; références `xf` : plan, axe, repli géométrique, face disparue) ; `test_tree_filter` adapté (plus de bandeau « Corps / Fonctions », le compte filtré reste sur l'en-tête du corps) ; sélecteurs d'occurrence précisés dans le parcours Playwright (`.tocc`). Vérifié dans l'application : plan à 10 mm d'une face de Base, qui suit Base déplacée de 5 mm.

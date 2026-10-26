@@ -201,7 +201,7 @@ test('composants : racine avec un repère de base, composant aligné qui suit, s
   // Placer (depuis un composant sans enfants : on remonte à la racine, l'occurrence sélectionnée)
   await ruban(page,'Placer').click();
   await page.waitForFunction(()=>asmMode==='asm'&&!asm.path.length&&asmScene.getObjectByName('asmOcc').children.length===2);
-  await page.locator('#tree .tnode',{hasText:'Composant 1:1'}).click();
+  await page.locator('#tree .tnode.tocc',{hasText:'Composant 1:1'}).click();
   await page.locator('#props button',{hasText:'Aligner un repère'}).click();
   await page.locator('#props button',{hasText:'Repère 1'}).first().click(); // repère du composant à poser
   await page.locator('#props button',{hasText:'Repère 1'}).last().click();  // repère de base de la racine
@@ -220,7 +220,7 @@ test('composants : racine avec un repère de base, composant aligné qui suit, s
   o=await pied();
   expect(o[2]).toBeCloseTo(35,6);
   // Sous-composant : double-clic sur Composant 1:1 (on le modélise), puis « Composant »
-  await page.locator('#tree .tnode',{hasText:'Composant 1:1'}).dblclick();
+  await page.locator('#tree .tnode.tocc',{hasText:'Composant 1:1'}).dblclick();
   await page.waitForFunction(()=>asmMode==='part'&&asm.path.length===1);
   await ruban(page,'Composant').click();
   await page.waitForFunction(()=>asm.path.length===2&&asmMode==='part'&&doc.features.length===0);
@@ -247,7 +247,7 @@ test('composants depuis les corps : clic droit sur un corps, même place, Ctrl+Z
   const r=await page.evaluate(()=>{const c=asm.comps.find(q=>q.name==='Colonne');
     return {ident:asmIsIdentity(asmRoot().occ[0].fr),feats:c.doc.features.length,sk:c.doc.sketches.map(s=>s.name),root:doc.features.length};});
   expect(r).toEqual({ident:true,feats:1,sk:['Esquisse colonne'],root:1});
-  await expect(page.locator('#tree .tnode',{hasText:'Colonne:1'})).toBeVisible();
+  await expect(page.locator('#tree .tnode.tocc',{hasText:'Colonne:1'})).toBeVisible();
   // Ctrl+Z en mode pièce : la conversion est annulée d'un coup
   await page.keyboard.press('Control+z');
   await page.waitForFunction(()=>asm.comps.length===1&&doc.bodies.length===2&&doc.features.length===2);
@@ -270,7 +270,7 @@ test('composants liés : lier l\'Axe, modifier sur place, la source est réécri
     return {rel:L.link.rel,dirty:asmLinkDirty(L),feats:L.doc.features.length};
   },axe);
   expect(r1).toEqual({rel:'Axe.miniFusion',dirty:false,feats:13});
-  await expect(page.locator('#tree .tnode',{hasText:'Axe:1'})).toContainText('🔗');
+  await expect(page.locator('#tree .tnode.tocc',{hasText:'Axe:1'})).toContainText('🔗');
   // modifier sur place : un repère de construction dans l'Axe, puis enregistrer (sources d'abord)
   const r2=await page.evaluate(async()=>{
     const L=asmLinked()[0];
@@ -306,7 +306,7 @@ test('liaisons : pivot tel que construit, piloté au curseur, limites',async({pa
   await page.evaluate(()=>{asmCompsFromBodies(doc.bodies.map(e=>e.id));markDirty();rebuild();});
   await ruban(page,'Placer').click();
   await page.waitForFunction(()=>asmMode==='asm'&&asmRoot().occ.length===2);
-  await page.locator('#tree .tnode',{hasText:'Bras:1'}).click();
+  await page.locator('#tree .tnode.tocc',{hasText:'Bras:1'}).click();
   await page.locator('#props button',{hasText:'Liaison telle que construite'}).click();
   await page.getByText('⚙ Pivot · axe Z de l’occurrence',{exact:true}).click();
   await page.waitForFunction(()=>{const o=asmRoot().occ[1];return o.align&&o.align.type==='revolute';});
@@ -344,7 +344,7 @@ test('points d’accroche : goupille posée par son axe sur le coin d’un socle
   await page.evaluate(()=>{asmCompsFromBodies(doc.bodies.map(e=>e.id));markDirty();rebuild();});
   await ruban(page,'Placer').click();
   await page.waitForFunction(()=>asmMode==='asm'&&asmRoot().occ.length===2);
-  await page.locator('#tree .tnode',{hasText:'Goupille:1'}).click();
+  await page.locator('#tree .tnode.tocc',{hasText:'Goupille:1'}).click();
   await page.locator('#props button',{hasText:'Aligner un repère'}).click();
   // position à l'écran d'un point (coordonnées de la racine = celles de la scène Placer)
   const ecran=async p=>page.evaluate(q=>{const v=new THREE.Vector3(q[0],q[1],q[2]).project(camera),r=renderer.domElement.getBoundingClientRect();
@@ -398,7 +398,7 @@ test('apparence en mode Placer : arêtes, intensité et transparence d’une occ
   let e=await etat();
   expect(e.aretes).toBe(1);   // arêtes de la goupille, comme en Modéliser
   const couleur=e.mats[0][0]; // celle du corps : elle ne change pas
-  await page.locator('#tree .tnode',{hasText:'Goupille:1'}).click();
+  await page.locator('#tree .tnode.tocc',{hasText:'Goupille:1'}).click();
   expect(await page.locator('#props .asmLookCol').count()).toBe(0); // pas de couleur par mode
   await page.locator('#props .asmLookOp').evaluate(i=>{i.value='50';i.dispatchEvent(new Event('input'));i.dispatchEvent(new Event('change'));});
   e=await etat();
@@ -433,12 +433,12 @@ test('mode Placer : la vue tourne autour de la pièce choisie ou du repère de r
   const pivot=()=>page.evaluate(()=>{const p=orbitPivot();return [p.x,p.y,p.z];});
   const proche=(a,b)=>a.forEach((v,i)=>expect(v).toBeCloseTo(b[i],3));
   proche(await pivot(),[22.5,0,15]);                       // rien de choisi : centre des pièces placées
-  await page.locator('#tree .tnode',{hasText:'Goupille:1'}).click();
+  await page.locator('#tree .tnode.tocc',{hasText:'Goupille:1'}).click();
   proche(await pivot(),[60,0,15]);                         // la goupille sélectionnée
   await page.locator('#tree .tnode',{hasText:'Origine de'}).click();
   proche(await pivot(),[0,0,0]);                           // le repère de référence cliqué
   await expect(page.locator('#tree .tnode.sel',{hasText:'Origine de'})).toHaveCount(1);
-  await page.locator('#tree .tnode',{hasText:'Goupille:1'}).click();
+  await page.locator('#tree .tnode.tocc',{hasText:'Goupille:1'}).click();
   // vraie rotation à la souris, dans le vide : la goupille reste au même endroit de l'écran
   const ecran=()=>page.evaluate(()=>{const q=orbitPivot().project(camera),r=renderer.domElement.getBoundingClientRect();
     return [r.left+(q.x+1)/2*r.width,r.top+(1-q.y)/2*r.height];});

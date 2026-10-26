@@ -294,6 +294,8 @@ function cgPickCommit(e){
   const tp=triadPickPlane(e);if(tp){cgRefAccept({k:'o',id:tp});return;}
   const mr=cgPickModelRef(e,cgMode.draft,cgMode.slot);
   if(mr){cgRefAccept(mr);return;}
+  const xr=cgPickOtherComp(e,cgMode.draft,cgMode.slot,body);
+  if(xr){cgRefAccept(xr);return;}
   if(!body){const pl=pickPlane(e);if(pl){cgRefAccept({k:'o',id:pl});return;}}
   try{faceEl.textContent='Rien de reconnu ici — cliquez '+cgSlotHint(CG_HOW[cgMode.draft.kind][cgMode.draft.how].slots[cgMode.slot][0])+'.';}catch(err){}
 }
@@ -335,6 +337,47 @@ function cgPickModelRef(e,draft,slot){
     finally{try{if(hit&&hit.face)hit.face.delete();}catch(err){}}
   }
   return null;
+}
+function cgPickOtherComp(e,draft,slot,bodyHit){
+  // Face d'un AUTRE composant affiché autour de la pièce (mode Modéliser d'un assemblage) :
+  // plan = face plane, axe = face cylindrique ou conique. Ces maillages ne sont pas cliquables
+  // en temps normal (asmFill) : on les vise ici, pendant la saisie seulement. → ref 'xf' ou null
+  if(typeof asm==='undefined'||!asm||!asmOn()||asmMode==='asm')return null;
+  const type=(CG_HOW[draft.kind][draft.how].slots[slot]||[])[0];
+  if(type!=='plane'&&type!=='axis')return null;
+  const G=scene.getObjectByName('asmCtx');if(!G)return null;
+  try{
+    const r=renderer.domElement.getBoundingClientRect();
+    rayc.setFromCamera(new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1),camera);
+    G.updateMatrixWorld(true);
+    const hits=[];G.traverse(m=>{if(m.isMesh&&m.visible!==false)THREE.Mesh.prototype.raycast.call(m,rayc,hits);});
+    hits.sort((a,b)=>a.distance-b.distance);
+    const h=hits[0];if(!h||!h.face)return null;
+    if(bodyHit&&bodyHit.distance<h.distance-1e-6)return null; // la pièce active est devant
+    let g=h.object;while(g&&!(g.userData&&g.userData.path))g=g.parent;if(!g)return null;
+    const path=g.userData.path.slice(),T=asmPathComp(path),c=asmComp(T);
+    if(!c||T===asm.active)return null;
+    const Fs=c._snap&&c._snap.pfaces;
+    if(!Fs||!Fs.length){try{faceEl.textContent='« '+c.name+' » : faces exactes indisponibles (noyau exact requis, rejouez ce composant).';}catch(err){}return null;}
+    const ctx=asm.path.slice(),Fi=asmInverse(asmSkXf(ctx,path));
+    const p=asmApply(Fi,[h.point.x,h.point.y,h.point.z]);
+    const nw=h.face.normal.clone().transformDirection(h.object.matrixWorld);
+    const q=asmApply(Fi,[nw.x,nw.y,nw.z]),n=cgUnit([q[0]-Fi.o[0],q[1]-Fi.o[1],q[2]-Fi.o[2]]);
+    let best=null,bd=Infinity;
+    Fs.forEach(f=>{
+      if(type==='plane'&&f.plane&&Math.abs(cgDot(n,f.plane.n))>0.995){
+        const d=Math.abs(cgDot(cgSub(p,f.plane.o),f.plane.n));if(d<bd){bd=d;best=f;}
+      }
+      if(type==='axis'&&f.axis&&Math.abs(cgDot(n,f.axis.d))<0.2){
+        const w=cgSub(p,f.axis.o),t=cgDot(w,f.axis.d),dd=cgLen(cgSub(w,cgMul(f.axis.d,t)));
+        const d=f.axis.rad!=null?Math.abs(dd-f.axis.rad):dd;if(d<bd){bd=d;best=f;}
+      }
+    });
+    if(!best||bd>0.5)return null;
+    const nm=(asmOcc(path[path.length-1])||{}).name||c.name;
+    const loc=best.plane?{plane:best.plane}:{axis:best.axis};
+    return {k:'xf',ctx,path,ref:best.ref,loc,name:(best.plane?'Face':'Axe de face')+' · '+nm,sig:null};
+  }catch(err){return null;}
 }
 function cgEdgeUnder(e,faceHit){
   // Arête EXACTE (occListEdges) à ≤ 7 px du curseur, indépendante de l'affichage des arêtes
@@ -476,36 +519,36 @@ function cgAskDelete(id){
   markDirty();rebuild();cgRefresh();
 }
 /* ── arbre ── */
-function cgTreeRows(t){
-  // Groupe « Construction » de l'arbre (appelé par renderTree, après l'origine)
-  const L=(doc.cgeo||[]).filter(cgValid).filter(c=>!cgLocked(c));
-  if(!L.length)return;
+function cgTreeModel(L){
+  // Section « Construction » de l'arbre (42 : treeModel, après l'origine) : une section repliable
+  // et ses éléments EN ENFANTS (niveau 1), comme les plans et axes sous Origine
+  const C=(doc.cgeo||[]).filter(cgValid).filter(c=>!cgLocked(c));
+  if(!C.length)return;
   const f=!!(doc.fold&&doc.fold.cg);
-  const hd=document.createElement('div');hd.className='tgroup';hd.style.cursor='pointer';
-  hd.innerHTML='<span class="tri" title="Déplier / replier">'+(f?'▶':'▼')+'</span><span>📐 Construction ('+L.length+')</span>';
-  hd.onclick=()=>{doc.fold=doc.fold||{};doc.fold.cg=!f;try{dirty=true;}catch(e){}renderTree();};
-  t.appendChild(hd);
-  if(f)return;
-  L.forEach(el=>{
-    const d=document.createElement('div');
+  const open=!f||!!(typeof treeQuery!=='undefined'&&treeQuery)||(sel&&sel.kind==='cg')||!!cgMode; // jamais replié sur ce qu'on vise
+  L.push({lvl:0,cls:'tnode tsec',title:'Plans, axes, points et repères de construction',
+    html:'<span class="tri" title="Déplier / replier">'+(open?'▼':'▶')+'</span><span>📐</span><span class="nm">Construction ('+C.length+')</span>',
+    on:{click:()=>{doc.fold=doc.fold||{};doc.fold.cg=open;try{dirty=true;}catch(e){}renderTree();}}});
+  if(!open)return;
+  C.forEach(el=>{
     const on=sel&&sel.kind==='cg'&&sel.id===el.id;
-    d.className='tnode'+(on?' sel':'')+(el.visible===false?' hidden':'');
     const warn=el.st==='warn'?' <span title="'+String(el.msg||'').replace(/"/g,'&quot;')+'" style="color:var(--warn)">⚠</span>':'';
-    d.innerHTML='<span>'+CG_KINDS[el.kind].ic+'</span><span class="nm">'+cgLabel(el).replace(/</g,'&lt;')+warn+'</span><span class="eye" title="Afficher / masquer">'+(el.visible===false?'🙈':'👁')+'</span>';
-    d.title='Clic = sélectionner · double-clic = '+((el.kind==='plane'||el.kind==='frame')?'esquisse dessus':'modifier')+' · clic droit = modifier, renommer, supprimer';
-    d.onclick=ev=>{
-      if(ev.target&&ev.target.classList&&ev.target.classList.contains('eye')){el.visible=!(el.visible!==false);try{dirty=true;}catch(e){}cgDraw();renderTree();return;}
-      if(cgTreePick({k:'cg',id:el.id}))return;
-      sel={kind:'cg',id:el.id};renderTree();renderProps();cgDraw();
-    };
-    d.ondblclick=()=>{
-      if(cgMode)return;
-      if(el.kind==='plane'&&typeof newSketchOnCg==='function')newSketchOnCg(el.id,null);
-      else if(el.kind==='frame'&&typeof newSketchOnCg==='function')newSketchOnCg(el.id,'XY');
-      else cgEdit(el.id);
-    };
-    d.oncontextmenu=e=>{e.preventDefault();showCtx(e.clientX,e.clientY,{kind:'cg',id:el.id});};
-    t.appendChild(d);
+    L.push({lvl:1,cls:'tnode'+(on?' sel':'')+(el.visible===false?' hidden':''),
+      html:'<span>'+CG_KINDS[el.kind].ic+'</span><span class="nm">'+cgLabel(el).replace(/</g,'&lt;')+warn+'</span><span class="eye" title="Afficher / masquer">'+(el.visible===false?'🙈':'👁')+'</span>',
+      title:'Clic = sélectionner · double-clic = '+((el.kind==='plane'||el.kind==='frame')?'esquisse dessus':'modifier')+' · clic droit = modifier, renommer, supprimer',
+      on:{
+        eye:()=>{el.visible=!(el.visible!==false);try{dirty=true;}catch(e){}cgDraw();renderTree();},
+        click:()=>{
+          if(cgTreePick({k:'cg',id:el.id}))return;
+          sel={kind:'cg',id:el.id};renderTree();renderProps();cgDraw();
+        },
+        dbl:()=>{
+          if(cgMode)return;
+          if(el.kind==='plane'&&typeof newSketchOnCg==='function')newSketchOnCg(el.id,null);
+          else if(el.kind==='frame'&&typeof newSketchOnCg==='function')newSketchOnCg(el.id,'XY');
+          else cgEdit(el.id);
+        },
+        ctx:e=>showCtx(e.clientX,e.clientY,{kind:'cg',id:el.id})}});
   });
 }
 function cgCtxAct(act,t){

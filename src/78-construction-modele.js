@@ -224,6 +224,8 @@ function cgEvalRef(ref,ctx){
     const o=cgAdd(cgAdd(cgArr(B.o),cgMul(cgArr(B.u),+q.x||0)),cgMul(cgArr(B.v),+q.y||0));
     return {point:{o}};
   }
+  // Face d'un AUTRE composant de l'assemblage (46 : asmXfEval)
+  if(ref.k==='xf')return typeof asmXfEval==='function'?asmXfEval(ref):null;
   // Géométrie du modèle (faces, arêtes, sommets) : noyau exact
   return cgEvalModelRef(ref,ctx);
 }
@@ -234,6 +236,7 @@ function cgSlot(el,ctx,i,type,opt){
   const g=cgEvalRef(r,ctx);
   if(!g){
     if(r.k==='cg')throw new Error('référence '+(i+1)+' supprimée ou non résolue');
+    if(r.k==='xf')throw new Error('référence '+(i+1)+' : face de l’autre composant introuvable — position mémorisée');
     if((r.k==='face'||r.k==='edge'||r.k==='vtx')&&!(typeof occHas==='function'&&occHas()))throw new Error('noyau exact indisponible : position mémorisée');
     throw new Error('référence '+(i+1)+' introuvable — la pièce a changé');
   }

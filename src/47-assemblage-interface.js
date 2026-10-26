@@ -60,7 +60,8 @@ function asmCaptureActive(){
   if(c._snap)asmSnapFree(c._snap);
   const edges=asmEdgeCapture(); // arêtes pour le mode Placer (48-assemblage-apparence)
   const pedges=asmSkCaptureEdges(); // V0.8.1 : arêtes exactes, projetables dans les esquisses des autres (46)
-  c._snap={items,edges,pedges,exact:builtEngine==='exact',hash:(()=>{try{return docHash();}catch(e){return '';}})()};
+  const pfaces=asmSkCaptureFaces(); // faces planes / cylindriques : références de construction des autres (46)
+  c._snap={items,edges,pedges,pfaces,exact:builtEngine==='exact',hash:(()=>{try{return docHash();}catch(e){return '';}})()};
   delete c._stale;
   // le composant vient d'être rejoué : ses repères ont pu bouger → les alignements suivent
   try{if(asmResolve()){dirty=true;autosave();}}catch(e){}
@@ -332,7 +333,8 @@ function asmNamesSync(){
   });
 }
 function asmBreadcrumb(t){
-  // En tête de l'arbre (les deux modes) : fil d'Ariane, puis la hiérarchie des composants
+  // En tête de l'arbre (les deux modes) : fil d'Ariane et boutons Modéliser / Placer ; la
+  // hiérarchie des composants est dessinée par l'arbre (42 : treeComps)
   if(!asmOn())return;
   asmNamesSync();
   const d=document.createElement('div');d.className='tnode asmCrumb';d.style.cssText='font-weight:600;flex-wrap:wrap;gap:2px';
@@ -365,67 +367,11 @@ function asmBreadcrumb(t){
     sw.appendChild(b);});
   d.appendChild(sw);
   t.appendChild(d);
-  asmCompsSection(t);
 }
-function asmCompsSection(t){
-  // Hiérarchie complète ; le sous-arbre actif en clair, ses enfants directs actionnables
-  const all=asmInstances(asm.root).filter(i=>i.path.length);
-  const h=document.createElement('div');h.className='tgroup';h.style.cursor='pointer';
-  h.innerHTML='<span>'+(asmTreeOpen?'▾':'▸')+' 📦 Composants ('+all.length+')</span>';
-  h.title=all.length+' occurrence(s) de '+(asm.comps.length-1)+' composant(s) sous la racine';
-  h.onclick=()=>{asmTreeOpen=!asmTreeOpen;renderTree();};
-  t.appendChild(h);
-  // composants liés : vérifier les sources (et autoriser l'accès : il faut un clic)
-  const nl=asmLinked().length;
-  if(nl){
-    const w=asmLinked().some(L=>L.link.st==='warn');
-    const r=document.createElement('div');r.className='tnode';r.style.cursor='pointer';
-    r.innerHTML='<span>🔗</span><span class="nm">'+nl+' composant(s) lié(s)'+(w?' <span style="color:var(--warn)">⚠</span>':'')+'</span><span title="Vérifier les sources">🔄</span>';
-    r.title='Clic = vérifier les sources sur le disque (et autoriser l’accès au dossier de projets)';
-    r.onclick=()=>asmLinksCheck(true);t.appendChild(r);
-  }
-  if(!asmTreeOpen)return;
-  const P=asm.path,n=P.length;
-  all.forEach(inst=>{
-    const id=inst.path[inst.path.length-1],o=asmOcc(id),c=asmComp(inst.comp)||{};if(!o)return;
-    const mine=inst.path.length>n&&P.every((q,i)=>inst.path[i]===q);
-    const direct=mine&&inst.path.length===n+1;
-    const self=inst.path.length===n&&P.every((q,i)=>inst.path[i]===q);
-    const badges=(o.fixed?' <span title="Fixée">📌</span>':'')+(o.align?(o.align.type?' <span title="Liaison '+asmEsc((ASM_JOINTS[o.align.type]||{}).lab||'')+'">⚙</span>':' <span title="Alignée sur un repère">🔗</span>'):'')+
-      (o.st==='warn'?' <span style="color:var(--warn)" title="'+asmEsc(o.msg)+'">⚠</span>':'')+
-      (c.occ&&c.occ.length?' <span style="color:var(--muted)" title="Sous-composants">('+c.occ.length+')</span>':'')+asmLinkBadge(c);
-    const d=document.createElement('div');
-    d.className='tnode'+(direct&&asmMode==='asm'&&asmSelId===id?' sel':'')+(o.visible===false?' hidden':'');
-    d.style.paddingLeft=(6+12*(inst.depth-1))+'px';
-    if(!mine&&!self)d.style.opacity='0.55';
-    d.innerHTML='<span>'+(self?'✏️':'📦')+'</span><span class="nm">'+asmEsc(o.name)+badges+(self?' <span style="color:var(--muted)">· actif</span>':'')+'</span>'+
-      '<span class="eye" title="Afficher / masquer">'+(o.visible===false?'🙈':'👁')+'</span>';
-    d.title=direct?'Clic = sélectionner · double-clic = modéliser · clic droit = menu':'Double-clic = modéliser ce composant';
-    d.onclick=ev=>{
-      if(ev.target&&ev.target.classList&&ev.target.classList.contains('eye')){asmPush('visibilité');o.visible=!(o.visible!==false);asmNotify();renderTree();return;}
-      {const f=globalThis.asmTreePick;if(typeof f==='function'&&f(inst.path))return;} // saisie d'un alignement (48)
-      if(direct){if(asmMode!=='asm'){asmShow(P,'asm',id);return;}asmSelId=id;asmPivot=null;asmDraw();renderTree();renderProps();}
-    };
-    d.ondblclick=()=>asmShow(inst.path,'part');
-    d.oncontextmenu=e=>{e.preventDefault();
-      const items=[{html:'✏️ Modéliser ce composant',fn:()=>asmShow(inst.path,'part')}];
-      if(c.occ&&c.occ.length)items.push({html:'🧩 Placer ses composants',fn:()=>asmShow(inst.path,'asm')});
-      if(direct){
-        if(asmMode==='asm'){asmSelId=id;asmDraw();renderTree();renderProps();}
-        items.push({html:'➕ Nouvelle occurrence',fn:()=>{if(asmMode!=='asm')asmShow(P,'asm',id);asmSelId=id;asmCmdNewOcc();}},
-          {html:o.fixed?'📌 Libérer':'📌 Fixer',fn:()=>asmToggleFixed(id)},
-          {html:'🏷 Renommer le composant',fn:()=>asmRename(id)},
-          {html:'🗑 Supprimer',fn:()=>asmAskDelete(id)});
-      }
-      items.push(...asmLinkMenu(c)); // composants liés (47-composants-lies)
-      try{mfPop({getBoundingClientRect:()=>({left:e.clientX,right:e.clientX+200,top:e.clientY-6,bottom:e.clientY-6,width:200,height:0})},items);}catch(err){}
-    };
-    t.appendChild(d);
-  });
-}
-function asmTreeRender(t){
-  // Arbre du mode Placer (renderTree le délègue ici)
-  asmBreadcrumb(t);
+function asmTreeRender(t,opt){
+  // Lignes du mode Placer (repères du composant actif) ; opt.noCrumb : l'arbre (42) a déjà
+  // dessiné le fil d'Ariane et la hiérarchie
+  if(!(opt&&opt.noCrumb))asmBreadcrumb(t);
   const c=asmActiveComp();
   const row=(html,cls,title)=>{const d=document.createElement('div');d.className=cls;d.innerHTML=html;if(title)d.title=title;t.appendChild(d);return d;};
   row('<span>🧩 '+asmEsc(c.name)+' · placer ses composants</span>','tgroup');

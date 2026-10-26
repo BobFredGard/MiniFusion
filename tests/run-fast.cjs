@@ -38,6 +38,7 @@ const SUITES = [
   'test_esquisse_arc_fixe_ddl',
   'test_construction_modele',
   'test_assemblage_modele',
+  'test_arbre_v2',
   'test_composants_modele',
   'test_composants_apparence',
   'test_extrusion_dynamique',
