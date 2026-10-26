@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**365 versions**, de `2026-09-28b` à `V0.11.10` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**366 versions**, de `2026-09-28b` à `V0.11.11` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5070,3 +5070,10 @@ Premier passage complet des tests navigateur sur le livrable courant (jusqu'ici 
 - **Cause** : en mode Placer, le pivot vient de la boîte englobante du maillage AFFICHÉ de la pièce ; depuis V0.11.5 (cercle extrudé = un seul cylindre) celui de la goupille n'est plus exactement symétrique. Écart de 3 µm, invisible à l'écran.
 - **Test** (`tests/browser/parcours.spec.cjs`) : `toBeCloseTo(…, 2)` (écart < 0,005) au lieu de 3 (< 0,0005). Le test vérifie toujours que la vue tourne autour de la bonne pièce (60 contre 22,5 ou 0).
 - **Tests** : navigateur 17/17 (15 parcours SwiftShader + 2 sur la carte réelle), suite complète 171/171, suite rapide.
+
+## V0.11.11 - Ébauche 3D escargot : la spirale finie, un côté puis l'autre
+Demande : « dès que la spirale est finie, tu attaques un côté, tu le finis, puis tu vas finir l'autre côté ». Sur une poche longue (bloc 160×60, poche 140×40), la spirale continuait ~5 tours au-delà des murs du petit axe : coupés par ces murs, ses tours alternaient gauche / droite en rapides avant le travail par côté.
+- **Cause** (`src/88-fao-90-ebauche3d.js`, `faoSpiralLevel`) : le rayon des « murs proches » `Rcent` se mesurait sur l'étendue des centres d'outil légaux, qui inclut l'air autour du brut (39,5 mm au lieu des 14,5 mm de la poche), plus un pas et un tour de marge.
+- **Correctif** : `Rcent` = distance du centre à la case illégale la plus proche (carte de distance déjà calculée pour le pôle), bornée par l'étendue ; la spirale s'arrête au dernier tour ENTIER (`floor(Rcent/pas)`, au moins 1), et les demi-anneaux des côtés partent de ce rayon. Résultat : spirale jusqu'à R = 10, tout le côté droit, tout le côté gauche, puis la passe des faces.
+- **CACHE_VER** → `2026-10-26-002` (parcours escargot changés : à régénérer).
+- **Tests** : `test_fao_escargot`, `test_fao_ebauche_brut`, suite rapide 54/54.

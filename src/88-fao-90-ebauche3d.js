@@ -755,7 +755,18 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   // région le plus proche), pas jusqu'à Rmax. La matière restante (les
   // extrémités le long de l'axe long) est éclaircie ensuite par clearArcs
   // (demi-anneaux circulaires par côté — 2026-10-11-001).
-  const Rcent=Math.min(cx-rx0,rx1-cx,cy-ry0,ry1-cy)+pitch;
+  // 2026-10-26 (demande « dès que la spirale est finie, tu attaques un côté,
+  // tu le finis, puis tu vas finir l'autre ») : la spirale s'arrête au
+  // DERNIER TOUR ENTIER — rayon ≤ murs proches. L'ancien +pitch / +1 tour
+  // la poussait au-delà : ses tours, coupés par les murs du petit axe,
+  // alternaient gauche / droite en rapides avant les côtés. Murs proches =
+  // distance du centre à la case illégale la plus proche (carte `dist`) :
+  // l'étendue rx0..ry1 inclut l'air autour du brut (39,5 mm au lieu des
+  // 14,5 mm de la poche sur un bloc 160×60).
+  const ciC=Math.min(nx-1,Math.max(0,Math.round((cx-gx0)/h))),cjC=Math.min(ny-1,Math.max(0,Math.round((cy-gy0)/h)));
+  const dC=dist[cjC*nx+ciC];
+  const Rcent=Math.min(dC<INF?Math.max(0,(dC-1)*h):1/0,cx-rx0,rx1-cx,cy-ry0,ry1-cy);
+  const nSp=Math.max(1,Math.floor(Rcent/pitch)); // tours de spirale
   // --- liaisons (copie conventionnelle) : G1 sûre ou translation à vide
   const zTopSafe=Math.max(top,isFinite(+brutTop)?+brutTop:top);
   // 2026-10-21-010 : BRUT = CORPS — hors de la zone usinable de ce niveau
@@ -1073,7 +1084,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   // --- spirale : R(θ) = pitch·θ/2π, échantillonnage à corde s (borné),
   // pas angulaire borné à π/6 près du centre.
   const s=Math.max(0.5,Math.min(Math.max(pitch,D*0.25),D*0.5));
-  const thMax=2*Math.PI*(Math.ceil(Rcent/pitch)+1);
+  const thMax=2*Math.PI*nSp;
   let th=0,guard=0,atCut=false,prevIn=false,px=cx,py=cy;
   // 007 : descente répartie le long de la spirale (rampL>0 = rampage actif)
   let rampL=0,rampK=0,rampTot=0;
@@ -1167,7 +1178,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     // pour le 2nd) : le pont devient un court G1, pas une rapide longue.
     // avalant : sens unique — début toujours à thA (aucun retournement).
     let rev=avalant?false:((side>0)?(pyRef>=cy):(pyRef<cy));
-    const Rsp=pitch*(Math.ceil(Rcent/pitch)+1); // rayon atteint par la spirale (thMax)
+    const Rsp=pitch*nSp; // rayon atteint par la spirale (thMax)
     let nEm=0,ag=0;
     for(let R=Rsp;R<=Rmax+1e-9;R+=pitch){
       const dth=Math.min(s/Math.max(R,0.5),Math.PI/6);
