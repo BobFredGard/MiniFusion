@@ -1798,7 +1798,22 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     for(let j=li-1;j>=0;j--)if(!plan[j].pose)return plan[j].z;
     return zt;};
   const aeS=Math.max(0.5,Math.min(ae,D*0.25));
-  for(let li=0;li<plan.length;li++){
+  // 2026-10-26 (Cavité Usinage : « pourquoi la 1ère passe il n'y a pas
+  // d'hélice ? Tu commences directement par un tour du bord » / « étrange
+  // comme spirale ! ») : la pose (bande de l'épaulement seule) passait AVANT
+  // son niveau de grille — rainure pleine fraise en rampe dans le brut, centre
+  // fermé. Elle passe désormais APRÈS ce niveau (hélice + spirale au centre
+  // d'abord, la bande s'attaque ensuite de côté) ; ses mini-passes restent
+  // celles du niveau de grille (aucune à elle).
+  const order=[];
+  {const late={};
+    for(let li=0;li<plan.length;li++){
+      if(plan[li].pose){const N=gridBelow(li);if(N){const j=plan.indexOf(N);(late[j]=late[j]||[]).push(li);continue;}}
+      order.push(li);
+      if(late[li])for(const q of late[li])order.push(q);
+    }}
+  for(let oi=0;oi<order.length;oi++){
+    const li=order[oi];
     const L=plan[li];
     chunkAt.push(moves.length);
     let zoneL=o.zoneAt;
@@ -1825,7 +1840,9 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     // ESCARGOT : spirale centre -> faces sur le meme plan/levels, memes
     // entrees/travel ; mini-passes et finition restent conventionnelles.
     // 2026-10-08-003 : sens (avalant = sens de coupe constant) porte par opt.
-    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:zoneL,zoneDense:typeof o.protectTip==='function',stockTop:stockTopF,remBlocked:rem?rem.blocked:null,remTopAt:rem?rem.topAt:null,remPtAt:rem?rem.ptAt:null,zoneSafe:o.zoneSafe||null,
+    // 2026-10-26 : la pose (bande en anneau, centre hors zone) n'a pas de
+    // spirale — ses demi-anneaux tronqués à la bande ; contours conventionnels.
+    if(esc&&!L.pose)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:zoneL,zoneDense:typeof o.protectTip==='function',stockTop:stockTopF,remBlocked:rem?rem.blocked:null,remTopAt:rem?rem.topAt:null,remPtAt:rem?rem.ptAt:null,zoneSafe:o.zoneSafe||null,
       bullFaces:bullC?function(zz){return faoBullRingRuns(bullCtx(L.radial),zz,o.sens==='avalant',true);}:null,
       bullOK:bullC?function(x,y,zz){return bullCtx(L.radial).tipB(x,y)<=zz+1e-6;}:null});
     else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:zoneL});

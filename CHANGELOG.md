@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**366 versions**, de `2026-09-28b` à `V0.11.11` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**367 versions**, de `2026-09-28b` à `V0.11.12` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5077,3 +5077,10 @@ Demande : « dès que la spirale est finie, tu attaques un côté, tu le finis, 
 - **Correctif** : `Rcent` = distance du centre à la case illégale la plus proche (carte de distance déjà calculée pour le pôle), bornée par l'étendue ; la spirale s'arrête au dernier tour ENTIER (`floor(Rcent/pas)`, au moins 1), et les demi-anneaux des côtés partent de ce rayon. Résultat : spirale jusqu'à R = 10, tout le côté droit, tout le côté gauche, puis la passe des faces.
 - **CACHE_VER** → `2026-10-26-002` (parcours escargot changés : à régénérer).
 - **Tests** : `test_fao_escargot`, `test_fao_ebauche_brut`, suite rapide 54/54.
+
+## V0.11.12 - Ébauche 3D : la pose d'épaulement après son niveau, en contour
+Cavité Usinage (« pourquoi la 1ère passe il n'y a pas d'hélice ? Tu commences directement par un tour du bord » / « étrange comme spirale ! ») : la pose de fond à Z46 (rebord de la cavité, hors grille 50/45) passait AVANT le niveau 45 — rainure pleine fraise tout autour, en rampe dans le brut, centre encore fermé ; en escargot, la spirale centrée ne gardait que des bouts de demi-anneaux le long de la bande.
+- **Ordre** (`src/88-fao-90-ebauche3d.js`, boucle des niveaux, tous modes) : chaque pose passe juste APRÈS son niveau de grille et ses mini-passes. Cavité Usinage : hélice au centre à 45, spirale, côté droit, côté gauche, faces, mini-passes 49,17 → 45,83, puis la pose à 46 (un contour du rebord, attaqué depuis la poche ouverte).
+- **Escargot** : la pose (bande en anneau, centre hors zone) est usinée en contours conventionnels, plus en spirale.
+- **CACHE_VER** → `2026-10-26-003`.
+- **Tests** : `test_fao_pose_fond` (ordre des niveaux 5 puis 8), `test_fao_escargot`, `test_fao_ebauche_brut`, suite rapide 54/54.
