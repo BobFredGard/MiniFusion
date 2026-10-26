@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**360 versions**, de `2026-09-28b` à `V0.11.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**361 versions**, de `2026-09-28b` à `V0.11.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5037,3 +5037,9 @@ Nouvelle fonction **✂ Scinder** (menu Modifier), sur le modèle de Scinder la 
 - **Cercle extrudé = un cylindre** : un cercle d'esquisse devient UNE arête fermée (plus deux demi-arcs) → un seul cylindre, sans arête de jonction ; sa projection en esquisse est un seul cercle (`test_esquisse_intersection` mis à jour : 1 face au lieu de 2).
 - **Coque et Dépouille** (`src/87-coque.js`, `src/86-draft-depouillage.js`) : la face choisie est colorée sur toute sa surface (un seul sommet par triangle était repris) ; message de la Dépouille sans balise `<b>` en texte brut.
 - **Tests** : `test_scinder` et `test_cylindre_unique` (nouveaux, suite complète) ; suite rapide 53/53.
+
+## V0.11.6 - Congés et chanfreins : un clic seul ajoute ou retire une arête
+Avant, un clic seul REMPLAÇAIT la sélection par l'arête cliquée et il fallait Ctrl/Cmd+clic pour en ajouter une (sauf en édition d'un congé existant).
+- **Sélection** (`src/80-conges-chanfreins.js`, `exactToggle`) : clic = ajouter l'arête, clic sur une arête déjà choisie = la retirer, dans tous les cas. Avec « arêtes tangentes », chaque arête choisie entraîne toujours sa chaîne tangente.
+- **Aide** : barre d'état, bulle de la case « arêtes tangentes », note du panneau et commentaire du clic 3D (`src/90-picking-mesure-import.js`) ne parlent plus de Ctrl.
+- **Tests** : suite rapide. Vérifié dans l'application sur un bloc : trois clics seuls donnent 1, 2 puis 1 arête(s).

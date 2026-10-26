@@ -500,15 +500,13 @@ function exactToggle(e){
       }
       if(exactFaceToggle(e))return;
       faceEl.textContent=xLabel(filModeX.kind)+' : cliquez une arête vive (noire · jaune au survol) ou une face (= toute sa boucle).'+
-        (filModeX.tangent?' Les arêtes tangentes à celle cliquée sont ajoutées automatiquement.':' Clic = cette arête · Ctrl/Cmd+clic = ajouter / retirer.');
+        (filModeX.tangent?' Les arêtes tangentes à celle cliquée sont ajoutées automatiquement.':' Clic = ajouter / retirer une arête.');
       return;
     }
-    // 2026-10-16-015 : clic = CETTE arête seule (remplace la sélection) ; Ctrl/Cmd+clic = ajouter /
-    // retirer. Avec « arêtes tangentes », chaque arête choisie entraîne sa chaîne tangente.
-    const multi=!!(e&&(e.ctrlKey||e.metaKey));
-    if(multi){if(xIsSeed(i))xSeedDel(i);else xSeedAdd(i);}
-    else if(filModeX.editing){if(xIsSeed(i))xSeedDel(i);else xSeedAdd(i);} // édition : on complète la sélection chargée
-    else{const only=(filModeX.seeds||[]).length===1&&xIsSeed(i);filModeX.seeds=only?[]:[i];}
+    // 2026-10-26 : clic SEUL = ajouter / retirer cette arête (avant : le clic remplaçait la
+    // sélection et il fallait Ctrl/Cmd+clic pour en ajouter). Avec « arêtes tangentes »,
+    // chaque arête choisie entraîne sa chaîne tangente.
+    if(xIsSeed(i))xSeedDel(i);else xSeedAdd(i);
     xSelSync();
     paintExact();renderExactPanel();
     const extra=(filModeX.tangent&&filModeX.sel.length>(filModeX.seeds||[]).length)
@@ -615,20 +613,20 @@ function renderExactPanel(){
   const tl=document.createElement('label');
   tl.style.cssText='display:flex;align-items:center;gap:6px;margin-top:8px;font-size:.83rem;cursor:pointer';
   const tc=document.createElement('input');tc.type='checkbox';tc.checked=filModeX.tangent!==false;
-  tc.title='Coché : le calcul suit la chaîne tangente de chaque arête choisie. Décoché : pas de recherche de tangences. Dans les 2 cas, seules les arêtes cliquées sont sélectionnées (Ctrl/Cmd+clic pour plusieurs).';
+  tc.title='Coché : le calcul suit la chaîne tangente de chaque arête choisie. Décoché : pas de recherche de tangences. Dans les 2 cas, seules les arêtes cliquées sont sélectionnées (clic = ajouter / retirer).';
   tc.addEventListener('change',()=>{
     filModeX.tangent=tc.checked;
     filMemo.tangent=tc.checked; // V0.2.4 : l'état des tangentes est retenu d'une session à l'autre
     xSelSync();paintExact();renderExactPanel();
-    faceEl.textContent=`${xLabel(k)} : arêtes tangentes ${tc.checked?'ajoutées automatiquement (germes en jaune)':'désactivées (clic = une arête · Ctrl/Cmd+clic = plusieurs)'} · ${filModeX.sel.length} arête(s).`;
+    faceEl.textContent=`${xLabel(k)} : arêtes tangentes ${tc.checked?'ajoutées automatiquement (germes en jaune)':'désactivées (clic = ajouter / retirer une arête)'} · ${filModeX.sel.length} arête(s).`;
   });
   tl.appendChild(tc);
   const tt=document.createElement('span');tt.textContent='🔗 Arêtes tangentes ajoutées automatiquement';
   tl.appendChild(tt);p.appendChild(tl);
   {const nt=document.createElement('div');nt.className='note';nt.style.marginTop='3px';
    nt.textContent=filModeX.tangent!==false
-     ?'Clic = une arête (le '+(xIsChamfer(k)?'chanfrein':'congé')+' suit sa chaîne tangente) · Ctrl/Cmd+clic = en ajouter / retirer.'
-     :'Clic = une arête, sans recherche de tangences · Ctrl/Cmd+clic = en ajouter / retirer. Note : le noyau prolonge toujours un '+(xIsChamfer(k)?'chanfrein':'congé')+' le long d’arêtes en continuité tangente (limite OCCT).';
+     ?'Clic = une arête (le '+(xIsChamfer(k)?'chanfrein':'congé')+' suit sa chaîne tangente) · clic sur une arête choisie = la retirer.'
+     :'Clic = ajouter / retirer une arête, sans recherche de tangences. Note : le noyau prolonge toujours un '+(xIsChamfer(k)?'chanfrein':'congé')+' le long d’arêtes en continuité tangente (limite OCCT).';
    p.appendChild(nt);}
   if(filModeX.sel.length){
     const nb=document.createElement('div');nb.className='note';
