@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**358 versions**, de `2026-09-28b` à `V0.11.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**359 versions**, de `2026-09-28b` à `V0.11.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5024,3 +5024,9 @@ Suite de V0.9.7 : « que reste-t-il à faire ? » — dans l'ordre proposé ; «
 - **Mise en plan** : `src/98-mise-en-plan.js` (9 763 lignes) devient 13 fichiers `98-mep-00-modele` … `98-mep-95-export-init`, coupés sur les sections A à X — 380 à 1 415 lignes. La fonction englobante et son `'use strict'` sont conservées : ouverte dans `98-mep-00`, fermée à la fin de `98-mep-95` ; ces fichiers ne se lisent qu'assemblés (build, lint et tests le font déjà). L'ordre d'assemblage est inchangé.
 - **Références** : `test_sk_offset_contraintes` lit désormais `50-esquisse-3-edition-geometrie.js` ; commentaires et `analysis.md` mis à jour.
 - **Tests** : suite complète 165/166 ; `test_esquisse_regles` échoue à l'identique sur le livrable V0.11.2 (antérieur au découpage).
+
+## V0.11.4 - Cotes R/Ø de l'esquisse de nouveau dessinées : collision de noms avec le Rendu
+« Regarde pourquoi test_esquisse_regles échoue ». Depuis V0.10.0, `98-rendu.js` déclarait `rdLayout()` et `rdDraw()`, les mêmes noms que la mise en page et le dessin des cotes de rayon / diamètre de l'esquisse (`50-esquisse-4-dessin-cotes.js`). Tous les fichiers forment un seul script : la dernière déclaration gagnait sans erreur, les cotes R/Ø n'étaient plus dessinées et leur étiquette n'avait plus de position.
+- **Rendu** (`src/98-rendu.js`) : `rdLayout()` devient `rdFitCanvas()` (3 appels) ; `rdDraw()`, jamais appelé, est supprimé.
+- **Garde-fou** : `test_noms_globaux` (nouveau, suites rapide et complète) refuse tout nom global déclaré deux fois dans `src/` (hors noms privés des `98-mep-*`) ; il signale bien les deux doublons sur l'ancien code. Le lint ne pouvait pas les voir (`no-redeclare` désactivé).
+- **Tests** : `test_esquisse_regles` repasse ; suite rapide 52/52. Vérifié dans l'application : cote Ø40 d'un cercle d'esquisse affichée avec sa ligne radiale ; atelier Rendu ouvert sans erreur, image ajustée en 16:9.

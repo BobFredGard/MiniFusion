@@ -369,7 +369,7 @@ function rdReset(){ // la scène ou la vue a changé : l'aperçu repart de zéro
   if(!rd.raf)rd.raf=requestAnimationFrame(rdLoop);
 }
 /* ── rendu ── */
-function rdLayout(){
+function rdFitCanvas(){
   if(!rd)return;
   const host=rd.view,W=Math.max(200,host.clientWidth-24),H=Math.max(120,host.clientHeight-24);
   let w=W,h=Math.round(W*9/16);if(h>H){h=H;w=Math.round(H*16/9);}
@@ -378,7 +378,6 @@ function rdLayout(){
   const sz=rd.r.getDrawingBufferSize(new THREE.Vector2());
   rdAccInit(sz.x,sz.y);rdReset();
 }
-function rdDraw(){rdReset();}
 function rdRefresh(what){
   if(!rd)return;
   if(what==='env')rdBuildEnv();
@@ -410,7 +409,7 @@ async function rdExport(){
   }catch(e){rdMsg('Rendu impossible : '+(e&&e.message||e));}
   finally{
     rd.busy=false;
-    rdLayout();
+    rdFitCanvas();
     if(btn){btn.disabled=false;btn.textContent='Rendre et enregistrer le PNG';}
     if(url)setTimeout(()=>URL.revokeObjectURL(url),20000);
   }
@@ -694,10 +693,10 @@ function rdOpen(){
   rdBuildObjects();rdBuildEnv();rdBackground();rdFloor();
   rdFromView();
   rdPanel();
-  rd.onResize=()=>rdLayout();window.addEventListener('resize',rd.onResize);
+  rd.onResize=()=>rdFitCanvas();window.addEventListener('resize',rd.onResize);
   document.addEventListener('keydown',rdKey,true);
   document.querySelectorAll('[data-mfrd]').forEach(b=>b.classList.add('on'));
-  requestAnimationFrame(rdLayout);
+  requestAnimationFrame(rdFitCanvas);
 }
 function rdClose(){
   if(!rd)return;

@@ -52,7 +52,8 @@ const SUITES = [
   'test_mcp_serveur',
   'test_cartouche_modele',
   'test_composants_liaisons',
-  'test_materiaux'
+  'test_materiaux',
+  'test_noms_globaux'
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {
