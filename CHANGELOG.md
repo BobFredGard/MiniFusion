@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**359 versions**, de `2026-09-28b` à `V0.11.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**360 versions**, de `2026-09-28b` à `V0.11.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5030,3 +5030,10 @@ Suite de V0.9.7 : « que reste-t-il à faire ? » — dans l'ordre proposé ; «
 - **Rendu** (`src/98-rendu.js`) : `rdLayout()` devient `rdFitCanvas()` (3 appels) ; `rdDraw()`, jamais appelé, est supprimé.
 - **Garde-fou** : `test_noms_globaux` (nouveau, suites rapide et complète) refuse tout nom global déclaré deux fois dans `src/` (hors noms privés des `98-mep-*`) ; il signale bien les deux doublons sur l'ancien code. Le lint ne pouvait pas les voir (`no-redeclare` désactivé).
 - **Tests** : `test_esquisse_regles` repasse ; suite rapide 52/52. Vérifié dans l'application : cote Ø40 d'un cercle d'esquisse affichée avec sa ligne radiale ; atelier Rendu ouvert sans erreur, image ajustée en 16:9.
+
+## V0.11.5 - Scinder par un plan (faces ou corps) ; cercle extrudé = un seul cylindre ; surbrillance Coque / Dépouille
+Nouvelle fonction **✂ Scinder** (menu Modifier), sur le modèle de Scinder la face / Scinder le corps de Fusion.
+- **Scinder** (`src/85-scinder.js`, calcul `splitPlaneOf` / `occApplySplit` dans `src/20-noyau-et-operations-solides.js`) : fonction `xsplit`, deux modes. *Faces* : chaque face cliquée reçoit une arête le long du plan, le solide reste entier ; les arêtes de coupe sont tracées vives, même entre deux moitiés tangentes d'un congé. *Corps* : le corps est coupé en deux, le côté vers lequel pointe la normale part dans un corps NEUF qui rejoue l'historique du corps source jusqu'à la scission (comme Combiner). Plan : XY / XZ / YZ, plan de construction (suivi s'il bouge) ou face plane cliquée (figée), décalage le long de la normale, Inverser. Faces mémorisées par référence durable ; ⚠ si une face n'est pas retrouvée ou si le plan ne coupe pas. Arbre, timeline, annuler, double-clic d'édition et Échap branchés ; supprimer la scission retire le corps neuf resté vide.
+- **Cercle extrudé = un cylindre** : un cercle d'esquisse devient UNE arête fermée (plus deux demi-arcs) → un seul cylindre, sans arête de jonction ; sa projection en esquisse est un seul cercle (`test_esquisse_intersection` mis à jour : 1 face au lieu de 2).
+- **Coque et Dépouille** (`src/87-coque.js`, `src/86-draft-depouillage.js`) : la face choisie est colorée sur toute sa surface (un seul sommet par triangle était repris) ; message de la Dépouille sans balise `<b>` en texte brut.
+- **Tests** : `test_scinder` et `test_cylindre_unique` (nouveaux, suite complète) ; suite rapide 53/53.

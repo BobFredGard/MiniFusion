@@ -69,9 +69,10 @@ function draftPaint(){
       groups.forEach(gr=>{
         if(gr.f!==w[0])return;
         for(let t=gr.start;t<gr.start+gr.count;t++){
-          const i3=t*3;
-          pos.push(a[i3],a[i3+1],a[i3+2]);
-          col.push(c.r,c.g,c.b);
+          // occGroups compte des TRIANGLES (géométrie non indexée) : 3 sommets = 9 flottants
+          const i9=t*9;
+          for(let k=0;k<9;k++)pos.push(a[i9+k]);
+          col.push(c.r,c.g,c.b,c.r,c.g,c.b,c.r,c.g,c.b);
         }
       });
     });
@@ -397,7 +398,7 @@ function draftToggle(e){
   }
   draftPaint();draftPreviewUpdate();renderDraftPanel();
   const nf=draftMode.faces.length;
-  faceEl.textContent=nf?`${nf} face(s) à dépouiller retenue(s)${tangentes?` (dont ${tangentes} tangente(s))`:''}${ignorees?` — ${ignorees} voisine(s) écartée(s) (référence ou parallèle au neutre)`:''} — saisissez l'angle puis <b>Appliquer</b>.`
+  faceEl.textContent=nf?`${nf} face(s) à dépouiller retenue(s)${tangentes?` (dont ${tangentes} tangente(s))`:''}${ignorees?` — ${ignorees} voisine(s) écartée(s) (référence ou parallèle au neutre)`:''} — saisissez l'angle puis Appliquer.`
     :'Aucune face retenue : cliquez les faces à dépouiller, ou <b>Échap</b> pour annuler.';
 }
 function draftHover(e){

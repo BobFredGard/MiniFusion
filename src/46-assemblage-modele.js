@@ -342,6 +342,7 @@ function asmLeavePart(){
   try{if(filModeX)exitExactFilletMode(true);}catch(e){}
   try{if(typeof draftMode!=='undefined'&&draftMode)exitDraftMode(true);}catch(e){}
   try{if(typeof coqueMode!=='undefined'&&coqueMode)exitCoqueMode(true);}catch(e){}
+  try{if(typeof splitMode!=='undefined'&&splitMode)exitSplitMode(true);}catch(e){}
   try{if(typeof repMode!=='undefined'&&repMode)exitRepMode();}catch(e){}
   try{if(typeof mvMode!=='undefined'&&mvMode)exitMoveFaceMode(true);}catch(e){}
   try{if(typeof extNew!=='undefined'&&extNew)extNew=null;}catch(e){}

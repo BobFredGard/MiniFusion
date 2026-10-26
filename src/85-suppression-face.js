@@ -15,7 +15,7 @@ document.addEventListener('pointerdown',e=>{
 function delFaceName(n){return n>1?`Suppression de ${n} faces`:'Suppression de face';}
 function delFacesWanted(){
   if(!delLastPtr3D||!selFaces||!selFaces.length)return false;
-  try{if(mvMode||draftMode||coqueMode||filModeX||filMode)return false;}catch(e){}
+  try{if(mvMode||draftMode||coqueMode||filModeX||filMode||splitMode)return false;}catch(e){}
   return true;
 }
 function deleteSelectedFaces(){

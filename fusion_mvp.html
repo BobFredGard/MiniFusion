@@ -277,7 +277,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.11.4';
+const APP_VER='V0.11.5';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -2413,12 +2413,12 @@ function occWireFromChain(sk,tr,chain,bin,z0){
       const Pf=tr.pts[st.from],Pt=tr.pts[toId];
       const aF=Math.atan2(Pf.y-Cc.y,Pf.x-Cc.x),aT=Math.atan2(Pt.y-Cc.y,Pt.x-Cc.x);
       const dEnt=an.a2-an.a1;
-      if(Math.abs(dEnt-TAU)<1e-6){ // cercle complet porté par un arc : 2 moitiés
-        const P0=projOnCirc(Cc,a.r,0),P1=projOnCirc(Cc,a.r,Math.PI);
-        const m1=occBinPush(bin,new occt.BRepBuilderAPI_MakeEdge_10(circ,P0,P1));m1.Build();
-        const m2=occBinPush(bin,new occt.BRepBuilderAPI_MakeEdge_10(circ,P1,P0));m2.Build();
-        if(!m1.IsDone()||!m2.IsDone())throw new Error('cercle complet impossible');
-        mkW.Add_1(m1.Edge());mkW.Add_1(m2.Edge());
+      if(Math.abs(dEnt-TAU)<1e-6){
+        // V0.11.5 : cercle complet = UNE arête fermée (et non 2 moitiés) → le prisme a UN
+        // cylindre, sans arête de jonction ; sa projection en esquisse est un seul cercle.
+        const m1=occBinPush(bin,new occt.BRepBuilderAPI_MakeEdge_8(circ));m1.Build();
+        if(!m1.IsDone())throw new Error('cercle complet impossible');
+        mkW.Add_1(m1.Edge());
         continue;
       }
       // Sens réel : le départ coïncide-t-il avec a1 (sens CCW de l'entité) ou a2 (retour CW) ?
@@ -2587,11 +2587,17 @@ function occCommon(a,b){
 }
 // 2026-10-16-009 : COMBINER des corps (union / soustraction / intersection), comme Fusion.
 function occBodyOfFeat(f){return (f&&f.body&&doc.bodies.some(e=>e.id===f.body))?f.body:(doc.bodies[0]&&doc.bodies[0].id);}
+function occSplitNewBody(f){
+  // Corps NEUF né d'une scission de corps (xsplit mode 'body'), ou null : la fonction est
+  // rejouée dans son corps (côté gardé) ET en tête du corps neuf (l'autre côté).
+  if(!f||f.type!=='xsplit'||f.mode!=='body'||!f.newBody)return null;
+  return (f.newBody!==occBodyOfFeat(f)&&doc.bodies.some(e=>e.id===f.newBody))?f.newBody:null;
+}
 function occCombinePrefix(f,tb){
   // fonctions du corps outil tb AVANT la combinaison f (timeline visible)
   const vis=doc.features.filter(x=>x.visible!==false&&!(occSkipFeat&&x.id===occSkipFeat));
   const i=vis.indexOf(f);
-  return vis.slice(0,i<0?vis.length:i).filter(x=>x.type!=='repeat'&&occBodyOfFeat(x)===tb);
+  return vis.slice(0,i<0?vis.length:i).filter(x=>x.type!=='repeat'&&(occBodyOfFeat(x)===tb||occSplitNewBody(x)===tb));
 }
 function occCombineTool(f,tb,bin){
   const list=occCombinePrefix(f,tb);if(!list.length)return null;
@@ -2839,7 +2845,7 @@ function occApplyCoque(result,f){
 }
 
 function occDiskPrism(sk,Cx,Cy,r,sp){
-  // Pastille pleine (cercles isolés) : 2 demi-arcs -> wire -> face -> UN prisme.
+  // Pastille pleine (cercles isolés) : cercle -> wire -> face -> UN prisme.
   // sp = plage {lo,hi} (ou nombre pour compat) : cercle construit au plan décalé z0=lo,
   // prisme unique de longueur hi-lo → même plage que les contours, sans couture coplanaire.
   const bin=[];
@@ -2854,12 +2860,11 @@ function occDiskPrism(sk,Cx,Cy,r,sp){
     const dir=occBinPush(bin,new occt.gp_Dir_4(n.x,n.y,n.z));
     const ax=occBinPush(bin,new occt.gp_Ax2_3(occBinPush(bin,new occt.gp_Pnt_3(Cw[0],Cw[1],Cw[2])),dir));
     const circ=occBinPush(bin,new occt.gp_Circ_2(ax,r));
-    const P0=occBinPush(bin,new occt.gp_Pnt_3(...OP(occW(sk,Cx+r,Cy)))),P1=occBinPush(bin,new occt.gp_Pnt_3(...OP(occW(sk,Cx-r,Cy))));
     const mkW=occBinPush(bin,new occt.BRepBuilderAPI_MakeWire_1());
-    const m1=occBinPush(bin,new occt.BRepBuilderAPI_MakeEdge_10(circ,P0,P1));m1.Build();
-    const m2=occBinPush(bin,new occt.BRepBuilderAPI_MakeEdge_10(circ,P1,P0));m2.Build();
-    if(!m1.IsDone()||!m2.IsDone())throw new Error('pastille impossible');
-    mkW.Add_1(m1.Edge());mkW.Add_1(m2.Edge());mkW.Build();
+    // V0.11.5 : UNE arête de cercle fermée (plus 2 demi-arcs) → un seul cylindre, sans jonction
+    const m1=occBinPush(bin,new occt.BRepBuilderAPI_MakeEdge_8(circ));m1.Build();
+    if(!m1.IsDone())throw new Error('pastille impossible');
+    mkW.Add_1(m1.Edge());mkW.Build();
     if(!mkW.IsDone())throw new Error('pastille non fermée');
     const fm=occBinPush(bin,new occt.BRepBuilderAPI_MakeFace_15(mkW.Wire(),true));
     fm.Build();if(!fm.IsDone())throw new Error('face pastille impossible');
@@ -3504,6 +3509,143 @@ function occApplyDeleteFaces(result,f){
   try{result.delete();}catch(e){}
   return{shape:r,warnings};
 }
+/* ---------- scinder par un plan : faces ou corps (V0.11.5) ----------
+   {type:'xsplit', mode:'face'|'body', body, pl:{src,cg?,o?,n?}, off, flip, faces?, newBody?}
+   • Faces : chaque face visée (référence durable occFaceRefAny) est coupée par sa ligne
+     d'intersection avec le plan (BRepAlgoAPI_Section) ; le Splitter imprime ces arêtes
+     sur le solide, qui reste UN solide (faces voisines recousues, volume inchangé).
+   • Corps : le Splitter coupe le solide par une grande face plane ; les morceaux du côté
+     opposé à la normale restent dans le corps, ceux du côté de la normale vont dans le
+     corps neuf `newBody` (« Inverser » échange les côtés). Mesuré : boîte 100x60x40
+     coupée à X=30 → 72 000 + 168 000 mm³. */
+function splitPlaneOf(f){
+  // Plan résolu {o,n} (monde) : origine, plan de construction (repère persistant) ou face
+  // figée au clic ; décalage le long de la normale ; flip retourne la normale.
+  const P=f.pl||{};let o=[0,0,0],n=[0,0,1];
+  if(P.src==='XZ')n=[0,1,0];
+  else if(P.src==='YZ')n=[1,0,0];
+  else if(P.src==='cg'){
+    const c=(doc.cgeo||[]).find(x=>x&&x.id===P.cg);
+    if(c&&c.fr&&c.fr.o&&c.fr.z){o=c.fr.o.slice();n=c.fr.z.slice();}
+    else if(P.o&&P.n){o=P.o.slice();n=P.n.slice();}
+  }else if(P.src==='face'&&P.o&&P.n){o=P.o.slice();n=P.n.slice();}
+  const l=Math.hypot(n[0],n[1],n[2])||1;n=n.map(v=>v/l);
+  const d=+f.off||0;o=[o[0]+n[0]*d,o[1]+n[1]*d,o[2]+n[2]*d];
+  if(f.flip)n=n.map(v=>-v);
+  return{o,n};
+}
+function splitCutPlanes(){
+  // Plans des scissions de FACES actives (visibles, non sautées en édition) : leurs arêtes
+  // de coupe sont affichées vives (occSharpEdges), même entre faces tangentes.
+  const out=[];
+  try{(doc.features||[]).forEach(f=>{if(f&&f.type==='xsplit'&&f.mode!=='body'&&f.visible!==false&&!(occSkipFeat&&f.id===occSkipFeat))out.push(splitPlaneOf(f));});}catch(e){}
+  return out;
+}
+function occSplitPln(P){return new occt.gp_Pln_3(new occt.gp_Pnt_3(P.o[0],P.o[1],P.o[2]),new occt.gp_Dir_4(P.n[0],P.n[1],P.n[2]));}
+function occSplitRun(shape,tools){
+  // Splitter : `shape` découpé par `tools` (liste de shapes). Rend le résultat brut.
+  const sp=new occt.BRepAlgoAPI_Splitter_1();
+  const la=new occt.TopTools_ListOfShape_1(),lt=new occt.TopTools_ListOfShape_1();
+  try{
+    la.Append_1(shape);tools.forEach(t=>lt.Append_1(t));
+    sp.SetArguments(la);sp.SetTools(lt);sp.Build();
+    if(!sp.IsDone())throw new Error('découpe refusée par le noyau');
+    const r=sp.Shape();if(!r||r.IsNull())throw new Error('résultat vide');
+    return r;
+  }finally{try{sp.delete();}catch(e){}try{la.delete();}catch(e){}try{lt.delete();}catch(e){}}
+}
+function occSolidsOf(shape){
+  const out=[],SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE;
+  const ex=new occt.TopExp_Explorer_2(shape,occt.TopAbs_ShapeEnum.TopAbs_SOLID,SH);
+  while(ex.More()){out.push(occt.TopoDS.Solid_1(ex.Current()));ex.Next();}
+  try{ex.delete();}catch(e){}
+  return out;
+}
+function occSplitFacesOnce(shape,faces,P){
+  // Coupe les faces visées par le plan ; le solide reste entier. → {shape, cut:nb de faces coupées}
+  const pln=occSplitPln(P),secs=[];let cut=0;
+  try{
+    faces.forEach(h=>{
+      const s=new occt.BRepAlgoAPI_Section_5(h,pln,false);
+      try{
+        s.Build();if(!s.IsDone())return;
+        const r=s.Shape();
+        const ex=new occt.TopExp_Explorer_2(r,occt.TopAbs_ShapeEnum.TopAbs_EDGE,occt.TopAbs_ShapeEnum.TopAbs_SHAPE);
+        const has=ex.More();try{ex.delete();}catch(e){}
+        if(has){secs.push(r);cut++;}else try{r.delete();}catch(e){}
+      }finally{try{s.delete();}catch(e){}}
+    });
+    if(!secs.length)return{shape:null,cut:0};
+    const r=occSplitRun(shape,secs);
+    const so=occSolidsOf(r);
+    if(so.length===1){try{r.delete();}catch(e){}return{shape:so[0],cut};}
+    so.forEach(s=>{try{s.delete();}catch(e){}});
+    return{shape:r,cut};
+  }finally{try{pln.delete();}catch(e){}secs.forEach(s=>{try{s.delete();}catch(e){}});}
+}
+function occSplitBodyOnce(shape,P){
+  // Coupe le solide en deux côtés. → {neg, pos} (null si vide de ce côté)
+  const b=occSolidBox(shape);if(!b)throw new Error('boîte du solide illisible');
+  const c=b.c,k=(c[0]-P.o[0])*P.n[0]+(c[1]-P.o[1])*P.n[1]+(c[2]-P.o[2])*P.n[2];
+  // face de coupe centrée sur la projection du centre, débordant largement du solide
+  const q={o:[c[0]-k*P.n[0],c[1]-k*P.n[1],c[2]-k*P.n[2]],n:P.n};
+  const R=b.dg+10,pln=occSplitPln(q);
+  let face=null,r=null;
+  try{
+    const mf=new occt.BRepBuilderAPI_MakeFace_9(pln,-R,R,-R,R);
+    try{if(!mf.IsDone())throw new Error('plan de coupe invalide');face=mf.Face();}finally{try{mf.delete();}catch(e){}}
+    r=occSplitRun(shape,[face]);
+  }finally{try{pln.delete();}catch(e){}if(face)try{face.delete();}catch(e){}}
+  const neg=[],pos=[];
+  occSolidsOf(r).forEach(s=>{
+    let ct=null;
+    try{const p=new occt.GProp_GProps_1();occt.BRepGProp.VolumeProperties_1(s,p,false,false,false);const m=p.CentreOfMass();ct=[m.X(),m.Y(),m.Z()];try{m.delete();}catch(e){}try{p.delete();}catch(e){}}catch(e){}
+    if(!ct){try{s.delete();}catch(e){}return;}
+    const d=(ct[0]-P.o[0])*P.n[0]+(ct[1]-P.o[1])*P.n[1]+(ct[2]-P.o[2])*P.n[2];
+    (d>0?pos:neg).push(s);
+  });
+  try{r.delete();}catch(e){}
+  const pack=L=>!L.length?null:(L.length===1?L[0]:occCompoundOf(L));
+  return{neg:pack(neg),pos:pack(pos),nNeg:neg.length,nPos:pos.length};
+}
+function occApplySplit(result,f,side){
+  // Rejoue la scission. side : 'neg' (corps d'origine) | 'pos' (corps neuf, mode corps).
+  // Retourne {shape,warnings} comme occApplyDeleteFaces.
+  const warnings=[];const P=splitPlaneOf(f);
+  if(f.mode==='body'){
+    let s=null;
+    try{s=occSplitBodyOnce(result,P);}
+    catch(e){return{shape:side==='pos'?null:result,warnings:[`scission impossible — ${(e&&e.message)||e}`],fatal:true};}
+    f._m={m:(s.nNeg&&s.nPos)?1:0,t:1};
+    if(!s.neg||!s.pos){
+      // le plan ne traverse pas le corps : tout reste dans le corps d'origine
+      if(s.neg)try{s.neg.delete();}catch(e){}if(s.pos)try{s.pos.delete();}catch(e){}
+      return{shape:side==='pos'?null:result,warnings:['le plan ne coupe pas le corps']};
+    }
+    try{result.delete();}catch(e){}
+    if(side==='pos'){try{s.neg.delete();}catch(e){}return{shape:s.pos,warnings};}
+    try{s.pos.delete();}catch(e){}
+    return{shape:s.neg,warnings};
+  }
+  const total=(f.faces||[]).length;
+  if(!total)return{shape:result,warnings:['aucune face à scinder']};
+  const hs=(f.faces||[]).map(fr=>{try{return occFindFaceAny(result,fr);}catch(e){return null;}}).filter(Boolean);
+  f._m={m:hs.length,t:total};
+  if(!hs.length)return{shape:result,warnings:[`aucune des ${total} face(s) n'est retrouvée — la pièce a changé`]};
+  if(hs.length<total)warnings.push(`${total-hs.length} face(s) introuvable(s) sur la pièce courante`);
+  let r=null;
+  try{r=occSplitFacesOnce(result,hs,P);}
+  catch(e){r=null;warnings.push(`scission impossible — ${(e&&e.message)||e}`);}
+  finally{hs.forEach(h=>{try{h.delete();}catch(e){}});}
+  if(!r||!r.shape){
+    f._m={m:0,t:total};
+    if(r&&!r.cut)warnings.push('le plan ne coupe aucune des faces choisies');
+    return{shape:result,warnings,fatal:true};
+  }
+  if(r.cut<hs.length){f._m={m:r.cut,t:total};warnings.push(`${hs.length-r.cut} face(s) non traversée(s) par le plan`);}
+  try{result.delete();}catch(e){}
+  return{shape:r.shape,warnings};
+}
 function occListEdges(shape){
   // Données pures par arête (pas de handles conservés) : mid, polyline pts, longueur, src (rang explorateur).
   const out=[],bin=[];
@@ -3678,6 +3820,10 @@ function occSurfNormalAt(surf,u,v){
 function occSharpEdges(shape){
   // Arêtes uniques classées : sharp (noire, C0) vs tangente (grise, G1+). Validé par exécution.
   const out=[],bin=[];
+  // V0.11.5 : arêtes de COUPE d'une scission de faces (xsplit) — entre les deux moitiés d'un
+  // congé, la continuité est G1 et l'arête serait grise ; c'est une limite voulue : noire.
+  const cuts=splitCutPlanes();
+  const onCut=pts=>cuts.some(P=>pts.every(q=>Math.abs((q[0]-P.o[0])*P.n[0]+(q[1]-P.o[1])*P.n[1]+(q[2]-P.o[2])*P.n[2])<1e-3));
   try{
     const SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE,NP=12;
     const ekey=(m,l)=>m.map(v=>v.toFixed(2)).join(',')+'|'+l.toFixed(2);
@@ -3750,7 +3896,8 @@ function occSharpEdges(shape){
               seen.add(kk);
               let sharp=true;
               const fl=fmap.get(kk)||[];
-              if((seam.has(kk)&&fl.length<=1)||sameCyl(fl)){ex.Next();continue;} // couture : pas une arête
+              const onC=cuts.length>0&&onCut(s.pts); // arête de coupe d'une scission : toujours tracée
+              if(!onC&&((seam.has(kk)&&fl.length<=1)||sameCyl(fl))){ex.Next();continue;} // couture : pas une arête
               if(fl.length>=2){
                 try{sharp=(occt.BRep_Tool.Continuity_1(e,faces[fl[0]],faces[fl[1]])===occt.GeomAbs_Shape.GeomAbs_C0);}
                 catch(err){sharp=true;}
@@ -3794,7 +3941,8 @@ function occSharpEdges(shape){
                 }
                 if(mesure&&maxA<3)sharp=false; // G1 confirmé sur toute l'arête : TANGENTE (grise)
               }
-              out.push({mid,pts:occCurvePts(ad,u0,u1),len:s.len,sharp});
+              const cut=!sharp&&onC;
+              out.push(cut?{mid,pts:occCurvePts(ad,u0,u1),len:s.len,sharp:true,split:true}:{mid,pts:occCurvePts(ad,u0,u1),len:s.len,sharp});
             }
           }
         }
@@ -4817,6 +4965,12 @@ function featSig(f){
     s+='|'+JSON.stringify(f.steps||[]);
   }else if(f.type==='xdelface'){
     s+='|'+((f.faces||[]).map(r=>JSON.stringify([r.pos,r.n||r.st,r.dim])).join(';'));
+  }else if(f.type==='xsplit'){
+    // Plan RÉSOLU (un plan de construction peut bouger sans que la fonction change) et,
+    // pour le corps neuf, l'historique du corps source jusqu'à la scission (comme combine).
+    const P=splitPlaneOf(f);
+    s+='|'+P.o.map(v=>(+v).toFixed(4)).join(',')+'/'+P.n.map(v=>(+v).toFixed(6)).join(',');
+    if(occSplitNewBody(f))s+='|src:'+occCombinePrefix(f,occBodyOfFeat(f)).map(featSig).join(',');
   }else if(f.type==='xdraft'){
     // L'ANGLE fait partie de la géométrie, ainsi que la face de référence (plan neutre)
     // et les faces visées (références durables pos/n/dim). Sans elles, changer l'angle
@@ -4915,6 +5069,31 @@ function occReplayBody(bid,list){
       result=r.shape;msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       if(r.warnings.length)occCkWarn[ckKey]=r.warnings.slice();else delete occCkWarn[ckKey];
       occCkPut(ckKey,()=>occShapeCopy(result));
+      return;
+    }
+    if(f.type==='xsplit'){
+      // Scinder : côté gardé dans le corps de la fonction ; en tête du corps NEUF (mode
+      // corps), l'autre côté du corps source tel qu'il est à cet endroit de la timeline.
+      const neuf=occSplitNewBody(f)===bid;
+      const ckP=occCkGet(ckKey);
+      const cpP=ckP?occShapeCopy(ckP):null;
+      if(cpP){
+        if(result)try{result.delete();}catch(e){}result=cpP;
+        const w=occCkWarn[ckKey];if(w&&w.length)msgs.push(...w.map(x=>`${f.name} : ${x}`));
+        return;
+      }
+      let src=result;
+      if(neuf){
+        if(result){msgs.push(`${f.name} : fonctions du corps neuf placées avant la scission — ignorées`);try{result.delete();}catch(e){}result=null;}
+        try{src=occCombineTool(f,occBodyOfFeat(f),bin);}catch(err){src=null;msgs.push(`${f.name} : corps source illisible (${err.message})`);}
+      }
+      if(!src){if(!neuf)msgs.push(`${f.name} : aucun volume à scinder — ignoré`);return;}
+      const r=occApplySplit(src,f,neuf?'pos':'neg');
+      result=r.shape;
+      const w=neuf?(r.fatal?r.warnings:[]):r.warnings; // le corps d'origine porte déjà les avertissements
+      msgs.push(...w.map(x=>`${f.name} : ${x}`));
+      if(w.length)occCkWarn[ckKey]=w.slice();else delete occCkWarn[ckKey];
+      if(result)occCkPut(ckKey,()=>occShapeCopy(result));
       return;
     }
     if(f.type==='xdraft'){
@@ -5071,6 +5250,8 @@ function occFinalShape(upto){
     const b=(f.body&&doc.bodies.some(e=>e.id===f.body))?f.body:doc.bodies[0].id;
     if(!byBody[b]){byBody[b]=[];order.push(b);}
     byBody[b].push(f);
+    const nb=occSplitNewBody(f); // scission de corps : l'autre côté naît dans le corps neuf
+    if(nb){if(!byBody[nb]){byBody[nb]=[];order.push(nb);}byBody[nb].push(f);}
   });
   const perBody=[],bin=[],itemShapes=[],ghostShapes=[],msgs=[],items=[],imports=[];
   // corps OUTILS consommés par une combinaison (sans « garder ») : plus affichés
@@ -5086,7 +5267,8 @@ function occFinalShape(upto){
       // parasite. occUnify est celui des fusions additives. PAS d'unify sans congé : les
       // coutures d'esquisse (scission d'une face à un point du profil) restent cliquables —
       // notamment comme ancre d'un congé (cf. test_conge_fond_poche).
-      if((byBody[bid]||[]).some(f=>f.type==='xfillet')){
+      // Une face SCINDÉE (xsplit 'face') serait recousue : pas d'unify dans ce corps.
+      if((byBody[bid]||[]).some(f=>f.type==='xfillet')&&!(byBody[bid]||[]).some(f=>f.type==='xsplit'&&f.mode!=='body')){
         try{const u=occUnify(occShapeCopy(sh));if(u&&u!==sh){try{sh.delete();}catch(e){}sh=u;}}catch(e){}
       }
       perBody.push({bodyId:bid,shape:sh});
@@ -5851,6 +6033,7 @@ function featIconOf(f){
   if(f.type==='xdelface')return ((f._m&&f._m.m<f._m.t)||f._err)?'⚠':'⌫';
   if(f.type==='xdraft')return ((f._m&&f._m.m<f._m.t)||f._err)?'⚠':'📐';
   if(f.type==='xshell')return ((f._m&&f._m.m<f._m.t)||f._err)?'⚠':'🥚';
+  if(f.type==='xsplit')return ((f._m&&f._m.m<f._m.t)||f._err)?'⚠':'✂';
   return '◧';
 }
 function renderTree(){
@@ -5892,6 +6075,7 @@ function repCanFeatureHint(f){
   if(f.type==='xdelface')return 'Suppression · '+(f.faces||[]).length+' face(s)';
   if(f.type==='xdraft')return 'Dépouillage · '+(+f.angle||0).toFixed(1).replace('.',',')+'° · '+(f.faces||[]).length+' face(s)';
   if(f.type==='xshell')return 'Coque · '+String(Math.round((+f.thick||0)*100)/100).replace('.',',')+' mm · '+(f.faces||[]).length+' face(s) retirée(s)';
+  if(f.type==='xsplit')return splitName(f);
   return '';
 }
 // Liste des fonctions répétables, en CASES À COCHER.
@@ -6277,6 +6461,7 @@ function delFeature(f){
   doc.features=doc.features.filter(x=>x.id!==f.id);
   doc.features.forEach(rp=>{if(rp.type==='repeat')rp.base=rp.base.filter(id=>id!==f.id);});
   if(tlMark===f.id)tlMark=null;
+  if(f.type==='xsplit')splitOnDelete(f); // corps neuf vide d'une scission (85-scinder)
 }
 // Le bouton vit ici (sources, jamais la coque HTML — même règle que Révolution) :
 // après Révolution si présente, sinon après Extrusion. Le regroupement du bandeau
@@ -6730,6 +6915,7 @@ function renderProps(){
     if(typeof bmPick!=='undefined'&&bmPick&&bmPick.fid!==f.id)bmPickExit(true); // saisie d'un autre Déplacer (85)
     /* — déplacer un corps (85) — */
     if(f.type==='bmove'){bmoveProps(p,f);visDel(f);return;}
+    if(f.type==='xsplit'){splitProps(p,f);visDel(f);return;} // scinder (85-scinder)
     /* — déplacement de face — */
     if(f.type==='xmove'){
       pH('Déplacement de face');
@@ -7240,6 +7426,7 @@ function tlbSvgKey(s){
     case 'xmove':case 'xdelface':return ['face','mod'];
     case 'xdraft':return ['draft','mod'];
     case 'xshell':return ['shell','cut'];
+    case 'xsplit':return ['split','mod'];
     case 'bmove':return ['move','mod'];
     case 'import':return ['import','mod'];
   }
@@ -7288,6 +7475,7 @@ function tlbDbl(s){
   if(f.type==='xfillet')enterExactFilletMode(f);
   else if(f.type==='xdraft')enterDraftMode(f);
   else if(f.type==='xshell')enterCoqueMode(f);
+  else if(f.type==='xsplit')enterSplitMode(f);
   else{renderTree();renderProps();}
 }
 function tlbHost(){
@@ -7655,7 +7843,7 @@ function treePart(L){
               treeSel=[f.id];
               sel={kind:'feature',id:f.id};renderTree();renderProps();refreshParts();
             },
-            dbl:()=>{if(k.type==='xfillet'){sel={kind:'feature',id:k.id};treeSel=[];enterExactFilletMode(k);}else if(k.type==='xdraft'){sel={kind:'feature',id:k.id};treeSel=[];enterDraftMode(k);}else if(k.type==='xshell'){sel={kind:'feature',id:k.id};treeSel=[];enterCoqueMode(k);}},
+            dbl:()=>{if(k.type==='xfillet'){sel={kind:'feature',id:k.id};treeSel=[];enterExactFilletMode(k);}else if(k.type==='xdraft'){sel={kind:'feature',id:k.id};treeSel=[];enterDraftMode(k);}else if(k.type==='xshell'){sel={kind:'feature',id:k.id};treeSel=[];enterCoqueMode(k);}else if(k.type==='xsplit'){sel={kind:'feature',id:k.id};treeSel=[];enterSplitMode(k);}},
             ctx:e=>showCtx(e.clientX,e.clientY,{kind:'feature',id:f.id})}});
       });
       return;
@@ -7663,7 +7851,7 @@ function treePart(L){
     const repF=sel.kind==='feature'?doc.features.find(x=>x.id===sel.id&&x.type==='repeat'):null;
     const estSrc=!!(repF&&(repF.base||[]).indexOf(f.id)>=0);
     const ri=repMode&&repMode.feats&&repMode.feats.includes(f.id)?'✓ ':'';
-    node(ri+(estSrc?'<span class="srcmark" title="Source de la répétition sélectionnée">◀</span>':'')+featIconOf(f),f.name,'feature',f.id,f.visible,(f.type==='xfillet'||f.type==='xdraft'||f.type==='xshell')?()=>{sel={kind:'feature',id:f.id};treeSel=[];if(f.type==='xfillet')enterExactFilletMode(f);else if(f.type==='xdraft')enterDraftMode(f);else enterCoqueMode(f);}:null);
+    node(ri+(estSrc?'<span class="srcmark" title="Source de la répétition sélectionnée">◀</span>':'')+featIconOf(f),f.name,'feature',f.id,f.visible,(f.type==='xfillet'||f.type==='xdraft'||f.type==='xshell'||f.type==='xsplit')?()=>{sel={kind:'feature',id:f.id};treeSel=[];if(f.type==='xfillet')enterExactFilletMode(f);else if(f.type==='xdraft')enterDraftMode(f);else if(f.type==='xsplit')enterSplitMode(f);else enterCoqueMode(f);}:null);
   };
   const groups=(doc.bodies||[]).length?doc.bodies:[{id:'b1',name:'Corps 1'}];
   groups.forEach(be=>{
@@ -8192,6 +8380,7 @@ function docApplySnap(snap){
   try{if(typeof draftMode!=='undefined'&&draftMode)exitDraftMode(true);}catch(e){}
   // Une coque en cours d'édition joue aussi sur occSkipFeat : même remise à null.
   try{if(typeof coqueMode!=='undefined'&&coqueMode)exitCoqueMode(true);}catch(e){}
+  try{if(typeof splitMode!=='undefined'&&splitMode)exitSplitMode(true);}catch(e){}
   try{if(typeof repMode!=='undefined'&&repMode)exitRepMode();}catch(e){}
   try{if(typeof extNew!=='undefined'&&extNew)extNew=null;}catch(e){}
   try{if(typeof revNew!=='undefined'&&revNew)revNew=null;}catch(e){}
@@ -8686,6 +8875,7 @@ function asmLeavePart(){
   try{if(filModeX)exitExactFilletMode(true);}catch(e){}
   try{if(typeof draftMode!=='undefined'&&draftMode)exitDraftMode(true);}catch(e){}
   try{if(typeof coqueMode!=='undefined'&&coqueMode)exitCoqueMode(true);}catch(e){}
+  try{if(typeof splitMode!=='undefined'&&splitMode)exitSplitMode(true);}catch(e){}
   try{if(typeof repMode!=='undefined'&&repMode)exitRepMode();}catch(e){}
   try{if(typeof mvMode!=='undefined'&&mvMode)exitMoveFaceMode(true);}catch(e){}
   try{if(typeof extNew!=='undefined'&&extNew)extNew=null;}catch(e){}
@@ -22596,6 +22786,376 @@ function bmCtxSync(menuId,t){
   }catch(e){}
 })();
 
+/* ═══════════════ 85-scinder.js — scinder ═══════════════ */
+/* ---------- scinder par un plan : faces ou corps (V0.11.5) ----------
+   Le calcul est dans 20-noyau (splitPlaneOf / occApplySplit). Ici : la commande, le mode
+   de saisie et les propriétés. Une seule fonction, deux modes, comme Scinder la face /
+   Scinder le corps dans Fusion :
+     • Faces : on clique les faces à couper ; chacune reçoit une arête le long du plan, le
+       solide reste entier (utile pour une dépouille, un déplacement, une zone d'usinage) ;
+     • Corps : on clique le corps (ou on le choisit) ; il est coupé en deux, le côté vers
+       lequel pointe la normale du plan part dans un corps NEUF.
+   Le plan : XY / XZ / YZ de l'origine, un plan de construction (suivi s'il bouge), ou une
+   face plane cliquée (figée au clic) ; plus un décalage le long de la normale et Inverser.
+   Les faces sont mémorisées par référence durable (occFaceRefAny), comme la suppression. */
+let splitMode=null; // null | {mode,faces:[ref],body,pl,off,flip,pick:null|'plane',editing:id|null}
+let splitGroup=null; // surbrillance 3D : faces visées + aperçu du plan
+
+(function(){
+  if(document.getElementById('btnSplit'))return;
+  const after=document.getElementById('btnCoque')||document.getElementById('btnDraft')||document.getElementById('btnExtrude');
+  if(!after||!after.parentNode)return;
+  const b=document.createElement('button');
+  b.id='btnSplit';
+  b.textContent='✂ Scinder';
+  b.title='Scinder par un plan : couper des faces (le solide reste entier) ou couper un corps en deux';
+  b.onclick=()=>{if(splitMode)exitSplitMode();else enterSplitMode();};
+  after.parentNode.insertBefore(b,after.nextSibling);
+})();
+
+function splitPlaneLabel(pl){
+  const P=pl||{};
+  if(P.src==='XY'||P.src==='XZ'||P.src==='YZ')return 'plan '+P.src;
+  if(P.src==='cg'){const c=(doc.cgeo||[]).find(x=>x&&x.id===P.cg);return c?c.name:'plan de construction supprimé';}
+  if(P.src==='face')return 'face plane';
+  return 'plan ?';
+}
+function splitName(f){
+  const d=+f.off||0;
+  const off=d?' '+(d>0?'+':'')+String(Math.round(d*1000)/1000).replace('.',',')+' mm':'';
+  if(f.mode==='body')return 'Scinder le corps · '+splitPlaneLabel(f.pl)+off;
+  const n=(f.faces||[]).length;
+  return 'Scinder '+(n>1?n+' faces':'la face')+' · '+splitPlaneLabel(f.pl)+off;
+}
+function splitBodyName(id){const e=(doc.bodies||[]).find(b=>b.id===id);return e?e.name:id;}
+
+/* ---------- surbrillance : faces visées (orange) + plan de coupe (bleu translucide) ---------- */
+function splitClearHl(){
+  if(!splitGroup)return;
+  splitGroup.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();});
+  scene.remove(splitGroup);splitGroup=null;
+}
+function splitPaint(){
+  splitClearHl();
+  if(!splitMode)return;
+  splitGroup=new THREE.Group();splitGroup.name='splitHl';
+  const targets=bodies.filter(x=>x.kind==='body'&&x.visible!==false&&x.mesh&&x.mesh.geometry);
+  // faces visées (mode faces)
+  if(splitMode.mode==='face'&&splitMode.faces.length){
+    const pos=[];
+    targets.forEach(b=>{
+      const groups=(b.mesh.geometry.userData.occGroups)||[];
+      const want=splitMode.faces.filter(r=>r._ord>=0&&r._bid===b.bodyId).map(r=>r._ord);
+      if(!want.length)return;
+      const a=b.mesh.geometry.attributes.position.array;
+      groups.forEach(gr=>{
+        if(want.indexOf(gr.f)<0)return;
+        for(let t=gr.start;t<gr.start+gr.count;t++){const i9=t*9;for(let k=0;k<9;k++)pos.push(a[i9+k]);} // groupes en TRIANGLES (non indexé)
+      });
+    });
+    if(pos.length){
+      const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+      const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:0xff9f0a,transparent:true,opacity:.55,depthTest:false,side:THREE.DoubleSide}));
+      m.raycast=()=>{};m.renderOrder=1002;splitGroup.add(m);
+    }
+  }
+  // plan de coupe : carré centré sur la projection du centre des corps
+  try{
+    const box=new THREE.Box3();
+    targets.forEach(b=>{if(splitMode.mode==='body'&&splitMode.body&&b.bodyId!==splitMode.body)return;box.expandByObject(b.mesh);});
+    if(!box.isEmpty()){
+      const P=splitPlaneOf(splitMode);
+      const c=box.getCenter(new THREE.Vector3()),n=new THREE.Vector3(P.n[0],P.n[1],P.n[2]).normalize();
+      const k=(c.x-P.o[0])*n.x+(c.y-P.o[1])*n.y+(c.z-P.o[2])*n.z;
+      const q=c.clone().addScaledVector(n,-k);
+      const s=box.getSize(new THREE.Vector3()).length()*0.75+4;
+      const g=new THREE.PlaneGeometry(s,s);
+      const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:0x0a84ff,transparent:true,opacity:.18,depthWrite:false,side:THREE.DoubleSide}));
+      m.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),n);m.position.copy(q);
+      m.raycast=()=>{};m.renderOrder=1001;splitGroup.add(m);
+      const eg=new THREE.EdgesGeometry(g);
+      const l=new THREE.LineSegments(eg,new THREE.LineBasicMaterial({color:0x0a84ff,transparent:true,opacity:.9}));
+      l.quaternion.copy(m.quaternion);l.position.copy(q);l.raycast=()=>{};l.renderOrder=1001;splitGroup.add(l);
+      // flèche de normale : le côté qui part dans le corps neuf (mode corps)
+      if(splitMode.mode==='body'&&THREE.ArrowHelper){
+        const ar=new THREE.ArrowHelper(n,q,s*0.25,0x0a84ff,s*0.06,s*0.03);
+        ar.traverse(o=>{o.raycast=()=>{};o.renderOrder=1003;if(o.material){o.material.depthTest=false;o.material.transparent=true;}});splitGroup.add(ar);
+      }
+    }
+  }catch(e){}
+  scene.add(splitGroup);
+}
+/* ---------- saisie ---------- */
+function splitFaceKey(r){return (r.pos||[]).map(v=>(+v).toFixed(2)).join(',')+'|'+(r.dim||[]).map(v=>(+v).toFixed(2)).join(',')+'|'+(r.st||'');}
+function splitHitUnder(e){
+  // Face exacte sous le curseur : {ref (occFaceRefAny), ord, bid, plane:{o,n}|null}
+  if(!occHas()||!occLive||!occLive.shape)return null;
+  try{
+    const h=pick(e);
+    if(!h||!h.object)return null;
+    const hit=occFaceOfHit(h.object,h.faceIndex);
+    if(!hit||!hit.face)return null;
+    let ref=null,plane=null;
+    try{
+      ref=occFaceRefAny(hit.face);
+      if(ref&&ref.n&&ref.st==='Plane')plane={o:ref.pos.slice(),n:ref.n.slice()};
+    }finally{try{hit.face.delete();}catch(e2){}}
+    if(!ref)return null;
+    return{ref,ord:hit.ord,bid:hit.bd.bodyId,plane};
+  }catch(err){return null;}
+}
+function splitOrdOf(ref){
+  // Édition : retrouve la face mémorisée sur les solides affichés (surbrillance).
+  const k=splitFaceKey(ref);
+  for(const b of bodies){
+    if(b.kind!=='body'||!b.mesh||!b.shape)continue;
+    if(ref._bid&&b.bodyId!==ref._bid)continue;
+    const groups=(b.mesh.geometry.userData.occGroups)||[];
+    for(const g of groups){
+      let f=null,cur=null;
+      try{f=occFaceAt(b.shape,g.f);if(f)cur=occFaceRefAny(f);}catch(e){}
+      try{if(f)f.delete();}catch(e){}
+      if(cur&&splitFaceKey(cur)===k){ref._bid=b.bodyId;return g.f;}
+    }
+  }
+  return -1;
+}
+function enterSplitMode(editF){
+  if(skEdit)return;
+  const editing=(editF&&editF.type==='xsplit')?editF:null;
+  if(splitMode){if(editing&&splitMode.editing===editing.id)return;exitSplitMode(true);}
+  if(!occHas()){faceEl.textContent='Scinder : solide exact indisponible (OCCT non chargé).';return;}
+  try{if(filMode||filModeX)exitFilletMode(true);}catch(e){}
+  try{if(mvMode)exitMoveFaceMode(true);}catch(e){}
+  try{if(draftMode)exitDraftMode(true);}catch(e){}
+  try{if(coqueMode)exitCoqueMode(true);}catch(e){}
+  let b0=null;try{b0=ensureActiveBody();}catch(e){}
+  splitMode={mode:'face',faces:[],body:b0,pl:{src:'XY'},off:0,flip:false,pick:null,editing:editing?editing.id:null};
+  if(editing){
+    // Édition : rejeu SANS la fonction (occSkipFeat) → les faces d'origine redeviennent cliquables.
+    splitMode.mode=editing.mode==='body'?'body':'face';
+    splitMode.body=editing.body;
+    splitMode.pl=JSON.parse(JSON.stringify(editing.pl||{src:'XY'}));
+    splitMode.off=+editing.off||0;splitMode.flip=!!editing.flip;
+    splitMode.faces=(editing.faces||[]).map(r=>JSON.parse(JSON.stringify(r)));
+    splitMode.faces.forEach(r=>{if(!r._bid)r._bid=editing.body;});
+    occSkipFeat=editing.id;
+    tlEditLock(editing);
+    try{rebuild();}catch(e){}
+    splitMode.faces.forEach(r=>{try{r._ord=splitOrdOf(r);}catch(e){r._ord=-1;}});
+  }else if(!occLive||!occLive.shape){
+    try{rebuild();}catch(e){}
+  }
+  splitPaint();renderSplitPanel();splitHelp();
+}
+function splitHelp(){
+  if(!splitMode)return;
+  const ed=splitMode.editing?'<b>✂ Édition de la scission</b>':'<b>✂ Scinder</b>';
+  faceEl.innerHTML=ed+'<br><span class="note">'+(splitMode.pick==='plane'
+    ?'Cliquez une <b>face plane</b> : elle devient le plan de coupe.'
+    :splitMode.mode==='face'
+      ?'Cliquez les <b>faces à couper</b> (re-clic = retirer), choisissez le plan, puis <b>Appliquer</b> (<b>Entrée</b>).'
+      :'Cliquez le <b>corps à couper</b> (ou choisissez-le), choisissez le plan, puis <b>Appliquer</b> (<b>Entrée</b>).')
+    +' <b>Échap</b> annule.</span>';
+}
+function exitSplitMode(silent){
+  if(!splitMode)return;
+  const wasEditing=!!splitMode.editing;
+  splitMode=null;splitClearHl();
+  if(wasEditing){occSkipFeat=null;tlEditUnlock();markDirty();try{rebuild();}catch(e){}}
+  if(!silent)renderProps();
+}
+function splitClick(e){
+  if(!splitMode)return;
+  const hit=splitHitUnder(e);
+  if(!hit){faceEl.textContent='Scinder : cliquez une face du solide exact.';return;}
+  if(splitMode.pick==='plane'){
+    if(!hit.plane){faceEl.textContent='Scinder : cette face n\'est pas plane — choisissez une face plane pour le plan de coupe.';return;}
+    splitMode.pl={src:'face',o:hit.plane.o,n:hit.plane.n};splitMode.off=0;splitMode.pick=null;
+    splitPaint();renderSplitPanel();splitHelp();
+    return;
+  }
+  if(splitMode.mode==='body'){
+    splitMode.body=hit.bid;splitPaint();renderSplitPanel();
+    faceEl.textContent='Corps à couper : '+splitBodyName(hit.bid)+'. Choisissez le plan puis Appliquer.';
+    return;
+  }
+  // mode faces : un seul corps par scission (la fonction vit dans ce corps)
+  if(splitMode.faces.length&&splitMode.faces[0]._bid!==hit.bid){
+    splitMode.faces=[];faceEl.textContent='Faces d\'un autre corps : la sélection repart de ce corps.';
+  }
+  splitMode.body=hit.bid;
+  hit.ref._ord=hit.ord;hit.ref._bid=hit.bid;
+  const k=splitFaceKey(hit.ref),i=splitMode.faces.findIndex(r=>splitFaceKey(r)===k);
+  if(i>=0)splitMode.faces.splice(i,1);else splitMode.faces.push(hit.ref);
+  splitPaint();renderSplitPanel();
+}
+function splitHover(){if(splitMode)renderer.domElement.style.cursor=splitMode.pick==='plane'?'crosshair':'pointer';}
+/* ---------- panneau ---------- */
+function splitPlaneOptions(){
+  const o=[['XY','Plan XY (origine)'],['XZ','Plan XZ (origine)'],['YZ','Plan YZ (origine)']];
+  (doc.cgeo||[]).forEach(c=>{if(c&&c.kind==='plane'&&c.fr)o.push(['cg:'+c.id,'▱ '+c.name]);});
+  o.push(['face','Face plane (cliquée)']);
+  return o;
+}
+function splitPlaneValue(pl){const P=pl||{};return P.src==='cg'?'cg:'+P.cg:(P.src||'XY');}
+function splitPlaneFrom(v,cur){
+  if(v==='face')return (cur&&cur.src==='face'&&cur.o)?cur:null; // il faut cliquer la face
+  if(/^cg:/.test(v)){const id=v.slice(3),c=(doc.cgeo||[]).find(x=>x&&x.id===id);return{src:'cg',cg:id,o:c&&c.fr?c.fr.o.slice():null,n:c&&c.fr?c.fr.z.slice():null};}
+  return{src:v};
+}
+function splitNumIn(val,fn){
+  const i=document.createElement('input');i.type='text';i.inputMode='decimal';
+  i.value=String(val).replace('.',',');
+  i.onchange=()=>{const v=parseFloat(String(i.value).replace(',','.').replace(/\s/g,''));if(!isFinite(v)){i.value=String(val).replace('.',',');return;}fn(v);};
+  return i;
+}
+function renderSplitPanel(){
+  const p=document.getElementById('props');if(!p)return;
+  p.innerHTML='';if(!splitMode)return;
+  const S=splitMode;
+  const row=(lab,el)=>{const r=document.createElement('div');r.className='pnl-row';const L=document.createElement('label');L.textContent=lab;r.appendChild(L);if(el)r.appendChild(el);p.appendChild(r);return r;};
+  const note=t=>{const n=document.createElement('div');n.className='pnl-note';n.textContent=t;p.appendChild(n);return n;};
+  const h=document.createElement('div');h.className='pnl-h';h.textContent=S.editing?'✂ Édition de la scission':'✂ Scinder par un plan';p.appendChild(h);
+  // mode
+  const md=document.createElement('div');md.className='pnl-btns';
+  [['face','▦ Faces','Couper des faces : le solide reste entier'],['body','◧ Corps','Couper un corps en deux corps']].forEach(([v,t,tip])=>{
+    const b=document.createElement('button');b.textContent=t;b.title=tip;if(S.mode===v)b.className='primary';
+    b.onclick=()=>{if(S.mode===v)return;S.mode=v;S.pick=null;splitPaint();renderSplitPanel();splitHelp();};
+    md.appendChild(b);
+  });
+  p.appendChild(md);
+  // cible
+  if(S.mode==='face'){
+    if(S.faces.length){
+      const lst=document.createElement('div');lst.className='lst';
+      S.faces.forEach((r,i)=>{
+        const it=document.createElement('div');it.className='item';
+        const s=document.createElement('span');
+        s.textContent=(r._ord>=0?'✅ ':'⚠ ')+'▸ '+(r.st==='Plane'?'face plane':'face '+(r.st||'')).trim()+' ('+r.pos.map(v=>(+v).toFixed(1)).join(' ; ')+')';
+        it.appendChild(s);
+        const x=document.createElement('button');x.textContent='✕';x.title='Retirer cette face';
+        x.onclick=()=>{S.faces.splice(i,1);splitPaint();renderSplitPanel();};
+        it.appendChild(x);lst.appendChild(it);
+      });
+      p.appendChild(lst);
+      note('Corps : '+splitBodyName(S.body));
+    }else note('Cliquez dans la vue 3D les faces à couper (toutes sur le même corps).');
+  }else{
+    const sb=document.createElement('select');
+    (doc.bodies||[]).forEach(b=>{const o=document.createElement('option');o.value=b.id;o.textContent=b.name;sb.appendChild(o);});
+    if(S.body)sb.value=S.body;
+    sb.onchange=()=>{S.body=sb.value;splitPaint();};
+    row('Corps à couper',sb);
+  }
+  // plan
+  const sp=document.createElement('select');
+  splitPlaneOptions().forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;sp.appendChild(o);});
+  sp.value=splitPlaneValue(S.pl);
+  sp.onchange=()=>{
+    const pl=splitPlaneFrom(sp.value,S.pl);
+    if(!pl){S.pick='plane';splitHelp();renderSplitPanel();return;}
+    S.pl=pl;S.pick=null;splitPaint();splitHelp();
+  };
+  row('Plan',sp);
+  const pk=document.createElement('div');pk.className='pnl-btns';
+  const bp=document.createElement('button');bp.textContent=S.pick==='plane'?'⊙ Cliquez une face plane…':'⊙ Choisir une face plane';
+  if(S.pick==='plane')bp.className='primary';
+  bp.onclick=()=>{S.pick=S.pick==='plane'?null:'plane';renderSplitPanel();splitHelp();};
+  pk.appendChild(bp);p.appendChild(pk);
+  row('Décalage (mm)',splitNumIn(S.off,v=>{S.off=v;splitPaint();}));
+  const fl=document.createElement('input');fl.type='checkbox';fl.checked=!!S.flip;fl.onchange=()=>{S.flip=fl.checked;splitPaint();};
+  row('Inverser',fl);
+  if(S.mode==='body')note('Le côté vers lequel pointe la flèche bleue part dans un corps neuf ; l\'autre reste dans '+splitBodyName(S.body)+'.');
+  else note('Chaque face reçoit une arête le long du plan ; le solide reste entier.');
+  const btns=document.createElement('div');btns.className='pnl-btns';btns.style.marginTop='8px';
+  const ok=document.createElement('button');ok.className='primary';ok.textContent=S.editing?'✔ Enregistrer':'✔ Appliquer';ok.onclick=splitApply;btns.appendChild(ok);
+  const q=document.createElement('button');q.textContent=S.editing?'✖ Annuler':'Quitter';q.onclick=()=>exitSplitMode();btns.appendChild(q);
+  p.appendChild(btns);
+}
+function splitApply(){
+  const S=splitMode;if(!S)return;
+  if(S.mode==='face'&&!S.faces.length){faceEl.textContent='Scinder : cliquez au moins une face à couper.';return;}
+  if(S.mode==='body'&&!(doc.bodies||[]).some(b=>b.id===S.body)){faceEl.textContent='Scinder : choisissez le corps à couper.';return;}
+  if(!S.pl||(S.pl.src==='face'&&!(S.pl.o&&S.pl.n))){faceEl.textContent='Scinder : choisissez le plan de coupe.';return;}
+  const clean=r=>{const o={pos:r.pos.slice(),dim:r.dim.slice()};if(r.n)o.n=r.n.slice();if(r.st)o.st=r.st;return o;};
+  const pl=JSON.parse(JSON.stringify(S.pl));
+  if(S.editing){
+    const f=doc.features.find(x=>x.id===S.editing&&x.type==='xsplit');
+    if(f){
+      docPushUndo('édition de « '+f.name+' »');
+      const wasBody=f.mode==='body';
+      f.mode=S.mode;f.pl=pl;f.off=+S.off||0;f.flip=!!S.flip;
+      if(S.mode==='face'){f.faces=S.faces.map(clean);f.body=S.body||f.body;}
+      else{delete f.faces;f.body=S.body;}
+      if(S.mode==='body'&&!wasBody&&!f.newBody)f.newBody=splitNewBodyFor(f.body);
+      if(S.mode==='face'&&wasBody&&f.newBody){const nb=f.newBody;delete f.newBody;splitOnDelete({type:'xsplit',newBody:nb});}
+      f.name=splitName(f);sel={kind:'feature',id:f.id};
+    }
+    exitSplitMode(true);
+    markDirty();rebuild();renderTree();renderProps();
+    if(f)faceEl.textContent='Scission mise à jour : '+f.name+'.';
+    return;
+  }
+  const nf={id:uid('sp'),type:'xsplit',name:'',mode:S.mode,body:S.body,pl,off:+S.off||0,flip:!!S.flip,visible:true};
+  if(S.mode==='face')nf.faces=S.faces.map(clean);
+  else nf.newBody=splitNewBodyFor(S.body);
+  nf.name=splitName(nf);
+  addFeature(nf);
+  sel={kind:'feature',id:nf.id};
+  exitSplitMode(true);
+  markDirty();rebuild();renderTree();renderProps();
+  const bad=nf._err||(nf._m&&nf._m.m<nf._m.t);
+  faceEl.textContent=bad?'Scinder : le plan ne coupe pas ce qui est visé — voir ⚠ dans l\'arbre (Ctrl+Z pour annuler).'
+    :(nf.mode==='body'?'Corps scindé : l\'autre côté est dans « '+splitBodyName(nf.newBody)+' ».':nf.name+' : faces coupées.');
+}
+function splitNewBodyFor(src){
+  // Corps neuf, nommé d'après le corps coupé (le corps actif reste inchangé)
+  try{ensureBodies();}catch(e){}
+  const n=doc.bodySeq++;
+  const e={id:'b'+n,name:splitBodyName(src)+' (2)',c:null};
+  doc.bodies.push(e);return e.id;
+}
+function splitOnDelete(f){
+  // Suppression de la fonction : le corps neuf part avec elle s'il ne porte rien d'autre.
+  const nb=f&&f.type==='xsplit'&&f.newBody;
+  if(!nb||doc.features.some(x=>x.body===nb||(x.type==='combine'&&(x.tools||[]).indexOf(nb)>=0)||(x!==f&&x.newBody===nb)))return;
+  doc.bodies=(doc.bodies||[]).filter(b=>b.id!==nb);
+  if(doc.activeBody===nb&&doc.bodies.length)doc.activeBody=doc.bodies[0].id;
+}
+/* ---------- propriétés d'une scission ---------- */
+function splitProps(p,f){
+  const pH=t=>{const h=document.createElement('div');h.className='pnl-h';h.textContent=t;p.appendChild(h);};
+  const pRow=(lab,el)=>{const r=document.createElement('div');r.className='pnl-row';const L=document.createElement('label');L.textContent=lab;r.appendChild(L);if(el)r.appendChild(el);p.appendChild(r);};
+  const pInfo=h=>{const d=document.createElement('div');d.className='pnl-note';d.innerHTML=h;p.appendChild(d);};
+  const set=(lab,fn)=>{docPushUndo(lab);fn();f.name=splitName(f);markDirty();rebuild();renderTree();renderProps();};
+  pH(f.mode==='body'?'Scinder le corps':'Scinder des faces');
+  pInfo('<b>'+f.name+'</b>');
+  if(f._m&&f._m.t&&f._m.m<f._m.t)pInfo('<span style="color:var(--warn)">⚠ '+(f.mode==='body'?'le plan ne coupe pas le corps':(f._m.m+'/'+f._m.t+' face(s) coupée(s)'))+'</span>');
+  if(f.mode==='body')pInfo('Corps coupé : <b>'+splitBodyName(f.body)+'</b> · autre côté : <b>'+splitBodyName(f.newBody)+'</b>');
+  else pInfo((f.faces||[]).length+' face(s) de <b>'+splitBodyName(f.body)+'</b>');
+  const sp=document.createElement('select');
+  splitPlaneOptions().forEach(([v,t])=>{if(v==='face'&&!(f.pl&&f.pl.src==='face'))return;const o=document.createElement('option');o.value=v;o.textContent=t;sp.appendChild(o);});
+  sp.value=splitPlaneValue(f.pl);
+  sp.onchange=()=>{const pl=splitPlaneFrom(sp.value,f.pl);if(pl)set('plan de « '+f.name+' »',()=>{f.pl=pl;});};
+  pRow('Plan',sp);
+  pRow('Décalage (mm)',splitNumIn(+f.off||0,v=>{if(v!==(+f.off||0))set('décalage de « '+f.name+' »',()=>{f.off=v;});}));
+  const fl=document.createElement('input');fl.type='checkbox';fl.checked=!!f.flip;
+  fl.onchange=()=>set('inversion de « '+f.name+' »',()=>{f.flip=fl.checked;});
+  pRow('Inverser',fl);
+  const d=document.createElement('div');d.className='pnl-btns';
+  const b=document.createElement('button');b.textContent='✂ Modifier (faces, corps, plan)';
+  b.onclick=()=>{exitSplitMode(true);enterSplitMode(f);};
+  d.appendChild(b);p.appendChild(d);
+}
+// Entrée applique, comme Échap annule (le champ Décalage valide d'abord sa saisie).
+window.addEventListener('keydown',e=>{
+  if(e.key!=='Enter'||!splitMode)return;
+  const t=e.target;
+  if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT'||t.isContentEditable)){try{t.blur();}catch(err){}}
+  e.preventDefault();splitApply();
+});
+
 /* ═══════════════ 85-suppression-face.js — suppression face ═══════════════ */
 /* ---------- suppression de faces (touche Suppr) ----------
    Le calcul est dans 20-noyau (occDeleteFacesOnce / occApplyDeleteFaces). Ici : la touche
@@ -22614,7 +23174,7 @@ document.addEventListener('pointerdown',e=>{
 function delFaceName(n){return n>1?`Suppression de ${n} faces`:'Suppression de face';}
 function delFacesWanted(){
   if(!delLastPtr3D||!selFaces||!selFaces.length)return false;
-  try{if(mvMode||draftMode||coqueMode||filModeX||filMode)return false;}catch(e){}
+  try{if(mvMode||draftMode||coqueMode||filModeX||filMode||splitMode)return false;}catch(e){}
   return true;
 }
 function deleteSelectedFaces(){
@@ -22733,9 +23293,10 @@ function draftPaint(){
       groups.forEach(gr=>{
         if(gr.f!==w[0])return;
         for(let t=gr.start;t<gr.start+gr.count;t++){
-          const i3=t*3;
-          pos.push(a[i3],a[i3+1],a[i3+2]);
-          col.push(c.r,c.g,c.b);
+          // occGroups compte des TRIANGLES (géométrie non indexée) : 3 sommets = 9 flottants
+          const i9=t*9;
+          for(let k=0;k<9;k++)pos.push(a[i9+k]);
+          col.push(c.r,c.g,c.b,c.r,c.g,c.b,c.r,c.g,c.b);
         }
       });
     });
@@ -23061,7 +23622,7 @@ function draftToggle(e){
   }
   draftPaint();draftPreviewUpdate();renderDraftPanel();
   const nf=draftMode.faces.length;
-  faceEl.textContent=nf?`${nf} face(s) à dépouiller retenue(s)${tangentes?` (dont ${tangentes} tangente(s))`:''}${ignorees?` — ${ignorees} voisine(s) écartée(s) (référence ou parallèle au neutre)`:''} — saisissez l'angle puis <b>Appliquer</b>.`
+  faceEl.textContent=nf?`${nf} face(s) à dépouiller retenue(s)${tangentes?` (dont ${tangentes} tangente(s))`:''}${ignorees?` — ${ignorees} voisine(s) écartée(s) (référence ou parallèle au neutre)`:''} — saisissez l'angle puis Appliquer.`
     :'Aucune face retenue : cliquez les faces à dépouiller, ou <b>Échap</b> pour annuler.';
 }
 function draftHover(e){
@@ -23260,9 +23821,10 @@ function coquePaint(){
       groups.forEach(gr=>{
         if(gr.f!==o)return;
         for(let t=gr.start;t<gr.start+gr.count;t++){
-          const i3=t*3;
-          pos.push(a[i3],a[i3+1],a[i3+2]);
-          col.push(c.r,c.g,c.b);
+          // occGroups compte des TRIANGLES (géométrie non indexée) : 3 sommets = 9 flottants
+          const i9=t*9;
+          for(let k=0;k<9;k++)pos.push(a[i9+k]);
+          col.push(c.r,c.g,c.b,c.r,c.g,c.b,c.r,c.g,c.b);
         }
       });
     });
@@ -38303,7 +38865,7 @@ function faoPlaneStart(setupId){
     if(typeof skEdit!=='undefined'&&skEdit){faceEl.textContent='Plan : fermez l\'esquisse d\'abord.';return;}
     if((typeof filMode!=='undefined'&&filMode)||(typeof filModeX!=='undefined'&&filModeX)||
        (typeof mvMode!=='undefined'&&mvMode)||(typeof draftMode!=='undefined'&&draftMode)||
-       (typeof coqueMode!=='undefined'&&coqueMode)||(typeof extPickFace!=='undefined'&&extPickFace)||
+       (typeof coqueMode!=='undefined'&&coqueMode)||(typeof splitMode!=='undefined'&&splitMode)||(typeof extPickFace!=='undefined'&&extPickFace)||
        (typeof faoChainMode!=='undefined'&&faoChainMode)){
       faceEl.textContent='Plan : quittez le mode en cours d\'abord.';return;
     }
@@ -38363,7 +38925,7 @@ function faoZPlaneStart(t){
     if(typeof skEdit!=='undefined'&&skEdit){faceEl.textContent='Plan : fermez l\'esquisse d\'abord.';return;}
     if((typeof filMode!=='undefined'&&filMode)||(typeof filModeX!=='undefined'&&filModeX)||
        (typeof mvMode!=='undefined'&&mvMode)||(typeof draftMode!=='undefined'&&draftMode)||
-       (typeof coqueMode!=='undefined'&&coqueMode)||(typeof extPickFace!=='undefined'&&extPickFace)||
+       (typeof coqueMode!=='undefined'&&coqueMode)||(typeof splitMode!=='undefined'&&splitMode)||(typeof extPickFace!=='undefined'&&extPickFace)||
        (typeof faoPlanePick!=='undefined'&&faoPlanePick)||(typeof faoChainMode!=='undefined'&&faoChainMode)){
       faceEl.textContent='Plan : quittez le mode en cours d\'abord.';return;
     }
@@ -38493,7 +39055,7 @@ function faoChainStart(setupId,opId,kind){
     if(typeof skEdit!=='undefined'&&skEdit){faceEl.textContent=PRE+' : fermez l\'esquisse d\'abord.';return;}
     if((typeof filMode!=='undefined'&&filMode)||(typeof filModeX!=='undefined'&&filModeX)||
        (typeof mvMode!=='undefined'&&mvMode)||(typeof draftMode!=='undefined'&&draftMode)||
-       (typeof coqueMode!=='undefined'&&coqueMode)||(typeof extPickFace!=='undefined'&&extPickFace)||
+       (typeof coqueMode!=='undefined'&&coqueMode)||(typeof splitMode!=='undefined'&&splitMode)||(typeof extPickFace!=='undefined'&&extPickFace)||
        (typeof faoPlanePick!=='undefined'&&faoPlanePick)){
       faceEl.textContent=PRE+' : quittez le mode en cours d\'abord.';return;
     }
@@ -44034,6 +44596,7 @@ function wirePick(){
     if(mvMode){if(e.button===0&&!e.ctrlKey)mvFaceCommit(e);return;}
     if(draftMode){if(e.button===0&&!e.ctrlKey)draftToggle(e);return;}
     if(coqueMode){if(e.button===0&&!e.ctrlKey)coqueToggle(e);return;}
+    if(splitMode){if(e.button===0&&!e.ctrlKey)splitClick(e);return;} // scinder (85-scinder)
     if(e.altKey)return;
     if(e.button===0&&!(e.ctrlKey||e.metaKey)&&typeof faoPosePickAt==='function'&&faoPosePickAt(e))return; // point cardinal → origine du posage
     if(e.shiftKey&&e.button===0){shiftMeasure(e);return;}
@@ -44052,6 +44615,7 @@ function wirePick(){
     if(mvMode){mvFaceHover(e);renderer.domElement.style.cursor='pointer';return;}
     if(draftMode){draftHover(e);return;}
     if(coqueMode){coqueHover(e);return;}
+    if(splitMode){splitHover(e);return;}
       if(filModeX){
        const i=exactPick(e);
        if(i!==xHover){xHover=i;paintExact();}
@@ -44162,7 +44726,8 @@ function filletTangentChain(sk, startCorner){
     if(typeof bmPick!=='undefined'&&bmPick){bmPickExit(false);return;}
     if(mvMode){exitMoveFaceMode();return;}
     if(draftMode){exitDraftMode();return;}
-    if(coqueMode){exitCoqueMode();return;}clearMeasure();clearHover();hideCtx();hideCtx3D();}});
+    if(coqueMode){exitCoqueMode();return;}
+    if(splitMode){if(splitMode.pick){splitMode.pick=null;renderSplitPanel();splitHelp();}else exitSplitMode();return;}clearMeasure();clearHover();hideCtx();hideCtx3D();}});
   // Entrée applique le dépouillage, comme Échap l'annule. Le champ d'angle du panneau
   // est isolé du reste : sans cela, taper un angle puis Entrée valait la saisie mais
   // n'appliquait rien, puisque le garde-fou global ignore toute cible INPUT.
@@ -46281,6 +46846,7 @@ function openAide(){
     ['btnMoveFace','\u{1F4D0}','Déplacer une face'],
     ['btnDraft','\u{1F6E1}','Dépouillage (angle de démoulage)'],
       ['btnCoque','⚙','Coque'],
+    ['btnSplit','✂','Scinder (faces ou corps) par un plan'],
     '#',
     [null,'Ensembles'],
     ['btnRepeat','\u{1F501}','Répétition (linéaire, circulaire, symétrie) (M)'],
@@ -47289,6 +47855,7 @@ const MF_IC={
   move:'<path d="M12 3v18M3 12h18"/><path d="M9.5 5.5L12 3l2.5 2.5M9.5 18.5L12 21l2.5-2.5M5.5 9.5L3 12l2.5 2.5M18.5 9.5L21 12l-2.5 2.5"/>',
   draft:'<path d="M8 4h8l4 16H4z"/><path d="M12 4v16" stroke-dasharray="2 2"/>',
   shell:'<path d="M3 6v14h18V6"/><path d="M7 6v10h10V6"/>',
+  split:'<path d="M4 9l8-4 8 4v7l-8 4-8-4z"/><path d="M2 13h20" stroke-dasharray="3 2"/>',
   pattern:'<rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/>',
   combine:'<circle cx="9" cy="12" r="6"/><circle cx="15" cy="12" r="6"/>',
   params:'<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
@@ -47379,7 +47946,7 @@ const MF_CAO=[
     ['cgAxis','Axe',()=>cgStart('axis'),'Axe de construction : arête, cylindre, 2 points, intersection de plans, normal à un plan'],
     ['cgPoint','Point',()=>cgStart('point'),'Point de construction : sommet, centre, coordonnées, intersection axe / plan'],
     ['cgFrame','Repère',()=>cgStart('frame'),'Repère de construction : origine + Z + X, sur un plan ou une face, par 3 points']]],
-  ['Modifier',[['fillet','Congé','btnFillet'],['chamfer','Chanfrein','btnChamfer'],['face','Face','btnMoveFace'],['draft','Dépouille','btnDraft'],['shell','Coque','btnCoque']]],
+  ['Modifier',[['fillet','Congé','btnFillet'],['chamfer','Chanfrein','btnChamfer'],['face','Face','btnMoveFace'],['draft','Dépouille','btnDraft'],['shell','Coque','btnCoque'],['split','Scinder','btnSplit']]],
   ['Ensembles',[['pattern','Répétition','btnRepeat'],['combine','Combiner','btnCombine'],['move','Déplacer','btnBodyMove'],['params','Paramètres','btnParams']]],
   ['Fichier',[['import','Importer','btnImport'],['export','STEP','btnExportStep'],['export','STL','btnExportStl'],['export','OBJ','btnExportObj']]]
 ];

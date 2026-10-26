@@ -20,6 +20,7 @@ function wirePick(){
     if(mvMode){if(e.button===0&&!e.ctrlKey)mvFaceCommit(e);return;}
     if(draftMode){if(e.button===0&&!e.ctrlKey)draftToggle(e);return;}
     if(coqueMode){if(e.button===0&&!e.ctrlKey)coqueToggle(e);return;}
+    if(splitMode){if(e.button===0&&!e.ctrlKey)splitClick(e);return;} // scinder (85-scinder)
     if(e.altKey)return;
     if(e.button===0&&!(e.ctrlKey||e.metaKey)&&typeof faoPosePickAt==='function'&&faoPosePickAt(e))return; // point cardinal → origine du posage
     if(e.shiftKey&&e.button===0){shiftMeasure(e);return;}
@@ -38,6 +39,7 @@ function wirePick(){
     if(mvMode){mvFaceHover(e);renderer.domElement.style.cursor='pointer';return;}
     if(draftMode){draftHover(e);return;}
     if(coqueMode){coqueHover(e);return;}
+    if(splitMode){splitHover(e);return;}
       if(filModeX){
        const i=exactPick(e);
        if(i!==xHover){xHover=i;paintExact();}
@@ -148,7 +150,8 @@ function filletTangentChain(sk, startCorner){
     if(typeof bmPick!=='undefined'&&bmPick){bmPickExit(false);return;}
     if(mvMode){exitMoveFaceMode();return;}
     if(draftMode){exitDraftMode();return;}
-    if(coqueMode){exitCoqueMode();return;}clearMeasure();clearHover();hideCtx();hideCtx3D();}});
+    if(coqueMode){exitCoqueMode();return;}
+    if(splitMode){if(splitMode.pick){splitMode.pick=null;renderSplitPanel();splitHelp();}else exitSplitMode();return;}clearMeasure();clearHover();hideCtx();hideCtx3D();}});
   // Entrée applique le dépouillage, comme Échap l'annule. Le champ d'angle du panneau
   // est isolé du reste : sans cela, taper un angle puis Entrée valait la saisie mais
   // n'appliquait rien, puisque le garde-fou global ignore toute cible INPUT.

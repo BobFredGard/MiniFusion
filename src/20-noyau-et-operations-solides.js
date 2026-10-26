@@ -142,12 +142,12 @@ function occWireFromChain(sk,tr,chain,bin,z0){
       const Pf=tr.pts[st.from],Pt=tr.pts[toId];
       const aF=Math.atan2(Pf.y-Cc.y,Pf.x-Cc.x),aT=Math.atan2(Pt.y-Cc.y,Pt.x-Cc.x);
       const dEnt=an.a2-an.a1;
-      if(Math.abs(dEnt-TAU)<1e-6){ // cercle complet porté par un arc : 2 moitiés
-        const P0=projOnCirc(Cc,a.r,0),P1=projOnCirc(Cc,a.r,Math.PI);
-        const m1=occBinPush(bin,new occt.BRepBuilderAPI_MakeEdge_10(circ,P0,P1));m1.Build();
-        const m2=occBinPush(bin,new occt.BRepBuilderAPI_MakeEdge_10(circ,P1,P0));m2.Build();
-        if(!m1.IsDone()||!m2.IsDone())throw new Error('cercle complet impossible');
-        mkW.Add_1(m1.Edge());mkW.Add_1(m2.Edge());
+      if(Math.abs(dEnt-TAU)<1e-6){
+        // V0.11.5 : cercle complet = UNE arête fermée (et non 2 moitiés) → le prisme a UN
+        // cylindre, sans arête de jonction ; sa projection en esquisse est un seul cercle.
+        const m1=occBinPush(bin,new occt.BRepBuilderAPI_MakeEdge_8(circ));m1.Build();
+        if(!m1.IsDone())throw new Error('cercle complet impossible');
+        mkW.Add_1(m1.Edge());
         continue;
       }
       // Sens réel : le départ coïncide-t-il avec a1 (sens CCW de l'entité) ou a2 (retour CW) ?
@@ -316,11 +316,17 @@ function occCommon(a,b){
 }
 // 2026-10-16-009 : COMBINER des corps (union / soustraction / intersection), comme Fusion.
 function occBodyOfFeat(f){return (f&&f.body&&doc.bodies.some(e=>e.id===f.body))?f.body:(doc.bodies[0]&&doc.bodies[0].id);}
+function occSplitNewBody(f){
+  // Corps NEUF né d'une scission de corps (xsplit mode 'body'), ou null : la fonction est
+  // rejouée dans son corps (côté gardé) ET en tête du corps neuf (l'autre côté).
+  if(!f||f.type!=='xsplit'||f.mode!=='body'||!f.newBody)return null;
+  return (f.newBody!==occBodyOfFeat(f)&&doc.bodies.some(e=>e.id===f.newBody))?f.newBody:null;
+}
 function occCombinePrefix(f,tb){
   // fonctions du corps outil tb AVANT la combinaison f (timeline visible)
   const vis=doc.features.filter(x=>x.visible!==false&&!(occSkipFeat&&x.id===occSkipFeat));
   const i=vis.indexOf(f);
-  return vis.slice(0,i<0?vis.length:i).filter(x=>x.type!=='repeat'&&occBodyOfFeat(x)===tb);
+  return vis.slice(0,i<0?vis.length:i).filter(x=>x.type!=='repeat'&&(occBodyOfFeat(x)===tb||occSplitNewBody(x)===tb));
 }
 function occCombineTool(f,tb,bin){
   const list=occCombinePrefix(f,tb);if(!list.length)return null;
@@ -568,7 +574,7 @@ function occApplyCoque(result,f){
 }
 
 function occDiskPrism(sk,Cx,Cy,r,sp){
-  // Pastille pleine (cercles isolés) : 2 demi-arcs -> wire -> face -> UN prisme.
+  // Pastille pleine (cercles isolés) : cercle -> wire -> face -> UN prisme.
   // sp = plage {lo,hi} (ou nombre pour compat) : cercle construit au plan décalé z0=lo,
   // prisme unique de longueur hi-lo → même plage que les contours, sans couture coplanaire.
   const bin=[];
@@ -583,12 +589,11 @@ function occDiskPrism(sk,Cx,Cy,r,sp){
     const dir=occBinPush(bin,new occt.gp_Dir_4(n.x,n.y,n.z));
     const ax=occBinPush(bin,new occt.gp_Ax2_3(occBinPush(bin,new occt.gp_Pnt_3(Cw[0],Cw[1],Cw[2])),dir));
     const circ=occBinPush(bin,new occt.gp_Circ_2(ax,r));
-    const P0=occBinPush(bin,new occt.gp_Pnt_3(...OP(occW(sk,Cx+r,Cy)))),P1=occBinPush(bin,new occt.gp_Pnt_3(...OP(occW(sk,Cx-r,Cy))));
     const mkW=occBinPush(bin,new occt.BRepBuilderAPI_MakeWire_1());
-    const m1=occBinPush(bin,new occt.BRepBuilderAPI_MakeEdge_10(circ,P0,P1));m1.Build();
-    const m2=occBinPush(bin,new occt.BRepBuilderAPI_MakeEdge_10(circ,P1,P0));m2.Build();
-    if(!m1.IsDone()||!m2.IsDone())throw new Error('pastille impossible');
-    mkW.Add_1(m1.Edge());mkW.Add_1(m2.Edge());mkW.Build();
+    // V0.11.5 : UNE arête de cercle fermée (plus 2 demi-arcs) → un seul cylindre, sans jonction
+    const m1=occBinPush(bin,new occt.BRepBuilderAPI_MakeEdge_8(circ));m1.Build();
+    if(!m1.IsDone())throw new Error('pastille impossible');
+    mkW.Add_1(m1.Edge());mkW.Build();
     if(!mkW.IsDone())throw new Error('pastille non fermée');
     const fm=occBinPush(bin,new occt.BRepBuilderAPI_MakeFace_15(mkW.Wire(),true));
     fm.Build();if(!fm.IsDone())throw new Error('face pastille impossible');
@@ -1233,6 +1238,143 @@ function occApplyDeleteFaces(result,f){
   try{result.delete();}catch(e){}
   return{shape:r,warnings};
 }
+/* ---------- scinder par un plan : faces ou corps (V0.11.5) ----------
+   {type:'xsplit', mode:'face'|'body', body, pl:{src,cg?,o?,n?}, off, flip, faces?, newBody?}
+   • Faces : chaque face visée (référence durable occFaceRefAny) est coupée par sa ligne
+     d'intersection avec le plan (BRepAlgoAPI_Section) ; le Splitter imprime ces arêtes
+     sur le solide, qui reste UN solide (faces voisines recousues, volume inchangé).
+   • Corps : le Splitter coupe le solide par une grande face plane ; les morceaux du côté
+     opposé à la normale restent dans le corps, ceux du côté de la normale vont dans le
+     corps neuf `newBody` (« Inverser » échange les côtés). Mesuré : boîte 100x60x40
+     coupée à X=30 → 72 000 + 168 000 mm³. */
+function splitPlaneOf(f){
+  // Plan résolu {o,n} (monde) : origine, plan de construction (repère persistant) ou face
+  // figée au clic ; décalage le long de la normale ; flip retourne la normale.
+  const P=f.pl||{};let o=[0,0,0],n=[0,0,1];
+  if(P.src==='XZ')n=[0,1,0];
+  else if(P.src==='YZ')n=[1,0,0];
+  else if(P.src==='cg'){
+    const c=(doc.cgeo||[]).find(x=>x&&x.id===P.cg);
+    if(c&&c.fr&&c.fr.o&&c.fr.z){o=c.fr.o.slice();n=c.fr.z.slice();}
+    else if(P.o&&P.n){o=P.o.slice();n=P.n.slice();}
+  }else if(P.src==='face'&&P.o&&P.n){o=P.o.slice();n=P.n.slice();}
+  const l=Math.hypot(n[0],n[1],n[2])||1;n=n.map(v=>v/l);
+  const d=+f.off||0;o=[o[0]+n[0]*d,o[1]+n[1]*d,o[2]+n[2]*d];
+  if(f.flip)n=n.map(v=>-v);
+  return{o,n};
+}
+function splitCutPlanes(){
+  // Plans des scissions de FACES actives (visibles, non sautées en édition) : leurs arêtes
+  // de coupe sont affichées vives (occSharpEdges), même entre faces tangentes.
+  const out=[];
+  try{(doc.features||[]).forEach(f=>{if(f&&f.type==='xsplit'&&f.mode!=='body'&&f.visible!==false&&!(occSkipFeat&&f.id===occSkipFeat))out.push(splitPlaneOf(f));});}catch(e){}
+  return out;
+}
+function occSplitPln(P){return new occt.gp_Pln_3(new occt.gp_Pnt_3(P.o[0],P.o[1],P.o[2]),new occt.gp_Dir_4(P.n[0],P.n[1],P.n[2]));}
+function occSplitRun(shape,tools){
+  // Splitter : `shape` découpé par `tools` (liste de shapes). Rend le résultat brut.
+  const sp=new occt.BRepAlgoAPI_Splitter_1();
+  const la=new occt.TopTools_ListOfShape_1(),lt=new occt.TopTools_ListOfShape_1();
+  try{
+    la.Append_1(shape);tools.forEach(t=>lt.Append_1(t));
+    sp.SetArguments(la);sp.SetTools(lt);sp.Build();
+    if(!sp.IsDone())throw new Error('découpe refusée par le noyau');
+    const r=sp.Shape();if(!r||r.IsNull())throw new Error('résultat vide');
+    return r;
+  }finally{try{sp.delete();}catch(e){}try{la.delete();}catch(e){}try{lt.delete();}catch(e){}}
+}
+function occSolidsOf(shape){
+  const out=[],SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE;
+  const ex=new occt.TopExp_Explorer_2(shape,occt.TopAbs_ShapeEnum.TopAbs_SOLID,SH);
+  while(ex.More()){out.push(occt.TopoDS.Solid_1(ex.Current()));ex.Next();}
+  try{ex.delete();}catch(e){}
+  return out;
+}
+function occSplitFacesOnce(shape,faces,P){
+  // Coupe les faces visées par le plan ; le solide reste entier. → {shape, cut:nb de faces coupées}
+  const pln=occSplitPln(P),secs=[];let cut=0;
+  try{
+    faces.forEach(h=>{
+      const s=new occt.BRepAlgoAPI_Section_5(h,pln,false);
+      try{
+        s.Build();if(!s.IsDone())return;
+        const r=s.Shape();
+        const ex=new occt.TopExp_Explorer_2(r,occt.TopAbs_ShapeEnum.TopAbs_EDGE,occt.TopAbs_ShapeEnum.TopAbs_SHAPE);
+        const has=ex.More();try{ex.delete();}catch(e){}
+        if(has){secs.push(r);cut++;}else try{r.delete();}catch(e){}
+      }finally{try{s.delete();}catch(e){}}
+    });
+    if(!secs.length)return{shape:null,cut:0};
+    const r=occSplitRun(shape,secs);
+    const so=occSolidsOf(r);
+    if(so.length===1){try{r.delete();}catch(e){}return{shape:so[0],cut};}
+    so.forEach(s=>{try{s.delete();}catch(e){}});
+    return{shape:r,cut};
+  }finally{try{pln.delete();}catch(e){}secs.forEach(s=>{try{s.delete();}catch(e){}});}
+}
+function occSplitBodyOnce(shape,P){
+  // Coupe le solide en deux côtés. → {neg, pos} (null si vide de ce côté)
+  const b=occSolidBox(shape);if(!b)throw new Error('boîte du solide illisible');
+  const c=b.c,k=(c[0]-P.o[0])*P.n[0]+(c[1]-P.o[1])*P.n[1]+(c[2]-P.o[2])*P.n[2];
+  // face de coupe centrée sur la projection du centre, débordant largement du solide
+  const q={o:[c[0]-k*P.n[0],c[1]-k*P.n[1],c[2]-k*P.n[2]],n:P.n};
+  const R=b.dg+10,pln=occSplitPln(q);
+  let face=null,r=null;
+  try{
+    const mf=new occt.BRepBuilderAPI_MakeFace_9(pln,-R,R,-R,R);
+    try{if(!mf.IsDone())throw new Error('plan de coupe invalide');face=mf.Face();}finally{try{mf.delete();}catch(e){}}
+    r=occSplitRun(shape,[face]);
+  }finally{try{pln.delete();}catch(e){}if(face)try{face.delete();}catch(e){}}
+  const neg=[],pos=[];
+  occSolidsOf(r).forEach(s=>{
+    let ct=null;
+    try{const p=new occt.GProp_GProps_1();occt.BRepGProp.VolumeProperties_1(s,p,false,false,false);const m=p.CentreOfMass();ct=[m.X(),m.Y(),m.Z()];try{m.delete();}catch(e){}try{p.delete();}catch(e){}}catch(e){}
+    if(!ct){try{s.delete();}catch(e){}return;}
+    const d=(ct[0]-P.o[0])*P.n[0]+(ct[1]-P.o[1])*P.n[1]+(ct[2]-P.o[2])*P.n[2];
+    (d>0?pos:neg).push(s);
+  });
+  try{r.delete();}catch(e){}
+  const pack=L=>!L.length?null:(L.length===1?L[0]:occCompoundOf(L));
+  return{neg:pack(neg),pos:pack(pos),nNeg:neg.length,nPos:pos.length};
+}
+function occApplySplit(result,f,side){
+  // Rejoue la scission. side : 'neg' (corps d'origine) | 'pos' (corps neuf, mode corps).
+  // Retourne {shape,warnings} comme occApplyDeleteFaces.
+  const warnings=[];const P=splitPlaneOf(f);
+  if(f.mode==='body'){
+    let s=null;
+    try{s=occSplitBodyOnce(result,P);}
+    catch(e){return{shape:side==='pos'?null:result,warnings:[`scission impossible — ${(e&&e.message)||e}`],fatal:true};}
+    f._m={m:(s.nNeg&&s.nPos)?1:0,t:1};
+    if(!s.neg||!s.pos){
+      // le plan ne traverse pas le corps : tout reste dans le corps d'origine
+      if(s.neg)try{s.neg.delete();}catch(e){}if(s.pos)try{s.pos.delete();}catch(e){}
+      return{shape:side==='pos'?null:result,warnings:['le plan ne coupe pas le corps']};
+    }
+    try{result.delete();}catch(e){}
+    if(side==='pos'){try{s.neg.delete();}catch(e){}return{shape:s.pos,warnings};}
+    try{s.pos.delete();}catch(e){}
+    return{shape:s.neg,warnings};
+  }
+  const total=(f.faces||[]).length;
+  if(!total)return{shape:result,warnings:['aucune face à scinder']};
+  const hs=(f.faces||[]).map(fr=>{try{return occFindFaceAny(result,fr);}catch(e){return null;}}).filter(Boolean);
+  f._m={m:hs.length,t:total};
+  if(!hs.length)return{shape:result,warnings:[`aucune des ${total} face(s) n'est retrouvée — la pièce a changé`]};
+  if(hs.length<total)warnings.push(`${total-hs.length} face(s) introuvable(s) sur la pièce courante`);
+  let r=null;
+  try{r=occSplitFacesOnce(result,hs,P);}
+  catch(e){r=null;warnings.push(`scission impossible — ${(e&&e.message)||e}`);}
+  finally{hs.forEach(h=>{try{h.delete();}catch(e){}});}
+  if(!r||!r.shape){
+    f._m={m:0,t:total};
+    if(r&&!r.cut)warnings.push('le plan ne coupe aucune des faces choisies');
+    return{shape:result,warnings,fatal:true};
+  }
+  if(r.cut<hs.length){f._m={m:r.cut,t:total};warnings.push(`${hs.length-r.cut} face(s) non traversée(s) par le plan`);}
+  try{result.delete();}catch(e){}
+  return{shape:r.shape,warnings};
+}
 function occListEdges(shape){
   // Données pures par arête (pas de handles conservés) : mid, polyline pts, longueur, src (rang explorateur).
   const out=[],bin=[];
@@ -1407,6 +1549,10 @@ function occSurfNormalAt(surf,u,v){
 function occSharpEdges(shape){
   // Arêtes uniques classées : sharp (noire, C0) vs tangente (grise, G1+). Validé par exécution.
   const out=[],bin=[];
+  // V0.11.5 : arêtes de COUPE d'une scission de faces (xsplit) — entre les deux moitiés d'un
+  // congé, la continuité est G1 et l'arête serait grise ; c'est une limite voulue : noire.
+  const cuts=splitCutPlanes();
+  const onCut=pts=>cuts.some(P=>pts.every(q=>Math.abs((q[0]-P.o[0])*P.n[0]+(q[1]-P.o[1])*P.n[1]+(q[2]-P.o[2])*P.n[2])<1e-3));
   try{
     const SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE,NP=12;
     const ekey=(m,l)=>m.map(v=>v.toFixed(2)).join(',')+'|'+l.toFixed(2);
@@ -1479,7 +1625,8 @@ function occSharpEdges(shape){
               seen.add(kk);
               let sharp=true;
               const fl=fmap.get(kk)||[];
-              if((seam.has(kk)&&fl.length<=1)||sameCyl(fl)){ex.Next();continue;} // couture : pas une arête
+              const onC=cuts.length>0&&onCut(s.pts); // arête de coupe d'une scission : toujours tracée
+              if(!onC&&((seam.has(kk)&&fl.length<=1)||sameCyl(fl))){ex.Next();continue;} // couture : pas une arête
               if(fl.length>=2){
                 try{sharp=(occt.BRep_Tool.Continuity_1(e,faces[fl[0]],faces[fl[1]])===occt.GeomAbs_Shape.GeomAbs_C0);}
                 catch(err){sharp=true;}
@@ -1523,7 +1670,8 @@ function occSharpEdges(shape){
                 }
                 if(mesure&&maxA<3)sharp=false; // G1 confirmé sur toute l'arête : TANGENTE (grise)
               }
-              out.push({mid,pts:occCurvePts(ad,u0,u1),len:s.len,sharp});
+              const cut=!sharp&&onC;
+              out.push(cut?{mid,pts:occCurvePts(ad,u0,u1),len:s.len,sharp:true,split:true}:{mid,pts:occCurvePts(ad,u0,u1),len:s.len,sharp});
             }
           }
         }
@@ -2546,6 +2694,12 @@ function featSig(f){
     s+='|'+JSON.stringify(f.steps||[]);
   }else if(f.type==='xdelface'){
     s+='|'+((f.faces||[]).map(r=>JSON.stringify([r.pos,r.n||r.st,r.dim])).join(';'));
+  }else if(f.type==='xsplit'){
+    // Plan RÉSOLU (un plan de construction peut bouger sans que la fonction change) et,
+    // pour le corps neuf, l'historique du corps source jusqu'à la scission (comme combine).
+    const P=splitPlaneOf(f);
+    s+='|'+P.o.map(v=>(+v).toFixed(4)).join(',')+'/'+P.n.map(v=>(+v).toFixed(6)).join(',');
+    if(occSplitNewBody(f))s+='|src:'+occCombinePrefix(f,occBodyOfFeat(f)).map(featSig).join(',');
   }else if(f.type==='xdraft'){
     // L'ANGLE fait partie de la géométrie, ainsi que la face de référence (plan neutre)
     // et les faces visées (références durables pos/n/dim). Sans elles, changer l'angle
@@ -2644,6 +2798,31 @@ function occReplayBody(bid,list){
       result=r.shape;msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       if(r.warnings.length)occCkWarn[ckKey]=r.warnings.slice();else delete occCkWarn[ckKey];
       occCkPut(ckKey,()=>occShapeCopy(result));
+      return;
+    }
+    if(f.type==='xsplit'){
+      // Scinder : côté gardé dans le corps de la fonction ; en tête du corps NEUF (mode
+      // corps), l'autre côté du corps source tel qu'il est à cet endroit de la timeline.
+      const neuf=occSplitNewBody(f)===bid;
+      const ckP=occCkGet(ckKey);
+      const cpP=ckP?occShapeCopy(ckP):null;
+      if(cpP){
+        if(result)try{result.delete();}catch(e){}result=cpP;
+        const w=occCkWarn[ckKey];if(w&&w.length)msgs.push(...w.map(x=>`${f.name} : ${x}`));
+        return;
+      }
+      let src=result;
+      if(neuf){
+        if(result){msgs.push(`${f.name} : fonctions du corps neuf placées avant la scission — ignorées`);try{result.delete();}catch(e){}result=null;}
+        try{src=occCombineTool(f,occBodyOfFeat(f),bin);}catch(err){src=null;msgs.push(`${f.name} : corps source illisible (${err.message})`);}
+      }
+      if(!src){if(!neuf)msgs.push(`${f.name} : aucun volume à scinder — ignoré`);return;}
+      const r=occApplySplit(src,f,neuf?'pos':'neg');
+      result=r.shape;
+      const w=neuf?(r.fatal?r.warnings:[]):r.warnings; // le corps d'origine porte déjà les avertissements
+      msgs.push(...w.map(x=>`${f.name} : ${x}`));
+      if(w.length)occCkWarn[ckKey]=w.slice();else delete occCkWarn[ckKey];
+      if(result)occCkPut(ckKey,()=>occShapeCopy(result));
       return;
     }
     if(f.type==='xdraft'){
@@ -2800,6 +2979,8 @@ function occFinalShape(upto){
     const b=(f.body&&doc.bodies.some(e=>e.id===f.body))?f.body:doc.bodies[0].id;
     if(!byBody[b]){byBody[b]=[];order.push(b);}
     byBody[b].push(f);
+    const nb=occSplitNewBody(f); // scission de corps : l'autre côté naît dans le corps neuf
+    if(nb){if(!byBody[nb]){byBody[nb]=[];order.push(nb);}byBody[nb].push(f);}
   });
   const perBody=[],bin=[],itemShapes=[],ghostShapes=[],msgs=[],items=[],imports=[];
   // corps OUTILS consommés par une combinaison (sans « garder ») : plus affichés
@@ -2815,7 +2996,8 @@ function occFinalShape(upto){
       // parasite. occUnify est celui des fusions additives. PAS d'unify sans congé : les
       // coutures d'esquisse (scission d'une face à un point du profil) restent cliquables —
       // notamment comme ancre d'un congé (cf. test_conge_fond_poche).
-      if((byBody[bid]||[]).some(f=>f.type==='xfillet')){
+      // Une face SCINDÉE (xsplit 'face') serait recousue : pas d'unify dans ce corps.
+      if((byBody[bid]||[]).some(f=>f.type==='xfillet')&&!(byBody[bid]||[]).some(f=>f.type==='xsplit'&&f.mode!=='body')){
         try{const u=occUnify(occShapeCopy(sh));if(u&&u!==sh){try{sh.delete();}catch(e){}sh=u;}}catch(e){}
       }
       perBody.push({bodyId:bid,shape:sh});

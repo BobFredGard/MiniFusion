@@ -153,6 +153,7 @@ function tlbSvgKey(s){
     case 'xmove':case 'xdelface':return ['face','mod'];
     case 'xdraft':return ['draft','mod'];
     case 'xshell':return ['shell','cut'];
+    case 'xsplit':return ['split','mod'];
     case 'bmove':return ['move','mod'];
     case 'import':return ['import','mod'];
   }
@@ -201,6 +202,7 @@ function tlbDbl(s){
   if(f.type==='xfillet')enterExactFilletMode(f);
   else if(f.type==='xdraft')enterDraftMode(f);
   else if(f.type==='xshell')enterCoqueMode(f);
+  else if(f.type==='xsplit')enterSplitMode(f);
   else{renderTree();renderProps();}
 }
 function tlbHost(){

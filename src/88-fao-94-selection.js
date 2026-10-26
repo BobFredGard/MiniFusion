@@ -1151,7 +1151,7 @@ function faoPlaneStart(setupId){
     if(typeof skEdit!=='undefined'&&skEdit){faceEl.textContent='Plan : fermez l\'esquisse d\'abord.';return;}
     if((typeof filMode!=='undefined'&&filMode)||(typeof filModeX!=='undefined'&&filModeX)||
        (typeof mvMode!=='undefined'&&mvMode)||(typeof draftMode!=='undefined'&&draftMode)||
-       (typeof coqueMode!=='undefined'&&coqueMode)||(typeof extPickFace!=='undefined'&&extPickFace)||
+       (typeof coqueMode!=='undefined'&&coqueMode)||(typeof splitMode!=='undefined'&&splitMode)||(typeof extPickFace!=='undefined'&&extPickFace)||
        (typeof faoChainMode!=='undefined'&&faoChainMode)){
       faceEl.textContent='Plan : quittez le mode en cours d\'abord.';return;
     }
@@ -1211,7 +1211,7 @@ function faoZPlaneStart(t){
     if(typeof skEdit!=='undefined'&&skEdit){faceEl.textContent='Plan : fermez l\'esquisse d\'abord.';return;}
     if((typeof filMode!=='undefined'&&filMode)||(typeof filModeX!=='undefined'&&filModeX)||
        (typeof mvMode!=='undefined'&&mvMode)||(typeof draftMode!=='undefined'&&draftMode)||
-       (typeof coqueMode!=='undefined'&&coqueMode)||(typeof extPickFace!=='undefined'&&extPickFace)||
+       (typeof coqueMode!=='undefined'&&coqueMode)||(typeof splitMode!=='undefined'&&splitMode)||(typeof extPickFace!=='undefined'&&extPickFace)||
        (typeof faoPlanePick!=='undefined'&&faoPlanePick)||(typeof faoChainMode!=='undefined'&&faoChainMode)){
       faceEl.textContent='Plan : quittez le mode en cours d\'abord.';return;
     }
@@ -1341,7 +1341,7 @@ function faoChainStart(setupId,opId,kind){
     if(typeof skEdit!=='undefined'&&skEdit){faceEl.textContent=PRE+' : fermez l\'esquisse d\'abord.';return;}
     if((typeof filMode!=='undefined'&&filMode)||(typeof filModeX!=='undefined'&&filModeX)||
        (typeof mvMode!=='undefined'&&mvMode)||(typeof draftMode!=='undefined'&&draftMode)||
-       (typeof coqueMode!=='undefined'&&coqueMode)||(typeof extPickFace!=='undefined'&&extPickFace)||
+       (typeof coqueMode!=='undefined'&&coqueMode)||(typeof splitMode!=='undefined'&&splitMode)||(typeof extPickFace!=='undefined'&&extPickFace)||
        (typeof faoPlanePick!=='undefined'&&faoPlanePick)){
       faceEl.textContent=PRE+' : quittez le mode en cours d\'abord.';return;
     }

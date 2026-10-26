@@ -70,6 +70,7 @@ function docApplySnap(snap){
   try{if(typeof draftMode!=='undefined'&&draftMode)exitDraftMode(true);}catch(e){}
   // Une coque en cours d'édition joue aussi sur occSkipFeat : même remise à null.
   try{if(typeof coqueMode!=='undefined'&&coqueMode)exitCoqueMode(true);}catch(e){}
+  try{if(typeof splitMode!=='undefined'&&splitMode)exitSplitMode(true);}catch(e){}
   try{if(typeof repMode!=='undefined'&&repMode)exitRepMode();}catch(e){}
   try{if(typeof extNew!=='undefined'&&extNew)extNew=null;}catch(e){}
   try{if(typeof revNew!=='undefined'&&revNew)revNew=null;}catch(e){}

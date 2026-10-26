@@ -65,7 +65,7 @@ let ko=0;
     skIsectClickAt(skM,60,30,{});
     let L=iso(skM);
     A(L.length===1&&L[0].t==='circle'&&near(L[0].r,10),'clic sur le trou : 1 cercle R10 ('+L.length+' entité)');
-    A(L[0]&&L[0].construction===true&&L[0].proj===true&&L[0].isect.mode==='faces'&&L[0].isect.faces.length===2,'cercle en construction, référence (proj) ; source = les 2 demi-faces du trou (couture du cylindre) : '+(L[0]&&L[0].isect.faces.length));
+    A(L[0]&&L[0].construction===true&&L[0].proj===true&&L[0].isect.mode==='faces'&&L[0].isect.faces.length===1,'cercle en construction, référence (proj) ; source = LA face du trou (cylindre d une seule pièce depuis V0.11.5) : '+(L[0]&&L[0].isect.faces.length));
     A(L[0]&&/^Intersection \\d+$/.test(L[0].projName||''),'nom persistant « '+(L[0]&&L[0].projName)+' »');
     A(skUndoStack.length===u0+1,'une seule étape d annulation');
     skUndoTrans();

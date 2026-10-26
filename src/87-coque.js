@@ -65,9 +65,10 @@ function coquePaint(){
       groups.forEach(gr=>{
         if(gr.f!==o)return;
         for(let t=gr.start;t<gr.start+gr.count;t++){
-          const i3=t*3;
-          pos.push(a[i3],a[i3+1],a[i3+2]);
-          col.push(c.r,c.g,c.b);
+          // occGroups compte des TRIANGLES (géométrie non indexée) : 3 sommets = 9 flottants
+          const i9=t*9;
+          for(let k=0;k<9;k++)pos.push(a[i9+k]);
+          col.push(c.r,c.g,c.b,c.r,c.g,c.b,c.r,c.g,c.b);
         }
       });
     });
