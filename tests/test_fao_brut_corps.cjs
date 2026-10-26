@@ -9,17 +9,21 @@
 //   • aucune avance à travers la pièce (outil vertical, Z-map du dessus) ;
 //   • aucun rapide horizontal dans la matière RESTANTE du vrai brut ;
 //   • simulation : matière de départ = dessus du corps-brut, pas la boîte.
+// Parties (tests/run.cjs les lance en parallèle) : `a` = boîte + corps (tout
+// sauf l'ordre par région), `b` = corps + ordre par région ; sans argument : tout.
 const fs=require('fs'),vm=require('vm'),path=require('path');
 const ROOT=path.join(__dirname,'..');
 globalThis.__dirname=path.join(ROOT,'occt');
 vm.runInThisContext(fs.readFileSync(path.join(ROOT,'occt','opencascade.full.js'),'utf8'),{filename:'occt.js'});
 const {loadApp}=require('./appvm.cjs');
 let ko=0;
+const PART=process.argv[2]||'', DO_A=PART!=='b', DO_B=PART!=='a';
 const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m);};
 (async()=>{
   const real=await globalThis.opencascadeFactory({wasmBinary:fs.readFileSync(path.join(ROOT,'occt','opencascade.wasm.wasm'))});
   const {ctx,sandbox}=loadApp();
   sandbox.__realOcct=real;
+  sandbox.__doA=DO_A;sandbox.__doB=DO_B;
   const T0=sandbox.THREE;
   class BG{constructor(){this.attributes={};this.userData={};this.index=null;}
     setAttribute(n,a){this.attributes[n]=a;return this;} getAttribute(n){return this.attributes[n];}
@@ -50,8 +54,11 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
       setup.ops=[Object.assign({},base,{id:solid?(reg?'br':'bc'):'bx'},reg?{parRegion:true}:{})];faoSanitiseOps(setup);
       return faoOpMoves(setup.ops[0],setup);
     };
-    const mvBox=run(false), mvReg=run(true,true), mvBody=run(true);
+    const mvBox=__doA?run(false):[], mvReg=__doB?run(true,true):[], mvBody=run(true);
     const T=faoStockTop(setup,1),dil=T.dil(10);
+    const eP=importStepBuild(new Uint8Array(__part));
+    const mP=_faoMeshFromBodyOrig({mesh:{geometry:eP.faoGeo}},600000),mS=_faoMeshFromBodyOrig({mesh:{geometry:eS.faoGeo}},600000);
+    if(!__doA)return {mP:mP,mS:mS,mv:mvBody.map(m=>[m.r?1:0,m.x,m.y,m.z]),mvR:mvReg.map(m=>[m.r?1:0,m.x,m.y,m.z])};
     const air=function(mv){let a=0,c=0;for(let i=1;i<mv.length;i++){const p=mv[i-1],q=mv[i];if(q.r)continue;const L=Math.hypot(q.x-p.x,q.y-p.y,q.z-p.z);
       if(dil((p.x+q.x)/2,(p.y+q.y)/2)>(p.z+q.z)/2+0.05)c+=L;else a+=L;}return [a,c];};
     // simulation : colonnes de la matière de départ
@@ -60,16 +67,16 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     let fullDisp=-1;try{const vw={matterOn:true,t:0,pts:[],dd:[],times:[]};faoViewerMatterEnable(vw);if(vw.mTops){fullDisp=0;for(let i=0;i<vw.mTops.length;i++)if(vw.mTops[i]>=box.z1-1e-6)fullDisp++;}}catch(e){fullDisp='err '+e.message;}
     // « le brut en Lisse est toujours un rectangle » (2026-10-22-002) : nœuds du heightfield
     let fullHF=-1;try{const vw={matterOn:true,smooth:true,t:0,pts:[],dd:[],times:[]};faoViewerMatterEnable(vw);if(vw.mH){fullHF=0;const H=vw.mH;for(let k=0;k<H.NV;k++)if(H.pos[k*3+2]>=box.z1-1e-6)fullHF++;fullHF=fullHF/H.NV;}}catch(e){fullHF='err '+e.message;}
-    const eP=importStepBuild(new Uint8Array(__part));
-    const mP=_faoMeshFromBodyOrig({mesh:{geometry:eP.faoGeo}},600000),mS=_faoMeshFromBodyOrig({mesh:{geometry:eS.faoGeo}},600000);
     return {airBox:air(mvBox),airBody:air(mvBody),nBox:mvBox.length,nBody:mvBody.length,zt:box.z1,
       sim:{cols:gm.nx*gm.ny,full:full,fullDisp:fullDisp,fullHF:fullHF},mP:mP,mS:mS,mv:mvBody.map(m=>[m.r?1:0,m.x,m.y,m.z]),mvR:mvReg.map(m=>[m.r?1:0,m.x,m.y,m.z])};
   })()`,ctx);
+  const mv=r.mv;
+  if(DO_A){
   const pc=a=>(100*a[0]/(a[0]+a[1])).toFixed(0);
   console.log('  · avance dans le vide : boîte '+(r.airBox[0]/1000).toFixed(1)+' m ('+pc(r.airBox)+' %) → corps '+(r.airBody[0]/1000).toFixed(1)+' m ('+pc(r.airBody)+' %) ; mouvements '+r.nBox+' → '+r.nBody);
   A(r.airBody[0]<0.3*r.airBox[0],'l’ébauche n’usine plus le cube : avance dans le vide divisée par plus de 3');
   // minipasses : 2 cotes par bande (ap = 3 → +1, +2)
-  const mv=r.mv,L={};for(let i=1;i<mv.length;i++){const a=mv[i-1],b=mv[i];if(a[0]||b[0]||Math.abs(a[3]-b[3])>1e-6)continue;const k=b[3].toFixed(3);L[k]=(L[k]||0)+Math.hypot(b[1]-a[1],b[2]-a[2]);}
+  const L={};for(let i=1;i<mv.length;i++){const a=mv[i-1],b=mv[i];if(a[0]||b[0]||Math.abs(a[3]-b[3])>1e-6)continue;const k=b[3].toFixed(3);L[k]=(L[k]||0)+Math.hypot(b[1]-a[1],b[2]-a[2]);}
   const bands=[];for(let k=1;;k++){const z=Math.round((r.zt-3*k)*1000)/1000;if(z<30-1e-6)break;
     bands.push([z,[1,2].map(d=>L[(Math.round((z+d)*1000)/1000).toFixed(3)]||0)]);}
   // au-dessus de la pièce (z > 67,8) : pas de paroi, rien à faire ; près des
@@ -80,6 +87,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   console.log('  · minipasses (longueur mm par cote, 2 cotes par bande) : '+bands.map(b=>b[0].toFixed(1)+':'+b[1].map(v=>v.toFixed(0)).join('/')).join(' ')+' — cotes manquantes sous la pièce : '+(manq.join(',')||'aucune'));
   A(manq.length===0,'minipasses présentes à chaque cote (2026-10-22-005 : sortie par remontée contre le flanc rouge)');
   A(sous.filter(b=>b[0]<57).every(b=>b[1].every(v=>v>5)),'minipasses complètes à toutes les bandes sous Z 57');
+  }
   // Z-maps du dessus pièce / brut
   const G=0.5;const zmap=m=>{let x0=1/0,y0=1/0,x1=-1/0,y1=-1/0;for(const p of m.v){x0=Math.min(x0,p[0]);y0=Math.min(y0,p[1]);x1=Math.max(x1,p[0]);y1=Math.max(y1,p[1]);}
     x0-=1;y0-=1;x1+=1;y1+=1;const nx=Math.ceil((x1-x0)/G)+1,ny=Math.ceil((y1-y0)/G)+1,h=new Float32Array(nx*ny).fill(-1/0);
@@ -93,6 +101,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   const visit=(Z,x,y,z,fn)=>{const ci=Math.round((x-Z.x0)/G),cj=Math.round((y-Z.y0)/G);
     for(let dj=-n;dj<=n;dj++)for(let di=-n;di<=n;di++){const i=ci+di,j=cj+dj;if(i<0||j<0||i>=Z.nx||j>=Z.ny)continue;
       const rho=Math.hypot(Z.x0+i*G-x,Z.y0+j*G-y);if(rho>Rt)continue;fn(j*Z.nx+i,rho>rc?z+cr-Math.sqrt(Math.max(0,cr*cr-(rho-rc)**2)):z);}};
+  if(DO_A){
   let pen=0,rapH=0,rapHAt=null;
   for(let i=1;i<mv.length;i++){const a=mv[i-1],b=mv[i];const L2=Math.hypot(b[1]-a[1],b[2]-a[2],b[3]-a[3]),ns=Math.max(1,Math.ceil(L2/0.5));
     const horiz=b[0]&&Math.abs(b[3]-a[3])<1e-6&&Math.hypot(b[1]-a[1],b[2]-a[2])>0.5;
@@ -116,8 +125,9 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     console.log('  · au-dessus de la pièce (Z ≥ 30) : '+(100*big/n2).toFixed(1)+' % des points avec plus de 4 mm de brut');
     A(big<0.02*n2,'face vrillée ébauchée partout (moins de 2 % des points à plus de 4 mm de brut)');}
   A(rapH===0,'aucun rapide horizontal dans la matière restante du brut'+(rapHAt?' (pire '+rapH.toFixed(2)+' mm en '+rapHAt.map(v=>+v.toFixed(1)).join(',')+')':''));
+  }
   // 2026-10-22-001 : « finir un côté puis l'autre » (parRegion)
-  {const side=function(m){const seg=[];let cur=null;
+  if(DO_B){const side=function(m){const seg=[];let cur=null;
       for(let i=1;i<m.length;i++){const a=m[i-1],b=m[i];if(b[0]){if(b[3]>a[3]+1e-6&&cur){seg.push(cur);cur=null;}continue;}
         if(!cur)cur={y:0,n:0};cur.y+=b[2];cur.n++;}
       if(cur)seg.push(cur);const ys=seg.map(q=>q.y/q.n);const ym=(Math.min(...ys)+Math.max(...ys))/2;
@@ -135,6 +145,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     A(s1<=0.3*s0,'« Finir une région avant l’autre » : plus de 3 fois moins de changements de côté');
     A(Math.abs(lenA-lenB)<1e-3*lenA,'même usinage (avance identique, seul l’ordre change)');
     A(pen2<0.01&&rap2===0,'ordre par région : ni avance dans la pièce ni rapide dans la matière restante');}
+  if(DO_A){
   // 2026-10-22-005 : la fraise SORT du brut (grille dilatée bornée au corps :
   // la zone s'arrêtait à 1 mm dehors) — points de coupe à plus de 5 mm du corps
   {let out5=0,nC=0,far=0;const k5=Math.ceil(5/G);
@@ -149,6 +160,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   A(typeof r.sim.fullDisp==='number'&&r.sim.fullDisp>=0&&r.sim.fullDisp<0.05*r.sim.cols,'simulation : la matière DESSINÉE suit le corps-brut (dessinait un cube)');
   console.log('  · rendu lisse : '+(typeof r.sim.fullHF==='number'?(100*r.sim.fullHF).toFixed(1)+' %':r.sim.fullHF)+' des nœuds à la hauteur pleine');
   A(typeof r.sim.fullHF==='number'&&r.sim.fullHF>=0&&r.sim.fullHF<0.05,'simulation lisse : la matière suit le corps-brut (était un rectangle)');
+  }
   console.log(ko?'ÉCHEC '+ko:'OK');
   process.exit(ko?1:0);
 })();

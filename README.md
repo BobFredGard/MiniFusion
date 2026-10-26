@@ -2,7 +2,7 @@
 
 **CAO paramétrique, assemblage, FAO et mise en plan dans un seul fichier HTML.** Esquisses contraintes, solides à historique, congés exacts, posages, parcours 2,5D / 3D, 3+2, G-code et planches cotées ISO. On ouvre la page et on travaille : il n'y a ni installation ni compte.
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.9.3** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. Si le noyau n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.9.4** (voir le [journal des modifications](CHANGELOG.md)).
 
 ## Sommaire
 
@@ -270,7 +270,7 @@ Le dépôt stocke les gros binaires (`occt/*.wasm`, `Exemples/*.miniFusion`, `Ex
 |---|---|
 | `src/*.js` | **Les sources** (77 fichiers, de l'en-tête à l'initialisation ; la FAO est découpée par domaine : parcours, caches, post-processeurs, simulation, interface, ébauche 3D, contour, géodésique, crêtes, perçage). C'est ici qu'on travaille. |
 | `fusion_mvp.html` | **Livrable généré** par `node build.js` (le HTML et le CSS de base vivent dans ce fichier, hors de la balise `<script>`). On n'édite jamais le script à la main. |
-| `tests/` | Suite Node portable (plus de 100 suites, dont certaines sur le noyau OCCT réel) : `node tests/run.cjs`, en parallèle (`-j N` pour la taille du pool, `--verbose` pour toutes les sorties) ; sous-ensemble rapide : `node tests/run-fast.cjs`. |
+| `tests/` | Suite Node portable (plus de 100 suites, dont certaines sur le noyau OCCT réel) : `node tests/run.cjs`, en parallèle (`-j N` pour la taille du pool, `--verbose` pour toutes les sorties ; les suites longues sont coupées en parties « suite:partie » ; sous Windows avec un processeur hybride, les ouvriers sont épinglés sur les cœurs P ou E après un étalonnage mis en cache, `TEST_AFFINITE=0` pour s'en passer) ; sous-ensemble rapide : `node tests/run-fast.cjs`. Non-régression des parcours FAO : `npm run parcours` recalcule chaque opération des exemples et compare son résumé (longueurs, niveaux, remontées, temps) à `tests/parcours/reference.json` ; `npm run parcours -- --ecrire` accepte les nouveaux chiffres (tableau dans `docs/parcours.md`). |
 | `tests/oracle/` | **Tests de référence** : pièces aux valeurs calculées à la main (volume, surface, centre de gravité, encombrement), vérifiées à chaque version par `test_oracle` ; tableau dans [docs/oracle.md](docs/oracle.md), régénéré par `npm run oracle`. |
 | `tools/lint.cjs` | Lint ESLint du script concaténé (même ordre que le build) : `npm run lint` (erreurs) ou `npm run lint:all`. |
 | `tools/mcp-minifusion.cjs` | Serveur MCP (stdio) relié à la page par WebSocket local : pilotage de MiniFusion par scripts JSON. |

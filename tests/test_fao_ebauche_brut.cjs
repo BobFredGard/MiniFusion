@@ -13,12 +13,15 @@
 // descente reliait deux échantillons légaux séparés par un trou EN LIGNE
 // DROITE à travers la pièce (8 m d'avance dans la matière) : aucune avance ne
 // doit passer sous le dessus de la pièce (corps d'outil vertical).
+// Parties (tests/run.cjs les lance en parallèle) : `a` = niveaux du défaut
+// (rapides, bande des flancs), `b` = niveaux bas ; sans argument : tout.
 const fs=require('fs'),vm=require('vm'),path=require('path');
 const ROOT=path.join(__dirname,'..');
 globalThis.__dirname=path.join(ROOT,'occt');
 vm.runInThisContext(fs.readFileSync(path.join(ROOT,'occt','opencascade.full.js'),'utf8'),{filename:'occt.js'});
 const {loadApp}=require('./appvm.cjs');
 let ko=0;
+const PART=process.argv[2]||'', DO_A=PART!=='b', DO_B=PART!=='a';
 const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m);};
 (async()=>{
   const real=await globalThis.opencascadeFactory({wasmBinary:fs.readFileSync(path.join(ROOT,'occt','opencascade.wasm.wasm'))});
@@ -37,6 +40,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   sandbox.__setup=fs.readFileSync(path.join(__dirname,'fixtures','retard_ebauche_posage.json'),'utf8');
   const ZBOT=10; // niveaux du défaut : 12,8 … 48,8 (temps de test borné)
   sandbox.__zbot=ZBOT;
+  sandbox.__doA=DO_A;sandbox.__doB=DO_B;
   const body=`
     const eS=importStepBuild(new Uint8Array(__stock));
     const mS=_faoMeshFromBodyOrig({mesh:{geometry:eS.faoGeo}},600000);
@@ -52,10 +56,10 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     faoSanitiseOps(setup);
     const op=setup.ops[0];
     const tool=faoToolById(setup,op.toolId);
-    const mv=faoOpMoves(op,setup);
+    const mv=__doA?faoOpMoves(op,setup):[];
     // niveaux bas : ponts de rampage
     const opL=Object.assign({},src.ops[0],{id:'bas',ztop:-40,zbot:-50});setup.ops=[opL];faoSanitiseOps(setup);
-    const mvL=faoOpMoves(setup.ops[0],setup);
+    const mvL=__doB?faoOpMoves(setup.ops[0],setup):[];
     const eP=importStepBuild(new Uint8Array(__part));
     const mP=_faoMeshFromBodyOrig({mesh:{geometry:eP.faoGeo}},600000);
     return {mP:mP,mvL:mvL.map(m=>[m.r?1:0,m.x,m.y,m.z]),mS:mS,stock:setup.stock,tool:{d:+tool.d,cr:+tool.cornerR||0},mv:mv.map(m=>[m.r?1:0,m.x,m.y,m.z])};
@@ -64,7 +68,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   try{ r=await vm.runInContext('(async()=>{'+body+'})()',ctx); }
   catch(e){ console.log('  ✗ exception',e&&e.stack||e); process.exit(1); }
   const mv=r.mv;
-  A(mv.length>1000,'ébauche 3D générée ('+mv.length+' mouvements)');
+  if(DO_A)A(mv.length>1000,'ébauche 3D générée ('+mv.length+' mouvements)');
   // Z-map du dessus du VRAI brut (raster des triangles)
   const G=0.5,m=r.mS;
   let x0=1/0,y0=1/0,x1=-1/0,y1=-1/0;for(const p of m.v){x0=Math.min(x0,p[0]);y0=Math.min(y0,p[1]);x1=Math.max(x1,p[0]);y1=Math.max(y1,p[1]);}
@@ -82,6 +86,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     for(let dj=-n;dj<=n;dj++)for(let di=-n;di<=n;di++){const i=ci+di,j=cj+dj;if(i<0||j<0||i>=nx||j>=ny)continue;
       const rho=Math.hypot(x0+i*G-x,y0+j*G-y);if(rho>Rt)continue;
       fn(j*nx+i,rho>rc?z+cr-Math.sqrt(Math.max(0,cr*cr-(rho-rc)**2)):z);}};
+  if(DO_A){
   let nR=0,inMat=0,worst=0,worstAt=null;
   for(let i=1;i<mv.length;i++){const a=mv[i-1],b=mv[i];
     const L=Math.hypot(b[1]-a[1],b[2]-a[2],b[3]-a[3]),ns=Math.max(1,Math.ceil(L/0.5));
@@ -94,7 +99,8 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   A(inMat<1,'aucun rapide dans la matière restante du vrai brut (avant correctif : 5,8 m)');
   let xMax=-1/0;for(const q of mv)if(!q[0]&&q[3]>ZBOT+1&&q[3]<45)xMax=Math.max(xMax,q[1]);
   A(xMax>=r.stock.x1+Rt-1,'bande du flanc x=48,2→'+r.stock.x1.toFixed(2)+' usinée (centre jusqu’à '+xMax.toFixed(2)+' ≥ brut + R − 1)');
-  {// avances des niveaux bas sous le dessus de la PIÈCE (Z-map du dessus)
+  }
+  if(DO_B){// avances des niveaux bas sous le dessus de la PIÈCE (Z-map du dessus)
     const mp=r.mP;let a0=1/0,b0=1/0,a1=-1/0,b1=-1/0;for(const p of mp.v){a0=Math.min(a0,p[0]);b0=Math.min(b0,p[1]);a1=Math.max(a1,p[0]);b1=Math.max(b1,p[1]);}
     a0-=1;b0-=1;a1+=1;b1+=1;const mx=Math.ceil((a1-a0)/G)+1,my=Math.ceil((b1-b0)/G)+1,HP=new Float32Array(mx*my).fill(-1/0);
     for(const t of mp.t){const P=mp.v[t[0]],Q=mp.v[t[1]],S=mp.v[t[2]];

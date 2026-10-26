@@ -12,7 +12,22 @@
 // Les durées de la dernière exécution (tests/.durees.json, non versionné) servent à
 // lancer les suites les plus longues en premier : la fin du pool n'attend plus un
 // retardataire démarré trop tard.
-const { spawn } = require('child_process'), path = require('path'), fs = require('fs'), os = require('os');
+//
+// PARTIES : une entrée « suite:partie » lance `node tests/suite.cjs partie` ; la suite
+// ne fait alors qu'une partie de ses contrôles (sans argument, elle fait tout). Les
+// suites longues sont ainsi coupées en morceaux qui tournent en même temps.
+//
+// CŒURS P / E (Windows, processeur hybride, voir tests/coeurs.cjs) : un étalonnage
+// épinglé trouve les cœurs rapides (résultat dans tests/.coeurs.json). Chaque
+// ouvrier est épinglé sur les cœurs P ou sur les cœurs E (`start /affinity`) ; un ouvrier
+// libre prend la plus longue suite qu'aucun autre ouvrier ne finirait plus tôt (durées
+// gardées en équivalent cœur P). L'écart de vitesse P / E se mesure sur les suites
+// elles-mêmes (~1,8 ; la boucle d'étalonnage, en racines carrées, exagère : ~4) : chaque
+// exécution compare la durée d'une suite sur cœur E à sa dernière durée sur cœur P, et la
+// médiane est gardée dans tests/.coeurs.json (2 au départ). Processeur homogène, hors
+// Windows ou TEST_AFFINITE=0 : pool homogène, comme avant. TEST_PCORES=0-7 force la liste
+// des cœurs P, TEST_RAPPORT=1.8 l'écart de vitesse.
+const path = require('path'), fs = require('fs'), os = require('os');
 const SUITES = [
   "test_highlight_order",
   "test_draft_sel",
@@ -55,9 +70,11 @@ const SUITES = [
   "test_fao_sketch_zone",
   "test_fao_cretes",
   "test_fao_geodesique",
-  "test_fao_ebauche_brut",
+  "test_fao_ebauche_brut:a",
+  "test_fao_ebauche_brut:b",
   "test_fao_faces",
-  "test_fao_brut_corps",
+  "test_fao_brut_corps:a",
+  "test_fao_brut_corps:b",
   "test_fao_poche",
   "test_fao_contour",
   "test_fao_torique",
@@ -114,6 +131,7 @@ const SUITES = [
   "test_fao_passes",
   "test_fao_barre3d",
   "test_fao_zlim",
+  "test_fao_pose_fond",
   "test_validate",
   "test_tree_filter",
   "test_view_reframe",
@@ -175,59 +193,97 @@ const DUREES = path.join(__dirname, '.durees.json');
 const argv = process.argv.slice(2);
 const VERBOSE = argv.includes('--verbose');
 const iJ = argv.findIndex(a => a === '-j' || a === '--jobs');
+const { NCPU, masque, lancerProc, tuer, coeursPE, ecrire } = require('./coeurs.cjs');
 // Taille du pool : un cœur laissé libre, et ~600 Mo de mémoire DISPONIBLE par processus
 // (pic mesuré : ~550 Mo pour une suite qui charge le noyau OCCT). Au-delà, la machine
 // swappe et tout ralentit ; -j N force la valeur.
-const auto = Math.max(1, Math.min(os.cpus().length - 1, Math.floor(os.freemem() / (600 * 1024 ** 2))));
+const auto = Math.max(1, Math.min(NCPU - 1, Math.floor(os.freemem() / (600 * 1024 ** 2))));
 const JOBS = Math.max(1, parseInt(iJ >= 0 ? argv[iJ + 1] : process.env.TEST_JOBS, 10) || auto);
 
-let anciennes = {};
-try { anciennes = JSON.parse(fs.readFileSync(DUREES, 'utf8')); } catch (e) { /* première exécution : ordre de la liste */ }
-// Plus longues d'abord ; une suite inconnue passe en tête (elle peut être longue).
-const file = SUITES.slice().sort((a, b) => (anciennes[b] ?? Infinity) - (anciennes[a] ?? Infinity));
-
 const sec = ms => (ms / 1000).toFixed(1).replace('.', ',') + ' s';
-const res = {};
-const t0 = Date.now();
-let fini = 0;
 
-function lancer(s) {
-  return new Promise(resolve => {
-    const debut = Date.now(), sortie = [];
-    const p = spawn(process.execPath, [path.join(__dirname, s + '.cjs')], { stdio: ['ignore', 'pipe', 'pipe'] });
-    p.stdout.on('data', d => sortie.push(d));
-    p.stderr.on('data', d => sortie.push(d));
-    const minuterie = setTimeout(() => { sortie.push(Buffer.from('\n✗ délai dépassé (' + sec(TIMEOUT) + ')\n')); p.kill(); }, TIMEOUT);
-    p.on('close', code => {
-      clearTimeout(minuterie);
-      const ms = Date.now() - debut, vert = code === 0;
-      res[s] = { vert, ms };
-      fini++;
-      if (!vert || VERBOSE) {
-        console.log('\n──── ' + s + ' ────');
-        process.stdout.write(Buffer.concat(sortie));
-      }
-      console.log((vert ? '✓ ' : '✗ ') + s + ' — ' + sec(ms) + '  [' + fini + '/' + SUITES.length + ']');
-      resolve();
-    });
+(async () => {
+  const { pcores, ecores, C } = await coeursPE(JOBS);
+  let rapport = (C && C.rapportSuites) || 2;
+  if (pcores && process.env.TEST_RAPPORT) rapport = +process.env.TEST_RAPPORT || rapport;
+  // ouvriers : autant d'ouvriers P que de cœurs P, le reste sur les cœurs E
+  const ouvriers = Array.from({ length: Math.min(JOBS, SUITES.length) }, (_, i) => {
+    if (!pcores) return { aff: null, vit: 1, libre: 0, P: false };
+    const P = i < pcores.length;
+    return { aff: masque(P ? pcores : ecores), vit: P ? 1 : rapport, libre: 0, P };
   });
-}
 
-async function ouvrier() { for (let s; (s = file.shift());) await lancer(s); }
+  let anciennes = {};
+  try { anciennes = JSON.parse(fs.readFileSync(DUREES, 'utf8')); } catch (e) { /* première exécution : ordre de la liste */ }
+  // Durée estimée (équivalent cœur P) ; une suite inconnue passe en tête (elle peut être longue).
+  const est = e => anciennes[e] ?? anciennes[e.split(':')[0]] ?? Infinity;
+  const file = SUITES.slice().sort((a, b) => est(b) - est(a));
 
-console.log('SUITE : ' + SUITES.length + ' suites, ' + JOBS + ' en parallèle');
-Promise.all(Array.from({ length: Math.min(JOBS, SUITES.length) }, ouvrier)).then(() => {
+  const res = {};
+  const t0 = Date.now();
+  let fini = 0;
+  // Choix « au plus tôt fini » : la plus longue suite qu'aucun autre ouvrier (libre plus
+  // tard, mais plus rapide) ne finirait avant celui-ci ; à défaut, la plus courte.
+  function choisir(w) {
+    const now = Date.now();
+    for (let i = 0; i < file.length; i++) {
+      const d = est(file[i]);
+      if (!isFinite(d)) return file.splice(i, 1)[0];
+      const f = now + d * w.vit;
+      if (ouvriers.every(o => o === w || Math.max(o.libre, now) + d * o.vit >= f - 1)) return file.splice(i, 1)[0];
+    }
+    return file.pop();
+  }
+  function lancer(e, w) {
+    return new Promise(resolve => {
+      const [s, partie] = e.split(':');
+      const debut = Date.now(), sortie = [];
+      w.libre = debut + (isFinite(est(e)) ? est(e) * w.vit : 0);
+      const p = lancerProc(path.join(__dirname, s + '.cjs'), partie ? [partie] : [], w.aff);
+      p.stdout.on('data', d => sortie.push(d));
+      p.stderr.on('data', d => sortie.push(d));
+      const minuterie = setTimeout(() => { sortie.push(Buffer.from('\n✗ délai dépassé (' + sec(TIMEOUT) + ')\n')); tuer(p, w.aff); }, TIMEOUT);
+      p.on('close', code => {
+        clearTimeout(minuterie);
+        const ms = Date.now() - debut, vert = code === 0;
+        res[e] = { vert, ms, eq: ms / w.vit, P: w.P };
+        w.libre = Date.now();
+        fini++;
+        if (!vert || VERBOSE) {
+          console.log('\n──── ' + e + ' ────');
+          process.stdout.write(Buffer.concat(sortie));
+        }
+        console.log((vert ? '✓ ' : '✗ ') + e + ' — ' + sec(ms) + (pcores ? (w.P ? ' (P)' : ' (E)') : '') + '  [' + fini + '/' + SUITES.length + ']');
+        resolve();
+      });
+    });
+  }
+  async function ouvrier(w) { for (let e; file.length && (e = choisir(w));) await lancer(e, w); }
+
+  console.log('SUITE : ' + SUITES.length + ' suites, ' + ouvriers.length + ' en parallèle' +
+    (pcores ? ' (cœurs P ' + pcores.join(',') + ' : ' + ouvriers.filter(o => o.P).length + ' ouvriers ; cœurs E : ' +
+      ouvriers.filter(o => !o.P).length + ' ouvriers, ' + String(rapport).replace('.', ',') + ' fois plus lents)' : ''));
+  await Promise.all(ouvriers.map(ouvrier));
   const total = Date.now() - t0;
   const ko = SUITES.filter(s => !res[s].vert);
   const cumul = SUITES.reduce((n, s) => n + res[s].ms, 0);
   const durees = {};
-  SUITES.forEach(s => { durees[s] = res[s].ms; });
+  SUITES.forEach(s => { durees[s] = Math.round(res[s].eq); });
   try { fs.writeFileSync(DUREES, JSON.stringify(durees, null, 1)); } catch (e) { console.log('(durées non enregistrées : ' + e.message + ')'); }
+  if (pcores && C) { // écart P / E appris : dernière durée de chaque suite sur P et sur E
+    const mP = C.mesP || {}, mE = C.mesE || {};
+    SUITES.forEach(s => { if (res[s].vert) (res[s].P ? mP : mE)[s] = res[s].ms; });
+    const r = SUITES.filter(s => mP[s] > 3000 && mE[s] > 3000).map(s => mE[s] / mP[s]).sort((a, b) => a - b);
+    Object.assign(C, { mesP: mP, mesE: mE });
+    if (r.length >= 3) C.rapportSuites = +r[r.length >> 1].toFixed(2);
+    ecrire(C);
+    if (r.length >= 3) console.log('Écart P / E mesuré sur ' + r.length + ' suites : ' + String(C.rapportSuites).replace('.', ','));
+  }
   console.log('');
   console.log('Plus lentes :');
   SUITES.slice().sort((a, b) => res[b].ms - res[a].ms).slice(0, 10)
-    .forEach(s => console.log('  ' + sec(res[s].ms).padStart(9) + '  ' + s));
-  console.log('Durée : ' + sec(total) + ' (cumul des suites ' + sec(cumul) + ', ' + JOBS + ' en parallèle)');
+    .forEach(s => console.log('  ' + sec(res[s].ms).padStart(9) + '  ' + s + (pcores ? (res[s].P ? ' (P)' : ' (E)') : '')));
+  console.log('Durée : ' + sec(total) + ' (cumul des suites ' + sec(cumul) + ', ' + ouvriers.length + ' en parallèle)');
   console.log('SUITE: ' + (SUITES.length - ko.length) + '/' + SUITES.length + ' OK' + (ko.length ? ' — KO: ' + ko.join(', ') : ''));
   process.exit(ko.length ? 1 : 0);
-});
+})();
