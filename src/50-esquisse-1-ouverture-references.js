@@ -652,6 +652,7 @@ function skBuildRefs(){
 }
 let skOpenAt=0; // instant d'ouverture : sketchCamTick recadre si la mise en page bouge juste après
 function openSketch(id){
+  try{docCheckpoint();}catch(e){} // filet d'annulation (45) : ce qui précède l'esquisse est relevé à part
   try{const sg=doc.sketches.find(x=>x.id===id);const ng=sg?skGapToAngle(sg):0;
     if(ng)setTimeout(()=>{try{skStatus(ng+' cote(s) d’entraxe entre lignes non parallèles changée(s) en cote(s) d’angle (valeur mesurée).');}catch(e){}},0);}catch(e){}
   // 2026-10-16-006 : nouvelle mise en page des cotes R/Ø — les anciens décalages (calés sur
@@ -698,6 +699,9 @@ function openSketch(id){
   // réouvert à la sortie s'il était ouvert avant — déjà replié : on n'y touche pas.
   // Mêmes règles que l'arborescence : localStorage jamais réécrit en édition.
   try{if(skFaoFoldSave===null)skFaoFoldSave=faoFolded;if(!faoFolded)faoFoldSet(true);}catch(e){}
+  // Les mises à niveau ci-dessus (rdV, chk, audit) ne sont pas une modification : la référence du
+  // filet les inclut, sans quoi ouvrir puis fermer une esquisse laissait une étape « vide »
+  try{docBaseSync();}catch(e){}
 }
 function closeSketch(save){
   skOpenAt=0;
@@ -720,7 +724,10 @@ function closeSketch(save){
   if(skEdit)tlEditUnlock();
   if(save&&skEdit){try{parApplyAll();}catch(e){}solveSketch(skEdit);cleanupSk(skEdit);repSyncForSketch(skEdit.id);markDirty();rebuild();projRefreshRerun(0);sel={kind:'sketch',id:skEdit.id};renderTree();renderProps();}
   else if(skEdit){markDirty();try{rebuild();}catch(e){}renderTree();renderProps();}
+  const skNm=skEdit&&skEdit.name;
   skEdit=null;try{docUndoUI();}catch(e){} // V0.7.6 : les flèches du haut reviennent au document
+  // Toute la session d'esquisse = UNE étape d'annulation du document (filet, 45)
+  try{undoActLabel='esquisse « '+(skNm||'')+' »';undoActT=Date.now();docCheckpoint();}catch(e){}
   skSel=null;skSelX=[];skChain=null;skArcC=null;skArcPa=null;skDraft=null;skDown=null;skDrag=null;skDimDrag=null;skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
   // Arborescence re-dépliée à la sortie, sauf si l'état antérieur était
   // rabattu (choix manuel de l'utilisateur conservé).

@@ -114,7 +114,7 @@ function rdSources(){
   });
   return out;
 }
-function rdUndo(){try{if(typeof docPushUndo==='function')docPushUndo('apparence de rendu');}catch(e){}}
+function rdUndo(lbl){try{if(typeof docPushUndo==='function')docPushUndo(lbl||'apparence de rendu');}catch(e){}}
 function rdBuildEdges(){
   // Arêtes « comme la CAO » (vives noires, tangentes grises) : la pièce active par edgeOverlayData
   // (asmEdgeCapture, même si le bouton « Arêtes » est éteint), les autres composants par leurs
@@ -276,7 +276,7 @@ function rdFromView(){ // reprend la vue CAO (direction et cible), puis cadre
 /* ── vues enregistrées (doc.rendu.cams, avec la pièce) ── */
 function rdCams(){return (typeof doc!=='undefined'&&doc&&doc.rendu&&doc.rendu.cams)||[];}
 function rdCamAdd(){
-  rdUndo();
+  rdUndo('vue de rendu enregistrée');
   if(!doc.rendu)doc.rendu={};
   const cs=doc.rendu.cams||(doc.rendu.cams=[]);
   let n=cs.length+1;while(cs.some(k=>k.n==='Vue '+n))n++;
@@ -289,7 +289,7 @@ function rdCamGo(k){
 }
 function rdCamDel(i){
   const cs=rdCams();if(!cs[i])return;
-  rdUndo();const n=cs[i].n;cs.splice(i,1);
+  rdUndo('vue de rendu supprimée');const n=cs[i].n;cs.splice(i,1);
   if(!cs.length){delete doc.rendu.cams;if(!doc.rendu.corps)doc.rendu=null;}
   markDirty();rdPanel();rdMsg('« '+n+' » supprimée.');
 }

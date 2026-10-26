@@ -1567,7 +1567,7 @@ async function restoreViewCache(){
     return true;
   }catch(e){return false;}
 }
-function markDirty(){dirty=true;_docVersion++;refreshParts();}
+function markDirty(){dirty=true;_docVersion++;refreshParts();try{docUndoNudge();}catch(e){}} // filet d'annulation (45)
 function autosave(){
   // Différé : une rafale de reconstructions n'écrit plus le document local à chaque fois
   // (sérialisation + écriture synchrone qui bloquaient le fil principal). Le contenu
@@ -1585,6 +1585,8 @@ addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')
 async function deserialise(json,opts){
   try{if(typeof viewFadeOut==='function')viewFadeOut();}catch(e){} // 2026-10-16-015 : fondu à l'ouverture
   const o=JSON.parse(json);doc=docFromSerial(o);
+  // Autre document : l'historique d'annulation de l'ancien ne s'y applique pas
+  try{docUndoStack=[];docRedoStack=[];docBase=null;docUndoUI();}catch(e){}
   // Document REMPLACÉ : nouvelle version (sans markDirty, ce n'est pas une modification). Sans
   // elle, ouvrir un fichier juste après un rejeu (brouillon restauré, autre fichier ouvert)
   // laissait buildKeyUpToDate() vrai : le rejeu était sauté et la pièce PRÉCÉDENTE restait

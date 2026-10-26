@@ -269,8 +269,7 @@ function asmKey(e){
   if(asmMode!=='asm')return false;
   const t=e.target;if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return false;
   const ctrl=e.ctrlKey||e.metaKey,k=String(e.key||'').toLowerCase();
-  if(ctrl&&k==='z'&&!e.shiftKey){e.preventDefault();asmUndo();return true;}
-  if(ctrl&&(k==='y'||(k==='z'&&e.shiftKey))){e.preventDefault();asmRedo();return true;}
+  if(ctrl&&(k==='z'||k==='y'))return false; // routage unique en capture (undoDispatch, 45)
   if((e.key==='Delete'||e.key==='Backspace')&&asmSelId){e.preventDefault();asmAskDelete(asmSelId);return true;}
   if(e.key==='Escape'&&asmAlign){asmAlignCancel();return true;}
   if(e.key==='Escape'&&asmAnim){asmAnimStop();return true;} // animation d'une liaison (48)

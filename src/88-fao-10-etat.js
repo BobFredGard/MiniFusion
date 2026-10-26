@@ -274,4 +274,5 @@ function faoTouch(){
   try{ dirty=true; }catch(e){}
   try{ if(typeof refreshParts==='function')refreshParts(); }catch(e){}
   try{ faoRenderTree(); }catch(e){}
+  try{ if(typeof docUndoNudge==='function')docUndoNudge(); }catch(e){} // filet d'annulation (45)
 }

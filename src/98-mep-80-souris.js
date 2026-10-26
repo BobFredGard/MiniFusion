@@ -1048,8 +1048,7 @@
     const ctrl=ev.ctrlKey||ev.metaKey;
     if(ctrl&&!ev.altKey){
       const kk=k.toLowerCase();
-      if(kk==='z'&&!ev.shiftKey){if(typeof docUndo==='function')docUndo();ev.preventDefault();ev.stopPropagation();return;}
-      if(kk==='y'||(kk==='z'&&ev.shiftKey)){if(typeof docRedo==='function')docRedo();ev.preventDefault();ev.stopPropagation();return;}
+      // Ctrl+Z / Ctrl+Y : routage unique en capture (undoDispatch, 45)
       return; // ne pas voler le reste
     }
     if(k==='F'){try{mepFitSheet();mepRender();}catch(e){}}

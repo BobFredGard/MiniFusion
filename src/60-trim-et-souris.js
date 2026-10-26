@@ -1258,8 +1258,7 @@ window.addEventListener('keydown',e=>{
   if((e.key==='n'||e.key==='N')&&skEdit&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&!e.shiftKey){e.preventDefault();skOrbFront();return;}
   // 2026-10-16-005 : raccourcis de contraintes (F1…F12) et H = centre de perçage
   if(skEdit&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&skShortcut(e))return;
-  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&(e.key==='z'||e.key==='Z')){e.preventDefault();skUndoTrans();return;}
-  if(((e.ctrlKey||e.metaKey)&&(e.key==='y'||e.key==='Y'))||((e.ctrlKey||e.metaKey)&&e.shiftKey&&(e.key==='z'||e.key==='Z'))){e.preventDefault();skRedoTrans();return;}
+  // Ctrl+Z / Ctrl+Y : routage unique en capture (undoDispatch, 45)
   if((e.key==='Delete'||e.key==='Backspace')&&skEdit){e.preventDefault();deleteSkSel();return;}
   if((e.key==='x'||e.key==='X')&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&!skDyn&&skEdit){e.preventDefault();toggleConstr();return;}
   // lancer la saisie dynamique en tapant un chiffre (outil Ligne + point de départ armé)

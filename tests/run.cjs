@@ -54,6 +54,7 @@ const SUITES = [
   "test_arbre_v2",
   "test_anteriorite",
   "test_undo_document",
+  "test_undo_filet",
   "test_undo_aller_retour",
   "test_revolve",
   "test_skctxmenu",

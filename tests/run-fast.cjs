@@ -22,6 +22,7 @@ const SUITES = [
   'test_fao_pose_fond',
   'test_mise_en_plan',
   'test_undo_document',
+  'test_undo_filet',
   'test_conge_tangent',
   'test_corps_cache_aretes',
   'test_fao_outils',

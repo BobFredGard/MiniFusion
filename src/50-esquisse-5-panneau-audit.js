@@ -298,10 +298,11 @@ function deleteSkSel(){
 /* ----- transactions (undo/redo) : chaque action = snapshot, rien n'est destructeur ----- */
 let skUndoStack=[],skRedoStack=[];
 function skSnap(){return JSON.parse(JSON.stringify({points:skEdit.points,entities:skEdit.entities,constraints:skEdit.constraints,dims:skEdit.dims}));}
-function skPushUndo(){if(!skEdit)return;skUndoStack.push(skSnap());if(skUndoStack.length>100)skUndoStack.shift();skRedoStack=[];skUndoBtn();}
-function skRestore(s){skEdit.points=s.points;skEdit.entities=s.entities;skEdit.constraints=s.constraints;skEdit.dims=s.dims;solveSketch(skEdit);cleanupSk(skEdit);skRefreshHealth();drawSketch2D();renderSkPanel();skUndoBtn();}
-function skUndoTrans(){if(!skEdit||!skUndoStack.length){skStatus('Rien à annuler.');return;}skRedoStack.push(skSnap());skRestore(skUndoStack.pop());skStatus('Annulé ↩.');}
-function skRedoTrans(){if(!skEdit||!skRedoStack.length){skStatus('Rien à rétablir.');return;}skUndoStack.push(skSnap());skRestore(skRedoStack.pop());skStatus('Rétabli ↪.');}
+// skCheckpoint / skBaseSync (45) : filet qui relève aussi les modifications sans skPushUndo
+function skPushUndo(){if(!skEdit)return;try{skCheckpoint();}catch(e){}skUndoStack.push(skSnap());if(skUndoStack.length>100)skUndoStack.shift();skRedoStack=[];try{skBaseSync();}catch(e){}skUndoBtn();}
+function skRestore(s){skEdit.points=s.points;skEdit.entities=s.entities;skEdit.constraints=s.constraints;skEdit.dims=s.dims;solveSketch(skEdit);cleanupSk(skEdit);skRefreshHealth();drawSketch2D();renderSkPanel();try{skBaseSync();}catch(e){}skUndoBtn();}
+function skUndoTrans(){try{skCheckpoint();}catch(e){}if(!skEdit||!skUndoStack.length){skStatus('Rien à annuler.');return;}skRedoStack.push(skSnap());skRestore(skUndoStack.pop());skStatus('Annulé ↩.');}
+function skRedoTrans(){try{skCheckpoint();}catch(e){}if(!skEdit||!skRedoStack.length){skStatus('Rien à rétablir.');return;}skUndoStack.push(skSnap());skRestore(skRedoStack.pop());skStatus('Rétabli ↪.');}
 function skUndoBtn(){const u=$('skUndo'),r=$('skRedo');if(u)u.disabled=!skUndoStack.length;if(r)r.disabled=!skRedoStack.length;try{docUndoUI();}catch(e){}} // V0.7.6 : flèches du haut
 /* ----- santé d'esquisse (docteur) : bouts ouverts, doublons, dégénérés, croisements ----- */
 function skRefreshHealth(){if(skEdit){skEdit._health=skHealth(skEdit);skEdit._audit=skAudit(skEdit);}}

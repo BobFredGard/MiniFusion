@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**362 versions**, de `2026-09-28b` à `V0.11.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**363 versions**, de `2026-09-28b` à `V0.11.8` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5050,3 +5050,10 @@ Avant, un clic seul REMPLAÇAIT la sélection par l'arête cliquée et il fallai
 - **Arêtes des corps montrés** (`occVisibleSharpEdges`) : tous montrés → composé `occLive`, à l'identique ; sinon corps par corps (`b.shape`), mémorisé tant que le sous-solide est le même — cacher / montrer ne relance pas la classification.
 - **L'overlay suit la visibilité** (`src/10-scene-3d.js`, `refreshParts`) : signature de visibilité comparée à celle du dernier overlay ; s'il y a un écart, reconstruction différée et unique, quel que soit le chemin (œil, clic droit, brut FAO, annuler, rejeu). Pas de double calcul dans un rejeu.
 - **Tests** : `test_corps_cache_aretes` (nouveau, suites rapide et complète). Vérifié dans l'application : clic sur l'œil du 2ᵉ corps d'un bloc scindé → overlay de 20 à 12 arêtes, aucun trait flottant.
+
+## V0.11.8 - Annuler / Rétablir partout : un filet unique relève toute modification du document
+Ctrl+Z / Ctrl+Y doivent couvrir tout ce qui modifie le document (CAO, FAO, mise en plan, rendu) et l'esquisse, y compris un module qui a oublié d'appeler `docPushUndo`.
+- **Filet** (`src/45-annuler-document.js`, `docCheckpoint`, `docUndoNudge`) : à chaque `markDirty` (`src/90`) ou `faoTouch` (`src/88-fao-10`), l'instantané du document est comparé à la référence ; un écart = une étape. Un `docPushUndo` explicite suivi de sa mutation reste UNE étape ; une pile travaillée par un module (fenêtre dynamique annulée) recale la référence sans rien empiler ; un mode en cours (dépouillage) attend sa sortie. Les champs transitoires « _… » et la dérive du solveur (1e-6 relatif) ne font pas d'étape.
+- **Esquisse** (`skCheckpoint`, `skBaseSync`, `src/50-esquisse-5`) : même filet sur les tracés sans `skPushUndo`. Ouvrir puis fermer une esquisse sans rien toucher ne laisse plus d'étape vide ; une session d'esquisse modifiée = une étape du document (« esquisse « … » »).
+- **Un seul routage du clavier** (`undoDispatch`, en capture sur window) : les gestionnaires propres à l'esquisse, l'assemblage et la mise en plan ne traitent plus Ctrl+Z eux-mêmes. Un champ en cours de frappe garde son Ctrl+Z ; un champ seulement focalisé (valeur validée) le rend au document. Ouvrir un autre document vide l'historique ; le rendu nomme ses étapes (vue enregistrée / supprimée).
+- **Tests** : `test_undo_filet` (nouveau, suites rapide et complète) ; parcours navigateur « extrusion dynamique » : compte des étapes à partir de l'esquisse.

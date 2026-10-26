@@ -503,6 +503,8 @@ test('extrusion dynamique : aperçu immédiat, flèche à la souris, champ de co
   });
   const pret=()=>page.waitForFunction(()=>builtEngine==='exact'&&rebuildDepth===0&&builtVersion===_docVersion,null,{timeout:60000});
   const vol=()=>page.evaluate(()=>Math.round(bodies.filter(b=>b.shape).reduce((s,b)=>s+occCoqueVolume(b.shape),0)));
+  // l'esquisse elle-même est une étape d'annulation (filet, 45) : on compte à partir d'ici
+  const u0=await page.evaluate(()=>docUndoStack.length);
   await ruban(page,'Extrusion').click();
   await pret();
   // aperçu immédiat : la fonction existe déjà, flèche et champ de cote affichés
@@ -527,7 +529,7 @@ test('extrusion dynamique : aperçu immédiat, flèche à la souris, champ de co
   // Annuler : la fonction disparaît, sans étape d'annulation laissée
   await page.locator('#props button.extDynCancel').click();
   await pret();
-  expect(await page.evaluate(()=>({n:doc.features.length,u:docUndoStack.length}))).toEqual({n:0,u:0});
+  expect(await page.evaluate(()=>({n:doc.features.length,u:docUndoStack.length}))).toEqual({n:0,u:u0});
   // de nouveau, puis OK
   await page.evaluate(()=>{sel={kind:'sketch',id:doc.sketches[0].id};});
   await ruban(page,'Extrusion').click();await pret();
