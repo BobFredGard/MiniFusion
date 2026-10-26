@@ -394,39 +394,23 @@ function xPreviewUpdate(){
     }catch(e){}
   }
 
+// 2026-10-26 : choix EN PIXELS (edgePickScreen, src/90) — avant, raycast « Line » au seuil de
+// 2 mm MONDE : sur une petite pièce ce seuil couvrait plusieurs arêtes et la plus proche de la
+// caméra gagnait, pas celle sous le curseur ; les arêtes cachées par la matière l'emportaient
+// aussi. Désormais : la plus proche du curseur à l'écran (≤ 7 px), arêtes masquées ignorées.
 function exactPick(e){
-  const grp=scene.getObjectByName('filEdges');if(!grp)return null;
-  const r=renderer.domElement.getBoundingClientRect();
-  const ndc=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
-  rayc.setFromCamera(ndc,camera);
-  rayc.params.Line.threshold=2;
-  // V0.2.4 : SÉLECTION = couche des VIVES seulement (children[0]) — les tangentes grises
-  // ont leur propre raycast (exactPickTang) : interroger les 2 couches ici faisait gagner
-  // une tangente plus proche → segEdge indéfini → null, même avec une vive sous le clic.
-  if(!grp.children[0]||!grp.children[0].userData.segEdge)return null;
-  const hits=rayc.intersectObjects([grp.children[0]],false);
-  if(!hits.length)return null;
-  const segEdge=hits[0].object.userData.segEdge;
-  if(!segEdge)return null;
-  // LineSegments non indexé : l'index rendu est le sommet de départ (0,2,4…) → seg = index/2
-  const i=segEdge[Math.round(hits[0].index/2)];
-  return (i!==undefined&&i>=0&&filModeX&&i<filModeX.edges.length)?i:null;
+  // V0.2.4 : SÉLECTION = VIVES seulement — les tangentes grises ont leur propre recherche
+  // (exactPickTang).
+  if(!filModeX||!filModeX.edges||!filModeX.edges.length)return null;
+  const b=edgePickScreen(e,filModeX.edges.map(x=>x.pts),pick(e),7);
+  return b?b.pi:null;
 }
 function exactPickTang(e){
-  // V0.2.4 : raycast sur la couche des arêtes TANGENTES (grp.children[1]) — un clic sur
-  // une arête grise doit répondre (message), pas se taire.
+  // V0.2.4 : arêtes TANGENTES — un clic sur une arête grise doit répondre (message), pas se taire.
   try{
-    const grp=scene.getObjectByName('filEdges');if(!grp||!grp.children[1]||!grp.children[1].userData.segEdgeT)return null;
-    const r=renderer.domElement.getBoundingClientRect();
-    const ndc=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
-    rayc.setFromCamera(ndc,camera);
-    rayc.params.Line.threshold=0.6; // plus sévère que les vives : la tangente est la cible EXPLICITE du clic
-    const hits=rayc.intersectObjects([grp.children[1]],false);
-    if(!hits.length)return null;
-    const segT=hits[0].object.userData.segEdgeT;
-    if(!segT)return null;
-    const i=segT[Math.round(hits[0].index/2)];
-    return (i!==undefined&&i>=0&&filModeX&&filModeX.tang&&i<filModeX.tang.length)?i:null;
+    if(!filModeX||!filModeX.tang||!filModeX.tang.length)return null;
+    const b=edgePickScreen(e,filModeX.tang.map(x=>x.pts||[]),pick(e),4); // plus sévère : la tangente doit être la cible explicite
+    return b?b.pi:null;
   }catch(err){return null;}
 }
 function occFaceEdges(faceOrd,shape){

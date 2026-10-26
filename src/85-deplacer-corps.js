@@ -149,18 +149,44 @@ function bmChooseAxis(ax){
   else bmAddStep(f,{k:'d',o:ax.o.slice(),d,dist:10,name:ax.name});
   try{faceEl.textContent=(P.want==='axis'?'Rotation de 90° autour de « '+ax.name+' » — réglez l’angle':'Translation de 10 mm suivant « '+ax.name+' » — réglez la distance')+' dans le panneau.';}catch(e){}
 }
+function bmMarkAt(e){
+  // 2026-10-26 : pastille (ou ligne d'axe) sous le curseur, EN PIXELS — avant, il fallait
+  // toucher une sphère de 1,2 % de la pièce (0,4 mm mini) : sur une petite pièce le clic
+  // tombait à côté, sur la face voisine, et la liste des points / axes était remplacée.
+  const P=bmPick;if(!P||!P.face)return null;
+  const r=renderer.domElement.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+  const v=new THREE.Vector3(),toS=p=>{v.set(p[0],p[1],p[2]).project(camera);return v.z>-1&&v.z<1?[(v.x+1)/2*r.width,(1-v.y)/2*r.height]:null;};
+  let best=null,bd=12;
+  (P.face.axes||P.face.pts).forEach((it,i)=>{
+    const s=toS(P.face.axes?it.o:it.p);if(!s)return;
+    const d=Math.hypot(mx-s[0],my-s[1]);if(d<bd){bd=d;best=i;}
+  });
+  if(best==null&&P.face.axes){
+    // à défaut de pastille : la ligne de l'axe à ≤ 6 px
+    bd=6;const L=bmMarkLen();
+    P.face.axes.forEach((a,i)=>{
+      const d=asmV.unit(a.d)||[0,0,1],A=toS(asmV.sub(a.o,asmV.mul(d,L))),B=toS(asmV.add(a.o,asmV.mul(d,L)));if(!A||!B)return;
+      const dx=B[0]-A[0],dy=B[1]-A[1],t=Math.max(0,Math.min(1,((mx-A[0])*dx+(my-A[1])*dy)/(dx*dx+dy*dy||1e-9)));
+      const q=Math.hypot(mx-A[0]-t*dx,my-A[1]-t*dy);if(q<bd){bd=q;best=i;}
+    });
+  }
+  return best;
+}
+function bmHoverAt(e){
+  // Survol pendant la saisie : la pastille visée grossit et son nom s'affiche
+  const P=bmPick;if(!P)return;
+  const i=bmMarkAt(e);
+  if(i!==P.hover){
+    P.hover=i;bmMarks();
+    if(i!=null&&P.face){const it=(P.face.axes||P.face.pts)[i];try{faceEl.textContent='Déplacer : '+(it&&it.name||'')+' — clic = choisir.';}catch(err){}}
+  }
+  try{renderer.domElement.style.cursor=i!=null?'pointer':'crosshair';}catch(err){}
+}
 function bmPickAt(e){
   // Clic dans la vue pendant la saisie : pastille → choix ; face → ses points / axes
   const P=bmPick;if(!P)return;
-  const G=scene.getObjectByName('bmMarks');
-  if(G){
-    const r=renderer.domElement.getBoundingClientRect();
-    rayc.setFromCamera(new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1),camera);
-    G.updateMatrixWorld(true);
-    const ms=[];G.traverse(m=>{if(m.isMesh&&m.userData.bm!=null)ms.push(m);});
-    const h=rayc.intersectObjects(ms,false)[0];
-    if(h&&P.face){const i=h.object.userData.bm;if(P.face.axes)bmChooseAxis(P.face.axes[i]);else bmChoosePt(P.face.pts[i]);return;}
-  }
+  const i=bmMarkAt(e);
+  if(i!=null){if(P.face.axes)bmChooseAxis(P.face.axes[i]);else bmChoosePt(P.face.pts[i]);return;}
   let F=null;
   try{
     const h=pick(e);
@@ -169,26 +195,47 @@ function bmPickAt(e){
   }catch(err){F=null;}
   if(!F){try{faceEl.textContent='Déplacer : cliquez une face plane ou cylindrique d’un corps exact, ou choisissez dans le panneau.';}catch(err){}return;}
   const ax=P.want==='axis'||P.want==='dir';
+  P.hover=null;
   P.face=ax?{axes:bmFaceAxes(F),name:asmSnapFaceName(F)}:{pts:asmSnapItems(F).map(it=>({name:asmSnapFaceName(F)+' · '+it.name,p:it.fr.o})),name:asmSnapFaceName(F)};
   bmMarks();renderProps();
   try{faceEl.textContent=P.face.name+' : '+(ax?P.face.axes.length+' axe(s)':P.face.pts.length+' point(s)')+' — cliquez une pastille (ou dans le panneau).';}catch(err){}
 }
+function bmMarkLen(){
+  // demi-longueur des lignes d'axe : 17 % de la diagonale des corps visibles
+  let L=14;try{const B=new THREE.Box3();bodies.forEach(b=>{if(b.mesh&&b.visible!==false)B.expandByObject(b.mesh);});if(!B.isEmpty())L=Math.max(0.5,0.17*B.getSize(new THREE.Vector3()).length());}catch(e){}
+  return L;
+}
 function bmMarks(){
-  // Pastilles des points / axes de la face cliquée, et le point de départ retenu
+  // Pastilles des points / axes de la face cliquée, le point de départ retenu et — 2026-10-26 —
+  // les axes / points DÉJÀ choisis du Déplacer sélectionné : ils restent affichés pendant le
+  // réglage de l'angle ou de la distance (avant : effacés dès le choix fait).
   let G=scene.getObjectByName('bmMarks');
   if(G){scene.remove(G);G.traverse(m=>{try{if(m.geometry)m.geometry.dispose();if(m.material)m.material.dispose();}catch(e){}});}
-  const P=bmPick;if(!P)return;
+  const P=bmPick,f=P?bmFeat(P.fid):((typeof sel!=='undefined'&&sel&&sel.kind==='feature')?bmFeat(sel.id):null);
+  if(!P&&!(f&&(f.steps||[]).length))return;
   G=new THREE.Group();G.name='bmMarks';scene.add(G);
-  let size=1;try{const B=new THREE.Box3();bodies.forEach(b=>{if(b.mesh&&b.visible!==false)B.expandByObject(b.mesh);});if(!B.isEmpty())size=Math.max(0.4,0.012*B.getSize(new THREE.Vector3()).length());}catch(e){}
-  const ball=(p,col,i)=>{const s=new THREE.Mesh(new THREE.SphereGeometry(size,14,10),new THREE.MeshBasicMaterial({color:col,depthTest:false,transparent:true,opacity:0.95}));
-    s.position.set(p[0],p[1],p[2]);s.renderOrder=995;if(i!=null)s.userData.bm=i;G.add(s);};
-  if(P.from)ball(P.from.p,0x0a84ff,null);
-  if(P.face&&P.face.pts)P.face.pts.forEach((it,i)=>ball(it.p,/cercle|arc/.test(it.name)?0xffb020:0x30d158,i));
+  const L=bmMarkLen(),r=renderer.domElement.getBoundingClientRect(),tmp=new THREE.Vector3();
+  // pastille de rayon CONSTANT à l'écran (px), quelle que soit la taille de la pièce
+  const ball=(p,col,px)=>{const s=new THREE.Mesh(new THREE.SphereGeometry(1,14,10),new THREE.MeshBasicMaterial({color:col,depthTest:false,transparent:true,opacity:0.95}));
+    s.position.set(p[0],p[1],p[2]);s.renderOrder=995;s.raycast=()=>{};
+    s.onBeforeRender=(rd,sc,cam)=>{const h=r.height||1;const w=cam.isOrthographicCamera?(cam.top-cam.bottom)/(cam.zoom||1)/h:2*cam.position.distanceTo(s.getWorldPosition(tmp))*Math.tan(cam.fov*Math.PI/360)/h;s.scale.setScalar(px*w);s.updateMatrixWorld(true);};
+    G.add(s);};
+  const line=(a,b,col,op)=>{const g=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...a),new THREE.Vector3(...b)]);
+    const l=new THREE.Line(g,new THREE.LineBasicMaterial({color:col,depthTest:false,transparent:true,opacity:op==null?1:op}));l.renderOrder=994;l.raycast=()=>{};G.add(l);};
+  const axis=(o,d0,col,op)=>{const d=asmV.unit(d0)||[0,0,1];line(asmV.sub(o,asmV.mul(d,L)),asmV.add(o,asmV.mul(d,L)),col,op);};
+  if(f)(f.steps||[]).forEach(s=>{
+    if(!s)return;
+    if(s.k==='r'){axis(s.o,s.d,0xbf5af2);ball(s.o,0xbf5af2,4);}
+    else if(s.k==='d'){axis(s.o,s.d,0x64d2ff,0.8);ball(s.o,0x64d2ff,3.5);}
+    else if(s.k==='p'&&s.a&&s.b){line(s.a,s.b,0x0a84ff,0.8);ball(s.a,0x0a84ff,3.5);ball(s.b,0x0a84ff,4);}
+  });
+  if(!P)return;
+  const hv=P.hover;
+  if(P.from)ball(P.from.p,0x0a84ff,6);
+  if(P.face&&P.face.pts)P.face.pts.forEach((it,i)=>ball(it.p,i===hv?0xffffff:(/cercle|arc/.test(it.name)?0xffb020:0x30d158),i===hv?8:5.5));
   if(P.face&&P.face.axes)P.face.axes.forEach((a,i)=>{
-    ball(a.o,0xffb020,i);
-    const L=size*14,d=asmV.unit(a.d)||[0,0,1];
-    const g=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...asmV.sub(a.o,asmV.mul(d,L))),new THREE.Vector3(...asmV.add(a.o,asmV.mul(d,L)))]);
-    const l=new THREE.Line(g,new THREE.LineBasicMaterial({color:0xffb020,depthTest:false}));l.renderOrder=994;G.add(l);
+    axis(a.o,a.d,i===hv?0xffffff:0xffb020,i===hv?1:0.75);
+    ball(a.o,i===hv?0xffffff:0xffb020,i===hv?8:5.5);
   });
 }
 /* ── panneau ── */

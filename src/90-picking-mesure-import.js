@@ -34,7 +34,7 @@ function wirePick(){
       if(extPickFace){renderer.domElement.style.cursor='crosshair';return;}
       if(faoPlanePick){renderer.domElement.style.cursor='crosshair';return;}
       if(faoZPlanePick){renderer.domElement.style.cursor='crosshair';return;}
-    if(typeof bmPick!=='undefined'&&bmPick){renderer.domElement.style.cursor='crosshair';return;}
+    if(typeof bmPick!=='undefined'&&bmPick){bmHoverAt(e);return;}
     if(mvMode){mvFaceHover(e);renderer.domElement.style.cursor='pointer';return;}
     if(draftMode){draftHover(e);return;}
     if(coqueMode){coqueHover(e);return;}
@@ -572,12 +572,20 @@ function edgeHoverSegs(){
   edgeHoverCache={key,segs:out};
   return out;
 }
-function edgeHoverPick(e,faceHit){
-  const segs=edgeHoverSegs();if(!segs.length)return null;
+function edgeHoverPick(e,faceHit){return edgePickScreen(e,edgeHoverSegs(),faceHit,6);}
+// 2026-10-26 : cœur commun du choix d'arête EN PIXELS (survol, sélection, congés/chanfreins) —
+// segs = polylignes monde ; la plus proche du curseur à l'écran (≤ tolPx) gagne, à égalité
+// (≤ 1 px) la plus proche de la caméra ; masquée si derrière la face sous le curseur, avec une
+// marge de 2 px ramenée en mm (avant : +0,3 mm fixe, trop large sur une très petite pièce).
+function edgePickScreen(e,segs,faceHit,tolPx){
+  if(!segs||!segs.length)return null;
   const r=renderer.domElement.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
   const v=new THREE.Vector3(),vz=new THREE.Vector3(),toS=p=>{vz.set(p[0],p[1],p[2]).applyMatrix4(camera.matrixWorldInverse);v.set(p[0],p[1],p[2]).project(camera);return[(v.x+1)/2*r.width,(1-v.y)/2*r.height,v.z,-vz.z];};
-  let best=null,bd=6;
+  let slack=0.3;
+  if(faceHit){const wpp=camera.isOrthographicCamera?(camera.top-camera.bottom)/(camera.zoom||1)/r.height:2*faceHit.distance*Math.tan(camera.fov*Math.PI/360)/r.height;slack=Math.min(0.3,2*wpp);}
+  let best=null,bd=tolPx||6;
   segs.forEach((P,pi)=>{
+    if(!P||P.length<2)return;
     let a=toS(P[0]);
     for(let k=1;k<P.length;k++){
       const b=toS(P[k]);
@@ -585,13 +593,14 @@ function edgeHoverPick(e,faceHit){
         const dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy||1e-9;
         let t=((mx-a[0])*dx+(my-a[1])*dy)/L2;t=Math.max(0,Math.min(1,t));
         const d=Math.hypot(mx-(a[0]+t*dx),my-(a[1]+t*dy));
-        if(d<bd){
+        if(d<bd+(best?1:0)){
           // paramètre 3D corrigé de la perspective (t écran ≠ t espace)
           if(!camera.isOrthographicCamera){const za=a[3],zb=b[3];const den=(1-t)*zb+t*za;if(Math.abs(den)>1e-12)t=t*za/den;}
           const w=[P[k-1][0]+(P[k][0]-P[k-1][0])*t,P[k-1][1]+(P[k][1]-P[k-1][1])*t,P[k-1][2]+(P[k][2]-P[k-1][2])*t];
           // masquée par la face survolée ? (l'arête doit être au moins aussi proche que la face)
           const dc=camera.position.distanceTo(new THREE.Vector3(w[0],w[1],w[2]));
-          if(!faceHit||dc<=faceHit.distance*1.004+0.3){bd=d;best={pi,dc};}
+          const better=!best||d<bd-1||(d<bd+1?dc<best.dc:false);
+          if(better&&(!faceHit||dc<=faceHit.distance*1.004+slack)){bd=Math.min(d,bd);best={pi,dc,d};}
         }
       }
       a=b;

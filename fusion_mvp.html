@@ -277,7 +277,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.10.0';
+const APP_VER='V0.10.1';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -6650,6 +6650,7 @@ function renderProps(){
   if(typeof extNew!=='undefined'&&extNew)extNew=null; // une sélection annule le formulaire en cours
   if(typeof revNew!=='undefined'&&revNew)revNew=null; // idem pour le formulaire de révolution
   const p=$('props');p.innerHTML='';p.className='col';
+  if(typeof bmMarks==='function'){try{bmMarks();}catch(e){}} // axes d'un Déplacer sélectionné (85) : affichés tant qu'il l'est
   // FAO : les fiches posage/opération vivent dans src/88-fao.js (arbre FAO dédié).
   if(sel&&(sel.kind==='faoSetup'||sel.kind==='faoOp')){
     try{ faoRenderProps(p,sel); }catch(e){}
@@ -21601,39 +21602,23 @@ function xPreviewUpdate(){
     }catch(e){}
   }
 
+// 2026-10-26 : choix EN PIXELS (edgePickScreen, src/90) — avant, raycast « Line » au seuil de
+// 2 mm MONDE : sur une petite pièce ce seuil couvrait plusieurs arêtes et la plus proche de la
+// caméra gagnait, pas celle sous le curseur ; les arêtes cachées par la matière l'emportaient
+// aussi. Désormais : la plus proche du curseur à l'écran (≤ 7 px), arêtes masquées ignorées.
 function exactPick(e){
-  const grp=scene.getObjectByName('filEdges');if(!grp)return null;
-  const r=renderer.domElement.getBoundingClientRect();
-  const ndc=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
-  rayc.setFromCamera(ndc,camera);
-  rayc.params.Line.threshold=2;
-  // V0.2.4 : SÉLECTION = couche des VIVES seulement (children[0]) — les tangentes grises
-  // ont leur propre raycast (exactPickTang) : interroger les 2 couches ici faisait gagner
-  // une tangente plus proche → segEdge indéfini → null, même avec une vive sous le clic.
-  if(!grp.children[0]||!grp.children[0].userData.segEdge)return null;
-  const hits=rayc.intersectObjects([grp.children[0]],false);
-  if(!hits.length)return null;
-  const segEdge=hits[0].object.userData.segEdge;
-  if(!segEdge)return null;
-  // LineSegments non indexé : l'index rendu est le sommet de départ (0,2,4…) → seg = index/2
-  const i=segEdge[Math.round(hits[0].index/2)];
-  return (i!==undefined&&i>=0&&filModeX&&i<filModeX.edges.length)?i:null;
+  // V0.2.4 : SÉLECTION = VIVES seulement — les tangentes grises ont leur propre recherche
+  // (exactPickTang).
+  if(!filModeX||!filModeX.edges||!filModeX.edges.length)return null;
+  const b=edgePickScreen(e,filModeX.edges.map(x=>x.pts),pick(e),7);
+  return b?b.pi:null;
 }
 function exactPickTang(e){
-  // V0.2.4 : raycast sur la couche des arêtes TANGENTES (grp.children[1]) — un clic sur
-  // une arête grise doit répondre (message), pas se taire.
+  // V0.2.4 : arêtes TANGENTES — un clic sur une arête grise doit répondre (message), pas se taire.
   try{
-    const grp=scene.getObjectByName('filEdges');if(!grp||!grp.children[1]||!grp.children[1].userData.segEdgeT)return null;
-    const r=renderer.domElement.getBoundingClientRect();
-    const ndc=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
-    rayc.setFromCamera(ndc,camera);
-    rayc.params.Line.threshold=0.6; // plus sévère que les vives : la tangente est la cible EXPLICITE du clic
-    const hits=rayc.intersectObjects([grp.children[1]],false);
-    if(!hits.length)return null;
-    const segT=hits[0].object.userData.segEdgeT;
-    if(!segT)return null;
-    const i=segT[Math.round(hits[0].index/2)];
-    return (i!==undefined&&i>=0&&filModeX&&filModeX.tang&&i<filModeX.tang.length)?i:null;
+    if(!filModeX||!filModeX.tang||!filModeX.tang.length)return null;
+    const b=edgePickScreen(e,filModeX.tang.map(x=>x.pts||[]),pick(e),4); // plus sévère : la tangente doit être la cible explicite
+    return b?b.pi:null;
   }catch(err){return null;}
 }
 function occFaceEdges(faceOrd,shape){
@@ -22394,18 +22379,44 @@ function bmChooseAxis(ax){
   else bmAddStep(f,{k:'d',o:ax.o.slice(),d,dist:10,name:ax.name});
   try{faceEl.textContent=(P.want==='axis'?'Rotation de 90° autour de « '+ax.name+' » — réglez l’angle':'Translation de 10 mm suivant « '+ax.name+' » — réglez la distance')+' dans le panneau.';}catch(e){}
 }
+function bmMarkAt(e){
+  // 2026-10-26 : pastille (ou ligne d'axe) sous le curseur, EN PIXELS — avant, il fallait
+  // toucher une sphère de 1,2 % de la pièce (0,4 mm mini) : sur une petite pièce le clic
+  // tombait à côté, sur la face voisine, et la liste des points / axes était remplacée.
+  const P=bmPick;if(!P||!P.face)return null;
+  const r=renderer.domElement.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+  const v=new THREE.Vector3(),toS=p=>{v.set(p[0],p[1],p[2]).project(camera);return v.z>-1&&v.z<1?[(v.x+1)/2*r.width,(1-v.y)/2*r.height]:null;};
+  let best=null,bd=12;
+  (P.face.axes||P.face.pts).forEach((it,i)=>{
+    const s=toS(P.face.axes?it.o:it.p);if(!s)return;
+    const d=Math.hypot(mx-s[0],my-s[1]);if(d<bd){bd=d;best=i;}
+  });
+  if(best==null&&P.face.axes){
+    // à défaut de pastille : la ligne de l'axe à ≤ 6 px
+    bd=6;const L=bmMarkLen();
+    P.face.axes.forEach((a,i)=>{
+      const d=asmV.unit(a.d)||[0,0,1],A=toS(asmV.sub(a.o,asmV.mul(d,L))),B=toS(asmV.add(a.o,asmV.mul(d,L)));if(!A||!B)return;
+      const dx=B[0]-A[0],dy=B[1]-A[1],t=Math.max(0,Math.min(1,((mx-A[0])*dx+(my-A[1])*dy)/(dx*dx+dy*dy||1e-9)));
+      const q=Math.hypot(mx-A[0]-t*dx,my-A[1]-t*dy);if(q<bd){bd=q;best=i;}
+    });
+  }
+  return best;
+}
+function bmHoverAt(e){
+  // Survol pendant la saisie : la pastille visée grossit et son nom s'affiche
+  const P=bmPick;if(!P)return;
+  const i=bmMarkAt(e);
+  if(i!==P.hover){
+    P.hover=i;bmMarks();
+    if(i!=null&&P.face){const it=(P.face.axes||P.face.pts)[i];try{faceEl.textContent='Déplacer : '+(it&&it.name||'')+' — clic = choisir.';}catch(err){}}
+  }
+  try{renderer.domElement.style.cursor=i!=null?'pointer':'crosshair';}catch(err){}
+}
 function bmPickAt(e){
   // Clic dans la vue pendant la saisie : pastille → choix ; face → ses points / axes
   const P=bmPick;if(!P)return;
-  const G=scene.getObjectByName('bmMarks');
-  if(G){
-    const r=renderer.domElement.getBoundingClientRect();
-    rayc.setFromCamera(new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1),camera);
-    G.updateMatrixWorld(true);
-    const ms=[];G.traverse(m=>{if(m.isMesh&&m.userData.bm!=null)ms.push(m);});
-    const h=rayc.intersectObjects(ms,false)[0];
-    if(h&&P.face){const i=h.object.userData.bm;if(P.face.axes)bmChooseAxis(P.face.axes[i]);else bmChoosePt(P.face.pts[i]);return;}
-  }
+  const i=bmMarkAt(e);
+  if(i!=null){if(P.face.axes)bmChooseAxis(P.face.axes[i]);else bmChoosePt(P.face.pts[i]);return;}
   let F=null;
   try{
     const h=pick(e);
@@ -22414,26 +22425,47 @@ function bmPickAt(e){
   }catch(err){F=null;}
   if(!F){try{faceEl.textContent='Déplacer : cliquez une face plane ou cylindrique d’un corps exact, ou choisissez dans le panneau.';}catch(err){}return;}
   const ax=P.want==='axis'||P.want==='dir';
+  P.hover=null;
   P.face=ax?{axes:bmFaceAxes(F),name:asmSnapFaceName(F)}:{pts:asmSnapItems(F).map(it=>({name:asmSnapFaceName(F)+' · '+it.name,p:it.fr.o})),name:asmSnapFaceName(F)};
   bmMarks();renderProps();
   try{faceEl.textContent=P.face.name+' : '+(ax?P.face.axes.length+' axe(s)':P.face.pts.length+' point(s)')+' — cliquez une pastille (ou dans le panneau).';}catch(err){}
 }
+function bmMarkLen(){
+  // demi-longueur des lignes d'axe : 17 % de la diagonale des corps visibles
+  let L=14;try{const B=new THREE.Box3();bodies.forEach(b=>{if(b.mesh&&b.visible!==false)B.expandByObject(b.mesh);});if(!B.isEmpty())L=Math.max(0.5,0.17*B.getSize(new THREE.Vector3()).length());}catch(e){}
+  return L;
+}
 function bmMarks(){
-  // Pastilles des points / axes de la face cliquée, et le point de départ retenu
+  // Pastilles des points / axes de la face cliquée, le point de départ retenu et — 2026-10-26 —
+  // les axes / points DÉJÀ choisis du Déplacer sélectionné : ils restent affichés pendant le
+  // réglage de l'angle ou de la distance (avant : effacés dès le choix fait).
   let G=scene.getObjectByName('bmMarks');
   if(G){scene.remove(G);G.traverse(m=>{try{if(m.geometry)m.geometry.dispose();if(m.material)m.material.dispose();}catch(e){}});}
-  const P=bmPick;if(!P)return;
+  const P=bmPick,f=P?bmFeat(P.fid):((typeof sel!=='undefined'&&sel&&sel.kind==='feature')?bmFeat(sel.id):null);
+  if(!P&&!(f&&(f.steps||[]).length))return;
   G=new THREE.Group();G.name='bmMarks';scene.add(G);
-  let size=1;try{const B=new THREE.Box3();bodies.forEach(b=>{if(b.mesh&&b.visible!==false)B.expandByObject(b.mesh);});if(!B.isEmpty())size=Math.max(0.4,0.012*B.getSize(new THREE.Vector3()).length());}catch(e){}
-  const ball=(p,col,i)=>{const s=new THREE.Mesh(new THREE.SphereGeometry(size,14,10),new THREE.MeshBasicMaterial({color:col,depthTest:false,transparent:true,opacity:0.95}));
-    s.position.set(p[0],p[1],p[2]);s.renderOrder=995;if(i!=null)s.userData.bm=i;G.add(s);};
-  if(P.from)ball(P.from.p,0x0a84ff,null);
-  if(P.face&&P.face.pts)P.face.pts.forEach((it,i)=>ball(it.p,/cercle|arc/.test(it.name)?0xffb020:0x30d158,i));
+  const L=bmMarkLen(),r=renderer.domElement.getBoundingClientRect(),tmp=new THREE.Vector3();
+  // pastille de rayon CONSTANT à l'écran (px), quelle que soit la taille de la pièce
+  const ball=(p,col,px)=>{const s=new THREE.Mesh(new THREE.SphereGeometry(1,14,10),new THREE.MeshBasicMaterial({color:col,depthTest:false,transparent:true,opacity:0.95}));
+    s.position.set(p[0],p[1],p[2]);s.renderOrder=995;s.raycast=()=>{};
+    s.onBeforeRender=(rd,sc,cam)=>{const h=r.height||1;const w=cam.isOrthographicCamera?(cam.top-cam.bottom)/(cam.zoom||1)/h:2*cam.position.distanceTo(s.getWorldPosition(tmp))*Math.tan(cam.fov*Math.PI/360)/h;s.scale.setScalar(px*w);s.updateMatrixWorld(true);};
+    G.add(s);};
+  const line=(a,b,col,op)=>{const g=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...a),new THREE.Vector3(...b)]);
+    const l=new THREE.Line(g,new THREE.LineBasicMaterial({color:col,depthTest:false,transparent:true,opacity:op==null?1:op}));l.renderOrder=994;l.raycast=()=>{};G.add(l);};
+  const axis=(o,d0,col,op)=>{const d=asmV.unit(d0)||[0,0,1];line(asmV.sub(o,asmV.mul(d,L)),asmV.add(o,asmV.mul(d,L)),col,op);};
+  if(f)(f.steps||[]).forEach(s=>{
+    if(!s)return;
+    if(s.k==='r'){axis(s.o,s.d,0xbf5af2);ball(s.o,0xbf5af2,4);}
+    else if(s.k==='d'){axis(s.o,s.d,0x64d2ff,0.8);ball(s.o,0x64d2ff,3.5);}
+    else if(s.k==='p'&&s.a&&s.b){line(s.a,s.b,0x0a84ff,0.8);ball(s.a,0x0a84ff,3.5);ball(s.b,0x0a84ff,4);}
+  });
+  if(!P)return;
+  const hv=P.hover;
+  if(P.from)ball(P.from.p,0x0a84ff,6);
+  if(P.face&&P.face.pts)P.face.pts.forEach((it,i)=>ball(it.p,i===hv?0xffffff:(/cercle|arc/.test(it.name)?0xffb020:0x30d158),i===hv?8:5.5));
   if(P.face&&P.face.axes)P.face.axes.forEach((a,i)=>{
-    ball(a.o,0xffb020,i);
-    const L=size*14,d=asmV.unit(a.d)||[0,0,1];
-    const g=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...asmV.sub(a.o,asmV.mul(d,L))),new THREE.Vector3(...asmV.add(a.o,asmV.mul(d,L)))]);
-    const l=new THREE.Line(g,new THREE.LineBasicMaterial({color:0xffb020,depthTest:false}));l.renderOrder=994;G.add(l);
+    axis(a.o,a.d,i===hv?0xffffff:0xffb020,i===hv?1:0.75);
+    ball(a.o,i===hv?0xffffff:0xffb020,i===hv?8:5.5);
   });
 }
 /* ── panneau ── */
@@ -43988,7 +44020,7 @@ function wirePick(){
       if(extPickFace){renderer.domElement.style.cursor='crosshair';return;}
       if(faoPlanePick){renderer.domElement.style.cursor='crosshair';return;}
       if(faoZPlanePick){renderer.domElement.style.cursor='crosshair';return;}
-    if(typeof bmPick!=='undefined'&&bmPick){renderer.domElement.style.cursor='crosshair';return;}
+    if(typeof bmPick!=='undefined'&&bmPick){bmHoverAt(e);return;}
     if(mvMode){mvFaceHover(e);renderer.domElement.style.cursor='pointer';return;}
     if(draftMode){draftHover(e);return;}
     if(coqueMode){coqueHover(e);return;}
@@ -44526,12 +44558,20 @@ function edgeHoverSegs(){
   edgeHoverCache={key,segs:out};
   return out;
 }
-function edgeHoverPick(e,faceHit){
-  const segs=edgeHoverSegs();if(!segs.length)return null;
+function edgeHoverPick(e,faceHit){return edgePickScreen(e,edgeHoverSegs(),faceHit,6);}
+// 2026-10-26 : cœur commun du choix d'arête EN PIXELS (survol, sélection, congés/chanfreins) —
+// segs = polylignes monde ; la plus proche du curseur à l'écran (≤ tolPx) gagne, à égalité
+// (≤ 1 px) la plus proche de la caméra ; masquée si derrière la face sous le curseur, avec une
+// marge de 2 px ramenée en mm (avant : +0,3 mm fixe, trop large sur une très petite pièce).
+function edgePickScreen(e,segs,faceHit,tolPx){
+  if(!segs||!segs.length)return null;
   const r=renderer.domElement.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
   const v=new THREE.Vector3(),vz=new THREE.Vector3(),toS=p=>{vz.set(p[0],p[1],p[2]).applyMatrix4(camera.matrixWorldInverse);v.set(p[0],p[1],p[2]).project(camera);return[(v.x+1)/2*r.width,(1-v.y)/2*r.height,v.z,-vz.z];};
-  let best=null,bd=6;
+  let slack=0.3;
+  if(faceHit){const wpp=camera.isOrthographicCamera?(camera.top-camera.bottom)/(camera.zoom||1)/r.height:2*faceHit.distance*Math.tan(camera.fov*Math.PI/360)/r.height;slack=Math.min(0.3,2*wpp);}
+  let best=null,bd=tolPx||6;
   segs.forEach((P,pi)=>{
+    if(!P||P.length<2)return;
     let a=toS(P[0]);
     for(let k=1;k<P.length;k++){
       const b=toS(P[k]);
@@ -44539,13 +44579,14 @@ function edgeHoverPick(e,faceHit){
         const dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy||1e-9;
         let t=((mx-a[0])*dx+(my-a[1])*dy)/L2;t=Math.max(0,Math.min(1,t));
         const d=Math.hypot(mx-(a[0]+t*dx),my-(a[1]+t*dy));
-        if(d<bd){
+        if(d<bd+(best?1:0)){
           // paramètre 3D corrigé de la perspective (t écran ≠ t espace)
           if(!camera.isOrthographicCamera){const za=a[3],zb=b[3];const den=(1-t)*zb+t*za;if(Math.abs(den)>1e-12)t=t*za/den;}
           const w=[P[k-1][0]+(P[k][0]-P[k-1][0])*t,P[k-1][1]+(P[k][1]-P[k-1][1])*t,P[k-1][2]+(P[k][2]-P[k-1][2])*t];
           // masquée par la face survolée ? (l'arête doit être au moins aussi proche que la face)
           const dc=camera.position.distanceTo(new THREE.Vector3(w[0],w[1],w[2]));
-          if(!faceHit||dc<=faceHit.distance*1.004+0.3){bd=d;best={pi,dc};}
+          const better=!best||d<bd-1||(d<bd+1?dc<best.dc:false);
+          if(better&&(!faceHit||dc<=faceHit.distance*1.004+slack)){bd=Math.min(d,bd);best={pi,dc,d};}
         }
       }
       a=b;

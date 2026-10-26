@@ -944,6 +944,7 @@ function renderProps(){
   if(typeof extNew!=='undefined'&&extNew)extNew=null; // une sélection annule le formulaire en cours
   if(typeof revNew!=='undefined'&&revNew)revNew=null; // idem pour le formulaire de révolution
   const p=$('props');p.innerHTML='';p.className='col';
+  if(typeof bmMarks==='function'){try{bmMarks();}catch(e){}} // axes d'un Déplacer sélectionné (85) : affichés tant qu'il l'est
   // FAO : les fiches posage/opération vivent dans src/88-fao.js (arbre FAO dédié).
   if(sel&&(sel.kind==='faoSetup'||sel.kind==='faoOp')){
     try{ faoRenderProps(p,sel); }catch(e){}
