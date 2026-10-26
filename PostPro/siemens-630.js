@@ -12,7 +12,10 @@ faoMachine({
   label: 'Siemens 840D · 630',   // nom affiché dans la liste des machines
   kind: 'siemens',               // dialecte : 'siemens' (840D) ou 'fagor' (8065)
   ext: 'mpf',                    // extension du programme exporté
-  axes: 5,                       // 5 : indexation 3+2 commandée (TRAORI, B/C) ; 3 : usinage à plat
+  axes: 5,                       // 5 : indexation 3+2 commandée ; 3 : usinage à plat
+  swivel: 'cycle800',            // 3+2 : 'cycle800' (pivotement de plan, comme le post Fusion) ou 'traori' (TRAORI + B/C)
+  swivelData: 'TABLE',           // jeu de données de pivotement de la CN (CYCLE800)
+  swivelRetract: ['G0 SUPA Z600 D0', 'G0 X-200', 'D1'],   // dégagement avant chaque pivotement
   numbers: null,                 // numérotation des lignes : null, ou { start: 10, step: 5 }
   coolant: { flood: 'M7', through: 'M8', off: 'M9' },   // arrosage, centre outil, arrêt
   toolChange: ['T{T} D1', 'M6'],  // changement d'outil (une ligne par élément)

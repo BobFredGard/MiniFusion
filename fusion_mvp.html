@@ -277,7 +277,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.9.0';
+const APP_VER='V0.9.1';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -25058,7 +25058,8 @@ function faoSeqSafe(job,seule){
 const FAO_POSTS={};
 const FAO_POST_DEF={
   siemens:{ext:'mpf',axes:5,numbers:null,coolant:{flood:'M7',through:'M8',off:'M9'},
-    toolChange:['T{T} D1','M6'],spindle:'S{S} M3',end:['G0 SUPA Z600 D0','M30']},
+    toolChange:['T{T} D1','M6'],spindle:'S{S} M3',end:['G0 SUPA Z600 D0','M30'],
+    swivel:'cycle800',swivelData:'TABLE',swivelRetract:['G0 SUPA Z600 D0','D1']},
   fagor:{ext:'nc',axes:3,numbers:{start:10,step:5},coolant:{flood:'M08',through:'M08',off:'M09'},
     toolChange:['T{T} D1 M06'],spindle:'S{S} M03',end:['G0 Z{ZRETR}','#MSG[""]','M30']}
 };
@@ -25073,6 +25074,22 @@ function faoPostLines(tpl,v){
   return (Array.isArray(tpl)?tpl:(tpl?[tpl]:[])).map(function(l){
     return String(l).replace(/\{(\w+)\}/g,function(m,k){return v[k]!==undefined?String(v[k]):m;});
   });
+}
+/* ----- 3+2 en CYCLE800 (V0.9.1) -----
+   Comme les posts Fusion fournis (PostPro/1520-5axes.cps, 630-5axes.cps) : pivotement du PLAN
+   de travail (le « cube » de l'écran Siemens), jeu de données « TABLE », rotations successives
+   autour de Z, puis Y, puis X (mode 27). La CN calcule elle-même les angles B/C de la table ;
+   X Y Z sont ensuite écrits DANS le plan incliné (arcs G2/G3 et cycles de perçage gardés). */
+function faoSwivelZYX(X,Y,Z){
+  // R = Rz(C)·Ry(B)·Rx(A), colonnes = axes du repère incliné exprimés dans le posage
+  const d=function(v){const r=Math.round(v*180/Math.PI*1000)/1000;return r===0?0:r;};
+  const B=Math.asin(Math.max(-1,Math.min(1,-X[2])));
+  if(Math.abs(Math.cos(B))>1e-9)return {a:d(Math.atan2(Y[2],Z[2])),b:d(B),c:d(Math.atan2(X[1],X[0]))};
+  return {a:0,b:d(B),c:d(Math.atan2(-Y[0],Y[1]))}; // outil couché : A et C confondus, A = 0
+}
+function faoCycle800(post,S,dir){
+  return 'CYCLE800(1,"'+(post.swivelData||'TABLE')+'",0,27,0,0,0,'+faoFmtXYZ(S.c)+','+faoFmtXYZ(S.b)+','+
+    faoFmtXYZ(S.a)+',0,0,0,'+dir+',,1)';
 }
 function faoToday(){ try{ return new Date().toISOString().slice(0,10); }catch(e){ return ''; } }
 
@@ -25090,9 +25107,10 @@ function faoArcWords(m,ox,oy,oz){
    paramètres alignés sur PostPro/630-5axes.cps).
    Fagor 8065    : `G98 G81 X Y Z I F` / `G98 G83 X Y Z I J F` (aligné sur
    PostPro/fagor-8065.cps) + annulation `G80` (cycles modaux). */
-function faoDrillCycle(op,job,oz){
+function faoDrillCycle(op,job,oz,inFrame){
   if(!op||op.type!=='drill')return null;
-  if(faoOpFrame(job,op))return null; // repère d'opération incliné : perçage émis en déroulé G0/G1
+  // repère d'opération incliné : déroulé G0/G1, sauf en CYCLE800 (job = posage vu par l'opération)
+  if(!inFrame&&faoOpFrame(job,op))return null;
   if(op.cycle==='helix')return null; // fraisage hélicoïdal : émis en G1/G2/G3 comme un parcours
   // 2026-10-15-011 : un plan PAR TROU (départ et fond propres — trous du modèle à
   // des hauteurs différentes), dans l'ordre optimisé. Saisie XY : comme avant.
@@ -25127,9 +25145,10 @@ function faoPost(job,postId){
   const post=FAO_POSTS[id]||FAO_POSTS.siemens630||FAO_POSTS[Object.keys(FAO_POSTS)[0]];
   const fag=post.kind==='fagor';
   const ax3=post.axes===3; // machine sans axe rotatif : 3+2 jamais commandé
+  const c800=!fag&&!ax3&&post.swivel!=='traori'; // 3+2 par CYCLE800 (défaut Siemens) ou TRAORI
   const name=faoProgName(job.name);
   const wcs=job.wcs||'G54';
-  const OG=faoOriginPoint(job), ox=OG[0], oy=OG[1], oz=OG[2];
+  const OG=faoOriginPoint(job), OX=OG[0], OY=OG[1], OZ=OG[2], ox=OX, oy=OY, oz=OZ;
   // Repli : plan de retrait du posage (aucune op ON -> groupe sans bloc).
   const retr=faoRetractZ(job);
   let retrPrev=retr; // plan de retrait du groupe précédent (retrait inter-outils)
@@ -25160,6 +25179,9 @@ function faoPost(job,postId){
   const L=[], NUM=post.numbers; let n=NUM?+NUM.start||10:0;
   const nc=function(s){ if(NUM){ L.push('N'+n+' '+s); n+=+NUM.step||5; } else L.push(s); };
   const cmt=function(s){ L.push(fag?('( '+s+' )'):('; '+s)); };
+  // avance MODALE : le mot F n'est écrit que lorsqu'il change (et après chaque changement d'outil)
+  let fCur=null;
+  const fw=function(v){ v=String(v); if(v===fCur)return ''; fCur=v; return ' F'+v; };
   const CO=post.coolant;
   const cool=(job.coolant==='off')?null:(job.coolant==='through'?CO.through:CO.flood);
   // G40 (annule la compensation d'outil) + G80 (annule les cycles en canneau) en
@@ -25182,7 +25204,7 @@ function faoPost(job,postId){
   // contrôleur transforme XYZ (arcs et cycles restent dans le repère pièce).
   // Fagor 8065 = machine 3 AXES uniquement : aucun axe rotatif — ne JAMAIS
   // commander B/C (alarme CN) ni laisser croire à une inclinaison : à plat.
-  if(ori32){
+  if(ori32&&!c800){ // CYCLE800 : pivotement après le changement d'outil (comme le post Fusion)
     if(ax3){
       cmt('3+2 : B'+faoFmtXYZ(ORI.b)+' C'+faoFmtXYZ(ORI.c)+
         ' demandé — machine 3 axes : B/C NON commandés, usinage à plat (voir avertissement)');
@@ -25195,7 +25217,10 @@ function faoPost(job,postId){
   let qi=0, prev=null;
   // 2026-10-16-020 : orientation 3+2 PAR OPÉRATION (repère propre de l'opération) ;
   // l'ancien 3+2 du posage reste l'orientation par défaut.
-  let oriCur={b:ORI.b,c:ORI.c}, traOn=ori32&&!ax3, fagWarn=false;
+  let oriCur={b:ORI.b,c:ORI.c}, traOn=ori32&&!ax3&&!c800, fagWarn=false;
+  // CYCLE800 : plan courant ('0,0,0' = à plat) ; null = à recommander (après un changement d'outil)
+  let swCur='0,0,0', swUsed=false;
+  const swOut=function(S,dir){ faoPostLines(post.swivelRetract,{}).forEach(nc); nc(faoCycle800(post,S,dir)); };
   groups.forEach(function(g,gi){
     const t=g.tool;
     const S=faoFmtS(t.s), F=faoFmtF(t.f), FP=faoFmtF(t.plunge);
@@ -25206,7 +25231,11 @@ function faoPost(job,postId){
       const qb=g.blocks[bi]&&g.blocks[bi].op;
       if(qb&&qb.on!==false){ retrCur=faoRetractAbs(qb,job); break; }
     }
-    if(gi>0){ nc(CO.off); nc('G0 Z'+faoFmtXYZ(retrPrev-oz)); }
+    if(gi>0){ nc(CO.off);
+      if(c800&&swUsed&&swCur!=='0,0,0')faoPostLines(post.swivelRetract,{}).forEach(nc); // plan incliné : retrait machine
+      else nc('G0 Z'+faoFmtXYZ(retrPrev-oz)); }
+    if(c800&&swUsed)swCur=null; // le plan est recommandé après le changement d'outil (post Fusion)
+    fCur=null;
     retrPrev=retrCur;
     const toolF=faoToolById(job,t.id)||{};
     cmt('OUTIL T'+(t.num||1)+' '+faoKindLabel(toolF.kind)+
@@ -25226,7 +25255,23 @@ function faoPost(job,postId){
       // cav.txt : N60 #MSG["OPT1: Paroies"]) — l'opérateur voit l'opération
       // en cours sur la CN. Sanitisé ASCII, sans G1 ni F (parité post intacte).
       if(fag){ try{ nc('#MSG["'+faoOpAscii(faoOpLabel(b.op,job))+'"]'); }catch(e){} }
-      const OB=faoOpBC(job,b.op)||{b:ORI.b,c:ORI.c};
+      const frB=(c800&&b.op)?faoOpFrame(job,b.op):null; // CYCLE800 : coordonnées dans le plan de l'opération
+      let ox=OX, oy=OY, oz=OZ, toB=null, joB=job;
+      if(c800){
+        const SW=frB?faoSwivelZYX(frB.rel.X,frB.rel.Y,frB.rel.Z):(ori32?{a:0,b:0-ORI.b,c:0-ORI.c}:{a:0,b:0,c:0});
+        const key=SW.a+','+SW.b+','+SW.c;
+        if(key!==swCur){
+          swOut(SW,1); swUsed=true;
+          swCur=key;
+        }
+        if(frB){
+          const X=frB.rel.X,Y=frB.rel.Y,Z=frB.rel.Z;
+          toB=function(m){ const d0=+m.x-OX,d1=+m.y-OY,d2=+m.z-OZ;
+            return {x:X[0]*d0+X[1]*d1+X[2]*d2,y:Y[0]*d0+Y[1]*d1+Y[2]*d2,z:Z[0]*d0+Z[1]*d1+Z[2]*d2}; };
+          ox=0;oy=0;oz=0;joB=faoOpJob(job,b.op,frB);
+        }
+      }
+      const OB=c800?oriCur:(faoOpBC(job,b.op)||{b:ORI.b,c:ORI.c});
       if(OB.b!==oriCur.b||OB.c!==oriCur.c){
         if(ax3){
           cmt('3+2 : B'+faoFmtXYZ(OB.b)+' C'+faoFmtXYZ(OB.c)+' demandé — machine 3 axes : B/C NON commandés');
@@ -25251,7 +25296,7 @@ function faoPost(job,postId){
       const safeB=faoClearAbs(b.op,job);
       // P1-a : perçage émis en cycle dialecte — le déroulé G0/G1 reste la
       // source prévisualisation/estimation/garde-fou mais n'est pas écrit ici.
-      const DC=faoDrillCycle(b.op,job,oz);
+      const DC=faoDrillCycle(b.op,joB,oz,!!toB);
       if(DC){
         // 2026-10-15-011 : départ (RFP) et fond (DP) PAR TROU ; temporisation (G82 /
         // CYCLE82, CYCLE83 DTB) ; brise-copeaux : CYCLE83 VARI=0 (Siemens), passes
@@ -25264,7 +25309,7 @@ function faoPost(job,postId){
             // PIT = pas (positif = filet à droite), SDAC=3 (M3 après cycle), SST = SST1 = S.
             // Fagor 8065 : G84 rigide (R1) — syntaxe à valider sur la machine.
             if(fag){
-              nc('G98 G84 '+X+' '+Y+' Z'+faoFmtXYZ(DC.RTP)+' I'+faoFmtXYZ(H.DP)+' K0 R1 F'+F);
+              nc('G98 G84 '+X+' '+Y+' Z'+faoFmtXYZ(DC.RTP)+' I'+faoFmtXYZ(H.DP)+' K0 R1'+fw(F));
             }else{
               nc('G0 '+X+' '+Y+' Z'+faoFmtXYZ(DC.RTP));
               nc('CYCLE84('+faoFmtXYZ(DC.RTP)+', '+faoFmtXYZ(H.RFP)+', '+faoFmtXYZ(H.SDIS)+', '+faoFmtXYZ(H.DP)+', , '+DTB+', 3, , '+faoFmtXYZ(DC.tap.p)+', 0, '+SB+', '+SB+')');
@@ -25278,7 +25323,7 @@ function faoPost(job,postId){
               let z=H.RFP;
               while(z>H.DP+1e-6){
                 z=Math.max(H.DP,z-H.peck);
-                nc('G1 Z'+faoFmtXYZ(z)+' F'+FP);
+                nc('G1 Z'+faoFmtXYZ(z)+fw(FP));
                 if(z>H.DP+1e-6)nc('G0 Z'+faoFmtXYZ(z+0.5));
               }
               if(DC.dwell>0)nc('G4 K'+faoFmtXYZ(DC.dwell));
@@ -25287,17 +25332,17 @@ function faoPost(job,postId){
               const pl=Math.max(Math.floor(H.span/H.peck),1);
               const inc=-(H.span/pl);
               nc('G98 G83 '+X+' '+Y+' Z'+faoFmtXYZ(DC.RTP)+
-                ' I'+faoFmtXYZ(inc)+' J'+pl+' F'+FP);
+                ' I'+faoFmtXYZ(inc)+' J'+pl+fw(FP));
             }else if(DC.dwell>0){
               nc('G98 G82 '+X+' '+Y+' Z'+faoFmtXYZ(DC.RTP)+
-                ' I'+faoFmtXYZ(H.DP)+' K'+faoFmtXYZ(DC.dwell)+' F'+FP);
+                ' I'+faoFmtXYZ(H.DP)+' K'+faoFmtXYZ(DC.dwell)+fw(FP));
             }else{
               nc('G98 G81 '+X+' '+Y+' Z'+faoFmtXYZ(DC.RTP)+
-                ' I'+faoFmtXYZ(H.DP)+' F'+FP);
+                ' I'+faoFmtXYZ(H.DP)+fw(FP));
             }
           }else{
             // F de plongée sur chaque G0 : séquence d'avances identique au Fagor.
-            nc('G0 '+X+' '+Y+' Z'+faoFmtXYZ(DC.RTP)+' F'+FP);
+            nc('G0 '+X+' '+Y+' Z'+faoFmtXYZ(DC.RTP)+fw(FP));
             nc(H.peck
               ? 'CYCLE83('+faoFmtXYZ(DC.RTP)+', '+faoFmtXYZ(H.RFP)+', '+
                 faoFmtXYZ(H.SDIS)+', '+faoFmtXYZ(H.DP)+', , '+
@@ -25314,11 +25359,45 @@ function faoPost(job,postId){
         // La machine repose au plan du cycle (dessus + sortie) sur le dernier trou.
         if(DC.pts.length){
           const lp=DC.pts[DC.pts.length-1];
-          prev={x:+lp[0],y:+lp[1],z:faoZoneSecu(b.op,job)};
+          prev={x:+lp[0],y:+lp[1],z:faoZoneSecu(b.op,joB)};
+          if(toB){ const w=faoPtOpToPos(frB,[prev.x,prev.y,prev.z]); prev={x:w[0],y:w[1],z:w[2]}; }
         }
         return;
       }
       let first=true; const b32=!!(b.op&&faoOpFrame(job,b.op));
+      if(toB){
+        // CYCLE800 : mouvements ramenés dans le plan incliné ; un arc de l'opération (linéarisé
+        // dans le posage) redevient un seul G2/G3 quand tous ses segments sont là, dans l'ordre
+        const emit=function(m){
+          const mm=toB(m);
+          const X='X'+faoFmtXYZ(mm.x), Y='Y'+faoFmtXYZ(mm.y), Z='Z'+faoFmtXYZ(mm.z);
+          if(m.r){ nc('G0 '+X+' '+Y+' '+Z); first=true; }
+          else{
+            const plunge=first&&/Z/.test(Z);
+            const up=!plunge&&prev&&Math.abs(m.x-prev.x)<1e-6&&Math.abs(m.y-prev.y)<1e-6&&m.z>prev.z+1e-6;
+            nc('G1 '+X+' '+Y+' '+Z+fw(plunge?FP:(m.ent?FE:(up?FR:F))));
+            first=false;
+          }
+          prev=m;
+        };
+        let buf=null;
+        const flush=function(){ if(buf){ const q=buf; buf=null; q.forEach(emit); } };
+        sq.moves.forEach(function(m){
+          const A=(typeof faoArcOf!=='undefined')?faoArcOf.get(m):null;
+          if(!A||(buf&&buf.src!==A.src))flush();
+          if(!A){ emit(m); return; }
+          if(!buf){ buf=[]; buf.src=A.src; buf.from=prev; }
+          buf.push(m);
+          if(!A.last)return;
+          const q=buf; buf=null;
+          const p0=q.from?toB(q.from):null, s0=A.from;
+          if(p0&&q.length===A.n&&Math.hypot(p0.x-s0.x,p0.y-s0.y,p0.z-s0.z)<1e-4){
+            nc(faoArcWords(A.src,0,0,0)+fw(A.src.ent?FE:F)); first=false; prev=m;
+          }else q.forEach(emit);
+        });
+        flush();
+        return;
+      }
       sq.moves.forEach(function(m){
         // Plan de sécurité : retrait sur place -> translation au plan -> plongée.
         const ins=b32?null:faoSafeAhead(prev,m,safeB); // 3+2 : déjà fait le long de son Z (faoSeqSafeOp)
@@ -25329,14 +25408,14 @@ function faoPost(job,postId){
         }
         const X='X'+faoFmtXYZ(m.x-ox), Y='Y'+faoFmtXYZ(m.y-oy), Z='Z'+faoFmtXYZ(m.z-oz);
         if(m.r){ nc('G0 '+X+' '+Y+' '+Z); first=true; }
-        else if(m.arc){ nc(faoArcWords(m,ox,oy,oz)+' F'+(m.ent?FE:F)); first=false; }
+        else if(m.arc){ nc(faoArcWords(m,ox,oy,oz)+fw(m.ent?FE:F)); first=false; }
         else{
           // première plongée après un rapide : avance de plongée ; mouvement d'entrée
           // (rampe, hélice, approche) : F entrée ; remontée verticale : F remontée ;
           // sinon avance de coupe.
           const plunge=first&&/Z/.test(Z);
           const up=!plunge&&prev&&Math.abs(m.x-prev.x)<1e-6&&Math.abs(m.y-prev.y)<1e-6&&m.z>prev.z+1e-6;
-          nc('G1 '+X+' '+Y+' '+Z+' F'+(plunge?FP:(m.ent?FE:(up?FR:F))));
+          nc('G1 '+X+' '+Y+' '+Z+fw(plunge?FP:(m.ent?FE:(up?FR:F))));
           first=false;
         }
         prev=m;
@@ -25346,6 +25425,7 @@ function faoPost(job,postId){
   // 3+2 : annuler la transformation AVANT les coordonnées machine de fin (SUPA/park).
   if(traOn)nc('TRAFOOF');
   nc(CO.off);
+  if(c800&&swUsed&&swCur!=='0,0,0')swOut({a:0,b:0,c:0},1); // table remise à plat (post Fusion : onClose)
   // fin de la fiche machine (Fagor : retrait + #MSG[""] qui efface le message op — cav.txt N243150 ;
   // Siemens : SUPA Z600 + parc machine)
   faoPostLines(post.end,{ZRETR:faoFmtXYZ(retrPrev-oz),NAME:name}).forEach(nc);
@@ -25713,7 +25793,10 @@ faoMachine({
   label: 'Siemens 840D · 1520',  // nom affiché dans la liste des machines
   kind: 'siemens',               // dialecte : 'siemens' (840D) ou 'fagor' (8065)
   ext: 'mpf',                    // extension du programme exporté
-  axes: 5,                       // 5 : indexation 3+2 commandée (TRAORI, B/C) ; 3 : usinage à plat
+  axes: 5,                       // 5 : indexation 3+2 commandée ; 3 : usinage à plat
+  swivel: 'cycle800',            // 3+2 : 'cycle800' (pivotement de plan, comme le post Fusion) ou 'traori' (TRAORI + B/C)
+  swivelData: 'TABLE',           // jeu de données de pivotement de la CN (CYCLE800)
+  swivelRetract: ['G0 SUPA Z600 D0', 'G0 X-430', 'D1'],   // dégagement avant chaque pivotement
   numbers: null,                 // numérotation des lignes : null, ou { start: 10, step: 5 }
   coolant: { flood: 'M7', through: 'M8', off: 'M9' },   // arrosage, centre outil, arrêt
   toolChange: ['T{T} D1', 'M6'],  // changement d'outil (une ligne par élément)
@@ -25736,7 +25819,10 @@ faoMachine({
   label: 'Siemens 840D · 630',   // nom affiché dans la liste des machines
   kind: 'siemens',               // dialecte : 'siemens' (840D) ou 'fagor' (8065)
   ext: 'mpf',                    // extension du programme exporté
-  axes: 5,                       // 5 : indexation 3+2 commandée (TRAORI, B/C) ; 3 : usinage à plat
+  axes: 5,                       // 5 : indexation 3+2 commandée ; 3 : usinage à plat
+  swivel: 'cycle800',            // 3+2 : 'cycle800' (pivotement de plan, comme le post Fusion) ou 'traori' (TRAORI + B/C)
+  swivelData: 'TABLE',           // jeu de données de pivotement de la CN (CYCLE800)
+  swivelRetract: ['G0 SUPA Z600 D0', 'G0 X-200', 'D1'],   // dégagement avant chaque pivotement
   numbers: null,                 // numérotation des lignes : null, ou { start: 10, step: 5 }
   coolant: { flood: 'M7', through: 'M8', off: 'M9' },   // arrosage, centre outil, arrêt
   toolChange: ['T{T} D1', 'M6'],  // changement d'outil (une ligne par élément)
@@ -41263,6 +41349,8 @@ function faoOpMatrix(setup,op){
     const m=new THREE.Matrix4();m.makeBasis(new THREE.Vector3(...x),new THREE.Vector3(...y),new THREE.Vector3(...z));m.setPosition(o[0],o[1],o[2]);return m;}catch(e){return null;}
 }
 function faoPtOpToPos(fr,p){return faoToF(fr.P,faoToW(fr,p));}
+// segments d'un arc linéarisé -> arc d'origine (repère de l'opération) : le post CYCLE800 le réécrit en G2/G3
+const faoArcOf=new WeakMap();
 function faoMovesOpToPos(mv,fr){
   // mouvements repère opération → repère posage ; arcs (plan XY de l'opération) linéarisés
   if(!Array.isArray(mv))return mv;
@@ -41279,6 +41367,7 @@ function faoMovesOpToPos(mv,fr){
         const t=k/n,a=a0+(a1-a0)*t,z=prev.z+(m.z-prev.z)*t;
         const q=k===n?[m.x,m.y,m.z]:[cx+R*Math.cos(a),cy+R*Math.sin(a),z];
         const w=faoPtOpToPos(fr,q);const o=Object.assign({},m);delete o.arc;o.x=w[0];o.y=w[1];o.z=w[2];out.push(o);
+        faoArcOf.set(o,{src:m,from:{x:+prev.x,y:+prev.y,z:+prev.z},n:n,last:k===n});
       }
     }else{
       const w=faoPtOpToPos(fr,[+m.x,+m.y,+m.z]);const o=Object.assign({},m);o.x=w[0];o.y=w[1];o.z=w[2];out.push(o);

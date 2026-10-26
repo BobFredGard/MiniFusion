@@ -59,7 +59,7 @@ const {loadApp}=require('./appvm.cjs');
     "A(pM&&Math.abs(pM.zTip-(40-4.2))<1e-6,'2c : pointage du M8 : chanfrein Ø8,4 (nominal + 0,4) → 4,2 mm');",
     "const g8=faoPost(S,'siemens630').code,fg=faoPost(S,'fagor8065').code;",
     "A((g8.match(/CYCLE84\\([^)]*, 3, , 1\\.250, 0, /g)||[]).length===2,'2d : Siemens : 2 × CYCLE84 rigide, pas 1,25');",
-    "A((fg.match(/G84 [^\\n]*R1 F/g)||[]).length===2,'2e : Fagor : 2 × G84 rigide (R1)');",
+    "A((fg.match(/G84 [^\\n]*R1/g)||[]).length===2&&(fg.match(/G84 [^\\n]*R1 F/g)||[]).length===1,'2e : Fagor : 2 × G84 rigide (R1), F modal écrit une fois');",
     "A((g8.match(/CYCLE83\\(/g)||[]).length===5&&(g8.match(/CYCLE81\\(/g)||[]).length===9,'2f : CYCLE83 pour les 5 trous > 4 × Ø (Ø5, Ø8, Ø6,6), CYCLE81 pour 7 pointages + 2 perçages Ø6,75');",
     // ── STEP : trou lisse marqué taraudé dans la fiche → taraudage possible
     "const k8=(8).toFixed(2)+'@'+(40).toFixed(2);S.holeInfo={};S.holeInfo[k8]={thread:{size:'M10',p:1.5}};",

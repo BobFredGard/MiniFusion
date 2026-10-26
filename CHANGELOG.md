@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**339 versions**, de `2026-09-28b` à `V0.9.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**340 versions**, de `2026-09-28b` à `V0.9.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -4860,3 +4860,11 @@ Dernière étape de la série V0.8 (« toutes tes idées ») : piloter MiniFusio
 - **Cartes — taille GPU** (nouveau `src/88-fao-79-cartes-gpu.js`) : chaque carte (posage, une par orientation 3+2) est une cible à trois textures écrites ensemble — hauteur (R32F), normale de l'outil (RGBA32F), direction radiale (RG32F) — plus une profondeur = hauteur normalisée. Un pas d'outil est une instance (son rectangle dans la carte) ; le fragment calcule la cote de coupe de sa colonne (dessous de l'outil : fond, arrondi, pointe) et sa normale ; le **test de profondeur** garde la plus basse avec SA normale et SA direction radiale. Les rendus existants (colonnes instanciées, lancer de rayons) lisent ces textures. Perçages : rattrapage **1,8 s → 74 ms**, pas de lecture **7 → 0,2 ms**, bascule réel ↔ lisse ~70 ms ; 7 texels sur 206 250 diffèrent du calcul JavaScript (tous au bord exact d'un trou : arrondi 32 / 64 bits).
 - Sans WebGL2 ni cibles flottantes : la taille en JavaScript, inchangée (tests en VM).
 - Correctif en chemin : en GLSL 3, three.js r147 ne déclare pas la sortie du fragment — les shaders la déclarent (`layout(location=…) out`).
+
+## V0.9.1 - Post Siemens : 3+2 par CYCLE800, avance F modale
+« Niveau Post Pro Siemens, as-tu fait le point avec les 2 fournis et l'histoire du cube de transformation ? Je vois les transformations en B et C mais pas le cube. » Les posts Fusion fournis (`PostPro/1520-5axes.cps`, `630-5axes.cps`) pivotent le plan de travail par **CYCLE800** ; MiniFusion sortait `TRAORI(1)` + `G0 B… C…` (angles machine supposés) avec X Y Z dans le repère du posage — `TRAORI` est en commentaire dans les deux posts.
+- **CYCLE800** (défaut Siemens, `src/88-fao-60`) : `CYCLE800(1,"TABLE",0,27,0,0,0,C,B,A,0,0,0,1,,1)`, angles du **repère de l'opération** (rotations successives Z, Y, X ; la CN calcule B/C de la table). Avant chaque pivotement, le dégagement de la fiche machine (`swivelRetract` : `G0 SUPA Z600 D0`, `G0 X-430` sur la 1520 / `X-200` sur la 630, `D1`) ; pivotement après le changement d'outil, recommandé à chaque outil ; table remise à plat (angles nuls) avant la fin. L'ancien 3+2 du posage (B, C) devient le plan pivoté C = −C, B = −B.
+- **Coordonnées dans le plan incliné** : les mouvements sont réécrits dans le repère de l'opération ; un arc de l'opération, linéarisé pour la simulation, redevient **un seul G2/G3** ; les **cycles de perçage** (CYCLE81/82/83/84) sont émis dans le plan incliné au lieu du déroulé G0/G1. Perçages : 4 pivotements, 515 arcs, 30 cycles.
+- Réglage par machine `swivel: 'traori'` (`PostPro/siemens-*.js`) : ancienne sortie `TRAORI` + B/C inchangée.
+- **Avance F modale** (Siemens et Fagor) : le mot F n'est écrit que lorsqu'il change, et de nouveau après chaque changement d'outil. Perçages : 47 mots F pour ~3 600 lignes de mouvement.
+- Tests : nouveau `test_post_cycle800` (angles ZYX sur 50 repères quelconques, ligne CYCLE800, ordre outil / pivotement, dégagements 1520 / 630, Z du plan incliné, arc rendu en G3, F jamais répété, réglage TRAORI, ancien 3+2 du posage) ; `test_fao`, `test_posage_repere`, `test_fao_taraudage` adaptés. *Signe des angles à valider à vide sur la machine (face inclinée simple).*

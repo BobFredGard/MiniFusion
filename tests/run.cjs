@@ -151,6 +151,7 @@ const SUITES = [
   "test_mcp_serveur",
   "test_cartouche_modele",
   "test_simulation_moteurs",
+  "test_post_cycle800",
   "test_composants_liaisons",
   "test_composants_inspection",
   "test_composants_plan",

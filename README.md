@@ -177,8 +177,8 @@ Convertir une pièce multicorps en assemblage, sans rien remodéliser :
 
 ### Repère d'opération (3+2) et G-code
 
-- Une opération peut avoir **son propre Z et X**, pris sur une face ou une arête, avec un **centre commun** avec le posage. Elle est calculée dans ce repère et le G-code oriente l'outil par **B / C** avant l'opération (Siemens `TRAORI` ; le Fagor 3 axes est signalé). La simulation incline l'outil.
-- **G-code** multi-outils, cycles du dialecte, coordonnées relatives à l'origine du posage. *Validez toujours un premier programme à vide sur la machine.*
+- Une opération peut avoir **son propre Z et X**, pris sur une face ou une arête, avec un **centre commun** avec le posage. Elle est calculée dans ce repère. Sur Siemens, le G-code **pivote le plan de travail par `CYCLE800`** (jeu « TABLE », mode 27, comme les posts Fusion de la 630 et de la 1520) après le dégagement de la machine, puis écrit X Y Z **dans le plan incliné** : arcs G2/G3 et cycles de perçage sont gardés ; la table est remise à plat en fin de programme. Réglage `swivel: 'traori'` dans la fiche machine pour l'ancienne sortie `TRAORI` + B / C. Le Fagor 3 axes est signalé. La simulation incline l'outil.
+- **G-code** multi-outils, cycles du dialecte, coordonnées relatives à l'origine du posage, **avance F modale** (écrite seulement quand elle change). *Validez toujours un premier programme à vide sur la machine.*
 
 ## PLAN
 
@@ -277,7 +277,7 @@ Le dépôt stocke les gros binaires (`occt/*.wasm`, `Exemples/*.miniFusion`, `Ex
 | `.github/workflows/ci.yml` | CI : build à jour, syntaxe, tests rapides, lint. |
 | `CHANGELOG.md` | Une entrée par version : cause, correctif, test. |
 | `occt/`, `threejs/` | Noyau OpenCascade WebAssembly, rendu three.js (`.wasm` via Git LFS). |
-| `PostPro/` | Une fiche par machine (`siemens-630.js`, `siemens-1520.js`, `fagor-8065.js`) : nom, extension, dialecte, axes, codes M, changement d'outil, fin de programme. Nouvelle machine = copier une fiche, la modifier, `npm run build`. |
+| `PostPro/` | Une fiche par machine (`siemens-630.js`, `siemens-1520.js`, `fagor-8065.js`) : nom, extension, dialecte, axes, pivotement 3+2 (CYCLE800 ou TRAORI, dégagement avant pivotement), codes M, changement d'outil, fin de programme. Nouvelle machine = copier une fiche, la modifier, `npm run build`. |
 | `docs/` | Captures du README, analyses (crêtes constantes), tests de référence (`oracle.md`). |
 
 Cycle de livraison :

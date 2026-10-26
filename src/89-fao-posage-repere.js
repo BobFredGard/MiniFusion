@@ -539,6 +539,8 @@ function faoOpMatrix(setup,op){
     const m=new THREE.Matrix4();m.makeBasis(new THREE.Vector3(...x),new THREE.Vector3(...y),new THREE.Vector3(...z));m.setPosition(o[0],o[1],o[2]);return m;}catch(e){return null;}
 }
 function faoPtOpToPos(fr,p){return faoToF(fr.P,faoToW(fr,p));}
+// segments d'un arc linéarisé -> arc d'origine (repère de l'opération) : le post CYCLE800 le réécrit en G2/G3
+const faoArcOf=new WeakMap();
 function faoMovesOpToPos(mv,fr){
   // mouvements repère opération → repère posage ; arcs (plan XY de l'opération) linéarisés
   if(!Array.isArray(mv))return mv;
@@ -555,6 +557,7 @@ function faoMovesOpToPos(mv,fr){
         const t=k/n,a=a0+(a1-a0)*t,z=prev.z+(m.z-prev.z)*t;
         const q=k===n?[m.x,m.y,m.z]:[cx+R*Math.cos(a),cy+R*Math.sin(a),z];
         const w=faoPtOpToPos(fr,q);const o=Object.assign({},m);delete o.arc;o.x=w[0];o.y=w[1];o.z=w[2];out.push(o);
+        faoArcOf.set(o,{src:m,from:{x:+prev.x,y:+prev.y,z:+prev.z},n:n,last:k===n});
       }
     }else{
       const w=faoPtOpToPos(fr,[+m.x,+m.y,+m.z]);const o=Object.assign({},m);o.x=w[0];o.y=w[1];o.z=w[2];out.push(o);

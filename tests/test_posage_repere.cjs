@@ -39,7 +39,7 @@ const R=[
   " const w=faoPtOpToPos(fr,[1,2,3]);A(w.join()==='-7,-19,17','25 : centre commun (origine posage −10,−20,15) : point opération (1,2,3) → posage (−7,−19,17)');",
   " const jo=faoOpJob(s,op,fr);A(jo.stock.z1===40&&jo.stock.z0===0&&jo.stock.x0===0&&jo.stock.y1===0,'26 : brut vu par l’opération : son dessus = face X1 du posage, à 40 du centre commun');",
   " const mv=faoMovesOpToPos([{r:1,x:10,y:0,z:5},{r:0,x:0,y:10,z:5,arc:{i:-10,j:0,cw:false}}],fr);const L=mv[mv.length-1];A(mv.length>10&&!mv.some(m=>m.arc)&&Math.abs(L.x+5)<1e-9&&Math.abs(L.y+20)<1e-9&&Math.abs(L.z-25)<1e-9,'27 : arc de l’opération linéarisé (' +(mv.length-1)+' segments) et ré-exprimé dans le posage');",
-  " delete op.z;const g=faoPost(s,'siemens630').code;A(g.indexOf('TRAORI(1)')>=0&&g.indexOf('G0 B-90.000 C0.000')>=0&&/TRAFOOF/.test(g),'28 : G-code Siemens : TRAORI + G0 B-90 C0 avant l’opération, TRAFOOF en fin');",
+  " delete op.z;faoMachine({id:'s630traori',kind:'siemens',swivel:'traori'});const g=faoPost(s,'s630traori').code;A(g.indexOf('TRAORI(1)')>=0&&g.indexOf('G0 B-90.000 C0.000')>=0&&/TRAFOOF/.test(g),'28 : G-code Siemens : TRAORI + G0 B-90 C0 avant l’opération, TRAFOOF en fin');",
   " const gf=faoPost(s,'fagor8065');A(!/G0 B/.test(gf.code)&&gf.warns.some(x=>/3 axes/.test(x)),'29 : Fagor 8065 (3 axes) : B/C non commandés, alerte');",
   " delete op.frame;A(!/TRAORI|B-90/.test(faoPost(s,'siemens630').code),'30 : repère du posage : aucune trace 3+2');",
   " op.ztop=15;op.zbot=5;faoOpFrameEdit(s,op,function(){op.frame={z:'+X',x:'+Y'};});A(op.ztop===40&&op.zbot===30,'31 : changement de repère : hauteurs recalées sur le dessus du brut (15/5 → 40/30)');}",

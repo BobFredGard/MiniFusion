@@ -468,7 +468,11 @@ const vm=require('vm');
     "const job32=faoDefaultSetup();job32.name='T32';job32.stock={x0:0,y0:0,z0:0,x1:100,y1:80,z1:25};",
     "job32.ops=[{id:'a32',on:true,toolId:'T1',type:'facing',z:25,ae:6}];",
     "job32.orient={b:45,c:0};",
-    "const g32=faoPost(job32,'siemens630').code;",
+    // V0.9.1 : CYCLE800 par défaut (plan pivoté), TRAORI sur réglage machine
+    "const g32c=faoPost(job32,'siemens630').code;",
+    "att(g32c.indexOf('CYCLE800(1,\"TABLE\",0,27,0,0,0,0.000,-45.000,0.000,0,0,0,1,,1)')>g32c.indexOf('T1 D1')&&!/TRAORI/.test(g32c),'siemens 3+2 : CYCLE800 B-45 apres l outil, sans TRAORI');",
+    "faoMachine({id:'s630traori',kind:'siemens',label:'630 TRAORI',swivel:'traori'});",
+    "const g32=faoPost(job32,'s630traori').code;",
     "att(/TRAORI\\(1\\)/.test(g32),'siemens 3+2 : TRAORI(1) emis');",
     "att(/G0 B45\\.000 C0\\.000/.test(g32),'siemens 3+2 : positionnement B/C');",
     "att(g32.indexOf('TRAORI(1)')>0&&g32.indexOf('TRAORI(1)')<g32.indexOf('T1 D1'),'siemens 3+2 : TRAORI avant l outil');",
