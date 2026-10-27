@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**376 versions**, de `2026-09-28b` à `V0.11.21` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**377 versions**, de `2026-09-28b` à `V0.11.22` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5148,3 +5148,9 @@ Travail laissé non commité dans le dépôt principal par la session « Dépoui
 - **Cause** (`src/20-noyau-et-operations-solides.js`, `occFilletNurbs`) : sur des surfaces NURBS, la passe arête par arête de `occFilletRun` (après l'échec du lot) peut lancer un `MakeFillet.Build` qui ne rend jamais la main ; et quand l'arrondi du bloc local échoue, la reprise sur le corps entier retombe sur le même arrondi, en plus lent.
 - **Correctif** : option `lot:true` de `occFilletRun` (le lot en une passe, sinon null — un résultat partiel était refusé juste après de toute façon) ; `refusNurbs` : si l'arrondi NURBS a échoué sur le bloc, pas d'essai sur le corps entier, la fonction reçoit son `_err` « impossible » comme tout congé refusé.
 - **Tests** : suites congés existantes, suite rapide.
+
+## V0.11.22 - Congé : l'ancre d'esquisse l'emporte quand le plan porteur a bougé
+« Quand je déplace le Plan 1 de Cavité Test, à 25 pas de souci, à 20 je perds des arêtes sur le congé 2 arêtes. » Plan 1 (décalé de YZ) porte l'Esquisse 3 ; la nervure extrudée ±4 a ses deux flancs congés R4 par deux entrées ancrées sur la même ligne (côté bas, côté haut), cliquées quand la nervure allait de x = 25 à x = 35.
+- **Cause** (`src/20-noyau-et-operations-solides.js`, `occApplyXFillets`, passe 1) : l'ancre d'esquisse de l'entrée « flanc bas » trouve bien l'arête x = 16, à 9 mm du clic d'origine (x = 25) ; la garde « ancre divergente » cherche alors une arête à moins de 2 mm du clic et la trouve : c'est le flanc HAUT de la nervure (x = 24), la jumelle de l'autre entrée. Les deux entrées visent la même arête ; la passe « doublons fusionnés » en efface une pour toujours — le retour à 25 ne la rend pas, et les trois images de la symétrie double perdent la leur de même.
+- **Correctif** : `xAnchorStill` — le clic d'origine (pos0, figé) est-il encore là où l'ancre le décrit (sur l'entité, au niveau mémorisé ou au niveau courant du côté) ? Si non, c'est l'esquisse qui a emporté l'arête (plan porteur décalé, origine ou entité déplacée) : l'ancre fait foi, l'arête « au droit du clic » est une étrangère. Si oui, règle historique inchangée (l'ancre a divergé, l'arête cliquée est rétablie). La passe « doublons » ne fusionne plus deux entrées d'ancres différentes (autre côté, autre entité) ni de clics d'origine distincts : un appariement erroné d'un rejeu n'efface plus une sélection.
+- **Tests** : `test_conge_plan_decale` (nouveau, vrai noyau, document Cavité Test en fixture : Plan 1 à 25 / 20 / 23 / retour 25 — 4 congés × 2 arêtes conservés, 103 faces constantes, aucun avertissement ; `xAnchorStill` vrai à 30 et faux à 25 ; deux entrées à la même position mais d'ancres différentes restent deux sélections), ajouté aux deux suites ; suites congés existantes.

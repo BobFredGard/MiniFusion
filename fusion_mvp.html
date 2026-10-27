@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.11.21';
+const APP_VER='V0.11.22';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -4643,6 +4643,46 @@ function xAnchorMatch(se,edges){
   if(c3!==null)out.push(c3);
   return out;
 }
+function xAnchorStill(se){
+  // Le point CLIQUÉ (pos0, monde, figé) est-il encore là où l'ancre le décrit — sur son
+  // entité d'esquisse, au niveau mémorisé ? true : l'esquisse n'a pas bougé sous le clic,
+  // une ancre qui vise ailleurs a donc divergé. false : l'esquisse a emporté l'arête (plan
+  // porteur décalé, origine ou entité déplacée) et l'ancre fait foi, même loin du clic.
+  // null : indécidable (sans ancre, sans pos0, esquisse ou entité absente) → règle historique.
+  // V0.11.22, Cavité Test : Plan 1 (porteur de l'Esquisse 3) décalé de 25 à 20 mm — l'arête
+  // du flanc BAS de la nervure (ancre côté 0) est à 9 mm du clic, mais le flanc HAUT (x = 24)
+  // passe à 1 mm du clic d'origine (x = 25) : la garde « divergente » prenait cette jumelle,
+  // les deux entrées du congé visaient la même arête et la passe « doublons » en effaçait une
+  // pour toujours (retour à 25 : une seule arête restait).
+  try{
+    const a=se&&se.anchor,P0=se&&se.pos0;
+    if(!a||!P0||P0.length!==3)return null;
+    const s=(doc.sketches||[]).find(k=>k.id===a.sk);if(!s)return null;
+    const B=sketchBasis(s);
+    const dx=P0[0]-B.o.x,dy=P0[1]-B.o.y,dz=P0[2]-B.o.z;
+    const q=[dx*B.u.x+dy*B.u.y+dz*B.u.z,dx*B.v.x+dy*B.v.y+dz*B.v.z,dx*B.n.x+dy*B.n.y+dz*B.n.z];
+    if(a.t==='p'){
+      const p=s.points[a.id];if(!p)return null;
+      return Math.hypot(q[0]-p.x,q[1]-p.y)<=2.5;
+    }
+    const e=(s.entities||[]).find(k=>k.id===a.id);if(!e)return null;
+    let d2;
+    if(e.t==='line'){const A0=s.points[e.p1],B0=s.points[e.p2];if(!A0||!B0)return null;d2=distSeg2(q[0],q[1],A0.x,A0.y,B0.x,B0.y);}
+    else if(e.t==='circle'||e.t==='arc'){const C=s.points[e.pc];if(!C||!(e.r>0))return null;d2=Math.abs(Math.hypot(q[0]-C.x,q[1]-C.y)-e.r);}
+    else return null;
+    if(d2>(a.far?8.0:2.5))return false; // l'entité n'est plus sous le clic : elle a été déplacée
+    // Niveau : celui mémorisé au clic (a.z) OU le niveau courant du côté (l'épaisseur a pu
+    // changer légitimement, comme dans xAnchorMatch) ; hors des deux, l'esquisse a bougé.
+    const zs=[];
+    if(a.z!==undefined&&a.z!==null&&isFinite(+a.z))zs.push(+a.z);
+    if(a.side!==undefined){
+      const sp=(doc.features||[]).filter(f=>f.type==='extrude'&&f.sketchId===a.sk&&f.visible!==false).map(f=>extrudeSpan(f));
+      if(sp.length){const z=a.side===0?sp[0].lo:sp[0].hi;if(isFinite(z)&&Math.abs(z)<=1000)zs.push(z);}
+    }
+    if(!zs.length)return true;
+    return zs.some(z=>Math.abs(q[2]-z)<=1.5);
+  }catch(err){return null;}
+}
 
 function occApplyXFillets(base,xfils){
   // Congés/chanfreins exacts : 1) ancre esquisse recalculée (suit les éditions), 2) repli position+longueur.
@@ -4663,12 +4703,21 @@ function occApplyXFillets(base,xfils){
   // perdues). On exige donc aussi la même longueur : deux vraies arêtes jumelles se
   // ressemblent jusque dans leur longueur ; deux arêtes d'un coin, non. La fusion exacte est
   // garantie plus bas, sur l'index d'arête réellement résolu.
+  // V0.11.22 : deux entrées d'ANCRES différentes (autre côté, autre entité) ou de CLICS
+  // différents (pos0 à plus de 2 mm) sont deux sélections distinctes, même si un rejeu les a
+  // momentanément appariées sur la même arête (se.pos identiques) : on ne les fusionne jamais,
+  // le rejeu suivant les sépare. Les vrais doublons anciens (même position, ancre recalée sur
+  // cette position, pos0 figé sur elle) sont fusionnés comme avant.
+  const ancKey=e=>e.anchor?[e.anchor.t,e.anchor.sk,e.anchor.id,e.anchor.side,Math.round((+e.anchor.z||0)*10)].join('|'):'';
+  const sameSel=(u,se)=>(!u.anchor||!se.anchor||ancKey(u)===ancKey(se))
+    &&(!u.pos0||!se.pos0||u.pos0.length!==3||se.pos0.length!==3||Math.hypot(u.pos0[0]-se.pos0[0],u.pos0[1]-se.pos0[1],u.pos0[2]-se.pos0[2])<=2.0);
   xfils.forEach(xf=>{
     const uniq=[];let nd=0;
     (xf.edges||[]).forEach(se=>{
       if(uniq.some(u=>Math.abs((u.r||0)-(se.r||0))<1e-9
         &&Math.abs((u.len||0)-(se.len||0))<=Math.max(0.01,0.02*(se.len||0))
-        &&Math.hypot(u.pos[0]-se.pos[0],u.pos[1]-se.pos[1],u.pos[2]-se.pos[2])<=0.75)){nd++;return;}
+        &&Math.hypot(u.pos[0]-se.pos[0],u.pos[1]-se.pos[1],u.pos[2]-se.pos[2])<=0.75
+        &&sameSel(u,se))){nd++;return;}
       uniq.push(se);
     });
     if(nd){xf.edges=uniq;warns.push(`${xf.name||lab} : ${nd} doublon(s) fusionné(s)`);}
@@ -4716,7 +4765,11 @@ function occApplyXFillets(base,xfils){
         //  au clic, une sélection d'arête se fait à 0,75 mm près.)
         const born=[];
         edges.forEach((e,i)=>{if(dRef(i)<=2.0)born.push(i);});
-        if(born.length){ // l'arête sélectionnée existe toujours → l'ancre a divergé, on l'ignore
+        // … sauf si le CLIC lui-même n'est plus là où l'ancre le décrit (plan porteur de
+        // l'esquisse décalé, entité déplacée) : c'est l'esquisse qui a emporté l'arête, l'ancre
+        // fait foi, et l'arête « au droit du clic » est une étrangère — la jumelle de l'autre
+        // flanc d'une nervure (Cavité Test, Plan 1 → 20 mm). Voir xAnchorStill (V0.11.22).
+        if(born.length&&xAnchorStill(se)!==false){ // l'arête sélectionnée existe toujours → l'ancre a divergé, on l'ignore
           born.sort((a,b)=>dRef(a)-dRef(b));
           take(born[0],se.r,se);
           // Une seule ligne par divergence (le rejeu passe à chaque édition : inutile de
