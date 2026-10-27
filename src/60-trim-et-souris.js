@@ -525,7 +525,8 @@ svg.addEventListener('pointerdown',e=>{
         skDragWalk=null;skDragEnt={x0:wx,y0:wy,pids:comp.pids,orig,anchor:comp.pids.filter(p=>!skFixed(sk).has(p)),pushed:false};
         renderSkPanel();drawSketch2D();return;
       }
-      skDrag=pid;skDragWalk=null;skDragMoved=false;skDragPushed=false;renderSkPanel();drawSketch2D();return;
+      skDrag=pid;skDragWalk=null;skDragMoved=false;skDragPushed=false;
+      skDragFrom={wx,wy,x:sk.points[pid].x,y:sk.points[pid].y};renderSkPanel();drawSketch2D();return;
     }
     if(e.detail===2) return;
     const dlId=hitDimLine(sk,e.clientX-r0.left,e.clientY-r0.top); // ligne de cote : glisser = repositionner
@@ -727,6 +728,11 @@ svg.addEventListener('pointermove',e=>{
     return;
   }
   if(skDrag){
+    // V0.11.27 : SEUIL ANTI-CLIC (comme pour une entité) — un simple clic de sélection sur un point
+    // le faisait glisser d'un pixel, et le lâcher posait une contrainte d'accroche (milieu, sur la
+    // ligne…) là où le point se trouvait DÉJÀ : bouts d'axes de construction d'un rectangle par le
+    // centre, points de symétrie… → contraintes en double, esquisse qui part de travers.
+    if(!skDragMoved&&skDragFrom&&Math.hypot(wx-skDragFrom.wx,wy-skDragFrom.wy)*skView.s<=4)return;
     if(skFixed(sk).has(skDrag)){skStatus('Point fixé 🔒 — retirez « Fixe » pour le déplacer.');return;}
     if(!skDragPushed){skPushUndo();skDragPushed=true;}
     const s=skDragSnapFind(sk,wx,wy,skDrag); // V0.11.24 : point, milieu, sur ligne / cercle (contrainte au lâcher)
@@ -888,8 +894,10 @@ svg.addEventListener('pointerup',e=>{
   if(skPan){skPanDragged=skPan.moved;skPan=null;return;}
   if(!skEdit||e.button!==0)return;const sk=skEdit;const[wx,wy]=evXY(e);
   if(skDimDrag){skDimDrag=null;drawSketch2D();return;}
-  if(skDrag){const pid=skDrag,s=skDragSnap;skDrag=null;skDragWalk=null;skDragPushed=false;skSnapMk=null;skDragSnap=null;
-    if(s&&skDragMoved)skDragRelease(sk,pid,s); // V0.11.24 : lâché sur une accroche → contrainte posée
+  if(skDrag){const pid=skDrag,s=skDragSnap,F=skDragFrom;skDrag=null;skDragWalk=null;skDragPushed=false;skSnapMk=null;skDragSnap=null;skDragFrom=null;
+    // V0.11.27 : accroche où le point était DÉJÀ au départ (milieu, ligne porteuse…) : rien à poser
+    const already=!!(s&&F&&Math.hypot(s.x-F.x,s.y-F.y)<1e-6);
+    if(s&&skDragMoved&&!already)skDragRelease(sk,pid,s); // V0.11.24 : lâché sur une accroche → contrainte posée
     renderSkPanel();drawSketch2D();return;}
   if(skDragEnt){const moved=skDragEnt.pushed;skDragEnt=null;skDragWalk=null;if(moved){solveSketch(sk,60);renderSkPanel();skStatus('Entité déplacée.');}drawSketch2D();return;}
   if(skBox){

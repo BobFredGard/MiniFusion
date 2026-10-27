@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.11.26';
+const APP_VER='V0.11.27';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -614,7 +614,7 @@ let floorOn=true; // V0.10.0 : case « Sol » (disque du thème) — « Miroir �
 try{if(localStorage.getItem('minifusion_sol')==='off')floorOn=false;}catch(e){}
 // 2026-10-22 : orbite LIBRE (façon Fusion « Free Orbit ») — la pièce tourne dans tous les sens,
 // roulis compris ; contrainte (défaut) = le Z de la vue reste en haut de l'écran.
-let orbitFree=false,_fo=null;
+let orbitFree=false,_fo=null,_fz=null,_foMark=null;
 try{if(localStorage.getItem('minifusion_orbit')==='libre')orbitFree=true;}catch(e){}
 // 2026-10-27 : EFFET DE PERSPECTIVE réglable (⚙ → Perspective) = angle de champ de la caméra 3D,
 // 5° (presque orthographique) à 90° (fuyantes marquées) ; 50° par défaut.
@@ -676,6 +676,7 @@ function buildScene(){
   controls=new THREE.OrbitControls(camera,renderer.domElement);
   controls.enableDamping=true; controls.dampingFactor=0.08;
   controls.zoomSpeed=zoomInv?-1:1;
+  controls.enableZoom=false; // V0.11.27 : molette = zoom VERS LA SOURIS (orbitZoomWheel), plus vers la cible
   // Souris : rotation = clic GAUCHE enfoncé, roulette (molette) conservée = rotation aussi,
   // déplacement (pan) = clic DROIT enfoncé. Clic court sans glisser = sélection (gardien >6px).
   if(controls.mouseButtons&&THREE.MOUSE){controls.mouseButtons.LEFT=THREE.MOUSE.ROTATE;controls.mouseButtons.MIDDLE=THREE.MOUSE.ROTATE;controls.mouseButtons.RIGHT=THREE.MOUSE.PAN;}
@@ -910,17 +911,45 @@ function orbitSetMode(free){
   try{const o=document.getElementById('optOrbit');if(o)o.value=orbitFree?'libre':'contrainte';}catch(e){}
   try{if(typeof mfOrbitBtnSync==='function')mfOrbitBtnSync();}catch(e){}
 }
-// pivot : centre de la (première) face sélectionnée, sinon centre des pièces visibles (+ brut en FAO)
+/* V0.11.27 : POINT SOUS LA SOURIS — sert de pivot à la rotation et de centre au zoom.
+   Plus on zoomait sur un détail, plus la rotation autour du centre des pièces le jetait hors
+   de l'écran. Désormais on tourne autour du point de pièce cliqué, et la molette zoome vers
+   le point visé (il reste sous le curseur). Rien sous la souris : null. */
+function viewHitAt(cx,cy){
+  if(!camera||!renderer)return null;
+  const r=renderer.domElement.getBoundingClientRect();
+  if(!r.width||!r.height)return null;
+  const ndc=new THREE.Vector2(((cx-r.left)/r.width)*2-1,-((cy-r.top)/r.height)*2+1);
+  rayc.setFromCamera(ndc,camera);
+  const objs=[];
+  try{
+    if(typeof asmMode!=='undefined'&&asmMode==='asm'&&typeof asmSceneGet==='function'){
+      const G=asmSceneGet().getObjectByName('asmOcc');
+      if(G)G.traverse(m=>{if(m.isMesh&&m.visible!==false)objs.push(m);});
+    }else bodies.forEach(b=>{if(b.visible&&b.mesh&&b.mesh.visible!==false&&!b.ghost)objs.push(b.mesh);});
+  }catch(e){}
+  try{
+    if(typeof faoPoseGrp!=='undefined'&&faoPoseGrp&&faoPoseGrp.parent&&faoPoseGrp.parent.visible!==false)
+      faoPoseGrp.traverse(o=>{if(o.isMesh&&o.visible&&o.userData&&o.userData.faoStock)objs.push(o);});
+  }catch(e){}
+  if(!objs.length)return null;
+  let hits=[];try{hits=rayc.intersectObjects(objs,false);}catch(e){}
+  const h=hits.find(x=>x.object&&(!x.object.material||x.object.material.opacity===undefined||x.object.material.opacity>0.05));
+  return h?h.point.clone():null;
+}
+// point du plan de la cible (perpendiculaire à la vue) sous la souris : repli du zoom dans le vide
+function viewTargetPlaneAt(cx,cy){
+  const r=renderer.domElement.getBoundingClientRect();
+  const ndc=new THREE.Vector2(((cx-r.left)/r.width)*2-1,-((cy-r.top)/r.height)*2+1);
+  rayc.setFromCamera(ndc,camera);
+  const d=camera.getWorldDirection(new THREE.Vector3());
+  const pl=new THREE.Plane().setFromNormalAndCoplanarPoint(d,controls.target);
+  return rayc.ray.intersectPlane(pl,new THREE.Vector3());
+}
+// pivot hors pièce : centre des pièces visibles (+ brut en FAO) ; mode Placer : repère / occurrence
 function orbitPivot(){
   // mode Placer (V0.7.4) : repère choisi, occurrence sélectionnée ou centre des pièces placées
   try{if(typeof asmOrbitPivot==='function'){const p=asmOrbitPivot();if(p)return p;}}catch(e){}
-  try{
-    if(typeof selFaces!=='undefined'&&selFaces.length&&selFaces[0].mesh&&typeof faceCentroid==='function'){
-      const c=faceCentroid(selFaces[0].mesh,selFaces[0].faceIndex);
-      if(c)return c;
-      if(selFaces[0].point)return selFaces[0].point.clone();
-    }
-  }catch(e){}
   const box=new THREE.Box3();
   try{bodies.forEach(b=>{if(b.visible&&b.mesh&&b.mesh.visible!==false)box.expandByObject(b.mesh);});}catch(e){}
   try{
@@ -928,6 +957,59 @@ function orbitPivot(){
       faoPoseGrp.traverse(o=>{if(o.isMesh&&o.visible&&o.userData&&o.userData.faoStock)box.expandByObject(o);});
   }catch(e){}
   return box.isEmpty()?controls.target.clone():box.getCenter(new THREE.Vector3());
+}
+// pivot d'un glisser qui commence en (cx,cy) : le point de la face sous la souris ; dans le vide,
+// le centre du solide (V0.11.27 — la face sélectionnée n'est plus le pivot)
+function orbitPivotAt(cx,cy){
+  try{if(typeof asmMode!=='undefined'&&asmMode==='asm'&&typeof asmPivot!=='undefined'&&asmPivot){const p=asmOrbitPivot();if(p)return p;}}catch(e){} // repère choisi : prioritaire
+  try{const h=viewHitAt(cx,cy);if(h)return h;}catch(e){}
+  return orbitPivot();
+}
+// repère visuel du pivot pendant la rotation (point orange, taille écran fixe, toujours devant)
+function orbitMarkShow(P){
+  try{
+    if(!_foMark){
+      const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute([0,0,0],3));
+      _foMark=new THREE.Points(g,new THREE.PointsMaterial({color:0xff8a00,size:9,sizeAttenuation:false,depthTest:false,transparent:true}));
+      _foMark.renderOrder=999;_foMark.userData.noMirror=true;_foMark.name='orbitPivotMark';
+    }
+    if(P){
+      _foMark.position.copy(P);_foMark.visible=true;
+      const S=(typeof asmMode!=='undefined'&&asmMode==='asm'&&typeof asmSceneGet==='function')?asmSceneGet():scene;
+      if(_foMark.parent!==S)S.add(_foMark);
+    }else _foMark.visible=false;
+  }catch(e){}
+}
+// molette : zoom VERS le point visé (homothétie centrée sur lui : il reste sous le curseur).
+// Pièce sous la souris → son point ; sinon le plan de la cible. Amorti comme la rotation.
+function orbitZoomWheel(e){
+  if(!controls||controls.enabled===false||!camera)return;
+  try{if(typeof skEdit!=='undefined'&&skEdit)return;}catch(err){}
+  e.preventDefault();
+  let d=e.deltaY*(e.deltaMode===1?33:(e.deltaMode===2?400:1));
+  if(!d)return;
+  d=Math.max(-300,Math.min(300,d));
+  if(zoomInv)d=-d;
+  let P=null;
+  try{P=viewHitAt(e.clientX,e.clientY)||viewTargetPlaneAt(e.clientX,e.clientY);}catch(err){}
+  if(!P)P=controls.target.clone();
+  // un cran (100) ≈ 15 % ; logarithme du facteur cumulé, écoulé par orbitTick
+  const ln=d*0.0016;
+  if(_fz&&_fz.ln*ln>0)_fz.ln+=ln;else _fz={ln};
+  _fz.P=P;
+  viewUserMoved=true;
+}
+function orbitZoomApply(ln,P){
+  const dc=camera.position.distanceTo(P);
+  // bornes : pas plus près que 0,5 mm du point visé, pas plus loin que 20 m
+  let k=Math.exp(ln);
+  if(dc*k<0.5)k=0.5/Math.max(dc,1e-9);
+  if(dc*k>20000)k=20000/Math.max(dc,1e-9);
+  if(Math.abs(k-1)<1e-9)return false;
+  const t=controls.target;
+  const oc=camera.position.clone().sub(P).multiplyScalar(k),ot=t.clone().sub(P).multiplyScalar(k);
+  camera.position.copy(P).add(oc);t.copy(P).add(ot);
+  return true;
 }
 function orbitRotate(dx,dy,P){
   if(!camera||!controls||!renderer)return;
@@ -958,12 +1040,18 @@ function orbitRotate(dx,dy,P){
 // l'atelier RENDU, lui, suit la souris sans inertie. Le pan et le zoom gardent 8 %.
 const ORBIT_ROT_DAMP=0.2;
 function orbitTick(){
+  if(_fz){
+    const f=(controls&&controls.enableDamping)?0.3:1,a=_fz.ln*f;
+    let moved=false;try{moved=orbitZoomApply(a,_fz.P);}catch(e){}
+    _fz.ln-=a;
+    if(!moved||Math.abs(_fz.ln)<1e-4)_fz=null;
+  }
   if(!_fo||(!_fo.vx&&!_fo.vy))return;
   try{if(typeof skEdit!=='undefined'&&skEdit){_fo.vx=_fo.vy=0;return;}}catch(e){}
   const f=(controls&&controls.enableDamping)?ORBIT_ROT_DAMP:1;
   orbitRotate(_fo.vx*f,_fo.vy*f,_fo.P);
   _fo.vx*=1-f;_fo.vy*=1-f;
-  if(Math.abs(_fo.vx)<0.01&&Math.abs(_fo.vy)<0.01){_fo.vx=_fo.vy=0;if(!_fo.down)_fo=null;}
+  if(Math.abs(_fo.vx)<0.01&&Math.abs(_fo.vy)<0.01){_fo.vx=_fo.vy=0;if(!_fo.down){_fo=null;orbitMarkShow(null);}}
 }
 function orbitWire(el){
   // 2026-10-23 : Ctrl + molette enfoncée = DÉPLACEMENT, comme le clic droit. Écouteur en
@@ -979,14 +1067,16 @@ function orbitWire(el){
     if(e.button===1&&(e.ctrlKey||e.metaKey))return; // Ctrl + molette : déplacement (OrbitControls)
     if(!controls||controls.enabled===false||!controls.enableRotate)return; // esquisse : caméra figée
     try{if(typeof skEdit!=='undefined'&&skEdit)return;}catch(err){}
-    _fo={id:e.pointerId,x:e.clientX,y:e.clientY,P:orbitPivot(),vx:0,vy:0,down:true};
+    _fo={id:e.pointerId,x:e.clientX,y:e.clientY,P:orbitPivotAt(e.clientX,e.clientY),x0:e.clientX,y0:e.clientY,vx:0,vy:0,down:true,moved:false};
   });
+  el.addEventListener('wheel',orbitZoomWheel,{passive:false});
   window.addEventListener('pointermove',e=>{
     if(!_fo||!_fo.down||e.pointerId!==_fo.id)return;
     const dx=e.clientX-_fo.x,dy=e.clientY-_fo.y;_fo.x=e.clientX;_fo.y=e.clientY;
     _fo.vx+=dx;_fo.vy+=dy;
+    if(!_fo.moved&&Math.hypot(e.clientX-_fo.x0,e.clientY-_fo.y0)>3){_fo.moved=true;orbitMarkShow(_fo.P);}
   });
-  const fin=e=>{if(_fo&&e.pointerId===_fo.id){_fo.down=false;if(!_fo.vx&&!_fo.vy)_fo=null;}};
+  const fin=e=>{if(_fo&&e.pointerId===_fo.id){_fo.down=false;if(!_fo.vx&&!_fo.vy){_fo=null;orbitMarkShow(null);}}};
   window.addEventListener('pointerup',fin);window.addEventListener('pointercancel',fin);
 }
 function viewFaoActive(){
@@ -1023,6 +1113,7 @@ function viewControlsRebuild(){
   try{controls.dispose();}catch(e){}
   controls=new THREE.OrbitControls(o.obj||camera,renderer.domElement);
   controls.enableDamping=o.damp;controls.dampingFactor=o.df;controls.zoomSpeed=o.zs;controls.enableRotate=o.rot;
+  controls.enableZoom=false; // zoom vers la souris : orbitZoomWheel
   if(o.mb&&controls.mouseButtons)Object.assign(controls.mouseButtons,o.mb);
   controls.target.copy(t);controls.update();
 }
@@ -13234,7 +13325,7 @@ function skEv(e){
 let SK_SNAP=5, SK_INF=2.5, SK_PICK=4, SK_PT=5, SK_PICKX=6;
 skUpdateTols();
 let skTool='select',skDraft=null,skMsg='',skOffArm=null;
-let skDown=null,skChain=null,skInfer=null,skSnapMk=null,skSel=null,skSelX=[],skDrag=null,skDragMoved=false,skDragPushed=false,skDimDrag=null,skPan=null,skDragSnap=null; // skDragSnap : accroche du point glissé (V0.11.24)
+let skDown=null,skChain=null,skInfer=null,skSnapMk=null,skSel=null,skSelX=[],skDrag=null,skDragMoved=false,skDragPushed=false,skDimDrag=null,skPan=null,skDragSnap=null,skDragFrom=null; // skDragSnap : accroche du point glissé (V0.11.24) ; skDragFrom : départ du glisser (V0.11.27)
 let skBox=null,skDragEnt=null,skDyn=null; // sélection rect · déplacement d'entité · saisie dynamique (longueur/angle)
 let skOffsetD=5; // distance « auto » du menu ⇄ Décaler (contexte) : déclarée ici car le menu la lit AVANT tout usage de l'outil — sinon ReferenceError et menu jamais affiché
 let skDimPlace=null; // placement de cote : {id} → la cote suit le curseur jusqu'au clic
@@ -16157,8 +16248,12 @@ function applyCon(type){
     return;
   }
   if(type==='symmetric'){
-    if(lines.length!==3){skStatus('Symétrie : sélectionnez 3 lignes — 2 à symétriser + l’axe en dernier (ex : clic axe en dernier).');return;}
-    const a=lines[0],b=lines[1],mid=lines[2];
+    if(lines.length!==3){skStatus('Symétrie : sélectionnez 3 lignes — 2 à symétriser + l’axe (la ligne de construction, ou la dernière cliquée).');return;}
+    // V0.11.27 : l'AXE est la ligne de CONSTRUCTION quand une seule des 3 l'est, quel que soit l'ordre
+    // des clics (avant : toujours la dernière cliquée — axe cliqué en premier = une ligne du profil
+    // prise pour axe, symétrie absurde) ; sinon, la dernière cliquée.
+    const cons=lines.filter(l=>l.construction);
+    const mid=cons.length===1?cons[0]:lines[2],pair=lines.filter(l=>l!==mid),a=pair[0],b=pair[1];
     if(new Set([a.id,b.id,mid.id]).size!==3){skStatus('Symétrie : 3 lignes distinctes requises.');return;}
     if((sk.constraints||[]).some(c=>c.type==='symmetric'&&((c.a===a.id&&c.b===b.id)||(c.a===b.id&&c.b===a.id))&&c.mid===mid.id)){skStatus('Symétrie déjà posée.');return;}
     skPushUndo();
@@ -18181,7 +18276,8 @@ svg.addEventListener('pointerdown',e=>{
         skDragWalk=null;skDragEnt={x0:wx,y0:wy,pids:comp.pids,orig,anchor:comp.pids.filter(p=>!skFixed(sk).has(p)),pushed:false};
         renderSkPanel();drawSketch2D();return;
       }
-      skDrag=pid;skDragWalk=null;skDragMoved=false;skDragPushed=false;renderSkPanel();drawSketch2D();return;
+      skDrag=pid;skDragWalk=null;skDragMoved=false;skDragPushed=false;
+      skDragFrom={wx,wy,x:sk.points[pid].x,y:sk.points[pid].y};renderSkPanel();drawSketch2D();return;
     }
     if(e.detail===2) return;
     const dlId=hitDimLine(sk,e.clientX-r0.left,e.clientY-r0.top); // ligne de cote : glisser = repositionner
@@ -18383,6 +18479,11 @@ svg.addEventListener('pointermove',e=>{
     return;
   }
   if(skDrag){
+    // V0.11.27 : SEUIL ANTI-CLIC (comme pour une entité) — un simple clic de sélection sur un point
+    // le faisait glisser d'un pixel, et le lâcher posait une contrainte d'accroche (milieu, sur la
+    // ligne…) là où le point se trouvait DÉJÀ : bouts d'axes de construction d'un rectangle par le
+    // centre, points de symétrie… → contraintes en double, esquisse qui part de travers.
+    if(!skDragMoved&&skDragFrom&&Math.hypot(wx-skDragFrom.wx,wy-skDragFrom.wy)*skView.s<=4)return;
     if(skFixed(sk).has(skDrag)){skStatus('Point fixé 🔒 — retirez « Fixe » pour le déplacer.');return;}
     if(!skDragPushed){skPushUndo();skDragPushed=true;}
     const s=skDragSnapFind(sk,wx,wy,skDrag); // V0.11.24 : point, milieu, sur ligne / cercle (contrainte au lâcher)
@@ -18544,8 +18645,10 @@ svg.addEventListener('pointerup',e=>{
   if(skPan){skPanDragged=skPan.moved;skPan=null;return;}
   if(!skEdit||e.button!==0)return;const sk=skEdit;const[wx,wy]=evXY(e);
   if(skDimDrag){skDimDrag=null;drawSketch2D();return;}
-  if(skDrag){const pid=skDrag,s=skDragSnap;skDrag=null;skDragWalk=null;skDragPushed=false;skSnapMk=null;skDragSnap=null;
-    if(s&&skDragMoved)skDragRelease(sk,pid,s); // V0.11.24 : lâché sur une accroche → contrainte posée
+  if(skDrag){const pid=skDrag,s=skDragSnap,F=skDragFrom;skDrag=null;skDragWalk=null;skDragPushed=false;skSnapMk=null;skDragSnap=null;skDragFrom=null;
+    // V0.11.27 : accroche où le point était DÉJÀ au départ (milieu, ligne porteuse…) : rien à poser
+    const already=!!(s&&F&&Math.hypot(s.x-F.x,s.y-F.y)<1e-6);
+    if(s&&skDragMoved&&!already)skDragRelease(sk,pid,s); // V0.11.24 : lâché sur une accroche → contrainte posée
     renderSkPanel();drawSketch2D();return;}
   if(skDragEnt){const moved=skDragEnt.pushed;skDragEnt=null;skDragWalk=null;if(moved){solveSketch(sk,60);renderSkPanel();skStatus('Entité déplacée.');}drawSketch2D();return;}
   if(skBox){
@@ -19660,23 +19763,22 @@ function extDynPanel(p,f){
   sec('Étendue',extSeg([['dist','📏','Distance','Une distance donnée'],['upto','🎯','Jusqu’à la face','S’arrête sur une face du corps cible'],['through','⤴','À travers tout','Traverse tout le solide']],
     f.upto?'upto':(f.through?'through':'dist'),v=>{
     if(v==='upto'){
+      // V0.11.27 : l'icône active SUFFIT — tout clic court sur une face la désigne (extUptoAuto)
       if(!f.upto){
-        const me=doc.features.indexOf(f);
-        const prevs=doc.features.slice(0,me).filter(x=>x.type==='extrude'&&(x.op||'add')==='add');
-        if(!prevs.length){try{faceEl.textContent='Jusqu’à la face : aucune extrusion additive ANTÉRIEURE.';}catch(e){}return;}
-        docPushUndo('étendue de « '+f.name+' »');f.upto={ex:prevs[prevs.length-1].id,side:1};
+        const t=extUptoTarget(f,f.body);
+        if(!t){try{faceEl.textContent='Jusqu’à la face : aucune fonction ANTÉRIEURE — créez d’abord un volume.';}catch(e){}return;}
+        extDynSet('étendue de « '+f.name+' »',g=>{g.upto={ex:t.id,side:1};g.through=false;});
       }
-      extPickFace={f};try{renderer.domElement.style.cursor='crosshair';}catch(e){}
-      try{faceEl.textContent='Cliquez une face du corps cible (Échap annule).';}catch(e){}
-      renderProps();
+      try{faceEl.textContent='Jusqu’à la face : cliquez une face dans la vue (autant de fois que voulu).';}catch(e){}
     }else if(v==='through')extDynSet('étendue de « '+f.name+' »',g=>{g.upto=null;g.through=true;g.distance=null;});
     else extDynSet('étendue de « '+f.name+' »',g=>{g.upto=null;g.through=false;if(!isFinite(g.distance)||g.distance===null)g.distance=10*(g.op==='cut'?-1:1);});
   }));
   // distance / face cible
   if(f.upto){
     const w=mk('div','pnl-btns');w.style.cssText='align-items:center;gap:6px';
-    w.appendChild(mk('span','pnl-note',f.upto.faceId&&f.upto.faceId.bid?'Face #'+f.upto.faceId.fi:'Face : (à cliquer)'));
-    const b=mk('button','mini','🎯 Changer la face');b.onclick=()=>{extPickFace={f};try{renderer.domElement.style.cursor='crosshair';}catch(e){}try{faceEl.textContent='Cliquez une face (Échap annule).';}catch(e){}};w.appendChild(b);
+    const fp=f.upto.faceProps;
+    w.appendChild(mk('span','pnl-note',fp&&fp.center?'🎯 face choisie — '+Math.abs(+f.distance||0)+' mm':'🎯 cliquez une face dans la vue'));
+    const tip=mk('div','pnl-note','Un clic sur une autre face la remplace.');tip.style.cssText='width:100%;opacity:.75';w.appendChild(tip);
     sec('Face cible',w);
   }else if(!f.through){
     const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.className='extDynDist';inp.style.width='90px';
@@ -19935,7 +20037,11 @@ function extName(f){
   if(!f)return'Extrusion';
   const base=(f.op==='cut'?'Découpe ':'Extrusion ')+skName(f.sketchId);
   const suf=(f.flip?' ⇄':'')+((+f.draft||0)?' ∠'+(+f.draft)+'°':'');
-  if(f.upto&&f.upto.ex){const t=doc.features.find(x=>x.id===f.upto.ex);return base+' → '+(t?t.name:'cible supprimée')+suf;}
+  if(f.upto&&f.upto.ex){
+    // face cliquée : « → face » (dans un corps fusionné, la fonction cible ne dit pas QUELLE face)
+    if(f.upto.faceProps)return base+' → face'+suf;
+    const t=doc.features.find(x=>x.id===f.upto.ex);return base+' → '+(t?t.name:'cible supprimée')+suf;
+  }
   const d=+f.distance||0;
   if(f.mid)return base+' ±'+(Math.abs(d)/2)+'mm'+suf;
   return base+' '+d+'mm'+suf;
@@ -19946,7 +20052,7 @@ function resolveExtrudeUpto(f){
   if(!f||f.type!=='extrude'||!f.upto)return false;
   const tgt=doc.features.find(x=>x.id===f.upto.ex);
   const fi=doc.features.indexOf(f),ti=tgt?doc.features.indexOf(tgt):-1;
-  if(ti<0||fi<0||ti>=fi||((tgt.op||'add')!=='add')){f.upto=null;f.name=extName(f);return false;}
+  if(ti<0||fi<0||ti>=fi){f.upto=null;f.name=extName(f);return false;}
   const sk=doc.sketches.find(s=>s.id===f.sketchId);
   if(!sk)return false;
   let B;try{B=sketchBasis(sk);}catch(e){return false;}
@@ -20038,52 +20144,77 @@ function resolveExtrudeUpto(f){
   f.distance=+v.toFixed(3);
   f.name=extName(f);
 }
+/* V0.11.27 : « Jusqu'à la face » sans caprice.
+   · Tant que la fenêtre de l'extrusion est ouverte avec cette étendue, le choix de face est
+     PERMANENT (extUptoAuto) : chaque clic court sur une face la (re)désigne, sans bouton à
+     rouvrir ni clic ailleurs. Avant, le premier relâchement de souris — même celui d'une
+     rotation de la vue — consommait le mode, et la face n'était plus cliquable.
+   · L'opération n'est plus forcée en Poche : un Plot reste un Plot.
+   · Toute face d'un corps (hors outils fantômes) convient, quelle que soit la fonction qui l'a
+     produite ; la cible mémorisée est la dernière fonction antérieure de ce corps. */
+function extUptoAuto(){
+  try{
+    if(typeof skEdit!=='undefined'&&skEdit)return null;
+    if(typeof asmMode!=='undefined'&&asmMode==='asm')return null;
+    const f=extDynFeature();
+    return f&&f.upto&&f.visible!==false?f:null;
+  }catch(e){return null;}
+}
+function extPickHit(e){
+  // face sous la souris, sur les corps VISIBLES et réels (les fantômes de découpe sont transparents)
+  const r=renderer.domElement.getBoundingClientRect();
+  rayc.setFromCamera(new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1),camera);
+  const ms=bodies.filter(b=>b.visible&&b.mesh&&!b.ghost&&b.mesh.visible!==false).map(b=>b.mesh);
+  const h=rayc.intersectObjects(ms,false)[0];
+  if(!h||!h.object.userData.bid)return null;
+  return {bid:h.object.userData.bid,mesh:h.object,fi:h.faceIndex,props:getFaceProps(h.object,h.faceIndex)};
+}
+function extUptoTarget(f,bid){
+  // fonction cible : la dernière fonction ANTÉRIEURE du corps cliqué, sinon la dernière antérieure
+  const me=doc.features.indexOf(f);
+  const prevs=doc.features.slice(0,me).filter(x=>x&&x.visible!==false);
+  if(!prevs.length)return null;
+  const own=prevs.filter(x=>x.id===bid||x.body===bid);
+  return (own.length?own:prevs)[(own.length?own:prevs).length-1];
+}
 function extPickFaceCommit(e){
-  // Clic en mode « vers un objet » : lit la normale de la face pour le sens, cible = extrusion
-  // additive antérieure (sélectionnée dans les props, sinon la dernière).
-  const job=extPickFace;extPickFace=null;
-  try{renderer.domElement.style.cursor='default';}catch(err){}
+  const auto=extUptoAuto();
+  const job=extPickFace||(auto?{f:auto}:null);extPickFace=null;
+  try{renderer.domElement.style.cursor='';}catch(err){}
   if(!job)return;
-  const f=job.f;
-  let picked=null;try{picked=pickFace(e);}catch(err){}
-  if(!picked){faceEl.textContent='Vers un objet : aucune face cliquée — réessayez.';renderProps();return;}
+  const f=doc.features.find(x=>x.id===job.f.id)||job.f;
+  let picked=null;try{picked=extPickHit(e);}catch(err){}
+  if(!picked){faceEl.textContent='Jusqu\'à la face : cliquez sur une face d\'un corps.';return;}
   const sk=doc.sketches.find(s=>s.id===f.sketchId);
   let B=null;try{B=sk?sketchBasis(sk):null;}catch(err){}
   // Côté déterminé par la POSITION de la face par rapport au plan d'esquisse (pas la normale)
+  const faceProps=picked.props||getFaceProps(picked.mesh,picked.fi);
   let side=1;
-  if(B){
-    const props=getFaceProps(picked.mesh,picked.fi);
-    if(props){
-      const dot=(props.center.x-B.o.x)*B.n.x+(props.center.y-B.o.y)*B.n.y+(props.center.z-B.o.z)*B.n.z;
-      side=dot>=0?1:-1;
-    }
+  if(B&&faceProps){
+    const c=faceProps.center;
+    side=((c.x-B.o.x)*B.n.x+(c.y-B.o.y)*B.n.y+(c.z-B.o.z)*B.n.z)>=0?1:-1;
   }
-  const me=doc.features.indexOf(f);
-  const prevs=doc.features.slice(0,me).filter(x=>x.type==='extrude'&&(x.op||'add')==='add');
-  if(!prevs.length){faceEl.textContent='Jusqu\'à la face : aucune extrusion additive ANTÉRIEURE — ajoutez d\'abord un volume avant cette fonction.';renderProps();return;}
-  const tgt=(f.upto&&f.upto.ex&&prevs.some(p=>p.id===f.upto.ex))?prevs.find(p=>p.id===f.upto.ex):prevs[prevs.length-1];
-  const bid=picked.mesh.userData.bid;
-   // Stocke la face cliquée pour le suivi dynamique (faceId bouge avec la géométrie)
-   // Par défaut : soustraction (poche)
-   f.op='cut';
-   const prevUpto=f.upto,prevDist=f.distance;
-   const faceProps=picked.props||getFaceProps(picked.mesh,picked.fi);
-   f.upto={ex:tgt.id,side,faceId:{fi:picked.fi,bid},faceProps};
-   let ok=false;try{ok=resolveExtrudeUpto(f);}catch(err){ok=false;}
-   if(!ok||!isFinite(f.distance)){
-     // Face non utilisable (parallèle à l'axe, coplanaire…) : on REVIENT à l'étendue
-     // précédente au lieu de garder silencieusement l'ancienne distance.
-     f.upto=prevUpto;f.distance=prevDist;
-     f.name=extName(f);
-     faceEl.textContent='Jusqu\'à la face : face non utilisable (parallèle au sens d\'extrusion ?) — étendue inchangée.';
-     markDirty();rebuild();renderProps();
-     return;
-   }
-   f.name=extName(f);
-   ghostHide=f.id; // opération « jusqu'à la face » : l'outil reste masqué
-   repSyncForFeature(f);markDirty();rebuild();renderProps();
-   const bName=bodies.find(b=>b.id===bid)?.name||tgt.name;
-   faceEl.textContent='Jusqu\'à la face : '+tgt.name+' — face '+(side>0?'+n':'−n')+' — '+Math.abs(f.distance)+' mm — Poche';
+  const tgt=extUptoTarget(f,picked.bid);
+  if(!tgt){faceEl.textContent='Jusqu\'à la face : aucune fonction ANTÉRIEURE — créez d\'abord un volume avant cette extrusion.';return;}
+  const prevUpto=f.upto,prevDist=f.distance;
+  f.upto={ex:tgt.id,side,faceId:{fi:picked.fi,bid:picked.bid},faceProps};
+  let ok=false;try{ok=resolveExtrudeUpto(f);}catch(err){ok=false;}
+  if(!ok||!isFinite(f.distance)){
+    // Face non utilisable (parallèle au sens d'extrusion, dans le plan d'esquisse…) : rien ne change
+    f.upto=prevUpto;f.distance=prevDist;
+    f.name=extName(f);
+    faceEl.textContent='Jusqu\'à la face : face non utilisable (parallèle au sens d\'extrusion, ou dans le plan de l\'esquisse) — choisissez-en une autre.';
+    return;
+  }
+  // une étape d'annulation par face choisie (l'état d'avant = prevUpto / prevDist)
+  const now={upto:f.upto,distance:f.distance};
+  f.upto=prevUpto;f.distance=prevDist;
+  docPushUndo('face cible de « '+f.name+' »');
+  f.upto=now.upto;f.distance=now.distance;
+  f.name=extName(f);
+  ghostHide=(f.op==='cut')?f.id:null;
+  repSyncForFeature(f);markDirty();rebuild();renderTree();renderProps();
+  faceEl.textContent='Jusqu\'à la face : '+Math.abs(+f.distance||0)+' mm ('+(f.op==='cut'?'Poche':'Plot')+'). Cliquez une autre face pour changer.';
 }
 
 /* ═══════════════ 71-fenetre-dynamique.js — fenetre dynamique ═══════════════ */
@@ -45803,7 +45934,8 @@ function wirePick(){
   el.addEventListener('pointerdown',e=>{dx=e.clientX;dy=e.clientY;});
   el.addEventListener('pointerup',e=>{
     if(asmMode==='asm'){if(e.button===0&&Math.hypot(e.clientX-dx,e.clientY-dy)<=6)asmClick(e);return;} // vue d'assemblage (47)
-    if(extPickFace){if(e.button===0)extPickFaceCommit(e);return;} // mode « vers un objet »
+    if(extPickFace||(typeof extUptoAuto==='function'&&extUptoAuto())){ // « jusqu'à la face » : clic COURT seulement (glisser = tourner la vue)
+      if(e.button===0&&Math.hypot(e.clientX-dx,e.clientY-dy)<=6)extPickFaceCommit(e);return;}
     if(cgMode&&cgMode.slot!=null){if(Math.hypot(e.clientX-dx,e.clientY-dy)<=6&&e.button===0)cgPickCommit(e);return;} // construction : référence de l'emplacement actif
     if(Math.hypot(e.clientX-dx,e.clientY-dy)>6)return;
     if(filMode){if(e.button===0&&!e.ctrlKey)filletToggle(e);return;}
@@ -45831,7 +45963,7 @@ function wirePick(){
    el.addEventListener('pointermove',hoverMove);
    el.addEventListener('pointerleave',()=>clearHover());
    el.addEventListener('pointermove',e=>{
-      if(extPickFace){renderer.domElement.style.cursor='crosshair';return;}
+      if(extPickFace||(typeof extUptoAuto==='function'&&extUptoAuto())){renderer.domElement.style.cursor='crosshair';return;}
       if(faoPlanePick){renderer.domElement.style.cursor='crosshair';return;}
       if(faoZPlanePick){renderer.domElement.style.cursor='crosshair';return;}
     if(typeof bmPick!=='undefined'&&bmPick){bmHoverAt(e);return;}

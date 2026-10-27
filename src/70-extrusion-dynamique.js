@@ -109,23 +109,22 @@ function extDynPanel(p,f){
   sec('Étendue',extSeg([['dist','📏','Distance','Une distance donnée'],['upto','🎯','Jusqu’à la face','S’arrête sur une face du corps cible'],['through','⤴','À travers tout','Traverse tout le solide']],
     f.upto?'upto':(f.through?'through':'dist'),v=>{
     if(v==='upto'){
+      // V0.11.27 : l'icône active SUFFIT — tout clic court sur une face la désigne (extUptoAuto)
       if(!f.upto){
-        const me=doc.features.indexOf(f);
-        const prevs=doc.features.slice(0,me).filter(x=>x.type==='extrude'&&(x.op||'add')==='add');
-        if(!prevs.length){try{faceEl.textContent='Jusqu’à la face : aucune extrusion additive ANTÉRIEURE.';}catch(e){}return;}
-        docPushUndo('étendue de « '+f.name+' »');f.upto={ex:prevs[prevs.length-1].id,side:1};
+        const t=extUptoTarget(f,f.body);
+        if(!t){try{faceEl.textContent='Jusqu’à la face : aucune fonction ANTÉRIEURE — créez d’abord un volume.';}catch(e){}return;}
+        extDynSet('étendue de « '+f.name+' »',g=>{g.upto={ex:t.id,side:1};g.through=false;});
       }
-      extPickFace={f};try{renderer.domElement.style.cursor='crosshair';}catch(e){}
-      try{faceEl.textContent='Cliquez une face du corps cible (Échap annule).';}catch(e){}
-      renderProps();
+      try{faceEl.textContent='Jusqu’à la face : cliquez une face dans la vue (autant de fois que voulu).';}catch(e){}
     }else if(v==='through')extDynSet('étendue de « '+f.name+' »',g=>{g.upto=null;g.through=true;g.distance=null;});
     else extDynSet('étendue de « '+f.name+' »',g=>{g.upto=null;g.through=false;if(!isFinite(g.distance)||g.distance===null)g.distance=10*(g.op==='cut'?-1:1);});
   }));
   // distance / face cible
   if(f.upto){
     const w=mk('div','pnl-btns');w.style.cssText='align-items:center;gap:6px';
-    w.appendChild(mk('span','pnl-note',f.upto.faceId&&f.upto.faceId.bid?'Face #'+f.upto.faceId.fi:'Face : (à cliquer)'));
-    const b=mk('button','mini','🎯 Changer la face');b.onclick=()=>{extPickFace={f};try{renderer.domElement.style.cursor='crosshair';}catch(e){}try{faceEl.textContent='Cliquez une face (Échap annule).';}catch(e){}};w.appendChild(b);
+    const fp=f.upto.faceProps;
+    w.appendChild(mk('span','pnl-note',fp&&fp.center?'🎯 face choisie — '+Math.abs(+f.distance||0)+' mm':'🎯 cliquez une face dans la vue'));
+    const tip=mk('div','pnl-note','Un clic sur une autre face la remplace.');tip.style.cssText='width:100%;opacity:.75';w.appendChild(tip);
     sec('Face cible',w);
   }else if(!f.through){
     const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.className='extDynDist';inp.style.width='90px';

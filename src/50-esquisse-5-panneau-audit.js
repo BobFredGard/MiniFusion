@@ -234,8 +234,12 @@ function applyCon(type){
     return;
   }
   if(type==='symmetric'){
-    if(lines.length!==3){skStatus('Symétrie : sélectionnez 3 lignes — 2 à symétriser + l’axe en dernier (ex : clic axe en dernier).');return;}
-    const a=lines[0],b=lines[1],mid=lines[2];
+    if(lines.length!==3){skStatus('Symétrie : sélectionnez 3 lignes — 2 à symétriser + l’axe (la ligne de construction, ou la dernière cliquée).');return;}
+    // V0.11.27 : l'AXE est la ligne de CONSTRUCTION quand une seule des 3 l'est, quel que soit l'ordre
+    // des clics (avant : toujours la dernière cliquée — axe cliqué en premier = une ligne du profil
+    // prise pour axe, symétrie absurde) ; sinon, la dernière cliquée.
+    const cons=lines.filter(l=>l.construction);
+    const mid=cons.length===1?cons[0]:lines[2],pair=lines.filter(l=>l!==mid),a=pair[0],b=pair[1];
     if(new Set([a.id,b.id,mid.id]).size!==3){skStatus('Symétrie : 3 lignes distinctes requises.');return;}
     if((sk.constraints||[]).some(c=>c.type==='symmetric'&&((c.a===a.id&&c.b===b.id)||(c.a===b.id&&c.b===a.id))&&c.mid===mid.id)){skStatus('Symétrie déjà posée.');return;}
     skPushUndo();

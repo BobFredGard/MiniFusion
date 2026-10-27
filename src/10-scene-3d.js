@@ -7,7 +7,7 @@ let floorOn=true; // V0.10.0 : case « Sol » (disque du thème) — « Miroir �
 try{if(localStorage.getItem('minifusion_sol')==='off')floorOn=false;}catch(e){}
 // 2026-10-22 : orbite LIBRE (façon Fusion « Free Orbit ») — la pièce tourne dans tous les sens,
 // roulis compris ; contrainte (défaut) = le Z de la vue reste en haut de l'écran.
-let orbitFree=false,_fo=null;
+let orbitFree=false,_fo=null,_fz=null,_foMark=null;
 try{if(localStorage.getItem('minifusion_orbit')==='libre')orbitFree=true;}catch(e){}
 // 2026-10-27 : EFFET DE PERSPECTIVE réglable (⚙ → Perspective) = angle de champ de la caméra 3D,
 // 5° (presque orthographique) à 90° (fuyantes marquées) ; 50° par défaut.
@@ -69,6 +69,7 @@ function buildScene(){
   controls=new THREE.OrbitControls(camera,renderer.domElement);
   controls.enableDamping=true; controls.dampingFactor=0.08;
   controls.zoomSpeed=zoomInv?-1:1;
+  controls.enableZoom=false; // V0.11.27 : molette = zoom VERS LA SOURIS (orbitZoomWheel), plus vers la cible
   // Souris : rotation = clic GAUCHE enfoncé, roulette (molette) conservée = rotation aussi,
   // déplacement (pan) = clic DROIT enfoncé. Clic court sans glisser = sélection (gardien >6px).
   if(controls.mouseButtons&&THREE.MOUSE){controls.mouseButtons.LEFT=THREE.MOUSE.ROTATE;controls.mouseButtons.MIDDLE=THREE.MOUSE.ROTATE;controls.mouseButtons.RIGHT=THREE.MOUSE.PAN;}
@@ -303,17 +304,45 @@ function orbitSetMode(free){
   try{const o=document.getElementById('optOrbit');if(o)o.value=orbitFree?'libre':'contrainte';}catch(e){}
   try{if(typeof mfOrbitBtnSync==='function')mfOrbitBtnSync();}catch(e){}
 }
-// pivot : centre de la (première) face sélectionnée, sinon centre des pièces visibles (+ brut en FAO)
+/* V0.11.27 : POINT SOUS LA SOURIS — sert de pivot à la rotation et de centre au zoom.
+   Plus on zoomait sur un détail, plus la rotation autour du centre des pièces le jetait hors
+   de l'écran. Désormais on tourne autour du point de pièce cliqué, et la molette zoome vers
+   le point visé (il reste sous le curseur). Rien sous la souris : null. */
+function viewHitAt(cx,cy){
+  if(!camera||!renderer)return null;
+  const r=renderer.domElement.getBoundingClientRect();
+  if(!r.width||!r.height)return null;
+  const ndc=new THREE.Vector2(((cx-r.left)/r.width)*2-1,-((cy-r.top)/r.height)*2+1);
+  rayc.setFromCamera(ndc,camera);
+  const objs=[];
+  try{
+    if(typeof asmMode!=='undefined'&&asmMode==='asm'&&typeof asmSceneGet==='function'){
+      const G=asmSceneGet().getObjectByName('asmOcc');
+      if(G)G.traverse(m=>{if(m.isMesh&&m.visible!==false)objs.push(m);});
+    }else bodies.forEach(b=>{if(b.visible&&b.mesh&&b.mesh.visible!==false&&!b.ghost)objs.push(b.mesh);});
+  }catch(e){}
+  try{
+    if(typeof faoPoseGrp!=='undefined'&&faoPoseGrp&&faoPoseGrp.parent&&faoPoseGrp.parent.visible!==false)
+      faoPoseGrp.traverse(o=>{if(o.isMesh&&o.visible&&o.userData&&o.userData.faoStock)objs.push(o);});
+  }catch(e){}
+  if(!objs.length)return null;
+  let hits=[];try{hits=rayc.intersectObjects(objs,false);}catch(e){}
+  const h=hits.find(x=>x.object&&(!x.object.material||x.object.material.opacity===undefined||x.object.material.opacity>0.05));
+  return h?h.point.clone():null;
+}
+// point du plan de la cible (perpendiculaire à la vue) sous la souris : repli du zoom dans le vide
+function viewTargetPlaneAt(cx,cy){
+  const r=renderer.domElement.getBoundingClientRect();
+  const ndc=new THREE.Vector2(((cx-r.left)/r.width)*2-1,-((cy-r.top)/r.height)*2+1);
+  rayc.setFromCamera(ndc,camera);
+  const d=camera.getWorldDirection(new THREE.Vector3());
+  const pl=new THREE.Plane().setFromNormalAndCoplanarPoint(d,controls.target);
+  return rayc.ray.intersectPlane(pl,new THREE.Vector3());
+}
+// pivot hors pièce : centre des pièces visibles (+ brut en FAO) ; mode Placer : repère / occurrence
 function orbitPivot(){
   // mode Placer (V0.7.4) : repère choisi, occurrence sélectionnée ou centre des pièces placées
   try{if(typeof asmOrbitPivot==='function'){const p=asmOrbitPivot();if(p)return p;}}catch(e){}
-  try{
-    if(typeof selFaces!=='undefined'&&selFaces.length&&selFaces[0].mesh&&typeof faceCentroid==='function'){
-      const c=faceCentroid(selFaces[0].mesh,selFaces[0].faceIndex);
-      if(c)return c;
-      if(selFaces[0].point)return selFaces[0].point.clone();
-    }
-  }catch(e){}
   const box=new THREE.Box3();
   try{bodies.forEach(b=>{if(b.visible&&b.mesh&&b.mesh.visible!==false)box.expandByObject(b.mesh);});}catch(e){}
   try{
@@ -321,6 +350,59 @@ function orbitPivot(){
       faoPoseGrp.traverse(o=>{if(o.isMesh&&o.visible&&o.userData&&o.userData.faoStock)box.expandByObject(o);});
   }catch(e){}
   return box.isEmpty()?controls.target.clone():box.getCenter(new THREE.Vector3());
+}
+// pivot d'un glisser qui commence en (cx,cy) : le point de la face sous la souris ; dans le vide,
+// le centre du solide (V0.11.27 — la face sélectionnée n'est plus le pivot)
+function orbitPivotAt(cx,cy){
+  try{if(typeof asmMode!=='undefined'&&asmMode==='asm'&&typeof asmPivot!=='undefined'&&asmPivot){const p=asmOrbitPivot();if(p)return p;}}catch(e){} // repère choisi : prioritaire
+  try{const h=viewHitAt(cx,cy);if(h)return h;}catch(e){}
+  return orbitPivot();
+}
+// repère visuel du pivot pendant la rotation (point orange, taille écran fixe, toujours devant)
+function orbitMarkShow(P){
+  try{
+    if(!_foMark){
+      const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute([0,0,0],3));
+      _foMark=new THREE.Points(g,new THREE.PointsMaterial({color:0xff8a00,size:9,sizeAttenuation:false,depthTest:false,transparent:true}));
+      _foMark.renderOrder=999;_foMark.userData.noMirror=true;_foMark.name='orbitPivotMark';
+    }
+    if(P){
+      _foMark.position.copy(P);_foMark.visible=true;
+      const S=(typeof asmMode!=='undefined'&&asmMode==='asm'&&typeof asmSceneGet==='function')?asmSceneGet():scene;
+      if(_foMark.parent!==S)S.add(_foMark);
+    }else _foMark.visible=false;
+  }catch(e){}
+}
+// molette : zoom VERS le point visé (homothétie centrée sur lui : il reste sous le curseur).
+// Pièce sous la souris → son point ; sinon le plan de la cible. Amorti comme la rotation.
+function orbitZoomWheel(e){
+  if(!controls||controls.enabled===false||!camera)return;
+  try{if(typeof skEdit!=='undefined'&&skEdit)return;}catch(err){}
+  e.preventDefault();
+  let d=e.deltaY*(e.deltaMode===1?33:(e.deltaMode===2?400:1));
+  if(!d)return;
+  d=Math.max(-300,Math.min(300,d));
+  if(zoomInv)d=-d;
+  let P=null;
+  try{P=viewHitAt(e.clientX,e.clientY)||viewTargetPlaneAt(e.clientX,e.clientY);}catch(err){}
+  if(!P)P=controls.target.clone();
+  // un cran (100) ≈ 15 % ; logarithme du facteur cumulé, écoulé par orbitTick
+  const ln=d*0.0016;
+  if(_fz&&_fz.ln*ln>0)_fz.ln+=ln;else _fz={ln};
+  _fz.P=P;
+  viewUserMoved=true;
+}
+function orbitZoomApply(ln,P){
+  const dc=camera.position.distanceTo(P);
+  // bornes : pas plus près que 0,5 mm du point visé, pas plus loin que 20 m
+  let k=Math.exp(ln);
+  if(dc*k<0.5)k=0.5/Math.max(dc,1e-9);
+  if(dc*k>20000)k=20000/Math.max(dc,1e-9);
+  if(Math.abs(k-1)<1e-9)return false;
+  const t=controls.target;
+  const oc=camera.position.clone().sub(P).multiplyScalar(k),ot=t.clone().sub(P).multiplyScalar(k);
+  camera.position.copy(P).add(oc);t.copy(P).add(ot);
+  return true;
 }
 function orbitRotate(dx,dy,P){
   if(!camera||!controls||!renderer)return;
@@ -351,12 +433,18 @@ function orbitRotate(dx,dy,P){
 // l'atelier RENDU, lui, suit la souris sans inertie. Le pan et le zoom gardent 8 %.
 const ORBIT_ROT_DAMP=0.2;
 function orbitTick(){
+  if(_fz){
+    const f=(controls&&controls.enableDamping)?0.3:1,a=_fz.ln*f;
+    let moved=false;try{moved=orbitZoomApply(a,_fz.P);}catch(e){}
+    _fz.ln-=a;
+    if(!moved||Math.abs(_fz.ln)<1e-4)_fz=null;
+  }
   if(!_fo||(!_fo.vx&&!_fo.vy))return;
   try{if(typeof skEdit!=='undefined'&&skEdit){_fo.vx=_fo.vy=0;return;}}catch(e){}
   const f=(controls&&controls.enableDamping)?ORBIT_ROT_DAMP:1;
   orbitRotate(_fo.vx*f,_fo.vy*f,_fo.P);
   _fo.vx*=1-f;_fo.vy*=1-f;
-  if(Math.abs(_fo.vx)<0.01&&Math.abs(_fo.vy)<0.01){_fo.vx=_fo.vy=0;if(!_fo.down)_fo=null;}
+  if(Math.abs(_fo.vx)<0.01&&Math.abs(_fo.vy)<0.01){_fo.vx=_fo.vy=0;if(!_fo.down){_fo=null;orbitMarkShow(null);}}
 }
 function orbitWire(el){
   // 2026-10-23 : Ctrl + molette enfoncée = DÉPLACEMENT, comme le clic droit. Écouteur en
@@ -372,14 +460,16 @@ function orbitWire(el){
     if(e.button===1&&(e.ctrlKey||e.metaKey))return; // Ctrl + molette : déplacement (OrbitControls)
     if(!controls||controls.enabled===false||!controls.enableRotate)return; // esquisse : caméra figée
     try{if(typeof skEdit!=='undefined'&&skEdit)return;}catch(err){}
-    _fo={id:e.pointerId,x:e.clientX,y:e.clientY,P:orbitPivot(),vx:0,vy:0,down:true};
+    _fo={id:e.pointerId,x:e.clientX,y:e.clientY,P:orbitPivotAt(e.clientX,e.clientY),x0:e.clientX,y0:e.clientY,vx:0,vy:0,down:true,moved:false};
   });
+  el.addEventListener('wheel',orbitZoomWheel,{passive:false});
   window.addEventListener('pointermove',e=>{
     if(!_fo||!_fo.down||e.pointerId!==_fo.id)return;
     const dx=e.clientX-_fo.x,dy=e.clientY-_fo.y;_fo.x=e.clientX;_fo.y=e.clientY;
     _fo.vx+=dx;_fo.vy+=dy;
+    if(!_fo.moved&&Math.hypot(e.clientX-_fo.x0,e.clientY-_fo.y0)>3){_fo.moved=true;orbitMarkShow(_fo.P);}
   });
-  const fin=e=>{if(_fo&&e.pointerId===_fo.id){_fo.down=false;if(!_fo.vx&&!_fo.vy)_fo=null;}};
+  const fin=e=>{if(_fo&&e.pointerId===_fo.id){_fo.down=false;if(!_fo.vx&&!_fo.vy){_fo=null;orbitMarkShow(null);}}};
   window.addEventListener('pointerup',fin);window.addEventListener('pointercancel',fin);
 }
 function viewFaoActive(){
@@ -416,6 +506,7 @@ function viewControlsRebuild(){
   try{controls.dispose();}catch(e){}
   controls=new THREE.OrbitControls(o.obj||camera,renderer.domElement);
   controls.enableDamping=o.damp;controls.dampingFactor=o.df;controls.zoomSpeed=o.zs;controls.enableRotate=o.rot;
+  controls.enableZoom=false; // zoom vers la souris : orbitZoomWheel
   if(o.mb&&controls.mouseButtons)Object.assign(controls.mouseButtons,o.mb);
   controls.target.copy(t);controls.update();
 }

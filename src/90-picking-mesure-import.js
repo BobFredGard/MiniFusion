@@ -4,7 +4,8 @@ function wirePick(){
   el.addEventListener('pointerdown',e=>{dx=e.clientX;dy=e.clientY;});
   el.addEventListener('pointerup',e=>{
     if(asmMode==='asm'){if(e.button===0&&Math.hypot(e.clientX-dx,e.clientY-dy)<=6)asmClick(e);return;} // vue d'assemblage (47)
-    if(extPickFace){if(e.button===0)extPickFaceCommit(e);return;} // mode « vers un objet »
+    if(extPickFace||(typeof extUptoAuto==='function'&&extUptoAuto())){ // « jusqu'à la face » : clic COURT seulement (glisser = tourner la vue)
+      if(e.button===0&&Math.hypot(e.clientX-dx,e.clientY-dy)<=6)extPickFaceCommit(e);return;}
     if(cgMode&&cgMode.slot!=null){if(Math.hypot(e.clientX-dx,e.clientY-dy)<=6&&e.button===0)cgPickCommit(e);return;} // construction : référence de l'emplacement actif
     if(Math.hypot(e.clientX-dx,e.clientY-dy)>6)return;
     if(filMode){if(e.button===0&&!e.ctrlKey)filletToggle(e);return;}
@@ -32,7 +33,7 @@ function wirePick(){
    el.addEventListener('pointermove',hoverMove);
    el.addEventListener('pointerleave',()=>clearHover());
    el.addEventListener('pointermove',e=>{
-      if(extPickFace){renderer.domElement.style.cursor='crosshair';return;}
+      if(extPickFace||(typeof extUptoAuto==='function'&&extUptoAuto())){renderer.domElement.style.cursor='crosshair';return;}
       if(faoPlanePick){renderer.domElement.style.cursor='crosshair';return;}
       if(faoZPlanePick){renderer.domElement.style.cursor='crosshair';return;}
     if(typeof bmPick!=='undefined'&&bmPick){bmHoverAt(e);return;}

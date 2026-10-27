@@ -5,6 +5,7 @@ const SUITES = [
   'test_highlight_order',
   'test_fresh_default',
   'test_validate',
+  'test_cao_passe',
   'test_raccourcis',
   'test_precision_affichage',
   'test_esquisse_contraintes',

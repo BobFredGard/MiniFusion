@@ -87,7 +87,11 @@ function extName(f){
   if(!f)return'Extrusion';
   const base=(f.op==='cut'?'Découpe ':'Extrusion ')+skName(f.sketchId);
   const suf=(f.flip?' ⇄':'')+((+f.draft||0)?' ∠'+(+f.draft)+'°':'');
-  if(f.upto&&f.upto.ex){const t=doc.features.find(x=>x.id===f.upto.ex);return base+' → '+(t?t.name:'cible supprimée')+suf;}
+  if(f.upto&&f.upto.ex){
+    // face cliquée : « → face » (dans un corps fusionné, la fonction cible ne dit pas QUELLE face)
+    if(f.upto.faceProps)return base+' → face'+suf;
+    const t=doc.features.find(x=>x.id===f.upto.ex);return base+' → '+(t?t.name:'cible supprimée')+suf;
+  }
   const d=+f.distance||0;
   if(f.mid)return base+' ±'+(Math.abs(d)/2)+'mm'+suf;
   return base+' '+d+'mm'+suf;
@@ -98,7 +102,7 @@ function resolveExtrudeUpto(f){
   if(!f||f.type!=='extrude'||!f.upto)return false;
   const tgt=doc.features.find(x=>x.id===f.upto.ex);
   const fi=doc.features.indexOf(f),ti=tgt?doc.features.indexOf(tgt):-1;
-  if(ti<0||fi<0||ti>=fi||((tgt.op||'add')!=='add')){f.upto=null;f.name=extName(f);return false;}
+  if(ti<0||fi<0||ti>=fi){f.upto=null;f.name=extName(f);return false;}
   const sk=doc.sketches.find(s=>s.id===f.sketchId);
   if(!sk)return false;
   let B;try{B=sketchBasis(sk);}catch(e){return false;}
@@ -190,50 +194,75 @@ function resolveExtrudeUpto(f){
   f.distance=+v.toFixed(3);
   f.name=extName(f);
 }
+/* V0.11.27 : « Jusqu'à la face » sans caprice.
+   · Tant que la fenêtre de l'extrusion est ouverte avec cette étendue, le choix de face est
+     PERMANENT (extUptoAuto) : chaque clic court sur une face la (re)désigne, sans bouton à
+     rouvrir ni clic ailleurs. Avant, le premier relâchement de souris — même celui d'une
+     rotation de la vue — consommait le mode, et la face n'était plus cliquable.
+   · L'opération n'est plus forcée en Poche : un Plot reste un Plot.
+   · Toute face d'un corps (hors outils fantômes) convient, quelle que soit la fonction qui l'a
+     produite ; la cible mémorisée est la dernière fonction antérieure de ce corps. */
+function extUptoAuto(){
+  try{
+    if(typeof skEdit!=='undefined'&&skEdit)return null;
+    if(typeof asmMode!=='undefined'&&asmMode==='asm')return null;
+    const f=extDynFeature();
+    return f&&f.upto&&f.visible!==false?f:null;
+  }catch(e){return null;}
+}
+function extPickHit(e){
+  // face sous la souris, sur les corps VISIBLES et réels (les fantômes de découpe sont transparents)
+  const r=renderer.domElement.getBoundingClientRect();
+  rayc.setFromCamera(new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1),camera);
+  const ms=bodies.filter(b=>b.visible&&b.mesh&&!b.ghost&&b.mesh.visible!==false).map(b=>b.mesh);
+  const h=rayc.intersectObjects(ms,false)[0];
+  if(!h||!h.object.userData.bid)return null;
+  return {bid:h.object.userData.bid,mesh:h.object,fi:h.faceIndex,props:getFaceProps(h.object,h.faceIndex)};
+}
+function extUptoTarget(f,bid){
+  // fonction cible : la dernière fonction ANTÉRIEURE du corps cliqué, sinon la dernière antérieure
+  const me=doc.features.indexOf(f);
+  const prevs=doc.features.slice(0,me).filter(x=>x&&x.visible!==false);
+  if(!prevs.length)return null;
+  const own=prevs.filter(x=>x.id===bid||x.body===bid);
+  return (own.length?own:prevs)[(own.length?own:prevs).length-1];
+}
 function extPickFaceCommit(e){
-  // Clic en mode « vers un objet » : lit la normale de la face pour le sens, cible = extrusion
-  // additive antérieure (sélectionnée dans les props, sinon la dernière).
-  const job=extPickFace;extPickFace=null;
-  try{renderer.domElement.style.cursor='default';}catch(err){}
+  const auto=extUptoAuto();
+  const job=extPickFace||(auto?{f:auto}:null);extPickFace=null;
+  try{renderer.domElement.style.cursor='';}catch(err){}
   if(!job)return;
-  const f=job.f;
-  let picked=null;try{picked=pickFace(e);}catch(err){}
-  if(!picked){faceEl.textContent='Vers un objet : aucune face cliquée — réessayez.';renderProps();return;}
+  const f=doc.features.find(x=>x.id===job.f.id)||job.f;
+  let picked=null;try{picked=extPickHit(e);}catch(err){}
+  if(!picked){faceEl.textContent='Jusqu\'à la face : cliquez sur une face d\'un corps.';return;}
   const sk=doc.sketches.find(s=>s.id===f.sketchId);
   let B=null;try{B=sk?sketchBasis(sk):null;}catch(err){}
   // Côté déterminé par la POSITION de la face par rapport au plan d'esquisse (pas la normale)
+  const faceProps=picked.props||getFaceProps(picked.mesh,picked.fi);
   let side=1;
-  if(B){
-    const props=getFaceProps(picked.mesh,picked.fi);
-    if(props){
-      const dot=(props.center.x-B.o.x)*B.n.x+(props.center.y-B.o.y)*B.n.y+(props.center.z-B.o.z)*B.n.z;
-      side=dot>=0?1:-1;
-    }
+  if(B&&faceProps){
+    const c=faceProps.center;
+    side=((c.x-B.o.x)*B.n.x+(c.y-B.o.y)*B.n.y+(c.z-B.o.z)*B.n.z)>=0?1:-1;
   }
-  const me=doc.features.indexOf(f);
-  const prevs=doc.features.slice(0,me).filter(x=>x.type==='extrude'&&(x.op||'add')==='add');
-  if(!prevs.length){faceEl.textContent='Jusqu\'à la face : aucune extrusion additive ANTÉRIEURE — ajoutez d\'abord un volume avant cette fonction.';renderProps();return;}
-  const tgt=(f.upto&&f.upto.ex&&prevs.some(p=>p.id===f.upto.ex))?prevs.find(p=>p.id===f.upto.ex):prevs[prevs.length-1];
-  const bid=picked.mesh.userData.bid;
-   // Stocke la face cliquée pour le suivi dynamique (faceId bouge avec la géométrie)
-   // Par défaut : soustraction (poche)
-   f.op='cut';
-   const prevUpto=f.upto,prevDist=f.distance;
-   const faceProps=picked.props||getFaceProps(picked.mesh,picked.fi);
-   f.upto={ex:tgt.id,side,faceId:{fi:picked.fi,bid},faceProps};
-   let ok=false;try{ok=resolveExtrudeUpto(f);}catch(err){ok=false;}
-   if(!ok||!isFinite(f.distance)){
-     // Face non utilisable (parallèle à l'axe, coplanaire…) : on REVIENT à l'étendue
-     // précédente au lieu de garder silencieusement l'ancienne distance.
-     f.upto=prevUpto;f.distance=prevDist;
-     f.name=extName(f);
-     faceEl.textContent='Jusqu\'à la face : face non utilisable (parallèle au sens d\'extrusion ?) — étendue inchangée.';
-     markDirty();rebuild();renderProps();
-     return;
-   }
-   f.name=extName(f);
-   ghostHide=f.id; // opération « jusqu'à la face » : l'outil reste masqué
-   repSyncForFeature(f);markDirty();rebuild();renderProps();
-   const bName=bodies.find(b=>b.id===bid)?.name||tgt.name;
-   faceEl.textContent='Jusqu\'à la face : '+tgt.name+' — face '+(side>0?'+n':'−n')+' — '+Math.abs(f.distance)+' mm — Poche';
+  const tgt=extUptoTarget(f,picked.bid);
+  if(!tgt){faceEl.textContent='Jusqu\'à la face : aucune fonction ANTÉRIEURE — créez d\'abord un volume avant cette extrusion.';return;}
+  const prevUpto=f.upto,prevDist=f.distance;
+  f.upto={ex:tgt.id,side,faceId:{fi:picked.fi,bid:picked.bid},faceProps};
+  let ok=false;try{ok=resolveExtrudeUpto(f);}catch(err){ok=false;}
+  if(!ok||!isFinite(f.distance)){
+    // Face non utilisable (parallèle au sens d'extrusion, dans le plan d'esquisse…) : rien ne change
+    f.upto=prevUpto;f.distance=prevDist;
+    f.name=extName(f);
+    faceEl.textContent='Jusqu\'à la face : face non utilisable (parallèle au sens d\'extrusion, ou dans le plan de l\'esquisse) — choisissez-en une autre.';
+    return;
+  }
+  // une étape d'annulation par face choisie (l'état d'avant = prevUpto / prevDist)
+  const now={upto:f.upto,distance:f.distance};
+  f.upto=prevUpto;f.distance=prevDist;
+  docPushUndo('face cible de « '+f.name+' »');
+  f.upto=now.upto;f.distance=now.distance;
+  f.name=extName(f);
+  ghostHide=(f.op==='cut')?f.id:null;
+  repSyncForFeature(f);markDirty();rebuild();renderTree();renderProps();
+  faceEl.textContent='Jusqu\'à la face : '+Math.abs(+f.distance||0)+' mm ('+(f.op==='cut'?'Poche':'Plot')+'). Cliquez une autre face pour changer.';
 }
