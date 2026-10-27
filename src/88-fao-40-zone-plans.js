@@ -453,12 +453,22 @@ function faoSegClipper(op,job){
       const P=faoPtOpToPos(fr,[x1,y1,z1]),Q=faoPtOpToPos(fr,[x2,y2,z2]);push(P[0],P[1],P[2],Q[0],Q[1],Q[2]);});
   };
 }
+function faoZoneDone(op){
+  // Zone déjà tenue par le générateur (bord exact, arcs d'entrée/sortie
+  // tangents au bord) : ni re-clip à la génération, ni clip à l'affichage.
+  return !!op&&((op.type==='geofinish'&&op.traj==='scallop')||op.type==='geodesic'||
+    (typeof faoContourProfil==='function'&&faoContourProfil(op))||op.type==='chamfer');
+}
 function faoSegClipper0(op,job){
   // -> fn(ax,ay,az,bx,by,bz,push) qui ne pousse que la partie DANS la zone,
   //    ou null : opération sans zone (affichage inchangé, cas par défaut).
   // Usage réservé aux segments de COUPE (cf. faoRefreshPreview) : un rapide
   // a le droit de traverser la frontière.
   // 2026-10-08-003 : zone intérieure (îlot) — ctx composé (ET des deux zones).
+  // 2026-10-27 : opérations dont la zone EST le parcours (faoZoneDone) — pas
+  // de clip, comme à la génération : le Contour profil passe sur/hors de sa
+  // chaîne, le clip effaçait ses arcs d'entrée verts (voire tout le tracé).
+  if(faoZoneDone(op))return null;
   const ctx=faoZoneCtx(op,job);
   if(!ctx)return null;
   if(!ctx.lim2){

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**386 versions**, de `2026-09-28b` à `V0.11.31` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**387 versions**, de `2026-09-28b` à `V0.11.32` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5223,3 +5223,9 @@ Temps bloqué dans la time line, nouvelle esquisse, sortie, extrusion validée :
 - **Cause** (`src/50-esquisse-1-ouverture-references.js`, `closeSketch`) : la sortie d'esquisse appelait toujours `tlEditUnlock`, qui levait le marqueur (`tlSetPtr(null)`) — même pour une esquisse libre qui n'avait posé aucun verrou, et en effaçant celui de l'utilisateur pour une esquisse consommée.
 - **Correctif** (`src/30-marqueur-temps.js`) : `tlEditLock` mémorise le marqueur de l'utilisateur (`tlEditSaved`) avant de verrouiller sur la fonction éditée ; `tlEditUnlock` le RESTAURE (fin de fil s'il n'y en avait pas, ou si sa fonction a disparu) et ne fait rien sans verrou posé. Les échecs de recalcul des congés, dépouilles et coques rendent eux aussi le marqueur (`tlEditUnlock` au lieu de `tlSetPtr(null)`). L'extrusion s'insérait déjà au marqueur (`addFeature`).
 - **Tests** : `test_timeline_bandeau` (marqueur avant M2 → nouvelle esquisse ouverte / fermée → extrusion insérée au marqueur → marqueur inchangé ; esquisse consommée : verrou avant sa fonction puis marqueur restauré ; sans marqueur : tout rejoué) ; `npm run ci` (63/64, `test_anteriorite` KO connu en worktree).
+
+## V0.11.32 - FAO Contour : les arcs d'entrée reviennent en vert dans l'aperçu
+Contour profil (chaîne d'arêtes) : les entrées/sorties tangentes n'apparaissaient pas en vert — selon le côté de la chaîne, tout le tracé disparaissait même (« Poche et Contour » : seuls les rapides orange restaient).
+- **Cause** (`src/88-fao-40-zone-plans.js`, `faoSegClipper0`) : l'aperçu borne la coupe et les entrées à la zone de l'opération ; pour le Contour profil, la zone est la chaîne elle-même, que le parcours longe ou contourne par l'extérieur — les arcs d'entrée (hors de la chaîne) étaient effacés. La génération l'exemptait déjà de ce clip (`zoneDone`) : le G-code était juste, seul l'affichage était faux.
+- **Correctif** : `faoZoneDone(op)` — opérations dont la zone EST le parcours (Contour profil, Crêtes constantes, géodésique, chanfrein) — partagée par la génération (`faoOpMovesIt0`, logique inchangée) et l'aperçu (`faoSegClipper0` renvoie null). Parcours inchangés : pas de bump de `CACHE_VER`.
+- **Tests** : `test_fao_contour` (aperçu par la zone = aperçu sans clip : mêmes segments verts et bleus) ; vérifié au navigateur sur « Poche et Contour » (0 → 507 segments bleus, 0 → 51 verts) ; `npm run ci` (63/64, `test_anteriorite` KO connu en worktree).

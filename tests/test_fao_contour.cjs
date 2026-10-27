@@ -81,6 +81,10 @@ const vm=require('vm');
     "faoActiveMesh=keepAM;",
     "att(mvD.filter(m=>!m.r).length>50&&mvD.filter(m=>!m.r).every(m=>dRect(m.x,m.y,30,70,20,40)>=3-0.005),'dispatch : contour généré, jamais dans la paroi (pas de re-clip par la zone)');",
     "att(op.geoDiag&&op.geoDiag.side==='ext','dispatch : côté détecté affiché (geoDiag)');",
+    // 2026-10-27 : aperçu — la chaîne n'est pas une zone de clip (le parcours
+    // passe hors du profil) : coupe bleue ET arcs d'entrée verts tous tracés
+    "const spD=faoSegSplit(mvD,faoSegClipper(op,job)),spN=faoSegSplit(mvD,null);",
+    "att(spD.plg.length>0&&spD.plg.length===spN.plg.length&&spD.cut.length===spN.cut.length,'aperçu : entrées vertes et coupe du contour non clippées ('+spD.plg.length/6+'/'+spN.plg.length/6+' verts, '+spD.cut.length/6+'/'+spN.cut.length/6+' bleus)');",
     "att(/Contour 4 arêtes/.test(faoOpLabel(op)),'libellé : '+faoOpLabel(op));",
     "const oldC={id:'oc',on:true,toolId:'TC',type:'contour',x0:30,y0:20,x1:70,y1:40,ztop:20,zbot:5,ap:5,radial:0,axial:0};",
     "const mvR=faoOpMoves(oldC,job);",

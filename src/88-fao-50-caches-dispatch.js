@@ -793,7 +793,7 @@ function* faoOpMovesIt0(op,job){
   // 2026-10-14-001 : Crêtes constantes 'scallop' — la zone est déjà la
   // RÉGION du générateur (bord exact par dichotomie) ; le re-clip couperait
   // les arcs d'entrée/sortie tangents au bord et réinjecterait des remontées.
-  const zoneDone=(op.type==='geofinish'&&op.traj==='scallop')||op.type==='geodesic'||faoContourProfil(op)||op.type==='chamfer';
+  const zoneDone=faoZoneDone(op);
   if(zoneDone){}
   else if(lim&&lim.mode==='rect'&&mv.length){
     const R=faoEffLimit(op,clipR*2);
