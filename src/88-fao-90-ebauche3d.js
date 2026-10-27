@@ -1653,45 +1653,39 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
   // 2026-10-08-001 : le mode trocoïdal (poche d'entrée o.poly, phases A/B)
   // a été supprimé — il ne reste que ces deux modes.
   const esc=(o.mode==='escargot');
-  // PLANCHER RÉEL (7/10) : la grille `ap` est ancrée sur `Haut` et ne se pose
-  // sur le fond de la poche que si `Bas` vaut ce fond (ou y tombe par hasard).
-  // Sinon le dernier niveau utile laisse jusqu'à `ap` de matière sur le
-  // plancher ET `Fond` ne décale que le bas de zone — le fond n'est jamais
-  // fini (Fond=0 comme Fond=0,5, sondes A/B). Pour CHAQUE fond : la laisse
-  // `Fond` devient un niveau à `fond+Fond` — et tout niveau de grille tombant
-  // dans [fond, fond+Fond[ est RETIRÉ (8/10 : ap aligné pile sur le fond —
-  // réel ap=5, fond 20 — le niveau 20 mangeait la laisse 0,5 et allait « au
-  // fond malgré le 0,5 »). Aucun ajout quand la grille pose déjà à
-  // fond+Fond (coût nul, documents non alignés inchangés).
+  // 2026-10-27 : MODÈLE SIMPLE DES PASSES (« revenir à un modèle simple ») —
+  // on descend de `ap` en `ap` depuis `Haut` ; chaque fond réel du maillage
+  // (plancher de poche, épaulement) est un ARRÊT à fond+`Fond` : s'il tombe
+  // entre deux pas, la passe suivante s'y pose pour le RESTE (< ap), puis on
+  // repart de ap en ap depuis cet arrêt. Dernier arrêt : `Bas`+`Fond`. Chaque
+  // niveau est une passe complète (plus de « pose » limitée à l'épaulement)
+  // et garde le haut de sa tranche (`top`) pour ses mini-passes.
   // Fonds calculés UNE fois (réutilisés par la finition : niveau cible).
   const zoneOk=isFinite(zt)&&isFinite(+zbot)&&zt>+zbot;
   const floorsUp=zoneOk?faoUpFloors(M,Math.min(+zbot,zt),Math.max(+zbot,zt)):[];
-  // Construction d'une grille (niveaux + poses de fond).
-  const mkPlan=function(apx){
-    const p=faoLevels(zt,zBot,apx).map(function(z){ return {z:z,radial:RA.radial}; });
-    if(zoneOk){
-      for(let i=0;i<floorsUp.length;i++){
-        const f=floorsUp[i];
-        if(f<+zbot-1e-9||f>=zt-1e-9)continue;   // hors zone (`Bas`) ou au niveau `Haut`
-        const target=Math.round((f+RA.axial)*1000)/1000; // fond + Fond
-        let atT=false;
-        for(let j=p.length-1;j>=0;j--){
-          const z=p[j].z;
-          if(z>=f-1e-9&&z<target-1e-9)p.splice(j,1);   // coupait dans la laisse
-          else if(Math.abs(z-target)<=1e-9)atT=true;
-        }
-        if(!atT)p.push({z:target,radial:RA.radial,pose:1}); // haut de laisse exact
-        // 2026-10-15-001 : FINIR LE FOND — avec une surépaisseur Fond > 0, une
-        // passe à la cote EXACTE du fond enlève la laisse ; la finition des
-        // parois (dernière passe latérale) se fait alors à cette hauteur.
-        if(o.finitFond&&RA.axial>1e-9&&faoFloorInZone(M,f,o.zoneAt)){const zf=Math.round(f*1000)/1000;
-          if(!p.some(function(q){return Math.abs(q.z-zf)<1e-9;}))p.push({z:zf,radial:RA.radial,fond:1});}
-      }
-      p.sort(function(a,b){return b.z-a.z;});
+  const plan=[];
+  {const r3=function(v){return Math.round(v*1000)/1000;};
+    const stops=[];
+    for(let i=0;i<floorsUp.length;i++){
+      const f=floorsUp[i];
+      if(f<+zbot-1e-9||f>=zt-1e-9)continue;   // hors zone (`Bas`) ou au niveau `Haut`
+      stops.push({z:r3(f+RA.axial),f:f});      // fond + Fond
     }
-    return p;
-  };
-  const plan=mkPlan(ap);                    // niveaux + poses de fond
+    if(isFinite(zBot))stops.push({z:r3(zBot),f:null});
+    stops.sort(function(a,b){return b.z-a.z;});
+    let z=zt;
+    for(let i=0;i<stops.length;i++){
+      const S=stops[i];
+      if(!(S.z<z-1e-3))continue;               // arrêt déjà atteint (ou au-dessus)
+      while(z-ap>S.z+1e-3){plan.push({z:r3(z-ap),radial:RA.radial,top:z});z=r3(z-ap);}
+      plan.push({z:S.z,radial:RA.radial,top:z});z=S.z;
+      // 2026-10-15-001 : FINIR LE FOND — avec une surépaisseur Fond > 0, une
+      // passe à la cote EXACTE du fond enlève la laisse ; la finition des
+      // parois (dernière passe latérale) se fait alors à cette hauteur.
+      if(S.f!==null&&o.finitFond&&RA.axial>1e-9&&faoFloorInZone(M,S.f,o.zoneAt))
+        plan.push({z:r3(S.f),radial:RA.radial,top:S.z,fond:1});
+    }
+  }
   const moves=[];
   const nb=isFinite(+o.minipasses)&&+o.minipasses>0?Math.min(50,Math.round(+o.minipasses)):0;
   // FINITION DES PAROIS (8/10) : N contours sur la DERNIÈRE passe en
@@ -1783,48 +1777,9 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
   // forEach -> for (yield interdit dans une closure) : chaque itération de
   // niveau cède le fil au flux via yield moves (dessin progressif 005).
   const chunkAt=[]; // 2026-10-22-001 : début de chaque niveau dans moves (ordre par région)
-  // 2026-10-26 : POSE DE FOND = MINI-PASSE DE PLUS (« pour me caler avec le
-  // fond, une mini-passe de plus qui combine passe et minipasse ») — un fond
-  // hors grille (Cavité Usinage : épaulement à 46, grille 45/40…) était une
-  // passe COMPLÈTE, et le niveau de grille suivant repassait partout pour
-  // 1 mm. La pose n'usine plus que là où le niveau de grille suivant est
-  // bloqué par la pièce (l'épaulement) ; ce niveau prend la cavité à ap, et
-  // ses mini-passes couvrent toute la tranche depuis le niveau au-dessus de
-  // la pose (la pose n'a pas de mini-passes à elle).
-  const gridBelow=function(li){
-    for(let j=li+1;j<plan.length;j++)if(!plan[j].pose&&!plan[j].fond)return plan[j];
-    return null;};
-  const bandTopOf=function(li){
-    for(let j=li-1;j>=0;j--)if(!plan[j].pose)return plan[j].z;
-    return zt;};
-  const aeS=Math.max(0.5,Math.min(ae,D*0.25));
-  // 2026-10-26 (Cavité Usinage : « pourquoi la 1ère passe il n'y a pas
-  // d'hélice ? Tu commences directement par un tour du bord » / « étrange
-  // comme spirale ! ») : la pose (bande de l'épaulement seule) passait AVANT
-  // son niveau de grille — rainure pleine fraise en rampe dans le brut, centre
-  // fermé. Elle passe désormais APRÈS ce niveau (hélice + spirale au centre
-  // d'abord, la bande s'attaque ensuite de côté) ; ses mini-passes restent
-  // celles du niveau de grille (aucune à elle).
-  const order=[];
-  {const late={};
-    for(let li=0;li<plan.length;li++){
-      if(plan[li].pose){const N=gridBelow(li);if(N){const j=plan.indexOf(N);(late[j]=late[j]||[]).push(li);continue;}}
-      order.push(li);
-      if(late[li])for(const q of late[li])order.push(q);
-    }}
-  for(let oi=0;oi<order.length;oi++){
-    const li=order[oi];
+  for(let li=0;li<plan.length;li++){
     const L=plan[li];
     chunkAt.push(moves.length);
-    let zoneL=o.zoneAt;
-    if(L.pose){
-      const N=gridBelow(li);
-      if(N){
-        const SN=faoShadowShape(M,faoShadowPlanes(M,N.z,Math.max(zt,isFinite(+o.brutTop)?+o.brutTop:N.z)),BB,D/2+N.radial,aeS);
-        const rN=Math.max(0.01,D/2+N.radial-0.005),zA=o.zoneAt;
-        zoneL=function(x,y){return (!zA||zA(x,y))&&!faoShapeValid(SN,x,y,rN);};
-      }
-    }
     // Entrée depuis z+pas (rainure du dessus déjà ouverte, descente en avance
     // plongée) : l'hélice ne refait jamais toute la hauteur depuis la sécu.
     const zFrom=Math.min(secu,L.z+ap);
@@ -1834,30 +1789,32 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     // 2026-10-08-002 : remontées réglables — mode 'min5' (défaut) = local à
     // 5 mm au-dessus de la bande (was 2 mm) borné par secu ; mode 'plan' =
     // toujours le plan de retrait (secu porte déjà le plan).
-    const bandTop=bandTopOf(li);
+    const bandTop=L.top;
     const tvZ=o.remPlan?secu:Math.min(secu,bandTop+5);
     zCur=L.z;
     // ESCARGOT : spirale centre -> faces sur le meme plan/levels, memes
     // entrees/travel ; mini-passes et finition restent conventionnelles.
     // 2026-10-08-003 : sens (avalant = sens de coupe constant) porte par opt.
-    // 2026-10-26 : la pose (bande en anneau, centre hors zone) n'a pas de
-    // spirale — ses demi-anneaux tronqués à la bande ; contours conventionnels.
-    if(esc&&!L.pose)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:zoneL,zoneDense:typeof o.protectTip==='function',stockTop:stockTopF,remBlocked:rem?rem.blocked:null,remTopAt:rem?rem.topAt:null,remPtAt:rem?rem.ptAt:null,zoneSafe:o.zoneSafe||null,
+    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,zoneDense:typeof o.protectTip==='function',stockTop:stockTopF,remBlocked:rem?rem.blocked:null,remTopAt:rem?rem.topAt:null,remPtAt:rem?rem.ptAt:null,zoneSafe:o.zoneSafe||null,
       bullFaces:bullC?function(zz){return faoBullRingRuns(bullCtx(L.radial),zz,o.sens==='avalant',true);}:null,
       bullOK:bullC?function(x,y,zz){return bullCtx(L.radial).tipB(x,y)<=zz+1e-6;}:null});
-    else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:zoneL});
+    else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
     if(rem)rem.carve();
     if(bullC&&!esc)bullJobs.push([L.radial,L.z,tvZ]); // conventionnel : contour ajouté en fin d'opération
     yield frameYield(); // dessin progressif 005 : pelage du niveau fini
     // MINI-PASSES (retour 4/10) : après le pelage du niveau, contour des parois
-    // entre ce plan et le plan du dessus : profondeurs k*h/(nb+1) sous le plan
+    // entre ce plan et le plan du dessus : profondeurs k*h/(n+1) sous le plan
     // du dessus (strictement entre les deux, jamais dessus), décalage radial
     // ENTIER (= marge finale de paroi — s=0 laissait le contour collé à la
     // cote théorique : gouge sur les parois inclinées, cf. A3).
-    if(nb&&!L.pose){
-      const h=bandTop-L.z;
-      if(h>1e-9)for(let k=1;k<=nb;k++){
-        const zm=Math.round((bandTop-k*h/(nb+1))*1000)/1000;
+    // 2026-10-27 : tranche plus courte que ap (reste au-dessus d'un fond) →
+    // nombre au prorata, arrondi INFÉRIEUR : n = ⌊nb·h/ap⌋ (3 mm sur ap 5,
+    // nb 4 → 2,4 → 2). La passe de fond exacte (finitFond) n'en a pas.
+    const h=bandTop-L.z;
+    const nbL=(!nb||L.fond||!(h>1e-9))?0:(h>=ap-1e-6?nb:Math.floor(nb*h/ap+1e-6));
+    if(nbL){
+      for(let k=1;k<=nbL;k++){
+        const zm=Math.round((bandTop-k*h/(nbL+1))*1000)/1000;
         const s=RA.radial;
         zCur=zm;
         // 2026-10-14-008 : outil à rayon de coin — la mini-passe (contour de

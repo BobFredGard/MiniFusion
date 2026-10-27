@@ -148,10 +148,10 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     // recale sur les fonds détectés : cotes fixes zt−6k ± 2 fausses dès qu'un fond bouge)
     const zt=+setup.ops[0].ztop,bands=[],Lz={};
     for(let i=1;i<mvE.length;i++){const a=mvE[i-1],b=mvE[i];if(b.r||a.r||Math.abs(a.z-b.z)>1e-6)continue;const k=b.z.toFixed(3);Lz[k]=(Lz[k]||0)+Math.hypot(b.x-a.x,b.y-a.y);}
-    const lv=[zt].concat(faoLevels(zt,30,6).map(function(z){return +z;})).filter(function(z,i,a){return a.indexOf(z)===i;}).sort(function(p,q){return q-p;});
-    // niveaux réels : la cote du parcours la plus proche de chaque niveau de grille (±1 mm)
+    // V0.11.26 : niveaux réels = passes complètes du parcours (longueur > 500 mm ;
+    // une mini-passe en fait ~100) — la grille repart de chaque fond détecté
     const zs=Object.keys(Lz).map(Number);
-    const real=lv.map(function(z){let best=null;zs.forEach(function(q){if(Math.abs(q-z)<=1+1e-6&&(best===null||Lz[q.toFixed(3)]>Lz[best.toFixed(3)]))best=q;});return best===null?z:best;});
+    const real=zs.filter(function(q){return Lz[q.toFixed(3)]>500;}).sort(function(p,q){return q-p;});
     for(let k=1;k<real.length;k++){const hi=real[k-1],lo=real[k];if(lo<30-1e-6)break;
       let L=0;zs.forEach(function(q){if(q>lo+0.2&&q<hi-0.2)L+=Lz[q.toFixed(3)];});
       bands.push([lo,+L.toFixed(1)]);}

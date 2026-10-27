@@ -1,9 +1,8 @@
-// FAO — Ébauche 3D (V0.9.2) : POSE DE FOND = MINI-PASSE DE PLUS. Cavité
-// Usinage : épaulement plat à 46, grille ap 45/40… — la pose à 46 était une
-// passe COMPLÈTE (cavité comprise) et le niveau 45 repassait partout pour
-// 1 mm. Désormais la pose n'usine que là où le niveau de grille suivant est
-// bloqué par la pièce ; ce niveau prend la cavité à ap ; les mini-passes
-// couvrent la tranche depuis le niveau au-dessus de la pose.
+// FAO — Ébauche 3D (V0.11.26) : MODÈLE SIMPLE DES PASSES. On descend de ap
+// en ap depuis Haut ; un fond réel (épaulement, plancher) est un arrêt : la
+// passe s'y pose pour le reste (< ap), puis on repart de ap en ap depuis lui.
+// Chaque niveau est une passe complète. Mini-passes : nb sur une tranche
+// pleine, ⌊nb·reste/ap⌋ sur un reste (3 mm, ap 5, nb 4 → 2,4 → 2).
 // Fixture : solide manifold en terrasses — cadre 10, épaulement 8
 // (15..85 × 15..65), cavité 0 (25..75 × 25..55), dessous −5.
 const {loadApp}=require('./appvm.cjs');
@@ -58,20 +57,22 @@ const vm=require('vm');
     const inCav=function(m){return m.x>31&&m.x<69&&m.y>31&&m.y<49;};      // centres loin de l'épaulement
     const onShelf=function(m){return m.x>19.5&&m.x<80.5&&m.y>19.5&&m.y<60.5&&!(m.x>30.5&&m.x<69.5&&m.y>30.5&&m.y<49.5);};
     const c=gen();
-    const z8=at(c,8), z5=at(c,5);
-    A(z8.length>0&&z8.every(function(m){return !inCav(m);}),
-      'pose 8 : aucune coupe au cœur de la cavité ('+z8.filter(inCav).length+' / '+z8.length+')');
-    A(z8.some(onShelf),'pose 8 : l\\'épaulement est usiné ('+z8.filter(onShelf).length+' points)');
-    A(z5.some(inCav),'niveau 5 : la cavité est prise à ap depuis 10 ('+z5.filter(inCav).length+' points)');
     const zs={};c.forEach(function(m){if(m.z<10-1e-6&&m.z>0)zs[Math.round(m.z*1000)/1000]=1;});
-    A(Object.keys(zs).map(Number).sort(function(a,b){return b-a;}).join(' ')==='8 5',
-      'niveaux de coupe : 8 5 (+ fond 0) — '+Object.keys(zs).join(' '));
-    // mini-passes : tranche 10 → 5 (pas 1,25), aucune dans 10 → 8 ni 8 → 5 seule
-    const m3=gen({minipasses:3});
-    const zm={};m3.forEach(function(m){const z=Math.round(m.z*1000)/1000;if(z>5&&z<10&&z!==8)zm[z]=1;});
-    const want=[8.75,7.5,6.25];
-    A(want.every(function(z){return zm[z];})&&Object.keys(zm).length===3,
-      'mini-passes réparties sur 10 → 5 : '+Object.keys(zm).sort().join(' '));
+    A(Object.keys(zs).map(Number).sort(function(a,b){return b-a;}).join(' ')==='8 3',
+      'niveaux de coupe : 8 (reste 2 sur épaulement) 3 (+ fond 0) — '+Object.keys(zs).join(' '));
+    const z8=at(c,8), z3=at(c,3);
+    A(z8.some(inCav)&&z8.some(onShelf),'niveau 8 : passe complète, cavité et épaulement ('+z8.filter(inCav).length+' / '+z8.filter(onShelf).length+')');
+    A(z3.length>0&&z3.every(function(m){return m.x<0||m.x>100||m.y<0||m.y>80||m.x>29.9&&m.x<70.1&&m.y>29.9&&m.y<50.1;}),'niveau 3 : ap sous épaulement, dans la cavité seule ('+z3.length+' points)');
+    A(at(c,5).length===0,'aucune passe de grille à 5 (ancien modèle : 1 passe pour 3 mm)');
+    // mini-passes : 8 → 3 tranche pleine (4) ; reste 3 → 0 : ⌊4·3/5⌋ = 2
+    const m4=gen({minipasses:4});
+    const zm={};m4.forEach(function(m){const z=Math.round(m.z*1000)/1000;if(z>0&&z<8&&z!==3)zm[z]=1;});
+    const got=Object.keys(zm).map(Number).sort(function(a,b){return b-a;}).join(' ');
+    // (le contour à 4 sort vide sur cette fixture, ancien moteur compris)
+    A(/^7 6 5 (4 )?2 1$/.test(got),'mini-passes 8 → 3 : 7 6 5 (4) ; reste 3 → 0 : ⌊2,4⌋ = 2 → 2 1 — '+got);
+    const m1=gen({minipasses:1});
+    const z1={};m1.forEach(function(m){const z=Math.round(m.z*1000)/1000;if(z>0&&z<3)z1[z]=1;});
+    A(Object.keys(z1).length===0,'nb 1 sur un reste de 3 : ⌊0,6⌋ = 0 mini-passe — '+Object.keys(z1).join(' '));
     return P;
   })()`,ctx);
   let ko=0;

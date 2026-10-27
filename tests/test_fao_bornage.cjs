@@ -126,7 +126,8 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     mv.forEach(function(m){if(m.r)return;const k=Math.round(m.z*1000)/1000;
       (cutsByZ[k]=cutsByZ[k]||[]).push([m.x,m.y]);});
     const rows=[];
-    const ZL=[49,48,47,46,45,44,43,42,41,40,39,38,37,36,35,34,33,32,31,30,29,28,27,26,25,24.1,23.2,22.3,21.4,20.5];
+    // V0.11.26 : reste 25 → 20,5 = 4,5 mm → ⌊4·4,5/5⌋ = 3 mini-passes (pas 1,125)
+    const ZL=[49,48,47,46,45,44,43,42,41,40,39,38,37,36,35,34,33,32,31,30,29,28,27,26,25,23.875,22.75,21.625,20.5];
     for(const z of ZL){
       const cuts=cutsByZ[Math.round(z*1000)/1000]||[];
       const r=rOf(z);
@@ -157,7 +158,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   })()`,ctx);
   if(out&&out.err){console.log('  ✗ '+out.err);process.exit(1);}
   A(out.mv>1000,'cavité usinage : '+out.mv+' moves générés');
-  A(out.rows.length===30,'30 niveaux évalués, vu '+out.rows.length);
+  A(out.rows.length===29,'29 niveaux évalués, vu '+out.rows.length);
   const nul=out.rows.filter(R=>R.gLo===null||R.gHi===null).length;
   A(nul===0,'60 bornes atteintes par bissection, '+nul+' côté(s) inatteignable(s)');
   for(const R of out.rows){
