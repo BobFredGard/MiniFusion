@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.11.18';
+const APP_VER='V0.11.19';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -2986,12 +2986,100 @@ function xLabelLow(k){return xIsChamfer(k)?'chanfrein exact':'congé exact';}
 function xIcon(k){return xIsChamfer(k)?'⟋':'⤢';}
 function xDimPrefix(k){return xIsChamfer(k)?'D':'R';}
 function xFeatName(f){return xLabel(xKindOf(f))+' ('+((f&&f.edges)||[]).length+' arête(s))';}
+/* V0.11.19 : CHANFREIN à deux distances ou distance + angle (idée SolidCraft `solid.chamfer`).
+   Champs de la fonction (et du mode de commande filModeX) : cmode 'eq' (défaut, distance égale,
+   comme avant) | 'd2' (D1 par arête, D2 = cd2 sur la seconde face) | 'da' (D1 par arête, angle
+   cang en degrés entre le chanfrein et la première face) ; cflip inverse la première face.
+   Première face = celle des deux qui regarde le plus vers le haut (+Z), à égalité vers +X puis
+   +Y : règle stable d'un rejeu à l'autre, l'aperçu montre le résultat et « inverser » l'échange. */
+function xChamOpts(f){
+  if(!f||!f.chamfer)return null;
+  const m=f.cmode==='d2'||f.cmode==='da'?f.cmode:'eq';
+  if(m==='eq')return null;
+  return{mode:m,d2:+f.cd2>0?+f.cd2:0,ang:+f.cang>0&&+f.cang<90?+f.cang:45,flip:!!f.cflip};
+}
+function xChamKey(c){return c?c.mode+':'+(+c.d2||0)+':'+(+c.ang||0)+':'+(c.flip?1:0):'eq';}
+function xChamLabel(f){
+  // Suffixe lisible du mode d'un chanfrein : « D1 × D2 » ou « D1 ∠ 30° »
+  const c=xChamOpts(f);if(!c)return '';
+  const n=v=>String(+(+v).toFixed(2)).replace('.',',');
+  return (c.mode==='d2'?' · D2 '+n(c.d2):' · ∠ '+n(c.ang)+'°')+(c.flip?' ⇄':'');
+}
+function occEdgeAt(shape,src){
+  // Handle de l'arête de rang `src` (rang explorateur TopExp, le même que occListEdges). À libérer.
+  const SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE;
+  const ex=new occt.TopExp_Explorer_2(shape,occt.TopAbs_ShapeEnum.TopAbs_EDGE,SH);
+  let k=0,out=null;
+  while(ex.More()){if(k===src){out=occt.TopoDS.Edge_1(ex.Current());break;}k++;ex.Next();}
+  try{ex.delete();}catch(e){}
+  return out;
+}
+function occEdgeFaces(shape,edge){
+  // Faces qui portent `edge` (au plus 2), avec leur normale SORTANTE au milieu de l'arête
+  // (pcurve → UV → normale de surface, signe par l'orientation de la face). Handles des faces
+  // à libérer par l'appelant ; n = null si la surface ne donne pas de normale.
+  const out=[],bin=[];
+  try{
+    const SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE;
+    const fx=new occt.TopExp_Explorer_2(shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,SH);bin.push(fx);
+    while(fx.More()&&out.length<2){
+      const f=occt.TopoDS.Face_1(fx.Current());
+      let has=false;
+      const ee=new occt.TopExp_Explorer_2(f,occt.TopAbs_ShapeEnum.TopAbs_EDGE,SH);bin.push(ee);
+      while(ee.More()){if(ee.Current().IsSame(edge)){has=true;break;}ee.Next();}
+      if(!has){try{f.delete();}catch(e){}fx.Next();continue;}
+      let n=null;
+      try{
+        const g=new occt.BRepAdaptor_Curve2d_2(edge,f);bin.push(g);
+        const w0=g.FirstParameter(),w1=g.LastParameter();
+        const q=g.Value((w0+w1)/2);bin.push(q);
+        const loc=new occt.TopLoc_Location_1();bin.push(loc);
+        const s=occt.BRep_Tool.Surface_1(f,loc);bin.push(s);
+        n=occSurfNormalAt(s,q.X(),q.Y());
+        if(n){
+          let rev=false;try{rev=(f.Orientation_1()===occt.TopAbs_Orientation.TopAbs_REVERSED);}catch(e){}
+          const L=Math.hypot(n[0],n[1],n[2])||1,sg=rev?-1:1;
+          n=[n[0]*sg/L,n[1]*sg/L,n[2]*sg/L];
+        }
+      }catch(e){n=null;}
+      out.push({f,n});fx.Next();
+    }
+  }catch(e){}
+  occDispose(bin);
+  return out;
+}
+function occChamferFirstFace(shape,edge,flip,fn){
+  // Première face d'un chanfrein asymétrique (voir xChamOpts) : {f (handle à libérer), n}.
+  // `fn` (normale mémorisée par l'arête à la création, transformée avec une répétition) :
+  // la face dont la normale s'en rapproche le plus — l'image de la première face de la
+  // source, quelle que soit la rotation ou la symétrie de la copie. Sans `fn` : la règle
+  // « regarde le plus vers le haut, sinon +X puis +Y ».
+  const fl=occEdgeFaces(shape,edge);
+  if(!fl.length)return null;
+  const byFn=Array.isArray(fn)&&fn.length===3;
+  const score=o=>!o.n?[-2,-2,-2]:byFn?[o.n[0]*fn[0]+o.n[1]*fn[1]+o.n[2]*fn[2],0,0]:[o.n[2],o.n[0],o.n[1]];
+  const cmp=(a,b)=>{const A=score(a),B=score(b);for(let k=0;k<3;k++){const d=A[k]-B[k];if(Math.abs(d)>1e-6)return d;}return 0;};
+  let best=0;for(let i=1;i<fl.length;i++)if(cmp(fl[i],fl[best])>0)best=i;
+  const pick=(flip&&fl.length>1)?(best===0?1:0):best;
+  fl.forEach((o,i)=>{if(i!==pick){try{o.f.delete();}catch(e){}}});
+  return{f:fl[pick].f,n:fl[pick].n};
+}
+/* V0.11.19 : DÉPOUILLE à angle signé + inversion. L'angle enregistré peut être négatif ;
+   `flip` inverse en plus le sens sans toucher à la valeur (une expression ƒx reste liée).
+   Angle effectif positif = la pièce se resserre le long de la normale de la face de référence
+   (démoulage dans ce sens) ; négatif = elle s'évase (démoulage dans l'autre sens). */
+function draftAngleEff(f){return (f&&f.flip?-1:1)*(+(f&&f.angle)||0);}
+function draftAngleOk(a){return isFinite(a)&&Math.abs(a)>1e-9&&Math.abs(a)<90;}
 // 2026-10-16-015 : congé / chanfrein d'UNE arête SANS suivre la chaîne tangente (OCCT la suit
 // toujours) — arête DROITE et CONVEXE entre deux faces : le secteur de matière est mesuré au
 // classificateur, l'outil (triangle du coin − disque du congé, ou triangle seul pour un
 // chanfrein) est extrudé le long de l'arête en DÉBORDANT devant et derrière, puis soustrait.
-function occSingleEdgeTool(shape,pts,r,chamfer){
+function occSingleEdgeTool(shape,pts,r,chamfer,cham,firstN){
+  // cham/firstN (V0.11.19) : chanfrein asymétrique — options xChamOpts et normale sortante de
+  // la PREMIÈRE face (celle qui porte D1) ; sans normale utilisable, l'outil renonce (null →
+  // repli noyau, qui sait faire).
   if(!pts||pts.length<2||!(r>0))return null;
+  if(chamfer&&cham&&!firstN)return null;
   const A=pts[0],B=pts[pts.length-1];
   const sub=(p,q)=>[p[0]-q[0],p[1]-q[1],p[2]-q[2]],add=(p,q)=>[p[0]+q[0],p[1]+q[1],p[2]+q[2]],mul=(p,k)=>[p[0]*k,p[1]*k,p[2]*k];
   const dot=(p,q)=>p[0]*q[0]+p[1]*q[1]+p[2]*q[2],len=p=>Math.hypot(p[0],p[1],p[2]),nrm=p=>{const l=len(p)||1;return mul(p,1/l);};
@@ -3020,10 +3108,20 @@ function occSingleEdgeTool(shape,pts,r,chamfer){
     let al=th2-th1;while(al<0)al+=2*Math.PI;while(al>2*Math.PI)al-=2*Math.PI;
     if(!(al>0.05&&al<Math.PI-0.02))return null; // arête concave (ou plate) : repli OCCT
     const d1=dir(th1),d2=dir(th2),b=nrm(add(d1,d2));
-    const s=chamfer?r:r/Math.tan(al/2);
-    const T1=add(M,mul(d1,s)),T2=add(M,mul(d2,s));
+    let s=chamfer?r:r/Math.tan(al/2),s1=s,s2=s;
+    if(chamfer&&cham){
+      // D1 sur la première face, D2 sur l'autre. Les directions d1/d2 sont DANS les faces :
+      // celle de la première face est perpendiculaire à sa normale (produit scalaire ~0).
+      const inFirst1=Math.abs(dot(d1,firstN))<Math.abs(dot(d2,firstN));
+      let D2=cham.mode==='da'
+        ?r*Math.sin(cham.ang*Math.PI/180)/Math.sin(al+cham.ang*Math.PI/180) // loi des sinus (triangle M,T1,T2)
+        :cham.d2;
+      if(!(D2>0))return null;
+      s1=inFirst1?r:D2;s2=inFirst1?D2:r;s=Math.max(s1,s2);
+    }
+    const T1=add(M,mul(d1,s1)),T2=add(M,mul(d2,s2));
     const Eo=sub(M,mul(b,0.5*s+0.5)); // sommet du triangle repoussé HORS matière (pas de face coplanaire)
-    const o=Math.max(2*r,2),half=L/2+o;
+    const o=Math.max(2*s,2),half=L/2+o;
     const at0=p=>sub(p,mul(t,half));
     const P=p=>{const q=new occt.gp_Pnt_3(p[0],p[1],p[2]);bin.push(q);return q;};
     const poly=new occt.BRepBuilderAPI_MakePolygon_3(P(at0(Eo)),P(at0(T1)),P(at0(T2)),true);bin.push(poly);
@@ -3049,19 +3147,30 @@ function occFilletRun(base,jobs,warns,chamfer,opts){
   // tomber toutes les autres). Les srcs changent après chaque arrondi : relocalisation
   // par le milieu mémorisé (mid). Retourne null si rien n'a pu être arrondi.
   const kindLabel=chamfer?'chanfrein':'arrondi';
+  const cham=chamfer&&opts&&opts.cham?opts.cham:null; // V0.11.19 : deux distances / distance + angle
   const mk=(cur,js)=>{
     const bin=[];
     try{
-      const want=new Map(js.map(j=>[j.src,j.r]));
+      const want=new Map(js.map(j=>[j.src,j]));
       const SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE;
       const ex=new occt.TopExp_Explorer_2(cur,occt.TopAbs_ShapeEnum.TopAbs_EDGE,SH);bin.push(ex);
       const hs=[];let k=0;
-      while(ex.More()){if(want.has(k)){const h=occt.TopoDS.Edge_1(ex.Current());bin.push(h);hs.push({h,r:want.get(k)});}k++;ex.Next();}
+      while(ex.More()){if(want.has(k)){const h=occt.TopoDS.Edge_1(ex.Current());bin.push(h);const w=want.get(k);hs.push({h,r:w.r,fn:w.fn||null});}k++;ex.Next();}
       occDispose([ex]);
       if(!hs.length){occDispose(bin);return null;}
       if(chamfer&&!occt.BRepFilletAPI_MakeChamfer){occDispose(bin);return null;}
       const mf=chamfer?new occt.BRepFilletAPI_MakeChamfer(cur):new occt.BRepFilletAPI_MakeFillet(cur,0);bin.push(mf);
-      hs.forEach(o=>mf.Add_2(o.r,o.h));
+      let sansFace=0;
+      hs.forEach(o=>{
+        if(!cham){mf.Add_2(o.r,o.h);return;}
+        // Add_3(D1, D2, arête, face de D1) / AddDA(D1, angle depuis cette face, arête, face)
+        const ff=occChamferFirstFace(cur,o.h,cham.flip,o.fn);
+        if(!ff){sansFace++;mf.Add_2(o.r,o.h);return;}
+        bin.push(ff.f);
+        if(cham.mode==='da')mf.AddDA(o.r,cham.ang*Math.PI/180,o.h,ff.f);
+        else mf.Add_3(o.r,cham.d2>0?cham.d2:o.r,o.h,ff.f);
+      });
+      if(sansFace)warns.push('chanfrein : '+sansFace+' arête(s) sans face identifiable — distance égale appliquée');
       let ok=false;try{mf.Build();ok=mf.IsDone();}catch(e){ok=false;}
       if(!ok){occDispose(bin);return null;}
       const s=mf.Shape();occDispose(bin);return s;
@@ -3074,9 +3183,15 @@ function occFilletRun(base,jobs,warns,chamfer,opts){
       let E=null;try{E=occListEdges(cur);}catch(e){}
       const ed=(E||[]).find(e=>cur===base?e.src===j.src:(j.mid&&Math.hypot(e.mid[0]-j.mid[0],e.mid[1]-j.mid[1],e.mid[2]-j.mid[2])<3));
       let nx=null;
-      const tool=ed?occSingleEdgeTool(cur,ed.pts,j.r,chamfer):null;
+      let firstN=null;
+      if(ed&&cham){ // normale de la première face pour l'outil asymétrique
+        let eh=null,ff=null;
+        try{eh=occEdgeAt(cur,ed.src);ff=eh?occChamferFirstFace(cur,eh,cham.flip,j.fn):null;firstN=ff?ff.n:null;}catch(e){firstN=null;}
+        try{if(ff&&ff.f)ff.f.delete();}catch(e){}try{if(eh)eh.delete();}catch(e){}
+      }
+      const tool=ed?occSingleEdgeTool(cur,ed.pts,j.r,chamfer,cham,firstN):null;
       if(tool){try{nx=occCut(cur,tool);}catch(e){nx=null;}try{tool.delete();}catch(e){}}
-      if(!nx&&ed){nx=mk(cur,[{src:ed.src,r:j.r}]);if(nx)warns.push(kindLabel+' : arête courbe ou concave — suivi de la chaîne tangente (noyau)');}
+      if(!nx&&ed){nx=mk(cur,[{src:ed.src,r:j.r,fn:j.fn||null}]);if(nx)warns.push(kindLabel+' : arête courbe ou concave — suivi de la chaîne tangente (noyau)');}
       if(nx){if(cur!==base){try{cur.delete();}catch(e){}}cur=nx;done++;}
       else warns.push(kindLabel+' isolé impossible ('+(chamfer?'distance trop grande ?':'rayon trop grand ?')+')');
     }
@@ -3090,7 +3205,7 @@ function occFilletRun(base,jobs,warns,chamfer,opts){
     let edges=null;try{edges=occListEdges(cur);}catch(e){}
     const ed=(edges||[]).find(e=>Math.hypot(e.mid[0]-j.mid[0],e.mid[1]-j.mid[1],e.mid[2]-j.mid[2])<3.0);
     if(!ed){warns.push('arête introuvable ('+kindLabel+' isolé)');continue;}
-    const one=mk(cur,[{src:ed.src,r:j.r}]);
+    const one=mk(cur,[{src:ed.src,r:j.r,fn:j.fn||null}]);
     if(one){if(cur!==base){try{cur.delete();}catch(e){}}cur=one;done++;}
     else warns.push(kindLabel+' isolé impossible ('+(chamfer?'distance trop grande ?':'rayon trop grand ?')+')');
   }
@@ -4037,7 +4152,7 @@ function occSharpEdges(shape){
 }
 function occApplyDraft(result,f){
   const warnings=[];
-  const ang=(+f.angle||0)*Math.PI/180;
+  const ang=draftAngleEff(f)*Math.PI/180; // V0.11.19 : signé (flip inverse le sens)
   if(!(Math.abs(ang)>1e-9))return{shape:result,warnings:['angle nul — aucune dépouille']};
   if(!f.ref||!(f.faces||[]).length)return{shape:result,warnings:['face de référence ou faces à dépouiller manquantes']};
   const ref=occFindFace(result,f.ref);
@@ -4560,11 +4675,14 @@ function occApplyXFillets(base,xfils){
   const near=(a,b,tol)=>Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2])<tol;
   const xNum=v=>String(+(+v).toFixed(2)).replace('.',','); // rayon/longueur : 16 et non 16,0
   const jobs=[],matchedSe=new Set(),seBi=new Map();
-  const take=(bi,r,se)=>{
+  const take=(bi,r,se,fnChain)=>{
     if(se){matchedSe.add(se);seBi.set(se,bi);if(!se.pos0)se.pos0=se.pos.slice(); // POSITION D'ORIGINE figée : c'est elle la référence durable
       se.pos=edges[bi].mid.slice();se.len=+edges[bi].len.toFixed(3);} // snapshot rafraîchi (repli plus tard)
     const dup=jobs.find(j=>j.bi===bi);
-    if(dup)dup.r=Math.max(dup.r,r);else jobs.push({bi,r});
+    // fn (V0.11.19) : normale de la première face d'un chanfrein asymétrique, portée par
+    // l'entrée (ou par le germe pour une arête de chaîne)
+    const fn=(se&&Array.isArray(se.fn))?se.fn:(fnChain||null);
+    if(dup){dup.r=Math.max(dup.r,r);if(!dup.fn&&fn)dup.fn=fn;}else jobs.push({bi,r,fn});
   };
   xfils.forEach(xf=>{
     (xf.edges||[]).forEach(se=>{
@@ -4684,7 +4802,7 @@ function occApplyXFillets(base,xfils){
       let bs=null,bd=1e9;
       roots.forEach(se=>{const d=at(se.pos0&&se.pos0.length===3?se.pos0:se.pos);if(d<bd){bd=d;bs=se;}});
       if(!bs)return;
-      take(j,bs.r,null);
+      take(j,bs.r,null,Array.isArray(bs.fn)?bs.fn:null);
     });
   });
   // Passe 3 : signature de groupe pour orphelins (anciennes sélections déplacées).
@@ -4726,14 +4844,15 @@ function occApplyXFillets(base,xfils){
     else delete xf._miss;
   });
   if(!jobs.length)return{shape:base,warnings:warns};
-  const js=jobs.map(j=>({src:edges[j.bi].src,r:j.r,mid:edges[j.bi].mid.slice()}));
+  const js=jobs.map(j=>({src:edges[j.bi].src,r:j.r,mid:edges[j.bi].mid.slice(),fn:j.fn||null}));
   const single=(xfils||[]).length>0&&(xfils||[]).every(x=>x&&x.tangent===false); // case décochée : arête seule
+  const cham=chamfer?xChamOpts((xfils||[]).find(x=>x&&x.chamfer)):null; // V0.11.19 : une fonction par appel
   const wA=[];
   // reprise déjà calculée sur ce même solide (rejeu puis affichage) : le calcul exact, qui
   // échouerait encore, n'est pas retenté (~0,3 s par congé)
-  let rN=occNurbsMemoGet(occNurbsMemoKey(js,chamfer,single,edges));
-  let s=rN?null:occFilletRun(base,js,wA,chamfer,{single});
-  if(!s&&!rN)rN=occFilletNurbs(base,js,chamfer,single,edges);
+  let rN=occNurbsMemoGet(occNurbsMemoKey(js,chamfer,single,edges,cham));
+  let s=rN?null:occFilletRun(base,js,wA,chamfer,{single,cham});
+  if(!s&&!rN)rN=occFilletNurbs(base,js,chamfer,single,edges,cham);
   if(rN){
     s=rN.shape;
     // les refus « isolé impossible » de la voie analytique ne concernent plus le résultat
@@ -4753,7 +4872,8 @@ function occApplyXFillets(base,xfils){
     for(const k of [0.7,0.5,0.4,0.3,0.2]){
       const r2=Math.max(0.5,+(rMax*k).toFixed(2));
       const w2=[];
-      const t=occFilletRun(occShapeCopy(base),js.map(j=>({src:j.src,r:r2,mid:j.mid.slice()})),w2,chamfer,{single});
+      const cham2=cham?Object.assign({},cham,{d2:+(cham.d2*k).toFixed(2)}):null; // D2 réduit dans le même rapport
+      const t=occFilletRun(occShapeCopy(base),js.map(j=>({src:j.src,r:r2,mid:j.mid.slice(),fn:j.fn||null})),w2,chamfer,{single,cham:cham2});
       if(t){ok=r2;try{t.delete();}catch(e){}break;}
     }
     const why=chamfer?'distance trop grande':'rayon trop grand';
@@ -4767,7 +4887,7 @@ function occApplyXFillets(base,xfils){
   try{base.delete();}catch(e){}
   return{shape:s,warnings:warns};
 }
-function occFilletNurbs(base,js,chamfer,single,edges){
+function occFilletNurbs(base,js,chamfer,single,edges,cham){
   // REPRISE DE DERNIER RECOURS (2026-10-26) : le même arrondi sur des surfaces converties en
   // NURBS (BRepBuilderAPI_NurbsConvert). Cavité Test : le congé R3,3 au pied de la nervure
   // ne passait qu'à la longueur 80 du bloc — 70, 79, 81, 100, même RETOUR à 80 : exception dans
@@ -4802,10 +4922,10 @@ function occFilletNurbs(base,js,chamfer,single,edges){
         let b=null,bd=1e-3;
         E.forEach(e=>{const d=Math.hypot(e.mid[0]-j.mid[0],e.mid[1]-j.mid[1],e.mid[2]-j.mid[2]);if(d<bd){bd=d;b=e;}});
         if(!b){del(nb);return null;}
-        js2.push({src:b.src,r:j.r,mid:j.mid.slice()});
+        js2.push({src:b.src,r:j.r,mid:j.mid.slice(),fn:j.fn||null});
       }
       const w=[];
-      const s=occFilletRun(nb,js2,w,chamfer,{single});
+      const s=occFilletRun(nb,js2,w,chamfer,{single,cham});
       // résultat PARTIEL (arête par arête) refusé : la reprise doit rendre la fonction entière
       if(!s||w.some(m=>/partiel|impossible|introuvable/.test(m))){if(s&&s!==nb)del(s);del(nb);return null;}
       if(s!==nb)del(nb);
@@ -4880,7 +5000,7 @@ function occFilletNurbs(base,js,chamfer,single,edges){
   // MÉMOIRE : le rejeu puis l'affichage (occFinalShape) rejouent le même congé sur le même
   // solide — chaque reprise (~1,5 s) était payée deux fois. Clé : arêtes demandées (milieu,
   // rayon), nombre d'arêtes du corps et somme de leurs longueurs ; résultat rendu en copie.
-  const key=occNurbsMemoKey(js,chamfer,single,edges);
+  const key=occNurbsMemoKey(js,chamfer,single,edges,cham);
   const hit=occNurbsMemoGet(key);if(hit)return hit;
   const g=local();
   const r=g?{shape:g,local:true}:(()=>{const s=filletNurbs(base);return s?{shape:s,local:false}:null;})();
@@ -4889,8 +5009,8 @@ function occFilletNurbs(base,js,chamfer,single,edges){
   return r;
 }
 const OCC_NURBS_MEMO=[]; // reprises NURBS récentes {key, shape, local} (voir occFilletNurbs)
-function occNurbsMemoKey(js,chamfer,single,edges){
-  return (chamfer?'C':'F')+(single?'1':'t')+'|'+(edges||[]).length+'|'+(edges||[]).reduce((a,e)=>a+e.len,0).toFixed(6)
+function occNurbsMemoKey(js,chamfer,single,edges,cham){
+  return (chamfer?'C':'F')+(single?'1':'t')+(cham?'|'+xChamKey(cham):'')+'|'+(edges||[]).length+'|'+(edges||[]).reduce((a,e)=>a+e.len,0).toFixed(6)
     +'|'+js.map(j=>j.mid.map(v=>v.toFixed(5)).join(',')+'@'+j.r).join(';');
 }
 function occNurbsMemoGet(key){
@@ -5054,11 +5174,12 @@ function featSig(f){
     // tangent (chaîne déduite à chaque rejeu) et seed (arête germe) changent la GÉOMÉTRIE
     // appliquée : les mettre dans la signature force le cache à rejouer quand on décoche
     // « arêtes tangentes » ou qu'on change de germe — sinon le solide périmé persiste.
-    s+='|'+(f.chamfer?1:0)+'|'+(f.tangent?1:0)+'|'+((f.edges||[]).map(e=>
+    // V0.11.19 : mode du chanfrein (deux distances / angle / inversion) = géométrie aussi.
+    s+='|'+(f.chamfer?1:0)+'|'+(f.chamfer?xChamKey(xChamOpts(f)):'')+'|'+(f.tangent?1:0)+'|'+((f.edges||[]).map(e=>
       // 2026-10-16-008 : position d'ORIGINE figée (pos0) et non le relevé pos/len rafraîchi à
       // chaque appariement — sinon la signature changeait APRÈS chaque rejeu (point de contrôle
       // jamais retrouvé). Un changement en amont change déjà le préfixe : aucune fraîcheur perdue.
-      (+e.r||0)+(e.seed?'s':'')+'@'+(e.pos0||e.pos||[]).map(x=>(+x).toFixed(3)).join(',')
+      (+e.r||0)+(e.seed?'s':'')+(Array.isArray(e.fn)?'n'+e.fn.map(x=>(+x).toFixed(2)).join(','):'')+'@'+(e.pos0||e.pos||[]).map(x=>(+x).toFixed(3)).join(',')
       +((e.anchor)?('#'+e.anchor.t+(e.anchor.sk||'')+(e.anchor.id||'')+'z'+(e.anchor.z||0)+'s'+(e.anchor.side||0)+'d'+(e.anchor.dist||0)+'f'+(e.anchor.far||0)):'')).join(';'));
   }else if(f.type==='combine'){
     // mode + historique COMPLET des corps outils jusqu'à la combinaison
@@ -5085,7 +5206,7 @@ function featSig(f){
     // laissait la signature inchangée et le point de contrôle réappliquait l'ancien
     // solide — la dépouille semblait « valide » mais restait invisible (Pièce 7).
     const q=r=>r?((r.pos||[]).map(v=>(+v).toFixed(2)).join(',')+'/'+(r.n||[]).map(v=>(+v).toFixed(3)).join(',')+'/'+(r.dim||[]).map(v=>(+v).toFixed(2)).join(',')):'?';
-    s+='|a'+(+f.angle||0)+'@'+q(f.ref)+'|'+((f.faces||[]).map(q).join(';'));
+    s+='|a'+draftAngleEff(f)+'@'+q(f.ref)+'|'+((f.faces||[]).map(q).join(';')); // V0.11.19 : angle signé + flip
   }else if(f.type==='xshell'){
     // L'ÉPAISSEUR et les faces RETIRÉES (ouvertures) font partie de la géométrie :
     // sans elles le cache réappliquerait l'ancien évidage après un changement.
@@ -6181,11 +6302,11 @@ function repCanFeatureHint(f){
   if(f.type==='extrude')return((f.op||'add')==='cut'?'Découpe':'Plot')+' · '+(+f.distance||0).toFixed(2)+' mm';
   if(f.type==='revolve')return revolveName(f);
   if(f.type==='hole')return 'Perçage · Ø'+(+f.d||0)+(f.thread&&f.thread.size?' · taraudé '+f.thread.size:'')+(f.kind&&f.kind!=='simple'?' · '+f.kind:'');
-  if(f.type==='xfillet')return xLabel(xKindOf(f))+' · '+(f.edges||[]).length+' arête(s)';
+  if(f.type==='xfillet')return xLabel(xKindOf(f))+' · '+(f.edges||[]).length+' arête(s)'+xChamLabel(f);
   if(f.type==='xmove')return 'Déplacement de face · '+(+f.dist||0)+' mm';
   if(f.type==='bmove')return 'Déplacer un corps · '+(f.steps||[]).length+' étape(s)';
   if(f.type==='xdelface')return 'Suppression · '+(f.faces||[]).length+' face(s)';
-  if(f.type==='xdraft')return 'Dépouillage · '+(+f.angle||0).toFixed(1).replace('.',',')+'° · '+(f.faces||[]).length+' face(s)';
+  if(f.type==='xdraft')return 'Dépouillage · '+draftAngleEff(f).toFixed(1).replace('.',',').replace('-','−')+'° · '+(f.faces||[]).length+' face(s)';
   if(f.type==='xshell')return 'Coque · '+String(Math.round((+f.thick||0)*100)/100).replace('.',',')+' mm · '+(f.faces||[]).length+' face(s) retirée(s)';
   if(f.type==='xsplit')return splitName(f);
   return '';
@@ -6394,6 +6515,9 @@ function repCloneFeature(f,i,skMap,featMap,cfg,reuse){
       const o=Object.assign({},s,{anchor:a});
       o.pos=repTransformPoint(s.pos,i,cfg).map(v=>+v.toFixed(6));
       o.pos0=repTransformPoint(s.pos0||s.pos,i,cfg).map(v=>+v.toFixed(6));
+      // V0.11.19 : normale de la première face d'un chanfrein asymétrique, transformée comme
+      // les normales de faces (repCloneFaceRef) — la copie garde D1 sur l'image de la même face.
+      if(Array.isArray(s.fn)&&s.fn.length===3)o.fn=repNorm(repTransformVec(s.fn,i,cfg)).map(v=>+v.toFixed(4));
       delete o._div; // divergence herdée de la source : sans rapport avec le clone
       return o;
     });
@@ -7114,14 +7238,18 @@ function renderProps(){
       d.addEventListener('change',()=>{
         const v=parseFloat(String(d.value).replace(',','.').replace(/\s/g,''));
         if(!isFinite(v)){d.value=String(+f.angle||0).replace('.',',');return;}
-        if(v<=0||v>=90){d.value=String(+f.angle||0).replace('.',',');faceEl.textContent='Angle hors bornes : 0 < a < 90°.';return;}
+        if(!draftAngleOk(v)){d.value=String(+f.angle||0).replace('.',',');faceEl.textContent='Angle hors bornes : −90 < a < 90°, non nul (négatif = sens inversé).';return;}
         if(v===+f.angle)return;
         docPushUndo();
         f.angle=v;f.name=draftName(f);repSyncForFeature(f);
         markDirty();rebuild();renderTree();renderProps();
       });
       pRow('Angle (°)',d);
-      pNote('Angle de démoulage : chaque face retenue pivote de cet angle autour de sa ligne d\'intersection avec le plan neutre.');
+      // V0.11.19 : inversion du sens sans toucher à la valeur (une expression ƒx reste liée)
+      const fb=document.createElement('input');fb.type='checkbox';fb.checked=!!f.flip;
+      fb.onchange=()=>{docPushUndo();f.flip=fb.checked;f.name=draftName(f);repSyncForFeature(f);markDirty();rebuild();renderTree();renderProps();};
+      pRow('⇄ Inverser le sens',fb);
+      pNote('Angle de démoulage : chaque face retenue pivote de cet angle autour de sa ligne d\'intersection avec le plan neutre. Sens effectif '+String(Math.round(draftAngleEff(f)*100)/100).replace('.',',').replace('-','−')+'° : la pièce '+(draftAngleEff(f)>=0?'se resserre':'s\'évase')+' le long de la normale du plan neutre.');
       pBtns([['📐 Re-sélectionner les faces',()=>{exitDraftMode(true);try{if(filMode||filModeX)exitFilletMode(true);}catch(e){}enterDraftMode(f);}]]);
       visDel(f);
       return;
@@ -7167,7 +7295,7 @@ function renderProps(){
     const filRims=f.rims||((f.rimTop||f.rimBot)?{top:!!f.rimTop,bottom:!!f.rimBot}:null);
     const typeLabel=f.type==='extrude'?((f.op||'add')==='cut'?'➖ ':'➕ ')+extName(f)
       :f.type==='fillet'?'Congé R'+f.radius+' · '+(f.corners||[]).length+' verticale(s)'
-      :f.type==='xfillet'?xLabel(xKindOf(f))+' · '+(f.edges||[]).length+' arête(s)'
+      :f.type==='xfillet'?xLabel(xKindOf(f))+' · '+(f.edges||[]).length+' arête(s)'+xChamLabel(f)
       :f.type==='repeat'?'Répétition'
       :f.type==='hole'?'Perçage'
       :f.type==='revolve'?'Révolution'
@@ -7290,6 +7418,39 @@ function renderProps(){
         r.appendChild(x);lst.appendChild(r);
       });
       p.appendChild(lst);
+      if(f.chamfer){
+        // V0.11.19 : type du chanfrein — distance égale / deux distances / distance + angle, inversion
+        const sm=document.createElement('select');
+        [['eq','Distance égale'],['d2','Deux distances'],['da','Distance + angle']].forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];sm.appendChild(op);});
+        sm.value=(f.cmode==='d2'||f.cmode==='da')?f.cmode:'eq';
+        sm.onclick=ev=>ev.stopPropagation();
+        sm.onchange=()=>{
+          docPushUndo();f.cmode=sm.value;
+          if(sm.value==='d2'&&!(+f.cd2>0))f.cd2=+((f.edges||[])[0]&&f.edges[0].r)||1;
+          if(sm.value==='da'&&!(+f.cang>0&&+f.cang<90))f.cang=45;
+          if(sm.value==='eq'){delete f.cflip;}
+          repSyncForFeature(f);markDirty();rebuild();renderTree();renderProps();
+        };
+        pRow('Type',sm);
+        if(sm.value!=='eq'){
+          const da=sm.value==='da',key=da?'cang':'cd2';
+          const i2=document.createElement('input');i2.type='text';i2.inputMode='decimal';i2.value=String(+f[key]||(da?45:1)).replace('.',',');parFx(i2,f,key);
+          i2.onclick=ev=>ev.stopPropagation();
+          const c3=()=>{
+            const v=parseFloat(String(i2.value).replace(',','.'));
+            if(!isFinite(v)||v<=0||(da&&v>=90)){i2.value=String(+f[key]).replace('.',',');faceEl.textContent=da?'Angle du chanfrein : 0 < a < 90°.':'Distance 2 : valeur strictement positive.';return;}
+            if(v===+f[key])return;
+            docPushUndo();f[key]=v;repSyncForFeature(f);markDirty();rebuild();renderTree();renderProps();
+          };
+          i2.addEventListener('change',c3);i2.addEventListener('blur',c3);
+          i2.addEventListener('keydown',e=>{if(e.key==='Enter'){c3();i2.blur();}e.stopPropagation();});
+          pRow(da?'Angle (°)':'Distance 2 (mm)',i2);
+          const fb=document.createElement('input');fb.type='checkbox';fb.checked=!!f.cflip;
+          fb.onchange=()=>{docPushUndo();f.cflip=fb.checked;repSyncForFeature(f);markDirty();rebuild();renderTree();renderProps();};
+          pRow('⇄ Inverser les faces',fb);
+          pNote((da?'D1 (distance par arête) sur la première face, angle entre le chanfrein et cette face.':'D1 (distance par arête) sur la première face, D2 sur l’autre.')+' Première face : celle qui regarde le plus vers le haut, sinon vers +X puis +Y.');
+        }
+      }
       pBtns([['✏️ Modifier la sélection',()=>enterExactFilletMode(f)]]);
       // V0.8.0 : une valeur pour toutes les arêtes (comme la flèche dans la vue), OK / Annuler
       if((f.edges||[]).length){
@@ -21954,7 +22115,7 @@ let filModeX=null,xHover=null; // mode exact : sel=[{pos:[x,y,z],r}], edges=occL
 // pour congé / R1 pour chanfrein et tangentes cochées À CHAQUE entrée ; sur une pièce à faces
 // étroites comme la pédale, un rayon par défaut trop grand rendait l'aperçu muet au 1ᵉʳ clic).
 // Les défauts bruts (10 / 1, tangentes cochées) restent ceux du démarrage de l'appli.
-const filMemo={r:{fillet:10,chamfer:1},tangent:true};
+const filMemo={r:{fillet:10,chamfer:1},tangent:true,cmode:'eq',cd2:1,cang:45}; // V0.11.19 : type de chanfrein retenu aussi
 let occSkipFeat=null; // id de fonction exclue du rejeu (édition de congé : revoir les arêtes vives AVANT elle)
 function filEdgeKey(fp){return fp.x.toFixed(2)+','+fp.y.toFixed(2);}
 function filletTarget(){
@@ -22003,6 +22164,18 @@ function enterExactFilletMode(editF,kind){
   // En édition : la case reste sur l'état PERSISTÉ du congé (f.tangent) — elle ne se
   // remet plus « cochée » en dépit de l'utilisateur à chaque réédition.
   filModeX={sel:[],seeds:[],tangent:editing?(editing.tangent!==false):filMemo.tangent,radius:xIsChamfer(k)?filMemo.r.chamfer:filMemo.r.fillet,edges:[],tang:[],editing:editing?editing.id:null,kind:k}; // défauts 1ᵉʳ usage : congé 10, chanfrein 1, tangentes ON — puis memory de session
+  // V0.11.19 : type de chanfrein (cmode 'eq' | 'd2' | 'da', cd2, cang, cflip) — `chamfer` posé
+  // sur le mode pour que xChamOpts(filModeX) lise l'état de la commande comme une fonction.
+  filModeX.chamfer=xIsChamfer(k);
+  if(filModeX.chamfer){
+    if(editing){
+      filModeX.cmode=(editing.cmode==='d2'||editing.cmode==='da')?editing.cmode:'eq';
+      filModeX.cd2=+editing.cd2>0?+editing.cd2:filMemo.cd2;
+      filModeX.cang=(+editing.cang>0&&+editing.cang<90)?+editing.cang:filMemo.cang;
+      filModeX.cflip=!!editing.cflip;
+      parFxFrom(editing,filModeX,['cd2','cang']);
+    }else{filModeX.cmode=filMemo.cmode;filModeX.cd2=filMemo.cd2;filModeX.cang=filMemo.cang;filModeX.cflip=false;}
+  }
   if(editing){
     // Édition : rejeu SANS la fonction (occSkipFeat) → les arêtes vives d'origine redeviennent
     // cliquables (l'arrondi appliqué les a remplacées par des surfaces tangentes).
@@ -22010,7 +22183,7 @@ function enterExactFilletMode(editF,kind){
     (editing.edges||[]).forEach(s=>{
       if(seen.some(u=>Math.abs((u.r||0)-(s.r||0))<1e-9&&Math.hypot(u.pos[0]-s.pos[0],u.pos[1]-s.pos[1],u.pos[2]-s.pos[2])<=0.75))return;
       seen.push(s);
-      filModeX.sel.push(parFxFrom(s,{pos:s.pos.slice(),pos0:(s.pos0||s.pos).slice(),r:s.r||2,len:+(s.len||0)||0,anchor:s.anchor||null,name:s.name||null,seed:s.seed?1:0},['r']));
+      filModeX.sel.push(parFxFrom(s,{pos:s.pos.slice(),pos0:(s.pos0||s.pos).slice(),r:s.r||2,len:+(s.len||0)||0,anchor:s.anchor||null,name:s.name||null,seed:s.seed?1:0,fn:Array.isArray(s.fn)?s.fn.slice():null},['r']));
     });
     const rr=filModeX.sel.find(s=>s.r>0);if(rr)filModeX.radius=rr.r;
     occSkipFeat=editing.id;
@@ -22179,7 +22352,8 @@ function xPreviewShape(base,jobs,cham){
   if(!base||!jobs||!jobs.length)return null;
   const warns=[];
   let sh=null;
-  try{sh=occFilletRun(base,jobs,warns,cham,{single:!!(filModeX&&filModeX.tangent===false)});}catch(e){sh=null;}
+  // V0.11.19 : type de chanfrein de la commande (deux distances / angle / inversion) dans l'aperçu
+  try{sh=occFilletRun(base,jobs,warns,cham,{single:!!(filModeX&&filModeX.tangent===false),cham:cham?xChamOpts(filModeX):null});}catch(e){sh=null;}
   return sh?{shape:sh}:{shape:null,warns};
 }
 function xPreviewUpdate(){
@@ -22188,7 +22362,7 @@ function xPreviewUpdate(){
     const sel=filModeX.sel.filter(s=>s.r>0);
     if(!sel.length||!occLive||!occLive.shape){xPrevRemove();return;}
     // rien à recalculer si la sélection et les rayons n'ont pas bougé
-    const sig=sel.map(s=>s.pos.map(v=>v.toFixed(2)).join(',')+'/'+s.r).join('|')+(xIsChamfer(filModeX.kind)?'#c':'#f')+(filModeX.tangent===false?'#1':'#t');
+    const sig=sel.map(s=>s.pos.map(v=>v.toFixed(2)).join(',')+'/'+s.r).join('|')+(xIsChamfer(filModeX.kind)?'#c'+xChamKey(xChamOpts(filModeX)):'#f')+(filModeX.tangent===false?'#1':'#t');
     if(filModeX._prevSig===sig)return;
     const cham=xIsChamfer(filModeX.kind);
     const E=occListEdges(occLive.shape);
@@ -22196,7 +22370,7 @@ function xPreviewUpdate(){
     sel.forEach(s=>{
       let bi=-1,bd=1e9;
       E.forEach((e,i)=>{const d=Math.hypot(e.mid[0]-s.pos[0],e.mid[1]-s.pos[1],e.mid[2]-s.pos[2]);if(d<bd){bd=d;bi=i;}});
-      if(bi>=0&&bd<1.5)jobs.push({src:E[bi].src,r:s.r,mid:E[bi].mid});
+      if(bi>=0&&bd<1.5)jobs.push({src:E[bi].src,r:s.r,mid:E[bi].mid,fn:Array.isArray(s.fn)?s.fn:null});
     });
     if(!jobs.length){xPrevRemove();return;}
     const pv=xPreviewShape(occLive.shape,jobs,cham);
@@ -22558,6 +22732,45 @@ function renderExactPanel(){
   inp.addEventListener('click',e=>e.stopPropagation());
   inp.addEventListener('keydown',e=>e.stopPropagation());
   r1.appendChild(inp);p.appendChild(r1);
+  if(xIsChamfer(k)){
+    // V0.11.19 : type du chanfrein — distance égale / deux distances / distance + angle, et
+    // inversion de la première face (celle qui porte D1). Même langage que SolidCraft.
+    const rm=document.createElement('div');rm.className='pnl-row';
+    const lm=document.createElement('label');lm.textContent='Type';rm.appendChild(lm);
+    const sm=document.createElement('select');sm.id='xChamMode';
+    [['eq','Distance égale'],['d2','Deux distances'],['da','Distance + angle']].forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];sm.appendChild(op);});
+    sm.value=filModeX.cmode||'eq';
+    sm.onclick=e=>e.stopPropagation();
+    sm.onchange=()=>{filModeX.cmode=sm.value;filMemo.cmode=sm.value;renderExactPanel();xPreviewUpdate();};
+    rm.appendChild(sm);p.appendChild(rm);
+    if(filModeX.cmode==='d2'||filModeX.cmode==='da'){
+      const da=filModeX.cmode==='da',key=da?'cang':'cd2';
+      const r2=document.createElement('div');r2.className='pnl-row';
+      const l2=document.createElement('label');l2.textContent=da?'Angle (°)':'Distance 2 (mm)';r2.appendChild(l2);
+      const i2=document.createElement('input');i2.type='text';i2.inputMode='decimal';i2.id=da?'xChamAng':'xChamD2';
+      i2.value=String(+filModeX[key]||(da?45:1)).replace('.',',');
+      parFx(i2,filModeX,key); // ƒx : « D/2 », « A »…
+      const set2=()=>{
+        const v=parseFloat(String(i2.value).replace(',','.'));
+        if(!isFinite(v)||v<=0||(da&&v>=90)){i2.value=String(+filModeX[key]).replace('.',',');faceEl.textContent=da?'Angle du chanfrein : 0 < a < 90°.':'Distance 2 : valeur strictement positive.';return;}
+        filModeX[key]=v;filMemo[key]=v;xPreviewUpdate();
+      };
+      i2.addEventListener('change',set2);i2.addEventListener('blur',set2);
+      i2.addEventListener('click',e=>e.stopPropagation());
+      i2.addEventListener('keydown',e=>{if(e.key==='Enter'){set2();i2.blur();}e.stopPropagation();});
+      r2.appendChild(i2);p.appendChild(r2);
+      const fl=document.createElement('label');fl.style.cssText='display:flex;align-items:center;gap:6px;margin-top:6px;font-size:.83rem;cursor:pointer';
+      const fc=document.createElement('input');fc.type='checkbox';fc.id='xChamFlip';fc.checked=!!filModeX.cflip;
+      fc.addEventListener('change',()=>{filModeX.cflip=fc.checked;xPreviewUpdate();});
+      fl.appendChild(fc);
+      const ft=document.createElement('span');ft.textContent='⇄ Inverser les faces (D1 sur l’autre face)';fl.appendChild(ft);
+      p.appendChild(fl);
+      const n2=document.createElement('div');n2.className='note';n2.style.marginTop='3px';
+      n2.textContent=(da?'D1 (distance par arête) sur la première face, angle mesuré entre le chanfrein et cette face.'
+        :'D1 (distance par arête) sur la première face, D2 sur l’autre.')+' Première face : celle qui regarde le plus vers le haut, sinon vers +X puis +Y.';
+      p.appendChild(n2);
+    }
+  }
   // Option « arêtes tangentes » : cochée, chaque arête cliquée entraîne sa chaîne tangente
   // (déduite, pas retenue par l'utilisateur) ; décochée, une arête par clic, rien de plus.
   const tl=document.createElement('label');
@@ -22636,8 +22849,24 @@ function applyExactFillet(){
   // permet de suivre l'arête quand le solide change de hauteur). Conservée en édition.
   // seed = arête GERME (cliquée) : re-marquée depuis filModeX.seeds (indices stables dans la
   // session), c'est elle qui ancre la propagation tangente à chaque rejeu (passe 2b).
+  // V0.11.19 : chanfrein — normale de la PREMIÈRE face de chaque arête (règle « vers le haut »,
+  // sans l'inversion), mémorisée pour que le rejeu et les copies d'une répétition (normale
+  // transformée) retrouvent la même face. Gardée telle quelle en édition.
+  const firstN=s=>{
+    if(!xIsChamfer(k))return null;
+    if(Array.isArray(s.fn)&&s.fn.length===3)return s.fn.slice();
+    let eh=null,ff=null,n=null;
+    try{
+      const E=occListEdges(occLive.shape);
+      let bi=-1,bd=1e9;E.forEach((e,i)=>{const d=Math.hypot(e.mid[0]-s.pos[0],e.mid[1]-s.pos[1],e.mid[2]-s.pos[2]);if(d<bd){bd=d;bi=i;}});
+      if(bi>=0&&bd<1.5){eh=occEdgeAt(occLive.shape,E[bi].src);ff=eh?occChamferFirstFace(occLive.shape,eh,false,null):null;if(ff&&ff.n)n=ff.n.map(v=>+v.toFixed(4));}
+    }catch(e){n=null;}
+    try{if(ff&&ff.f)ff.f.delete();}catch(e){}try{if(eh)eh.delete();}catch(e){}
+    return n;
+  };
   const mkEdges=()=>filModeX.sel.map(s=>{
     const e={pos:s.pos.slice(),pos0:(s.pos0||s.pos).slice(),r:s.r,len:+(s.len||0),anchor:s.anchor||null,name:s.name||entName('edge')};
+    const fn=firstN(s);if(fn)e.fn=fn;
     // ƒx : expression propre à l'arête, sinon celle du rayon par défaut si l'arête l'a gardé
     if((s.expr&&s.expr.r)||(s.pname&&s.pname.r))parFxCopy(s,e,['r']);
     else if(filModeX.expr&&filModeX.expr.radius&&Math.abs((+s.r)-(+filModeX.radius))<1e-9)e.expr={r:filModeX.expr.radius};
@@ -22645,17 +22874,30 @@ function applyExactFillet(){
     if((ei>=0&&(filModeX.seeds||[]).indexOf(ei)>=0)||s.seed)e.seed=1;
     return e;
   });
+  // V0.11.19 : type du chanfrein reporté sur la fonction (avec ses expressions ƒx)
+  const chamFields=g=>{
+    if(!xIsChamfer(k))return;
+    g.cmode=(filModeX.cmode==='d2'||filModeX.cmode==='da')?filModeX.cmode:'eq';
+    if(g.cmode==='eq'){
+      delete g.cd2;delete g.cang;delete g.cflip;
+      if(g.expr){delete g.expr.cd2;delete g.expr.cang;if(!Object.keys(g.expr).length)delete g.expr;}
+      if(g.pname){delete g.pname.cd2;delete g.pname.cang;if(!Object.keys(g.pname).length)delete g.pname;}
+      return;
+    }
+    g.cd2=+filModeX.cd2>0?+filModeX.cd2:1;g.cang=(+filModeX.cang>0&&+filModeX.cang<90)?+filModeX.cang:45;g.cflip=!!filModeX.cflip;
+    parFxCopy(filModeX,g,['cd2','cang']);
+  };
   if(filModeX.editing){
     // Édition en place : on met À JOUR la fonction existante (pas de 2ᵉ fonction).
     const f=doc.features.find(x=>x.id===filModeX.editing);
-    if(f){f.edges=mkEdges();f.tangent=filModeX.tangent!==false;f.name=xFeatName(f);repSyncForFeature(f);sel={kind:'feature',id:f.id};}
+    if(f){f.edges=mkEdges();f.tangent=filModeX.tangent!==false;chamFields(f);f.name=xFeatName(f);repSyncForFeature(f);sel={kind:'feature',id:f.id};}
     exitExactFilletMode(true); // restaure le rejeu complet avec les arêtes mises à jour
     renderProps();
     faceEl.textContent=label+' : mise à jour enregistrée ('+(f?f.edges.length:0)+' arête(s)).';
     return;
   }
   const nf={id:uid('xf'),type:'xfillet',name:xLabel(k)+' ('+filModeX.sel.length+' arête(s))',edges:mkEdges(),visible:true,tangent:filModeX.tangent!==false};
-  if(xIsChamfer(k))nf.chamfer=true;
+  if(xIsChamfer(k)){nf.chamfer=true;chamFields(nf);}
   const snap0=docSnap(),len0=docUndoStack.length; // V0.8.0 : Annuler retire le congé
   addFeature(nf);
   try{ fdynStart(nf,snap0,len0); }catch(e){}
@@ -23782,9 +24024,14 @@ let draftPrevBody=null; // aperçu translucide du solide dépouillé (non valid�
 })();
 
 function draftName(f){
-  const a=+f.angle||0;
-  const d=String(Math.round(a*100)/100).replace('.',',');
+  const a=draftAngleEff(f); // V0.11.19 : angle signé (flip compris) — « −5° » = sens inversé
+  const d=String(Math.round(a*100)/100).replace('.',',').replace('-','−');
   return `Dépouillage ${d}° · ${(f.faces||[]).length} face(s)`;
+}
+function draftSensText(){
+  // Note du panneau : sens effectif (angle × inversion) et ce qu'il fait à la pièce.
+  const eff=draftAngleEff(draftMode||{});
+  return 'Sens effectif : '+String(Math.round(eff*100)/100).replace('.',',').replace('-','−')+'° — la pièce '+(eff>=0?'se resserre':'s\'évase')+' en s\'éloignant du plan neutre le long de sa normale (flèche jaune).';
 }
 function draftKey(r){
   return (r.pos||[]).map(v=>(+v).toFixed(2)).join(',')+'|'+(r.n||[]).map(v=>(+v).toFixed(3)).join(',');
@@ -23836,10 +24083,12 @@ function draftPaint(){
   const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.55,depthTest:false,side:THREE.DoubleSide}));
   m.raycast=()=>{};m.renderOrder=1002;
   draftGroup=new THREE.Group();draftGroup.name='draftFaces';draftGroup.add(m);
-  // Flèche du sens de démoulage (direction de dépouille = normale de la référence),
-  // plantée au centre de la face de référence — comme la flèche blanche de Fusion.
+  // Flèche du sens de démoulage (direction de dépouille = normale de la référence, retournée
+  // si l'angle effectif est négatif — V0.11.19), plantée au centre de la face de référence —
+  // comme la flèche blanche de Fusion.
   try{
-    const rn=draftMode.ref.n||[0,0,1],rp=draftMode.ref.pos||[0,0,0];
+    const sg=draftAngleEff(draftMode)<0?-1:1;
+    const rn=(draftMode.ref.n||[0,0,1]).map(v=>v*sg),rp=draftMode.ref.pos||[0,0,0];
     let len=40;
     try{
       const bm=bodies.find(x=>x.kind==='body'&&x.mesh&&(draftMode.ref._bid==null||x.id===draftMode.ref._bid));
@@ -24005,14 +24254,14 @@ function draftPreviewUpdate(){
     const faces=draftMode.faces||[];
     if(!draftMode.ref||!faces.length||!occLive||!occLive.shape){draftPreviewRemove();return;}
     // rien à recalculer si la sélection, la référence et l'angle n'ont pas bougé
-    const sig=draftKey(draftMode.ref)+'|'+faces.map(draftKey).join(';')+'|'+draftMode.angle;
+    const sig=draftKey(draftMode.ref)+'|'+faces.map(draftKey).join(';')+'|'+draftAngleEff(draftMode);
     if(draftMode._prevSig===sig)return;
     draftMode._prevSig=sig;
     const got=[];
     faces.forEach(r=>{try{const h=occFindFace(occLive.shape,r);if(h)got.push(h);}catch(e){}});
     if(!got.length){draftPreviewRemove();return;}
     let r=null;
-    try{r=occDraftOnce(occLive.shape,{pos:draftMode.ref.pos,n:draftMode.ref.n},got,+draftMode.angle*Math.PI/180);}
+    try{r=occDraftOnce(occLive.shape,{pos:draftMode.ref.pos,n:draftMode.ref.n},got,draftAngleEff(draftMode)*Math.PI/180);}
     finally{got.forEach(g=>{try{g.delete();}catch(e){}});}
     if(!r||!r.shape){draftPreviewRemove();return;}
     let sh=r.shape;
@@ -24052,7 +24301,7 @@ function enterDraftMode(editF){
   if(filModeX)exitExactFilletMode(true);
   if(mvMode)exitMoveFaceMode(true);
   if(typeof coqueMode!=='undefined'&&coqueMode)exitCoqueMode(true);
-  draftMode={phase:'ref',ref:null,faces:[],angle:5,editing:editing?editing.id:null,tangent:true};
+  draftMode={phase:'ref',ref:null,faces:[],angle:5,flip:false,editing:editing?editing.id:null,tangent:true};
   if(editing){
     // Édition : rejeu SANS la fonction (occSkipFeat) → les faces à dépouiller redeviennent
     // celles d'origine, cliquables. Exactement la stratégie de l'édition d'un congé exact.
@@ -24064,7 +24313,7 @@ function enterDraftMode(editF){
     draftMode.faces=(editing.faces||[]).map(draftCleanRef).filter(Boolean);
     draftMode._ecartees=avant-draftMode.faces.length;
     draftMode.phase=draftMode.ref?'faces':'ref';
-    draftMode.angle=(+editing.angle>0&&+editing.angle<90)?+editing.angle:5;parFxFrom(editing,draftMode,['angle']);
+    draftMode.angle=draftAngleOk(+editing.angle)?+editing.angle:5;draftMode.flip=!!editing.flip;parFxFrom(editing,draftMode,['angle']); // V0.11.19 : signé + flip
     occSkipFeat=editing.id;
     tlEditLock(editing); // arbre bloqué sur la dépouille : seules les opérations précédentes rejouées
     try{rebuild();}catch(e){}
@@ -24218,7 +24467,8 @@ function renderDraftPanel(){
   tcb.title='En cliquant une face, ajouter aussi ses voisines reliées par des arêtes lisses';
   tcb.onchange=()=>{draftMode.tangent=tcb.checked;};
   trow.appendChild(tcb);p.appendChild(trow);
-  // Angle : 0 < a < 90, au-delà le dépouillage perd son sens géométrique.
+  // Angle : −90 < a < 90, non nul (V0.11.19 : signé — négatif = sens inversé ; au-delà de 90°
+  // le dépouillage perd son sens géométrique).
   const row=document.createElement('div');row.className='pnl-row';row.style.marginTop='8px';
   const lab=document.createElement('label');lab.textContent='Angle (°)';row.appendChild(lab);
   const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';
@@ -24226,16 +24476,27 @@ function renderDraftPanel(){
   parFx(inp,draftMode,'angle');
   inp.onchange=()=>{
     const v=parseFloat(String(inp.value).replace(',','.').replace(/\s/g,''));
-    if(!isFinite(v)||v<=0||v>=90){
+    if(!draftAngleOk(v)){
       inp.value=String(draftMode.angle).replace('.',',');
-      faceEl.textContent='Angle invalide : il doit être compris entre 0 et 90° (exclus).';
+      faceEl.textContent='Angle invalide : il doit être compris entre −90 et 90° (exclus), non nul — un angle négatif inverse le sens.';
       draftPreviewRemove();
       return;
     }
     draftMode.angle=v;inp.value=String(v).replace('.',',');
-    draftPreviewUpdate();
+    draftPaint();draftPreviewUpdate();
+    const ns=document.getElementById('draftSensNote');if(ns)ns.textContent=draftSensText(); // la note suit, sans reconstruire le panneau
   };
   row.appendChild(inp);p.appendChild(row);
+  // Sens de démoulage : inversion sans toucher à la valeur (une expression ƒx reste liée).
+  const frow=document.createElement('label');frow.style.cssText='display:flex;align-items:center;gap:6px;margin-top:6px;font-size:.83rem;cursor:pointer';
+  const fcb=document.createElement('input');fcb.type='checkbox';fcb.id='draftFlipIn';fcb.checked=!!draftMode.flip;
+  fcb.onchange=()=>{draftMode.flip=fcb.checked;draftPaint();draftPreviewUpdate();const ns=document.getElementById('draftSensNote');if(ns)ns.textContent=draftSensText();};
+  frow.appendChild(fcb);
+  const ftx=document.createElement('span');ftx.textContent='⇄ Inverser le sens de démoulage';frow.appendChild(ftx);
+  p.appendChild(frow);
+  {const ns=document.createElement('span');ns.className='note';ns.id='draftSensNote';
+   ns.textContent=draftSensText();
+   p.appendChild(ns);}
   const btns=document.createElement('div');btns.className='pnl-btns';btns.style.marginTop='8px';
   const ok=document.createElement('button');ok.className='primary';
   ok.textContent=ed?'✔ Enregistrer':'✔ Appliquer';ok.onclick=draftApply;btns.appendChild(ok);
@@ -24252,7 +24513,8 @@ function draftApply(){
   if(draftMode.phase==='ref'){faceEl.textContent='Dépouillage : cliquez d\'abord la face de référence.';return;}
   if(!(draftMode.faces||[]).length){faceEl.textContent='Dépouillage : retenez au moins une face à dépouiller.';return;}
   const a=+draftMode.angle||0;
-  if(!(a>0&&a<90)){faceEl.textContent='Dépouillage : angle hors bornes (0 ; 90).';return;}
+  if(!draftAngleOk(a)){faceEl.textContent='Dépouillage : angle hors bornes (−90 ; 90), non nul.';return;}
+  const flip=!!draftMode.flip;
   // On retire `_ord` (index BRep de la session) : il n'a de sens que pour la surbrillance et
   // il ferait grossir le document sans rien apporter au rejeu. L'ancre, elle, est gardée :
   // c'est elle qui permet au rejeu de suivre les éditions amont (passe 1).
@@ -24265,7 +24527,7 @@ function draftApply(){
     const f=doc.features.find(x=>x.id===draftMode.editing&&x.type==='xdraft');
     if(f){
       docPushUndo('édition de « '+draftName(f)+' »');
-      f.ref=ref;f.faces=faces;f.angle=a;parFxCopy(draftMode,f,['angle']);f.name=draftName(f);
+      f.ref=ref;f.faces=faces;f.angle=a;f.flip=flip;parFxCopy(draftMode,f,['angle']);f.name=draftName(f);
       repSyncForFeature(f); // les instances de la répétition suivent le nouveau paramètre
       sel={kind:'feature',id:f.id};
     }
@@ -24274,7 +24536,7 @@ function draftApply(){
     faceEl.textContent='Dépouillage mis à jour : '+draftName(f)+'.';
     return;
   }
-  const nf={id:uid('dr'),type:'xdraft',name:draftName({angle:a,faces:faces}),ref,faces,angle:a,visible:true};
+  const nf={id:uid('dr'),type:'xdraft',name:draftName({angle:a,flip,faces:faces}),ref,faces,angle:a,flip,visible:true};
   parFxCopy(draftMode,nf,['angle']);
   addFeature(nf); // instantané d'annulation + insertion au marqueur temps
   sel={kind:'feature',id:nf.id};

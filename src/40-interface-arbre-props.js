@@ -167,11 +167,11 @@ function repCanFeatureHint(f){
   if(f.type==='extrude')return((f.op||'add')==='cut'?'Découpe':'Plot')+' · '+(+f.distance||0).toFixed(2)+' mm';
   if(f.type==='revolve')return revolveName(f);
   if(f.type==='hole')return 'Perçage · Ø'+(+f.d||0)+(f.thread&&f.thread.size?' · taraudé '+f.thread.size:'')+(f.kind&&f.kind!=='simple'?' · '+f.kind:'');
-  if(f.type==='xfillet')return xLabel(xKindOf(f))+' · '+(f.edges||[]).length+' arête(s)';
+  if(f.type==='xfillet')return xLabel(xKindOf(f))+' · '+(f.edges||[]).length+' arête(s)'+xChamLabel(f);
   if(f.type==='xmove')return 'Déplacement de face · '+(+f.dist||0)+' mm';
   if(f.type==='bmove')return 'Déplacer un corps · '+(f.steps||[]).length+' étape(s)';
   if(f.type==='xdelface')return 'Suppression · '+(f.faces||[]).length+' face(s)';
-  if(f.type==='xdraft')return 'Dépouillage · '+(+f.angle||0).toFixed(1).replace('.',',')+'° · '+(f.faces||[]).length+' face(s)';
+  if(f.type==='xdraft')return 'Dépouillage · '+draftAngleEff(f).toFixed(1).replace('.',',').replace('-','−')+'° · '+(f.faces||[]).length+' face(s)';
   if(f.type==='xshell')return 'Coque · '+String(Math.round((+f.thick||0)*100)/100).replace('.',',')+' mm · '+(f.faces||[]).length+' face(s) retirée(s)';
   if(f.type==='xsplit')return splitName(f);
   return '';
@@ -380,6 +380,9 @@ function repCloneFeature(f,i,skMap,featMap,cfg,reuse){
       const o=Object.assign({},s,{anchor:a});
       o.pos=repTransformPoint(s.pos,i,cfg).map(v=>+v.toFixed(6));
       o.pos0=repTransformPoint(s.pos0||s.pos,i,cfg).map(v=>+v.toFixed(6));
+      // V0.11.19 : normale de la première face d'un chanfrein asymétrique, transformée comme
+      // les normales de faces (repCloneFaceRef) — la copie garde D1 sur l'image de la même face.
+      if(Array.isArray(s.fn)&&s.fn.length===3)o.fn=repNorm(repTransformVec(s.fn,i,cfg)).map(v=>+v.toFixed(4));
       delete o._div; // divergence herdée de la source : sans rapport avec le clone
       return o;
     });
@@ -1100,14 +1103,18 @@ function renderProps(){
       d.addEventListener('change',()=>{
         const v=parseFloat(String(d.value).replace(',','.').replace(/\s/g,''));
         if(!isFinite(v)){d.value=String(+f.angle||0).replace('.',',');return;}
-        if(v<=0||v>=90){d.value=String(+f.angle||0).replace('.',',');faceEl.textContent='Angle hors bornes : 0 < a < 90°.';return;}
+        if(!draftAngleOk(v)){d.value=String(+f.angle||0).replace('.',',');faceEl.textContent='Angle hors bornes : −90 < a < 90°, non nul (négatif = sens inversé).';return;}
         if(v===+f.angle)return;
         docPushUndo();
         f.angle=v;f.name=draftName(f);repSyncForFeature(f);
         markDirty();rebuild();renderTree();renderProps();
       });
       pRow('Angle (°)',d);
-      pNote('Angle de démoulage : chaque face retenue pivote de cet angle autour de sa ligne d\'intersection avec le plan neutre.');
+      // V0.11.19 : inversion du sens sans toucher à la valeur (une expression ƒx reste liée)
+      const fb=document.createElement('input');fb.type='checkbox';fb.checked=!!f.flip;
+      fb.onchange=()=>{docPushUndo();f.flip=fb.checked;f.name=draftName(f);repSyncForFeature(f);markDirty();rebuild();renderTree();renderProps();};
+      pRow('⇄ Inverser le sens',fb);
+      pNote('Angle de démoulage : chaque face retenue pivote de cet angle autour de sa ligne d\'intersection avec le plan neutre. Sens effectif '+String(Math.round(draftAngleEff(f)*100)/100).replace('.',',').replace('-','−')+'° : la pièce '+(draftAngleEff(f)>=0?'se resserre':'s\'évase')+' le long de la normale du plan neutre.');
       pBtns([['📐 Re-sélectionner les faces',()=>{exitDraftMode(true);try{if(filMode||filModeX)exitFilletMode(true);}catch(e){}enterDraftMode(f);}]]);
       visDel(f);
       return;
@@ -1153,7 +1160,7 @@ function renderProps(){
     const filRims=f.rims||((f.rimTop||f.rimBot)?{top:!!f.rimTop,bottom:!!f.rimBot}:null);
     const typeLabel=f.type==='extrude'?((f.op||'add')==='cut'?'➖ ':'➕ ')+extName(f)
       :f.type==='fillet'?'Congé R'+f.radius+' · '+(f.corners||[]).length+' verticale(s)'
-      :f.type==='xfillet'?xLabel(xKindOf(f))+' · '+(f.edges||[]).length+' arête(s)'
+      :f.type==='xfillet'?xLabel(xKindOf(f))+' · '+(f.edges||[]).length+' arête(s)'+xChamLabel(f)
       :f.type==='repeat'?'Répétition'
       :f.type==='hole'?'Perçage'
       :f.type==='revolve'?'Révolution'
@@ -1276,6 +1283,39 @@ function renderProps(){
         r.appendChild(x);lst.appendChild(r);
       });
       p.appendChild(lst);
+      if(f.chamfer){
+        // V0.11.19 : type du chanfrein — distance égale / deux distances / distance + angle, inversion
+        const sm=document.createElement('select');
+        [['eq','Distance égale'],['d2','Deux distances'],['da','Distance + angle']].forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];sm.appendChild(op);});
+        sm.value=(f.cmode==='d2'||f.cmode==='da')?f.cmode:'eq';
+        sm.onclick=ev=>ev.stopPropagation();
+        sm.onchange=()=>{
+          docPushUndo();f.cmode=sm.value;
+          if(sm.value==='d2'&&!(+f.cd2>0))f.cd2=+((f.edges||[])[0]&&f.edges[0].r)||1;
+          if(sm.value==='da'&&!(+f.cang>0&&+f.cang<90))f.cang=45;
+          if(sm.value==='eq'){delete f.cflip;}
+          repSyncForFeature(f);markDirty();rebuild();renderTree();renderProps();
+        };
+        pRow('Type',sm);
+        if(sm.value!=='eq'){
+          const da=sm.value==='da',key=da?'cang':'cd2';
+          const i2=document.createElement('input');i2.type='text';i2.inputMode='decimal';i2.value=String(+f[key]||(da?45:1)).replace('.',',');parFx(i2,f,key);
+          i2.onclick=ev=>ev.stopPropagation();
+          const c3=()=>{
+            const v=parseFloat(String(i2.value).replace(',','.'));
+            if(!isFinite(v)||v<=0||(da&&v>=90)){i2.value=String(+f[key]).replace('.',',');faceEl.textContent=da?'Angle du chanfrein : 0 < a < 90°.':'Distance 2 : valeur strictement positive.';return;}
+            if(v===+f[key])return;
+            docPushUndo();f[key]=v;repSyncForFeature(f);markDirty();rebuild();renderTree();renderProps();
+          };
+          i2.addEventListener('change',c3);i2.addEventListener('blur',c3);
+          i2.addEventListener('keydown',e=>{if(e.key==='Enter'){c3();i2.blur();}e.stopPropagation();});
+          pRow(da?'Angle (°)':'Distance 2 (mm)',i2);
+          const fb=document.createElement('input');fb.type='checkbox';fb.checked=!!f.cflip;
+          fb.onchange=()=>{docPushUndo();f.cflip=fb.checked;repSyncForFeature(f);markDirty();rebuild();renderTree();renderProps();};
+          pRow('⇄ Inverser les faces',fb);
+          pNote((da?'D1 (distance par arête) sur la première face, angle entre le chanfrein et cette face.':'D1 (distance par arête) sur la première face, D2 sur l’autre.')+' Première face : celle qui regarde le plus vers le haut, sinon vers +X puis +Y.');
+        }
+      }
       pBtns([['✏️ Modifier la sélection',()=>enterExactFilletMode(f)]]);
       // V0.8.0 : une valeur pour toutes les arêtes (comme la flèche dans la vue), OK / Annuler
       if((f.edges||[]).length){

@@ -6,7 +6,7 @@ let filModeX=null,xHover=null; // mode exact : sel=[{pos:[x,y,z],r}], edges=occL
 // pour congé / R1 pour chanfrein et tangentes cochées À CHAQUE entrée ; sur une pièce à faces
 // étroites comme la pédale, un rayon par défaut trop grand rendait l'aperçu muet au 1ᵉʳ clic).
 // Les défauts bruts (10 / 1, tangentes cochées) restent ceux du démarrage de l'appli.
-const filMemo={r:{fillet:10,chamfer:1},tangent:true};
+const filMemo={r:{fillet:10,chamfer:1},tangent:true,cmode:'eq',cd2:1,cang:45}; // V0.11.19 : type de chanfrein retenu aussi
 let occSkipFeat=null; // id de fonction exclue du rejeu (édition de congé : revoir les arêtes vives AVANT elle)
 function filEdgeKey(fp){return fp.x.toFixed(2)+','+fp.y.toFixed(2);}
 function filletTarget(){
@@ -55,6 +55,18 @@ function enterExactFilletMode(editF,kind){
   // En édition : la case reste sur l'état PERSISTÉ du congé (f.tangent) — elle ne se
   // remet plus « cochée » en dépit de l'utilisateur à chaque réédition.
   filModeX={sel:[],seeds:[],tangent:editing?(editing.tangent!==false):filMemo.tangent,radius:xIsChamfer(k)?filMemo.r.chamfer:filMemo.r.fillet,edges:[],tang:[],editing:editing?editing.id:null,kind:k}; // défauts 1ᵉʳ usage : congé 10, chanfrein 1, tangentes ON — puis memory de session
+  // V0.11.19 : type de chanfrein (cmode 'eq' | 'd2' | 'da', cd2, cang, cflip) — `chamfer` posé
+  // sur le mode pour que xChamOpts(filModeX) lise l'état de la commande comme une fonction.
+  filModeX.chamfer=xIsChamfer(k);
+  if(filModeX.chamfer){
+    if(editing){
+      filModeX.cmode=(editing.cmode==='d2'||editing.cmode==='da')?editing.cmode:'eq';
+      filModeX.cd2=+editing.cd2>0?+editing.cd2:filMemo.cd2;
+      filModeX.cang=(+editing.cang>0&&+editing.cang<90)?+editing.cang:filMemo.cang;
+      filModeX.cflip=!!editing.cflip;
+      parFxFrom(editing,filModeX,['cd2','cang']);
+    }else{filModeX.cmode=filMemo.cmode;filModeX.cd2=filMemo.cd2;filModeX.cang=filMemo.cang;filModeX.cflip=false;}
+  }
   if(editing){
     // Édition : rejeu SANS la fonction (occSkipFeat) → les arêtes vives d'origine redeviennent
     // cliquables (l'arrondi appliqué les a remplacées par des surfaces tangentes).
@@ -62,7 +74,7 @@ function enterExactFilletMode(editF,kind){
     (editing.edges||[]).forEach(s=>{
       if(seen.some(u=>Math.abs((u.r||0)-(s.r||0))<1e-9&&Math.hypot(u.pos[0]-s.pos[0],u.pos[1]-s.pos[1],u.pos[2]-s.pos[2])<=0.75))return;
       seen.push(s);
-      filModeX.sel.push(parFxFrom(s,{pos:s.pos.slice(),pos0:(s.pos0||s.pos).slice(),r:s.r||2,len:+(s.len||0)||0,anchor:s.anchor||null,name:s.name||null,seed:s.seed?1:0},['r']));
+      filModeX.sel.push(parFxFrom(s,{pos:s.pos.slice(),pos0:(s.pos0||s.pos).slice(),r:s.r||2,len:+(s.len||0)||0,anchor:s.anchor||null,name:s.name||null,seed:s.seed?1:0,fn:Array.isArray(s.fn)?s.fn.slice():null},['r']));
     });
     const rr=filModeX.sel.find(s=>s.r>0);if(rr)filModeX.radius=rr.r;
     occSkipFeat=editing.id;
@@ -231,7 +243,8 @@ function xPreviewShape(base,jobs,cham){
   if(!base||!jobs||!jobs.length)return null;
   const warns=[];
   let sh=null;
-  try{sh=occFilletRun(base,jobs,warns,cham,{single:!!(filModeX&&filModeX.tangent===false)});}catch(e){sh=null;}
+  // V0.11.19 : type de chanfrein de la commande (deux distances / angle / inversion) dans l'aperçu
+  try{sh=occFilletRun(base,jobs,warns,cham,{single:!!(filModeX&&filModeX.tangent===false),cham:cham?xChamOpts(filModeX):null});}catch(e){sh=null;}
   return sh?{shape:sh}:{shape:null,warns};
 }
 function xPreviewUpdate(){
@@ -240,7 +253,7 @@ function xPreviewUpdate(){
     const sel=filModeX.sel.filter(s=>s.r>0);
     if(!sel.length||!occLive||!occLive.shape){xPrevRemove();return;}
     // rien à recalculer si la sélection et les rayons n'ont pas bougé
-    const sig=sel.map(s=>s.pos.map(v=>v.toFixed(2)).join(',')+'/'+s.r).join('|')+(xIsChamfer(filModeX.kind)?'#c':'#f')+(filModeX.tangent===false?'#1':'#t');
+    const sig=sel.map(s=>s.pos.map(v=>v.toFixed(2)).join(',')+'/'+s.r).join('|')+(xIsChamfer(filModeX.kind)?'#c'+xChamKey(xChamOpts(filModeX)):'#f')+(filModeX.tangent===false?'#1':'#t');
     if(filModeX._prevSig===sig)return;
     const cham=xIsChamfer(filModeX.kind);
     const E=occListEdges(occLive.shape);
@@ -248,7 +261,7 @@ function xPreviewUpdate(){
     sel.forEach(s=>{
       let bi=-1,bd=1e9;
       E.forEach((e,i)=>{const d=Math.hypot(e.mid[0]-s.pos[0],e.mid[1]-s.pos[1],e.mid[2]-s.pos[2]);if(d<bd){bd=d;bi=i;}});
-      if(bi>=0&&bd<1.5)jobs.push({src:E[bi].src,r:s.r,mid:E[bi].mid});
+      if(bi>=0&&bd<1.5)jobs.push({src:E[bi].src,r:s.r,mid:E[bi].mid,fn:Array.isArray(s.fn)?s.fn:null});
     });
     if(!jobs.length){xPrevRemove();return;}
     const pv=xPreviewShape(occLive.shape,jobs,cham);
@@ -610,6 +623,45 @@ function renderExactPanel(){
   inp.addEventListener('click',e=>e.stopPropagation());
   inp.addEventListener('keydown',e=>e.stopPropagation());
   r1.appendChild(inp);p.appendChild(r1);
+  if(xIsChamfer(k)){
+    // V0.11.19 : type du chanfrein — distance égale / deux distances / distance + angle, et
+    // inversion de la première face (celle qui porte D1). Même langage que SolidCraft.
+    const rm=document.createElement('div');rm.className='pnl-row';
+    const lm=document.createElement('label');lm.textContent='Type';rm.appendChild(lm);
+    const sm=document.createElement('select');sm.id='xChamMode';
+    [['eq','Distance égale'],['d2','Deux distances'],['da','Distance + angle']].forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];sm.appendChild(op);});
+    sm.value=filModeX.cmode||'eq';
+    sm.onclick=e=>e.stopPropagation();
+    sm.onchange=()=>{filModeX.cmode=sm.value;filMemo.cmode=sm.value;renderExactPanel();xPreviewUpdate();};
+    rm.appendChild(sm);p.appendChild(rm);
+    if(filModeX.cmode==='d2'||filModeX.cmode==='da'){
+      const da=filModeX.cmode==='da',key=da?'cang':'cd2';
+      const r2=document.createElement('div');r2.className='pnl-row';
+      const l2=document.createElement('label');l2.textContent=da?'Angle (°)':'Distance 2 (mm)';r2.appendChild(l2);
+      const i2=document.createElement('input');i2.type='text';i2.inputMode='decimal';i2.id=da?'xChamAng':'xChamD2';
+      i2.value=String(+filModeX[key]||(da?45:1)).replace('.',',');
+      parFx(i2,filModeX,key); // ƒx : « D/2 », « A »…
+      const set2=()=>{
+        const v=parseFloat(String(i2.value).replace(',','.'));
+        if(!isFinite(v)||v<=0||(da&&v>=90)){i2.value=String(+filModeX[key]).replace('.',',');faceEl.textContent=da?'Angle du chanfrein : 0 < a < 90°.':'Distance 2 : valeur strictement positive.';return;}
+        filModeX[key]=v;filMemo[key]=v;xPreviewUpdate();
+      };
+      i2.addEventListener('change',set2);i2.addEventListener('blur',set2);
+      i2.addEventListener('click',e=>e.stopPropagation());
+      i2.addEventListener('keydown',e=>{if(e.key==='Enter'){set2();i2.blur();}e.stopPropagation();});
+      r2.appendChild(i2);p.appendChild(r2);
+      const fl=document.createElement('label');fl.style.cssText='display:flex;align-items:center;gap:6px;margin-top:6px;font-size:.83rem;cursor:pointer';
+      const fc=document.createElement('input');fc.type='checkbox';fc.id='xChamFlip';fc.checked=!!filModeX.cflip;
+      fc.addEventListener('change',()=>{filModeX.cflip=fc.checked;xPreviewUpdate();});
+      fl.appendChild(fc);
+      const ft=document.createElement('span');ft.textContent='⇄ Inverser les faces (D1 sur l’autre face)';fl.appendChild(ft);
+      p.appendChild(fl);
+      const n2=document.createElement('div');n2.className='note';n2.style.marginTop='3px';
+      n2.textContent=(da?'D1 (distance par arête) sur la première face, angle mesuré entre le chanfrein et cette face.'
+        :'D1 (distance par arête) sur la première face, D2 sur l’autre.')+' Première face : celle qui regarde le plus vers le haut, sinon vers +X puis +Y.';
+      p.appendChild(n2);
+    }
+  }
   // Option « arêtes tangentes » : cochée, chaque arête cliquée entraîne sa chaîne tangente
   // (déduite, pas retenue par l'utilisateur) ; décochée, une arête par clic, rien de plus.
   const tl=document.createElement('label');
@@ -688,8 +740,24 @@ function applyExactFillet(){
   // permet de suivre l'arête quand le solide change de hauteur). Conservée en édition.
   // seed = arête GERME (cliquée) : re-marquée depuis filModeX.seeds (indices stables dans la
   // session), c'est elle qui ancre la propagation tangente à chaque rejeu (passe 2b).
+  // V0.11.19 : chanfrein — normale de la PREMIÈRE face de chaque arête (règle « vers le haut »,
+  // sans l'inversion), mémorisée pour que le rejeu et les copies d'une répétition (normale
+  // transformée) retrouvent la même face. Gardée telle quelle en édition.
+  const firstN=s=>{
+    if(!xIsChamfer(k))return null;
+    if(Array.isArray(s.fn)&&s.fn.length===3)return s.fn.slice();
+    let eh=null,ff=null,n=null;
+    try{
+      const E=occListEdges(occLive.shape);
+      let bi=-1,bd=1e9;E.forEach((e,i)=>{const d=Math.hypot(e.mid[0]-s.pos[0],e.mid[1]-s.pos[1],e.mid[2]-s.pos[2]);if(d<bd){bd=d;bi=i;}});
+      if(bi>=0&&bd<1.5){eh=occEdgeAt(occLive.shape,E[bi].src);ff=eh?occChamferFirstFace(occLive.shape,eh,false,null):null;if(ff&&ff.n)n=ff.n.map(v=>+v.toFixed(4));}
+    }catch(e){n=null;}
+    try{if(ff&&ff.f)ff.f.delete();}catch(e){}try{if(eh)eh.delete();}catch(e){}
+    return n;
+  };
   const mkEdges=()=>filModeX.sel.map(s=>{
     const e={pos:s.pos.slice(),pos0:(s.pos0||s.pos).slice(),r:s.r,len:+(s.len||0),anchor:s.anchor||null,name:s.name||entName('edge')};
+    const fn=firstN(s);if(fn)e.fn=fn;
     // ƒx : expression propre à l'arête, sinon celle du rayon par défaut si l'arête l'a gardé
     if((s.expr&&s.expr.r)||(s.pname&&s.pname.r))parFxCopy(s,e,['r']);
     else if(filModeX.expr&&filModeX.expr.radius&&Math.abs((+s.r)-(+filModeX.radius))<1e-9)e.expr={r:filModeX.expr.radius};
@@ -697,17 +765,30 @@ function applyExactFillet(){
     if((ei>=0&&(filModeX.seeds||[]).indexOf(ei)>=0)||s.seed)e.seed=1;
     return e;
   });
+  // V0.11.19 : type du chanfrein reporté sur la fonction (avec ses expressions ƒx)
+  const chamFields=g=>{
+    if(!xIsChamfer(k))return;
+    g.cmode=(filModeX.cmode==='d2'||filModeX.cmode==='da')?filModeX.cmode:'eq';
+    if(g.cmode==='eq'){
+      delete g.cd2;delete g.cang;delete g.cflip;
+      if(g.expr){delete g.expr.cd2;delete g.expr.cang;if(!Object.keys(g.expr).length)delete g.expr;}
+      if(g.pname){delete g.pname.cd2;delete g.pname.cang;if(!Object.keys(g.pname).length)delete g.pname;}
+      return;
+    }
+    g.cd2=+filModeX.cd2>0?+filModeX.cd2:1;g.cang=(+filModeX.cang>0&&+filModeX.cang<90)?+filModeX.cang:45;g.cflip=!!filModeX.cflip;
+    parFxCopy(filModeX,g,['cd2','cang']);
+  };
   if(filModeX.editing){
     // Édition en place : on met À JOUR la fonction existante (pas de 2ᵉ fonction).
     const f=doc.features.find(x=>x.id===filModeX.editing);
-    if(f){f.edges=mkEdges();f.tangent=filModeX.tangent!==false;f.name=xFeatName(f);repSyncForFeature(f);sel={kind:'feature',id:f.id};}
+    if(f){f.edges=mkEdges();f.tangent=filModeX.tangent!==false;chamFields(f);f.name=xFeatName(f);repSyncForFeature(f);sel={kind:'feature',id:f.id};}
     exitExactFilletMode(true); // restaure le rejeu complet avec les arêtes mises à jour
     renderProps();
     faceEl.textContent=label+' : mise à jour enregistrée ('+(f?f.edges.length:0)+' arête(s)).';
     return;
   }
   const nf={id:uid('xf'),type:'xfillet',name:xLabel(k)+' ('+filModeX.sel.length+' arête(s))',edges:mkEdges(),visible:true,tangent:filModeX.tangent!==false};
-  if(xIsChamfer(k))nf.chamfer=true;
+  if(xIsChamfer(k)){nf.chamfer=true;chamFields(nf);}
   const snap0=docSnap(),len0=docUndoStack.length; // V0.8.0 : Annuler retire le congé
   addFeature(nf);
   try{ fdynStart(nf,snap0,len0); }catch(e){}

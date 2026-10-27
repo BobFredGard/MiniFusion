@@ -30,9 +30,14 @@ let draftPrevBody=null; // aperçu translucide du solide dépouillé (non valid�
 })();
 
 function draftName(f){
-  const a=+f.angle||0;
-  const d=String(Math.round(a*100)/100).replace('.',',');
+  const a=draftAngleEff(f); // V0.11.19 : angle signé (flip compris) — « −5° » = sens inversé
+  const d=String(Math.round(a*100)/100).replace('.',',').replace('-','−');
   return `Dépouillage ${d}° · ${(f.faces||[]).length} face(s)`;
+}
+function draftSensText(){
+  // Note du panneau : sens effectif (angle × inversion) et ce qu'il fait à la pièce.
+  const eff=draftAngleEff(draftMode||{});
+  return 'Sens effectif : '+String(Math.round(eff*100)/100).replace('.',',').replace('-','−')+'° — la pièce '+(eff>=0?'se resserre':'s\'évase')+' en s\'éloignant du plan neutre le long de sa normale (flèche jaune).';
 }
 function draftKey(r){
   return (r.pos||[]).map(v=>(+v).toFixed(2)).join(',')+'|'+(r.n||[]).map(v=>(+v).toFixed(3)).join(',');
@@ -84,10 +89,12 @@ function draftPaint(){
   const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.55,depthTest:false,side:THREE.DoubleSide}));
   m.raycast=()=>{};m.renderOrder=1002;
   draftGroup=new THREE.Group();draftGroup.name='draftFaces';draftGroup.add(m);
-  // Flèche du sens de démoulage (direction de dépouille = normale de la référence),
-  // plantée au centre de la face de référence — comme la flèche blanche de Fusion.
+  // Flèche du sens de démoulage (direction de dépouille = normale de la référence, retournée
+  // si l'angle effectif est négatif — V0.11.19), plantée au centre de la face de référence —
+  // comme la flèche blanche de Fusion.
   try{
-    const rn=draftMode.ref.n||[0,0,1],rp=draftMode.ref.pos||[0,0,0];
+    const sg=draftAngleEff(draftMode)<0?-1:1;
+    const rn=(draftMode.ref.n||[0,0,1]).map(v=>v*sg),rp=draftMode.ref.pos||[0,0,0];
     let len=40;
     try{
       const bm=bodies.find(x=>x.kind==='body'&&x.mesh&&(draftMode.ref._bid==null||x.id===draftMode.ref._bid));
@@ -253,14 +260,14 @@ function draftPreviewUpdate(){
     const faces=draftMode.faces||[];
     if(!draftMode.ref||!faces.length||!occLive||!occLive.shape){draftPreviewRemove();return;}
     // rien à recalculer si la sélection, la référence et l'angle n'ont pas bougé
-    const sig=draftKey(draftMode.ref)+'|'+faces.map(draftKey).join(';')+'|'+draftMode.angle;
+    const sig=draftKey(draftMode.ref)+'|'+faces.map(draftKey).join(';')+'|'+draftAngleEff(draftMode);
     if(draftMode._prevSig===sig)return;
     draftMode._prevSig=sig;
     const got=[];
     faces.forEach(r=>{try{const h=occFindFace(occLive.shape,r);if(h)got.push(h);}catch(e){}});
     if(!got.length){draftPreviewRemove();return;}
     let r=null;
-    try{r=occDraftOnce(occLive.shape,{pos:draftMode.ref.pos,n:draftMode.ref.n},got,+draftMode.angle*Math.PI/180);}
+    try{r=occDraftOnce(occLive.shape,{pos:draftMode.ref.pos,n:draftMode.ref.n},got,draftAngleEff(draftMode)*Math.PI/180);}
     finally{got.forEach(g=>{try{g.delete();}catch(e){}});}
     if(!r||!r.shape){draftPreviewRemove();return;}
     let sh=r.shape;
@@ -300,7 +307,7 @@ function enterDraftMode(editF){
   if(filModeX)exitExactFilletMode(true);
   if(mvMode)exitMoveFaceMode(true);
   if(typeof coqueMode!=='undefined'&&coqueMode)exitCoqueMode(true);
-  draftMode={phase:'ref',ref:null,faces:[],angle:5,editing:editing?editing.id:null,tangent:true};
+  draftMode={phase:'ref',ref:null,faces:[],angle:5,flip:false,editing:editing?editing.id:null,tangent:true};
   if(editing){
     // Édition : rejeu SANS la fonction (occSkipFeat) → les faces à dépouiller redeviennent
     // celles d'origine, cliquables. Exactement la stratégie de l'édition d'un congé exact.
@@ -312,7 +319,7 @@ function enterDraftMode(editF){
     draftMode.faces=(editing.faces||[]).map(draftCleanRef).filter(Boolean);
     draftMode._ecartees=avant-draftMode.faces.length;
     draftMode.phase=draftMode.ref?'faces':'ref';
-    draftMode.angle=(+editing.angle>0&&+editing.angle<90)?+editing.angle:5;parFxFrom(editing,draftMode,['angle']);
+    draftMode.angle=draftAngleOk(+editing.angle)?+editing.angle:5;draftMode.flip=!!editing.flip;parFxFrom(editing,draftMode,['angle']); // V0.11.19 : signé + flip
     occSkipFeat=editing.id;
     tlEditLock(editing); // arbre bloqué sur la dépouille : seules les opérations précédentes rejouées
     try{rebuild();}catch(e){}
@@ -466,7 +473,8 @@ function renderDraftPanel(){
   tcb.title='En cliquant une face, ajouter aussi ses voisines reliées par des arêtes lisses';
   tcb.onchange=()=>{draftMode.tangent=tcb.checked;};
   trow.appendChild(tcb);p.appendChild(trow);
-  // Angle : 0 < a < 90, au-delà le dépouillage perd son sens géométrique.
+  // Angle : −90 < a < 90, non nul (V0.11.19 : signé — négatif = sens inversé ; au-delà de 90°
+  // le dépouillage perd son sens géométrique).
   const row=document.createElement('div');row.className='pnl-row';row.style.marginTop='8px';
   const lab=document.createElement('label');lab.textContent='Angle (°)';row.appendChild(lab);
   const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';
@@ -474,16 +482,27 @@ function renderDraftPanel(){
   parFx(inp,draftMode,'angle');
   inp.onchange=()=>{
     const v=parseFloat(String(inp.value).replace(',','.').replace(/\s/g,''));
-    if(!isFinite(v)||v<=0||v>=90){
+    if(!draftAngleOk(v)){
       inp.value=String(draftMode.angle).replace('.',',');
-      faceEl.textContent='Angle invalide : il doit être compris entre 0 et 90° (exclus).';
+      faceEl.textContent='Angle invalide : il doit être compris entre −90 et 90° (exclus), non nul — un angle négatif inverse le sens.';
       draftPreviewRemove();
       return;
     }
     draftMode.angle=v;inp.value=String(v).replace('.',',');
-    draftPreviewUpdate();
+    draftPaint();draftPreviewUpdate();
+    const ns=document.getElementById('draftSensNote');if(ns)ns.textContent=draftSensText(); // la note suit, sans reconstruire le panneau
   };
   row.appendChild(inp);p.appendChild(row);
+  // Sens de démoulage : inversion sans toucher à la valeur (une expression ƒx reste liée).
+  const frow=document.createElement('label');frow.style.cssText='display:flex;align-items:center;gap:6px;margin-top:6px;font-size:.83rem;cursor:pointer';
+  const fcb=document.createElement('input');fcb.type='checkbox';fcb.id='draftFlipIn';fcb.checked=!!draftMode.flip;
+  fcb.onchange=()=>{draftMode.flip=fcb.checked;draftPaint();draftPreviewUpdate();const ns=document.getElementById('draftSensNote');if(ns)ns.textContent=draftSensText();};
+  frow.appendChild(fcb);
+  const ftx=document.createElement('span');ftx.textContent='⇄ Inverser le sens de démoulage';frow.appendChild(ftx);
+  p.appendChild(frow);
+  {const ns=document.createElement('span');ns.className='note';ns.id='draftSensNote';
+   ns.textContent=draftSensText();
+   p.appendChild(ns);}
   const btns=document.createElement('div');btns.className='pnl-btns';btns.style.marginTop='8px';
   const ok=document.createElement('button');ok.className='primary';
   ok.textContent=ed?'✔ Enregistrer':'✔ Appliquer';ok.onclick=draftApply;btns.appendChild(ok);
@@ -500,7 +519,8 @@ function draftApply(){
   if(draftMode.phase==='ref'){faceEl.textContent='Dépouillage : cliquez d\'abord la face de référence.';return;}
   if(!(draftMode.faces||[]).length){faceEl.textContent='Dépouillage : retenez au moins une face à dépouiller.';return;}
   const a=+draftMode.angle||0;
-  if(!(a>0&&a<90)){faceEl.textContent='Dépouillage : angle hors bornes (0 ; 90).';return;}
+  if(!draftAngleOk(a)){faceEl.textContent='Dépouillage : angle hors bornes (−90 ; 90), non nul.';return;}
+  const flip=!!draftMode.flip;
   // On retire `_ord` (index BRep de la session) : il n'a de sens que pour la surbrillance et
   // il ferait grossir le document sans rien apporter au rejeu. L'ancre, elle, est gardée :
   // c'est elle qui permet au rejeu de suivre les éditions amont (passe 1).
@@ -513,7 +533,7 @@ function draftApply(){
     const f=doc.features.find(x=>x.id===draftMode.editing&&x.type==='xdraft');
     if(f){
       docPushUndo('édition de « '+draftName(f)+' »');
-      f.ref=ref;f.faces=faces;f.angle=a;parFxCopy(draftMode,f,['angle']);f.name=draftName(f);
+      f.ref=ref;f.faces=faces;f.angle=a;f.flip=flip;parFxCopy(draftMode,f,['angle']);f.name=draftName(f);
       repSyncForFeature(f); // les instances de la répétition suivent le nouveau paramètre
       sel={kind:'feature',id:f.id};
     }
@@ -522,7 +542,7 @@ function draftApply(){
     faceEl.textContent='Dépouillage mis à jour : '+draftName(f)+'.';
     return;
   }
-  const nf={id:uid('dr'),type:'xdraft',name:draftName({angle:a,faces:faces}),ref,faces,angle:a,visible:true};
+  const nf={id:uid('dr'),type:'xdraft',name:draftName({angle:a,flip,faces:faces}),ref,faces,angle:a,flip,visible:true};
   parFxCopy(draftMode,nf,['angle']);
   addFeature(nf); // instantané d'annulation + insertion au marqueur temps
   sel={kind:'feature',id:nf.id};

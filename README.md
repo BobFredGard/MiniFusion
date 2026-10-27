@@ -4,7 +4,7 @@
 
 ![Support de pédale déportée R1200RT, rendu de l'atelier RENDU](docs/captures/rendu-pedale.png)
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. S'il n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.11.12** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. S'il n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.11.19** (voir le [journal des modifications](CHANGELOG.md)).
 
 | | |
 |---|---|
@@ -56,9 +56,9 @@ Plans (décalé, à un angle, 3 points, médian, normal), axes, points et **rep�
 Historique rejouable, timeline à icônes (vert = ajout, rouge = enlèvement), marqueur de temps glissable, réordonnancement par glisser-déposer. Une fonction ne s'appuie que sur ce qui la précède (**règle d'antériorité**).
 - **Extrusion** et **révolution** dynamiques : distance, jusqu'à une face, à travers tout, symétrique, dépouille, nouveau corps.
 - **Perçage** simple, lamé, fraisé ou **taraudé** (filet ISO réellement modélisé), débouchant ou borgne.
-- **Congés et chanfreins exacts** sur la chaîne tangente ou l'arête seule (un clic ajoute ou retire une arête), avec reprise NURBS quand le noyau refuse la chaîne.
+- **Congés et chanfreins exacts** sur la chaîne tangente ou l'arête seule (un clic ajoute ou retire une arête), avec reprise NURBS quand le noyau refuse la chaîne. Chanfrein à **distance égale, deux distances ou distance + angle**, première face inversable.
 - **Répétition** linéaire, en grille, circulaire, symétrie.
-- **Modifier** : déplacer ou supprimer une face, dépouille, coque, **scinder** par un plan, **déplacer un corps** (translation, rotation, point à point), **combiner** (union, soustraction, intersection).
+- **Modifier** : déplacer ou supprimer une face, **dépouille** (angle signé, sens inversable), coque, **scinder** par un plan, **déplacer un corps** (translation, rotation, point à point), **combiner** (union, soustraction, intersection).
 
 ### Corps, mesures, fichiers
 
