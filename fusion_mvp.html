@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.11.29';
+const APP_VER='V0.11.30';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -6538,7 +6538,7 @@ function repCanFeature(id){
   const f=doc.features.find(x=>x.id===id);
   if(!f)return false;
   if(f.repeatId)return false;
-  if(f.type==='repeat')return false;
+  if(f.type==='repeat')return true; // V0.11.30 : une répétition se répète (voir repExpandSources)
   // 2026-10-16-005 : perçages répétables ; 2026-10-27 : dépouilles, révolutions, déplacement et
   // suppression de face. Restent exclues les opérations de CORPS ENTIER (coque, scission,
   // combinaison, déplacement de corps, import) : les répéter n'a pas de sens géométrique.
@@ -6566,7 +6566,24 @@ function repCanFeatureHint(f){
   if(f.type==='xdraft')return 'Dépouillage · '+draftAngleEff(f).toFixed(1).replace('.',',').replace('-','−')+'° · '+(f.faces||[]).length+' face(s)';
   if(f.type==='xshell')return 'Coque · '+String(Math.round((+f.thick||0)*100)/100).replace('.',',')+' mm · '+(f.faces||[]).length+' face(s) retirée(s)';
   if(f.type==='xsplit')return splitName(f);
+  if(f.type==='repeat')return repTypeName(f.mode,f)+' · '+doc.features.filter(k=>k.repeatId===f.id).length+' instance(s) — le motif entier (sources + instances) est recopié';
   return '';
+}
+// V0.11.30 : RÉPÉTER UNE RÉPÉTITION. Une répétition prise comme source vaut ses propres
+// sources (développées, une répétition de répétition aussi) suivies de ses instances : la
+// copie reproduit le motif ENTIER. Une fonction cochée seule ET présente dans le motif n'est
+// recopiée qu'une fois. Ordre de la timeline conservé (les ancres et « jusqu'à » des copies
+// se remappent sur des fonctions déjà clonées dans la même passe).
+function repExpandSources(list,seen){
+  seen=seen||new Set();const out=[];
+  const ord=(a,b)=>doc.features.indexOf(a)-doc.features.indexOf(b);
+  (list||[]).slice().sort(ord).forEach(f=>{
+    if(!f||seen.has(f.id))return;seen.add(f.id);
+    if(f.type!=='repeat'){out.push(f);return;}
+    out.push(...repExpandSources((f.base||[]).map(id=>doc.features.find(x=>x.id===id)).filter(Boolean),seen));
+    doc.features.forEach(k=>{if(k.repeatId===f.id&&!seen.has(k.id)){seen.add(k.id);out.push(k);}});
+  });
+  return out;
 }
 // Liste des fonctions répétables, en CASES À COCHER.
 // PARTAGÉE par la création (repMode) et l'édition d'une répétition déjà construite :
@@ -6593,7 +6610,7 @@ function repSourceList(base,onChange,onTick,rp){
   box.appendChild(t);
   if(!cand.length){
     const w=document.createElement('span');w.className='note';
-    w.textContent='Aucune fonction répétable en amont (extrusion, révolution, perçage, congé, chanfrein, dépouille, déplacement ou suppression de face placés avant la répétition).';
+    w.textContent='Aucune fonction répétable en amont (extrusion, révolution, perçage, congé, chanfrein, dépouille, déplacement ou suppression de face, répétition placés avant la répétition).';
     box.appendChild(w);
     return box;
   }
@@ -6635,7 +6652,7 @@ function enterRepMode(){
   renderTree();renderRepPanel();
   faceEl.textContent='Répétition : cochez les fonctions à répéter dans la liste ci-dessus, puis Appliquer. Astuce : la repetition est depliee dans l arbre et ses sources sont marquees ◀.';
 }
-function exitRepMode(){repPreviewRemove();repMode=null;renderTree();renderProps();}
+function exitRepMode(){repPreviewRemove();repPreviewSrcFree();repMode=null;renderTree();renderProps();}
 /* V0.11.20 : APERÇU ROUGE des copies dès le choix du plan / de l'axe (retour : « j'aimerais
    voir les répétitions en rouge sur cette 1ère étape pour voir si je ne me trompe pas de
    plan »). La PIÈCE ENTIÈRE (chaque corps montré) est recopiée avec la matrice de chaque
@@ -6676,23 +6693,152 @@ function repPreviewRemove(){
   }catch(e){}
   repPrevGroup=null; // la géométrie est celle des corps (partagée) : rien à libérer
 }
+/* V0.11.30 : l'aperçu montre les FONCTIONS COCHÉES, plus la pièce entière (retour : « ce qu'il
+   faut montrer en rouge, ce sont les features sélectionnées et non le corps en cours »).
+   - extrusion / découpe / révolution / perçage : le SOLIDE-OUTIL seul (prisme, volume tourné,
+     volume percé) — ce qui sera ajouté ou enlevé à chaque copie ;
+   - congé / chanfrein / dépouille / déplacement de face : les FACES du corps qui les portent ;
+   - suppression de face (faces disparues) ou face introuvable : la boîte de la face mémorisée ;
+   - répétition cochée : son motif entier (repExpandSources).
+   La géométrie des sources est calculée UNE FOIS par jeu de sources (clé = signatures) ; changer
+   le pas, l'axe ou la quantité ne fait que recalculer les matrices. */
+let repPrevSrc=null; // {key, items:[{geo, mw}]} — géométries possédées par l'aperçu
+function repPreviewSrcFree(){
+  if(!repPrevSrc)return;
+  repPrevSrc.items.forEach(it=>{try{it.geo.dispose();}catch(e){}});
+  repPrevSrc=null;
+}
+function repBoxDist(bx,p){
+  let s=0;for(let k=0;k<3;k++){const d=Math.max(0,Math.abs(p[k]-bx.pos[k])-bx.dim[k]/2);s+=d*d;}
+  return Math.sqrt(s);
+}
+function repFaceOrd(shape,face){
+  const SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE;
+  const ex=new occt.TopExp_Explorer_2(shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,SH);
+  let i=0,r=-1;
+  while(ex.More()){let s=false;try{s=ex.Current().IsSame(face);}catch(e){}if(s){r=i;break;}i++;ex.Next();}
+  try{ex.delete();}catch(e){}
+  return r;
+}
+function repFeatPreviewGeos(f){
+  const out=[];
+  if(f.type==='extrude'||f.type==='revolve'||f.type==='hole'){
+    let ok=false;
+    if(typeof occHas==='function'&&occHas()){
+      let r=null;
+      try{
+        r=f.type==='revolve'?occShapeOfRevolve(f):(f.type==='hole'?occShapeOfHole(f):occShapeOfExtrude(f));
+        out.push({geo:occTessellate(r.shape,0.3,0.4),mw:null});ok=true;
+      }catch(e){}
+      if(r){occDispose(r.bins);try{r.shape.delete();}catch(e){}}
+    }
+    if(!ok){
+      try{
+        const gl=f.type==='revolve'?legacyRevolveGeos(f,[]):(f.type==='hole'?legacyHoleGeos(f,[]):legacyPrismGeos(f,[]));
+        (gl||[]).forEach(g=>{if(g&&g.isBufferGeometry)out.push({geo:g,mw:null});});
+      }catch(e){}
+    }
+    return out;
+  }
+  const refs=[],eds=[],boxes=[];
+  if(f.type==='xfillet')(f.edges||[]).forEach(e=>{if(e&&Array.isArray(e.pos))eds.push({pos:e.pos,r:+e.r||+f.radius||1,len:+e.len||0,cham:!!f.chamfer});});
+  if(f.type==='xdraft')(f.faces||[]).forEach(r=>{if(r&&Array.isArray(r.pos))refs.push(r);});
+  if(f.type==='xmove'&&f.ref&&Array.isArray(f.ref.pos)){
+    // la face a avancé de dist le long de sa normale
+    const n=Array.isArray(f.ref.n)?repNorm(f.ref.n):[0,0,0],d=+f.dist||0;
+    refs.push(Object.assign({},f.ref,{pos:repAdd(f.ref.pos,repScale(n,d)),anchor:undefined}));
+  }
+  if(f.type==='xdelface')(f.faces||[]).forEach(r=>{if(r&&Array.isArray(r.pos))boxes.push(r);});
+  const bs=(typeof occHas==='function'&&occHas())?(bodies||[]).filter(b=>b&&b.kind==='body'&&b.shape&&b.mesh&&b.mesh.geometry&&bodyShown(b)):[];
+  const ords=new Map(); // corps → ordinaux de faces
+  const addOrd=(b,o)=>{if(!ords.has(b))ords.set(b,new Set());ords.get(b).add(o);};
+  refs.forEach(r=>{
+    let hit=false;
+    for(const b of bs){
+      let h=null;try{h=occFindFaceAny(b.shape,Object.assign({},r));}catch(e){h=null;}
+      if(!h)continue;
+      const o=repFaceOrd(b.shape,h);try{h.delete();}catch(e){}
+      if(o>=0){addOrd(b,o);hit=true;break;}
+    }
+    if(!hit)boxes.push(r);
+  });
+  if(eds.length)bs.forEach(b=>{
+    // faces de congé : touchent le milieu de l'arête, pas plus longues que l'arête + 2 r, courbes
+    // (un chanfrein est plan : le critère de taille suffit)
+    const SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE;
+    const ex=new occt.TopExp_Explorer_2(b.shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,SH);
+    let o=0;
+    while(ex.More()){
+      const fc=occt.TopoDS.Face_1(ex.Current());
+      try{
+        const bx=occFaceBox(fc);
+        if(bx){
+          const big=Math.max(bx.dim[0],bx.dim[1],bx.dim[2]);
+          let kind=null;
+          if(eds.some(e=>repBoxDist(bx,e.pos)<=0.05+0.05*e.r&&big<=e.len+2*e.r+0.5&&(e.cham||(kind=kind||occSurfKind(fc))!=='Plane')))addOrd(b,o);
+        }
+      }catch(e){}
+      try{fc.delete();}catch(e){}
+      o++;ex.Next();
+    }
+    try{ex.delete();}catch(e){}
+  });
+  ords.forEach((set,b)=>{
+    try{
+      const G=b.mesh.geometry,P=G.getAttribute('position'),I=G.index,gr=G.userData.occGroups||[],arr=[];
+      gr.forEach(g=>{
+        if(!set.has(g.f))return;
+        for(let t=g.start;t<g.start+g.count;t++)for(let k=0;k<3;k++){
+          const v=I?I.array[3*t+k]:3*t+k;arr.push(P.getX(v),P.getY(v),P.getZ(v));
+        }
+      });
+      if(!arr.length)return;
+      const geo=new THREE.BufferGeometry();
+      geo.setAttribute('position',new THREE.Float32BufferAttribute(arr,3));geo.computeVertexNormals();
+      b.mesh.updateMatrixWorld(true);
+      out.push({geo,mw:b.mesh.matrixWorld.clone()});
+    }catch(e){}
+  });
+  boxes.forEach(r=>{
+    try{
+      const d=Array.isArray(r.dim)?r.dim:[1,1,1];
+      const geo=new THREE.BoxGeometry(Math.max(+d[0]||0,0.4),Math.max(+d[1]||0,0.4),Math.max(+d[2]||0,0.4));
+      geo.translate(+r.pos[0]||0,+r.pos[1]||0,+r.pos[2]||0);
+      out.push({geo,mw:null});
+    }catch(e){}
+  });
+  return out;
+}
+function repPreviewSources(){
+  const ids=((repMode&&repMode.feats)||[]).filter(id=>repCanFeature(id)&&repAmont(id,null));
+  const list=repExpandSources(ids.map(id=>doc.features.find(f=>f.id===id)).filter(Boolean)).filter(f=>f.visible!==false);
+  let key='';
+  try{key=list.map(f=>f.id+':'+featSig(f)).join('|')+'@'+bodyVisSig();}catch(e){key=list.map(f=>f.id).join('|');}
+  if(repPrevSrc&&repPrevSrc.key===key)return repPrevSrc.items;
+  repPreviewSrcFree();
+  const items=[];
+  list.forEach(f=>{try{items.push(...repFeatPreviewGeos(f));}catch(e){}});
+  repPrevSrc={key,items};
+  return items;
+}
 function repPreviewUpdate(){
   repPreviewRemove();
-  if(!repMode||typeof scene==='undefined'||!scene)return;
+  if(!repMode){repPreviewSrcFree();return;}
+  if(typeof scene==='undefined'||!scene)return;
   let ms=[];
   try{ms=repPreviewXforms(repMode);}catch(e){ms=[];}
   if(!ms.length)return;
-  const srcs=(bodies||[]).filter(b=>b&&b.kind==='body'&&!b.ghost&&!b.preview&&b.mesh&&b.mesh.geometry&&(typeof bodyShown!=='function'||bodyShown(b)));
+  let srcs=[];
+  try{srcs=repPreviewSources();}catch(e){srcs=[];}
   if(!srcs.length)return;
   try{
     const g=new THREE.Group();g.name='repPreview';
-    const mat=new THREE.MeshStandardMaterial({color:0xff5a4e,transparent:true,opacity:0.42,depthWrite:false,side:THREE.DoubleSide,roughness:0.5,metalness:0.05});
-    srcs.forEach(b=>{
-      try{b.mesh.updateMatrixWorld(true);}catch(e){}
+    const mat=new THREE.MeshStandardMaterial({color:0xff5a4e,transparent:true,opacity:0.55,depthWrite:false,side:THREE.DoubleSide,roughness:0.5,metalness:0.05});
+    srcs.forEach(it=>{
       ms.forEach(a=>{
-        const m=new THREE.Mesh(b.mesh.geometry,mat);
+        const m=new THREE.Mesh(it.geo,mat);
         m.matrixAutoUpdate=false;
-        m.matrix.fromArray(a);if(b.mesh.matrixWorld)m.matrix.multiply(b.mesh.matrixWorld);
+        m.matrix.fromArray(a);if(it.mw)m.matrix.multiply(it.mw);
         m.raycast=()=>{};m.renderOrder=999;m.userData.bid='rep_preview';
         g.add(m);
       });
@@ -6884,9 +7030,10 @@ function repGenChildren(rp){
     const sk=doc.sketches.find(s=>s.id===f.sketchId);
     if(sk&&!doc.features.some(x=>x.id!==f.id&&x.sketchId===sk.id))doc.sketches=doc.sketches.filter(s=>s.id!==sk.id);
   };
-  rp.base=rp.base.filter(id=>{const b=doc.features.find(x=>x.id===id);return b&&b.type!=='repeat'&&!b.repeatId;});
+  // V0.11.30 : une répétition source (pas soi-même, pas une instance) est développée en son motif
+  rp.base=rp.base.filter(id=>{const b=doc.features.find(x=>x.id===id);return b&&b.id!==rp.id&&!b.repeatId;});
   const n=rp.mode==='mir'?1:repMaxCopies(rp.copies);
-  const base=rp.base.map(id=>doc.features.find(f=>f.id===id)).filter(Boolean).sort((a,b)=>doc.features.indexOf(a)-doc.features.indexOf(b));
+  const base=repExpandSources(rp.base.map(id=>doc.features.find(f=>f.id===id)).filter(Boolean),new Set([rp.id]));
   // Symétrie DOUBLE : un 2ᵉ plan (rp.plane2) ajoute une 2ᵉ passe qui miroite la BASE et
   // les instances de la 1ʳᵉ passe — « la 1ère symétrie est comprise dans la seconde,
   // ainsi que l'opération initiale ». Chaque passe applique UN SEUL miroir via la
@@ -6981,18 +7128,25 @@ function repSyncForSketch(skId){
   const fids=new Set();
   doc.features.forEach(f=>{if(f.sketchId===skId&&f.type!=='repeat'&&!f.repeatId)fids.add(f.id);});
   if(!fids.size)return;
-  for(const rp of [...doc.features]){if(rp.type==='repeat'&&rp.base.some(id=>fids.has(id)))repGenChildren(rp);}
+  for(const rp of [...doc.features]){if(rp.type==='repeat'&&rp.base.some(id=>fids.has(id))){repGenChildren(rp);repSyncForFeature(rp);}}
 }
-function repSyncForFeature(f){
+function repSyncForFeature(f,seen){
   // Régénère les instances des répétitions dont f est une fonction SOURCE (profondeur,
   // opération, sens, étendue, congé édités) : les clones suivent les nouveaux paramètres.
-  if(!f)return;
-  for(const rp of [...doc.features]){if(rp.type==='repeat'&&rp.base.includes(f.id))repGenChildren(rp);}
+  // V0.11.30 : en cascade — une répétition régénérée régénère celles qui la répètent.
+  if(!f)return;seen=seen||new Set();
+  for(const rp of [...doc.features]){
+    if(rp.type!=='repeat'||seen.has(rp.id)||!rp.base.includes(f.id))continue;
+    seen.add(rp.id);repGenChildren(rp);repSyncForFeature(rp,seen);
+  }
 }
 const repGenSigs=new Map(); // id de répétition -> signature des sources au dernier régénéré
 function repSourceSig(rp){
   let s=JSON.stringify([rp.mode,rp.copies,rp.dist,rp.angle,rp.axis,rp.plane,rp.planeN,rp.plane2,rp.planeN2,rp.base,rp.dir,rp.lin2,rp.axis2,rp.dir2,rp.copies2,rp.dist2]);
-  (rp.base||[]).forEach(id=>{const f=doc.features.find(x=>x.id===id);s+='#'+(f?featSig(f):'?');});
+  // motif développé : une répétition source change dès que ses instances changent
+  const B=(rp.base||[]).map(id=>doc.features.find(x=>x.id===id));
+  if(B.some(f=>!f))s+='#?';
+  repExpandSources(B.filter(Boolean),new Set([rp.id])).forEach(f=>{s+='#'+featSig(f);});
   return s;
 }
 function repSyncStale(){
@@ -7393,7 +7547,7 @@ function repUseSelectedFace2(){
 }
 function renderRepPanel(){
   const p=$('props');p.innerHTML='';if(!repMode)return;
-  const h=document.createElement('div');h.innerHTML='<b>🔁 Répétition</b><br><span class="note">Choisissez les fonctions à répéter ci-dessous (cases à cocher). Dans l\'arbre, un <b>Ctrl+clic</b> sert désormais à la multi-suppression.<br>🔴 <b>Aperçu rouge</b> : la pièce entière recopiée comme le seront les fonctions cochées — pour contrôler le plan, l\'axe ou le pas avant de valider.</span>';p.appendChild(h);
+  const h=document.createElement('div');h.innerHTML='<b>🔁 Répétition</b><br><span class="note">Choisissez les fonctions à répéter ci-dessous (cases à cocher). Dans l\'arbre, un <b>Ctrl+clic</b> sert désormais à la multi-suppression.<br>🔴 <b>Aperçu rouge</b> : les fonctions cochées, recopiées comme elles le seront (volume ajouté ou enlevé, faces des congés et dépouilles) — pour contrôler le plan, l\'axe ou le pas avant de valider. Une répétition cochée recopie son motif entier.</span>';p.appendChild(h);
   const row=document.createElement('div');row.className='row';
   const typ=document.createElement('select');[['lin','Linéaire'],['circ','Circulaire'],['mir','Symétrie']].forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];typ.appendChild(op);});typ.value=repMode.type;typ.onchange=()=>{repMode.type=typ.value;renderRepPanel();};row.appendChild(typ);
   // 2026-10-23 : QUANTITÉ, original compris (6 = l'original + 5 copies) ; stocké : copies = quantité − 1
@@ -7453,7 +7607,7 @@ function renderRepPanel(){
   // ── FONCTIONS RÉPÉTABLES : la MÊME liste à cocher qu'à l'édition (voir
   // repSourceList). Aucun re-rendu ici : la case garde son état, seul l'arbre se
   // rafraîchit (le compteur se met à jour sur place, dans la liste).
-  p.appendChild(repSourceList(repMode.feats,function(b){repMode.feats=b;},function(){renderTree();}));
+  p.appendChild(repSourceList(repMode.feats,function(b){repMode.feats=b;},function(){renderTree();repPreviewUpdate();}));
   const r=document.createElement('div');r.className='row';r.style.marginTop='8px';const ok=document.createElement('button');ok.className='primary';ok.textContent='✔ Appliquer';ok.onclick=applyRepPattern;r.appendChild(ok);const q=document.createElement('button');q.textContent='Quitter';q.onclick=exitRepMode;r.appendChild(q);p.appendChild(r);
   repPreviewUpdate(); // V0.11.20 : les copies en rouge dès l'entrée et à chaque changement de type / plan / axe
 }

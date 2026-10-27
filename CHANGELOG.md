@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**384 versions**, de `2026-09-28b` à `V0.11.29` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**385 versions**, de `2026-09-28b` à `V0.11.30` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5211,3 +5211,9 @@ Le Rendu (V0.10.0 → V0.11.2) n'était vérifié que dans la machine virtuelle 
   1. **Atelier** : ouverture par l'appareil photo de la barre de vue, affinage progressif, pièce présente dans l'image (fond dégradé comparé ligne par ligne), laiton choisi dans le panneau → l'image vire au jaune, `doc.rendu` le retient et la CAO garde son matériau et sa couleur ; export « Axe - rendu 1920x1080.png » (en-tête PNG 1920 × 1080) ; Échap ferme l'atelier.
   2. **Vue CAO** : ambiance Studio par ⚙ → fond dégradé et reflets, la pièce garde sa couleur CAO malgré une apparence de rendu différente ; ombre portée (lampe d'ombre, la pièce la porte) ; matériau CAO « verre » → verre approché, sans ombre ; retour à « Actuel (CAO) » → matières d'origine et fond du thème retrouvés.
 - **Tests** : `npx playwright test -c tests/browser/playwright.config.cjs --project=chromium rendu.spec.cjs` (2/2), `npm run ci`.
+
+## V0.11.30 - Répétition : l'aperçu rouge montre les fonctions cochées, et une répétition se répète
+Retours sur « test suppr » : l'aperçu rouge recopiait le corps entier au lieu des seules fonctions cochées ; une répétition ne pouvait pas être répétée.
+- **Aperçu** (`src/40-interface-arbre-props.js`, `repPreviewSources` / `repFeatPreviewGeos`) : chaque fonction cochée est montrée seule — solide-outil d'une extrusion, découpe, révolution ou perçage (`occShapeOf*`, repli maillage `legacy*Geos`) ; faces du corps qui portent un congé, un chanfrein, une dépouille ou un déplacement de face ; boîte de la face mémorisée pour une suppression de face (ou une face introuvable). Géométrie calculée une fois par jeu de sources (clé = signatures) : changer pas, axe ou quantité ne refait que les matrices. Cocher / décocher une source rafraîchit l'aperçu.
+- **Répétition de répétition** : `repCanFeature` accepte une répétition (pas ses instances) ; `repExpandSources` la développe en son motif entier — ses sources (développées elles aussi) puis ses instances, dans l'ordre de la timeline, sans doublon si une fonction du motif est aussi cochée seule. `repGenChildren`, la signature de rejeu (`repSourceSig`) et `repSyncForFeature` / `repSyncForSketch` (en cascade) suivent le motif développé : modifier la répétition intérieure régénère celle qui la répète.
+- **Tests** : `test_repeat_imbrique` (nouveau : grille d'une ligne de perçages répétée, centres et volume exacts, cascade directe et au rejeu, symétrie d'une répétition sans doublon, relecture, aperçu = outils seuls) ; `test_arbre_selection` mis à jour (la répétition sélectionnée est proposée et pré-cochée) ; `npm run ci`.
