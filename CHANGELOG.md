@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**387 versions**, de `2026-09-28b` à `V0.11.32` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**388 versions**, de `2026-09-28b` à `V0.11.33` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5229,3 +5229,9 @@ Contour profil (chaîne d'arêtes) : les entrées/sorties tangentes n'apparaissa
 - **Cause** (`src/88-fao-40-zone-plans.js`, `faoSegClipper0`) : l'aperçu borne la coupe et les entrées à la zone de l'opération ; pour le Contour profil, la zone est la chaîne elle-même, que le parcours longe ou contourne par l'extérieur — les arcs d'entrée (hors de la chaîne) étaient effacés. La génération l'exemptait déjà de ce clip (`zoneDone`) : le G-code était juste, seul l'affichage était faux.
 - **Correctif** : `faoZoneDone(op)` — opérations dont la zone EST le parcours (Contour profil, Crêtes constantes, géodésique, chanfrein) — partagée par la génération (`faoOpMovesIt0`, logique inchangée) et l'aperçu (`faoSegClipper0` renvoie null). Parcours inchangés : pas de bump de `CACHE_VER`.
 - **Tests** : `test_fao_contour` (aperçu par la zone = aperçu sans clip : mêmes segments verts et bleus) ; vérifié au navigateur sur « Poche et Contour » (0 → 507 segments bleus, 0 → 51 verts) ; `npm run ci` (63/64, `test_anteriorite` KO connu en worktree).
+
+## V0.11.33 - Tests : test_anteriorite à jour (une répétition est une source répétable)
+La suite rapide affichait 63/64 depuis V0.11.30, l'échec de `test_anteriorite` étant pris pour un « KO connu en worktree ».
+- **Cause** : en worktree, les `Exemples/*.miniFusion` restaient des pointeurs Git LFS (smudge non fait à la création) : `test_anteriorite` et `test_repeat_circ_tour` plantaient sur `Unexpected token 'v', "version ht"…`, ce qui masquait 2 vrais écarts de `test_anteriorite`. Depuis V0.11.30 (`repCanFeature` : une répétition se répète), « Rép » fait partie des sources proposées ; le test attendait encore 4 sources en fin de fil et « Bloc » seul avec le marqueur de temps.
+- **Correctif** (`tests/test_anteriorite.cjs`) : 5 sources en fin de fil (Bloc, Rép, Bossage, Congé, Plot), Bloc + Rép avec le marqueur sur Bossage. Application inchangée. En worktree, `git lfs checkout` matérialise les fichiers LFS depuis le stockage partagé, sans réseau.
+- **Tests** : `test_anteriorite` et `test_repeat_circ_tour` passent ; `npm run ci` (64/64).

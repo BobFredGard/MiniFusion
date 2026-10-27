@@ -42,10 +42,10 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     lab=etiquettes(repSourceList(['E1','E2'],function(){},null,doc.features.find(function(f){return f.id==='RP';})));
     o.srcAvalCochee=lab.length===2&&/^⚠/.test(lab[1])&&/Bossage/.test(lab[1])&&!/⚠/.test(lab[0]);
     lab=etiquettes(repSourceList([],function(){},null));
-    o.srcCreation=lab.length===4; // création en fin de fil : Bloc, Bossage, Congé, Plot
+    o.srcCreation=lab.length===5&&lab.some(function(l){return /Rép/.test(l);}); // création en fin de fil : Bloc, Rép, Bossage, Congé, Plot (V0.11.30 : une répétition se répète)
     tlMark='E2';
     lab=etiquettes(repSourceList([],function(){},null));
-    o.srcCreationMarqueur=lab.length===1&&/Bloc/.test(lab[0]);
+    o.srcCreationMarqueur=lab.length===2&&/Bloc/.test(lab[0])&&/Rép/.test(lab[1]);
     o.amont=repAmont('E1',null)&&!repAmont('E2',null)&&!repAmont('XF',null);
     tlMark=null;
 
