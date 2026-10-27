@@ -99,3 +99,39 @@ test('Axe, surfaçage + finition boule : taille GPU (shaders) = taille JavaScrip
   expect(R.n1,'cellules à plus de 0,01 mm').toBe(0);
   expect(err).toEqual([]);
 });
+
+// Atelier RENDU, second moteur (src/98-rendu-rayons.js) : three-gpu-pathtracer sur un three récent,
+// empaqueté à part (threejs/rendu-rayons.js) et chargé seulement quand on choisit le moteur.
+test('atelier RENDU, « Lancer de rayons » : chargé à la demande, affinage sur le GPU, PNG 1920×1080',async({page})=>{
+  const err=await demarrer(page);
+  page.on('console',m=>{if(m.type()==='error')err.push('console : '+m.text().slice(0,300));});
+  await page.setInputFiles('#fileProj',AXE);
+  await page.waitForFunction(()=>doc&&doc.name==='Axe'&&builtEngine==='exact'&&bodies.some(b=>b.shape),null,{timeout:120000});
+  await page.evaluate(()=>{try{localStorage.removeItem('minifusion_rendu');}catch(e){}});
+  await page.locator('#btnRender').click();
+  await page.waitForFunction(()=>rd&&rd.acc&&rd.acc.n>=1);
+  expect(await page.evaluate(()=>typeof window.RDPT),'bibliothèque chargée sans être demandée').toBe('undefined');
+  await page.locator('#rdPanel .rdSeg button',{hasText:'Lancer de rayons'}).click();
+  await page.waitForFunction(()=>rd.rt&&rd.rt.pt&&rd.rt.pt.samples>=32,null,{timeout:180000});
+  const R=await page.evaluate(()=>{
+    const W=96,H=54,c=document.createElement('canvas');c.width=W;c.height=H;
+    const x=c.getContext('2d');x.drawImage(rd.rt.canvas,0,0,W,H);
+    const d=x.getImageData(0,0,W,H).data,teintes=new Set();let opaque=0;
+    for(let i=0;i<W*H;i++){if(d[i*4+3]>200)opaque++;teintes.add((d[i*4]>>3)+','+(d[i*4+1]>>3)+','+(d[i*4+2]>>3));}
+    return {rayons:RDPT.THREE.REVISION,cao:THREE.REVISION,opaque:opaque/(W*H),teintes:teintes.size,visible:rd.rt.canvas.style.visibility};
+  });
+  test.info().annotations.push({type:'lancer de rayons',description:JSON.stringify(R)});
+  expect(R.rayons).toBe('186');
+  expect(R.cao,'le three de la CAO reste celui de l’application').toBe('147');
+  expect(R.visible).toBe('visible');
+  expect(R.opaque,'pièce et sol dessinés').toBeGreaterThan(0.05);
+  expect(R.teintes,'image ombrée, pas un aplat').toBeGreaterThan(40);
+  await page.evaluate(()=>{rd.st.ech=16;rdPanel();rdFoot();}); // 128 échantillons
+  const [dl]=await Promise.all([page.waitForEvent('download',{timeout:180000}),page.locator('#rdPanel .rdGo').click()]);
+  expect(dl.suggestedFilename()).toMatch(/1920x1080 \(rayons\)\.png$/);
+  // retour au moteur rapide : canevas et contexte du lancer de rayons libérés
+  await page.locator('#rdPanel .rdSeg button',{hasText:'Rapide'}).click();
+  expect(await page.evaluate(()=>!rd.rt&&!document.querySelector('#rdView canvas.rdPT'))).toBe(true);
+  await page.keyboard.press('Escape');
+  expect(err).toEqual([]);
+});

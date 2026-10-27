@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.11.34';
+const APP_VER='V0.12.0';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -60048,6 +60048,317 @@ function viewFadeIn(){
   else try{mepInit();}catch(e){}
 })();
 
+/* ═══════════════ 98-rendu-rayons.js — rendu rayons ═══════════════ */
+/* ---------- atelier RENDU : moteur « Lancer de rayons » (V0.12.0, prototype) ----------
+   Second moteur de l'atelier (bloc « Moteur » du panneau) : three-gpu-pathtracer sur un three RÉCENT, empaqueté
+   à part (threejs/rendu-rayons.js → window.RDPT, chargé au premier choix du moteur). Il ne partage rien avec le
+   three r147 de la CAO ni avec le moteur rapide : son canevas (posé sur celui du moteur rapide, sans souris :
+   la navigation et la mise au point restent au moteur rapide), son contexte WebGL, ses copies des maillages de
+   l'atelier (rd.group, mêmes matières physiques).
+   - Lumière : la même ambiance (rdEnvDesc) calculée en image équirectangulaire flottante, plus la lampe de
+     l'atelier en petit disque (rayon angulaire = « Douceur ») de même énergie que dans le moteur rapide.
+     La lumière est suivie de rebond en rebond : reflets entre pièces, ombres de contact, verre réfracté.
+   - Sol : disque à bords fondus (alphaMap, comme rdDisk), vernis si « Miroir ». Le fond (dégradé, uni,
+     transparent) est composé derrière le canevas, comme rdShow le fait pour le moteur rapide.
+   - Pendant un glisser, l'image du moteur rapide reparaît (instantanée), puis l'affinage repart de zéro.
+   Limites du prototype : les reliefs (bump) ne sont rendus que par la rugosité qu'ils ajoutent, pas d'arêtes
+   CAO, le curseur « Ombre » (opacité) est sans effet. */
+const RT_SRC='threejs/rendu-rayons.js';
+const RT_PREVIEW=512; // échantillons par pixel de l'aperçu
+const RT_ECH={16:128,64:512,256:2048}; // qualité de l'image (passes du moteur rapide) → échantillons par pixel
+const RT_TONS={aces:'ACESFilmicToneMapping',doux:'ReinhardToneMapping',cine:'CineonToneMapping',lin:'NoToneMapping'};
+let rtLoading=null;
+function rtLoad(){
+  if(window.RDPT)return Promise.resolve(window.RDPT);
+  if(!rtLoading)rtLoading=new Promise((ok,ko)=>{
+    const s=document.createElement('script');s.src=RT_SRC;
+    s.onload=()=>window.RDPT?ok(window.RDPT):ko(new Error('bibliothèque vide'));
+    s.onerror=()=>{rtLoading=null;s.remove();ko(new Error(RT_SRC+' introuvable'));};
+    document.head.appendChild(s);
+  });
+  return rtLoading;
+}
+function rtOn(){return !!(rd&&rd.rt&&rd.rt.pt&&rd.st.moteur==='rayons');}
+function rtSamples(){return rd.rt.pt.samples;}
+/* ── ambiance → image équirectangulaire (convention du pathtracer : u autour de Y, v de haut en bas) ── */
+function rtEnvData(){
+  const st=rd.st,D=rdEnvDesc(st.amb),W=1024,H=512,data=new Float32Array(W*H*4);
+  const rot=st.envRot*Math.PI/180;
+  const rgb=h=>[((h>>16)&255)/255,((h>>8)&255)/255,(h&255)/255];
+  const P=D.panels.map(([az,el,dist,w,h,inten,tint])=>{ // repère du panneau, tourné vers le centre (comme lookAt)
+    const a=az*Math.PI/180+rot,e=el*Math.PI/180;
+    const c=[Math.cos(e)*Math.cos(a),Math.cos(e)*Math.sin(a),Math.sin(e)];
+    let x=[c[1],-c[0],0];const nx=Math.hypot(x[0],x[1])||1;x=[x[0]/nx,x[1]/nx,0]; // haut × (-c)
+    const y=[c[2]*x[1],-c[2]*x[0],-(c[0]*x[1]-c[1]*x[0])];                         // (-c) × x
+    return {c,x,y,dist,hw:w/2,hh:h/2,col:rgb(tint).map(v=>v*inten)};
+  });
+  const T=D.sky.top,Hz=D.sky.hor,B=D.sky.bot;
+  // lampe : disque de rayon « Douceur » (comme rdSunJitter), éclairement égal à celui de la DirectionalLight r147
+  const ka=(D.key[0]+st.envRot)*Math.PI/180,ke=D.key[1]*Math.PI/180;
+  const kd=[Math.cos(ke)*Math.cos(ka),Math.cos(ke)*Math.sin(ka),Math.sin(ke)];
+  const kr=Math.max(0.8,st.douceur*0.4)*Math.PI/180,kc=Math.cos(kr);
+  const E=st.lum*(st.amb==='noir'?0.6:1.4)*Math.PI; // r147 (lumières non physiques) : éclairement × π
+  const lamp=[];let om=0;const eUp=[0,0,0]; // éclairement d'un plan horizontal par le ciel et les panneaux
+  const dU=2*Math.PI/W,dV=Math.PI/H;
+  for(let j=0;j<H;j++){
+    const ph=(1-(j+0.5)/H)*Math.PI,sp=Math.sin(ph),cp=Math.cos(ph);
+    for(let i=0;i<W;i++){
+      const th=((i+0.5)/W-0.5)*2*Math.PI;
+      const d0=sp*Math.cos(th),d1=cp,d2=sp*Math.sin(th); // direction du monde (Z en haut chez nous)
+      let r,g,b;const z=d2;
+      if(z>=0){const k=Math.pow(z,0.6);r=Hz.r+(T.r-Hz.r)*k;g=Hz.g+(T.g-Hz.g)*k;b=Hz.b+(T.b-Hz.b)*k;}
+      else{const k=Math.pow(-z,0.5);r=Hz.r+(B.r-Hz.r)*k;g=Hz.g+(B.g-Hz.g)*k;b=Hz.b+(B.b-Hz.b)*k;}
+      let best=Infinity;
+      for(const p of P){
+        const dc=d0*p.c[0]+d1*p.c[1]+d2*p.c[2];if(dc<1e-6)continue;
+        const t=p.dist/dc;if(t>=best)continue;
+        const lx=t*d0-p.dist*p.c[0],ly=t*d1-p.dist*p.c[1],lz=t*d2-p.dist*p.c[2];
+        if(Math.abs(lx*p.x[0]+ly*p.x[1]+lz*p.x[2])>p.hw||Math.abs(lx*p.y[0]+ly*p.y[1]+lz*p.y[2])>p.hh)continue;
+        best=t;[r,g,b]=p.col;
+      }
+      const k=4*(j*W+i);data[k]=r;data[k+1]=g;data[k+2]=b;data[k+3]=1;
+      if(z>0){const w=z*dU*dV*sp;eUp[0]+=r*w;eUp[1]+=g*w;eUp[2]+=b*w;}
+      if(d0*kd[0]+d1*kd[1]+d2*kd[2]>=kc){lamp.push(k);om+=dU*dV*sp;}
+    }
+  }
+  if(om>0&&E>0){const L=E/om;lamp.forEach(k=>{data[k]+=L;data[k+1]+=L;data[k+2]+=L;});} // énergie exacte sur les pixels touchés
+  return {data,W,H,eUp,eKey:E*Math.max(0,Math.sin(ke))};
+}
+function rtBuildEnv(){
+  const R=rd.rt,T=R.T,{data,W,H,eUp,eKey}=rtEnvData();
+  R.eUp=eUp;R.eKey=eKey;
+  const tex=new T.DataTexture(data,W,H,T.RGBAFormat,T.FloatType);
+  tex.mapping=T.EquirectangularReflectionMapping;tex.magFilter=tex.minFilter=T.LinearFilter;tex.needsUpdate=true;
+  if(R.env)R.env.dispose();
+  R.env=tex;R.scene.environment=tex;R.scene.environmentIntensity=rd.st.envInt;R.envKey=rtEnvKey();
+}
+function rtEnvKey(){const st=rd.st;return [st.amb,st.envRot,st.lum,st.douceur].join('|');}
+function rtFloorKey(){const st=rd.st;return [st.solOn,st.miroir,st.ombreOn,rdSolHex(),rd.rt.envKey,st.envInt].join('|');} // l'albédo du sol suit l'éclairement
+/* ── objets et sol : copies des maillages de l'atelier ── */
+function rtAttr(T,a){
+  if(!a.isInterleavedBufferAttribute)return new T.BufferAttribute(a.array,a.itemSize,a.normalized);
+  const o=new Float32Array(a.count*a.itemSize);
+  for(let i=0;i<a.count;i++)for(let c=0;c<a.itemSize;c++)o[i*a.itemSize+c]=a.getComponent?a.getComponent(i,c):[a.getX(i),a.getY(i),a.getZ(i)][c];
+  return new T.BufferAttribute(o,a.itemSize);
+}
+function rtMaterial(T,m,src){
+  // la matière physique du moteur rapide (rdMaterial), relue champ par champ ; un relief devient sa rugosité
+  const d=src?matDef(src.mat):null,rel=src?relOf({rel:src.rel},d):null;
+  const p=new T.MeshPhysicalMaterial({metalness:m.metalness,roughness:Math.min(1,m.roughness+(rel?REL_DEF[rel.t].r:0)),
+    clearcoat:m.clearcoat,clearcoatRoughness:m.clearcoatRoughness,transmission:m.transmission,ior:m.ior,thickness:m.thickness,
+    attenuationDistance:m.attenuationDistance,sheen:m.sheen,sheenRoughness:m.sheenRoughness});
+  p.color.setRGB(m.color.r,m.color.g,m.color.b); // déjà linéaires (rdLin) = espace de travail du three récent
+  p.attenuationColor.setRGB(m.attenuationColor.r,m.attenuationColor.g,m.attenuationColor.b);
+  if(m.sheenColor)p.sheenColor.setRGB(m.sheenColor.r,m.sheenColor.g,m.sheenColor.b);
+  return p;
+}
+function rtFloorAlpha(T){ // opaque jusqu'à 1,6 R, transparent à 5,5 R, sur un disque de rayon 8 R (rdDisk)
+  const N=256,a=new Uint8Array(N*N*4);
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++){
+    const r=Math.hypot((x+0.5)/N-0.5,(y+0.5)/N-0.5)*16,t=Math.min(1,Math.max(0,(r-1.6)/3.9)),v=Math.round(255*(1-t*t*(3-2*t)));
+    const k=4*(y*N+x);a[k]=a[k+1]=a[k+2]=a[k+3]=v;
+  }
+  const tx=new T.DataTexture(a,N,N,T.RGBAFormat);tx.magFilter=tx.minFilter=T.LinearFilter;tx.needsUpdate=true;return tx;
+}
+function rtFloorMat(){
+  const R=rd.rt,st=rd.st,m=R.floor.material,on=!!(st.solOn||st.miroir||st.ombreOn);
+  // comme rdDisk, le sol HORS de l'ombre garde sa couleur choisie : albédo = couleur × π / éclairement reçu
+  // (ciel et panneaux × « Reflets », plus la lampe) ; l'ombre et l'occlusion au contact l'assombrissent
+  m.color.set(rdSolHex()); // sRGB → linéaire (gestion des couleurs du three récent)
+  const E=[0,1,2].map(i=>Math.max(1e-3,R.eUp[i]*st.envInt+R.eKey));
+  m.color.setRGB(Math.min(1,m.color.r*Math.PI/E[0]),Math.min(1,m.color.g*Math.PI/E[1]),Math.min(1,m.color.b*Math.PI/E[2]));
+  m.roughness=st.miroir?0.4:0.9;m.clearcoat=st.miroir?1:0;m.clearcoatRoughness=0.04;
+  m.opacity=on?1:0;R.floorKey=rtFloorKey();
+}
+function rtBuildObjects(){
+  const R=rd.rt,T=R.T;
+  if(R.group){R.scene.remove(R.group);R.group.traverse(o=>{if(o.isMesh){o.geometry.dispose();o.material.dispose();}});}
+  const G=new T.Group();
+  (rd.group?rd.group.children:[]).forEach((m,i)=>{
+    if(!m.isMesh||!m.geometry||!m.geometry.attributes.position)return;
+    const A=m.geometry.attributes,g=new T.BufferGeometry();
+    g.setAttribute('position',rtAttr(T,A.position));
+    if(A.normal)g.setAttribute('normal',rtAttr(T,A.normal));else g.computeVertexNormals();
+    if(m.geometry.index)g.setIndex(new T.BufferAttribute(m.geometry.index.array,1));
+    const o=new T.Mesh(g,rtMaterial(T,m.material,rd.srcs&&rd.srcs[i]));
+    o.matrixAutoUpdate=false;o.matrix.fromArray(m.matrix.elements);
+    G.add(o);
+  });
+  R.group=G;R.scene.add(G);
+  // sol : un disque toujours présent (sa matière seule change : pas de BVH à refaire pour une case cochée)
+  const b=rd.box,c=b.getCenter(new THREE.Vector3()),Rr=b.getSize(new THREE.Vector3()).length()*0.5||50;
+  if(!R.floor){
+    R.floor=new T.Mesh(new T.CircleGeometry(1,128),new T.MeshPhysicalMaterial({metalness:0,transparent:true,alphaMap:rtFloorAlpha(T)}));
+    R.floor.matrixAutoUpdate=false;R.scene.add(R.floor);
+  }
+  R.floor.matrix.makeScale(Rr*8,Rr*8,1).setPosition(c.x,c.y,b.min.z-Rr*0.001);
+  rtFloorMat();
+  R.pt.setScene(R.scene,R.cam);
+}
+/* ── appareil photo : celui du moteur rapide, recopié (focale sur 36 mm, pupille = focale / ouverture) ── */
+function rtSyncCam(){
+  const c=rd.rt.cam,s=rd.cam,st=rd.st;
+  c.position.fromArray(s.position.toArray());c.quaternion.fromArray(s.quaternion.toArray());c.up.fromArray(s.up.toArray());
+  c.fov=s.fov;c.aspect=s.aspect;c.near=s.near;c.far=s.far;c.filmGauge=36;
+  c.fStop=st.ouv>0?st.ouv:1e6;c.focusDistance=rdFocusDist();
+  c.updateProjectionMatrix();c.updateMatrixWorld();
+  rd.rt.pt.setCamera(c);
+}
+function rtLook(){ // tons, exposition, fond : à l'affichage seulement (pas de nouvel affinage)
+  const R=rd.rt,T=R.T,st=rd.st;
+  const tm=T[RT_TONS[st.tons]||'ACESFilmicToneMapping'];
+  if(R.r.toneMapping!==tm){R.r.toneMapping=tm;R.pt._quad.material.needsUpdate=true;}
+  R.r.toneMappingExposure=Math.pow(2,st.ev);
+  R.canvas.style.background=st.fond==='transparent'?'none':st.fond==='degrade'?'linear-gradient('+st.fc1+','+st.fc2+')':st.fc1;
+}
+/* ── affinage ──
+   Le compteur du pathtracer avance à l'ENVOI des tuiles (3 × 3 par échantillon) : sans frein, la file du GPU
+   s'allonge de plusieurs secondes et fige la page. Une barrière (fenceSync, WebGL 2) suit chaque lot : le lot
+   suivant ne part qu'une fois le précédent calculé, et sa taille vise une durée GPU (cible, en ms). */
+function rtGpuReady(R,cible){
+  if(!R.fence)return true;
+  const gl=R.r.getContext();
+  if(gl.getSyncParameter(R.fence,gl.SYNC_STATUS)!==gl.SIGNALED)return false;
+  gl.deleteSync(R.fence);R.fence=null;
+  const dt=Math.max(1,performance.now()-R.tSub);
+  R.batch=Math.max(1,Math.min(144,Math.round(R.batch*Math.min(2,Math.max(0.5,cible/dt)))));
+  return true;
+}
+function rtSubmit(R,goal){ // jusqu'à R.batch tuiles, puis la barrière
+  for(let i=0;i<R.batch&&rtSamples()<goal;i++){R.pt.renderSample();if(R.pt.isCompiling)break;}
+  const gl=R.r.getContext();R.fence=gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0);gl.flush();R.tSub=performance.now();
+}
+function rtLoop(){
+  const R=rd&&rd.rt;if(!R||!R.pt)return;
+  R.raf=0;
+  if(rd.busy||rd.st.moteur!=='rayons')return;
+  if(rd.drag){R.canvas.style.visibility='hidden';return;}
+  if(R.camDirty){rtSyncCam();R.camDirty=false;}
+  if(rtSamples()<RT_PREVIEW){if(rtGpuReady(R,24))rtSubmit(R,RT_PREVIEW);}
+  else if(R.lookDirty){R.pt.pausePathTracing=true;R.pt.renderSample();R.pt.pausePathTracing=false;}
+  R.lookDirty=false;
+  R.canvas.style.visibility=rtSamples()>=1?'visible':'hidden';
+  rtCount();
+  if(rtSamples()<RT_PREVIEW)R.raf=requestAnimationFrame(rtLoop);
+}
+function rtKick(cam){
+  const R=rd&&rd.rt;if(!R||!R.pt)return;
+  if(cam!==false)R.camDirty=true;
+  if(!R.raf)R.raf=requestAnimationFrame(rtLoop);
+}
+function rtCount(){
+  if(!rtOn()||!rd.cnt)return;
+  const R=rd.rt;
+  rd.cnt.textContent=R.pt.isCompiling?'Lancer de rayons : préparation du calcul (la première fois : jusqu’à 30 s)…':
+    'Lancer de rayons : '+Math.floor(rtSamples())+' / '+RT_PREVIEW+' échantillons'+(rd.st.ouv>0?' · f/'+String(rd.st.ouv).replace('.',','):'');
+}
+function rtFit(){
+  const R=rd&&rd.rt;if(!R||!R.r)return;
+  const c=rd.canvas;
+  R.canvas.style.left=c.offsetLeft+'px';R.canvas.style.top=c.offsetTop+'px';
+  R.canvas.style.width=c.style.width;R.canvas.style.height=c.style.height;
+  R.r.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  R.r.setSize(parseInt(c.style.width)||c.clientWidth,parseInt(c.style.height)||c.clientHeight,false);
+  R.pt.reset();rtKick();
+}
+function rtRefresh(what){ // pendant de rdRefresh : ne refait que ce qui a changé
+  const R=rd&&rd.rt;if(!R||!R.pt)return;
+  const st=rd.st;
+  if(what==='objets'){rtBuildObjects();}
+  else{
+    if(rtEnvKey()!==R.envKey){rtBuildEnv();R.pt.updateEnvironment();}
+    else if(R.scene.environmentIntensity!==st.envInt){R.scene.environmentIntensity=st.envInt;R.pt.updateEnvironment();}
+    if(rtFloorKey()!==R.floorKey){rtFloorMat();R.pt.updateMaterials();}
+  }
+  R.lookDirty=true;rtLook();rtKick();
+}
+/* ── démarrage / arrêt ── */
+async function rtStart(){
+  if(!rd||rd.rt)return;
+  const R=rd.rt={};
+  rdMsg('Chargement du moteur « Lancer de rayons »…');
+  let L;
+  try{L=await rtLoad();}
+  catch(e){if(rd&&rd.rt===R){rd.rt=null;rd.st.moteur='rapide';rdSave();rdPanel();rdMsg('Lancer de rayons indisponible : '+(e&&e.message||e));}return;}
+  if(!rd||rd.rt!==R)return; // atelier fermé ou moteur changé pendant le chargement
+  const T=L.THREE,canvas=document.createElement('canvas');canvas.className='rdPT';
+  let r;
+  try{r=new T.WebGLRenderer({canvas,antialias:false,alpha:true,premultipliedAlpha:true,preserveDrawingBuffer:true,powerPreference:'high-performance'});}
+  catch(e){rd.rt=null;rd.st.moteur='rapide';rdSave();rdPanel();rdMsg('Lancer de rayons indisponible : WebGL 2 refusé.');return;}
+  r.outputColorSpace=T.SRGBColorSpace;
+  canvas.style.visibility='hidden';rd.view.appendChild(canvas);
+  const pt=new L.WebGLPathTracer(r);
+  pt.renderDelay=0;pt.fadeDuration=0;pt.minSamples=1;pt.rasterizeScene=false;
+  pt.bounces=8;pt.transmissiveBounces=10;pt.filterGlossyFactor=0.5;
+  const cam=new L.PhysicalCamera();cam.up.set(0,0,1);
+  Object.assign(R,{L,T,r,canvas,pt,cam,scene:new T.Scene(),raf:0,batch:9,fence:null});
+  try{
+    const t0=performance.now();
+    rtBuildEnv();rtSyncCam();rtBuildObjects();
+    rtLook();
+    rtFit();
+    rdMsg('Lancer de rayons prêt ('+(rd.srcs||[]).length+' corps, scène préparée en '+((performance.now()-t0)/1000).toFixed(1).replace('.',',')+' s).');
+  }catch(e){rtStop();rd.st.moteur='rapide';rdSave();rdPanel();rdMsg('Lancer de rayons impossible : '+(e&&e.message||e));}
+  rdReset();
+}
+function rtStop(){
+  const R=rd&&rd.rt;if(!R)return;
+  rd.rt=null;
+  if(R.raf)cancelAnimationFrame(R.raf);
+  try{if(R.group)R.group.traverse(o=>{if(o.isMesh){o.geometry.dispose();o.material.dispose();}});}catch(e){}
+  try{if(R.floor){R.floor.geometry.dispose();if(R.floor.material.alphaMap)R.floor.material.alphaMap.dispose();R.floor.material.dispose();}}catch(e){}
+  try{if(R.env)R.env.dispose();}catch(e){}
+  try{if(R.fence)R.r.getContext().deleteSync(R.fence);if(R.pt)R.pt.dispose();}catch(e){}
+  try{if(R.r){R.r.dispose();R.r.forceContextLoss();}}catch(e){}
+  try{if(R.canvas)R.canvas.remove();}catch(e){}
+}
+function rdSetMoteur(v){
+  if(rd.busy||rd.st.moteur===v)return;
+  rd.st.moteur=v;rdSave();
+  if(v==='rayons')rtStart();else{rtStop();rdMsg('');}
+  rdReset();rdPanel();
+}
+/* ── image finale ── */
+async function rtExport(){
+  const R=rd.rt,st=rd.st,W=st.res==='2160'?3840:1920,H=st.res==='2160'?2160:1080,N=RT_ECH[+st.ech]||512;
+  rd.busy=true;
+  if(R.raf){cancelAnimationFrame(R.raf);R.raf=0;}
+  const btn=rd.panel.querySelector('.rdGo');if(btn){btn.disabled=true;btn.textContent='Calcul en cours…';}
+  await new Promise(r=>setTimeout(r,30));
+  let url=null;const t0=performance.now();
+  try{
+    R.r.setPixelRatio(1);R.r.setSize(W,H,false);
+    rtSyncCam();R.pt.reset();
+    let last=0;
+    while(rtSamples()<N){
+      if(rtGpuReady(R,80))rtSubmit(R,N);
+      if(btn&&Math.floor(rtSamples())!==last){last=Math.floor(rtSamples());
+        const el=(performance.now()-t0)/1000,rest=last>0?el*(N-last)/last:0;
+        btn.textContent='Calcul : '+Math.round(100*last/N)+' %  ('+last+' / '+N+(last>2?' · reste '+Math.ceil(rest)+' s':'')+')';}
+      await new Promise(r=>setTimeout(r,4));
+      if(!rd||rd.rt!==R)return;
+    }
+    while(!rtGpuReady(R,80))await new Promise(r=>setTimeout(r,4)); // dernier lot calculé avant la copie
+    // le fond (dégradé ou uni) est composé ici ; transparent : PNG détouré tel quel
+    const out=document.createElement('canvas');out.width=W;out.height=H;const g=out.getContext('2d');
+    if(st.fond!=='transparent'){
+      if(st.fond==='degrade'){const lg=g.createLinearGradient(0,0,0,H);lg.addColorStop(0,st.fc1);lg.addColorStop(1,st.fc2);g.fillStyle=lg;}else g.fillStyle=st.fc1;
+      g.fillRect(0,0,W,H);
+    }
+    g.drawImage(R.canvas,0,0);
+    const blob=await new Promise(r=>out.toBlob(r,'image/png'));
+    if(!blob)throw new Error('image vide');
+    url=URL.createObjectURL(blob);
+    const nm=String((typeof doc!=='undefined'&&doc&&doc.name)||'piece').replace(/[\\/:*?"<>|]+/g,'-');
+    const a=document.createElement('a');a.href=url;a.download=nm+' - rendu '+W+'x'+H+' (rayons).png';document.body.appendChild(a);a.click();a.remove();
+    rdMsg('Image '+W+'×'+H+' enregistrée : '+N+' échantillons en '+((performance.now()-t0)/1000).toFixed(1).replace('.',',')+' s ('+(blob.size/1048576).toFixed(1).replace('.',',')+' Mo).');
+  }catch(e){rdMsg('Rendu impossible : '+(e&&e.message||e));}
+  finally{
+    if(rd){rd.busy=false;rdFitCanvas();if(btn){btn.disabled=false;btn.textContent='Rendre et enregistrer le PNG';}}
+    if(url)setTimeout(()=>URL.revokeObjectURL(url),20000);
+  }
+}
+
 /* ═══════════════ 98-rendu-reliefs.js — rendu reliefs ═══════════════ */
 /* ---------- reliefs procéduraux de l'atelier RENDU (V0.11.0, phase 2) ----------
    Brossé, sablé, moleté, veinage bois, grain, stries d'usinage, couches d'impression 3D : calculés
@@ -60351,7 +60662,7 @@ function vEnvTick(){
    Réglages retenus dans le navigateur (localStorage), pas dans le document. */
 const RD_LS='minifusion_rendu';
 const RD_DEF={amb:'studio',envRot:0,envInt:1,lum:1,fond:'degrade',fc1:'#f2f3f5',fc2:'#c3c7ce',ombre:0.45,douceur:6,
-  focale:50,ev:0,tons:'aces',res:'1080',ech:64,aretes:'non',solOn:true,solCol:'',miroir:true,ombreOn:true,ouv:0,map:0}; // solCol '' = couleur du bas du fond ; ouv 0 = tout net ; map 0 = mise au point sur la cible
+  focale:50,ev:0,tons:'aces',res:'1080',ech:64,aretes:'non',solOn:true,solCol:'',miroir:true,ombreOn:true,ouv:0,map:0,moteur:'rapide'}; // solCol '' = couleur du bas du fond ; ouv 0 = tout net ; map 0 = mise au point sur la cible ; moteur 'rayons' : 98-rendu-rayons
 const RD_AMB=[
   ['studio','Studio (softbox)'],['clair','Studio lumineux'],['atelier','Atelier (lumière chaude)'],['exterieur','Extérieur (ciel)'],['noir','Scène noire (contre-jour)']];
 const RD_PREVIEW=64; // passes de l'aperçu
@@ -60365,26 +60676,13 @@ function rdSettings(){
 function rdSave(){try{localStorage.setItem(RD_LS,JSON.stringify(rd.st));}catch(e){}}
 /* ── ambiances : scène d'environnement → PMREM ── */
 function rdLin(hex){return new THREE.Color(hex).convertSRGBToLinear();}
-function rdEnvScene(amb){
-  // Z en haut (convention CAO) : ciel = sphère à dégradé vertical, lumières = panneaux émissifs (HDR > 1)
-  const S=new THREE.Scene();
-  const sky=(top,hor,bot)=>{
-    const g=new THREE.SphereGeometry(100,48,24);g.rotateX(Math.PI/2); // pôles sur Z
-    const P=g.attributes.position,col=[];
-    const T=new THREE.Color(top),H=new THREE.Color(hor),B=new THREE.Color(bot),c=new THREE.Color();
-    for(let i=0;i<P.count;i++){const z=P.getZ(i)/100;
-      if(z>=0)c.copy(H).lerp(T,Math.pow(z,0.6));else c.copy(H).lerp(B,Math.pow(-z,0.5));
-      col.push(c.r,c.g,c.b);}
-    g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
-    S.add(new THREE.Mesh(g,new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.BackSide})));
-  };
-  const panel=(az,el,dist,w,h,inten,tint)=>{ // az, el en degrés ; panneau tourné vers le centre
-    const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({side:THREE.DoubleSide}));
-    m.material.color.set(tint==null?0xffffff:tint).multiplyScalar(inten);
-    const a=az*Math.PI/180,e=el*Math.PI/180;
-    m.position.set(dist*Math.cos(e)*Math.cos(a),dist*Math.cos(e)*Math.sin(a),dist*Math.sin(e));
-    m.up.set(0,0,1);m.lookAt(0,0,0);S.add(m);
-  };
+function rdEnvDesc(amb){
+  // Z en haut (convention CAO) : ciel = dégradé vertical {top, hor, bot}, lumières = panneaux émissifs (HDR > 1)
+  // [az, el (degrés), distance, largeur, hauteur, intensité, teinte] tournés vers le centre ; key = lampe (az, el).
+  // Décrite une seule fois : la scène PMREM (rdEnvScene) et le lancer de rayons (98-rendu-rayons) la lisent.
+  const D={panels:[]};
+  const sky=(top,hor,bot)=>{D.sky={top:new THREE.Color(top),hor:new THREE.Color(hor),bot:new THREE.Color(bot)};};
+  const panel=(az,el,dist,w,h,inten,tint)=>{D.panels.push([az,el,dist,w,h,inten,tint==null?0xffffff:tint]);};
   let key=[-60,40]; // direction de la lumière principale (az, el) : ombre portée
   if(amb==='clair'){
     sky(0xf4f5f7,0xd9dce1,0x8e939b);
@@ -60407,7 +60705,28 @@ function rdEnvScene(amb){
     panel(90,75,30,36,36,8);panel(-55,30,30,20,28,12);panel(40,20,30,16,24,4);panel(170,25,30,6,36,10);
     key=[-55,45];
   }
-  return {S,key};
+  D.key=key;return D;
+}
+function rdEnvScene(amb){
+  const D=rdEnvDesc(amb),S=new THREE.Scene();
+  { // ciel : sphère à couleurs de sommets
+    const g=new THREE.SphereGeometry(100,48,24);g.rotateX(Math.PI/2); // pôles sur Z
+    const P=g.attributes.position,col=[];
+    const T=D.sky.top,H=D.sky.hor,B=D.sky.bot,c=new THREE.Color();
+    for(let i=0;i<P.count;i++){const z=P.getZ(i)/100;
+      if(z>=0)c.copy(H).lerp(T,Math.pow(z,0.6));else c.copy(H).lerp(B,Math.pow(-z,0.5));
+      col.push(c.r,c.g,c.b);}
+    g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
+    S.add(new THREE.Mesh(g,new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.BackSide})));
+  }
+  D.panels.forEach(([az,el,dist,w,h,inten,tint])=>{
+    const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({side:THREE.DoubleSide}));
+    m.material.color.set(tint).multiplyScalar(inten);
+    const a=az*Math.PI/180,e=el*Math.PI/180;
+    m.position.set(dist*Math.cos(e)*Math.cos(a),dist*Math.cos(e)*Math.sin(a),dist*Math.sin(e));
+    m.up.set(0,0,1);m.lookAt(0,0,0);S.add(m);
+  });
+  return {S,key:D.key};
 }
 function rdEnvTex(pmrem,amb,rot){ // ambiance → {rt (PMREM), key (direction de la lampe)} — aussi pour la vue (98-rendu-vue)
   const {S,key}=rdEnvScene(amb);
@@ -60687,18 +61006,19 @@ function rdCount(){if(rd&&rd.cnt&&rd.acc)rd.cnt.textContent='Affinage : '+rd.acc
 function rdLoop(){
   rd&&(rd.raf=0);
   if(!rd||rd.busy||!rd.acc)return;
-  const A=rd.acc;
+  const A=rd.acc,lim=rtOn()?1:RD_PREVIEW; // lancer de rayons : le moteur rapide ne fait que l'aperçu des glissers
   if(A.n===0||!rd.drag){
     const k=A.n===0?1:2;
-    for(let j=0;j<k&&A.n<RD_PREVIEW;j++)rdSample();
-    rdShow();rdCount();
+    for(let j=0;j<k&&A.n<lim;j++)rdSample();
+    rdShow();if(!rtOn())rdCount();
   }
-  if(A.n<RD_PREVIEW&&!rd.drag)rd.raf=requestAnimationFrame(rdLoop);
+  if(A.n<lim&&!rd.drag)rd.raf=requestAnimationFrame(rdLoop);
 }
 function rdReset(){ // la scène ou la vue a changé : l'aperçu repart de zéro
   if(!rd||!rd.acc)return;
   rd.acc.n=0;
   if(!rd.raf)rd.raf=requestAnimationFrame(rdLoop);
+  rtKick();
 }
 /* ── rendu ── */
 function rdFitCanvas(){
@@ -60708,17 +61028,19 @@ function rdFitCanvas(){
   rd.r.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
   rd.r.setSize(w,h,false);rd.canvas.style.width=w+'px';rd.canvas.style.height=h+'px';
   const sz=rd.r.getDrawingBufferSize(new THREE.Vector2());
-  rdAccInit(sz.x,sz.y);rdReset();
+  rdAccInit(sz.x,sz.y);rdReset();rtFit();
 }
 function rdRefresh(what){
   if(!rd)return;
   if(what==='env')rdBuildEnv();
   if(what==='fond')rdBackground();
   if(what==='objets')rdBuildObjects();
-  rdFloor();rdApplyCam();rdReset();rdSave();
+  rdFloor();rdApplyCam();rdReset();rdSave();rtRefresh(what);
 }
 async function rdExport(){
-  if(!rd||rd.busy)return;rd.busy=true;
+  if(!rd||rd.busy)return;
+  if(rtOn())return rtExport();
+  rd.busy=true;
   if(rd.raf){cancelAnimationFrame(rd.raf);rd.raf=0;}
   const st=rd.st,W=st.res==='2160'?3840:1920,H=st.res==='2160'?2160:1080,N=Math.max(1,+st.ech||64);
   const btn=rd.panel.querySelector('.rdGo');if(btn){btn.disabled=true;btn.textContent='Calcul en cours…';}
@@ -60768,6 +61090,7 @@ function rdCss(){
     '#rdView{flex:1;display:flex;align-items:center;justify-content:center;position:relative;min-width:0;background:repeating-conic-gradient(#1a1a1c 0% 25%,#141416 0% 50%) 50%/22px 22px}',
     '#rdView canvas{box-shadow:0 10px 40px rgba(0,0,0,.55);cursor:grab;outline:1px solid rgba(255,255,255,.08)}',
     '#rdView .rdHint{position:absolute;left:14px;bottom:10px;color:#98989d;font-size:.72rem}',
+    '#rdView canvas.rdPT{position:absolute;pointer-events:none;box-shadow:none;outline:none}',
     '#rdView .rdCnt{position:absolute;right:14px;bottom:10px;color:#98989d;font-size:.72rem;font-variant-numeric:tabular-nums}',
     '#rdPanel{width:290px;flex:none;display:flex;flex-direction:column;background:var(--bg,#1c1c1e);padding:8px;gap:8px;min-height:0}',
     '#rdPanel .rdCard{flex:1;min-height:0;overflow-y:auto;padding:8px 10px}',
@@ -60815,7 +61138,7 @@ function rdCss(){
   ].join('\n');
   document.head.appendChild(s);
 }
-const RD_TABS=[['amb','Ambiance'],['fond','Fond et sol'],['cam','Appareil photo'],['vues','Vues enregistrées'],['mat','Matériaux et reliefs'],['img','Image']]; // blocs du panneau, dans l'ordre
+const RD_TABS=[['mot','Moteur'],['amb','Ambiance'],['fond','Fond et sol'],['cam','Appareil photo'],['vues','Vues enregistrées'],['mat','Matériaux et reliefs'],['img','Image']]; // blocs du panneau, dans l'ordre
 function rdPanel(){
   const st=rd.st,p=rd.panel;
   const sc0=rd.card?rd.card.scrollTop:0;p.innerHTML='';
@@ -60839,7 +61162,10 @@ function rdPanel(){
     c.onchange=()=>{st[k]=c.checked;rdRefresh();};l.appendChild(c);l.appendChild(document.createTextNode(lab));return l;};
   RD_TABS.forEach(([t,lab])=>{
   pane=el('div','rdSec');pane.appendChild(el('h4','rdSecT',lab));card.appendChild(pane);
-  if(t==='amb'){
+  if(t==='mot'){
+    row('Calcul',seg([['rapide','Rapide','Rastérisation affinée : image presque immédiate'],['rayons','Lancer de rayons','Suit la lumière de rebond en rebond : reflets entre pièces, ombres de contact, verre réfracté — plus lent']],st.moteur,rdSetMoteur));
+    if(st.moteur==='rayons')pane.appendChild(el('div','rdNote','Prototype : reliefs rendus par leur seule rugosité, sans arêtes CAO. Pendant un glisser, l’aperçu rapide reprend la main.'));
+  }else if(t==='amb'){
     row('Lumière',select(RD_AMB,st.amb,v=>{st.amb=v;rdRefresh('env');}));
     slider('Rotation','envRot',0,360,5,v=>v+'°','env');
     slider('Reflets','envInt',0,3,0.05,v=>v.toFixed(2).replace('.',','),null);
@@ -60919,9 +61245,10 @@ function rdPanel(){
     if(ids.length)pane.appendChild(el('div','rdNote','Apparence propre au RENDU, enregistrée avec la pièce : la CAO garde ses couleurs (↺ pour y revenir). Relief : motif calculé, direction X / Y / Z de la pièce, échelle en mm.'));
   }else if(t==='img'){
     row('Format',seg([['1080','1920 × 1080'],['2160','4K','3840 × 2160']],st.res,v=>{st.res=v;rdSave();rdPanel();rdFoot();}));
-    row('Qualité',seg([['16','16','Brouillon : 16 passes'],['64','64','Bonne : 64 passes'],['256','256','Haute : 256 passes']],st.ech,v=>{st.ech=+v;rdSave();rdPanel();rdFoot();}))
-      .title='Nombre de passes moyennées : bords, ombres douces et profondeur de champ plus lisses';
-    pane.appendChild(el('div','rdNote','Passes : 16 brouillon · 64 bonne · 256 haute. Le fond transparent (onglet Fond et sol) donne un PNG détouré.'));
+    const ray=st.moteur==='rayons';
+    row('Qualité',seg([['16','16'],['64','64'],['256','256']].map(([v])=>[v,ray?String(RT_ECH[v]):v,(v==='16'?'Brouillon':v==='64'?'Bonne':'Haute')+' : '+(ray?RT_ECH[v]+' échantillons':v+' passes')]),st.ech,v=>{st.ech=+v;rdSave();rdPanel();rdFoot();}))
+      .title=ray?'Échantillons par pixel : moins de grain, surtout dans les ombres et le verre':'Nombre de passes moyennées : bords, ombres douces et profondeur de champ plus lisses';
+    pane.appendChild(el('div','rdNote',(ray?'Échantillons : '+RT_ECH[16]+' brouillon · '+RT_ECH[64]+' bonne · '+RT_ECH[256]+' haute.':'Passes : 16 brouillon · 64 bonne · 256 haute.')+' Le fond transparent (onglet Fond et sol) donne un PNG détouré.'));
   }
   });
   // pied, toujours visible : format retenu + bouton
@@ -60932,7 +61259,7 @@ function rdPanel(){
 function rdFoot(){
   const f=rd.foot;if(!f)return;const st=rd.st,msg=rd.msg?rd.msg.textContent:'';f.innerHTML='';
   const r=document.createElement('div');r.className='rdFootRow';
-  const s=document.createElement('span');s.textContent=(st.res==='2160'?'3840 × 2160':'1920 × 1080')+' · '+(+st.ech||64)+' passes'+(st.fond==='transparent'?' · détouré':'');r.appendChild(s);f.appendChild(r);
+  const s=document.createElement('span');s.textContent=(st.res==='2160'?'3840 × 2160':'1920 × 1080')+' · '+(st.moteur==='rayons'?(RT_ECH[+st.ech]||512)+' échantillons':(+st.ech||64)+' passes')+(st.fond==='transparent'?' · détouré':'');r.appendChild(s);f.appendChild(r);
   const go=document.createElement('button');go.className='rdGo';go.textContent='Rendre et enregistrer le PNG';go.onclick=rdExport;f.appendChild(go);
   rd.msg=document.createElement('div');rd.msg.className='rdMsg';rd.msg.textContent=msg;f.appendChild(rd.msg);
 }
@@ -61028,11 +61355,12 @@ function rdOpen(){
   rd.onResize=()=>rdFitCanvas();window.addEventListener('resize',rd.onResize);
   document.addEventListener('keydown',rdKey,true);
   document.querySelectorAll('[data-mfrd]').forEach(b=>b.classList.add('on'));
-  requestAnimationFrame(rdFitCanvas);
+  requestAnimationFrame(()=>{rdFitCanvas();if(rd&&rd.st.moteur==='rayons')rtStart();});
 }
 function rdClose(){
   if(!rd)return;
   if(rd.raf)cancelAnimationFrame(rd.raf);
+  rtStop();
   window.removeEventListener('resize',rd.onResize);document.removeEventListener('keydown',rdKey,true);
   try{rd.ctl.dispose();}catch(e){}
   try{if(rd.group)rd.group.traverse(o=>{if(o.material)o.material.dispose();if(o.geometry)o.geometry.dispose();});}catch(e){}

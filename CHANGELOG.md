@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**389 versions**, de `2026-09-28b` à `V0.11.34` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**390 versions**, de `2026-09-28b` à `V0.12.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5241,3 +5241,10 @@ Fonds plats, flancs et congés montraient des taches d'ombre (« Cavité Usinage
 - **Cause** (`src/20-noyau-et-operations-solides.js`, `smoothNormals`) : les normales d'affichage étaient lissées sur tous les triangles d'un sommet à moins de 35° — y compris ceux des faces VOISINES tangentes. Une face plane bordée de congés prenait leur inclinaison au bord, étalée sur la face par ses longs triangles. Sur « Cavité Usinage », 79 % des sommets étaient faussés de plus de 0,5° (8° au maximum).
 - **Correctif** : `occTriPos(shape,defl,ang,true)` rend aussi `nrm`, la normale EXACTE de la surface BRep en chaque nœud (`BRepGProp_Face.Normal` aux coordonnées UV du maillage, orientation de la face comprise, ~1,4 µs par nœud) ; `occTriNormals` l'applique et ne garde le lissage qu'en repli (pas d'UV, point singulier : pôle, sommet de cône). Utilisé par `occTessellate` (tous les corps affichés) et la mise en plan des composants (`src/48-composants-plan.js`). Parcours FAO inchangés : pas de bump de `CACHE_VER`.
 - **Tests** : `test_normales_exactes` (nouveau : boîte à congés R3 par le vrai noyau — faces planes 4,71° → 0°, aucune normale opposée à sa facette, sans `wantN` pas de `nrm`) ; `npm run ci`.
+
+## V0.12.0 - Rendu : moteur « Lancer de rayons » (prototype) dans l’atelier RENDU
+Demande : un rendu « à la Blender / Fusion 360 » — les images de l’atelier, rapides et proches de la vue, manquaient de lumière renvoyée, de reflets entre pièces et de vrai verre.
+- **Cause** : l’atelier (`src/98-rendu.js`) est une rastérisation three r147 affinée passe après passe : la lumière ne rebondit pas (pas d’ombres de contact ni d’inter-réflexions), le verre ne réfracte que le décor.
+- **Ajout** (`src/98-rendu-rayons.js`, bloc « Moteur » du panneau : Rapide / Lancer de rayons) : three-gpu-pathtracer 0.0.27 sur three 0.186.1 + three-mesh-bvh 0.9.16 (MIT), empaquetés en un script classique `threejs/rendu-rayons.js` (`window.RDPT`, 734 Ko, recette dans `tools/rendu-rayons-entree.mjs`), chargé seulement au choix du moteur — marche en file://. Son propre canevas et contexte WebGL, posé sur celui du moteur rapide (qui garde la souris et sert d’aperçu pendant un glisser) ; la vue CAO et son three r147 ne sont pas touchés. Mêmes réglages : ambiances (description partagée `rdEnvDesc`, calculée en image équirectangulaire flottante), lampe en disque de rayon « Douceur » de même énergie que la DirectionalLight du moteur rapide, sol à bords fondus (albédo calé sur l’éclairement reçu : hors de l’ombre il garde sa couleur), vernis si « Miroir », matières physiques, tons, exposition, profondeur de champ (PhysicalCamera), fond composé derrière, PNG 1920×1080 / 4K en 128 / 512 / 2048 échantillons. Envoi au GPU régulé par barrières WebGL 2 (fenceSync) : sans elles la file s’allongeait de plusieurs secondes et figeait la page.
+- **Limites du prototype** : reliefs rendus par leur seule rugosité, pas d’arêtes CAO, curseur « Ombre » sans effet ; première préparation du calcul 20 à 40 s (compilation du shader), grain résiduel dans les zones sombres (pas encore de débruitage).
+- **Tests** : `gpu.spec` (nouveau parcours : bibliothèque non chargée avant le choix, three 186 / CAO 147, image ombrée, PNG 1920×1080 « (rayons) », retour au moteur rapide qui libère canevas et contexte) ; `rendu.spec` inchangé et vert ; essai sur « Support Pédale » (inox, verre, laque, ambiances studio / atelier / extérieur) : 512 échantillons en ~20 s sur RTX 5070 Ti ; `npm run ci`.

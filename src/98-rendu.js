@@ -19,7 +19,7 @@
    Réglages retenus dans le navigateur (localStorage), pas dans le document. */
 const RD_LS='minifusion_rendu';
 const RD_DEF={amb:'studio',envRot:0,envInt:1,lum:1,fond:'degrade',fc1:'#f2f3f5',fc2:'#c3c7ce',ombre:0.45,douceur:6,
-  focale:50,ev:0,tons:'aces',res:'1080',ech:64,aretes:'non',solOn:true,solCol:'',miroir:true,ombreOn:true,ouv:0,map:0}; // solCol '' = couleur du bas du fond ; ouv 0 = tout net ; map 0 = mise au point sur la cible
+  focale:50,ev:0,tons:'aces',res:'1080',ech:64,aretes:'non',solOn:true,solCol:'',miroir:true,ombreOn:true,ouv:0,map:0,moteur:'rapide'}; // solCol '' = couleur du bas du fond ; ouv 0 = tout net ; map 0 = mise au point sur la cible ; moteur 'rayons' : 98-rendu-rayons
 const RD_AMB=[
   ['studio','Studio (softbox)'],['clair','Studio lumineux'],['atelier','Atelier (lumière chaude)'],['exterieur','Extérieur (ciel)'],['noir','Scène noire (contre-jour)']];
 const RD_PREVIEW=64; // passes de l'aperçu
@@ -33,26 +33,13 @@ function rdSettings(){
 function rdSave(){try{localStorage.setItem(RD_LS,JSON.stringify(rd.st));}catch(e){}}
 /* ── ambiances : scène d'environnement → PMREM ── */
 function rdLin(hex){return new THREE.Color(hex).convertSRGBToLinear();}
-function rdEnvScene(amb){
-  // Z en haut (convention CAO) : ciel = sphère à dégradé vertical, lumières = panneaux émissifs (HDR > 1)
-  const S=new THREE.Scene();
-  const sky=(top,hor,bot)=>{
-    const g=new THREE.SphereGeometry(100,48,24);g.rotateX(Math.PI/2); // pôles sur Z
-    const P=g.attributes.position,col=[];
-    const T=new THREE.Color(top),H=new THREE.Color(hor),B=new THREE.Color(bot),c=new THREE.Color();
-    for(let i=0;i<P.count;i++){const z=P.getZ(i)/100;
-      if(z>=0)c.copy(H).lerp(T,Math.pow(z,0.6));else c.copy(H).lerp(B,Math.pow(-z,0.5));
-      col.push(c.r,c.g,c.b);}
-    g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
-    S.add(new THREE.Mesh(g,new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.BackSide})));
-  };
-  const panel=(az,el,dist,w,h,inten,tint)=>{ // az, el en degrés ; panneau tourné vers le centre
-    const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({side:THREE.DoubleSide}));
-    m.material.color.set(tint==null?0xffffff:tint).multiplyScalar(inten);
-    const a=az*Math.PI/180,e=el*Math.PI/180;
-    m.position.set(dist*Math.cos(e)*Math.cos(a),dist*Math.cos(e)*Math.sin(a),dist*Math.sin(e));
-    m.up.set(0,0,1);m.lookAt(0,0,0);S.add(m);
-  };
+function rdEnvDesc(amb){
+  // Z en haut (convention CAO) : ciel = dégradé vertical {top, hor, bot}, lumières = panneaux émissifs (HDR > 1)
+  // [az, el (degrés), distance, largeur, hauteur, intensité, teinte] tournés vers le centre ; key = lampe (az, el).
+  // Décrite une seule fois : la scène PMREM (rdEnvScene) et le lancer de rayons (98-rendu-rayons) la lisent.
+  const D={panels:[]};
+  const sky=(top,hor,bot)=>{D.sky={top:new THREE.Color(top),hor:new THREE.Color(hor),bot:new THREE.Color(bot)};};
+  const panel=(az,el,dist,w,h,inten,tint)=>{D.panels.push([az,el,dist,w,h,inten,tint==null?0xffffff:tint]);};
   let key=[-60,40]; // direction de la lumière principale (az, el) : ombre portée
   if(amb==='clair'){
     sky(0xf4f5f7,0xd9dce1,0x8e939b);
@@ -75,7 +62,28 @@ function rdEnvScene(amb){
     panel(90,75,30,36,36,8);panel(-55,30,30,20,28,12);panel(40,20,30,16,24,4);panel(170,25,30,6,36,10);
     key=[-55,45];
   }
-  return {S,key};
+  D.key=key;return D;
+}
+function rdEnvScene(amb){
+  const D=rdEnvDesc(amb),S=new THREE.Scene();
+  { // ciel : sphère à couleurs de sommets
+    const g=new THREE.SphereGeometry(100,48,24);g.rotateX(Math.PI/2); // pôles sur Z
+    const P=g.attributes.position,col=[];
+    const T=D.sky.top,H=D.sky.hor,B=D.sky.bot,c=new THREE.Color();
+    for(let i=0;i<P.count;i++){const z=P.getZ(i)/100;
+      if(z>=0)c.copy(H).lerp(T,Math.pow(z,0.6));else c.copy(H).lerp(B,Math.pow(-z,0.5));
+      col.push(c.r,c.g,c.b);}
+    g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
+    S.add(new THREE.Mesh(g,new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.BackSide})));
+  }
+  D.panels.forEach(([az,el,dist,w,h,inten,tint])=>{
+    const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({side:THREE.DoubleSide}));
+    m.material.color.set(tint).multiplyScalar(inten);
+    const a=az*Math.PI/180,e=el*Math.PI/180;
+    m.position.set(dist*Math.cos(e)*Math.cos(a),dist*Math.cos(e)*Math.sin(a),dist*Math.sin(e));
+    m.up.set(0,0,1);m.lookAt(0,0,0);S.add(m);
+  });
+  return {S,key:D.key};
 }
 function rdEnvTex(pmrem,amb,rot){ // ambiance → {rt (PMREM), key (direction de la lampe)} — aussi pour la vue (98-rendu-vue)
   const {S,key}=rdEnvScene(amb);
@@ -355,18 +363,19 @@ function rdCount(){if(rd&&rd.cnt&&rd.acc)rd.cnt.textContent='Affinage : '+rd.acc
 function rdLoop(){
   rd&&(rd.raf=0);
   if(!rd||rd.busy||!rd.acc)return;
-  const A=rd.acc;
+  const A=rd.acc,lim=rtOn()?1:RD_PREVIEW; // lancer de rayons : le moteur rapide ne fait que l'aperçu des glissers
   if(A.n===0||!rd.drag){
     const k=A.n===0?1:2;
-    for(let j=0;j<k&&A.n<RD_PREVIEW;j++)rdSample();
-    rdShow();rdCount();
+    for(let j=0;j<k&&A.n<lim;j++)rdSample();
+    rdShow();if(!rtOn())rdCount();
   }
-  if(A.n<RD_PREVIEW&&!rd.drag)rd.raf=requestAnimationFrame(rdLoop);
+  if(A.n<lim&&!rd.drag)rd.raf=requestAnimationFrame(rdLoop);
 }
 function rdReset(){ // la scène ou la vue a changé : l'aperçu repart de zéro
   if(!rd||!rd.acc)return;
   rd.acc.n=0;
   if(!rd.raf)rd.raf=requestAnimationFrame(rdLoop);
+  rtKick();
 }
 /* ── rendu ── */
 function rdFitCanvas(){
@@ -376,17 +385,19 @@ function rdFitCanvas(){
   rd.r.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
   rd.r.setSize(w,h,false);rd.canvas.style.width=w+'px';rd.canvas.style.height=h+'px';
   const sz=rd.r.getDrawingBufferSize(new THREE.Vector2());
-  rdAccInit(sz.x,sz.y);rdReset();
+  rdAccInit(sz.x,sz.y);rdReset();rtFit();
 }
 function rdRefresh(what){
   if(!rd)return;
   if(what==='env')rdBuildEnv();
   if(what==='fond')rdBackground();
   if(what==='objets')rdBuildObjects();
-  rdFloor();rdApplyCam();rdReset();rdSave();
+  rdFloor();rdApplyCam();rdReset();rdSave();rtRefresh(what);
 }
 async function rdExport(){
-  if(!rd||rd.busy)return;rd.busy=true;
+  if(!rd||rd.busy)return;
+  if(rtOn())return rtExport();
+  rd.busy=true;
   if(rd.raf){cancelAnimationFrame(rd.raf);rd.raf=0;}
   const st=rd.st,W=st.res==='2160'?3840:1920,H=st.res==='2160'?2160:1080,N=Math.max(1,+st.ech||64);
   const btn=rd.panel.querySelector('.rdGo');if(btn){btn.disabled=true;btn.textContent='Calcul en cours…';}
@@ -436,6 +447,7 @@ function rdCss(){
     '#rdView{flex:1;display:flex;align-items:center;justify-content:center;position:relative;min-width:0;background:repeating-conic-gradient(#1a1a1c 0% 25%,#141416 0% 50%) 50%/22px 22px}',
     '#rdView canvas{box-shadow:0 10px 40px rgba(0,0,0,.55);cursor:grab;outline:1px solid rgba(255,255,255,.08)}',
     '#rdView .rdHint{position:absolute;left:14px;bottom:10px;color:#98989d;font-size:.72rem}',
+    '#rdView canvas.rdPT{position:absolute;pointer-events:none;box-shadow:none;outline:none}',
     '#rdView .rdCnt{position:absolute;right:14px;bottom:10px;color:#98989d;font-size:.72rem;font-variant-numeric:tabular-nums}',
     '#rdPanel{width:290px;flex:none;display:flex;flex-direction:column;background:var(--bg,#1c1c1e);padding:8px;gap:8px;min-height:0}',
     '#rdPanel .rdCard{flex:1;min-height:0;overflow-y:auto;padding:8px 10px}',
@@ -483,7 +495,7 @@ function rdCss(){
   ].join('\n');
   document.head.appendChild(s);
 }
-const RD_TABS=[['amb','Ambiance'],['fond','Fond et sol'],['cam','Appareil photo'],['vues','Vues enregistrées'],['mat','Matériaux et reliefs'],['img','Image']]; // blocs du panneau, dans l'ordre
+const RD_TABS=[['mot','Moteur'],['amb','Ambiance'],['fond','Fond et sol'],['cam','Appareil photo'],['vues','Vues enregistrées'],['mat','Matériaux et reliefs'],['img','Image']]; // blocs du panneau, dans l'ordre
 function rdPanel(){
   const st=rd.st,p=rd.panel;
   const sc0=rd.card?rd.card.scrollTop:0;p.innerHTML='';
@@ -507,7 +519,10 @@ function rdPanel(){
     c.onchange=()=>{st[k]=c.checked;rdRefresh();};l.appendChild(c);l.appendChild(document.createTextNode(lab));return l;};
   RD_TABS.forEach(([t,lab])=>{
   pane=el('div','rdSec');pane.appendChild(el('h4','rdSecT',lab));card.appendChild(pane);
-  if(t==='amb'){
+  if(t==='mot'){
+    row('Calcul',seg([['rapide','Rapide','Rastérisation affinée : image presque immédiate'],['rayons','Lancer de rayons','Suit la lumière de rebond en rebond : reflets entre pièces, ombres de contact, verre réfracté — plus lent']],st.moteur,rdSetMoteur));
+    if(st.moteur==='rayons')pane.appendChild(el('div','rdNote','Prototype : reliefs rendus par leur seule rugosité, sans arêtes CAO. Pendant un glisser, l’aperçu rapide reprend la main.'));
+  }else if(t==='amb'){
     row('Lumière',select(RD_AMB,st.amb,v=>{st.amb=v;rdRefresh('env');}));
     slider('Rotation','envRot',0,360,5,v=>v+'°','env');
     slider('Reflets','envInt',0,3,0.05,v=>v.toFixed(2).replace('.',','),null);
@@ -587,9 +602,10 @@ function rdPanel(){
     if(ids.length)pane.appendChild(el('div','rdNote','Apparence propre au RENDU, enregistrée avec la pièce : la CAO garde ses couleurs (↺ pour y revenir). Relief : motif calculé, direction X / Y / Z de la pièce, échelle en mm.'));
   }else if(t==='img'){
     row('Format',seg([['1080','1920 × 1080'],['2160','4K','3840 × 2160']],st.res,v=>{st.res=v;rdSave();rdPanel();rdFoot();}));
-    row('Qualité',seg([['16','16','Brouillon : 16 passes'],['64','64','Bonne : 64 passes'],['256','256','Haute : 256 passes']],st.ech,v=>{st.ech=+v;rdSave();rdPanel();rdFoot();}))
-      .title='Nombre de passes moyennées : bords, ombres douces et profondeur de champ plus lisses';
-    pane.appendChild(el('div','rdNote','Passes : 16 brouillon · 64 bonne · 256 haute. Le fond transparent (onglet Fond et sol) donne un PNG détouré.'));
+    const ray=st.moteur==='rayons';
+    row('Qualité',seg([['16','16'],['64','64'],['256','256']].map(([v])=>[v,ray?String(RT_ECH[v]):v,(v==='16'?'Brouillon':v==='64'?'Bonne':'Haute')+' : '+(ray?RT_ECH[v]+' échantillons':v+' passes')]),st.ech,v=>{st.ech=+v;rdSave();rdPanel();rdFoot();}))
+      .title=ray?'Échantillons par pixel : moins de grain, surtout dans les ombres et le verre':'Nombre de passes moyennées : bords, ombres douces et profondeur de champ plus lisses';
+    pane.appendChild(el('div','rdNote',(ray?'Échantillons : '+RT_ECH[16]+' brouillon · '+RT_ECH[64]+' bonne · '+RT_ECH[256]+' haute.':'Passes : 16 brouillon · 64 bonne · 256 haute.')+' Le fond transparent (onglet Fond et sol) donne un PNG détouré.'));
   }
   });
   // pied, toujours visible : format retenu + bouton
@@ -600,7 +616,7 @@ function rdPanel(){
 function rdFoot(){
   const f=rd.foot;if(!f)return;const st=rd.st,msg=rd.msg?rd.msg.textContent:'';f.innerHTML='';
   const r=document.createElement('div');r.className='rdFootRow';
-  const s=document.createElement('span');s.textContent=(st.res==='2160'?'3840 × 2160':'1920 × 1080')+' · '+(+st.ech||64)+' passes'+(st.fond==='transparent'?' · détouré':'');r.appendChild(s);f.appendChild(r);
+  const s=document.createElement('span');s.textContent=(st.res==='2160'?'3840 × 2160':'1920 × 1080')+' · '+(st.moteur==='rayons'?(RT_ECH[+st.ech]||512)+' échantillons':(+st.ech||64)+' passes')+(st.fond==='transparent'?' · détouré':'');r.appendChild(s);f.appendChild(r);
   const go=document.createElement('button');go.className='rdGo';go.textContent='Rendre et enregistrer le PNG';go.onclick=rdExport;f.appendChild(go);
   rd.msg=document.createElement('div');rd.msg.className='rdMsg';rd.msg.textContent=msg;f.appendChild(rd.msg);
 }
@@ -696,11 +712,12 @@ function rdOpen(){
   rd.onResize=()=>rdFitCanvas();window.addEventListener('resize',rd.onResize);
   document.addEventListener('keydown',rdKey,true);
   document.querySelectorAll('[data-mfrd]').forEach(b=>b.classList.add('on'));
-  requestAnimationFrame(rdFitCanvas);
+  requestAnimationFrame(()=>{rdFitCanvas();if(rd&&rd.st.moteur==='rayons')rtStart();});
 }
 function rdClose(){
   if(!rd)return;
   if(rd.raf)cancelAnimationFrame(rd.raf);
+  rtStop();
   window.removeEventListener('resize',rd.onResize);document.removeEventListener('keydown',rdKey,true);
   try{rd.ctl.dispose();}catch(e){}
   try{if(rd.group)rd.group.traverse(o=>{if(o.material)o.material.dispose();if(o.geometry)o.geometry.dispose();});}catch(e){}
