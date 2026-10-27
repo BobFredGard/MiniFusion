@@ -66,6 +66,7 @@ const SUITES = [
   'test_cartouche_modele',
   'test_composants_liaisons',
   'test_materiaux',
+  'test_rendu_patine',
   'test_noms_globaux'
 ];
 let ok = 0; const ko = [];

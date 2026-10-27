@@ -90,12 +90,13 @@ function rtAttr(T,a){
   for(let i=0;i<a.count;i++)for(let c=0;c<a.itemSize;c++)o[i*a.itemSize+c]=a.getComponent?a.getComponent(i,c):[a.getX(i),a.getY(i),a.getZ(i)][c];
   return new T.BufferAttribute(o,a.itemSize);
 }
-function rtMaterial(T,m,src){
-  // la matière physique du moteur rapide (rdMaterial), relue champ par champ ; un relief devient sa rugosité
-  const d=src?matDef(src.mat):null,rel=src?relOf({rel:src.rel},d):null;
-  const p=new T.MeshPhysicalMaterial({metalness:m.metalness,roughness:Math.min(1,m.roughness+(rel?REL_DEF[rel.t].r:0)),
+function rtMaterial(T,m){
+  // la matière physique du moteur rapide (rdMaterial), relue champ par champ ; relief, paillettes, patine :
+  // textures et couleurs de sommets de rtSurfMesh (98-rendu-surface)
+  const p=new T.MeshPhysicalMaterial({metalness:m.metalness,roughness:m.roughness,
     clearcoat:m.clearcoat,clearcoatRoughness:m.clearcoatRoughness,transmission:m.transmission,ior:m.ior,thickness:m.thickness,
-    attenuationDistance:m.attenuationDistance,sheen:m.sheen,sheenRoughness:m.sheenRoughness});
+    attenuationDistance:m.attenuationDistance,sheen:m.sheen,sheenRoughness:m.sheenRoughness,
+    iridescence:m.iridescence||0,iridescenceIOR:m.iridescenceIOR||1.3,iridescenceThicknessRange:(m.iridescenceThicknessRange||[100,400]).slice()});
   p.color.setRGB(m.color.r,m.color.g,m.color.b); // déjà linéaires (rdLin) = espace de travail du three récent
   p.attenuationColor.setRGB(m.attenuationColor.r,m.attenuationColor.g,m.attenuationColor.b);
   if(m.sheenColor)p.sheenColor.setRGB(m.sheenColor.r,m.sheenColor.g,m.sheenColor.b);
@@ -119,17 +120,20 @@ function rtFloorMat(){
   m.roughness=st.miroir?0.4:0.9;m.clearcoat=st.miroir?1:0;m.clearcoatRoughness=0.04;
   m.opacity=on?1:0;R.floorKey=rtFloorKey();
 }
+function rtDropGroup(R){ // copies des corps (matières en tableau : une par plan de projection)
+  if(!R.group)return;
+  R.scene.remove(R.group);
+  R.group.traverse(o=>{if(o.isMesh){o.geometry.dispose();[].concat(o.material).forEach(m=>m.dispose());}});
+  R.group=null;
+}
 function rtBuildObjects(){
   const R=rd.rt,T=R.T;
-  if(R.group){R.scene.remove(R.group);R.group.traverse(o=>{if(o.isMesh){o.geometry.dispose();o.material.dispose();}});}
+  rtDropGroup(R);
   const G=new T.Group();
+  if(!R.texCache)R.texCache=new Map(); // textures de surface, mises en commun (sfKit)
   (rd.group?rd.group.children:[]).forEach((m,i)=>{
     if(!m.isMesh||!m.geometry||!m.geometry.attributes.position)return;
-    const A=m.geometry.attributes,g=new T.BufferGeometry();
-    g.setAttribute('position',rtAttr(T,A.position));
-    if(A.normal)g.setAttribute('normal',rtAttr(T,A.normal));else g.computeVertexNormals();
-    if(m.geometry.index)g.setIndex(new T.BufferAttribute(m.geometry.index.array,1));
-    const o=new T.Mesh(g,rtMaterial(T,m.material,rd.srcs&&rd.srcs[i]));
+    const o=rtSurfMesh(T,m,rd.srcs&&rd.srcs[i],rtMaterial(T,m.material),R.texCache);
     o.matrixAutoUpdate=false;o.matrix.fromArray(m.matrix.elements);
     G.add(o);
   });
@@ -254,7 +258,7 @@ function rtStop(){
   const R=rd&&rd.rt;if(!R)return;
   rd.rt=null;
   if(R.raf)cancelAnimationFrame(R.raf);
-  try{if(R.group)R.group.traverse(o=>{if(o.isMesh){o.geometry.dispose();o.material.dispose();}});}catch(e){}
+  try{rtDropGroup(R);if(R.texCache)R.texCache.forEach(K=>['map','rough','normal'].forEach(k=>{if(K[k])K[k].dispose();}));}catch(e){}
   try{if(R.floor){R.floor.geometry.dispose();if(R.floor.material.alphaMap)R.floor.material.alphaMap.dispose();R.floor.material.dispose();}}catch(e){}
   try{if(R.env)R.env.dispose();}catch(e){}
   try{if(R.fence)R.r.getContext().deleteSync(R.fence);if(R.pt)R.pt.dispose();}catch(e){}

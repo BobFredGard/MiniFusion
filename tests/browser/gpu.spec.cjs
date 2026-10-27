@@ -126,6 +126,19 @@ test('atelier RENDU, « Lancer de rayons » : chargé à la demande, affinage su
   expect(R.visible).toBe('visible');
   expect(R.opaque,'pièce et sol dessinés').toBeGreaterThan(0.05);
   expect(R.teintes,'image ombrée, pas un aplat').toBeGreaterThan(40);
+  // couches et patine (V0.13.0) : peinture métallisée usée — paillettes, bandes d'usure, textures périodiques
+  const P=await page.evaluate(async()=>{
+    rd.srcs.filter(s=>s.id).forEach(s=>setRenderLook(s.id,'peint-metal',null,{p:'usee'}));rdRefresh('objets');
+    for(let i=0;i<600&&rd.rt.pt.samples<16;i++)await new Promise(r=>setTimeout(r,100));
+    const ms=[];rd.rt.group.traverse(o=>{if(o.isMesh)ms.push(o);});
+    return {samples:rd.rt.pt.samples,maillages:ms.length,usure:ms.every(o=>!!o.geometry.attributes.color),
+      normales:ms.every(o=>!!o.material.normalMap),aUse:rd.group.children.every(m=>!!m.geometry.attributes.aUse)};
+  });
+  test.info().annotations.push({type:'patine',description:JSON.stringify(P)});
+  expect(P.samples).toBeGreaterThanOrEqual(16);
+  expect(P.aUse,'moteur rapide : bandes d’usure (aUse)').toBe(true);
+  expect(P.usure&&P.normales,'lancer de rayons : couleurs d’usure et carte de normales (paillettes)').toBe(true);
+  expect(P.maillages,'un maillage par plan de projection').toBeGreaterThan(1);
   await page.evaluate(()=>{rd.st.ech=16;rdPanel();rdFoot();}); // 128 échantillons
   const [dl]=await Promise.all([page.waitForEvent('download',{timeout:180000}),page.locator('#rdPanel .rdGo').click()]);
   expect(dl.suggestedFilename()).toMatch(/1920x1080 \(rayons\)\.png$/);

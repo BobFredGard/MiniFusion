@@ -150,14 +150,18 @@ function rdMaterial(src){
     envMapIntensity:rd.st.envInt,polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1}); // décalage : les arêtes restent devant les faces
   if(d&&d.trans){m.transmission=d.trans;m.ior=d.ior||1.5;m.thickness=4;m.attenuationColor=rdLin(src.color);m.attenuationDistance=d.trans<1?8:60;m.color.setRGB(1,1,1);}
   if(d&&d.sheen){m.sheen=d.sheen;m.sheenRoughness=0.8;m.sheenColor=new THREE.Color(0.35,0.35,0.35);}
-  return relApply(m,relOf({rel:src.rel},d)); // relief du corps, sinon celui du matériau (98-rendu-reliefs)
+  if(d&&d.ir){m.iridescence=d.ir.i;m.iridescenceIOR=d.ir.ior;m.iridescenceThicknessRange=d.ir.th.slice();} // couche mince (V0.13.0)
+  // relief du corps, sinon celui du matériau (98-rendu-reliefs) ; couches et patine (98-rendu-surface)
+  return relApply(m,relOf({rel:src.rel},d),surfOpts(src,d));
 }
 function rdBuildObjects(){
   if(rd.group){rd.scene.remove(rd.group);rd.group.traverse(o=>{if(o.material)o.material.dispose();if(o.geometry)o.geometry.dispose();});}
   const G=new THREE.Group();rd.srcs=rdSources();
   rd.srcs.forEach(s=>{
     s.mesh.updateMatrixWorld(true);
-    const m=new THREE.Mesh(s.mesh.geometry.clone(),rdMaterial(s)); // copie : un rejeu de la CAO libère ses maillages
+    // copie : un rejeu de la CAO libère ses maillages ; patine usée : bandes d'usure et de salissure (surfGeo)
+    const g0=s.mesh.geometry,wear=surfOpts(s,matDef(s.mat)).wear;
+    const m=new THREE.Mesh(wear?surfGeo(g0,surfBand(g0)):g0.clone(),rdMaterial(s));
     m.matrixAutoUpdate=false;m.matrix.copy(s.mesh.matrixWorld);
     m.castShadow=true;m.receiveShadow=false; // seul le sol reçoit l'ombre (pas d'acné sur les faces)
     G.add(m);
@@ -599,7 +603,7 @@ function rdPanel(){
     const asmView=(rd.srcs||[]).some(x=>!x.id&&x.comp);
     if(!ids.length&&!asmView)pane.appendChild(el('div','rdNote','Aucun corps de la pièce active à l’écran.'));
     rdAsmPanel(pane,el,select);
-    if(ids.length)pane.appendChild(el('div','rdNote','Apparence propre au RENDU, enregistrée avec la pièce : la CAO garde ses couleurs (↺ pour y revenir). Relief : motif calculé, direction X / Y / Z de la pièce, échelle en mm.'));
+    if(ids.length)pane.appendChild(el('div','rdNote','Apparence propre au RENDU, enregistrée avec la pièce : la CAO garde ses couleurs (↺ pour y revenir). Relief : motif calculé, direction X / Y / Z de la pièce, échelle en mm. Patine : taches, usure des arêtes, salissure des creux.'));
   }else if(t==='img'){
     row('Format',seg([['1080','1920 × 1080'],['2160','4K','3840 × 2160']],st.res,v=>{st.res=v;rdSave();rdPanel();rdFoot();}));
     const ray=st.moteur==='rayons';
@@ -634,7 +638,12 @@ function rdRelRow(el,select,rel0,dm,fn){
     e.onchange=()=>{if(+e.value>0)fn(relNorm(Object.assign({},rel0||{},{e:+e.value})));};
     r.appendChild(d);r.appendChild(e);r.appendChild(el('span','rdNote','mm'));
   }
-  return r;
+  // patine (V0.13.0) : taches et traces, usure des arêtes, salissure des creux — rangée sous le relief
+  const F=document.createDocumentFragment(),r2=el('div','rdRel');F.appendChild(r);
+  const pt=select(PAT_TYPES,(rel0&&rel0.p)||'',v=>fn(relNorm(Object.assign({},rel0||{},{p:v||undefined}))));
+  pt.title='Patine : variation de teinte et de rugosité, usure des arêtes (la peinture laisse voir le métal), salissure des creux';
+  r2.appendChild(pt);F.appendChild(r2);
+  return F;
 }
 function rdAsmPanel(p,el,select){
   // Rendu d'assemblage (mode Assembler) : apparence de rendu par OCCURRENCE, corps par corps

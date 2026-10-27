@@ -111,6 +111,7 @@ const SUITES = [
   "test_corps_iso",
   "test_corps_style",
   "test_materiaux",
+  "test_rendu_patine",
   "test_noms_globaux",
   "test_import_vie",
   "test_import_persist",

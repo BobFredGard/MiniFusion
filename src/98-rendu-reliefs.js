@@ -27,6 +27,7 @@ function relNorm(r){ // relu d'un fichier : champs valides seulement ; null si v
   if(r.t==='aucun'||REL_ID[r.t])o.t=r.t;
   if(isFinite(+r.e)&&+r.e>0.005&&+r.e<50)o.e=+(+r.e).toFixed(3);
   if(r.d==='x'||r.d==='y'||r.d==='z')o.d=r.d;
+  if(typeof PAT_DEF!=='undefined'&&PAT_DEF[r.p]&&r.p!=='propre')o.p=r.p; // patine (98-rendu-surface, V0.13.0)
   return Object.keys(o).length?o:null;
 }
 const REL_VS_HEAD='varying vec3 vRelP;\nvarying vec3 vRelN;\n';
@@ -57,17 +58,22 @@ const REL_FS_HEAD=[
   '  vec3 R1=cross(vSigmaY,vN);vec3 R2=cross(vN,vSigmaX);float fDet=dot(vSigmaX,R1)*faceDirection;',
   '  vec3 vGrad=sign(fDet)*(dHdxy.x*R1+dHdxy.y*R2);return normalize(abs(fDet)*surf_norm-vGrad);}',
   ''].join('\n');
-function relApply(mat,rel){
-  // branche le relief rel ({t,e,d}) sur une MeshPhysicalMaterial de l'atelier ; rel null : rien
-  if(!rel)return mat;
-  const P=REL_DEF[rel.t],D=rel.d==='y'?[0,1,0]:rel.d==='z'?[0,0,1]:[1,0,0];
-  const U={uRelT:{value:REL_ID[rel.t]},uRelF:{value:1/rel.e},uRelA:{value:P.a*(rel.e/P.e)},uRelR:{value:P.r},uRelD:{value:new THREE.Vector3(D[0],D[1],D[2])}};
+function relApply(mat,rel,S){
+  // branche le relief rel ({t,e,d}) et, V0.13.0, les couches et la patine S (surfOpts, 98-rendu-surface :
+  // paillettes, taches et traces, usure et salissure lues sur l'attribut aUse de surfGeo) sur une
+  // MeshPhysicalMaterial de l'atelier ; rien de tout cela : la matière telle quelle
+  const fl=S&&S.fl,wear=!!(S&&S.wear),sv=S?S.pat.v:0;
+  if(!rel&&!fl&&!wear&&!sv)return mat;
+  const P=rel?REL_DEF[rel.t]:null,D=rel&&rel.d==='y'?[0,1,0]:rel&&rel.d==='z'?[0,0,1]:[1,0,0];
+  const U={uRelT:{value:rel?REL_ID[rel.t]:0},uRelF:{value:rel?1/rel.e:1},uRelA:{value:rel?P.a*(rel.e/P.e):0},uRelR:{value:rel?P.r:0},uRelD:{value:new THREE.Vector3(D[0],D[1],D[2])},
+    uSfV:{value:sv},uSfW:{value:S?S.pat.w:0},uSfS:{value:S?S.pat.s:0},uSfPaint:{value:S&&S.paint?1:0},uFlT:{value:fl?fl.t:1},uFlI:{value:fl?fl.i:0}};
   mat.userData.rel=U;
+  mat.defines=Object.assign(mat.defines||{},wear?{SURF_WEAR:''}:{},fl?{SURF_FLAKE:''}:{});
   mat.onBeforeCompile=function(sh){
     Object.assign(sh.uniforms,U);
-    sh.vertexShader=REL_VS_HEAD+sh.vertexShader
-      .replace('#include <begin_vertex>','#include <begin_vertex>\n  vRelP = transformed; vRelN = objectNormal;');
-    sh.fragmentShader=REL_FS_HEAD+sh.fragmentShader
+    sh.vertexShader=REL_VS_HEAD+SURF_VS_HEAD+sh.vertexShader
+      .replace('#include <begin_vertex>','#include <begin_vertex>\n  vRelP = transformed; vRelN = objectNormal;\n#ifdef SURF_WEAR\n  vUse = aUse;\n#endif');
+    sh.fragmentShader=REL_FS_HEAD+SURF_FS_HEAD+sh.fragmentShader
       .replace('#include <color_fragment>','#include <color_fragment>\n'+
         '  float relWood; float relHv = relH( vRelP, relWood );\n'+
         // visibilité : motifs aléatoires jugés sur leurs composantes larges (l'affinage moyenne le reste) ;
@@ -75,13 +81,14 @@ function relApply(mat,rel){
         '  int relT = int( uRelT + 0.5 ); float relK = ( relT == 3 || relT == 6 || relT == 7 ) ? 1.0 : 0.3;\n'+
         '  float relFw = relK * ( fwidth( vRelP.x * uRelF ) + fwidth( vRelP.y * uRelF ) + fwidth( vRelP.z * uRelF ) );\n'+
         '  float relVis = 1.0 - smoothstep( 0.35, 1.2, relFw );\n'+                              // motif plus fin que le pixel : il s'estompe
-        '  if( int( uRelT + 0.5 ) == 4 ) diffuseColor.rgb *= mix( 0.62, 1.08, mix( 0.5, relWood, max( relVis, 0.35 ) ) );')
+        '  if( int( uRelT + 0.5 ) == 4 ) diffuseColor.rgb *= mix( 0.62, 1.08, mix( 0.5, relWood, max( relVis, 0.35 ) ) );\n'+SURF_FS_COLOR)
       .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\n'+
-        '  roughnessFactor = clamp( roughnessFactor + uRelR * ( 1.0 - relVis ) + uRelR * 0.4 * relVis * ( relHv - 0.5 ), 0.03, 1.0 );')
+        '  roughnessFactor = clamp( roughnessFactor + uRelR * ( 1.0 - relVis ) + uRelR * 0.4 * relVis * ( relHv - 0.5 ), 0.03, 1.0 );\n'+SURF_FS_ROUGH)
+      .replace('#include <metalnessmap_fragment>','#include <metalnessmap_fragment>\n'+SURF_FS_METAL)
       .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\n'+
-        '  normal = relPerturb( - vViewPosition, normal, vec2( dFdx( relHv ), dFdy( relHv ) ) * uRelA * relVis, faceDirection );');
+        '  normal = relPerturb( - vViewPosition, normal, vec2( dFdx( relHv ), dFdy( relHv ) ) * uRelA * relVis, faceDirection );\n'+SURF_FS_NORMAL);
   };
-  mat.customProgramCacheKey=function(){return 'rdRelief';};
+  mat.customProgramCacheKey=function(){return 'rdRelief2';};
   mat.needsUpdate=true;
   return mat;
 }

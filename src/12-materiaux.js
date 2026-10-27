@@ -7,6 +7,8 @@
    Champs : k clé stable (enregistrée dans les fichiers — ne jamais renommer), nom, fam famille,
    col couleur de base, metal 0..1, rough 0..1, cc vernis 0..1, ccr rugosité du vernis,
    trans transmission 0..1 (verres), ior, rho densité g/cm³, sheen velours (élastomères), gv « Transparence »
+   — couches du RENDU (V0.13.0, 98-rendu-surface) : fl paillettes {t taille mm, i intensité 0..1}, sous le vernis ;
+   ir irisation (couche mince) {i 0..1, ior, th [épaisseur min, max] en nm} —
    de la vue CAO pour un verre (verre approché : setMatAlpha, 0,1 = clair … 1 = opaque). */
 const MAT_FAMS=['Aciers et fontes','Aluminium','Métaux non ferreux','Plastiques','Élastomères','Peintures','Bois','Verres et transparents'];
 const MAT_LIB=[
@@ -33,6 +35,7 @@ const MAT_LIB=[
   {k:'bronze',nom:'Bronze',fam:'Métaux non ferreux',col:0xb07a45,metal:1,rough:0.32,rho:8.8},
   {k:'cuivre',nom:'Cuivre',fam:'Métaux non ferreux',col:0xd9825b,metal:1,rough:0.22,rho:8.96},
   {k:'titane',nom:'Titane',fam:'Métaux non ferreux',col:0xa7a59f,metal:1,rough:0.34,rho:4.43},
+  {k:'titane-bleui',nom:'Titane bleui (irisé)',fam:'Métaux non ferreux',col:0x9a948c,metal:1,rough:0.22,rho:4.43,ir:{i:1,ior:2.2,th:[50,70]}},
   {k:'or',nom:'Or',fam:'Métaux non ferreux',col:0xf2c45a,metal:1,rough:0.14,rho:19.3},
   {k:'chrome',nom:'Chrome',fam:'Métaux non ferreux',col:0xe8eaec,metal:1,rough:0.03,rho:7.19},
   // plastiques
@@ -53,7 +56,9 @@ const MAT_LIB=[
   {k:'peint-mat',nom:'Peinture mate',fam:'Peintures',col:0x2e3a46,metal:0,rough:0.8},
   {k:'peint-satin',nom:'Peinture satinée',fam:'Peintures',col:0xd8d4cc,metal:0,rough:0.45,cc:0.3,ccr:0.35},
   {k:'peint-laque',nom:'Laque brillante',fam:'Peintures',col:0xc8102e,metal:0,rough:0.3,cc:1,ccr:0.03},
-  {k:'peint-metal',nom:'Peinture métallisée',fam:'Peintures',col:0x2c4f86,metal:0.6,rough:0.35,cc:1,ccr:0.03},
+  {k:'peint-metal',nom:'Peinture métallisée',fam:'Peintures',col:0x2c4f86,metal:0.6,rough:0.35,cc:1,ccr:0.03,fl:{t:0.06,i:0.45}},
+  {k:'peint-paillettes',nom:'Peinture pailletée (gros grains)',fam:'Peintures',col:0x5d6470,metal:0.7,rough:0.3,cc:1,ccr:0.02,fl:{t:0.18,i:0.9}},
+  {k:'peint-nacre',nom:'Peinture nacrée',fam:'Peintures',col:0xece8e0,metal:0.15,rough:0.32,cc:1,ccr:0.03,fl:{t:0.05,i:0.25},ir:{i:0.6,ior:1.7,th:[250,380]}},
   {k:'peint-epoxy',nom:'Poudre époxy texturée',fam:'Peintures',col:0x1f2a22,metal:0,rough:0.7,cc:0.1,ccr:0.6},
   // bois
   {k:'bois-hetre',nom:'Hêtre',fam:'Bois',col:0xd9b48a,metal:0,rough:0.65,rho:0.72},
