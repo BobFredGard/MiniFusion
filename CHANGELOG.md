@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**383 versions**, de `2026-09-28b` à `V0.11.28` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**384 versions**, de `2026-09-28b` à `V0.11.29` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5204,3 +5204,10 @@ Encoche taillée sous un bossage jusqu'au dessus du bloc (`Exemples/test suppr`)
 - **Cause** (`src/20-noyau-et-operations-solides.js`, `occReplayBody`) : le booléen de découpe scinde la face existante quand le fond (ou une paroi) de l'outil tombe pile dans son plan, et les découpes ne passent pas par `occUnify` — volontairement, pour garder les coutures d'esquisse (point de scission d'un profil, ancre de congé) et les scissions de face voulues.
 - **Correctif** : `occUnifyCutSeams` après chaque découpe — repère les coutures planes du résultat (arête entre deux faces de même normale et même cote, lues seulement dans la boîte de l'outil, `occPlaneSeams`) et ne retire QUE celles qui n'étaient couture ni du solide d'avant ni de l'outil (`occOnSeam`) ; toutes les autres arêtes sont gardées (`KeepShape`). Volume inchangé ; en cas de doute la découpe brute est rendue.
 - **Tests** : `test_decoupe_coplanaire` (nouveau : 1 encoche sous bossage → une face à Z=20, 13 faces, volume inchangé ; 2 couture d'outil gardée ; 3 couture du solide d'avant gardée ; 4 rejeu complet), `test_conge_fond_poche`, `test_suppression_face`, suite complète, `npm run ci` ; vérifié dans l'app sur « test suppr ».
+
+## V0.11.29 - Tests navigateur du Rendu : atelier et ambiances de la vue CAO
+Le Rendu (V0.10.0 → V0.11.2) n'était vérifié que dans la machine virtuelle de test (`test_materiaux`), sans WebGL : shaders, images et interface se validaient à la main.
+- **Ajout** : `tests/browser/rendu.spec.cjs`, deux parcours Playwright dans un vrai Chromium sur l'Axe, relevant toute exception, boîte de dialogue ou erreur WebGL / shader sur la console.
+  1. **Atelier** : ouverture par l'appareil photo de la barre de vue, affinage progressif, pièce présente dans l'image (fond dégradé comparé ligne par ligne), laiton choisi dans le panneau → l'image vire au jaune, `doc.rendu` le retient et la CAO garde son matériau et sa couleur ; export « Axe - rendu 1920x1080.png » (en-tête PNG 1920 × 1080) ; Échap ferme l'atelier.
+  2. **Vue CAO** : ambiance Studio par ⚙ → fond dégradé et reflets, la pièce garde sa couleur CAO malgré une apparence de rendu différente ; ombre portée (lampe d'ombre, la pièce la porte) ; matériau CAO « verre » → verre approché, sans ombre ; retour à « Actuel (CAO) » → matières d'origine et fond du thème retrouvés.
+- **Tests** : `npx playwright test -c tests/browser/playwright.config.cjs --project=chromium rendu.spec.cjs` (2/2), `npm run ci`.

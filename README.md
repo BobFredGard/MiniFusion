@@ -188,7 +188,7 @@ Le dépôt stocke les gros binaires (`occt/*.wasm`, `Exemples/*.miniFusion`, `Ex
 | `fusion_mvp.html` | **Livrable généré** par `node build.js`. On n'édite jamais son script à la main. |
 | `PostPro/` | Une fiche par machine (`siemens-630.js`, `siemens-1520.js`, `fagor-8065.js`). Nouvelle machine = copier une fiche, la modifier, `npm run build`. |
 | `tests/` | 169 suites Node lancées en parallèle (`node tests/run.cjs`), 54 rapides (`node tests/run-fast.cjs`), non-régression des parcours FAO (`npm run parcours`), tests de référence (`tests/oracle/`, [docs/oracle.md](docs/oracle.md)). |
-| `tests/browser/` | Playwright dans un vrai Chromium : parcours critiques (`npm run test:browser`) et carte graphique réelle (`npm run test:gpu`). |
+| `tests/browser/` | Playwright dans un vrai Chromium : parcours critiques et Rendu (`npm run test:browser`) et carte graphique réelle (`npm run test:gpu`). |
 | `tools/` | Lint du script concaténé (`npm run lint`), serveur MCP, **captures du README** (`npm run captures`). |
 | `occt/`, `threejs/` | Noyau OpenCascade WebAssembly, rendu three.js. |
 | `docs/` | Captures du README, analyses, tableaux de référence. |
