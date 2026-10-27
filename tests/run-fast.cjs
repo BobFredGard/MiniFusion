@@ -32,6 +32,7 @@ const SUITES = [
   'test_repeat_chanfrein_depouille',
   'test_repeat_apercu',
   'test_corps_cache_aretes',
+  'test_normales_exactes',
   'test_fao_outils',
   'test_fao_percage',
   'test_fao_32_fiches',

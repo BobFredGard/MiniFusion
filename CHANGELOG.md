@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**388 versions**, de `2026-09-28b` à `V0.11.33` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**389 versions**, de `2026-09-28b` à `V0.11.34` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5235,3 +5235,9 @@ La suite rapide affichait 63/64 depuis V0.11.30, l'échec de `test_anteriorite` 
 - **Cause** : en worktree, les `Exemples/*.miniFusion` restaient des pointeurs Git LFS (smudge non fait à la création) : `test_anteriorite` et `test_repeat_circ_tour` plantaient sur `Unexpected token 'v', "version ht"…`, ce qui masquait 2 vrais écarts de `test_anteriorite`. Depuis V0.11.30 (`repCanFeature` : une répétition se répète), « Rép » fait partie des sources proposées ; le test attendait encore 4 sources en fin de fil et « Bloc » seul avec le marqueur de temps.
 - **Correctif** (`tests/test_anteriorite.cjs`) : 5 sources en fin de fil (Bloc, Rép, Bossage, Congé, Plot), Bloc + Rép avec le marqueur sur Bossage. Application inchangée. En worktree, `git lfs checkout` matérialise les fichiers LFS depuis le stockage partagé, sans réseau.
 - **Tests** : `test_anteriorite` et `test_repeat_circ_tour` passent ; `npm run ci` (64/64).
+
+## V0.11.34 - Vue 3D : les faces ne sont plus « marbrées »
+Fonds plats, flancs et congés montraient des taches d'ombre (« Cavité Usinage » : fond de poche tacheté autour des bossages).
+- **Cause** (`src/20-noyau-et-operations-solides.js`, `smoothNormals`) : les normales d'affichage étaient lissées sur tous les triangles d'un sommet à moins de 35° — y compris ceux des faces VOISINES tangentes. Une face plane bordée de congés prenait leur inclinaison au bord, étalée sur la face par ses longs triangles. Sur « Cavité Usinage », 79 % des sommets étaient faussés de plus de 0,5° (8° au maximum).
+- **Correctif** : `occTriPos(shape,defl,ang,true)` rend aussi `nrm`, la normale EXACTE de la surface BRep en chaque nœud (`BRepGProp_Face.Normal` aux coordonnées UV du maillage, orientation de la face comprise, ~1,4 µs par nœud) ; `occTriNormals` l'applique et ne garde le lissage qu'en repli (pas d'UV, point singulier : pôle, sommet de cône). Utilisé par `occTessellate` (tous les corps affichés) et la mise en plan des composants (`src/48-composants-plan.js`). Parcours FAO inchangés : pas de bump de `CACHE_VER`.
+- **Tests** : `test_normales_exactes` (nouveau : boîte à congés R3 par le vrai noyau — faces planes 4,71° → 0°, aucune normale opposée à sa facette, sans `wantN` pas de `nrm`) ; `npm run ci`.

@@ -46,6 +46,7 @@ const SUITES = [
   "test_mirror_arc",
   "test_extrude_flip_draft",
   "test_apercu_diff",
+  "test_normales_exactes",
   "test_apercu_edition",
   "test_conge_reel",
   "test_conge_sur_conge",

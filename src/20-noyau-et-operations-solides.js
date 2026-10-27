@@ -1130,22 +1130,35 @@ function smoothNormals(pos,creaseDeg){
   }
   return out;
 }
+function occTriNormals(T){
+  // V0.11.34 : normales EXACTES de la surface BRep (T.nrm, occTriPos avec wantN) ; à défaut
+  // (pas d'UV, point singulier : pôle, sommet de cône), normale lissée de smoothNormals.
+  // Le lissage seul mélangeait les triangles des faces VOISINES tangentes : un fond plat
+  // prenait l'inclinaison de ses congés au bord, étalée par ses longs triangles = faces « marbrées ».
+  const out=smoothNormals(T.pos,35),n=T.nrm;
+  if(n)for(let i=0;i<out.length;i+=3)if(n[i]===n[i]){out[i]=n[i];out[i+1]=n[i+1];out[i+2]=n[i+2];}
+  return out;
+}
 function occTessellate(shape,defl,ang){
-  // BRep -> THREE.BufferGeometry (non indexé, normales plates). Validé par exécution.
-  const T=occTriPos(shape,defl,ang),pos=T.pos;
+  // BRep -> THREE.BufferGeometry (non indexé, normales exactes de la surface). Validé par exécution.
+  const T=occTriPos(shape,defl,ang,true),pos=T.pos;
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
-  try{g.setAttribute('normal',new THREE.Float32BufferAttribute(smoothNormals(pos,35),3));}
+  try{g.setAttribute('normal',new THREE.Float32BufferAttribute(occTriNormals(T),3));}
   catch(e){g.computeVertexNormals();}
   g.userData.occGroups=T.groups; // triangle -> face BRep (clic-face en mode exact)
   return g;
 }
-function occTriPos(shape,defl,ang){
+function occTriPos(shape,defl,ang,wantN){
   // BRep -> triangles bruts {pos:[x,y,z × 3 par triangle], groups:[{f,start,count}]} (V0.8.2 :
   // aussi pour les rayons des bulles de la mise en plan, qui n'ont pas besoin de THREE)
+  // wantN : + nrm (parallèle à pos) = normale sortante exacte au nœud (BRepGProp_Face, orientation
+  // de la face comprise), NaN si indisponible — voir occTriNormals.
   defl=defl||0.5;ang=ang||0.5;
   new occt.BRepMesh_IncrementalMesh_2(shape,defl,false,ang,false);
-  const pos=[],groups=[];
+  const pos=[],groups=[],nrm=wantN?[]:null;
+  let gP=null,gV=null;
+  if(wantN){try{gP=new occt.gp_Pnt_1();gV=new occt.gp_Vec_1();}catch(e){gP=gV=null;}}
   let faceOrd=0;
   const SH=occt.TopAbs_ShapeEnum.TopAbs_SHAPE;
   const ex=new occt.TopExp_Explorer_2(shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,SH);
@@ -1162,6 +1175,22 @@ function occTriPos(shape,defl,ang){
         let rev=false;
         try{rev=(f.Orientation_1()===occt.TopAbs_Orientation.TopAbs_REVERSED);}catch(e){rev=false;}
         const trsf=loc.IsIdentity()?null:loc.Transformation();
+        // normales exactes par nœud (une fois par nœud, pas par sommet de triangle) ;
+        // BRepGProp_Face lit la surface placée (Location de la face) : pas de trsf à appliquer
+        let nn=null;
+        if(nrm&&gV){
+          try{
+            if(t.HasUVNodes()){
+              const bf=new occt.BRepGProp_Face_2(f,false),nb=t.NbNodes();nn=new Float64Array(nb*3+3);
+              for(let k=1;k<=nb;k++){
+                const uv=t.UVNode(k);bf.Normal(uv.X(),uv.Y(),gP,gV);try{uv.delete();}catch(e){}
+                const x=gV.X(),y=gV.Y(),z=gV.Z(),l=Math.hypot(x,y,z);
+                if(l>1e-12){nn[k*3]=x/l;nn[k*3+1]=y/l;nn[k*3+2]=z/l;}else nn[k*3]=NaN;
+              }
+              try{bf.delete();}catch(e){}
+            }
+          }catch(e){nn=null;}
+        }
         for(let i=1;i<=nt;i++){
           const tr=t.Triangle(i);
           let idx=[tr.Value(1),tr.Value(2),tr.Value(3)];
@@ -1172,6 +1201,7 @@ function occTriPos(shape,defl,ang){
             if(trsf){const q=p.Transformed(trsf);x=q.X();y=q.Y();z=q.Z();}
             else{x=p.X();y=p.Y();z=p.Z();}
             pos.push(x,y,z);
+            if(nrm){if(nn)nrm.push(nn[k*3],nn[k*3+1],nn[k*3+2]);else nrm.push(NaN,NaN,NaN);}
           }
         }
       }
@@ -1183,7 +1213,8 @@ function occTriPos(shape,defl,ang){
     ex.Next();
   }
   try{ex.delete();}catch(e){}
-  return {pos,groups};
+  try{if(gP)gP.delete();if(gV)gV.delete();}catch(e){}
+  return nrm?{pos,groups,nrm}:{pos,groups};
 }
 let occLive=null; // solide BRep affiché conservé pour le picking d'arêtes exact
 function occDropLive(){if(occLive){try{occLive.shape.delete();}catch(e){}occLive=null;}}

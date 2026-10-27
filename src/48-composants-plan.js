@@ -58,9 +58,9 @@ function asmPlanBodies(){
         asmExactOfQuiet(c).forEach(b=>{
           const sh=asmPlaced(b.shape,I.F);
           let geo=null,tri=null;
-          try{const T=occTriPos(sh,0.3,0.4);tri=new Float32Array(T.pos); // V0.8.2 : triangles bruts (rayons des bulles)
+          try{const T=occTriPos(sh,0.3,0.4,true);tri=new Float32Array(T.pos); // V0.8.2 : triangles bruts (rayons des bulles)
             geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(T.pos,3));
-            try{geo.setAttribute('normal',new THREE.Float32BufferAttribute(smoothNormals(T.pos,35),3));}catch(e){geo.computeVertexNormals();}
+            try{geo.setAttribute('normal',new THREE.Float32BufferAttribute(occTriNormals(T),3));}catch(e){geo.computeVertexNormals();}
             geo.userData.occGroups=T.groups;}catch(e){geo=null;}
           if(!geo){try{sh.delete();}catch(e){}return;}
           const e=(c.doc.bodies||[]).find(x=>x.id===b.id)||{};
