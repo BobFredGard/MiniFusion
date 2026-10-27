@@ -31,6 +31,7 @@ function conDesc(sk,c){
   if(c.type==='oncircle')return 'Point '+pt(c.p)+' sur '+nm(c.ent);
   if(c.type==='online')return 'Point '+pt(c.p)+' sur '+nm(c.line);
   if(c.type==='midpoint')return c.p?('Milieu : '+pt(c.p)+' au centre de '+nm(c.line)):('Milieux égaux '+nm(c.a)+' / '+nm(c.b));
+  if(c.type==='offset')return N+' '+nm(c.c)+'→'+nm(c.d)+' = '+nm(c.a)+'→'+nm(c.b);
   if(c.a&&c.b)return N+' '+nm(c.a)+' / '+nm(c.b);
   return N;
 }
@@ -397,6 +398,8 @@ function skAudit(sk){
         if(CA&&CB)push(c.id,'coaxiaux',Math.hypot(CB.x-CA.x,CB.y-CA.y));}}
     if(c.type==='coincident'){const A=P[c.a],B=P[c.b];
       if(A&&B)push(c.id,'coïncident',Math.hypot(B.x-A.x,B.y-A.y));}
+    if(c.type==='offset'){const v1=skOffsetVal(sk,c.a,c.b,c.sa),v2=skOffsetVal(sk,c.c,c.d,c.sb);
+      if(v1!=null&&v2!=null)push(c.id,'décalage égal',Math.abs(v2-v1));}
     if(c.type==='oncircle'){const Pt=P[c.p],E=entById(sk,c.ent);
       if(Pt&&E&&(E.t==='circle'||E.t==='arc')){const CC=P[E.pc];
         if(CC)push(c.id,'point sur '+({circle:'cercle',arc:'arc'}[E.t]),Math.abs(Math.hypot(Pt.x-CC.x,Pt.y-CC.y)-E.r));}}

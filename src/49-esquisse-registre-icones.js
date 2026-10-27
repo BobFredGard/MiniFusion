@@ -79,7 +79,8 @@ const SK_CON={
   coincident:   {nom:'Coïncident',      ic:'coincident',   dof:2},
   midpoint:     {nom:'Milieu',          ic:'midpoint',     dof:2},
   online:       {nom:'Point sur ligne', ic:'online',       dof:1},
-  oncircle:     {nom:'Point sur courbe',ic:'oncircle',     dof:1}
+  oncircle:     {nom:'Point sur courbe',ic:'oncircle',     dof:1},
+  offset:       {nom:'Décalage égal',   ic:'offset',       dof:1}   // V0.11.25 : l'écart (c→d) suit l'écart (a→b) porté par la cote unique du décalage
 };
 const SK_DIM_IC={length:'length',distance:'distance',diameter:'diameter',radius:'radius',angle:'angle',gap:'gap',distline:'distline'};
 function skConDof(c){

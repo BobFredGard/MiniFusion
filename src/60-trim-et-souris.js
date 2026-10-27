@@ -694,14 +694,14 @@ svg.addEventListener('pointerdown',e=>{
     // Décalage : sélection (Ctrl/Cmd = lot) PUIS clic du côté — la distance suit le curseur.
     const sel=skSelectedEnts().filter(e=>(e.t==='line'||e.t==='circle'||e.t==='arc')&&!e.ref);
     if(!sel.length){skStatus('Décalage ⇄ : sélectionnez d’abord 1+ lignes/cercles/arcs (Ctrl/Cmd = lot).');return;}
-    if(!skOffArm){skOffArm=true;skStatus('Décalage ⇄ : cliquez le CÔTÉ (distance = curseur, cotes créées pour ajuster). Échap annule.');drawSketch2D();return;}
+    if(!skOffArm){skOffArm=true;skStatus('Décalage ⇄ : cliquez le CÔTÉ (distance = curseur, une cote par chaîne pour ajuster). Échap annule.');drawSketch2D();return;}
     const D=skOffsetDistToSel(sk,sel,{x:wx,y:wy});
     skOffArm=false;
     if(!(D>=4/skView.s)){skStatus('Décalage : cliquez plus loin du profil.');drawSketch2D();return;}
     skPushUndo();
     const r=skOffsetApply(sk,sel.map(e=>e.id),D,{x:wx,y:wy});
     if(!r.ok){skUndoStack.pop();skUndoBtn();skStatus(r.msg);drawSketch2D();return;}
-    skOffsetD=D;afterEdit();skStatus(r.msg+' — cotes modifiables (double-clic).');
+    skOffsetD=D;afterEdit();skStatus(r.msg+' — cote modifiable (double-clic).');
     return;
   }
 });
@@ -1230,7 +1230,7 @@ function showSkCtx(x,y){
       skPushUndo();
       const r=skOffsetApply(skEdit,offEl.map(e=>e.id),skOffsetD,null);
       if(!r.ok){skUndoStack.pop();skUndoBtn();skStatus(r.msg);return;}
-      afterEdit();skStatus(r.msg+' — cotes modifiables (double-clic).');});
+      afterEdit();skStatus(r.msg+' — cote modifiable (double-clic).');});
   }
   // 2 points
   if(pts.length===2){

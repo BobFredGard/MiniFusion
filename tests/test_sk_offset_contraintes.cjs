@@ -6,7 +6,8 @@
 //  - source avec contrainte `tangent` (ligne ↔ arc) → copie avec contrainte
 //    `tangent` (copie-ligne ↔ copie-arc).
 // Si la source n'est PAS contrainte (jointures par points fusionnés), le
-// comportement est inchangé : pids partagés, parallel+gap, radius — aucune
+// comportement est inchangé : pids partagés, parallel + UNE cote gap par chaîne et
+// contraintes « décalage égal » (V0.11.25) — aucune
 // contrainte copie↔copie ajoutée.
 // Avant : skOffsetChains ne relie QUE les pids identiques (une source contrainte
 // n'est jamais chaînée) et skOffsetApply ne crée ni `coincident` ni `tangent`.
@@ -54,7 +55,7 @@ const {loadApp}=require('./appvm.cjs');
     "  }",
     "  A(typeCount(sk,'coincident')===0,'a) contrainte coincident ajoutée à tort sur une source non contrainte');",
     "  A(typeCount(sk,'tangent')===0,'a) contrainte tangent ajoutée à tort sur une source non contrainte');",
-    "  A(typeCount(sk,'parallel')===2&&sk.dims.filter(d=>d.type==='gap').length===2,'a) parallel/gap historiques manquants');",
+    "  A(typeCount(sk,'parallel')===2&&sk.dims.filter(d=>d.type==='gap').length===1&&typeCount(sk,'offset')===1,'a) parallel ×2 + UNE cote gap + 1 contrainte offset (V0.11.25) attendus — gap='+sk.dims.filter(d=>d.type==='gap').length+' offset='+typeCount(sk,'offset'));",
     "}",
     // ─── (b) source contrainte `coincident` (2 points distincts) → copie coincidente ───
     "{",
@@ -77,7 +78,7 @@ const {loadApp}=require('./appvm.cjs');
     "  const res=residu(sk);",
     "  step('b) résidu après règlement : '+res.toExponential(2));",
     "  A(res<1e-6,'b) résidu '+res+' après règlement (joint de copie non résolu)');",
-    "  A(typeCount(sk,'parallel')===2&&sk.dims.filter(d=>d.type==='gap').length===2,'b) parallel/gap historiques manquants');",
+    "  A(typeCount(sk,'parallel')===2&&sk.dims.filter(d=>d.type==='gap').length===1&&typeCount(sk,'offset')===1,'b) parallel ×2 + UNE cote gap + 1 contrainte offset (V0.11.25) attendus — gap='+sk.dims.filter(d=>d.type==='gap').length+' offset='+typeCount(sk,'offset'));",
     "}",
     // ─── (c) source avec contrainte `tangent` (ligne ↔ arc) → copie tangente ───
     "{",

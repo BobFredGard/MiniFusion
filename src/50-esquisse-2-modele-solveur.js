@@ -102,6 +102,7 @@ function cleanupSk(sk){
     if(c.p&&!sk.points[c.p])return false;
     if(c.type==='coincident')return(!c.a||!!sk.points[c.a])&&(!c.b||!!sk.points[c.b]); // a/b = POINTS
     if(c.type==='symmetric')return(!!eids.has(c.a)&&!!eids.has(c.b)&&!!eids.has(c.mid));
+    if(c.type==='offset'&&!(eids.has(c.c)&&eids.has(c.d)))return false; // V0.11.25 : 2ᵉ paire (c/d) = entités
     if(c.a&&!eids.has(c.a))return false;
     if(c.b&&!eids.has(c.b))return false;
     if(c.mid&&!eids.has(c.mid))return false;
@@ -167,6 +168,18 @@ function skJointSame(sk,a,b){ // joint de décalage : skSameEnd OU superposition
   const pa=sk.points[a],pb=sk.points[b];
   return !!pa&&!!pb&&Math.hypot(pa.x-pb.x,pa.y-pb.y)<1e-6;
 }
+function skOffsetVal(sk,aId,bId,sgn){ // V0.11.25 : écart signé source→copie d'un décalage — lignes : distance ⟂ du p1 de la copie à la source (normale gauche) ; arcs/cercles : Δ rayon. null si non mesurable.
+  const P=sk.points,A=entById(sk,aId),B=entById(sk,bId);if(!A||!B)return null;
+  const s=sgn===-1?-1:1;
+  if(A.t==='line'&&B.t==='line'){
+    const A1=P[A.p1],A2=P[A.p2],B1=P[B.p1];if(!A1||!A2||!B1)return null;
+    if(skForRank&&skRankDegen&&skRankDegen.has(A.id))return null; // ligne réduite à un point : pas de direction (cf. vec)
+    const dx=A2.x-A1.x,dy=A2.y-A1.y,L=Math.hypot(dx,dy);if(!(L>1e-9))return null;
+    return s*((B1.x-A1.x)*(-dy/L)+(B1.y-A1.y)*(dx/L));
+  }
+  if((A.t==='circle'||A.t==='arc')&&(B.t==='circle'||B.t==='arc'))return s*(B.r-A.r);
+  return null;
+}
 function skPerpImplied(sk,aId,bId){
   // ⟂ IMPLICITE par ─/│ : une droite H et une droite V sont perpendiculaires par
   // construction — ajouter ⟂ ne sert à rien (que du sur-contrainte et du bruit).
@@ -188,6 +201,7 @@ function skConKey(c){
     case 'parallel': case 'perpendicular': case 'equal': case 'collinear': return c.type+'@'+pair(c.a,c.b);
     case 'symmetric': return 'symmetric@'+pair(c.a,c.b)+'|'+c.mid;
     case 'coaxial': return 'coaxial@'+pair(c.a,c.b);
+    case 'offset': return 'offset@'+c.a+'|'+c.b+'|'+c.c+'|'+c.d;
     case 'coincident': return 'coincident@'+pair(c.a,c.b);
     case 'midpoint': return c.p!=null?('midpoint@'+c.p+'|'+c.line):('midpoint@@'+pair(c.a,c.b));
     case 'online': return 'online@'+c.p+'|'+c.line;
@@ -730,6 +744,10 @@ function sklsCollect(sk,out,B){
       if(A&&B){if(A.t==='line'&&B.t==='line')push(nrm(A)-nrm(B));
         else if((A.t==='circle'||A.t==='arc')&&(B.t==='circle'||B.t==='arc'))push(A.r-B.r);}
     }
+    if(c.type==='offset'){ // V0.11.25 : décalage égal — l'écart (c→d) vaut l'écart (a→b), celui de la cote unique du décalage (rayons des copies : sans ancre, cf. plus bas)
+      const v1=skOffsetVal(sk,c.a,c.b,c.sa),v2=skOffsetVal(sk,c.c,c.d,c.sb);
+      if(v1!=null&&v2!=null)push(v2-v1);
+    }
     if(c.type==='tangent'){
       const L=entById(sk,c.line),E=entById(sk,c.ent);
       if(L&&E&&L.t==='line'&&(E.t==='circle'||E.t==='arc')){
@@ -801,6 +819,10 @@ function sklsCollect(sk,out,B){
     while(grow){grow=false;(sk.constraints||[]).forEach(c=>{if(c.type!=='equal')return;
       const a=dimR.has(c.a)||driven.has(c.a),b=dimR.has(c.b)||driven.has(c.b);
       if(a&&!b&&!driven.has(c.b)){driven.add(c.b);grow=true;}if(b&&!a&&!driven.has(c.a)){driven.add(c.a);grow=true;}});}
+    // V0.11.25 : rayon d'une copie de décalage « égal » (offset) : piloté par l'écart de la paire
+    // cotée (Δr = entraxe) — l'ancre le retenait à sa valeur, la cote unique ne convergeait qu'à
+    // 1e-5 près par règlement (compromis ancre / relation, résidu 1,2 mm après 20 itérations).
+    (sk.constraints||[]).forEach(c=>{if(c&&c.type==='offset'&&c.d)driven.add(c.d);});
     (B.rad||[]).forEach(eid=>{if(driven.has(eid))return;const e=entById(sk,eid);if(e&&B.r0&&B.r0[eid]!=null)push((e.r-B.r0[eid])*1.0);});
   }
   return out;

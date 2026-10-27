@@ -446,6 +446,7 @@ function skOffsetApply(sk,ids,D,S){
   if(!ents.length)return{ok:false,msg:'Décalage : sélectionnez lignes, cercles ou arcs.'};
   const chains=skOffsetChains(sk,ents.map(e=>e.id));
   const solo=ents.filter(e=>e.t==='circle');
+  const cons0=(sk.constraints||[]).slice(),srcToCopy=new Map(); // V0.11.25 : contraintes de la source à recopier entre les copies
   const copies=[];let jointsBad=0,doneChains=0;
   const near=(pts,C)=>{let b=null,bd=1e9;pts.forEach(p=>{const d=Math.hypot(p.x-C.x,p.y-C.y);if(d<bd){bd=d;b=p;}});return b;};
   const offLine=(A,B,s)=>{const n=skLeftNormal(A,B);return[{x:A.x+s*D*n.x,y:A.y+s*D*n.y},{x:B.x+s*D*n.x,y:B.y+s*D*n.y}];};
@@ -531,7 +532,7 @@ function skOffsetApply(sk,ids,D,S){
         newEnds[i]={pid:addPoint(sk,M.x,M.y)};
       }
     }
-    const copyIds=new Array(n);
+    const copyIds=new Array(n),pairs=[]; // pairs : {a:source, b:copie, line} dans l'ordre de la chaîne
     for(let i=0;i<n;i++){
       const o=order[i],off=offs[i];
       const prevJ=ch.closed?newEnds[(i-1+n)%n]:(i===0?null:newEnds[i-1]);
@@ -556,7 +557,7 @@ function skOffsetApply(sk,ids,D,S){
         const cp={id:nid,t:'line',p1,p2};if(o.e.construction)cp.construction=true;
         sk.entities.push(cp);
         if(!skHasParallel(sk,o.e.id,nid))sk.constraints.push({id:skNewEid(sk),type:'parallel',a:o.e.id,b:nid});
-        sk.dims.push({id:skNewEid(sk),type:'gap',a:o.e.id,b:nid,value:+D.toFixed(3),ox:0,oy:0});
+        pairs.push({a:o.e.id,b:nid,line:true});
         copies.push(nid);
         copyIds[i]=nid;
       }else{
@@ -575,13 +576,30 @@ function skOffsetApply(sk,ids,D,S){
           if(soloNext&&B0)put(pB,B0);
         }
         const nid=skNewEid(sk);
-        const cp={id:nid,t:'arc',pc:o.e.pc,pa:pA,pb:pB,r:off.r};if(o.e.construction)cp.construction=true;
+        // V0.11.25 : pA/pB suivent le sens de PARCOURS de la chaîne ; l'arc, lui, va
+        // toujours de pa à pb dans le sens trigonométrique. Chaîne parcourue à l'envers
+        // (fwd=false, cas normal d'une chaîne fermée) → sans échange, la copie faisait
+        // le TOUR COMPLÉMENTAIRE (270° au lieu de 90° : quasi-cercles aux coins arrondis).
+        const cp={id:nid,t:'arc',pc:o.e.pc,pa:o.fwd?pA:pB,pb:o.fwd?pB:pA,r:off.r};if(o.e.construction)cp.construction=true;
         sk.entities.push(cp);
-        sk.dims.push({id:skNewEid(sk),type:'radius',ent:nid,value:+off.r.toFixed(3),ox:0,oy:0});
+        pairs.push({a:o.e.id,b:nid,line:false});
         copies.push(nid);
         copyIds[i]=nid;
       }
     }
+    // V0.11.25 : UNE cote par chaîne (entraxe sur la 1ʳᵉ paire ligne→copie ; rayon si la chaîne
+    // n'a que des arcs). Les autres paires suivent par la contrainte « décalage égal » (offset) :
+    // leur écart source→copie vaut celui de la paire cotée. Avant : une cote gap par ligne et une
+    // cote radius par arc — autant de cotes à retoucher pour changer la distance du décalage.
+    const refP=pairs.find(p=>p.line)||pairs[0];
+    if(refP){
+      if(refP.line)sk.dims.push({id:skNewEid(sk),type:'gap',a:refP.a,b:refP.b,value:+D.toFixed(3),ox:0,oy:0});
+      else{const cpE=entById(sk,refP.b);sk.dims.push({id:skNewEid(sk),type:'radius',ent:refP.b,value:+(cpE?cpE.r:D).toFixed(3),ox:0,oy:0});}
+      const sgnOf=p=>{const v=skOffsetVal(sk,p.a,p.b,1);return(v!=null&&v<0)?-1:1;};
+      const sa=sgnOf(refP);
+      pairs.forEach(p=>{if(p!==refP)sk.constraints.push({id:skNewEid(sk),type:'offset',a:refP.a,b:refP.b,c:p.a,d:p.b,sa,sb:sgnOf(p)});});
+    }
+    pairs.forEach(p=>srcToCopy.set(p.a,p.b));
     // Tangence de la source recréée entre les copies : si ligne et arc étaient
     // contraints tangents, leurs copies le sont aussi (le décalage préserve la
     // tangence géométriquement — la contrainte la maintient ensuite).
@@ -597,6 +615,16 @@ function skOffsetApply(sk,ids,D,S){
     }
     doneChains++;
   }
+  // V0.11.25 : contraintes de la source recopiées ENTRE les copies (─ │ ∥ ⟂ colinéaire) — la copie
+  // garde sa forme sans cote supplémentaire (tangences et coïncidences : recréées plus haut).
+  if(srcToCopy.size)cons0.forEach(c=>{
+    if(!c)return;
+    if((c.type==='h'||c.type==='v')&&srcToCopy.has(c.line)){const l=srcToCopy.get(c.line);if(!hasHV(sk,l,c.type))sk.constraints.push({id:skNewEid(sk),type:c.type,line:l});}
+    else if((c.type==='parallel'||c.type==='perpendicular'||c.type==='collinear')&&srcToCopy.has(c.a)&&srcToCopy.has(c.b)){
+      const a=srcToCopy.get(c.a),b=srcToCopy.get(c.b);
+      if(!(sk.constraints||[]).some(k=>k.type===c.type&&((k.a===a&&k.b===b)||(k.a===b&&k.b===a))))sk.constraints.push({id:skNewEid(sk),type:c.type,a,b});
+    }
+  });
   for(const e of solo){
     const C=P[e.pc];if(!C)continue;
     let s=1;
