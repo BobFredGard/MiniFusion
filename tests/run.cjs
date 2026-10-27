@@ -35,6 +35,7 @@ const SUITES = [
   "test_deplacer_corps",
   "test_coque_sel",
   "test_suppression_face",
+  "test_decoupe_coplanaire",
   "test_coque_depouille",
   "test_repeat_mir2",
   "test_symetrie_conges",

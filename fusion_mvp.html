@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.11.27';
+const APP_VER='V0.11.28';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -2800,6 +2800,107 @@ function occUnifyKeepEdges(s){
     }
   }catch(e){}finally{occDispose(bin);}
   return out;
+}
+/* ---------- découpe : recoller les faces coplanaires qu'elle a créées (V0.11.28) ----------
+   Une découpe dont le fond (ou une paroi) tombe PILE dans le plan d'une face existante
+   scinde cette face : encoche taillée sous un bossage jusqu'au dessus du bloc → le fond de
+   l'encoche restait une « mini surface » à part du dessus (Exemples/test suppr). Les découpes
+   ne passent pas par occUnify, qui effacerait aussi les coutures d'esquisse (point de scission
+   d'un profil, cf. test_conge_fond_poche) et les scissions de face voulues. Ici on ne retire
+   QUE les coutures planes nées de la découpe : une arête entre deux faces du même plan qui
+   n'était couture ni du solide d'avant ni de l'outil. Toutes les autres arêtes sont gardées. */
+function occShapeBox(s,m){
+  const b=new occt.Bnd_Box_1();
+  try{occt.BRepBndLib.Add(s,b,true);const a=b.CornerMin(),z=b.CornerMax();
+    return [[a.X()-m,a.Y()-m,a.Z()-m],[z.X()+m,z.Y()+m,z.Z()+m]];}
+  finally{try{b.delete();}catch(e){}}
+}
+function occPlaneSeams(s,box,withPts){
+  // Coutures planes de s : arêtes communes à deux faces planes de même normale sortante et
+  // même cote. Seules les faces qui touchent `box` sont lues (la découpe est locale).
+  // Retourne {seams:[{e,mid,pts?}],bin} : l'appelant libère bin (les handles e y vivent).
+  const out=[],bin=[];
+  const E=occt.TopAbs_ShapeEnum,T=occt.GeomAbs_SurfaceType;
+  const hit=b=>{for(let i=0;i<3;i++){if(b.pos[i]+b.dim[i]/2<box[0][i]||b.pos[i]-b.dim[i]/2>box[1][i])return false;}return true;};
+  try{
+    const buckets=new Map();let fi=0;
+    const ex=occBinPush(bin,new occt.TopExp_Explorer_2(s,E.TopAbs_FACE,E.TopAbs_SHAPE));
+    for(;ex.More();ex.Next(),fi++){
+      const f=occBinPush(bin,occt.TopoDS.Face_1(ex.Current()));
+      if(box){const b=occFaceBox(f);if(!b||!hit(b))continue;}
+      const ad=occBinPush(bin,new occt.BRepAdaptor_Surface_2(f,true));
+      if(ad.GetType()!==T.GeomAbs_Plane)continue;
+      const n=occFaceOutNormal(f);if(!n)continue;
+      const L=occBinPush(bin,occBinPush(bin,ad.Plane()).Location());
+      const d=n[0]*L.X()+n[1]*L.Y()+n[2]*L.Z();
+      const ee=occBinPush(bin,new occt.TopExp_Explorer_2(f,E.TopAbs_EDGE,E.TopAbs_SHAPE));
+      for(;ee.More();ee.Next()){
+        const e=occBinPush(bin,occt.TopoDS.Edge_1(ee.Current()));
+        const c=occBinPush(bin,new occt.BRepAdaptor_Curve_2(e));
+        const u0=c.FirstParameter(),u1=c.LastParameter();
+        const m=occBinPush(bin,c.Value((u0+u1)/2));
+        const rec={e,fi,n,d,mid:[m.X(),m.Y(),m.Z()]};
+        const k=rec.mid.map(v=>v.toFixed(3)).join(',');
+        const bk=buckets.get(k);
+        if(!bk){buckets.set(k,[rec]);continue;}
+        const twin=bk.find(o=>o.fi!==fi&&o.e.IsSame(e));
+        if(twin&&twin.n[0]*n[0]+twin.n[1]*n[1]+twin.n[2]*n[2]>1-1e-9&&Math.abs(twin.d-d)<1e-6&&!out.includes(twin)){
+          if(withPts){
+            // 2N+1 points : les impairs mesurent la flèche des cordes (couture courbe)
+            twin.pts=[];const N=32;
+            for(let i=0;i<=2*N;i++){const p=occBinPush(bin,c.Value(u0+(u1-u0)*i/(2*N)));twin.pts.push([p.X(),p.Y(),p.Z()]);}
+          }
+          out.push(twin);
+        }
+        bk.push(rec);
+      }
+    }
+  }catch(e){}
+  return{seams:out,bin};
+}
+function occOnSeam(p,pts){
+  // p est-il sur la polyligne pts (cordes paires, tolérance = flèche mesurée + 1e-4 mm) ?
+  for(let i=0;i+2<pts.length;i+=2){
+    const a=pts[i],b=pts[i+2],h=pts[i+1];
+    const ab=[b[0]-a[0],b[1]-a[1],b[2]-a[2]],l2=ab[0]*ab[0]+ab[1]*ab[1]+ab[2]*ab[2];
+    const dSeg=q=>{let t=l2>0?((q[0]-a[0])*ab[0]+(q[1]-a[1])*ab[1]+(q[2]-a[2])*ab[2])/l2:0;t=Math.max(0,Math.min(1,t));
+      return Math.hypot(q[0]-a[0]-ab[0]*t,q[1]-a[1]-ab[1]*t,q[2]-a[2]-ab[2]*t);};
+    if(dSeg(p)<=1e-4+1.5*dSeg(h))return true;
+  }
+  return false;
+}
+function occUnifyCutSeams(res,prev,tool){
+  // res = occCut(prev,tool). Rend res sans ses coutures planes parasites (res est supprimée
+  // si une forme neuve est rendue). Jamais d'exception : en cas de doute, res telle quelle.
+  if(!res||!prev||!tool||!occt.ShapeUpgrade_UnifySameDomain_2)return res;
+  const bin=[];let u=null;
+  try{
+    const box=occShapeBox(tool,1e-3);
+    const R=occPlaneSeams(res,box,false);bin.push(...R.bin);
+    if(!R.seams.length)return res;
+    const P=occPlaneSeams(prev,box,true),Q=occPlaneSeams(tool,null,true);
+    const refs=P.seams.concat(Q.seams).map(x=>x.pts);
+    occDispose(P.bin);occDispose(Q.bin);
+    const drop=R.seams.filter(r=>!refs.some(pts=>occOnSeam(r.mid,pts)));
+    if(!drop.length)return res;
+    u=new occt.ShapeUpgrade_UnifySameDomain_2(res,true,true,false);
+    const E=occt.TopAbs_ShapeEnum;
+    const ex=occBinPush(bin,new occt.TopExp_Explorer_2(res,E.TopAbs_EDGE,E.TopAbs_SHAPE));
+    for(;ex.More();ex.Next()){
+      const e=ex.Current();
+      if(!drop.some(r=>r.e.IsSame(e)))u.KeepShape(occBinPush(bin,occt.TopoDS.Edge_1(e)));
+    }
+    u.Build();
+    const r=u.Shape();
+    if(!r||r.IsNull()||r===res)return res;
+    try{res.delete();}catch(e){}
+    return r;
+  }catch(e){
+    return res;
+  }finally{
+    try{if(u)u.delete();}catch(e){}
+    occDispose(bin);
+  }
 }
 
 // ---------- Coque (évidage paroi mince) ----------
@@ -5602,7 +5703,7 @@ function occReplayBody(bid,list){
       const ckC=occCkGet(ckKey);
       const cpC=ckC?occShapeCopy(ckC):null;
       if(cpC){try{result.delete();}catch(e){}result=cpC;return;}
-      const c=occCut(result,shape);
+      const c=occUnifyCutSeams(occCut(result,shape),result,shape); // fond pile sur une face : pas de mini surface
       try{result.delete();}catch(e){}try{shape.delete();}catch(e){}
       result=c;
     }else{

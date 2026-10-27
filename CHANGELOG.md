@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**382 versions**, de `2026-09-28b` à `V0.11.27` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**383 versions**, de `2026-09-28b` à `V0.11.28` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5198,3 +5198,9 @@ Décalage d'un rectangle à coins arrondis (4 lignes + 4 arcs) : les arcs copié
 - **Esquisse — cause** (`src/60-trim-et-souris.js`) : un simple clic sur un point démarrait un glisser sans seuil ; depuis V0.11.24 le lâcher pose une contrainte d'accroche — un bout d'axe de construction déjà au milieu d'un côté (rectangle par le centre) recevait un « milieu » en double des symétries, et l'esquisse dérivait. **Correctif** : seuil de 4 px comme pour une entité, et aucune contrainte posée quand le point était déjà sur l'accroche au départ.
 - **Symétrie — cause** (`src/50-esquisse-5-panneau-audit.js`) : l'axe était toujours la DERNIÈRE ligne cliquée ; axe de construction cliqué en premier = une ligne du profil prise pour axe. **Correctif** : si une seule des 3 lignes est de construction, c'est l'axe, quel que soit l'ordre.
 - **Tests** : `test_cao_passe` (nouveau : zoom homothétique et butée, axe de symétrie cliqué en premier, nom et cible « jusqu'à la face ») ; vérifié dans Chromium (clic de face après rotation, changement de face d'un clic Tour 35 mm → Bloc 20 mm, Plot gardé ; pivot sur la face / centre du solide ; clic tremblé sur les points d'un rectangle par le centre sans contrainte ajoutée, glisser réel accroché au milieu) ; `npm run ci`.
+
+## V0.11.28 - Découpe : plus de « mini surface » quand le fond tombe sur une face existante
+Encoche taillée sous un bossage jusqu'au dessus du bloc (`Exemples/test suppr`) : le fond de l'encoche restait une face à part (6,1 × 6,5 mm) collée au dessus du bloc, sélectionnable seule.
+- **Cause** (`src/20-noyau-et-operations-solides.js`, `occReplayBody`) : le booléen de découpe scinde la face existante quand le fond (ou une paroi) de l'outil tombe pile dans son plan, et les découpes ne passent pas par `occUnify` — volontairement, pour garder les coutures d'esquisse (point de scission d'un profil, ancre de congé) et les scissions de face voulues.
+- **Correctif** : `occUnifyCutSeams` après chaque découpe — repère les coutures planes du résultat (arête entre deux faces de même normale et même cote, lues seulement dans la boîte de l'outil, `occPlaneSeams`) et ne retire QUE celles qui n'étaient couture ni du solide d'avant ni de l'outil (`occOnSeam`) ; toutes les autres arêtes sont gardées (`KeepShape`). Volume inchangé ; en cas de doute la découpe brute est rendue.
+- **Tests** : `test_decoupe_coplanaire` (nouveau : 1 encoche sous bossage → une face à Z=20, 13 faces, volume inchangé ; 2 couture d'outil gardée ; 3 couture du solide d'avant gardée ; 4 rejeu complet), `test_conge_fond_poche`, `test_suppression_face`, suite complète, `npm run ci` ; vérifié dans l'app sur « test suppr ».
