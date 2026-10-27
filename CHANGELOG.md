@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**374 versions**, de `2026-09-28b` à `V0.11.19` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**375 versions**, de `2026-09-28b` à `V0.11.20` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5135,3 +5135,10 @@ Point fait sur le GitHub de SolidCraft (`solid.chamfer`, `solid.draft`) : deux o
 - **Dépouille** (`src/86-draft-depouillage.js`, `src/40`, `occApplyDraft`) : angle signé (−90 ; 90, non nul), case « ⇄ Inverser le sens de démoulage » (`f.flip` : la valeur et son expression ƒx restent). Angle effectif positif = la pièce se resserre le long de la normale du plan neutre ; négatif = elle s'évase. Flèche jaune retournée avec le sens, nom « Dépouillage −5° », panneau qui dit le sens effectif, signature de rejeu (`draftAngleEff`).
 - **Répétitions** (retour : « il faudrait voir les répétitions avant de valider les premiers choix ») : la règle « vers le haut, sinon +X puis +Y » appliquée en coordonnées monde échangeait D1 et D2 sur une copie tournée de 180° ou symétrique (même volume enlevé, faces inversées). Chaque arête d'un chanfrein asymétrique mémorise la normale de sa première face (`fn`, posée à la création, gardée en édition) ; `repCloneFeature` la transforme comme les normales de faces et `occChamferFirstFace` choisit la face qui s'en rapproche le plus. Les arêtes de chaîne tangente héritent de celle de leur germe ; `fn` entre dans la signature de rejeu. La dépouille inversée se copie sans rien de plus : `flip` est recopié, le signe suit la normale transformée du plan neutre.
 - **Tests** : `test_chanfrein_modes` (nouveau, vrai noyau : volumes 23920 / 23760 / 23953,8, position des arêtes D1 / D2, inversion, arête seule, rejeu par le document, signatures), `test_draft_sens` (nouveau : ±5°, inversion, noms, signatures), `test_repeat_chanfrein_depouille` (nouveau : chanfrein 2 / 6 d'une arête verticale copié en linéaire, circulaire 90° / 180° / tour complet, symétries YZ et XZ — D1 reste sur l'image du flanc +X, largeurs 18 / 14 vérifiées ; dépouille inversée copiée, volumes exacts ; sans `fn`, le même test échoue sur 180° et les symétries), ajoutés à la suite rapide.
+
+## V0.11.20 - Répétition : aperçu rouge des copies dès le choix du plan
+« J'aimerais voir les répétitions en rouge sur cette 1ère étape pour voir si je ne me trompe pas de plan. »
+- **Aperçu** (`src/40-interface-arbre-props.js`, `repPreviewUpdate`) : dès l'entrée dans Répétition et à chaque changement de type, de quantité, de pas, d'axe, de plan (2ᵉ direction et 2ᵉ plan compris), la pièce entière — chaque corps montré — est recopiée en rouge translucide avec la matrice de chaque instance, sans calcul noyau (maillage partagé, une matrice par copie, 60 copies au plus). Les fonctions cochées subiront exactement ces transformations.
+- **Matrices** (`repPreviewXforms`, fonction pure) : linéaire et grille (`repLinCells`), circulaire (pas `repCircStep`), symétrie simple, symétrie double (image 1, image 2, image de l'image 1 ; plans identiques → une seule image), plans et axes par face / arête.
+- Retrait à la sortie du mode, à l'application et à chaque rafraîchissement du panneau.
+- **Tests** : `test_repeat_apercu` (nouveau, sans noyau : chaque matrice transforme des points exactement comme `repTransformPoint` — linéaire, grille, circulaire 360° / 90° / axe libre, symétrie YZ / par face / double / même plan), ajouté à la suite rapide.

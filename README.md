@@ -4,7 +4,7 @@
 
 ![Support de pédale déportée R1200RT, rendu de l'atelier RENDU](docs/captures/rendu-pedale.png)
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. S'il n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.11.19** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. S'il n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.11.20** (voir le [journal des modifications](CHANGELOG.md)).
 
 | | |
 |---|---|

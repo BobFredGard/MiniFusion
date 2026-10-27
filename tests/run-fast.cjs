@@ -28,6 +28,7 @@ const SUITES = [
   'test_chanfrein_modes',
   'test_draft_sens',
   'test_repeat_chanfrein_depouille',
+  'test_repeat_apercu',
   'test_corps_cache_aretes',
   'test_fao_outils',
   'test_fao_percage',

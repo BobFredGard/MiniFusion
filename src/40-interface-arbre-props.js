@@ -243,7 +243,71 @@ function enterRepMode(){
   renderTree();renderRepPanel();
   faceEl.textContent='Répétition : cochez les fonctions à répéter dans la liste ci-dessus, puis Appliquer. Astuce : la repetition est depliee dans l arbre et ses sources sont marquees ◀.';
 }
-function exitRepMode(){repMode=null;renderTree();renderProps();}
+function exitRepMode(){repPreviewRemove();repMode=null;renderTree();renderProps();}
+/* V0.11.20 : APERÇU ROUGE des copies dès le choix du plan / de l'axe (retour : « j'aimerais
+   voir les répétitions en rouge sur cette 1ère étape pour voir si je ne me trompe pas de
+   plan »). La PIÈCE ENTIÈRE (chaque corps montré) est recopiée avec la matrice de chaque
+   instance — la même transformation que subiront les fonctions cochées — sans aucun calcul
+   noyau : le maillage affiché est partagé, seule une matrice change par copie. */
+const REP_PREVIEW_MAX=60; // copies affichées au plus (une grille 20 × 20 n'a pas besoin de 400 fantômes)
+let repPrevGroup=null;
+function repPreviewXforms(cfg){
+  // Matrices 4×4 (ordre colonne, THREE.Matrix4.fromArray) des instances, même machinerie que
+  // repTransformPoint / repGenChildren : linéaire (grille comprise), circulaire, symétrie
+  // (double : image 1, image 2, image de l'image 1 ; plans identiques : image 1 seule).
+  // Fonction pure, testable sans THREE (test_repeat_apercu).
+  const c=cfg||repMode;if(!c)return [];
+  const t=c.mode||c.type,out=[];
+  const trans=o=>[1,0,0,0, 0,1,0,0, 0,0,1,0, o[0],o[1],o[2],1];
+  const lin3=(e0,e1,e2)=>[e0[0],e0[1],e0[2],0, e1[0],e1[1],e1[2],0, e2[0],e2[1],e2[2],0, 0,0,0,1];
+  const mirM=n=>{const u=repNorm(n);const col=k=>{const e=[0,0,0];e[k]=1;return repAdd(e,repScale(u,-2*u[k]));};return lin3(col(0),col(1),col(2));};
+  const mul=(A,B)=>{const R=new Array(16).fill(0);for(let i=0;i<4;i++)for(let j=0;j<4;j++){let s=0;for(let k=0;k<4;k++)s+=A[i+4*k]*B[k+4*j];R[i+4*j]=s;}return R;}; // A·B
+  if(t==='lin'){repLinCells(c).forEach(cell=>{if(out.length<REP_PREVIEW_MAX)out.push(trans(cell.off));});return out;}
+  if(t==='circ'){
+    const n=repMaxCopies(c.copies),ax=repAxisVec(c),st=repCircStep(c);
+    for(let i=1;i<=n&&out.length<REP_PREVIEW_MAX;i++){const e=[[1,0,0],[0,1,0],[0,0,1]].map(v=>repRot(v,ax,st*i));out.push(lin3(e[0],e[1],e[2]));}
+    return out;
+  }
+  const n1=repPlaneN(c),M1=mirM(n1);out.push(M1);
+  if(c.plane2){
+    const n2=c.planeN2?repNorm(c.planeN2):repPlaneN({plane:c.plane2});
+    if(Math.abs(repDot(n1,n2))<0.999){const M2=mirM(n2);out.push(M2);out.push(mul(M2,M1));}
+  }
+  return out;
+}
+function repPreviewRemove(){
+  if(!repPrevGroup)return;
+  try{
+    const mats=new Set();repPrevGroup.traverse(o=>{if(o.isMesh&&o.material)mats.add(o.material);});
+    mats.forEach(m=>{try{m.dispose();}catch(e){}});
+    scene.remove(repPrevGroup);
+  }catch(e){}
+  repPrevGroup=null; // la géométrie est celle des corps (partagée) : rien à libérer
+}
+function repPreviewUpdate(){
+  repPreviewRemove();
+  if(!repMode||typeof scene==='undefined'||!scene)return;
+  let ms=[];
+  try{ms=repPreviewXforms(repMode);}catch(e){ms=[];}
+  if(!ms.length)return;
+  const srcs=(bodies||[]).filter(b=>b&&b.kind==='body'&&!b.ghost&&!b.preview&&b.mesh&&b.mesh.geometry&&(typeof bodyShown!=='function'||bodyShown(b)));
+  if(!srcs.length)return;
+  try{
+    const g=new THREE.Group();g.name='repPreview';
+    const mat=new THREE.MeshStandardMaterial({color:0xff5a4e,transparent:true,opacity:0.42,depthWrite:false,side:THREE.DoubleSide,roughness:0.5,metalness:0.05});
+    srcs.forEach(b=>{
+      try{b.mesh.updateMatrixWorld(true);}catch(e){}
+      ms.forEach(a=>{
+        const m=new THREE.Mesh(b.mesh.geometry,mat);
+        m.matrixAutoUpdate=false;
+        m.matrix.fromArray(a);if(b.mesh.matrixWorld)m.matrix.multiply(b.mesh.matrixWorld);
+        m.raycast=()=>{};m.renderOrder=999;m.userData.bid='rep_preview';
+        g.add(m);
+      });
+    });
+    scene.add(g);repPrevGroup=g;
+  }catch(e){repPrevGroup=null;}
+}
 function repTypeName(m,f){if(m==='mir'&&f&&f.plane2)return 'Symétrie double';if(m==='lin'&&f&&f.lin2)return 'Linéaire 2 directions';return m==='mir'?'Symétrie':m==='circ'?'Circulaire':'Linéaire';}
 function repAxisVec(cfg){const c=cfg||repMode;const a=c&&c.axis;if(c&&c.dir)return repNorm(c.dir);if(a==='Y')return[0,1,0];if(a==='Z')return[0,0,1];return[1,0,0];}
 function repPlaneN(cfg){const c=cfg||repMode;if(c&&c.planeN)return repNorm(c.planeN);const p=c&&c.plane;if(p==='XY')return[0,0,1];if(p==='XZ')return[0,1,0];return[1,0,0];}
@@ -937,11 +1001,11 @@ function repUseSelectedFace2(){
 }
 function renderRepPanel(){
   const p=$('props');p.innerHTML='';if(!repMode)return;
-  const h=document.createElement('div');h.innerHTML='<b>🔁 Répétition</b><br><span class="note">Choisissez les fonctions à répéter ci-dessous (cases à cocher). Dans l\'arbre, un <b>Ctrl+clic</b> sert désormais à la multi-suppression.</span>';p.appendChild(h);
+  const h=document.createElement('div');h.innerHTML='<b>🔁 Répétition</b><br><span class="note">Choisissez les fonctions à répéter ci-dessous (cases à cocher). Dans l\'arbre, un <b>Ctrl+clic</b> sert désormais à la multi-suppression.<br>🔴 <b>Aperçu rouge</b> : la pièce entière recopiée comme le seront les fonctions cochées — pour contrôler le plan, l\'axe ou le pas avant de valider.</span>';p.appendChild(h);
   const row=document.createElement('div');row.className='row';
   const typ=document.createElement('select');[['lin','Linéaire'],['circ','Circulaire'],['mir','Symétrie']].forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];typ.appendChild(op);});typ.value=repMode.type;typ.onchange=()=>{repMode.type=typ.value;renderRepPanel();};row.appendChild(typ);
   // 2026-10-23 : QUANTITÉ, original compris (6 = l'original + 5 copies) ; stocké : copies = quantité − 1
-  const cnt=document.createElement('input');cnt.type='number';cnt.min='2';cnt.value=(+repMode.copies||1)+1;cnt.title='Quantité, original compris (6 = l’original + 5 copies)';cnt.onchange=()=>{repMode.copies=repMaxCopies((+cnt.value||2)-1);cnt.value=repMode.copies+1;};
+  const cnt=document.createElement('input');cnt.type='number';cnt.min='2';cnt.value=(+repMode.copies||1)+1;cnt.title='Quantité, original compris (6 = l’original + 5 copies)';cnt.onchange=()=>{repMode.copies=repMaxCopies((+cnt.value||2)-1);cnt.value=repMode.copies+1;repPreviewUpdate();};
   if(repMode.type==='mir'){cnt.disabled=true;cnt.value=2;}
   row.appendChild(cnt);p.appendChild(row);
   const ax=document.createElement('select');['X','Y','Z','Face'].forEach(v=>{const op=document.createElement('option');op.value=v;op.textContent=(repMode.type==='mir'?(v==='X'?'YZ':v==='Y'?'XZ':v==='Z'?'XY':v):(v==='Face'?'Face / arête':v));ax.appendChild(op);});
@@ -974,7 +1038,7 @@ function renderRepPanel(){
       bf2.onclick=()=>{repUseSelectedFace2();};p.appendChild(bf2);
     }
   }
-  if(repMode.type==='lin'){const l=document.createElement('label');l.textContent=' Distance (mm)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.dist;parFx(inp,repMode,'dist');inp.onchange=()=>{repMode.dist=parseFloat(String(inp.value).replace(',','.'))||0;};l.appendChild(inp);p.appendChild(l);
+  if(repMode.type==='lin'){const l=document.createElement('label');l.textContent=' Distance (mm)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.dist;parFx(inp,repMode,'dist');inp.onchange=()=>{repMode.dist=parseFloat(String(inp.value).replace(',','.'))||0;repPreviewUpdate();};l.appendChild(inp);p.appendChild(l);
     // 2ᵉ DIRECTION (grille) : axe, quantité (original compris), pas
     const r2=document.createElement('div');r2.className='row';
     const t2=document.createElement('input');t2.type='checkbox';t2.checked=!!repMode.lin2;t2.className='rep2Chk';
@@ -987,18 +1051,19 @@ function renderRepPanel(){
       const ax2=document.createElement('select');['X','Y','Z','Face'].forEach(v=>{const op=document.createElement('option');op.value=v;op.textContent=v==='Face'?'Face / arête':v;ax2.appendChild(op);});
       ax2.value=repMode.axis2||'Y';ax2.title='Axe de la 2ᵉ direction';ax2.onchange=()=>{repMode.axis2=ax2.value;delete repMode.dir2;renderRepPanel();};p.appendChild(ax2);
       const c2=document.createElement('input');c2.type='number';c2.min='2';c2.value=(+repMode.copies2||1)+1;c2.title='Quantité dans la 2ᵉ direction, original compris';
-      c2.onchange=()=>{repMode.copies2=repMaxCopies((+c2.value||2)-1);c2.value=repMode.copies2+1;};p.appendChild(c2);
+      c2.onchange=()=>{repMode.copies2=repMaxCopies((+c2.value||2)-1);c2.value=repMode.copies2+1;repPreviewUpdate();};p.appendChild(c2);
       const ld=document.createElement('label');ld.textContent=' Distance 2 (mm)';const i2=document.createElement('input');i2.type='text';i2.inputMode='decimal';i2.value=repMode.dist2;parFx(i2,repMode,'dist2');
-      i2.onchange=()=>{repMode.dist2=parseFloat(String(i2.value).replace(',','.'))||0;};ld.appendChild(i2);p.appendChild(ld);
+      i2.onchange=()=>{repMode.dist2=parseFloat(String(i2.value).replace(',','.'))||0;repPreviewUpdate();};ld.appendChild(i2);p.appendChild(ld);
       const bf2=document.createElement('button');bf2.textContent='🎯 Face / arête → 2ᵉ direction';bf2.title='Prend la direction de l’arête sélectionnée (axe d’un cercle) ou la normale de la face sélectionnée';bf2.onclick=()=>repUseSelectedFace2();p.appendChild(bf2);
     }
   }
-  if(repMode.type==='circ'){const l=document.createElement('label');l.textContent=' Angle total (°)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.angle;parFx(inp,repMode,'angle');inp.onchange=()=>{repMode.angle=parseFloat(String(inp.value).replace(',','.'))||360;};l.appendChild(inp);p.appendChild(l);}
+  if(repMode.type==='circ'){const l=document.createElement('label');l.textContent=' Angle total (°)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.angle;parFx(inp,repMode,'angle');inp.onchange=()=>{repMode.angle=parseFloat(String(inp.value).replace(',','.'))||360;repPreviewUpdate();};l.appendChild(inp);p.appendChild(l);}
   // ── FONCTIONS RÉPÉTABLES : la MÊME liste à cocher qu'à l'édition (voir
   // repSourceList). Aucun re-rendu ici : la case garde son état, seul l'arbre se
   // rafraîchit (le compteur se met à jour sur place, dans la liste).
   p.appendChild(repSourceList(repMode.feats,function(b){repMode.feats=b;},function(){renderTree();}));
   const r=document.createElement('div');r.className='row';r.style.marginTop='8px';const ok=document.createElement('button');ok.className='primary';ok.textContent='✔ Appliquer';ok.onclick=applyRepPattern;r.appendChild(ok);const q=document.createElement('button');q.textContent='Quitter';q.onclick=exitRepMode;r.appendChild(q);p.appendChild(r);
+  repPreviewUpdate(); // V0.11.20 : les copies en rouge dès l'entrée et à chaque changement de type / plan / axe
 }
 function renderProps(){
   if(typeof extNew!=='undefined'&&extNew)extNew=null; // une sélection annule le formulaire en cours
