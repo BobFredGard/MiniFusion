@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.11.30';
+const APP_VER='V0.11.31';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -6059,19 +6059,26 @@ function tlReplayCount(){ // nb de fonctions VISIBLES avant le marqueur (upto po
 function tlSetPtr(f){ // bloque le temps juste AVANT la fonction f (null = rejouer tout)
   tlMark=f&&doc.features.some(x=>x.id===f.id)?f.id:null;
 }
+let tlEditSaved; // marqueur posé par l'utilisateur avant le verrou d'édition (undefined = pas de verrou)
 function tlEditLock(f){
   // Verrouille l'arbre sur la fonction en cours d'édition : seules les opérations qui
   // la précèdent restent visibles et rejouées. À appeler à l'entrée de chaque session
   // d'édition (esquisse, congé, dépouille, coque), avant son rebuild.
   if(!f||!doc.features.some(x=>x.id===f.id))return false;
+  if(tlEditSaved===undefined)tlEditSaved=tlMark; // le marqueur de l'utilisateur sera rendu à la sortie
   if(tlMark!==f.id){tlSetPtr(f);markDirty();}
   return true;
 }
 function tlEditUnlock(){
   // Lève le verrou : la fonction modifiée ET celles qui suivent sont régénérées au
   // rebuild suivant. À appeler à TOUTE sortie de session (validation comme annulation).
-  if(tlMark==null)return false;
-  tlSetPtr(null);markDirty();
+  // Le marqueur posé par l'utilisateur est RESTAURÉ (il ne bouge jamais sans lui) ;
+  // sans verrou posé (esquisse libre, nouvelle esquisse), rien ne change.
+  if(tlEditSaved===undefined)return false;
+  const prev=tlEditSaved;tlEditSaved=undefined;
+  const m=prev!=null&&doc.features.some(x=>x.id===prev)?prev:null;
+  if(m===tlMark)return false;
+  tlMark=m;markDirty();
   return true;
 }
 function tlHostFeatureOfSketch(sk){
@@ -23001,7 +23008,7 @@ function enterExactFilletMode(editF,kind){
     occSkipFeat=editing.id;
     tlEditLock(editing); // arbre bloqué sur le congé : seules les opérations précédentes rejouées
     try{rebuild();}catch(e){}
-    if(!occLive||!occLive.shape){occSkipFeat=null;filModeX=null;if(tlMark===editing.id)tlSetPtr(null);faceEl.textContent=label+' : recalcul impossible.';return;}
+    if(!occLive||!occLive.shape){occSkipFeat=null;filModeX=null;tlEditUnlock();faceEl.textContent=label+' : recalcul impossible.';return;}
   }
   try{filEdgesReload();}
   catch(e){
@@ -25129,7 +25136,7 @@ function enterDraftMode(editF){
     occSkipFeat=editing.id;
     tlEditLock(editing); // arbre bloqué sur la dépouille : seules les opérations précédentes rejouées
     try{rebuild();}catch(e){}
-    if(!occLive||!occLive.shape){occSkipFeat=null;draftMode=null;if(tlMark===editing.id)tlSetPtr(null);faceEl.textContent='Dépouillage : recalcul impossible.';return;}
+    if(!occLive||!occLive.shape){occSkipFeat=null;draftMode=null;tlEditUnlock();faceEl.textContent='Dépouillage : recalcul impossible.';return;}
     draftMode._stats=draftMarkByPosition();
   }
   draftPaint();draftPreviewUpdate();renderDraftPanel();
@@ -25577,7 +25584,7 @@ function enterCoqueMode(editF){
     occSkipFeat=editing.id;
     tlEditLock(editing); // arbre bloqué sur la coque : seules les opérations précédentes rejouées
     try{rebuild();}catch(e){}
-    if(!occLive||!occLive.shape){occSkipFeat=null;coqueMode=null;if(tlMark===editing.id)tlSetPtr(null);faceEl.textContent='Coque : recalcul impossible.';return;}
+    if(!occLive||!occLive.shape){occSkipFeat=null;coqueMode=null;tlEditUnlock();faceEl.textContent='Coque : recalcul impossible.';return;}
     coqueMode._stats=coqueMarkByPosition();
   }
   coquePaint();coquePreviewUpdate();renderCoquePanel();

@@ -323,7 +323,7 @@ function enterDraftMode(editF){
     occSkipFeat=editing.id;
     tlEditLock(editing); // arbre bloqué sur la dépouille : seules les opérations précédentes rejouées
     try{rebuild();}catch(e){}
-    if(!occLive||!occLive.shape){occSkipFeat=null;draftMode=null;if(tlMark===editing.id)tlSetPtr(null);faceEl.textContent='Dépouillage : recalcul impossible.';return;}
+    if(!occLive||!occLive.shape){occSkipFeat=null;draftMode=null;tlEditUnlock();faceEl.textContent='Dépouillage : recalcul impossible.';return;}
     draftMode._stats=draftMarkByPosition();
   }
   draftPaint();draftPreviewUpdate();renderDraftPanel();

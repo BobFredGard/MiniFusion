@@ -217,7 +217,7 @@ function enterCoqueMode(editF){
     occSkipFeat=editing.id;
     tlEditLock(editing); // arbre bloqué sur la coque : seules les opérations précédentes rejouées
     try{rebuild();}catch(e){}
-    if(!occLive||!occLive.shape){occSkipFeat=null;coqueMode=null;if(tlMark===editing.id)tlSetPtr(null);faceEl.textContent='Coque : recalcul impossible.';return;}
+    if(!occLive||!occLive.shape){occSkipFeat=null;coqueMode=null;tlEditUnlock();faceEl.textContent='Coque : recalcul impossible.';return;}
     coqueMode._stats=coqueMarkByPosition();
   }
   coquePaint();coquePreviewUpdate();renderCoquePanel();

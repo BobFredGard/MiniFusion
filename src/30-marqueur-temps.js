@@ -16,19 +16,26 @@ function tlReplayCount(){ // nb de fonctions VISIBLES avant le marqueur (upto po
 function tlSetPtr(f){ // bloque le temps juste AVANT la fonction f (null = rejouer tout)
   tlMark=f&&doc.features.some(x=>x.id===f.id)?f.id:null;
 }
+let tlEditSaved; // marqueur posé par l'utilisateur avant le verrou d'édition (undefined = pas de verrou)
 function tlEditLock(f){
   // Verrouille l'arbre sur la fonction en cours d'édition : seules les opérations qui
   // la précèdent restent visibles et rejouées. À appeler à l'entrée de chaque session
   // d'édition (esquisse, congé, dépouille, coque), avant son rebuild.
   if(!f||!doc.features.some(x=>x.id===f.id))return false;
+  if(tlEditSaved===undefined)tlEditSaved=tlMark; // le marqueur de l'utilisateur sera rendu à la sortie
   if(tlMark!==f.id){tlSetPtr(f);markDirty();}
   return true;
 }
 function tlEditUnlock(){
   // Lève le verrou : la fonction modifiée ET celles qui suivent sont régénérées au
   // rebuild suivant. À appeler à TOUTE sortie de session (validation comme annulation).
-  if(tlMark==null)return false;
-  tlSetPtr(null);markDirty();
+  // Le marqueur posé par l'utilisateur est RESTAURÉ (il ne bouge jamais sans lui) ;
+  // sans verrou posé (esquisse libre, nouvelle esquisse), rien ne change.
+  if(tlEditSaved===undefined)return false;
+  const prev=tlEditSaved;tlEditSaved=undefined;
+  const m=prev!=null&&doc.features.some(x=>x.id===prev)?prev:null;
+  if(m===tlMark)return false;
+  tlMark=m;markDirty();
   return true;
 }
 function tlHostFeatureOfSketch(sk){

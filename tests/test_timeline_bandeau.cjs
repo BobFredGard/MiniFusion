@@ -82,6 +82,18 @@ const vm=require('vm');
     "att(ids()==='x1,rp,x2','instances repliées dans leur répétition (vu '+ids()+')');",
     "att(tlbMoveTo('rp',3)===true&&F()==='x1,x2,rp,k1,k2','bloc répétition glissé en fin, entier (vu '+F()+')');",
     "att(tlbMoveTo('k1',0)===false,'instance seule : non déplaçable');",
+    // --- marqueur posé par l'utilisateur : ni l'esquisse ni l'extrusion ne le déplacent
+    "doc.sketches=[{id:'t1',name:'EsqT1',plane:'XY',entities:[],points:{}}];",
+    "doc.features=[{id:'m1',type:'extrude',name:'M1',sketchId:'t1',body:'b1'},{id:'m2',type:'extrude',name:'M2',body:'b1'},{id:'m3',type:'extrude',name:'M3',body:'b1'}];",
+    "tlSetPtr(doc.features[1]);",
+    "doc.sketches.push({id:'t2',name:'EsqT2',plane:'XZ',entities:[],points:{}});",
+    "openSketch('t2');closeSketch(true);",
+    "att(tlMark==='m2','nouvelle esquisse fermée : marqueur toujours avant M2 (vu '+tlMark+')');",
+    "extDynNew('t2');extDyn=null;",
+    "att(tlMark==='m2'&&doc.features[1].sketchId==='t2','extrusion validée : insérée au marqueur, marqueur inchangé (vu '+tlMark+')');",
+    "openSketch('t1');att(tlMark==='m1','esquisse consommée : verrou avant sa fonction');closeSketch(false);",
+    "att(tlMark==='m2','sortie d esquisse consommée : marqueur de l utilisateur restauré (vu '+tlMark+')');",
+    "tlSetPtr(null);openSketch('t1');closeSketch(false);att(tlMark===null,'sans marqueur : sortie = tout rejoué');",
     "if(ATT.length){p('');p('ECHECS ('+ATT.length+') :');ATT.forEach(m=>p('  x '+m));}",
     "else p('TOUT EST CONFORME');",
     "return P.join(String.fromCharCode(10));"

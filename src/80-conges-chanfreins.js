@@ -80,7 +80,7 @@ function enterExactFilletMode(editF,kind){
     occSkipFeat=editing.id;
     tlEditLock(editing); // arbre bloqué sur le congé : seules les opérations précédentes rejouées
     try{rebuild();}catch(e){}
-    if(!occLive||!occLive.shape){occSkipFeat=null;filModeX=null;if(tlMark===editing.id)tlSetPtr(null);faceEl.textContent=label+' : recalcul impossible.';return;}
+    if(!occLive||!occLive.shape){occSkipFeat=null;filModeX=null;tlEditUnlock();faceEl.textContent=label+' : recalcul impossible.';return;}
   }
   try{filEdgesReload();}
   catch(e){

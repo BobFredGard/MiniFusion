@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**385 versions**, de `2026-09-28b` à `V0.11.30` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**386 versions**, de `2026-09-28b` à `V0.11.31` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5217,3 +5217,9 @@ Retours sur « test suppr » : l'aperçu rouge recopiait le corps entier au lieu
 - **Aperçu** (`src/40-interface-arbre-props.js`, `repPreviewSources` / `repFeatPreviewGeos`) : chaque fonction cochée est montrée seule — solide-outil d'une extrusion, découpe, révolution ou perçage (`occShapeOf*`, repli maillage `legacy*Geos`) ; faces du corps qui portent un congé, un chanfrein, une dépouille ou un déplacement de face ; boîte de la face mémorisée pour une suppression de face (ou une face introuvable). Géométrie calculée une fois par jeu de sources (clé = signatures) : changer pas, axe ou quantité ne refait que les matrices. Cocher / décocher une source rafraîchit l'aperçu.
 - **Répétition de répétition** : `repCanFeature` accepte une répétition (pas ses instances) ; `repExpandSources` la développe en son motif entier — ses sources (développées elles aussi) puis ses instances, dans l'ordre de la timeline, sans doublon si une fonction du motif est aussi cochée seule. `repGenChildren`, la signature de rejeu (`repSourceSig`) et `repSyncForFeature` / `repSyncForSketch` (en cascade) suivent le motif développé : modifier la répétition intérieure régénère celle qui la répète.
 - **Tests** : `test_repeat_imbrique` (nouveau : grille d'une ligne de perçages répétée, centres et volume exacts, cascade directe et au rejeu, symétrie d'une répétition sans doublon, relecture, aperçu = outils seuls) ; `test_arbre_selection` mis à jour (la répétition sélectionnée est proposée et pré-cochée) ; `npm run ci`.
+
+## V0.11.31 - Time line : le marqueur posé ne bouge plus en créant une esquisse puis une extrusion
+Temps bloqué dans la time line, nouvelle esquisse, sortie, extrusion validée : le marqueur repartait en fin de fil.
+- **Cause** (`src/50-esquisse-1-ouverture-references.js`, `closeSketch`) : la sortie d'esquisse appelait toujours `tlEditUnlock`, qui levait le marqueur (`tlSetPtr(null)`) — même pour une esquisse libre qui n'avait posé aucun verrou, et en effaçant celui de l'utilisateur pour une esquisse consommée.
+- **Correctif** (`src/30-marqueur-temps.js`) : `tlEditLock` mémorise le marqueur de l'utilisateur (`tlEditSaved`) avant de verrouiller sur la fonction éditée ; `tlEditUnlock` le RESTAURE (fin de fil s'il n'y en avait pas, ou si sa fonction a disparu) et ne fait rien sans verrou posé. Les échecs de recalcul des congés, dépouilles et coques rendent eux aussi le marqueur (`tlEditUnlock` au lieu de `tlSetPtr(null)`). L'extrusion s'insérait déjà au marqueur (`addFeature`).
+- **Tests** : `test_timeline_bandeau` (marqueur avant M2 → nouvelle esquisse ouverte / fermée → extrusion insérée au marqueur → marqueur inchangé ; esquisse consommée : verrou avant sa fonction puis marqueur restauré ; sans marqueur : tout rejoué) ; `npm run ci` (63/64, `test_anteriorite` KO connu en worktree).
