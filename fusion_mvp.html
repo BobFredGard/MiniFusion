@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.12.0';
+const APP_VER='V0.12.1';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -5130,8 +5130,24 @@ function occApplyXFillets(base,xfils){
   // reprise déjà calculée sur ce même solide (rejeu puis affichage) : le calcul exact, qui
   // échouerait encore, n'est pas retenté (~0,3 s par congé)
   let rN=occNurbsMemoGet(occNurbsMemoKey(js,chamfer,single,edges,cham));
+  // RÉSULTAT INVALIDE REFUSÉ (2026-10-27) : MakeFillet peut rendre « IsDone » un solide déchiré
+  // (Cavité Test, nervure dépouillée de 25°, congé R3 d'une arête : faces et contours invalides,
+  // −1 220 mm³, éclats triangulaires à l'écran). Contrôle LOCAL, faces dont la boîte touche la
+  // zone des arêtes (~10 ms ; le corps entier coûtait 30 à 80 ms par congé et par rejeu).
+  const zone=occFilletZone(jobs.map(j=>edges[j.bi]),Math.max.apply(null,js.map(j=>j.r)));
+  // Zone DÉJÀ invalide avant le congé (corps hérité d'une reprise NURBS sur le corps entier,
+  // Cavité Test à la longueur 70) : ce congé n'y est pour rien et n'est pas refusé.
+  let invalide=false,baseSaine=null;
+  const refuse=sh=>{
+    if(!sh||occFacesValides(sh,zone))return false;
+    if(baseSaine===null)baseSaine=occFacesValides(base,zone);
+    if(!baseSaine)return false;
+    invalide=true;try{sh.delete();}catch(e){}return true;
+  };
   let s=rN?null:occFilletRun(base,js,wA,chamfer,{single,cham});
+  if(refuse(s))s=null;
   if(!s&&!rN)rN=occFilletNurbs(base,js,chamfer,single,edges,cham);
+  if(rN&&refuse(rN.shape))rN=null;
   if(rN){
     s=rN.shape;
     // les refus « isolé impossible » de la voie analytique ne concernent plus le résultat
@@ -5153,18 +5169,48 @@ function occApplyXFillets(base,xfils){
       const w2=[];
       const cham2=cham?Object.assign({},cham,{d2:+(cham.d2*k).toFixed(2)}):null; // D2 réduit dans le même rapport
       const t=occFilletRun(occShapeCopy(base),js.map(j=>({src:j.src,r:r2,mid:j.mid.slice(),fn:j.fn||null})),w2,chamfer,{single,cham:cham2});
-      if(t){ok=r2;try{t.delete();}catch(e){}break;}
+      const bon=t&&(occFacesValides(t,zone)||baseSaine===false); // un rayon « vérifié » doit aussi donner un solide valide
+      try{if(t)t.delete();}catch(e){}
+      if(bon){ok=r2;break;}
     }
     const why=chamfer?'distance trop grande':'rayon trop grand';
-    warns.push(`${lab} ${dp}${xNum(rMax)} impossible sur ${js.length} arête(s)${dl} — ${why} ou faces déjà consommées par un autre congé ?`+(ok?` ESSAYEZ ${dp}${xNum(ok)} (vérifié)`:' — arête trop courte, aucun rayon testé ne passe'));
-    const conseil=ok?`${dp}${xNum(rMax)} impossible${dl} — essayez ${dp}${xNum(ok)} (vérifié)`
-      :`${dp}${xNum(rMax)} impossible${dl} — arête trop courte ou faces déjà consommées par un autre congé`;
+    const dechire=invalide?' : le noyau rend un solide déchiré (faces invalides), refusé':'';
+    warns.push(`${lab} ${dp}${xNum(rMax)} impossible sur ${js.length} arête(s)${dl}${dechire} — ${why} ou faces déjà consommées par un autre congé ?`+(ok?` ESSAYEZ ${dp}${xNum(ok)} (vérifié)`:' — arête trop courte, aucun rayon testé ne passe'));
+    const conseil=ok?`${dp}${xNum(rMax)} impossible${dl}${dechire} — essayez ${dp}${xNum(ok)} (vérifié)`
+      :`${dp}${xNum(rMax)} impossible${dl}${dechire} — arête trop courte ou faces déjà consommées par un autre congé`;
     xfils.forEach(xf=>{xf._err=conseil;});
     return{shape:base,warnings:warns};
   }
   xfils.forEach(xf=>{delete xf._err;}); // plus d'erreur : le rayon courant passe
   try{base.delete();}catch(e){}
   return{shape:s,warnings:warns};
+}
+function occFilletZone(eds,r){
+  // Boîte des arêtes d'un congé (points échantillonnés) gonflée de R + 1 mm → {lo, hi}
+  const lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9],m=(+r||0)+1;
+  (eds||[]).forEach(e=>((e&&e.pts&&e.pts.length)?e.pts:(e&&e.mid?[e.mid]:[])).forEach(q=>{
+    for(let k=0;k<3;k++){lo[k]=Math.min(lo[k],q[k]-m);hi[k]=Math.max(hi[k],q[k]+m);}}));
+  return{lo,hi};
+}
+function occFacesValides(sh,zone){
+  // Faces du solide dont la boîte touche la zone : chacune passe BRepCheck seule (contours,
+  // arêtes, sommets). Les grandes faces voisines modifiées par l'arrondi la touchent aussi.
+  // Doute (exception, zone vide) → valide : ce contrôle ne doit jamais refuser à tort.
+  if(!sh||!zone||!(zone.hi[0]>=zone.lo[0]))return true;
+  const bin=[];
+  try{
+    const ex=occBinPush(bin,new occt.TopExp_Explorer_2(sh,occt.TopAbs_ShapeEnum.TopAbs_FACE,occt.TopAbs_ShapeEnum.TopAbs_SHAPE));
+    for(;ex.More();ex.Next()){
+      const f=occBinPush(bin,occt.TopoDS.Face_1(ex.Current()));
+      const b=occBinPush(bin,new occt.Bnd_Box_1());occt.BRepBndLib.Add(f,b,false);
+      const a=occBinPush(bin,b.CornerMin()),z=occBinPush(bin,b.CornerMax());
+      const A=[a.X(),a.Y(),a.Z()],Z=[z.X(),z.Y(),z.Z()];
+      if(![0,1,2].every(k=>Z[k]>=zone.lo[k]&&A[k]<=zone.hi[k]))continue;
+      const C=occBinPush(bin,new occt.BRepCheck_Analyzer(f,true));
+      if(!C.IsValid_2())return false;
+    }
+    return true;
+  }catch(e){return true;}finally{occDispose(bin);}
 }
 function occFilletNurbs(base,js,chamfer,single,edges,cham){
   // REPRISE DE DERNIER RECOURS (2026-10-26) : le même arrondi sur des surfaces converties en
