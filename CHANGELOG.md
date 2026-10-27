@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**368 versions**, de `2026-09-28b` à `V0.11.13` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**369 versions**, de `2026-09-28b` à `V0.11.14` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5092,3 +5092,9 @@ Cavité Usinage (« pourquoi la 1ère passe il n'y a pas d'hélice ? Tu commence
 - **Doublons** : recoter une entité déjà cotée (même type, même orientation) sélectionne la cote existante au lieu d'en poser une 2ᵉ grise.
 - **H / V** (`skDimOrientAt`) : écart angulaire modulo 180° replié sur [0, 90°] — curseur pile à gauche ou sous la cote, 179,99° battait la verticale / l'horizontale face à l'alignée.
 - **Tests** : `test_esquisse_cotes_pose` (nouveau, souris simulée), suites d'esquisse, suite rapide 55/55.
+
+## V0.11.14 - Esquisse : contraintes en conflit qui écrasaient une ligne en un point
+« test esquisse » : 3 cotes en RÉFÉRENCE alors que l'esquisse gardait 7 DDL. La ligne e17 (horizontale) était ⟂ à la construction e20, rendue ensuite horizontale elle aussi : la résolution avait « réussi » en réduisant e17 à un point (longueur 1e-124).
+- **Refus** (`src/50-esquisse-2-modele-solveur.js`, `skSolveOrRevert` / `skRevertTo`) : une modification (contrainte, cote) dont la résolution réduit à un point une ligne qui ne l'était pas est annulée — « ⛔ Contrainte impossible (la ligne … serait réduite à un point — contraintes en conflit) », esquisse intacte.
+- **Rang** (`sklsCollect`, `skJacobian`) : les lignes déjà réduites à un point sont relevées une fois avant les différences finies (`skRankDegen`) ; leurs ∥ / ⟂ / colinéaire / entraxe / tangence sont écartés de l'analyse (dérivées ~4e6 qui faussaient tout le rang). Le fichier tel quel : rang 9, 7 DDL, les 3 cotes redeviennent pilotantes à l'ouverture (e17 reste à corriger : retirer la ⟂ e21).
+- **Tests** : `test_esquisse_cotes_pose` (cas E), suites d'esquisse, suite rapide 55/55.

@@ -637,6 +637,7 @@ function sklsSig(sk,B,m){ // signature de la structure : inconnues, lignes, cont
   return m+'|'+B.pts.join(',')+'|'+B.rad.join(',')+'|'+(sk.constraints||[]).map(c=>c&&c.id).join(',')+'|'+(sk.dims||[]).map(d=>d.id+(d.ref?'r':'')).join(',');
 }
 let skForRank=false; // analyse de rang seulement : équations implicites ajoutées (pied des congés)
+let skRankDegen=null; // analyse de rang : lignes réduites à un point (relevées une fois, avant les différences finies)
 function sklsCollect(sk,out,B){
   // résidu vectoriel complet : cotes + contraintes + structure des arcs + ancrage des rayons libres.
   const P=sk.points;
@@ -644,7 +645,10 @@ function sklsCollect(sk,out,B){
   const push=f=>{if(f!=null&&isFinite(f))out.push(f);};
   const fix=skFixed(sk);
   const nrm=(l)=>{const A=P[l.p1],B=P[l.p2];if(!A||!B)return 0;return Math.hypot(B.x-A.x,B.y-A.y);};
-  const vec=(l)=>{const A=P[l.p1],B=P[l.p2];if(!A||!B)return null;const L=Math.hypot(B.x-A.x,B.y-A.y)||1e-9;return{ux:(B.x-A.x)/L,uy:(B.y-A.y)/L,L};};
+  // V0.11.13 : en analyse de rang, une ligne réduite à un point n'a pas de direction — ses ∥ / ⟂ /
+  // colinéaire / entraxe sont écartés (dérivées ~1e6 qui faussaient tout le rang : 3 cotes passées
+  // en référence avec 7 DDL libres, « test esquisse »).
+  const vec=(l)=>{const A=P[l.p1],B=P[l.p2];if(!A||!B)return null;const L0=Math.hypot(B.x-A.x,B.y-A.y);if(skForRank&&skRankDegen&&skRankDegen.has(l.id))return null;const L=L0||1e-9;return{ux:(B.x-A.x)/L,uy:(B.y-A.y)/L,L};};
   // ── cotes ── (les cotes de référence ne pilotent rien)
   (sk.dims||[]).forEach(d=>{
     if(d.ref)return;
@@ -729,7 +733,7 @@ function sklsCollect(sk,out,B){
     if(c.type==='tangent'){
       const L=entById(sk,c.line),E=entById(sk,c.ent);
       if(L&&E&&L.t==='line'&&(E.t==='circle'||E.t==='arc')){
-        const A=P[L.p1],B=P[L.p2],CC=P[E.pc];if(A&&B&&CC){
+        const A=P[L.p1],B=P[L.p2],CC=P[E.pc];if(A&&B&&CC&&!(skForRank&&skRankDegen&&skRankDegen.has(L.id))){
           const dx=B.x-A.x,dy=B.y-A.y,len=Math.hypot(dx,dy)||1e-9;
           const ux=dx/len,uy=dy/len;
           const d=(CC.x-A.x)*(-uy)+(CC.y-A.y)*(ux);
@@ -1001,9 +1005,18 @@ function skSolveOrRevert(sk,label){
   // solution, souvent déformée ou retournée). Une esquisse déjà en défaut n'est pas bloquée.
   const before=skUndoStack[skUndoStack.length-1];
   solveSketch(sk);
-  if(sk!==skEdit||!before||skResid(sk)<=SK_OK_RES)return true;
+  if(sk!==skEdit||!before)return true;
+  // V0.11.13 : une ligne RÉDUITE À UN POINT par la résolution = contraintes en conflit « résolues »
+  // en écrasant la ligne (─ sur une ligne ⟂ à une autre ─ : « test esquisse », e17) → refusé.
+  const bP=before.points||{},crushed=(sk.entities||[]).find(e=>{if(e.t!=='line')return false;
+    const A=sk.points[e.p1],B=sk.points[e.p2],A0=bP[e.p1],B0=bP[e.p2];
+    return A&&B&&A0&&B0&&Math.hypot(B.x-A.x,B.y-A.y)<1e-4&&Math.hypot(B0.x-A0.x,B0.y-A0.y)>1e-3;});
+  if(crushed)return skRevertTo(sk,before,label,'la ligne '+crushed.id+' serait réduite à un point — contraintes en conflit');
+  if(skResid(sk)<=SK_OK_RES)return true;
   if(skResid({points:before.points,entities:before.entities,constraints:before.constraints,dims:before.dims})>SK_OK_RES)return true;
-  const why=skWorstViol(sk);
+  return skRevertTo(sk,before,label,skWorstViol(sk));
+}
+function skRevertTo(sk,before,label,why){
   // restauration SANS nouvelle résolution (skRestore résout) : coordonnées exactement celles d'avant
   skUndoStack.pop();
   skEdit.points=before.points;skEdit.entities=before.entities;skEdit.constraints=before.constraints;skEdit.dims=before.dims;

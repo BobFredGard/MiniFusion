@@ -11,7 +11,11 @@
 //  B. distance coin↔coin posée en horizontale (= largeur déjà cotée) : RÉFÉRENCE, DDL inchangé ;
 //     curseur pile à gauche → verticale 40 pilotante (l’écart 179,99° comptait comme 179,99° et non 0,01°) ;
 //  C. 1re cote sur une arête fixe (projection) puis clic sur le coin (10,10) : distance 10 pilotante ;
-//  D. cote R d'un congé : le coude suit le curseur ; recoter le même congé ne crée pas de doublon.
+//  D. cote R d'un congé : le coude suit le curseur ; recoter le même congé ne crée pas de doublon ;
+//  E. « test esquisse » : ─ posée sur une ligne ⟂ à une ligne ─ — la résolution écrasait la 1re
+//     ligne en un point (e17), et ce point sans direction faussait le rang (3 cotes en référence,
+//     7 DDL libres). La contrainte est refusée, esquisse intacte ; sur le fichier tel quel, les
+//     3 cotes peuvent piloter.
 // Harnais : DOM/THREE stubbé, sans OCCT.
 const vm=require('vm');
 const {loadApp}=require('./appvm.cjs');
@@ -59,10 +63,21 @@ function inVm(){
     A(sk.dims.filter(d=>d.type==='radius').length===nR&&skSel&&skSel.kind==='dim','D. même congé recoté : pas de doublon, la cote R existante est sélectionnée');
     pmove(X+15,Y-5);
   }
+  // E
+  {const sk={id:'s2',name:'S',plane:'XY',origin:[0,0,0],axU:[1,0,0],axV:[0,1,0],axN:[0,0,1],points:{a:{x:-75,y:20},b:{x:-55,y:20},c:{x:-55,y:-10}},
+    entities:[{id:'l1',t:'line',p1:'a',p2:'b'},{id:'l2',t:'line',p1:'b',p2:'c'}],constraints:[{id:'k1',type:'h',line:'l1'},{id:'k2',type:'perpendicular',a:'l2',b:'l1'}],dims:[],seq:20,visible:true};
+    doc.sketches=[sk];doc.features=[];openSketch('s2');skTool='select';
+    const len=id=>{const l=entById(skEdit,id),P=skEdit.points;return Math.hypot(P[l.p2].x-P[l.p1].x,P[l.p2].y-P[l.p1].y);};
+    skSel={kind:'ent',id:'l2'};skSelX=[];applyCon('h');
+    A(!skEdit.constraints.some(c=>c.type==='h'&&c.line==='l2')&&len('l1')>19.9&&len('l2')>29.9&&/réduite à un point/.test(skMsg),'E. ─ sur une ligne ⟂ à une ligne ─ : refusée, aucune ligne écrasée ('+skMsg+')');
+    if(__TE){const s3=JSON.parse(JSON.stringify(__TE));ensureSketchBasis(s3);skDofCache={key:null};
+      A(skDofInfo(s3).dof===7&&s3.dims.every(d=>skDimCanDrive(s3,d)),'E. fichier « test esquisse » : 7 DDL, les 3 cotes peuvent piloter (le point e17 ne fausse plus le rang)');}
+  }
   closeSketch(false);
   return out;
 }
 const {ctx}=loadApp();
+try{ctx.__TE=JSON.parse(require('fs').readFileSync(require('path').join(__dirname,'..','Exemples','test esquisse.miniFusion'),'utf8')).doc.sketches[0];}catch(e){ctx.__TE=null;}
 const out=vm.runInContext('('+inVm.toString()+')()',ctx,{filename:'test_esquisse_cotes_pose.js'});
 console.log('=== Esquisse : statut des cotes en pose, placement R / Ø ===');
 out.log.forEach(m=>console.log('  ✓ '+m));

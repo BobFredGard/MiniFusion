@@ -441,6 +441,7 @@ function skJacobian(sk,skipDim){
   if(skipDim)sk.dims=(sk.dims||[]).filter(d=>d!==skipDim);
   const f0=[],fp=[],fm=[];
   skForRank=true;
+  skRankDegen=new Set((sk.entities||[]).filter(e=>{if(e.t!=='line')return false;const A=sk.points[e.p1],Bp=sk.points[e.p2];return A&&Bp&&Math.hypot(Bp.x-A.x,Bp.y-A.y)<1e-6;}).map(e=>e.id));
   try{
     sklsApply(sk,B,x);sklsCollect(sk,f0,B);
     const m=f0.length,J=[];for(let r=0;r<m;r++)J.push(new Float64Array(n));
@@ -453,7 +454,7 @@ function skJacobian(sk,skipDim){
     }
     sklsApply(sk,B,x);
     return{B,J,m,n};
-  }finally{sk.dims=dims0;skForRank=false;}
+  }finally{sk.dims=dims0;skForRank=false;skRankDegen=null;}
 }
 function skRref(J,m,n){
   // Échelonnement réduit (pivot partiel) : rang + colonnes pivots + matrice réduite.
