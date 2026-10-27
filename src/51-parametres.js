@@ -27,7 +27,12 @@ function parEval(src,lookup){
     sp();const c=s[i];
     if(c==='('){i++;const v=expr();sp();if(s[i]!==')')err('« ) » manquante');i++;return v;}
     const mN=/^(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?/.exec(s.slice(i));
-    if(mN){i+=mN[0].length;return parseFloat(mN[0]);}
+    if(mN){i+=mN[0].length;let v=parseFloat(mN[0]);
+      // V0.11.23 : unité collée au nombre (« 2 cm + 3 », « 1 in », « 1.5 rad ») — mm, cm, m, in / ", ° / deg, rad.
+      // Avant : seul « mm » en fin d'expression était toléré (« 5 mm + 3 » refusé).
+      const mU=/^\s*(mm|cm|m|in|"|°|deg|rad)(?![A-Za-z0-9_])/.exec(s.slice(i));
+      if(mU){i+=mU[0].length;const u=mU[1];v*=u==='cm'?10:u==='m'?1000:(u==='in'||u==='"')?25.4:u==='rad'?180/Math.PI:1;}
+      return v;}
     const mI=/^[A-Za-z_][A-Za-z0-9_]*/.exec(s.slice(i));
     if(mI){
       const nm=mI[0];i+=nm.length;sp();
@@ -249,7 +254,7 @@ function parDimCommit(sk,d,txt){
   // Applique une saisie « [nom =] valeur|expression » à la cote d. Retour {ok,nv}|{ok:false,msg}.
   const s=String(txt==null?'':txt).trim();
   const mm=/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(s);
-  const name=mm?mm[1]:null,expr=(mm?mm[2]:s).trim();
+  const name=mm?mm[1]:null,expr=(mm?mm[2]:s).trim().replace(/^[ØøR∠]\s*(?=[\d.,(-])/,''); // V0.11.23 : « Ø20 », « R5 », « ∠45 » acceptés tels qu'affichés
   if(!expr)return{ok:false,msg:'Valeur vide.'};
   if(name){const ok=parNameCheck(name,d,null);if(ok!==true)return{ok:false,msg:ok};}
   const old={name:d.name,expr:d.expr,value:d.value};

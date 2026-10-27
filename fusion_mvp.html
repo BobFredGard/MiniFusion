@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.11.22';
+const APP_VER='V0.11.23';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -13084,6 +13084,7 @@ function skBuildRefs(){
 }
 let skOpenAt=0; // instant d'ouverture : sketchCamTick recadre si la mise en page bouge juste après
 function openSketch(id){
+  try{if(skDimEditInp)skDimEditInp._cancel();}catch(e){} // V0.11.23 : saisie de cote d’une autre esquisse refermée
   try{docCheckpoint();}catch(e){} // filet d'annulation (45) : ce qui précède l'esquisse est relevé à part
   try{const sg=doc.sketches.find(x=>x.id===id);const ng=sg?skGapToAngle(sg):0;
     if(ng)setTimeout(()=>{try{skStatus(ng+' cote(s) d’entraxe entre lignes non parallèles changée(s) en cote(s) d’angle (valeur mesurée).');}catch(e){}},0);}catch(e){}
@@ -13099,7 +13100,8 @@ function openSketch(id){
       (s0.constraints||[]).forEach(c=>{if(c.type!=='symmetric'||c.inf)return;
         if([c.a,c.b].some(id=>{const l=entById(s0,id);return l&&(arcPts.has(l.p1)||arcPts.has(l.p2));}))c.inf=true;});}
     // 2026-10-16-001 : une référence qui n'est plus en trop (esquisse modifiée depuis) redevient pilotante
-    if(s0)(s0.dims||[]).forEach(d=>{if(d.ref&&skDimCanDrive(s0,d)){const mv=skDimMeasure(s0,d);if(mv!=null&&isFinite(mv))d.value=mv;delete d.ref;delete d.refV;}});
+    // V0.11.23 : refV=1 — référence VOULUE par l'utilisateur (menu « Rendre RÉFÉRENCE »), gardée telle quelle
+    if(s0)(s0.dims||[]).forEach(d=>{if(d.ref&&d.refV!==1&&skDimCanDrive(s0,d)){const mv=skDimMeasure(s0,d);if(mv!=null&&isFinite(mv))d.value=mv;delete d.ref;delete d.refV;}});
     if(s0&&(s0.dims||[]).some(d=>!d.chk))skCheckNewDims(s0);}catch(e){}
   skEdit=doc.sketches.find(s=>s.id===id);if(!skEdit)return;
   migrateSketch(skEdit);
@@ -13136,6 +13138,7 @@ function openSketch(id){
   try{docBaseSync();}catch(e){}
 }
 function closeSketch(save){
+  try{if(skDimEditInp)skDimEditInp._cancel();}catch(e){} // V0.11.23
   skOpenAt=0;
   $('sketchOverlay').classList.remove('open');
   try{$('skStatWrap').style.display='none';}catch(e){}
@@ -15353,10 +15356,31 @@ function rdDraw(sk,d,st){
   t.textContent=str;t.dataset.dim=d.id;
   t.addEventListener('dblclick',ev=>{ev.stopPropagation();editDim(d.id);});
 }
+function dimTextAt(S,d){ // V0.11.23 : texte d'une cote linéaire SUR sa ligne de cote, glissé de d.sl le long d'elle
+  // (l'entraxe glisse sa ligne entière par d.sl : texte au milieu). Avant : dimLabelPos ajoutait
+  // ox/oy mais dimTextOnLine dessinait au milieu — le texte glissé ne bougeait pas, sa zone de clic si.
+  const mx=(S.a.x+S.b.x)/2,my=(S.a.y+S.b.y)/2;
+  const s=(d&&d.type!=='gap'&&isFinite(d.sl))?d.sl:0;if(!s)return{x:mx,y:my};
+  const dx=S.b.x-S.a.x,dy=S.b.y-S.a.y,L=Math.hypot(dx,dy)||1e-9;
+  return{x:mx+dx/L*s,y:my+dy/L*s};
+}
+function skDimTextTo(sk,d,tx,ty){ // V0.11.23 : amène le texte d'une cote linéaire en (tx,ty) monde : écart d.w (⊥) + glissement d.sl (∥)
+  let S=dimSeg(sk,d);if(!S)return false;
+  if(d.type==='gap'){const s0=d.sl||0,bx=(S.a.x+S.b.x)/2-S.ux*s0,by=(S.a.y+S.b.y)/2-S.uy*s0;d.sl=(tx-bx)*S.ux+(ty-by)*S.uy;return true;}
+  const M={x:(S.A.x+S.B.x)/2,y:(S.A.y+S.B.y)/2};
+  d.w=(tx-M.x)*S.nx+(ty-M.y)*S.ny; // ligne de cote sous le texte
+  S=dimSeg(sk,d);if(!S)return true;
+  const dx=S.b.x-S.a.x,dy=S.b.y-S.a.y,L=Math.hypot(dx,dy);
+  if(L<1e-9){d.sl=0;return true;}
+  const mx=(S.a.x+S.b.x)/2,my=(S.a.y+S.b.y)/2;
+  d.sl=((tx-mx)*dx+(ty-my)*dy)/L; // texte glissé le long de la ligne
+  if(Math.abs(d.sl)<0.5/(skView.s||1))d.sl=0;
+  return true;
+}
 function dimLabelPos(sk,d){ // position monde de l'étiquette, décalage utilisateur inclus (déplaçable)
   const P=sk.points,ox=d.ox||0,oy=d.oy||0;
   if(d.type==='length'||d.type==='distance'||d.type==='gap'||d.type==='distline'){const S=dimSeg(sk,d);if(!S)return null;
-    return{x:(S.a.x+S.b.x)/2+ox,y:(S.a.y+S.b.y)/2+oy};}
+    return dimTextAt(S,d);}
   if(d.type==='diameter'||d.type==='radius'){const L=rdLayout(sk,d);if(!L)return null;const s=skView.s||1,tw=rdTextW(rdText(d));
     return{x:L.K.x+L.side*(5+tw/2)/s,y:L.K.y+8/s};} // centre du texte, posé sur le trait d'épaulement
   if(d.type==='angle'){const I=angleArcInfo(sk,d);if(!I)return null; // au milieu de l'arc, comme Fusion
@@ -15517,9 +15541,9 @@ function dimText(x,y,str,id){ // étiquette horizontale avec halo sombre (Ø/R)
   t.addEventListener('dblclick',ev=>{ev.stopPropagation();editDim(id);});
   return t;
 }
-function dimTextOnLine(S,str,id){ // étiquette posée SUR la ligne de cote, alignée avec elle (comme Fusion)
+function dimTextOnLine(S,str,id,d){ // étiquette posée SUR la ligne de cote, alignée avec elle (comme Fusion), glissée de d.sl
   str=parDecor(id,str); // nom= / ƒx
-  const mx=(S.a.x+S.b.x)/2,my=(S.a.y+S.b.y)/2;
+  const T=dimTextAt(S,d),mx=T.x,my=T.y;
   const[ax,ay]=w2s(S.a.x,S.a.y),[bx,by]=w2s(S.b.x,S.b.y);
   const[sx,sy]=w2s(mx,my);
   if(!isFinite(sx)||!isFinite(sy))return null;
@@ -15591,7 +15615,7 @@ function drawSkDims(sk){
       dimArrow(p1x,p1y,p1x-p2x,p1y-p2y,st); // pointe extérieure en a
       dimArrow(p2x,p2y,p2x-p1x,p2y-p1y,st); // pointe extérieure en b
       // valeur alignée sur la ligne, fond opaque
-      dimTextOnLine(S,vtxt(d.value),d.id);
+      dimTextOnLine(S,vtxt(d.value),d.id,d);
     }
     if(d.type==='diameter'||d.type==='radius'){rdDraw(sk,d,st);}
     if(d.type==='angle'){
@@ -15621,7 +15645,7 @@ function drawSkDims(sk){
       // flèches aux 2 lignes (pointes sur les lignes cotées, pointant vers l'extérieur)
       dimArrow(a,b,a-c,b-e2,st,8);
       dimArrow(c,e2,c-a,e2-b,st,8);
-      dimTextOnLine(S,vtxt(d.value),d.id);
+      dimTextOnLine(S,vtxt(d.value),d.id,d);
       // 7. lignes d'attache : prolongement des 2 lignes cotées jusqu'à la ligne de cote
       try{skDimExt(sk,entById(sk,d.a),S.a,st);skDimExt(sk,entById(sk,d.b),S.b,st);}catch(e){}
     }
@@ -15647,13 +15671,65 @@ function drawSkDims(sk){
       skEl('line',{x1:p2x,y1:p2y,x2:f2x,y2:f2y,stroke:st,'stroke-width':1.4,'pointer-events':'none'});
       dimArrow(px,py,px-fx,py-fy,st,8);  // pointe en P, vers l'extérieur
       dimArrow(fx,fy,fx-px,fy-py,st,8);  // pointe en F (sur la ligne), vers l'extérieur
-      dimTextOnLine({a:{x:S.a.x,y:S.a.y},b:{x:S.b.x,y:S.b.y}},vtxt(d.value),d.id);
+      dimTextOnLine({a:{x:S.a.x,y:S.a.y},b:{x:S.b.x,y:S.b.y}},vtxt(d.value),d.id,d);
       try{skDimExt(sk,entById(sk,d.line),S.b,st);}catch(e){} // 7. prolongement de la ligne jusqu'au pied
     }
   });
 }
-function editDim(id){
+let skDimEditInp=null; // V0.11.23 : champ de saisie d'une cote ouvert (clic sur une autre cote = insère son nom)
+function skDimAutoName(sk,d){ // V0.11.23 : nom automatique d1, d2… (comme les paramètres de modèle de SolidCraft / Fusion)
+  for(let n=1;n<10000;n++){const nm='d'+n;if(parNameCheck(nm,d,null)===true){d.name=nm;return nm;}}
+  return null;
+}
+function skDimEditPick(sk,px,py){ // V0.11.23 : pendant la saisie, un clic sur une autre cote insère son nom (nommée d<n> au besoin)
+  const inp=skDimEditInp;if(!inp||!sk)return false;
+  const dl=hitDimLabel(sk,px,py)||hitDimLine(sk,px,py);if(!dl)return false;
+  inp._hold=Date.now(); // le blur qui suit n'est pas une validation
+  const keep=()=>{try{inp.focus();}catch(e){}};
+  if(dl===inp._dimId){keep();return true;}
+  const d=dimById(sk,dl);if(!d){keep();return true;}
+  if(d.ref){skStatus('Une cote de RÉFÉRENCE mesure sans piloter : elle ne sert pas de paramètre.');keep();return true;}
+  let nm=d.name;
+  if(!nm){skPushUndo();nm=skDimAutoName(sk,d);if(!nm){keep();return true;}drawSketch2D();}
+  // valeur seule (« 10 », « 10 mm ») : remplacée par le nom ; expression en cours : insérée au curseur
+  const cur=String(inp.value),m=/^([A-Za-z_][A-Za-z0-9_]*\s*=\s*)?([\s\S]*)$/.exec(cur),pre=m&&m[1]?m[1]:'',rhs=m?m[2]:cur;
+  let s0=cur.length,s1=cur.length;
+  try{if(typeof inp.selectionStart==='number'){s0=inp.selectionStart;s1=inp.selectionEnd;}}catch(e){}
+  if(parIsNumber(rhs.replace(/\s*(mm|°|deg)\s*$/i,''))){inp.value=pre+nm;s0=s1=inp.value.length;}
+  else{s0=Math.max(s0,pre.length);s1=Math.max(s1,s0);inp.value=cur.slice(0,s0)+nm+cur.slice(s1);s0=s1=s0+nm.length;}
+  keep();try{inp.setSelectionRange(s0,s1);}catch(e){}
+  skStatus('« '+nm+' » inséré dans la saisie — Entrée pour valider.');
+  return true;
+}
+function skDimToggleRef(id){ // V0.11.23 : bascule pilotante ⇄ référence à la demande (SolidCraft sketch.toggle_driven)
+  const sk=skEdit;if(!sk)return false;const d=dimById(sk,id);if(!d)return false;
+  if(d.ref){
+    if(!skDimCanDrive(sk,d)){skStatus('Cote de RÉFÉRENCE (sur-contrainte) : elle mesure sans piloter — retirez une contrainte ou une cote pour la rendre pilotante.');return false;}
+    skPushUndo();const mv=skDimMeasure(sk,d);if(mv!=null&&isFinite(mv))d.value=mv;delete d.ref;delete d.refV;
+    afterEdit();skStatus('Cote PILOTANTE (= '+(+parDimUser(d).toFixed(2))+(d.type==='angle'?'°':' mm')+') — double-clic pour changer la valeur.');return true;
+  }
+  skPushUndo();d.ref=true;d.refV=1; // 1 = choix de l'utilisateur, gardé (2 = sur-contrainte, réévaluée)
+  delete d.expr;delete d.exprErr;
+  afterEdit();skStatus('Cote de RÉFÉRENCE : elle mesure sans piloter — clic droit pour la rendre pilotante.');return true;
+}
+function skDimResetText(id){ // V0.11.23 : texte et ligne de cote remis à leur place par défaut (sketch.dimension_text reset)
+  const sk=skEdit;if(!sk)return false;const d=dimById(sk,id);if(!d)return false;
+  skPushUndo();delete d.w;delete d.sl;d.ox=0;d.oy=0;drawSketch2D();skStatus('Texte de la cote replacé.');return true;
+}
+function skDimPlaceCommit(sk,dd){ // V0.11.23 : pose de la cote vivante — doublon (même type, même orientation) → cote existante sélectionnée
+  skDimPlace=null;
+  const dup=dd&&findDupDim({dims:(sk.dims||[]).filter(x=>x!==dd&&(x.orient||'a')===(dd.orient||'a'))},dd);
+  if(dup){sk.dims=sk.dims.filter(x=>x!==dd);afterEdit();reuseDim(dup);return null;}
+  return dd?dd.id:null;
+}
+function skDimPlaceType(key){ // V0.11.23 : taper la valeur (ou Entrée) pendant la pose = pose là où la cote est, saisie ouverte
+  const sk=skEdit;if(!sk||!skDimPlace)return;
+  const dd=dimById(sk,skDimPlace.id);const id=skDimPlaceCommit(sk,dd);if(!id)return;
+  skStatus('Cote posée.');drawSketch2D();renderSkPanel();editDim(id,key);
+}
+function editDim(id,init){
   const sk=skEdit;if(!sk)return;const d=(sk.dims||[]).find(x=>x.id===id);if(!d)return;
+  if(skDimEditInp){try{skDimEditInp._cancel();}catch(e){}} // une seule saisie à la fois
   if(d.ref){
     // cote de référence : redevient PILOTANTE si elle n'est plus en trop, sinon on explique
     if(!skDimCanDrive(sk,d)){skStatus('Cote de RÉFÉRENCE (sur-contrainte) : elle mesure sans piloter — retirez une contrainte ou une cote pour la rendre pilotante.');return;}
@@ -15673,18 +15749,25 @@ function editDim(id){
   const inp=document.createElement('input');
   inp.type='text'; inp.inputMode='decimal';
   inp.value=parDimInputText(d); // « nom = expression » si nommée / ƒx
-  inp.title='Valeur, expression (ƒx), ou « nom = valeur » pour nommer la cote';
+  inp.title='Valeur, expression (ƒx), « nom = valeur » pour nommer la cote — clic sur une autre cote : insère son nom';
   const wIn=Math.max(80,Math.min(260,8*inp.value.length+24));
   inp.style.cssText=`position:absolute;left:${r.left+sx-wIn/2}px;top:${r.top+sy-14}px;width:${wIn}px;height:22px;font-size:12px;text-align:center;border:1px solid #0a84ff;border-radius:6px;background:#1e1e1e;color:#fff;z-index:50`;
   document.body.appendChild(inp);
+  inp._dimId=id;skDimEditInp=inp;
+  // V0.11.23 : hors du filet global ƒx (parFxGlobal, en capture) — il remplaçait « d1/2 » par « 30 » AVANT le
+  // gestionnaire de la cote : l'expression était perdue, la cote ne suivait plus d1 (défaut depuis V0.11.15).
+  inp._parFx=1;
   // 2026-10-16-001 : focus DIFFÉRÉ + blur ignoré 300 ms — le clic qui pose la cote
   // retirait le focus et validait aussitôt la saisie (« pas éditable de suite »).
   const t0=Date.now();
-  try{inp.focus();inp.select();}catch(e){} setTimeout(()=>{try{inp.focus();inp.select();}catch(e){}},30);
+  // V0.11.23 : valeur tapée pendant la pose → elle remplace le texte, curseur à la fin
+  const sel=()=>{if(init!=null){try{inp.setSelectionRange(inp.value.length,inp.value.length);}catch(e){}}else inp.select();};
+  if(init!=null)inp.value=String(init);
+  try{inp.focus();sel();}catch(e){} setTimeout(()=>{try{inp.focus();sel();}catch(e){}},30);
   let done=false;
   const commit=(cancel)=>{
     if(done) return; done=true;
-    inp.remove();
+    inp.remove();if(skDimEditInp===inp)skDimEditInp=null;
     if(cancel) return;
     // 2026-10-16-002 : « nom = valeur », expression ƒx (noms d'autres cotes / paramètres)
     skPushUndo();
@@ -15700,7 +15783,9 @@ function editDim(id){
     if(e.key==='Escape'){ commit(true); }
     e.stopPropagation();
   });
-  inp.addEventListener('blur',()=>{ if(Date.now()-t0<300){ setTimeout(()=>{try{if(!done)inp.focus();}catch(e){}},0); return; } commit(false); });
+  inp._cancel=()=>commit(true);
+  inp.addEventListener('blur',()=>{ if(Date.now()-t0<300||Date.now()-(inp._hold||0)<400){ setTimeout(()=>{try{if(!done)inp.focus();}catch(e){}},0); return; } commit(false); });
+  return inp;
 }
 function skFirstDimScale(sk,d,nv){
   // 11. 1re cote PILOTANTE d'une esquisse dessinée « à la volée » (aucune autre cote,
@@ -15846,6 +15931,10 @@ function renderSkPanel(){
     const icD=document.createElement('span');icD.className='skli-ic';icD.innerHTML=skIcon(SK_DIM_IC[d.type]||'dim',15);r.appendChild(icD);
     const s=document.createElement('span');s.textContent=dimDesc(sk,d)+(badD?`  ⚠±${wD.viol.toFixed(2)}`:'');s.style.flex='1';r.appendChild(s);
     if(badD)r.style.borderColor='#ff453a';
+    // V0.11.23 : bascule pilotante ⇄ référence à la demande (aussi au clic droit sur la cote)
+    const tg=document.createElement('span');tg.className='x';tg.textContent=d.ref?'( )':'⇄';tg.title=d.ref?'Cote de référence (mesure seulement) — rendre pilotante':'Rendre cote de référence (mesure seulement)';
+    tg.onclick=ev=>{ev.stopPropagation();skDimToggleRef(d.id);};
+    r.appendChild(tg);
     const x=document.createElement('span');x.className='x';x.textContent='✕';x.title='Retirer';
     x.onclick=ev=>{ev.stopPropagation();skPushUndo();sk.dims=sk.dims.filter(k=>k.id!==d.id);if(skSel&&skSel.id===d.id)skSel=null;drawSketch2D();renderSkPanel();};
     r.appendChild(x);
@@ -16260,10 +16349,32 @@ function skCheckNewDims(sk){
     try{
       const a=skJacobian(sk,d),b=skJacobian(sk,null);
       const ra=a.n?skRref(a.J,a.m,a.n).rank:0,rb=b.n?skRref(b.J,b.m,b.n).rank:0;
-      if(rb<=ra){d.ref=true;d.refV=2;try{skStatus('Cote en sur-contrainte → cote de RÉFÉRENCE (grise, entre parenthèses) : elle mesure sans piloter.');}catch(e){}}
+      if(rb<=ra){d.ref=true;d.refV=2;
+        // V0.11.23 : la barre d'état NOMME ce qui détermine déjà la cote (SolidCraft : « already determined by … »)
+        let by=[];try{by=skDimDeterminedBy(sk,d,3);}catch(e){}
+        try{skStatus('Cote en sur-contrainte → cote de RÉFÉRENCE (grise, entre parenthèses) : elle mesure sans piloter'+(by.length?' — déjà déterminée par '+by.join(' · '):'')+'.');}catch(e){}}
       else if(wasRef){try{skStatus('Cote PILOTANTE — cliquez (vide) pour poser.');}catch(e){}}
     }catch(e){if(wasRef){d.ref=true;d.refV=2;}}
   });
+}
+function skDimDeterminedBy(sk,d,max){
+  // V0.11.23 : quelles cotes / contraintes déterminent déjà la cote d (redondante) ? Chacune est
+  // retirée à son tour : si la cote ajouterait alors du rang, c'est elle qui la rend redondante.
+  // Borné à `max` réponses et ~250 ms (deux analyses de rang par candidat).
+  const out=[],t0=Date.now(),lim=max||3;
+  const late=()=>Date.now()-t0>250;
+  for(const x of (sk.dims||[])){
+    if(x===d||x.ref||out.length>=lim||late())continue;
+    x.ref=true;let ok=false;try{ok=skDimCanDrive(sk,d);}finally{delete x.ref;}
+    if(ok)out.push(dimDesc(sk,x));
+  }
+  const cons=sk.constraints||[];
+  for(const c of cons){
+    if(out.length>=lim||late())break;
+    sk.constraints=cons.filter(k=>k!==c);let ok=false;try{ok=skDimCanDrive(sk,d);}finally{sk.constraints=cons;}
+    if(ok)out.push(conDesc(sk,c));
+  }
+  return out;
 }
 function skDimCanDrive(sk,d){
   // vrai si la cote d (de référence) ajouterait du RANG en devenant pilotante
@@ -16668,7 +16779,12 @@ function parEval(src,lookup){
     sp();const c=s[i];
     if(c==='('){i++;const v=expr();sp();if(s[i]!==')')err('« ) » manquante');i++;return v;}
     const mN=/^(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?/.exec(s.slice(i));
-    if(mN){i+=mN[0].length;return parseFloat(mN[0]);}
+    if(mN){i+=mN[0].length;let v=parseFloat(mN[0]);
+      // V0.11.23 : unité collée au nombre (« 2 cm + 3 », « 1 in », « 1.5 rad ») — mm, cm, m, in / ", ° / deg, rad.
+      // Avant : seul « mm » en fin d'expression était toléré (« 5 mm + 3 » refusé).
+      const mU=/^\s*(mm|cm|m|in|"|°|deg|rad)(?![A-Za-z0-9_])/.exec(s.slice(i));
+      if(mU){i+=mU[0].length;const u=mU[1];v*=u==='cm'?10:u==='m'?1000:(u==='in'||u==='"')?25.4:u==='rad'?180/Math.PI:1;}
+      return v;}
     const mI=/^[A-Za-z_][A-Za-z0-9_]*/.exec(s.slice(i));
     if(mI){
       const nm=mI[0];i+=nm.length;sp();
@@ -16890,7 +17006,7 @@ function parDimCommit(sk,d,txt){
   // Applique une saisie « [nom =] valeur|expression » à la cote d. Retour {ok,nv}|{ok:false,msg}.
   const s=String(txt==null?'':txt).trim();
   const mm=/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(s);
-  const name=mm?mm[1]:null,expr=(mm?mm[2]:s).trim();
+  const name=mm?mm[1]:null,expr=(mm?mm[2]:s).trim().replace(/^[ØøR∠]\s*(?=[\d.,(-])/,''); // V0.11.23 : « Ø20 », « R5 », « ∠45 » acceptés tels qu'affichés
   if(!expr)return{ok:false,msg:'Valeur vide.'};
   if(name){const ok=parNameCheck(name,d,null);if(ok!==true)return{ok:false,msg:ok};}
   const old={name:d.name,expr:d.expr,value:d.value};
@@ -17744,8 +17860,12 @@ svg.addEventListener('contextmenu',e=>{
   if(!skEdit) return;
   if(skTool==='isect'){skIsectCtx(e.clientX,e.clientY);return;} // menu de l'outil Intersection
   if(skDimPlace){skCancelDraft();skStatus('Placement annulé.');return;} // Échap/clic droit pendant la pose
+  // V0.11.23 : clic droit sur une cote → menu de la cote (valeur, référence ⇄ pilotante, replacer le texte)
+  {const r0=svg.getBoundingClientRect(),px=e.clientX-r0.left,py=e.clientY-r0.top;
+    const dl=hitDimLabel(skEdit,px,py)||hitDimLine(skEdit,px,py);
+    if(dl){skSel={kind:'dim',id:dl};skSelX=[];drawSketch2D();renderSkPanel();}}
   const selEnts=skSelectedEnts();
-  const hasSel = selEnts.length>0 || (skSel&&skSel.kind==='point') || skSelX.length>0;
+  const hasSel = selEnts.length>0 || (skSel&&(skSel.kind==='point'||skSel.kind==='dim')) || skSelX.length>0;
   if(hasSel){
     showSkCtx(e.clientX, e.clientY);
     return;
@@ -17922,11 +18042,14 @@ svg.addEventListener('pointerdown',e=>{
   if(e.button===2){skPan={px:e.clientX,py:e.clientY,cx:skView.cx,cy:skView.cy,moved:false};return;}
   if(e.button!==0||skPan)return;
   const[wx,wy]=evXY(e);
+  // V0.11.23 : saisie d'une cote ouverte — un clic sur une autre cote insère son nom (ƒx), sans fermer la saisie
+  if(skDimEditInp){const r0=svg.getBoundingClientRect();if(skDimEditPick(sk,e.clientX-r0.left,e.clientY-r0.top)){e.preventDefault();return;}}
   if(skTool==='select'){
     const r0=svg.getBoundingClientRect(); // une étiquette de cote se déplace au glisser, s'édite au double-clic
     const dl=hitDimLabel(sk,e.clientX-r0.left,e.clientY-r0.top);
     if(dl){const dd=dimById(sk,dl);skSel={kind:'dim',id:dl};skSelX=[];
-      skDimDrag={id:dl,mode:'label',px:e.clientX,py:e.clientY,ox0:(dd.ox||0),oy0:(dd.oy||0),pushed:false};
+      const tp=dimLabelPos(sk,dd)||{x:wx,y:wy}; // V0.11.23 : décalage de prise, le texte ne saute pas sous le curseur
+      skDimDrag={id:dl,mode:'label',px:e.clientX,py:e.clientY,ox0:(dd.ox||0),oy0:(dd.oy||0),gx:tp.x-wx,gy:tp.y-wy,pushed:false};
       renderSkPanel();return;}
     const pid=nearestPoint(sk,wx,wy,SK_PT);
     if(pid){
@@ -18016,12 +18139,18 @@ svg.addEventListener('pointerdown',e=>{
       const ent=nearestEntity(sk,wx,wy,SK_PICK);
       const pid=nearestPoint(sk,wx,wy,SK_PT);
       if(dd&&tryExtendDim(dd,ent,pid))return; // convertie → reste en mode pose
-      const id=skDimPlace.id;skDimPlace=null;
       // V0.11.13 : entité déjà cotée de la même façon → la cote existante est sélectionnée
       // (la 2ᵉ, redondante, restait grise à côté). La cote vivante a pu servir de 1er clic d'une conversion.
-      const dup=dd&&findDupDim({dims:(sk.dims||[]).filter(x=>x!==dd&&(x.orient||'a')===(dd.orient||'a'))},dd);
-      if(dup){sk.dims=sk.dims.filter(x=>x!==dd);afterEdit();reuseDim(dup);return;}
+      const id=skDimPlaceCommit(sk,dd);if(!id)return;
       skStatus('Cote posée.');drawSketch2D();renderSkPanel();editDim(id);return;
+    }
+    // V0.11.23 : avec l'outil Cote, un clic sur une cote existante (texte, ou ligne de cote hors géométrie)
+    // ouvre sa valeur — comme SolidCraft / Fusion, sans repasser par l'outil Sélection.
+    if(!skPendPt&&!skDimLine&&skDimRef===null){
+      const r0=svg.getBoundingClientRect(),px=e.clientX-r0.left,py=e.clientY-r0.top;
+      const onGeom=!!(nearestPoint(sk,wx,wy,SK_PT)||nearestEntity(sk,wx,wy,SK_PICK));
+      const dl=hitDimLabel(sk,px,py)||(onGeom?null:hitDimLine(sk,px,py));
+      if(dl){skSel={kind:'dim',id:dl};skSelX=[];renderSkPanel();editDim(dl);return;}
     }
     dimClick(wx,wy,skMulti(e));return;
   }
@@ -18178,6 +18307,15 @@ svg.addEventListener('pointermove',e=>{
         const V=angleVertex(sk,dd);
         if(V){const[mwx,mwy]=evXY(e);dd.w=Math.max(1,Math.hypot(mwx-V.x,mwy-V.y));}
       }
+      drawSketch2D();return;
+    }
+    // V0.11.23 : cote linéaire — glisser le TEXTE déplace la ligne de cote (écart d.w) et fait glisser le
+    // texte le long d'elle (d.sl), comme SolidCraft / Fusion. Avant : ox/oy déplaçaient la zone de clic
+    // mais le texte, dessiné au milieu de la ligne, ne bougeait pas.
+    if(dd.type==='length'||dd.type==='distance'||dd.type==='distline'||dd.type==='gap'){
+      const[mwx,mwy]=evXY(e);const tx=mwx+(skDimDrag.gx||0),ty=mwy+(skDimDrag.gy||0);
+      if(!skDimDrag.pushed&&Math.hypot(e.clientX-skDimDrag.px,e.clientY-skDimDrag.py)>1){skPushUndo();skDimDrag.pushed=true;}
+      skDimTextTo(sk,dd,tx,ty);
       drawSketch2D();return;
     }
     dd.ox=skDimDrag.ox0+(e.clientX-skDimDrag.px)/skView.s;
@@ -18444,6 +18582,7 @@ function skEscapeToSelect(){
   if(skEdit){drawSketch2D();renderSkPanel();}
 }
 function skCancelDraft(){
+  try{if(skDimEditInp)skDimEditInp._cancel();}catch(e){} // V0.11.23 : Échap referme aussi la saisie d’une cote
   skFilletSess=null;skCornerPick=null; // nouvelle passe de congés : nouvelle cote
   if(skDimPlace&&skEdit){skEdit.dims=skEdit.dims.filter(x=>x.id!==skDimPlace.id);skDimPlace=null;} // Échap pendant le placement annule la cote
   skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skPendPt=null;skCoinA=null;skCornA=null;skOffArm=null;skDraft=null;skDown=null;skDrag=null;skDragEnt=null;skDragWalk=null;skBox=null;skDyn=null;skDimDrag=null;skPan=null;skInfer=null;skMsg='';skDimLine=null;skDimRef=null;skProjectHover=null;if(typeof skIsectReset==='function')skIsectReset();hideSkCtx();if(skEdit){cleanupSk(skEdit);drawSketch2D();renderSkPanel();}}
@@ -18537,6 +18676,19 @@ function showSkCtx(x,y){
     b.onmouseenter=()=>b.style.background='rgba(255,255,255,.08)'; b.onmouseleave=()=>b.style.background='none'; b.onclick=()=>{ hideSkCtx(); fn(); }; m.appendChild(b);
   };
   let has=false;
+  // V0.11.23 : une COTE sélectionnée — son menu propre (comme SolidCraft : valeur, toggle_driven, dimension_text reset)
+  if(skSel&&skSel.kind==='dim'&&!selEnts.length&&!pts.length){
+    const d=dimById(skEdit,skSel.id);
+    if(d){
+      const id=d.id;
+      $('skCtxTitle').textContent='Cote '+dimDesc(skEdit,d)+(d.ref?' (référence)':'');
+      add('✎ Modifier la valeur',()=>editDim(id));
+      add(d.ref?'⇄ Rendre PILOTANTE':'⇄ Rendre RÉFÉRENCE (mesure seulement)',()=>skDimToggleRef(id));
+      add('↺ Replacer le texte',()=>skDimResetText(id));
+      add('🗑 Supprimer',()=>{skSel={kind:'dim',id};skSelX=[];deleteSkSel();});
+      m.style.left=x+'px'; m.style.top=y+'px'; m.style.display='block';return;
+    }
+  }
   // construction : bascule hors profil (touche X)
   const ctorEnts=selEnts.filter(e=>e.t==='line'||e.t==='circle'||e.t==='arc');
   if(ctorEnts.length){
@@ -18682,6 +18834,10 @@ window.addEventListener('keydown',e=>{
   }
   if(e.key==='Escape'){e.preventDefault();skEscapeToSelect();return;}
   if(e.key==='Enter'&&skEdit&&skTool==='isect'){e.preventDefault();skIsectValidate();return;}
+  // V0.11.23 : pendant la pose d'une cote, taper sa valeur (ou Entrée) la pose là où elle est et ouvre la saisie
+  if(skEdit&&skTool==='dim'&&skDimPlace&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&(e.key==='Enter'||/^[0-9.,-]$/.test(e.key))){
+    e.preventDefault();skDimPlaceType(e.key==='Enter'?null:(e.key===','?'.':e.key));return;
+  }
   // N : à plat dans le plan d'esquisse, face choisie DEVANT et droite (après une orbite)
   if((e.key==='n'||e.key==='N')&&skEdit&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&!e.shiftKey){e.preventDefault();skOrbFront();return;}
   // 2026-10-16-005 : raccourcis de contraintes (F1…F12) et H = centre de perçage

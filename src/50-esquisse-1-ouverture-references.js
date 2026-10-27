@@ -652,6 +652,7 @@ function skBuildRefs(){
 }
 let skOpenAt=0; // instant d'ouverture : sketchCamTick recadre si la mise en page bouge juste après
 function openSketch(id){
+  try{if(skDimEditInp)skDimEditInp._cancel();}catch(e){} // V0.11.23 : saisie de cote d’une autre esquisse refermée
   try{docCheckpoint();}catch(e){} // filet d'annulation (45) : ce qui précède l'esquisse est relevé à part
   try{const sg=doc.sketches.find(x=>x.id===id);const ng=sg?skGapToAngle(sg):0;
     if(ng)setTimeout(()=>{try{skStatus(ng+' cote(s) d’entraxe entre lignes non parallèles changée(s) en cote(s) d’angle (valeur mesurée).');}catch(e){}},0);}catch(e){}
@@ -667,7 +668,8 @@ function openSketch(id){
       (s0.constraints||[]).forEach(c=>{if(c.type!=='symmetric'||c.inf)return;
         if([c.a,c.b].some(id=>{const l=entById(s0,id);return l&&(arcPts.has(l.p1)||arcPts.has(l.p2));}))c.inf=true;});}
     // 2026-10-16-001 : une référence qui n'est plus en trop (esquisse modifiée depuis) redevient pilotante
-    if(s0)(s0.dims||[]).forEach(d=>{if(d.ref&&skDimCanDrive(s0,d)){const mv=skDimMeasure(s0,d);if(mv!=null&&isFinite(mv))d.value=mv;delete d.ref;delete d.refV;}});
+    // V0.11.23 : refV=1 — référence VOULUE par l'utilisateur (menu « Rendre RÉFÉRENCE »), gardée telle quelle
+    if(s0)(s0.dims||[]).forEach(d=>{if(d.ref&&d.refV!==1&&skDimCanDrive(s0,d)){const mv=skDimMeasure(s0,d);if(mv!=null&&isFinite(mv))d.value=mv;delete d.ref;delete d.refV;}});
     if(s0&&(s0.dims||[]).some(d=>!d.chk))skCheckNewDims(s0);}catch(e){}
   skEdit=doc.sketches.find(s=>s.id===id);if(!skEdit)return;
   migrateSketch(skEdit);
@@ -704,6 +706,7 @@ function openSketch(id){
   try{docBaseSync();}catch(e){}
 }
 function closeSketch(save){
+  try{if(skDimEditInp)skDimEditInp._cancel();}catch(e){} // V0.11.23
   skOpenAt=0;
   $('sketchOverlay').classList.remove('open');
   try{$('skStatWrap').style.display='none';}catch(e){}

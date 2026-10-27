@@ -120,6 +120,10 @@ function renderSkPanel(){
     const icD=document.createElement('span');icD.className='skli-ic';icD.innerHTML=skIcon(SK_DIM_IC[d.type]||'dim',15);r.appendChild(icD);
     const s=document.createElement('span');s.textContent=dimDesc(sk,d)+(badD?`  ⚠±${wD.viol.toFixed(2)}`:'');s.style.flex='1';r.appendChild(s);
     if(badD)r.style.borderColor='#ff453a';
+    // V0.11.23 : bascule pilotante ⇄ référence à la demande (aussi au clic droit sur la cote)
+    const tg=document.createElement('span');tg.className='x';tg.textContent=d.ref?'( )':'⇄';tg.title=d.ref?'Cote de référence (mesure seulement) — rendre pilotante':'Rendre cote de référence (mesure seulement)';
+    tg.onclick=ev=>{ev.stopPropagation();skDimToggleRef(d.id);};
+    r.appendChild(tg);
     const x=document.createElement('span');x.className='x';x.textContent='✕';x.title='Retirer';
     x.onclick=ev=>{ev.stopPropagation();skPushUndo();sk.dims=sk.dims.filter(k=>k.id!==d.id);if(skSel&&skSel.id===d.id)skSel=null;drawSketch2D();renderSkPanel();};
     r.appendChild(x);
@@ -534,10 +538,32 @@ function skCheckNewDims(sk){
     try{
       const a=skJacobian(sk,d),b=skJacobian(sk,null);
       const ra=a.n?skRref(a.J,a.m,a.n).rank:0,rb=b.n?skRref(b.J,b.m,b.n).rank:0;
-      if(rb<=ra){d.ref=true;d.refV=2;try{skStatus('Cote en sur-contrainte → cote de RÉFÉRENCE (grise, entre parenthèses) : elle mesure sans piloter.');}catch(e){}}
+      if(rb<=ra){d.ref=true;d.refV=2;
+        // V0.11.23 : la barre d'état NOMME ce qui détermine déjà la cote (SolidCraft : « already determined by … »)
+        let by=[];try{by=skDimDeterminedBy(sk,d,3);}catch(e){}
+        try{skStatus('Cote en sur-contrainte → cote de RÉFÉRENCE (grise, entre parenthèses) : elle mesure sans piloter'+(by.length?' — déjà déterminée par '+by.join(' · '):'')+'.');}catch(e){}}
       else if(wasRef){try{skStatus('Cote PILOTANTE — cliquez (vide) pour poser.');}catch(e){}}
     }catch(e){if(wasRef){d.ref=true;d.refV=2;}}
   });
+}
+function skDimDeterminedBy(sk,d,max){
+  // V0.11.23 : quelles cotes / contraintes déterminent déjà la cote d (redondante) ? Chacune est
+  // retirée à son tour : si la cote ajouterait alors du rang, c'est elle qui la rend redondante.
+  // Borné à `max` réponses et ~250 ms (deux analyses de rang par candidat).
+  const out=[],t0=Date.now(),lim=max||3;
+  const late=()=>Date.now()-t0>250;
+  for(const x of (sk.dims||[])){
+    if(x===d||x.ref||out.length>=lim||late())continue;
+    x.ref=true;let ok=false;try{ok=skDimCanDrive(sk,d);}finally{delete x.ref;}
+    if(ok)out.push(dimDesc(sk,x));
+  }
+  const cons=sk.constraints||[];
+  for(const c of cons){
+    if(out.length>=lim||late())break;
+    sk.constraints=cons.filter(k=>k!==c);let ok=false;try{ok=skDimCanDrive(sk,d);}finally{sk.constraints=cons;}
+    if(ok)out.push(conDesc(sk,c));
+  }
+  return out;
 }
 function skDimCanDrive(sk,d){
   // vrai si la cote d (de référence) ajouterait du RANG en devenant pilotante
