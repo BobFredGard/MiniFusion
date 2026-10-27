@@ -45,6 +45,7 @@ const SUITES = [
   'test_cote_points',
   'test_esquisse_cotes_pose',
   'test_esquisse_cotes_souples',
+  'test_esquisse_inference_glisser',
   'test_esquisse_arc_fixe_ddl',
   'test_construction_modele',
   'test_assemblage_modele',

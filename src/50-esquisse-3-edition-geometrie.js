@@ -18,6 +18,53 @@ function findSnap(sk,x,y,exclude){
   if(bc)return{kind:'point',pid:bc,x:sk.points[bc].x,y:sk.points[bc].y};
   return null;
 }
+function skDragSnapFind(sk,x,y,pid){
+  // V0.11.24 : accroche d'un POINT GLISSÉ (comme SolidCraft drag_snap) : autre point, milieu d'une ligne,
+  // puis SUR une ligne ou un cercle — jamais les entités qui portent le point lui-même (l'autre bout de
+  // sa ligne, son propre milieu). Le lâcher pose la contrainte correspondante (skDragRelease).
+  const own=new Set();(sk.entities||[]).forEach(e=>{if(skEntPids(e).indexOf(pid)>=0){own.add(e.id);skEntPids(e).forEach(p=>{if(p)own.add(p);});}});
+  let best=null,bd=SK_SNAP;
+  Object.keys(skPts(sk)).forEach(q=>{if(q===pid||own.has(q))return;const p=sk.points[q];const d=Math.hypot(p.x-x,p.y-y);if(d<bd){bd=d;best={kind:'point',pid:q,x:p.x,y:p.y};}});
+  if(best)return best;
+  bd=SK_SNAP;
+  (sk.entities||[]).forEach(e=>{if(e.t!=='line'||own.has(e.id))return;const A=sk.points[e.p1],B=sk.points[e.p2];if(!A||!B)return;
+    const mx=(A.x+B.x)/2,my=(A.y+B.y)/2,d=Math.hypot(mx-x,my-y);if(d<bd){bd=d;best={kind:'mid',line:e.id,x:mx,y:my};}});
+  if(best)return best;
+  bd=SK_SNAP*0.6;
+  (sk.entities||[]).forEach(e=>{
+    if(own.has(e.id))return;
+    if(e.t==='line'){const A=sk.points[e.p1],B=sk.points[e.p2];if(!A||!B)return;
+      const dx=B.x-A.x,dy=B.y-A.y,L2=dx*dx+dy*dy;if(L2<1e-12)return;
+      const t=((x-A.x)*dx+(y-A.y)*dy)/L2;if(t<=1e-3||t>=1-1e-3)return;
+      const fx=A.x+t*dx,fy=A.y+t*dy,d=Math.hypot(fx-x,fy-y);if(d<bd){bd=d;best={kind:'on',line:e.id,x:fx,y:fy};}}
+    else if(e.t==='circle'||e.t==='arc'){const C=sk.points[e.pc];if(!C||!(e.r>0))return;
+      const dc=Math.hypot(x-C.x,y-C.y);if(dc<1e-9)return;const d=Math.abs(dc-e.r);
+      if(d<bd){const ux=(x-C.x)/dc,uy=(y-C.y)/dc;const qx=C.x+ux*e.r,qy=C.y+uy*e.r;
+        if(e.t==='arc'){const an=arcAngles(sk,e);if(an&&!angInArc(Math.atan2(uy,ux),an.a1,an.a2))return;}
+        bd=d;best={kind:'oncircle',ent:e.id,x:qx,y:qy};}}
+  });
+  return best;
+}
+function skDragRelease(sk,pid,s){
+  // V0.11.24 : au lâcher d'un point glissé sur une accroche, la contrainte est posée (coïncident, milieu,
+  // sur la ligne, sur le cercle) — avant, deux points superposés restaient libres l'un de l'autre.
+  if(!s||!pid||!sk.points[pid])return null;
+  const has=f=>(sk.constraints||[]).some(f);
+  let c=null,msg='';
+  if(s.kind==='point'){if(!sk.points[s.pid]||skHasCoincident(sk,pid,s.pid))return null;c={id:skNewEid(sk),type:'coincident',a:pid,b:s.pid};msg='Points coïncidents ⌾ (lâcher sur un point).';}
+  else if(s.kind==='mid'){if(has(x=>x.type==='midpoint'&&x.p===pid&&x.line===s.line))return null;c={id:skNewEid(sk),type:'midpoint',p:pid,line:s.line};msg='Point au milieu ⊕ de la ligne (lâcher sur le milieu).';}
+  else if(s.kind==='on'){if(has(x=>x.type==='online'&&x.p===pid&&x.line===s.line))return null;c={id:skNewEid(sk),type:'online',p:pid,line:s.line};msg='Point sur la ligne (lâcher sur la ligne).';}
+  else if(s.kind==='oncircle'){if(has(x=>x.type==='oncircle'&&x.p===pid&&x.ent===s.ent))return null;c={id:skNewEid(sk),type:'oncircle',p:pid,ent:s.ent};msg='Point sur le cercle (lâcher sur le cercle).';}
+  if(!c)return null;
+  sk.constraints.push(c);
+  solveSketch(sk);
+  if(skResid(sk)>SK_OK_RES){ // la contrainte ne tient pas (déjà sur-contraint) : retirée, le glisser reste
+    sk.constraints=sk.constraints.filter(k=>k!==c);solveSketch(sk);
+    try{skStatus('Accroche impossible ici (contraintes en conflit) — point déplacé sans contrainte.');}catch(e){}
+    return null;}
+  try{skStatus(msg+' Ctrl+Z pour annuler.');}catch(e){}
+  return c;
+}
 function snapNewPoint(sk,x,y){
   const s=findSnap(sk,x,y);
   if(s&&s.kind==='point')return s.pid;
@@ -128,6 +175,11 @@ function skCommitLine(sk,fromPid,snap,ex,ey,dimVal){
   // la perpendicularité est déjà acquise — on ne l'ajoute pas (cf. skPerpImplied).
   if(skInfer&&skInfer.perp&&!skHasPerp(sk,nl.id,skInfer.perp)&&!skPerpImplied(sk,nl.id,skInfer.perp))
     sk.constraints.push({id:skNewEid(sk),type:'perpendicular',a:nl.id,b:skInfer.perp});
+  // V0.11.24 : ∥ inféré → contrainte parallèle ; prolongement inféré → extrémité posée SUR la droite (online, pied hors du segment)
+  if(skInfer&&skInfer.par&&skInfer.par!==nl.id&&!skHasParallel(sk,nl.id,skInfer.par)&&entById(sk,skInfer.par))
+    sk.constraints.push({id:skNewEid(sk),type:'parallel',a:nl.id,b:skInfer.par});
+  if(skInfer&&skInfer.ext&&skInfer.ext!==nl.id&&entById(sk,skInfer.ext)&&!(sk.constraints||[]).some(c=>c.type==='online'&&c.p===endPid&&c.line===skInfer.ext))
+    sk.constraints.push({id:skNewEid(sk),type:'online',p:endPid,line:skInfer.ext});
   if(skInfer&&skInfer.tan&&!(sk.constraints||[]).some(c=>c.type==='tangent'&&c.line===nl.id&&c.ent===skInfer.tan)){
     sk.constraints.push({id:skNewEid(sk),type:'tangent',line:nl.id,ent:skInfer.tan});
     skPinTangent(sk,nl.id,skInfer.tan);

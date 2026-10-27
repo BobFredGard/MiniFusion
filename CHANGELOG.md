@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**378 versions**, de `2026-09-28b` à `V0.11.23` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**379 versions**, de `2026-09-28b` à `V0.11.24` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5166,3 +5166,10 @@ Point fait avec le module ESQUISSE de SolidCraft (tangency-labs/solidcraft, Rust
 - **Expression d'une cote perdue** (défaut depuis V0.11.15, vu dans Chromium en vérifiant) : le filet global ƒx (`parFxGlobal`, écoute en capture) remplaçait « d1/2 » par « 30 » dans la saisie de cote AVANT son propre gestionnaire — la cote prenait la valeur mais oubliait l'expression et ne suivait plus `d1`. La saisie de cote se déclare `_parFx` (elle gère ƒx elle-même), comme les champs des commandes.
 - **Expressions** (`src/51-parametres.js`, `parEval`, `parDimCommit`) : unités collées au nombre, n'importe où dans l'expression (`2 cm + 3`, `1 in`, `5 mm + 3` — avant, seul `mm` en fin d'expression passait), `rad` ; « Ø24 », « R5 », « ∠45 » acceptés tels qu'affichés.
 - **Tests** : `test_esquisse_cotes_souples` (nouveau, souris et clavier simulés : A glisser, B clic outil, C saisie pendant la pose, D référence à la demande + réouverture, E nom inséré au clic et dépendance d1/2, F cause d'une redondance, G unités et préfixes, H menu contextuel), `test_esquisse_cotes_pose`, suites esquisse / paramètres, `npm run ci`.
+
+## V0.11.24 - Esquisse : inférences ∥ / prolongement au tracé, contrainte posée au lâcher d'un point
+2e tranche du comparatif SolidCraft (`docs/comparatif-esquisse-solidcraft.md`, § 8 : glisser et inférence — `sketch_drag.rs`, `ui-egui/src/inference.rs`, `drag_snap.rs`, `sketch_tools.rs::refine_snap`).
+- **Cause** : au tracé d'une ligne, MiniFusion n'inférait que H / V, ⟂ et la tangence ; SolidCraft propose aussi le parallélisme à une ligne inclinée et le prolongement d'une ligne au-delà de ses bouts, avec un guide et la contrainte posée au clic. Un point glissé s'accrochait visuellement (points, milieux, centres) mais **aucune contrainte n'était posée au lâcher** : deux points superposés restaient libres l'un de l'autre.
+- **Inférences ∥ et ⟶** (`src/60-trim-et-souris.js`, outil Ligne ; `src/50-esquisse-3-edition-geometrie.js`, `skCommitLine`) : à moins de 3° de la direction d'une ligne inclinée (jamais H / V, jamais une ligne partant du même point : ce serait colinéaire) le curseur est projeté sur cette direction, la ligne de référence est surlignée en violet, le clic pose `parallel` ; à moins de 0,8 × SK_INF de la droite d'une ligne, au-delà de ses bouts, le curseur est posé sur la droite (guide pointillé depuis le bout le plus proche, « ⟶ sur la droite »), le clic pose `online` (pied hors du segment ; `skAutoAttach` ne traitait que l'intérieur). Priorité : accroche point > H / V > ⟂ > prolongement > ∥ > tangente.
+- **Contrainte au lâcher** (`skDragSnapFind`, `skDragRelease`) : pendant le glisser d'un point, accroche à un autre point, au milieu d'une ligne, puis SUR une ligne ou un cercle / arc (0,6 × SK_SNAP), jamais aux entités qui portent le point lui-même (l'autre bout de sa ligne, son propre milieu) ; au lâcher : `coincident`, `midpoint`, `online` ou `oncircle`, résolue ; si elle ne tient pas (déjà sur-contraint), elle est retirée et le déplacement reste. Lâché dans le vide : rien, comme avant.
+- **Tests** : `test_esquisse_inference_glisser` (nouveau : A ∥ à 1°, B prolongement à 1 px, C ni ∥ depuis le même point ni sur une ligne H, D coïncident / milieu / sur ligne / sur cercle / vide, E l'autre bout de sa propre ligne jamais accroché), suites esquisse existantes, `npm run ci`.

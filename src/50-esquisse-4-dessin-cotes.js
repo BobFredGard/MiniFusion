@@ -68,6 +68,11 @@ function drawSketch2D(){
       if(A&&B){const[a,b]=w2s(A.x,A.y),[c,d2]=w2s(B.x,B.y);skEl('line',{x1:a,y1:b,x2:c,y2:d2,stroke:'#ffd60a','stroke-width':3,opacity:0.9});}}}
     if(skInfer.tan){const c=entById(sk,skInfer.tan);if(c){const C=sk.points[c.pc];
       if(C){const[a,b]=w2s(C.x,C.y);skEl('circle',{cx:a,cy:b,r:c.r*skView.s,fill:'none',stroke:'#ffd60a','stroke-width':3});}}}
+    // V0.11.24 : ∥ = ligne de référence surlignée ; prolongement = guide pointillé du bout de la ligne au curseur
+    if(skInfer.par){const l=entById(sk,skInfer.par);if(l&&l.t==='line'){const A=sk.points[l.p1],B=sk.points[l.p2];
+      if(A&&B){const[a,b]=w2s(A.x,A.y),[c,d2]=w2s(B.x,B.y);skEl('line',{x1:a,y1:b,x2:c,y2:d2,stroke:'#bf5af2','stroke-width':7,opacity:0.55});}}} // halo large : l’entité (2 px) est dessinée par-dessus
+    if(skInfer.ext&&skInfer.from){const[a,b]=w2s(skInfer.from.x,skInfer.from.y),[c,d2]=w2s(skInfer.x,skInfer.y);
+      skEl('line',{x1:a,y1:b,x2:c,y2:d2,stroke:'#bf5af2','stroke-width':1,'stroke-dasharray':'6 4'});}
   }
   const fix=skFixed(sk);
   const showDof=skDofInfo(sk).dof>0; // flèches DOF tant que sous-contrainte (rang réel)
@@ -234,6 +239,8 @@ function drawSketch2D(){
         t.textContent=L.toFixed(2)+' mm ∠ '+ang.toFixed(1)+'°';
         if(skInfer&&skInfer.perp){const g=skEl('text',{x:mx+18,y:my+4,fill:'#ffd60a','font-size':15,'font-weight':'bold'});g.textContent='⟂';}
         if(skInfer&&skInfer.tan){const g=skEl('text',{x:mx+18,y:my+4,fill:'#ffd60a','font-size':15,'font-weight':'bold'});g.textContent='⦾';}
+        if(skInfer&&skInfer.par){const g=skEl('text',{x:mx+18,y:my+4,fill:'#bf5af2','font-size':15,'font-weight':'bold'});g.textContent='∥';}
+        if(skInfer&&skInfer.ext){const g=skEl('text',{x:mx+18,y:my+4,fill:'#bf5af2','font-size':13,'font-weight':'bold'});g.textContent='⟶ sur la droite';}
       }}
     if(d.t==='slot'){
       const x0=Math.min(d.x1,d.x2),x1=Math.max(d.x1,d.x2),y0=Math.min(d.y1,d.y2),y1=Math.max(d.y1,d.y2),w=x1-x0,h=y1-y0;

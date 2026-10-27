@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.11.23';
+const APP_VER='V0.11.24';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -13231,7 +13231,7 @@ function skEv(e){
 let SK_SNAP=5, SK_INF=2.5, SK_PICK=4, SK_PT=5, SK_PICKX=6;
 skUpdateTols();
 let skTool='select',skDraft=null,skMsg='',skOffArm=null;
-let skDown=null,skChain=null,skInfer=null,skSnapMk=null,skSel=null,skSelX=[],skDrag=null,skDragMoved=false,skDragPushed=false,skDimDrag=null,skPan=null;
+let skDown=null,skChain=null,skInfer=null,skSnapMk=null,skSel=null,skSelX=[],skDrag=null,skDragMoved=false,skDragPushed=false,skDimDrag=null,skPan=null,skDragSnap=null; // skDragSnap : accroche du point glissé (V0.11.24)
 let skBox=null,skDragEnt=null,skDyn=null; // sélection rect · déplacement d'entité · saisie dynamique (longueur/angle)
 let skOffsetD=5; // distance « auto » du menu ⇄ Décaler (contexte) : déclarée ici car le menu la lit AVANT tout usage de l'outil — sinon ReferenceError et menu jamais affiché
 let skDimPlace=null; // placement de cote : {id} → la cote suit le curseur jusqu'au clic
@@ -14409,6 +14409,53 @@ function findSnap(sk,x,y,exclude){
   if(bc)return{kind:'point',pid:bc,x:sk.points[bc].x,y:sk.points[bc].y};
   return null;
 }
+function skDragSnapFind(sk,x,y,pid){
+  // V0.11.24 : accroche d'un POINT GLISSÉ (comme SolidCraft drag_snap) : autre point, milieu d'une ligne,
+  // puis SUR une ligne ou un cercle — jamais les entités qui portent le point lui-même (l'autre bout de
+  // sa ligne, son propre milieu). Le lâcher pose la contrainte correspondante (skDragRelease).
+  const own=new Set();(sk.entities||[]).forEach(e=>{if(skEntPids(e).indexOf(pid)>=0){own.add(e.id);skEntPids(e).forEach(p=>{if(p)own.add(p);});}});
+  let best=null,bd=SK_SNAP;
+  Object.keys(skPts(sk)).forEach(q=>{if(q===pid||own.has(q))return;const p=sk.points[q];const d=Math.hypot(p.x-x,p.y-y);if(d<bd){bd=d;best={kind:'point',pid:q,x:p.x,y:p.y};}});
+  if(best)return best;
+  bd=SK_SNAP;
+  (sk.entities||[]).forEach(e=>{if(e.t!=='line'||own.has(e.id))return;const A=sk.points[e.p1],B=sk.points[e.p2];if(!A||!B)return;
+    const mx=(A.x+B.x)/2,my=(A.y+B.y)/2,d=Math.hypot(mx-x,my-y);if(d<bd){bd=d;best={kind:'mid',line:e.id,x:mx,y:my};}});
+  if(best)return best;
+  bd=SK_SNAP*0.6;
+  (sk.entities||[]).forEach(e=>{
+    if(own.has(e.id))return;
+    if(e.t==='line'){const A=sk.points[e.p1],B=sk.points[e.p2];if(!A||!B)return;
+      const dx=B.x-A.x,dy=B.y-A.y,L2=dx*dx+dy*dy;if(L2<1e-12)return;
+      const t=((x-A.x)*dx+(y-A.y)*dy)/L2;if(t<=1e-3||t>=1-1e-3)return;
+      const fx=A.x+t*dx,fy=A.y+t*dy,d=Math.hypot(fx-x,fy-y);if(d<bd){bd=d;best={kind:'on',line:e.id,x:fx,y:fy};}}
+    else if(e.t==='circle'||e.t==='arc'){const C=sk.points[e.pc];if(!C||!(e.r>0))return;
+      const dc=Math.hypot(x-C.x,y-C.y);if(dc<1e-9)return;const d=Math.abs(dc-e.r);
+      if(d<bd){const ux=(x-C.x)/dc,uy=(y-C.y)/dc;const qx=C.x+ux*e.r,qy=C.y+uy*e.r;
+        if(e.t==='arc'){const an=arcAngles(sk,e);if(an&&!angInArc(Math.atan2(uy,ux),an.a1,an.a2))return;}
+        bd=d;best={kind:'oncircle',ent:e.id,x:qx,y:qy};}}
+  });
+  return best;
+}
+function skDragRelease(sk,pid,s){
+  // V0.11.24 : au lâcher d'un point glissé sur une accroche, la contrainte est posée (coïncident, milieu,
+  // sur la ligne, sur le cercle) — avant, deux points superposés restaient libres l'un de l'autre.
+  if(!s||!pid||!sk.points[pid])return null;
+  const has=f=>(sk.constraints||[]).some(f);
+  let c=null,msg='';
+  if(s.kind==='point'){if(!sk.points[s.pid]||skHasCoincident(sk,pid,s.pid))return null;c={id:skNewEid(sk),type:'coincident',a:pid,b:s.pid};msg='Points coïncidents ⌾ (lâcher sur un point).';}
+  else if(s.kind==='mid'){if(has(x=>x.type==='midpoint'&&x.p===pid&&x.line===s.line))return null;c={id:skNewEid(sk),type:'midpoint',p:pid,line:s.line};msg='Point au milieu ⊕ de la ligne (lâcher sur le milieu).';}
+  else if(s.kind==='on'){if(has(x=>x.type==='online'&&x.p===pid&&x.line===s.line))return null;c={id:skNewEid(sk),type:'online',p:pid,line:s.line};msg='Point sur la ligne (lâcher sur la ligne).';}
+  else if(s.kind==='oncircle'){if(has(x=>x.type==='oncircle'&&x.p===pid&&x.ent===s.ent))return null;c={id:skNewEid(sk),type:'oncircle',p:pid,ent:s.ent};msg='Point sur le cercle (lâcher sur le cercle).';}
+  if(!c)return null;
+  sk.constraints.push(c);
+  solveSketch(sk);
+  if(skResid(sk)>SK_OK_RES){ // la contrainte ne tient pas (déjà sur-contraint) : retirée, le glisser reste
+    sk.constraints=sk.constraints.filter(k=>k!==c);solveSketch(sk);
+    try{skStatus('Accroche impossible ici (contraintes en conflit) — point déplacé sans contrainte.');}catch(e){}
+    return null;}
+  try{skStatus(msg+' Ctrl+Z pour annuler.');}catch(e){}
+  return c;
+}
 function snapNewPoint(sk,x,y){
   const s=findSnap(sk,x,y);
   if(s&&s.kind==='point')return s.pid;
@@ -14519,6 +14566,11 @@ function skCommitLine(sk,fromPid,snap,ex,ey,dimVal){
   // la perpendicularité est déjà acquise — on ne l'ajoute pas (cf. skPerpImplied).
   if(skInfer&&skInfer.perp&&!skHasPerp(sk,nl.id,skInfer.perp)&&!skPerpImplied(sk,nl.id,skInfer.perp))
     sk.constraints.push({id:skNewEid(sk),type:'perpendicular',a:nl.id,b:skInfer.perp});
+  // V0.11.24 : ∥ inféré → contrainte parallèle ; prolongement inféré → extrémité posée SUR la droite (online, pied hors du segment)
+  if(skInfer&&skInfer.par&&skInfer.par!==nl.id&&!skHasParallel(sk,nl.id,skInfer.par)&&entById(sk,skInfer.par))
+    sk.constraints.push({id:skNewEid(sk),type:'parallel',a:nl.id,b:skInfer.par});
+  if(skInfer&&skInfer.ext&&skInfer.ext!==nl.id&&entById(sk,skInfer.ext)&&!(sk.constraints||[]).some(c=>c.type==='online'&&c.p===endPid&&c.line===skInfer.ext))
+    sk.constraints.push({id:skNewEid(sk),type:'online',p:endPid,line:skInfer.ext});
   if(skInfer&&skInfer.tan&&!(sk.constraints||[]).some(c=>c.type==='tangent'&&c.line===nl.id&&c.ent===skInfer.tan)){
     sk.constraints.push({id:skNewEid(sk),type:'tangent',line:nl.id,ent:skInfer.tan});
     skPinTangent(sk,nl.id,skInfer.tan);
@@ -15083,6 +15135,11 @@ function drawSketch2D(){
       if(A&&B){const[a,b]=w2s(A.x,A.y),[c,d2]=w2s(B.x,B.y);skEl('line',{x1:a,y1:b,x2:c,y2:d2,stroke:'#ffd60a','stroke-width':3,opacity:0.9});}}}
     if(skInfer.tan){const c=entById(sk,skInfer.tan);if(c){const C=sk.points[c.pc];
       if(C){const[a,b]=w2s(C.x,C.y);skEl('circle',{cx:a,cy:b,r:c.r*skView.s,fill:'none',stroke:'#ffd60a','stroke-width':3});}}}
+    // V0.11.24 : ∥ = ligne de référence surlignée ; prolongement = guide pointillé du bout de la ligne au curseur
+    if(skInfer.par){const l=entById(sk,skInfer.par);if(l&&l.t==='line'){const A=sk.points[l.p1],B=sk.points[l.p2];
+      if(A&&B){const[a,b]=w2s(A.x,A.y),[c,d2]=w2s(B.x,B.y);skEl('line',{x1:a,y1:b,x2:c,y2:d2,stroke:'#bf5af2','stroke-width':7,opacity:0.55});}}} // halo large : l’entité (2 px) est dessinée par-dessus
+    if(skInfer.ext&&skInfer.from){const[a,b]=w2s(skInfer.from.x,skInfer.from.y),[c,d2]=w2s(skInfer.x,skInfer.y);
+      skEl('line',{x1:a,y1:b,x2:c,y2:d2,stroke:'#bf5af2','stroke-width':1,'stroke-dasharray':'6 4'});}
   }
   const fix=skFixed(sk);
   const showDof=skDofInfo(sk).dof>0; // flèches DOF tant que sous-contrainte (rang réel)
@@ -15249,6 +15306,8 @@ function drawSketch2D(){
         t.textContent=L.toFixed(2)+' mm ∠ '+ang.toFixed(1)+'°';
         if(skInfer&&skInfer.perp){const g=skEl('text',{x:mx+18,y:my+4,fill:'#ffd60a','font-size':15,'font-weight':'bold'});g.textContent='⟂';}
         if(skInfer&&skInfer.tan){const g=skEl('text',{x:mx+18,y:my+4,fill:'#ffd60a','font-size':15,'font-weight':'bold'});g.textContent='⦾';}
+        if(skInfer&&skInfer.par){const g=skEl('text',{x:mx+18,y:my+4,fill:'#bf5af2','font-size':15,'font-weight':'bold'});g.textContent='∥';}
+        if(skInfer&&skInfer.ext){const g=skEl('text',{x:mx+18,y:my+4,fill:'#bf5af2','font-size':13,'font-weight':'bold'});g.textContent='⟶ sur la droite';}
       }}
     if(d.t==='slot'){
       const x0=Math.min(d.x1,d.x2),x1=Math.max(d.x1,d.x2),y0=Math.min(d.y1,d.y2),y1=Math.max(d.y1,d.y2),w=x1-x0,h=y1-y0;
@@ -18270,7 +18329,8 @@ svg.addEventListener('pointermove',e=>{
   if(skDrag){
     if(skFixed(sk).has(skDrag)){skStatus('Point fixé 🔒 — retirez « Fixe » pour le déplacer.');return;}
     if(!skDragPushed){skPushUndo();skDragPushed=true;}
-    const s=findSnap(sk,wx,wy,skDrag);
+    const s=skDragSnapFind(sk,wx,wy,skDrag); // V0.11.24 : point, milieu, sur ligne / cercle (contrainte au lâcher)
+    skDragSnap=s;
     let nx=wx,ny=wy;
     if(s){nx=s.x;ny=s.y;skSnapMk={x:nx,y:ny};}
     else{if($('skSnap').checked){nx=skSnapVal(nx);ny=skSnapVal(ny);}skSnapMk=null;}
@@ -18362,6 +18422,30 @@ svg.addEventListener('pointermove',e=>{
         if(dl<bestD){bestD=dl;bestPerp=l.id;}
       });
       if(bestPerp)skInfer=Object.assign(skInfer||{},{perp:bestPerp});
+      // V0.11.24 : inférences ∥ (parallèle à une ligne inclinée, hors H / V) et ⟶ (prolongement d'une
+      // ligne au-delà de ses bouts), comme SolidCraft / Fusion — guide tracé, contrainte posée au clic.
+      if(!bestPerp&&!(skInfer&&(skInfer.h||skInfer.v))){
+        let bestPar=null,bestPD=1e9,bestExt=null,bestED=1e9;
+        (sk.entities||[]).forEach(l=>{
+          if(l.t!=='line')return;
+          const A=sk.points[l.p1],B=sk.points[l.p2];if(!A||!B)return;
+          const ux=B.x-A.x,uy=B.y-A.y,ul=Math.hypot(ux,uy);if(ul<1e-9)return;
+          if(Math.abs(ux)<1e-9*ul||Math.abs(uy)<1e-9*ul)return; // lignes H / V : affaire des guides H / V
+          const touches=l.p1===skDown.pid||l.p2===skDown.pid;
+          // prolongement : curseur près de la droite, AU-DELÀ du segment (le pied dedans = point sur ligne, skAutoAttach)
+          const t=((wx-A.x)*ux+(wy-A.y)*uy)/(ul*ul),dL=Math.abs((wx-A.x)*(-uy)+(wy-A.y)*ux)/ul;
+          if(!touches&&(t<-1e-3||t>1+1e-3)&&dL<SK_INF*0.8&&dL<bestED){bestED=dL;bestExt={id:l.id,x:A.x+ux*t,y:A.y+uy*t,from:t<0?A:B};}
+          if(touches)return; // ligne partant du même point : ce serait colinéaire, pas parallèle
+          const sn=Math.abs((dxB*uy-dyB*ux)/(lenB*ul));
+          if(sn>0.053)return; // ≈3° de la direction
+          const dl=distSeg(wx,wy,A,B);
+          if(dl<bestPD){bestPD=dl;bestPar=l.id;}
+        });
+        if(bestExt){gx=bestExt.x;gy=bestExt.y;skInfer=Object.assign(skInfer||{},{ext:bestExt.id,from:bestExt.from,x:gx,y:gy});}
+        else if(bestPar){const l=entById(sk,bestPar),A=sk.points[l.p1],B=sk.points[l.p2];
+          const ux=B.x-A.x,uy=B.y-A.y,ul=Math.hypot(ux,uy)||1e-9,pr=(dxB*ux+dyB*uy)/ul; // projeté sur la direction
+          gx=skDown.x+ux/ul*pr;gy=skDown.y+uy/ul*pr;skInfer=Object.assign(skInfer||{},{par:bestPar});}
+      }
       let bestTan=null;
       (sk.entities||[]).forEach(c=>{
         if(c.t!=='circle'&&c.t!=='arc')return;
@@ -18404,7 +18488,9 @@ svg.addEventListener('pointerup',e=>{
   if(skPan){skPanDragged=skPan.moved;skPan=null;return;}
   if(!skEdit||e.button!==0)return;const sk=skEdit;const[wx,wy]=evXY(e);
   if(skDimDrag){skDimDrag=null;drawSketch2D();return;}
-  if(skDrag){skDrag=null;skDragWalk=null;skDragPushed=false;skSnapMk=null;renderSkPanel();drawSketch2D();return;}
+  if(skDrag){const pid=skDrag,s=skDragSnap;skDrag=null;skDragWalk=null;skDragPushed=false;skSnapMk=null;skDragSnap=null;
+    if(s&&skDragMoved)skDragRelease(sk,pid,s); // V0.11.24 : lâché sur une accroche → contrainte posée
+    renderSkPanel();drawSketch2D();return;}
   if(skDragEnt){const moved=skDragEnt.pushed;skDragEnt=null;skDragWalk=null;if(moved){solveSketch(sk,60);renderSkPanel();skStatus('Entité déplacée.');}drawSketch2D();return;}
   if(skBox){
     const w=skBox;skBox=null;
