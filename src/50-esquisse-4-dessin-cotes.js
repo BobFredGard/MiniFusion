@@ -295,10 +295,10 @@ function angleArcInfo(sk,d){ // {V,rr,a1,dd} — secteur STOCKE (a1=rayon A, dd=
 function rdLayout(sk,d){
   const e=entById(sk,d.ent);if(!e||!(e.r>0))return null;const C=(sk.points||{})[e.pc];if(!C)return null;
   const s=skView.s||1;
-  let u;
-  if(e.t==='arc'){const an=arcAngles(sk,e);const am=an?(an.a1+an.a2)/2:Math.PI/4;u={x:Math.cos(am),y:Math.sin(am)};}
-  else u={x:Math.SQRT1_2,y:Math.SQRT1_2};
-  const gap=26/s;
+  let u=rdDir(sk,e);
+  // V0.11.13 : décalage posé (ox/oy) compté depuis le point du cercle — le coude ne bouge plus
+  // au zoom ; sans décalage, coude à 26 px du cercle sur la direction par défaut.
+  const gap=(d.ox||d.oy)?0:26/s;
   let K={x:C.x+u.x*(e.r+gap)+(d.ox||0),y:C.y+u.y*(e.r+gap)+(d.oy||0)};
   let vx=K.x-C.x,vy=K.y-C.y,vl=Math.hypot(vx,vy);
   if(vl<1e-9){vx=u.x;vy=u.y;vl=1;}
@@ -306,6 +306,16 @@ function rdLayout(sk,d){
   const minR=e.r+10/s;
   if(vl<minR)K={x:C.x+u.x*minR,y:C.y+u.y*minR};
   return{e,C,u,K,P:{x:C.x+u.x*e.r,y:C.y+u.y*e.r},P2:{x:C.x-u.x*e.r,y:C.y-u.y*e.r},side:u.x>=0?1:-1};
+}
+function rdDir(sk,e){ // direction par défaut : bissectrice de l'arc, 45° pour un cercle
+  if(e.t==='arc'){const an=arcAngles(sk,e);const am=an?(an.a1+an.a2)/2:Math.PI/4;return{x:Math.cos(am),y:Math.sin(am)};}
+  return{x:Math.SQRT1_2,y:Math.SQRT1_2};
+}
+function rdPlaceAt(sk,d,wx,wy){ // pose R/Ø : le coude suit le curseur (V0.11.13 — il partait à côté sur un arc)
+  const e=entById(sk,d.ent);if(!e||!(e.r>0))return;const C=(sk.points||{})[e.pc];if(!C)return;
+  const u=rdDir(sk,e);
+  d.ox=wx-(C.x+u.x*e.r);d.oy=wy-(C.y+u.y*e.r);
+  if(!d.ox&&!d.oy)d.ox=1e-6; // curseur pile sur le cercle : décalage posé quand même
 }
 function rdText(d){
   const t=(d.type==='diameter'?'Ø':'R')+(+d.value).toFixed(2);
@@ -395,7 +405,9 @@ function skDimOrientAt(sk,dd,wx,wy){ // pose linéaire : H/V/aligné selon la po
   let o=dd.orient||'a';
   if(Math.hypot(rdx,rdy)>1e-6){
     const beta=Math.atan2(dy,dx),phi=Math.atan2(rdy,rdx);
-    const w180=a=>{a=(a*180/Math.PI)%180;if(a<0)a+=180;return a;};
+    // écart angulaire modulo 180°, replié sur [0,90] : 179,99° vaut 0,01° (V0.11.13 — curseur pile à
+    // gauche ou sous la cote : la verticale / l'horizontale perdait face à l'alignée)
+    const w180=a=>{a=(a*180/Math.PI)%180;if(a<0)a+=180;return Math.min(a,180-a);};
     const dH=w180(phi-Math.PI/2),dV=w180(phi),dA=w180(phi-(beta+Math.PI/2));
     const cands=[{o:'h',d:dH,ok:Math.abs(dx)>1e-6},{o:'v',d:dV,ok:Math.abs(dy)>1e-6},{o:'a',d:dA,ok:true}];
     cands.sort((x,y)=>x.d-y.d);

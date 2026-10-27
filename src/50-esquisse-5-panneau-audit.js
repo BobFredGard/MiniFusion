@@ -511,20 +511,31 @@ function skDofInfo(sk){
   skDofCache={key,info};
   return info;
 }
+// V0.11.13 : signature (type, entités, orientation) de la cote au dernier contrôle — jamais
+// enregistrée. Une cote en pose change de nature (longueur → point↔ligne, entraxe, angle ;
+// alignée → H / V) : le contrôle fait à la création ne vaut plus. Avant, la 1re cote prise sur
+// une arête projetée restait grise après le clic sur le coin, et une distance H qui doublait
+// une largeur déjà cotée restait pilotante (esquisse sur-contrainte sans le dire).
+const SK_DIM_SIG=new WeakMap();
+function skDimSig(d){return [d.type,d.line,d.a,d.b,d.p,d.ent,d.orient||''].join('|');}
 function skCheckNewDims(sk){
   // 2026-10-16-001 : une cote NOUVELLE qui n'ajoute aucun rang (redondante ou en
   // conflit) devient une cote de RÉFÉRENCE : grise, entre parenthèses, mesurée.
   // Cote vers un AXE de rotation : affichée et saisie en Ø (le solveur garde la distance).
   (sk.dims||[]).forEach(d=>{
-    if(d.chk)return;d.chk=1;
+    const sg=skDimSig(d),was=SK_DIM_SIG.get(d);
+    if(d.chk&&(was===undefined||was===sg))return;
+    d.chk=1;SK_DIM_SIG.set(d,sg);
     const axisLine=id=>{const e=entById(sk,id);return !!(e&&e.axis);};
     if(!d.dia&&((d.type==='distline'&&axisLine(d.line))||(d.type==='gap'&&(axisLine(d.a)||axisLine(d.b)))))d.dia=true;
-    if(d.ref)return;
+    const wasRef=!!d.ref;
+    if(d.ref){if(was===undefined||d.refV!==2)return;delete d.ref;delete d.refV;} // cote changée : référence automatique réévaluée
     try{
       const a=skJacobian(sk,d),b=skJacobian(sk,null);
       const ra=a.n?skRref(a.J,a.m,a.n).rank:0,rb=b.n?skRref(b.J,b.m,b.n).rank:0;
       if(rb<=ra){d.ref=true;d.refV=2;try{skStatus('Cote en sur-contrainte → cote de RÉFÉRENCE (grise, entre parenthèses) : elle mesure sans piloter.');}catch(e){}}
-    }catch(e){}
+      else if(wasRef){try{skStatus('Cote PILOTANTE — cliquez (vide) pour poser.');}catch(e){}}
+    }catch(e){if(wasRef){d.ref=true;d.refV=2;}}
   });
 }
 function skDimCanDrive(sk,d){

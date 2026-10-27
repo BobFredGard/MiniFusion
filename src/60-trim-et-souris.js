@@ -592,6 +592,10 @@ svg.addEventListener('pointerdown',e=>{
       const pid=nearestPoint(sk,wx,wy,SK_PT);
       if(dd&&tryExtendDim(dd,ent,pid))return; // convertie → reste en mode pose
       const id=skDimPlace.id;skDimPlace=null;
+      // V0.11.13 : entité déjà cotée de la même façon → la cote existante est sélectionnée
+      // (la 2ᵉ, redondante, restait grise à côté). La cote vivante a pu servir de 1er clic d'une conversion.
+      const dup=dd&&findDupDim({dims:(sk.dims||[]).filter(x=>x!==dd&&(x.orient||'a')===(dd.orient||'a'))},dd);
+      if(dup){sk.dims=sk.dims.filter(x=>x!==dd);afterEdit();reuseDim(dup);return;}
       skStatus('Cote posée.');drawSketch2D();renderSkPanel();editDim(id);return;
     }
     dimClick(wx,wy,skMulti(e));return;
@@ -760,14 +764,13 @@ svg.addEventListener('pointermove',e=>{
     const dd=dimById(sk,skDimPlace.id);
     if(!dd)skDimPlace=null;
     else{
-      if(dd.type==='length'||dd.type==='distance'){skDimOrientAt(sk,dd,wx,wy);}
+      if(dd.type==='length'||dd.type==='distance'){const o0=dd.orient;skDimOrientAt(sk,dd,wx,wy);if(dd.orient!==o0)skCheckNewDims(sk);} // H / V / alignée : pilotante ou référence réévaluée
       else if(dd.type==='distline'){const S=dimSeg(sk,dd);if(S)dd.w=(wx-S.A.x)*S.nx+(wy-S.A.y)*S.ny;}
       else if(dd.type==='gap'){const S=dimSeg(sk,dd);if(S){const s0=dd.sl||0;const ax0=S.a.x-S.ux*s0,ay0=S.a.y-S.uy*s0;
         dd.sl=(wx-ax0)*S.ux+(wy-ay0)*S.uy;}}
       else if(dd.type==='angle'){skDimAngleAt(sk,dd,wx,wy);}
       else if(dd.type==='diameter'||dd.type==='radius'){ // Ø/R : le rayon suit le curseur (comme Fusion)
-        const e=entById(sk,dd.ent),C=e&&sk.points[e.pc];
-        if(e&&C){dd.ox=wx-(C.x+e.r*0.7);dd.oy=wy-(C.y+e.r*0.7);}}
+        rdPlaceAt(sk,dd,wx,wy);}
       drawSketch2D();return;
     }
   }

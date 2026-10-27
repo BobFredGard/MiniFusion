@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**367 versions**, de `2026-09-28b` à `V0.11.12` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**368 versions**, de `2026-09-28b` à `V0.11.13` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5084,3 +5084,11 @@ Cavité Usinage (« pourquoi la 1ère passe il n'y a pas d'hélice ? Tu commence
 - **Escargot** : la pose (bande en anneau, centre hors zone) est usinée en contours conventionnels, plus en spirale.
 - **CACHE_VER** → `2026-10-26-003`.
 - **Tests** : `test_fao_pose_fond` (ordre des niveaux 5 puis 8), `test_fao_escargot`, `test_fao_ebauche_brut`, suite rapide 54/54.
+
+## V0.11.13 - Esquisse : statut des cotes pendant la pose, placement des R / Ø
+« Problème de cotes non contraintes alors que l'esquisse n'est pas encore totalement blanche, voir à la 1ère cote. Les cotes de rayon ou diamètre se placent mal. »
+- **Pilotante / référence** (`src/50-esquisse-5-panneau-audit.js`, `skCheckNewDims`) : le contrôle de rang n'était fait qu'à la création de la cote vivante ; la conversion pendant la pose (longueur → point↔ligne, entraxe, angle ; alignée → H / V) ne le refaisait pas. La 1re cote prise sur une arête projetée restait grise après le clic sur le coin ; une distance H qui doublait une largeur déjà cotée restait pilotante (esquisse sur-contrainte sans le dire — 7 cotes ainsi dans Cavité Usinage, esquisses 4 et 11, non corrigées d'office). Signature (type, entités, orientation) gardée hors fichier : la cote changée est réévaluée, y compris au changement d'orientation sous le curseur (`src/60-trim-et-souris.js`).
+- **R / Ø** (`src/50-esquisse-4-dessin-cotes.js`, `rdPlaceAt`, `rdDir`) : le coude était décalé depuis un point à 45° (0,7·r) alors que le dessin part de la bissectrice de l'arc, 26 px plus loin — jusqu'à 13 mm d'écart sur un congé. Le coude suit le curseur ; un décalage posé est compté depuis le cercle et ne bouge plus au zoom (les R / Ø déjà déplacés glissent une fois de quelques mm).
+- **Doublons** : recoter une entité déjà cotée (même type, même orientation) sélectionne la cote existante au lieu d'en poser une 2ᵉ grise.
+- **H / V** (`skDimOrientAt`) : écart angulaire modulo 180° replié sur [0, 90°] — curseur pile à gauche ou sous la cote, 179,99° battait la verticale / l'horizontale face à l'alignée.
+- **Tests** : `test_esquisse_cotes_pose` (nouveau, souris simulée), suites d'esquisse, suite rapide 55/55.

@@ -277,7 +277,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.11.12';
+const APP_VER='V0.11.13';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -14877,10 +14877,10 @@ function angleArcInfo(sk,d){ // {V,rr,a1,dd} — secteur STOCKE (a1=rayon A, dd=
 function rdLayout(sk,d){
   const e=entById(sk,d.ent);if(!e||!(e.r>0))return null;const C=(sk.points||{})[e.pc];if(!C)return null;
   const s=skView.s||1;
-  let u;
-  if(e.t==='arc'){const an=arcAngles(sk,e);const am=an?(an.a1+an.a2)/2:Math.PI/4;u={x:Math.cos(am),y:Math.sin(am)};}
-  else u={x:Math.SQRT1_2,y:Math.SQRT1_2};
-  const gap=26/s;
+  let u=rdDir(sk,e);
+  // V0.11.13 : décalage posé (ox/oy) compté depuis le point du cercle — le coude ne bouge plus
+  // au zoom ; sans décalage, coude à 26 px du cercle sur la direction par défaut.
+  const gap=(d.ox||d.oy)?0:26/s;
   let K={x:C.x+u.x*(e.r+gap)+(d.ox||0),y:C.y+u.y*(e.r+gap)+(d.oy||0)};
   let vx=K.x-C.x,vy=K.y-C.y,vl=Math.hypot(vx,vy);
   if(vl<1e-9){vx=u.x;vy=u.y;vl=1;}
@@ -14888,6 +14888,16 @@ function rdLayout(sk,d){
   const minR=e.r+10/s;
   if(vl<minR)K={x:C.x+u.x*minR,y:C.y+u.y*minR};
   return{e,C,u,K,P:{x:C.x+u.x*e.r,y:C.y+u.y*e.r},P2:{x:C.x-u.x*e.r,y:C.y-u.y*e.r},side:u.x>=0?1:-1};
+}
+function rdDir(sk,e){ // direction par défaut : bissectrice de l'arc, 45° pour un cercle
+  if(e.t==='arc'){const an=arcAngles(sk,e);const am=an?(an.a1+an.a2)/2:Math.PI/4;return{x:Math.cos(am),y:Math.sin(am)};}
+  return{x:Math.SQRT1_2,y:Math.SQRT1_2};
+}
+function rdPlaceAt(sk,d,wx,wy){ // pose R/Ø : le coude suit le curseur (V0.11.13 — il partait à côté sur un arc)
+  const e=entById(sk,d.ent);if(!e||!(e.r>0))return;const C=(sk.points||{})[e.pc];if(!C)return;
+  const u=rdDir(sk,e);
+  d.ox=wx-(C.x+u.x*e.r);d.oy=wy-(C.y+u.y*e.r);
+  if(!d.ox&&!d.oy)d.ox=1e-6; // curseur pile sur le cercle : décalage posé quand même
 }
 function rdText(d){
   const t=(d.type==='diameter'?'Ø':'R')+(+d.value).toFixed(2);
@@ -14977,7 +14987,9 @@ function skDimOrientAt(sk,dd,wx,wy){ // pose linéaire : H/V/aligné selon la po
   let o=dd.orient||'a';
   if(Math.hypot(rdx,rdy)>1e-6){
     const beta=Math.atan2(dy,dx),phi=Math.atan2(rdy,rdx);
-    const w180=a=>{a=(a*180/Math.PI)%180;if(a<0)a+=180;return a;};
+    // écart angulaire modulo 180°, replié sur [0,90] : 179,99° vaut 0,01° (V0.11.13 — curseur pile à
+    // gauche ou sous la cote : la verticale / l'horizontale perdait face à l'alignée)
+    const w180=a=>{a=(a*180/Math.PI)%180;if(a<0)a+=180;return Math.min(a,180-a);};
     const dH=w180(phi-Math.PI/2),dV=w180(phi),dA=w180(phi-(beta+Math.PI/2));
     const cands=[{o:'h',d:dH,ok:Math.abs(dx)>1e-6},{o:'v',d:dV,ok:Math.abs(dy)>1e-6},{o:'a',d:dA,ok:true}];
     cands.sort((x,y)=>x.d-y.d);
@@ -15795,20 +15807,31 @@ function skDofInfo(sk){
   skDofCache={key,info};
   return info;
 }
+// V0.11.13 : signature (type, entités, orientation) de la cote au dernier contrôle — jamais
+// enregistrée. Une cote en pose change de nature (longueur → point↔ligne, entraxe, angle ;
+// alignée → H / V) : le contrôle fait à la création ne vaut plus. Avant, la 1re cote prise sur
+// une arête projetée restait grise après le clic sur le coin, et une distance H qui doublait
+// une largeur déjà cotée restait pilotante (esquisse sur-contrainte sans le dire).
+const SK_DIM_SIG=new WeakMap();
+function skDimSig(d){return [d.type,d.line,d.a,d.b,d.p,d.ent,d.orient||''].join('|');}
 function skCheckNewDims(sk){
   // 2026-10-16-001 : une cote NOUVELLE qui n'ajoute aucun rang (redondante ou en
   // conflit) devient une cote de RÉFÉRENCE : grise, entre parenthèses, mesurée.
   // Cote vers un AXE de rotation : affichée et saisie en Ø (le solveur garde la distance).
   (sk.dims||[]).forEach(d=>{
-    if(d.chk)return;d.chk=1;
+    const sg=skDimSig(d),was=SK_DIM_SIG.get(d);
+    if(d.chk&&(was===undefined||was===sg))return;
+    d.chk=1;SK_DIM_SIG.set(d,sg);
     const axisLine=id=>{const e=entById(sk,id);return !!(e&&e.axis);};
     if(!d.dia&&((d.type==='distline'&&axisLine(d.line))||(d.type==='gap'&&(axisLine(d.a)||axisLine(d.b)))))d.dia=true;
-    if(d.ref)return;
+    const wasRef=!!d.ref;
+    if(d.ref){if(was===undefined||d.refV!==2)return;delete d.ref;delete d.refV;} // cote changée : référence automatique réévaluée
     try{
       const a=skJacobian(sk,d),b=skJacobian(sk,null);
       const ra=a.n?skRref(a.J,a.m,a.n).rank:0,rb=b.n?skRref(b.J,b.m,b.n).rank:0;
       if(rb<=ra){d.ref=true;d.refV=2;try{skStatus('Cote en sur-contrainte → cote de RÉFÉRENCE (grise, entre parenthèses) : elle mesure sans piloter.');}catch(e){}}
-    }catch(e){}
+      else if(wasRef){try{skStatus('Cote PILOTANTE — cliquez (vide) pour poser.');}catch(e){}}
+    }catch(e){if(wasRef){d.ref=true;d.refV=2;}}
   });
 }
 function skDimCanDrive(sk,d){
@@ -17458,6 +17481,10 @@ svg.addEventListener('pointerdown',e=>{
       const pid=nearestPoint(sk,wx,wy,SK_PT);
       if(dd&&tryExtendDim(dd,ent,pid))return; // convertie → reste en mode pose
       const id=skDimPlace.id;skDimPlace=null;
+      // V0.11.13 : entité déjà cotée de la même façon → la cote existante est sélectionnée
+      // (la 2ᵉ, redondante, restait grise à côté). La cote vivante a pu servir de 1er clic d'une conversion.
+      const dup=dd&&findDupDim({dims:(sk.dims||[]).filter(x=>x!==dd&&(x.orient||'a')===(dd.orient||'a'))},dd);
+      if(dup){sk.dims=sk.dims.filter(x=>x!==dd);afterEdit();reuseDim(dup);return;}
       skStatus('Cote posée.');drawSketch2D();renderSkPanel();editDim(id);return;
     }
     dimClick(wx,wy,skMulti(e));return;
@@ -17626,14 +17653,13 @@ svg.addEventListener('pointermove',e=>{
     const dd=dimById(sk,skDimPlace.id);
     if(!dd)skDimPlace=null;
     else{
-      if(dd.type==='length'||dd.type==='distance'){skDimOrientAt(sk,dd,wx,wy);}
+      if(dd.type==='length'||dd.type==='distance'){const o0=dd.orient;skDimOrientAt(sk,dd,wx,wy);if(dd.orient!==o0)skCheckNewDims(sk);} // H / V / alignée : pilotante ou référence réévaluée
       else if(dd.type==='distline'){const S=dimSeg(sk,dd);if(S)dd.w=(wx-S.A.x)*S.nx+(wy-S.A.y)*S.ny;}
       else if(dd.type==='gap'){const S=dimSeg(sk,dd);if(S){const s0=dd.sl||0;const ax0=S.a.x-S.ux*s0,ay0=S.a.y-S.uy*s0;
         dd.sl=(wx-ax0)*S.ux+(wy-ay0)*S.uy;}}
       else if(dd.type==='angle'){skDimAngleAt(sk,dd,wx,wy);}
       else if(dd.type==='diameter'||dd.type==='radius'){ // Ø/R : le rayon suit le curseur (comme Fusion)
-        const e=entById(sk,dd.ent),C=e&&sk.points[e.pc];
-        if(e&&C){dd.ox=wx-(C.x+e.r*0.7);dd.oy=wy-(C.y+e.r*0.7);}}
+        rdPlaceAt(sk,dd,wx,wy);}
       drawSketch2D();return;
     }
   }
