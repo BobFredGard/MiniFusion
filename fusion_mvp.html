@@ -171,6 +171,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
       <div class="setRow"><label><input type="checkbox" id="optAxes" checked> Repère (axes XYZ)</label></div>
       <div class="setRow"><label><input type="checkbox" id="optZoomInv"> Inverser le zoom</label></div>
       <div class="setRow"><label>Orbite <select id="optOrbit" title="Contrainte : Z reste en haut de l'écran · Libre : la pièce tourne dans tous les sens (tour complet, par-dessus et par-dessous)"><option value="contrainte">Contrainte (Z en haut)</option><option value="libre">Libre (tous les sens)</option></select></label></div>
+      <div class="setRow" title="Effet de perspective = angle de champ de la caméra : à gauche presque orthographique, à droite fuyantes marquées. La pièce garde sa taille à l'écran. Double-clic : 50° par défaut"><label for="optFov">Perspective</label><input type="range" id="optFov" min="5" max="90" step="1" value="50" style="flex:1"><span id="optFovVal" style="min-width:30px;text-align:right">50°</span></div>
       <p class="ovlTitle">Coupe</p>
       <div class="setRow"><label><input type="checkbox" id="clipOn"> Activer coupe (plan Z · hauteur)</label></div>
       <div class="setRow"><input type="range" id="clipPos" min="-100" max="100" value="0" step="0.5" title="Hauteur du plan de coupe"></div>
@@ -277,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.11.15';
+const APP_VER='V0.11.16';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -613,6 +614,10 @@ try{if(localStorage.getItem('minifusion_sol')==='off')floorOn=false;}catch(e){}
 // roulis compris ; contrainte (défaut) = le Z de la vue reste en haut de l'écran.
 let orbitFree=false,_fo=null;
 try{if(localStorage.getItem('minifusion_orbit')==='libre')orbitFree=true;}catch(e){}
+// 2026-10-27 : EFFET DE PERSPECTIVE réglable (⚙ → Perspective) = angle de champ de la caméra 3D,
+// 5° (presque orthographique) à 90° (fuyantes marquées) ; 50° par défaut.
+let viewFov=50;
+try{const _fv=parseFloat(localStorage.getItem('minifusion_fov'));if(_fv>=5&&_fv<=90)viewFov=_fv;}catch(e){}
 function makeStudioEnv(){
   // Environnement procédural (reflets PBR) : 6 faces dégradé + boîtes lumineuses. Zéro asset externe.
   function face(draw){const c=document.createElement('canvas');c.width=c.height=256;draw(c.getContext('2d'));return c;}
@@ -631,6 +636,7 @@ function makeStudioEnv(){
 function buildScene(){
   scene=new THREE.Scene(); scene.background=new THREE.Color(0x1c1c1e);
   camera=new THREE.PerspectiveCamera(50,1.5,0.1,5000);
+  camSetFov(viewFov,false);
   camera.up.set(0,0,1); // convention CAO : Z vers le haut, Y vers l'arrière, X à droite
   camera.position.set(90,-90,90);
   renderer=new THREE.WebGLRenderer({canvas:$('viewport'),antialias:true,powerPreference:'high-performance'}); // V0.8.8 : carte graphique dédiée (NVIDIA) plutôt que l'intégrée sur un portable hybride
@@ -877,6 +883,22 @@ function viewUpReset(){
     const s=new THREE.Vector3(1,-1,0).normalize();if(Math.abs(s.dot(_mn))>0.9)s.set(0,1,0);
     camera.position.addScaledVector(s,off.length()*1e-3);
   }
+}
+function camSetFov(f,keep){
+  // Change l'angle de champ ; keep : recule/avance la caméra pour que le plan de la cible garde
+  // la même taille à l'écran (seule la convergence des fuyantes change, façon « travelling compensé »).
+  f=Math.min(90,Math.max(5,+f||50));
+  if(!camera||!camera.isPerspectiveCamera)return;
+  const t0=Math.tan((camera.fov||50)*Math.PI/360),t1=Math.tan(f*Math.PI/360);
+  if(keep&&controls){
+    const off=camera.position.clone().sub(controls.target);
+    camera.position.copy(controls.target).addScaledVector(off,t0/t1);
+  }
+  // petit angle = caméra lointaine : plans de coupe éloignés d'autant (précision de profondeur gardée)
+  const k=Math.max(1,Math.tan(25*Math.PI/180)/t1);
+  camera.fov=f;camera.near=0.1*k;camera.far=5000*k;camera.updateProjectionMatrix();
+  viewFov=f;
+  if(keep){try{controls.update();}catch(e){}mirrorDirty=true;}
 }
 function orbitSetMode(free){
   orbitFree=!!free;
@@ -47065,6 +47087,10 @@ try{if($('optMirror')){$('optMirror').checked=mirrorOn;$('optMirror').onchange=(
 try{if($('optAxes')){$('optAxes').checked=axHelper?axHelper.visible:true;$('optAxes').onchange=()=>{if(axHelper)axHelper.visible=$('optAxes').checked;markDirty();try{renderTree();}catch(e){}};}}catch(e){}
 try{if($('optZoomInv')){$('optZoomInv').checked=zoomInv;$('optZoomInv').onchange=()=>{zoomInv=$('optZoomInv').checked;if(controls)controls.zoomSpeed=zoomInv?-1:1;try{localStorage.setItem('minifusion_zoominv',zoomInv?'on':'off');}catch(e){}markDirty();};}}catch(e){}
 try{if($('optOrbit')){$('optOrbit').value=orbitFree?'libre':'contrainte';$('optOrbit').onchange=()=>orbitSetMode($('optOrbit').value==='libre');}}catch(e){}
+try{if($('optFov')){const r=$('optFov'),o=$('optFovVal'),sh=()=>{if(o)o.textContent=Math.round(viewFov)+'°';};r.value=String(viewFov);sh();
+  r.oninput=()=>{camSetFov(parseFloat(r.value),true);sh();};
+  r.onchange=()=>{try{localStorage.setItem('minifusion_fov',String(viewFov));}catch(e){}};
+  r.ondblclick=()=>{r.value='50';camSetFov(50,true);sh();try{localStorage.setItem('minifusion_fov','50');}catch(e){}};}}catch(e){}
 function docResetEmpty(){
   // V0.2.3 : remise à zéro COMPLÈTE de l'espace (modes, esquisse, FAO, sélection, caches) —
   // utilisée par « Nouveau » et avant chaque ouverture de fichier (src/97-fichiers-projets.js)

@@ -9,6 +9,10 @@ try{if(localStorage.getItem('minifusion_sol')==='off')floorOn=false;}catch(e){}
 // roulis compris ; contrainte (défaut) = le Z de la vue reste en haut de l'écran.
 let orbitFree=false,_fo=null;
 try{if(localStorage.getItem('minifusion_orbit')==='libre')orbitFree=true;}catch(e){}
+// 2026-10-27 : EFFET DE PERSPECTIVE réglable (⚙ → Perspective) = angle de champ de la caméra 3D,
+// 5° (presque orthographique) à 90° (fuyantes marquées) ; 50° par défaut.
+let viewFov=50;
+try{const _fv=parseFloat(localStorage.getItem('minifusion_fov'));if(_fv>=5&&_fv<=90)viewFov=_fv;}catch(e){}
 function makeStudioEnv(){
   // Environnement procédural (reflets PBR) : 6 faces dégradé + boîtes lumineuses. Zéro asset externe.
   function face(draw){const c=document.createElement('canvas');c.width=c.height=256;draw(c.getContext('2d'));return c;}
@@ -27,6 +31,7 @@ function makeStudioEnv(){
 function buildScene(){
   scene=new THREE.Scene(); scene.background=new THREE.Color(0x1c1c1e);
   camera=new THREE.PerspectiveCamera(50,1.5,0.1,5000);
+  camSetFov(viewFov,false);
   camera.up.set(0,0,1); // convention CAO : Z vers le haut, Y vers l'arrière, X à droite
   camera.position.set(90,-90,90);
   renderer=new THREE.WebGLRenderer({canvas:$('viewport'),antialias:true,powerPreference:'high-performance'}); // V0.8.8 : carte graphique dédiée (NVIDIA) plutôt que l'intégrée sur un portable hybride
@@ -273,6 +278,22 @@ function viewUpReset(){
     const s=new THREE.Vector3(1,-1,0).normalize();if(Math.abs(s.dot(_mn))>0.9)s.set(0,1,0);
     camera.position.addScaledVector(s,off.length()*1e-3);
   }
+}
+function camSetFov(f,keep){
+  // Change l'angle de champ ; keep : recule/avance la caméra pour que le plan de la cible garde
+  // la même taille à l'écran (seule la convergence des fuyantes change, façon « travelling compensé »).
+  f=Math.min(90,Math.max(5,+f||50));
+  if(!camera||!camera.isPerspectiveCamera)return;
+  const t0=Math.tan((camera.fov||50)*Math.PI/360),t1=Math.tan(f*Math.PI/360);
+  if(keep&&controls){
+    const off=camera.position.clone().sub(controls.target);
+    camera.position.copy(controls.target).addScaledVector(off,t0/t1);
+  }
+  // petit angle = caméra lointaine : plans de coupe éloignés d'autant (précision de profondeur gardée)
+  const k=Math.max(1,Math.tan(25*Math.PI/180)/t1);
+  camera.fov=f;camera.near=0.1*k;camera.far=5000*k;camera.updateProjectionMatrix();
+  viewFov=f;
+  if(keep){try{controls.update();}catch(e){}mirrorDirty=true;}
 }
 function orbitSetMode(free){
   orbitFree=!!free;

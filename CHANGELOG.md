@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**370 versions**, de `2026-09-28b` à `V0.11.15` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**371 versions**, de `2026-09-28b` à `V0.11.16` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5106,3 +5106,9 @@ Cavité Usinage (« pourquoi la 1ère passe il n'y a pas d'hélice ? Tu commence
 - **Filet global** (`parFxGlobal`, écoute en capture) : tout champ numérique accepte une expression, évaluée à Entrée / sortie du champ avant le gestionnaire du champ (valeur figée). Nom inconnu : valeur d'avant + message. Champs FAO numériques (`faoNum`, outils) passés en texte décimal (`fao-num`) — un `type=number` refuse le texte ; ↑ / ↓ gardent le pas (`parNumKeys`).
 - **pi** : constante affichée en permanence dans la fenêtre ƒx (3,141592653590) ; valeurs calculées à 12 décimales.
 - **Tests** : `test_parametres_partout` (nouveau), `test_fao_zlim` / `test_fao_fiche_onglets` / `test_fao_fond_finition` (champ cherché par `fao-num`), vérifié en Chromium (congé « P1*2 » suit P1, coque « L/50 », étiquette « L/4+P1 »), suite rapide 56/56.
+
+## V0.11.16 - Vue 3D : réglage de l'effet de perspective
+« Perspective : ajouter un slider pour augmenter ou réduire l'effet ».
+- **Réglage** (⚙ Réglages de visualisation → Affichage → « Perspective ») : curseur 5° à 90° = angle de champ de la caméra 3D (50° par défaut, comme avant). À gauche presque orthographique, à droite fuyantes marquées. Double-clic : retour à 50°. Mémorisé dans le navigateur (`minifusion_fov`).
+- **Cadrage gardé** (`src/10-scene-3d.js`, `camSetFov`) : la caméra recule ou avance vers la cible pour que la pièce garde sa taille à l'écran (seule la convergence change) ; plans proche / lointain éloignés d'autant aux petits angles. Les vues PLAN « Perspective (comme la 3D) » reprennent cet angle.
+- **Tests** : vérifié en Chromium (15° et 90° : taille à l'écran identique, rapport 1,000), suite rapide 54/56 (KO `test_repeat_circ_tour`, `test_anteriorite` : exemples Git LFS non téléchargés dans cette copie, sans lien).

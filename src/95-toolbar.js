@@ -135,6 +135,10 @@ try{if($('optMirror')){$('optMirror').checked=mirrorOn;$('optMirror').onchange=(
 try{if($('optAxes')){$('optAxes').checked=axHelper?axHelper.visible:true;$('optAxes').onchange=()=>{if(axHelper)axHelper.visible=$('optAxes').checked;markDirty();try{renderTree();}catch(e){}};}}catch(e){}
 try{if($('optZoomInv')){$('optZoomInv').checked=zoomInv;$('optZoomInv').onchange=()=>{zoomInv=$('optZoomInv').checked;if(controls)controls.zoomSpeed=zoomInv?-1:1;try{localStorage.setItem('minifusion_zoominv',zoomInv?'on':'off');}catch(e){}markDirty();};}}catch(e){}
 try{if($('optOrbit')){$('optOrbit').value=orbitFree?'libre':'contrainte';$('optOrbit').onchange=()=>orbitSetMode($('optOrbit').value==='libre');}}catch(e){}
+try{if($('optFov')){const r=$('optFov'),o=$('optFovVal'),sh=()=>{if(o)o.textContent=Math.round(viewFov)+'°';};r.value=String(viewFov);sh();
+  r.oninput=()=>{camSetFov(parseFloat(r.value),true);sh();};
+  r.onchange=()=>{try{localStorage.setItem('minifusion_fov',String(viewFov));}catch(e){}};
+  r.ondblclick=()=>{r.value='50';camSetFov(50,true);sh();try{localStorage.setItem('minifusion_fov','50');}catch(e){}};}}catch(e){}
 function docResetEmpty(){
   // V0.2.3 : remise à zéro COMPLÈTE de l'espace (modes, esquisse, FAO, sélection, caches) —
   // utilisée par « Nouveau » et avant chaque ouverture de fichier (src/97-fichiers-projets.js)
