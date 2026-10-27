@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**372 versions**, de `2026-09-28b` à `V0.11.17` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**373 versions**, de `2026-09-28b` à `V0.11.18` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5122,3 +5122,9 @@ Cavité Usinage (« pourquoi la 1ère passe il n'y a pas d'hélice ? Tu commence
 - Restent exclues, volontairement : coque, scission, combinaison, déplacement de corps, import (opérations de corps entier).
 - **Connu, hors de cette version** : deux révolutions jointives par une face d'extrémité figent la fusion OCCT (aussi sans répétition) — corrigé à part.
 - **Tests** : `test_repeat_fonctions` (nouveau, vrai noyau : linéaire 1 et 2 copies, circulaire 360° / 45° / 90°, symétrie ; volumes et positions exacts, copie suivant l'angle de la source), tests de répétition existants, suite rapide 56/56.
+
+## V0.11.18 - Révolutions jointives : fin du gel du rejeu
+Défaut trouvé en rendant les révolutions répétables (V0.11.17) : deux révolutions qui se touchent exactement par une face d'extrémité figeaient le rejeu (> 60 s, onglet bloqué), avec ou sans répétition.
+- **Cause** (`src/20-noyau-et-operations-solides.js`, `occUnify`) : la fusion passait ; c'est `ShapeUpgrade_UnifySameDomain` qui bouclait sans fin en recollant deux faces de révolution du même domaine mais de paramétrage incompatible (axe de sens opposé, ou repère indirect après une symétrie).
+- **Correctif** : `occUnifyKeepEdges` repère ces paires (cylindre, cône, sphère, tore de mêmes dimensions, axes confondus) et leurs arêtes communes sont gardées (`KeepShape`) : les deux faces restent séparées, une ligne de jonction en plus ; tout le reste est uni comme avant. Paires compatibles (même sens, même main) : inchangé.
+- **Tests** : `test_revolutions_jointives` (nouveau, vrai noyau : axes opposés, symétrique YZ, témoin recollé en 6 faces).

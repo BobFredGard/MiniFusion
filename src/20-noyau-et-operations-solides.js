@@ -342,9 +342,11 @@ function occUnify(s){
   // en cas d'échec la shape d'origine est rendue telle quelle. Sa propre shape (s) est
   // supprimée si l'unification en produit une nouvelle.
   if(!s||!occtReady||!occt||!occt.ShapeUpgrade_UnifySameDomain_2)return s;
-  let u=null;
+  let u=null,keep=[];
   try{
     u=new occt.ShapeUpgrade_UnifySameDomain_2(s,true,true,false);
+    keep=occUnifyKeepEdges(s);
+    keep.forEach(e=>u.KeepShape(e));
     u.Build();
     const r=u.Shape();
     if(r&&r!==s){try{s.delete();}catch(e){}return r;}
@@ -353,7 +355,57 @@ function occUnify(s){
     return s;
   }finally{
     try{if(u)u.delete();}catch(e){}
+    occDispose(keep);
   }
+}
+function occUnifyKeepEdges(s){
+  // GARDE-FOU (2026-10-27) : UnifySameDomain BOUCLE SANS FIN (wasm figé, > 60 s) quand il
+  // recolle deux faces de révolution du même domaine mais de paramétrage incompatible : axe
+  // de sens opposé (deux révolutions de 90° qui se touchent par leur face d'extrémité, l'une
+  // autour de +Y, l'autre autour de −Y) ou repère indirect (symétrie d'une révolution
+  // partielle). Les arêtes communes à ces paires sont rendues ici pour KeepShape : les deux
+  // faces restent séparées (une couture de plus), tout le reste est uni normalement.
+  // Paires sûres (même sens, même main) : rien. Jamais d'exception : [] en cas d'échec.
+  const out=[];
+  if(!occt.BRepAdaptor_Surface_2||!occt.GeomAbs_SurfaceType)return out;
+  const T=occt.GeomAbs_SurfaceType,E=occt.TopAbs_ShapeEnum,bin=[];
+  const v3=p=>[p.X(),p.Y(),p.Z()];
+  const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+  const crs=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+  const tol=1e-6;
+  try{
+    const R=[];
+    const ex=occBinPush(bin,new occt.TopExp_Explorer_2(s,E.TopAbs_FACE,E.TopAbs_SHAPE));
+    for(;ex.More();ex.Next()){
+      const f=occBinPush(bin,occt.TopoDS.Face_1(ex.Current()));
+      const ad=occBinPush(bin,new occt.BRepAdaptor_Surface_2(f,true));
+      const t=ad.GetType();let g=null,k='',sig=[];
+      if(t===T.GeomAbs_Cylinder){g=occBinPush(bin,ad.Cylinder());k='cyl';sig=[g.Radius()];}
+      else if(t===T.GeomAbs_Cone){g=occBinPush(bin,ad.Cone());k='cone';sig=v3(occBinPush(bin,g.Apex())).concat([Math.abs(g.SemiAngle())]);}
+      else if(t===T.GeomAbs_Sphere){g=occBinPush(bin,ad.Sphere());k='sph';sig=[g.Radius()];}
+      else if(t===T.GeomAbs_Torus){g=occBinPush(bin,ad.Torus());k='tor';sig=[g.MajorRadius(),g.MinorRadius()];}
+      if(!g)continue;
+      const ax=occBinPush(bin,g.Position());
+      R.push({f,k,sig,P:v3(occBinPush(bin,ax.Location())),D:v3(occBinPush(bin,ax.Direction())),direct:!!ax.Direct()});
+    }
+    for(let i=0;i<R.length;i++)for(let j=i+1;j<R.length;j++){
+      const a=R[i],b=R[j];
+      if(a.k!==b.k||a.sig.length!==b.sig.length||a.sig.some((x,n)=>Math.abs(x-b.sig[n])>tol))continue;
+      const c=dot(a.D,b.D);
+      if(Math.abs(Math.abs(c)-1)>1e-9)continue; // axes non parallèles : pas le même domaine
+      const w=sub(b.P,a.P);
+      if(a.k==='sph'||a.k==='tor'?Math.hypot(...w)>tol:Math.hypot(...crs(w,a.D))>tol)continue; // axes non confondus
+      if(c>0&&a.direct===b.direct)continue; // paramétrages compatibles : UnifySameDomain s'en sort
+      const ea=occBinPush(bin,new occt.TopExp_Explorer_2(a.f,E.TopAbs_EDGE,E.TopAbs_SHAPE));
+      for(;ea.More();ea.Next()){
+        const e=ea.Current();let com=false;
+        const eb=occBinPush(bin,new occt.TopExp_Explorer_2(b.f,E.TopAbs_EDGE,E.TopAbs_SHAPE));
+        for(;eb.More()&&!com;eb.Next())com=e.IsSame(eb.Current());
+        if(com&&!out.some(x=>x.IsSame(e)))out.push(occt.TopoDS.Edge_1(e));
+      }
+    }
+  }catch(e){}finally{occDispose(bin);}
+  return out;
 }
 
 // ---------- Coque (évidage paroi mince) ----------
