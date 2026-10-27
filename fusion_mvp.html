@@ -277,7 +277,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.11.14';
+const APP_VER='V0.11.15';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -6797,6 +6797,7 @@ function applyRepPattern(){
     dir2:repMode.type==='lin'&&repMode.lin2?repMode.dir2:undefined,copies2:repMode.type==='lin'&&repMode.lin2?repMaxCopies(repMode.copies2):undefined,
     dist2:repMode.type==='lin'&&repMode.lin2?(+repMode.dist2||0):undefined,
     base:base.map(f=>f.id),children:[],visible:true};
+  parFxCopy(repMode,rp,repMode.type==='circ'?['angle']:(repMode.type==='lin'?(repMode.lin2?['dist','dist2']:['dist']):[]));
   addFeature(rp);
   const nb=repGenChildren(rp);
   exitRepMode();
@@ -6857,7 +6858,7 @@ function renderRepPanel(){
       bf2.onclick=()=>{repUseSelectedFace2();};p.appendChild(bf2);
     }
   }
-  if(repMode.type==='lin'){const l=document.createElement('label');l.textContent=' Distance (mm)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.dist;inp.onchange=()=>{repMode.dist=parseFloat(String(inp.value).replace(',','.'))||0;};l.appendChild(inp);p.appendChild(l);
+  if(repMode.type==='lin'){const l=document.createElement('label');l.textContent=' Distance (mm)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.dist;parFx(inp,repMode,'dist');inp.onchange=()=>{repMode.dist=parseFloat(String(inp.value).replace(',','.'))||0;};l.appendChild(inp);p.appendChild(l);
     // 2ᵉ DIRECTION (grille) : axe, quantité (original compris), pas
     const r2=document.createElement('div');r2.className='row';
     const t2=document.createElement('input');t2.type='checkbox';t2.checked=!!repMode.lin2;t2.className='rep2Chk';
@@ -6871,12 +6872,12 @@ function renderRepPanel(){
       ax2.value=repMode.axis2||'Y';ax2.title='Axe de la 2ᵉ direction';ax2.onchange=()=>{repMode.axis2=ax2.value;delete repMode.dir2;renderRepPanel();};p.appendChild(ax2);
       const c2=document.createElement('input');c2.type='number';c2.min='2';c2.value=(+repMode.copies2||1)+1;c2.title='Quantité dans la 2ᵉ direction, original compris';
       c2.onchange=()=>{repMode.copies2=repMaxCopies((+c2.value||2)-1);c2.value=repMode.copies2+1;};p.appendChild(c2);
-      const ld=document.createElement('label');ld.textContent=' Distance 2 (mm)';const i2=document.createElement('input');i2.type='text';i2.inputMode='decimal';i2.value=repMode.dist2;
+      const ld=document.createElement('label');ld.textContent=' Distance 2 (mm)';const i2=document.createElement('input');i2.type='text';i2.inputMode='decimal';i2.value=repMode.dist2;parFx(i2,repMode,'dist2');
       i2.onchange=()=>{repMode.dist2=parseFloat(String(i2.value).replace(',','.'))||0;};ld.appendChild(i2);p.appendChild(ld);
       const bf2=document.createElement('button');bf2.textContent='🎯 Face / arête → 2ᵉ direction';bf2.title='Prend la direction de l’arête sélectionnée (axe d’un cercle) ou la normale de la face sélectionnée';bf2.onclick=()=>repUseSelectedFace2();p.appendChild(bf2);
     }
   }
-  if(repMode.type==='circ'){const l=document.createElement('label');l.textContent=' Angle total (°)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.angle;inp.onchange=()=>{repMode.angle=parseFloat(String(inp.value).replace(',','.'))||360;};l.appendChild(inp);p.appendChild(l);}
+  if(repMode.type==='circ'){const l=document.createElement('label');l.textContent=' Angle total (°)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.angle;parFx(inp,repMode,'angle');inp.onchange=()=>{repMode.angle=parseFloat(String(inp.value).replace(',','.'))||360;};l.appendChild(inp);p.appendChild(l);}
   // ── FONCTIONS RÉPÉTABLES : la MÊME liste à cocher qu'à l'édition (voir
   // repSourceList). Aucun re-rendu ici : la case garde son état, seul l'arbre se
   // rafraîchit (le compteur se met à jour sur place, dans la liste).
@@ -16360,7 +16361,8 @@ function parNameCheck(nm,selfDim,selfParam,selfH,selfK){
   if(!PAR_ID.test(nm))return'Nom invalide « '+nm+' » : lettres, chiffres, _ (sans espace ni accent, pas de chiffre en tête).';
   if(PAR_FN[nm]||Object.prototype.hasOwnProperty.call(PAR_CONST,nm))return'« '+nm+' » est réservé (fonction / constante).';
   const e=parAll().get(nm);
-  if(e&&!((e.kind==='dim'&&e.d===selfDim)||(e.kind==='param'&&e.p===selfParam)||(e.kind==='feat'&&e.h===selfH&&e.k===selfK)))return'Le nom « '+nm+' » est déjà utilisé.';
+  // selfH._fxOf : porteur provisoire d'une commande en cours d'ÉDITION (copie de la fonction éditée)
+  if(e&&!((e.kind==='dim'&&e.d===selfDim)||(e.kind==='param'&&e.p===selfParam)||(e.kind==='feat'&&((e.h===selfH&&e.k===selfK)||(selfH&&selfH._fxOf===e.h&&e.k===((selfH._fxKeys&&selfH._fxKeys[selfK])||selfK))))))return'Le nom « '+nm+' » est déjà utilisé.';
   return true;
 }
 function parRename(oldN,newN){
@@ -16388,16 +16390,62 @@ function parFxSet(h,k,txt){
   if(parIsNumber(expr)){if(h.expr)delete h.expr[k];return{ok:true,v:parseFloat(expr.replace(',','.'))};}
   h.expr=h.expr||{};h.expr[k]=expr;
   const before=h[k];
-  try{parResolve();}catch(e){h.exprErr=h.exprErr||{};h.exprErr[k]=e.message;}
+  // porteur hors document (commande en cours de création : congé, coque, répétition…) :
+  // parResolve ne le voit pas, l'expression est évaluée ici avec les valeurs du document
+  const inDoc=parHolders().some(x=>x.h===h);
+  let v=NaN;
+  try{const R=parResolve();if(!inDoc){v=parEval(expr,R.get);if(!isFinite(v))throw new Error('valeur non finie');}}
+  catch(e){h.exprErr=h.exprErr||{};h.exprErr[k]=e.message;}
   if(h.exprErr&&h.exprErr[k]){const msg=h.exprErr[k];if(name&&oldN&&name!==oldN)parRename(name,oldN);restore();h[k]=before;return{ok:false,msg:'Expression : '+msg};}
-  const v=parHolderVal(h,k);h[k]=before; // le code de la fonction applique la valeur (contrôles, nom, rejeu)
+  if(inDoc)v=parHolderVal(h,k);
+  h[k]=before; // le code de la fonction applique la valeur (contrôles, nom, rejeu)
   return{ok:true,v};
+}
+function parFxCopy(src,dst,keys){
+  // Reporte expression / nom ƒx d'un porteur provisoire (état d'une commande) vers la fonction
+  // créée ou éditée. keys : ['angle'] ou {cléSource:cléCible}. Une valeur saisie en clair efface.
+  if(!src||!dst)return dst;
+  const M=Array.isArray(keys)?Object.fromEntries(keys.map(k=>[k,k])):keys;
+  Object.keys(M).forEach(a=>{const b=M[a];
+    const ex=src.expr&&src.expr[a],nm=src.pname&&src.pname[a];
+    if(ex){dst.expr=dst.expr||{};dst.expr[b]=ex;}else if(dst.expr){delete dst.expr[b];if(!Object.keys(dst.expr).length)delete dst.expr;}
+    if(nm){dst.pname=dst.pname||{};dst.pname[b]=nm;}
+    if(dst.exprErr)delete dst.exprErr[b];});
+  return dst;
+}
+function parFxFrom(f,dst,keys){
+  // Inverse de parFxCopy : une commande ouverte en ÉDITION reprend les expressions de la fonction
+  // (le champ affiche « nom = expression ») ; dst._fxOf évite que son propre nom soit « déjà utilisé ».
+  if(!f||!dst)return dst;
+  const M=Array.isArray(keys)?Object.fromEntries(keys.map(k=>[k,k])):keys;
+  delete dst.expr;delete dst.pname;
+  Object.keys(M).forEach(b=>{const a=M[b];
+    if(f.expr&&f.expr[a]){dst.expr=dst.expr||{};dst.expr[b]=f.expr[a];}
+    if(f.pname&&f.pname[a]){dst.pname=dst.pname||{};dst.pname[b]=f.pname[a];}});
+  dst._fxOf=f;dst._fxKeys=M;
+  return dst;
+}
+function parValueNow(nm){
+  // valeur ACTUELLE d'un nom (sans réévaluer le document)
+  const e=parAll().get(nm);if(!e)throw new Error('« '+nm+' » inconnu');
+  if(e.kind==='param')return(e.p.value!=null&&isFinite(+e.p.value))?+e.p.value:parEval(e.p.expr,parValueNow);
+  return e.kind==='feat'?parHolderVal(e.h,e.k):parDimUser(e.d);
+}
+function parFxNum(txt,h,k){
+  // Lecture d'une saisie numérique : nombre, expression (L/2 + 3) ou, avec un porteur h/k,
+  // « nom = expression » mémorisé comme parFx. Retour {ok,v}|{ok:false,msg}.
+  const s=String(txt==null?'':txt).trim().replace(/\s*(mm|°|deg)\s*$/i,'');
+  if(parIsNumber(s)){if(h&&h.expr&&h.expr[k])delete h.expr[k];return{ok:true,v:parseFloat(s.replace(',','.'))};}
+  if(h)return parFxSet(h,k,s);
+  if(/=/.test(s))return{ok:false,msg:'« nom = valeur » : nommer n’est possible que sur une valeur de fonction.'};
+  try{return{ok:true,v:parEval(s,parValueNow)};}catch(e){return{ok:false,msg:e.message};}
 }
 function parFx(inp,h,k){
   // Branche un champ numérique de fonction 3D sur ƒx : appelé JUSTE APRÈS la création du champ
   // (avant ses propres gestionnaires) — une expression / « nom = » est mémorisée puis remplacée
   // par sa valeur numérique, que le gestionnaire existant applique comme d'habitude.
   if(!inp||!h)return inp;
+  inp._parFx=1; // le filet global (parFxGlobal) laisse ce champ à son gestionnaire ƒx
   const ex=h.expr&&h.expr[k],nm=h.pname&&h.pname[k];
   if(ex||nm){inp.value=(nm?nm+' = ':'')+(ex||String(+parHolderVal(h,k).toFixed(4)).replace('.',','));
     inp.style.width=Math.max(parseInt(inp.style.width)||70,Math.min(240,8*inp.value.length+20))+'px';}
@@ -16409,7 +16457,7 @@ function parFx(inp,h,k){
     if(parIsNumber(s)){if(h.expr&&h.expr[k]){delete h.expr[k];}inp._fxDone=s;return;}
     const r=parFxSet(h,k,s);
     if(!r.ok){try{faceEl.textContent='ƒx : '+r.msg;}catch(e){}inp.value=String(+parHolderVal(h,k).toFixed(4)).replace('.',',');inp._fxDone=inp.value;return;}
-    inp.value=String(+r.v.toFixed(6)).replace('.',',');inp._fxDone=inp.value;
+    inp.value=String(+r.v.toFixed(12)).replace('.',',');inp._fxDone=inp.value;
     try{faceEl.textContent='ƒx : '+(h.pname&&h.pname[k]?h.pname[k]+' = ':'')+(h.expr&&h.expr[k]?h.expr[k]+' → ':'')+(+r.v.toFixed(4));}catch(e){}
   };
   inp.addEventListener('change',go);inp.addEventListener('blur',go);
@@ -16481,7 +16529,7 @@ function openParamsDlg(){
       const td=()=>{const t=document.createElement('td');t.style.padding='3px 6px';tr.appendChild(t);return t;};
       const n=document.createElement('input');n.value=o.name||'';n.style.cssText=inpCss;n.placeholder='nom';td().appendChild(n);
       const x=document.createElement('input');x.value=o.expr;x.style.cssText=inpCss;td().appendChild(x);
-      const v=td();v.textContent=o.err?('⚠ '+o.err):(isFinite(o.val)?(+o.val.toFixed(4))+(o.unit||''):'');if(o.err)v.style.color='#ff9f0a';
+      const v=td();v.textContent=o.err?('⚠ '+o.err):(isFinite(o.val)?String(+o.val.toFixed(12)).replace('.',',')+(o.unit||''):'');if(o.err)v.style.color='#ff9f0a';
       td().textContent=o.origin;
       const del=td();
       if(o.del){const b=document.createElement('button');b.textContent='🗑';b.title='Supprimer';b.onclick=()=>{o.del();parAfterChange();render();};del.appendChild(b);}
@@ -16512,6 +16560,10 @@ function openParamsDlg(){
       });
     });
     box.appendChild(tbl);
+    // constantes toujours disponibles (lecture seule) : pi à 12 décimales
+    const cst=document.createElement('div');cst.className='parConst';cst.style.cssText='margin-top:8px;opacity:.85';
+    cst.innerHTML='<b>Constantes</b> (toujours disponibles) : <code>pi</code> = '+PAR_CONST.pi.toFixed(12).replace('.',',')+' — ex. « pi*D », « 2*pi*R », « D*pi/4 ».';
+    box.appendChild(cst);
     try{cfgSection(box,render);}catch(e){} // V0.8.4 : configurations (52-configurations)
     const bar=document.createElement('div');bar.style.cssText='display:flex;gap:8px;justify-content:flex-end;margin-top:12px';
     const add=document.createElement('button');add.textContent='+ Paramètre';
@@ -16524,6 +16576,60 @@ function openParamsDlg(){
   ov.addEventListener('keydown',e=>{if(e.key==='Escape'){ov.remove();}e.stopPropagation();});
   document.body.appendChild(ov);
 }
+/* ---------- ƒx partout (V0.11.15) ----------
+   Filet global : tout champ NUMÉRIQUE de l'interface (FAO, assemblage, mise en plan, outils…)
+   accepte une expression à la validation (Entrée / sortie du champ) : « L + 2 », « P1*3 »,
+   « (L - 2*R)/3 », « 12,5 / 4 »… Elle est remplacée par sa valeur AVANT le gestionnaire du champ
+   (écoute en phase de capture), qui applique un nombre comme d'habitude. Valeur figée : seuls les
+   champs branchés par parFx (fonctions 3D et commandes qui les créent) gardent le lien.
+   Champ numérique = champ texte dont la valeur à l'entrée était un nombre, ou inputMode décimal. */
+function parFxEligible(t){
+  if(!t||t.tagName!=='INPUT'||t._parFx||t.readOnly||t.disabled)return false;
+  if(t.type!=='text'&&t.type!=='')return false;
+  if(t.dataset&&t.dataset.nofx!=null)return false;
+  try{if(t.closest&&t.closest('#parDlg'))return false;}catch(e){}
+  return true;
+}
+function parNumKeys(i){
+  // champ texte décimal qui remplace un type=number : ↑ / ↓ ajoutent / retirent le pas (i.step, défaut 1)
+  if(!i||!i.addEventListener)return i;
+  i.addEventListener('keydown',e=>{
+    if(e.key!=='ArrowUp'&&e.key!=='ArrowDown')return;
+    const v=parseFloat(String(i.value).replace(',','.'));if(!isFinite(v))return;
+    const st=Math.abs(parseFloat(i.step))||1,n=v+(e.key==='ArrowUp'?st:-st);
+    i.value=String(+n.toFixed(6));e.preventDefault();
+    try{i.dispatchEvent(new Event('change',{bubbles:true}));}catch(e2){}
+  });
+  return i;
+}
+function parFxNumeric(t){return t.inputMode==='decimal'||t.inputMode==='numeric'||parIsNumber(t._fxPrev);}
+function parFxGlobal(e){
+  const t=e.target;
+  if(e.type==='keydown'&&e.key!=='Enter')return;
+  if(!parFxEligible(t)||!parFxNumeric(t))return;
+  const s=String(t.value).trim();
+  if(!s||parIsNumber(s)||s===t._fxLast||/=/.test(s))return; // « nom = … » : réservé aux champs parFx / cotes
+  if(!/[A-Za-z_(+*\/^-]/.test(s.replace(/^\s*-/,'')))return;
+  let v;
+  try{v=parEval(s,parValueNow);}
+  catch(err){
+    // nom inconnu, parenthèse… : ne JAMAIS laisser parseFloat lire « 2*X » comme 2
+    if(/[A-Za-z_]/.test(s)||/[+*\/^]/.test(s)){
+      if(t._fxPrev!=null)t.value=t._fxPrev;
+      try{faceEl.textContent='ƒx : '+err.message+' — valeur inchangée.';}catch(e2){}
+    }
+    return;
+  }
+  const out=String(+v.toFixed(12)); // 12 décimales (pi = 3.141592653590) ; point décimal : certains champs lisent parseFloat(valeur) brut
+  t.value=out;t._fxLast=out;
+  try{faceEl.textContent='ƒx : '+s+' → '+(+v.toFixed(4));}catch(e2){}
+  try{t.dispatchEvent(new Event('input',{bubbles:true}));}catch(e2){} // champs à l'écoute de « input »
+}
+try{
+  document.addEventListener('focusin',e=>{const t=e.target;if(parFxEligible(t)){t._fxPrev=t.value;t._fxLast=null;}},true);
+  document.addEventListener('keydown',parFxGlobal,true);
+  document.addEventListener('change',parFxGlobal,true);
+}catch(e){}
 // boutons ƒx : bandeau principal (après Perçage / Extrusion) et barre d'esquisse (avant ↩)
 (function(){
   try{
@@ -18929,8 +19035,10 @@ function extLabelEl(){
   w.style.cssText='position:fixed;z-index:40;display:none;align-items:center;gap:6px;padding:3px 7px;border-radius:7px;background:var(--panel, #1e1e22);border:1px solid var(--line, #3a3a40);box-shadow:0 2px 10px rgba(0,0,0,.35);font-size:12px;color:var(--fg, #ddd)';
   const l=document.createElement('span');l.textContent='Distance';w.appendChild(l);
   const i=document.createElement('input');i.type='text';i.inputMode='decimal';i.className='extDistIn';i.style.cssText='width:64px;font-size:12px;padding:1px 4px';
+  i._parFx=1; // ƒx traité ici : « L/2 », « Ep = L/10 » se mémorisent sur l'extrusion
   i.addEventListener('keydown',e=>{e.stopPropagation();
-    if(e.key==='Enter'){const f=extDynFeature();const v=parseFloat(String(i.value).replace(',','.').replace(/\s*mm$/,''));
+    if(e.key==='Enter'){const f=extDynFeature();const r=f?parFxNum(i.value,f,'distance'):{ok:false,msg:''},v=r.ok?r.v:NaN;
+      if(!r.ok&&r.msg){try{faceEl.textContent='ƒx : '+r.msg;}catch(e2){}}
       if(f&&isFinite(v)&&v!==0)extDynSet('distance de « '+f.name+' »',g=>extDistSet(g,Math.abs(v)*((g.op||'add')==='cut'?-1:1)));i.blur();}
     else if(e.key==='Escape')i.blur();});
   w.appendChild(i);const u=document.createElement('span');u.textContent='mm';w.appendChild(u);
@@ -19072,7 +19180,7 @@ function renderNewExtrude(){
   // ── Distance ──
   const r2=document.createElement('div');r2.className='pnl-row';
   const l2=document.createElement('label');l2.textContent=(extNew.op==='cut'?'Profondeur de la poche':'Hauteur du plot')+' (mm)';r2.appendChild(l2);
-  const i2=document.createElement('input');i2.type='text';i2.inputMode='decimal';i2.value=extNew.dist;
+  const i2=document.createElement('input');i2.type='text';i2.inputMode='decimal';i2.value=extNew.dist;parFx(i2,extNew,'dist');
   i2.addEventListener('change',()=>{const v=parseFloat(String(i2.value).replace(',','.'));if(isFinite(v)&&v!==0)extNew.dist=Math.abs(v);});
   i2.addEventListener('keydown',e=>{if(e.key==='Enter'){extNewOk();e.stopPropagation();}e.stopPropagation();});
   i2.addEventListener('click',e=>e.stopPropagation());
@@ -19090,6 +19198,7 @@ function extNewOk(){
   const op0=extNew.op,op=op0==='new'?'add':op0;
   const nf={id:uid('ex'),type:'extrude',name:'',sketchId:extNew.sketchId,
     distance:Math.abs(+extNew.dist||20)*(op==='cut'?-1:1),op:op,visible:true,mid:false,upto:null};
+  parFxCopy(extNew,nf,{dist:'distance'});
   if(op0==='new'){nf.body=extNewBody();nf.newBody=true;} // 2026-10-16-009 : NOUVEAU CORPS (solide séparé)
   nf.name=extName(nf);
   addFeature(nf);
@@ -19332,9 +19441,10 @@ function fdynSec(p,lab,el){
   const l=document.createElement('div');l.className='pnl-note';l.style.cssText='margin:0 0 3px;font-weight:600';l.textContent=lab;
   w.appendChild(l);w.appendChild(el);p.appendChild(w);return w;
 }
-function fdynNumIn(val,onSet,cls,w){
+function fdynNumIn(val,onSet,cls,w,h,k){
   const i=document.createElement('input');i.type='text';i.inputMode='decimal';i.className=cls||'';i.style.width=(w||80)+'px';
   i.value=String(+(+val).toFixed(3)).replace('.',',');
+  if(h)parFx(i,h,k); // ƒx : expression / « nom = » mémorisée sur la fonction (h[k])
   const c=()=>{const v=parseFloat(String(i.value).replace(',','.'));if(isFinite(v)&&v>0&&Math.abs(v-(+val))>1e-9)onSet(v);};
   i.addEventListener('change',c);i.addEventListener('keydown',e=>{if(e.key==='Enter'){c();i.blur();}e.stopPropagation();});
   i.addEventListener('click',e=>e.stopPropagation());
@@ -19384,7 +19494,7 @@ function fdynRevolvePanel(p,f){
   fdynSec(p,'Angle',extSeg([['90','◔','90°',''],['180','◑','180°',''],['270','◕','270°',''],['360','●','360°','Tour complet']],String(+a),
     v=>fdynSet('angle de « '+f.name+' »',g=>{g.angle=+v;})));
   const w=document.createElement('div');w.className='pnl-btns';w.style.cssText='align-items:center;gap:6px';
-  w.appendChild(fdynNumIn(a,v=>fdynSet('angle de « '+f.name+' »',g=>{g.angle=Math.min(360,v);}),'fdynAngle',80));
+  w.appendChild(fdynNumIn(a,v=>fdynSet('angle de « '+f.name+' »',g=>{g.angle=Math.min(360,v);}),'fdynAngle',80,f,'angle'));
   const u=document.createElement('span');u.className='pnl-note';u.textContent='°';w.appendChild(u);
   fdynSec(p,'',w);
   if(skR){
@@ -19406,7 +19516,7 @@ function fdynHandle(f){
     const A=holeAxis(f,sk);if(!A.pts.length)return null;
     const P=A.pts[0];
     return {kind:'lin',C:new THREE.Vector3(P.x,P.y,P.z),n:new THREE.Vector3(A.dir.x,A.dir.y,A.dir.z),val:+f.depth||10,
-      label:'Profondeur',unit:'mm',step:1,min:0.5,max:2000,set:(g,v)=>{g.depth=v;}};
+      label:'Profondeur',unit:'mm',step:1,min:0.5,max:2000,hk:[f,'depth'],set:(g,v)=>{g.depth=v;}};
   }
   if(f.type==='xfillet'){
     const E=(f.edges||[])[0];if(!E||!E.pos)return null;
@@ -19428,7 +19538,7 @@ function fdynHandle(f){
       const w=occW(sk,q.x,q.y),v=new THREE.Vector3(w[0],w[1],w[2]),r=v.clone().sub(A),dd=r.clone().addScaledVector(d,-r.dot(d)).length();
       if(dd>best){best=dd;R0=v;}});});
     if(!R0||!(best>1e-6))return null;
-    return {kind:'rot',A:A,d:d,R0:R0,val:revolveAngle(f),label:'Angle',unit:'°',step:1,min:1,max:360,set:(g,v)=>{g.angle=v;}};
+    return {kind:'rot',A:A,d:d,R0:R0,val:revolveAngle(f),label:'Angle',unit:'°',step:1,min:1,max:360,hk:[f,'angle'],set:(g,v)=>{g.angle=v;}};
   }
   return null;
 }
@@ -19456,8 +19566,11 @@ function fdynLabelEl(){
   w.style.cssText='position:fixed;z-index:40;display:none;align-items:center;gap:6px;padding:3px 7px;border-radius:7px;background:var(--panel, #1e1e22);border:1px solid var(--line, #3a3a40);box-shadow:0 2px 10px rgba(0,0,0,.35);font-size:12px;color:var(--fg, #ddd)';
   const l=document.createElement('span');l.className='fdynLblT';w.appendChild(l);
   const i=document.createElement('input');i.type='text';i.inputMode='decimal';i.className='fdynIn';i.style.cssText='width:64px;font-size:12px;padding:1px 4px';
+  i._parFx=1; // ƒx traité ici : l'expression se mémorise sur la fonction (H.hk)
   i.addEventListener('keydown',e=>{e.stopPropagation();
-    if(e.key==='Enter'){const f=fdynFeature(),H=fdynHandle(f);const v=parseFloat(String(i.value).replace(',','.').replace(/\s*(mm|°)$/,''));
+    if(e.key==='Enter'){const f=fdynFeature(),H=fdynHandle(f);
+      const r=parFxNum(i.value,H&&H.hk&&H.hk[0],H&&H.hk&&H.hk[1]),v=r.ok?r.v:NaN;
+      if(!r.ok){try{faceEl.textContent='ƒx : '+r.msg;}catch(e2){}}
       if(f&&H&&isFinite(v)&&v>0)fdynSet(H.label.toLowerCase()+' de « '+f.name+' »',g=>H.set(g,Math.min(H.max,Math.max(H.min,v))));i.blur();}
     else if(e.key==='Escape')i.blur();});
   w.appendChild(i);const u=document.createElement('span');u.className='fdynLblU';w.appendChild(u);
@@ -19906,7 +20019,7 @@ function renderNewRevolve(){
   // ── Angle ──
   const r3=document.createElement('div');r3.className='pnl-row';
   const l3=document.createElement('label');l3.textContent='Angle (°)';r3.appendChild(l3);
-  const i3=document.createElement('input');i3.type='text';i3.inputMode='decimal';i3.value=revNew.angle;
+  const i3=document.createElement('input');i3.type='text';i3.inputMode='decimal';i3.value=revNew.angle;parFx(i3,revNew,'angle');
   i3.addEventListener('change',()=>{const v=parseFloat(String(i3.value).replace(',','.'));if(isFinite(v)&&v>0)revNew.angle=Math.min(360,v);});
   i3.addEventListener('keydown',e=>{if(e.key==='Enter'){revNewOk();e.stopPropagation();}e.stopPropagation();});
   i3.addEventListener('click',e=>e.stopPropagation());
@@ -19946,6 +20059,7 @@ function revNewOk(){
   if(!sd.ok){faceEl.textContent='Révolution : '+sd.msg;return;}
   const nf={id:uid('rv'),type:'revolve',name:'',sketchId:revNew.sketchId,
     axis:revNew.axis,angle:revNew.angle,op:revNew.op,visible:true};
+  parFxCopy(revNew,nf,['angle']);
   nf.name=revolveName(nf);
   addFeature(nf);
   if(sk.visible!==false)sk.visible=false;
@@ -21769,7 +21883,7 @@ function enterExactFilletMode(editF,kind){
     (editing.edges||[]).forEach(s=>{
       if(seen.some(u=>Math.abs((u.r||0)-(s.r||0))<1e-9&&Math.hypot(u.pos[0]-s.pos[0],u.pos[1]-s.pos[1],u.pos[2]-s.pos[2])<=0.75))return;
       seen.push(s);
-      filModeX.sel.push({pos:s.pos.slice(),pos0:(s.pos0||s.pos).slice(),r:s.r||2,len:+(s.len||0)||0,anchor:s.anchor||null,name:s.name||null,seed:s.seed?1:0});
+      filModeX.sel.push(parFxFrom(s,{pos:s.pos.slice(),pos0:(s.pos0||s.pos).slice(),r:s.r||2,len:+(s.len||0)||0,anchor:s.anchor||null,name:s.name||null,seed:s.seed?1:0},['r']));
     });
     const rr=filModeX.sel.find(s=>s.r>0);if(rr)filModeX.radius=rr.r;
     occSkipFeat=editing.id;
@@ -21866,7 +21980,7 @@ function xSelSync(){
   // un rayon saisi arête par arête survit à un changement de sélection
   filModeX.sel.forEach(s=>{
     const k=kept.findIndex(u=>Math.hypot(u.pos[0]-s.pos[0],u.pos[1]-s.pos[1],u.pos[2]-s.pos[2])<0.75);
-    if(k>=0)kept[k].r=s.r;
+    if(k>=0){kept[k].r=s.r;if(s.expr||s.pname){parFxCopy(s,kept[k],['r']);if(s._fxOf)kept[k]._fxOf=s._fxOf;}}
   });
   filModeX.sel=kept;
   xPreviewUpdate();
@@ -22311,7 +22425,9 @@ function renderExactPanel(){
   const r1=document.createElement('div');r1.className='pnl-row';
   const lab=document.createElement('label');lab.textContent=(xIsChamfer(k)?'Distance':'Rayon')+' par défaut (mm)';r1.appendChild(lab);
   const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=filModeX.radius;
-  inp.addEventListener('input',()=>{const v=parseFloat(String(inp.value).replace(',','.'));if(v>0&&isFinite(v)){filModeX.radius=v;filMemo.r[xIsChamfer(k)?'chamfer':'fillet']=v;}});
+  parFx(inp,filModeX,'radius'); // ƒx : « R », « R*2 »… — l'expression suit sur les arêtes retenues
+  const setR=()=>{const v=parseFloat(String(inp.value).replace(',','.'));if(v>0&&isFinite(v)){filModeX.radius=v;filMemo.r[xIsChamfer(k)?'chamfer':'fillet']=v;}};
+  inp.addEventListener('input',setR);inp.addEventListener('change',setR);
   inp.addEventListener('click',e=>e.stopPropagation());
   inp.addEventListener('keydown',e=>e.stopPropagation());
   r1.appendChild(inp);p.appendChild(r1);
@@ -22356,7 +22472,7 @@ function renderExactPanel(){
     const eLen=(filModeX.edges.find(e=>Math.hypot(e.mid[0]-s.pos[0],e.mid[1]-s.pos[1],e.mid[2]-s.pos[2])<0.75)||{len:0}).len;
     r.innerHTML=`<span>${xIcon(k)}</span><span class="nm">${s.name?`<b>${s.name}</b> · `:''}${dp} <b>${s.r}</b> · L${eLen.toFixed(1)}${s.anchor?' · ⌖':''} · (${s.pos.map(v=>v.toFixed(1)).join(', ')})</span><span title="Retirer">✕</span>`;
     const num=document.createElement('input');num.type='text';num.inputMode='decimal';num.value=s.r;
-    num.onclick=ev=>ev.stopPropagation();
+    num.onclick=ev=>ev.stopPropagation();parFx(num,s,'r');
     const ce=()=>{
       const v=parseFloat(String(num.value).replace(',','.'));
       if(v>0&&isFinite(v)){s.r=v;renderExactPanel();xPreviewUpdate();}
@@ -22395,6 +22511,9 @@ function applyExactFillet(){
   // session), c'est elle qui ancre la propagation tangente à chaque rejeu (passe 2b).
   const mkEdges=()=>filModeX.sel.map(s=>{
     const e={pos:s.pos.slice(),pos0:(s.pos0||s.pos).slice(),r:s.r,len:+(s.len||0),anchor:s.anchor||null,name:s.name||entName('edge')};
+    // ƒx : expression propre à l'arête, sinon celle du rayon par défaut si l'arête l'a gardé
+    if((s.expr&&s.expr.r)||(s.pname&&s.pname.r))parFxCopy(s,e,['r']);
+    else if(filModeX.expr&&filModeX.expr.radius&&Math.abs((+s.r)-(+filModeX.radius))<1e-9)e.expr={r:filModeX.expr.radius};
     const ei=filModeX.edges.findIndex(x=>x&&Math.hypot(x.mid[0]-s.pos[0],x.mid[1]-s.pos[1],x.mid[2]-s.pos[2])<0.75);
     if((ei>=0&&(filModeX.seeds||[]).indexOf(ei)>=0)||s.seed)e.seed=1;
     return e;
@@ -22573,7 +22692,9 @@ function renderFilletPanel(){
     const r1=document.createElement('div');r1.className='pnl-row';
     const lab=document.createElement('label');lab.textContent='Rayon (mm)';r1.appendChild(lab);
     const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=filMode.radius;
-    inp.addEventListener('input',()=>{const v=parseFloat(String(inp.value).replace(',','.'));if(v>0&&isFinite(v))filMode.radius=v;});
+    parFx(inp,filMode,'radius');
+    const setR=()=>{const v=parseFloat(String(inp.value).replace(',','.'));if(v>0&&isFinite(v))filMode.radius=v;};
+    inp.addEventListener('input',setR);inp.addEventListener('change',setR);
     inp.addEventListener('click',e=>e.stopPropagation());
     inp.addEventListener('keydown',e=>e.stopPropagation());
     r1.appendChild(inp);p.appendChild(r1);
@@ -22620,6 +22741,7 @@ function renderFilletPanel(){
    }
    const nTot=(rf.applied||0)+(hasR?((filMode.rims.top?1:0)+(filMode.rims.bottom?1:0)):0);
    const nf={id:uid('fi'),type:'fillet',name:`Congé R${r} (${nTot} arête(s)${hasR?' dont périmètre':''})`,target:F.id,radius:r,corners:filMode.sel.map(c=>({x:c.x,y:c.y,pid:c.pid||undefined})),rims:{top:!!filMode.rims.top,bottom:!!filMode.rims.bottom},rimTop:!!filMode.rims.top,rimBot:!!filMode.rims.bottom,visible:true,radii:rf.radii};
+   parFxCopy(filMode,nf,['radius']);
    addFeature(nf);
    if(rf.warnings.length)faceEl.textContent='Congé appliqué : '+rf.warnings.join(' · ');
    else faceEl.textContent='Congé R'+r+' appliqué sur '+rf.applied+' arête(s).';
@@ -23815,7 +23937,7 @@ function enterDraftMode(editF){
     draftMode.faces=(editing.faces||[]).map(draftCleanRef).filter(Boolean);
     draftMode._ecartees=avant-draftMode.faces.length;
     draftMode.phase=draftMode.ref?'faces':'ref';
-    draftMode.angle=(+editing.angle>0&&+editing.angle<90)?+editing.angle:5;
+    draftMode.angle=(+editing.angle>0&&+editing.angle<90)?+editing.angle:5;parFxFrom(editing,draftMode,['angle']);
     occSkipFeat=editing.id;
     tlEditLock(editing); // arbre bloqué sur la dépouille : seules les opérations précédentes rejouées
     try{rebuild();}catch(e){}
@@ -23974,6 +24096,7 @@ function renderDraftPanel(){
   const lab=document.createElement('label');lab.textContent='Angle (°)';row.appendChild(lab);
   const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';
   inp.id='draftAngleIn';inp.value=String(draftMode.angle).replace('.',',');
+  parFx(inp,draftMode,'angle');
   inp.onchange=()=>{
     const v=parseFloat(String(inp.value).replace(',','.').replace(/\s/g,''));
     if(!isFinite(v)||v<=0||v>=90){
@@ -24015,7 +24138,7 @@ function draftApply(){
     const f=doc.features.find(x=>x.id===draftMode.editing&&x.type==='xdraft');
     if(f){
       docPushUndo('édition de « '+draftName(f)+' »');
-      f.ref=ref;f.faces=faces;f.angle=a;f.name=draftName(f);
+      f.ref=ref;f.faces=faces;f.angle=a;parFxCopy(draftMode,f,['angle']);f.name=draftName(f);
       repSyncForFeature(f); // les instances de la répétition suivent le nouveau paramètre
       sel={kind:'feature',id:f.id};
     }
@@ -24025,6 +24148,7 @@ function draftApply(){
     return;
   }
   const nf={id:uid('dr'),type:'xdraft',name:draftName({angle:a,faces:faces}),ref,faces,angle:a,visible:true};
+  parFxCopy(draftMode,nf,['angle']);
   addFeature(nf); // instantané d'annulation + insertion au marqueur temps
   sel={kind:'feature',id:nf.id};
   exitDraftMode(true);
@@ -24248,7 +24372,7 @@ function enterCoqueMode(editF){
     const avant=(editing.faces||[]).length;
     coqueMode.faces=(editing.faces||[]).map(coqueCleanRef).filter(Boolean);
     coqueMode._ecartees=avant-coqueMode.faces.length;
-    coqueMode.thick=(+editing.thick>0)?+editing.thick:2;
+    coqueMode.thick=(+editing.thick>0)?+editing.thick:2;parFxFrom(editing,coqueMode,['thick']);
     occSkipFeat=editing.id;
     tlEditLock(editing); // arbre bloqué sur la coque : seules les opérations précédentes rejouées
     try{rebuild();}catch(e){}
@@ -24332,6 +24456,7 @@ function renderCoquePanel(){
   const lab=document.createElement('label');lab.textContent='Paroi (mm)';row.appendChild(lab);
   const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';
   inp.id='coqueThickIn';inp.value=String(coqueMode.thick).replace('.',',');
+  parFx(inp,coqueMode,'thick');
   inp.onchange=()=>{
     const v=parseFloat(String(inp.value).replace(',','.').replace(/\s/g,''));
     if(!isFinite(v)||v<=0){
@@ -24367,7 +24492,7 @@ function coqueApply(){
     const f=doc.features.find(x=>x.id===coqueMode.editing&&x.type==='xshell');
     if(f){
       docPushUndo('édition de « '+shellName(f)+' »');
-      f.faces=faces;f.thick=t;f.name=shellName(f);
+      f.faces=faces;f.thick=t;parFxCopy(coqueMode,f,['thick']);f.name=shellName(f);
       repSyncForFeature(f); // les instances de la répétition suivent la nouvelle épaisseur
       sel={kind:'feature',id:f.id};
     }
@@ -24377,6 +24502,7 @@ function coqueApply(){
     return;
   }
   const nf={id:uid('sh'),type:'xshell',name:shellName({thick:t,faces:faces}),faces,thick:t,visible:true};
+  parFxCopy(coqueMode,nf,['thick']);
   addFeature(nf); // instantané d'annulation + insertion au marqueur temps
   sel={kind:'feature',id:nf.id};
   exitCoqueMode(true);
@@ -24450,7 +24576,7 @@ const faoRapideMin=30;
       +'box-shadow:0 0 0 3px rgba(10,132,255,.25)}'
       +'.fao-in:disabled{opacity:.5}'
       /* --- 2026-10-14-011 : champs numériques SANS flèches (illisibles), valeur à droite --- */
-      +'.fao-in[type=number]{-moz-appearance:textfield;appearance:textfield;text-align:right}'
+      +'.fao-in[type=number],.fao-in.fao-num{-moz-appearance:textfield;appearance:textfield;text-align:right}'
       +'.fao-in[type=number]::-webkit-inner-spin-button,.fao-in[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}'
       /* --- onglets de la fiche d'opération --- */
       +'.fao-tabs{display:flex;flex-wrap:wrap;gap:2px;margin:8px 0 6px;border-bottom:1px solid rgba(255,255,255,.12)}'
@@ -24466,7 +24592,7 @@ const faoRapideMin=30;
       +'.fao-row.fao-line{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:3px 0;min-height:24px}'
       +'.fao-row.fao-line>.fao-lab{flex:1 0 auto;max-width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-size:.74rem}'
       +'.fao-ctl{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:0 1 auto;min-width:0;max-width:100%;margin-left:auto}'
-      +'.fao-ctl>.fao-in[type=number],.fao-ctl>input[type=number]{width:66px!important;flex:none}'
+      +'.fao-ctl>.fao-in[type=number],.fao-ctl>.fao-in.fao-num,.fao-ctl>input[type=number]{width:66px!important;flex:none}'
       +'.fao-ctl>.fao-in[type=text]{width:120px}'
       +'.fao-ctl>.fao-sel,.fao-ctl>select{max-width:160px;min-width:88px}'
       +'.fao-ctl>input[type=checkbox]{margin:0;flex:none}'
@@ -32096,12 +32222,14 @@ function faoReset(){
   }catch(e){}
 }
 function faoNum(val,fn,w,step,title){
-  const i=document.createElement('input'); i.type='number'; i.className='fao-in';
+  // V0.11.15 : champ TEXTE décimal (un type=number refuse « L/2 ») — ƒx global, ↑/↓ = pas
+  const i=document.createElement('input'); i.type='text'; i.inputMode='decimal'; i.className='fao-in fao-num';
   // valeur affichée arrondie (1,000000001 → 1) : jamais de chiffres parasites
   i.value=(typeof val==='number'&&isFinite(val))?String(+val.toFixed(4)):val;
   if(step)i.step=step;
   if(title)i.title=title;
-  i.onchange=function(){ const v=parseFloat(i.value); if(isFinite(v)){ faoSnapshot(title); fn(v); faoChanged(); } };
+  i.onchange=function(){ const v=parseFloat(String(i.value).replace(',','.')); if(isFinite(v)){ faoSnapshot(title); fn(v); faoChanged(); } };
+  parNumKeys(i);
   return i; }
 function faoTxt(val,fn,w,title){
   const i=document.createElement('input'); i.type='text'; i.className='fao-in';
@@ -42860,9 +42988,10 @@ function faoToolsElement(setup){
   const field=function(parent,lab,val,isDef,fn,title,step,unit){
     const p=document.createElement('label');p.className='fao-tl-f'+(isDef?' def':'');p.title=title||lab;
     const s=document.createElement('span');s.textContent=lab;p.appendChild(s);
-    const i=document.createElement('input');i.type='number';i.className='fao-in';i.value=String(+(+val).toFixed(4));
+    const i=document.createElement('input');i.type='text';i.inputMode='decimal';i.className='fao-in fao-num';i.value=String(+(+val).toFixed(4));
     if(step)i.step=step;
-    i.onchange=function(){const v=parseFloat(i.value);if(isFinite(v)&&v>0){fn(v);faoChanged();rerender();}};
+    i.onchange=function(){const v=parseFloat(String(i.value).replace(',','.'));if(isFinite(v)&&v>0){fn(v);faoChanged();rerender();}};
+    parNumKeys(i);
     p.appendChild(i);
     if(unit){const u=document.createElement('em');u.textContent=unit;p.appendChild(u);}
     parent.appendChild(p);return i;

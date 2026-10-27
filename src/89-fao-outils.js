@@ -208,9 +208,10 @@ function faoToolsElement(setup){
   const field=function(parent,lab,val,isDef,fn,title,step,unit){
     const p=document.createElement('label');p.className='fao-tl-f'+(isDef?' def':'');p.title=title||lab;
     const s=document.createElement('span');s.textContent=lab;p.appendChild(s);
-    const i=document.createElement('input');i.type='number';i.className='fao-in';i.value=String(+(+val).toFixed(4));
+    const i=document.createElement('input');i.type='text';i.inputMode='decimal';i.className='fao-in fao-num';i.value=String(+(+val).toFixed(4));
     if(step)i.step=step;
-    i.onchange=function(){const v=parseFloat(i.value);if(isFinite(v)&&v>0){fn(v);faoChanged();rerender();}};
+    i.onchange=function(){const v=parseFloat(String(i.value).replace(',','.'));if(isFinite(v)&&v>0){fn(v);faoChanged();rerender();}};
+    parNumKeys(i);
     p.appendChild(i);
     if(unit){const u=document.createElement('em');u.textContent=unit;p.appendChild(u);}
     parent.appendChild(p);return i;

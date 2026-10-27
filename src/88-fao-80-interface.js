@@ -399,12 +399,14 @@ function faoReset(){
   }catch(e){}
 }
 function faoNum(val,fn,w,step,title){
-  const i=document.createElement('input'); i.type='number'; i.className='fao-in';
+  // V0.11.15 : champ TEXTE décimal (un type=number refuse « L/2 ») — ƒx global, ↑/↓ = pas
+  const i=document.createElement('input'); i.type='text'; i.inputMode='decimal'; i.className='fao-in fao-num';
   // valeur affichée arrondie (1,000000001 → 1) : jamais de chiffres parasites
   i.value=(typeof val==='number'&&isFinite(val))?String(+val.toFixed(4)):val;
   if(step)i.step=step;
   if(title)i.title=title;
-  i.onchange=function(){ const v=parseFloat(i.value); if(isFinite(v)){ faoSnapshot(title); fn(v); faoChanged(); } };
+  i.onchange=function(){ const v=parseFloat(String(i.value).replace(',','.')); if(isFinite(v)){ faoSnapshot(title); fn(v); faoChanged(); } };
+  parNumKeys(i);
   return i; }
 function faoTxt(val,fn,w,title){
   const i=document.createElement('input'); i.type='text'; i.className='fao-in';

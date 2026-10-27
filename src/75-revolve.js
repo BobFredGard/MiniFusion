@@ -344,7 +344,7 @@ function renderNewRevolve(){
   // ── Angle ──
   const r3=document.createElement('div');r3.className='pnl-row';
   const l3=document.createElement('label');l3.textContent='Angle (°)';r3.appendChild(l3);
-  const i3=document.createElement('input');i3.type='text';i3.inputMode='decimal';i3.value=revNew.angle;
+  const i3=document.createElement('input');i3.type='text';i3.inputMode='decimal';i3.value=revNew.angle;parFx(i3,revNew,'angle');
   i3.addEventListener('change',()=>{const v=parseFloat(String(i3.value).replace(',','.'));if(isFinite(v)&&v>0)revNew.angle=Math.min(360,v);});
   i3.addEventListener('keydown',e=>{if(e.key==='Enter'){revNewOk();e.stopPropagation();}e.stopPropagation();});
   i3.addEventListener('click',e=>e.stopPropagation());
@@ -384,6 +384,7 @@ function revNewOk(){
   if(!sd.ok){faceEl.textContent='Révolution : '+sd.msg;return;}
   const nf={id:uid('rv'),type:'revolve',name:'',sketchId:revNew.sketchId,
     axis:revNew.axis,angle:revNew.angle,op:revNew.op,visible:true};
+  parFxCopy(revNew,nf,['angle']);
   nf.name=revolveName(nf);
   addFeature(nf);
   if(sk.visible!==false)sk.visible=false;

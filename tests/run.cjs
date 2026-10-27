@@ -124,6 +124,7 @@ const SUITES = [
   "test_raccourcis",
   "test_projection_arcs",
   "test_parametres_3d",
+  "test_parametres_partout",
   "test_corps_combiner",
   "test_scinder",
   "test_cylindre_unique",

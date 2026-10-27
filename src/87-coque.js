@@ -213,7 +213,7 @@ function enterCoqueMode(editF){
     const avant=(editing.faces||[]).length;
     coqueMode.faces=(editing.faces||[]).map(coqueCleanRef).filter(Boolean);
     coqueMode._ecartees=avant-coqueMode.faces.length;
-    coqueMode.thick=(+editing.thick>0)?+editing.thick:2;
+    coqueMode.thick=(+editing.thick>0)?+editing.thick:2;parFxFrom(editing,coqueMode,['thick']);
     occSkipFeat=editing.id;
     tlEditLock(editing); // arbre bloqué sur la coque : seules les opérations précédentes rejouées
     try{rebuild();}catch(e){}
@@ -297,6 +297,7 @@ function renderCoquePanel(){
   const lab=document.createElement('label');lab.textContent='Paroi (mm)';row.appendChild(lab);
   const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';
   inp.id='coqueThickIn';inp.value=String(coqueMode.thick).replace('.',',');
+  parFx(inp,coqueMode,'thick');
   inp.onchange=()=>{
     const v=parseFloat(String(inp.value).replace(',','.').replace(/\s/g,''));
     if(!isFinite(v)||v<=0){
@@ -332,7 +333,7 @@ function coqueApply(){
     const f=doc.features.find(x=>x.id===coqueMode.editing&&x.type==='xshell');
     if(f){
       docPushUndo('édition de « '+shellName(f)+' »');
-      f.faces=faces;f.thick=t;f.name=shellName(f);
+      f.faces=faces;f.thick=t;parFxCopy(coqueMode,f,['thick']);f.name=shellName(f);
       repSyncForFeature(f); // les instances de la répétition suivent la nouvelle épaisseur
       sel={kind:'feature',id:f.id};
     }
@@ -342,6 +343,7 @@ function coqueApply(){
     return;
   }
   const nf={id:uid('sh'),type:'xshell',name:shellName({thick:t,faces:faces}),faces,thick:t,visible:true};
+  parFxCopy(coqueMode,nf,['thick']);
   addFeature(nf); // instantané d'annulation + insertion au marqueur temps
   sel={kind:'feature',id:nf.id};
   exitCoqueMode(true);

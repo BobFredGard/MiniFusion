@@ -116,7 +116,7 @@ const vm=require('vm');
     const findBox=function(root){return all(root).filter(function(n){
       return /input/i.test(n.tagName||'')&&n.type==='checkbox'&&/Finir les parois/.test(String(n.title||''));})[0];};
     const findNum=function(root){return all(root).filter(function(n){
-      return /input/i.test(n.tagName||'')&&n.type==='number'&&/Nombre de contours de finition/.test(String(n.title||''));})[0];};
+      return /input/i.test(n.tagName||'')&&/fao-num/.test(n.className||'')&&/Nombre de contours de finition/.test(String(n.title||''));})[0];};
     const helpOf=function(root){return all(root).filter(function(n){
       return n.className==='fao-help'&&String(n.textContent||'').indexOf('Finition : ')===0;})[0];};
     const us=faoSetup();
@@ -193,7 +193,7 @@ const vm=require('vm');
       '3 profondeurs : cotes 6,667 et 8,333 au contact ('+(p3[6.667]!==undefined?p3[6.667].toFixed(3):'absent')+', '+(p3[8.333]!==undefined?p3[8.333].toFixed(3):'absent')+')');
     // Fiche : champ Profondeurs (grise OFF, reglable ON)
     const findProf=function(root){return all(root).filter(function(n){
-      return /input/i.test(n.tagName||'')&&n.type==='number'&&/Profondeurs de finition/.test(String(n.title||''));})[0];};
+      return /input/i.test(n.tagName||'')&&/fao-num/.test(n.className||'')&&/Profondeurs de finition/.test(String(n.title||''));})[0];};
     const cF=faoOpCardElement(us,uo,0), zpF=findProf(cF);
     A(!!zpF&&zpF.disabled===true,'fiche OFF : champ Profondeurs present + grise');
     findBox(cF).checked=true; findBox(cF).onchange();

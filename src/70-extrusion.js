@@ -46,7 +46,7 @@ function renderNewExtrude(){
   // ── Distance ──
   const r2=document.createElement('div');r2.className='pnl-row';
   const l2=document.createElement('label');l2.textContent=(extNew.op==='cut'?'Profondeur de la poche':'Hauteur du plot')+' (mm)';r2.appendChild(l2);
-  const i2=document.createElement('input');i2.type='text';i2.inputMode='decimal';i2.value=extNew.dist;
+  const i2=document.createElement('input');i2.type='text';i2.inputMode='decimal';i2.value=extNew.dist;parFx(i2,extNew,'dist');
   i2.addEventListener('change',()=>{const v=parseFloat(String(i2.value).replace(',','.'));if(isFinite(v)&&v!==0)extNew.dist=Math.abs(v);});
   i2.addEventListener('keydown',e=>{if(e.key==='Enter'){extNewOk();e.stopPropagation();}e.stopPropagation();});
   i2.addEventListener('click',e=>e.stopPropagation());
@@ -64,6 +64,7 @@ function extNewOk(){
   const op0=extNew.op,op=op0==='new'?'add':op0;
   const nf={id:uid('ex'),type:'extrude',name:'',sketchId:extNew.sketchId,
     distance:Math.abs(+extNew.dist||20)*(op==='cut'?-1:1),op:op,visible:true,mid:false,upto:null};
+  parFxCopy(extNew,nf,{dist:'distance'});
   if(op0==='new'){nf.body=extNewBody();nf.newBody=true;} // 2026-10-16-009 : NOUVEAU CORPS (solide séparé)
   nf.name=extName(nf);
   addFeature(nf);

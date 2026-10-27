@@ -62,7 +62,7 @@ function enterExactFilletMode(editF,kind){
     (editing.edges||[]).forEach(s=>{
       if(seen.some(u=>Math.abs((u.r||0)-(s.r||0))<1e-9&&Math.hypot(u.pos[0]-s.pos[0],u.pos[1]-s.pos[1],u.pos[2]-s.pos[2])<=0.75))return;
       seen.push(s);
-      filModeX.sel.push({pos:s.pos.slice(),pos0:(s.pos0||s.pos).slice(),r:s.r||2,len:+(s.len||0)||0,anchor:s.anchor||null,name:s.name||null,seed:s.seed?1:0});
+      filModeX.sel.push(parFxFrom(s,{pos:s.pos.slice(),pos0:(s.pos0||s.pos).slice(),r:s.r||2,len:+(s.len||0)||0,anchor:s.anchor||null,name:s.name||null,seed:s.seed?1:0},['r']));
     });
     const rr=filModeX.sel.find(s=>s.r>0);if(rr)filModeX.radius=rr.r;
     occSkipFeat=editing.id;
@@ -159,7 +159,7 @@ function xSelSync(){
   // un rayon saisi arête par arête survit à un changement de sélection
   filModeX.sel.forEach(s=>{
     const k=kept.findIndex(u=>Math.hypot(u.pos[0]-s.pos[0],u.pos[1]-s.pos[1],u.pos[2]-s.pos[2])<0.75);
-    if(k>=0)kept[k].r=s.r;
+    if(k>=0){kept[k].r=s.r;if(s.expr||s.pname){parFxCopy(s,kept[k],['r']);if(s._fxOf)kept[k]._fxOf=s._fxOf;}}
   });
   filModeX.sel=kept;
   xPreviewUpdate();
@@ -604,7 +604,9 @@ function renderExactPanel(){
   const r1=document.createElement('div');r1.className='pnl-row';
   const lab=document.createElement('label');lab.textContent=(xIsChamfer(k)?'Distance':'Rayon')+' par défaut (mm)';r1.appendChild(lab);
   const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=filModeX.radius;
-  inp.addEventListener('input',()=>{const v=parseFloat(String(inp.value).replace(',','.'));if(v>0&&isFinite(v)){filModeX.radius=v;filMemo.r[xIsChamfer(k)?'chamfer':'fillet']=v;}});
+  parFx(inp,filModeX,'radius'); // ƒx : « R », « R*2 »… — l'expression suit sur les arêtes retenues
+  const setR=()=>{const v=parseFloat(String(inp.value).replace(',','.'));if(v>0&&isFinite(v)){filModeX.radius=v;filMemo.r[xIsChamfer(k)?'chamfer':'fillet']=v;}};
+  inp.addEventListener('input',setR);inp.addEventListener('change',setR);
   inp.addEventListener('click',e=>e.stopPropagation());
   inp.addEventListener('keydown',e=>e.stopPropagation());
   r1.appendChild(inp);p.appendChild(r1);
@@ -649,7 +651,7 @@ function renderExactPanel(){
     const eLen=(filModeX.edges.find(e=>Math.hypot(e.mid[0]-s.pos[0],e.mid[1]-s.pos[1],e.mid[2]-s.pos[2])<0.75)||{len:0}).len;
     r.innerHTML=`<span>${xIcon(k)}</span><span class="nm">${s.name?`<b>${s.name}</b> · `:''}${dp} <b>${s.r}</b> · L${eLen.toFixed(1)}${s.anchor?' · ⌖':''} · (${s.pos.map(v=>v.toFixed(1)).join(', ')})</span><span title="Retirer">✕</span>`;
     const num=document.createElement('input');num.type='text';num.inputMode='decimal';num.value=s.r;
-    num.onclick=ev=>ev.stopPropagation();
+    num.onclick=ev=>ev.stopPropagation();parFx(num,s,'r');
     const ce=()=>{
       const v=parseFloat(String(num.value).replace(',','.'));
       if(v>0&&isFinite(v)){s.r=v;renderExactPanel();xPreviewUpdate();}
@@ -688,6 +690,9 @@ function applyExactFillet(){
   // session), c'est elle qui ancre la propagation tangente à chaque rejeu (passe 2b).
   const mkEdges=()=>filModeX.sel.map(s=>{
     const e={pos:s.pos.slice(),pos0:(s.pos0||s.pos).slice(),r:s.r,len:+(s.len||0),anchor:s.anchor||null,name:s.name||entName('edge')};
+    // ƒx : expression propre à l'arête, sinon celle du rayon par défaut si l'arête l'a gardé
+    if((s.expr&&s.expr.r)||(s.pname&&s.pname.r))parFxCopy(s,e,['r']);
+    else if(filModeX.expr&&filModeX.expr.radius&&Math.abs((+s.r)-(+filModeX.radius))<1e-9)e.expr={r:filModeX.expr.radius};
     const ei=filModeX.edges.findIndex(x=>x&&Math.hypot(x.mid[0]-s.pos[0],x.mid[1]-s.pos[1],x.mid[2]-s.pos[2])<0.75);
     if((ei>=0&&(filModeX.seeds||[]).indexOf(ei)>=0)||s.seed)e.seed=1;
     return e;
@@ -866,7 +871,9 @@ function renderFilletPanel(){
     const r1=document.createElement('div');r1.className='pnl-row';
     const lab=document.createElement('label');lab.textContent='Rayon (mm)';r1.appendChild(lab);
     const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=filMode.radius;
-    inp.addEventListener('input',()=>{const v=parseFloat(String(inp.value).replace(',','.'));if(v>0&&isFinite(v))filMode.radius=v;});
+    parFx(inp,filMode,'radius');
+    const setR=()=>{const v=parseFloat(String(inp.value).replace(',','.'));if(v>0&&isFinite(v))filMode.radius=v;};
+    inp.addEventListener('input',setR);inp.addEventListener('change',setR);
     inp.addEventListener('click',e=>e.stopPropagation());
     inp.addEventListener('keydown',e=>e.stopPropagation());
     r1.appendChild(inp);p.appendChild(r1);
@@ -913,6 +920,7 @@ function renderFilletPanel(){
    }
    const nTot=(rf.applied||0)+(hasR?((filMode.rims.top?1:0)+(filMode.rims.bottom?1:0)):0);
    const nf={id:uid('fi'),type:'fillet',name:`Congé R${r} (${nTot} arête(s)${hasR?' dont périmètre':''})`,target:F.id,radius:r,corners:filMode.sel.map(c=>({x:c.x,y:c.y,pid:c.pid||undefined})),rims:{top:!!filMode.rims.top,bottom:!!filMode.rims.bottom},rimTop:!!filMode.rims.top,rimBot:!!filMode.rims.bottom,visible:true,radii:rf.radii};
+   parFxCopy(filMode,nf,['radius']);
    addFeature(nf);
    if(rf.warnings.length)faceEl.textContent='Congé appliqué : '+rf.warnings.join(' · ');
    else faceEl.textContent='Congé R'+r+' appliqué sur '+rf.applied+' arête(s).';

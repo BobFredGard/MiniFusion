@@ -312,7 +312,7 @@ function enterDraftMode(editF){
     draftMode.faces=(editing.faces||[]).map(draftCleanRef).filter(Boolean);
     draftMode._ecartees=avant-draftMode.faces.length;
     draftMode.phase=draftMode.ref?'faces':'ref';
-    draftMode.angle=(+editing.angle>0&&+editing.angle<90)?+editing.angle:5;
+    draftMode.angle=(+editing.angle>0&&+editing.angle<90)?+editing.angle:5;parFxFrom(editing,draftMode,['angle']);
     occSkipFeat=editing.id;
     tlEditLock(editing); // arbre bloqué sur la dépouille : seules les opérations précédentes rejouées
     try{rebuild();}catch(e){}
@@ -471,6 +471,7 @@ function renderDraftPanel(){
   const lab=document.createElement('label');lab.textContent='Angle (°)';row.appendChild(lab);
   const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';
   inp.id='draftAngleIn';inp.value=String(draftMode.angle).replace('.',',');
+  parFx(inp,draftMode,'angle');
   inp.onchange=()=>{
     const v=parseFloat(String(inp.value).replace(',','.').replace(/\s/g,''));
     if(!isFinite(v)||v<=0||v>=90){
@@ -512,7 +513,7 @@ function draftApply(){
     const f=doc.features.find(x=>x.id===draftMode.editing&&x.type==='xdraft');
     if(f){
       docPushUndo('édition de « '+draftName(f)+' »');
-      f.ref=ref;f.faces=faces;f.angle=a;f.name=draftName(f);
+      f.ref=ref;f.faces=faces;f.angle=a;parFxCopy(draftMode,f,['angle']);f.name=draftName(f);
       repSyncForFeature(f); // les instances de la répétition suivent le nouveau paramètre
       sel={kind:'feature',id:f.id};
     }
@@ -522,6 +523,7 @@ function draftApply(){
     return;
   }
   const nf={id:uid('dr'),type:'xdraft',name:draftName({angle:a,faces:faces}),ref,faces,angle:a,visible:true};
+  parFxCopy(draftMode,nf,['angle']);
   addFeature(nf); // instantané d'annulation + insertion au marqueur temps
   sel={kind:'feature',id:nf.id};
   exitDraftMode(true);

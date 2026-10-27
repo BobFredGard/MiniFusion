@@ -66,9 +66,10 @@ function fdynSec(p,lab,el){
   const l=document.createElement('div');l.className='pnl-note';l.style.cssText='margin:0 0 3px;font-weight:600';l.textContent=lab;
   w.appendChild(l);w.appendChild(el);p.appendChild(w);return w;
 }
-function fdynNumIn(val,onSet,cls,w){
+function fdynNumIn(val,onSet,cls,w,h,k){
   const i=document.createElement('input');i.type='text';i.inputMode='decimal';i.className=cls||'';i.style.width=(w||80)+'px';
   i.value=String(+(+val).toFixed(3)).replace('.',',');
+  if(h)parFx(i,h,k); // ƒx : expression / « nom = » mémorisée sur la fonction (h[k])
   const c=()=>{const v=parseFloat(String(i.value).replace(',','.'));if(isFinite(v)&&v>0&&Math.abs(v-(+val))>1e-9)onSet(v);};
   i.addEventListener('change',c);i.addEventListener('keydown',e=>{if(e.key==='Enter'){c();i.blur();}e.stopPropagation();});
   i.addEventListener('click',e=>e.stopPropagation());
@@ -118,7 +119,7 @@ function fdynRevolvePanel(p,f){
   fdynSec(p,'Angle',extSeg([['90','◔','90°',''],['180','◑','180°',''],['270','◕','270°',''],['360','●','360°','Tour complet']],String(+a),
     v=>fdynSet('angle de « '+f.name+' »',g=>{g.angle=+v;})));
   const w=document.createElement('div');w.className='pnl-btns';w.style.cssText='align-items:center;gap:6px';
-  w.appendChild(fdynNumIn(a,v=>fdynSet('angle de « '+f.name+' »',g=>{g.angle=Math.min(360,v);}),'fdynAngle',80));
+  w.appendChild(fdynNumIn(a,v=>fdynSet('angle de « '+f.name+' »',g=>{g.angle=Math.min(360,v);}),'fdynAngle',80,f,'angle'));
   const u=document.createElement('span');u.className='pnl-note';u.textContent='°';w.appendChild(u);
   fdynSec(p,'',w);
   if(skR){
@@ -140,7 +141,7 @@ function fdynHandle(f){
     const A=holeAxis(f,sk);if(!A.pts.length)return null;
     const P=A.pts[0];
     return {kind:'lin',C:new THREE.Vector3(P.x,P.y,P.z),n:new THREE.Vector3(A.dir.x,A.dir.y,A.dir.z),val:+f.depth||10,
-      label:'Profondeur',unit:'mm',step:1,min:0.5,max:2000,set:(g,v)=>{g.depth=v;}};
+      label:'Profondeur',unit:'mm',step:1,min:0.5,max:2000,hk:[f,'depth'],set:(g,v)=>{g.depth=v;}};
   }
   if(f.type==='xfillet'){
     const E=(f.edges||[])[0];if(!E||!E.pos)return null;
@@ -162,7 +163,7 @@ function fdynHandle(f){
       const w=occW(sk,q.x,q.y),v=new THREE.Vector3(w[0],w[1],w[2]),r=v.clone().sub(A),dd=r.clone().addScaledVector(d,-r.dot(d)).length();
       if(dd>best){best=dd;R0=v;}});});
     if(!R0||!(best>1e-6))return null;
-    return {kind:'rot',A:A,d:d,R0:R0,val:revolveAngle(f),label:'Angle',unit:'°',step:1,min:1,max:360,set:(g,v)=>{g.angle=v;}};
+    return {kind:'rot',A:A,d:d,R0:R0,val:revolveAngle(f),label:'Angle',unit:'°',step:1,min:1,max:360,hk:[f,'angle'],set:(g,v)=>{g.angle=v;}};
   }
   return null;
 }
@@ -190,8 +191,11 @@ function fdynLabelEl(){
   w.style.cssText='position:fixed;z-index:40;display:none;align-items:center;gap:6px;padding:3px 7px;border-radius:7px;background:var(--panel, #1e1e22);border:1px solid var(--line, #3a3a40);box-shadow:0 2px 10px rgba(0,0,0,.35);font-size:12px;color:var(--fg, #ddd)';
   const l=document.createElement('span');l.className='fdynLblT';w.appendChild(l);
   const i=document.createElement('input');i.type='text';i.inputMode='decimal';i.className='fdynIn';i.style.cssText='width:64px;font-size:12px;padding:1px 4px';
+  i._parFx=1; // ƒx traité ici : l'expression se mémorise sur la fonction (H.hk)
   i.addEventListener('keydown',e=>{e.stopPropagation();
-    if(e.key==='Enter'){const f=fdynFeature(),H=fdynHandle(f);const v=parseFloat(String(i.value).replace(',','.').replace(/\s*(mm|°)$/,''));
+    if(e.key==='Enter'){const f=fdynFeature(),H=fdynHandle(f);
+      const r=parFxNum(i.value,H&&H.hk&&H.hk[0],H&&H.hk&&H.hk[1]),v=r.ok?r.v:NaN;
+      if(!r.ok){try{faceEl.textContent='ƒx : '+r.msg;}catch(e2){}}
       if(f&&H&&isFinite(v)&&v>0)fdynSet(H.label.toLowerCase()+' de « '+f.name+' »',g=>H.set(g,Math.min(H.max,Math.max(H.min,v))));i.blur();}
     else if(e.key==='Escape')i.blur();});
   w.appendChild(i);const u=document.createElement('span');u.className='fdynLblU';w.appendChild(u);

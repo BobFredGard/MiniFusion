@@ -63,7 +63,7 @@ const faoRapideMin=30;
       +'box-shadow:0 0 0 3px rgba(10,132,255,.25)}'
       +'.fao-in:disabled{opacity:.5}'
       /* --- 2026-10-14-011 : champs numériques SANS flèches (illisibles), valeur à droite --- */
-      +'.fao-in[type=number]{-moz-appearance:textfield;appearance:textfield;text-align:right}'
+      +'.fao-in[type=number],.fao-in.fao-num{-moz-appearance:textfield;appearance:textfield;text-align:right}'
       +'.fao-in[type=number]::-webkit-inner-spin-button,.fao-in[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}'
       /* --- onglets de la fiche d'opération --- */
       +'.fao-tabs{display:flex;flex-wrap:wrap;gap:2px;margin:8px 0 6px;border-bottom:1px solid rgba(255,255,255,.12)}'
@@ -79,7 +79,7 @@ const faoRapideMin=30;
       +'.fao-row.fao-line{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:3px 0;min-height:24px}'
       +'.fao-row.fao-line>.fao-lab{flex:1 0 auto;max-width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-size:.74rem}'
       +'.fao-ctl{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:0 1 auto;min-width:0;max-width:100%;margin-left:auto}'
-      +'.fao-ctl>.fao-in[type=number],.fao-ctl>input[type=number]{width:66px!important;flex:none}'
+      +'.fao-ctl>.fao-in[type=number],.fao-ctl>.fao-in.fao-num,.fao-ctl>input[type=number]{width:66px!important;flex:none}'
       +'.fao-ctl>.fao-in[type=text]{width:120px}'
       +'.fao-ctl>.fao-sel,.fao-ctl>select{max-width:160px;min-width:88px}'
       +'.fao-ctl>input[type=checkbox]{margin:0;flex:none}'

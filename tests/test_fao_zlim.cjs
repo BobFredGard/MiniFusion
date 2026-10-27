@@ -105,7 +105,7 @@ const vm=require('vm');
     "const zCard3=faoOpCardElement(zs,zOp,0);",
     "let zTopIn=null;(function w(n){",
     "  (n.children||[]).forEach(function(c){",
-    "    if(c.tagName==='INPUT'&&c.type==='number'&&parseFloat(c.value)===faoDsp(zOp,44,2))zTopIn=c;", // 2026-10-16-020 : cote affichée relative à l'origine du posage
+    "    if(c.tagName==='INPUT'&&/fao-num/.test(c.className||'')&&parseFloat(c.value)===faoDsp(zOp,44,2))zTopIn=c;", // 2026-10-16-020 : cote affichée relative à l'origine du posage
     "    w(c);});})(zCard3);",
     "att(!!zTopIn,'F4 : champ Haut = 44 trouve');",
     "if(zTopIn){zTopIn.value='12';zTopIn.onchange();}",

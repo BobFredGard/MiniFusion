@@ -136,7 +136,8 @@ function parNameCheck(nm,selfDim,selfParam,selfH,selfK){
   if(!PAR_ID.test(nm))return'Nom invalide « '+nm+' » : lettres, chiffres, _ (sans espace ni accent, pas de chiffre en tête).';
   if(PAR_FN[nm]||Object.prototype.hasOwnProperty.call(PAR_CONST,nm))return'« '+nm+' » est réservé (fonction / constante).';
   const e=parAll().get(nm);
-  if(e&&!((e.kind==='dim'&&e.d===selfDim)||(e.kind==='param'&&e.p===selfParam)||(e.kind==='feat'&&e.h===selfH&&e.k===selfK)))return'Le nom « '+nm+' » est déjà utilisé.';
+  // selfH._fxOf : porteur provisoire d'une commande en cours d'ÉDITION (copie de la fonction éditée)
+  if(e&&!((e.kind==='dim'&&e.d===selfDim)||(e.kind==='param'&&e.p===selfParam)||(e.kind==='feat'&&((e.h===selfH&&e.k===selfK)||(selfH&&selfH._fxOf===e.h&&e.k===((selfH._fxKeys&&selfH._fxKeys[selfK])||selfK))))))return'Le nom « '+nm+' » est déjà utilisé.';
   return true;
 }
 function parRename(oldN,newN){
@@ -164,16 +165,62 @@ function parFxSet(h,k,txt){
   if(parIsNumber(expr)){if(h.expr)delete h.expr[k];return{ok:true,v:parseFloat(expr.replace(',','.'))};}
   h.expr=h.expr||{};h.expr[k]=expr;
   const before=h[k];
-  try{parResolve();}catch(e){h.exprErr=h.exprErr||{};h.exprErr[k]=e.message;}
+  // porteur hors document (commande en cours de création : congé, coque, répétition…) :
+  // parResolve ne le voit pas, l'expression est évaluée ici avec les valeurs du document
+  const inDoc=parHolders().some(x=>x.h===h);
+  let v=NaN;
+  try{const R=parResolve();if(!inDoc){v=parEval(expr,R.get);if(!isFinite(v))throw new Error('valeur non finie');}}
+  catch(e){h.exprErr=h.exprErr||{};h.exprErr[k]=e.message;}
   if(h.exprErr&&h.exprErr[k]){const msg=h.exprErr[k];if(name&&oldN&&name!==oldN)parRename(name,oldN);restore();h[k]=before;return{ok:false,msg:'Expression : '+msg};}
-  const v=parHolderVal(h,k);h[k]=before; // le code de la fonction applique la valeur (contrôles, nom, rejeu)
+  if(inDoc)v=parHolderVal(h,k);
+  h[k]=before; // le code de la fonction applique la valeur (contrôles, nom, rejeu)
   return{ok:true,v};
+}
+function parFxCopy(src,dst,keys){
+  // Reporte expression / nom ƒx d'un porteur provisoire (état d'une commande) vers la fonction
+  // créée ou éditée. keys : ['angle'] ou {cléSource:cléCible}. Une valeur saisie en clair efface.
+  if(!src||!dst)return dst;
+  const M=Array.isArray(keys)?Object.fromEntries(keys.map(k=>[k,k])):keys;
+  Object.keys(M).forEach(a=>{const b=M[a];
+    const ex=src.expr&&src.expr[a],nm=src.pname&&src.pname[a];
+    if(ex){dst.expr=dst.expr||{};dst.expr[b]=ex;}else if(dst.expr){delete dst.expr[b];if(!Object.keys(dst.expr).length)delete dst.expr;}
+    if(nm){dst.pname=dst.pname||{};dst.pname[b]=nm;}
+    if(dst.exprErr)delete dst.exprErr[b];});
+  return dst;
+}
+function parFxFrom(f,dst,keys){
+  // Inverse de parFxCopy : une commande ouverte en ÉDITION reprend les expressions de la fonction
+  // (le champ affiche « nom = expression ») ; dst._fxOf évite que son propre nom soit « déjà utilisé ».
+  if(!f||!dst)return dst;
+  const M=Array.isArray(keys)?Object.fromEntries(keys.map(k=>[k,k])):keys;
+  delete dst.expr;delete dst.pname;
+  Object.keys(M).forEach(b=>{const a=M[b];
+    if(f.expr&&f.expr[a]){dst.expr=dst.expr||{};dst.expr[b]=f.expr[a];}
+    if(f.pname&&f.pname[a]){dst.pname=dst.pname||{};dst.pname[b]=f.pname[a];}});
+  dst._fxOf=f;dst._fxKeys=M;
+  return dst;
+}
+function parValueNow(nm){
+  // valeur ACTUELLE d'un nom (sans réévaluer le document)
+  const e=parAll().get(nm);if(!e)throw new Error('« '+nm+' » inconnu');
+  if(e.kind==='param')return(e.p.value!=null&&isFinite(+e.p.value))?+e.p.value:parEval(e.p.expr,parValueNow);
+  return e.kind==='feat'?parHolderVal(e.h,e.k):parDimUser(e.d);
+}
+function parFxNum(txt,h,k){
+  // Lecture d'une saisie numérique : nombre, expression (L/2 + 3) ou, avec un porteur h/k,
+  // « nom = expression » mémorisé comme parFx. Retour {ok,v}|{ok:false,msg}.
+  const s=String(txt==null?'':txt).trim().replace(/\s*(mm|°|deg)\s*$/i,'');
+  if(parIsNumber(s)){if(h&&h.expr&&h.expr[k])delete h.expr[k];return{ok:true,v:parseFloat(s.replace(',','.'))};}
+  if(h)return parFxSet(h,k,s);
+  if(/=/.test(s))return{ok:false,msg:'« nom = valeur » : nommer n’est possible que sur une valeur de fonction.'};
+  try{return{ok:true,v:parEval(s,parValueNow)};}catch(e){return{ok:false,msg:e.message};}
 }
 function parFx(inp,h,k){
   // Branche un champ numérique de fonction 3D sur ƒx : appelé JUSTE APRÈS la création du champ
   // (avant ses propres gestionnaires) — une expression / « nom = » est mémorisée puis remplacée
   // par sa valeur numérique, que le gestionnaire existant applique comme d'habitude.
   if(!inp||!h)return inp;
+  inp._parFx=1; // le filet global (parFxGlobal) laisse ce champ à son gestionnaire ƒx
   const ex=h.expr&&h.expr[k],nm=h.pname&&h.pname[k];
   if(ex||nm){inp.value=(nm?nm+' = ':'')+(ex||String(+parHolderVal(h,k).toFixed(4)).replace('.',','));
     inp.style.width=Math.max(parseInt(inp.style.width)||70,Math.min(240,8*inp.value.length+20))+'px';}
@@ -185,7 +232,7 @@ function parFx(inp,h,k){
     if(parIsNumber(s)){if(h.expr&&h.expr[k]){delete h.expr[k];}inp._fxDone=s;return;}
     const r=parFxSet(h,k,s);
     if(!r.ok){try{faceEl.textContent='ƒx : '+r.msg;}catch(e){}inp.value=String(+parHolderVal(h,k).toFixed(4)).replace('.',',');inp._fxDone=inp.value;return;}
-    inp.value=String(+r.v.toFixed(6)).replace('.',',');inp._fxDone=inp.value;
+    inp.value=String(+r.v.toFixed(12)).replace('.',',');inp._fxDone=inp.value;
     try{faceEl.textContent='ƒx : '+(h.pname&&h.pname[k]?h.pname[k]+' = ':'')+(h.expr&&h.expr[k]?h.expr[k]+' → ':'')+(+r.v.toFixed(4));}catch(e){}
   };
   inp.addEventListener('change',go);inp.addEventListener('blur',go);
@@ -257,7 +304,7 @@ function openParamsDlg(){
       const td=()=>{const t=document.createElement('td');t.style.padding='3px 6px';tr.appendChild(t);return t;};
       const n=document.createElement('input');n.value=o.name||'';n.style.cssText=inpCss;n.placeholder='nom';td().appendChild(n);
       const x=document.createElement('input');x.value=o.expr;x.style.cssText=inpCss;td().appendChild(x);
-      const v=td();v.textContent=o.err?('⚠ '+o.err):(isFinite(o.val)?(+o.val.toFixed(4))+(o.unit||''):'');if(o.err)v.style.color='#ff9f0a';
+      const v=td();v.textContent=o.err?('⚠ '+o.err):(isFinite(o.val)?String(+o.val.toFixed(12)).replace('.',',')+(o.unit||''):'');if(o.err)v.style.color='#ff9f0a';
       td().textContent=o.origin;
       const del=td();
       if(o.del){const b=document.createElement('button');b.textContent='🗑';b.title='Supprimer';b.onclick=()=>{o.del();parAfterChange();render();};del.appendChild(b);}
@@ -288,6 +335,10 @@ function openParamsDlg(){
       });
     });
     box.appendChild(tbl);
+    // constantes toujours disponibles (lecture seule) : pi à 12 décimales
+    const cst=document.createElement('div');cst.className='parConst';cst.style.cssText='margin-top:8px;opacity:.85';
+    cst.innerHTML='<b>Constantes</b> (toujours disponibles) : <code>pi</code> = '+PAR_CONST.pi.toFixed(12).replace('.',',')+' — ex. « pi*D », « 2*pi*R », « D*pi/4 ».';
+    box.appendChild(cst);
     try{cfgSection(box,render);}catch(e){} // V0.8.4 : configurations (52-configurations)
     const bar=document.createElement('div');bar.style.cssText='display:flex;gap:8px;justify-content:flex-end;margin-top:12px';
     const add=document.createElement('button');add.textContent='+ Paramètre';
@@ -300,6 +351,60 @@ function openParamsDlg(){
   ov.addEventListener('keydown',e=>{if(e.key==='Escape'){ov.remove();}e.stopPropagation();});
   document.body.appendChild(ov);
 }
+/* ---------- ƒx partout (V0.11.15) ----------
+   Filet global : tout champ NUMÉRIQUE de l'interface (FAO, assemblage, mise en plan, outils…)
+   accepte une expression à la validation (Entrée / sortie du champ) : « L + 2 », « P1*3 »,
+   « (L - 2*R)/3 », « 12,5 / 4 »… Elle est remplacée par sa valeur AVANT le gestionnaire du champ
+   (écoute en phase de capture), qui applique un nombre comme d'habitude. Valeur figée : seuls les
+   champs branchés par parFx (fonctions 3D et commandes qui les créent) gardent le lien.
+   Champ numérique = champ texte dont la valeur à l'entrée était un nombre, ou inputMode décimal. */
+function parFxEligible(t){
+  if(!t||t.tagName!=='INPUT'||t._parFx||t.readOnly||t.disabled)return false;
+  if(t.type!=='text'&&t.type!=='')return false;
+  if(t.dataset&&t.dataset.nofx!=null)return false;
+  try{if(t.closest&&t.closest('#parDlg'))return false;}catch(e){}
+  return true;
+}
+function parNumKeys(i){
+  // champ texte décimal qui remplace un type=number : ↑ / ↓ ajoutent / retirent le pas (i.step, défaut 1)
+  if(!i||!i.addEventListener)return i;
+  i.addEventListener('keydown',e=>{
+    if(e.key!=='ArrowUp'&&e.key!=='ArrowDown')return;
+    const v=parseFloat(String(i.value).replace(',','.'));if(!isFinite(v))return;
+    const st=Math.abs(parseFloat(i.step))||1,n=v+(e.key==='ArrowUp'?st:-st);
+    i.value=String(+n.toFixed(6));e.preventDefault();
+    try{i.dispatchEvent(new Event('change',{bubbles:true}));}catch(e2){}
+  });
+  return i;
+}
+function parFxNumeric(t){return t.inputMode==='decimal'||t.inputMode==='numeric'||parIsNumber(t._fxPrev);}
+function parFxGlobal(e){
+  const t=e.target;
+  if(e.type==='keydown'&&e.key!=='Enter')return;
+  if(!parFxEligible(t)||!parFxNumeric(t))return;
+  const s=String(t.value).trim();
+  if(!s||parIsNumber(s)||s===t._fxLast||/=/.test(s))return; // « nom = … » : réservé aux champs parFx / cotes
+  if(!/[A-Za-z_(+*\/^-]/.test(s.replace(/^\s*-/,'')))return;
+  let v;
+  try{v=parEval(s,parValueNow);}
+  catch(err){
+    // nom inconnu, parenthèse… : ne JAMAIS laisser parseFloat lire « 2*X » comme 2
+    if(/[A-Za-z_]/.test(s)||/[+*\/^]/.test(s)){
+      if(t._fxPrev!=null)t.value=t._fxPrev;
+      try{faceEl.textContent='ƒx : '+err.message+' — valeur inchangée.';}catch(e2){}
+    }
+    return;
+  }
+  const out=String(+v.toFixed(12)); // 12 décimales (pi = 3.141592653590) ; point décimal : certains champs lisent parseFloat(valeur) brut
+  t.value=out;t._fxLast=out;
+  try{faceEl.textContent='ƒx : '+s+' → '+(+v.toFixed(4));}catch(e2){}
+  try{t.dispatchEvent(new Event('input',{bubbles:true}));}catch(e2){} // champs à l'écoute de « input »
+}
+try{
+  document.addEventListener('focusin',e=>{const t=e.target;if(parFxEligible(t)){t._fxPrev=t.value;t._fxLast=null;}},true);
+  document.addEventListener('keydown',parFxGlobal,true);
+  document.addEventListener('change',parFxGlobal,true);
+}catch(e){}
 // boutons ƒx : bandeau principal (après Perçage / Extrusion) et barre d'esquisse (avant ↩)
 (function(){
   try{

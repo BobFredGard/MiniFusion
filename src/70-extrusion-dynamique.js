@@ -198,8 +198,10 @@ function extLabelEl(){
   w.style.cssText='position:fixed;z-index:40;display:none;align-items:center;gap:6px;padding:3px 7px;border-radius:7px;background:var(--panel, #1e1e22);border:1px solid var(--line, #3a3a40);box-shadow:0 2px 10px rgba(0,0,0,.35);font-size:12px;color:var(--fg, #ddd)';
   const l=document.createElement('span');l.textContent='Distance';w.appendChild(l);
   const i=document.createElement('input');i.type='text';i.inputMode='decimal';i.className='extDistIn';i.style.cssText='width:64px;font-size:12px;padding:1px 4px';
+  i._parFx=1; // ƒx traité ici : « L/2 », « Ep = L/10 » se mémorisent sur l'extrusion
   i.addEventListener('keydown',e=>{e.stopPropagation();
-    if(e.key==='Enter'){const f=extDynFeature();const v=parseFloat(String(i.value).replace(',','.').replace(/\s*mm$/,''));
+    if(e.key==='Enter'){const f=extDynFeature();const r=f?parFxNum(i.value,f,'distance'):{ok:false,msg:''},v=r.ok?r.v:NaN;
+      if(!r.ok&&r.msg){try{faceEl.textContent='ƒx : '+r.msg;}catch(e2){}}
       if(f&&isFinite(v)&&v!==0)extDynSet('distance de « '+f.name+' »',g=>extDistSet(g,Math.abs(v)*((g.op||'add')==='cut'?-1:1)));i.blur();}
     else if(e.key==='Escape')i.blur();});
   w.appendChild(i);const u=document.createElement('span');u.textContent='mm';w.appendChild(u);

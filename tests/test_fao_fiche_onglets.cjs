@@ -32,7 +32,7 @@ const vm=require('vm');
     "att(all(R3.c).some(n=>n.className==='fao-opnum'),'en-tête (n° + type) visible hors onglets');",
     // champ d'avance « ap » trouvable par son titre, valeur arrondie
     "const op5=faoOpDefaults('geofinish');op5.id='t5';op5.step=1.0000000004;const c5=faoOpCardElement(S,op5,0);",
-    "const stepIn=all(c5).find(n=>n.tagName==='INPUT'&&n.type==='number'&&/Écart entre deux passes/.test(n.title||''));",
+    "const stepIn=all(c5).find(n=>n.tagName==='INPUT'&&/fao-num/.test(n.className||'')&&/Écart entre deux passes/.test(n.title||''));",
     "att(stepIn&&stepIn.value==='1','valeur affichée arrondie (vu '+(stepIn&&stepIn.value)+')');",
     "att(all(R3.c).some(n=>n.className==='fao-lab'&&n.textContent==='Descente ap'),'libellé en clair : Descente ap');",
     "att(all(PK.c).some(n=>n.className==='fao-lab'&&n.textContent==='Finir le fond'),'poche : case « Finir le fond » (onglet Matière)');",

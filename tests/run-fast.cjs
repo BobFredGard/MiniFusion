@@ -13,6 +13,7 @@ const SUITES = [
   'test_esquisse_aleatoire',
   'test_esquisse_echelle',
   'test_parametres',
+  'test_parametres_partout',
   'test_interface_moderne',
   'test_sk_origin',
   'test_ctx_menu_viewport',
