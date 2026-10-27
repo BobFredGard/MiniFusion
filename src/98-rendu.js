@@ -19,7 +19,7 @@
    Réglages retenus dans le navigateur (localStorage), pas dans le document. */
 const RD_LS='minifusion_rendu';
 const RD_DEF={amb:'studio',envRot:0,envInt:1,lum:1,fond:'degrade',fc1:'#f2f3f5',fc2:'#c3c7ce',ombre:0.45,douceur:6,
-  focale:50,ev:0,tons:'aces',res:'1080',ech:64,aretes:'non',solOn:true,solCol:'',miroir:true,ombreOn:true,ouv:0,map:0,moteur:'rapide'}; // solCol '' = couleur du bas du fond ; ouv 0 = tout net ; map 0 = mise au point sur la cible ; moteur 'rayons' : 98-rendu-rayons
+  focale:50,ev:0,tons:'aces',res:'1080',ech:64,aretes:'non',solOn:true,solCol:'',miroir:true,ombreOn:true,ouv:0,map:0,moteur:'rapide',support:''}; // support : 98-rendu-scene (V0.14.0) // solCol '' = couleur du bas du fond ; ouv 0 = tout net ; map 0 = mise au point sur la cible ; moteur 'rayons' : 98-rendu-rayons
 const RD_AMB=[
   ['studio','Studio (softbox)'],['clair','Studio lumineux'],['atelier','Atelier (lumière chaude)'],['exterieur','Extérieur (ciel)'],['noir','Scène noire (contre-jour)']];
 const RD_PREVIEW=64; // passes de l'aperçu
@@ -93,13 +93,25 @@ function rdEnvTex(pmrem,amb,rot){ // ambiance → {rt (PMREM), key (direction de
   return {rt,key};
 }
 function rdBuildEnv(){
-  const {rt,key}=rdEnvTex(rd.pmrem,rd.st.amb,rd.st.envRot);
+  const st=rd.st;let rt,key;
+  if(rd.hdriBg){rd.hdriBg.dispose();rd.hdriBg=null;}
+  rd.sunE=null;
+  if(st.amb==='hdri'&&rdHdri){ // HDRI importée (98-rendu-scene) : reflets sans son soleil, le soleil devient la lampe
+    const rot=st.envRot*Math.PI/180,env=new THREE.DataTexture(rdHdriWorld(rdHdri,rot,1024,1,true),1024,512,THREE.RGBAFormat,THREE.FloatType);
+    env.mapping=THREE.EquirectangularReflectionMapping;env.magFilter=env.minFilter=THREE.LinearFilter;env.needsUpdate=true;
+    rt=rd.pmrem.fromEquirectangular(env);env.dispose();
+    const sk=rdHdriSunKey(rdHdri);key=sk?[sk.az,sk.el]:[0,90];rd.sunE=sk&&sk.el>1?sk.E:0;
+    const W=Math.min(2048,rdHdri.w-(rdHdri.w%2)); // fond : l'image entière, soleil compris
+    rd.hdriBg=new THREE.DataTexture(rdHdriWorld(rdHdri,rot,W,1,false),W,W/2,THREE.RGBAFormat,THREE.FloatType);
+    rd.hdriBg.mapping=THREE.EquirectangularReflectionMapping;rd.hdriBg.magFilter=rd.hdriBg.minFilter=THREE.LinearFilter;rd.hdriBg.needsUpdate=true;
+  }else({rt,key}=rdEnvTex(rd.pmrem,st.amb,st.envRot));
   if(rd.envRT)rd.envRT.dispose();
   rd.envRT=rt;rd.scene.environment=rt.texture;
   rd.keyDir=key;
 }
-/* ── fond : composé à l'affichage (rdShow), jamais dans la scène — les passes ont un fond transparent ── */
-function rdBackground(){rd.scene.background=null;}
+/* ── fond : composé à l'affichage (rdShow), jamais dans la scène — les passes ont un fond transparent ;
+   sauf l'image HDRI (V0.14.0) : fond de la scène, vu sous l'angle de chaque passe ── */
+function rdBackground(){rd.scene.background=rd.st.fond==='hdri'&&rd.hdriBg?rd.hdriBg:null;}
 /* ── objets : maillages affichés + matières physiques ── */
 function rdShown(o){for(let p=o;p;p=p.parent)if(p.visible===false)return false;return true;}
 function rdSources(){
@@ -182,15 +194,18 @@ function rdFloor(){
     rd.key.shadow.mapSize.set(4096,4096);rd.key.shadow.bias=-0.0004;
     rd.scene.add(rd.key);rd.scene.add(rd.key.target);
   }
-  rd.floor.visible=!!st.ombreOn;
+  const studio=st.fond==='studio';
+  rd.floor.visible=!!st.ombreOn&&!studio;
   rdDisk(c,R,b.min.z);
+  rdStudio(c,R,b.min.z);
   rd.floor.scale.set(R*12,R*12,1);rd.floor.position.set(c.x,c.y,b.min.z-R*0.002);
   rd.floor.material.opacity=st.ombre;
   // lumière principale : direction de l'ambiance, tournée avec elle ; rdSunJitter la promène dans un cône
   rd.keyBase={c,R,a:(rd.keyDir[0]+st.envRot)*Math.PI/180,e:rd.keyDir[1]*Math.PI/180};
   rdSunJitter(-1);
   rd.key.target.position.copy(c);rd.key.target.updateMatrixWorld();
-  rd.key.intensity=st.lum*(st.amb==='noir'?0.6:1.4);
+  // HDRI : éclairement de son soleil (r147, lumières non physiques : intensité = E / π) ; sans soleil, pas de lampe
+  rd.key.intensity=rd.sunE!=null?st.lum*rd.sunE/Math.PI:st.lum*(st.amb==='noir'?0.6:1.4);
   const sc=rd.key.shadow.camera;sc.left=-R*1.6;sc.right=R*1.6;sc.top=R*1.6;sc.bottom=-R*1.6;sc.near=R*0.5;sc.far=R*8;sc.updateProjectionMatrix();
 }
 function rdHalton(i,b){let f=1,r=0;i=i+1;while(i>0){f/=b;r+=f*(i%b);i=Math.floor(i/b);}return r;}
@@ -212,7 +227,30 @@ function rdSunJitter(i){
    le sRGB sont appliqués une seule fois, à l'affichage (rdShow). */
 function rdSolHex(){
   const st=rd.st;if(st.solCol)return st.solCol;
-  return st.fond==='degrade'?st.fc2:st.fond==='uni'?st.fc1:'#9a9ea6';
+  if(st.fond==='hdri'&&rdHdri)return rdLinHex(rdHdriGround(rdHdri)); // devant l'image : la couleur de son sol
+  return st.fond==='degrade'?st.fc2:st.fond==='uni'?st.fc1:st.fond==='studio'?'#d9dbdf':'#9a9ea6';
+}
+function rdStudio(c,R,z){
+  // fond courbe (98-rendu-scene) : reçoit l'ombre de la lampe, n'en porte pas (ses murs masqueraient tout)
+  const st=rd.st,on=st.fond==='studio';
+  if(rd.studio&&rd.studioR!==R){rd.scene.remove(rd.studio);rd.studio.geometry.dispose();rd.studio.material.dispose();rd.studio=null;}
+  if(!rd.studio){if(!on)return;
+    rd.studio=new THREE.Mesh(rdStudioGeo(THREE,R),new THREE.MeshStandardMaterial({metalness:0,side:THREE.DoubleSide}));
+    rd.studio.receiveShadow=true;rd.studio.castShadow=false;rd.studioR=R;rd.scene.add(rd.studio);}
+  rd.studio.visible=on;
+  rd.studio.position.set(c.x,c.y,z-R*0.001);rd.studio.updateMatrixWorld();
+  // calé comme le sol du lancer de rayons : hors de l'ombre, le fond garde la couleur choisie (sinon il brûle)
+  const m=rd.studio.material,E=rdEnvCal(),cl=rdLin(rdSolHex());
+  m.color.setRGB(...[cl.r,cl.g,cl.b].map((v,i)=>Math.min(1,v*Math.PI/Math.max(1e-3,E.eUp[i]*st.envInt+E.eKey))));
+  m.roughness=st.miroir?0.35:0.9;m.envMapIntensity=st.envInt;
+}
+function rdSupTex3(k){ // texture du support pour le moteur rapide (sRGB 8 bits, convertie dans le shader du sol)
+  if(!k||!RD_SUP_DEF[k])return null;
+  rd.supTex=rd.supTex||{};
+  if(!rd.supTex[k]){const S=rdSupTex(k),t=new THREE.DataTexture(S.data,S.N,S.N,THREE.RGBAFormat);
+    t.wrapS=t.wrapT=THREE.RepeatWrapping;t.magFilter=THREE.LinearFilter;t.minFilter=THREE.LinearMipmapLinearFilter;t.generateMipmaps=true;t.anisotropy=8;t.needsUpdate=true;
+    rd.supTex[k]=t;}
+  return rd.supTex[k];
 }
 function rdDisk(c,R,z){
   const st=rd.st;
@@ -220,22 +258,23 @@ function rdDisk(c,R,z){
     rd.mirRT=new THREE.WebGLRenderTarget(2048,2048,{samples:4,type:THREE.HalfFloatType});
     rd.mirCam=new THREE.PerspectiveCamera();rd.mirMat=new THREE.Matrix4();
     const U={color:{value:new THREE.Color()},tRefl:{value:rd.mirRT.texture},texM:{value:rd.mirMat},uC:{value:new THREE.Vector3()},
-      uR:{value:1},uDisk:{value:1},uRefl:{value:1}};
+      uR:{value:1},uDisk:{value:1},uRefl:{value:1},tSup:{value:null},uSup:{value:0},uSupT:{value:100}};
     rd.disk=new THREE.Mesh(new THREE.CircleGeometry(1,128),new THREE.ShaderMaterial({uniforms:U,transparent:true,depthWrite:false,
       vertexShader:'uniform mat4 texM; varying vec4 vUv; varying vec3 vW;\nvoid main(){ vec4 wp = modelMatrix * vec4(position, 1.0); vW = wp.xyz; vUv = texM * vec4(position, 1.0); gl_Position = projectionMatrix * viewMatrix * wp; }',
-      fragmentShader:'uniform vec3 color; uniform sampler2D tRefl; uniform vec3 uC; uniform float uR; uniform float uDisk; uniform float uRefl; varying vec4 vUv; varying vec3 vW;\n'+
+      fragmentShader:'uniform vec3 color; uniform sampler2D tRefl; uniform vec3 uC; uniform float uR; uniform float uDisk; uniform float uRefl; uniform sampler2D tSup; uniform float uSup; uniform float uSupT; varying vec4 vUv; varying vec3 vW;\n'+
         'void main(){ float d = distance(vW, uC); float a = uDisk > 0.5 ? 1.0 - smoothstep(uR * 1.6, uR * 5.5, d) : 0.0; vec3 refl = vec3(0.0); float ra = 0.0; float f = 0.0; '+
         'if(uRefl > 0.5 && vUv.w > 1e-4){ vec2 uv = vUv.xy / vUv.w; if(uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0){ vec4 r4 = texture2D(tRefl, uv); ra = r4.a; refl = ra > 1e-4 ? r4.rgb / ra : vec3(0.0); f = exp(-pow(d / max(uR * 1.2, 1e-3), 2.0) * 1.6) * 0.8; } } '+
-        'vec3 base = pow(color, vec3(2.2)); '+ // couleur choisie (sRGB) → linéaire
+        'vec3 base = uSup > 0.5 ? pow(texture2D(tSup, vW.xy / uSupT).rgb, vec3(2.2)) : pow(color, vec3(2.2)); '+ // couleur choisie ou support (sRGB) → linéaire
         'if(uDisk > 0.5){ gl_FragColor = vec4(mix(base, refl, clamp(f * ra * 0.7, 0.0, 1.0)), a); return; } gl_FragColor = vec4(refl, ra * f * 0.6); }'}));
     rd.disk.renderOrder=-3;rd.scene.add(rd.disk);
     rd.floor.renderOrder=-2; // l'ombre par-dessus le sol et le reflet
   }
   const U=rd.disk.material.uniforms;
-  rd.disk.visible=!!(st.solOn||st.miroir);
+  rd.disk.visible=!!(st.solOn||st.miroir)&&st.fond!=='studio';
   rd.disk.scale.set(R*8,R*8,1);rd.disk.position.set(c.x,c.y,z-R*0.001);rd.disk.updateMatrixWorld();
   U.color.value.set(rdSolHex());U.uC.value.set(c.x,c.y,z);U.uR.value=R;
   U.uDisk.value=st.solOn?1:0;U.uRefl.value=st.miroir?1:0;
+  const sup=rdSupTex3(st.support);U.uSup.value=sup?1:0;U.tSup.value=sup;U.uSupT.value=sup?RD_SUP_DEF[st.support].t:100;
   rd.floorZ=z;
 }
 const _rdV1=new THREE.Vector3(),_rdV2=new THREE.Vector3();
@@ -360,7 +399,7 @@ function rdSample(){
 function rdShow(){
   const A=rd.acc,st=rd.st,U=A.out.uniforms;
   U.tA.value=A.a.texture;U.uExpo.value=Math.pow(2,st.ev);U.uTone.value={aces:0,doux:1,cine:2,lin:3}[st.tons]||0;
-  U.uBg.value=st.fond==='transparent'?2:st.fond==='degrade'?1:0;U.uC1.value.set(st.fc1);U.uC2.value.set(st.fc2);
+  U.uBg.value=st.fond==='transparent'?2:st.fond==='degrade'||st.fond==='studio'?1:0;U.uC1.value.set(st.fc1);U.uC2.value.set(st.fc2);
   A.quad.material=A.out;rd.r.setRenderTarget(null);rd.r.render(A.sc,A.cam);
 }
 function rdCount(){if(rd&&rd.cnt&&rd.acc)rd.cnt.textContent='Affinage : '+rd.acc.n+' / '+RD_PREVIEW+(rd.st.ouv>0?' · f/'+String(rd.st.ouv).replace('.',',')+' · net à '+Math.round(rdFocusDist())+' mm':'');}
@@ -393,7 +432,7 @@ function rdFitCanvas(){
 }
 function rdRefresh(what){
   if(!rd)return;
-  if(what==='env')rdBuildEnv();
+  if(what==='env'){rdBuildEnv();rdBackground();}
   if(what==='fond')rdBackground();
   if(what==='objets')rdBuildObjects();
   rdFloor();rdApplyCam();rdReset();rdSave();rtRefresh(what);
@@ -525,9 +564,15 @@ function rdPanel(){
   pane=el('div','rdSec');pane.appendChild(el('h4','rdSecT',lab));card.appendChild(pane);
   if(t==='mot'){
     row('Calcul',seg([['rapide','Rapide','Rastérisation affinée : image presque immédiate'],['rayons','Lancer de rayons','Suit la lumière de rebond en rebond : reflets entre pièces, ombres de contact, verre réfracté — plus lent']],st.moteur,rdSetMoteur));
-    if(st.moteur==='rayons')pane.appendChild(el('div','rdNote','Prototype : reliefs rendus par leur seule rugosité, sans arêtes CAO. Pendant un glisser, l’aperçu rapide reprend la main.'));
+    if(st.moteur==='rayons')pane.appendChild(el('div','rdNote','Sans arêtes CAO. Pendant un glisser, l’aperçu rapide reprend la main.'));
   }else if(t==='amb'){
-    row('Lumière',select(RD_AMB,st.amb,v=>{st.amb=v;rdRefresh('env');}));
+    // V0.14.0 : image HDRI importée (98-rendu-scene), gardée par le navigateur
+    const ambs=RD_AMB.concat(rdHdri?[['hdri','Image HDRI : '+rdHdri.name]]:[]);
+    row('Lumière',select(ambs,st.amb,v=>{st.amb=v;if(v!=='hdri'&&st.fond==='hdri')st.fond='degrade';rdRefresh('env');rdRefresh('fond');rdPanel();}));
+    const ib=el('button','rdB',rdHdri?'Autre image HDRI…':'Importer une image HDRI…');
+    ib.title='Panorama .hdr ou .exr (Poly Haven…) : lumière, reflets et, au choix, fond de l’image ; « Lampe » règle son soleil';
+    ib.onclick=()=>rdHdriImport(()=>{if(!rd)return;st.amb='hdri';rdRefresh('env');rdPanel();});
+    const ir=el('div','rdBtns');ir.appendChild(ib);pane.appendChild(ir);
     slider('Rotation','envRot',0,360,5,v=>v+'°','env');
     slider('Reflets','envInt',0,3,0.05,v=>v.toFixed(2).replace('.',','),null);
     slider('Lampe','lum',0,3,0.05,v=>v.toFixed(2).replace('.',','),null);
@@ -535,8 +580,10 @@ function rdPanel(){
     slider('Exposition','ev',-3,3,0.1,v=>(v>0?'+':'')+v.toFixed(1).replace('.',',')+' EV',null);
     row('Tons',select([['aces','Film (ACES)'],['doux','Doux (Reinhard)'],['cine','Cinéon'],['lin','Neutre (linéaire)']],st.tons,v=>{st.tons=v;rdRefresh();}));
   }else if(t==='fond'){
-    row('Fond',seg([['degrade','Dégradé'],['uni','Uni'],['transparent','Transp.','Transparent : PNG détouré']],st.fond,v=>{st.fond=v;rdRefresh('fond');rdPanel();}));
-    if(st.fond!=='transparent'){
+    const fonds=[['degrade','Dégradé'],['uni','Uni'],['studio','Studio','Fond courbe de photographe (sol, gorge et mur d’un seul tenant), couleur du sol']]
+      .concat(st.amb==='hdri'&&rdHdri?[['hdri','Image','L’image HDRI derrière la pièce']]:[]).concat([['transparent','Transp.','Transparent : PNG détouré']]);
+    row('Fond',seg(fonds,st.fond,v=>{st.fond=v;rdRefresh('fond');rdPanel();}));
+    if(st.fond==='degrade'||st.fond==='uni'){
       const c1=el('input');c1.type='color';c1.value=st.fc1;c1.title=st.fond==='degrade'?'Haut du dégradé':'Couleur du fond';c1.oninput=()=>{st.fc1=c1.value;rdRefresh('fond');};
       let c2=null;if(st.fond==='degrade'){c2=el('input');c2.type='color';c2.value=st.fc2;c2.title='Bas du dégradé';c2.oninput=()=>{st.fc2=c2.value;rdRefresh('fond');};}
       row('Couleurs',c1,c2);
@@ -544,17 +591,25 @@ function rdPanel(){
     const pres=el('div','rdBtns');
     [['Blanc','#f2f3f5','#c3c7ce'],['Gris','#9aa0a8','#4b5058'],['Ardoise','#3a4049','#121417'],['Noir','#121214','#000000'],['Bleu nuit','#24324a','#0b111c']].forEach(([n,a,b])=>{
       const q=el('button','rdB',n);q.onclick=()=>{st.fc1=a;st.fc2=b;if(st.fond==='transparent')st.fond='degrade';rdPanel();rdRefresh('fond');};pres.appendChild(q);});
-    pane.appendChild(pres);
-    pane.appendChild(el('h4',null,'Sol'));
-    { // Sol (et sa couleur) · Miroir · Ombre : trois cases, comme dans la vue CAO
+    if(st.fond!=='studio'&&st.fond!=='hdri')pane.appendChild(pres);
+    pane.appendChild(el('h4',null,st.fond==='studio'?'Studio':'Sol'));
+    if(st.fond==='studio'){ // fond courbe : sa couleur et son vernis
+      const r=el('div','rdRow rdWrap');
+      const sc=el('input');sc.type='color';sc.value=rdSolHex();sc.title='Couleur du fond courbe';sc.oninput=()=>{st.solCol=sc.value;rdRefresh();};
+      r.appendChild(el('label',null,'Couleur'));r.appendChild(sc);
+      r.appendChild(chk('Brillant','miroir','Fond verni : la pièce s’y reflète'));
+      pane.appendChild(r);
+    }else{ // Sol (et sa couleur) · Miroir · Ombre : trois cases, comme dans la vue CAO ; support texturé (V0.14.0)
       const r=el('div','rdRow rdWrap');
       r.appendChild(chk('Sol','solOn','Disque sous la pièce, bords fondus dans le fond'));
       const sc=el('input');sc.type='color';sc.value=rdSolHex();sc.title='Couleur du sol (par défaut : bas du fond)';sc.oninput=()=>{st.solCol=sc.value;rdRefresh();};r.appendChild(sc);
       r.appendChild(chk('Miroir','miroir','Reflet de la pièce au sol, avec ou sans disque'));
       r.appendChild(chk('Ombre','ombreOn','Ombre portée sur le sol'));
       pane.appendChild(r);
+      row('Support',select(RD_SUPPORTS,st.support||'',v=>{st.support=v;if(v)st.solOn=true;rdRefresh();rdPanel();}))
+        .title='Matière du sol, à l’échelle réelle (béton, plateau de bois, marbre, tapis de découpe quadrillé tous les 10 mm)';
+      slider('Ombre','ombre',0,1,0.05,v=>Math.round(v*100)+' %',null);
     }
-    slider('Ombre','ombre',0,1,0.05,v=>Math.round(v*100)+' %',null);
     pane.appendChild(el('h4',null,'Dessin'));
     row('Arêtes',seg([['non','Sans','Photo'],['cao','CAO','Comme la CAO : vives noires, tangentes grises']],st.aretes,v=>{st.aretes=v;rdBuildEdges();rdRefresh();rdPanel();}));
   }else if(t==='cam'){
@@ -722,6 +777,8 @@ function rdOpen(){
   document.addEventListener('keydown',rdKey,true);
   document.querySelectorAll('[data-mfrd]').forEach(b=>b.classList.add('on'));
   requestAnimationFrame(()=>{rdFitCanvas();if(rd&&rd.st.moteur==='rayons')rtStart();});
+  if(rd.st.amb==='hdri'&&!rdHdri) // l'HDRI de la dernière fois (IndexedDB) ; absente : retour au studio
+    rdHdriRestore().then(h=>{if(!rd)return;if(!h){rd.st.amb='studio';if(rd.st.fond==='hdri')rd.st.fond='degrade';}rdRefresh('env');rdRefresh('fond');rdPanel();});
 }
 function rdClose(){
   if(!rd)return;
@@ -734,6 +791,7 @@ function rdClose(){
   try{if(rd.envRT)rd.envRT.dispose();rd.pmrem.dispose();}catch(e){}
   try{if(rd.floor){rd.floor.geometry.dispose();rd.floor.material.dispose();}if(rd.key&&rd.key.shadow.map)rd.key.shadow.map.dispose();}catch(e){}
   try{if(rd.disk){rd.disk.geometry.dispose();rd.disk.material.dispose();rd.mirRT.dispose();}}catch(e){}
+  try{if(rd.studio){rd.studio.geometry.dispose();rd.studio.material.dispose();}if(rd.hdriBg)rd.hdriBg.dispose();Object.values(rd.supTex||{}).forEach(t=>t.dispose());}catch(e){}
   try{const A=rd.acc;if(A){['s','a','b'].forEach(k=>{if(A[k])A[k].dispose();});A.quad.geometry.dispose();A.mix.dispose();A.out.dispose();}}catch(e){}
   try{rd.r.dispose();rd.r.forceContextLoss();}catch(e){}
   rd.ov.remove();rd=null;

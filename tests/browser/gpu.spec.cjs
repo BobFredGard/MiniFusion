@@ -139,6 +139,17 @@ test('atelier RENDU, « Lancer de rayons » : chargé à la demande, affinage su
   expect(P.aUse,'moteur rapide : bandes d’usure (aUse)').toBe(true);
   expect(P.usure&&P.normales,'lancer de rayons : couleurs d’usure et carte de normales (paillettes)').toBe(true);
   expect(P.maillages,'un maillage par plan de projection').toBeGreaterThan(1);
+  // scène (V0.14.0) : studio courbe, puis support « tapis de découpe » — les deux moteurs
+  const Sc=await page.evaluate(async()=>{
+    const att=async()=>{for(let i=0;i<600&&rd.rt.pt.samples<16;i++)await new Promise(r=>setTimeout(r,100));return rd.rt.pt.samples;};
+    rd.st.fond='studio';rdRefresh('fond');const s1=await att();
+    const st={rapide:!!(rd.studio&&rd.studio.visible&&!rd.disk.visible),rayons:!!rd.rt.studio,s1};
+    rd.st.fond='degrade';rd.st.support='tapis';rdRefresh('fond');const s2=await att();
+    return Object.assign(st,{sans:!rd.rt.studio&&!rd.studio.visible,tapis:!!rd.rt.floor.material.map&&rd.disk.material.uniforms.uSup.value===1,s2});
+  });
+  test.info().annotations.push({type:'scène',description:JSON.stringify(Sc)});
+  expect(Sc,'studio puis tapis de découpe').toEqual({rapide:true,rayons:true,s1:Sc.s1,sans:true,tapis:true,s2:Sc.s2});
+  expect(Math.min(Sc.s1,Sc.s2)).toBeGreaterThanOrEqual(16);
   await page.evaluate(()=>{rd.st.ech=16;rdPanel();rdFoot();}); // 128 échantillons
   const [dl]=await Promise.all([page.waitForEvent('download',{timeout:180000}),page.locator('#rdPanel .rdGo').click()]);
   expect(dl.suggestedFilename()).toMatch(/1920x1080 \(rayons\)\.png$/);

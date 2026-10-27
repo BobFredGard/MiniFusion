@@ -31,6 +31,13 @@ function rtOn(){return !!(rd&&rd.rt&&rd.rt.pt&&rd.st.moteur==='rayons');}
 function rtSamples(){return rd.rt.pt.samples;}
 /* ── ambiance → image équirectangulaire (convention du pathtracer : u autour de Y, v de haut en bas) ── */
 function rtEnvData(){
+  if(rd.st.amb==='hdri'&&rdHdri){ // HDRI importée (98-rendu-scene) : l'image, son soleil × « Lampe » ; pas de lampe ajoutée
+    const st=rd.st,W=2048,H=1024,data=rdHdriWorld(rdHdri,st.envRot*Math.PI/180,W,st.lum,false),eUp=[0,0,0],dU=2*Math.PI/W,dV=Math.PI/H;
+    for(let j=0;j<H;j++){const ph=(1-(j+0.5)/H)*Math.PI,sp=Math.sin(ph);
+      for(let i=0;i<W;i++){const z=sp*Math.sin(((i+0.5)/W-0.5)*2*Math.PI);if(z<=0)continue;
+        const k=4*(j*W+i),w=z*dU*dV*sp;eUp[0]+=data[k]*w;eUp[1]+=data[k+1]*w;eUp[2]+=data[k+2]*w;}}
+    return {data,W,H,eUp,eKey:0};
+  }
   const st=rd.st,D=rdEnvDesc(st.amb),W=1024,H=512,data=new Float32Array(W*H*4);
   const rot=st.envRot*Math.PI/180;
   const rgb=h=>[((h>>16)&255)/255,((h>>8)&255)/255,(h&255)/255];
@@ -80,9 +87,11 @@ function rtBuildEnv(){
   tex.mapping=T.EquirectangularReflectionMapping;tex.magFilter=tex.minFilter=T.LinearFilter;tex.needsUpdate=true;
   if(R.env)R.env.dispose();
   R.env=tex;R.scene.environment=tex;R.scene.environmentIntensity=rd.st.envInt;R.envKey=rtEnvKey();
+  R.scene.background=rtBg();
 }
-function rtEnvKey(){const st=rd.st;return [st.amb,st.envRot,st.lum,st.douceur].join('|');}
-function rtFloorKey(){const st=rd.st;return [st.solOn,st.miroir,st.ombreOn,rdSolHex(),rd.rt.envKey,st.envInt].join('|');} // l'albédo du sol suit l'éclairement
+function rtBg(){const st=rd.st;return st.fond==='hdri'&&st.amb==='hdri'&&rdHdri?rd.rt.env:null;} // fond « Image » : l'HDRI elle-même
+function rtEnvKey(){const st=rd.st;return [st.amb,st.envRot,st.lum,st.douceur,rdHdri?rdHdri.at:0].join('|');}
+function rtFloorKey(){const st=rd.st;return [st.solOn,st.miroir,st.ombreOn,rdSolHex(),rd.rt.envKey,st.envInt,st.fond,st.support].join('|');} // l'albédo du sol suit l'éclairement
 /* ── objets et sol : copies des maillages de l'atelier ── */
 function rtAttr(T,a){
   if(!a.isInterleavedBufferAttribute)return new T.BufferAttribute(a.array,a.itemSize,a.normalized);
@@ -110,15 +119,29 @@ function rtFloorAlpha(T){ // opaque jusqu'à 1,6 R, transparent à 5,5 R, sur un
   }
   const tx=new T.DataTexture(a,N,N,T.RGBAFormat);tx.magFilter=tx.minFilter=T.LinearFilter;tx.needsUpdate=true;return tx;
 }
+function rtSupMap(k){ // support texturé (98-rendu-scene) : albédo linéaire 8 bits, tuile posée par rtBuildObjects
+  const R=rd.rt,T=R.T;R.supMap=R.supMap||{};
+  if(!R.supMap[k]){const S=rdSupTex(k),a=new Uint8Array(S.data.length),lut=new Uint8Array(256);
+    for(let i=0;i<256;i++)lut[i]=Math.round(255*Math.pow(i/255,2.2));
+    for(let i=0;i<a.length;i++)a[i]=(i&3)===3?255:lut[S.data[i]];
+    const t=new T.DataTexture(a,S.N,S.N,T.RGBAFormat);t.wrapS=t.wrapT=T.RepeatWrapping;t.magFilter=t.minFilter=T.LinearFilter;t.needsUpdate=true;
+    R.supMap[k]=t;}
+  return R.supMap[k];
+}
 function rtFloorMat(){
-  const R=rd.rt,st=rd.st,m=R.floor.material,on=!!(st.solOn||st.miroir||st.ombreOn);
+  const R=rd.rt,st=rd.st,m=R.floor.material,studio=st.fond==='studio',on=!!(st.solOn||st.miroir||st.ombreOn)&&!studio;
   // comme rdDisk, le sol HORS de l'ombre garde sa couleur choisie : albédo = couleur × π / éclairement reçu
-  // (ciel et panneaux × « Reflets », plus la lampe) ; l'ombre et l'occlusion au contact l'assombrissent
-  m.color.set(rdSolHex()); // sRGB → linéaire (gestion des couleurs du three récent)
-  const E=[0,1,2].map(i=>Math.max(1e-3,R.eUp[i]*st.envInt+R.eKey));
-  m.color.setRGB(Math.min(1,m.color.r*Math.PI/E[0]),Math.min(1,m.color.g*Math.PI/E[1]),Math.min(1,m.color.b*Math.PI/E[2]));
-  m.roughness=st.miroir?0.4:0.9;m.clearcoat=st.miroir?1:0;m.clearcoatRoughness=0.04;
-  m.opacity=on?1:0;R.floorKey=rtFloorKey();
+  // (ciel et panneaux × « Reflets », plus la lampe) ; l'ombre et l'occlusion au contact l'assombrissent.
+  // Même règle pour le fond courbe du studio et pour un support texturé (sa texture porte l'albédo).
+  const E=[0,1,2].map(i=>Math.max(1e-3,R.eUp[i]*st.envInt+R.eKey)),k=E.map(e=>Math.PI/e);
+  const cal=(mm,hex)=>{mm.color.set(hex);mm.color.setRGB(Math.min(1,mm.color.r*k[0]),Math.min(1,mm.color.g*k[1]),Math.min(1,mm.color.b*k[2]));}; // sRGB → linéaire, puis calé
+  const sup=!studio&&st.support&&RD_SUP_DEF[st.support]?st.support:'';
+  if(sup){const t=rtSupMap(sup),n=16*(R.floorR||50)/RD_SUP_DEF[sup].t;t.repeat.set(n,n);m.map=t;m.color.setRGB(Math.min(1,k[0]),Math.min(1,k[1]),Math.min(1,k[2]));}
+  else{m.map=null;cal(m,rdSolHex());}
+  m.roughness=sup?RD_SUP_DEF[sup].r:st.miroir?0.4:0.9;m.clearcoat=st.miroir?1:0;m.clearcoatRoughness=0.04;
+  m.opacity=on?1:0;
+  if(R.studio){const s=R.studio.material;cal(s,rdSolHex());s.roughness=st.miroir?0.35:0.9;s.clearcoat=st.miroir?1:0;s.clearcoatRoughness=0.22;} // vernis satiné : la gorge courbe ne fait pas de lignes de reflets
+  R.floorKey=rtFloorKey();
 }
 function rtDropGroup(R){ // copies des corps (matières en tableau : une par plan de projection)
   if(!R.group)return;
@@ -144,7 +167,15 @@ function rtBuildObjects(){
     R.floor=new T.Mesh(new T.CircleGeometry(1,128),new T.MeshPhysicalMaterial({metalness:0,transparent:true,alphaMap:rtFloorAlpha(T)}));
     R.floor.matrixAutoUpdate=false;R.scene.add(R.floor);
   }
-  R.floor.matrix.makeScale(Rr*8,Rr*8,1).setPosition(c.x,c.y,b.min.z-Rr*0.001);
+  R.floor.matrix.makeScale(Rr*8,Rr*8,1).setPosition(c.x,c.y,b.min.z-Rr*0.001);R.floorR=Rr;
+  // fond courbe du studio (98-rendu-scene), toujours présent lui aussi : ses murs laissent passer les rayons
+  // d'ombre (castShadow false) — l'ambiance éclaire la pièce à travers, comme les lampes d'un vrai studio
+  // (dans la scène seulement en mode Studio : présent mais transparent, il faussait les matières du sol)
+  const sOn=rd.st.fond==='studio';
+  if(R.studio&&(R.studioR!==Rr||!sOn)){R.scene.remove(R.studio);R.studio.geometry.dispose();R.studio.material.dispose();R.studio=null;}
+  if(!R.studio&&sOn){const sm=new T.MeshPhysicalMaterial({metalness:0,side:T.DoubleSide});sm.castShadow=false;
+    R.studio=new T.Mesh(rdStudioGeo(T,Rr),sm);R.studio.matrixAutoUpdate=false;R.studioR=Rr;R.scene.add(R.studio);}
+  if(R.studio)R.studio.matrix.makeTranslation(c.x,c.y,b.min.z-Rr*0.001);
   rtFloorMat();
   R.pt.setScene(R.scene,R.cam);
 }
@@ -162,7 +193,7 @@ function rtLook(){ // tons, exposition, fond : à l'affichage seulement (pas de 
   const tm=T[RT_TONS[st.tons]||'ACESFilmicToneMapping'];
   if(R.r.toneMapping!==tm){R.r.toneMapping=tm;R.pt._quad.material.needsUpdate=true;}
   R.r.toneMappingExposure=Math.pow(2,st.ev);
-  R.canvas.style.background=st.fond==='transparent'?'none':st.fond==='degrade'?'linear-gradient('+st.fc1+','+st.fc2+')':st.fc1;
+  R.canvas.style.background=st.fond==='transparent'||st.fond==='hdri'?'none':st.fond==='degrade'||st.fond==='studio'?'linear-gradient('+st.fc1+','+st.fc2+')':st.fc1;
 }
 /* ── affinage ──
    Le compteur du pathtracer avance à l'ENVOI des tuiles (3 × 3 par échantillon) : sans frein, la file du GPU
@@ -217,10 +248,11 @@ function rtFit(){
 function rtRefresh(what){ // pendant de rdRefresh : ne refait que ce qui a changé
   const R=rd&&rd.rt;if(!R||!R.pt)return;
   const st=rd.st;
-  if(what==='objets'){rtBuildObjects();}
+  if(what==='objets'||(st.fond==='studio')!==!!R.studio){rtBuildObjects();} // studio ajouté ou ôté : scène refaite
   else{
     if(rtEnvKey()!==R.envKey){rtBuildEnv();R.pt.updateEnvironment();}
     else if(R.scene.environmentIntensity!==st.envInt){R.scene.environmentIntensity=st.envInt;R.pt.updateEnvironment();}
+    if(R.scene.background!==rtBg()){R.scene.background=rtBg();R.pt.updateEnvironment();}
     if(rtFloorKey()!==R.floorKey){rtFloorMat();R.pt.updateMaterials();}
   }
   R.lookDirty=true;rtLook();rtKick();
@@ -260,7 +292,7 @@ function rtStop(){
   if(R.raf)cancelAnimationFrame(R.raf);
   try{rtDropGroup(R);if(R.texCache)R.texCache.forEach(K=>['map','rough','normal'].forEach(k=>{if(K[k])K[k].dispose();}));}catch(e){}
   try{if(R.floor){R.floor.geometry.dispose();if(R.floor.material.alphaMap)R.floor.material.alphaMap.dispose();R.floor.material.dispose();}}catch(e){}
-  try{if(R.env)R.env.dispose();}catch(e){}
+  try{if(R.env)R.env.dispose();Object.values(R.supMap||{}).forEach(t=>t.dispose());if(R.studio){R.studio.geometry.dispose();R.studio.material.dispose();}}catch(e){}
   try{if(R.fence)R.r.getContext().deleteSync(R.fence);if(R.pt)R.pt.dispose();}catch(e){}
   try{if(R.r){R.r.dispose();R.r.forceContextLoss();}}catch(e){}
   try{if(R.canvas)R.canvas.remove();}catch(e){}
@@ -294,8 +326,8 @@ async function rtExport(){
     while(!rtGpuReady(R,80))await new Promise(r=>setTimeout(r,4)); // dernier lot calculé avant la copie
     // le fond (dégradé ou uni) est composé ici ; transparent : PNG détouré tel quel
     const out=document.createElement('canvas');out.width=W;out.height=H;const g=out.getContext('2d');
-    if(st.fond!=='transparent'){
-      if(st.fond==='degrade'){const lg=g.createLinearGradient(0,0,0,H);lg.addColorStop(0,st.fc1);lg.addColorStop(1,st.fc2);g.fillStyle=lg;}else g.fillStyle=st.fc1;
+    if(st.fond!=='transparent'&&st.fond!=='hdri'){ // « Image » : l'HDRI est déjà dans le calcul
+      if(st.fond==='degrade'||st.fond==='studio'){const lg=g.createLinearGradient(0,0,0,H);lg.addColorStop(0,st.fc1);lg.addColorStop(1,st.fc2);g.fillStyle=lg;}else g.fillStyle=st.fc1;
       g.fillRect(0,0,W,H);
     }
     g.drawImage(R.canvas,0,0);
