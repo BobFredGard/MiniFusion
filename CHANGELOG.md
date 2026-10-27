@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**371 versions**, de `2026-09-28b` à `V0.11.16` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**372 versions**, de `2026-09-28b` à `V0.11.17` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5112,3 +5112,13 @@ Cavité Usinage (« pourquoi la 1ère passe il n'y a pas d'hélice ? Tu commence
 - **Réglage** (⚙ Réglages de visualisation → Affichage → « Perspective ») : curseur 5° à 90° = angle de champ de la caméra 3D (50° par défaut, comme avant). À gauche presque orthographique, à droite fuyantes marquées. Double-clic : retour à 50°. Mémorisé dans le navigateur (`minifusion_fov`).
 - **Cadrage gardé** (`src/10-scene-3d.js`, `camSetFov`) : la caméra recule ou avance vers la cible pour que la pièce garde sa taille à l'écran (seule la convergence change) ; plans proche / lointain éloignés d'autant aux petits angles. Les vues PLAN « Perspective (comme la 3D) » reprennent cet angle.
 - **Tests** : vérifié en Chromium (15° et 90° : taille à l'écran identique, rapport 1,000), suite rapide 54/56 (KO `test_repeat_circ_tour`, `test_anteriorite` : exemples Git LFS non téléchargés dans cette copie, sans lien).
+
+## V0.11.17 - Répétitions : dépouilles, révolutions, déplacement et suppression de face
+« Les dépouilles ne sont pas prises en compte dans les répétitions » ; « pas que pour les dépouilles, mais ce qui manquerait à être utilisé dans les répétitions ».
+- **Cause** (`src/40-interface-arbre-props.js`, `repCanFeature`) : seules l'extrusion / découpe, le perçage et le congé / chanfrein étaient proposés ; `repCloneFeature` ne savait pas transporter les références de faces (pos / n / dim + ancre) des autres fonctions.
+- **Dépouille** : faces visées transformées (`repCloneFaceRef`, encombrement `repTransformDim` = |M|·dim), ancre remappée sur l'esquisse copiée de la même passe. Le plan neutre n'est déplacé que si la transformation le change (translation ou rotation dans son plan : face d'origine gardée, souvent le dessus de la plaque).
+- **Révolution** : esquisse clonée comme une extrusion ; l'axe (système X/Y/Z ou ligne) devient une ligne de construction `_rvax` de l'esquisse copiée, retournée en symétrie pour qu'une révolution partielle reste l'image miroir.
+- **Déplacement de face / suppression de face** : faces visées transformées de même.
+- Restent exclues, volontairement : coque, scission, combinaison, déplacement de corps, import (opérations de corps entier).
+- **Connu, hors de cette version** : deux révolutions jointives par une face d'extrémité figent la fusion OCCT (aussi sans répétition) — corrigé à part.
+- **Tests** : `test_repeat_fonctions` (nouveau, vrai noyau : linéaire 1 et 2 copies, circulaire 360° / 45° / 90°, symétrie ; volumes et positions exacts, copie suivant l'angle de la source), tests de répétition existants, suite rapide 56/56.

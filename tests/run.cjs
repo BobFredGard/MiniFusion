@@ -38,6 +38,7 @@ const SUITES = [
   "test_coque_depouille",
   "test_repeat_mir2",
   "test_symetrie_conges",
+  "test_repeat_fonctions",
   "test_repeat_session",
   "test_repeat_circ_tour",
   "test_esquisse_angle",

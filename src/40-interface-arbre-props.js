@@ -147,7 +147,10 @@ function repCanFeature(id){
   if(!f)return false;
   if(f.repeatId)return false;
   if(f.type==='repeat')return false;
-  return f.type==='extrude'||f.type==='xfillet'||f.type==='hole'; // 2026-10-16-005 : perçages répétables
+  // 2026-10-16-005 : perçages répétables ; 2026-10-27 : dépouilles, révolutions, déplacement et
+  // suppression de face. Restent exclues les opérations de CORPS ENTIER (coque, scission,
+  // combinaison, déplacement de corps, import) : les répéter n'a pas de sens géométrique.
+  return ['extrude','revolve','hole','xfillet','xdraft','xmove','xdelface'].includes(f.type);
 }
 // Antériorité (43) : une répétition ne répète que ce qui la PRÉCÈDE — fonctions placées avant
 // elle, ou, à la création (rp absent), avant son point d'insertion (marqueur de temps).
@@ -162,6 +165,7 @@ function repAmont(id,rp){
 function repCanFeatureHint(f){
   if(!f)return'';
   if(f.type==='extrude')return((f.op||'add')==='cut'?'Découpe':'Plot')+' · '+(+f.distance||0).toFixed(2)+' mm';
+  if(f.type==='revolve')return revolveName(f);
   if(f.type==='hole')return 'Perçage · Ø'+(+f.d||0)+(f.thread&&f.thread.size?' · taraudé '+f.thread.size:'')+(f.kind&&f.kind!=='simple'?' · '+f.kind:'');
   if(f.type==='xfillet')return xLabel(xKindOf(f))+' · '+(f.edges||[]).length+' arête(s)';
   if(f.type==='xmove')return 'Déplacement de face · '+(+f.dist||0)+' mm';
@@ -197,7 +201,7 @@ function repSourceList(base,onChange,onTick,rp){
   box.appendChild(t);
   if(!cand.length){
     const w=document.createElement('span');w.className='note';
-    w.textContent='Aucune fonction répétable en amont (extrusion, découpe, perçage, congé ou chanfrein placés avant la répétition).';
+    w.textContent='Aucune fonction répétable en amont (extrusion, révolution, perçage, congé, chanfrein, dépouille, déplacement ou suppression de face placés avant la répétition).';
     box.appendChild(w);
     return box;
   }
@@ -280,6 +284,26 @@ function repTransformVec(v,i,cfg){const c=cfg||repMode,t=c.mode||c.type;
   if(t==='circ')return repRot(a,repAxisVec(c),repCircStep(c)*i);
   const n=repPlaneN(c);return repAdd(a,repScale(n,-2*repDot(a,n)));
 }
+// Encombrement (boîte alignée X/Y/Z) d'une face après transformation : |M|·dim, M = matrice
+// de la rotation / du miroir. Exact pour une face alignée sur les axes ; une rotation
+// quelconque en donne la boîte englobante — l'ordre de grandeur que compare occFindFace.
+function repTransformDim(d,i,cfg){
+  const e=[[1,0,0],[0,1,0],[0,0,1]].map(v=>repTransformVec(v,i,cfg));
+  const a=[+(d&&d[0])||0,+(d&&d[1])||0,+(d&&d[2])||0];
+  return [0,1,2].map(r=>Math.abs(e[0][r])*a[0]+Math.abs(e[1][r])*a[1]+Math.abs(e[2][r])*a[2]);
+}
+// Référence durable de face (pos/n/dim + ancre, cf. occFaceRef) transportée dans une copie :
+// l'ancre suit l'esquisse CLONÉE de la même passe (comme les congés), sinon elle est jetée et
+// occFindFace la recalera sur la position transformée.
+function repCloneFaceRef(r,i,skMap,cfg){
+  if(!r||!Array.isArray(r.pos))return r;
+  const o=Object.assign({},r);delete o._ord;
+  o.pos=repTransformPoint(r.pos,i,cfg).map(v=>+v.toFixed(3));
+  if(Array.isArray(r.n))o.n=repNorm(repTransformVec(r.n,i,cfg)).map(v=>+v.toFixed(4));
+  if(Array.isArray(r.dim))o.dim=repTransformDim(r.dim,i,cfg).map(v=>+v.toFixed(3));
+  if(r.anchor&&r.anchor.sk&&skMap[r.anchor.sk])o.anchor=Object.assign({},r.anchor,{sk:skMap[r.anchor.sk]});else delete o.anchor;
+  return o;
+}
 let repGenBusy=false; // garde-fou : une régénération ne s'emboîte jamais (rejeu non borné)
 function repCloneSketch(sk,i,skMap,featMap,cfg,reuse){
   // reuse = esquisse d'une instance déjà créée : MISE À JOUR EN PLACE (id conservé). Les
@@ -317,13 +341,26 @@ function repCloneFeature(f,i,skMap,featMap,cfg,reuse){
   // créer un nouveau — les fonctions qui pointent vers cette instance restent valides.
   const nf=JSON.parse(JSON.stringify(f));delete nf._m;delete nf._mesh;
   nf.visible=true;nf._src=f.id;
-  const target=reuse?reuse.id:uid(f.type==='xfillet'?'xf':(f.type==='hole'?'ho':'ex'));
-  if(f.type==='extrude'||f.type==='hole'){ // perçage : son esquisse de centres est clonée / transformée comme un profil
+  const target=reuse?reuse.id:uid({xfillet:'xf',hole:'ho',xdraft:'dr',revolve:'rv',xmove:'mv',xdelface:'df'}[f.type]||'ex');
+  if(f.type==='extrude'||f.type==='hole'||f.type==='revolve'){ // perçage : son esquisse de centres est clonée / transformée comme un profil
     const sk=doc.sketches.find(s=>s.id===f.sketchId);if(!sk)return null;
     featMap[f.id]=target; // AVANT l'esquisse : l'hôte (feat) de l'esquisse se remappe sur l'instance
     const reuseSk=reuse?doc.sketches.find(s=>s.id===reuse.sketchId):null;
     nf.sketchId=repCloneSketch(sk,i,skMap,featMap,cfg,reuseSk);
     if(nf.upto&&nf.upto.ex){if(featMap[nf.upto.ex])nf.upto.ex=featMap[nf.upto.ex];else nf.upto=null;}
+    if(f.type==='revolve'){
+      // 2026-10-27 : révolution répétée. Un axe SYSTÈME (X/Y/Z monde) ne suit pas la copie : il
+      // est remplacé par une ligne de construction de l'esquisse copiée, aux mêmes coordonnées
+      // 2D (le repère de l'esquisse est déjà transformé). Un miroir inverse le sens de rotation :
+      // la ligne est alors retournée pour qu'une révolution partielle reste l'image miroir.
+      const ax=revolveAxis2D(sk,f),ns=doc.sketches.find(s=>s.id===nf.sketchId);
+      if(ax&&!ax.err&&ns){
+        const inv=(cfg.mode||cfg.type)==='mir'?-1:1,P=ns.points=ns.points||{};
+        P._rvA={x:ax.p2.x,y:ax.p2.y};P._rvB={x:ax.p2.x+10*inv*ax.d2.x,y:ax.p2.y+10*inv*ax.d2.y};
+        ns.entities=(ns.entities||[]).filter(e=>e.id!=='_rvax').concat([{id:'_rvax',t:'line',p1:'_rvA',p2:'_rvB',construction:true}]);
+        nf.axis={k:'line',id:'_rvax'};
+      }
+    }
   }else{
     featMap[f.id]=target;
     if(f.type==='xfillet')nf.edges=(nf.edges||[]).map(s=>{
@@ -346,6 +383,22 @@ function repCloneFeature(f,i,skMap,featMap,cfg,reuse){
       delete o._div; // divergence herdée de la source : sans rapport avec le clone
       return o;
     });
+    if(f.type==='xdraft'){
+      // 2026-10-27 : dépouille répétée — les faces visées suivent la transformation. Le plan
+      // NEUTRE (référence) n'est déplacé que si la transformation le change : une translation
+      // ou une rotation dans son propre plan le laisse identique, on garde alors la face
+      // d'origine (souvent le dessus de la plaque, que la copie ne recrée pas).
+      nf.faces=(f.faces||[]).map(r=>repCloneFaceRef(r,i,skMap,cfg));
+      const r0=f.ref,r1=repCloneFaceRef(r0,i,skMap,cfg);
+      const meme=r0&&Array.isArray(r0.n)&&r1&&Array.isArray(r1.n)
+        &&repDot(repNorm(r0.n),r1.n)>0.9999
+        &&Math.abs(repDot(repNorm(r0.n),[r1.pos[0]-r0.pos[0],r1.pos[1]-r0.pos[1],r1.pos[2]-r0.pos[2]]))<1e-3;
+      nf.ref=meme?JSON.parse(JSON.stringify(r0)):r1;
+      delete nf._m;
+    }
+    // déplacement / suppression de face : les faces visées suivent la transformation
+    if(f.type==='xmove')nf.ref=repCloneFaceRef(f.ref,i,skMap,cfg);
+    if(f.type==='xdelface'){nf.faces=(f.faces||[]).map(r=>repCloneFaceRef(r,i,skMap,cfg));delete nf._m;delete nf._err;}
   }
   // Le NOM de la FONCTION COPIÉE est conservé tel quel dans la sous-arborescence (c'est la
   // répétition elle-même qui porte le nom du TYPE : Linéaire / Circulaire / Symétrie).
