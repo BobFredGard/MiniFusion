@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**375 versions**, de `2026-09-28b` à `V0.11.20` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**376 versions**, de `2026-09-28b` à `V0.11.21` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5142,3 +5142,9 @@ Point fait sur le GitHub de SolidCraft (`solid.chamfer`, `solid.draft`) : deux o
 - **Matrices** (`repPreviewXforms`, fonction pure) : linéaire et grille (`repLinCells`), circulaire (pas `repCircStep`), symétrie simple, symétrie double (image 1, image 2, image de l'image 1 ; plans identiques → une seule image), plans et axes par face / arête.
 - Retrait à la sortie du mode, à l'application et à chaque rafraîchissement du panneau.
 - **Tests** : `test_repeat_apercu` (nouveau, sans noyau : chaque matrice transforme des points exactement comme `repTransformPoint` — linéaire, grille, circulaire 360° / 90° / axe libre, symétrie YZ / par face / double / même plan), ajouté à la suite rapide.
+
+## V0.11.21 - Reprise NURBS : le lot seul, pas de corps entier après un refus du bloc
+Travail laissé non commité dans le dépôt principal par la session « Dépouilles manquantes dans les répétitions » (après la V0.11.18), repris tel quel. Cavité Test, congé voisin passé de R10 à R8 : la reprise NURBS du congé R3,3 FIGEAIT le noyau (onglet bloqué).
+- **Cause** (`src/20-noyau-et-operations-solides.js`, `occFilletNurbs`) : sur des surfaces NURBS, la passe arête par arête de `occFilletRun` (après l'échec du lot) peut lancer un `MakeFillet.Build` qui ne rend jamais la main ; et quand l'arrondi du bloc local échoue, la reprise sur le corps entier retombe sur le même arrondi, en plus lent.
+- **Correctif** : option `lot:true` de `occFilletRun` (le lot en une passe, sinon null — un résultat partiel était refusé juste après de toute façon) ; `refusNurbs` : si l'arrondi NURBS a échoué sur le bloc, pas d'essai sur le corps entier, la fonction reçoit son `_err` « impossible » comme tout congé refusé.
+- **Tests** : suites congés existantes, suite rapide.

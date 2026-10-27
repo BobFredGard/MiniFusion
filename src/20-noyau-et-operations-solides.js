@@ -898,6 +898,7 @@ function occFilletRun(base,jobs,warns,chamfer,opts){
   }
   let s=mk(base,jobs);
   if(s)return s;
+  if(opts&&opts.lot)return null; // lot seul (reprise NURBS, voir occFilletNurbs)
   let cur=base,done=0;
   for(const j of jobs){
     if(!j.mid||j.mid.length!==3){warns.push('arête sans repère — '+kindLabel+' abandonné');return cur===base?null:cur;}
@@ -2624,7 +2625,10 @@ function occFilletNurbs(base,js,chamfer,single,edges,cham){
         js2.push({src:b.src,r:j.r,mid:j.mid.slice(),fn:j.fn||null});
       }
       const w=[];
-      const s=occFilletRun(nb,js2,w,chamfer,{single,cham});
+      // LOT SEUL (2026-10-27) : la passe arête par arête sur des surfaces NURBS peut FIGER le
+      // noyau (Cavité Test, congé voisin R10 → R8 : un MakeFillet.Build sur la chaîne R3,3 ne
+      // rend jamais la main) ; et un résultat partiel serait refusé juste après de toute façon.
+      const s=occFilletRun(nb,js2,w,chamfer,{single,cham,lot:true});
       // résultat PARTIEL (arête par arête) refusé : la reprise doit rendre la fonction entière
       if(!s||w.some(m=>/partiel|impossible|introuvable/.test(m))){if(s&&s!==nb)del(s);del(nb);return null;}
       if(s!==nb)del(nb);
@@ -2666,7 +2670,7 @@ function occFilletNurbs(base,js,chamfer,single,edges,cham){
           if([0,1,2].some(k=>Math.abs(q[k]-lo[k])<1e-6||Math.abs(q[k]-hi[k])<1e-6))a+=G.Mass();
           G.delete();x.Next();}
         x.delete();return a;};
-      const f=filletNurbs(loc);if(!f)return null;bin.push(f);
+      const f=filletNurbs(loc);if(!f){refusNurbs=true;return null;}bin.push(f);
       const a0=coupe(loc),a1=coupe(f);
       if(!(Math.abs(a1-a0)<=1e-6*Math.max(1,a0)))return null; // l'arrondi a débordé du bloc
       let g=null;
@@ -2701,8 +2705,14 @@ function occFilletNurbs(base,js,chamfer,single,edges,cham){
   // rayon), nombre d'arêtes du corps et somme de leurs longueurs ; résultat rendu en copie.
   const key=occNurbsMemoKey(js,chamfer,single,edges,cham);
   const hit=occNurbsMemoGet(key);if(hit)return hit;
+  // PAS DE CORPS ENTIER quand l'arrondi NURBS a déjà échoué sur le bloc (2026-10-27) : la cause
+  // est l'arrondi lui-même, pas le découpage, et le corps entier ne fait pas mieux — pire, Cavité
+  // Test avec le congé voisin passé de R10 à R8 : la chaîne R3,3 y FIGE le noyau (un
+  // MakeFillet.Build arête par arête ne rend jamais la main, onglet bloqué). La fonction
+  // reçoit alors son _err « impossible » comme tout congé refusé.
+  let refusNurbs=false;
   const g=local();
-  const r=g?{shape:g,local:true}:(()=>{const s=filletNurbs(base);return s?{shape:s,local:false}:null;})();
+  const r=g?{shape:g,local:true}:refusNurbs?null:(()=>{const s=filletNurbs(base);return s?{shape:s,local:false}:null;})();
   if(r){const c=occShapeCopy(r.shape);if(c){OCC_NURBS_MEMO.unshift({key,shape:c,local:r.local});
     while(OCC_NURBS_MEMO.length>8){const o=OCC_NURBS_MEMO.pop();try{o.shape.delete();}catch(e){}}}}
   return r;
