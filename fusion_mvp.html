@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.15.5';
+const APP_VER='V0.15.6';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -60671,7 +60671,7 @@ function rtBuildObjects(){
     G.add(o);
   });
   R.group=G;R.scene.add(G);
-  // sol : un disque toujours présent (sa matière seule change : pas de BVH à refaire pour une case cochée)
+  // sol : un disque présent hors Studio (sa matière seule change : pas de BVH à refaire pour une case cochée)
   const b=rd.box,c=b.getCenter(new THREE.Vector3()),Rr=b.getSize(new THREE.Vector3()).length()*0.5||50;
   if(!R.floor){
     R.floor=new T.Mesh(new T.CircleGeometry(1,128),new T.MeshPhysicalMaterial({metalness:0,transparent:true,alphaMap:rtFloorAlpha(T)}));
@@ -60686,6 +60686,9 @@ function rtBuildObjects(){
   if(!R.studio&&sOn){const sm=new T.MeshPhysicalMaterial({metalness:0,side:T.DoubleSide});sm.castShadow=false;
     R.studio=new T.Mesh(rdStudioGeo(T,Rr),sm);R.studio.matrixAutoUpdate=false;R.studioR=Rr;R.scene.add(R.studio);}
   if(R.studio)R.studio.matrix.makeTranslation(c.x,c.y,b.min.z-Rr*0.001);
+  // …et le disque du sol hors de la scène en mode Studio : même transparent, coplanaire au fond de la
+  // cuvette, il se disputait les rayons avec elle (anneaux concentriques et coutures droites au rendu)
+  if(sOn)R.scene.remove(R.floor);else if(R.floor.parent!==R.scene)R.scene.add(R.floor);
   rtFloorMat();
   R.pt.setScene(R.scene,R.cam);
 }

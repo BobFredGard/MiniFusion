@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**399 versions**, de `2026-09-28b` à `V0.15.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**400 versions**, de `2026-09-28b` à `V0.15.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5315,3 +5315,10 @@ Demande : un fichier STEP exporté doit être au format AP203 ou AP214, ou propo
 - **Constat** : le noyau écrit toujours de l'AP214 IS (`AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }`). Dans cette build d'opencascade.js, les noms passés en chaîne n'arrivent pas au C++ : `Interface_Static.IsPresent('write.step.schema')` vaut faux même après `STEPControl_Controller.Init()`, `SetCVal`/`SetIVal` renvoient faux — `write.step.schema` est inaccessible.
 - **AP203** (`stepToAp203`) : le texte AP214 est réécrit comme OCCT le fait en schéma 3 — `FILE_SCHEMA(('CONFIG_CONTROL_DESIGN'))`, `APPLICATION_PROTOCOL_DEFINITION(…,'config_control_design',1994,…)`, contexte d'application AP203, `MECHANICAL_CONTEXT`, `DESIGN_CONTEXT('detailed design',…)`, et les entités de gestion obligatoires (approbation, classification de sécurité, personne/organisation et leurs rôles, dates de création et de classification). Géométrie inchangée. `occWriteStep(shapes,path,schema)` garde sa signature (schéma facultatif).
 - **Test** : `test_step_schema` (noyau réel, 18 vérifications) — en-têtes des deux schémas, aucun vestige AP214 dans l'AP203, entités CC_DESIGN_* présentes, toutes les références `#n` définies sans doublon, les deux fichiers relus par `STEPControl_Reader` en un solide de 6 faces 60 × 40 × 20. Non essayé : ouverture de l'AP203 dans un autre logiciel de CAO.
+
+## V0.15.6 - Rendu : fond Studio lisse en lancer de rayons (plus de stries ni de couture)
+Constat : fond « Studio » en « Lancer de rayons » — stries circulaires concentriques sur le sol et coutures rectilignes, « Brillant » coché ou non (Support Pédale, alu anodisé bleu, 128 échantillons, 1080p). Moteur rapide sans défaut.
+- **Cause** (`src/98-rendu-rayons.js`, `rtBuildObjects`) : le disque du sol (`R.floor`) restait dans la scène en mode Studio — transparent, mais exactement à la cote du fond de la cuvette. Les rayons touchaient tantôt l'un, tantôt l'autre : moiré entre les deux éventails de triangles (disque 128 côtés, cuvette 256), d'où les anneaux et les droites aux raccords. Ni les normales de la `LatheGeometry`, ni ses facettes, ni les UV n'y étaient pour quelque chose (retirer le disque seul suffit à lisser l'image).
+- **Correctif** : le disque sort de la scène en mode Studio et y revient pour les autres fonds ; le passage au Studio refaisait déjà la scène (`rtRefresh`).
+- **Mesure** (1080p, passe-haut 15 × 15 sur le coin bas-gauche du sol) : écart moyen 0,26 → 0,16 niveau (Brillant), 0,13 (sans) — reste le grain sous un niveau 8 bits.
+- **Tests** : `gpu.spec` (3/3) et `rendu.spec` (2/2) verts ; `npm run ci` (67/67).
