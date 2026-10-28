@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**404 versions**, de `2026-09-28b` à `V0.15.10` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**405 versions**, de `2026-09-28b` à `V0.15.11` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5357,3 +5357,11 @@ Demande : « Répétition → permettre de créer un corps ou de l'unir » (comm
 - **Nettoyage** : quantité réduite, retour à « Unir » ou suppression de la répétition retirent les corps devenus vides (`repDropBody`) ; un corps qui porte une fonction ajoutée ou sert d'outil de combinaison reste. Supprimer seul un corps d'exemplaire est refusé avec une explication : la répétition le recréerait.
 - **Arbre** (`src/42-arbre-modele.js`) : ◧ sur la répétition, « 🔁 nom » sur les corps qu'elle a créés. Le panneau signale par ⚠ un « Nouveau corps » dont aucune source n'ajoute de matière (perçage seul : corps vides).
 - **Tests** : `test_repeat_corps` (nouveau, suite rapide : 14 contrôles sur le noyau réel — volumes par corps, ids stables, refus, réduction, relecture JSON, retour à Unir, symétrie double, suppression).
+
+## V0.15.11 - Filets taraudés : cachés avec leur corps
+Demande : « quand je cache un corps avec des trous taraudés, je veux bien cacher aussi les filets spirales ».
+- **Cause** (`src/76-percage.js`, `holeThreadPaths`) : chaque filet cosmétique prenait son corps dans `f.bodyId`, champ qu'aucune fonction ne porte (le corps est `f.body`). Les hélices et cercles d'entrée n'appartenaient donc à aucun corps et restaient affichés corps caché. Même champ erroné dans la mise en plan : une vue d'un seul corps montrait aussi les filets des autres corps.
+- **Correctif** : le filet prend le corps de sa fonction (`occBodyOfFeat`). `holeThreadBodyShown` dit si ce corps est montré : œil du corps (`doc.bodyVis`), puis visibilité réelle de ses maillages, pour suivre aussi le clic droit « Cacher », l'isolement, l'esquisse en mode fantôme. `holeThreadVisSync` applique la règle à chaque image (`animate`, `src/10-scene-3d.js`) ; un groupe recréé par un rejeu naît déjà à jour.
+- **Mise en plan** (`src/98-mep-10-projection-hlr.js`) : filets en ombrage, filets du rendu 3D et symboles de taraudage ignorent un corps caché et respectent le filtre de corps de la vue.
+- **Repli maillage** : sans noyau exact, tous les corps sont fondus en un seul maillage ; seul l'œil du corps cache alors ses filets.
+- **Tests** : `test_filet_visibilite` (nouveau, suite rapide : 10 contrôles sur le noyau réel — corps de chaque filet, œil éteint et rallumé, maillage caché hors de l'œil, rejeu avec un corps caché). Contrôlé aussi dans le navigateur sur la scène réelle.

@@ -342,8 +342,10 @@
     const toEye=p=>{if(!K)return qn;const e=[K.E[0]-p[0],K.E[1]-p[1],K.E[2]-p[2]],l=Math.hypot(e[0],e[1],e[2])||1;return[e[0]/l,e[1]/l,e[2]/l];};
     const vis=(a,b)=>{const m=[(a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2];return mepVisible(m,toEye(m),null,meshes);};
     const out=[];
+    const memo=new Map();
     holeThreadPaths(16,0.12).forEach(T=>{ // 0,12 mm vers l'axe : hors des facettes de la paroi
       if(view.bodyId&&T.bodyId&&T.bodyId!==view.bodyId)return;
+      if(typeof holeThreadBodyShown==='function'&&!holeThreadBodyShown(T.bodyId,memo))return; // corps caché : ses filets aussi
       const H=T.helix,per=Math.max(4,Math.round(T.spt||16));
       let hidRun=0;
       for(let i=1;i<H.length;i++){
@@ -476,7 +478,10 @@
       try{
         if(typeof holeThreadPaths==='function'){
           const hel=[],rng=[],seg=(arr,pts)=>{for(let i=1;i<pts.length;i++){const p=pts[i-1],q=pts[i];arr.push(p[0],p[1],p[2],q[0],q[1],q[2]);}};
-          holeThreadPaths().forEach(T=>{if(view.bodyId&&T.bodyId&&T.bodyId!==view.bodyId)return;seg(hel,T.helix);seg(rng,T.ring);});
+          const memo=new Map();
+          holeThreadPaths().forEach(T=>{if(view.bodyId&&T.bodyId&&T.bodyId!==view.bodyId)return;
+            if(typeof holeThreadBodyShown==='function'&&!holeThreadBodyShown(T.bodyId,memo))return; // corps caché : ses filets aussi
+            seg(hel,T.helix);seg(rng,T.ring);});
           if(hel.length){
             thrGrp=new THREE.Group();
             const mkL=(arr,dash)=>{const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(arr,3));
@@ -916,7 +921,9 @@
     const nS=view.section?mepNorm(view.section.n):null;
     (doc.features||[]).forEach(f=>{
       if(!f||f.type!=='hole'||f.visible===false||!f.thread||!f.thread.size||f.thread.model)return;
-      if(view.bodyId&&f.bodyId&&f.bodyId!==view.bodyId)return;
+      const fb=(typeof occBodyOfFeat==='function'?occBodyOfFeat(f):f.body)||null; // V0.15.11 : f.bodyId n'existe pas
+      if(view.bodyId&&fb&&fb!==view.bodyId)return;
+      if(typeof holeThreadBodyShown==='function'&&!holeThreadBodyShown(fb))return;
       const T=isoThread(f.thread.size);if(!T)return;
       const sk=(doc.sketches||[]).find(q=>q.id===f.sketchId);if(!sk)return;
       let A=null,N=null;try{A=holeAxis(f,sk);N=holeNorm(f);}catch(e){return;}

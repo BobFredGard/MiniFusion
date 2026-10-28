@@ -578,6 +578,7 @@ function animate(){
   try{if(typeof extDynTick==='function')extDynTick();}catch(e){} // extrusion dynamique : flèche et cote (70)
   try{if(typeof faoPoseSync==='function')faoPoseSync();}catch(e){}
   try{if(typeof faoFaceHlSync==='function')faoFaceHlSync();}catch(e){} // faces bleues / rouges de l'op sélectionnée
+  try{if(typeof holeThreadVisSync==='function')holeThreadVisSync();}catch(e){} // filets taraudés : cachés avec leur corps (76)
   renderer.render(asmRenderScene(),camera); // vue d'assemblage : sa propre scène (47)
 }
 function showAll(){

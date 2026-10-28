@@ -478,13 +478,45 @@ function holeThreadPaths(stepsPerTurn,inset){
       for(let k=0;k<=48;k++){const a=k/48*Math.PI*2;
         const q=O.clone().addScaledVector(D,off-0.03).addScaledVector(U,Rn*Math.cos(a)).addScaledVector(V,Rn*Math.sin(a));
         ring.push([q.x,q.y,q.z]);}
-      out.push({bodyId:f.bodyId||null,helix:helix,ring:ring,spt:steps/turns});
+      // V0.15.11 : corps CONTENEUR de la fonction (f.body). L'ancien f.bodyId n'existe sur aucune
+      // fonction : les filets n'appartenaient à aucun corps et restaient visibles corps caché.
+      out.push({bodyId:(typeof occBodyOfFeat==='function'?occBodyOfFeat(f):f.body)||null,helix:helix,ring:ring,spt:steps/turns});
     });
   });
   return out;
 }
+/* V0.15.11 : « quand je cache un corps avec des trous taraudés, je veux cacher aussi les filets ».
+   Un filet est montré tant que son corps l'est : œil du corps (doc.bodyVis), mais aussi tout ce
+   qui cache le maillage sans passer par lui (clic droit « Cacher », isoler, esquisse en mode
+   fantôme, sélection d'arêtes de congé). On suit donc la visibilité RÉELLE des maillages du
+   corps ; corps sans maillage affiché (rejeu en cours) : seul doc.bodyVis décide. */
+function holeThreadBodyShown(bid,memo){
+  if(!bid)return true;
+  if(memo&&memo.has(bid))return memo.get(bid);
+  let r=!(doc.bodyVis&&doc.bodyVis[bid]===false);
+  if(r){
+    let seen=false,shown=false;
+    (typeof bodies!=='undefined'&&bodies?bodies:[]).forEach(function(b){
+      if(!b||b.ghost||!b.mesh)return;
+      let id=null;try{id=bodyIdOfRuntime(b);}catch(e){}
+      if(id!==bid)return;
+      seen=true;if(b.mesh.visible!==false)shown=true;
+    });
+    r=!seen||shown;
+  }
+  if(memo)memo.set(bid,r);
+  return r;
+}
+let holeThreadGrp=null; // groupe affiché (évite un parcours de scène à chaque image)
+function holeThreadVisSync(){
+  // Appelé à chaque image (10, animate) : quelques objets, une table par image.
+  const g=holeThreadGrp;if(!g||!g.parent)return;
+  const memo=new Map();
+  for(const o of g.children){const v=holeThreadBodyShown(o.userData.bodyId,memo);if(o.visible!==v)o.visible=v;}
+}
 function holeThreadOverlay(){
   try{
+    holeThreadGrp=null;
     const old=scene.getObjectByName('holeThreads');
     if(old){scene.remove(old);old.traverse(function(o){try{if(o.geometry)o.geometry.dispose();}catch(e){}});}
     const grp=new THREE.Group();grp.name='holeThreads';
@@ -496,9 +528,10 @@ function holeThreadOverlay(){
         const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(arr,3));
         const m=dash?new THREE.LineDashedMaterial({color:col,dashSize:0.8,gapSize:0.6,transparent:true,opacity:op}):new THREE.LineBasicMaterial({color:col,transparent:true,opacity:op});
         const l=new THREE.LineSegments(g,m);if(dash&&l.computeLineDistances)l.computeLineDistances();l.renderOrder=5;l.raycast=function(){};return l;};
-      if(helix.length)grp.add(mkL(helix,0xffb340,0.9,false));
-      if(ring.length)grp.add(mkL(ring,0xffb340,0.95,true));
+      const add=function(l){l.userData.bodyId=T.bodyId;grp.add(l);};
+      if(helix.length)add(mkL(helix,0xffb340,0.9,false));
+      if(ring.length)add(mkL(ring,0xffb340,0.95,true));
     });
-    if(grp.children.length)scene.add(grp);
+    if(grp.children.length){scene.add(grp);holeThreadGrp=grp;holeThreadVisSync();}
   }catch(e){}
 }
