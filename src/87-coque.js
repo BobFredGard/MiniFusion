@@ -114,21 +114,35 @@ function coqueFaceUnder(e){
     return{ref:ref,ord:hit.ord};
   }catch(e){return null;}
 }
+let coqueOrdIdx=null; // le temps d'un marquage : solide → Map(clé de face → rang)
 function coqueOrdOf(ref){
   // Multi-corps : on cherche sur TOUS les solides affichés, on mémorise le corps.
+  // V0.15.5 : UN parcours des faces par solide (index clé → rang), partagé par toutes les
+  // faces d'un marquage. Avant : occFaceAt(rang) reparcourait le solide depuis le début
+  // pour CHAQUE face candidate, et pour chaque face mémorisée — O(faces²) par face, des
+  // secondes à l'entrée en édition d'une sélection nombreuse sur une grosse pièce.
   const k=coqueKey(ref);
   for(const b of bodies){
     if(b.kind!=='body'||!b.mesh||!b.shape)continue;
-    const groups=(b.mesh.geometry.userData.occGroups)||[];
-    for(const g of groups){
-      let f=null;
-      try{f=occFaceAt(b.shape,g.f);}catch(e){continue;}
-      if(!f)continue;
-      let cur=null;
-      try{cur=coqueRefOf(f);}catch(e){}
-      try{f.delete();}catch(e){}
-      if(cur&&coqueKey(cur)===k){ref._bid=b.id;return g.f;}
+    let idx=coqueOrdIdx&&coqueOrdIdx.get(b.shape);
+    if(!idx){
+      idx=new Map();
+      const want=new Set(((b.mesh.geometry.userData.occGroups)||[]).map(g=>g.f));
+      const ex=new occt.TopExp_Explorer_2(b.shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,occt.TopAbs_ShapeEnum.TopAbs_SHAPE);
+      let o=0;
+      while(ex.More()){
+        if(want.has(o)){
+          let cur=null;
+          try{cur=coqueRefOf(occt.TopoDS.Face_1(ex.Current()));}catch(e){}
+          if(cur){const kk=coqueKey(cur);if(!idx.has(kk))idx.set(kk,o);} // 1ʳᵉ face de même clé, comme avant
+        }
+        o++;ex.Next();
+      }
+      try{ex.delete();}catch(e){}
+      if(coqueOrdIdx)coqueOrdIdx.set(b.shape,idx);
     }
+    const o=idx.get(k);
+    if(o!==undefined){ref._bid=b.id;return o;}
   }
   return -1;
 }
@@ -138,10 +152,13 @@ function coqueMarkByPosition(){
   // une seule face problématique effaçait toute la surbrillance. Retourne le bilan.
   const st={ok:0,ko:0};
   if(!coqueMode||!occLive||!occLive.shape)return st;
-  (coqueMode.faces||[]).forEach(r=>{
-    try{r._ord=coqueOrdOf(r);}catch(e){r._ord=-1;}
-    if(r._ord>=0)st.ok++;else st.ko++;
-  });
+  coqueOrdIdx=new Map();
+  try{
+    (coqueMode.faces||[]).forEach(r=>{
+      try{r._ord=coqueOrdOf(r);}catch(e){r._ord=-1;}
+      if(r._ord>=0)st.ok++;else st.ko++;
+    });
+  }finally{coqueOrdIdx=null;}
   return st;
 }
 /* ---------- aperçu vert translucide du solide évidé AVANT validation ----------
