@@ -11,7 +11,7 @@ Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. S'il n
 | ![Espace CAO](docs/captures/cao-percages.png) | ![Espace FAO](docs/captures/fao-parcours.png) |
 | **CAO** : esquisses contraintes, solides à historique, congés exacts, perçages taraudés | **FAO** : posages, 2,5D, 3D, 3+2, perçage, simulation, G-code Siemens et Fagor |
 | ![Espace PLAN](docs/captures/plan-percages.png) | ![Atelier RENDU](docs/captures/rendu-atelier.png) |
-| **PLAN** : planches cotées ISO, coupes, cartouche, nomenclature | **RENDU** : images réalistes 1920×1080 ou 4K |
+| **PLAN** : planches cotées ISO, coupes, cartouche, nomenclature | **RENDU** : images réalistes 1920×1080 ou 4K, moteur rapide ou lancer de rayons |
 
 ## Sommaire
 
@@ -20,7 +20,7 @@ Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. S'il n
 - [Assemblage](#assemblage) : composants, liaisons, références entre composants
 - [FAO](#fao) : posage, opérations, perçage, simulation, 3+2, G-code
 - [PLAN](#plan) : planches, vues, coupes, cotation, sorties
-- [RENDU](#rendu) : ambiances, matériaux, appareil photo
+- [RENDU](#rendu) : deux moteurs, matériaux et patine, HDRI, finition, calques
 - [Souris et clavier](#souris-et-clavier)
 - [Démarrage](#démarrage) · [Scripts et MCP](#scripts-et-pilotage-par-claude-mcp) · [Développement](#développement) · [Licences](#licences)
 
@@ -133,11 +133,18 @@ Comme dans Fusion 360, **tout est composant** : le fichier est le composant raci
 ## RENDU
 
 Une image soignée de la pièce ou de l'assemblage, en **1920×1080 ou 4K**, enregistrée en PNG. L'atelier a sa propre scène : la vue CAO n'est jamais touchée.
-- **Ambiances** générées à la volée (studio, studio lumineux, atelier, extérieur, scène noire) : aucune image externe, l'application reste un seul fichier.
-- **Matériaux** de la bibliothèque commune (aciers, aluminiums usinés ou anodisés, laiton, plastiques, élastomères, peintures, bois, verres), **reliefs procéduraux** (brossé, sablé, moleté, bois).
-- **Affinage progressif** : ombres douces, bords lisses, **profondeur de champ** ; 16, 64 ou 256 passes pour l'image finale.
-- **Appareil photo** : focale en mm, ouverture, mise au point au clic, exposition, rendu des tons ; **vues enregistrées** avec la pièce.
-- **Fond et sol** : dégradé, uni ou transparent, sol miroir, ombre réglable.
+- **Deux moteurs**, tous deux sur la carte graphique :
+  - **Rapide** : l'image s'affine passe après passe, quelques secondes ;
+  - **Lancer de rayons** (three-gpu-pathtracer) : lumière renvoyée, reflets entre pièces, vrai verre ; 128, 512 ou 2048 échantillons pour l'image finale, chargé seulement quand on le choisit.
+- **Matériaux** de la bibliothèque commune (aciers, aluminiums usinés ou anodisés, laiton, titane, plastiques, élastomères, peintures, bois, verres) :
+  - **couches** : paillettes sous vernis, irisation (titane bleui, peinture nacrée) ;
+  - **reliefs procéduraux** : brossé, sablé, moleté, bois ;
+  - **patine** par corps : taches de teinte, usure des arêtes vives, salissure des creux, de légère à très usée.
+- **Ambiances** générées à la volée (studio, studio lumineux, atelier, extérieur, scène noire), ou **image HDRI importée** (`.hdr`, `.exr`) dont le soleil porte l'ombre ; gardée par le navigateur, jamais dans le fichier.
+- **Fond et sol** : dégradé, uni, transparent (PNG détouré), **studio courbe** ou l'HDRI elle-même ; sol miroir, ombre réglable, **supports** texturés (béton, plateau de bois, marbre, tapis de découpe).
+- **Appareil photo** : focale en mm, ouverture et **profondeur de champ**, mise au point au clic, exposition, rendu des tons ; **vues enregistrées** avec la pièce.
+- **Finition** : débruitage (lancer de rayons), halo, vignettage, grain, contraste, saturation, température ; préréglages Neutre, Photo, Cinéma.
+- **Calques séparés** au choix : une archive `.zip` avec l'image finale, le masque, la profondeur, les normales, une couleur par corps et l'ombre seule, prêts pour la retouche.
 
 ## Souris et clavier
 
@@ -208,4 +215,5 @@ Les captures de ce README sont refaites par `npm run captures` (Chromium sur la 
 
 - Code : **ISC** (voir `package.json`).
 - `threejs/` : three.js et OrbitControls sous **MIT**, CSG.js.
+- `threejs/rendu-rayons.js` : three.js, three-mesh-bvh, three-gpu-pathtracer et fflate, sous **MIT**.
 - `occt/` : OpenCascade Technology sous **LGPL**.
