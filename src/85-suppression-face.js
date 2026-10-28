@@ -59,7 +59,9 @@ function deleteSelectedFaces(){
   const made=ids.map(id=>doc.features.find(x=>x.id===id)).filter(Boolean);
   const bad=made.filter(f=>f._err||(f._m&&f._m.m<f._m.t));
   const n=made.reduce((a,f)=>a+(f.faces||[]).length,0);
-  faceEl.textContent=bad.length
+  // Calcul parti au worker (21-suppression-face-calcul) : la réponse relance le rejeu.
+  if(made.some(f=>f._calc))faceEl.textContent=`Suppression de ${n} face(s) : calcul en cours… La pièce reste affichée sans la suppression, abandon au bout de ${Math.round(DEL_WK_DELAI/1000)} s. Ctrl+Z pour annuler.`;
+  else faceEl.textContent=bad.length
     ?'Suppression de face : le noyau n\'a pas pu refermer le solide pour '+bad.length+' fonction(s) — voir ⚠ dans l\'arbre (Ctrl+Z pour annuler).'
     :`${n} face(s) supprimée(s) — les faces voisines ont été prolongées.${lost?` (${lost} face(s) ignorée(s) : hors solide exact)`:''} Ctrl+Z pour annuler.`;
   if(made.length===1)try{sel={kind:'feature',id:made[0].id};renderProps();}catch(e){}

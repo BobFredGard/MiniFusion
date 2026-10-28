@@ -1536,10 +1536,12 @@ function occBoxMinMax(sh){
   }catch(e){return null;}
 }
 const DEL_ISOLE_MAX=6;
-function occApplyDeleteFaces(result,f){
+function occApplyDeleteFaces(result,f,ckKey){
   // Rejoue la suppression. Retourne {shape,warnings} comme occApplyCoque : les faces sont
   // retrouvées par référence durable, et celles que le noyau refuse sont écartées une à
-  // une (isolation) plutôt que de tout perdre.
+  // une (isolation) plutôt que de tout perdre. ckKey (rejeu) : clé du point de contrôle,
+  // qui permet d'envoyer le calcul au worker ; {pending:true} tant qu'il n'a pas répondu.
+  delete f._calc;
   const warnings=[];
   const total=(f.faces||[]).length;
   if(!total)return{shape:result,warnings:['aucune face à supprimer']};
@@ -1548,7 +1550,34 @@ function occApplyDeleteFaces(result,f){
   f._m={m:hs.length,t:total};
   if(!hs.length)return{shape:result,warnings:[`aucune des ${total} face(s) n'est retrouvée — la pièce a changé`]};
   if(hs.length<total)warnings.push(`${total-hs.length} face(s) introuvable(s) sur la pièce courante`);
-  let r=null,echec=null;
+  // V0.15.8 : calcul dans le worker quand il existe (21-suppression-face-calcul) — l'interface
+  // ne gèle plus et un calcul sans fin est abandonné au délai. Sans worker : ici même.
+  let res=null;
+  if(ckKey&&delWkUsable()){
+    const a=delWkAsk(ckKey,result,hs,f.id);
+    if(a.pending){
+      free();delete f._m;f._calc=true;
+      return{shape:result,warnings:warnings.concat([a.msg]),pending:true};
+    }
+    res=a.res;
+  }
+  if(!res)res=occDelFacesTry(result,hs);
+  free();
+  warnings.push(...res.warnings);
+  if(!res.r){
+    f._m={m:0,t:total};
+    return{shape:result,warnings:[`suppression impossible — ${res.err}`].concat(warnings),fatal:true};
+  }
+  if(res.kept<hs.length){f._m={m:res.kept,t:total};warnings.push(`suppression partielle : ${res.kept}/${total} face(s), ${hs.length-res.kept} refusée(s) par le noyau`);}
+  try{result.delete();}catch(e){}
+  return{shape:res.r,warnings};
+}
+function occDelFacesTry(result,hs){
+  // Cœur commun au thread principal et au worker (sérialisé tel quel par delWkSource : ni
+  // variable extérieure autre que occt / DEL_ISOLE_MAX, ni fonction hors de sa liste).
+  // → {r: solide ou null, kept: nb de faces retirées, err: message d'échec, warnings}
+  const warnings=[];
+  let r=null,echec=null,kept=hs.length;
   try{r=occDeleteFacesOnce(result,hs);}catch(e){echec=e;}
   // Reprise face par face : N+1 suppressions complètes de plus. Sur une grosse pièce, une
   // seule coûte déjà de 0,4 s à plusieurs minutes (Defeaturing OCCT, mesuré V0.15.5) :
@@ -1561,17 +1590,10 @@ function occApplyDeleteFaces(result,f){
     }
     if(garde.length){
       try{r=occDeleteFacesOnce(result,garde);}catch(e){echec=e;}
-      if(r){f._m={m:garde.length,t:total};warnings.push(`suppression partielle : ${garde.length}/${total} face(s), ${hs.length-garde.length} refusée(s) par le noyau`);}
+      if(r)kept=garde.length;
     }
   }
-  free();
-  if(!r){
-    const m=(echec&&echec.message)||echec;
-    f._m={m:0,t:total};
-    return{shape:result,warnings:[`suppression impossible — ${m}`].concat(warnings),fatal:true};
-  }
-  try{result.delete();}catch(e){}
-  return{shape:r,warnings};
+  return{r,kept:r?kept:0,err:r?null:String((echec&&echec.message)||echec),warnings};
 }
 /* ---------- scinder par un plan : faces ou corps (V0.11.5) ----------
    {type:'xsplit', mode:'face'|'body', body, pl:{src,cg?,o?,n?}, off, flip, faces?, newBody?}
@@ -3196,8 +3218,9 @@ function featSig(f){
   // de solide périmé réutilisé si un champ se rajoute au moteur. Exclus :
   // _mesh/_m (état dérivé vivant, non géométrique — _mesh est une référence THREE
   // non sérialisable), name/open (affichage pur : replier un nœud ou renommer ne
-  // change pas le solide et invaliderait tout).
-  const jf={};for(const k in f){if(k==='name'||k==='open'||k==='_m'||k==='_mesh')continue;jf[k]=f[k];}
+  // change pas le solide et invaliderait tout). _calc : suppression au worker (21), état
+  // dérivé lui aussi — dans la clé, la réponse du worker ne serait jamais retrouvée.
+  const jf={};for(const k in f){if(k==='name'||k==='open'||k==='_m'||k==='_mesh'||k==='_calc')continue;jf[k]=f[k];}
   s+='|j'+JSON.stringify(jf);
   return s;
 }
@@ -3270,8 +3293,11 @@ function occReplayBody(bid,list){
         const w=occCkWarn[ckKey];if(w&&w.length)msgs.push(...w.map(x=>`${f.name} : ${x}`));
         return;
       }
-      const r=f.type==='xmove'?occApplyMoveFace(result,f):f.type==='bmove'?occApplyBodyMove(result,f):occApplyDeleteFaces(result,f); // bmove : 85-deplacer-corps
+      const r=f.type==='xmove'?occApplyMoveFace(result,f):f.type==='bmove'?occApplyBodyMove(result,f):occApplyDeleteFaces(result,f,ckKey); // bmove : 85-deplacer-corps
       result=r.shape;msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
+      // Suppression partie au worker : corps affiché SANS elle, et rien de mémorisé en aval
+      // sous une clé qui la supposerait faite (même marque que le STEP en cours de restauration).
+      if(r.pending){ckKey+=DEL_WK_MARK+f.id+';';return;}
       if(r.warnings.length)occCkWarn[ckKey]=r.warnings.slice();else delete occCkWarn[ckKey];
       occCkPut(ckKey,()=>occShapeCopy(result));
       return;

@@ -415,5 +415,5 @@ function delFaceApply(){
   exitCoqueMode(true);
   markDirty();rebuild();renderTree();renderProps();
   const bad=f&&(f._err||(f._m&&f._m.m<f._m.t));
-  faceEl.textContent=f?(bad?'Suppression de face : le noyau n\'a pas pu refermer le solide — voir ⚠ dans l\'arbre (Ctrl+Z pour annuler).':f.name+' : mise à jour enregistrée.'):'Suppression de face : fonction introuvable.';
+  faceEl.textContent=f?(f._calc?f.name+' : calcul en cours… (abandon au bout de '+Math.round(DEL_WK_DELAI/1000)+' s).':bad?'Suppression de face : le noyau n\'a pas pu refermer le solide — voir ⚠ dans l\'arbre (Ctrl+Z pour annuler).':f.name+' : mise à jour enregistrée.'):'Suppression de face : fonction introuvable.';
 }

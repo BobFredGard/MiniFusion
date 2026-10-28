@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**400 versions**, de `2026-09-28b` à `V0.15.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**402 versions**, de `2026-09-28b` à `V0.15.8` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5322,3 +5322,13 @@ Constat : fond « Studio » en « Lancer de rayons » — stries circulaires con
 - **Correctif** : le disque sort de la scène en mode Studio et y revient pour les autres fonds ; le passage au Studio refaisait déjà la scène (`rtRefresh`).
 - **Mesure** (1080p, passe-haut 15 × 15 sur le coin bas-gauche du sol) : écart moyen 0,26 → 0,16 niveau (Brillant), 0,13 (sans) — reste le grain sous un niveau 8 bits.
 - **Tests** : `gpu.spec` (3/3) et `rendu.spec` (2/2) verts ; `npm run ci` (67/67).
+
+## V0.15.8 - Suppression de face dans un Web Worker : interface libre, abandon au délai
+Constat : sur `Exemples/Cavité Usinage.step` (113 faces), la plupart des faces se suppriment en moins d'une seconde, mais le cylindre 33×33×23 (5ᵉ face non plane) tient `BRepAlgoAPI_Defeaturing` 579 s puis fait planter le noyau — onglet figé pendant tout ce temps, et ce build OCCT n'offre aucune interruption (ni SetUseOBB, ni SetFuzzyValue, ni SetRunParallel, ni progression).
+- **Worker** (`src/21-suppression-face-calcul.js`) : le calcul part dans un Web Worker qui charge SON noyau OCCT (`occt/opencascade.full.js` + `.wasm`, module compilé réemployé d'un worker à l'autre). Il exécute le MÊME code que le thread principal — `occDelFacesTry` (nouveau cœur commun extrait de `occApplyDeleteFaces`, `src/20`), garde-fou de débord `occDelFaceDebord`, reprise face par face bornée à `DEL_ISOLE_MAX` — sérialisé par `delWkSource` : rien à entretenir en double.
+- **Délai** : `DEL_WK_DELAI` = 20 s (réglable : `localStorage.minifusion_delFaceDelai`, en secondes). Dépassé, le worker est arrêté net ; la fonction prend ⚠ « le noyau ne sait pas supprimer ces faces en un temps raisonnable (calcul arrêté après 20 s) », la pièce reste intacte, Ctrl+Z l'annule. Le worker suivant redémarre en une fraction de seconde (module wasm déjà compilé).
+- **Interface** : Suppr rend la main tout de suite (⏳ dans l'arbre, « calcul en cours… », corps affiché sans la suppression) ; la réponse relance le rejeu, qui reprend le résultat par clé de point de contrôle (`ckKey`), comme « STEP en cours de restauration ». Marque `⧗` dans la clé en aval tant que la réponse manque : rien de mémorisé qui supposerait la suppression faite. Même travail redemandé sous une autre clé (référence de face complétée d'une ancre au rejeu suivant) : partagé, pas recalculé (`sig` = fonction + rangs + empreinte FNV du BRep). `_calc` exclu de `featSig`.
+- **Aller-retour du solide** : `BRepTools.Write_2` / `Read_2` par le FS du noyau (exact, ~10 ms, mêmes faces dans le même ordre : les faces visées partent par leur rang d'exploration après résolution `occFindFaceAny` sur le thread principal). Constat : au-delà de ~10 caractères, le chemin passé à Write_2/Read_2 arrive mangé au C++ (fichier « ('򀋀 », FS error 44 à la relecture) — chemin court `/d.brep` obligatoire, comme `write.step.schema` inaccessible en V0.15.5.
+- **Repli** : sans worker (harnais Node, `file://` sans .wasm lisible, démarrage raté) le calcul reste synchrone, comme avant. Une suppression ordinaire donne le même solide (vérifié face à face contre le calcul synchrone).
+- **Mesure** : la face pathologique est abandonnée à 20,6 s de bout en bout dans le navigateur (avant : ~10 min puis plantage) ; une face ordinaire de la même pièce prend 10–11 s — identique en synchrone (ce n'est pas le worker), les 0,4 s mesurées en V0.15.7 valant pour d'autres faces.
+- **Tests** : `test_suppression_face_worker` (17 vérifications, worker réel sur `worker_threads` exécutant le code de `delWkSource` avec un vrai noyau) : boîte percée (main rendue en 23 ms, 7 faces affichées pendant le calcul, même solide que le synchrone), cache par clé (rejeu complet sans points de contrôle : aucun calcul relancé), Cavité Usinage 5ᵉ face non plane (abandon à 3,6 s pour un délai de 3 s, ⚠, pièce intacte), puis worker relancé sur une face ordinaire. `test_suppression_face`, `_step`, `_edition`, `test_cache_exact`, `test_coque_sel` verts ; `npm run ci` (67/67). Parcours FAO intouchés.
