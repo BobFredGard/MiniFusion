@@ -8,7 +8,8 @@
 //    types sans lien, même nom vu par deux unités de compilation, mémoire illisible.
 // 2. Branchement : la colle trouve ___cxa_can_catch / ___cxa_is_pointer_type sur l'objet
 //    global (application et harnais), et le crochet du harnais délègue à celui de l'app.
-// 3. La colle fournie appelle bien ces noms comme identifiants libres (sinon la correction
+// 3. Le worker de suppression de face (V0.15.9) embarque le crochet.
+// 4. La colle fournie appelle bien ces noms comme identifiants libres (sinon la correction
 //    serait sans effet après une mise à jour du noyau) et ne les définit pas elle-même.
 const fs=require('fs'),path=require('path');
 const {loadApp}=require('./appvm.cjs');
@@ -48,6 +49,13 @@ A(typeof sandbox.___cxa_can_catch==='function'&&typeof sandbox.___cxa_is_pointer
 A(typeof globalThis.___cxa_can_catch==='function','le harnais les définit là où la colle du noyau les cherche');
 A(sandbox.___cxa_can_catch(1,2,0)===1,'sans noyau chargé : réponse « oui » (Standard_Failure, l\'attrapé courant)');
 A(globalThis.___cxa_can_catch(1,2,0)===1&&sandbox.___cxa_is_pointer_type(5)===0,'délégation du harnais, pas d\'exception par pointeur');
+
+// V0.15.9 : le worker de suppression de face charge SON noyau — le crochet doit y être posé
+if(typeof sandbox.delWkSource==='function'){
+  const src=sandbox.delWkSource(),i=src.indexOf('occtExcInstall(self);');
+  A(i>0&&/function occtCanCatch/.test(src)&&/function occtTypeName/.test(src),'worker : test d\'héritage et crochet embarqués');
+  A(i>0&&i<src.lastIndexOf('self.onmessage'),'worker : crochet posé avant le chargement de son noyau');
+}else A(false,'delWkSource exposée par l\'application');
 
 // la colle livrée appelle ces noms sans les définir
 const glue=fs.readFileSync(path.join(__dirname,'..','occt','opencascade.full.js'),'utf8');

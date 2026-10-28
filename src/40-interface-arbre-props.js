@@ -124,7 +124,7 @@ function featIconOf(f){
   if(f.type==='hole')return '⊚';
   if(f.type==='xmove')return '📐';
   if(f.type==='bmove')return '✥';
-  if(f.type==='xdelface')return ((f._m&&f._m.m<f._m.t)||f._err)?'⚠':'⌫';
+  if(f.type==='xdelface')return f._calc?'⏳':((f._m&&f._m.m<f._m.t)||f._err)?'⚠':'⌫'; // ⏳ : calcul au worker (21)
   if(f.type==='xdraft')return ((f._m&&f._m.m<f._m.t)||f._err)?'⚠':'📐';
   if(f.type==='xshell')return ((f._m&&f._m.m<f._m.t)||f._err)?'⚠':'🥚';
   if(f.type==='xsplit')return ((f._m&&f._m.m<f._m.t)||f._err)?'⚠':'✂';
