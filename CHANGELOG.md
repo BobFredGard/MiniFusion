@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**410 versions**, de `2026-09-28b` à `V0.15.16` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**411 versions**, de `2026-09-28b` à `V0.15.17` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5406,3 +5406,9 @@ Demande : « pour coter, coter un 1er élément, une droite, horizontale ou vert
 - **Droite → point** (`mepDimLineToPt`) : une droite cliquée puis un accrochage choisi au clic droit reste la 1ʳᵉ entité ; le point imposé (extrémité, milieu, centre, point extrême, intersection) donne la distance perpendiculaire : droite horizontale → cote verticale (et inversement), ligne de rappel depuis l'arête ; droite oblique → cote alignée sur la perpendiculaire. Revenir à « Automatique » rend la longueur de la droite.
 - **Au passage** (`src/98-mep-80-souris.js`) : en accrochage imposé, un clic sur le rappel d'une cote déjà posée prend le point au lieu de déplacer cette cote (cas du centre d'un cercle déjà coté).
 - **Tests** : `test_mep_accrochages` (39 contrôles, +13 : intersection en 2 clics, ligne × cercle des 2 côtés, Échap, droite verticale → centre = 30, droite → intersection = 20, droite oblique → 35√2). Vérifié dans le navigateur à la souris (intersection L1 × L2 puis centre ; droite verticale puis Centre).
+
+## V0.15.17 - Mise en plan, cotation en chaîne depuis une ligne de rappel
+Demande : « je crée et positionne une cote, fonction cotation toujours active, je clique sur une des lignes de rappel et elle devient ma 1ère ligne de ma cote suivante ; au prochain clic, je positionne la cote et la 2nde ligne devient la 1ère ligne de la cote suivante, jusqu'à Échap qui valide l'empilement des cotes, toutes bien alignées ».
+- **Chaîne** (`src/98-mep-87-chaine.js`, nouveau) : outil Cote actif, un clic SANS glisser sur une ligne de rappel d'une cote linéaire posée (longueur ou distance) lance la chaîne depuis ce point. Chaque clic suivant donne un point (accrochage automatique, ou imposé au clic droit : extrémité, milieu, centre, point extrême, intersection en 2 clics) et pose aussitôt la cote sur la MÊME ligne de cote, avec la même orientation (X, Y ou alignée) ; son 2ᵉ rappel devient le départ suivant. Aperçu de la cote suivante sous le curseur. Un point sans écart dans la direction cotée est refusé. Échap termine la chaîne, l'outil Cote reste actif (un 2ᵉ Échap le quitte). Chaque cote s'annule séparément (Ctrl+Z).
+- **Glisser** un rappel déplace toujours la cote, comme avant. Le clic sur un rappel l'emporte sur la zone de saisie de l'étiquette (large de 18 mm), sauf sur le texte même (`mepChainRappelAt`).
+- **Tests** : `test_mep_chaine` (nouveau, suite rapide : 16 contrôles — rappel a / b / ligne de cote / près de l'étiquette, aperçu, cotes 20 → 25 → 20 sur la ligne de la 1ʳᵉ, point refusé, milieu imposé, fin). Vérifié dans le navigateur à la souris : clic sur le rappel de la cote 15, trois clics, Échap → 15, 20, 25, 20 alignées.

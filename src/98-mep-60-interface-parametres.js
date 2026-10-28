@@ -254,6 +254,7 @@
     if(mepSt.dim&&mepSt.dim.__ghost!==false&&!(mepSt.dim.kind==='dist'&&!mepSt.dim.b)){
       try{mepDrawDim(mk,mepSt.dim,sh);}catch(e){}
     }
+    if(mepSt.chain&&mepSt.chain.ghost){try{mepDrawDim(mk,mepSt.chain.ghost,sh);}catch(e){}} // cote suivante de la chaîne
     /* esquisse de planche */
     if(sh.sk){
       try{mepDrawSk(mk,sh);}catch(e){} // (V0.3.12 : la planche, et non sh.sk — l'esquisse n'était jamais dessinée)

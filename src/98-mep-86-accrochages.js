@@ -30,7 +30,7 @@
     if(!m&&mepSt.dimLine){mepSt.dimLine=null;mepDimRefreshDraft();} // retour à la longueur de la droite
     // une entité pré-sélectionnée (longueur, Ø…) laisse la place au point imposé
     if(m&&mepSt.dim&&!(mepSt.dim.kind==='dist'&&!mepSt.dim.b)){mepSt.dim=null;mepSt.entSel=[];mepSt.hovEnt=null;mepSt.dimLine=null;}
-    const D=mepSt.dim,nth=(D||mepSt.dimLine)?'2ᵉ':'1ᵉʳ';
+    const D=mepSt.dim,nth=(D||mepSt.dimLine||mepSt.chain)?'2ᵉ':'1ᵉʳ';
     mepStatus(m==='int'?('Intersection ('+nth+' point) : cliquez une ligne ou un cercle, puis une 2ᵉ (clic droit pour changer).')
       :m?('Accrochage '+mepSnapModeLabel(m).toLowerCase()+' : cliquez le '+nth+' point'+(mepSt.dimLine?' (cote perpendiculaire à la droite)':'')+' (clic droit pour changer).')
       :'Accrochage automatique.');

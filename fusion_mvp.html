@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.15.16';
+const APP_VER='V0.15.17';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -55609,6 +55609,7 @@ function viewFadeIn(){
     if(mepSt.dim&&mepSt.dim.__ghost!==false&&!(mepSt.dim.kind==='dist'&&!mepSt.dim.b)){
       try{mepDrawDim(mk,mepSt.dim,sh);}catch(e){}
     }
+    if(mepSt.chain&&mepSt.chain.ghost){try{mepDrawDim(mk,mepSt.chain.ghost,sh);}catch(e){}} // cote suivante de la chaîne
     /* esquisse de planche */
     if(sh.sk){
       try{mepDrawSk(mk,sh);}catch(e){} // (V0.3.12 : la planche, et non sh.sk — l'esquisse n'était jamais dessinée)
@@ -57973,7 +57974,7 @@ function viewFadeIn(){
     if(next==='select')mepSt.entSel=[];
     mepSt.pick=null;mepSt.dim=null;mepSt.cutPts=[];mepSt.detC=null;mepSt.hovEnt=null;mepSt.skSel=new Set();mepSt.lot=null;mepSt.vcmd=null;
     mepSt.axisPick=[];mepSt.axisFree=null;mepSt.ord=null;mepSt.ordPt=null;mepSt.snapMode=null;mepSt.snapHov=null;
-    mepSt.intPick=null;mepSt.dimLine=null;
+    mepSt.intPick=null;mepSt.dimLine=null;mepSt.chain=null;
     if(ordKeep){mepSt.ord=ordKeep;mepSt.selDim=ordKeep;mepStatus('Ordonnées : cliquez les points à AJOUTER au groupe sélectionné (Entrée ou Échap pour terminer).');}
     mepToolSync();
     try{mepSideShow();}catch(e){}
@@ -58260,7 +58261,8 @@ function viewFadeIn(){
     const tp=mepDimTextPos(sh,dim);
     const labelHit=!!tp&&Math.hypot(P.x-tp.x,P.y-tp.y)<=18/(mepSt.zoom||1);
     mepSt.pick={kind:'dimDrag',id:dim.id,sx:P.x,sy:P.y,px0:P.px,py0:P.py,
-      cx:w?w.b.x:null,cy:w?w.b.y:null,off0:dim.off,txtOff0:+dim.txtOff||0,labelHit,moved:false,undoPushed:false};
+      cx:w?w.b.x:null,cy:w?w.b.y:null,off0:dim.off,txtOff0:+dim.txtOff||0,labelHit,moved:false,undoPushed:false,
+      rappel:mepSt.tool==='dim'?mepChainRappelAt(sh,dim,P):null}; // clic sans glisser sur un rappel : chaîne
     mepSideShow();mepRender();
   }
   function mepOnDown(ev){
@@ -58430,6 +58432,7 @@ function viewFadeIn(){
     if(tool==='dim'){
       // une cote déjà posée reste attrapable : n'importe quel trait rouge
       // (ligne, rappel, leader, arc) démarre son déplacement.
+      if(mepSt.chain){mepChainClick(sh,P);return;} // chaîne de cotes : chaque clic donne le point suivant
       // (sauf en accrochage imposé : le clic donne un point, même sur le rappel d'une autre cote)
       if(!mepSt.dim&&!mepSt.snapMode){
         if(mepDimPressDbl(sh,P,ev))return;
@@ -58737,6 +58740,7 @@ function viewFadeIn(){
     if(mepSt.tool==='dim'||mepSt.tool==='hole'){
       // survol des arêtes/cercis : feedback avant les 2 clics de sélection
       let need=false;
+      if(mepSt.tool==='dim'&&mepSt.chain){mepChainHover(sh,P);return;}
       if(mepSt.tool==='dim'&&mepSt.snapMode&&!(mepSt.dim&&mepSt.dim.b)){
         // accrochage imposé : repère du point visé, pas de surbrillance d'entité
         // (Intersection : on survole des ENTITÉS, le point s'affiche dès la 2ᵉ)
@@ -58800,6 +58804,9 @@ function viewFadeIn(){
       else if(pk.jog){ // Ctrl + clic sans glisser : cassure retirée
         const sh=mepSheet(),d=sh.dims.find(x=>x.id===pk.id),q=d&&d.pts&&d.pts[pk.jog.i];
         if(q&&q.jog){mepEdit('cassure retirée',()=>{delete q.jog;});mepStatus('Cassure retirée.');}
+      }else if(pk.rappel&&mepSt.tool==='dim'){ // rappel cliqué : départ d'une chaîne de cotes
+        const sh=mepSheet(),d=sh&&sh.dims.find(x=>x.id===pk.id);
+        if(d){mepSt.pick=null;mepChainStart(sh,d,pk.rappel);return;}
       }
       mepSt.pick=null;
       return;
@@ -58947,6 +58954,7 @@ function viewFadeIn(){
     if(k==='Escape'&&mepSt.blAdd){mepSt.blAdd=false;mepStatus('＋ Bulle terminé.');mepSideShow();ev.preventDefault();ev.stopPropagation();return;} // V0.8.2
     if(k==='Escape'){
       if(mepSt.intPick){mepIntCancel();ev.preventDefault();ev.stopPropagation();return;} // seulement l'intersection en cours
+      if(mepSt.chain){mepChainEnd();ev.preventDefault();ev.stopPropagation();return;} // fin de chaîne, l'outil Cote reste actif
       if(mepSt.alignDims){mepSt.alignDims=null;mepStatus('Alignement annulé.');ev.preventDefault();ev.stopPropagation();return;}
       if(mepSt.vcmd){mepVcmdCancel();ev.preventDefault();ev.stopPropagation();return;}
       if(mepSt.pick&&MEP_SK_TOOLS.indexOf(mepSt.pick.kind)>=0){mepSt.pick=null;mepRender();ev.preventDefault();ev.stopPropagation();return;}
@@ -59389,6 +59397,7 @@ function viewFadeIn(){
       mepCtxShow(ev.clientX,ev.clientY,mepSt.dim,true,snapCtx);
       return;
     }
+    if(snapCtx&&mepSt.chain){mepCtxShow(ev.clientX,ev.clientY,null,false,true);return;} // chaîne : accrochage seul
     const P=mepPt(ev),d=mepSt.dim?null:mepDimAt(sh,P.x,P.y);
     if(snapCtx&&!canCtx(d)){mepCtxShow(ev.clientX,ev.clientY,null,false,true);return;}
     if(canCtx(d)){
@@ -59839,7 +59848,7 @@ function viewFadeIn(){
     if(!m&&mepSt.dimLine){mepSt.dimLine=null;mepDimRefreshDraft();} // retour à la longueur de la droite
     // une entité pré-sélectionnée (longueur, Ø…) laisse la place au point imposé
     if(m&&mepSt.dim&&!(mepSt.dim.kind==='dist'&&!mepSt.dim.b)){mepSt.dim=null;mepSt.entSel=[];mepSt.hovEnt=null;mepSt.dimLine=null;}
-    const D=mepSt.dim,nth=(D||mepSt.dimLine)?'2ᵉ':'1ᵉʳ';
+    const D=mepSt.dim,nth=(D||mepSt.dimLine||mepSt.chain)?'2ᵉ':'1ᵉʳ';
     mepStatus(m==='int'?('Intersection ('+nth+' point) : cliquez une ligne ou un cercle, puis une 2ᵉ (clic droit pour changer).')
       :m?('Accrochage '+mepSnapModeLabel(m).toLowerCase()+' : cliquez le '+nth+' point'+(mepSt.dimLine?' (cote perpendiculaire à la droite)':'')+' (clic droit pour changer).')
       :'Accrochage automatique.');
@@ -60149,6 +60158,105 @@ function viewFadeIn(){
     const v=mepView(sh,H.vid);
     if(v&&H.ext)mepSnapExtPrims(v,H.q,H.ext).forEach(p=>mk('line',{x1:p.x1,y1:p.y1,x2:p.x2,y2:p.y2,class:'mepDimL mepDimGhost'},mepGHlp));
     mark(H.x,H.y,H.mode);
+  }
+
+/* ═══════════════ 98-mep-87-chaine.js — mep 87 chaine ═══════════════ */
+// Espace PLAN — suite de la fonction englobante ouverte dans 98-mep-00-modele.js (état privé partagé, fermée dans 98-mep-95-export-init.js) : cotation en chaîne.
+  /* ═══════════════ U3. cotation en chaîne (outil Cote) ═══════════════ */
+  /* 2026-10-28 : « je crée et positionne une cote, fonction cotation toujours active, je clique sur une
+     des lignes de rappel et elle devient ma 1ère ligne de ma cote suivante ; au prochain clic, je
+     positionne la cote et la 2nde ligne devient la 1ère ligne de la cote suivante, jusqu'à Échap qui
+     valide l'empilement des cotes, toutes bien alignées ».
+     mepSt.chain={vid,a (point local du rappel repris),orient,L (point papier de la ligne de cote),n,ghost}.
+     Chaque clic donne un point (accrochage automatique ou imposé au clic droit) : la cote est posée
+     aussitôt sur la même ligne de cote, même orientation ; son 2ᵉ rappel devient le départ suivant.
+     Un clic SANS glisser sur un rappel lance la chaîne ; glisser déplace toujours la cote. */
+  // rappel ('a' | 'b') d'une cote linéaire sous le point P (mm papier), null sur la ligne de cote ou l'étiquette
+  function mepChainRappelAt(sh,d,P){
+    if(!d||(d.kind!=='len'&&d.kind!=='dist'))return null;
+    const g=mepDimLine(sh,d);if(!g)return null;
+    const sd=(x1,y1,x2,y2)=>{
+      const dx=x2-x1,dy=y2-y1,L2=dx*dx+dy*dy;
+      const t=L2>1e-12?Math.max(0,Math.min(1,((P.x-x1)*dx+(P.y-y1)*dy)/L2)):0;
+      return Math.hypot(P.x-(x1+dx*t),P.y-(y1+dy*t));
+    };
+    const tol=6/(mepSt.zoom||1);
+    const da=sd(g.sa.x,g.sa.y,g.ea.x,g.ea.y),db=sd(g.sb.x,g.sb.y,g.eb.x,g.eb.y),dl=sd(g.a1.x,g.a1.y,g.b1.x,g.b1.y);
+    const m=Math.min(da,db);
+    if(!(m<tol)||dl<m)return null;
+    // la zone de saisie de l'étiquette est large (18 mm) : seul le texte lui-même l'emporte sur le rappel
+    const tp=mepDimTextPos(sh,d);
+    if(tp&&Math.hypot(P.x-tp.x,P.y-tp.y)<Math.min(m,2.5/(mepSt.zoom||1)))return null;
+    return da<=db?'a':'b';
+  }
+  function mepChainStart(sh,d,end){
+    const g=mepDimLine(sh,d);if(!g)return false;
+    const p=end==='a'?d.a:d.b;if(!p)return false;
+    const vid=end==='a'?d.vid:(d.vid2||d.vid);
+    mepSt.chain={vid,a:JSON.parse(JSON.stringify(p)),orient:d.orient||'a',L:end==='a'?{x:g.a1.x,y:g.a1.y}:{x:g.b1.x,y:g.b1.y},n:0,ghost:null};
+    mepSt.selDim=null;mepSt.sel=null;mepSt.entSel=[];mepSt.dim=null;mepSt.hovEnt=null;
+    mepStatus('Chaîne de cotes : cliquez le point suivant (clic droit : accrochage, Échap termine).');
+    mepRender();
+    return true;
+  }
+  // cote de la chaîne vers le point local q, sur la ligne de cote commune (null si nulle ou impossible)
+  function mepChainDim(sh,C,q){
+    const d={kind:'dist',vid:C.vid,vid2:null,a:JSON.parse(JSON.stringify(C.a)),b:q,orient:C.orient,off:0,tol:null};
+    const w=mepDimWorld(sh,d);if(!w)return null;
+    const dx=w.b.x-w.a.x,dy=w.b.y-w.a.y;
+    if(C.orient==='h'?Math.abs(dx)<1e-6:C.orient==='v'?Math.abs(dy)<1e-6:Math.hypot(dx,dy)<1e-6)return null;
+    d.off=mepDimOffsetFromPts(w.a.x,w.a.y,w.b.x,w.b.y,C.orient,C.L);
+    return d;
+  }
+  // point visé au curseur : accrochage imposé (S, comme les clics de l'outil Cote) ou automatique
+  function mepChainPtAuto(sh,C,P){
+    const v=mepView(sh,C.vid);if(!v)return null;
+    const snap=mepSnapPt(P.x,P.y,sh);
+    const q={x:(snap.x-v.x)/v.scale,y:(snap.y-v.y)/v.scale};
+    const hh=(snap.hit&&snap.hit.vid===v.id)?mepSnapHint(sh,v,snap,q):null;if(hh)q.hint=hh;
+    return q;
+  }
+  function mepChainHover(sh,P){
+    const C=mepSt.chain;let q=null;
+    if(mepSt.snapMode){
+      const isInt=mepSt.snapMode==='int',ih=isInt?mepIntPickHit(sh,P):null;
+      const S=isInt?mepIntPoint(sh,mepSt.intPick,ih,P):mepSnapModePt(sh,P.x,P.y,mepSt.snapMode);
+      mepSt.snapHov=S;
+      mepSt.hovEnt=ih?{vid:ih.vid,i:ih.i,sig:mepEntSig(ih.e)}:null;
+      if(S&&S.vid===C.vid)q={x:S.q.x,y:S.q.y};
+    }else{
+      mepSt.snapHov=null;
+      const hit=mepHitViewEnt(sh,P.x,P.y,{axes:true});
+      mepSt.hovEnt=hit?{vid:hit.vid,i:hit.i,sig:mepEntSig(hit.e)}:null;
+      q=mepChainPtAuto(sh,C,P);
+    }
+    C.ghost=q?mepChainDim(sh,C,q):null;
+    if(C.ghost)C.ghost.__ghost=true;
+    mepRender();
+  }
+  function mepChainClick(sh,P){
+    const C=mepSt.chain;let q;
+    if(mepSt.snapMode){
+      const S=mepSnapModeClick(sh,P);
+      if(!S)return;
+      if(S.vid!==C.vid){mepStatus('Chaîne de cotes : le point doit être dans la même vue.');return;}
+      q=mepSnapModeQ(sh,S);
+    }else q=mepChainPtAuto(sh,C,P);
+    const d=q&&mepChainDim(sh,C,q);
+    if(!d){mepStatus('Chaîne de cotes : cote nulle dans cette direction — cliquez un autre point.');return;}
+    d.id=mepUid('d');d.ref=false;
+    mepEdit('cote en chaîne',()=>{mepDimAutoDia(sh,d);sh.dims.push(d);});
+    C.a=JSON.parse(JSON.stringify(d.b));C.n++;C.ghost=null;
+    mepSt.snapMode=null;mepSt.snapHov=null;mepSt.intPick=null;
+    mepStatus('Chaîne de cotes : '+C.n+' cote'+(C.n>1?'s':'')+' — cliquez le point suivant (Échap termine).');
+    mepRender();
+  }
+  function mepChainEnd(){
+    const C=mepSt.chain;if(!C)return false;
+    mepSt.chain=null;mepSt.snapMode=null;mepSt.snapHov=null;mepSt.intPick=null;mepSt.hovEnt=null;
+    mepStatus('Chaîne de cotes terminée'+(C.n?' : '+C.n+' cote'+(C.n>1?'s':'')+' alignée'+(C.n>1?'s':''):'')+'.');
+    mepRender();
+    return true;
   }
 
 /* ═══════════════ 98-mep-90-proprietes.js — mep 90 proprietes ═══════════════ */
@@ -61327,7 +61435,7 @@ function viewFadeIn(){
       axisAt:(x,y)=>mepAxisAt(mepSheet(),x,y),
       axisLines:(view,auto)=>{if(auto){mepAxGen++;const l=mepAxisLines(mepSheet(),view,auto);mepAxLinesCache.set(view,{gen:mepAxGen,geo:mepGeoOf(view),list:l});return l;}return mepAxisLines(mepSheet(),view);},
       snapPt:(x,y,o)=>mepSnapPt(x,y,mepSheet(),o),
-      snapModePt:(x,y,m)=>mepSnapModePt(mepSheet(),x,y,m),setSnapMode:m=>mepSetSnapMode(m),intCancel:()=>mepIntCancel(),snapMode:()=>mepSt.snapMode||null,dimClick:(P,c,s,a)=>mepDimClick(mepSheet(),P,!!c,!!s,!!a),snapInter:(a,b)=>mepSnapInter(a,b),snapExt:(v,q,e)=>mepSnapExtPrims(v,q,e),
+      snapModePt:(x,y,m)=>mepSnapModePt(mepSheet(),x,y,m),setSnapMode:m=>mepSetSnapMode(m),intCancel:()=>mepIntCancel(),chainStart:(d,e)=>mepChainStart(mepSheet(),d,e),chainRappelAt:(d,P)=>mepChainRappelAt(mepSheet(),d,P),chainEnd:()=>mepChainEnd(),chainClick:P=>mepChainClick(mepSheet(),P),chainHover:P=>mepChainHover(mepSheet(),P),dimLineOf:d=>mepDimLine(mepSheet(),d),snapMode:()=>mepSt.snapMode||null,dimClick:(P,c,s,a)=>mepDimClick(mepSheet(),P,!!c,!!s,!!a),snapInter:(a,b)=>mepSnapInter(a,b),snapExt:(v,q,e)=>mepSnapExtPrims(v,q,e),
       vcmd:()=>mepSt.vcmd,
       secStepped:view=>mepSecStepped(view),cutPrism:(s,p,v)=>mepCutPrism(s,p,v),hatchLoops:(sh,v,p,n)=>mepHatchLoops(sh,v,p,n),hatchCfg:()=>mepHatchCfg(),drawHatch:(mk,l,v,c)=>mepDrawHatch(mk,l,v,c),hatchApply:c=>mepHatchApply(c),hatchAt:(x,y)=>mepHatchAt(mepSheet(),x,y),hatchDialog:()=>mepHatchDialog(),reproject:id=>mepReproject(id||null),axisSymTrack:(v,a)=>mepAxisSymTrack(v,a),
       hitEnt:(x,y,o)=>mepHitViewEnt(mepSheet(),x,y,o),

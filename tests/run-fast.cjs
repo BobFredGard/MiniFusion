@@ -50,6 +50,7 @@ const SUITES = [
   'test_esquisse_intersection',
   'test_cote_points',
   'test_mep_accrochages',
+  'test_mep_chaine',
   'test_mep_cotes_suivi',
   'test_esquisse_cotes_pose',
   'test_esquisse_cotes_souples',

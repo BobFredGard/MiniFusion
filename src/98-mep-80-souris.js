@@ -15,7 +15,7 @@
     if(next==='select')mepSt.entSel=[];
     mepSt.pick=null;mepSt.dim=null;mepSt.cutPts=[];mepSt.detC=null;mepSt.hovEnt=null;mepSt.skSel=new Set();mepSt.lot=null;mepSt.vcmd=null;
     mepSt.axisPick=[];mepSt.axisFree=null;mepSt.ord=null;mepSt.ordPt=null;mepSt.snapMode=null;mepSt.snapHov=null;
-    mepSt.intPick=null;mepSt.dimLine=null;
+    mepSt.intPick=null;mepSt.dimLine=null;mepSt.chain=null;
     if(ordKeep){mepSt.ord=ordKeep;mepSt.selDim=ordKeep;mepStatus('Ordonnées : cliquez les points à AJOUTER au groupe sélectionné (Entrée ou Échap pour terminer).');}
     mepToolSync();
     try{mepSideShow();}catch(e){}
@@ -302,7 +302,8 @@
     const tp=mepDimTextPos(sh,dim);
     const labelHit=!!tp&&Math.hypot(P.x-tp.x,P.y-tp.y)<=18/(mepSt.zoom||1);
     mepSt.pick={kind:'dimDrag',id:dim.id,sx:P.x,sy:P.y,px0:P.px,py0:P.py,
-      cx:w?w.b.x:null,cy:w?w.b.y:null,off0:dim.off,txtOff0:+dim.txtOff||0,labelHit,moved:false,undoPushed:false};
+      cx:w?w.b.x:null,cy:w?w.b.y:null,off0:dim.off,txtOff0:+dim.txtOff||0,labelHit,moved:false,undoPushed:false,
+      rappel:mepSt.tool==='dim'?mepChainRappelAt(sh,dim,P):null}; // clic sans glisser sur un rappel : chaîne
     mepSideShow();mepRender();
   }
   function mepOnDown(ev){
@@ -472,6 +473,7 @@
     if(tool==='dim'){
       // une cote déjà posée reste attrapable : n'importe quel trait rouge
       // (ligne, rappel, leader, arc) démarre son déplacement.
+      if(mepSt.chain){mepChainClick(sh,P);return;} // chaîne de cotes : chaque clic donne le point suivant
       // (sauf en accrochage imposé : le clic donne un point, même sur le rappel d'une autre cote)
       if(!mepSt.dim&&!mepSt.snapMode){
         if(mepDimPressDbl(sh,P,ev))return;
@@ -779,6 +781,7 @@
     if(mepSt.tool==='dim'||mepSt.tool==='hole'){
       // survol des arêtes/cercis : feedback avant les 2 clics de sélection
       let need=false;
+      if(mepSt.tool==='dim'&&mepSt.chain){mepChainHover(sh,P);return;}
       if(mepSt.tool==='dim'&&mepSt.snapMode&&!(mepSt.dim&&mepSt.dim.b)){
         // accrochage imposé : repère du point visé, pas de surbrillance d'entité
         // (Intersection : on survole des ENTITÉS, le point s'affiche dès la 2ᵉ)
@@ -842,6 +845,9 @@
       else if(pk.jog){ // Ctrl + clic sans glisser : cassure retirée
         const sh=mepSheet(),d=sh.dims.find(x=>x.id===pk.id),q=d&&d.pts&&d.pts[pk.jog.i];
         if(q&&q.jog){mepEdit('cassure retirée',()=>{delete q.jog;});mepStatus('Cassure retirée.');}
+      }else if(pk.rappel&&mepSt.tool==='dim'){ // rappel cliqué : départ d'une chaîne de cotes
+        const sh=mepSheet(),d=sh&&sh.dims.find(x=>x.id===pk.id);
+        if(d){mepSt.pick=null;mepChainStart(sh,d,pk.rappel);return;}
       }
       mepSt.pick=null;
       return;
@@ -989,6 +995,7 @@
     if(k==='Escape'&&mepSt.blAdd){mepSt.blAdd=false;mepStatus('＋ Bulle terminé.');mepSideShow();ev.preventDefault();ev.stopPropagation();return;} // V0.8.2
     if(k==='Escape'){
       if(mepSt.intPick){mepIntCancel();ev.preventDefault();ev.stopPropagation();return;} // seulement l'intersection en cours
+      if(mepSt.chain){mepChainEnd();ev.preventDefault();ev.stopPropagation();return;} // fin de chaîne, l'outil Cote reste actif
       if(mepSt.alignDims){mepSt.alignDims=null;mepStatus('Alignement annulé.');ev.preventDefault();ev.stopPropagation();return;}
       if(mepSt.vcmd){mepVcmdCancel();ev.preventDefault();ev.stopPropagation();return;}
       if(mepSt.pick&&MEP_SK_TOOLS.indexOf(mepSt.pick.kind)>=0){mepSt.pick=null;mepRender();ev.preventDefault();ev.stopPropagation();return;}
@@ -1431,6 +1438,7 @@
       mepCtxShow(ev.clientX,ev.clientY,mepSt.dim,true,snapCtx);
       return;
     }
+    if(snapCtx&&mepSt.chain){mepCtxShow(ev.clientX,ev.clientY,null,false,true);return;} // chaîne : accrochage seul
     const P=mepPt(ev),d=mepSt.dim?null:mepDimAt(sh,P.x,P.y);
     if(snapCtx&&!canCtx(d)){mepCtxShow(ev.clientX,ev.clientY,null,false,true);return;}
     if(canCtx(d)){
