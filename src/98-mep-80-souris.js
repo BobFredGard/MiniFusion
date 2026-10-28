@@ -300,7 +300,11 @@
     }
     const w=mepDimWorld(sh,dim);
     const tp=mepDimTextPos(sh,dim);
-    const labelHit=!!tp&&Math.hypot(P.x-tp.x,P.y-tp.y)<=18/(mepSt.zoom||1);
+    let labelHit=!!tp&&Math.hypot(P.x-tp.x,P.y-tp.y)<=18/(mepSt.zoom||1);
+    if(dim.kind==='ang'){ // texte collé à l'arc : seule sa boîte (pas l'arc voisin) le saisit
+      const ap=mepAngTextPos(sh,dim),m=1.5/(mepSt.zoom||1);
+      labelHit=!!ap&&Math.abs(P.x-ap.x)<=ap.hw+m&&Math.abs(P.y-ap.y)<=ap.hh+m;
+    }
     mepSt.pick={kind:'dimDrag',id:dim.id,sx:P.x,sy:P.y,px0:P.px,py0:P.py,
       cx:w?w.b.x:null,cy:w?w.b.y:null,off0:dim.off,txtOff0:+dim.txtOff||0,labelHit,moved:false,undoPushed:false,
       rappel:mepSt.tool==='dim'?mepChainRappelAt(sh,dim,P):null}; // clic sans glisser sur un rappel : chaîne
@@ -1159,6 +1163,23 @@
     return 0;
   }
   function mepAngRadius(d){return Math.max(6,Math.min(80,d.off==null?14:d.off));}
+  /* 2026-10-28 : « cotes d'angle : le texte est assez loin de la ligne de cote, il faut qu'il soit au
+     centre, sur le dessus, en bas ou en haut en fonction de sa position ; je dois pouvoir le bouger de
+     droite à gauche et retrouver son centre automatiquement ». Texte horizontal collé à l'arc, du côté
+     extérieur : sa boîte touche l'arc (au-dessus en haut de l'arc, en dessous en
+     bas, à côté sur les flancs) à 1,2 mm près. d.txtOff = décalage le long de l'arc (mm papier, sens
+     des angles croissants) depuis le milieu ; |txtOff| < 3 mm → retour au centre. */
+  // → {x,y (centre de la boîte), bx,by (ligne de base, ancre 'middle'), hw,hh, t (angle du point d'arc), r}
+  function mepAngTextPos(sh,d,g){
+    g=g||mepAngGeom(sh,d);if(!g)return null;
+    const r=mepAngRadius(d),t=g.a1+g.dd/2+(+d.txtOff||0)/r;
+    const val=d.value!=null?d.value:mepDimMeasure(sh,d);
+    const hw=mepDimLabelHalf(d,val),H=MEP_TEXT_STYLE.dimH||3.5,hh=H/2;
+    const nx=Math.cos(t),ny=Math.sin(t),k=r+1.2+Math.abs(nx)*hw+Math.abs(ny)*hh;
+    const x=g.O.x+nx*k,y=g.O.y+ny*k;
+    return{x,y,bx:x,by:y+hh,hw,hh,t,r};
+  }
+  function mepAngTxtOffSnap(v){v=+v||0;return Math.abs(v)<3?0:v;}
   // Trait de cote linéaire : a1/b1 = extrémités décalées, u = direction de la cote,
   // v = normale (côté de la cote). Sert au rendu, au texte et au hit-test, pour
   // que les rappels restent perpendiculaires au trait (pas de trapèze).
@@ -1264,9 +1285,8 @@
       return d.axis==='y'?{x:oS.x+(+d.off||0),y:oS.y}:{x:oS.x,y:oS.y+(+d.off||0)};
     }
     if(d.kind==='ang'){
-      const g=mepAngGeom(sh,d);if(!g)return{x:w.b.x,y:w.b.y};
-      const dd=g.dd,r=mepAngRadius(d);
-      return{x:g.O.x+(r+7)*Math.cos(g.a1+dd/2),y:g.O.y+(r+7)*Math.sin(g.a1+dd/2)};
+      const p=mepAngTextPos(sh,d);
+      return p?{x:p.x,y:p.y}:{x:w.b.x,y:w.b.y};
     }
     const g=mepDimLine(sh,d,w);
     return g?mepDimTextAnchorPos(g,d):{x:w.a.x,y:w.a.y};

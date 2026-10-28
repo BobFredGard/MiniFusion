@@ -221,12 +221,21 @@
     if(d.kind==='ang'){
       let g=mepAngGeom(sh,d);
       if(!g)return false;
+      // texte saisi : il glisse le long de l'arc (relatif au geste), aimanté au milieu
+      if(pk&&pk.labelHit&&pk.sx!=null){
+        const r=mepAngRadius(d),ang=Q=>Math.atan2(Q.y-g.O.y,Q.x-g.O.x);
+        let da=ang(P)-ang({x:pk.sx,y:pk.sy});
+        while(da>Math.PI)da-=2*Math.PI;while(da<=-Math.PI)da+=2*Math.PI;
+        const to=mepAngTxtOffSnap((+pk.txtOff0||0)+da*r);
+        if(to)d.txtOff=+to.toFixed(3);else delete d.txtOff;
+        return true;
+      }
       if(Math.hypot(P.x-g.O.x,P.y-g.O.y)>1e-6){
         const q=mepAngSectorAt(g.b1,g.b2,Math.atan2(P.y-g.O.y,P.x-g.O.x))^(d.big?3:0);
         if(q!==((+d.q||0)&3)){if(q)d.q=q;else delete d.q;g=mepAngGeom(sh,d)||g;}
       }
-      // l'étiquette est à r+7 : le curseur doit la suivre, pas l'arc
-      d.off=Math.max(6,Math.min(80,Math.hypot(P.x-g.O.x,P.y-g.O.y)-7));
+      // le texte est collé à l'arc, juste à l'extérieur : le curseur règle l'arc lui-même
+      d.off=Math.max(6,Math.min(80,Math.hypot(P.x-g.O.x,P.y-g.O.y)));
       return true;
     }
     // Ø/R : translation du point d'ancrage (si on a saisi l'étiquette, on

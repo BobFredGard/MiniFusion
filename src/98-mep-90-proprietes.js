@@ -771,6 +771,19 @@
     ref.onchange=()=>{mepEdit('référence',()=>{d.ref=ref.checked;});};
     row('Cote de référence',ref);
     }
+    if(d.kind==='ang'){ // texte collé à l'arc : décalage le long de l'arc depuis le milieu
+      const to=document.createElement('input');
+      to.type='number';to.step='1';to.value=Math.round((+d.txtOff||0)*100)/100;
+      to.onchange=()=>{
+        let v=+to.value;if(!Number.isFinite(v))v=0;
+        v=mepAngTxtOffSnap(v);
+        mepEdit('décalage texte',()=>{d.txtOff=v||undefined;});
+      };
+      row('Décalage texte (mm)',to);
+      const bc=document.createElement('button');bc.textContent='Centrer';
+      bc.onclick=()=>{mepEdit('centrage texte',()=>{d.txtOff=undefined;});mepSideShow();mepRender();};
+      row('',bc);
+    }
     if(d.kind==='len'||d.kind==='dist'){
       const ba=document.createElement('button');
       ba.textContent=d.arr==='out'?'Flèches intérieures':'Flèches extérieures';

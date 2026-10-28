@@ -1270,9 +1270,18 @@
         hit.push({x1:O.x+r*Math.cos(t0),y1:O.y+r*Math.sin(t0),
           x2:O.x+r*Math.cos(t1),y2:O.y+r*Math.sin(t1)});
       }
-      const mx=O.x+(r+7)*Math.cos(aa+dd/2),my=O.y+(r+7)*Math.sin(aa+dd/2);
+      // texte collé à l'arc (mepAngTextPos) ; poussé hors des flèches, l'arc se prolonge jusqu'à lui
+      const tp=mepAngTextPos(sh,d,g);if(!tp)return;
+      const lo=Math.min(aa,aa+dd),hi=Math.max(aa,aa+dd);
+      if(tp.t<lo||tp.t>hi){
+        const e0=tp.t<lo?lo:hi,e1=tp.t,ne=Math.max(4,Math.ceil(Math.abs(e1-e0)*r/2));
+        for(let k=0;k<ne;k++){
+          const t0=e0+(e1-e0)*k/ne,t1=e0+(e1-e0)*(k+1)/ne;
+          draw('line',Object.assign({x1:O.x+r*Math.cos(t0),y1:O.y+r*Math.sin(t0),x2:O.x+r*Math.cos(t1),y2:O.y+r*Math.sin(t1)},L));
+        }
+      }
       const pp=mepDimTextParts(d,val);
-      mepDimDrawText(draw,T,pp.main,pp.up,pp.lo,mx,my+2,'middle',null,false,pp.sym,pp.par,pp.post);
+      mepDimDrawText(draw,T,pp.main,pp.up,pp.lo,tp.bx,tp.by,'middle',null,false,pp.sym,pp.par,pp.post);
       return;
     }
     /* linear (len / dist) */

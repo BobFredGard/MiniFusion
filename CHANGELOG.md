@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**411 versions**, de `2026-09-28b` à `V0.15.17` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**412 versions**, de `2026-09-28b` à `V0.15.18` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5412,3 +5412,10 @@ Demande : « je crée et positionne une cote, fonction cotation toujours active,
 - **Chaîne** (`src/98-mep-87-chaine.js`, nouveau) : outil Cote actif, un clic SANS glisser sur une ligne de rappel d'une cote linéaire posée (longueur ou distance) lance la chaîne depuis ce point. Chaque clic suivant donne un point (accrochage automatique, ou imposé au clic droit : extrémité, milieu, centre, point extrême, intersection en 2 clics) et pose aussitôt la cote sur la MÊME ligne de cote, avec la même orientation (X, Y ou alignée) ; son 2ᵉ rappel devient le départ suivant. Aperçu de la cote suivante sous le curseur. Un point sans écart dans la direction cotée est refusé. Échap termine la chaîne, l'outil Cote reste actif (un 2ᵉ Échap le quitte). Chaque cote s'annule séparément (Ctrl+Z).
 - **Glisser** un rappel déplace toujours la cote, comme avant. Le clic sur un rappel l'emporte sur la zone de saisie de l'étiquette (large de 18 mm), sauf sur le texte même (`mepChainRappelAt`).
 - **Tests** : `test_mep_chaine` (nouveau, suite rapide : 16 contrôles — rappel a / b / ligne de cote / près de l'étiquette, aperçu, cotes 20 → 25 → 20 sur la ligne de la 1ʳᵉ, point refusé, milieu imposé, fin). Vérifié dans le navigateur à la souris : clic sur le rappel de la cote 15, trois clics, Échap → 15, 20, 25, 20 alignées.
+
+## V0.15.18 - Mise en plan : texte des cotes d'angle collé à l'arc, déplaçable, aimanté au centre
+Demande : « les cotes d'angle : le texte est assez loin de la ligne de cote, il faut qu'il soit au centre, sur le dessus, en bas ou en haut en fonction de sa position. Je dois pouvoir le bouger de droite à gauche et retrouver son centre automatiquement ».
+- **Avant** : le texte était posé à 7 mm au-delà de l'arc, sur la bissectrice (puis 2 mm plus bas), loin de la ligne de cote ; il ne se déplaçait pas.
+- **Position** (`src/98-mep-80-souris.js`, `mepAngTextPos`) : texte horizontal collé à l'arc, du côté extérieur, sa boîte à 1,2 mm de l'arc — au-dessus quand le milieu de l'arc est en haut, en dessous quand il est en bas, à côté sur les flancs. Dessin, saisie et clic s'appuient sur la même position.
+- **Glisser le texte** (`src/98-mep-85-cote-unique.js`) : il suit l'arc, de droite à gauche (`d.txtOff`, mm le long de l'arc) ; à moins de 3 mm du milieu, il revient au centre. Poussé au-delà des flèches, l'arc se prolonge jusqu'à lui (`src/98-mep-70-cotes.js`). Seule la boîte du texte le saisit ; glisser l'arc règle toujours le rayon et le secteur. Le panneau Propriétés reçoit « Décalage texte » et « Centrer » pour les angles.
+- **Tests** : `test_mep_angle_texte` (nouveau, suite rapide : 12 contrôles — au-dessus, en dessous, flanc à 1,2 mm, aimant à 2 mm, décalage de 10 mm, rayon inchangé, recentrage, prolongement d'arc). Vérifié dans le navigateur : trois angles (haut, bas, flanc) ; texte glissé de 6,9 mm à la souris puis ramené : recentré.
