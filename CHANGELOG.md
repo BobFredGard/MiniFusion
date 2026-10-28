@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**395 versions**, de `2026-09-28b` à `V0.15.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**396 versions**, de `2026-09-28b` à `V0.15.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5287,3 +5287,10 @@ Constat : export 4K 2048 échantillons sur RTX 5070 Ti à ~1,5 échantillon/s (2
 - **Correctif** : file de DEUX lots en vol (`R.fences`) — le GPU calcule l'un pendant que l'autre attend ; file vidée entre deux réveils → lots ×1,5 (au plus `RT_LOT_MAX` = 144 tuiles) ; plus vieux lot en attente au-delà de 2 × (cible + retard moyen du réveil) → lots ×0,75. Barrières restantes libérées à l'arrêt du moteur (`rtGpuDrain`), toutes attendues avant la copie finale de l'export.
 - **Mesures** (4K, nvidia-smi, pièce d'essai) : retard de réveil simulé 0 / 70 / 300 ms → 8,5 / 8,6 / 8,7 échantillons/s, GPU 100 % (avant : 8,2 / 4,4 échantillons/s, GPU ~50 % à 70 ms).
 - **Tests** : `gpu.spec` et `rendu.spec` verts ; `npm run ci`.
+
+## V0.15.2 - Rendu : halo visible sur toute scène, débruitage plus franc
+Constat : « le Débruitage et le Halo n'agissent pas » — alu anodisé bleu sur fond noir, halo 11 %, débruitage 0 %.
+- **Cause** (`src/98-rendu-post.js`) : le halo ne prenait que la partie de l'image au-dessus du blanc (luminance > 1 après exposition) — une pièce sombre n'en a presque pas, d'où aucun débord ; un seuil plus bas (essayé) noyait au contraire les scènes claires de brouillard. Le débruitage, réservé au lancer de rayons, était timide (rayon et tolérance de couleur faibles).
+- **Correctif** : halo à la façon d'un filtre de diffusion — l'image exposée (alpha compris, prémultipliée) est réduite et floutée sur 6 niveaux (`RP_NIV`, ½ à 1/64 de la taille), les niveaux ¼, 1/16 et 1/64 sont mêlés à l'image nette (au plus 40 %) : chaque zone claire déborde sur ses voisines plus sombres, fond compris, sans ajouter de lumière, quelle que soit la luminosité de la scène. Débruitage : écart spatial 0,8 → 5 px (était 0,6 → 4), tolérance de couleur 0,04 → 0,26 (était 0,03 → 0,15).
+- **Mesures** (pièce d'essai, 512 échantillons) : halo 100 % → écart moyen 5,3 niveaux sur alu bleu / fond noir (avant : ~0 à 30 %), 2,1 sur la scène claire, sans voile ; débruitage à 32 échantillons : grain du sol effacé.
+- **Tests** : `gpu.spec` étendu (halo à 100 % : écart moyen > 1 niveau, relevé 9,2) ; `rendu.spec` vert ; `npm run ci`.

@@ -4,8 +4,10 @@
    LINÉAIRE accumulée (cible flottante, alpha prémultiplié ou non) et va jusqu'aux pixels du canevas :
      1. débruitage (lancer de rayons) : filtre bilatéral — moyenne pondérée des voisins, coupée là où la
         couleur change franchement (jugée sur c / (1 + c) : les reflets intenses ne bavent pas) ;
-     2. halo : partie lumineuse (au-dessus d'un seuil, après exposition), floutée à ½, ¼ et ⅛ de la taille,
-        rajoutée — la lumière déborde aussi sur le fond ;
+     2. halo : l'image (après exposition, alpha compris), floutée au ¼, au 1/16 et au 1/64 de la taille, mêlée à l'image nette
+        (au plus 40 %) : chaque zone claire déborde sur ses voisines plus sombres, fond compris, sans ajouter de
+        lumière. V0.15.2 : auparavant seule la partie au-dessus du blanc (luminance > 1) débordait — rien sur une
+        pièce sombre, et un seuil plus bas noyait de brouillard les scènes claires ;
      3. tons (ACES, Reinhard, Cinéon, linéaire) et fond (dégradé, uni, transparent) ;
      4. étalonnage (température, contraste, saturation), vignettage, grain — sur l'image affichée, fond compris ;
      5. sRGB.
@@ -23,16 +25,17 @@ const RP_DEN=[
   '    float w = exp(-r2 / (2.0 * uSig * uSig)) * exp(-(dot(dk, dk) + da * da) / (2.0 * uThr * uThr));',
   '    acc += w * c; z += w; }',
   '  gl_FragColor = acc / max(z, 1e-6); }'].join('\n');
-const RP_BRIGHT=[ // partie lumineuse, réduite de moitié (4 lectures)
-  'uniform sampler2D tSrc; uniform vec2 uPx; uniform float uExpo; uniform float uSeuil; varying vec2 vUv;',
-  'vec3 rpB(vec2 uv){ vec3 c = texture2D(tSrc, uv).rgb * uExpo; float l = dot(c, vec3(0.2126, 0.7152, 0.0722)); return c * max(0.0, l - uSeuil) / max(l, 1e-4); }',
-  'void main(){ gl_FragColor = vec4((rpB(vUv + uPx * vec2(-0.5, -0.5)) + rpB(vUv + uPx * vec2(0.5, -0.5)) + rpB(vUv + uPx * vec2(-0.5, 0.5)) + rpB(vUv + uPx * vec2(0.5, 0.5))) * 0.25, 1.0); }'].join('\n');
+const RP_BRIGHT=[ // image exposée (prémultipliée), réduite de moitié (4 lectures)
+  'uniform sampler2D tSrc; uniform vec2 uPx; uniform float uExpo; varying vec2 vUv;',
+  'vec4 rpB(vec2 uv){ vec4 c = texture2D(tSrc, uv); c.rgb *= uExpo; return c; }',
+  'void main(){ gl_FragColor = (rpB(vUv + uPx * vec2(-0.5, -0.5)) + rpB(vUv + uPx * vec2(0.5, -0.5)) + rpB(vUv + uPx * vec2(-0.5, 0.5)) + rpB(vUv + uPx * vec2(0.5, 0.5))) * 0.25; }'].join('\n');
 const RP_BLUR=[ // flou gaussien séparé, 9 lectures (pas : uDir en pixels de la cible lue)
   'uniform sampler2D tSrc; uniform vec2 uDir; varying vec2 vUv;',
-  'void main(){ vec3 s = texture2D(tSrc, vUv).rgb * 0.2270270;',
-  '  s += (texture2D(tSrc, vUv + uDir * 1.3846154).rgb + texture2D(tSrc, vUv - uDir * 1.3846154).rgb) * 0.3162162;',
-  '  s += (texture2D(tSrc, vUv + uDir * 3.2307692).rgb + texture2D(tSrc, vUv - uDir * 3.2307692).rgb) * 0.0702703;',
-  '  gl_FragColor = vec4(s, 1.0); }'].join('\n');
+  'void main(){ vec4 s = texture2D(tSrc, vUv) * 0.2270270;',
+  '  s += (texture2D(tSrc, vUv + uDir * 1.3846154) + texture2D(tSrc, vUv - uDir * 1.3846154)) * 0.3162162;',
+  '  s += (texture2D(tSrc, vUv + uDir * 3.2307692) + texture2D(tSrc, vUv - uDir * 3.2307692)) * 0.0702703;',
+  '  gl_FragColor = s; }'].join('\n');
+const RP_NIV=6; // niveaux du halo : ½ … 1/64 de la taille (le shader final lit le 2e, le 4e et le 6e)
 const RP_FINAL=[
   'uniform sampler2D tC; uniform sampler2D tB1; uniform sampler2D tB2; uniform sampler2D tB3;',
   'uniform float uExpo; uniform float uTone; uniform float uHalo; uniform float uBg; uniform vec3 uC1; uniform vec3 uC2;',
@@ -56,8 +59,8 @@ const RP_FINAL=[
   '  return clamp(c, 0.0, 1.0); }',
   'void main(){',
   '  vec4 a = texture2D(tC, vUv);', // linéaire, alpha prémultiplié
-  '  vec3 h = (texture2D(tB1, vUv).rgb + texture2D(tB2, vUv).rgb + texture2D(tB3, vUv).rgb) * (uHalo / 3.0);',
-  '  vec3 lin = a.rgb * uExpo + h; float al = clamp(a.a + dot(h, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0);',
+  '  vec4 h = (texture2D(tB1, vUv) + texture2D(tB2, vUv) + texture2D(tB3, vUv)) / 3.0;', // halo : image floutée, exposée
+  '  vec3 lin = mix(a.rgb * uExpo, h.rgb, uHalo); float al = clamp(mix(a.a, h.a, uHalo), 0.0, 1.0);',
   '  vec3 col = al > 1e-4 ? rpTone(lin / al) : vec3(0.0);',
   '  if(uBg > 1.5){ vec3 c = rpLook(col, gl_FragCoord.xy); gl_FragColor = vec4(rpSrgb(c) * al, al); return; }', // fond transparent : PNG détouré, prémultiplié
   '  vec3 bg = rpLin(uBg > 0.5 ? mix(uC2, uC1, vUv.y) : uC1);',
@@ -68,7 +71,7 @@ function rpCreate(T,r){
   const mat=(fs,U)=>new T.ShaderMaterial({uniforms:U,vertexShader:RP_VS,fragmentShader:fs,depthTest:false,depthWrite:false});
   const P={T,r,cam,quad,sc,w:0,h:0,rt:{},
     den:mat(RP_DEN,{tSrc:{value:null},uPx:{value:new T.Vector2()},uPremul:{value:1},uSig:{value:0},uThr:{value:0.1}}),
-    bright:mat(RP_BRIGHT,{tSrc:{value:null},uPx:{value:new T.Vector2()},uExpo:{value:1},uSeuil:{value:1}}),
+    bright:mat(RP_BRIGHT,{tSrc:{value:null},uPx:{value:new T.Vector2()},uExpo:{value:1}}),
     blur:mat(RP_BLUR,{tSrc:{value:null},uDir:{value:new T.Vector2()}}),
     fin:mat(RP_FINAL,{tC:{value:null},tB1:{value:null},tB2:{value:null},tB3:{value:null},uExpo:{value:1},uTone:{value:0},uHalo:{value:0},uBg:{value:1},
       uC1:{value:new T.Color()},uC2:{value:new T.Color()},uVig:{value:0},uGrain:{value:0},uCon:{value:0},uSat:{value:0},uTemp:{value:0},uAsp:{value:16/9}})};
@@ -79,7 +82,7 @@ function rpSize(P,w,h){
   Object.values(P.rt).forEach(t=>t.dispose());P.rt={};
   const T=P.T,mk=(a,b)=>new T.WebGLRenderTarget(Math.max(1,a),Math.max(1,b),{type:T.HalfFloatType,depthBuffer:false});
   P.rt.den=mk(w,h);
-  for(let i=1;i<=3;i++){const s=1<<i;P.rt['a'+i]=mk(Math.ceil(w/s),Math.ceil(h/s));P.rt['b'+i]=mk(Math.ceil(w/s),Math.ceil(h/s));}
+  for(let i=1;i<=RP_NIV;i++){const s=1<<i;P.rt['a'+i]=mk(Math.ceil(w/s),Math.ceil(h/s));P.rt['b'+i]=mk(Math.ceil(w/s),Math.ceil(h/s));}
   P.w=w;P.h=h;
 }
 function rpPass(P,m,target){P.quad.material=m;P.r.setRenderTarget(target);P.r.render(P.sc,P.cam);}
@@ -87,22 +90,22 @@ function rpRender(P,src,w,h,o){
   // src : texture linéaire (o.premul : alpha prémultiplié) ; o : {den, halo, expo, tone, bg, c1, c2, vig, grain, con, sat, temp}
   rpSize(P,w,h);
   const D=P.den.uniforms;let tex=src;
-  if(o.den>0.001){D.tSrc.value=src;D.uPx.value.set(1/w,1/h);D.uPremul.value=o.premul?1:0;D.uSig.value=0.6+3.4*o.den;D.uThr.value=0.03+0.12*o.den;
+  if(o.den>0.001){D.tSrc.value=src;D.uPx.value.set(1/w,1/h);D.uPremul.value=o.premul?1:0;D.uSig.value=0.8+4.2*o.den;D.uThr.value=0.04+0.22*o.den;
     rpPass(P,P.den,P.rt.den);tex=P.rt.den.texture;}
   else if(!o.premul){D.tSrc.value=src;D.uPx.value.set(1/w,1/h);D.uPremul.value=0;D.uSig.value=0;rpPass(P,P.den,P.rt.den);tex=P.rt.den.texture;} // prémultiplie
   const F=P.fin.uniforms;
   if(o.halo>0.001){
-    const B=P.bright.uniforms;B.tSrc.value=tex;B.uPx.value.set(1/w,1/h);B.uExpo.value=o.expo;B.uSeuil.value=1;rpPass(P,P.bright,P.rt.a1);
+    const B=P.bright.uniforms;B.tSrc.value=tex;B.uPx.value.set(1/w,1/h);B.uExpo.value=o.expo;rpPass(P,P.bright,P.rt.a1);
     const L=P.blur.uniforms;
-    for(let i=1;i<=3;i++){
+    for(let i=1;i<=RP_NIV;i++){
       const a=P.rt['a'+i],b=P.rt['b'+i];
       if(i>1){L.tSrc.value=P.rt['a'+(i-1)].texture;L.uDir.value.set(0,0);rpPass(P,P.blur,a);} // réduction (lecture bilinéaire)
       L.tSrc.value=a.texture;L.uDir.value.set(1/a.width,0);rpPass(P,P.blur,b);
       L.tSrc.value=b.texture;L.uDir.value.set(0,1/a.height);rpPass(P,P.blur,a);
     }
-    F.tB1.value=P.rt.a1.texture;F.tB2.value=P.rt.a2.texture;F.tB3.value=P.rt.a3.texture;
+    F.tB1.value=P.rt.a2.texture;F.tB2.value=P.rt.a4.texture;F.tB3.value=P.rt.a6.texture;
   }else{F.tB1.value=F.tB2.value=F.tB3.value=tex;}
-  F.tC.value=tex;F.uExpo.value=o.expo;F.uTone.value=o.tone;F.uHalo.value=o.halo>0.001?o.halo*1.5:0;F.uBg.value=o.bg;
+  F.tC.value=tex;F.uExpo.value=o.expo;F.uTone.value=o.tone;F.uHalo.value=o.halo>0.001?o.halo*0.4:0;F.uBg.value=o.bg;
   rpHex(F.uC1.value,o.c1);rpHex(F.uC2.value,o.c2); // valeurs sRGB telles quelles (le three récent convertirait un « #rrggbb »)
   F.uVig.value=o.vig;F.uGrain.value=o.grain;F.uCon.value=o.con;F.uSat.value=o.sat;F.uTemp.value=o.temp;F.uAsp.value=w/h;
   if(o.halo<=0.001){F.uHalo.value=0;}
