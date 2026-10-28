@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**400 versions**, de `2026-09-28b` à `V0.15.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**401 versions**, de `2026-09-28b` à `V0.15.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5322,3 +5322,11 @@ Constat : fond « Studio » en « Lancer de rayons » — stries circulaires con
 - **Correctif** : le disque sort de la scène en mode Studio et y revient pour les autres fonds ; le passage au Studio refaisait déjà la scène (`rtRefresh`).
 - **Mesure** (1080p, passe-haut 15 × 15 sur le coin bas-gauche du sol) : écart moyen 0,26 → 0,16 niveau (Brillant), 0,13 (sans) — reste le grain sous un niveau 8 bits.
 - **Tests** : `gpu.spec` (3/3) et `rendu.spec` (2/2) verts ; `npm run ci` (67/67).
+
+## V0.15.7 - Suppression de face : édition rapide d'une sélection nombreuse, reprise face par face bornée
+Constat : « j'ai voulu prendre toutes ces arêtes et c'est très long ! » (bande de chanfreins tout autour du plateau STEP, une vingtaine de faces) ; « Fusion 360 le fait en un clin d'œil ».
+- **Mesures** (`Exemples/Cavité Usinage.step`, 113 faces dont 36 surfaces libres) : le temps est dans `BRepAlgoAPI_Defeaturing` lui-même — une face ordinaire 0,4 s, 3 faces 2 s, 6 faces 226 s, et un seul cylindre 33×33×23 579 s avant plantage du noyau. Ce build OCCT n'expose ni SetUseOBB, ni SetFuzzyValue, ni SetRunParallel, ni d'interruption ; une suppression locale (boîte découpée, suppression dans le morceau, recollage) ne règle pas la face pathologique et coûte plus cher sur les autres (1,7 s contre 0,4 s).
+- **Entrée en édition** (`src/87-coque.js`, `coqueOrdOf`) : un seul parcours des faces par solide, index clé → rang partagé par toutes les faces d'un marquage (`coqueOrdIdx`). Avant : `occFaceAt(rang)` reparcourait le solide depuis le début pour chaque face candidate et chaque face mémorisée, O(faces²) par face. Profite aussi à la coque.
+- **Reprise face par face** (`src/20-noyau-et-operations-solides.js`, `occApplyDeleteFaces`) : N+1 suppressions complètes de plus quand le lot échoue ; limitée à `DEL_ISOLE_MAX` = 6 faces. Au-delà : refus direct, ⚠ et « supprimez-les en plusieurs fois ».
+- **Suite** : la suppression dans un Web Worker avec délai maximal (interface jamais gelée, abandon propre d'une face pathologique) est un chantier séparé.
+- **Tests** : `test_suppression_face`, `test_suppression_face_step`, `test_suppression_face_edition`, `test_coque_sel`, `test_coque_depouille` verts ; `npm run ci` (67/67).

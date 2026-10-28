@@ -1535,6 +1535,7 @@ function occBoxMinMax(sh){
     return r;
   }catch(e){return null;}
 }
+const DEL_ISOLE_MAX=6;
 function occApplyDeleteFaces(result,f){
   // Rejoue la suppression. Retourne {shape,warnings} comme occApplyCoque : les faces sont
   // retrouvées par référence durable, et celles que le noyau refuse sont écartées une à
@@ -1549,7 +1550,11 @@ function occApplyDeleteFaces(result,f){
   if(hs.length<total)warnings.push(`${total-hs.length} face(s) introuvable(s) sur la pièce courante`);
   let r=null,echec=null;
   try{r=occDeleteFacesOnce(result,hs);}catch(e){echec=e;}
-  if(!r&&hs.length>1){
+  // Reprise face par face : N+1 suppressions complètes de plus. Sur une grosse pièce, une
+  // seule coûte déjà de 0,4 s à plusieurs minutes (Defeaturing OCCT, mesuré V0.15.7) :
+  // au-delà de DEL_ISOLE_MAX faces, refus direct plutôt qu'une attente interminable.
+  if(!r&&hs.length>DEL_ISOLE_MAX)warnings.push(`pas de reprise face par face au-delà de ${DEL_ISOLE_MAX} faces (trop longue) — supprimez-les en plusieurs fois`);
+  if(!r&&hs.length>1&&hs.length<=DEL_ISOLE_MAX){
     const garde=[];
     for(const h of hs){
       try{const t=occDeleteFacesOnce(result,garde.concat([h]));try{t.delete();}catch(e){}garde.push(h);}catch(e){}
@@ -1563,7 +1568,7 @@ function occApplyDeleteFaces(result,f){
   if(!r){
     const m=(echec&&echec.message)||echec;
     f._m={m:0,t:total};
-    return{shape:result,warnings:[`suppression impossible — ${m}`],fatal:true};
+    return{shape:result,warnings:[`suppression impossible — ${m}`].concat(warnings),fatal:true};
   }
   try{result.delete();}catch(e){}
   return{shape:r,warnings};
