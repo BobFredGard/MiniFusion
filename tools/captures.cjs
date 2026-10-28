@@ -62,10 +62,27 @@ const CAPTURES={
       process.env.MF_FOND==='blanc'?{}:{fond:'degrade',fc1:'#3a4049',fc2:'#121417'});
     await page.waitForTimeout(6000); // aperçu affiné (64 passes)
     await photo(page,'rendu-atelier');
-    const dl=page.waitForEvent('download',{timeout:240000});
-    await page.evaluate(()=>{rd.st.ech=64;rd.st.res='1080';rdExport();});
-    await (await dl).saveAs(path.join(SORTIE,'rendu-pedale.png'));
-    console.log('  rendu-pedale.png');
+    await page.evaluate(()=>rdClose());
+  },
+  // image de tête du README (V0.15.2) : lancer de rayons, 2048 échantillons — alu anodisé rouge, patine légère,
+  // studio lumineux, sol béton, finition « Photo »
+  async renduRayons(page){
+    await ouvrir(page,'Support Pédale Déportée R1200RT 2011');
+    await page.evaluate(()=>bodies.forEach(b=>{const id=bodyIdOfRuntime(b);if(id)setRenderLook(id,'alu-anod-rouge',null,{p:'legere'});}));
+    await page.evaluate(f=>{localStorage.setItem('minifusion_rendu',JSON.stringify(f));rdOpen();},
+      {amb:'clair',fond:'degrade',fc1:'#e9eaec',fc2:'#a9adb3',support:'beton',miroir:false,pHalo:0.3,pVig:0.35,pGrain:0.2,pCon:0.1,pSat:0.05});
+    await page.waitForTimeout(1500);
+    await page.evaluate(()=>rdSetMoteur('rayons'));
+    await page.waitForFunction(()=>rd.rt&&rd.rt.pt&&rd.rt.pt.samples>=8,null,{timeout:240000}); // shader compilé
+    const dl=page.waitForEvent('download',{timeout:900000});
+    await page.evaluate(()=>{rd.st.ech=256;rd.st.res='1080';rdExport();});
+    // en JPEG : le grain de la finition gonfle le PNG (3,3 Mo au lieu de quelques centaines de Ko)
+    const png=fs.readFileSync(await (await dl).path()).toString('base64');
+    const jpg=await page.evaluate(async b=>{const im=new Image();im.src='data:image/png;base64,'+b;await im.decode();
+      const c=document.createElement('canvas');c.width=im.width;c.height=im.height;c.getContext('2d').drawImage(im,0,0);
+      return c.toDataURL('image/jpeg',0.9).split(',')[1];},png);
+    fs.writeFileSync(path.join(SORTIE,'rendu-pedale.jpg'),Buffer.from(jpg,'base64'));
+    console.log('  rendu-pedale.jpg');
     await page.evaluate(()=>rdClose());
   }
 };

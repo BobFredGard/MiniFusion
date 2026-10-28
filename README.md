@@ -2,7 +2,7 @@
 
 **CAO paramétrique, assemblage, FAO, mise en plan et rendu, dans un seul fichier HTML.** On ouvre la page et on travaille : ni installation, ni compte, ni connexion.
 
-![Support de pédale déportée R1200RT, rendu de l'atelier RENDU](docs/captures/rendu-pedale.png)
+![Support de pédale déportée R1200RT en alu anodisé rouge sur béton, lancer de rayons de l'atelier RENDU (2048 échantillons)](docs/captures/rendu-pedale.jpg)
 
 Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. S'il n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.11.28** (voir le [journal des modifications](CHANGELOG.md)).
 
