@@ -317,7 +317,8 @@
   function mepDrawAxes(mk,v,sh){
     const sa=mepSt.selAxis&&mepSt.selAxis.vid===v.id?mepSt.selAxis:null;
     const hs=2.2/(mepSt.zoom||1),ends=[];
-    const entCls=ak=>(mepSt.entSel||[]).some(s=>s.vid===v.id&&s.i==='ax:'+ak)?' mepSelEnt'
+    const ip=mepSt.intPick;
+    const entCls=ak=>((mepSt.entSel||[]).some(s=>s.vid===v.id&&s.i==='ax:'+ak)||(ip&&ip.vid===v.id&&ip.i==='ax:'+ak))?' mepSelEnt'
       :(mepSt.hovEnt&&mepSt.hovEnt.vid===v.id&&mepSt.hovEnt.i==='ax:'+ak?' mepHovEnt':'');
     mepAxisLines(sh,v).forEach(p=>{
       // axe manuel : tout l'axe est sélectionné ; axe auto : le seul trait cliqué
@@ -346,8 +347,9 @@
       class:'mepThr3d'+(t[4]?' mepThr3dRing':'')}));
     mepDrawAxes(mk,v,sh);
     /* la vue sélectionnée garde ses couleurs : seul le cadre bleu la signale */
-    const selEnt=(e,ei)=>mepSt.entSel&&mepSt.entSel.some(s=>
-      s.vid===v.id&&s.i===ei&&(!s.sig||s.sig===mepEntSig(e)));
+    const selEnt=(e,ei)=>(mepSt.entSel&&mepSt.entSel.some(s=>
+      s.vid===v.id&&s.i===ei&&(!s.sig||s.sig===mepEntSig(e))))
+      ||(mepSt.intPick&&mepSt.intPick.vid===v.id&&mepSt.intPick.i===ei); // 1ʳᵉ entité d'une intersection
     const hovEnt=(e,ei)=>mepSt.hovEnt&&mepSt.hovEnt.vid===v.id&&mepSt.hovEnt.i===ei
       &&(!mepSt.hovEnt.sig||mepSt.hovEnt.sig===mepEntSig(e));
     const cls=(e,ei)=>(e.k==='hidden'||e.k==='threadH'?'mepEnt mepHidden':e.k==='thread'?'mepEnt mepThread':e.k==='tangent'?'mepEnt mepTangent':e.k==='sect'?'mepEnt mepSect':'mepEnt mepSharp')

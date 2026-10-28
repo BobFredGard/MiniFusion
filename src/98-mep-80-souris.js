@@ -15,6 +15,7 @@
     if(next==='select')mepSt.entSel=[];
     mepSt.pick=null;mepSt.dim=null;mepSt.cutPts=[];mepSt.detC=null;mepSt.hovEnt=null;mepSt.skSel=new Set();mepSt.lot=null;mepSt.vcmd=null;
     mepSt.axisPick=[];mepSt.axisFree=null;mepSt.ord=null;mepSt.ordPt=null;mepSt.snapMode=null;mepSt.snapHov=null;
+    mepSt.intPick=null;mepSt.dimLine=null;
     if(ordKeep){mepSt.ord=ordKeep;mepSt.selDim=ordKeep;mepStatus('Ordonnées : cliquez les points à AJOUTER au groupe sélectionné (Entrée ou Échap pour terminer).');}
     mepToolSync();
     try{mepSideShow();}catch(e){}
@@ -471,7 +472,8 @@
     if(tool==='dim'){
       // une cote déjà posée reste attrapable : n'importe quel trait rouge
       // (ligne, rappel, leader, arc) démarre son déplacement.
-      if(!mepSt.dim){
+      // (sauf en accrochage imposé : le clic donne un point, même sur le rappel d'une autre cote)
+      if(!mepSt.dim&&!mepSt.snapMode){
         if(mepDimPressDbl(sh,P,ev))return;
         const dim=mepDimAt(sh,P.x,P.y);
         if(dim){mepDimDragStart(sh,P,dim,ev);return;}
@@ -779,10 +781,14 @@
       let need=false;
       if(mepSt.tool==='dim'&&mepSt.snapMode&&!(mepSt.dim&&mepSt.dim.b)){
         // accrochage imposé : repère du point visé, pas de surbrillance d'entité
-        const S=mepSnapModePt(sh,P.x,P.y,mepSt.snapMode),o=mepSt.snapHov;
+        // (Intersection : on survole des ENTITÉS, le point s'affiche dès la 2ᵉ)
+        const isInt=mepSt.snapMode==='int';
+        const ih=isInt?mepIntPickHit(sh,P):null;
+        const S=isInt?mepIntPoint(sh,mepSt.intPick,ih,P):mepSnapModePt(sh,P.x,P.y,mepSt.snapMode),o=mepSt.snapHov;
         if(!!S!==!!o||(S&&(Math.abs(S.x-o.x)>1e-6||Math.abs(S.y-o.y)>1e-6)))need=true;
         mepSt.snapHov=S;
-        if(mepSt.hovEnt){mepSt.hovEnt=null;need=true;}
+        const hov=ih?{vid:ih.vid,i:ih.i,sig:mepEntSig(ih.e)}:null;
+        if(!mepSameHovEnt(hov,mepSt.hovEnt)){mepSt.hovEnt=hov;need=true;}
         if(need)mepRender();
         return;
       }
@@ -982,6 +988,7 @@
     if((k==='Escape'||k==='Enter')&&mepSt.ord){mepSt.ord=null;mepSetTool('select');mepStatus('Cotation d’ordonnées terminée.');ev.preventDefault();ev.stopPropagation();return;}
     if(k==='Escape'&&mepSt.blAdd){mepSt.blAdd=false;mepStatus('＋ Bulle terminé.');mepSideShow();ev.preventDefault();ev.stopPropagation();return;} // V0.8.2
     if(k==='Escape'){
+      if(mepSt.intPick){mepIntCancel();ev.preventDefault();ev.stopPropagation();return;} // seulement l'intersection en cours
       if(mepSt.alignDims){mepSt.alignDims=null;mepStatus('Alignement annulé.');ev.preventDefault();ev.stopPropagation();return;}
       if(mepSt.vcmd){mepVcmdCancel();ev.preventDefault();ev.stopPropagation();return;}
       if(mepSt.pick&&MEP_SK_TOOLS.indexOf(mepSt.pick.kind)>=0){mepSt.pick=null;mepRender();ev.preventDefault();ev.stopPropagation();return;}

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**409 versions**, de `2026-09-28b` à `V0.15.15` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**410 versions**, de `2026-09-28b` à `V0.15.16` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5398,3 +5398,11 @@ Constat (vérification de V0.15.9 dans le navigateur sur le plateau STEP de l'ut
 - **Correctif** : `delWkArm` — un minuteur qui se déclenche en retard se replace derrière la file (`setTimeout` 0) avant de décider ; à l'échéance, un sursis de 2 s (`DEL_WK_SURSIS`) précède l'arrêt du worker, le temps qu'une « fin » déjà envoyée soit lue. Une face réellement trop longue est toujours abandonnée (au bout de ~22 s au lieu de 20).
 - **Vérification navigateur (V0.15.9, avant correctif)** : Cavité Usinage — Suppr rend la main en 0,14 s, face pathologique abandonnée proprement, face ordinaire identique au calcul synchrone (112 faces, même volume) ; ouverture du plateau : 71 s de fil principal bloqué (lecture du STEP et rejeu), suppressions terminées au worker vers 2 min.
 - **Test** : `test_suppression_face_worker`, cas 5 — délai 0,3 s, messages du worker retenus 1,5 s pendant un calcul de 0,5 s : plus d'abandon, même solide que le synchrone. Échoue sans le correctif (⚠ « temps raisonnable », 113 faces).  Suite complète 193/193, `npm run ci` 73/73.
+
+## V0.15.16 - Mise en plan, cotation : Intersection en 2 clics, cote droite → point
+Demande : « pour coter, coter un 1er élément, une droite, horizontale ou verticale, puis clic droit, et je choisis la 2nde entité en fonction du menu contextuel, un point, un milieu, un centre » ; « D, clic droit, Intersection : une sous-fonction qui me permet de cliquer une ligne, puis une autre, d'obtenir leur point d'intersection, qui devient mon 1er point à coter […] aussi avec un cercle et une ligne ». Réponses : de 2 intersections, la plus proche ; droite oblique → cote perpendiculaire ; Échap → retour au choix du point.
+- **Avant** : l'accrochage Intersection prenait le croisement le plus proche du curseur, entités devinées (inutilisable quand le croisement est loin des traits) ; choisir un accrochage après avoir cliqué une droite abandonnait la droite.
+- **Intersection** (`src/98-mep-86-accrochages.js`, `mepIntClick`) : sous-fonction en 2 clics d'ENTITÉS (ligne, cercle, arc, trait d'axe ; ligne × ligne, ligne × cercle, cercle × cercle, même prolongés). La 1ʳᵉ reste surlignée, le survol de la 2ᵉ montre le point (✕) et les prolongements ; de 2 solutions, celle la plus proche du 2ᵉ clic. Le point devient le 1ᵉʳ (ou le 2ᵉ) point de la cote, référencé et suivi comme avant. Échap n'annule que l'intersection en cours.
+- **Droite → point** (`mepDimLineToPt`) : une droite cliquée puis un accrochage choisi au clic droit reste la 1ʳᵉ entité ; le point imposé (extrémité, milieu, centre, point extrême, intersection) donne la distance perpendiculaire : droite horizontale → cote verticale (et inversement), ligne de rappel depuis l'arête ; droite oblique → cote alignée sur la perpendiculaire. Revenir à « Automatique » rend la longueur de la droite.
+- **Au passage** (`src/98-mep-80-souris.js`) : en accrochage imposé, un clic sur le rappel d'une cote déjà posée prend le point au lieu de déplacer cette cote (cas du centre d'un cercle déjà coté).
+- **Tests** : `test_mep_accrochages` (39 contrôles, +13 : intersection en 2 clics, ligne × cercle des 2 côtés, Échap, droite verticale → centre = 30, droite → intersection = 20, droite oblique → 35√2). Vérifié dans le navigateur à la souris (intersection L1 × L2 puis centre ; droite verticale puis Centre).

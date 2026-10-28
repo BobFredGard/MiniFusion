@@ -253,7 +253,7 @@
     return false;
   }
   function mepDimClearSelection(){
-    mepSt.dim=null;mepSt.entSel=[];mepSt.hovEnt=null;
+    mepSt.dim=null;mepSt.entSel=[];mepSt.hovEnt=null;mepSt.dimLine=null;mepSt.intPick=null;
   }
   function mepDimCommitDraft(sh,P,ref){
     const D=mepSt.dim;if(!D)return;
@@ -280,8 +280,10 @@
     const tool=mepSt.dim; // état en cours : {kind,a,vid,ent}
     if(!tool&&mepSt.snapMode){
       // accrochage imposé (menu contextuel) : le clic donne un POINT, jamais une entité
-      const S=mepSnapModePt(sh,P.x,P.y,mepSt.snapMode);
-      if(!S){mepStatus('Accrochage '+mepSnapModeLabel(mepSt.snapMode).toLowerCase()+' : aucun point sous le curseur.');return;}
+      // (Intersection : 2 clics d'entités, cf. mepIntClick)
+      const S=mepSnapModeClick(sh,P);
+      if(!S)return;
+      if(mepSt.dimLine){mepDimLineToPt(sh,S,P);return;} // 1ʳᵉ entité = une droite
       mepSt.dim={kind:'dist',a:mepSnapModeQ(sh,S),vid:S.vid,off:8,__ghost:true};
       mepSt.snapHov=null;
       mepStatus('Distance : cliquez le 2ᵉ point (accrochage '+mepSnapModeLabel(mepSt.snapMode).toLowerCase()+', clic droit pour changer).');
@@ -307,8 +309,8 @@
     const D=mepSt.dim;
     const sh2=sh;
     if(D.kind==='dist'&&!D.b&&mepSt.snapMode){
-      const S=mepSnapModePt(sh2,P.x,P.y,mepSt.snapMode);
-      if(!S){mepStatus('Accrochage '+mepSnapModeLabel(mepSt.snapMode).toLowerCase()+' : aucun point sous le curseur.');return;}
+      const S=mepSnapModeClick(sh2,P);
+      if(!S)return;
       if(S.vid!==D.vid){mepStatus('Distance : les 2 points doivent être dans la même vue.');return;}
       D.b=mepSnapModeQ(sh2,S);
       D._pp=P;mepSt.snapHov=null;

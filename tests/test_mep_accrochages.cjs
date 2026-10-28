@@ -40,11 +40,17 @@ const out=vm.runInContext(`(function(){
   A(near(T.snapModePt(171,109,'maxy'),170,110),'point extrême Y du cercle');
   A(near(T.snapModePt(140.5,128,'maxy'),140,130),'point extrême Y d’une droite : son extrémité');
   A(T.snapModePt(300,300,'int')===null,'rien dans le vide lointain');
-  // 3. cote complète : intersection → extrémité, puis placement
+  // 3. cote complète : intersection (2 clics d'entités) → extrémité, puis placement
   mepSetTool('dim');
   T.setSnapMode('int');
   T.dimClick({x:141,y:101});
-  A(T.st().dim&&T.st().dim.kind==='dist'&&near(T.st().dim.a,40,0),'1ᵉʳ point = intersection (40,0)');
+  A(!T.st().dim&&!T.st().intPick,'Intersection : un clic dans le vide ne prend rien');
+  T.dimClick({x:110,y:100.3});
+  A(!T.st().dim&&T.st().intPick&&T.st().intPick.i===0,'Intersection : 1ʳᵉ entité = L1, pas encore de point');
+  T.dimClick({x:110.5,y:100.2});
+  A(!T.st().dim&&T.st().intPick,'Intersection : recliquer la même entité ne donne rien');
+  T.dimClick({x:140.2,y:120});
+  A(T.st().dim&&T.st().dim.kind==='dist'&&near(T.st().dim.a,40,0)&&!T.st().intPick,'1ᵉʳ point = intersection L1 × L2 (40,0), dans le vide');
   T.setSnapMode('end');
   A(T.st().dim&&near(T.st().dim.a,40,0),'changer d’accrochage garde le 1ᵉʳ point');
   T.dimClick({x:101,y:101});
@@ -61,6 +67,47 @@ const out=vm.runInContext(`(function(){
   // 5. suivi : L2 se déplace à x=45 → la cote vaut 45
   T.setViewGeo(v,{src:'dxf',els:[L1,{t:'L',x1:45,y1:10,x2:45,y2:30},C]});
   A(Math.abs(T.dimMeasure(d)-45)<1e-6,'L2 déplacée : le point d’intersection suit (45) : '+T.dimMeasure(d));
+  T.setViewGeo(v,{src:'dxf',els:[L1,L2,C]});
+  // 6. ligne × cercle : des 2 intersections, la plus proche du 2ᵉ clic
+  mepSetTool('dim');T.setSnapMode('int');
+  T.dimClick({x:110,y:100.3});T.dimClick({x:179.9,y:101.5});
+  A(T.st().dim&&near(T.st().dim.a,80,0),'L1 × C, 2ᵉ clic côté droit du cercle → (80,0)');
+  mepSetTool('dim');T.setSnapMode('int');
+  T.dimClick({x:110,y:100.3});T.dimClick({x:160.1,y:101.5});
+  A(T.st().dim&&near(T.st().dim.a,60,0),'L1 × C, 2ᵉ clic côté gauche → (60,0)');
+  mepSetTool('dim');T.setSnapMode('int');
+  T.dimClick({x:110,y:100.3});T.intCancel();
+  A(T.snapMode()==='int'&&!T.st().intPick&&!T.st().dim,'Échap : seule l’intersection en cours est annulée');
+  // 7. droite (1ʳᵉ entité) → point imposé : distance perpendiculaire
+  mepSetTool('dim');
+  T.dimClick({x:140.2,y:120});
+  A(T.st().dim&&T.st().dim.kind==='len','clic sur L2 : longueur en cours');
+  T.setSnapMode('ctr');
+  A(!T.st().dim&&T.st().dimLine&&T.st().dimLine.i===1,'Centre choisi : L2 reste la 1ʳᵉ entité');
+  T.dimClick({x:169,y:100.5});
+  const D7=T.st().dim;
+  A(D7&&D7.kind==='dist'&&D7.orient==='h'&&near(D7.a,40,10)&&near(D7.b,70,0),'L2 verticale → centre : cote horizontale du pied (40,10) au centre');
+  T.dimClick({x:150,y:80});
+  const d7=sh.dims[sh.dims.length-1];
+  A(d7&&d7.orient==='h'&&Math.abs(T.dimMeasure(d7)-30)<1e-6,'valeur 30 ('+(d7&&T.dimMeasure(d7))+')');
+  // 8. droite → intersection (L2 puis Intersection L1 × C, côté gauche)
+  mepSetTool('dim');
+  T.dimClick({x:140.2,y:120});T.setSnapMode('int');
+  T.dimClick({x:110,y:100.3});T.dimClick({x:160.1,y:101.5});
+  T.dimClick({x:150,y:80});
+  const d8=sh.dims[sh.dims.length-1];
+  A(d8&&d8!==d7&&d8.b.hint&&d8.b.hint.t==='int'&&Math.abs(T.dimMeasure(d8)-20)<1e-6,'L2 → intersection (60,0) : 20 ('+(d8&&T.dimMeasure(d8))+')');
+  // 9. droite oblique → point : cote alignée sur la perpendiculaire
+  const L3={t:'L',x1:0,y1:50,x2:10,y2:60};
+  T.setViewGeo(v,{src:'dxf',els:[L1,L2,C,L3]});
+  mepSetTool('dim');
+  T.dimClick({x:105,y:155});T.setSnapMode('end');
+  T.dimClick({x:120.3,y:100.3}); // extrémité (20,0) de L1
+  const D9=T.st().dim;
+  A(D9&&D9.orient==='a'&&near(D9.a,-15,35),'L3 oblique → (20,0) : pied (-15,35) sur la droite prolongée');
+  T.dimClick({x:100,y:120});
+  const d9=sh.dims[sh.dims.length-1];
+  A(d9&&Math.abs(T.dimMeasure(d9)-35*Math.SQRT2)<1e-6,'valeur perpendiculaire 35√2 ('+(d9&&T.dimMeasure(d9))+')');
   return r;
 })()`,ctx);
 console.log('=== PLAN : accrochages imposés de l’outil Cote ===');

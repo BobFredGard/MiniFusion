@@ -18,13 +18,100 @@
   ];
   function mepSnapModeLabel(m){const r=MEP_SNAP_MODES.find(x=>x[0]===(m||null));return r?r[1]:'Automatique';}
   function mepSetSnapMode(m){
-    mepSt.snapMode=m||null;mepSt.snapHov=null;
+    mepSt.snapMode=m||null;mepSt.snapHov=null;mepSt.intPick=null;
+    /* 2026-10-28 (2) : « coter un 1er élément, une droite, puis clic droit, et je choisis la 2nde entité
+       (point, milieu, centre…) » — une droite seule pré-sélectionnée reste la 1ʳᵉ entité
+       (mepSt.dimLine) : la cote ira du point imposé à cette droite, perpendiculairement. */
+    const sel=mepSt.entSel||[],D0=mepSt.dim;
+    if(m&&D0&&D0.kind==='len'&&sel.length===1&&sel[0].t==='L'){
+      const sh=mepSheet(),r=sh&&mepEntRef(sh,sel[0]);
+      if(r&&r.e.t==='L'){mepSt.dimLine={vid:r.v.id,i:r.i,e:mepSnapEntOf(r.e)};mepSt.dim=null;mepSt.hovEnt=null;}
+    }
+    if(!m&&mepSt.dimLine){mepSt.dimLine=null;mepDimRefreshDraft();} // retour à la longueur de la droite
     // une entité pré-sélectionnée (longueur, Ø…) laisse la place au point imposé
-    if(m&&mepSt.dim&&!(mepSt.dim.kind==='dist'&&!mepSt.dim.b)){mepSt.dim=null;mepSt.entSel=[];mepSt.hovEnt=null;}
-    const D=mepSt.dim;
-    mepStatus(m?('Accrochage '+mepSnapModeLabel(m).toLowerCase()+' : cliquez le '+(D?'2ᵉ':'1ᵉʳ')+' point (clic droit pour changer).')
+    if(m&&mepSt.dim&&!(mepSt.dim.kind==='dist'&&!mepSt.dim.b)){mepSt.dim=null;mepSt.entSel=[];mepSt.hovEnt=null;mepSt.dimLine=null;}
+    const D=mepSt.dim,nth=(D||mepSt.dimLine)?'2ᵉ':'1ᵉʳ';
+    mepStatus(m==='int'?('Intersection ('+nth+' point) : cliquez une ligne ou un cercle, puis une 2ᵉ (clic droit pour changer).')
+      :m?('Accrochage '+mepSnapModeLabel(m).toLowerCase()+' : cliquez le '+nth+' point'+(mepSt.dimLine?' (cote perpendiculaire à la droite)':'')+' (clic droit pour changer).')
       :'Accrochage automatique.');
     mepRender();
+  }
+  /* point d'un clic en accrochage imposé (null : rien de pris, le statut le dit) */
+  function mepSnapModeClick(sh,P){
+    if(mepSt.snapMode==='int')return mepIntClick(sh,P);
+    const S=mepSnapModePt(sh,P.x,P.y,mepSt.snapMode);
+    if(!S)mepStatus('Accrochage '+mepSnapModeLabel(mepSt.snapMode).toLowerCase()+' : aucun point sous le curseur.');
+    return S;
+  }
+  /* ── Intersection, sous-fonction en 2 clics (2026-10-28 (2)) ──
+     « clic droit, Intersection : je clique une ligne, puis une autre, leur point d'intersection devient
+     mon point à coter » ; aussi ligne × cercle (et cercle × cercle, arcs). mepSt.intPick garde la 1ʳᵉ
+     entité ; de 2 intersections possibles on garde la plus proche du 2ᵉ clic. Échap n'annule que
+     l'intersection en cours (retour au choix du point). */
+  function mepIntPickHit(sh,P){
+    const hit=mepHitViewEnt(sh,P.x,P.y,{axes:true});
+    return hit&&(hit.e.t==='L'||hit.e.t==='C'||hit.e.t==='A')?hit:null;
+  }
+  // intersection de la 1ʳᵉ entité retenue (f) et de hit, la plus proche de P (mm papier)
+  function mepIntPoint(sh,f,hit,P){
+    if(!f||!hit||hit.vid!==f.vid||hit.i===f.i)return null;
+    const v=mepView(sh,hit.vid);if(!v)return null;
+    const ents=[f.s,mepSnapEntOf(hit.e)];
+    let best=null,bd=Infinity;
+    mepSnapInter(ents[0],ents[1]).forEach(p=>{
+      const x=v.x+p.x*v.scale,y=v.y+p.y*v.scale,d=Math.hypot(x-P.x,y-P.y);
+      if(d<bd){bd=d;best={x,y,vid:v.id,q:{x:p.x,y:p.y,hint:{t:'int',e:ents}},hint:null,ext:ents,mode:'int'};}
+    });
+    return best;
+  }
+  function mepIntClick(sh,P){
+    const hit=mepIntPickHit(sh,P),f=mepSt.intPick;
+    if(!f){
+      if(!hit){mepStatus('Intersection : cliquez une ligne ou un cercle.');return null;}
+      mepSt.intPick={vid:hit.vid,i:hit.i,s:mepSnapEntOf(hit.e)};
+      mepStatus('Intersection : cliquez la 2ᵉ ligne ou le cercle (Échap annule l’intersection).');
+      mepRender();
+      return null;
+    }
+    if(!hit){mepStatus('Intersection : cliquez la 2ᵉ ligne ou le cercle (Échap annule l’intersection).');return null;}
+    if(hit.vid!==f.vid){mepStatus('Intersection : les 2 entités doivent être dans la même vue.');return null;}
+    if(hit.i===f.i){mepStatus('Intersection : cliquez une AUTRE ligne ou un cercle.');return null;}
+    const S=mepIntPoint(sh,f,hit,P);
+    if(!S){mepStatus('Intersection : ces 2 entités ne se coupent pas, même prolongées — cliquez-en une autre.');return null;}
+    mepSt.intPick=null;mepSt.snapHov=null;
+    return S;
+  }
+  function mepIntCancel(){
+    mepSt.intPick=null;mepSt.snapHov=null;
+    mepStatus('Intersection annulée : cliquez une ligne ou un cercle (clic droit pour un autre accrochage).');
+    mepRender();
+  }
+  /* ── cote droite → point imposé : distance perpendiculaire ──
+     droite horizontale → cote verticale (et inversement), pied borné sur l'arête (ligne de rappel
+     depuis le trait) ; droite oblique → cote alignée sur la perpendiculaire (pied sur la droite prolongée). */
+  function mepDimLineFoot(e,q){
+    const dx=e.x2-e.x1,dy=e.y2-e.y1,L=Math.hypot(dx,dy);if(!(L>1e-12))return null;
+    const hv=Math.abs(dy)/L<1e-4?'v':Math.abs(dx)/L<1e-4?'h':null; // horizontale → cote verticale
+    let t=((q.x-e.x1)*dx+(q.y-e.y1)*dy)/(L*L);
+    if(hv)t=t<0?0:(t>1?1:t);
+    return{x:e.x1+dx*t,y:e.y1+dy*t,t,orient:hv||'a'};
+  }
+  function mepDimLineToPt(sh,S,P){
+    const Lr=mepSt.dimLine,v=Lr&&mepView(sh,Lr.vid);
+    if(!v){mepSt.dimLine=null;mepStatus('Cote annulée : vue supprimée.');mepRender();return false;}
+    if(S.vid!==Lr.vid){mepStatus('Distance : la droite et le point doivent être dans la même vue.');return false;}
+    const q=mepSnapModeQ(sh,S),F=mepDimLineFoot(Lr.e,q);
+    if(!F)return false;
+    const dn=F.orient==='v'?Math.abs(q.y-F.y):F.orient==='h'?Math.abs(q.x-F.x):Math.hypot(q.x-F.x,q.y-F.y);
+    if(dn<1e-9){mepStatus('Distance : ce point est sur la droite — choisissez-en un autre.');return false;}
+    const a={x:F.x,y:F.y};
+    if(F.t>=-1e-9&&F.t<=1+1e-9)a.hint={t:'seg',i:Lr.i};
+    mepSt.dim={kind:'dist',vid:v.id,a,b:q,off:8,orient:F.orient,__ghost:true,__orientLock:true,_pp:P};
+    mepSt.dimLine=null;mepSt.entSel=[];mepSt.hovEnt=null;mepSt.snapHov=null;
+    mepDimMoveTo(sh,mepSt.dim,P);
+    mepStatus('Distance droite → point : cliquez pour placer la cote.');
+    mepRender();
+    return true;
   }
   // snapshot d'une entité (repère de la vue) : ce qui suffit à recalculer le point et ses prolongements
   function mepSnapEntOf(e){
@@ -245,6 +332,11 @@
     }
     const H=mepSt.snapHov;
     if(!H)return;
+    const Lr=mepSt.dimLine,vl=Lr&&H.vid===Lr.vid?mepView(sh,Lr.vid):null;
+    if(vl){ // droite → point : trait d'aperçu du pied de la perpendiculaire au point visé
+      const F=mepDimLineFoot(Lr.e,H.q);
+      if(F){const A=mepToSheet(vl,F.x,F.y);mk('line',{x1:A.x,y1:A.y,x2:H.x,y2:H.y,class:'mepDraft'},mepGHlp);}
+    }
     const v=mepView(sh,H.vid);
     if(v&&H.ext)mepSnapExtPrims(v,H.q,H.ext).forEach(p=>mk('line',{x1:p.x1,y1:p.y1,x2:p.x2,y2:p.y2,class:'mepDimL mepDimGhost'},mepGHlp));
     mark(H.x,H.y,H.mode);
