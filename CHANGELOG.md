@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**408 versions**, de `2026-09-28b` à `V0.15.14` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**409 versions**, de `2026-09-28b` à `V0.15.15` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5391,3 +5391,10 @@ Signalé : « des fois, les cotes ne changent pas après avoir modifié le 3D : 
 - **Au passage** : une cote posée par 2 clics de points (coin, centre) garde désormais la référence de son entité au lieu de la jeter (`src/98-mep-85-cote-unique.js`, `src/98-mep-86-accrochages.js`) ; une distance oblique rafraîchit ses points suivis (seule la migration des points sans référence reste réservée aux cotes horizontales/verticales).
 - **Limite** : une cote créée avant cette version mémorise la forme de son entité au premier affichage ; si le 3D a changé entre-temps, « Rejeter » ou la recréer une fois.
 - **Tests** : `test_mep_cotes_suivi` (nouveau, suite rapide : 16 contrôles — largeur 10,14 → 10, longueur, coin → trou, Ø, arêtes renumérotées, cote par points oblique, maillage sans effet). Contrôlé aussi sous Node avec le noyau OCCT réel (boîte 10,14 → 10 : la cote suit).
+
+## V0.15.15 - Suppression de face au worker : plus d'abandon à tort pendant un rejeu
+Constat (vérification de V0.15.9 dans le navigateur sur le plateau STEP de l'utilisateur, `Base Symétrie`) : la « Suppression de 6 faces » finissait en ⚠ 0/6 « calcul arrêté après 20 s », alors qu'elle réussissait en V0.15.7 et que le worker la calcule en 11,4 s (délai porté à 120 s : les 5 suppressions réussissent).
+- **Cause** (`src/21-suppression-face-calcul.js`) : pendant un rejeu synchrone (jusqu'à 16 s sur ce plateau), le fil principal est bloqué ; la « fin » du worker arrive dans la file sans être lue, et le minuteur du délai, échu entre-temps, pouvait passer avant elle — le navigateur ne garantit pas l'ordre entre minuteurs et messages.
+- **Correctif** : `delWkArm` — un minuteur qui se déclenche en retard se replace derrière la file (`setTimeout` 0) avant de décider ; à l'échéance, un sursis de 2 s (`DEL_WK_SURSIS`) précède l'arrêt du worker, le temps qu'une « fin » déjà envoyée soit lue. Une face réellement trop longue est toujours abandonnée (au bout de ~22 s au lieu de 20).
+- **Vérification navigateur (V0.15.9, avant correctif)** : Cavité Usinage — Suppr rend la main en 0,14 s, face pathologique abandonnée proprement, face ordinaire identique au calcul synchrone (112 faces, même volume) ; ouverture du plateau : 71 s de fil principal bloqué (lecture du STEP et rejeu), suppressions terminées au worker vers 2 min.
+- **Test** : `test_suppression_face_worker`, cas 5 — délai 0,3 s, messages du worker retenus 1,5 s pendant un calcul de 0,5 s : plus d'abandon, même solide que le synchrone. Échoue sans le correctif (⚠ « temps raisonnable », 113 faces).  Suite complète 193/193, `npm run ci` 73/73.

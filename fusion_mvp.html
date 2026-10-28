@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.15.14';
+const APP_VER='V0.15.15';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -6295,6 +6295,7 @@ function projRefreshRerun(pass){
      synchrone, comme avant. */
 let DEL_WK_DELAI=20000; // ms ; réglable : localStorage minifusion_delFaceDelai (en secondes)
 try{const s=+localStorage.getItem('minifusion_delFaceDelai');if(s>0)DEL_WK_DELAI=s*1000;}catch(e){}
+const DEL_WK_SURSIS=2000; // ms ; après le délai, avant l'arrêt (voir delWkArm)
 const DEL_WK_MARK='⧗';   // marque, dans ckKey, d'une suppression pas encore calculée
 let delWk=null;          // {w, ready, job, timer, boot} : worker courant
 let delWkOff=null;       // raison de l'abandon (démarrage impossible) → calcul synchrone
@@ -6412,8 +6413,8 @@ function delWkMsg(me,m){
   if(m.t==='pret'){me.ready=true;clearTimeout(me.boot);if(m.mod)delWkMod=m.mod;delWkPump();return;}
   if(m.t==='ko'){delWkCrash(me,m.err);return;}
   if(m.t==='debut'){
-    clearTimeout(me.timer);
-    me.timer=setTimeout(()=>delWkTimeout(me),DEL_WK_DELAI);
+    me.sursis=false;
+    delWkArm(me,()=>delWkTimeout(me),DEL_WK_DELAI);
     return;
   }
   if(m.t==='fin'&&me.job&&me.job.key===m.id){
@@ -6423,10 +6424,25 @@ function delWkMsg(me,m){
     delWkReplay(m.id);
   }
 }
+function delWkArm(me,fn,ms){
+  // V0.15.15 : minuteur du délai. Pendant un rejeu synchrone (16 s sur un gros STEP), le fil
+  // principal est bloqué : la « fin » du worker arrive dans la file mais n'est pas lue, et
+  // le minuteur échu pouvait passer AVANT elle → abandon à tort d'un calcul fini (plateau
+  // de l'utilisateur : 6 faces en 11 s, ⚠ « arrêté après 20 s »). Un minuteur qui se
+  // déclenche en retard se replace donc derrière la file avant de décider.
+  clearTimeout(me.timer);
+  const du=performance.now()+ms;
+  me.timer=setTimeout(()=>{
+    if(performance.now()-du>200)me.timer=setTimeout(fn,0);
+    else fn();
+  },ms);
+}
 function delWkTimeout(me){
   // Délai dépassé : le noyau ne s'interrompt pas, on arrête le worker entier. Le suivant
-  // repart du module wasm déjà compilé (delWkMod).
+  // repart du module wasm déjà compilé (delWkMod). Avant d'arrêter : un sursis de
+  // DEL_WK_SURSIS, le temps qu'une « fin » déjà envoyée soit lue.
   if(me!==delWk||!me.job)return;
+  if(!me.sursis){me.sursis=true;delWkArm(me,()=>delWkTimeout(me),DEL_WK_SURSIS);return;}
   const j=me.job;
   delWkStop(me);
   delWkFin(j.key,{brep:null,kept:0,warnings:[],ms:DEL_WK_DELAI,delai:true,

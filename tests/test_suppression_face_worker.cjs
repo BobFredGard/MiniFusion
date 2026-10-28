@@ -9,6 +9,8 @@
 // 3. Délai : Cavité Usinage.step, 5ᵉ face non plane (cylindre 33×33×23 : ~10 min puis
 //    plantage du noyau en synchrone) → abandon propre au délai (3 s ici), ⚠ « temps
 //    raisonnable », pièce intacte ; le worker suivant repart et supprime une face ordinaire.
+// 5. (V0.15.15) Délai 0,3 s, messages du worker retenus 1,5 s (fil principal bloqué) pendant un calcul de ~0,5 s :
+//    la « fin » est lue avant l'abandon (avant : arrêt à tort, ⚠ sur un calcul fini).
 const fs=require('fs'),vm=require('vm'),path=require('path');
 const {Worker:NodeWorker}=require('worker_threads');
 const ROOT=path.join(__dirname,'..'),OCCT=path.join(ROOT,'occt');
@@ -19,7 +21,10 @@ let ko=0;
 const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m);};
 
 // ── Worker du navigateur, version worker_threads ──
-const stats={created:0,jobs:0,terminated:0};
+// retenir : messages du worker mis en attente (comme derrière un fil principal bloqué, où
+// le navigateur ne garantit pas qu'ils passent avant un minuteur échu) ; relacher() les livre.
+const stats={created:0,jobs:0,terminated:0,debuts:0,retenir:false,tampon:[]};
+stats.relacher=()=>{stats.retenir=false;const t=stats.tampon.splice(0);t.forEach(f=>f());};
 const blobs=new Map();
 class Blob{constructor(parts){this.text=parts.join('');}}
 const URLs={createObjectURL(b){const k='blob:t'+blobs.size;blobs.set(k,b.text);return k;}};
@@ -35,7 +40,8 @@ class Worker{
   constructor(url){
     stats.created++;
     this.nw=new NodeWorker(PRE+blobs.get(url),{eval:true});
-    this.nw.on('message',d=>this.onmessage&&this.onmessage({data:d}));
+    const livrer=d=>{if(d&&d.t==='debut')stats.debuts++;this.onmessage&&this.onmessage({data:d});};
+    this.nw.on('message',d=>{if(stats.retenir)stats.tampon.push(()=>livrer(d));else livrer(d);});
     this.nw.on('error',e=>this.onerror&&this.onerror({message:String((e&&e.message)||e),preventDefault(){}}));
   }
   postMessage(m){if(m&&m.t==='job')stats.jobs++;this.nw.postMessage(m);}
@@ -121,6 +127,22 @@ class Worker{
       out.t4={ms:s4.ms,calc:!!s4.d._calc};
       out.t4.fini=await attendre(()=>!delWkPending()&&!s4.d._calc,180000);
       out.t4.apres=corps();out.t4.m=s4.d._m;out.t4.created=__stats.created;
+      // ── 5. page bloquée : la « fin » arrive pendant un rejeu et le délai échoit avant
+      //    qu'elle soit lue (V0.15.15) — plus d'abandon d'un calcul pourtant fini ──
+      doc.features=doc.features.filter(x=>x.type==='import');markDirty();rebuild();
+      let k5=-1;for(let i=0;i<imp.n&&k5<0;i++){const fc=occFaceAt(imp.ent.brep,i);if(occSurfKind(fc)==='Cylinder')k5=i;fc.delete();}
+      out.ref5=synchrone(imp,k5);
+      DEL_WK_DELAI=300;
+      const stop0=__stats.terminated;
+      const d0=__stats.debuts;
+      const s5=suppr(imp,k5);
+      out.t5={vu:await attendre(()=>__stats.debuts>d0,60000)}; // « debut » lu : délai armé
+      // messages du worker retenus 1,5 s (calcul ~0,5 s) : le délai de 0,3 s échoit pendant ce
+      // temps, la « fin » attend derrière — puis tout est livré d'un coup
+      __stats.retenir=true;await sleep(1500);__stats.relacher();
+      out.t5.fini=await attendre(()=>!delWkPending()&&!s5.d._calc,60000);
+      out.t5.m=s5.d._m;out.t5.apres=corps();out.t5.msg=String(faceEl.textContent||'');out.t5.stop=__stats.terminated-stop0;
+      DEL_WK_DELAI=60000;
     }
     try{if(delWk)delWkStop(delWk);}catch(e){}
     return out;
@@ -149,6 +171,10 @@ class Worker{
   console.log('--- 4. worker relancé, face ordinaire ---');
   A(o.t4.calc&&o.t4.fini,'calcul relancé et terminé ('+o.t4.created+' workers créés)');
   A(o.ref4&&!o.ref4.err?same(o.t4.apres,o.ref4)&&o.t4.m&&o.t4.m.m===1:(o.t4.m&&o.t4.m.m===0),'même résultat que le synchrone : '+r1(o.t4.apres)+' / '+r1(o.ref4));
+  console.log('--- 5. fil principal bloqué quand le délai échoit ---');
+  A(o.t5.vu&&o.t5.fini,'calcul lancé, délai armé (0,3 s), messages du worker retenus 1,5 s');
+  A(o.t5.stop===0&&o.t5.m&&o.t5.m.m===1,'pas d\'abandon : la « fin » déjà arrivée est lue avant le délai '+JSON.stringify(o.t5.m)+' — « '+o.t5.msg.slice(0,90)+' »');
+  A(same(o.t5.apres,o.ref5),'même solide que le synchrone : '+r1(o.t5.apres)+' = '+r1(o.ref5));
   console.log(ko?'\n*** '+ko+' PROBLEME(S) ***':'\n*** TOUT PASSE ***');
   process.exit(ko?1:0);
 })().catch(e=>{console.log('FATAL',String((e&&e.stack)||e).slice(0,1500));process.exit(1);});
