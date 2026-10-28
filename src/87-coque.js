@@ -197,8 +197,7 @@ function enterCoqueMode(editF){
   if(!occLive||!occLive.shape){
     if(!occHas()){faceEl.textContent='Coque : solide exact indisponible (OCCT non chargé ou aucun volume).';return;}
     faceEl.textContent='Coque : recalcul du solide…';
-    try{rebuild();}catch(e){}
-    if(!occLive||!occLive.shape){faceEl.textContent='Coque : recalcul impossible.';return;}
+    if(!occExactForTool()){faceEl.textContent='Coque : recalcul impossible.';return;} // STEP seul compris
   }
   if(filMode)exitFilletMode(true);
   if(filModeX)exitExactFilletMode(true);
@@ -233,6 +232,7 @@ function exitCoqueMode(silent){
   const wasEditing=!!coqueMode.editing;
   coqueMode=null;coqueClearHl();coquePreviewRemove();
   if(wasEditing){occSkipFeat=null;tlEditUnlock();markDirty();try{rebuild();}catch(e){}}
+  occStepForceEnd();
   if(!silent)renderProps();
 }
 function coqueToggle(e){

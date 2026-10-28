@@ -27,7 +27,7 @@ function mvName(f){
   return `Déplacement de face ${d>0?'+':''}${String(d).replace('.',',')} mm`;
 }
 function enterMoveFaceMode(){
-  if(!occHas()||!occLive||!occLive.shape){
+  if(!occHas()||!occExactForTool()){ // STEP seul compris
     faceEl.textContent='Déplacement de face : solide exact indisponible (OCCT non chargé ou aucun volume).';
     return;
   }
@@ -41,6 +41,7 @@ function enterMoveFaceMode(){
 function exitMoveFaceMode(silent){
   if(!mvMode)return;
   mvMode=null;
+  occStepForceEnd();
   try{clearHover();}catch(e){}
   if(!silent)try{faceEl.textContent='Déplacement de face : annulé.';}catch(e){}
 }

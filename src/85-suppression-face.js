@@ -19,7 +19,10 @@ function delFacesWanted(){
   return true;
 }
 function deleteSelectedFaces(){
-  if(!occHas()||!occLive||!occLive.shape){
+  // occLive est vide quand le seul volume est un import STEP (hors chaîne exacte tant qu'il
+  // est seul) : ses faces se résolvent sur son BRep (occFaceOfHit), la fonction l'y fait entrer.
+  const stepSeul=bodies.some(b=>b.kind==='import'&&typeof importGeom!=='undefined'&&(importGeom.get(b.ref||b.id)||{}).brep);
+  if(!occHas()||(!(occLive&&occLive.shape)&&!stepSeul)){
     faceEl.textContent='Suppression de face : solide exact indisponible (OCCT non chargé ou aucun volume).';
     return;
   }

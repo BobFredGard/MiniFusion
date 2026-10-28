@@ -21,7 +21,7 @@
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.15.2';
+const APP_VER='V0.15.3';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -110,7 +110,7 @@ let builtHash=null,builtEngine=null; // empreinte doc + moteur ('exact'|'mesh') 
 // docHash() est mémoïsé par version : une seule sérialisation du document par version au
 // lieu de deux (rebuild + saveViewCache). L'empreinte et le cache d'affichage sont
 // désormais écrits APRÈS le rendu (buildDone) : plus de blocking dans le chemin critique.
-let builtVersion=-1,builtTl=null,builtSkip=null;
+let builtVersion=-1,builtTl=null,builtSkip=null,builtStep=false; // builtStep : occStepForce (STEP seul dans la chaîne exacte)
 let _docVersion=0,_hashMemo=null,_hashVer=-1,_postT=null,_autoT=null;
 function collectView(){
   // Préférences d'affichage (persistées dans le fichier à la sauvegarde).

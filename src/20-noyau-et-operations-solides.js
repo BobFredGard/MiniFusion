@@ -3205,7 +3205,8 @@ function occReplayBody(bid,list){
   // Un import SEUL reste affiché comme avant (son mesh, son nom dans Pièces) ;
   // dès qu'AU MOINS une autre fonction coexiste dans le corps, il entre dans la
   // chaîne exacte et devient le volume à unir / soustraire.
-  const importSeul=!list.some(f=>f&&f.type!=='import');
+  // Outil de face ouvert sur un STEP seul (occStepForce) : il entre aussi dans la chaîne.
+  const importSeul=!occStepForce&&!list.some(f=>f&&f.type!=='import');
   list.forEach(f=>{
     ckKey+=featSig(f)+';';
     if(f.type==='xfillet'){
@@ -3526,16 +3527,61 @@ function occBodyOfMesh(mesh){
 function occFaceOfHit(mesh,fi){
   // Face BRep d'un triangle cliqué : {face, ord, bd}. La face retournée est un
   // handle neuf — à l'appelant de la supprimer après occFaceRef (comme occFaceAt).
-  const bd=occBodyOfMesh(mesh);
+  // Un import STEP SEUL n'entre pas dans la chaîne exacte (occReplayBody : importSeul)
+  // mais son BRep (importGeom.brep) est celui que la chaîne copiera dès qu'une fonction
+  // le rejoint dans son corps, et son maillage porte occGroups : on résout la face dessus
+  // (même repère : le mesh d'un import n'est jamais transformé).
+  let bd=occBodyOfMesh(mesh),shape=bd&&bd.shape;
+  if(!bd&&mesh){
+    const bi=bodies.find(b=>b.mesh===mesh&&b.kind==='import');
+    const e=bi&&typeof importGeom!=='undefined'?importGeom.get(bi.ref||bi.id):null;
+    if(e&&e.brep){bd=bi;shape=e.brep;}
+  }
   if(!bd||fi===undefined||fi===null)return null;
   try{
     const groups=mesh.geometry.userData.occGroups||[];
     const g=groups.find(g=>fi>=g.start&&fi<g.start+g.count);
     if(!g)return null;
-    const face=occFaceAt(bd.shape,g.f);
+    const face=occFaceAt(shape,g.f);
     if(!face)return null;
     return {face:face,ord:g.f,bd:bd};
   }catch(e){return null;}
+}
+// Outils de face (congé/chanfrein, déplacement, dépouille, coque) sur un STEP SEUL : hors
+// chaîne exacte (importSeul), occLive restait null et chaque outil refusait d'entrer
+// (« solide exact indisponible »). Le temps du mode, l'import entre dans la chaîne
+// (occStepForce) : arêtes, faces et aperçus voient son BRep comme une pièce native. À la
+// sortie, s'il est resté seul (annulation), il retrouve son affichage d'origine — la FAO
+// d'un STEP seul (faoGeo) n'est donc pas touchée ; la fonction créée, elle, l'y garde.
+let occStepForce=false;
+function occLoneStep(){
+  // Un corps dont toutes les fonctions visibles sont des imports, dont un avec son BRep.
+  const by={},b0=(doc.bodies&&doc.bodies[0]&&doc.bodies[0].id)||'';
+  (doc.features||[]).forEach(f=>{if(!f||f.visible===false)return;const b=f.body||b0;(by[b]=by[b]||[]).push(f);});
+  return Object.keys(by).some(b=>by[b].every(f=>f.type==='import')&&by[b].some(f=>{
+    const e=(typeof importGeom!=='undefined')?importGeom.get(f.id):null;return !!(e&&e.brep);}));
+}
+function occExactForTool(){
+  // Solide exact prêt pour un outil de face : recalcul paresseux, STEP seul compris.
+  if(occLive&&occLive.shape)return true;
+  if(!occHas())return false;
+  if(occLoneStep())occStepForce=true;
+  try{rebuild();}catch(e){}
+  if(occLive&&occLive.shape)return true;
+  if(occStepForce){occStepForce=false;try{rebuild();}catch(e){}}
+  return false;
+}
+function occStepForceEnd(){
+  // Appelé à la sortie de chaque mode. Différé : un mode qui en remplace un autre (ou la
+  // validation qui rejoue juste après) garde le STEP dans la chaîne sans rejeu inutile.
+  if(!occStepForce)return;
+  setTimeout(()=>{
+    if(!occStepForce)return;
+    try{if((typeof filModeX!=='undefined'&&filModeX)||(typeof mvMode!=='undefined'&&mvMode)||
+      (typeof draftMode!=='undefined'&&draftMode)||(typeof coqueMode!=='undefined'&&coqueMode))return;}catch(e){}
+    occStepForce=false;
+    if(occLoneStep()){try{rebuild();renderTree();}catch(e){}}
+  },0);
 }
 function bodyEntry(id){
   // Fiche persistée d'un corps (nom/couleur/centroïde) : la créer si besoin.

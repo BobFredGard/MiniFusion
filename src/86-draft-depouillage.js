@@ -300,8 +300,7 @@ function enterDraftMode(editF){
   if(!occLive||!occLive.shape){
     if(!occHas()){faceEl.textContent='Dépouillage : solide exact indisponible (OCCT non chargé ou aucun volume).';return;}
     faceEl.textContent='Dépouillage : recalcul du solide…';
-    try{rebuild();}catch(e){}
-    if(!occLive||!occLive.shape){faceEl.textContent='Dépouillage : recalcul impossible.';return;}
+    if(!occExactForTool()){faceEl.textContent='Dépouillage : recalcul impossible.';return;} // STEP seul compris
   }
   if(filMode)exitFilletMode(true);
   if(filModeX)exitExactFilletMode(true);
@@ -339,6 +338,7 @@ function exitDraftMode(silent){
   const wasEditing=!!draftMode.editing;
   draftMode=null;draftClearHl();draftPreviewRemove();
   if(wasEditing){occSkipFeat=null;tlEditUnlock();markDirty();try{rebuild();}catch(e){}}
+  occStepForceEnd();
   if(!silent)renderProps();
 }
 function draftToggle(e){

@@ -18,7 +18,7 @@ function filletTarget(){
 }
 function enterFilletMode(){
   if(skEdit)return;
-  if(occHas()&&occLive&&occLive.shape){enterExactFilletMode();return;}
+  if(occHas()&&occExactForTool()){enterExactFilletMode();return;} // STEP seul compris
   const tid=filletTarget();
   if(!tid){faceEl.textContent='Congé : sélectionnez d\u2019abord un corps extrudé (ou son extrusion dans l\u2019arbre).';return;}
   const F=doc.features.find(x=>x.id===tid);if(!F||F.type!=='extrude'){faceEl.textContent='Congé : extrusion introuvable.';return;}
@@ -46,8 +46,7 @@ function enterExactFilletMode(editF,kind){
   if(!occLive||!occLive.shape){ // recalcul paresseux : le BRep n'existe que si besoin
     if(!occHas()){faceEl.textContent=label+' : solide exact indisponible (OCCT non chargé ou aucun volume).';return;}
     faceEl.textContent=label+' : recalcul du solide…';
-    try{rebuild();}catch(e){}
-    if(!occLive||!occLive.shape){faceEl.textContent=label+' : recalcul impossible.';return;}
+    if(!occExactForTool()){faceEl.textContent=label+' : recalcul impossible.';return;} // STEP seul compris
   }
   if(filMode)exitFilletMode(true);
   // tangent : les arêtes tangentes à celle cliquée sont ajoutées automatiquement (coché par
@@ -116,6 +115,7 @@ function exitExactFilletMode(silent){
   try{xPrevRemove();}catch(e){}
   const o=scene.getObjectByName('filEdges');if(o)scene.remove(o);{const orb=scene.getObjectByName('filRibbons');if(orb)scene.remove(orb);}
   if(wasEditing){tlEditUnlock();markDirty();try{rebuild();}catch(e){}} // lève le verrou : la fonction modifiée ET celles qui suivent sont régénérées
+  occStepForceEnd();
   if(!silent)renderProps();
 }
 /* 2026-10-18 V0.2.4 : listage complet — `edges` = vives (cliquables, noir) et `tang` =

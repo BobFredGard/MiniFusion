@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**396 versions**, de `2026-09-28b` à `V0.15.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**397 versions**, de `2026-09-28b` à `V0.15.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5294,3 +5294,10 @@ Constat : « le Débruitage et le Halo n'agissent pas » — alu anodisé bleu s
 - **Correctif** : halo à la façon d'un filtre de diffusion — l'image exposée (alpha compris, prémultipliée) est réduite et floutée sur 6 niveaux (`RP_NIV`, ½ à 1/64 de la taille), les niveaux ¼, 1/16 et 1/64 sont mêlés à l'image nette (au plus 40 %) : chaque zone claire déborde sur ses voisines plus sombres, fond compris, sans ajouter de lumière, quelle que soit la luminosité de la scène. Débruitage : écart spatial 0,8 → 5 px (était 0,6 → 4), tolérance de couleur 0,04 → 0,26 (était 0,03 → 0,15).
 - **Mesures** (pièce d'essai, 512 échantillons) : halo 100 % → écart moyen 5,3 niveaux sur alu bleu / fond noir (avant : ~0 à 30 %), 2,1 sur la scène claire, sans voile ; débruitage à 32 échantillons : grain du sol effacé.
 - **Tests** : `gpu.spec` étendu (halo à 100 % : écart moyen > 1 niveau, relevé 9,2) ; `rendu.spec` vert ; `npm run ci`.
+
+## V0.15.3 - Outils de face sur un STEP importé seul (Suppr, congé, chanfrein, déplacement, dépouille, coque)
+Constat : Suppr sur une face du plateau STEP → « Suppression de face : solide exact indisponible (OCCT non chargé ou aucun volume) » alors que le noyau est prêt ; même refus pour congé, chanfrein, déplacement de face, dépouille et coque.
+- **Cause** (`src/20-noyau-et-operations-solides.js`) : un import SEUL dans son corps reste affiché tel qu'importé, hors chaîne exacte (`occReplayBody`, `importSeul`) : `occLive` restait vide et `occFaceOfHit` ne connaissait que les corps exacts. Chaque outil refusait donc d'entrer.
+- **Suppr** : la face cliquée se résout sur le BRep de l'import (`importGeom.brep`, même repère que son maillage) ; la fonction « Suppression de face » créée dans le corps y fait entrer le STEP (`src/85-suppression-face.js`).
+- **Autres outils** : `occExactForTool()` remplace le recalcul paresseux à l'entrée de chaque mode — pour un STEP seul, il l'admet dans la chaîne le temps du mode (`occStepForce`). `occStepForceEnd()` à la sortie (différé) : annulé, le STEP redevient un import affiché tel quel (FAO d'un STEP seul inchangée) ; validé, la fonction l'y garde ; un outil qui en remplace un autre le garde sans rejeu. `occStepForce` entre dans la clé d'affichage (`builtStep`) : sinon le rejeu était sauté, le document n'ayant pas changé.
+- **Test** : `test_suppression_face_step` (noyau réel, 19 vérifications) — boîte STEP percée Ø10 : Suppr sur le trou → 6 faces, volume plein ; congé, chanfrein, déplacement, dépouille, coque : le mode s'ouvre sur le solide exact, l'annulation rend l'import ; relais d'un outil à l'autre ; coque et congé validés (un seul corps, plus de maillage en double). Échoue sans le correctif. `npm run ci` (67/67).

@@ -76,12 +76,12 @@ let rebuildDepth=0;
 const REGEN_MAX_PASS=4;
 function buildKeyUpToDate(){
   // Un affichage valide existe-t-il encore pour l'état courant du document ?
-  return bodies.length>0&&builtVersion===_docVersion&&builtTl===tlMark&&builtSkip===occSkipFeat;
+  return bodies.length>0&&builtVersion===_docVersion&&builtTl===tlMark&&builtSkip===occSkipFeat&&builtStep===occStepForce;
 }
 function buildDone(){
   // Fin de reconstruction : rejeu terminé. L'empreinte du document et le cache
   // d'affichage (copie de tous les sommets + IndexedDB) sont REPUSSES apres le rendu.
-  builtVersion=_docVersion;builtTl=tlMark;builtSkip=occSkipFeat;
+  builtVersion=_docVersion;builtTl=tlMark;builtSkip=occSkipFeat;builtStep=occStepForce;
   // FAO : les limites « esquisse » sont re-extraites du document et les
   // limites « chaîne » re-suivies sur les arêtes du nouveau solide (état
   // dérivé : pas d'entrée d'annulation) ; sinon marquées obsolètes (stale).
