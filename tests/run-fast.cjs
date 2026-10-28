@@ -43,6 +43,7 @@ const SUITES = [
   'test_repeat_circ_tour',
   'test_repeat_corps',
   'test_filet_visibilite',
+  'test_corps_temps',
   'test_esquisse_angle',
   'test_esquisse_transparence',
   'test_esquisse_face_conges',

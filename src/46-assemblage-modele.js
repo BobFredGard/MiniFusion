@@ -381,6 +381,7 @@ function asmActivate(cid,path){
   const rt=c._rt||{};
   docUndoStack=rt.undo||[];docRedoStack=rt.redo||[];
   tlMark=rt.tl||null;
+  try{tlActiveWanted=null;}catch(e){}
   sel=rt.sel&&rt.sel.kind?rt.sel:{kind:null,id:null};
   if(typeof treeSel!=='undefined')treeSel=[];
   occSkipFeat=null;

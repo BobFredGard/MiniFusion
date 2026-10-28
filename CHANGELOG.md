@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**405 versions**, de `2026-09-28b` à `V0.15.11` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**406 versions**, de `2026-09-28b` à `V0.15.12` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5365,3 +5365,12 @@ Demande : « quand je cache un corps avec des trous taraudés, je veux bien cach
 - **Mise en plan** (`src/98-mep-10-projection-hlr.js`) : filets en ombrage, filets du rendu 3D et symboles de taraudage ignorent un corps caché et respectent le filtre de corps de la vue.
 - **Repli maillage** : sans noyau exact, tous les corps sont fondus en un seul maillage ; seul l'œil du corps cache alors ses filets.
 - **Tests** : `test_filet_visibilite` (nouveau, suite rapide : 10 contrôles sur le noyau réel — corps de chaque filet, œil éteint et rallumé, maillage caché hors de l'œil, rejeu avec un corps caché). Contrôlé aussi dans le navigateur sur la scène réelle.
+
+## V0.15.12 - Corps et temps : antériorité du corps actif, découpe sur plusieurs corps
+Demande : « travailler dans un corps puis un autre ; prendre en compte l'antériorité de création d'un corps quand la timeline revient en arrière (avant une répétition « Nouveau corps »), sinon je ne modifie que le dernier corps » puis « proposer, si plusieurs corps ne sont pas cachés, de supprimer sur tous ou d'en choisir un en particulier ».
+- **Cause** : le corps ACTIF (●, destination des nouvelles fonctions) ignorait le marqueur temps. Après une répétition « Nouveau corps », le dernier corps créé restait actif ; marqueur reculé avant la répétition, la fonction ajoutée naissait dans ce corps qui n'existait pas encore — et ne touchait que lui.
+- **Naissance d'un corps** (`src/20-noyau-et-operations-solides.js`) : `bodyBornAt(id, index)` — un corps naît avec sa première fonction dans la timeline (un corps vide existe toujours). `bodyBirthFallback` donne le corps où travailler à la place : le corps source d'une répétition (chaîne remontée), sinon celui de la dernière fonction rejouée.
+- **Corps actif qui suit le temps** (`src/30-marqueur-temps.js`) : `tlSyncActiveBody` à chaque déplacement du marqueur et à chaque création (`ensureActiveBody`). Le choix de l'utilisateur est mémorisé et rendu dès que le corps existe de nouveau (marqueur levé). `tlActivateBody` refuse, avec une explication, d'activer un corps pas encore né (arbre, panneau du corps).
+- **Arbre** (`src/42-arbre-modele.js`) : un corps pas encore né au marqueur est grisé, « ⏳ pas encore créé ».
+- **Découpe sur plusieurs corps** : une poche, un perçage ou une révolution en retrait propose, dès que plusieurs corps sont visibles (non masqués, rejeu allumé, déjà nés, non consommés par une combinaison), la ligne « Corps visés » : son corps seul, tous les corps visibles, ou un corps en particulier (la fonction change de corps). `f.cutBodies` : la découpe est rejouée dans chaque corps visé, à sa place dans la timeline, avec un seul fantôme (`occCutExtraBodies`). Une copie « Nouveau corps » ne vise que son propre corps.
+- **Tests** : `test_corps_temps` (nouveau, suite rapide : 16 contrôles sur le noyau réel — corps actif au marqueur, refus, retour du choix, volumes par corps pour les trois choix, corps masqué exclu, relecture JSON, copie de répétition). `tests/fixtures/arbre_reference.json` régénérée (`test_arbre_v2 --ecrire`) : seule change la ligne du corps né après le marqueur, désormais « ⏳ pas encore créé ».

@@ -714,6 +714,7 @@ function repGenChildren(rp){
   const usedBodies=new Set();
   const setBody=(nf,src,idx)=>{
     if(!repIsNewBody(rp)){delete nf.repBodyKey;return;}
+    delete nf.cutBodies; // chaque exemplaire est un corps à part : sa découpe ne vise que lui
     const sb=occBodyOfFeat(src);
     const key=(src.repeatId===rp.id&&src.repBodyKey?src.repBodyKey:sb)+'@'+idx;
     nf.repBodyKey=key;nf.body=repBodyFor(rp,key,(src.repeatId===rp.id&&src.repBodyKey)?src.repBodyKey.split('@')[0]:sb);
@@ -896,6 +897,62 @@ function delFeature(f){
   b.onclick=()=>newBody();
   after.parentNode.insertBefore(b,after.nextSibling);
 })();
+// V0.15.12 : CORPS VISÉS par une découpe (poche, perçage, révolution en retrait). Dès que
+// plusieurs corps sont visibles à cet instant de la timeline, on propose : son corps seul,
+// TOUS les corps visibles (f.cutBodies, rejouée dans chacun — cf. occCutExtraBodies) ou UN
+// corps en particulier (la fonction change de corps, comme un glisser-déposer dans l'arbre).
+function cutBodyCandidates(f){
+  const i=doc.features.indexOf(f);
+  const consumed=new Set();
+  doc.features.slice(0,i<0?undefined:i).forEach(x=>{if(x&&x.type==='combine'&&!x.keep&&x.visible!==false)(x.tools||[]).forEach(t=>consumed.add(t));});
+  return (doc.bodies||[]).filter(e=>{
+    if(!e||consumed.has(e.id))return false;
+    if(doc.bodyVis&&doc.bodyVis[e.id]===false)return false;
+    try{if(!bodyEnabledOf(e.id))return false;}catch(err){}
+    try{return bodyBornAt(e.id,i);}catch(err){return true;}
+  });
+}
+function cutBodiesField(f){
+  // Rend la ligne « Corps visés », ou null s'il n'y a qu'un corps visible
+  if(!occIsCutFeat(f)||f.repeatId)return null;
+  const own=occBodyOfFeat(f);
+  const cand=cutBodyCandidates(f).filter(e=>e.id!==own);
+  const extra=occCutExtraBodies(f);
+  if(!cand.length&&!extra.length)return null;
+  const nm=id=>{const e=(doc.bodies||[]).find(x=>x.id===id);return e?e.name:id;};
+  const all=cand.length>0&&cand.every(e=>extra.indexOf(e.id)>=0);
+  const cur=!extra.length?'own':(all?'all':'custom');
+  const r=document.createElement('div');r.className='pnl-row';
+  const L=document.createElement('label');L.textContent='Corps visés';r.appendChild(L);
+  const s=document.createElement('select');s.className='cutBodiesSel';
+  const opt=(v,t,tip)=>{const o=document.createElement('option');o.value=v;o.textContent=t;if(tip)o.title=tip;s.appendChild(o);};
+  opt('own','Son corps seul — « '+nm(own)+' »','La découpe ne retire de la matière qu’à son corps');
+  opt('all','Tous les corps visibles ('+(cand.length+1)+')','La découpe traverse chaque corps visible à cet instant de la timeline');
+  if(cur==='custom')opt('custom','Sélection : '+[own].concat(extra).map(nm).join(', '));
+  cand.forEach(e=>opt('b:'+e.id,'Seulement « '+e.name+' »','La fonction passe dans « '+e.name+' » (et ne touche plus « '+nm(own)+' »)'));
+  s.value=cur;
+  s.title='Plusieurs corps sont visibles : choisir sur lesquels la découpe s’applique';
+  s.onchange=()=>{
+    const v=s.value;
+    if(v==='custom')return;
+    if(v.startsWith('b:')){
+      const bid=v.slice(2);
+      docPushUndo('corps visés par « '+f.name+' »');
+      delete f.cutBodies;f.body=bid;
+      try{repSyncForFeature(f);}catch(e){}
+      markDirty();rebuild();renderTree();renderProps();refreshParts();
+      try{faceEl.textContent='« '+f.name+' » découpe maintenant « '+nm(bid)+' » seulement.';}catch(e){}
+      return;
+    }
+    docPushUndo('corps visés par « '+f.name+' »');
+    if(v==='all')f.cutBodies=cand.map(e=>e.id);else delete f.cutBodies;
+    try{repSyncForFeature(f);}catch(e){}
+    markDirty();rebuild();renderTree();renderProps();refreshParts();
+    try{faceEl.textContent=v==='all'?'« '+f.name+' » découpe les '+(cand.length+1)+' corps visibles.':'« '+f.name+' » ne découpe plus que « '+nm(own)+' ».';}catch(e){}
+  };
+  r.appendChild(s);
+  return r;
+}
 function newBody(){
   // Crée un corps VIDE et l'ACTIVE : esquissez puis extrudez, la fonction naîtra
   // dedans (addFeature taggue au corps actif). Annulable comme toute modification.
@@ -1633,6 +1690,7 @@ function renderProps(){
       }
       fdynFoot(p,f);
     }
+    {const cb=cutBodiesField(f);if(cb)p.appendChild(cb);} // V0.15.12 : plusieurs corps visibles → tous ou un seul
     if(f.type==='hole'){fdynEnsure(f);renderHoleProps(p,f);fdynFoot(p,f);} // V0.8.0 : OK / Annuler, flèche de profondeur
     /* — révolution — V0.8.0 : fenêtre dynamique (71-fenetre-dynamique) */
     if(f.type==='revolve'){ fdynRevolvePanel(p,f); }
@@ -1653,7 +1711,7 @@ function renderProps(){
     pH('Corps');
     pInfo(b?`<b>${e?e.name:sel.id}</b> · ${kids.length} fonction(s)`:(e?`<b>${e.name}</b> · corps vide — esquissez puis extrudez.`:'Corps non reconstruit.'));
     if(doc.activeBody!==sel.id)pBtns([['● Activer ce corps',()=>{
-      doc.activeBody=sel.id;try{dirty=true;}catch(err){}
+      if(!tlActivateBody(sel.id)){renderTree();return;}
       renderTree();renderProps();refreshParts();
       try{faceEl.textContent='« '+((e&&e.name)||sel.id)+' » ACTIF : les nouvelles fonctions naîtront dedans.';}catch(err){}
     }]]);

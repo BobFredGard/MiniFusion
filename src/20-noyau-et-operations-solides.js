@@ -316,6 +316,44 @@ function occCommon(a,b){
 }
 // 2026-10-16-009 : COMBINER des corps (union / soustraction / intersection), comme Fusion.
 function occBodyOfFeat(f){return (f&&f.body&&doc.bodies.some(e=>e.id===f.body))?f.body:(doc.bodies[0]&&doc.bodies[0].id);}
+// V0.15.12 : DÉCOUPE MULTI-CORPS. Une découpe (poche, perçage, révolution en retrait) peut viser,
+// en plus de son corps, d'autres corps (f.cutBodies) : elle est alors rejouée dans chacun, à sa
+// place dans la timeline — comme « Objets à découper » de Fusion.
+function occIsCutFeat(f){return !!f&&(f.type==='hole'||((f.type==='extrude'||f.type==='revolve')&&(f.op||'add')==='cut'));}
+function occCutExtraBodies(f){
+  if(!occIsCutFeat(f)||!Array.isArray(f.cutBodies))return [];
+  const own=occBodyOfFeat(f);
+  return f.cutBodies.filter((b,i,a)=>b!==own&&a.indexOf(b)===i&&doc.bodies.some(e=>e.id===b));
+}
+// V0.15.12 : ANTÉRIORITÉ DES CORPS. Un corps « naît » avec sa première fonction dans la
+// timeline (corps d'une répétition « Nouveau corps », d'une extrusion « Nouveau corps », d'une
+// scission…). Marqueur reculé avant cette naissance : le corps n'existe pas encore, on ne
+// peut donc pas y créer de fonction. Un corps sans aucune fonction (créé vide) existe toujours.
+function bodyBornAt(bid,idx){
+  const L=doc.features||[];
+  const owns=f=>f&&(f.body===bid||occSplitNewBody(f)===bid||occCutExtraBodies(f).indexOf(bid)>=0);
+  const first=L.findIndex(owns);
+  if(first<0)return true;
+  return idx==null||idx<0||first<idx;
+}
+function bodyBirthFallback(bid,idx){
+  // Corps où travailler quand `bid` n'est pas encore né à l'index `idx` : le corps SOURCE
+  // d'une répétition « Nouveau corps » (en remontant la chaîne), sinon le corps de la
+  // dernière fonction rejouée, sinon le premier corps né.
+  const born=b=>!!b&&doc.bodies.some(e=>e.id===b)&&bodyBornAt(b,idx);
+  let cur=bid;
+  for(let k=0;k<8&&cur&&!born(cur);k++){
+    const rp=(doc.features||[]).find(r=>r&&r.type==='repeat'&&r.bodyMap&&Object.keys(r.bodyMap).some(q=>r.bodyMap[q]===cur));
+    if(!rp)break;
+    const key=Object.keys(rp.bodyMap).find(q=>rp.bodyMap[q]===cur);
+    cur=key?key.split('@')[0]:null;
+  }
+  if(born(cur))return cur;
+  const L=(doc.features||[]).slice(0,idx==null||idx<0?undefined:idx);
+  for(let i=L.length-1;i>=0;i--){const b=occBodyOfFeat(L[i]);if(born(b))return b;}
+  const e=doc.bodies.find(x=>born(x.id));
+  return e?e.id:(doc.bodies[0]&&doc.bodies[0].id);
+}
 function occSplitNewBody(f){
   // Corps NEUF né d'une scission de corps (xsplit mode 'body'), ou null : la fonction est
   // rejouée dans son corps (côté gardé) ET en tête du corps neuf (l'autre côté).
@@ -326,7 +364,7 @@ function occCombinePrefix(f,tb){
   // fonctions du corps outil tb AVANT la combinaison f (timeline visible)
   const vis=doc.features.filter(x=>x.visible!==false&&!(occSkipFeat&&x.id===occSkipFeat));
   const i=vis.indexOf(f);
-  return vis.slice(0,i<0?vis.length:i).filter(x=>x.type!=='repeat'&&(occBodyOfFeat(x)===tb||occSplitNewBody(x)===tb));
+  return vis.slice(0,i<0?vis.length:i).filter(x=>x.type!=='repeat'&&(occBodyOfFeat(x)===tb||occSplitNewBody(x)===tb||occCutExtraBodies(x).indexOf(tb)>=0));
 }
 function occCombineTool(f,tb,bin){
   const list=occCombinePrefix(f,tb);if(!list.length)return null;
@@ -3422,12 +3460,13 @@ function occReplayBody(bid,list){
     // Pour une découpe « à travers tout », l'étendue se mesure sur le solide DÉJÀ reconstruit
     // (tout ce qui précède dans la timeline) — jamais sur l'affichage de l'édition précédente.
     occThroughBase=(((f.type==='extrude'&&f.through)||f.type==='hole')&&result)?result:null; // perçage : débouchant / prochaine face
+    const xtra=occBodyOfFeat(f)!==bid; // découpe rejouée dans un corps visé en plus : un seul fantôme (celui de son corps)
     try{
       let r=occToolCkGet(ckKey);
       if(!r){r=(f.type==='revolve')?occShapeOfRevolve(f):(f.type==='hole'?occShapeOfHole(f):occShapeOfExtrude(f));occToolCkPut(ckKey,r);}
       bin.push(...r.bins);itemShapes.push(r.shape);
       if(r.warnings.length)msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
-      shape=r.shape;items.push({f,shape});
+      shape=r.shape;if(!xtra)items.push({f,shape});
     }catch(err){
       // Isolation : UNE esquisse fautive ne fait plus basculer tout le solide en maillage.
       msgs.push(`${f.name} : exclu de l'exact (${err.message})`);
@@ -3442,9 +3481,9 @@ function occReplayBody(bid,list){
       // Fantôme tessellé AVANT delete (use-after-delete = crash + repli fantôme).
       // Filet hélicoïdal : le fantôme est un simple aperçu → maillage plus grossier
       // (2× plus rapide), la géométrie exacte et le solide final ne changent pas.
-      const ghostGeo=(()=>{try{return f.type==='hole'?occTessellate(shape,1,0.8):occTessellate(shape,0.5);}catch(e){msgs.push(`${f.name} : outil illisible`);return null;}})();
-      if(!result){msgs.push(`${f.name} : découpe dans le vide — ignorée`);if(ghostGeo)ghostShapes.push({geo:ghostGeo,orphan:true,fid:f.id});return;}
-      if(ghostGeo)ghostShapes.push({geo:ghostGeo,orphan:false,fid:f.id});
+      const ghostGeo=xtra?null:(()=>{try{return f.type==='hole'?occTessellate(shape,1,0.8):occTessellate(shape,0.5);}catch(e){msgs.push(`${f.name} : outil illisible`);return null;}})();
+      if(!result){if(!xtra){msgs.push(`${f.name} : découpe dans le vide — ignorée`);if(ghostGeo)ghostShapes.push({geo:ghostGeo,orphan:true,fid:f.id});}return;}
+      if(ghostGeo&&!xtra)ghostShapes.push({geo:ghostGeo,orphan:false,fid:f.id});
       // Préfixe inchangé : le solide accumulé contient DÉJÀ cette découpe → on saute le
       // booléen (le plus coûteux) et on adopte la copie mémorisée.
       const ckC=occCkGet(ckKey);
@@ -3485,6 +3524,7 @@ function occFinalShape(upto){
     byBody[b].push(f);
     const nb=occSplitNewBody(f); // scission de corps : l'autre côté naît dans le corps neuf
     if(nb){if(!byBody[nb]){byBody[nb]=[];order.push(nb);}byBody[nb].push(f);}
+    occCutExtraBodies(f).forEach(xb=>{if(!byBody[xb]){byBody[xb]=[];order.push(xb);}byBody[xb].push(f);}); // découpe multi-corps
   });
   const perBody=[],bin=[],itemShapes=[],ghostShapes=[],msgs=[],items=[],imports=[];
   // corps OUTILS consommés par une combinaison (sans « garder ») : plus affichés
@@ -3706,8 +3746,9 @@ function ensureActiveBody(){
   // premier (jamais de fonction orpheline, même après un undo exotique).
   try{
     ensureBodies();
-    if(doc.bodies.some(e=>e.id===doc.activeBody))return doc.activeBody;
-    doc.activeBody=doc.bodies[0].id;
+    if(!doc.bodies.some(e=>e.id===doc.activeBody))doc.activeBody=doc.bodies[0].id;
+    // V0.15.12 : marqueur reculé avant la naissance du corps actif → son corps d'origine
+    try{tlSyncActiveBody();}catch(e){}
     return doc.activeBody;
   }catch(e){return 'b1';}
 }

@@ -212,6 +212,7 @@ const SUITES = [
   "test_repeat_imbrique",
   "test_repeat_corps",
   "test_filet_visibilite",
+  "test_corps_temps",
   "test_fao_percage_tranche",
   "test_fao_32_fiches",
   "test_simulation_rendu",

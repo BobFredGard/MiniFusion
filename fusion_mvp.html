@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.15.11';
+const APP_VER='V0.15.12';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -2716,6 +2716,44 @@ function occCommon(a,b){
 }
 // 2026-10-16-009 : COMBINER des corps (union / soustraction / intersection), comme Fusion.
 function occBodyOfFeat(f){return (f&&f.body&&doc.bodies.some(e=>e.id===f.body))?f.body:(doc.bodies[0]&&doc.bodies[0].id);}
+// V0.15.12 : DÉCOUPE MULTI-CORPS. Une découpe (poche, perçage, révolution en retrait) peut viser,
+// en plus de son corps, d'autres corps (f.cutBodies) : elle est alors rejouée dans chacun, à sa
+// place dans la timeline — comme « Objets à découper » de Fusion.
+function occIsCutFeat(f){return !!f&&(f.type==='hole'||((f.type==='extrude'||f.type==='revolve')&&(f.op||'add')==='cut'));}
+function occCutExtraBodies(f){
+  if(!occIsCutFeat(f)||!Array.isArray(f.cutBodies))return [];
+  const own=occBodyOfFeat(f);
+  return f.cutBodies.filter((b,i,a)=>b!==own&&a.indexOf(b)===i&&doc.bodies.some(e=>e.id===b));
+}
+// V0.15.12 : ANTÉRIORITÉ DES CORPS. Un corps « naît » avec sa première fonction dans la
+// timeline (corps d'une répétition « Nouveau corps », d'une extrusion « Nouveau corps », d'une
+// scission…). Marqueur reculé avant cette naissance : le corps n'existe pas encore, on ne
+// peut donc pas y créer de fonction. Un corps sans aucune fonction (créé vide) existe toujours.
+function bodyBornAt(bid,idx){
+  const L=doc.features||[];
+  const owns=f=>f&&(f.body===bid||occSplitNewBody(f)===bid||occCutExtraBodies(f).indexOf(bid)>=0);
+  const first=L.findIndex(owns);
+  if(first<0)return true;
+  return idx==null||idx<0||first<idx;
+}
+function bodyBirthFallback(bid,idx){
+  // Corps où travailler quand `bid` n'est pas encore né à l'index `idx` : le corps SOURCE
+  // d'une répétition « Nouveau corps » (en remontant la chaîne), sinon le corps de la
+  // dernière fonction rejouée, sinon le premier corps né.
+  const born=b=>!!b&&doc.bodies.some(e=>e.id===b)&&bodyBornAt(b,idx);
+  let cur=bid;
+  for(let k=0;k<8&&cur&&!born(cur);k++){
+    const rp=(doc.features||[]).find(r=>r&&r.type==='repeat'&&r.bodyMap&&Object.keys(r.bodyMap).some(q=>r.bodyMap[q]===cur));
+    if(!rp)break;
+    const key=Object.keys(rp.bodyMap).find(q=>rp.bodyMap[q]===cur);
+    cur=key?key.split('@')[0]:null;
+  }
+  if(born(cur))return cur;
+  const L=(doc.features||[]).slice(0,idx==null||idx<0?undefined:idx);
+  for(let i=L.length-1;i>=0;i--){const b=occBodyOfFeat(L[i]);if(born(b))return b;}
+  const e=doc.bodies.find(x=>born(x.id));
+  return e?e.id:(doc.bodies[0]&&doc.bodies[0].id);
+}
 function occSplitNewBody(f){
   // Corps NEUF né d'une scission de corps (xsplit mode 'body'), ou null : la fonction est
   // rejouée dans son corps (côté gardé) ET en tête du corps neuf (l'autre côté).
@@ -2726,7 +2764,7 @@ function occCombinePrefix(f,tb){
   // fonctions du corps outil tb AVANT la combinaison f (timeline visible)
   const vis=doc.features.filter(x=>x.visible!==false&&!(occSkipFeat&&x.id===occSkipFeat));
   const i=vis.indexOf(f);
-  return vis.slice(0,i<0?vis.length:i).filter(x=>x.type!=='repeat'&&(occBodyOfFeat(x)===tb||occSplitNewBody(x)===tb));
+  return vis.slice(0,i<0?vis.length:i).filter(x=>x.type!=='repeat'&&(occBodyOfFeat(x)===tb||occSplitNewBody(x)===tb||occCutExtraBodies(x).indexOf(tb)>=0));
 }
 function occCombineTool(f,tb,bin){
   const list=occCombinePrefix(f,tb);if(!list.length)return null;
@@ -5822,12 +5860,13 @@ function occReplayBody(bid,list){
     // Pour une découpe « à travers tout », l'étendue se mesure sur le solide DÉJÀ reconstruit
     // (tout ce qui précède dans la timeline) — jamais sur l'affichage de l'édition précédente.
     occThroughBase=(((f.type==='extrude'&&f.through)||f.type==='hole')&&result)?result:null; // perçage : débouchant / prochaine face
+    const xtra=occBodyOfFeat(f)!==bid; // découpe rejouée dans un corps visé en plus : un seul fantôme (celui de son corps)
     try{
       let r=occToolCkGet(ckKey);
       if(!r){r=(f.type==='revolve')?occShapeOfRevolve(f):(f.type==='hole'?occShapeOfHole(f):occShapeOfExtrude(f));occToolCkPut(ckKey,r);}
       bin.push(...r.bins);itemShapes.push(r.shape);
       if(r.warnings.length)msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
-      shape=r.shape;items.push({f,shape});
+      shape=r.shape;if(!xtra)items.push({f,shape});
     }catch(err){
       // Isolation : UNE esquisse fautive ne fait plus basculer tout le solide en maillage.
       msgs.push(`${f.name} : exclu de l'exact (${err.message})`);
@@ -5842,9 +5881,9 @@ function occReplayBody(bid,list){
       // Fantôme tessellé AVANT delete (use-after-delete = crash + repli fantôme).
       // Filet hélicoïdal : le fantôme est un simple aperçu → maillage plus grossier
       // (2× plus rapide), la géométrie exacte et le solide final ne changent pas.
-      const ghostGeo=(()=>{try{return f.type==='hole'?occTessellate(shape,1,0.8):occTessellate(shape,0.5);}catch(e){msgs.push(`${f.name} : outil illisible`);return null;}})();
-      if(!result){msgs.push(`${f.name} : découpe dans le vide — ignorée`);if(ghostGeo)ghostShapes.push({geo:ghostGeo,orphan:true,fid:f.id});return;}
-      if(ghostGeo)ghostShapes.push({geo:ghostGeo,orphan:false,fid:f.id});
+      const ghostGeo=xtra?null:(()=>{try{return f.type==='hole'?occTessellate(shape,1,0.8):occTessellate(shape,0.5);}catch(e){msgs.push(`${f.name} : outil illisible`);return null;}})();
+      if(!result){if(!xtra){msgs.push(`${f.name} : découpe dans le vide — ignorée`);if(ghostGeo)ghostShapes.push({geo:ghostGeo,orphan:true,fid:f.id});}return;}
+      if(ghostGeo&&!xtra)ghostShapes.push({geo:ghostGeo,orphan:false,fid:f.id});
       // Préfixe inchangé : le solide accumulé contient DÉJÀ cette découpe → on saute le
       // booléen (le plus coûteux) et on adopte la copie mémorisée.
       const ckC=occCkGet(ckKey);
@@ -5885,6 +5924,7 @@ function occFinalShape(upto){
     byBody[b].push(f);
     const nb=occSplitNewBody(f); // scission de corps : l'autre côté naît dans le corps neuf
     if(nb){if(!byBody[nb]){byBody[nb]=[];order.push(nb);}byBody[nb].push(f);}
+    occCutExtraBodies(f).forEach(xb=>{if(!byBody[xb]){byBody[xb]=[];order.push(xb);}byBody[xb].push(f);}); // découpe multi-corps
   });
   const perBody=[],bin=[],itemShapes=[],ghostShapes=[],msgs=[],items=[],imports=[];
   // corps OUTILS consommés par une combinaison (sans « garder ») : plus affichés
@@ -6106,8 +6146,9 @@ function ensureActiveBody(){
   // premier (jamais de fonction orpheline, même après un undo exotique).
   try{
     ensureBodies();
-    if(doc.bodies.some(e=>e.id===doc.activeBody))return doc.activeBody;
-    doc.activeBody=doc.bodies[0].id;
+    if(!doc.bodies.some(e=>e.id===doc.activeBody))doc.activeBody=doc.bodies[0].id;
+    // V0.15.12 : marqueur reculé avant la naissance du corps actif → son corps d'origine
+    try{tlSyncActiveBody();}catch(e){}
     return doc.activeBody;
   }catch(e){return 'b1';}
 }
@@ -6495,6 +6536,40 @@ function tlReplayCount(){ // nb de fonctions VISIBLES avant le marqueur (upto po
 }
 function tlSetPtr(f){ // bloque le temps juste AVANT la fonction f (null = rejouer tout)
   tlMark=f&&doc.features.some(x=>x.id===f.id)?f.id:null;
+  try{tlSyncActiveBody();}catch(e){}
+}
+// V0.15.12 : le corps ACTIF suit le temps. Marqueur reculé avant la naissance du corps actif
+// (corps d'une répétition « Nouveau corps »…) : on travaille dans son corps d'origine — sinon
+// la fonction naîtrait dans un corps qui n'existe pas encore et la modification ne toucherait
+// que lui. Le choix de l'utilisateur est mémorisé et rendu dès que le corps existe de nouveau.
+let tlActiveWanted=null; // corps choisi par l'utilisateur, provisoirement remplacé (null = aucun)
+function tlSyncActiveBody(){
+  if(!doc||!doc.bodies||!doc.bodies.length||typeof bodyBornAt!=='function')return false;
+  const i=tlIdx();
+  if(tlActiveWanted&&doc.bodies.some(e=>e.id===tlActiveWanted)&&bodyBornAt(tlActiveWanted,i)){
+    const ch=doc.activeBody!==tlActiveWanted;doc.activeBody=tlActiveWanted;tlActiveWanted=null;return ch;
+  }
+  if(!doc.bodies.some(e=>e.id===tlActiveWanted))tlActiveWanted=null;
+  if(!doc.activeBody||bodyBornAt(doc.activeBody,i))return false;
+  const fb=bodyBirthFallback(doc.activeBody,i);
+  if(!fb||fb===doc.activeBody)return false;
+  if(!tlActiveWanted)tlActiveWanted=doc.activeBody;
+  doc.activeBody=fb;
+  return true;
+}
+function tlActivateBody(bid){
+  // Activation demandée par l'utilisateur (arbre, panneau du corps) : refusée si le corps
+  // n'est pas encore né au marqueur. Rend false (avec un message) dans ce cas.
+  const i=tlIdx();
+  if(typeof bodyBornAt==='function'&&!bodyBornAt(bid,i)){
+    const e=(doc.bodies||[]).find(x=>x.id===bid);
+    try{faceEl.textContent='« '+((e&&e.name)||bid)+' » n\'existe pas encore à cet instant de la timeline (il naît plus loin) : '+
+      'avancez le marqueur après sa création pour y travailler. Ici, travaillez dans son corps d\'origine (puis cochez la fonction dans les sources de la répétition pour la reporter sur les copies).';}catch(err){}
+    return false;
+  }
+  tlActiveWanted=null;
+  if(doc.activeBody!==bid){doc.activeBody=bid;try{dirty=true;}catch(err){}}
+  return true;
 }
 let tlEditSaved; // marqueur posé par l'utilisateur avant le verrou d'édition (undefined = pas de verrou)
 function tlEditLock(f){
@@ -6516,6 +6591,7 @@ function tlEditUnlock(){
   const m=prev!=null&&doc.features.some(x=>x.id===prev)?prev:null;
   if(m===tlMark)return false;
   tlMark=m;markDirty();
+  try{tlSyncActiveBody();}catch(e){}
   return true;
 }
 function tlHostFeatureOfSketch(sk){
@@ -7550,6 +7626,7 @@ function repGenChildren(rp){
   const usedBodies=new Set();
   const setBody=(nf,src,idx)=>{
     if(!repIsNewBody(rp)){delete nf.repBodyKey;return;}
+    delete nf.cutBodies; // chaque exemplaire est un corps à part : sa découpe ne vise que lui
     const sb=occBodyOfFeat(src);
     const key=(src.repeatId===rp.id&&src.repBodyKey?src.repBodyKey:sb)+'@'+idx;
     nf.repBodyKey=key;nf.body=repBodyFor(rp,key,(src.repeatId===rp.id&&src.repBodyKey)?src.repBodyKey.split('@')[0]:sb);
@@ -7732,6 +7809,62 @@ function delFeature(f){
   b.onclick=()=>newBody();
   after.parentNode.insertBefore(b,after.nextSibling);
 })();
+// V0.15.12 : CORPS VISÉS par une découpe (poche, perçage, révolution en retrait). Dès que
+// plusieurs corps sont visibles à cet instant de la timeline, on propose : son corps seul,
+// TOUS les corps visibles (f.cutBodies, rejouée dans chacun — cf. occCutExtraBodies) ou UN
+// corps en particulier (la fonction change de corps, comme un glisser-déposer dans l'arbre).
+function cutBodyCandidates(f){
+  const i=doc.features.indexOf(f);
+  const consumed=new Set();
+  doc.features.slice(0,i<0?undefined:i).forEach(x=>{if(x&&x.type==='combine'&&!x.keep&&x.visible!==false)(x.tools||[]).forEach(t=>consumed.add(t));});
+  return (doc.bodies||[]).filter(e=>{
+    if(!e||consumed.has(e.id))return false;
+    if(doc.bodyVis&&doc.bodyVis[e.id]===false)return false;
+    try{if(!bodyEnabledOf(e.id))return false;}catch(err){}
+    try{return bodyBornAt(e.id,i);}catch(err){return true;}
+  });
+}
+function cutBodiesField(f){
+  // Rend la ligne « Corps visés », ou null s'il n'y a qu'un corps visible
+  if(!occIsCutFeat(f)||f.repeatId)return null;
+  const own=occBodyOfFeat(f);
+  const cand=cutBodyCandidates(f).filter(e=>e.id!==own);
+  const extra=occCutExtraBodies(f);
+  if(!cand.length&&!extra.length)return null;
+  const nm=id=>{const e=(doc.bodies||[]).find(x=>x.id===id);return e?e.name:id;};
+  const all=cand.length>0&&cand.every(e=>extra.indexOf(e.id)>=0);
+  const cur=!extra.length?'own':(all?'all':'custom');
+  const r=document.createElement('div');r.className='pnl-row';
+  const L=document.createElement('label');L.textContent='Corps visés';r.appendChild(L);
+  const s=document.createElement('select');s.className='cutBodiesSel';
+  const opt=(v,t,tip)=>{const o=document.createElement('option');o.value=v;o.textContent=t;if(tip)o.title=tip;s.appendChild(o);};
+  opt('own','Son corps seul — « '+nm(own)+' »','La découpe ne retire de la matière qu’à son corps');
+  opt('all','Tous les corps visibles ('+(cand.length+1)+')','La découpe traverse chaque corps visible à cet instant de la timeline');
+  if(cur==='custom')opt('custom','Sélection : '+[own].concat(extra).map(nm).join(', '));
+  cand.forEach(e=>opt('b:'+e.id,'Seulement « '+e.name+' »','La fonction passe dans « '+e.name+' » (et ne touche plus « '+nm(own)+' »)'));
+  s.value=cur;
+  s.title='Plusieurs corps sont visibles : choisir sur lesquels la découpe s’applique';
+  s.onchange=()=>{
+    const v=s.value;
+    if(v==='custom')return;
+    if(v.startsWith('b:')){
+      const bid=v.slice(2);
+      docPushUndo('corps visés par « '+f.name+' »');
+      delete f.cutBodies;f.body=bid;
+      try{repSyncForFeature(f);}catch(e){}
+      markDirty();rebuild();renderTree();renderProps();refreshParts();
+      try{faceEl.textContent='« '+f.name+' » découpe maintenant « '+nm(bid)+' » seulement.';}catch(e){}
+      return;
+    }
+    docPushUndo('corps visés par « '+f.name+' »');
+    if(v==='all')f.cutBodies=cand.map(e=>e.id);else delete f.cutBodies;
+    try{repSyncForFeature(f);}catch(e){}
+    markDirty();rebuild();renderTree();renderProps();refreshParts();
+    try{faceEl.textContent=v==='all'?'« '+f.name+' » découpe les '+(cand.length+1)+' corps visibles.':'« '+f.name+' » ne découpe plus que « '+nm(own)+' ».';}catch(e){}
+  };
+  r.appendChild(s);
+  return r;
+}
 function newBody(){
   // Crée un corps VIDE et l'ACTIVE : esquissez puis extrudez, la fonction naîtra
   // dedans (addFeature taggue au corps actif). Annulable comme toute modification.
@@ -8469,6 +8602,7 @@ function renderProps(){
       }
       fdynFoot(p,f);
     }
+    {const cb=cutBodiesField(f);if(cb)p.appendChild(cb);} // V0.15.12 : plusieurs corps visibles → tous ou un seul
     if(f.type==='hole'){fdynEnsure(f);renderHoleProps(p,f);fdynFoot(p,f);} // V0.8.0 : OK / Annuler, flèche de profondeur
     /* — révolution — V0.8.0 : fenêtre dynamique (71-fenetre-dynamique) */
     if(f.type==='revolve'){ fdynRevolvePanel(p,f); }
@@ -8489,7 +8623,7 @@ function renderProps(){
     pH('Corps');
     pInfo(b?`<b>${e?e.name:sel.id}</b> · ${kids.length} fonction(s)`:(e?`<b>${e.name}</b> · corps vide — esquissez puis extrudez.`:'Corps non reconstruit.'));
     if(doc.activeBody!==sel.id)pBtns([['● Activer ce corps',()=>{
-      doc.activeBody=sel.id;try{dirty=true;}catch(err){}
+      if(!tlActivateBody(sel.id)){renderTree();return;}
       renderTree();renderProps();refreshParts();
       try{faceEl.textContent='« '+((e&&e.name)||sel.id)+' » ACTIF : les nouvelles fonctions naîtront dedans.';}catch(err){}
     }]]);
@@ -9069,7 +9203,7 @@ function treePart(L){
         if(kind==='feature'&&ghostHide===id)ghostHide=null;
         treeSel=kind==='feature'?[id]:[];
         sel={kind,id};
-        if(kind==='body'){try{if(doc.activeBody!==id){doc.activeBody=id;dirty=true;}}catch(e){}}
+        if(kind==='body'){try{tlActivateBody(id);}catch(e){}}
         renderTree();renderProps();refreshParts();
       },
       ctx:e=>showCtx(e.clientX,e.clientY,{kind,id})
@@ -9191,6 +9325,7 @@ function treePart(L){
     const kids=doc.features.filter(f=>!f.repeatId&&bodyOf(f)===be.id);
     const kidsVis=kids.filter(f=>!tlLocked(f));
     const estActif=doc.activeBody===be.id;
+    let pasNe=false;try{pasNe=tlMark!=null&&!bodyBornAt(be.id,tlIdx());}catch(e){} // V0.15.12 : corps né plus loin que le marqueur
     const selIn=treeSel.concat([(sel.kind==='feature'||sel.kind==='body')?sel.id:null]).filter(Boolean);
     const hasSel=selIn.some(id=>id===be.id||bodyOf(doc.features.find(x=>x.id===id))===be.id);
     const open=be.open!==false||hasSel||!!treeQuery;
@@ -9198,10 +9333,10 @@ function treePart(L){
     try{ visVue=!(doc.bodyVis&&doc.bodyVis[be.id]===false); }catch(e){}
     const enRejeu=bodyEnabledOf(be.id);
     const bcol=bodyTextColor(be);
-    L.push({drag:{kind:'body',id:be.id},drop:treeDropBody(be.id),lvl:0,cls:'tnode bh'+((sel.kind==='body'&&sel.id===be.id)?' sel':'')+(visVue?'':' hidden')+(enRejeu?'':' off'),
+    L.push({drag:{kind:'body',id:be.id},drop:treeDropBody(be.id),lvl:0,cls:'tnode bh'+((sel.kind==='body'&&sel.id===be.id)?' sel':'')+(visVue?'':' hidden')+(enRejeu?'':' off')+(pasNe?' locked':''),
       style:{boxShadow:'inset 3px 0 0 '+(bcol||'#9a9aa0')},
       html:'<span class="tri" title="Déplier / replier les fonctions du corps">'+(open?'▼':'▶')+'</span><span title="Corps — '+(be.name||'')+'">🧱</span>'+
-        '<span class="nm"'+(bcol?(' style="color:'+bcol+'"'):'')+'>'+be.name+(estActif?' ●':'')+' · '+kidsVis.length+' fonction(s)'+(function(){const o=typeof repBodyOwner==='function'?repBodyOwner(be.id):null;return o?' <span class="repsrc" title="Corps créé par la répétition « '+o.name+' » (opération Nouveau corps)">🔁 '+o.name+'</span>':'';})()+'</span>'+
+        '<span class="nm"'+(bcol?(' style="color:'+bcol+'"'):'')+'>'+be.name+(estActif?' ●':'')+(pasNe?' <span title="Ce corps naît plus loin dans la timeline : il n’existe pas encore au marqueur">⏳ pas encore créé</span>':' · '+kidsVis.length+' fonction(s)')+(function(){const o=typeof repBodyOwner==='function'?repBodyOwner(be.id):null;return o?' <span class="repsrc" title="Corps créé par la répétition « '+o.name+' » (opération Nouveau corps)">🔁 '+o.name+'</span>':'';})()+'</span>'+
         '<span class="pwr'+(enRejeu?' on':'')+'" title="'+(enRejeu?'Rejeu ACTIF : toutes les fonctions de ce corps sont recalculées — cliquer pour les EXCLURE (le corps reste visible)':'Rejeu ÉTEINT : toutes les fonctions de ce corps sont exclues (grisées) — cliquer pour les inclure')+'">⏻</span>'+
         '<span class="eye" title="'+(visVue?'Corps visible dans la 3D — cliquer pour le CACHER (il reste dans le rejeu et l\'export)':'Corps masqué dans la 3D (vue seule) — cliquer pour l\'AFFICHER. Aucune fonction n\'est touchée')+'">'+(visVue?'👁':'🙈')+'</span>',
       title:'Clic = sélectionner et ACTIVER (les nouvelles fonctions naîtront dans « '+be.name+' ») · ▶/▼ = replier · ⏻ = rejeu (inclure/exclure ses fonctions du recalcul) · 👁 = vue 3D seule · clic droit = renommer / supprimer · ➕ additif / ➖ découpe · ● = corps actif',
@@ -9213,7 +9348,7 @@ function treePart(L){
           if(typeof skEdit!=='undefined'&&skEdit&&skTool==='isect'&&typeof skIsectFromBody==='function'&&skIsectFromBody(be.id))return;
           treeSel=[];
           sel={kind:'body',id:be.id};
-          try{if(doc.activeBody!==be.id){doc.activeBody=be.id;dirty=true;}}catch(e){}
+          try{tlActivateBody(be.id);}catch(e){}
           renderTree();renderProps();refreshParts();
         },
         ctx:e=>showCtx(e.clientX,e.clientY,{kind:'body',id:be.id})}});
@@ -10448,6 +10583,7 @@ function asmActivate(cid,path){
   const rt=c._rt||{};
   docUndoStack=rt.undo||[];docRedoStack=rt.redo||[];
   tlMark=rt.tl||null;
+  try{tlActiveWanted=null;}catch(e){}
   sel=rt.sel&&rt.sel.kind?rt.sel:{kind:null,id:null};
   if(typeof treeSel!=='undefined')treeSel=[];
   occSkipFeat=null;

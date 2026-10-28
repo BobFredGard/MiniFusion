@@ -15,6 +15,40 @@ function tlReplayCount(){ // nb de fonctions VISIBLES avant le marqueur (upto po
 }
 function tlSetPtr(f){ // bloque le temps juste AVANT la fonction f (null = rejouer tout)
   tlMark=f&&doc.features.some(x=>x.id===f.id)?f.id:null;
+  try{tlSyncActiveBody();}catch(e){}
+}
+// V0.15.12 : le corps ACTIF suit le temps. Marqueur reculé avant la naissance du corps actif
+// (corps d'une répétition « Nouveau corps »…) : on travaille dans son corps d'origine — sinon
+// la fonction naîtrait dans un corps qui n'existe pas encore et la modification ne toucherait
+// que lui. Le choix de l'utilisateur est mémorisé et rendu dès que le corps existe de nouveau.
+let tlActiveWanted=null; // corps choisi par l'utilisateur, provisoirement remplacé (null = aucun)
+function tlSyncActiveBody(){
+  if(!doc||!doc.bodies||!doc.bodies.length||typeof bodyBornAt!=='function')return false;
+  const i=tlIdx();
+  if(tlActiveWanted&&doc.bodies.some(e=>e.id===tlActiveWanted)&&bodyBornAt(tlActiveWanted,i)){
+    const ch=doc.activeBody!==tlActiveWanted;doc.activeBody=tlActiveWanted;tlActiveWanted=null;return ch;
+  }
+  if(!doc.bodies.some(e=>e.id===tlActiveWanted))tlActiveWanted=null;
+  if(!doc.activeBody||bodyBornAt(doc.activeBody,i))return false;
+  const fb=bodyBirthFallback(doc.activeBody,i);
+  if(!fb||fb===doc.activeBody)return false;
+  if(!tlActiveWanted)tlActiveWanted=doc.activeBody;
+  doc.activeBody=fb;
+  return true;
+}
+function tlActivateBody(bid){
+  // Activation demandée par l'utilisateur (arbre, panneau du corps) : refusée si le corps
+  // n'est pas encore né au marqueur. Rend false (avec un message) dans ce cas.
+  const i=tlIdx();
+  if(typeof bodyBornAt==='function'&&!bodyBornAt(bid,i)){
+    const e=(doc.bodies||[]).find(x=>x.id===bid);
+    try{faceEl.textContent='« '+((e&&e.name)||bid)+' » n\'existe pas encore à cet instant de la timeline (il naît plus loin) : '+
+      'avancez le marqueur après sa création pour y travailler. Ici, travaillez dans son corps d\'origine (puis cochez la fonction dans les sources de la répétition pour la reporter sur les copies).';}catch(err){}
+    return false;
+  }
+  tlActiveWanted=null;
+  if(doc.activeBody!==bid){doc.activeBody=bid;try{dirty=true;}catch(err){}}
+  return true;
 }
 let tlEditSaved; // marqueur posé par l'utilisateur avant le verrou d'édition (undefined = pas de verrou)
 function tlEditLock(f){
@@ -36,6 +70,7 @@ function tlEditUnlock(){
   const m=prev!=null&&doc.features.some(x=>x.id===prev)?prev:null;
   if(m===tlMark)return false;
   tlMark=m;markDirty();
+  try{tlSyncActiveBody();}catch(e){}
   return true;
 }
 function tlHostFeatureOfSketch(sk){
