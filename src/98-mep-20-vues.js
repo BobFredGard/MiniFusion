@@ -881,6 +881,7 @@
         const rebind=(a,vw,o)=>{
           if(!a||!a.hint)return a;
           if(typeof a.hint.i==='string')return a; // trait d'axe : clé stable, rien à re-ancrer
+          if(a.hint.s)return a; // forme de l'entité connue : suivie par mepIdxFollow (2026-10-28)
           const g=mepGeoOf(vw);
           if(!o&&a===d.a&&d.kind==='len'&&d.b&&!d.vid2)o={t:'L',x1:d.a.x,y1:d.a.y,x2:d.b.x,y2:d.b.y};
           let best=null,bs=Infinity;

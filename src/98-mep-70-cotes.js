@@ -65,8 +65,78 @@
     const dx=e.x2-e.x1,dy=e.y2-e.y1,L2=dx*dx+dy*dy;
     return{t:'eln',l:{x1:e.x1,y1:e.y1,x2:e.x2,y2:e.y2,k:e.k},f:L2>1e-12?((q.x-e.x1)*dx+(q.y-e.y1)*dy)/L2:0};
   }
+  /* 2026-10-28 : « la largeur passe de 10,14 à 10 dans le 3D et la cote de la mise en plan ne bouge
+     pas ; supprimée et recréée, elle est bonne » — les points accrochés par INDEX d'entité
+     ({t:'seg'|'ctr', i}) ne se ré-ancraient qu'au bouton « Rejeter ». Le point garde la forme de
+     son entité (h.s, enregistrée avec le plan) ; quand la géométrie EXACTE de la vue change, l'entité
+     est retrouvée par sa forme (droite parallèle la plus proche, cercle de même rayon), le point
+     glisse avec elle (même position relative le long de l'arête, ou le centre) et l'index est
+     mis à jour. Dérivé de la géométrie : pas d'étape d'annulation. */
+  const mepIdxSeen=new WeakMap(); // point → géométrie déjà vue (évite de refaire le suivi à chaque dessin)
+  function mepIdxSnap(e){
+    return e.t==='L'?{t:'L',x1:e.x1,y1:e.y1,x2:e.x2,y2:e.y2,k:e.k}:{t:e.t,cx:e.cx,cy:e.cy,r:e.r};
+  }
+  function mepIdxSame(e,s){
+    if(!e||!s||(e.t==='L')!==(s.t==='L'))return false;
+    const n=(a,b)=>Math.abs(a-b)<1e-6;
+    return e.t==='L'?n(e.x1,s.x1)&&n(e.y1,s.y1)&&n(e.x2,s.x2)&&n(e.y2,s.y2):n(e.cx,s.cx)&&n(e.cy,s.cy)&&n(e.r,s.r);
+  }
+  function mepIdxFollow(v,q){
+    const h=q&&q.hint;
+    if(!v||!h||(h.t!=='seg'&&h.t!=='ctr')||typeof h.i!=='number')return false;
+    const g=mepGeoOf(v);if(!mepGeoExact(g)||mepIdxSeen.get(q)===g)return false;
+    mepIdxSeen.set(q,g);
+    const cur=g.els[h.i];
+    if(!h.s){ // première rencontre : la forme de l'entité qui passe bien par le point
+      if(cur&&(cur.t==='L'?h.t==='seg'&&mepSegDist(q,cur)<0.6:(cur.t==='C'||cur.t==='A')&&Math.hypot(cur.cx-q.x,cur.cy-q.y)<0.6))h.s=mepIdxSnap(cur);
+      else if(h.t==='ctr'){ // index périmé : le cercle centré sur le point
+        const k=g.els.findIndex(c=>(c.t==='C'||c.t==='A')&&Math.hypot(c.cx-q.x,c.cy-q.y)<0.05);
+        if(k>=0){h.i=k;h.s=mepIdxSnap(g.els[k]);}
+      }
+      return false;
+    }
+    if(mepIdxSame(cur,h.s))return false;
+    const s=h.s;let e=null;
+    if(s.t==='L')e=mepAxisTrackLine(g,s,null);
+    else{
+      let bc=Infinity;
+      g.els.forEach(c=>{
+        if(c.t!=='C'&&c.t!=='A')return;
+        const k=Math.hypot(c.cx-s.cx,c.cy-s.cy)+2*Math.abs(c.r-s.r);
+        if(k<bc){bc=k;e=c;}
+      });
+      if(bc>Math.max(3,s.r))e=null;
+    }
+    if(!e)return false; // entité disparue : dernière position connue
+    if(s.t==='L'){
+      const dx=s.x2-s.x1,dy=s.y2-s.y1,L2=dx*dx+dy*dy;
+      const f=L2>1e-12?((q.x-s.x1)*dx+(q.y-s.y1)*dy)/L2:0;
+      // même sens que l'ancienne arête (le noyau peut l'avoir retournée)
+      const rev=Math.hypot(e.x1-s.x1,e.y1-s.y1)+Math.hypot(e.x2-s.x2,e.y2-s.y2)
+        >Math.hypot(e.x2-s.x1,e.y2-s.y1)+Math.hypot(e.x1-s.x2,e.y1-s.y2);
+      const ax=rev?e.x2:e.x1,ay=rev?e.y2:e.y1,bx=rev?e.x1:e.x2,by=rev?e.y1:e.y2;
+      q.x=ax+(bx-ax)*f;q.y=ay+(by-ay)*f;
+    }else{q.x=e.cx;q.y=e.cy;}
+    h.i=g.els.indexOf(e);h.s=mepIdxSnap(e);
+    mepIdxSeen.set(q,g);
+    return true;
+  }
   function mepDimPtsRefresh(sh,d){
     const v1=mepView(sh,d.vid);if(!v1)return;
+    // points accrochés par index d'entité : suivent la géométrie exacte (cote, ordonnées)
+    if(d.kind==='ord'){mepIdxFollow(v1,d.o);(d.pts||[]).forEach(q=>mepIdxFollow(v1,q));}
+    else{
+      const v2=d.vid2?mepView(sh,d.vid2):v1;
+      if(mepIdxFollow(v1,d.a)&&d.kind==='len'&&!d.vid2&&d.b){
+        // longueur : ses 2 extrémités dessinées sont celles de l'arête retrouvée
+        const e=mepEntByHint(v1,d.a.hint);
+        if(e&&e.t==='L'){
+          const sw=Math.hypot(e.x2-d.a.x,e.y2-d.a.y)<Math.hypot(e.x1-d.a.x,e.y1-d.a.y);
+          d.a.x=sw?e.x2:e.x1;d.a.y=sw?e.y2:e.y1;d.b={x:sw?e.x1:e.x2,y:sw?e.y1:e.y2};
+        }
+      }
+      if(d.b&&v2)mepIdxFollow(v2,d.b);
+    }
     if(d.kind==='dist'){ // points d'intersection (accrochage imposé) : suivent leurs 2 entités
       mepIntRefresh(v1,d.a);if(d.b)mepIntRefresh(d.vid2?mepView(sh,d.vid2):v1,d.b);
     }
@@ -77,9 +147,10 @@
     }
     if(d.kind!=='dist'&&d.kind!=='note')return;
     const pr=d.kind==='dist'?(d.orient==='h'?'v':(d.orient==='v'?'h':null)):null;
-    if(d.kind==='dist'&&!pr)return; // distance oblique : pas de migration ambiguë (les références posées restent suivies)
-    mepPtRefresh(sh,v1,d.a,pr);
-    if(d.kind==='dist'&&d.b)mepPtRefresh(sh,d.vid2?mepView(sh,d.vid2):v1,d.b,pr);
+    // distance oblique : pas de migration ambiguë, mais les références posées restent suivies
+    const ok=q=>!!(q&&(pr||d.kind!=='dist'||q.hint));
+    if(ok(d.a))mepPtRefresh(sh,v1,d.a,pr);
+    if(d.kind==='dist'&&ok(d.b))mepPtRefresh(sh,d.vid2?mepView(sh,d.vid2):v1,d.b,pr);
   }
   function mepDimWorld(sh,d){
     // ancrages → mm papier

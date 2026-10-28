@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**407 versions**, de `2026-09-28b` à `V0.15.13` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**408 versions**, de `2026-09-28b` à `V0.15.14` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5383,3 +5383,11 @@ Demande : « coter entre points : extrémité d'arête, point maximum suivant X 
 - **Prolongements** (`src/98-mep-70-cotes.js`) : un point d'intersection garde ses 2 entités (`hint {t:'int', e:[…]}`). La cote trace, en couleur de cote, l'arête (ou l'arc) prolongé de son bout jusqu'au point, plus le dépassement des lignes de rappel. Sur la géométrie exacte, le point suit ses entités (droite parallèle la plus proche, cercle de même rayon) et se recalcule (`mepIntRefresh`).
 - **Survol** : repère jaune du point visé (carré extrémité, triangle milieu, cercle centre, losange extrême, croix intersection), prolongements en pointillé, trait d'aperçu depuis le 1ᵉʳ point.
 - **Tests** : `test_mep_accrochages` (nouveau, suite rapide : 26 contrôles — intersections des 3 familles, parallèles, chaque accrochage, cote intersection → extrémité posée et mesurée, retour à Automatique, prolongements dessinés, suivi après déplacement d'une arête). Contrôlé aussi dans le navigateur sur l'exemple Axe.
+
+## V0.15.14 - Mise en plan : les cotes suivent une modification du 3D
+Signalé : « des fois, les cotes ne changent pas après avoir modifié le 3D : la largeur du 1er sketch passe de 10,14 à 10 et la cote de la mise en plan n'a pas bougé ; supprimée et recréée, elle est bonne ».
+- **Cause** : la géométrie des vues est recalculée à chaque modification, mais les points des cotes accrochés par INDEX d'entité (`hint {t:'seg'|'ctr', i}`) n'étaient ré-ancrés qu'au bouton « ⟳ Rejeter ». Une cote de distance (2 arêtes parallèles, coin, centre) gardait ses anciens points, donc son ancienne valeur ; une longueur gardait ses extrémités dessinées.
+- **Correctif** (`src/98-mep-70-cotes.js`, `mepIdxFollow`) : le point garde la forme de son entité (`hint.s`, enregistrée avec le plan). Quand la géométrie EXACTE de la vue change, l'entité est retrouvée par sa forme (droite parallèle la plus proche, cercle de même rayon), même renumérotée ; le point glisse avec elle (même position relative le long de l'arête, ou le centre) et l'index est mis à jour. Longueur : ses extrémités dessinées suivent l'arête. Cotes, angles, Ø/R, perçages et ordonnées en profitent. Rien ne bouge sur le maillage provisoire d'ouverture. « Rejeter » laisse au suivi les points dont la forme est connue (`src/98-mep-20-vues.js`).
+- **Au passage** : une cote posée par 2 clics de points (coin, centre) garde désormais la référence de son entité au lieu de la jeter (`src/98-mep-85-cote-unique.js`, `src/98-mep-86-accrochages.js`) ; une distance oblique rafraîchit ses points suivis (seule la migration des points sans référence reste réservée aux cotes horizontales/verticales).
+- **Limite** : une cote créée avant cette version mémorise la forme de son entité au premier affichage ; si le 3D a changé entre-temps, « Rejeter » ou la recréer une fois.
+- **Tests** : `test_mep_cotes_suivi` (nouveau, suite rapide : 16 contrôles — largeur 10,14 → 10, longueur, coin → trou, Ø, arêtes renumérotées, cote par points oblique, maillage sans effet). Contrôlé aussi sous Node avec le noyau OCCT réel (boîte 10,14 → 10 : la cote suit).

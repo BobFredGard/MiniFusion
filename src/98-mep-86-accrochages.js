@@ -163,7 +163,7 @@
     const v=mepView(sh,S.vid);
     const q={x:S.q.x,y:S.q.y};
     if(S.q.hint)q.hint=S.q.hint;
-    else if(S.hint&&v){const hh=mepSnapHint(sh,v,{hit:S.hint},q);if(hh&&(hh.t==='axp'||hh.t==='axc'||hh.t==='eln'))q.hint=hh;}
+    else if(S.hint&&v){const hh=mepSnapHint(sh,v,{hit:S.hint},q);if(hh)q.hint=hh;}
     return q;
   }
   /* suivi d'un point d'intersection : sur la géométrie exacte, chaque entité est retrouvée

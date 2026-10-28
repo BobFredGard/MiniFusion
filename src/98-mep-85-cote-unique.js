@@ -298,7 +298,7 @@
       const v=mepViewAt(sh,snap.x,snap.y);
       const lx=v?(snap.x-v.x)/v.scale:0,ly=v?(snap.y-v.y)/v.scale:0;
       if(!v){mepStatus('Cote : cliquez une arête ou un cercle projeté.');return;}
-      const qa={x:lx,y:ly};{const hh=(snap.hit&&snap.hit.vid===v.id)?mepSnapHint(sh,v,snap,qa):null;if(hh&&(hh.t==='axp'||hh.t==='axc'||hh.t==='eln'))qa.hint=hh;}
+      const qa={x:lx,y:ly};{const hh=(snap.hit&&snap.hit.vid===v.id)?mepSnapHint(sh,v,snap,qa):null;if(hh)qa.hint=hh;}
       mepSt.dim={kind:'dist',a:qa,vid:v.id,off:8,__ghost:true};
       mepStatus('Distance : cliquez le 2ᵉ point.');
       return;
@@ -321,7 +321,7 @@
       const v=mepView(sh2,D.vid);
       if(!v){mepSt.dim=null;return;}
       const lx=(snap.x-v.x)/v.scale,ly=(snap.y-v.y)/v.scale;
-      D.b={x:lx,y:ly};{const hh=(snap.hit&&snap.hit.vid===v.id)?mepSnapHint(sh2,v,snap,D.b):null;if(hh&&(hh.t==='axp'||hh.t==='axc'||hh.t==='eln'))D.b.hint=hh;}
+      D.b={x:lx,y:ly};{const hh=(snap.hit&&snap.hit.vid===v.id)?mepSnapHint(sh2,v,snap,D.b):null;if(hh)D.b.hint=hh;}
       D._pp=P; // position papier du 2ᵉ clic → futur placement
       mepStatus('Distance : encore un clic pour placer la cote.');
       return;
