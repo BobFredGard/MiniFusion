@@ -25,7 +25,9 @@ const delWkQ=[];         // travaux en attente {key, fid, brep, idx}
 const delWkRes=new Map(); // ckKey → {st:'run'|'fin', sig, brep|null, kept, err, warnings, ms, delai?}
 // Une même entrée (objet) peut être rangée sous PLUSIEURS clés : le rejeu change de clé pour le
 // même travail (référence de face complétée d'une ancre d'esquisse au rejeu suivant) — sans
-// cela la suppression était calculée deux fois. sig = fonction + rangs + empreinte du BRep.
+// cela la suppression était calculée deux fois. sig = fonction + rangs des faces + clé du
+// solide d'entrée (préfixe du rejeu) — pas les octets BRep : deux copies du même solide ne
+// s'écrivent pas pareil, et la triangulation d'affichage s'y ajoute après le premier rejeu.
 const DEL_WK_RES_MAX=32;
 
 // Chemin COURT obligatoire : au-delà de ~10 caractères, la chaîne passée à BRepTools.Write_2 /
@@ -178,20 +180,15 @@ function delWkFin(key,v){
   delWkRes.delete(key);delWkRes.set(key,e);
   for(const [k,x] of delWkRes){if(delWkRes.size<=DEL_WK_RES_MAX)break;if(x.st==='fin')delWkRes.delete(k);}
 }
-function delWkHash(u8){
-  // Empreinte FNV-1a des octets BRep (quelques ms pour quelques Mo).
-  let h=2166136261;
-  for(let i=0;i<u8.length;i++){h^=u8[i];h=Math.imul(h,16777619);}
-  return (h>>>0).toString(36)+'.'+u8.length;
-}
 function delWkPump(){
   if(!delWk||!delWk.ready||delWk.job)return;
   const j=delWkQ.shift();if(!j)return;
   delWk.job=j;
   delWk.w.postMessage({t:'job',id:j.key,brep:j.brep,idx:j.idx});
 }
-function delWkAsk(key,result,hs,fid){
+function delWkAsk(key,result,hs,fid,ckPre){
   // Rejeu : résultat du worker pour cette clé, ou {pending} (calcul lancé / en cours).
+  // ckPre : clé du solide d'entrée (préfixe du rejeu avant la fonction).
   // → {pending:true,msg} | {res:{r,kept,err,warnings}}
   const e=delWkRes.get(key);
   if(e&&e.st==='fin'){
@@ -212,8 +209,8 @@ function delWkAsk(key,result,hs,fid){
   let brep;
   try{brep=occBrepWrite(result);}catch(x){return{res:null};}
   // Même travail déjà lancé ou fini sous une autre clé : on le partage (alias).
-  const sig=fid+'|'+idx.join(',')+'|'+delWkHash(brep);
-  for(const x of delWkRes.values())if(x.sig===sig){delWkRes.set(key,x);return delWkAsk(key,result,hs,fid);}
+  const sig=fid+'|'+idx.join(',')+'|'+(ckPre||'');
+  for(const x of delWkRes.values())if(x.sig===sig){delWkRes.set(key,x);return delWkAsk(key,result,hs,fid,ckPre);}
   // Une nouvelle version de la même fonction (édition) rend caduques ses travaux en attente.
   for(let i=delWkQ.length-1;i>=0;i--)if(delWkQ[i].fid===fid){delWkRes.delete(delWkQ[i].key);delWkQ.splice(i,1);}
   delWkRes.set(key,{st:'run',sig});

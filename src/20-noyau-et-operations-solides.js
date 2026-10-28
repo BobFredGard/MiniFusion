@@ -1536,11 +1536,12 @@ function occBoxMinMax(sh){
   }catch(e){return null;}
 }
 const DEL_ISOLE_MAX=6;
-function occApplyDeleteFaces(result,f,ckKey){
+function occApplyDeleteFaces(result,f,ckKey,ckPre){
   // Rejoue la suppression. Retourne {shape,warnings} comme occApplyCoque : les faces sont
   // retrouvées par référence durable, et celles que le noyau refuse sont écartées une à
   // une (isolation) plutôt que de tout perdre. ckKey (rejeu) : clé du point de contrôle,
   // qui permet d'envoyer le calcul au worker ; {pending:true} tant qu'il n'a pas répondu.
+  // ckPre : clé du solide d'ENTRÉE (préfixe du rejeu avant cette fonction).
   delete f._calc;
   const warnings=[];
   const total=(f.faces||[]).length;
@@ -1554,7 +1555,7 @@ function occApplyDeleteFaces(result,f,ckKey){
   // ne gèle plus et un calcul sans fin est abandonné au délai. Sans worker : ici même.
   let res=null;
   if(ckKey&&delWkUsable()){
-    const a=delWkAsk(ckKey,result,hs,f.id);
+    const a=delWkAsk(ckKey,result,hs,f.id,ckPre);
     if(a.pending){
       free();delete f._m;f._calc=true;
       return{shape:result,warnings:warnings.concat([a.msg]),pending:true};
@@ -3266,6 +3267,7 @@ function occReplayBody(bid,list){
   // Outil de face ouvert sur un STEP seul (occStepForce) : il entre aussi dans la chaîne.
   const importSeul=!occStepForce&&!list.some(f=>f&&f.type!=='import');
   list.forEach(f=>{
+    const ckPre=ckKey; // clé du solide d'entrée de cette fonction (worker de suppression, 21)
     ckKey+=featSig(f)+';';
     if(f.type==='xfillet'){
       if(!result){msgs.push(`${f.name} : aucun volume à congédier — ignoré`);return;}
@@ -3293,7 +3295,7 @@ function occReplayBody(bid,list){
         const w=occCkWarn[ckKey];if(w&&w.length)msgs.push(...w.map(x=>`${f.name} : ${x}`));
         return;
       }
-      const r=f.type==='xmove'?occApplyMoveFace(result,f):f.type==='bmove'?occApplyBodyMove(result,f):occApplyDeleteFaces(result,f,ckKey); // bmove : 85-deplacer-corps
+      const r=f.type==='xmove'?occApplyMoveFace(result,f):f.type==='bmove'?occApplyBodyMove(result,f):occApplyDeleteFaces(result,f,ckKey,ckPre); // bmove : 85-deplacer-corps
       result=r.shape;msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       // Suppression partie au worker : corps affiché SANS elle, et rien de mémorisé en aval
       // sous une clé qui la supposerait faite (même marque que le STEP en cours de restauration).
