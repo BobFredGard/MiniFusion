@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**398 versions**, de `2026-09-28b` à `V0.15.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**399 versions**, de `2026-09-28b` à `V0.15.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5308,3 +5308,10 @@ Demande : « il faudrait une sélection multiple à l'édition de la fonction »
 - **Garde-fou** (`src/20-noyau-et-operations-solides.js`, `occDeleteFacesOnce` / `occDelFaceDebord`) : le noyau peut refermer le solide en prolongeant une voisine très loin et rendre IsDone vrai. Le résultat doit tenir dans la pièce d'origine ∪ la boîte des faces retirées élargie de leur plus grande dimension (congé → arête vive, chanfrein → coin, trou rebouché restent permis) ; sinon refus : solide inchangé, ⚠ dans l'arbre, « les faces voisines partent hors de la pièce (+N mm) — ajoutez aussi les faces voisines à la suppression ».
 - **Lenteur** (mesure, `Cavité Usinage.step`, 113 faces) : Suppr 0,75 s, dont 0,4 s pour le Defeaturing OCCT lui-même, 0,1 s de contrôle de validité, 0,09 s de tessellation, 0,03 s d'unification — le noyau WASM mono-cœur, aucun calcul en double. Pas de changement de performance dans cette version.
 - **Test** : `test_suppression_face_edition` (noyau réel, 17 vérifications) — STEP seul percé de deux trous : Suppr sur le premier, édition, ajout du second, Enregistrer → 6 faces, volume plein, une seule fonction ; Échap en édition sans effet ; prisme trapézoïdal : refus, solide inchangé ; règle du débord sur boîtes chiffrées (pointe du plateau refusée, chanfrein / trou / trapèze acceptés — le noyau n'a pas reproduit la pointe sur une forme simple). `npm run ci` (67/67).
+
+## V0.15.5 - Export STEP : choix AP214 ou AP203
+Demande : un fichier STEP exporté doit être au format AP203 ou AP214, ou proposer les deux.
+- **Choix** (`src/90-picking-mesure-import.js`, `stepAskSchema`) : l'export global (bouton STEP) et l'export d'un corps (menu contextuel) ouvrent une petite fenêtre AP214 (défaut, recommandé) / AP203 ; Entrée reprend le dernier choix, Échap annule. Choix retenu (`minifusion_stepSchema`) et rappelé dans le message de fin d'export.
+- **Constat** : le noyau écrit toujours de l'AP214 IS (`AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }`). Dans cette build d'opencascade.js, les noms passés en chaîne n'arrivent pas au C++ : `Interface_Static.IsPresent('write.step.schema')` vaut faux même après `STEPControl_Controller.Init()`, `SetCVal`/`SetIVal` renvoient faux — `write.step.schema` est inaccessible.
+- **AP203** (`stepToAp203`) : le texte AP214 est réécrit comme OCCT le fait en schéma 3 — `FILE_SCHEMA(('CONFIG_CONTROL_DESIGN'))`, `APPLICATION_PROTOCOL_DEFINITION(…,'config_control_design',1994,…)`, contexte d'application AP203, `MECHANICAL_CONTEXT`, `DESIGN_CONTEXT('detailed design',…)`, et les entités de gestion obligatoires (approbation, classification de sécurité, personne/organisation et leurs rôles, dates de création et de classification). Géométrie inchangée. `occWriteStep(shapes,path,schema)` garde sa signature (schéma facultatif).
+- **Test** : `test_step_schema` (noyau réel, 18 vérifications) — en-têtes des deux schémas, aucun vestige AP214 dans l'AP203, entités CC_DESIGN_* présentes, toutes les références `#n` définies sans doublon, les deux fichiers relus par `STEPControl_Reader` en un solide de 6 faces 60 × 40 × 20. Non essayé : ouverture de l'AP203 dans un autre logiciel de CAO.

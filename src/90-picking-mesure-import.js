@@ -834,6 +834,8 @@ async function ctxExportStep(bid){
   let FR=null;
   try{
     if(!occHas())throw new Error('OCCT indisponible (chargement en cours ou échec — servez la page en http://)');
+    const sch=await stepAskSchema('Export STEP « '+nm+' »');
+    if(!sch)return;
     faceEl.textContent='Export STEP « '+nm+' » : pré-test…';
     const pok=(await occExportPreflight());
     if(!pok[0])throw new Error(pok[1]||'pré-test impossible');
@@ -842,14 +844,14 @@ async function ctxExportStep(bid){
     if(!pb.length)throw new Error('rien à exporter : aucune fonction visible de ce corps dans le rejeu (⏻ éteint ?)');
     const path='/b.stp'; // chemin court fixe (cf. /o.stp de l'export global)
     try{occt.FS.unlink(path);}catch(e){}
-    const bytes=occWriteStep(pb.map(p=>p.shape),path);
+    const bytes=occWriteStep(pb.map(p=>p.shape),path,sch);
     const blob=new Blob([bytes],{type:'application/step'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);
     a.download=String(nm).replace(/[\\/:*?"<>|]+/g,'-')+'.step';
     a.click();
     setTimeout(()=>{try{URL.revokeObjectURL(a.href);}catch(e){}},2000);
     try{occt.FS.unlink(path);}catch(e){}
-    faceEl.textContent='STEP « '+nm+' » exporté ('+(bytes.length/1024).toFixed(1)+' Ko).';
+    faceEl.textContent='STEP '+sch+' « '+nm+' » exporté ('+(bytes.length/1024).toFixed(1)+' Ko).';
   }catch(e){
     const msg=String((e&&e.message)||e||'erreur');
     faceEl.textContent='Export STEP « '+nm+' » : '+msg;
@@ -1300,7 +1302,94 @@ function occFsDiag(){
     return L;
   }catch(e){return null;}
 }
-function occWriteStep(shapes,path){
+/* ---- Schéma STEP de sortie : AP214 (défaut) ou AP203. Le dernier choix est
+   retenu (localStorage).
+   Le noyau écrit TOUJOURS de l'AP214 IS ({ 1 0 10303 214 1 1 1 1 }) : dans cette
+   build d'opencascade.js les noms passés en chaîne n'arrivent pas au C++
+   (Interface_Static.IsPresent('write.step.schema') === false, SetCVal → false),
+   write.step.schema est donc inaccessible. L'AP203 est obtenu en réécrivant le
+   texte comme le ferait OCCT en schéma 3 : en-tête CONFIG_CONTROL_DESIGN,
+   contextes AP203 et entités de gestion obligatoires (approbation,
+   classification, personne/organisation, dates — STEPConstruct_AP203Context). ---- */
+let stepSchema='AP214';
+try{if(localStorage.getItem('minifusion_stepSchema')==='AP203')stepSchema='AP203';}catch(e){}
+function stepToAp203(bytes){
+  // octets AP214 OCCT → octets AP203. Latin-1 : aller-retour octet pour octet.
+  let t='';for(let i=0;i<bytes.length;i+=8192)t+=String.fromCharCode.apply(null,bytes.subarray(i,i+8192));
+  t=t.replace(/FILE_SCHEMA\s*\(\s*\(\s*'[^']*'\s*\)\s*\)/,"FILE_SCHEMA(('CONFIG_CONTROL_DESIGN'))")
+     .replace(/APPLICATION_PROTOCOL_DEFINITION\s*\(\s*'([^']*)'\s*,\s*'automotive_design'\s*,\s*\d+\s*,/g,"APPLICATION_PROTOCOL_DEFINITION('$1','config_control_design',1994,")
+     .replace(/APPLICATION_CONTEXT\s*\(\s*'core data for automotive mechanical design processes'\s*\)/g,"APPLICATION_CONTEXT('configuration controlled 3D designs of mechanical parts and assemblies')")
+     .replace(/=\s*PRODUCT_CONTEXT\s*\(/g,'= MECHANICAL_CONTEXT(')
+     .replace(/=\s*PRODUCT_DEFINITION_CONTEXT\s*\(\s*'part definition'/g,"= DESIGN_CONTEXT('detailed design'");
+  const ids=(re)=>{const r=[];let m;re.lastIndex=0;while((m=re.exec(t)))r.push('#'+m[1]);return r;};
+  const prod=ids(/#(\d+)\s*=\s*PRODUCT\s*\(/g),
+        pdf=ids(/#(\d+)\s*=\s*PRODUCT_DEFINITION_FORMATION(?:_WITH_SPECIFIED_SOURCE)?\s*\(/g),
+        pd=ids(/#(\d+)\s*=\s*PRODUCT_DEFINITION\s*\(/g);
+  if(!prod.length||!pdf.length||!pd.length)throw new Error('AP203 : produit introuvable dans le STEP');
+  let n=0;const re=/#(\d+)\s*=/g;let m;while((m=re.exec(t)))n=Math.max(n,+m[1]);
+  const L=[],e=(s)=>{n++;L.push('#'+n+' = '+s+';');return '#'+n;};
+  const d=new Date();
+  const L1=(a)=>'('+a.join(',')+')';
+  const pers=e("PERSON('UNKNOWN','UNKNOWN','',$,$,$)");
+  const org=e("ORGANIZATION('UNKNOWN','UNKNOWN','')");
+  const po=e('PERSON_AND_ORGANIZATION('+pers+','+org+')');
+  const off=-d.getTimezoneOffset();
+  const zone=e('COORDINATED_UNIVERSAL_TIME_OFFSET('+Math.floor(Math.abs(off)/60)+','+(Math.abs(off)%60)+','+(off<0?'.BEHIND.':'.AHEAD.')+')');
+  const dt=e('DATE_AND_TIME('+e('CALENDAR_DATE('+d.getFullYear()+','+d.getDate()+','+(d.getMonth()+1)+')')+','
+                            +e('LOCAL_TIME('+d.getHours()+','+d.getMinutes()+','+d.getSeconds()+'.,'+zone+')')+')');
+  const sec=e("SECURITY_CLASSIFICATION('','',"+e("SECURITY_CLASSIFICATION_LEVEL('unclassified')")+')');
+  const appr=e("APPROVAL("+e("APPROVAL_STATUS('not_yet_approved')")+",'')");
+  e('APPROVAL_PERSON_ORGANIZATION('+po+','+appr+','+e("APPROVAL_ROLE('approver')")+')');
+  e('APPROVAL_DATE_TIME('+dt+','+appr+')');
+  e('CC_DESIGN_APPROVAL('+appr+','+L1([sec].concat(pdf,pd))+')');
+  e('CC_DESIGN_SECURITY_CLASSIFICATION('+sec+','+L1(pdf)+')');
+  const role=(r,items)=>e('CC_DESIGN_PERSON_AND_ORGANIZATION_ASSIGNMENT('+po+','+e("PERSON_AND_ORGANIZATION_ROLE('"+r+"')")+','+L1(items)+')');
+  role('design_owner',prod);role('design_supplier',pdf);role('classification_officer',[sec]);role('creator',pdf.concat(pd));
+  e('CC_DESIGN_DATE_AND_TIME_ASSIGNMENT('+dt+','+e("DATE_TIME_ROLE('creation_date')")+','+L1(pd)+')');
+  e('CC_DESIGN_DATE_AND_TIME_ASSIGNMENT('+dt+','+e("DATE_TIME_ROLE('classification_date')")+','+L1([sec])+')');
+  const k=t.lastIndexOf('ENDSEC;');
+  if(k<0)throw new Error('AP203 : fin de section DATA introuvable');
+  t=t.slice(0,k)+L.join('\n')+'\n'+t.slice(k);
+  const out=new Uint8Array(t.length);for(let i=0;i<t.length;i++)out[i]=t.charCodeAt(i)&255;
+  return out;
+}
+function stepAskSchema(titre){
+  // Petite fenêtre « AP214 / AP203 » ; résout le schéma choisi, ou null (Échap / fond).
+  return new Promise(res=>{
+    let ov=document.getElementById('stepSchDlg');if(ov)ov.remove();
+    ov=document.createElement('div');ov.id='stepSchDlg';
+    ov.style.cssText='position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center';
+    const box=document.createElement('div');
+    box.style.cssText='background:#1c1c20;color:#e8e8ea;border:1px solid #3a3a40;border-radius:10px;padding:14px 16px;width:360px;max-width:92vw;font-size:13px;box-shadow:0 14px 40px rgba(0,0,0,.6)';
+    box.innerHTML='<b style="font-size:15px">'+(titre||'Export STEP')+'</b><div style="opacity:.7;margin:4px 0 10px">Format du fichier :</div>';
+    const fin=(v)=>{document.removeEventListener('keydown',kd,true);ov.remove();
+      if(v){stepSchema=v;try{localStorage.setItem('minifusion_stepSchema',v);}catch(e){}}
+      res(v);};
+    const kd=(e)=>{if(e.key==='Escape'){e.stopPropagation();e.preventDefault();fin(null);}
+      else if(e.key==='Enter'){e.stopPropagation();e.preventDefault();fin(stepSchema);}};
+    [['AP214','AP214 — automotive design','Recommandé : lu par tous les logiciels récents.'],
+     ['AP203','AP203 — config control design','Pour les logiciels plus anciens ou exigeant l’AP203.']].forEach(([v,lab,sub])=>{
+      const b=document.createElement('button');
+      const on=v===stepSchema;
+      b.style.cssText='display:block;width:100%;text-align:left;margin:0 0 8px;padding:8px 10px;border-radius:7px;cursor:pointer;color:#e8e8ea;background:'+(on?'#24324a':'#101012')+';border:1px solid '+(on?'#4a8cff':'#3a3a40');
+      b.innerHTML='<b>'+lab+'</b><div style="opacity:.7;font-size:12px;margin-top:2px">'+sub+'</div>';
+      b.onclick=()=>fin(v);
+      box.appendChild(b);
+    });
+    const an=document.createElement('button');an.textContent='Annuler';
+    an.style.cssText='float:right;padding:4px 12px;border-radius:6px;cursor:pointer';
+    an.onclick=()=>fin(null);box.appendChild(an);
+    ov.onclick=(e)=>{if(e.target===ov)fin(null);};
+    ov.appendChild(box);document.body.appendChild(ov);
+    document.addEventListener('keydown',kd,true);
+  });
+}
+function occWriteStep(shapes,path,schema){
+  // schema : 'AP214' | 'AP203' (défaut : dernier choix de l'utilisateur).
+  const b=occWriteStepAp214(shapes,path);
+  return (schema||stepSchema)==='AP203'?stepToAp203(b):b;
+}
+function occWriteStepAp214(shapes,path){
   // shapes : liste de TopoDS_Shape -> octets STEP via le FS OCCT. Chaque étape est vérifiée.
   const RD=occt.IFSelect_ReturnStatus;
   const wr=new occt.STEPControl_Writer_1();
@@ -1374,6 +1463,8 @@ async function occExportPreflight(){
 }
 $('btnExportStep').onclick=async()=>{
   if(!occHas()){alert('Export STEP exact nécessite OCCT (chargement en cours ou échec — servez la page en http://). Export STL/OBJ dispo.');return;}
+  const sch=await stepAskSchema('Export STEP');
+  if(!sch)return;
   faceEl.textContent='Export STEP : pré-test…';
   const[pok,pdetail]=await occExportPreflight();
   try{console.log('[STEP-OUT] pré-test : '+pdetail);}catch(e){}
@@ -1385,14 +1476,14 @@ $('btnExportStep').onclick=async()=>{
     const path='/o.stp'; // chemin court fixe (les chemins longs échouent dans certains onglets)
     try{occt.FS.unlink(path);}catch(e){}
     try{console.log('[STEP-OUT] path='+JSON.stringify(path)+' typeof='+(typeof path)+' cwd='+occt.FS.cwd()+' avant='+occt.FS.readdir('/').slice(0,12).join(','));}catch(e){}
-    const bytes=occWriteStep([FR.shape],path);
+    const bytes=occWriteStep([FR.shape],path,sch);
     try{console.log('[STEP-OUT] après='+occt.FS.readdir('/').slice(0,12).join(','));}catch(e){}
     const blob=new Blob([bytes],{type:'application/step'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(doc.name||'piece')+'.step';a.click();
     setTimeout(()=>URL.revokeObjectURL(a.href),2000);
     try{occt.FS.unlink(path);}catch(e){}
     occCleanup(FR,null);
-    faceEl.textContent='STEP exact exporté ('+(bytes.length/1024).toFixed(1)+' Ko).';
+    faceEl.textContent='STEP '+sch+' exact exporté ('+(bytes.length/1024).toFixed(1)+' Ko).';
   }catch(e){alert('Export STEP impossible : '+e.message);}
 };
 $('btnExportStl').onclick=()=>downloadMesh('stl');
