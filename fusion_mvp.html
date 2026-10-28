@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.15.18';
+const APP_VER='V0.16.0';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -5519,6 +5519,10 @@ function occCleanup(FR,keepShape){
    invalide tout ce qui suit, donc aucune geometrie perimee ne peut etre reutilisee. */
 let occCk=[]; // [{key,shape}] du plus ancien au plus recent
 let occCkWarn={}; // avertissements de congé par point de contrôle (mêmes entrées = mêmes messages)
+// V0.16.0 : relevé pos/len des arêtes d'un congé exact tel qu'au point de contrôle. Il n'est plus
+// dans la clé (featSig) : un point de contrôle retrouvé le RESTITUE, comme un recalcul l'aurait
+// rafraîchi (retour à une valeur précédente : relevé de cet état-là, pas du dernier rejeu).
+let occCkEdges={};
 let occProjPass=0; // 0 = rejeu principal ; >=1 = passe de projection imbriquée (rebuild(pass))
 // Limite adaptative : 8 points de contrôle sur une timeline de 13 fonctions évacuaient les
 // prÉfixes (les projections upto<13 ne trouvaient JAMAIS leur point de contrôle → rejeu
@@ -5551,7 +5555,7 @@ function occToolCkPut(key,r){
 }
 function occCkClear(){
   for(const c of occCk){try{c.shape.delete();}catch(e){}}
-  occCk=[];occCkWarn={};
+  occCk=[];occCkWarn={};occCkEdges={};
   occToolCk.forEach(o=>{try{o.shape.delete();}catch(e){}});occToolCk=new Map();
 }
 function skSig(sk){
@@ -5559,9 +5563,12 @@ function skSig(sk){
   // contraintes, cotes. MarcheArithmetique directe — pas de JSON.stringify (40x moins cher).
   let h=2166136261;
   const mix=v=>{h^=(+v||0)|0;h=Math.imul(h,16777619);};
+  // ARRONDI (pas troncature `|0`) : une cote ronde portée par le solveur à ±1e-9 près
+  // (−10,999999999 / −11,000000001) tombait de part et d'autre d'un entier → signature
+  // instable, point de contrôle raté et tout l'aval rejoué.
   mix(sk.seq);
   const u=sk.axU||[1,0,0],v=sk.axV||[0,1,0],w=sk.axN||[0,0,1],o=sk.origin||[0,0,0];
-  for(let i=0;i<3;i++){mix((+u[i]*1e6)|0);mix((+v[i]*1e6)|0);mix((+w[i]*1e6)|0);mix((+o[i]*1e6)|0);}
+  for(let i=0;i<3;i++){mix(Math.round(+u[i]*1e6));mix(Math.round(+v[i]*1e6));mix(Math.round(+w[i]*1e6));mix(Math.round(+o[i]*1e6));}
   // Seul le PROFIL compte : construction et références 3D ne participent jamais au solide
   // (extrusion, ancrages) — les projeter ne doit donc pas invalider les points de contrôle.
   const C=sk.constraints||[],D=sk.dims||[],P=sk.points||{};
@@ -5572,9 +5579,9 @@ function skSig(sk){
   const K=Object.keys(P).filter(k=>used.has(k));mix(K.length);
   for(const k of K){
     for(let i=0;i<k.length;i++)mix(k.charCodeAt(i));
-    const p=P[k]||{};mix((+p.x*1000)|0);mix((+p.y*1000)|0);
+    const p=P[k]||{};mix(Math.round(+p.x*1000));mix(Math.round(+p.y*1000));
   }
-  for(const e of E){mix(e.t?e.t.length:0);mix((+e.r*1000)|0);mix(e.p1?e.p1.length:0);mix(e.p2?e.p2.length:0);}
+  for(const e of E){mix(e.t?e.t.length:0);mix(Math.round(+e.r*1000));mix(e.p1?e.p1.length:0);mix(e.p2?e.p2.length:0);}
   for(const c of C)mix(c.type?c.type.length:0);
   return (h>>>0).toString(36);
 }
@@ -5659,7 +5666,11 @@ function featSig(f){
   // non sérialisable), name/open (affichage pur : replier un nœud ou renommer ne
   // change pas le solide et invaliderait tout). _calc : suppression au worker (21), état
   // dérivé lui aussi — dans la clé, la réponse du worker ne serait jamais retrouvée.
+  // V0.16.0 : congé exact — le relevé pos/len, rafraîchi à chaque appariement (bruit ~1e-9),
+  // est exclu du filet quand pos0 le fige : il y rentrait par la fonction entière et changeait la
+  // clé après chaque rejeu (point de contrôle raté, tout l'aval rejoué sans changement).
   const jf={};for(const k in f){if(k==='name'||k==='open'||k==='_m'||k==='_mesh'||k==='_calc')continue;jf[k]=f[k];}
+  if(f.type==='xfillet'&&Array.isArray(f.edges))jf.edges=f.edges.map(e=>{if(!e||typeof e!=='object')return e;const q=Object.assign({},e);if(q.pos0)delete q.pos;delete q.len;return q;});
   s+='|j'+JSON.stringify(jf);
   return s;
 }
@@ -5686,7 +5697,7 @@ function occCkPut(key,mkShape){
   const shape=mk?mk():mkShape;
   if(!shape)return;
   occCk.push({key,shape});
-  while(occCk.length>occCkMax()){const old=occCk.shift();try{old.shape.delete();}catch(e){}}
+  while(occCk.length>occCkMax()){const old=occCk.shift();try{old.shape.delete();}catch(e){}delete occCkEdges[old.key];}
 }
 function occReplayBody(bid,list){
   // Rejeu ISOLÉ d'un corps : mêmes règles que l'ancien rejeu global (ordre timeline,
@@ -5716,11 +5727,14 @@ function occReplayBody(bid,list){
       if(cpX){
         try{result.delete();}catch(e){}result=cpX;
         const w=occCkWarn[ckKey];if(w&&w.length)msgs.push(...w.map(x=>`${f.name} : ${x}`));
+        const sv=occCkEdges[ckKey];
+        if(sv&&Array.isArray(f.edges)&&sv.length===f.edges.length)f.edges.forEach((e,i)=>{if(e&&sv[i]){if(sv[i].pos)e.pos=sv[i].pos.slice();if(sv[i].len!=null)e.len=sv[i].len;}});
         return;
       }
       const r=occApplyXFillets(result,[f]);
       result=r.shape;msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       if(r.warnings.length)occCkWarn[ckKey]=r.warnings.slice();else delete occCkWarn[ckKey];
+      occCkEdges[ckKey]=(f.edges||[]).map(e=>e?{pos:Array.isArray(e.pos)?e.pos.slice():null,len:e.len!=null?e.len:null}:null);
       occCkPut(ckKey,()=>occShapeCopy(result));
       return;
     }
@@ -7669,9 +7683,6 @@ function repGenChildren(rp){
     base.forEach(f=>{sources2.push(f);const k1=kids1.find(k=>k._src===f.id);if(k1)sources2.push(k1);});
     kids2=buildPass(sources2,cfg2,2);
   }
-  const kept=new Set([...reuse.values()]);
-  olds.forEach(c=>{if(!kept.has(c))dropSketch(c.id);});
-  doc.features=doc.features.filter(f=>f.repeatId!==rp.id);
   rp.children=[];
   const kids=(rp.mode==='mir')?kids1.concat(kids2):[];
   if(rp.mode!=='mir'){
@@ -7690,6 +7701,12 @@ function repGenChildren(rp){
   }else{
     kids.forEach(nf=>rp.children.push(nf.id));
   }
+  // Purge APRÈS toutes les passes (V0.16.0) : faite avant la boucle linéaire / circulaire,
+  // elle voyait `reuse` encore vide et supprimait les esquisses des instances recyclées — ids
+  // d'esquisses neufs à chaque régénération (cotes, hôtes, projections et cache de rejeu perdus).
+  const kept=new Set([...reuse.values()]);
+  olds.forEach(c=>{if(!kept.has(c))dropSketch(c.id);});
+  doc.features=doc.features.filter(f=>f.repeatId!==rp.id);
   const at=doc.features.indexOf(rp);
   if(at<0)doc.features=doc.features.concat(kids);else doc.features.splice(at+1,0,...kids);
   // Corps d'exemplaires devenus inutiles (quantité réduite, retour à « Unir », source retirée)

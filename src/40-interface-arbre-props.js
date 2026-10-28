@@ -741,9 +741,6 @@ function repGenChildren(rp){
     base.forEach(f=>{sources2.push(f);const k1=kids1.find(k=>k._src===f.id);if(k1)sources2.push(k1);});
     kids2=buildPass(sources2,cfg2,2);
   }
-  const kept=new Set([...reuse.values()]);
-  olds.forEach(c=>{if(!kept.has(c))dropSketch(c.id);});
-  doc.features=doc.features.filter(f=>f.repeatId!==rp.id);
   rp.children=[];
   const kids=(rp.mode==='mir')?kids1.concat(kids2):[];
   if(rp.mode!=='mir'){
@@ -762,6 +759,12 @@ function repGenChildren(rp){
   }else{
     kids.forEach(nf=>rp.children.push(nf.id));
   }
+  // Purge APRÈS toutes les passes (V0.16.0) : faite avant la boucle linéaire / circulaire,
+  // elle voyait `reuse` encore vide et supprimait les esquisses des instances recyclées — ids
+  // d'esquisses neufs à chaque régénération (cotes, hôtes, projections et cache de rejeu perdus).
+  const kept=new Set([...reuse.values()]);
+  olds.forEach(c=>{if(!kept.has(c))dropSketch(c.id);});
+  doc.features=doc.features.filter(f=>f.repeatId!==rp.id);
   const at=doc.features.indexOf(rp);
   if(at<0)doc.features=doc.features.concat(kids);else doc.features.splice(at+1,0,...kids);
   // Corps d'exemplaires devenus inutiles (quantité réduite, retour à « Unir », source retirée)
