@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.14.0';
+const APP_VER='V0.15.0';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -60099,6 +60099,186 @@ function viewFadeIn(){
   else try{mepInit();}catch(e){}
 })();
 
+/* ═══════════════ 98-rendu-post.js — rendu post ═══════════════ */
+/* ---------- finition de l'image de l'atelier RENDU (V0.15.0) ----------
+   Une chaîne écrite UNE fois, en GLSL que comprennent le three r147 (moteur rapide) et le three récent
+   (lancer de rayons) : rpCreate(T, moteur) reçoit l'espace de noms three de chacun. Elle part de l'image
+   LINÉAIRE accumulée (cible flottante, alpha prémultiplié ou non) et va jusqu'aux pixels du canevas :
+     1. débruitage (lancer de rayons) : filtre bilatéral — moyenne pondérée des voisins, coupée là où la
+        couleur change franchement (jugée sur c / (1 + c) : les reflets intenses ne bavent pas) ;
+     2. halo : partie lumineuse (au-dessus d'un seuil, après exposition), floutée à ½, ¼ et ⅛ de la taille,
+        rajoutée — la lumière déborde aussi sur le fond ;
+     3. tons (ACES, Reinhard, Cinéon, linéaire) et fond (dégradé, uni, transparent) ;
+     4. étalonnage (température, contraste, saturation), vignettage, grain — sur l'image affichée, fond compris ;
+     5. sRGB.
+   Les réglages (rd.st) restent dans le navigateur, comme le reste de l'atelier. */
+const RP_VS='varying vec2 vUv;\nvoid main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
+const RP_DEN=[
+  'uniform sampler2D tSrc; uniform vec2 uPx; uniform float uPremul; uniform float uSig; uniform float uThr; varying vec2 vUv;',
+  'vec4 rpRd(vec2 uv){ vec4 c = texture2D(tSrc, uv); if(uPremul < 0.5) c.rgb *= c.a; return c; }',
+  'void main(){',
+  '  vec4 c0 = rpRd(vUv); if(uSig < 0.01){ gl_FragColor = c0; return; }',
+  '  vec3 k0 = c0.rgb / (1.0 + c0.rgb); float z = 0.0; vec4 acc = vec4(0.0);',
+  '  for(int x = -6; x <= 6; x++) for(int y = -6; y <= 6; y++){',
+  '    vec2 d = vec2(float(x), float(y)); float r2 = dot(d, d); if(r2 > 36.0) continue;',
+  '    vec4 c = rpRd(vUv + d * uPx); vec3 k = c.rgb / (1.0 + c.rgb); vec3 dk = k - k0; float da = c.a - c0.a;',
+  '    float w = exp(-r2 / (2.0 * uSig * uSig)) * exp(-(dot(dk, dk) + da * da) / (2.0 * uThr * uThr));',
+  '    acc += w * c; z += w; }',
+  '  gl_FragColor = acc / max(z, 1e-6); }'].join('\n');
+const RP_BRIGHT=[ // partie lumineuse, réduite de moitié (4 lectures)
+  'uniform sampler2D tSrc; uniform vec2 uPx; uniform float uExpo; uniform float uSeuil; varying vec2 vUv;',
+  'vec3 rpB(vec2 uv){ vec3 c = texture2D(tSrc, uv).rgb * uExpo; float l = dot(c, vec3(0.2126, 0.7152, 0.0722)); return c * max(0.0, l - uSeuil) / max(l, 1e-4); }',
+  'void main(){ gl_FragColor = vec4((rpB(vUv + uPx * vec2(-0.5, -0.5)) + rpB(vUv + uPx * vec2(0.5, -0.5)) + rpB(vUv + uPx * vec2(-0.5, 0.5)) + rpB(vUv + uPx * vec2(0.5, 0.5))) * 0.25, 1.0); }'].join('\n');
+const RP_BLUR=[ // flou gaussien séparé, 9 lectures (pas : uDir en pixels de la cible lue)
+  'uniform sampler2D tSrc; uniform vec2 uDir; varying vec2 vUv;',
+  'void main(){ vec3 s = texture2D(tSrc, vUv).rgb * 0.2270270;',
+  '  s += (texture2D(tSrc, vUv + uDir * 1.3846154).rgb + texture2D(tSrc, vUv - uDir * 1.3846154).rgb) * 0.3162162;',
+  '  s += (texture2D(tSrc, vUv + uDir * 3.2307692).rgb + texture2D(tSrc, vUv - uDir * 3.2307692).rgb) * 0.0702703;',
+  '  gl_FragColor = vec4(s, 1.0); }'].join('\n');
+const RP_FINAL=[
+  'uniform sampler2D tC; uniform sampler2D tB1; uniform sampler2D tB2; uniform sampler2D tB3;',
+  'uniform float uExpo; uniform float uTone; uniform float uHalo; uniform float uBg; uniform vec3 uC1; uniform vec3 uC2;',
+  'uniform float uVig; uniform float uGrain; uniform float uCon; uniform float uSat; uniform float uTemp; uniform float uAsp; varying vec2 vUv;',
+  'vec3 rpRrt(vec3 v){ vec3 a = v * (v + 0.0245786) - 0.000090537; vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081; return a / b; }',
+  'vec3 rpAces(vec3 c){',
+  '  const mat3 I = mat3(vec3(0.59719, 0.07600, 0.02840), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));',
+  '  const mat3 O = mat3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));',
+  '  c *= 1.0 / 0.6; c = I * c; c = rpRrt(c); c = O * c; return clamp(c, 0.0, 1.0); }',
+  'vec3 rpTone(vec3 c){ if(uTone < 0.5) return rpAces(c); if(uTone < 1.5) return clamp(c / (1.0 + c), 0.0, 1.0);',
+  '  if(uTone < 2.5){ c = max(vec3(0.0), c - 0.004); return pow((c * (6.2 * c + 0.5)) / (c * (6.2 * c + 1.7) + 0.06), vec3(2.2)); } return clamp(c, 0.0, 1.0); }',
+  'vec3 rpSrgb(vec3 c){ c = clamp(c, 0.0, 1.0); return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c)); }',
+  'vec3 rpLin(vec3 c){ return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }',
+  'float rpHash(vec2 p){ vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }',
+  'vec3 rpLook(vec3 c, vec2 fc){', // étalonnage, vignettage, grain : couleur affichée (linéaire, 0..1)
+  '  c *= vec3(1.0 + 0.12 * uTemp, 1.0 + 0.02 * uTemp, 1.0 - 0.12 * uTemp);',
+  '  float l = dot(c, vec3(0.2126, 0.7152, 0.0722)); c = mix(vec3(l), c, 1.0 + uSat);',
+  '  vec3 s = rpSrgb(c); s = (s - 0.5) * (1.0 + uCon) + 0.5; c = rpLin(clamp(s, 0.0, 1.0));',
+  '  vec2 d = (vUv - 0.5) * vec2(uAsp, 1.0) / sqrt(uAsp * uAsp * 0.25 + 0.25); c *= 1.0 - uVig * smoothstep(0.35, 1.0, length(d));',
+  '  c += (rpHash(fc) - 0.5) * uGrain * 0.12 * (0.35 + 0.65 * sqrt(max(l, 0.0)));',
+  '  return clamp(c, 0.0, 1.0); }',
+  'void main(){',
+  '  vec4 a = texture2D(tC, vUv);', // linéaire, alpha prémultiplié
+  '  vec3 h = (texture2D(tB1, vUv).rgb + texture2D(tB2, vUv).rgb + texture2D(tB3, vUv).rgb) * (uHalo / 3.0);',
+  '  vec3 lin = a.rgb * uExpo + h; float al = clamp(a.a + dot(h, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0);',
+  '  vec3 col = al > 1e-4 ? rpTone(lin / al) : vec3(0.0);',
+  '  if(uBg > 1.5){ vec3 c = rpLook(col, gl_FragCoord.xy); gl_FragColor = vec4(rpSrgb(c) * al, al); return; }', // fond transparent : PNG détouré, prémultiplié
+  '  vec3 bg = rpLin(uBg > 0.5 ? mix(uC2, uC1, vUv.y) : uC1);',
+  '  gl_FragColor = vec4(rpSrgb(rpLook(mix(bg, col, al), gl_FragCoord.xy)), 1.0); }'].join('\n');
+function rpCreate(T,r){
+  const cam=new T.OrthographicCamera(-1,1,1,-1,0,1),quad=new T.Mesh(new T.PlaneGeometry(2,2)),sc=new T.Scene();
+  quad.frustumCulled=false;sc.add(quad);
+  const mat=(fs,U)=>new T.ShaderMaterial({uniforms:U,vertexShader:RP_VS,fragmentShader:fs,depthTest:false,depthWrite:false});
+  const P={T,r,cam,quad,sc,w:0,h:0,rt:{},
+    den:mat(RP_DEN,{tSrc:{value:null},uPx:{value:new T.Vector2()},uPremul:{value:1},uSig:{value:0},uThr:{value:0.1}}),
+    bright:mat(RP_BRIGHT,{tSrc:{value:null},uPx:{value:new T.Vector2()},uExpo:{value:1},uSeuil:{value:1}}),
+    blur:mat(RP_BLUR,{tSrc:{value:null},uDir:{value:new T.Vector2()}}),
+    fin:mat(RP_FINAL,{tC:{value:null},tB1:{value:null},tB2:{value:null},tB3:{value:null},uExpo:{value:1},uTone:{value:0},uHalo:{value:0},uBg:{value:1},
+      uC1:{value:new T.Color()},uC2:{value:new T.Color()},uVig:{value:0},uGrain:{value:0},uCon:{value:0},uSat:{value:0},uTemp:{value:0},uAsp:{value:16/9}})};
+  return P;
+}
+function rpSize(P,w,h){
+  if(P.w===w&&P.h===h)return;
+  Object.values(P.rt).forEach(t=>t.dispose());P.rt={};
+  const T=P.T,mk=(a,b)=>new T.WebGLRenderTarget(Math.max(1,a),Math.max(1,b),{type:T.HalfFloatType,depthBuffer:false});
+  P.rt.den=mk(w,h);
+  for(let i=1;i<=3;i++){const s=1<<i;P.rt['a'+i]=mk(Math.ceil(w/s),Math.ceil(h/s));P.rt['b'+i]=mk(Math.ceil(w/s),Math.ceil(h/s));}
+  P.w=w;P.h=h;
+}
+function rpPass(P,m,target){P.quad.material=m;P.r.setRenderTarget(target);P.r.render(P.sc,P.cam);}
+function rpRender(P,src,w,h,o){
+  // src : texture linéaire (o.premul : alpha prémultiplié) ; o : {den, halo, expo, tone, bg, c1, c2, vig, grain, con, sat, temp}
+  rpSize(P,w,h);
+  const D=P.den.uniforms;let tex=src;
+  if(o.den>0.001){D.tSrc.value=src;D.uPx.value.set(1/w,1/h);D.uPremul.value=o.premul?1:0;D.uSig.value=0.6+3.4*o.den;D.uThr.value=0.03+0.12*o.den;
+    rpPass(P,P.den,P.rt.den);tex=P.rt.den.texture;}
+  else if(!o.premul){D.tSrc.value=src;D.uPx.value.set(1/w,1/h);D.uPremul.value=0;D.uSig.value=0;rpPass(P,P.den,P.rt.den);tex=P.rt.den.texture;} // prémultiplie
+  const F=P.fin.uniforms;
+  if(o.halo>0.001){
+    const B=P.bright.uniforms;B.tSrc.value=tex;B.uPx.value.set(1/w,1/h);B.uExpo.value=o.expo;B.uSeuil.value=1;rpPass(P,P.bright,P.rt.a1);
+    const L=P.blur.uniforms;
+    for(let i=1;i<=3;i++){
+      const a=P.rt['a'+i],b=P.rt['b'+i];
+      if(i>1){L.tSrc.value=P.rt['a'+(i-1)].texture;L.uDir.value.set(0,0);rpPass(P,P.blur,a);} // réduction (lecture bilinéaire)
+      L.tSrc.value=a.texture;L.uDir.value.set(1/a.width,0);rpPass(P,P.blur,b);
+      L.tSrc.value=b.texture;L.uDir.value.set(0,1/a.height);rpPass(P,P.blur,a);
+    }
+    F.tB1.value=P.rt.a1.texture;F.tB2.value=P.rt.a2.texture;F.tB3.value=P.rt.a3.texture;
+  }else{F.tB1.value=F.tB2.value=F.tB3.value=tex;}
+  F.tC.value=tex;F.uExpo.value=o.expo;F.uTone.value=o.tone;F.uHalo.value=o.halo>0.001?o.halo*1.5:0;F.uBg.value=o.bg;
+  rpHex(F.uC1.value,o.c1);rpHex(F.uC2.value,o.c2); // valeurs sRGB telles quelles (le three récent convertirait un « #rrggbb »)
+  F.uVig.value=o.vig;F.uGrain.value=o.grain;F.uCon.value=o.con;F.uSat.value=o.sat;F.uTemp.value=o.temp;F.uAsp.value=w/h;
+  if(o.halo<=0.001){F.uHalo.value=0;}
+  rpPass(P,P.fin,null);
+}
+function rpHex(c,h){const v=parseInt(String(h).slice(1),16)||0;c.setRGB(((v>>16)&255)/255,((v>>8)&255)/255,(v&255)/255);}
+function rpOpts(premul,den){ // réglages de l'atelier → rpRender
+  const st=rd.st;
+  return {premul,den:den?+st.pDen:0,halo:+st.pHalo,expo:Math.pow(2,st.ev),tone:{aces:0,doux:1,cine:2,lin:3}[st.tons]||0,
+    bg:st.fond==='transparent'?2:st.fond==='degrade'||st.fond==='studio'?1:0,c1:st.fc1,c2:st.fc2,
+    vig:+st.pVig,grain:+st.pGrain,con:+st.pCon,sat:+st.pSat,temp:+st.pTemp};
+}
+function rpDispose(P){if(!P)return;Object.values(P.rt).forEach(t=>t.dispose());['den','bright','blur','fin'].forEach(k=>P[k].dispose());P.quad.geometry.dispose();}
+/* ── enregistrement : le PNG, ou (« Calques séparés ») une archive .zip pour la retouche :
+   beauté (l'image finie) + calques géométriques rendus par le moteur rapide, même cadrage, sans décalage :
+   masque (pièce blanche sur noir), profondeur (proche = clair), normales (repère de la caméra),
+   identifiants (une teinte par corps), ombre (ombre portée seule, noire sur blanc : en « produit »). ── */
+async function rdSaveImage(blob,W,H,base){
+  let out=blob,name=base+'.png',zip=false;
+  if(rd.st.calques){
+    const files={'1 - beaute.png':new Uint8Array(await blob.arrayBuffer())},L=await rdLayers(W,H);
+    for(const k of Object.keys(L))files[k]=new Uint8Array(await L[k].arrayBuffer());
+    const Lib=await rtLoad();
+    out=new Blob([Lib.zipSync(files,{level:0})],{type:'application/zip'});name=base+' - calques.zip';zip=true;
+  }
+  const url=URL.createObjectURL(out),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  return {url,size:out.size,zip};
+}
+async function rdLayers(W,H){
+  const r=rd.r,sc=rd.scene,cam=rd.cam,G=rd.group.children.filter(m=>m.isMesh);
+  r.setPixelRatio(1);r.setSize(W,H,false);cam.clearViewOffset();cam.updateMatrixWorld();
+  const keep={bg:sc.background,vis:[rd.disk,rd.floor,rd.studio,rd.edges].map(o=>o&&o.visible),mats:G.map(m=>m.material),
+    fo:rd.floor.material.opacity,fc:rd.floor.material.color.getHex(),cc:r.getClearColor(new THREE.Color()).getHex(),ca:r.getClearAlpha()};
+  const hide=()=>{[rd.disk,rd.studio,rd.edges,rd.floor].forEach(o=>{if(o)o.visible=false;});};
+  const box=rd.box,cen=box.getCenter(new THREE.Vector3()),R=box.getSize(new THREE.Vector3()).length()*0.5||50,dc=cam.position.distanceTo(cen);
+  const made=[],shot=async(nom,bg,mats)=>{
+    hide();sc.background=null;
+    G.forEach((m,i)=>{m.material=mats(i);});
+    r.setRenderTarget(null);r.setClearColor(bg,1);r.clear();r.render(sc,cam);
+    const b=await new Promise(res=>rd.canvas.toBlob(res,'image/png'));if(b)made.push([nom,b]);
+  };
+  const tmp=[],T=m=>{tmp.push(m);return m;};
+  try{
+    const white=T(new THREE.MeshBasicMaterial({color:0xffffff}));
+    await shot('2 - masque.png',0x000000,()=>white);
+    const dep=T(new THREE.ShaderMaterial({uniforms:{uN:{value:Math.max(0.01,dc-R)},uF:{value:dc+R}},
+      vertexShader:'varying float vZ;\nvoid main(){ vec4 p = modelViewMatrix * vec4(position, 1.0); vZ = -p.z; gl_Position = projectionMatrix * p; }',
+      fragmentShader:'uniform float uN; uniform float uF; varying float vZ;\nvoid main(){ float d = clamp((vZ - uN) / (uF - uN), 0.0, 1.0); gl_FragColor = vec4(vec3(1.0 - d), 1.0); }'}));
+    await shot('3 - profondeur.png',0x000000,()=>dep);
+    const nor=T(new THREE.MeshNormalMaterial());
+    await shot('4 - normales.png',0x8080ff,()=>nor);
+    const ids=G.map((m,i)=>T(new THREE.MeshBasicMaterial({color:new THREE.Color().setHSL((i*0.618034)%1,0.75,0.55)})));
+    await shot('5 - identifiants.png',0x000000,i=>ids[i]);
+    // ombre : la pièce n'écrit aucune couleur (elle masque seulement le sol et porte son ombre)
+    const inv=T(new THREE.MeshBasicMaterial({colorWrite:false}));
+    hide();rd.floor.visible=true;rd.floor.material.opacity=1;rd.floor.material.color.setHex(0x000000);
+    G.forEach(m=>{m.material=inv;});sc.background=null;
+    // pénombre : moyenne de 48 positions de la lampe dans son disque (« Douceur »), comme l'affinage
+    const acc=document.createElement('canvas');acc.width=W;acc.height=H;const g2=acc.getContext('2d');
+    for(let i=0;i<48;i++){
+      rdSunJitter(i);r.shadowMap.needsUpdate=true;
+      r.setRenderTarget(null);r.setClearColor(0xffffff,1);r.clear();r.render(sc,cam);
+      g2.globalAlpha=1/(i+1);g2.drawImage(rd.canvas,0,0);
+    }
+    rdSunJitter(-1);
+    const b=await new Promise(res=>acc.toBlob(res,'image/png'));if(b)made.push(['6 - ombre.png',b]);
+  }finally{
+    G.forEach((m,i)=>{m.material=keep.mats[i];});tmp.forEach(m=>m.dispose());
+    sc.background=keep.bg;[rd.disk,rd.floor,rd.studio,rd.edges].forEach((o,i)=>{if(o)o.visible=keep.vis[i];});
+    rd.floor.material.opacity=keep.fo;rd.floor.material.color.setHex(keep.fc);r.setClearColor(keep.cc,keep.ca);r.shadowMap.needsUpdate=true;
+  }
+  return Object.fromEntries(made);
+}
+
 /* ═══════════════ 98-rendu-rayons.js — rendu rayons ═══════════════ */
 /* ---------- atelier RENDU : moteur « Lancer de rayons » (V0.12.0, prototype) ----------
    Second moteur de l'atelier (bloc « Moteur » du panneau) : three-gpu-pathtracer sur un three RÉCENT, empaqueté
@@ -60290,12 +60470,14 @@ function rtSyncCam(){
   c.updateProjectionMatrix();c.updateMatrixWorld();
   rd.rt.pt.setCamera(c);
 }
-function rtLook(){ // tons, exposition, fond : à l'affichage seulement (pas de nouvel affinage)
-  const R=rd.rt,T=R.T,st=rd.st;
-  const tm=T[RT_TONS[st.tons]||'ACESFilmicToneMapping'];
-  if(R.r.toneMapping!==tm){R.r.toneMapping=tm;R.pt._quad.material.needsUpdate=true;}
-  R.r.toneMappingExposure=Math.pow(2,st.ev);
-  R.canvas.style.background=st.fond==='transparent'||st.fond==='hdri'?'none':st.fond==='degrade'||st.fond==='studio'?'linear-gradient('+st.fc1+','+st.fc2+')':st.fc1;
+function rtLook(){ // tons, exposition, fond : à l'affichage seulement, par la finition commune (pas de nouvel affinage)
+  const R=rd.rt;R.r.toneMapping=R.T.NoToneMapping;R.canvas.style.background='none';R.lookDirty=true;
+}
+function rtPresent(){
+  // image accumulée du pathtracer (linéaire, alpha non prémultiplié) → débruitage, halo, tons, fond, étalonnage
+  const R=rd.rt;if(!R.post)R.post=rpCreate(R.T,R.r);
+  const sz=R.r.getDrawingBufferSize(new R.T.Vector2());
+  rpRender(R.post,R.pt.target.texture,sz.x,sz.y,rpOpts(false,true));R.shown=true;
 }
 /* ── affinage ──
    Le compteur du pathtracer avance à l'ENVOI des tuiles (3 × 3 par échantillon) : sans frein, la file du GPU
@@ -60321,7 +60503,7 @@ function rtLoop(){
   if(rd.drag){R.canvas.style.visibility='hidden';return;}
   if(R.camDirty){rtSyncCam();R.camDirty=false;}
   if(rtSamples()<RT_PREVIEW){if(rtGpuReady(R,24))rtSubmit(R,RT_PREVIEW);}
-  else if(R.lookDirty){R.pt.pausePathTracing=true;R.pt.renderSample();R.pt.pausePathTracing=false;}
+  if(rtSamples()>=1&&(rtSamples()<RT_PREVIEW||R.lookDirty||!R.shown))rtPresent(); // V0.15.0 : finition (98-rendu-post)
   R.lookDirty=false;
   R.canvas.style.visibility=rtSamples()>=1?'visible':'hidden';
   rtCount();
@@ -60375,7 +60557,7 @@ async function rtStart(){
   r.outputColorSpace=T.SRGBColorSpace;
   canvas.style.visibility='hidden';rd.view.appendChild(canvas);
   const pt=new L.WebGLPathTracer(r);
-  pt.renderDelay=0;pt.fadeDuration=0;pt.minSamples=1;pt.rasterizeScene=false;
+  pt.renderDelay=0;pt.fadeDuration=0;pt.minSamples=1;pt.rasterizeScene=false;pt.renderToCanvas=false; // affichage : rtPresent
   pt.bounces=8;pt.transmissiveBounces=10;pt.filterGlossyFactor=0.5;
   const cam=new L.PhysicalCamera();cam.up.set(0,0,1);
   Object.assign(R,{L,T,r,canvas,pt,cam,scene:new T.Scene(),raf:0,batch:9,fence:null});
@@ -60395,7 +60577,7 @@ function rtStop(){
   try{rtDropGroup(R);if(R.texCache)R.texCache.forEach(K=>['map','rough','normal'].forEach(k=>{if(K[k])K[k].dispose();}));}catch(e){}
   try{if(R.floor){R.floor.geometry.dispose();if(R.floor.material.alphaMap)R.floor.material.alphaMap.dispose();R.floor.material.dispose();}}catch(e){}
   try{if(R.env)R.env.dispose();Object.values(R.supMap||{}).forEach(t=>t.dispose());if(R.studio){R.studio.geometry.dispose();R.studio.material.dispose();}}catch(e){}
-  try{if(R.fence)R.r.getContext().deleteSync(R.fence);if(R.pt)R.pt.dispose();}catch(e){}
+  try{if(R.fence)R.r.getContext().deleteSync(R.fence);if(R.pt)R.pt.dispose();rpDispose(R.post);}catch(e){}
   try{if(R.r){R.r.dispose();R.r.forceContextLoss();}}catch(e){}
   try{if(R.canvas)R.canvas.remove();}catch(e){}
 }
@@ -60426,19 +60608,13 @@ async function rtExport(){
       if(!rd||rd.rt!==R)return;
     }
     while(!rtGpuReady(R,80))await new Promise(r=>setTimeout(r,4)); // dernier lot calculé avant la copie
-    // le fond (dégradé ou uni) est composé ici ; transparent : PNG détouré tel quel
-    const out=document.createElement('canvas');out.width=W;out.height=H;const g=out.getContext('2d');
-    if(st.fond!=='transparent'&&st.fond!=='hdri'){ // « Image » : l'HDRI est déjà dans le calcul
-      if(st.fond==='degrade'||st.fond==='studio'){const lg=g.createLinearGradient(0,0,0,H);lg.addColorStop(0,st.fc1);lg.addColorStop(1,st.fc2);g.fillStyle=lg;}else g.fillStyle=st.fc1;
-      g.fillRect(0,0,W,H);
-    }
-    g.drawImage(R.canvas,0,0);
-    const blob=await new Promise(r=>out.toBlob(r,'image/png'));
+    // finition (fond compris, transparent : PNG détouré) puis, au choix, les calques séparés (98-rendu-post)
+    rtPresent();
+    const blob=await new Promise(r=>R.canvas.toBlob(r,'image/png'));
     if(!blob)throw new Error('image vide');
-    url=URL.createObjectURL(blob);
     const nm=String((typeof doc!=='undefined'&&doc&&doc.name)||'piece').replace(/[\\/:*?"<>|]+/g,'-');
-    const a=document.createElement('a');a.href=url;a.download=nm+' - rendu '+W+'x'+H+' (rayons).png';document.body.appendChild(a);a.click();a.remove();
-    rdMsg('Image '+W+'×'+H+' enregistrée : '+N+' échantillons en '+((performance.now()-t0)/1000).toFixed(1).replace('.',',')+' s ('+(blob.size/1048576).toFixed(1).replace('.',',')+' Mo).');
+    const sv=await rdSaveImage(blob,W,H,nm+' - rendu '+W+'x'+H+' (rayons)');url=sv.url;
+    rdMsg((sv.zip?'Calques ':'Image ')+W+'×'+H+(sv.zip?' enregistrés : ':' enregistrée : ')+N+' échantillons en '+((performance.now()-t0)/1000).toFixed(1).replace('.',',')+' s ('+(sv.size/1048576).toFixed(1).replace('.',',')+' Mo).');
   }catch(e){rdMsg('Rendu impossible : '+(e&&e.message||e));}
   finally{
     if(rd){rd.busy=false;rdFitCanvas();if(btn){btn.disabled=false;btn.textContent='Rendre et enregistrer le PNG';}}
@@ -61259,7 +61435,8 @@ function vEnvTick(){
    Réglages retenus dans le navigateur (localStorage), pas dans le document. */
 const RD_LS='minifusion_rendu';
 const RD_DEF={amb:'studio',envRot:0,envInt:1,lum:1,fond:'degrade',fc1:'#f2f3f5',fc2:'#c3c7ce',ombre:0.45,douceur:6,
-  focale:50,ev:0,tons:'aces',res:'1080',ech:64,aretes:'non',solOn:true,solCol:'',miroir:true,ombreOn:true,ouv:0,map:0,moteur:'rapide',support:''}; // support : 98-rendu-scene (V0.14.0) // solCol '' = couleur du bas du fond ; ouv 0 = tout net ; map 0 = mise au point sur la cible ; moteur 'rayons' : 98-rendu-rayons
+  focale:50,ev:0,tons:'aces',res:'1080',ech:64,aretes:'non',solOn:true,solCol:'',miroir:true,ombreOn:true,ouv:0,map:0,moteur:'rapide',support:'',
+  pDen:0.5,pHalo:0,pVig:0,pGrain:0,pCon:0,pSat:0,pTemp:0,calques:false}; // support : 98-rendu-scene (V0.14.0) ; p… finition, calques : 98-rendu-post (V0.15.0) // solCol '' = couleur du bas du fond ; ouv 0 = tout net ; map 0 = mise au point sur la cible ; moteur 'rayons' : 98-rendu-rayons
 const RD_AMB=[
   ['studio','Studio (softbox)'],['clair','Studio lumineux'],['atelier','Atelier (lumière chaude)'],['exterieur','Extérieur (ciel)'],['noir','Scène noire (contre-jour)']];
 const RD_PREVIEW=64; // passes de l'aperçu
@@ -61636,11 +61813,10 @@ function rdSample(){
   rd.r.setRenderTarget(null);
   if(jit){cam.clearViewOffset();cam.position.copy(_rdP0);cam.quaternion.copy(_rdQ0);cam.up.copy(_rdU0);cam.updateMatrixWorld();}
 }
-function rdShow(){
-  const A=rd.acc,st=rd.st,U=A.out.uniforms;
-  U.tA.value=A.a.texture;U.uExpo.value=Math.pow(2,st.ev);U.uTone.value={aces:0,doux:1,cine:2,lin:3}[st.tons]||0;
-  U.uBg.value=st.fond==='transparent'?2:st.fond==='degrade'||st.fond==='studio'?1:0;U.uC1.value.set(st.fc1);U.uC2.value.set(st.fc2);
-  A.quad.material=A.out;rd.r.setRenderTarget(null);rd.r.render(A.sc,A.cam);
+function rdShow(){ // V0.15.0 : finition commune aux deux moteurs (98-rendu-post) — halo, tons, fond, étalonnage, vignettage, grain
+  const A=rd.acc;
+  if(!rd.post)rd.post=rpCreate(THREE,rd.r);
+  rpRender(rd.post,A.a.texture,A.w,A.h,rpOpts(true,false));
 }
 function rdCount(){if(rd&&rd.cnt&&rd.acc)rd.cnt.textContent='Affinage : '+rd.acc.n+' / '+RD_PREVIEW+(rd.st.ouv>0?' · f/'+String(rd.st.ouv).replace('.',',')+' · net à '+Math.round(rdFocusDist())+' mm':'');}
 function rdLoop(){
@@ -61696,10 +61872,9 @@ async function rdExport(){
     rdShow();
     const blob=await new Promise(r=>rd.canvas.toBlob(r,'image/png'));
     if(!blob)throw new Error('image vide');
-    url=URL.createObjectURL(blob);
     const nm=String((typeof doc!=='undefined'&&doc&&doc.name)||'piece').replace(/[\\/:*?"<>|]+/g,'-');
-    const a=document.createElement('a');a.href=url;a.download=nm+' - rendu '+W+'x'+H+'.png';document.body.appendChild(a);a.click();a.remove();
-    rdMsg('Image '+W+'×'+H+' enregistrée : '+N+' passes en '+((performance.now()-t0)/1000).toFixed(1).replace('.',',')+' s ('+(blob.size/1048576).toFixed(1).replace('.',',')+' Mo).');
+    const sv=await rdSaveImage(blob,W,H,nm+' - rendu '+W+'x'+H);url=sv.url; // PNG, ou archive des calques (98-rendu-post)
+    rdMsg((sv.zip?'Calques ':'Image ')+W+'×'+H+(sv.zip?' enregistrés : ':' enregistrée : ')+N+' passes en '+((performance.now()-t0)/1000).toFixed(1).replace('.',',')+' s ('+(sv.size/1048576).toFixed(1).replace('.',',')+' Mo).');
   }catch(e){rdMsg('Rendu impossible : '+(e&&e.message||e));}
   finally{
     rd.busy=false;
@@ -61778,7 +61953,7 @@ function rdCss(){
   ].join('\n');
   document.head.appendChild(s);
 }
-const RD_TABS=[['mot','Moteur'],['amb','Ambiance'],['fond','Fond et sol'],['cam','Appareil photo'],['vues','Vues enregistrées'],['mat','Matériaux et reliefs'],['img','Image']]; // blocs du panneau, dans l'ordre
+const RD_TABS=[['mot','Moteur'],['amb','Ambiance'],['fond','Fond et sol'],['cam','Appareil photo'],['vues','Vues enregistrées'],['mat','Matériaux et reliefs'],['fin','Finition'],['img','Image']]; // blocs du panneau, dans l'ordre
 function rdPanel(){
   const st=rd.st,p=rd.panel;
   const sc0=rd.card?rd.card.scrollTop:0;p.innerHTML='';
@@ -61899,12 +62074,31 @@ function rdPanel(){
     if(!ids.length&&!asmView)pane.appendChild(el('div','rdNote','Aucun corps de la pièce active à l’écran.'));
     rdAsmPanel(pane,el,select);
     if(ids.length)pane.appendChild(el('div','rdNote','Apparence propre au RENDU, enregistrée avec la pièce : la CAO garde ses couleurs (↺ pour y revenir). Relief : motif calculé, direction X / Y / Z de la pièce, échelle en mm. Patine : taches, usure des arêtes, salissure des creux.'));
+  }else if(t==='fin'){ // V0.15.0 : finition de l'image (98-rendu-post), appliquée à l'affichage : pas de nouvel affinage
+    const pct=v=>Math.round(v*100)+' %',sg=v=>(v>0?'+':'')+Math.round(v*100);
+    const look=()=>{rdSave();if(rd.acc&&rd.acc.n)rdShow();if(rd.rt&&rd.rt.pt){rd.rt.lookDirty=true;rtKick(false);}};
+    const sl=(lab,k,min,max,fmt,tip)=>{const r=el('input');r.type='range';r.min=min;r.max=max;r.step=0.01;r.value=st[k];
+      const v=el('span','rdV',fmt(+st[k]));r.oninput=()=>{st[k]=+r.value;v.textContent=fmt(st[k]);look();};const w=row(lab,r,v);if(tip)w.title=tip;return w;};
+    if(st.moteur==='rayons')sl('Débruitage','pDen',0,1,pct,'Lisse le grain du lancer de rayons sans flouter les contours (filtre bilatéral)');
+    sl('Halo','pHalo',0,1,pct,'La lumière des reflets intenses déborde autour d’eux');
+    sl('Vignettage','pVig',0,1,pct,'Assombrit les bords de l’image');
+    sl('Grain','pGrain',0,1,pct,'Grain de film, plus marqué dans les tons moyens');
+    sl('Contraste','pCon',-0.5,0.5,sg);
+    sl('Saturation','pSat',-1,1,sg);
+    sl('Température','pTemp',-1,1,v=>v<-0.02?'froide':v>0.02?'chaude':'neutre','Balance des blancs : bleutée ou chaude');
+    const b=el('div','rdBtns'),set=o=>()=>{Object.assign(st,o);look();rdPanel();};
+    const n=el('button','rdB','Neutre');n.onclick=set({pHalo:0,pVig:0,pGrain:0,pCon:0,pSat:0,pTemp:0});b.appendChild(n);
+    const ph=el('button','rdB','Photo');ph.title='Halo léger, vignettage, grain fin, un peu de contraste';ph.onclick=set({pHalo:0.3,pVig:0.35,pGrain:0.2,pCon:0.1,pSat:0.05,pTemp:0});b.appendChild(ph);
+    const ci=el('button','rdB','Cinéma');ci.title='Contraste fort, couleurs chaudes, vignettage marqué';ci.onclick=set({pHalo:0.45,pVig:0.55,pGrain:0.35,pCon:0.2,pSat:-0.1,pTemp:0.35});b.appendChild(ci);
+    pane.appendChild(b);
   }else if(t==='img'){
     row('Format',seg([['1080','1920 × 1080'],['2160','4K','3840 × 2160']],st.res,v=>{st.res=v;rdSave();rdPanel();rdFoot();}));
     const ray=st.moteur==='rayons';
     row('Qualité',seg([['16','16'],['64','64'],['256','256']].map(([v])=>[v,ray?String(RT_ECH[v]):v,(v==='16'?'Brouillon':v==='64'?'Bonne':'Haute')+' : '+(ray?RT_ECH[v]+' échantillons':v+' passes')]),st.ech,v=>{st.ech=+v;rdSave();rdPanel();rdFoot();}))
       .title=ray?'Échantillons par pixel : moins de grain, surtout dans les ombres et le verre':'Nombre de passes moyennées : bords, ombres douces et profondeur de champ plus lisses';
     pane.appendChild(el('div','rdNote',(ray?'Échantillons : '+RT_ECH[16]+' brouillon · '+RT_ECH[64]+' bonne · '+RT_ECH[256]+' haute.':'Passes : 16 brouillon · 64 bonne · 256 haute.')+' Le fond transparent (onglet Fond et sol) donne un PNG détouré.'));
+    const cr=el('div','rdRow');cr.appendChild(chk('Calques séparés (.zip)','calques','Pour la retouche : beauté, masque, profondeur, normales, identifiants des corps, ombre seule'));pane.appendChild(cr);
+    if(st.calques)pane.appendChild(el('div','rdNote','Archive .zip : beauté, masque, profondeur, normales, identifiants des corps, ombre — même cadrage.'));
   }
   });
   // pied, toujours visible : format retenu + bouton
@@ -62032,7 +62226,7 @@ function rdClose(){
   try{if(rd.floor){rd.floor.geometry.dispose();rd.floor.material.dispose();}if(rd.key&&rd.key.shadow.map)rd.key.shadow.map.dispose();}catch(e){}
   try{if(rd.disk){rd.disk.geometry.dispose();rd.disk.material.dispose();rd.mirRT.dispose();}}catch(e){}
   try{if(rd.studio){rd.studio.geometry.dispose();rd.studio.material.dispose();}if(rd.hdriBg)rd.hdriBg.dispose();Object.values(rd.supTex||{}).forEach(t=>t.dispose());}catch(e){}
-  try{const A=rd.acc;if(A){['s','a','b'].forEach(k=>{if(A[k])A[k].dispose();});A.quad.geometry.dispose();A.mix.dispose();A.out.dispose();}}catch(e){}
+  try{const A=rd.acc;if(A){['s','a','b'].forEach(k=>{if(A[k])A[k].dispose();});A.quad.geometry.dispose();A.mix.dispose();A.out.dispose();}rpDispose(rd.post);}catch(e){}
   try{rd.r.dispose();rd.r.forceContextLoss();}catch(e){}
   rd.ov.remove();rd=null;
   document.querySelectorAll('[data-mfrd]').forEach(b=>b.classList.remove('on'));

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**393 versions**, de `2026-09-28b` à `V0.14.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**394 versions**, de `2026-09-28b` à `V0.15.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5272,3 +5272,11 @@ Demande : d’autres fonds et scènes dans l’atelier RENDU (point 3 de la feui
 - **Fond « Studio »** : cuvette de révolution (sol plat 2,5 R, gorge 2,2 R, mur 6 R, 256 côtés), couleur du sol, vernis satiné au choix. Moteur rapide : reçoit l’ombre, n’en porte pas, albédo calé sur l’éclairement de l’ambiance (`rdEnvCal`, même règle que le sol du lancer de rayons) — sinon il brûlait. Lancer de rayons : `castShadow` false, l’ambiance éclaire la pièce à travers ses murs ; dans la scène seulement en mode Studio (présent mais transparent, il faussait les matières du sol).
 - **Supports** (bloc Sol, « Support ») : béton, plateau de bois, marbre, tapis de découpe (quadrillage 10 mm, traits forts tous les 50 mm) — textures périodiques à l’échelle réelle (`rdSupTex`), sur le disque du sol (moteur rapide) et sur le sol physique du lancer de rayons (rugosité propre à chaque support).
 - **Tests** : `test_rendu_scene` (nouveau : vrai fichier .hdr lu par le chargeur du bundle, soleil −30° / 35° et son éclairement, image du monde Z en haut et rotation, soleil ôté pour le moteur rapide, « Lampe », couleur du sol, quatre supports qui se raccordent, profil et pose du studio) ; `gpu.spec` étendu (studio puis tapis de découpe, deux moteurs) ; `rendu.spec` vert ; captures GPU sur « Support Pédale » avec un ciel HDR synthétique ; `npm run ci` (67/67). Non essayés : une vraie photo HDRI, un fichier `.exr`.
+
+## V0.15.0 - Rendu : finition (débruitage, halo, vignettage, grain, étalonnage) et calques séparés
+Demande : les effets de post-production d’un rendu « à la Blender » (point 4 de la feuille de route rendu).
+- **Chaîne de finition** (`src/98-rendu-post.js`, nouveau) : une seule suite de passes GLSL, écrite une fois et créée sur le three de chaque moteur (r147 pour le rapide, 0.186 pour le lancer de rayons) ; l’image accumulée en flottant y passe avant l’affichage et l’export. Ordre : débruitage, halo (passe des hautes lumières, flou séparable sur 3 niveaux), exposition et tons (ACES / Reinhard / Cinéon / linéaire, désormais appliqués ici), fond composé, température, saturation, contraste, vignettage, grain, sRGB. Le lancer de rayons n’écrit plus lui-même dans son canevas (`renderToCanvas` false, `rtPresent`).
+- **Débruitage** (lancer de rayons seulement) : filtre bilatéral (13×13, sur c/(1+c)) qui lisse le grain sans franchir les arêtes de couleur.
+- **Panneau « Finition »** (onglet avant « Image ») : Débruitage, Halo, Vignettage, Grain, Contraste, Saturation, Température ; préréglages Neutre (défaut : les images d’avant ne changent pas), Photo, Cinéma. Réglages gardés avec ceux de l’atelier.
+- **Calques séparés** (bloc Image, case « Calques séparés (.zip) ») : l’export devient un `.zip` (fflate, déjà dans le bundle) : `1 - beaute.png` (image finale, l’un ou l’autre moteur), `2 - masque.png`, `3 - profondeur.png` (linéaire), `4 - normales.png`, `5 - identifiants.png` (une teinte par corps), `6 - ombre.png` (ombre seule, moyennée sur 48 positions de la lampe : pénombre conservée). Calques faits avec la scène du moteur rapide et des matières de remplacement, tout restauré ensuite.
+- **Tests** : `gpu.spec` étendu (préréglage Cinéma : le coin assombri par le vignettage ; débruitage : grain du fond réduit ; export calques en lancer de rayons : `.zip` 1920×1080 aux six PNG attendus) ; `rendu.spec` vert ; `npm run ci` (67/67).

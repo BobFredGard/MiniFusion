@@ -19,7 +19,8 @@
    Réglages retenus dans le navigateur (localStorage), pas dans le document. */
 const RD_LS='minifusion_rendu';
 const RD_DEF={amb:'studio',envRot:0,envInt:1,lum:1,fond:'degrade',fc1:'#f2f3f5',fc2:'#c3c7ce',ombre:0.45,douceur:6,
-  focale:50,ev:0,tons:'aces',res:'1080',ech:64,aretes:'non',solOn:true,solCol:'',miroir:true,ombreOn:true,ouv:0,map:0,moteur:'rapide',support:''}; // support : 98-rendu-scene (V0.14.0) // solCol '' = couleur du bas du fond ; ouv 0 = tout net ; map 0 = mise au point sur la cible ; moteur 'rayons' : 98-rendu-rayons
+  focale:50,ev:0,tons:'aces',res:'1080',ech:64,aretes:'non',solOn:true,solCol:'',miroir:true,ombreOn:true,ouv:0,map:0,moteur:'rapide',support:'',
+  pDen:0.5,pHalo:0,pVig:0,pGrain:0,pCon:0,pSat:0,pTemp:0,calques:false}; // support : 98-rendu-scene (V0.14.0) ; p… finition, calques : 98-rendu-post (V0.15.0) // solCol '' = couleur du bas du fond ; ouv 0 = tout net ; map 0 = mise au point sur la cible ; moteur 'rayons' : 98-rendu-rayons
 const RD_AMB=[
   ['studio','Studio (softbox)'],['clair','Studio lumineux'],['atelier','Atelier (lumière chaude)'],['exterieur','Extérieur (ciel)'],['noir','Scène noire (contre-jour)']];
 const RD_PREVIEW=64; // passes de l'aperçu
@@ -396,11 +397,10 @@ function rdSample(){
   rd.r.setRenderTarget(null);
   if(jit){cam.clearViewOffset();cam.position.copy(_rdP0);cam.quaternion.copy(_rdQ0);cam.up.copy(_rdU0);cam.updateMatrixWorld();}
 }
-function rdShow(){
-  const A=rd.acc,st=rd.st,U=A.out.uniforms;
-  U.tA.value=A.a.texture;U.uExpo.value=Math.pow(2,st.ev);U.uTone.value={aces:0,doux:1,cine:2,lin:3}[st.tons]||0;
-  U.uBg.value=st.fond==='transparent'?2:st.fond==='degrade'||st.fond==='studio'?1:0;U.uC1.value.set(st.fc1);U.uC2.value.set(st.fc2);
-  A.quad.material=A.out;rd.r.setRenderTarget(null);rd.r.render(A.sc,A.cam);
+function rdShow(){ // V0.15.0 : finition commune aux deux moteurs (98-rendu-post) — halo, tons, fond, étalonnage, vignettage, grain
+  const A=rd.acc;
+  if(!rd.post)rd.post=rpCreate(THREE,rd.r);
+  rpRender(rd.post,A.a.texture,A.w,A.h,rpOpts(true,false));
 }
 function rdCount(){if(rd&&rd.cnt&&rd.acc)rd.cnt.textContent='Affinage : '+rd.acc.n+' / '+RD_PREVIEW+(rd.st.ouv>0?' · f/'+String(rd.st.ouv).replace('.',',')+' · net à '+Math.round(rdFocusDist())+' mm':'');}
 function rdLoop(){
@@ -456,10 +456,9 @@ async function rdExport(){
     rdShow();
     const blob=await new Promise(r=>rd.canvas.toBlob(r,'image/png'));
     if(!blob)throw new Error('image vide');
-    url=URL.createObjectURL(blob);
     const nm=String((typeof doc!=='undefined'&&doc&&doc.name)||'piece').replace(/[\\/:*?"<>|]+/g,'-');
-    const a=document.createElement('a');a.href=url;a.download=nm+' - rendu '+W+'x'+H+'.png';document.body.appendChild(a);a.click();a.remove();
-    rdMsg('Image '+W+'×'+H+' enregistrée : '+N+' passes en '+((performance.now()-t0)/1000).toFixed(1).replace('.',',')+' s ('+(blob.size/1048576).toFixed(1).replace('.',',')+' Mo).');
+    const sv=await rdSaveImage(blob,W,H,nm+' - rendu '+W+'x'+H);url=sv.url; // PNG, ou archive des calques (98-rendu-post)
+    rdMsg((sv.zip?'Calques ':'Image ')+W+'×'+H+(sv.zip?' enregistrés : ':' enregistrée : ')+N+' passes en '+((performance.now()-t0)/1000).toFixed(1).replace('.',',')+' s ('+(sv.size/1048576).toFixed(1).replace('.',',')+' Mo).');
   }catch(e){rdMsg('Rendu impossible : '+(e&&e.message||e));}
   finally{
     rd.busy=false;
@@ -538,7 +537,7 @@ function rdCss(){
   ].join('\n');
   document.head.appendChild(s);
 }
-const RD_TABS=[['mot','Moteur'],['amb','Ambiance'],['fond','Fond et sol'],['cam','Appareil photo'],['vues','Vues enregistrées'],['mat','Matériaux et reliefs'],['img','Image']]; // blocs du panneau, dans l'ordre
+const RD_TABS=[['mot','Moteur'],['amb','Ambiance'],['fond','Fond et sol'],['cam','Appareil photo'],['vues','Vues enregistrées'],['mat','Matériaux et reliefs'],['fin','Finition'],['img','Image']]; // blocs du panneau, dans l'ordre
 function rdPanel(){
   const st=rd.st,p=rd.panel;
   const sc0=rd.card?rd.card.scrollTop:0;p.innerHTML='';
@@ -659,12 +658,31 @@ function rdPanel(){
     if(!ids.length&&!asmView)pane.appendChild(el('div','rdNote','Aucun corps de la pièce active à l’écran.'));
     rdAsmPanel(pane,el,select);
     if(ids.length)pane.appendChild(el('div','rdNote','Apparence propre au RENDU, enregistrée avec la pièce : la CAO garde ses couleurs (↺ pour y revenir). Relief : motif calculé, direction X / Y / Z de la pièce, échelle en mm. Patine : taches, usure des arêtes, salissure des creux.'));
+  }else if(t==='fin'){ // V0.15.0 : finition de l'image (98-rendu-post), appliquée à l'affichage : pas de nouvel affinage
+    const pct=v=>Math.round(v*100)+' %',sg=v=>(v>0?'+':'')+Math.round(v*100);
+    const look=()=>{rdSave();if(rd.acc&&rd.acc.n)rdShow();if(rd.rt&&rd.rt.pt){rd.rt.lookDirty=true;rtKick(false);}};
+    const sl=(lab,k,min,max,fmt,tip)=>{const r=el('input');r.type='range';r.min=min;r.max=max;r.step=0.01;r.value=st[k];
+      const v=el('span','rdV',fmt(+st[k]));r.oninput=()=>{st[k]=+r.value;v.textContent=fmt(st[k]);look();};const w=row(lab,r,v);if(tip)w.title=tip;return w;};
+    if(st.moteur==='rayons')sl('Débruitage','pDen',0,1,pct,'Lisse le grain du lancer de rayons sans flouter les contours (filtre bilatéral)');
+    sl('Halo','pHalo',0,1,pct,'La lumière des reflets intenses déborde autour d’eux');
+    sl('Vignettage','pVig',0,1,pct,'Assombrit les bords de l’image');
+    sl('Grain','pGrain',0,1,pct,'Grain de film, plus marqué dans les tons moyens');
+    sl('Contraste','pCon',-0.5,0.5,sg);
+    sl('Saturation','pSat',-1,1,sg);
+    sl('Température','pTemp',-1,1,v=>v<-0.02?'froide':v>0.02?'chaude':'neutre','Balance des blancs : bleutée ou chaude');
+    const b=el('div','rdBtns'),set=o=>()=>{Object.assign(st,o);look();rdPanel();};
+    const n=el('button','rdB','Neutre');n.onclick=set({pHalo:0,pVig:0,pGrain:0,pCon:0,pSat:0,pTemp:0});b.appendChild(n);
+    const ph=el('button','rdB','Photo');ph.title='Halo léger, vignettage, grain fin, un peu de contraste';ph.onclick=set({pHalo:0.3,pVig:0.35,pGrain:0.2,pCon:0.1,pSat:0.05,pTemp:0});b.appendChild(ph);
+    const ci=el('button','rdB','Cinéma');ci.title='Contraste fort, couleurs chaudes, vignettage marqué';ci.onclick=set({pHalo:0.45,pVig:0.55,pGrain:0.35,pCon:0.2,pSat:-0.1,pTemp:0.35});b.appendChild(ci);
+    pane.appendChild(b);
   }else if(t==='img'){
     row('Format',seg([['1080','1920 × 1080'],['2160','4K','3840 × 2160']],st.res,v=>{st.res=v;rdSave();rdPanel();rdFoot();}));
     const ray=st.moteur==='rayons';
     row('Qualité',seg([['16','16'],['64','64'],['256','256']].map(([v])=>[v,ray?String(RT_ECH[v]):v,(v==='16'?'Brouillon':v==='64'?'Bonne':'Haute')+' : '+(ray?RT_ECH[v]+' échantillons':v+' passes')]),st.ech,v=>{st.ech=+v;rdSave();rdPanel();rdFoot();}))
       .title=ray?'Échantillons par pixel : moins de grain, surtout dans les ombres et le verre':'Nombre de passes moyennées : bords, ombres douces et profondeur de champ plus lisses';
     pane.appendChild(el('div','rdNote',(ray?'Échantillons : '+RT_ECH[16]+' brouillon · '+RT_ECH[64]+' bonne · '+RT_ECH[256]+' haute.':'Passes : 16 brouillon · 64 bonne · 256 haute.')+' Le fond transparent (onglet Fond et sol) donne un PNG détouré.'));
+    const cr=el('div','rdRow');cr.appendChild(chk('Calques séparés (.zip)','calques','Pour la retouche : beauté, masque, profondeur, normales, identifiants des corps, ombre seule'));pane.appendChild(cr);
+    if(st.calques)pane.appendChild(el('div','rdNote','Archive .zip : beauté, masque, profondeur, normales, identifiants des corps, ombre — même cadrage.'));
   }
   });
   // pied, toujours visible : format retenu + bouton
@@ -792,7 +810,7 @@ function rdClose(){
   try{if(rd.floor){rd.floor.geometry.dispose();rd.floor.material.dispose();}if(rd.key&&rd.key.shadow.map)rd.key.shadow.map.dispose();}catch(e){}
   try{if(rd.disk){rd.disk.geometry.dispose();rd.disk.material.dispose();rd.mirRT.dispose();}}catch(e){}
   try{if(rd.studio){rd.studio.geometry.dispose();rd.studio.material.dispose();}if(rd.hdriBg)rd.hdriBg.dispose();Object.values(rd.supTex||{}).forEach(t=>t.dispose());}catch(e){}
-  try{const A=rd.acc;if(A){['s','a','b'].forEach(k=>{if(A[k])A[k].dispose();});A.quad.geometry.dispose();A.mix.dispose();A.out.dispose();}}catch(e){}
+  try{const A=rd.acc;if(A){['s','a','b'].forEach(k=>{if(A[k])A[k].dispose();});A.quad.geometry.dispose();A.mix.dispose();A.out.dispose();}rpDispose(rd.post);}catch(e){}
   try{rd.r.dispose();rd.r.forceContextLoss();}catch(e){}
   rd.ov.remove();rd=null;
   document.querySelectorAll('[data-mfrd]').forEach(b=>b.classList.remove('on'));

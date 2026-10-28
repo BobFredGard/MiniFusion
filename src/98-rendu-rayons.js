@@ -188,12 +188,14 @@ function rtSyncCam(){
   c.updateProjectionMatrix();c.updateMatrixWorld();
   rd.rt.pt.setCamera(c);
 }
-function rtLook(){ // tons, exposition, fond : à l'affichage seulement (pas de nouvel affinage)
-  const R=rd.rt,T=R.T,st=rd.st;
-  const tm=T[RT_TONS[st.tons]||'ACESFilmicToneMapping'];
-  if(R.r.toneMapping!==tm){R.r.toneMapping=tm;R.pt._quad.material.needsUpdate=true;}
-  R.r.toneMappingExposure=Math.pow(2,st.ev);
-  R.canvas.style.background=st.fond==='transparent'||st.fond==='hdri'?'none':st.fond==='degrade'||st.fond==='studio'?'linear-gradient('+st.fc1+','+st.fc2+')':st.fc1;
+function rtLook(){ // tons, exposition, fond : à l'affichage seulement, par la finition commune (pas de nouvel affinage)
+  const R=rd.rt;R.r.toneMapping=R.T.NoToneMapping;R.canvas.style.background='none';R.lookDirty=true;
+}
+function rtPresent(){
+  // image accumulée du pathtracer (linéaire, alpha non prémultiplié) → débruitage, halo, tons, fond, étalonnage
+  const R=rd.rt;if(!R.post)R.post=rpCreate(R.T,R.r);
+  const sz=R.r.getDrawingBufferSize(new R.T.Vector2());
+  rpRender(R.post,R.pt.target.texture,sz.x,sz.y,rpOpts(false,true));R.shown=true;
 }
 /* ── affinage ──
    Le compteur du pathtracer avance à l'ENVOI des tuiles (3 × 3 par échantillon) : sans frein, la file du GPU
@@ -219,7 +221,7 @@ function rtLoop(){
   if(rd.drag){R.canvas.style.visibility='hidden';return;}
   if(R.camDirty){rtSyncCam();R.camDirty=false;}
   if(rtSamples()<RT_PREVIEW){if(rtGpuReady(R,24))rtSubmit(R,RT_PREVIEW);}
-  else if(R.lookDirty){R.pt.pausePathTracing=true;R.pt.renderSample();R.pt.pausePathTracing=false;}
+  if(rtSamples()>=1&&(rtSamples()<RT_PREVIEW||R.lookDirty||!R.shown))rtPresent(); // V0.15.0 : finition (98-rendu-post)
   R.lookDirty=false;
   R.canvas.style.visibility=rtSamples()>=1?'visible':'hidden';
   rtCount();
@@ -273,7 +275,7 @@ async function rtStart(){
   r.outputColorSpace=T.SRGBColorSpace;
   canvas.style.visibility='hidden';rd.view.appendChild(canvas);
   const pt=new L.WebGLPathTracer(r);
-  pt.renderDelay=0;pt.fadeDuration=0;pt.minSamples=1;pt.rasterizeScene=false;
+  pt.renderDelay=0;pt.fadeDuration=0;pt.minSamples=1;pt.rasterizeScene=false;pt.renderToCanvas=false; // affichage : rtPresent
   pt.bounces=8;pt.transmissiveBounces=10;pt.filterGlossyFactor=0.5;
   const cam=new L.PhysicalCamera();cam.up.set(0,0,1);
   Object.assign(R,{L,T,r,canvas,pt,cam,scene:new T.Scene(),raf:0,batch:9,fence:null});
@@ -293,7 +295,7 @@ function rtStop(){
   try{rtDropGroup(R);if(R.texCache)R.texCache.forEach(K=>['map','rough','normal'].forEach(k=>{if(K[k])K[k].dispose();}));}catch(e){}
   try{if(R.floor){R.floor.geometry.dispose();if(R.floor.material.alphaMap)R.floor.material.alphaMap.dispose();R.floor.material.dispose();}}catch(e){}
   try{if(R.env)R.env.dispose();Object.values(R.supMap||{}).forEach(t=>t.dispose());if(R.studio){R.studio.geometry.dispose();R.studio.material.dispose();}}catch(e){}
-  try{if(R.fence)R.r.getContext().deleteSync(R.fence);if(R.pt)R.pt.dispose();}catch(e){}
+  try{if(R.fence)R.r.getContext().deleteSync(R.fence);if(R.pt)R.pt.dispose();rpDispose(R.post);}catch(e){}
   try{if(R.r){R.r.dispose();R.r.forceContextLoss();}}catch(e){}
   try{if(R.canvas)R.canvas.remove();}catch(e){}
 }
@@ -324,19 +326,13 @@ async function rtExport(){
       if(!rd||rd.rt!==R)return;
     }
     while(!rtGpuReady(R,80))await new Promise(r=>setTimeout(r,4)); // dernier lot calculé avant la copie
-    // le fond (dégradé ou uni) est composé ici ; transparent : PNG détouré tel quel
-    const out=document.createElement('canvas');out.width=W;out.height=H;const g=out.getContext('2d');
-    if(st.fond!=='transparent'&&st.fond!=='hdri'){ // « Image » : l'HDRI est déjà dans le calcul
-      if(st.fond==='degrade'||st.fond==='studio'){const lg=g.createLinearGradient(0,0,0,H);lg.addColorStop(0,st.fc1);lg.addColorStop(1,st.fc2);g.fillStyle=lg;}else g.fillStyle=st.fc1;
-      g.fillRect(0,0,W,H);
-    }
-    g.drawImage(R.canvas,0,0);
-    const blob=await new Promise(r=>out.toBlob(r,'image/png'));
+    // finition (fond compris, transparent : PNG détouré) puis, au choix, les calques séparés (98-rendu-post)
+    rtPresent();
+    const blob=await new Promise(r=>R.canvas.toBlob(r,'image/png'));
     if(!blob)throw new Error('image vide');
-    url=URL.createObjectURL(blob);
     const nm=String((typeof doc!=='undefined'&&doc&&doc.name)||'piece').replace(/[\\/:*?"<>|]+/g,'-');
-    const a=document.createElement('a');a.href=url;a.download=nm+' - rendu '+W+'x'+H+' (rayons).png';document.body.appendChild(a);a.click();a.remove();
-    rdMsg('Image '+W+'×'+H+' enregistrée : '+N+' échantillons en '+((performance.now()-t0)/1000).toFixed(1).replace('.',',')+' s ('+(blob.size/1048576).toFixed(1).replace('.',',')+' Mo).');
+    const sv=await rdSaveImage(blob,W,H,nm+' - rendu '+W+'x'+H+' (rayons)');url=sv.url;
+    rdMsg((sv.zip?'Calques ':'Image ')+W+'×'+H+(sv.zip?' enregistrés : ':' enregistrée : ')+N+' échantillons en '+((performance.now()-t0)/1000).toFixed(1).replace('.',',')+' s ('+(sv.size/1048576).toFixed(1).replace('.',',')+' Mo).');
   }catch(e){rdMsg('Rendu impossible : '+(e&&e.message||e));}
   finally{
     if(rd){rd.busy=false;rdFitCanvas();if(btn){btn.disabled=false;btn.textContent='Rendre et enregistrer le PNG';}}

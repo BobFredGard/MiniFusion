@@ -150,9 +150,24 @@ test('atelier RENDU, « Lancer de rayons » : chargé à la demande, affinage su
   test.info().annotations.push({type:'scène',description:JSON.stringify(Sc)});
   expect(Sc,'studio puis tapis de découpe').toEqual({rapide:true,rayons:true,s1:Sc.s1,sans:true,tapis:true,s2:Sc.s2});
   expect(Math.min(Sc.s1,Sc.s2)).toBeGreaterThanOrEqual(16);
+  // finition (V0.15.0) : le vignettage assombrit le coin, le débruitage lisse le grain du fond
+  const Fi=await page.evaluate(()=>{
+    const px=()=>{const c=document.createElement('canvas');c.width=96;c.height=54;const x=c.getContext('2d');x.drawImage(rd.rt.canvas,0,0,96,54);return x.getImageData(0,0,96,54).data;};
+    const grain=d=>{let s=0;for(let y=40;y<52;y++)for(let x=2;x<20;x++){const o=(y*96+x)*4,q=o+4;s+=Math.abs(d[o]-d[q]);}return s;};
+    rd.busy=true;rd.st.support='';rd.st.pDen=0;rtPresent();const a=px();
+    rd.st.pVig=1;rtPresent();const v=px();rd.st.pVig=0;rd.st.pDen=1;rtPresent();const d=px();rd.st.pDen=0.5;rtPresent();rd.busy=false;
+    return {coin:a[0],coinVig:v[0],grainBrut:grain(a),grainDebruite:grain(d)};
+  });
+  test.info().annotations.push({type:'finition',description:JSON.stringify(Fi)});
+  expect(Fi.coinVig,'vignettage').toBeLessThan(Fi.coin-20);
+  expect(Fi.grainDebruite,'débruitage').toBeLessThanOrEqual(Fi.grainBrut);
+  await page.evaluate(()=>{rd.st.calques=true;rdPanel();});
   await page.evaluate(()=>{rd.st.ech=16;rdPanel();rdFoot();}); // 128 échantillons
   const [dl]=await Promise.all([page.waitForEvent('download',{timeout:180000}),page.locator('#rdPanel .rdGo').click()]);
-  expect(dl.suggestedFilename()).toMatch(/1920x1080 \(rayons\)\.png$/);
+  expect(dl.suggestedFilename()).toMatch(/1920x1080 \(rayons\) - calques\.zip$/); // calques séparés : beauté + 5 calques
+  const zf=test.info().outputPath('calques.zip');await dl.saveAs(zf);
+  const zb=fs.readFileSync(zf),noms=[];for(let i=0;i+30<zb.length;i++)if(zb.readUInt32LE(i)===0x04034b50){const n=zb.readUInt16LE(i+26);noms.push(zb.slice(i+30,i+30+n).toString());}
+  expect(noms).toEqual(['1 - beaute.png','2 - masque.png','3 - profondeur.png','4 - normales.png','5 - identifiants.png','6 - ombre.png']);
   // retour au moteur rapide : canevas et contexte du lancer de rayons libérés
   await page.locator('#rdPanel .rdSeg button',{hasText:'Rapide'}).click();
   expect(await page.evaluate(()=>!rd.rt&&!document.querySelector('#rdView canvas.rdPT'))).toBe(true);

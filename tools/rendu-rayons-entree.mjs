@@ -7,13 +7,15 @@
 import {WebGLRenderer,Scene,Group,Mesh,BufferGeometry,BufferAttribute,MeshPhysicalMaterial,MeshStandardMaterial,DataTexture,
   Color,Matrix4,Vector2,Vector3,PlaneGeometry,CircleGeometry,LatheGeometry,RGBAFormat,FloatType,HalfFloatType,LinearFilter,EquirectangularReflectionMapping,
   RepeatWrapping,ClampToEdgeWrapping,DoubleSide,FrontSide,SRGBColorSpace,LinearSRGBColorSpace,NoToneMapping,ACESFilmicToneMapping,
-  ReinhardToneMapping,CineonToneMapping,AgXToneMapping,NeutralToneMapping,REVISION} from 'three';
+  ReinhardToneMapping,CineonToneMapping,AgXToneMapping,NeutralToneMapping,REVISION,OrthographicCamera,WebGLRenderTarget,ShaderMaterial} from 'three';
 import {WebGLPathTracer,PhysicalCamera} from 'three-gpu-pathtracer';
 // images HDRI importées (.hdr, .exr) — V0.14.0 : lues ici, servent aux deux moteurs de l'atelier
 import {HDRLoader} from 'three/examples/jsm/loaders/HDRLoader.js';
 import {EXRLoader} from 'three/examples/jsm/loaders/EXRLoader.js';
+// calques séparés de l'image (V0.15.0) : une archive .zip
+import {zipSync} from 'three/examples/jsm/libs/fflate.module.js';
 export const THREE={WebGLRenderer,Scene,Group,Mesh,BufferGeometry,BufferAttribute,MeshPhysicalMaterial,MeshStandardMaterial,DataTexture,
   Color,Matrix4,Vector2,Vector3,PlaneGeometry,CircleGeometry,LatheGeometry,RGBAFormat,FloatType,HalfFloatType,LinearFilter,EquirectangularReflectionMapping,
   RepeatWrapping,ClampToEdgeWrapping,DoubleSide,FrontSide,SRGBColorSpace,LinearSRGBColorSpace,NoToneMapping,ACESFilmicToneMapping,
-  ReinhardToneMapping,CineonToneMapping,AgXToneMapping,NeutralToneMapping,REVISION};
-export {WebGLPathTracer,PhysicalCamera,HDRLoader,EXRLoader};
+  ReinhardToneMapping,CineonToneMapping,AgXToneMapping,NeutralToneMapping,REVISION,OrthographicCamera,WebGLRenderTarget,ShaderMaterial};
+export {WebGLPathTracer,PhysicalCamera,HDRLoader,EXRLoader,zipSync};
