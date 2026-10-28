@@ -201,7 +201,7 @@ function tlbDbl(s){
   sel={kind:'feature',id:f.id};treeSel=[];
   if(f.type==='xfillet')enterExactFilletMode(f);
   else if(f.type==='xdraft')enterDraftMode(f);
-  else if(f.type==='xshell')enterCoqueMode(f);
+  else if(f.type==='xshell'||f.type==='xdelface')enterCoqueMode(f);
   else if(f.type==='xsplit')enterSplitMode(f);
   else{renderTree();renderProps();}
 }

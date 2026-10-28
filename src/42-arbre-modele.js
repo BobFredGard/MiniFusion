@@ -284,7 +284,7 @@ function treePart(L){
     const repF=sel.kind==='feature'?doc.features.find(x=>x.id===sel.id&&x.type==='repeat'):null;
     const estSrc=!!(repF&&(repF.base||[]).indexOf(f.id)>=0);
     const ri=repMode&&repMode.feats&&repMode.feats.includes(f.id)?'✓ ':'';
-    node(ri+(estSrc?'<span class="srcmark" title="Source de la répétition sélectionnée">◀</span>':'')+featIconOf(f),f.name,'feature',f.id,f.visible,(f.type==='xfillet'||f.type==='xdraft'||f.type==='xshell'||f.type==='xsplit')?()=>{sel={kind:'feature',id:f.id};treeSel=[];if(f.type==='xfillet')enterExactFilletMode(f);else if(f.type==='xdraft')enterDraftMode(f);else if(f.type==='xsplit')enterSplitMode(f);else enterCoqueMode(f);}:null);
+    node(ri+(estSrc?'<span class="srcmark" title="Source de la répétition sélectionnée">◀</span>':'')+featIconOf(f),f.name,'feature',f.id,f.visible,(f.type==='xfillet'||f.type==='xdraft'||f.type==='xshell'||f.type==='xdelface'||f.type==='xsplit')?()=>{sel={kind:'feature',id:f.id};treeSel=[];if(f.type==='xfillet')enterExactFilletMode(f);else if(f.type==='xdraft')enterDraftMode(f);else if(f.type==='xsplit')enterSplitMode(f);else enterCoqueMode(f);}:null);
   };
   const groups=(doc.bodies||[]).length?doc.bodies:[{id:'b1',name:'Corps 1'}];
   groups.forEach(be=>{

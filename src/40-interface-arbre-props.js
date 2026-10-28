@@ -1372,6 +1372,7 @@ function renderProps(){
       }
       if((f.faces||[]).length)pNote('Face(s) retirée(s) : '+f.faces.map(r=>'('+r.pos.map(v=>(+v).toFixed(1)).join(' ; ')+')').join(' · '));
       pNote('Les faces voisines sont prolongées jusqu\'à se rejoindre (congé → arête vive, trou → rebouché). Pour revenir en arrière : Ctrl+Z ou supprimer cette fonction.');
+      pBtns([['⌫ Modifier les faces',()=>{exitCoqueMode(true);try{if(filMode||filModeX)exitFilletMode(true);}catch(e){}enterCoqueMode(f);}]]);
       visDel(f);
       return;
     }

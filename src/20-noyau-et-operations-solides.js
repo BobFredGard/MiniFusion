@@ -1502,8 +1502,38 @@ function occDeleteFacesOnce(shape,faces){
     if(reste){try{r.delete();}catch(e){}throw new Error('les faces voisines ne se rejoignent pas');}
     r=occUnify(r);
     if(!occCoqueValide(r)){try{r.delete();}catch(e){}throw new Error('solide résultant invalide');}
+    // V0.15.4 : garde-fou « part en vrille ». Le noyau referme parfois le solide en
+    // prolongeant une voisine très loin (pointe de plusieurs centaines de mm hors de la
+    // pièce) et rend IsDone vrai. Un prolongement légitime (congé → arête vive, chanfrein
+    // → coin) reste près des faces retirées : la boîte du résultat doit tenir dans celle
+    // de la pièce ∪ celle des faces retirées élargie de leur plus grande dimension.
+    const sort=occDelFaceDebord(occBoxMinMax(shape),occBoxMinMax(r),faces.map(occBoxMinMax));
+    if(sort>0.05){
+      try{r.delete();}catch(e){}
+      throw new Error(`les faces voisines partent hors de la pièce (+${sort.toFixed(0)} mm) — ajoutez aussi les faces voisines à la suppression`);
+    }
     return r;
   }finally{try{d.delete();}catch(e){}}
+}
+function occDelFaceDebord(B,R,Fs){
+  // Débord (mm) du résultat R hors de la zone permise : pièce d'origine B ∪ boîte des faces
+  // retirées élargie de leur plus grande dimension. Boîtes {lo,hi} ; 0 si rien à reprocher.
+  const F=(Fs||[]).filter(Boolean).reduce((a,b)=>a?{lo:a.lo.map((v,i)=>Math.min(v,b.lo[i])),hi:a.hi.map((v,i)=>Math.max(v,b.hi[i]))}:b,null);
+  if(!B||!R||!F)return 0;
+  const m=Math.max(1,...F.hi.map((v,i)=>v-F.lo[i]));
+  let sort=0;
+  for(let i=0;i<3;i++)sort=Math.max(sort,Math.min(B.lo[i],F.lo[i]-m)-R.lo[i],R.hi[i]-Math.max(B.hi[i],F.hi[i]+m));
+  return sort;
+}
+function occBoxMinMax(sh){
+  // Boîte englobante {lo:[x,y,z], hi:[x,y,z]} d'une forme, ou null.
+  try{
+    const box=new occt.Bnd_Box_1();occt.BRepBndLib.Add(sh,box,true);
+    const a=box.CornerMin(),b=box.CornerMax();
+    const r={lo:[a.X(),a.Y(),a.Z()],hi:[b.X(),b.Y(),b.Z()]};
+    try{box.delete();}catch(e){}
+    return r;
+  }catch(e){return null;}
 }
 function occApplyDeleteFaces(result,f){
   // Rejoue la suppression. Retourne {shape,warnings} comme occApplyCoque : les faces sont
@@ -3557,13 +3587,15 @@ let occStepForce=false;
 function occLoneStep(){
   // Un corps dont toutes les fonctions visibles sont des imports, dont un avec son BRep.
   const by={},b0=(doc.bodies&&doc.bodies[0]&&doc.bodies[0].id)||'';
-  (doc.features||[]).forEach(f=>{if(!f||f.visible===false)return;const b=f.body||b0;(by[b]=by[b]||[]).push(f);});
+  (doc.features||[]).forEach(f=>{if(!f||f.visible===false||(occSkipFeat&&f.id===occSkipFeat))return;const b=f.body||b0;(by[b]=by[b]||[]).push(f);});
   return Object.keys(by).some(b=>by[b].every(f=>f.type==='import')&&by[b].some(f=>{
     const e=(typeof importGeom!=='undefined')?importGeom.get(f.id):null;return !!(e&&e.brep);}));
 }
-function occExactForTool(){
+function occExactForTool(again){
   // Solide exact prêt pour un outil de face : recalcul paresseux, STEP seul compris.
-  if(occLive&&occLive.shape)return true;
+  // again : rejouer quand même (édition : occSkipFeat vient de changer — sans la fonction
+  // éditée, un STEP peut redevenir seul).
+  if(!again&&occLive&&occLive.shape)return true;
   if(!occHas())return false;
   if(occLoneStep())occStepForce=true;
   try{rebuild();}catch(e){}

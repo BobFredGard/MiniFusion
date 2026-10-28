@@ -6,8 +6,14 @@
 
    Chaque face est mémorisée par sa RÉFÉRENCE DURABLE (centre + normale +
    dimensions, occFaceRef) et non par son numéro — même approche que le
-   dépouillage (xdraft, 86) et le déplacement d'une face (xmove, 85). */
-let coqueMode=null; // null | {faces:[ref], thick, editing:id|null}
+   dépouillage (xdraft, 86) et le déplacement d'une face (xmove, 85).
+
+   V0.15.4 : le même mode ÉDITE une « Suppression de face » (xdelface, drapeau `del`) —
+   clic = ajouter / re-clic = retirer, plusieurs faces, Enregistrer / Échap. Faces
+   mémorisées par référence GÉNÉRIQUE (occFaceRefAny : tores, surfaces libres compris),
+   pas d'épaisseur ni d'aperçu (un rejeu de suppression complet à chaque clic serait
+   trop lent sur une grosse pièce : la surbrillance rouge suffit). */
+let coqueMode=null; // null | {faces:[ref], thick, editing:id|null, del?:true}
 let coqueGroup=null; // surbrillance 3D (faces à retirer en rouge)
 let coquePrevBody=null; // aperçu translucide du solide évidé (non validé)
 function coqueCleanRef(r){
@@ -15,6 +21,11 @@ function coqueCleanRef(r){
   // rien. Un `dim` manquant fait lever occFindFace au lieu de dégrader, et une exception
   // ici faisait avorter toute l'entrée en mode (état à moitié initialisé, aucun retour
   // visuel) — même cause, même remède que la dépouille (86).
+  if(coqueMode&&coqueMode.del){ // suppression de face : référence générique (n facultative)
+    if(!(r&&Array.isArray(r.pos)&&r.pos.length>=3&&Array.isArray(r.dim)&&r.dim.length>=3))return null;
+    const o=JSON.parse(JSON.stringify(r));o._ord=-1;delete o._bid;
+    return o;
+  }
   if(!(r&&Array.isArray(r.pos)&&r.pos.length>=3&&Array.isArray(r.n)&&r.n.length>=3&&Array.isArray(r.dim)&&r.dim.length>=3))return null;
   const o={pos:r.pos.slice(),n:r.n.slice(),dim:r.dim.slice(),_ord:-1};
   if(typeof r._bid==='string')o._bid=r._bid;
@@ -36,7 +47,11 @@ function coqueCleanRef(r){
 })();
 
 function coqueKey(r){
-  return (r.pos||[]).map(v=>(+v).toFixed(2)).join(',')+'|'+(r.n||[]).map(v=>(+v).toFixed(3)).join(',');
+  return (r.pos||[]).map(v=>(+v).toFixed(2)).join(',')+'|'+(r.n?r.n.map(v=>(+v).toFixed(3)).join(','):(r.st||''));
+}
+function coqueRefOf(face){
+  // Référence d'une face : générique pour la suppression de face (toute surface).
+  return (coqueMode&&coqueMode.del)?occFaceRefAny(face):occFaceRef(face);
 }
 /* ---------- surbrillance 3D (faces à retirer) ---------- */
 function coqueClearHl(){
@@ -91,7 +106,7 @@ function coqueFaceUnder(e){
     if(!h||!h.object||!h.object.geometry)return null;
     const hit=occFaceOfHit(h.object,h.faceIndex);
     if(!hit||!hit.face)return null;
-    const ref=occFaceRef(hit.face);
+    const ref=coqueRefOf(hit.face);
     try{hit.face.delete();}catch(e){}
     if(!ref)return null;
     ref._bid=hit.bd.id;
@@ -110,7 +125,7 @@ function coqueOrdOf(ref){
       try{f=occFaceAt(b.shape,g.f);}catch(e){continue;}
       if(!f)continue;
       let cur=null;
-      try{cur=occFaceRef(f);}catch(e){}
+      try{cur=coqueRefOf(f);}catch(e){}
       try{f.delete();}catch(e){}
       if(cur&&coqueKey(cur)===k){ref._bid=b.id;return g.f;}
     }
@@ -151,7 +166,7 @@ function coquePreviewRemove(){
 }
 function coquePreviewUpdate(){
   try{
-    if(!coqueMode){coquePreviewRemove();return;}
+    if(!coqueMode||coqueMode.del){coquePreviewRemove();return;}
     const faces=coqueMode.faces||[];
     const t=+coqueMode.thick||0;
     if(!faces.length||!(t>0)||!occLive||!occLive.shape){coquePreviewRemove();return;}
@@ -192,7 +207,8 @@ function coquePreviewUpdate(){
 }
 function enterCoqueMode(editF){
   if(skEdit)return;
-  const editing=(editF&&editF.type==='xshell')?editF:null;
+  const editing=(editF&&(editF.type==='xshell'||editF.type==='xdelface'))?editF:null;
+  const del=!!(editing&&editing.type==='xdelface');
   if(coqueMode){if(editing&&coqueMode.editing===editing.id)return;exitCoqueMode(true);}
   if(!occLive||!occLive.shape){
     if(!occHas()){faceEl.textContent='Coque : solide exact indisponible (OCCT non chargé ou aucun volume).';return;}
@@ -204,6 +220,7 @@ function enterCoqueMode(editF){
   if(mvMode)exitMoveFaceMode(true);
   if(draftMode)exitDraftMode(true);
   coqueMode={faces:[],thick:2,editing:editing?editing.id:null};
+  if(del)coqueMode.del=true;
   if(editing){
     // Édition : rejeu SANS la fonction (occSkipFeat) → les faces d'origine
     // redeviennent cliquables. Même stratégie que congé/dépouillage.
@@ -212,14 +229,18 @@ function enterCoqueMode(editF){
     const avant=(editing.faces||[]).length;
     coqueMode.faces=(editing.faces||[]).map(coqueCleanRef).filter(Boolean);
     coqueMode._ecartees=avant-coqueMode.faces.length;
-    coqueMode.thick=(+editing.thick>0)?+editing.thick:2;parFxFrom(editing,coqueMode,['thick']);
+    if(!del){coqueMode.thick=(+editing.thick>0)?+editing.thick:2;parFxFrom(editing,coqueMode,['thick']);}
     occSkipFeat=editing.id;
     tlEditLock(editing); // arbre bloqué sur la coque : seules les opérations précédentes rejouées
-    try{rebuild();}catch(e){}
-    if(!occLive||!occLive.shape){occSkipFeat=null;coqueMode=null;tlEditUnlock();faceEl.textContent='Coque : recalcul impossible.';return;}
+    if(!occExactForTool(true)){occSkipFeat=null;coqueMode=null;tlEditUnlock();faceEl.textContent=(del?'Suppression de face':'Coque')+' : recalcul impossible.';return;} // rejeu sans la fonction (un STEP resté seul compris)
     coqueMode._stats=coqueMarkByPosition();
   }
   coquePaint();coquePreviewUpdate();renderCoquePanel();
+  if(del){
+    faceEl.innerHTML='<b>⌫ Édition « '+editing.name+' »</b><br><span class="note">Cliquez d\'autres faces à '+
+      'supprimer (re-clic = retirer), puis <b>Enregistrer</b> (<b>Entrée</b>). <b>Échap</b> annule.</span>';
+    return;
+  }
   faceEl.innerHTML=editing
     ?'<b>⚙ Édition « '+shellName(editing)+' »</b><br><span class="note">Re-cliquez les faces à '+
      'retirer pour en ajouter ou en retirer, ajustez l\'épaisseur, puis <b>Enregistrer</b>. <b>Échap</b> annule.</span>'
@@ -238,7 +259,7 @@ function exitCoqueMode(silent){
 function coqueToggle(e){
   if(!coqueMode)return;
   const hit=coqueFaceUnder(e);
-  if(!hit){faceEl.textContent='Coque : cliquez une face du solide exact.';return;}
+  if(!hit){faceEl.textContent=(coqueMode.del?'Suppression de face':'Coque')+' : cliquez une face du solide exact.';return;}
   hit.ref._ord=hit.ord;
   const k=coqueKey(hit.ref);
   const i=coqueMode.faces.findIndex(r=>coqueKey(r)===k);
@@ -248,6 +269,7 @@ function coqueToggle(e){
   // L'aperçu se recalcule (signature : sélection + épaisseur).
   coquePaint();coquePreviewUpdate();renderCoquePanel();
   const nf=coqueMode.faces.length;
+  if(coqueMode.del){faceEl.textContent=nf?`${nf} face(s) à supprimer — Enregistrer (Entrée) ou Échap.`:'Aucune face retenue : cliquez les faces à supprimer, ou Échap pour annuler.';return;}
   faceEl.textContent=nf?`${nf} face(s) à retirer retenue(s) — saisissez l'épaisseur puis Appliquer.`
     :'Aucune face retenue : cliquez les faces à retirer (les ouvertures), ou Échap pour annuler.';
 }
@@ -261,7 +283,8 @@ function renderCoquePanel(){
   p.innerHTML='';if(!coqueMode)return;
   const ed=coqueMode.editing;
   const h=document.createElement('div');h.className='pnl-h';
-  h.innerHTML=ed?'⚙ Édition de la coque':'⚙ Coque (évidage paroi mince)';
+  const del=!!coqueMode.del;
+  h.innerHTML=del?'⌫ Édition de la suppression de face':ed?'⚙ Édition de la coque':'⚙ Coque (évidage paroi mince)';
   p.appendChild(h);
   const nf=(coqueMode.faces||[]).length;
   if(nf){
@@ -275,7 +298,7 @@ function renderCoquePanel(){
     coqueMode.faces.forEach((fr,i)=>{
       const r2=document.createElement('div');r2.className='item';
       const s=document.createElement('span');
-      s.textContent=(fr._ord>=0?'✅ ':'⚠ ')+'▸ centre ('+fr.pos.map(v=>(+v).toFixed(1)).join(' ; ')+') mm — sera retirée (ouverture)';
+      s.textContent=(fr._ord>=0?'✅ ':'⚠ ')+'▸ centre ('+fr.pos.map(v=>(+v).toFixed(1)).join(' ; ')+') mm — '+(del?'sera supprimée':'sera retirée (ouverture)');
       r2.appendChild(s);
       const x=document.createElement('button');x.textContent='✕';x.title='Retirer cette face';
       x.onclick=()=>{coqueMode.faces.splice(i,1);coquePaint();coquePreviewUpdate();renderCoquePanel();};
@@ -284,13 +307,23 @@ function renderCoquePanel(){
     p.appendChild(lst);
   }else{
     const n=document.createElement('span');n.className='note';
-    n.textContent='Cliquez les faces à retirer dans la vue 3D : ce sont les ouvertures du bac/boîtier.';
+    n.textContent=del?'Cliquez les faces à supprimer dans la vue 3D.':'Cliquez les faces à retirer dans la vue 3D : ce sont les ouvertures du bac/boîtier.';
     p.appendChild(n);
   }
   if(coqueMode._ecartees>0){
     const n=document.createElement('span');n.className='note';
     n.textContent='⚠ '+coqueMode._ecartees+' face(s) mémorisée(s) illisible(s) écartée(s) au chargement.';
     p.appendChild(n);
+  }
+  if(del){
+    const b2=document.createElement('div');b2.className='pnl-btns';b2.style.marginTop='8px';
+    const ok2=document.createElement('button');ok2.className='primary';ok2.textContent='✔ Enregistrer';ok2.onclick=coqueApply;b2.appendChild(ok2);
+    const q2=document.createElement('button');q2.textContent='✖ Annuler';q2.onclick=()=>exitCoqueMode();b2.appendChild(q2);
+    p.appendChild(b2);
+    const n3=document.createElement('span');n3.className='note';
+    n3.textContent='Les faces voisines sont prolongées jusqu\'à se rejoindre. Si elles partent hors de la pièce, ajoutez aussi ces voisines à la suppression.';
+    p.appendChild(n3);
+    return;
   }
   // Épaisseur : > 0, et inférieure à la plus petite dimension utile (le moteur refuse sinon).
   const row=document.createElement('div');row.className='pnl-row';row.style.marginTop='8px';
@@ -322,6 +355,7 @@ function renderCoquePanel(){
 }
 function coqueApply(){
   if(!coqueMode)return;
+  if(coqueMode.del){delFaceApply();return;}
   if(!(coqueMode.faces||[]).length){faceEl.textContent='Coque : retenez au moins une face à retirer (l\'ouverture).';return;}
   const t=+coqueMode.thick||0;
   if(!(t>0)){faceEl.textContent='Coque : épaisseur hors bornes (> 0).';return;}
@@ -349,4 +383,20 @@ function coqueApply(){
   exitCoqueMode(true);
   markDirty();rebuild();renderTree();renderProps();
   faceEl.textContent='Coque créée : '+nf.name+'. Épaisseur modifiable dans ses propriétés, ou re-sélectionnez les faces.';
+}
+function delFaceApply(){
+  // Édition EN PLACE d'une « Suppression de face » : nouvelles faces, même fonction.
+  if(!(coqueMode.faces||[]).length){faceEl.textContent='Suppression de face : retenez au moins une face (ou supprimez la fonction dans l\'arbre).';return;}
+  const f=doc.features.find(x=>x.id===coqueMode.editing&&x.type==='xdelface');
+  const faces=coqueMode.faces.map(r=>{const o=JSON.parse(JSON.stringify(r));delete o._ord;delete o._bid;return o;});
+  if(f){
+    docPushUndo('édition de « '+f.name+' »');
+    f.faces=faces;f.name=delFaceName(faces.length);delete f._m;delete f._err;
+    repSyncForFeature(f);
+    sel={kind:'feature',id:f.id};
+  }
+  exitCoqueMode(true);
+  markDirty();rebuild();renderTree();renderProps();
+  const bad=f&&(f._err||(f._m&&f._m.m<f._m.t));
+  faceEl.textContent=f?(bad?'Suppression de face : le noyau n\'a pas pu refermer le solide — voir ⚠ dans l\'arbre (Ctrl+Z pour annuler).':f.name+' : mise à jour enregistrée.'):'Suppression de face : fonction introuvable.';
 }
