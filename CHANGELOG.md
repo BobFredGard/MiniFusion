@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**394 versions**, de `2026-09-28b` à `V0.15.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**395 versions**, de `2026-09-28b` à `V0.15.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5280,3 +5280,10 @@ Demande : les effets de post-production d’un rendu « à la Blender » (point 
 - **Panneau « Finition »** (onglet avant « Image ») : Débruitage, Halo, Vignettage, Grain, Contraste, Saturation, Température ; préréglages Neutre (défaut : les images d’avant ne changent pas), Photo, Cinéma. Réglages gardés avec ceux de l’atelier.
 - **Calques séparés** (bloc Image, case « Calques séparés (.zip) ») : l’export devient un `.zip` (fflate, déjà dans le bundle) : `1 - beaute.png` (image finale, l’un ou l’autre moteur), `2 - masque.png`, `3 - profondeur.png` (linéaire), `4 - normales.png`, `5 - identifiants.png` (une teinte par corps), `6 - ombre.png` (ombre seule, moyennée sur 48 positions de la lampe : pénombre conservée). Calques faits avec la scène du moteur rapide et des matières de remplacement, tout restauré ensuite.
 - **Tests** : `gpu.spec` étendu (préréglage Cinéma : le coin assombri par le vignettage ; débruitage : grain du fond réduit ; export calques en lancer de rayons : `.zip` 1920×1080 aux six PNG attendus) ; `rendu.spec` vert ; `npm run ci` (67/67).
+
+## V0.15.1 - Rendu : le lancer de rayons occupe tout le GPU, même fenêtre en arrière-plan
+Constat : export 4K 2048 échantillons sur RTX 5070 Ti à ~1,5 échantillon/s (22 min annoncées), GPU à 14 % dans le Gestionnaire des tâches.
+- **Cause** (`src/98-rendu-rayons.js`, `rtGpuReady`) : la taille des lots de tuiles se réglait sur le délai « envoi → barrière vue », qui compte aussi le retard du réveil de la page. Quand la fenêtre n'a pas la main, le navigateur et Windows ralentissent les minuteries : ce retard, pris pour du calcul, réduisait les lots à quelques tuiles, et une seule barrière en vol laissait le GPU à l'arrêt entre deux lots.
+- **Correctif** : file de DEUX lots en vol (`R.fences`) — le GPU calcule l'un pendant que l'autre attend ; file vidée entre deux réveils → lots ×1,5 (au plus `RT_LOT_MAX` = 144 tuiles) ; plus vieux lot en attente au-delà de 2 × (cible + retard moyen du réveil) → lots ×0,75. Barrières restantes libérées à l'arrêt du moteur (`rtGpuDrain`), toutes attendues avant la copie finale de l'export.
+- **Mesures** (4K, nvidia-smi, pièce d'essai) : retard de réveil simulé 0 / 70 / 300 ms → 8,5 / 8,6 / 8,7 échantillons/s, GPU 100 % (avant : 8,2 / 4,4 échantillons/s, GPU ~50 % à 70 ms).
+- **Tests** : `gpu.spec` et `rendu.spec` verts ; `npm run ci`.

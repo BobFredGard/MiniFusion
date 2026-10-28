@@ -14,6 +14,7 @@
    CAO, le curseur « Ombre » (opacité) est sans effet. */
 const RT_SRC='threejs/rendu-rayons.js';
 const RT_PREVIEW=512; // échantillons par pixel de l'aperçu
+const RT_LOT_MAX=144; // tuiles par lot au plus (16 échantillons en 3 × 3)
 const RT_ECH={16:128,64:512,256:2048}; // qualité de l'image (passes du moteur rapide) → échantillons par pixel
 const RT_TONS={aces:'ACESFilmicToneMapping',doux:'ReinhardToneMapping',cine:'CineonToneMapping',lin:'NoToneMapping'};
 let rtLoading=null;
@@ -199,20 +200,31 @@ function rtPresent(){
 }
 /* ── affinage ──
    Le compteur du pathtracer avance à l'ENVOI des tuiles (3 × 3 par échantillon) : sans frein, la file du GPU
-   s'allonge de plusieurs secondes et fige la page. Une barrière (fenceSync, WebGL 2) suit chaque lot : le lot
-   suivant ne part qu'une fois le précédent calculé, et sa taille vise une durée GPU (cible, en ms). */
-function rtGpuReady(R,cible){
-  if(!R.fence)return true;
-  const gl=R.r.getContext();
-  if(gl.getSyncParameter(R.fence,gl.SYNC_STATUS)!==gl.SIGNALED)return false;
-  gl.deleteSync(R.fence);R.fence=null;
-  const dt=Math.max(1,performance.now()-R.tSub);
-  R.batch=Math.max(1,Math.min(144,Math.round(R.batch*Math.min(2,Math.max(0.5,cible/dt)))));
-  return true;
+   s'allonge de plusieurs secondes et fige la page. Une barrière (fenceSync, WebGL 2) suit chaque lot, et la file
+   en garde DEUX au plus : le GPU calcule l'un pendant que l'autre attend, la page reste vive.
+   V0.15.1 : la taille des lots ne se règle plus sur « envoi → barrière vue », qui compte aussi le retard du réveil
+   de la page (minuteries ralenties par le navigateur ou Windows quand la fenêtre n'a pas la main) : ce retard,
+   pris pour du calcul, réduisait les lots à quelques tuiles et le GPU attendait entre deux (14 % d'occupation).
+   File vidée entre deux réveils = GPU à l'arrêt → lots plus gros ; plus vieux lot en attente bien au-delà de la
+   cible → plus petits. */
+function rtGpuReady(R,cible){ // libère les lots calculés ; vrai s'il y a de la place dans la file
+  const gl=R.r.getContext(),Q=R.fences,now=performance.now();
+  if(now-R.tChk<1)return Q.length<2; // même réveil
+  if(R.tChk)R.lat=0.8*R.lat+0.2*Math.min(1000,now-R.tChk);
+  R.tChk=now;
+  let fini=0;
+  while(Q.length&&gl.getSyncParameter(Q[0].f,gl.SYNC_STATUS)===gl.SIGNALED){gl.deleteSync(Q.shift().f);fini++;}
+  if(fini&&!Q.length)R.batch=Math.min(RT_LOT_MAX,Math.ceil(R.batch*1.5));
+  else if(Q.length&&!Q[0].vu&&now-Q[0].t>2*(cible+R.lat)){Q[0].vu=true;R.batch=Math.max(1,Math.floor(R.batch*0.75));}
+  return Q.length<2;
 }
 function rtSubmit(R,goal){ // jusqu'à R.batch tuiles, puis la barrière
   for(let i=0;i<R.batch&&rtSamples()<goal;i++){R.pt.renderSample();if(R.pt.isCompiling)break;}
-  const gl=R.r.getContext();R.fence=gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0);gl.flush();R.tSub=performance.now();
+  const gl=R.r.getContext();R.fences.push({f:gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0),t:performance.now()});gl.flush();
+}
+function rtGpuDrain(R){ // barrières restantes (arrêt du moteur)
+  try{const gl=R.r.getContext();R.fences.forEach(q=>gl.deleteSync(q.f));}catch(e){}
+  R.fences=[];
 }
 function rtLoop(){
   const R=rd&&rd.rt;if(!R||!R.pt)return;
@@ -220,7 +232,7 @@ function rtLoop(){
   if(rd.busy||rd.st.moteur!=='rayons')return;
   if(rd.drag){R.canvas.style.visibility='hidden';return;}
   if(R.camDirty){rtSyncCam();R.camDirty=false;}
-  if(rtSamples()<RT_PREVIEW){if(rtGpuReady(R,24))rtSubmit(R,RT_PREVIEW);}
+  while(rtSamples()<RT_PREVIEW&&rtGpuReady(R,24))rtSubmit(R,RT_PREVIEW);
   if(rtSamples()>=1&&(rtSamples()<RT_PREVIEW||R.lookDirty||!R.shown))rtPresent(); // V0.15.0 : finition (98-rendu-post)
   R.lookDirty=false;
   R.canvas.style.visibility=rtSamples()>=1?'visible':'hidden';
@@ -278,7 +290,7 @@ async function rtStart(){
   pt.renderDelay=0;pt.fadeDuration=0;pt.minSamples=1;pt.rasterizeScene=false;pt.renderToCanvas=false; // affichage : rtPresent
   pt.bounces=8;pt.transmissiveBounces=10;pt.filterGlossyFactor=0.5;
   const cam=new L.PhysicalCamera();cam.up.set(0,0,1);
-  Object.assign(R,{L,T,r,canvas,pt,cam,scene:new T.Scene(),raf:0,batch:9,fence:null});
+  Object.assign(R,{L,T,r,canvas,pt,cam,scene:new T.Scene(),raf:0,batch:9,fences:[],lat:0,tChk:0});
   try{
     const t0=performance.now();
     rtBuildEnv();rtSyncCam();rtBuildObjects();
@@ -295,7 +307,7 @@ function rtStop(){
   try{rtDropGroup(R);if(R.texCache)R.texCache.forEach(K=>['map','rough','normal'].forEach(k=>{if(K[k])K[k].dispose();}));}catch(e){}
   try{if(R.floor){R.floor.geometry.dispose();if(R.floor.material.alphaMap)R.floor.material.alphaMap.dispose();R.floor.material.dispose();}}catch(e){}
   try{if(R.env)R.env.dispose();Object.values(R.supMap||{}).forEach(t=>t.dispose());if(R.studio){R.studio.geometry.dispose();R.studio.material.dispose();}}catch(e){}
-  try{if(R.fence)R.r.getContext().deleteSync(R.fence);if(R.pt)R.pt.dispose();rpDispose(R.post);}catch(e){}
+  try{rtGpuDrain(R);if(R.pt)R.pt.dispose();rpDispose(R.post);}catch(e){}
   try{if(R.r){R.r.dispose();R.r.forceContextLoss();}}catch(e){}
   try{if(R.canvas)R.canvas.remove();}catch(e){}
 }
@@ -318,14 +330,14 @@ async function rtExport(){
     rtSyncCam();R.pt.reset();
     let last=0;
     while(rtSamples()<N){
-      if(rtGpuReady(R,80))rtSubmit(R,N);
+      while(rtSamples()<N&&rtGpuReady(R,80))rtSubmit(R,N);
       if(btn&&Math.floor(rtSamples())!==last){last=Math.floor(rtSamples());
         const el=(performance.now()-t0)/1000,rest=last>0?el*(N-last)/last:0;
         btn.textContent='Calcul : '+Math.round(100*last/N)+' %  ('+last+' / '+N+(last>2?' · reste '+Math.ceil(rest)+' s':'')+')';}
       await new Promise(r=>setTimeout(r,4));
       if(!rd||rd.rt!==R)return;
     }
-    while(!rtGpuReady(R,80))await new Promise(r=>setTimeout(r,4)); // dernier lot calculé avant la copie
+    while(rtGpuReady(R,80),R.fences.length)await new Promise(r=>setTimeout(r,4)); // derniers lots calculés avant la copie
     // finition (fond compris, transparent : PNG détouré) puis, au choix, les calques séparés (98-rendu-post)
     rtPresent();
     const blob=await new Promise(r=>R.canvas.toBlob(r,'image/png'));
