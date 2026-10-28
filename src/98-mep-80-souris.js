@@ -14,7 +14,7 @@
     mepSt.tool=next;
     if(next==='select')mepSt.entSel=[];
     mepSt.pick=null;mepSt.dim=null;mepSt.cutPts=[];mepSt.detC=null;mepSt.hovEnt=null;mepSt.skSel=new Set();mepSt.lot=null;mepSt.vcmd=null;
-    mepSt.axisPick=[];mepSt.axisFree=null;mepSt.ord=null;mepSt.ordPt=null;
+    mepSt.axisPick=[];mepSt.axisFree=null;mepSt.ord=null;mepSt.ordPt=null;mepSt.snapMode=null;mepSt.snapHov=null;
     if(ordKeep){mepSt.ord=ordKeep;mepSt.selDim=ordKeep;mepStatus('Ordonnées : cliquez les points à AJOUTER au groupe sélectionné (Entrée ou Échap pour terminer).');}
     mepToolSync();
     try{mepSideShow();}catch(e){}
@@ -55,7 +55,7 @@
       arc:'Arc 3 points : centre, départ, arrivée.',
       point:'Point : cliquez pour placer.',
       trim:'Ajuster : cliquez le tronçon à couper entre 2 intersections.',
-      dim:'Cote : cliquez une arête/cercle · 2ᵉ entité pour distance/angle · cliquez pour poser · glissez un trait rouge pour déplacer',
+      dim:'Cote : cliquez une arête/cercle · 2ᵉ entité pour distance/angle · cliquez pour poser · clic droit : accrochage (extrémité, milieu, extrême X/Y, intersection)',
       hole:'Perçage : cliquez un cercle de perçage, puis posez l’étiquette.',
       axis:'Axes : cliquez un trou (ou utilisez Alignement / Cercle / Libre dans le panneau).',
       cut2:'Coupe : 2 clics sur la ligne de coupe.',
@@ -776,9 +776,19 @@
     if(mepSt.tool==='note'&&mepSt.dim){if(mepDimMoveTo(sh,mepSt.dim,P))mepRender();return;}
     if(mepSt.tool==='dim'||mepSt.tool==='hole'){
       // survol des arêtes/cercis : feedback avant les 2 clics de sélection
+      let need=false;
+      if(mepSt.tool==='dim'&&mepSt.snapMode&&!(mepSt.dim&&mepSt.dim.b)){
+        // accrochage imposé : repère du point visé, pas de surbrillance d'entité
+        const S=mepSnapModePt(sh,P.x,P.y,mepSt.snapMode),o=mepSt.snapHov;
+        if(!!S!==!!o||(S&&(Math.abs(S.x-o.x)>1e-6||Math.abs(S.y-o.y)>1e-6)))need=true;
+        mepSt.snapHov=S;
+        if(mepSt.hovEnt){mepSt.hovEnt=null;need=true;}
+        if(need)mepRender();
+        return;
+      }
+      if(mepSt.snapHov){mepSt.snapHov=null;need=true;}
       const hit=mepHitViewEnt(sh,P.x,P.y,{axes:mepSt.tool==='dim'});
       const hov=hit?{vid:hit.vid,i:hit.i,sig:mepEntSig(hit.e)}:null;
-      let need=false;
       if(!mepSameHovEnt(hov,mepSt.hovEnt)){mepSt.hovEnt=hov;need=true;}
       // la cote en cours suit la souris (sauf distance point→point sans 2ᵉ point)
       if(mepSt.dim&&!(mepSt.dim.kind==='dist'&&!mepSt.dim.b)){
@@ -1350,7 +1360,7 @@
     mepSt.selDim=d.id;mepSt.sel=null;mepRender();mepSideShow();
     mepStatus(label+' — clic droit pour changer l’orientation.');
   }
-  function mepCtxShow(x,y,d,draft){
+  function mepCtxShow(x,y,d,draft,snap){
     if(!mepCtxEl){
       mepCtxEl=document.createElement('div');
       mepCtxEl.id='mepCtx';
@@ -1364,7 +1374,7 @@
     }
     mepCtxEl.innerHTML='';
     const title=document.createElement('div');
-    title.textContent=draft?'Cote en cours':'Cote';
+    title.textContent=d?(draft?'Cote en cours':'Cote'):'Accrochage';
     title.style.cssText='padding:3px 8px 5px;color:var(--muted,#999);font-size:.7rem';
     mepCtxEl.appendChild(title);
     const add=(label,cur,on)=>{
@@ -1377,15 +1387,24 @@
       b.onclick=()=>{mepCtxHide();on();};
       mepCtxEl.appendChild(b);
     };
-    if(d.kind==='dia'||d.kind==='rad'){
+    if(d&&(d.kind==='dia'||d.kind==='rad')){
       add('Rayon (R)',d.kind==='rad',()=>mepDimSetKind(d,'rad',!!draft));
       add('Diamètre (Ø)',d.kind==='dia',()=>mepDimSetKind(d,'dia',!!draft));
     }
-    if(d.kind==='len'||d.kind==='dist'){
+    if(d&&(d.kind==='len'||d.kind==='dist')&&!(d.kind==='dist'&&!d.b)){
       const o=d.orient||'a';
       add('Alignée (A)',o==='a',()=>mepDimSetOrient(d,'a',!!draft));
       add('Horizontale (X)',o==='h',()=>mepDimSetOrient(d,'h',!!draft));
       add('Verticale (Y)',o==='v',()=>mepDimSetOrient(d,'v',!!draft));
+    }
+    if(snap){
+      // accrochage imposé des points de la cote (2026-10-28)
+      if(mepCtxEl.children.length>1){
+        const h=document.createElement('div');h.textContent='Accrochage';
+        h.style.cssText='padding:6px 8px 3px;margin-top:3px;border-top:1px solid var(--border,#3a3a3e);color:var(--muted,#999);font-size:.7rem';
+        mepCtxEl.appendChild(h);
+      }
+      MEP_SNAP_MODES.forEach(([m,lab])=>add(lab,(mepSt.snapMode||null)===m,()=>mepSetSnapMode(m)));
     }
     mepCtxEl.style.display='block';
     mepCtxEl.style.left='0px';mepCtxEl.style.top='0px';
@@ -1400,11 +1419,13 @@
     if(mepSt.pick&&MEP_SK_TOOLS.indexOf(mepSt.pick.kind)>=0){mepSt.pick=null;mepRender();mepStatus('Tracé terminé.');return;}
     const sh=mepSheet();if(!sh)return;
     const canCtx=d=>d&&(d.kind==='dia'||d.kind==='rad'||d.kind==='len'||d.kind==='dist');
+    const snapCtx=mepSt.tool==='dim'&&!(mepSt.dim&&mepSt.dim.kind==='dist'&&mepSt.dim._pp);
     if(mepSt.dim&&canCtx(mepSt.dim)){
-      mepCtxShow(ev.clientX,ev.clientY,mepSt.dim,true);
+      mepCtxShow(ev.clientX,ev.clientY,mepSt.dim,true,snapCtx);
       return;
     }
-    const P=mepPt(ev),d=mepDimAt(sh,P.x,P.y);
+    const P=mepPt(ev),d=mepSt.dim?null:mepDimAt(sh,P.x,P.y);
+    if(snapCtx&&!canCtx(d)){mepCtxShow(ev.clientX,ev.clientY,null,false,true);return;}
     if(canCtx(d)){
       mepSt.selDim=d.id;mepSt.sel=null;mepSt.entSel=[];
       mepRender();

@@ -73,6 +73,7 @@ const SUITES = [
   "test_esquisse_projection",
   "test_esquisse_intersection",
   "test_cote_points",
+  "test_mep_accrochages",
   "test_esquisse_cotes_pose",
   "test_esquisse_arc_fixe_ddl",
   "test_proj_arc_sens",

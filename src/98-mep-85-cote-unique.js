@@ -278,6 +278,16 @@
   }
   function mepDimClick(sh,P,ctrl,shift,alt){
     const tool=mepSt.dim; // état en cours : {kind,a,vid,ent}
+    if(!tool&&mepSt.snapMode){
+      // accrochage imposé (menu contextuel) : le clic donne un POINT, jamais une entité
+      const S=mepSnapModePt(sh,P.x,P.y,mepSt.snapMode);
+      if(!S){mepStatus('Accrochage '+mepSnapModeLabel(mepSt.snapMode).toLowerCase()+' : aucun point sous le curseur.');return;}
+      mepSt.dim={kind:'dist',a:mepSnapModeQ(sh,S),vid:S.vid,off:8,__ghost:true};
+      mepSt.snapHov=null;
+      mepStatus('Distance : cliquez le 2ᵉ point (accrochage '+mepSnapModeLabel(mepSt.snapMode).toLowerCase()+', clic droit pour changer).');
+      mepRender();
+      return;
+    }
     if(!tool){
       // 1ᵉʳ clic : sélection d'une entité, sans poser la cote. Un 2ᵉ clic sur
       // une autre entité construit distance/angle ; sinon le clic suivant pose.
@@ -296,6 +306,16 @@
     /* 2ᵉ clic */
     const D=mepSt.dim;
     const sh2=sh;
+    if(D.kind==='dist'&&!D.b&&mepSt.snapMode){
+      const S=mepSnapModePt(sh2,P.x,P.y,mepSt.snapMode);
+      if(!S){mepStatus('Accrochage '+mepSnapModeLabel(mepSt.snapMode).toLowerCase()+' : aucun point sous le curseur.');return;}
+      if(S.vid!==D.vid){mepStatus('Distance : les 2 points doivent être dans la même vue.');return;}
+      D.b=mepSnapModeQ(sh2,S);
+      D._pp=P;mepSt.snapHov=null;
+      mepStatus('Distance : encore un clic pour placer la cote.');
+      mepRender();
+      return;
+    }
     if(D.kind==='dist'&&!D.b){
       const snap=mepSnapPt(P.x,P.y,sh2);
       const v=mepView(sh2,D.vid);
@@ -316,7 +336,7 @@
         mepDimAutoDia(sh2,nd);
         sh2.dims.push(nd);
       });
-      mepDimClearSelection();mepSt.selDim=null;mepSt.sel=null;mepRender();
+      mepDimClearSelection();mepSt.selDim=null;mepSt.sel=null;mepSt.snapMode=null;mepSt.snapHov=null;mepRender();
       mepStatus('Cote posée.');
       return;
     }

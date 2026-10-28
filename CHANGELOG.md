@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**406 versions**, de `2026-09-28b` à `V0.15.12` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**407 versions**, de `2026-09-28b` à `V0.15.13` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5374,3 +5374,12 @@ Demande : « travailler dans un corps puis un autre ; prendre en compte l'antér
 - **Arbre** (`src/42-arbre-modele.js`) : un corps pas encore né au marqueur est grisé, « ⏳ pas encore créé ».
 - **Découpe sur plusieurs corps** : une poche, un perçage ou une révolution en retrait propose, dès que plusieurs corps sont visibles (non masqués, rejeu allumé, déjà nés, non consommés par une combinaison), la ligne « Corps visés » : son corps seul, tous les corps visibles, ou un corps en particulier (la fonction change de corps). `f.cutBodies` : la découpe est rejouée dans chaque corps visé, à sa place dans la timeline, avec un seul fantôme (`occCutExtraBodies`). Une copie « Nouveau corps » ne vise que son propre corps.
 - **Tests** : `test_corps_temps` (nouveau, suite rapide : 16 contrôles sur le noyau réel — corps actif au marqueur, refus, retour du choix, volumes par corps pour les trois choix, corps masqué exclu, relecture JSON, copie de répétition). `tests/fixtures/arbre_reference.json` régénérée (`test_arbre_v2 --ecrire`) : seule change la ligne du corps né après le marqueur, désormais « ⏳ pas encore créé ».
+
+## V0.15.13 - Mise en plan : accrochages imposés de l'outil Cote (extrémité, milieu, extrême X/Y, intersection)
+Demande : « coter entre points : extrémité d'arête, point maximum suivant X ou Y, milieu, intersection entre tout type de ligne ou cercle, via menu contextuel ; l'intersection peut être dans le vide (2 lignes prolongées, ligne et cercle prolongé) en bleu, comme les cotes ».
+- **Menu contextuel** (`src/98-mep-80-souris.js`) : dans l'outil Cote, le clic droit propose « Accrochage » : Automatique, Extrémité, Milieu, Centre, Point extrême suivant X, Point extrême suivant Y, Intersection (même prolongée). Pendant une cote en cours, la section s'ajoute aux choix R/Ø ou Alignée/X/Y. Le type choisi (`mepSt.snapMode`) vaut pour les 2 points de la cote, peut changer entre les deux, et revient à Automatique une fois la cote posée.
+- **Points imposés** (`src/98-mep-86-accrochages.js`, nouveau) : `mepSnapModePt` cherche sur les arêtes projetées et les traits d'axe. Point extrême : sur l'entité visée, le point de X (ou Y) minimal ou maximal le plus proche du curseur (quadrants et bouts d'un arc, bouts d'une droite). Intersection : supports infinis (droite prolongée, cercle complet) passant près du curseur, croisés 2 à 2 (`mepSnapInter` : droite × droite, droite × cercle, cercle × cercle) ; à égalité, une intersection réelle passe avant une intersection prolongée.
+- **Clics** (`src/98-mep-85-cote-unique.js`) : en accrochage imposé, le clic donne toujours un POINT (cote de distance), jamais une entité ; les 2 points doivent être dans la même vue.
+- **Prolongements** (`src/98-mep-70-cotes.js`) : un point d'intersection garde ses 2 entités (`hint {t:'int', e:[…]}`). La cote trace, en couleur de cote, l'arête (ou l'arc) prolongé de son bout jusqu'au point, plus le dépassement des lignes de rappel. Sur la géométrie exacte, le point suit ses entités (droite parallèle la plus proche, cercle de même rayon) et se recalcule (`mepIntRefresh`).
+- **Survol** : repère jaune du point visé (carré extrémité, triangle milieu, cercle centre, losange extrême, croix intersection), prolongements en pointillé, trait d'aperçu depuis le 1ᵉʳ point.
+- **Tests** : `test_mep_accrochages` (nouveau, suite rapide : 26 contrôles — intersections des 3 familles, parallèles, chaque accrochage, cote intersection → extrémité posée et mesurée, retour à Automatique, prolongements dessinés, suivi après déplacement d'une arête). Contrôlé aussi dans le navigateur sur l'exemple Axe.

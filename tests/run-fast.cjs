@@ -49,6 +49,7 @@ const SUITES = [
   'test_esquisse_face_conges',
   'test_esquisse_intersection',
   'test_cote_points',
+  'test_mep_accrochages',
   'test_esquisse_cotes_pose',
   'test_esquisse_cotes_souples',
   'test_esquisse_inference_glisser',

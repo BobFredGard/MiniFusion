@@ -270,6 +270,7 @@
     if(mepSt.hovView)drawVB(mepSt.hovView,'mepVB');
     /* brouillons d'interaction */
     try{mepDrawDraft(mk);}catch(e){}
+    try{mepDrawSnapHov(mk);}catch(e){}
     try{mepVcmdDraw(mk);}catch(e){}
     mepToolSync();
     mepRulers();

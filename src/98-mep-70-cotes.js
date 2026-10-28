@@ -67,6 +67,9 @@
   }
   function mepDimPtsRefresh(sh,d){
     const v1=mepView(sh,d.vid);if(!v1)return;
+    if(d.kind==='dist'){ // points d'intersection (accrochage imposé) : suivent leurs 2 entités
+      mepIntRefresh(v1,d.a);if(d.b)mepIntRefresh(d.vid2?mepView(sh,d.vid2):v1,d.b);
+    }
     if(d.kind==='ord'){
       const pr=d.axis==='y'?'h':'v';
       mepPtRefresh(sh,v1,d.o,pr);d.a=d.b=d.o;(d.pts||[]).forEach(q=>mepPtRefresh(sh,v1,q,pr));
@@ -1209,6 +1212,8 @@
     // la pièce et un dépassement `over` après la ligne de cote (paramètres).
     draw('line',Object.assign({x1:sa.x,y1:sa.y,x2:ea.x,y2:ea.y},L));
     draw('line',Object.assign({x1:sb.x,y1:sb.y,x2:eb.x,y2:eb.y},L));
+    // point d'intersection dans le vide : arêtes / arcs prolongés jusqu'au point
+    mepDrawSnapExt(draw,L,w.v1,d.a);if(d.b)mepDrawSnapExt(draw,L,w.v2||w.v1,d.b);
     // ligne de cote fléchée
     if(d.arr==='out'){
       const ext=Math.max(2,MEP_DIM_STYLE.arrowLen);
