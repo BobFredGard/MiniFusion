@@ -41,6 +41,7 @@ const SUITES = [
   'test_simulation_cartes',
   'test_fao_chanfrein',
   'test_repeat_circ_tour',
+  'test_repeat_corps',
   'test_esquisse_angle',
   'test_esquisse_transparence',
   'test_esquisse_face_conges',

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**403 versions**, de `2026-09-28b` à `V0.15.9` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**404 versions**, de `2026-09-28b` à `V0.15.10` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5349,3 +5349,11 @@ Constat : sur `Exemples/Cavité Usinage.step` (113 faces), la plupart des faces 
 - **Mesure** : la face pathologique est abandonnée à 20,6 s de bout en bout dans le navigateur (avant : ~10 min puis plantage) ; une face ordinaire de la même pièce prend 10–11 s — identique en synchrone (ce n'est pas le worker), les 0,4 s mesurées en V0.15.7 valant pour d'autres faces.
 - **Exceptions du noyau dans le worker** (fusion avec V0.15.8) : le code envoyé au worker embarque `occtTypeName` / `occtCanCatch` / `occtExcInstall` et pose le crochet sur `self` avant `importScripts` du noyau — sans cela, le noyau du worker avortait comme avant V0.15.8. Contrôlé par `test_noyau_exceptions`.
 - **Tests** : `test_suppression_face_worker` (17 vérifications, worker réel sur `worker_threads` exécutant le code de `delWkSource` avec un vrai noyau) : boîte percée (main rendue en 23 ms, 7 faces affichées pendant le calcul, même solide que le synchrone), cache par clé (rejeu complet sans points de contrôle : aucun calcul relancé), Cavité Usinage 5ᵉ face non plane (abandon à 3,6 s pour un délai de 3 s, ⚠, pièce intacte), puis worker relancé sur une face ordinaire. `test_suppression_face`, `_step`, `_edition`, `test_cache_exact`, `test_coque_sel` verts ; `npm run ci` (67/67). Parcours FAO intouchés. Après fusion : suite complète 188/188, `npm run ci` 68/68.
+
+## V0.15.10 - Répétition : opération « Unir » ou « Nouveau corps »
+Demande : « Répétition → permettre de créer un corps ou de l'unir » (comme l'opération Joindre / Nouveau corps de Fusion).
+- **Opération** (`src/40-interface-arbre-props.js`) : sélecteur « Opération » à la création et à l'édition d'une répétition. « ➕ Unir » (défaut, comportement d'avant) : les copies restent dans le corps de leur source et s'y unissent. « ◧ Nouveau corps » (`rp.op='new'`) : chaque exemplaire devient un corps séparé, un par exemplaire et par corps source ; la symétrie double donne aussi un corps à l'image de l'image.
+- **Corps stables** : `rp.bodyMap` (clé « corps source@exemplaire ») garde les mêmes ids d'une régénération à l'autre. Le nom, la couleur ou une fonction ajoutée dans un corps d'exemplaire survivent. Les corps neufs héritent couleur et transparence du corps source et s'appellent « Plaque (rép 1) ».
+- **Nettoyage** : quantité réduite, retour à « Unir » ou suppression de la répétition retirent les corps devenus vides (`repDropBody`) ; un corps qui porte une fonction ajoutée ou sert d'outil de combinaison reste. Supprimer seul un corps d'exemplaire est refusé avec une explication : la répétition le recréerait.
+- **Arbre** (`src/42-arbre-modele.js`) : ◧ sur la répétition, « 🔁 nom » sur les corps qu'elle a créés. Le panneau signale par ⚠ un « Nouveau corps » dont aucune source n'ajoute de matière (perçage seul : corps vides).
+- **Tests** : `test_repeat_corps` (nouveau, suite rapide : 14 contrôles sur le noyau réel — volumes par corps, ids stables, refus, réduction, relecture JSON, retour à Unir, symétrie double, suppression).

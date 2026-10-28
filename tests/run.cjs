@@ -210,6 +210,7 @@ const SUITES = [
   "test_fenetre_dynamique",
   "test_repeat_lin2",
   "test_repeat_imbrique",
+  "test_repeat_corps",
   "test_fao_percage_tranche",
   "test_fao_32_fiches",
   "test_simulation_rendu",

@@ -624,6 +624,41 @@ function repCloneFeature(f,i,skMap,featMap,cfg,reuse){
   }
   nf.id=target;return nf; // l'insertion dans doc.features est faite par repGenChildren (kids)
 }
+// V0.15.10 : OPÉRATION de la répétition (comme Fusion : Joindre / Nouveau corps).
+//   rp.op absent ou 'join' : les copies restent dans le corps de leur source et s'y UNISSENT ;
+//   rp.op === 'new'        : chaque exemplaire devient un CORPS NEUF (un par exemplaire et par
+//                            corps source — répéter deux corps donne deux corps par exemplaire).
+// Les corps créés sont mémorisés dans rp.bodyMap (clé « corps source@exemplaire », pour la
+// symétrie double « corps@1@2 » = image de l'image) : ids STABLES d'une régénération à l'autre,
+// le nom, la couleur ou une fonction ajoutée par l'utilisateur dans le corps survivent.
+function repIsNewBody(rp){return !!rp&&rp.op==='new';}
+function repBodyOwner(bid){
+  // Répétition « nouveau corps » qui a créé ce corps (ou null)
+  return (doc.features||[]).find(r=>r&&r.type==='repeat'&&r.bodyMap&&Object.keys(r.bodyMap).some(k=>r.bodyMap[k]===bid))||null;
+}
+function repDropBody(bid){
+  // Retire un corps créé par une répétition, s'il ne porte plus rien (fonction, outil de
+  // combinaison, corps neuf d'une autre fonction) — sinon il reste, comme tout corps.
+  if(!bid||(doc.features||[]).some(x=>x.body===bid||x.newBody===bid||(x.type==='combine'&&(x.tools||[]).indexOf(bid)>=0)))return false;
+  const n0=(doc.bodies||[]).length;
+  doc.bodies=(doc.bodies||[]).filter(b=>b.id!==bid);
+  if(doc.bodies.length&&doc.activeBody===bid)doc.activeBody=doc.bodies[0].id;
+  return doc.bodies.length<n0;
+}
+function repBodyFor(rp,key,src){
+  // Corps de l'exemplaire `key` (créé au besoin, couleur / transparence du corps source)
+  rp.bodyMap=rp.bodyMap||{};
+  const bid=rp.bodyMap[key];
+  if(bid&&(doc.bodies||[]).some(b=>b.id===bid))return bid;
+  try{ensureBodies();}catch(e){}
+  const se=(doc.bodies||[]).find(b=>b.id===src)||{};
+  const n=doc.bodySeq++;
+  const e={id:'b'+n,name:(se.name||'Corps')+' (rép '+key.split('@').slice(1).join('·')+')',c:se.c==null?null:se.c};
+  if(se.color>0)e.color=se.color;
+  if(se.op>0)e.op=se.op;
+  doc.bodies.push(e);rp.bodyMap[key]=e.id;
+  return e.id;
+}
 function repGenChildren(rp){
   // Reconstruit les INSTANCES d'une répétition depuis rp.base et ses paramètres, PAR
   // RECONSTRUCTION À PARTIR DE LA MODIFICATION : les instances existantes sont rafraîchies
@@ -673,6 +708,17 @@ function repGenChildren(rp){
   // instances via take() (clé 'index|type', préférence _src), ids stables d'un rejeu
   // à l'autre. Pour la 2ᵉ passe, la source est l'instance de 1ʳᵉ passe (id stable).
   const reuse=new Map(); // 'index|srcId' -> instance existante (toutes passes)
+  // Opération : nouveau corps → chaque clone va dans le corps de son exemplaire ; unir → il
+  // garde le corps de sa source (copié avec elle). Une instance de 1ʳᵉ passe prise comme source
+  // (symétrie double) transmet sa clé : son image va dans un corps à part (image de l'image).
+  const usedBodies=new Set();
+  const setBody=(nf,src,idx)=>{
+    if(!repIsNewBody(rp)){delete nf.repBodyKey;return;}
+    const sb=occBodyOfFeat(src);
+    const key=(src.repeatId===rp.id&&src.repBodyKey?src.repBodyKey:sb)+'@'+idx;
+    nf.repBodyKey=key;nf.body=repBodyFor(rp,key,(src.repeatId===rp.id&&src.repBodyKey)?src.repBodyKey.split('@')[0]:sb);
+    usedBodies.add(nf.body);
+  };
   // 2) Purge : instances hors bornes ou dont la source a disparu (+ esquisses orphelines).
   // Pour le miroir double, les instances de 2ᵉ passe sont recyclées à partir des instances
   // de 1ʳᵉ passe (ids stables) : la passe 1 est donc reconstruite D'ABORD, puis la passe 2
@@ -683,7 +729,7 @@ function repGenChildren(rp){
     sources.forEach(f=>{
       const c=take(idx,f.type,f.id);
       const nf=repCloneFeature(f,idx,skMap,featMap,cfg,c||null);
-      if(nf){nf.repeatId=rp.id;nf.repIndex=idx;if(c)reuse.set(idx+'|'+f.id,c);kids.push(nf);}
+      if(nf){nf.repeatId=rp.id;nf.repIndex=idx;setBody(nf,f,idx);if(c)reuse.set(idx+'|'+f.id,c);kids.push(nf);}
     });
     return kids;
   };
@@ -709,7 +755,7 @@ function repGenChildren(rp){
       base.forEach(f=>{
         const c=take(i,f.type,f.id);
         const nf=repCloneFeature(f,i,skMap,featMap,cfg,c||null);
-        if(nf){nf.repeatId=rp.id;nf.repIndex=i;if(c)reuse.set(i+'|'+f.id,c);rp.children.push(nf.id);kids.push(nf);}
+        if(nf){nf.repeatId=rp.id;nf.repIndex=i;setBody(nf,f,i);if(c)reuse.set(i+'|'+f.id,c);rp.children.push(nf.id);kids.push(nf);}
       });
     }
   }else{
@@ -717,6 +763,11 @@ function repGenChildren(rp){
   }
   const at=doc.features.indexOf(rp);
   if(at<0)doc.features=doc.features.concat(kids);else doc.features.splice(at+1,0,...kids);
+  // Corps d'exemplaires devenus inutiles (quantité réduite, retour à « Unir », source retirée)
+  if(rp.bodyMap){
+    Object.keys(rp.bodyMap).forEach(k=>{const b=rp.bodyMap[k];if(usedBodies.has(b))return;delete rp.bodyMap[k];repDropBody(b);});
+    if(!Object.keys(rp.bodyMap).length)delete rp.bodyMap;
+  }
   return kids.length;
   }finally{repGenBusy=false;}
 }
@@ -728,6 +779,7 @@ function repRemoveRepeat(rp){
     if(sk&&!doc.features.some(x=>x!==f&&x.sketchId===sk.id))doc.sketches=doc.sketches.filter(s=>s.id!==sk.id);
   }
   doc.features=doc.features.filter(f=>f.id!==rp.id&&f.repeatId!==rp.id);
+  if(rp.bodyMap)Object.keys(rp.bodyMap).forEach(k=>repDropBody(rp.bodyMap[k])); // corps neufs des exemplaires
 }
 function repSyncForSketch(skId){
   // Régénère les instances des répétitions dont une fonction SOURCE utilise cette esquisse :
@@ -750,7 +802,7 @@ function repSyncForFeature(f,seen){
 }
 const repGenSigs=new Map(); // id de répétition -> signature des sources au dernier régénéré
 function repSourceSig(rp){
-  let s=JSON.stringify([rp.mode,rp.copies,rp.dist,rp.angle,rp.axis,rp.plane,rp.planeN,rp.plane2,rp.planeN2,rp.base,rp.dir,rp.lin2,rp.axis2,rp.dir2,rp.copies2,rp.dist2]);
+  let s=JSON.stringify([rp.op||'join',rp.mode,rp.copies,rp.dist,rp.angle,rp.axis,rp.plane,rp.planeN,rp.plane2,rp.planeN2,rp.base,rp.dir,rp.lin2,rp.axis2,rp.dir2,rp.copies2,rp.dist2]);
   // motif développé : une répétition source change dès que ses instances changent
   const B=(rp.base||[]).map(id=>doc.features.find(x=>x.id===id));
   if(B.some(f=>!f))s+='#?';
@@ -1006,6 +1058,13 @@ function delBody(id){
   // corps partent aussi, sinon leurs instances resteraient orphelines sans se régénérer.
   const e=(doc.bodies||[]).find(x=>x.id===id);
   if(!e)return;
+  // Corps d'un exemplaire de répétition « nouveau corps » : il est régénéré par la répétition,
+  // le supprimer seul n'aurait pas d'effet durable — on l'explique au lieu de le faire.
+  const own=typeof repBodyOwner==='function'?repBodyOwner(id):null;
+  if(own&&doc.features.some(f=>f.repeatId===own.id&&f.body===id)){
+    try{faceEl.textContent='« '+e.name+' » est un exemplaire de la répétition « '+own.name+' » : réduisez sa quantité, passez-la en « Unir » ou supprimez-la.';}catch(e2){}
+    return;
+  }
   const kids=doc.features.filter(f=>f.body===id);
   const kidIds=new Set(kids.map(f=>f.id));
   const reps=doc.features.filter(f=>f.type==='repeat'&&(f.body===id||(f.base||[]).some(b=>kidIds.has(b))));
@@ -1130,6 +1189,7 @@ function applyRepPattern(){
     lin2:repMode.type==='lin'&&repMode.lin2?true:undefined,axis2:repMode.type==='lin'&&repMode.lin2?repMode.axis2:undefined,
     dir2:repMode.type==='lin'&&repMode.lin2?repMode.dir2:undefined,copies2:repMode.type==='lin'&&repMode.lin2?repMaxCopies(repMode.copies2):undefined,
     dist2:repMode.type==='lin'&&repMode.lin2?(+repMode.dist2||0):undefined,
+    op:repMode.op==='new'?'new':undefined,
     base:base.map(f=>f.id),children:[],visible:true};
   parFxCopy(repMode,rp,repMode.type==='circ'?['angle']:(repMode.type==='lin'?(repMode.lin2?['dist','dist2']:['dist']):[]));
   addFeature(rp);
@@ -1152,6 +1212,15 @@ function repUseSelectedFace2(){
   if(repMode.type==='lin'){repMode.axis2='Face';repMode.dir2=P.a;}
   else{repMode.plane2='Face';repMode.planeN2=P.a;}
   renderRepPanel();
+}
+const REP_OPS=[['join','➕ Unir','Les copies s’unissent au corps de leur source (un seul solide)'],
+  ['new','◧ Nouveau corps','Chaque exemplaire devient un corps séparé (un par exemplaire et par corps source)']];
+// Exemplaires « nouveau corps » sans matière : les découpes, congés, dépouilles copiés seuls
+// tombent dans un corps vide — on le signale au lieu de laisser des corps fantômes muets.
+function repNewBodyEmpty(rp){
+  if(!repIsNewBody(rp))return false;
+  const B=repExpandSources((rp.base||[]).map(id=>doc.features.find(x=>x.id===id)).filter(Boolean),new Set([rp.id]));
+  return B.length>0&&!B.some(f=>(f.type==='extrude'||f.type==='revolve')&&(f.op||'add')!=='cut');
 }
 function renderRepPanel(){
   const p=$('props');p.innerHTML='';if(!repMode)return;
@@ -1211,6 +1280,14 @@ function renderRepPanel(){
       const bf2=document.createElement('button');bf2.textContent='🎯 Face / arête → 2ᵉ direction';bf2.title='Prend la direction de l’arête sélectionnée (axe d’un cercle) ou la normale de la face sélectionnée';bf2.onclick=()=>repUseSelectedFace2();p.appendChild(bf2);
     }
   }
+  // V0.15.10 : OPÉRATION — unir les copies au corps de leur source, ou un corps neuf par exemplaire
+  {const ro=document.createElement('div');ro.className='row';ro.style.marginTop='4px';
+    const lo=document.createElement('span');lo.className='note';lo.textContent='Opération ';ro.appendChild(lo);
+    const so=document.createElement('select');so.className='repOpSel';
+    REP_OPS.forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];op.title=o[2];so.appendChild(op);});
+    so.value=repMode.op==='new'?'new':'join';so.title=REP_OPS.find(o=>o[0]===so.value)[2];
+    so.onchange=()=>{repMode.op=so.value;so.title=REP_OPS.find(o=>o[0]===so.value)[2];};
+    ro.appendChild(so);p.appendChild(ro);}
   if(repMode.type==='circ'){const l=document.createElement('label');l.textContent=' Angle total (°)';const inp=document.createElement('input');inp.type='text';inp.inputMode='decimal';inp.value=repMode.angle;parFx(inp,repMode,'angle');inp.onchange=()=>{repMode.angle=parseFloat(String(inp.value).replace(',','.'))||360;repPreviewUpdate();};l.appendChild(inp);p.appendChild(l);}
   // ── FONCTIONS RÉPÉTABLES : la MÊME liste à cocher qu'à l'édition (voir
   // repSourceList). Aucun re-rendu ici : la case garde son état, seul l'arbre se
@@ -1413,6 +1490,18 @@ function renderProps(){
       const typ=pSel([['lin','Linéaire'],['circ','Circulaire'],['mir','Symétrie']],f.mode||'lin',
         v=>{f.mode=v;f.name=repTypeName(f.mode,f);applyCfg();});
       pRow('Type',typ);
+      const opS=pSel(REP_OPS.map(o=>[o[0],o[1]]),repIsNewBody(f)?'new':'join',v=>{
+        docPushUndo('opération de « '+f.name+' »');
+        if(v==='new')f.op='new';else delete f.op;
+        applyCfg();
+      });
+      opS.classList.add('repOpSel');opS.title=REP_OPS.find(o=>o[0]===(repIsNewBody(f)?'new':'join'))[2];
+      pRow('Opération',opS);
+      if(repIsNewBody(f)){
+        const nb=new Set(doc.features.filter(k=>k.repeatId===f.id).map(k=>k.body));
+        pNote('◧ '+nb.size+' corps créé(s) — un par exemplaire'+(repNewBodyEmpty(f)?'':' ; renommer, colorer ou combiner chacun dans l’arbre')+'.');
+        if(repNewBodyEmpty(f))pNote('⚠ Aucune source n’ajoute de matière (découpe, congé, dépouille…) : les corps créés restent vides. Cochez aussi l’extrusion de base, ou choisissez « Unir ».');
+      }
       // 2026-10-23 : QUANTITÉ, original compris (6 = l'original + 5 copies) ; stocké : copies = quantité − 1
       const cnt=document.createElement('input');cnt.type='number';cnt.min='2';cnt.value=(+f.copies||1)+1;cnt.title='Quantité, original compris (6 = l’original + 5 copies)';
       cnt.onchange=()=>{f.copies=repMaxCopies((+cnt.value||2)-1);applyCfg();};
