@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**401 versions**, de `2026-09-28b` à `V0.15.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**402 versions**, de `2026-09-28b` à `V0.15.8` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5330,3 +5330,11 @@ Constat : « j'ai voulu prendre toutes ces arêtes et c'est très long ! » (ban
 - **Reprise face par face** (`src/20-noyau-et-operations-solides.js`, `occApplyDeleteFaces`) : N+1 suppressions complètes de plus quand le lot échoue ; limitée à `DEL_ISOLE_MAX` = 6 faces. Au-delà : refus direct, ⚠ et « supprimez-les en plusieurs fois ».
 - **Suite** : la suppression dans un Web Worker avec délai maximal (interface jamais gelée, abandon propre d'une face pathologique) est un chantier séparé.
 - **Tests** : `test_suppression_face`, `test_suppression_face_step`, `test_suppression_face_edition`, `test_coque_sel`, `test_coque_depouille` verts ; `npm run ci` (67/67).
+
+## V0.15.8 - Noyau : les exceptions C++ d'OCCT se rattrapent au lieu de faire avorter l'opération
+Constat : sur le plateau STEP de l'utilisateur (`Base Symétrie`), supprimer toute la bande inclinée du pourtour (18 faces) avortait après 64 s sur « ReferenceError: ___cxa_can_catch is not defined » ; même plantage après 579 s sur une face de `Cavité Usinage.step`.
+- **Cause** (`occt/opencascade.full.js`, colle Emscripten d'opencascade.js 1.1.4) : `___cxa_find_matching_catch_N` appelle `___cxa_can_catch` dès qu'une exception d'un type DÉRIVÉ traverse un `catch(Base&)` (Standard_ConstructionError attrapée par `catch(Standard_Failure&)`, courant dans les booléens et la suppression de face) — ni le .wasm ne l'exporte, ni la colle ne la définit. L'opération entière avortait au lieu que le noyau se rattrape.
+- **Correctif** (`src/96-noyau-occt-tiers-lgpl.js`) : `occtExcInstall` pose `___cxa_can_catch` et `___cxa_is_pointer_type` sur l'objet global avant le chargement du noyau (l'identifiant libre de la colle s'y résout). `occtCanCatch` répond par un vrai test d'héritage sur les type_info Itanium lus dans la mémoire du noyau (héritage simple et multiple, même nom vu par deux unités de compilation) ; module inconnu → « oui ». Harnais (`tests/appvm.cjs`) : même crochet dans le contexte principal de Node, qui délègue à celui de l'application ; `CXA_OFF=1` rend l'ancien comportement pour comparer.
+- **Effet mesuré** sur le plateau : la bande complète se termine par un refus propre (« les faces voisines ne se rejoignent pas ») au lieu du plantage ; le noyau ne sait toujours pas la supprimer (surfaces libres mal prolongées).
+- **test_ctx_step** : en échec depuis V0.15.5 (la fenêtre AP214 / AP203 attendait un clic) — le test choisit AP214.
+- **Tests** : `test_noyau_exceptions` (nouveau, suite rapide : 16 contrôles sur des type_info simulés et le branchement) ; suite complète 186/187 (seul `test_ctx_step` en échec, corrigé puis vert seul) ; `npm run ci` (68/68).

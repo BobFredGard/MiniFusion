@@ -3,6 +3,7 @@
 const { execFileSync } = require('child_process'), path = require('path');
 const SUITES = [
   'test_highlight_order',
+  'test_noyau_exceptions',
   'test_fresh_default',
   'test_validate',
   'test_cao_passe',

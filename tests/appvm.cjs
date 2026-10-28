@@ -5,6 +5,21 @@ const fs=require('fs'),vm=require('vm'),path=require('path');
 
 const APP=process.env.APP_FILE||path.join(__dirname,'..','fusion_mvp.html');
 
+// Rattrapage des exceptions C++ du noyau (voir src/96-noyau-occt-tiers-lgpl.js) : la colle
+// OCCT, chargée par les tests dans le contexte PRINCIPAL de Node (vm.runInThisContext), y
+// cherche ___cxa_can_catch — l'application la définit, elle, sur son bac à sable. On délègue
+// à celle du dernier bac à sable chargé (qui lit la mémoire de son noyau), sinon « oui ».
+// CXA_OFF=1 : ancien comportement (fonction absente), pour comparer.
+let lastSandbox=null;
+if(!process.env.CXA_OFF){
+  if(typeof globalThis.___cxa_can_catch!=='function')globalThis.___cxa_can_catch=function(c,t,b){
+    const f=lastSandbox&&lastSandbox.___cxa_can_catch;
+    if(typeof f==='function'&&f!==globalThis.___cxa_can_catch)return f(c,t,b);
+    return 1;
+  };
+  if(typeof globalThis.___cxa_is_pointer_type!=='function')globalThis.___cxa_is_pointer_type=function(){return 0;};
+}
+
 // --- boucle d'événements minimale : les handlers ajoutés par l'app sont réellement appelés ---
 const EVCAT=new Map(); // clé: node|'window'|documentStub → {type:[fn]}
 function evBind(k,t,fn){if(typeof fn!=='function')return;if(!EVCAT.has(k))EVCAT.set(k,{});const m=EVCAT.get(k);(m[t]=m[t]||[]).push(fn);}
@@ -155,6 +170,7 @@ function loadApp(){
     crypto:global.crypto||{getRandomValues:(a)=>{for(let i=0;i<a.length;i++)a[i]=Math.floor(Math.random()*256);return a;}}
   };
   sandbox.window=sandbox;sandbox.self=sandbox;sandbox.globalThis=sandbox;
+  lastSandbox=sandbox; // ___cxa_can_catch du noyau : délègue à celle de l'application
   sandbox.__MEP_TEST_HOOKS__=true; // expose un petit seam de test (voir 98-mep-*.js)
   // Démarrage asynchrone du noyau (96) NEUTRALISÉ : les tests injectent eux-mêmes le noyau
   // (occt=…;occtReady=true). Sans cette garde, ce démarrage échouait en « file: » une

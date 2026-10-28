@@ -42,6 +42,8 @@ const vm=require('vm');
     //  les stubs AVANT chaque clic, sinon occHas() redevient faux entre deux tests)
     "occtReady=true;occt={FS:{unlink:function(){},readFile:function(){return new Uint8Array(1536);},readdir:function(){return [];},cwd:function(){return '/';}}};",
     "occExportPreflight=async function(){return [true,'pre-test OK'];};",
+    // V0.15.5 : l export demande AP214 / AP203 dans une fenetre ; le test choisit AP214
+    "stepAskSchema=async function(){return 'AP214';};",
     "const SH1={tag:'shape-b1'},SH2={tag:'shape-b2'},SHG={tag:'composes'};",
     "occFinalShape=function(){return {shape:SHG,perBody:[{bodyId:'b1',shape:SH1},{bodyId:'b2',shape:SH2}]};};",
     "let wrote=null,cleaned=0;",

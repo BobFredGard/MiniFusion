@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.15.7';
+const APP_VER='V0.15.8';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -48877,6 +48877,61 @@ function openAide(){
 
 /* ═══════════════ 96-noyau-occt-tiers-lgpl.js — noyau occt tiers lgpl ═══════════════ */
 /* ---------- OCCT exact (opencascade.js 1.1.4 vendu localement) ---------- */
+/* V0.15.8 : rattrapage des exceptions C++ du noyau. La colle Emscripten de ce build appelle
+   ___cxa_can_catch (« ce catch(T&) attrape-t-il une exception de type U ? ») sans que le
+   .wasm ne l'exporte ni que la colle ne la définisse : dès qu'OCCT lançait une exception
+   d'un type DÉRIVÉ de celui de son propre catch (Standard_ConstructionError attrapée par
+   catch(Standard_Failure&), cas courant dans les booléens, la suppression de face…), on
+   avait « ReferenceError: ___cxa_can_catch is not defined » : l'opération entière avortait
+   au lieu que le noyau se rattrape (plantages après 64 s / 579 s sur le plateau et la
+   Cavité). L'identifiant libre se résout sur l'objet global : on l'y définit AVANT le
+   chargement de la colle. Réponse = vrai test d'héritage sur les type_info Itanium lus dans
+   la mémoire du noyau ; module inconnu → « oui » (toutes les exceptions OCCT dérivent de
+   Standard_Failure, l'attrapé courant). */
+function occtTypeName(H8,H32,t){
+  // Nom (mangled) d'un std::type_info : [vptr, const char* name] ; null si illisible.
+  try{
+    if(!(t>0)||(t>>2)+1>=H32.length)return null;
+    let p=H32[(t+4)>>2],s='';
+    if(!(p>0)||p>=H8.length)return null;
+    for(let i=0;i<256&&p+i<H8.length;i++){const c=H8[p+i];if(!c)break;s+=String.fromCharCode(c);}
+    return /^[0-9A-Za-z_]{2,255}$/.test(s)?s:null;
+  }catch(e){return null;}
+}
+function occtCanCatch(H8,H32,caught,thrown){
+  // Le type `thrown` est-il `caught` ou en dérive-t-il ? Parcours des bases (wasm32) :
+  // __si_class_type_info = [vptr, nom, base*] ; __vmi_class_type_info = [vptr, nom, flags,
+  // nb_bases, {base*, offset_flags}…]. Une base n'est suivie que si elle a un nom lisible.
+  if(!caught||!thrown)return false;
+  const cn=occtTypeName(H8,H32,caught);
+  const vu=new Set(),file=[thrown];
+  while(file.length&&vu.size<64){
+    const t=file.shift();
+    if(vu.has(t))continue;vu.add(t);
+    if(t===caught)return true;
+    const tn=occtTypeName(H8,H32,t);
+    if(cn&&tn===cn)return true; // même type vu par deux unités de compilation
+    if(!tn)continue;
+    const b=H32[(t+8)>>2];
+    if(occtTypeName(H8,H32,b)){file.push(b);continue;} // héritage simple
+    const flags=H32[(t+8)>>2],n=H32[(t+12)>>2];       // héritage multiple / virtuel
+    if(flags>=0&&flags<=3&&n>0&&n<16)
+      for(let i=0;i<n;i++){const bi=H32[(t+16+8*i)>>2];if(occtTypeName(H8,H32,bi))file.push(bi);}
+  }
+  return false;
+}
+function occtExcInstall(G){
+  // Pose les deux fonctions sur l'objet global G (page, ou worker de 21-suppression-face :
+  // `occt` y désigne alors le noyau du worker).
+  if(typeof G.___cxa_can_catch!=='function')G.___cxa_can_catch=function(caught,thrown){
+    let M=null;try{M=(typeof occt!=='undefined'&&occt&&occt.HEAP32&&occt.HEAPU8)?occt:null;}catch(e){M=null;}
+    if(!M)return 1;
+    try{return occtCanCatch(M.HEAPU8,M.HEAP32,caught,thrown)?1:0;}catch(e){return 1;}
+  };
+  // Exceptions lancées par pointeur : OCCT n'en lance pas (valeurs / handles).
+  if(typeof G.___cxa_is_pointer_type!=='function')G.___cxa_is_pointer_type=function(){return 0;};
+}
+occtExcInstall((typeof globalThis!=='undefined')?globalThis:window);
 function occtFileUrl(p){ // chemin relatif : marche en http(s) comme en file://
   try{const b=document.currentScript&&document.currentScript.src?document.currentScript.src:location.href;
     return new URL(p,b).href;}catch(e){return p;}

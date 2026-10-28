@@ -37,6 +37,7 @@ const SUITES = [
   "test_suppression_face",
   "test_suppression_face_step",
   "test_suppression_face_edition",
+  "test_noyau_exceptions",
   "test_decoupe_coplanaire",
   "test_coque_depouille",
   "test_repeat_mir2",
