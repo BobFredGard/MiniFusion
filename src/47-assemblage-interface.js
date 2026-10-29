@@ -255,6 +255,7 @@ function asmPickAt(e){
 }
 function asmClick(e){
   if(asmAlignPickAt(e))return; // commande Aligner : clic = repère (48)
+  if(stdHolePickAt(e))return; // composants normalisés : pose sur des trous (48)
   const id=asmPickAt(e);
   asmSelId=id;if(id)asmPivot=null; // une pièce cliquée redevient le centre de rotation
   asmDraw();renderTree();renderProps();
@@ -272,6 +273,7 @@ function asmKey(e){
   if(ctrl&&(k==='z'||k==='y'))return false; // routage unique en capture (undoDispatch, 45)
   if((e.key==='Delete'||e.key==='Backspace')&&asmSelId){e.preventDefault();asmAskDelete(asmSelId);return true;}
   if(e.key==='Escape'&&asmAlign){asmAlignCancel();return true;}
+  if(e.key==='Escape'&&stdHolePick){stdHoleCancel();return true;}
   if(e.key==='Escape'&&asmAnim){asmAnimStop();return true;} // animation d'une liaison (48)
   if(e.key==='Escape'){
     if(asmSelId){asmSelId=null;asmDraw();renderTree();renderProps();}
@@ -394,7 +396,7 @@ function asmRenderProps(p){
   if(!o||!c.occ.includes(o)){
     H('🧩 '+c.name);
     Note(c.occ.length+' composant(s) placé(s) ici, '+asm.comps.length+' composant(s) dans le fichier. Cliquez un composant (vue ou arbre) ; double-clic = le modéliser.');
-    const l=[['➕ Nouveau composant',asmCmdNewComp,'primary'],['📥 Insérer…',asmCmdInsert],['✏️ Modéliser « '+c.name+' »',()=>asmExit()]];
+    const l=[['➕ Nouveau composant',asmCmdNewComp,'primary'],['📥 Insérer…',asmCmdInsert],['🔩 Normalisés…',()=>stdDlg()],['✏️ Modéliser « '+c.name+' »',()=>asmExit()]];
     if(asm.path.length)l.push(['↑ Remonter',asmUp]);
     Btns(l);
     asmJointsProps(p); // piloter les liaisons (48)

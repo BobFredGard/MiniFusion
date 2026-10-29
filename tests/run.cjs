@@ -217,6 +217,7 @@ const SUITES = [
   "test_post_cycle800",
   "test_composants_liaisons",
   "test_composants_inspection",
+  "test_composants_normalises",
   "test_composants_plan",
   "test_composants_accroches",
   "test_composants_apparence",
