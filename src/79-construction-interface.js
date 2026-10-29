@@ -224,7 +224,8 @@ function cgSlotHint(t){
   return ({plane:'un plan d’origine, un plan de construction ou une face plane',
     axis:'un axe (origine, construction), une arête droite ou une face cylindrique',
     point:'l’origine, un point, un sommet, le centre d’une arête circulaire',
-    frame:'un repère (ou l’origine)'})[t]||'une référence';
+    frame:'un repère (ou l’origine)',
+    curve:'une arête (droite, arc, spline) ou une courbe d’une esquisse affichée'})[t]||'une référence';
 }
 function cgCancel(){
   cgMode=null;
@@ -279,7 +280,7 @@ function cgRefAccept(ref){
     }
   }
   const g=cgEvalRef(ref,{});
-  if(!g||!g[s[0]]){try{faceEl.textContent=s[1]+' : ce n’est pas '+({plane:'un plan',axis:'un axe',point:'un point',frame:'un repère'})[s[0]]+'. Cliquez '+cgSlotHint(s[0])+'.';}catch(e){}return false;}
+  if(!g||!g[s[0]]){try{faceEl.textContent=s[1]+' : ce n’est pas '+({plane:'un plan',axis:'un axe',point:'un point',frame:'un repère',curve:'une courbe'})[s[0]]+'. Cliquez '+cgSlotHint(s[0])+'.';}catch(e){}return false;}
   const k=cgMode.slot;
   d.refs[k]=ref;
   cgNextSlot(k);cgRefresh();
@@ -288,8 +289,15 @@ function cgRefAccept(ref){
 function cgPickCommit(e){
   // Clic dans la vue pendant la saisie d'une référence
   if(!cgMode||cgMode.slot==null)return;
-  const c=cgPickAt(e);
   const body=pick(e);
+  if(CG_HOW[cgMode.draft.kind][cgMode.draft.how].slots[cgMode.slot][0]==='curve'){
+    // courbe : une courbe d'esquisse affichée, sinon une arête de la pièce (les plans ne gênent pas)
+    const r=cgPickSketchCurve(e,body)||cgPickModelRef(e,cgMode.draft,cgMode.slot);
+    if(r){cgRefAccept(r);return;}
+    try{faceEl.textContent='Rien de reconnu ici — cliquez '+cgSlotHint('curve')+'.';}catch(err){}
+    return;
+  }
+  const c=cgPickAt(e);
   if(c&&!(c.plane&&body&&body.distance<c.dist-1e-6)){cgRefAccept(c.sub?{k:'cg',id:c.id,sub:c.sub}:{k:'cg',id:c.id});return;}
   const tp=triadPickPlane(e);if(tp){cgRefAccept({k:'o',id:tp});return;}
   const mr=cgPickModelRef(e,cgMode.draft,cgMode.slot);
@@ -322,6 +330,7 @@ function cgPickModelRef(e,draft,slot){
       }
       if(type==='axis'&&G)return Object.assign({k:'edge',name:entName('edge')},base);
       if(type==='plane'&&G&&G.circ)return Object.assign({k:'edge',name:'Plan du cercle · '+entName('edge')},base);
+      if(type==='curve')return Object.assign({k:'edge',name:(G?(G.line?'Droite':'Arc'):'Courbe')+' · '+entName('edge')},base);
     }
   }
   if(h&&(type==='plane'||type==='axis')){
@@ -425,6 +434,40 @@ function cgPickOtherEdge(e,type,surfDist){
   if(type==='plane'&&Gm&&Gm.circ)return Object.assign(base,{sub:'edge',name:'Plan du cercle · '+nm});
   return null;
 }
+function cgPickSketchCurve(e,faceHit){
+  // Ligne, arc, cercle ou spline d'une esquisse AFFICHÉE à ≤ 7 px du curseur → ref 'skent' ou null.
+  // Les poignées de spline (cachées en 3D) sont ignorées ; une courbe derrière la face visée aussi.
+  const r=renderer.domElement.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+  const v=new THREE.Vector3(),toS=p=>{v.set(p[0],p[1],p[2]).project(camera);return [(v.x+1)/2*r.width,(1-v.y)/2*r.height,v.z];};
+  let best=null,bd=7;
+  for(const sk of (doc.sketches||[])){
+    if(sk.visible===false)continue;
+    let B;try{B=sketchBasis(sk);}catch(err){continue;}
+    const o=cgArr(B.o),u=cgArr(B.u),w=cgArr(B.v);
+    for(const en of (sk.entities||[])){
+      if(!en||en.handle||!/^(line|arc|circle|spline)$/.test(en.t))continue;
+      const P2=cgSkEntPts(sk,en);if(!P2||P2.length<2)continue;
+      const P=P2.map(q=>cgAdd(cgAdd(o,cgMul(u,q[0])),cgMul(w,q[1])));
+      let a=toS(P[0]);
+      for(let k=1;k<P.length;k++){
+        const b=toS(P[k]);
+        if(Math.abs(a[2])<1&&Math.abs(b[2])<1){
+          const dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy||1e-9;
+          const t=Math.max(0,Math.min(1,((mx-a[0])*dx+(my-a[1])*dy)/L2));
+          const d=Math.hypot(mx-(a[0]+t*dx),my-(a[1]+t*dy));
+          if(d<bd){
+            const q=cgAdd(P[k-1],cgMul(cgSub(P[k],P[k-1]),t));
+            if(!faceHit||camera.position.distanceTo(cgV3(q))<=faceHit.distance*1.004+0.3){bd=d;best={sk,en};}
+          }
+        }
+        a=b;
+      }
+    }
+  }
+  if(!best)return null;
+  const lab={line:'Ligne',arc:'Arc',circle:'Cercle',spline:'Spline'}[best.en.t];
+  return {k:'skent',sk:best.sk.id,e:best.en.id,name:lab+' · '+(best.sk.name||'esquisse')};
+}
 function cgEdgeUnder(e,faceHit){
   // Arête EXACTE (occListEdges) à ≤ 7 px du curseur, indépendante de l'affichage des arêtes
   // (edgeHoverSegs n'existe que lorsqu'elles sont dessinées). Une arête cachée derrière la
@@ -470,6 +513,7 @@ function cgRefLabel(r){
   if(r.k==='o')return CG_O_PLANES[r.id]?'Plan '+r.id:(r.id==='O'?'Origine':'Axe '+r.id);
   if(r.k==='cg'){const el=cgGet(r.id);return (el?el.name:'(supprimé)')+(r.sub?' · '+r.sub:'');}
   if(r.k==='skpt'){const sk=(doc.sketches||[]).find(s=>s.id===r.sk);return 'Point · '+(sk?sk.name:'esquisse ?');}
+  if(r.k==='skent'&&!r.name){const sk=(doc.sketches||[]).find(s=>s.id===r.sk);return 'Courbe · '+(sk?sk.name:'esquisse ?');}
   if(r.name)return r.name;
   return ({face:'Face',edge:'Arête',vtx:'Sommet'})[r.k]||'Référence';
 }

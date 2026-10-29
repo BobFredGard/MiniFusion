@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**426 versions**, de `2026-09-28b` à `V0.19.9` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**427 versions**, de `2026-09-28b` à `V0.20.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5512,3 +5512,11 @@ Demande : « Pouvoir utiliser la touche SHIFT dans la sélection pour en sélect
 - **Lot mixte** (`src/40-interface-arbre-props.js`) : `treeSel` accepte esquisses, fonctions et éléments de construction (ids uniques, genre retrouvé par `treeKindOf`). `treeSelClick` : Ctrl+clic ajoute / retire (désormais aussi esquisses et construction), **Shift+clic** sélectionne la plage depuis le dernier clic, dans l'ordre de l'arbre et dans le genre cliqué (`treeOrderOf`) ; Ctrl+Shift ajoute la plage au lot. Branché sur l'arbre (`src/42`), la construction (`src/79`) et la timeline (`src/41`, fonctions) ; lignes du lot surlignées partout ; texte de l'arbre non sélectionnable (Shift+clic).
 - **Suppr** (`treeDeleteSel`) : supprime tout le lot en une seule annulation, avec une seule confirmation qui liste les éléments ; une esquisse emporte les fonctions tracées dessus (comme le menu clic droit), un élément de construction se retire comme `cgDelete` (esquisses posées dessus laissées en place). Une esquisse seule sélectionnée se supprime aussi avec Suppr.
 - **Tests** : `npm run ci` ; vérifié dans l'app (Shift sur esquisses et fonctions, Ctrl en plus, lot mixte esquisse + fonction, Suppr puis Ctrl+Z).
+
+## V0.20.0 - Géométrie : plan perpendiculaire à une droite ou une courbe, au ratio
+Demande : « Plans → perpendiculaire à droite et courbe dont spline avec positionnement au ratio, 0 → début, 0.5 → moitié et 1 → fin ».
+- **Nouvelle méthode de plan** « Perpendiculaire à une courbe » (`CG_HOW.plane.curve`, `src/78-construction-modele.js`) : un emplacement de type **courbe** et une valeur **Position** (ratio, ƒx accepté). Le plan passe par le point situé à la fraction t de la **longueur** de la courbe (0 = début, 0,5 = milieu, 1 = fin) ; sa normale est la tangente en ce point (« Inverser la normale » disponible). Ratio hors de [0 ; 1] : ramené au bout, ⚠.
+- **Courbes acceptées** : arête de la pièce (droite, arc, cercle, spline — échantillonnée finement sur la courbe exacte, `cgEdgeCurve`, à la demande seulement) ; ligne, arc, cercle ou spline d'une esquisse affichée (nouvelle référence `{k:'skent',sk,e}`, `cgSkEntPts`). Sens : arête du premier au dernier paramètre ; esquisse p1 → p2, arc dans le sens trigonométrique, spline du premier au dernier point. Une courbe d'une esquisse posée sur le plan lui-même est refusée (boucle).
+- **Point et tangente** (`cgCurveAt`) : abscisse curviligne sur la polyligne, tangente par différences centrées (ordre 2 aux bouts) — écart < 1e-3 sur arcs et splines.
+- **Saisie** (`src/79-construction-interface.js`) : pour un emplacement courbe, clic sur une courbe d'esquisse affichée (`cgPickSketchCurve`, ≤ 7 px, poignées ignorées) ou sur une arête ; les plans de construction ne gênent pas le clic.
+- **Tests** : `test_construction_modele` (ligne t = 0 / 0,5 / 1 / 0,25 inversé, arc, spline symétrique, ratio > 1, axe infini refusé, suivi d'un point de passage, boucle refusée) ; `test_construction_esquisse` (noyau réel : arête verticale au quart, cercle du cylindre). `npm run ci`.

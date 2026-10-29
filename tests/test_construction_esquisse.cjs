@@ -70,6 +70,21 @@ const {loadApp}=require('./appvm.cjs');
     FR=replay();
     V(Q1.fr.o,[100,60,40],'le sommet suit la hauteur du bloc');
     V(P1.fr.o,[50,30,45],'le plan revient avec la face');
+    // ── plan perpendiculaire à une arête, au ratio (V0.19.9) : arête droite du coin, cercle du cylindre ──
+    {
+      const Ev=occListEdges(FR.shape).find(e=>Math.abs(e.mid[0]-100)<1e-6&&Math.abs(e.mid[1]-60)<1e-6);
+      const Pv=cgNew('plane','curve',[{k:'edge',pos:Ev.mid,len:Ev.len,name:'Droite'}],{t:0.25});
+      att(Pv.st==='ok'&&Math.abs(Math.abs(Pv.fr.z[2])-1)<1e-9,'⟂ arête verticale : normale verticale ('+Pv.msg+')');
+      att(Math.abs(Pv.fr.o[0]-100)<1e-6&&Math.abs(Pv.fr.o[1]-60)<1e-6&&(Math.abs(Pv.fr.o[2]-10)<1e-6||Math.abs(Pv.fr.o[2]-30)<1e-6),'⟂ arête verticale t=0,25 : au quart (vu '+Pv.fr.o.join(', ')+')');
+      const Ec=occListEdges(FR.shape).find(e=>Math.abs(e.mid[2]-30)<1e-6&&Math.hypot(e.mid[0]-200,e.mid[1]-30)>9.9&&Math.hypot(e.mid[0]-200,e.mid[1]-30)<10.1);
+      att(!!Ec,'cercle du haut du cylindre trouvé');
+      if(Ec){
+        const Pc=cgNew('plane','curve',[{k:'edge',pos:Ec.mid,len:Ec.len,name:'Cercle'}],{t:0.3});
+        const r=[Pc.fr.o[0]-200,Pc.fr.o[1]-30,0];
+        att(Pc.st==='ok'&&Math.abs(Math.hypot(r[0],r[1])-10)<1e-3&&Math.abs(Pc.fr.o[2]-30)<1e-6,'⟂ cercle : origine sur le cercle (vu '+Pc.fr.o.join(', ')+')');
+        att(Math.abs(Pc.fr.z[2])<1e-6&&Math.abs(r[0]*Pc.fr.z[0]+r[1]*Pc.fr.z[1])<1e-3,'⟂ cercle : normale tangente (horizontale, ⟂ rayon)');
+      }
+    }
     // ── marqueur : le plan est résolu sur le solide AVANT lui (antériorité) ──
     att(cgUpto(P1)===1,'plan : 1 fonction rejouée avant lui (vu '+cgUpto(P1)+')');
     // ── sans noyau exact : position mémorisée, ⚠ ──

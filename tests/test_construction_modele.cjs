@@ -45,6 +45,38 @@ const vm=require('vm');
     att(pNp.st==='warn'&&/parallèles/.test(pNp.msg),'médian de plans non parallèles refusé');
     const p7=cgNew('plane','normal',[O('Y'),C(a.id)]);
     V(p7.fr.z,[0,1,0],'plan normal à Y : normale');V(p7.fr.o,[10,0,0],'plan normal : passe par le point');
+    // ── plan perpendiculaire à une courbe d'esquisse, au ratio de longueur (V0.19.9) ──
+    {
+      const skq={id:'skq',name:'Courbes',plane:'XY',entities:[],points:{},constraints:[],dims:[],seq:1,visible:true};
+      skq.points={a:{x:0,y:0},b:{x:40,y:0},c:{x:0,y:0},d:{x:10,y:0},e:{x:0,y:10},s1:{x:0,y:0},s2:{x:20,y:20},s3:{x:40,y:0}};
+      skq.entities=[{id:'L',t:'line',p1:'a',p2:'b'},{id:'A',t:'arc',pc:'c',pa:'d',pb:'e',r:10},{id:'S',t:'spline',pts:['s1','s2','s3']}];
+      doc.sketches.push(skq);
+      const E=e=>({k:'skent',sk:'skq',e});
+      const l0=cgNew('plane','curve',[E('L')],{t:0}),l5=cgNew('plane','curve',[E('L')],{t:0.5}),l1=cgNew('plane','curve',[E('L')],{t:1});
+      V(l0.fr.o,[0,0,0],'⟂ ligne t=0 : début');V(l5.fr.o,[20,0,0],'⟂ ligne t=0,5 : milieu');V(l1.fr.o,[40,0,0],'⟂ ligne t=1 : fin');
+      V(l5.fr.z,[1,0,0],'⟂ ligne : normale = direction de la ligne');
+      const lf=cgNew('plane','curve',[E('L')],{t:0.25,flip:true});
+      V(lf.fr.o,[10,0,0],'⟂ ligne t=0,25');V(lf.fr.z,[-1,0,0],'⟂ ligne inversé : normale');
+      const am=cgNew('plane','curve',[E('A')],{t:0.5});
+      att(near(am.fr.o,[10*S2,10*S2,0],1e-3)&&near(am.fr.z,[-S2,S2,0],1e-3),'⟂ arc : normale = tangente (vu '+am.fr.z.join(', ')+')');
+      const a1=cgNew('plane','curve',[E('A')],{t:1});
+      att(near(a1.fr.o,[0,10,0],1e-6)&&near(a1.fr.z,[-1,0,0],1e-3),'⟂ arc t=1 : fin, tangente −X (vu '+a1.fr.o.join(', ')+' / '+a1.fr.z.join(', ')+')');
+      const s0=cgNew('plane','curve',[E('S')],{t:0}),s5=cgNew('plane','curve',[E('S')],{t:0.5}),s1=cgNew('plane','curve',[E('S')],{t:1});
+      V(s0.fr.o,[0,0,0],'⟂ spline t=0 : 1er point');V(s1.fr.o,[40,0,0],'⟂ spline t=1 : dernier point');
+      att(near(s5.fr.o,[20,20,0],1e-3)&&near(s5.fr.z,[1,0,0],1e-3),'⟂ spline symétrique t=0,5 : sommet, tangente X (vu '+s5.fr.o.join(', ')+' / '+s5.fr.z.join(', ')+')');
+      att(s0.fr.z[0]>0.3&&s0.fr.z[1]>0.3,'⟂ spline t=0 : tangente montante');
+      const sx=cgNew('plane','curve',[E('S')],{t:1.5});
+      att(sx.st==='warn'&&/hors/.test(sx.msg)&&near(sx.fr.o,[40,0,0]),'ratio > 1 : ramené au bout, signalé');
+      const sNo=cgNew('plane','curve',[O('X')]);
+      att(sNo.st==='warn'&&/courbe/.test(sNo.msg),'axe infini refusé comme courbe ('+sNo.msg+')');
+      skq.points.s2.y=30;cgResolveAll();
+      att(near(s5.fr.o,[20,30,0],1e-3),'⟂ spline : suit le point de passage modifié');
+      const skOn={id:'skon',name:'Sur',plane:'CG',cg:{id:l5.id},entities:[{id:'M',t:'line',p1:'a',p2:'b'}],points:{a:{x:0,y:0},b:{x:5,y:0}},constraints:[],dims:[],seq:1,visible:true};
+      doc.sketches.push(skOn);const keep=JSON.stringify(l5.fr);l5.refs=[{k:'skent',sk:'skon',e:'M'}];cgResolveAll();
+      att(l5.st==='warn'&&JSON.stringify(l5.fr)===keep,'courbe d une esquisse posée sur ce plan : refusée (boucle)');
+      l5.refs=[E('L')];doc.sketches=doc.sketches.filter(s=>s!==skOn&&s!==skq);
+      doc.cgeo=doc.cgeo.filter(c=>![l0,l5,l1,lf,am,a1,s0,s5,s1,sx,sNo].includes(c));
+    }
     // ── axes ──
     const x1=cgNew('axis','inter',[C(p3.id),O('XZ')]);
     V(x1.fr.z,[1,0,0],'axe intersection plan 30° / XZ : direction');

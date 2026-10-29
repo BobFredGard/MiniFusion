@@ -15,9 +15,12 @@
      {k:'o',id:'XY'|'XZ'|'YZ'|'X'|'Y'|'Z'|'O'}   origine
      {k:'cg',id,sub?}                              autre élément (sub : plan ou axe d'un repère)
      {k:'skpt',sk,pt}                              point d'esquisse
+     {k:'skent',sk,e}                              courbe d'esquisse (ligne, arc, cercle, spline)
      {k:'face'|'edge'|'vtx',…}                     géométrie du modèle (noyau exact, 78/79)
-   Une référence s'évalue en formes génériques (cgEvalRef) : {plane,axis,point,frame} ;
-   chaque méthode demande des emplacements « de type plan / axe / point / repère ». */
+   Une référence s'évalue en formes génériques (cgEvalRef) : {plane,axis,point,frame,curve} ;
+   chaque méthode demande des emplacements « de type plan / axe / point / repère / courbe ».
+   Courbe (V0.19.9) : {pts} polyligne fine dans le sens de la courbe (arête : du 1er au dernier
+   paramètre ; esquisse : p1 → p2, arc dans le sens trigo, spline du 1er au dernier point). */
 const CG_KINDS={
   plane:{lab:'Plan',ic:'▱'},
   axis:{lab:'Axe',ic:'↗'},
@@ -33,6 +36,7 @@ const CG_HOW={
     '3pts':{lab:'Par 3 points',slots:[['point','Point 1'],['point','Point 2'],['point','Point 3']],flip:true},
     mid:{lab:'Médian',slots:[['plane','Plan 1'],['plane','Plan 2']],flip:true},
     normal:{lab:'Normal à un axe',slots:[['axis','Axe'],['point','Point',1]],flip:true},
+    curve:{lab:'Perpendiculaire à une courbe',slots:[['curve','Droite, arc ou spline']],par:{t:{lab:'Position (0 début → 1 fin)',def:0.5,unit:'ratio'}},flip:true},
     ext:{lab:'Depuis un autre composant',slots:[],ext:true,flip:true}
   },
   axis:{
@@ -217,6 +221,17 @@ function cgEvalRef(ref,ctx){
     if(ref.sub&&el.kind==='frame'){const s=cgFrameSub(el.fr,ref.sub);if(s)s.point={o:el.fr.o};return s;}
     return cgShapes(el);
   }
+  if(ref.k==='skent'){
+    const sk=(doc.sketches||[]).find(s=>s.id===ref.sk);if(!sk)return null;
+    if(ctx&&ctx.self&&sk.plane==='CG'&&sk.cg&&sk.cg.id===ctx.self.id)return null; // esquisse posée sur ce plan : boucle
+    const e=(sk.entities||[]).find(x=>x&&x.id===ref.e);if(!e)return null;
+    const P2=cgSkEntPts(sk,e);if(!P2||P2.length<2)return null;
+    const B=sketchBasis(sk),o=cgArr(B.o),u=cgArr(B.u),v=cgArr(B.v);
+    const pts=P2.map(q=>cgAdd(cgAdd(o,cgMul(u,q[0])),cgMul(v,q[1])));
+    const g={curve:{pts},point:{o:cgCurveAt({pts},0.5).o}};
+    if(e.t==='line')g.axis={o:g.point.o,d:cgSub(pts[1],pts[0])};
+    return g;
+  }
   if(ref.k==='skpt'){
     const sk=(doc.sketches||[]).find(s=>s.id===ref.sk);if(!sk)return null;
     const q=sk.points&&sk.points[ref.pt];if(!q)return null;
@@ -242,12 +257,55 @@ function cgSlot(el,ctx,i,type,opt){
     if((r.k==='face'||r.k==='edge'||r.k==='vtx')&&!(typeof occHas==='function'&&occHas()))throw new Error('noyau exact indisponible : position mémorisée');
     throw new Error('référence '+(i+1)+' introuvable — la pièce a changé');
   }
-  if(!g[type])throw new Error('référence '+(i+1)+' : ce n’est pas un '+({plane:'plan',axis:'axe',point:'point',frame:'repère'})[type]);
+  if(!g[type])throw new Error('référence '+(i+1)+' : ce n’est pas '+({plane:'un plan',axis:'un axe',point:'un point',frame:'un repère',curve:'une courbe'})[type]);
   return g[type];
 }
 function cgNum(el,k){const v=+(el.p&&el.p[k]);return isFinite(v)?v:0;}
 function cgFrPlane(o,u,v,n){return {o:cgArr(o),x:cgUnit(u),y:cgUnit(v),z:cgUnit(n)};}
 function cgFrAxis(o,d){const z=cgUnit(d),B=cgBasisN(z,null);return {o:cgArr(o),x:B.u,y:B.v,z};}
+function cgCurveAt(C,t){
+  // Point et tangente unitaire à la fraction t (0 début → 1 fin) de la LONGUEUR d'une polyligne
+  // fine. Tangente aux sommets = corde des deux voisins, interpolée le long du segment.
+  const P=(C&&C.pts)||[];if(P.length<2)throw new Error('courbe vide');
+  const n=P.length,S=[0];for(let i=1;i<n;i++)S.push(S[i-1]+cgLen(cgSub(P[i],P[i-1])));
+  const L=S[n-1];if(!(L>1e-9))throw new Error('courbe de longueur nulle');
+  const s=Math.max(0,Math.min(1,+t||0))*L;
+  let k=1;while(k<n-1&&S[k]<s)k++;
+  const g=(S[k]-S[k-1])>1e-12?(s-S[k-1])/(S[k]-S[k-1]):0;
+  const closed=cgLen(cgSub(P[0],P[n-1]))<1e-9*Math.max(1,L);
+  const tan=i=>{
+    if(i===0||i===n-1){
+      if(closed)return cgUnit(cgSub(P[1],P[n-2]));
+      if(n<3)return cgUnit(cgSub(P[1],P[0]));
+      // bout ouvert : différence décentrée d'ordre 2 (−3P₀ + 4P₁ − P₂), exacte sur une droite
+      const a=i?P[n-1]:P[0],b=i?P[n-2]:P[1],c=i?P[n-3]:P[2];
+      const d=cgSub(cgMul(cgSub(b,a),4),cgSub(c,a));
+      return cgUnit(i?cgMul(d,-1):d);
+    }
+    return cgUnit(cgSub(P[i+1],P[i-1]));
+  };
+  const o=cgAdd(P[k-1],cgMul(cgSub(P[k],P[k-1]),g));
+  const d=cgUnit(cgAdd(cgMul(tan(k-1),1-g),cgMul(tan(k),g)));
+  return {o,d,L};
+}
+function cgSkEntPts(sk,e){
+  // Polyligne fine 2D d'une courbe d'esquisse (dans son sens) → [[x,y]…] ou null
+  const P=sk.points||{},N=256;
+  if(e.t==='line'){const A=P[e.p1],B=P[e.p2];return A&&B?[[A.x,A.y],[B.x,B.y]]:null;}
+  if(e.t==='circle'||e.t==='arc'){
+    const C=P[e.pc];if(!C||!(e.r>0))return null;
+    let a1=0,a2=2*Math.PI;
+    if(e.t==='arc'){const an=typeof arcAngles==='function'?arcAngles(sk,e):null;if(!an)return null;a1=an.a1;a2=an.a2;}
+    const m=Math.max(8,Math.ceil(N*Math.abs(a2-a1)/(2*Math.PI))),out=[];
+    for(let i=0;i<=m;i++){const a=a1+(a2-a1)*i/m;out.push([C.x+Math.cos(a)*e.r,C.y+Math.sin(a)*e.r]);}
+    return out;
+  }
+  if(e.t==='spline'&&typeof skSplineFit==='function'){
+    const f=skSplineFit(sk,e);if(!f)return null;
+    return bsSample(f,f.a,f.b,64);
+  }
+  return null;
+}
 function cgBuild(el,ctx){
   // → {fr,warn} ; lève une Error lisible si la construction est impossible
   const S=(i,t,opt)=>cgSlot(el,ctx,i,t,opt);
@@ -283,6 +341,11 @@ function cgBuild(el,ctx){
       const A=S(0,'axis'),Pt=S(1,'point',true),n=cgUnit(A.d);
       const B=cgBasisN(n,null);
       fr=cgFrPlane(Pt?Pt.o:A.o,B.u,B.v,n);
+    }else if(el.how==='curve'){
+      const t=cgNum(el,'t');
+      if(t<0||t>1)warn='position hors de [0 ; 1] : ramenée au bout';
+      const K=cgCurveAt(S(0,'curve'),t),B=cgBasisN(K.d,null);
+      fr=cgFrPlane(K.o,B.u,B.v,K.d);
     }else if(el.how==='ext'){
       const F=X();fr=cgFrPlane(F.o,F.x,F.y,F.z);
     }
@@ -502,12 +565,30 @@ function cgEvalModelRef(ref,ctx){
       ref.vpos=o.map(v=>+v.toFixed(4));
       return {point:{o}};
     }
-    const G=cgEdgeGeom(E.pts);if(!G)return {point:{o:E.mid}};
-    if(G.line)return {axis:{o:E.mid,d:cgSub(G.line.b,G.line.a)},point:{o:E.mid}};
-    const B=cgBasisN(G.circ.n,null);
-    return {point:{o:G.circ.c},axis:{o:G.circ.c,d:G.circ.n},plane:{o:G.circ.c,u:B.u,v:B.v,n:B.n}};
+    const G=cgEdgeGeom(E.pts);
+    let g;
+    if(!G)g={point:{o:E.mid}};
+    else if(G.line)g={axis:{o:E.mid,d:cgSub(G.line.b,G.line.a)},point:{o:E.mid}};
+    else{const B=cgBasisN(G.circ.n,null);g={point:{o:G.circ.c},axis:{o:G.circ.c,d:G.circ.n},plane:{o:G.circ.c,u:B.u,v:B.v,n:B.n}};}
+    // courbe : échantillonnée finement à la demande seulement (le solide vit le temps de la résolution)
+    let cv;
+    Object.defineProperty(g,'curve',{enumerable:true,get(){if(cv===undefined)cv=G&&G.line?{pts:[E.pts[0],E.pts[E.pts.length-1]]}:cgEdgeCurve(shape,E);return cv;}});
+    return g;
   }
   return null;
+}
+function cgEdgeCurve(shape,E){
+  // Polyligne fine (paramètre uniforme, 400 pas) de l'arête exacte de rang E.src → {pts} ;
+  // repli sur les 11 points d'occListEdges si l'arête ne se retrouve pas
+  let e=null,ad=null;
+  try{
+    e=occEdgeAt(shape,E.src);if(!e)return {pts:E.pts};
+    ad=new occt.BRepAdaptor_Curve_2(e);
+    const u0=ad.FirstParameter(),u1=ad.LastParameter(),N=400,pts=[];
+    for(let i=0;i<=N;i++){const p=ad.Value(u0+(u1-u0)*i/N);pts.push([p.X(),p.Y(),p.Z()]);try{p.delete();}catch(x){}}
+    return {pts};
+  }catch(err){return {pts:E.pts};}
+  finally{try{if(ad)ad.delete();}catch(x){}try{if(e)e.delete();}catch(x){}}
 }
 function cgShapesRelease(ctx){
   // Libère les solides rejoués le temps d'une passe de résolution
