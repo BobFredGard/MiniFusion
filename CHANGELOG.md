@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**415 versions**, de `2026-09-28b` à `V0.18.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**416 versions**, de `2026-09-28b` à `V0.18.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5441,3 +5441,10 @@ Demande : « Fonction Balayage : il faudrait commencer à coder cette fonction e
 - **Noyau** : `BRepOffsetAPI_MakePipeShell`, Frenet corrigé, coins vifs en ONGLET (`BRepBuilderAPI_RightCorner`). Mesuré au prototype : chemin en L 50+50, carré 10 → 10 000 exact et valide ; le mode par défaut donnait 4 000 (invalide), `MakePipe` sur face 5 000 (invalide). Trous du profil balayés puis retranchés, comme la révolution. Repli maillage sans noyau (contour extérieur transporté le long du chemin).
 - **Intégration** : ruban CAO « Créer » et bandeau « Création solide » (bouton 〰 Balayage, entre Révolution et Perçage), fenêtre dynamique (aperçu immédiat, opération Plot / Poche, profil et chemin modifiables, OK / Annuler), arbre et timeline (〰 / ≋), signature de cache (profil ET chemin), découpe multi-corps, déplacement vers un autre corps, antériorité et consommateur des deux esquisses. Pas encore : répétition d'un balayage, chemin limité à une partie de l'esquisse, torsion / échelle.
 - **Tests** : `test_balayage` (nouveau, 18 contrôles, volumes BRepGProp : L à coin vif, ligne + arc + ligne, chemin fermé, anneau, profil troué, tube creux, rainure en Poche dans un bloc, 4 refus, icônes, repli maillage). Vérifié dans le navigateur : bouton du ruban → tube creux le long de ligne + arc + ligne, volume 8 436,4 exact ; Poche ; Annuler. `npm run ci` 75/75.
+
+## V0.18.1 - Rendu : clic droit sur les pièces d'un assemblage (CAO et Assembler)
+Signalé : « Impossible de modifier les rendus des pièces d'un assemblage dans le monde CAO ».
+- **Cause** : les autres composants dessinés autour de la pièce active (`asmCtx`, 47) ont leur sélection neutralisée (`raycast` vide) et le clic droit de la vue (`src/90-picking-mesure-import.js`) ne cherchait que les corps de la pièce active ; en mode Assembler, il ne regardait pas les occurrences. La fenêtre de V0.17.0 ne s'ouvrait donc jamais pour elles.
+- **Correctif** : `rdLookAsmHit` (`src/98-rendu-apparence.js`) teste les corps d'occurrence avec le raycast d'origine de three (`asmCtx`, ou `asmOcc` en mode Assembler) ; le plus proche, devant la pièce active, ouvre sa fenêtre d'apparence (enregistrée dans `o.rendu`).
+- **Vue en ambiance** (`src/98-rendu-vue.js`) : une occurrence (ou un corps) transparente en CAO garde le métal et la rugosité de son matériau de rendu (le laiton paraissait blanc) ; sans matériau, réglages de transparence comme avant.
+- **Tests** : vérifié dans le navigateur sur « Test Assemblage » (Base:1 et Goupille:1, en CAO et en mode Assembler ; laiton enregistré sur l'occurrence et redessiné). `npm run ci` 75/75.

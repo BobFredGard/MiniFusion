@@ -67,11 +67,12 @@ function wirePick(){
     if(e.ctrlKey){e.preventDefault();return;}
     if(Math.hypot(e.clientX-dx,e.clientY-dy)>6)return;
     e.preventDefault();hideCtx();
-    const h=pick(e);if(!h)return;
+    // pièce d'un autre composant (autour de la pièce, ou mode Assembler) devant la pièce active :
+    // directement sa fenêtre d'apparence de rendu (98-rendu-apparence)
+    const h=asmMode==='asm'?null:pick(e);
+    try{const a=rdLookAsmHit(e);if(a&&(!h||a.distance<h.distance)){rdLookPop(e.clientX,e.clientY,a.t);return;}}catch(err){}
+    if(!h)return;
     const b=bodies.find(x=>x.mesh===h.object);
-    // corps d'une occurrence d'assemblage : directement sa fenêtre d'apparence de rendu (98-rendu-apparence)
-    const r=!b&&h.object.userData&&h.object.userData.rd;
-    if(r&&r.bid&&!r.ghost){try{rdLookPop(e.clientX,e.clientY,{occ:r.occ||null,bid:r.bid,comp:r.comp});}catch(err){}return;}
     showCtx3D(e.clientX,e.clientY,b?b.id:null);
   });
   el.addEventListener('dblclick',e=>{

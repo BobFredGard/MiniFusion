@@ -112,6 +112,20 @@ function rdLookPick(ev){
   const t=rdLookFromSrc((rd.srcs||[])[rd.group.children.indexOf(hit.object)]);if(!t)return false;
   rdLookPop(ev.clientX,ev.clientY,t);return true;
 }
+function rdLookAsmHit(ev){
+  // vue CAO / FAO : corps d'occurrence sous la souris → {t, distance} ; ces maillages sont dessinés sans
+  // sélection (raycast neutralisé, 47) : on les teste ici avec le raycast d'origine de three
+  const S=(typeof asmMode!=='undefined'&&asmMode==='asm'&&asmScene)?asmScene.getObjectByName('asmOcc'):scene.getObjectByName('asmCtx');
+  if(!S)return null;
+  const r=renderer.domElement.getBoundingClientRect(),ray=new THREE.Raycaster();
+  ray.setFromCamera(new THREE.Vector2((ev.clientX-r.left)/r.width*2-1,-((ev.clientY-r.top)/r.height*2-1)),camera);
+  const hits=[];
+  S.traverse(o=>{const d=o.isMesh&&o.userData&&o.userData.rd;if(d&&!d.ghost&&d.bid&&o.name!=='glassIn'&&rdShown(o))THREE.Mesh.prototype.raycast.call(o,ray,hits);});
+  if(!hits.length)return null;
+  hits.sort((a,b)=>a.distance-b.distance);
+  const d=hits[0].object.userData.rd;
+  return {t:{occ:d.occ||null,bid:d.bid,comp:d.comp},distance:hits[0].distance};
+}
 function rdLookList(pane,el){
   // bloc « Matériaux et reliefs » de l'atelier : une ligne par pièce (pastille, nom, matériau) ; clic → fenêtre
   const seen=new Set(),rows=[];

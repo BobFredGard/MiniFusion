@@ -162,7 +162,7 @@ function vEnvTick(){
         U.uEnvCol.value.setHex(L.color);
         U.uEnvGlass.value=0;
         if(d&&d.trans){U.uEnvMet.value=0;U.uEnvRou.value=d.rough;U.uEnvGlass.value=1;} // verre approché : lisse, reflets nets, bords plus opaques
-        else if(mat.transparent){U.uEnvMet.value=mat.metalness;U.uEnvRou.value=mat.roughness;} // transparence CAO : réglages de setMatAlpha
+        else if(mat.transparent&&!d){U.uEnvMet.value=mat.metalness;U.uEnvRou.value=mat.roughness;} // transparence CAO sans matériau : réglages de setMatAlpha (avec matériau : le sien, transparence gardée)
         else{U.uEnvMet.value=d?d.metal:0.15;U.uEnvRou.value=d?(d.cc?d.rough+((d.ccr!=null?d.ccr:0.1)-d.rough)*d.cc*0.5:d.rough):0.42;} // vernis : reflets plus nets
         vEnvRelU(U,L,d);
         if(mat.envMap!==vEnvS.rt.texture)mat.envMap=vEnvS.rt.texture;

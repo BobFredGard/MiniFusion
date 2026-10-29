@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.18.0';
+const APP_VER='V0.18.1';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -47503,11 +47503,12 @@ function wirePick(){
     if(e.ctrlKey){e.preventDefault();return;}
     if(Math.hypot(e.clientX-dx,e.clientY-dy)>6)return;
     e.preventDefault();hideCtx();
-    const h=pick(e);if(!h)return;
+    // pièce d'un autre composant (autour de la pièce, ou mode Assembler) devant la pièce active :
+    // directement sa fenêtre d'apparence de rendu (98-rendu-apparence)
+    const h=asmMode==='asm'?null:pick(e);
+    try{const a=rdLookAsmHit(e);if(a&&(!h||a.distance<h.distance)){rdLookPop(e.clientX,e.clientY,a.t);return;}}catch(err){}
+    if(!h)return;
     const b=bodies.find(x=>x.mesh===h.object);
-    // corps d'une occurrence d'assemblage : directement sa fenêtre d'apparence de rendu (98-rendu-apparence)
-    const r=!b&&h.object.userData&&h.object.userData.rd;
-    if(r&&r.bid&&!r.ghost){try{rdLookPop(e.clientX,e.clientY,{occ:r.occ||null,bid:r.bid,comp:r.comp});}catch(err){}return;}
     showCtx3D(e.clientX,e.clientY,b?b.id:null);
   });
   el.addEventListener('dblclick',e=>{
@@ -62174,6 +62175,20 @@ function rdLookPick(ev){
   const t=rdLookFromSrc((rd.srcs||[])[rd.group.children.indexOf(hit.object)]);if(!t)return false;
   rdLookPop(ev.clientX,ev.clientY,t);return true;
 }
+function rdLookAsmHit(ev){
+  // vue CAO / FAO : corps d'occurrence sous la souris → {t, distance} ; ces maillages sont dessinés sans
+  // sélection (raycast neutralisé, 47) : on les teste ici avec le raycast d'origine de three
+  const S=(typeof asmMode!=='undefined'&&asmMode==='asm'&&asmScene)?asmScene.getObjectByName('asmOcc'):scene.getObjectByName('asmCtx');
+  if(!S)return null;
+  const r=renderer.domElement.getBoundingClientRect(),ray=new THREE.Raycaster();
+  ray.setFromCamera(new THREE.Vector2((ev.clientX-r.left)/r.width*2-1,-((ev.clientY-r.top)/r.height*2-1)),camera);
+  const hits=[];
+  S.traverse(o=>{const d=o.isMesh&&o.userData&&o.userData.rd;if(d&&!d.ghost&&d.bid&&o.name!=='glassIn'&&rdShown(o))THREE.Mesh.prototype.raycast.call(o,ray,hits);});
+  if(!hits.length)return null;
+  hits.sort((a,b)=>a.distance-b.distance);
+  const d=hits[0].object.userData.rd;
+  return {t:{occ:d.occ||null,bid:d.bid,comp:d.comp},distance:hits[0].distance};
+}
 function rdLookList(pane,el){
   // bloc « Matériaux et reliefs » de l'atelier : une ligne par pièce (pastille, nom, matériau) ; clic → fenêtre
   const seen=new Set(),rows=[];
@@ -63513,7 +63528,7 @@ function vEnvTick(){
         U.uEnvCol.value.setHex(L.color);
         U.uEnvGlass.value=0;
         if(d&&d.trans){U.uEnvMet.value=0;U.uEnvRou.value=d.rough;U.uEnvGlass.value=1;} // verre approché : lisse, reflets nets, bords plus opaques
-        else if(mat.transparent){U.uEnvMet.value=mat.metalness;U.uEnvRou.value=mat.roughness;} // transparence CAO : réglages de setMatAlpha
+        else if(mat.transparent&&!d){U.uEnvMet.value=mat.metalness;U.uEnvRou.value=mat.roughness;} // transparence CAO sans matériau : réglages de setMatAlpha (avec matériau : le sien, transparence gardée)
         else{U.uEnvMet.value=d?d.metal:0.15;U.uEnvRou.value=d?(d.cc?d.rough+((d.ccr!=null?d.ccr:0.1)-d.rough)*d.cc*0.5:d.rough):0.42;} // vernis : reflets plus nets
         vEnvRelU(U,L,d);
         if(mat.envMap!==vEnvS.rt.texture)mat.envMap=vEnvS.rt.texture;
