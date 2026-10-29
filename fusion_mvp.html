@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.19.5';
+const APP_VER='V0.19.6';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -51873,6 +51873,8 @@ function mfCss(){
   /* 2026-10-29 : roue ⚙ de la vue en esquisse = menu propre à l'esquisse (Grille 1 mm, À plat,
      Effacer tout) ; la barre de vue passe au-dessus du calque d'esquisse pour rester cliquable */
   'body.ui-modern.mf-sk #viewbar{z-index:56}body.ui-modern.mf-sk #setMenu{z-index:57}',
+  /* 2026-10-29 : en esquisse, pas d'onglets Modèle / Usinage / Plan ni de rabat d'arborescence sur la vue */
+  'body.ui-modern.mf-sk #mfBrTabs,body.ui-modern.mf-sk #treeWrap{display:none!important}',
   '#skSetMenu{position:absolute;top:46px;right:92px;z-index:57;display:none;flex-direction:column;gap:7px;width:230px;padding:10px 12px 12px;border-radius:12px;background:rgba(14,16,20,.95);border:1px solid rgba(255,255,255,.15);box-shadow:0 16px 44px rgba(0,0,0,.55)}',
   '#skSetMenu.open{display:flex}',
   '#skSetMenu .ovlTitle{margin:2px 0 0;font-size:.68rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:rgba(255,255,255,.55)}',
