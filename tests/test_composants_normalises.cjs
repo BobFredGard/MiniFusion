@@ -187,6 +187,40 @@ const {loadApp}=require('./appvm.cjs');
     A(asmUndo()&&asmCompOccs(C0.id).length===4&&C0.name==='CHC M6×35'&&(asmUndo(),asmNamesSync(),C0.doc.std.st.len==='25'&&C0.name==='CHC M6×25'),'36 : Ctrl+Z jusqu à la reconstruction : M6×25 revient');
     const bk=JSON.parse(serialise()),t2=asmTreeOfFile(bk.doc||bk),c3=t2.comps.find(c=>c.doc&&c.doc.std&&c.doc.std.key===C0.doc.std.key);
     A(c3&&c3.doc.std.cat==='iso'&&c3.doc.std.st.len==='25','37 : cat / st relus depuis le fichier');
+    // ── 7. clavettes dans une rainure (V0.21.9) : bloc à deux rainures fermées 8 × 40 (selon X et
+    //    selon Y) et une rainure débouchante, profondeur 4 ──
+    docResetEmpty();asm=null;doc.name='Arbre';
+    const sb2=SK('skA',0);stdLoop(sb2,[[-50,-30],[50,-30],[50,30],[-50,30]]);
+    doc.features.push({id:'exA',type:'extrude',name:'Bloc',sketchId:'skA',distance:20,op:'add',visible:true,mid:false,upto:null,body:'b1'});
+    const KW=(id,pts)=>{const s=SK('sk'+id,20);stdLoop(s,pts);doc.features.push({id,type:'extrude',name:id,sketchId:s.id,distance:-4,op:'cut',visible:true,mid:false,upto:null,body:'b1'});};
+    const sh=(P,f)=>P.map(q=>{const a=f(q[0],q[1]),o=[a[0],a[1]];if(q[2]){const c=f(q[2].c[0],q[2].c[1]);o.push(Object.assign({},q[2],{c}));}return o;});
+    const ol=stdKeyOutline({form:'A',L:40,b:8});
+    KW('kw1',sh(ol,(x,y)=>[x-20,y-15]));          // selon X, centre (−20, −15)
+    KW('kw2',sh(ol,(x,y)=>[-y+25,x]));            // selon Y, centre (25, 0)
+    KW('kw3',[[34,18,{c:[34,22],ccw:true}],[55,18],[55,26],[34,26]]); // débouchante en x = 50
+    doc.bodies=[{id:'b1',name:'Arbre',c:null}];doc.bodySeq=2;doc.activeBody='b1';
+    asmEnsure();asm._force=true;markDirty();rebuild();asm._force=false;
+    const Ra=asmRoot(),Ga=asmSnapGeomOf(Ra);
+    const KS=(Ga?Ga.faces:[]).map(stdKeyway).filter(k=>k&&k.form!=='rect');
+    A(KS.filter(k=>k.form==='A').length===2&&KS.filter(k=>k.form==='open').length===1&&KS.filter(k=>k.form==='A').every(k=>Math.abs(k.w-8)<1e-6&&Math.abs(k.len-40)<1e-6),
+      '38 : 2 rainures fermées 8 × 40 et 1 débouchante ('+KS.map(k=>k.form+' '+k.w.toFixed(1)+'×'+k.len.toFixed(1)).join(', ')+')');
+    const r3=v=>v.map(x=>+x.toFixed(3)).join(',');
+    stdUi.keyAt='face';
+    let R=stdKeyPick(null,Ga,[-20,-15,16],[0,0,1]);
+    let ok2=stdAddInKeyways(stdSpec('key',{type:'A',size:'8x7',len:'40'}),Ra.id,[],R.items,R.mode);
+    const pf=ok2.map(o=>r3(o.fr.o)+' x'+r3(o.fr.x.map(Math.abs))).sort();
+    A(R.mode==='face'&&ok2.length===2&&JSON.stringify(pf)===JSON.stringify(['-20,-15,16 x1,0,0','25,0,16 x0,1,0'])&&ok2.every(o=>o.fr.z[2]>0.999&&o.st==='ok'),
+      '39 : centre de face : clavette 8×7×40 au centre des deux rainures, couchée sur le fond, X selon l axe de chacune ('+pf.join(' | ')+')');
+    A(asmUndo()&&!Ra.occ.length,'40 : Ctrl+Z : les deux clavettes d un coup');
+    stdUi.keyAt='arc';
+    R=stdKeyPick(null,Ga,[-38,-15,16],[0,0,1]);
+    ok2=stdAddInKeyways(stdSpec('key',{type:'A',size:'8x7',len:'25'}),Ra.id,[],R.items,R.mode);
+    const kL=ok2.find(o=>Math.abs(o.fr.o[1]+15)<1e-6);
+    A(R.mode==='arc'&&ok2.length===2&&kL&&r3(kL.fr.o)==="-27.5,-15,16"&&Math.abs(Math.abs(kL.fr.x[0])-1)<1e-9,'41 : centre du cercle : clavette 25 calée contre le bout gauche cliqué (centre en x = −36 + 8,5 : '+(kL?r3(kL.fr.o):"?")+")");
+    asmUndo();
+    R=stdKeyPick(null,Ga,[40,22,16],[0,0,1]);
+    ok2=stdAddInKeyways(stdSpec('key',{type:'A',size:'8x7',len:'18'}),Ra.id,[],R.items,R.mode);
+    A(R.K.form==='open'&&ok2.length===1&&r3(ok2[0].fr.o)==='39,22,16','42 : rainure débouchante : calée contre son bout rond ('+(ok2[0]?r3(ok2[0].fr.o):'?')+')');
     return out;
   `;
   const o=await vm.runInContext('(async()=>{'+R+'})()',ctx);

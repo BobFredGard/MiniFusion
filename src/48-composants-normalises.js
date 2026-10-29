@@ -462,6 +462,16 @@ function stdHoleSn(h,mode,pos){
   const it=its.find(q=>q.w==='ec'&&q.e&&at(q))||its.find(q=>q.w==='c'&&at(q));
   return it?asmSnapRef(S.F,it):null;
 }
+function stdCompFor(sp,owner){
+  // Composant de la pièce : celui de même désignation s'il peut aller dans le porteur, sinon un neuf
+  let c=asm.comps.find(q=>q.doc&&q.doc.std&&q.doc.std.key===sp.key&&asmCanPlace(q.id,owner.id));
+  if(!c){
+    c={id:uid('cp'),kind:'comp',name:sp.name,doc:stdDoc(sp),occ:[],link:null};
+    const L=asmLinkOwner(owner);if(L)c.of=L.id;
+    asm.comps.push(c);
+  }
+  return c;
+}
 function stdAddOnHoles(sp,ownerId,relPath,holes,at){
   // at (goupilles) : 'mid' | 'top' | 'bot' — où va le centre de la goupille sur l'axe du trou
   // Une occurrence par trou, liaison rigide sur son cercle d'assise — une seule étape d'annulation
@@ -471,12 +481,7 @@ function stdAddOnHoles(sp,ownerId,relPath,holes,at){
   holes.forEach(h=>{const sn=stdHoleSn(h,sp.seat||'under',at||'mid');if(sn)sns.push({sn,h});});
   if(!sns.length)return [];
   asmPush('normalisé « '+sp.name+' » sur '+sns.length+' trou(s)');
-  let c=asm.comps.find(q=>q.doc&&q.doc.std&&q.doc.std.key===sp.key&&asmCanPlace(q.id,owner.id));
-  if(!c){
-    c={id:uid('cp'),kind:'comp',name:sp.name,doc:stdDoc(sp),occ:[],link:null};
-    const L=asmLinkOwner(owner);if(L)c.of=L.id;
-    asm.comps.push(c);
-  }
+  const c=stdCompFor(sp,owner);
   const occs=sns.map(({sn,h})=>{
     const o=asmNewOccObj(c.id,asmOccName(c.id),asmFr0());
     // goupille : +Z de la pièce vers l'entrée (l'axe d'un cylindre a un sens arbitraire) ;
@@ -528,15 +533,109 @@ function stdReplace(occId,sp,all){
   asm.comps.push(t);move(t);sink();asmResolve();
   return {comp:t,n:1,how:'moved'};
 }
-/* ── commande « Sur des trous » : clic sur un trou en mode Placer ── */
+/* ── clavettes : pose dans une rainure (V0.21.9) ──
+   Fond de rainure = face plane cliquée, lue sur la forme exacte : ses arcs (bouts ronds, rayon
+   commun) donnent l'axe et le centre — deux arcs : rainure fermée (forme A) ; un arc : rainure
+   débouchante ; aucun : rainure droite (contour de lignes, axe = la plus longue). La clavette
+   (origine au centre de son dessous, longueur selon X) est tenue par une liaison rigide sur un
+   point d'accroche du fond : son CENTRE de face (mode 'face'), ou le centre d'un bout rond (mode
+   'arc' : le bout le plus proche du clic ; une rainure débouchante n'a que celui-là). La rotation
+   (rz) amène X de la clavette sur l'axe de la rainure ; en mode 'arc', le décalage (off) pose le
+   bout de la clavette contre le bout de la rainure. Rainures fermées ou débouchantes identiques
+   de la pièce (même forme, largeur, longueur) : équipées d'un coup. */
+const STD_KEY_AT=[['face','Centre de face (milieu de la rainure)'],['arc','Centre du cercle (bout le plus proche du clic)']];
+function stdKeyway(F){
+  // → {F, form:'A'|'open'|'rect', c, ax, w, len, arcs:[{c, r}], sig} | null
+  if(!F||F.k!=='plane')return null;
+  const V=asmV,arcs=[];
+  F.edges.forEach(e=>{
+    if(e.k!=='circ'||e.full||Math.abs(V.dot(e.n,F.n))<0.999)return;
+    if(!arcs.some(a=>V.len(V.sub(a.c,e.c))<1e-3))arcs.push({c:e.c,r:e.r});
+  });
+  const lines=F.edges.filter(e=>e.k==='line'&&e.p0&&e.p1);
+  const inPl=v=>{const u=V.sub(v,V.mul(F.n,V.dot(v,F.n)));return V.unit(u);};
+  const ext=(c,ax)=>{let a=1e18,b=-1e18;lines.forEach(l=>[l.p0,l.p1].forEach(p=>{const t=V.dot(V.sub(p,c),ax);a=Math.min(a,t);b=Math.max(b,t);}));return [a,b];};
+  let K=null;
+  if(arcs.length===2&&Math.abs(arcs[0].r-arcs[1].r)<1e-3){
+    const ax=inPl(V.sub(arcs[1].c,arcs[0].c));if(!ax)return null;
+    const r=arcs[0].r,dd=V.len(V.sub(arcs[1].c,arcs[0].c));
+    K={form:'A',c:V.mul(V.add(arcs[0].c,arcs[1].c),0.5),ax,w:2*r,len:dd+2*r};
+  }else if(arcs.length===1){
+    const ax=inPl(V.sub(F.c,arcs[0].c));if(!ax)return null;
+    const [,b]=ext(arcs[0].c,ax);
+    K={form:'open',c:F.c,ax,w:2*arcs[0].r,len:b+arcs[0].r};
+  }else if(!arcs.length&&lines.length>=4){
+    const lg=lines.reduce((a,l)=>V.len(V.sub(l.p1,l.p0))>V.len(V.sub(a.p1,a.p0))?l:a);
+    const ax=inPl(V.sub(lg.p1,lg.p0));if(!ax)return null;
+    const [a,b]=ext(F.c,ax),[c0,c1]=ext(F.c,V.cross(F.n,ax));
+    K={form:'rect',c:F.c,ax,w:c1-c0,len:b-a};
+  }else return null;
+  K.F=F;K.arcs=arcs;K.sig=K.form+'|'+K.w.toFixed(2)+'|'+K.len.toFixed(2);
+  return K;
+}
+function stdKeyAlign(K,mode,end,key){
+  // Liaison d'une clavette key = {L, b, form} dans la rainure K → {sn, rz, off} | null
+  const V=asmV,its=asmSnapItems(K.F);
+  let it=null,u=K.ax,d=0;
+  if(K.form==='open'||(mode==='arc'&&end&&K.form!=='rect')){
+    const E=end||K.arcs[0];
+    it=its.find(q=>q.w==='ec'&&V.len(V.sub(q.fr.o,E.c))<1e-3);
+    u=K.form==='open'?K.ax:V.unit(V.sub(K.c,E.c));
+    d=key.L/2-E.r; // bout de la clavette contre le bout de la rainure
+  }else it=its.find(q=>q.w==='c');
+  if(!it||!u)return null;
+  const ux=V.dot(u,it.fr.x),uy=V.dot(u,it.fr.y);
+  return {sn:asmSnapRef(K.F,it),rz:+(Math.atan2(uy,ux)*180/Math.PI).toFixed(9),off:[ux*d,uy*d,0]};
+}
+function stdKeyEndFor(K,dir){
+  // Bout d'une rainure du même côté (direction depuis son centre) que celui choisi sur la rainure cliquée
+  if(!K.arcs.length)return null;
+  return K.arcs.reduce((a,b)=>asmV.dot(asmV.sub(b.c,K.c),dir)>asmV.dot(asmV.sub(a.c,K.c),dir)?b:a);
+}
+function stdAddInKeyways(sp,ownerId,relPath,items,mode){
+  // items : [{K, end}] — une occurrence par rainure, liaison rigide ; une seule étape d'annulation
+  asmEnsure();
+  const owner=asmComp(ownerId||asm.active),key=(sp.ops||[]).find(o=>o.k==='key');
+  if(!owner||!key||!items.length)return [];
+  const al=[];items.forEach(x=>{const a=stdKeyAlign(x.K,mode,x.end,key);if(a)al.push(a);});
+  if(!al.length)return [];
+  asmPush('normalisé « '+sp.name+' » dans '+al.length+' rainure(s)');
+  const c=stdCompFor(sp,owner);
+  const occs=al.map(a=>{
+    const o=asmNewOccObj(c.id,asmOccName(c.id),asmFr0());
+    o.align={src:{path:[],cg:null},dst:{path:(relPath||[]).slice(),cg:null,sn:a.sn},flip:false,rz:a.rz,off:a.off};
+    owner.occ.push(o);return o;
+  });
+  asmResolve();
+  return occs;
+}
+function stdKeyPick(sp,Gs,p,n){
+  // Clic (point p, normale n du maillage, coordonnées du composant) → {K, items, mode} | null
+  const F=asmSnapHitFace(Gs,p,n);if(!F||F.k!=='plane')return null;
+  const K=stdKeyway(F);if(!K)return null;
+  let mode=stdUi.keyAt==='arc'?'arc':'face',end=null;
+  if(K.form==='open'){mode='arc';end=K.arcs[0];}
+  else if(mode==='arc'&&K.arcs.length)end=K.arcs.reduce((a,b)=>asmV.len(asmV.sub(b.c,p))<asmV.len(asmV.sub(a.c,p))?b:a);
+  if(K.form==='rect')mode='face';
+  const items=[{K,end}];
+  if(K.form!=='rect'){
+    const dir=end?asmV.sub(end.c,K.c):null;
+    Gs.faces.forEach(G=>{if(G===F||G.k!=='plane')return;const Q=stdKeyway(G);
+      if(Q&&Q.sig===K.sig)items.push({K:Q,end:mode==='arc'?(Q.form==='open'?Q.arcs[0]:stdKeyEndFor(Q,dir)):null});});
+  }
+  return {K,items,mode};
+}
+/* ── commande « Sur des trous » (« Dans une rainure » pour une clavette) : clic en mode Placer ── */
 let stdHolePick=null; // {sp}
+function stdIsKey(sp){return !!(sp&&(sp.ops||[]).some(o=>o.k==='key'));}
 function stdHoleStart(sp){
-  if(!sp||!sp.seat){try{faceEl.textContent='Cette pièce ne se pose pas dans un trou.';}catch(e){}return;}
+  if(!sp||(!sp.seat&&!stdIsKey(sp))){try{faceEl.textContent='Cette pièce ne se pose pas dans un trou.';}catch(e){}return;}
   if(!(typeof occHas==='function'&&occHas())){alert('La pose sur des trous lit la forme exacte : noyau OCCT pas encore prêt.');return;}
   if(asmMode!=='asm')asmEnter();
   stdHolePick={sp};
   try{renderer.domElement.style.cursor='crosshair';}catch(e){}
-  try{faceEl.textContent='« '+sp.name+' » : cliquez un trou (sa paroi) — tous les trous identiques de la pièce le recevront. Échap = annuler.';}catch(e){}
+  try{faceEl.textContent=stdIsKey(sp)?'« '+sp.name+' » : cliquez le FOND d’une rainure — les rainures identiques de la pièce la recevront aussi. Échap = annuler.'
+    :'« '+sp.name+' » : cliquez un trou (sa paroi) — tous les trous identiques de la pièce le recevront. Échap = annuler.';}catch(e){}
 }
 function stdHoleCancel(){
   stdHolePick=null;try{renderer.domElement.style.cursor='';}catch(e){}
@@ -558,6 +657,20 @@ function stdHolePickAt(e){
     const Gs=asmSnapGeomOf(c);if(!Gs)continue;
     const inv=new THREE.Matrix4().copy(hit.object.matrixWorld).invert();
     const pl=hit.point.clone().applyMatrix4(inv),ld=rayc.ray.direction.clone().transformDirection(inv);
+    if(stdIsKey(sp)){
+      const nl=hit.face?hit.face.normal.clone():null; // normale locale du maillage : la face visée, pas celle de derrière
+      const R=stdKeyPick(sp,Gs,[pl.x,pl.y,pl.z],nl?[nl.x,nl.y,nl.z]:null);if(!R)continue;
+      const occs=stdAddInKeyways(sp,asm.active,path.slice(n),R.items,R.mode);
+      stdHolePick=null;try{renderer.domElement.style.cursor='';}catch(err){}
+      try{asmBuildSnapshots();}catch(err){}
+      if(occs.length)asmSelId=occs[0].id;
+      asmNotify();
+      const key=sp.ops.find(o=>o.k==='key'),warn=Math.abs(R.K.w-key.b)>0.05?' ⚠ largeur de rainure '+stdF(R.K.w)+' ≠ b '+stdF(key.b):'',lg=key.L>R.K.len+0.01?' ⚠ clavette plus longue que la rainure ('+stdF(R.K.len)+')':'';
+      const how=R.mode==='arc'?'contre le bout rond':'au centre';
+      try{faceEl.textContent=occs.length?'« '+sp.name+' » posée dans '+occs.length+' rainure(s) '+stdF(R.K.w)+' × '+stdF(R.K.len)+' de « '+c.name+' », '+how+', liaison rigide.'+warn+lg:'Pose impossible dans cette rainure.';}catch(err){}
+      const m=document.querySelector('#stdDlg .stdFoot span');if(m)m.textContent=occs.length?'✓ '+occs.length+' × '+sp.name:'';
+      return true;
+    }
     const H=stdHoles(Gs),h=stdHoleAt(H,[pl.x,pl.y,pl.z],[ld.x,ld.y,ld.z]);
     if(!h)continue;
     let at=null;
@@ -573,7 +686,7 @@ function stdHolePickAt(e){
     const m=document.querySelector('#stdDlg .stdFoot span');if(m)m.textContent=occs.length?'✓ '+occs.length+' × '+sp.name:'';
     return true;
   }
-  try{faceEl.textContent='Pas de trou ici : cliquez la paroi d’un trou (simple, lamé ou fraisé). Échap = annuler.';}catch(err){}
+  try{faceEl.textContent=stdIsKey(sp)?'Pas de rainure ici : cliquez le fond plat d’une rainure (bouts ronds ou droits). Échap = annuler.':'Pas de trou ici : cliquez la paroi d’un trou (simple, lamé ou fraisé). Échap = annuler.';}catch(err){}
   return true;
 }
 /* ── aperçu : silhouette de côté (révolution) ou vue de dessus + côté (clavette) ── */
@@ -696,6 +809,14 @@ function stdDlg(edit){
     });
     let sp=null;try{sp=stdSpec(C.k,st);}catch(e){sp=null;}
     const nm=document.createElement('div');nm.className='stdName';nm.textContent=sp?sp.name:'—';form.appendChild(nm);
+    if(sp&&stdIsKey(sp)&&!edit){
+      // clavette : par quel point elle se pose « Dans une rainure »
+      const l=document.createElement('label');l.textContent='Attacher par (Dans une rainure)';
+      const s=document.createElement('select');s.dataset.k='keyAt';
+      STD_KEY_AT.forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;if(v===(stdUi.keyAt||'face'))o.selected=true;s.appendChild(o);});
+      s.onchange=()=>{stdUi.keyAt=s.value;save();};
+      l.appendChild(s);form.appendChild(l);
+    }
     if(sp&&sp.seat==='mid'&&!edit){
       // goupille : où va son centre quand on la pose « Sur des trous »
       const l=document.createElement('label');l.textContent='Position dans le trou (Sur des trous)';
@@ -707,8 +828,10 @@ function stdDlg(edit){
     const inf=document.createElement('div');inf.className='stdInfo';inf.textContent=sp?(sp.norm+' · '+sp.info):'';form.appendChild(inf);
     prev.innerHTML=sp?stdSvg(sp):'';
     if(edit){bHole.disabled=bIns.disabled=!sp;bHole.onclick=()=>apply(sp,true);bIns.onclick=()=>apply(sp,false);return;}
-    bIns.disabled=!sp;bHole.disabled=!sp||!sp.seat;
-    bHole.onclick=()=>{if(sp){msg.textContent='Cliquez un trou dans la vue…';stdHoleStart(sp);}};
+    bIns.disabled=!sp;bHole.disabled=!sp||(!sp.seat&&!stdIsKey(sp));
+    bHole.textContent=stdIsKey(sp)?'🎯 Dans une rainure…':'🎯 Sur des trous…';
+    bHole.title=stdIsKey(sp)?'Cliquez le fond d’une rainure : la clavette s’y pose (centre de face ou centre du cercle), les rainures identiques aussi, en liaison rigide':'Cliquez un trou dans la vue : tous les trous identiques (simple, lamé, fraisé) reçoivent la pièce, en liaison rigide';
+    bHole.onclick=()=>{if(sp){msg.textContent=stdIsKey(sp)?'Cliquez le fond d’une rainure…':'Cliquez un trou dans la vue…';stdHoleStart(sp);}};
     bIns.onclick=()=>{
       if(!sp)return;
       const o=stdInsert(sp);

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**439 versions**, de `2026-09-28b` à `V0.21.8` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**440 versions**, de `2026-09-28b` à `V0.21.9` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5597,3 +5597,11 @@ Demande : « Pour les goupilles, il faut les attacher via leur centre (c'est fai
 Demande : « Pour la couleur de la visserie, quand je change le matériau ou la couleur, il faut que je puisse changer toutes les occurrences aussi ».
 - **Fenêtre d'apparence** (clic droit → « Matériau de rendu… », `src/98-rendu-apparence.js`) : sur une occurrence d'un composant posé plusieurs fois, case **« Toutes les occurrences de « … » (n) »**, cochée par défaut et mémorisée (`minifusion_rdLookAll`). Cochée, matériau, couleur, relief, patine et ↺ valent pour toutes les occurrences du composant (`asmSetOccRendu` / `asmClearOccRendu` avec `all`), en une seule étape d'annulation ; décochée, pour la seule occurrence cliquée. Le bouton ⇉ recopie toujours l'apparence actuelle sur toutes.
 - **Tests** : `tests/test_materiaux.cjs` (case et branchement). Vérifié dans le navigateur sur Test Visserie : 9 vis FHC M8×30 passées au laiton d'un coup, une seule au cuivre case décochée. `npm run ci`.
+
+## V0.21.9 - Clavettes : « Dans une rainure », par le centre de face ou le centre du cercle
+Question : « Comment sont positionnées les clavettes ? Il faudrait plusieurs options, par le centre de face, par les centres des cercles de cette même face » — proposition acceptée (« aller ») : l'équivalent de « Sur des trous » pour les clavettes.
+- **🎯 Dans une rainure** (onglet Clavettes de la fenêtre Normalisés ; le bouton « Sur des trous » change de rôle) : un clic sur le FOND d'une rainure. Le fond est lu sur la forme exacte (`stdKeyway`) : deux bouts ronds de même rayon → rainure fermée (axe = droite entre leurs centres, largeur 2r, longueur entraxe + 2r) ; un seul → rainure débouchante (axe du bout rond vers le centre de la face) ; aucun → rainure droite (axe = sa plus longue arête), seulement celle cliquée.
+- **Attacher par** (retenu avec les réglages) : *Centre de face* — le centre du dessous de la clavette sur le centre du fond ; *Centre du cercle* — le bout de la clavette calé contre le bout rond le plus proche du clic (centre de son arc sur celui de la rainure pour une clavette de même largeur). Une rainure débouchante est toujours calée contre son bout rond. La longueur de la clavette suit l'axe de la rainure, son dessous posé à plat sur le fond.
+- **Liaison rigide** sur un point d'accroche du fond (centre de face, ou centre de l'arc) avec une rotation (`rz`) et, au bout, un décalage (`off`) : associative comme pour les vis. Les rainures identiques de la pièce (même forme, largeur, longueur, quelle que soit leur orientation) reçoivent chacune une clavette, du même côté pour « centre du cercle » ; une seule étape d'annulation. La barre d'état signale une largeur de rainure ≠ b ou une clavette plus longue que la rainure.
+- **Code** : `stdCompFor` (composant réemployé ou créé) partagé par les trous et les rainures ; `stdKeyAlign`, `stdKeyPick`, `stdAddInKeyways` dans `src/48-composants-normalises.js`.
+- **Tests** : `tests/test_composants_normalises.cjs`, 5 contrôles de plus (bloc à deux rainures fermées 8 × 40, l'une selon X, l'autre selon Y, et une débouchante : détection ; centre de face sur les deux, X selon chaque axe ; Ctrl+Z ; centre du cercle, clavette 25 contre le bout cliqué ; débouchante calée contre son bout rond). Vérifié dans le navigateur : bouton et option, vrai clic au fond d'une rainure.

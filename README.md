@@ -4,7 +4,7 @@
 
 ![Support de pédale déportée R1200RT en alu anodisé rouge sur béton, lancer de rayons de l'atelier RENDU (2048 échantillons)](docs/captures/rendu-pedale.jpg)
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. S'il n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.21.7** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. S'il n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.21.9** (voir le [journal des modifications](CHANGELOG.md)).
 
 | | |
 |---|---|
@@ -75,7 +75,7 @@ Comme dans Fusion 360, **tout est composant** : le fichier est le composant raci
 - **Arbre unifié** : pièce et composants dans une seule arborescence, avec recherche et glisser-déposer.
 - **Modéliser** le composant actif (le reste de l'assemblage affiché autour) ou **Assembler** ses enfants (manipulateur, pas de 1 mm et 5°).
 - **Composant**, **Occurrence**, **Insérer** un autre fichier, **Depuis corps** pour convertir une pièce multicorps sans rien remodéliser.
-- **Normalisés** : vis ISO 4762 / ISO 10642 (pas gros par défaut, pas fins au choix), vis ANSI SHCS / FHCS 82° (UNC ou UNF), bouchons six pans creux DIN 906, DIN 908 et NPTF, goupilles ISO 2338, 8734, 2339, 8752 et ANSI (dowel, spring), clavettes ISO 773 formes A, B, C ; de vraies fonctions (révolution, six pans creux), avec aperçu coté. **Sur des trous** : un clic sur un trou pose la pièce dans tous les trous identiques de la pièce (simples, lamés, fraisés), en liaison rigide qui suit les trous (vis FHC 0,2 mm sous la surface, goupilles par leur centre : milieu du trou, arête haute ou basse, au plus court du clic). **Modifier…** (propriétés ou clic droit) rouvre la fenêtre sur la pièce : toutes ses occurrences, ou celle-ci seulement.
+- **Normalisés** : vis ISO 4762 / ISO 10642 (pas gros par défaut, pas fins au choix), vis ANSI SHCS / FHCS 82° (UNC ou UNF), bouchons six pans creux DIN 906, DIN 908 et NPTF, goupilles ISO 2338, 8734, 2339, 8752 et ANSI (dowel, spring), clavettes ISO 773 formes A, B, C ; de vraies fonctions (révolution, six pans creux), avec aperçu coté. **Sur des trous** : un clic sur un trou pose la pièce dans tous les trous identiques de la pièce (simples, lamés, fraisés), en liaison rigide qui suit les trous (vis FHC 0,2 mm sous la surface, goupilles par leur centre : milieu du trou, arête haute ou basse, au plus court du clic). **Dans une rainure** : une clavette se pose au fond d’une rainure (fermée ou débouchante), par le centre de face ou contre un bout rond, et toutes les rainures identiques sont équipées. **Modifier…** (propriétés ou clic droit) rouvre la fenêtre sur la pièce : toutes ses occurrences, ou celle-ci seulement.
 - **Composants liés** à un fichier du dossier de projets : édition sur place, mise à jour, conflits gérés.
 - **Aligner** un repère ou un **point d'accroche** (centre et points cardinaux d'une face, axe d'un cylindre, centre d'un cercle) sur un autre composant, de façon associative.
 - **Liaisons** : rigide, pivot, glissière, pivot glissant, plan, rotule, avec limites, curseurs et animation.
