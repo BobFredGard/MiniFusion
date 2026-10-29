@@ -1,4 +1,5 @@
 // 2026-10-28 : export STEP au choix AP214 / AP203.
+// 2026-10-29 : option « sans courbes 2D » (stepStripPcurves) pour les vieux logiciels.
 // Le noyau n'écrit que de l'AP214 IS (write.step.schema inaccessible dans cette
 // build d'opencascade.js) ; l'AP203 est réécrit en JS (stepToAp203). On vérifie :
 //   • en-têtes : AUTOMOTIVE_DESIGN / automotive_design vs CONFIG_CONTROL_DESIGN /
@@ -32,13 +33,25 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
       while(es.More()){ns++;es.Next();}es.delete();
       const bx=new occt.Bnd_Box_1();occt.BRepBndLib.Add(sh,bx,false);
       const a=bx.CornerMin(),z=bx.CornerMax();
-      return {nf,ns,dx:z.X()-a.X(),dy:z.Y()-a.Y(),dz:z.Z()-a.Z()};
+      const G=new occt.GProp_GProps_1();occt.BRepGProp.VolumeProperties_1(sh,G,false,false,false);
+      const ok=new occt.BRepCheck_Analyzer(sh,true).IsValid_2();
+      return {nf,ns,dx:z.X()-a.X(),dy:z.Y()-a.Y(),dz:z.Z()-a.Z(),v:G.Mass(),ok};
     };
     const mk=new occt.BRepPrimAPI_MakeBox_2(new occt.gp_Pnt_3(0,0,0),60,40,20);
     const sh=mk.Shape();
     const b214=occWriteStep([sh],'/s.stp','AP214');
     const b203=occWriteStep([sh],'/s.stp','AP203');
-    return {t214:txt(b214),t203:txt(b203),r214:relire(b214),r203:relire(b203)};
+    // Courbes 2D : boîte percée (couture de cylindre) + assemblage de deux pièces.
+    const ax=new occt.gp_Ax2_3(new occt.gp_Pnt_3(30,20,-5),new occt.gp_Dir_4(0,0,1));
+    const trou=new occt.BRepAlgoAPI_Cut_3(sh,new occt.BRepPrimAPI_MakeCylinder_3(ax,8,30).Shape()).Shape();
+    const tr=new occt.gp_Trsf_1();tr.SetTranslation_1(new occt.gp_Vec_4(100,0,0));
+    const B=new occt.BRep_Builder(),C=new occt.TopoDS_Compound();B.MakeCompound(C);
+    B.Add(C,trou);B.Add(C,sh.Moved(new occt.TopLoc_Location_2(tr)));
+    const pc={};
+    for(const [k,s] of [['trou',trou],['asm',C]])for(const sch of ['AP214','AP203'])for(const np of [false,true]){
+      const b=occWriteStep([s],'/s.stp',sch,np);pc[k+' '+sch+(np?' sans':' avec')]={t:txt(b),r:relire(b)};
+    }
+    return {t214:txt(b214),t203:txt(b203),r214:relire(b214),r203:relire(b203),pc};
   })()`,ctx);
   const {t214,t203}=r;
   console.log('— AP214');
@@ -63,6 +76,23 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     A(v&&v.ns===1&&v.nf===6,k+' : 1 solide, 6 faces'+(v?' ('+v.ns+' / '+v.nf+')':''));
     A(v&&Math.abs(v.dx-60)<1e-6&&Math.abs(v.dy-40)<1e-6&&Math.abs(v.dz-20)<1e-6,k+' : boîte 60 × 40 × 20');
   }
+  console.log('— sans courbes 2D');
+  const refsOk=(t)=>{const d=t.slice(t.indexOf('DATA;'));const def=new Set(),ref=new Set();
+    d.replace(/#(\d+)\s*=/g,(m,n)=>{def.add(n);return m;});d.replace(/#(\d+)(?!\s*=)/g,(m,n)=>{ref.add(n);return m;});
+    return [...ref].every(n=>def.has(n));};
+  const nauo=(t)=>(t.match(/NEXT_ASSEMBLY_USAGE_OCCURRENCE\(/g)||[]).length;
+  for(const k of ['trou','asm'])for(const sch of ['AP214','AP203']){
+    const av=r.pc[k+' '+sch+' avec'],sa=r.pc[k+' '+sch+' sans'],n=k+' '+sch+' sans : ';
+    A(/PCURVE\(/.test(av.t)&&/SEAM_CURVE\(/.test(av.t),k+' '+sch+' avec : PCURVE et SEAM_CURVE présentes');
+    A(!/PCURVE|SURFACE_CURVE|SEAM_CURVE|DEFINITIONAL_REPRESENTATION|PARAMETRIC_REPRESENTATION_CONTEXT/.test(sa.t),n+'plus aucune courbe 2D ni contexte 2D');
+    A(refsOk(sa.t),n+'toutes les références #n sont définies');
+    A(sa.t.length<av.t.length*0.6,n+'fichier allégé ('+(sa.t.length/1024).toFixed(1)+' / '+(av.t.length/1024).toFixed(1)+' Ko)');
+    A(nauo(sa.t)===nauo(av.t)&&(k!=='asm'||nauo(sa.t)===2),n+'même structure de produits ('+nauo(sa.t)+' occurrence(s) d\'assemblage)');
+    const a=av.r,b=sa.r;
+    A(a&&b&&a.ns===b.ns&&a.nf===b.nf&&Math.abs(a.v-b.v)<1e-6*a.v&&Math.abs(a.dx-b.dx)<1e-6&&b.ok,
+      n+'relu à l\'identique, valide'+(b?' ('+b.ns+' solide(s), '+b.nf+' faces, '+b.v.toFixed(1)+' mm³)':''));
+  }
+  A(/CC_DESIGN_APPROVAL\(/.test(r.pc['asm AP203 sans'].t),'asm AP203 sans : entités de gestion AP203 conservées');
   console.log(ko?`\n${ko} ÉCHEC(S)`:'\nTOUT PASSE');
   process.exit(ko?1:0);
 })().catch(e=>{console.log('  ✗ exception : '+(e&&e.stack||e));process.exit(1);});

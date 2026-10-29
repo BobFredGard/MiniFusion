@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**424 versions**, de `2026-09-28b` à `V0.19.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**425 versions**, de `2026-09-28b` à `V0.19.8` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5500,3 +5500,9 @@ En esquisse, les onglets Modèle / Usinage / Plan et le rabat de l'arborescence 
 Demande : « Menu Settings : pas top les listes qui dépassent. Mais au standard des autres fenêtres ».
 - **Listes compactes** (CSS de `#setMenu`, `fusion_mvp.html`) : Environnement, Arêtes et Orbite reprennent le format des panneaux de propriétés (libellé à gauche, liste de 140 px à droite, petite police, texte abrégé par « … ») et ne débordent plus du menu ; boutons de vue Iso / Dessus / Face / Droite / Tout afficher compacts.
 - **Tests** : `npm run ci` ; vérifié dans l'app (les trois listes à l'intérieur du menu, alignées en colonne).
+
+## V0.19.8 - Export STEP : option « sans courbes 2D » pour les vieux logiciels
+Constat : les STEP de miniFusion n'ouvraient dans les vieux logiciels de l'utilisateur qu'après un passage par TopSolid ou FreeCAD, en AP214 comme en AP203. Comparaison de la Griffe (miniFusion) avec la même pièce repassée par FreeCAD : géométrie, unités (mm), tolérance (1e-7) et schéma identiques ; deux écarts seulement — miniFusion écrit un assemblage (FreeCAD : un fichier par pièce) et chaque arête en `SURFACE_CURVE` / `SEAM_CURVE`, avec une `PCURVE` et son contexte 2D par face voisine (FreeCAD : aucune). Essai de l'utilisateur sur trois variantes : assemblage sans courbes 2D lu, pièce seule avec courbes 2D refusée, pièce seule sans courbes 2D lue — les courbes 2D sont la cause, l'assemblage n'y est pour rien.
+- **Correctif** (`src/90-picking-mesure-import.js`, `stepStripPcurves`) : `write.surfacecurve.mode` est inaccessible dans cette build (comme `write.step.schema`, V0.15.5) ; le texte est réécrit — chaque arête pointe directement sur sa courbe 3D, puis seules les entités encore atteignables depuis les racines d'origine sont gardées et renumérotées. Appliqué avant la conversion AP203 (`occWriteStep(shapes,path,schema,noPcurve)`, dernier argument facultatif). Géométrie inchangée, fichier environ deux fois plus léger (Griffe : 137 → 54 Ko).
+- **Fenêtre d'export** (`stepAskSchema`) : case « Sans courbes 2D — pour les vieux logiciels », cochée par défaut, retenue (`minifusion_stepNoPcurve`) ; rappelée dans le message de fin d'export.
+- **Test** : `test_step_schema`, +25 vérifications (noyau réel) — boîte percée (couture de cylindre) et assemblage de deux pièces, en AP214 et AP203 : plus aucune `PCURVE`, `SURFACE_CURVE`, `SEAM_CURVE` ni contexte 2D, références toutes définies, même structure de produits, entités de gestion AP203 conservées, relecture identique (solides, faces, volume, boîte) et forme valide. Vérifié dans le navigateur : fenêtre d'export avec la case, export réel de la pièce de démonstration 101,5 → 47,6 Ko, 36 faces, aucune courbe 2D. `npm run ci` 76/76.

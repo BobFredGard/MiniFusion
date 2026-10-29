@@ -856,7 +856,7 @@ async function ctxExportStep(bid){
     a.click();
     setTimeout(()=>{try{URL.revokeObjectURL(a.href);}catch(e){}},2000);
     try{occt.FS.unlink(path);}catch(e){}
-    faceEl.textContent='STEP '+sch+' « '+nm+' » exporté ('+(bytes.length/1024).toFixed(1)+' Ko).';
+    faceEl.textContent='STEP '+stepLabel(sch)+' « '+nm+' » exporté ('+(bytes.length/1024).toFixed(1)+' Ko).';
   }catch(e){
     const msg=String((e&&e.message)||e||'erreur');
     faceEl.textContent='Export STEP « '+nm+' » : '+msg;
@@ -1358,6 +1358,65 @@ function stepToAp203(bytes){
   const out=new Uint8Array(t.length);for(let i=0;i<t.length;i++)out[i]=t.charCodeAt(i)&255;
   return out;
 }
+/* ---- Sans courbes 2D (case « vieux logiciels », cochée par défaut, retenue).
+   OCCT écrit chaque arête en SURFACE_CURVE / SEAM_CURVE : la courbe 3D plus une
+   PCURVE (et son contexte 2D) par face voisine. Les vieux logiciels de l'utilisateur
+   refusent ces fichiers (essai Griffe du 29/10 : assemblage sans courbes 2D lu,
+   pièce seule avec courbes 2D refusée) ; FreeCAD n'en écrit aucune. Le réglage
+   write.surfacecurve.mode étant inaccessible (cf. AP203 ci-dessus), on réécrit le
+   texte : chaque arête pointe directement sur sa courbe 3D, puis on ne garde que
+   les entités encore atteignables depuis les racines d'origine. Géométrie
+   inchangée : le lecteur recalcule les courbes 2D. ---- */
+let stepNoPcurve=true;
+try{if(localStorage.getItem('minifusion_stepNoPcurve')==='0')stepNoPcurve=false;}catch(e){}
+function stepRefsMap(s,f){
+  // Remplace chaque #n hors chaîne par f(n) ; null → '#!' (référence retirée).
+  let o='',q=false;
+  for(let i=0;i<s.length;i++){
+    const c=s[i];
+    if(c==="'"){q=!q;o+=c;continue;}
+    if(!q&&c==='#'){let j=i+1;while(j<s.length&&s[j]>='0'&&s[j]<='9')j++;
+      const r=f(+s.slice(i+1,j));o+=(r==null?'#!':'#'+r);i=j-1;continue;}
+    o+=c;
+  }
+  return o;
+}
+function stepStripPcurves(bytes){
+  let t='';for(let i=0;i<bytes.length;i+=8192)t+=String.fromCharCode.apply(null,bytes.subarray(i,i+8192));
+  const a=t.indexOf('DATA;'),z=t.lastIndexOf('ENDSEC;');
+  if(a<0||z<a)throw new Error('courbes 2D : section DATA introuvable');
+  const E=new Map(),order=[];
+  let cur='',q=false;const body=t.slice(a+5,z);
+  for(let i=0;i<body.length;i++){
+    const c=body[i];
+    if(c==="'")q=!q;
+    if(c===';'&&!q){const m=/^\s*#(\d+)\s*=\s*([\s\S]*)$/.exec(cur);
+      if(m){E.set(+m[1],m[2].trim());order.push(+m[1]);}
+      cur='';continue;}
+    cur+=c;
+  }
+  const refs=(s)=>{const r=[];stepRefsMap(s,n=>{r.push(n);return n;});return r;};
+  // Racines : entités que personne ne référence (avant retouche).
+  const used=new Set();for(const id of order)for(const n of refs(E.get(id)))used.add(n);
+  const roots=order.filter(id=>!used.has(id));
+  const alias=new Map();
+  for(const id of order){const m=/^(?:SURFACE_CURVE|SEAM_CURVE)\s*\(\s*'[^']*'\s*,\s*#(\d+)/.exec(E.get(id));if(m)alias.set(id,+m[1]);}
+  if(!alias.size)return bytes;
+  for(const id of alias.keys())E.delete(id);
+  for(const [id,s] of E)E.set(id,stepRefsMap(s,n=>alias.has(n)?alias.get(n):n));
+  const keep=new Set(),st=roots.filter(r=>E.has(r));
+  while(st.length){const id=st.pop();if(keep.has(id))continue;keep.add(id);
+    for(const n of refs(E.get(id)))if(E.has(n)&&!keep.has(n))st.push(n);}
+  const kept=order.filter(id=>keep.has(id));
+  const nu=new Map();kept.forEach((id,i)=>nu.set(id,i+1));
+  const L=kept.map(id=>{const s=stepRefsMap(E.get(id),n=>nu.has(n)?nu.get(n):null);
+    if(s.includes('#!'))throw new Error('courbes 2D : référence morte dans #'+id);
+    return '#'+nu.get(id)+' = '+s+';';});
+  t=t.slice(0,a+5)+'\n'+L.join('\n')+'\n'+t.slice(z);
+  const out=new Uint8Array(t.length);for(let i=0;i<t.length;i++)out[i]=t.charCodeAt(i)&255;
+  return out;
+}
+function stepLabel(sch){return sch+(stepNoPcurve?' sans courbes 2D':'');}
 function stepAskSchema(titre){
   // Petite fenêtre « AP214 / AP203 » ; résout le schéma choisi, ou null (Échap / fond).
   return new Promise(res=>{
@@ -1381,6 +1440,12 @@ function stepAskSchema(titre){
       b.onclick=()=>fin(v);
       box.appendChild(b);
     });
+    const pc=document.createElement('label');
+    pc.style.cssText='display:flex;gap:8px;align-items:flex-start;margin:2px 0 10px;cursor:pointer';
+    pc.innerHTML='<input type="checkbox" style="margin-top:2px"'+(stepNoPcurve?' checked':'')+'><span><b>Sans courbes 2D</b><div style="opacity:.7;font-size:12px;margin-top:2px">Pour les vieux logiciels : arêtes en 3D seulement, fichier plus léger.</div></span>';
+    pc.querySelector('input').onchange=(e)=>{stepNoPcurve=!!e.target.checked;
+      try{localStorage.setItem('minifusion_stepNoPcurve',stepNoPcurve?'1':'0');}catch(_){}};
+    box.appendChild(pc);
     const an=document.createElement('button');an.textContent='Annuler';
     an.style.cssText='float:right;padding:4px 12px;border-radius:6px;cursor:pointer';
     an.onclick=()=>fin(null);box.appendChild(an);
@@ -1389,9 +1454,10 @@ function stepAskSchema(titre){
     document.addEventListener('keydown',kd,true);
   });
 }
-function occWriteStep(shapes,path,schema){
-  // schema : 'AP214' | 'AP203' (défaut : dernier choix de l'utilisateur).
-  const b=occWriteStepAp214(shapes,path);
+function occWriteStep(shapes,path,schema,noPcurve){
+  // schema : 'AP214' | 'AP203' ; noPcurve : booléen (défaut : derniers choix de l'utilisateur).
+  let b=occWriteStepAp214(shapes,path);
+  if(noPcurve==null?stepNoPcurve:noPcurve)b=stepStripPcurves(b);
   return (schema||stepSchema)==='AP203'?stepToAp203(b):b;
 }
 function occWriteStepAp214(shapes,path){
@@ -1488,7 +1554,7 @@ $('btnExportStep').onclick=async()=>{
     setTimeout(()=>URL.revokeObjectURL(a.href),2000);
     try{occt.FS.unlink(path);}catch(e){}
     occCleanup(FR,null);
-    faceEl.textContent='STEP '+sch+' exact exporté ('+(bytes.length/1024).toFixed(1)+' Ko).';
+    faceEl.textContent='STEP '+stepLabel(sch)+' exact exporté ('+(bytes.length/1024).toFixed(1)+' Ko).';
   }catch(e){alert('Export STEP impossible : '+e.message);}
 };
 $('btnExportStl').onclick=()=>downloadMesh('stl');
