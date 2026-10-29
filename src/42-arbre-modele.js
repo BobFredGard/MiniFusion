@@ -386,6 +386,7 @@ function treeComps(L,P){
               {html:'➕ Nouvelle occurrence',fn:()=>{if(asmMode!=='asm')asmShow(AP,'asm',id);asmSelId=id;asmCmdNewOcc();}},
               {html:o.fixed?'📌 Libérer':'📌 Fixer',fn:()=>asmToggleFixed(id)},
               {html:'🏷 Renommer le composant',fn:()=>asmRename(id)},
+              ...(c.doc&&c.doc.std?[{html:'🔩 Modifier la pièce normalisée…',fn:()=>stdDlg({occ:id})}]:[]), // 48-composants-normalises
               {html:'🗑 Supprimer',fn:()=>asmAskDelete(id)});
           }
           items.push(...asmLinkMenu(c));

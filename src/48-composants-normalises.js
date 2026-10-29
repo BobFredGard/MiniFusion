@@ -18,7 +18,8 @@
    même profondeur, même sens) reçoivent chacun une occurrence, tenue par une LIAISON RIGIDE
    (alignement sur le centre du cercle de la face d'assise : associatif, la vis suit le trou).
    Assise (sp.seat) : 'under' sous tête (CHC, collerette) — fond du lamage, sinon l'entrée ;
-   'flush' affleurant (FHC, bouchon conique) — l'entrée ; 'in' (goupille) — l'entrée, vers le fond. Cotes en mm ; les normes en pouces sont converties (STD_IN). */
+   'flush' affleurant (bouchon conique) — l'entrée ; FHC — l'entrée, 0,2 mm dessous (sp.sink,
+   FHC_RETRAIT du perçage) ; 'mid' (goupille, origine en son milieu) — milieu de l'axe du trou. Cotes en mm ; les normes en pouces sont converties (STD_IN). */
 const STD_IN=25.4;
 // ISO 261 : pas gros (la désignation « M » seule) puis pas fins
 const STD_ISO_PAS={'M1.6':[0.35,0.2],'M2':[0.4,0.25],'M2.5':[0.45,0.35],'M3':[0.5,0.35],'M4':[0.7,0.5],'M5':[0.8,0.5],
@@ -130,7 +131,7 @@ function stdIsoScrew(st){
   const pas=STD_ISO_PAS[r[0]],P=+st.pitch||pas[0],L=+st.len,fin=Math.abs(P-pas[0])>1e-9;
   const g=fhc?stdScrewFHC({d:r[1],dk:r[2],k:r[3],a:90,s:r[4],t:r[5],L,P}):stdScrewCHC({d:r[1],dk:r[2],k:r[3],s:r[4],t:r[5],L,P});
   const th=r[0]+(fin?'×'+stdF(P):''),norm=fhc?'ISO 10642':'ISO 4762';
-  return Object.assign(g,{seat:fhc?'flush':'under',key:norm+'|'+th+'|'+L,norm,desig:th+'×'+stdF(L),name:(fhc?'FHC ':'CHC ')+th+'×'+stdF(L),
+  return Object.assign(g,{seat:fhc?'flush':'under',sink:fhc?FHC_RETRAIT:0,key:norm+'|'+th+'|'+L,norm,desig:th+'×'+stdF(L),name:(fhc?'FHC ':'CHC ')+th+'×'+stdF(L),
     info:(fhc?'Vis à tête fraisée six pans creux, fraisure 90°':'Vis à tête cylindrique six pans creux')+' · pas '+stdF(P)+(fin?' (fin)':' (gros)')+
       ' · '+(fhc?'Ø tête ':'dk ')+stdF(r[2])+' · k '+stdF(r[3])+' · clé '+stdF(r[4])+' · L '+stdF(L)+(fhc?' (tête comprise)':' (sous tête)')});
 }
@@ -141,7 +142,7 @@ function stdAnsiScrew(st){
   const g=fhc?stdScrewFHC({d:r[1]*I,dk:r[2]*I,k:(r[2]-r[1])/2/Math.tan(41*Math.PI/180)*I,a:82,s:r[3]*I,t:r[4]*I,L:L*I,P})
     :stdScrewCHC({d:r[1]*I,dk:r[2]*I,k:r[3]*I,s:r[4]*I,t:r[5]*I,L:L*I,P});
   const th=r[0]+'-'+tpi+' '+serie,norm=fhc?'ASME B18.3 FHCS':'ASME B18.3 SHCS';
-  return Object.assign(g,{seat:fhc?'flush':'under',key:norm+'|'+th+'|'+st.len,norm,desig:th+' × '+st.len+'"',name:(fhc?'FHCS ':'SHCS ')+th+' × '+st.len+'"',
+  return Object.assign(g,{seat:fhc?'flush':'under',sink:fhc?FHC_RETRAIT:0,key:norm+'|'+th+'|'+st.len,norm,desig:th+' × '+st.len+'"',name:(fhc?'FHCS ':'SHCS ')+th+' × '+st.len+'"',
     info:(fhc?'Flat head socket cap screw, fraisure 82°':'Socket head cap screw')+' · '+tpi+' filets/pouce · Ø '+stdF(r[1]*I)+' mm · L '+stdF(L*I)+' mm'+(fhc?' (tête comprise)':' (sous tête)')});
 }
 function stdPlug(st){
@@ -160,6 +161,16 @@ function stdPlug(st){
     prof:[[0,-L],[rb-c,-L],[rb,-L+c],[rt,0],[0,0]],ops:[{k:'hex',z:0,s,t}]};
 }
 function stdPin(st){
+  // Goupille centrée : origine au MILIEU de sa longueur (V0.21.1) — posée sur un trou, elle
+  // s'aligne sur le milieu de l'axe du cylindre (seat 'mid')
+  const sp=stdPinBody(st),zs=stdPolyPts(sp.prof).map(p=>p[1]),dz=-(Math.min(...zs)+Math.max(...zs))/2;
+  sp.prof=sp.prof.map(q=>{const o=[q[0],q[1]+dz];if(q[2])o.push(Object.assign({},q[2],{c:[q[2].c[0],q[2].c[1]+dz]}));return o;});
+  (sp.ops||[]).forEach(o=>{if(o.k==='slot')o.z0=dz;});
+  sp.seat='mid';
+  return sp;
+}
+function stdPinBody(st){
+  // profil de z = 0 à z = L
   const ty=st.type,ansi=ty==='dowel'||ty==='spring';
   const d=ansi?stdFrac(st.size)*STD_IN:+st.size,L=ansi?stdFrac(st.len)*STD_IN:+st.len,r=d/2;
   const c=ansi?Math.max(0.15,d*0.08):(STD_PIN_C[+st.size]||d*0.15);
@@ -168,14 +179,14 @@ function stdPin(st){
     const w=ty==='spring'?(STD_ANSI_SPRING.find(x=>x[0]===st.size)||STD_ANSI_SPRING[0])[1]*STD_IN:(STD_ISO8752.find(x=>x[0]===+st.size)||STD_ISO8752[0])[1];
     const ri=r-w,cc=Math.min(w*0.8,c),g=Math.max(0.15,d*0.1);
     const norm=ty==='spring'?'ASME B18.8.2 spring':'ISO 8752';
-    return {seat:'in',key:norm+'|'+lab,norm,desig:lab,name:(ty==='spring'?'Spring pin ':'Goupille élastique ISO 8752 ')+lab,
+    return {key:norm+'|'+lab,norm,desig:lab,name:(ty==='spring'?'Spring pin ':'Goupille élastique ISO 8752 ')+lab,
       info:'Goupille élastique fendue · épaisseur '+stdF(w)+' · fente '+stdF(g)+' · Ø '+stdF(d)+' · L '+stdF(L),
       prof:[[ri,0],[r-cc,0],[r,cc],[r,L-cc],[r-cc,L],[ri,L]],ops:[{k:'slot',x0:ri-0.3,x1:r+1,w:g,L}]};
   }
   if(ty==='iso2339'){
     // conique 1:50 : d au petit bout, bouts bombés (R ≈ d)
     const R2=r+L/100,a=stdCrown(r,d,0,false),b=stdCrown(R2,2*R2,L,true);
-    return {seat:'in',key:'ISO 2339|'+lab,norm:'ISO 2339',desig:'A '+lab,name:'Goupille conique ISO 2339 '+lab,
+    return {key:'ISO 2339|'+lab,norm:'ISO 2339',desig:'A '+lab,name:'Goupille conique ISO 2339 '+lab,
       info:'Goupille conique 1:50 · Ø petit bout '+stdF(d)+' · Ø gros bout '+stdF(2*R2)+' · L '+stdF(L),
       prof:[[0,0],a.edge.concat([{c:[0,d]}]),b.edge,b.top],ops:[]};
   }
@@ -183,11 +194,11 @@ function stdPin(st){
     // trempée : un bout chanfreiné, l'autre bombé
     const b=stdCrown(r,d,L,true);
     const norm=ty==='dowel'?'ASME B18.8.2 dowel':'ISO 8734';
-    return {seat:'in',key:norm+'|'+lab,norm,desig:lab,name:(ty==='dowel'?'Dowel pin ':'Goupille ISO 8734 ')+lab,
+    return {key:norm+'|'+lab,norm,desig:lab,name:(ty==='dowel'?'Dowel pin ':'Goupille ISO 8734 ')+lab,
       info:'Goupille cylindrique trempée, rectifiée (m6) · un bout chanfreiné, un bout bombé · Ø '+stdF(d)+' · L '+stdF(L),
       prof:[[0,0],[r-c,0],[r,c],b.edge,b.top],ops:[]};
   }
-  return {seat:'in',key:'ISO 2338|'+lab,norm:'ISO 2338',desig:'m6 '+lab,name:'Goupille ISO 2338 '+lab,
+  return {key:'ISO 2338|'+lab,norm:'ISO 2338',desig:'m6 '+lab,name:'Goupille ISO 2338 '+lab,
     info:'Goupille cylindrique non trempée (m6) · chanfreins '+stdF(c)+' · Ø '+stdF(d)+' · L '+stdF(L),
     prof:[[0,0],[r-c,0],[r,c],[r,L-c],[r-c,L],[0,L]],ops:[]};
 }
@@ -260,7 +271,27 @@ function stdNormState(cat,st){
   });
   return o;
 }
-function stdSpec(cat,st){return stdCat(cat).gen(stdNormState(cat,st));}
+function stdSpec(cat,st){
+  // Pièce d'après les réglages de la fenêtre ; cat / st la suivent (doc.std : « Modifier… » la rouvre)
+  const C=stdCat(cat),s=stdNormState(C.k,st),sp=C.gen(s);
+  sp.cat=C.k;sp.st=s;return sp;
+}
+function stdStateOf(std){
+  // Réglages {cat, st} d'une pièce : enregistrés (V0.21.1), sinon retrouvés par sa clé (pièces V0.21.0)
+  if(!std||typeof std.key!=='string')return null;
+  if(std.st&&typeof std.st==='object'&&STD_CATS.some(c=>c.k===std.cat))return {cat:std.cat,st:stdNormState(std.cat,std.st)};
+  let hit=null;
+  STD_CATS.some(C=>{
+    const walk=(i,st)=>{
+      if(hit)return;
+      if(i===C.fields.length){try{if(C.gen(st).key===std.key)hit={cat:C.k,st};}catch(e){}return;}
+      const f=C.fields[i];
+      f.opts(st).forEach(o=>{if(!hit)walk(i+1,Object.assign({},st,{[f.k]:o[0]}));});
+    };
+    walk(0,{});return !!hit;
+  });
+  return hit;
+}
 /* ── document du composant : esquisses + fonctions ── */
 function stdSketch(d,name,plane,off){
   const s={id:uid('sk'),name,plane,entities:[],points:{},constraints:[],dims:[],seq:1,visible:false,origin:[0,0,0]};
@@ -285,6 +316,7 @@ function stdDoc(sp){
   const d=asmEmptyDoc(sp.name);
   d.bodies=[{id:'b1',name:sp.name,c:null}];d.bodySeq=2;d.activeBody='b1';
   d.std={key:sp.key,norm:sp.norm,desig:sp.desig};
+  if(sp.cat&&sp.st){d.std.cat=sp.cat;d.std.st=Object.assign({},sp.st);}
   const F=(f)=>{f.id=uid(f.type==='revolve'?'rv':'ex');f.visible=true;f.body='b1';d.features.push(f);return f;};
   if(sp.prof){
     const s=stdSketch(d,'Profil','XZ',0);stdLoop(s,sp.prof);
@@ -296,7 +328,7 @@ function stdDoc(sp){
       const s=stdSketch(d,'Six pans creux','XY',o.z+0.5);stdLoop(s,stdHex(o.s));
       F({type:'extrude',name:'Six pans creux '+stdF(o.s),sketchId:s.id,distance:-(o.t+0.5),op:'cut',mid:false,upto:null});
     }else if(o.k==='slot'){
-      const s=stdSketch(d,'Fente','XY',-1),g=o.w/2;stdLoop(s,[[o.x0,-g],[o.x1,-g],[o.x1,g],[o.x0,g]]);
+      const s=stdSketch(d,'Fente','XY',(o.z0||0)-1),g=o.w/2;stdLoop(s,[[o.x0,-g],[o.x1,-g],[o.x1,g],[o.x0,g]]);
       F({type:'extrude',name:'Fente',sketchId:s.id,distance:o.L+2,op:'cut',mid:false,upto:null});
     }else if(o.k==='key'){
       const s=stdSketch(d,'Contour','XY',0);stdLoop(s,stdKeyOutline(o));
@@ -367,7 +399,7 @@ function stdHoles(G){
     if(co.some(o=>depth(E,o.c)<-0.01))return; // dominé : fond de lamage
     const cs=cyl.map(q=>q.F).filter(F=>Math.abs(V.dot(F.n,E.n))>0.999&&off(E,F.l)<0.01).map(F=>{
       const a=depth(E,V.add(F.l,V.mul(F.n,F.t[0]))),b=depth(E,V.add(F.l,V.mul(F.n,F.t[1])));
-      return {r:F.r,d0:Math.min(a,b),d1:Math.max(a,b)};
+      return {r:F.r,d0:Math.min(a,b),d1:Math.max(a,b),F};
     }).filter(c=>c.d1>0.01).sort((a,b)=>a.d0-b.d0);
     // cylindres contigus depuis l'entrée (un fraisage laisse un cône, hors liste, au début)
     const seg=[];
@@ -384,7 +416,8 @@ function stdHoles(G){
       if(s1)seat=s1;
     }
     const f=v=>(+v).toFixed(2);
-    out.push({E,seat,kind,n:E.n,r:seg[kind==='cbore'?1:0].r,
+    const main=seg[kind==='cbore'?1:0]; // cylindre du trou proprement dit (sous le lamage)
+    out.push({E,seat,kind,n:E.n,r:main.r,cyl:main.F,
       sig:kind+'|'+f(E.r)+'|'+seg.map(c=>f(c.r)+':'+f(c.d0)+':'+f(c.d1)).join(';')});
   });
   return out;
@@ -403,7 +436,9 @@ function stdHoleAt(H,p,look){
 }
 function stdSameHoles(H,h){return H.filter(q=>q.sig===h.sig&&asmV.dot(q.n,h.n)>0.999);}
 function stdHoleSn(h,mode){
-  // Référence durable (point d'accroche) du centre du cercle d'assise
+  // Référence durable (point d'accroche) du centre du cercle d'assise ; 'mid' : milieu de l'axe du
+  // cylindre du trou (goupille centrée dans l'épaisseur)
+  if(mode==='mid'){const it=h.cyl&&asmSnapItems(h.cyl).find(q=>q.w==='am');return it?asmSnapRef(h.cyl,it):null;}
   const S=mode==='under'?h.seat:h.E;
   // Fond de lamage : face annulaire dont le centre EST celui du trou — les points d'accroche n'y
   // gardent que le « centre » de la face (même point, même axe) : il convient aussi
@@ -415,7 +450,8 @@ function stdAddOnHoles(sp,ownerId,relPath,holes){
   // Une occurrence par trou, liaison rigide sur son cercle d'assise — une seule étape d'annulation
   asmEnsure();
   const owner=asmComp(ownerId||asm.active);if(!owner||!holes.length)return [];
-  const sns=holes.map(h=>stdHoleSn(h,sp.seat||'under')).filter(Boolean);
+  const sns=[];
+  holes.forEach(h=>{const sn=stdHoleSn(h,sp.seat||'under');if(sn)sns.push({sn,h});});
   if(!sns.length)return [];
   asmPush('normalisé « '+sp.name+' » sur '+sns.length+' trou(s)');
   let c=asm.comps.find(q=>q.doc&&q.doc.std&&q.doc.std.key===sp.key&&asmCanPlace(q.id,owner.id));
@@ -424,13 +460,56 @@ function stdAddOnHoles(sp,ownerId,relPath,holes){
     const L=asmLinkOwner(owner);if(L)c.of=L.id;
     asm.comps.push(c);
   }
-  const occs=sns.map(sn=>{
+  const occs=sns.map(({sn,h})=>{
     const o=asmNewOccObj(c.id,asmOccName(c.id),asmFr0());
-    o.align={src:{path:[],cg:null},dst:{path:(relPath||[]).slice(),cg:null,sn},flip:sp.seat==='in',rz:0,off:[0,0,0]};
+    // goupille : +Z de la pièce vers l'entrée (l'axe d'un cylindre a un sens arbitraire) ;
+    // FHC : tête 0,2 mm sous la face d'entrée (sp.sink, retrait des fraisures du perçage)
+    const flip=sp.seat==='mid'&&asmV.dot(sn.fr.z,h.n)<0;
+    o.align={src:{path:[],cg:null},dst:{path:(relPath||[]).slice(),cg:null,sn},flip,rz:0,off:[0,0,-(sp.sink||0)]};
     owner.occ.push(o);return o;
   });
   asmResolve();
   return occs;
+}
+/* ── modifier une pièce posée (V0.21.1) ──
+   all : toutes les occurrences du composant — il est reconstruit sur place (même objet document,
+   autre contenu), renommé ; si la nouvelle pièce existe déjà, ses occurrences y passent plutôt.
+   Sinon : cette occurrence seulement — elle passe sur la nouvelle pièce (créée ou réemployée).
+   Positions, liaisons et apparence restent : l'origine d'une pièce (face d'appui, dessus, bout)
+   ne dépend ni de la longueur ni du pas. Une seule étape d'annulation. */
+function stdReplace(occId,sp,all){
+  // → {comp, n (occurrences changées), how:'rebuilt'|'moved'|'same'} ou null
+  if(!asm)return null;
+  const o=asmOcc(occId),owner=asmOccOwner(occId);if(!o||!owner)return null;
+  const c=asmComp(o.comp);if(!c||!c.doc||!c.doc.std||c.doc===doc)return null;
+  if(c.doc.std.key===sp.key)return {comp:c,n:0,how:'same'};
+  const list=all?asmCompOccs(c.id):[o];
+  // même assise (sous tête, affleurant, milieu) : le retrait suit la nouvelle pièce (FHC ↔ bouchon…)
+  const oS=stdStateOf(c.doc.std),was=oS?stdSpec(oS.cat,oS.st):null;
+  const sink=()=>{if(was&&was.seat===sp.seat)list.forEach(q=>{if(q.align&&q.align.dst&&q.align.dst.sn)q.align.off=[0,0,-(sp.sink||0)];});};
+  const ownerOf=q=>asmOccOwner(q.id);
+  const same=asm.comps.find(q=>q!==c&&q.doc&&q.doc.std&&q.doc.std.key===sp.key&&list.every(x=>asmCanPlace(q.id,ownerOf(x).id)));
+  const lab='« '+c.name+' » → « '+sp.name+' »'+(all?'':' (une occurrence)');
+  const move=t=>list.forEach(q=>{q.name=asmOccName(t.id);q.comp=t.id;});
+  if(same){asmPush(lab);move(same);sink();asmPurge();asmResolve();return {comp:same,n:list.length,how:'moved'};}
+  if(all||asmCompOccs(c.id).length===1){
+    // le composant entier change : reconstruit sur place
+    asmPush(lab,[c.id]);
+    const old=c.name,nd=stdDoc(sp);
+    Object.keys(c.doc).forEach(k=>{delete c.doc[k];});Object.assign(c.doc,nd);
+    c.name=sp.name;
+    const re=new RegExp('^'+old.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+    asmCompOccs(c.id).forEach(q=>{q.name=q.name.replace(re,sp.name);});
+    c._stale=true;
+    sink();
+    asmResolve();
+    return {comp:c,n:asmCompOccs(c.id).length,how:'rebuilt'};
+  }
+  asmPush(lab);
+  const t={id:uid('cp'),kind:'comp',name:sp.name,doc:stdDoc(sp),occ:[],link:null};
+  const L=asmLinkOwner(owner);if(L)t.of=L.id;
+  asm.comps.push(t);move(t);sink();asmResolve();
+  return {comp:t,n:1,how:'moved'};
 }
 /* ── commande « Sur des trous » : clic sur un trou en mode Placer ── */
 let stdHolePick=null; // {sp}
@@ -500,7 +579,7 @@ function stdSvg(sp){
     shapes.push(P.map(p=>[p[0],p[1]]),P.map(p=>[-p[0],p[1]]));
     (sp.ops||[]).forEach(o=>{
       if(o.k==='hex'){const e=o.s/Math.sqrt(3);hid.push([[-e,o.z],[-e,o.z-o.t],[e,o.z-o.t],[e,o.z]]);}
-      if(o.k==='slot'){hid.push([[-o.w/2,0],[-o.w/2,o.L]],[[o.w/2,0],[o.w/2,o.L]]);}
+      if(o.k==='slot'){const z0=o.z0||0;hid.push([[-o.w/2,z0],[-o.w/2,z0+o.L]],[[o.w/2,z0],[o.w/2,z0+o.L]]);}
     });
   }
   (sp.ops||[]).forEach(o=>{
@@ -544,21 +623,44 @@ function stdCss(){
   ].join('\n');
   document.head.appendChild(st);
 }
-function stdDlg(){
-  // Ouvre (ou ferme) la fenêtre des composants normalisés
-  let w=document.getElementById('stdDlg');if(w){w.remove();return;}
+function stdDlg(edit){
+  // Ouvre (ou ferme) la fenêtre des composants normalisés. edit = {occ} : « Modifier… » une pièce
+  // posée — la fenêtre reprend ses réglages et applique à toutes ses occurrences ou à celle-ci.
+  let w=document.getElementById('stdDlg');if(w){w.remove();if(!edit)return;}
   stdCss();
   try{const v=JSON.parse(localStorage.getItem('minifusion_std')||'null');if(v&&typeof v.cat==='string'&&v.st&&typeof v.st==='object')stdUi=v;}catch(e){}
+  if(edit){
+    const o=asmOcc(edit.occ),c=o&&asmComp(o.comp),S=c&&c.doc&&stdStateOf(c.doc.std);
+    if(!S){try{faceEl.textContent='Ce composant n’est pas une pièce normalisée (ou ses réglages sont illisibles).';}catch(e){}return;}
+    stdUi.cat=S.cat;stdUi.st=stdUi.st||{};stdUi.st[S.cat]=S.st;
+  }
   w=document.createElement('div');w.id='stdDlg';
   w.innerHTML='<div class="stdHead"><b>🔩 Composants normalisés</b><button title="Fermer (Échap)">✕</button></div>'+
     '<div class="stdTabs"></div><div class="stdBody"><div class="stdForm"></div><div class="stdPrev"></div></div>'+
-    '<div class="stdFoot"><span></span><button title="Cliquez un trou dans la vue : tous les trous identiques (simple, lamé, fraisé) reçoivent la pièce, en liaison rigide">🎯 Sur des trous…</button><button class="primary">➕ Insérer</button><button>Fermer</button></div>';
+    (edit?'<div class="stdFoot"><span></span><button class="primary">✔ Toutes les occurrences</button><button>Celle-ci seulement</button><button>Fermer</button></div>'
+      :'<div class="stdFoot"><span></span><button title="Cliquez un trou dans la vue : tous les trous identiques (simple, lamé, fraisé) reçoivent la pièce, en liaison rigide">🎯 Sur des trous…</button><button class="primary">➕ Insérer</button><button>Fermer</button></div>');
   const tabs=w.querySelector('.stdTabs'),form=w.querySelector('.stdForm'),prev=w.querySelector('.stdPrev'),msg=w.querySelector('.stdFoot span');
   const close=()=>w.remove();
   w.querySelector('.stdHead button').onclick=close;
   const [bHole,bIns,bClose]=w.querySelectorAll('.stdFoot button');bClose.onclick=close;
   const save=()=>{try{localStorage.setItem('minifusion_std',JSON.stringify(stdUi));}catch(e){}};
+  const apply=(sp,all)=>{
+    const r=sp&&stdReplace(edit.occ,sp,all);
+    if(!r){msg.textContent='Modification impossible.';return;}
+    if(r.how==='same'){msg.textContent='Déjà cette pièce.';return;}
+    try{asmBuildSnapshots();}catch(e){}
+    asmNotify();
+    msg.textContent='✓ '+r.n+' occurrence(s) → '+sp.name;
+    try{faceEl.textContent='Pièce normalisée modifiée : '+r.n+' occurrence(s) → « '+sp.name+' » (liaisons gardées). Ctrl+Z pour annuler.';}catch(e){}
+    draw();
+  };
   const draw=()=>{
+    if(edit){
+      const o=asmOcc(edit.occ),c=o&&asmComp(o.comp);if(!o||!c){close();return;}
+      const n=asmCompOccs(c.id).length;
+      w.querySelector('.stdHead b').textContent='🔩 Modifier « '+o.name+' »';
+      bHole.textContent='✔ Toutes les occurrences ('+n+')';bIns.style.display=n>1?'':'none';
+    }
     const C=stdCat(stdUi.cat);
     stdUi.st[C.k]=stdNormState(C.k,stdUi.st[C.k]);const st=stdUi.st[C.k];
     tabs.innerHTML='';
@@ -572,10 +674,11 @@ function stdDlg(){
       s.onchange=()=>{st[f.k]=s.value;save();draw();};
       l.appendChild(s);form.appendChild(l);
     });
-    let sp=null;try{sp=C.gen(st);}catch(e){sp=null;}
+    let sp=null;try{sp=stdSpec(C.k,st);}catch(e){sp=null;}
     const nm=document.createElement('div');nm.className='stdName';nm.textContent=sp?sp.name:'—';form.appendChild(nm);
     const inf=document.createElement('div');inf.className='stdInfo';inf.textContent=sp?(sp.norm+' · '+sp.info):'';form.appendChild(inf);
     prev.innerHTML=sp?stdSvg(sp):'';
+    if(edit){bHole.disabled=bIns.disabled=!sp;bHole.onclick=()=>apply(sp,true);bIns.onclick=()=>apply(sp,false);return;}
     bIns.disabled=!sp;bHole.disabled=!sp||!sp.seat;
     bHole.onclick=()=>{if(sp){msg.textContent='Cliquez un trou dans la vue…';stdHoleStart(sp);}};
     bIns.onclick=()=>{

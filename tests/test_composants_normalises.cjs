@@ -139,9 +139,10 @@ const {loadApp}=require('./appvm.cjs');
     const pos=occs.map(o=>o.fr.o.map(v=>+v.toFixed(3)).join(',')).sort();
     A(JSON.stringify(pos)===JSON.stringify(['-40,-20,13.6','-40,20,13.6','40,-20,13.6','40,20,13.6'])&&occs.every(o=>o.fr.z[2]>0.999),'20 : têtes au fond des lamés (z = 20 − 6,4), tige vers le bas ('+pos.join(' | ')+')');
     const fh=stdAddOnHoles(stdSpec('iso',{type:'fhc',size:'M6',len:'20'}),Rt.id,[],stdSameHoles(H,hCs));
-    A(fh.length===2&&fh.every(o=>Math.abs(o.fr.o[2]-20)<1e-6&&o.fr.z[2]>0.999),'21 : FHC affleurantes dans les fraisures (z = 20)');
+    A(fh.length===2&&fh.every(o=>Math.abs(o.fr.o[2]-19.8)<1e-6&&o.fr.z[2]>0.999),'21 : FHC dans les fraisures, 0,2 mm sous l entrée (z = 19,8 : '+fh.map(o=>o.fr.o[2]).join(', ')+')');
     const pn=stdAddOnHoles(stdSpec('pin',{type:'iso2338',size:'6',len:'20'}),Rt.id,[],stdSameHoles(H,hS));
-    A(pn.length===2&&pn.every(o=>Math.abs(o.fr.o[2]-20)<1e-6&&o.fr.z[2]<-0.999),'22 : goupilles à l entrée, vers le fond (retournées)');
+    A(pn.length===2&&pn.every(o=>Math.abs(o.fr.o[2]-10)<1e-6&&o.fr.z[2]>0.999),'22 : goupilles centrées au milieu de l axe du trou (z = 10 : '+pn.map(o=>o.fr.o.map(v=>+v.toFixed(3)).join(',')).join(' | ')+'), +Z vers l entrée');
+    {const P=stdPolyPts(stdSpec('pin',{type:'iso8734',size:'6',len:'20'}).prof).map(p=>p[1]);A(Math.abs(Math.min(...P)+10)<1e-9&&Math.abs(Math.max(...P)-10)<1e-9,'22b : goupille : origine en son milieu (z de −10 à 10)');}
     A(asmUndo()&&Rt.occ.length===6,'23 : Ctrl+Z : toutes les goupilles d un coup');
     // associativité : les lamés bougent, les vis suivent
     Object.values(sCb.points).forEach(p=>{p.x+=p.x>0?3:-3;});
@@ -149,6 +150,32 @@ const {loadApp}=require('./appvm.cjs');
     const ids=new Set(occs.map(o=>o.id)),now=Rt.occ.filter(o=>ids.has(o.id)); // Ctrl+Z a restauré des copies
     const pos2=now.map(o=>o.fr.o.map(v=>+v.toFixed(3)).join(',')).sort();
     A(JSON.stringify(pos2)===JSON.stringify(['-43,-20,13.6','-43,20,13.6','43,-20,13.6','43,20,13.6']),'24 : lamés écartés de 3 mm : les vis suivent ('+pos2.join(' | ')+')');
+    // ── 6. modifier une pièce posée (V0.21.1) ──
+    const S0=stdStateOf({key:'ISO 4762|M8×1|30',norm:'ISO 4762',desig:'M8×1×30'});
+    A(S0&&S0.cat==='iso'&&S0.st.type==='chc'&&S0.st.size==='M8'&&S0.st.pitch==='1'&&S0.st.len==='30','25 : pièce V0.21.0 (clé seule) : réglages retrouvés ('+JSON.stringify(S0)+')');
+    const S1=stdStateOf({key:'ISO 773|C|8×7×40'});
+    A(S1&&S1.cat==='key'&&S1.st.type==='C'&&S1.st.size==='8x7'&&S1.st.len==='40','26 : clavette retrouvée aussi');
+    const C0=asmComp(now[0].comp);
+    A(C0.doc.std.cat==='iso'&&C0.doc.std.st.len==='25','27 : réglages enregistrés dans doc.std (cat, st)');
+    const docObj=C0.doc,pos0=now.map(o=>o.fr.o.join(','));
+    let r=stdReplace(now[0].id,stdSpec('iso',{type:'chc',size:'M6',pitch:'1',len:'35'}),true);
+    A(r&&r.how==='rebuilt'&&r.n===4&&C0.doc===docObj&&C0.name==='CHC M6×35'&&C0.doc.std.st.len==='35'&&now.every(o=>o.comp===C0.id&&/^CHC M6×35:\d$/.test(o.name)),'28 : toutes les occurrences : composant reconstruit sur place, renommé ('+now.map(o=>o.name).join(', ')+')');
+    A(JSON.stringify(now.map(o=>o.fr.o.join(',')))===JSON.stringify(pos0)&&now.every(o=>o.align&&o.st==='ok'),'29 : positions et liaisons rigides gardées');
+    const rv=C0.doc.features.find(f=>f.type==='revolve'),pk=C0.doc.sketches.find(s=>s.id===rv.sketchId);
+    A(Math.min(...Object.values(pk.points).map(p=>p.y))===-35,'30 : profil refait : tige de 35');
+    r=stdReplace(now[1].id,stdSpec('iso',{type:'chc',size:'M6',pitch:'1',len:'20'}),false);
+    const C20=asmComp(now[1].comp);
+    A(r&&r.how==='moved'&&C20!==C0&&C20.name==='CHC M6×20'&&asmCompOccs(C0.id).length===3&&now[1].align&&now[1].st==='ok'&&now[1].fr.o.join(',')===pos0[1],'31 : celle-ci seulement : elle passe sur une CHC M6×20, liaison gardée, les 3 autres restent');
+    const nC=asm.comps.length;
+    r=stdReplace(now[2].id,stdSpec('iso',{type:'chc',size:'M6',pitch:'1',len:'20'}),false);
+    A(r&&now[2].comp===C20.id&&asm.comps.length===nC&&/:2$/.test(now[2].name),'32 : deuxième fois : la M6×20 existante est réemployée ('+now[2].name+')');
+    A(asmUndo()&&now.length&&Rt.occ.find(o=>o.id===now[2].id).comp===C0.id,'33 : Ctrl+Z : l occurrence revient');
+    r=stdReplace(now[0].id,stdSpec('iso',{type:'chc',size:'M6',pitch:'1',len:'20'}),true);
+    A(r&&r.how==='moved'&&!asm.comps.includes(C0)&&asmCompOccs(C20.id).length===4,'34 : toutes vers une pièce déjà là : tout passe dessus, l ancien composant disparaît');
+    A(asmUndo()&&asm.comps.includes(C0)&&asmCompOccs(C0.id).length===3,'35 : Ctrl+Z : rétabli');
+    A(asmUndo()&&asmCompOccs(C0.id).length===4&&C0.name==='CHC M6×35'&&(asmUndo(),asmNamesSync(),C0.doc.std.st.len==='25'&&C0.name==='CHC M6×25'),'36 : Ctrl+Z jusqu à la reconstruction : M6×25 revient');
+    const bk=JSON.parse(serialise()),t2=asmTreeOfFile(bk.doc||bk),c3=t2.comps.find(c=>c.doc&&c.doc.std&&c.doc.std.key===C0.doc.std.key);
+    A(c3&&c3.doc.std.cat==='iso'&&c3.doc.std.st.len==='25','37 : cat / st relus depuis le fichier');
     return out;
   `;
   const o=await vm.runInContext('(async()=>{'+R+'})()',ctx);

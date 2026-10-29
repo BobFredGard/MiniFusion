@@ -413,6 +413,7 @@ function asmRenderProps(p){
   {const g=globalThis.asmPlacementProps;if(typeof g==='function')g(p,o);} // placement (48)
   const l=[['✏️ Modéliser',()=>asmExit(o.id),'primary']];
   if(cc.occ&&cc.occ.length)l.push(['🧩 Placer ses composants',()=>asmShow(asm.path.concat(o.id),'asm')]);
+  if(cc.doc&&cc.doc.std)l.push(['🔩 Modifier…',()=>stdDlg({occ:o.id})]); // pièce normalisée (48)
   l.push(['➕ Occurrence',asmCmdNewOcc],[o.fixed?'📌 Libérer':'📌 Fixer',()=>asmToggleFixed(o.id)],['🗑 Supprimer',()=>asmAskDelete(o.id),'danger']);
   Btns(l);
   {const lm=asmLinkMenu(cc);if(lm.length)Btns(lm.map(x=>[x.html,x.fn]));}

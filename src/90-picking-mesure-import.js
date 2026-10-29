@@ -1614,7 +1614,8 @@ function docFromSerial(o){
   // Document de pièce à partir de son objet sérialisé (ouverture, pièces d'un assemblage)
   const d={name:o.name||'Sans titre',tint:o.tint||0,entNames:o.entNames||null,sketches:o.sketches||[],features:o.features||[],cgeo:Array.isArray(o.cgeo)?o.cgeo.filter(cgValid):[],bodyVis:o.bodyVis||{},bodies:Array.isArray(o.bodies)?o.bodies.filter(e=>e&&typeof e.id==='string').map(e=>({id:e.id,name:String(e.name||e.id),c:Array.isArray(e.c)&&e.c.length===3?e.c.slice():null,color:isFinite(+e.color)?+e.color:undefined,mat:(typeof matDef==='function'&&matDef(e.mat))?e.mat:undefined,op:(e.op>0&&e.op<1)?+e.op:undefined,gl:(e.gl>0&&e.gl<1)?+e.gl:undefined,open:e.open!==false})):[],
     bodySeq:o.bodySeq>0?Math.floor(o.bodySeq):1,activeBody:(typeof o.activeBody==='string')?o.activeBody:null,fold:(o.fold&&typeof o.fold==='object')?{sk:!!o.fold.sk,origin:!!o.fold.origin}:{},fao:o.fao||null,mep:o.mep||null,rendu:(typeof renduNorm==='function'?renduNorm(o.rendu):null),params:Array.isArray(o.params)?o.params.filter(p=>p&&typeof p.name==='string'):[],configs:(typeof cfgNorm==='function'?cfgNorm(o.configs):null),
-    std:(o.std&&typeof o.std==='object'&&typeof o.std.key==='string')?{key:o.std.key,norm:String(o.std.norm||''),desig:String(o.std.desig||'')}:undefined};
+    std:(o.std&&typeof o.std==='object'&&typeof o.std.key==='string')?Object.assign({key:o.std.key,norm:String(o.std.norm||''),desig:String(o.std.desig||'')},
+      typeof o.std.cat==='string'&&o.std.st&&typeof o.std.st==='object'?{cat:o.std.cat,st:Object.fromEntries(Object.entries(o.std.st).filter(e=>typeof e[1]==='string'))}:{}):undefined};
   let mx=0;
   (d.bodies||[]).forEach(e=>{const m=/^b(\d+)$/.exec(e.id||'');if(m)mx=Math.max(mx,+m[1]);});
   if(!(d.bodySeq>mx))d.bodySeq=mx+1;
