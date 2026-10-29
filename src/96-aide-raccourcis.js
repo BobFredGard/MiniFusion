@@ -9,6 +9,8 @@ const AIDE_SECTIONS=[
     ['X','Construction ↔ profil'],['Clic droit','Menu : contraintes, congé, axe de rotation…']]],
   ['Esquisse — tracé et cotes',[
     ['H','Centre de perçage'],['L C R B','Ligne · cercle · rectangle · oblong'],['P I','Projection · intersection (faces / corps ∩ plan)'],['T D','Ajuster · cote'],['F O','Congé · décalage'],['Ligne','Le 2e clic enchaîne la ligne suivante'],
+    ['S','Spline : clics = points de passage · double-clic / Entrée = fin · 1er point = fermée'],['Maj+S','Spline par points de contrôle (pôles, polygone en pointillé)'],['Clic droit sur un point de spline','Poignée de tangence (direction + tension)'],
+    ['Spline + courbe, clic droit','Tangence · courbure continue (G2) · peigne de courbure'],
     ['Ctrl/Cmd + rectangle','Rectangle par le centre'],['Ctrl/Cmd + clic','Multi-sélection'],
     ['Chiffres pendant une ligne','Longueur saisie (Tab = angle)'],['Double-clic sur une cote','Modifier la valeur'],
     ['nom = valeur','Nommer une cote (ex. Longueur = 80)'],['Longueur/2','Expression ƒx (cotes nommées, paramètres)'],

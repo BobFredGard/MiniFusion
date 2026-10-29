@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**416 versions**, de `2026-09-28b` à `V0.18.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**417 versions**, de `2026-09-28b` à `V0.19.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5448,3 +5448,13 @@ Signalé : « Impossible de modifier les rendus des pièces d'un assemblage dans
 - **Correctif** : `rdLookAsmHit` (`src/98-rendu-apparence.js`) teste les corps d'occurrence avec le raycast d'origine de three (`asmCtx`, ou `asmOcc` en mode Assembler) ; le plus proche, devant la pièce active, ouvre sa fenêtre d'apparence (enregistrée dans `o.rendu`).
 - **Vue en ambiance** (`src/98-rendu-vue.js`) : une occurrence (ou un corps) transparente en CAO garde le métal et la rugosité de son matériau de rendu (le laiton paraissait blanc) ; sans matériau, réglages de transparence comme avant.
 - **Tests** : vérifié dans le navigateur sur « Test Assemblage » (Base:1 et Goupille:1, en CAO et en mode Assembler ; laiton enregistré sur l'occurrence et redessiné). `npm run ci` 75/75.
+
+## V0.19.0 - Esquisse : splines (points de passage, points de contrôle), tangences, courbure G2, peigne
+Demandé : « Esquisse : fonction Spline 2D », « avec possibilité de rendre la spline tangente aux cercles et aux droites ou à une autre spline », puis le lot 2 (points de contrôle, G2, peigne).
+- **Modèle** (`src/50-esquisse-6-spline.js`) : entité `{t:'spline',pts:[…],mode?:'ctrl',closed?}` dont les points sont des points d'esquisse ordinaires (glisser, coïncidence, fixe, cotes). Points de passage : B-spline cubique bornée qui PASSE par chaque point (paramètre = corde cumulée ; nœud simple = C2, double au point à poignée = C1 ; bout libre = dérivée seconde nulle ; fermée = C′ et C″ égales aux bouts). Points de contrôle : les points sont les pôles (nœuds uniformes ; fermée = périodique). Le solveur ne voit que des points : DDL, audit, Ctrl+Z inchangés.
+- **Poignée de tangence** (clic droit sur un point de passage) : ligne de construction `handle` dont la direction est la tangente et la longueur la tension ; cotable. Posée sans changer la courbe ; suit son point au glisser.
+- **Tangence** `stangent` (F3 / menu, spline + ligne, cercle, arc ou spline) : la poignée — ou le pôle voisin d'une spline à pôles — s'aligne sur la tangente de l'autre courbe au point commun ; posée d'office quand un bout part dans le prolongement d'une ligne / d'un arc / d'une spline (< 20°). **Courbure continue** `scurv` (G2) : courbures égales au raccord, tangence posée d'abord ; retirée avec elle. **Peigne de courbure** (clic droit sur la spline), affichage seul.
+- **Outils** : Spline (S) et Spline par points de contrôle (Maj+S), après l'arc ; double-clic / Entrée / clic droit = fin, clic sur le 1er point = fermée.
+- **Profils** : `skLoopTrace` (`src/10-scene-3d.js`) prend les splines (fermée coupée en deux arêtes ; nœuds virtuels `__s…` pour une fermée à pôles) ; `occWireFromChain` (`src/20`) bâtit une `Geom_BSplineCurve` EXACTE avec les pôles et nœuds du dessin. Extrusion, révolution, balayage (profil), contours FAO et affichage 3D suivent ; trajectoires existantes inchangées (pas de CACHE_VER).
+- **Limites** : ajuster / prolonger / décaler ne prennent pas encore les splines ; une ligne qui s'arrête au milieu d'une spline n'est pas reliée au contour.
+- **Tests** : `tests/test_esquisse_spline.cjs` (36 contrôles, noyau OCCT réel : passage exact, poignée sans effet sur la courbe, tangences ligne / arc / spline, G2 arc = 1/R et ligne = 0, contours fermés, volume extrudé = aire de la courbe × hauteur à 3e-6 près). Vérifié dans le navigateur. `npm run ci` 76/76.

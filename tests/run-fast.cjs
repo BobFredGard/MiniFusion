@@ -57,6 +57,7 @@ const SUITES = [
   'test_esquisse_cotes_souples',
   'test_esquisse_inference_glisser',
   'test_esquisse_arc_fixe_ddl',
+  'test_esquisse_spline',
   'test_construction_modele',
   'test_assemblage_modele',
   'test_arbre_v2',

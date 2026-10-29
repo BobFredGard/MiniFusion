@@ -169,7 +169,8 @@ function extArrowGeom(f){
   let x0=1e18,y0=1e18,x1=-1e18,y1=-1e18;const add=(x,y)=>{x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);};
   (sk.entities||[]).forEach(e=>{if(!e||e.construction)return;const P=sk.points;
     if(e.t==='line'){[e.p1,e.p2].forEach(id=>{const q=P[id];if(q)add(q.x,q.y);});}
-    else if((e.t==='circle'||e.t==='arc')&&P[e.pc]){const q=P[e.pc],r=+e.r||0;add(q.x-r,q.y-r);add(q.x+r,q.y+r);}});
+    else if((e.t==='circle'||e.t==='arc')&&P[e.pc]){const q=P[e.pc],r=+e.r||0;add(q.x-r,q.y-r);add(q.x+r,q.y+r);}
+    else if(e.t==='spline'){(skSplinePoly(sk,e,4)||[]).forEach(q=>add(q[0],q[1]));}});
   if(!(x1>=x0))return null;
   const B=sketchBasis(sk),cx=(x0+x1)/2,cy=(y0+y1)/2;
   const C=B.o.clone().addScaledVector(B.u,cx).addScaledVector(B.v,cy),n=B.n.clone().normalize();

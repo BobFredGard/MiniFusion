@@ -686,7 +686,7 @@ function openSketch(id){
   if(ci>=0){ locked=tlEditLock(doc.features.filter(f=>f.visible!==false)[ci]); }
   if(locked){try{rebuild();}catch(e){}}
   skBuildRefs();
-  skTool='select';skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skPendPt=null;skCoinA=null;skDraft=null;skDown=null;skDrag=null;skDragPushed=false;skDimDrag=null;skSel=null;skSelX=[];skMsg='';skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
+  skTool='select';skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skSpl=null;skPendPt=null;skCoinA=null;skDraft=null;skDown=null;skDrag=null;skDragPushed=false;skDimDrag=null;skSel=null;skSelX=[];skMsg='';skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
   skUndoStack=[];skRedoStack=[];
   document.querySelectorAll('#skToolbar .tool').forEach(x=>x.classList.toggle('on',x.dataset.tool==='select'));
   $('skTitle').textContent='Esquisse — '+skEdit.name+' (plan '+sketchFaceLabel(skEdit)+')';
@@ -731,7 +731,7 @@ function closeSketch(save){
   skEdit=null;try{docUndoUI();}catch(e){} // V0.7.6 : les flèches du haut reviennent au document
   // Toute la session d'esquisse = UNE étape d'annulation du document (filet, 45)
   try{undoActLabel='esquisse « '+(skNm||'')+' »';undoActT=Date.now();docCheckpoint();}catch(e){}
-  skSel=null;skSelX=[];skChain=null;skArcC=null;skArcPa=null;skDraft=null;skDown=null;skDrag=null;skDimDrag=null;skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
+  skSel=null;skSelX=[];skChain=null;skArcC=null;skArcPa=null;skSpl=null;skDraft=null;skDown=null;skDrag=null;skDimDrag=null;skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
   // Arborescence re-dépliée à la sortie, sauf si l'état antérieur était
   // rabattu (choix manuel de l'utilisateur conservé).
   try{if(skTreeFoldSave===false)treeFoldSet(false);skTreeFoldSave=null;}catch(e){}
@@ -804,4 +804,5 @@ let skBox=null,skDragEnt=null,skDyn=null; // sélection rect · déplacement d'e
 let skOffsetD=5; // distance « auto » du menu ⇄ Décaler (contexte) : déclarée ici car le menu la lit AVANT tout usage de l'outil — sinon ReferenceError et menu jamais affiché
 let skDimPlace=null; // placement de cote : {id} → la cote suit le curseur jusqu'au clic
 let skPendPt=null,skCoinA=null,skCornA=null,skArcC=null,skArcA1=null,skArcPa=null;
+let skSpl=null; // spline en cours de tracé : {pts:[{x,y,snap}]} (50-esquisse-6)
 let skProjectHover=null; // ⧉ : arête projetable sous le curseur (preview orange)

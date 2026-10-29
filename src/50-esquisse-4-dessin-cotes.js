@@ -116,6 +116,33 @@ function drawSketch2D(){
     const g=skEl('text',{x:tx+6,y:ty-6,fill:'#30d158','font-size':12,'font-weight':'bold'});g.textContent='T';};
   (sk.entities||[]).forEach(e=>{
     const P=sk.points;
+    if(e.t==='line'&&e.handle){ // poignée de spline : trait fin (symétrique à un point intérieur), T si tangente
+      const A=P[e.p1],B=P[e.p2],S=entById(sk,e.handle);if(!A||!B)return;
+      const[a,b]=w2s(A.x,A.y),[c,d]=w2s(B.x,B.y),st=selIds.has(e.id)?'#ff9f0a':'#bf5af2';
+      const k=S?skSplineIndex(S,e.p1):-1,inner=S&&(S.closed||(k>0&&k<S.pts.length-1));
+      skEl('line',{x1:inner?2*a-c:a,y1:inner?2*b-d:b,x2:c,y2:d,stroke:st,'stroke-width':selIds.has(e.id)?2.4:1.3,'stroke-dasharray':'4 3',opacity:.9});
+      if((sk.constraints||[]).some(q=>q.type==='stangent'&&q.p===e.p1&&(q.s===e.handle||q.ent===e.handle)))drawT(A);
+      return;
+    }
+    if(e.t==='spline'){const pl=skSplinePoly(sk,e);if(!pl)return;
+      const toD=a=>'M '+a.map(q=>{const s=w2s(q[0],q[1]);return s[0].toFixed(1)+' '+s[1].toFixed(1);}).join(' L ');
+      if(e.mode==='ctrl'){ // polygone de contrôle : pôles reliés en pointillé
+        const Q=e.pts.map(p=>P[p]).filter(Boolean).map(q=>[q.x,q.y]);if(e.closed&&Q.length)Q.push(Q[0]);
+        if(Q.length>1)skEl('path',{d:toD(Q),fill:'none',stroke:selIds.has(e.id)?'#ff9f0a':'#bf5af2','stroke-width':1.1,'stroke-dasharray':'3 3',opacity:.75});
+        (sk.constraints||[]).forEach(k=>{if(k.type==='stangent'&&(k.s===e.id||k.ent===e.id)&&P[k.p])drawT(P[k.p]);});
+      }
+      if(skComb.has(e.id)){ // peigne de courbure
+        const cb=skSplineComb(sk,e,120)||[];
+        cb.forEach((q,i)=>{if(i%2)return;const[a,b]=w2s(q.x,q.y),[c,d2]=w2s(q.qx,q.qy);skEl('line',{x1:a,y1:b,x2:c,y2:d2,stroke:'#ff9f0a','stroke-width':0.8,opacity:.7});});
+        if(cb.length>1)skEl('path',{d:toD(cb.map(q=>[q.qx,q.qy])),fill:'none',stroke:'#ff9f0a','stroke-width':1.2,opacity:.85});
+      }
+      (sk.constraints||[]).forEach(k=>{if(k.type==='scurv'&&k.s===e.id&&P[k.p]){const[tx,ty]=w2s(P[k.p].x,P[k.p].y);
+        const g=skEl('text',{x:tx+6,y:ty+16,fill:'#30d158','font-size':11,'font-weight':'bold'});g.textContent='G2';}});
+      const d=toD(pl);
+      skEl('path',{d,fill:'none',stroke:col(e),'stroke-width':wdt(e),'stroke-linejoin':'round',...(e.construction?{'stroke-dasharray':'7 5',opacity:.45}:{})});
+      if((sk.constraints||[]).some(k=>k.type==='fix'&&k.ent===e.id)){const m=pl[Math.floor(pl.length/2)],[mx,my]=w2s(m[0],m[1]);badges(['fix'],mx+8,my-10);}
+      return;
+    }
     if(e.t==='line'){const A=P[e.p1],B=P[e.p2];if(!A||!B)return;
       const[a,b]=w2s(A.x,A.y),[c,d]=w2s(B.x,B.y);
       if(e.axis){ // axe de rotation : trait mixte (axe), prolongé, toujours visible
@@ -168,6 +195,7 @@ function drawSketch2D(){
       }else skEl('path',{d:`M ${a-6} ${b} H ${a+6} M ${a} ${b-6} V ${b+6}`,stroke:col(e),'stroke-width':wdt(e)});}
   });
   // extrémités : carrés (plein = fixe) + pastille coïncident + flèche DOF · origine = pastille ronde permanente
+  const hEnds=new Set();(sk.entities||[]).forEach(e=>{if(e.t==='line'&&e.handle)hEnds.add(e.p2);});
   Object.keys(skPts(sk)).forEach(pid=>{
     const p=sk.points[pid];if(!p)return;const[a,b]=w2s(p.x,p.y);
     const isSel=(skSel&&skSel.kind==='point'&&skSel.pid===pid)||skSelX.some(s=>s.kind==='point'&&s.pid===pid);
@@ -180,8 +208,12 @@ function drawSketch2D(){
       if(isMark)skEl('circle',{cx:a,cy:b,r:13,fill:'none',stroke:'#ff9f0a','stroke-width':2,opacity:0.9});
       return;
     }
+    if(hEnds.has(pid)){ // bout de poignée de spline : petit losange
+      skEl('path',{d:`M ${a} ${b-5} L ${a+5} ${b} L ${a} ${b+5} L ${a-5} ${b} Z`,fill:fix.has(pid)?'#e8e8ea':(isSel?'#ff9f0a':'#101012'),stroke:isSel?'#ff9f0a':'#bf5af2','stroke-width':1.5});
+      return;
+    }
     skEl('rect',{x:a-4,y:b-4,width:8,height:8,fill:fix.has(pid)?'#e8e8ea':(isSel||isMark?'#ff9f0a':'#101012'),stroke:isSel?'#ff9f0a':(DA.ptFull(pid)?'#e8e8ea':'#64d2ff'),'stroke-width':1.5});
-    let used=0;(sk.entities||[]).forEach(e=>{if(e.p1===pid||e.p2===pid||e.p===pid||e.pc===pid||e.pa===pid||e.pb===pid)used++;});
+    let used=0;(sk.entities||[]).forEach(e=>{if(e.handle)return;if(e.p1===pid||e.p2===pid||e.p===pid||e.pc===pid||e.pa===pid||e.pb===pid||(e.pts&&e.pts.indexOf(pid)>=0))used++;});
     if(used>=2)skEl('circle',{cx:a,cy:b,r:6,fill:'none',stroke:'#30d158','stroke-width':1.2,opacity:0.9}); // coïncident
     if(showDof&&!fix.has(pid))skEl('path',{d:`M ${a+7} ${b-7} h 7 m -3.5 -3.5 l 3.5 3.5 l -3.5 3.5`,fill:'none',stroke:'#30d158','stroke-width':1.4,opacity:0.85}); // DOF
   });
@@ -229,6 +261,14 @@ function drawSketch2D(){
   // brouillon + cote live (longueur/angle comme Fusion)
   if(skDraft){
     const d=skDraft;
+    if(d.t==='spline'&&d.ctrl){ // points de contrôle : polygone vivant (clics + curseur)
+      const Q=(d.pts||[]).map(q=>[q.x,q.y]);if(d.cur)Q.push([d.cur.x,d.cur.y]);else if(d.closeHint&&Q.length)Q.push(Q[0]);
+      if(Q.length>1)skEl('path',{d:'M '+Q.map(q=>{const s=w2s(q[0],q[1]);return s[0].toFixed(1)+' '+s[1].toFixed(1);}).join(' L '),fill:'none',stroke:'#bf5af2','stroke-width':1.1,'stroke-dasharray':'3 3'});
+    }
+    if(d.t==='spline'){ // tracé de spline : courbe vivante + points déjà cliqués
+      if(d.poly&&d.poly.length>1)skEl('path',{d:'M '+d.poly.map(q=>{const s=w2s(q[0],q[1]);return s[0].toFixed(1)+' '+s[1].toFixed(1);}).join(' L '),fill:'none',stroke:'#fff','stroke-width':2,'stroke-dasharray':'5 3'});
+      (d.pts||[]).forEach((q,i)=>{const[a,b]=w2s(q.x,q.y);skEl('rect',{x:a-4,y:b-4,width:8,height:8,fill:i===0&&d.closeHint?'#ffd60a':'#101012',stroke:'#ffd60a','stroke-width':1.5});});
+    }
     if(d.t==='line'){const[a,b]=w2s(d.x1,d.y1),[c2,d2]=w2s(d.x2,d.y2);
       skEl('line',{x1:a,y1:b,x2:c2,y2:d2,stroke:'#fff','stroke-width':2,'stroke-dasharray':'5 3'});
       const L=Math.hypot(d.x2-d.x1,d.y2-d.y1);

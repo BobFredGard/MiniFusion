@@ -1034,6 +1034,8 @@ function chainPolygon(chain,pts){
         const n=Math.max(8,Math.ceil(dd/TAU*48));
         for(let k=1;k<=n;k++){const t=a1+dd*k/n;ring.push([C.x+a.r*Math.cos(t),C.y+a.r*Math.sin(t)]);}
         if(i===0){const a0=pts[st.from];if(a0)ring.unshift([a0.x,a0.y]);}
+      }else if(ed.kind==='spline'){
+        const pl=skEdgePoly(ed,st.from);for(let k=(i===0?0:1);k<pl.length;k++)ring.push([pl[k][0],pl[k][1]]);
       }
     }
     return ring;
@@ -1298,6 +1300,11 @@ function skLoopTrace(sk){ // traçage de faces déterministe (demi-arêtes, mur 
     pts[pb]={x:C.x+a.r*Math.cos(an.a2),y:C.y+a.r*Math.sin(an.a2)};
     a._t=[pa,pb];
   });
+  // 2026-10-29 : splines (50-esquisse-6) — arêtes calculées ici : une spline fermée par points de contrôle
+  // a des nœuds virtuels (« __s… », la courbe ne passe par aucun pôle), ajoutés aux points comme ceux des arcs
+  const splEd=[];
+  (sk.entities||[]).forEach(e=>{if(e.t!=='spline'||e.construction)return;
+    skSplineEdges(sk,e).forEach(se=>{if(se.virt)Object.keys(se.virt).forEach(k=>{pts[k]={x:se.virt[k][0],y:se.virt[k][1]};});splEd.push([e,se]);});});
   // canonisation : fusionne les noeuds quasi-coincidents (1 µm)
   const canon=new Map(),reps=[];
   Object.keys(pts).forEach(pid=>{
@@ -1310,6 +1317,9 @@ function skLoopTrace(sk){ // traçage de faces déterministe (demi-arêtes, mur 
   const pushEdge=(a,b,e,kind)=>{const ed={a:Cid(a),b:Cid(b),e,kind};edges.push(ed);return edges.length-1;};
   lines.forEach(l=>{const ei=pushEdge(l.p1,l.p2,l,'line');l._ei=ei;});
   arcs.forEach(a=>{if(!a._t)return;const ei=pushEdge(a._t[0],a._t[1],a,'arc');a._ei=ei;});
+  // splines : arête exacte (pôles + nœuds) + polyligne ; fermée = 2 moitiés
+  const splHE=[];
+  splEd.forEach(([e,se])=>{const ei=pushEdge(se.a,se.b,e,'spline');Object.assign(edges[ei],{bs:se.bs,poly:se.poly});splHE.push([ei,se.o,se.i]);});
   const hes=[];
   const addHE=(ei,oAng,iAng)=>{
     const ed=edges[ei],a=hes.length;
@@ -1322,6 +1332,7 @@ function skLoopTrace(sk){ // traçage de faces déterministe (demi-arêtes, mur 
     if(a._ei===undefined)return;const an=arcAngles(sk,a);if(!an)return;
     addHE(a._ei,an.a1+Math.PI/2,an.a2+Math.PI/2);
   });
+  splHE.forEach(([ei,o,i])=>addHE(ei,o,i)); // tangentes de départ / d'arrivée de la courbe
   arcs.forEach(a=>{delete a._t;});lines.forEach(l=>{delete l._ei;});
   const out=new Map();
   hes.forEach((h,i)=>{if(!out.has(h.from))out.set(h.from,[]);out.get(h.from).push(i);});
@@ -1363,6 +1374,7 @@ function skLoopTrace(sk){ // traçage de faces déterministe (demi-arêtes, mur 
     steps.forEach(ci=>{
       const h=hes[ci],ed=edges[h.edge];
       if(ed.kind==='line'){const q=pts[h.to];ring.push([q.x,q.y]);}
+      else if(ed.kind==='spline'){const pl=skEdgePoly(ed,h.from);for(let k=1;k<pl.length;k++)ring.push([pl[k][0],pl[k][1]]);}
       else{const a=ed.e,Cc=pts[a.pc],an=arcAngles(sk,a);if(!an||!Cc)return;
         const fwd=(ed.a===h.from);
         let sA=fwd?an.a1:an.a2,sB=fwd?an.a2:an.a1;
@@ -1377,6 +1389,7 @@ function skLoopTrace(sk){ // traçage de faces déterministe (demi-arêtes, mur 
   function faceSample(steps){
     const h=hes[steps[0]],ed=edges[h.edge];
     if(ed.kind==='line'){const A=pts[h.from],B=pts[h.to];return[(A.x+B.x)/2,(A.y+B.y)/2];}
+    if(ed.kind==='spline'){const q=ed.poly[Math.floor(ed.poly.length/2)];return[q[0],q[1]];}
     const a=ed.e,Cc=pts[a.pc],an=arcAngles(sk,a);
     const mid=(an.a1+an.a2)/2;return[Cc.x+a.r*Math.cos(mid),Cc.y+a.r*Math.sin(mid)];
   }
@@ -1479,6 +1492,7 @@ function sketchShape(sk){
     chain.forEach(st=>{
       const ed=st.ed;
       if(ed.kind==='line'){const B=PV[(ed.a===st.from)?ed.b:ed.a];path.lineTo(B.x,B.y);}
+      else if(ed.kind==='spline'){const pl=skEdgePoly(ed,st.from);for(let k=1;k<pl.length;k++)path.lineTo(pl[k][0],pl[k][1]);}
       else{const a=ed.e,C=P[a.pc],an=arcAngles(sk,a),fwd=(ed.a===st.from);if(!an||!C)return;
         if(fwd)path.absarc(C.x,C.y,a.r,an.a1,an.a2,false);
         else path.absarc(C.x,C.y,a.r,an.a1,an.a2,true);}

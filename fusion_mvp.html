@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.18.1';
+const APP_VER='V0.19.0';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -1641,6 +1641,8 @@ function chainPolygon(chain,pts){
         const n=Math.max(8,Math.ceil(dd/TAU*48));
         for(let k=1;k<=n;k++){const t=a1+dd*k/n;ring.push([C.x+a.r*Math.cos(t),C.y+a.r*Math.sin(t)]);}
         if(i===0){const a0=pts[st.from];if(a0)ring.unshift([a0.x,a0.y]);}
+      }else if(ed.kind==='spline'){
+        const pl=skEdgePoly(ed,st.from);for(let k=(i===0?0:1);k<pl.length;k++)ring.push([pl[k][0],pl[k][1]]);
       }
     }
     return ring;
@@ -1905,6 +1907,11 @@ function skLoopTrace(sk){ // traçage de faces déterministe (demi-arêtes, mur 
     pts[pb]={x:C.x+a.r*Math.cos(an.a2),y:C.y+a.r*Math.sin(an.a2)};
     a._t=[pa,pb];
   });
+  // 2026-10-29 : splines (50-esquisse-6) — arêtes calculées ici : une spline fermée par points de contrôle
+  // a des nœuds virtuels (« __s… », la courbe ne passe par aucun pôle), ajoutés aux points comme ceux des arcs
+  const splEd=[];
+  (sk.entities||[]).forEach(e=>{if(e.t!=='spline'||e.construction)return;
+    skSplineEdges(sk,e).forEach(se=>{if(se.virt)Object.keys(se.virt).forEach(k=>{pts[k]={x:se.virt[k][0],y:se.virt[k][1]};});splEd.push([e,se]);});});
   // canonisation : fusionne les noeuds quasi-coincidents (1 µm)
   const canon=new Map(),reps=[];
   Object.keys(pts).forEach(pid=>{
@@ -1917,6 +1924,9 @@ function skLoopTrace(sk){ // traçage de faces déterministe (demi-arêtes, mur 
   const pushEdge=(a,b,e,kind)=>{const ed={a:Cid(a),b:Cid(b),e,kind};edges.push(ed);return edges.length-1;};
   lines.forEach(l=>{const ei=pushEdge(l.p1,l.p2,l,'line');l._ei=ei;});
   arcs.forEach(a=>{if(!a._t)return;const ei=pushEdge(a._t[0],a._t[1],a,'arc');a._ei=ei;});
+  // splines : arête exacte (pôles + nœuds) + polyligne ; fermée = 2 moitiés
+  const splHE=[];
+  splEd.forEach(([e,se])=>{const ei=pushEdge(se.a,se.b,e,'spline');Object.assign(edges[ei],{bs:se.bs,poly:se.poly});splHE.push([ei,se.o,se.i]);});
   const hes=[];
   const addHE=(ei,oAng,iAng)=>{
     const ed=edges[ei],a=hes.length;
@@ -1929,6 +1939,7 @@ function skLoopTrace(sk){ // traçage de faces déterministe (demi-arêtes, mur 
     if(a._ei===undefined)return;const an=arcAngles(sk,a);if(!an)return;
     addHE(a._ei,an.a1+Math.PI/2,an.a2+Math.PI/2);
   });
+  splHE.forEach(([ei,o,i])=>addHE(ei,o,i)); // tangentes de départ / d'arrivée de la courbe
   arcs.forEach(a=>{delete a._t;});lines.forEach(l=>{delete l._ei;});
   const out=new Map();
   hes.forEach((h,i)=>{if(!out.has(h.from))out.set(h.from,[]);out.get(h.from).push(i);});
@@ -1970,6 +1981,7 @@ function skLoopTrace(sk){ // traçage de faces déterministe (demi-arêtes, mur 
     steps.forEach(ci=>{
       const h=hes[ci],ed=edges[h.edge];
       if(ed.kind==='line'){const q=pts[h.to];ring.push([q.x,q.y]);}
+      else if(ed.kind==='spline'){const pl=skEdgePoly(ed,h.from);for(let k=1;k<pl.length;k++)ring.push([pl[k][0],pl[k][1]]);}
       else{const a=ed.e,Cc=pts[a.pc],an=arcAngles(sk,a);if(!an||!Cc)return;
         const fwd=(ed.a===h.from);
         let sA=fwd?an.a1:an.a2,sB=fwd?an.a2:an.a1;
@@ -1984,6 +1996,7 @@ function skLoopTrace(sk){ // traçage de faces déterministe (demi-arêtes, mur 
   function faceSample(steps){
     const h=hes[steps[0]],ed=edges[h.edge];
     if(ed.kind==='line'){const A=pts[h.from],B=pts[h.to];return[(A.x+B.x)/2,(A.y+B.y)/2];}
+    if(ed.kind==='spline'){const q=ed.poly[Math.floor(ed.poly.length/2)];return[q[0],q[1]];}
     const a=ed.e,Cc=pts[a.pc],an=arcAngles(sk,a);
     const mid=(an.a1+an.a2)/2;return[Cc.x+a.r*Math.cos(mid),Cc.y+a.r*Math.sin(mid)];
   }
@@ -2086,6 +2099,7 @@ function sketchShape(sk){
     chain.forEach(st=>{
       const ed=st.ed;
       if(ed.kind==='line'){const B=PV[(ed.a===st.from)?ed.b:ed.a];path.lineTo(B.x,B.y);}
+      else if(ed.kind==='spline'){const pl=skEdgePoly(ed,st.from);for(let k=1;k<pl.length;k++)path.lineTo(pl[k][0],pl[k][1]);}
       else{const a=ed.e,C=P[a.pc],an=arcAngles(sk,a),fwd=(ed.a===st.from);if(!an||!C)return;
         if(fwd)path.absarc(C.x,C.y,a.r,an.a1,an.a2,false);
         else path.absarc(C.x,C.y,a.r,an.a1,an.a2,true);}
@@ -2528,6 +2542,20 @@ function occWireFromChain(sk,tr,chain,bin,z0){
       const me=occBinPush(bin,new occt.BRepBuilderAPI_MakeEdge_3(PW(A.x,A.y),PW(B.x,B.y)));
       me.Build();if(!me.IsDone())throw new Error('arête ligne impossible');
       mkW.Add_1(me.Edge());
+    }else if(ed.kind==='spline'){
+      // 2026-10-29 : spline d'esquisse = B-spline EXACTE (mêmes pôles et nœuds que le dessin 2D, 50-esquisse-6),
+      // pôles posés dans le plan par la même application affine que les lignes : bouts identiques aux voisines
+      const bs=ed.bs;if(!bs||!bs.P||bs.P.length<(bs.p||SK_SPL_DEG)+1)throw new Error('spline invalide');
+      const poles=occBinPush(bin,new occt.TColgp_Array1OfPnt_2(1,bs.P.length));
+      bs.P.forEach((q,i)=>poles.SetValue(i+1,PW(q[0],q[1])));
+      const km=skBsKnotMults(bs.U);
+      const kn=occBinPush(bin,new occt.TColStd_Array1OfReal_2(1,km.k.length)),mu=occBinPush(bin,new occt.TColStd_Array1OfInteger_2(1,km.k.length));
+      km.k.forEach((v,i)=>{kn.SetValue(i+1,v);mu.SetValue(i+1,km.m[i]);});
+      const h=occBinPush(bin,new occt.Handle_Geom_Curve_2(new occt.Geom_BSplineCurve_1(poles,kn,mu,bs.p||SK_SPL_DEG,false))); // la poignée possède la courbe
+      const me=occBinPush(bin,new occt.BRepBuilderAPI_MakeEdge_24(h));
+      me.Build();if(!me.IsDone())throw new Error('arête spline impossible');
+      let e=me.Edge();if(ed.a!==st.from)e=occt.TopoDS.Edge_1(e.Reversed());
+      mkW.Add_1(e);
     }else{
       const a=ed.e,Cc=tr.pts[a.pc];
       const an=arcAngles(sk,a);if(!an||!Cc)throw new Error('arc invalide');
@@ -6935,10 +6963,11 @@ function drawSketchHelpers(){
     const mk=(pts,e)=>{const m=(e&&e.axis)?matAx:((e&&e.construction)?matC:mat);const L=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),m);if(m!==mat)L.computeLineDistances();return L;};
     const to3=(x,y)=>new THREE.Vector3().copy(o).addScaledVector(u,x).addScaledVector(v,y);
     (sk.entities||[]).forEach(e=>{
-      if(e.t==='line'){const A=P[e.p1],B=P[e.p2];if(!A||!B)return;
+      if(e.t==='line'){const A=P[e.p1],B=P[e.p2];if(!A||!B||e.handle)return; // poignée de spline : esquisse ouverte seulement
         grp.add(mk([to3(A.x,A.y),to3(B.x,B.y)],e));}
       if(e.t==='circle'){const C=P[e.pc];if(!C||!(e.r>0))return;const pts=[];for(let i=0;i<=48;i++){const a=i/48*Math.PI*2;pts.push(to3(C.x+Math.cos(a)*e.r,C.y+Math.sin(a)*e.r));}grp.add(mk(pts,e));}
       if(e.t==='arc'){const C=P[e.pc];if(!C||!(e.r>0))return;const an=arcAngles(sk,e);if(!an)return;const pts=[];const d=an.a2-an.a1;const n2=Math.max(2,Math.ceil(d/(Math.PI*2)*48));for(let i=0;i<=n2;i++){const a=an.a1+d*i/n2;pts.push(to3(C.x+Math.cos(a)*e.r,C.y+Math.sin(a)*e.r));}grp.add(mk(pts,e));}
+      if(e.t==='spline'){const pl=skSplinePoly(sk,e);if(pl)grp.add(mk(pl.map(q=>to3(q[0],q[1])),e));}
     });
     scene.add(grp);
   });
@@ -13409,6 +13438,7 @@ const SK_ICONS={
   slot:'<path d="M8.5 7h7a5 5 0 0 1 0 10h-7a5 5 0 0 1 0-10z"/><circle cx="8.5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="12" r="1.3" fill="currentColor" stroke="none"/>',
   circle:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/>',
   arc:'<path d="M20 18A12 12 0 0 0 8 6"/><path d="M8 18h12M8 18V6" stroke-dasharray="1.6 2.4" stroke-width="1.3"/><circle cx="8" cy="18" r="1.6" fill="currentColor" stroke="none"/>',
+  spline:'<path d="M3.5 18C6 6 10 5 12 12s6 6 8.5-6"/><circle cx="3.5" cy="18" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="20.5" cy="6" r="1.7" fill="currentColor" stroke="none"/>',
   cpoint:'<circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/><path d="M12 3.5v4.5M12 16v4.5M3.5 12H8M16 12h4.5"/>',
   // centre de perçage : CIBLE + FORET dont la pointe vise le centre (orange dans la barre)
   hpoint:'<circle cx="12" cy="17" r="5.2" stroke-width="1.6"/><path d="M12 10.5v13M5.5 17h13" stroke-width="1"/><path d="M10.2 1.5h3.6v3.2h-3.6z" fill="currentColor" stroke="none"/><path d="M10 4.7h4v7l-2 4.3-2-4.3z" stroke-width="1.4"/><path d="M10 6.6l4 1.4M10 8.9l4 1.4" stroke-width="1.1"/>',
@@ -13430,6 +13460,8 @@ const SK_ICONS={
   symmetric:'<path d="M12 2.5v19" stroke-dasharray="2 2.2" stroke-width="1.4"/><path d="M9 6.5L3.5 12 9 17.5M15 6.5l5.5 5.5-5.5 5.5"/>',
   fix:'<rect x="5.5" y="10.5" width="13" height="10" rx="1.6"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/><circle cx="12" cy="15.5" r="1.3" fill="currentColor" stroke="none"/>',
   tangent:'<circle cx="12" cy="14.5" r="6"/><path d="M2.5 8.5h19" stroke-width="2.2"/><circle cx="12" cy="8.5" r="1.6" fill="currentColor" stroke="none"/>',
+  curvature:'<path d="M3 19c4-1 7-4 9-8s5-7 9-8" stroke-width="2.2"/><path d="M6 18.2v-4M9.5 16v-5.5M13 12.5V6.5M16.5 8.5V4.4" stroke-width="1.2"/>',
+  cspline:'<path d="M4 18C7 8 11 6 13 12s5 6 7-4" stroke-width="2"/><path d="M4 18L6.5 6l9.5 13L20 8" stroke-dasharray="1.6 2" stroke-width="1.2"/><rect x="5" y="4.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="14.5" y="17.5" width="3" height="3" fill="currentColor" stroke="none"/>',
   tangent2:'<circle cx="7.5" cy="12" r="5"/><circle cx="17.5" cy="12" r="5"/><circle cx="12.5" cy="12" r="1.4" fill="currentColor" stroke="none"/>',
   coaxial:'<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/>',
   midpoint:'<path d="M3 17h18"/><path d="M12 16.5l-3.6-6h7.2z" fill="currentColor" stroke="none"/><path d="M3 14.5v5M21 14.5v5" stroke-width="1.4"/>',
@@ -13471,6 +13503,8 @@ const SK_CON={
   midpoint:     {nom:'Milieu',          ic:'midpoint',     dof:2},
   online:       {nom:'Point sur ligne', ic:'online',       dof:1},
   oncircle:     {nom:'Point sur courbe',ic:'oncircle',     dof:1},
+  stangent:     {nom:'Tangence',        ic:'tangent',      dof:1},   // 2026-10-29 : poignée de spline alignée sur l'autre courbe
+  scurv:        {nom:'Courbure (G2)',   ic:'curvature',    dof:1},   // 2026-10-29 : courbures égales au raccord d'une spline
   offset:       {nom:'Décalage égal',   ic:'offset',       dof:1}   // V0.11.25 : l'écart (c→d) suit l'écart (a→b) porté par la cote unique du décalage
 };
 const SK_DIM_IC={length:'length',distance:'distance',diameter:'diameter',radius:'radius',angle:'angle',gap:'gap',distline:'distline'};
@@ -14181,7 +14215,7 @@ function openSketch(id){
   if(ci>=0){ locked=tlEditLock(doc.features.filter(f=>f.visible!==false)[ci]); }
   if(locked){try{rebuild();}catch(e){}}
   skBuildRefs();
-  skTool='select';skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skPendPt=null;skCoinA=null;skDraft=null;skDown=null;skDrag=null;skDragPushed=false;skDimDrag=null;skSel=null;skSelX=[];skMsg='';skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
+  skTool='select';skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skSpl=null;skPendPt=null;skCoinA=null;skDraft=null;skDown=null;skDrag=null;skDragPushed=false;skDimDrag=null;skSel=null;skSelX=[];skMsg='';skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
   skUndoStack=[];skRedoStack=[];
   document.querySelectorAll('#skToolbar .tool').forEach(x=>x.classList.toggle('on',x.dataset.tool==='select'));
   $('skTitle').textContent='Esquisse — '+skEdit.name+' (plan '+sketchFaceLabel(skEdit)+')';
@@ -14226,7 +14260,7 @@ function closeSketch(save){
   skEdit=null;try{docUndoUI();}catch(e){} // V0.7.6 : les flèches du haut reviennent au document
   // Toute la session d'esquisse = UNE étape d'annulation du document (filet, 45)
   try{undoActLabel='esquisse « '+(skNm||'')+' »';undoActT=Date.now();docCheckpoint();}catch(e){}
-  skSel=null;skSelX=[];skChain=null;skArcC=null;skArcPa=null;skDraft=null;skDown=null;skDrag=null;skDimDrag=null;skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
+  skSel=null;skSelX=[];skChain=null;skArcC=null;skArcPa=null;skSpl=null;skDraft=null;skDown=null;skDrag=null;skDimDrag=null;skDimLine=null;skDimRef=null;skBox=null;skDragEnt=null;skDyn=null;skInfer=null;skPan=null;skSnapMk=null;skDimPlace=null;skProjectHover=null;
   // Arborescence re-dépliée à la sortie, sauf si l'état antérieur était
   // rabattu (choix manuel de l'utilisateur conservé).
   try{if(skTreeFoldSave===false)treeFoldSet(false);skTreeFoldSave=null;}catch(e){}
@@ -14299,6 +14333,7 @@ let skBox=null,skDragEnt=null,skDyn=null; // sélection rect · déplacement d'e
 let skOffsetD=5; // distance « auto » du menu ⇄ Décaler (contexte) : déclarée ici car le menu la lit AVANT tout usage de l'outil — sinon ReferenceError et menu jamais affiché
 let skDimPlace=null; // placement de cote : {id} → la cote suit le curseur jusqu'au clic
 let skPendPt=null,skCoinA=null,skCornA=null,skArcC=null,skArcA1=null,skArcPa=null;
+let skSpl=null; // spline en cours de tracé : {pts:[{x,y,snap}]} (50-esquisse-6)
 let skProjectHover=null; // ⧉ : arête projetable sous le curseur (preview orange)
 
 /* ═══════════════ 50-esquisse-2-modele-solveur.js — esquisse 2 modele solveur ═══════════════ */
@@ -14386,9 +14421,10 @@ function migrateSketch(sk){
 function cleanupSk(sk){
   ensureOrigin(sk); // origine permanente : rétablie si absente
   skGapToAngle(sk);
+  skSplineCleanup(sk); // splines réduites / poignées orphelines (50-esquisse-6)
   const keep=new Set([skChain,skArcC,skCoinA,skPendPt,skDrag,skDown&&skDown.pid,SK_ORIGIN].filter(Boolean));
   const ref=new Set();
-  (sk.entities||[]).forEach(e=>{['p1','p2','p','pc','pa','pb'].forEach(k=>{if(e[k])ref.add(e[k]);});});
+  (sk.entities||[]).forEach(e=>{['p1','p2','p','pc','pa','pb'].forEach(k=>{if(e[k])ref.add(e[k]);});if(e.pts)e.pts.forEach(p=>ref.add(p));});
   (sk.dims||[]).forEach(d=>{if(d.a)ref.add(d.a);if(d.b)ref.add(d.b);if(d.p)ref.add(d.p);});
   (sk.constraints||[]).forEach(c=>{if(c.p)ref.add(c.p);if(c.a)ref.add(c.a);if(c.b)ref.add(c.b);if(c.mid)ref.add(c.mid);});
   keep.forEach(k=>ref.add(k));
@@ -14403,7 +14439,12 @@ function cleanupSk(sk){
   sk.constraints=(sk.constraints||[]).filter(c=>{
     if(c.line&&!eids.has(c.line))return false;
     if(c.ent&&!eids.has(c.ent))return false;
+    if(c.s&&!eids.has(c.s))return false; // tangence de spline : la spline
     if(c.p&&!sk.points[c.p])return false;
+    if(c.type==='stangent'||c.type==='scurv'){const S=entById(sk,c.s),O=entById(sk,c.ent); // tangence / courbure de spline
+      if(!S||S.t!=='spline'||S.pts.indexOf(c.p)<0||!skSplineTanPid(sk,S,c.p))return false;
+      if(O&&O.t==='spline'&&!skSplineTanPid(sk,O,c.p))return false;
+      if(c.type==='scurv'&&!(sk.constraints||[]).some(k=>k.type==='stangent'&&k.s===c.s&&k.p===c.p&&k.ent===c.ent))return false;} // G2 sans G1 : retirée
     if(c.type==='coincident')return(!c.a||!!sk.points[c.a])&&(!c.b||!!sk.points[c.b]); // a/b = POINTS
     if(c.type==='symmetric')return(!!eids.has(c.a)&&!!eids.has(c.b)&&!!eids.has(c.mid));
     if(c.type==='offset'&&!(eids.has(c.c)&&eids.has(c.d)))return false; // V0.11.25 : 2ᵉ paire (c/d) = entités
@@ -14510,6 +14551,7 @@ function skConKey(c){
     case 'midpoint': return c.p!=null?('midpoint@'+c.p+'|'+c.line):('midpoint@@'+pair(c.a,c.b));
     case 'online': return 'online@'+c.p+'|'+c.line;
     case 'oncircle': return 'oncircle@'+c.p+'|'+c.ent;
+    case 'stangent': case 'scurv': return c.type+'@'+c.s+'|'+c.p+'|'+c.ent;
     default: return c.type+'@'+(c.id||'');
   }
 }
@@ -14535,7 +14577,8 @@ function skFixed(sk){
   const f=new Set();
   (sk.constraints||[]).forEach(c=>{
     if(c.type==='fix'&&c.p)f.add(c.p);
-    if(c.type==='fix'&&c.ent){const e=entById(sk,c.ent);if(e&&(e.t==='circle'||e.t==='arc'||e.t==='cpoint')&&(e.pc||e.p))f.add(e.pc||e.p);}
+    if(c.type==='fix'&&c.ent){const e=entById(sk,c.ent);if(e&&(e.t==='circle'||e.t==='arc'||e.t==='cpoint')&&(e.pc||e.p))f.add(e.pc||e.p);
+      if(e&&e.t==='spline')skSplineAllPids(sk,e).forEach(p=>f.add(p));} // spline fixe : points de passage et poignées
   });
   if((sk.points||{})[SK_ORIGIN])f.add(SK_ORIGIN);
   return f;
@@ -14691,6 +14734,7 @@ function solveSketchRelax(sk,iters,anchor){
         if(!fix.has(c.p)){Pt.x+=dx/d*err*0.5;Pt.y+=dy/d*err*0.5;}
         else if(!fix.has(E.pc)){CC.x-=dx/d*err*0.5;CC.y-=dy/d*err*0.5;} // point figé → le centre suit
       }
+      if(c.type==='stangent')skStanRelax(sk,c,fix); // tangence de spline : la poignée tourne vers la tangente
       if(c.type==='online'){ // point sur ligne : perpendiculaire à moitié ; point figé → la ligne suit
         const Pt=P[c.p],l=entById(sk,c.line);
         if(!Pt||!l||l.t!=='line')return;
@@ -15102,6 +15146,8 @@ function sklsCollect(sk,out,B){
         }
       }
     }
+    if(c.type==='stangent'){const r=skStanResid(sk,c);if(r!=null)push(r);} // poignée de spline alignée sur la tangente (mm)
+    if(c.type==='scurv'){const r=skCurvResid(sk,c);if(r!=null)push(r);}   // courbures égales au raccord (G2, ramené en mm)
     if(c.type==='fix'){ /* exclus des variables → pas de résidu */ }
   });
   // ── structure des arcs : les extrémités restent sur le cercle (sauf point fixé) ──
@@ -15470,6 +15516,7 @@ function entLocked(sk,e,fix){
   if(e.t==='line')return fix.has(e.p1)&&fix.has(e.p2);
   if(e.t==='cpoint')return fix.has(e.p);
   if(e.t==='circle'||e.t==='arc')return fix.has(e.pc)&&rLocked(sk,e);
+  if(e.t==='spline')return skSplineAllPids(sk,e).every(p=>fix.has(p));
   return false;
 }
 
@@ -15625,7 +15672,8 @@ function mergePoints(sk,fromPid,toPid){
     if(P&&O&&(P.x!==O.x||P.y!==O.y)){const dx=O.x-P.x,dy=O.y-P.y;
       Object.keys(sk.points).forEach(k=>{if(k!==fromPid&&k!==SK_ORIGIN){const q=sk.points[k];q.x+=dx;q.y+=dy;}});}
   }
-  sk.entities.forEach(e=>{['p1','p2','p','pc','pa','pb'].forEach(k=>{if(e[k]===fromPid)e[k]=toPid;});});
+  sk.entities.forEach(e=>{['p1','p2','p','pc','pa','pb'].forEach(k=>{if(e[k]===fromPid)e[k]=toPid;});
+    if(e.pts)e.pts=e.pts.map(p=>p===fromPid?toPid:p).filter((p,i,a)=>i===0||p!==a[i-1]);}); // spline : doublon voisin retiré
   (sk.dims||[]).forEach(d=>{if(d.a===fromPid)d.a=toPid;if(d.b===fromPid)d.b=toPid;if(d.p===fromPid)d.p=toPid;});
   (sk.constraints||[]).forEach(c=>{if(c.p===fromPid)c.p=toPid;if(c.a===fromPid&&c.type==='coincident')c.a=toPid;if(c.b===fromPid&&c.type==='coincident')c.b=toPid;});
   // ancrages de congé/chanfrein : une ancre type p visant le point fusionné doit suivre
@@ -16132,6 +16180,8 @@ function skBoxHits(box){
     let sel=false;
     if(e.t==='line'){const A=P[e.p1],B=P[e.p2];if(A&&B)sel=segIn(A,B);}
     else if(e.t==='cpoint'){const Q=P[e.p];if(Q)sel=inPt(Q.x,Q.y);}
+    else if(e.t==='spline'){const pl=skSplinePoly(sk,e,8)||[];
+      sel=pl.length>1&&(fwd?pl.every(q=>inPt(q[0],q[1])):pl.some((q,i)=>i>0&&segIn({x:pl[i-1][0],y:pl[i-1][1]},{x:q[0],y:q[1]})));}
     else{const C=P[e.pc];if(C){
       if(fwd)sel=inPt(C.x,C.y);
       else sel=(C.x+e.r>=x0&&C.x-e.r<=x1&&C.y+e.r>=y0&&C.y-e.r<=y1);
@@ -16155,6 +16205,7 @@ function nearestEntity(sk,x,y,maxD,skipConstr){
     if(e.t==='circle'){const C=P[e.pc];if(C)d=Math.abs(Math.hypot(x-C.x,y-C.y)-e.r);}
     if(e.t==='arc'){const C=P[e.pc];if(C){const an=arcAngles(sk,e);const dR=Math.abs(Math.hypot(x-C.x,y-C.y)-e.r);d=(an&&dR<maxD*1.5&&angInArc(Math.atan2(y-C.y,x-C.x),an.a1,an.a2))?dR:1e9;}}
     if(e.t==='cpoint'){const Q=P[e.p];if(Q)d=Math.hypot(x-Q.x,y-Q.y);}
+    if(e.t==='spline'){const pl=skSplinePoly(sk,e);if(pl)d=skPolyDist(x,y,pl);}
     if(d<bd){bd=d;best=e;}
   });
   return best;
@@ -16296,6 +16347,33 @@ function drawSketch2D(){
     const g=skEl('text',{x:tx+6,y:ty-6,fill:'#30d158','font-size':12,'font-weight':'bold'});g.textContent='T';};
   (sk.entities||[]).forEach(e=>{
     const P=sk.points;
+    if(e.t==='line'&&e.handle){ // poignée de spline : trait fin (symétrique à un point intérieur), T si tangente
+      const A=P[e.p1],B=P[e.p2],S=entById(sk,e.handle);if(!A||!B)return;
+      const[a,b]=w2s(A.x,A.y),[c,d]=w2s(B.x,B.y),st=selIds.has(e.id)?'#ff9f0a':'#bf5af2';
+      const k=S?skSplineIndex(S,e.p1):-1,inner=S&&(S.closed||(k>0&&k<S.pts.length-1));
+      skEl('line',{x1:inner?2*a-c:a,y1:inner?2*b-d:b,x2:c,y2:d,stroke:st,'stroke-width':selIds.has(e.id)?2.4:1.3,'stroke-dasharray':'4 3',opacity:.9});
+      if((sk.constraints||[]).some(q=>q.type==='stangent'&&q.p===e.p1&&(q.s===e.handle||q.ent===e.handle)))drawT(A);
+      return;
+    }
+    if(e.t==='spline'){const pl=skSplinePoly(sk,e);if(!pl)return;
+      const toD=a=>'M '+a.map(q=>{const s=w2s(q[0],q[1]);return s[0].toFixed(1)+' '+s[1].toFixed(1);}).join(' L ');
+      if(e.mode==='ctrl'){ // polygone de contrôle : pôles reliés en pointillé
+        const Q=e.pts.map(p=>P[p]).filter(Boolean).map(q=>[q.x,q.y]);if(e.closed&&Q.length)Q.push(Q[0]);
+        if(Q.length>1)skEl('path',{d:toD(Q),fill:'none',stroke:selIds.has(e.id)?'#ff9f0a':'#bf5af2','stroke-width':1.1,'stroke-dasharray':'3 3',opacity:.75});
+        (sk.constraints||[]).forEach(k=>{if(k.type==='stangent'&&(k.s===e.id||k.ent===e.id)&&P[k.p])drawT(P[k.p]);});
+      }
+      if(skComb.has(e.id)){ // peigne de courbure
+        const cb=skSplineComb(sk,e,120)||[];
+        cb.forEach((q,i)=>{if(i%2)return;const[a,b]=w2s(q.x,q.y),[c,d2]=w2s(q.qx,q.qy);skEl('line',{x1:a,y1:b,x2:c,y2:d2,stroke:'#ff9f0a','stroke-width':0.8,opacity:.7});});
+        if(cb.length>1)skEl('path',{d:toD(cb.map(q=>[q.qx,q.qy])),fill:'none',stroke:'#ff9f0a','stroke-width':1.2,opacity:.85});
+      }
+      (sk.constraints||[]).forEach(k=>{if(k.type==='scurv'&&k.s===e.id&&P[k.p]){const[tx,ty]=w2s(P[k.p].x,P[k.p].y);
+        const g=skEl('text',{x:tx+6,y:ty+16,fill:'#30d158','font-size':11,'font-weight':'bold'});g.textContent='G2';}});
+      const d=toD(pl);
+      skEl('path',{d,fill:'none',stroke:col(e),'stroke-width':wdt(e),'stroke-linejoin':'round',...(e.construction?{'stroke-dasharray':'7 5',opacity:.45}:{})});
+      if((sk.constraints||[]).some(k=>k.type==='fix'&&k.ent===e.id)){const m=pl[Math.floor(pl.length/2)],[mx,my]=w2s(m[0],m[1]);badges(['fix'],mx+8,my-10);}
+      return;
+    }
     if(e.t==='line'){const A=P[e.p1],B=P[e.p2];if(!A||!B)return;
       const[a,b]=w2s(A.x,A.y),[c,d]=w2s(B.x,B.y);
       if(e.axis){ // axe de rotation : trait mixte (axe), prolongé, toujours visible
@@ -16348,6 +16426,7 @@ function drawSketch2D(){
       }else skEl('path',{d:`M ${a-6} ${b} H ${a+6} M ${a} ${b-6} V ${b+6}`,stroke:col(e),'stroke-width':wdt(e)});}
   });
   // extrémités : carrés (plein = fixe) + pastille coïncident + flèche DOF · origine = pastille ronde permanente
+  const hEnds=new Set();(sk.entities||[]).forEach(e=>{if(e.t==='line'&&e.handle)hEnds.add(e.p2);});
   Object.keys(skPts(sk)).forEach(pid=>{
     const p=sk.points[pid];if(!p)return;const[a,b]=w2s(p.x,p.y);
     const isSel=(skSel&&skSel.kind==='point'&&skSel.pid===pid)||skSelX.some(s=>s.kind==='point'&&s.pid===pid);
@@ -16360,8 +16439,12 @@ function drawSketch2D(){
       if(isMark)skEl('circle',{cx:a,cy:b,r:13,fill:'none',stroke:'#ff9f0a','stroke-width':2,opacity:0.9});
       return;
     }
+    if(hEnds.has(pid)){ // bout de poignée de spline : petit losange
+      skEl('path',{d:`M ${a} ${b-5} L ${a+5} ${b} L ${a} ${b+5} L ${a-5} ${b} Z`,fill:fix.has(pid)?'#e8e8ea':(isSel?'#ff9f0a':'#101012'),stroke:isSel?'#ff9f0a':'#bf5af2','stroke-width':1.5});
+      return;
+    }
     skEl('rect',{x:a-4,y:b-4,width:8,height:8,fill:fix.has(pid)?'#e8e8ea':(isSel||isMark?'#ff9f0a':'#101012'),stroke:isSel?'#ff9f0a':(DA.ptFull(pid)?'#e8e8ea':'#64d2ff'),'stroke-width':1.5});
-    let used=0;(sk.entities||[]).forEach(e=>{if(e.p1===pid||e.p2===pid||e.p===pid||e.pc===pid||e.pa===pid||e.pb===pid)used++;});
+    let used=0;(sk.entities||[]).forEach(e=>{if(e.handle)return;if(e.p1===pid||e.p2===pid||e.p===pid||e.pc===pid||e.pa===pid||e.pb===pid||(e.pts&&e.pts.indexOf(pid)>=0))used++;});
     if(used>=2)skEl('circle',{cx:a,cy:b,r:6,fill:'none',stroke:'#30d158','stroke-width':1.2,opacity:0.9}); // coïncident
     if(showDof&&!fix.has(pid))skEl('path',{d:`M ${a+7} ${b-7} h 7 m -3.5 -3.5 l 3.5 3.5 l -3.5 3.5`,fill:'none',stroke:'#30d158','stroke-width':1.4,opacity:0.85}); // DOF
   });
@@ -16409,6 +16492,14 @@ function drawSketch2D(){
   // brouillon + cote live (longueur/angle comme Fusion)
   if(skDraft){
     const d=skDraft;
+    if(d.t==='spline'&&d.ctrl){ // points de contrôle : polygone vivant (clics + curseur)
+      const Q=(d.pts||[]).map(q=>[q.x,q.y]);if(d.cur)Q.push([d.cur.x,d.cur.y]);else if(d.closeHint&&Q.length)Q.push(Q[0]);
+      if(Q.length>1)skEl('path',{d:'M '+Q.map(q=>{const s=w2s(q[0],q[1]);return s[0].toFixed(1)+' '+s[1].toFixed(1);}).join(' L '),fill:'none',stroke:'#bf5af2','stroke-width':1.1,'stroke-dasharray':'3 3'});
+    }
+    if(d.t==='spline'){ // tracé de spline : courbe vivante + points déjà cliqués
+      if(d.poly&&d.poly.length>1)skEl('path',{d:'M '+d.poly.map(q=>{const s=w2s(q[0],q[1]);return s[0].toFixed(1)+' '+s[1].toFixed(1);}).join(' L '),fill:'none',stroke:'#fff','stroke-width':2,'stroke-dasharray':'5 3'});
+      (d.pts||[]).forEach((q,i)=>{const[a,b]=w2s(q.x,q.y);skEl('rect',{x:a-4,y:b-4,width:8,height:8,fill:i===0&&d.closeHint?'#ffd60a':'#101012',stroke:'#ffd60a','stroke-width':1.5});});
+    }
     if(d.t==='line'){const[a,b]=w2s(d.x1,d.y1),[c2,d2]=w2s(d.x2,d.y2);
       skEl('line',{x1:a,y1:b,x2:c2,y2:d2,stroke:'#fff','stroke-width':2,'stroke-dasharray':'5 3'});
       const L=Math.hypot(d.x2-d.x1,d.y2-d.y1);
@@ -17003,12 +17094,13 @@ function skDefaultStatus(){
 }
 function conDesc(sk,c){
   // Texte SANS glyphe : l'icône (registre SK_CON) est posée à côté par la liste.
-  const nm=id=>{const e=entById(sk,id);return e?({line:'ligne',circle:'cercle',arc:'arc',cpoint:'point'}[e.t]||'?')+'…'+String(id).slice(-3):'?';};
+  const nm=id=>{const e=entById(sk,id);return e?(e.handle?'poignée':({line:'ligne',circle:'cercle',arc:'arc',cpoint:'point',spline:'spline'}[e.t]||'?'))+'…'+String(id).slice(-3):'?';};
   const pt=id=>'pt…'+String(id).slice(-3);
   const R=SK_CON[c.type],N=R?R.nom:c.type;
   if(c.type==='h'||c.type==='v')return N+' '+nm(c.line);
   if(c.type==='fix')return N+' '+(c.p?pt(c.p):nm(c.ent));
   if(c.type==='tangent')return N+' '+nm(c.line)+' / '+nm(c.ent);
+  if(c.type==='stangent'||c.type==='scurv')return N+' '+nm(c.s)+' / '+nm(c.ent)+' en '+pt(c.p);
   if(c.type==='symmetric')return N+' '+nm(c.a)+' / '+nm(c.b)+' | axe '+nm(c.mid);
   if(c.type==='coincident')return N+' '+pt(c.a)+' / '+pt(c.b)+(c.a===SK_ORIGIN||c.b===SK_ORIGIN?' (origine)':'');
   if(c.type==='oncircle')return 'Point '+pt(c.p)+' sur '+nm(c.ent);
@@ -17053,6 +17145,9 @@ function renderSkPanel(){
       note(`${pn}Ligne${e.ref?' (référence 3D)':(e.construction?' (construction)':'')} · L=${lineLen(sk,e).toFixed(2)} mm`);mkRow('x1',A.x,v=>A.x=v);mkRow('y1',A.y,v=>A.y=v);mkRow('x2',B.x,v=>B.x=v);mkRow('y2',B.y,v=>B.y=v);}
     else if(e.t==='circle'){const C=sk.points[e.pc];note(`${pn}Cercle`+(e.construction?' (construction)':'')+' · Ø='+(e.r*2).toFixed(2)+' mm');mkRow('cx',C.x,v=>C.x=v);mkRow('cy',C.y,v=>C.y=v);mkRow('r',e.r,v=>e.r=Math.max(v,.1));}
     else if(e.t==='arc'){const C=sk.points[e.pc],an=arcAngles(sk,e);note(`${pn}Arc`+(e.construction?' (construction)':'')+' · R='+e.r.toFixed(2)+' mm');mkRow('cx',C.x,v=>C.x=v);mkRow('cy',C.y,v=>C.y=v);mkRow('r',e.r,v=>{e.r=Math.max(v,.1);});if(an){const d1=an.a1*180/Math.PI,d2=an.a2*180/Math.PI;mkRow('a1°',d1,v=>{const a=v*Math.PI/180,A=sk.points[e.pa];A.x=C.x+e.r*Math.cos(a);A.y=C.y+e.r*Math.sin(a);});mkRow('a2°',d2,v=>{const a=v*Math.PI/180,B=sk.points[e.pb];B.x=C.x+e.r*Math.cos(a);B.y=C.y+e.r*Math.sin(a);});}}
+    else if(e.t==='spline'){const nh=Object.keys(skSplineHandles(sk,e)).length;
+      note(e.mode==='ctrl'?`Spline par points de contrôle${e.closed?' fermée':''}${e.construction?' (construction)':''} · ${e.pts.length} pôles — clic droit : peigne de courbure`
+        :`Spline${e.closed?' fermée':''}${e.construction?' (construction)':''} · ${e.pts.length} points de passage`+(nh?` · ${nh} poignée(s)`:'')+' — clic droit sur un point : poignée de tangence');}
     else if(e.t==='cpoint'){const Q=sk.points[e.p];note(e.hole?'Centre de perçage (fonction 3D « Perçage »)':'Point de construction');mkRow('x',Q.x,v=>Q.x=v);mkRow('y',Q.y,v=>Q.y=v);}
     addBtn('🗑 Supprimer',deleteSkSel);
   }else if(skSel&&skSel.kind==='point'){
@@ -17123,8 +17218,8 @@ function skSelectedEnts(){
 }
 function toggleConstr(){
   if(!skEdit)return;
-  const ents=skSelectedEnts().filter(e=>e.t==='line'||e.t==='circle'||e.t==='arc');
-  if(!ents.length){skStatus('Sélectionnez une ligne, un cercle ou un arc (➤), puis basculez en construction (X).');return;}
+  const ents=skSelectedEnts().filter(e=>(e.t==='line'&&!e.handle)||e.t==='circle'||e.t==='arc'||e.t==='spline');
+  if(!ents.length){skStatus('Sélectionnez une ligne, un cercle, un arc ou une spline (➤), puis basculez en construction (X).');return;}
   skPushUndo();
   const toCon=!ents.some(e=>e.construction);
   ents.forEach(e=>{if(toCon)e.construction=true;else delete e.construction;});
@@ -17174,6 +17269,33 @@ function applyCon(type){
     if(!ok){skStatus('Égal : types incompatibles.');return;}
     skPushUndo();
     sk.constraints.push({id:skNewEid(sk),type:'equal',a:a.id,b:b.id});
+  }
+  if(type==='curvature'){ // courbure continue (G2) entre une spline et une autre courbe, au point commun
+    if(ents.length!==2||!ents.some(e=>e.t==='spline')){skStatus('Courbure (G2) : sélectionnez une spline + une ligne, un cercle, un arc ou une spline.');return;}
+    const S=ents[0].t==='spline'?ents[0]:ents[1],O=S===ents[0]?ents[1]:ents[0];
+    let S2=S,O2=O,pid=skSplineJoint(sk,S,O);
+    if(!pid&&O.t==='spline'){pid=skSplineJoint(sk,O,S);S2=O;O2=S;}
+    if(!pid){skStatus('Courbure (G2) : joignez d’abord la spline à l’autre courbe (point commun, F1).');return;}
+    skPushUndo();
+    const r=skSplineCurvTo(sk,S2,O2,pid);
+    if(typeof r==='string'){skUndoStack.pop();skUndoBtn();skStatus(r);return;}
+    skMsg='';const ok=skSolveOrRevert(sk,'Courbure G2');cleanupSk(sk);drawSketch2D();renderSkPanel();
+    if(ok)skStatus('Courbure continue (G2) — raccord sans saut de courbure ; peigne de courbure : clic droit sur la spline.');
+    return;
+  }
+  if(type==='tangent'&&ents.length===2&&ents.some(e=>e.t==='spline')){
+    // spline ↔ ligne / cercle / arc / spline, au point commun (ou au point de passage sélectionné)
+    const S=ents[0].t==='spline'?ents[0]:ents[1],O=S===ents[0]?ents[1]:ents[0];
+    const selP=(skSel&&skSel.kind==='point')?skSel.pid:(skSelX.find(s=>s.kind==='point')||{}).pid;
+    let S2=S,O2=O,pid=(selP&&skSplineIndex(S,selP)>=0)?selP:skSplineJoint(sk,S,O);
+    if(!pid&&O.t==='spline'){pid=skSplineJoint(sk,O,S);S2=O;O2=S;}
+    if(!pid){skStatus('Tangence spline : joignez d’abord la spline à l’autre courbe (point commun, F1).');return;}
+    skPushUndo();
+    const r=skSplineTangentTo(sk,S2,O2,pid);
+    if(typeof r==='string'){skUndoStack.pop();skUndoBtn();skStatus(r);return;}
+    skMsg='';const ok=skSolveOrRevert(sk,'Tangence');cleanupSk(sk);drawSketch2D();renderSkPanel();
+    if(ok)skStatus('Spline tangente ⦾ — la poignée suit la tangente ; sa longueur règle la tension.');
+    return;
   }
   if(type==='tangent'){
     if(ents.length!==2){skStatus('Tangence : sélectionnez 1 ligne + 1 cercle/arc (ou 2 cercles).');return;}
@@ -17231,7 +17353,7 @@ function applyCon(type){
   if(type==='fix'){
     const pts=[];if(skSel&&skSel.kind==='point')pts.push(skSel.pid);
     skSelX.forEach(s=>{if(s.kind==='point'&&!pts.includes(s.pid))pts.push(s.pid);});
-    const circ=ents.filter(e=>e.t==='circle'||e.t==='arc');
+    const circ=ents.filter(e=>e.t==='circle'||e.t==='arc'||e.t==='spline'); // spline : points de passage + poignées (skFixed)
     const fixAll=new Set([...pts,...lines.flatMap(l=>[l.p1,l.p2])].filter(p=>p!==SK_ORIGIN));
     if(!fixAll.size&&!circ.length){skStatus(pts.includes(SK_ORIGIN)&&!pts.some(p=>p!==SK_ORIGIN)?'Origine (0,0) : déjà fixe.':'Fixe : sélectionnez un point, une ligne ou un cercle.');return;}
     skPushUndo();
@@ -17279,6 +17401,7 @@ function deleteSkSel(){
   if(blockedOrigin)killPts.delete(SK_ORIGIN);
   skPushUndo();
   if(killEnts.size)sk.entities=sk.entities.filter(x=>!killEnts.has(x.id));
+  if(killPts.size)sk.entities.forEach(x=>{if(x.t==='spline')x.pts=x.pts.filter(p=>!killPts.has(p));}); // spline : le point de passage seul est retiré
   if(killPts.size)sk.entities=sk.entities.filter(x=>!(x.t==='line'&&(killPts.has(x.p1)||killPts.has(x.p2)))&&!((x.t==='circle'||x.t==='arc')&&killPts.has(x.pc))&&!(x.t==='arc'&&(killPts.has(x.pa)||killPts.has(x.pb)))&&!(x.t==='cpoint'&&killPts.has(x.p)));
   if(killCons.size)sk.constraints=sk.constraints.filter(c=>!killCons.has(c.id));
   if(killDims.size)sk.dims=sk.dims.filter(d=>!killDims.has(d.id));
@@ -17387,6 +17510,8 @@ function skAudit(sk){
       if(A&&B)push(c.id,'coïncident',Math.hypot(B.x-A.x,B.y-A.y));}
     if(c.type==='offset'){const v1=skOffsetVal(sk,c.a,c.b,c.sa),v2=skOffsetVal(sk,c.c,c.d,c.sb);
       if(v1!=null&&v2!=null)push(c.id,'décalage égal',Math.abs(v2-v1));}
+    if(c.type==='stangent'){const r=skStanResid(sk,c);if(r!=null)push(c.id,'tangence spline',Math.abs(r));}
+    if(c.type==='scurv'){const r=skCurvResid(sk,c);if(r!=null)push(c.id,'courbure G2',Math.abs(r));}
     if(c.type==='oncircle'){const Pt=P[c.p],E=entById(sk,c.ent);
       if(Pt&&E&&(E.t==='circle'||E.t==='arc')){const CC=P[E.pc];
         if(CC)push(c.id,'point sur '+({circle:'cercle',arc:'arc'}[E.t]),Math.abs(Math.hypot(Pt.x-CC.x,Pt.y-CC.y)-E.r));}}
@@ -17496,7 +17621,7 @@ function skDofInfo(sk){
     const radVar={};B.rad.forEach((eid,j)=>{radVar[eid]=2*B.pts.length+j;});
     const ptFull=pid=>{const v=ptVars[pid];if(!v)return true;return det.has(v[0])&&det.has(v[1]);};
     const entFull=e=>{
-      const pids=[e.p1,e.p2,e.p,e.pc,e.pa,e.pb].filter(Boolean);
+      const pids=e.t==='spline'?skSplineAllPids(sk,e):[e.p1,e.p2,e.p,e.pc,e.pa,e.pb].filter(Boolean);
       if(!pids.every(ptFull))return false;
       if((e.t==='circle'||e.t==='arc')&&radVar[e.id]!=null&&!det.has(radVar[e.id]))return false;
       return true;
@@ -17926,6 +18051,474 @@ function dimClick(x,y,shift){
   const p0=pid||(ent&&ent.t==='cpoint'?ent.p:null);
   if(p0){skPendPt=p0;skStatus('Cote distance : cliquez un second point.');drawSketch2D();return;}
   skStatus('Cote : ligne=longueur, cercle=Ø, arc=R, 2 points=distance · Ctrl/Cmd+clic 2 lignes = angle/entraxe · étiquettes déplaçables au glisser.');
+}
+
+/* ═══════════════ 50-esquisse-6-spline.js — esquisse 6 spline ═══════════════ */
+// Esquisse 2D (6) : spline par points de passage — B-spline cubique exacte, poignées de tangence, tangences.
+/* 2026-10-29 — Lot 1 de la spline 2D.
+   Entité   {id,t:'spline',pts:[pid…],closed?:true} : la courbe PASSE par chaque point (points d'esquisse
+            ordinaires : glisser, coïncidence, fixe, cotes entre points fonctionnent tels quels).
+   Poignée  ligne de CONSTRUCTION {t:'line',construction:true,handle:<id spline>,p1:<point de passage>,p2:<bout>} :
+            sa direction est la tangente de la courbe en p1, sa longueur la tension. Cotable (longueur, angle,
+            H / V) comme toute ligne. Aux extrémités d'une spline ouverte, elle pointe VERS L'EXTÉRIEUR.
+   Courbe   B-spline cubique bornée, non rationnelle ; paramètre = longueur de corde cumulée (mm).
+            Nœud simple à un point de passage (C2), double à un point à poignée (C1). Conditions : passage par
+            chaque point ; dérivée D = 3·(H−P)/Δ aux points à poignée (Δ : corde voisine, moyenne à l'intérieur) ;
+            bout libre : dérivée seconde nulle ; fermée : C' et C'' égales aux deux bouts. Système carré
+            résolu à chaque évaluation (quelques dizaines d'inconnues au plus).
+   Le solveur ne voit QUE des points : la courbe n'entre dans aucun résidu. Tangence {type:'stangent',
+   s:<spline>,p:<point de passage>,ent:<ligne | cercle | arc | spline>} : la poignée en p est alignée sur
+   la tangente de l'autre courbe en p (p est commun aux deux, ou posé dessus).
+   Le noyau reçoit les mêmes pôles et nœuds (Geom_BSplineCurve) : profil exact, pas une polyligne. */
+const SK_SPL_DEG=3;
+function bsSpan(n,p,u,U){ // n = nombre de pôles − 1 ; intervalle [U[s],U[s+1]) qui contient u (le dernier à droite)
+  if(u>=U[n+1])return n;
+  if(u<=U[p])return p;
+  let lo=p,hi=n+1,mid=(lo+hi)>>1;
+  while(u<U[mid]||u>=U[mid+1]){if(u<U[mid])hi=mid;else lo=mid;mid=(lo+hi)>>1;}
+  return mid;
+}
+function bsDersBasis(i,u,p,nd,U){ // fonctions de base non nulles et dérivées (Piegl & Tiller, A2.3) : ders[k][j] = N⁽ᵏ⁾ de i−p+j
+  const ndu=[],left=new Array(p+1).fill(0),right=new Array(p+1).fill(0);
+  for(let j=0;j<=p;j++)ndu.push(new Array(p+1).fill(0));
+  ndu[0][0]=1;
+  for(let j=1;j<=p;j++){
+    left[j]=u-U[i+1-j];right[j]=U[i+j]-u;let saved=0;
+    for(let r=0;r<j;r++){ndu[j][r]=right[r+1]+left[j-r];const t=ndu[r][j-1]/ndu[j][r];ndu[r][j]=saved+right[r+1]*t;saved=left[j-r]*t;}
+    ndu[j][j]=saved;
+  }
+  const ders=[];for(let k=0;k<=nd;k++)ders.push(new Array(p+1).fill(0));
+  for(let j=0;j<=p;j++)ders[0][j]=ndu[j][p];
+  const a=[new Array(p+1).fill(0),new Array(p+1).fill(0)];
+  for(let r=0;r<=p;r++){
+    let s1=0,s2=1;a[0][0]=1;
+    for(let k=1;k<=nd;k++){
+      let d=0;const rk=r-k,pk=p-k;
+      if(r>=k){a[s2][0]=a[s1][0]/ndu[pk+1][rk];d=a[s2][0]*ndu[rk][pk];}
+      const j1=rk>=-1?1:-rk,j2=(r-1<=pk)?k-1:p-r;
+      for(let j=j1;j<=j2;j++){a[s2][j]=(a[s1][j]-a[s1][j-1])/ndu[pk+1][rk+j];d+=a[s2][j]*ndu[rk+j][pk];}
+      if(r<=pk){a[s2][k]=-a[s1][k-1]/ndu[pk+1][r];d+=a[s2][k]*ndu[r][pk];}
+      ders[k][r]=d;const t=s1;s1=s2;s2=t;
+    }
+  }
+  let f=p;for(let k=1;k<=nd;k++){for(let j=0;j<=p;j++)ders[k][j]*=f;f*=(p-k);}
+  return ders;
+}
+function bsEval(bs,u,nd){ // [C, C′, C″…] en u (nd dérivées ; au-delà du degré : nulles)
+  const p=bs.p||SK_SPL_DEG,n=bs.P.length-1,nw=nd||0,nk=Math.min(nw,p);
+  const s=bsSpan(n,p,u,bs.U),D=bsDersBasis(s,u,p,nk,bs.U),out=[];
+  for(let k=0;k<=nk;k++){let x=0,y=0;for(let j=0;j<=p;j++){const q=bs.P[s-p+j];x+=D[k][j]*q[0];y+=D[k][j]*q[1];}out.push([x,y]);}
+  while(out.length<=nw)out.push([0,0]);
+  return out;
+}
+function bsSolve(A,bx,by){ // élimination de Gauss à pivot partiel (A carrée, deux seconds membres) ; null si singulière
+  const n=A.length;
+  for(let c=0;c<n;c++){
+    let b=c,bv=Math.abs(A[c][c]);for(let r=c+1;r<n;r++){const v=Math.abs(A[r][c]);if(v>bv){bv=v;b=r;}}
+    if(!(bv>1e-14))return null;
+    if(b!==c){let t=A[b];A[b]=A[c];A[c]=t;t=bx[b];bx[b]=bx[c];bx[c]=t;t=by[b];by[b]=by[c];by[c]=t;}
+    for(let r=c+1;r<n;r++){const f=A[r][c]/A[c][c];if(!f)continue;for(let k=c;k<n;k++)A[r][k]-=f*A[c][k];bx[r]-=f*bx[c];by[r]-=f*by[c];}
+  }
+  const x=new Array(n),y=new Array(n);
+  for(let r=n-1;r>=0;r--){let sx=bx[r],sy=by[r];for(let k=r+1;k<n;k++){sx-=A[r][k]*x[k];sy-=A[r][k]*y[k];}x[r]=sx/A[r][r];y[r]=sy/A[r][r];}
+  return x.map((v,i)=>[v,y[i]]);
+}
+function skSplineHandles(sk,e){ // point de passage → bout de sa poignée
+  const m={};
+  (sk.entities||[]).forEach(l=>{if(l&&l.t==='line'&&l.handle===e.id&&l.p1&&l.p2)m[l.p1]=l.p2;});
+  return m;
+}
+function skSplineHandleLine(sk,e,pid){return (sk.entities||[]).find(l=>l&&l.t==='line'&&l.handle===e.id&&l.p1===pid)||null;}
+function bsInterpolate(Q,H,closed){
+  // Q : points de passage [[x,y]…] ; H : bout de poignée par point ([x,y] ou null) ; closed : boucle (Q[0] n'est pas répété)
+  const m=Q.length;if(m<2)return null;
+  const X=closed?Q.concat([Q[0]]):Q.slice(),HH=closed?H.concat([H[0]]):H.slice(),n=X.length-1;
+  const d=[0];for(let k=1;k<=n;k++)d.push(Math.max(Math.hypot(X[k][0]-X[k-1][0],X[k][1]-X[k-1][1]),1e-6));
+  const u=[0];for(let k=1;k<=n;k++)u.push(u[k-1]+d[k]);
+  const deriv=k=>{ // dérivée imposée par la poignée du point k (null : pas de poignée)
+    const h=HH[k];if(!h)return null;const P=X[k],vx=h[0]-P[0],vy=h[1]-P[1];
+    if(!closed&&k===0)return[-3*vx/d[1],-3*vy/d[1]];
+    if(!closed&&k===n)return[3*vx/d[n],3*vy/d[n]];
+    const dp=k>0?d[k]:d[n],dn=k<n?d[k+1]:d[1],a=(dp+dn)/2;return[3*vx/a,3*vy/a];
+  };
+  const p=SK_SPL_DEG,U=[u[0],u[0],u[0],u[0]];
+  for(let k=1;k<n;k++){U.push(u[k]);if(HH[k])U.push(u[k]);}
+  U.push(u[n],u[n],u[n],u[n]);
+  const nP=U.length-p-1,rows=[],bx=[],by=[];
+  const row=(t,o,rx,ry,sub)=>{ // équation : dérivée o en t (− dérivée o en sub si sub fourni) = (rx, ry)
+    const r=new Array(nP).fill(0);
+    const add=(tt,sg)=>{const s=bsSpan(nP-1,p,tt,U),D=bsDersBasis(s,tt,p,o,U);for(let j=0;j<=p;j++)r[s-p+j]+=sg*D[o][j];};
+    add(t,1);if(sub!=null)add(sub,-1);rows.push(r);bx.push(rx);by.push(ry);
+  };
+  for(let k=0;k<=n;k++)row(u[k],0,X[k][0],X[k][1]);
+  for(let k=1;k<n;k++){const D=deriv(k);if(D)row(u[k],1,D[0],D[1]);}
+  if(closed){
+    const D=deriv(0);
+    if(D){row(u[0],1,D[0],D[1]);row(u[n],1,D[0],D[1]);}
+    else{row(u[0],1,0,0,u[n]);row(u[0],2,0,0,u[n]);}
+  }else{
+    const D0=deriv(0),Dn=deriv(n);
+    if(D0)row(u[0],1,D0[0],D0[1]);else row(u[0],2,0,0);
+    if(Dn)row(u[n],1,Dn[0],Dn[1]);else row(u[n],2,0,0);
+  }
+  if(rows.length!==nP)return null;
+  const P=bsSolve(rows,bx,by);if(!P)return null;
+  P[0]=X[0].slice();P[nP-1]=X[n].slice(); // bouts exacts : jonctions bit à bit avec les lignes voisines
+  return{U,P,u,d,closed:!!closed,n,p,a:U[0],b:U[U.length-1]};
+}
+function bsControl(Q,closed){
+  // spline par POINTS DE CONTRÔLE : les points d'esquisse sont les pôles. Ouverte : B-spline bornée à nœuds
+  // uniformes (passe par le 1er et le dernier pôle, tangente aux côtés extrêmes du polygone), degré 3 ou
+  // moins s'il y a peu de pôles. Fermée : périodique uniforme (pôles repris en boucle), domaine [a, b].
+  const m=Q.length;
+  if(!closed){
+    const p=Math.min(SK_SPL_DEG,m-1);if(p<1)return null;
+    const n=m-1,U=[];for(let i=0;i<=p;i++)U.push(0);for(let k=1;k<=n-p;k++)U.push(k);for(let i=0;i<=p;i++)U.push(n-p+1);
+    return{U,P:Q.map(q=>q.slice()),p,ctrl:true,closed:false,a:0,b:n-p+1};
+  }
+  const p=Math.min(SK_SPL_DEG,m-1);if(m<3)return null;
+  const P=Q.concat(Q.slice(0,p)).map(q=>q.slice()),U=[];for(let i=0;i<P.length+p+1;i++)U.push(i);
+  return{U,P,p,ctrl:true,closed:true,a:U[p],b:U[P.length]};
+}
+function bsRange(bs,u0,u1,P0,P1){ // morceau [u0, u1] d'une B-spline, rendu borné (bouts exacts P0 / P1 si fournis)
+  const p=bs.p||SK_SPL_DEG,U=bs.U,a=U[p],b=U[bs.P.length],L=U.length-1;
+  let c={U,P:bs.P,p};
+  if(u0>a+1e-12||U[0]!==U[p])c=bsSplit(c,u0,P0)[1];          // périodique : bornée par insertion de nœuds
+  if(u1<b-1e-12||U[L]!==U[L-p])c=bsSplit(c,u1,P1)[0];
+  return c;
+}
+const SK_SPL_CACHE=new WeakMap(); // entité → {key, fit} (jamais enregistré)
+function skSplineFit(sk,e){
+  if(!e||e.t!=='spline'||!sk)return null;
+  const Pp=sk.points||{},ids=e.pts||[];if(ids.length<2)return null;
+  const ctrl=e.mode==='ctrl',hm=ctrl?{}:skSplineHandles(sk,e),Q=[],H=[];let key=(e.closed?'c':'o')+(ctrl?'k':'');
+  for(const id of ids){const q=Pp[id];if(!q)return null;Q.push([q.x,q.y]);key+='|'+q.x+','+q.y;
+    const h=hm[id]&&Pp[hm[id]];H.push(h?[h.x,h.y]:null);if(h)key+='h'+h.x+','+h.y;}
+  const c=SK_SPL_CACHE.get(e);if(c&&c.key===key)return c.fit;
+  const closed=!!e.closed&&ids.length>=3;
+  let fit=null;try{fit=ctrl?bsControl(Q,closed):bsInterpolate(Q,H,closed);}catch(err){fit=null;}
+  SK_SPL_CACHE.set(e,{key,fit});
+  return fit;
+}
+function bsSample(bs,u0,u1,per){ // polyligne de u0 à u1, « per » pas par intervalle de nœuds
+  const out=[],U=bs.U,knots=[];
+  for(let i=0;i<U.length;i++){const v=U[i];if(v>u0+1e-12&&v<u1-1e-12&&knots.indexOf(v)<0)knots.push(v);}
+  const br=[u0].concat(knots,[u1]);
+  for(let i=0;i+1<br.length;i++){const a=br[i],b=br[i+1];for(let k=(i?1:0);k<=per;k++){const c=bsEval(bs,a+(b-a)*k/per,0)[0];out.push([c[0],c[1]]);}}
+  return out;
+}
+function skSplinePoly(sk,e,per){ // polyligne complète (premier point → dernier, refermée si fermée)
+  const f=skSplineFit(sk,e);if(!f)return null;
+  return bsSample(f,f.a,f.b,per||16);
+}
+function skSplineParam(sk,e,pid){
+  // paramètre de la courbe au point pid : point de passage (interpolée) ; 1er / dernier pôle d'une spline
+  // ouverte par points de contrôle (les autres pôles ne sont pas sur la courbe) ; null sinon
+  const f=skSplineFit(sk,e),k=skSplineIndex(e,pid);if(!f||k<0)return null;
+  if(!f.ctrl)return f.u[k];
+  if(f.closed)return null;
+  return k===0?f.a:(k===e.pts.length-1?f.b:null);
+}
+function skSplineTanPid(sk,e,pid){
+  // point qui donne la tangente en pid : bout de la poignée (interpolée), pôle voisin (points de contrôle)
+  if(!e||e.t!=='spline')return null;
+  if(e.mode==='ctrl'){if(e.closed)return null;const n=e.pts.length-1;return pid===e.pts[0]?e.pts[1]:(pid===e.pts[n]?e.pts[n-1]:null);}
+  const l=skSplineHandleLine(sk,e,pid);return l?l.p2:null;
+}
+function skSplineCurvature(sk,e,pid){ // courbure signée en pid (sens de parcours) + tangente unitaire
+  const u=skSplineParam(sk,e,pid),f=skSplineFit(sk,e);if(u==null||!f)return null;
+  const D=bsEval(f,u,2),d1=D[1],d2=D[2],L=Math.hypot(d1[0],d1[1]);if(!(L>1e-12))return null;
+  return{k:(d1[0]*d2[1]-d1[1]*d2[0])/(L*L*L),tx:d1[0]/L,ty:d1[1]/L};
+}
+function bsInsertKnot(bs,u){ // Boehm : insère u une fois
+  const p=bs.p||SK_SPL_DEG,U=bs.U,P=bs.P,n=P.length-1,k=bsSpan(n,p,u,U);
+  const NU=U.slice(0,k+1).concat([u],U.slice(k+1)),NP=[];
+  for(let i=0;i<=n+1;i++){
+    if(i<=k-p)NP.push(P[i]);
+    else if(i>k)NP.push(P[i-1]);
+    else{const a=(u-U[i])/(U[i+p]-U[i]);NP.push([(1-a)*P[i-1][0]+a*P[i][0],(1-a)*P[i-1][1]+a*P[i][1]]);}
+  }
+  return{U:NU,P:NP,p};
+}
+function bsSplit(bs,u,Pu){ // coupe en u (intérieur) → [gauche, droite], deux B-splines bornées à droite / à gauche ; Pu : point exact en u
+  const p=bs.p||SK_SPL_DEG;let c={U:bs.U.slice(),P:bs.P.map(q=>q.slice()),p};
+  let s=c.U.filter(v=>v===u).length;
+  while(s<p){c=bsInsertKnot(c,u);s++;}
+  const r=c.U.indexOf(u);
+  if(Pu)c.P[r-1]=Pu.slice();
+  const L={U:c.U.slice(0,r+p).concat([u]),P:c.P.slice(0,r),p};
+  const R={U:[u].concat(c.U.slice(r)),P:c.P.slice(r-1),p};
+  return[L,R];
+}
+function skBsKnotMults(U){ // nœuds distincts + multiplicités (format OCCT)
+  const k=[],m=[];U.forEach(v=>{if(k.length&&k[k.length-1]===v)m[m.length-1]++;else{k.push(v);m.push(1);}});
+  return{k,m};
+}
+function skSplineEdges(sk,e){
+  // arêtes de profil d'une spline : une seule (ouverte), deux moitiés coupées à un point de passage (fermée)
+  // — jamais une arête qui revient sur son propre nœud. {a,b,bs,poly,o,i} : o / i = angle de départ / d'arrivée.
+  // Spline fermée par points de contrôle : ses deux nœuds ne sont pas des points d'esquisse (la courbe ne
+  // passe par aucun pôle) — nœuds virtuels « __s… », coordonnées dans virt, comme les bouts d'arc « __a… ».
+  const f=skSplineFit(sk,e);if(!f)return[];
+  const ids=e.pts,p=f.p||SK_SPL_DEG;
+  const mk=(a,b,bs,virt)=>{
+    const s=bs.U[0],t=bs.U[bs.U.length-1],d0=bsEval(bs,s,1)[1],d1=bsEval(bs,t,1)[1];
+    return{a,b,bs,poly:bsSample(bs,s,t,16),o:Math.atan2(d0[1],d0[0]),i:Math.atan2(d1[1],d1[0]),virt:virt||null};
+  };
+  if(f.ctrl&&f.closed){
+    const um=(f.a+f.b)/2,C0=bsEval(f,f.a,0)[0],Cm=bsEval(f,um,0)[0],va='__s'+e.id+'a',vb='__s'+e.id+'b';
+    const L=bsRange(f,f.a,um,C0,Cm),R=bsRange(f,um,f.b,Cm,C0),virt={};virt[va]=C0;virt[vb]=Cm;
+    return[mk(va,vb,L,virt),mk(vb,va,R,virt)];
+  }
+  const loop=!!e.closed||ids[0]===ids[ids.length-1];
+  if(!loop)return[mk(ids[0],ids[ids.length-1],{U:f.U,P:f.P,p})];
+  if(f.ctrl){ // 1er et dernier pôles confondus : coupée au milieu de son domaine (nœud virtuel)
+    const um=(f.a+f.b)/2,Cm=bsEval(f,um,0)[0],vb='__s'+e.id+'b',virt={};virt[vb]=Cm;
+    const[L,R]=bsSplit({U:f.U,P:f.P,p},um,Cm);return[mk(ids[0],vb,L,virt),mk(vb,ids[0],R,virt)];
+  }
+  const m=Math.max(1,Math.floor(ids.length/2)),um=f.u[m],Pm=sk.points[ids[m]];
+  if(!(um>f.a&&um<f.b)||!Pm)return[];
+  const[L,R]=bsSplit({U:f.U,P:f.P,p},um,[Pm.x,Pm.y]);
+  return[mk(ids[0],ids[m],L),mk(ids[m],ids[0],R)];
+}
+function skEdgePoly(ed,from){ // polyligne d'une arête spline parcourue depuis le nœud « from »
+  const pl=ed.poly||[];return ed.a===from?pl:pl.slice().reverse();
+}
+function skSplineIndex(e,pid){return e&&e.t==='spline'?(e.pts||[]).indexOf(pid):-1;}
+function skSplineTangent(sk,e,pid){
+  // tangente unitaire de la courbe au point de passage pid, dans le sens de parcours (premier → dernier point)
+  const f=skSplineFit(sk,e),u=skSplineParam(sk,e,pid);if(!f||u==null)return null;
+  const d=bsEval(f,u,1)[1],L=Math.hypot(d[0],d[1]);
+  return L>1e-12?{x:d[0]/L,y:d[1]/L,speed:L}:null;
+}
+function skSplineOutward(sk,e,pid){
+  // direction « vers l'extérieur » de la poignée : sens de parcours, sauf au 1er point d'une spline ouverte
+  const t=skSplineTangent(sk,e,pid);if(!t)return null;
+  const k=skSplineIndex(e,pid);
+  return(!e.closed&&k===0)?{x:-t.x,y:-t.y,speed:t.speed}:t;
+}
+function skSplineAddHandle(sk,e,pid){
+  // pose une poignée en pid SANS changer la courbe : bout placé sur la tangente courante, longueur
+  // telle que la dérivée imposée soit celle de la courbe actuelle (la courbe en C2 vérifie déjà les
+  // nouvelles conditions, et la solution du système carré est unique).
+  if(e.mode==='ctrl')return null; // points de contrôle : la tangente est portée par le pôle voisin
+  const ex=skSplineHandleLine(sk,e,pid);if(ex)return ex;
+  const f=skSplineFit(sk,e),k=skSplineIndex(e,pid),P=sk.points[pid];if(!f||k<0||!P)return null;
+  const n=f.n,der=bsEval({U:f.U,P:f.P},f.u[k],1)[1];
+  let dl;
+  if(!e.closed&&k===0)dl=-f.d[1]/3;
+  else if(!e.closed&&k===n)dl=f.d[n]/3;
+  else{const dp=k>0?f.d[k]:f.d[n],dn=k<n?f.d[k+1]:f.d[1];dl=(dp+dn)/6;}
+  let hx=P.x+der[0]*dl,hy=P.y+der[1]*dl;
+  if(!(Math.hypot(hx-P.x,hy-P.y)>1e-6)){hx=P.x+1;hy=P.y;}
+  const hp=addPoint(sk,hx,hy),l={id:skNewEid(sk),t:'line',p1:pid,p2:hp,construction:true,handle:e.id};
+  sk.entities.push(l);
+  return l;
+}
+function skSplineRemoveHandle(sk,e,pid){
+  const l=skSplineHandleLine(sk,e,pid);if(!l)return false;
+  sk.entities=sk.entities.filter(x=>x!==l);
+  sk.constraints=(sk.constraints||[]).filter(c=>!(c.type==='stangent'&&((c.s===e.id&&c.p===pid)||(c.ent===e.id&&c.p===pid))));
+  return true;
+}
+function skCurveIntoDir(sk,ent,pid){
+  // direction unitaire qui part de pid VERS l'intérieur de l'entité (pid en est une extrémité) ; null sinon
+  const P=sk.points,Q=P[pid];if(!ent||!Q)return null;
+  const unit=(x,y)=>{const L=Math.hypot(x,y);return L>1e-12?{x:x/L,y:y/L}:null;};
+  if(ent.t==='line'){const o=ent.p1===pid?P[ent.p2]:(ent.p2===pid?P[ent.p1]:null);return o?unit(o.x-Q.x,o.y-Q.y):null;}
+  if(ent.t==='arc'){const C=P[ent.pc];if(!C)return null;const rx=Q.x-C.x,ry=Q.y-C.y;
+    if(ent.pa===pid)return unit(-ry,rx);if(ent.pb===pid)return unit(ry,-rx);return null;}
+  if(ent.t==='spline'){const k=skSplineIndex(ent,pid);if(k<0||ent.closed)return null;const t=skSplineTangent(sk,ent,pid);if(!t)return null;
+    if(k===0)return{x:t.x,y:t.y};if(k===ent.pts.length-1)return{x:-t.x,y:-t.y};return null;}
+  return null;
+}
+function skStanResid(sk,c){
+  // résidu (mm) d'une tangence spline : écart de la poignée à la tangente de l'autre courbe en p
+  const P=sk.points,S=entById(sk,c.s),O=entById(sk,c.ent),Pt=P[c.p];
+  if(!S||S.t!=='spline'||!O||!Pt)return null;
+  const hp=skSplineTanPid(sk,S,c.p),H=hp&&P[hp];if(!H)return null;
+  const hx=H.x-Pt.x,hy=H.y-Pt.y;
+  if(O.t==='line'){const A=P[O.p1],B=P[O.p2];if(!A||!B)return null;const L=Math.hypot(B.x-A.x,B.y-A.y);if(!(L>1e-9))return null;
+    return(hx*(B.y-A.y)-hy*(B.x-A.x))/L;}
+  if(O.t==='circle'||O.t==='arc'){const C=P[O.pc];if(!C)return null;const R=Math.hypot(Pt.x-C.x,Pt.y-C.y);if(!(R>1e-9))return null;
+    return(hx*(Pt.x-C.x)+hy*(Pt.y-C.y))/R;}
+  if(O.t==='spline'){const h2=skSplineTanPid(sk,O,c.p),H2=h2&&P[h2];if(!H2)return null;
+    const vx=H2.x-Pt.x,vy=H2.y-Pt.y,L=Math.hypot(vx,vy);if(!(L>1e-9))return null;return(hx*vy-hy*vx)/L;}
+  return null;
+}
+function skStanRelax(sk,c,fix){
+  // relaxation : la poignée tourne autour de p de la moitié de l'écart vers la tangente voulue
+  const P=sk.points,S=entById(sk,c.s),O=entById(sk,c.ent),Pt=P[c.p];if(!S||!O||!Pt)return;
+  const hp=skSplineTanPid(sk,S,c.p);if(!hp||fix.has(hp))return;const H=P[hp];if(!H)return;
+  let tx=null,ty=null;
+  if(O.t==='line'){const A=P[O.p1],B=P[O.p2];if(!A||!B)return;tx=B.x-A.x;ty=B.y-A.y;}
+  else if(O.t==='circle'||O.t==='arc'){const C=P[O.pc];if(!C)return;tx=-(Pt.y-C.y);ty=Pt.x-C.x;}
+  else if(O.t==='spline'){const h2=skSplineTanPid(sk,O,c.p),H2=h2&&P[h2];if(!H2)return;tx=H2.x-Pt.x;ty=H2.y-Pt.y;}
+  const L=Math.hypot(tx,ty),hx=H.x-Pt.x,hy=H.y-Pt.y,hl2=Math.hypot(hx,hy);if(!(L>1e-12)||!(hl2>1e-12))return;
+  let ux=tx/L,uy=ty/L;if(hx*ux+hy*uy<0){ux=-ux;uy=-uy;}
+  const qx=Pt.x+ux*hl2,qy=Pt.y+uy*hl2;H.x+=(qx-H.x)*0.5;H.y+=(qy-H.y)*0.5;
+}
+function skCurvResid(sk,c){
+  // résidu d'une contrainte de courbure (G2) au raccord : courbure de la spline − courbure de l'autre courbe,
+  // toutes deux prises dans le sens de parcours de la spline, ramené en mm (× longueur de la poignée²)
+  const P=sk.points,S=entById(sk,c.s),O=entById(sk,c.ent),Pt=P[c.p];if(!S||!O||!Pt)return null;
+  const a=skSplineCurvature(sk,S,c.p);if(!a)return null;
+  let k2;
+  if(O.t==='line')k2=0;
+  else if(O.t==='circle'||O.t==='arc'){const C=P[O.pc];if(!C||!(O.r>0))return null;const tx=-(Pt.y-C.y),ty=Pt.x-C.x;k2=(tx*a.tx+ty*a.ty>=0?1:-1)/O.r;}
+  else if(O.t==='spline'){const b=skSplineCurvature(sk,O,c.p);if(!b)return null;k2=(b.tx*a.tx+b.ty*a.ty>=0?1:-1)*b.k;}
+  else return null;
+  const hp=skSplineTanPid(sk,S,c.p),H=hp&&P[hp],L=H?Math.max(Math.hypot(H.x-Pt.x,H.y-Pt.y),1e-3):1;
+  return(a.k-k2)*L*L;
+}
+function skSplineCurvTo(sk,S,O,pid){
+  // courbure continue (G2) entre la spline S et O en pid : la tangence (G1) est posée d'abord si besoin
+  if((sk.constraints||[]).some(c=>c.type==='scurv'&&c.s===S.id&&c.p===pid&&c.ent===O.id))return 'Courbure (G2) déjà posée.';
+  if(!(sk.constraints||[]).some(c=>c.type==='stangent'&&c.s===S.id&&c.p===pid&&c.ent===O.id)){
+    const r=skSplineTangentTo(sk,S,O,pid);if(typeof r==='string')return r;}
+  const c={id:skNewEid(sk),type:'scurv',s:S.id,p:pid,ent:O.id};
+  sk.constraints.push(c);
+  return c;
+}
+const skComb=new Set(); // splines dont le peigne de courbure est affiché (session, jamais enregistré)
+function skSplineComb(sk,e,n){
+  // peigne de courbure : en chaque échantillon, une dent le long de la normale, longue de k × échelle (côté
+  // opposé au centre de courbure) ; échelle telle que la plus longue dent fasse 20 % de l'encombrement
+  const f=skSplineFit(sk,e);if(!f)return null;
+  const N=n||120,S=[];let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity,km=0;
+  for(let i=0;i<=N;i++){const u=f.a+(f.b-f.a)*i/N,D=bsEval(f,u,2),L=Math.hypot(D[1][0],D[1][1]);if(!(L>1e-12))continue;
+    const k=(D[1][0]*D[2][1]-D[1][1]*D[2][0])/(L*L*L),nx=-D[1][1]/L,ny=D[1][0]/L;
+    S.push({x:D[0][0],y:D[0][1],k,nx,ny});km=Math.max(km,Math.abs(k));
+    x0=Math.min(x0,D[0][0]);x1=Math.max(x1,D[0][0]);y0=Math.min(y0,D[0][1]);y1=Math.max(y1,D[0][1]);}
+  const sc=km>1e-12?0.2*Math.max(Math.hypot(x1-x0,y1-y0),1e-6)/km:0;
+  return S.map(q=>({x:q.x,y:q.y,qx:q.x-q.nx*q.k*sc,qy:q.y-q.ny*q.k*sc}));
+}
+function skSplineTangentTo(sk,S,O,pid){
+  // pose la tangence de la spline S à l'entité O au point pid (point de passage de S) : poignée(s) créée(s),
+  // point posé sur O s'il n'en est pas une extrémité. Retourne la contrainte, ou un message d'erreur (chaîne).
+  if(!S||S.t!=='spline'||!O||O.id===S.id)return 'Tangence spline : choisissez une autre courbe.';
+  if(skSplineIndex(S,pid)<0)return 'Tangence spline : le point n’est pas un point de passage de la spline.';
+  const endOnly='Spline par points de contrôle : tangence à son premier ou dernier pôle seulement (les autres ne sont pas sur la courbe).';
+  if(S.mode==='ctrl'&&skSplineParam(sk,S,pid)==null)return endOnly;
+  if((sk.constraints||[]).some(c=>c.type==='stangent'&&c.s===S.id&&c.p===pid&&c.ent===O.id))return 'Tangence déjà posée.';
+  const Q=sk.points[pid];
+  if(O.t==='spline'){if(skSplineIndex(O,pid)<0)return 'Tangence entre splines : elles doivent partager ce point (joignez-les d’abord, F1).';
+    if(O.mode==='ctrl'&&skSplineParam(sk,O,pid)==null)return endOnly;
+    skSplineAddHandle(sk,O,pid);}
+  else if(O.t==='line'){if(O.p1!==pid&&O.p2!==pid&&!(sk.constraints||[]).some(c=>c.type==='online'&&c.p===pid&&c.line===O.id))
+    sk.constraints.push({id:skNewEid(sk),type:'online',p:pid,line:O.id});}
+  else if(O.t==='circle'||O.t==='arc'){if(O.pa!==pid&&O.pb!==pid&&!(sk.constraints||[]).some(c=>c.type==='oncircle'&&c.p===pid&&c.ent===O.id))
+    sk.constraints.push({id:skNewEid(sk),type:'oncircle',p:pid,ent:O.id});}
+  else return 'Tangence spline : ligne, cercle, arc ou spline.';
+  skSplineAddHandle(sk,S,pid);if(!skSplineTanPid(sk,S,pid)||!Q)return 'Tangence spline : poignée impossible.';
+  const c={id:skNewEid(sk),type:'stangent',s:S.id,p:pid,ent:O.id};
+  sk.constraints.push(c);
+  return c;
+}
+function skSplineJoint(sk,S,O){
+  // point de passage de S où poser la tangence avec O : extrémité partagée d'abord, sinon le bout de S le plus proche de O
+  const ends=S.closed?S.pts.slice():[S.pts[0],S.pts[S.pts.length-1]];
+  const shared=ends.find(p=>skEntPids(O).indexOf(p)>=0)||S.pts.find(p=>skEntPids(O).indexOf(p)>=0);
+  if(shared)return shared;
+  const P=sk.points;let best=null,bd=Infinity;
+  ends.forEach(p=>{const q=P[p];if(!q)return;let d=Infinity;
+    if(O.t==='line'){const A=P[O.p1],B=P[O.p2];if(A&&B)d=distSeg(q.x,q.y,A,B);}
+    else if(O.t==='circle'||O.t==='arc'){const C=P[O.pc];if(C)d=Math.abs(Math.hypot(q.x-C.x,q.y-C.y)-O.r);}
+    if(d<bd){bd=d;best=p;}});
+  return O.t==='spline'?null:best;
+}
+function skSplineAutoTangent(sk,S){
+  // à la création : un bout posé sur l'extrémité d'une ligne / d'un arc / d'une spline et parti dans son
+  // prolongement (moins de 20°) devient tangent — comme l'inférence de tangence des lignes
+  if(!S||S.closed)return 0;let n=0;
+  [S.pts[0],S.pts[S.pts.length-1]].forEach(pid=>{
+    const out=skSplineOutward(sk,S,pid);if(!out)return;
+    const L=Math.hypot(out.x,out.y)||1,ox=out.x/L,oy=out.y/L;
+    let best=null,bc=Math.cos(20*Math.PI/180);
+    (sk.entities||[]).forEach(o=>{
+      if(!o||o.id===S.id||o.construction||o.handle)return;
+      const v=skCurveIntoDir(sk,o,pid);if(!v)return;
+      const c=ox*v.x+oy*v.y;if(c>bc){bc=c;best=o;}
+    });
+    if(best){const r=skSplineTangentTo(sk,S,best,pid);if(r&&typeof r==='object')n++;}
+  });
+  return n;
+}
+function skSplineCommit(sk,draft,closed,mode){
+  // crée la spline à partir des clics du brouillon ({x,y,snap}) ; null si trop peu de points distincts
+  // mode 'ctrl' : les clics sont des pôles (spline par points de contrôle)
+  const pids=[],free=[],ctrl=mode==='ctrl';
+  draft.forEach(q=>{
+    const snapped=!!(q.snap&&q.snap.kind==='point'&&sk.points[q.snap.pid]);
+    const pid=snapped?q.snap.pid:(ctrl?addPoint(sk,q.x,q.y):snapNewPoint(sk,q.x,q.y)); // pôle : jamais posé sur un milieu
+    if(!pids.length||pids[pids.length-1]!==pid){pids.push(pid);if(!snapped)free.push(pid);}
+  });
+  if(closed&&pids.length>1&&pids[pids.length-1]===pids[0])pids.pop();
+  if(pids.length<2||(closed&&pids.length<3))return null;
+  const e={id:skNewEid(sk),t:'spline',pts:pids};if(ctrl)e.mode='ctrl';if(closed)e.closed=true;
+  sk.entities.push(e);
+  // pôles intérieurs : hors de la courbe, jamais attachés à une ligne / un cercle
+  (ctrl?free.filter(p=>p===pids[0]||p===pids[pids.length-1]):free).forEach(pid=>{const q=sk.points[pid];if(q)skAutoAttach(sk,pid,q.x,q.y);}); // point nouveau sur une ligne / un cercle : posé dessus
+  skSplineAutoTangent(sk,e);
+  return e;
+}
+function skSplineDraftPoly(draft,cur,closed,ctrl){ // aperçu pendant le tracé (pas d'entité) : clics + curseur
+  const Q=draft.map(q=>[q.x,q.y]);if(cur)Q.push([cur.x,cur.y]);
+  const U=[];Q.forEach(q=>{if(!U.length||Math.hypot(q[0]-U[U.length-1][0],q[1]-U[U.length-1][1])>1e-9)U.push(q);});
+  if(U.length<2)return null;
+  const cl=!!closed&&U.length>=3,f=ctrl?bsControl(U,cl):bsInterpolate(U,U.map(()=>null),cl);if(!f)return null;
+  return bsSample(f,f.a,f.b,16);
+}
+function skSplMode(){return skTool==='cspline'?'ctrl':'fit';}
+function skSplFinish(closed){
+  // fin du tracé (double-clic, Entrée, clic droit, clic sur le 1er point = fermée) : la spline est créée
+  const sk=skEdit,d=skSpl,mode=skSplMode();skSpl=null;skDraft=null;skSnapMk=null;
+  if(!sk)return;
+  const what=mode==='ctrl'?'pôles':'points de passage';
+  if(!d||d.pts.length<2){drawSketch2D();skStatus('Spline : cliquez au moins 2 '+what+'.');return;}
+  skPushUndo();
+  const e=skSplineCommit(sk,d.pts,closed,mode);
+  if(!e){skUndoStack.pop();skUndoBtn();drawSketch2D();skStatus('Spline : points confondus — rien de créé.');return;}
+  const nT=(sk.constraints||[]).filter(c=>c.type==='stangent'&&c.s===e.id).length;
+  afterEdit();
+  skStatus('Spline '+(closed?'fermée ':'')+'créée ('+e.pts.length+' '+what+')'+(nT?' — '+nT+' bout(s) tangent(s) ⦾':'')+
+    (mode==='ctrl'?'. Glissez les pôles pour modeler la courbe.':'. Glissez les points ; clic droit sur un point : poignée de tangence.')+' Cliquez pour une nouvelle spline.');
+}
+function skSplClick(sk,wx,wy,e){
+  // outils Spline : un clic = un point de passage (ou un pôle)
+  const s=findSnap(sk,wx,wy);let x=wx,y=wy;
+  if(s){x=s.x;y=s.y;}else if($('skSnap').checked){x=skSnapVal(x);y=skSnapVal(y);}
+  if(!skSpl)skSpl={pts:[]};
+  const S=skSpl.pts,tol=6/skView.s,ctrl=skSplMode()==='ctrl';
+  if(S.length>=3&&Math.hypot(x-S[0].x,y-S[0].y)<tol){skSplFinish(true);return;}
+  if(S.length&&(e.detail>=2||Math.hypot(x-S[S.length-1].x,y-S[S.length-1].y)<tol)){skSplFinish(false);return;}
+  S.push({x,y,snap:s&&s.kind==='point'?s:null});
+  skDraft={t:'spline',ctrl,pts:S,poly:skSplineDraftPoly(S,null,false,ctrl)};
+  drawSketch2D();
+  skStatus('Spline : '+S.length+(ctrl?' pôle(s)':' point(s)')+' — clic = suivant · double-clic / Entrée / clic droit = fin · clic sur le 1er = fermée.');
+}
+function skSplMove(sk,wx,wy){
+  const s=findSnap(sk,wx,wy);let x=wx,y=wy;
+  if(s){x=s.x;y=s.y;skSnapMk={x,y};}else{skSnapMk=null;if($('skSnap').checked){x=skSnapVal(x);y=skSnapVal(y);}}
+  if(skSpl&&skSpl.pts.length){
+    const S=skSpl.pts,close=S.length>=3&&Math.hypot(x-S[0].x,y-S[0].y)<6/skView.s,ctrl=skSplMode()==='ctrl';
+    skDraft={t:'spline',ctrl,pts:S,cur:close?null:{x,y},closeHint:close,poly:skSplineDraftPoly(S,close?null:{x,y},close,ctrl)};
+  }
+  drawSketch2D();
+}
+function skPolyDist(x,y,pl){let m=Infinity;for(let i=0;i+1<pl.length;i++){const d=distSeg(x,y,{x:pl[i][0],y:pl[i][1]},{x:pl[i+1][0],y:pl[i+1][1]});if(d<m)m=d;}return m;}
+function skSplineAllPids(sk,e){ // points de passage + bouts de poignée (pour le « entièrement contrainte »)
+  const hm=skSplineHandles(sk,e);return (e.pts||[]).concat(Object.keys(hm).map(k=>hm[k]));
+}
+function skSplineCleanup(sk){
+  // poignées orphelines (spline supprimée, ou point de passage retiré) → retirées ; spline réduite à < 2 points → retirée
+  const byId=new Map();(sk.entities||[]).forEach(e=>{if(e&&e.t==='spline')byId.set(e.id,e);});
+  (sk.entities||[]).forEach(e=>{if(e&&e.t==='spline'){e.pts=(e.pts||[]).filter(p=>sk.points[p]);if(e.closed&&e.pts.length<3)delete e.closed;}});
+  sk.entities=(sk.entities||[]).filter(e=>{
+    if(e&&e.t==='spline')return e.pts.length>=2;
+    if(e&&e.t==='line'&&e.handle){const S=byId.get(e.handle);return !!S&&S.pts.length>=2&&S.pts.indexOf(e.p1)>=0;}
+    return true;
+  });
 }
 
 /* ═══════════════ 51-parametres.js — parametres ═══════════════ */
@@ -19037,6 +19630,7 @@ svg.addEventListener('contextmenu',e=>{
   e.preventDefault();
   if(skPanDragged){skPanDragged=false;return;} // fin d'un déplacement au clic droit
   if(!skEdit) return;
+  if((skTool==='spline'||skTool==='cspline')&&skSpl){skSplFinish(false);return;} // clic droit : fin du tracé de spline
   if(skTool==='isect'){skIsectCtx(e.clientX,e.clientY);return;} // menu de l'outil Intersection
   if(skDimPlace){skCancelDraft();skStatus('Placement annulé.');return;} // Échap/clic droit pendant la pose
   // V0.11.23 : clic droit sur une cote → menu de la cote (valeur, référence ⇄ pilotante, replacer le texte)
@@ -19064,6 +19658,7 @@ function skEntPids(e){
   if(e.t==='arc')return[e.pc,e.pa,e.pb];
   if(e.t==='circle')return[e.pc];
   if(e.t==='cpoint')return[e.p];
+  if(e.t==='spline')return(e.pts||[]).slice();
   return[];
 }
 function skSymCenters(sk){
@@ -19168,6 +19763,11 @@ function skDragComp(sk,seed){
         if(!L||!E)return;
         if(ents.has(L.id)&&!ents.has(E.id)){ents.add(E.id);skEntPids(E).forEach(p=>{if(p&&sk.points[p])pids.add(p);});changed=true;}
         else if(ents.has(E.id)&&!ents.has(L.id)){ents.add(L.id);skEntPids(L).forEach(p=>{if(p&&sk.points[p])pids.add(p);});changed=true;}
+      }else if(c.type==='stangent'||c.type==='scurv'){
+        const S=entById(sk,c.s),E=entById(sk,c.ent);
+        if(!S||!E)return;
+        if(ents.has(S.id)&&!ents.has(E.id)){ents.add(E.id);skEntPids(E).forEach(p=>{if(p&&sk.points[p])pids.add(p);});changed=true;}
+        else if(ents.has(E.id)&&!ents.has(S.id)){ents.add(S.id);skEntPids(S).forEach(p=>{if(p&&sk.points[p])pids.add(p);});changed=true;}
       }else if(c.type==='oncircle'){
         const E=entById(sk,c.ent);
         if(!E||!sk.points[c.p])return;
@@ -19235,7 +19835,7 @@ svg.addEventListener('pointerdown',e=>{
       if(skMulti(e)){skSelX.push({kind:'point',pid});renderSkPanel();drawSketch2D();return;}
       skSel={kind:'point',pid};skSelX=[];
       // point de jonction (partagé par 2+ entités ou coïncident) → glisser toute la composante en corps rigide
-      const nShared=(sk.entities||[]).reduce((n,e)=>n+(skEntPids(e).indexOf(pid)>=0?1:0),0);
+      const nShared=(sk.entities||[]).reduce((n,e)=>n+(skEntPids(e).indexOf(pid)>=0&&!e.handle?1:0),0); // poignée de spline : pas une jonction
       const coin=(sk.constraints||[]).some(c=>c.type==='coincident'&&(c.a===pid||c.b===pid));
       // centre de symétrie saisi (rectangle par le centre non ancré) → toute la forme suit en bloc
       const isCtr=skSymCenters(sk).indexOf(pid)>=0&&!skDragComp(sk,[pid]).pids.some(p=>skFixed(sk).has(p));
@@ -19264,7 +19864,7 @@ svg.addEventListener('pointerdown',e=>{
       // seule l'entité saisie bouge, le solveur ajuste le reste (côté d'un rectangle par le centre).
       const comp0=skDragComp(sk,skEntPids(ent));
       const rigid=skDragRigid(sk,comp0);
-      const comp=rigid?comp0:{pids:skEntPids(ent).filter(p=>p&&sk.points[p]),ents:[ent.id]};
+      const comp=rigid?comp0:{pids:(ent.t==='spline'?skSplineAllPids(sk,ent):skEntPids(ent)).filter(p=>p&&sk.points[p]),ents:[ent.id]}; // spline : ses poignées suivent
       const orig={};comp.pids.forEach(p=>{if(sk.points[p])orig[p]={x:sk.points[p].x,y:sk.points[p].y};});
       skDragWalk=null;skDragEnt={x0:wx,y0:wy,pids:comp.pids,orig,anchor:comp.pids.filter(p=>!skFixed(sk).has(p)),pushed:false,rigid};
       renderSkPanel();drawSketch2D();return;
@@ -19290,6 +19890,7 @@ svg.addEventListener('pointerdown',e=>{
     const pid=snapNewPoint(sk,wx,wy);const S=sk.points[pid];
     skDown={pid,x:S.x,y:S.y,center:skMulti(e)&&skTool!=='circle'};return;
   }
+  if(skTool==='spline'||skTool==='cspline'){skSplClick(sk,wx,wy,e);return;} // 2026-10-29 : spline par points de passage (50-esquisse-6)
   if(skTool==='cpoint'){skPushUndo();const pid=snapNewPoint(sk,wx,wy);sk.entities.push({id:skNewEid(sk),t:'cpoint',p:pid});skAutoAttach(sk,pid,wx,wy);afterEdit();return;}
   // 2026-10-15-012 : CENTRE DE PERÇAGE — point dédié aux trous (fonction 3D « Perçage »),
   // hors profil comme le point de construction, mais seul retenu par les perçages.
@@ -19461,7 +20062,11 @@ svg.addEventListener('pointermove',e=>{
     if(s){nx=s.x;ny=s.y;skSnapMk={x:nx,y:ny};}
     else{if($('skSnap').checked){nx=skSnapVal(nx);ny=skSnapVal(ny);}skSnapMk=null;}
     const pid=skDrag,p0=sk.points[pid];skDragMoved=true;
-    skDragWalkTo(sk,{x:p0.x,y:p0.y},{x:nx,y:ny},q=>{sk.points[pid]={x:q.x,y:q.y};},skDragHold(sk,[pid]),[pid]);
+    // point de passage de spline : ses poignées le suivent (tangente gardée), comme Fusion
+    const hEnd=(sk.entities||[]).filter(l=>l.t==='line'&&l.handle&&l.p1===pid).map(l=>l.p2),fxH=skFixed(sk);
+    skDragWalkTo(sk,{x:p0.x,y:p0.y},{x:nx,y:ny},q=>{const o=sk.points[pid];
+      hEnd.forEach(h=>{const H=sk.points[h];if(H&&o&&!fxH.has(h)){H.x+=q.x-o.x;H.y+=q.y-o.y;}});
+      sk.points[pid]={x:q.x,y:q.y};},skDragHold(sk,[pid]),[pid]);
     drawSketch2D();return;
   }
   if(skDragEnt){
@@ -19509,6 +20114,7 @@ svg.addEventListener('pointermove',e=>{
     drawSketch2D();return;
   }
   if(skBox){skBox.x1=wx;skBox.y1=wy;drawSketch2D();return;}
+  if(skTool==='spline'||skTool==='cspline'){skSplMove(sk,wx,wy);return;}
   if(skDimPlace&&skTool==='dim'){ // aperçu : la cote de pose suit le curseur
     const dd=dimById(sk,skDimPlace.id);
     if(!dd)skDimPlace=null;
@@ -19799,7 +20405,7 @@ function skCancelDraft(){
   try{if(skDimEditInp)skDimEditInp._cancel();}catch(e){} // V0.11.23 : Échap referme aussi la saisie d’une cote
   skFilletSess=null;skCornerPick=null; // nouvelle passe de congés : nouvelle cote
   if(skDimPlace&&skEdit){skEdit.dims=skEdit.dims.filter(x=>x.id!==skDimPlace.id);skDimPlace=null;} // Échap pendant le placement annule la cote
-  skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skPendPt=null;skCoinA=null;skCornA=null;skOffArm=null;skDraft=null;skDown=null;skDrag=null;skDragEnt=null;skDragWalk=null;skBox=null;skDyn=null;skDimDrag=null;skPan=null;skInfer=null;skMsg='';skDimLine=null;skDimRef=null;skProjectHover=null;if(typeof skIsectReset==='function')skIsectReset();hideSkCtx();if(skEdit){cleanupSk(skEdit);drawSketch2D();renderSkPanel();}}
+  skChain=null;skArcC=null;skArcA1=null;skArcPa=null;skSpl=null;skPendPt=null;skCoinA=null;skCornA=null;skOffArm=null;skDraft=null;skDown=null;skDrag=null;skDragEnt=null;skDragWalk=null;skBox=null;skDyn=null;skDimDrag=null;skPan=null;skInfer=null;skMsg='';skDimLine=null;skDimRef=null;skProjectHover=null;if(typeof skIsectReset==='function')skIsectReset();hideSkCtx();if(skEdit){cleanupSk(skEdit);drawSketch2D();renderSkPanel();}}
 function skMinLen(){
   // 2026-10-16-001 : longueur mini d'un tracé = 3 px ÉCRAN (et non 0,5 mm fixe) —
   // zoomer permet de dessiner des lignes / cercles aussi petits que voulu.
@@ -19904,11 +20510,25 @@ function showSkCtx(x,y){
     }
   }
   // construction : bascule hors profil (touche X)
-  const ctorEnts=selEnts.filter(e=>e.t==='line'||e.t==='circle'||e.t==='arc');
+  const ctorEnts=selEnts.filter(e=>(e.t==='line'&&!e.handle)||e.t==='circle'||e.t==='arc'||e.t==='spline');
   if(ctorEnts.length){
     add(ctorEnts.some(e=>!e.construction)?'⇄ Construction (X)':'⇄ Géométrie normale (X)',()=>toggleConstr());
     has=true;
   }
+  // 2026-10-29 : spline — poignée de tangence sur un point de passage, tangence avec une autre courbe
+  const splines=selEnts.filter(e=>e.t==='spline');
+  if(pts.length===1&&selEnts.length<=1){
+    const S=(skEdit.entities||[]).find(e=>e.t==='spline'&&e.mode!=='ctrl'&&e.pts.indexOf(pts[0])>=0&&(!selEnts.length||selEnts[0]===e));
+    if(S){const pid=pts[0],hasH=!!skSplineHandleLine(skEdit,S,pid);
+      add(hasH?'⦾ Retirer la poignée de tangence':'⦾ Poignée de tangence (direction + tension)',()=>{
+        skPushUndo();if(hasH)skSplineRemoveHandle(skEdit,S,pid);else skSplineAddHandle(skEdit,S,pid);afterEdit();
+        skStatus(hasH?'Poignée retirée : la courbe redevient libre en ce point.':'Poignée posée : glissez son bout (losange violet) pour orienter la tangente et régler la tension — cotable comme une ligne.');});
+      has=true;}
+  }
+  if(splines.length===1&&tot===1){const S1=splines[0];add('📌 Fixe',()=>applyCon('fix'));
+    add(skComb.has(S1.id)?'∿ Masquer le peigne de courbure':'∿ Peigne de courbure',()=>{if(skComb.has(S1.id))skComb.delete(S1.id);else skComb.add(S1.id);drawSketch2D();});has=true;}
+  if(splines.length&&selEnts.length===2&&selEnts.every(e=>e.t==='spline'||(e.t==='line'&&!e.handle)||e.t==='circle'||e.t==='arc')){
+    add('⦾ Tangence',()=>applyCon('tangent'));add('∿ Courbure continue (G2)',()=>applyCon('curvature'));has=true;}
   // 1 ligne
   if(lines.length===1 && tot===1){
     add('📏 Longueur',()=>{ const e=lines[0]; skPushUndo(); skEdit.dims.push({id:skNewEid(skEdit),type:'length',line:e.id,value:+lineLen(skEdit,e).toFixed(2)}); afterEdit(); });
@@ -20046,6 +20666,8 @@ window.addEventListener('keydown',e=>{
     if(e.key==='Enter'){e.preventDefault();skDynCommit();return;}
     if(e.key==='Escape'){e.preventDefault();skEscapeToSelect();return;}
   }
+  // spline : Entrée = fin du tracé (l'outil reste) · Échap = fin puis Sélection
+  if(skEdit&&(skTool==='spline'||skTool==='cspline')&&skSpl&&(e.key==='Enter'||e.key==='Escape')){e.preventDefault();skSplFinish(false);if(e.key==='Escape')skEscapeToSelect();return;}
   if(e.key==='Escape'){e.preventDefault();skEscapeToSelect();return;}
   if(e.key==='Enter'&&skEdit&&skTool==='isect'){e.preventDefault();skIsectValidate();return;}
   // V0.11.23 : pendant la pose d'une cote, taper sa valeur (ou Entrée) la pose là où elle est et ouvre la saisie
@@ -20083,6 +20705,12 @@ window.addEventListener('keydown',e=>{
   mk('fillet','⦾','Congé (F) : cliquez 2 lignes en coin → arc tangent + cote R (double-clic pour modifier)');
   mk('chamfer','◣','Chanfrein (H) : cliquez 2 lignes en coin → coupe + cote (double-clic pour modifier)');
   mk('offset','⇄','Décalage (O) : sélectionnez lignes/cercles/arcs, cliquez le CÔTÉ → copies // et cotes');
+  // 2026-10-29 : Spline (S), rangée avec les outils de dessin, juste après l'arc
+  mk('spline','∿','Spline (S) : cliquez les points de passage — double-clic / Entrée / clic droit = fin, clic sur le 1er point = fermée · clic droit sur un point : poignée de tangence');
+  mk('cspline','∿','Spline par points de contrôle (Maj+S) : cliquez les pôles — la courbe part du 1er, finit au dernier et suit le polygone · double-clic / Entrée / clic droit = fin, clic sur le 1er pôle = fermée');
+  const sp=bar.querySelector('[data-tool="spline"]'),cs=bar.querySelector('[data-tool="cspline"]'),arc=bar.querySelector('[data-tool="arc"]');
+  if(sp&&arc&&arc.parentNode)arc.parentNode.insertBefore(sp,arc.nextSibling);
+  if(cs&&sp&&sp.parentNode)sp.parentNode.insertBefore(cs,sp.nextSibling);
 })();
 
 /* ═══════════════ 62-esquisse-intersection.js — esquisse intersection ═══════════════ */
@@ -20792,7 +21420,8 @@ function extArrowGeom(f){
   let x0=1e18,y0=1e18,x1=-1e18,y1=-1e18;const add=(x,y)=>{x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);};
   (sk.entities||[]).forEach(e=>{if(!e||e.construction)return;const P=sk.points;
     if(e.t==='line'){[e.p1,e.p2].forEach(id=>{const q=P[id];if(q)add(q.x,q.y);});}
-    else if((e.t==='circle'||e.t==='arc')&&P[e.pc]){const q=P[e.pc],r=+e.r||0;add(q.x-r,q.y-r);add(q.x+r,q.y+r);}});
+    else if((e.t==='circle'||e.t==='arc')&&P[e.pc]){const q=P[e.pc],r=+e.r||0;add(q.x-r,q.y-r);add(q.x+r,q.y+r);}
+    else if(e.t==='spline'){(skSplinePoly(sk,e,4)||[]).forEach(q=>add(q[0],q[1]));}});
   if(!(x1>=x0))return null;
   const B=sketchBasis(sk),cx=(x0+x1)/2,cy=(y0+y1)/2;
   const C=B.o.clone().addScaledVector(B.u,cx).addScaledVector(B.v,cy),n=B.n.clone().normalize();
@@ -21729,6 +22358,7 @@ function sweepChainPts2D(sk,pts,chain){
     const ed=st.ed,A=pts[st.from],B=pts[ed.a===st.from?ed.b:ed.a];
     if(!A||!B)return;
     if(ed.kind==='line'){if(!out.length)out.push(A);out.push(B);return;}
+    if(ed.kind==='spline'){const pl=skEdgePoly(ed,st.from);for(let k=out.length?1:0;k<pl.length;k++)out.push({x:pl[k][0],y:pl[k][1]});return;} // profil à spline
     const e=ed.e,C=sk.points[e.pc],an=arcAngles(sk,e);if(!C||!an)return;
     const aF=Math.atan2(A.y-C.y,A.x-C.x),dA=an.a2-an.a1;
     const ccw=Math.min(nm(aF-an.a1),TAU-nm(aF-an.a1))<=Math.min(nm(aF-an.a2),TAU-nm(aF-an.a2));
@@ -22002,6 +22632,7 @@ function revolveSideCheck(sk,tr,ax){
       if(!seg||!seg.ed)return;
       const toId=(seg.ed.a===seg.from)?seg.ed.b:seg.ed.a;
       see(tr.pts[seg.from]);see(tr.pts[toId]);
+      if(seg.ed.kind==='spline'){(seg.ed.poly||[]).forEach(q=>see({x:q[0],y:q[1]}));return;} // la courbe peut franchir l'axe entre ses points
       const a=seg.ed.e;
       if(seg.ed.kind!=='line'&&a&&a.pc){
         const C=tr.pts[a.pc]||sk.points[a.pc];
@@ -22164,6 +22795,7 @@ function legacyRevolveGeos(f,warnArr){
       const pf=tr.pts[seg.from],pt=tr.pts[toId];
       if(!pf||!pt)return;
       if(seg.ed.kind==='line'){push(pf);push(pt);return;}
+      if(seg.ed.kind==='spline'){skEdgePoly(seg.ed,seg.from).forEach(q=>push({x:q[0],y:q[1]}));return;}
       // arc : on échantillonne l'entité réelle
       const e=seg.ed.e;if(!e)return;
       const C=tr.pts[e.pc];if(!C)return;
@@ -24908,6 +25540,7 @@ function applyExactFillet(){
     ch.forEach(st=>{
       const ed=st.ed;
       if(ed.kind==='line'){const q=sk.points[(ed.a===st.from)?ed.b:ed.a];if(q)ring.push({x:q.x,y:q.y});}
+      else if(ed.kind==='spline'){const pl=skEdgePoly(ed,st.from);for(let k=1;k<pl.length;k++)ring.push({x:pl[k][0],y:pl[k][1]});}
       else{const a=ed.e,C=sk.points[a.pc],an=arcAngles(sk,a);if(!an||!C)return;
         const fwd=(ed.a===st.from),aS=fwd?an.a1:an.a2;let aE=fwd?an.a2:an.a1;
         let dd=aE-aS;const T=Math.PI*2;dd=((dd%T)+T)%T;if(dd<1e-9)dd=T;
@@ -28637,6 +29270,9 @@ function faoSketchLoop(skId){
         if(ed.kind==='line'){
           const q=tr.pts[toId];
           if(q)pts.push([q.x,q.y]);
+        }else if(ed.kind==='spline'){ // 2026-10-29 : spline d'esquisse → sa polyligne
+          const pl=skEdgePoly(ed,st.from);
+          for(let k=1;k<pl.length;k++)pts.push([pl[k][0],pl[k][1]]);
         }else{
           const a=ed.e, C=tr.pts[a.pc], an=arcAngles(sk,a);
           if(!C||!an||!(a.r>1e-9)){bad=true;break;}
@@ -49671,6 +50307,8 @@ const AIDE_SECTIONS=[
     ['X','Construction ↔ profil'],['Clic droit','Menu : contraintes, congé, axe de rotation…']]],
   ['Esquisse — tracé et cotes',[
     ['H','Centre de perçage'],['L C R B','Ligne · cercle · rectangle · oblong'],['P I','Projection · intersection (faces / corps ∩ plan)'],['T D','Ajuster · cote'],['F O','Congé · décalage'],['Ligne','Le 2e clic enchaîne la ligne suivante'],
+    ['S','Spline : clics = points de passage · double-clic / Entrée = fin · 1er point = fermée'],['Maj+S','Spline par points de contrôle (pôles, polygone en pointillé)'],['Clic droit sur un point de spline','Poignée de tangence (direction + tension)'],
+    ['Spline + courbe, clic droit','Tangence · courbure continue (G2) · peigne de courbure'],
     ['Ctrl/Cmd + rectangle','Rectangle par le centre'],['Ctrl/Cmd + clic','Multi-sélection'],
     ['Chiffres pendant une ligne','Longueur saisie (Tab = angle)'],['Double-clic sur une cote','Modifier la valeur'],
     ['nom = valeur','Nommer une cote (ex. Longueur = 80)'],['Longueur/2','Expression ƒx (cotes nommées, paramètres)'],
@@ -64389,9 +65027,10 @@ document.addEventListener('keydown',function(e){
   if(e.ctrlKey||e.altKey||e.metaKey)return;
   if(typeof skEdit==='undefined'||!skEdit)return;      // hors édition d'esquisse : on ignore
   const k=e.key.toLowerCase();
-  const map={l:'line',c:'circle',r:'rect',b:'slot',p:'project',i:'isect',t:'trim',d:'dim',f:'fillet',o:'offset'};
+  const map={l:'line',c:'circle',r:'rect',b:'slot',s:'spline',p:'project',i:'isect',t:'trim',d:'dim',f:'fillet',o:'offset'};
   if(!(k in map))return;
-  const btn=document.querySelector('#skToolbar .tool[data-tool="'+map[k]+'"]');
+  const tool=(k==='s'&&e.shiftKey)?'cspline':map[k]; // Maj+S : spline par points de contrôle
+  const btn=document.querySelector('#skToolbar .tool[data-tool="'+tool+'"]');
   if(!btn)return;
   e.preventDefault();
   btn.click(); // délègue au handler existant de la barre d'outils (annule le brouillon, change d'outil, statut)

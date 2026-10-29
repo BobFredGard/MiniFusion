@@ -80,6 +80,7 @@ const SUITES = [
   "test_mep_cotes_suivi",
   "test_esquisse_cotes_pose",
   "test_esquisse_arc_fixe_ddl",
+  "test_esquisse_spline",
   "test_proj_arc_sens",
   "test_esquisse_contraintes",
   "test_fao",

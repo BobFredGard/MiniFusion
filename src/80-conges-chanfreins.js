@@ -819,6 +819,7 @@ function applyExactFillet(){
     ch.forEach(st=>{
       const ed=st.ed;
       if(ed.kind==='line'){const q=sk.points[(ed.a===st.from)?ed.b:ed.a];if(q)ring.push({x:q.x,y:q.y});}
+      else if(ed.kind==='spline'){const pl=skEdgePoly(ed,st.from);for(let k=1;k<pl.length;k++)ring.push({x:pl[k][0],y:pl[k][1]});}
       else{const a=ed.e,C=sk.points[a.pc],an=arcAngles(sk,a);if(!an||!C)return;
         const fwd=(ed.a===st.from),aS=fwd?an.a1:an.a2;let aE=fwd?an.a2:an.a1;
         let dd=aE-aS;const T=Math.PI*2;dd=((dd%T)+T)%T;if(dd<1e-9)dd=T;

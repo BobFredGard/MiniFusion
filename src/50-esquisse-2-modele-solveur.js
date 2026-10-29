@@ -82,9 +82,10 @@ function migrateSketch(sk){
 function cleanupSk(sk){
   ensureOrigin(sk); // origine permanente : rétablie si absente
   skGapToAngle(sk);
+  skSplineCleanup(sk); // splines réduites / poignées orphelines (50-esquisse-6)
   const keep=new Set([skChain,skArcC,skCoinA,skPendPt,skDrag,skDown&&skDown.pid,SK_ORIGIN].filter(Boolean));
   const ref=new Set();
-  (sk.entities||[]).forEach(e=>{['p1','p2','p','pc','pa','pb'].forEach(k=>{if(e[k])ref.add(e[k]);});});
+  (sk.entities||[]).forEach(e=>{['p1','p2','p','pc','pa','pb'].forEach(k=>{if(e[k])ref.add(e[k]);});if(e.pts)e.pts.forEach(p=>ref.add(p));});
   (sk.dims||[]).forEach(d=>{if(d.a)ref.add(d.a);if(d.b)ref.add(d.b);if(d.p)ref.add(d.p);});
   (sk.constraints||[]).forEach(c=>{if(c.p)ref.add(c.p);if(c.a)ref.add(c.a);if(c.b)ref.add(c.b);if(c.mid)ref.add(c.mid);});
   keep.forEach(k=>ref.add(k));
@@ -99,7 +100,12 @@ function cleanupSk(sk){
   sk.constraints=(sk.constraints||[]).filter(c=>{
     if(c.line&&!eids.has(c.line))return false;
     if(c.ent&&!eids.has(c.ent))return false;
+    if(c.s&&!eids.has(c.s))return false; // tangence de spline : la spline
     if(c.p&&!sk.points[c.p])return false;
+    if(c.type==='stangent'||c.type==='scurv'){const S=entById(sk,c.s),O=entById(sk,c.ent); // tangence / courbure de spline
+      if(!S||S.t!=='spline'||S.pts.indexOf(c.p)<0||!skSplineTanPid(sk,S,c.p))return false;
+      if(O&&O.t==='spline'&&!skSplineTanPid(sk,O,c.p))return false;
+      if(c.type==='scurv'&&!(sk.constraints||[]).some(k=>k.type==='stangent'&&k.s===c.s&&k.p===c.p&&k.ent===c.ent))return false;} // G2 sans G1 : retirée
     if(c.type==='coincident')return(!c.a||!!sk.points[c.a])&&(!c.b||!!sk.points[c.b]); // a/b = POINTS
     if(c.type==='symmetric')return(!!eids.has(c.a)&&!!eids.has(c.b)&&!!eids.has(c.mid));
     if(c.type==='offset'&&!(eids.has(c.c)&&eids.has(c.d)))return false; // V0.11.25 : 2ᵉ paire (c/d) = entités
@@ -206,6 +212,7 @@ function skConKey(c){
     case 'midpoint': return c.p!=null?('midpoint@'+c.p+'|'+c.line):('midpoint@@'+pair(c.a,c.b));
     case 'online': return 'online@'+c.p+'|'+c.line;
     case 'oncircle': return 'oncircle@'+c.p+'|'+c.ent;
+    case 'stangent': case 'scurv': return c.type+'@'+c.s+'|'+c.p+'|'+c.ent;
     default: return c.type+'@'+(c.id||'');
   }
 }
@@ -231,7 +238,8 @@ function skFixed(sk){
   const f=new Set();
   (sk.constraints||[]).forEach(c=>{
     if(c.type==='fix'&&c.p)f.add(c.p);
-    if(c.type==='fix'&&c.ent){const e=entById(sk,c.ent);if(e&&(e.t==='circle'||e.t==='arc'||e.t==='cpoint')&&(e.pc||e.p))f.add(e.pc||e.p);}
+    if(c.type==='fix'&&c.ent){const e=entById(sk,c.ent);if(e&&(e.t==='circle'||e.t==='arc'||e.t==='cpoint')&&(e.pc||e.p))f.add(e.pc||e.p);
+      if(e&&e.t==='spline')skSplineAllPids(sk,e).forEach(p=>f.add(p));} // spline fixe : points de passage et poignées
   });
   if((sk.points||{})[SK_ORIGIN])f.add(SK_ORIGIN);
   return f;
@@ -387,6 +395,7 @@ function solveSketchRelax(sk,iters,anchor){
         if(!fix.has(c.p)){Pt.x+=dx/d*err*0.5;Pt.y+=dy/d*err*0.5;}
         else if(!fix.has(E.pc)){CC.x-=dx/d*err*0.5;CC.y-=dy/d*err*0.5;} // point figé → le centre suit
       }
+      if(c.type==='stangent')skStanRelax(sk,c,fix); // tangence de spline : la poignée tourne vers la tangente
       if(c.type==='online'){ // point sur ligne : perpendiculaire à moitié ; point figé → la ligne suit
         const Pt=P[c.p],l=entById(sk,c.line);
         if(!Pt||!l||l.t!=='line')return;
@@ -798,6 +807,8 @@ function sklsCollect(sk,out,B){
         }
       }
     }
+    if(c.type==='stangent'){const r=skStanResid(sk,c);if(r!=null)push(r);} // poignée de spline alignée sur la tangente (mm)
+    if(c.type==='scurv'){const r=skCurvResid(sk,c);if(r!=null)push(r);}   // courbures égales au raccord (G2, ramené en mm)
     if(c.type==='fix'){ /* exclus des variables → pas de résidu */ }
   });
   // ── structure des arcs : les extrémités restent sur le cercle (sauf point fixé) ──
@@ -1166,5 +1177,6 @@ function entLocked(sk,e,fix){
   if(e.t==='line')return fix.has(e.p1)&&fix.has(e.p2);
   if(e.t==='cpoint')return fix.has(e.p);
   if(e.t==='circle'||e.t==='arc')return fix.has(e.pc)&&rLocked(sk,e);
+  if(e.t==='spline')return skSplineAllPids(sk,e).every(p=>fix.has(p));
   return false;
 }

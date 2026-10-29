@@ -239,6 +239,7 @@ function sweepChainPts2D(sk,pts,chain){
     const ed=st.ed,A=pts[st.from],B=pts[ed.a===st.from?ed.b:ed.a];
     if(!A||!B)return;
     if(ed.kind==='line'){if(!out.length)out.push(A);out.push(B);return;}
+    if(ed.kind==='spline'){const pl=skEdgePoly(ed,st.from);for(let k=out.length?1:0;k<pl.length;k++)out.push({x:pl[k][0],y:pl[k][1]});return;} // profil à spline
     const e=ed.e,C=sk.points[e.pc],an=arcAngles(sk,e);if(!C||!an)return;
     const aF=Math.atan2(A.y-C.y,A.x-C.x),dA=an.a2-an.a1;
     const ccw=Math.min(nm(aF-an.a1),TAU-nm(aF-an.a1))<=Math.min(nm(aF-an.a2),TAU-nm(aF-an.a2));

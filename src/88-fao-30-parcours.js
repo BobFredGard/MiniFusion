@@ -844,6 +844,9 @@ function faoSketchLoop(skId){
         if(ed.kind==='line'){
           const q=tr.pts[toId];
           if(q)pts.push([q.x,q.y]);
+        }else if(ed.kind==='spline'){ // 2026-10-29 : spline d'esquisse → sa polyligne
+          const pl=skEdgePoly(ed,st.from);
+          for(let k=1;k<pl.length;k++)pts.push([pl[k][0],pl[k][1]]);
         }else{
           const a=ed.e, C=tr.pts[a.pc], an=arcAngles(sk,a);
           if(!C||!an||!(a.r>1e-9)){bad=true;break;}

@@ -379,10 +379,11 @@ function drawSketchHelpers(){
     const mk=(pts,e)=>{const m=(e&&e.axis)?matAx:((e&&e.construction)?matC:mat);const L=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),m);if(m!==mat)L.computeLineDistances();return L;};
     const to3=(x,y)=>new THREE.Vector3().copy(o).addScaledVector(u,x).addScaledVector(v,y);
     (sk.entities||[]).forEach(e=>{
-      if(e.t==='line'){const A=P[e.p1],B=P[e.p2];if(!A||!B)return;
+      if(e.t==='line'){const A=P[e.p1],B=P[e.p2];if(!A||!B||e.handle)return; // poignée de spline : esquisse ouverte seulement
         grp.add(mk([to3(A.x,A.y),to3(B.x,B.y)],e));}
       if(e.t==='circle'){const C=P[e.pc];if(!C||!(e.r>0))return;const pts=[];for(let i=0;i<=48;i++){const a=i/48*Math.PI*2;pts.push(to3(C.x+Math.cos(a)*e.r,C.y+Math.sin(a)*e.r));}grp.add(mk(pts,e));}
       if(e.t==='arc'){const C=P[e.pc];if(!C||!(e.r>0))return;const an=arcAngles(sk,e);if(!an)return;const pts=[];const d=an.a2-an.a1;const n2=Math.max(2,Math.ceil(d/(Math.PI*2)*48));for(let i=0;i<=n2;i++){const a=an.a1+d*i/n2;pts.push(to3(C.x+Math.cos(a)*e.r,C.y+Math.sin(a)*e.r));}grp.add(mk(pts,e));}
+      if(e.t==='spline'){const pl=skSplinePoly(sk,e);if(pl)grp.add(mk(pl.map(q=>to3(q[0],q[1])),e));}
     });
     scene.add(grp);
   });

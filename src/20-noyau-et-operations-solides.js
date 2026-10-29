@@ -128,6 +128,20 @@ function occWireFromChain(sk,tr,chain,bin,z0){
       const me=occBinPush(bin,new occt.BRepBuilderAPI_MakeEdge_3(PW(A.x,A.y),PW(B.x,B.y)));
       me.Build();if(!me.IsDone())throw new Error('arête ligne impossible');
       mkW.Add_1(me.Edge());
+    }else if(ed.kind==='spline'){
+      // 2026-10-29 : spline d'esquisse = B-spline EXACTE (mêmes pôles et nœuds que le dessin 2D, 50-esquisse-6),
+      // pôles posés dans le plan par la même application affine que les lignes : bouts identiques aux voisines
+      const bs=ed.bs;if(!bs||!bs.P||bs.P.length<(bs.p||SK_SPL_DEG)+1)throw new Error('spline invalide');
+      const poles=occBinPush(bin,new occt.TColgp_Array1OfPnt_2(1,bs.P.length));
+      bs.P.forEach((q,i)=>poles.SetValue(i+1,PW(q[0],q[1])));
+      const km=skBsKnotMults(bs.U);
+      const kn=occBinPush(bin,new occt.TColStd_Array1OfReal_2(1,km.k.length)),mu=occBinPush(bin,new occt.TColStd_Array1OfInteger_2(1,km.k.length));
+      km.k.forEach((v,i)=>{kn.SetValue(i+1,v);mu.SetValue(i+1,km.m[i]);});
+      const h=occBinPush(bin,new occt.Handle_Geom_Curve_2(new occt.Geom_BSplineCurve_1(poles,kn,mu,bs.p||SK_SPL_DEG,false))); // la poignée possède la courbe
+      const me=occBinPush(bin,new occt.BRepBuilderAPI_MakeEdge_24(h));
+      me.Build();if(!me.IsDone())throw new Error('arête spline impossible');
+      let e=me.Edge();if(ed.a!==st.from)e=occt.TopoDS.Edge_1(e.Reversed());
+      mkW.Add_1(e);
     }else{
       const a=ed.e,Cc=tr.pts[a.pc];
       const an=arcAngles(sk,a);if(!an||!Cc)throw new Error('arc invalide');

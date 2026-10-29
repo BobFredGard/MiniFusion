@@ -92,6 +92,7 @@ function revolveSideCheck(sk,tr,ax){
       if(!seg||!seg.ed)return;
       const toId=(seg.ed.a===seg.from)?seg.ed.b:seg.ed.a;
       see(tr.pts[seg.from]);see(tr.pts[toId]);
+      if(seg.ed.kind==='spline'){(seg.ed.poly||[]).forEach(q=>see({x:q[0],y:q[1]}));return;} // la courbe peut franchir l'axe entre ses points
       const a=seg.ed.e;
       if(seg.ed.kind!=='line'&&a&&a.pc){
         const C=tr.pts[a.pc]||sk.points[a.pc];
@@ -254,6 +255,7 @@ function legacyRevolveGeos(f,warnArr){
       const pf=tr.pts[seg.from],pt=tr.pts[toId];
       if(!pf||!pt)return;
       if(seg.ed.kind==='line'){push(pf);push(pt);return;}
+      if(seg.ed.kind==='spline'){skEdgePoly(seg.ed,seg.from).forEach(q=>push({x:q[0],y:q[1]}));return;}
       // arc : on échantillonne l'entité réelle
       const e=seg.ed.e;if(!e)return;
       const C=tr.pts[e.pc];if(!C)return;

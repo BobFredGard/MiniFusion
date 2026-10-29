@@ -149,7 +149,8 @@ function mergePoints(sk,fromPid,toPid){
     if(P&&O&&(P.x!==O.x||P.y!==O.y)){const dx=O.x-P.x,dy=O.y-P.y;
       Object.keys(sk.points).forEach(k=>{if(k!==fromPid&&k!==SK_ORIGIN){const q=sk.points[k];q.x+=dx;q.y+=dy;}});}
   }
-  sk.entities.forEach(e=>{['p1','p2','p','pc','pa','pb'].forEach(k=>{if(e[k]===fromPid)e[k]=toPid;});});
+  sk.entities.forEach(e=>{['p1','p2','p','pc','pa','pb'].forEach(k=>{if(e[k]===fromPid)e[k]=toPid;});
+    if(e.pts)e.pts=e.pts.map(p=>p===fromPid?toPid:p).filter((p,i,a)=>i===0||p!==a[i-1]);}); // spline : doublon voisin retiré
   (sk.dims||[]).forEach(d=>{if(d.a===fromPid)d.a=toPid;if(d.b===fromPid)d.b=toPid;if(d.p===fromPid)d.p=toPid;});
   (sk.constraints||[]).forEach(c=>{if(c.p===fromPid)c.p=toPid;if(c.a===fromPid&&c.type==='coincident')c.a=toPid;if(c.b===fromPid&&c.type==='coincident')c.b=toPid;});
   // ancrages de congé/chanfrein : une ancre type p visant le point fusionné doit suivre
@@ -656,6 +657,8 @@ function skBoxHits(box){
     let sel=false;
     if(e.t==='line'){const A=P[e.p1],B=P[e.p2];if(A&&B)sel=segIn(A,B);}
     else if(e.t==='cpoint'){const Q=P[e.p];if(Q)sel=inPt(Q.x,Q.y);}
+    else if(e.t==='spline'){const pl=skSplinePoly(sk,e,8)||[];
+      sel=pl.length>1&&(fwd?pl.every(q=>inPt(q[0],q[1])):pl.some((q,i)=>i>0&&segIn({x:pl[i-1][0],y:pl[i-1][1]},{x:q[0],y:q[1]})));}
     else{const C=P[e.pc];if(C){
       if(fwd)sel=inPt(C.x,C.y);
       else sel=(C.x+e.r>=x0&&C.x-e.r<=x1&&C.y+e.r>=y0&&C.y-e.r<=y1);
@@ -679,6 +682,7 @@ function nearestEntity(sk,x,y,maxD,skipConstr){
     if(e.t==='circle'){const C=P[e.pc];if(C)d=Math.abs(Math.hypot(x-C.x,y-C.y)-e.r);}
     if(e.t==='arc'){const C=P[e.pc];if(C){const an=arcAngles(sk,e);const dR=Math.abs(Math.hypot(x-C.x,y-C.y)-e.r);d=(an&&dR<maxD*1.5&&angInArc(Math.atan2(y-C.y,x-C.x),an.a1,an.a2))?dR:1e9;}}
     if(e.t==='cpoint'){const Q=P[e.p];if(Q)d=Math.hypot(x-Q.x,y-Q.y);}
+    if(e.t==='spline'){const pl=skSplinePoly(sk,e);if(pl)d=skPolyDist(x,y,pl);}
     if(d<bd){bd=d;best=e;}
   });
   return best;
