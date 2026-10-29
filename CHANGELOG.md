@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**433 versions**, de `2026-09-28b` à `V0.21.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**434 versions**, de `2026-09-28b` à `V0.21.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5562,3 +5562,9 @@ Question : « Comment fait-on pour changer la longueur après création ? Peut-o
 Demande : « tous ces icônes ne sont pas utiles dans la partie modélisation. On ne devrait voir que Assembler et le reste quand on passe dans Assembler. L'icône Assembler dans le monde Assembler devrait s'appeler Modéliser ».
 - **Ruban moderne** (`src/97-interface-moderne.js`) : en modélisation, le groupe Composants ne montre que **Assembler** ; Composant, Occurrence, Inspecter, Depuis corps, Normalisés et Insérer (classe `mfAsmOnly`) n'apparaissent qu'en mode assemblage (`body[data-asm="1"]`), où le premier bouton s'intitule **Modéliser**. Bascule en CSS, `grp` accepte une classe par bouton.
 - **Tests** : vérifié dans le navigateur (aller-retour Assembler ↔ Modéliser, boutons visibles). `npm run ci`.
+
+## V0.21.3 - Rendu direct : le matériau changé s'affiche sans recharger
+Signalement : « Le changement de matériau dans le 3D ne se met pas à jour automatiquement, il faut un CTRL+R » — « ça ne le fait pas tout le temps ».
+- **Cause** : seulement après avoir éteint puis rallumé Rendu direct (ou être passé par « Actuel (CAO) »). three r147 garde, par matériau, le programme compilé de chaque clé ; au retour en ambiance, il reprenait le programme `vEnvPhoto2` déjà compilé SANS rappeler `onBeforeCompile`, donc sans rebrancher les uniformes du nouveau patch : la carte graphique gardait la couleur et le matériau d'avant jusqu'au rechargement.
+- **Correctif** (`src/98-rendu-vue.js`) : `vEnvUnpatch` libère les programmes du matériau (`m.dispose()`) ; le prochain patch recompile et rebranche ses uniformes.
+- **Tests** : `tests/browser/rendu.spec.cjs` — après le retour à Actuel, Rendu direct rallumé, matériau cuivre : les uniformes du programme sont ceux du patch et portent la couleur du cuivre (échouait avant). Vérifié dans le navigateur (Axe, Goupille : laiton → cuivre → or après plusieurs bascules). `npm run ci`.

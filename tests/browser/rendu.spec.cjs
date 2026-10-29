@@ -163,5 +163,18 @@ test('vue CAO : ambiance Studio, apparence de rendu, verre approché, ombre, ret
   expect(fin).toEqual({patch:false,fondTex:false});
   const fond2=(await pixelsVue(page)).fond;
   expect(fond2.reduce((a,v,i)=>a+Math.abs(v-fond0[i]),0),'fond du thème retrouvé').toBeLessThan(12);
+
+  // V0.21.3 : Rendu direct rallumé → un matériau changé s'affiche sans recharger (three reprenait le
+  // programme en cache sans nos uniformes : couleur figée sur le GPU jusqu'au Ctrl+R)
+  await page.locator('#btnLive').click();
+  await page.waitForFunction(i=>{const b=bodies.find(q=>bodyIdOfRuntime(q)===i);return vEnvS.on&&b.mesh.material.userData.vEnv;},id);
+  await page.evaluate(i=>setRenderLook(i,'cuivre',null),id);
+  const lie=i=>{const m=bodies.find(q=>bodyIdOfRuntime(q)===i).mesh.material,p=renderer.properties.get(m),v=m.userData.vEnv;
+    return {lie:!!(v&&p.uniforms&&p.uniforms.uEnvCol===v.U.uEnvCol),gpu:p.uniforms&&p.uniforms.uEnvCol?p.uniforms.uEnvCol.value.getHex():null,cuivre:matDef('cuivre').col,
+      U:v?v.U.uEnvCol.value.getHex():null,on:vEnvS.on,vEnv,progs:p.programs?p.programs.size:-1};};
+  try{await page.waitForFunction(new Function('i','const r=('+lie+')(i);return r.lie&&r.gpu===r.cuivre;'),id,{timeout:20000});}
+  catch(e){throw new Error('uniformes non rebranchés : '+JSON.stringify(await page.evaluate(new Function('i','return ('+lie+')(i);'),id)));}
+  await page.locator('#btnLive').click();
+  await page.waitForFunction(()=>!vEnvS.on);
   expect(err).toEqual([]);
 });

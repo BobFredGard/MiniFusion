@@ -74,6 +74,9 @@ function vEnvUnpatch(m){
   const s=m&&m.userData&&m.userData.vEnv;if(!s)return;
   m.onBeforeCompile=s.obc;m.customProgramCacheKey=s.key;m.envMap=s.env;m.envMapIntensity=s.ei;
   delete m.userData.vEnv;m.needsUpdate=true;
+  // three garde le programme compilé par matériau et, en le reprenant au retour en ambiance, n'y
+  // rebranche PAS nos uniformes (couleur, matériau figés jusqu'au rechargement) : on l'oublie
+  m.dispose();
 }
 function vEnvMeshes(cb){
   // corps de la pièce (hors modes congé / dépouille / coque : leur matière est celle de l'outil)
