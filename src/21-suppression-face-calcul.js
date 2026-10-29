@@ -93,6 +93,22 @@ function delWkMain(){
     self.postMessage({t:'debut',id:m.id});
     const t0=Date.now();let s=null,hs=[];
     const fin=o=>self.postMessage(Object.assign({t:'fin',id:m.id,kept:0,err:null,warnings:[],brep:null,ms:Date.now()-t0},o));
+    if(m.kind==='thr'){
+      // V0.21.19 : filets modélisés (occThrCut, src/20) — corps et vides en BRep
+      let vd=null,r=null;
+      try{
+        s=occBrepRead(m.brep);vd=occBrepRead(m.voids);
+        r=occThrCut(s,vd);
+        // maillage d'affichage, repris tel quel par le fil principal s'il est au moins aussi
+        // fin que demandé : même angle, flèche −10 % (la boîte du corps fileté, qui fixe la
+        // flèche d'affichage, est un peu plus grande que celle du corps sans filets ; sinon
+        // tout est remaillé au retour : 2,5 s mesurées sur « Perçages »)
+        if(m.lin>0)new occt.BRepMesh_IncrementalMesh_2(r,0.9*m.lin,false,m.ang||0.5,false);
+        fin({brep:occBrepWrite(r)});
+      }catch(e){fin({err:String((e&&e.message)||e)});}
+      finally{[s,vd,r].forEach(x=>{try{if(x)x.delete();}catch(e){}});}
+      return;
+    }
     try{
       s=occBrepRead(m.brep);
       hs=m.idx.map(i=>occFaceAt(s,i));
@@ -110,7 +126,8 @@ function delWkSource(){
   // + rattrapage des exceptions C++ du noyau (V0.15.8, 96-noyau) : la colle chargée par
   // importScripts cherche ___cxa_can_catch sur self — posée AVANT ce chargement.
   const fns=[occBinPush,occDispose,occUnifyKeepEdges,occUnify,occCoqueValide,occBoxMinMax,occDelFaceDebord,
-    occDeleteFacesOnce,occDelFacesTry,occBrepWrite,occBrepRead,occFaceAt,occtTypeName,occtCanCatch,occtExcInstall];
+    occDeleteFacesOnce,occDelFacesTry,occBrepWrite,occBrepRead,occFaceAt,occtTypeName,occtCanCatch,occtExcInstall,
+    occCut,occCutEach,occThrCut];
   return 'let occt=null,occtReady=false;const DEL_ISOLE_MAX='+DEL_ISOLE_MAX+',DEL_BREP_PATH='+JSON.stringify(DEL_BREP_PATH)+';\n'+fns.map(String).join('\n')+'\nocctExcInstall(self);\n('+delWkMain+')();\n';
 }
 function delWkStart(){
@@ -136,7 +153,7 @@ function delWkMsg(me,m){
   if(m.t==='ko'){delWkCrash(me,m.err);return;}
   if(m.t==='debut'){
     me.sursis=false;
-    delWkArm(me,()=>delWkTimeout(me),DEL_WK_DELAI);
+    delWkArm(me,()=>delWkTimeout(me),me.job&&me.job.kind==='thr'?THR_WK_DELAI:DEL_WK_DELAI);
     return;
   }
   if(m.t==='fin'&&me.job&&me.job.key===m.id){
@@ -167,7 +184,9 @@ function delWkTimeout(me){
   if(!me.sursis){me.sursis=true;delWkArm(me,()=>delWkTimeout(me),DEL_WK_SURSIS);return;}
   const j=me.job;
   delWkStop(me);
-  delWkFin(j.key,{brep:null,kept:0,warnings:[],ms:DEL_WK_DELAI,delai:true,
+  delWkFin(j.key,j.kind==='thr'
+    ?{brep:null,kept:0,warnings:[],ms:THR_WK_DELAI,delai:true,err:`calcul des filets arrêté après ${Math.round(THR_WK_DELAI/1000)} s`}
+    :{brep:null,kept:0,warnings:[],ms:DEL_WK_DELAI,delai:true,
     err:`le noyau ne sait pas supprimer ces faces en un temps raisonnable (calcul arrêté après ${Math.round(DEL_WK_DELAI/1000)} s)`+(j.idx.length>1?' — essayez-les séparément':'')});
   if(delWkQ.length)delWkStart();
   delWkReplay(j.key);
@@ -202,7 +221,8 @@ function delWkPump(){
   if(!delWk||!delWk.ready||delWk.job)return;
   const j=delWkQ.shift();if(!j)return;
   delWk.job=j;
-  delWk.w.postMessage({t:'job',id:j.key,brep:j.brep,idx:j.idx});
+  delWk.w.postMessage(j.kind==='thr'?{t:'job',kind:'thr',id:j.key,brep:j.brep,voids:j.voids,lin:j.lin,ang:j.ang}
+    :{t:'job',id:j.key,brep:j.brep,idx:j.idx});
 }
 function delWkAsk(key,result,hs,fid,ckPre){
   // Rejeu : résultat du worker pour cette clé, ou {pending} (calcul lancé / en cours).
@@ -237,6 +257,35 @@ function delWkAsk(key,result,hs,fid,ckPre){
   delWkPump();
   return{pending:true,msg:'calcul en cours… (corps affiché sans la suppression)'};
 }
+/* ---------- filets modélisés dans le même worker (V0.21.19) ----------
+   Le rejeu creuse les filets en dernier (src/20, occReplayBody) : ce travail part ici,
+   la pièce est affichée tout de suite sans eux (filet cosmétique), puis reprise quand le
+   worker répond (résultat rangé sous la clé du point de contrôle, comme une suppression).
+   Une édition qui rend le travail caduc retire de la file les travaux de mêmes filets. */
+const THR_WK_DELAI=180000; // ms
+function thrWkAsk(key,result,voids,fids,D){
+  // → {pending:true} | {res:{r,err}} | {res:null} (pas de worker : calcul synchrone)
+  if(!delWkUsable())return{res:null};
+  const e=delWkRes.get(key);
+  if(e&&e.st==='fin'){
+    let r=null,err=e.err;
+    if(e.brep){try{r=occBrepRead(e.brep);}catch(x){err=(x&&x.message)||String(x);}}
+    return{res:{r,err:r?null:(err||'résultat illisible')}};
+  }
+  if(e)return{pending:true};
+  let brep,vb;
+  try{brep=occBrepWrite(result);vb=occBrepWrite(voids);}catch(x){return{res:null};}
+  const fk=(fids||[]).join(',');
+  for(let i=delWkQ.length-1;i>=0;i--)if(delWkQ[i].kind==='thr'&&delWkQ[i].fid===fk){delWkRes.delete(delWkQ[i].key);delWkQ.splice(i,1);}
+  // filets de la version précédente encore en calcul : caducs, le worker est relancé
+  // (le noyau ne s'interrompt pas ; le module wasm compilé est réemployé)
+  if(delWk&&delWk.job&&delWk.job.kind==='thr'&&delWk.job.fid===fk){delWkRes.delete(delWk.job.key);delWkStop(delWk);}
+  delWkRes.set(key,{st:'run',sig:null,thr:true});
+  delWkQ.push({key,kind:'thr',fid:fk,brep,voids:vb,idx:[],lin:D&&D.lin||0,ang:D&&D.ang||0});
+  try{delWkStart();}catch(x){delWkOff=(x&&x.message)||String(x);delWkQ.length=0;delWkRes.delete(key);return{res:null};}
+  delWkPump();
+  return{pending:true};
+}
 function delWkPending(){
   // Nombre de suppressions encore attendues (en cours + en file).
   const s=new Set();delWkRes.forEach(v=>{if(v.st==='run')s.add(v);});return s.size;
@@ -249,6 +298,8 @@ function delWkReplay(key){
     const e=key&&delWkRes.get(key);
     if(!e||delWkPending())return;
     try{
+      if(e.thr){faceEl.textContent=e.err&&!e.brep?'⚠ Filets modélisés : '+e.err+'.'
+        :'Filets modélisés : calculés en '+(e.ms/1000).toFixed(1).replace('.',',')+' s.';return;}
       faceEl.textContent=e.err&&!e.brep
         ?'⚠ Suppression de face : '+e.err+' (voir ⚠ dans l\'arbre, Ctrl+Z pour annuler).'
         :'Suppression de face : calcul terminé en '+(e.ms/1000).toFixed(1).replace('.',',')+' s.';

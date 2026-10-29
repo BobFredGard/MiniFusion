@@ -37,7 +37,9 @@ function faoHoleShapes(){
 }
 function faoHoleShapesW(){
   const out=[];
-  try{ if(typeof occLive!=='undefined'&&occLive&&occLive.shape)out.push(occLive.shape); }catch(e){}
+  // V0.21.19 : pièce SANS filets modélisés quand il y en a (le taraud fait le filet ;
+  // l'avant-trou y est un vrai cylindre au Ø de perçage)
+  try{ if(typeof occLive!=='undefined'&&occLive&&occLive.shape)out.push(occLive.shapeFao||occLive.shape); }catch(e){}
   try{
     (typeof bodies!=='undefined'&&bodies?bodies:[]).forEach(function(b){
       if(!b||b.kind!=='import'||b.visible===false||b.ghost)return;
@@ -93,6 +95,36 @@ function faoHolesDetect(shapes){
     }
     try{ ex.delete(); }catch(e){}
   });
+  // V0.21.19 : un filet modélisé est un vide construit d'un bloc (src/76,
+  // occHoleThreadVoid) : crête et fût sont des faces réglées, sans cylindre analytique.
+  // Le trou est alors repris de la fonction Perçage (axe, Ø de crête, profondeur).
+  try{
+    (doc.features||[]).forEach(function(f){
+      if(!f||f.type!=='hole'||f.visible===false||!f.thread||!f.thread.model)return;
+      const sk=doc.sketches.find(function(q){return q.id===f.sketchId;});if(!sk)return;
+      const th=(typeof isoHoleThread==='function')?isoHoleThread(f.thread.size,f.thread.p,f.thread.clear):null;if(!th)return;
+      const A=holeAxis(f,sk);if(Math.abs(A.dir.z)<0.9999)return;
+      const N=holeNorm(f),rb=Math.max((+f.d)/2,th.D1/2+th.c);
+      const off=N.kind==='cbore'?N.cbH:(N.kind==='csink'?Math.max(0,(N.csD-N.d)/2/Math.tan(N.csA*Math.PI/360)):0);
+      let zEndAll=null;
+      A.pts.forEach(function(P){
+        let known=false;
+        groups.forEach(function(G){if(Math.abs(G.r-rb)<0.03&&Math.hypot(G.x-P.x,G.y-P.y)<0.03)known=true;});
+        if(known)return;
+        let depth=N.end==='blind'?N.depth:(N.end==='upto'?holePlaneDist(f.uptoPlane,P,A.dir):null);
+        let z2;
+        if(depth!=null)z2=P.z+A.dir.z*depth;
+        else{ // débouchant : jusqu'à la face de la pièce traversée
+          if(zEndAll===null){const bb=new occt.Bnd_Box_1();shapes.forEach(function(s){occt.BRepBndLib.Add(s,bb,true);});
+            zEndAll=A.dir.z<0?bb.CornerMin().Z():bb.CornerMax().Z();try{bb.delete();}catch(e){}}
+          z2=zEndAll;
+        }
+        const z1=P.z+A.dir.z*off;
+        groups.set('filet|'+P.x.toFixed(2)+'|'+P.y.toFixed(2)+'|'+rb.toFixed(3),
+          {x:+P.x.toFixed(3),y:+P.y.toFixed(3),r:rb,rng:[{lo:Math.min(z1,z2),hi:Math.max(z1,z2),u:Math.PI*2,f:'filet:'+f.id}],shape:0});
+      });
+    });
+  }catch(e){}
   // Un même axe peut porter PLUSIEURS tronçons (trou qui traverse une cavité) :
   // chaque intervalle Z contigu est un trou à part.
   const segs=new Map();
@@ -121,12 +153,14 @@ function faoHolesDetect(shapes){
     out.forEach(function(g,i){segs.set(key+'#'+i,g);});
   });
   groups.clear();segs.forEach(function(v,k){groups.set(k,v);});
+  const cls=new Map(); // un classificateur par solide, partagé (libéré en fin de détection)
+  const clOf=function(i){let c=cls.get(i);if(!c){c=new occt.BRepClass3d_SolidClassifier_2(shapes[i]);cls.set(i,c);}return c;};
   const holes=[];
   groups.forEach(function(g){
     // filet modélisé : couverture/classification perturbées par la gorge → trou d'office
     if(!g.modeled){
       if(g.cov<Math.PI*1.5)return; // < 270° : congé, rainure, demi-lune — pas un trou
-      if(!faoHoleIsHole(shapes[g.shape],g))return; // pion / bossage : matière DEDANS
+      if(!faoHoleIsHole(shapes[g.shape],g,clOf(g.shape)))return; // pion / bossage : matière DEDANS
     }
     const h={x:g.x,y:g.y,d:+(2*g.r).toFixed(3),ztop:+g.zHi.toFixed(3),zbot:+g.zLo.toFixed(3),
       through:false,tipAng:0,zSurf:+g.zHi.toFixed(3),chD:0,cb:null,faces:g.faces};
@@ -156,11 +190,11 @@ function faoHolesDetect(shapes){
     let zTest=h.zbot-0.3;
     cones.forEach(function(c){ if(Math.hypot(c.x-h.x,c.y-h.y)<=0.01&&c.zHi<=h.zbot+0.01&&c.apex<h.zbot)zTest=Math.min(zTest,c.apex-0.3); });
     try{
-      const cl=new occt.BRepClass3d_SolidClassifier_2(shapes[g?g.shape:0]);
+      const cl=clOf(g?g.shape:0);
       const P=new occt.gp_Pnt_3(h.x,h.y,zTest);
       cl.Perform(P,1e-6);
       h.through=(cl.State()===occt.TopAbs_State.TopAbs_OUT);
-      try{P.delete();cl.delete();}catch(e){}
+      try{P.delete();}catch(e){}
     }catch(e){}
   });
   // Trous créés par la fonction 3D « Perçage » (src/76) : nature reconnue d'office
@@ -184,16 +218,19 @@ function faoHolesDetect(shapes){
     });
   }catch(e){}
   holes.sort(function(a,b){return b.ztop-a.ztop||a.d-b.d||a.x-b.x||a.y-b.y;});
+  cls.forEach(function(c){try{c.delete();}catch(e){}});
   if(shapes.length===1){faoHoleCache={shape:shapes[0],list:holes};}
   return holes;
 }
-function faoHoleIsHole(sh,g){
+function faoHoleIsHole(sh,g,clShared){
   // Trou = vide juste à l'intérieur du rayon, matière juste à l'extérieur, à mi-hauteur
   // (8 directions ; majorité — un perçage voisin ou une poche peut en manger une).
+  // clShared (V0.21.19) : classificateur du solide partagé par tous les trous — sa
+  // construction coûte cher sur une pièce aux filets modélisés (centaines de faces).
   let inOut=0,outIn=0;
   const zm=(g.zLo+g.zHi)/2,e=Math.min(0.3,g.r*0.25);
   try{
-    const cl=new occt.BRepClass3d_SolidClassifier_2(sh);
+    const cl=clShared||new occt.BRepClass3d_SolidClassifier_2(sh);
     const st=function(x,y,z){const P=new occt.gp_Pnt_3(x,y,z);cl.Perform(P,1e-6);const r=cl.State();try{P.delete();}catch(e2){}return r;};
     const IN=occt.TopAbs_State.TopAbs_IN,OUT=occt.TopAbs_State.TopAbs_OUT;
     for(let k=0;k<8;k++){
@@ -201,7 +238,7 @@ function faoHoleIsHole(sh,g){
       if(st(g.x+(g.r+e)*c,g.y+(g.r+e)*s,zm)===IN)inOut++;
       if(st(g.x+(g.r-e)*c,g.y+(g.r-e)*s,zm)===OUT)outIn++;
     }
-    try{cl.delete();}catch(e2){}
+    if(!clShared){try{cl.delete();}catch(e2){}}
   }catch(e){return false;}
   return inOut>=5&&outIn>=5;
 }

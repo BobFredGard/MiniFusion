@@ -45,14 +45,20 @@ const {loadApp}=require('./appvm.cjs');
     "{const ex=new occt.TopExp_Explorer_2(occLive.shape,occt.TopAbs_ShapeEnum.TopAbs_SOLID,occt.TopAbs_ShapeEnum.TopAbs_SHAPE);let n=0;for(;ex.More();ex.Next())n++;",
     " A(n===1,'10a : un seul solide après les perçages filetés ('+n+')');}",
     "A(st(30,30,25)===OUT&&st(30,30,5)===OUT,'10b : axe du trou fileté débouchant vide sur toute la hauteur');",
+    // V0.21.19 : dans l'arbre, le perçage n'est qu'un avant-trou lisse (aucune face
+    // hélicoïdale pour les fonctions suivantes) ; le filet est creusé en fin de rejeu
+    "{occThroughBase=null;const r=occShapeOfHole(f1);const ex=new occt.TopExp_Explorer_2(r.shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,occt.TopAbs_ShapeEnum.TopAbs_SHAPE);",
+    " let bs=0;for(;ex.More();ex.Next()){const ad=new occt.BRepAdaptor_Surface_2(occt.TopoDS.Face_1(ex.Current()),true);const t=ad.GetType();if(t!==occt.GeomAbs_SurfaceType.GeomAbs_Plane&&t!==occt.GeomAbs_SurfaceType.GeomAbs_Cylinder&&t!==occt.GeomAbs_SurfaceType.GeomAbs_Cone)bs++;ad.delete();}",
+    " A(bs===0&&!!r.thr,'10c : outil dans l\\'arbre = avant-trou analytique ('+bs+' face(s) libres), filet mis de côté pour la fin du rejeu');}",
     // V0.21.16 : coupe AXIALE du trou lamé (jeu 0) = trapèze ISO : racine au Ø 8, crête au
-    // Ø de perçage (6,75 ≥ D1 6,647), flancs à 60° (pente radiale/axiale = tan 60°)
+    // Ø de perçage (6,75 ≥ D1 6,647) + 0,02 (V0.21.19, jamais confondue avec l'avant-trou),
+    // flancs à 60° (pente radiale/axiale = tan 60°)
     // rayon où commence la matière, par dichotomie (le profil est monotone sur le rayon)
     "{const rad=z=>{let a=3.2,b=4.3;for(let k=0;k<12;k++){const m=(a+b)/2;if(st(70+m,30,z)===OUT)a=m;else b=m;}return (a+b)/2;};",
     " const zs=[],rs=[];for(let z=17;z>14.5;z-=0.025){zs.push(z);rs.push(rad(z));}",
     " const mx=Math.max(...rs),mn=Math.min(...rs);",
     " A(Math.abs(mx-4)<0.01,'11a : coupe axiale, racine du filet au Ø majeur 8 (R'+mx.toFixed(3)+')');",
-    " A(Math.abs(mn-3.375)<0.01,'11b : coupe axiale, crête au Ø de perçage 6,75 (R'+mn.toFixed(3)+')');",
+    " A(Math.abs(mn-3.385)<0.005,'11b : coupe axiale, crête au Ø de perçage 6,75 + 0,02 (R'+mn.toFixed(3)+')');",
     " let sl=[];for(let i=1;i<rs.length;i++){const d=Math.abs(rs[i]-rs[i-1]);if(d>0.02&&d<0.1)sl.push(d/0.025);}",
     " const sm=sl.reduce((a,b)=>a+b,0)/Math.max(1,sl.length);",
     " A(sl.length>4&&Math.abs(sm-Math.sqrt(3))<0.15,'11c : flancs à 60° dans la coupe axiale (pente '+sm.toFixed(2)+')');}",

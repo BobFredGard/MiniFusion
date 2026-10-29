@@ -341,7 +341,9 @@ function occCutEach(a,b){
   const la=new occt.TopTools_ListOfShape_1(),lt=new occt.TopTools_ListOfShape_1(),c=new occt.BRepAlgoAPI_Cut_1();
   try{
     la.Append_1(a);kids.forEach(k=>lt.Append_1(k));
-    c.SetArguments(la);c.SetTools(lt);c.Build();
+    // outils de perçage orientés par construction : le contrôle « solide retourné »
+    // (une classification complète contre les faces du filet) est superflu
+    c.SetArguments(la);c.SetTools(lt);c.SetCheckInverted(false);c.Build();
     const s=c.IsDone()?c.Shape():null;
     if(!s||s.IsNull())throw new Error('découpe impossible');
     return s;
@@ -1295,7 +1297,9 @@ function occTriPos(shape,defl,ang,wantN){
   return nrm?{pos,groups,nrm}:{pos,groups};
 }
 let occLive=null; // solide BRep affiché conservé pour le picking d'arêtes exact
-function occDropLive(){if(occLive){try{occLive.shape.delete();}catch(e){}occLive=null;}}
+function occDropLive(){if(occLive){try{occLive.shape.delete();}catch(e){}
+  try{if(occLive.shapeFao)occLive.shapeFao.delete();}catch(e){}
+  (occLive.preThr||[]).forEach(p=>{try{p.shape.delete();}catch(e){}});occLive=null;}}
 /* ---------- déplacement d'une face (push/pull) ----------
    Principe retenu après mesure : on ne cherche pas la primitive « déplacement » du noyau
    (BRepFeat_MakeDPrism existe mais sa signature Web est ambiguë et son résultat peut être
@@ -3222,6 +3226,8 @@ function occCleanup(FR,keepShape){
   occDispose(FR.bin);
   (FR.itemShapes||[]).forEach(s=>{if(s!==keepShape){try{s.delete();}catch(e){}}});
   if(FR.shape&&FR.shape!==keepShape){try{FR.shape.delete();}catch(e){}}
+  if(FR.shapeFao){try{FR.shapeFao.delete();}catch(e){}}
+  (FR.preThr||[]).forEach(p=>{try{p.shape.delete();}catch(e){}});
   // Rejeux jetables (projections, export : keepShape==null) : les solides par corps
   // partent aussi, sinon chaque passe upto fuit ses solides. Au rebuild (keep = occLive),
   // ce sont eux qui sont AFFICHÉS : on n'y touche jamais (b.shape les référence).
@@ -3257,24 +3263,26 @@ function occShapeCopy(sh){
 // 2026-10-16-003 : cache des OUTILS (prisme d'extrusion / révolution / perçage) par clé de
 // préfixe — la même que les points de contrôle. Sur un point de contrôle trouvé, l'outil
 // était quand même reconstruit (fusion des profils ≈ 45 % d'un rejeu « sans changement »).
-let occToolCk=new Map(); // ckKey → {shape, warnings}
+let occToolCk=new Map(); // ckKey → {shape, warnings, thr}
+let occThreadSkip=false; // V0.21.19 : rejeu partiel en cours — filets modélisés sautés
 function occToolCkGet(key){
   if(freshHard&&!(occProjPass>=1))return null;
   const t=occToolCk.get(key);if(!t)return null;
   occToolCk.delete(key);occToolCk.set(key,t); // fraîcheur
-  const sh=occShapeCopy(t.shape);return sh?{shape:sh,bins:[],warnings:t.warnings.slice()}:null;
+  const sh=occShapeCopy(t.shape);if(!sh)return null;
+  return {shape:sh,bins:[],warnings:t.warnings.slice(),thr:t.thr?occShapeCopy(t.thr):null};
 }
 function occToolCkPut(key,r){
   if(freshHard&&!(occProjPass>=1))return;
   if(!r||!r.shape||occToolCk.has(key))return;
   const cp=occShapeCopy(r.shape);if(!cp)return;
-  occToolCk.set(key,{shape:cp,warnings:(r.warnings||[]).slice()});
-  while(occToolCk.size>occCkMax()){const k=occToolCk.keys().next().value;const o=occToolCk.get(k);occToolCk.delete(k);try{o.shape.delete();}catch(e){}}
+  occToolCk.set(key,{shape:cp,warnings:(r.warnings||[]).slice(),thr:r.thr?occShapeCopy(r.thr):null});
+  while(occToolCk.size>occCkMax()){const k=occToolCk.keys().next().value;const o=occToolCk.get(k);occToolCk.delete(k);try{o.shape.delete();}catch(e){}try{if(o.thr)o.thr.delete();}catch(e){}}
 }
 function occCkClear(){
   for(const c of occCk){try{c.shape.delete();}catch(e){}}
   occCk=[];occCkWarn={};occCkEdges={};
-  occToolCk.forEach(o=>{try{o.shape.delete();}catch(e){}});occToolCk=new Map();
+  occToolCk.forEach(o=>{try{o.shape.delete();}catch(e){}try{if(o.thr)o.thr.delete();}catch(e){}});occToolCk=new Map();
 }
 function skSig(sk){
   // Signature numerique d'une esquisse : base (position + axes), points, entites,
@@ -3433,6 +3441,7 @@ function occReplayBody(bid,list){
   // ALL et UPn parcourent les MÊMES préfixes cumulatifs ; un marqueur dans la clé privait
   // les projections (upto<n) de tous les points de contrôle posés par le rejeu complet.
   const items=[]; // extrudes réussies, dans l'ordre (affichage nA/nC)
+  const threads=[]; // V0.21.19 : filets modélisés (vides filetés), creusés en fin de rejeu
   // Un import SEUL reste affiché comme avant (son mesh, son nom dans Pièces) ;
   // dès qu'AU MOINS une autre fonction coexiste dans le corps, il entre dans la
   // chaîne exacte et devient le volume à unir / soustraire.
@@ -3602,6 +3611,7 @@ function occReplayBody(bid,list){
       let r=occToolCkGet(ckKey);
       if(!r){r=(f.type==='revolve')?occShapeOfRevolve(f):(f.type==='sweep'?occShapeOfSweep(f):(f.type==='hole'?occShapeOfHole(f):occShapeOfExtrude(f)));occToolCkPut(ckKey,r);}
       bin.push(...r.bins);itemShapes.push(r.shape);
+      if(r.thr)threads.push({f,thr:r.thr});
       if(r.warnings.length)msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       shape=r.shape;if(!xtra)items.push({f,shape});
     }catch(err){
@@ -3643,8 +3653,55 @@ function occReplayBody(bid,list){
     }
     occCkPut(ckKey,()=>occShapeCopy(result)); // point de contrôle pour le rejeu suivant
   });
-  return{shape:result,ghostShapes,msgs,bin,itemShapes,items,imports};
+  // V0.21.19 : filets modélisés creusés EN DERNIER, en une seule découpe (src/76,
+  // occShapeOfHole) : dans l'arbre, chaque perçage n'a laissé qu'un avant-trou lisse,
+  // et les fonctions suivantes n'ont jamais vu les faces hélicoïdales.
+  // Rejeu partiel (références d'esquisse, occFinalShape(upto)) : inutile, filets sautés.
+  // V0.21.19 : en navigateur, le calcul part dans le worker de calcul (src/21, thrWkAsk) :
+  // le corps est affiché tout de suite SANS les filets (= filet cosmétique), puis repris
+  // quand le worker répond. preThr : corps sans filets, gardé pour la FAO.
+  let preThr=null;
+  const thrOn=!!(threads.length&&result&&!occThreadSkip);
+  // Recousage des coutures de congé (occFinalShape) fait AVANT les filets : après, il
+  // reconstruirait aussi leurs centaines de faces et jetterait le maillage du worker.
+  if(thrOn&&occUnifyAfterFillets(list)){try{const u=occUnify(occShapeCopy(result));if(u&&u!==result){try{result.delete();}catch(e){}result=u;}}catch(e){}}
+  if(thrOn){
+    const ckT=ckKey+'|filets;';
+    const names=threads.map(x=>x.f.name).join(', ');
+    const ckF=occCkGet(ckT);
+    const cpF=ckF?occShapeCopy(ckF):null;
+    if(cpF){preThr=result;result=cpF;}
+    else{
+      try{
+        const voids=occCompoundOf(threads.map(x=>x.thr));
+        // maillage d'affichage fait AUSSI par le worker (voyage avec le BRep) : à la réponse,
+        // le fil principal n'a plus à trianguler les centaines de faces du filet
+        let D=null;try{D=occDisplayDefl(result);}catch(e){}
+        const w=(typeof thrWkAsk==='function')?thrWkAsk(ckT,result,voids,threads.map(x=>x.f.id),D):{res:null};
+        if(w.pending){
+          occThrPending=true;
+          msgs.push(`${names} : filets modélisés en calcul… (pièce affichée avec le filet cosmétique)`);
+        }else{
+          const t=w.res?w.res.r:occThrCut(result,voids);
+          if(w.res&&w.res.err)throw new Error(w.res.err);
+          preThr=result;result=t;
+          occCkPut(ckT,()=>occShapeCopy(result));
+        }
+      }catch(err){msgs.push(`${names} : filet modélisé impossible (${err.message})`);}
+    }
+  }
+  return{shape:result,preThr,unified:thrOn,ghostShapes,msgs,bin,itemShapes,items,imports};
 }
+// congé exact dans le corps, sans scission de face : coutures à recoudre (occFinalShape)
+function occUnifyAfterFillets(list){
+  return (list||[]).some(f=>f.type==='xfillet')&&!(list||[]).some(f=>f.type==='xsplit'&&f.mode!=='body');
+}
+// Vides filetés (src/76) découpés du corps. Exécuté sur le thread principal (Node, pas
+// de worker) OU dans le worker (sérialisé par delWkSource, src/21). base n'est pas modifiée.
+function occThrCut(base,voids){
+  return occCutEach(base,voids);
+}
+let occThrPending=false; // un filet modélisé attend le worker (filet cosmétique affiché)
 function occFinalShape(upto){
   // Partition par corps (ordre de première apparition dans la timeline), rejeu isolé
   // par corps, puis composé GRATUIT pour occLive (picking, ancrages, overlay, aperçu
@@ -3666,6 +3723,12 @@ function occFinalShape(upto){
   const perBody=[],bin=[],itemShapes=[],ghostShapes=[],msgs=[],items=[],imports=[];
   // corps OUTILS consommés par une combinaison (sans « garder ») : plus affichés
   const consumed=new Set();list.forEach(f=>{if(f.type==='combine'&&!f.keep)(f.tools||[]).forEach(t=>consumed.add(t));});
+  // rejeu partiel = la liste s'arrête avant la fin (références d'esquisse) ; le rejeu
+  // complet passe aussi un upto (marqueur de la timeline) : seule la longueur compte
+  const partial=list.length<feats.filter(f=>!(occSkipFeat&&f.id===occSkipFeat)).length;
+  occThreadSkip=partial; // reposé à chaque appel : jamais d'état périmé
+  if(!partial)occThrPending=false;
+  const preThr=[]; // {bodyId, shape} : corps SANS filets modélisés (FAO)
   order.forEach(bid=>{
     if(consumed.has(bid))return;
     const r=occReplayBody(bid,byBody[bid]);
@@ -3678,17 +3741,20 @@ function occFinalShape(upto){
       // coutures d'esquisse (scission d'une face à un point du profil) restent cliquables —
       // notamment comme ancre d'un congé (cf. test_conge_fond_poche).
       // Une face SCINDÉE (xsplit 'face') serait recousue : pas d'unify dans ce corps.
-      if((byBody[bid]||[]).some(f=>f.type==='xfillet')&&!(byBody[bid]||[]).some(f=>f.type==='xsplit'&&f.mode!=='body')){
+      if(!r.unified&&occUnifyAfterFillets(byBody[bid])){
         try{const u=occUnify(occShapeCopy(sh));if(u&&u!==sh){try{sh.delete();}catch(e){}sh=u;}}catch(e){}
       }
       perBody.push({bodyId:bid,shape:sh});
-    }
+      if(r.preThr)preThr.push({bodyId:bid,shape:r.preThr});
+    }else if(r.preThr){try{r.preThr.delete();}catch(e){}}
     bin.push(...r.bin);itemShapes.push(...r.itemShapes);
     ghostShapes.push(...r.ghostShapes);msgs.push(...r.msgs);items.push(...r.items);
     imports.push(...r.imports); // imports entrés dans la chaîne exacte (affichés par le corps)
   });
   const shape=occCompoundOf(perBody.map(p=>p.shape));
-  return{shape,perBody,ghostShapes,msgs,bin,itemShapes,items,imports};
+  // pièce SANS filets modélisés (FAO : le taraud fait le filet) — seulement s'il y en a
+  const shapeFao=preThr.length?occCompoundOf(perBody.map(p=>{const q=preThr.find(x=>x.bodyId===p.bodyId);return q?q.shape:p.shape;})):null;
+  return{shape,shapeFao,preThr,perBody,ghostShapes,msgs,bin,itemShapes,items,imports};
 }
 function legacyPrismGeos(f,warnArr){
   // Prisme maillage (monde) d'une extrusion — même construction que la voie repli. Jette si profil vide.
@@ -3950,10 +4016,11 @@ function occRebuild(){
         const mesh=new THREE.Mesh(g,mat);mesh.userData.bid=e.id;scene.add(mesh);
         const vis=!doc.bodyVis||!Object.prototype.hasOwnProperty.call(doc.bodyVis,e.id)?true:!!doc.bodyVis[e.id];
         mesh.visible=vis;
-        bodies.push({id:e.id,name:e.name+' · '+(lit?tris.toLocaleString('fr'):'?')+' tris',mesh,color:col,visible:vis,kind:'body',ref:null,bodyId:e.id,shape:p.shape});
+        const pre=(FR.preThr||[]).find(x=>x.bodyId===p.bodyId); // corps sans filets modélisés (FAO)
+        bodies.push({id:e.id,name:e.name+' · '+(lit?tris.toLocaleString('fr'):'?')+' tris',mesh,color:col,visible:vis,kind:'body',ref:null,bodyId:e.id,shape:p.shape,shapeFao:pre?pre.shape:null});
       });
       if(!bodies.some(b=>b.kind==='body'))faceEl.textContent+=(faceEl.textContent?'\n':'')+'Solide exact vide (tout a été découpé).';
-      if(FR.shape){occLive={shape:FR.shape};FR.shape=null;} // conservé pour le picking d'arêtes
+      if(FR.shape){occLive={shape:FR.shape,shapeFao:FR.shapeFao||null,preThr:FR.preThr||[]};FR.shape=null;FR.shapeFao=null;FR.preThr=null;} // conservé pour le picking d'arêtes
     }
     FR.ghostShapes.forEach((gh,i)=>{
       try{

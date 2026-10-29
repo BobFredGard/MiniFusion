@@ -146,61 +146,98 @@ function holeProfileSegs(N,zEndPt){
   if(N.end==='blind'&&N.tip>0){const h=N.r/Math.tan(N.tip*Math.PI/360);s.push([zEnd,h,N.r,0]);}
   return s;
 }
-// 2026-10-19 : filet MODÉLISÉ — gorge hélicoïdale creusée dans le corps.
-// Le trou reste percé au Ø de perçage (≥ Ø mineur + jeu) et l'on retire en plus la
-// gorge comprise entre la crête (R1) et la racine (R2) le long de l'hélice au pas réel.
-// V0.21.16 : profil ISO 68-1 EXACT. Le profil normalisé est défini dans le plan AXIAL
-// (flancs à 60° mesurés dans une coupe passant par l'axe) ; il était auparavant posé
-// perpendiculairement à l'hélice (trièdre de Frenet), ce qui le déformait, sur une
-// hélice approchée par points. Désormais :
-//  - hélice EXACTE : droite tracée sur le cylindre (u = angle, v = axe), courbe 3D
-//    déduite par le noyau (BRepLib.BuildCurves3d) ;
-//  - balayage en mode « binormale = axe » : le profil reste dans le plan axial à
-//    chaque tour, la coupe du trou montre le trapèze ISO (racine p/8, crête p/4, 60°).
-// Profil (vide, filet INTERNE) : méplat p/8 au Ø majeur, flancs à 60°, prolongé sous
-// le Ø mineur (rIn) pour recouvrir franchement le perçage : aucune pellicule, aucune
-// face confondue avec l'alésage.
-function occHoleThreadGroove(P,D,zStart,zLen,th,bins){
-  const p=th.P,r1=th.rCrete,r2=th.rRacine;
-  if(!(zLen>0.9*p))return null; // moins d'un pas : rien de représentable
+// 2026-10-19 : filet MODÉLISÉ — filet creusé dans le corps.
+// V0.21.16 : profil ISO 68-1 EXACT, défini dans le plan AXIAL (racine p/8 au Ø majeur,
+// crête au Ø de perçage, flancs à 60°), sur une hélice exacte.
+// V0.21.19 : ~6× plus rapide. L'ancienne gorge balayée sur toute la longueur était
+// découpée en recouvrant l'alésage : le noyau calculait l'intersection de ses flancs
+// avec le cylindre sur toutes les spires (~5 s pour un M8 de 20 mm). Désormais le VIDE
+// fileté entier (de l'axe jusqu'à la paroi filetée) est construit directement, sans
+// aucun booléen :
+//  - un tour = 4 faces RÉGLÉES entre hélices (flanc, racine, flanc, crête : chaque
+//    génératrice est un segment du plan axial, le profil est donc exact) ;
+//  - les tours suivants sont des copies translatées d'un pas, cousues entre elles ;
+//  - fermeture en tête : hélicoïde (axe → crête) sur le premier tour + bouchon plan ;
+//  - le FÛT sous le filet fait partie du même solide : face réglée entre la dernière
+//    hélice de crête et le cercle du fond (génératrices axiales : c'est exactement le
+//    cylindre de perçage), fond plat ou pointe de foret, petit bouchon du dernier creux.
+// Le profil va jusqu'à l'axe : rien ne chevauche, UNE découpe, qui ne voit plus que les
+// faces de la pièce traversées par le trou (face d'entrée, de sortie).
+// Il faut zEnd ≥ zStart + (n+1)·p (sous la dernière hélice de crête).
+function occHoleThreadVoid(P,D,zStart,nT,th,rb,zEnd,tip,bins){
+  const p=th.P,r2=th.rRacine;
+  if(!(nT>=1)||!(rb>0&&rb<r2-1e-3)||!(zEnd>zStart+(nT+1)*p+1e-3))return null;
   const cross=function(a,b){return {x:a.y*b.z-a.z*b.y,y:a.z*b.x-a.x*b.z,z:a.x*b.y-a.y*b.x};};
   const norm=function(a){const l=Math.hypot(a.x,a.y,a.z)||1;return {x:a.x/l,y:a.y/l,z:a.z/l};};
   const ref=Math.abs(D.z)<0.9?{x:0,y:0,z:1}:{x:1,y:0,z:0};
-  // Départ de l'hélice tourné de ~37° : aligné sur la couture des cylindres/cônes du
-  // perçage (même repère), le cœur du trou restait en solide séparé après la découpe.
+  // Départ tourné de ~37° : jamais aligné sur la couture des cylindres/cônes du perçage.
   const U0=norm(cross(D,ref)),V0=cross(D,U0),ca=Math.cos(0.65),sa=Math.sin(0.65);
   const U={x:U0.x*ca+V0.x*sa,y:U0.y*ca+V0.y*sa,z:U0.z*ca+V0.z*sa};
-  // L'hélice commence à zStart + p/2 : le profil (demi-largeur < p/2) couvre [zStart, zStart+zLen].
-  const z0=zStart+p/2,turns=Math.max(0.25,zLen/p-1);
-  const O={x:P.x+D.x*z0,y:P.y+D.y*z0,z:P.z+D.z*z0};
+  const h=p/16+(r2-rb)*Math.tan(Math.PI/6); // demi-largeur du creux au rayon de crête
+  const z0=zStart+h; // le profil du 1er tour commence (à l'axe) en zStart
   const pnt=function(q){return occBinPush(bins,new occt.gp_Pnt_3(q.x,q.y,q.z));};
   const dirOf=function(q){return occBinPush(bins,new occt.gp_Dir_4(q.x,q.y,q.z));};
-  // hélice à droite : u croît autour de D pendant que v avance le long de D
-  const ax3=occBinPush(bins,new occt.gp_Ax3_3(pnt(O),dirOf(D),dirOf(U)));
-  const hSurf=occBinPush(bins,new occt.Handle_Geom_Surface_2(new occt.Geom_CylindricalSurface_1(ax3,r1))); // la poignée possède la surface
-  const hLine=occBinPush(bins,new occt.Handle_Geom2d_Curve_2(new occt.Geom2d_Line_3(
-    occBinPush(bins,new occt.gp_Pnt2d_3(0,0)),occBinPush(bins,new occt.gp_Dir2d_4(2*Math.PI,p))))); // la poignée possède la droite
-  const me=occBinPush(bins,new occt.BRepBuilderAPI_MakeEdge_31(hLine,hSurf,0,turns*Math.hypot(2*Math.PI,p)));
-  if(!me.IsDone())throw new Error('hélice impossible');
-  const helix=me.Edge();
-  occt.BRepLib.BuildCurves3d_2(helix);
-  const mkS=occBinPush(bins,new occt.BRepBuilderAPI_MakeWire_2(helix));
-  if(!mkS.IsDone())throw new Error('fil d\'hélice impossible');
-  // profil dans le plan (U, D) au départ de l'hélice ; s = décalage axial
-  const t30=Math.tan(Math.PI/6),rIn=r1-Math.min(0.05,0.1*p);
-  const hw=function(r){return p/16+(r2-r)*t30;}; // demi-largeur de la gorge au rayon r
-  const at=function(r,s){return pnt({x:O.x+U.x*r+D.x*s,y:O.y+U.y*r+D.y*s,z:O.z+U.z*r+D.z*s});};
-  const poly=occBinPush(bins,new occt.BRepBuilderAPI_MakePolygon_1());
-  [[r2,-p/16],[r2,p/16],[rIn,hw(rIn)],[rIn,-hw(rIn)]].forEach(function(q){poly.Add_1(at(q[0],q[1]));});
-  poly.Close();
-  if(!poly.IsDone())throw new Error('profil de filet impossible');
-  const pipe=occBinPush(bins,new occt.BRepOffsetAPI_MakePipeShell(mkS.Wire()));
-  pipe.SetMode_3(dirOf(D));
-  pipe.Add_1(poly.Wire(),false,false);
-  pipe.Build();
-  if(!pipe.IsDone())throw new Error('balayage hélicoïdal impossible');
-  try{pipe.MakeSolid();}catch(e){}
-  return pipe.Shape();
+  const at=function(r,s){return {x:P.x+D.x*(z0+s)+U.x*r,y:P.y+D.y*(z0+s)+U.y*r,z:P.z+D.z*(z0+s)+U.z*r};};
+  // profil d'un tour, de l'axe à l'axe (s le long de D) : crête p/4 entière, pas de demi-crêtes
+  const q=[[0,-h],[rb,-h],[r2,-p/16],[r2,p/16],[rb,h],[rb,p-h],[0,p-h]];
+  // hélice d'un tour, à droite (u croît autour de D quand v avance le long de D)
+  const helix=function(r,s){
+    if(r<1e-9){const me=occBinPush(bins,new occt.BRepBuilderAPI_MakeEdge_3(pnt(at(0,s)),pnt(at(0,s+p))));return me.Edge();}
+    const ax3=occBinPush(bins,new occt.gp_Ax3_3(pnt(at(0,s)),dirOf(D),dirOf(U)));
+    const hSurf=occBinPush(bins,new occt.Handle_Geom_Surface_2(new occt.Geom_CylindricalSurface_1(ax3,r))); // la poignée possède la surface
+    const hLine=occBinPush(bins,new occt.Handle_Geom2d_Curve_2(new occt.Geom2d_Line_3(
+      occBinPush(bins,new occt.gp_Pnt2d_3(0,0)),occBinPush(bins,new occt.gp_Dir2d_4(2*Math.PI,p))))); // la poignée possède la droite
+    const me=occBinPush(bins,new occt.BRepBuilderAPI_MakeEdge_31(hLine,hSurf,0,Math.hypot(2*Math.PI,p)));
+    if(!me.IsDone())throw new Error('hélice impossible');
+    const e=me.Edge();occt.BRepLib.BuildCurves3d_2(e);return e;
+  };
+  const H=q.map(function(a){return helix(a[0],a[1]);});
+  const ruled=function(i,j){return occt.BRepFill.Face(H[i],H[j]);};
+  const wall=[ruled(1,2),ruled(2,3),ruled(3,4),ruled(4,5)];
+  const cap=function(k,pts){
+    const pl=occBinPush(bins,new occt.BRepBuilderAPI_MakePolygon_1());
+    pts.forEach(function(a){pl.Add_1(pnt(at(a[0],a[1]+k*p)));});pl.Close();
+    const mf=occBinPush(bins,new occt.BRepBuilderAPI_MakeFace_15(pl.Wire(),true));
+    if(!mf.IsDone())throw new Error('bouchon de filet impossible');
+    return mf.Face();
+  };
+  const moved=function(s,k){
+    if(!k)return s;
+    const g=occBinPush(bins,new occt.gp_Trsf_1());g.SetTranslation_1(occBinPush(bins,new occt.gp_Vec_4(D.x*p*k,D.y*p*k,D.z*p*k)));
+    return occBinPush(bins,new occt.BRepBuilderAPI_Transform_2(s,g,true)).Shape();
+  };
+  const sew=occBinPush(bins,new occt.BRepBuilderAPI_Sewing(1e-4,true,true,true,false));
+  for(let k=0;k<nT;k++)wall.forEach(function(w){sew.Add(moved(w,k));});
+  sew.Add(ruled(0,1));sew.Add(cap(0,q));
+  // fût : cercle du fond (même départ angulaire que les hélices) relié à la dernière crête
+  const oE=pnt({x:P.x+D.x*zEnd,y:P.y+D.y*zEnd,z:P.z+D.z*zEnd});
+  const circ=occBinPush(bins,new occt.gp_Circ_2(occBinPush(bins,new occt.gp_Ax2_2(oE,dirOf(D),dirOf(U))),rb));
+  const ce=occBinPush(bins,new occt.BRepBuilderAPI_MakeEdge_8(circ)).Edge();
+  sew.Add(occt.BRepFill.Face(occt.TopoDS.Edge_1(moved(H[5],nT-1)),ce));
+  sew.Add(cap(nT,[q[1],q[2],q[3],q[4]])); // fin du dernier creux
+  if(tip>0){
+    // pointe de foret : face conique du cône (base = cercle du fond, cousue)
+    const ax=occBinPush(bins,new occt.gp_Ax2_2(oE,dirOf(D),dirOf(U)));
+    const cone=occBinPush(bins,new occt.BRepPrimAPI_MakeCone_3(ax,rb,0,rb/Math.tan(tip*Math.PI/360))).Shape();
+    const fx=occBinPush(bins,new occt.TopExp_Explorer_2(cone,occt.TopAbs_ShapeEnum.TopAbs_FACE,occt.TopAbs_ShapeEnum.TopAbs_SHAPE));
+    for(;fx.More();fx.Next()){const fc=occt.TopoDS.Face_1(fx.Current());
+      const ad=occBinPush(bins,new occt.BRepAdaptor_Surface_2(fc,true));
+      if(ad.GetType()!==occt.GeomAbs_SurfaceType.GeomAbs_Plane)sew.Add(fc);}
+  }else{
+    const mf=occBinPush(bins,new occt.BRepBuilderAPI_MakeFace_15(occBinPush(bins,new occt.BRepBuilderAPI_MakeWire_2(ce)).Wire(),true));
+    sew.Add(mf.Face());
+  }
+  sew.Perform(occBinPush(bins,new occt.Handle_Message_ProgressIndicator_1()));
+  if(sew.NbFreeEdges()>0)throw new Error('filet non fermé ('+sew.NbFreeEdges()+' arêtes libres)');
+  const sewn=sew.SewedShape();
+  const ex=occBinPush(bins,new occt.TopExp_Explorer_2(sewn,occt.TopAbs_ShapeEnum.TopAbs_SHELL,occt.TopAbs_ShapeEnum.TopAbs_SHAPE));
+  if(!ex.More())throw new Error('coque de filet introuvable');
+  const ms=occBinPush(bins,new occt.BRepBuilderAPI_MakeSolid_1());
+  ms.Add(occt.TopoDS.Shell_1(ex.Current()));
+  let sol=ms.Solid();
+  const gp=occBinPush(bins,new occt.GProp_GProps_1());occt.BRepGProp.VolumeProperties_1(sol,gp,false,false,false);
+  if(gp.Mass()<0)sol=sol.Reversed();
+  return sol;
 }
 function occShapeOfHole(f){
   const sk=doc.sketches.find(function(s){return s.id===f.sketchId;});
@@ -253,14 +290,9 @@ function occShapeOfHole(f){
   }catch(e){}
   const D=A.dir;
   const dir=occBinPush(bins,new occt.gp_Dir_4(D.x,D.y,D.z));
-  // Outil = COMPOSÉ des corps (pas de fuse) — bien plus rapide qu'un fuse explicite avec
-  // la gorge hélicoïdale.
-  // V0.21.16 : filet modélisé → outil en ÉTAPES, découpées dans l'ordre de l'usinage
-  // (occCutEach, src/20) : 1) avant-trou (fût + pointe), 2) filet (gorges), 3) tête
-  // (lamage ou fraisure). Tout ensemble, ou le cône avant la gorge, le noyau échouait
-  // en silence (filet absent, ou cœur du trou laissé en 2ᵉ solide).
-  const tool=[],stages=[[],[],[]];
-  const add=function(sh,k){ (thModel?stages[k||0]:tool).push(sh); };
+  // Outil = COMPOSÉ des corps (pas de fuse), un par centre.
+  const tool=[];
+  const add=function(sh){ tool.push(sh); };
   const OVER=0.02; // départ légèrement au-dessus du plan : jamais de face coplanaire
   const segShape=function(P,sg,first){
     // 1er segment rallongé de OVER au-dessus du plan : un CÔNE (fraisure) est prolongé
@@ -274,43 +306,62 @@ function occShapeOfHole(f){
     else{const mk=new occt.BRepPrimAPI_MakeCone_3(ax,r0,sg[3],h);sh=mk.Shape();try{mk.delete();}catch(e){}}
     return sh;
   };
+  // Les segments du profil (fût, lamage/fraisure, pointe) sont FUSIONNÉS : une découpe
+  // avec un composé laisse les opercules internes (membrane au fond du lamage). Les
+  // segments suivants gardent leurs bornes exactes — c'est la fusion, et non un
+  // recouvrement, qui supprime ces opercules.
+  const fused=function(P,segs,firstOver){
+    let prof=null;
+    segs.forEach(function(sg,i){const sh=segShape(P,sg,firstOver&&i===0);prof=prof?occFuse(prof,sh):sh;});
+    return prof;
+  };
+  // Filet modélisé (V0.21.19) : à sa place dans l'arbre, le perçage n'est qu'un
+  // AVANT-TROU lisse au Ø de perçage exact (+ lamage / fraisure) : la pièce sans filets
+  // est exactement celle du filet cosmétique (affichée pendant le calcul des filets, et
+  // vue par la FAO). Les filets sont creusés à la FIN du rejeu du corps (occReplayBody,
+  // src/20 : `thr`, en tâche de fond) : les fonctions suivantes travaillent sur un simple
+  // cylindre au lieu de centaines de faces hélicoïdales. La crête du filet est 0,01 mm
+  // au-delà de l'avant-trou (Ø + 0,02, dans la tolérance 6H) : jamais de face confondue.
+  const voids=[];let v0=null;const rC=N.r+0.01;
   A.pts.forEach(function(P){
     const zEnd=zEndOf(P);
-    // Filet modélisé : l'avant-trou est le fût SEUL depuis la face ; la tête vient en étape 3.
-    const segs=holeProfileSegs(thModel?Object.assign({},N,{kind:'simple'}):N,zEnd);
-    // Les segments du profil (fût, lamage/fraisure, pointe) sont FUSIONNÉS : une découpe
-    // avec un composé laisse les opercules internes (membrane au fond du lamage). Les
-    // segments suivants gardent leurs bornes exactes — c'est la fusion, et non un
-    // recouvrement, qui supprime ces opercules.
-    let prof=null;
-    segs.forEach(function(sg,i){const sh=segShape(P,sg,i===0);prof=prof?occFuse(prof,sh):sh;});
-    add(prof,0);
-    if(thModel&&N.kind!=='simple')add(segShape(P,holeProfileSegs(N,zEnd)[0],true),2);
-    if(thModel){
-      const off=(N.kind==='cbore')?N.cbH:(N.kind==='csink'?Math.max(0,(N.csD-N.d)/2/Math.tan(N.csA*Math.PI/360)):0);
-      const L=((f.thread.lenMode||'len')==='through')?Math.max(0,zEnd-off)
-        :Math.min(+f._thLen||+f.thread.len||N.depth,zEnd-off);
+    if(!thModel){add(fused(P,holeProfileSegs(N,zEnd),true));return;}
+    const p=thModel.P;
+    const off=(N.kind==='cbore')?N.cbH:(N.kind==='csink'?Math.max(0,(N.csD-N.d)/2/Math.tan(N.csA*Math.PI/360)):0);
+    const L=((f.thread.lenMode||'len')==='through')?Math.max(0,zEnd-off)
+      :Math.min(+f._thLen||+f.thread.len||N.depth,zEnd-off);
+    // Le vide commence un pas AVANT l'entrée (jonction hors matière) et, pour un
+    // débouchant, finit un pas après la sortie ; borgne : le fût lisse garde au moins
+    // un pas sous la dernière crête (comme un taraud, qui ne file pas jusqu'au fond).
+    const zStart=off-p,blind=!(N.through||N.end==='next');
+    let nT=Math.max(1,Math.round((L+p+(blind?0:p))/p)),zB=zEnd;
+    if(blind)while(nT>1&&zStart+(nT+1)*p>zEnd-0.05)nT--;
+    else zB=Math.max(zEnd,zStart+(nT+1)*p+0.1);
+    const tip=(blind&&N.end==='blind')?N.tip:0;
+    let v=null;
+    if(L>0.9*p){
+      const key=[zStart,nT,zB,tip].map(function(x){return (+x).toFixed(4);}).join('|');
       try{
-        // La gorge DÉPASSE l'entrée d'un pas (et la sortie pour un débouchant) : la
-        // jonction hélice/pièce tombe hors matière, il ne reste ni lèvre ni face de cap.
-        const lead=thModel.P,leadOut=(N.through||N.end==='next')?thModel.P:0;
-        const g=occHoleThreadGroove(P,A.dir,off-lead,L+lead+leadOut,thModel,bins);
-        if(g)add(g,1);
-        else warnings.push('filet modélisé ignoré : longueur filetée inférieure à un pas');
+        // même filet sur plusieurs centres : construit une fois, puis translaté
+        if(v0&&v0.key===key){
+          const g=occBinPush(bins,new occt.gp_Trsf_1());
+          g.SetTranslation_1(occBinPush(bins,new occt.gp_Vec_4(P.x-v0.P.x,P.y-v0.P.y,P.z-v0.P.z)));
+          v=occBinPush(bins,new occt.BRepBuilderAPI_Transform_2(v0.v,g,false)).Shape();
+        }else{
+          v=occHoleThreadVoid(P,D,zStart,nT,thModel,rC,zB,tip,bins);
+          if(v)v0={key:key,P:P,v:v};
+        }
       }catch(err){warnings.push('filet modélisé impossible (trou lisse) : '+String(err.message||err));}
-    }
+      if(!v&&!warnings.length)warnings.push('filet modélisé ignoré : trou trop court pour le filet');
+    }else warnings.push('filet modélisé ignoré : longueur filetée inférieure à un pas');
+    if(!v){add(fused(P,holeProfileSegs(N,zEnd),true));return;}
+    voids.push(v);
+    // avant-trou : fond 0,01 au-dessus de celui du vide (jamais de faces coplanaires)
+    add(fused(P,holeProfileSegs(N,blind?zEnd-0.01:zEnd),true));
   });
-  if(thModel){
-    // composé de composés = étapes ordonnées (occCutEach) ; une étape vide est omise
-    const comp=function(list){const c=new occt.TopoDS_Compound(),bd=new occt.TopoDS_Builder();
-      bd.MakeCompound(c);list.forEach(function(s){bd.Add(c,s);});try{bd.delete();}catch(e){}return c;};
-    const st=stages.filter(function(l){return l.length;});
-    if(!st.length)throw new Error('aucun corps d’outil de perçage');
-    return {shape:comp(st.map(comp)),bins:bins,warnings:warnings};
-  }
   if(!tool.length)throw new Error('aucun corps d’outil de perçage');
   const shp=(tool.length===1)?tool[0]:(occCompoundOf(tool)||tool[0]);
-  return {shape:shp,bins:bins,warnings:warnings};
+  return {shape:shp,bins:bins,warnings:warnings,thr:voids.length?occCompoundOf(voids):null};
 }
 function legacyHoleGeos(f,msgs){
   // Repli maillage (sans noyau exact) : cylindres approchés.
@@ -532,7 +583,8 @@ function holeThreadPaths(stepsPerTurn,inset){
   const out=[],spt=stepsPerTurn||24;
   (doc.features||[]).forEach(function(f){
     if(!f||f.type!=='hole'||f.visible===false||!f.thread||!f.thread.size)return;
-    if(f.thread.model)return; // le filet est déjà dans le solide exact
+    // le filet est déjà dans le solide exact — sauf pendant son calcul en tâche de fond
+    if(f.thread.model&&!(typeof occThrPending!=='undefined'&&occThrPending))return;
     if(typeof tlLocked==='function'&&tlLocked(f))return;
     const sk=doc.sketches.find(function(s){return s.id===f.sketchId;});if(!sk)return;
     const t=isoThread(f.thread.size);if(!t)return;

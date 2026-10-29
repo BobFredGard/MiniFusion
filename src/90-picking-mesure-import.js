@@ -1361,9 +1361,12 @@ function faoLegacyGeo(b){
     // Le shape est déjà maillé en AFFICHAGE (plus fin) : BRepMesh réutilise un
     // maillage existant s'il est au moins aussi fin → on l'efface, sinon la FAO
     // récupérerait la finesse d'affichage au lieu de sa définition historique.
-    try{occt.BRepTools.Clean(b.shape);}catch(e){}
+    // V0.21.19 : corps SANS filets modélisés s'il y en a (le taraud fait le filet) —
+    // mailler les centaines de faces du filet coûtait 1,5 s à chaque rejeu sur « Perçages »
+    const S=b.shapeFao||b.shape;
+    try{occt.BRepTools.Clean(S);}catch(e){}
     const D=occXDefl();
-    g=occTessellate(b.shape,D.lin,D.ang);
+    g=occTessellate(S,D.lin,D.ang);
   }catch(e){g=null;}
   if(!g)return null;
   b._faoGeo=g;

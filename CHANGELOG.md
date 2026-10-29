@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**448 versions**, de `2026-09-28b` à `V0.21.18` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**449 versions**, de `2026-09-28b` à `V0.21.19` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5663,3 +5663,13 @@ Constat : le job `browser-test` de la CI dépassait ses 20 min depuis V0.10.0 (1
 - **Correctif** : `shadowMap.autoUpdate=false`. `vEnvTick` relève une signature des corps qui portent l'ombre (géométrie, placement) et de la lampe : la carte ne se refait que si elle change. Image sous SwiftShader : 986 → 46 ms. Vérifié dans le navigateur : 1 calcul après l'extrusion, 0 à l'arrêt, 1 après un changement de distance ; ombre et reflet affichés.
 - **Test navigateur « composants »** : depuis V0.21.2, « Composant » n'est visible qu'en mode Assembler. Le test passe par Assembler → Composant. Pour le sous-composant, il appelle `asmCmdNewComp` : en Modéliser, un composant sans enfants n'a plus de bouton pour en créer un.
 - **Tests** : `npm run ci`. Parcours navigateur sous SwiftShader (Chrome local) : 15/15, de 7 à 31 s chacun.
+
+## V0.21.19 - Filets modélisés : construits d'un bloc, creusés en fin de rejeu, en tâche de fond
+Demande : « il faut travailler sur le temps de génération des filets modélisés, c'est 20× trop long » ; puis « oui, en tâche de fond ».
+- **Vide fileté construit sans booléen** (`src/76-percage.js`, `occHoleThreadVoid`) : la gorge balayée sur toute la longueur était découpée en recouvrant l'alésage — le noyau calculait l'intersection de ses flancs avec le cylindre sur toutes les spires (~5 s pour un M8 de 20 mm). Désormais un tour = 4 faces RÉGLÉES entre hélices exactes (flanc, racine, flanc, crête : génératrices dans le plan axial, profil ISO exact), copié d'un pas et cousu ; le vide va de l'axe à la paroi filetée et comprend le fût lisse (face réglée jusqu'au cercle du fond) et la pointe de foret. Une seule découpe ; le même filet sur plusieurs centres est construit une fois puis translaté.
+- **Filets creusés en DERNIER** (`occReplayBody`, `src/20`) : à sa place dans l'arbre, le perçage n'est qu'un avant-trou lisse au Ø de perçage exact ; les fonctions suivantes ne voient plus les centaines de faces hélicoïdales (« Perçages », M6 ×4 modélisé : les perçages suivants passaient de 50 ms à 6 s chacun). La crête est à Ø + 0,02 (tolérance 6H) : jamais de face confondue avec l'avant-trou. Rejeux partiels (références d'esquisse) : filets sautés.
+- **Tâche de fond** (`thrWkAsk`, `src/21`, même worker que la suppression de face) : le corps est affiché tout de suite sans les filets, avec le filet cosmétique, puis repris quand le worker répond (résultat rangé sous la clé du point de contrôle, maillage d'affichage fait par le worker). Une modification pendant le calcul abandonne le travail caduc. Sans worker (Node) : calcul synchrone.
+- **FAO** (`src/89`) : travaille sur la pièce SANS filets (`occLive.shapeFao` : avant-trou exact, le taraud fait le filet) ; un seul classificateur par solide dans la reconnaissance des trous (il était reconstruit pour chaque trou : 15 s sur « Perçages » fileté) ; trou repris de la fonction Perçage quand aucun cylindre n'est trouvé.
+- **Retour du worker allégé** : maillage d'affichage fait par le worker (même angle, flèche −10 %) et repris tel quel ; recousage des coutures de congé fait AVANT les filets (après, il reconstruisait leurs faces et jetait ce maillage) ; maillage FAO (`faoLegacyGeo`, `src/90`) sur le corps sans filets.
+- **Mesures** : M8 de 20 mm dans un bloc, rejeu 6,9 s → 1,8 s en synchrone. « Perçages » avec M6 ×4 + M8 modélisés : 75 s → ~2,6 s bloquants à l'activation, ~1,7 s par modification, filets en ~10 s de fond, puis ~2,6 s de reprise à l'arrivée.
+- **Tests** : `test_filet_modele` (outil dans l'arbre = avant-trou analytique, crête R3,385) ; nouveau `test_filet_tache_fond` (worker réel : rendu immédiat sans filets + cosmétique, réponse = un solide fileté, FAO sur l'avant-trou Ø6,75 M8, cache, travail caduc abandonné) ; `test_percage_3d`, `test_fao_taraudage`, `test_fao_percage`, `test_cache_exact`, `test_rejeu_cache`, `test_suppression_face_worker` ; `npm run ci`. Vu dans l'appli sur « Perçages ».
