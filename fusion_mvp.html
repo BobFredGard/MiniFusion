@@ -281,7 +281,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.21.7';
+const APP_VER='V0.21.8';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -64735,6 +64735,12 @@ function viewFadeIn(){
    Cible : {id} corps de la pièce active (doc.rendu, 12-materiaux) ou {occ, bid, comp} corps d'une
    occurrence d'assemblage (o.rendu, 48-assemblage-apparence) ; {bid, comp} sans occ = composant ouvert. */
 let rdLookT=null; // cible de la fenêtre ouverte
+// V0.21.8 : occurrence → le changement vaut pour TOUTES les occurrences du composant (visserie : une
+// vis = des dizaines d'occurrences) ; case de la fenêtre, cochée par défaut, mémorisée
+let rdLookAll=true;
+try{if(localStorage.getItem('minifusion_rdLookAll')==='off')rdLookAll=false;}catch(e){}
+function rdLookOccN(t){try{return t.occ?asmCompOccs(t.comp).length:0;}catch(e){return 0;}}
+function rdLookAllOn(t){return rdLookAll&&rdLookOccN(t)>1;}
 function rdLookCss(){
   if(document.getElementById('rdLookCss'))return;
   const s=document.createElement('style');s.id='rdLookCss';s.textContent=[
@@ -64748,6 +64754,8 @@ function rdLookCss(){
     '#rdLook .rlRow,#rdLook .rdRel{display:flex;align-items:center;gap:4px;margin:4px 0}',
     '#rdLook .rlRow>select,#rdLook .rdRel>select:first-child{flex:1;max-width:none}',
     '#rdLook .rdRel>input{width:52px}',
+    '#rdLook .rlAll{display:flex;align-items:center;gap:5px;margin:2px 0 4px;cursor:pointer}',
+    '#rdLook .rlAll>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
     '#rdLook .rdNote{color:var(--muted);font-size:.68rem;line-height:1.35;margin:4px 0 0}',
     'body[data-theme="clair"] #rdLook{background:rgba(255,255,255,.98);color:#1c1c1e;box-shadow:0 12px 32px rgba(0,0,0,.18)}'
   ].join('\n');
@@ -64781,7 +64789,7 @@ function rdLookDone(t){
   rdLookFill();
 }
 function rdLookSet(t,mat,col,rel){
-  if(t.occ){const L=rdLookGet(t);asmSetOccRendu(L.o,t.bid,mat,col,false,rel===undefined?L.rel:rel);}
+  if(t.occ){const L=rdLookGet(t);asmSetOccRendu(L.o,t.bid,mat,col,rdLookAllOn(t),rel===undefined?L.rel:rel);}
   else{rdUndo();setRenderLook(t.id||t.bid,mat,col,rel);}
   rdLookDone(t);
 }
@@ -64797,9 +64805,18 @@ function rdLookFill(){
   }
   const z=el('button',null,'↺');z.disabled=!L.own;z.style.opacity=L.own?'':'.35';
   z.title=t.occ?'Reprendre l’apparence de la pièce':'Reprendre le matériau et la couleur de la CAO';
-  z.onclick=()=>{if(t.occ)asmClearOccRendu(L.o,t.bid,false);else{rdUndo();clearRenderLook(t.id||t.bid);}rdLookDone(t);};h.appendChild(z);
+  z.onclick=()=>{if(t.occ)asmClearOccRendu(L.o,t.bid,rdLookAllOn(t));else{rdUndo();clearRenderLook(t.id||t.bid);}rdLookDone(t);};h.appendChild(z);
   const x=el('button',null,'×');x.title='Fermer (Échap)';x.onclick=rdLookClose;h.appendChild(x);
   p.appendChild(h);
+  const nOcc=rdLookOccN(t);
+  if(nOcc>1){
+    const lb=el('label','rlAll'),cb=el('input');cb.type='checkbox';cb.checked=rdLookAll;
+    const c=asmComp(t.comp);
+    lb.title='Coché : matériau, couleur, relief, patine et ↺ s’appliquent à toutes les occurrences de ce composant';
+    cb.onchange=()=>{rdLookAll=cb.checked;try{localStorage.setItem('minifusion_rdLookAll',rdLookAll?'on':'off');}catch(e){}};
+    lb.appendChild(cb);lb.appendChild(el('span',null,'Toutes les occurrences de « '+((c&&c.name)||'?')+' » ('+nOcc+')'));
+    p.appendChild(lb);
+  }
   const r=el('div','rlRow');
   r.appendChild(matSelect(L.mat,k=>rdLookSet(t,k,null,undefined),'Sans matériau'));
   const ci=el('input');ci.type='color';ci.value=cssHex(L.color);ci.title='Couleur de rendu (la pièce CAO garde la sienne)';

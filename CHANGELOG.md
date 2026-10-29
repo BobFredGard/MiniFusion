@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**438 versions**, de `2026-09-28b` à `V0.21.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**439 versions**, de `2026-09-28b` à `V0.21.8` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5592,3 +5592,8 @@ Demande : « Pour les goupilles, il faut les attacher via leur centre (c'est fai
 - **Position dans le trou** (onglet Goupilles de la fenêtre Normalisés, retenue avec les autres réglages) : *Au plus court (selon le clic)* par défaut, *Milieu du cylindre*, *Arête haute (entrée)*, *Arête basse (fond)*. La goupille reste attachée par son CENTRE ; la cible est un point de l'axe du cylindre du trou (sous le lamage pour un trou lamé) : son milieu ou l'une de ses deux arêtes circulaires.
 - **Au plus court** (`stdPinAt`) : la profondeur du point cliqué sur la paroi choisit le plus proche des trois points (arête haute, milieu, arête basse) ; le même choix s'applique à tous les trous identiques. Les bouts de l'axe du cylindre (points d'accroche a0 / a1, rangés selon le sens de l'axe) sont triés par profondeur depuis l'entrée (`stdHoleSn(h, 'mid', pos)`). La barre d'état dit où le centre a été posé.
 - **Tests** : `tests/test_composants_normalises.cjs`, 4 contrôles de plus (choix au plus court haut / milieu / bas, arête haute z = 20, arête basse z = 0, trou lamé : arête haute = haut du cylindre sous le lamage, z = 13,6). Vérifié dans le navigateur : la liste, puis deux vrais clics (près de l'entrée → arête haute, vers le fond → arête basse).
+
+## V0.21.8 - Matériau de rendu : toutes les occurrences d'un composant d'un coup (visserie)
+Demande : « Pour la couleur de la visserie, quand je change le matériau ou la couleur, il faut que je puisse changer toutes les occurrences aussi ».
+- **Fenêtre d'apparence** (clic droit → « Matériau de rendu… », `src/98-rendu-apparence.js`) : sur une occurrence d'un composant posé plusieurs fois, case **« Toutes les occurrences de « … » (n) »**, cochée par défaut et mémorisée (`minifusion_rdLookAll`). Cochée, matériau, couleur, relief, patine et ↺ valent pour toutes les occurrences du composant (`asmSetOccRendu` / `asmClearOccRendu` avec `all`), en une seule étape d'annulation ; décochée, pour la seule occurrence cliquée. Le bouton ⇉ recopie toujours l'apparence actuelle sur toutes.
+- **Tests** : `tests/test_materiaux.cjs` (case et branchement). Vérifié dans le navigateur sur Test Visserie : 9 vis FHC M8×30 passées au laiton d'un coup, une seule au cuivre case décochée. `npm run ci`.

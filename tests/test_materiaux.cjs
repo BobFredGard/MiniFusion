@@ -22,6 +22,8 @@ if(!/btnLive/.test(vue)||!/\['rendu','Rendu direct/.test(vue)||!/function vEnvCf
 if(!/vEnvRdSt=null/.test(rendu))staticKo.push('Rendu direct : réglages de la fenêtre RENDU relus à l\'enregistrement');
 {const ap=fs.readFileSync(path.join(ROOT,'src','98-rendu-apparence.js'),'utf8');
   if(!/function rdLookPop\(/.test(ap)||!/ctxRdLook/.test(ap))staticKo.push('apparence de rendu au clic droit (98-rendu-apparence) attendue');
+  // V0.21.8 : occurrence → toutes les occurrences du composant (case « Toutes les occurrences », visserie)
+  if(!/asmSetOccRendu\(L\.o,t\.bid,mat,col,rdLookAllOn\(t\)/.test(ap)||!/asmClearOccRendu\(L\.o,t\.bid,rdLookAllOn\(t\)\)/.test(ap)||!/minifusion_rdLookAll/.test(ap))staticKo.push('fenêtre d’apparence : case « Toutes les occurrences » attendue');
   if(/matSelect\(L\.mat/.test(rendu))staticKo.push('atelier : plus de liste déroulante par pièce dans le panneau (clic droit)');}
 if(/castShadow=shW&&!mat\.transparent/.test(vue))staticKo.push('ombre : les corps transparents doivent porter leur ombre');
 if(!/solOn:true/.test(rendu)||!/miroir:true/.test(rendu)||!/ombreOn:true/.test(rendu)||!/function rdMirror\(/.test(rendu))staticKo.push('atelier : cases Sol / Miroir / Ombre et passe reflet attendues');
