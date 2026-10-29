@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**427 versions**, de `2026-09-28b` à `V0.20.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**428 versions**, de `2026-09-28b` à `V0.20.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5520,3 +5520,10 @@ Demande : « Plans → perpendiculaire à droite et courbe dont spline avec posi
 - **Point et tangente** (`cgCurveAt`) : abscisse curviligne sur la polyligne, tangente par différences centrées (ordre 2 aux bouts) — écart < 1e-3 sur arcs et splines.
 - **Saisie** (`src/79-construction-interface.js`) : pour un emplacement courbe, clic sur une courbe d'esquisse affichée (`cgPickSketchCurve`, ≤ 7 px, poignées ignorées) ou sur une arête ; les plans de construction ne gênent pas le clic.
 - **Tests** : `test_construction_modele` (ligne t = 0 / 0,5 / 1 / 0,25 inversé, arc, spline symétrique, ratio > 1, axe infini refusé, suivi d'un point de passage, boucle refusée) ; `test_construction_esquisse` (noyau réel : arête verticale au quart, cercle du cylindre). `npm run ci`.
+
+## V0.20.1 - Esquisse : arêtes et points du plan utilisables sans projeter
+Demande : « que les arêtes du plan d'esquisse puissent être utilisées directement sans les projeter, ainsi que les points d'intersection, en surbrillance au survol ; pour les autres, je pourrai toujours les projeter ».
+- **Cibles du plan** (`src/50-esquisse-7-plan-cibles.js`, nouveau) : arêtes du solide situées DANS le plan (à l'antériorité de ⧉, `projEdgesFor`), leurs sommets, milieux, centres, leurs croisements (ligne / cercle / arc), et les points où une arête du solide traverse le plan (plan d'origine qui coupe la pièce, dépouilles). Calculées une fois par ouverture d'esquisse (cache vidé par `skBuildRefs`) ; sans noyau, repli sur les références du plan.
+- **Survol** : dans les outils Ligne, Rectangle, Oblong, Cercle, Arc, Point, Centre de perçage, Spline et Cote, la cible sous le curseur s'allume en orange (arête(s) + point ; losange pour une traversée). La géométrie de l'esquisse garde la priorité ; l'outil Sélection n'est pas concerné.
+- **Usage direct** (`findSnap` → `skPlSnap`, `snapNewPoint`, `skCommitLine`, cercle, `skPlDimPrep` pour la Cote) : au clic, l'arête est projetée d'office en construction, exactement comme avec ⧉ (`skProjectCreate`, factorisé depuis l'outil ⧉) donc associative ; une arête déjà présente est réutilisée (pas de doublon). Sommet = extrémité de la projetée ; milieu = contrainte milieu ; centre = centre de la projetée ; croisement = point posé sur les deux projetées ; pied sur une arête = point sur la projetée ; traversée = point de construction projeté fixe (`cpoint` `pierce`), recalé au rejeu sur son arête source (`skPlTrackPierce`, branché dans `updateAssociativeProjections`). Pendant le tracé d'une ligne, un guide H / V actif l'emporte sur l'accroche à une arête. Un instantané d'annulation précède la projection du 1er clic.
+- **Tests** : `tests/test_esquisse_plan_cibles.cjs` (noyau OCCT réel, 29 contrôles) — cibles d'une face de boîte, survol et dessin orange, projection au clic sans doublon, ligne tracée aux vrais événements souris (sommet → milieu), cote sur arête, traversées d'un plan médian suivies quand la boîte s'allonge, croisements 2D, rien en Sélection. Vérifié dans le navigateur (Cache Piles, Esquisse 9 : survol du milieu d'arête, ligne milieu → traversée, deux Ctrl+Z).

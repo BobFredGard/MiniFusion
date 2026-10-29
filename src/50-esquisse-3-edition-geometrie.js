@@ -6,6 +6,7 @@ function nearestPoint(sk,x,y,maxD,exclude){
   return best;
 }
 function findSnap(sk,x,y,exclude){
+  skPlHover=null;
   const pid=nearestPoint(sk,x,y,SK_SNAP,exclude);
   if(pid)return{kind:'point',pid,x:sk.points[pid].x,y:sk.points[pid].y};
   let bm=null,bd=SK_SNAP;
@@ -16,7 +17,7 @@ function findSnap(sk,x,y,exclude){
   sk.entities.forEach(e=>{if(e.t!=='circle'&&e.t!=='arc')return;const C=sk.points[e.pc];if(!C)return;
     const d=Math.hypot(C.x-x,C.y-y);if(d<bd){bd=d;bc=e.pc;}});
   if(bc)return{kind:'point',pid:bc,x:sk.points[bc].x,y:sk.points[bc].y};
-  return null;
+  return skPlSnap(sk,x,y); // V0.20.1 : arêtes / points du plan d'esquisse (50-esquisse-7)
 }
 function skDragSnapFind(sk,x,y,pid){
   // V0.11.24 : accroche d'un POINT GLISSÉ (comme SolidCraft drag_snap) : autre point, milieu d'une ligne,
@@ -70,6 +71,7 @@ function skDragRelease(sk,pid,s){
 function snapNewPoint(sk,x,y){
   const s=findSnap(sk,x,y);
   if(s&&s.kind==='point')return s.pid;
+  if(s&&s.kind==='plane')return skPlMaterialize(sk,s.pl);
   if(s&&s.kind==='mid'){const pid=addPoint(sk,s.x,s.y);
     if(!(sk.constraints||[]).some(c=>c.type==='midpoint'&&c.p===pid&&c.line===s.line))
       sk.constraints.push({id:skNewEid(sk),type:'midpoint',p:pid,line:s.line}); // point au centre — la ligne reste entière
@@ -164,6 +166,7 @@ function skCommitLine(sk,fromPid,snap,ex,ey,dimVal){
   skPushUndo(); // snapshot AVANT la fin de tracé : annuler retire proprement le point de fin
   let endPid=null;
   if(snap&&snap.kind==='point')endPid=snap.pid;
+  else if(snap&&snap.kind==='plane')endPid=skPlMaterialize(sk,snap.pl);
   else if(snap&&snap.kind==='mid'){endPid=addPoint(sk,snap.x,snap.y);
     if(!(sk.constraints||[]).some(c=>c.type==='midpoint'&&c.p===endPid&&c.line===snap.line))
       sk.constraints.push({id:skNewEid(sk),type:'midpoint',p:endPid,line:snap.line}); // sans scinder la ligne réceptrice

@@ -256,6 +256,7 @@ function drawSketch2D(){
   }
   // marqueur de snap
   if(skSnapMk){const[a,b]=w2s(skSnapMk.x,skSnapMk.y);skEl('circle',{cx:a,cy:b,r:7,fill:'none',stroke:'#ffd60a','stroke-width':2});}
+  skPlDrawHover(sk); // V0.20.1 : arête / point du plan survolé (orange)
   // boîte de sélection rectangle
   if(skBox){
     const[a,b]=w2s(Math.min(skBox.x0,skBox.x1),Math.max(skBox.y0,skBox.y1));

@@ -572,6 +572,7 @@ svg.addEventListener('pointerdown',e=>{
     if(skDyn){skDynCommit();return;}
     if(skDown){skDown.clicked=true;return;} // déjà armé : le tracé suit la souris
     const fromChain=!!skChain;
+    if(!skChain)skPlUndoIfPlane(sk,wx,wy);
     const startPid=skChain||snapNewPoint(sk,wx,wy);
     const S=sk.points[startPid];
     skDown={pid:startPid,x:S.x,y:S.y,fromChain,clicked:false,cx:e.clientX,cy:e.clientY};
@@ -581,6 +582,7 @@ svg.addEventListener('pointerdown',e=>{
   }
   if(skTool==='rect'||skTool==='circle'||skTool==='slot'){
     if(skDown) return;
+    skPlUndoIfPlane(sk,wx,wy);
     const pid=snapNewPoint(sk,wx,wy);const S=sk.points[pid];
     skDown={pid,x:S.x,y:S.y,center:skMulti(e)&&skTool!=='circle'};return;
   }
@@ -609,6 +611,7 @@ svg.addEventListener('pointerdown',e=>{
     skArcC=null;skArcA1=null;skArcPa=null;skDraft=null;afterEdit();return;
   }
   if(skTool==='dim'){
+    skPlDimPrep(sk,wx,wy); // V0.20.1 : arête / point du plan → entité cotable (projetée)
     if(skDimPlace){ // cote vivante : 2ᵉ entité → conversion (comme Fusion), vide → pose + saisie
       const dd=dimById(sk,skDimPlace.id);
       const ent=nearestEntity(sk,wx,wy,SK_PICK);
@@ -674,35 +677,10 @@ svg.addEventListener('pointerdown',e=>{
     const pr=projectEdgeAt(sk,wx,wy);
     if(!pr){skStatus('Aucune arête 3D sur ce plan à proximité.');return;}
     skPushUndo();
-    if(pr.type==='circle'){
-      const pc=addPoint(sk,pr.cx,pr.cy);
-      sk.constraints.push({id:skNewEid(sk),type:'fix',p:pc});
-      const eid=skNewEid(sk);
-      sk.entities.push(Object.assign({id:eid,t:'circle',pc,r:pr.r,construction:true,proj:true},projNames(pr)));
-      sk.constraints.push({id:skNewEid(sk),type:'fix',ent:eid});
-      skStatus('Cercle projeté en construction (centre fixe).');
-    }else if(pr.type==='arc'){
-      const pc=addPoint(sk,pr.cx,pr.cy);
-      const pa=addPoint(sk,pr.x1,pr.y1), pb=addPoint(sk,pr.x2,pr.y2);
-      sk.constraints.push({id:skNewEid(sk),type:'fix',p:pc});
-      sk.constraints.push({id:skNewEid(sk),type:'fix',p:pa});
-      sk.constraints.push({id:skNewEid(sk),type:'fix',p:pb});
-      const eid=skNewEid(sk);
-      sk.entities.push(Object.assign({id:eid,t:'arc',pc,pa,pb,r:pr.r,construction:true,proj:true},projNames(pr)));
-      sk.constraints.push({id:skNewEid(sk),type:'fix',ent:eid});
-      skStatus('Arc projeté en construction (fixe).');
-    }else if(pr.type==='curve'){ // lot 3 : arête courbe → spline par points de passage fixés (construction)
-      const eid=skSplineProject(sk,pr.pts);
-      if(!eid){skUndoStack.pop();skUndoBtn();skStatus('Arête courbe trop courte pour être projetée.');return;}
-      Object.assign(entById(sk,eid),{construction:true,proj:true},projNames(pr));
-      skStatus('Courbe projetée en construction : spline aux points fixés (non suivie au rejeu).');
-    }else{
-      const p1=addPoint(sk,pr.x1,pr.y1),p2=addPoint(sk,pr.x2,pr.y2);
-      const eid=skNewEid(sk);
-      sk.entities.push(Object.assign({id:eid,t:'line',p1,p2,construction:true,proj:true},projNames(pr)));
-      sk.constraints.push({id:skNewEid(sk),type:'fix',p:p1},{id:skNewEid(sk),type:'fix',p:p2});
-      skStatus('Arête projetée en construction (fixe).');
-    }
+    const eid=skProjectCreate(sk,pr);
+    if(!eid){skUndoStack.pop();skUndoBtn();skStatus('Arête courbe trop courte pour être projetée.');return;}
+    skStatus(pr.type==='circle'?'Cercle projeté en construction (centre fixe).':pr.type==='arc'?'Arc projeté en construction (fixe).':
+      pr.type==='curve'?'Courbe projetée en construction : spline aux points fixés (non suivie au rejeu).':'Arête projetée en construction (fixe).');
     afterEdit();return;
   }
   if(skTool==='isect'){skIsectClickAt(sk,wx,wy,e);return;}
@@ -840,17 +818,20 @@ svg.addEventListener('pointermove',e=>{
   }
   if(skTool==='line'&&skDown){
     let gx=wx,gy=wy;skInfer=null;skSnapMk=null;
-    const s=findSnap(sk,wx,wy,skDown.pid);
-    if(s&&s.kind==='point'){gx=s.x;gy=s.y;skSnapMk={x:gx,y:gy};}
+    let s=findSnap(sk,wx,wy,skDown.pid);
+    // V0.20.1 : point du plan = accroche exacte ; arête du plan = pied, sauf guide H / V actif
+    const plPt=!!(s&&s.kind==='plane'&&s.pl.kind==='pt');
+    if(s&&(s.kind==='point'||plPt)){gx=s.x;gy=s.y;skSnapMk={x:gx,y:gy};}
     else{
       if(s&&s.kind==='mid')skSnapMk={x:s.x,y:s.y};
       if(Math.abs(wx-skDown.x)<SK_INF){gx=skDown.x;skInfer={v:true,x:gx};}
       if(Math.abs(wy-skDown.y)<SK_INF){gy=skDown.y;skInfer=Object.assign(skInfer||{},{h:true,y:gy});}
-      if($('skSnap').checked){if(!skInfer||!skInfer.v)gx=skSnapVal(gx);if(!skInfer||!skInfer.h)gy=skSnapVal(gy);}
+      if(s&&s.kind==='plane'){if(skInfer){s=null;skPlHover=null;}else{gx=s.x;gy=s.y;skSnapMk={x:gx,y:gy};}}
+      if($('skSnap').checked&&!s){if(!skInfer||!skInfer.v)gx=skSnapVal(gx);if(!skInfer||!skInfer.h)gy=skSnapVal(gy);}
     }
     // inférence ⟂ (perpendiculaire) et ⦾ (tangente) — comme Fusion
     const dxB=gx-skDown.x,dyB=gy-skDown.y,lenB=Math.hypot(dxB,dyB);
-    if(lenB>1e-6){
+    if(lenB>1e-6&&!(s&&s.kind==='plane')){
       let bestPerp=null,bestD=1e9;
       (sk.entities||[]).forEach(l=>{
         if(l.t!=='line')return;
@@ -918,9 +899,10 @@ svg.addEventListener('pointermove',e=>{
     const C=sk.points[skArcC];let a2=Math.atan2(wy-C.y,wx-C.x);let d=a2-skArcA1;while(d<=0)d+=Math.PI*2;
     skDraft.a2=skArcA1+d;drawSketch2D();return;
   }
-  if(!skDown&&!skDrag&&!skDimDrag&&(skTool==='line'||skTool==='coincident'||skTool==='dim'||skTool==='arc')){
+  if(!skDown&&!skDrag&&!skDimDrag&&(skTool==='line'||skTool==='coincident'||skTool==='dim'||skTool==='arc'||SK_PL_TOOLS.has(skTool))){
+    const h0=skPlHover;
     const s=findSnap(sk,wx,wy);const nm=s?{x:s.x,y:s.y}:null;
-    if(JSON.stringify(nm)!==JSON.stringify(skSnapMk)){skSnapMk=nm;drawSketch2D();}
+    if(JSON.stringify(nm)!==JSON.stringify(skSnapMk)||h0!==skPlHover&&!(h0&&skPlHover&&h0.x===skPlHover.x&&h0.y===skPlHover.y)){skSnapMk=nm;drawSketch2D();}
   }
 });
 svg.addEventListener('pointerup',e=>{
@@ -1096,7 +1078,8 @@ svg.addEventListener('pointerup',e=>{
     const nc={id:skNewEid(sk),t:'circle',pc:skDown.pid,r};
     sk.entities.push(nc);
     {const cp=sk.points[nc.pc];if(cp)skAutoAttach(sk,nc.pc,cp.x,cp.y,1e-3);}
-    if(s&&s.kind==='point'&&s.pid&&s.pid!==nc.pc&&!(sk.constraints||[]).some(c=>c.type==='oncircle'&&c.p===s.pid&&c.ent===nc.id))
+    if(s&&s.kind==='plane'){const q=skPlMaterialize(sk,s.pl);if(q&&q!==nc.pc)sk.constraints.push({id:skNewEid(sk),type:'oncircle',p:q,ent:nc.id});} // V0.20.1
+    else if(s&&s.kind==='point'&&s.pid&&s.pid!==nc.pc&&!(sk.constraints||[]).some(c=>c.type==='oncircle'&&c.p===s.pid&&c.ent===nc.id))
       sk.constraints.push({id:skNewEid(sk),type:'oncircle',p:s.pid,ent:nc.id}); // rayon posé sur un point → point sur cercle
     skDown=null;skDraft=null;afterEdit();
     skStatus('Cercle créé — cliquez le centre du suivant (Échap = fin).');return; // 2026-10-16-001 : l'outil reste actif

@@ -81,6 +81,7 @@ const SUITES = [
   "test_esquisse_cotes_pose",
   "test_esquisse_arc_fixe_ddl",
   "test_esquisse_spline",
+  "test_esquisse_plan_cibles",
   "test_proj_arc_sens",
   "test_esquisse_contraintes",
   "test_fao",
