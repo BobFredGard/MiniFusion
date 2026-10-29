@@ -69,6 +69,15 @@ const {loadApp}=require('./appvm.cjs');
     "A(g(70).length===2&&g(70).some(h=>Math.abs(h.zbot-2)<1e-3&&!h.through),'4d : « Jusqu\\u2019à la face » Z2 : fond à Z2 (sous la cavité)');",
     "A(Math.abs((fN._thLen||0)-10)<0.06,'4e : longueur filetée « prochaine face » = '+fN._thLen+' mm');",
     "A(!/Supprimer/.test((function(){const p=document.createElement('div');renderHoleProps(p,fN);const t=[];(function w(n){t.push(n.textContent||'');(n.children||[]).forEach(w);})(p);return t.join('|');})()),'4f : plus de bouton Supprimer en double dans le panneau Perçage');",
+    // V0.20.2 : choix de vis CHC / FHC conservé tant que les valeurs correspondent
+    "const scr=(fx)=>{const p=document.createElement('div');renderHoleProps(p,fx);const o=[];(function w(n){if(n.tagName==='SELECT')o.push(n);(n.children||[]).forEach(w);})(p);return o.map(x=>x.value);};",
+    "const hC={kind:'cbore',d:6.6,cbD:11,cbH:6.4,thread:null};",
+    "A(holeScrewOf(hC)==='M6'&&scr(Object.assign({},fN,hC)).indexOf('M6')>=0,'6a : lamage Ø6,6 / Ø11 × 6,4 → « Vis CHC » reste sur M6');",
+    "A(holeScrewOf(Object.assign({},hC,{cbH:7}))==='','6b : profondeur de lamage changée → plus de vis CHC choisie');",
+    "A(ISO_FHC.every(c=>(fhcCsD(c)-c[2])/2/Math.tan(Math.PI/4)>=0.2-1e-9),'6c : FHC : chaque tête est au moins 0,2 mm sous la surface d\u2019entrée');",
+    "const hF={kind:'csink',d:6.6,csD:fhcCsD(ISO_FHC.find(c=>c[0]==='M6')),csA:90,thread:null};",
+    "A(hF.csD===13.9&&holeScrewOf(hF)==='M6'&&scr(Object.assign({},fN,hF)).indexOf('M6')>=0,'6d : fraisure FHC M6 : Ø6,6 / Ø13,9 × 90° → « Vis FHC » reste sur M6');",
+    "A(holeScrewOf(Object.assign({},hF,{csA:100}))===''&&holeScrewOf(Object.assign({},hF,{thread:{size:'M6',p:1}}))==='','6e : angle ou taraudage changé → plus de vis FHC choisie');",
     // STEP : pas de fonction → choix proposé selon le Ø
     "const S=faoSetup();S.ops=[];const op=faoOpDefaults('drill');S.ops.push(op);",
     "doc.features=doc.features.filter(x=>x.type!=='hole'||x.id==='zz');faoHoleCache={shape:null,list:null};",

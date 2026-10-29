@@ -23,6 +23,22 @@ const ISO_THREADS=[['M2',2,0.4],['M2.5',2.5,0.45],['M3',3,0.5],['M4',4,0.7],['M5
 // Vis CHC (ISO 4762) : passage moyen, lamage Ø, profondeur de lamage
 const ISO_CHC=[['M3',3.4,6.5,3.4],['M4',4.5,8,4.4],['M5',5.5,10,5.4],['M6',6.6,11,6.4],['M8',9,15,8.6],
   ['M10',11,18,10.8],['M12',13.5,20,13],['M14',15.5,24,15],['M16',17.5,26,17.5],['M20',22,33,21.5],['M24',26,40,25.5]];
+// Vis FHC (ISO 10642, tête fraisée 90°) : passage moyen, Ø de tête théorique dk max.
+// La fraisure (90°) est agrandie pour que la tête reste au moins 0,2 mm SOUS la surface
+// d'entrée : Ø fraisure = dk + 2×0,2×tan 45°, arrondi au 0,1 supérieur.
+const FHC_RETRAIT=0.2;
+const ISO_FHC=[['M3',3.4,6.72],['M4',4.5,8.96],['M5',5.5,11.2],['M6',6.6,13.44],['M8',9,17.92],
+  ['M10',11,22.4],['M12',13.5,26.88],['M14',15.5,30.8],['M16',17.5,33.6],['M20',22,40.32]];
+function fhcCsD(c){ return Math.ceil((c[2]+2*FHC_RETRAIT)*10-1e-6)/10; }
+// Vis dont les cotes correspondent au perçage (le choix reste affiché tant qu'on ne touche pas aux valeurs)
+function holeScrewOf(f){
+  if(!f||(f.thread&&f.thread.size))return '';
+  const eq=function(a,b){return Math.abs(+a-b)<1e-6;};
+  let c=null;
+  if(f.kind==='cbore')c=ISO_CHC.find(function(x){return eq(f.d,x[1])&&eq(f.cbD,x[2])&&eq(f.cbH,x[3]);});
+  else if(f.kind==='csink')c=ISO_FHC.find(function(x){return eq(f.d,x[1])&&eq(f.csD,fhcCsD(x))&&eq(f.csA||90,90);});
+  return c?c[0]:'';
+}
 function isoThread(size){ return ISO_THREADS.find(function(t){return t[0]===size;})||null; }
 function tapDrill(size,p){ const t=isoThread(size); return t?+(t[1]-(p||t[2])).toFixed(2):null; }
 // Filet interne ISO 68-1 / ISO 965-1 : crête (Ø mineur D1) méplat p/4, racine
@@ -407,8 +423,11 @@ function renderHoleProps(p,f){
     if(f.kind==='csink')f.csD=+(isoThread(q[0])[1]*1.1+0.4).toFixed(2);
   }));
   /* vis CHC (lamage) */
-  if(f.kind==='cbore')pRow('Vis CHC',sel([['','—']].concat(ISO_CHC.map(function(c){return [c[0],c[0]+' : Ø'+String(c[1]).replace('.',',')+' / lamage Ø'+c[2]+' × '+String(c[3]).replace('.',',')];})),'',function(v){
+  if(f.kind==='cbore')pRow('Vis CHC',sel([['','—']].concat(ISO_CHC.map(function(c){return [c[0],c[0]+' : Ø'+String(c[1]).replace('.',',')+' / lamage Ø'+c[2]+' × '+String(c[3]).replace('.',',')];})),holeScrewOf(f),function(v){
     const c=ISO_CHC.find(function(x){return x[0]===v;});if(!c)return;f.thread=null;f.d=c[1];f.cbD=c[2];f.cbH=c[3];}));
+  /* vis FHC (fraisure) : tête au moins 0,2 mm sous la surface */
+  if(f.kind==='csink')pRow('Vis FHC',sel([['','—']].concat(ISO_FHC.map(function(c){return [c[0],c[0]+' : Ø'+String(c[1]).replace('.',',')+' / fraisure Ø'+String(fhcCsD(c)).replace('.',',')+' × 90° (tête −'+String(FHC_RETRAIT).replace('.',',')+')'];})),holeScrewOf(f),function(v){
+    const c=ISO_FHC.find(function(x){return x[0]===v;});if(!c)return;f.thread=null;f.d=c[1];f.csD=fhcCsD(c);f.csA=90;}));
   /* Ø */
   pRow(f.thread&&f.thread.size?'Ø taraud '+holeThreadLabel(f.thread):'Ø du trou',num(f.d,function(v){f.d=v;},0,f,'d'));
   if(f.thread&&f.thread.size){

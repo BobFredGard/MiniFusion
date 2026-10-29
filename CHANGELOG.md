@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**428 versions**, de `2026-09-28b` à `V0.20.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**429 versions**, de `2026-09-28b` à `V0.20.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5527,3 +5527,9 @@ Demande : « que les arêtes du plan d'esquisse puissent être utilisées direct
 - **Survol** : dans les outils Ligne, Rectangle, Oblong, Cercle, Arc, Point, Centre de perçage, Spline et Cote, la cible sous le curseur s'allume en orange (arête(s) + point ; losange pour une traversée). La géométrie de l'esquisse garde la priorité ; l'outil Sélection n'est pas concerné.
 - **Usage direct** (`findSnap` → `skPlSnap`, `snapNewPoint`, `skCommitLine`, cercle, `skPlDimPrep` pour la Cote) : au clic, l'arête est projetée d'office en construction, exactement comme avec ⧉ (`skProjectCreate`, factorisé depuis l'outil ⧉) donc associative ; une arête déjà présente est réutilisée (pas de doublon). Sommet = extrémité de la projetée ; milieu = contrainte milieu ; centre = centre de la projetée ; croisement = point posé sur les deux projetées ; pied sur une arête = point sur la projetée ; traversée = point de construction projeté fixe (`cpoint` `pierce`), recalé au rejeu sur son arête source (`skPlTrackPierce`, branché dans `updateAssociativeProjections`). Pendant le tracé d'une ligne, un guide H / V actif l'emporte sur l'accroche à une arête. Un instantané d'annulation précède la projection du 1er clic.
 - **Tests** : `tests/test_esquisse_plan_cibles.cjs` (noyau OCCT réel, 29 contrôles) — cibles d'une face de boîte, survol et dessin orange, projection au clic sans doublon, ligne tracée aux vrais événements souris (sommet → milieu), cote sur arête, traversées d'un plan médian suivies quand la boîte s'allonge, croisements 2D, rien en Sélection. Vérifié dans le navigateur (Cache Piles, Esquisse 9 : survol du milieu d'arête, ligne milieu → traversée, deux Ctrl+Z).
+
+## V0.20.2 - Perçage : choix de vis CHC conservé, vis FHC pour les fraisures
+Demande : « que le choix des vis pour les lamages reste sauf si on change les valeurs ; le même choix avec les vis FHC et les trous fraisés, la tête au moins 0,2 mm sous la surface d'entrée ».
+- **Choix conservé** (`holeScrewOf`, `src/76-percage.js`) : la liste « Vis CHC » n'est plus remise à « — » ; elle affiche la vis dont les cotes correspondent exactement au trou (Ø, Ø lamage, profondeur, sans taraudage). Une valeur modifiée à la main la ramène à « — ».
+- **Vis FHC** (ISO 10642, tête fraisée 90°) pour le type Fraisure, M3 à M20 : passage moyen (comme CHC) et Ø de fraisure = dk max théorique + 2 × 0,2 × tan 45°, arrondi au 0,1 supérieur (`ISO_FHC`, `fhcCsD`, `FHC_RETRAIT`) → la tête reste de 0,20 à 0,24 mm sous la surface (ex. M6 : Ø6,6 / fraisure Ø13,9 × 90°). Le choix fixe l'angle à 90° et retire le taraudage ; il reste affiché tant que Ø, Ø fraisure et angle correspondent.
+- **Tests** : `test_percage_3d` 6a–6e (choix CHC et FHC conservés dans le panneau, perdus quand une cote change, retrait ≥ 0,2 mm pour toutes les tailles). `npm run ci`.
