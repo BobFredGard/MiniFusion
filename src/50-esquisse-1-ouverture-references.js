@@ -461,6 +461,7 @@ function projectEdgeAt(sk,x,y){
       const edges=sh&&sh.edges?sh.edges:occListEdges(sh);
       for(const e of edges){
         const pts2=e.pts.map(p=>[(p[0]-o.x)*u.x+(p[1]-o.y)*u.y+(p[2]-o.z)*u.z, (p[0]-o.x)*v.x+(p[1]-o.y)*v.y+(p[2]-o.z)*v.z]);
+        if(pts2.every(p=>Math.hypot(p[0]-pts2[0][0],p[1]-pts2[0][1])<1e-4))continue; // arête ⟂ au plan : un point, rien à projeter
         // cercle ? (3 points → centre)
         let isCirc=false,cx=0,cy=0,r=0,arcA1=0,arcA2=0;
         if(pts2.length>=6){
@@ -510,7 +511,12 @@ function projectEdgeAt(sk,x,y){
               const oa=arcOrient(cx,cy,p0a[0],p0a[1],p1a[0],p1a[1],pma[0],pma[1]);
               best={type:'arc',cx,cy,r, x1:oa[0],y1:oa[1],x2:oa[2],y2:oa[3]};
             }
-          } else best={type:'line',x1:pts2[0][0],y1:pts2[0][1],x2:pts2[pts2.length-1][0],y2:pts2[pts2.length-1][1]};
+          } else{
+            // lot 3 spline : arête COURBE (B-spline, ellipse…) — avant, projetée en corde droite
+            const A0=pts2[0],B0=pts2[pts2.length-1],cl=Math.hypot(B0[0]-A0[0],B0[1]-A0[1]);let dv=0;
+            for(const p of pts2)dv=Math.max(dv,cl>1e-9?Math.abs((p[0]-A0[0])*(B0[1]-A0[1])-(p[1]-A0[1])*(B0[0]-A0[0]))/cl:Math.hypot(p[0]-A0[0],p[1]-A0[1]));
+            best=dv>0.02?{type:'curve',pts:pts2.map(p=>p.slice())}:{type:'line',x1:A0[0],y1:A0[1],x2:B0[0],y2:B0[1]};
+          }
         }
       }
       if(best){if(srcMid)best.srcMid=srcMid;if(sh&&sh.ext){best.ext={ctx:sh.ext.ctx.slice(),path:sh.ext.path.slice()};best.extName=sh.name;}return best;}

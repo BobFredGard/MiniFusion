@@ -29,7 +29,7 @@ function conDesc(sk,c){
   if(c.type==='stangent'||c.type==='scurv')return N+' '+nm(c.s)+' / '+nm(c.ent)+' en '+pt(c.p);
   if(c.type==='symmetric')return N+' '+nm(c.a)+' / '+nm(c.b)+' | axe '+nm(c.mid);
   if(c.type==='coincident')return N+' '+pt(c.a)+' / '+pt(c.b)+(c.a===SK_ORIGIN||c.b===SK_ORIGIN?' (origine)':'');
-  if(c.type==='oncircle')return 'Point '+pt(c.p)+' sur '+nm(c.ent);
+  if(c.type==='oncircle'||c.type==='onspline')return 'Point '+pt(c.p)+' sur '+nm(c.ent);
   if(c.type==='online')return 'Point '+pt(c.p)+' sur '+nm(c.line);
   if(c.type==='midpoint')return c.p?('Milieu : '+pt(c.p)+' au centre de '+nm(c.line)):('Milieux égaux '+nm(c.a)+' / '+nm(c.b));
   if(c.type==='offset')return N+' '+nm(c.c)+'→'+nm(c.d)+' = '+nm(c.a)+'→'+nm(c.b);
@@ -178,6 +178,11 @@ function applyCon(type){
       if(e.pc===p){skStatus('Ce point est le centre : utilisez Coaxial ou déplacez-le.');return;}
       if(has(c=>c.type==='oncircle'&&c.p===p&&c.ent===e.id)){skStatus('Point déjà sur ce cercle.');return;}
       skPushUndo();sk.constraints.push({id:skNewEid(sk),type:'oncircle',p,ent:e.id});
+    }else if(pts.length===1&&ents.length===1&&ents[0].t==='spline'){ // point sur la spline (lot 3)
+      const p=pts[0],e=ents[0];
+      if(skEntPids(e).indexOf(p)>=0){skStatus('Ce point appartient déjà à la spline.');return;}
+      if(has(c=>c.type==='onspline'&&c.p===p&&c.ent===e.id)){skStatus('Point déjà sur cette spline.');return;}
+      skPushUndo();sk.constraints.push({id:skNewEid(sk),type:'onspline',p,ent:e.id});
     }else{skStatus('Coïncident : sélectionnez 2 points, ou 1 point + 1 ligne (il glissera sur toute la droite), ou 1 point + 1 cercle/arc (Ctrl/Cmd+clic pour le 2ᵉ).');return;}
     skMsg='';const ok=skSolveOrRevert(sk,'Contrainte');drawSketch2D();renderSkPanel();
     if(ok)skStatus(pts.length===2?'Points coïncidents ⌖.':(lines.length?'Point sur la droite ⌖ — il peut glisser au-delà du segment.':'Point sur la courbe ⌖.'));
@@ -438,6 +443,7 @@ function skAudit(sk){
       if(v1!=null&&v2!=null)push(c.id,'décalage égal',Math.abs(v2-v1));}
     if(c.type==='stangent'){const r=skStanResid(sk,c);if(r!=null)push(c.id,'tangence spline',Math.abs(r));}
     if(c.type==='scurv'){const r=skCurvResid(sk,c);if(r!=null)push(c.id,'courbure G2',Math.abs(r));}
+    if(c.type==='onspline'){const r=skOnSplResid(sk,c);if(r!=null)push(c.id,'point sur spline',Math.abs(r));}
     if(c.type==='oncircle'){const Pt=P[c.p],E=entById(sk,c.ent);
       if(Pt&&E&&(E.t==='circle'||E.t==='arc')){const CC=P[E.pc];
         if(CC)push(c.id,'point sur '+({circle:'cercle',arc:'arc'}[E.t]),Math.abs(Math.hypot(Pt.x-CC.x,Pt.y-CC.y)-E.r));}}

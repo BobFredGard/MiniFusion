@@ -84,6 +84,7 @@ const SK_CON={
   online:       {nom:'Point sur ligne', ic:'online',       dof:1},
   oncircle:     {nom:'Point sur courbe',ic:'oncircle',     dof:1},
   stangent:     {nom:'Tangence',        ic:'tangent',      dof:1},   // 2026-10-29 : poignée de spline alignée sur l'autre courbe
+  onspline:     {nom:'Point sur courbe',ic:'oncircle',     dof:1},   // lot 3 : point posé sur une spline
   scurv:        {nom:'Courbure (G2)',   ic:'curvature',    dof:1},   // 2026-10-29 : courbures égales au raccord d'une spline
   offset:       {nom:'Décalage égal',   ic:'offset',       dof:1}   // V0.11.25 : l'écart (c→d) suit l'écart (a→b) porté par la cote unique du décalage
 };

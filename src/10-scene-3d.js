@@ -1412,9 +1412,12 @@ function skLoopTrace(sk){ // traçage de faces déterministe (demi-arêtes, mur 
   });
   // 2026-10-29 : splines (50-esquisse-6) — arêtes calculées ici : une spline fermée par points de contrôle
   // a des nœuds virtuels (« __s… », la courbe ne passe par aucun pôle), ajoutés aux points comme ceux des arcs
-  const splEd=[];
+  // lot 3 : un bout de ligne / d'arc / d'autre spline posé sur la courbe la coupe (jonction en T)
+  const splEd=[],splEnds=new Set();
+  lines.forEach(l=>{splEnds.add(l.p1);splEnds.add(l.p2);});arcs.forEach(a=>{splEnds.add(a.pa);splEnds.add(a.pb);});
+  (sk.entities||[]).forEach(e=>{if(e.t==='spline'&&!e.construction&&e.pts.length){splEnds.add(e.pts[0]);splEnds.add(e.pts[e.pts.length-1]);}});
   (sk.entities||[]).forEach(e=>{if(e.t!=='spline'||e.construction)return;
-    skSplineEdges(sk,e).forEach(se=>{if(se.virt)Object.keys(se.virt).forEach(k=>{pts[k]={x:se.virt[k][0],y:se.virt[k][1]};});splEd.push([e,se]);});});
+    skSplineEdges(sk,e,skSplineCutsFor(sk,e,[...splEnds])).forEach(se=>{if(se.virt)Object.keys(se.virt).forEach(k=>{pts[k]={x:se.virt[k][0],y:se.virt[k][1]};});splEd.push([e,se]);});});
   // canonisation : fusionne les noeuds quasi-coincidents (1 µm)
   const canon=new Map(),reps=[];
   Object.keys(pts).forEach(pid=>{

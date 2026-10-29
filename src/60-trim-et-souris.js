@@ -39,6 +39,7 @@ function entHits(sk,ent){ // intersections (monde) avec les autres entités
         interLineCircle(A,B,C,o.r).forEach(h=>{if(h.t>-1e-6&&h.t<1+1e-6){
           if(o.t==='arc'){const an=arcAngles(sk,o);if(!an||!onArcEps(Math.atan2(h.y-C.y,h.x-C.x),an.a1,an.a2))return;}
           push(h.x,h.y);}});}
+      if(o.t==='spline')skSplineHits(sk,o,ent).forEach(h=>push(h.x,h.y)); // lot 3 : spline (bornes de la ligne vérifiées)
     });
   }
   if(ent.t==='circle'||ent.t==='arc'){
@@ -52,7 +53,11 @@ function entHits(sk,ent){ // intersections (monde) avec les autres entités
       if(o.t==='circle'||o.t==='arc'){const C2=P[o.pc];if(!C2)return;
         interCircCirc(C,ent.r,C2,o.r).forEach(h=>{if(!onArc(h.x,h.y))return;
           if(o.t==='arc'){const an=arcAngles(sk,o);if(!an||!onArcEps(Math.atan2(h.y-C2.y,h.x-C2.x),an.a1,an.a2))return;}push(h.x,h.y);});}
+      if(o.t==='spline')skSplineHits(sk,o,ent).forEach(h=>push(h.x,h.y));
     });
+  }
+  if(ent.t==='spline'){ // lot 3 : intersections exactes de la spline (Newton / bissection sur la courbe)
+    sk.entities.forEach(o=>{if(o.id===ent.id||o.construction)return;skSplineHits(sk,ent,o).forEach(h=>push(h.x,h.y));});
   }
   const u=[];out.forEach(h=>{if(!u.some(k=>Math.hypot(k.x-h.x,k.y-h.y)<1e-6))u.push(h);});
   return u;
@@ -81,6 +86,7 @@ function skAttachOnCurve(sk,pid,x,y,tol){ // épingle un point sur le cercle/arc
     if((sk.constraints||[]).some(c=>c.type==='oncircle'&&c.p===pid&&c.ent===e.id))return;
     sk.constraints.push({id:skNewEid(sk),type:'oncircle',p:pid,ent:e.id});n++;
   });
+  if(!n)n=skSplineAttach(sk,pid,x,y,tol); // coupe sur une spline : épinglée dessus
   return n;
 }
 function skAutoAttach(sk,pid,x,y,tol){
@@ -103,7 +109,7 @@ function skAutoAttach(sk,pid,x,y,tol){
     if((sk.constraints||[]).some(c=>c.type==='midpoint'&&c.p===pid&&c.line===best.id))return 0; // déjà au centre ⊕ : l'online est implicite
     sk.constraints.push({id:skNewEid(sk),type:'online',p:pid,line:best.id});return 1;
   }
-  return skAttachOnCurve(sk,pid,x,y,tol);
+  return skAttachOnCurve(sk,pid,x,y,tol)||skSplineAttach(sk,pid,x,y,tol); // lot 3 : ou sur une spline
 }
 function skPinTangent(sk,lineId,entId){
   // verrouille le point de tangence (Fusion360) : l'extrémité au contact est épinglée
@@ -301,7 +307,8 @@ function trimEntity(sk,ent,cx,cy){
     }
     return 'Rien à ajuster ici.';
   }
-  return 'Ajuster : lignes, arcs et cercles uniquement.';
+  if(ent.t==='spline')return skSplineTrim(sk,ent,cx,cy); // lot 3 (50-esquisse-6)
+  return 'Ajuster : lignes, arcs, cercles et splines uniquement.';
 }
 
 /* ----- interactions souris ----- */
@@ -455,7 +462,7 @@ function skDragComp(sk,seed){
         if(!S||!E)return;
         if(ents.has(S.id)&&!ents.has(E.id)){ents.add(E.id);skEntPids(E).forEach(p=>{if(p&&sk.points[p])pids.add(p);});changed=true;}
         else if(ents.has(E.id)&&!ents.has(S.id)){ents.add(S.id);skEntPids(S).forEach(p=>{if(p&&sk.points[p])pids.add(p);});changed=true;}
-      }else if(c.type==='oncircle'){
+      }else if(c.type==='oncircle'||c.type==='onspline'){
         const E=entById(sk,c.ent);
         if(!E||!sk.points[c.p])return;
         if(pids.has(c.p)&&!ents.has(E.id)){ents.add(E.id);skEntPids(E).forEach(p=>{if(p&&sk.points[p])pids.add(p);});changed=true;}
@@ -684,6 +691,11 @@ svg.addEventListener('pointerdown',e=>{
       sk.entities.push(Object.assign({id:eid,t:'arc',pc,pa,pb,r:pr.r,construction:true,proj:true},projNames(pr)));
       sk.constraints.push({id:skNewEid(sk),type:'fix',ent:eid});
       skStatus('Arc projeté en construction (fixe).');
+    }else if(pr.type==='curve'){ // lot 3 : arête courbe → spline par points de passage fixés (construction)
+      const eid=skSplineProject(sk,pr.pts);
+      if(!eid){skUndoStack.pop();skUndoBtn();skStatus('Arête courbe trop courte pour être projetée.');return;}
+      Object.assign(entById(sk,eid),{construction:true,proj:true},projNames(pr));
+      skStatus('Courbe projetée en construction : spline aux points fixés (non suivie au rejeu).');
     }else{
       const p1=addPoint(sk,pr.x1,pr.y1),p2=addPoint(sk,pr.x2,pr.y2);
       const eid=skNewEid(sk);
@@ -696,21 +708,29 @@ svg.addEventListener('pointerdown',e=>{
   if(skTool==='isect'){skIsectClickAt(sk,wx,wy,e);return;}
   if(skTool==='trim'){
     const ent=nearestEntity(sk,wx,wy,SK_PICKX,true);
-    if(!ent){skStatus('Ajuster : cliquez un tronçon de ligne, d’arc ou de cercle près d’une intersection.');return;}
+    if(!ent){skStatus('Ajuster : cliquez un tronçon de ligne, d’arc, de cercle ou de spline près d’une intersection.');return;}
     skPushUndo();skStatus(trimEntity(sk,ent,wx,wy));afterEdit();return;
   }
   if(skTool==='offset'){
     // Décalage : sélection (Ctrl/Cmd = lot) PUIS clic du côté — la distance suit le curseur.
-    const sel=skSelectedEnts().filter(e=>(e.t==='line'||e.t==='circle'||e.t==='arc')&&!e.ref);
-    if(!sel.length){skStatus('Décalage ⇄ : sélectionnez d’abord 1+ lignes/cercles/arcs (Ctrl/Cmd = lot).');return;}
+    const sel=skSelectedEnts().filter(e=>(e.t==='line'&&!e.handle||e.t==='circle'||e.t==='arc')&&!e.ref);
+    const spl=skSelectedEnts().filter(e=>e.t==='spline'); // lot 3 : splines décalées à part (copie approchée, non associative)
+    if(!sel.length&&!spl.length){skStatus('Décalage ⇄ : sélectionnez d’abord 1+ lignes/cercles/arcs/splines (Ctrl/Cmd = lot).');return;}
     if(!skOffArm){skOffArm=true;skStatus('Décalage ⇄ : cliquez le CÔTÉ (distance = curseur, une cote par chaîne pour ajuster). Échap annule.');drawSketch2D();return;}
-    const D=skOffsetDistToSel(sk,sel,{x:wx,y:wy});
+    const D=sel.length?skOffsetDistToSel(sk,sel,{x:wx,y:wy}):Math.min(...spl.map(e=>(skSplineClosest(sk,e,wx,wy)||{d:Infinity}).d));
     skOffArm=false;
     if(!(D>=4/skView.s)){skStatus('Décalage : cliquez plus loin du profil.');drawSketch2D();return;}
     skPushUndo();
-    const r=skOffsetApply(sk,sel.map(e=>e.id),D,{x:wx,y:wy});
-    if(!r.ok){skUndoStack.pop();skUndoBtn();skStatus(r.msg);drawSketch2D();return;}
-    skOffsetD=D;afterEdit();skStatus(r.msg+' — cote modifiable (double-clic).');
+    let msg='';
+    if(sel.length){
+      const r=skOffsetApply(sk,sel.map(e=>e.id),D,{x:wx,y:wy});
+      if(!r.ok){skUndoStack.pop();skUndoBtn();skStatus(r.msg);drawSketch2D();return;}
+      msg=r.msg+' — cote modifiable (double-clic).';
+    }
+    let nS=0,cusp=false;
+    spl.forEach(e=>{const h=skSplineClosest(sk,e,wx,wy);if(!h)return;const r=skSplineOffset(sk,e,D,h.s>=0?1:-1);if(typeof r==='object'){nS++;cusp=cusp||r.cusp;}});
+    if(nS)msg+=(msg?' ':'')+nS+' spline(s) décalée(s) de '+D.toFixed(2)+' mm (copie approchée à 0,005 mm, non associative)'+(cusp?' ⚠ distance > rayon de courbure : la copie se recoupe':'')+'.';
+    skOffsetD=D;afterEdit();skStatus(msg);
     return;
   }
 });
@@ -724,15 +744,17 @@ svg.addEventListener('pointermove',e=>{
     const pr=projectEdgeAt(sk,wx,wy);
     const k=pr?JSON.stringify(pr):'null', ko=skProjectHover?JSON.stringify(skProjectHover):'null';
     if(k!==ko){ skProjectHover=pr; drawSketch2D(); }
-    if(pr) skStatus('⧉ '+(pr.type==='circle'?'Cercle':pr.type==='arc'?'Arc':'Arête')+(pr.ext?' de « '+(pr.extName||'composant')+' » (suit ce composant)':'')+' — clic pour projeter en construction.');
+    if(pr) skStatus('⧉ '+(pr.type==='circle'?'Cercle':pr.type==='arc'?'Arc':pr.type==='curve'?'Courbe':'Arête')+(pr.ext?' de « '+(pr.extName||'composant')+' » (suit ce composant)':'')+' — clic pour projeter en construction.');
     else skStatus('⧉ Survolez une arête 3D (même hors plan) — elle s\'illumine en orange.');
     return;
   }
   if(skTool==='isect'){skIsectHoverAt(sk,wx,wy,!!e.shiftKey);return;}
   if(skTool==='offset'&&skOffArm){
     // Distance vivante pendant le placement (sans aperçu géométrique : le clic fige).
-    const sel=skSelectedEnts().filter(e=>(e.t==='line'||e.t==='circle'||e.t==='arc')&&!e.ref);
-    if(sel.length)skStatus('Décalage ⇄ : '+skOffsetDistToSel(sk,sel,{x:wx,y:wy}).toFixed(2)+' mm — clic pour appliquer, Échap annule.');
+    const sel=skSelectedEnts().filter(e=>(e.t==='line'&&!e.handle||e.t==='circle'||e.t==='arc')&&!e.ref);
+    const spl=skSelectedEnts().filter(e=>e.t==='spline');
+    const dd=sel.length?skOffsetDistToSel(sk,sel,{x:wx,y:wy}):(spl.length?Math.min(...spl.map(e=>(skSplineClosest(sk,e,wx,wy)||{d:Infinity}).d)):null);
+    if(dd!=null)skStatus('Décalage ⇄ : '+dd.toFixed(2)+' mm — clic pour appliquer, Échap annule.');
     return;
   }
   if(skDrag){
@@ -1143,6 +1165,7 @@ function skShortcut(e){
       const E=ents[0];skPushUndo();
       if(E.t==='line')sk.constraints.push({id:skNewEid(sk),type:'online',p:pts[0],line:E.id});
       else if(E.t==='circle'||E.t==='arc')sk.constraints.push({id:skNewEid(sk),type:'oncircle',p:pts[0],ent:E.id});
+      else if(E.t==='spline'&&skEntPids(E).indexOf(pts[0])<0)sk.constraints.push({id:skNewEid(sk),type:'onspline',p:pts[0],ent:E.id});
       else{skUndoStack.pop();skUndoBtn();skStatus('F1 : point + ligne / cercle, ou 2 points.');return true;}
       afterEdit();skStatus('Point posé sur '+(E.t==='line'?'la ligne':'le cercle')+' (F1).');return true;
     }
@@ -1212,6 +1235,8 @@ function showSkCtx(x,y){
         skStatus(hasH?'Poignée retirée : la courbe redevient libre en ce point.':'Poignée posée : glissez son bout (losange violet) pour orienter la tangente et régler la tension — cotable comme une ligne.');});
       has=true;}
   }
+  if(pts.length===1&&splines.length===1&&selEnts.length===1&&skEntPids(splines[0]).indexOf(pts[0])<0){
+    add('⌾ Coïncident (point sur la spline)',()=>applyCon('coincident'));has=true;}
   if(splines.length===1&&tot===1){const S1=splines[0];add('📌 Fixe',()=>applyCon('fix'));
     add(skComb.has(S1.id)?'∿ Masquer le peigne de courbure':'∿ Peigne de courbure',()=>{if(skComb.has(S1.id))skComb.delete(S1.id);else skComb.add(S1.id);drawSketch2D();});has=true;}
   if(splines.length&&selEnts.length===2&&selEnts.every(e=>e.t==='spline'||(e.t==='line'&&!e.handle)||e.t==='circle'||e.t==='arc')){
@@ -1391,7 +1416,7 @@ window.addEventListener('keydown',e=>{
   };
   mk('fillet','⦾','Congé (F) : cliquez 2 lignes en coin → arc tangent + cote R (double-clic pour modifier)');
   mk('chamfer','◣','Chanfrein (H) : cliquez 2 lignes en coin → coupe + cote (double-clic pour modifier)');
-  mk('offset','⇄','Décalage (O) : sélectionnez lignes/cercles/arcs, cliquez le CÔTÉ → copies // et cotes');
+  mk('offset','⇄','Décalage (O) : sélectionnez lignes/cercles/arcs/splines, cliquez le CÔTÉ → copies // et cotes (spline : copie approchée, sans cote)');
   // 2026-10-29 : Spline (S), rangée avec les outils de dessin, juste après l'arc
   mk('spline','∿','Spline (S) : cliquez les points de passage — double-clic / Entrée / clic droit = fin, clic sur le 1er point = fermée · clic droit sur un point : poignée de tangence');
   mk('cspline','∿','Spline par points de contrôle (Maj+S) : cliquez les pôles — la courbe part du 1er, finit au dernier et suit le polygone · double-clic / Entrée / clic droit = fin, clic sur le 1er pôle = fermée');

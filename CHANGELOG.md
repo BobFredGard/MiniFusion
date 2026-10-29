@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**421 versions**, de `2026-09-28b` à `V0.19.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**422 versions**, de `2026-09-28b` à `V0.19.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5481,3 +5481,12 @@ Demande : « dans l'esquisse l'on puisse tourner comme dans le monde 3D, de la m
 - **Rotation** (`src/10-scene-3d.js`, `skOrbDragBy`) : clic-molette glissé = même calcul qu'`orbitRotate` (vitesse, orbite contrainte ou libre selon ⚙, inertie `ORBIT_ROT_DAMP` via `skOrbTick`), pivot au centre du dessin. Plus de butée à 8° de la tranche : on passe derrière le plan et on voit l'esquisse de dos. Lâchée à moins de 4° de face, la vue se recale dans le plan (`skOrbSnapFace`).
 - **Perspective hors du plan** (`sketchSyncCamera`) : de face, caméra orthographique comme avant ; dès que la vue quitte le plan, la caméra perspective de l'espace 3D (même angle de champ), à la distance qui garde l'échelle au centre du dessin (décalage de vue sur le centre du SVG). Plan → écran devient une homographie `_skH` : le dessin, tracé en vue normale, va dans un second SVG (`#skSvgP`, `src/50-esquisse-4-dessin-cotes.js`) projeté par CSS `matrix3d` et coupé au cadre ; la souris repasse par l'inverse (`skEv`), on dessine donc aussi en vue inclinée. Textes de cote redressés par la jacobienne locale ; grille coupée avant l'horizon (`skOrbVisPoly`, `skClipSeg`) ; fantôme aplati réservé à la vue de face. Plan vu par la tranche (< 0,5°) : dessin masqué. À la sortie, caméra 3D rendue (plans de coupe, décalage de vue).
 - **Tests** : vérifié dans le navigateur — un point du plan projeté par la caméra 3D et le rendu CSS réel coïncident (au 1/10 px), aller-retour souris exact, passage derrière le plan, recalage de face, cube de vue (iso → perspective, face → orthogonal), sortie d'esquisse. `npm run ci` 75/75.
+
+## V0.19.5 - Esquisse : splines, lot 3 — ajuster, jonction en T, décalage, intersection et projection en splines
+Demandé : « Lot 3 -> tu peux y travailler » (suite de V0.19.0 : ajuster / prolonger / décaler, intersections, courbes de section en vraies splines).
+- **Intersections exactes** (`src/50-esquisse-6-spline.js`) : spline × ligne / cercle / arc par changement de signe + bissection sur la courbe, spline × spline par Newton 2D ; pied d'un point par Newton. `entHits` (`src/60`) les prend : l'outil Ajuster coupe aussi lignes, arcs et cercles sur une spline (bout coupé épinglé dessus).
+- **Ajuster une spline** (`skSplineTrim`) : le tronçon cliqué part ; les morceaux gardés sont des splines par points de contrôle à **nœuds explicites** (`knots`, `deg`) découpées par insertion de nœuds — forme inchangée (écart 1e-14 mm). Fermée : deux coupes. Tangences, courbures et « point sur » reportées sur le morceau qui porte le point.
+- **Point sur spline** `onspline` (F1, Coïncident, lâcher sur la courbe, création, coupe) : distance signée au pied. **Jonction en T** : un bout de ligne / d'arc / de spline posé sur la courbe la coupe dans `skLoopTrace` (`src/10`) — deux contours, extrusion exacte.
+- **Décalage** (O) d'une spline : copie échantillonnée puis interpolée jusqu'à 0,005 mm, en points de contrôle ; non associative (pas de cote) ; avertit si la distance dépasse le rayon de courbure.
+- **Intersection** (I) : une courbe de section libre (ellipse, B-spline) devient une spline fixée aux n points du découpage régulier (au lieu de n segments), recalée au rejeu (`src/62`). **Projeter** (P) : une arête courbe donnait sa CORDE ; elle donne une spline fixée (non suivie au rejeu) ; une arête ⟂ au plan (un point) n'est plus proposée (`src/50-esquisse-1`).
+- **Tests** : `tests/test_esquisse_spline.cjs` porté à 51 contrôles (noyau OCCT réel : intersections, ajuster exact, ligne ajustée sur spline, jonction en T + volume, décalage à 3 mm, section d'une face spline, projection d'arête courbe). Vérifié dans le navigateur. `npm run ci` 76/76.

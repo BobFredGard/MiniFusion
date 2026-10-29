@@ -110,11 +110,17 @@ function bsInterpolate(Q,H,closed){
   P[0]=X[0].slice();P[nP-1]=X[n].slice(); // bouts exacts : jonctions bit à bit avec les lignes voisines
   return{U,P,u,d,closed:!!closed,n,p,a:U[0],b:U[U.length-1]};
 }
-function bsControl(Q,closed){
+function bsControl(Q,closed,knots,deg){
   // spline par POINTS DE CONTRÔLE : les points d'esquisse sont les pôles. Ouverte : B-spline bornée à nœuds
   // uniformes (passe par le 1er et le dernier pôle, tangente aux côtés extrêmes du polygone), degré 3 ou
   // moins s'il y a peu de pôles. Fermée : périodique uniforme (pôles repris en boucle), domaine [a, b].
+  // knots / deg (lot 3) : vecteur de nœuds explicite d'une spline OUVERTE issue d'une coupe ou d'un décalage
+  // — le morceau garde exactement la forme de la courbe d'origine.
   const m=Q.length;
+  if(!closed&&Array.isArray(knots)){
+    const p=deg||SK_SPL_DEG;
+    if(knots.length===m+p+1&&p>=1&&p<m)return{U:knots.slice(),P:Q.map(q=>q.slice()),p,ctrl:true,closed:false,a:knots[p],b:knots[m]};
+  }
   if(!closed){
     const p=Math.min(SK_SPL_DEG,m-1);if(p<1)return null;
     const n=m-1,U=[];for(let i=0;i<=p;i++)U.push(0);for(let k=1;k<=n-p;k++)U.push(k);for(let i=0;i<=p;i++)U.push(n-p+1);
@@ -135,12 +141,12 @@ const SK_SPL_CACHE=new WeakMap(); // entité → {key, fit} (jamais enregistré)
 function skSplineFit(sk,e){
   if(!e||e.t!=='spline'||!sk)return null;
   const Pp=sk.points||{},ids=e.pts||[];if(ids.length<2)return null;
-  const ctrl=e.mode==='ctrl',hm=ctrl?{}:skSplineHandles(sk,e),Q=[],H=[];let key=(e.closed?'c':'o')+(ctrl?'k':'');
+  const ctrl=e.mode==='ctrl',hm=ctrl?{}:skSplineHandles(sk,e),Q=[],H=[];let key=(e.closed?'c':'o')+(ctrl?'k'+(e.knots?e.knots.join(','):''):'');
   for(const id of ids){const q=Pp[id];if(!q)return null;Q.push([q.x,q.y]);key+='|'+q.x+','+q.y;
     const h=hm[id]&&Pp[hm[id]];H.push(h?[h.x,h.y]:null);if(h)key+='h'+h.x+','+h.y;}
   const c=SK_SPL_CACHE.get(e);if(c&&c.key===key)return c.fit;
   const closed=!!e.closed&&ids.length>=3;
-  let fit=null;try{fit=ctrl?bsControl(Q,closed):bsInterpolate(Q,H,closed);}catch(err){fit=null;}
+  let fit=null;try{fit=ctrl?bsControl(Q,closed,e.knots,e.deg):bsInterpolate(Q,H,closed);}catch(err){fit=null;}
   SK_SPL_CACHE.set(e,{key,fit});
   return fit;
 }
@@ -198,32 +204,232 @@ function skBsKnotMults(U){ // nœuds distincts + multiplicités (format OCCT)
   const k=[],m=[];U.forEach(v=>{if(k.length&&k[k.length-1]===v)m[m.length-1]++;else{k.push(v);m.push(1);}});
   return{k,m};
 }
-function skSplineEdges(sk,e){
-  // arêtes de profil d'une spline : une seule (ouverte), deux moitiés coupées à un point de passage (fermée)
-  // — jamais une arête qui revient sur son propre nœud. {a,b,bs,poly,o,i} : o / i = angle de départ / d'arrivée.
-  // Spline fermée par points de contrôle : ses deux nœuds ne sont pas des points d'esquisse (la courbe ne
-  // passe par aucun pôle) — nœuds virtuels « __s… », coordonnées dans virt, comme les bouts d'arc « __a… ».
+function skSplineEdges(sk,e,cuts){
+  // arêtes de profil d'une spline, coupée à ses nœuds : bouts (ouverte), départ + un point au milieu (fermée,
+  // jamais une arête qui revient sur son propre nœud), et les points posés sur la courbe (cuts : [{u,pid}],
+  // jonction en T d'une ligne / d'un arc / d'une autre spline). {a,b,bs,poly,o,i,virt} : o / i = angles de
+  // départ / d'arrivée. Spline fermée par points de contrôle : la courbe ne passe par aucun pôle — nœuds
+  // virtuels « __s… », coordonnées dans virt, comme les bouts d'arc « __a… ».
   const f=skSplineFit(sk,e);if(!f)return[];
-  const ids=e.pts,p=f.p||SK_SPL_DEG;
-  const mk=(a,b,bs,virt)=>{
-    const s=bs.U[0],t=bs.U[bs.U.length-1],d0=bsEval(bs,s,1)[1],d1=bsEval(bs,t,1)[1];
-    return{a,b,bs,poly:bsSample(bs,s,t,16),o:Math.atan2(d0[1],d0[0]),i:Math.atan2(d1[1],d1[0]),virt:virt||null};
-  };
-  if(f.ctrl&&f.closed){
-    const um=(f.a+f.b)/2,C0=bsEval(f,f.a,0)[0],Cm=bsEval(f,um,0)[0],va='__s'+e.id+'a',vb='__s'+e.id+'b';
-    const L=bsRange(f,f.a,um,C0,Cm),R=bsRange(f,um,f.b,Cm,C0),virt={};virt[va]=C0;virt[vb]=Cm;
-    return[mk(va,vb,L,virt),mk(vb,va,R,virt)];
-  }
+  const ids=e.pts,P=sk.points,virt={};
+  const at=u=>bsEval(f,u,0)[0];
   const loop=!!e.closed||ids[0]===ids[ids.length-1];
-  if(!loop)return[mk(ids[0],ids[ids.length-1],{U:f.U,P:f.P,p})];
-  if(f.ctrl){ // 1er et dernier pôles confondus : coupée au milieu de son domaine (nœud virtuel)
-    const um=(f.a+f.b)/2,Cm=bsEval(f,um,0)[0],vb='__s'+e.id+'b',virt={};virt[vb]=Cm;
-    const[L,R]=bsSplit({U:f.U,P:f.P,p},um,Cm);return[mk(ids[0],vb,L,virt),mk(vb,ids[0],R,virt)];
+  let nodes; // [{u,id,pt}] croissants ; fermée : le dernier = le premier (u = b)
+  if(!loop)nodes=[{u:f.a,id:ids[0]},{u:f.b,id:ids[ids.length-1]}];
+  else if(f.ctrl&&f.closed){const id='__s'+e.id+'a';virt[id]=at(f.a);nodes=[{u:f.a,id},{u:f.b,id}];}
+  else nodes=[{u:f.a,id:ids[0]},{u:f.b,id:ids[0]}];
+  (cuts||[]).forEach(c=>{if(c.u>f.a+1e-9&&c.u<f.b-1e-9&&!nodes.some(n=>Math.abs(n.u-c.u)<1e-9||n.id===c.pid))nodes.push({u:c.u,id:c.pid});});
+  nodes.sort((x,y)=>x.u-y.u);
+  if(loop&&nodes.length<3){ // boucle sans autre nœud : coupée au milieu (point de passage, sinon nœud virtuel)
+    let mid=null;
+    if(!f.ctrl&&f.u){const m=Math.max(1,Math.floor(ids.length/2));if(f.u[m]>f.a&&f.u[m]<f.b&&P[ids[m]])mid={u:f.u[m],id:ids[m]};}
+    if(!mid){const id='__s'+e.id+'b',u=(f.a+f.b)/2;virt[id]=at(u);mid={u,id};}
+    nodes.splice(1,0,mid);
   }
-  const m=Math.max(1,Math.floor(ids.length/2)),um=f.u[m],Pm=sk.points[ids[m]];
-  if(!(um>f.a&&um<f.b)||!Pm)return[];
-  const[L,R]=bsSplit({U:f.U,P:f.P,p},um,[Pm.x,Pm.y]);
-  return[mk(ids[0],ids[m],L),mk(ids[m],ids[0],R)];
+  const ptOf=n=>virt[n.id]||(P[n.id]?[P[n.id].x,P[n.id].y]:at(n.u));
+  const out=[];
+  for(let i=0;i+1<nodes.length;i++){
+    const A=nodes[i],B=nodes[i+1];if(!(B.u-A.u>1e-12))continue;
+    const bs=bsRange(f,A.u,B.u,ptOf(A),ptOf(B));
+    const s=bs.U[0],t=bs.U[bs.U.length-1],d0=bsEval(bs,s,1)[1],d1=bsEval(bs,t,1)[1];
+    out.push({a:A.id,b:B.id,bs,poly:bsSample(bs,s,t,16),o:Math.atan2(d0[1],d0[0]),i:Math.atan2(d1[1],d1[0]),virt:Object.keys(virt).length?virt:null});
+  }
+  return out;
+}
+/* ----- lot 3 : point le plus proche, intersections exactes, point sur spline ----- */
+function bsSampleU(bs,u0,u1,per){ // [[u,x,y]…] de u0 à u1, « per » pas par intervalle de nœuds
+  const out=[],U=bs.U,br=[u0];
+  for(let i=0;i<U.length;i++){const v=U[i];if(v>u0+1e-12&&v<u1-1e-12&&br.indexOf(v)<0)br.push(v);}
+  br.push(u1);
+  for(let i=0;i+1<br.length;i++){const a=br[i],b=br[i+1];for(let k=(i?1:0);k<=per;k++){const u=a+(b-a)*k/per,c=bsEval(bs,u,0)[0];out.push([u,c[0],c[1]]);}}
+  return out;
+}
+function bsNewtonClosest(f,u,x,y){ // affine u vers le pied de (x,y) sur la courbe (Newton, borné au domaine)
+  for(let it=0;it<12;it++){
+    const D=bsEval(f,u,2),rx=D[0][0]-x,ry=D[0][1]-y,g=rx*D[1][0]+ry*D[1][1],h=D[1][0]*D[1][0]+D[1][1]*D[1][1]+rx*D[2][0]+ry*D[2][1];
+    if(!(h>1e-18))break;const nu=Math.min(f.b,Math.max(f.a,u-g/h));if(Math.abs(nu-u)<1e-13*(1+Math.abs(u))){u=nu;break;}u=nu;
+  }
+  return u;
+}
+function skSplineClosest(sk,e,x,y,u0){
+  // pied de (x,y) sur la spline : {u, x, y, d (distance), s (distance signée, normale gauche), nx, ny}
+  const f=skSplineFit(sk,e);if(!f)return null;
+  let u=u0;
+  if(u==null||!(u>=f.a&&u<=f.b)){
+    const S=bsSampleU(f,f.a,f.b,10);let bd=Infinity;
+    for(let i=0;i+1<S.length;i++){const A=S[i],B=S[i+1],dx=B[1]-A[1],dy=B[2]-A[2],L2=dx*dx+dy*dy;
+      let t=L2>1e-24?((x-A[1])*dx+(y-A[2])*dy)/L2:0;t=Math.max(0,Math.min(1,t));
+      const d=Math.hypot(A[1]+t*dx-x,A[2]+t*dy-y);if(d<bd){bd=d;u=A[0]+t*(B[0]-A[0]);}}
+  }
+  u=bsNewtonClosest(f,u,x,y);
+  const D=bsEval(f,u,1),L=Math.hypot(D[1][0],D[1][1])||1e-12,nx=-D[1][1]/L,ny=D[1][0]/L;
+  return{u,x:D[0][0],y:D[0][1],d:Math.hypot(x-D[0][0],y-D[0][1]),s:(x-D[0][0])*nx+(y-D[0][1])*ny,nx,ny};
+}
+function bsRoots(f,g,per){ // zéros de g(u) sur la courbe : changements de signe aux échantillons, puis bissection
+  const S=bsSampleU(f,f.a,f.b,per||12),out=[];let pu=S[0][0],pg=g(pu);
+  if(Math.abs(pg)<1e-9)out.push(pu);
+  for(let i=1;i<S.length;i++){
+    const u=S[i][0],gu=g(u);
+    if(Math.abs(gu)<1e-9){out.push(u);}
+    else if(pg*gu<0&&Math.abs(pg)>=1e-9){let a=pu,b=u,ga=pg;for(let k=0;k<60;k++){const m=(a+b)/2,gm=g(m);if(ga*gm<=0)b=m;else{a=m;ga=gm;}}out.push((a+b)/2);}
+    pu=u;pg=gu;
+  }
+  return out;
+}
+function skSplineHits(sk,e,o){
+  // intersections exactes de la spline e avec l'entité o (dans les bornes de o) : [{x,y,u}] (u sur e)
+  const f=skSplineFit(sk,e),P=sk.points,out=[];if(!f||!o||o.id===e.id)return out;
+  const push=u=>{const c=bsEval(f,u,0)[0];if(!out.some(h=>Math.hypot(h.x-c[0],h.y-c[1])<1e-6))out.push({x:c[0],y:c[1],u});};
+  if(o.t==='line'){const A=P[o.p1],B=P[o.p2];if(!A||!B)return out;
+    const dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy);if(!(L>1e-9))return out;const nx=-dy/L,ny=dx/L;
+    bsRoots(f,u=>{const c=bsEval(f,u,0)[0];return(c[0]-A.x)*nx+(c[1]-A.y)*ny;}).forEach(u=>{
+      const c=bsEval(f,u,0)[0],t=((c[0]-A.x)*dx+(c[1]-A.y)*dy)/(L*L);if(t>-1e-6&&t<1+1e-6)push(u);});
+  }else if(o.t==='circle'||o.t==='arc'){const C=P[o.pc];if(!C||!(o.r>0))return out;
+    const an=o.t==='arc'?arcAngles(sk,o):null;if(o.t==='arc'&&!an)return out;
+    bsRoots(f,u=>{const c=bsEval(f,u,0)[0];return Math.hypot(c[0]-C.x,c[1]-C.y)-o.r;}).forEach(u=>{
+      const c=bsEval(f,u,0)[0];if(an&&!angInArc(Math.atan2(c[1]-C.y,c[0]-C.x),an.a1,an.a2+1e-6))return;push(u);});
+  }else if(o.t==='spline'){const g=skSplineFit(sk,o);if(!g)return out;
+    const S1=bsSampleU(f,f.a,f.b,12),S2=bsSampleU(g,g.a,g.b,12);
+    for(let i=0;i+1<S1.length;i++)for(let j=0;j+1<S2.length;j++){
+      const h=interLineLine({x:S1[i][1],y:S1[i][2]},{x:S1[i+1][1],y:S1[i+1][2]},{x:S2[j][1],y:S2[j][2]},{x:S2[j+1][1],y:S2[j+1][2]});
+      if(!h||h.t<-1e-9||h.t>1+1e-9||h.u<-1e-9||h.u>1+1e-9)continue;
+      let u=S1[i][0]+h.t*(S1[i+1][0]-S1[i][0]),v=S2[j][0]+h.u*(S2[j+1][0]-S2[j][0]);
+      for(let it=0;it<15;it++){ // Newton 2D : C1(u) − C2(v) = 0
+        const D1=bsEval(f,u,1),D2=bsEval(g,v,1),rx=D1[0][0]-D2[0][0],ry=D1[0][1]-D2[0][1];
+        const a=D1[1][0],b=-D2[1][0],c=D1[1][1],d=-D2[1][1],det=a*d-b*c;if(Math.abs(det)<1e-18)break;
+        const du=(d*rx-b*ry)/det,dv=(-c*rx+a*ry)/det;u=Math.min(f.b,Math.max(f.a,u-du));v=Math.min(g.b,Math.max(g.a,v-dv));
+        if(Math.abs(du)+Math.abs(dv)<1e-13)break;
+      }
+      const c1=bsEval(f,u,0)[0],c2=bsEval(g,v,0)[0];if(Math.hypot(c1[0]-c2[0],c1[1]-c2[1])<1e-6)push(u);
+    }
+  }
+  return out;
+}
+const SK_ONSPL_U=new WeakMap(); // contrainte → dernier paramètre du pied (départ de Newton ; jamais enregistré)
+function skOnSplResid(sk,c){ // point sur spline : distance signée au pied (mm)
+  const E=entById(sk,c.ent),Q=sk.points[c.p];if(!E||E.t!=='spline'||!Q)return null;
+  const h=skSplineClosest(sk,E,Q.x,Q.y,SK_ONSPL_U.get(c));if(!h)return null;
+  SK_ONSPL_U.set(c,h.u);return h.s;
+}
+function skOnSplRelax(sk,c,fix){
+  const E=entById(sk,c.ent),Q=sk.points[c.p];if(!E||E.t!=='spline'||!Q||fix.has(c.p))return;
+  const h=skSplineClosest(sk,E,Q.x,Q.y,SK_ONSPL_U.get(c));if(!h)return;
+  Q.x+=(h.x-Q.x)*0.5;Q.y+=(h.y-Q.y)*0.5;
+}
+function skSplineAttach(sk,pid,x,y,tol){
+  // point posé sur une spline (création, coupe, lâcher) : contrainte « sur la spline », pas sur ses propres points
+  let best=null,bd=tol;
+  (sk.entities||[]).forEach(e=>{if(e.t!=='spline'||skEntPids(e).indexOf(pid)>=0)return;
+    const h=skSplineClosest(sk,e,x,y);if(h&&h.d<bd){bd=h.d;best=e;}});
+  if(!best||(sk.constraints||[]).some(c=>c.type==='onspline'&&c.p===pid&&c.ent===best.id))return 0;
+  sk.constraints.push({id:skNewEid(sk),type:'onspline',p:pid,ent:best.id});return 1;
+}
+function skSplineCutsFor(sk,e,cands){
+  // points (pids candidats) posés sur la spline hors de ses bouts → coupes de profil (jonction en T)
+  const f=skSplineFit(sk,e);if(!f)return[];
+  const own=new Set([e.pts[0],e.pts[e.pts.length-1]]),out=[];
+  cands.forEach(pid=>{if(own.has(pid))return;const Q=sk.points[pid];if(!Q)return;
+    const h=skSplineClosest(sk,e,Q.x,Q.y);if(h&&h.d<1e-3&&h.u>f.a+1e-9&&h.u<f.b-1e-9)out.push({u:h.u,pid});});
+  return out;
+}
+function bsJoin(A,B){ // B commence où A finit (même degré) : une B-spline, nœud de multiplicité p au raccord
+  const p=A.p||SK_SPL_DEG,ke=A.U[A.U.length-1],s2=B.U[0];
+  return{U:A.U.slice(0,-1).concat(B.U.slice(p+1).map(v=>v-s2+ke)),P:A.P.concat(B.P.slice(1)),p};
+}
+function skSplineFromBs(sk,src,bs,pidA,pidB){
+  // morceau exact d'une spline → spline par points de contrôle à nœuds explicites (pôles = points d'esquisse)
+  const n=bs.P.length-1,U0=bs.U[0],sc=bs.U[bs.U.length-1]-U0||1;
+  const pts=bs.P.map((q,i)=>{
+    if(i===0&&pidA){const Q=sk.points[pidA];if(Q){Q.x=q[0];Q.y=q[1];}return pidA;}
+    if(i===n&&pidB){const Q=sk.points[pidB];if(Q){Q.x=q[0];Q.y=q[1];}return pidB;}
+    return addPoint(sk,q[0],q[1]);});
+  const e={id:skNewEid(sk),t:'spline',mode:'ctrl',pts,knots:bs.U.map(v=>+((v-U0)/sc).toFixed(12)),deg:bs.p||SK_SPL_DEG};
+  if(src.construction)e.construction=true;
+  return e;
+}
+function skSplineTrim(sk,ent,cx,cy){
+  // Ajuster : retire le tronçon cliqué entre deux intersections (ou bout). Les morceaux gardés sont EXACTS :
+  // splines par points de contrôle portant les nœuds de la courbe d'origine (la forme ne bouge pas).
+  const f=skSplineFit(sk,ent);if(!f)return 'Spline invalide.';
+  const P=sk.points,ids=ent.pts,eps=1e-7*(f.b-f.a);
+  const hu=[];entHits(sk,ent).forEach(h=>{const c=skSplineClosest(sk,ent,h.x,h.y);if(c&&c.d<1e-4&&!hu.some(u=>Math.abs(u-c.u)<eps))hu.push(c.u);});
+  hu.sort((x,y)=>x-y);
+  const inner=hu.filter(u=>u>f.a+eps&&u<f.b-eps);
+  if(!inner.length&&!(hu.length&&!f.closed))return 'Aucune intersection : rien à ajuster.';
+  const uc=(skSplineClosest(sk,ent,cx,cy)||{}).u;if(uc==null)return 'Spline invalide.';
+  const pt=u=>{const c=bsEval(f,u,0)[0];return c;};
+  const cutIds=[],cutPid=u=>{const c=pt(u);const pid=pidAtTol(sk,c[0],c[1],Math.min(0.5,SK_SNAP*0.5));if(!skEntPids(ent).includes(pid))cutIds.push(pid);return pid;};
+  const pieces=[]; // [{bs, pa, pb}]
+  const loop=!!f.closed||ids[0]===ids[ids.length-1];
+  if(!loop){
+    let lo=f.a,hi=f.b;inner.forEach(u=>{if(u<uc)lo=u;else if(u>uc&&hi===f.b)hi=u;});
+    if(lo<=f.a+eps&&hi>=f.b-eps){sk.entities=sk.entities.filter(x=>x.id!==ent.id);return 'Spline retirée ✂.';}
+    if(lo>f.a+eps){const pb=cutPid(lo);pieces.push({bs:bsRange(f,f.a,lo,null,pt(lo)),pa:ids[0],pb});}
+    if(hi<f.b-eps){const pa=cutPid(hi);pieces.push({bs:bsRange(f,hi,f.b,pt(hi),null),pa,pb:ids[ids.length-1]});}
+  }else{
+    if(inner.length<2&&!(inner.length===1&&!(f.ctrl&&f.closed)))return 'Spline fermée : il faut deux intersections pour ajuster.';
+    const cuts=inner.slice();if(cuts.length===1)cuts.push(f.a); // une seule coupe : le point de départ sert de 2e bout
+    cuts.sort((x,y)=>x-y);
+    let lo=null,hi=null;cuts.forEach(u=>{if(u<uc)lo=u;else if(u>uc&&hi===null)hi=u;});
+    if(lo===null||hi===null){ // tronçon cliqué à cheval sur le départ : on garde [premier, dernier]
+      const u0=cuts[0],u1=cuts[cuts.length-1];if(!(u1-u0>eps))return 'Rien à ajuster ici.';
+      pieces.push({bs:bsRange(f,u0,u1,pt(u0),pt(u1)),pa:cutPid(u0),pb:cutPid(u1)});
+    }else{ // garde [hi, b] + [a, lo], raccordés au départ de la boucle
+      const A=hi<f.b-eps?bsRange(f,hi,f.b,pt(hi),pt(f.b)):null,B=lo>f.a+eps?bsRange(f,f.a,lo,pt(f.a),pt(lo)):null;
+      const bs=A&&B?bsJoin(A,B):(A||B);if(!bs)return 'Rien à ajuster ici.';
+      pieces.push({bs,pa:cutPid(hi),pb:cutPid(lo)});
+    }
+  }
+  const news=pieces.map(q=>skSplineFromBs(sk,ent,q.bs,q.pa,q.pb));
+  // contraintes qui visaient l'ancienne spline : reportées sur le morceau qui porte le point (tangence, courbure,
+  // point sur courbe) ; « Fixe » sur chaque morceau ; les autres tombent au nettoyage
+  const ofP=pid=>news.find(n=>n.pts[0]===pid||n.pts[n.pts.length-1]===pid);
+  (sk.constraints||[]).slice().forEach(c=>{
+    if(c.type==='fix'&&c.ent===ent.id){news.forEach((n,i)=>{if(i)sk.constraints.push({id:skNewEid(sk),type:'fix',ent:n.id});else c.ent=n.id;});return;}
+    if((c.type==='stangent'||c.type==='scurv')){const n=ofP(c.p);if(c.s===ent.id&&n)c.s=n.id;if(c.ent===ent.id&&n)c.ent=n.id;}
+    if(c.type==='onspline'&&c.ent===ent.id){const Q=P[c.p];const n=Q&&news.find(m=>{const h=skSplineClosest(sk,m,Q.x,Q.y);return h&&h.d<1e-3;});if(n)c.ent=n.id;}
+  });
+  sk.entities=sk.entities.filter(x=>x.id!==ent.id).concat(news);
+  cutIds.forEach(pid=>{const Q=P[pid];if(Q)skAutoAttach(sk,pid,Q.x,Q.y,1e-3);}); // bout coupé posé sur la courbe qui coupe
+  return 'Spline ajustée ✂ ('+news.length+' morceau'+(news.length>1?'x':'')+' exact'+(news.length>1?'s':'')+', en points de contrôle).';
+}
+function skSplineOffset(sk,e,D,side){
+  // Décalage d'une spline de D (side = +1 : côté de la normale gauche, −1 : droite). La courbe décalée d'une
+  // B-spline n'en est pas une : elle est échantillonnée et interpolée, en resserrant l'échantillon jusqu'à
+  // 0,005 mm d'écart (contrôlé au milieu de chaque intervalle). Résultat : spline par points de contrôle,
+  // copie NON associative. {e, err, cusp} ou un message (chaîne).
+  const f=skSplineFit(sk,e);if(!f)return 'Spline invalide.';
+  const loop=!!f.closed||e.pts[0]===e.pts[e.pts.length-1];
+  const off=u=>{const d=bsEval(f,u,1),L=Math.hypot(d[1][0],d[1][1])||1e-12;return[d[0][0]-side*D*d[1][1]/L,d[0][1]+side*D*d[1][0]/L];};
+  let km=0;bsSampleU(f,f.a,f.b,16).forEach(s=>{const d=bsEval(f,s[0],2),L=Math.hypot(d[1][0],d[1][1]);if(L>1e-12)km=Math.max(km,Math.abs((d[1][0]*d[2][1]-d[1][1]*d[2][0])/(L*L*L)));});
+  let res=null,err=Infinity;
+  for(let per=4;per<=64&&err>0.005;per*=2){
+    const S=bsSampleU(f,f.a,f.b,per),U=S.map(s=>s[0]);if(loop)U.pop();
+    const Q=U.map(off),g=bsInterpolate(Q,Q.map(()=>null),loop);if(!g)return 'Décalage impossible.';
+    err=0;for(let i=0;i+1<S.length;i++){const um=(S[i][0]+S[i+1][0])/2,t=off(um);
+      const v=bsNewtonClosest(g,g.a+(g.b-g.a)*(i+0.5)/(S.length-1),t[0],t[1]),c=bsEval(g,v,0)[0];err=Math.max(err,Math.hypot(c[0]-t[0],c[1]-t[1]));}
+    res=g;
+  }
+  const n=res.P.length-1,pa=addPoint(sk,res.P[0][0],res.P[0][1]),pb=loop?pa:addPoint(sk,res.P[n][0],res.P[n][1]);
+  const ne=skSplineFromBs(sk,e,{U:res.U,P:res.P,p:res.p||SK_SPL_DEG},pa,pb);
+  sk.entities.push(ne);
+  return{e:ne,err,cusp:D*km>=1};
+}
+function skSplineProject(sk,pts){
+  // polyligne d'une arête courbe projetée → spline par points de passage FIXÉS (au plus 25, régulièrement
+  // répartis en longueur) ; boucle si la polyligne se referme. → id de l'entité, ou null
+  if(!pts||pts.length<2)return null;
+  const L=[0];for(let i=1;i<pts.length;i++)L.push(L[i-1]+Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]));
+  const tot=L[L.length-1];if(!(tot>1e-6))return null;
+  const closed=Math.hypot(pts[0][0]-pts[pts.length-1][0],pts[0][1]-pts[pts.length-1][1])<1e-4;
+  const m=Math.max(3,Math.min(25,pts.length-1)),Q=[];
+  for(let k=0;k<=m;k++){const s=tot*k/m;let i=1;while(i<L.length-1&&L[i]<s)i++;const w=(s-L[i-1])/((L[i]-L[i-1])||1);
+    Q.push([pts[i-1][0]+(pts[i][0]-pts[i-1][0])*w,pts[i-1][1]+(pts[i][1]-pts[i-1][1])*w]);}
+  if(closed)Q.pop();
+  const ids=Q.map(q=>{const p=addPoint(sk,q[0],q[1]);sk.constraints.push({id:skNewEid(sk),type:'fix',p});return p;});
+  const e={id:skNewEid(sk),t:'spline',pts:ids};if(closed&&ids.length>=3)e.closed=true;
+  sk.entities.push(e);sk.constraints.push({id:skNewEid(sk),type:'fix',ent:e.id});
+  return e.id;
 }
 function skEdgePoly(ed,from){ // polyligne d'une arête spline parcourue depuis le nœud « from »
   const pl=ed.poly||[];return ed.a===from?pl:pl.slice().reverse();

@@ -276,6 +276,8 @@ function drawSketch2D(){
       const[a,b]=w2s(pr.x1,pr.y1),[c,d]=w2s(pr.x2,pr.y2);
       skEl('path',{d:`M ${a} ${b} A ${pr.r*skView.s} ${pr.r*skView.s} 0 ${dd>Math.PI?1:0} 0 ${c} ${d}`,fill:'none',stroke:'#ff9f0a','stroke-width':3,opacity:0.95});
       const[ac,bc]=w2s(pr.cx,pr.cy); skEl('rect',{x:ac-3,y:bc-3,width:6,height:6,fill:'none',stroke:'#ff9f0a'});
+    }else if(pr.type==='curve'&&pr.pts&&pr.pts.length>1){
+      skEl('path',{d:'M '+pr.pts.map(q=>{const s=w2s(q[0],q[1]);return s[0].toFixed(1)+' '+s[1].toFixed(1);}).join(' L '),fill:'none',stroke:'#ff9f0a','stroke-width':3,opacity:0.95});
     }else if(pr.type==='line'){
       const[a,b]=w2s(pr.x1,pr.y1),[c,d]=w2s(pr.x2,pr.y2);
       skEl('line',{x1:a,y1:b,x2:c,y2:d,stroke:'#ff9f0a','stroke-width':3,opacity:0.95});

@@ -42,6 +42,7 @@ function skDragSnapFind(sk,x,y,pid){
       if(d<bd){const ux=(x-C.x)/dc,uy=(y-C.y)/dc;const qx=C.x+ux*e.r,qy=C.y+uy*e.r;
         if(e.t==='arc'){const an=arcAngles(sk,e);if(an&&!angInArc(Math.atan2(uy,ux),an.a1,an.a2))return;}
         bd=d;best={kind:'oncircle',ent:e.id,x:qx,y:qy};}}
+    else if(e.t==='spline'){const h=skSplineClosest(sk,e,x,y);if(h&&h.d<bd){bd=h.d;best={kind:'onspline',ent:e.id,x:h.x,y:h.y};}}
   });
   return best;
 }
@@ -55,6 +56,7 @@ function skDragRelease(sk,pid,s){
   else if(s.kind==='mid'){if(has(x=>x.type==='midpoint'&&x.p===pid&&x.line===s.line))return null;c={id:skNewEid(sk),type:'midpoint',p:pid,line:s.line};msg='Point au milieu ⊕ de la ligne (lâcher sur le milieu).';}
   else if(s.kind==='on'){if(has(x=>x.type==='online'&&x.p===pid&&x.line===s.line))return null;c={id:skNewEid(sk),type:'online',p:pid,line:s.line};msg='Point sur la ligne (lâcher sur la ligne).';}
   else if(s.kind==='oncircle'){if(has(x=>x.type==='oncircle'&&x.p===pid&&x.ent===s.ent))return null;c={id:skNewEid(sk),type:'oncircle',p:pid,ent:s.ent};msg='Point sur le cercle (lâcher sur le cercle).';}
+  else if(s.kind==='onspline'){if(has(x=>x.type==='onspline'&&x.p===pid&&x.ent===s.ent))return null;c={id:skNewEid(sk),type:'onspline',p:pid,ent:s.ent};msg='Point sur la spline (lâcher sur la spline).';}
   if(!c)return null;
   sk.constraints.push(c);
   solveSketch(sk);

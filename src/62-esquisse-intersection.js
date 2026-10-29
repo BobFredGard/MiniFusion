@@ -2,7 +2,8 @@
    Comme Fusion : courbes d'intersection entre le PLAN d'esquisse et des FACES choisies ou un
    CORPS entier. Noyau exact : BRepAlgoAPI_Section(solide | face, gp_Pln) ; chaque arête de
    section devient ligne / arc / cercle d'esquisse ; les autres courbes (ellipse, B-spline)
-   une polyligne régulière en paramètre (même découpage au rejeu).
+   une spline par points de passage aux n points d'un découpage régulier en paramètre (même
+   découpage au rejeu) — une polyligne avant le lot 3 des splines.
    Entités de RÉFÉRENCE comme les projections : proj:true, construction par défaut (option
    « géométrie normale » pour s'en servir de profil), points fixés et partagés aux jonctions
    (contour fermé), nom « Intersection N ». La source est mémorisée sur chaque entité :
@@ -223,11 +224,12 @@ function skIsectTrack(sk,e){
   if(!res||!res.curves||!res.curves.length)return false;
   e.isect=JSON.parse(JSON.stringify(res.src));
   const P=sk.points;
-  const want=e.seg?'curve':e.t;
+  const want=(e.seg||e.t==='spline')?'curve':e.t;
   const cands=res.curves.filter(c=>c.type===want);if(!cands.length)return false;
   // candidat : le plus proche du milieu 3D mémorisé (identité), sinon de la position 2D
   const here=()=>{
     if(e.t==='circle'){const C=P[e.pc];return C?[C.x,C.y]:null;}
+    if(e.t==='spline'){const q=(e.pts||[]).map(p=>P[p]).filter(Boolean);return q.length?[q.reduce((s,v)=>s+v.x,0)/q.length,q.reduce((s,v)=>s+v.y,0)/q.length]:null;}
     const A=P[e.t==='arc'?e.pa:e.p1],Bp=P[e.t==='arc'?e.pb:e.p2];return (A&&Bp)?[(A.x+Bp.x)/2,(A.y+Bp.y)/2]:null;
   };
   const h=here();if(!h)return false;
@@ -254,6 +256,12 @@ function skIsectTrack(sk,e){
     const S=isectSegs(best,e.seg[1]);let bi=-1,bd=1e18;
     S.forEach((s,i)=>{const d=Math.hypot((s[0][0]+s[1][0])/2-h[0],(s[0][1]+s[1][1])/2-h[1]);if(d<bd){bd=d;bi=i;}});
     if(bi>=0){e.seg=[bi,e.seg[1]];setLine(S[bi][0][0],S[bi][0][1],S[bi][1][0],S[bi][1][1]);}
+  }else if(e.t==='spline'&&e.isplN){ // spline de section : mêmes n points de passage, ordre conservé
+    const S=isectSegs(best,e.isplN),Q=[S[0][0]].concat(S.map(s=>s[1]));if(e.closed)Q.pop();
+    const cur=e.pts.map(p=>P[p]);if(Q.length!==cur.length||cur.some(q=>!q))return false;
+    let dF=0,dR=0;cur.forEach((p,i)=>{const a=Q[i],b=Q[Q.length-1-i];dF+=Math.hypot(p.x-a[0],p.y-a[1]);dR+=Math.hypot(p.x-b[0],p.y-b[1]);});
+    if(dR<dF)Q.reverse();
+    cur.forEach((p,i)=>{if(Math.hypot(p.x-Q[i][0],p.y-Q[i][1])>1e-6){p.x=Q[i][0];p.y=Q[i][1];changed=true;}});
   }else if(e.t==='line')setLine(best.x1,best.y1,best.x2,best.y2);
   else if(e.t==='circle'){
     const C=P[e.pc];if(!C)return false;
@@ -298,10 +306,14 @@ function skIsectEmit(sk,curves,src,real){
       sk.entities.push(Object.assign({id,t:'arc',pc,pa,pb,r:c.r},base(c)));
       sk.constraints.push({id:skNewEid(sk),type:'fix',ent:id});made.push(id);
     }else if(c.type==='curve'){
-      isectSegs(c,c.n).forEach((s,i)=>{
-        const p1=pid(s[0][0],s[0][1]),p2=pid(s[1][0],s[1][1]);if(p1===p2)return;
-        const id=skNewEid(sk);sk.entities.push(Object.assign({id,t:'line',p1,p2,seg:[i,c.n]},base(c)));made.push(id);
-      });
+      // V0.19.5 (lot 3 spline) : courbe libre (ellipse, B-spline…) → SPLINE par points de passage fixés,
+      // aux n points du découpage régulier (une courbe lisse au lieu d'une polyligne de n segments)
+      const S=isectSegs(c,c.n),ids=[pid(S[0][0][0],S[0][0][1])];
+      S.forEach(s=>{const q=pid(s[1][0],s[1][1]);if(q!==ids[ids.length-1])ids.push(q);});
+      const closed=ids.length>3&&ids[0]===ids[ids.length-1];if(closed)ids.pop();
+      if(ids.length<2)continue;
+      const id=skNewEid(sk);sk.entities.push(Object.assign({id,t:'spline',pts:ids,isplN:c.n},closed?{closed:true}:{},base(c)));
+      sk.constraints.push({id:skNewEid(sk),type:'fix',ent:id});made.push(id);
     }
   }
   return made.length;

@@ -213,6 +213,7 @@ function skConKey(c){
     case 'online': return 'online@'+c.p+'|'+c.line;
     case 'oncircle': return 'oncircle@'+c.p+'|'+c.ent;
     case 'stangent': case 'scurv': return c.type+'@'+c.s+'|'+c.p+'|'+c.ent;
+    case 'onspline': return 'onspline@'+c.p+'|'+c.ent;
     default: return c.type+'@'+(c.id||'');
   }
 }
@@ -396,6 +397,7 @@ function solveSketchRelax(sk,iters,anchor){
         else if(!fix.has(E.pc)){CC.x-=dx/d*err*0.5;CC.y-=dy/d*err*0.5;} // point figé → le centre suit
       }
       if(c.type==='stangent')skStanRelax(sk,c,fix); // tangence de spline : la poignée tourne vers la tangente
+      if(c.type==='onspline')skOnSplRelax(sk,c,fix); // point sur spline : à mi-chemin du pied
       if(c.type==='online'){ // point sur ligne : perpendiculaire à moitié ; point figé → la ligne suit
         const Pt=P[c.p],l=entById(sk,c.line);
         if(!Pt||!l||l.t!=='line')return;
@@ -645,7 +647,7 @@ function sklsBuild(sk,fix){
   (sk.entities||[]).forEach(e=>{if((e.t==='circle'||e.t==='arc')&&!rLocked(sk,e)){rad.push(e.id);r0[e.id]=e.r;}});
   // V0.7.1 : points tenus sur une courbe (sur ligne / sur cercle) — moins chers à déplacer :
   // ils GLISSENT sur la courbe au lieu d'entraîner les extrémités de celle-ci
-  const slide=new Set();(sk.constraints||[]).forEach(c=>{if(c&&(c.type==='online'||c.type==='oncircle')&&c.p)slide.add(c.p);});
+  const slide=new Set();(sk.constraints||[]).forEach(c=>{if(c&&(c.type==='online'||c.type==='oncircle'||c.type==='onspline')&&c.p)slide.add(c.p);});
   return{pts,rad,r0,slide,n:2*pts.length+rad.length};
 }
 function sklsApply(sk,B,x){
@@ -809,6 +811,7 @@ function sklsCollect(sk,out,B){
     }
     if(c.type==='stangent'){const r=skStanResid(sk,c);if(r!=null)push(r);} // poignée de spline alignée sur la tangente (mm)
     if(c.type==='scurv'){const r=skCurvResid(sk,c);if(r!=null)push(r);}   // courbures égales au raccord (G2, ramené en mm)
+    if(c.type==='onspline'){const r=skOnSplResid(sk,c);if(r!=null)push(r);} // point sur spline : distance signée au pied (mm)
     if(c.type==='fix'){ /* exclus des variables → pas de résidu */ }
   });
   // ── structure des arcs : les extrémités restent sur le cercle (sauf point fixé) ──
