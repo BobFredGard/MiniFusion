@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**449 versions**, de `2026-09-28b` à `V0.21.19` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**450 versions**, de `2026-09-28b` à `V0.22.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5673,3 +5673,7 @@ Demande : « il faut travailler sur le temps de génération des filets modélis
 - **Retour du worker allégé** : maillage d'affichage fait par le worker (même angle, flèche −10 %) et repris tel quel ; recousage des coutures de congé fait AVANT les filets (après, il reconstruisait leurs faces et jetait ce maillage) ; maillage FAO (`faoLegacyGeo`, `src/90`) sur le corps sans filets.
 - **Mesures** : M8 de 20 mm dans un bloc, rejeu 6,9 s → 1,8 s en synchrone. « Perçages » avec M6 ×4 + M8 modélisés : 75 s → ~2,6 s bloquants à l'activation, ~1,7 s par modification, filets en ~10 s de fond, puis ~2,6 s de reprise à l'arrivée.
 - **Tests** : `test_filet_modele` (outil dans l'arbre = avant-trou analytique, crête R3,385) ; nouveau `test_filet_tache_fond` (worker réel : rendu immédiat sans filets + cosmétique, réponse = un solide fileté, FAO sur l'avant-trou Ø6,75 M8, cache, travail caduc abandonné) ; `test_percage_3d`, `test_fao_taraudage`, `test_fao_percage`, `test_cache_exact`, `test_rejeu_cache`, `test_suppression_face_worker` ; `npm run ci`. Vu dans l'appli sur « Perçages ».
+
+## V0.22.0 - Filets modélisés ISO intégrés au corps (version de test)
+Demande : « V0.22.0 — commit que je puisse tester ». Version mineure qui regroupe le travail sur les trous taraudés : filet ISO 68-1 exact réellement creusé dans le corps (V0.21.16), puis construit d'un bloc, creusé en fin de rejeu et calculé en tâche de fond (V0.21.19). Aucun changement de code depuis V0.21.19.
+- **Tests** : `npm run ci` (V0.21.19).
