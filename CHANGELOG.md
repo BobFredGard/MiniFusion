@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**441 versions**, de `2026-09-28b` à `V0.21.10` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**442 versions**, de `2026-09-28b` à `V0.21.11` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5611,3 +5611,8 @@ Demande : « Arbre Assembler -> Sélection multiple comme pour la pièce seule �
 - **Lot** (`src/47-assemblage-interface.js`, `asmLot` / `asmSelClick`) : en mode Assembler, Ctrl+clic ajoute / retire une occurrence, Shift+clic prend la plage (ordre des occurrences du porteur), Ctrl+Shift ajoute la plage — sur les lignes de composants, sur les lignes du dossier ⚙ Liaisons, et dans la vue 3D. Ctrl+clic sur un groupe « ×N » met toutes ses occurrences au lot. `asmSelId` suit le dernier clic (manipulateur, panneau) ; un clic simple rend le lot caduc. Surbrillance bleue dans la vue et dans l'arbre pour tout le lot.
 - **Actions** : Suppr supprime le lot (une confirmation qui liste les occurrences et les composants qui partent avec leur dernière occurrence, **une seule** étape d'annulation — `asmDeleteOcc(id, noPush)`, `src/46-assemblage-modele.js`) ; le clic droit propose « Supprimer le lot (n) » ; le panneau d'un lot offre Fixer / Libérer, Masquer / Afficher et Supprimer pour tout le lot. Échap désélectionne.
 - **Tests** : `npm run ci`. Vérifié dans le navigateur sur `Exemples/Test Visserie.miniFusion` : Ctrl+clic (3 vis), Shift+clic (plage de 5), Ctrl+clic sur le groupe ×9 (10 au lot), retrait d'une vis, Suppr → 9 occurrences supprimées en 1 étape, Ctrl+Z → 12 occurrences rétablies ; surbrillance 3D limitée au lot.
+
+## V0.21.11 - Assemblage : FAO / Usinage seulement avec une pièce active
+Demande : « Quand la pièce est active, on peut usiner et pas quand elle ne l'est pas ».
+- **Interface** (`src/97-interface-moderne.js`) : `mfFaoOk` — FAO permis seulement avec une PIÈCE active en Modéliser (pas en mode Assembler, pas sur un composant qui a des sous-composants ; pièce seule sans arbre : permis). Sinon le bouton **FAO** du bandeau et l'onglet **Usinage** de la vue sont grisés (`body[data-fao-off]`, recalculé à chaque rendu de l'arbre par `mfFaoGate`) et `mfWs('fao')` (clic, recherche « Espace FAO ») est refusé avec un message dans la barre d'état, au lieu de sortir de l'assemblage vers la pièce. PLAN garde son comportement.
+- **Tests** : `npm run ci` ; vérifié dans le navigateur (assemblage en Assembler et en Modéliser → FAO grisé, clic sans effet ; pièce active → FAO actif).

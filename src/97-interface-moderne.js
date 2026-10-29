@@ -124,6 +124,8 @@ function mfCss(){
   'body.ui-modern[data-asm="1"] #mfRibbon .mfCao:not(.mfAsmG),body[data-asm="1"] #mfTl{display:none!important}'+
   'body.ui-modern[data-ws="cao"] #mfRibbon .mfFao,body.ui-modern[data-ws="cao"] #mfRibbon .mfPlan,body.ui-modern[data-ws="fao"] #mfRibbon .mfCao,body.ui-modern[data-ws="fao"] #mfRibbon .mfPlan,body.ui-modern[data-ws="plan"] #mfRibbon .mfCao,body.ui-modern[data-ws="plan"] #mfRibbon .mfFao{display:none}',
   // groupe Composants : en modélisation, seul « Assembler » ; en assemblage, tout, et le bouton devient « Modéliser »
+  // V0.21.11 : FAO = espace de PIÈCE — grisé sans pièce active en Modéliser (mfFaoGate)
+  'body[data-fao-off="1"] [data-mfws="fao"]{opacity:.35;cursor:not-allowed}',
   'body.ui-modern:not([data-asm="1"]) #mfRibbon .mfAsmOnly,body.ui-modern:not([data-asm="1"]) #mfRibbon .mfLabA,body.ui-modern[data-asm="1"] #mfRibbon .mfLabM{display:none}',
   /* navigateur : Modèle (arbre) / Usinage (posages) à gauche de la vue */
   '#mfBrTabs{position:absolute;top:10px;left:4px;z-index:23;gap:2px;padding:2px;border-radius:9px;background:rgba(16,18,22,.82);border:1px solid var(--border)}',
@@ -449,10 +451,22 @@ function mfSpaceRestore(w,snap){
   try{if(typeof refreshParts==='function')refreshParts();}catch(e){}
   try{if(typeof faoRenderTree==='function')faoRenderTree();}catch(e){}
 }
+function mfFaoOk(){
+  // V0.21.11 : on n'usine qu'une PIÈCE active en Modéliser — ni en mode Assembler, ni sur un
+  // composant qui a des sous-composants (un assemblage). Pièce seule (sans arbre) : oui.
+  try{
+    if(typeof asm==='undefined'||!asm)return true;
+    if(asmMode==='asm')return false;
+    const c=asmActiveComp();return !(c&&c.occ&&c.occ.length);
+  }catch(e){return true;}
+}
+function mfFaoGate(){try{if(mfFaoOk())document.body.removeAttribute('data-fao-off');else document.body.setAttribute('data-fao-off','1');}catch(e){}}
 function mfWs(w){
   mfCloseMenus();
   w=(w==='fao'||w==='plan')?w:'cao';
-  // FAO et PLAN sont des espaces de PIÈCE : depuis la vue d'assemblage, on entre dans la pièce
+  // V0.21.11 : FAO refusé sans pièce active en Modéliser (bouton grisé, mfFaoGate)
+  if(w==='fao'&&!mfFaoOk()){try{faceEl.textContent='FAO : rendez d’abord une pièce active (double-clic dans l’arbre → « Modéliser »).';}catch(e){}return;}
+  // PLAN est un espace de PIÈCE : depuis la vue d'assemblage, on entre dans la pièce
   try{if(asmMode==='asm'&&w!=='cao')asmExit();}catch(e){}
   let prev=mfWsCur;
   if(!prev)try{prev=document.body.getAttribute('data-ws');}catch(e){}

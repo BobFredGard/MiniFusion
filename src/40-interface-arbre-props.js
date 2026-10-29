@@ -134,6 +134,7 @@ function featIconOf(f){
 function renderTree(){
   // L'arbre est construit par le modèle générique (42-arbre-modele.js : treeModel → treeDraw)
   treeRender();
+  try{mfFaoGate();}catch(e){} // V0.21.11 : FAO grisé sans pièce active (97)
 }
 // Fonction répétable : extrusion ou congé/chanfrein exact. NI une répétition, NI une
 // instance de répétition (une instance est déjà générée : la répéter empilerait des
