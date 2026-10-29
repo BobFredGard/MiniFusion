@@ -281,7 +281,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.21.11';
+const APP_VER='V0.21.12';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -12403,8 +12403,12 @@ function asmSnapFind(G,sn){
     const d=asmV.dot(F.n,sn.f.n);
     if(F.k==='plane'?d<0.999:Math.abs(d)<0.999)return; // un cylindre peut avoir son axe retourné
     let s=asmV.len(asmV.sub(F.c,sn.f.c));
+    // V0.21.12 : un cylindre du MÊME diamètre passe avant tout autre, même plus loin — un perçage
+    // Ø8 déplacé au-delà des vis laissait le Ø9 d'une vis plus proche : la goupille y sautait,
+    // et la référence réécrite sur ce trou ne revenait jamais. Autre diamètre : repli (Ø modifié).
+    const sr=F.k==='cyl'&&Math.abs(F.r-(sn.f.r||0))<1e-4?0:1;
     if(F.k==='cyl')s+=10*Math.abs(F.r-(sn.f.r||0));
-    if(!best||s<best.s)best={F,s};
+    if(!best||sr<best.sr||(sr===best.sr&&s<best.s))best={F,s,sr};
   });
   if(!best)return null;
   const items=asmSnapItems(best.F);
@@ -12438,7 +12442,7 @@ function asmSnapFrame(cid,sn){
     const r=asmSnapFind(c._snapG.g,sn);
     if(!r){sn.miss=true;return null;}
     delete sn.miss;
-    const nw=asmSnapRef(r.F,r.it);sn.f=nw.f;if(nw.e)sn.e=nw.e;sn.fr=nw.fr;
+    const nw=asmSnapRef(r.F,r.it);sn.f=nw.f;if(nw.e)sn.e=nw.e;sn.fr=nw.fr;sn.name=nw.name; // nom à jour (Ø compris)
   }
   if(sn.miss&&!asmSnapFresh(c))return null;
   const f=sn.fr;return f?{o:f.o.slice(),x:f.x.slice(),y:f.y.slice(),z:f.z.slice()}:null;

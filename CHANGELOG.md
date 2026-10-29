@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**442 versions**, de `2026-09-28b` à `V0.21.11` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**443 versions**, de `2026-09-28b` à `V0.21.12` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5616,3 +5616,10 @@ Demande : « Arbre Assembler -> Sélection multiple comme pour la pièce seule �
 Demande : « Quand la pièce est active, on peut usiner et pas quand elle ne l'est pas ».
 - **Interface** (`src/97-interface-moderne.js`) : `mfFaoOk` — FAO permis seulement avec une PIÈCE active en Modéliser (pas en mode Assembler, pas sur un composant qui a des sous-composants ; pièce seule sans arbre : permis). Sinon le bouton **FAO** du bandeau et l'onglet **Usinage** de la vue sont grisés (`body[data-fao-off]`, recalculé à chaque rendu de l'arbre par `mfFaoGate`) et `mfWs('fao')` (clic, recherche « Espace FAO ») est refusé avec un message dans la barre d'état, au lieu de sortir de l'assemblage vers la pièce. PLAN garde son comportement.
 - **Tests** : `npm run ci` ; vérifié dans le navigateur (assemblage en Assembler et en Modéliser → FAO grisé, clic sans effet ; pièce active → FAO actif).
+
+## V0.21.12 - Assemblage : la goupille suit son perçage Ø8, pas le trou de vis voisin
+Signalé : « Goupilles mal positionnées après modif retouche esquisse vis FHC… en bougeant la position des goupilles au-delà des vis ».
+- **Cause** (`src/48-assemblage-accroches.js`, `asmSnapFind`) : après un rejeu, le cylindre visé est retrouvé par « centre le plus proche + 10 × écart de rayon ». Perçages Ø8 déplacés de (±40, 0) vers (±60, 0) au-delà des trous Ø9 des FHC : le Ø9 en (±66, 0) coûtait 26 + 5 = 31, le Ø8 déplacé plus. La goupille sautait sur la vis, et la signature réécrite sur ce Ø9 ne revenait jamais (le nom, lui, restait « Cylindre Ø8 »).
+- **Correctif** : un cylindre du **même diamètre** passe avant tout autre, même s'il est plus loin ; un autre diamètre ne sert qu'en repli (Ø modifié). Le nom de la référence est mis à jour avec la signature.
+- **Fichier déjà touché** : la référence des goupilles de Test Visserie vise désormais le Ø9 d'une vis — refaire la liaison (Rigide → fin de l'axe du Ø8).
+- **Tests** : `test_composants_accroches` 19-20 (Ø8 déplacé au-delà d'un Ø10 plus proche : la goupille suit le Ø8 ; échoue sans le correctif) ; `npm run ci`.

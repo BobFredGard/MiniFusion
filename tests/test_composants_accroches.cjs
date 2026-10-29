@@ -86,6 +86,15 @@ const {loadApp}=require('./appvm.cjs');
     editS(d=>{d.features.find(f=>f.id==='F1').visible=true;d.features.find(f=>f.id==='F2').visible=true;});
     asmSnapSync();
     A(oP.st==='ok'&&near(at(oP,[60,0,0])[2],25,1e-6),'18 : face revenue : alignement rétabli');
+    // ── 7. V0.21.12 : perçage Ø8 déplacé au-delà d'un Ø10 voisin : la goupille suit le Ø8 ──
+    editS(d=>{d.sketches.push(ci('skQ',0,10,5));d.features.push({id:'F4',type:'extrude',name:'Trou Ø10',sketchId:'skQ',distance:25,op:'cut',visible:true,body:'b1'});});
+    asmSnapSync();
+    const GS2=asmSnapGeomOf(S),c8=GS2.faces.find(F=>F.k==='cyl'&&near(F.r,4));
+    oP.align={src,dst:{path:[oS.id],cg:null,sn:asmSnapRef(c8,asmSnapItems(c8).find(q=>q.w==='a1'))},flip:true,rz:0,off:[0,0,0]};asmResolve();
+    A(nearV(at(oP,[60,0,0]),[10,10,20],1e-6),'19 : goupille sur la fin de l’axe du Ø8 (10,10,20)');
+    editS(d=>{const k=d.sketches.find(s=>s.id==='skH');k.points.p={x:-20,y:-20};});
+    asmSnapSync();
+    A(nearV(at(oP,[60,0,0]),[-20,-20,20],1e-6)&&/Ø8/.test(oP.align.dst.sn.name),'20 : Ø8 déplacé en (-20,-20), le Ø10 plus proche : la goupille suit le Ø8 '+f3(at(oP,[60,0,0]))+' « '+oP.align.dst.sn.name+' »');
     return out;
   `;
   const o=await vm.runInContext('(async()=>{'+R+'})()',ctx);
