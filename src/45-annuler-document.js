@@ -388,7 +388,7 @@ function docUndoUI(){
   try{
     const wrap=document.querySelector?document.querySelector('.ovlNote'):null;
     if(!wrap)return;
-    wrap.textContent='Clic = sélectionner · Ctrl+clic = ajouter au lot · Suppr = supprimer le lot · '+
+    wrap.textContent='Clic = sélectionner · Ctrl+clic = ajouter au lot · Shift+clic = plage · Suppr = supprimer le lot · '+
       'Ctrl+Z = annuler · double-clic = éditer · clic droit = menu (renommer / temps / supprimer).';
   }catch(e){}
 })();

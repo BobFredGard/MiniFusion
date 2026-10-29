@@ -152,7 +152,7 @@ function treePart(L){
   // ligne d'esquisse ou de fonction : l'ancien node() de renderTree
   const node=(icon,name,kind,id,visible,dbl,info)=>{
     const lk=(tlMark!=null&&kind==='feature'?(function(){const mi=tlIdx();return mi>=0&&doc.features.findIndex(x=>x.id===id)>=mi;})():false);
-    const estSel=(sel.kind===kind&&sel.id===id)||(kind==='feature'&&treeSel.indexOf(id)>=0);
+    const estSel=(sel.kind===kind&&sel.id===id)||treeSel.indexOf(id)>=0;
     const mvOk=kind==='feature'&&(function(){const _f=doc.features.find(x=>x.id===id);return !!(_f&&!_f.repeatId);})();
     const mv=mvOk?' <span class="mv" data-d="-1" title="Monter dans le corps">▲</span><span class="mv" data-d="1" title="Descendre dans le corps">▼</span>':'';
     const on={
@@ -165,7 +165,7 @@ function treePart(L){
           markDirty();rebuild();renderTree();}}
       },
       click:ev=>{
-        if(kind==='feature'&&ev.ctrlKey){treeSelToggle(id);return;}
+        if(treeSelClick(kind,id,ev))return;
         if(kind==='feature'&&ghostHide===id)ghostHide=null;
         treeSel=kind==='feature'?[id]:[];
         sel={kind,id};
@@ -178,8 +178,8 @@ function treePart(L){
     const dd=kind==='sketch'?{drag:{kind:'sketch',id}}:(mvOk?{drag:{kind:'feature',id},drop:treeDropFeat(id)}:{});
     L.push(Object.assign(dd,{lvl:1,cls:'tnode'+(estSel?' sel':'')+(visible===false?' hidden':'')+(lk?' locked':''),
       html:`<span>${icon}</span><span class="nm">${name}</span>${kind==='feature'?antTag(id):''}${mv}<span class="eye" title="Afficher / masquer">`+(visible===false?'🙈':'👁')+`</span>`,
-      title:kind==='sketch'?(info?info+' — ':'')+'Clic = sélectionner · double-clic = modifier l’esquisse · 👁 = afficher/masquer':
-        kind==='feature'?'Clic = sélectionner · double-clic = éditer congé/chanfrein exact · 👁 = afficher/masquer · ▲▼ = décaler dans le corps':undefined,
+      title:kind==='sketch'?(info?info+' — ':'')+'Clic = sélectionner · Ctrl+clic = ajouter au lot · Shift+clic = plage · Suppr = supprimer · double-clic = modifier l’esquisse · 👁 = afficher/masquer':
+        kind==='feature'?'Clic = sélectionner · Ctrl+clic = ajouter au lot · Shift+clic = plage · double-clic = éditer congé/chanfrein exact · 👁 = afficher/masquer · ▲▼ = décaler dans le corps':undefined,
       on}));
   };
   if(gfold('origin','⬒','Origine','Repère de l’origine · Z↑ haut · Y arrière',true)){
@@ -259,7 +259,7 @@ function treePart(L){
           tri:()=>{f.open=!f.open;renderTree();renderProps();},
           eye:()=>{f.visible=!(f.visible!==false);doc.features.forEach(k=>{if(k.repeatId===f.id)k.visible=f.visible;});markDirty();rebuild();renderTree();},
           click:ev=>{
-            if(ev.ctrlKey){treeSelToggle(f.id);return;}
+            if(treeSelClick('feature',f.id,ev))return;
             treeSel=[f.id];
             sel={kind:'feature',id:f.id};renderTree();renderProps();refreshParts();
           },
@@ -272,7 +272,7 @@ function treePart(L){
           on:{
             eye:()=>{k.visible=!(k.visible!==false);markDirty();rebuild();renderTree();},
             click:ev=>{
-              if(ev.ctrlKey){treeSelToggle(k.id);return;}
+              if(ev.ctrlKey||ev.metaKey){treeSelToggle(k.id,'feature');return;}
               treeSel=[f.id];
               sel={kind:'feature',id:f.id};renderTree();renderProps();refreshParts();
             },

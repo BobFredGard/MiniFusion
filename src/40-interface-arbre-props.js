@@ -1143,20 +1143,72 @@ function delBody(id){
 }
 
 // ── sélection multiple + suppression ─────────────────────────────────────────
-function treeSelToggle(id){
+// Le lot mêle esquisses, fonctions et éléments de construction (ids uniques, uid) :
+// le genre se retrouve par l'id. V0.19.8 : Shift+clic = plage, dans le genre cliqué.
+let treeAnchor=null; // dernier clic simple ou Ctrl : origine de la plage Shift
+const TREE_LOT_KINDS=['feature','sketch','cg'];
+function treeKindOf(id){
+  if(doc.features.some(f=>f.id===id))return 'feature';
+  if((doc.sketches||[]).some(s=>s.id===id))return 'sketch';
+  if((doc.cgeo||[]).some(c=>c.id===id))return 'cg';
+  return null;
+}
+// Ordre d'affichage de l'arbre pour un genre (42 : esquisses, construction, corps → fonctions)
+function treeOrderOf(kind){
+  if(kind==='sketch')return (doc.sketches||[]).filter(s=>!skIsRepCopy(s)).map(s=>s.id);
+  if(kind==='cg')return (doc.cgeo||[]).filter(cgValid).filter(c=>!cgLocked(c)).map(c=>c.id);
+  const B=((doc.bodies||[]).length?doc.bodies:[{id:'b1'}]).map(e=>e.id);
+  const bodyOf=f=>B.indexOf(f.body)>=0?f.body:B[0];
+  const out=[];
+  B.forEach(b=>doc.features.forEach(f=>{if(!f.repeatId&&!tlLocked(f)&&bodyOf(f)===b)out.push(f.id);}));
+  return out;
+}
+function treeLotMsg(){
+  const n=treeSel.length;
+  faceEl.textContent=n?(n+' élément(s) sélectionné(s) — Suppr pour supprimer, Échap pour désélectionner.')
+                    :'Sélection vidée.';
+}
+// Clic d'une ligne du lot : Ctrl = ajouter / retirer, Shift = plage depuis le dernier clic.
+// → true si traité ; sinon clic simple, l'appelant sélectionne et appelle treeSelSet.
+function treeSelClick(kind,id,ev){
+  if(!ev||TREE_LOT_KINDS.indexOf(kind)<0)return false;
+  if(ev.shiftKey){treeSelRange(kind,id,!!(ev.ctrlKey||ev.metaKey));return true;}
+  if(ev.ctrlKey||ev.metaKey){treeSelToggle(id,kind);return true;}
+  treeAnchor=id;
+  return false;
+}
+function treeSelToggle(id,kind){
+  kind=kind||treeKindOf(id)||'feature';
+  // le clic simple d'avant n'est pas encore dans le lot : il en fait partie
+  if(!treeSel.length&&sel&&TREE_LOT_KINDS.indexOf(sel.kind)>=0&&sel.id&&sel.id!==id)treeSel=[sel.id];
   const i=treeSel.indexOf(id);
   if(i>=0){if(treeSel.length===1)treeSel=[];else treeSel.splice(i,1);}
   else treeSel.push(id);
+  treeAnchor=id;
   // `sel` suit le dernier clic : le panneau de propriétés reste cohérent
-  sel={kind:'feature',id};
+  sel={kind,id};
   renderTree();renderProps();refreshParts();
-  const n=treeSel.length;
-  faceEl.textContent=n?(n+' fonction(s) sélectionnée(s) — Suppr pour supprimer, Échap pour désélectionner.')
-                    :'Sélection vidée.';
+  try{if(kind==='cg')cgDraw();}catch(e){}
+  treeLotMsg();
+}
+function treeSelRange(kind,id,ajout){
+  const ord=treeOrderOf(kind);
+  let a=treeAnchor&&ord.indexOf(treeAnchor)>=0?ord.indexOf(treeAnchor):-1;
+  if(a<0&&sel&&sel.kind===kind)a=ord.indexOf(sel.id);
+  const b=ord.indexOf(id);
+  if(b<0)return;
+  if(a<0)a=b;
+  const plage=ord.slice(Math.min(a,b),Math.max(a,b)+1);
+  // Shift seul remplace le lot ; Ctrl+Shift ajoute la plage. L'ancre ne bouge pas.
+  treeSel=ajout?treeSel.concat(plage.filter(x=>treeSel.indexOf(x)<0)):plage;
+  sel={kind,id};
+  renderTree();renderProps();refreshParts();
+  try{if(kind==='cg')cgDraw();}catch(e){}
+  treeLotMsg();
 }
 function treeSelIds(){
   if(treeSel&&treeSel.length)return treeSel.slice();
-  if(sel&&sel.kind==='feature')return [sel.id];
+  if(sel&&TREE_LOT_KINDS.indexOf(sel.kind)>=0&&sel.id)return [sel.id];
   return [];
 }
 // Ce qui DÉPEND des fonctions visées et qu'il faut donc emporter avec elles :
@@ -1177,31 +1229,46 @@ function treeSelDeps(ids){
   return out;
 }
 function treeDeleteSel(){
-  const ids=treeSelIds().filter(id=>doc.features.some(f=>f.id===id));
-  if(!ids.length)return;
-  const noms=id=>{const f=doc.features.find(x=>x.id===id);return f?f.name:id;};
+  const lot=treeSelIds();
+  const skIds=lot.filter(id=>(doc.sketches||[]).some(s=>s.id===id));
+  const cgIds=lot.filter(id=>(doc.cgeo||[]).some(c=>c.id===id));
+  // une esquisse emporte les fonctions tracées dessus (comme le menu clic droit)
+  const ids=lot.filter(id=>doc.features.some(f=>f.id===id));
+  doc.features.forEach(f=>{if(f.sketchId&&skIds.indexOf(f.sketchId)>=0&&ids.indexOf(f.id)<0)ids.push(f.id);});
+  if(!ids.length&&!skIds.length&&!cgIds.length)return;
+  const noms=id=>{const f=doc.features.find(x=>x.id===id)||(doc.sketches||[]).find(x=>x.id===id)||(doc.cgeo||[]).find(x=>x.id===id);return f?f.name:id;};
   const deps=treeSelDeps(ids);
-  const tous=ids.concat(deps);
+  const feats=ids.concat(deps);
+  const tous=skIds.concat(cgIds,feats);
   let msg;
   if(tous.length===1)msg='Supprimer « '+noms(tous[0])+' » ?';
-  else msg='Supprimer '+tous.length+' fonction(s) ?\n\n· '+tous.map(noms).join('\n· ');
+  else msg='Supprimer '+[skIds.length?skIds.length+' esquisse(s)':'',cgIds.length?cgIds.length+' élément(s) de construction':'',
+    feats.length?feats.length+' fonction(s)':''].filter(Boolean).join(', ')+' ?\n\n· '+tous.map(noms).join('\n· ');
   if(deps.length)msg+='\n\n'+deps.length+' fonction(s) en dépendent : elles seront supprimées aussi.';
   // les esquisses posées sur une face de la fonction supprimée ne sont PAS
   // détruites (trop destructif) : on prévient qu'elles perdent leur hôte.
-  const skDep=(doc.sketches||[]).filter(s=>s.host&&ids.indexOf(s.host.feat)>=0);
+  const skDep=(doc.sketches||[]).filter(s=>s.host&&ids.indexOf(s.host.feat)>=0&&skIds.indexOf(s.id)<0);
   if(skDep.length)msg+='\n'+skDep.length+' esquisse(s) sont posées sur ses faces : elles resteront, sans hôte.';
   if(!confirm(msg))return;
-  docPushUndo('suppression de '+tous.length+' fonction(s)');
-  tous.slice().forEach(id=>{
+  const nomsTous=tous.map(noms);
+  docPushUndo('suppression de '+tous.length+' élément(s)');
+  feats.slice().forEach(id=>{
     const f=doc.features.find(x=>x.id===id);
     if(f)delFeature(f);
   });
-  treeSel=[];sel={kind:null,id:null};
+  if(skIds.length)doc.sketches=doc.sketches.filter(s=>skIds.indexOf(s.id)<0);
+  // construction : comme cgDelete (78), sous la même annulation
+  cgIds.forEach(id=>{
+    doc.cgeo=doc.cgeo.filter(c=>c.id!==id);
+    (doc.sketches||[]).forEach(sk=>{if(sk.plane==='CG'&&sk.cg&&sk.cg.id===id)cgDetachSketch(sk);});
+  });
+  treeSel=[];treeAnchor=null;sel={kind:null,id:null};
+  if(cgIds.length)try{cgRefresh();}catch(e){}
   markDirty();rebuild();
   renderTree();renderProps();refreshParts();
   try{buildEdgeOverlay();}catch(e){}
   try{refreshMirror();}catch(e){}
-  faceEl.textContent='🗑 Supprimé : '+tous.map(noms).join(', ')+'  —  Ctrl+Z pour annuler.';
+  faceEl.textContent='🗑 Supprimé : '+nomsTous.join(', ')+'  —  Ctrl+Z pour annuler.';
 }
 function repPickedDir(faceOnly){
   // Direction choisie dans la vue : ARÊTE sélectionnée (droite : sa direction ; cercle / arc : son

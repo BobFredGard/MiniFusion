@@ -27,7 +27,7 @@ kbd{background:rgba(255,255,255,.1);border:1px solid var(--border);border-radius
 .sidebar{width:272px;flex:none;display:flex;flex-direction:column;gap:10px;min-height:0;overflow-y:auto}
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
 .panel-title{font-size:.66rem;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:0 0 8px}
-.tree{font-size:.82rem}.tnode{padding:3px 6px;border-radius:6px;cursor:pointer;display:flex;gap:7px;align-items:center;white-space:nowrap;overflow:hidden}
+.tree{font-size:.82rem}.tnode{padding:3px 6px;border-radius:6px;cursor:pointer;display:flex;gap:7px;align-items:center;white-space:nowrap;overflow:hidden;user-select:none}
 .tnode:hover{background:rgba(10,132,255,.25)}.tnode.sel{background:rgba(10,132,255,.4)}.tnode.hidden{opacity:.45}.tnode.hidden .nm{text-decoration:line-through}.tnode.locked{opacity:.4}.tnode.locked .nm{opacity:.7;text-decoration:line-through}
 .tnode .nm{flex:1;overflow:hidden;text-overflow:ellipsis}.tgroup{font-weight:700;color:var(--warn);margin-top:8px;font-size:.76rem}
 .timeline{display:flex;gap:6px;flex-wrap:wrap}.chip{font-size:.72rem;background:rgba(10,132,255,.18);border:1px solid rgba(10,132,255,.5);border-radius:16px;padding:3px 10px;cursor:pointer}
@@ -281,7 +281,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.19.8';
+const APP_VER='V0.19.9';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -8235,20 +8235,72 @@ function delBody(id){
 }
 
 // ── sélection multiple + suppression ─────────────────────────────────────────
-function treeSelToggle(id){
+// Le lot mêle esquisses, fonctions et éléments de construction (ids uniques, uid) :
+// le genre se retrouve par l'id. V0.19.8 : Shift+clic = plage, dans le genre cliqué.
+let treeAnchor=null; // dernier clic simple ou Ctrl : origine de la plage Shift
+const TREE_LOT_KINDS=['feature','sketch','cg'];
+function treeKindOf(id){
+  if(doc.features.some(f=>f.id===id))return 'feature';
+  if((doc.sketches||[]).some(s=>s.id===id))return 'sketch';
+  if((doc.cgeo||[]).some(c=>c.id===id))return 'cg';
+  return null;
+}
+// Ordre d'affichage de l'arbre pour un genre (42 : esquisses, construction, corps → fonctions)
+function treeOrderOf(kind){
+  if(kind==='sketch')return (doc.sketches||[]).filter(s=>!skIsRepCopy(s)).map(s=>s.id);
+  if(kind==='cg')return (doc.cgeo||[]).filter(cgValid).filter(c=>!cgLocked(c)).map(c=>c.id);
+  const B=((doc.bodies||[]).length?doc.bodies:[{id:'b1'}]).map(e=>e.id);
+  const bodyOf=f=>B.indexOf(f.body)>=0?f.body:B[0];
+  const out=[];
+  B.forEach(b=>doc.features.forEach(f=>{if(!f.repeatId&&!tlLocked(f)&&bodyOf(f)===b)out.push(f.id);}));
+  return out;
+}
+function treeLotMsg(){
+  const n=treeSel.length;
+  faceEl.textContent=n?(n+' élément(s) sélectionné(s) — Suppr pour supprimer, Échap pour désélectionner.')
+                    :'Sélection vidée.';
+}
+// Clic d'une ligne du lot : Ctrl = ajouter / retirer, Shift = plage depuis le dernier clic.
+// → true si traité ; sinon clic simple, l'appelant sélectionne et appelle treeSelSet.
+function treeSelClick(kind,id,ev){
+  if(!ev||TREE_LOT_KINDS.indexOf(kind)<0)return false;
+  if(ev.shiftKey){treeSelRange(kind,id,!!(ev.ctrlKey||ev.metaKey));return true;}
+  if(ev.ctrlKey||ev.metaKey){treeSelToggle(id,kind);return true;}
+  treeAnchor=id;
+  return false;
+}
+function treeSelToggle(id,kind){
+  kind=kind||treeKindOf(id)||'feature';
+  // le clic simple d'avant n'est pas encore dans le lot : il en fait partie
+  if(!treeSel.length&&sel&&TREE_LOT_KINDS.indexOf(sel.kind)>=0&&sel.id&&sel.id!==id)treeSel=[sel.id];
   const i=treeSel.indexOf(id);
   if(i>=0){if(treeSel.length===1)treeSel=[];else treeSel.splice(i,1);}
   else treeSel.push(id);
+  treeAnchor=id;
   // `sel` suit le dernier clic : le panneau de propriétés reste cohérent
-  sel={kind:'feature',id};
+  sel={kind,id};
   renderTree();renderProps();refreshParts();
-  const n=treeSel.length;
-  faceEl.textContent=n?(n+' fonction(s) sélectionnée(s) — Suppr pour supprimer, Échap pour désélectionner.')
-                    :'Sélection vidée.';
+  try{if(kind==='cg')cgDraw();}catch(e){}
+  treeLotMsg();
+}
+function treeSelRange(kind,id,ajout){
+  const ord=treeOrderOf(kind);
+  let a=treeAnchor&&ord.indexOf(treeAnchor)>=0?ord.indexOf(treeAnchor):-1;
+  if(a<0&&sel&&sel.kind===kind)a=ord.indexOf(sel.id);
+  const b=ord.indexOf(id);
+  if(b<0)return;
+  if(a<0)a=b;
+  const plage=ord.slice(Math.min(a,b),Math.max(a,b)+1);
+  // Shift seul remplace le lot ; Ctrl+Shift ajoute la plage. L'ancre ne bouge pas.
+  treeSel=ajout?treeSel.concat(plage.filter(x=>treeSel.indexOf(x)<0)):plage;
+  sel={kind,id};
+  renderTree();renderProps();refreshParts();
+  try{if(kind==='cg')cgDraw();}catch(e){}
+  treeLotMsg();
 }
 function treeSelIds(){
   if(treeSel&&treeSel.length)return treeSel.slice();
-  if(sel&&sel.kind==='feature')return [sel.id];
+  if(sel&&TREE_LOT_KINDS.indexOf(sel.kind)>=0&&sel.id)return [sel.id];
   return [];
 }
 // Ce qui DÉPEND des fonctions visées et qu'il faut donc emporter avec elles :
@@ -8269,31 +8321,46 @@ function treeSelDeps(ids){
   return out;
 }
 function treeDeleteSel(){
-  const ids=treeSelIds().filter(id=>doc.features.some(f=>f.id===id));
-  if(!ids.length)return;
-  const noms=id=>{const f=doc.features.find(x=>x.id===id);return f?f.name:id;};
+  const lot=treeSelIds();
+  const skIds=lot.filter(id=>(doc.sketches||[]).some(s=>s.id===id));
+  const cgIds=lot.filter(id=>(doc.cgeo||[]).some(c=>c.id===id));
+  // une esquisse emporte les fonctions tracées dessus (comme le menu clic droit)
+  const ids=lot.filter(id=>doc.features.some(f=>f.id===id));
+  doc.features.forEach(f=>{if(f.sketchId&&skIds.indexOf(f.sketchId)>=0&&ids.indexOf(f.id)<0)ids.push(f.id);});
+  if(!ids.length&&!skIds.length&&!cgIds.length)return;
+  const noms=id=>{const f=doc.features.find(x=>x.id===id)||(doc.sketches||[]).find(x=>x.id===id)||(doc.cgeo||[]).find(x=>x.id===id);return f?f.name:id;};
   const deps=treeSelDeps(ids);
-  const tous=ids.concat(deps);
+  const feats=ids.concat(deps);
+  const tous=skIds.concat(cgIds,feats);
   let msg;
   if(tous.length===1)msg='Supprimer « '+noms(tous[0])+' » ?';
-  else msg='Supprimer '+tous.length+' fonction(s) ?\n\n· '+tous.map(noms).join('\n· ');
+  else msg='Supprimer '+[skIds.length?skIds.length+' esquisse(s)':'',cgIds.length?cgIds.length+' élément(s) de construction':'',
+    feats.length?feats.length+' fonction(s)':''].filter(Boolean).join(', ')+' ?\n\n· '+tous.map(noms).join('\n· ');
   if(deps.length)msg+='\n\n'+deps.length+' fonction(s) en dépendent : elles seront supprimées aussi.';
   // les esquisses posées sur une face de la fonction supprimée ne sont PAS
   // détruites (trop destructif) : on prévient qu'elles perdent leur hôte.
-  const skDep=(doc.sketches||[]).filter(s=>s.host&&ids.indexOf(s.host.feat)>=0);
+  const skDep=(doc.sketches||[]).filter(s=>s.host&&ids.indexOf(s.host.feat)>=0&&skIds.indexOf(s.id)<0);
   if(skDep.length)msg+='\n'+skDep.length+' esquisse(s) sont posées sur ses faces : elles resteront, sans hôte.';
   if(!confirm(msg))return;
-  docPushUndo('suppression de '+tous.length+' fonction(s)');
-  tous.slice().forEach(id=>{
+  const nomsTous=tous.map(noms);
+  docPushUndo('suppression de '+tous.length+' élément(s)');
+  feats.slice().forEach(id=>{
     const f=doc.features.find(x=>x.id===id);
     if(f)delFeature(f);
   });
-  treeSel=[];sel={kind:null,id:null};
+  if(skIds.length)doc.sketches=doc.sketches.filter(s=>skIds.indexOf(s.id)<0);
+  // construction : comme cgDelete (78), sous la même annulation
+  cgIds.forEach(id=>{
+    doc.cgeo=doc.cgeo.filter(c=>c.id!==id);
+    (doc.sketches||[]).forEach(sk=>{if(sk.plane==='CG'&&sk.cg&&sk.cg.id===id)cgDetachSketch(sk);});
+  });
+  treeSel=[];treeAnchor=null;sel={kind:null,id:null};
+  if(cgIds.length)try{cgRefresh();}catch(e){}
   markDirty();rebuild();
   renderTree();renderProps();refreshParts();
   try{buildEdgeOverlay();}catch(e){}
   try{refreshMirror();}catch(e){}
-  faceEl.textContent='🗑 Supprimé : '+tous.map(noms).join(', ')+'  —  Ctrl+Z pour annuler.';
+  faceEl.textContent='🗑 Supprimé : '+nomsTous.join(', ')+'  —  Ctrl+Z pour annuler.';
 }
 function repPickedDir(faceOnly){
   // Direction choisie dans la vue : ARÊTE sélectionnée (droite : sa direction ; cercle / arc : son
@@ -9106,7 +9173,7 @@ function tlbName(s){
 }
 function tlbIsSel(s){
   if(s.kind==='feature')return (sel.kind==='feature'&&sel.id===s.id)||treeSel.indexOf(s.id)>=0;
-  return sel.kind===(s.kind==='cg'?'cg':'sketch')&&sel.id===s.id;
+  return (sel.kind===(s.kind==='cg'?'cg':'sketch')&&sel.id===s.id)||treeSel.indexOf(s.id)>=0;
 }
 function tlbClick(s,ev){
   if(tlbNoClick){tlbNoClick=false;return;}
@@ -9115,7 +9182,7 @@ function tlbClick(s,ev){
     sel={kind:'cg',id:s.id};treeSel=[];renderTree();renderProps();try{cgDraw();}catch(e){}
     return;
   }
-  if(s.kind==='feature'&&ev&&ev.ctrlKey){treeSelToggle(s.id);return;}
+  if(s.kind==='feature'&&treeSelClick('feature',s.id,ev))return;
   if(s.kind==='feature'&&ghostHide===s.id)ghostHide=null;
   treeSel=s.kind==='feature'?[s.id]:[];
   sel={kind:s.kind,id:s.id};
@@ -9374,7 +9441,7 @@ function treePart(L){
   // ligne d'esquisse ou de fonction : l'ancien node() de renderTree
   const node=(icon,name,kind,id,visible,dbl,info)=>{
     const lk=(tlMark!=null&&kind==='feature'?(function(){const mi=tlIdx();return mi>=0&&doc.features.findIndex(x=>x.id===id)>=mi;})():false);
-    const estSel=(sel.kind===kind&&sel.id===id)||(kind==='feature'&&treeSel.indexOf(id)>=0);
+    const estSel=(sel.kind===kind&&sel.id===id)||treeSel.indexOf(id)>=0;
     const mvOk=kind==='feature'&&(function(){const _f=doc.features.find(x=>x.id===id);return !!(_f&&!_f.repeatId);})();
     const mv=mvOk?' <span class="mv" data-d="-1" title="Monter dans le corps">▲</span><span class="mv" data-d="1" title="Descendre dans le corps">▼</span>':'';
     const on={
@@ -9387,7 +9454,7 @@ function treePart(L){
           markDirty();rebuild();renderTree();}}
       },
       click:ev=>{
-        if(kind==='feature'&&ev.ctrlKey){treeSelToggle(id);return;}
+        if(treeSelClick(kind,id,ev))return;
         if(kind==='feature'&&ghostHide===id)ghostHide=null;
         treeSel=kind==='feature'?[id]:[];
         sel={kind,id};
@@ -9400,8 +9467,8 @@ function treePart(L){
     const dd=kind==='sketch'?{drag:{kind:'sketch',id}}:(mvOk?{drag:{kind:'feature',id},drop:treeDropFeat(id)}:{});
     L.push(Object.assign(dd,{lvl:1,cls:'tnode'+(estSel?' sel':'')+(visible===false?' hidden':'')+(lk?' locked':''),
       html:`<span>${icon}</span><span class="nm">${name}</span>${kind==='feature'?antTag(id):''}${mv}<span class="eye" title="Afficher / masquer">`+(visible===false?'🙈':'👁')+`</span>`,
-      title:kind==='sketch'?(info?info+' — ':'')+'Clic = sélectionner · double-clic = modifier l’esquisse · 👁 = afficher/masquer':
-        kind==='feature'?'Clic = sélectionner · double-clic = éditer congé/chanfrein exact · 👁 = afficher/masquer · ▲▼ = décaler dans le corps':undefined,
+      title:kind==='sketch'?(info?info+' — ':'')+'Clic = sélectionner · Ctrl+clic = ajouter au lot · Shift+clic = plage · Suppr = supprimer · double-clic = modifier l’esquisse · 👁 = afficher/masquer':
+        kind==='feature'?'Clic = sélectionner · Ctrl+clic = ajouter au lot · Shift+clic = plage · double-clic = éditer congé/chanfrein exact · 👁 = afficher/masquer · ▲▼ = décaler dans le corps':undefined,
       on}));
   };
   if(gfold('origin','⬒','Origine','Repère de l’origine · Z↑ haut · Y arrière',true)){
@@ -9481,7 +9548,7 @@ function treePart(L){
           tri:()=>{f.open=!f.open;renderTree();renderProps();},
           eye:()=>{f.visible=!(f.visible!==false);doc.features.forEach(k=>{if(k.repeatId===f.id)k.visible=f.visible;});markDirty();rebuild();renderTree();},
           click:ev=>{
-            if(ev.ctrlKey){treeSelToggle(f.id);return;}
+            if(treeSelClick('feature',f.id,ev))return;
             treeSel=[f.id];
             sel={kind:'feature',id:f.id};renderTree();renderProps();refreshParts();
           },
@@ -9494,7 +9561,7 @@ function treePart(L){
           on:{
             eye:()=>{k.visible=!(k.visible!==false);markDirty();rebuild();renderTree();},
             click:ev=>{
-              if(ev.ctrlKey){treeSelToggle(k.id);return;}
+              if(ev.ctrlKey||ev.metaKey){treeSelToggle(k.id,'feature');return;}
               treeSel=[f.id];
               sel={kind:'feature',id:f.id};renderTree();renderProps();refreshParts();
             },
@@ -10355,7 +10422,7 @@ function docUndoUI(){
   try{
     const wrap=document.querySelector?document.querySelector('.ovlNote'):null;
     if(!wrap)return;
-    wrap.textContent='Clic = sélectionner · Ctrl+clic = ajouter au lot · Suppr = supprimer le lot · '+
+    wrap.textContent='Clic = sélectionner · Ctrl+clic = ajouter au lot · Shift+clic = plage · Suppr = supprimer le lot · '+
       'Ctrl+Z = annuler · double-clic = éditer · clic droit = menu (renommer / temps / supprimer).';
   }catch(e){}
 })();
@@ -25091,15 +25158,16 @@ function cgTreeModel(L){
     on:{click:()=>{doc.fold=doc.fold||{};doc.fold.cg=open;try{dirty=true;}catch(e){}renderTree();}}});
   if(!open)return;
   C.forEach(el=>{
-    const on=sel&&sel.kind==='cg'&&sel.id===el.id;
+    const on=(sel&&sel.kind==='cg'&&sel.id===el.id)||treeSel.indexOf(el.id)>=0;
     const warn=el.st==='warn'?' <span title="'+String(el.msg||'').replace(/"/g,'&quot;')+'" style="color:var(--warn)">⚠</span>':'';
     L.push({lvl:1,cls:'tnode'+(on?' sel':'')+(el.visible===false?' hidden':''),
       html:'<span>'+CG_KINDS[el.kind].ic+'</span><span class="nm">'+cgLabel(el).replace(/</g,'&lt;')+warn+'</span><span class="eye" title="Afficher / masquer">'+(el.visible===false?'🙈':'👁')+'</span>',
-      title:'Clic = sélectionner · double-clic = '+((el.kind==='plane'||el.kind==='frame')?'esquisse dessus':'modifier')+' · clic droit = modifier, renommer, supprimer',
+      title:'Clic = sélectionner · Ctrl / Shift+clic = lot · double-clic = '+((el.kind==='plane'||el.kind==='frame')?'esquisse dessus':'modifier')+' · clic droit = modifier, renommer, supprimer',
       on:{
         eye:()=>{el.visible=!(el.visible!==false);try{dirty=true;}catch(e){}cgDraw();renderTree();},
-        click:()=>{
+        click:ev=>{
           if(cgTreePick({k:'cg',id:el.id}))return;
+          if(treeSelClick('cg',el.id,ev))return;
           treeSel=[];sel={kind:'cg',id:el.id};renderTree();renderProps();cgDraw();
         },
         dbl:()=>{

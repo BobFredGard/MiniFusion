@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**425 versions**, de `2026-09-28b` à `V0.19.8` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**426 versions**, de `2026-09-28b` à `V0.19.9` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5506,3 +5506,9 @@ Constat : les STEP de miniFusion n'ouvraient dans les vieux logiciels de l'utili
 - **Correctif** (`src/90-picking-mesure-import.js`, `stepStripPcurves`) : `write.surfacecurve.mode` est inaccessible dans cette build (comme `write.step.schema`, V0.15.5) ; le texte est réécrit — chaque arête pointe directement sur sa courbe 3D, puis seules les entités encore atteignables depuis les racines d'origine sont gardées et renumérotées. Appliqué avant la conversion AP203 (`occWriteStep(shapes,path,schema,noPcurve)`, dernier argument facultatif). Géométrie inchangée, fichier environ deux fois plus léger (Griffe : 137 → 54 Ko).
 - **Fenêtre d'export** (`stepAskSchema`) : case « Sans courbes 2D — pour les vieux logiciels », cochée par défaut, retenue (`minifusion_stepNoPcurve`) ; rappelée dans le message de fin d'export.
 - **Test** : `test_step_schema`, +25 vérifications (noyau réel) — boîte percée (couture de cylindre) et assemblage de deux pièces, en AP214 et AP203 : plus aucune `PCURVE`, `SURFACE_CURVE`, `SEAM_CURVE` ni contexte 2D, références toutes définies, même structure de produits, entités de gestion AP203 conservées, relecture identique (solides, faces, volume, boîte) et forme valide. Vérifié dans le navigateur : fenêtre d'export avec la case, export réel de la pièce de démonstration 101,5 → 47,6 Ko, 36 faces, aucune courbe 2D. `npm run ci` 76/76.
+
+## V0.19.9 - Arborescence : Shift+clic = plage ; Suppr supprime aussi les esquisses
+Demande : « Pouvoir utiliser la touche SHIFT dans la sélection pour en sélectionner une ribambelle, valable pour les esquisses, les fonctions et la géométrie, et surtout pour supprimer les esquisses avec SUPPR ».
+- **Lot mixte** (`src/40-interface-arbre-props.js`) : `treeSel` accepte esquisses, fonctions et éléments de construction (ids uniques, genre retrouvé par `treeKindOf`). `treeSelClick` : Ctrl+clic ajoute / retire (désormais aussi esquisses et construction), **Shift+clic** sélectionne la plage depuis le dernier clic, dans l'ordre de l'arbre et dans le genre cliqué (`treeOrderOf`) ; Ctrl+Shift ajoute la plage au lot. Branché sur l'arbre (`src/42`), la construction (`src/79`) et la timeline (`src/41`, fonctions) ; lignes du lot surlignées partout ; texte de l'arbre non sélectionnable (Shift+clic).
+- **Suppr** (`treeDeleteSel`) : supprime tout le lot en une seule annulation, avec une seule confirmation qui liste les éléments ; une esquisse emporte les fonctions tracées dessus (comme le menu clic droit), un élément de construction se retire comme `cgDelete` (esquisses posées dessus laissées en place). Une esquisse seule sélectionnée se supprime aussi avec Suppr.
+- **Tests** : `npm run ci` ; vérifié dans l'app (Shift sur esquisses et fonctions, Ctrl en plus, lot mixte esquisse + fonction, Suppr puis Ctrl+Z).

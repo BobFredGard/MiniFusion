@@ -179,7 +179,7 @@ function tlbName(s){
 }
 function tlbIsSel(s){
   if(s.kind==='feature')return (sel.kind==='feature'&&sel.id===s.id)||treeSel.indexOf(s.id)>=0;
-  return sel.kind===(s.kind==='cg'?'cg':'sketch')&&sel.id===s.id;
+  return (sel.kind===(s.kind==='cg'?'cg':'sketch')&&sel.id===s.id)||treeSel.indexOf(s.id)>=0;
 }
 function tlbClick(s,ev){
   if(tlbNoClick){tlbNoClick=false;return;}
@@ -188,7 +188,7 @@ function tlbClick(s,ev){
     sel={kind:'cg',id:s.id};treeSel=[];renderTree();renderProps();try{cgDraw();}catch(e){}
     return;
   }
-  if(s.kind==='feature'&&ev&&ev.ctrlKey){treeSelToggle(s.id);return;}
+  if(s.kind==='feature'&&treeSelClick('feature',s.id,ev))return;
   if(s.kind==='feature'&&ghostHide===s.id)ghostHide=null;
   treeSel=s.kind==='feature'?[s.id]:[];
   sel={kind:s.kind,id:s.id};
