@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**418 versions**, de `2026-09-28b` à `V0.19.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**419 versions**, de `2026-09-28b` à `V0.19.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5464,3 +5464,8 @@ Demande : « un bouton "Rendu Direct" entre l'appareil photo et la roue ; actif 
 - **Bouton** `#btnLive` (`src/98-rendu-vue.js`) entre l'appareil photo (RENDU) et ⚙ : bascule entre « Actuel (CAO) » et la nouvelle ambiance **« Rendu direct (réglages RENDU) »** ; orange tant qu'une ambiance de rendu est active (aussi celles choisies dans ⚙ → Environnement). L'appareil photo s'insère avant lui (`src/98-rendu.js`).
 - **Réglages de la fenêtre RENDU** (`vEnvCfg`) : en Rendu direct, la vue prend l'ambiance de l'atelier, sa rotation, la force des reflets (`envMapIntensity`), le fond Dégradé / Uni (couleurs et préréglages) et la couleur du sol ; relus à chaque enregistrement des réglages (`rdSave`) et à la fermeture de l'atelier. Image HDRI : ambiance Studio ; fonds Studio / Image / Transparent : fond de l'ambiance. Les autres ambiances gardent leur fond.
 - **Tests** : `test_materiaux` (bouton, ambiance « rendu », relecture des réglages). Vérifié dans le navigateur : ordre des boutons, orange / normal, fond « Bleu nuit » choisi dans la fenêtre RENDU repris par la vue. `npm run ci` 75/75.
+
+## V0.19.2 - Livraison propre de V0.19.1 (tag publié sur un commit intermédiaire)
+Le tag `V0.19.1` a été publié sur le commit intermédiaire `eef1adb` (« wip rendu direct » : sources seules, sans numéro de version, CHANGELOG ni livrable reconstruit) — un `git add` en échec passager pendant le cpt n'avait pas arrêté la suite des commandes. Le contenu complet de V0.19.1 est dans `61c336c` ; le tag publié n'est pas déplacé.
+- **Aucun changement fonctionnel** par rapport à `61c336c` : numéro de version seulement (`APP_VER`, `package.json`). `V0.19.2` est le tag à utiliser pour le Rendu direct.
+- **Tests** : `npm run ci`.
