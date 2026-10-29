@@ -12,7 +12,7 @@
    rugosité lus dans des uniformes (mat.color n'est jamais modifiée : la CAO la relit), puis tons
    ACES et sortie sRGB dans leur shader. Le moteur garde sa sortie linéaire : tout le reste de la
    scène s'affiche exactement comme avant. */
-const VENV_LIST=[['actuel','Actuel (CAO)'],['studio','Studio'],['clair','Studio lumineux'],['atelier','Atelier'],['exterieur','Extérieur'],['noir','Scène noire']];
+const VENV_LIST=[['actuel','Actuel (CAO)'],['rendu','Rendu direct (réglages RENDU)'],['studio','Studio'],['clair','Studio lumineux'],['atelier','Atelier'],['exterieur','Extérieur'],['noir','Scène noire']];
 const VENV_SOL={studio:'#b4b8bf',clair:'#e2e4e8',atelier:'#272b31',exterieur:'#7d8894',noir:'#0b0b0d'}; // couleur du sol (case « Sol »)
 const VENV_FOND={studio:['#d3d6db','#9a9fa7'],clair:['#f4f5f7','#cdd1d7'],atelier:['#3a4049','#121417'],exterieur:['#b7c5d4','#6a7684'],noir:['#1b1b1e','#000000']};
 let vEnv='actuel';
@@ -30,6 +30,20 @@ function vEnvSet(k){
   vEnv=VENV_LIST.some(x=>x[0]===k)?k:'actuel';
   try{localStorage.setItem('minifusion_env',vEnv);}catch(e){}
   const s=document.getElementById('optEnv');if(s)s.value=vEnv;
+  const b=document.getElementById('btnLive');if(b)b.classList.toggle('on',vEnv!=='actuel');
+}
+/* ── « Rendu direct » (V0.18.2) : l'ambiance, sa rotation, la force des reflets, le fond (dégradé ou uni)
+   et la couleur du sol sont ceux de la fenêtre RENDU (98-rendu : rd.st, ou ses réglages enregistrés) ;
+   les autres ambiances gardent leur fond. Image HDRI, studio courbe, fond transparent : fond de l'ambiance. */
+let vEnvRdSt=null; // réglages de l'atelier relus (rdSave remet à null)
+function vEnvCfg(){
+  if(vEnv!=='rendu'){const f=VENV_FOND[vEnv]||VENV_FOND.studio;return {amb:vEnv,rot:0,int:1,fond:f,sol:VENV_SOL[vEnv]||VENV_SOL.studio,sig:vEnv};}
+  let st=rd&&rd.st;
+  if(!st){if(!vEnvRdSt)vEnvRdSt=rdSettings();st=vEnvRdSt;}
+  const amb=RD_AMB.some(a=>a[0]===st.amb)?st.amb:'studio';
+  const f=st.fond==='degrade'?[st.fc1,st.fc2]:st.fond==='uni'?[st.fc1,st.fc1]:VENV_FOND[amb];
+  const sol=st.solCol||(st.fond==='degrade'||st.fond==='uni'?f[1]:VENV_SOL[amb]);
+  return {amb,rot:+st.envRot||0,int:st.envInt!=null?+st.envInt:1,fond:f,sol,sig:['rendu',amb,st.envRot,f[0],f[1]].join('|')};
 }
 /* ── matières des corps ── */
 function vEnvPatch(m){
@@ -85,7 +99,7 @@ function vEnvRelU(U,L,d){
 }
 /* ── ambiance, fond, sol ── */
 function vEnvBg(){
-  const f=VENV_FOND[vEnv]||VENV_FOND.studio;
+  const f=vEnvCfg().fond;
   const c=document.createElement('canvas');c.width=16;c.height=512;
   const x=c.getContext('2d'),g=x.createLinearGradient(0,0,0,512);g.addColorStop(0,f[0]);g.addColorStop(1,f[1]);
   x.fillStyle=g;x.fillRect(0,0,16,512);
@@ -95,9 +109,10 @@ function vEnvBg(){
 }
 function vEnvOn(){
   if(!vEnvS.pmrem)vEnvS.pmrem=new THREE.PMREMGenerator(renderer);
-  if(vEnvS.amb!==vEnv){
-    const old=vEnvS.rt,{rt,key}=rdEnvTex(vEnvS.pmrem,vEnv,0);
-    vEnvS.rt=rt;vEnvS.key=key;vEnvS.amb=vEnv;
+  const C=vEnvCfg();
+  if(vEnvS.amb!==C.sig){
+    const old=vEnvS.rt,{rt,key}=rdEnvTex(vEnvS.pmrem,C.amb,C.rot);
+    vEnvS.rt=rt;vEnvS.key=[key[0]+C.rot,key[1]];vEnvS.amb=C.sig;
     vEnvS.mats.forEach(m=>{if(m.userData&&m.userData.vEnv)m.envMap=rt.texture;});
     if(old)old.dispose();
     vEnvBg();
@@ -148,10 +163,11 @@ function vEnvTick(){
   // sol et reflet SUIVENT la pièce (déplacée, modifiée, composant placé) : recalés toutes les 15 images
   vEnvS.n=(vEnvS.n||0)+1;
   if(cao&&vEnvS.n%15===0&&(floorOn||mirrorOn)){try{refreshMirror();}catch(e){}}
-  if(envW){if(!vEnvS.on||vEnvS.amb!==vEnv)vEnvOn();}else if(vEnvS.on)vEnvOff();
+  const C=envW?vEnvCfg():null;
+  if(envW){if(!vEnvS.on||vEnvS.amb!==C.sig)vEnvOn();}else if(vEnvS.on)vEnvOff();
   if(shW&&!vEnvS.sun)vShadowStart();else if(!shW&&vEnvS.sun)vShadowStop();
   if(!envW&&!shW)return;
-  if(envW&&mirrorU)mirrorU.color.value.set(VENV_SOL[vEnv]||VENV_SOL.studio); // sol à la couleur de l'ambiance
+  if(envW&&mirrorU)mirrorU.color.value.set(C.sol); // sol à la couleur de l'ambiance (Rendu direct : celle de la fenêtre RENDU)
   const box=_vEnvBox.makeEmpty();
   vEnvMeshes((m,L)=>{
     const mat=m.material;if(!mat||!mat.isMeshStandardMaterial)return;
@@ -166,6 +182,7 @@ function vEnvTick(){
         else{U.uEnvMet.value=d?d.metal:0.15;U.uEnvRou.value=d?(d.cc?d.rough+((d.ccr!=null?d.ccr:0.1)-d.rough)*d.cc*0.5:d.rough):0.42;} // vernis : reflets plus nets
         vEnvRelU(U,L,d);
         if(mat.envMap!==vEnvS.rt.texture)mat.envMap=vEnvS.rt.texture;
+        mat.envMapIntensity=C.int; // « Reflets » de la fenêtre RENDU (1 pour les autres ambiances)
       }
     }
     const dv=matDef(L.mat);
@@ -174,7 +191,7 @@ function vEnvTick(){
   });
   const fl=vEnvS.floor,sun=vEnvS.sun;if(!shW||!fl||!sun)return;
   fl.visible=!box.isEmpty();if(box.isEmpty())return;
-  const dark=!envW||vEnv==='noir'||vEnv==='atelier';fl.material.opacity=dark?0.55:0.32;
+  const dark=!envW||C.amb==='noir'||C.amb==='atelier';fl.material.opacity=dark?0.55:0.32;
   box.getCenter(_vEnvC);const R=box.getSize(_vEnvSz).length()*0.5||50;
   fl.scale.set(R*14,R*14,1);fl.position.set(_vEnvC.x,_vEnvC.y,box.min.z-R*0.002);
   const k=envW?vEnvS.key:[-34,59]; // environnement actuel : direction de la lampe de la vue (10-scene-3d)
@@ -196,6 +213,17 @@ function vEnvTick(){
     VENV_LIST.forEach(([k,t])=>{const o=document.createElement('option');o.value=k;o.textContent=t;if(k===vEnv)o.selected=true;s.appendChild(o);});
     s.onchange=()=>vEnvSet(s.value);
     lab.appendChild(s);row.appendChild(lab);
+    // « Rendu direct » dans la barre de vue, entre l'appareil photo (RENDU) et ⚙ : orange = vue rendue
+    const vb=document.getElementById('viewbar'),st=document.getElementById('btnSettings');
+    if(vb&&!document.getElementById('btnLive')){
+      const cs=document.createElement('style');cs.textContent='#viewbar #btnLive.on{background:#ff9f0a!important;border-color:#ff9f0a!important;color:#1c1c1e!important}';document.head.appendChild(cs);
+      const b=document.createElement('button');b.id='btnLive';
+      b.title='Rendu direct : la vue rendue comme dans l’atelier RENDU (lumière, reflets, fond, matériaux et reliefs de chaque pièce) — fond et ambiance réglés dans la fenêtre RENDU · clic droit sur une pièce : son matériau';
+      b.innerHTML='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px"><circle cx="12" cy="12" r="5"/><path d="M12 7c-1.6 1.2-1.6 8.8 0 10M7.6 9.5c2.8 1 6 1 8.8 0"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+      b.onclick=()=>vEnvSet(vEnv==='actuel'?'rendu':'actuel');
+      vb.insertBefore(b,st||null);
+      if(vEnv!=='actuel')b.classList.add('on');
+    }
     row0.parentNode.insertBefore(row,row0);
     const lo=document.createElement('label');lo.title='Ombre portée de la pièce sur le sol (espace CAO)';
     const co=document.createElement('input');co.type='checkbox';co.id='optShadow';co.checked=vShadowOn;

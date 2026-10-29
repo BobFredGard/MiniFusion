@@ -17,6 +17,9 @@ if(!/if\(vu\)\{/.test(sc3))staticKo.push('reflet : passe recalculée à chaque i
 // V0.17.0 : « rendu léger » — en ambiance, la vue montre l'apparence de RENDU (relief compris), choisie au clic droit par pièce
 if(!/renderLookOf/.test(vue)||!/relShader\(sh\)/.test(vue))staticKo.push('vue en ambiance : apparence de rendu et relief de chaque pièce attendus');
 if(!/ws==='fao'/.test(vue))staticKo.push('vue en ambiance : espace FAO attendu');
+// V0.18.2 : bouton « Rendu direct » (orange = actif), réglages de la fenêtre RENDU (ambiance, fond, reflets)
+if(!/btnLive/.test(vue)||!/\['rendu','Rendu direct/.test(vue)||!/function vEnvCfg\(/.test(vue))staticKo.push('bouton Rendu direct et ambiance « rendu » attendus');
+if(!/vEnvRdSt=null/.test(rendu))staticKo.push('Rendu direct : réglages de la fenêtre RENDU relus à l\'enregistrement');
 {const ap=fs.readFileSync(path.join(ROOT,'src','98-rendu-apparence.js'),'utf8');
   if(!/function rdLookPop\(/.test(ap)||!/ctxRdLook/.test(ap))staticKo.push('apparence de rendu au clic droit (98-rendu-apparence) attendue');
   if(/matSelect\(L\.mat/.test(rendu))staticKo.push('atelier : plus de liste déroulante par pièce dans le panneau (clic droit)');}

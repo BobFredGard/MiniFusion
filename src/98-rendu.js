@@ -31,7 +31,7 @@ function rdSettings(){
   delete s.qual; // V0.10.0 : suréchantillonnage ×2, remplacé par le nombre de passes (ech)
   return Object.assign({},RD_DEF,s);
 }
-function rdSave(){try{localStorage.setItem(RD_LS,JSON.stringify(rd.st));}catch(e){}}
+function rdSave(){try{localStorage.setItem(RD_LS,JSON.stringify(rd.st));}catch(e){}vEnvRdSt=null;} // Rendu direct (98-rendu-vue) : réglages relus
 /* ── ambiances : scène d'environnement → PMREM ── */
 function rdLin(hex){return new THREE.Color(hex).convertSRGBToLinear();}
 function rdEnvDesc(amb){
@@ -760,7 +760,7 @@ function rdClose(){
   try{const A=rd.acc;if(A){['s','a','b'].forEach(k=>{if(A[k])A[k].dispose();});A.quad.geometry.dispose();A.mix.dispose();A.out.dispose();}rpDispose(rd.post);}catch(e){}
   try{rd.r.dispose();rd.r.forceContextLoss();}catch(e){}
   try{rdLookClose();}catch(e){}
-  rd.ov.remove();rd=null;
+  rd.ov.remove();rd=null;vEnvRdSt=null; // Rendu direct : réglages de la fenêtre relus
   document.querySelectorAll('[data-mfrd]').forEach(b=>b.classList.remove('on'));
   try{renderProps();}catch(e){} // la fiche du corps reprend un matériau changé dans l'atelier
 }
@@ -772,7 +772,7 @@ function rdClose(){
       const b=document.createElement('button');b.id='btnRender';b.dataset.mfrd='1';b.title='Rendu : image réaliste 1920×1080 (matériaux, ambiance, appareil photo)';
       b.innerHTML='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
       b.onclick=()=>rdOpen();
-      vb.insertBefore(b,st||null);
+      vb.insertBefore(b,document.getElementById('btnLive')||st||null); // appareil photo, Rendu direct (98-rendu-vue), ⚙
     }
   }catch(e){}
 })();
