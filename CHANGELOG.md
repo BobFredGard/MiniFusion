@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**447 versions**, de `2026-09-28b` à `V0.21.16` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**448 versions**, de `2026-09-28b` à `V0.21.18` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5656,3 +5656,10 @@ Demande : « Balayage -> accepter les spline aussi comme guide ».
 - **Chemin** (`src/75-balayage.js`, `sweepPath2D`) : les splines d'esquisse entrent dans la chaîne, seules, fermées ou bout à bout avec lignes et arcs. Arêtes exactes de `skSplineEdges` (mêmes pôles et nœuds que le dessin), coupées comme dans `skLoopTrace` ; départ à la tangente de bout de la courbe (`sweepStart3`). Repli maillage : la polyligne de la spline.
 - **Noyau** (`occShapeOfSweep`) : un chemin à spline est balayé à binormale FIXE = normale de son esquisse (repère à rotation minimale d'une courbe plane). Le Frenet corrigé ne rend jamais la main sur une B-spline (mesuré, OCCT wasm) ; le Frenet pur vrille aux inflexions. Chemins lignes / arcs inchangés.
 - **Tests** : `test_balayage` — spline droite, en S (deux sens), carré 4×4 sans vrille à l'inflexion, ligne + spline, spline fermée, repli maillage : volume = section × longueur ; `npm run ci`.
+
+## V0.21.18 - Ombre portée calculée seulement quand elle change : tests navigateur de nouveau dans les temps
+Constat : le job `browser-test` de la CI dépassait ses 20 min depuis V0.10.0 (16 s → 2,1 min pour ouvrir l'Axe, puis 4 min de délai dépassé par parcours). La CI n'a pas de carte graphique (WebGL logiciel SwiftShader).
+- **Cause** (`src/98-rendu-vue.js`) : l'ombre portée de la vue CAO (VSM 2048², flou) était recalculée à chaque image, et deux fois avec le passage du reflet. Coût mesuré sous SwiftShader : ~940 ms par image, même sans pièce.
+- **Correctif** : `shadowMap.autoUpdate=false`. `vEnvTick` relève une signature des corps qui portent l'ombre (géométrie, placement) et de la lampe : la carte ne se refait que si elle change. Image sous SwiftShader : 986 → 46 ms. Vérifié dans le navigateur : 1 calcul après l'extrusion, 0 à l'arrêt, 1 après un changement de distance ; ombre et reflet affichés.
+- **Test navigateur « composants »** : depuis V0.21.2, « Composant » n'est visible qu'en mode Assembler. Le test passe par Assembler → Composant. Pour le sous-composant, il appelle `asmCmdNewComp` : en Modéliser, un composant sans enfants n'a plus de bouton pour en créer un.
+- **Tests** : `npm run ci`. Parcours navigateur sous SwiftShader (Chrome local) : 15/15, de 7 à 31 s chacun.

@@ -140,6 +140,9 @@ let vShadowOn=true;
 try{if(localStorage.getItem('minifusion_ombre')==='off')vShadowOn=false;}catch(e){}
 function vShadowStart(){
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.VSMShadowMap;
+  // V0.21.18 : carte d'ombre recalculée seulement si ce qui la porte change (vEnvTick) — à chaque image,
+  // VSM 2048² + flou coûtait ~1 s par image sans carte graphique (SwiftShader : tests navigateur de la CI)
+  renderer.shadowMap.autoUpdate=false;renderer.shadowMap.needsUpdate=true;vEnvS.shSig=null;
   const sun=new THREE.DirectionalLight(0xffffff,0);sun.name='vEnvSun';sun.castShadow=true;
   sun.shadow.mapSize.set(2048,2048);sun.shadow.radius=6;sun.shadow.blurSamples=16;sun.shadow.bias=-0.0005;
   scene.add(sun);scene.add(sun.target);vEnvS.sun=sun;
@@ -154,7 +157,7 @@ function vShadowStop(){
   const off=o=>{if(o&&o.parent)o.parent.remove(o);}; // dans scene ou asmScene (viewDecorTo, 10-scene-3d)
   if(vEnvS.sun){off(vEnvS.sun.target);off(vEnvS.sun);if(vEnvS.sun.shadow.map)vEnvS.sun.shadow.map.dispose();vEnvS.sun=null;}
   if(vEnvS.floor){off(vEnvS.floor);vEnvS.floor.geometry.dispose();vEnvS.floor.material.dispose();vEnvS.floor=null;}
-  renderer.shadowMap.enabled=false;
+  renderer.shadowMap.enabled=false;renderer.shadowMap.autoUpdate=true;
 }
 function vCaoWs(){
   if(typeof scene==='undefined'||!scene||typeof renderer==='undefined'||!renderer)return false;
@@ -174,7 +177,7 @@ function vEnvTick(){
   if(shW&&!vEnvS.sun)vShadowStart();else if(!shW&&vEnvS.sun)vShadowStop();
   if(!envW&&!shW)return;
   if(envW&&mirrorU)mirrorU.color.value.set(C.sol); // sol à la couleur de l'ambiance (Rendu direct : celle de la fenêtre RENDU)
-  const box=_vEnvBox.makeEmpty();
+  const box=_vEnvBox.makeEmpty(),sg=[];
   const asmV=(typeof asmMode!=='undefined'&&asmMode==='asm'&&typeof asmScene!=='undefined'&&asmScene)?asmScene:null;
   vEnvMeshes((m,L)=>{
     const mat=m.material;if(!mat||!mat.isMeshStandardMaterial)return;
@@ -195,6 +198,7 @@ function vEnvTick(){
     const dv=matDef(L.mat);
     m.castShadow=shW&&m.name!=='glassIn'&&!(dv&&dv.trans); // un corps transparent (réglage CAO) porte aussi son ombre ; sa passe intérieure et le verre, non
     if(shW&&m.parent&&rdShown(m)&&(!asmV||vRootOf(m)===asmV))box.expandByObject(m); // mode Assembler : seuls les composants placés
+    if(m.castShadow&&m.visible){const g=m.geometry,p=g&&g.attributes&&g.attributes.position;sg.push(m.id,g?g.id:0,p?p.version:0,...m.matrixWorld.elements);}
   });
   const fl=vEnvS.floor,sun=vEnvS.sun;if(!shW||!fl||!sun)return;
   fl.visible=!box.isEmpty();if(box.isEmpty())return;
@@ -207,6 +211,10 @@ function vEnvTick(){
   sun.target.position.copy(_vEnvC);sun.target.updateMatrixWorld();
   const sc=sun.shadow.camera;
   if(sc.right!==R*1.6||sc.far!==R*8){sc.left=-R*1.6;sc.right=R*1.6;sc.top=R*1.6;sc.bottom=-R*1.6;sc.near=R*0.5;sc.far=R*8;sc.updateProjectionMatrix();}
+  // corps qui portent l'ombre (géométrie, placement) + lampe : la carte ne se refait que s'ils changent
+  sg.push(sun.position.x,sun.position.y,sun.position.z,R);
+  const sig=sg.join(',');
+  if(sig!==vEnvS.shSig){vEnvS.shSig=sig;renderer.shadowMap.needsUpdate=true;}
 }
 (function(){
   // ⚙ Réglages de visualisation → Affichage : liste « Environnement », en tête

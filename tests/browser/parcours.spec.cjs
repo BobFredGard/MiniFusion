@@ -192,7 +192,10 @@ test('composants : racine avec un repère de base, composant aligné qui suit, s
     cgNew('frame','face',[{k:'face',ref:top,name:'Dessus'}],{});markDirty();rebuild();
   });
   await pret();
-  // Ruban « Composant » : nouveau composant dans la racine, on est dedans
+  // Ruban « Composant » : nouveau composant dans la racine, on est dedans. V0.21.2 : le bouton
+  // n'apparaît qu'en mode Assembler (en Modéliser, le groupe Composants se réduit à « Assembler »)
+  await ruban(page,'Assembler').click();
+  await page.waitForFunction(()=>asmMode==='asm');
   await ruban(page,'Composant').click();
   await page.waitForFunction(()=>asm&&asm.comps.length===2&&asmRoot().occ.length===1&&asmMode==='part'&&doc.features.length===0);
   await bloc(10,10,60);await pret();
@@ -219,10 +222,12 @@ test('composants : racine avec un repère de base, composant aligné qui suit, s
   await page.waitForFunction(()=>asmMode==='asm');
   o=await pied();
   expect(o[2]).toBeCloseTo(35,6);
-  // Sous-composant : double-clic sur Composant 1:1 (on le modélise), puis « Composant »
+  // Sous-composant : double-clic sur Composant 1:1 (on le modélise), puis nouveau composant.
+  // V0.21.2 : plus de bouton « Composant » en Modéliser, et « Assembler » depuis un composant sans
+  // enfants remonte au porteur — la commande est appelée directement (asmCmdNewComp, 47)
   await page.locator('#tree .tnode.tocc',{hasText:'Composant 1:1'}).dblclick();
   await page.waitForFunction(()=>asmMode==='part'&&asm.path.length===1);
-  await ruban(page,'Composant').click();
+  await page.evaluate(()=>asmCmdNewComp());
   await page.waitForFunction(()=>asm.path.length===2&&asmMode==='part'&&doc.features.length===0);
   await expect(page.locator('#tree .asmCrumb')).toContainText('Socle›Composant 1›Composant 2');
   expect(await page.evaluate(()=>asmComp(asmRoot().occ[0].comp).occ.length)).toBe(1);
