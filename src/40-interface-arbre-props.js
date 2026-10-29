@@ -121,6 +121,7 @@ function featIconOf(f){
   if(f.type==='repeat')return '🔁';
   if(f.type==='combine')return f.mode==='cut'?'⊖':(f.mode==='intersect'?'⊗':'⊕');
   if(f.type==='revolve')return (f.op||'add')==='cut'?'◔':'◍';
+  if(f.type==='sweep')return (f.op||'add')==='cut'?'≋':'〰';
   if(f.type==='hole')return '⊚';
   if(f.type==='xmove')return '📐';
   if(f.type==='bmove')return '✥';
@@ -166,6 +167,7 @@ function repCanFeatureHint(f){
   if(!f)return'';
   if(f.type==='extrude')return((f.op||'add')==='cut'?'Découpe':'Plot')+' · '+(+f.distance||0).toFixed(2)+' mm';
   if(f.type==='revolve')return revolveName(f);
+  if(f.type==='sweep')return sweepName(f);
   if(f.type==='hole')return 'Perçage · Ø'+(+f.d||0)+(f.thread&&f.thread.size?' · taraudé '+f.thread.size:'')+(f.kind&&f.kind!=='simple'?' · '+f.kind:'');
   if(f.type==='xfillet')return xLabel(xKindOf(f))+' · '+(f.edges||[]).length+' arête(s)'+xChamLabel(f);
   if(f.type==='xmove')return 'Déplacement de face · '+(+f.dist||0)+' mm';
@@ -860,7 +862,7 @@ function docSanitise(){
     if(f.type!=='repeat'||f.q)return;f.q=1;
     if(f.mode==='circ'&&Math.abs(+f.angle||360)>=360-1e-9&&f.copies>=2){f.copies--;cap++;try{repGenChildren(f);}catch(e){}}
   });
-  const used=new Set(doc.features.map(f=>f.sketchId).filter(Boolean));
+  const used=new Set(doc.features.map(f=>f.sketchId).concat(doc.features.map(f=>f.pathId)).filter(Boolean));
   doc.sketches=(doc.sketches||[]).filter(x=>{
     if(used.has(x.id))return true;
     if(repCloneSkName(x)){sk++;return false;}
@@ -1280,7 +1282,7 @@ const REP_OPS=[['join','➕ Unir','Les copies s’unissent au corps de leur sour
 function repNewBodyEmpty(rp){
   if(!repIsNewBody(rp))return false;
   const B=repExpandSources((rp.base||[]).map(id=>doc.features.find(x=>x.id===id)).filter(Boolean),new Set([rp.id]));
-  return B.length>0&&!B.some(f=>(f.type==='extrude'||f.type==='revolve')&&(f.op||'add')!=='cut');
+  return B.length>0&&!B.some(f=>(f.type==='extrude'||f.type==='revolve'||f.type==='sweep')&&(f.op||'add')!=='cut');
 }
 function renderRepPanel(){
   const p=$('props');p.innerHTML='';if(!repMode)return;
@@ -1521,6 +1523,7 @@ function renderProps(){
       :f.type==='repeat'?'Répétition'
       :f.type==='hole'?'Perçage'
       :f.type==='revolve'?'Révolution'
+      :f.type==='sweep'?'Balayage'
       :f.type==='combine'?'Combiner'
       :'Import';
     pH(typeLabel);
@@ -1697,6 +1700,7 @@ function renderProps(){
     if(f.type==='hole'){fdynEnsure(f);renderHoleProps(p,f);fdynFoot(p,f);} // V0.8.0 : OK / Annuler, flèche de profondeur
     /* — révolution — V0.8.0 : fenêtre dynamique (71-fenetre-dynamique) */
     if(f.type==='revolve'){ fdynRevolvePanel(p,f); }
+    if(f.type==='sweep'){ sweepPanel(p,f); } // 75-balayage
     /* — extrusion — */
     if(f.type==='extrude'){
       // V0.7.6 : fenêtre de l'extrusion dynamique — boutons à icônes, flèche dans la vue (70-extrusion-dynamique)

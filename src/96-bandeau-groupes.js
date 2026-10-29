@@ -74,9 +74,10 @@
   const inputs=(()=>{const a=$('fileProj'),b=$('fileImport');return [a,b].filter(Boolean);})();
 
   // 2026-10-16-009 : « Création solide » regroupe ce qui CRÉE du volume / des corps
-  const gCre=groupe('Création solide','Créer du volume : extrusion, révolution, perçage, nouveau corps',[
+  const gCre=groupe('Création solide','Créer du volume : extrusion, révolution, balayage, perçage, nouveau corps',[
     ['btnExtrude','\u{1F9F1}','Extrusion (E)'],
     ['btnRevolve','\u{1F504}','Révolution (R)'],
+    ['btnSweep','〰','Balayage (profil le long d’un chemin)'],
     ['btnHole','⊚','Perçage (H)'],
     '#',
     ['btnBody','◧','Nouveau corps de pièce']

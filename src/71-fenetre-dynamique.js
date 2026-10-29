@@ -9,7 +9,7 @@
      · OK / ANNULER / Échap : Annuler remet le document EXACTEMENT comme à l'ouverture de la fenêtre
        (création : la fonction disparaît) et retire les étapes d'annulation prises entre-temps. */
 let fdyn=null; // session : {id, type, snap, len, isNew}
-const FDYN_TYPES={revolve:1,hole:1,xfillet:1};
+const FDYN_TYPES={revolve:1,sweep:1,hole:1,xfillet:1};
 function fdynFeature(){
   if(typeof sel==='undefined'||!sel||sel.kind!=='feature')return null;
   const f=(doc.features||[]).find(x=>x&&x.id===sel.id);
@@ -25,6 +25,7 @@ function fdynStart(f,snap,len){ fdyn={id:f.id,type:f.type,isNew:true,snap:snap,l
 function fdynRename(f){
   try{
     if(f.type==='revolve')f.name=revolveName(f);
+    else if(f.type==='sweep')f.name=sweepName(f);
     else if(f.type==='hole')f.name=holeName(f);
     else if(f.type==='xfillet')f.name=xFeatName(f);
   }catch(e){}

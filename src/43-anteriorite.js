@@ -14,7 +14,8 @@
 function antSketchUsers(F){
   // esquisse → PREMIÈRE fonction de F qui la consomme (extrusion, révolution, perçage)
   const m=new Map();
-  F.forEach(f=>{if(f&&(f.type==='extrude'||f.type==='revolve'||f.type==='hole')&&f.sketchId&&!m.has(f.sketchId))m.set(f.sketchId,f);});
+  F.forEach(f=>{if(f&&(f.type==='extrude'||f.type==='revolve'||f.type==='sweep'||f.type==='hole')&&f.sketchId&&!m.has(f.sketchId))m.set(f.sketchId,f);
+    if(f&&f.type==='sweep'&&f.pathId&&!m.has(f.pathId))m.set(f.pathId,f);}); // chemin du balayage
   return m;
 }
 function antAnchorSketches(o,out,prof){

@@ -117,7 +117,7 @@ function skConsumerIdx(sk){
   // l'incluait déjà, la détection ne suivait pas).
   if(!sk)return -1;
   return (doc.features||[]).filter(f=>f.visible!==false)
-    .findIndex(f=>(f.type==='extrude'||f.type==='revolve'||f.type==='hole')&&f.sketchId===sk.id);
+    .findIndex(f=>((f.type==='extrude'||f.type==='revolve'||f.type==='sweep'||f.type==='hole')&&f.sketchId===sk.id)||(f.type==='sweep'&&f.pathId===sk.id));
 }
 function skFadeSaveRestore(){
   // Remet les opacités d'origine mémorisées par skApplyFade (idempotent).
@@ -581,7 +581,7 @@ function skBuildRefs(){
   skEdit._refs=[];skEdit._ghost=[];skEdit._refNote='';skEdit._fade=null;skAnteriorEdges=null;
   const feats=doc.features.filter(f=>f.visible!==false);
   const idx=skConsumerIdx(skEdit);
-  const geomLater=arr=>arr.some(f=>f.type==='extrude'||f.type==='revolve'||f.type==='xfillet'||f.type==='fillet');
+  const geomLater=arr=>arr.some(f=>f.type==='extrude'||f.type==='revolve'||f.type==='sweep'||f.type==='xfillet'||f.type==='fillet');
   const dropGhost=()=>{ if(skAnteriorGhost){ try{scene.remove(skAnteriorGhost); skAnteriorGhost.geometry.dispose();}catch(e){} skAnteriorGhost=null; } };
   if(idx<0){
     try{

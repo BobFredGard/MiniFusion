@@ -319,7 +319,7 @@ function occBodyOfFeat(f){return (f&&f.body&&doc.bodies.some(e=>e.id===f.body))?
 // V0.15.12 : DÉCOUPE MULTI-CORPS. Une découpe (poche, perçage, révolution en retrait) peut viser,
 // en plus de son corps, d'autres corps (f.cutBodies) : elle est alors rejouée dans chacun, à sa
 // place dans la timeline — comme « Objets à découper » de Fusion.
-function occIsCutFeat(f){return !!f&&(f.type==='hole'||((f.type==='extrude'||f.type==='revolve')&&(f.op||'add')==='cut'));}
+function occIsCutFeat(f){return !!f&&(f.type==='hole'||((f.type==='extrude'||f.type==='revolve'||f.type==='sweep')&&(f.op||'add')==='cut'));}
 function occCutExtraBodies(f){
   if(!occIsCutFeat(f)||!Array.isArray(f.cutBodies))return [];
   const own=occBodyOfFeat(f);
@@ -3199,6 +3199,11 @@ function featSig(f){
     s+='|'+f.sketchId+'|'+(skH?skSig(skH):'?')+'|'+JSON.stringify([f.kind,f.d,f.thread||null,f.cbD,f.cbH,f.csD,f.csA,f.end,f.depth,f.tip,!!f.flip,f.uptoPlane||null]);
     if(skH)(skH.entities||[]).forEach(e=>{if(e&&e.t==='cpoint'&&e.hole){const Q=skH.points[e.p];if(Q)s+=';h'+Q.x.toFixed(4)+','+Q.y.toFixed(4);}});
   }
+  if(f.type==='sweep'){
+    // Balayage (75-balayage) : profil ET chemin — éditer l'un ou l'autre change le solide
+    const sk=doc.sketches.find(x=>x.id===f.sketchId),pk=doc.sketches.find(x=>x.id===f.pathId);
+    s+='|'+f.sketchId+'|'+(sk?skSig(sk):'?')+'|pa'+f.pathId+'|'+(pk?skSig(pk):'?');
+  }
   if(f.type==='extrude'||f.type==='revolve'){
     s+='|'+f.sketchId;
     const sk=doc.sketches.find(x=>x.id===f.sketchId);s+='|'+(sk?skSig(sk):'?');
@@ -3470,14 +3475,14 @@ function occReplayBody(bid,list){
       occCkPut(ckKey,()=>occShapeCopy(result));
       return;
     }
-    if(f.type!=='extrude'&&f.type!=='revolve'&&f.type!=='hole')return; // hole : fonction Perçage (src/76), toujours une découpe
+    if(f.type!=='extrude'&&f.type!=='revolve'&&f.type!=='sweep'&&f.type!=='hole')return; // sweep : 75-balayage ; hole : fonction Perçage (src/76), toujours une découpe
     // Pour une découpe « à travers tout », l'étendue se mesure sur le solide DÉJÀ reconstruit
     // (tout ce qui précède dans la timeline) — jamais sur l'affichage de l'édition précédente.
     occThroughBase=(((f.type==='extrude'&&f.through)||f.type==='hole')&&result)?result:null; // perçage : débouchant / prochaine face
     const xtra=occBodyOfFeat(f)!==bid; // découpe rejouée dans un corps visé en plus : un seul fantôme (celui de son corps)
     try{
       let r=occToolCkGet(ckKey);
-      if(!r){r=(f.type==='revolve')?occShapeOfRevolve(f):(f.type==='hole'?occShapeOfHole(f):occShapeOfExtrude(f));occToolCkPut(ckKey,r);}
+      if(!r){r=(f.type==='revolve')?occShapeOfRevolve(f):(f.type==='sweep'?occShapeOfSweep(f):(f.type==='hole'?occShapeOfHole(f):occShapeOfExtrude(f)));occToolCkPut(ckKey,r);}
       bin.push(...r.bins);itemShapes.push(r.shape);
       if(r.warnings.length)msgs.push(...r.warnings.map(w=>`${f.name} : ${w}`));
       shape=r.shape;if(!xtra)items.push({f,shape});
@@ -3485,7 +3490,7 @@ function occReplayBody(bid,list){
       // Isolation : UNE esquisse fautive ne fait plus basculer tout le solide en maillage.
       msgs.push(`${f.name} : exclu de l'exact (${err.message})`);
       try{
-        const gl=(f.type==='revolve')?legacyRevolveGeos(f,msgs):(f.type==='hole'?legacyHoleGeos(f,msgs):legacyPrismGeos(f,msgs));
+        const gl=(f.type==='revolve')?legacyRevolveGeos(f,msgs):(f.type==='sweep'?legacySweepGeos(f,msgs):(f.type==='hole'?legacyHoleGeos(f,msgs):legacyPrismGeos(f,msgs)));
         gl.forEach(g=>ghostShapes.push({geo:g,orphan:true,inexact:f.name,fid:f.id}));
       }catch(e2){msgs.push(`${f.name} : même le maillage échoue (${e2.message})`);}
       return;

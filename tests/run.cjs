@@ -65,6 +65,7 @@ const SUITES = [
   "test_undo_filet",
   "test_undo_aller_retour",
   "test_revolve",
+  "test_balayage",
   "test_skctxmenu",
   "test_esquisse_transparence",
   "test_esquisse_arbre_rabat",

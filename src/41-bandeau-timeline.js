@@ -59,7 +59,7 @@ function tlbSteps(){
   (doc.sketches||[]).forEach((sk,k)=>{
     if(skIsRepCopy(sk))return; // copie d'une répétition : comme ses fonctions d'instance, hors du fil
     const h=tlHostFeatureOfSketch(sk);let key;
-    if(h&&h.sketchId===sk.id)key=4*at(h.id)+1;                                  // consommée : juste avant sa fonction
+    if(h&&(h.sketchId===sk.id||h.pathId===sk.id))key=4*at(h.id)+1;                                  // consommée : juste avant sa fonction
     else if(sk.plane==='CG'&&sk.cg&&cgKey[sk.cg.id]!=null)key=cgKey[sk.cg.id];    // sur un élément de construction : après lui
     else if(h)key=4*at(h.id)+3;                                                  // sur une face : après la fonction hôte
     else key=4*F.length;                                                         // libre : en fin de fil
@@ -145,6 +145,7 @@ function tlbSvgKey(s){
   switch(f.type){
     case 'extrude':return ['extrude',cut?'cut':'add',cut];
     case 'revolve':return ['revolve',cut?'cut':'add',cut];
+    case 'sweep':return ['sweep',cut?'cut':'add',cut];
     case 'hole':return ['hole','cut'];
     case 'xfillet':{let k='';try{k=xKindOf(f);}catch(e){}return [/cham/i.test(k)?'chamfer':'fillet','mod'];}
     case 'fillet':return ['fillet','mod'];

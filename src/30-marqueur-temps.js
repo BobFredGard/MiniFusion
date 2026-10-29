@@ -77,7 +77,7 @@ function tlHostFeatureOfSketch(sk){
   // Fonction « propriétaire » d'une esquisse : la première extrusion/révolution qui
   // l'utilise (ordre timeline), sinon l'hôte de face (esquisse posée sur face).
   if(!sk)return null;
-  const users=doc.features.filter(f=>(f.type==='extrude'||f.type==='revolve'||f.type==='hole')&&f.sketchId===sk.id);
+  const users=doc.features.filter(f=>((f.type==='extrude'||f.type==='revolve'||f.type==='sweep'||f.type==='hole')&&f.sketchId===sk.id)||(f.type==='sweep'&&f.pathId===sk.id));
   if(users.length)return users.sort((a,b)=>doc.features.indexOf(a)-doc.features.indexOf(b))[0];
   if(sk.host&&sk.host.feat){const h=doc.features.find(f=>f.id===sk.host.feat);if(h)return h;}
   return null;
@@ -249,12 +249,12 @@ function rebuildInner(projPass){
   // Phase 1 : construit chaque prisme en coordonnées monde (sans l'afficher encore)
   const jobs=[]; // {f, geos:[BufferGeometry monde], ghost?:false}
   tlActiveList().filter(f=>f.visible!==false).forEach(f=>{
-    if(f.type==='extrude'||f.type==='revolve'||f.type==='hole'){
+    if(f.type==='extrude'||f.type==='revolve'||f.type==='sweep'||f.type==='hole'){
       try{
-        const geos=(f.type==='revolve')?legacyRevolveGeos(f,filWarn):(f.type==='hole'?legacyHoleGeos(f,filWarn):legacyPrismGeos(f,filWarn));
+        const geos=(f.type==='revolve')?legacyRevolveGeos(f,filWarn):(f.type==='sweep'?legacySweepGeos(f,filWarn):(f.type==='hole'?legacyHoleGeos(f,filWarn):legacyPrismGeos(f,filWarn)));
         if(geos.length)jobs.push({f,geos});
       }catch(e){
-        const quoi=(f.type==='revolve')?'révolution impossible':'extrusion impossible';
+        const quoi=(f.type==='revolve')?'révolution impossible':(f.type==='sweep'?'balayage impossible':'extrusion impossible');
         let msg=`${f.name} : ${quoi} — ${e.message}. Ouvrez l'esquisse : les bouts ouverts sont en rouge, bouton « Refermer ».`;
         faceEl.textContent+=(faceEl.textContent?'\n':'')+msg;
       }

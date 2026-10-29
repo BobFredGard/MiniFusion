@@ -549,7 +549,7 @@ function treeFeatMoveTo(id,targetId){
 // place dans l'ordre de rejeu ; une étape d'annulation. Seules les fonctions qui ne visent pas des
 // faces ou arêtes précises de leur corps : extrusion, révolution, perçage (un congé, une
 // dépouille, une coque, une répétition, une combinaison y perdraient leurs références).
-const TREE_TO_BODY=['extrude','revolve','hole'];
+const TREE_TO_BODY=['extrude','revolve','sweep','hole'];
 function treeFeatToBody(id,bodyId){
   const f=doc.features.find(x=>x.id===id),b=(doc.bodies||[]).find(x=>x.id===bodyId);
   if(!f||!b||f.repeatId||f.body===bodyId)return false;

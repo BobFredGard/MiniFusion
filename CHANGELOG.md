@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**414 versions**, de `2026-09-28b` à `V0.17.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**415 versions**, de `2026-09-28b` à `V0.18.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5434,3 +5434,10 @@ Demande : « mettre les matériaux par clic droit et par pièce car cela prend t
 - **Rendu léger** (`src/98-rendu-vue.js`) : en ambiance (⚙ → Environnement), chaque pièce prend son APPARENCE DE RENDU (`renderLookOf`, `o.rendu` en assemblage ; à défaut celle de la CAO) avec relief procédural, taches de patine et paillettes — même shader que l'atelier (`relShader`, extrait de `relApply` dans `src/98-rendu-reliefs.js`), réglé par uniformes sans recompilation. Vernis approché par la rugosité ; pas d'usure des arêtes. Actif aussi dans l'espace FAO (brut, parcours, simulation inchangés). « Actuel (CAO) » inchangé.
 - **Atelier RENDU** (`src/98-rendu.js`) : clic molette = tourner (la molette roulée avance / recule).
 - **Tests** : `test_materiaux` (contrôles statiques mis à jour : apparence de rendu et relief en ambiance, FAO, fenêtre au clic droit, plus de liste par pièce) ; `tests/browser/rendu.spec.cjs` : choix du matériau au clic droit dans l'atelier, Échap, vue CAO en apparence de rendu (relief sablé de l'alu anodisé), menu « Matériau de rendu… ». `npm run ci` 75/75, rendu navigateur 2/2. Aucun changement de parcours (CACHE_VER inchangé).
+
+## V0.18.0 - CAO : fonction Balayage (profil le long d'un chemin)
+Demande : « Fonction Balayage : il faudrait commencer à coder cette fonction et l'intégrer dans le menu CAO. Maintenant que les plans existent, ça vaut le coup. » (V0.17.0 est livrée par une autre session.)
+- **Fonction** (`src/75-balayage.js`, nouveau) : `{type:'sweep', sketchId (profil), pathId (chemin), op}`. Le profil fermé d'une esquisse (boucles, trous, cercles ; deux cercles concentriques = tube creux) suit le chemin d'une AUTRE esquisse : lignes et arcs bout à bout, ouvert ou fermé, ou un cercle seul (anneau). Le chemin part de son extrémité la plus proche du profil, quel que soit son sens de tracé. Refus expliqués : chemin ramifié ou en morceaux, chemin dans le plan du profil, même esquisse, profil ouvert ; avertissement si le profil n'est pas au départ du chemin.
+- **Noyau** : `BRepOffsetAPI_MakePipeShell`, Frenet corrigé, coins vifs en ONGLET (`BRepBuilderAPI_RightCorner`). Mesuré au prototype : chemin en L 50+50, carré 10 → 10 000 exact et valide ; le mode par défaut donnait 4 000 (invalide), `MakePipe` sur face 5 000 (invalide). Trous du profil balayés puis retranchés, comme la révolution. Repli maillage sans noyau (contour extérieur transporté le long du chemin).
+- **Intégration** : ruban CAO « Créer » et bandeau « Création solide » (bouton 〰 Balayage, entre Révolution et Perçage), fenêtre dynamique (aperçu immédiat, opération Plot / Poche, profil et chemin modifiables, OK / Annuler), arbre et timeline (〰 / ≋), signature de cache (profil ET chemin), découpe multi-corps, déplacement vers un autre corps, antériorité et consommateur des deux esquisses. Pas encore : répétition d'un balayage, chemin limité à une partie de l'esquisse, torsion / échelle.
+- **Tests** : `test_balayage` (nouveau, 18 contrôles, volumes BRepGProp : L à coin vif, ligne + arc + ligne, chemin fermé, anneau, profil troué, tube creux, rainure en Poche dans un bloc, 4 refus, icônes, repli maillage). Vérifié dans le navigateur : bouton du ruban → tube creux le long de ligne + arc + ligne, volume 8 436,4 exact ; Poche ; Annuler. `npm run ci` 75/75.
