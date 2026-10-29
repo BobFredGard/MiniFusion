@@ -61,6 +61,9 @@ kbd{background:rgba(255,255,255,.1);border:1px solid var(--border);border-radius
 #setMenu .setRow{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 #setMenu label{display:flex;align-items:center;gap:6px;font-size:.78rem;margin:0;color:#e9e9ec}
 #setMenu input[type=range]{width:100%}
+#setMenu .setRow>button{padding:3px 8px;font-size:.72rem;border-radius:6px}
+#setMenu label:has(select){flex:1;justify-content:space-between}
+#setMenu select{width:140px;flex:none;padding:3px 6px;font-size:.72rem;border:1px solid var(--border);border-radius:5px;background:var(--bg);color:var(--text);text-overflow:ellipsis}
 #setMenu .ovlNote{font-size:.68rem;color:rgba(255,255,255,.6);line-height:1.35}
 .part-row{display:flex;align-items:center;gap:7px;padding:2px 6px;border-radius:6px;cursor:pointer;font-size:.78rem;color:#fff;text-shadow:0 1px 4px #000}
 .part-row:hover{background:rgba(10,132,255,.35)}.part-row.hidden{opacity:.45}.pdot{width:11px;height:11px;border-radius:50%;flex:none;border:1px solid rgba(255,255,255,.5)}
@@ -278,7 +281,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.19.6';
+const APP_VER='V0.19.7';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────

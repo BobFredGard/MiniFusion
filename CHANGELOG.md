@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**423 versions**, de `2026-09-28b` à `V0.19.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**424 versions**, de `2026-09-28b` à `V0.19.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5495,3 +5495,8 @@ Demandé : « Lot 3 -> tu peux y travailler » (suite de V0.19.0 : ajuster / pro
 En esquisse, les onglets Modèle / Usinage / Plan et le rabat de l'arborescence restaient posés sur la vue, sans usage pendant le dessin.
 - **Masqués en esquisse** (interface moderne) : `#mfBrTabs` et `#treeWrap` disparaissent à l'ouverture de l'esquisse et reviennent à la fermeture.
 - **Tests** : `npm run ci` ; vérifié dans l'app (masqués à l'ouverture, revenus à la fermeture).
+
+## V0.19.7 - Réglages de vue ⚙ : listes au format des autres panneaux
+Demande : « Menu Settings : pas top les listes qui dépassent. Mais au standard des autres fenêtres ».
+- **Listes compactes** (CSS de `#setMenu`, `fusion_mvp.html`) : Environnement, Arêtes et Orbite reprennent le format des panneaux de propriétés (libellé à gauche, liste de 140 px à droite, petite police, texte abrégé par « … ») et ne débordent plus du menu ; boutons de vue Iso / Dessus / Face / Droite / Tout afficher compacts.
+- **Tests** : `npm run ci` ; vérifié dans l'app (les trois listes à l'intérieur du menu, alignées en colonne).
