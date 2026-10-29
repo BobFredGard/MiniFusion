@@ -1147,7 +1147,9 @@ function importAttach(name,fmt,u8,entry,fileName){
   }
   const id=uid('im');
   importGeom.set(id,entry);
-  addFeature({id,type:'import',name,visible:true,_mesh:entry.mesh,src});
+  const nf={id,type:'import',name,visible:true,_mesh:entry.mesh,src};
+  if(entry.mesh.geometry.userData.impOcc)nf.colMode='piece'; // STEP à plusieurs solides : une couleur par pièce d'emblée
+  addFeature(nf);
   return id;
 }
 function importStlBuild(u8){
@@ -1252,6 +1254,8 @@ function importStepBuild(u8){
     // toutes, et on les range dans la table. Sans ça, l'overlay « Arêtes » ne couvrait
     // jamais un STEP : le repli ne dessinait que des vives > 30°, tout en noir.
     try{const E=occSharpEdges(shape);if(E&&E.length)entry.edges=E;}catch(e){}
+    try{const O=importStepOcc(shape);if(O)g.userData.impOcc=O;}catch(e){} // couleurs par pièce / occurrence
+
     // SOLIDE EXACT CONSERVÉ : sans lui, la voie exacte n'avait RIEN à unir ni à
     // soustraire (le mesh n'est pas un solide) — « Uni » restait deux pièces et
     // « Soustraction » tombait dans le vide. Le BRep reste la PROPRIÉTÉ de la table :
@@ -1261,6 +1265,77 @@ function importStepBuild(u8){
     try{occt.FS.unlink(path);}catch(e){}
     return entry; // {mesh, edges, faoGeo, brep}
   }
+}
+/* ---- STEP à corps multiples : une couleur par PIÈCE ou par OCCURRENCE ----
+   Chaque solide du STEP est une occurrence ; deux occurrences de la même pièce
+   partagent leur géométrie (même TShape, placement différent : IsPartner).
+   Le maillage d'affichage porte alors une couleur par sommet, choisie dans la
+   palette auto ; f.colMode : 'piece' | 'occ' | absent (= couleur du corps).
+   Seul l'affichage change : FAO (faoGeo) et solide exact (brep) intacts. */
+function importStepOcc(shape){
+  // {faceOcc, occPart, nOcc, nPart} : ordinal de face (même ordre que occTriPos) →
+  // occurrence → pièce. null si moins de 2 solides, ou si des faces sont hors solide.
+  const E=occt.TopAbs_ShapeEnum,SH=E.TopAbs_SHAPE;
+  const sols=[];
+  const ex=new occt.TopExp_Explorer_2(shape,E.TopAbs_SOLID,SH);
+  while(ex.More()){sols.push(occt.TopoDS.Solid_1(ex.Current()));ex.Next();}
+  try{ex.delete();}catch(e){}
+  const nFaces=s=>{let n=0;const x=new occt.TopExp_Explorer_2(s,E.TopAbs_FACE,SH);while(x.More()){n++;x.Next();}try{x.delete();}catch(e){}return n;};
+  try{
+    if(sols.length<2)return null;
+    // L'explorateur parcourt en profondeur : les faces du tout = celles des solides,
+    // mises bout à bout — sauf faces libres (coques hors solide), alors on renonce.
+    const cnt=sols.map(nFaces),tot=cnt.reduce((a,b)=>a+b,0);
+    if(tot!==nFaces(shape))return null;
+    const faceOcc=new Int32Array(tot);
+    let k=0;cnt.forEach((c,i)=>{faceOcc.fill(i,k,k+c);k+=c;});
+    const occPart=new Int32Array(sols.length),rep=[];
+    sols.forEach((s,i)=>{
+      let p=rep.findIndex(j=>{try{return s.IsPartner(sols[j]);}catch(e){return false;}});
+      if(p<0){p=rep.length;rep.push(i);}
+      occPart[i]=p;
+    });
+    return {faceOcc,occPart,nOcc:sols.length,nPart:rep.length};
+  }finally{sols.forEach(s=>{try{s.delete();}catch(e){}});}
+}
+function importColorMat(f,mat){
+  // Pose (ou retire) les couleurs par sommet d'un import selon f.colMode ; rend mat.
+  // applyBodyStyle laisse alors la matière BLANCHE (sinon la couleur du corps teinterait tout).
+  const g=f&&f._mesh&&f._mesh.geometry,O=g&&g.userData&&g.userData.impOcc;
+  const mode=(O&&(f.colMode==='piece'||f.colMode==='occ'))?f.colMode:null;
+  if(!g||!mat)return mat;
+  if(!mode){
+    if(g.getAttribute('color'))g.deleteAttribute('color');
+    mat.vertexColors=false;g.userData.impColKey=null;
+    return mat;
+  }
+  const key=mode+(vivid?'':'!');
+  if(g.userData.impColKey!==key||!g.getAttribute('color')){
+    const n=g.attributes.position.count,col=new Float32Array(n*3),c=new THREE.Color();
+    (g.userData.occGroups||[]).forEach(gr=>{
+      const o=O.faceOcc[gr.f];if(o===undefined)return;
+      c.setHex(autoCol(mode==='occ'?o:O.occPart[o]));
+      for(let t=gr.start*3,z=(gr.start+gr.count)*3;t<z&&t<n;t++){col[t*3]=c.r;col[t*3+1]=c.g;col[t*3+2]=c.b;}
+    });
+    g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
+    g.userData.impColKey=key;
+  }
+  mat.vertexColors=true;mat.needsUpdate=true;
+  return mat;
+}
+function importColorsPanel(p,f,pRow,pSel,pNote){
+  // Panneau d'un import STEP à plusieurs solides : choix du coloriage.
+  const g=f&&f._mesh&&f._mesh.geometry,O=g&&g.userData&&g.userData.impOcc;
+  if(!O)return;
+  const s=pSel([
+    ['','Couleur du corps','Une seule couleur : celle du corps qui contient l’import'],
+    ['piece','Une couleur par pièce ('+O.nPart+')','Les occurrences d’une même pièce partagent leur couleur'],
+    ['occ','Une couleur par occurrence ('+O.nOcc+')','Chaque solide du fichier a sa propre couleur']],
+    f.colMode||'',v=>{docPushUndo('couleurs de « '+f.name+' »');
+      if(v)f.colMode=v;else delete f.colMode;
+      markDirty();rebuild();renderProps();});
+  pRow('Couleurs',s);
+  pNote(O.nOcc+' solides · '+O.nPart+' pièce(s) distincte(s).'+(O.nPart<O.nOcc?' Une pièce répétée = plusieurs occurrences.':''));
 }
 /* ============ FAO : « corps blindés » (phase 4) ==============================
    L'affichage est désormais plus fin (occDisplayDefl + budget de triangles, phase 3)

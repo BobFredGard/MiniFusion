@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**443 versions**, de `2026-09-28b` à `V0.21.12` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**444 versions**, de `2026-09-28b` à `V0.21.13` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5623,3 +5623,10 @@ Signalé : « Goupilles mal positionnées après modif retouche esquisse vis FHC
 - **Correctif** : un cylindre du **même diamètre** passe avant tout autre, même s'il est plus loin ; un autre diamètre ne sert qu'en repli (Ø modifié). Le nom de la référence est mis à jour avec la signature.
 - **Fichier déjà touché** : la référence des goupilles de Test Visserie vise désormais le Ø9 d'une vis — refaire la liaison (Rigide → fin de l'axe du Ø8).
 - **Tests** : `test_composants_accroches` 19-20 (Ø8 déplacé au-delà d'un Ø10 plus proche : la goupille suit le Ø8 ; échoue sans le correctif) ; `npm run ci`.
+
+## V0.21.13 - Import STEP multi-corps : une couleur par pièce ou par occurrence
+Demande : « Import STEP -> STEP à corps multiple -> 1 couleur par pièce et 1 par Occurrence ».
+- **Analyse** (`src/90-picking-mesure-import.js`, `importStepOcc`) : chaque solide du STEP est une occurrence ; deux occurrences sont la même pièce quand elles partagent leur géométrie (même TShape, placement différent : `IsPartner`). Table face → occurrence → pièce rangée sur le maillage d'affichage (`userData.impOcc`) ; abandon si moins de 2 solides ou faces hors solide.
+- **Affichage** (`importColorMat`, appelé par les deux moteurs `src/20` et `src/30`) : couleurs par sommet tirées de la palette auto ; `applyBodyStyle` (`src/00`) laisse alors la matière blanche. Seul l'affichage change : FAO (`faoGeo`) et solide exact (`brep`) intacts.
+- **Panneau de l'import** (`importColorsPanel`, `src/40`) : « Couleurs » = Couleur du corps / Une couleur par pièce (n) / Une couleur par occurrence (n), avec annulation. `f.colMode` : `'piece'` d'emblée pour un nouvel import à plusieurs solides ; anciens documents inchangés.
+- **Tests** : `npm run ci`. Vérifié dans le navigateur sur un STEP écrit puis relu (2 cubes identiques + une barre) : 3 occurrences, 2 pièces ; 2 couleurs par pièce, 3 par occurrence, retour à la couleur du corps.

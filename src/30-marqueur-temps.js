@@ -329,7 +329,7 @@ function rebuildInner(projPass){
     jobs.forEach(j=>{
       if(j.isImport){
         const col=bodyColorOf(j.f.body); // l'import est rangé dans un corps : SA couleur, SA transparence
-        j.f._mesh.material=applyBodyStyle(FreshMat(col),j.f.body);scene.add(j.f._mesh);
+        j.f._mesh.material=applyBodyStyle(importColorMat(j.f,FreshMat(col)),j.f.body);scene.add(j.f._mesh);
         bodies.push({id:j.f.id,name:j.f.name,mesh:j.f._mesh,color:col,visible:true,kind:'import',ref:j.f.id,bodyId:j.f.body||null});ci++;
         return;
       }

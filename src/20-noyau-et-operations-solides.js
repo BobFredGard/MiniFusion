@@ -3946,7 +3946,7 @@ function occRebuild(){
     doc.features.filter(f=>f.visible!==false&&f.type==='import'&&f._mesh).forEach(f=>{
       if(consommes.has(f.id)){try{scene.remove(f._mesh);}catch(e){}return;}
       const col=bodyColorOf(f.body); // l'import appartient à un corps : SA couleur
-      f._mesh.material=applyBodyStyle(FreshMat(col),f.body);scene.add(f._mesh);
+      f._mesh.material=applyBodyStyle(importColorMat(f,FreshMat(col)),f.body);scene.add(f._mesh);
       bodies.push({id:f.id,name:f.name,mesh:f._mesh,color:col,visible:true,kind:'import',ref:f.id,bodyId:f.body||null});
     });
     occCleanup(FR,(occLive&&occLive.shape)||null);

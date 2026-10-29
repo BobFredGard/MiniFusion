@@ -1772,6 +1772,7 @@ function renderProps(){
     /* — révolution — V0.8.0 : fenêtre dynamique (71-fenetre-dynamique) */
     if(f.type==='revolve'){ fdynRevolvePanel(p,f); }
     if(f.type==='sweep'){ sweepPanel(p,f); } // 75-balayage
+    if(f.type==='import'){ importColorsPanel(p,f,pRow,pSel,pNote); } // STEP multi-corps : couleur par pièce / occurrence (90)
     /* — extrusion — */
     if(f.type==='extrude'){
       // V0.7.6 : fenêtre de l'extrusion dynamique — boutons à icônes, flèche dans la vue (70-extrusion-dynamique)
