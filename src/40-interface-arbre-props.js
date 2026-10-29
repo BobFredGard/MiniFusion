@@ -353,11 +353,12 @@ function repFeatPreviewGeos(f){
   const refs=[],eds=[],boxes=[];
   if(f.type==='xfillet')(f.edges||[]).forEach(e=>{if(e&&Array.isArray(e.pos))eds.push({pos:e.pos,r:+e.r||+f.radius||1,len:+e.len||0,cham:!!f.chamfer});});
   if(f.type==='xdraft')(f.faces||[]).forEach(r=>{if(r&&Array.isArray(r.pos))refs.push(r);});
-  if(f.type==='xmove'&&f.ref&&Array.isArray(f.ref.pos)){
+  if(f.type==='xmove')mvRefs(f).forEach(r=>{
+    if(!r||!Array.isArray(r.pos))return;
     // la face a avancé de dist le long de sa normale
-    const n=Array.isArray(f.ref.n)?repNorm(f.ref.n):[0,0,0],d=+f.dist||0;
-    refs.push(Object.assign({},f.ref,{pos:repAdd(f.ref.pos,repScale(n,d)),anchor:undefined}));
-  }
+    const n=Array.isArray(r.n)?repNorm(r.n):[0,0,0],d=+f.dist||0;
+    refs.push(Object.assign({},r,{pos:repAdd(r.pos,repScale(n,d)),anchor:undefined}));
+  });
   if(f.type==='xdelface')(f.faces||[]).forEach(r=>{if(r&&Array.isArray(r.pos))boxes.push(r);});
   const bs=(typeof occHas==='function'&&occHas())?(bodies||[]).filter(b=>b&&b.kind==='body'&&b.shape&&b.mesh&&b.mesh.geometry&&bodyShown(b)):[];
   const ords=new Map(); // corps → ordinaux de faces
@@ -612,7 +613,7 @@ function repCloneFeature(f,i,skMap,featMap,cfg,reuse){
       delete nf._m;
     }
     // déplacement / suppression de face : les faces visées suivent la transformation
-    if(f.type==='xmove')nf.ref=repCloneFaceRef(f.ref,i,skMap,cfg);
+    if(f.type==='xmove'){nf.ref=repCloneFaceRef(f.ref,i,skMap,cfg);if(Array.isArray(f.faces))nf.faces=f.faces.map(r=>repCloneFaceRef(r,i,skMap,cfg));}
     if(f.type==='xdelface'){nf.faces=(f.faces||[]).map(r=>repCloneFaceRef(r,i,skMap,cfg));delete nf._m;delete nf._err;}
   }
   // Le NOM de la FONCTION COPIÉE est conservé tel quel dans la sous-arborescence (c'est la
@@ -1496,7 +1497,9 @@ function renderProps(){
     if(f.type==='xmove'){
       pH('Déplacement de face');
       pInfo(`<b>${f.name}</b>`);
-      if(f.ref)pNote('Face visée : centre ('+f.ref.pos.map(v=>(+v).toFixed(1)).join(' ; ')+') mm, normale ('+f.ref.n.map(v=>(+v).toFixed(2)).join(' ; ')+').');
+      const mvR=mvRefs(f);
+      if(mvR.length===1)pNote('Face visée : centre ('+mvR[0].pos.map(v=>(+v).toFixed(1)).join(' ; ')+') mm, normale ('+mvR[0].n.map(v=>(+v).toFixed(2)).join(' ; ')+').');
+      else if(mvR.length>1)pNote(mvR.length+' faces visées : '+mvR.map(r=>'('+r.pos.map(v=>(+v).toFixed(1)).join(' ; ')+')').join(', ')+' mm.');
       const d=document.createElement('input');d.type='text';d.inputMode='decimal';
       d.value=String(+f.dist||0).replace('.',',');parFx(d,f,'dist');
       d.addEventListener('change',()=>{
@@ -1509,7 +1512,7 @@ function renderProps(){
       pRow('Distance (mm)',d);
       pNote('Positif : la face avance. Négatif : elle rentre. 0 : la fonction ne fait rien.');
       pBtns([
-        ['📐 Re-sélectionner',()=>{exitMoveFaceMode(true);try{if(filMode||filModeX)exitFilletMode(true);}catch(e){}enterMoveFaceMode();}],
+        ['📐 Re-sélectionner',()=>{try{if(filMode||filModeX)exitFilletMode(true);}catch(e){}enterMoveFaceMode(f);}],
         ...[]]);
       visDel(f);
       return;

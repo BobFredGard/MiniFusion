@@ -61,18 +61,25 @@ function coqueClearHl(){
 }
 function coquePaint(){
   coqueClearHl();
-  if(!coqueMode||!(coqueMode.faces||[]).length)return;
+  if(!coqueMode)return;
+  coqueGroup=facesHlGroup(coqueMode.faces,0xff453a,'coqueFaces');
+}
+function facesHlGroup(faces,hex,name){
+  // Surbrillance 3D d'une sélection de faces (référence + `_ord`/`_bid` de session),
+  // partagée par la coque, la suppression et le déplacement de face (85). Ajoute le
+  // groupe à la scène et le renvoie (null si rien à peindre).
+  if(!(faces||[]).length)return null;
   // Multi-corps : la surbrillance se peint sur chaque solide visible (ordinaux par
   // solide — une face ne se peint que sur son corps, `_bid`, ou partout si ancien
   // document sans `_bid`).
   const targets=bodies.filter(x=>x.kind==='body'&&x.visible!==false&&x.mesh&&x.mesh.visible!==false&&x.mesh.geometry);
-  if(!targets.length)return;
+  if(!targets.length)return null;
   const pos=[],col=[],c=new THREE.Color();
-  c.setHex(0xff453a);
+  c.setHex(hex);
   targets.forEach(b=>{
     const groups=(b.mesh.geometry.userData.occGroups)||[];
     if(!groups.length)return;
-    const want=(coqueMode.faces||[]).filter(r=>r._ord!=null&&(r._bid==null||r._bid===b.id)).map(r=>r._ord);
+    const want=faces.filter(r=>r._ord!=null&&(r._bid==null||r._bid===b.id)).map(r=>r._ord);
     const kept=want.filter(o=>groups.some(g=>g.f===o));
     if(!kept.length)return;
     const a=b.mesh.geometry.attributes.position.array;
@@ -88,14 +95,15 @@ function coquePaint(){
       });
     });
   });
-  if(!pos.length)return;
+  if(!pos.length)return null;
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
   g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
   const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.55,depthTest:false,side:THREE.DoubleSide}));
   m.raycast=()=>{};m.renderOrder=1002;
-  coqueGroup=new THREE.Group();coqueGroup.name='coqueFaces';coqueGroup.add(m);
-  scene.add(coqueGroup);
+  const grp=new THREE.Group();grp.name=name;grp.add(m);
+  scene.add(grp);
+  return grp;
 }
 function coqueFaceUnder(e){
   // Face exacte sous le curseur (même chemin que dépouillage/déplacement —

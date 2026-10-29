@@ -1443,20 +1443,98 @@ function occMoveFaceOnce(shape,face,dist){
   if(!res||res.IsNull())throw new Error('opération de déplacement impossible');
   return res;
 }
+function mvRefs(f){
+  // Faces visées par un déplacement : `faces` (multi-sélection, V0.21.6) ou l'ancienne
+  // référence unique `ref` (documents antérieurs).
+  if(f&&Array.isArray(f.faces)&&f.faces.length)return f.faces;
+  return (f&&f.ref)?[f.ref]:[];
+}
+function occFaceTrack(face){
+  // Signature de SUIVI d'une face entre deux déplacements successifs : déplacer une face
+  // prolonge ou rogne ses voisines (centre et dimensions changent), mais une face plane
+  // reste dans SON plan. On mémorise donc normale + plan + boîte d'origine.
+  const n=occFaceOutNormal(face),b=occFaceBox(face);
+  if(!n||!b)return null;
+  const t={n,pos:b.pos,dim:b.dim,plane:false,d:0};
+  try{
+    const ad=new occt.BRepAdaptor_Surface_2(face,true);
+    try{
+      if(ad.GetType()===occt.GeomAbs_SurfaceType.GeomAbs_Plane){
+        const l=ad.Plane().Location();
+        t.plane=true;t.d=n[0]*l.X()+n[1]*l.Y()+n[2]*l.Z();
+      }
+    }finally{try{ad.delete();}catch(e){}}
+  }catch(e){}
+  return t;
+}
+function occFindFaceTracked(shape,t){
+  // Retrouve, après le déplacement d'une AUTRE face, la face suivie par occFaceTrack :
+  // même normale, même plan (faces planes), et la boîte la plus proche du centre d'origine
+  // (contenu = 0). Rien au-delà de 2,5 mm : on préfère échouer que viser une autre face.
+  const ex=new occt.TopExp_Explorer_2(shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,occt.TopAbs_ShapeEnum.TopAbs_SHAPE);
+  let best=null,bs=1e18;
+  while(ex.More()){
+    const f=occt.TopoDS.Face_1(ex.Current());ex.Next();
+    let ok=false,sc=1e18;
+    const n=occFaceOutNormal(f);
+    if(n&&n[0]*t.n[0]+n[1]*t.n[1]+n[2]*t.n[2]>=0.999){
+      const c=occFaceTrack(f);
+      if(c&&(!t.plane||(c.plane&&Math.abs(c.d-t.d)<0.01))){
+        let out=0;
+        for(let i=0;i<3;i++){
+          const lo=c.pos[i]-c.dim[i]/2,hi=c.pos[i]+c.dim[i]/2;
+          const e=Math.max(0,lo-t.pos[i],t.pos[i]-hi);out+=e*e;
+        }
+        const dc=Math.hypot(c.pos[0]-t.pos[0],c.pos[1]-t.pos[1],c.pos[2]-t.pos[2]);
+        sc=Math.sqrt(out)+1e-3*dc;
+        ok=Math.sqrt(out)<=2.5;
+      }
+    }
+    if(ok&&sc<bs){if(best)try{best.delete();}catch(e){}best=f;bs=sc;}
+    else try{f.delete();}catch(e){}
+  }
+  try{ex.delete();}catch(e){}
+  return best;
+}
 function occApplyMoveFace(result,f){
-  // Rejoue le déplacement d'une face. Retourne {shape,warnings} comme occApplyXFillets.
+  // Rejoue le déplacement d'une ou plusieurs faces. Retourne {shape,warnings} comme
+  // occApplyXFillets. Les faces sont TOUTES retrouvées sur le solide d'entrée, puis
+  // déplacées l'une après l'autre (même distance) : chacune est re-suivie sur le solide
+  // déjà modifié (occFindFaceTracked) — deux faces voisines avancées ensemble donnent
+  // ainsi un coin plein, pas une encoche entre deux prismes.
   const warnings=[];
   const dist=+f.dist||0;
-  const face=occFindFace(result,f.ref);
-  if(!face){return {shape:result,warnings:[`face introuvable près de (${(f.ref.pos||[]).map(v=>(+v).toFixed(1)).join(', ')}) — la pièce a changé`]};}
-  if(!dist){return {shape:result,warnings:['distance nulle — aucun déplacement']};}
+  const refs=mvRefs(f);
+  const lab=r=>'('+(r.pos||[]).map(v=>(+v).toFixed(1)).join(', ')+')';
+  const found=refs.map(r=>{try{return occFindFace(result,r);}catch(e){return null;}});
+  const trk=found.map(h=>h?occFaceTrack(h):null);
+  const drop=()=>found.forEach(h=>{if(h)try{h.delete();}catch(e){}});
+  found.forEach((h,i)=>{if(!h)warnings.push(`face introuvable près de ${lab(refs[i])} — la pièce a changé`);});
+  if(!found.some(Boolean)){drop();return {shape:result,warnings};}
+  if(!dist){drop();return {shape:result,warnings:['distance nulle — aucun déplacement']};}
+  let cur=result;
   try{
-    const s=occMoveFaceOnce(result,face,dist);
-    try{result.delete();}catch(e){}
-    return {shape:s,warnings};
+    for(let i=0;i<found.length;i++){
+      if(!found[i])continue;
+      let face=found[i],own=false;
+      if(cur!==result){
+        face=trk[i]?occFindFaceTracked(cur,trk[i]):null;own=true;
+        if(!face){warnings.push(`face ${lab(refs[i])} perdue après le déplacement des précédentes`);continue;}
+      }
+      let s;
+      try{s=occMoveFaceOnce(cur,face,dist);}
+      finally{if(own)try{face.delete();}catch(e){}}
+      if(cur!==result)try{cur.delete();}catch(e){}
+      cur=s;
+    }
   }catch(e){
-    return {shape:result,warnings:[`déplacement impossible (${(e&&e.message)||e})`],fatal:true};
+    if(cur!==result)try{cur.delete();}catch(e2){}
+    drop();
+    return {shape:result,warnings:warnings.concat([`déplacement impossible (${(e&&e.message)||e})`]),fatal:true};
   }
+  drop();
+  if(cur!==result)try{result.delete();}catch(e){}
+  return {shape:cur,warnings};
 }
 /* ---------- suppression de faces (touche Suppr, façon Fusion) ----------
    BRepAlgoAPI_Defeaturing retire les faces visées et PROLONGE les faces voisines jusqu'à
@@ -3250,7 +3328,7 @@ function featSig(f){
     // La DISTANCE fait partie de la géométrie, et la face visée par sa référence durable
     // (centre + normale + dimensions) : sans elle, changer la distance d'un déplacement
     // laisserait la signature inchangée et le point de contrôle réappliquerait l'ancien.
-    s+='|d'+(+f.dist||0)+'@'+JSON.stringify(f.ref||null);
+    s+='|d'+(+f.dist||0)+'@'+JSON.stringify(mvRefs(f).map(r=>[r.pos,r.n,r.dim]));
   }else if(f.type==='bmove'){
     // Déplacer un corps : ses étapes (translations, rotations, point à point) font la géométrie
     s+='|'+JSON.stringify(f.steps||[]);

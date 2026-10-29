@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**436 versions**, de `2026-09-28b` à `V0.21.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**437 versions**, de `2026-09-28b` à `V0.21.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5580,3 +5580,9 @@ Demande : « dans une fonction, comme les congés, je puisse changer le centre d
 - **Cause** : pendant un congé, un chanfrein, une dépouille ou une coque, l'aperçu REMPLACE la pièce (masquée) ; il est marqué fantôme et son raycast est coupé pour ne pas gêner la sélection des arêtes. `viewHitAt` ne trouvait donc plus rien sous la souris : la rotation retombait sur le centre des pièces et la molette sur le plan de la cible.
 - **Correctif** (`src/10-scene-3d.js`) : `viewHitAt` lance à la main le raycast des aperçus (`b.preview`) ; la sélection, elle, les ignore toujours. Rotation et zoom visent le point de l'aperçu sous la souris, comme hors fonction.
 - **Tests** : vérifié dans le navigateur (congé en cours, point de pivot sur l'aperçu). `npm run ci`.
+
+## V0.21.6 - Face : multi-sélection de faces
+Demande : « Fonction Face → il faut pouvoir faire une multi-sélection de faces ».
+- **Mode** (`src/85-deplacement-face.js`) : clic = ajouter / re-clic = retirer (surbrillance orange), liste des faces dans le panneau (✕ pour en retirer une), distance commune, **Appliquer** (Entrée) / Échap. Avant, le premier clic créait aussitôt la fonction sur une seule face. « Re-sélectionner » ÉDITE désormais la fonction en place (rejeu sans elle, faces repeintes), comme la coque. La surbrillance de la coque est mise en commun (`facesHlGroup`, `src/87-coque.js`).
+- **Rejeu** (`src/20-noyau-et-operations-solides.js`) : `xmove` mémorise `faces` (toutes) et `ref` (la première, documents antérieurs inchangés — `mvRefs`). Les faces sont retrouvées sur le solide d'entrée puis déplacées l'une après l'autre, chacune re-suivie par son plan (`occFindFaceTracked`) : deux faces voisines avancées ensemble donnent un coin plein, pas une encoche. Signature, répétitions et repérage des faces dans l'arbre suivent toutes les faces.
+- **Tests** : `tests/test_xmove.cjs` — +X et +Y avancées de 10 → 110×70×40, 6 faces, un solide ; +X et −X rentrées de 10 → 80 de large. `npm run ci`.

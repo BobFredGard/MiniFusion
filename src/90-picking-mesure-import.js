@@ -175,6 +175,17 @@ function filletTangentChain(sk, startCorner){
     if(!estThick&&t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return;
     e.preventDefault();coqueApply();
   });
+  // Entrée applique le déplacement de face (multi-sélection), même isolement du champ :
+  // la distance tapée est validée avant d'appliquer.
+  window.addEventListener('keydown',e=>{
+    if(e.key!=='Enter'||!mvMode)return;
+    const t=e.target;
+    const estDist=t&&t.id==='mvDistIn';
+    if(!estDist&&t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return;
+    e.preventDefault();
+    if(estDist&&t.onchange)t.onchange();
+    mvApply();
+  });
 }
 /* F5 = Vue complète isométrique (au lieu du rechargement navigateur) : on voit la pièce entièrement. */
 window.addEventListener('keydown',e=>{
