@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**432 versions**, de `2026-09-28b` à `V0.21.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**433 versions**, de `2026-09-28b` à `V0.21.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5557,3 +5557,8 @@ Question : « Comment fait-on pour changer la longueur après création ? Peut-o
 - **Toutes** (`stdReplace(occ, sp, true)`) : le composant est reconstruit SUR PLACE (même document, nouvelles esquisses et fonctions) et renommé, occurrences comprises ; si la nouvelle pièce existe déjà dans l'assemblage, toutes les occurrences y passent et l'ancien composant disparaît. **Celle-ci** : l'occurrence passe sur la nouvelle pièce (créée, ou réemployée si elle existe). Positions, liaisons rigides et apparence restent : l'origine d'une pièce (face d'appui, dessus, bout) ne dépend ni de la longueur ni du pas. Une seule étape d'annulation.
 - **Réglages mémorisés** : `doc.std` garde désormais `cat` et `st` (onglet et réglages de la fenêtre), enregistrés dans le fichier ; pour une pièce créée en V0.21.0 (désignation seule), ils sont retrouvés en parcourant les combinaisons jusqu'à la même clé (`stdStateOf`).
 - **Tests** : `tests/test_composants_normalises.cjs`, 13 contrôles de plus (réglages retrouvés pour une vis et une clavette V0.21.0 ; toutes : reconstruit sur place, renommé, tige de 35, positions et liaisons gardées ; celle-ci : nouvelle pièce puis réemploi ; toutes vers une pièce existante ; Ctrl+Z pas à pas ; aller-retour du fichier). Vérifié dans le navigateur sur une plaque dont les vis venaient de la V0.21.0 : bouton Modifier…, fenêtre réglée sur M6 / pas 1 / 25, « Celle-ci seulement » puis « Toutes (3) », liaisons intactes.
+
+## V0.21.2 - Ruban : groupe Composants réduit à « Assembler » en modélisation
+Demande : « tous ces icônes ne sont pas utiles dans la partie modélisation. On ne devrait voir que Assembler et le reste quand on passe dans Assembler. L'icône Assembler dans le monde Assembler devrait s'appeler Modéliser ».
+- **Ruban moderne** (`src/97-interface-moderne.js`) : en modélisation, le groupe Composants ne montre que **Assembler** ; Composant, Occurrence, Inspecter, Depuis corps, Normalisés et Insérer (classe `mfAsmOnly`) n'apparaissent qu'en mode assemblage (`body[data-asm="1"]`), où le premier bouton s'intitule **Modéliser**. Bascule en CSS, `grp` accepte une classe par bouton.
+- **Tests** : vérifié dans le navigateur (aller-retour Assembler ↔ Modéliser, boutons visibles). `npm run ci`.

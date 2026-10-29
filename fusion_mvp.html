@@ -281,7 +281,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.21.1';
+const APP_VER='V0.21.2';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -53130,6 +53130,8 @@ function mfCss(){
   // vue d'assemblage : seuls les groupes d'assemblage, pas de bandeau de timeline (fil de PIÈCE)
   'body.ui-modern[data-asm="1"] #mfRibbon .mfCao:not(.mfAsmG),body[data-asm="1"] #mfTl{display:none!important}'+
   'body.ui-modern[data-ws="cao"] #mfRibbon .mfFao,body.ui-modern[data-ws="cao"] #mfRibbon .mfPlan,body.ui-modern[data-ws="fao"] #mfRibbon .mfCao,body.ui-modern[data-ws="fao"] #mfRibbon .mfPlan,body.ui-modern[data-ws="plan"] #mfRibbon .mfCao,body.ui-modern[data-ws="plan"] #mfRibbon .mfFao{display:none}',
+  // groupe Composants : en modélisation, seul « Assembler » ; en assemblage, tout, et le bouton devient « Modéliser »
+  'body.ui-modern:not([data-asm="1"]) #mfRibbon .mfAsmOnly,body.ui-modern:not([data-asm="1"]) #mfRibbon .mfLabA,body.ui-modern[data-asm="1"] #mfRibbon .mfLabM{display:none}',
   /* navigateur : Modèle (arbre) / Usinage (posages) à gauche de la vue */
   '#mfBrTabs{position:absolute;top:10px;left:4px;z-index:23;gap:2px;padding:2px;border-radius:9px;background:rgba(16,18,22,.82);border:1px solid var(--border)}',
   '#mfBrTabs button{padding:3px 12px;font-size:.74rem;border:none;background:none;border-radius:7px;color:#e9e9ec}',
@@ -53370,19 +53372,21 @@ function mfFaoAdd(type,nm){
 function mfRibbon(){
   const rb=document.createElement('div');rb.id='mfRibbon';rb.className='mfM';
   const grp=(title,btns,cls)=>{const g=document.createElement('div');g.className='mfGrp '+cls;const bb=document.createElement('div');bb.className='mfGrpB';
-    btns.forEach(([ic,lab,act,tip])=>{const b=document.createElement('button');b.className='mfRb';b.innerHTML='<i>'+(mfI(ic,22)||ic)+'</i>'+lab;
+    btns.forEach(([ic,lab,act,tip,cls])=>{const b=document.createElement('button');b.className='mfRb'+(cls?' '+cls:'');b.innerHTML='<i>'+(mfI(ic,22)||ic)+'</i>'+lab;
       const src=typeof act==='string'?document.getElementById(act):null;b.title=tip||(src&&src.title)||lab;
       b.onclick=()=>{mfCloseMenus();typeof act==='function'?act():mfClick(act);};bb.appendChild(b);});
     g.appendChild(bb);const t=document.createElement('div');t.className='mfGrpT';t.textContent=title;g.appendChild(t);rb.appendChild(g);};
   MF_CAO.forEach(([t,bs])=>grp(t,bs,'mfCao'));
-  // V0.6.0 / V0.6.1 : composants (46/47) — seul groupe CAO visible en mode Placer (mfAsmG)
-  grp('Composants',[['asmView','Assembler',()=>asmToggle(),'Modéliser le composant actif ↔ placer ses composants'],
-    ['asmPart','Composant',()=>asmCmdNewComp(),'Nouveau composant dans le composant actif (on entre aussitôt dedans)'],
-    ['asmOcc','Occurrence',()=>{if(asmMode!=='asm')asmEnter();asmCmdNewOcc();},'Nouvelle occurrence du composant sélectionné'],
-    ['asmInspect','Inspecter',()=>asmCmdInspect(),'Interférences entre corps / composants, masses (matière par composant) et centre de gravité'],
-    ['asmFromBodies','Depuis corps',()=>asmCmdFromBodies(),'Créer un composant depuis le corps sélectionné (ou depuis chaque corps) : la pièce multicorps devient un assemblage, sans rien remodéliser'],
-    ['asmStd','Normalisés',()=>stdDlg(),'Vis ISO / ANSI (CHC, FHC, pas au choix), bouchons gaz six pans creux, goupilles, clavettes ISO : insérés comme composants du composant actif'],
-    ['import','Insérer',()=>asmCmdInsert(),'Insérer un fichier .miniFusion comme composant du composant actif : lié (modifiable ici, la source suit) ou copié']],'mfCao mfAsmG');
+  // V0.6.0 / V0.6.1 : composants (46/47) — seul groupe CAO visible en mode Placer (mfAsmG) ;
+  // en modélisation, seul le bouton « Assembler » (qui s'appelle « Modéliser » en assemblage)
+  const asmO='mfAsmOnly';
+  grp('Composants',[['asmView','<span class="mfLabM">Assembler</span><span class="mfLabA">Modéliser</span>',()=>asmToggle(),'Modéliser le composant actif ↔ placer ses composants'],
+    ['asmPart','Composant',()=>asmCmdNewComp(),'Nouveau composant dans le composant actif (on entre aussitôt dedans)',asmO],
+    ['asmOcc','Occurrence',()=>{if(asmMode!=='asm')asmEnter();asmCmdNewOcc();},'Nouvelle occurrence du composant sélectionné',asmO],
+    ['asmInspect','Inspecter',()=>asmCmdInspect(),'Interférences entre corps / composants, masses (matière par composant) et centre de gravité',asmO],
+    ['asmFromBodies','Depuis corps',()=>asmCmdFromBodies(),'Créer un composant depuis le corps sélectionné (ou depuis chaque corps) : la pièce multicorps devient un assemblage, sans rien remodéliser',asmO],
+    ['asmStd','Normalisés',()=>stdDlg(),'Vis ISO / ANSI (CHC, FHC, pas au choix), bouchons gaz six pans creux, goupilles, clavettes ISO : insérés comme composants du composant actif',asmO],
+    ['import','Insérer',()=>asmCmdInsert(),'Insérer un fichier .miniFusion comme composant du composant actif : lié (modifiable ici, la source suit) ou copié',asmO]],'mfCao mfAsmG');
   // FAO : posage, opérations (mêmes fiches que la barre « + Usinage »), simulation, calcul, export
   grp('Posage',[['setup','Posage',()=>{const b=Array.from(document.querySelectorAll('#faoTreeWrap button')).find(x=>/\+ Posage/.test(x.textContent));if(b)b.click();},'Ajouter un posage'],['tools','Outils','faoToolsBtn']],'mfFao');
   let ops=[];try{ops=faoAddOpsSpec();}catch(e){}
