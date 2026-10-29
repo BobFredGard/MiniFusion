@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**446 versions**, de `2026-09-28b` à `V0.21.15` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**447 versions**, de `2026-09-28b` à `V0.21.16` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5642,3 +5642,11 @@ Constat : la CI complète (`npm run ci:full`) était rouge depuis V0.21.7 ; la s
 - **Import STEP** (`src/90-picking-mesure-import.js`) : V0.21.13 lisait `geometry.userData.impOcc` et retirait l'attribut `color` sans garde. Avec la géométrie simplifiée des tests, l'import échouait (6 suites rouges : suppression de face STEP / édition / worker, FAO géodésique / faces / ébauche brut). `importAttach` vérifie `userData`. `importColorMat` ne retire les couleurs que s'il les a posées (`impColKey`).
 - **`test_rejeu_cache`** : il lisait `Exemples/test suppr.miniFusion`, retravaillé depuis (import seul, plus d'extrusion). Il lit maintenant une copie figée : `tests/fixtures/test_suppr_rejeu.minifusion.json` (version du 2026-10-27).
 - **Tests** : `npm run ci:full`.
+
+## V0.21.16 - Trous taraudés : filet ISO réellement creusé dans le corps
+Demande : « Trous taraudés -> un filet normalisé modelé comme il faut […] intégré au corps et pas comme il est fait maintenant » ; puis « il faut faire l'avant-trou avant de faire le filet » et « on fait sans chanfrein ».
+- **Profil ISO exact** (`src/76-percage.js`, `occHoleThreadGroove`) : le profil était balayé perpendiculairement à l'hélice (trièdre de Frenet) sur une hélice approchée par points — profil déformé, filet peu lisible. L'hélice est désormais EXACTE (droite tracée sur le cylindre, courbe 3D déduite par `BRepLib.BuildCurves3d`) et le balayage garde le profil dans le plan AXIAL (`SetMode` binormale = axe) : la coupe du trou montre le trapèze ISO 68-1 (racine p/8 au Ø majeur, crête au Ø de perçage, flancs à 60°). Plus de bord décalé `SEAM`.
+- **Avant-trou, puis filet** (`occShapeOfHole`, `occCutEach` dans `src/20`) : fût et gorge étaient découpés ensemble, dans un composé dont les solides se chevauchent — le noyau laissait le cœur du trou en 2ᵉ solide (trou rebouché à l'écran). L'outil d'un filet modélisé est maintenant un composé d'ÉTAPES découpées dans l'ordre de l'usinage : avant-trou (fût + pointe), filet, puis lamage ou fraisure. Un trou sans filet modélisé garde une seule découpe.
+- **Panneau** : « Filet » propose d'abord « Modélisé — profil ISO dans le corps » ; le jeu (Ø) vaut 0 par défaut (profil nominal), à augmenter seulement pour l'impression 3D.
+- **Coût** : environ 5 s de noyau pour un M8 de 20 mm (16 spires), comme l'ancienne gorge ; le résultat est ensuite repris des points de contrôle du rejeu tant que le perçage ne change pas.
+- **Tests** : `test_filet_modele` (un seul solide, axe du trou vide, coupe axiale : racine R4,000, crête R3,375, flancs à 60°) ; `test_percage_3d`, `test_fao_taraudage`, `test_filet_visibilite`, `test_mep_hachures_cotes` ; `npm run ci`. Vu dans l'appli sur « Perçages » (M8 modélisé).

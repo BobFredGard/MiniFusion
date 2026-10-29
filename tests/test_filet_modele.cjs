@@ -41,6 +41,21 @@ const {loadApp}=require('./appvm.cjs');
     "const st=(x,y,z)=>{const p=new occt.gp_Pnt_3(x,y,z);cl.Perform(p,1e-6);const s=cl.State();p.delete();return s;};",
     "const fracOut=(cx,cy,r,z)=>{let n=0,N=144;for(let k=0;k<N;k++){const a=k/N*Math.PI*2;if(st(cx+r*Math.cos(a),cy+r*Math.sin(a),z)===OUT)n++;}return n/N;};",
     "const th1=isoHoleThread('M8',1.25,0.2),th2=isoHoleThread('M8',1.25,0);",
+    // V0.21.16 : un seul solide (le cœur du trou ne reste plus en solide séparé)
+    "{const ex=new occt.TopExp_Explorer_2(occLive.shape,occt.TopAbs_ShapeEnum.TopAbs_SOLID,occt.TopAbs_ShapeEnum.TopAbs_SHAPE);let n=0;for(;ex.More();ex.Next())n++;",
+    " A(n===1,'10a : un seul solide après les perçages filetés ('+n+')');}",
+    "A(st(30,30,25)===OUT&&st(30,30,5)===OUT,'10b : axe du trou fileté débouchant vide sur toute la hauteur');",
+    // V0.21.16 : coupe AXIALE du trou lamé (jeu 0) = trapèze ISO : racine au Ø 8, crête au
+    // Ø de perçage (6,75 ≥ D1 6,647), flancs à 60° (pente radiale/axiale = tan 60°)
+    // rayon où commence la matière, par dichotomie (le profil est monotone sur le rayon)
+    "{const rad=z=>{let a=3.2,b=4.3;for(let k=0;k<12;k++){const m=(a+b)/2;if(st(70+m,30,z)===OUT)a=m;else b=m;}return (a+b)/2;};",
+    " const zs=[],rs=[];for(let z=17;z>14.5;z-=0.025){zs.push(z);rs.push(rad(z));}",
+    " const mx=Math.max(...rs),mn=Math.min(...rs);",
+    " A(Math.abs(mx-4)<0.01,'11a : coupe axiale, racine du filet au Ø majeur 8 (R'+mx.toFixed(3)+')');",
+    " A(Math.abs(mn-3.375)<0.01,'11b : coupe axiale, crête au Ø de perçage 6,75 (R'+mn.toFixed(3)+')');",
+    " let sl=[];for(let i=1;i<rs.length;i++){const d=Math.abs(rs[i]-rs[i-1]);if(d>0.02&&d<0.1)sl.push(d/0.025);}",
+    " const sm=sl.reduce((a,b)=>a+b,0)/Math.max(1,sl.length);",
+    " A(sl.length>4&&Math.abs(sm-Math.sqrt(3))<0.15,'11c : flancs à 60° dans la coupe axiale (pente '+sm.toFixed(2)+')');}",
     "const rMid1=(th1.rCrete+th1.rRacine)/2,rMid2=(th2.rCrete+th2.rRacine)/2;",
     "out.log.push('M8 jeu 0,2 : crete R'+th1.rCrete.toFixed(3)+', racine R'+th1.rRacine.toFixed(3)+', rMid '+rMid1.toFixed(3));",
     // à mi-profondeur du filet : la gorge retire de la matière au-delà du Ø de perçage

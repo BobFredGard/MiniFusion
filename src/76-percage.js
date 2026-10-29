@@ -8,11 +8,11 @@
    • Points : entités cpoint `hole:true` de l'esquisse (outil ⊕ Centre de perçage) —
      seuls ces points portent un trou.
    • f = {type:'hole', sketchId, kind:'simple'|'cbore'|'csink', d (Ø de perçage),
-          thread:null|{size:'M8',p:1.25,len}, cbD,cbH (lamage), csD,csA (fraisure),
+          thread:null|{size:'M8',p:1.25,len,model,clear}, cbD,cbH (lamage), csD,csA (fraisure),
           end:'blind'|'through', depth (profondeur à plein Ø), tip (angle de pointe,
           0 = fond plat), flip (sens), op:'cut'}
-     Taraudé : d = Ø de perçage du taraud (M − pas), filet non modélisé (comme
-     Fusion « filet cosmétique ») — l'info voyage jusqu'à la FAO.
+     Taraudé : d = Ø de perçage du taraud (M − pas) ; filet cosmétique (dessin seul)
+     ou modélisé (profil ISO creusé dans le corps, V0.21.16) — l'info voyage jusqu'à la FAO.
    • Géométrie exacte : par point, un outil de révolution (lamage/fraisure + corps +
      pointe) le long de −n (ou +n si inversé), unis puis découpés du corps.
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -146,71 +146,57 @@ function holeProfileSegs(N,zEndPt){
   if(N.end==='blind'&&N.tip>0){const h=N.r/Math.tan(N.tip*Math.PI/360);s.push([zEnd,h,N.r,0]);}
   return s;
 }
-// 2026-10-19 : filet MODÉLISÉ (impression 3D) — gorge hélicoïdale exacte.
+// 2026-10-19 : filet MODÉLISÉ — gorge hélicoïdale creusée dans le corps.
 // Le trou reste percé au Ø de perçage (≥ Ø mineur + jeu) et l'on retire en plus la
 // gorge comprise entre la crête (R1) et la racine (R2) le long de l'hélice au pas réel.
-// Profil d'un pas (interne) : racine p/8 → flanc → crête p/4 → flanc → racine.
+// V0.21.16 : profil ISO 68-1 EXACT. Le profil normalisé est défini dans le plan AXIAL
+// (flancs à 60° mesurés dans une coupe passant par l'axe) ; il était auparavant posé
+// perpendiculairement à l'hélice (trièdre de Frenet), ce qui le déformait, sur une
+// hélice approchée par points. Désormais :
+//  - hélice EXACTE : droite tracée sur le cylindre (u = angle, v = axe), courbe 3D
+//    déduite par le noyau (BRepLib.BuildCurves3d) ;
+//  - balayage en mode « binormale = axe » : le profil reste dans le plan axial à
+//    chaque tour, la coupe du trou montre le trapèze ISO (racine p/8, crête p/4, 60°).
+// Profil (vide, filet INTERNE) : méplat p/8 au Ø majeur, flancs à 60°, prolongé sous
+// le Ø mineur (rIn) pour recouvrir franchement le perçage : aucune pellicule, aucune
+// face confondue avec l'alésage.
 function occHoleThreadGroove(P,D,zStart,zLen,th,bins){
   const p=th.P,r1=th.rCrete,r2=th.rRacine;
   if(!(zLen>0.9*p))return null; // moins d'un pas : rien de représentable
   const cross=function(a,b){return {x:a.y*b.z-a.z*b.y,y:a.z*b.x-a.x*b.z,z:a.x*b.y-a.y*b.x};};
   const norm=function(a){const l=Math.hypot(a.x,a.y,a.z)||1;return {x:a.x/l,y:a.y/l,z:a.z/l};};
   const ref=Math.abs(D.z)<0.9?{x:0,y:0,z:1}:{x:1,y:0,z:0};
-  const U=norm(cross(D,ref)),V=norm(cross(D,U));
-  const r0=(r1+r2)/2;
-  const P0={x:P.x+D.x*zStart+U.x*r0,y:P.y+D.y*zStart+U.y*r0,z:P.z+D.z*zStart+U.z*r0};
-  // tangente au départ (dP/dθ) → plan du profil exactement normal à la spire
-  const T=norm({x:D.x*(p/(Math.PI*2))+V.x*r0,y:D.y*(p/(Math.PI*2))+V.y*r0,z:D.z*(p/(Math.PI*2))+V.z*r0});
-  const W=norm(cross(T,U));
-  const mkWire=function(pts){
-    const mkW=occBinPush(bins,new occt.BRepBuilderAPI_MakeWire_1());
-    for(let i=0;i<pts.length-1;i++){
-      const me=occBinPush(bins,new occt.BRepBuilderAPI_MakeEdge_3(pts[i],pts[i+1]));
-      me.Build();if(!me.IsDone())throw new Error('arête de filet impossible');
-      mkW.Add_1(me.Edge());
-    }
-    mkW.Build();if(!mkW.IsDone())throw new Error('fil de filet impossible');
-    return mkW.Wire();
-  };
-  // hélice : zLen − p de course axiale + l'étendue axiale du profil (p) = zLen.
-  // Le noyau exige une arête LISSE : une polyligne donne un solide dégénéré (volume
-  // nul). On approche donc l'hélice par une B-spline passant par les points.
-  const turns=Math.max(0.25,zLen/p-1),steps=Math.max(24,Math.ceil(turns*28));
-  const spinePts=[];
-  for(let i=0;i<=steps;i++){
-    const a=2*Math.PI*turns*i/steps,z=zStart+p*turns*i/steps;
-    spinePts.push(occBinPush(bins,new occt.gp_Pnt_3(
-      P.x+D.x*z+U.x*r0*Math.cos(a)+V.x*r0*Math.sin(a),
-      P.y+D.y*z+U.y*r0*Math.cos(a)+V.y*r0*Math.sin(a),
-      P.z+D.z*z+U.z*r0*Math.cos(a)+V.z*r0*Math.sin(a))));
-  }
-  const makeSpine=function(){
-    const arr=occBinPush(bins,new occt.TColgp_Array1OfPnt_2(1,spinePts.length));
-    spinePts.forEach(function(q,i){arr.SetValue(i+1,q);});
-    const fit=occBinPush(bins,new occt.GeomAPI_PointsToBSpline_2(arr,3,8,occt.GeomAbs_Shape.GeomAbs_C2,1e-4));
-    const h=occBinPush(bins,new occt.Handle_Geom_Curve_2(fit.Curve().get()));
-    const me=occBinPush(bins,new occt.BRepBuilderAPI_MakeEdge_24(h));
-    me.Build();if(!me.IsDone())throw new Error('hélice impossible');
-    const mkW=occBinPush(bins,new occt.BRepBuilderAPI_MakeWire_1());
-    mkW.Add_1(me.Edge());mkW.Build();if(!mkW.IsDone())throw new Error('fil d\'hélice impossible');
-    return mkW.Wire();
-  };
-  const profPt=function(r,z){
-    return occBinPush(bins,new occt.gp_Pnt_3(P0.x+U.x*(r-r0)+W.x*z,P0.y+U.y*(r-r0)+W.y*z,P0.z+U.z*(r-r0)+W.z*z));
-  };
-  // Bords de FERMETURE du profil décalés de SEAM vers l'extérieur : confondus avec la
-  // racine (r2), ils se superposaient à la facette (0→p/8) de même rayon. Le fil se
-  // recouvrait lui-même et, selon la longueur, MakePipeShell produisait un solide
-  // auto-sécant (volume faux ou négatif) qui faisait échouer les découpes suivantes
-  // (filet débouchant). SEAM est très inférieur à la résolution d'impression.
-  const SEAM=0.03;
-  const zs=[0,p/8,p/8+5*p/16,p/8+5*p/16+p/4,p];
-  const rs=[r2,r2,r1,r1,r2+SEAM];
-  const profPts=zs.map(function(z,i){return profPt(rs[i],z);});
-  profPts.push(profPts[0]);
-  const pipe=occBinPush(bins,new occt.BRepOffsetAPI_MakePipeShell(makeSpine()));
-  try{pipe.SetMode_1(true);}catch(e){}
-  pipe.Add_1(mkWire(profPts),false,false);
+  // Départ de l'hélice tourné de ~37° : aligné sur la couture des cylindres/cônes du
+  // perçage (même repère), le cœur du trou restait en solide séparé après la découpe.
+  const U0=norm(cross(D,ref)),V0=cross(D,U0),ca=Math.cos(0.65),sa=Math.sin(0.65);
+  const U={x:U0.x*ca+V0.x*sa,y:U0.y*ca+V0.y*sa,z:U0.z*ca+V0.z*sa};
+  // L'hélice commence à zStart + p/2 : le profil (demi-largeur < p/2) couvre [zStart, zStart+zLen].
+  const z0=zStart+p/2,turns=Math.max(0.25,zLen/p-1);
+  const O={x:P.x+D.x*z0,y:P.y+D.y*z0,z:P.z+D.z*z0};
+  const pnt=function(q){return occBinPush(bins,new occt.gp_Pnt_3(q.x,q.y,q.z));};
+  const dirOf=function(q){return occBinPush(bins,new occt.gp_Dir_4(q.x,q.y,q.z));};
+  // hélice à droite : u croît autour de D pendant que v avance le long de D
+  const ax3=occBinPush(bins,new occt.gp_Ax3_3(pnt(O),dirOf(D),dirOf(U)));
+  const hSurf=occBinPush(bins,new occt.Handle_Geom_Surface_2(new occt.Geom_CylindricalSurface_1(ax3,r1))); // la poignée possède la surface
+  const hLine=occBinPush(bins,new occt.Handle_Geom2d_Curve_2(new occt.Geom2d_Line_3(
+    occBinPush(bins,new occt.gp_Pnt2d_3(0,0)),occBinPush(bins,new occt.gp_Dir2d_4(2*Math.PI,p))))); // la poignée possède la droite
+  const me=occBinPush(bins,new occt.BRepBuilderAPI_MakeEdge_31(hLine,hSurf,0,turns*Math.hypot(2*Math.PI,p)));
+  if(!me.IsDone())throw new Error('hélice impossible');
+  const helix=me.Edge();
+  occt.BRepLib.BuildCurves3d_2(helix);
+  const mkS=occBinPush(bins,new occt.BRepBuilderAPI_MakeWire_2(helix));
+  if(!mkS.IsDone())throw new Error('fil d\'hélice impossible');
+  // profil dans le plan (U, D) au départ de l'hélice ; s = décalage axial
+  const t30=Math.tan(Math.PI/6),rIn=r1-Math.min(0.05,0.1*p);
+  const hw=function(r){return p/16+(r2-r)*t30;}; // demi-largeur de la gorge au rayon r
+  const at=function(r,s){return pnt({x:O.x+U.x*r+D.x*s,y:O.y+U.y*r+D.y*s,z:O.z+U.z*r+D.z*s});};
+  const poly=occBinPush(bins,new occt.BRepBuilderAPI_MakePolygon_1());
+  [[r2,-p/16],[r2,p/16],[rIn,hw(rIn)],[rIn,-hw(rIn)]].forEach(function(q){poly.Add_1(at(q[0],q[1]));});
+  poly.Close();
+  if(!poly.IsDone())throw new Error('profil de filet impossible');
+  const pipe=occBinPush(bins,new occt.BRepOffsetAPI_MakePipeShell(mkS.Wire()));
+  pipe.SetMode_3(dirOf(D));
+  pipe.Add_1(poly.Wire(),false,false);
   pipe.Build();
   if(!pipe.IsDone())throw new Error('balayage hélicoïdal impossible');
   try{pipe.MakeSolid();}catch(e){}
@@ -267,36 +253,39 @@ function occShapeOfHole(f){
   }catch(e){}
   const D=A.dir;
   const dir=occBinPush(bins,new occt.gp_Dir_4(D.x,D.y,D.z));
-  // Outil = COMPOSÉ des corps (pas de fuse) : la découpe OCCT traite le composé comme
-  // une liste d'outils en un seul passage — bien plus rapide qu'un fuse explicite avec
-  // la gorge hélicoïdale, et le résultat est strictement le même.
-  const tool=[];
-  const add=function(sh){ tool.push(sh); };
+  // Outil = COMPOSÉ des corps (pas de fuse) — bien plus rapide qu'un fuse explicite avec
+  // la gorge hélicoïdale.
+  // V0.21.16 : filet modélisé → outil en ÉTAPES, découpées dans l'ordre de l'usinage
+  // (occCutEach, src/20) : 1) avant-trou (fût + pointe), 2) filet (gorges), 3) tête
+  // (lamage ou fraisure). Tout ensemble, ou le cône avant la gorge, le noyau échouait
+  // en silence (filet absent, ou cœur du trou laissé en 2ᵉ solide).
+  const tool=[],stages=[[],[],[]];
+  const add=function(sh,k){ (thModel?stages[k||0]:tool).push(sh); };
   const OVER=0.02; // départ légèrement au-dessus du plan : jamais de face coplanaire
+  const segShape=function(P,sg,first){
+    // 1er segment rallongé de OVER au-dessus du plan : un CÔNE (fraisure) est prolongé
+    // sur sa génératrice, sinon le Ø au ras de la face serait trop petit (10,96 pour 11).
+    const z0=sg[0]-(first?OVER:0),h=sg[1]+(first?OVER:0);
+    const r0=(first&&sg[1]>1e-9)?sg[2]+OVER*(sg[2]-sg[3])/sg[1]:sg[2];
+    const o=occBinPush(bins,new occt.gp_Pnt_3(P.x+D.x*z0,P.y+D.y*z0,P.z+D.z*z0));
+    const ax=occBinPush(bins,new occt.gp_Ax2_3(o,dir));
+    let sh=null;
+    if(Math.abs(sg[2]-sg[3])<1e-9){const mk=new occt.BRepPrimAPI_MakeCylinder_3(ax,sg[2],h);sh=mk.Shape();try{mk.delete();}catch(e){}}
+    else{const mk=new occt.BRepPrimAPI_MakeCone_3(ax,r0,sg[3],h);sh=mk.Shape();try{mk.delete();}catch(e){}}
+    return sh;
+  };
   A.pts.forEach(function(P){
     const zEnd=zEndOf(P);
-    const segs=holeProfileSegs(N,zEnd);
-    const body=[];
-    segs.forEach(function(sg,i){
-      // 1er segment rallongé de OVER au-dessus du plan : un CÔNE (fraisure) est prolongé
-      // sur sa génératrice, sinon le Ø au ras de la face serait trop petit (10,96 pour 11).
-      // Les segments suivants gardent leurs bornes exactes — c'est la FUSION ci-dessous,
-      // et non un recouvrement, qui supprime les opercules internes (lamage/fraisure).
-      const z0=sg[0]-(i===0?OVER:0),h=sg[1]+(i===0?OVER:0);
-      const r0=(i===0&&sg[1]>1e-9)?sg[2]+OVER*(sg[2]-sg[3])/sg[1]:sg[2];
-      const o=occBinPush(bins,new occt.gp_Pnt_3(P.x+D.x*z0,P.y+D.y*z0,P.z+D.z*z0));
-      const ax=occBinPush(bins,new occt.gp_Ax2_3(o,dir));
-      let sh=null;
-      if(Math.abs(sg[2]-sg[3])<1e-9){const mk=new occt.BRepPrimAPI_MakeCylinder_3(ax,sg[2],h);sh=mk.Shape();try{mk.delete();}catch(e){}}
-      else{const mk=new occt.BRepPrimAPI_MakeCone_3(ax,r0,sg[3],h);sh=mk.Shape();try{mk.delete();}catch(e){}}
-      body.push(sh);
-    });
+    // Filet modélisé : l'avant-trou est le fût SEUL depuis la face ; la tête vient en étape 3.
+    const segs=holeProfileSegs(thModel?Object.assign({},N,{kind:'simple'}):N,zEnd);
     // Les segments du profil (fût, lamage/fraisure, pointe) sont FUSIONNÉS : une découpe
-    // avec un composé laisse les opercules internes (membrane au fond du lamage). La fusion
-    // ne porte que sur ces quelques corps simples — la gorge reste à part dans le composé.
-    let prof=body[0];
-    for(let k=1;k<body.length;k++)prof=occFuse(prof,body[k]);
-    add(prof);
+    // avec un composé laisse les opercules internes (membrane au fond du lamage). Les
+    // segments suivants gardent leurs bornes exactes — c'est la fusion, et non un
+    // recouvrement, qui supprime ces opercules.
+    let prof=null;
+    segs.forEach(function(sg,i){const sh=segShape(P,sg,i===0);prof=prof?occFuse(prof,sh):sh;});
+    add(prof,0);
+    if(thModel&&N.kind!=='simple')add(segShape(P,holeProfileSegs(N,zEnd)[0],true),2);
     if(thModel){
       const off=(N.kind==='cbore')?N.cbH:(N.kind==='csink'?Math.max(0,(N.csD-N.d)/2/Math.tan(N.csA*Math.PI/360)):0);
       const L=((f.thread.lenMode||'len')==='through')?Math.max(0,zEnd-off)
@@ -306,11 +295,19 @@ function occShapeOfHole(f){
         // jonction hélice/pièce tombe hors matière, il ne reste ni lèvre ni face de cap.
         const lead=thModel.P,leadOut=(N.through||N.end==='next')?thModel.P:0;
         const g=occHoleThreadGroove(P,A.dir,off-lead,L+lead+leadOut,thModel,bins);
-        if(g)add(g);
+        if(g)add(g,1);
         else warnings.push('filet modélisé ignoré : longueur filetée inférieure à un pas');
       }catch(err){warnings.push('filet modélisé impossible (trou lisse) : '+String(err.message||err));}
     }
   });
+  if(thModel){
+    // composé de composés = étapes ordonnées (occCutEach) ; une étape vide est omise
+    const comp=function(list){const c=new occt.TopoDS_Compound(),bd=new occt.TopoDS_Builder();
+      bd.MakeCompound(c);list.forEach(function(s){bd.Add(c,s);});try{bd.delete();}catch(e){}return c;};
+    const st=stages.filter(function(l){return l.length;});
+    if(!st.length)throw new Error('aucun corps d’outil de perçage');
+    return {shape:comp(st.map(comp)),bins:bins,warnings:warnings};
+  }
   if(!tool.length)throw new Error('aucun corps d’outil de perçage');
   const shp=(tool.length===1)?tool[0]:(occCompoundOf(tool)||tool[0]);
   return {shape:shp,bins:bins,warnings:warnings};
@@ -498,11 +495,11 @@ function renderHoleProps(p,f){
     else if(tm==='upto')pBtns([['Sélectionner la face',function(){holeFacePickStart(f.id,'thread');}]]);
     if(f._thLen)pNote('Longueur filetée effective : '+String(f._thLen).replace('.',',')+' mm');
     if(!threadInfo(f.thread.size).model)pNote('Filet '+(threadInfo(f.thread.size).cone?'conique ':'')+'cosmétique seulement (profil non modélisé) ; Ø de perçage du taraud selon les tables usuelles.');
-    else pRow('Filet',sel([['cosmetic','Cosmétique (FAO seulement)'],['model','Modélisé — impression 3D']],f.thread.model?'model':'cosmetic',function(v){
-      f.thread.model=(v==='model');if(f.thread.model&&f.thread.clear==null)f.thread.clear=0.2;}));
+    else pRow('Filet',sel([['model','Modélisé — profil ISO dans le corps'],['cosmetic','Cosmétique (dessin seul, trou lisse)']],f.thread.model?'model':'cosmetic',function(v){
+      f.thread.model=(v==='model');if(f.thread.model&&f.thread.clear==null)f.thread.clear=0;}));
     if(f.thread.model){
-      pRow('Jeu d\'impression (Ø mm)',num0(f.thread.clear==null?0.2:f.thread.clear,function(v){f.thread.clear=v;},0));
-      const th=isoHoleThread(f.thread.size,f.thread.p,f.thread.clear);
+      // V0.21.16 : jeu 0 = profil nominal ISO ; > 0 seulement pour l'impression 3D
+      pRow('Jeu (Ø mm, impression 3D)',num0(f.thread.clear==null?0:f.thread.clear,function(v){f.thread.clear=v;},0));      const th=isoHoleThread(f.thread.size,f.thread.p,f.thread.clear);
       if(th){const fx=v=>String(+(+v).toFixed(3)).replace('.',',');
         pNote((threadInfo(f.thread.size).fam==='M'?'ISO 261 / ISO 965-1':'ASME B1.1 (profil 60°)')+' : Ø mineur '+fx(th.D1)+' (crête) / Ø majeur '+fx(th.D)+' (racine), pas '+fx(th.P)+' mm — '+
           Math.max(1,Math.round((+f._thLen||+f.thread.len||th.P*3)/th.P))+' spire(s). Noyau exact requis.');}

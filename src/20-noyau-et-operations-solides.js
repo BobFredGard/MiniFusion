@@ -321,6 +321,32 @@ function occCut(a,b){
   if(!ok||!s)throw new Error('découpe impossible');
   return s;
 }
+// V0.21.16 : découpe par un COMPOSÉ dont les solides se chevauchent (perçage : fût + gorge
+// du filet modélisé). Un composé passé comme outil unique doit être sans auto-interférence :
+// sinon le cœur du trou restait en 2ᵉ solide. Chaque enfant devient un outil de la liste,
+// le noyau les traite toujours en UNE passe.
+// Composé dont TOUS les enfants sont des composés = ÉTAPES découpées l'une après l'autre
+// (filet modélisé : avant-trou, puis filet, puis tête — src/76, occShapeOfHole).
+function occCutEach(a,b){
+  const CP=occt.TopAbs_ShapeEnum.TopAbs_COMPOUND;
+  if(!b||b.ShapeType()!==CP)return occCut(a,b);
+  const kids=[];
+  const it=new occt.TopoDS_Iterator_2(b,true,true);
+  try{for(;it.More();it.Next())kids.push(it.Value());}finally{try{it.delete();}catch(e){}}
+  if(kids.length&&kids.every(k=>k.ShapeType()===CP)){
+    let r=a;
+    kids.forEach(k=>{const n=occCutEach(r,k);if(r!==a){try{r.delete();}catch(e){}}r=n;});
+    return r;
+  }
+  const la=new occt.TopTools_ListOfShape_1(),lt=new occt.TopTools_ListOfShape_1(),c=new occt.BRepAlgoAPI_Cut_1();
+  try{
+    la.Append_1(a);kids.forEach(k=>lt.Append_1(k));
+    c.SetArguments(la);c.SetTools(lt);c.Build();
+    const s=c.IsDone()?c.Shape():null;
+    if(!s||s.IsNull())throw new Error('découpe impossible');
+    return s;
+  }finally{try{c.delete();}catch(e){}try{la.delete();}catch(e){}try{lt.delete();}catch(e){}}
+}
 function occCommon(a,b){
   const c=new occt.BRepAlgoAPI_Common_3(a,b);
   c.Build();const ok=c.IsDone();const s=ok?c.Shape():null;
@@ -3600,7 +3626,7 @@ function occReplayBody(bid,list){
       const ckC=occCkGet(ckKey);
       const cpC=ckC?occShapeCopy(ckC):null;
       if(cpC){try{result.delete();}catch(e){}result=cpC;return;}
-      const c=occUnifyCutSeams(occCut(result,shape),result,shape); // fond pile sur une face : pas de mini surface
+      const c=occUnifyCutSeams((f.type==='hole'?occCutEach:occCut)(result,shape),result,shape); // fond pile sur une face : pas de mini surface
       try{result.delete();}catch(e){}try{shape.delete();}catch(e){}
       result=c;
     }else{
