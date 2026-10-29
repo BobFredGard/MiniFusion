@@ -19,7 +19,8 @@
    (alignement sur le centre du cercle de la face d'assise : associatif, la vis suit le trou).
    Assise (sp.seat) : 'under' sous tête (CHC, collerette) — fond du lamage, sinon l'entrée ;
    'flush' affleurant (bouchon conique) — l'entrée ; FHC — l'entrée, 0,2 mm dessous (sp.sink,
-   FHC_RETRAIT du perçage) ; 'mid' (goupille, origine en son milieu) — milieu de l'axe du trou. Cotes en mm ; les normes en pouces sont converties (STD_IN). */
+   FHC_RETRAIT du perçage) ; 'mid' (goupille, origine en son milieu) — sur l'axe du cylindre du trou :
+   milieu, arête haute ou arête basse, au choix ou « au plus court » du point cliqué (V0.21.7). Cotes en mm ; les normes en pouces sont converties (STD_IN). */
 const STD_IN=25.4;
 // ISO 261 : pas gros (la désignation « M » seule) puis pas fins
 const STD_ISO_PAS={'M1.6':[0.35,0.2],'M2':[0.4,0.25],'M2.5':[0.45,0.35],'M3':[0.5,0.35],'M4':[0.7,0.5],'M5':[0.8,0.5],
@@ -417,7 +418,7 @@ function stdHoles(G){
     }
     const f=v=>(+v).toFixed(2);
     const main=seg[kind==='cbore'?1:0]; // cylindre du trou proprement dit (sous le lamage)
-    out.push({E,seat,kind,n:E.n,r:main.r,cyl:main.F,
+    out.push({E,seat,kind,n:E.n,r:main.r,cyl:main.F,d0:main.d0,d1:main.d1,
       sig:kind+'|'+f(E.r)+'|'+seg.map(c=>f(c.r)+':'+f(c.d0)+':'+f(c.d1)).join(';')});
   });
   return out;
@@ -435,10 +436,25 @@ function stdHoleAt(H,p,look){
   return best&&best.h;
 }
 function stdSameHoles(H,h){return H.filter(q=>q.sig===h.sig&&asmV.dot(q.n,h.n)>0.999);}
-function stdHoleSn(h,mode){
-  // Référence durable (point d'accroche) du centre du cercle d'assise ; 'mid' : milieu de l'axe du
-  // cylindre du trou (goupille centrée dans l'épaisseur)
-  if(mode==='mid'){const it=h.cyl&&asmSnapItems(h.cyl).find(q=>q.w==='am');return it?asmSnapRef(h.cyl,it):null;}
+const STD_PIN_AT=[['auto','Au plus court (selon le clic)'],['mid','Milieu du cylindre'],['top','Arête haute (entrée)'],['bot','Arête basse (fond)']];
+function stdPinAt(h,p){
+  // « Au plus court » : du point cliqué sur la paroi (coordonnées du composant), le plus proche
+  // des trois points de l'axe du cylindre — arête haute, milieu, arête basse
+  const d=-asmV.dot(asmV.sub(p,h.E.c),h.n),c=[['top',h.d0],['mid',(h.d0+h.d1)/2],['bot',h.d1]];
+  return c.reduce((b,x)=>Math.abs(x[1]-d)<Math.abs(b[1]-d)?x:b)[0];
+}
+function stdHoleSn(h,mode,pos){
+  // Référence durable (point d'accroche) du centre du cercle d'assise ; 'mid' (goupille, par son
+  // centre) : un point de l'axe du cylindre du trou — pos : 'mid' milieu, 'top' arête haute (côté
+  // entrée), 'bot' arête basse. Les bouts de l'axe (a0 / a1) suivent son sens : on les range par profondeur.
+  if(mode==='mid'){
+    const its=h.cyl?asmSnapItems(h.cyl):[];let it=null;
+    if(pos==='top'||pos==='bot'){
+      const ends=its.filter(q=>q.w==='a0'||q.w==='a1').map(q=>({q,d:-asmV.dot(asmV.sub(q.fr.o,h.E.c),h.n)})).sort((a,b)=>a.d-b.d);
+      if(ends.length)it=(pos==='top'?ends[0]:ends[ends.length-1]).q;
+    }else it=its.find(q=>q.w==='am');
+    return it?asmSnapRef(h.cyl,it):null;
+  }
   const S=mode==='under'?h.seat:h.E;
   // Fond de lamage : face annulaire dont le centre EST celui du trou — les points d'accroche n'y
   // gardent que le « centre » de la face (même point, même axe) : il convient aussi
@@ -446,12 +462,13 @@ function stdHoleSn(h,mode){
   const it=its.find(q=>q.w==='ec'&&q.e&&at(q))||its.find(q=>q.w==='c'&&at(q));
   return it?asmSnapRef(S.F,it):null;
 }
-function stdAddOnHoles(sp,ownerId,relPath,holes){
+function stdAddOnHoles(sp,ownerId,relPath,holes,at){
+  // at (goupilles) : 'mid' | 'top' | 'bot' — où va le centre de la goupille sur l'axe du trou
   // Une occurrence par trou, liaison rigide sur son cercle d'assise — une seule étape d'annulation
   asmEnsure();
   const owner=asmComp(ownerId||asm.active);if(!owner||!holes.length)return [];
   const sns=[];
-  holes.forEach(h=>{const sn=stdHoleSn(h,sp.seat||'under');if(sn)sns.push({sn,h});});
+  holes.forEach(h=>{const sn=stdHoleSn(h,sp.seat||'under',at||'mid');if(sn)sns.push({sn,h});});
   if(!sns.length)return [];
   asmPush('normalisé « '+sp.name+' » sur '+sns.length+' trou(s)');
   let c=asm.comps.find(q=>q.doc&&q.doc.std&&q.doc.std.key===sp.key&&asmCanPlace(q.id,owner.id));
@@ -543,13 +560,16 @@ function stdHolePickAt(e){
     const pl=hit.point.clone().applyMatrix4(inv),ld=rayc.ray.direction.clone().transformDirection(inv);
     const H=stdHoles(Gs),h=stdHoleAt(H,[pl.x,pl.y,pl.z],[ld.x,ld.y,ld.z]);
     if(!h)continue;
-    const occs=stdAddOnHoles(sp,asm.active,path.slice(n),stdSameHoles(H,h));
+    let at=null;
+    if(sp.seat==='mid'){at=stdUi.pinAt||'auto';if(at==='auto')at=stdPinAt(h,[pl.x,pl.y,pl.z]);}
+    const occs=stdAddOnHoles(sp,asm.active,path.slice(n),stdSameHoles(H,h),at);
     stdHolePick=null;try{renderer.domElement.style.cursor='';}catch(err){}
     try{asmBuildSnapshots();}catch(err){}
     if(occs.length)asmSelId=occs[0].id;
     asmNotify();
     const lab={simple:'simples',cbore:'lamés',csink:'fraisés'}[h.kind];
-    try{faceEl.textContent=occs.length?'« '+sp.name+' » posé sur '+occs.length+' trou(s) '+lab+' Ø'+stdF(2*h.r)+' de « '+c.name+' », liaison rigide (suit la pièce).':'Pose impossible sur ce trou.';}catch(err){}
+    const where=at?{mid:', centre au milieu du cylindre',top:', centre sur l’arête haute',bot:', centre sur l’arête basse'}[at]:'';
+    try{faceEl.textContent=occs.length?'« '+sp.name+' » posé sur '+occs.length+' trou(s) '+lab+' Ø'+stdF(2*h.r)+' de « '+c.name+' »'+where+', liaison rigide (suit la pièce).':'Pose impossible sur ce trou.';}catch(err){}
     const m=document.querySelector('#stdDlg .stdFoot span');if(m)m.textContent=occs.length?'✓ '+occs.length+' × '+sp.name:'';
     return true;
   }
@@ -676,6 +696,14 @@ function stdDlg(edit){
     });
     let sp=null;try{sp=stdSpec(C.k,st);}catch(e){sp=null;}
     const nm=document.createElement('div');nm.className='stdName';nm.textContent=sp?sp.name:'—';form.appendChild(nm);
+    if(sp&&sp.seat==='mid'&&!edit){
+      // goupille : où va son centre quand on la pose « Sur des trous »
+      const l=document.createElement('label');l.textContent='Position dans le trou (Sur des trous)';
+      const s=document.createElement('select');s.dataset.k='pinAt';
+      STD_PIN_AT.forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;if(v===(stdUi.pinAt||'auto'))o.selected=true;s.appendChild(o);});
+      s.onchange=()=>{stdUi.pinAt=s.value;save();};
+      l.appendChild(s);form.appendChild(l);
+    }
     const inf=document.createElement('div');inf.className='stdInfo';inf.textContent=sp?(sp.norm+' · '+sp.info):'';form.appendChild(inf);
     prev.innerHTML=sp?stdSvg(sp):'';
     if(edit){bHole.disabled=bIns.disabled=!sp;bHole.onclick=()=>apply(sp,true);bIns.onclick=()=>apply(sp,false);return;}

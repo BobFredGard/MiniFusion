@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**437 versions**, de `2026-09-28b` à `V0.21.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**438 versions**, de `2026-09-28b` à `V0.21.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5586,3 +5586,9 @@ Demande : « Fonction Face → il faut pouvoir faire une multi-sélection de fac
 - **Mode** (`src/85-deplacement-face.js`) : clic = ajouter / re-clic = retirer (surbrillance orange), liste des faces dans le panneau (✕ pour en retirer une), distance commune, **Appliquer** (Entrée) / Échap. Avant, le premier clic créait aussitôt la fonction sur une seule face. « Re-sélectionner » ÉDITE désormais la fonction en place (rejeu sans elle, faces repeintes), comme la coque. La surbrillance de la coque est mise en commun (`facesHlGroup`, `src/87-coque.js`).
 - **Rejeu** (`src/20-noyau-et-operations-solides.js`) : `xmove` mémorise `faces` (toutes) et `ref` (la première, documents antérieurs inchangés — `mvRefs`). Les faces sont retrouvées sur le solide d'entrée puis déplacées l'une après l'autre, chacune re-suivie par son plan (`occFindFaceTracked`) : deux faces voisines avancées ensemble donnent un coin plein, pas une encoche. Signature, répétitions et repérage des faces dans l'arbre suivent toutes les faces.
 - **Tests** : `tests/test_xmove.cjs` — +X et +Y avancées de 10 → 110×70×40, 6 faces, un solide ; +X et −X rentrées de 10 → 80 de large. `npm run ci`.
+
+## V0.21.7 - Goupilles : centre sur le milieu ou sur une arête du cylindre, « au plus court » du clic
+Demande : « Pour les goupilles, il faut les attacher via leur centre (c'est fait) et sur une arête haute du cylindre sélectionné, en fonction du choix / au centre du cylindre, on part au plus court, ou carrément sur une arête ».
+- **Position dans le trou** (onglet Goupilles de la fenêtre Normalisés, retenue avec les autres réglages) : *Au plus court (selon le clic)* par défaut, *Milieu du cylindre*, *Arête haute (entrée)*, *Arête basse (fond)*. La goupille reste attachée par son CENTRE ; la cible est un point de l'axe du cylindre du trou (sous le lamage pour un trou lamé) : son milieu ou l'une de ses deux arêtes circulaires.
+- **Au plus court** (`stdPinAt`) : la profondeur du point cliqué sur la paroi choisit le plus proche des trois points (arête haute, milieu, arête basse) ; le même choix s'applique à tous les trous identiques. Les bouts de l'axe du cylindre (points d'accroche a0 / a1, rangés selon le sens de l'axe) sont triés par profondeur depuis l'entrée (`stdHoleSn(h, 'mid', pos)`). La barre d'état dit où le centre a été posé.
+- **Tests** : `tests/test_composants_normalises.cjs`, 4 contrôles de plus (choix au plus court haut / milieu / bas, arête haute z = 20, arête basse z = 0, trou lamé : arête haute = haut du cylindre sous le lamage, z = 13,6). Vérifié dans le navigateur : la liste, puis deux vrais clics (près de l'entrée → arête haute, vers le fond → arête basse).

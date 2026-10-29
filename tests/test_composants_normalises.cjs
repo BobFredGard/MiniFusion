@@ -144,6 +144,17 @@ const {loadApp}=require('./appvm.cjs');
     A(pn.length===2&&pn.every(o=>Math.abs(o.fr.o[2]-10)<1e-6&&o.fr.z[2]>0.999),'22 : goupilles centrées au milieu de l axe du trou (z = 10 : '+pn.map(o=>o.fr.o.map(v=>+v.toFixed(3)).join(',')).join(' | ')+'), +Z vers l entrée');
     {const P=stdPolyPts(stdSpec('pin',{type:'iso8734',size:'6',len:'20'}).prof).map(p=>p[1]);A(Math.abs(Math.min(...P)+10)<1e-9&&Math.abs(Math.max(...P)-10)<1e-9,'22b : goupille : origine en son milieu (z de −10 à 10)');}
     A(asmUndo()&&Rt.occ.length===6,'23 : Ctrl+Z : toutes les goupilles d un coup');
+    // goupilles : centre sur l'arête haute / basse, ou au plus court du clic (V0.21.7)
+    A(stdPinAt(hS,[15,3.3,18])==='top'&&stdPinAt(hS,[15,3.3,11])==='mid'&&stdPinAt(hS,[15,3.3,3])==='bot','23b : au plus court : haut / milieu / bas selon la profondeur du clic');
+    const pT=stdAddOnHoles(stdSpec('pin',{type:'iso2338',size:'6',len:'20'}),Rt.id,[],stdSameHoles(H,hS),'top');
+    A(pT.length===2&&pT.every(o=>Math.abs(o.fr.o[2]-20)<1e-6&&o.fr.z[2]>0.999),'23c : arête haute : centre à l entrée (z = 20 : '+pT.map(o=>o.fr.o[2]).join(', ')+')');
+    asmUndo();
+    const pB=stdAddOnHoles(stdSpec('pin',{type:'iso2338',size:'6',len:'20'}),Rt.id,[],stdSameHoles(H,hS),'bot');
+    A(pB.length===2&&pB.every(o=>Math.abs(o.fr.o[2])<1e-6&&o.fr.z[2]>0.999),'23d : arête basse : centre au fond (z = 0 : '+pB.map(o=>o.fr.o[2]).join(', ')+')');
+    asmUndo();
+    const pC=stdAddOnHoles(stdSpec('pin',{type:'iso2338',size:'6',len:'10'}),Rt.id,[],stdSameHoles(H,hCb),'top');
+    A(pC.length===4&&pC.every(o=>Math.abs(o.fr.o[2]-13.6)<1e-6),'23e : trou lamé : arête haute = haut du cylindre sous le lamage (z = 13,6)');
+    asmUndo();
     // associativité : les lamés bougent, les vis suivent
     Object.values(sCb.points).forEach(p=>{p.x+=p.x>0?3:-3;});
     markDirty();rebuild();asmSnapSync();
