@@ -13,6 +13,8 @@
    propres, géométries clonées en fin de rejeu), refaits seulement repli maillage → exact. */
 let asmScene=null,asmTri=null;
 let asmSelId=null;      // occurrence sélectionnée (mode Placer) : enfant direct du composant actif
+let asmLot=[];          // V0.21.8 : lot Ctrl/Shift+clic (ids d'enfants directs) — valable tant qu'il contient asmSelId
+let asmAnchor=null;     // ancre du Shift+clic
 let asmPivot=null;      // V0.7.4 : repère choisi dans l'arbre comme centre de rotation {cg|null, name}
 let asmBuilding=false;  // instantanés en cours : pas de dessin intermédiaire
 let asmTreeOpen=true;   // section « Composants » de l'arbre dépliée
@@ -108,7 +110,7 @@ function asmFill(G,placer){
     g.userData.path=inst.path; // chemin absolu : points d'accroche (48-assemblage-accroches)
     g.userData.kind=kind;      // centre de rotation : les fantômes ne comptent pas (asmOrbitPivot)
     if(kind==='pick'){g.userData.occ=key;g.name='occ_'+key;}
-    const on=kind==='pick'&&asmSelId===key;
+    const on=kind==='pick'&&asmLotHas(key);
     // apparence de l'occurrence (intensité, transparence, arêtes — 48-assemblage-apparence),
     // la même en mode Placer et en mode Modéliser (V0.7.5)
     const look=asmLookOf(inst.path);
@@ -257,10 +259,51 @@ function asmClick(e){
   if(asmAlignPickAt(e))return; // commande Aligner : clic = repère (48)
   if(stdHolePickAt(e))return; // composants normalisés : pose sur des trous (48)
   const id=asmPickAt(e);
-  asmSelId=id;if(id)asmPivot=null; // une pièce cliquée redevient le centre de rotation
+  if(id&&asmSelClick(id,e))return;
+  asmSelId=id;asmAnchor=id;if(id)asmPivot=null; // une pièce cliquée redevient le centre de rotation
   asmDraw();renderTree();renderProps();
   const o=asmOcc(id);
   try{faceEl.textContent=o?(o.name+' — composant « '+((asmComp(o.comp)||{}).name||'')+' »'+(o.fixed?' · fixée':'')+(o.align?' · alignée':'')+'\nDouble-clic = modéliser ce composant.'):'Aucun composant ici.';}catch(err){}
+}
+/* ── lot (V0.21.8) : comme l'arbre de la pièce (treeSelClick, 40) ──
+   Ctrl+clic = ajouter / retirer, Shift+clic = plage (ordre des occurrences du porteur),
+   Ctrl+Shift = ajouter la plage. asmSelId suit le dernier clic (panneau, manipulateur) ;
+   un clic simple ailleurs change asmSelId et rend le lot caduc (asmLotIds). */
+function asmLotIds(){
+  const c=asm&&asmActiveComp();if(!c||!asmSelId)return [];
+  const ok=id=>c.occ.some(o=>o.id===id);
+  if(asmLot.indexOf(asmSelId)>=0){const L=asmLot.filter(ok);if(L.length)return L;}
+  return ok(asmSelId)?[asmSelId]:[];
+}
+function asmLotHas(id){return !!id&&asmLotIds().indexOf(id)>=0;}
+function asmLotSet(L,last){
+  asmLot=L.slice();asmSelId=L.length?(L.indexOf(last)>=0?last:L[L.length-1]):null;
+  if(asmSelId)asmPivot=null;
+  asmDraw();renderTree();renderProps();
+  try{faceEl.textContent=L.length>1?(L.length+' composants sélectionnés — Suppr pour supprimer, Échap pour désélectionner.'):(L.length?'':'Sélection vidée.');}catch(e){}
+}
+// → true si le clic est un geste de lot (Ctrl / Shift) et a été traité
+function asmSelClick(id,ev){
+  if(!ev||asmMode!=='asm')return false;
+  const c=asmActiveComp();if(!c||!c.occ.some(o=>o.id===id))return false;
+  const ctrl=!!(ev.ctrlKey||ev.metaKey);
+  if(ev.shiftKey){
+    const ord=c.occ.map(o=>o.id);
+    let a=asmAnchor&&ord.indexOf(asmAnchor)>=0?ord.indexOf(asmAnchor):(asmSelId?ord.indexOf(asmSelId):-1);
+    const b=ord.indexOf(id);if(a<0)a=b;
+    const plage=ord.slice(Math.min(a,b),Math.max(a,b)+1);
+    const cur=asmLotIds();
+    asmLotSet(ctrl?cur.concat(plage.filter(x=>cur.indexOf(x)<0)):plage,id); // l'ancre ne bouge pas
+    return true;
+  }
+  if(ctrl){
+    const L=asmLotIds(),i=L.indexOf(id);
+    if(i>=0)L.splice(i,1);else L.push(id);
+    asmAnchor=id;asmLotSet(L,i>=0?null:id);
+    return true;
+  }
+  asmAnchor=id;asmLot=[];
+  return false;
 }
 function asmDblClick(e){
   const id=asmPickAt(e);if(id)asmExit(id);
@@ -271,7 +314,7 @@ function asmKey(e){
   const t=e.target;if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return false;
   const ctrl=e.ctrlKey||e.metaKey,k=String(e.key||'').toLowerCase();
   if(ctrl&&(k==='z'||k==='y'))return false; // routage unique en capture (undoDispatch, 45)
-  if((e.key==='Delete'||e.key==='Backspace')&&asmSelId){e.preventDefault();asmAskDelete(asmSelId);return true;}
+  if((e.key==='Delete'||e.key==='Backspace')&&asmSelId){e.preventDefault();asmAskDeleteLot(asmLotIds());return true;}
   if(e.key==='Escape'&&asmAlign){asmAlignCancel();return true;}
   if(e.key==='Escape'&&stdHolePick){stdHoleCancel();return true;}
   if(e.key==='Escape'&&asmAnim){asmAnimStop();return true;} // animation d'une liaison (48)
@@ -312,6 +355,24 @@ function asmAskDelete(id){
   const c=asmComp(o.comp),seule=asmCompOccs(o.comp).length===1;
   if(!confirm('Supprimer l’occurrence « '+o.name+' » ?'+(seule?'\nC’est la dernière du composant « '+((c||{}).name||'')+' » : il sera supprimé avec ses sous-composants (Ctrl+Z pour annuler).':'')))return;
   asmDeleteOcc(id);if(asmSelId===id)asmSelId=null;asmNotify();
+}
+function asmAskDeleteLot(ids){
+  // Suppr sur un lot : une confirmation, une seule étape d'annulation
+  ids=(ids||[]).filter(id=>asmOcc(id));
+  if(ids.length<2){if(ids.length)asmAskDelete(ids[0]);return;}
+  const nm=ids.map(id=>asmOcc(id).name);
+  // composants dont toutes les occurrences partent : supprimés avec elles
+  const gone=[...new Set(ids.map(id=>asmOcc(id).comp))].filter(cid=>asmCompOccs(cid).every(q=>ids.indexOf(q.id)>=0)).map(cid=>(asmComp(cid)||{}).name||'');
+  if(!confirm('Supprimer '+ids.length+' occurrences ?\n\n· '+nm.join('\n· ')+(gone.length?'\n\nDernières occurrences de : '+gone.join(', ')+' — ces composants seront supprimés avec leurs sous-composants (Ctrl+Z pour annuler).':'')))return;
+  asmPush('suppression de '+ids.length+' occurrences');
+  ids.forEach(id=>asmDeleteOcc(id,true));
+  asmSelId=null;asmLot=[];asmNotify();
+  try{faceEl.textContent='🗑 Supprimé : '+nm.join(', ')+'  —  Ctrl+Z pour annuler.';}catch(e){}
+}
+function asmLotEach(label,fn){
+  // Même changement sur tout le lot : une étape d'annulation
+  const L=asmLotIds().map(asmOcc).filter(Boolean);if(!L.length)return;
+  asmPush(label);L.forEach(fn);asmNotify();
 }
 function asmRename(id){
   const o=asmOcc(id);if(!o)return;
@@ -400,6 +461,18 @@ function asmRenderProps(p){
     if(asm.path.length)l.push(['↑ Remonter',asmUp]);
     Btns(l);
     asmJointsProps(p); // piloter les liaisons (48)
+    return;
+  }
+  const lot=asmLotIds();
+  if(lot.length>1){
+    // lot (Ctrl/Shift+clic) : ce qui s'applique à toutes les occurrences
+    const L=lot.map(asmOcc).filter(Boolean),nf=L.filter(q=>q.fixed).length,nh=L.filter(q=>q.visible===false).length;
+    H('📦 '+L.length+' composants sélectionnés');
+    Note(L.map(q=>q.name).join(', '));
+    Note('Ctrl+clic = ajouter / retirer · Shift+clic = plage · Suppr = supprimer le lot · Échap = désélectionner.');
+    Btns([[nf===L.length?'📌 Libérer':'📌 Fixer',()=>{const v=nf!==L.length;asmLotEach(v?'fixer':'libérer',q=>{q.fixed=v;});}],
+      [nh===L.length?'👁 Afficher':'🙈 Masquer',()=>{const v=nh===L.length;asmLotEach('visibilité',q=>{q.visible=v;});}],
+      ['🗑 Supprimer',()=>asmAskDeleteLot(lot),'danger']]);
     return;
   }
   const cc=asmComp(o.comp)||{};

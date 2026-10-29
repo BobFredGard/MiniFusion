@@ -317,10 +317,11 @@ function asmPurge(){
     if(keep.length<asm.comps.length){asm.comps=keep;again=true;}
   }
 }
-function asmDeleteOcc(id){
+function asmDeleteOcc(id,noPush){
   // Supprimer une occurrence ; un composant qui n'a plus d'instance part avec elle
+  // noPush : l'appelant a déjà empilé l'annulation (suppression d'un lot, 47)
   const owner=asmOccOwner(id),o=asmOcc(id);if(!o||!owner)return false;
-  asmPush('suppression de « '+o.name+' »');
+  if(!noPush)asmPush('suppression de « '+o.name+' »');
   owner.occ=owner.occ.filter(q=>q.id!==id);
   // les alignements qui passaient par elle tombent (les occurrences gardent leur position)
   asm.comps.forEach(c=>c.occ.forEach(q=>{const a=q.align;

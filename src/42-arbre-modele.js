@@ -364,30 +364,30 @@ function treeComps(L,P){
     const badges=(o.fixed?'<span class="tbadge" title="Fixée">📌 fixe</span>':'')+
       (o.align?(o.align.type?'<span class="tbadge j" title="Liaison">⚙ '+asmEsc((ASM_JOINTS[o.align.type]||{}).lab||'')+'</span>':'<span class="tbadge j" title="Alignée sur un repère (rigide)">⚙ Rigide</span>'):'')+
       (o.st==='warn'?'<span class="tbadge w" title="'+asmEsc(o.msg)+'">⚠</span>':'');
-    L.push({drop:treeDropComp(inst.comp),lvl:lv,cls:'tnode tocc'+(self?' tactive':'')+(direct&&asmMode==='asm'&&asmSelId===id?' sel':'')+(o.visible===false?' hidden':''),
+    L.push({drop:treeDropComp(inst.comp),lvl:lv,cls:'tnode tocc'+(self?' tactive':'')+(direct&&asmMode==='asm'&&asmLotHas(id)?' sel':'')+(o.visible===false?' hidden':''),
       style:(!mine&&!self)?{opacity:'0.55'}:{},
       html:tri+'<span>'+(self?'✏️':'📦')+'</span><span class="nm">'+asmEsc(o.name)+sub+'</span>'+badges+
         '<span class="eye" title="Afficher / masquer">'+(o.visible===false?'🙈':'👁')+'</span>',
-      title:direct?'Clic = sélectionner · double-clic = modéliser · ▶ = contenu · clic droit = menu':'Double-clic = modéliser ce composant · ▶ = contenu',
+      title:direct?'Clic = sélectionner · Ctrl+clic = ajouter au lot · Shift+clic = plage · Suppr = supprimer le lot · double-clic = modéliser · ▶ = contenu · clic droit = menu':'Double-clic = modéliser ce composant · ▶ = contenu',
       on:{
         tri:togg,
         eye:()=>{asmPush('visibilité');o.visible=!(o.visible!==false);asmNotify();renderTree();},
-        click:()=>{
+        click:ev=>{
           {const f=globalThis.asmTreePick;if(typeof f==='function'&&f(inst.path))return;}
-          if(direct){if(asmMode!=='asm'){asmShow(AP,'asm',id);return;}asmSelId=id;asmPivot=null;asmDraw();renderTree();renderProps();}
+          if(direct){if(asmMode!=='asm'){asmShow(AP,'asm',id);return;}if(asmSelClick(id,ev))return;asmSelId=id;asmPivot=null;asmDraw();renderTree();renderProps();}
         },
         dbl:()=>asmShow(inst.path,'part'),
         ctx:e=>{
           const items=[{html:'✏️ Modéliser ce composant',fn:()=>asmShow(inst.path,'part')}];
           if(c.occ&&c.occ.length)items.push({html:'🧩 Placer ses composants',fn:()=>asmShow(inst.path,'asm')});
           if(direct){
-            if(asmMode==='asm'){asmSelId=id;asmDraw();renderTree();renderProps();}
+            if(asmMode==='asm'&&!asmLotHas(id)){asmSelId=id;asmDraw();renderTree();renderProps();} // dans le lot : le lot reste
             items.push({html:'✥ Déplacer',fn:()=>asmCmdMoveOcc(AP,id)},
               {html:'➕ Nouvelle occurrence',fn:()=>{if(asmMode!=='asm')asmShow(AP,'asm',id);asmSelId=id;asmCmdNewOcc();}},
               {html:o.fixed?'📌 Libérer':'📌 Fixer',fn:()=>asmToggleFixed(id)},
               {html:'🏷 Renommer le composant',fn:()=>asmRename(id)},
               ...(c.doc&&c.doc.std?[{html:'🔩 Modifier la pièce normalisée…',fn:()=>stdDlg({occ:id})}]:[]), // 48-composants-normalises
-              {html:'🗑 Supprimer',fn:()=>asmAskDelete(id)});
+              {html:'🗑 Supprimer'+(asmLotIds().length>1&&asmLotHas(id)?' le lot ('+asmLotIds().length+')':''),fn:()=>asmAskDeleteLot(asmLotHas(id)?asmLotIds():[id])});
           }
           items.push(...asmLinkMenu(c));
           try{mfPop({getBoundingClientRect:()=>({left:e.clientX,right:e.clientX+200,top:e.clientY-6,bottom:e.clientY-6,width:200,height:0})},items);}catch(err){}
@@ -419,8 +419,17 @@ function treeComps(L,P){
           ' <span style="color:var(--muted)">×'+g.occ.length+'</span>'+(nf?' <span title="'+nf+' fixée(s)">📌'+(nf<g.occ.length?nf:'')+'</span>':'')+
           (nj?' <span title="'+nj+' liée(s) / alignée(s)">⚙'+(nj<g.occ.length?nj:'')+'</span>':'')+'</span>'+
           '<span class="eye" title="Afficher / masquer toutes les occurrences">'+(nh===g.occ.length?'🙈':'👁')+'</span>',
-        title:g.occ.length+' occurrences de « '+(gc.name||'')+' » · ▶ = les détailler · 👁 = toutes · double-clic = modéliser le composant',
-        on:{tri:gt,click:gt,
+        title:g.occ.length+' occurrences de « '+(gc.name||'')+' » · ▶ = les détailler · Ctrl+clic = toutes au lot · 👁 = toutes · double-clic = modéliser le composant',
+        on:{tri:gt,
+          click:ev=>{
+            // Ctrl+clic (mode Placer, occurrences du composant actif) : tout le groupe au lot
+            if(ev&&(ev.ctrlKey||ev.metaKey)&&asmMode==='asm'&&same(path,AP)){
+              const cur=asmLotIds(),ids=g.occ.map(o=>o.id),all=ids.every(x=>cur.indexOf(x)>=0);
+              asmLotSet(all?cur.filter(x=>ids.indexOf(x)<0):cur.concat(ids.filter(x=>cur.indexOf(x)<0)),all?null:ids[ids.length-1]);
+              return;
+            }
+            gt();
+          },
           eye:()=>{asmPush('visibilité');const v=nh===g.occ.length;g.occ.forEach(o=>{o.visible=v;});asmNotify();renderTree();},
           dbl:()=>asmShow(path.concat(g.occ[0].id),'part')}});
       if(gopen)g.occ.forEach(o=>walk(o.comp,path.concat(o.id),lv+1));
@@ -511,13 +520,13 @@ function treeJoints(L,all,lv){
     const ownerC=(all.find(i=>same(i.path,owner))||{}).comp;
     const cible=a.rel?'telle que construite':(typeof asmRelName==='function'?asmRelName(ownerC,a.dst):'?');
     const dof=typed?asmDofs(a).map(k=>{const v=+((a.q||{})[k])||0;return k+' '+String(+v.toFixed(2)).replace('.',',')+(k[0]==='r'?'°':' mm');}).join(', '):'';
-    const selOk=asmMode==='asm'&&asmSelId===o.id&&same(owner,AP);
+    const selOk=asmMode==='asm'&&asmLotHas(o.id)&&same(owner,AP);
     L.push({lvl:lv+1,cls:'tnode tjoint'+(selOk?' sel':''),
       html:'<span>⚙</span><span class="nm">'+asmEsc(lab)+' <span style="color:var(--muted)">'+asmEsc(o.name)+' → '+asmEsc(cible)+'</span></span>'+
         (o.st==='warn'?'<span class="tbadge w" title="'+asmEsc(o.msg)+'">⚠</span>':''),
-      title:(typed?'Liaison ':'Alignement ')+lab+' de « '+o.name+' » → '+cible+(dof?' · '+dof:'')+' · clic = la piloter (mode Placer)',
-      on:{click:()=>{
-        if(asmMode==='asm'&&same(owner,AP)){asmSelId=o.id;asmPivot=null;asmDraw();renderTree();renderProps();}
+      title:(typed?'Liaison ':'Alignement ')+lab+' de « '+o.name+' » → '+cible+(dof?' · '+dof:'')+' · clic = la piloter (mode Placer) · Ctrl+clic = ajouter au lot · Shift+clic = plage',
+      on:{click:ev=>{
+        if(asmMode==='asm'&&same(owner,AP)){if(asmSelClick(o.id,ev))return;asmSelId=o.id;asmPivot=null;asmDraw();renderTree();renderProps();}
         else asmShow(owner,'asm',o.id);
       }}});
   });

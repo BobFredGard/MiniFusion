@@ -281,7 +281,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.21.9';
+const APP_VER='V0.21.10';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -9756,30 +9756,30 @@ function treeComps(L,P){
     const badges=(o.fixed?'<span class="tbadge" title="Fixée">📌 fixe</span>':'')+
       (o.align?(o.align.type?'<span class="tbadge j" title="Liaison">⚙ '+asmEsc((ASM_JOINTS[o.align.type]||{}).lab||'')+'</span>':'<span class="tbadge j" title="Alignée sur un repère (rigide)">⚙ Rigide</span>'):'')+
       (o.st==='warn'?'<span class="tbadge w" title="'+asmEsc(o.msg)+'">⚠</span>':'');
-    L.push({drop:treeDropComp(inst.comp),lvl:lv,cls:'tnode tocc'+(self?' tactive':'')+(direct&&asmMode==='asm'&&asmSelId===id?' sel':'')+(o.visible===false?' hidden':''),
+    L.push({drop:treeDropComp(inst.comp),lvl:lv,cls:'tnode tocc'+(self?' tactive':'')+(direct&&asmMode==='asm'&&asmLotHas(id)?' sel':'')+(o.visible===false?' hidden':''),
       style:(!mine&&!self)?{opacity:'0.55'}:{},
       html:tri+'<span>'+(self?'✏️':'📦')+'</span><span class="nm">'+asmEsc(o.name)+sub+'</span>'+badges+
         '<span class="eye" title="Afficher / masquer">'+(o.visible===false?'🙈':'👁')+'</span>',
-      title:direct?'Clic = sélectionner · double-clic = modéliser · ▶ = contenu · clic droit = menu':'Double-clic = modéliser ce composant · ▶ = contenu',
+      title:direct?'Clic = sélectionner · Ctrl+clic = ajouter au lot · Shift+clic = plage · Suppr = supprimer le lot · double-clic = modéliser · ▶ = contenu · clic droit = menu':'Double-clic = modéliser ce composant · ▶ = contenu',
       on:{
         tri:togg,
         eye:()=>{asmPush('visibilité');o.visible=!(o.visible!==false);asmNotify();renderTree();},
-        click:()=>{
+        click:ev=>{
           {const f=globalThis.asmTreePick;if(typeof f==='function'&&f(inst.path))return;}
-          if(direct){if(asmMode!=='asm'){asmShow(AP,'asm',id);return;}asmSelId=id;asmPivot=null;asmDraw();renderTree();renderProps();}
+          if(direct){if(asmMode!=='asm'){asmShow(AP,'asm',id);return;}if(asmSelClick(id,ev))return;asmSelId=id;asmPivot=null;asmDraw();renderTree();renderProps();}
         },
         dbl:()=>asmShow(inst.path,'part'),
         ctx:e=>{
           const items=[{html:'✏️ Modéliser ce composant',fn:()=>asmShow(inst.path,'part')}];
           if(c.occ&&c.occ.length)items.push({html:'🧩 Placer ses composants',fn:()=>asmShow(inst.path,'asm')});
           if(direct){
-            if(asmMode==='asm'){asmSelId=id;asmDraw();renderTree();renderProps();}
+            if(asmMode==='asm'&&!asmLotHas(id)){asmSelId=id;asmDraw();renderTree();renderProps();} // dans le lot : le lot reste
             items.push({html:'✥ Déplacer',fn:()=>asmCmdMoveOcc(AP,id)},
               {html:'➕ Nouvelle occurrence',fn:()=>{if(asmMode!=='asm')asmShow(AP,'asm',id);asmSelId=id;asmCmdNewOcc();}},
               {html:o.fixed?'📌 Libérer':'📌 Fixer',fn:()=>asmToggleFixed(id)},
               {html:'🏷 Renommer le composant',fn:()=>asmRename(id)},
               ...(c.doc&&c.doc.std?[{html:'🔩 Modifier la pièce normalisée…',fn:()=>stdDlg({occ:id})}]:[]), // 48-composants-normalises
-              {html:'🗑 Supprimer',fn:()=>asmAskDelete(id)});
+              {html:'🗑 Supprimer'+(asmLotIds().length>1&&asmLotHas(id)?' le lot ('+asmLotIds().length+')':''),fn:()=>asmAskDeleteLot(asmLotHas(id)?asmLotIds():[id])});
           }
           items.push(...asmLinkMenu(c));
           try{mfPop({getBoundingClientRect:()=>({left:e.clientX,right:e.clientX+200,top:e.clientY-6,bottom:e.clientY-6,width:200,height:0})},items);}catch(err){}
@@ -9811,8 +9811,17 @@ function treeComps(L,P){
           ' <span style="color:var(--muted)">×'+g.occ.length+'</span>'+(nf?' <span title="'+nf+' fixée(s)">📌'+(nf<g.occ.length?nf:'')+'</span>':'')+
           (nj?' <span title="'+nj+' liée(s) / alignée(s)">⚙'+(nj<g.occ.length?nj:'')+'</span>':'')+'</span>'+
           '<span class="eye" title="Afficher / masquer toutes les occurrences">'+(nh===g.occ.length?'🙈':'👁')+'</span>',
-        title:g.occ.length+' occurrences de « '+(gc.name||'')+' » · ▶ = les détailler · 👁 = toutes · double-clic = modéliser le composant',
-        on:{tri:gt,click:gt,
+        title:g.occ.length+' occurrences de « '+(gc.name||'')+' » · ▶ = les détailler · Ctrl+clic = toutes au lot · 👁 = toutes · double-clic = modéliser le composant',
+        on:{tri:gt,
+          click:ev=>{
+            // Ctrl+clic (mode Placer, occurrences du composant actif) : tout le groupe au lot
+            if(ev&&(ev.ctrlKey||ev.metaKey)&&asmMode==='asm'&&same(path,AP)){
+              const cur=asmLotIds(),ids=g.occ.map(o=>o.id),all=ids.every(x=>cur.indexOf(x)>=0);
+              asmLotSet(all?cur.filter(x=>ids.indexOf(x)<0):cur.concat(ids.filter(x=>cur.indexOf(x)<0)),all?null:ids[ids.length-1]);
+              return;
+            }
+            gt();
+          },
           eye:()=>{asmPush('visibilité');const v=nh===g.occ.length;g.occ.forEach(o=>{o.visible=v;});asmNotify();renderTree();},
           dbl:()=>asmShow(path.concat(g.occ[0].id),'part')}});
       if(gopen)g.occ.forEach(o=>walk(o.comp,path.concat(o.id),lv+1));
@@ -9903,13 +9912,13 @@ function treeJoints(L,all,lv){
     const ownerC=(all.find(i=>same(i.path,owner))||{}).comp;
     const cible=a.rel?'telle que construite':(typeof asmRelName==='function'?asmRelName(ownerC,a.dst):'?');
     const dof=typed?asmDofs(a).map(k=>{const v=+((a.q||{})[k])||0;return k+' '+String(+v.toFixed(2)).replace('.',',')+(k[0]==='r'?'°':' mm');}).join(', '):'';
-    const selOk=asmMode==='asm'&&asmSelId===o.id&&same(owner,AP);
+    const selOk=asmMode==='asm'&&asmLotHas(o.id)&&same(owner,AP);
     L.push({lvl:lv+1,cls:'tnode tjoint'+(selOk?' sel':''),
       html:'<span>⚙</span><span class="nm">'+asmEsc(lab)+' <span style="color:var(--muted)">'+asmEsc(o.name)+' → '+asmEsc(cible)+'</span></span>'+
         (o.st==='warn'?'<span class="tbadge w" title="'+asmEsc(o.msg)+'">⚠</span>':''),
-      title:(typed?'Liaison ':'Alignement ')+lab+' de « '+o.name+' » → '+cible+(dof?' · '+dof:'')+' · clic = la piloter (mode Placer)',
-      on:{click:()=>{
-        if(asmMode==='asm'&&same(owner,AP)){asmSelId=o.id;asmPivot=null;asmDraw();renderTree();renderProps();}
+      title:(typed?'Liaison ':'Alignement ')+lab+' de « '+o.name+' » → '+cible+(dof?' · '+dof:'')+' · clic = la piloter (mode Placer) · Ctrl+clic = ajouter au lot · Shift+clic = plage',
+      on:{click:ev=>{
+        if(asmMode==='asm'&&same(owner,AP)){if(asmSelClick(o.id,ev))return;asmSelId=o.id;asmPivot=null;asmDraw();renderTree();renderProps();}
         else asmShow(owner,'asm',o.id);
       }}});
   });
@@ -10879,10 +10888,11 @@ function asmPurge(){
     if(keep.length<asm.comps.length){asm.comps=keep;again=true;}
   }
 }
-function asmDeleteOcc(id){
+function asmDeleteOcc(id,noPush){
   // Supprimer une occurrence ; un composant qui n'a plus d'instance part avec elle
+  // noPush : l'appelant a déjà empilé l'annulation (suppression d'un lot, 47)
   const owner=asmOccOwner(id),o=asmOcc(id);if(!o||!owner)return false;
-  asmPush('suppression de « '+o.name+' »');
+  if(!noPush)asmPush('suppression de « '+o.name+' »');
   owner.occ=owner.occ.filter(q=>q.id!==id);
   // les alignements qui passaient par elle tombent (les occurrences gardent leur position)
   asm.comps.forEach(c=>c.occ.forEach(q=>{const a=q.align;
@@ -11342,6 +11352,8 @@ function asmExtSyncSoon(){if(!asmExtBusy&&asm){try{setTimeout(()=>{try{if(asmExt
    propres, géométries clonées en fin de rejeu), refaits seulement repli maillage → exact. */
 let asmScene=null,asmTri=null;
 let asmSelId=null;      // occurrence sélectionnée (mode Placer) : enfant direct du composant actif
+let asmLot=[];          // V0.21.8 : lot Ctrl/Shift+clic (ids d'enfants directs) — valable tant qu'il contient asmSelId
+let asmAnchor=null;     // ancre du Shift+clic
 let asmPivot=null;      // V0.7.4 : repère choisi dans l'arbre comme centre de rotation {cg|null, name}
 let asmBuilding=false;  // instantanés en cours : pas de dessin intermédiaire
 let asmTreeOpen=true;   // section « Composants » de l'arbre dépliée
@@ -11437,7 +11449,7 @@ function asmFill(G,placer){
     g.userData.path=inst.path; // chemin absolu : points d'accroche (48-assemblage-accroches)
     g.userData.kind=kind;      // centre de rotation : les fantômes ne comptent pas (asmOrbitPivot)
     if(kind==='pick'){g.userData.occ=key;g.name='occ_'+key;}
-    const on=kind==='pick'&&asmSelId===key;
+    const on=kind==='pick'&&asmLotHas(key);
     // apparence de l'occurrence (intensité, transparence, arêtes — 48-assemblage-apparence),
     // la même en mode Placer et en mode Modéliser (V0.7.5)
     const look=asmLookOf(inst.path);
@@ -11586,10 +11598,51 @@ function asmClick(e){
   if(asmAlignPickAt(e))return; // commande Aligner : clic = repère (48)
   if(stdHolePickAt(e))return; // composants normalisés : pose sur des trous (48)
   const id=asmPickAt(e);
-  asmSelId=id;if(id)asmPivot=null; // une pièce cliquée redevient le centre de rotation
+  if(id&&asmSelClick(id,e))return;
+  asmSelId=id;asmAnchor=id;if(id)asmPivot=null; // une pièce cliquée redevient le centre de rotation
   asmDraw();renderTree();renderProps();
   const o=asmOcc(id);
   try{faceEl.textContent=o?(o.name+' — composant « '+((asmComp(o.comp)||{}).name||'')+' »'+(o.fixed?' · fixée':'')+(o.align?' · alignée':'')+'\nDouble-clic = modéliser ce composant.'):'Aucun composant ici.';}catch(err){}
+}
+/* ── lot (V0.21.8) : comme l'arbre de la pièce (treeSelClick, 40) ──
+   Ctrl+clic = ajouter / retirer, Shift+clic = plage (ordre des occurrences du porteur),
+   Ctrl+Shift = ajouter la plage. asmSelId suit le dernier clic (panneau, manipulateur) ;
+   un clic simple ailleurs change asmSelId et rend le lot caduc (asmLotIds). */
+function asmLotIds(){
+  const c=asm&&asmActiveComp();if(!c||!asmSelId)return [];
+  const ok=id=>c.occ.some(o=>o.id===id);
+  if(asmLot.indexOf(asmSelId)>=0){const L=asmLot.filter(ok);if(L.length)return L;}
+  return ok(asmSelId)?[asmSelId]:[];
+}
+function asmLotHas(id){return !!id&&asmLotIds().indexOf(id)>=0;}
+function asmLotSet(L,last){
+  asmLot=L.slice();asmSelId=L.length?(L.indexOf(last)>=0?last:L[L.length-1]):null;
+  if(asmSelId)asmPivot=null;
+  asmDraw();renderTree();renderProps();
+  try{faceEl.textContent=L.length>1?(L.length+' composants sélectionnés — Suppr pour supprimer, Échap pour désélectionner.'):(L.length?'':'Sélection vidée.');}catch(e){}
+}
+// → true si le clic est un geste de lot (Ctrl / Shift) et a été traité
+function asmSelClick(id,ev){
+  if(!ev||asmMode!=='asm')return false;
+  const c=asmActiveComp();if(!c||!c.occ.some(o=>o.id===id))return false;
+  const ctrl=!!(ev.ctrlKey||ev.metaKey);
+  if(ev.shiftKey){
+    const ord=c.occ.map(o=>o.id);
+    let a=asmAnchor&&ord.indexOf(asmAnchor)>=0?ord.indexOf(asmAnchor):(asmSelId?ord.indexOf(asmSelId):-1);
+    const b=ord.indexOf(id);if(a<0)a=b;
+    const plage=ord.slice(Math.min(a,b),Math.max(a,b)+1);
+    const cur=asmLotIds();
+    asmLotSet(ctrl?cur.concat(plage.filter(x=>cur.indexOf(x)<0)):plage,id); // l'ancre ne bouge pas
+    return true;
+  }
+  if(ctrl){
+    const L=asmLotIds(),i=L.indexOf(id);
+    if(i>=0)L.splice(i,1);else L.push(id);
+    asmAnchor=id;asmLotSet(L,i>=0?null:id);
+    return true;
+  }
+  asmAnchor=id;asmLot=[];
+  return false;
 }
 function asmDblClick(e){
   const id=asmPickAt(e);if(id)asmExit(id);
@@ -11600,7 +11653,7 @@ function asmKey(e){
   const t=e.target;if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return false;
   const ctrl=e.ctrlKey||e.metaKey,k=String(e.key||'').toLowerCase();
   if(ctrl&&(k==='z'||k==='y'))return false; // routage unique en capture (undoDispatch, 45)
-  if((e.key==='Delete'||e.key==='Backspace')&&asmSelId){e.preventDefault();asmAskDelete(asmSelId);return true;}
+  if((e.key==='Delete'||e.key==='Backspace')&&asmSelId){e.preventDefault();asmAskDeleteLot(asmLotIds());return true;}
   if(e.key==='Escape'&&asmAlign){asmAlignCancel();return true;}
   if(e.key==='Escape'&&stdHolePick){stdHoleCancel();return true;}
   if(e.key==='Escape'&&asmAnim){asmAnimStop();return true;} // animation d'une liaison (48)
@@ -11641,6 +11694,24 @@ function asmAskDelete(id){
   const c=asmComp(o.comp),seule=asmCompOccs(o.comp).length===1;
   if(!confirm('Supprimer l’occurrence « '+o.name+' » ?'+(seule?'\nC’est la dernière du composant « '+((c||{}).name||'')+' » : il sera supprimé avec ses sous-composants (Ctrl+Z pour annuler).':'')))return;
   asmDeleteOcc(id);if(asmSelId===id)asmSelId=null;asmNotify();
+}
+function asmAskDeleteLot(ids){
+  // Suppr sur un lot : une confirmation, une seule étape d'annulation
+  ids=(ids||[]).filter(id=>asmOcc(id));
+  if(ids.length<2){if(ids.length)asmAskDelete(ids[0]);return;}
+  const nm=ids.map(id=>asmOcc(id).name);
+  // composants dont toutes les occurrences partent : supprimés avec elles
+  const gone=[...new Set(ids.map(id=>asmOcc(id).comp))].filter(cid=>asmCompOccs(cid).every(q=>ids.indexOf(q.id)>=0)).map(cid=>(asmComp(cid)||{}).name||'');
+  if(!confirm('Supprimer '+ids.length+' occurrences ?\n\n· '+nm.join('\n· ')+(gone.length?'\n\nDernières occurrences de : '+gone.join(', ')+' — ces composants seront supprimés avec leurs sous-composants (Ctrl+Z pour annuler).':'')))return;
+  asmPush('suppression de '+ids.length+' occurrences');
+  ids.forEach(id=>asmDeleteOcc(id,true));
+  asmSelId=null;asmLot=[];asmNotify();
+  try{faceEl.textContent='🗑 Supprimé : '+nm.join(', ')+'  —  Ctrl+Z pour annuler.';}catch(e){}
+}
+function asmLotEach(label,fn){
+  // Même changement sur tout le lot : une étape d'annulation
+  const L=asmLotIds().map(asmOcc).filter(Boolean);if(!L.length)return;
+  asmPush(label);L.forEach(fn);asmNotify();
 }
 function asmRename(id){
   const o=asmOcc(id);if(!o)return;
@@ -11729,6 +11800,18 @@ function asmRenderProps(p){
     if(asm.path.length)l.push(['↑ Remonter',asmUp]);
     Btns(l);
     asmJointsProps(p); // piloter les liaisons (48)
+    return;
+  }
+  const lot=asmLotIds();
+  if(lot.length>1){
+    // lot (Ctrl/Shift+clic) : ce qui s'applique à toutes les occurrences
+    const L=lot.map(asmOcc).filter(Boolean),nf=L.filter(q=>q.fixed).length,nh=L.filter(q=>q.visible===false).length;
+    H('📦 '+L.length+' composants sélectionnés');
+    Note(L.map(q=>q.name).join(', '));
+    Note('Ctrl+clic = ajouter / retirer · Shift+clic = plage · Suppr = supprimer le lot · Échap = désélectionner.');
+    Btns([[nf===L.length?'📌 Libérer':'📌 Fixer',()=>{const v=nf!==L.length;asmLotEach(v?'fixer':'libérer',q=>{q.fixed=v;});}],
+      [nh===L.length?'👁 Afficher':'🙈 Masquer',()=>{const v=nh===L.length;asmLotEach('visibilité',q=>{q.visible=v;});}],
+      ['🗑 Supprimer',()=>asmAskDeleteLot(lot),'danger']]);
     return;
   }
   const cc=asmComp(o.comp)||{};

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**440 versions**, de `2026-09-28b` à `V0.21.9` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**441 versions**, de `2026-09-28b` à `V0.21.10` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5605,3 +5605,9 @@ Question : « Comment sont positionnées les clavettes ? Il faudrait plusieurs o
 - **Liaison rigide** sur un point d'accroche du fond (centre de face, ou centre de l'arc) avec une rotation (`rz`) et, au bout, un décalage (`off`) : associative comme pour les vis. Les rainures identiques de la pièce (même forme, largeur, longueur, quelle que soit leur orientation) reçoivent chacune une clavette, du même côté pour « centre du cercle » ; une seule étape d'annulation. La barre d'état signale une largeur de rainure ≠ b ou une clavette plus longue que la rainure.
 - **Code** : `stdCompFor` (composant réemployé ou créé) partagé par les trous et les rainures ; `stdKeyAlign`, `stdKeyPick`, `stdAddInKeyways` dans `src/48-composants-normalises.js`.
 - **Tests** : `tests/test_composants_normalises.cjs`, 5 contrôles de plus (bloc à deux rainures fermées 8 × 40, l'une selon X, l'autre selon Y, et une débouchante : détection ; centre de face sur les deux, X selon chaque axe ; Ctrl+Z ; centre du cercle, clavette 25 contre le bout cliqué ; débouchante calée contre son bout rond). Vérifié dans le navigateur : bouton et option, vrai clic au fond d'une rainure.
+
+## V0.21.10 - Arbre Assembler : sélection multiple comme pour la pièce seule
+Demande : « Arbre Assembler -> Sélection multiple comme pour la pièce seule ».
+- **Lot** (`src/47-assemblage-interface.js`, `asmLot` / `asmSelClick`) : en mode Assembler, Ctrl+clic ajoute / retire une occurrence, Shift+clic prend la plage (ordre des occurrences du porteur), Ctrl+Shift ajoute la plage — sur les lignes de composants, sur les lignes du dossier ⚙ Liaisons, et dans la vue 3D. Ctrl+clic sur un groupe « ×N » met toutes ses occurrences au lot. `asmSelId` suit le dernier clic (manipulateur, panneau) ; un clic simple rend le lot caduc. Surbrillance bleue dans la vue et dans l'arbre pour tout le lot.
+- **Actions** : Suppr supprime le lot (une confirmation qui liste les occurrences et les composants qui partent avec leur dernière occurrence, **une seule** étape d'annulation — `asmDeleteOcc(id, noPush)`, `src/46-assemblage-modele.js`) ; le clic droit propose « Supprimer le lot (n) » ; le panneau d'un lot offre Fixer / Libérer, Masquer / Afficher et Supprimer pour tout le lot. Échap désélectionne.
+- **Tests** : `npm run ci`. Vérifié dans le navigateur sur `Exemples/Test Visserie.miniFusion` : Ctrl+clic (3 vis), Shift+clic (plage de 5), Ctrl+clic sur le groupe ×9 (10 au lot), retrait d'une vis, Suppr → 9 occurrences supprimées en 1 étape, Ctrl+Z → 12 occurrences rétablies ; surbrillance 3D limitée au lot.
