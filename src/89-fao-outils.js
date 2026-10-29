@@ -246,7 +246,7 @@ function faoToolsElement(setup){
   if(t.kind==='tap'){
     const pT=document.createElement('label');pT.className='fao-tl-f';pT.innerHTML='<span>Filet</span>';
     const sT=document.createElement('select');sT.className='fao-sel';
-    ISO_THREADS.forEach(function(q){for(let k=2;k<q.length;k++){const e=document.createElement('option');e.value=q[0]+'|'+q[k];e.textContent=q[0]+(k>2?('×'+q[k]):'')+' (pas '+q[k]+')';sT.appendChild(e);}});
+    ALL_THREADS.forEach(function(q){for(let k=2;k<q.length;k++){const e=document.createElement('option');e.value=q[0]+'|'+q[k];e.textContent=threadOptLabel(q,k);sT.appendChild(e);}}); // V0.20.3 : + UNC/UNF, G, Rc, NPT
     sT.value=(t.size||'M8')+'|'+(t.p||1.25);
     sT.onchange=function(){const q=sT.value.split('|');faoSnapshot('filet du taraud');t.size=q[0];t.p=+q[1];const T=isoThread(q[0]);if(T)t.d=T[1];t.name='Taraud '+holeThreadLabel({size:t.size,p:t.p});faoChanged();rerender();};
     pT.appendChild(sT);s2.appendChild(pT);

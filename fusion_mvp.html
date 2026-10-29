@@ -281,7 +281,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.20.2';
+const APP_VER='V0.20.3';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -23740,29 +23740,80 @@ const ISO_THREADS=[['M2',2,0.4],['M2.5',2.5,0.45],['M3',3,0.5],['M4',4,0.7],['M5
 // Vis CHC (ISO 4762) : passage moyen, lamage Ø, profondeur de lamage
 const ISO_CHC=[['M3',3.4,6.5,3.4],['M4',4.5,8,4.4],['M5',5.5,10,5.4],['M6',6.6,11,6.4],['M8',9,15,8.6],
   ['M10',11,18,10.8],['M12',13.5,20,13],['M14',15.5,24,15],['M16',17.5,26,17.5],['M20',22,33,21.5],['M24',26,40,25.5]];
-// Vis FHC (ISO 10642, tête fraisée 90°) : passage moyen, Ø de tête théorique dk max.
-// La fraisure (90°) est agrandie pour que la tête reste au moins 0,2 mm SOUS la surface
-// d'entrée : Ø fraisure = dk + 2×0,2×tan 45°, arrondi au 0,1 supérieur.
+// Vis CHC ANSI (ASME B18.3, pouces) : perçage de passage « normal fit », Ø lamage,
+// profondeur = hauteur de tête + 0,4 mm (comme les CHC ISO) — V0.20.3
+const INCH=25.4,inMm=function(v){return +(v*INCH).toFixed(2);};
+const ANSI_CHC=[['#2',.1065,.188,.086],['#4',.136,.219,.112],['#5',.154,.25,.125],['#6',.1695,.281,.138],['#8',.1935,.313,.164],
+  ['#10',.221,.375,.19],['1/4"',.281,.438,.25],['5/16"',.344,.531,.3125],['3/8"',.406,.625,.375],['7/16"',.469,.75,.4375],
+  ['1/2"',.531,.812,.5],['5/8"',.656,1,.625],['3/4"',.781,1.188,.75],['7/8"',.906,1.375,.875],['1"',1.031,1.625,1]]
+  .map(function(c){return [c[0],inMm(c[1]),inMm(c[2]),Math.ceil((c[3]*INCH+0.4)*10-1e-6)/10];});
+// Vis FHC : passage, Ø de tête théorique dk max, angle de tête. La fraisure (même angle)
+// est agrandie pour que la tête reste au moins 0,2 mm SOUS la surface d'entrée :
+// Ø fraisure = dk + 2×0,2×tan(angle/2), arrondi au 0,1 supérieur.
+// ISO 10642 : 90° ; ANSI (ASME B18.3, pouces) : 82° — V0.20.3.
 const FHC_RETRAIT=0.2;
 const ISO_FHC=[['M3',3.4,6.72],['M4',4.5,8.96],['M5',5.5,11.2],['M6',6.6,13.44],['M8',9,17.92],
   ['M10',11,22.4],['M12',13.5,26.88],['M14',15.5,30.8],['M16',17.5,33.6],['M20',22,40.32]];
-function fhcCsD(c){ return Math.ceil((c[2]+2*FHC_RETRAIT)*10-1e-6)/10; }
+const ANSI_FHC=[['#2',.1065,.197],['#4',.136,.255],['#5',.154,.281],['#6',.1695,.307],['#8',.1935,.359],['#10',.221,.411],
+  ['1/4"',.281,.531],['5/16"',.344,.656],['3/8"',.406,.781],['7/16"',.469,.844],['1/2"',.531,.938],['5/8"',.656,1.188],
+  ['3/4"',.781,1.438],['7/8"',.906,1.688],['1"',1.031,1.938]].map(function(c){return [c[0],inMm(c[1]),inMm(c[2]),82];});
+function fhcCsD(c){ return Math.ceil((c[2]+2*FHC_RETRAIT*Math.tan((c[3]||90)*Math.PI/360))*10-1e-6)/10; }
 // Vis dont les cotes correspondent au perçage (le choix reste affiché tant qu'on ne touche pas aux valeurs)
 function holeScrewOf(f){
   if(!f||(f.thread&&f.thread.size))return '';
   const eq=function(a,b){return Math.abs(+a-b)<1e-6;};
   let c=null;
-  if(f.kind==='cbore')c=ISO_CHC.find(function(x){return eq(f.d,x[1])&&eq(f.cbD,x[2])&&eq(f.cbH,x[3]);});
-  else if(f.kind==='csink')c=ISO_FHC.find(function(x){return eq(f.d,x[1])&&eq(f.csD,fhcCsD(x))&&eq(f.csA||90,90);});
+  if(f.kind==='cbore')c=ISO_CHC.concat(ANSI_CHC).find(function(x){return eq(f.d,x[1])&&eq(f.cbD,x[2])&&eq(f.cbH,x[3]);});
+  else if(f.kind==='csink')c=ISO_FHC.concat(ANSI_FHC).find(function(x){return eq(f.d,x[1])&&eq(f.csD,fhcCsD(x))&&eq(f.csA||90,x[3]||90);});
   return c?c[0]:'';
 }
-function isoThread(size){ return ISO_THREADS.find(function(t){return t[0]===size;})||null; }
-function tapDrill(size,p){ const t=isoThread(size); return t?+(t[1]-(p||t[2])).toFixed(2):null; }
+// Filetages hors métrique ISO (V0.20.3), au même format [taille, Ø nominal, pas] (un seul pas) :
+// • ANSI UNC / UNF (ASME B1.1, profil 60° comme l'ISO) ;
+// • pas du gaz : G (ISO 228, cylindrique), Rc (ISO 7, conique 1:16), NPT (ASME B1.20.1, conique) — 55° / 60°.
+// THREAD_INFO[taille] = {fam, drill (Ø de perçage du taraud, tables usuelles), cone (conique), model (filet modélisable)}.
+const THREAD_INFO={};
+const THREADS_UN=[],THREADS_GAZ=[];
+[['#2',.086,56,.07,64,.07],['#4',.112,40,.089,48,.0935],['#5',.125,40,.1015,44,.104],['#6',.138,32,.1065,40,.113],
+ ['#8',.164,32,.136,36,.136],['#10',.19,24,.1495,32,.159],['#12',.216,24,.177,28,.182],['1/4',.25,20,.201,28,.213],
+ ['5/16',.3125,18,.257,24,.272],['3/8',.375,16,.3125,24,.332],['7/16',.4375,14,.368,20,.3906],['1/2',.5,13,.4219,20,.4531],
+ ['9/16',.5625,12,.4844,18,.5156],['5/8',.625,11,.5312,18,.5781],['3/4',.75,10,.6562,16,.6875],['7/8',.875,9,.7656,14,.8125],
+ ['1',1,8,.875,12,.9219]].forEach(function(u){
+  [['UNC',u[2],u[3]],['UNF',u[4],u[5]]].forEach(function(k){
+    const n=u[0]+'-'+k[1]+' '+k[0];
+    THREADS_UN.push([n,+(u[1]*INCH).toFixed(3),+(INCH/k[1]).toFixed(4)]);
+    THREAD_INFO[n]={fam:k[0],tpi:k[1],drill:inMm(k[2]),cone:false,model:true};
+  });
+});
+[['1/16',7.723,28,6.8,6.6],['1/8',9.728,28,8.8,8.4],['1/4',13.157,19,11.8,11.2],['3/8',16.662,19,15.25,14.75],
+ ['1/2',20.955,14,19,18.25],['3/4',26.441,14,24.5,23.75],['1',33.249,11,30.75,30],['1 1/4',41.91,11,39.5,38.5],
+ ['1 1/2',47.803,11,45.25,44.5],['2',59.614,11,57,56]].forEach(function(g){
+  const p=+(INCH/g[2]).toFixed(4);
+  THREADS_GAZ.push(['G'+g[0],g[1],p]);THREAD_INFO['G'+g[0]]={fam:'G',tpi:g[2],drill:g[3],cone:false,model:false};
+  THREADS_GAZ.push(['Rc'+g[0],g[1],p]);THREAD_INFO['Rc'+g[0]]={fam:'Rc',tpi:g[2],drill:g[4],cone:true,model:false};
+});
+[['1/16',7.94,27,6.3],['1/8',10.29,27,8.7],['1/4',13.72,18,11.1],['3/8',17.15,18,14.7],['1/2',21.34,14,18.3],
+ ['3/4',26.67,14,23.4],['1',33.4,11.5,29.4],['1 1/4',42.16,11.5,38.1],['1 1/2',48.26,11.5,44],['2',60.33,11.5,56.3]].forEach(function(g){
+  const n=g[0]+' NPT';THREADS_GAZ.push([n,g[1],+(INCH/g[2]).toFixed(4)]);THREAD_INFO[n]={fam:'NPT',tpi:g[2],drill:g[3],cone:true,model:false};
+});
+const ALL_THREADS=ISO_THREADS.concat(THREADS_UN,THREADS_GAZ);
+function isoThread(size){ return ALL_THREADS.find(function(t){return t[0]===size;})||null; }
+function threadInfo(size){ return THREAD_INFO[size]||{fam:'M',drill:0,cone:false,model:true}; }
+function tapDrill(size,p){
+  const t=isoThread(size);if(!t)return null;const I=threadInfo(size);
+  if(I.drill>0&&(!p||Math.abs(+p-t[2])<1e-6))return I.drill;
+  return +(t[1]-(p||t[2])).toFixed(2);
+}
+// Libellé d'un pas dans les listes : « M8 (pas 1,25) », « M8×1 (fin) », « 1/4-20 UNC (20 filets/po) », « G1/4 (19 filets/po) »
+function threadOptLabel(t,k){
+  const I=threadInfo(t[0]);
+  if(I.fam!=='M')return t[0]+' ('+I.tpi+' filets/po'+(I.cone?', conique':'')+')';
+  return k>2?(t[0]+'×'+String(t[k]).replace('.',',')+' (fin)'):(t[0]+' (pas '+String(t[2]).replace('.',',')+')');
+}
 // Filet interne ISO 68-1 / ISO 965-1 : crête (Ø mineur D1) méplat p/4, racine
 // (Ø majeur D) méplat p/8, flancs à 60°. `jeu` est un jeu d'impression sur le
 // DIAMÈTRE (mm) : chaque rayon est décalé de jeu/2.
 function isoHoleThread(size,p,jeu){
-  const t=isoThread(size);if(!t)return null;
+  const t=isoThread(size);if(!t||!threadInfo(size).model)return null; // pas du gaz (55° / conique) : cosmétique seulement
   const D=+t[1],P=+p||+t[2];if(!(D>0)||!(P>0))return null;
   const c=Math.max(0,+jeu||0)/2,D1=D-1.082532*P;
   return {D:D,P:P,D1:D1,rCrete:D1/2+c,rRacine:D/2+c,c:c};
@@ -24105,8 +24156,10 @@ function renderHoleProps(p,f){
     list.forEach(([t,fn,cls])=>{const b=document.createElement('button');b.textContent=t;
       if(cls)b.className=cls;b.onclick=fn;d.appendChild(b);});
     p.appendChild(d);return d;};
-  const sel=function(opts,val,fn){const s=document.createElement('select');
-    opts.forEach(function(o){const op=document.createElement('option');op.value=o[0];op.textContent=o[1];s.appendChild(op);});
+  // une entrée {g:'titre'} ouvre un groupe (optgroup) — V0.20.3
+  const sel=function(opts,val,fn){const s=document.createElement('select');let grp=s;
+    opts.forEach(function(o){if(o.g){grp=document.createElement('optgroup');grp.label=o.g;s.appendChild(grp);return;}
+      const op=document.createElement('option');op.value=o[0];op.textContent=o[1];grp.appendChild(op);});
     s.value=String(val);s.onchange=function(){docPushUndo('perçage');fn(s.value);go();};return s;};
   const num=function(val,fn,w,hh,kk){const i=document.createElement('input');i.type='text';i.inputMode='decimal';
     i.value=String(+(+val).toFixed(3)).replace('.',',');if(hh)parFx(i,hh,kk);
@@ -24127,24 +24180,31 @@ function renderHoleProps(p,f){
     function(v){docPushUndo('perçage');f.kind=v;go();});
   pRow('Type',segT);
   /* taraudage */
-  const thOpts=[['','Aucun (trou lisse)']];
-  ISO_THREADS.forEach(function(t){thOpts.push([t[0]+'|'+t[2],t[0]+' (pas '+String(t[2]).replace('.',',')+')']);
-    for(let k=3;k<t.length;k++)thOpts.push([t[0]+'|'+t[k],t[0]+'×'+String(t[k]).replace('.',',')+' (fin)']);});
+  const thOpts=[['','Aucun (trou lisse)'],{g:'Métrique ISO'}];
+  ISO_THREADS.forEach(function(t){for(let k=2;k<t.length;k++)thOpts.push([t[0]+'|'+t[k],threadOptLabel(t,k)]);});
+  // V0.20.3 : ANSI UNC / UNF, pas du gaz G (cylindrique), Rc et NPT (coniques)
+  [['UNC','ANSI UNC (gros)'],['UNF','ANSI UNF (fin)'],['G','Gaz G — cylindrique (ISO 228)'],['Rc','Gaz Rc — conique (ISO 7)'],['NPT','NPT — conique (ANSI)']].forEach(function(F){
+    thOpts.push({g:F[1]});
+    THREADS_UN.concat(THREADS_GAZ).forEach(function(t){if(threadInfo(t[0]).fam===F[0])thOpts.push([t[0]+'|'+t[2],threadOptLabel(t,2)]);});});
   pRow('Taraudage',sel(thOpts,f.thread&&f.thread.size?(f.thread.size+'|'+f.thread.p):'',function(v){
     if(!v){f.thread=null;return;}
     const q=v.split('|'),pz=+q[1],prev=f.thread||{};
     // conserve le mode de longueur, la face choisie et les options d'impression
     f.thread=Object.assign({},prev,{size:q[0],p:pz});
+    if(!threadInfo(q[0]).model)f.thread.model=false; // pas du gaz : filet cosmétique seulement
     if(!(f.thread.len>0))f.thread.len=Math.max(2*isoThread(q[0])[1],+f.depth-2*pz);
     f.d=tapDrill(q[0],pz);
     if(f.kind==='csink')f.csD=+(isoThread(q[0])[1]*1.1+0.4).toFixed(2);
   }));
   /* vis CHC (lamage) */
-  if(f.kind==='cbore')pRow('Vis CHC',sel([['','—']].concat(ISO_CHC.map(function(c){return [c[0],c[0]+' : Ø'+String(c[1]).replace('.',',')+' / lamage Ø'+c[2]+' × '+String(c[3]).replace('.',',')];})),holeScrewOf(f),function(v){
-    const c=ISO_CHC.find(function(x){return x[0]===v;});if(!c)return;f.thread=null;f.d=c[1];f.cbD=c[2];f.cbH=c[3];}));
+  const fr=function(v){return String(v).replace('.',',');};
+  if(f.kind==='cbore')pRow('Vis CHC',sel([['','—'],{g:'ISO 4762 (métrique)'}].concat(ISO_CHC.map(function(c){return [c[0],c[0]+' : Ø'+fr(c[1])+' / lamage Ø'+fr(c[2])+' × '+fr(c[3])];}),
+    [{g:'ANSI B18.3 (pouces)'}],ANSI_CHC.map(function(c){return [c[0],c[0]+' : Ø'+fr(c[1])+' / lamage Ø'+fr(c[2])+' × '+fr(c[3])];})),holeScrewOf(f),function(v){
+    const c=ISO_CHC.concat(ANSI_CHC).find(function(x){return x[0]===v;});if(!c)return;f.thread=null;f.d=c[1];f.cbD=c[2];f.cbH=c[3];}));
   /* vis FHC (fraisure) : tête au moins 0,2 mm sous la surface */
-  if(f.kind==='csink')pRow('Vis FHC',sel([['','—']].concat(ISO_FHC.map(function(c){return [c[0],c[0]+' : Ø'+String(c[1]).replace('.',',')+' / fraisure Ø'+String(fhcCsD(c)).replace('.',',')+' × 90° (tête −'+String(FHC_RETRAIT).replace('.',',')+')'];})),holeScrewOf(f),function(v){
-    const c=ISO_FHC.find(function(x){return x[0]===v;});if(!c)return;f.thread=null;f.d=c[1];f.csD=fhcCsD(c);f.csA=90;}));
+  const fhcOpt=function(c){return [c[0],c[0]+' : Ø'+fr(c[1])+' / fraisure Ø'+fr(fhcCsD(c))+' × '+(c[3]||90)+'° (tête −'+fr(FHC_RETRAIT)+')'];};
+  if(f.kind==='csink')pRow('Vis FHC',sel([['','—'],{g:'ISO 10642 (métrique, 90°)'}].concat(ISO_FHC.map(fhcOpt),[{g:'ANSI B18.3 (pouces, 82°)'}],ANSI_FHC.map(fhcOpt)),holeScrewOf(f),function(v){
+    const c=ISO_FHC.concat(ANSI_FHC).find(function(x){return x[0]===v;});if(!c)return;f.thread=null;f.d=c[1];f.csD=fhcCsD(c);f.csA=c[3]||90;}));
   /* Ø */
   pRow(f.thread&&f.thread.size?'Ø taraud '+holeThreadLabel(f.thread):'Ø du trou',num(f.d,function(v){f.d=v;},0,f,'d'));
   if(f.thread&&f.thread.size){
@@ -24154,13 +24214,14 @@ function renderHoleProps(p,f){
     if(tm==='len')pRow('Longueur (mm)',num(f.thread.len||f.depth,function(v){f.thread.len=v;},0,f.thread,'len'));
     else if(tm==='upto')pBtns([['Sélectionner la face',function(){holeFacePickStart(f.id,'thread');}]]);
     if(f._thLen)pNote('Longueur filetée effective : '+String(f._thLen).replace('.',',')+' mm');
-    pRow('Filet',sel([['cosmetic','Cosmétique (FAO seulement)'],['model','Modélisé — impression 3D']],f.thread.model?'model':'cosmetic',function(v){
+    if(!threadInfo(f.thread.size).model)pNote('Filet '+(threadInfo(f.thread.size).cone?'conique ':'')+'cosmétique seulement (profil non modélisé) ; Ø de perçage du taraud selon les tables usuelles.');
+    else pRow('Filet',sel([['cosmetic','Cosmétique (FAO seulement)'],['model','Modélisé — impression 3D']],f.thread.model?'model':'cosmetic',function(v){
       f.thread.model=(v==='model');if(f.thread.model&&f.thread.clear==null)f.thread.clear=0.2;}));
     if(f.thread.model){
       pRow('Jeu d\'impression (Ø mm)',num0(f.thread.clear==null?0.2:f.thread.clear,function(v){f.thread.clear=v;},0));
       const th=isoHoleThread(f.thread.size,f.thread.p,f.thread.clear);
       if(th){const fx=v=>String(+(+v).toFixed(3)).replace('.',',');
-        pNote('ISO 261 / ISO 965-1 : Ø mineur '+fx(th.D1)+' (crête) / Ø majeur '+fx(th.D)+' (racine), pas '+fx(th.P)+' mm — '+
+        pNote((threadInfo(f.thread.size).fam==='M'?'ISO 261 / ISO 965-1':'ASME B1.1 (profil 60°)')+' : Ø mineur '+fx(th.D1)+' (crête) / Ø majeur '+fx(th.D)+' (racine), pas '+fx(th.P)+' mm — '+
           Math.max(1,Math.round((+f._thLen||+f.thread.len||th.P*3)/th.P))+' spire(s). Noyau exact requis.');}
     }
   }
@@ -46959,7 +47020,7 @@ function faoToolsElement(setup){
   if(t.kind==='tap'){
     const pT=document.createElement('label');pT.className='fao-tl-f';pT.innerHTML='<span>Filet</span>';
     const sT=document.createElement('select');sT.className='fao-sel';
-    ISO_THREADS.forEach(function(q){for(let k=2;k<q.length;k++){const e=document.createElement('option');e.value=q[0]+'|'+q[k];e.textContent=q[0]+(k>2?('×'+q[k]):'')+' (pas '+q[k]+')';sT.appendChild(e);}});
+    ALL_THREADS.forEach(function(q){for(let k=2;k<q.length;k++){const e=document.createElement('option');e.value=q[0]+'|'+q[k];e.textContent=threadOptLabel(q,k);sT.appendChild(e);}}); // V0.20.3 : + UNC/UNF, G, Rc, NPT
     sT.value=(t.size||'M8')+'|'+(t.p||1.25);
     sT.onchange=function(){const q=sT.value.split('|');faoSnapshot('filet du taraud');t.size=q[0];t.p=+q[1];const T=isoThread(q[0]);if(T)t.d=T[1];t.name='Taraud '+holeThreadLabel({size:t.size,p:t.p});faoChanged();rerender();};
     pT.appendChild(sT);s2.appendChild(pT);
@@ -47668,7 +47729,7 @@ function faoDrillSections(setup,op,d){
         const key=g.d.toFixed(2)+'@'+g.z.toFixed(2);
         const info=(setup.holeInfo&&setup.holeInfo[key])||{};
         const opts=[['','Trou']];
-        ISO_THREADS.forEach(function(t){for(let k=2;k<t.length;k++){const td=t[1]-t[k];if(Math.abs(td-g.d)<=0.3)opts.push([t[0]+'|'+t[k],'Taraudé '+t[0]+(k>2?('×'+String(t[k]).replace('.',',')):'')]);}});
+        ALL_THREADS.forEach(function(t){for(let k=2;k<t.length;k++){const td=tapDrill(t[0],t[k]);if(Math.abs(td-g.d)<=0.3)opts.push([t[0]+'|'+t[k],'Taraudé '+holeThreadLabel({size:t[0],p:t[k]})]);}}); // V0.20.3 : + UNC/UNF, gaz
         if(opts.length>1)r.appendChild(faoSel(opts,info.thread?(info.thread.size+'|'+info.thread.p):'',function(v){
           setup.holeInfo=setup.holeInfo||{};
           if(!v)delete setup.holeInfo[key];

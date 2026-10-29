@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**429 versions**, de `2026-09-28b` à `V0.20.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**430 versions**, de `2026-09-28b` à `V0.20.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5533,3 +5533,11 @@ Demande : « que le choix des vis pour les lamages reste sauf si on change les v
 - **Choix conservé** (`holeScrewOf`, `src/76-percage.js`) : la liste « Vis CHC » n'est plus remise à « — » ; elle affiche la vis dont les cotes correspondent exactement au trou (Ø, Ø lamage, profondeur, sans taraudage). Une valeur modifiée à la main la ramène à « — ».
 - **Vis FHC** (ISO 10642, tête fraisée 90°) pour le type Fraisure, M3 à M20 : passage moyen (comme CHC) et Ø de fraisure = dk max théorique + 2 × 0,2 × tan 45°, arrondi au 0,1 supérieur (`ISO_FHC`, `fhcCsD`, `FHC_RETRAIT`) → la tête reste de 0,20 à 0,24 mm sous la surface (ex. M6 : Ø6,6 / fraisure Ø13,9 × 90°). Le choix fixe l'angle à 90° et retire le taraudage ; il reste affiché tant que Ø, Ø fraisure et angle correspondent.
 - **Tests** : `test_percage_3d` 6a–6e (choix CHC et FHC conservés dans le panneau, perdus quand une cote change, retrait ≥ 0,2 mm pour toutes les tailles). `npm run ci`.
+
+## V0.20.3 - Perçage : ANSI (UNC / UNF, vis CHC / FHC en pouces) et pas du gaz
+Demande : « ajouter la norme ANSI, pour les CHC et FHC UNC et UNF, ainsi que les trous taraudés au pas du gaz conique et droit ».
+- **Filetages** (`src/76-percage.js`) : `THREADS_UN` (ASME B1.1, #2 à 1", UNC et UNF, nommés « 1/4-20 UNC »), `THREADS_GAZ` (G ISO 228 cylindrique, Rc ISO 7 conique, NPT conique, 1/16 à 2) au même format que `ISO_THREADS` ; `ALL_THREADS` est consulté par `isoThread`. `THREAD_INFO` donne la famille, les filets par pouce et le Ø de perçage du taraud des tables usuelles (`tapDrill` : 1/4-20 UNC → 5,11 ; G1/4 → 11,8 ; Rc1/4 → 11,2 ; sinon Ø − pas comme avant).
+- **Panneau** : « Taraudage » groupé (Métrique ISO, ANSI UNC, ANSI UNF, Gaz G, Gaz Rc, NPT) ; les pouces s'affichent en filets/po. UNC / UNF se modélisent comme l'ISO (profil 60°) ; G, Rc et NPT restent en filet cosmétique (profil 55° ou conique non modélisé, note dans le panneau), et le Rc / NPT est percé droit au Ø de taraud.
+- **Vis en pouces** : « Vis CHC » propose aussi ASME B18.3 (passage « normal fit », lamage, profondeur = hauteur de tête + 0,4 mm) ; « Vis FHC » propose ASME B18.3 à 82°, fraisure à 82° agrandie pour une tête ≥ 0,2 mm sous la surface (`fhcCsD` tient compte de l'angle). Le choix reste affiché tant que les cotes correspondent (angle compris).
+- **FAO** : la liste du taraud (`89-fao-outils`) et la nature des trous STEP (`89-fao-percage`, par Ø de perçage du taraud) incluent ces filetages.
+- **Tests** : `test_percage_3d` 7a–7g (Ø de taraud, pas, modélisable ou non, CHC / FHC ANSI, listes du panneau, G1/4 et 1/4-20 UNC percés au noyau exact et reconnus par la FAO). `npm run ci`.

@@ -575,7 +575,7 @@ function faoDrillSections(setup,op,d){
         const key=g.d.toFixed(2)+'@'+g.z.toFixed(2);
         const info=(setup.holeInfo&&setup.holeInfo[key])||{};
         const opts=[['','Trou']];
-        ISO_THREADS.forEach(function(t){for(let k=2;k<t.length;k++){const td=t[1]-t[k];if(Math.abs(td-g.d)<=0.3)opts.push([t[0]+'|'+t[k],'Taraudé '+t[0]+(k>2?('×'+String(t[k]).replace('.',',')):'')]);}});
+        ALL_THREADS.forEach(function(t){for(let k=2;k<t.length;k++){const td=tapDrill(t[0],t[k]);if(Math.abs(td-g.d)<=0.3)opts.push([t[0]+'|'+t[k],'Taraudé '+holeThreadLabel({size:t[0],p:t[k]})]);}}); // V0.20.3 : + UNC/UNF, gaz
         if(opts.length>1)r.appendChild(faoSel(opts,info.thread?(info.thread.size+'|'+info.thread.p):'',function(v){
           setup.holeInfo=setup.holeInfo||{};
           if(!v)delete setup.holeInfo[key];
