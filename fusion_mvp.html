@@ -281,7 +281,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.21.16';
+const APP_VER='V0.21.17';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -23950,7 +23950,7 @@ document.addEventListener('keydown',e=>{
 /* ═══════════════ 75-balayage.js — balayage ═══════════════ */
 /* ═══════════════════════════════════════════════════════════════════════════
    BALAYAGE — un profil d'esquisse (fermé) poussé le long d'un CHEMIN dessiné dans
-   une AUTRE esquisse (lignes et arcs bout à bout, ouvert ou fermé, ou un cercle seul).
+   une AUTRE esquisse (lignes, arcs et splines bout à bout, ouvert ou fermé, ou un cercle seul).
 
    Cas d'école : le profil sur un plan de construction « normal à un axe » posé au bout
    du chemin (tube, main courante, joint torique, rainure qui suit un contour).
@@ -23978,15 +23978,15 @@ function sweepName(f){
 }
 
 // ── le CHEMIN, dans le plan de son esquisse ─────────────────────────────────
-// Toutes les lignes / arcs hors construction de l'esquisse, qui doivent former UNE chaîne
+// Toutes les lignes / arcs / splines hors construction de l'esquisse, qui doivent former UNE chaîne
 // sans embranchement ; ou un cercle seul (chemin fermé). near = point MONDE {x,y,z} (centre
 // du profil) : la chaîne démarre à l'extrémité la plus proche.
 // → {chain, pts, closed, len, n} | {circle, closed:true, len} | {err}
 function sweepPath2D(sk,near){
   if(!sk)return{err:'esquisse du chemin introuvable'};
   const P=sk.points||{},TAU=Math.PI*2;
-  const ents=(sk.entities||[]).filter(e=>e&&!e.construction&&!e.ref&&(e.t==='line'||e.t==='arc'||e.t==='circle'));
-  if(!ents.length)return{err:'le chemin est vide (aucune ligne ni arc hors construction dans « '+sk.name+' »)'};
+  const ents=(sk.entities||[]).filter(e=>e&&!e.construction&&!e.ref&&(e.t==='line'||e.t==='arc'||e.t==='circle'||e.t==='spline'));
+  if(!ents.length)return{err:'le chemin est vide (aucune ligne, arc ni spline hors construction dans « '+sk.name+' »)'};
   const full=e=>e.t==='circle'||(e.t==='arc'&&e.pa===e.pb);
   if(ents.some(full)){
     if(ents.length>1)return{err:'un cercle ne sert de chemin que seul dans son esquisse'};
@@ -24006,6 +24006,18 @@ function sweepPath2D(sk,near){
       const A=P[e.p1],B=P[e.p2];
       if(!A||!B||Math.hypot(B.x-A.x,B.y-A.y)<1e-9)return;
       edges.push({a:node(A),b:node(B),e:e,kind:'line',len:Math.hypot(B.x-A.x,B.y-A.y)});
+    }else if(e.t==='spline'){
+      // B-spline exacte (50-esquisse-6), coupée comme dans skLoopTrace : aux bouts des autres traits posés
+      // dessus (jonction en T → refusée plus bas comme fourche) ; fermée = 2 moitiés, donc une boucle
+      const cands=[];ents.forEach(o=>{if(o===e)return;
+        (o.t==='line'?[o.p1,o.p2]:o.t==='arc'?[o.pa,o.pb]:o.t==='spline'&&o.pts.length?[o.pts[0],o.pts[o.pts.length-1]]:[]).forEach(p=>cands.push(p));});
+      skSplineEdges(sk,e,skSplineCutsFor(sk,e,cands)).forEach(se=>{
+        const pl=se.poly||[];if(pl.length<2)return;
+        let L=0;for(let k=1;k<pl.length;k++)L+=Math.hypot(pl[k][0]-pl[k-1][0],pl[k][1]-pl[k-1][1]);
+        if(!(L>1e-9))return;
+        edges.push({a:node({x:pl[0][0],y:pl[0][1]}),b:node({x:pl[pl.length-1][0],y:pl[pl.length-1][1]}),e:e,kind:'spline',
+          bs:se.bs,poly:pl,o:se.o,i:se.i,len:L});
+      });
     }else{
       const C=P[e.pc],an=arcAngles(sk,e);
       if(!C||!an||!(e.r>1e-9))return;
@@ -24013,7 +24025,7 @@ function sweepPath2D(sk,near){
         b:node({x:C.x+e.r*Math.cos(an.a2),y:C.y+e.r*Math.sin(an.a2)}),e:e,kind:'arc',len:e.r*(an.a2-an.a1)});
     }
   });
-  if(!edges.length)return{err:'chemin : lignes ou arcs dégénérés'};
+  if(!edges.length)return{err:'chemin : lignes, arcs ou splines dégénérés'};
   const deg={};edges.forEach(d=>{deg[d.a]=(deg[d.a]||0)+1;deg[d.b]=(deg[d.b]||0)+1;});
   const fourche=ids.find(id=>deg[id]>2);
   if(fourche)return{err:'le chemin se ramifie en ('+pts[fourche].x.toFixed(1)+' ; '+pts[fourche].y.toFixed(1)+') — il faut UNE chaîne continue, sans embranchement'};
@@ -24048,6 +24060,7 @@ function sweepStart3(sk,p){
     const st=p.chain[0],ed=st.ed,A=p.pts[st.from],Bp=p.pts[ed.a===st.from?ed.b:ed.a];
     s2=A;
     if(ed.kind==='line')t2={x:Bp.x-A.x,y:Bp.y-A.y};
+    else if(ed.kind==='spline')t2=ed.a===st.from?{x:Math.cos(ed.o),y:Math.sin(ed.o)}:{x:-Math.cos(ed.i),y:-Math.sin(ed.i)}; // tangente de bout de la courbe
     else{
       // même lecture du sens que occWireFromChain : départ sur a1 → sens trigo
       const C=sk.points[ed.e.pc],an=arcAngles(sk,ed.e),a=Math.atan2(A.y-C.y,A.x-C.x);
@@ -24128,9 +24141,13 @@ function occShapeOfSweep(f){
     catch(e){occDispose(bins);throw new Error('chemin : '+e.message);}
   }
   const vol=s=>{let v=0;try{const G=new occt.GProp_GProps_1();occt.BRepGProp.VolumeProperties_1(s,G,false,false,false);v=G.Mass();G.delete();}catch(e){}return v;};
+  // chemin à spline : binormale FIXE = normale de son esquisse (repère à rotation minimale d'une courbe plane).
+  // Le Frenet corrigé ne rend jamais la main sur une B-spline (mesuré, OCCT wasm) ; le Frenet pur vrille aux inflexions.
+  const binorm=!path.circle&&path.chain.some(st=>st.ed.kind==='spline')?sketchBasis(pk).n:null;
   const pipe=w=>{
     const ps=occBinPush(bins,new occt.BRepOffsetAPI_MakePipeShell(spine));
-    try{ps.SetMode_1(false);}catch(e){}
+    if(binorm)ps.SetMode_3(occBinPush(bins,new occt.gp_Dir_4(binorm.x,binorm.y,binorm.z)));
+    else try{ps.SetMode_1(false);}catch(e){}
     try{ps.SetTransitionMode(occt.BRepBuilderAPI_TransitionMode.BRepBuilderAPI_RightCorner);}catch(e){}
     ps.Add_1(w,false,false);
     ps.Build();
@@ -24280,7 +24297,7 @@ function sweepDefaultPath(profId){
 }
 function askSweep(presetSketchId){
   const S=sweepSketches();
-  if(S.length<2){alert('Balayage : il faut deux esquisses — le PROFIL (fermé) et le CHEMIN (lignes et arcs bout à bout), sur des plans différents.');return;}
+  if(S.length<2){alert('Balayage : il faut deux esquisses — le PROFIL (fermé) et le CHEMIN (lignes, arcs et splines bout à bout), sur des plans différents.');return;}
   let prof=presetSketchId;
   if(!prof){
     for(let i=S.length-1;i>=0&&!prof;i--){const tr=skLoopTrace(S[i]);if(tr.solids.length||tr.circlesOut.length)prof=S[i].id;}
@@ -52390,7 +52407,7 @@ function faoMeshFromBodyFine(b){
       const n=document.createElement('button');
       n.id='btnSweep';
       n.textContent='〰 Balayage';
-      n.title='Balayage : le profil fermé d’une esquisse suit le chemin (lignes et arcs bout à bout) d’une autre esquisse — tube, main courante, rainure.';
+      n.title='Balayage : le profil fermé d’une esquisse suit le chemin (lignes, arcs et splines bout à bout) d’une autre esquisse — tube, main courante, rainure.';
       b.parentNode.insertBefore(n,b.nextSibling);
     }
   }

@@ -5650,3 +5650,9 @@ Demande : « Trous taraudés -> un filet normalisé modelé comme il faut […] 
 - **Panneau** : « Filet » propose d'abord « Modélisé — profil ISO dans le corps » ; le jeu (Ø) vaut 0 par défaut (profil nominal), à augmenter seulement pour l'impression 3D.
 - **Coût** : environ 5 s de noyau pour un M8 de 20 mm (16 spires), comme l'ancienne gorge ; le résultat est ensuite repris des points de contrôle du rejeu tant que le perçage ne change pas.
 - **Tests** : `test_filet_modele` (un seul solide, axe du trou vide, coupe axiale : racine R4,000, crête R3,375, flancs à 60°) ; `test_percage_3d`, `test_fao_taraudage`, `test_filet_visibilite`, `test_mep_hachures_cotes` ; `npm run ci`. Vu dans l'appli sur « Perçages » (M8 modélisé).
+
+## V0.21.17 - Balayage : les splines servent aussi de chemin
+Demande : « Balayage -> accepter les spline aussi comme guide ».
+- **Chemin** (`src/75-balayage.js`, `sweepPath2D`) : les splines d'esquisse entrent dans la chaîne, seules, fermées ou bout à bout avec lignes et arcs. Arêtes exactes de `skSplineEdges` (mêmes pôles et nœuds que le dessin), coupées comme dans `skLoopTrace` ; départ à la tangente de bout de la courbe (`sweepStart3`). Repli maillage : la polyligne de la spline.
+- **Noyau** (`occShapeOfSweep`) : un chemin à spline est balayé à binormale FIXE = normale de son esquisse (repère à rotation minimale d'une courbe plane). Le Frenet corrigé ne rend jamais la main sur une B-spline (mesuré, OCCT wasm) ; le Frenet pur vrille aux inflexions. Chemins lignes / arcs inchangés.
+- **Tests** : `test_balayage` — spline droite, en S (deux sens), carré 4×4 sans vrille à l'inflexion, ligne + spline, spline fermée, repli maillage : volume = section × longueur ; `npm run ci`.

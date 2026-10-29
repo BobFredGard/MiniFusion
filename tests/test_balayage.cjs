@@ -62,6 +62,20 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     'markDirty();rebuild();const FR=occFinalShape(null);out.doc={vol:FR.shape?vol(FR.shape):null,msgs:FR.msgs.slice(0,3)};if(FR.shape)occCleanup(FR,null);',
     'out.icone=featIconOf(fc);out.tl=JSON.stringify(tlbSvgKey({kind:"feature",o:fc}));',
     'out.hote=tlHostFeatureOfSketch(ch)===fc;out.coupe=occIsCutFeat(fc);',
+    // 9) chemins SPLINE : droite (points alignés), courbe en S, ligne + spline, spline fermée ; profil cercle r3
+    'const spl=(sk,pts,closed)=>{const ids=pts.map(q=>{const id="s"+(++k);sk.points[id]={x:q[0],y:q[1]};return id;});const e={id:"P"+(++k),t:"spline",pts:ids};if(closed)e.closed=true;sk.entities.push(e);return ids;};',
+    // profil cercle r3 posé NORMAL à la tangente de départ du chemin (sinon la section est oblique : × cos)
+    'const prN=(ch,r)=>{const T=sweepStart3(ch,sweepPath2D(ch,{x:0,y:0,z:0})).T;const p=mkSk([-T.y,T.x,0],[0,0,1],[T.x,T.y,0]);circ(p,0,0,r||3);return p;};',
+    'reset();ch=mkSk(...XY);spl(ch,[[0,0],[20,0],[40,0]]);pr=prN(ch);out.splD=run(sw(pr,ch));',
+    'reset();ch=mkSk(...XY);spl(ch,[[0,0],[20,8],[40,-8],[60,0]]);pr=prN(ch);out.splS=run(sw(pr,ch));out.splSCk=sweepCheck(sw(pr,ch));out.splSLen=out.splSCk.path&&out.splSCk.path.len;',
+    'ch.entities=[];spl(ch,[[60,0],[40,-8],[20,8],[0,0]]);out.splSinv=run(sw(pr,ch));',
+    // carré 4×4 le long de la même courbe en S : il ne doit pas vriller à l'inflexion (solide valide, volume 16·L)
+    'const prC=mkSk(pr.axU,pr.axV,pr.axN);poly(prC,[[-2,-2],[2,-2],[2,2],[-2,2]],true);out.splSq=run(sw(prC,ch));',
+    'reset();ch=mkSk(...XY);const sj=spl(ch,[[20,0],[40,10],[60,0]]);ch.points.z0={x:0,y:0};ch.entities.push({id:"lz",t:"line",p1:"z0",p2:sj[0]});pr=prN(ch);',
+    'out.splL=run(sw(pr,ch));out.splLCk=sweepCheck(sw(pr,ch));out.splLLen=out.splLCk.path&&out.splLCk.path.len;out.splLn=out.splLCk.path&&out.splLCk.path.n;',
+    'try{const g=legacySweepGeos(sw(pr,ch),[]);out.splMail={n:g.length};}catch(e){out.splMail={err:String(e.message)};}',
+    'reset();pr=mkSk(...ZX);circ(pr,0,30,3);ch=mkSk(...XY);spl(ch,[[30,0],[0,30],[-30,0],[0,-30]],true);',
+    'out.splF=run(sw(pr,ch));out.splFCk=sweepCheck(sw(pr,ch));out.splFLen=out.splFCk.path&&out.splFCk.path.len;out.splFClosed=out.splFCk.path&&out.splFCk.path.closed;',
     // 8) repli maillage
     'reset();pr=mkSk(...YZ);circ(pr,0,0,3);ch=mkSk(...XY);poly(ch,[[0,0],[40,0],[40,40]],false);',
     'try{const g=legacySweepGeos(sw(pr,ch),[]);out.maillage={n:g.length};}catch(e){out.maillage={err:String(e.message)};}',
@@ -99,6 +113,18 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   A(o.icone==='≋'&&/"sweep","cut"/.test(o.tl),'icônes arbre / timeline : '+o.icone+' '+o.tl);
   A(o.hote&&o.coupe,'l’esquisse du chemin est rattachée au balayage ; découpe reconnue');
   A(o.maillage&&o.maillage.n===1,'repli maillage : '+JSON.stringify(o.maillage));
+  console.log('  spline droite r3   : '+show(o.splD));
+  A(near(o.splD.vol,pi*9*40),'chemin SPLINE à points alignés : cylindre π·9·40');
+  console.log('  spline en S r3     : '+show(o.splS)+' (L = '+(o.splSLen||0).toFixed(3)+')');
+  A(o.splSLen>60.5&&near(o.splS.vol,pi*9*o.splSLen,2e-3),'chemin SPLINE en S : volume = section × longueur de la courbe');
+  A(near(o.splSinv.vol,o.splS.vol,1e-3),'spline dessinée à l’envers : même tube, parti du profil');
+  console.log('  spline en S carré 4 : '+show(o.splSq));
+  A(near(o.splSq.vol,16*o.splSLen,2e-3)&&!(o.splSq.warn||[]).length,'profil CARRÉ le long d’une spline à inflexion : sans vrille, volume 16 × L');
+  console.log('  ligne + spline r3  : '+show(o.splL)+' (L = '+(o.splLLen||0).toFixed(3)+', '+o.splLn+' traits)');
+  A(o.splLn===2&&near(o.splL.vol,pi*9*o.splLLen,2e-3),'chemin ligne + spline bout à bout : volume = section × longueur');
+  A(o.splMail&&o.splMail.n===1,'repli maillage le long d’une spline : '+JSON.stringify(o.splMail));
+  console.log('  spline fermée r3   : '+show(o.splF)+' (L = '+(o.splFLen||0).toFixed(3)+')');
+  A(o.splFClosed&&near(o.splF.vol,pi*9*o.splFLen,2e-3),'chemin SPLINE FERMÉE : anneau, volume = section × longueur');
   console.log(ko?'✗ '+ko+' échec(s)':'✓ balayage : tout est bon');
   process.exit(ko?1:0);
 })().catch(e=>{console.error(e);process.exit(1);});

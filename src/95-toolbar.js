@@ -22,7 +22,7 @@
       const n=document.createElement('button');
       n.id='btnSweep';
       n.textContent='〰 Balayage';
-      n.title='Balayage : le profil fermé d’une esquisse suit le chemin (lignes et arcs bout à bout) d’une autre esquisse — tube, main courante, rainure.';
+      n.title='Balayage : le profil fermé d’une esquisse suit le chemin (lignes, arcs et splines bout à bout) d’une autre esquisse — tube, main courante, rainure.';
       b.parentNode.insertBefore(n,b.nextSibling);
     }
   }
