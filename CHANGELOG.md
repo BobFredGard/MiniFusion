@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**435 versions**, de `2026-09-28b` à `V0.21.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**436 versions**, de `2026-09-28b` à `V0.21.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5574,3 +5574,9 @@ Signalement : « Assembler : pas de miroir ni ombre visibles ».
 - **Cause** : le mode Assembler dessine sa propre scène (`asmScene`, 47) ; le sol miroir (`floorMesh`), la lampe d'ombre et le plan qui la reçoit (`vEnvS.sun` / `vEnvS.floor`, 98-rendu-vue) restaient dans la scène de la pièce, non dessinée. Le reflet était aussi calculé sur cette scène-là, et le sol se calait sous les corps de la pièce.
 - **Correctif** (`src/10-scene-3d.js`) : `viewDecorTo` rattache sol, lampe et plan d'ombre à la scène réellement dessinée (`asmRenderScene`) à chaque image ; la passe de reflet rend cette scène (manipulateur d'assemblage, `depthTest` false, exclu) ; `refreshMirror` pose le sol sous les composants placés (fantômes exclus). `src/98-rendu-vue.js` : boîte de l'ombre limitée aux composants placés, arrêt de l'ombre quel que soit le parent de la lampe.
 - **Tests** : vérifié dans le navigateur sur « Test Assemblage » (mode Assembler : sol, lampe et plan d'ombre dans la scène dessinée, reflet de la base visible ; 41 % des pixels changent par rapport à l'ancien comportement). `npm run ci`.
+
+## V0.21.5 - Centre de rotation : le point sous la souris aussi pendant une fonction
+Demande : « dans une fonction, comme les congés, je puisse changer le centre de rotation comme il a été défini avant pour la vue 3D ».
+- **Cause** : pendant un congé, un chanfrein, une dépouille ou une coque, l'aperçu REMPLACE la pièce (masquée) ; il est marqué fantôme et son raycast est coupé pour ne pas gêner la sélection des arêtes. `viewHitAt` ne trouvait donc plus rien sous la souris : la rotation retombait sur le centre des pièces et la molette sur le plan de la cible.
+- **Correctif** (`src/10-scene-3d.js`) : `viewHitAt` lance à la main le raycast des aperçus (`b.preview`) ; la sélection, elle, les ignore toujours. Rotation et zoom visent le point de l'aperçu sous la souris, comme hors fonction.
+- **Tests** : vérifié dans le navigateur (congé en cours, point de pivot sur l'aperçu). `npm run ci`.

@@ -39,6 +39,8 @@ const b=[
 "  att(seg("+str(S.s97)+",'mfWs').indexOf('viewCenterShift')>=0,'src/97 : mfWs applique le décalage');",
 "  att(/setViewOffset/.test("+str(S.s10)+"),'src/10 : la projection est décalée via setViewOffset');",
 "  att(/clearViewOffset/.test("+str(S.s10)+"),'src/10 : le décalage est retiré quand la zone est déjà centrée');",
+// V0.21.5 : pendant une fonction (congé, dépouille, coque), l'aperçu remplace la pièce : il compte pour le point sous la souris
+"  att(/b\\.preview/.test(seg("+str(S.s10)+",'viewHitAt'))&&/Mesh\\.prototype\\.raycast\\.call/.test(seg("+str(S.s10)+",'viewHitAt')),'src/10 : viewHitAt vise aussi l\\'aperçu d\\'une fonction (raycast lancé à la main)');",
 // --- B) géométrie mesurée : rectangles substitués au cas par cas (harnais) ---
 "  const VP=document.getElementById('vpwrap');VP.clientWidth=1000;VP.clientHeight=600;",
 "  VP.getBoundingClientRect=function(){return{left:0,top:0,right:1000,bottom:600,width:1000,height:600};};",

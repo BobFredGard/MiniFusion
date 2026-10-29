@@ -281,7 +281,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.21.4';
+const APP_VER='V0.21.5';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -927,19 +927,29 @@ function viewHitAt(cx,cy){
   if(!r.width||!r.height)return null;
   const ndc=new THREE.Vector2(((cx-r.left)/r.width)*2-1,-((cy-r.top)/r.height)*2+1);
   rayc.setFromCamera(ndc,camera);
-  const objs=[];
+  const objs=[],prev=[];
   try{
     if(typeof asmMode!=='undefined'&&asmMode==='asm'&&typeof asmSceneGet==='function'){
       const G=asmSceneGet().getObjectByName('asmOcc');
       if(G)G.traverse(m=>{if(m.isMesh&&m.visible!==false)objs.push(m);});
-    }else bodies.forEach(b=>{if(b.visible&&b.mesh&&b.mesh.visible!==false&&!b.ghost)objs.push(b.mesh);});
+    }else bodies.forEach(b=>{
+      if(!b.visible||!b.mesh||b.mesh.visible===false)return;
+      // V0.21.5 : l'aperçu d'une fonction (congé, chanfrein, dépouille, coque) REMPLACE la pièce,
+      // qui est masquée — sans lui, plus rien sous la souris : la rotation retombait sur le centre
+      // des pièces. Son raycast reste coupé pour la sélection ; on le lance ici à la main.
+      if(b.preview&&b.mesh.isMesh)prev.push(b.mesh);else if(!b.ghost)objs.push(b.mesh);
+    });
   }catch(e){}
   try{
     if(typeof faoPoseGrp!=='undefined'&&faoPoseGrp&&faoPoseGrp.parent&&faoPoseGrp.parent.visible!==false)
       faoPoseGrp.traverse(o=>{if(o.isMesh&&o.visible&&o.userData&&o.userData.faoStock)objs.push(o);});
   }catch(e){}
-  if(!objs.length)return null;
-  let hits=[];try{hits=rayc.intersectObjects(objs,false);}catch(e){}
+  if(!objs.length&&!prev.length)return null;
+  let hits=[];try{hits=objs.length?rayc.intersectObjects(objs,false):[];}catch(e){}
+  if(prev.length){
+    try{prev.forEach(m=>{m.updateMatrixWorld();THREE.Mesh.prototype.raycast.call(m,rayc,hits);});}catch(e){}
+    hits.sort((a,b)=>a.distance-b.distance);
+  }
   const h=hits.find(x=>x.object&&(!x.object.material||x.object.material.opacity===undefined||x.object.material.opacity>0.05));
   return h?h.point.clone():null;
 }
