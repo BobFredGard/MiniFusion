@@ -723,29 +723,44 @@ function ensureSketchBasis(sk){
 //     DROITE (le Z du monde vers le haut ; plan horizontal : Y vers le haut, comme le cube) ;
 //   · ouverture : à plat, ou vue 3D courante gardée (case « À plat », skFlatOpen) ;
 //   · orbite : clic-molette glissé (comme en 3D), cube de vue, boutons de vue (setView).
+// 2026-10-29 : DE FACE (plan d'esquisse face à l'écran) = ORTHOGRAPHIQUE (projections arrière
+// sans fuyantes) ; dès que la vue QUITTE LE PLAN = PERSPECTIVE, la caméra 3D elle-même. Plan →
+// écran devient une HOMOGRAPHIE (_skH, 3×3 sur [px,py,1]) : le dessin est tracé en vue normale
+// dans un second SVG (#skSvgP) que CSS projette (matrix3d) ; la souris repasse par _skHi. La
+// rotation reprend celle de l'espace 3D (orbitRotate : vitesse, contraint / libre, inertie) et
+// passe derrière le plan ; lâchée à moins de 4° de face, la vue se recale dans le plan.
 let skOrb={R:[1,0,0],U:[0,1,0],D:[0,0,1]};
 let skFlatOpen=true; // ouverture à plat (sinon la vue 3D courante est gardée) — persisté
 try{if(localStorage.getItem('minifusion_skFlat')==='0')skFlatOpen=false;}catch(e){}
 let _skKeep=false; // session ouverte « vue 3D gardée » : la sortie garde l'orientation
-const SK_ORB_MIN=Math.sin(8*Math.PI/180); // jamais le plan par la tranche (application non inversible)
+let _skH=null,_skHi=null,_skEdge=false; // homographie perspective et son inverse (null = orthographique)
+const SK_EDGE=Math.sin(0.5*Math.PI/180); // plan vu par la tranche : dessin masqué (homographie dégénérée)
+const SK_SNAP_FACE=Math.cos(4*Math.PI/180); // lâcher à moins de 4° de face : retour dans le plan
+function skPersp(){return Math.abs(skOrb.D[2])<1-1e-9;} // hors du plan → perspective
 function skOrbOn(){return !(Math.abs(skOrb.D[2]-1)<1e-12&&Math.abs(skOrb.U[1]-1)<1e-12);}
 function skOrbL(){ // SVG « vue normale » → SVG affiché, autour du centre du SVG : [l11,l12,l21,l22]
   if(!skOrbOn())return[1,0,0,1];
   const R=skOrb.R,U=skOrb.U;
   return[R[0],-R[1],-U[0],U[1]];
 }
+function skH(h,px,py,wmin){ // homographie appliquée à un point ; wmin : au-delà de l'horizon, point lointain
+  let w=h[6]*px+h[7]*py+h[8];if(wmin!=null&&w<wmin)w=wmin;
+  return[(h[0]*px+h[1]*py+h[2])/w,(h[3]*px+h[4]*py+h[5])/w];
+}
 function skOrbFwd(px,py){ // point SVG normal → point SVG affiché
   if(!skOrbOn())return[px,py];
+  if(_skH)return skH(_skH,px,py);
   const{W,H}=svgSize(),L=skOrbL(),x=px-W/2,y=py-H/2;
   return[W/2+L[0]*x+L[1]*y,H/2+L[2]*x+L[3]*y];
 }
 function skOrbInv(px,py){ // point SVG affiché (souris) → point SVG normal
   if(!skOrbOn())return[px,py];
+  if(_skH)return _skHi?skH(_skHi,px,py,0.02):[px,py];
   const{W,H}=svgSize(),L=skOrbL(),x=px-W/2,y=py-H/2,det=(L[0]*L[3]-L[1]*L[2])||1e-9;
   return[W/2+(L[3]*x-L[1]*y)/det,H/2+(-L[2]*x+L[0]*y)/det];
 }
-function skOrbTransform(){ // attribut transform du groupe racine du SVG (null = vue normale)
-  if(!skOrbOn())return null;
+function skOrbTransform(){ // attribut transform du groupe racine du SVG (null = vue normale ou perspective)
+  if(!skOrbOn()||_skH)return null;
   const{W,H}=svgSize(),L=skOrbL(),cx=W/2,cy=H/2;
   return `matrix(${L[0]} ${L[2]} ${L[1]} ${L[3]} ${cx-L[0]*cx-L[1]*cy} ${cy-L[2]*cx-L[3]*cy})`;
 }
@@ -753,30 +768,68 @@ function skOrbUpright(root){
   // Textes LISIBLES quel que soit l'angle : chaque texte (et le fond d'étiquette de cote, qui
   // pivote autour du même point) annule la déformation autour de son point d'ancrage ; une
   // étiquette alignée sur sa ligne de cote reprend l'angle de la ligne À L'ÉCRAN.
-  const L=skOrbL(),det=L[0]*L[3]-L[1]*L[2];if(Math.abs(det)<1e-9)return;
-  const I=[L[3]/det,-L[1]/det,-L[2]/det,L[0]/det];
+  // Perspective : application LOCALE (jacobienne de l'homographie au point d'ancrage).
   root.querySelectorAll('text,rect').forEach(el=>{
     const m=/rotate\(\s*([-\d.e]+)[\s,]+([-\d.e]+)[\s,]+([-\d.e]+)\s*\)/.exec(el.getAttribute('transform')||'');
-    let px,py,al=0;
+    let px,py,al=0,dx=1,dy=0;
     if(m){
-      px=+m[2];py=+m[3];const r=(+m[1])*Math.PI/180,dx=Math.cos(r),dy=Math.sin(r);
-      al=Math.atan2(L[2]*dx+L[3]*dy,L[0]*dx+L[1]*dy)*180/Math.PI;
-      if(al>90.01)al-=180;else if(al<-90.01)al+=180;
+      px=+m[2];py=+m[3];const r=(+m[1])*Math.PI/180;dx=Math.cos(r);dy=Math.sin(r);
     }else{
       if(el.tagName!=='text')return;
       px=+el.getAttribute('x');py=+el.getAttribute('y');
     }
     if(!isFinite(px)||!isFinite(py))return;
+    const L=skOrbJ(px,py),det=L[0]*L[3]-L[1]*L[2];if(Math.abs(det)<1e-9)return;
+    const I=[L[3]/det,-L[1]/det,-L[2]/det,L[0]/det];
+    if(m){
+      al=Math.atan2(L[2]*dx+L[3]*dy,L[0]*dx+L[1]*dy)*180/Math.PI;
+      if(al>90.01)al-=180;else if(al<-90.01)al+=180;
+    }
     const e=px-(I[0]*px+I[1]*py),f=py-(I[2]*px+I[3]*py);
     el.setAttribute('transform',`matrix(${I[0]} ${I[2]} ${I[1]} ${I[3]} ${e} ${f})`+(al?` rotate(${al} ${px} ${py})`:''));
   });
+}
+function skOrbJ(px,py){ // application linéaire locale plan → écran au point SVG normal (px,py)
+  if(!_skH)return skOrbL();
+  const h=_skH,A=h[0]*px+h[1]*py+h[2],B=h[3]*px+h[4]*py+h[5],w=h[6]*px+h[7]*py+h[8],w2=w*w;
+  return[(h[0]*w-A*h[6])/w2,(h[1]*w-A*h[7])/w2,(h[3]*w-B*h[6])/w2,(h[4]*w-B*h[7])/w2];
+}
+function skOrbVisPoly(W,H){
+  // Zone du plan visible dans le cadre du SVG, en coordonnées SVG normales (polygone convexe).
+  // Perspective : le cadre est d'abord coupé sous l'horizon (w de l'inverse ≥ 0,35 : au-delà, la
+  // grille ne serait plus qu'un gris uniforme — et un point derrière la caméra n'a pas d'image).
+  let poly=[[0,0],[W,0],[W,H],[0,H]];
+  if(_skH&&_skHi){
+    const h=_skHi,c=p=>h[6]*p[0]+h[7]*p[1]+h[8],cm=0.35,out=[];
+    for(let i=0;i<poly.length;i++){
+      const a=poly[i],b=poly[(i+1)%poly.length],ca=c(a)-cm,cb=c(b)-cm;
+      if(ca>=0)out.push(a);
+      if((ca>=0)!==(cb>=0)){const t=ca/(ca-cb);out.push([a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]);}
+    }
+    poly=out;
+  }
+  return poly.map(p=>skOrbInv(p[0],p[1]));
+}
+function skClipSeg(poly,x1,y1,x2,y2){
+  // Segment coupé par un polygone convexe (Cyrus-Beck, sens quelconque) ; null = hors du polygone
+  const n=poly.length;if(n<3)return null;
+  let ar=0;for(let i=0;i<n;i++){const a=poly[i],b=poly[(i+1)%n];ar+=a[0]*b[1]-b[0]*a[1];}
+  const sg=ar<0?-1:1,dx=x2-x1,dy=y2-y1;let t0=0,t1=1;
+  for(let i=0;i<n;i++){
+    const a=poly[i],b=poly[(i+1)%n],ex=b[0]-a[0],ey=b[1]-a[1];
+    const num=sg*(ex*(y1-a[1])-ey*(x1-a[0])),den=sg*(ex*dy-ey*dx); // dedans : num + t·den ≥ 0
+    if(Math.abs(den)<1e-15){if(num<0)return null;continue;}
+    const t=-num/den;if(den>0){if(t>t0)t0=t;}else if(t<t1)t1=t;
+    if(t0>t1)return null;
+  }
+  return[x1+dx*t0,y1+dy*t0,x1+dx*t1,y1+dy*t1];
 }
 const _v3=a=>new THREE.Vector3(a[0],a[1],a[2]);
 function skOrbLocal(w){const{u,v,n}=sketchBasis(skEdit);return[w.dot(u),w.dot(v),w.dot(n)];}
 function skOrbWorld(a){const{u,v,n}=sketchBasis(skEdit);return new THREE.Vector3().addScaledVector(u,a[0]).addScaledVector(v,a[1]).addScaledVector(n,a[2]);}
 function skOrbBtnSync(){
   try{const b=$('skOrbit');if(b){const on=!skOrbIsFront();b.classList.toggle('on',on);
-    b.title=on?'Revenir à plat, face de l’esquisse devant (touche N)':'Vue 3D inclinée — orbite : clic-molette glissé, ou cube de vue · N = à plat';}}catch(e){}
+    b.title=on?'Revenir à plat, face de l’esquisse devant, vue orthogonale (touche N)':'Vue 3D inclinée en perspective — orbite : clic-molette glissé, ou cube de vue · N = à plat';}}catch(e){}
 }
 function skOrbFrontUp(){ // haut de la vue à plat, en local : Z du monde projeté (plan horizontal : Y)
   const{n}=sketchBasis(skEdit);
@@ -790,11 +843,11 @@ function skOrbIsFront(){
   return Math.abs(skOrb.D[2]-1)<1e-9&&Math.abs(skOrb.U[0]-U[0]/h)<1e-9&&Math.abs(skOrb.U[1]-U[1]/h)<1e-9;
 }
 function skOrbSetFrame(D,U,noDraw){
-  // D, U en LOCAL ; orthonormalisés, jamais le plan par la tranche
+  // D, U en LOCAL ; orthonormalisés — jamais EXACTEMENT par la tranche (homographie non inversible)
   let d=D.slice(),L=Math.hypot(d[0],d[1],d[2])||1;d=d.map(x=>x/L);
-  if(Math.abs(d[2])<SK_ORB_MIN){
-    const sg=d[2]<0?-1:1,h=Math.hypot(d[0],d[1])||1,c=Math.sqrt(1-SK_ORB_MIN*SK_ORB_MIN);
-    d=[d[0]/h*c,d[1]/h*c,sg*SK_ORB_MIN];
+  if(Math.abs(d[2])<1e-3){
+    const sg=d[2]<0?-1:1,h=Math.hypot(d[0],d[1])||1,c=Math.sqrt(1-1e-6);
+    d=[d[0]/h*c,d[1]/h*c,sg*1e-3];
   }
   let u=U.slice();const k=u[0]*d[0]+u[1]*d[1]+u[2]*d[2];u=[u[0]-k*d[0],u[1]-k*d[1],u[2]-k*d[2]];
   L=Math.hypot(u[0],u[1],u[2]);
@@ -809,18 +862,40 @@ function skOrbSetFrame(D,U,noDraw){
 function skOrbFromWorld(Dw,Uw,noDraw){if(skEdit)skOrbSetFrame(skOrbLocal(Dw.clone().normalize()),skOrbLocal(Uw),noDraw);}
 function skOrbFront(noDraw){if(skEdit)skOrbSetFrame([0,0,1],skOrbFrontUp(),noDraw);}
 function skOrbDragBy(dx,dy){
-  // Orbite comme en 3D : tour autour du Z du monde (glisser horizontal), bascule autour de
-  // l'axe droit de la vue (glisser vertical) — pivot au centre du dessin.
+  // Orbite EXACTEMENT comme en 3D (orbitRotate) — même vitesse, orbite contrainte (tour autour du
+  // Z de la vue, bascule bornée avant les pôles, Z en haut) ou libre (axes écran, roulis compris) ;
+  // pivot au centre du dessin. Le plan peut passer par la tranche : on voit l'esquisse de dos.
   if(!skEdit)return;
-  const Z=new THREE.Vector3(0,0,1),a=-dx*0.008,b=-dy*0.008;
-  let D=skOrbWorld(skOrb.D),U=skOrbWorld(skOrb.U);
-  D.applyAxisAngle(Z,a);U.applyAxisAngle(Z,a);
-  const R=new THREE.Vector3().crossVectors(U,D).normalize();
-  const D2=D.clone().applyAxisAngle(R,b),U2=U.clone().applyAxisAngle(R,b);
-  // pas de passage par le pôle (la vue se retournerait) ; on peut toujours s'en éloigner
-  const away=Math.abs(D2.z)<Math.abs(D.z)&&(D2.x*D.x+D2.y*D.y)>=0;
-  if(Math.abs(D2.z)<0.995||away){D=D2;U=U2;}
+  const k=2*Math.PI/((renderer&&renderer.domElement.clientHeight)||600)*((controls&&controls.rotateSpeed)||1);
+  const D=skOrbWorld(skOrb.D),U=skOrbWorld(skOrb.U),R=new THREE.Vector3().crossVectors(U,D).normalize();
+  let q;
+  if(orbitFree){
+    q=new THREE.Quaternion().setFromAxisAngle(U,-dx*k).multiply(new THREE.Quaternion().setFromAxisAngle(R,-dy*k));
+    D.applyQuaternion(q);U.applyQuaternion(q);
+  }else{
+    const phi=Math.acos(Math.max(-1,Math.min(1,D.dot(_mn))));
+    const lim=1e-3,a=Math.max(lim,Math.min(Math.PI-lim,phi-dy*k))-phi;
+    q=new THREE.Quaternion().setFromAxisAngle(_mn,-dx*k).multiply(new THREE.Quaternion().setFromAxisAngle(R,a));
+    D.applyQuaternion(q);U.applyQuaternion(q);
+    const Uz=_mn.clone().addScaledVector(D,-_mn.dot(D)); // haut de l'écran = Z de la vue
+    if(Uz.lengthSq()>1e-12)U.copy(Uz.normalize());
+  }
   skOrbFromWorld(D,U);
+}
+function skOrbSnapFace(){ // lâchée presque de face : la vue se recale DANS le plan (orthographique)
+  if(!skEdit||!skPersp()||Math.abs(skOrb.D[2])<SK_SNAP_FACE)return;
+  skOrbSetFrame([0,0,skOrb.D[2]<0?-1:1],[skOrb.U[0],skOrb.U[1],0]);
+}
+function skOrbTick(){
+  // inertie de l'orbite d'esquisse : comme orbitTick (ORBIT_ROT_DAMP du reste par image)
+  const o=(typeof skOrbDrag!=='undefined')?skOrbDrag:null;if(!o)return;
+  if(!skEdit){skOrbDrag=null;return;}
+  if(o.vx||o.vy){
+    const f=(controls&&controls.enableDamping)?ORBIT_ROT_DAMP:1;
+    skOrbDragBy(o.vx*f,o.vy*f);o.vx*=1-f;o.vy*=1-f;
+    if(Math.abs(o.vx)<0.01&&Math.abs(o.vy)<0.01)o.vx=o.vy=0;
+  }
+  if(!o.down&&!o.vx&&!o.vy){skOrbDrag=null;skOrbSnapFace();}
 }
 function sketchViewDir(o){
   // Cube de vue / boutons de vue pendant l'esquisse : on oriente la vue d'esquisse (le plan
@@ -837,7 +912,7 @@ function sketchAlignCamera(){
     _skOrigCam=camera;
     _skPrevCam={pos:camera.position.clone(),target:controls.target.clone(),up:camera.up.clone(),rot:controls.enableRotate};
     _skBaseS=skView.s||2.2;
-    _skKeep=false;
+    _skKeep=false;_skH=_skHi=null;
     if(!skFlatOpen&&camera.isPerspectiveCamera){
       // Vue 3D GARDÉE : même direction, même haut, même échelle au point visé ; le centre du
       // dessin = point du plan sous le centre de la zone d'esquisse (repli : cible projetée).
@@ -870,6 +945,10 @@ function sketchLayoutSig(){
   return [a.left,a.top,a.width,a.height,b.left,b.top,b.width,b.height].map(Math.round).join(',');
 }
 function sketchSyncCamera(){
+  // Caméra calée sur le SVG : DE FACE, caméra orthographique (frustum asymétrique, le pivot de
+  // l'orbite est le milieu du dessin) ; HORS DU PLAN, la caméra perspective de l'espace 3D, à la
+  // distance qui donne s px/mm au centre du dessin (décalage de vue : ce centre tombe au milieu
+  // du SVG) — l'homographie _skH (SVG normal → SVG affiché) en est tirée.
   try{
     if(!skEdit||!_skOrtho||!controls||!renderer) return;
     const {o,u,v}=sketchBasis(skEdit);
@@ -877,13 +956,40 @@ function sketchSyncCamera(){
     const Wr=renderer.domElement.clientWidth||W, Hr=renderer.domElement.clientHeight||H;
     const svgR=svg.getBoundingClientRect(), rendR=renderer.domElement.getBoundingClientRect();
     _skLaySig=sketchLayoutSig();
-    // centre du SVG dans le canevas → frustum asymétrique : le pivot de l'orbite est le milieu du dessin
-    const scx=(svgR.left-rendR.left)+W/2, scy=(svgR.top-rendR.top)+H/2;
-    _skOrtho.left=-scx/s; _skOrtho.right=(Wr-scx)/s; _skOrtho.top=scy/s; _skOrtho.bottom=-(Hr-scy)/s;
+    const ox=svgR.left-rendR.left, oy=svgR.top-rendR.top, scx=ox+W/2, scy=oy+H/2;
     const tgt=o.clone().addScaledVector(u, skView.cx).addScaledVector(v, skView.cy);
-    _skOrtho.position.copy(tgt).addScaledVector(skOrbWorld(skOrb.D), 2000);
-    _skOrtho.up.copy(skOrbWorld(skOrb.U)); _skOrtho.lookAt(tgt); _skOrtho.updateProjectionMatrix();
-    controls.target.copy(tgt); controls.update();
+    const Dw=skOrbWorld(skOrb.D), Uw=skOrbWorld(skOrb.U);
+    const P=(_skOrigCam&&_skOrigCam.isPerspectiveCamera)?_skOrigCam:null;
+    _skH=_skHi=null;_skEdge=false;
+    if(P&&skPersp()){
+      const dist=Hr/(2*s*Math.tan((P.fov||50)*Math.PI/360));
+      camera=P; controls.object=P;
+      P.aspect=Wr/Hr; P.near=Math.max(0.01,dist/1000); P.far=dist*20+20000;
+      P.setViewOffset(Wr,Hr,Wr/2-scx,Hr/2-scy,Wr,Hr);
+      P.position.copy(tgt).addScaledVector(Dw,dist); P.up.copy(Uw);
+      controls.target.copy(tgt); controls.update();
+      P.updateProjectionMatrix(); P.updateMatrixWorld();
+      // point SVG normal (px,py) → plan → écran : [X·w, Y·w, w] est affine en (px,py)
+      const M=new THREE.Matrix4().multiplyMatrices(P.projectionMatrix,P.matrixWorldInverse),q4=new THREE.Vector4();
+      const f=(px,py)=>{const x=skView.cx+(px-W/2)/s,y=skView.cy-(py-H/2)/s;
+        q4.set(o.x+u.x*x+v.x*y,o.y+u.y*x+v.y*y,o.z+u.z*x+v.z*y,1).applyMatrix4(M);
+        return[(q4.x+q4.w)/2*Wr-ox*q4.w,(q4.w-q4.y)/2*Hr-oy*q4.w,q4.w];};
+      const c=f(0,0),a=f(1,0),b=f(0,1),wc=f(W/2,H/2)[2]||1;
+      const h=[a[0]-c[0],b[0]-c[0],c[0],a[1]-c[1],b[1]-c[1],c[1],a[2]-c[2],b[2]-c[2],c[2]].map(x=>x/wc);
+      // inverse (adjointe), normalisée : w = 1 au centre du SVG
+      const I=[h[4]*h[8]-h[5]*h[7],h[2]*h[7]-h[1]*h[8],h[1]*h[5]-h[2]*h[4],
+               h[5]*h[6]-h[3]*h[8],h[0]*h[8]-h[2]*h[6],h[2]*h[3]-h[0]*h[5],
+               h[3]*h[7]-h[4]*h[6],h[1]*h[6]-h[0]*h[7],h[0]*h[4]-h[1]*h[3]];
+      const ic=I[6]*W/2+I[7]*H/2+I[8];
+      _skH=h; _skHi=Math.abs(ic)>1e-12?I.map(x=>x/ic):null;
+      _skEdge=Math.abs(skOrb.D[2])<SK_EDGE||!_skHi;
+    }else{
+      camera=_skOrtho; controls.object=_skOrtho;
+      _skOrtho.left=-scx/s; _skOrtho.right=(Wr-scx)/s; _skOrtho.top=scy/s; _skOrtho.bottom=-(Hr-scy)/s;
+      _skOrtho.position.copy(tgt).addScaledVector(Dw, 2000);
+      _skOrtho.up.copy(Uw); _skOrtho.lookAt(tgt); _skOrtho.updateProjectionMatrix();
+      controls.target.copy(tgt); controls.update();
+    }
   }catch(e){}
 }
 function sketchCamTick(){
@@ -891,6 +997,7 @@ function sketchCamTick(){
   // arborescence rabattue) : la caméra calée sur l'ancienne taille montrait la pièce
   // décalée jusqu'au premier clic. On suit la géométrie réelle à chaque image ; dans la
   // seconde qui suit une ouverture À PLAT on recadre (cadrage d'ouverture, sur la taille finale).
+  try{skOrbTick();}catch(e){}
   try{
     if(!skEdit||!_skOrtho)return;
     if(sketchLayoutSig()===_skLaySig)return;
@@ -905,7 +1012,8 @@ function sketchRestoreCamera(){
       const B=sketchBasis(skEdit);
       K={T:B.o.clone().addScaledVector(B.u,skView.cx).addScaledVector(B.v,skView.cy),D:skOrbWorld(skOrb.D),U:skOrbWorld(skOrb.U)};
     }
-    if(_skOrigCam){ camera=_skOrigCam; controls.object=camera; }
+    if(_skOrigCam){ camera=_skOrigCam; controls.object=camera; // perspective d'esquisse : décalage de vue et plans de coupe remis
+      try{camera.clearViewOffset();camSetFov(viewFov,false);camera.aspect=(renderer.domElement.clientWidth||1)/(renderer.domElement.clientHeight||1);camera.updateProjectionMatrix();}catch(e){} }
     if(_skPrevCam&&camera&&controls){
       camera.up.copy(_skPrevCam.up);
       controls.enableRotate=_skPrevCam.rot;
@@ -922,6 +1030,8 @@ function sketchRestoreCamera(){
       controls.update();
     }
     _skPrevCam=null; _skOrtho=null; _skOrigCam=null; _skKeep=false; skOrb={R:[1,0,0],U:[0,1,0],D:[0,0,1]};
+    _skH=_skHi=null; _skEdge=false; try{skSvgPHide();}catch(e){}
+    try{viewCenterShift();}catch(e){} // recentrage sur la zone libre (neutre pendant l'esquisse)
   }catch(e){}
 }
 function findHostForFace(pt,n,tol){

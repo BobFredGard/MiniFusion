@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**420 versions**, de `2026-09-28b` à `V0.19.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**421 versions**, de `2026-09-28b` à `V0.19.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5475,3 +5475,9 @@ En esquisse, la roue ⚙ de la vue 3D était recouverte par le calque d'esquisse
 - **Menu ⚙ « Esquisse »** (interface moderne) : esquisse ouverte, la roue ⚙ (à côté de l'appareil photo) ouvre un menu propre à l'esquisse — Grille 1 mm, À plat, Effacer tout — avec un bouton « Réglages de la vue 3D… » vers le menu habituel. Les trois commandes quittent la barre d'esquisse (mêmes éléments déplacés, réglages et gestionnaires inchangés) et y reviennent à la fermeture ; hors esquisse, la ⚙ ouvre les réglages de vue comme avant. La barre de vue passe au-dessus du calque d'esquisse.
 - Interface classique inchangée.
 - **Tests** : `npm run ci` ; vérifié dans l'app (ouverture du menu, case Grille, accès aux réglages 3D, retour en place à la fermeture).
+
+## V0.19.4 - Esquisse : rotation comme en 3D ; perspective hors du plan, orthogonal de face
+Demande : « dans l'esquisse l'on puisse tourner comme dans le monde 3D, de la même manière et pourquoi pas revenir en perspective dès que l'on quitte le plan de l'esquisse. Quand on est dans le plan, alors on revient en orthogonal pour les projections arrières ».
+- **Rotation** (`src/10-scene-3d.js`, `skOrbDragBy`) : clic-molette glissé = même calcul qu'`orbitRotate` (vitesse, orbite contrainte ou libre selon ⚙, inertie `ORBIT_ROT_DAMP` via `skOrbTick`), pivot au centre du dessin. Plus de butée à 8° de la tranche : on passe derrière le plan et on voit l'esquisse de dos. Lâchée à moins de 4° de face, la vue se recale dans le plan (`skOrbSnapFace`).
+- **Perspective hors du plan** (`sketchSyncCamera`) : de face, caméra orthographique comme avant ; dès que la vue quitte le plan, la caméra perspective de l'espace 3D (même angle de champ), à la distance qui garde l'échelle au centre du dessin (décalage de vue sur le centre du SVG). Plan → écran devient une homographie `_skH` : le dessin, tracé en vue normale, va dans un second SVG (`#skSvgP`, `src/50-esquisse-4-dessin-cotes.js`) projeté par CSS `matrix3d` et coupé au cadre ; la souris repasse par l'inverse (`skEv`), on dessine donc aussi en vue inclinée. Textes de cote redressés par la jacobienne locale ; grille coupée avant l'horizon (`skOrbVisPoly`, `skClipSeg`) ; fantôme aplati réservé à la vue de face. Plan vu par la tranche (< 0,5°) : dessin masqué. À la sortie, caméra 3D rendue (plans de coupe, décalage de vue).
+- **Tests** : vérifié dans le navigateur — un point du plan projeté par la caméra 3D et le rendu CSS réel coïncident (au 1/10 px), aller-retour souris exact, passage derrière le plan, recalage de face, cube de vue (iso → perspective, face → orthogonal), sortie d'esquisse. `npm run ci` 75/75.

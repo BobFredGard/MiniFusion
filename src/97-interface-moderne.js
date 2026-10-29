@@ -80,7 +80,7 @@ function mfCss(){
   'body[data-theme="clair"] #skSide{background:rgba(255,255,255,.97);color:#1c1c1e}',
   'body[data-theme="clair"] #skSide .li{background:rgba(0,0,0,.04)}',
   /* dessin d'esquisse (pensé pour fond sombre) : inversé en Clair, teintes gardées */
-  'body[data-theme="clair"] #skSvg{filter:invert(1) hue-rotate(180deg)}',
+  'body[data-theme="clair"] #skSvg,body[data-theme="clair"] #skSvgP{filter:invert(1) hue-rotate(180deg)}',
   'body[data-theme="clair"] #skToolbar .con{color:#1a9e46}',
   'body[data-theme="clair"] #skToolbar .con[data-con="construction"]{color:#6b6b70}',
   'body[data-theme="clair"] #skToolbar .tool.on,body[data-theme="clair"] #skToolbar .con.on{color:#fff}',

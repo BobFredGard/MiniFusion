@@ -6,26 +6,52 @@ function skEl(n,attrs,parent){
   for(const k in attrs)el.setAttribute(k,attrs[k]);
   (parent||skRoot||svg).appendChild(el);return el;
 }
+// Perspective (vue hors du plan) : le dessin, tracé en vue normale, va dans un SECOND SVG que CSS
+// projette (matrix3d = homographie _skH) ; son cadre (non transformé) le coupe au bord du SVG
+// d'esquisse. #skSvg reste en place, vide et transparent : il reçoit toujours la souris.
+let _skSvgPW=null,_skSvgP=null;
+function skSvgPGet(W,H){
+  if(!_skSvgP){
+    _skSvgPW=document.createElement('div');_skSvgPW.id='skSvgPWrap';
+    _skSvgPW.style.cssText='position:absolute;overflow:hidden;pointer-events:none';
+    _skSvgP=document.createElementNS(NS,'svg');_skSvgP.id='skSvgP';
+    _skSvgP.style.cssText='position:absolute;left:0;top:0;overflow:visible;transform-origin:0 0';
+    _skSvgPW.appendChild(_skSvgP);svg.parentNode.appendChild(_skSvgPW);
+  }
+  const h=_skH,f=x=>+x.toPrecision(12),pa=svg.parentNode,pr=pa.getBoundingClientRect(),r=svg.getBoundingClientRect(); // (pas d'offsetLeft sur un SVG)
+  Object.assign(_skSvgPW.style,{display:'',left:(r.left-pr.left-pa.clientLeft)+'px',top:(r.top-pr.top-pa.clientTop)+'px',width:W+'px',height:H+'px',visibility:_skEdge?'hidden':''});
+  _skSvgP.setAttribute('width',W);_skSvgP.setAttribute('height',H);_skSvgP.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  _skSvgP.style.transform=`matrix3d(${[h[0],h[3],0,h[6],h[1],h[4],0,h[7],0,0,1,0,h[2],h[5],0,h[8]].map(f).join(',')})`;
+  _skSvgP.innerHTML='';
+  return _skSvgP;
+}
+function skSvgPHide(){if(_skSvgPW){_skSvgPW.style.display='none';_skSvgP.innerHTML='';}}
 function drawSketch2D(){
   if(!skEdit)return;const sk=skEdit;
   const{W,H}=svgSize();svg.setAttribute('viewBox',`0 0 ${W} ${H}`);svg.innerHTML='';
-  {const tf=skOrbTransform();skRoot=null;if(tf)skRoot=skEl('g',{transform:tf},svg);}
-  // grille adaptative à l'échelle — en orbite, la zone du plan visible déborde le cadre
+  if(_skPrevCam) sketchSyncCamera(); // caméra (orthographique de face, perspective hors du plan) et _skH
+  const persp=!!(_skH&&skOrbOn());
+  if(persp)skRoot=skEl('g',{},skSvgPGet(W,H));
+  else{skSvgPHide();const tf=skOrbTransform();skRoot=null;if(tf)skRoot=skEl('g',{transform:tf},svg);}
+  // grille adaptative à l'échelle — en orbite, la zone du plan visible déborde le cadre :
+  // lignes coupées par cette zone (perspective : arrêtées avant l'horizon)
+  const gpoly=skOrbVisPoly(W,H).map(p=>s2w(p[0],p[1]));
   let gvx0=1e18,gvx1=-1e18,gvY0=1e18,gvY1=-1e18;
-  [[0,0],[W,0],[0,H],[W,H]].forEach(c=>{const[a,b]=skOrbInv(c[0],c[1]),[wx,wy]=s2w(a,b);
-    gvx0=Math.min(gvx0,wx);gvx1=Math.max(gvx1,wx);gvY0=Math.min(gvY0,wy);gvY1=Math.max(gvY1,wy);});
+  gpoly.forEach(([wx,wy])=>{gvx0=Math.min(gvx0,wx);gvx1=Math.max(gvx1,wx);gvY0=Math.min(gvY0,wy);gvY1=Math.max(gvY1,wy);});
   let gstep=10;const gsteps=[0.001,0.002,0.005,0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,20,50,100,200,500,1000,2000];
   for(const st of gsteps){if(st*skView.s>=16){gstep=st;break;}}
+  const gline=(xa,ya,xb,yb,isAx)=>{const c=skClipSeg(gpoly,xa,ya,xb,yb);if(!c)return;
+    const[x1,y1]=w2s(c[0],c[1]),[x2,y2]=w2s(c[2],c[3]);
+    skEl('line',{x1,y1,x2,y2,stroke:isAx?'#0a84ff':'#2a2a2e','stroke-width':isAx?1.5:1});};
   const kx0=Math.floor(gvx0/gstep),kx1=Math.ceil(gvx1/gstep),ky0=Math.floor(gvY0/gstep),ky1=Math.ceil(gvY1/gstep);
   if(kx1-kx0<600)for(let k=kx0;k<=kx1;k++){const gx=k*gstep,isAx=Math.abs(gx)<1e-9;if(!isAx&&!skShowGrid)continue; // grille masquée : axes seuls
-    const[x1,y1]=w2s(gx,gvY0-gstep),[x2,y2]=w2s(gx,gvY1+gstep);
-    skEl('line',{x1,y1,x2,y2,stroke:isAx?'#0a84ff':'#2a2a2e','stroke-width':isAx?1.5:1});}
+    gline(gx,gvY0-gstep,gx,gvY1+gstep,isAx);}
   if(ky1-ky0<600)for(let k=ky0;k<=ky1;k++){const gy=k*gstep,isAx=Math.abs(gy)<1e-9;if(!isAx&&!skShowGrid)continue;
-    const[x1,y1]=w2s(gvx0-gstep,gy),[x2,y2]=w2s(gvx1+gstep,gy);
-    skEl('line',{x1,y1,x2,y2,stroke:isAx?'#0a84ff':'#2a2a2e','stroke-width':isAx?1.5:1});}
+    gline(gvx0-gstep,gy,gvx1+gstep,gy,isAx);}
   // Fantôme 2D orthographique (pièce derrière, sans perspective) — bouge avec le zoom/pan comme Fusion
   // B : violet supprimé, fantôme seul et plus contrasté pour bien voir la pièce
-  if((sk._ghost||[]).length){
+  // Perspective : la pièce elle-même est visible en 3D, le fantôme aplati n'aurait plus de sens.
+  if(!persp&&(sk._ghost||[]).length){
     for(const r of sk._ghost){
       if(r.type==='circle'){
         const[a,b]=w2s(r.cx,r.cy);
@@ -55,7 +81,7 @@ function drawSketch2D(){
         skEl('path',{d:`M ${a} ${b} A ${r.r*skView.s} ${r.r*skView.s} 0 ${dd>Math.PI?1:0} 0 ${c} ${d}`,fill:'none',stroke:'#bf5af2','stroke-width':1,'stroke-dasharray':'5 4',opacity:0.5});
       } else {
         const[a,b]=w2s(r.x1,r.y1),[c,d]=w2s(r.x2,r.y2);
-        if((a<-60&&c<-60)||(a>W+60&&c>W+60)||(b<-60&&d<-60)||(b>H+60&&d>H+60))continue;
+        if(!skOrbOn()&&((a<-60&&c<-60)||(a>W+60&&c>W+60)||(b<-60&&d<-60)||(b>H+60&&d>H+60)))continue; // en orbite, le visible déborde le cadre
         skEl('line',{x1:a.toFixed(1),y1:b.toFixed(1),x2:c.toFixed(1),y2:d.toFixed(1),stroke:'#bf5af2','stroke-width':1,'stroke-dasharray':'5 4',opacity:0.5});
       }
     }
@@ -324,7 +350,6 @@ function drawSketch2D(){
     h.textContent='Tab angle/longueur · Entrée OK · Échap annule';
   }
   if(skRoot)skOrbUpright(skRoot); // orbite : textes et étiquettes restent lisibles
-  if(_skPrevCam) sketchSyncCamera();
 }
 function dimById(sk,id){return (sk.dims||[]).find(d=>d.id===id);}
 function angleArcInfo(sk,d){ // {V,rr,a1,dd} — secteur STOCKE (a1=rayon A, dd=±value), arc et texte toujours cohérents

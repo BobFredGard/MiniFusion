@@ -305,7 +305,7 @@ function trimEntity(sk,ent,cx,cy){
 }
 
 /* ----- interactions souris ----- */
-let skOrbDrag=null; // orbite en cours (clic-molette glissé, comme en 3D) : {px,py}
+let skOrbDrag=null; // orbite en cours (clic-molette glissé, comme en 3D) : {px,py,vx,vy,down} — inertie : skOrbTick
 let skPanDragged=false; // le clic droit vient de servir à déplacer la vue : pas de menu ni d'annulation
 svg.addEventListener('wheel',e=>{
   if(!skEdit)return;e.preventDefault();e=skEv(e);
@@ -503,7 +503,7 @@ svg.addEventListener('pointerdown',e=>{
   skPanDragged=false;
   if(e.button===1&&(e.ctrlKey||e.metaKey)){ // Ctrl + molette enfoncée = déplacement, comme le clic droit
     e.preventDefault();e=skEv(e);skPan={px:e.clientX,py:e.clientY,cx:skView.cx,cy:skView.cy,moved:false};return;}
-  if(e.button===1){e.preventDefault();skOrbDrag={px:e.clientX,py:e.clientY};return;}
+  if(e.button===1){e.preventDefault();skOrbDrag={px:e.clientX,py:e.clientY,vx:0,vy:0,down:true};return;}
   e=skEv(e);
   if(e.button===2){skPan={px:e.clientX,py:e.clientY,cx:skView.cx,cy:skView.cy,moved:false};return;}
   if(e.button!==0||skPan)return;
@@ -716,7 +716,7 @@ svg.addEventListener('pointerdown',e=>{
 });
 svg.addEventListener('pointermove',e=>{
   if(!skEdit)return;
-  if(skOrbDrag){skOrbDragBy(e.clientX-skOrbDrag.px,e.clientY-skOrbDrag.py);skOrbDrag.px=e.clientX;skOrbDrag.py=e.clientY;return;}
+  if(skOrbDrag&&skOrbDrag.down){skOrbDrag.vx+=e.clientX-skOrbDrag.px;skOrbDrag.vy+=e.clientY-skOrbDrag.py;skOrbDrag.px=e.clientX;skOrbDrag.py=e.clientY;return;}
   e=skEv(e);const sk=skEdit;const[wx,wy]=evXY(e);
   if(skPan&&!skPan.moved){if(Math.hypot(e.clientX-skPan.px,e.clientY-skPan.py)<4)return;skPan.moved=true;} // seuil : un clic droit court reste un clic
   if(skPan){skView.cx=skPan.cx-(e.clientX-skPan.px)/skView.s;skView.cy=skPan.cy+(e.clientY-skPan.py)/skView.s;drawSketch2D();return;}
@@ -902,7 +902,7 @@ svg.addEventListener('pointermove',e=>{
   }
 });
 svg.addEventListener('pointerup',e=>{
-  if(skOrbDrag){skOrbDrag=null;return;}
+  if(skOrbDrag&&skOrbDrag.down){skOrbDrag.down=false;return;} // l'élan s'écoule (skOrbTick)
   e=skEv(e);
   if(skPan){skPanDragged=skPan.moved;skPan=null;return;}
   if(!skEdit||e.button!==0)return;const sk=skEdit;const[wx,wy]=evXY(e);
