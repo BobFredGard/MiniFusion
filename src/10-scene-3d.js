@@ -334,6 +334,7 @@ function viewHitAt(cx,cy){
     if(typeof faoPoseGrp!=='undefined'&&faoPoseGrp&&faoPoseGrp.parent&&faoPoseGrp.parent.visible!==false)
       faoPoseGrp.traverse(o=>{if(o.isMesh&&o.visible&&o.userData&&o.userData.faoStock)objs.push(o);});
   }catch(e){}
+  try{if(!(typeof asmMode!=='undefined'&&asmMode==='asm'))asmCtxSub().forEach(m=>prev.push(m));}catch(e){} // raycast coupé : lancé à la main
   if(!objs.length&&!prev.length)return null;
   let hits=[];try{hits=objs.length?rayc.intersectObjects(objs,false):[];}catch(e){}
   if(prev.length){
@@ -352,12 +353,21 @@ function viewTargetPlaneAt(cx,cy){
   const pl=new THREE.Plane().setFromNormalAndCoplanarPoint(d,controls.target);
   return rayc.ray.intersectPlane(pl,new THREE.Vector3());
 }
+// V0.21.14 : mode Modéliser — sous-composants du composant actif dessinés autour de la pièce (asmCtx, 47) :
+// ils servent au pivot de rotation comme les occurrences sélectionnables du mode Assembler
+function asmCtxSub(){
+  const out=[];if(typeof scene==='undefined'||!scene)return out;
+  const G=scene.getObjectByName('asmCtx');if(!G||G.visible===false)return out;
+  G.children.forEach(g=>{if(g.userData&&g.userData.sub&&g.visible!==false)g.traverse(m=>{if(m.isMesh&&m.geometry&&m.visible!==false)out.push(m);});});
+  return out;
+}
 // pivot hors pièce : centre des pièces visibles (+ brut en FAO) ; mode Placer : repère / occurrence
 function orbitPivot(){
   // mode Placer (V0.7.4) : repère choisi, occurrence sélectionnée ou centre des pièces placées
   try{if(typeof asmOrbitPivot==='function'){const p=asmOrbitPivot();if(p)return p;}}catch(e){}
   const box=new THREE.Box3();
   try{bodies.forEach(b=>{if(b.visible&&b.mesh&&b.mesh.visible!==false)box.expandByObject(b.mesh);});}catch(e){}
+  try{asmCtxSub().forEach(m=>box.expandByObject(m));}catch(e){}
   try{
     if(typeof faoPoseGrp!=='undefined'&&faoPoseGrp&&faoPoseGrp.parent&&faoPoseGrp.parent.visible!==false)
       faoPoseGrp.traverse(o=>{if(o.isMesh&&o.visible&&o.userData&&o.userData.faoStock)box.expandByObject(o);});

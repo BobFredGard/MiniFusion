@@ -109,6 +109,7 @@ function asmFill(G,placer){
     const g=new THREE.Group();g.matrixAutoUpdate=false;g.matrix.copy(asmMat4(asmCompose(V,inst.F)));
     g.userData.path=inst.path; // chemin absolu : points d'accroche (48-assemblage-accroches)
     g.userData.kind=kind;      // centre de rotation : les fantômes ne comptent pas (asmOrbitPivot)
+    g.userData.sub=mine&&!self; // Modéliser : sous-composants du composant actif = pivot de rotation, comme en Placer (10-scene-3d)
     if(kind==='pick'){g.userData.occ=key;g.name='occ_'+key;}
     const on=kind==='pick'&&asmLotHas(key);
     // apparence de l'occurrence (intensité, transparence, arêtes — 48-assemblage-apparence),
