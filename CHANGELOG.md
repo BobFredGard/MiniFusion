@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**445 versions**, de `2026-09-28b` à `V0.21.14` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**446 versions**, de `2026-09-28b` à `V0.21.15` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5636,3 +5636,9 @@ Demande : « Dans ce mode Modéliser où aucun composant n'est actif, il faut ap
 - **Cause** (`src/10-scene-3d.js`, `viewHitAt` / `orbitPivot`) : en Modéliser, le pivot ne voyait que les corps de la pièce. Les composants dessinés autour (`asmCtx`, raycast coupé : non sélectionnables) étaient ignorés : sur un assemblage (racine active, sans corps propre), on ne tournait jamais autour de la vis visée.
 - **Correctif** : `asmFill` (`src/47`) marque les sous-composants du composant actif (`userData.sub`) ; `asmCtxSub()` les fournit au pivot. Clic sur l'un d'eux : rotation autour du point visé ; dans le vide : centre des corps et de ces composants. Frères et parents d'un sous-composant actif restent exclus, comme les fantômes d'Assembler.
 - **Tests** : `npm run ci`.
+
+## V0.21.15 - CI de nouveau verte : import STEP dans les tests, test du cache de rejeu
+Constat : la CI complète (`npm run ci:full`) était rouge depuis V0.21.7 ; la suite rapide locale (`npm run ci`) ne le voyait pas.
+- **Import STEP** (`src/90-picking-mesure-import.js`) : V0.21.13 lisait `geometry.userData.impOcc` et retirait l'attribut `color` sans garde. Avec la géométrie simplifiée des tests, l'import échouait (6 suites rouges : suppression de face STEP / édition / worker, FAO géodésique / faces / ébauche brut). `importAttach` vérifie `userData`. `importColorMat` ne retire les couleurs que s'il les a posées (`impColKey`).
+- **`test_rejeu_cache`** : il lisait `Exemples/test suppr.miniFusion`, retravaillé depuis (import seul, plus d'extrusion). Il lit maintenant une copie figée : `tests/fixtures/test_suppr_rejeu.minifusion.json` (version du 2026-10-27).
+- **Tests** : `npm run ci:full`.

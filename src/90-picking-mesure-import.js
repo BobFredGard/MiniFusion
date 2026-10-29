@@ -1148,7 +1148,8 @@ function importAttach(name,fmt,u8,entry,fileName){
   const id=uid('im');
   importGeom.set(id,entry);
   const nf={id,type:'import',name,visible:true,_mesh:entry.mesh,src};
-  if(entry.mesh.geometry.userData.impOcc)nf.colMode='piece'; // STEP à plusieurs solides : une couleur par pièce d'emblée
+  const ud=entry.mesh.geometry&&entry.mesh.geometry.userData; // absent hors THREE réel (tests)
+  if(ud&&ud.impOcc)nf.colMode='piece'; // STEP à plusieurs solides : une couleur par pièce d'emblée
   addFeature(nf);
   return id;
 }
@@ -1305,8 +1306,8 @@ function importColorMat(f,mat){
   const mode=(O&&(f.colMode==='piece'||f.colMode==='occ'))?f.colMode:null;
   if(!g||!mat)return mat;
   if(!mode){
-    if(g.getAttribute('color'))g.deleteAttribute('color');
-    mat.vertexColors=false;g.userData.impColKey=null;
+    if(g.userData&&g.userData.impColKey){g.deleteAttribute('color');g.userData.impColKey=null;} // seulement si posées ici
+    mat.vertexColors=false;
     return mat;
   }
   const key=mode+(vivid?'':'!');

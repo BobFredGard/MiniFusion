@@ -9,7 +9,9 @@ const ROOT=path.join(__dirname,'..');
 globalThis.__dirname=path.join(ROOT,'occt');
 vm.runInThisContext(fs.readFileSync(path.join(ROOT,'occt','opencascade.full.js'),'utf8'),{filename:'occt.js'});
 const {loadApp}=require('./appvm.cjs');
-const lire=n=>fs.readFileSync(path.join(ROOT,'Exemples',n),'utf8');
+// « test suppr » : copie figée (version du 2026-10-27, avec extrusions) — l'exemple vivant a
+// été retravaillé depuis (import seul) et ne porte plus d'extrusion à faire varier
+const lire=n=>fs.readFileSync(n.startsWith('fixtures/')?path.join(__dirname,n):path.join(ROOT,'Exemples',n),'utf8');
 (async()=>{
   const real=await globalThis.opencascadeFactory({wasmBinary:fs.readFileSync(path.join(ROOT,'occt','opencascade.wasm.wasm'))});
   const out={fails:[],log:[]};
@@ -28,7 +30,7 @@ const lire=n=>fs.readFileSync(path.join(ROOT,'Exemples',n),'utf8');
     (o.log||[]).forEach(m=>out.log.push(fichier+' : '+m));(o.fails||[]).forEach(m=>out.fails.push(fichier+' : '+m));
   };
   // (2) skSig : arrondi, pas troncature
-  await cas('test suppr.miniFusion',[
+  await cas('fixtures/test_suppr_rejeu.minifusion.json',[
     'const sk={seq:1,points:{a:{x:0,y:-10.999999999},b:{x:5,y:0}},entities:[{t:"line",p1:"a",p2:"b"}],constraints:[],dims:[]};',
     'const s1=skSig(sk);sk.points.a.y=-11.000000001;',
     'A(skSig(sk)===s1,"1 : skSig — cote ronde à ±1e-9 près (−10,999999999 / −11,000000001) : même signature");',
