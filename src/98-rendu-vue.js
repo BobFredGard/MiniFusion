@@ -32,7 +32,7 @@ function vEnvSet(k){
   const s=document.getElementById('optEnv');if(s)s.value=vEnv;
   const b=document.getElementById('btnLive');if(b)b.classList.toggle('on',vEnv!=='actuel');
 }
-/* ── « Rendu direct » (V0.18.2) : l'ambiance, sa rotation, la force des reflets, le fond (dégradé ou uni)
+/* ── « Rendu direct » (V0.19.1) : l'ambiance, sa rotation, la force des reflets, le fond (dégradé ou uni)
    et la couleur du sol sont ceux de la fenêtre RENDU (98-rendu : rd.st, ou ses réglages enregistrés) ;
    les autres ambiances gardent leur fond. Image HDRI, studio courbe, fond transparent : fond de l'ambiance. */
 let vEnvRdSt=null; // réglages de l'atelier relus (rdSave remet à null)

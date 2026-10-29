@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**417 versions**, de `2026-09-28b` à `V0.19.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**418 versions**, de `2026-09-28b` à `V0.19.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5458,3 +5458,9 @@ Demandé : « Esquisse : fonction Spline 2D », « avec possibilité de rendre l
 - **Profils** : `skLoopTrace` (`src/10-scene-3d.js`) prend les splines (fermée coupée en deux arêtes ; nœuds virtuels `__s…` pour une fermée à pôles) ; `occWireFromChain` (`src/20`) bâtit une `Geom_BSplineCurve` EXACTE avec les pôles et nœuds du dessin. Extrusion, révolution, balayage (profil), contours FAO et affichage 3D suivent ; trajectoires existantes inchangées (pas de CACHE_VER).
 - **Limites** : ajuster / prolonger / décaler ne prennent pas encore les splines ; une ligne qui s'arrête au milieu d'une spline n'est pas reliée au contour.
 - **Tests** : `tests/test_esquisse_spline.cjs` (36 contrôles, noyau OCCT réel : passage exact, poignée sans effet sur la courbe, tangences ligne / arc / spline, G2 arc = 1/R et ligne = 0, contours fermés, volume extrudé = aire de la courbe × hauteur à 3e-6 près). Vérifié dans le navigateur. `npm run ci` 76/76.
+
+## V0.19.1 - Rendu direct : bouton dans la barre de vue ; fond et ambiance réglés dans la fenêtre RENDU
+Demande : « un bouton "Rendu Direct" entre l'appareil photo et la roue ; actif orange : rendu type EEVEE, désélectionné : mode normal ; le fond du rendu peut être changé dans la fenêtre rendu ? ».
+- **Bouton** `#btnLive` (`src/98-rendu-vue.js`) entre l'appareil photo (RENDU) et ⚙ : bascule entre « Actuel (CAO) » et la nouvelle ambiance **« Rendu direct (réglages RENDU) »** ; orange tant qu'une ambiance de rendu est active (aussi celles choisies dans ⚙ → Environnement). L'appareil photo s'insère avant lui (`src/98-rendu.js`).
+- **Réglages de la fenêtre RENDU** (`vEnvCfg`) : en Rendu direct, la vue prend l'ambiance de l'atelier, sa rotation, la force des reflets (`envMapIntensity`), le fond Dégradé / Uni (couleurs et préréglages) et la couleur du sol ; relus à chaque enregistrement des réglages (`rdSave`) et à la fermeture de l'atelier. Image HDRI : ambiance Studio ; fonds Studio / Image / Transparent : fond de l'ambiance. Les autres ambiances gardent leur fond.
+- **Tests** : `test_materiaux` (bouton, ambiance « rendu », relecture des réglages). Vérifié dans le navigateur : ordre des boutons, orange / normal, fond « Bleu nuit » choisi dans la fenêtre RENDU repris par la vue. `npm run ci` 75/75.
