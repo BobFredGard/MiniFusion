@@ -516,14 +516,11 @@ function rdCss(){
     '#rdPanel .rdSeg button.active{background:var(--primary,#0a84ff);border-color:var(--primary,#0a84ff);color:#fff;font-weight:600}',
     '#rdPanel .rdBtns{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0}',
     '#rdPanel .rdChk{display:inline-flex;align-items:center;gap:3px;color:var(--text);white-space:nowrap;cursor:pointer}',
-    '#rdPanel .rdMat{display:flex;align-items:center;gap:4px;margin:6px 0 2px}',
-    '#rdPanel .rdMat>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-weight:600}',
-    '#rdPanel .rdMat2{display:flex;align-items:center;gap:4px;margin:2px 0}',
-    '#rdPanel .rdMat2>select{flex:1;min-width:0;max-width:none}',
-    '#rdPanel .rdRel{display:flex;align-items:center;gap:4px;margin:2px 0 6px}',
-    '#rdPanel .rdRel>select:first-child{flex:1;min-width:0;max-width:none}',
-    '#rdPanel .rdRel>input{width:52px}',
-    '#rdPanel .rdOcc{margin:10px 0 0;font-weight:700;color:var(--text);border-top:1px solid var(--border);padding-top:6px}',
+    '#rdPanel .rdLookRow{display:flex;align-items:center;gap:6px;width:100%;margin:2px 0;padding:4px 6px;border:1px solid transparent;border-radius:6px;background:none;color:var(--text);font-size:.72rem;cursor:pointer;text-align:left}',
+    '#rdPanel .rdLookRow:hover{border-color:var(--primary,#0a84ff)}',
+    '#rdPanel .rdLookRow>i{width:12px;height:12px;border-radius:3px;flex:none;outline:1px solid rgba(127,127,127,.4)}',
+    '#rdPanel .rdLookRow>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}',
+    '#rdPanel .rdLookRow>em{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-style:normal}',
     '#rdPanel .rdCam{display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}',
     '#rdPanel .rdCam>button{background:none;border:none;color:var(--text);padding:3px 8px;font-size:.71rem;cursor:pointer}',
     '#rdPanel .rdCam>button+button{border-left:1px solid var(--border);color:var(--muted)}',
@@ -638,26 +635,8 @@ function rdPanel(){
     pane.appendChild(cv);
     const ca=el('button','rdB','+ Enregistrer la vue');ca.title='Position, cible et focale, enregistrées avec la pièce';ca.onclick=rdCamAdd;
     const r=el('div','rdBtns');r.appendChild(ca);pane.appendChild(r);
-  }else if(t==='mat'){
-    const ids=[];(rd.srcs||[]).forEach(s=>{if(s.id&&ids.indexOf(s.id)<0)ids.push(s.id);});
-    ids.forEach(id=>{
-      const e=bodyEntryOf(id),b=(bodies||[]).find(q=>bodyIdOfRuntime(q)===id);
-      const L=renderLookOf(id);
-      const done=()=>{markDirty();rdRefresh('objets');rdPanel();};
-      const r=el('div','rdMat');const n=el('span',null,(e&&e.name)||(b&&b.name)||id);n.title=n.textContent;r.appendChild(n);
-      const z=el('button','rdB','↺');z.title=L.own?'Reprendre le matériau et la couleur de la CAO':'Apparence de la CAO (rien de propre au rendu)';z.disabled=!L.own;z.style.opacity=L.own?'':'.35';
-      z.onclick=()=>{rdUndo();clearRenderLook(id);done();};r.appendChild(z);pane.appendChild(r);
-      const r2=el('div','rdMat2');
-      const s=matSelect(L.mat,k=>{rdUndo();setRenderLook(id,k,null);done();},'Sans matériau');
-      const ci=el('input');ci.type='color';ci.value=cssHex(L.color);ci.title='Couleur de rendu (la pièce CAO garde la sienne)';
-      ci.onchange=()=>{const v=parseInt(ci.value.slice(1),16);if(v>=0){rdUndo();setRenderLook(id,renderLookOf(id).mat,v);done();}};
-      r2.appendChild(s);r2.appendChild(ci);pane.appendChild(r2);
-      pane.appendChild(rdRelRow(el,select,L.rel,matDef(L.mat),rel=>{rdUndo();const L2=renderLookOf(id);setRenderLook(id,L2.mat,L2.color,rel);done();}));
-    });
-    const asmView=(rd.srcs||[]).some(x=>!x.id&&x.comp);
-    if(!ids.length&&!asmView)pane.appendChild(el('div','rdNote','Aucun corps de la pièce active à l’écran.'));
-    rdAsmPanel(pane,el,select);
-    if(ids.length)pane.appendChild(el('div','rdNote','Apparence propre au RENDU, enregistrée avec la pièce : la CAO garde ses couleurs (↺ pour y revenir). Relief : motif calculé, direction X / Y / Z de la pièce, échelle en mm. Patine : taches, usure des arêtes, salissure des creux.'));
+  }else if(t==='mat'){ // V0.17.0 : une ligne par pièce, le détail au clic droit (98-rendu-apparence)
+    rdLookList(pane,el);
   }else if(t==='fin'){ // V0.15.0 : finition de l'image (98-rendu-post), appliquée à l'affichage : pas de nouvel affinage
     const pct=v=>Math.round(v*100)+' %',sg=v=>(v>0?'+':'')+Math.round(v*100);
     const look=()=>{rdSave();if(rd.acc&&rd.acc.n)rdShow();if(rd.rt&&rd.rt.pt){rd.rt.lookDirty=true;rtKick(false);}};
@@ -718,46 +697,12 @@ function rdRelRow(el,select,rel0,dm,fn){
   r2.appendChild(pt);F.appendChild(r2);
   return F;
 }
-function rdAsmPanel(p,el,select){
-  // Rendu d'assemblage (mode Assembler) : apparence de rendu par OCCURRENCE, corps par corps
-  // (o.rendu, 48-assemblage-apparence) ; ⇉ = la même pour toutes les occurrences du composant
-  const seen=new Set(),rows=[];
-  (rd.srcs||[]).forEach(s=>{if(s.id||!s.comp||!s.bid)return;const k=(s.occ||'')+'|'+s.bid;if(seen.has(k))return;seen.add(k);rows.push(s);});
-  if(!rows.length){if((rd.srcs||[]).some(s=>!s.id))p.appendChild(el('div','rdNote','Autres composants : apparence choisie en mode Assembler (atelier ouvert sur l’assemblage).'));return;}
-  let last=null;
-  rows.forEach(s=>{
-    const c=asmComp(s.comp),o=s.occ?asmOcc(s.occ):null;
-    if(s.occ!==last){last=s.occ;p.appendChild(el('div','rdOcc',(o?o.name:(c&&c.name)||'?')));}
-    const be=c&&c.doc&&(c.doc.bodies||[]).find(e=>e&&e.id===s.bid);
-    const r=el('div','rdMat');const n=el('span',null,(be&&be.name)||s.bid);n.title=n.textContent;r.appendChild(n);p.appendChild(r);
-    const r2=el('div','rdMat2');p.appendChild(r2);
-    if(!o){ // le composant ouvert lui-même (racine) : apparence de rendu de sa pièce
-      const L=renderLookOf(s.bid);
-      const sel=matSelect(L.mat,k=>{rdUndo();setRenderLook(s.bid,k,null);markDirty();rdAsmRedraw();},'Sans matériau');
-      const ci=el('input');ci.type='color';ci.value=cssHex(L.color);ci.onchange=()=>{rdUndo();setRenderLook(s.bid,renderLookOf(s.bid).mat,parseInt(ci.value.slice(1),16));markDirty();rdAsmRedraw();};
-      r2.appendChild(sel);r2.appendChild(ci);
-      p.appendChild(rdRelRow(el,select,L.rel,matDef(L.mat),rel=>{rdUndo();const L2=renderLookOf(s.bid);setRenderLook(s.bid,L2.mat,L2.color,rel);markDirty();rdAsmRedraw();}));
-      return;
-    }
-    const own=!!(o.rendu&&o.rendu.corps&&o.rendu.corps[s.bid]);
-    const all=el('button','rdB','⇉');all.title='Même apparence pour toutes les occurrences de « '+((c&&c.name)||'?')+' »';
-    all.onclick=()=>{asmSetOccRendu(o,s.bid,s.mat,s.color,true,s.rel);rdAsmRedraw();};
-    const z=el('button','rdB','↺');z.title='Reprendre l’apparence de la pièce';z.disabled=!own;z.style.opacity=own?'':'.35';
-    z.onclick=()=>{asmClearOccRendu(o,s.bid,false);rdAsmRedraw();};
-    r.appendChild(all);r.appendChild(z);
-    const sel=matSelect(s.mat,k=>{asmSetOccRendu(o,s.bid,k,null,false);rdAsmRedraw();},'Sans matériau');
-    const ci=el('input');ci.type='color';ci.value=cssHex(s.color);ci.title='Couleur de rendu de cette occurrence';
-    ci.onchange=()=>{asmSetOccRendu(o,s.bid,s.mat,parseInt(ci.value.slice(1),16),false,s.rel);rdAsmRedraw();};
-    r2.appendChild(sel);r2.appendChild(ci);
-    p.appendChild(rdRelRow(el,select,s.rel,matDef(s.mat),rel=>{asmSetOccRendu(o,s.bid,s.mat,s.color,false,rel);rdAsmRedraw();}));
-  });
-  p.appendChild(el('div','rdNote','Rendu d’assemblage : apparence par occurrence, enregistrée avec l’assemblage (⇉ : toutes les occurrences du composant, ↺ : celle de la pièce). La vue CAO garde les couleurs de la CAO.'));
-}
 function rdAsmRedraw(){ // l'assemblage redessine ses instances (userData.rd), puis l'atelier les reprend
   try{asmDraw();}catch(e){}try{asmCtxDraw();}catch(e){}
   rdRefresh('objets');rdPanel();
 }
-function rdKey(e){if(rd&&e.key==='Escape'&&!rd.busy){e.stopPropagation();e.preventDefault();rdClose();}}
+function rdKey(e){if(rd&&e.key==='Escape'&&!rd.busy&&!rdLookT){ // Échap ferme d'abord la fenêtre d'apparence (98-rendu-apparence)
+  e.stopPropagation();e.preventDefault();rdClose();}}
 function rdOpen(){
   if(rd)return;
   try{if(typeof skEdit!=='undefined'&&skEdit){faceEl.textContent='Terminez l’esquisse avant d’ouvrir le rendu.';return;}}catch(e){}
@@ -766,7 +711,7 @@ function rdOpen(){
   const ov=document.createElement('div');ov.id='rdOverlay';
   const view=document.createElement('div');view.id='rdView';
   const canvas=document.createElement('canvas');view.appendChild(canvas);
-  const hint=document.createElement('div');hint.className='rdHint';hint.textContent='Glisser : tourner · clic droit : déplacer · molette : avancer / reculer · clic sur la pièce : mise au point — le cadre est l’image finale (16:9)';view.appendChild(hint);
+  const hint=document.createElement('div');hint.className='rdHint';hint.textContent='Glisser ou clic molette : tourner · clic droit : déplacer · clic droit sur une pièce : son matériau · molette : avancer / reculer · clic : mise au point — le cadre est l’image finale (16:9)';view.appendChild(hint);
   const cnt=document.createElement('div');cnt.className='rdCnt';view.appendChild(cnt);
   const panel=document.createElement('div');panel.id='rdPanel';
   ov.appendChild(view);ov.appendChild(panel);document.body.appendChild(ov);
@@ -780,12 +725,14 @@ function rdOpen(){
   cam.position.copy(camera.position);
   const ctl=new THREE.OrbitControls(cam,canvas);
   ctl.target.copy(controls.target);ctl.enableDamping=false;
-  if(ctl.mouseButtons&&THREE.MOUSE){ctl.mouseButtons.LEFT=THREE.MOUSE.ROTATE;ctl.mouseButtons.MIDDLE=THREE.MOUSE.DOLLY;ctl.mouseButtons.RIGHT=THREE.MOUSE.PAN;}
+  if(ctl.mouseButtons&&THREE.MOUSE){ctl.mouseButtons.LEFT=THREE.MOUSE.ROTATE;ctl.mouseButtons.MIDDLE=THREE.MOUSE.ROTATE;ctl.mouseButtons.RIGHT=THREE.MOUSE.PAN;}
   ctl.addEventListener('change',()=>{if(rd&&!rd.busy){rdApplyCam();rdReset();}});
   ctl.addEventListener('start',()=>{if(rd)rd.drag=true;});
   ctl.addEventListener('end',()=>{if(rd){rd.drag=false;rdReset();}});
-  let down=null;
-  canvas.addEventListener('pointerdown',e=>{down=e.button===0?{x:e.clientX,y:e.clientY}:null;});
+  let down=null,downR=null;
+  canvas.addEventListener('pointerdown',e=>{down=e.button===0?{x:e.clientX,y:e.clientY}:null;downR=e.button===2?{x:e.clientX,y:e.clientY}:null;});
+  // clic droit sans glisser sur une pièce : son matériau (98-rendu-apparence) ; glissé : déplacer la vue
+  canvas.addEventListener('contextmenu',e=>{e.preventDefault();if(downR&&rd&&!rd.busy&&Math.hypot(e.clientX-downR.x,e.clientY-downR.y)<4){try{rdLookPick(e);}catch(err){}}downR=null;});
   canvas.addEventListener('pointerup',e=>{if(down&&rd&&!rd.busy&&Math.hypot(e.clientX-down.x,e.clientY-down.y)<4){try{rdPick(e);rdPanel();}catch(err){}}down=null;});
   rd={ov,view,canvas,panel,r,cam,ctl,cnt,scene:new THREE.Scene(),pmrem:new THREE.PMREMGenerator(r),st:rdSettings(),keyDir:[-55,45],drag:false,raf:0};
   rdBuildObjects();rdBuildEnv();rdBackground();rdFloor();
@@ -812,6 +759,7 @@ function rdClose(){
   try{if(rd.studio){rd.studio.geometry.dispose();rd.studio.material.dispose();}if(rd.hdriBg)rd.hdriBg.dispose();Object.values(rd.supTex||{}).forEach(t=>t.dispose());}catch(e){}
   try{const A=rd.acc;if(A){['s','a','b'].forEach(k=>{if(A[k])A[k].dispose();});A.quad.geometry.dispose();A.mix.dispose();A.out.dispose();}rpDispose(rd.post);}catch(e){}
   try{rd.r.dispose();rd.r.forceContextLoss();}catch(e){}
+  try{rdLookClose();}catch(e){}
   rd.ov.remove();rd=null;
   document.querySelectorAll('[data-mfrd]').forEach(b=>b.classList.remove('on'));
   try{renderProps();}catch(e){} // la fiche du corps reprend un matériau changé dans l'atelier

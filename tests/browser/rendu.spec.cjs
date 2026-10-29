@@ -1,9 +1,9 @@
 // Rendu dans un VRAI navigateur (Chromium, WebGL réel) : les tests VM (test_materiaux)
 // ne voient ni les shaders ni les images. Deux parcours sur l'Axe :
 //   1. atelier RENDU : ouverture par le bouton, affinage progressif, matériau de rendu
-//      choisi dans le panneau (la CAO garde le sien), export PNG 1920×1080, Échap ;
-//   2. ambiances dans la vue CAO : Studio (fond, reflets, pièce aux couleurs CAO), verre
-//      approché, ombre portée, retour à « Actuel (CAO) ».
+//      choisi au clic droit sur la pièce (la CAO garde le sien), export PNG 1920×1080, Échap ;
+//   2. ambiances dans la vue CAO : Studio (fond, reflets, pièce à son apparence de RENDU, relief),
+//      clic droit → Matériau de rendu…, verre approché, ombre portée, retour à « Actuel (CAO) ».
 // Aucun message d'erreur WebGL (shader qui ne compile pas) n'est toléré.
 'use strict';
 const {test,expect}=require('@playwright/test');
@@ -11,6 +11,7 @@ const fs=require('fs'),path=require('path');
 
 const RACINE=path.join(__dirname,'..','..');
 const AXE=path.join(RACINE,'Exemples','Axe.miniFusion');
+const REL_ID_SABLE=2; // REL_ID.sable (98-rendu-reliefs)
 
 test.beforeAll(()=>{
   for(const f of ['occt/opencascade.wasm.wasm','occt/opencascade.full.wasm','Exemples/Axe.miniFusion']){
@@ -66,14 +67,23 @@ test('atelier RENDU : affinage, matériau de rendu séparé de la CAO, PNG 1920�
   expect(im0.part,'la pièce occupe une part de l’image').toBeGreaterThan(0.03);
   expect(im0.part,'l’image n’est pas uniforme').toBeLessThan(0.9);
 
-  // matériau de rendu : laiton, choisi dans le panneau
-  await page.locator('#rdPanel .rdMat2 select').first().selectOption('laiton');
+  // matériau de rendu : laiton, choisi au clic droit sur la pièce (fenêtre #rdLook, 98-rendu-apparence)
+  await expect(page.locator('#rdPanel .rdLookRow')).toHaveCount(1);
+  const bx=await page.evaluate(()=>{const b=new THREE.Box3().setFromObject(rd.group),c=b.getCenter(new THREE.Vector3()).project(rd.cam),r=rd.canvas.getBoundingClientRect();
+    return {x:r.left+(c.x+1)/2*r.width,y:r.top+(1-c.y)/2*r.height};});
+  await page.mouse.click(bx.x,bx.y,{button:'right'});
+  await expect(page.locator('#rdLook')).toBeVisible();
+  await page.locator('#rdLook select').first().selectOption('laiton');
   await page.waitForFunction(()=>rd&&rd.acc&&rd.acc.n>=4,null,{timeout:60000});
   const look=await page.evaluate(i=>({own:doc.rendu&&doc.rendu.corps&&doc.rendu.corps[i],cao:{mat:bodyMatOf(i),col:bodyColorOf(i)}}),id);
   expect(look.own&&look.own.mat).toBe('laiton');
   expect(look.cao,'la CAO garde son matériau et sa couleur').toEqual(cao0);
   const im1=await imageAtelier(page);
   expect(im1.r-im1.b,'laiton : nettement plus rouge que bleu').toBeGreaterThan(25);
+  await expect(page.locator('#rdPanel .rdLookRow')).toContainText('Laiton');
+  await page.keyboard.press('Escape'); // ferme d'abord la fenêtre, pas l'atelier
+  await expect(page.locator('#rdLook')).toHaveCount(0);
+  await expect(page.locator('#rdOverlay')).toBeVisible();
 
   // export : 4 passes suffisent ici (SwiftShader), au format 1920×1080
   await page.evaluate(()=>{rd.st.ech=4;rd.st.res='1080';});
@@ -103,10 +113,10 @@ async function pixelsVue(page){
   });
 }
 
-test('vue CAO : ambiance Studio, couleurs CAO gardées, verre approché, ombre, retour à Actuel',async({page})=>{
+test('vue CAO : ambiance Studio, apparence de rendu, verre approché, ombre, retour à Actuel',async({page})=>{
   const err=await demarrerAxe(page);
   const id=await page.evaluate(()=>bodyIdOfRuntime(bodies.find(b=>!b.ghost&&b.shape)));
-  // l'apparence de RENDU (autre couleur) ne doit pas déteindre sur la vue CAO
+  // V0.17.0 : en ambiance, la vue montre l'apparence de RENDU (« rendu léger ») ; la CAO garde la sienne
   await page.evaluate(i=>setRenderLook(i,'alu-anod-rouge',null),id);
   const fond0=(await pixelsVue(page)).fond;
 
@@ -116,10 +126,12 @@ test('vue CAO : ambiance Studio, couleurs CAO gardées, verre approché, ombre, 
   await page.waitForFunction(i=>{const b=bodies.find(q=>bodyIdOfRuntime(q)===i);return b&&b.mesh.material.userData.vEnv;},id);
   const s=await page.evaluate(i=>{
     const b=bodies.find(q=>bodyIdOfRuntime(q)===i),U=b.mesh.material.userData.vEnv.U;
-    return {col:U.uEnvCol.value.getHex(),cao:bodyColorOf(i),glass:U.uEnvGlass.value,env:b.mesh.material.envMap===vEnvS.rt.texture,
+    return {col:U.uEnvCol.value.getHex(),rendu:renderLookOf(i).color,cao:bodyColorOf(i),glass:U.uEnvGlass.value,relT:U.uRelT.value,env:b.mesh.material.envMap===vEnvS.rt.texture,
       fondTex:!!(scene.background&&scene.background.isTexture),sun:!!vEnvS.sun,ombre:b.mesh.castShadow};
   },id);
-  expect(s.col,'la pièce garde sa couleur CAO').toBe(s.cao);
+  expect(s.col,'la pièce prend sa couleur de rendu').toBe(s.rendu);
+  expect(s.cao,'la CAO garde la sienne').not.toBe(s.rendu);
+  expect(s.relT,'relief du matériau (alu anodisé : sablé)').toBe(REL_ID_SABLE);
   expect(s.env,'reflets de l’ambiance').toBe(true);
   expect(s.fondTex,'fond dégradé de l’ambiance').toBe(true);
   expect(s.glass).toBe(0);
@@ -130,11 +142,21 @@ test('vue CAO : ambiance Studio, couleurs CAO gardées, verre approché, ombre, 
   await page.locator('#optShadow').setChecked(true);
   await page.waitForFunction(i=>{const b=bodies.find(q=>bodyIdOfRuntime(q)===i);return vEnvS.sun&&vEnvS.floor&&vEnvS.floor.visible&&b.mesh.castShadow;},id);
 
-  // verre approché (matériau CAO « verre ») : transparent, sans ombre
-  await page.evaluate(i=>{setBodyMat(i,'verre');try{applyBodyStyle();}catch(e){}},id);
+  // clic droit sur la pièce → « Matériau de rendu… » → fenêtre d'apparence
+  const pc=await page.evaluate(i=>{const b=bodies.find(q=>bodyIdOfRuntime(q)===i),c=new THREE.Box3().setFromObject(b.mesh).getCenter(new THREE.Vector3()).project(camera),
+    r=renderer.domElement.getBoundingClientRect();return {x:r.left+(c.x+1)/2*r.width,y:r.top+(1-c.y)/2*r.height};},id);
+  await page.mouse.click(pc.x,pc.y,{button:'right'});
+  await expect(page.locator('#ctxRdLook')).toBeVisible();
+  await page.locator('#ctxRdLook').click();
+  await expect(page.locator('#rdLook')).toBeVisible();
+  // verre approché (matériau de rendu « verre ») : sans ombre
+  await page.locator('#rdLook select').first().selectOption('verre');
+  expect(await page.evaluate(i=>renderLookOf(i).mat,id)).toBe('verre');
   await page.waitForFunction(i=>{const b=bodies.find(q=>bodyIdOfRuntime(q)===i);const v=b.mesh.material.userData.vEnv;return v&&v.U.uEnvGlass.value===1&&!b.mesh.castShadow;},id);
 
-  // retour à Actuel (CAO) : matières rendues telles quelles, fond du thème
+  // retour à Actuel (CAO) : matières rendues telles quelles, fond du thème (⚙ refermé par le clic droit : on le rouvre)
+  await page.keyboard.press('Escape');
+  if(!await page.locator('#optEnv').isVisible())await page.locator('#btnSettings').click();
   await page.locator('#optEnv').selectOption('actuel');
   await page.waitForFunction(()=>!vEnvS.on&&vEnvS.mats.size===0);
   const fin=await page.evaluate(i=>{const b=bodies.find(q=>bodyIdOfRuntime(q)===i);return {patch:!!b.mesh.material.userData.vEnv,fondTex:!!(scene.background&&scene.background.isTexture)};},id);

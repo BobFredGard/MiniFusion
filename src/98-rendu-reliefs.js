@@ -69,26 +69,28 @@ function relApply(mat,rel,S){
     uSfV:{value:sv},uSfW:{value:S?S.pat.w:0},uSfS:{value:S?S.pat.s:0},uSfPaint:{value:S&&S.paint?1:0},uFlT:{value:fl?fl.t:1},uFlI:{value:fl?fl.i:0}};
   mat.userData.rel=U;
   mat.defines=Object.assign(mat.defines||{},wear?{SURF_WEAR:''}:{},fl?{SURF_FLAKE:''}:{});
-  mat.onBeforeCompile=function(sh){
-    Object.assign(sh.uniforms,U);
-    sh.vertexShader=REL_VS_HEAD+SURF_VS_HEAD+sh.vertexShader
-      .replace('#include <begin_vertex>','#include <begin_vertex>\n  vRelP = transformed; vRelN = objectNormal;\n#ifdef SURF_WEAR\n  vUse = aUse;\n#endif');
-    sh.fragmentShader=REL_FS_HEAD+SURF_FS_HEAD+sh.fragmentShader
-      .replace('#include <color_fragment>','#include <color_fragment>\n'+
-        '  float relWood; float relHv = relH( vRelP, relWood );\n'+
-        // visibilité : motifs aléatoires jugés sur leurs composantes larges (l'affinage moyenne le reste) ;
-        // motifs réguliers (moleté, stries, couches) sur leur pas — sinon moiré
-        '  int relT = int( uRelT + 0.5 ); float relK = ( relT == 3 || relT == 6 || relT == 7 ) ? 1.0 : 0.3;\n'+
-        '  float relFw = relK * ( fwidth( vRelP.x * uRelF ) + fwidth( vRelP.y * uRelF ) + fwidth( vRelP.z * uRelF ) );\n'+
-        '  float relVis = 1.0 - smoothstep( 0.35, 1.2, relFw );\n'+                              // motif plus fin que le pixel : il s'estompe
-        '  if( int( uRelT + 0.5 ) == 4 ) diffuseColor.rgb *= mix( 0.62, 1.08, mix( 0.5, relWood, max( relVis, 0.35 ) ) );\n'+SURF_FS_COLOR)
-      .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\n'+
-        '  roughnessFactor = clamp( roughnessFactor + uRelR * ( 1.0 - relVis ) + uRelR * 0.4 * relVis * ( relHv - 0.5 ), 0.03, 1.0 );\n'+SURF_FS_ROUGH)
-      .replace('#include <metalnessmap_fragment>','#include <metalnessmap_fragment>\n'+SURF_FS_METAL)
-      .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\n'+
-        '  normal = relPerturb( - vViewPosition, normal, vec2( dFdx( relHv ), dFdy( relHv ) ) * uRelA * relVis, faceDirection );\n'+SURF_FS_NORMAL);
-  };
+  mat.onBeforeCompile=function(sh){Object.assign(sh.uniforms,U);relShader(sh);};
   mat.customProgramCacheKey=function(){return 'rdRelief2';};
   mat.needsUpdate=true;
   return mat;
+}
+function relShader(sh){
+  // relief, couches et patine dans le shader d'une matière standard ou physique : relApply, et la vue
+  // en ambiance de rendu (98-rendu-vue) ; uniformes de relApply (uRel*, uSf*, uFl*) à fournir
+  sh.vertexShader=REL_VS_HEAD+SURF_VS_HEAD+sh.vertexShader
+    .replace('#include <begin_vertex>','#include <begin_vertex>\n  vRelP = transformed; vRelN = objectNormal;\n#ifdef SURF_WEAR\n  vUse = aUse;\n#endif');
+  sh.fragmentShader=REL_FS_HEAD+SURF_FS_HEAD+sh.fragmentShader
+    .replace('#include <color_fragment>','#include <color_fragment>\n'+
+      '  float relWood; float relHv = relH( vRelP, relWood );\n'+
+      // visibilité : motifs aléatoires jugés sur leurs composantes larges (l'affinage moyenne le reste) ;
+      // motifs réguliers (moleté, stries, couches) sur leur pas — sinon moiré
+      '  int relT = int( uRelT + 0.5 ); float relK = ( relT == 3 || relT == 6 || relT == 7 ) ? 1.0 : 0.3;\n'+
+      '  float relFw = relK * ( fwidth( vRelP.x * uRelF ) + fwidth( vRelP.y * uRelF ) + fwidth( vRelP.z * uRelF ) );\n'+
+      '  float relVis = 1.0 - smoothstep( 0.35, 1.2, relFw );\n'+                              // motif plus fin que le pixel : il s'estompe
+      '  if( int( uRelT + 0.5 ) == 4 ) diffuseColor.rgb *= mix( 0.62, 1.08, mix( 0.5, relWood, max( relVis, 0.35 ) ) );\n'+SURF_FS_COLOR)
+    .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\n'+
+      '  roughnessFactor = clamp( roughnessFactor + uRelR * ( 1.0 - relVis ) + uRelR * 0.4 * relVis * ( relHv - 0.5 ), 0.03, 1.0 );\n'+SURF_FS_ROUGH)
+    .replace('#include <metalnessmap_fragment>','#include <metalnessmap_fragment>\n'+SURF_FS_METAL)
+    .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\n'+
+      '  normal = relPerturb( - vViewPosition, normal, vec2( dFdx( relHv ), dFdy( relHv ) ) * uRelA * relVis, faceDirection );\n'+SURF_FS_NORMAL);
 }

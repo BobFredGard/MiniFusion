@@ -69,6 +69,9 @@ function wirePick(){
     e.preventDefault();hideCtx();
     const h=pick(e);if(!h)return;
     const b=bodies.find(x=>x.mesh===h.object);
+    // corps d'une occurrence d'assemblage : directement sa fenêtre d'apparence de rendu (98-rendu-apparence)
+    const r=!b&&h.object.userData&&h.object.userData.rd;
+    if(r&&r.bid&&!r.ghost){try{rdLookPop(e.clientX,e.clientY,{occ:r.occ||null,bid:r.bid,comp:r.comp});}catch(err){}return;}
     showCtx3D(e.clientX,e.clientY,b?b.id:null);
   });
   el.addEventListener('dblclick',e=>{
@@ -778,6 +781,7 @@ function showCtx3D(x,y,bid){ctxTarget={kind:'body',id:bid};const _bd=bodies.find
     ctxStyleSync();
   }catch(e){}
   try{ bmCtxSync('ctxMenu3D',bid?ctxTarget:null); }catch(e){} // déplacer le corps (85)
+  try{ rdLookCtxSync(bid&&!_bd.ghost?bid:null); }catch(e){} // matériau de rendu (98-rendu-apparence)
   $('ctxMenu3D').style.display='block';ctxPlace($('ctxMenu3D'),x,y);}
 function hideCtx3D(){$('ctxMenu3D').style.display='none';}
 document.querySelectorAll('#ctxMenu button').forEach(b=>b.onclick=()=>{

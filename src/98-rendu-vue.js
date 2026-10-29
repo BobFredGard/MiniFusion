@@ -2,12 +2,16 @@
    Réglages de vue ⚙ → « Environnement » : « Actuel (CAO) » (fond du thème, sol miroir, couleurs
    de la CAO) ou une ambiance de l'atelier RENDU (98-rendu) — Studio, Studio lumineux, Atelier,
    Extérieur, Scène noire — pour modéliser avec le rendu : reflets de l'ambiance, ombre douce au
-   sol, fond dégradé. La pièce garde la COULEUR et le MATÉRIAU de la CAO (doc.bodies) : l'apparence de
-   rendu (doc.rendu) ne sert qu'à l'atelier RENDU. Les arêtes, esquisses, surbrillances restent celles de la CAO.
+   sol, fond dégradé. Les arêtes, esquisses, surbrillances restent celles de la CAO.
+   V0.17.0 — « rendu léger » pour travailler : en ambiance, chaque pièce prend son APPARENCE DE RENDU
+   (doc.rendu, o.rendu en assemblage ; à défaut matériau et couleur de la CAO), choisie au clic droit
+   (98-rendu-apparence) : matériau, couleur, relief procédural (brossé, sablé, bois… : relShader,
+   98-rendu-reliefs), taches de patine, paillettes ; vernis approché par la rugosité (matière standard).
+   Espaces CAO et FAO (les parcours, le brut et la simulation gardent leur dessin) ; PLAN : actuel.
    Comment : seules les matières des CORPS sont retouchées (onBeforeCompile) — couleur, métal et
    rugosité lus dans des uniformes (mat.color n'est jamais modifiée : la CAO la relit), puis tons
    ACES et sortie sRGB dans leur shader. Le moteur garde sa sortie linéaire : tout le reste de la
-   scène s'affiche exactement comme avant. Espace CAO seulement (FAO, PLAN : environnement actuel). */
+   scène s'affiche exactement comme avant. */
 const VENV_LIST=[['actuel','Actuel (CAO)'],['studio','Studio'],['clair','Studio lumineux'],['atelier','Atelier'],['exterieur','Extérieur'],['noir','Scène noire']];
 const VENV_SOL={studio:'#b4b8bf',clair:'#e2e4e8',atelier:'#272b31',exterieur:'#7d8894',noir:'#0b0b0d'}; // couleur du sol (case « Sol »)
 const VENV_FOND={studio:['#d3d6db','#9a9fa7'],clair:['#f4f5f7','#cdd1d7'],atelier:['#3a4049','#121417'],exterieur:['#b7c5d4','#6a7684'],noir:['#1b1b1e','#000000']};
@@ -30,10 +34,14 @@ function vEnvSet(k){
 /* ── matières des corps ── */
 function vEnvPatch(m){
   if(!m||!m.isMeshStandardMaterial||m.userData.vEnv)return;
-  const U={uEnvCol:{value:new THREE.Color()},uEnvMet:{value:0.35},uEnvRou:{value:0.4},uEnvGlass:{value:0}};
+  const U={uEnvCol:{value:new THREE.Color()},uEnvMet:{value:0.35},uEnvRou:{value:0.4},uEnvGlass:{value:0},
+    // relief, patine, paillettes (relShader, 98-rendu-reliefs) : réglés à chaque image (vEnvTick), sans recompiler
+    uRelT:{value:0},uRelF:{value:1},uRelA:{value:0},uRelR:{value:0},uRelD:{value:new THREE.Vector3(1,0,0)},
+    uSfV:{value:0},uSfW:{value:0},uSfS:{value:0},uSfPaint:{value:0},uFlT:{value:1},uFlI:{value:0}};
   m.userData.vEnv={U,obc:m.onBeforeCompile,key:m.customProgramCacheKey,env:m.envMap,ei:m.envMapIntensity};
   m.onBeforeCompile=function(sh){
     Object.assign(sh.uniforms,U);
+    relShader(sh);sh.fragmentShader='#define SURF_FLAKE\n'+sh.fragmentShader; // paillettes : sans effet tant que uFlI = 0
     sh.fragmentShader=VENV_GLSL+sh.fragmentShader
       .replace('vec4 diffuseColor = vec4( diffuse, opacity );','vec4 diffuseColor = vec4( pow( uEnvCol, vec3( 2.2 ) ), opacity );')
       .replace('vec3 totalEmissiveRadiance = emissive;','vec3 totalEmissiveRadiance = pow( emissive, vec3( 2.2 ) );')
@@ -44,7 +52,7 @@ function vEnvPatch(m){
         'gl_FragColor.a = clamp( gl_FragColor.a + uEnvGlass * 0.6 * pow( 1.0 - abs( dot( normalize( normal ), normalize( vViewPosition ) ) ), 3.0 ), 0.0, 1.0 );'+
         'gl_FragColor.rgb = vEnvAces( gl_FragColor.rgb ); gl_FragColor = LinearTosRGB( gl_FragColor );');
   };
-  m.customProgramCacheKey=function(){return 'vEnvPhoto';};
+  m.customProgramCacheKey=function(){return 'vEnvPhoto2';};
   m.envMap=vEnvS.rt.texture;m.envMapIntensity=1;
   m.needsUpdate=true;vEnvS.mats.add(m);
 }
@@ -58,15 +66,22 @@ function vEnvMeshes(cb){
   (bodies||[]).forEach(b=>{
     if(!b||b.ghost||!b.mesh||!b.mesh.material)return;
     if(b._xSaved!=null||b._dSaved!=null||b._cSaved!=null)return;
-    const id=bodyIdOfRuntime(b),L={mat:id?bodyMatOf(id):null,color:id?bodyColorOf(id):(b.color||0x9a9aa0)}; // vue CAO : couleur et matériau de la CAO (l'apparence de rendu ne sert qu'à l'atelier)
+    const id=bodyIdOfRuntime(b),L=id?renderLookOf(id):{mat:null,color:b.color||0x9a9aa0,rel:null}; // apparence de RENDU (12-materiaux), sinon celle de la CAO
     cb(b.mesh,L);
     // passe intérieure d'un corps transparent (glassDepthMask, src/20) : même apparence
     b.mesh.children.forEach(c=>{if(c.isMesh&&c.material&&c.material.isMeshStandardMaterial)cb(c,L);});
   });
   // autres composants (autour de la pièce, ou mode Assembler) : apparence capturée (47, userData.rd)
-  const visit=root=>{if(!root)return;root.traverse(o=>{const r=o.isMesh&&o.userData&&o.userData.rd;if(r&&!r.ghost)cb(o,{mat:r.cmat||null,color:r.ccol!=null?r.ccol:r.color});});};
+  const visit=root=>{if(!root)return;root.traverse(o=>{const r=o.isMesh&&o.userData&&o.userData.rd;if(r&&!r.ghost)cb(o,{mat:r.mat||null,color:r.color!=null?r.color:r.ccol,rel:r.rel||null});});};
   visit(scene.getObjectByName('asmCtx'));
   try{if(asmMode==='asm'&&asmScene)visit(asmScene.getObjectByName('asmOcc'));}catch(e){}
+}
+function vEnvRelU(U,L,d){
+  // relief effectif (corps, sinon matériau), taches de la patine, paillettes — comme l'atelier, sans usure des arêtes
+  const rl=relOf({rel:L.rel},d),P=rl?REL_DEF[rl.t]:null,S=surfOpts({rel:L.rel},d);
+  U.uRelT.value=rl?REL_ID[rl.t]:0;U.uRelF.value=rl?1/rl.e:1;U.uRelA.value=rl?P.a*(rl.e/P.e):0;U.uRelR.value=rl?P.r:0;
+  U.uRelD.value.set(rl&&rl.d==='x'?1:0,rl&&rl.d==='y'?1:0,rl&&rl.d==='z'?1:0);if(!rl)U.uRelD.value.set(1,0,0);
+  U.uSfV.value=S.pat.v;U.uSfPaint.value=S.paint?1:0;U.uFlT.value=S.fl?S.fl.t:1;U.uFlI.value=S.fl?S.fl.i:0;
 }
 /* ── ambiance, fond, sol ── */
 function vEnvBg(){
@@ -124,7 +139,7 @@ function vShadowStop(){
 function vCaoWs(){
   if(typeof scene==='undefined'||!scene||typeof renderer==='undefined'||!renderer)return false;
   const ws=document.body&&document.body.getAttribute('data-ws');
-  return !ws||ws==='cao';
+  return !ws||ws==='cao'||ws==='fao'; // V0.17.0 : aussi en FAO (la mise en plan garde son dessin)
 }
 const _vEnvBox=new THREE.Box3(),_vEnvC=new THREE.Vector3(),_vEnvSz=new THREE.Vector3();
 function vEnvTick(){
@@ -148,7 +163,8 @@ function vEnvTick(){
         U.uEnvGlass.value=0;
         if(d&&d.trans){U.uEnvMet.value=0;U.uEnvRou.value=d.rough;U.uEnvGlass.value=1;} // verre approché : lisse, reflets nets, bords plus opaques
         else if(mat.transparent){U.uEnvMet.value=mat.metalness;U.uEnvRou.value=mat.roughness;} // transparence CAO : réglages de setMatAlpha
-        else{U.uEnvMet.value=d?d.metal:0.15;U.uEnvRou.value=d?d.rough:0.42;}
+        else{U.uEnvMet.value=d?d.metal:0.15;U.uEnvRou.value=d?(d.cc?d.rough+((d.ccr!=null?d.ccr:0.1)-d.rough)*d.cc*0.5:d.rough):0.42;} // vernis : reflets plus nets
+        vEnvRelU(U,L,d);
         if(mat.envMap!==vEnvS.rt.texture)mat.envMap=vEnvS.rt.texture;
       }
     }
@@ -176,7 +192,7 @@ function vEnvTick(){
     const row=document.createElement('div');row.className='setRow';
     const lab=document.createElement('label');lab.textContent='Environnement ';
     const s=document.createElement('select');s.id='optEnv';
-    s.title='Actuel : fond du thème · ambiances : éclairage et reflets de l’atelier RENDU, fond dégradé, pour modéliser — la pièce garde ses couleurs et matériaux CAO — espace CAO';
+    s.title='Actuel : fond du thème · ambiances : « rendu léger » pour travailler — éclairage et reflets de l’atelier RENDU, matériaux, reliefs et patine de rendu de chaque pièce (clic droit sur une pièce → Matériau de rendu…) — espaces CAO et FAO';
     VENV_LIST.forEach(([k,t])=>{const o=document.createElement('option');o.value=k;o.textContent=t;if(k===vEnv)o.selected=true;s.appendChild(o);});
     s.onchange=()=>vEnvSet(s.value);
     lab.appendChild(s);row.appendChild(lab);

@@ -278,7 +278,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.16.0';
+const APP_VER='V0.17.0';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -47073,6 +47073,9 @@ function wirePick(){
     e.preventDefault();hideCtx();
     const h=pick(e);if(!h)return;
     const b=bodies.find(x=>x.mesh===h.object);
+    // corps d'une occurrence d'assemblage : directement sa fenêtre d'apparence de rendu (98-rendu-apparence)
+    const r=!b&&h.object.userData&&h.object.userData.rd;
+    if(r&&r.bid&&!r.ghost){try{rdLookPop(e.clientX,e.clientY,{occ:r.occ||null,bid:r.bid,comp:r.comp});}catch(err){}return;}
     showCtx3D(e.clientX,e.clientY,b?b.id:null);
   });
   el.addEventListener('dblclick',e=>{
@@ -47782,6 +47785,7 @@ function showCtx3D(x,y,bid){ctxTarget={kind:'body',id:bid};const _bd=bodies.find
     ctxStyleSync();
   }catch(e){}
   try{ bmCtxSync('ctxMenu3D',bid?ctxTarget:null); }catch(e){} // déplacer le corps (85)
+  try{ rdLookCtxSync(bid&&!_bd.ghost?bid:null); }catch(e){} // matériau de rendu (98-rendu-apparence)
   $('ctxMenu3D').style.display='block';ctxPlace($('ctxMenu3D'),x,y);}
 function hideCtx3D(){$('ctxMenu3D').style.display='none';}
 document.querySelectorAll('#ctxMenu button').forEach(b=>b.onclick=()=>{
@@ -61607,6 +61611,153 @@ function viewFadeIn(){
   else try{mepInit();}catch(e){}
 })();
 
+/* ═══════════════ 98-rendu-apparence.js — rendu apparence ═══════════════ */
+/* ---------- apparence de RENDU par pièce, au clic droit (V0.17.0) ----------
+   Matériau, couleur, relief et patine d'UNE pièce dans une petite fenêtre flottante, au lieu de la
+   liste complète dans le panneau de l'atelier (qui prenait toute la hauteur) :
+   - atelier RENDU (98-rendu) : clic droit sans glisser sur une pièce de l'image, ou clic sur sa ligne
+     dans le bloc « Matériaux et reliefs » (une ligne par pièce) ;
+   - vue CAO / FAO : menu du clic droit sur une pièce → « Matériau de rendu… » ; la vue en ambiance de
+     rendu (98-rendu-vue) montre aussitôt le résultat.
+   Cible : {id} corps de la pièce active (doc.rendu, 12-materiaux) ou {occ, bid, comp} corps d'une
+   occurrence d'assemblage (o.rendu, 48-assemblage-apparence) ; {bid, comp} sans occ = composant ouvert. */
+let rdLookT=null; // cible de la fenêtre ouverte
+function rdLookCss(){
+  if(document.getElementById('rdLookCss'))return;
+  const s=document.createElement('style');s.id='rdLookCss';s.textContent=[
+    '#rdLook{position:fixed;z-index:9600;width:262px;background:var(--surface,#1c1c20);color:var(--text,#f5f5f7);border:1px solid var(--border,#3a3a3f);border-radius:9px;padding:8px 10px;box-shadow:0 12px 32px rgba(0,0,0,.5);font-size:.74rem}',
+    '#rdLook .rlHead{display:flex;align-items:center;gap:5px;margin-bottom:6px}',
+    '#rdLook .rlHead>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700}',
+    '#rdLook button{padding:2px 7px;font-size:.71rem;border:1px solid var(--border);background:none;color:var(--text);border-radius:6px;cursor:pointer}',
+    '#rdLook button:hover{border-color:var(--primary,#0a84ff)}',
+    '#rdLook select,#rdLook input[type=number]{padding:3px 6px;font-size:.72rem;border:1px solid var(--border);border-radius:5px;background:var(--bg);color:var(--text);min-width:0}',
+    '#rdLook input[type=color]{width:30px;height:22px;padding:0;border:1px solid var(--border);border-radius:4px;background:none;flex:none}',
+    '#rdLook .rlRow,#rdLook .rdRel{display:flex;align-items:center;gap:4px;margin:4px 0}',
+    '#rdLook .rlRow>select,#rdLook .rdRel>select:first-child{flex:1;max-width:none}',
+    '#rdLook .rdRel>input{width:52px}',
+    '#rdLook .rdNote{color:var(--muted);font-size:.68rem;line-height:1.35;margin:4px 0 0}',
+    'body[data-theme="clair"] #rdLook{background:rgba(255,255,255,.98);color:#1c1c1e;box-shadow:0 12px 32px rgba(0,0,0,.18)}'
+  ].join('\n');
+  document.head.appendChild(s);
+}
+function rdLookOccMesh(t){ // maillage affiché d'une occurrence (son userData.rd est l'apparence en cours)
+  let hit=null;
+  const visit=root=>{if(!root||hit)return;root.traverse(o=>{const r=!hit&&o.isMesh&&o.userData&&o.userData.rd;if(r&&!r.ghost&&r.bid===t.bid&&(r.occ||null)===(t.occ||null)&&r.comp===t.comp)hit=r;});};
+  try{if(typeof asmMode!=='undefined'&&asmMode==='asm'&&asmScene)visit(asmScene);}catch(e){}
+  try{visit(scene.getObjectByName('asmCtx'));}catch(e){}
+  if(!hit&&rd&&rd.srcs)hit=rd.srcs.find(s=>!s.id&&s.bid===t.bid&&(s.occ||null)===(t.occ||null)&&s.comp===t.comp)||null;
+  return hit;
+}
+function rdLookGet(t){
+  // {name, mat, color, rel, own} de la cible
+  if(t.id||(t.bid&&!t.occ)){
+    const id=t.id||t.bid,L=renderLookOf(id);
+    let n=id;try{const e=bodyEntryOf(id),b=(bodies||[]).find(q=>bodyIdOfRuntime(q)===id);n=(e&&e.name)||(b&&b.name)||id;}catch(e){}
+    return {name:n,mat:L.mat,color:L.color,rel:L.rel,own:L.own};
+  }
+  const o=asmOcc(t.occ),c=asmComp(t.comp),r=rdLookOccMesh(t);
+  const be=c&&c.doc&&(c.doc.bodies||[]).find(e=>e&&e.id===t.bid);
+  return {name:(o?o.name+' · ':'')+((be&&be.name)||t.bid),mat:r?r.mat:null,color:r?r.color:0x9a9aa0,rel:r?r.rel||null:null,
+    own:!!(o&&o.rendu&&o.rendu.corps&&o.rendu.corps[t.bid]),o};
+}
+function rdLookDone(t){
+  // la pièce a changé d'apparence : document, atelier ouvert, assemblage redessiné, fenêtre relue
+  try{markDirty();}catch(e){}
+  if(t.occ||t.bid){try{asmDraw();}catch(e){}try{asmCtxDraw();}catch(e){}}
+  if(rd){try{rdRefresh('objets');rdPanel();}catch(e){}}
+  rdLookFill();
+}
+function rdLookSet(t,mat,col,rel){
+  if(t.occ){const L=rdLookGet(t);asmSetOccRendu(L.o,t.bid,mat,col,false,rel===undefined?L.rel:rel);}
+  else{rdUndo();setRenderLook(t.id||t.bid,mat,col,rel);}
+  rdLookDone(t);
+}
+function rdLookFill(){
+  const p=document.getElementById('rdLook');if(!p||!rdLookT)return;
+  const t=rdLookT,L=rdLookGet(t);p.innerHTML='';
+  const el=(tag,cls,txt)=>{const d=document.createElement(tag);if(cls)d.className=cls;if(txt!=null)d.textContent=txt;return d;};
+  const select=(opts,cur,fn)=>{const s=el('select');opts.forEach(([v,tx])=>{const o=el('option',null,tx);o.value=v;if(String(v)===String(cur))o.selected=true;s.appendChild(o);});s.onchange=()=>fn(s.value);return s;};
+  const h=el('div','rlHead');const n=el('span',null,L.name);n.title=L.name;h.appendChild(n);
+  if(t.occ){
+    const all=el('button',null,'⇉');all.title='Même apparence pour toutes les occurrences de ce composant';
+    all.onclick=()=>{asmSetOccRendu(L.o,t.bid,L.mat,L.color,true,L.rel);rdLookDone(t);};h.appendChild(all);
+  }
+  const z=el('button',null,'↺');z.disabled=!L.own;z.style.opacity=L.own?'':'.35';
+  z.title=t.occ?'Reprendre l’apparence de la pièce':'Reprendre le matériau et la couleur de la CAO';
+  z.onclick=()=>{if(t.occ)asmClearOccRendu(L.o,t.bid,false);else{rdUndo();clearRenderLook(t.id||t.bid);}rdLookDone(t);};h.appendChild(z);
+  const x=el('button',null,'×');x.title='Fermer (Échap)';x.onclick=rdLookClose;h.appendChild(x);
+  p.appendChild(h);
+  const r=el('div','rlRow');
+  r.appendChild(matSelect(L.mat,k=>rdLookSet(t,k,null,undefined),'Sans matériau'));
+  const ci=el('input');ci.type='color';ci.value=cssHex(L.color);ci.title='Couleur de rendu (la pièce CAO garde la sienne)';
+  ci.onchange=()=>{const v=parseInt(ci.value.slice(1),16);if(v>=0){const L2=rdLookGet(t);rdLookSet(t,L2.mat,v,L2.rel);}};
+  r.appendChild(ci);p.appendChild(r);
+  p.appendChild(rdRelRow(el,select,L.rel,matDef(L.mat),rel=>{const L2=rdLookGet(t);rdLookSet(t,L2.mat,L2.color,rel);}));
+  p.appendChild(el('div','rdNote','Apparence de RENDU, enregistrée avec '+(t.occ?'l’assemblage':'la pièce')+' : atelier RENDU et ambiances de la vue (⚙ → Environnement). La CAO garde sa couleur.'));
+}
+function rdLookPop(x,y,t){
+  if(!t||!(t.id||t.bid))return;
+  rdLookCss();rdLookT=t;
+  let p=document.getElementById('rdLook');
+  if(!p){p=document.createElement('div');p.id='rdLook';
+    p.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();});
+    p.addEventListener('pointerdown',e=>e.stopPropagation());
+    p.addEventListener('wheel',e=>e.stopPropagation());
+    document.body.appendChild(p);
+    setTimeout(()=>{document.addEventListener('pointerdown',rdLookOut,true);document.addEventListener('keydown',rdLookKey,true);},0);}
+  rdLookFill();
+  const w=p.offsetWidth||262,hh=p.offsetHeight||160;
+  p.style.left=Math.max(4,Math.min(x+6,innerWidth-w-4))+'px';p.style.top=Math.max(4,Math.min(y+6,innerHeight-hh-4))+'px';
+}
+function rdLookClose(){
+  const p=document.getElementById('rdLook');if(p)p.remove();rdLookT=null;
+  document.removeEventListener('pointerdown',rdLookOut,true);document.removeEventListener('keydown',rdLookKey,true);
+}
+function rdLookOut(e){const p=document.getElementById('rdLook');if(p&&!p.contains(e.target))rdLookClose();}
+function rdLookKey(e){if(e.key==='Escape'&&rdLookT){e.stopPropagation();e.preventDefault();rdLookClose();}}
+function rdLookFromSrc(s){return s&&s.id?{id:s.id}:s&&s.bid?{occ:s.occ||null,bid:s.bid,comp:s.comp}:null;}
+function rdLookPick(ev){
+  // atelier : clic droit sur une pièce de l'image → sa fenêtre d'apparence
+  if(!rd||!rd.group)return false;
+  const r=rd.canvas.getBoundingClientRect();
+  const m=new THREE.Vector2((ev.clientX-r.left)/r.width*2-1,-((ev.clientY-r.top)/r.height*2-1));
+  const ray=new THREE.Raycaster();ray.setFromCamera(m,rd.cam);
+  const hit=ray.intersectObjects(rd.group.children,false)[0];if(!hit)return false;
+  const t=rdLookFromSrc((rd.srcs||[])[rd.group.children.indexOf(hit.object)]);if(!t)return false;
+  rdLookPop(ev.clientX,ev.clientY,t);return true;
+}
+function rdLookList(pane,el){
+  // bloc « Matériaux et reliefs » de l'atelier : une ligne par pièce (pastille, nom, matériau) ; clic → fenêtre
+  const seen=new Set(),rows=[];
+  (rd.srcs||[]).forEach(s=>{const t=rdLookFromSrc(s);if(!t)return;const k=(t.id||'')+'|'+(t.occ||'')+'|'+(t.bid||'');if(seen.has(k))return;seen.add(k);rows.push(t);});
+  if(!rows.length){pane.appendChild(el('div','rdNote','Aucune pièce à l’écran.'));return;}
+  rows.forEach(t=>{
+    const L=rdLookGet(t),d=matDef(L.mat);
+    const b=el('button','rdLookRow');b.title='Matériau, couleur, relief et patine de « '+L.name+' »';
+    const sw=el('i');sw.style.background=cssHex(L.color);b.appendChild(sw);
+    const n=el('span',null,L.name);b.appendChild(n);
+    b.appendChild(el('em',null,(d?d.nom:'sans matériau')+(L.own?' •':'')));
+    b.onclick=e=>{const q=b.getBoundingClientRect();rdLookPop(q.left-268,q.top,t);e.stopPropagation();};
+    pane.appendChild(b);
+  });
+  pane.appendChild(el('div','rdNote','Clic droit sur une pièce dans l’image (ou sur sa ligne) : matériau, couleur, relief, patine. • = apparence propre au rendu.'));
+}
+function rdLookCtxSync(bid){ // menu du clic droit de la vue (90) : « Matériau de rendu… » sur un corps
+  const b=document.getElementById('ctxRdLook');if(b)b.style.display=bid?'':'none';
+}
+(function(){
+  try{
+    const m=document.getElementById('ctxMenu3D');if(!m||document.getElementById('ctxRdLook'))return;
+    const b=document.createElement('button');b.id='ctxRdLook';b.textContent='✨ Matériau de rendu…';
+    b.title='Matériau, couleur, relief et patine de rendu de cette pièce (atelier RENDU et ambiances de la vue)';
+    b.onclick=()=>{
+      const t=ctxTarget,q=m.getBoundingClientRect();hideCtx3D();
+      const id=t&&ctxBodyId(t);if(id)rdLookPop(q.left,q.top,{id});
+    };
+    const row=m.querySelector('.ctxRow');m.insertBefore(b,row||null);
+  }catch(e){}
+})();
+
 /* ═══════════════ 98-rendu-post.js — rendu post ═══════════════ */
 /* ---------- finition de l'image de l'atelier RENDU (V0.15.0) ----------
    Une chaîne écrite UNE fois, en GLSL que comprennent le three r147 (moteur rapide) et le three récent
@@ -62220,28 +62371,30 @@ function relApply(mat,rel,S){
     uSfV:{value:sv},uSfW:{value:S?S.pat.w:0},uSfS:{value:S?S.pat.s:0},uSfPaint:{value:S&&S.paint?1:0},uFlT:{value:fl?fl.t:1},uFlI:{value:fl?fl.i:0}};
   mat.userData.rel=U;
   mat.defines=Object.assign(mat.defines||{},wear?{SURF_WEAR:''}:{},fl?{SURF_FLAKE:''}:{});
-  mat.onBeforeCompile=function(sh){
-    Object.assign(sh.uniforms,U);
-    sh.vertexShader=REL_VS_HEAD+SURF_VS_HEAD+sh.vertexShader
-      .replace('#include <begin_vertex>','#include <begin_vertex>\n  vRelP = transformed; vRelN = objectNormal;\n#ifdef SURF_WEAR\n  vUse = aUse;\n#endif');
-    sh.fragmentShader=REL_FS_HEAD+SURF_FS_HEAD+sh.fragmentShader
-      .replace('#include <color_fragment>','#include <color_fragment>\n'+
-        '  float relWood; float relHv = relH( vRelP, relWood );\n'+
-        // visibilité : motifs aléatoires jugés sur leurs composantes larges (l'affinage moyenne le reste) ;
-        // motifs réguliers (moleté, stries, couches) sur leur pas — sinon moiré
-        '  int relT = int( uRelT + 0.5 ); float relK = ( relT == 3 || relT == 6 || relT == 7 ) ? 1.0 : 0.3;\n'+
-        '  float relFw = relK * ( fwidth( vRelP.x * uRelF ) + fwidth( vRelP.y * uRelF ) + fwidth( vRelP.z * uRelF ) );\n'+
-        '  float relVis = 1.0 - smoothstep( 0.35, 1.2, relFw );\n'+                              // motif plus fin que le pixel : il s'estompe
-        '  if( int( uRelT + 0.5 ) == 4 ) diffuseColor.rgb *= mix( 0.62, 1.08, mix( 0.5, relWood, max( relVis, 0.35 ) ) );\n'+SURF_FS_COLOR)
-      .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\n'+
-        '  roughnessFactor = clamp( roughnessFactor + uRelR * ( 1.0 - relVis ) + uRelR * 0.4 * relVis * ( relHv - 0.5 ), 0.03, 1.0 );\n'+SURF_FS_ROUGH)
-      .replace('#include <metalnessmap_fragment>','#include <metalnessmap_fragment>\n'+SURF_FS_METAL)
-      .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\n'+
-        '  normal = relPerturb( - vViewPosition, normal, vec2( dFdx( relHv ), dFdy( relHv ) ) * uRelA * relVis, faceDirection );\n'+SURF_FS_NORMAL);
-  };
+  mat.onBeforeCompile=function(sh){Object.assign(sh.uniforms,U);relShader(sh);};
   mat.customProgramCacheKey=function(){return 'rdRelief2';};
   mat.needsUpdate=true;
   return mat;
+}
+function relShader(sh){
+  // relief, couches et patine dans le shader d'une matière standard ou physique : relApply, et la vue
+  // en ambiance de rendu (98-rendu-vue) ; uniformes de relApply (uRel*, uSf*, uFl*) à fournir
+  sh.vertexShader=REL_VS_HEAD+SURF_VS_HEAD+sh.vertexShader
+    .replace('#include <begin_vertex>','#include <begin_vertex>\n  vRelP = transformed; vRelN = objectNormal;\n#ifdef SURF_WEAR\n  vUse = aUse;\n#endif');
+  sh.fragmentShader=REL_FS_HEAD+SURF_FS_HEAD+sh.fragmentShader
+    .replace('#include <color_fragment>','#include <color_fragment>\n'+
+      '  float relWood; float relHv = relH( vRelP, relWood );\n'+
+      // visibilité : motifs aléatoires jugés sur leurs composantes larges (l'affinage moyenne le reste) ;
+      // motifs réguliers (moleté, stries, couches) sur leur pas — sinon moiré
+      '  int relT = int( uRelT + 0.5 ); float relK = ( relT == 3 || relT == 6 || relT == 7 ) ? 1.0 : 0.3;\n'+
+      '  float relFw = relK * ( fwidth( vRelP.x * uRelF ) + fwidth( vRelP.y * uRelF ) + fwidth( vRelP.z * uRelF ) );\n'+
+      '  float relVis = 1.0 - smoothstep( 0.35, 1.2, relFw );\n'+                              // motif plus fin que le pixel : il s'estompe
+      '  if( int( uRelT + 0.5 ) == 4 ) diffuseColor.rgb *= mix( 0.62, 1.08, mix( 0.5, relWood, max( relVis, 0.35 ) ) );\n'+SURF_FS_COLOR)
+    .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\n'+
+      '  roughnessFactor = clamp( roughnessFactor + uRelR * ( 1.0 - relVis ) + uRelR * 0.4 * relVis * ( relHv - 0.5 ), 0.03, 1.0 );\n'+SURF_FS_ROUGH)
+    .replace('#include <metalnessmap_fragment>','#include <metalnessmap_fragment>\n'+SURF_FS_METAL)
+    .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\n'+
+      '  normal = relPerturb( - vViewPosition, normal, vec2( dFdx( relHv ), dFdy( relHv ) ) * uRelA * relVis, faceDirection );\n'+SURF_FS_NORMAL);
 }
 
 /* ═══════════════ 98-rendu-scene.js — rendu scene ═══════════════ */
@@ -62752,12 +62905,16 @@ function rtSurfMesh(T3,m,src,base,cache){
    Réglages de vue ⚙ → « Environnement » : « Actuel (CAO) » (fond du thème, sol miroir, couleurs
    de la CAO) ou une ambiance de l'atelier RENDU (98-rendu) — Studio, Studio lumineux, Atelier,
    Extérieur, Scène noire — pour modéliser avec le rendu : reflets de l'ambiance, ombre douce au
-   sol, fond dégradé. La pièce garde la COULEUR et le MATÉRIAU de la CAO (doc.bodies) : l'apparence de
-   rendu (doc.rendu) ne sert qu'à l'atelier RENDU. Les arêtes, esquisses, surbrillances restent celles de la CAO.
+   sol, fond dégradé. Les arêtes, esquisses, surbrillances restent celles de la CAO.
+   V0.17.0 — « rendu léger » pour travailler : en ambiance, chaque pièce prend son APPARENCE DE RENDU
+   (doc.rendu, o.rendu en assemblage ; à défaut matériau et couleur de la CAO), choisie au clic droit
+   (98-rendu-apparence) : matériau, couleur, relief procédural (brossé, sablé, bois… : relShader,
+   98-rendu-reliefs), taches de patine, paillettes ; vernis approché par la rugosité (matière standard).
+   Espaces CAO et FAO (les parcours, le brut et la simulation gardent leur dessin) ; PLAN : actuel.
    Comment : seules les matières des CORPS sont retouchées (onBeforeCompile) — couleur, métal et
    rugosité lus dans des uniformes (mat.color n'est jamais modifiée : la CAO la relit), puis tons
    ACES et sortie sRGB dans leur shader. Le moteur garde sa sortie linéaire : tout le reste de la
-   scène s'affiche exactement comme avant. Espace CAO seulement (FAO, PLAN : environnement actuel). */
+   scène s'affiche exactement comme avant. */
 const VENV_LIST=[['actuel','Actuel (CAO)'],['studio','Studio'],['clair','Studio lumineux'],['atelier','Atelier'],['exterieur','Extérieur'],['noir','Scène noire']];
 const VENV_SOL={studio:'#b4b8bf',clair:'#e2e4e8',atelier:'#272b31',exterieur:'#7d8894',noir:'#0b0b0d'}; // couleur du sol (case « Sol »)
 const VENV_FOND={studio:['#d3d6db','#9a9fa7'],clair:['#f4f5f7','#cdd1d7'],atelier:['#3a4049','#121417'],exterieur:['#b7c5d4','#6a7684'],noir:['#1b1b1e','#000000']};
@@ -62780,10 +62937,14 @@ function vEnvSet(k){
 /* ── matières des corps ── */
 function vEnvPatch(m){
   if(!m||!m.isMeshStandardMaterial||m.userData.vEnv)return;
-  const U={uEnvCol:{value:new THREE.Color()},uEnvMet:{value:0.35},uEnvRou:{value:0.4},uEnvGlass:{value:0}};
+  const U={uEnvCol:{value:new THREE.Color()},uEnvMet:{value:0.35},uEnvRou:{value:0.4},uEnvGlass:{value:0},
+    // relief, patine, paillettes (relShader, 98-rendu-reliefs) : réglés à chaque image (vEnvTick), sans recompiler
+    uRelT:{value:0},uRelF:{value:1},uRelA:{value:0},uRelR:{value:0},uRelD:{value:new THREE.Vector3(1,0,0)},
+    uSfV:{value:0},uSfW:{value:0},uSfS:{value:0},uSfPaint:{value:0},uFlT:{value:1},uFlI:{value:0}};
   m.userData.vEnv={U,obc:m.onBeforeCompile,key:m.customProgramCacheKey,env:m.envMap,ei:m.envMapIntensity};
   m.onBeforeCompile=function(sh){
     Object.assign(sh.uniforms,U);
+    relShader(sh);sh.fragmentShader='#define SURF_FLAKE\n'+sh.fragmentShader; // paillettes : sans effet tant que uFlI = 0
     sh.fragmentShader=VENV_GLSL+sh.fragmentShader
       .replace('vec4 diffuseColor = vec4( diffuse, opacity );','vec4 diffuseColor = vec4( pow( uEnvCol, vec3( 2.2 ) ), opacity );')
       .replace('vec3 totalEmissiveRadiance = emissive;','vec3 totalEmissiveRadiance = pow( emissive, vec3( 2.2 ) );')
@@ -62794,7 +62955,7 @@ function vEnvPatch(m){
         'gl_FragColor.a = clamp( gl_FragColor.a + uEnvGlass * 0.6 * pow( 1.0 - abs( dot( normalize( normal ), normalize( vViewPosition ) ) ), 3.0 ), 0.0, 1.0 );'+
         'gl_FragColor.rgb = vEnvAces( gl_FragColor.rgb ); gl_FragColor = LinearTosRGB( gl_FragColor );');
   };
-  m.customProgramCacheKey=function(){return 'vEnvPhoto';};
+  m.customProgramCacheKey=function(){return 'vEnvPhoto2';};
   m.envMap=vEnvS.rt.texture;m.envMapIntensity=1;
   m.needsUpdate=true;vEnvS.mats.add(m);
 }
@@ -62808,15 +62969,22 @@ function vEnvMeshes(cb){
   (bodies||[]).forEach(b=>{
     if(!b||b.ghost||!b.mesh||!b.mesh.material)return;
     if(b._xSaved!=null||b._dSaved!=null||b._cSaved!=null)return;
-    const id=bodyIdOfRuntime(b),L={mat:id?bodyMatOf(id):null,color:id?bodyColorOf(id):(b.color||0x9a9aa0)}; // vue CAO : couleur et matériau de la CAO (l'apparence de rendu ne sert qu'à l'atelier)
+    const id=bodyIdOfRuntime(b),L=id?renderLookOf(id):{mat:null,color:b.color||0x9a9aa0,rel:null}; // apparence de RENDU (12-materiaux), sinon celle de la CAO
     cb(b.mesh,L);
     // passe intérieure d'un corps transparent (glassDepthMask, src/20) : même apparence
     b.mesh.children.forEach(c=>{if(c.isMesh&&c.material&&c.material.isMeshStandardMaterial)cb(c,L);});
   });
   // autres composants (autour de la pièce, ou mode Assembler) : apparence capturée (47, userData.rd)
-  const visit=root=>{if(!root)return;root.traverse(o=>{const r=o.isMesh&&o.userData&&o.userData.rd;if(r&&!r.ghost)cb(o,{mat:r.cmat||null,color:r.ccol!=null?r.ccol:r.color});});};
+  const visit=root=>{if(!root)return;root.traverse(o=>{const r=o.isMesh&&o.userData&&o.userData.rd;if(r&&!r.ghost)cb(o,{mat:r.mat||null,color:r.color!=null?r.color:r.ccol,rel:r.rel||null});});};
   visit(scene.getObjectByName('asmCtx'));
   try{if(asmMode==='asm'&&asmScene)visit(asmScene.getObjectByName('asmOcc'));}catch(e){}
+}
+function vEnvRelU(U,L,d){
+  // relief effectif (corps, sinon matériau), taches de la patine, paillettes — comme l'atelier, sans usure des arêtes
+  const rl=relOf({rel:L.rel},d),P=rl?REL_DEF[rl.t]:null,S=surfOpts({rel:L.rel},d);
+  U.uRelT.value=rl?REL_ID[rl.t]:0;U.uRelF.value=rl?1/rl.e:1;U.uRelA.value=rl?P.a*(rl.e/P.e):0;U.uRelR.value=rl?P.r:0;
+  U.uRelD.value.set(rl&&rl.d==='x'?1:0,rl&&rl.d==='y'?1:0,rl&&rl.d==='z'?1:0);if(!rl)U.uRelD.value.set(1,0,0);
+  U.uSfV.value=S.pat.v;U.uSfPaint.value=S.paint?1:0;U.uFlT.value=S.fl?S.fl.t:1;U.uFlI.value=S.fl?S.fl.i:0;
 }
 /* ── ambiance, fond, sol ── */
 function vEnvBg(){
@@ -62874,7 +63042,7 @@ function vShadowStop(){
 function vCaoWs(){
   if(typeof scene==='undefined'||!scene||typeof renderer==='undefined'||!renderer)return false;
   const ws=document.body&&document.body.getAttribute('data-ws');
-  return !ws||ws==='cao';
+  return !ws||ws==='cao'||ws==='fao'; // V0.17.0 : aussi en FAO (la mise en plan garde son dessin)
 }
 const _vEnvBox=new THREE.Box3(),_vEnvC=new THREE.Vector3(),_vEnvSz=new THREE.Vector3();
 function vEnvTick(){
@@ -62898,7 +63066,8 @@ function vEnvTick(){
         U.uEnvGlass.value=0;
         if(d&&d.trans){U.uEnvMet.value=0;U.uEnvRou.value=d.rough;U.uEnvGlass.value=1;} // verre approché : lisse, reflets nets, bords plus opaques
         else if(mat.transparent){U.uEnvMet.value=mat.metalness;U.uEnvRou.value=mat.roughness;} // transparence CAO : réglages de setMatAlpha
-        else{U.uEnvMet.value=d?d.metal:0.15;U.uEnvRou.value=d?d.rough:0.42;}
+        else{U.uEnvMet.value=d?d.metal:0.15;U.uEnvRou.value=d?(d.cc?d.rough+((d.ccr!=null?d.ccr:0.1)-d.rough)*d.cc*0.5:d.rough):0.42;} // vernis : reflets plus nets
+        vEnvRelU(U,L,d);
         if(mat.envMap!==vEnvS.rt.texture)mat.envMap=vEnvS.rt.texture;
       }
     }
@@ -62926,7 +63095,7 @@ function vEnvTick(){
     const row=document.createElement('div');row.className='setRow';
     const lab=document.createElement('label');lab.textContent='Environnement ';
     const s=document.createElement('select');s.id='optEnv';
-    s.title='Actuel : fond du thème · ambiances : éclairage et reflets de l’atelier RENDU, fond dégradé, pour modéliser — la pièce garde ses couleurs et matériaux CAO — espace CAO';
+    s.title='Actuel : fond du thème · ambiances : « rendu léger » pour travailler — éclairage et reflets de l’atelier RENDU, matériaux, reliefs et patine de rendu de chaque pièce (clic droit sur une pièce → Matériau de rendu…) — espaces CAO et FAO';
     VENV_LIST.forEach(([k,t])=>{const o=document.createElement('option');o.value=k;o.textContent=t;if(k===vEnv)o.selected=true;s.appendChild(o);});
     s.onchange=()=>vEnvSet(s.value);
     lab.appendChild(s);row.appendChild(lab);
@@ -63458,14 +63627,11 @@ function rdCss(){
     '#rdPanel .rdSeg button.active{background:var(--primary,#0a84ff);border-color:var(--primary,#0a84ff);color:#fff;font-weight:600}',
     '#rdPanel .rdBtns{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0}',
     '#rdPanel .rdChk{display:inline-flex;align-items:center;gap:3px;color:var(--text);white-space:nowrap;cursor:pointer}',
-    '#rdPanel .rdMat{display:flex;align-items:center;gap:4px;margin:6px 0 2px}',
-    '#rdPanel .rdMat>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-weight:600}',
-    '#rdPanel .rdMat2{display:flex;align-items:center;gap:4px;margin:2px 0}',
-    '#rdPanel .rdMat2>select{flex:1;min-width:0;max-width:none}',
-    '#rdPanel .rdRel{display:flex;align-items:center;gap:4px;margin:2px 0 6px}',
-    '#rdPanel .rdRel>select:first-child{flex:1;min-width:0;max-width:none}',
-    '#rdPanel .rdRel>input{width:52px}',
-    '#rdPanel .rdOcc{margin:10px 0 0;font-weight:700;color:var(--text);border-top:1px solid var(--border);padding-top:6px}',
+    '#rdPanel .rdLookRow{display:flex;align-items:center;gap:6px;width:100%;margin:2px 0;padding:4px 6px;border:1px solid transparent;border-radius:6px;background:none;color:var(--text);font-size:.72rem;cursor:pointer;text-align:left}',
+    '#rdPanel .rdLookRow:hover{border-color:var(--primary,#0a84ff)}',
+    '#rdPanel .rdLookRow>i{width:12px;height:12px;border-radius:3px;flex:none;outline:1px solid rgba(127,127,127,.4)}',
+    '#rdPanel .rdLookRow>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}',
+    '#rdPanel .rdLookRow>em{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-style:normal}',
     '#rdPanel .rdCam{display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}',
     '#rdPanel .rdCam>button{background:none;border:none;color:var(--text);padding:3px 8px;font-size:.71rem;cursor:pointer}',
     '#rdPanel .rdCam>button+button{border-left:1px solid var(--border);color:var(--muted)}',
@@ -63580,26 +63746,8 @@ function rdPanel(){
     pane.appendChild(cv);
     const ca=el('button','rdB','+ Enregistrer la vue');ca.title='Position, cible et focale, enregistrées avec la pièce';ca.onclick=rdCamAdd;
     const r=el('div','rdBtns');r.appendChild(ca);pane.appendChild(r);
-  }else if(t==='mat'){
-    const ids=[];(rd.srcs||[]).forEach(s=>{if(s.id&&ids.indexOf(s.id)<0)ids.push(s.id);});
-    ids.forEach(id=>{
-      const e=bodyEntryOf(id),b=(bodies||[]).find(q=>bodyIdOfRuntime(q)===id);
-      const L=renderLookOf(id);
-      const done=()=>{markDirty();rdRefresh('objets');rdPanel();};
-      const r=el('div','rdMat');const n=el('span',null,(e&&e.name)||(b&&b.name)||id);n.title=n.textContent;r.appendChild(n);
-      const z=el('button','rdB','↺');z.title=L.own?'Reprendre le matériau et la couleur de la CAO':'Apparence de la CAO (rien de propre au rendu)';z.disabled=!L.own;z.style.opacity=L.own?'':'.35';
-      z.onclick=()=>{rdUndo();clearRenderLook(id);done();};r.appendChild(z);pane.appendChild(r);
-      const r2=el('div','rdMat2');
-      const s=matSelect(L.mat,k=>{rdUndo();setRenderLook(id,k,null);done();},'Sans matériau');
-      const ci=el('input');ci.type='color';ci.value=cssHex(L.color);ci.title='Couleur de rendu (la pièce CAO garde la sienne)';
-      ci.onchange=()=>{const v=parseInt(ci.value.slice(1),16);if(v>=0){rdUndo();setRenderLook(id,renderLookOf(id).mat,v);done();}};
-      r2.appendChild(s);r2.appendChild(ci);pane.appendChild(r2);
-      pane.appendChild(rdRelRow(el,select,L.rel,matDef(L.mat),rel=>{rdUndo();const L2=renderLookOf(id);setRenderLook(id,L2.mat,L2.color,rel);done();}));
-    });
-    const asmView=(rd.srcs||[]).some(x=>!x.id&&x.comp);
-    if(!ids.length&&!asmView)pane.appendChild(el('div','rdNote','Aucun corps de la pièce active à l’écran.'));
-    rdAsmPanel(pane,el,select);
-    if(ids.length)pane.appendChild(el('div','rdNote','Apparence propre au RENDU, enregistrée avec la pièce : la CAO garde ses couleurs (↺ pour y revenir). Relief : motif calculé, direction X / Y / Z de la pièce, échelle en mm. Patine : taches, usure des arêtes, salissure des creux.'));
+  }else if(t==='mat'){ // V0.17.0 : une ligne par pièce, le détail au clic droit (98-rendu-apparence)
+    rdLookList(pane,el);
   }else if(t==='fin'){ // V0.15.0 : finition de l'image (98-rendu-post), appliquée à l'affichage : pas de nouvel affinage
     const pct=v=>Math.round(v*100)+' %',sg=v=>(v>0?'+':'')+Math.round(v*100);
     const look=()=>{rdSave();if(rd.acc&&rd.acc.n)rdShow();if(rd.rt&&rd.rt.pt){rd.rt.lookDirty=true;rtKick(false);}};
@@ -63660,46 +63808,12 @@ function rdRelRow(el,select,rel0,dm,fn){
   r2.appendChild(pt);F.appendChild(r2);
   return F;
 }
-function rdAsmPanel(p,el,select){
-  // Rendu d'assemblage (mode Assembler) : apparence de rendu par OCCURRENCE, corps par corps
-  // (o.rendu, 48-assemblage-apparence) ; ⇉ = la même pour toutes les occurrences du composant
-  const seen=new Set(),rows=[];
-  (rd.srcs||[]).forEach(s=>{if(s.id||!s.comp||!s.bid)return;const k=(s.occ||'')+'|'+s.bid;if(seen.has(k))return;seen.add(k);rows.push(s);});
-  if(!rows.length){if((rd.srcs||[]).some(s=>!s.id))p.appendChild(el('div','rdNote','Autres composants : apparence choisie en mode Assembler (atelier ouvert sur l’assemblage).'));return;}
-  let last=null;
-  rows.forEach(s=>{
-    const c=asmComp(s.comp),o=s.occ?asmOcc(s.occ):null;
-    if(s.occ!==last){last=s.occ;p.appendChild(el('div','rdOcc',(o?o.name:(c&&c.name)||'?')));}
-    const be=c&&c.doc&&(c.doc.bodies||[]).find(e=>e&&e.id===s.bid);
-    const r=el('div','rdMat');const n=el('span',null,(be&&be.name)||s.bid);n.title=n.textContent;r.appendChild(n);p.appendChild(r);
-    const r2=el('div','rdMat2');p.appendChild(r2);
-    if(!o){ // le composant ouvert lui-même (racine) : apparence de rendu de sa pièce
-      const L=renderLookOf(s.bid);
-      const sel=matSelect(L.mat,k=>{rdUndo();setRenderLook(s.bid,k,null);markDirty();rdAsmRedraw();},'Sans matériau');
-      const ci=el('input');ci.type='color';ci.value=cssHex(L.color);ci.onchange=()=>{rdUndo();setRenderLook(s.bid,renderLookOf(s.bid).mat,parseInt(ci.value.slice(1),16));markDirty();rdAsmRedraw();};
-      r2.appendChild(sel);r2.appendChild(ci);
-      p.appendChild(rdRelRow(el,select,L.rel,matDef(L.mat),rel=>{rdUndo();const L2=renderLookOf(s.bid);setRenderLook(s.bid,L2.mat,L2.color,rel);markDirty();rdAsmRedraw();}));
-      return;
-    }
-    const own=!!(o.rendu&&o.rendu.corps&&o.rendu.corps[s.bid]);
-    const all=el('button','rdB','⇉');all.title='Même apparence pour toutes les occurrences de « '+((c&&c.name)||'?')+' »';
-    all.onclick=()=>{asmSetOccRendu(o,s.bid,s.mat,s.color,true,s.rel);rdAsmRedraw();};
-    const z=el('button','rdB','↺');z.title='Reprendre l’apparence de la pièce';z.disabled=!own;z.style.opacity=own?'':'.35';
-    z.onclick=()=>{asmClearOccRendu(o,s.bid,false);rdAsmRedraw();};
-    r.appendChild(all);r.appendChild(z);
-    const sel=matSelect(s.mat,k=>{asmSetOccRendu(o,s.bid,k,null,false);rdAsmRedraw();},'Sans matériau');
-    const ci=el('input');ci.type='color';ci.value=cssHex(s.color);ci.title='Couleur de rendu de cette occurrence';
-    ci.onchange=()=>{asmSetOccRendu(o,s.bid,s.mat,parseInt(ci.value.slice(1),16),false,s.rel);rdAsmRedraw();};
-    r2.appendChild(sel);r2.appendChild(ci);
-    p.appendChild(rdRelRow(el,select,s.rel,matDef(s.mat),rel=>{asmSetOccRendu(o,s.bid,s.mat,s.color,false,rel);rdAsmRedraw();}));
-  });
-  p.appendChild(el('div','rdNote','Rendu d’assemblage : apparence par occurrence, enregistrée avec l’assemblage (⇉ : toutes les occurrences du composant, ↺ : celle de la pièce). La vue CAO garde les couleurs de la CAO.'));
-}
 function rdAsmRedraw(){ // l'assemblage redessine ses instances (userData.rd), puis l'atelier les reprend
   try{asmDraw();}catch(e){}try{asmCtxDraw();}catch(e){}
   rdRefresh('objets');rdPanel();
 }
-function rdKey(e){if(rd&&e.key==='Escape'&&!rd.busy){e.stopPropagation();e.preventDefault();rdClose();}}
+function rdKey(e){if(rd&&e.key==='Escape'&&!rd.busy&&!rdLookT){ // Échap ferme d'abord la fenêtre d'apparence (98-rendu-apparence)
+  e.stopPropagation();e.preventDefault();rdClose();}}
 function rdOpen(){
   if(rd)return;
   try{if(typeof skEdit!=='undefined'&&skEdit){faceEl.textContent='Terminez l’esquisse avant d’ouvrir le rendu.';return;}}catch(e){}
@@ -63708,7 +63822,7 @@ function rdOpen(){
   const ov=document.createElement('div');ov.id='rdOverlay';
   const view=document.createElement('div');view.id='rdView';
   const canvas=document.createElement('canvas');view.appendChild(canvas);
-  const hint=document.createElement('div');hint.className='rdHint';hint.textContent='Glisser : tourner · clic droit : déplacer · molette : avancer / reculer · clic sur la pièce : mise au point — le cadre est l’image finale (16:9)';view.appendChild(hint);
+  const hint=document.createElement('div');hint.className='rdHint';hint.textContent='Glisser ou clic molette : tourner · clic droit : déplacer · clic droit sur une pièce : son matériau · molette : avancer / reculer · clic : mise au point — le cadre est l’image finale (16:9)';view.appendChild(hint);
   const cnt=document.createElement('div');cnt.className='rdCnt';view.appendChild(cnt);
   const panel=document.createElement('div');panel.id='rdPanel';
   ov.appendChild(view);ov.appendChild(panel);document.body.appendChild(ov);
@@ -63722,12 +63836,14 @@ function rdOpen(){
   cam.position.copy(camera.position);
   const ctl=new THREE.OrbitControls(cam,canvas);
   ctl.target.copy(controls.target);ctl.enableDamping=false;
-  if(ctl.mouseButtons&&THREE.MOUSE){ctl.mouseButtons.LEFT=THREE.MOUSE.ROTATE;ctl.mouseButtons.MIDDLE=THREE.MOUSE.DOLLY;ctl.mouseButtons.RIGHT=THREE.MOUSE.PAN;}
+  if(ctl.mouseButtons&&THREE.MOUSE){ctl.mouseButtons.LEFT=THREE.MOUSE.ROTATE;ctl.mouseButtons.MIDDLE=THREE.MOUSE.ROTATE;ctl.mouseButtons.RIGHT=THREE.MOUSE.PAN;}
   ctl.addEventListener('change',()=>{if(rd&&!rd.busy){rdApplyCam();rdReset();}});
   ctl.addEventListener('start',()=>{if(rd)rd.drag=true;});
   ctl.addEventListener('end',()=>{if(rd){rd.drag=false;rdReset();}});
-  let down=null;
-  canvas.addEventListener('pointerdown',e=>{down=e.button===0?{x:e.clientX,y:e.clientY}:null;});
+  let down=null,downR=null;
+  canvas.addEventListener('pointerdown',e=>{down=e.button===0?{x:e.clientX,y:e.clientY}:null;downR=e.button===2?{x:e.clientX,y:e.clientY}:null;});
+  // clic droit sans glisser sur une pièce : son matériau (98-rendu-apparence) ; glissé : déplacer la vue
+  canvas.addEventListener('contextmenu',e=>{e.preventDefault();if(downR&&rd&&!rd.busy&&Math.hypot(e.clientX-downR.x,e.clientY-downR.y)<4){try{rdLookPick(e);}catch(err){}}downR=null;});
   canvas.addEventListener('pointerup',e=>{if(down&&rd&&!rd.busy&&Math.hypot(e.clientX-down.x,e.clientY-down.y)<4){try{rdPick(e);rdPanel();}catch(err){}}down=null;});
   rd={ov,view,canvas,panel,r,cam,ctl,cnt,scene:new THREE.Scene(),pmrem:new THREE.PMREMGenerator(r),st:rdSettings(),keyDir:[-55,45],drag:false,raf:0};
   rdBuildObjects();rdBuildEnv();rdBackground();rdFloor();
@@ -63754,6 +63870,7 @@ function rdClose(){
   try{if(rd.studio){rd.studio.geometry.dispose();rd.studio.material.dispose();}if(rd.hdriBg)rd.hdriBg.dispose();Object.values(rd.supTex||{}).forEach(t=>t.dispose());}catch(e){}
   try{const A=rd.acc;if(A){['s','a','b'].forEach(k=>{if(A[k])A[k].dispose();});A.quad.geometry.dispose();A.mix.dispose();A.out.dispose();}rpDispose(rd.post);}catch(e){}
   try{rd.r.dispose();rd.r.forceContextLoss();}catch(e){}
+  try{rdLookClose();}catch(e){}
   rd.ov.remove();rd=null;
   document.querySelectorAll('[data-mfrd]').forEach(b=>b.classList.remove('on'));
   try{renderProps();}catch(e){} // la fiche du corps reprend un matériau changé dans l'atelier

@@ -14,7 +14,12 @@ const html0=fs.readFileSync(path.join(ROOT,'fusion_mvp.html'),'utf8'),vue=fs.rea
 if(!/id="optFloor"/.test(html0)||!/id="optMirror"/.test(html0))staticKo.push('réglages de vue : cases « Sol » et « Miroir » attendues');
 if(/if\(mirrorOn&&floorMesh&&mirrorCam&&!/.test(sc3))staticKo.push('reflet : la passe miroir ne doit pas être coupée sous une ambiance (reflet figé)');
 if(!/if\(vu\)\{/.test(sc3))staticKo.push('reflet : passe recalculée à chaque image attendue');
-if(/renderLookOf/.test(vue))staticKo.push('vue CAO : la pièce doit garder ses couleurs CAO (pas d\'apparence de rendu)');
+// V0.17.0 : « rendu léger » — en ambiance, la vue montre l'apparence de RENDU (relief compris), choisie au clic droit par pièce
+if(!/renderLookOf/.test(vue)||!/relShader\(sh\)/.test(vue))staticKo.push('vue en ambiance : apparence de rendu et relief de chaque pièce attendus');
+if(!/ws==='fao'/.test(vue))staticKo.push('vue en ambiance : espace FAO attendu');
+{const ap=fs.readFileSync(path.join(ROOT,'src','98-rendu-apparence.js'),'utf8');
+  if(!/function rdLookPop\(/.test(ap)||!/ctxRdLook/.test(ap))staticKo.push('apparence de rendu au clic droit (98-rendu-apparence) attendue');
+  if(/matSelect\(L\.mat/.test(rendu))staticKo.push('atelier : plus de liste déroulante par pièce dans le panneau (clic droit)');}
 if(/castShadow=shW&&!mat\.transparent/.test(vue))staticKo.push('ombre : les corps transparents doivent porter leur ombre');
 if(!/solOn:true/.test(rendu)||!/miroir:true/.test(rendu)||!/ombreOn:true/.test(rendu)||!/function rdMirror\(/.test(rendu))staticKo.push('atelier : cases Sol / Miroir / Ombre et passe reflet attendues');
 if(!/optShadow/.test(vue))staticKo.push('réglages de vue : case « Ombre » attendue');
