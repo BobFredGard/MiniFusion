@@ -150,8 +150,10 @@ function vShadowStart(){
 function vShadowStop(){
   try{(bodies||[]).forEach(b=>{if(b&&b.mesh)b.mesh.castShadow=false;});}catch(e){}
   try{const g=scene.getObjectByName('asmCtx');if(g)g.traverse(o=>{if(o.isMesh)o.castShadow=false;});}catch(e){}
-  if(vEnvS.sun){scene.remove(vEnvS.sun.target);scene.remove(vEnvS.sun);if(vEnvS.sun.shadow.map)vEnvS.sun.shadow.map.dispose();vEnvS.sun=null;}
-  if(vEnvS.floor){scene.remove(vEnvS.floor);vEnvS.floor.geometry.dispose();vEnvS.floor.material.dispose();vEnvS.floor=null;}
+  try{const g=asmScene&&asmScene.getObjectByName('asmOcc');if(g)g.traverse(o=>{if(o.isMesh)o.castShadow=false;});}catch(e){}
+  const off=o=>{if(o&&o.parent)o.parent.remove(o);}; // dans scene ou asmScene (viewDecorTo, 10-scene-3d)
+  if(vEnvS.sun){off(vEnvS.sun.target);off(vEnvS.sun);if(vEnvS.sun.shadow.map)vEnvS.sun.shadow.map.dispose();vEnvS.sun=null;}
+  if(vEnvS.floor){off(vEnvS.floor);vEnvS.floor.geometry.dispose();vEnvS.floor.material.dispose();vEnvS.floor=null;}
   renderer.shadowMap.enabled=false;
 }
 function vCaoWs(){
@@ -159,6 +161,7 @@ function vCaoWs(){
   const ws=document.body&&document.body.getAttribute('data-ws');
   return !ws||ws==='cao'||ws==='fao'; // V0.17.0 : aussi en FAO (la mise en plan garde son dessin)
 }
+const vRootOf=o=>{while(o.parent)o=o.parent;return o;};
 const _vEnvBox=new THREE.Box3(),_vEnvC=new THREE.Vector3(),_vEnvSz=new THREE.Vector3();
 function vEnvTick(){
   // appelée à chaque image (animate, 10-scene-3d) : suit l'espace de travail, les corps et leurs apparences
@@ -172,6 +175,7 @@ function vEnvTick(){
   if(!envW&&!shW)return;
   if(envW&&mirrorU)mirrorU.color.value.set(C.sol); // sol à la couleur de l'ambiance (Rendu direct : celle de la fenêtre RENDU)
   const box=_vEnvBox.makeEmpty();
+  const asmV=(typeof asmMode!=='undefined'&&asmMode==='asm'&&typeof asmScene!=='undefined'&&asmScene)?asmScene:null;
   vEnvMeshes((m,L)=>{
     const mat=m.material;if(!mat||!mat.isMeshStandardMaterial)return;
     if(envW){
@@ -190,7 +194,7 @@ function vEnvTick(){
     }
     const dv=matDef(L.mat);
     m.castShadow=shW&&m.name!=='glassIn'&&!(dv&&dv.trans); // un corps transparent (réglage CAO) porte aussi son ombre ; sa passe intérieure et le verre, non
-    if(shW&&m.parent&&rdShown(m))box.expandByObject(m);
+    if(shW&&m.parent&&rdShown(m)&&(!asmV||vRootOf(m)===asmV))box.expandByObject(m); // mode Assembler : seuls les composants placés
   });
   const fl=vEnvS.floor,sun=vEnvS.sun;if(!shW||!fl||!sun)return;
   fl.visible=!box.isEmpty();if(box.isEmpty())return;

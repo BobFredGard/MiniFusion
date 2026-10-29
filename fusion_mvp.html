@@ -281,7 +281,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.21.3';
+const APP_VER='V0.21.4';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -825,7 +825,10 @@ function refreshMirror(){
   // V0.7.5 : seulement ce qui est réellement AFFICHÉ (objet et parents visibles) — un corps masqué
   // (case, simulation) ne retient plus le sol sous lui ; le sol passe sous la dernière pièce visible
   const ms=[],shown=o=>{for(let p=o;p;p=p.parent)if(p.visible===false)return false;return true;};
-  bodies.forEach(b=>{if(b.visible&&b.mesh&&shown(b.mesh))ms.push(b.mesh);});
+  // mode Assembler : la vue dessine asmScene (47) — le sol passe sous les composants placés (fantômes exclus)
+  const asmG=(typeof asmMode!=='undefined'&&asmMode==='asm'&&typeof asmScene!=='undefined'&&asmScene)?asmScene.getObjectByName('asmOcc'):null;
+  if(asmG)asmG.traverse(o=>{if(o.isMesh&&o.geometry&&!(o.userData.rd&&o.userData.rd.ghost)&&shown(o))ms.push(o);});
+  else bodies.forEach(b=>{if(b.visible&&b.mesh&&shown(b.mesh))ms.push(b.mesh);});
   try{
     if(faoPoseGrp&&faoPoseGrp.parent&&faoPoseGrp.parent.visible!==false)
       faoPoseGrp.traverse(o=>{if(o.isMesh&&o.userData&&o.userData.faoStock&&shown(o))ms.push(o);});
@@ -1160,6 +1163,8 @@ function animate(){
   requestAnimationFrame(animate);
   try{viewUpSync();}catch(e){} // 2026-10-21-005 : haut de vue = Z du posage / de l'opération en FAO
   orbitTick();controls.update();updateLabels();
+  const RS=asmRenderScene(); // vue d'assemblage : sa propre scène (47)
+  viewDecorTo(RS);
   try{if(typeof vEnvTick==='function')vEnvTick();}catch(e){} // V0.10.0 : environnement de rendu (98-rendu-vue)
   if(mirrorOn&&floorMesh&&mirrorCam){ // aussi sous une ambiance de rendu : sinon le sol montrait le dernier reflet calculé, figé
     const vu=updateMirror();mirrorU.uRefl.value=vu?1:0; // caméra sous le sol : pas de reflet (il resterait figé)
@@ -1168,14 +1173,14 @@ function animate(){
       floorMesh.visible=false;
       // Seuls les SOLIDES se reflètent (comme viewer_STEP) : traits, aides et plans masqués.
       const _mh=[];
-      scene.traverse(o=>{
-        if(!o.visible||o===scene)return;
-        if(o.isLine||o.isLineSegments||o.isPoints||o.isSprite||o===axHelper||(o.userData&&(o.userData.triad||o.userData.noMirror))||(o.material&&o.material.isShaderMaterial)||(o.material&&o.material.transparent&&o.material.opacity<0.6)){o.visible=false;_mh.push(o);}
+      RS.traverse(o=>{
+        if(!o.visible||o===RS)return;
+        if(o.isLine||o.isLineSegments||o.isPoints||o.isSprite||o===axHelper||(o.userData&&(o.userData.triad||o.userData.noMirror))||(o.material&&(o.material.isShaderMaterial||o.material.depthTest===false))||(o.material&&o.material.transparent&&o.material.opacity<0.6)){o.visible=false;_mh.push(o);} // depthTest false : manipulateur d'assemblage (48)
       });
-      const _bg=scene.background,_ca=renderer.getClearAlpha();
-      scene.background=null;renderer.setClearAlpha(0); // alpha 0 hors de la pièce : seul le reflet de la pièce se pose sur le sol (plus de tache du fond)
-      renderer.setRenderTarget(mirrorRT);renderer.clear();renderer.render(scene,mirrorCam);
-      scene.background=_bg;renderer.setClearAlpha(_ca);
+      const _bg=RS.background,_ca=renderer.getClearAlpha();
+      RS.background=null;renderer.setClearAlpha(0); // alpha 0 hors de la pièce : seul le reflet de la pièce se pose sur le sol (plus de tache du fond)
+      renderer.setRenderTarget(mirrorRT);renderer.clear();renderer.render(RS,mirrorCam);
+      RS.background=_bg;renderer.setClearAlpha(_ca);
       for(const o of _mh)o.visible=true;
       renderer.setRenderTarget(null);
       floorMesh.visible=_fv;
@@ -1189,7 +1194,14 @@ function animate(){
   try{if(typeof faoPoseSync==='function')faoPoseSync();}catch(e){}
   try{if(typeof faoFaceHlSync==='function')faoFaceHlSync();}catch(e){} // faces bleues / rouges de l'op sélectionnée
   try{if(typeof holeThreadVisSync==='function')holeThreadVisSync();}catch(e){} // filets taraudés : cachés avec leur corps (76)
-  renderer.render(asmRenderScene(),camera); // vue d'assemblage : sa propre scène (47)
+  renderer.render(RS,camera);
+}
+// Sol miroir, lampe et plan d'ombre (98-rendu-vue) suivent la scène dessinée : celle de la pièce,
+// ou asmScene en mode Assembler (sinon ni reflet ni ombre sous les composants placés)
+function viewDecorTo(S){
+  const mv=o=>{if(o&&o.parent!==S)S.add(o);};
+  mv(floorMesh);
+  try{if(typeof vEnvS!=='undefined'&&vEnvS){if(vEnvS.sun){mv(vEnvS.sun);mv(vEnvS.sun.target);}mv(vEnvS.floor);}}catch(e){}
 }
 function showAll(){
   const box=new THREE.Box3();
@@ -65931,8 +65943,10 @@ function vShadowStart(){
 function vShadowStop(){
   try{(bodies||[]).forEach(b=>{if(b&&b.mesh)b.mesh.castShadow=false;});}catch(e){}
   try{const g=scene.getObjectByName('asmCtx');if(g)g.traverse(o=>{if(o.isMesh)o.castShadow=false;});}catch(e){}
-  if(vEnvS.sun){scene.remove(vEnvS.sun.target);scene.remove(vEnvS.sun);if(vEnvS.sun.shadow.map)vEnvS.sun.shadow.map.dispose();vEnvS.sun=null;}
-  if(vEnvS.floor){scene.remove(vEnvS.floor);vEnvS.floor.geometry.dispose();vEnvS.floor.material.dispose();vEnvS.floor=null;}
+  try{const g=asmScene&&asmScene.getObjectByName('asmOcc');if(g)g.traverse(o=>{if(o.isMesh)o.castShadow=false;});}catch(e){}
+  const off=o=>{if(o&&o.parent)o.parent.remove(o);}; // dans scene ou asmScene (viewDecorTo, 10-scene-3d)
+  if(vEnvS.sun){off(vEnvS.sun.target);off(vEnvS.sun);if(vEnvS.sun.shadow.map)vEnvS.sun.shadow.map.dispose();vEnvS.sun=null;}
+  if(vEnvS.floor){off(vEnvS.floor);vEnvS.floor.geometry.dispose();vEnvS.floor.material.dispose();vEnvS.floor=null;}
   renderer.shadowMap.enabled=false;
 }
 function vCaoWs(){
@@ -65940,6 +65954,7 @@ function vCaoWs(){
   const ws=document.body&&document.body.getAttribute('data-ws');
   return !ws||ws==='cao'||ws==='fao'; // V0.17.0 : aussi en FAO (la mise en plan garde son dessin)
 }
+const vRootOf=o=>{while(o.parent)o=o.parent;return o;};
 const _vEnvBox=new THREE.Box3(),_vEnvC=new THREE.Vector3(),_vEnvSz=new THREE.Vector3();
 function vEnvTick(){
   // appelée à chaque image (animate, 10-scene-3d) : suit l'espace de travail, les corps et leurs apparences
@@ -65953,6 +65968,7 @@ function vEnvTick(){
   if(!envW&&!shW)return;
   if(envW&&mirrorU)mirrorU.color.value.set(C.sol); // sol à la couleur de l'ambiance (Rendu direct : celle de la fenêtre RENDU)
   const box=_vEnvBox.makeEmpty();
+  const asmV=(typeof asmMode!=='undefined'&&asmMode==='asm'&&typeof asmScene!=='undefined'&&asmScene)?asmScene:null;
   vEnvMeshes((m,L)=>{
     const mat=m.material;if(!mat||!mat.isMeshStandardMaterial)return;
     if(envW){
@@ -65971,7 +65987,7 @@ function vEnvTick(){
     }
     const dv=matDef(L.mat);
     m.castShadow=shW&&m.name!=='glassIn'&&!(dv&&dv.trans); // un corps transparent (réglage CAO) porte aussi son ombre ; sa passe intérieure et le verre, non
-    if(shW&&m.parent&&rdShown(m))box.expandByObject(m);
+    if(shW&&m.parent&&rdShown(m)&&(!asmV||vRootOf(m)===asmV))box.expandByObject(m); // mode Assembler : seuls les composants placés
   });
   const fl=vEnvS.floor,sun=vEnvS.sun;if(!shW||!fl||!sun)return;
   fl.visible=!box.isEmpty();if(box.isEmpty())return;

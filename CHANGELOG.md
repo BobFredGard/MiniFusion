@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**434 versions**, de `2026-09-28b` à `V0.21.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**435 versions**, de `2026-09-28b` à `V0.21.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5568,3 +5568,9 @@ Signalement : « Le changement de matériau dans le 3D ne se met pas à jour aut
 - **Cause** : seulement après avoir éteint puis rallumé Rendu direct (ou être passé par « Actuel (CAO) »). three r147 garde, par matériau, le programme compilé de chaque clé ; au retour en ambiance, il reprenait le programme `vEnvPhoto2` déjà compilé SANS rappeler `onBeforeCompile`, donc sans rebrancher les uniformes du nouveau patch : la carte graphique gardait la couleur et le matériau d'avant jusqu'au rechargement.
 - **Correctif** (`src/98-rendu-vue.js`) : `vEnvUnpatch` libère les programmes du matériau (`m.dispose()`) ; le prochain patch recompile et rebranche ses uniformes.
 - **Tests** : `tests/browser/rendu.spec.cjs` — après le retour à Actuel, Rendu direct rallumé, matériau cuivre : les uniformes du programme sont ceux du patch et portent la couleur du cuivre (échouait avant). Vérifié dans le navigateur (Axe, Goupille : laiton → cuivre → or après plusieurs bascules). `npm run ci`.
+
+## V0.21.4 - Assembler : sol miroir et ombre portée de nouveau visibles
+Signalement : « Assembler : pas de miroir ni ombre visibles ».
+- **Cause** : le mode Assembler dessine sa propre scène (`asmScene`, 47) ; le sol miroir (`floorMesh`), la lampe d'ombre et le plan qui la reçoit (`vEnvS.sun` / `vEnvS.floor`, 98-rendu-vue) restaient dans la scène de la pièce, non dessinée. Le reflet était aussi calculé sur cette scène-là, et le sol se calait sous les corps de la pièce.
+- **Correctif** (`src/10-scene-3d.js`) : `viewDecorTo` rattache sol, lampe et plan d'ombre à la scène réellement dessinée (`asmRenderScene`) à chaque image ; la passe de reflet rend cette scène (manipulateur d'assemblage, `depthTest` false, exclu) ; `refreshMirror` pose le sol sous les composants placés (fantômes exclus). `src/98-rendu-vue.js` : boîte de l'ombre limitée aux composants placés, arrêt de l'ombre quel que soit le parent de la lampe.
+- **Tests** : vérifié dans le navigateur sur « Test Assemblage » (mode Assembler : sol, lampe et plan d'ombre dans la scène dessinée, reflet de la base visible ; 41 % des pixels changent par rapport à l'ancien comportement). `npm run ci`.

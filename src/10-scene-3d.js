@@ -215,7 +215,10 @@ function refreshMirror(){
   // V0.7.5 : seulement ce qui est réellement AFFICHÉ (objet et parents visibles) — un corps masqué
   // (case, simulation) ne retient plus le sol sous lui ; le sol passe sous la dernière pièce visible
   const ms=[],shown=o=>{for(let p=o;p;p=p.parent)if(p.visible===false)return false;return true;};
-  bodies.forEach(b=>{if(b.visible&&b.mesh&&shown(b.mesh))ms.push(b.mesh);});
+  // mode Assembler : la vue dessine asmScene (47) — le sol passe sous les composants placés (fantômes exclus)
+  const asmG=(typeof asmMode!=='undefined'&&asmMode==='asm'&&typeof asmScene!=='undefined'&&asmScene)?asmScene.getObjectByName('asmOcc'):null;
+  if(asmG)asmG.traverse(o=>{if(o.isMesh&&o.geometry&&!(o.userData.rd&&o.userData.rd.ghost)&&shown(o))ms.push(o);});
+  else bodies.forEach(b=>{if(b.visible&&b.mesh&&shown(b.mesh))ms.push(b.mesh);});
   try{
     if(faoPoseGrp&&faoPoseGrp.parent&&faoPoseGrp.parent.visible!==false)
       faoPoseGrp.traverse(o=>{if(o.isMesh&&o.userData&&o.userData.faoStock&&shown(o))ms.push(o);});
@@ -550,6 +553,8 @@ function animate(){
   requestAnimationFrame(animate);
   try{viewUpSync();}catch(e){} // 2026-10-21-005 : haut de vue = Z du posage / de l'opération en FAO
   orbitTick();controls.update();updateLabels();
+  const RS=asmRenderScene(); // vue d'assemblage : sa propre scène (47)
+  viewDecorTo(RS);
   try{if(typeof vEnvTick==='function')vEnvTick();}catch(e){} // V0.10.0 : environnement de rendu (98-rendu-vue)
   if(mirrorOn&&floorMesh&&mirrorCam){ // aussi sous une ambiance de rendu : sinon le sol montrait le dernier reflet calculé, figé
     const vu=updateMirror();mirrorU.uRefl.value=vu?1:0; // caméra sous le sol : pas de reflet (il resterait figé)
@@ -558,14 +563,14 @@ function animate(){
       floorMesh.visible=false;
       // Seuls les SOLIDES se reflètent (comme viewer_STEP) : traits, aides et plans masqués.
       const _mh=[];
-      scene.traverse(o=>{
-        if(!o.visible||o===scene)return;
-        if(o.isLine||o.isLineSegments||o.isPoints||o.isSprite||o===axHelper||(o.userData&&(o.userData.triad||o.userData.noMirror))||(o.material&&o.material.isShaderMaterial)||(o.material&&o.material.transparent&&o.material.opacity<0.6)){o.visible=false;_mh.push(o);}
+      RS.traverse(o=>{
+        if(!o.visible||o===RS)return;
+        if(o.isLine||o.isLineSegments||o.isPoints||o.isSprite||o===axHelper||(o.userData&&(o.userData.triad||o.userData.noMirror))||(o.material&&(o.material.isShaderMaterial||o.material.depthTest===false))||(o.material&&o.material.transparent&&o.material.opacity<0.6)){o.visible=false;_mh.push(o);} // depthTest false : manipulateur d'assemblage (48)
       });
-      const _bg=scene.background,_ca=renderer.getClearAlpha();
-      scene.background=null;renderer.setClearAlpha(0); // alpha 0 hors de la pièce : seul le reflet de la pièce se pose sur le sol (plus de tache du fond)
-      renderer.setRenderTarget(mirrorRT);renderer.clear();renderer.render(scene,mirrorCam);
-      scene.background=_bg;renderer.setClearAlpha(_ca);
+      const _bg=RS.background,_ca=renderer.getClearAlpha();
+      RS.background=null;renderer.setClearAlpha(0); // alpha 0 hors de la pièce : seul le reflet de la pièce se pose sur le sol (plus de tache du fond)
+      renderer.setRenderTarget(mirrorRT);renderer.clear();renderer.render(RS,mirrorCam);
+      RS.background=_bg;renderer.setClearAlpha(_ca);
       for(const o of _mh)o.visible=true;
       renderer.setRenderTarget(null);
       floorMesh.visible=_fv;
@@ -579,7 +584,14 @@ function animate(){
   try{if(typeof faoPoseSync==='function')faoPoseSync();}catch(e){}
   try{if(typeof faoFaceHlSync==='function')faoFaceHlSync();}catch(e){} // faces bleues / rouges de l'op sélectionnée
   try{if(typeof holeThreadVisSync==='function')holeThreadVisSync();}catch(e){} // filets taraudés : cachés avec leur corps (76)
-  renderer.render(asmRenderScene(),camera); // vue d'assemblage : sa propre scène (47)
+  renderer.render(RS,camera);
+}
+// Sol miroir, lampe et plan d'ombre (98-rendu-vue) suivent la scène dessinée : celle de la pièce,
+// ou asmScene en mode Assembler (sinon ni reflet ni ombre sous les composants placés)
+function viewDecorTo(S){
+  const mv=o=>{if(o&&o.parent!==S)S.add(o);};
+  mv(floorMesh);
+  try{if(typeof vEnvS!=='undefined'&&vEnvS){if(vEnvS.sun){mv(vEnvS.sun);mv(vEnvS.sun.target);}mv(vEnvS.floor);}}catch(e){}
 }
 function showAll(){
   const box=new THREE.Box3();
