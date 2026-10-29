@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**419 versions**, de `2026-09-28b` à `V0.19.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**420 versions**, de `2026-09-28b` à `V0.19.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5469,3 +5469,9 @@ Demande : « un bouton "Rendu Direct" entre l'appareil photo et la roue ; actif 
 Le tag `V0.19.1` a été publié sur le commit intermédiaire `eef1adb` (« wip rendu direct » : sources seules, sans numéro de version, CHANGELOG ni livrable reconstruit) — un `git add` en échec passager pendant le cpt n'avait pas arrêté la suite des commandes. Le contenu complet de V0.19.1 est dans `61c336c` ; le tag publié n'est pas déplacé.
 - **Aucun changement fonctionnel** par rapport à `61c336c` : numéro de version seulement (`APP_VER`, `package.json`). `V0.19.2` est le tag à utiliser pour le Rendu direct.
 - **Tests** : `npm run ci`.
+
+## V0.19.3 - Esquisse : menu propre sur la roue ⚙ de la vue
+En esquisse, la roue ⚙ de la vue 3D était recouverte par le calque d'esquisse (clic sans effet), et « Grille 1 mm », « À plat » et « Effacer tout » chargeaient la barre d'esquisse.
+- **Menu ⚙ « Esquisse »** (interface moderne) : esquisse ouverte, la roue ⚙ (à côté de l'appareil photo) ouvre un menu propre à l'esquisse — Grille 1 mm, À plat, Effacer tout — avec un bouton « Réglages de la vue 3D… » vers le menu habituel. Les trois commandes quittent la barre d'esquisse (mêmes éléments déplacés, réglages et gestionnaires inchangés) et y reviennent à la fermeture ; hors esquisse, la ⚙ ouvre les réglages de vue comme avant. La barre de vue passe au-dessus du calque d'esquisse.
+- Interface classique inchangée.
+- **Tests** : `npm run ci` ; vérifié dans l'app (ouverture du menu, case Grille, accès aux réglages 3D, retour en place à la fermeture).

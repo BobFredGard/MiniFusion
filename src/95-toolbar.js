@@ -198,7 +198,7 @@ function treeFoldSet(f){ // replier/déplier SANS toucher à localStorage (clic 
   }
   const btn=$('btnSettings'),menu=$('setMenu');
   if(btn&&menu){
-    const close=()=>menu.classList.remove('open');
+    const close=()=>{menu.classList.remove('open');const sk=$('skSetMenu');if(sk)sk.classList.remove('open');};
     // 2026-10-16-016 : le menu s'ouvre à DROITE de l'arborescence (ou de sa flèche si elle est
     // repliée) au lieu de la recouvrir.
     const place=()=>{
@@ -212,7 +212,11 @@ function treeFoldSet(f){ // replier/déplier SANS toucher à localStorage (clic 
         menu.style.left=x+'px';
       }catch(e){}
     };
-    btn.onclick=ev=>{ev.stopPropagation();menu.classList.toggle('open');if(menu.classList.contains('open'))place();};
+    btn.onclick=ev=>{ev.stopPropagation();
+      // 2026-10-29 : esquisse ouverte (moderne) → menu propre à l'esquisse (97-interface-moderne)
+      const sk=document.body.classList.contains('mf-sk')&&$('skSetMenu');
+      if(sk){menu.classList.remove('open');sk.classList.toggle('open');return;}
+      menu.classList.toggle('open');if(menu.classList.contains('open'))place();};
     menu.onclick=ev=>ev.stopPropagation();
     addEventListener('click',close);
     addEventListener('keydown',e=>{if(e.key==='Escape')close();});

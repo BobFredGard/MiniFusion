@@ -68,8 +68,8 @@ function mfCss(){
   'body[data-theme="clair"] .fao-ctx{background:rgba(255,255,255,.98)!important;color:#1c1c1e!important;border-color:rgba(0,0,0,.16)!important;box-shadow:0 12px 32px rgba(0,0,0,.18)!important}',
   'body[data-theme="clair"] kbd,body[data-theme="clair"] .hints span{background:rgba(0,0,0,.05)}',
   /* Clair : la vue 3D est claire, ses panneaux aussi (arbre, barre de vues, réglages, FAO, onglets) */
-  'body[data-theme="clair"] #treeOverlay,body[data-theme="clair"] #treeToggle,body[data-theme="clair"] #viewbar,body[data-theme="clair"] #setMenu,body[data-theme="clair"] #faoTreeWrap .fao-cnt,body[data-theme="clair"] #faoToggle,body[data-theme="clair"] #faoAddBar,body[data-theme="clair"] #faoViewerBar,body[data-theme="clair"] #mfBrTabs{background:rgba(255,255,255,.9)!important;color:#1c1c1e!important;border-color:rgba(0,0,0,.14)!important;box-shadow:0 6px 20px rgba(0,0,0,.12)!important}',
-  'body[data-theme="clair"] #treeOverlay .ovlTitle,body[data-theme="clair"] #treeOverlay .ovlNote,body[data-theme="clair"] #setMenu .ovlTitle,body[data-theme="clair"] #setMenu label,body[data-theme="clair"] #setMenu .ovlNote,body[data-theme="clair"] #mfBrTabs button{color:#1c1c1e!important}',
+  'body[data-theme="clair"] #treeOverlay,body[data-theme="clair"] #treeToggle,body[data-theme="clair"] #viewbar,body[data-theme="clair"] #setMenu,body[data-theme="clair"] #skSetMenu,body[data-theme="clair"] #faoTreeWrap .fao-cnt,body[data-theme="clair"] #faoToggle,body[data-theme="clair"] #faoAddBar,body[data-theme="clair"] #faoViewerBar,body[data-theme="clair"] #mfBrTabs{background:rgba(255,255,255,.9)!important;color:#1c1c1e!important;border-color:rgba(0,0,0,.14)!important;box-shadow:0 6px 20px rgba(0,0,0,.12)!important}',
+  'body[data-theme="clair"] #treeOverlay .ovlTitle,body[data-theme="clair"] #treeOverlay .ovlNote,body[data-theme="clair"] #setMenu .ovlTitle,body[data-theme="clair"] #setMenu label,body[data-theme="clair"] #setMenu .ovlNote,body[data-theme="clair"] #skSetMenu .ovlTitle,body[data-theme="clair"] #skSetMenu label,body[data-theme="clair"] #mfBrTabs button{color:#1c1c1e!important}',
   'body[data-theme="clair"] #treeOverlay .tgroup{color:#9a6700!important}',
   'body[data-theme="clair"] #mfBrTabs button.on{color:#fff!important}',
   'body[data-theme="clair"] #vpwrap{box-shadow:0 10px 30px rgba(0,0,0,.12)}',
@@ -175,7 +175,6 @@ function mfCss(){
   /* bandeau d'esquisse (moderne) : icône + nom, comme les rubans CAO / FAO, sur une ligne */
   '.mfSkLab{display:none}',
   'body.ui-modern.mf-sk #skToolbar{flex-wrap:wrap;overflow:visible;gap:2px;align-items:stretch;row-gap:4px}',
-  'body.ui-modern.mf-sk #skToolbar #skClear{margin-left:auto}',
   /* V0.7.6 : Zoom +/− (molette) et Annuler/Rétablir (Ctrl+Z / Ctrl+Y, flèches du bandeau du haut) en double : masqués */
   'body.ui-modern.mf-sk #skToolbar #skZoomIn,body.ui-modern.mf-sk #skToolbar #skZoomOut,body.ui-modern.mf-sk #skToolbar #skUndo,body.ui-modern.mf-sk #skToolbar #skRedo{display:none!important}',
   'body.ui-modern.mf-sk #skTitle{display:none}',
@@ -188,6 +187,15 @@ function mfCss(){
   'body.ui-modern.mf-sk #skToolbar .sksep{align-self:stretch;width:1px;margin:0 3px;background:var(--border)}',
   'body.ui-modern.mf-sk #skToolbar label{font-size:.66rem;flex:none;white-space:nowrap}',
   'body.ui-modern.mf-sk #skToolbar #skClear,body.ui-modern.mf-sk #skToolbar #skCancel,body.ui-modern.mf-sk #skToolbar #skOk{flex:none;align-self:center;padding:6px 10px;font-size:.76rem}',
+  /* 2026-10-29 : roue ⚙ de la vue en esquisse = menu propre à l'esquisse (Grille 1 mm, À plat,
+     Effacer tout) ; la barre de vue passe au-dessus du calque d'esquisse pour rester cliquable */
+  'body.ui-modern.mf-sk #viewbar{z-index:56}body.ui-modern.mf-sk #setMenu{z-index:57}',
+  '#skSetMenu{position:absolute;top:46px;right:92px;z-index:57;display:none;flex-direction:column;gap:7px;width:230px;padding:10px 12px 12px;border-radius:12px;background:rgba(14,16,20,.95);border:1px solid rgba(255,255,255,.15);box-shadow:0 16px 44px rgba(0,0,0,.55)}',
+  '#skSetMenu.open{display:flex}',
+  '#skSetMenu .ovlTitle{margin:2px 0 0;font-size:.68rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:rgba(255,255,255,.55)}',
+  '#skSetMenu label{display:flex;align-items:center;gap:6px;font-size:.78rem!important;margin:0;color:#e9e9ec}',
+  '#skSetMenu button{align-self:flex-start;padding:5px 10px;font-size:.76rem}',
+  '#skSetMenu #skSet3D{align-self:stretch;margin-top:4px;background:none;border-color:var(--border)}',
   /* --- bandeaux ADAPTATIFS à la largeur d'écran --- */
   '@media (max-width:1700px){.mfRb{min-width:42px;font-size:.62rem}.mfRb i svg{width:20px;height:20px}body.ui-modern.mf-sk #skToolbar .tool,body.ui-modern.mf-sk #skToolbar .con{min-width:33px!important}body.ui-modern.mf-sk .mfSkLab{font-size:.54rem}}',
   '@media (max-width:1500px){.mfGrpT{display:none}.mfRb{min-width:38px;padding:3px 2px}body.ui-modern.mf-sk .mfSkLab{display:none!important}body.ui-modern.mf-sk #skToolbar .tool,body.ui-modern.mf-sk #skToolbar .con,body.ui-modern.mf-sk #skToolbar #skZoomIn,body.ui-modern.mf-sk #skToolbar #skZoomOut,body.ui-modern.mf-sk #skToolbar #skFit,body.ui-modern.mf-sk #skToolbar #skRefs,body.ui-modern.mf-sk #skToolbar #skParams,body.ui-modern.mf-sk #skToolbar #skUndo,body.ui-modern.mf-sk #skToolbar #skRedo{min-width:32px!important;padding:5px 3px!important}}',
@@ -207,7 +215,7 @@ function mfCloseMenus(){
   document.querySelectorAll('.mfPop.mfTmp').forEach(p=>p.remove());
   document.querySelectorAll('.dd.open').forEach(d=>d.classList.remove('open'));
   ['ctxMenu','ctxMenu3D','skCtxMenu','mepCtx'].forEach(id=>{const m=document.getElementById(id);if(m)m.style.display='none';});
-  const sm=document.getElementById('setMenu');if(sm)sm.classList.remove('open');
+  ['setMenu','skSetMenu'].forEach(id=>{const m=document.getElementById(id);if(m)m.classList.remove('open');});
 }
 function mfSyncPropsHost(){
   const p=document.getElementById('props');if(!p)return;
@@ -622,6 +630,7 @@ function mfSkLayout(){
     (rb&&rb.parentNode?rb.parentNode:document.body).insertBefore(host,rb?rb.nextSibling:null);
     host.appendChild(tb);
     mfSkLabels();
+    mfSkSetMenu(true);
     const right=document.querySelector('aside.right');
     const pnl=document.createElement('div');pnl.className='panel';pnl.id='mfSkSidePanel';
     const ttl=document.createElement('p');ttl.className='panel-title';ttl.textContent=((document.getElementById('skTitle')||{}).textContent||'Esquisse');pnl.appendChild(ttl);
@@ -634,11 +643,41 @@ function mfSkLayout(){
     const m=mfSkMoved;mfSkMoved=null;
     try{m.tbP.insertBefore(tb,m.tbN&&m.tbN.parentNode===m.tbP?m.tbN:null);}catch(e){m.tbP.appendChild(tb);}
     try{m.sdP.insertBefore(side,m.sdN&&m.sdN.parentNode===m.sdP?m.sdN:null);}catch(e){m.sdP.appendChild(side);}
+    mfSkSetMenu(false);
     const h=document.getElementById('mfSkBar');if(h)h.parentNode.removeChild(h);
     const pn=document.getElementById('mfSkSidePanel');if(pn)pn.parentNode.removeChild(pn);
     document.body.classList.remove('mf-sk');
     try{mfSyncPropsHost();}catch(e){}
     try{window.dispatchEvent(new Event('resize'));}catch(e){}
+  }
+}
+/* 2026-10-29 : menu de la roue ⚙ propre à l'esquisse (même place que les réglages de vue) :
+   Grille 1 mm, À plat, Effacer tout y sont déplacés (mêmes nœuds) à l'ouverture, remis dans la
+   barre d'esquisse à la fermeture. La ⚙ ouvre ce menu tant que l'esquisse est ouverte (95-toolbar). */
+let mfSkSetMoved=null;
+function mfSkSetMenu(on){
+  const nodes=[document.getElementById('skSnap'),document.getElementById('skFlatOpen'),document.getElementById('skClear')]
+    .map(n=>n&&n.tagName==='INPUT'?n.closest('label'):n).filter(Boolean);
+  if(on&&!mfSkSetMoved){
+    const vb=document.getElementById('viewbar');
+    let m=document.getElementById('skSetMenu');
+    if(!m){
+      m=document.createElement('div');m.id='skSetMenu';
+      m.onclick=ev=>ev.stopPropagation();
+      (vb&&vb.parentNode?vb.parentNode:document.body).appendChild(m);
+    }
+    m.innerHTML='<p class="ovlTitle">Esquisse</p>';
+    mfSkSetMoved=nodes.map(n=>({n,p:n.parentNode,x:n.nextSibling}));
+    nodes.forEach(n=>m.appendChild(n));
+    const b3=document.createElement('button');b3.id='skSet3D';b3.textContent='Réglages de la vue 3D…';
+    b3.title='Menu ⚙ habituel : affichage, orbite, perspective, coupe';
+    b3.onclick=()=>{m.classList.remove('open');const sm=document.getElementById('setMenu');if(sm)sm.classList.add('open');};
+    m.appendChild(b3);
+  }else if(!on&&mfSkSetMoved){
+    const mv=mfSkSetMoved;mfSkSetMoved=null;
+    mv.forEach(({n,p,x})=>{try{p.insertBefore(n,x&&x.parentNode===p?x:null);}catch(e){p.appendChild(n);}});
+    const m=document.getElementById('skSetMenu');if(m){m.classList.remove('open');m.innerHTML='';}
+    const sm=document.getElementById('setMenu');if(sm)sm.classList.remove('open');
   }
 }
 function mfSkWatch(){
