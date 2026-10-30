@@ -1248,6 +1248,7 @@ function importStepBuild(u8){
     }
     if(!g||!g.attributes.position.count)throw new Error('tessellation vide');
     const mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0x0a84ff}));
+    mesh.raycast=importRaycast; // V0.23.0 : clic et zoom rapides sur les gros imports
     const entry={mesh};
     if(faoGeo)entry.faoGeo=faoGeo; // géométrie réservée à l'outillage (voir la fin du fichier)
     // Arêtes tangentes : besoin des FACES et de leur continuité (C0/G1). Le shape est
@@ -1394,6 +1395,37 @@ function importStepTree(u8,oc,nOcc){
   if(!T){nSub=0;T=gen(oc,'');}
   if(T.o.length!==nOcc)return null; // garde-fou : chaque occurrence exactement une fois
   return T;
+}
+function importRaycast(raycaster,intersects){
+  // V0.23.0 : lancer de rayon d'un gros import — boîte de chaque face BRep (occGroups) testée
+  // d'abord, triangles seulement dans les faces traversées (drawRange : même code three.js,
+  // mêmes résultats, faceIndex global). Moule 73-40 : 2,1 M triangles, 73 000 faces.
+  const g=this.geometry,G=g&&g.userData&&g.userData.occGroups,M=THREE.Mesh.prototype.raycast;
+  if(!G||G.length<64||g.index||!g.attributes.position)return M.call(this,raycaster,intersects);
+  let B=g.userData.grpBox;
+  if(!B){
+    const P=g.attributes.position.array;B=new Float32Array(G.length*6);
+    G.forEach((gr,i)=>{
+      let a=Infinity,b=Infinity,c=Infinity,d=-Infinity,e=-Infinity,f=-Infinity;
+      for(let k=gr.start*9,z=(gr.start+gr.count)*9;k<z;k+=3){const x=P[k],y=P[k+1],w=P[k+2];
+        if(x<a)a=x;if(x>d)d=x;if(y<b)b=y;if(y>e)e=y;if(w<c)c=w;if(w>f)f=w;}
+      B.set([a,b,c,d,e,f],i*6);
+    });
+    g.userData.grpBox=B; // positions d'origine ; masquer ne fait que rétrécir les faces : boîtes toujours englobantes
+  }
+  if(g.boundingSphere===null)g.computeBoundingSphere();
+  const S=new THREE.Sphere().copy(g.boundingSphere).applyMatrix4(this.matrixWorld);
+  if(!raycaster.ray.intersectsSphere(S))return;
+  const ray=raycaster.ray.clone().applyMatrix4(new THREE.Matrix4().copy(this.matrixWorld).invert());
+  const box=new THREE.Box3(),s0=g.drawRange.start,c0=g.drawRange.count;
+  try{
+    for(let i=0;i<G.length;i++){
+      const o=i*6;box.min.set(B[o],B[o+1],B[o+2]);box.max.set(B[o+3],B[o+4],B[o+5]);
+      if(!ray.intersectsBox(box))continue;
+      g.drawRange.start=G[i].start*3;g.drawRange.count=G[i].count*3;
+      M.call(this,raycaster,intersects);
+    }
+  }finally{g.drawRange.start=s0;g.drawRange.count=c0;}
 }
 let impTreeOpen=new Set(); // nœuds dépliés (« idFonction » ou « idFonction/chemin ») : état de vue
 function importTreeOf(f){

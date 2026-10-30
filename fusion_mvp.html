@@ -176,11 +176,10 @@ input[type=range]{accent-color:var(--primary);width:100%}
       <div class="setRow"><label>Orbite <select id="optOrbit" title="Contrainte : Z reste en haut de l'écran · Libre : la pièce tourne dans tous les sens (tour complet, par-dessus et par-dessous)"><option value="contrainte">Contrainte (Z en haut)</option><option value="libre">Libre (tous les sens)</option></select></label></div>
       <div class="setRow" title="Effet de perspective = angle de champ de la caméra : à gauche presque orthographique, à droite fuyantes marquées. La pièce garde sa taille à l'écran. Double-clic : 50° par défaut"><label for="optFov">Perspective</label><input type="range" id="optFov" min="5" max="90" step="1" value="50" style="flex:1"><span id="optFovVal" style="min-width:30px;text-align:right">50°</span></div>
       <p class="ovlTitle">Coupe</p>
-      <div class="setRow"><label><input type="checkbox" id="clipOn"> Activer la coupe</label> <label>Axe <select id="clipAxis" title="Plan de coupe perpendiculaire à cet axe"><option value="X">X</option><option value="Y">Y</option><option value="Z" selected>Z (hauteur)</option></select></label></div>
-      <div class="setRow"><input type="range" id="clipPos" min="-100" max="100" value="0" step="0.5" title="Position du plan de coupe le long de l'axe" style="flex:1;min-width:0"><input type="number" id="clipPosN" step="0.5" style="width:64px" title="Position du plan de coupe en mm (Entrée pour appliquer)"></div>
-      <div class="setRow"><label><input type="checkbox" id="clipFlip"> Inverser côté</label> <label title="Remplit les faces coupées à la couleur du corps (sinon on voit l'intérieur creux de la peau)"><input type="checkbox" id="clipCap" checked> Remplir la coupe</label></div>
-      <div class="setRow"><label><input type="checkbox" id="clipHelper"> Afficher le plan</label></div>
-      <div class="ovlNote">Plan de coupe global sur les corps visibles ; le curseur couvre l'emprise des corps sur l'axe choisi.</div>
+      <div class="setRow"><label><input type="checkbox" id="clipOn"> Activer coupe (plan Z · hauteur)</label></div>
+      <div class="setRow"><input type="range" id="clipPos" min="-100" max="100" value="0" step="0.5" title="Hauteur du plan de coupe"></div>
+      <div class="setRow"><label><input type="checkbox" id="clipFlip"> Inverser côté</label></div>
+      <div class="ovlNote">Plan de coupe global sur les corps visibles.</div>
     </div>
     <div id="sketchOverlay">
       <div id="skToolbar">
@@ -282,7 +281,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.22.7';
+const APP_VER='V0.23.0';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -377,8 +376,7 @@ function collectView(){
   // Préférences d'affichage (persistées dans le fichier à la sauvegarde).
   try{
     return{edges:edgeMode,mirror:mirrorOn,axes:axHelper?axHelper.visible:true,zoomInv,
-      clipOn:$('clipOn').checked,clipPos:parseFloat($('clipPos').value)||0,clipFlip:$('clipFlip').checked,
-      clipAxis:$('clipAxis').value,clipCap:$('clipCap').checked};
+      clipOn:$('clipOn').checked,clipPos:parseFloat($('clipPos').value)||0,clipFlip:$('clipFlip').checked};
   }catch(e){return{};}
 }
 function applyView(v){
@@ -392,8 +390,6 @@ function applyView(v){
     if(typeof v.clipOn==='boolean'&&$('clipOn'))$('clipOn').checked=v.clipOn;
     if(isFinite(v.clipPos)&&$('clipPos'))$('clipPos').value=v.clipPos;
     if(typeof v.clipFlip==='boolean'&&$('clipFlip'))$('clipFlip').checked=v.clipFlip;
-    if(/^[XYZ]$/.test(v.clipAxis||'')&&$('clipAxis'))$('clipAxis').value=v.clipAxis;
-    if(typeof v.clipCap==='boolean'&&$('clipCap'))$('clipCap').checked=v.clipCap;
     applyClip();refreshMirror();buildEdgeOverlay();
   }catch(e){}
 }
@@ -1012,6 +1008,11 @@ function orbitMarkShow(P){
 }
 // molette : zoom VERS le point visé (homothétie centrée sur lui : il reste sous le curseur).
 // Pièce sous la souris → son point ; sinon le plan de la cible. Amorti comme la rotation.
+let _fzHit=null; // dernier point visé par la molette {x,y,t,P,cam}
+function orbitCamKey(){
+  const p=camera.position,q=camera.quaternion;
+  return [p.x,p.y,p.z,q.x,q.y,q.z,q.w].map(v=>v.toFixed(5)).join(',');
+}
 function orbitZoomWheel(e){
   if(!controls||controls.enabled===false||!camera)return;
   try{if(typeof skEdit!=='undefined'&&skEdit)return;}catch(err){}
@@ -1020,9 +1021,19 @@ function orbitZoomWheel(e){
   if(!d)return;
   d=Math.max(-300,Math.min(300,d));
   if(zoomInv)d=-d;
+  // V0.23.0 : le point visé est MÉMORISÉ pendant un geste — zoomer vers P le garde sous le
+  // curseur, donc tant que la souris ne bouge pas (±3 px) et que la caméra n'a bougé que par
+  // ce zoom, P est encore le bon point. Avant : un lancer de rayon par cran (Moule 73-40,
+  // 2,1 M triangles : 55 ms chacun, des dizaines par geste sous Chrome = zoom saccadé).
+  const now=performance.now(),H=_fzHit;
   let P=null;
-  try{P=viewHitAt(e.clientX,e.clientY)||viewTargetPlaneAt(e.clientX,e.clientY);}catch(err){}
-  if(!P)P=controls.target.clone();
+  if(H&&Math.abs(e.clientX-H.x)<=3&&Math.abs(e.clientY-H.y)<=3&&now-H.t<1000&&H.cam===orbitCamKey())P=H.P;
+  else{
+    try{P=viewHitAt(e.clientX,e.clientY)||viewTargetPlaneAt(e.clientX,e.clientY);}catch(err){}
+    if(!P)P=controls.target.clone();
+    _fzHit={x:e.clientX,y:e.clientY,P,cam:orbitCamKey()};
+  }
+  _fzHit.t=now;
   // un cran (100) ≈ 15 % ; logarithme du facteur cumulé, écoulé par orbitTick
   const ln=d*0.0016;
   if(_fz&&_fz.ln*ln>0)_fz.ln+=ln;else _fz={ln};
@@ -1073,6 +1084,7 @@ function orbitTick(){
   if(_fz){
     const f=(controls&&controls.enableDamping)?0.3:1,a=_fz.ln*f;
     let moved=false;try{moved=orbitZoomApply(a,_fz.P);}catch(e){}
+    if(_fzHit)_fzHit.cam=orbitCamKey(); // ce mouvement-là ne périme pas le point visé
     _fz.ln-=a;
     if(!moved||Math.abs(_fz.ln)<1e-4)_fz=null;
   }
@@ -51746,6 +51758,7 @@ function importStepBuild(u8){
     }
     if(!g||!g.attributes.position.count)throw new Error('tessellation vide');
     const mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0x0a84ff}));
+    mesh.raycast=importRaycast; // V0.23.0 : clic et zoom rapides sur les gros imports
     const entry={mesh};
     if(faoGeo)entry.faoGeo=faoGeo; // géométrie réservée à l'outillage (voir la fin du fichier)
     // Arêtes tangentes : besoin des FACES et de leur continuité (C0/G1). Le shape est
@@ -51892,6 +51905,37 @@ function importStepTree(u8,oc,nOcc){
   if(!T){nSub=0;T=gen(oc,'');}
   if(T.o.length!==nOcc)return null; // garde-fou : chaque occurrence exactement une fois
   return T;
+}
+function importRaycast(raycaster,intersects){
+  // V0.23.0 : lancer de rayon d'un gros import — boîte de chaque face BRep (occGroups) testée
+  // d'abord, triangles seulement dans les faces traversées (drawRange : même code three.js,
+  // mêmes résultats, faceIndex global). Moule 73-40 : 2,1 M triangles, 73 000 faces.
+  const g=this.geometry,G=g&&g.userData&&g.userData.occGroups,M=THREE.Mesh.prototype.raycast;
+  if(!G||G.length<64||g.index||!g.attributes.position)return M.call(this,raycaster,intersects);
+  let B=g.userData.grpBox;
+  if(!B){
+    const P=g.attributes.position.array;B=new Float32Array(G.length*6);
+    G.forEach((gr,i)=>{
+      let a=Infinity,b=Infinity,c=Infinity,d=-Infinity,e=-Infinity,f=-Infinity;
+      for(let k=gr.start*9,z=(gr.start+gr.count)*9;k<z;k+=3){const x=P[k],y=P[k+1],w=P[k+2];
+        if(x<a)a=x;if(x>d)d=x;if(y<b)b=y;if(y>e)e=y;if(w<c)c=w;if(w>f)f=w;}
+      B.set([a,b,c,d,e,f],i*6);
+    });
+    g.userData.grpBox=B; // positions d'origine ; masquer ne fait que rétrécir les faces : boîtes toujours englobantes
+  }
+  if(g.boundingSphere===null)g.computeBoundingSphere();
+  const S=new THREE.Sphere().copy(g.boundingSphere).applyMatrix4(this.matrixWorld);
+  if(!raycaster.ray.intersectsSphere(S))return;
+  const ray=raycaster.ray.clone().applyMatrix4(new THREE.Matrix4().copy(this.matrixWorld).invert());
+  const box=new THREE.Box3(),s0=g.drawRange.start,c0=g.drawRange.count;
+  try{
+    for(let i=0;i<G.length;i++){
+      const o=i*6;box.min.set(B[o],B[o+1],B[o+2]);box.max.set(B[o+3],B[o+4],B[o+5]);
+      if(!ray.intersectsBox(box))continue;
+      g.drawRange.start=G[i].start*3;g.drawRange.count=G[i].count*3;
+      M.call(this,raycaster,intersects);
+    }
+  }finally{g.drawRange.start=s0;g.drawRange.count=c0;}
 }
 let impTreeOpen=new Set(); // nœuds dépliés (« idFonction » ou « idFonction/chemin ») : état de vue
 function importTreeOf(f){

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**457 versions**, de `2026-09-28b` à `V0.22.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**458 versions**, de `2026-09-28b` à `V0.23.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5732,3 +5732,12 @@ Demande : un cartouche dédié à un client (A3 paysage et A4 portrait, repris d
 - **Esquisse du cartouche** : texte tourné (`rot`, mention de confidentialité verticale), texte resserré à la largeur de sa case (`fit`, police plus étroite du DXF d'origine), case vide sans « — » (`nd`), hauteur réservée imposée (`hRes` : un trait de toute la hauteur de la feuille ne prend plus la planche).
 - **Zones du cadre** : pas (`zw`, `zh`) et départ (`zx0` depuis la gauche, `zy0` depuis le bas) réglables par le modèle ; sinon 50 mm centrés comme avant.
 - **Tests** : `test_cartouche_exterieur` (nouveau, 11 points) ; `npm run ci`. Vérifié dans le navigateur : les deux modèles chargés par le bouton, comparés aux PDF du client, export DXF (textes du cartouche, texte vertical à 90°).
+
+## V0.23.0 - Gros STEP : zoom fluide (version mineure)
+Demande : « La V0.23.0 ce sera ». Version mineure qui clôt le travail sur les gros assemblages STEP : ouverture des fichiers de 18 et 44 Mo (V0.22.3, V0.22.4), arborescence nommée et pièces masquables (V0.22.5), et ce zoom fluide.
+Signalé : « Sous chrome -> problème de zoom qui lague alors que la rotation est super fluide ».
+- **Cause** (`src/10-scene-3d.js`, `orbitZoomWheel`) : chaque cran de molette lançait un rayon sur toute la scène pour viser le point sous le curseur (`viewHitAt`) ; sur Moule 73-40 (2,1 M triangles, sans structure d'accélération) 55 ms par cran, et Chrome envoie des dizaines de crans par geste. La rotation ne cherche son pivot qu'une fois, au clic.
+- **Point visé mémorisé pendant le geste** : zoomer vers P le garde sous le curseur ; P est réutilisé tant que la souris reste à ±3 px, moins d'1 s après le cran précédent, et que la caméra n'a bougé que par ce zoom (`orbitCamKey`). 30 crans : 1 lancer au lieu de 30.
+- **Lancer de rayon par faces** (`importRaycast`, `src/90`, posé sur le maillage d'un import) : boîte de chaque face BRep testée d'abord, triangles seulement dans les faces traversées (`drawRange`, même code three.js). 144 rayons comparés sur Moule 73-40 : résultats identiques, 1,0 ms au lieu de 39,5 ms. Le clic de sélection en profite aussi.
+- **Mesure (navigateur)** : pire cran de molette 76 ms → 2 ms.
+- **Tests** : `npm run ci` ; `test_aretes_import`, `test_bool_import`, `test_import_vie`, `test_suppression_face_step`, `test_import_arbre`.

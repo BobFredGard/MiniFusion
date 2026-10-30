@@ -398,6 +398,11 @@ function orbitMarkShow(P){
 }
 // molette : zoom VERS le point visé (homothétie centrée sur lui : il reste sous le curseur).
 // Pièce sous la souris → son point ; sinon le plan de la cible. Amorti comme la rotation.
+let _fzHit=null; // dernier point visé par la molette {x,y,t,P,cam}
+function orbitCamKey(){
+  const p=camera.position,q=camera.quaternion;
+  return [p.x,p.y,p.z,q.x,q.y,q.z,q.w].map(v=>v.toFixed(5)).join(',');
+}
 function orbitZoomWheel(e){
   if(!controls||controls.enabled===false||!camera)return;
   try{if(typeof skEdit!=='undefined'&&skEdit)return;}catch(err){}
@@ -406,9 +411,19 @@ function orbitZoomWheel(e){
   if(!d)return;
   d=Math.max(-300,Math.min(300,d));
   if(zoomInv)d=-d;
+  // V0.23.0 : le point visé est MÉMORISÉ pendant un geste — zoomer vers P le garde sous le
+  // curseur, donc tant que la souris ne bouge pas (±3 px) et que la caméra n'a bougé que par
+  // ce zoom, P est encore le bon point. Avant : un lancer de rayon par cran (Moule 73-40,
+  // 2,1 M triangles : 55 ms chacun, des dizaines par geste sous Chrome = zoom saccadé).
+  const now=performance.now(),H=_fzHit;
   let P=null;
-  try{P=viewHitAt(e.clientX,e.clientY)||viewTargetPlaneAt(e.clientX,e.clientY);}catch(err){}
-  if(!P)P=controls.target.clone();
+  if(H&&Math.abs(e.clientX-H.x)<=3&&Math.abs(e.clientY-H.y)<=3&&now-H.t<1000&&H.cam===orbitCamKey())P=H.P;
+  else{
+    try{P=viewHitAt(e.clientX,e.clientY)||viewTargetPlaneAt(e.clientX,e.clientY);}catch(err){}
+    if(!P)P=controls.target.clone();
+    _fzHit={x:e.clientX,y:e.clientY,P,cam:orbitCamKey()};
+  }
+  _fzHit.t=now;
   // un cran (100) ≈ 15 % ; logarithme du facteur cumulé, écoulé par orbitTick
   const ln=d*0.0016;
   if(_fz&&_fz.ln*ln>0)_fz.ln+=ln;else _fz={ln};
@@ -459,6 +474,7 @@ function orbitTick(){
   if(_fz){
     const f=(controls&&controls.enableDamping)?0.3:1,a=_fz.ln*f;
     let moved=false;try{moved=orbitZoomApply(a,_fz.P);}catch(e){}
+    if(_fzHit)_fzHit.cam=orbitCamKey(); // ce mouvement-là ne périme pas le point visé
     _fz.ln-=a;
     if(!moved||Math.abs(_fz.ln)<1e-4)_fz=null;
   }
