@@ -866,19 +866,22 @@
     if(p.par)return main+' ('+p.up+' / '+p.lo+')'+(p.post?' '+p.post:'');
     return p.up||p.lo?main+' '+p.up+' / '+p.lo:main;
   }
+  /* tolérances au PRORATA de la hauteur des cotes (V0.23.5) : écarts à 0,68 × le corps du texte,
+     interligne et espacements proportionnels — plus de minimum fixe (2,8 / 1,8 / 1,2 mm) qui
+     les grossissait en petite écriture ; à 3,5 mm (défaut) le dessin reste celui d'avant */
+  function mepDimSubH(th){return th*0.68;}
   function mepDimTolLineH(){
     const th=MEP_DIM_STYLE.textHeight||7;
-    const sub=Math.max(2.8,th*0.68);
-    return Math.max(1.8,sub*0.72+0.45);
+    return mepDimSubH(th)*0.855;
   }
   // largeur de la pile des écarts (parenthèses et suffixe compris), mm papier
   function mepDimStackW(up,lo,par,post){
-    const th=MEP_DIM_STYLE.textHeight||7,sub=Math.max(2.8,th*0.68),lh=mepDimTolLineH();
+    const th=MEP_DIM_STYLE.textHeight||7,sub=mepDimSubH(th),lh=mepDimTolLineH();
     const pw=par?sub*0.55:0,tw=Math.max(String(up||'').length,String(lo||'').length)*sub*0.54;
     const cw=par?(sub+lh)*0.4+(post?(String(post).length+1)*sub*0.54:0):0;
     return pw+tw+cw;
   }
-  function mepDimStackGap(){return Math.max(1.2,(MEP_DIM_STYLE.textHeight||7)*0.22);}
+  function mepDimStackGap(){return (MEP_DIM_STYLE.textHeight||7)*0.245;}
   function mepDimDrawText(mk,T,main,up,lo,x,y,anchor,transform,flip,sym,par,post){
     // 2026-10-22-011 : texte calé à DROITE (leader à droite) — la pile des écarts tient AVANT
     // le point d'attache : tout le groupe recule (la pile ne déborde plus sur le leader)
@@ -895,7 +898,7 @@
     }
     if(!up&&!lo)return t;
     const th=MEP_DIM_STYLE.textHeight||7;
-    const sub=Math.max(2.8,th*0.68),gap=mepDimStackGap();
+    const sub=mepDimSubH(th),gap=mepDimStackGap();
     const lh=mepDimTolLineH();
     const mw=Math.max(7,String(main).length*th*0.62);
     // calé à gauche : la pile suit la largeur MESURÉE du texte (celle du souligné des Ø/R)
@@ -928,7 +931,7 @@
     const mainHalf=Math.max(7,String(main).length*th*0.62)/2;
     if(p.sym)return mainHalf+Math.max(1.2,th*0.14)+String(p.sym).length*th*0.85*0.54;
     if(!p.up&&!p.lo)return mainHalf;
-    const sub=Math.max(2.8,th*0.68),gap=Math.max(1,th*0.15);
+    const sub=mepDimSubH(th),gap=th*0.204;
     const tolW=Math.max(String(p.up||'').length,String(p.lo||'').length)*sub*0.54+(p.par?sub*0.55+(1+(p.post?String(p.post).length+1:0))*(sub+mepDimTolLineH())*0.4:0);
     return mainHalf+gap+tolW;
   }
@@ -1188,7 +1191,7 @@
         else s.split(/(\u0001[^\u0002]*\u0002)/).forEach(seg=>{ // écarts de tolérance en petit corps
           if(!seg)return;
           const sub=document.createElementNS(NS,'tspan');
-          if(seg[0]==='\u0001'){sub.setAttribute('font-size',String(Math.max(2.8,(MEP_DIM_STYLE.textHeight||7)*0.68)));sub.textContent=mepTolMarks(seg);}
+          if(seg[0]==='\u0001'){sub.setAttribute('font-size',String(mepDimSubH(MEP_DIM_STYLE.textHeight||7)));sub.textContent=mepTolMarks(seg);}
           else sub.textContent=seg;
           ts.appendChild(sub);
         });

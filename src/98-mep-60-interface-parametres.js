@@ -162,13 +162,24 @@
     try{mepApplyDimStyle();mepLwApply();mepThemeApply();mepRulers();}catch(e){}
     return true;
   }
+  /* réglages PAR DÉFAUT (V0.23.5, « Sauvegarder par défaut ») : copie des réglages dans ce navigateur,
+     reprise au début de chaque session et par chaque plan qui n'a pas encore les siens */
+  const MEP_PREF_DEF_KEY='mep_prefs_def';
+  let mepPrefsDefDone=false;
+  function mepPrefsDefGet(){try{const o=JSON.parse(localStorage.getItem(MEP_PREF_DEF_KEY)||'null');return o&&o.ls&&typeof o.ls==='object'?o:null;}catch(e){return null;}}
+  function mepPrefsDefSave(){
+    try{localStorage.setItem(MEP_PREF_DEF_KEY,JSON.stringify(mepPrefsCollect()));mepStatus('Réglages du plan enregistrés par défaut : repris à chaque session et par chaque nouveau plan.');}
+    catch(e){mepStatus('Réglages par défaut : enregistrement impossible.');}
+  }
+  function mepPrefsDefApply(){const p=mepPrefsDefGet();return p?mepPrefsApply(p):false;}
   function mepPrefsSync(){
     const m=doc.mep;if(!m)return;
+    if(!mepPrefsDefDone){mepPrefsDefDone=true;mepPrefsDefApply();} // nouvelle session : les défauts d'abord
     const cur=mepPrefsCollect(),js=JSON.stringify(cur);
     if(m!==mepPrefsMep){ // projet ouvert (ou plan remplacé par annuler / rétablir)
       mepPrefsMep=m;
       if(m.prefs&&m.prefs.ls){if(JSON.stringify(m.prefs)!==js){mepPrefsApply(m.prefs);try{mepSideShow();}catch(e){}}}
-      else m.prefs=cur; // ancien projet : il adopte les réglages de la session
+      else{if(mepPrefsDefApply()){try{mepSideShow();}catch(e){}}m.prefs=mepPrefsCollect();} // nouveau plan : réglages par défaut, sinon ceux de la session
       return;
     }
     if(JSON.stringify(m.prefs||null)!==js){ // réglage changé : recopié dans le projet

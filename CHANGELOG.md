@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**462 versions**, de `2026-09-28b` à `V0.23.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**463 versions**, de `2026-09-28b` à `V0.23.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5764,3 +5764,10 @@ Demandes : « Mise en plan -> permettre le rendu réaliste dans la mise en plan 
 - **Rendu réaliste** (propriétés d'une vue, case « Rendu réaliste », `v.real`) : l'image de la vue est celle du Rendu direct — ambiance, rotation et reflets de la fenêtre RENDU, apparence de rendu de chaque pièce (matériau, couleur, relief) — sur fond transparent, arêtes par-dessus. `mepRender3dImage` (`src/98-mep-10`) passe par `vEnvRealDo` (`src/98-rendu-vue.js`) qui patche les matières le temps du rendu hors écran puis rend celles de la CAO. Ombrage, Rendu 3D et Rendu réaliste s'excluent ; « Miroir » vaut pour les deux rendus (reflet aux matières réalistes). Clé de cache : réglages RENDU et apparence des pièces. Le patch des matières de `vEnvTick` est extrait dans `vEnvApply` (même code).
 - **Épaisseurs** (Planche → Traits) : « Cotes » devient « Lignes de cote » ; nouveaux champs « Lignes de rappel » (rappels des cotes linéaires et angulaires, prolongements, attaches des cotes ordonnées : classe `mepDimX`, `--mepLwExt`) et « Axes de trous » (lignes d'axe et croix de centre : `--mepLwAxis`, `--mepLwAxisX`). Vides : comportement d'avant (rappels = lignes de cote, axes = trait fin, croix 0,62). Ils sont gardés quand on change de préréglage ; enregistrés avec les autres traits (`mep_lw`, export .mfplan).
 - **Tests** : `npm run ci`. Vérifié dans le navigateur (Support Pédale, laiton) : vues réalistes avec et sans miroir, matières de la 3D rendues ensuite, cases exclusives ; épaisseurs appliquées et gardées au changement de préréglage ; aucune erreur console.
+
+## V0.23.5 - Plan : hauteur des cotes, tolérances au prorata, réglages par défaut
+Demandes : « Il faudrait pouvoir changer la hauteur de la cotation », « dans l'onglet Paramètre ajouter "Sauvegarder par Défaut" tous les paramètres définis et les réouvrir pour chaque session ou plan », « En fonction de la hauteur de texte, il faudra faire un prorata sur la hauteur des tolérances ».
+- **Hauteur des cotes** (Cotation → « Hauteur du texte (mm) », `mepDimHIn`) : valeur libre de 1,8 à 20 mm, la même que la liste ISO « Écriture → Cotes h » (qui affiche une valeur hors série telle quelle).
+- **Tolérances au prorata** (`src/98-mep-70-cotes.js`, `mepDimSubH`) : écarts à 0,68 × le corps du texte, interligne (`mepDimTolLineH`, 0,855 × écart) et espacements proportionnels ; les minimums fixes (2,8 / 1,8 / 1,2 / 1 mm) qui grossissaient les tolérances en petite écriture sont retirés. À 3,5 mm le dessin est celui d'avant (écart d'interligne < 0,01 mm).
+- **Réglages par défaut** (Paramètres → « Sauvegarder par défaut », « Appliquer les défauts ») : copie de tous les réglages du plan (`mepPrefsCollect` : écriture, cotes, traits, export, papier, règles, cadre et cartouche par défaut) dans ce navigateur (`mep_prefs_def`). Ils sont repris au début de chaque session et par chaque plan qui n'a pas encore ses réglages (nouvelle pièce, ancien projet) ; une pièce qui a les siens les garde, « Appliquer les défauts » les remplace.
+- **Tests** : `test_mise_en_plan` (interligne au prorata) ; `npm run ci`. Vérifié dans le navigateur : écarts à 0,68 × le texte à 2,5 / 3,5 / 7 mm ; défauts 5,2 mm repris par une nouvelle pièce.

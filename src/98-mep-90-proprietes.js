@@ -420,6 +420,19 @@
     const thL=document.createElement('label');thL.style.cssText='flex:none;display:flex;gap:4px;align-items:center';
     thL.appendChild(dimTh);thL.appendChild(document.createTextNode('thème'));
     const colRow=dimRow('Couleur',dimCol);colRow.appendChild(thL);
+    { // hauteur du texte des cotes (V0.23.5) : valeur libre, la même que « Écriture → Cotes h » (liste ISO)
+      const i=document.createElement('input');i.type='number';i.id='mepDimHIn';i.min=1.8;i.max=20;i.step=0.1;i.value=MEP_TEXT_STYLE.dimH;
+      i.title='Hauteur des majuscules des cotes (mm) — série ISO 3098 : 2,5 · 3,5 · 5 · 7 ; toute valeur de 1,8 à 20 est acceptée';
+      i.onchange=()=>{
+        let v=parseFloat(String(i.value).replace(',','.'));
+        if(!Number.isFinite(v))v=MEP_TEXT_STYLE.dimH;
+        v=Math.round(Math.min(20,Math.max(1.8,v))*100)/100;
+        MEP_TEXT_STYLE.dimH=v;mepTextStyleSync();
+        mepDimStyleSave();mepApplyDimStyle();mepSideShow();mepRender();
+        mepStatus('Cotes : hauteur du texte = '+mepFmtNum(v,2).replace('.',',')+' mm');
+      };
+      dimRow('Hauteur du texte (mm)',i);
+    }
     dimNum('Angle des flèches','arrowAngle',10,90,1,'°');
     dimNum('Longueur des flèches','arrowLen',2,30,0.5,'mm');
     r=rowEl();
@@ -431,8 +444,12 @@
     /* — paramètres (projet + session + fichier) — */
     h('Paramètres');
     {const n=document.createElement('div');n.className='note';
-     n.textContent='Tous les réglages du plan (écriture, cotes, traits, export, papier, cadre et cartouche par défaut) sont enregistrés avec la pièce (.miniFusion) et gardés pour la session. Ouvrir une pièce reprend ses réglages.';
+     n.textContent='Tous les réglages du plan (écriture, cotes, traits, export, papier, cadre et cartouche par défaut) sont enregistrés avec la pièce (.miniFusion) et gardés pour la session. Ouvrir une pièce reprend ses réglages. « Sauvegarder par défaut » : ces réglages sont repris à chaque nouvelle session et par chaque nouveau plan (une pièce qui a déjà les siens les garde).';
      root.appendChild(n);}
+    r=rowEl();
+    r.appendChild(mkBtn('Sauvegarder par défaut',()=>{mepPrefsDefSave();mepSideShow();},'Mémoriser tous les réglages actuels du plan comme réglages par défaut de ce navigateur : nouvelles sessions et nouveaux plans')).style.flex='1';
+    {const b=mkBtn('Appliquer les défauts',()=>{if(mepPrefsDefApply()){mepSideShow();mepRender();mepStatus('Réglages par défaut appliqués à ce plan.');}},'Remplacer les réglages de ce plan par les réglages par défaut');
+     b.style.flex='1';if(!mepPrefsDefGet()){b.disabled=true;b.title='Aucun réglage par défaut enregistré';}r.appendChild(b);}
     r=rowEl();
     r.appendChild(mkBtn('Exporter…',mepPrefsExport,'Sauvegarder les paramètres plan (+ bibliothèque de cartouches) dans un fichier .mfplan')).style.flex='1';
     r.appendChild(mkBtn('Importer…',mepPrefsImport,'Charger des paramètres plan depuis un fichier .mfplan (appliqués au projet et à la session)')).style.flex='1';

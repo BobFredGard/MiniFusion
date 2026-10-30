@@ -282,7 +282,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.23.4';
+const APP_VER='V0.23.5';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -59801,13 +59801,24 @@ function viewFadeIn(){
     try{mepApplyDimStyle();mepLwApply();mepThemeApply();mepRulers();}catch(e){}
     return true;
   }
+  /* réglages PAR DÉFAUT (V0.23.5, « Sauvegarder par défaut ») : copie des réglages dans ce navigateur,
+     reprise au début de chaque session et par chaque plan qui n'a pas encore les siens */
+  const MEP_PREF_DEF_KEY='mep_prefs_def';
+  let mepPrefsDefDone=false;
+  function mepPrefsDefGet(){try{const o=JSON.parse(localStorage.getItem(MEP_PREF_DEF_KEY)||'null');return o&&o.ls&&typeof o.ls==='object'?o:null;}catch(e){return null;}}
+  function mepPrefsDefSave(){
+    try{localStorage.setItem(MEP_PREF_DEF_KEY,JSON.stringify(mepPrefsCollect()));mepStatus('Réglages du plan enregistrés par défaut : repris à chaque session et par chaque nouveau plan.');}
+    catch(e){mepStatus('Réglages par défaut : enregistrement impossible.');}
+  }
+  function mepPrefsDefApply(){const p=mepPrefsDefGet();return p?mepPrefsApply(p):false;}
   function mepPrefsSync(){
     const m=doc.mep;if(!m)return;
+    if(!mepPrefsDefDone){mepPrefsDefDone=true;mepPrefsDefApply();} // nouvelle session : les défauts d'abord
     const cur=mepPrefsCollect(),js=JSON.stringify(cur);
     if(m!==mepPrefsMep){ // projet ouvert (ou plan remplacé par annuler / rétablir)
       mepPrefsMep=m;
       if(m.prefs&&m.prefs.ls){if(JSON.stringify(m.prefs)!==js){mepPrefsApply(m.prefs);try{mepSideShow();}catch(e){}}}
-      else m.prefs=cur; // ancien projet : il adopte les réglages de la session
+      else{if(mepPrefsDefApply()){try{mepSideShow();}catch(e){}}m.prefs=mepPrefsCollect();} // nouveau plan : réglages par défaut, sinon ceux de la session
       return;
     }
     if(JSON.stringify(m.prefs||null)!==js){ // réglage changé : recopié dans le projet
@@ -61319,19 +61330,22 @@ function viewFadeIn(){
     if(p.par)return main+' ('+p.up+' / '+p.lo+')'+(p.post?' '+p.post:'');
     return p.up||p.lo?main+' '+p.up+' / '+p.lo:main;
   }
+  /* tolérances au PRORATA de la hauteur des cotes (V0.23.5) : écarts à 0,68 × le corps du texte,
+     interligne et espacements proportionnels — plus de minimum fixe (2,8 / 1,8 / 1,2 mm) qui
+     les grossissait en petite écriture ; à 3,5 mm (défaut) le dessin reste celui d'avant */
+  function mepDimSubH(th){return th*0.68;}
   function mepDimTolLineH(){
     const th=MEP_DIM_STYLE.textHeight||7;
-    const sub=Math.max(2.8,th*0.68);
-    return Math.max(1.8,sub*0.72+0.45);
+    return mepDimSubH(th)*0.855;
   }
   // largeur de la pile des écarts (parenthèses et suffixe compris), mm papier
   function mepDimStackW(up,lo,par,post){
-    const th=MEP_DIM_STYLE.textHeight||7,sub=Math.max(2.8,th*0.68),lh=mepDimTolLineH();
+    const th=MEP_DIM_STYLE.textHeight||7,sub=mepDimSubH(th),lh=mepDimTolLineH();
     const pw=par?sub*0.55:0,tw=Math.max(String(up||'').length,String(lo||'').length)*sub*0.54;
     const cw=par?(sub+lh)*0.4+(post?(String(post).length+1)*sub*0.54:0):0;
     return pw+tw+cw;
   }
-  function mepDimStackGap(){return Math.max(1.2,(MEP_DIM_STYLE.textHeight||7)*0.22);}
+  function mepDimStackGap(){return (MEP_DIM_STYLE.textHeight||7)*0.245;}
   function mepDimDrawText(mk,T,main,up,lo,x,y,anchor,transform,flip,sym,par,post){
     // 2026-10-22-011 : texte calé à DROITE (leader à droite) — la pile des écarts tient AVANT
     // le point d'attache : tout le groupe recule (la pile ne déborde plus sur le leader)
@@ -61348,7 +61362,7 @@ function viewFadeIn(){
     }
     if(!up&&!lo)return t;
     const th=MEP_DIM_STYLE.textHeight||7;
-    const sub=Math.max(2.8,th*0.68),gap=mepDimStackGap();
+    const sub=mepDimSubH(th),gap=mepDimStackGap();
     const lh=mepDimTolLineH();
     const mw=Math.max(7,String(main).length*th*0.62);
     // calé à gauche : la pile suit la largeur MESURÉE du texte (celle du souligné des Ø/R)
@@ -61381,7 +61395,7 @@ function viewFadeIn(){
     const mainHalf=Math.max(7,String(main).length*th*0.62)/2;
     if(p.sym)return mainHalf+Math.max(1.2,th*0.14)+String(p.sym).length*th*0.85*0.54;
     if(!p.up&&!p.lo)return mainHalf;
-    const sub=Math.max(2.8,th*0.68),gap=Math.max(1,th*0.15);
+    const sub=mepDimSubH(th),gap=th*0.204;
     const tolW=Math.max(String(p.up||'').length,String(p.lo||'').length)*sub*0.54+(p.par?sub*0.55+(1+(p.post?String(p.post).length+1:0))*(sub+mepDimTolLineH())*0.4:0);
     return mainHalf+gap+tolW;
   }
@@ -61641,7 +61655,7 @@ function viewFadeIn(){
         else s.split(/(\u0001[^\u0002]*\u0002)/).forEach(seg=>{ // écarts de tolérance en petit corps
           if(!seg)return;
           const sub=document.createElementNS(NS,'tspan');
-          if(seg[0]==='\u0001'){sub.setAttribute('font-size',String(Math.max(2.8,(MEP_DIM_STYLE.textHeight||7)*0.68)));sub.textContent=mepTolMarks(seg);}
+          if(seg[0]==='\u0001'){sub.setAttribute('font-size',String(mepDimSubH(MEP_DIM_STYLE.textHeight||7)));sub.textContent=mepTolMarks(seg);}
           else sub.textContent=seg;
           ts.appendChild(sub);
         });
@@ -65006,6 +65020,19 @@ function viewFadeIn(){
     const thL=document.createElement('label');thL.style.cssText='flex:none;display:flex;gap:4px;align-items:center';
     thL.appendChild(dimTh);thL.appendChild(document.createTextNode('thème'));
     const colRow=dimRow('Couleur',dimCol);colRow.appendChild(thL);
+    { // hauteur du texte des cotes (V0.23.5) : valeur libre, la même que « Écriture → Cotes h » (liste ISO)
+      const i=document.createElement('input');i.type='number';i.id='mepDimHIn';i.min=1.8;i.max=20;i.step=0.1;i.value=MEP_TEXT_STYLE.dimH;
+      i.title='Hauteur des majuscules des cotes (mm) — série ISO 3098 : 2,5 · 3,5 · 5 · 7 ; toute valeur de 1,8 à 20 est acceptée';
+      i.onchange=()=>{
+        let v=parseFloat(String(i.value).replace(',','.'));
+        if(!Number.isFinite(v))v=MEP_TEXT_STYLE.dimH;
+        v=Math.round(Math.min(20,Math.max(1.8,v))*100)/100;
+        MEP_TEXT_STYLE.dimH=v;mepTextStyleSync();
+        mepDimStyleSave();mepApplyDimStyle();mepSideShow();mepRender();
+        mepStatus('Cotes : hauteur du texte = '+mepFmtNum(v,2).replace('.',',')+' mm');
+      };
+      dimRow('Hauteur du texte (mm)',i);
+    }
     dimNum('Angle des flèches','arrowAngle',10,90,1,'°');
     dimNum('Longueur des flèches','arrowLen',2,30,0.5,'mm');
     r=rowEl();
@@ -65017,8 +65044,12 @@ function viewFadeIn(){
     /* — paramètres (projet + session + fichier) — */
     h('Paramètres');
     {const n=document.createElement('div');n.className='note';
-     n.textContent='Tous les réglages du plan (écriture, cotes, traits, export, papier, cadre et cartouche par défaut) sont enregistrés avec la pièce (.miniFusion) et gardés pour la session. Ouvrir une pièce reprend ses réglages.';
+     n.textContent='Tous les réglages du plan (écriture, cotes, traits, export, papier, cadre et cartouche par défaut) sont enregistrés avec la pièce (.miniFusion) et gardés pour la session. Ouvrir une pièce reprend ses réglages. « Sauvegarder par défaut » : ces réglages sont repris à chaque nouvelle session et par chaque nouveau plan (une pièce qui a déjà les siens les garde).';
      root.appendChild(n);}
+    r=rowEl();
+    r.appendChild(mkBtn('Sauvegarder par défaut',()=>{mepPrefsDefSave();mepSideShow();},'Mémoriser tous les réglages actuels du plan comme réglages par défaut de ce navigateur : nouvelles sessions et nouveaux plans')).style.flex='1';
+    {const b=mkBtn('Appliquer les défauts',()=>{if(mepPrefsDefApply()){mepSideShow();mepRender();mepStatus('Réglages par défaut appliqués à ce plan.');}},'Remplacer les réglages de ce plan par les réglages par défaut');
+     b.style.flex='1';if(!mepPrefsDefGet()){b.disabled=true;b.title='Aucun réglage par défaut enregistré';}r.appendChild(b);}
     r=rowEl();
     r.appendChild(mkBtn('Exporter…',mepPrefsExport,'Sauvegarder les paramètres plan (+ bibliothèque de cartouches) dans un fichier .mfplan')).style.flex='1';
     r.appendChild(mkBtn('Importer…',mepPrefsImport,'Charger des paramètres plan depuis un fichier .mfplan (appliqués au projet et à la session)')).style.flex='1';
