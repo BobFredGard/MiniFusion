@@ -553,6 +553,15 @@
       chk3d.title='Rendu de la vue depuis la 3D (couleurs et transparence des corps)';
       if(v.render3d){const cm=mkChk('Miroir','mirror','mepChkMirror');cm.title='Reflet de la pièce sous elle-même, estompé vers le bas (sans sol ni ombre)';}
     }
+    if(v.kind==='base'&&MEP_BASE_ORIENTS.indexOf(v.vk)>=0){
+      // orientation : la vue principale peut regarder de droite, de gauche, de dessus… — les projections suivent
+      const oSel=document.createElement('select');oSel.id='mepOrientSel';
+      MEP_BASE_ORIENTS.forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=MEP_VIEWS[k].lab;oSel.appendChild(o);});
+      oSel.value=v.vk;
+      oSel.title='Direction d’observation de la vue principale ; ses projections (dessus, côtés…) sont recalculées et replacées';
+      oSel.onchange=()=>{mepSetBaseOrient(v,oSel.value);mepSideShow();};
+      row('Orientation',oSel);
+    }
     if(v.kind==='base'){
       // projection oblique (cavalière) : angle et coefficient des fuyantes
       const pSel=document.createElement('select');pSel.id='mepOblSel';

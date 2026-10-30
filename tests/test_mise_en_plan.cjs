@@ -170,6 +170,21 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
     par.vk=''; par.dir=[0,0,-1]; par.u=[1,0,0]; par.v=[0,1,0];
     mepReprojectView(par.id);
     out.projReprojected = pTop && pTop.dir[0]===0 && pTop.dir[1]===-1 && pTop.dir[2]===0;
+    // orientation de la vue principale (2026-10-30) : Face → Côté droit, les projections suivent
+    {
+      const shO = doc.mep.sheets[doc.mep.cur];
+      const b = mepAddViewStd('front');
+      const t = mepProjectView('top', b), r = mepProjectView('right', b);
+      mepSetViewOrient(b.id, 'right');
+      // base Côté droit : dir (1,0,0) u (0,1,0) v (0,0,-1) ; dessus → dir (0,0,1) ; droit de la droite → arrière (0,1,0)
+      const eq=(a,c)=>a&&a.every((x,i)=>Math.abs(x-c[i])<1e-9);
+      out.orientOK = b.vk==='right' && b.label==='Côté droit' && eq(b.dir,[1,0,0])
+        && eq(t.dir,[0,0,1]) && eq(t.u,[0,1,0]) && eq(r.dir,[0,1,0])
+        && Math.abs(t.x-b.x)<1e-9 && t.y>b.y && Math.abs(r.y-b.y)<1e-9 && r.x<b.x;
+      mepSetViewOrient(b.id, 'top');
+      out.orientTop = b.vk==='top' && eq(t.dir,[0,1,0]) && eq(b.dir,[0,0,1]);
+      shO.views = shO.views.filter(x=>x.id!==b.id && x.parent!==b.id);
+    }
     // sérialisation des projections
     out.projSerialise = serialise(false).indexOf('"proj"')>=0;
     // suppression de la mère → les projections partent aussi
@@ -1002,6 +1017,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  x '+m);}else console.log('  ✓ '+m);
   A(val&&val.detClip,'détail : traits qui entrent / sortent du cercle rognés au bon croisement '+(val&&val.detDbg));
   A(val&&val.expCol&&val.expBW,'export PDF / SVG : couleurs gardées par défaut, option noir'+(val&&val.expErr?' — '+val.expErr:''));
   A(val&&val.paperBasis&&val.paperBasisSide,'vues alignées (coupe / auxiliaire) : base = projection 1er angle (V0.3.13)'+(val&&val.paperErr?' — '+val.paperErr:''));
+  A(val&&val.orientOK&&val.orientTop,'orientation de la vue principale (Face → Côté droit / Dessus) : projections recalculées et replacées');
   A(val&&val.exportsNew,'exports DXF, perçages auto et papier présents');
   A(val&&val.axisExtOK,'axe : allongement mémorisé par bout (v.axExt) '+(val&&val.axisExtErr||''));
   A(val&&val.axisSnapOK&&val.axisSnapOff,'axe : extrémités accrochables (flèches de coupe, esquisse)');

@@ -318,6 +318,7 @@
   window.mepDxfBuild=()=>mepDxfBuild(); // texte DXF + entités (sans téléchargement)
   window.mepReprojectAll=()=>mepReproject(null);
   window.mepReprojectView=id=>{mepSetActive(true);return mepReproject(id||mepSt.sel);};
+  window.mepSetViewOrient=(id,vk)=>{mepSetActive(true);const v=mepView(mepSheet(),id||mepSt.sel);mepSetBaseOrient(v,vk);return v;};
   // valeur (mm modèle) d'une cote, indépendante de l'échelle de la vue
   window.mepDimValue=d=>{const sh=mepSheet();return sh?mepDimMeasure(sh,d):0;};
   window.mepDimTextPos=d=>{const sh=mepSheet();return sh?mepDimTextPos(sh,d):null;};

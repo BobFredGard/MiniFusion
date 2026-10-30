@@ -650,16 +650,39 @@
       bodyId:par.bodyId,asm:!!par.asm,mode:par.mode,tangent:par.tangent,hlrExact:par.hlrExact!==false,scale:par.scale,
       autoAxes:!!par.autoAxes,autoPitch:!!par.autoPitch},at?{_keepScale:1,_at:at}:{}));
     // placement aligné 1er angle : l'axe commun est verrouillé sur la mère
-    if(!at)mepEdit('placement vue projetée',()=>{
-      vObj.scale=par.scale; // les vues liées partagent TOUJOURS l'échelle de la mère
-      const off=mepViewSpan(par)+mepViewSpan(vObj)+30;
-      if(which==='top'){vObj.x=par.x;vObj.y=par.y+off;}
-      else if(which==='bottom'){vObj.x=par.x;vObj.y=par.y-off;}
-      else if(which==='left'){vObj.x=par.x+off;vObj.y=par.y;}
-      else{vObj.x=par.x-off;vObj.y=par.y;}
-    });
+    if(!at)mepEdit('placement vue projetée',()=>mepPlaceProj(par,vObj,which));
     mepStatus('Vue projetée « '+def.lab+' » ('+vObj.label+') — 1er angle, alignée sur la mère.');
     return vObj;
+  }
+  function mepPlaceProj(par,vObj,which){
+    vObj.scale=par.scale; // les vues liées partagent TOUJOURS l'échelle de la mère
+    const off=mepViewSpan(par)+mepViewSpan(vObj)+30;
+    if(which==='top'){vObj.x=par.x;vObj.y=par.y+off;}
+    else if(which==='bottom'){vObj.x=par.x;vObj.y=par.y-off;}
+    else if(which==='left'){vObj.x=par.x+off;vObj.y=par.y;}
+    else{vObj.x=par.x-off;vObj.y=par.y;}
+  }
+  /* orientation d'une vue de base (2026-10-30) : Face → Côté droit, Dessus… Les projections
+     (et leurs filles) suivent en cascade, les cotes sont re-ancrées, et les projections
+     directes reprennent leur place 1er angle (leur taille a changé avec la nouvelle direction). */
+  const MEP_BASE_ORIENTS=['front','rear','left','right','top','bottom'];
+  function mepSetBaseOrient(v,vk){
+    if(!v||v.kind!=='base'||!MEP_VIEWS[vk]||v.vk===vk)return;
+    const sh=mepSheet(),old=MEP_VIEWS[v.vk];
+    mepEdit('orientation de vue',()=>{
+      if(!v.label||(old&&v.label===old.lab))v.label=MEP_VIEWS[vk].lab;
+      v.vk=vk;delete v.camera;mepOrtho(v);
+    });
+    mepReproject(v.id,true);
+    mepEdit('placement des projections',()=>{
+      sh.views.forEach(c=>{
+        if(c.kind!=='proj'||c.parent!==v.id||!MEP_PROJ[c.proj||''])return;
+        const x0=c.x,y0=c.y;
+        mepPlaceProj(v,c,c.proj);
+        mepProjFollow(sh,c,c.x-x0,c.y-y0);
+      });
+    },true);
+    mepStatus('Vue « '+(v.label||MEP_VIEWS[vk].lab)+' » : orientation '+MEP_VIEWS[vk].lab+' — projections mises à jour.');
   }
   function mepBeginAux(){
     const s=(typeof selFaces!=='undefined'&&selFaces||[])[0];
@@ -794,7 +817,7 @@
     let t=L2>0?((p.x-e.x1)*dx+(p.y-e.y1)*dy)/L2:0;t=t<0?0:(t>1?1:t);
     return Math.hypot(p.x-(e.x1+dx*t),p.y-(e.y1+dy*t));
   }
-  function mepReproject(id){
+  function mepReproject(id,noUndo){
     const sh=mepSheet();
     let list=id?[mepView(sh,id)]:sh.views;
     if(id&&list[0]){
@@ -912,5 +935,5 @@
         d.a=rebind(d.a,v,old.a);
         if(d.b)d.b=rebind(d.b,v2||v,old.b);
       });
-    });
+    },noUndo);
   }

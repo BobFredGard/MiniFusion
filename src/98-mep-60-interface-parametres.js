@@ -641,7 +641,8 @@
       const s=v.scale>=1?(mepFmtNum(v.scale,2)+':1'):('1:'+mepFmtNum(1/v.scale,2));
       return 'DÉTAIL '+v.label+' ('+s+')';
     }
-    return v.label;
+    if(v.kind==='aux')return v.label;
+    return ''; // vues standard et projetées : pas de nom sur la planche (2026-10-30)
   }
   function mepViewTitleGeo(v){
     const txt=mepViewTitleText(v);if(!txt)return null;
