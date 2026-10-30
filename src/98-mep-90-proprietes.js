@@ -583,10 +583,13 @@
       t.textContent='n° '+(k+1)+(l.lost?' ⚠':'');
       t.title='Plan de coupe parallèle à la vue, à la profondeur de l’arête choisie'+(Number.isFinite(l.ref&&l.ref.w)?' ('+mepFmtNum(l.ref.w,2)+' mm le long de la direction de vue)':'');
       if(l.lost)t.title='L’arête du plan n’est plus retrouvée : le dernier plan connu est gardé — « Arête… » pour en choisir une autre';
+      t.style.cursor='pointer';t.title+=' — clic : sélectionner la forme pour tirer ses points';
+      if(mepSt.selLoc&&mepSt.selLoc.vid===v.id&&mepSt.selLoc.id===l.id)t.style.color='var(--primary,#0a84ff)';
+      t.onclick=e=>{e.stopPropagation();mepSt.selLoc={vid:v.id,id:l.id};mepRender();mepSideShow();};
       const b=document.createElement('button');b.textContent='Arête…';b.title='Choisir une autre arête pour placer le plan de coupe';
       b.onclick=e=>{e.stopPropagation();mepBeginLocal(l.id);};
       const d=document.createElement('button');d.textContent='✕';d.title='Supprimer cette coupe locale';
-      d.onclick=e=>{e.stopPropagation();mepEdit('suppression coupe locale',()=>{v.locals=v.locals.filter(q=>q!==l);if(!v.locals.length)delete v.locals;});mepRender();mepSideShow();};
+      d.onclick=e=>{e.stopPropagation();mepLocDelete(mepSheet(),v,l);};
       r.appendChild(t);r.appendChild(b);r.appendChild(d);row(k?'':'Coupes locales',r);
     });
     if(v.kind==='base'&&MEP_BASE_ORIENTS.indexOf(v.vk)>=0){

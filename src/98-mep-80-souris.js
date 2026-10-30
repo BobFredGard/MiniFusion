@@ -366,6 +366,8 @@
        const addK=ev.shiftKey||ev.ctrlKey||ev.metaKey;
        if(mepSt.tbEdit){mepSt.pick={kind:'box',sx:P.x,sy:P.y,cur:{x:P.x,y:P.y},px0:P.px,py0:P.py,add:addK};return;}
        if(!addK){if(mepSt.skSel&&mepSt.skSel.size)mepSt.skSel=new Set();mepSt.lot=null;}}
+      // coupe locale (forme ou point de contrôle) ?
+      if(mepLocDown(sh,P,ev))return;
       // flèche de coupe ? → glisser le bout (trait fort + flèche + lettre) le long de la ligne de coupe
       {const ca=mepCutArrowAt(sh,P.x,P.y);
        if(ca){const shf=Array.isArray(ca.v.section.sh)?ca.v.section.sh:[0,0];
@@ -428,6 +430,7 @@
         mepSt.hatchDown={t:now,px:P.px,py:P.py};
       }else mepSt.hatchDown=null;
       const v=mepViewAt(sh,P.x,P.y);
+      mepSt.selLoc=null;
       if(v){
         mepSt.sel=v.id;mepSt.selDim=null;mepSt.selAxis=null;
         mepSt.pick={kind:'viewDrag',vid:v.id,ox:P.x-v.x,oy:P.y-v.y,moved:false,undoPushed:false,
@@ -654,6 +657,7 @@
         }
         return;
       }
+      if(pk.kind==='locPt'){mepLocMove(sh,P);return;}
       if(pk.kind==='blDrag'){ // V0.8.2 : bulle glissée
         const b=(sh.balloons||[]).find(q=>q.id===pk.id);
         if(b){
@@ -882,6 +886,7 @@
       mepSt.pick=null;mepRender();
       return;
     }
+    if(pk.kind==='locPt'){mepLocUp(mepSheet());return;}
     if(pk.kind==='blDrag'){ // V0.8.2
       if(pk.moved)mepEdit('bulle',()=>{},true);
       mepSt.pick=null;mepRender();
@@ -1003,6 +1008,7 @@
       if(mepSt.alignDims){mepSt.alignDims=null;mepStatus('Alignement annulé.');ev.preventDefault();ev.stopPropagation();return;}
       if(mepSt.vcmd){mepVcmdCancel();ev.preventDefault();ev.stopPropagation();return;}
       if(mepSt.pick&&MEP_SK_TOOLS.indexOf(mepSt.pick.kind)>=0){mepSt.pick=null;mepRender();ev.preventDefault();ev.stopPropagation();return;}
+      if(mepSt.selLoc){mepSt.selLoc=null;mepRender();ev.preventDefault();ev.stopPropagation();return;}
       if((mepSt.skSel&&mepSt.skSel.size)||mepSt.lot){mepSt.skSel=new Set();mepSt.lot=null;mepSideShow();mepRender();ev.preventDefault();ev.stopPropagation();return;}
       if(mepSt.tbEdit){if(mepSt.tool!=='select')mepSetTool('select');else mepTbEdit(false);ev.preventDefault();ev.stopPropagation();return;}
       if(mepSt.pick||mepSt.tool!=='select'||mepSt.dim||mepSt.cutPts.length||mepSt.detC
@@ -1041,6 +1047,7 @@
         mepOrdDelPt(sh,sh.dims.find(d=>d.id===mepSt.selDim),mepSt.ordPt.i);
         ev.preventDefault();ev.stopPropagation();return;
       }
+      {const S=mepLocSelGet(sh);if(S){mepLocDelete(sh,S.v,S.l);ev.preventDefault();ev.stopPropagation();return;}}
       if(mepSt.selBl&&(sh.balloons||[]).some(b=>b.id===mepSt.selBl)){ // V0.8.2 : bulle sélectionnée
         mepEdit('suppression bulle',()=>{sh.balloons=sh.balloons.filter(b=>b.id!==mepSt.selBl);mepSt.selBl=null;});
         mepSideShow();mepRender();ev.preventDefault();ev.stopPropagation();return;
@@ -1398,6 +1405,24 @@
     mepSt.selDim=d.id;mepSt.sel=null;mepRender();mepSideShow();
     mepStatus(label+' — clic droit pour changer l’orientation.');
   }
+  function mepCtxMenu(x,y,title,items){
+    // menu simple : [libellé, action]…
+    mepCtxShow(x,y,null,false,false);
+    mepCtxEl.innerHTML='';
+    const t=document.createElement('div');t.textContent=title;
+    t.style.cssText='padding:3px 8px 5px;color:var(--muted,#999);font-size:.7rem';mepCtxEl.appendChild(t);
+    items.forEach(([label,on])=>{
+      const b=document.createElement('button');b.type='button';b.textContent=label;
+      b.style.cssText='display:block;width:100%;text-align:left;padding:5px 8px;border:0;border-radius:5px;background:none;color:inherit;font:inherit;cursor:pointer';
+      b.onmouseenter=()=>{b.style.background='var(--primary,#0a84ff)';b.style.color='#fff';};
+      b.onmouseleave=()=>{b.style.background='none';b.style.color='inherit';};
+      b.onclick=()=>{mepCtxHide();on();};
+      mepCtxEl.appendChild(b);
+    });
+    const r=mepCtxEl.getBoundingClientRect(),vw=window.innerWidth||1200,vh=window.innerHeight||800;
+    mepCtxEl.style.left=Math.max(4,Math.min(x,vw-r.width-4))+'px';
+    mepCtxEl.style.top=Math.max(4,Math.min(y,vh-r.height-4))+'px';
+  }
   function mepCtxShow(x,y,d,draft,snap){
     if(!mepCtxEl){
       mepCtxEl=document.createElement('div');
@@ -1464,6 +1489,7 @@
     }
     if(snapCtx&&mepSt.chain){mepCtxShow(ev.clientX,ev.clientY,null,false,true);return;} // chaîne : accrochage seul
     const P=mepPt(ev),d=mepSt.dim?null:mepDimAt(sh,P.x,P.y);
+    if(!mepSt.dim&&!snapCtx&&!canCtx(d)&&mepLocCtx(sh,P,ev))return; // coupe locale : menu de la forme
     if(snapCtx&&!canCtx(d)){mepCtxShow(ev.clientX,ev.clientY,null,false,true);return;}
     if(canCtx(d)){
       mepSt.selDim=d.id;mepSt.sel=null;mepSt.entSel=[];

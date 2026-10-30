@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**467 versions**, de `2026-09-28b` à `V0.23.9` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**468 versions**, de `2026-09-28b` à `V0.23.10` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5799,3 +5799,10 @@ Demande : « il faut régler le problème des lignes de cotes qui dépassent du 
 - **Étendue réelle du texte** (`mepDimLabelSpan`, `src/98-mep-70-cotes.js`) : valeur centrée, pile des écarts d'UN côté (mêmes mesures que le dessin : `mepDimStackGap` + `mepDimStackW`) ; le « ± » reste centré avec la valeur (demi-largeur seulement). `mepDimLabelSpanU` l'oriente le long de la cote : sens de lecture inversé pour un texte retourné ou vertical (lu de bas en haut).
 - **Ligne prolongée** seulement du côté où le texte dépasse, jusqu'au bout du texte ; **retour au centre** (`mepDimTxtOffSnap`) seulement si le texte tient entre les flèches à sa place ET au centre.
 - **Tests** : `npm run ci` ; vérifié dans le navigateur (Ø14 H7 verticale, 40 H7, 30 H7 vers la gauche décalée).
+
+## V0.23.10 - Plan : modifier la forme d'une coupe locale ou la supprimer
+Demande : « il faut pouvoir modifier la "patate" de la coupe locale pour l'agrandir ou supprimer la coupe locale » (V0.23.7 : forme figée une fois posée).
+- **Sélection** (`mepLocDown` / `mepLocHit`, `src/98-mep-50-vues-interactives.js`) : clic sur le trait de la forme (ou sur son n° dans les propriétés de la vue) → forme et points de contrôle affichés (`mepLocDraw`) ; une coupe juste créée reste sélectionnée.
+- **Édition** : tirer un point de contrôle le déplace ; glisser sur la forme ajoute un point ; Maj + clic sur un point le retire (`mepLocDelPt`, 3 points au minimum). Un geste = une étape d'annulation (Ctrl+Z).
+- **Suppression** (`mepLocDelete`) : touche Suppr sur la coupe sélectionnée, clic droit sur la forme → menu « Supprimer la coupe locale » (`mepCtxMenu`, `src/98-mep-80-souris.js`), ou ✕ des propriétés ; Échap désélectionne. Annulable.
+- **Tests** : `npm run ci` ; vérifié à la souris dans le navigateur (sélection, déplacement, ajout et retrait de point, suppression, annulation).

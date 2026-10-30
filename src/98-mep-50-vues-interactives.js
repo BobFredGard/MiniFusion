@@ -245,8 +245,94 @@
       else par.locals=(par.locals||[]).concat([{id:mepUid('loc'),pts:pts.map(p=>[+p[0].toFixed(3),+p[1].toFixed(3)]),ref}]);
     });
     mepSt.sel=par.id;mepSt.hovEnt=null;
+    const nl=(par.locals||[]).find(q=>q.ref===ref);mepSt.selLoc=nl?{vid:par.id,id:nl.id}:null;
     mepStatus('Coupe locale '+(id?'replacée':'créée')+' : plan à la profondeur de l’arête choisie — il la suit quand la pièce change.');
     mepRender();try{mepSideShow();}catch(e2){}
+  }
+  /* édition d'une coupe locale posée : clic sur sa forme = sélection ; points de contrôle à tirer,
+     glisser la forme = nouveau point, Maj + clic sur un point = le retirer ; Suppr / clic droit = supprimer */
+  function mepLocSelGet(sh){
+    const s=mepSt.selLoc;if(!s||s.vid!==mepSt.sel)return null;
+    const v=mepView(sh,s.vid),l=v&&(v.locals||[]).find(q=>q.id===s.id);
+    return l?{v,l}:null;
+  }
+  function mepLocHit(sh,P){
+    // point de contrôle de la coupe sélectionnée, sinon trait de la forme (toute coupe locale)
+    const z=mepSt.zoom||1,S=mepLocSelGet(sh);
+    if(S){let bi=-1,bd=3/z;
+      S.l.pts.forEach((q,i)=>{const p=mepToSheet(S.v,q[0],q[1]),d=Math.hypot(P.x-p.x,P.y-p.y);if(d<bd){bd=d;bi=i;}});
+      if(bi>=0)return{v:S.v,l:S.l,i:bi};}
+    let best=null,bd=2.5/z;
+    (sh.views||[]).forEach(v=>(v.locals||[]).forEach(l=>{
+      if(!l.pts||l.pts.length<3)return;
+      const n=12,C=mepLocCurve(l.pts,n).map(q=>mepToSheet(v,q[0],q[1]));
+      for(let k=0;k<C.length;k++){
+        const a=C[k],b=C[(k+1)%C.length],dx=b.x-a.x,dy=b.y-a.y,L2=dx*dx+dy*dy||1e-12;
+        const t=Math.max(0,Math.min(1,((P.x-a.x)*dx+(P.y-a.y)*dy)/L2)),d=Math.hypot(P.x-a.x-dx*t,P.y-a.y-dy*t);
+        if(d<bd){bd=d;best={v,l,seg:Math.floor(k/n)};}
+      }
+    }));
+    return best;
+  }
+  function mepLocDelete(sh,v,l){
+    mepEdit('suppression coupe locale',()=>{v.locals=(v.locals||[]).filter(q=>q.id!==l.id);if(!v.locals.length)delete v.locals;});
+    mepSt.selLoc=null;mepStatus('Coupe locale supprimée (Ctrl+Z pour la rétablir).');
+    mepRender();try{mepSideShow();}catch(e){}
+  }
+  function mepLocDelPt(sh,v,l,i){
+    if(l.pts.length<=3){mepStatus('Coupe locale : 3 points au moins — Suppr supprime la coupe entière.');return;}
+    mepEdit('coupe locale : point retiré',()=>{l.pts=l.pts.filter((q,j)=>j!==i);});
+    mepStatus('Coupe locale : point retiré.');mepRender();
+  }
+  function mepLocDown(sh,P,ev){
+    const h=mepLocHit(sh,P);if(!h)return false;
+    const S=mepLocSelGet(sh),selIt=S&&S.l===h.l;
+    mepSt.sel=h.v.id;mepSt.selLoc={vid:h.v.id,id:h.l.id};mepSt.selDim=null;mepSt.selAxis=null;mepSt.entSel=[];
+    if(h.i!=null&&ev.shiftKey){mepLocDelPt(sh,h.v,h.l,h.i);mepSideShow();return true;}
+    if(h.i!=null||selIt){
+      const pts=h.l.pts.map(q=>q.slice());let i=h.i;
+      if(i==null){const q=mepFromSheet(h.v,P.x,P.y);i=h.seg+1;pts.splice(i,0,[q.x,q.y]);} // forme glissée : nouveau point
+      mepSt.pick={kind:'locPt',vid:h.v.id,id:h.l.id,i,pts,ins:h.i==null,px0:P.px,py0:P.py,moved:false};
+      mepStatus('Coupe locale : tirez le point'+(h.i==null?' ajouté':'')+' — Maj + clic retire un point, Suppr supprime la coupe.');
+    }else{
+      mepSt.pick={kind:'viewDrag',vid:h.v.id,ox:P.x-h.v.x,oy:P.y-h.v.y,moved:false,undoPushed:false,px0:P.px,py0:P.py};
+      mepStatus('Coupe locale sélectionnée : tirez ses points (ou la forme pour en ajouter un), Suppr la supprime, clic droit pour le menu.');
+    }
+    mepSideShow();mepRender();return true;
+  }
+  function mepLocMove(sh,P){
+    const pk=mepSt.pick,v=mepView(sh,pk.vid);if(!v)return;
+    if(!pk.moved&&Math.hypot(P.px-pk.px0,P.py-pk.py0)<3)return;
+    const q=mepFromSheet(v,P.x,P.y);pk.pts[pk.i]=[q.x,q.y];pk.moved=true;mepRender();
+  }
+  function mepLocUp(sh){
+    const pk=mepSt.pick;mepSt.pick=null;
+    const v=mepView(sh,pk.vid),l=v&&(v.locals||[]).find(q=>q.id===pk.id);
+    if(l&&pk.moved){
+      mepEdit(pk.ins?'coupe locale : point ajouté':'coupe locale : forme',()=>{l.pts=pk.pts.map(p=>[+p[0].toFixed(3),+p[1].toFixed(3)]);});
+      mepStatus('Coupe locale : forme modifiée.');
+    }
+    mepRender();
+  }
+  function mepLocDraw(mk){
+    // forme et points de la coupe sélectionnée (aperçu pendant le glissement)
+    const sh=mepSheet(),S=mepLocSelGet(sh);if(!S)return;
+    const pk=mepSt.pick,pts=pk&&pk.kind==='locPt'&&pk.id===S.l.id?pk.pts:S.l.pts;
+    const z=mepSt.zoom||1,C=mepLocCurve(pts).map(q=>mepToSheet(S.v,q[0],q[1]));
+    mk('path',{d:'M'+C.map(p=>p.x.toFixed(3)+' '+p.y.toFixed(3)).join(' L')+' Z',class:'mepVcLine',fill:'rgba(10,132,255,.06)'},mepGHlp);
+    pts.forEach(q=>{const p=mepToSheet(S.v,q[0],q[1]),h=1.3/z;
+      mk('rect',{x:p.x-h,y:p.y-h,width:2*h,height:2*h,class:'mepVcSnap',fill:'#fff'},mepGHlp);});
+  }
+  function mepLocCtx(sh,P,ev){
+    const h=mepLocHit(sh,P);if(!h)return false;
+    mepSt.sel=h.v.id;mepSt.selLoc={vid:h.v.id,id:h.l.id};mepSt.selDim=null;mepSt.entSel=[];
+    mepRender();mepSideShow();
+    const k=(h.v.locals||[]).indexOf(h.l)+1,items=[];
+    if(h.i!=null&&h.l.pts.length>3)items.push(['Retirer ce point',()=>mepLocDelPt(sh,h.v,h.l,h.i)]);
+    items.push(['Arête du plan…',()=>mepBeginLocal(h.l.id)]);
+    items.push(['Supprimer la coupe locale',()=>mepLocDelete(sh,h.v,h.l)]);
+    mepCtxMenu(ev.clientX,ev.clientY,'Coupe locale n° '+k,items);
+    return true;
   }
   function mepVcmdDown(sh,P,ev){
     const c=mepSt.vcmd;c.cur={x:P.x,y:P.y};

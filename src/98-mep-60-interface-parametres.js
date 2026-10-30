@@ -284,6 +284,7 @@
     try{mepDrawDraft(mk);}catch(e){}
     try{mepDrawSnapHov(mk);}catch(e){}
     try{mepVcmdDraw(mk);}catch(e){}
+    try{mepLocDraw(mk);}catch(e){} // coupe locale sélectionnée : forme et points
     mepToolSync();
     mepRulers();
   }
