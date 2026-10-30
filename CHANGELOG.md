@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**478 versions**, de `2026-09-28b` à `V0.23.20` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**479 versions**, de `2026-09-28b` à `V0.23.21` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5881,3 +5881,10 @@ Demande : « il faut pouvoir copier une opération ou plusieurs de FAO et un pos
 - **Copier** (Ctrl+C ou bouton « Copier » du groupe Posage) : les opérations sélectionnées, ou le posage entier (machine, repère, brut, bridage, outils, opérations) quand c'est le posage qui est sélectionné.
 - **Coller** (Ctrl+V ou bouton « Coller ») : les opérations vont dans le posage actif, juste après la sélection (sinon à la fin), avec des ids neufs ; un outil absent du posage cible y est ajouté (même id et même géométrie, ou outil identique = repris). Un posage est inséré après le posage actif sous le nom `…_COPIE` (`_COPIE2`…). Ctrl+Z annule. Presse-papiers en mémoire et dans `localStorage` : on peut coller dans un autre document ou un autre onglet. Les champs de saisie gardent Ctrl+C / Ctrl+V natifs. Module `src/88-fao-81-copier-coller.js`. `CACHE_VER` inchangé (les éléments collés sont simplement à régénérer).
 - **Tests** : `test_fao_copier_coller` (sélection Maj/Ctrl, ordre, ids neufs, outils, insertion après la sélection, posage complet indépendant, noms) ; `npm run ci`.
+
+## V0.23.21 - Ébauche 3D Escargot : le brut devant une face rouge est usiné
+Constaté sur la CI GitHub (suite complète) : `test_fao_faces` cas D en échec depuis V0.23.15 — « sans la case, l'ébauche usine bien le brut devant le flanc rouge ».
+- **Cause** : en Escargot (`snailRings`), le long d'une limite (zone, rouge) l'anneau de bord était écarté dès qu'une paroi de la pièce était à moins de r + ae/2, le tour des faces étant censé la suivre. Devant un flanc rouge, ce tour (à r de la paroi) tombe dans la marge et est retiré : rien ne suivait la limite, le brut devant le flanc restait (0 point d'usinage dans la bande, 560 en Trochoïdal). Le test prenait le mode par défaut, Escargot depuis V0.23.15.
+- **Correctif** (`noWall`, `src/88-fao-90-ebauche3d.js`) : près d'une paroi, l'anneau de bord n'est écarté que si le tour des faces est dans la limite au point voisin à r de la paroi. Sans rouge ni limite : inchangé.
+- **Résultat** (RETARD, repère incliné de 11°, 398 cases de brut devant le flanc) : restant 370 → 358 (Trochoïdal 311 ; le reste est sous le flanc en surplomb, inaccessible avec la marge 0,5 mm). Écart restant avec le Trochoïdal : une lisière de 0,7 mm au bord du brut.
+- **Tests** : `test_fao_faces`, `test_fao_escargot`, `test_fao_escargot_ilots`, `test_fao_ebauche_brut`, `test_fao_zlim` ; `npm run parcours` 27/27 identiques ; `npm run ci`.

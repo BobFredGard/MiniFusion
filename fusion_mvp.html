@@ -336,7 +336,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.23.20';
+const APP_VER='V0.23.21';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 try{var mfSv=document.getElementById('mfSplashVer');if(mfSv)mfSv.textContent=APP_VER;}catch(e){} // écran de démarrage
 
@@ -41171,9 +41171,18 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     // est de l'air au-delà, le premier anneau suffit (pas de tour à 0,5 mm du brut)
     // V0.23.16 : sans zone, aucune limite — pas de tour du brut (MERLIN-23-001)
     const lim=zoneSafeL||zoneAt;
+    // V0.23.21 : paroi proche → le tour des faces (à r de la paroi) passe là,
+    // SAUF s'il y est hors limite : le long d'une face ROUGE la marge l'écarte,
+    // et rien ne suivait la limite (brut laissé devant le flanc, test_fao_faces D)
     const noWall=function(q){
       if(!lim)return false;
-      if(faoDistSeg(S.hash,q[0],q[1],rimL,rimL-1e-6)<rimL-1e-6)return false;
+      const dW=faoDistSeg(S.hash,q[0],q[1],rimL,rimL-1e-6);
+      if(dW<rimL-1e-6){
+        const s=Math.max(0,dW-r);let bp=q,bd=dW;
+        if(s>1e-6)for(let a=0;a<16;a++){const t=a*Math.PI/8,p=[q[0]+s*Math.cos(t),q[1]+s*Math.sin(t)];
+          const d=faoDistSeg(S.hash,p[0],p[1],rimL);if(d<bd){bd=d;bp=p;}}
+        if(lim(bp[0],bp[1]))return false;
+      }
       for(let a=0;a<8;a++){const t=a*Math.PI/4;if(!lim(q[0]+2*h*Math.cos(t),q[1]+2*h*Math.sin(t)))return true;}
       return false;};
     const lab=new Int32Array(N);
