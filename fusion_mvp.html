@@ -282,7 +282,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.23.6';
+const APP_VER='V0.23.7';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -54623,6 +54623,7 @@ const MF_IC={
   pViewIso:'<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/>',
   pViewAux:'<path d="M3 21V11h6l4 4v6z"/><path d="M14 10l4.5-4.5 3 3L17 13z" stroke-dasharray="2 1.6"/><path d="M10.5 12.5l3-3"/>',
   pViewSection:'<path d="M3 6.5h18" stroke-dasharray="5 1.5 1 1.5"/><path d="M3 4v5M21 4v5" stroke-width="2.4"/><rect x="5" y="11" width="14" height="9" rx="1"/><path d="M7 20l7-9M11 20l7-9M15 20l4-5"/>',
+  pViewLocal:'<path d="M4 4h16v16H4z"/><path d="M9 8c3-2 7-1 8 2s-1 7-4 7-6-1-6-4 0-4 2-5z" stroke-dasharray="0"/><path d="M9 12l3-3M9 15l5-5M11.5 16.5l4.5-4.5"/>',
   pViewDetail:'<circle cx="7.5" cy="8" r="4.5" stroke-dasharray="2 1.6"/><circle cx="15.5" cy="15.5" r="6"/><path d="M11 11l1.5 1.5"/><path d="M13 17.5l2.5-4 2.5 4"/>',
   pLine:'<path d="M5 19L19 5"/><circle cx="5" cy="19" r="1.8"/><circle cx="19" cy="5" r="1.8"/>',
   pRect:'<rect x="4" y="6" width="16" height="12"/><circle cx="4" cy="6" r="1.4"/><circle cx="20" cy="18" r="1.4"/>',
@@ -54712,6 +54713,7 @@ function mfRibbon(){
     ['pViewAux','Auxiliaire',()=>{try{mepBeginAuxCmd();}catch(e){}},'Vue auxiliaire : cliquez une arête inclinée, puis placez la vue perpendiculairement'],
     ['pViewSection','Coupe',()=>{try{mepSetActive(true);mepBeginSectionCmd();}catch(e){}},'Vue en coupe : points de la ligne sur une vue (2, ou plus pour une coupe brisée à l’équerre), ✓ / Entrée pour valider, ↶ / Retour arrière pour reculer, puis placez la vue (le côté donne le sens du regard)'],
     ['pViewDetail','Détail',()=>{try{mepSetActive(true);mepBeginDetailCmd();}catch(e){}},'Vue de détail : centre, rayon, puis placement'],
+    ['pViewLocal','Coupe locale',()=>{try{mepSetActive(true);mepBeginLocalCmd();}catch(e){}},'Coupe locale (arrachement) : points d’une forme libre fermée sur une vue (1er point ou Entrée pour fermer), puis l’arête qui place le plan de coupe — le plan suit l’arête quand la pièce change'],
     ['pDxfIn','DXF',()=>{try{mepSetActive(true);mepImportDxf();}catch(e){}},'Importer un DXF comme vue : on peut la coter, y accrocher lignes, cercles, axes…']],'mfPlan');
   grp('Dessin',[['pLine','Ligne',()=>mepTool('line'),'Ligne enchaînée (Échap termine)'],['pRect','Rectangle',()=>mepTool('rect')],
     ['pCircle','Cercle',()=>mepTool('circle')],['pArc','Arc',()=>mepTool('arc'),'Arc : centre, départ, arrivée'],
@@ -55409,6 +55411,7 @@ function viewFadeIn(){
     .mepFace{shape-rendering:geometricPrecision;stroke-linejoin:round}
     .mepSharp{stroke:var(--mepInk,#151515);stroke-width:var(--mepLwThick,.72)}
     .mepTangent{stroke:var(--mepInk2,#7a8088);stroke-width:var(--mepLwThin,.42);stroke-opacity:.92}
+    .mepBrk{stroke:var(--mepInk,#151515);stroke-width:var(--mepLwThin,.42);fill:none;stroke-linejoin:round} /* limite de coupe locale (trait fin continu) */
     .mepHidden{stroke:var(--mepHid,#59606a);stroke-width:var(--mepLwHid,.42);stroke-dasharray:2 1.2;stroke-linecap:butt}
     .mepSect{stroke:var(--mepInk,#151515);stroke-width:calc(var(--mepLwThick,.72) * 1.22)}
     .mepThread{fill:none;stroke:var(--mepThreadCol,#a4a9b0);stroke-width:calc(var(--mepLwThin,.42) * 0.7)} /* fond de filet ISO 6410 : gris clair, plus fin */
@@ -55783,7 +55786,7 @@ function viewFadeIn(){
   function mepViewSig(v){
     let s=[v.kind==='dxf'?'dxf:'+((v.dxf&&v.dxf.rev)||0):'',mepRound(v.dir),mepRound(v.u),mepRound(v.v),v.bodyId||'',v.mode||'hide',v.tangent?1:0,
       v.hlrExact===false?'soft':'exact',v.shade?1:0,(v.render3d||v.real)?(v.mirror?'1m':1):0,v.real?'real':'',
-      v.section?mepRound(v.section.p)+mepRound(v.section.n)+(v.section.pts?JSON.stringify(v.section.pts):''):'',v.detail?v.detail.cx+','+v.detail.cy+','+v.detail.r:'',mepOblOf(v)?'obl:'+mepOblOf(v).a+','+mepOblOf(v).k:'',mepPerspOf(v)?'persp:'+mepPerspOf(v).fov:'',v.asm?'asm:'+asmPlanSig():''].join('|');
+      v.section?mepRound(v.section.p)+mepRound(v.section.n)+(v.section.pts?JSON.stringify(v.section.pts):''):'',v.detail?v.detail.cx+','+v.detail.cy+','+v.detail.r:'',mepOblOf(v)?'obl:'+mepOblOf(v).a+','+mepOblOf(v).k:'',mepPerspOf(v)?'persp:'+mepPerspOf(v).fov:'',v.asm?'asm:'+asmPlanSig():'',mepLocalSig(v)].join('|');
     /* l'ombrage et le rendu 3D dépendent de la couleur/opacité des corps :
        ces réglages ne changent pas _docVersion, donc on les met dans la clé
        de cache. Le thème influe aussi sur l'environnement du rendu 3D. */
@@ -56624,6 +56627,7 @@ function viewFadeIn(){
             const pts=occCurvePts(ad,u0,u1,0.02,400);
             if(pts&&pts.length>1){
               const lp=pts.map(p=>[mepDot(p,view.u),mepDot(p,view.v)]);
+              const wp=pts.map(p=>mepDot(p,view.dir)); // profondeur (vers l'observateur) : plan d'une coupe locale (V0.23.7)
               const cir=mepFitCircle(lp);
               if(cir){
                 const kc='C'+Math.round(cir.cx*100)+','+Math.round(cir.cy*100)+','+Math.round(cir.r*100);
@@ -56631,7 +56635,8 @@ function viewFadeIn(){
                 const kk=cir.full?kc:ka;
                 if(!added.has(kk)){
                   added.add(kk);
-                  geo.els.push(cir.full?{t:'C',cx:cir.cx,cy:cir.cy,r:cir.r,k:kind}:{t:'A',cx:cir.cx,cy:cir.cy,r:cir.r,a0:cir.a0,a1:cir.a1,k:kind});
+                  const w=wp.reduce((s,x)=>s+x,0)/wp.length;
+                  geo.els.push(cir.full?{t:'C',cx:cir.cx,cy:cir.cy,r:cir.r,k:kind,w}:{t:'A',cx:cir.cx,cy:cir.cy,r:cir.r,a0:cir.a0,a1:cir.a1,k:kind,w});
                   n++;
                 }
               }else{
@@ -56643,7 +56648,7 @@ function viewFadeIn(){
                   const k2=Math.round(B[0]*100)+','+Math.round(B[1]*100)+','+Math.round(A[0]*100)+','+Math.round(A[1]*100);
                   if(added.has(k)||added.has(k2))continue;
                   added.add(k);
-                  geo.els.push({t:'L',x1:A[0],y1:A[1],x2:B[0],y2:B[1],k:kind});
+                  geo.els.push({t:'L',x1:A[0],y1:A[1],x2:B[0],y2:B[1],k:kind,w:(wp[i]+wp[i+1])/2});
                   n++;
                 }
               }
@@ -56805,6 +56810,11 @@ function viewFadeIn(){
           if(L.length){geo.hatchG.push({k:i,loops:L});geo.hatch=geo.hatch.concat(L);}}catch(e){}});
       }else{try{geo.hatch=mepHatchLoops(cutShapes,view,P0,view.section.n);}catch(e){}}
       if(st)geo.els=mepDropStepEdges(geo.els,view,st);
+    }
+    // coupes locales (V0.23.7) : celles de la vue, ou de sa mère pour un détail — avant le rognage du détail
+    if(!view.section&&cutShapes.length&&/^OCCT/.test(geo.src||'')&&!mepOblOf(view)&&!mepPerspOf(view)){
+      const lv=view.detail&&view.parent?mepView(mepSheet(),view.parent):view,L=lv&&lv.locals;
+      if(L&&L.length)try{mepLocalApply(geo,view,cutShapes,L);}catch(e){try{console.warn('mep coupe locale',e);}catch(e2){}}
     }
     if(view.detail&&view.parent){
       const par=mepView(mepSheet(),view.parent);
@@ -57223,6 +57233,144 @@ function viewFadeIn(){
     return loops.filter(l=>l.length>3);
   }
   /* détail : rogne la géométrie d'une vue au cercle (coords locales) */
+  /* ═══════════════ coupes locales (V0.23.7) ═══════════════
+     « choisir une vue, dessiner une patate (forme libre fermée), puis choisir une arête de la vue
+     qui définit le plan de coupe ; si l'arête change, le plan change ».
+     v.locals = [{id, pts:[[x,y]…] (points de la forme, coordonnées locales de la vue),
+                  ref:{x,y, s:forme 2D de l'entité choisie, w:sa profondeur}}].
+     Plan : parallèle au plan de la vue, à la profondeur de l'arête (e.w, posée par le HLR exact) ;
+     la matière côté observateur est ôtée DANS la forme : hors de la forme la vue reste entière,
+     dedans on voit la coupe (arêtes du HLR de la pièce coupée + hachures), bordée d'un trait fin
+     continu (ISO 128 : limite de coupe partielle). L'arête est retrouvée à chaque reconstruction
+     sur la vue ENTIÈRE (même forme 2D, profondeur la plus proche) : sa nouvelle profondeur
+     déplace le plan. */
+  function mepLocalSig(v){
+    const sh=v&&v.kind==='detail'&&v.parent?mepView(mepSheet(),v.parent):v,L=sh&&sh.locals;
+    return L&&L.length?'loc:'+L.map(l=>l.id+':'+(l.pts||[]).map(p=>p[0].toFixed(2)+','+p[1].toFixed(2)).join(' ')).join(';'):'';
+  }
+  function mepLocCurve(pts,n){ // forme lisse fermée (Catmull-Rom) par les points cliqués
+    const N=pts.length,out=[];if(N<3)return pts.map(p=>p.slice());
+    n=n||12;
+    for(let i=0;i<N;i++){
+      const p0=pts[(i-1+N)%N],p1=pts[i],p2=pts[(i+1)%N],p3=pts[(i+2)%N];
+      for(let k=0;k<n;k++){const t=k/n,t2=t*t,t3=t2*t;
+        out.push([0,1].map(j=>0.5*(2*p1[j]+(p2[j]-p0[j])*t+(2*p0[j]-5*p1[j]+4*p2[j]-p3[j])*t2+(3*p1[j]-p0[j]-3*p2[j]+p3[j])*t3)));}
+    }
+    return out;
+  }
+  function mepPip(x,y,poly){
+    let c=false;
+    for(let i=0,j=poly.length-1;i<poly.length;j=i++){const a=poly[i],b=poly[j];
+      if((a[1]>y)!==(b[1]>y)&&x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0])c=!c;}
+    return c;
+  }
+  function mepClipSegPoly(x1,y1,x2,y2,poly,keepIn){
+    // morceaux du segment dedans (keepIn) ou dehors du polygone
+    const dx=x2-x1,dy=y2-y1,ts=[0,1];
+    for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+      const a=poly[j],ex=poly[i][0]-a[0],ey=poly[i][1]-a[1],den=dx*ey-dy*ex;
+      if(Math.abs(den)<1e-12)continue;
+      const t=((a[0]-x1)*ey-(a[1]-y1)*ex)/den,s=((a[0]-x1)*dy-(a[1]-y1)*dx)/den;
+      if(t>0&&t<1&&s>=0&&s<=1)ts.push(t);
+    }
+    ts.sort((a,b)=>a-b);
+    const out=[];
+    for(let k=0;k+1<ts.length;k++){
+      const t0=ts[k],t1=ts[k+1];if(t1-t0<1e-9)continue;
+      const m=(t0+t1)/2;if(mepPip(x1+dx*m,y1+dy*m,poly)!==keepIn)continue;
+      const L=out[out.length-1];
+      if(L&&Math.abs(L[4]-t0)<1e-9){L[2]=x1+dx*t1;L[3]=y1+dy*t1;L[4]=t1;}
+      else out.push([x1+dx*t0,y1+dy*t0,x1+dx*t1,y1+dy*t1,t1]);
+    }
+    return out;
+  }
+  function mepClipPoly(els,poly,keepIn){
+    const out=[];
+    const segs=(e,pts)=>{for(let i=0;i+1<pts.length;i++)mepClipSegPoly(pts[i][0],pts[i][1],pts[i+1][0],pts[i+1][1],poly,keepIn)
+      .forEach(s=>out.push({t:'L',x1:s[0],y1:s[1],x2:s[2],y2:s[3],k:e.k,w:e.w}));};
+    els.forEach(e=>{
+      if(e.t==='L')segs(e,[[e.x1,e.y1],[e.x2,e.y2]]);
+      else if(e.t==='C'||e.t==='A'){
+        const a0=e.t==='C'?0:e.a0,a1=e.t==='C'?2*Math.PI:e.a1,N=Math.max(24,Math.ceil(Math.abs(a1-a0)*e.r/0.4));
+        const pts=[];for(let i=0;i<=N;i++){const a=a0+(a1-a0)*i/N;pts.push([e.cx+e.r*Math.cos(a),e.cy+e.r*Math.sin(a)]);}
+        const ins=pts.map(p=>mepPip(p[0],p[1],poly));
+        if(ins.every(x=>x===keepIn)&&!poly.some(q=>Math.abs(Math.hypot(q[0]-e.cx,q[1]-e.cy)-e.r)<1e-6))out.push(e);
+        else if(ins.some(x=>x===keepIn))segs(e,pts);
+      }else if(e.t==='P'&&e.pts)segs(e,e.pts);
+      else out.push(e);
+    });
+    return out;
+  }
+  function mepLocEnt(els,ref){
+    // entité de la vue entière qui porte le plan : même forme 2D, à défaut la plus proche ; à égalité
+    // (arêtes superposées à l'avant et à l'arrière), la profondeur la plus proche de la dernière connue
+    const s=ref&&ref.s;if(!s)return null;
+    let best=null,bc=Infinity,lim=3;
+    els.forEach(e=>{
+      if(!Number.isFinite(e.w))return;
+      let c;
+      if(s.t==='L'&&e.t==='L'){
+        const dx=s.x2-s.x1,dy=s.y2-s.y1,len=Math.hypot(dx,dy);if(!(len>1e-9))return;
+        const ux=dx/len,uy=dy/len,ex=e.x2-e.x1,ey=e.y2-e.y1,el=Math.hypot(ex,ey);if(!(el>1e-9))return;
+        if(Math.abs(ux*ey/el-uy*ex/el)>0.035)return;
+        const cx=(e.x1+e.x2-s.x1-s.x2)/2,cy=(e.y1+e.y2-s.y1-s.y2)/2;
+        c=Math.abs(cx*uy-cy*ux)+0.5*Math.abs(cx*ux+cy*uy)+0.5*Math.abs(el-len);lim=Math.max(3,0.6*len);
+      }else if((s.t==='C'||s.t==='A')&&(e.t==='C'||e.t==='A')){
+        c=Math.hypot(e.cx-s.cx,e.cy-s.cy)+2*Math.abs(e.r-s.r);lim=Math.max(3,s.r);
+      }else return;
+      c+=0.01*Math.abs(e.w-(Number.isFinite(ref.w)?ref.w:e.w));
+      if(c<bc){bc=c;best=e;}
+    });
+    return bc<=lim+0.5?best:null;
+  }
+  function mepLocBorder(view,poly){
+    // limite de la forme : seulement là où il y a de la matière (rayon le long de la vue) — dans
+    // le vide autour de la pièce, rien n'est tracé ; morceaux affinés par dichotomie
+    const meshes=mepMeshesOf(view).map(b=>b.mesh).filter(Boolean);
+    const closed=poly.concat([poly[0]]);
+    if(!meshes.length||typeof THREE==='undefined')return[closed];
+    const d=mepNorm(view.dir),u=view.u,vv=view.v,rc=new THREE.Raycaster(),dn=new THREE.Vector3(-d[0],-d[1],-d[2]);
+    meshes.forEach(m=>{try{m.updateMatrixWorld(true);}catch(e){}});
+    const on=p=>{const o=[u[0]*p[0]+vv[0]*p[1]+d[0]*5000,u[1]*p[0]+vv[1]*p[1]+d[1]*5000,u[2]*p[0]+vv[2]*p[1]+d[2]*5000];
+      rc.set(new THREE.Vector3(o[0],o[1],o[2]),dn);rc.far=10000;try{return rc.intersectObjects(meshes,false).length>0;}catch(e){return true;}};
+    const mid=(a,b)=>[(a[0]+b[0])/2,(a[1]+b[1])/2];
+    const edge=(a,b,ia)=>{let p=a,q=b;for(let k=0;k<8;k++){const m=mid(p,q);if(on(m)===ia)p=m;else q=m;}return p;}; // dernier point du même état que a
+    const ins=closed.map(on),runs=[];let run=null;
+    for(let i=0;i<closed.length;i++){
+      if(ins[i]){
+        if(!run){run=[];if(i>0)run.push(edge(closed[i],closed[i-1],true));}
+        run.push(closed[i]);
+      }else if(run){run.push(edge(closed[i-1],closed[i],true));runs.push(run);run=null;}
+    }
+    if(run){if(runs.length&&ins[0]&&ins[closed.length-1]&&runs[0][0]===closed[0])runs[0]=run.concat(runs[0].slice(1));else runs.push(run);}
+    return runs.filter(r=>r.length>1);
+  }
+  function mepLocalApply(geo,view,shapes,locals){
+    const dir=mepNorm(view.dir),full=geo.els;
+    let els=full;
+    geo.hatchLoc=[];
+    locals.forEach(loc=>{
+      if(!loc||!loc.pts||loc.pts.length<3)return;
+      const poly=mepLocCurve(loc.pts);
+      const e=mepLocEnt(full,loc.ref);
+      if(e&&loc.ref){loc.ref.s=mepIdxSnap(e);loc.ref.w=e.w;loc.lost=false;}
+      else if(loc.ref)loc.lost=true; // arête introuvable : dernier plan connu
+      const w=loc.ref&&loc.ref.w;if(!Number.isFinite(w))return;
+      const p0=[dir[0]*w,dir[1]*w,dir[2]*w];
+      const cut=[];shapes.forEach(sh=>{const c=mepCutHalfSpace(sh,p0,dir);if(c)cut.push(c);});
+      if(!cut.length)return;
+      try{
+        const g2={els:[],hatch:[]};
+        if(!mepHlrExact(g2,view,cut,new Set()))return;
+        g2.els=mepMergeCollinear(g2.els);
+        els=mepClipPoly(els,poly,false).concat(mepClipPoly(g2.els,poly,true));
+        let loops=[];try{loops=mepHatchLoops(cut,view,p0,dir);}catch(e2){}
+        if(loops.length)geo.hatchLoc.push({loops,poly});
+        mepLocBorder(view,poly).forEach(run=>els.push({t:'P',pts:run,k:'brk'})); // limite de la coupe : trait fin continu, sur la matière
+      }finally{cut.forEach(c=>{try{c.delete();}catch(e2){}});}
+    });
+    geo.fullEls=full;geo.els=els;
+  }
   function mepClipDetail(els,det){
     const{cx,cy,r}=det,out=[];
     const inC=(x,y)=>Math.hypot(x-cx,y-cy)<=r-0.01;
@@ -58932,6 +59080,12 @@ function viewFadeIn(){
     view.x=at.lockX!=null?at.lockX:at.x-cx*view.scale;
     view.y=at.lockY!=null?at.lockY:at.y-cy*view.scale;
   }
+  function mepBeginLocal(locId){ // locId : changer l'arête d'une coupe locale existante (vue sélectionnée)
+    mepVcmdStart('local');
+    const c=mepSt.vcmd,v=mepSt.sel?mepView(mepSheet(),mepSt.sel):null;
+    if(locId&&v){c.par=v.id;c.loc=locId;c.pts=[];c.stage=2;mepVcmdHint();mepRender();}
+    else{c.par=null;c.pts=[];}
+  }
   function mepVcmdStart(kind){
     const sh=mepSheet();
     mepSetTool('select');
@@ -58946,7 +59100,9 @@ function viewFadeIn(){
       proj:['Projection : cliquez la vue mère.','Projection : déplacez la souris autour de la vue (droite/gauche/dessus/dessous, diagonale = ISO) et cliquez. Échap termine.'],
       section:['Coupe : cliquez le 1er point de la ligne de coupe sur une vue.','Coupe : cliquez le point suivant (Maj = sans alignement H/V) — ✓ / Entrée valide la ligne, ↶ / Retour arrière enlève le dernier point.','Coupe : placez la vue — le côté de la souris donne le sens du regard. Échap annule.'],
       detail:['Détail : cliquez le centre de la zone à agrandir.','Détail : cliquez pour fixer le rayon.','Détail : placez la vue de détail.'],
-      aux:['Auxiliaire : cliquez une arête inclinée d’une vue.','Auxiliaire : placez la vue de part ou d’autre de l’arête. Échap annule.']
+      aux:['Auxiliaire : cliquez une arête inclinée d’une vue.','Auxiliaire : placez la vue de part ou d’autre de l’arête. Échap annule.'],
+      local:['Coupe locale : cliquez dans une vue le 1er point de la forme.','Coupe locale : points suivants de la forme — cliquez le 1er point ou Entrée pour la fermer (3 points au moins), Retour arrière enlève le dernier.',
+        'Coupe locale : cliquez l’arête de la vue qui place le plan de coupe (parallèle à la vue, à la profondeur de l’arête). Échap annule.']
     };
     mepStatus((m[c.kind]||[])[c.stage]||'');
   }
@@ -59021,6 +59177,15 @@ function viewFadeIn(){
   }
   function mepVcmdDraw(mk){
     const c=mepSt.vcmd;if(!c||!c.cur)return;
+    if(c.kind==='local'){ // forme de la coupe locale : points, courbe lisse fermée
+      const par=c.par?mepView(mepSheet(),c.par):null;if(!par||!c.pts||!c.pts.length)return;
+      const P=c.pts.map(q=>mepToSheet(par,q[0],q[1])),z=mepSt.zoom||1;
+      const open=c.stage===1?P.concat([c.cur]):P;
+      const cl=open.length>=3?mepLocCurve(open.map(p=>[p.x,p.y])):open.map(p=>[p.x,p.y]);
+      mk('path',{d:'M'+cl.map(p=>p[0].toFixed(3)+' '+p[1].toFixed(3)).join(' L')+(open.length>=3?' Z':''),class:'mepVcLine',fill:'rgba(10,132,255,.06)'},mepGHlp);
+      P.forEach((p,i)=>mk('circle',{cx:p.x,cy:p.y,r:(i===0&&c.stage===1&&P.length>=3?2.2:1.2)/z,class:'mepVcSnap'},mepGHlp));
+      return;
+    }
     const sh=mepSheet(),G=mepVcmdGeom(sh,c.cur,c.shift);
     const par=c.par?mepView(sh,c.par):null;
     if(par){const bb=mepViewSheetBBox(par);if(bb)mk('rect',{x:bb.x-4,y:bb.y-4,width:bb.w+8,height:bb.h+8,class:'mepVBSel'},mepGHlp);}
@@ -59058,6 +59223,10 @@ function viewFadeIn(){
     if(c.kind==='aux'&&c.stage===0){
       const hit=mepHitViewEnt(sh,P.x,P.y);
       mepSt.hovEnt=hit&&hit.e.t==='L'?{vid:hit.vid,i:hit.i,sig:mepEntSig(hit.e)}:null;
+    }
+    if(c.kind==='local'&&c.stage===2){ // arête du plan : seulement dans la vue de la coupe
+      const hit=mepHitViewEnt(sh,P.x,P.y);
+      mepSt.hovEnt=hit&&hit.vid===c.par&&Number.isFinite(hit.e.w)?{vid:hit.vid,i:hit.i,sig:mepEntSig(hit.e)}:null;
     }
     mepRender();
   }
@@ -59101,9 +59270,50 @@ function viewFadeIn(){
     if(c.pts.length%2){mepStatus('Coupe : la ligne doit finir par un tronçon parallèle au 1er — ajoutez un point (ou ↶).');return true;}
     c.A=c.pts[0];c.B=c.pts[1];c.stage=2;mepVcmdHint();mepRender();return true;
   }
+  function mepLocUndo(){
+    const c=mepSt.vcmd;if(!c||c.kind!=='local'||c.stage!==1)return false;
+    c.pts.pop();if(!c.pts.length){c.stage=0;c.par=null;}
+    mepVcmdHint();mepRender();return true;
+  }
+  function mepLocClose(){
+    const c=mepSt.vcmd;if(!c||c.kind!=='local'||c.stage!==1)return false;
+    if(c.pts.length<3){mepStatus('Coupe locale : il faut au moins 3 points.');return true;}
+    c.stage=2;mepVcmdHint();mepRender();return true;
+  }
+  function mepLocalAdd(par,pts,e,P,id){
+    // e : entité choisie (porte sa profondeur w) ; id : coupe existante dont on change l'arête
+    const ref={x:P.x,y:P.y,s:mepIdxSnap(e),w:e.w};
+    mepEdit(id?'arête de la coupe locale':'coupe locale',()=>{
+      if(id){const l=(par.locals||[]).find(q=>q.id===id);if(l){l.ref=ref;l.id=mepUid('loc');}}
+      else par.locals=(par.locals||[]).concat([{id:mepUid('loc'),pts:pts.map(p=>[+p[0].toFixed(3),+p[1].toFixed(3)]),ref}]);
+    });
+    mepSt.sel=par.id;mepSt.hovEnt=null;
+    mepStatus('Coupe locale '+(id?'replacée':'créée')+' : plan à la profondeur de l’arête choisie — il la suit quand la pièce change.');
+    mepRender();try{mepSideShow();}catch(e2){}
+  }
   function mepVcmdDown(sh,P,ev){
     const c=mepSt.vcmd;c.cur={x:P.x,y:P.y};
     const parOf=()=>c.par?mepView(sh,c.par):null;
+    if(c.kind==='local'){
+      if(c.stage===0){
+        const v=mepViewAt(sh,P.x,P.y);if(!v){mepStatus('Coupe locale : cliquez dans une vue.');return;}
+        if(v.section||v.kind==='detail'||v.kind==='dxf'||mepOblOf(v)||mepPerspOf(v)){mepStatus('Coupe locale : choisissez une vue orthogonale complète (pas une coupe, un détail, une vue DXF, oblique ou en perspective).');return;}
+        const q=mepFromSheet(v,P.x,P.y);c.par=v.id;c.pts=[[q.x,q.y]];c.stage=1;mepSt.sel=v.id;mepVcmdHint();mepRender();return;
+      }
+      const par=parOf();if(!par)return mepVcmdCancel();
+      if(c.stage===1){
+        const f=mepToSheet(par,c.pts[0][0],c.pts[0][1]),z=mepSt.zoom||1;
+        if(c.pts.length>=3&&Math.hypot(P.x-f.x,P.y-f.y)<3/z){mepLocClose();return;}
+        const q=mepFromSheet(par,P.x,P.y),l=c.pts[c.pts.length-1],lp=mepToSheet(par,l[0],l[1]);
+        if(Math.hypot(P.x-lp.x,P.y-lp.y)<0.5)return; // double clic : même point
+        c.pts.push([q.x,q.y]);mepRender();return;
+      }
+      const hit=mepHitViewEnt(sh,P.x,P.y);
+      if(!hit||hit.vid!==par.id||!Number.isFinite(hit.e.w)){mepStatus('Coupe locale : cliquez une arête de la pièce dans cette vue (projetée par le noyau exact).');return;}
+      mepSt.vcmd=null;
+      mepLocalAdd(par,c.pts||[],hit.e,{x:hit.lx,y:hit.ly},c.loc||null);
+      return;
+    }
     if(c.kind==='proj'){
       if(c.stage===0){const v=mepViewAt(sh,P.x,P.y);if(!v){mepStatus('Projection : cliquez sur une vue.');return;}
         c.par=v.id;c.stage=1;mepSt.sel=v.id;mepVcmdHint();mepRender();return;}
@@ -60003,7 +60213,7 @@ function viewFadeIn(){
       ||(mepSt.intPick&&mepSt.intPick.vid===v.id&&mepSt.intPick.i===ei); // 1ʳᵉ entité d'une intersection
     const hovEnt=(e,ei)=>mepSt.hovEnt&&mepSt.hovEnt.vid===v.id&&mepSt.hovEnt.i===ei
       &&(!mepSt.hovEnt.sig||mepSt.hovEnt.sig===mepEntSig(e));
-    const cls=(e,ei)=>(e.k==='hidden'||e.k==='threadH'?'mepEnt mepHidden':e.k==='thread'?'mepEnt mepThread':e.k==='tangent'?'mepEnt mepTangent':e.k==='sect'?'mepEnt mepSect':'mepEnt mepSharp')
+    const cls=(e,ei)=>(e.k==='hidden'||e.k==='threadH'?'mepEnt mepHidden':e.k==='thread'?'mepEnt mepThread':e.k==='tangent'?'mepEnt mepTangent':e.k==='sect'?'mepEnt mepSect':e.k==='brk'?'mepEnt mepBrk':'mepEnt mepSharp')
       +(selEnt(e,ei)?' mepSelEnt':(hovEnt(e,ei)?' mepHovEnt':''));
     g.els.forEach((e,ei)=>{
       if(e.t==='L')mk('line',{x1:+X(e.x1).toFixed(3),y1:+Y(e.y1).toFixed(3),x2:+X(e.x2).toFixed(3),y2:+Y(e.y2).toFixed(3),class:cls(e,ei)});
@@ -60023,6 +60233,12 @@ function viewFadeIn(){
     /* hachures */
     if(g.hatchG&&g.hatchG.length>1&&mepHatchCfg().parts)g.hatchG.forEach(G=>mepDrawHatch(mk,G.loops,v,mepHatchVar(G.k))); // V0.8.2 : par pièce
     else if(g.hatch&&g.hatch.length)mepDrawHatch(mk,g.hatch,v);
+    // coupes locales (V0.23.7) : hachures rognées à la forme (et au cercle d'un détail)
+    if(g.hatchLoc)g.hatchLoc.forEach(H=>{
+      const clips=[H.poly];
+      if(v.detail){const d=v.detail,c=[];for(let i=0;i<64;i++){const a=i*Math.PI/32;c.push([d.cx+d.r*Math.cos(a),d.cy+d.r*Math.sin(a)]);}clips.push(c);}
+      mepDrawHatch(mk,H.loops,v,null,clips);
+    });
     /* ligne de coupe sur le parent (ISO 128-44) : trait mixte fin, extrémités épaisses, flèches = sens du regard, lettres */
     if(v.section&&v.section.a&&v.section.pid){
       const par=mepView(sh,v.section.pid);
@@ -60362,19 +60578,29 @@ function viewFadeIn(){
     }
     return lines;
   }
-  function mepDrawHatch(mk,loops,v,cfg){
+  function mepDrawHatch(mk,loops,v,cfg,clips){
     if(!loops.length)return;
+    const clip=ln=>{ // clips : polygones locaux où garder les traits (coupe locale)
+      let segs=[[ln[0][0],ln[0][1],ln[1][0],ln[1][1]]];
+      (clips||[]).forEach(P=>{segs=[].concat(...segs.map(s=>mepClipSegPoly(s[0],s[1],s[2],s[3],P,true)));});
+      return segs.map(s=>[[s[0],s[1]],[s[2],s[3]]]);
+    };
     const H=cfg||mepHatchCfg();
     const st=H.col?(H.pat==='plein'?'fill:':'stroke:')+H.col:null;
     const P=MEP_HATCH_PATS.find(p=>p[0]===H.pat)||MEP_HATCH_PATS[0];
     if(!P[2]){ // plein : boucles remplies (pair-impair, trous inclus)
       const d=loops.map(l=>'M'+l.map(p=>(+(v.x+p[0]*v.scale).toFixed(3))+' '+(+(v.y+p[1]*v.scale).toFixed(3))).join(' L')+' Z').join(' ');
       const at={d:d,'fill-rule':'evenodd',class:'mepHatch mepHatchFill'};if(st)at.style=st;
+      if(clips&&clips.length){ // plein rogné : chemin de découpe de la forme
+        const id='mepClip'+(++mepClipSeq),cp=mk('clipPath',{id});
+        mk('path',{d:'M'+clips[0].map(p=>(+(v.x+p[0]*v.scale).toFixed(3))+' '+(+(v.y+p[1]*v.scale).toFixed(3))).join(' L')+' Z'},cp);
+        at['clip-path']='url(#'+id+')';
+      }
       mk('path',at);return;
     }
     const sp0=2.5*H.sc/v.scale; // 2,5 mm papier × échelle
     P[2].forEach(F=>{
-      mepHatchLines(loops,H.ang+F[0],sp0*F[1],F[2]).forEach(ln=>{
+      [].concat(...mepHatchLines(loops,H.ang+F[0],sp0*F[1],F[2]).map(ln=>clips?clip(ln):[ln])).forEach(ln=>{
         const at={x1:+(v.x+ln[0][0]*v.scale).toFixed(3),y1:+(v.y+ln[0][1]*v.scale).toFixed(3),
           x2:+(v.x+ln[1][0]*v.scale).toFixed(3),y2:+(v.y+ln[1][1]*v.scale).toFixed(3),class:'mepHatch'};
         if(F[3])at['stroke-dasharray']=F[3];
@@ -60383,6 +60609,7 @@ function viewFadeIn(){
       });
     });
   }
+  let mepClipSeq=0;
   function mepHatchAt(sh,px,py){
     // vue en coupe dont une zone hachurée contient le point (pair-impair sur les boucles)
     for(let k=sh.views.length-1;k>=0;k--){
@@ -63288,6 +63515,10 @@ function viewFadeIn(){
       }
       return;
     }
+    if(mepSt.vcmd&&mepSt.vcmd.kind==='local'&&mepSt.vcmd.stage===1&&(k==='Enter'||k==='Backspace')){
+      if(k==='Enter')mepLocClose();else mepLocUndo();
+      ev.preventDefault();ev.stopPropagation();return;
+    }
     if(mepSt.vcmd&&mepSt.vcmd.kind==='section'&&mepSt.vcmd.stage===1&&(k==='Enter'||k==='Backspace')){
       if(k==='Enter')mepSecValidate();else mepSecUndo();
       ev.preventDefault();ev.stopPropagation();return;
@@ -65176,6 +65407,19 @@ function viewFadeIn(){
       chkR.title='Image de la vue comme le Rendu direct : ambiance et reflets de la fenêtre RENDU, matériau de rendu de chaque pièce (clic droit sur une pièce en 3D) — arêtes par-dessus';
       if(v.render3d||v.real){const cm=mkChk('Miroir','mirror','mepChkMirror');cm.title='Reflet de la pièce sous elle-même, estompé vers le bas (sans sol ni ombre)';}
     }
+    // coupes locales (V0.23.7) : une ligne par coupe — changer l'arête du plan, supprimer
+    (v.locals||[]).forEach((l,k)=>{
+      const r=document.createElement('div');r.style.cssText='display:flex;gap:4px;align-items:center;flex:1';
+      const t=document.createElement('span');t.style.flex='1';
+      t.textContent='n° '+(k+1)+(l.lost?' ⚠':'');
+      t.title='Plan de coupe parallèle à la vue, à la profondeur de l’arête choisie'+(Number.isFinite(l.ref&&l.ref.w)?' ('+mepFmtNum(l.ref.w,2)+' mm le long de la direction de vue)':'');
+      if(l.lost)t.title='L’arête du plan n’est plus retrouvée : le dernier plan connu est gardé — « Arête… » pour en choisir une autre';
+      const b=document.createElement('button');b.textContent='Arête…';b.title='Choisir une autre arête pour placer le plan de coupe';
+      b.onclick=e=>{e.stopPropagation();mepBeginLocal(l.id);};
+      const d=document.createElement('button');d.textContent='✕';d.title='Supprimer cette coupe locale';
+      d.onclick=e=>{e.stopPropagation();mepEdit('suppression coupe locale',()=>{v.locals=v.locals.filter(q=>q!==l);if(!v.locals.length)delete v.locals;});mepRender();mepSideShow();};
+      r.appendChild(t);r.appendChild(b);r.appendChild(d);row(k?'':'Coupes locales',r);
+    });
     if(v.kind==='base'&&MEP_BASE_ORIENTS.indexOf(v.vk)>=0){
       // orientation : la vue principale peut regarder de droite, de gauche, de dessus… — les projections suivent
       const oSel=document.createElement('select');oSel.id='mepOrientSel';
@@ -65525,7 +65769,7 @@ function viewFadeIn(){
     if(has('mepAxis')||has('mepAxisCross'))return 'AXE';
     if(has('mepDimL')||has('mepDimT')||has('mepDimRef'))return 'COTES';
     if(has('mepHatch'))return 'HACHURES';
-    if(has('mepTangent'))return 'TANGENTE';
+    if(has('mepTangent')||has('mepBrk'))return 'TANGENTE';
     if(has('mepThread'))return 'FILETAGE'; // traits fins ISO 6410
     if(has('mepTitleText')||has('mepTitleVal')||has('mepRevText'))return 'CARTOUCHE';
     if(has('mepTitleBlock'))return 'CARTOUCHE';
@@ -65835,7 +66079,7 @@ function viewFadeIn(){
       holeText:mepHoleFeatureText,
       holeCallout:mepHoleCallout,
       fmt:mepFmtNum,
-      geo:view=>mepGeoOf(view),geoClear:()=>mepGeoCache.clear(),dxfView:(txt,name)=>{const r=mepDxfParse(txt);const v=mepAddView({kind:'dxf',vk:'',label:'',dxf:mepDxfData(r,name||'t',1),mode:'wire'});v._dims=mepDxfDims(mepSheet(),v,r);return v;},dimMeasure:d=>mepDimMeasure(mepSheet(),d),ptRefresh:(v,q,pr)=>mepPtRefresh(mepSheet(),v,q,pr),dimPts:d=>mepDimPtsRefresh(mepSheet(),d),ordClick:(P,ax)=>mepOrdClick(mepSheet(),P,ax),ordEnd:()=>{mepSt.ord=null;},ordPick:(d,i)=>{mepSt.selDim=d?d.id:null;mepSt.ordPt=d?{id:d.id,i}:null;},selDim:id=>{mepSt.selDim=id;},holeTolText:(t,tol)=>mepTolMarks(mepHoleTolText(t,tol)),dimText:d=>mepDimText(d,mepDimMeasure(mepSheet(),d)),ordPtAt:(d,P)=>mepOrdPtAt(mepSheet(),d,P),ordDelPt:(d,i)=>mepOrdDelPt(mepSheet(),d,i),ordValue:(d,p)=>mepOrdValue(d,p),drawDim:(mk,d)=>mepDrawDim(mk,d,mepSheet()),dimPressDbl:(P,ev)=>mepDimPressDbl(mepSheet(),P,ev||{}),dimAlignTo:(ref,ids)=>mepDimAlignTo(mepSheet(),ref,ids),perspCam:v=>mepPerspCam(v),threadEls:v=>mepThreadEls(v),oblShear:(sh,v)=>mepOblShear(sh,v),
+      geo:view=>mepGeoOf(view),geoClear:()=>mepGeoCache.clear(),locCurve:p=>mepLocCurve(p),clipSegPoly:(a,b,c,d,P,k)=>mepClipSegPoly(a,b,c,d,P,k),dxfView:(txt,name)=>{const r=mepDxfParse(txt);const v=mepAddView({kind:'dxf',vk:'',label:'',dxf:mepDxfData(r,name||'t',1),mode:'wire'});v._dims=mepDxfDims(mepSheet(),v,r);return v;},dimMeasure:d=>mepDimMeasure(mepSheet(),d),ptRefresh:(v,q,pr)=>mepPtRefresh(mepSheet(),v,q,pr),dimPts:d=>mepDimPtsRefresh(mepSheet(),d),ordClick:(P,ax)=>mepOrdClick(mepSheet(),P,ax),ordEnd:()=>{mepSt.ord=null;},ordPick:(d,i)=>{mepSt.selDim=d?d.id:null;mepSt.ordPt=d?{id:d.id,i}:null;},selDim:id=>{mepSt.selDim=id;},holeTolText:(t,tol)=>mepTolMarks(mepHoleTolText(t,tol)),dimText:d=>mepDimText(d,mepDimMeasure(mepSheet(),d)),ordPtAt:(d,P)=>mepOrdPtAt(mepSheet(),d,P),ordDelPt:(d,i)=>mepOrdDelPt(mepSheet(),d,i),ordValue:(d,p)=>mepOrdValue(d,p),drawDim:(mk,d)=>mepDrawDim(mk,d,mepSheet()),dimPressDbl:(P,ev)=>mepDimPressDbl(mepSheet(),P,ev||{}),dimAlignTo:(ref,ids)=>mepDimAlignTo(mepSheet(),ref,ids),perspCam:v=>mepPerspCam(v),threadEls:v=>mepThreadEls(v),oblShear:(sh,v)=>mepOblShear(sh,v),
       imgRect:(view,img)=>mepImg3dRect(view,img),
       shadeTri:(view,A,B,C,col,op)=>mepShadeTri(view,A,B,C,col,op),
       shadeFaces:view=>mepShadedFaces(view),
@@ -65923,6 +66167,7 @@ function viewFadeIn(){
   window.mepProjectView=(which,parent)=>{mepSetActive(true);return mepAddProjected(parent||mepView(mepSheet(),mepSt.sel),which);};
   window.mepBeginSectionCmd=()=>{mepSetActive(true);mepBeginSection();};
   window.mepBeginDetailCmd=()=>{mepSetActive(true);mepBeginDetail();};
+  window.mepBeginLocalCmd=()=>{mepSetActive(true);mepBeginLocal();};
   // auto-init une fois le DOM prêt
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{try{mepInit();}catch(e){}});
   else try{mepInit();}catch(e){}

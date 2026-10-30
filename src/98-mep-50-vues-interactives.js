@@ -37,6 +37,12 @@
     view.x=at.lockX!=null?at.lockX:at.x-cx*view.scale;
     view.y=at.lockY!=null?at.lockY:at.y-cy*view.scale;
   }
+  function mepBeginLocal(locId){ // locId : changer l'arête d'une coupe locale existante (vue sélectionnée)
+    mepVcmdStart('local');
+    const c=mepSt.vcmd,v=mepSt.sel?mepView(mepSheet(),mepSt.sel):null;
+    if(locId&&v){c.par=v.id;c.loc=locId;c.pts=[];c.stage=2;mepVcmdHint();mepRender();}
+    else{c.par=null;c.pts=[];}
+  }
   function mepVcmdStart(kind){
     const sh=mepSheet();
     mepSetTool('select');
@@ -51,7 +57,9 @@
       proj:['Projection : cliquez la vue mère.','Projection : déplacez la souris autour de la vue (droite/gauche/dessus/dessous, diagonale = ISO) et cliquez. Échap termine.'],
       section:['Coupe : cliquez le 1er point de la ligne de coupe sur une vue.','Coupe : cliquez le point suivant (Maj = sans alignement H/V) — ✓ / Entrée valide la ligne, ↶ / Retour arrière enlève le dernier point.','Coupe : placez la vue — le côté de la souris donne le sens du regard. Échap annule.'],
       detail:['Détail : cliquez le centre de la zone à agrandir.','Détail : cliquez pour fixer le rayon.','Détail : placez la vue de détail.'],
-      aux:['Auxiliaire : cliquez une arête inclinée d’une vue.','Auxiliaire : placez la vue de part ou d’autre de l’arête. Échap annule.']
+      aux:['Auxiliaire : cliquez une arête inclinée d’une vue.','Auxiliaire : placez la vue de part ou d’autre de l’arête. Échap annule.'],
+      local:['Coupe locale : cliquez dans une vue le 1er point de la forme.','Coupe locale : points suivants de la forme — cliquez le 1er point ou Entrée pour la fermer (3 points au moins), Retour arrière enlève le dernier.',
+        'Coupe locale : cliquez l’arête de la vue qui place le plan de coupe (parallèle à la vue, à la profondeur de l’arête). Échap annule.']
     };
     mepStatus((m[c.kind]||[])[c.stage]||'');
   }
@@ -126,6 +134,15 @@
   }
   function mepVcmdDraw(mk){
     const c=mepSt.vcmd;if(!c||!c.cur)return;
+    if(c.kind==='local'){ // forme de la coupe locale : points, courbe lisse fermée
+      const par=c.par?mepView(mepSheet(),c.par):null;if(!par||!c.pts||!c.pts.length)return;
+      const P=c.pts.map(q=>mepToSheet(par,q[0],q[1])),z=mepSt.zoom||1;
+      const open=c.stage===1?P.concat([c.cur]):P;
+      const cl=open.length>=3?mepLocCurve(open.map(p=>[p.x,p.y])):open.map(p=>[p.x,p.y]);
+      mk('path',{d:'M'+cl.map(p=>p[0].toFixed(3)+' '+p[1].toFixed(3)).join(' L')+(open.length>=3?' Z':''),class:'mepVcLine',fill:'rgba(10,132,255,.06)'},mepGHlp);
+      P.forEach((p,i)=>mk('circle',{cx:p.x,cy:p.y,r:(i===0&&c.stage===1&&P.length>=3?2.2:1.2)/z,class:'mepVcSnap'},mepGHlp));
+      return;
+    }
     const sh=mepSheet(),G=mepVcmdGeom(sh,c.cur,c.shift);
     const par=c.par?mepView(sh,c.par):null;
     if(par){const bb=mepViewSheetBBox(par);if(bb)mk('rect',{x:bb.x-4,y:bb.y-4,width:bb.w+8,height:bb.h+8,class:'mepVBSel'},mepGHlp);}
@@ -163,6 +180,10 @@
     if(c.kind==='aux'&&c.stage===0){
       const hit=mepHitViewEnt(sh,P.x,P.y);
       mepSt.hovEnt=hit&&hit.e.t==='L'?{vid:hit.vid,i:hit.i,sig:mepEntSig(hit.e)}:null;
+    }
+    if(c.kind==='local'&&c.stage===2){ // arête du plan : seulement dans la vue de la coupe
+      const hit=mepHitViewEnt(sh,P.x,P.y);
+      mepSt.hovEnt=hit&&hit.vid===c.par&&Number.isFinite(hit.e.w)?{vid:hit.vid,i:hit.i,sig:mepEntSig(hit.e)}:null;
     }
     mepRender();
   }
@@ -206,9 +227,50 @@
     if(c.pts.length%2){mepStatus('Coupe : la ligne doit finir par un tronçon parallèle au 1er — ajoutez un point (ou ↶).');return true;}
     c.A=c.pts[0];c.B=c.pts[1];c.stage=2;mepVcmdHint();mepRender();return true;
   }
+  function mepLocUndo(){
+    const c=mepSt.vcmd;if(!c||c.kind!=='local'||c.stage!==1)return false;
+    c.pts.pop();if(!c.pts.length){c.stage=0;c.par=null;}
+    mepVcmdHint();mepRender();return true;
+  }
+  function mepLocClose(){
+    const c=mepSt.vcmd;if(!c||c.kind!=='local'||c.stage!==1)return false;
+    if(c.pts.length<3){mepStatus('Coupe locale : il faut au moins 3 points.');return true;}
+    c.stage=2;mepVcmdHint();mepRender();return true;
+  }
+  function mepLocalAdd(par,pts,e,P,id){
+    // e : entité choisie (porte sa profondeur w) ; id : coupe existante dont on change l'arête
+    const ref={x:P.x,y:P.y,s:mepIdxSnap(e),w:e.w};
+    mepEdit(id?'arête de la coupe locale':'coupe locale',()=>{
+      if(id){const l=(par.locals||[]).find(q=>q.id===id);if(l){l.ref=ref;l.id=mepUid('loc');}}
+      else par.locals=(par.locals||[]).concat([{id:mepUid('loc'),pts:pts.map(p=>[+p[0].toFixed(3),+p[1].toFixed(3)]),ref}]);
+    });
+    mepSt.sel=par.id;mepSt.hovEnt=null;
+    mepStatus('Coupe locale '+(id?'replacée':'créée')+' : plan à la profondeur de l’arête choisie — il la suit quand la pièce change.');
+    mepRender();try{mepSideShow();}catch(e2){}
+  }
   function mepVcmdDown(sh,P,ev){
     const c=mepSt.vcmd;c.cur={x:P.x,y:P.y};
     const parOf=()=>c.par?mepView(sh,c.par):null;
+    if(c.kind==='local'){
+      if(c.stage===0){
+        const v=mepViewAt(sh,P.x,P.y);if(!v){mepStatus('Coupe locale : cliquez dans une vue.');return;}
+        if(v.section||v.kind==='detail'||v.kind==='dxf'||mepOblOf(v)||mepPerspOf(v)){mepStatus('Coupe locale : choisissez une vue orthogonale complète (pas une coupe, un détail, une vue DXF, oblique ou en perspective).');return;}
+        const q=mepFromSheet(v,P.x,P.y);c.par=v.id;c.pts=[[q.x,q.y]];c.stage=1;mepSt.sel=v.id;mepVcmdHint();mepRender();return;
+      }
+      const par=parOf();if(!par)return mepVcmdCancel();
+      if(c.stage===1){
+        const f=mepToSheet(par,c.pts[0][0],c.pts[0][1]),z=mepSt.zoom||1;
+        if(c.pts.length>=3&&Math.hypot(P.x-f.x,P.y-f.y)<3/z){mepLocClose();return;}
+        const q=mepFromSheet(par,P.x,P.y),l=c.pts[c.pts.length-1],lp=mepToSheet(par,l[0],l[1]);
+        if(Math.hypot(P.x-lp.x,P.y-lp.y)<0.5)return; // double clic : même point
+        c.pts.push([q.x,q.y]);mepRender();return;
+      }
+      const hit=mepHitViewEnt(sh,P.x,P.y);
+      if(!hit||hit.vid!==par.id||!Number.isFinite(hit.e.w)){mepStatus('Coupe locale : cliquez une arête de la pièce dans cette vue (projetée par le noyau exact).');return;}
+      mepSt.vcmd=null;
+      mepLocalAdd(par,c.pts||[],hit.e,{x:hit.lx,y:hit.ly},c.loc||null);
+      return;
+    }
     if(c.kind==='proj'){
       if(c.stage===0){const v=mepViewAt(sh,P.x,P.y);if(!v){mepStatus('Projection : cliquez sur une vue.');return;}
         c.par=v.id;c.stage=1;mepSt.sel=v.id;mepVcmdHint();mepRender();return;}

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**464 versions**, de `2026-09-28b` à `V0.23.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**465 versions**, de `2026-09-28b` à `V0.23.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5776,3 +5776,11 @@ Demandes : « Il faudrait pouvoir changer la hauteur de la cotation », « dans 
 Demande : « Il faudrait les traits pointillés moins longs, un peu plus resserrés ».
 - **Pointillé des arêtes cachées** : tirets de 2 mm espacés de 1,2 mm (au lieu de 3,5 / 2,5) — vues (`.mepHidden`), type de trait « caché » des esquisses de planche (`.mepLtHid`) et type DASHED de l'export DXF. Les traits d'axe (mixtes) ne changent pas.
 - **Tests** : `npm run ci`.
+
+## V0.23.7 - Plan : coupe locale (forme libre + arête du plan)
+Demande : « Il me manque une coupe locale. L'idée est de choisir une vue, de dessiner une "patate" ou forme libre fermée en plusieurs points puis de choisir une arête dans la vue qui définira le plan de coupe. Simple et efficace et surtout, si l'arête change, alors le plan change ! »
+- **Outil « Coupe locale »** (ruban PLAN → Vues ; `mepBeginLocal`, `src/98-mep-50`) : clic dans une vue orthogonale, points de la forme (courbe lisse fermée, `mepLocCurve`), fermeture en recliquant le 1er point ou Entrée (Retour arrière enlève le dernier), puis clic sur l'arête de la vue qui place le plan. Échap annule.
+- **Plan** : parallèle à la vue, à la profondeur de l'arête choisie. Le HLR exact pose maintenant la profondeur de chaque trait projeté (`e.w`, `mepHlrAddEdge`). La matière côté observateur est ôtée (`mepCutHalfSpace`) ; dans la forme : arêtes de la pièce coupée et hachures de la face coupée (rognées à la forme, `mepDrawHatch`) ; hors de la forme : la vue entière. Limite : trait fin continu, tracé seulement sur la matière (rayons sur la pièce, `mepLocBorder`) ; calque TANGENTE en DXF.
+- **Le plan suit l'arête** (`mepLocEnt`) : à chaque reconstruction, l'arête est retrouvée sur la vue entière (même forme 2D, à égalité la profondeur la plus proche) et sa profondeur déplace le plan. Arête introuvable : dernier plan gardé, ⚠ dans les propriétés.
+- **Propriétés de la vue** : « Coupes locales » — n°, « Arête… » (choisir une autre arête), ✕ (supprimer) ; annulable (Ctrl+Z). Un détail pris sur la vue montre aussi la coupe locale.
+- **Tests** : `test_mep_coupe_locale` (pavé percé : profondeur des traits, trou vu dans la forme et caché hors forme, hachures, limite ; trou déplacé de Y 20 à Y 30 → plan à Y 30 ; forme et rognage) ; `npm run ci`. Vérifié dans le navigateur (Support Pédale) : outil complet à la souris, suppression et annulation.

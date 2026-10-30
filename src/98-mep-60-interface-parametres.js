@@ -364,7 +364,7 @@
       ||(mepSt.intPick&&mepSt.intPick.vid===v.id&&mepSt.intPick.i===ei); // 1ʳᵉ entité d'une intersection
     const hovEnt=(e,ei)=>mepSt.hovEnt&&mepSt.hovEnt.vid===v.id&&mepSt.hovEnt.i===ei
       &&(!mepSt.hovEnt.sig||mepSt.hovEnt.sig===mepEntSig(e));
-    const cls=(e,ei)=>(e.k==='hidden'||e.k==='threadH'?'mepEnt mepHidden':e.k==='thread'?'mepEnt mepThread':e.k==='tangent'?'mepEnt mepTangent':e.k==='sect'?'mepEnt mepSect':'mepEnt mepSharp')
+    const cls=(e,ei)=>(e.k==='hidden'||e.k==='threadH'?'mepEnt mepHidden':e.k==='thread'?'mepEnt mepThread':e.k==='tangent'?'mepEnt mepTangent':e.k==='sect'?'mepEnt mepSect':e.k==='brk'?'mepEnt mepBrk':'mepEnt mepSharp')
       +(selEnt(e,ei)?' mepSelEnt':(hovEnt(e,ei)?' mepHovEnt':''));
     g.els.forEach((e,ei)=>{
       if(e.t==='L')mk('line',{x1:+X(e.x1).toFixed(3),y1:+Y(e.y1).toFixed(3),x2:+X(e.x2).toFixed(3),y2:+Y(e.y2).toFixed(3),class:cls(e,ei)});
@@ -384,6 +384,12 @@
     /* hachures */
     if(g.hatchG&&g.hatchG.length>1&&mepHatchCfg().parts)g.hatchG.forEach(G=>mepDrawHatch(mk,G.loops,v,mepHatchVar(G.k))); // V0.8.2 : par pièce
     else if(g.hatch&&g.hatch.length)mepDrawHatch(mk,g.hatch,v);
+    // coupes locales (V0.23.7) : hachures rognées à la forme (et au cercle d'un détail)
+    if(g.hatchLoc)g.hatchLoc.forEach(H=>{
+      const clips=[H.poly];
+      if(v.detail){const d=v.detail,c=[];for(let i=0;i<64;i++){const a=i*Math.PI/32;c.push([d.cx+d.r*Math.cos(a),d.cy+d.r*Math.sin(a)]);}clips.push(c);}
+      mepDrawHatch(mk,H.loops,v,null,clips);
+    });
     /* ligne de coupe sur le parent (ISO 128-44) : trait mixte fin, extrémités épaisses, flèches = sens du regard, lettres */
     if(v.section&&v.section.a&&v.section.pid){
       const par=mepView(sh,v.section.pid);
@@ -723,19 +729,29 @@
     }
     return lines;
   }
-  function mepDrawHatch(mk,loops,v,cfg){
+  function mepDrawHatch(mk,loops,v,cfg,clips){
     if(!loops.length)return;
+    const clip=ln=>{ // clips : polygones locaux où garder les traits (coupe locale)
+      let segs=[[ln[0][0],ln[0][1],ln[1][0],ln[1][1]]];
+      (clips||[]).forEach(P=>{segs=[].concat(...segs.map(s=>mepClipSegPoly(s[0],s[1],s[2],s[3],P,true)));});
+      return segs.map(s=>[[s[0],s[1]],[s[2],s[3]]]);
+    };
     const H=cfg||mepHatchCfg();
     const st=H.col?(H.pat==='plein'?'fill:':'stroke:')+H.col:null;
     const P=MEP_HATCH_PATS.find(p=>p[0]===H.pat)||MEP_HATCH_PATS[0];
     if(!P[2]){ // plein : boucles remplies (pair-impair, trous inclus)
       const d=loops.map(l=>'M'+l.map(p=>(+(v.x+p[0]*v.scale).toFixed(3))+' '+(+(v.y+p[1]*v.scale).toFixed(3))).join(' L')+' Z').join(' ');
       const at={d:d,'fill-rule':'evenodd',class:'mepHatch mepHatchFill'};if(st)at.style=st;
+      if(clips&&clips.length){ // plein rogné : chemin de découpe de la forme
+        const id='mepClip'+(++mepClipSeq),cp=mk('clipPath',{id});
+        mk('path',{d:'M'+clips[0].map(p=>(+(v.x+p[0]*v.scale).toFixed(3))+' '+(+(v.y+p[1]*v.scale).toFixed(3))).join(' L')+' Z'},cp);
+        at['clip-path']='url(#'+id+')';
+      }
       mk('path',at);return;
     }
     const sp0=2.5*H.sc/v.scale; // 2,5 mm papier × échelle
     P[2].forEach(F=>{
-      mepHatchLines(loops,H.ang+F[0],sp0*F[1],F[2]).forEach(ln=>{
+      [].concat(...mepHatchLines(loops,H.ang+F[0],sp0*F[1],F[2]).map(ln=>clips?clip(ln):[ln])).forEach(ln=>{
         const at={x1:+(v.x+ln[0][0]*v.scale).toFixed(3),y1:+(v.y+ln[0][1]*v.scale).toFixed(3),
           x2:+(v.x+ln[1][0]*v.scale).toFixed(3),y2:+(v.y+ln[1][1]*v.scale).toFixed(3),class:'mepHatch'};
         if(F[3])at['stroke-dasharray']=F[3];
@@ -744,6 +760,7 @@
       });
     });
   }
+  let mepClipSeq=0;
   function mepHatchAt(sh,px,py){
     // vue en coupe dont une zone hachurée contient le point (pair-impair sur les boucles)
     for(let k=sh.views.length-1;k>=0;k--){

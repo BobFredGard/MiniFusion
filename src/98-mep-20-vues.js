@@ -407,6 +407,144 @@
     return loops.filter(l=>l.length>3);
   }
   /* détail : rogne la géométrie d'une vue au cercle (coords locales) */
+  /* ═══════════════ coupes locales (V0.23.7) ═══════════════
+     « choisir une vue, dessiner une patate (forme libre fermée), puis choisir une arête de la vue
+     qui définit le plan de coupe ; si l'arête change, le plan change ».
+     v.locals = [{id, pts:[[x,y]…] (points de la forme, coordonnées locales de la vue),
+                  ref:{x,y, s:forme 2D de l'entité choisie, w:sa profondeur}}].
+     Plan : parallèle au plan de la vue, à la profondeur de l'arête (e.w, posée par le HLR exact) ;
+     la matière côté observateur est ôtée DANS la forme : hors de la forme la vue reste entière,
+     dedans on voit la coupe (arêtes du HLR de la pièce coupée + hachures), bordée d'un trait fin
+     continu (ISO 128 : limite de coupe partielle). L'arête est retrouvée à chaque reconstruction
+     sur la vue ENTIÈRE (même forme 2D, profondeur la plus proche) : sa nouvelle profondeur
+     déplace le plan. */
+  function mepLocalSig(v){
+    const sh=v&&v.kind==='detail'&&v.parent?mepView(mepSheet(),v.parent):v,L=sh&&sh.locals;
+    return L&&L.length?'loc:'+L.map(l=>l.id+':'+(l.pts||[]).map(p=>p[0].toFixed(2)+','+p[1].toFixed(2)).join(' ')).join(';'):'';
+  }
+  function mepLocCurve(pts,n){ // forme lisse fermée (Catmull-Rom) par les points cliqués
+    const N=pts.length,out=[];if(N<3)return pts.map(p=>p.slice());
+    n=n||12;
+    for(let i=0;i<N;i++){
+      const p0=pts[(i-1+N)%N],p1=pts[i],p2=pts[(i+1)%N],p3=pts[(i+2)%N];
+      for(let k=0;k<n;k++){const t=k/n,t2=t*t,t3=t2*t;
+        out.push([0,1].map(j=>0.5*(2*p1[j]+(p2[j]-p0[j])*t+(2*p0[j]-5*p1[j]+4*p2[j]-p3[j])*t2+(3*p1[j]-p0[j]-3*p2[j]+p3[j])*t3)));}
+    }
+    return out;
+  }
+  function mepPip(x,y,poly){
+    let c=false;
+    for(let i=0,j=poly.length-1;i<poly.length;j=i++){const a=poly[i],b=poly[j];
+      if((a[1]>y)!==(b[1]>y)&&x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0])c=!c;}
+    return c;
+  }
+  function mepClipSegPoly(x1,y1,x2,y2,poly,keepIn){
+    // morceaux du segment dedans (keepIn) ou dehors du polygone
+    const dx=x2-x1,dy=y2-y1,ts=[0,1];
+    for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+      const a=poly[j],ex=poly[i][0]-a[0],ey=poly[i][1]-a[1],den=dx*ey-dy*ex;
+      if(Math.abs(den)<1e-12)continue;
+      const t=((a[0]-x1)*ey-(a[1]-y1)*ex)/den,s=((a[0]-x1)*dy-(a[1]-y1)*dx)/den;
+      if(t>0&&t<1&&s>=0&&s<=1)ts.push(t);
+    }
+    ts.sort((a,b)=>a-b);
+    const out=[];
+    for(let k=0;k+1<ts.length;k++){
+      const t0=ts[k],t1=ts[k+1];if(t1-t0<1e-9)continue;
+      const m=(t0+t1)/2;if(mepPip(x1+dx*m,y1+dy*m,poly)!==keepIn)continue;
+      const L=out[out.length-1];
+      if(L&&Math.abs(L[4]-t0)<1e-9){L[2]=x1+dx*t1;L[3]=y1+dy*t1;L[4]=t1;}
+      else out.push([x1+dx*t0,y1+dy*t0,x1+dx*t1,y1+dy*t1,t1]);
+    }
+    return out;
+  }
+  function mepClipPoly(els,poly,keepIn){
+    const out=[];
+    const segs=(e,pts)=>{for(let i=0;i+1<pts.length;i++)mepClipSegPoly(pts[i][0],pts[i][1],pts[i+1][0],pts[i+1][1],poly,keepIn)
+      .forEach(s=>out.push({t:'L',x1:s[0],y1:s[1],x2:s[2],y2:s[3],k:e.k,w:e.w}));};
+    els.forEach(e=>{
+      if(e.t==='L')segs(e,[[e.x1,e.y1],[e.x2,e.y2]]);
+      else if(e.t==='C'||e.t==='A'){
+        const a0=e.t==='C'?0:e.a0,a1=e.t==='C'?2*Math.PI:e.a1,N=Math.max(24,Math.ceil(Math.abs(a1-a0)*e.r/0.4));
+        const pts=[];for(let i=0;i<=N;i++){const a=a0+(a1-a0)*i/N;pts.push([e.cx+e.r*Math.cos(a),e.cy+e.r*Math.sin(a)]);}
+        const ins=pts.map(p=>mepPip(p[0],p[1],poly));
+        if(ins.every(x=>x===keepIn)&&!poly.some(q=>Math.abs(Math.hypot(q[0]-e.cx,q[1]-e.cy)-e.r)<1e-6))out.push(e);
+        else if(ins.some(x=>x===keepIn))segs(e,pts);
+      }else if(e.t==='P'&&e.pts)segs(e,e.pts);
+      else out.push(e);
+    });
+    return out;
+  }
+  function mepLocEnt(els,ref){
+    // entité de la vue entière qui porte le plan : même forme 2D, à défaut la plus proche ; à égalité
+    // (arêtes superposées à l'avant et à l'arrière), la profondeur la plus proche de la dernière connue
+    const s=ref&&ref.s;if(!s)return null;
+    let best=null,bc=Infinity,lim=3;
+    els.forEach(e=>{
+      if(!Number.isFinite(e.w))return;
+      let c;
+      if(s.t==='L'&&e.t==='L'){
+        const dx=s.x2-s.x1,dy=s.y2-s.y1,len=Math.hypot(dx,dy);if(!(len>1e-9))return;
+        const ux=dx/len,uy=dy/len,ex=e.x2-e.x1,ey=e.y2-e.y1,el=Math.hypot(ex,ey);if(!(el>1e-9))return;
+        if(Math.abs(ux*ey/el-uy*ex/el)>0.035)return;
+        const cx=(e.x1+e.x2-s.x1-s.x2)/2,cy=(e.y1+e.y2-s.y1-s.y2)/2;
+        c=Math.abs(cx*uy-cy*ux)+0.5*Math.abs(cx*ux+cy*uy)+0.5*Math.abs(el-len);lim=Math.max(3,0.6*len);
+      }else if((s.t==='C'||s.t==='A')&&(e.t==='C'||e.t==='A')){
+        c=Math.hypot(e.cx-s.cx,e.cy-s.cy)+2*Math.abs(e.r-s.r);lim=Math.max(3,s.r);
+      }else return;
+      c+=0.01*Math.abs(e.w-(Number.isFinite(ref.w)?ref.w:e.w));
+      if(c<bc){bc=c;best=e;}
+    });
+    return bc<=lim+0.5?best:null;
+  }
+  function mepLocBorder(view,poly){
+    // limite de la forme : seulement là où il y a de la matière (rayon le long de la vue) — dans
+    // le vide autour de la pièce, rien n'est tracé ; morceaux affinés par dichotomie
+    const meshes=mepMeshesOf(view).map(b=>b.mesh).filter(Boolean);
+    const closed=poly.concat([poly[0]]);
+    if(!meshes.length||typeof THREE==='undefined')return[closed];
+    const d=mepNorm(view.dir),u=view.u,vv=view.v,rc=new THREE.Raycaster(),dn=new THREE.Vector3(-d[0],-d[1],-d[2]);
+    meshes.forEach(m=>{try{m.updateMatrixWorld(true);}catch(e){}});
+    const on=p=>{const o=[u[0]*p[0]+vv[0]*p[1]+d[0]*5000,u[1]*p[0]+vv[1]*p[1]+d[1]*5000,u[2]*p[0]+vv[2]*p[1]+d[2]*5000];
+      rc.set(new THREE.Vector3(o[0],o[1],o[2]),dn);rc.far=10000;try{return rc.intersectObjects(meshes,false).length>0;}catch(e){return true;}};
+    const mid=(a,b)=>[(a[0]+b[0])/2,(a[1]+b[1])/2];
+    const edge=(a,b,ia)=>{let p=a,q=b;for(let k=0;k<8;k++){const m=mid(p,q);if(on(m)===ia)p=m;else q=m;}return p;}; // dernier point du même état que a
+    const ins=closed.map(on),runs=[];let run=null;
+    for(let i=0;i<closed.length;i++){
+      if(ins[i]){
+        if(!run){run=[];if(i>0)run.push(edge(closed[i],closed[i-1],true));}
+        run.push(closed[i]);
+      }else if(run){run.push(edge(closed[i-1],closed[i],true));runs.push(run);run=null;}
+    }
+    if(run){if(runs.length&&ins[0]&&ins[closed.length-1]&&runs[0][0]===closed[0])runs[0]=run.concat(runs[0].slice(1));else runs.push(run);}
+    return runs.filter(r=>r.length>1);
+  }
+  function mepLocalApply(geo,view,shapes,locals){
+    const dir=mepNorm(view.dir),full=geo.els;
+    let els=full;
+    geo.hatchLoc=[];
+    locals.forEach(loc=>{
+      if(!loc||!loc.pts||loc.pts.length<3)return;
+      const poly=mepLocCurve(loc.pts);
+      const e=mepLocEnt(full,loc.ref);
+      if(e&&loc.ref){loc.ref.s=mepIdxSnap(e);loc.ref.w=e.w;loc.lost=false;}
+      else if(loc.ref)loc.lost=true; // arête introuvable : dernier plan connu
+      const w=loc.ref&&loc.ref.w;if(!Number.isFinite(w))return;
+      const p0=[dir[0]*w,dir[1]*w,dir[2]*w];
+      const cut=[];shapes.forEach(sh=>{const c=mepCutHalfSpace(sh,p0,dir);if(c)cut.push(c);});
+      if(!cut.length)return;
+      try{
+        const g2={els:[],hatch:[]};
+        if(!mepHlrExact(g2,view,cut,new Set()))return;
+        g2.els=mepMergeCollinear(g2.els);
+        els=mepClipPoly(els,poly,false).concat(mepClipPoly(g2.els,poly,true));
+        let loops=[];try{loops=mepHatchLoops(cut,view,p0,dir);}catch(e2){}
+        if(loops.length)geo.hatchLoc.push({loops,poly});
+        mepLocBorder(view,poly).forEach(run=>els.push({t:'P',pts:run,k:'brk'})); // limite de la coupe : trait fin continu, sur la matière
+      }finally{cut.forEach(c=>{try{c.delete();}catch(e2){}});}
+    });
+    geo.fullEls=full;geo.els=els;
+  }
   function mepClipDetail(els,det){
     const{cx,cy,r}=det,out=[];
     const inC=(x,y)=>Math.hypot(x-cx,y-cy)<=r-0.01;

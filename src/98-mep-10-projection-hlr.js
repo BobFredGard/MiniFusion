@@ -4,7 +4,7 @@
   function mepViewSig(v){
     let s=[v.kind==='dxf'?'dxf:'+((v.dxf&&v.dxf.rev)||0):'',mepRound(v.dir),mepRound(v.u),mepRound(v.v),v.bodyId||'',v.mode||'hide',v.tangent?1:0,
       v.hlrExact===false?'soft':'exact',v.shade?1:0,(v.render3d||v.real)?(v.mirror?'1m':1):0,v.real?'real':'',
-      v.section?mepRound(v.section.p)+mepRound(v.section.n)+(v.section.pts?JSON.stringify(v.section.pts):''):'',v.detail?v.detail.cx+','+v.detail.cy+','+v.detail.r:'',mepOblOf(v)?'obl:'+mepOblOf(v).a+','+mepOblOf(v).k:'',mepPerspOf(v)?'persp:'+mepPerspOf(v).fov:'',v.asm?'asm:'+asmPlanSig():''].join('|');
+      v.section?mepRound(v.section.p)+mepRound(v.section.n)+(v.section.pts?JSON.stringify(v.section.pts):''):'',v.detail?v.detail.cx+','+v.detail.cy+','+v.detail.r:'',mepOblOf(v)?'obl:'+mepOblOf(v).a+','+mepOblOf(v).k:'',mepPerspOf(v)?'persp:'+mepPerspOf(v).fov:'',v.asm?'asm:'+asmPlanSig():'',mepLocalSig(v)].join('|');
     /* l'ombrage et le rendu 3D dépendent de la couleur/opacité des corps :
        ces réglages ne changent pas _docVersion, donc on les met dans la clé
        de cache. Le thème influe aussi sur l'environnement du rendu 3D. */
@@ -845,6 +845,7 @@
             const pts=occCurvePts(ad,u0,u1,0.02,400);
             if(pts&&pts.length>1){
               const lp=pts.map(p=>[mepDot(p,view.u),mepDot(p,view.v)]);
+              const wp=pts.map(p=>mepDot(p,view.dir)); // profondeur (vers l'observateur) : plan d'une coupe locale (V0.23.7)
               const cir=mepFitCircle(lp);
               if(cir){
                 const kc='C'+Math.round(cir.cx*100)+','+Math.round(cir.cy*100)+','+Math.round(cir.r*100);
@@ -852,7 +853,8 @@
                 const kk=cir.full?kc:ka;
                 if(!added.has(kk)){
                   added.add(kk);
-                  geo.els.push(cir.full?{t:'C',cx:cir.cx,cy:cir.cy,r:cir.r,k:kind}:{t:'A',cx:cir.cx,cy:cir.cy,r:cir.r,a0:cir.a0,a1:cir.a1,k:kind});
+                  const w=wp.reduce((s,x)=>s+x,0)/wp.length;
+                  geo.els.push(cir.full?{t:'C',cx:cir.cx,cy:cir.cy,r:cir.r,k:kind,w}:{t:'A',cx:cir.cx,cy:cir.cy,r:cir.r,a0:cir.a0,a1:cir.a1,k:kind,w});
                   n++;
                 }
               }else{
@@ -864,7 +866,7 @@
                   const k2=Math.round(B[0]*100)+','+Math.round(B[1]*100)+','+Math.round(A[0]*100)+','+Math.round(A[1]*100);
                   if(added.has(k)||added.has(k2))continue;
                   added.add(k);
-                  geo.els.push({t:'L',x1:A[0],y1:A[1],x2:B[0],y2:B[1],k:kind});
+                  geo.els.push({t:'L',x1:A[0],y1:A[1],x2:B[0],y2:B[1],k:kind,w:(wp[i]+wp[i+1])/2});
                   n++;
                 }
               }
@@ -1026,6 +1028,11 @@
           if(L.length){geo.hatchG.push({k:i,loops:L});geo.hatch=geo.hatch.concat(L);}}catch(e){}});
       }else{try{geo.hatch=mepHatchLoops(cutShapes,view,P0,view.section.n);}catch(e){}}
       if(st)geo.els=mepDropStepEdges(geo.els,view,st);
+    }
+    // coupes locales (V0.23.7) : celles de la vue, ou de sa mère pour un détail — avant le rognage du détail
+    if(!view.section&&cutShapes.length&&/^OCCT/.test(geo.src||'')&&!mepOblOf(view)&&!mepPerspOf(view)){
+      const lv=view.detail&&view.parent?mepView(mepSheet(),view.parent):view,L=lv&&lv.locals;
+      if(L&&L.length)try{mepLocalApply(geo,view,cutShapes,L);}catch(e){try{console.warn('mep coupe locale',e);}catch(e2){}}
     }
     if(view.detail&&view.parent){
       const par=mepView(mepSheet(),view.parent);

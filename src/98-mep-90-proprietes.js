@@ -576,6 +576,19 @@
       chkR.title='Image de la vue comme le Rendu direct : ambiance et reflets de la fenêtre RENDU, matériau de rendu de chaque pièce (clic droit sur une pièce en 3D) — arêtes par-dessus';
       if(v.render3d||v.real){const cm=mkChk('Miroir','mirror','mepChkMirror');cm.title='Reflet de la pièce sous elle-même, estompé vers le bas (sans sol ni ombre)';}
     }
+    // coupes locales (V0.23.7) : une ligne par coupe — changer l'arête du plan, supprimer
+    (v.locals||[]).forEach((l,k)=>{
+      const r=document.createElement('div');r.style.cssText='display:flex;gap:4px;align-items:center;flex:1';
+      const t=document.createElement('span');t.style.flex='1';
+      t.textContent='n° '+(k+1)+(l.lost?' ⚠':'');
+      t.title='Plan de coupe parallèle à la vue, à la profondeur de l’arête choisie'+(Number.isFinite(l.ref&&l.ref.w)?' ('+mepFmtNum(l.ref.w,2)+' mm le long de la direction de vue)':'');
+      if(l.lost)t.title='L’arête du plan n’est plus retrouvée : le dernier plan connu est gardé — « Arête… » pour en choisir une autre';
+      const b=document.createElement('button');b.textContent='Arête…';b.title='Choisir une autre arête pour placer le plan de coupe';
+      b.onclick=e=>{e.stopPropagation();mepBeginLocal(l.id);};
+      const d=document.createElement('button');d.textContent='✕';d.title='Supprimer cette coupe locale';
+      d.onclick=e=>{e.stopPropagation();mepEdit('suppression coupe locale',()=>{v.locals=v.locals.filter(q=>q!==l);if(!v.locals.length)delete v.locals;});mepRender();mepSideShow();};
+      r.appendChild(t);r.appendChild(b);r.appendChild(d);row(k?'':'Coupes locales',r);
+    });
     if(v.kind==='base'&&MEP_BASE_ORIENTS.indexOf(v.vk)>=0){
       // orientation : la vue principale peut regarder de droite, de gauche, de dessus… — les projections suivent
       const oSel=document.createElement('select');oSel.id='mepOrientSel';

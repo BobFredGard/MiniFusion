@@ -58,6 +58,7 @@
     .mepFace{shape-rendering:geometricPrecision;stroke-linejoin:round}
     .mepSharp{stroke:var(--mepInk,#151515);stroke-width:var(--mepLwThick,.72)}
     .mepTangent{stroke:var(--mepInk2,#7a8088);stroke-width:var(--mepLwThin,.42);stroke-opacity:.92}
+    .mepBrk{stroke:var(--mepInk,#151515);stroke-width:var(--mepLwThin,.42);fill:none;stroke-linejoin:round} /* limite de coupe locale (trait fin continu) */
     .mepHidden{stroke:var(--mepHid,#59606a);stroke-width:var(--mepLwHid,.42);stroke-dasharray:2 1.2;stroke-linecap:butt}
     .mepSect{stroke:var(--mepInk,#151515);stroke-width:calc(var(--mepLwThick,.72) * 1.22)}
     .mepThread{fill:none;stroke:var(--mepThreadCol,#a4a9b0);stroke-width:calc(var(--mepLwThin,.42) * 0.7)} /* fond de filet ISO 6410 : gris clair, plus fin */

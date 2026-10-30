@@ -1020,6 +1020,10 @@
       }
       return;
     }
+    if(mepSt.vcmd&&mepSt.vcmd.kind==='local'&&mepSt.vcmd.stage===1&&(k==='Enter'||k==='Backspace')){
+      if(k==='Enter')mepLocClose();else mepLocUndo();
+      ev.preventDefault();ev.stopPropagation();return;
+    }
     if(mepSt.vcmd&&mepSt.vcmd.kind==='section'&&mepSt.vcmd.stage===1&&(k==='Enter'||k==='Backspace')){
       if(k==='Enter')mepSecValidate();else mepSecUndo();
       ev.preventDefault();ev.stopPropagation();return;

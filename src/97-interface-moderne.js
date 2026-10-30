@@ -312,6 +312,7 @@ const MF_IC={
   pViewIso:'<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/>',
   pViewAux:'<path d="M3 21V11h6l4 4v6z"/><path d="M14 10l4.5-4.5 3 3L17 13z" stroke-dasharray="2 1.6"/><path d="M10.5 12.5l3-3"/>',
   pViewSection:'<path d="M3 6.5h18" stroke-dasharray="5 1.5 1 1.5"/><path d="M3 4v5M21 4v5" stroke-width="2.4"/><rect x="5" y="11" width="14" height="9" rx="1"/><path d="M7 20l7-9M11 20l7-9M15 20l4-5"/>',
+  pViewLocal:'<path d="M4 4h16v16H4z"/><path d="M9 8c3-2 7-1 8 2s-1 7-4 7-6-1-6-4 0-4 2-5z" stroke-dasharray="0"/><path d="M9 12l3-3M9 15l5-5M11.5 16.5l4.5-4.5"/>',
   pViewDetail:'<circle cx="7.5" cy="8" r="4.5" stroke-dasharray="2 1.6"/><circle cx="15.5" cy="15.5" r="6"/><path d="M11 11l1.5 1.5"/><path d="M13 17.5l2.5-4 2.5 4"/>',
   pLine:'<path d="M5 19L19 5"/><circle cx="5" cy="19" r="1.8"/><circle cx="19" cy="5" r="1.8"/>',
   pRect:'<rect x="4" y="6" width="16" height="12"/><circle cx="4" cy="6" r="1.4"/><circle cx="20" cy="18" r="1.4"/>',
@@ -401,6 +402,7 @@ function mfRibbon(){
     ['pViewAux','Auxiliaire',()=>{try{mepBeginAuxCmd();}catch(e){}},'Vue auxiliaire : cliquez une arête inclinée, puis placez la vue perpendiculairement'],
     ['pViewSection','Coupe',()=>{try{mepSetActive(true);mepBeginSectionCmd();}catch(e){}},'Vue en coupe : points de la ligne sur une vue (2, ou plus pour une coupe brisée à l’équerre), ✓ / Entrée pour valider, ↶ / Retour arrière pour reculer, puis placez la vue (le côté donne le sens du regard)'],
     ['pViewDetail','Détail',()=>{try{mepSetActive(true);mepBeginDetailCmd();}catch(e){}},'Vue de détail : centre, rayon, puis placement'],
+    ['pViewLocal','Coupe locale',()=>{try{mepSetActive(true);mepBeginLocalCmd();}catch(e){}},'Coupe locale (arrachement) : points d’une forme libre fermée sur une vue (1er point ou Entrée pour fermer), puis l’arête qui place le plan de coupe — le plan suit l’arête quand la pièce change'],
     ['pDxfIn','DXF',()=>{try{mepSetActive(true);mepImportDxf();}catch(e){}},'Importer un DXF comme vue : on peut la coter, y accrocher lignes, cercles, axes…']],'mfPlan');
   grp('Dessin',[['pLine','Ligne',()=>mepTool('line'),'Ligne enchaînée (Échap termine)'],['pRect','Rectangle',()=>mepTool('rect')],
     ['pCircle','Cercle',()=>mepTool('circle')],['pArc','Arc',()=>mepTool('arc'),'Arc : centre, départ, arrivée'],
