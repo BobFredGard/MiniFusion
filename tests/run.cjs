@@ -87,6 +87,7 @@ const SUITES = [
   "test_fao",
   "test_fao3d",
   "test_fao_escargot",
+  "test_fao_escargot_ilots",
   "test_fao_sens",
   "test_fao_zone2",
   "test_fao_sketch_zone",

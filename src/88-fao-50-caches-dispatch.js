@@ -700,7 +700,9 @@ function* faoOpMovesIt0(op,job){
         remPlan:!!(job&&job.planes&&job.planes.mode==='plan'),
         // 2026-10-22-001 : finir une région avant la suivante (faoRegionOrder)
         parRegion:!!op.parRegion,
-        mode:'escargot', // 2026-10-15-002 : mode unique
+        // V0.23.15 : 'anneaux' = Escargot (anneaux autour des îlots) ; sinon
+        // 'escargot' = Trochoïdal (valeur historique, documents existants)
+        mode:op.mode==='anneaux'?'anneaux':'escargot',
         // 2026-10-08-003 : sens de passe — 'avalant' = sens de coupe constant
         // (aucune chaine retournee) ; absent/'bidir' = legacy (retournement
         // vers l'extremite la plus proche).
@@ -979,19 +981,25 @@ function faoRoundMoves(moves,radius){
   // de parcours sont arrondies.
   const R=isFinite(+radius)&&+radius>0?+radius:0;
   if(!(R>0))return moves;
+  // V0.23.16 : chaque passage commence à la POSITION COURANTE (dernier move
+  // émis : fin d'entrée, d'arc ou de rapide), jamais émise une 2e fois. Avant,
+  // le 1er point du passage était pris pour la position courante et omis : un
+  // passage qui suivait une entrée en arc perdait son premier coin (MERLIN-23-001 :
+  // diagonale de 60 mm à travers le brut au lieu du tour du cadre).
   const out=[]; let run=[];
   const flush=function(){
     if(run.length>=3){
       const rounded=faoRoundPath(run,R);
-      // Le 1er point est déjà la position courante : on l'omet.
       for(let i=1;i<rounded.length;i++)out.push(rounded[i]);
     }else{
-      run.forEach(function(p){out.push({r:0,x:p.x,y:p.y,z:p.z});});
+      for(let i=1;i<run.length;i++)out.push({r:0,x:run[i].x,y:run[i].y,z:run[i].z});
     }
     run=[];
   };
   (moves||[]).forEach(function(m){
     if(m.r||m.arc||m.ent){ flush(); out.push(m); return; }
+    if(!run.length){const c=out.length?out[out.length-1]:null;run.push(c?{x:c.x,y:c.y,z:c.z}:{x:m.x,y:m.y,z:m.z});
+      if(!c){out.push({r:0,x:m.x,y:m.y,z:m.z});return;}}
     run.push({x:m.x,y:m.y,z:m.z});
   });
   flush();

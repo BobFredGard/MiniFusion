@@ -183,7 +183,8 @@ function faoSanitiseOps(s){
       // 2026-10-15-002 : CONVENTIONNEL RETIRÉ (« retire le conventionnel partout et on
       // garde l'escargot partout ») — tout document (absent / 'conv' / autre) passe
       // en escargot à la lecture.
-      op.mode='escargot';
+      // V0.23.15 : 2e mode 'anneaux' (Escargot) ; 'escargot' = Trochoïdal.
+      if(op.mode!=='anneaux')op.mode='escargot';
       delete op.entree;
       }
     // 2026-10-08-003 : sens de passe — seuls 'avalant' et 'bidir' survivent,

@@ -692,12 +692,18 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   h=Math.max(h,Math.max(extX,extY)/400); // garde-fou : <= 401² cases
   const nx=Math.max(2,Math.floor(extX/h)+1),ny=Math.max(2,Math.floor(extY/h)+1);
   const mask=new Uint8Array(nx*ny);
+  // V0.23.16 (Escargot) : case hors zone à cause d'une PAROI (pièce, limite,
+  // rouge) — sinon elle n'est hors zone que faute de brut : de l'AIR.
+  const snail=!!(opt&&opt.snail),zsM=(opt&&typeof opt.zoneSafe==='function')?opt.zoneSafe:null;
+  const wallC=snail?new Uint8Array(nx*ny):null;
   let rx0=1/0,rx1=-1/0,ry0=1/0,ry1=-1/0,nL=0;
   for(let j=0;j<ny;j++){
     const y=gy0+j*h;
     for(let i=0;i<nx;i++){
       const x=gx0+i*h;
-      if(!faoShapeValid(S,x,y,rrM)||(zoneAt&&!zoneAt(x,y)))continue;
+      if(snail){const sv=faoShapeValid(S,x,y,rrM);
+        if(!sv||(zoneAt&&!zoneAt(x,y))){if(!sv||!zsM||!zsM(x,y))wallC[j*nx+i]=1;continue;}}
+      else if(!faoShapeValid(S,x,y,rrM)||(zoneAt&&!zoneAt(x,y)))continue;
       mask[j*nx+i]=1;nL++;
       if(x<rx0)rx0=x; if(x>rx1)rx1=x;
       if(y<ry0)ry0=y; if(y>ry1)ry1=y;
@@ -769,6 +775,22 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   const dC=dist[cjC*nx+ciC];
   const Rcent=Math.min(dC<INF?Math.max(0,(dC-1)*h):1/0,cx-rx0,rx1-cx,cy-ry0,ry1-cy);
   const nSp=Math.max(1,Math.floor(Rcent/pitch)); // tours de spirale
+  // V0.23.16 (Escargot, demande « comme la limite extérieure n'existe que par le
+  // brut, on peut commencer en rayon de l'extérieur car le brut va
+  // disparaître ») : la région du centre touche-t-elle l'AIR (bord du brut,
+  // case sans brut, bord de la boîte) ? Alors pas de spirale : les anneaux
+  // partent de l'extérieur (snailRings), entrée dans l'air.
+  let spOn=true;
+  if(snail){
+    const st=new Int32Array(nx*ny),seen=new Uint8Array(nx*ny);let sp=0,open=false;
+    const c0=cjC*nx+ciC;
+    if(mask[c0]){st[sp++]=c0;seen[c0]=1;}
+    while(sp&&!open){const q=st[--sp],qi=q%nx,qj=(q-qi)/nx;
+      for(let dj=-1;dj<=1&&!open;dj++)for(let di=-1;di<=1;di++){const ii=qi+di,jj=qj+dj;
+        if(ii<0||jj<0||ii>=nx||jj>=ny){open=true;break;}
+        const t=jj*nx+ii;if(mask[t]){if(!seen[t]){seen[t]=1;st[sp++]=t;}}else if(!wallC[t]){open=true;break;}}}
+    spOn=!open;
+  }
   // --- liaisons (copie conventionnelle) : G1 sûre ou translation à vide
   const zTopSafe=Math.max(top,isFinite(+brutTop)?+brutTop:top);
   // 2026-10-21-010 : BRUT = CORPS — hors de la zone usinable de ce niveau
@@ -1112,7 +1134,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     }
     rampL=0;
   };
-  while(th<=thMax&&guard++<400000){
+  while(spOn&&th<=thMax&&guard++<400000){
     const R=pitch*th/(2*Math.PI);
     const x=cx+R*Math.cos(th), y=cy+R*Math.sin(th);
     if(inside(x,y)){
@@ -1223,6 +1245,259 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     }
     return nEm;
   };
+  // --- ESCARGOT (V0.23.15) : après la spirale, ANNEAUX PARALLÈLES AUX BORDS
+  // (demande « dès qu'il y a des obstacles, il faut tourner autour et ainsi de
+  // suite tout en finissant le brut restant par passe ») — au lieu des
+  // demi-anneaux par côté du Trochoïdal. Les anneaux sont les lignes de niveau
+  // de la DISTANCE au bord de la zone des centres (carte `mask` de la spirale :
+  // pièce dilatée de r, îlots compris, zone, brut-corps) à ae, 2·ae, … : autour
+  // d'un îlot ils l'entourent, puis se referment avec ceux de la paroi quand ils
+  // se rejoignent. Ordre : région de la spirale d'abord, du plus profond vers
+  // les faces (l'outil enlève ≤ ae à chaque tour, la matière toujours à droite,
+  // sens de la spirale), le plus proche à niveau égal, puis la région suivante
+  // la plus proche. Sautés : ce que la spirale a balayé (disque de rayon Rsp),
+  // l'air (brut restant sous le disque d'outil ≤ z : remPt) et, avec la seule
+  // boîte du brut, ce qui ne l'entame pas (frameTouch). Pas de reste au sommet
+  // d'une bosse de distance plus basse que l'anneau suivant (plus de D/2 au-
+  // dessus du dernier anneau) : un anneau à mi-pas l'entoure. Liaisons :
+  // glissement à la cote vers la passe voisine (≤ 1,5·ae, sûr), sinon entrée.
+  // Le tour des faces (plus bas) finit le niveau, inchangé.
+  const snailRings=function(){
+    const W=nx+2,H=ny+2,N=W*H,BIG=1e20;
+    // distance euclidienne exacte (Felzenszwalb) aux cases à zéro de d2
+    let d2=new Float64Array(N);
+    const nmax=Math.max(W,H),fb=new Float64Array(nmax),db=new Float64Array(nmax),vb=new Int32Array(nmax),zb=new Float64Array(nmax+1);
+    const edt1=function(n){
+      let k=0;vb[0]=0;zb[0]=-BIG;zb[1]=BIG;
+      for(let q=1;q<n;q++){
+        let s=((fb[q]+q*q)-(fb[vb[k]]+vb[k]*vb[k]))/(2*q-2*vb[k]);
+        while(s<=zb[k]){k--;s=((fb[q]+q*q)-(fb[vb[k]]+vb[k]*vb[k]))/(2*q-2*vb[k]);}
+        k++;vb[k]=q;zb[k]=s;zb[k+1]=BIG;
+      }
+      k=0;
+      for(let q=0;q<n;q++){while(zb[k+1]<q)k++;db[q]=(q-vb[k])*(q-vb[k])+fb[vb[k]];}
+    };
+    const edt=function(){
+      for(let i=0;i<W;i++){for(let j=0;j<H;j++)fb[j]=d2[j*W+i];edt1(H);for(let j=0;j<H;j++)d2[j*W+i]=db[j];}
+      for(let j=0;j<H;j++){for(let i=0;i<W;i++)fb[i]=d2[j*W+i];edt1(W);for(let i=0;i<W;i++)d2[j*W+i]=db[i];}
+      const out=new Float64Array(N);
+      for(let p=0;p<N;p++)out[p]=d2[p]>=BIG*0.5?1/0:Math.sqrt(d2[p])*h;
+      return out;
+    };
+    // F : distance à TOUT le bord de la zone (parois, air, bord de boîte)
+    for(let j=0;j<ny;j++)for(let i=0;i<nx;i++)if(mask[j*nx+i])d2[(j+1)*W+i+1]=BIG;
+    const F=edt();
+    // G (V0.23.16) : distance aux seules PAROIS (pièce, limite, rouge) — l'air
+    // ne compte pas : ses anneaux suivent la pièce depuis l'extérieur du brut
+    d2=new Float64Array(N).fill(BIG);
+    for(let j=0;j<ny;j++)for(let i=0;i<nx;i++)if(wallC[j*nx+i])d2[(j+1)*W+i+1]=0;
+    const G=edt();
+    let Fmax=0;for(let p=0;p<N;p++)if(F[p]>Fmax)Fmax=F[p];
+    const X0=gx0-h,Y0=gy0-h; // nœud (0,0) de la grille bordée
+    // composantes 8-connexes de {Fld ≥ L}
+    let Fld=F;
+    const comps=function(L,lab){
+      lab.fill(-1);let nc=0;const st=new Int32Array(N),mx=[];
+      for(let p=0;p<N;p++){
+        if(lab[p]>=0||!(Fld[p]>=L))continue;
+        let sp=0,m=0;st[sp++]=p;lab[p]=nc;
+        while(sp){const q=st[--sp];if(Fld[q]>m)m=Fld[q];
+          const qi=q%W,qj=(q-qi)/W;
+          for(let dj=-1;dj<=1;dj++)for(let di=-1;di<=1;di++){
+            const ii=qi+di,jj=qj+dj;if(ii<0||jj<0||ii>=W||jj>=H)continue;
+            const t=jj*W+ii;if(lab[t]<0&&Fld[t]>=L){lab[t]=nc;st[sp++]=t;}}}
+        mx.push(m);nc++;
+      }
+      return mx;
+    };
+    // lignes de niveau (carrés marchants), côté F ≥ L à GAUCHE ; keep(p) = nœud admis
+    const iso=function(L,keep){
+      const nxt=new Int32Array(2*N).fill(-1),ex=new Float64Array(2*N),ey=new Float64Array(2*N);
+      // bord de la grille sous tout niveau : toute ligne est FERMÉE (G ne s'annule
+      // pas au bord — sans cela une ligne ouverte était refermée par une corde)
+      const val=function(p){const pi=p%W,pj=(p-pi)/W;
+        if(pi===0||pj===0||pi===W-1||pj===H-1)return -1;
+        return keep(p)?Math.min(Fld[p],BIG):-1;};
+      const cut=function(e,pa,pb,ax,ay,bx,by){
+        const va=val(pa),vb2=val(pb),t=(L-va)/(vb2-va);
+        ex[e]=X0+(ax+(bx-ax)*t)*h;ey[e]=Y0+(ay+(by-ay)*t)*h;return e;};
+      for(let j=0;j<H-1;j++)for(let i=0;i<W-1;i++){
+        const a=j*W+i,b=a+1,c=a+W+1,d=a+W;
+        const ia=val(a)>=L,ib=val(b)>=L,ic=val(c)>=L,id=val(d)>=L;
+        if(ia===ib&&ib===ic&&ic===id)continue;
+        // arêtes du carré dans l'ordre trigonométrique a→b→c→d→a
+        const E=[];
+        if(ia!==ib)E.push([cut(2*a,a,b,i,j,i+1,j),ia]);
+        if(ib!==ic)E.push([cut(2*b+1,b,c,i+1,j,i+1,j+1),ib]);
+        if(ic!==id)E.push([cut(2*d,d,c,i,j+1,i+1,j+1),ic]);
+        if(id!==ia)E.push([cut(2*a+1,a,d,i,j,i,j+1),id]);
+        // [e, true] = sortie du côté haut ; segment sortie → entrée
+        if(E.length===2){const o=E[0][1]?E[0]:E[1],n2=E[0][1]?E[1]:E[0];nxt[o[0]]=n2[0];}
+        else if(E.length===4){
+          const ctr=(val(a)+val(b)+val(c)+val(d))/4>=L;
+          // E = [a-b, b-c, c-d, d-a] ; ia=ic (haut) ou ib=id (haut)
+          if(ia){ if(ctr){nxt[E[0][0]]=E[1][0];nxt[E[2][0]]=E[3][0];}else{nxt[E[0][0]]=E[3][0];nxt[E[2][0]]=E[1][0];} }
+          else{ if(ctr){nxt[E[1][0]]=E[2][0];nxt[E[3][0]]=E[0][0];}else{nxt[E[1][0]]=E[0][0];nxt[E[3][0]]=E[2][0];} }
+        }
+      }
+      const loops=[],seen=new Uint8Array(2*N);
+      for(let e=0;e<2*N;e++){
+        if(nxt[e]<0||seen[e])continue;
+        const P=[];let q=e,g=0;
+        while(q>=0&&!seen[q]&&g++<4*N){seen[q]=1;P.push([ex[q],ey[q]]);q=nxt[q];}
+        if(P.length>=3)loops.push(faoSimplifyPts(P.concat([P[0]]),0.01).slice(0,-1));
+      }
+      return loops;
+    };
+    // régions (8-connexes) de la zone des centres : une région finie avant l'autre
+    const reg=new Int32Array(N);comps(1e-9,reg);
+    const regAt=function(x,y){const i=Math.round((x-X0)/h),j=Math.round((y-Y0)/h);
+      if(i<0||j<0||i>=W||j>=H)return -1;return reg[j*W+i];};
+    // régions bordées par une paroi : anneaux de G, de l'extérieur vers la paroi ;
+    // sans paroi (surfaçage, brut seul) : anneaux de F, du bord vers le centre
+    let nReg=0;for(let p=0;p<N;p++)if(reg[p]+1>nReg)nReg=reg[p]+1;
+    const hasW=new Uint8Array(nReg);
+    for(let p=0;p<N;p++)if(reg[p]>=0&&G[p]<1/0)hasW[reg[p]]=1;
+    let Gmax=0;for(let p=0;p<N;p++)if(reg[p]>=0&&G[p]<1/0&&G[p]>Gmax)Gmax=G[p];
+    const Rsp=spOn?pitch*nSp:0,fT=(opt&&typeof opt.frameTouch==='function')?opt.frameTouch:null;
+    const useful=function(x,y){
+      if(Math.hypot(x-cx,y-cy)<=Rsp-1e-6)return false;       // balayé par la spirale
+      if(!inside(x,y))return false;
+      if(airHere(x,y))return false;                           // brut restant sous l'outil ≤ z
+      if(fT&&!fT(x,y))return false;                           // hors de la boîte du brut
+      return true;
+    };
+    const runs=[];
+    // filtrage au pas ≤ 1 mm (les anneaux sont simplifiés : un côté droit n'a
+    // que ses deux bouts), puis chaque morceau gardé est resimplifié
+    const dens=function(P){const out=[],n=P.length,st=Math.max(0.5,Math.min(1,h));
+      for(let i=0;i<n;i++){const a=P[i],c=P[(i+1)%n],L=Math.hypot(c[0]-a[0],c[1]-a[1]),m=Math.max(1,Math.ceil(L/st));
+        for(let t=0;t<m;t++)out.push([a[0]+(c[0]-a[0])*t/m,a[1]+(c[1]-a[1])*t/m]);}
+      return out;};
+    const simp=function(P,closed){return closed?faoSimplifyPts(P.concat([P[0]]),0.01).slice(0,-1):faoSimplifyPts(P,0.01);};
+    let regOK=null;
+    const addLoops=function(lv,loops,extra){
+      for(let li=0;li<loops.length;li++){
+        const P=dens(loops[li]),n=P.length,ok=P.map(function(q){return useful(q[0],q[1])&&(!extra||extra(q));});
+        // trou court (≤ 2·D le long de l'anneau, déjà vidé ou dans l'air) entre
+        // deux morceaux utiles : parcouru à la cote s'il reste dans la zone —
+        // une remontée par petite poche d'air coûtait plus que ce glissement
+        if(ok.some(Boolean)&&!ok.every(Boolean)){
+          let k0=0;while(!(ok[k0]&&!ok[(k0+n-1)%n]))k0++; // début d'un morceau utile : aucun trou à cheval
+          for(let t=0;t<n;){const k=(k0+t)%n;if(ok[k]){t++;continue;}
+            let e=t,L=0,leg=true;
+            while(e<n&&!ok[(k0+e)%n]){const a=P[(k0+e)%n],c=P[(k0+e+1)%n];L+=Math.hypot(c[0]-a[0],c[1]-a[1]);if(!inside(a[0],a[1]))leg=false;e++;}
+            if(leg&&L<=2*D&&e<n)for(let q=t;q<e;q++)ok[(k0+q)%n]=true;
+            t=e;}
+        }
+        let rg=-1;for(let k=0;k<n&&rg<0;k++)if(ok[k])rg=regAt(P[k][0],P[k][1]);
+        if(regOK&&!regOK(rg))continue;
+        if(ok.every(Boolean)){runs.push({lv:lv,rg:rg,pts:simp(P,true),closed:true});continue;}
+        let k0=0;while(k0<n&&ok[k0])k0++;
+        if(k0>=n)continue;
+        let cur=null;
+        for(let t=1;t<=n;t++){const k=(k0+t)%n;
+          if(ok[k]){if(!cur)cur=[];cur.push(P[k]);}
+          else if(cur){if(cur.length>=2)runs.push({lv:lv,rg:rg,pts:simp(cur,false),closed:false});cur=null;}}
+      }
+    };
+    const all=function(){return true;};
+    // ANNEAU DE BORD : le tour des faces (plus bas) ne suit que les parois de la
+    // pièce ; le long d'une LIMITE DE ZONE (« au centre » : l'outil doit y aller)
+    // le dernier anneau restait à ae du bord (Perçages : colonne de 40 mm
+    // oubliée dans une rainure). Ligne de niveau à ~h, recollée au bord réel
+    // (bissection sur inside, le long de la pente de la distance), gardée là
+    // où aucune paroi de la pièce n'est à moins de r + ae/2 ; dans l'air
+    // (bord du brut) elle tombe d'elle-même (useful).
+    const rimL=r+0.5*pitch;
+    const rim=function(loops){
+      return loops.map(function(P){return P.map(function(q){
+        const i=Math.min(W-2,Math.max(1,Math.round((q[0]-X0)/h))),j=Math.min(H-2,Math.max(1,Math.round((q[1]-Y0)/h))),p=j*W+i;
+        let ux=-(F[p+1]-F[p-1]),uy=-(F[p+W]-F[p-W]);const L=Math.hypot(ux,uy);
+        if(!(L>1e-12)||!inside(q[0],q[1]))return q;
+        ux/=L;uy/=L;let lo=0,hi=2*h;
+        if(inside(q[0]+ux*hi,q[1]+uy*hi))return q;
+        for(let it=0;it<10;it++){const m=(lo+hi)/2;if(inside(q[0]+ux*m,q[1]+uy*m))lo=m;else hi=m;}
+        return [q[0]+ux*lo,q[1]+uy*lo];
+      });});
+    };
+    // … et seulement contre une LIMITE (zone, rouge) : le bord du brut-corps
+    // est de l'air au-delà, le premier anneau suffit (pas de tour à 0,5 mm du brut)
+    // V0.23.16 : sans zone, aucune limite — pas de tour du brut (MERLIN-23-001)
+    const lim=zoneSafeL||zoneAt;
+    const noWall=function(q){
+      if(!lim)return false;
+      if(faoDistSeg(S.hash,q[0],q[1],rimL,rimL-1e-6)<rimL-1e-6)return false;
+      for(let a=0;a<8;a++){const t=a*Math.PI/4;if(!lim(q[0]+2*h*Math.cos(t),q[1]+2*h*Math.sin(t)))return true;}
+      return false;};
+    const lab=new Int32Array(N);
+    const rings=function(Mx){
+      for(let k=0;k*pitch<Mx;k++){
+        const dk=k*pitch;
+        if(k>=1&&dk<Mx)addLoops(dk,iso(dk,all));
+        // sommet de bosse entre deux anneaux, à plus de D/2 du dernier : mi-pas
+        const Lh=dk+pitch/2,mx=comps(Lh,lab),sel=[];
+        let any=false;
+        for(let c=0;c<mx.length;c++){sel.push(mx[c]<dk+pitch&&mx[c]>dk+0.45*D);if(sel[c])any=true;}
+        if(any)addLoops(Lh,iso(Lh,function(p){return lab[p]>=0&&sel[lab[p]];}));
+      }
+    };
+    Fld=G;regOK=function(rg){return rg>=0&&hasW[rg];};rings(Gmax);
+    Fld=F;regOK=function(rg){return !(rg>=0&&hasW[rg]);};rings(Fmax);
+    regOK=null;addLoops(0,rim(iso(1.05*h,all)),noWall);
+    // sens : paroi → du plus loin au plus près (lv décroissant) ; sans paroi → du bord au centre
+    runs.forEach(function(R){R.key=(R.rg>=0&&!hasW[R.rg])?R.lv:-R.lv;});
+    if(!runs.length)return;
+    // ordre : région de la spirale, du plus profond au bord, le plus proche à égalité
+    const r0=regAt(cx,cy);
+    let curR=r0>=0?r0:runs[0].rg;
+    const left=runs.slice();
+    let ag=0;
+    while(left.length&&ag++<100000){
+      const P0=moves.length?moves[moves.length-1]:{x:cx,y:cy};
+      let inR=left.filter(function(R){return R.rg===curR;});
+      if(!inR.length){
+        // région suivante : celle du morceau le plus proche
+        let bd=1/0,bR=left[0].rg;
+        for(let i=0;i<left.length;i++){const q=left[i].pts[0],dd=Math.hypot(q[0]-P0.x,q[1]-P0.y);if(dd<bd){bd=dd;bR=left[i].rg;}}
+        curR=bR;inR=left.filter(function(R){return R.rg===curR;});
+      }
+      let kM=1/0;for(let i=0;i<inR.length;i++)if(inR[i].key<kM)kM=inR[i].key;
+      let best=null,bi=0,bd2=1/0;
+      for(let i=0;i<inR.length;i++){const R=inR[i];if(R.key>kM+1e-9)continue;
+        const Pp=R.pts;
+        if(R.closed){for(let k=0;k<Pp.length;k++){const dd=Math.hypot(Pp[k][0]-P0.x,Pp[k][1]-P0.y);if(dd<bd2){bd2=dd;best=R;bi=k;}}}
+        else{const dd=Math.hypot(Pp[0][0]-P0.x,Pp[0][1]-P0.y);if(dd<bd2){bd2=dd;best=R;bi=0;}
+          if(!avalant){const de=Math.hypot(Pp[Pp.length-1][0]-P0.x,Pp[Pp.length-1][1]-P0.y);if(de<bd2){bd2=de;best=R;bi=-1;}}}}
+      left.splice(left.indexOf(best),1);
+      let seq=best.pts;
+      if(best.closed)seq=seq.slice(bi).concat(seq.slice(0,bi+1));
+      else if(bi<0)seq=seq.slice().reverse();
+      for(let i=0;i<seq.length;i++){
+        const x=seq[i][0],y=seq[i][1];
+        const q=seq[i+1]||seq[i-1];
+        let ex=q?(seq[i+1]?q[0]-x:x-q[0]):0,ey=q?(seq[i+1]?q[1]-y:y-q[1]):0;
+        if(rampL>0&&!(i>0&&prevIn&&segClear(px,py,x,y)))finishRamp(); // jamais de pont
+        const Pm=moves.length?moves[moves.length-1]:null;
+        const atZ=!!(Pm&&!Pm.r&&Math.abs(Pm.z-z)<1e-9);
+        if(rampL>0){
+          rampK++;
+          const zr=Math.max(z,Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000);
+          moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:zr});
+          rampL--;
+        }else if(i>0&&atZ&&prevIn&&segClear(px,py,x,y))pushCut(x,y);
+        else if(atZ&&linkNear(Pm.x,Pm.y,x,y)&&segClear(Pm.x,Pm.y,x,y))pushCut(x,y); // passe voisine : glissement
+        else if(!entryTo(x,y,ex,ey)){
+          rampTot=Math.max(2,Math.ceil((rampZ0-z)/2));
+          rampK=1; rampL=rampTot-1;
+          const zr=Math.max(z,Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000);
+          moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:zr});
+        }
+        atCut=true; prevIn=true; px=x; py=y;
+      }
+    }
+    finishRamp();
+  };
   // 007 : la descente éventuellement active est terminée par le bloc « fin de
   // spirale pendant un rampage » ci-dessus — état clos avant les côtés.
   rampL=0;
@@ -1233,9 +1508,12 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     atCut=!!(P&&!P.r&&Math.abs(P.z-z)<1e-9);
     prevIn=atCut;
   }
-  const side0=(px>=cx)?1:-1; // côté où la spirale s'est arrêtée : d'abord là
-  clearArcs(side0,py);
-  clearArcs(-side0,py); // py = dernier point du côté précédent (mis à jour)
+  if(opt&&opt.snail)snailRings();
+  else{
+    const side0=(px>=cx)?1:-1; // côté où la spirale s'est arrêtée : d'abord là
+    clearArcs(side0,py);
+    clearArcs(-side0,py); // py = dernier point du côté précédent (mis à jour)
+  }
   // --- DERNIÈRE PASSE : les FACES du solide (retour 2/3). Mêmes chaînes que
   // le conventionnel k=0 : chaines du niveau offsetées à r (la laisse de
   // l'outil suit exactement les parois) + cadre E0 de la boîte. Chaîne la plus
@@ -1669,7 +1947,10 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
   // reste STRICTEMENT identique.
   // 2026-10-08-001 : le mode trocoïdal (poche d'entrée o.poly, phases A/B)
   // a été supprimé — il ne reste que ces deux modes.
-  const esc=(o.mode==='escargot');
+  // V0.23.15 : 'escargot' (valeur historique) = TROCHOÏDAL (spirale puis demi-
+  // anneaux par côté) ; 'anneaux' = ESCARGOT (spirale puis anneaux parallèles
+  // aux bords et aux îlots, snailRings). Même moteur de niveau.
+  const esc=(o.mode==='escargot'||o.mode==='anneaux');
   // 2026-10-27 : MODÈLE SIMPLE DES PASSES (« revenir à un modèle simple ») —
   // on descend de `ap` en `ap` depuis `Haut` ; chaque fond réel du maillage
   // (plancher de poche, épaulement) est un ARRÊT à fond+`Fond` : s'il tombe
@@ -1737,13 +2018,22 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
   // contrôlés : la matière laissée hors zone ou non atteinte n'est plus
   // traversée. Sans brut-corps ni rouge : absente (parcours inchangés).
   let rem=null;
-  if(stockTopF||typeof o.protectTip==='function'){
+  // V0.23.16 : en Escargot, une simple BOÎTE de brut a aussi sa carte (demande
+  // « je n'ai pas vu de gestion du brut ») — dessus = haut du brut dans la
+  // boîte, rien dehors ; le Trochoïdal n'en a pas (parcours inchangés).
+  const remBox=!stockTopF&&typeof o.protectTip!=='function'&&!!SB&&o.mode==='anneaux';
+  if(stockTopF||typeof o.protectTip==='function'||remBox){
     const g=1,pad=D;
     const rx0=BB.x0-pad,ry0=BB.y0-pad,rnx=Math.ceil((BB.x1-BB.x0+2*pad)/g)+1,rny=Math.ceil((BB.y1-BB.y0+2*pad)/g)+1;
     const top=new Float32Array(rnx*rny),raw=new Float32Array(rnx*rny);
     const bt=isFinite(+o.brutTop)?+o.brutTop:zt;
     const SBr=o.stockBox&&isFinite(+o.stockBox.x0)?o.stockBox:null;
+    // boîte du brut dans le repère interne (tourné / transposé) — remBox seulement
+    const inSB=function(x,y){let X=x,Y=y;
+      if(th!==0){const cs=Math.cos(th),sn=Math.sin(th);X=x*cs-y*sn;Y=x*sn+y*cs;}else if(swapped){X=y;Y=x;}
+      return X>=+SBr.x0&&X<=+SBr.x1&&Y>=+SBr.y0&&Y<=+SBr.y1;};
     for(let j=0;j<rny;j++)for(let i=0;i<rnx;i++){const x=rx0+i*g,y=ry0+j*g;
+      if(remBox){top[j*rnx+i]=raw[j*rnx+i]=inSB(x,y)?bt:-1/0;continue;}
       top[j*rnx+i]=stockTopF?Math.min(bt,stockTopF(x,y)):bt;
       // brut non dilaté : corps (repère interne) ; sinon boîte du brut
       raw[j*rnx+i]=stockRawF?Math.min(bt,stockRawF(x,y))
@@ -1812,7 +2102,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     // ESCARGOT : spirale centre -> faces sur le meme plan/levels, memes
     // entrees/travel ; mini-passes et finition restent conventionnelles.
     // 2026-10-08-003 : sens (avalant = sens de coupe constant) porte par opt.
-    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,frameTouch:frameTouch,zoneDense:typeof o.protectTip==='function',stockTop:stockTopF,remBlocked:rem?rem.blocked:null,remTopAt:rem?rem.topAt:null,remPtAt:rem?rem.ptAt:null,zoneSafe:o.zoneSafe||null,
+    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{snail:o.mode==='anneaux',travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,frameTouch:frameTouch,zoneDense:typeof o.protectTip==='function',stockTop:stockTopF,remBlocked:rem?rem.blocked:null,remTopAt:rem?rem.topAt:null,remPtAt:rem?rem.ptAt:null,zoneSafe:o.zoneSafe||null,
       bullFaces:bullC?function(zz){return faoBullRingRuns(bullCtx(L.radial),zz,o.sens==='avalant',true);}:null,
       bullOK:bullC?function(x,y,zz){return bullCtx(L.radial).tipB(x,y)<=zz+1e-6;}:null});
     else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,frameTouch:frameTouch});

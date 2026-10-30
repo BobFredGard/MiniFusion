@@ -249,7 +249,8 @@ const vm=require('vm');
     "const wD=minSd(atZ(cD,14),POCK);",
     "att(wD>=5.3&&wD<=6.5,'decalee : z=14 lasse outil '+wD.toFixed(2)+' en [5.3,6.5]');",
     // ================= 5. defaut a la creation + sanitise =================
-    "att(faoOpDefaults('rough3d').mode==='escargot','creation : faoOpDefaults(rough3d) en mode escargot');",
+    // V0.23.15 : création en ESCARGOT ('anneaux') ; 'escargot' = Trochoïdal
+    "att(faoOpDefaults('rough3d').mode==='anneaux','creation : faoOpDefaults(rough3d) en mode anneaux (Escargot)');",
     "const o1={id:'es1',type:'rough3d',minipasses:0,mode:'escargot'};",
     "faoSanitiseOps({ops:[o1]});",
     "att(o1.mode==='escargot','sanitise : escargot conserve');",
@@ -270,12 +271,13 @@ const vm=require('vm');
     "const all=function(root){const out=[];(function w(n){out.push(n);(n.children||[]).forEach(w);})(root);return out;};",
     "const txt=function(root){return all(root).map(function(n){return String(n.textContent||'');}).join('|');};",
     "const selsOf=function(root){return all(root).filter(function(n){return n.tagName==='SELECT';});};",
-    "const r3=faoOpDefaults('rough3d');",
+    "const r3=faoOpDefaults('rough3d');r3.mode='escargot';",
     "const card=faoOpCardElement(faoSetup(),r3,0);",
     "att(all(card).filter(function(n){return n.className==='fao-h';}).length>=4,'fiche escargot : sections');",
     "const modeSels=selsOf(card).filter(function(s){return /Escargot|Conventionnel/.test(Array.prototype.map.call(s.children||[],function(o){return String(o.textContent||'');}).join('|'));});",
-    "att(modeSels.length===0,'fiche : plus de sélecteur de mode (conventionnel retiré)');",
-    "att(/Escargot · du centre vers les faces/.test(txt(card)),'fiche : mode Escargot affiché');",
+    // V0.23.15 : sélecteur Escargot / Trochoïdal (valeur 'escargot' = Trochoïdal)
+    "att(modeSels.length===1&&modeSels[0].value==='escargot','fiche : sélecteur de mode, Trochoïdal sélectionné');",
+    "att(/Trochoïdal/.test(txt(card)),'fiche : mode Trochoïdal proposé');",
     "att(!/Conventionnel/.test(txt(card)),'fiche : aucune mention du conventionnel');",
 
     // ================= 7. dispatch : op escargot -> parcours complet =================

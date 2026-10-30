@@ -21,7 +21,7 @@
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.23.14';
+const APP_VER='V0.23.16';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -31,8 +31,11 @@ try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-30-001';
+const CACHE_VER='2026-10-30-002';
 function cacheVerOK(v){
+  // 2026-10-30-002 (V0.23.16) : arrondi des coins — le passage qui suit une
+  // entrée / un arc / un rapide garde son premier point (faoRoundMoves) : les
+  // opérations à Arrondi > 0 changent, à régénérer.
   // 2026-10-30-001 (V0.23.14) : ébauche 3D — tours de paroi en double retirés
   // (faoRunsDedupGeo), descente rapide au-dessus du déjà-usiné (faoFastDrops).
   // 2026-10-27-001 : ébauche 3D — modèle simple des passes (ap en ap, reste

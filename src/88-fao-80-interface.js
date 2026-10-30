@@ -110,9 +110,9 @@ function faoOpDefaults(type){
     entry:'circ', minipasses:0,
     // 2026-10-22-001 : finir une région avant la suivante (faoRegionOrder)
     parRegion:true,
-    // 2026-10-07-005 : l'ESCARGOT est la 1re selection a la creation
-    // (les documents anciens sans mode restent conventionnels).
-    mode:'escargot',
+    // V0.23.15 : ESCARGOT (anneaux autour des îlots) à la création ; les
+    // documents existants ('escargot') restent en Trochoïdal.
+    mode:'anneaux',
     // 2026-10-08-003 : sens de passe — 'avalant' (defaut a la creation) =
     // sens de coupe CONSTANT : aucune chaine retournee, la passe suit toujours
     // le meme sens d'avance (les dents attaquent la matiere de la meme facon,
@@ -1230,12 +1230,18 @@ function faoOpCardElement(setup,op,i){
     d.appendChild(faoH('Vidage'));
     const rM=faoRow();
     rM.appendChild(faoLab('Mode'));
-    // 2026-10-15-002 : mode unique ESCARGOT (le conventionnel est retiré)
-    const modeSel=document.createElement('span');
-    modeSel.className='fao-meta';
-    modeSel.textContent='Escargot · du centre vers les faces';
-    modeSel.title='Pelage en spirale depuis le centre de la zone à usiner vers les faces, tours espacés de ae ; entrées en hélice ou en arc tangent ; '+
-      'la dernière passe de chaque niveau suit les faces du solide (au contact réel de l’outil torique ou boule).';
+    // V0.23.15 : deux modes — TROCHOÏDAL (valeur historique 'escargot' :
+    // spirale puis demi-anneaux par côté) et ESCARGOT ('anneaux' : spirale puis
+    // anneaux parallèles aux bords, qui tournent autour des îlots).
+    const modeSel=faoSel([
+      ['anneaux','Escargot · tourne autour des îlots','Spirale au centre de la zone, puis anneaux parallèles aux bords espacés de ae, du centre vers les faces : '+
+        'dès qu’un îlot est présent, les anneaux l’entourent puis rejoignent ceux de la paroi. Chaque niveau est fini en entier (brut et brut restant : '+
+        'l’air n’est pas usiné) ; la dernière passe suit les faces du solide.'],
+      ['escargot','Trochoïdal · demi-anneaux par côté','Spirale au centre jusqu’aux murs les plus proches, puis demi-anneaux circulaires d’un côté puis de l’autre ; '+
+        'la dernière passe de chaque niveau suit les faces du solide (au contact réel de l’outil torique ou boule).']],
+      op.mode==='anneaux'?'anneaux':'escargot',
+      function(v){ op.mode=(v==='anneaux')?'anneaux':'escargot'; },
+      'Mode de vidage de l’ébauche 3D');
     rM.appendChild(modeSel);
     d.appendChild(rM);
     // 2026-10-08-003 : SENS DE PASSE — 'avalant' = sens de coupe constant
