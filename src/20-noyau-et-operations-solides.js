@@ -4012,6 +4012,7 @@ function occRebuild(){
         try{const info=occSolidBox(p.shape);if(info)e.c=info.c;}catch(err){}
         const col=bodyColorOf(e.id); // fiche du corps : couleur unique (plus de couleur par fonction)
         const mat=new THREE.MeshStandardMaterial({color:col,metalness:.35,roughness:.4,clippingPlanes:clipPlane?[clipPlane]:null});
+        try{if(typeof importBodyColors==='function'&&importBodyColors(g,e.id,D.lin))mat.vertexColors=true;}catch(err){} // STEP multicolore dans le corps (90)
         applyBodyStyle(mat,e.id); // + transparence du corps (100 % = opaque, inchangé)
         const mesh=new THREE.Mesh(g,mat);mesh.userData.bid=e.id;scene.add(mesh);
         const vis=!doc.bodyVis||!Object.prototype.hasOwnProperty.call(doc.bodyVis,e.id)?true:!!doc.bodyVis[e.id];

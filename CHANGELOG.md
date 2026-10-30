@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**451 versions**, de `2026-09-28b` à `V0.22.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**452 versions**, de `2026-09-28b` à `V0.22.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5683,3 +5683,10 @@ Signalé : « l'import en couleur n'a pas fonctionné » sur `MERLIN-37-000.step
 - **Cause** (`src/90-picking-mesure-import.js`, `importStepOcc`, V0.21.13) : le fichier compte 25 solides et 29 coques — 4 surfaces hors solide. Le contrôle « toutes les faces sont dans un solide » échouait, l'import restait d'une seule couleur.
 - **Correctif** : parcours récursif (`TopoDS_Iterator`, même ordre que l'explorateur de faces d'`occTriPos`) ; une occurrence = un solide, ou une coque / face libre. Palette étendue au-delà des 8 couleurs vives (`importCol`, teintes à l'angle d'or) : les 22 pièces de MERLIN ne se répètent plus. Note du panneau : « n occurrences · m pièce(s) ».
 - **Tests** : `npm run ci`. Vérifié dans le navigateur sur `MERLIN-37-000.step` : 29 occurrences, 22 pièces ; 22 couleurs par pièce, 29 par occurrence.
+
+## V0.22.2 - Import STEP multicolore : les couleurs restent quand le corps a d'autres fonctions
+Signalé : « MERLIN-37-000.step -> ce fichier là s'ouvre d'une seule couleur », le STEP étant dans un corps qui a d'autres fonctions.
+- **Cause** (`src/20-noyau-et-operations-solides.js`, `occReplayBody` : `importSeul`) : dès que le corps contient une autre fonction (ou qu'un outil de face est ouvert sur le STEP), l'import entre dans la chaîne exacte ; le corps est retessellé depuis le solide calculé, le maillage d'import (seul à porter les couleurs, V0.21.13) n'est plus affiché → une seule couleur, celle du corps.
+- **Correctif** (`importBodyColors`, `src/90`) : chaque face du corps exact reprend la couleur de la pièce (ou de l'occurrence, selon « Couleurs ») du STEP sur laquelle elle est posée — triangle du maillage d'import le plus proche, à moins de 2,5 × la déflection d'affichage (grille `importTriGrid`, mémorisée). Une face nouvelle (paroi de perçage, matière extrudée) garde la couleur du corps. MERLIN : 1 227 faces sur 1 227 retrouvées, 0,13 s.
+- **Palette** (`importCol`) : le bleu par défaut des corps n'est plus donné à une pièce — la plus grosse pièce de MERLIN le prenait et l'import paraissait d'une seule couleur.
+- **Tests** : `npm run ci`. Vérifié dans le navigateur (MERLIN dans la chaîne exacte : 22 couleurs sur le corps).

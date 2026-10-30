@@ -1310,8 +1310,10 @@ function importStepOcc(shape){
 function importCol(c,i){
   // Couleur n° i : la palette vive, puis des teintes à l'angle d'or (22 pièces dans
   // MERLIN-37-000 : les 8 couleurs de la palette se répétaient d'une pièce voisine à l'autre).
-  if(i<VIVID.length)c.setHex(VIVID[i]);
-  else c.setHSL(((i-VIVID.length)*0.381966+0.07)%1,0.62+0.2*(i%2),0.42+0.16*((i>>1)%2));
+  // V0.22.2 : le bleu VIVID[0] (couleur des corps par défaut) est sauté — la plus grosse
+  // pièce de MERLIN le prenait et l'import semblait rester d'une seule couleur.
+  if(i<VIVID.length-1)c.setHex(VIVID[i+1]);
+  else{i-=VIVID.length-1;c.setHSL((i*0.381966+0.07)%1,0.62+0.2*(i%2),0.42+0.16*((i>>1)%2));}
   return c;
 }
 function importColorMat(f,mat){
@@ -1338,6 +1340,75 @@ function importColorMat(f,mat){
   }
   mat.vertexColors=true;mat.needsUpdate=true;
   return mat;
+}
+/* V0.22.2 : STEP DANS LA CHAÎNE EXACTE (corps avec d'autres fonctions, outil de face) —
+   le corps est retessellé depuis le solide calculé : l'import n'est plus affiché et ses
+   couleurs étaient perdues. Chaque face du corps reprend la couleur de la pièce du STEP
+   sur laquelle elle est posée (triangles du maillage d'import à moins de tol) ; une face
+   nouvelle (paroi d'un perçage, matière extrudée) garde la couleur du corps. */
+function importTriGrid(g){
+  // Grille des triangles du maillage d'import (rang de face par triangle), mémorisée sur g.
+  if(g.userData.impGrid)return g.userData.impGrid;
+  const P=g.attributes.position.array,nt=(P.length/9)|0,tf=new Int32Array(nt).fill(-1);
+  (g.userData.occGroups||[]).forEach(gr=>{for(let t=gr.start,z=Math.min(nt,gr.start+gr.count);t<z;t++)tf[t]=gr.f;});
+  g.computeBoundingBox();const bb=g.boundingBox,sz=bb.getSize(new THREE.Vector3());
+  const h=Math.max(sz.x,sz.y,sz.z,1e-6)/Math.min(256,Math.max(48,Math.round(4*Math.cbrt(nt)))),cells=new Map(); // ~1 case par triangle sur la plus grande dimension
+  const ix=v=>Math.floor((v-bb.min.x)/h),iy=v=>Math.floor((v-bb.min.y)/h),iz=v=>Math.floor((v-bb.min.z)/h);
+  for(let t=0;t<nt;t++){
+    if(tf[t]<0)continue;const o=t*9;
+    const x0=ix(Math.min(P[o],P[o+3],P[o+6])),x1=ix(Math.max(P[o],P[o+3],P[o+6]));
+    const y0=iy(Math.min(P[o+1],P[o+4],P[o+7])),y1=iy(Math.max(P[o+1],P[o+4],P[o+7]));
+    const z0=iz(Math.min(P[o+2],P[o+5],P[o+8])),z1=iz(Math.max(P[o+2],P[o+5],P[o+8]));
+    for(let a=x0;a<=x1;a++)for(let b=y0;b<=y1;b++)for(let c=z0;c<=z1;c++){
+      const k=(a*1024+b)*1024+c;let L=cells.get(k);if(!L){L=[];cells.set(k,L);}L.push(t);}
+  }
+  return(g.userData.impGrid={P,tf,cells,h,min:bb.min.clone(),ix,iy,iz});
+}
+function importTriNear(G,p,tol){
+  // Rang de face d'import du triangle le plus proche de p (à moins de tol), sinon -1.
+  const tri=new THREE.Triangle(),q=new THREE.Vector3(),P=G.P;
+  let best=-1,bd=tol;const seen=new Set();
+  for(let a=G.ix(p.x-tol);a<=G.ix(p.x+tol);a++)for(let b=G.iy(p.y-tol);b<=G.iy(p.y+tol);b++)for(let c=G.iz(p.z-tol);c<=G.iz(p.z+tol);c++){
+    const L=G.cells.get((a*1024+b)*1024+c);if(!L)continue;
+    for(const t of L){
+      if(seen.has(t))continue;seen.add(t);const o=t*9;
+      tri.a.set(P[o],P[o+1],P[o+2]);tri.b.set(P[o+3],P[o+4],P[o+5]);tri.c.set(P[o+6],P[o+7],P[o+8]);
+      const d=tri.closestPointToPoint(p,q).distanceTo(p);if(d<=bd){bd=d;best=G.tf[t];}
+    }
+  }
+  return best;
+}
+function importBodyColors(g,bodyId,lin){
+  // Couleurs par sommet du maillage d'un corps exact qui contient un import multicolore
+  // (f.colMode). Rend true si posées (la matière doit alors passer en vertexColors).
+  if(!g||!g.userData||!g.userData.occGroups||typeof doc==='undefined')return false;
+  const b0=(doc.bodies&&doc.bodies[0]&&doc.bodies[0].id)||'';
+  const ims=(doc.features||[]).filter(f=>f&&f.type==='import'&&f.visible!==false&&(f.body||b0)===bodyId&&
+    (f.colMode==='piece'||f.colMode==='occ')&&f._mesh&&f._mesh.geometry&&f._mesh.geometry.userData&&f._mesh.geometry.userData.impOcc);
+  if(!ims.length)return false;
+  const tol=Math.max(0.05,2.5*(+lin||0.1)); // deux maillages de la même surface, chacun à lin près
+  const P=g.attributes.position.array,n=(P.length/3)|0,col=new Float32Array(n*3);
+  const base=new THREE.Color(bodyColorOf(bodyId)),c=new THREE.Color(),p=new THREE.Vector3();
+  const G=ims.map(f=>importTriGrid(f._mesh.geometry));
+  let hit=0;
+  g.userData.occGroups.forEach(gr=>{
+    // jusqu'à 5 triangles de la face (centroïdes) : le premier posé sur une pièce l'emporte
+    let cc=null;const st=Math.max(1,Math.floor(gr.count/5));
+    for(let k=0;k<gr.count&&!cc;k+=st){
+      const o=(gr.start+k)*9;
+      p.set((P[o]+P[o+3]+P[o+6])/3,(P[o+1]+P[o+4]+P[o+7])/3,(P[o+2]+P[o+5]+P[o+8])/3);
+      for(let i=0;i<ims.length&&!cc;i++){
+        const fo=importTriNear(G[i],p,tol);if(fo<0)continue;
+        const O=ims[i]._mesh.geometry.userData.impOcc,oc=O.faceOcc[fo];if(oc===undefined)continue;
+        cc=importCol(c,ims[i].colMode==='occ'?oc:O.occPart[oc]);
+      }
+    }
+    if(cc)hit++;const C=cc||base;
+    for(let t=gr.start*3,z=(gr.start+gr.count)*3;t<z&&t<n;t++){col[t*3]=C.r;col[t*3+1]=C.g;col[t*3+2]=C.b;}
+  });
+  if(!hit)return false;
+  g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
+  return true;
 }
 function importColorsPanel(p,f,pRow,pSel,pNote){
   // Panneau d'un import STEP à plusieurs solides : choix du coloriage.
