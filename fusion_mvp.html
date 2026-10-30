@@ -336,7 +336,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.23.23';
+const APP_VER='V0.23.24';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 try{var mfSv=document.getElementById('mfSplashVer');if(mfSv)mfSv.textContent=APP_VER;}catch(e){} // écran de démarrage
 
@@ -347,7 +347,7 @@ try{var mfSv=document.getElementById('mfSplashVer');if(mfSv)mfSv.textContent=APP
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-30-002';
+const CACHE_VER='2026-10-30-003';
 function cacheVerOK(v){
   // 2026-10-30-002 (V0.23.16) : arrondi des coins — le passage qui suit une
   // entrée / un arc / un rapide garde son premier point (faoRoundMoves) : les
@@ -33510,9 +33510,10 @@ function faoArcSegs(p0,m,maxStep){
   }
   return pts;
 }
-function faoRoundPath(pts,radius){
+function faoRoundPath(pts,radius,keep){
   // Remplace chaque coin (changement de direction 1°..179°) par un arc
   // tangent de rayon donné. Retourne des moves {r:0} (droites + arcs).
+  // keep(p) : coin gardé vif (point de plongée ultérieure, faoRoundMoves).
   const out=[];
   const R=isFinite(+radius)&&+radius>0?+radius:0;
   if(!(R>0)||!pts||pts.length<3)return (pts||[]).map(function(p){return {r:0,x:p.x,y:p.y,z:p.z};});
@@ -33520,7 +33521,7 @@ function faoRoundPath(pts,radius){
   out.push({r:0,x:P[0].x,y:P[0].y,z:P[0].z});
   for(let i=1;i+1<P.length;i++){
     const a=P[i-1], b=P[i], c=P[i+1];
-    if(Math.abs(b.z-a.z)>1e-9||Math.abs(c.z-b.z)>1e-9){
+    if(Math.abs(b.z-a.z)>1e-9||Math.abs(c.z-b.z)>1e-9||(keep&&keep(b))){
       out.push({r:0,x:b.x,y:b.y,z:b.z}); // pas d'arc hors plan : on garde le coin
       continue;
     }
@@ -33564,10 +33565,19 @@ function faoRoundMoves(moves,radius){
   // le 1er point du passage était pris pour la position courante et omis : un
   // passage qui suivait une entrée en arc perdait son premier coin (MERLIN-23-001 :
   // diagonale de 60 mm à travers le brut au lieu du tour du cadre).
+  // V0.23.24 : un coin où l'outil REPLONGE plus tard à la verticale (entrée
+  // validée à la génération parce que l'outil y était déjà passé à la cote)
+  // reste vif : arrondi, l'outil n'y passait plus et la plongée tombait dans
+  // la matière (MERLIN-23-001 : 3 mm au bord du brut, niveaux 4 / 1,7 / 0).
+  const kp=function(x,y,z){return x.toFixed(3)+','+y.toFixed(3)+','+z.toFixed(3);};
+  const plunge=new Set();
+  (moves||[]).forEach(function(m,i){const a=i>0?moves[i-1]:null;
+    if(a&&m.ent&&!m.r&&!m.arc&&Math.abs(a.x-m.x)<1e-9&&Math.abs(a.y-m.y)<1e-9&&a.z>m.z+1e-6)plunge.add(kp(m.x,m.y,m.z));});
+  const keep=plunge.size?function(p){return plunge.has(kp(p.x,p.y,p.z));}:null;
   const out=[]; let run=[];
   const flush=function(){
     if(run.length>=3){
-      const rounded=faoRoundPath(run,R);
+      const rounded=faoRoundPath(run,R,keep);
       for(let i=1;i<rounded.length;i++)out.push(rounded[i]);
     }else{
       for(let i=1;i<run.length;i++)out.push({r:0,x:run[i].x,y:run[i].y,z:run[i].z});
@@ -40291,8 +40301,7 @@ function faoPlungeClear(Sx,Sy,moves,z,D,airAt,margin){
   const R=D/2, Rs=R+(margin>0?margin:0), lim=R+1e-9, lim2=lim*lim, near=(Rs+lim), near2=near*near;
   const K=Math.max(16,Math.min(64,Math.ceil(Math.PI*2*Rs)));
   const qx=[Sx],qy=[Sy];
-  for(let k=0;k<K;k++){const a=k/K*2*Math.PI;qx.push(Sx+Rs*Math.cos(a));qy.push(Sy+Rs*Math.sin(a));}
-  const cov=new Uint8Array(qx.length);
+  for(let k=0;k<K;k++){const a=k/K*2*Math.PI;qx.push(Sx+Rs*Math.cos(a));qy.push(Sy+Rs*Math.sin(a));}  const cov=new Uint8Array(qx.length);
   let left=qx.length;
   const d2=function(ax,ay,bx,by,px,py){
     const dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy;
@@ -40899,6 +40908,16 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   let th=0,guard=0,atCut=false,prevIn=false,px=cx,py=cy;
   // 007 : descente répartie le long de la spirale (rampL>0 = rampage actif)
   let rampL=0,rampK=0,rampTot=0;
+  // V0.23.24 : cote du pas de rampe — paliers de ~2 mm (rampTot) ET pente
+  // ≤ 0,4 (≈ 22°) par rapport au point précédent : des échantillons serrés
+  // (petit rayon, π/6) donnaient 2 mm sur 0,9 mm, une descente à 60° dans la
+  // matière (MERLIN-23-001, bord du brut) ; le 1er pas, sur place, était vertical.
+  const rampZr=function(x,y){
+    const zf=Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000;
+    const P=moves.length?moves[moves.length-1]:null;
+    const zl=P?Math.round((P.z-Math.hypot(x-P.x,y-P.y)*0.4)*1000)/1000:zf;
+    return Math.max(z,zf,zl);
+  };
   // 2026-10-21-004 : FIN DE RAMPAGE ANTICIPÉE — un rampage ne continue QUE
   // vers un point CONTIGU (échantillon précédent légal) et dégagé (segClear).
   // Avant : après un trou (la spirale / le demi-anneau passe sous la pièce,
@@ -40933,9 +40952,9 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
         // 007 : on CONTINUE le rampage — la fraise descend en avançant sur la
         // spirale (coupe progressive du croissant non balayé, centre légal).
         rampK++;
-        const zr=Math.max(z,Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000);
+        const zr=rampZr(x,y);
         moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:zr});
-        rampL--;
+        rampL--;if(!rampL&&zr>z+1e-9)rampL=1; // V0.23.24 : jusqu’à la cote
       }else if(!atCut||!prevIn||!segClear(px,py,x,y)){
         if(!entryTo(x,y,ex,ey)){
           // 007 : aucune entrée sûre ici (pas d'ancre balayée, pas d'orbite
@@ -40943,7 +40962,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
           // progressant, jamais à plat sur le brut restant.
           rampTot=Math.max(2,Math.ceil((rampZ0-z)/2));
           rampK=1; rampL=rampTot-1;
-          const zr=Math.max(z,Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000);
+          const zr=rampZr(x,y);
           moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:zr});
         }
       }
@@ -41011,14 +41030,14 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
         if(rampL>0&&!(prevIn&&segClear(px,py,x,y)))finishRamp(); // 2026-10-21-004 : jamais de pont
         if(rampL>0){
           rampK++;
-          const zr=Math.max(z,Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000);
+          const zr=rampZr(x,y);
           moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:zr});
-          rampL--;
+          rampL--;if(!rampL&&zr>z+1e-9)rampL=1; // V0.23.24 : jusqu’à la cote
         }else if(!atCut||!prevIn||!segClear(px,py,x,y)){
           if(!entryTo(x,y,ex,ey)){
             rampTot=Math.max(2,Math.ceil((rampZ0-z)/2));
             rampK=1; rampL=rampTot-1;
-            const zr=Math.max(z,Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000);
+            const zr=rampZr(x,y);
             moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:zr});
           }
         }
@@ -41276,15 +41295,15 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
         const atZ=!!(Pm&&!Pm.r&&Math.abs(Pm.z-z)<1e-9);
         if(rampL>0){
           rampK++;
-          const zr=Math.max(z,Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000);
+          const zr=rampZr(x,y);
           moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:zr});
-          rampL--;
+          rampL--;if(!rampL&&zr>z+1e-9)rampL=1; // V0.23.24 : jusqu’à la cote
         }else if(i>0&&atZ&&prevIn&&segClear(px,py,x,y))pushCut(x,y);
         else if(atZ&&linkNear(Pm.x,Pm.y,x,y)&&segClear(Pm.x,Pm.y,x,y))pushCut(x,y); // passe voisine : glissement
         else if(!entryTo(x,y,ex,ey)){
           rampTot=Math.max(2,Math.ceil((rampZ0-z)/2));
           rampK=1; rampL=rampTot-1;
-          const zr=Math.max(z,Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000);
+          const zr=rampZr(x,y);
           moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:zr});
         }
         atCut=true; prevIn=true; px=x; py=y;

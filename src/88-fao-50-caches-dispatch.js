@@ -953,9 +953,10 @@ function faoArcSegs(p0,m,maxStep){
   }
   return pts;
 }
-function faoRoundPath(pts,radius){
+function faoRoundPath(pts,radius,keep){
   // Remplace chaque coin (changement de direction 1°..179°) par un arc
   // tangent de rayon donné. Retourne des moves {r:0} (droites + arcs).
+  // keep(p) : coin gardé vif (point de plongée ultérieure, faoRoundMoves).
   const out=[];
   const R=isFinite(+radius)&&+radius>0?+radius:0;
   if(!(R>0)||!pts||pts.length<3)return (pts||[]).map(function(p){return {r:0,x:p.x,y:p.y,z:p.z};});
@@ -963,7 +964,7 @@ function faoRoundPath(pts,radius){
   out.push({r:0,x:P[0].x,y:P[0].y,z:P[0].z});
   for(let i=1;i+1<P.length;i++){
     const a=P[i-1], b=P[i], c=P[i+1];
-    if(Math.abs(b.z-a.z)>1e-9||Math.abs(c.z-b.z)>1e-9){
+    if(Math.abs(b.z-a.z)>1e-9||Math.abs(c.z-b.z)>1e-9||(keep&&keep(b))){
       out.push({r:0,x:b.x,y:b.y,z:b.z}); // pas d'arc hors plan : on garde le coin
       continue;
     }
@@ -1007,10 +1008,19 @@ function faoRoundMoves(moves,radius){
   // le 1er point du passage était pris pour la position courante et omis : un
   // passage qui suivait une entrée en arc perdait son premier coin (MERLIN-23-001 :
   // diagonale de 60 mm à travers le brut au lieu du tour du cadre).
+  // V0.23.24 : un coin où l'outil REPLONGE plus tard à la verticale (entrée
+  // validée à la génération parce que l'outil y était déjà passé à la cote)
+  // reste vif : arrondi, l'outil n'y passait plus et la plongée tombait dans
+  // la matière (MERLIN-23-001 : 3 mm au bord du brut, niveaux 4 / 1,7 / 0).
+  const kp=function(x,y,z){return x.toFixed(3)+','+y.toFixed(3)+','+z.toFixed(3);};
+  const plunge=new Set();
+  (moves||[]).forEach(function(m,i){const a=i>0?moves[i-1]:null;
+    if(a&&m.ent&&!m.r&&!m.arc&&Math.abs(a.x-m.x)<1e-9&&Math.abs(a.y-m.y)<1e-9&&a.z>m.z+1e-6)plunge.add(kp(m.x,m.y,m.z));});
+  const keep=plunge.size?function(p){return plunge.has(kp(p.x,p.y,p.z));}:null;
   const out=[]; let run=[];
   const flush=function(){
     if(run.length>=3){
-      const rounded=faoRoundPath(run,R);
+      const rounded=faoRoundPath(run,R,keep);
       for(let i=1;i<rounded.length;i++)out.push(rounded[i]);
     }else{
       for(let i=1;i<run.length;i++)out.push({r:0,x:run[i].x,y:run[i].y,z:run[i].z});

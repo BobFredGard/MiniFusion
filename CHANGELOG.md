@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**481 versions**, de `2026-09-28b` à `V0.23.23` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**482 versions**, de `2026-09-28b` à `V0.23.24` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5903,3 +5903,13 @@ Demande : le cube du brut, plus bas que la pièce, était caché sous le sol mir
 - **Cause** : ce n'était pas le sol miroir (il suit le brut depuis V0.23.12) mais le **plan d'ombre portée** (`vEnvFloor`, actif aussi en FAO) : posé sous les seules pièces, à leur Z le plus bas et toujours en Z monde, et écrivant la profondeur — tout le cube du brut sous la pièce était masqué et assombri.
 - **Correctif** : `refreshMirror` (`src/10-scene-3d.js`) garde le plan du sol dans `floorPlane` (centre et haut de la vue, Z du posage en 3+2), calculé aussi quand seule l'ombre est affichée ; `vEnvTick` (`src/98-rendu-vue.js`) pose le plan d'ombre sur ce plan, un peu plus bas, même orientation, avec `depthWrite:false`.
 - **Tests** : `npm run ci`. Vérifié dans le navigateur sur MERLIN-23-001, brut descendu à 15 mm sous la pièce : sol miroir à −15,02, ombre à −15,09 (avant : vers 0) ; cube entier, reflet depuis sa face du bas.
+
+## V0.23.24 - Ébauche 3D : plus de plongée verticale ni de rampe raide dans la matière
+Demande : « des fois, tu rentres verticalement en pleine matière (MERLIN-23-001). Toujours, quand c'est possible, par l'extérieur avec un cercle ou en hélice ». Mesuré en rejouant l'ébauche de MERLIN-23-001 (mode du fichier : Trochoïdal) sur une Z-map du brut : 3 descentes verticales en avance à (−30,5 ; 4,5), niveaux 4 / 1,7 / 0, avec 3 mm de matière sous la fraise ; 5 rampes à 58–63° (presque verticales) au bord du brut. Escargot : aucune.
+- **Cause 1** : l'entrée verticale était validée à la génération (l'outil était déjà passé à ce point à la cote), puis l'**arrondi des coins** (`faoRoundMoves`, appliqué au parcours fini) remplaçait ce coin par un arc : l'outil n'y passait plus, la plongée tombait dans un quart de disque de brut. **Correctif** : un coin où l'outil replonge plus tard à la verticale reste vif (`faoRoundPath`, paramètre `keep`).
+- **Cause 2** : le rampage le long de la spirale, des demi-anneaux et des anneaux Escargot descendait de ~2 mm par échantillon quelle que soit leur distance (π/6 près d'un petit rayon : 2 mm sur 0,9 mm), et son 1er pas, sur place, était vertical. **Correctif** : `rampZr` — pente ≤ 0,4 (≈ 22°) par rapport au point précédent, la rampe continue jusqu'à la cote.
+- **Résultat MERLIN-23-001** : 0 plongée verticale, 0 rampe raide, 0 rapide dans la matière, en Trochoïdal comme en Escargot. Trochoïdal : chaque niveau commence par une hélice au centre de la spirale ; Escargot : entrées par l'extérieur.
+- Essai écarté : la carte du brut (boîte) en Trochoïdal supprimait aussi les rampes raides, mais faisait passer un rapide à 1,34 mm dans la matière (`test_fao_ebauche_brut`).
+- **CI GitHub** : le projet Playwright `gpu` est exclu (`--project=chromium`) : les machines GitHub n'ont pas de carte graphique (SwiftShader) ; à lancer en local avec `npm run test:gpu`.
+- `CACHE_VER` 2026-10-30-003 : les ébauches 3D sont à régénérer.
+- **Tests** : `npm run parcours` 27/27 identiques ; `tests/test_fao_*.cjs` ; `npm run ci`.

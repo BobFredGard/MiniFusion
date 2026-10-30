@@ -506,8 +506,7 @@ function faoPlungeClear(Sx,Sy,moves,z,D,airAt,margin){
   const R=D/2, Rs=R+(margin>0?margin:0), lim=R+1e-9, lim2=lim*lim, near=(Rs+lim), near2=near*near;
   const K=Math.max(16,Math.min(64,Math.ceil(Math.PI*2*Rs)));
   const qx=[Sx],qy=[Sy];
-  for(let k=0;k<K;k++){const a=k/K*2*Math.PI;qx.push(Sx+Rs*Math.cos(a));qy.push(Sy+Rs*Math.sin(a));}
-  const cov=new Uint8Array(qx.length);
+  for(let k=0;k<K;k++){const a=k/K*2*Math.PI;qx.push(Sx+Rs*Math.cos(a));qy.push(Sy+Rs*Math.sin(a));}  const cov=new Uint8Array(qx.length);
   let left=qx.length;
   const d2=function(ax,ay,bx,by,px,py){
     const dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy;
@@ -1114,6 +1113,16 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
   let th=0,guard=0,atCut=false,prevIn=false,px=cx,py=cy;
   // 007 : descente répartie le long de la spirale (rampL>0 = rampage actif)
   let rampL=0,rampK=0,rampTot=0;
+  // V0.23.24 : cote du pas de rampe — paliers de ~2 mm (rampTot) ET pente
+  // ≤ 0,4 (≈ 22°) par rapport au point précédent : des échantillons serrés
+  // (petit rayon, π/6) donnaient 2 mm sur 0,9 mm, une descente à 60° dans la
+  // matière (MERLIN-23-001, bord du brut) ; le 1er pas, sur place, était vertical.
+  const rampZr=function(x,y){
+    const zf=Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000;
+    const P=moves.length?moves[moves.length-1]:null;
+    const zl=P?Math.round((P.z-Math.hypot(x-P.x,y-P.y)*0.4)*1000)/1000:zf;
+    return Math.max(z,zf,zl);
+  };
   // 2026-10-21-004 : FIN DE RAMPAGE ANTICIPÉE — un rampage ne continue QUE
   // vers un point CONTIGU (échantillon précédent légal) et dégagé (segClear).
   // Avant : après un trou (la spirale / le demi-anneau passe sous la pièce,
@@ -1148,9 +1157,9 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
         // 007 : on CONTINUE le rampage — la fraise descend en avançant sur la
         // spirale (coupe progressive du croissant non balayé, centre légal).
         rampK++;
-        const zr=Math.max(z,Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000);
+        const zr=rampZr(x,y);
         moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:zr});
-        rampL--;
+        rampL--;if(!rampL&&zr>z+1e-9)rampL=1; // V0.23.24 : jusqu’à la cote
       }else if(!atCut||!prevIn||!segClear(px,py,x,y)){
         if(!entryTo(x,y,ex,ey)){
           // 007 : aucune entrée sûre ici (pas d'ancre balayée, pas d'orbite
@@ -1158,7 +1167,7 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
           // progressant, jamais à plat sur le brut restant.
           rampTot=Math.max(2,Math.ceil((rampZ0-z)/2));
           rampK=1; rampL=rampTot-1;
-          const zr=Math.max(z,Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000);
+          const zr=rampZr(x,y);
           moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:zr});
         }
       }
@@ -1226,14 +1235,14 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
         if(rampL>0&&!(prevIn&&segClear(px,py,x,y)))finishRamp(); // 2026-10-21-004 : jamais de pont
         if(rampL>0){
           rampK++;
-          const zr=Math.max(z,Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000);
+          const zr=rampZr(x,y);
           moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:zr});
-          rampL--;
+          rampL--;if(!rampL&&zr>z+1e-9)rampL=1; // V0.23.24 : jusqu’à la cote
         }else if(!atCut||!prevIn||!segClear(px,py,x,y)){
           if(!entryTo(x,y,ex,ey)){
             rampTot=Math.max(2,Math.ceil((rampZ0-z)/2));
             rampK=1; rampL=rampTot-1;
-            const zr=Math.max(z,Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000);
+            const zr=rampZr(x,y);
             moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:zr});
           }
         }
@@ -1491,15 +1500,15 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
         const atZ=!!(Pm&&!Pm.r&&Math.abs(Pm.z-z)<1e-9);
         if(rampL>0){
           rampK++;
-          const zr=Math.max(z,Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000);
+          const zr=rampZr(x,y);
           moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:zr});
-          rampL--;
+          rampL--;if(!rampL&&zr>z+1e-9)rampL=1; // V0.23.24 : jusqu’à la cote
         }else if(i>0&&atZ&&prevIn&&segClear(px,py,x,y))pushCut(x,y);
         else if(atZ&&linkNear(Pm.x,Pm.y,x,y)&&segClear(Pm.x,Pm.y,x,y))pushCut(x,y); // passe voisine : glissement
         else if(!entryTo(x,y,ex,ey)){
           rampTot=Math.max(2,Math.ceil((rampZ0-z)/2));
           rampK=1; rampL=rampTot-1;
-          const zr=Math.max(z,Math.round((rampZ0+(z-rampZ0)*rampK/rampTot)*1000)/1000);
+          const zr=rampZr(x,y);
           moves.push({r:0,ent:1,x:rnd(x),y:rnd(y),z:zr});
         }
         atCut=true; prevIn=true; px=x; py=y;

@@ -37,8 +37,10 @@ jobs:
       - run: npm ci
       - name: Installer Chromium (Playwright)
         run: npx playwright install --with-deps chromium
+      # projet « gpu » exclu : les machines GitHub n'ont pas de carte graphique
+      # (SwiftShader) — à lancer en local avec npm run test:gpu
       - name: Tests navigateur
-        run: npm run test:browser
+        run: npm run test:browser -- --project=chromium
       - name: Rapport Playwright
         if: failure()
         uses: actions/upload-artifact@v4
