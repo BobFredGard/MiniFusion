@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**469 versions**, de `2026-09-28b` à `V0.23.11` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**470 versions**, de `2026-09-28b` à `V0.23.12` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5813,3 +5813,9 @@ Demande : « j'aimerais que la création du PDF et l'impression se fassent dans 
 - **Iframe d'aperçu = document d'impression** (`mepPrintHtml`) : règles `@page` / print au format exact de la planche, sans marge (échelle 1:1), couleurs imprimées telles quelles ; les règles écran n'ajustent que l'aperçu.
 - **Nom du PDF** (`mepPrintName`) : titre de la fenêtre = document_planche le temps de l'impression (proposé à l'enregistrement), remis après `afterprint`. « Télécharger PDF » passe par la boîte d'impression : choisir « Enregistrer au format PDF », marges aucune.
 - **Tests** : `npm run ci` ; modale vérifiée dans le navigateur.
+
+## V0.23.12 - FAO : le sol miroir suit le brut comme son reflet
+Demande : « FAO : le miroir n'a pas suivi le brut mais le reflet oui ».
+- **Cause** : le reflet est rendu à chaque image, mais le disque du sol n'était recalé (`refreshMirror`) que sur certains événements (posage, ouverture / fermeture de la simulation, cases) ; un brut changé autrement laissait le sol en place sous l'ancien encombrement.
+- **Correctif** (`src/10`) : `floorMeshes()` regroupe les corps qui portent le sol ; `floorFollowTick()`, appelé à chaque image, compare une signature (nombre de corps, boîte englobante des géométries sans parcours des sommets, haut de la vue) et relance `refreshMirror` si elle change.
+- **Tests** : `npm run ci`. Vérifié dans le navigateur : un volume descendu sans appel à `refreshMirror` → sol de −0,02 à −45,02, halo élargi quand il grossit.

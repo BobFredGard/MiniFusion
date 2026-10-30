@@ -282,7 +282,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.23.11';
+const APP_VER='V0.23.12';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -814,16 +814,8 @@ function floorSync(){
   floorMesh.visible=floorOn||mirrorOn;
   mirrorDirty=true;
 }
-function refreshMirror(){
-  // Sol sous les corps visibles + halo centré (comme le viewer).
-  // 2026-10-21-005 : le sol est PERPENDICULAIRE au haut de la vue (_mn : Z monde, ou
-  // Z du posage / de l'opération en FAO — viewUpSync) et posé sous le point le plus
-  // bas des corps LE LONG de cet axe (sommets exacts : une boîte englobante penchée
-  // laisserait un vide sous la pièce).
-  if(!floorMesh)return;
-  mirrorDirty=true; // la cible de reflet est à refaire (position du sol, halo, visibilité)
-  floorSync();
-  if(!floorMesh.visible)return;
+function floorMeshes(){
+  // Corps sur lesquels le sol se pose (refreshMirror, floorFollowTick).
   // 2026-10-22 : en FAO, le BRUT affiché (posage sélectionné) compte aussi — le sol
   // passe sous lui, pas sous la pièce qu'il enveloppe.
   // V0.7.5 : seulement ce qui est réellement AFFICHÉ (objet et parents visibles) — un corps masqué
@@ -841,8 +833,38 @@ function refreshMirror(){
   try{const g=scene.getObjectByName('asmCtx');if(g)g.traverse(o=>{if(o.isMesh&&shown(o))ms.push(o);});}catch(e){}
   // V0.7.5 : FAO en simulation — le brut et la matière usinée du simulateur (88-fao-70)
   try{if(typeof faoVw!=='undefined'&&faoVw)[faoVw.stock,faoVw.matter].forEach(g=>{if(g&&g.traverse)g.traverse(o=>{if(o.isMesh&&shown(o))ms.push(o);});});}catch(e){}
+  return ms;
+}
+// V0.23.12 : le sol suit À CHAQUE IMAGE ce qui est affiché, comme le reflet — avant, il n'était
+// recalé que sur certains événements (posage, simulation, cases) et restait en place quand le
+// brut changeait autrement (matière simulée, brut corps modifié…) alors que son reflet suivait.
+// Signature : nombre de corps + boîte englobante (boundingBox des géométries, sans parcours des
+// sommets) + haut de la vue ; le recalage complet n'a lieu que si elle change.
+let _floorSig='';
+function floorBoxSig(n,box){
+  const r=v=>Math.round(v*1e3);
+  return n+'|'+(box.isEmpty()?'':[box.min.x,box.min.y,box.min.z,box.max.x,box.max.y,box.max.z].map(r).join(','))+'|'+[_mn.x,_mn.y,_mn.z].map(v=>Math.round(v*1e6)).join(',');
+}
+function floorFollowTick(){
+  if(!floorMesh||!floorMesh.visible)return;
+  const ms=floorMeshes(),box=new THREE.Box3();
+  ms.forEach(m=>{m.updateWorldMatrix(true,false);box.expandByObject(m);});
+  if(floorBoxSig(ms.length,box)!==_floorSig)refreshMirror();
+}
+function refreshMirror(){
+  // Sol sous les corps visibles + halo centré (comme le viewer).
+  // 2026-10-21-005 : le sol est PERPENDICULAIRE au haut de la vue (_mn : Z monde, ou
+  // Z du posage / de l'opération en FAO — viewUpSync) et posé sous le point le plus
+  // bas des corps LE LONG de cet axe (sommets exacts : une boîte englobante penchée
+  // laisserait un vide sous la pièce).
+  if(!floorMesh)return;
+  mirrorDirty=true; // la cible de reflet est à refaire (position du sol, halo, visibilité)
+  floorSync();
+  if(!floorMesh.visible)return;
+  const ms=floorMeshes();
   const box=new THREE.Box3();let n=0;
   ms.forEach(m=>{m.updateWorldMatrix(true,false);box.expandByObject(m);n++;});
+  _floorSig=floorBoxSig(n,box);
   if(!n||box.isEmpty())return;
   const U=_mn,sz=box.getSize(new THREE.Vector3()).length();
   let dmin=Infinity;
@@ -1232,6 +1254,7 @@ function animate(){
   try{cgPaintIfNeeded();}catch(e){} // construction : la surbrillance suit la sélection
   try{if(typeof extDynTick==='function')extDynTick();}catch(e){} // extrusion dynamique : flèche et cote (70)
   try{if(typeof faoPoseSync==='function')faoPoseSync();}catch(e){}
+  try{floorFollowTick();}catch(e){} // le sol suit le brut / les corps affichés (V0.23.12)
   try{if(typeof faoFaceHlSync==='function')faoFaceHlSync();}catch(e){} // faces bleues / rouges de l'op sélectionnée
   try{if(typeof holeThreadVisSync==='function')holeThreadVisSync();}catch(e){} // filets taraudés : cachés avec leur corps (76)
   try{if(typeof clipTick==='function')clipTick();}catch(e){} // coupe : remplissage des faces coupées (91)
