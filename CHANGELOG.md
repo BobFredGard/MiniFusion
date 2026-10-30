@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**476 versions**, de `2026-09-28b` à `V0.23.18` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**477 versions**, de `2026-09-28b` à `V0.23.19` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5869,3 +5869,8 @@ Demande : « Aujourd'hui, le contournage se fait par palier. On va l'appeler Pal
 - **Fiche Contour → Passes → Descente** : **Paliers** (niveaux ap, comportement d'avant, défaut) ou **Pente** avec l'angle **pente °** (0,5 à 45°, défaut 5° ; `ap` masqué). Champs `op.descente='pente'` / `op.pente` ; absents = Paliers, documents existants inchangés (`CACHE_VER` inchangé).
 - **Parcours** (`faoGenContourProfil`, `src/89-fao-contour.js`) : entrée tangente au Haut, hélice le long de la boucle à z = Haut − s·tan(angle) jusqu'au plan final (Bas + Fond), point exact au bas de la rampe, un tour complet à plat + recouvrement, sortie tangente. Chaque passe latérale descend de la sorte ; la finition pleine hauteur reste à plat. Attaches respectées (marches au bord de l'attache, z interpolé sur la rampe). Morceau de profil ouvert : repli en paliers.
 - **Tests** : `test_fao_contour` (attaque au Haut, z jamais remontant, pente ≤ tan(angle), tour final à plat au Bas hors paroi, attaches, sanitise) ; `npm run parcours` : 27/27 identiques ; `npm run ci`.
+
+## V0.23.19 - Écran de démarrage : 10 s au lieu de 15 s
+Demande : « passe l'animation à 10s ».
+- **Correctif** (gabarit de `fusion_mvp.html`) : barre de progression et début du fondu à 9,3 s (au lieu de 14,3 s), retrait de l'écran à 10,1 s (au lieu de 15,1 s). Les animations d'entrée (logo, lettres, slogan, finies avant 3 s) ne changent pas.
+- **Tests** : `npm run ci`. Vérifié dans le navigateur : écran présent à 8 s, retiré à 11 s.
