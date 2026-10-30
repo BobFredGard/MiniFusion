@@ -176,10 +176,11 @@ input[type=range]{accent-color:var(--primary);width:100%}
       <div class="setRow"><label>Orbite <select id="optOrbit" title="Contrainte : Z reste en haut de l'écran · Libre : la pièce tourne dans tous les sens (tour complet, par-dessus et par-dessous)"><option value="contrainte">Contrainte (Z en haut)</option><option value="libre">Libre (tous les sens)</option></select></label></div>
       <div class="setRow" title="Effet de perspective = angle de champ de la caméra : à gauche presque orthographique, à droite fuyantes marquées. La pièce garde sa taille à l'écran. Double-clic : 50° par défaut"><label for="optFov">Perspective</label><input type="range" id="optFov" min="5" max="90" step="1" value="50" style="flex:1"><span id="optFovVal" style="min-width:30px;text-align:right">50°</span></div>
       <p class="ovlTitle">Coupe</p>
-      <div class="setRow"><label><input type="checkbox" id="clipOn"> Activer coupe (plan Z · hauteur)</label></div>
-      <div class="setRow"><input type="range" id="clipPos" min="-100" max="100" value="0" step="0.5" title="Hauteur du plan de coupe"></div>
-      <div class="setRow"><label><input type="checkbox" id="clipFlip"> Inverser côté</label></div>
-      <div class="ovlNote">Plan de coupe global sur les corps visibles.</div>
+      <div class="setRow"><label><input type="checkbox" id="clipOn"> Activer la coupe</label> <label>Axe <select id="clipAxis" title="Plan de coupe perpendiculaire à cet axe"><option value="X">X</option><option value="Y">Y</option><option value="Z" selected>Z (hauteur)</option></select></label></div>
+      <div class="setRow"><input type="range" id="clipPos" min="-100" max="100" value="0" step="0.5" title="Position du plan de coupe le long de l'axe" style="flex:1;min-width:0"><input type="number" id="clipPosN" step="0.5" style="width:64px" title="Position du plan de coupe en mm (Entrée pour appliquer)"></div>
+      <div class="setRow"><label><input type="checkbox" id="clipFlip"> Inverser côté</label> <label title="Remplit les faces coupées à la couleur du corps (sinon on voit l'intérieur creux de la peau)"><input type="checkbox" id="clipCap" checked> Remplir la coupe</label></div>
+      <div class="setRow"><label><input type="checkbox" id="clipHelper"> Afficher le plan</label></div>
+      <div class="ovlNote">Plan de coupe global sur les corps visibles ; le curseur couvre l'emprise des corps sur l'axe choisi.</div>
     </div>
     <div id="sketchOverlay">
       <div id="skToolbar">
@@ -281,7 +282,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.23.2';
+const APP_VER='V0.23.3';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────

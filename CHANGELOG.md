@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**460 versions**, de `2026-09-28b` à `V0.23.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**461 versions**, de `2026-09-28b` à `V0.23.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5752,3 +5752,9 @@ Demande : « La fonction face choisit le plan de face par défaut mais j'aimerai
 - **Orientation** (propriétés d'une vue de base : Face, Arrière, Côté gauche, Côté droit, Dessus, Dessous) : `mepSetBaseOrient` (`src/98-mep-20-vues.js`) change la direction de la vue, rejoue en cascade ses projections et leurs filles (`mepReproject`, cotes re-ancrées), puis replace les projections directes en 1er angle (`mepPlaceProj`, extrait de `mepAddProjected`). Le libellé par défaut suit la nouvelle orientation. Un seul Ctrl+Z annule tout (`mepReproject(id,noUndo)`). API : `mepSetViewOrient(id,vk)`.
 - **Noms de vues** (`mepViewTitleText`, `src/98-mep-60`) : plus de titre sur la planche pour les vues standard, projetées et DXF ; gardé pour les coupes (COUPE A-A), détails et vues auxiliaires. Le libellé reste dans les propriétés.
 - **Tests** : `test_mise_en_plan` (Face → Côté droit → Dessus : directions et placement des projections) ; `npm run ci`. Vérifié dans le navigateur : liste Orientation, projections recalculées, aucun titre sur la planche.
+
+## V0.23.3 - Correctif de fusion : interface Moderne et noyau de nouveau chargés
+Signalé : « j'ai perdu mon interface Moderne par défaut » (interface classique, noyau bloqué sur « Init… »), depuis V0.23.0.
+- **Cause** : en reportant V0.23.0 sur V0.22.7, `fusion_mvp.html` a été pris en entier depuis V0.23.0, donc avec le gabarit HTML de V0.22.5 (même erreur que celle corrigée en V0.23.1). `build.js` reprend ce gabarit du livrable existant : les contrôles de coupe de V0.22.6 (`clipAxis`, `clipCap`, `clipHelper`, `clipPosN`) ont disparu de la page, et `95-toolbar.js` (`$('clipAxis').onchange=…`) levait une erreur qui arrêtait l'initialisation avant l'interface Moderne et le noyau. V0.23.1 et V0.23.2 l'ont héritée.
+- **Correctif** : seul le bloc des réglages de coupe du gabarit est rétabli ; le gabarit est alors identique à celui de V0.22.7 (V0.23.2 n'y avait rien changé).
+- **Tests** : `npm run ci`. Vérifié dans le navigateur : aucune erreur, interface Moderne, noyau prêt.
