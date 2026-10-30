@@ -490,7 +490,7 @@ function fmiIdx(moves){
   g.nq=L;
   return g;
 }
-function faoPlungeClear(Sx,Sy,moves,z,D,airAt){
+function faoPlungeClear(Sx,Sy,moves,z,D,airAt,margin){
   if(globalThis.__st)globalThis.__st.pc++;
   // 2026-10-08-005 : la plongée en S exige la fraise TOTALEMENT hors matière
   // restante — le disque de rayon D/2 autour de S doit être entièrement balayé
@@ -501,10 +501,12 @@ function faoPlungeClear(Sx,Sy,moves,z,D,airAt){
   // 2026-10-08-004 est un cas particulier — centre couvert — remplacée ici.)
   // 2026-10-09-004 : interrogation via l'index incrémental fmi (même
   // sémantique, O(cellules proches) au lieu de O(tous les moves)).
-  const R=D/2, lim=R+1e-9, lim2=lim*lim, near=(R+lim), near2=near*near;
-  const K=Math.max(16,Math.min(64,Math.ceil(Math.PI*D)));
+  // V0.23.14 : margin (descente rapide, faoFastDrops) — cercle d'échantillons
+  // à D/2+margin, le balayage reste compté au vrai rayon D/2.
+  const R=D/2, Rs=R+(margin>0?margin:0), lim=R+1e-9, lim2=lim*lim, near=(Rs+lim), near2=near*near;
+  const K=Math.max(16,Math.min(64,Math.ceil(Math.PI*2*Rs)));
   const qx=[Sx],qy=[Sy];
-  for(let k=0;k<K;k++){const a=k/K*2*Math.PI;qx.push(Sx+R*Math.cos(a));qy.push(Sy+R*Math.sin(a));}
+  for(let k=0;k<K;k++){const a=k/K*2*Math.PI;qx.push(Sx+Rs*Math.cos(a));qy.push(Sy+Rs*Math.sin(a));}
   const cov=new Uint8Array(qx.length);
   let left=qx.length;
   const d2=function(ax,ay,bx,by,px,py){
@@ -908,6 +910,8 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
       else if(zoneAt&&!zoneAt(qx,qy))return false;}
     return true;
   };
+  // (descente rapide au-dessus du DÉJÀ-USINÉ : faoFastDrops, après l'arrondi
+  // des coins — ici le parcours n'est pas encore lissé, V0.23.14)
   const dropAir=function(x,y,zG){
     if(airHere(x,y)&&zG>z+1+1e-9)moves.push({r:1,x:rnd(x),y:rnd(y),z:rnd(z+1)});
   };
@@ -1252,7 +1256,8 @@ function faoSpiralLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,moves,op
     ?function(ax,ay,bx,by){const L=Math.hypot(bx-ax,by-ay),n=Math.max(1,Math.ceil(L/0.25));
         for(let i=0;i<=n;i++){const t=i/n;if(!opt.bullOK(ax+(bx-ax)*t,ay+(by-ay)*t,z))return false;}return true;}
     :segClear;
-  const rem=wallRuns.concat(faoRectRuns(S,0,r)).filter(function(c){
+  const fTouch=(opt&&typeof opt.frameTouch==='function')?opt.frameTouch:null; // V0.23.14 : cadre dans l'air retiré
+  const rem=wallRuns.concat(faoRectRuns(S,0,r).filter(function(c){return !fTouch||c.pts.some(function(p){return fTouch(p[0],p[1]);});})).filter(function(c){
     return c.pts&&c.pts.length>=2&&Math.max(c.bb[2]-c.bb[0],c.bb[3]-c.bb[1])>=0.1;
   });
   // 2026-10-10-004 : les chaines de FACES (parois du solide) sont egalement
@@ -1603,6 +1608,18 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     if(th!==0){const cs=Math.cos(th),sn=Math.sin(th);stockTopF=function(x,y){return sW(x*cs-y*sn,x*sn+y*cs);};}
     else stockTopF=function(x,y){return sW(y,x);};
   }
+  // V0.23.14 : CADRE DANS L'AIR — depuis 2026-10-21-002 la boîte de travail
+  // contient la boîte du brut : le cadre E0 (tour de la boîte à r) passait
+  // AUTOUR du brut, l'outil à la surépaisseur du bord (MERLIN-23-001 : 271 mm
+  // à chacun des 15 niveaux, sans un copeau). Un morceau de cadre n'est gardé
+  // que si le disque de l'outil entame la boîte du brut (le corps-brut y est
+  // inclus) en au moins un point. Sans boîte du brut : cadre inchangé.
+  let frameTouch=null;
+  if(SB){const rD=D/2-0.01,cs=Math.cos(th),sn=Math.sin(th);
+    frameTouch=function(x,y){let X=x,Y=y;
+      if(th!==0){X=x*cs-y*sn;Y=x*sn+y*cs;}else if(swapped){X=y;Y=x;}
+      const dx=Math.max(+SB.x0-X,0,X-+SB.x1),dy=Math.max(+SB.y0-Y,0,Y-+SB.y1);
+      return dx*dx+dy*dy<rD*rD;};}
   if(typeof o.zoneAt==='function'&&(th!==0||swapped)){
     const zW=o.zoneAt,zS=(typeof o.zoneSafe==='function')?o.zoneSafe:null;
     if(th!==0){
@@ -1795,10 +1812,10 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
     // ESCARGOT : spirale centre -> faces sur le meme plan/levels, memes
     // entrees/travel ; mini-passes et finition restent conventionnelles.
     // 2026-10-08-003 : sens (avalant = sens de coupe constant) porte par opt.
-    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,zoneDense:typeof o.protectTip==='function',stockTop:stockTopF,remBlocked:rem?rem.blocked:null,remTopAt:rem?rem.topAt:null,remPtAt:rem?rem.ptAt:null,zoneSafe:o.zoneSafe||null,
+    if(esc)faoSpiralLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,frameTouch:frameTouch,zoneDense:typeof o.protectTip==='function',stockTop:stockTopF,remBlocked:rem?rem.blocked:null,remTopAt:rem?rem.topAt:null,remPtAt:rem?rem.ptAt:null,zoneSafe:o.zoneSafe||null,
       bullFaces:bullC?function(zz){return faoBullRingRuns(bullCtx(L.radial),zz,o.sens==='avalant',true);}:null,
       bullOK:bullC?function(x,y,zz){return bullCtx(L.radial).tipB(x,y)<=zz+1e-6;}:null});
-    else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
+    else faoRoughAdaptiveLevel(M,BB,L.z,D,D/2+L.radial,secu,zFrom,ae,entryMode,o.brutTop,zt,moves,{travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,frameTouch:frameTouch});
     if(rem)rem.carve();
     if(bullC&&!esc)bullJobs.push([L.radial,L.z,tvZ]); // conventionnel : contour ajouté en fin d'opération
     yield frameYield(); // dessin progressif 005 : pelage du niveau fini
@@ -1822,7 +1839,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
         // même place du parcours, au lieu du calcul fraise droite (~1 mm de
         // trop sur les faces inclinées, torique D25 R2).
         if(bullC)faoBullRingLevel(bullCtx(s),zm,moves,{sens:o.sens,secu:secu,travelZ:tvZ,linkMax:bullLink,minRun:rem?5:0,dzStay:rem?h:0,all:true});
-        else faoRoughAdaptiveLevel(M,BB,zm,D,D/2+s,secu,Math.min(secu,bandTop),ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
+        else faoRoughAdaptiveLevel(M,BB,zm,D,D/2+s,secu,Math.min(secu,bandTop),ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvZ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,frameTouch:frameTouch});
         if(rem)rem.carve();
         yield frameYield(); // dessin progressif 005 : mini-passe k
       }
@@ -1856,7 +1873,7 @@ function* faoGenRough3DIt(mesh,box,ztop,zbot,o){
           const off=RA.radial*(nf-k)/nf;
           // 2026-10-14-010 : outil à rayon de coin — anneau au contact réel, en place
           if(bullC)faoBullRingLevel(bullCtx(off),zj,moves,{sens:o.sens,secu:secu,travelZ:tvJ,linkMax:bullLink,minRun:rem?5:0,all:true});
-          else faoRoughAdaptiveLevel(M,BB,zj,D,D/2+off,secu,zF,ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvJ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt});
+          else faoRoughAdaptiveLevel(M,BB,zj,D,D/2+off,secu,zF,ae,entryMode,o.brutTop,zt,moves,{ringOnly:true,travelZ:tvJ,sens:o.sens,entryR:o.entryR,zoneAt:o.zoneAt,frameTouch:frameTouch});
           yield frameYield(); // dessin progressif 005 : finition k
         }
       }

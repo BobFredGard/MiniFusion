@@ -62,7 +62,12 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     const mvL=__doB?faoOpMoves(setup.ops[0],setup):[];
     const eP=importStepBuild(new Uint8Array(__part));
     const mP=_faoMeshFromBodyOrig({mesh:{geometry:eP.faoGeo}},600000);
-    return {mP:mP,mvL:mvL.map(m=>[m.r?1:0,m.x,m.y,m.z]),mS:mS,stock:setup.stock,tool:{d:+tool.d,cr:+tool.cornerR||0},mv:mv.map(m=>[m.r?1:0,m.x,m.y,m.z])};
+    // V0.23.14 : arcs G2/G3 subdivisés (faoArcSegs) — rejoués en corde, un arc
+    // R5 (flèche 1,46 mm) laissait une matière fictive sous une descente rapide
+    const flat=function(L){const o=[];for(let i=0;i<L.length;i++){const m=L[i];
+      if(m.arc&&i>0)(faoArcSegs(L[i-1],m)||[]).forEach(q=>o.push([0,q[0],q[1],q.length>2?q[2]:m.z]));
+      o.push([m.r?1:0,m.x,m.y,m.z]);}return o;};
+    return {mP:mP,mvL:mvL.map(m=>[m.r?1:0,m.x,m.y,m.z]),mS:mS,stock:setup.stock,tool:{d:+tool.d,cr:+tool.cornerR||0},mv:flat(mv)};
   `;
   let r;
   try{ r=await vm.runInContext('(async()=>{'+body+'})()',ctx); }

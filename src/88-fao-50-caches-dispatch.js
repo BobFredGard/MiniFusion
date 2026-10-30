@@ -821,6 +821,8 @@ function* faoOpMovesIt0(op,job){
   // dépasser la frontière). Les rapides, eux, traversent librement.
   // 2026-10-08-003 : l'îlot intérieur compte comme une zone (ctx composé).
   if((lim||lim2)&&mv.length&&!zoneDone)mv=faoZoneCuts(mv,op,job,secu);
+  if(op&&op.type==='rough3d'&&mv.length)
+    mv=faoFastDrops(mv,D,tool.kind==='ball'?D/2:Math.min(D/2,Math.max(0,+tool.cornerR||0)));
   if(ck!==null)faoOpMovesStore(op,ck,mv);
   if(ck!==null)faoMovesSave(job,op,ck,mv); // persistance : prochaine ouverture = lecture
   if(op){ try{ op.stale=false; }catch(e){} } // generation fraiche
@@ -993,6 +995,25 @@ function faoRoundMoves(moves,radius){
     run.push({x:m.x,y:m.y,z:m.z});
   });
   flush();
+  return out;
+}
+// V0.23.14 : DESCENTE RAPIDE AU-DESSUS DU DÉJÀ-USINÉ (ébauche 3D). Une entrée
+// qui arrive en rapide à la hauteur de liaison puis descend à la verticale en
+// avance (r:0) : si le disque de l'outil (+0,25 mm) est entièrement balayé par
+// des coupes antérieures à cote ≤ z (faoPlungeClear, sur le parcours FINAL,
+// arrondi des coins compris), la colonne est vide au-dessus de z+rc (rc =
+// rayon de coin : une coupe torique/boule laisse jusqu'à rc de matière sous le
+// bord de l'outil) — rapide jusqu'à z+rc+1, puis la fin en avance.
+// MERLIN-23-001 : 2 082 descentes de 7 à 10 mm en avance plongée dans le vide.
+function faoFastDrops(mv,D,rc){
+  const out=[],up=1+(rc>0?rc:0);
+  for(let i=0;i<mv.length;i++){
+    const b=mv[i],a=out.length?out[out.length-1]:null;
+    if(a&&a.r&&!b.r&&!b.arc&&Math.abs(a.x-b.x)<1e-9&&Math.abs(a.y-b.y)<1e-9&&a.z>b.z+up+1e-6&&
+       faoPlungeClear(b.x,b.y,out,b.z,D,null,0.25))
+      out.push({r:1,x:b.x,y:b.y,z:Math.round((b.z+up)*1000)/1000});
+    out.push(b);
+  }
   return out;
 }
 function faoEstimate(moves,fCut,fRap,accel){

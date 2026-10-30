@@ -2,61 +2,64 @@
  "Cavité Test.miniFusion › POSAGE1 › 1. Surfaçage (op_4_mvqryqye)": {
   "type": "facing",
   "outil": "Torique D20 R2",
-  "ms": 9550,
+  "ms": 7380,
   "resume": {
    "n": 62,
-   "coupe": 3321.2,
+   "coupe": 3161.2,
    "rapide": 17.5,
    "nRap": 2,
    "remontees": 1,
    "zMin": 40,
    "zMax": 42.5,
-   "minutes": 2.77,
+   "minutes": 2.64,
    "niveaux": {
-    "42.500": 1467,
-    "40.000": 1659
+    "42.500": 1397,
+    "40.000": 1579
    }
-  }
- },
- "Perçages.miniFusion › POSAGE1 › 8. Perçage (op_14_mvjrbphp)": {
-  "type": "drill",
-  "outil": "Taraud M6",
-  "ms": 9646,
-  "resume": {
-   "n": 20,
-   "coupe": 176,
-   "rapide": 244,
-   "nRap": 11,
-   "remontees": 4,
-   "zMin": 0,
-   "zMax": 22,
-   "minutes": 0.21,
-   "niveaux": {}
   }
  },
  "Cavité Test.miniFusion › POSAGE1 › 4. Contour (op_6_mvr0jnwn)": {
   "type": "contour",
   "outil": "Fraise D10",
-  "ms": 9773,
+  "ms": 8055,
   "resume": {
-   "n": 1472,
-   "coupe": 2637,
-   "rapide": 64.8,
-   "nRap": 10,
-   "remontees": 5,
-   "zMin": 36.5,
-   "zMax": 38,
-   "minutes": 2.22,
+   "n": 2087,
+   "coupe": 3564,
+   "rapide": 83.3,
+   "nRap": 14,
+   "remontees": 7,
+   "zMin": 40,
+   "zMax": 43,
+   "minutes": 3.01,
    "niveaux": {
-    "38.000": 1051,
-    "36.500": 1562
+    "43.000": 1011,
+    "41.000": 1011,
+    "40.000": 1502
+   }
+  }
+ },
+ "Perçages.miniFusion › POSAGE1 › 11. Perçage (op_4_mvnrwbxw)": {
+  "type": "drill",
+  "outil": "Taraud M5",
+  "ms": 7910,
+  "resume": {
+   "n": 10,
+   "coupe": 65.6,
+   "rapide": 97,
+   "nRap": 5,
+   "remontees": 0,
+   "zMin": 10,
+   "zMax": 10,
+   "minutes": 0.08,
+   "niveaux": {
+    "10.000": 33
    }
   }
  },
  "Perçages.miniFusion › POSAGE1 › 4. Perçage (op_8_mvjrb2sl)": {
   "type": "drill",
   "outil": "Foret D6.6",
-  "ms": 9635,
+  "ms": 8009,
   "resume": {
    "n": 24,
    "coupe": 173.9,
@@ -69,26 +72,60 @@
    "niveaux": {}
   }
  },
- "Perçages.miniFusion › POSAGE1 › 6. Perçage (op_12_mvjrbpho)": {
+ "Perçages.miniFusion › POSAGE1 › 5. Perçage (op_10_mvjrbe4p)": {
   "type": "drill",
-  "outil": "Foret à centrer D10",
-  "ms": 9792,
+  "outil": "Fraise D6",
+  "ms": 8091,
+  "resume": {
+   "n": 294,
+   "coupe": 1075.3,
+   "rapide": 268,
+   "nRap": 17,
+   "remontees": 6,
+   "zMin": 13.6,
+   "zMax": 20.332,
+   "minutes": 0.97,
+   "niveaux": {
+    "13.600": 109
+   }
+  }
+ },
+ "Perçages.miniFusion › POSAGE1 › 7. Perçage (op_13_mvjrbphp)": {
+  "type": "drill",
+  "outil": "Foret D5",
+  "ms": 8084,
   "resume": {
    "n": 16,
-   "coupe": 20.8,
-   "rapide": 264.8,
+   "coupe": 98,
+   "rapide": 342,
    "nRap": 11,
    "remontees": 4,
-   "zMin": 16.8,
-   "zMax": 16.8,
-   "minutes": 0.09,
+   "zMin": -2.502,
+   "zMax": -2.502,
+   "minutes": 0.17,
+   "niveaux": {}
+  }
+ },
+ "Perçages.miniFusion › POSAGE1 › 10. Perçage (op_3_mvnrwbxv)": {
+  "type": "drill",
+  "outil": "Foret D4.2",
+  "ms": 8137,
+  "resume": {
+   "n": 8,
+   "coupe": 38.5,
+   "rapide": 135.5,
+   "nRap": 5,
+   "remontees": 0,
+   "zMin": 10,
+   "zMax": 10,
+   "minutes": 0.07,
    "niveaux": {}
   }
  },
  "Perçages.miniFusion › POSAGE1 › 1. Surfaçage (op_5_mvjcidjk)": {
   "type": "facing",
   "outil": "Torique D25 R2",
-  "ms": 9805,
+  "ms": 8166,
   "resume": {
    "n": 46,
    "coupe": 1828.1,
@@ -104,10 +141,42 @@
    }
   }
  },
+ "Perçages.miniFusion › POSAGE1 › 8. Perçage (op_14_mvjrbphp)": {
+  "type": "drill",
+  "outil": "Taraud M6",
+  "ms": 8327,
+  "resume": {
+   "n": 20,
+   "coupe": 176,
+   "rapide": 244,
+   "nRap": 11,
+   "remontees": 4,
+   "zMin": 0,
+   "zMax": 22,
+   "minutes": 0.21,
+   "niveaux": {}
+  }
+ },
+ "Perçages.miniFusion › POSAGE1 › 6. Perçage (op_12_mvjrbpho)": {
+  "type": "drill",
+  "outil": "Foret à centrer D10",
+  "ms": 8268,
+  "resume": {
+   "n": 16,
+   "coupe": 20.8,
+   "rapide": 264.8,
+   "nRap": 11,
+   "remontees": 4,
+   "zMin": 16.8,
+   "zMax": 16.8,
+   "minutes": 0.09,
+   "niveaux": {}
+  }
+ },
  "Perçages.miniFusion › POSAGE1 › 3. Perçage (op_7_mvjrb2sl)": {
   "type": "drill",
   "outil": "Foret à centrer D10",
-  "ms": 9884,
+  "ms": 8229,
   "resume": {
    "n": 24,
    "coupe": 33,
@@ -120,26 +189,10 @@
    "niveaux": {}
   }
  },
- "Perçages.miniFusion › POSAGE1 › 7. Perçage (op_13_mvjrbphp)": {
-  "type": "drill",
-  "outil": "Foret D5",
-  "ms": 9900,
-  "resume": {
-   "n": 16,
-   "coupe": 98,
-   "rapide": 342,
-   "nRap": 11,
-   "remontees": 4,
-   "zMin": -2.502,
-   "zMax": -2.502,
-   "minutes": 0.17,
-   "niveaux": {}
-  }
- },
  "Perçages.miniFusion › POSAGE1 › 9. Perçage (op_2_mvnrwbxu)": {
   "type": "drill",
   "outil": "Foret à centrer D10",
-  "ms": 9887,
+  "ms": 8290,
   "resume": {
    "n": 8,
    "coupe": 9.4,
@@ -152,81 +205,10 @@
    "niveaux": {}
   }
  },
- "Perçages.miniFusion › POSAGE1 › 11. Perçage (op_4_mvnrwbxw)": {
-  "type": "drill",
-  "outil": "Taraud M5",
-  "ms": 9920,
-  "resume": {
-   "n": 10,
-   "coupe": 65.6,
-   "rapide": 97,
-   "nRap": 5,
-   "remontees": 0,
-   "zMin": 10,
-   "zMax": 10,
-   "minutes": 0.08,
-   "niveaux": {
-    "10.000": 33
-   }
-  }
- },
- "Perçages.miniFusion › POSAGE1 › 10. Perçage (op_3_mvnrwbxv)": {
-  "type": "drill",
-  "outil": "Foret D4.2",
-  "ms": 10114,
-  "resume": {
-   "n": 8,
-   "coupe": 38.5,
-   "rapide": 135.5,
-   "nRap": 5,
-   "remontees": 0,
-   "zMin": 10,
-   "zMax": 10,
-   "minutes": 0.07,
-   "niveaux": {}
-  }
- },
- "Perçages.miniFusion › POSAGE1 › 5. Perçage (op_10_mvjrbe4p)": {
-  "type": "drill",
-  "outil": "Fraise D6",
-  "ms": 10091,
-  "resume": {
-   "n": 294,
-   "coupe": 1075.3,
-   "rapide": 268,
-   "nRap": 17,
-   "remontees": 6,
-   "zMin": 13.6,
-   "zMax": 20.332,
-   "minutes": 0.97,
-   "niveaux": {
-    "13.600": 109
-   }
-  }
- },
- "Perçages.miniFusion › POSAGE1 › 13. Chanfrein (op_2_mvo2kuqf)": {
-  "type": "chamfer",
-  "outil": "Foret à centrer D10",
-  "ms": 10428,
-  "resume": {
-   "n": 94,
-   "coupe": 102.4,
-   "rapide": 20.3,
-   "nRap": 2,
-   "remontees": 0,
-   "zMin": 1.45,
-   "zMax": 17.55,
-   "minutes": 0.09,
-   "niveaux": {
-    "17.550": 27,
-    "2.450": 28
-   }
-  }
- },
  "Perçages.miniFusion › POSAGE1 › 2. Contour (op_6_mvjcpb4f)": {
   "type": "contour",
   "outil": "Fraise D10",
-  "ms": 10523,
+  "ms": 8646,
   "resume": {
    "n": 1705,
    "coupe": 3626.3,
@@ -244,19 +226,38 @@
    }
   }
  },
+ "Perçages.miniFusion › POSAGE1 › 13. Chanfrein (op_2_mvo2kuqf)": {
+  "type": "chamfer",
+  "outil": "Foret à centrer D10",
+  "ms": 8731,
+  "resume": {
+   "n": 94,
+   "coupe": 102.4,
+   "rapide": 20.3,
+   "nRap": 2,
+   "remontees": 0,
+   "zMin": 1.45,
+   "zMax": 17.55,
+   "minutes": 0.09,
+   "niveaux": {
+    "17.550": 27,
+    "2.450": 28
+   }
+  }
+ },
  "Perçages.miniFusion › POSAGE1 › 12. Ébauche 3D (op_2_mvnu3k2a)": {
   "type": "rough3d",
   "outil": "Fraise D6",
-  "ms": 10683,
+  "ms": 8842,
   "resume": {
-   "n": 1578,
-   "coupe": 1093.8,
-   "rapide": 157.1,
-   "nRap": 17,
+   "n": 1586,
+   "coupe": 1063.3,
+   "rapide": 187.6,
+   "nRap": 25,
    "remontees": 4,
    "zMin": 6.75,
    "zMax": 13.25,
-   "minutes": 0.97,
+   "minutes": 0.96,
    "niveaux": {
     "13.250": 26,
     "12.750": 105,
@@ -267,49 +268,48 @@
    }
   }
  },
- "Poche et Contour.miniFusion › POSAGE1 › 4. Surfaçage (op_3_mvbd93sk)": {
-  "type": "facing",
-  "outil": "Fraise D10",
-  "ms": 1733,
-  "resume": {
-   "n": 43,
-   "coupe": 2984.9,
-   "rapide": 24.1,
-   "nRap": 2,
-   "remontees": 1,
-   "zMin": 5.429,
-   "zMax": 107.071,
-   "minutes": 2.5,
-   "niveaux": {
-    "107.071": 54,
-    "5.429": 56
-   }
-  }
- },
  "Poche et Contour.miniFusion › POSAGE1 › 3. Poche (op_4_mv81nm4j)": {
   "type": "pocket",
   "outil": "Fraise D10",
-  "ms": 2059,
+  "ms": 1865,
   "resume": {
-   "n": 3749,
-   "coupe": 5687.7,
+   "n": 3528,
+   "coupe": 5418.2,
    "rapide": 2076.6,
    "nRap": 77,
    "remontees": 39,
    "zMin": 24,
    "zMax": 32,
-   "minutes": 5.26,
+   "minutes": 5.04,
    "niveaux": {
     "28.000": 1591,
     "26.000": 1605,
-    "24.000": 1974
+    "24.000": 1705
+   }
+  }
+ },
+ "Poche et Contour.miniFusion › POSAGE1 › 2. Contour (op_3_mv81m3qf)": {
+  "type": "contour",
+  "outil": "Fraise D10",
+  "ms": 1467,
+  "resume": {
+   "n": 565,
+   "coupe": 1497.9,
+   "rapide": 56.7,
+   "nRap": 6,
+   "remontees": 3,
+   "zMin": 26,
+   "zMax": 26,
+   "minutes": 1.27,
+   "niveaux": {
+    "26.000": 1480
    }
   }
  },
  "Poche et Contour.miniFusion › POSAGE1 › 1. Surfaçage (op_3_mv7upzw4)": {
   "type": "facing",
   "outil": "Torique D25 R2",
-  "ms": 2176,
+  "ms": 2207,
   "resume": {
    "n": 80,
    "coupe": 3866.7,
@@ -326,28 +326,56 @@
    }
   }
  },
- "Poche et Contour.miniFusion › POSAGE1 › 2. Contour (op_3_mv81m3qf)": {
-  "type": "contour",
+ "Poche et Contour.miniFusion › POSAGE1 › 4. Surfaçage (op_3_mvbd93sk)": {
+  "type": "facing",
   "outil": "Fraise D10",
-  "ms": 2228,
+  "ms": 2189,
   "resume": {
-   "n": 565,
-   "coupe": 1497.9,
-   "rapide": 56.7,
-   "nRap": 6,
-   "remontees": 3,
-   "zMin": 26,
-   "zMax": 26,
-   "minutes": 1.27,
+   "n": 43,
+   "coupe": 2984.9,
+   "rapide": 24.1,
+   "nRap": 2,
+   "remontees": 1,
+   "zMin": 5.429,
+   "zMax": 107.071,
+   "minutes": 2.5,
    "niveaux": {
-    "26.000": 1480
+    "107.071": 54,
+    "5.429": 56
+   }
+  }
+ },
+ "Perçages.miniFusion › POSAGE1 › 14. Ébauche 3D (op_2_mvo4kwaj)": {
+  "type": "rough3d",
+  "outil": "Fraise D6",
+  "ms": 13176,
+  "resume": {
+   "n": 1865,
+   "coupe": 1132.3,
+   "rapide": 357.8,
+   "nRap": 40,
+   "remontees": 12,
+   "zMin": 8.5,
+   "zMax": 11.5,
+   "minutes": 1.07,
+   "niveaux": {
+    "11.500": 49,
+    "11.000": 193,
+    "10.849": 45,
+    "10.438": 54,
+    "10.424": 20,
+    "10.013": 29,
+    "10.000": 48,
+    "9.987": 30,
+    "9.000": 195,
+    "8.500": 49
    }
   }
  },
  "Cavité Usinage.miniFusion › CAVIT_TEST › 1. Surfaçage (op_33_mv9vmyye)": {
   "type": "facing",
   "outil": "Fraise D20",
-  "ms": 14161,
+  "ms": 13403,
   "resume": {
    "n": 176,
    "coupe": 11946.4,
@@ -364,37 +392,10 @@
    }
   }
  },
- "Perçages.miniFusion › POSAGE1 › 14. Ébauche 3D (op_2_mvo4kwaj)": {
-  "type": "rough3d",
-  "outil": "Fraise D6",
-  "ms": 14811,
-  "resume": {
-   "n": 1858,
-   "coupe": 1156.3,
-   "rapide": 333.8,
-   "nRap": 33,
-   "remontees": 12,
-   "zMin": 8.5,
-   "zMax": 11.5,
-   "minutes": 1.08,
-   "niveaux": {
-    "11.500": 49,
-    "11.000": 193,
-    "10.849": 45,
-    "10.438": 54,
-    "10.424": 20,
-    "10.013": 29,
-    "10.000": 48,
-    "9.987": 30,
-    "9.000": 195,
-    "8.500": 49
-   }
-  }
- },
  "Malaxeur Retard.miniFusion › POSAGE1 › 2. Géodésique (op_2_mvibf0gg)": {
   "type": "geodesic",
   "outil": "Boule D30",
-  "ms": 23027,
+  "ms": 21153,
   "resume": {
    "n": 37326,
    "coupe": 32317.6,
@@ -410,7 +411,7 @@
  "Cavité Usinage.miniFusion › CAVIT_TEST › 3. Finition (op_3_mv4wo41j)": {
   "type": "geofinish",
   "outil": "Boule D6",
-  "ms": 26583,
+  "ms": 24947,
   "resume": {
    "n": 107037,
    "coupe": 74851.1,
@@ -438,87 +439,86 @@
  "Cavité Test.miniFusion › POSAGE1 › 3. Finition (op_3_mvqu822f)": {
   "type": "geofinish",
   "outil": "Boule D6",
-  "ms": 29768,
+  "ms": 27983,
   "resume": {
-   "n": 95155,
-   "coupe": 72460.5,
-   "rapide": 202.7,
-   "nRap": 20,
-   "remontees": 7,
+   "n": 92871,
+   "coupe": 67791.8,
+   "rapide": 129.4,
+   "nRap": 17,
+   "remontees": 6,
    "zMin": 15,
    "zMax": 44.799,
-   "minutes": 60.45,
+   "minutes": 56.54,
    "niveaux": {
-    "40.000": 221,
-    "39.958": 218,
-    "15.000": 18373
+    "40.000": 156,
+    "15.000": 16492
    }
   }
  },
  "Cavité Test.miniFusion › POSAGE1 › 2. Ébauche 3D (op_5_mvqs3025)": {
   "type": "rough3d",
   "outil": "Torique D20 R2",
-  "ms": 47522,
+  "ms": 44680,
   "resume": {
-   "n": 24398,
-   "coupe": 21492.8,
-   "rapide": 5968.3,
-   "nRap": 246,
-   "remontees": 109,
+   "n": 23819,
+   "coupe": 18766,
+   "rapide": 6569.4,
+   "nRap": 293,
+   "remontees": 99,
    "zMin": 15.5,
    "zMax": 44,
-   "minutes": 19.45,
+   "minutes": 17.36,
    "niveaux": {
-    "39.250": 377,
-    "38.500": 374,
-    "37.750": 371,
-    "37.000": 1897,
-    "36.286": 366,
-    "35.571": 363,
-    "34.857": 361,
-    "34.143": 358,
-    "33.429": 355,
-    "32.714": 353,
-    "32.000": 1663,
-    "31.286": 349,
-    "30.571": 348,
-    "29.857": 346,
-    "29.143": 345,
-    "28.429": 343,
-    "27.714": 342,
-    "27.000": 1491,
-    "26.286": 354,
-    "25.571": 338,
-    "24.857": 337,
-    "24.143": 337,
-    "23.429": 335,
-    "22.714": 335,
-    "22.000": 1316,
-    "21.286": 340,
-    "20.571": 332,
-    "19.857": 329,
-    "19.143": 327,
-    "18.429": 322,
-    "17.714": 317,
-    "17.000": 1010,
-    "16.250": 292,
-    "15.500": 826
+    "39.250": 357,
+    "38.500": 354,
+    "37.750": 351,
+    "37.000": 1762,
+    "36.286": 445,
+    "35.571": 344,
+    "34.857": 341,
+    "34.143": 338,
+    "33.429": 335,
+    "32.714": 333,
+    "32.000": 1545,
+    "31.286": 329,
+    "30.571": 327,
+    "29.857": 326,
+    "29.143": 325,
+    "28.429": 323,
+    "27.714": 322,
+    "27.000": 1373,
+    "26.286": 319,
+    "25.571": 318,
+    "24.857": 317,
+    "24.143": 316,
+    "23.429": 315,
+    "22.714": 314,
+    "22.000": 1216,
+    "21.286": 313,
+    "20.571": 312,
+    "19.857": 310,
+    "19.143": 307,
+    "18.429": 302,
+    "17.714": 296,
+    "17.000": 898,
+    "16.250": 272,
+    "15.500": 748
    }
   }
  },
  "Cavité Usinage.miniFusion › CAVIT_TEST › 2. Ébauche 3D (op_3_muyajzho)": {
   "type": "rough3d",
   "outil": "Torique D25 R2",
-  "ms": 68653,
+  "ms": 66787,
   "resume": {
-   "n": 39699,
-   "coupe": 34409.7,
-   "rapide": 3088,
-   "nRap": 168,
+   "n": 39753,
+   "coupe": 34071.1,
+   "rapide": 3426.7,
+   "nRap": 222,
    "remontees": 84,
    "zMin": 20,
    "zMax": 53,
-   "minutes": 9.45,
+   "minutes": 9.51,
    "niveaux": {
     "49.200": 537,
     "48.400": 534,
@@ -562,129 +562,129 @@
  "Malaxeur Retard.miniFusion › POSAGE1 › 1. Ébauche 3D (op_3_mvia0l7l)": {
   "type": "rough3d",
   "outil": "Torique D20 R2",
-  "ms": 69667,
+  "ms": 67114,
   "resume": {
-   "n": 29115,
-   "coupe": 42938.5,
-   "rapide": 43289.9,
-   "nRap": 1870,
-   "remontees": 685,
+   "n": 24675,
+   "coupe": 36688.2,
+   "rapide": 40936.5,
+   "nRap": 1648,
+   "remontees": 596,
    "zMin": -22.5,
    "zMax": 64.424,
-   "minutes": 47.04,
+   "minutes": 41.05,
    "niveaux": {
-    "61.000": 1408,
-    "60.229": 1323,
+    "61.000": 1232,
+    "60.229": 1161,
     "59.479": 135,
     "58.729": 119,
     "57.979": 112,
-    "57.229": 1091,
+    "57.229": 956,
     "56.479": 108,
     "55.729": 108,
     "54.979": 108,
-    "54.229": 1020,
+    "54.229": 889,
     "53.479": 108,
     "52.729": 107,
     "51.979": 108,
-    "51.229": 1014,
+    "51.229": 884,
     "50.479": 108,
     "49.729": 108,
     "48.979": 108,
-    "48.229": 1020,
+    "48.229": 896,
     "47.479": 108,
     "46.729": 109,
     "45.979": 108,
-    "45.229": 1006,
+    "45.229": 880,
     "44.479": 109,
     "43.729": 109,
     "42.979": 109,
-    "42.229": 917,
+    "42.229": 789,
     "41.479": 108,
     "40.729": 109,
     "39.979": 109,
-    "39.229": 925,
+    "39.229": 803,
     "38.479": 109,
     "37.729": 109,
     "36.979": 110,
-    "36.229": 943,
+    "36.229": 831,
     "35.479": 109,
     "34.729": 109,
     "33.979": 109,
-    "33.229": 890,
+    "33.229": 761,
     "32.479": 110,
     "31.729": 110,
     "30.979": 110,
-    "30.229": 826,
+    "30.229": 716,
     "29.479": 110,
     "28.729": 110,
     "27.979": 112,
-    "27.229": 764,
+    "27.229": 657,
     "26.479": 125,
     "25.729": 126,
     "24.979": 126,
-    "24.229": 725,
+    "24.229": 618,
     "23.479": 125,
     "22.729": 125,
     "21.979": 124,
-    "21.229": 704,
+    "21.229": 593,
     "20.479": 123,
     "19.729": 123,
     "18.979": 123,
-    "18.229": 641,
+    "18.229": 558,
     "17.479": 127,
     "16.729": 127,
     "15.979": 126,
-    "15.229": 690,
+    "15.229": 545,
     "14.479": 126,
     "13.729": 125,
     "12.979": 124,
-    "12.229": 662,
+    "12.229": 464,
     "11.479": 123,
     "10.729": 123,
     "9.979": 123,
-    "9.229": 673,
+    "9.229": 472,
     "8.479": 122,
     "7.729": 121,
     "6.979": 121,
-    "6.229": 560,
+    "6.229": 384,
     "5.479": 120,
     "4.729": 120,
     "3.979": 119,
-    "3.229": 535,
+    "3.229": 363,
     "2.479": 119,
     "1.729": 118,
     "0.979": 118,
-    "0.229": 485,
+    "0.229": 308,
     "-0.521": 117,
     "-1.271": 117,
     "-2.021": 117,
-    "-2.771": 400,
+    "-2.771": 228,
     "-3.521": 116,
     "-4.271": 115,
     "-5.021": 115,
-    "-5.771": 384,
+    "-5.771": 219,
     "-6.521": 114,
     "-7.271": 113,
     "-8.021": 113,
-    "-8.771": 356,
+    "-8.771": 195,
     "-9.521": 113,
     "-10.271": 113,
     "-11.021": 112,
-    "-11.771": 368,
+    "-11.771": 206,
     "-12.521": 111,
     "-13.271": 112,
     "-14.021": 112,
-    "-14.771": 373,
+    "-14.771": 209,
     "-15.521": 111,
     "-16.271": 109,
     "-17.021": 109,
-    "-17.771": 287,
+    "-17.771": 129,
     "-18.521": 108,
     "-19.271": 106,
     "-20.021": 104,
-    "-20.771": 350,
+    "-20.771": 199,
     "-21.635": 105,
-    "-22.500": 350
+    "-22.500": 199
    }
   }
  }

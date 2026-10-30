@@ -147,13 +147,16 @@ function faoChainsClosed(segs){
     return [{p:[s[0],s[1],0]},{p:[s[2],s[3],0]}];
   }),1e-4);
   const out=[];
-  raw.forEach(function(ch){
+  const lists=raw.map(function(ch){
     const pts=[];
     ch.forEach(function(q){
       const p=q.p;
       if(!pts.length||Math.abs(pts[pts.length-1][0]-p[0])>1e-9||Math.abs(pts[pts.length-1][1]-p[1])>1e-9)
         pts.push([p[0],p[1]]);
     });
+    return pts;
+  });
+  faoStitchOpen(lists,1e-3).forEach(function(pts){
     while(pts.length>1&&Math.abs(pts[0][0]-pts[pts.length-1][0])<1e-9&&Math.abs(pts[0][1]-pts[pts.length-1][1])<1e-9)
       pts.pop();
     if(pts.length<3)return;
@@ -161,6 +164,41 @@ function faoChainsClosed(segs){
     const bb=faoPtsBB(pts);
     out.push({pts:pts,bb:bb});
   });
+  return out;
+}
+// V0.23.14 : PINCEMENT — un plan qui passe pile par un point où deux boucles de
+// la section se touchent (Cavité Test : bord de cavité et encoche de nervure en
+// (±24,07 ; ±41,16)) donne un sommet de degré 4 ; l'enchaînement s'y arrête et
+// laissait 3 morceaux ouverts, fermés d'office par une CORDE chacun : la corde
+// x = −24,07 et la diagonale (−24 ; −41) → (24 ; 41) bornaient un faux coin de
+// « matière » (parité) au milieu de la cavité, jamais usiné (colonne de 22 mm).
+// Les morceaux ouverts sont recousus bout à bout (extrémités à ≤ tol, sens
+// direct ou inverse) avant toute fermeture forcée : la parité ne dépend que de
+// l'ensemble des arêtes, quel que soit l'appariement au point de pincement.
+function faoStitchOpen(lists,tol){
+  const same=function(a,b){return Math.abs(a[0]-b[0])<=tol&&Math.abs(a[1]-b[1])<=tol;};
+  const isOpen=function(P){return P.length>=2&&!same(P[0],P[P.length-1]);};
+  const out=[],open=lists.filter(isOpen);
+  if(!open.length)return lists;
+  const used=new Set();
+  for(let k=0;k<lists.length;k++){
+    if(!isOpen(lists[k])){out.push(lists[k]);continue;}
+    if(used.has(lists[k]))continue;
+    used.add(lists[k]);open.splice(open.indexOf(lists[k]),1);
+    let c=lists[k],grew=true;
+    while(grew&&isOpen(c)){
+      grew=false;
+      for(let i=0;i<open.length;i++){
+        const d=open[i],e=c[c.length-1];
+        if(same(d[0],e))c=c.concat(d.slice(1));
+        else if(same(d[d.length-1],e))c=c.concat(d.slice(0,-1).reverse());
+        else continue;
+        used.add(d);open.splice(i,1);grew=true;break;
+      }
+    }
+    if(!isOpen(c))c=c.slice(0,-1).concat([c[0]]); // fermeture exacte (écart ≤ tol)
+    out.push(c);
+  }
   return out;
 }
 function faoPtsBB(pts){
@@ -656,7 +694,39 @@ function faoOffsetRuns(S,d){
     if(!raw)continue;
     faoEmitRuns(S,raw,valid,out);
   }
-  return out;
+  return faoRunsDedupGeo(out,0.05);
+}
+// V0.23.14 : DOUBLONS GÉOMÉTRIQUES — une paroi verticale est lue à chaque plan
+// vertex de l'ombre (S.chains) ; le maillage n'y place pas les mêmes points
+// intermédiaires d'un plan à l'autre, la clé exacte (faoPointsKey) ne les
+// reconnaissait pas : MERLIN-23-001, niveau 0 = 160 plans, 321 tours de paroi
+// au lieu de quelques-uns (107 m d'avance dans le vide). Un morceau dont TOUS
+// les points (échantillonnés à 0,5 mm) sont à ≤ tol des morceaux déjà gardés
+// (les plus longs d'abord) est retiré ; l'ordre d'origine des gardés est conservé.
+function faoRunsDedupGeo(runs,tol){
+  if(runs.length<2)return runs;
+  const C=1,cells=new Map(),tol2=tol*tol;
+  const len=function(R){const P=R.pts;let L=0;for(let i=1;i<P.length;i++)L+=Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]);return L;};
+  const segsOf=function(R){const P=R.pts,s=[];for(let i=1;i<P.length;i++)s.push([P[i-1],P[i]]);
+    if(R.closed&&P.length>2)s.push([P[P.length-1],P[0]]);return s;};
+  const near=function(x,y){const ix=Math.floor(x/C),iy=Math.floor(y/C);
+    for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){const L=cells.get((ix+a)+','+(iy+b));if(!L)continue;
+      for(let k=0;k<L.length;k++){const A=L[k][0],B=L[k][1],dx=B[0]-A[0],dy=B[1]-A[1],l2=dx*dx+dy*dy;
+        let t=l2>0?((x-A[0])*dx+(y-A[1])*dy)/l2:0;if(t<0)t=0;else if(t>1)t=1;
+        const ex=A[0]+t*dx-x,ey=A[1]+t*dy-y;if(ex*ex+ey*ey<=tol2)return true;}}
+    return false;};
+  const add=function(sg){const A=sg[0],B=sg[1];
+    const i0=Math.floor((Math.min(A[0],B[0])-tol)/C),i1=Math.floor((Math.max(A[0],B[0])+tol)/C);
+    const j0=Math.floor((Math.min(A[1],B[1])-tol)/C),j1=Math.floor((Math.max(A[1],B[1])+tol)/C);
+    for(let i=i0;i<=i1;i++)for(let j=j0;j<=j1;j++){const k=i+','+j;let L=cells.get(k);if(!L)cells.set(k,L=[]);L.push(sg);}};
+  const idx=runs.map(function(R,i){return {i:i,L:len(R)};}).sort(function(a,b){return b.L-a.L||a.i-b.i;});
+  const keep=new Uint8Array(runs.length);
+  for(const q of idx){const sg=segsOf(runs[q.i]);let cov=true;
+    for(let s=0;s<sg.length&&cov;s++){const A=sg[s][0],B=sg[s][1],n=Math.max(1,Math.ceil(Math.hypot(B[0]-A[0],B[1]-A[1])/0.5));
+      for(let t=0;t<=n;t++)if(!near(A[0]+(B[0]-A[0])*t/n,A[1]+(B[1]-A[1])*t/n)){cov=false;break;}}
+    if(sg.length&&cov)continue;
+    keep[q.i]=1;sg.forEach(add);}
+  return runs.filter(function(R,i){return keep[i];});
 }
 function faoRectRuns(S,inset,d){
   // E0 (inset=0) : le tour de la boite de validation, valide a d (= r).
@@ -899,7 +969,8 @@ function faoRoughAdaptiveLevel(mesh,B,z,D,r,secu,zFrom,ae,entryMode,brutTop,zt,m
     // les tue au contact de l'ombre) — UNIQUEMENT s'il reste de la matière
     // (niveau vide : les bandes pleine largeur couvrent tout, pas de double
     // passe). Arrêt dès qu'un palier ne produit plus rien.
-    const fr=(k===0||S.chains.length)?faoRectRuns(S,inset,d):[];
+    const fT=(opt&&typeof opt.frameTouch==='function')?opt.frameTouch:null; // V0.23.14 : cadre dans l'air retiré
+    const fr=((k===0||S.chains.length)?faoRectRuns(S,inset,d):[]).filter(function(c){return !fT||c.pts.some(function(p){return fT(p[0],p[1]);});});
     for(let i=0;i<fr.length;i++)if(fr[i].pts&&fr[i].pts.length>=2){fr[i].k=kTag(fr[i],k);chunks.push(fr[i]);any=true;}
     if(isRing)break; // mini-passes/finition : k=0 seulement (comme avant)
     if(k>0&&!any)break;
