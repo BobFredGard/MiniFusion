@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**474 versions**, de `2026-09-28b` à `V0.23.16` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**475 versions**, de `2026-09-28b` à `V0.23.17` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5857,3 +5857,9 @@ Retour sur MERLIN-23-001 : « Il y a un manque de brut sur les 2 ère passes. Il
 - **MERLIN-23-001** (D10, ae 5, ap 3) : Escargot 14,1 min contre 24,2 en Trochoïdal, brut final identique (Z-map), dernier niveau entièrement balayé. Les morceaux d'anneau coupés par le bord du brut restent ouverts : en avalant, chaque morceau se termine par une remontée (90 sur l'opération).
 - **Exemples (Escargot)** : Cavité Test 14,9 min, Cavité Usinage 8,6 min, Perçages 0,84 et 0,69 min, Malaxeur Retard 35,8 min (Trochoïdal 41,1). Brut final comparé au Trochoïdal : identique ou à ≤ 0,5 mm près ; Perçages : seule différence = la trace de la rampe du Trochoïdal hors zone.
 - **Tests** : `test_fao_escargot_ilots`, `test_fao_escargot` ; `npm run parcours` : 9 écarts, tous dus à l'arrondi corrigé (un mouvement retrouvé par passage, coins de surfaçage plus coupés en diagonale) → référence réécrite ; `npm run ci`.
+
+## V0.23.17 - Écran de démarrage animé « ◧ MiniFusion »
+Demande : « Des fois, quand c'est trop long, j'ai l'ancienne interface qui apparaît. […] la remplacer par un logo ◧ MiniFusion animé au démarrage pendant 15 s ».
+- **Cause** : la page affiche sa coque HTML brute (barre d'outils d'origine) pendant que le navigateur analyse le script de 4 Mo ; l'interface Moderne n'est posée qu'à la fin.
+- **Correctif** : `#mfSplash` dans le gabarit de `fusion_mvp.html` (hors `<script>`, donc visible avant l'analyse) : symbole ◧ qui se trace et se remplit, anneau lumineux, lettres de « MiniFusion » qui montent, grille de dessin, barre de progression 15 s, puis fondu. Animations en transform/opacity seulement (fluides même fil principal occupé) ; clic, Échap, Entrée ou Espace pour passer ; mouvements réduits si le système le demande ; absent sous navigateur piloté (`navigator.webdriver`) pour ne pas gêner les tests. Le petit script de l'écran porte `id="mfSplashJs"` : les tests et `build.js` lisent le premier `<script>` nu. La version (APP_VER) s'affiche en pied via `src/00`.
+- **Tests** : `npm run ci`. Vérifié dans le navigateur : écran à 3 s, interface Moderne à 17 s.

@@ -21,8 +21,9 @@
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.23.16';
+const APP_VER='V0.23.17';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
+try{var mfSv=document.getElementById('mfSplashVer');if(mfSv)mfSv.textContent=APP_VER;}catch(e){} // écran de démarrage
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
    SÉPARÉ d'APP_VER exprès : un changement d'interface (badge, panneau, texte)
