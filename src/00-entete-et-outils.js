@@ -21,7 +21,7 @@
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.23.24';
+const APP_VER='V0.23.25';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 try{var mfSv=document.getElementById('mfSplashVer');if(mfSv)mfSv.textContent=APP_VER;}catch(e){} // écran de démarrage
 
@@ -32,7 +32,7 @@ try{var mfSv=document.getElementById('mfSplashVer');if(mfSv)mfSv.textContent=APP
    et une image vide au F5 — pour rien, les données produites n'avaient pas bougé.
    A ne bumper QUE quand ce qui PRODUIT ces données change (moteur de géométrie,
    faoGen*) : c'est le seul cas où une entrée devient légitimement périmée. */
-const CACHE_VER='2026-10-30-003';
+const CACHE_VER='2026-10-30-004';
 function cacheVerOK(v){
   // 2026-10-30-002 (V0.23.16) : arrondi des coins — le passage qui suit une
   // entrée / un arc / un rapide garde son premier point (faoRoundMoves) : les

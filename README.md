@@ -4,7 +4,7 @@
 
 ![Support de pédale déportée R1200RT en alu anodisé rouge sur béton, lancer de rayons de l'atelier RENDU (2048 échantillons)](docs/captures/rendu-pedale.jpg)
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. S'il n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.21.10** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. S'il n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.23.25** (voir le [journal des modifications](CHANGELOG.md)).
 
 | | |
 |---|---|
@@ -34,6 +34,8 @@ Quatre espaces dans le bandeau supérieur : **CAO**, **FAO**, **PLAN** et **REND
 - **Annuler / Rétablir partout** (`Ctrl+Z` / `Ctrl+Y`) : CAO, esquisse, assemblage, FAO, PLAN et RENDU.
 - **Cinq thèmes** : Nuit, Graphite, Atelier, Clair, Contraste élevé.
 - **Vue 3D** : cube de vue, orbite contrainte ou libre, centre de rotation sur la sélection, sol miroir, transparence « verre ».
+- **Coupe X / Y / Z** (⚙ › Coupe) : plan de coupe glissé ou saisi au mm, côté inversable, faces coupées remplies.
+- **Écran de démarrage** animé « ◧ MiniFusion » pendant le chargement (10 s ; un clic ou `Échap` le passe).
 
 ## CAO
 
@@ -57,7 +59,8 @@ Plans (décalé, à un angle, 3 points, médian, normal), axes, points et **rep�
 
 Historique rejouable, timeline à icônes (vert = ajout, rouge = enlèvement), marqueur de temps glissable, réordonnancement par glisser-déposer. Une fonction ne s'appuie que sur ce qui la précède (**règle d'antériorité**).
 - **Extrusion** et **révolution** dynamiques : distance, jusqu'à une face, à travers tout, symétrique, dépouille, nouveau corps.
-- **Perçage** simple, lamé, fraisé ou **taraudé** (filet ISO réellement modélisé), débouchant ou borgne.
+- **Balayage** d'un profil le long d'une ligne, d'un arc ou d'une **spline**.
+- **Perçage** simple, lamé, fraisé ou **taraudé**, débouchant ou borgne. Le filet ISO 68-1 est **réellement creusé dans le corps**, après l'avant-trou ; il est calculé en tâche de fond.
 - **Congés et chanfreins exacts** sur la chaîne tangente ou l'arête seule (un clic ajoute ou retire une arête), avec reprise NURBS quand le noyau refuse la chaîne. Chanfrein à **distance égale, deux distances ou distance + angle**, première face inversable.
 - **Répétition** linéaire, en grille, circulaire, symétrie.
 - **Modifier** : déplacer ou supprimer une face, **dépouille** (angle signé, sens inversable), coque, **scinder** par un plan, **déplacer un corps** (translation, rotation, point à point), **combiner** (union, soustraction, intersection).
@@ -67,13 +70,15 @@ Historique rejouable, timeline à icônes (vert = ajout, rouge = enlèvement), m
 - **Corps** : matériau (bibliothèque commune avec le RENDU, masse estimée), couleur, transparence, isoler.
 - **Mesures** : face à face, Ø, entraxe, entre deux arêtes.
 - **Fichiers** : import STEP / STL, export STEP / STL / OBJ, projet **`.miniFusion`** (pièce, FAO, planches, rendu), sauvegarde locale automatique.
+- **STEP multi-corps** : arborescence des sous-ensembles et pièces avec leurs noms, pièces **masquables** (👁), **une couleur par pièce ou par occurrence** ; les gros fichiers (44 Mo, 73 000 faces) s'ouvrent et se manipulent sans à-coups.
 - **Enregistrement sûr** : contenu vérifié avant écriture, version précédente gardée (`nom.miniFusion.bak` et copie dans le navigateur).
 
 ## Assemblage
 
 Comme dans Fusion 360, **tout est composant** : le fichier est le composant racine, ses enfants sont des pièces complètes, à n'importe quelle profondeur.
 - **Arbre unifié** : pièce et composants dans une seule arborescence, avec recherche et glisser-déposer ; sélection multiple (Ctrl+clic, Shift+clic) aussi en mode Assembler.
-- **Modéliser** le composant actif (le reste de l'assemblage affiché autour) ou **Assembler** ses enfants (manipulateur, pas de 1 mm et 5°).
+- **Modéliser** le composant actif (le reste de l'assemblage affiché autour) ou **Assembler** ses enfants (manipulateur, pas de 1 mm et 5°). Dans les deux modes, la vue tourne autour du composant visé.
+- **FAO** permise seulement quand une **pièce** est active (pas en mode Assembler).
 - **Composant**, **Occurrence**, **Insérer** un autre fichier, **Depuis corps** pour convertir une pièce multicorps sans rien remodéliser.
 - **Normalisés** : vis ISO 4762 / ISO 10642 (pas gros par défaut, pas fins au choix), vis ANSI SHCS / FHCS 82° (UNC ou UNF), bouchons six pans creux DIN 906, DIN 908 et NPTF, goupilles ISO 2338, 8734, 2339, 8752 et ANSI (dowel, spring), clavettes ISO 773 formes A, B, C ; de vraies fonctions (révolution, six pans creux), avec aperçu coté. **Sur des trous** : un clic sur un trou pose la pièce dans tous les trous identiques de la pièce (simples, lamés, fraisés), en liaison rigide qui suit les trous (vis FHC 0,2 mm sous la surface, goupilles par leur centre : milieu du trou, arête haute ou basse, au plus court du clic). **Dans une rainure** : une clavette se pose au fond d’une rainure (fermée ou débouchante), par le centre de face ou contre un bout rond, et toutes les rainures identiques sont équipées. **Modifier…** (propriétés ou clic droit) rouvre la fenêtre sur la pièce : toutes ses occurrences, ou celle-ci seulement.
 - **Composants liés** à un fichier du dossier de projets : édition sur place, mise à jour, conflits gérés.
@@ -97,13 +102,20 @@ Comme dans Fusion 360, **tout est composant** : le fichier est le composant raci
 
 - **Surfaçage**, **Contour** (côté auto, passes radiales, attaches), **Chanfrein** sur arêtes cliquées.
 - **Perçage** : les trous sont **reconnus sur le modèle** (Ø, profondeur, débouchant ou borgne, lamage, filet) et choisis par groupe ; pointage, perçage, débourrage, taraudage, **lamage fraisé en hélice** ; **gamme automatique** pointage → perçage → lamage → taraudage, avec les forets pris dans la bibliothèque ou créés.
-- **Ébauche 3D** : niveaux en Z, minipasses, entrées par l'extérieur ou en hélice, spirale « escargot », une région finie avant l'autre.
+- **Ébauche 3D** : niveaux en Z, minipasses, une région finie avant l'autre ; deux stratégies :
+  - **Trochoïdal** : spirale avec arcs de dégagement ;
+  - **Escargot** : anneaux concentriques autour des îlots, départ par l'extérieur, suivi du brut restant (carte du brut).
+
+  Les entrées ne plongent **jamais en pleine matière** : par l'extérieur en arc, en hélice ou en rampe douce (pente ≤ 0,4). Les descentes dans l'air se font en **rapide**, jusqu'au brut restant.
+- **Contour** : descente en **paliers** ou en **pente** (pente réglable).
 - **Finition** (passes parallèles ou à crête constante) et **Géodésique** (passes à distance constante depuis les bords des faces).
 - **Faces usinables / intouchables** par opération, **zones** (rectangle, chaîne d'arêtes, esquisse, îlots), hauteurs par références.
+- **Limites propres à la FAO** (ruban FAO → Limites) : esquisses et extrusions, en **solide** ou en **surface**, qui servent de murs ou de surfaces infranchissables sans toucher au modèle.
+- **Copier / coller** (`Ctrl+C` / `Ctrl+V`) une ou plusieurs opérations, ou un posage complet.
 
 ### Simulation, 3+2 et G-code
 
-- **Simulation** sur la **carte graphique** : outil réel, matière enlevée à partir du vrai brut, rendu réel ou lisse ; moteur **cartes de hauteurs** (une par orientation en 3+2, lancer de rayons) ou **champ de distance**.
+- **Simulation** sur la **carte graphique** : outil réel, matière enlevée à partir du vrai brut, rendu réel ou lisse (sol miroir et plan d'ombre placés sous le brut) ; moteur **cartes de hauteurs** (une par orientation en 3+2, lancer de rayons) ou **champ de distance**.
 - **3+2** : chaque opération peut avoir son propre Z et X ; sur Siemens, le plan de travail pivote par **`CYCLE800`** et les arcs G2/G3 et cycles de perçage sont écrits dans le plan incliné.
 - **G-code** multi-outils, cycles du dialecte (CYCLE81 à 84, G81 / G83), avance F modale. *Validez toujours un premier programme à vide sur la machine.*
 - **Cache des parcours** : rien n'est recalculé tant que la géométrie ne change pas.
@@ -115,21 +127,24 @@ Comme dans Fusion 360, **tout est composant** : le fichier est le composant raci
 ### Planches
 
 - **Formats** A4 à A0, paysage ou portrait, ou format manuel ; plusieurs planches en onglets.
-- **Cadre** réglable (préréglages Justet, ISO 5457, Classique), **cartouche** éditable avec logo, **nomenclature** et tableau des révisions.
+- **Cadre** réglable (préréglages Justet, ISO 5457, Classique), **cartouche** éditable avec logo, **nomenclature** et tableau des révisions ; le **cartouche d'entreprise** peut venir d'un modèle externe, gardé hors du dépôt.
 - **Écriture ISO 3098** et paramètres du plan enregistrés par projet (`.mfplan`).
 
 ### Vues
 
 - **Face, projection, ISO, caméra, auxiliaire, coupe et détail**, par corps ou en assemblage (une hachure par pièce, bulles automatiques).
-- **Arêtes exactes** du noyau (HLR OCCT), y compris pour un STEP importé ; perspective et cavalière.
-- **Ligne de coupe** droite ou brisée (ISO 128-44), **hachures** (ISO 128-50), **filetages** (ISO 6410), **axes** (ISO 128-2).
+- **Orientation de la vue principale** : Face, Arrière, Côté gauche, Côté droit, Dessus, Dessous ; les projections suivent.
+- **Arêtes exactes** du noyau (HLR OCCT), y compris pour un STEP importé ; perspective et cavalière ; **rendu réaliste** des vues au choix.
+- **Ligne de coupe** droite ou brisée (ISO 128-44), **hachures** (ISO 128-50), **filetages** (ISO 6410), **axes** (ISO 128-2) ; nom de vue affiché seulement sur les coupes et détails.
+- **Coupe locale** : contour libre plus une arête du plan, modifiable ou supprimable (double-clic sur ses hachures).
 
 ### Cotation et sorties
 
 - **Cote** unique (longueur, distance, Ø, rayon, angle), **tolérances ISO 286**, cotes associatives qui suivent la pièce.
 - **Perçages** cotés depuis la fonction Perçage (« Perçages auto » cote toute la planche), **ordonnées X / Y**, notes à flèche.
+- **Hauteur du texte** des cotes, avec flèches et tolérances proportionnelles ; épaisseur des lignes d'attache et des axes de trous ; **Sauvegarder par défaut** / **Appliquer les défauts**.
 - **Dessin 2D** sur la planche avec contraintes.
-- **Sorties** : SVG, **DXF R12** par calques, **PDF** au format exact, impression, en couleur ou tout en noir.
+- **Sorties** : SVG, **DXF R12** par calques, **PDF** au format exact, impression (dans une fenêtre dédiée), en couleur ou tout en noir.
 
 ## RENDU
 
@@ -192,11 +207,11 @@ Le dépôt stocke les gros binaires (`occt/*.wasm`, `Exemples/*.miniFusion`, `Ex
 
 | Chemin | Rôle |
 |---|---|
-| `src/*.js` | **Les sources** : 101 fichiers concaténés dans l'ordre numérique (noyau, esquisse, fonctions 3D, assemblage, FAO découpée par domaine, mise en plan, rendu). C'est ici qu'on travaille. |
+| `src/*.js` | **Les sources** : 116 fichiers concaténés dans l'ordre numérique (noyau, esquisse, fonctions 3D, assemblage, FAO découpée par domaine, mise en plan, rendu). C'est ici qu'on travaille. |
 | `fusion_mvp.html` | **Livrable généré** par `node build.js`. On n'édite jamais son script à la main. |
 | `PostPro/` | Une fiche par machine (`siemens-630.js`, `siemens-1520.js`, `fagor-8065.js`). Nouvelle machine = copier une fiche, la modifier, `npm run build`. |
-| `tests/` | 169 suites Node lancées en parallèle (`node tests/run.cjs`), 54 rapides (`node tests/run-fast.cjs`), non-régression des parcours FAO (`npm run parcours`), tests de référence (`tests/oracle/`, [docs/oracle.md](docs/oracle.md)). |
-| `tests/browser/` | Playwright dans un vrai Chromium : parcours critiques et Rendu (`npm run test:browser`) et carte graphique réelle (`npm run test:gpu`). |
+| `tests/` | 210 suites Node lancées en parallèle (`node tests/run.cjs`), 81 rapides (`node tests/run-fast.cjs`), non-régression des parcours FAO (`npm run parcours`), tests de référence (`tests/oracle/`, [docs/oracle.md](docs/oracle.md)). |
+| `tests/browser/` | Playwright dans un vrai Chromium : parcours critiques et Rendu (`npm run test:browser`, seul projet lancé par la CI GitHub) et carte graphique réelle (`npm run test:gpu`, en local). |
 | `tools/` | Lint du script concaténé (`npm run lint`), serveur MCP, **captures du README** (`npm run captures`). |
 | `occt/`, `threejs/` | Noyau OpenCascade WebAssembly, rendu three.js. |
 | `docs/` | Captures du README, analyses, tableaux de référence. |

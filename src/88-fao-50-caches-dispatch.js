@@ -842,7 +842,8 @@ function* faoOpMovesIt0(op,job){
   // 2026-10-08-003 : l'îlot intérieur compte comme une zone (ctx composé).
   if((lim||lim2)&&mv.length&&!zoneDone)mv=faoZoneCuts(mv,op,job,secu);
   if(op&&op.type==='rough3d'&&mv.length)
-    mv=faoFastDrops(mv,D,tool.kind==='ball'?D/2:Math.min(D/2,Math.max(0,+tool.cornerR||0)));
+    mv=faoFastDrops(mv,D,tool.kind==='ball'?D/2:Math.min(D/2,Math.max(0,+tool.cornerR||0)),
+      (job&&job.stock&&faoStockValid&&faoStockValid(job.stock))?job.stock:null);
   // V0.23.20 : corps FAO = murs infranchissables, en TOUT dernier (après arrondis,
   // zones et descentes) : coupes recoupées, rapides relevés au-dessus des corps
   if(mv.length)mv=faoWallsApply(mv,op,job,D,secu);
@@ -1044,13 +1045,55 @@ function faoRoundMoves(moves,radius){
 // rayon de coin : une coupe torique/boule laisse jusqu'à rc de matière sous le
 // bord de l'outil) — rapide jusqu'à z+rc+1, puis la fin en avance.
 // MERLIN-23-001 : 2 082 descentes de 7 à 10 mm en avance plongée dans le vide.
-function faoFastDrops(mv,D,rc){
+// V0.23.25 : sinon, avec la boîte du brut (stock, même repère que le parcours),
+// rapide jusqu'à 1 mm (+ rc) au-dessus du brut RESTANT sous le disque (+0,25 mm) :
+// carte des hauteurs de la boîte abaissée par les coupes déjà émises (rayon
+// réduit d'une maille, les opérations précédentes ignorées : prudente).
+// MERLIN-23-001 en Trochoïdal : 5,4 m de descentes en avance dans l'air.
+function faoFastDrops(mv,D,rc,stock){
   const out=[],up=1+(rc>0?rc:0);
+  const S=(stock&&[stock.x0,stock.y0,stock.x1,stock.y1,stock.z1].every(function(v){return isFinite(+v);})&&
+    +stock.x1>+stock.x0&&+stock.y1>+stock.y0)?stock:null;
+  let top=null,gx0=0,gy0=0,nx=0,ny=0,g=1,stampAt=null,topAt=null;
+  if(S){
+    const R=D/2;g=Math.max(0.5,D/20);
+    gx0=+S.x0-R-2*g;gy0=+S.y0-R-2*g;
+    nx=Math.ceil((+S.x1-+S.x0+2*R+4*g)/g)+1;ny=Math.ceil((+S.y1-+S.y0+2*R+4*g)/g)+1;
+    if(nx*ny<=4e6){
+      top=new Float32Array(nx*ny).fill(-Infinity);
+      for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){const x=gx0+i*g,y=gy0+j*g;
+        if(x>=+S.x0-g&&x<=+S.x1+g&&y>=+S.y0-g&&y<=+S.y1+g)top[j*nx+i]=+S.z1;}
+      const disk=function(r){const n=Math.ceil(r/g),o=[];
+        for(let dj=-n;dj<=n;dj++)for(let di=-n;di<=n;di++)if((di*di+dj*dj)*g*g<=r*r)o.push([di,dj]);return o;};
+      const cut=disk(Math.max(0,R-g)),probe=disk(R+0.25+g);
+      // hors de la grille (brut + marge) : pas de brut
+      stampAt=function(x,y,z){const i=Math.round((x-gx0)/g),j=Math.round((y-gy0)/g);
+        for(let k=0;k<cut.length;k++){const ii=i+cut[k][0],jj=j+cut[k][1];
+          if(ii<0||jj<0||ii>=nx||jj>=ny)continue;const q=jj*nx+ii;if(top[q]>z)top[q]=z;}};
+      topAt=function(x,y){const i=Math.round((x-gx0)/g),j=Math.round((y-gy0)/g);let m=-Infinity;
+        for(let k=0;k<probe.length;k++){const ii=i+probe[k][0],jj=j+probe[k][1];
+          if(ii<0||jj<0||ii>=nx||jj>=ny)continue;const v=top[jj*nx+ii];if(v>m)m=v;}
+        return m;};
+    }
+  }
+  // coupe a→b dans la carte (arcs subdivisés ; pas ≤ une maille)
+  const stamp=function(a,b){
+    const P=b.arc?faoArcSegs(a,b,g):[[b.x,b.y,b.z]];
+    let px=a.x,py=a.y,pz=a.z;
+    for(let k=0;k<P.length;k++){const qx=P[k][0],qy=P[k][1],qz=P[k][2];
+      const n=Math.max(1,Math.ceil(Math.hypot(qx-px,qy-py)/g));
+      for(let s=1;s<=n;s++){const t=s/n;stampAt(px+(qx-px)*t,py+(qy-py)*t,Math.max(pz,qz));}
+      px=qx;py=qy;pz=qz;}
+  };
   for(let i=0;i<mv.length;i++){
     const b=mv[i],a=out.length?out[out.length-1]:null;
-    if(a&&a.r&&!b.r&&!b.arc&&Math.abs(a.x-b.x)<1e-9&&Math.abs(a.y-b.y)<1e-9&&a.z>b.z+up+1e-6&&
-       faoPlungeClear(b.x,b.y,out,b.z,D,null,0.25))
-      out.push({r:1,x:b.x,y:b.y,z:Math.round((b.z+up)*1000)/1000});
+    if(a&&a.r&&!b.r&&!b.arc&&Math.abs(a.x-b.x)<1e-9&&Math.abs(a.y-b.y)<1e-9&&a.z>b.z+up+1e-6){
+      let zr=null;
+      if(faoPlungeClear(b.x,b.y,out,b.z,D,null,0.25))zr=b.z+up;
+      else if(topAt){const t=topAt(b.x,b.y);if(t<Infinity)zr=Math.max(b.z,t)+up;}
+      if(zr!==null&&a.z>zr+0.5)out.push({r:1,x:b.x,y:b.y,z:Math.round(zr*1000)/1000});
+    }
+    if(stampAt&&a&&!b.r)stamp(out[out.length-1],b);
     out.push(b);
   }
   return out;

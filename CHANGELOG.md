@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**482 versions**, de `2026-09-28b` à `V0.23.24` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**483 versions**, de `2026-09-28b` à `V0.23.25` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5913,3 +5913,12 @@ Demande : « des fois, tu rentres verticalement en pleine matière (MERLIN-23-00
 - **CI GitHub** : le projet Playwright `gpu` est exclu (`--project=chromium`) : les machines GitHub n'ont pas de carte graphique (SwiftShader) ; à lancer en local avec `npm run test:gpu`.
 - `CACHE_VER` 2026-10-30-003 : les ébauches 3D sont à régénérer.
 - **Tests** : `npm run parcours` 27/27 identiques ; `tests/test_fao_*.cjs` ; `npm run ci`.
+
+## V0.23.25 - Ébauche 3D : descente rapide jusqu'au brut restant
+Suite de V0.23.24 : en Trochoïdal, MERLIN-23-001 faisait encore 296 descentes verticales en avance plongée, dont 4,4 m dans l'air (au-dessus du déjà usiné ou hors du brut).
+- **Cause** : `faoFastDrops` (V0.23.14) ne passait en rapide que si le disque d'outil était ENTIÈREMENT balayé à la cote ; une entrée au bord d'une zone vidée, ou à côté du brut, descendait en avance depuis la hauteur de liaison.
+- **Correctif** (`src/88-fao-50-caches-dispatch.js`) : avec la boîte du brut (repère de l'opération, comme le parcours), carte des hauteurs du brut abaissée par les coupes déjà émises (rayon réduit d'une maille ; opérations précédentes ignorées, brut-corps pris pour sa boîte : prudente) ; la descente est rapide jusqu'à 1 mm (+ rayon de coin) au-dessus du brut restant sous le disque + 0,25 mm, puis en avance.
+- **Résultat MERLIN-23-001** : Trochoïdal 4,4 m → 12 mm de descente lente dans l'air, 24,2 → 22,2 min ; Escargot 0,9 m → 0, 14,1 → 13,6 min ; toujours aucune plongée ni rapide dans la matière. Exemples : Malaxeur Retard 41,1 → 37,6 min, Cavité Test 17,4 → 17,1 min.
+- `CACHE_VER` 2026-10-30-004 : les ébauches 3D sont à régénérer.
+- **Tests** : `npm run parcours` (5 ébauches changées, rapides contrôlés sur Z-map du brut : aucun nouveau rapide en matière ; Perçages 12 / 14 en 3+2, outil selon X) ; `tests/test_fao_*.cjs` ; `npm run ci`.
+- **README** remis à jour (V0.21.10 → V0.23.25) : écran de démarrage, coupe X / Y / Z, filet creusé, balayage sur spline, STEP multi-corps, FAO en pièce active, Ébauche 3D Trochoïdal / Escargot et entrées, Contour en pente, limites FAO, copier / coller, cartouche externe, orientation et rendu des vues, coupe locale, hauteur des cotes, compteurs du développement.
