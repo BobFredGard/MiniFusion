@@ -281,7 +281,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.22.3';
+const APP_VER='V0.22.4';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -3791,13 +3791,52 @@ function occTessellate(shape,defl,ang){
   g.userData.occGroups=T.groups; // triangle -> face BRep (clic-face en mode exact)
   return g;
 }
+const OCC_MESH_SPLIT_FACES=20000; // au-delà : maillage pièce par pièce (gros assemblages STEP)
+function occMeshShape(shape,defl,ang){
+  // Maillage du noyau, mailleur libéré (il gardait tout son modèle de travail en mémoire).
+  // V0.22.4 — gros assemblage (> OCC_MESH_SPLIT_FACES faces, 2 pièces ou plus) : maillé
+  // PIÈCE PAR PIÈCE. D'un bloc, les structures de travail du mailleur s'additionnent :
+  // « Moule 73-40 » (73 000 faces) saturait le tas de 2 Go, planches 1 à 32 y montait à 763 Mo
+  // (229 Mo en pièces, triangles identiques au bit près). Une pièce = un solide, ou une coque /
+  // face hors solide ; ses occurrences partagent leurs faces (IsPartner) : maillée UNE fois.
+  // Sous le seuil (pièces natives, petits STEP) : inchangé, d'un bloc.
+  const E=occt.TopAbs_ShapeEnum,parts=[];
+  try{
+    const typ=s=>{const t=s.ShapeType();return t===E.TopAbs_SOLID?'so':t===E.TopAbs_SHELL?'sh':t===E.TopAbs_FACE?'f':t===E.TopAbs_COMPOUND||t===E.TopAbs_COMPSOLID?'c':'';};
+    const visit=(s,inSolid)=>{
+      const t=typ(s);
+      if(t==='so'||((t==='sh'||t==='f')&&!inSolid)){
+        const p=t==='so'?occt.TopoDS.Solid_1(s):t==='sh'?occt.TopoDS.Shell_1(s):occt.TopoDS.Face_1(s);
+        if(parts.some(q=>{try{return q.IsPartner(p);}catch(e){return false;}})){try{p.delete();}catch(e){}}
+        else parts.push(p);
+        return; // la pièce entière est maillée : on ne descend pas plus bas
+      }
+      if(t!=='c')return;
+      const it=new occt.TopoDS_Iterator_2(s,true,true);
+      try{while(it.More()){visit(it.Value(),inSolid);it.Next();}}finally{try{it.delete();}catch(e){}}
+    };
+    let split=false;
+    if(typ(shape)==='c'){
+      let nf=0;const ex=new occt.TopExp_Explorer_2(shape,E.TopAbs_FACE,E.TopAbs_SHAPE);
+      while(ex.More()&&nf<=OCC_MESH_SPLIT_FACES){nf++;ex.Next();}
+      try{ex.delete();}catch(e){}
+      if(nf>OCC_MESH_SPLIT_FACES){visit(shape,false);split=parts.length>=2;}
+    }
+    if(split){
+      for(const p of parts){const m=new occt.BRepMesh_IncrementalMesh_2(p,defl,false,ang,false);try{m.delete();}catch(e){}}
+      return;
+    }
+  }finally{parts.forEach(p=>{try{p.delete();}catch(e){}});}
+  const m=new occt.BRepMesh_IncrementalMesh_2(shape,defl,false,ang,false);
+  try{m.delete();}catch(e){}
+}
 function occTriPos(shape,defl,ang,wantN){
   // BRep -> triangles bruts {pos:[x,y,z × 3 par triangle], groups:[{f,start,count}]} (V0.8.2 :
   // aussi pour les rayons des bulles de la mise en plan, qui n'ont pas besoin de THREE)
   // wantN : + nrm (parallèle à pos) = normale sortante exacte au nœud (BRepGProp_Face, orientation
   // de la face comprise), NaN si indisponible — voir occTriNormals.
   defl=defl||0.5;ang=ang||0.5;
-  new occt.BRepMesh_IncrementalMesh_2(shape,defl,false,ang,false);
+  occMeshShape(shape,defl,ang);
   const pos=[],groups=[],nrm=wantN?[]:null;
   let gP=null,gV=null;
   if(wantN){try{gP=new occt.gp_Pnt_1();gV=new occt.gp_Vec_1();}catch(e){gP=gV=null;}}
@@ -51690,8 +51729,16 @@ function importStepBuild(u8){
     // MÊME déflection d'affichage que le natif (occDisplayDefl) : finesse commune,
     // ombrage identique, budget de triangles borné. Avant : 0,5 mm fixe + 0,5 rad,
     // donc un STEP toujours plus grossier qu'une pièce native.
-    const D=occDisplayDefl(shape);
-    const g=occTessellateBudget(shape,D,OCC_DISPLAY_TRIS)||occTessellate(shape,D.lin,D.ang);
+    // Gros STEP (V0.22.4) : le maillage FAO dépasse DÉJÀ le budget d'affichage → l'affichage
+    // en prend une copie. Remailler plus fin le multipliait (planches 1 à 32 : 2,2 → 5,7 M
+    // triangles, ~65 s) et le budget ne peut pas le réduire : le noyau ne regrossit jamais.
+    let nFao=0;try{nFao=faoGeo?Number(faoGeo.attributes.position.count)/3:0;}catch(e){} // harnais Node : compteur non numérique
+    let g=null;
+    if(nFao>OCC_DISPLAY_TRIS){g=faoGeo.clone();g.userData={occGroups:faoGeo.userData.occGroups};}
+    else{
+      const D=occDisplayDefl(shape);
+      g=occTessellateBudget(shape,D,OCC_DISPLAY_TRIS)||occTessellate(shape,D.lin,D.ang);
+    }
     if(!g||!g.attributes.position.count)throw new Error('tessellation vide');
     const mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0x0a84ff}));
     const entry={mesh};
@@ -51700,7 +51747,16 @@ function importStepBuild(u8){
     // détruit juste en dessous (shape.delete()) — on les classe DONC ICI, une fois pour
     // toutes, et on les range dans la table. Sans ça, l'overlay « Arêtes » ne couvrait
     // jamais un STEP : le repli ne dessinait que des vives > 30°, tout en noir.
-    try{const E=occSharpEdges(shape);if(E&&E.length)entry.edges=E;}catch(e){}
+    // V0.22.4 : classées au PREMIER BESOIN (overlay « Arêtes », sélection FAO…) — le solide
+    // exact reste dans la table (entry.brep). Planches 1 à 32 : ~30 s épargnées à l'import
+    // quand les arêtes sont masquées (réglage par défaut).
+    let edges;
+    Object.defineProperty(entry,'edges',{enumerable:true,configurable:true,
+      get(){
+        if(edges===undefined){edges=null;try{const E=entry.brep&&occSharpEdges(entry.brep);if(E&&E.length)edges=E;}catch(e){}}
+        return edges||undefined;
+      },
+      set(v){edges=v;}});
     try{const O=importStepOcc(shape);if(O)g.userData.impOcc=O;}catch(e){} // couleurs par pièce / occurrence
 
     // SOLIDE EXACT CONSERVÉ : sans lui, la voie exacte n'avait RIEN à unir ni à

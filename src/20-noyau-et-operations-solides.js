@@ -1229,13 +1229,52 @@ function occTessellate(shape,defl,ang){
   g.userData.occGroups=T.groups; // triangle -> face BRep (clic-face en mode exact)
   return g;
 }
+const OCC_MESH_SPLIT_FACES=20000; // au-delà : maillage pièce par pièce (gros assemblages STEP)
+function occMeshShape(shape,defl,ang){
+  // Maillage du noyau, mailleur libéré (il gardait tout son modèle de travail en mémoire).
+  // V0.22.4 — gros assemblage (> OCC_MESH_SPLIT_FACES faces, 2 pièces ou plus) : maillé
+  // PIÈCE PAR PIÈCE. D'un bloc, les structures de travail du mailleur s'additionnent :
+  // « Moule 73-40 » (73 000 faces) saturait le tas de 2 Go, planches 1 à 32 y montait à 763 Mo
+  // (229 Mo en pièces, triangles identiques au bit près). Une pièce = un solide, ou une coque /
+  // face hors solide ; ses occurrences partagent leurs faces (IsPartner) : maillée UNE fois.
+  // Sous le seuil (pièces natives, petits STEP) : inchangé, d'un bloc.
+  const E=occt.TopAbs_ShapeEnum,parts=[];
+  try{
+    const typ=s=>{const t=s.ShapeType();return t===E.TopAbs_SOLID?'so':t===E.TopAbs_SHELL?'sh':t===E.TopAbs_FACE?'f':t===E.TopAbs_COMPOUND||t===E.TopAbs_COMPSOLID?'c':'';};
+    const visit=(s,inSolid)=>{
+      const t=typ(s);
+      if(t==='so'||((t==='sh'||t==='f')&&!inSolid)){
+        const p=t==='so'?occt.TopoDS.Solid_1(s):t==='sh'?occt.TopoDS.Shell_1(s):occt.TopoDS.Face_1(s);
+        if(parts.some(q=>{try{return q.IsPartner(p);}catch(e){return false;}})){try{p.delete();}catch(e){}}
+        else parts.push(p);
+        return; // la pièce entière est maillée : on ne descend pas plus bas
+      }
+      if(t!=='c')return;
+      const it=new occt.TopoDS_Iterator_2(s,true,true);
+      try{while(it.More()){visit(it.Value(),inSolid);it.Next();}}finally{try{it.delete();}catch(e){}}
+    };
+    let split=false;
+    if(typ(shape)==='c'){
+      let nf=0;const ex=new occt.TopExp_Explorer_2(shape,E.TopAbs_FACE,E.TopAbs_SHAPE);
+      while(ex.More()&&nf<=OCC_MESH_SPLIT_FACES){nf++;ex.Next();}
+      try{ex.delete();}catch(e){}
+      if(nf>OCC_MESH_SPLIT_FACES){visit(shape,false);split=parts.length>=2;}
+    }
+    if(split){
+      for(const p of parts){const m=new occt.BRepMesh_IncrementalMesh_2(p,defl,false,ang,false);try{m.delete();}catch(e){}}
+      return;
+    }
+  }finally{parts.forEach(p=>{try{p.delete();}catch(e){}});}
+  const m=new occt.BRepMesh_IncrementalMesh_2(shape,defl,false,ang,false);
+  try{m.delete();}catch(e){}
+}
 function occTriPos(shape,defl,ang,wantN){
   // BRep -> triangles bruts {pos:[x,y,z × 3 par triangle], groups:[{f,start,count}]} (V0.8.2 :
   // aussi pour les rayons des bulles de la mise en plan, qui n'ont pas besoin de THREE)
   // wantN : + nrm (parallèle à pos) = normale sortante exacte au nœud (BRepGProp_Face, orientation
   // de la face comprise), NaN si indisponible — voir occTriNormals.
   defl=defl||0.5;ang=ang||0.5;
-  new occt.BRepMesh_IncrementalMesh_2(shape,defl,false,ang,false);
+  occMeshShape(shape,defl,ang);
   const pos=[],groups=[],nrm=wantN?[]:null;
   let gP=null,gV=null;
   if(wantN){try{gP=new occt.gp_Pnt_1();gV=new occt.gp_Vec_1();}catch(e){gP=gV=null;}}

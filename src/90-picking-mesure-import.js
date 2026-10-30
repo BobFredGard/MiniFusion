@@ -1244,8 +1244,16 @@ function importStepBuild(u8){
     // MÊME déflection d'affichage que le natif (occDisplayDefl) : finesse commune,
     // ombrage identique, budget de triangles borné. Avant : 0,5 mm fixe + 0,5 rad,
     // donc un STEP toujours plus grossier qu'une pièce native.
-    const D=occDisplayDefl(shape);
-    const g=occTessellateBudget(shape,D,OCC_DISPLAY_TRIS)||occTessellate(shape,D.lin,D.ang);
+    // Gros STEP (V0.22.4) : le maillage FAO dépasse DÉJÀ le budget d'affichage → l'affichage
+    // en prend une copie. Remailler plus fin le multipliait (planches 1 à 32 : 2,2 → 5,7 M
+    // triangles, ~65 s) et le budget ne peut pas le réduire : le noyau ne regrossit jamais.
+    let nFao=0;try{nFao=faoGeo?Number(faoGeo.attributes.position.count)/3:0;}catch(e){} // harnais Node : compteur non numérique
+    let g=null;
+    if(nFao>OCC_DISPLAY_TRIS){g=faoGeo.clone();g.userData={occGroups:faoGeo.userData.occGroups};}
+    else{
+      const D=occDisplayDefl(shape);
+      g=occTessellateBudget(shape,D,OCC_DISPLAY_TRIS)||occTessellate(shape,D.lin,D.ang);
+    }
     if(!g||!g.attributes.position.count)throw new Error('tessellation vide');
     const mesh=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:0x0a84ff}));
     const entry={mesh};
@@ -1254,7 +1262,16 @@ function importStepBuild(u8){
     // détruit juste en dessous (shape.delete()) — on les classe DONC ICI, une fois pour
     // toutes, et on les range dans la table. Sans ça, l'overlay « Arêtes » ne couvrait
     // jamais un STEP : le repli ne dessinait que des vives > 30°, tout en noir.
-    try{const E=occSharpEdges(shape);if(E&&E.length)entry.edges=E;}catch(e){}
+    // V0.22.4 : classées au PREMIER BESOIN (overlay « Arêtes », sélection FAO…) — le solide
+    // exact reste dans la table (entry.brep). Planches 1 à 32 : ~30 s épargnées à l'import
+    // quand les arêtes sont masquées (réglage par défaut).
+    let edges;
+    Object.defineProperty(entry,'edges',{enumerable:true,configurable:true,
+      get(){
+        if(edges===undefined){edges=null;try{const E=entry.brep&&occSharpEdges(entry.brep);if(E&&E.length)edges=E;}catch(e){}}
+        return edges||undefined;
+      },
+      set(v){edges=v;}});
     try{const O=importStepOcc(shape);if(O)g.userData.impOcc=O;}catch(e){} // couleurs par pièce / occurrence
 
     // SOLIDE EXACT CONSERVÉ : sans lui, la voie exacte n'avait RIEN à unir ni à

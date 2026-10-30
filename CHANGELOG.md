@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**453 versions**, de `2026-09-28b` à `V0.22.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**454 versions**, de `2026-09-28b` à `V0.22.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5697,3 +5697,11 @@ Signalé : « Fichier STEP de + de 20Mo -> problème d'ouverture » (`000 - Ense
 - **Correctif** : nœuds lus une fois par face dans un tableau, copies libérées. Triangles identiques (mêmes coordonnées, même ordre). Tas au pic : 2 048 → 860 Mo ; maillage d'affichage +1 060 → +97 Mo. Une exception sans message affiche désormais « erreur interne du noyau OCCT (mémoire insuffisante ?) ».
 - **Reste** : l'import de ce fichier prend ~2 min 20 (noyau réel sous Node), page figée.
 - **Tests** : `npm run ci`. Fichier de l'utilisateur importé de bout en bout sous Node avec le noyau réel (lecture, transfert, maillages FAO et affichage, arêtes, occurrences) ; pas encore essayé dans le navigateur.
+
+## V0.22.4 - Gros STEP : import 3× plus rapide, 44 Mo ouvert
+Demandes : « Il n'y a pas un moyen de faire plus vite ? » (comparé au viewer_STEP.html de l'utilisateur : occt-import-js en worker, 44 s), puis « Pour un fichier de 44Mo, l'import échoue » (`000 - Moule 73-40.step`, 73 000 faces, 542 occurrences).
+- **Maillage pièce par pièce** (`occMeshShape`, `src/20`) : au-delà de 20 000 faces, chaque pièce (solide, ou coque / face hors solide) est maillée seule, une fois pour toutes ses occurrences (`IsPartner`). D'un bloc, les structures de travail du mailleur s'additionnaient : le 44 Mo saturait le tas de 2 Go, le 18 Mo y montait à 763 Mo (229 Mo désormais). Triangles identiques au bit près (empreinte comparée sur « planches 1 à 32 »). Le mailleur est libéré après usage. Sous le seuil : maillage d'un bloc, inchangé.
+- **Affichage = maillage FAO quand il dépasse déjà le budget** (`importStepBuild`, `src/90`) : remailler plus fin pour l'affichage passait de 2,2 à 5,7 M triangles (~65 s), et le budget de 400 000 ne pouvait pas le réduire (le noyau ne regrossit jamais) — le navigateur refaisait même l'extraction deux fois. Zoom plus fluide (2,2 M triangles au lieu de 5,7 M).
+- **Arêtes calculées au premier besoin** (`entry.edges`, accesseur) : masquées par défaut, elles coûtaient ~30 s à chaque import.
+- **Mesures (navigateur)** : planches 1 à 32 (18,7 Mo) ~140 s → 42 s ; Moule 73-40 (44,5 Mo) : échec → ~110 s, dont ~90 s de lecture STEP par le noyau.
+- **Tests** : `npm run ci` ; `test_aretes_import`, `test_bool_import`, `test_import_persist`, `test_import_regen`, `test_import_vie`, `test_suppression_face_step`, `test_fao_chain_step`, `test_ctx_step`.
