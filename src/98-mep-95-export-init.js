@@ -182,7 +182,7 @@
     g(9,'$LIMMIN');g(10,0);g(20,0);g(9,'$LIMMAX');g(10,R(pg.W));g(20,R(pg.H));g(0,'ENDSEC');
     g(0,'SECTION');g(2,'TABLES');
     g(0,'TABLE');g(2,'LTYPE');g(70,3);
-    [['CONTINUOUS','Solid line',[]],['DASHED','__ __ __',[3.5,-2.5]],['CENTER','____ _ ____',[8,-2,1.5,-2]]].forEach(([nm,ds,pat])=>{
+    [['CONTINUOUS','Solid line',[]],['DASHED','__ __ __',[2,-1.2]],['CENTER','____ _ ____',[8,-2,1.5,-2]]].forEach(([nm,ds,pat])=>{
       g(0,'LTYPE');g(2,nm);g(70,0);g(3,ds);g(72,65);g(73,pat.length);g(40,R(pat.reduce((s,v)=>s+Math.abs(v),0)));pat.forEach(v=>g(49,R(v)));});
     g(0,'ENDTAB');
     g(0,'TABLE');g(2,'LAYER');g(70,MEP_DXF_LAYERS.length);

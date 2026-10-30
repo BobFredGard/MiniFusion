@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**463 versions**, de `2026-09-28b` à `V0.23.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**464 versions**, de `2026-09-28b` à `V0.23.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5771,3 +5771,8 @@ Demandes : « Il faudrait pouvoir changer la hauteur de la cotation », « dans 
 - **Tolérances au prorata** (`src/98-mep-70-cotes.js`, `mepDimSubH`) : écarts à 0,68 × le corps du texte, interligne (`mepDimTolLineH`, 0,855 × écart) et espacements proportionnels ; les minimums fixes (2,8 / 1,8 / 1,2 / 1 mm) qui grossissaient les tolérances en petite écriture sont retirés. À 3,5 mm le dessin est celui d'avant (écart d'interligne < 0,01 mm).
 - **Réglages par défaut** (Paramètres → « Sauvegarder par défaut », « Appliquer les défauts ») : copie de tous les réglages du plan (`mepPrefsCollect` : écriture, cotes, traits, export, papier, règles, cadre et cartouche par défaut) dans ce navigateur (`mep_prefs_def`). Ils sont repris au début de chaque session et par chaque plan qui n'a pas encore ses réglages (nouvelle pièce, ancien projet) ; une pièce qui a les siens les garde, « Appliquer les défauts » les remplace.
 - **Tests** : `test_mise_en_plan` (interligne au prorata) ; `npm run ci`. Vérifié dans le navigateur : écarts à 0,68 × le texte à 2,5 / 3,5 / 7 mm ; défauts 5,2 mm repris par une nouvelle pièce.
+
+## V0.23.6 - Plan : traits cachés en pointillé plus courts et plus serrés
+Demande : « Il faudrait les traits pointillés moins longs, un peu plus resserrés ».
+- **Pointillé des arêtes cachées** : tirets de 2 mm espacés de 1,2 mm (au lieu de 3,5 / 2,5) — vues (`.mepHidden`), type de trait « caché » des esquisses de planche (`.mepLtHid`) et type DASHED de l'export DXF. Les traits d'axe (mixtes) ne changent pas.
+- **Tests** : `npm run ci`.

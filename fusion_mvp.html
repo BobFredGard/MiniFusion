@@ -282,7 +282,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.23.5';
+const APP_VER='V0.23.6';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -55409,7 +55409,7 @@ function viewFadeIn(){
     .mepFace{shape-rendering:geometricPrecision;stroke-linejoin:round}
     .mepSharp{stroke:var(--mepInk,#151515);stroke-width:var(--mepLwThick,.72)}
     .mepTangent{stroke:var(--mepInk2,#7a8088);stroke-width:var(--mepLwThin,.42);stroke-opacity:.92}
-    .mepHidden{stroke:var(--mepHid,#59606a);stroke-width:var(--mepLwHid,.42);stroke-dasharray:3.5 2.5;stroke-linecap:butt}
+    .mepHidden{stroke:var(--mepHid,#59606a);stroke-width:var(--mepLwHid,.42);stroke-dasharray:2 1.2;stroke-linecap:butt}
     .mepSect{stroke:var(--mepInk,#151515);stroke-width:calc(var(--mepLwThick,.72) * 1.22)}
     .mepThread{fill:none;stroke:var(--mepThreadCol,#a4a9b0);stroke-width:calc(var(--mepLwThin,.42) * 0.7)} /* fond de filet ISO 6410 : gris clair, plus fin */
     .mepHatch{stroke:var(--mepHatchCol,#333);stroke-width:var(--mepLwHatch,.35)}
@@ -55461,7 +55461,7 @@ function viewFadeIn(){
     .mepTbThick{stroke-width:var(--mepLwThick,.72)}
     .mepSkThick{stroke-width:var(--mepLwThick,.72)}
     .mepSkThin{stroke-width:var(--mepLwThin,.42)}
-    .mepLtHid{stroke-dasharray:3.5 2.5;stroke-linecap:butt}
+    .mepLtHid{stroke-dasharray:2 1.2;stroke-linecap:butt}
     .mepLtAxis{stroke-dasharray:8 2 1.5 2;stroke-linecap:butt}
     .mepSkSelE{stroke:#ff9f0a!important}
     .mepSkHovE{stroke:#0a84ff!important;stroke-width:.6!important}
@@ -65640,7 +65640,7 @@ function viewFadeIn(){
     g(9,'$LIMMIN');g(10,0);g(20,0);g(9,'$LIMMAX');g(10,R(pg.W));g(20,R(pg.H));g(0,'ENDSEC');
     g(0,'SECTION');g(2,'TABLES');
     g(0,'TABLE');g(2,'LTYPE');g(70,3);
-    [['CONTINUOUS','Solid line',[]],['DASHED','__ __ __',[3.5,-2.5]],['CENTER','____ _ ____',[8,-2,1.5,-2]]].forEach(([nm,ds,pat])=>{
+    [['CONTINUOUS','Solid line',[]],['DASHED','__ __ __',[2,-1.2]],['CENTER','____ _ ____',[8,-2,1.5,-2]]].forEach(([nm,ds,pat])=>{
       g(0,'LTYPE');g(2,nm);g(70,0);g(3,ds);g(72,65);g(73,pat.length);g(40,R(pat.reduce((s,v)=>s+Math.abs(v),0)));pat.forEach(v=>g(49,R(v)));});
     g(0,'ENDTAB');
     g(0,'TABLE');g(2,'LAYER');g(70,MEP_DXF_LAYERS.length);
