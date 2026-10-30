@@ -924,16 +924,34 @@
   function mepDimHasStack(d){
     return !d.txt&&d.tol&&(d.tol.m==='dbl'||(d.tol.m==='cls'&&d.tol.cls&&String(d.tol.cls).indexOf('/')<0));
   }
-  function mepDimLabelHalf(d,value){
+  /* 2026-10-30 : étendue du texte d'une cote ancré 'middle', dans le sens de lecture, depuis le
+     point d'ancrage → {lo,hi} (mm papier). Le « ± » suit le texte (centré avec lui) ; la pile des
+     écarts est posée d'UN seul côté, après la valeur (mêmes mesures que mepDimDrawText) : la ligne
+     de cote ne se prolonge plus du mauvais côté de toute la largeur des tolérances. */
+  function mepDimLabelSpan(d,value){
     const p=mepDimTextParts(d,value);
     const th=MEP_DIM_STYLE.textHeight||7;
     const main=d.ref?'('+p.main+')':p.main;
     const mainHalf=Math.max(7,String(main).length*th*0.62)/2;
-    if(p.sym)return mainHalf+Math.max(1.2,th*0.14)+String(p.sym).length*th*0.85*0.54;
-    if(!p.up&&!p.lo)return mainHalf;
-    const sub=mepDimSubH(th),gap=th*0.204;
-    const tolW=Math.max(String(p.up||'').length,String(p.lo||'').length)*sub*0.54+(p.par?sub*0.55+(1+(p.post?String(p.post).length+1:0))*(sub+mepDimTolLineH())*0.4:0);
-    return mainHalf+gap+tolW;
+    if(p.sym){
+      const h=mainHalf+(Math.max(1.2,th*0.14)+String(p.sym).length*th*0.85*0.54)/2;
+      return{lo:-h,hi:h};
+    }
+    if(!p.up&&!p.lo)return{lo:-mainHalf,hi:mainHalf};
+    return{lo:-mainHalf,hi:mainHalf+mepDimStackGap()+mepDimStackW(p.up,p.lo,p.par,p.post)};
+  }
+  function mepDimLabelHalf(d,value){
+    const s=mepDimLabelSpan(d,value);
+    return Math.max(-s.lo,s.hi);
+  }
+  // étendue du texte le long de u (direction de la cote) : le sens de lecture est +u, ou −u quand
+  // le texte est retourné (cote vers la gauche) ou vertical (lu de bas en haut)
+  function mepDimLabelSpanU(g,d,value){
+    const s=mepDimLabelSpan(d,value);
+    const vertical=Math.abs(g.ux)<1e-6;
+    const ang=Math.atan2(g.dy,g.dx)*180/Math.PI;
+    const k=vertical?(g.uy>0?-1:1):((ang>90||ang<-90)?-1:1);
+    return k>0?s:{lo:-s.hi,hi:-s.lo};
   }
   function mepDimTextAnchorPos(g,d){
     const th=MEP_DIM_STYLE.textHeight||7;
@@ -952,17 +970,19 @@
   }
   function mepDimLineExtent(g,d,value){
     const half=g.L/2,toff=+d.txtOff||0;
-    const lh=mepDimLabelHalf(d,value);
     if(Math.abs(toff)<1e-9)return{start:-half,end:half,half};
-    return{start:Math.min(-half,toff-lh),end:Math.max(half,toff+lh),half};
+    const s=mepDimLabelSpanU(g,d,value);
+    return{start:Math.min(-half,toff+s.lo),end:Math.max(half,toff+s.hi),half};
   }
   function mepDimTxtOffSnap(sh,d,v,g){
     v=+v||0;
     g=g||mepDimLine(sh,d);
     if(!g||!g.L)return v;
     const value=d.value!=null?d.value:mepDimMeasure(sh,d);
-    const lim=Math.max(0,g.L/2-mepDimLabelHalf(d,value));
-    return Math.abs(v)<=lim?0:v;
+    // texte entièrement entre les flèches, ici comme au centre → retour au centre
+    const s=mepDimLabelSpanU(g,d,value),half=g.L/2;
+    const fits=o=>o+s.lo>=-half-1e-9&&o+s.hi<=half+1e-9;
+    return (fits(v)&&fits(0))?0:v;
   }
   /* largeur d'un texte de cote (mm papier) : mesurée sur le SVG quand il est affiché,
      sinon estimée d'après le corps de la police (chiffres et capitales ≈ 0,6 corps, graisse 600) */

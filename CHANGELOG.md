@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**466 versions**, de `2026-09-28b` à `V0.23.8` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**467 versions**, de `2026-09-28b` à `V0.23.9` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5792,3 +5792,10 @@ Demande : « Quand on ouvre un STEP multi corps, si on cache un corps ou un ense
 - **Reconstruction** : le 👁 de l'arborescence reconstruit l'overlay ; la signature de visibilité (`bodyVisSig`) inclut les pièces masquées, donc annuler / rétablir suivent aussi.
 - **Limite** : la mise en plan (PLAN) projette toujours le STEP entier.
 - **Tests** : `test_import_arbre` (partie E, MERLIN-37-000 : 2739 arêtes, occurrence 0 masquée → 635 retirées, et seulement elles) ; `npm run ci`.
+
+## V0.23.9 - Plan : la ligne de cote ne dépasse plus du mauvais côté avec une tolérance
+Demande : « il faut régler le problème des lignes de cotes qui dépassent du mauvais côté ou trop quand on rajoute des tolérances » (Ø14 H7 (+0.018 / 0) verticale : trait prolongé sous le rappel du bas).
+- **Cause** : texte déplacé le long du trait (`txtOff`) → `mepDimLineExtent` prolongeait la ligne de ±(valeur/2 + pile des écarts), symétriquement, alors que la pile n'est que d'un côté, après la valeur.
+- **Étendue réelle du texte** (`mepDimLabelSpan`, `src/98-mep-70-cotes.js`) : valeur centrée, pile des écarts d'UN côté (mêmes mesures que le dessin : `mepDimStackGap` + `mepDimStackW`) ; le « ± » reste centré avec la valeur (demi-largeur seulement). `mepDimLabelSpanU` l'oriente le long de la cote : sens de lecture inversé pour un texte retourné ou vertical (lu de bas en haut).
+- **Ligne prolongée** seulement du côté où le texte dépasse, jusqu'au bout du texte ; **retour au centre** (`mepDimTxtOffSnap`) seulement si le texte tient entre les flèches à sa place ET au centre.
+- **Tests** : `npm run ci` ; vérifié dans le navigateur (Ø14 H7 verticale, 40 H7, 30 H7 vers la gauche décalée).
