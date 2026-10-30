@@ -155,11 +155,14 @@ function faoSanitiseOps(s){
     if(op.type==='contour'&&op.strat==='profil'){
       if(op.cside!=='ext'&&op.cside!=='int')delete op.cside;
       ['nR','fin','leadR','overlap','tabN','tabW','tabH'].forEach(function(k){if(k in op&&!(isFinite(+op[k])&&+op[k]>=0))delete op[k];});
+      // V0.23.18 : descente « Pente » (absent = Paliers, documents inchangés)
+      if(op.descente==='pente'){const a=+op.pente;op.pente=isFinite(a)&&a>0?Math.max(0.5,Math.min(45,a)):5;}
+      else{delete op.descente;delete op.pente;}
     }else if(op.type==='chamfer'){ // V0.7.9 : chanfrein — côté, entrées, recouvrement, largeur, décalage de pointe
       if(op.cside!=='ext'&&op.cside!=='int'&&op.cside!=='auto')delete op.cside;
       ['leadR','overlap','w','tipOff','z'].forEach(function(k){if(k in op&&!(isFinite(+op[k])&&(k==='z'||+op[k]>=0)))delete op[k];});
-      ['nR','fin','tabN','tabW','tabH'].forEach(function(k){delete op[k];});
-    }else ['cside','nR','fin','leadR','overlap','tabN','tabW','tabH'].forEach(function(k){delete op[k];});
+      ['nR','fin','tabN','tabW','tabH','descente','pente'].forEach(function(k){delete op[k];});
+    }else ['cside','nR','fin','leadR','overlap','tabN','tabW','tabH','descente','pente'].forEach(function(k){delete op[k];});
     if(op.type==='rough3d'||faoPocketAdapt(op)){const mp=+op.minipasses;op.minipasses=isFinite(mp)&&mp>0?Math.min(50,Math.round(mp)):0;
       // 2026-10-07-001/002 : finition des parois (N contours « Parois » -> 0,
       // sur la DERNIERE passe en profondeur, finitProf cotes vers le haut) —

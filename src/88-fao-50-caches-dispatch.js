@@ -640,7 +640,8 @@ function* faoOpMovesIt0(op,job){
       mv=faoGenContourProfil(am&&am.mesh,L.loop,Object.assign({},base,{
         ztop:+op.ztop,zbot:+op.zbot,ap:+op.ap,ae:op.ae,nR:op.nR,fin:op.fin,
         radial:RA.radial,axial:RA.axial,side:op.cside,sens:op.sens==='opp'?'opp':'climb',
-        leadR:op.leadR,overlap:op.overlap,tabN:op.tabN,tabW:op.tabW,tabH:op.tabH}));
+        leadR:op.leadR,overlap:op.overlap,tabN:op.tabN,tabW:op.tabW,tabH:op.tabH,
+        descente:op.descente,pente:op.pente}));
       try{ if(mv&&mv.diag)op.geoDiag=mv.diag; }catch(e){}
     }
   }

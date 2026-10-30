@@ -8,7 +8,10 @@
      mi-hauteur (parité) — dedans = bossage (outil dehors), dehors =
      poche (outil dedans) ; forçable (op.cside 'ext' / 'int') ;
    - passes radiales (n, écart ae) puis finition à pleine hauteur
-     (surépaisseur op.fin) ; passes en Z (ap) ;
+     (surépaisseur op.fin) ; descente en Z : « Paliers » (niveaux ap,
+     défaut) ou « Pente » (V0.23.18, op.descente 'pente') — l'outil attaque
+     le contour en haut et descend en hélice le long de la boucle selon
+     l'angle op.pente (°) jusqu'au plan final, puis un tour à plat ;
    - sens avalant (matière à droite de l'avance, broche M3) ou opposé ;
    - entrée / sortie en quart de cercle tangent côté libre,
      recouvrement en fin de boucle ;
@@ -132,7 +135,8 @@ function faoGenContourProfil(mesh,loop0,o){
     return true;
   };
   // une passe (morceau) à la cote z : entrée, boucle (+recouvrement), sortie
-  const emitRun=function(run,z,d){
+  // ramp (Pente) : {z0 : cote d'attaque, k : tan(angle)} — z = plan final
+  const emitRun=function(run,z,d,ramp){
     let pts=run.pts;
     // départ : point le plus proche de la position courante (boucle fermée)
     if(run.closed&&cur){
@@ -141,8 +145,29 @@ function faoGenContourProfil(mesh,loop0,o){
       const body=pts.slice(bi,pts.length-1).concat(pts.slice(0,bi));
       pts=body.concat([[body[0][0],body[0][1]]]);
     }
+    // Pente : hélice le long de la boucle de z0 à z (longueur (z0−z)/k), puis
+    // un tour complet à plat + recouvrement ; pts portent leur z ([x,y,z])
+    if(ramp&&run.closed&&ramp.z0>z+1e-9){
+      const B=pts;let Lb=0;for(let i=1;i<B.length;i++)Lb+=Math.hypot(B[i][0]-B[i-1][0],B[i][1]-B[i-1][1]);
+      if(Lb>1e-6){
+        const Lr=(ramp.z0-z)/ramp.k,total=Lr+Lb+overlap;
+        const zAt=function(t){return Math.max(z,ramp.z0-ramp.k*t);};
+        const P3=[[B[0][0],B[0][1],ramp.z0]];let t=0;
+        while(t<total-1e-9){
+          for(let i=1;i<B.length&&t<total-1e-9;i++){
+            const a=B[i-1],b=B[i],l=Math.hypot(b[0]-a[0],b[1]-a[1]);
+            if(!(l>0))continue;
+            // fin de la rampe au milieu d'un segment : point exact au plan final
+            if(t<Lr-1e-9&&t+l>Lr+1e-9&&t+l<total){const u=(Lr-t)/l;P3.push([a[0]+(b[0]-a[0])*u,a[1]+(b[1]-a[1])*u,z]);}
+            if(t+l>=total){const u=(total-t)/l;P3.push([a[0]+(b[0]-a[0])*u,a[1]+(b[1]-a[1])*u,z]);t=total;break;}
+            t+=l;P3.push([b[0],b[1],zAt(t)]);
+          }
+        }
+        pts=P3;
+      }else ramp=null;
+    }else ramp=null;
     // recouvrement
-    if(run.closed&&overlap>0){
+    if(!ramp&&run.closed&&overlap>0){
       let acc=0;
       for(let i=1;i<pts.length&&acc<overlap;i++){
         const a=pts[i-1],b=pts[i],l=Math.hypot(b[0]-a[0],b[1]-a[1]);
@@ -163,9 +188,25 @@ function faoGenContourProfil(mesh,loop0,o){
       if(cur.z<zClear-1e-9)push({r:1,x:cur.x,y:cur.y,z:zClear});
       push({r:1,x:S[0],y:S[1],z:zClear});
     }
-    const zIn=(lin&&inTab(S[0],S[1])&&z<tabZ)?tabZ:z;
+    const zS=ramp?ramp.z0:z;
+    const zIn=(lin&&inTab(S[0],S[1])&&zS<tabZ)?tabZ:zS;
     push({r:0,ent:1,x:S[0],y:S[1],z:zIn});
-    const cutPt=function(x,y,ent){
+    // Pente : z varie à chaque point — bascule d'attache suivie par drapeau
+    let clipOn=zIn>zS+1e-9,rawZ=zS;
+    const cutRamp=function(x,y,ent,zp){
+      const tb=zp<tabZ&&inTab(x,y),zz=tb?tabZ:zp;
+      if(cur&&!cur.r&&tb!==clipOn&&inTab(x,y)!==inTab(cur.x,cur.y)){
+        let A=[cur.x,cur.y],B=[x,y];
+        for(let it=0;it<20;it++){const m=[(A[0]+B[0])/2,(A[1]+B[1])/2];if(inTab(m[0],m[1])===clipOn)A=m;else B=m;}
+        const q=clipOn?B:A,L=Math.hypot(x-cur.x,y-cur.y);
+        const zq=L>1e-9?rawZ+(zp-rawZ)*Math.hypot(q[0]-cur.x,q[1]-cur.y)/L:zp;
+        if(clipOn){push({r:0,ent:ent,x:q[0],y:q[1],z:tabZ});if(zq<tabZ)push({r:0,ent:ent,x:q[0],y:q[1],z:zq});}
+        else{push({r:0,ent:ent,x:q[0],y:q[1],z:zq});if(zq<tabZ)push({r:0,ent:ent,x:q[0],y:q[1],z:tabZ});}
+      }
+      push({r:0,ent:ent,x:x,y:y,z:zz});clipOn=tb;rawZ=zp;
+    };
+    const cutPt=function(x,y,ent,zp){
+      if(ramp){cutRamp(x,y,ent,zp);return;}
       const zz=(z<tabZ&&inTab(x,y))?tabZ:z;
       if(cur&&!cur.r&&Math.abs(cur.z-zz)>1e-9){
         // bord d'attache : marche verticale au point de bascule (dichotomie)
@@ -177,15 +218,25 @@ function faoGenContourProfil(mesh,loop0,o){
       }
       push({r:0,ent:ent,x:x,y:y,z:zz});
     };
-    if(lin)for(let k=1;k<lin.length;k++)cutPt(lin[k][0],lin[k][1],1);
-    for(let k=1;k<pts.length;k++)cutPt(pts[k][0],pts[k][1],0);
-    if(lout)for(let k=1;k<lout.length;k++)cutPt(lout[k][0],lout[k][1],1);
+    if(lin)for(let k=1;k<lin.length;k++)cutPt(lin[k][0],lin[k][1],1,zS);
+    for(let k=1;k<pts.length;k++)cutPt(pts[k][0],pts[k][1],0,ramp?pts[k][2]:z);
+    if(lout)for(let k=1;k<lout.length;k++)cutPt(lout[k][0],lout[k][1],1,z);
     diag.passes++;
   };
   const levels=faoLevels(ztop,zbot+RA.axial,isFinite(+o.ap)&&+o.ap>0?+o.ap:5);
   diag.levels=levels.length;
   const passes=offs.map(passAt);
-  levels.forEach(function(z){
+  if(o.descente==='pente'){
+    // Pente : chaque passe latérale descend d'un trait jusqu'au plan final ;
+    // un morceau OUVERT (profil coupé) ne peut pas tourner : repli en paliers
+    const ang=Math.max(0.5,Math.min(45,isFinite(+o.pente)&&+o.pente>0?+o.pente:5));
+    const ramp={z0:ztop,k:Math.tan(ang*Math.PI/180)},zf=zbot+RA.axial;
+    diag.pente=ang;
+    passes.forEach(function(runs,k){runs.forEach(function(run){
+      if(run.closed)emitRun(run,zf,offs[k],ramp);
+      else levels.forEach(function(z){emitRun(run,z,offs[k]);});
+    });});
+  }else levels.forEach(function(z){
     passes.forEach(function(runs,k){runs.forEach(function(run){emitRun(run,z,offs[k]);});});
   });
   // finition à pleine hauteur (surépaisseur fin enlevée d'un coup au fond)
@@ -232,8 +283,21 @@ function faoContourRows(d,setup,op){
   rZ.appendChild(faoLab('Bas')); rZ.appendChild(faoNum(faoDsp(op,op.zbot,2),function(v){op.zbot=faoInp(op,v,2);},56,null,'Bas de la paroi (arête la plus basse du profil par défaut).'));
   d.appendChild(rZ);
   d.appendChild(faoH('Passes (mm)'));
+  const pente=op.descente==='pente';
+  const rD=faoRow();
+  rD.appendChild(faoLab('Descente'));
+  rD.appendChild(faoSel([
+    ['paliers','Paliers','Niveaux successifs espacés de ap : un tour à plat par niveau.'],
+    ['pente','Pente','Attaque en haut du contour puis descente en hélice le long du profil, selon l’angle de pente, jusqu’au plan final (Bas) parcouru à plat.']],
+    pente?'pente':'paliers',function(v){ if(v==='pente'){op.descente='pente';if(!isFinite(+op.pente))op.pente=5;} else{delete op.descente;delete op.pente;} },
+    'Descente en Z : par paliers ou en pente continue.'));
+  if(pente){
+    rD.appendChild(faoLab('pente °')); rD.appendChild(faoNum(isFinite(+op.pente)?+op.pente:5,function(v){op.pente=Math.max(0.5,Math.min(45,v));},44,0.5,
+      'Angle de la descente par rapport au plan horizontal (0,5 à 45°) : la profondeur gagnée par tour vaut périmètre × tan(angle).'));
+  }
+  d.appendChild(rD);
   const rP=faoRow();
-  rP.appendChild(faoLab('ap')); rP.appendChild(faoNum(op.ap,function(v){op.ap=Math.max(0.2,v);},48,0.5,'Descente par passe en Z.'));
+  if(!pente){rP.appendChild(faoLab('ap')); rP.appendChild(faoNum(op.ap,function(v){op.ap=Math.max(0.2,v);},48,0.5,'Descente par passe en Z.'));}
   rP.appendChild(faoLab('passes')); rP.appendChild(faoNum(isFinite(+op.nR)?+op.nR:1,function(v){op.nR=Math.max(1,Math.min(20,Math.round(v)));},36,1,
     'Passes latérales (ébauche) : de la plus éloignée vers la paroi, écartées de ae.'));
   rP.appendChild(faoLab('ae')); rP.appendChild(faoNum(isFinite(+op.ae)?+op.ae:+(toolD*0.4).toFixed(2),function(v){op.ae=Math.max(0.05,v);},48,0.1,'Écart entre deux passes latérales.'));

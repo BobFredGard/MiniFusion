@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**475 versions**, de `2026-09-28b` à `V0.23.17` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**476 versions**, de `2026-09-28b` à `V0.23.18` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5863,3 +5863,9 @@ Demande : « Des fois, quand c'est trop long, j'ai l'ancienne interface qui appa
 - **Cause** : la page affiche sa coque HTML brute (barre d'outils d'origine) pendant que le navigateur analyse le script de 4 Mo ; l'interface Moderne n'est posée qu'à la fin.
 - **Correctif** : `#mfSplash` dans le gabarit de `fusion_mvp.html` (hors `<script>`, donc visible avant l'analyse) : symbole ◧ qui se trace et se remplit, anneau lumineux, lettres de « MiniFusion » qui montent, grille de dessin, barre de progression 15 s, puis fondu. Animations en transform/opacity seulement (fluides même fil principal occupé) ; clic, Échap, Entrée ou Espace pour passer ; mouvements réduits si le système le demande ; absent sous navigateur piloté (`navigator.webdriver`) pour ne pas gêner les tests. Le petit script de l'écran porte `id="mfSplashJs"` : les tests et `build.js` lisent le premier `<script>` nu. La version (APP_VER) s'affiche en pied via `src/00`.
 - **Tests** : `npm run ci`. Vérifié dans le navigateur : écran à 3 s, interface Moderne à 17 s.
+
+## V0.23.18 - Contour : descente en Pente (en plus des Paliers)
+Demande : « Aujourd'hui, le contournage se fait par palier. On va l'appeler Paliers. Je veux ajouter une fonction en pente. L'idée est d'attaquer le contour et de descendre en pente jusqu'au plan final qui sera lui, plan. Il me faut un paramètre de pente. »
+- **Fiche Contour → Passes → Descente** : **Paliers** (niveaux ap, comportement d'avant, défaut) ou **Pente** avec l'angle **pente °** (0,5 à 45°, défaut 5° ; `ap` masqué). Champs `op.descente='pente'` / `op.pente` ; absents = Paliers, documents existants inchangés (`CACHE_VER` inchangé).
+- **Parcours** (`faoGenContourProfil`, `src/89-fao-contour.js`) : entrée tangente au Haut, hélice le long de la boucle à z = Haut − s·tan(angle) jusqu'au plan final (Bas + Fond), point exact au bas de la rampe, un tour complet à plat + recouvrement, sortie tangente. Chaque passe latérale descend de la sorte ; la finition pleine hauteur reste à plat. Attaches respectées (marches au bord de l'attache, z interpolé sur la rampe). Morceau de profil ouvert : repli en paliers.
+- **Tests** : `test_fao_contour` (attaque au Haut, z jamais remontant, pente ≤ tan(angle), tour final à plat au Bas hors paroi, attaches, sanitise) ; `npm run parcours` : 27/27 identiques ; `npm run ci`.
