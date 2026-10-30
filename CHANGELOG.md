@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**458 versions**, de `2026-09-28b` à `V0.23.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**459 versions**, de `2026-09-28b` à `V0.23.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5741,3 +5741,8 @@ Signalé : « Sous chrome -> problème de zoom qui lague alors que la rotation e
 - **Lancer de rayon par faces** (`importRaycast`, `src/90`, posé sur le maillage d'un import) : boîte de chaque face BRep testée d'abord, triangles seulement dans les faces traversées (`drawRange`, même code three.js). 144 rayons comparés sur Moule 73-40 : résultats identiques, 1,0 ms au lieu de 39,5 ms. Le clic de sélection en profite aussi.
 - **Mesure (navigateur)** : pire cran de molette 76 ms → 2 ms.
 - **Tests** : `npm run ci` ; `test_aretes_import`, `test_bool_import`, `test_import_vie`, `test_suppression_face_step`, `test_import_arbre`.
+
+## V0.23.1 - Correctif de fusion : réglages de coupe de nouveau enregistrés
+- **Cause** : en reportant V0.23.0 sur V0.22.6 / V0.22.7 (sessions parallèles), le conflit de `src/00-entete-et-outils.js` (numéro de version) a été résolu en prenant le fichier entier de V0.23.0 : `collectView` / `applyView` ont perdu l'axe de coupe (`clipAxis`) et le remplissage des faces coupées (`clipCap`) ajoutés par V0.22.6 — ils n'étaient plus enregistrés dans la vue du document.
+- **Correctif** : fichier de V0.22.7 rétabli, seul le numéro de version change. Les autres fichiers fusionnés (`10-scene-3d.js`, `90-picking-mesure-import.js`) vérifiés : aucune ligne de V0.22.6 / V0.22.7 perdue.
+- **Tests** : `npm run ci`.
