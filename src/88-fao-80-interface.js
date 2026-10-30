@@ -612,6 +612,15 @@ function faoInitUI(){
       tw.title='Bibliothèque d\'outils du posage : fenêtre flottante (Échap ou ✕ pour fermer).';
       tw.onclick=function(){ faoToolsWindowToggle(); };
       r1.appendChild(tw);
+      // V0.23.20 : copier / coller (88-fao-81-copier-coller.js) — mêmes actions que Ctrl+C / Ctrl+V
+      const bc=document.createElement('button'); bc.id='faoCopyBtn'; bc.textContent='Copier';
+      bc.title='Copier les opérations sélectionnées (Ctrl+clic / Maj+clic pour en prendre plusieurs) ou le posage sélectionné en entier — Ctrl+C.';
+      bc.onclick=function(){ if(!faoCopy())faoClipMsg('sélectionnez une ou plusieurs opérations, ou un posage, avant de copier.'); };
+      r1.appendChild(bc);
+      const bv=document.createElement('button'); bv.id='faoPasteBtn'; bv.textContent='Coller';
+      bv.title='Coller : des opérations dans le posage actif (après l’opération sélectionnée), un posage après le posage actif — Ctrl+V.';
+      bv.onclick=function(){ if(!faoPaste())faoClipMsg('presse-papiers FAO vide — copiez d’abord des opérations ou un posage.'); };
+      r1.appendChild(bv);
       cnt.appendChild(r1);
       cnt.appendChild(grp('Exécution'));
       const r2=row();
@@ -722,9 +731,9 @@ function faoRenderTree(){
         const hid=op.hidden===true;
         const off=op.on===false;
         const d=document.createElement('div');
-        d.className='fao-op'+(isSel('faoOp',op.id)?' sel':'')
+        d.className='fao-op'+(isSel('faoOp',op.id)||faoMultiHas(s.id,op.id)?' sel':'')
           +(off?' isoff':'')+(hid?' ishid':'');
-        d.title='Clic = fiche dans le panneau droit'
+        d.title='Clic = fiche dans le panneau droit · Ctrl+clic / Maj+clic = plusieurs opérations (Ctrl+C / Ctrl+V)'
           +(hid?' — traces masquées dans la 3D (opération toujours active)':'');
         const eye=document.createElement('span');
         eye.textContent=off?'○':'●';
@@ -766,7 +775,7 @@ function faoRenderTree(){
           d.appendChild(sk);
         }
         d.appendChild(mb);
-        d.onclick=function(){ faoSelectOp(s.id,op.id); };
+        d.onclick=function(ev){ if(faoMultiClick(ev,s,op))return; faoSelectOp(s.id,op.id); };
         tree.appendChild(d);
       });
     });
@@ -791,7 +800,7 @@ function faoSelectSetup(id){
   try{
     if(typeof mfCloseMenus==='function')mfCloseMenus();
     const r=faoRoot(); r.activeSetupId=id;
-    sel={kind:'faoSetup',id:id};
+    sel={kind:'faoSetup',id:id}; faoMulti=[];
     if(typeof renderTree==='function')renderTree();
     if(typeof renderProps==='function')renderProps();
     faoRenderTree();
@@ -801,7 +810,7 @@ function faoSelectOp(setupId,opId){
   try{
     if(typeof mfCloseMenus==='function')mfCloseMenus();
     const r=faoRoot(); r.activeSetupId=setupId;
-    sel={kind:'faoOp',id:opId,setup:setupId};
+    sel={kind:'faoOp',id:opId,setup:setupId}; faoMulti=[];
     if(typeof renderTree==='function')renderTree();
     if(typeof renderProps==='function')renderProps();
     faoRenderTree();

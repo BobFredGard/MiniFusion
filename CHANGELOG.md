@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**477 versions**, de `2026-09-28b` à `V0.23.19` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**478 versions**, de `2026-09-28b` à `V0.23.20` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5874,3 +5874,10 @@ Demande : « Aujourd'hui, le contournage se fait par palier. On va l'appeler Pal
 Demande : « passe l'animation à 10s ».
 - **Correctif** (gabarit de `fusion_mvp.html`) : barre de progression et début du fondu à 9,3 s (au lieu de 14,3 s), retrait de l'écran à 10,1 s (au lieu de 15,1 s). Les animations d'entrée (logo, lettres, slogan, finies avant 3 s) ne changent pas.
 - **Tests** : `npm run ci`. Vérifié dans le navigateur : écran présent à 8 s, retiré à 11 s.
+
+## V0.23.20 - FAO : copier / coller d'opérations et de posages complets
+Demande : « il faut pouvoir copier une opération ou plusieurs de FAO et un posage complet ».
+- **Sélection multiple** dans l'arbre FAO : Ctrl+clic ajoute / retire une opération, Maj+clic prend la plage depuis l'opération sélectionnée (même posage).
+- **Copier** (Ctrl+C ou bouton « Copier » du groupe Posage) : les opérations sélectionnées, ou le posage entier (machine, repère, brut, bridage, outils, opérations) quand c'est le posage qui est sélectionné.
+- **Coller** (Ctrl+V ou bouton « Coller ») : les opérations vont dans le posage actif, juste après la sélection (sinon à la fin), avec des ids neufs ; un outil absent du posage cible y est ajouté (même id et même géométrie, ou outil identique = repris). Un posage est inséré après le posage actif sous le nom `…_COPIE` (`_COPIE2`…). Ctrl+Z annule. Presse-papiers en mémoire et dans `localStorage` : on peut coller dans un autre document ou un autre onglet. Les champs de saisie gardent Ctrl+C / Ctrl+V natifs. Module `src/88-fao-81-copier-coller.js`. `CACHE_VER` inchangé (les éléments collés sont simplement à régénérer).
+- **Tests** : `test_fao_copier_coller` (sélection Maj/Ctrl, ordre, ids neufs, outils, insertion après la sélection, posage complet indépendant, noms) ; `npm run ci`.
