@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**452 versions**, de `2026-09-28b` à `V0.22.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**453 versions**, de `2026-09-28b` à `V0.22.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5690,3 +5690,10 @@ Signalé : « MERLIN-37-000.step -> ce fichier là s'ouvre d'une seule couleur �
 - **Correctif** (`importBodyColors`, `src/90`) : chaque face du corps exact reprend la couleur de la pièce (ou de l'occurrence, selon « Couleurs ») du STEP sur laquelle elle est posée — triangle du maillage d'import le plus proche, à moins de 2,5 × la déflection d'affichage (grille `importTriGrid`, mémorisée). Une face nouvelle (paroi de perçage, matière extrudée) garde la couleur du corps. MERLIN : 1 227 faces sur 1 227 retrouvées, 0,13 s.
 - **Palette** (`importCol`) : le bleu par défaut des corps n'est plus donné à une pièce — la plus grosse pièce de MERLIN le prenait et l'import paraissait d'une seule couleur.
 - **Tests** : `npm run ci`. Vérifié dans le navigateur (MERLIN dans la chaîne exacte : 22 couleurs sur le corps).
+
+## V0.22.3 - Import STEP volumineux : plus de « Import STEP impossible : undefined »
+Signalé : « Fichier STEP de + de 20Mo -> problème d'ouverture » (`000 - Ensemble des planches 1 à 32.step`, 18,7 Mo, 531 occurrences).
+- **Cause** (`src/20-noyau-et-operations-solides.js`, `occTriPos`) : `Node()`, `Transformed()` et `Triangle()` rendent des copies dans le tas du noyau, jamais libérées — trois nœuds relus par triangle. Sur ce fichier, le maillage d'affichage menait le tas OCCT à son plafond de 2 Go ; l'allocation suivante levait une exception C++ sans message, d'où « undefined ».
+- **Correctif** : nœuds lus une fois par face dans un tableau, copies libérées. Triangles identiques (mêmes coordonnées, même ordre). Tas au pic : 2 048 → 860 Mo ; maillage d'affichage +1 060 → +97 Mo. Une exception sans message affiche désormais « erreur interne du noyau OCCT (mémoire insuffisante ?) ».
+- **Reste** : l'import de ce fichier prend ~2 min 20 (noyau réel sous Node), page figée.
+- **Tests** : `npm run ci`. Fichier de l'utilisateur importé de bout en bout sous Node avec le noyau réel (lecture, transfert, maillages FAO et affichage, arêtes, occurrences) ; pas encore essayé dans le navigateur.

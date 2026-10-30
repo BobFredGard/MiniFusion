@@ -1271,19 +1271,27 @@ function occTriPos(shape,defl,ang,wantN){
             }
           }catch(e){nn=null;}
         }
+        // Nœuds lus UNE fois par face et libérés : Node(), Transformed() et Triangle() rendent
+        // des COPIES dans le tas du noyau ; non libérées (3 par triangle), un STEP de 18 Mo
+        // (planches 1 à 32) menait le tas à son plafond de 2 Go → import impossible.
+        const nb=t.NbNodes(),P=new Float64Array(nb*3+3);
+        for(let k=1;k<=nb;k++){
+          const p=t.Node(k);
+          if(trsf){const q=p.Transformed(trsf);P[k*3]=q.X();P[k*3+1]=q.Y();P[k*3+2]=q.Z();try{q.delete();}catch(e){}}
+          else{P[k*3]=p.X();P[k*3+1]=p.Y();P[k*3+2]=p.Z();}
+          try{p.delete();}catch(e){}
+        }
         for(let i=1;i<=nt;i++){
           const tr=t.Triangle(i);
           let idx=[tr.Value(1),tr.Value(2),tr.Value(3)];
+          try{tr.delete();}catch(e){}
           if(rev)idx=[idx[0],idx[2],idx[1]];
           for(const k of idx){
-            const p=t.Node(k);
-            let x,y,z;
-            if(trsf){const q=p.Transformed(trsf);x=q.X();y=q.Y();z=q.Z();}
-            else{x=p.X();y=p.Y();z=p.Z();}
-            pos.push(x,y,z);
+            pos.push(P[k*3],P[k*3+1],P[k*3+2]);
             if(nrm){if(nn)nrm.push(nn[k*3],nn[k*3+1],nn[k*3+2]);else nrm.push(NaN,NaN,NaN);}
           }
         }
+        try{if(trsf)trsf.delete();}catch(e){}
       }
     }catch(e){}
     try{loc.delete();}catch(e){}

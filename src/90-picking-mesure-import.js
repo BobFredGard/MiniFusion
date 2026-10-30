@@ -1222,7 +1222,7 @@ async function importSTEP(file){
     importAttach(file.name.replace(/\.[^.]+$/,''),'step',u8,entry,file.name);
     markDirty();rebuild();showAll();
     faceEl.textContent='STEP importé : '+file.name;
-  }catch(e){alert('Import STEP impossible : '+e.message);}
+  }catch(e){alert('Import STEP impossible : '+((e&&e.message)||'erreur interne du noyau OCCT (mémoire insuffisante ?) — rechargez la page (F5) puis réessayez'));} // exception C++ : pas de message
 }
 function importStepBuild(u8){
   // Octets STEP -> {mesh, faoGeo, edges, brep}. Synchrone, déterministe : le
