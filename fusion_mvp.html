@@ -282,7 +282,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.23.10';
+const APP_VER='V0.23.11';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -66064,30 +66064,86 @@ function viewFadeIn(){
       mepStatus('DXF exporté : '+a.download+' ('+r.ents.length+' entités, calques CONTOUR/CACHE/AXE/COTES…)');
     }catch(e){mepStatus('Export DXF impossible : '+e.message);}
   }
+  // 2026-10-30 : PDF / impression dans la fenêtre de l'application (plus d'onglet).
+  // Modale = aperçu de la planche dans une iframe, qui sert aussi de document d'impression :
+  // ses règles @page / print gardent le format exact 1:1, les règles @media screen ne règlent que l'aperçu.
+  let mepPrintDlgEl=null,mepPrintT0=null;
+  function mepPrintHtml(sh,pg){
+    const clone=mepSvgEl.cloneNode(true);
+    clone.removeAttribute('id'); // idem export : la règle #mepSvg ne doit pas s'appliquer
+    const xcss=mepExportPrep(clone);
+    clone.setAttribute('xmlns',NS);
+    clone.setAttribute('viewBox','0 0 '+pg.W+' '+pg.H);
+    clone.setAttribute('width',pg.W+'mm');clone.setAttribute('height',pg.H+'mm');
+    clone.querySelectorAll('#mepGHlp,.mepDraft').forEach(n=>n.parentNode&&n.parentNode.removeChild(n));
+    clone.querySelectorAll('.mepSkSelE,.mepSkSelT,.mepSkHovE').forEach(n=>{n.classList.remove('mepSkSelE');n.classList.remove('mepSkSelT');n.classList.remove('mepSkHovE');});
+    const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    return '<!doctype html><html><head><meta charset="utf-8"><title>'+esc(mepPrintName(sh))+'</title>'+
+      // page = format exact de la planche, sans marge : impression / PDF à l'échelle 1:1 réelle
+      '<style>@page{size:'+pg.W+'mm '+pg.H+'mm;margin:0}'+
+      'html,body{margin:0;padding:0}svg{display:block;width:'+pg.W+'mm;height:'+pg.H+'mm}'+
+      // couleurs imprimées telles quelles (sinon Chrome peut les éclaircir)
+      'svg{-webkit-print-color-adjust:exact;print-color-adjust:exact}'+css.textContent+xcss+
+      // aperçu écran : feuille blanche ajustée à la modale (sans effet sur l'impression)
+      '@media screen{html,body{height:100%;background:#6e6e73;overflow:hidden}body{display:flex;align-items:center;justify-content:center}'+
+      'svg{width:auto;height:auto;max-width:calc(100% - 24px);max-height:calc(100% - 24px);background:#fff;box-shadow:0 4px 18px rgba(0,0,0,.45)}}'+
+      '</style></head><body>'+new XMLSerializer().serializeToString(clone)+'</body></html>';
+  }
+  function mepPrintName(sh){return (doc.name||'plan').replace(/[^\w.-]+/g,'_')+'_'+sh.name.replace(/\s+/g,'');}
+  function mepPrintClose(){
+    if(!mepPrintDlgEl)return;
+    try{mepPrintDlgEl.remove();}catch(e){}
+    window.removeEventListener('keydown',mepPrintDlgEl._key,true);
+    mepPrintDlgEl=null;
+  }
   function mepPrint(pdf){
     try{
       const sh=mepSheet();
       const pg=mepPage();
-      const clone=mepSvgEl.cloneNode(true);
-      clone.removeAttribute('id'); // idem export : la règle #mepSvg ne doit pas s'appliquer
-      const xcss=mepExportPrep(clone);
-      clone.setAttribute('xmlns',NS);
-      clone.setAttribute('viewBox','0 0 '+pg.W+' '+pg.H);
-      clone.setAttribute('width',pg.W+'mm');clone.setAttribute('height',pg.H+'mm');
-      clone.querySelectorAll('#mepGHlp,.mepDraft').forEach(n=>n.parentNode&&n.parentNode.removeChild(n));
-      clone.querySelectorAll('.mepSkSelE,.mepSkSelT,.mepSkHovE').forEach(n=>{n.classList.remove('mepSkSelE');n.classList.remove('mepSkSelT');n.classList.remove('mepSkHovE');});
-      const w=window.open('','_blank');
-      if(!w){mepStatus('Popup bloquée — autorisez les popups pour imprimer.');return;}
-      w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>'+sh.name+'</title>'+
-        // page = format exact de la planche, sans marge : impression / PDF à l'échelle 1:1 réelle
-        '<style>@page{size:'+pg.W+'mm '+pg.H+'mm;margin:0}'+
-        'html,body{margin:0;padding:0}svg{display:block;width:'+pg.W+'mm;height:'+pg.H+'mm}'+
-        // couleurs imprimées telles quelles (sinon Chrome peut les éclaircir)
-        'svg{-webkit-print-color-adjust:exact;print-color-adjust:exact}'+css.textContent+xcss+'</style></head><body>'+
-        new XMLSerializer().serializeToString(clone)+'</body></html>');
-      w.document.close();
-      setTimeout(()=>{try{w.focus();w.print();}catch(e){}},250);
-      mepStatus(pdf===true?'PDF : choisissez « Enregistrer au format PDF » comme imprimante (format '+mepFmtLabel(sh)+', marges : aucune).':'Impression ouverte.');
+      mepPrintClose();
+      const ov=document.createElement('div');ov.id='mepPrintDlg';mepPrintDlgEl=ov;
+      ov.style.cssText='position:fixed;inset:0;z-index:10002;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center';
+      const box=document.createElement('div');
+      box.style.cssText='display:flex;flex-direction:column;width:min(1100px,92vw);height:88vh;padding:12px 14px;box-sizing:border-box;'
+        +'border:1px solid var(--border,#3a3a3e);border-radius:10px;background:var(--surface,#222);color:var(--text,#eee);'
+        +'box-shadow:0 12px 32px rgba(0,0,0,.5);font:12px sans-serif';
+      ov.appendChild(box);
+      const h=document.createElement('div');h.style.cssText='font-weight:600;font-size:13px;margin-bottom:8px';
+      h.textContent=(pdf===true?'PDF — ':'Imprimer — ')+sh.name+' · '+mepFmtLabel(sh)+' ('+pg.W+' × '+pg.H+' mm)';box.appendChild(h);
+      const fr=document.createElement('iframe');fr.id='mepPrintFrame';fr.title='Aperçu de la planche';
+      fr.style.cssText='flex:1;min-height:0;width:100%;border:1px solid var(--border,#3a3a3e);border-radius:6px;background:#6e6e73';
+      fr.srcdoc=mepPrintHtml(sh,pg);box.appendChild(fr);
+      const note=document.createElement('div');note.style.cssText='margin-top:8px;color:var(--muted,#aaa)';
+      note.textContent='PDF : choisissez « Enregistrer au format PDF » comme imprimante (format '+mepFmtLabel(sh)+', marges : aucune, échelle 100 %).';
+      box.appendChild(note);
+      const bt=document.createElement('div');bt.style.cssText='display:flex;justify-content:flex-end;gap:8px;margin-top:10px';
+      const go=asPdf=>{
+        const w=fr.contentWindow;if(!w)return;
+        // nom proposé à l'enregistrement PDF = titre du document (remis à l'issue de l'impression)
+        if(mepPrintT0===null){mepPrintT0=document.title;
+          const back=()=>{if(mepPrintT0!==null)document.title=mepPrintT0;mepPrintT0=null;window.removeEventListener('afterprint',back);};
+          // afterprint part de l'iframe (Chrome) ou de la fenêtre selon le navigateur
+          window.addEventListener('afterprint',back);w.addEventListener('afterprint',back);setTimeout(back,60000);}
+        document.title=mepPrintName(sh);
+        try{w.focus();w.print();}catch(e){window.dispatchEvent(new Event('afterprint'));mepStatus('Impression impossible : '+e.message);return;}
+        mepStatus(asPdf?'PDF : choisissez « Enregistrer au format PDF » comme imprimante (format '+mepFmtLabel(sh)+', marges : aucune).':'Impression lancée.');
+      };
+      const mk=(id,txt,fn)=>{const b=document.createElement('button');b.type='button';b.id=id;b.textContent=txt;b.onclick=fn;bt.appendChild(b);return b;};
+      const bP=mk('mepPrintPdf','Télécharger PDF',()=>go(true));
+      const bI=mk('mepPrintGo','Imprimer',()=>go(false));
+      mk('mepPrintClose','Fermer',mepPrintClose);
+      box.appendChild(bt);
+      // Échap ferme ; capture fenêtre : passe avant le plan et l'annulation globale
+      ov._key=e=>{
+        if(e.key==='Escape'){e.preventDefault();e.stopPropagation();mepPrintClose();return;}
+        if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='p'){e.preventDefault();e.stopPropagation();go(false);return;}
+        if(!box.contains(e.target))e.stopPropagation(); // rien n'atteint le plan derrière la modale
+      };
+      window.addEventListener('keydown',ov._key,true);
+      ov.addEventListener('mousedown',e=>{if(e.target===ov)mepPrintClose();});
+      document.body.appendChild(ov);
+      try{(pdf===true?bP:bI).focus();}catch(e){}
+      mepStatus('Aperçu '+(pdf===true?'PDF':'impression')+' : '+sh.name+' — Échap pour fermer.');
     }catch(e){mepStatus('Impression impossible : '+e.message);}
   }
   /* ═══════════════ X. activation espace + init ═══════════════ */
@@ -66124,6 +66180,7 @@ function viewFadeIn(){
       mepAutoViews();
     }else{
       mepSt.open=false;
+      mepPrintClose();
       // La sélection PLAN est conservée : au retour dans l'espace, la vue/cote
       // active et son panneau réapparaissent tels quels.
       if(mepWrapEl)mepWrapEl.classList.remove('open');
@@ -66135,6 +66192,7 @@ function viewFadeIn(){
   }
   function mepReset(){
     // docResetEmpty() : ferme l'espace SANS recréer doc.mep (doc.mep=null déjà posé par l'appelant)
+    mepPrintClose();
     mepSt.open=false;mepSt.sel=null;mepSt.selDim=null;mepSt.tool='select';
     mepGeoCache.clear();
     if(mepWrapEl)mepWrapEl.classList.remove('open');

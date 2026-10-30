@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**468 versions**, de `2026-09-28b` à `V0.23.10` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**469 versions**, de `2026-09-28b` à `V0.23.11` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5806,3 +5806,10 @@ Demande : « il faut pouvoir modifier la "patate" de la coupe locale pour l'agra
 - **Édition** : tirer un point de contrôle le déplace ; glisser sur la forme ajoute un point ; Maj + clic sur un point le retire (`mepLocDelPt`, 3 points au minimum). Un geste = une étape d'annulation (Ctrl+Z).
 - **Suppression** (`mepLocDelete`) : touche Suppr sur la coupe sélectionnée, clic droit sur la forme → menu « Supprimer la coupe locale » (`mepCtxMenu`, `src/98-mep-80-souris.js`), ou ✕ des propriétés ; Échap désélectionne. Annulable.
 - **Tests** : `npm run ci` ; vérifié à la souris dans le navigateur (sélection, déplacement, ajout et retrait de point, suppression, annulation).
+
+## V0.23.11 - Plan : PDF et impression dans une fenêtre modale, sans nouvel onglet
+Demande : « j'aimerais que la création du PDF et l'impression se fassent dans la fenêtre avec une fenêtre modale et pas ouvrir un onglet ».
+- **Modale** (`src/98-mep-95-export-init.js`) : PDF et Imprimer ouvrent un aperçu de la planche dans l'application (titre : planche, format, dimensions en mm), boutons « Télécharger PDF », « Imprimer », « Fermer » ; Échap ferme (capturé avant le plan et l'annulation globale). Plus aucun `window.open`.
+- **Iframe d'aperçu = document d'impression** (`mepPrintHtml`) : règles `@page` / print au format exact de la planche, sans marge (échelle 1:1), couleurs imprimées telles quelles ; les règles écran n'ajustent que l'aperçu.
+- **Nom du PDF** (`mepPrintName`) : titre de la fenêtre = document_planche le temps de l'impression (proposé à l'enregistrement), remis après `afterprint`. « Télécharger PDF » passe par la boîte d'impression : choisir « Enregistrer au format PDF », marges aucune.
+- **Tests** : `npm run ci` ; modale vérifiée dans le navigateur.
