@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**455 versions**, de `2026-09-28b` à `V0.22.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**456 versions**, de `2026-09-28b` à `V0.22.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5713,3 +5713,12 @@ Demande : « il faut pouvoir créer une arborescence pour l'import d'un STEP mul
 - **Arbre** (`importTreeRows`, `src/42` sous la fonction import) : ▶ déplie, 📦 sous-ensemble (nombre de pièces, masquées), 🧊 pièce ; 👁 masque / affiche tout le nœud (annulable, enregistré dans `f.hidOcc`).
 - **Masquage = affichage seul** (`importHideApply`, appelé par `importColorMat`) : les triangles des pièces masquées sont aplatis dans le maillage d'affichage (ni dessinés ni cliquables, numéros de face intacts) ; la FAO (`faoGeo`) et le solide exact n'en voient rien. Limites : sans effet quand l'import est dans la chaîne exacte (corps avec d'autres fonctions) ; les arêtes affichées d'une pièce masquée restent.
 - **Tests** : nouveau `test_import_arbre` (suite rapide) ; `npm run ci`. Vérifié dans le navigateur sur Moule 73-40 : 111 nœuds de tête, une cavité seule affichée, annuler.
+
+## V0.22.6 - Coupe X / Y / Z avec remplissage des faces coupées
+Demande : « Il y a un outil de coupe suivant X/Y/Z [dans viewer_STEP]. Il faut l'adapter à miniFusion avec le remplissage des faces coupées. »
+- **Avant** (`applyClip`, `src/90`) : plan Z seul, curseur figé sur −100…+100, corps creux à la coupe (on voyait l'intérieur de la peau), arêtes et filets non coupés ; un plan neuf à chaque mouvement du curseur.
+- **Nouveau module** `src/91-coupe-section.js`, repris du « Coupe / Section » de viewer_STEP : axe X, Y ou Z (⚙ › Coupe) ; curseur calé sur l'emprise des corps montrés le long de l'axe (recentré au changement d'axe) ; saisie au mm (Entrée) ; « Inverser côté » ; « Afficher le plan » (voile jaune centré sur la pièce, pas sur l'origine).
+- **Remplir la coupe** (coché par défaut) : par corps, deux pochoirs stencil (sa géométrie, faces arrière +1 / avant −1, coupés par le plan) puis une peau plane à la couleur du corps, dessinée là où le compteur ≠ 0. Stencil remis à zéro avant chaque corps (ni mélange entre corps, ni avec la marque des corps transparents). Rien n'est dessiné dans une cible sans tampon stencil (reflet, projections de plan) ; peaux et pochoirs exclus du reflet. Suppose des maillages fermés (corps OCCT / CSG).
+- **Plan unique** : `clipPlane` reste l'objet lu à la création des matériaux, mais n'est plus recréé — le curseur le déplace sans recompilation. `clipTick` (à chaque image, `src/10`) lui rattache ce qui naît après coup (arêtes `edgeOverlay`, filets `holeThreads`, passes de transparence, corps reconstruits) et suit visibilité / couleur des corps.
+- Axe et remplissage enregistrés avec l'affichage du fichier (`collectView` / `applyView`).
+- **Tests** : `npm run ci`. Captures Playwright sur « Support Pédale » : coupe Z avec / sans remplissage, X avec plan affiché, Y inversée, curseur aux bornes (tout coupé / rien).

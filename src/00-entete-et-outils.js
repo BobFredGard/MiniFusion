@@ -21,7 +21,7 @@
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.22.5';
+const APP_VER='V0.22.6';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -116,7 +116,8 @@ function collectView(){
   // Préférences d'affichage (persistées dans le fichier à la sauvegarde).
   try{
     return{edges:edgeMode,mirror:mirrorOn,axes:axHelper?axHelper.visible:true,zoomInv,
-      clipOn:$('clipOn').checked,clipPos:parseFloat($('clipPos').value)||0,clipFlip:$('clipFlip').checked};
+      clipOn:$('clipOn').checked,clipPos:parseFloat($('clipPos').value)||0,clipFlip:$('clipFlip').checked,
+      clipAxis:$('clipAxis').value,clipCap:$('clipCap').checked};
   }catch(e){return{};}
 }
 function applyView(v){
@@ -130,6 +131,8 @@ function applyView(v){
     if(typeof v.clipOn==='boolean'&&$('clipOn'))$('clipOn').checked=v.clipOn;
     if(isFinite(v.clipPos)&&$('clipPos'))$('clipPos').value=v.clipPos;
     if(typeof v.clipFlip==='boolean'&&$('clipFlip'))$('clipFlip').checked=v.clipFlip;
+    if(/^[XYZ]$/.test(v.clipAxis||'')&&$('clipAxis'))$('clipAxis').value=v.clipAxis;
+    if(typeof v.clipCap==='boolean'&&$('clipCap'))$('clipCap').checked=v.clipCap;
     applyClip();refreshMirror();buildEdgeOverlay();
   }catch(e){}
 }

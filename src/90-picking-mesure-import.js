@@ -993,15 +993,7 @@ ctxStepBtn=ctxStepBtnMake('ctxMenu');
 ctxStepBtn3d=ctxStepBtnMake('ctxMenu3D');
 const curName=t=>{if(t.kind==='plane')return 'Plan '+t.id;if(t.kind==='cg')return (cgGet(t.id)||{}).name;if(t.kind==='sketch')return(doc.sketches.find(s=>s.id===t.id)||{}).name;if(t.kind==='feature')return(doc.features.find(f=>f.id===t.id)||{}).name;if(t.kind==='body')return String((bodies.find(b=>b.id===t.id)||{}).name||'').replace(/ · .*$/,'');return'';};
 
-/* ---------- coupe ---------- */
-function applyClip(){
-  const on=$('clipOn').checked;
-  if(on){const pos=parseFloat($('clipPos').value)||0;
-    const flip=$('clipFlip').checked?-1:1;
-    clipPlane=new THREE.Plane(new THREE.Vector3(0,0,-flip),flip*pos); // Z = hauteur
-  }else clipPlane=null;
-  bodies.forEach(b=>{b.mesh.material.clippingPlanes=clipPlane?[clipPlane]:null;b.mesh.material.needsUpdate=true;});
-}
+/* ---------- coupe : voir 91-coupe-section.js (axe X / Y / Z, remplissage des faces coupées) ---------- */
 
 /* ---------- import / export ---------- */
 // ── Géométrie vivante des imports (STEP / STL) ───────────────────────────────

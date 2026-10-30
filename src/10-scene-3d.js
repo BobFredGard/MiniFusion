@@ -604,6 +604,7 @@ function animate(){
   try{if(typeof faoPoseSync==='function')faoPoseSync();}catch(e){}
   try{if(typeof faoFaceHlSync==='function')faoFaceHlSync();}catch(e){} // faces bleues / rouges de l'op sélectionnée
   try{if(typeof holeThreadVisSync==='function')holeThreadVisSync();}catch(e){} // filets taraudés : cachés avec leur corps (76)
+  try{if(typeof clipTick==='function')clipTick();}catch(e){} // coupe : remplissage des faces coupées (91)
   renderer.render(RS,camera);
 }
 // Sol miroir, lampe et plan d'ombre (98-rendu-vue) suivent la scène dessinée : celle de la pièce,

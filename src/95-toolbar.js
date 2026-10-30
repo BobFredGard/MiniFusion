@@ -174,6 +174,8 @@ if($('btnNew'))$('btnNew').onclick=()=>{
 };
 try{if($('optEdges')){$('optEdges').value=edgeMode;$('optEdges').onchange=()=>{edgeMode=$('optEdges').value;try{localStorage.setItem('minifusion_edges',edgeMode);}catch(e){}buildEdgeOverlay();try{if(typeof asmMode!=='undefined'){if(asmMode==='asm')asmDraw();else asmCtxDraw();}}catch(e){}};}}catch(e){}
 $('clipOn').onchange=applyClip;$('clipPos').oninput=applyClip;$('clipFlip').onchange=applyClip;
+$('clipAxis').onchange=()=>{clipRecenter=true;applyClip();};$('clipCap').onchange=applyClip;$('clipHelper').onchange=applyClip;
+$('clipPosN').onchange=clipFromNum;$('clipPosN').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();clipFromNum();}e.stopPropagation();};
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>setView(b.dataset.view));
 // --- arborescence dans la vue 3D : onglet de repli + menu réglages ---
 // État de l'arborescence : source de vérité partagée (openSketch/closeSketch la
