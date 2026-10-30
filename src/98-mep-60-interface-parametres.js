@@ -763,17 +763,17 @@
   }
   let mepClipSeq=0;
   function mepHatchAt(sh,px,py){
-    // vue en coupe dont une zone hachurée contient le point (pair-impair sur les boucles)
+    // vue dont une zone hachurée contient le point (pair-impair sur les boucles) : vue en coupe,
+    // ou coupe locale (V0.23.7 : boucles rognées à la forme, et au cercle d'un détail)
+    const inLoops=(L,x,y)=>{let c=false;L.forEach(l=>{if(mepPip(x,y,l))c=!c;});return c;};
     for(let k=sh.views.length-1;k>=0;k--){
-      const v=sh.views[k];if(!v||!v.section)continue;
+      const v=sh.views[k];if(!v)continue;
       let g=null;try{g=mepGeoOf(v);}catch(e){}
-      if(!g||!g.hatch||!g.hatch.length)continue;
+      if(!g)continue;
       const x=(px-v.x)/v.scale,y=(py-v.y)/v.scale;
-      let inside=false;
-      g.hatch.forEach(l=>{for(let i=0,j=l.length-1;i<l.length;j=i++){
-        const a=l[i],b=l[j];
-        if((a[1]>y)!==(b[1]>y)&&x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0])inside=!inside;}});
-      if(inside)return v;
+      if(v.section&&g.hatch&&g.hatch.length&&inLoops(g.hatch,x,y))return v;
+      if(v.detail&&Math.hypot(x-v.detail.cx,y-v.detail.cy)>v.detail.r)continue;
+      if((g.hatchLoc||[]).some(H=>mepPip(x,y,H.poly)&&inLoops(H.loops,x,y)))return v;
     }
     return null;
   }

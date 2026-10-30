@@ -51,6 +51,9 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
       out.hatch=(g1.hatchLoc||[]).map(h=>h.loops.length);
       out.brk=g1.els.filter(q=>q.k==='brk').length;
       out.full=(g1.fullEls||[]).length;
+      // double-clic sur les hachures : matière coupée → la vue ; dans le trou ou hors forme → rien
+      const at=(lx,ly)=>{const h=T.hatchAt(v.x+lx*v.scale,v.y+ly*v.scale);return h?h.id:null;};
+      out.hatAt=[at(25,16),at(25,10),at(5,16)];
       // le trou recule à Y = 30 : même trait 2D, nouvelle profondeur
       bd.shape=part(30);T.geoClear();
       const g2=T.geo(v);
@@ -75,6 +78,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   A(r.vis6&&r.vis6.length&&r.vis6.every(s=>s[0]>=17&&s[1]<=43),'dans la forme : le trou coupé est VU (arête vive), seulement dans la forme');
   A(r.hid6&&r.hid6.some(s=>s[0]<1)&&r.hid6.some(s=>s[1]>59),'hors de la forme : le trou reste en traits cachés des deux côtés');
   A(r.hatch&&r.hatch.length===1&&r.hatch[0]>0,'hachures de la face coupée');
+  A(JSON.stringify(r.hatAt)==='["__loc__",null,null]','hachures de la coupe locale trouvées au double-clic (pas dans le trou, pas hors forme) : '+JSON.stringify(r.hatAt));
   A(r.brk>0,'limite de la coupe : trait fin continu');
   A(r.full>0,'vue entière gardée pour retrouver l’arête');
   console.log('  · trou déplacé à Y = 30 : plan à '+r.w2+(r.lost?' (arête perdue)':'')+' ; vus '+r.vis6b);

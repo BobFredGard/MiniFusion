@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**470 versions**, de `2026-09-28b` à `V0.23.12` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**471 versions**, de `2026-09-28b` à `V0.23.13` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5819,3 +5819,9 @@ Demande : « FAO : le miroir n'a pas suivi le brut mais le reflet oui ».
 - **Cause** : le reflet est rendu à chaque image, mais le disque du sol n'était recalé (`refreshMirror`) que sur certains événements (posage, ouverture / fermeture de la simulation, cases) ; un brut changé autrement laissait le sol en place sous l'ancien encombrement.
 - **Correctif** (`src/10`) : `floorMeshes()` regroupe les corps qui portent le sol ; `floorFollowTick()`, appelé à chaque image, compare une signature (nombre de corps, boîte englobante des géométries sans parcours des sommets, haut de la vue) et relance `refreshMirror` si elle change.
 - **Tests** : `npm run ci`. Vérifié dans le navigateur : un volume descendu sans appel à `refreshMirror` → sol de −0,02 à −45,02, halo élargi quand il grossit.
+
+## V0.23.13 - Plan : double-clic sur les hachures d'une coupe locale
+Demande : « Mise en plan hachures > je n'arrive pas à les éditer ».
+- **Cause** : `mepHatchAt` (`src/98-mep-60-interface-parametres.js`) ne cherchait les zones hachurées que dans les vues en coupe (`v.section`) ; les hachures d'une coupe locale (V0.23.7, `geo.hatchLoc`) n'étaient jamais trouvées, le double-clic tombait sur « Libellé de la vue ».
+- **Correctif** : la recherche couvre aussi les coupes locales de toute vue — point dans les boucles hachurées (pair-impair) ET dans la forme de la coupe, et dans le cercle pour une vue de détail. La fenêtre des hachures s'ouvre ; ses réglages valent pour toutes les coupes, locales comprises.
+- **Tests** : `test_mep_coupe_locale` (matière coupée → la vue ; dans le trou ou hors forme → rien) ; `npm run ci`. Vérifié dans le navigateur sur « Perçages » : coupe locale sur la vue de face, double-clic → fenêtre, angle 60° appliqué.
