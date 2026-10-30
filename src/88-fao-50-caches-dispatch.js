@@ -116,9 +116,13 @@ function faoOpMovesKey(op,job){
       if(!Object.prototype.hasOwnProperty.call(base,k)||k==='ops'||k==='open')continue;
       if(k==='name'||k==='id')continue; // libelle / identifiant : jamais une trajectoire
       if(k==='holeInfo')continue; // nature des trous d'un STEP (taraudé…) : aucun effet sur les tracés
+      if(k==='sketches'||k==='walls')continue; // V0.23.20 : esquisses/corps FAO -> géométrie seule (ci-dessous)
       js[k]=job[k]; // posage vu par l'opération : son brut (repère de l'opération)
     }
     if(inh){ js.stock=job.stock; js.opFrame=job.frame; js.originZero=true; }
+    // V0.23.20 : corps FAO actifs (murs) — empreinte de leur prisme ; absent sans corps
+    // (clés des documents sans murs inchangées)
+    const wsig=faoWallsSig(job); if(wsig)js.walls=wsig;
     // Seul l'outil de CETTE operation influence ses parcours : modifier T3 ne
     // doit pas rendre perimes les traces des operations qui tournent en T1.
     // 2026-10-15-010 : sous-ensemble HISTORIQUE de la fiche (faoToolKeyObj) — les champs
@@ -659,6 +663,11 @@ function* faoOpMovesIt0(op,job){
       try{ const rb=faoProtectBodiesMesh(job,op); if(rb)am={mesh:faoMeshConcat(am.mesh,rb),box:am.box}; }catch(e){}
       try{ protTip=faoProtectTip(job,op,faoToolById(job,op.toolId)||{d:D},faoRA(op).radial,true,am.mesh); }catch(e){ protTip=null; }
     }
+    // V0.23.20 : corps FAO (murs) — dans le modèle et dans la cote de pointe minimale
+    if(am&&am.mesh){
+      try{ const wm=faoWallsMesh(job); if(wm){ am={mesh:faoMeshConcat(am.mesh,wm),box:am.box};
+        protTip=faoTipMax(protTip,faoWallTip(job,D,RA.radial)); } }catch(e){}
+    }
     // bulge supprimé : la sonde (A/B) montrait une garde identique avec ou
     // sans compensation parent — l'arrondi tangent reste hors mur (≥0.48).
     const brutTop=(job&&job.stock&&isFinite(+job.stock.z1))?+job.stock.z1:null;
@@ -728,6 +737,9 @@ function* faoOpMovesIt0(op,job){
       // champ géodésique (faces hors zone exclues) ; sans cela, zbot bas +
       // parois du maillage = passes qui descendent sous la face limitée.
       const zctx0=faoZoneCtx(op,job);
+      // V0.23.20 : corps FAO — aucune position d'outil à leur contact
+      const far=faoWallFarAt(job,D);
+      if(far)faceOk=faceOk?(function(f0){return function(x,y){return far(x,y)&&f0(x,y);};})(faceOk):far;
       const zctx=faceOk?{at:(zctx0&&zctx0.at)?function(x,y){return zctx0.at(x,y)&&faceOk(x,y);}:faceOk}:zctx0;
       // 2026-10-14-001 : trajectoire 'scallop' = CRÊTES CONSTANTES façon
       // Fusion 360 (offsets géodésiques depuis les bords de la zone, lentilles
@@ -774,6 +786,11 @@ function* faoOpMovesIt0(op,job){
     if(am&&am.mesh&&Array.isArray(op.protect)&&op.protect.length){
       try{ const rb=faoProtectBodiesMesh(job,op); if(rb)am={mesh:faoMeshConcat(am.mesh,rb),box:am.box}; }catch(e){}
       try{ const tl=faoToolById(job,op.toolId)||{d:D,kind:'ball'};red=faoProtectFn(job,op,tl.kind||'ball',+tl.d||D,tl.cornerR,+op.laisse||0,am.mesh); }catch(e){ red=null; }
+    }
+    // V0.23.20 : corps FAO (murs) — dans le modèle et dans la descente
+    if(am&&am.mesh){
+      try{ const wm=faoWallsMesh(job); if(wm){ am={mesh:faoMeshConcat(am.mesh,wm),box:am.box};
+        red=faoTipMax(red,faoWallTip(job,D,+op.laisse||0)); } }catch(e){}
     }
     if(am&&am.mesh&&drive){
       const tool=faoToolById(job,op.toolId);
@@ -826,6 +843,9 @@ function* faoOpMovesIt0(op,job){
   if((lim||lim2)&&mv.length&&!zoneDone)mv=faoZoneCuts(mv,op,job,secu);
   if(op&&op.type==='rough3d'&&mv.length)
     mv=faoFastDrops(mv,D,tool.kind==='ball'?D/2:Math.min(D/2,Math.max(0,+tool.cornerR||0)));
+  // V0.23.20 : corps FAO = murs infranchissables, en TOUT dernier (après arrondis,
+  // zones et descentes) : coupes recoupées, rapides relevés au-dessus des corps
+  if(mv.length)mv=faoWallsApply(mv,op,job,D,secu);
   if(ck!==null)faoOpMovesStore(op,ck,mv);
   if(ck!==null)faoMovesSave(job,op,ck,mv); // persistance : prochaine ouverture = lecture
   if(op){ try{ op.stale=false; }catch(e){} } // generation fraiche

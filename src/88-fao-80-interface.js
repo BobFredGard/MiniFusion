@@ -724,6 +724,7 @@ function faoRenderTree(){
         +(open?'':' · opérations repliées (clic sur la flèche pour les rouvrir)');
       h.onclick=function(){ faoSelectSetup(s.id); };
       tree.appendChild(h);
+      if(open)faoWallsTree(tree,s,isSel); // V0.23.20 : esquisses et corps FAO du posage
       if(open)(s.ops||[]).forEach(function(op,i){
         // ●/○ = ACTIVÉE (entre dans le G-code) — indépendant de « Masquer » : une
         // opération désactivée est absente du programme, une opération masquée
@@ -780,6 +781,7 @@ function faoRenderTree(){
       });
     });
   }catch(e){}
+  try{ faoWalls3D(); }catch(e){} // V0.23.20 : corps et esquisses FAO dans la vue
 }
 function faoOpShortLabel(op){
   const n={facing:'Surfaçage',pocket:'Poche',chamfer:'Chanfrein',contour:'Contour',drill:'Perçage',
@@ -1515,7 +1517,7 @@ function faoOpCardElement(setup,op,i){
     const rsk=faoRow();
     rsk.appendChild(faoLab('Esquisse'));
     const skOpts=[['','— choisir une esquisse —','Contour fermé (traits forts), plan horizontal, sans îlot ni trou, sans cercle.']];
-    ((typeof doc!=='undefined'&&doc&&doc.sketches)||[]).forEach(function(s){
+    ((typeof doc!=='undefined'&&doc&&doc.sketches)||[]).concat(faoSkList(setup)).forEach(function(s){
       skOpts.push([s.id,s.name+' · '+sketchFaceLabel(s),(s.entities||[]).length+' traits']);
     });
     rsk.appendChild(faoSel(skOpts,L.sk||'',function(v){
@@ -1627,7 +1629,7 @@ function faoOpCardElement(setup,op,i){
     rsk2.className='fao-row';
     rsk2.appendChild(faoLab('Esquisse'));
     const skOpts2=[['','— choisir une esquisse —','Contour fermé (traits forts), plan horizontal, sans îlot ni trou, sans cercle.']];
-    ((typeof doc!=='undefined'&&doc&&doc.sketches)||[]).forEach(function(s){
+    ((typeof doc!=='undefined'&&doc&&doc.sketches)||[]).concat(faoSkList(setup)).forEach(function(s){
       skOpts2.push([s.id,s.name+' · '+sketchFaceLabel(s),(s.entities||[]).length+' traits']);
     });
     rsk2.appendChild(faoSel(skOpts2,L2.sk||'',function(v){
@@ -2022,6 +2024,8 @@ function faoRenderProps(p,s){
       faoChainPanel(p,setup,op);
       return;
     }
+    const wall=(!op&&s.wall)?faoWallList(setup).filter(function(w){return w.id===s.wall;})[0]:null;
+    if(wall){ faoWallFiche(p,setup,wall); faoTidyRows(p); return; } // V0.23.20 : corps FAO
     if(op){
       p.appendChild(faoH('Opération · '+setup.name));
       p.appendChild(faoOpCardElement(setup,op,idx));

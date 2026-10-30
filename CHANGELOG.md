@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**479 versions**, de `2026-09-28b` à `V0.23.21` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**480 versions**, de `2026-09-28b` à `V0.23.22` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5888,3 +5888,12 @@ Constaté sur la CI GitHub (suite complète) : `test_fao_faces` cas D en échec 
 - **Correctif** (`noWall`, `src/88-fao-90-ebauche3d.js`) : près d'une paroi, l'anneau de bord n'est écarté que si le tour des faces est dans la limite au point voisin à r de la paroi. Sans rouge ni limite : inchangé.
 - **Résultat** (RETARD, repère incliné de 11°, 398 cases de brut devant le flanc) : restant 370 → 358 (Trochoïdal 311 ; le reste est sous le flanc en surplomb, inaccessible avec la marge 0,5 mm). Écart restant avec le Trochoïdal : une lisière de 0,7 mm au bord du brut.
 - **Tests** : `test_fao_faces`, `test_fao_escargot`, `test_fao_escargot_ilots`, `test_fao_ebauche_brut`, `test_fao_zlim` ; `npm run parcours` 27/27 identiques ; `npm run ci`.
+
+## V0.23.22 - FAO : esquisses et corps propres à la FAO (murs infranchissables)
+Demande : « il faudrait pouvoir dessiner une esquisse et faire une extrusion dans ce mode-là, FAO, pour réaliser des murs infranchissables ou autres limites du genre » ; « il faut ajouter à l'arbre une partie esquisse et corps. Ils ne doivent apparaître que dans la FAO, jamais ailleurs » ; « les limites pourront être des surfaces simples, pas forcément des solides » ; « il faudra les mettre transparentes bleu clair ».
+- **Arbre FAO** : sous chaque posage, sections **✏️ Esquisses** (+ nouvelle, clic = éditer, Extruder, ✕) et **◧ Corps** (+ nouveau, œil actif/inactif, clic = fiche). **Ruban FAO → Limites** : Esquisse, Extrusion.
+- **Stockage** (`src/89-fao-murs.js`) : `setup.sketches` (format d'esquisse CAO, plan XY du posage) et `setup.walls` `{sk, a: départ Z, h: hauteur, m: marge}` dans `doc.fao` — jamais dans `doc.sketches` / `doc.features` / les corps : arbre CAO, mise en plan, exports, empreinte du modèle et noyau ne les voient pas. L'éditeur d'esquisse est celui de la CAO ; l'esquisse n'entre dans `doc.sketches` que le temps de l'édition (retirée avant le rejeu de fermeture, et par `faoRoot()` si elle y restait).
+- **Type de corps** : **Solide** (prisme des contours fermés) ou **Surface** (parois sans épaisseur le long de chaque trait, même ouvert — une simple ligne suffit ; hauteur 0 : surface plane des contours fermés, plancher). Esquisse sans contour fermé : Surface d'office. Affichage **bleu clair transparent**, espace FAO seulement.
+- **Mur infranchissable** pour toutes les opérations du posage : coupes recoupées à l'outil gonflé de la marge (flanc et pointe) et reprises par le haut, rapides relevés au-dessus du corps (même au-delà du plan de dégagement), trous de perçage retirés (G-code compris). Ébauche 3D / poche adaptative / Géodésique : le corps entre dans le modèle et la cote de pointe minimale ; Finition : positions au contact exclues. Une esquisse FAO sert aussi de zone / îlot d'opération.
+- **Cache** : clé inchangée sans corps actif (`CACHE_VER` inchangé) ; avec corps, empreinte du prisme + marge.
+- **Tests** : `test_fao_murs` (stockage, prisme, clé, surfaçage coupé à 39,5 / 60,5 mm et rapides à Z 31,5 autour d'un mur 45..55 × Z 0..30, paroi d'un trait ouvert, surface plane, corps désactivé = parcours d'origine, perçage, arbre, fiche, zone) ; `npm run ci` ; `npm run parcours`.

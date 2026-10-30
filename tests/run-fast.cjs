@@ -37,6 +37,7 @@ const SUITES = [
   'test_fao_outils',
   'test_fao_copier_coller',
   'test_fao_percage',
+  'test_fao_murs',
   'test_fao_32_fiches',
   'test_simulation_rendu',
   'test_simulation_cartes',

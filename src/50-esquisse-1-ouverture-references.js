@@ -15,6 +15,7 @@ function newSketch(preset){
 }
 function sketchFaceLabel(sk){
   if(!sk)return '?';
+  if(sk.fao)return 'XY du posage'; // V0.23.20 : esquisse FAO
   if(sk.plane==='CG'){const el=sk.cg&&cgGet(sk.cg.id);return (el?el.name:'construction ?')+(sk.cg&&sk.cg.sub?' · '+sk.cg.sub:'');}
   if(sk.plane==='FACE'&&sk.origin)return 'FACE @('+sk.origin.map(v=>(+v).toFixed(1)).join(', ')+')'+(sk.host&&sk.host.name?' · '+sk.host.name:'');
   return sk.plane;
@@ -732,7 +733,11 @@ function closeSketch(save){
   // la fonction modifiée et celles qui suivent ; sans rebuild de sortie, un verrou posé
   // à l'ouverture laisserait l'arbre bloqué.
   if(skEdit)tlEditUnlock();
-  if(save&&skEdit){try{parApplyAll();}catch(e){}solveSketch(skEdit);cleanupSk(skEdit);repSyncForSketch(skEdit.id);markDirty();rebuild();projRefreshRerun(0);sel={kind:'sketch',id:skEdit.id};renderTree();renderProps();}
+  // V0.23.20 : esquisse FAO (src/89-fao-murs.js) — quitte doc.sketches AVANT le rejeu :
+  // la CAO ne la voit jamais (empreinte du modèle inchangée)
+  const faoSk=(skEdit&&skEdit.fao)?skEdit:null;
+  if(faoSk)try{faoSkDetach(faoSk);}catch(e){}
+  if(save&&skEdit){try{parApplyAll();}catch(e){}solveSketch(skEdit);cleanupSk(skEdit);if(!faoSk)repSyncForSketch(skEdit.id);markDirty();rebuild();projRefreshRerun(0);sel=faoSk?{kind:'faoSetup',id:faoSk.fao}:{kind:'sketch',id:skEdit.id};renderTree();renderProps();}
   else if(skEdit){markDirty();try{rebuild();}catch(e){}renderTree();renderProps();}
   const skNm=skEdit&&skEdit.name;
   skEdit=null;try{docUndoUI();}catch(e){} // V0.7.6 : les flèches du haut reviennent au document
@@ -743,6 +748,7 @@ function closeSketch(save){
   // rabattu (choix manuel de l'utilisateur conservé).
   try{if(skTreeFoldSave===false)treeFoldSet(false);skTreeFoldSave=null;}catch(e){}
   try{if(skFaoFoldSave===false)faoFoldSet(false);skFaoFoldSave=null;}catch(e){}
+  if(faoSk)try{faoSkAfterEdit(faoSk);}catch(e){}
 }
 const svg=$('skSvg');
 const NS='http://www.w3.org/2000/svg';

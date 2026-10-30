@@ -385,6 +385,9 @@ function mfRibbon(){
     ['import','Insérer',()=>asmCmdInsert(),'Insérer un fichier .miniFusion comme composant du composant actif : lié (modifiable ici, la source suit) ou copié',asmO]],'mfCao mfAsmG');
   // FAO : posage, opérations (mêmes fiches que la barre « + Usinage »), simulation, calcul, export
   grp('Posage',[['setup','Posage',()=>{const b=Array.from(document.querySelectorAll('#faoTreeWrap button')).find(x=>/\+ Posage/.test(x.textContent));if(b)b.click();},'Ajouter un posage'],['tools','Outils','faoToolsBtn']],'mfFao');
+  // V0.23.20 : esquisses et corps FAO (murs infranchissables) — src/89-fao-murs.js
+  grp('Limites',[['sketch','Esquisse',()=>faoSkNew(),'Nouvelle esquisse FAO sur le plan XY du posage (visible seulement en FAO)'],
+    ['extrude','Extrusion',()=>faoWallNew(),'Corps FAO : extrusion de la dernière esquisse FAO — mur infranchissable pour toutes les opérations du posage']],'mfFao');
   let ops=[];try{ops=faoAddOpsSpec();}catch(e){}
   grp('Opérations',ops.map(a=>{const nm=String(a[1]).replace(/^\+ /,'');return [MF_FAO_ICON[a[0]]||'pocket',nm,()=>mfFaoAdd(a[0],nm),'Ajouter « '+nm+' » au posage courant'];}),'mfFao');
   grp('Simulation',[['play','Usinage','faoVwBtn'],['rapid','Rapides','faoRapBtn']],'mfFao');

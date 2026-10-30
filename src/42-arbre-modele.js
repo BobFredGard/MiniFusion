@@ -219,7 +219,7 @@ function treePart(L){
     });
   }
   cgTreeModel(L); // 📐 Construction (79) : section + éléments en enfants
-  const skVis=doc.sketches.filter(s=>!skIsRepCopy(s));
+  const skVis=doc.sketches.filter(s=>!skIsRepCopy(s)&&!s.fao); // V0.23.20 : esquisses FAO jamais en CAO
   if(gfold('sk','✏️','Esquisses ('+skVis.length+')','Esquisses de la pièce',false)){
     skVis.forEach(s=>node('✏️',s.name,'sketch',s.id,s.visible,()=>openSketch(s.id),sketchFaceLabel(s)+' · '+s.entities.length+' traits'));
   }

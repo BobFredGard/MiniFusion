@@ -373,6 +373,8 @@ function faoDrillPlan(op,job){
     const D=(t&&+t.d>0)?+t.d:10;
     list=faoLimitDrillPts(op,D).map(function(p){return {x:+p[0],y:+p[1],rfp:+op.ztop,zTip:+op.zbot,d:D};});
   }
+  // V0.23.20 : trou dont la pointe descendrait dans un corps FAO -> retiré
+  list=faoWallDrillFilter(list,job,(t&&+t.d>0)?+t.d:10);
   // saisie XY historique : ordre saisi (programmes existants inchangés) sauf choix explicite
   return faoDrillOrder(list,op.order||(op.src==='model'?'auto':'sel'));
 }

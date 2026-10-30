@@ -264,6 +264,7 @@ function faoRoot(){
     if(!r.activeSetupId||!r.setups.some(function(s){return s.id===r.activeSetupId;}))
       r.activeSetupId=r.setups[0].id;
     r.setups.forEach(faoSanitiseOps);
+    faoWallsSanitise(r); // V0.23.20 : esquisses et corps FAO (src/89-fao-murs.js)
     return r;
   }catch(e){ return {setups:[faoDefaultSetup()],activeSetupId:null}; }
 }

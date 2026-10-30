@@ -815,7 +815,8 @@ function faoSketchLoop(skId){
   // boucle dégénérée — la zone n'est JAMAIS devinée.
   try{
     if(typeof doc==='undefined'||!doc||!Array.isArray(doc.sketches))return null;
-    const sk=doc.sketches.find(function(s){return s.id===skId;});
+    // V0.23.20 : esquisse FAO du posage (src/89-fao-murs.js) admise aussi
+    const sk=doc.sketches.find(function(s){return s.id===skId;})||((faoSkFind(skId)||{}).sk);
     if(!sk)return null;
     const b=sketchBasis(sk);
     if(!b||Math.abs(b.n.z)<0.99)return null;   // la zone est un contour XY
