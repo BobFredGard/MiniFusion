@@ -227,12 +227,16 @@ function floorMeshes(){
 // Signature : nombre de corps + boîte englobante (boundingBox des géométries, sans parcours des
 // sommets) + haut de la vue ; le recalage complet n'a lieu que si elle change.
 let _floorSig='';
+// V0.23.23 : plan du sol (centre des corps projeté, haut de la vue) — aussi lu par le plan
+// d'ombre portée (vEnvTick, 98), qui restait sous la pièce et coupait le cube du brut.
+let floorPlane=null;
 function floorBoxSig(n,box){
   const r=v=>Math.round(v*1e3);
   return n+'|'+(box.isEmpty()?'':[box.min.x,box.min.y,box.min.z,box.max.x,box.max.y,box.max.z].map(r).join(','))+'|'+[_mn.x,_mn.y,_mn.z].map(v=>Math.round(v*1e6)).join(',');
 }
 function floorFollowTick(){
-  if(!floorMesh||!floorMesh.visible)return;
+  const sh=typeof vEnvS!=='undefined'&&vEnvS&&vEnvS.floor; // ombre portée : suit le même plan
+  if(!floorMesh||(!floorMesh.visible&&!sh))return;
   const ms=floorMeshes(),box=new THREE.Box3();
   ms.forEach(m=>{m.updateWorldMatrix(true,false);box.expandByObject(m);});
   if(floorBoxSig(ms.length,box)!==_floorSig)refreshMirror();
@@ -246,12 +250,13 @@ function refreshMirror(){
   if(!floorMesh)return;
   mirrorDirty=true; // la cible de reflet est à refaire (position du sol, halo, visibilité)
   floorSync();
-  if(!floorMesh.visible)return;
+  const sh=typeof vEnvS!=='undefined'&&vEnvS&&vEnvS.floor;
+  if(!floorMesh.visible&&!sh)return;
   const ms=floorMeshes();
   const box=new THREE.Box3();let n=0;
   ms.forEach(m=>{m.updateWorldMatrix(true,false);box.expandByObject(m);n++;});
   _floorSig=floorBoxSig(n,box);
-  if(!n||box.isEmpty())return;
+  if(!n||box.isEmpty()){floorPlane=null;return;}
   const U=_mn,sz=box.getSize(new THREE.Vector3()).length();
   let dmin=Infinity;
   const up=Math.abs(U.z-1)<1e-9;
@@ -271,6 +276,8 @@ function refreshMirror(){
   const c=box.getCenter(new THREE.Vector3());
   // centre du halo = centre des corps projeté sur le plan du sol
   _mcu.copy(c).addScaledVector(U,dmin-c.dot(U));
+  floorPlane={c:_mcu.clone(),U:U.clone()};
+  if(!floorMesh.visible)return;
   floorMesh.position.copy(_mcu);
   floorMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),U);
   floorMesh.updateMatrixWorld();

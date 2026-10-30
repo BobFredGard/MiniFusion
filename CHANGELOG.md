@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**480 versions**, de `2026-09-28b` à `V0.23.22` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**481 versions**, de `2026-09-28b` à `V0.23.23` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5897,3 +5897,9 @@ Demande : « il faudrait pouvoir dessiner une esquisse et faire une extrusion da
 - **Mur infranchissable** pour toutes les opérations du posage : coupes recoupées à l'outil gonflé de la marge (flanc et pointe) et reprises par le haut, rapides relevés au-dessus du corps (même au-delà du plan de dégagement), trous de perçage retirés (G-code compris). Ébauche 3D / poche adaptative / Géodésique : le corps entre dans le modèle et la cote de pointe minimale ; Finition : positions au contact exclues. Une esquisse FAO sert aussi de zone / îlot d'opération.
 - **Cache** : clé inchangée sans corps actif (`CACHE_VER` inchangé) ; avec corps, empreinte du prisme + marge.
 - **Tests** : `test_fao_murs` (stockage, prisme, clé, surfaçage coupé à 39,5 / 60,5 mm et rapides à Z 31,5 autour d'un mur 45..55 × Z 0..30, paroi d'un trait ouvert, surface plane, corps désactivé = parcours d'origine, perçage, arbre, fiche, zone) ; `npm run ci` ; `npm run parcours`.
+
+## V0.23.23 - FAO : le cube du brut n'est plus coupé par le plan d'ombre
+Demande : le cube du brut, plus bas que la pièce, était caché sous le sol miroir.
+- **Cause** : ce n'était pas le sol miroir (il suit le brut depuis V0.23.12) mais le **plan d'ombre portée** (`vEnvFloor`, actif aussi en FAO) : posé sous les seules pièces, à leur Z le plus bas et toujours en Z monde, et écrivant la profondeur — tout le cube du brut sous la pièce était masqué et assombri.
+- **Correctif** : `refreshMirror` (`src/10-scene-3d.js`) garde le plan du sol dans `floorPlane` (centre et haut de la vue, Z du posage en 3+2), calculé aussi quand seule l'ombre est affichée ; `vEnvTick` (`src/98-rendu-vue.js`) pose le plan d'ombre sur ce plan, un peu plus bas, même orientation, avec `depthWrite:false`.
+- **Tests** : `npm run ci`. Vérifié dans le navigateur sur MERLIN-23-001, brut descendu à 15 mm sous la pièce : sol miroir à −15,02, ombre à −15,09 (avant : vers 0) ; cube entier, reflet depuis sa face du bas.

@@ -146,7 +146,7 @@ function vShadowStart(){
   const sun=new THREE.DirectionalLight(0xffffff,0);sun.name='vEnvSun';sun.castShadow=true;
   sun.shadow.mapSize.set(2048,2048);sun.shadow.radius=6;sun.shadow.blurSamples=16;sun.shadow.bias=-0.0005;
   scene.add(sun);scene.add(sun.target);vEnvS.sun=sun;
-  const fl=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.ShadowMaterial({opacity:0.35}));
+  const fl=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.ShadowMaterial({opacity:0.35,depthWrite:false}));
   fl.name='vEnvFloor';fl.receiveShadow=true;fl.raycast=()=>{};fl.userData.noMirror=true;fl.renderOrder=-2;
   scene.add(fl);vEnvS.floor=fl;
 }
@@ -235,7 +235,12 @@ function vEnvTick(){
   fl.visible=!box.isEmpty();if(box.isEmpty())return;
   const dark=!envW||C.amb==='noir'||C.amb==='atelier';fl.material.opacity=dark?0.55:0.32;
   box.getCenter(_vEnvC);const R=box.getSize(_vEnvSz).length()*0.5||50;
-  fl.scale.set(R*14,R*14,1);fl.position.set(_vEnvC.x,_vEnvC.y,box.min.z-R*0.002);
+  fl.scale.set(R*14,R*14,1);
+  // V0.23.23 : sur le plan du sol miroir (sous le brut FAO, perpendiculaire au haut de la vue) —
+  // posé sous les seuls corps, il coupait le cube du brut qui descend plus bas que la pièce
+  const FP=typeof floorPlane!=='undefined'?floorPlane:null;
+  if(FP){fl.position.copy(FP.c).addScaledVector(FP.U,-R*0.002);fl.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),FP.U);}
+  else{fl.position.set(_vEnvC.x,_vEnvC.y,box.min.z-R*0.002);fl.quaternion.identity();}
   const k=envW?vEnvS.key:[-34,59]; // environnement actuel : direction de la lampe de la vue (10-scene-3d)
   const a=k[0]*Math.PI/180,e=k[1]*Math.PI/180,D=R*4;
   sun.position.set(_vEnvC.x+D*Math.cos(e)*Math.cos(a),_vEnvC.y+D*Math.cos(e)*Math.sin(a),_vEnvC.z+D*Math.sin(e));

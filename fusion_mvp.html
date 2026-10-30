@@ -336,7 +336,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.23.22';
+const APP_VER='V0.23.23';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 try{var mfSv=document.getElementById('mfSplashVer');if(mfSv)mfSv.textContent=APP_VER;}catch(e){} // écran de démarrage
 
@@ -901,12 +901,16 @@ function floorMeshes(){
 // Signature : nombre de corps + boîte englobante (boundingBox des géométries, sans parcours des
 // sommets) + haut de la vue ; le recalage complet n'a lieu que si elle change.
 let _floorSig='';
+// V0.23.23 : plan du sol (centre des corps projeté, haut de la vue) — aussi lu par le plan
+// d'ombre portée (vEnvTick, 98), qui restait sous la pièce et coupait le cube du brut.
+let floorPlane=null;
 function floorBoxSig(n,box){
   const r=v=>Math.round(v*1e3);
   return n+'|'+(box.isEmpty()?'':[box.min.x,box.min.y,box.min.z,box.max.x,box.max.y,box.max.z].map(r).join(','))+'|'+[_mn.x,_mn.y,_mn.z].map(v=>Math.round(v*1e6)).join(',');
 }
 function floorFollowTick(){
-  if(!floorMesh||!floorMesh.visible)return;
+  const sh=typeof vEnvS!=='undefined'&&vEnvS&&vEnvS.floor; // ombre portée : suit le même plan
+  if(!floorMesh||(!floorMesh.visible&&!sh))return;
   const ms=floorMeshes(),box=new THREE.Box3();
   ms.forEach(m=>{m.updateWorldMatrix(true,false);box.expandByObject(m);});
   if(floorBoxSig(ms.length,box)!==_floorSig)refreshMirror();
@@ -920,12 +924,13 @@ function refreshMirror(){
   if(!floorMesh)return;
   mirrorDirty=true; // la cible de reflet est à refaire (position du sol, halo, visibilité)
   floorSync();
-  if(!floorMesh.visible)return;
+  const sh=typeof vEnvS!=='undefined'&&vEnvS&&vEnvS.floor;
+  if(!floorMesh.visible&&!sh)return;
   const ms=floorMeshes();
   const box=new THREE.Box3();let n=0;
   ms.forEach(m=>{m.updateWorldMatrix(true,false);box.expandByObject(m);n++;});
   _floorSig=floorBoxSig(n,box);
-  if(!n||box.isEmpty())return;
+  if(!n||box.isEmpty()){floorPlane=null;return;}
   const U=_mn,sz=box.getSize(new THREE.Vector3()).length();
   let dmin=Infinity;
   const up=Math.abs(U.z-1)<1e-9;
@@ -945,6 +950,8 @@ function refreshMirror(){
   const c=box.getCenter(new THREE.Vector3());
   // centre du halo = centre des corps projeté sur le plan du sol
   _mcu.copy(c).addScaledVector(U,dmin-c.dot(U));
+  floorPlane={c:_mcu.clone(),U:U.clone()};
+  if(!floorMesh.visible)return;
   floorMesh.position.copy(_mcu);
   floorMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),U);
   floorMesh.updateMatrixWorld();
@@ -69182,7 +69189,7 @@ function vShadowStart(){
   const sun=new THREE.DirectionalLight(0xffffff,0);sun.name='vEnvSun';sun.castShadow=true;
   sun.shadow.mapSize.set(2048,2048);sun.shadow.radius=6;sun.shadow.blurSamples=16;sun.shadow.bias=-0.0005;
   scene.add(sun);scene.add(sun.target);vEnvS.sun=sun;
-  const fl=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.ShadowMaterial({opacity:0.35}));
+  const fl=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.ShadowMaterial({opacity:0.35,depthWrite:false}));
   fl.name='vEnvFloor';fl.receiveShadow=true;fl.raycast=()=>{};fl.userData.noMirror=true;fl.renderOrder=-2;
   scene.add(fl);vEnvS.floor=fl;
 }
@@ -69271,7 +69278,12 @@ function vEnvTick(){
   fl.visible=!box.isEmpty();if(box.isEmpty())return;
   const dark=!envW||C.amb==='noir'||C.amb==='atelier';fl.material.opacity=dark?0.55:0.32;
   box.getCenter(_vEnvC);const R=box.getSize(_vEnvSz).length()*0.5||50;
-  fl.scale.set(R*14,R*14,1);fl.position.set(_vEnvC.x,_vEnvC.y,box.min.z-R*0.002);
+  fl.scale.set(R*14,R*14,1);
+  // V0.23.23 : sur le plan du sol miroir (sous le brut FAO, perpendiculaire au haut de la vue) —
+  // posé sous les seuls corps, il coupait le cube du brut qui descend plus bas que la pièce
+  const FP=typeof floorPlane!=='undefined'?floorPlane:null;
+  if(FP){fl.position.copy(FP.c).addScaledVector(FP.U,-R*0.002);fl.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),FP.U);}
+  else{fl.position.set(_vEnvC.x,_vEnvC.y,box.min.z-R*0.002);fl.quaternion.identity();}
   const k=envW?vEnvS.key:[-34,59]; // environnement actuel : direction de la lampe de la vue (10-scene-3d)
   const a=k[0]*Math.PI/180,e=k[1]*Math.PI/180,D=R*4;
   sun.position.set(_vEnvC.x+D*Math.cos(e)*Math.cos(a),_vEnvC.y+D*Math.cos(e)*Math.sin(a),_vEnvC.z+D*Math.sin(e));
