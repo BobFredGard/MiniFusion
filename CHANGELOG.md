@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**450 versions**, de `2026-09-28b` à `V0.22.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**451 versions**, de `2026-09-28b` à `V0.22.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5677,3 +5677,9 @@ Demande : « il faut travailler sur le temps de génération des filets modélis
 ## V0.22.0 - Filets modélisés ISO intégrés au corps (version de test)
 Demande : « V0.22.0 — commit que je puisse tester ». Version mineure qui regroupe le travail sur les trous taraudés : filet ISO 68-1 exact réellement creusé dans le corps (V0.21.16), puis construit d'un bloc, creusé en fin de rejeu et calculé en tâche de fond (V0.21.19). Aucun changement de code depuis V0.21.19.
 - **Tests** : `npm run ci` (V0.21.19).
+
+## V0.22.1 - Import STEP multi-corps : couleurs aussi avec des surfaces hors solide
+Signalé : « l'import en couleur n'a pas fonctionné » sur `MERLIN-37-000.step`.
+- **Cause** (`src/90-picking-mesure-import.js`, `importStepOcc`, V0.21.13) : le fichier compte 25 solides et 29 coques — 4 surfaces hors solide. Le contrôle « toutes les faces sont dans un solide » échouait, l'import restait d'une seule couleur.
+- **Correctif** : parcours récursif (`TopoDS_Iterator`, même ordre que l'explorateur de faces d'`occTriPos`) ; une occurrence = un solide, ou une coque / face libre. Palette étendue au-delà des 8 couleurs vives (`importCol`, teintes à l'angle d'or) : les 22 pièces de MERLIN ne se répètent plus. Note du panneau : « n occurrences · m pièce(s) ».
+- **Tests** : `npm run ci`. Vérifié dans le navigateur sur `MERLIN-37-000.step` : 29 occurrences, 22 pièces ; 22 couleurs par pièce, 29 par occurrence.

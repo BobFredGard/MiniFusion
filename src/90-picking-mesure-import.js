@@ -1275,29 +1275,44 @@ function importStepBuild(u8){
    Seul l'affichage change : FAO (faoGeo) et solide exact (brep) intacts. */
 function importStepOcc(shape){
   // {faceOcc, occPart, nOcc, nPart} : ordinal de face (même ordre que occTriPos) →
-  // occurrence → pièce. null si moins de 2 solides, ou si des faces sont hors solide.
-  const E=occt.TopAbs_ShapeEnum,SH=E.TopAbs_SHAPE;
-  const sols=[];
-  const ex=new occt.TopExp_Explorer_2(shape,E.TopAbs_SOLID,SH);
-  while(ex.More()){sols.push(occt.TopoDS.Solid_1(ex.Current()));ex.Next();}
-  try{ex.delete();}catch(e){}
-  const nFaces=s=>{let n=0;const x=new occt.TopExp_Explorer_2(s,E.TopAbs_FACE,SH);while(x.More()){n++;x.Next();}try{x.delete();}catch(e){}return n;};
+  // occurrence → pièce. Occurrence = un solide, ou une coque / face LIBRE (hors solide :
+  // MERLIN-37-000 en a 4 pour 25 solides — l'ancien test « tout est dans un solide »
+  // renonçait alors et l'import restait d'une seule couleur). null si moins de 2.
+  // Parcours récursif par TopoDS_Iterator : même ordre en profondeur que
+  // l'explorateur de faces d'occTriPos, donc mêmes ordinaux.
+  const E=occt.TopAbs_ShapeEnum;
+  const owners=[],faceOcc=[];
+  const typ=s=>{const t=s.ShapeType();return t===E.TopAbs_SOLID?'so':t===E.TopAbs_SHELL?'sh':t===E.TopAbs_FACE?'f':t===E.TopAbs_COMPOUND||t===E.TopAbs_COMPSOLID?'c':'';};
+  const visit=(s,own)=>{
+    const t=typ(s);
+    if(t==='so'||((t==='sh'||t==='f')&&own<0)){
+      own=owners.length;
+      // poignée neuve (Value() est une référence interne de l'itérateur)
+      owners.push(t==='so'?occt.TopoDS.Solid_1(s):t==='sh'?occt.TopoDS.Shell_1(s):occt.TopoDS.Face_1(s));
+    }
+    if(t==='f'){faceOcc.push(own);return;}
+    if(!t)return;
+    const it=new occt.TopoDS_Iterator_2(s,true,true);
+    try{while(it.More()){visit(it.Value(),own);it.Next();}}finally{try{it.delete();}catch(e){}}
+  };
   try{
-    if(sols.length<2)return null;
-    // L'explorateur parcourt en profondeur : les faces du tout = celles des solides,
-    // mises bout à bout — sauf faces libres (coques hors solide), alors on renonce.
-    const cnt=sols.map(nFaces),tot=cnt.reduce((a,b)=>a+b,0);
-    if(tot!==nFaces(shape))return null;
-    const faceOcc=new Int32Array(tot);
-    let k=0;cnt.forEach((c,i)=>{faceOcc.fill(i,k,k+c);k+=c;});
-    const occPart=new Int32Array(sols.length),rep=[];
-    sols.forEach((s,i)=>{
-      let p=rep.findIndex(j=>{try{return s.IsPartner(sols[j]);}catch(e){return false;}});
+    visit(shape,-1);
+    if(owners.length<2)return null;
+    const occPart=new Int32Array(owners.length),rep=[];
+    owners.forEach((s,i)=>{
+      let p=rep.findIndex(j=>{try{return s.IsPartner(owners[j]);}catch(e){return false;}});
       if(p<0){p=rep.length;rep.push(i);}
       occPart[i]=p;
     });
-    return {faceOcc,occPart,nOcc:sols.length,nPart:rep.length};
-  }finally{sols.forEach(s=>{try{s.delete();}catch(e){}});}
+    return {faceOcc:Int32Array.from(faceOcc),occPart,nOcc:owners.length,nPart:rep.length};
+  }finally{owners.forEach(s=>{try{s.delete();}catch(e){}});}
+}
+function importCol(c,i){
+  // Couleur n° i : la palette vive, puis des teintes à l'angle d'or (22 pièces dans
+  // MERLIN-37-000 : les 8 couleurs de la palette se répétaient d'une pièce voisine à l'autre).
+  if(i<VIVID.length)c.setHex(VIVID[i]);
+  else c.setHSL(((i-VIVID.length)*0.381966+0.07)%1,0.62+0.2*(i%2),0.42+0.16*((i>>1)%2));
+  return c;
 }
 function importColorMat(f,mat){
   // Pose (ou retire) les couleurs par sommet d'un import selon f.colMode ; rend mat.
@@ -1310,12 +1325,12 @@ function importColorMat(f,mat){
     mat.vertexColors=false;
     return mat;
   }
-  const key=mode+(vivid?'':'!');
+  const key=mode+'2';
   if(g.userData.impColKey!==key||!g.getAttribute('color')){
     const n=g.attributes.position.count,col=new Float32Array(n*3),c=new THREE.Color();
     (g.userData.occGroups||[]).forEach(gr=>{
       const o=O.faceOcc[gr.f];if(o===undefined)return;
-      c.setHex(autoCol(mode==='occ'?o:O.occPart[o]));
+      importCol(c,mode==='occ'?o:O.occPart[o]);
       for(let t=gr.start*3,z=(gr.start+gr.count)*3;t<z&&t<n;t++){col[t*3]=c.r;col[t*3+1]=c.g;col[t*3+2]=c.b;}
     });
     g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
@@ -1336,7 +1351,7 @@ function importColorsPanel(p,f,pRow,pSel,pNote){
       if(v)f.colMode=v;else delete f.colMode;
       markDirty();rebuild();renderProps();});
   pRow('Couleurs',s);
-  pNote(O.nOcc+' solides · '+O.nPart+' pièce(s) distincte(s).'+(O.nPart<O.nOcc?' Une pièce répétée = plusieurs occurrences.':''));
+  pNote(O.nOcc+' occurrences · '+O.nPart+' pièce(s) distincte(s).'+(O.nPart<O.nOcc?' Une pièce répétée = plusieurs occurrences.':''));
 }
 /* ============ FAO : « corps blindés » (phase 4) ==============================
    L'affichage est désormais plus fin (occDisplayDefl + budget de triangles, phase 3)
