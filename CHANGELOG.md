@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**465 versions**, de `2026-09-28b` à `V0.23.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**466 versions**, de `2026-09-28b` à `V0.23.8` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5784,3 +5784,11 @@ Demande : « Il me manque une coupe locale. L'idée est de choisir une vue, de d
 - **Le plan suit l'arête** (`mepLocEnt`) : à chaque reconstruction, l'arête est retrouvée sur la vue entière (même forme 2D, à égalité la profondeur la plus proche) et sa profondeur déplace le plan. Arête introuvable : dernier plan gardé, ⚠ dans les propriétés.
 - **Propriétés de la vue** : « Coupes locales » — n°, « Arête… » (choisir une autre arête), ✕ (supprimer) ; annulable (Ctrl+Z). Un détail pris sur la vue montre aussi la coupe locale.
 - **Tests** : `test_mep_coupe_locale` (pavé percé : profondeur des traits, trou vu dans la forme et caché hors forme, hachures, limite ; trou déplacé de Y 20 à Y 30 → plan à Y 30 ; forme et rognage) ; `npm run ci`. Vérifié dans le navigateur (Support Pédale) : outil complet à la souris, suppression et annulation.
+
+## V0.23.8 - STEP multi-corps : une pièce masquée cache aussi ses arêtes
+Demande : « Quand on ouvre un STEP multi corps, si on cache un corps ou un ensemble de corps, seul le shading est caché, pas les arêtes vives et cachées. Il y a une action qui a été faite déjà pour la CAO » (V0.11.7).
+- **Arêtes rattachées à leurs faces** (`occSharpEdges`, `src/20`) : chaque arête garde ses faces voisines (`fs`, ordinaux de l'explorateur, les mêmes que `faceOcc`).
+- **Overlay « Arêtes »** (`edgeOverlayData` → `importEdgeShown`) : une arête d'import est tracée tant qu'une de ses faces est sur une pièce affichée. Vives, tangentes, voile arrière, survol et rendu lisent tous cette liste.
+- **Reconstruction** : le 👁 de l'arborescence reconstruit l'overlay ; la signature de visibilité (`bodyVisSig`) inclut les pièces masquées, donc annuler / rétablir suivent aussi.
+- **Limite** : la mise en plan (PLAN) projette toujours le STEP entier.
+- **Tests** : `test_import_arbre` (partie E, MERLIN-37-000 : 2739 arêtes, occurrence 0 masquée → 635 retirées, et seulement elles) ; `npm run ci`.

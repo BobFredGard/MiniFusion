@@ -2236,7 +2236,9 @@ function occSharpEdges(shape){
                 if(mesure&&maxA<3)sharp=false; // G1 confirmé sur toute l'arête : TANGENTE (grise)
               }
               const cut=!sharp&&onC;
-              out.push(cut?{mid,pts:occCurvePts(ad,u0,u1),len:s.len,sharp:true,split:true}:{mid,pts:occCurvePts(ad,u0,u1),len:s.len,sharp});
+              const E=cut?{mid,pts:occCurvePts(ad,u0,u1),len:s.len,sharp:true,split:true}:{mid,pts:occCurvePts(ad,u0,u1),len:s.len,sharp};
+              if(fl.length)E.fs=fl.slice(); // V0.23.8 : faces voisines (ordinaux) → pièce d'un STEP multi-corps
+              out.push(E);
             }
           }
         }
@@ -2346,7 +2348,17 @@ function occVisibleSharpEdges(){
 // Signature de visibilité au moment du dernier overlay : refreshParts() le reconstruit dès
 // qu'elle change, quel que soit le chemin qui a caché / montré le corps.
 let edgeOverlayVisSig=null;
-function bodyVisSig(){return bodies.filter(b=>b&&!b.ghost).map(b=>b.id+(bodyShown(b)?'+':'-')).join(',');}
+// V0.23.8 : + pièces masquées d'un STEP multi-corps (arborescence, importHideApply).
+function bodyVisSig(){return bodies.filter(b=>b&&!b.ghost).map(b=>b.id+(bodyShown(b)?'+':'-')+(b.kind==='import'?importHidSig(b):'')).join(',');}
+function importHidSig(b){const u=b&&b.mesh&&b.mesh.geometry&&b.mesh.geometry.userData;return u&&u.impHidKey?'['+u.impHidKey+']':'';}
+function importEdgeShown(b){
+  // Arête d'un STEP multi-corps : montrée tant qu'UNE de ses faces voisines est sur une
+  // pièce affichée (arête commune à deux pièces en contact : gardée si l'une reste).
+  const u=b&&b.mesh&&b.mesh.geometry&&b.mesh.geometry.userData,O=u&&u.impOcc;
+  if(!O||!u.impHidKey)return null;
+  const hid=new Uint8Array(O.nOcc);u.impHidKey.split(',').forEach(i=>{if(+i>=0&&+i<O.nOcc)hid[+i]=1;});
+  return e=>!e.fs||e.fs.some(fi=>{const o=O.faceOcc[fi];return o===undefined||!hid[o];});
+}
 function edgeOverlayData(){
   // POLYLIGNES de l'overlay « Arêtes » : {pts:[[x,y,z]…], sharp, mw?}.
   // • corps exacts → classification C0/G1 RÉELLE sur le composé occLive (inchangé) ;
@@ -2368,7 +2380,8 @@ function edgeOverlayData(){
       let ent=null;
       try{ent=importGeom.get(b.ref||b.id);}catch(e){ent=null;}
       if(ent&&ent.edges&&ent.edges.length){
-        ent.edges.forEach(e=>{if(e&&e.pts&&e.pts.length>1)out.push({pts:e.pts,sharp:!!e.sharp,mw:(b.mesh&&b.mesh.matrixWorld)||null});});
+        const keep=importEdgeShown(b); // V0.23.8 : pièces masquées dans l'arborescence → leurs arêtes aussi
+        ent.edges.forEach(e=>{if(e&&e.pts&&e.pts.length>1&&(!keep||keep(e)))out.push({pts:e.pts,sharp:!!e.sharp,mw:(b.mesh&&b.mesh.matrixWorld)||null});});
         return;
       } // STL / import sans classification → repli maillage ci-dessous
     }else if(exact)return; // corps exacts déjà couverts par le composé occLive

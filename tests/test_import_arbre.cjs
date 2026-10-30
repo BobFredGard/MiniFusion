@@ -51,6 +51,26 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
     A(!r.generique,'noms lus dans le fichier (pas de repli générique)');
     A(r.leaves===r.nOcc&&r.uniq,'chaque occurrence apparaît une seule fois ('+r.leaves+'/'+r.nOcc+')');
     A(r.deuxNoms===0,'aucune pièce géométrique sous deux noms différents (noms calés sur la bonne forme)');
+
+    // ── E. V0.23.8 : arêtes d'une pièce masquée retirées ──
+    const e=vm.runInContext(`(function(){
+      const rd=new occt.STEPControl_Reader_1();rd.ReadFile('/arbre.stp');rd.TransferRoots();const sh=rd.OneShape();
+      const O=importStepOcc(sh),E=occSharpEdges(sh);
+      const occs=x=>[...new Set(x.fs.map(fi=>O.faceOcc[fi]))];
+      const avec=E.filter(x=>x.fs&&x.fs.length),une=avec.filter(x=>occs(x).length===1);
+      const b={mesh:{geometry:{userData:{impOcc:O,impHidKey:'0'}}}};
+      const keep=importEdgeShown(b),gard=E.filter(keep),ret=E.filter(x=>!keep(x));
+      const sig0=importHidSig({mesh:{geometry:{userData:{impOcc:O}}}}),sig1=importHidSig(b);
+      b.mesh.geometry.userData.impHidKey='';
+      return {n:E.length,avec:avec.length,une:une.length,gard:gard.length,ret:ret.length,
+        retOk:ret.every(x=>occs(x).every(o=>o===0)),aucun:importEdgeShown(b)===null,sig0,sig1};
+    })()`,ctx);
+    console.log('  MERLIN : '+e.n+' arêtes, '+e.avec+' avec faces voisines, '+e.une+' sur une seule occurrence ; occurrence 0 masquée → '+e.ret+' retirées');
+    A(e.avec===e.n,'chaque arête connaît ses faces voisines');
+    A(e.une>=0.95*e.avec,'faces voisines sur la même pièce (ordinaux calés sur faceOcc)');
+    A(e.ret>0&&e.gard+e.ret===e.n&&e.retOk,'occurrence masquée : ses arêtes retirées, et seulement elles');
+    A(e.aucun,'rien de masqué : aucun filtre');
+    A(e.sig0===''&&e.sig1==='[0]','signature de visibilité : suit les pièces masquées');
   }
 
   // ── C. repli générique ──

@@ -1438,6 +1438,7 @@ function importHideSet(f,occ,hide){
   const H=new Set(f.hidOcc||[]);occ.forEach(o=>{if(hide)H.add(o);else H.delete(o);});
   if(H.size)f.hidOcc=[...H].sort((a,b)=>a-b);else delete f.hidOcc;
   try{importHideApply(f);}catch(e){}
+  try{if(bodyVisSig()!==edgeOverlayVisSig)buildEdgeOverlay();}catch(e){} // V0.23.8 : leurs arêtes suivent
   markDirty();renderTree();
 }
 function importTreeRows(L,f,T,lvl){
