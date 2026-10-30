@@ -734,7 +734,9 @@
       const o=mepLwGet(),st=mepSvgEl&&mepSvgEl.style;if(!st)return;
       const set=(k,v)=>{try{st.setProperty(k,v);}catch(e){st[k]=v;}};
       set('--mepLwThick',String(o.thick));set('--mepLwThin',String(o.thin));set('--mepLwHid',String(o.hid));
-      set('--mepLwDim',String(o.dim));set('--mepLwHatch',String(o.thin));set('--mepLwAxis',String(o.thin));
+      set('--mepLwDim',String(o.dim));set('--mepLwExt',String(o.ext>0?o.ext:o.dim));set('--mepLwHatch',String(o.thin));
+      // axes et croix des trous (V0.23.4) : leur épaisseur propre si réglée, sinon trait fin / croix 0,62
+      set('--mepLwAxis',String(o.axis>0?o.axis:o.thin));if(o.axis>0)set('--mepLwAxisX',String(o.axis));else st.removeProperty('--mepLwAxisX');
     }catch(e){}
   }
   function mepLwSet(o){try{localStorage.setItem('mep_lw',JSON.stringify(o));}catch(e){}mepLwApply();mepRender();}

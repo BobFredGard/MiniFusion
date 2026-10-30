@@ -282,7 +282,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.23.3';
+const APP_VER='V0.23.4';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -55421,6 +55421,7 @@ function viewFadeIn(){
     .mepVB{fill:rgba(10,132,255,.04);stroke:#0a84ff;stroke-width:.8;stroke-dasharray:4 2.5;pointer-events:none}
     .mepVBSel{fill:none;stroke:#0a84ff;stroke-width:1;pointer-events:none}
     .mepDimL{stroke:var(--mepDimCol,#111);stroke-width:var(--mepLwDim,.55);fill:none}
+    .mepDimL.mepDimX{stroke-width:var(--mepLwExt,var(--mepLwDim,.55))}
     .mepDimT{font-family:sans-serif;font-size:var(--mepDimH,7px);fill:var(--mepDimCol,#111);font-weight:600;paint-order:stroke;stroke:var(--mepPaper,#fff);stroke-width:1.5;stroke-linejoin:round}
     .mepDimRef{fill:var(--mepHid,#7a7f86)}
     .mepDimL.mepDimSel{stroke:#ff3b30!important}
@@ -55482,7 +55483,7 @@ function viewFadeIn(){
     .mepAxis{fill:none;stroke:var(--mepAxisCol,#111);stroke-width:var(--mepLwAxis,.35);stroke-dasharray:8 2 1.5 2;stroke-linecap:butt;stroke-linejoin:round;pointer-events:none}
     .mepThr3d{stroke:#e8930c;stroke-width:.16;fill:none;stroke-linecap:round;pointer-events:none}
     .mepThr3dRing{stroke-dasharray:.8 .6}
-    .mepAxisCross{fill:none;stroke:var(--mepAxisCol,#111);stroke-width:.62;stroke-linecap:butt;pointer-events:none}
+    .mepAxisCross{fill:none;stroke:var(--mepAxisCol,#111);stroke-width:var(--mepLwAxisX,.62);stroke-linecap:butt;pointer-events:none}
     .mepAxisSel{stroke:#0066ff!important;stroke-width:1.1!important}
     .mepAxisPick{fill:none;stroke:#ffd60a;stroke-width:1.1;pointer-events:none}
   `;
@@ -55781,19 +55782,20 @@ function viewFadeIn(){
   const mepGeoCache=new Map(); // viewId → {ver,sig,geo}
   function mepViewSig(v){
     let s=[v.kind==='dxf'?'dxf:'+((v.dxf&&v.dxf.rev)||0):'',mepRound(v.dir),mepRound(v.u),mepRound(v.v),v.bodyId||'',v.mode||'hide',v.tangent?1:0,
-      v.hlrExact===false?'soft':'exact',v.shade?1:0,v.render3d?(v.mirror?'1m':1):0,
+      v.hlrExact===false?'soft':'exact',v.shade?1:0,(v.render3d||v.real)?(v.mirror?'1m':1):0,v.real?'real':'',
       v.section?mepRound(v.section.p)+mepRound(v.section.n)+(v.section.pts?JSON.stringify(v.section.pts):''):'',v.detail?v.detail.cx+','+v.detail.cy+','+v.detail.r:'',mepOblOf(v)?'obl:'+mepOblOf(v).a+','+mepOblOf(v).k:'',mepPerspOf(v)?'persp:'+mepPerspOf(v).fov:'',v.asm?'asm:'+asmPlanSig():''].join('|');
     /* l'ombrage et le rendu 3D dépendent de la couleur/opacité des corps :
        ces réglages ne changent pas _docVersion, donc on les met dans la clé
        de cache. Le thème influe aussi sur l'environnement du rendu 3D. */
-    if(v.shade||v.render3d){
+    if(v.shade||v.render3d||v.real){
       try{
         s+='|'+mepMeshesOf(v).map(b=>{
           const st=mepBodyStyleOf(b);
           return (b.id||b.bodyId||'')+':'+st.col+':'+st.op;
         }).join(';');
       }catch(e){}
-      if(v.render3d){
+      if(v.real){try{s+='|rd:'+vEnvRealSig()+':'+mepMeshesOf(v).map(b=>{const L=vEnvLookOf(b.mesh);return L.mat+','+L.color+','+JSON.stringify(L.rel||0);}).join(';');}catch(e){}}
+      if(v.render3d||v.real){
         try{s+='|th:'+(document.body.getAttribute('data-theme')||'');}catch(e){}
       }
     }
@@ -56139,7 +56141,11 @@ function viewFadeIn(){
   /* Rendu orthographique hors écran, aligné sur la base papier de la vue :
     la caméra regarde le long de view.dir, avec up=-view.v. L'image obtenue
     couvre exactement le même cadre (u,v) que les arêtes et les cotes. */
-  function mepRender3dImage(view){
+  function mepRender3dImage(view,inner){
+    // rendu réaliste (V0.23.4) : même image, matières du Rendu direct (98-rendu-vue) le temps du rendu
+    if(view.real&&!inner&&typeof vEnvRealDo==='function'){
+      try{return vEnvRealDo(mepMeshesOf(view).map(b=>b.mesh).filter(Boolean),()=>mepRender3dImage(view,true));}catch(e){return null;}
+    }
     try{
       if(typeof THREE==='undefined'||typeof renderer==='undefined'||!renderer||
         typeof scene==='undefined'||!scene)return null;
@@ -56293,13 +56299,14 @@ function viewFadeIn(){
             const src=bd.mesh;if(!src||!src.geometry)return;
             const mats=(Array.isArray(src.material)?src.material:[src.material]).map(m0=>{
               const m=m0.clone();m.transparent=true;m.depthWrite=true;
-              m.onBeforeCompile=sh=>{
+              const ob=inner&&m0.userData&&m0.userData.vEnv?m0.onBeforeCompile:null; // rendu réaliste : matière du Rendu direct, puis le fondu
+              m.onBeforeCompile=sh=>{if(ob)ob.call(m0,sh);
                 sh.uniforms.uFz={value:fz};sh.uniforms.uFl={value:fadeL};
                 sh.vertexShader='varying float vMz;\n'+sh.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\n vMz=(modelMatrix*vec4(transformed,1.0)).z;');
                 sh.fragmentShader='uniform float uFz; uniform float uFl; varying float vMz;\n'+sh.fragmentShader.replace('#include <dithering_fragment>',
                   '#include <dithering_fragment>\n { float t=clamp((uFz-vMz)/uFl,0.0,1.0); gl_FragColor.a*=0.5*(1.0-t)*(1.0-t); }');
               };
-              m.customProgramCacheKey=()=>'mepMirror';
+              m.customProgramCacheKey=()=>ob?'mepMirrorReal':'mepMirror';
               return m;});
             const o=new THREE.Mesh(src.geometry,Array.isArray(src.material)?mats:mats[0]);
             o.matrixAutoUpdate=false;o.matrix.copy(M).multiply(src.matrixWorld);o.matrixWorld.copy(o.matrix);o.renderOrder=-1;
@@ -56780,10 +56787,10 @@ function viewFadeIn(){
   function mepFinishGeo(geo,view,cutShapes){
     try{geo.els=mepMergeCollinear(geo.els);}catch(e){}
     try{const th=mepThreadEls(view);if(th.length)geo.els=geo.els.concat(th);}catch(e){try{console.warn('mep filetage',e);}catch(e2){}}
-    if(view.render3d&&!view.section&&!view.detail){
+    if((view.render3d||view.real)&&!view.section&&!view.detail){
       try{geo.img3d=mepRender3dImage(view);}catch(e){geo.img3d=null;}
     }
-    if(view.shade&&!view.render3d&&!view.section&&!view.detail){
+    if(view.shade&&!view.render3d&&!view.real&&!view.section&&!view.detail){
       try{geo.faces=mepShadedFaces(view);}catch(e){geo.faces=[];}
       try{geo.thr3d=mepThreadSegs(view);}catch(e){geo.thr3d=[];}
     }
@@ -56825,7 +56832,7 @@ function viewFadeIn(){
     const added=new Set();
     const sty=new Map();
     list.forEach(bd=>sty.set(bd,mepBodyStyleOf(bd)));
-    const shade=!!(view.shade||view.render3d)&&!view.section&&!view.detail;
+    const shade=!!(view.shade||view.render3d||view.real)&&!view.section&&!view.detail;
     const occList=shade?list.filter(bd=>bd.mesh&&!sty.get(bd).transparent):list;
     /* — formes exactes et coupe AVANT le HLR : le HLR doit voir la matière
        réellement coupée, pas la pièce entière. — */
@@ -59622,7 +59629,9 @@ function viewFadeIn(){
       const o=mepLwGet(),st=mepSvgEl&&mepSvgEl.style;if(!st)return;
       const set=(k,v)=>{try{st.setProperty(k,v);}catch(e){st[k]=v;}};
       set('--mepLwThick',String(o.thick));set('--mepLwThin',String(o.thin));set('--mepLwHid',String(o.hid));
-      set('--mepLwDim',String(o.dim));set('--mepLwHatch',String(o.thin));set('--mepLwAxis',String(o.thin));
+      set('--mepLwDim',String(o.dim));set('--mepLwExt',String(o.ext>0?o.ext:o.dim));set('--mepLwHatch',String(o.thin));
+      // axes et croix des trous (V0.23.4) : leur épaisseur propre si réglée, sinon trait fin / croix 0,62
+      set('--mepLwAxis',String(o.axis>0?o.axis:o.thin));if(o.axis>0)set('--mepLwAxisX',String(o.axis));else st.removeProperty('--mepLwAxisX');
     }catch(e){}
   }
   function mepLwSet(o){try{localStorage.setItem('mep_lw',JSON.stringify(o));}catch(e){}mepLwApply();mepRender();}
@@ -59966,7 +59975,7 @@ function viewFadeIn(){
     const g=mepGeoOf(v);
     const X=lx=>v.x+lx*v.scale,Y=ly=>v.y+ly*v.scale;
     /* rendu 3D bitmap derrière les arêtes */
-    if(v.render3d&&g.img3d&&g.img3d.url){
+    if((v.render3d||v.real)&&g.img3d&&g.img3d.url){
       const ir=mepImg3dRect(v,g.img3d);
       mk('image',{x:ir.x,y:ir.y,width:ir.w,height:ir.h,
         href:g.img3d.url,preserveAspectRatio:'none','pointer-events':'none',
@@ -61589,6 +61598,7 @@ function viewFadeIn(){
     const ghost=!!d.__ghost;
     const col=sel?COL.sel:(d.ref?null:'#0a84ff');
     const L={class:'mepDimL'+(sel?' mepDimSel':'')+(ghost?' mepDimGhost':'')};
+    const LX={class:L.class+' mepDimX'}; // lignes de rappel (V0.23.4) : leur épaisseur propre (--mepLwExt)
     const T={class:'mepDimT'+(sel?' mepDimSel':'')+(d.ref?' mepDimRef':'')+(ghost?' mepDimGhost':'')};
     const AR=sel?'url(#mepArrSel)':'url(#mepArr)';
     const ARS=sel?'url(#mepArrSSel)':'url(#mepArrS)';
@@ -61601,7 +61611,7 @@ function viewFadeIn(){
       }
       return mk(tag,attrs);
     };
-    if(d.kind==='ord'){mepDrawOrd(draw,d,sh,L,T);return;}
+    if(d.kind==='ord'){mepDrawOrd(draw,d,sh,LX,T);return;}
     if(d.kind==='note')txt=d.txt||'Texte';
     if(d.kind==='hole'||d.kind==='note'){
       if(d.kind==='hole'&&d.holeFid&&typeof doc!=='undefined'){
@@ -61704,7 +61714,7 @@ function viewFadeIn(){
         let s0=null,s1=null;
         if(r>e[1]+0.05){s0=e[1]+gap;s1=r+ov;}
         else if(r<e[0]-0.05){s0=e[0]-gap;s1=r-ov;}
-        if(s0!==null&&Math.abs(s1-s0)>0.2)draw('line',Object.assign({x1:O.x+ux*s0,y1:O.y+uy*s0,x2:O.x+ux*s1,y2:O.y+uy*s1},L));
+        if(s0!==null&&Math.abs(s1-s0)>0.2)draw('line',Object.assign({x1:O.x+ux*s0,y1:O.y+uy*s0,x2:O.x+ux*s1,y2:O.y+uy*s1},LX));
       });
       // arc fléché aux deux bouts (pointes sur les rappels)
       draw('path',Object.assign({d:'M'+x1+','+y1+' A'+r+','+r+' 0 '+large+' '+sweep+' '+x2+','+y2,'marker-start':ARS,'marker-end':AR},L));
@@ -61734,10 +61744,10 @@ function viewFadeIn(){
     const {a1,b1,sa,sb,ea,eb}=g;
     // rappels : perpendiculaires au trait, avec un vide de `gap` au départ de
     // la pièce et un dépassement `over` après la ligne de cote (paramètres).
-    draw('line',Object.assign({x1:sa.x,y1:sa.y,x2:ea.x,y2:ea.y},L));
-    draw('line',Object.assign({x1:sb.x,y1:sb.y,x2:eb.x,y2:eb.y},L));
+    draw('line',Object.assign({x1:sa.x,y1:sa.y,x2:ea.x,y2:ea.y},LX));
+    draw('line',Object.assign({x1:sb.x,y1:sb.y,x2:eb.x,y2:eb.y},LX));
     // point d'intersection dans le vide : arêtes / arcs prolongés jusqu'au point
-    mepDrawSnapExt(draw,L,w.v1,d.a);if(d.b)mepDrawSnapExt(draw,L,w.v2||w.v1,d.b);
+    mepDrawSnapExt(draw,LX,w.v1,d.a);if(d.b)mepDrawSnapExt(draw,LX,w.v2||w.v1,d.b);
     // ligne de cote fléchée
     if(d.arr==='out'){
       const ext=Math.max(2,MEP_DIM_STYLE.arrowLen);
@@ -64739,15 +64749,23 @@ function viewFadeIn(){
      Object.keys(MEP_LW_PRESETS).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=MEP_LW_PRESETS[k].lab;sel.appendChild(o);});
      const oc=document.createElement('option');oc.value='perso';oc.textContent='Personnalisé';sel.appendChild(oc);
      sel.value=cur.preset&&MEP_LW_PRESETS[cur.preset]?cur.preset:'perso';
-     sel.onchange=()=>{const P=MEP_LW_PRESETS[sel.value];if(P){mepLwSet({preset:sel.value,thick:P.thick,thin:P.thin,hid:P.hid,dim:P.dim});mepSideShow();}};
+     sel.onchange=()=>{const P=MEP_LW_PRESETS[sel.value];if(P){const c=mepLwGet();mepLwSet(Object.assign({preset:sel.value,thick:P.thick,thin:P.thin,hid:P.hid,dim:P.dim},c.axis>0?{axis:c.axis}:{},c.ext>0?{ext:c.ext}:{}));mepSideShow();}};
      r.appendChild(sel);}
     {const cur=mepLwGet();
      // une valeur par ligne (libellé à gauche, saisie à droite) comme le reste du panneau
-     [['Trait épais (mm)','thick'],['Trait fin (mm)','thin'],['Trait caché (mm)','hid'],['Cotes (mm)','dim']].forEach(([lab,k])=>{
+     [['Trait épais (mm)','thick'],['Trait fin (mm)','thin'],['Trait caché (mm)','hid'],['Lignes de cote (mm)','dim']].forEach(([lab,k])=>{
        r=rowEl();
        const L=document.createElement('label');L.textContent=lab;r.appendChild(L);
        const i=document.createElement('input');i.type='number';i.step='0.05';i.min='0.1';i.max='2';i.value=cur[k];i.title=lab;
        i.onchange=()=>{const v=Math.min(2,Math.max(.1,+i.value||cur[k]));const o=Object.assign({},mepLwGet(),{preset:'perso'});o[k]=v;mepLwSet(o);mepSideShow();};
+       r.appendChild(i);});
+     // lignes de rappel, axes de trous (lignes d'axe et croix de centre) : réglages propres, gardés quand le préréglage change
+     [['Lignes de rappel (mm)','ext','mepLwExtIn','dim','Épaisseur des lignes de rappel (et d’attache des cotes ordonnées) — vide : comme les lignes de cote'],
+      ['Axes de trous (mm)','axis','mepLwAxisIn','thin','Épaisseur des axes et des croix de centre des trous — vide : trait fin (croix 0,62)']].forEach(([lab,k,id,dk,tip])=>{
+       r=rowEl();
+       const L=document.createElement('label');L.textContent=lab;r.appendChild(L);
+       const i=document.createElement('input');i.type='number';i.id=id;i.step='0.05';i.min='0.1';i.max='2';i.value=cur[k]>0?cur[k]:cur[dk];i.title=tip;
+       i.onchange=()=>{const o=Object.assign({},mepLwGet());if(i.value==='')delete o[k];else o[k]=Math.min(2,Math.max(.1,+i.value||o[dk]));mepLwSet(o);mepSideShow();};
        r.appendChild(i);});}
     /* — cartouche (projet / auteur / date) — */
     const tt=sh.title||(sh.title={});
@@ -65118,16 +65136,14 @@ function viewFadeIn(){
     modeSel.onchange=()=>{mepEdit('rendu',()=>{v.mode=modeSel.value;});};
     row('Rendu',modeSel);
     if(v.kind!=='section'&&v.kind!=='detail'){
-      let chkShade,chk3d;
-      chkShade=mkChk('Ombrage (faces)','shade','mepChkShade',on=>{
-        if(on){v.render3d=false;if(chk3d)chk3d.checked=false;setTimeout(()=>{try{mepSideShow();}catch(e){}},0);}
-      });
-      chk3d=mkChk('Rendu 3D (image)','render3d','mepChkRender3d',on=>{
-        if(on){v.shade=false;if(chkShade)chkShade.checked=false;}
-        setTimeout(()=>{try{mepSideShow();}catch(e){}},0); // case « Miroir » : seulement en rendu 3D
-      });
+      // ombrage, rendu 3D, rendu réaliste : une seule à la fois ; la case « Miroir » suit les rendus 3D
+      const only=k=>on=>{if(on)['shade','render3d','real'].forEach(x=>{if(x!==k)v[x]=false;});setTimeout(()=>{try{mepSideShow();}catch(e){}},0);};
+      mkChk('Ombrage (faces)','shade','mepChkShade',only('shade'));
+      const chk3d=mkChk('Rendu 3D (image)','render3d','mepChkRender3d',only('render3d'));
       chk3d.title='Rendu de la vue depuis la 3D (couleurs et transparence des corps)';
-      if(v.render3d){const cm=mkChk('Miroir','mirror','mepChkMirror');cm.title='Reflet de la pièce sous elle-même, estompé vers le bas (sans sol ni ombre)';}
+      const chkR=mkChk('Rendu réaliste','real','mepChkReal',only('real'));
+      chkR.title='Image de la vue comme le Rendu direct : ambiance et reflets de la fenêtre RENDU, matériau de rendu de chaque pièce (clic droit sur une pièce en 3D) — arêtes par-dessus';
+      if(v.render3d||v.real){const cm=mkChk('Miroir','mirror','mepChkMirror');cm.title='Reflet de la pièce sous elle-même, estompé vers le bas (sans sol ni ombre)';}
     }
     if(v.kind==='base'&&MEP_BASE_ORIENTS.indexOf(v.vk)>=0){
       // orientation : la vue principale peut regarder de droite, de gauche, de dessus… — les projections suivent
@@ -65205,7 +65221,9 @@ function viewFadeIn(){
     note.className='note';
     note.textContent=v.section?'Plan de coupe : normale '+mepRound(v.section.n):(v.kind==='detail'?'Détail ×'+mepFmtNum(v.scale,2):
       (v.kind==='proj'?'1er angle — glissement contraint, échelle liée à la mère':'dir '+mepRound(v.dir)));
-    if(v.render3d&&v.kind!=='section'&&v.kind!=='detail')
+    if(v.real&&v.kind!=='section'&&v.kind!=='detail')
+      note.textContent+=' · rendu réaliste : image du Rendu direct (réglages RENDU) + arêtes';
+    else if(v.render3d&&v.kind!=='section'&&v.kind!=='detail')
       note.textContent+=' · rendu 3D : image de la vue + arêtes, transparence par corps';
     else if(v.shade&&v.kind!=='section'&&v.kind!=='detail')
       note.textContent+=' · ombrage : couleur et transparence des corps reprises';
@@ -67366,6 +67384,50 @@ function vCaoWs(){
   const ws=document.body&&document.body.getAttribute('data-ws');
   return !ws||ws==='cao'||ws==='fao'; // V0.17.0 : aussi en FAO (la mise en plan garde son dessin)
 }
+function vEnvApply(mat,L,C){ // matière d'un corps → apparence de rendu L ({mat,color,rel}) dans l'ambiance C (vEnvCfg)
+  vEnvPatch(mat);const U=mat.userData.vEnv&&mat.userData.vEnv.U;
+  if(!U)return;
+  const d=matDef(L.mat);
+  U.uEnvCol.value.setHex(L.color);
+  U.uEnvGlass.value=0;
+  if(d&&d.trans){U.uEnvMet.value=0;U.uEnvRou.value=d.rough;U.uEnvGlass.value=1;} // verre approché : lisse, reflets nets, bords plus opaques
+  else if(mat.transparent&&!d){U.uEnvMet.value=mat.metalness;U.uEnvRou.value=mat.roughness;} // transparence CAO sans matériau : réglages de setMatAlpha (avec matériau : le sien, transparence gardée)
+  else{U.uEnvMet.value=d?d.metal:0.15;U.uEnvRou.value=d?(d.cc?d.rough+((d.ccr!=null?d.ccr:0.1)-d.rough)*d.cc*0.5:d.rough):0.42;} // vernis : reflets plus nets
+  vEnvRelU(U,L,d);
+  if(mat.envMap!==vEnvS.rt.texture)mat.envMap=vEnvS.rt.texture;
+  mat.envMapIntensity=C.int; // « Reflets » de la fenêtre RENDU (1 pour les autres ambiances)
+}
+/* ── PLAN (V0.23.4) : vue « Rendu réaliste » — l'image de la vue (mepRender3dImage) est rendue comme le
+   Rendu direct (ambiance et reflets de la fenêtre RENDU, apparence de rendu de chaque pièce), le temps
+   d'un rendu hors écran ; puis la vue CAO retrouve son état (l'espace PLAN n'a pas d'ambiance). */
+function vEnvLookOf(m){ // apparence de rendu d'un maillage projeté : corps de la pièce, composant d'assemblage, sinon sa couleur
+  const r=m.userData&&m.userData.rd;
+  if(r)return {mat:r.mat||null,color:r.color!=null?r.color:r.ccol,rel:r.rel||null};
+  const b=(bodies||[]).find(x=>x&&x.mesh&&(x.mesh===m||x.mesh===m.parent)),id=b?bodyIdOfRuntime(b):null;
+  if(id)return renderLookOf(id);
+  const mt=Array.isArray(m.material)?m.material[0]:m.material;
+  return {mat:null,color:mt&&mt.color?mt.color.getHex():0x9a9aa0,rel:null};
+}
+function vEnvRealSig(){ // réglages qui changent l'image réaliste (clé de cache des vues PLAN)
+  const C=(()=>{const p=vEnv;vEnv='rendu';try{return vEnvCfg();}finally{vEnv=p;}})();
+  return C.sig+'|'+C.int;
+}
+function vEnvRealDo(meshes,fn){
+  const prev=vEnv,was=vEnvS.on;
+  vEnv='rendu';
+  try{
+    const C=vEnvCfg();
+    if(!vEnvS.on||vEnvS.amb!==C.sig){vEnvS.on=false;vEnvOn();}
+    meshes.forEach(m=>{
+      const L=vEnvLookOf(m);
+      [m].concat(m.children.filter(c=>c.isMesh)).forEach(o=>{if(o.material&&o.material.isMeshStandardMaterial)vEnvApply(o.material,L,C);});
+    });
+    return fn();
+  }finally{
+    vEnv=prev;
+    if(!was)vEnvOff(); // matières rendues à la CAO ; sinon vEnvTick reprend l'ambiance de la vue
+  }
+}
 const vRootOf=o=>{while(o.parent)o=o.parent;return o;};
 const _vEnvBox=new THREE.Box3(),_vEnvC=new THREE.Vector3(),_vEnvSz=new THREE.Vector3();
 function vEnvTick(){
@@ -67383,20 +67445,7 @@ function vEnvTick(){
   const asmV=(typeof asmMode!=='undefined'&&asmMode==='asm'&&typeof asmScene!=='undefined'&&asmScene)?asmScene:null;
   vEnvMeshes((m,L)=>{
     const mat=m.material;if(!mat||!mat.isMeshStandardMaterial)return;
-    if(envW){
-      vEnvPatch(mat);const U=mat.userData.vEnv&&mat.userData.vEnv.U;
-      if(U){
-        const d=matDef(L.mat);
-        U.uEnvCol.value.setHex(L.color);
-        U.uEnvGlass.value=0;
-        if(d&&d.trans){U.uEnvMet.value=0;U.uEnvRou.value=d.rough;U.uEnvGlass.value=1;} // verre approché : lisse, reflets nets, bords plus opaques
-        else if(mat.transparent&&!d){U.uEnvMet.value=mat.metalness;U.uEnvRou.value=mat.roughness;} // transparence CAO sans matériau : réglages de setMatAlpha (avec matériau : le sien, transparence gardée)
-        else{U.uEnvMet.value=d?d.metal:0.15;U.uEnvRou.value=d?(d.cc?d.rough+((d.ccr!=null?d.ccr:0.1)-d.rough)*d.cc*0.5:d.rough):0.42;} // vernis : reflets plus nets
-        vEnvRelU(U,L,d);
-        if(mat.envMap!==vEnvS.rt.texture)mat.envMap=vEnvS.rt.texture;
-        mat.envMapIntensity=C.int; // « Reflets » de la fenêtre RENDU (1 pour les autres ambiances)
-      }
-    }
+    if(envW)vEnvApply(mat,L,C);
     const dv=matDef(L.mat);
     m.castShadow=shW&&m.name!=='glassIn'&&!(dv&&dv.trans); // un corps transparent (réglage CAO) porte aussi son ombre ; sa passe intérieure et le verre, non
     if(shW&&m.parent&&rdShown(m)&&(!asmV||vRootOf(m)===asmV))box.expandByObject(m); // mode Assembler : seuls les composants placés

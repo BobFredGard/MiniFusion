@@ -163,15 +163,23 @@
      Object.keys(MEP_LW_PRESETS).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=MEP_LW_PRESETS[k].lab;sel.appendChild(o);});
      const oc=document.createElement('option');oc.value='perso';oc.textContent='Personnalisé';sel.appendChild(oc);
      sel.value=cur.preset&&MEP_LW_PRESETS[cur.preset]?cur.preset:'perso';
-     sel.onchange=()=>{const P=MEP_LW_PRESETS[sel.value];if(P){mepLwSet({preset:sel.value,thick:P.thick,thin:P.thin,hid:P.hid,dim:P.dim});mepSideShow();}};
+     sel.onchange=()=>{const P=MEP_LW_PRESETS[sel.value];if(P){const c=mepLwGet();mepLwSet(Object.assign({preset:sel.value,thick:P.thick,thin:P.thin,hid:P.hid,dim:P.dim},c.axis>0?{axis:c.axis}:{},c.ext>0?{ext:c.ext}:{}));mepSideShow();}};
      r.appendChild(sel);}
     {const cur=mepLwGet();
      // une valeur par ligne (libellé à gauche, saisie à droite) comme le reste du panneau
-     [['Trait épais (mm)','thick'],['Trait fin (mm)','thin'],['Trait caché (mm)','hid'],['Cotes (mm)','dim']].forEach(([lab,k])=>{
+     [['Trait épais (mm)','thick'],['Trait fin (mm)','thin'],['Trait caché (mm)','hid'],['Lignes de cote (mm)','dim']].forEach(([lab,k])=>{
        r=rowEl();
        const L=document.createElement('label');L.textContent=lab;r.appendChild(L);
        const i=document.createElement('input');i.type='number';i.step='0.05';i.min='0.1';i.max='2';i.value=cur[k];i.title=lab;
        i.onchange=()=>{const v=Math.min(2,Math.max(.1,+i.value||cur[k]));const o=Object.assign({},mepLwGet(),{preset:'perso'});o[k]=v;mepLwSet(o);mepSideShow();};
+       r.appendChild(i);});
+     // lignes de rappel, axes de trous (lignes d'axe et croix de centre) : réglages propres, gardés quand le préréglage change
+     [['Lignes de rappel (mm)','ext','mepLwExtIn','dim','Épaisseur des lignes de rappel (et d’attache des cotes ordonnées) — vide : comme les lignes de cote'],
+      ['Axes de trous (mm)','axis','mepLwAxisIn','thin','Épaisseur des axes et des croix de centre des trous — vide : trait fin (croix 0,62)']].forEach(([lab,k,id,dk,tip])=>{
+       r=rowEl();
+       const L=document.createElement('label');L.textContent=lab;r.appendChild(L);
+       const i=document.createElement('input');i.type='number';i.id=id;i.step='0.05';i.min='0.1';i.max='2';i.value=cur[k]>0?cur[k]:cur[dk];i.title=tip;
+       i.onchange=()=>{const o=Object.assign({},mepLwGet());if(i.value==='')delete o[k];else o[k]=Math.min(2,Math.max(.1,+i.value||o[dk]));mepLwSet(o);mepSideShow();};
        r.appendChild(i);});}
     /* — cartouche (projet / auteur / date) — */
     const tt=sh.title||(sh.title={});
@@ -542,16 +550,14 @@
     modeSel.onchange=()=>{mepEdit('rendu',()=>{v.mode=modeSel.value;});};
     row('Rendu',modeSel);
     if(v.kind!=='section'&&v.kind!=='detail'){
-      let chkShade,chk3d;
-      chkShade=mkChk('Ombrage (faces)','shade','mepChkShade',on=>{
-        if(on){v.render3d=false;if(chk3d)chk3d.checked=false;setTimeout(()=>{try{mepSideShow();}catch(e){}},0);}
-      });
-      chk3d=mkChk('Rendu 3D (image)','render3d','mepChkRender3d',on=>{
-        if(on){v.shade=false;if(chkShade)chkShade.checked=false;}
-        setTimeout(()=>{try{mepSideShow();}catch(e){}},0); // case « Miroir » : seulement en rendu 3D
-      });
+      // ombrage, rendu 3D, rendu réaliste : une seule à la fois ; la case « Miroir » suit les rendus 3D
+      const only=k=>on=>{if(on)['shade','render3d','real'].forEach(x=>{if(x!==k)v[x]=false;});setTimeout(()=>{try{mepSideShow();}catch(e){}},0);};
+      mkChk('Ombrage (faces)','shade','mepChkShade',only('shade'));
+      const chk3d=mkChk('Rendu 3D (image)','render3d','mepChkRender3d',only('render3d'));
       chk3d.title='Rendu de la vue depuis la 3D (couleurs et transparence des corps)';
-      if(v.render3d){const cm=mkChk('Miroir','mirror','mepChkMirror');cm.title='Reflet de la pièce sous elle-même, estompé vers le bas (sans sol ni ombre)';}
+      const chkR=mkChk('Rendu réaliste','real','mepChkReal',only('real'));
+      chkR.title='Image de la vue comme le Rendu direct : ambiance et reflets de la fenêtre RENDU, matériau de rendu de chaque pièce (clic droit sur une pièce en 3D) — arêtes par-dessus';
+      if(v.render3d||v.real){const cm=mkChk('Miroir','mirror','mepChkMirror');cm.title='Reflet de la pièce sous elle-même, estompé vers le bas (sans sol ni ombre)';}
     }
     if(v.kind==='base'&&MEP_BASE_ORIENTS.indexOf(v.vk)>=0){
       // orientation : la vue principale peut regarder de droite, de gauche, de dessus… — les projections suivent
@@ -629,7 +635,9 @@
     note.className='note';
     note.textContent=v.section?'Plan de coupe : normale '+mepRound(v.section.n):(v.kind==='detail'?'Détail ×'+mepFmtNum(v.scale,2):
       (v.kind==='proj'?'1er angle — glissement contraint, échelle liée à la mère':'dir '+mepRound(v.dir)));
-    if(v.render3d&&v.kind!=='section'&&v.kind!=='detail')
+    if(v.real&&v.kind!=='section'&&v.kind!=='detail')
+      note.textContent+=' · rendu réaliste : image du Rendu direct (réglages RENDU) + arêtes';
+    else if(v.render3d&&v.kind!=='section'&&v.kind!=='detail')
       note.textContent+=' · rendu 3D : image de la vue + arêtes, transparence par corps';
     else if(v.shade&&v.kind!=='section'&&v.kind!=='detail')
       note.textContent+=' · ombrage : couleur et transparence des corps reprises';

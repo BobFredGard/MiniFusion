@@ -3,19 +3,20 @@
   const mepGeoCache=new Map(); // viewId → {ver,sig,geo}
   function mepViewSig(v){
     let s=[v.kind==='dxf'?'dxf:'+((v.dxf&&v.dxf.rev)||0):'',mepRound(v.dir),mepRound(v.u),mepRound(v.v),v.bodyId||'',v.mode||'hide',v.tangent?1:0,
-      v.hlrExact===false?'soft':'exact',v.shade?1:0,v.render3d?(v.mirror?'1m':1):0,
+      v.hlrExact===false?'soft':'exact',v.shade?1:0,(v.render3d||v.real)?(v.mirror?'1m':1):0,v.real?'real':'',
       v.section?mepRound(v.section.p)+mepRound(v.section.n)+(v.section.pts?JSON.stringify(v.section.pts):''):'',v.detail?v.detail.cx+','+v.detail.cy+','+v.detail.r:'',mepOblOf(v)?'obl:'+mepOblOf(v).a+','+mepOblOf(v).k:'',mepPerspOf(v)?'persp:'+mepPerspOf(v).fov:'',v.asm?'asm:'+asmPlanSig():''].join('|');
     /* l'ombrage et le rendu 3D dépendent de la couleur/opacité des corps :
        ces réglages ne changent pas _docVersion, donc on les met dans la clé
        de cache. Le thème influe aussi sur l'environnement du rendu 3D. */
-    if(v.shade||v.render3d){
+    if(v.shade||v.render3d||v.real){
       try{
         s+='|'+mepMeshesOf(v).map(b=>{
           const st=mepBodyStyleOf(b);
           return (b.id||b.bodyId||'')+':'+st.col+':'+st.op;
         }).join(';');
       }catch(e){}
-      if(v.render3d){
+      if(v.real){try{s+='|rd:'+vEnvRealSig()+':'+mepMeshesOf(v).map(b=>{const L=vEnvLookOf(b.mesh);return L.mat+','+L.color+','+JSON.stringify(L.rel||0);}).join(';');}catch(e){}}
+      if(v.render3d||v.real){
         try{s+='|th:'+(document.body.getAttribute('data-theme')||'');}catch(e){}
       }
     }
@@ -361,7 +362,11 @@
   /* Rendu orthographique hors écran, aligné sur la base papier de la vue :
     la caméra regarde le long de view.dir, avec up=-view.v. L'image obtenue
     couvre exactement le même cadre (u,v) que les arêtes et les cotes. */
-  function mepRender3dImage(view){
+  function mepRender3dImage(view,inner){
+    // rendu réaliste (V0.23.4) : même image, matières du Rendu direct (98-rendu-vue) le temps du rendu
+    if(view.real&&!inner&&typeof vEnvRealDo==='function'){
+      try{return vEnvRealDo(mepMeshesOf(view).map(b=>b.mesh).filter(Boolean),()=>mepRender3dImage(view,true));}catch(e){return null;}
+    }
     try{
       if(typeof THREE==='undefined'||typeof renderer==='undefined'||!renderer||
         typeof scene==='undefined'||!scene)return null;
@@ -515,13 +520,14 @@
             const src=bd.mesh;if(!src||!src.geometry)return;
             const mats=(Array.isArray(src.material)?src.material:[src.material]).map(m0=>{
               const m=m0.clone();m.transparent=true;m.depthWrite=true;
-              m.onBeforeCompile=sh=>{
+              const ob=inner&&m0.userData&&m0.userData.vEnv?m0.onBeforeCompile:null; // rendu réaliste : matière du Rendu direct, puis le fondu
+              m.onBeforeCompile=sh=>{if(ob)ob.call(m0,sh);
                 sh.uniforms.uFz={value:fz};sh.uniforms.uFl={value:fadeL};
                 sh.vertexShader='varying float vMz;\n'+sh.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\n vMz=(modelMatrix*vec4(transformed,1.0)).z;');
                 sh.fragmentShader='uniform float uFz; uniform float uFl; varying float vMz;\n'+sh.fragmentShader.replace('#include <dithering_fragment>',
                   '#include <dithering_fragment>\n { float t=clamp((uFz-vMz)/uFl,0.0,1.0); gl_FragColor.a*=0.5*(1.0-t)*(1.0-t); }');
               };
-              m.customProgramCacheKey=()=>'mepMirror';
+              m.customProgramCacheKey=()=>ob?'mepMirrorReal':'mepMirror';
               return m;});
             const o=new THREE.Mesh(src.geometry,Array.isArray(src.material)?mats:mats[0]);
             o.matrixAutoUpdate=false;o.matrix.copy(M).multiply(src.matrixWorld);o.matrixWorld.copy(o.matrix);o.renderOrder=-1;
@@ -1002,10 +1008,10 @@
   function mepFinishGeo(geo,view,cutShapes){
     try{geo.els=mepMergeCollinear(geo.els);}catch(e){}
     try{const th=mepThreadEls(view);if(th.length)geo.els=geo.els.concat(th);}catch(e){try{console.warn('mep filetage',e);}catch(e2){}}
-    if(view.render3d&&!view.section&&!view.detail){
+    if((view.render3d||view.real)&&!view.section&&!view.detail){
       try{geo.img3d=mepRender3dImage(view);}catch(e){geo.img3d=null;}
     }
-    if(view.shade&&!view.render3d&&!view.section&&!view.detail){
+    if(view.shade&&!view.render3d&&!view.real&&!view.section&&!view.detail){
       try{geo.faces=mepShadedFaces(view);}catch(e){geo.faces=[];}
       try{geo.thr3d=mepThreadSegs(view);}catch(e){geo.thr3d=[];}
     }

@@ -1145,6 +1145,7 @@
     const ghost=!!d.__ghost;
     const col=sel?COL.sel:(d.ref?null:'#0a84ff');
     const L={class:'mepDimL'+(sel?' mepDimSel':'')+(ghost?' mepDimGhost':'')};
+    const LX={class:L.class+' mepDimX'}; // lignes de rappel (V0.23.4) : leur épaisseur propre (--mepLwExt)
     const T={class:'mepDimT'+(sel?' mepDimSel':'')+(d.ref?' mepDimRef':'')+(ghost?' mepDimGhost':'')};
     const AR=sel?'url(#mepArrSel)':'url(#mepArr)';
     const ARS=sel?'url(#mepArrSSel)':'url(#mepArrS)';
@@ -1157,7 +1158,7 @@
       }
       return mk(tag,attrs);
     };
-    if(d.kind==='ord'){mepDrawOrd(draw,d,sh,L,T);return;}
+    if(d.kind==='ord'){mepDrawOrd(draw,d,sh,LX,T);return;}
     if(d.kind==='note')txt=d.txt||'Texte';
     if(d.kind==='hole'||d.kind==='note'){
       if(d.kind==='hole'&&d.holeFid&&typeof doc!=='undefined'){
@@ -1260,7 +1261,7 @@
         let s0=null,s1=null;
         if(r>e[1]+0.05){s0=e[1]+gap;s1=r+ov;}
         else if(r<e[0]-0.05){s0=e[0]-gap;s1=r-ov;}
-        if(s0!==null&&Math.abs(s1-s0)>0.2)draw('line',Object.assign({x1:O.x+ux*s0,y1:O.y+uy*s0,x2:O.x+ux*s1,y2:O.y+uy*s1},L));
+        if(s0!==null&&Math.abs(s1-s0)>0.2)draw('line',Object.assign({x1:O.x+ux*s0,y1:O.y+uy*s0,x2:O.x+ux*s1,y2:O.y+uy*s1},LX));
       });
       // arc fléché aux deux bouts (pointes sur les rappels)
       draw('path',Object.assign({d:'M'+x1+','+y1+' A'+r+','+r+' 0 '+large+' '+sweep+' '+x2+','+y2,'marker-start':ARS,'marker-end':AR},L));
@@ -1290,10 +1291,10 @@
     const {a1,b1,sa,sb,ea,eb}=g;
     // rappels : perpendiculaires au trait, avec un vide de `gap` au départ de
     // la pièce et un dépassement `over` après la ligne de cote (paramètres).
-    draw('line',Object.assign({x1:sa.x,y1:sa.y,x2:ea.x,y2:ea.y},L));
-    draw('line',Object.assign({x1:sb.x,y1:sb.y,x2:eb.x,y2:eb.y},L));
+    draw('line',Object.assign({x1:sa.x,y1:sa.y,x2:ea.x,y2:ea.y},LX));
+    draw('line',Object.assign({x1:sb.x,y1:sb.y,x2:eb.x,y2:eb.y},LX));
     // point d'intersection dans le vide : arêtes / arcs prolongés jusqu'au point
-    mepDrawSnapExt(draw,L,w.v1,d.a);if(d.b)mepDrawSnapExt(draw,L,w.v2||w.v1,d.b);
+    mepDrawSnapExt(draw,LX,w.v1,d.a);if(d.b)mepDrawSnapExt(draw,LX,w.v2||w.v1,d.b);
     // ligne de cote fléchée
     if(d.arr==='out'){
       const ext=Math.max(2,MEP_DIM_STYLE.arrowLen);

@@ -70,6 +70,7 @@
     .mepVB{fill:rgba(10,132,255,.04);stroke:#0a84ff;stroke-width:.8;stroke-dasharray:4 2.5;pointer-events:none}
     .mepVBSel{fill:none;stroke:#0a84ff;stroke-width:1;pointer-events:none}
     .mepDimL{stroke:var(--mepDimCol,#111);stroke-width:var(--mepLwDim,.55);fill:none}
+    .mepDimL.mepDimX{stroke-width:var(--mepLwExt,var(--mepLwDim,.55))}
     .mepDimT{font-family:sans-serif;font-size:var(--mepDimH,7px);fill:var(--mepDimCol,#111);font-weight:600;paint-order:stroke;stroke:var(--mepPaper,#fff);stroke-width:1.5;stroke-linejoin:round}
     .mepDimRef{fill:var(--mepHid,#7a7f86)}
     .mepDimL.mepDimSel{stroke:#ff3b30!important}
@@ -131,7 +132,7 @@
     .mepAxis{fill:none;stroke:var(--mepAxisCol,#111);stroke-width:var(--mepLwAxis,.35);stroke-dasharray:8 2 1.5 2;stroke-linecap:butt;stroke-linejoin:round;pointer-events:none}
     .mepThr3d{stroke:#e8930c;stroke-width:.16;fill:none;stroke-linecap:round;pointer-events:none}
     .mepThr3dRing{stroke-dasharray:.8 .6}
-    .mepAxisCross{fill:none;stroke:var(--mepAxisCol,#111);stroke-width:.62;stroke-linecap:butt;pointer-events:none}
+    .mepAxisCross{fill:none;stroke:var(--mepAxisCol,#111);stroke-width:var(--mepLwAxisX,.62);stroke-linecap:butt;pointer-events:none}
     .mepAxisSel{stroke:#0066ff!important;stroke-width:1.1!important}
     .mepAxisPick{fill:none;stroke:#ffd60a;stroke-width:1.1;pointer-events:none}
   `;

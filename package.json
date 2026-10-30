@@ -1,6 +1,6 @@
 {
   "name": "fusion2",
-  "version": "0.23.3",
+  "version": "0.23.4",
   "description": "MiniFusion — CAO paramétrique et FAO dans un seul fichier HTML",
   "scripts": {
     "start": "npx serve . -l 3000",

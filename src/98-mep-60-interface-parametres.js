@@ -336,7 +336,7 @@
     const g=mepGeoOf(v);
     const X=lx=>v.x+lx*v.scale,Y=ly=>v.y+ly*v.scale;
     /* rendu 3D bitmap derrière les arêtes */
-    if(v.render3d&&g.img3d&&g.img3d.url){
+    if((v.render3d||v.real)&&g.img3d&&g.img3d.url){
       const ir=mepImg3dRect(v,g.img3d);
       mk('image',{x:ir.x,y:ir.y,width:ir.w,height:ir.h,
         href:g.img3d.url,preserveAspectRatio:'none','pointer-events':'none',

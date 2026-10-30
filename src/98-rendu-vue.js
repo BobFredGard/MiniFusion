@@ -164,6 +164,50 @@ function vCaoWs(){
   const ws=document.body&&document.body.getAttribute('data-ws');
   return !ws||ws==='cao'||ws==='fao'; // V0.17.0 : aussi en FAO (la mise en plan garde son dessin)
 }
+function vEnvApply(mat,L,C){ // matière d'un corps → apparence de rendu L ({mat,color,rel}) dans l'ambiance C (vEnvCfg)
+  vEnvPatch(mat);const U=mat.userData.vEnv&&mat.userData.vEnv.U;
+  if(!U)return;
+  const d=matDef(L.mat);
+  U.uEnvCol.value.setHex(L.color);
+  U.uEnvGlass.value=0;
+  if(d&&d.trans){U.uEnvMet.value=0;U.uEnvRou.value=d.rough;U.uEnvGlass.value=1;} // verre approché : lisse, reflets nets, bords plus opaques
+  else if(mat.transparent&&!d){U.uEnvMet.value=mat.metalness;U.uEnvRou.value=mat.roughness;} // transparence CAO sans matériau : réglages de setMatAlpha (avec matériau : le sien, transparence gardée)
+  else{U.uEnvMet.value=d?d.metal:0.15;U.uEnvRou.value=d?(d.cc?d.rough+((d.ccr!=null?d.ccr:0.1)-d.rough)*d.cc*0.5:d.rough):0.42;} // vernis : reflets plus nets
+  vEnvRelU(U,L,d);
+  if(mat.envMap!==vEnvS.rt.texture)mat.envMap=vEnvS.rt.texture;
+  mat.envMapIntensity=C.int; // « Reflets » de la fenêtre RENDU (1 pour les autres ambiances)
+}
+/* ── PLAN (V0.23.4) : vue « Rendu réaliste » — l'image de la vue (mepRender3dImage) est rendue comme le
+   Rendu direct (ambiance et reflets de la fenêtre RENDU, apparence de rendu de chaque pièce), le temps
+   d'un rendu hors écran ; puis la vue CAO retrouve son état (l'espace PLAN n'a pas d'ambiance). */
+function vEnvLookOf(m){ // apparence de rendu d'un maillage projeté : corps de la pièce, composant d'assemblage, sinon sa couleur
+  const r=m.userData&&m.userData.rd;
+  if(r)return {mat:r.mat||null,color:r.color!=null?r.color:r.ccol,rel:r.rel||null};
+  const b=(bodies||[]).find(x=>x&&x.mesh&&(x.mesh===m||x.mesh===m.parent)),id=b?bodyIdOfRuntime(b):null;
+  if(id)return renderLookOf(id);
+  const mt=Array.isArray(m.material)?m.material[0]:m.material;
+  return {mat:null,color:mt&&mt.color?mt.color.getHex():0x9a9aa0,rel:null};
+}
+function vEnvRealSig(){ // réglages qui changent l'image réaliste (clé de cache des vues PLAN)
+  const C=(()=>{const p=vEnv;vEnv='rendu';try{return vEnvCfg();}finally{vEnv=p;}})();
+  return C.sig+'|'+C.int;
+}
+function vEnvRealDo(meshes,fn){
+  const prev=vEnv,was=vEnvS.on;
+  vEnv='rendu';
+  try{
+    const C=vEnvCfg();
+    if(!vEnvS.on||vEnvS.amb!==C.sig){vEnvS.on=false;vEnvOn();}
+    meshes.forEach(m=>{
+      const L=vEnvLookOf(m);
+      [m].concat(m.children.filter(c=>c.isMesh)).forEach(o=>{if(o.material&&o.material.isMeshStandardMaterial)vEnvApply(o.material,L,C);});
+    });
+    return fn();
+  }finally{
+    vEnv=prev;
+    if(!was)vEnvOff(); // matières rendues à la CAO ; sinon vEnvTick reprend l'ambiance de la vue
+  }
+}
 const vRootOf=o=>{while(o.parent)o=o.parent;return o;};
 const _vEnvBox=new THREE.Box3(),_vEnvC=new THREE.Vector3(),_vEnvSz=new THREE.Vector3();
 function vEnvTick(){
@@ -181,20 +225,7 @@ function vEnvTick(){
   const asmV=(typeof asmMode!=='undefined'&&asmMode==='asm'&&typeof asmScene!=='undefined'&&asmScene)?asmScene:null;
   vEnvMeshes((m,L)=>{
     const mat=m.material;if(!mat||!mat.isMeshStandardMaterial)return;
-    if(envW){
-      vEnvPatch(mat);const U=mat.userData.vEnv&&mat.userData.vEnv.U;
-      if(U){
-        const d=matDef(L.mat);
-        U.uEnvCol.value.setHex(L.color);
-        U.uEnvGlass.value=0;
-        if(d&&d.trans){U.uEnvMet.value=0;U.uEnvRou.value=d.rough;U.uEnvGlass.value=1;} // verre approché : lisse, reflets nets, bords plus opaques
-        else if(mat.transparent&&!d){U.uEnvMet.value=mat.metalness;U.uEnvRou.value=mat.roughness;} // transparence CAO sans matériau : réglages de setMatAlpha (avec matériau : le sien, transparence gardée)
-        else{U.uEnvMet.value=d?d.metal:0.15;U.uEnvRou.value=d?(d.cc?d.rough+((d.ccr!=null?d.ccr:0.1)-d.rough)*d.cc*0.5:d.rough):0.42;} // vernis : reflets plus nets
-        vEnvRelU(U,L,d);
-        if(mat.envMap!==vEnvS.rt.texture)mat.envMap=vEnvS.rt.texture;
-        mat.envMapIntensity=C.int; // « Reflets » de la fenêtre RENDU (1 pour les autres ambiances)
-      }
-    }
+    if(envW)vEnvApply(mat,L,C);
     const dv=matDef(L.mat);
     m.castShadow=shW&&m.name!=='glassIn'&&!(dv&&dv.trans); // un corps transparent (réglage CAO) porte aussi son ombre ; sa passe intérieure et le verre, non
     if(shW&&m.parent&&rdShown(m)&&(!asmV||vRootOf(m)===asmV))box.expandByObject(m); // mode Assembler : seuls les composants placés

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**461 versions**, de `2026-09-28b` à `V0.23.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**462 versions**, de `2026-09-28b` à `V0.23.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5758,3 +5758,9 @@ Signalé : « j'ai perdu mon interface Moderne par défaut » (interface classiq
 - **Cause** : en reportant V0.23.0 sur V0.22.7, `fusion_mvp.html` a été pris en entier depuis V0.23.0, donc avec le gabarit HTML de V0.22.5 (même erreur que celle corrigée en V0.23.1). `build.js` reprend ce gabarit du livrable existant : les contrôles de coupe de V0.22.6 (`clipAxis`, `clipCap`, `clipHelper`, `clipPosN`) ont disparu de la page, et `95-toolbar.js` (`$('clipAxis').onchange=…`) levait une erreur qui arrêtait l'initialisation avant l'interface Moderne et le noyau. V0.23.1 et V0.23.2 l'ont héritée.
 - **Correctif** : seul le bloc des réglages de coupe du gabarit est rétabli ; le gabarit est alors identique à celui de V0.22.7 (V0.23.2 n'y avait rien changé).
 - **Tests** : `npm run ci`. Vérifié dans le navigateur : aucune erreur, interface Moderne, noyau prêt.
+
+## V0.23.4 - Plan : rendu réaliste des vues, épaisseur des lignes de rappel et des axes de trous
+Demandes : « Mise en plan -> permettre le rendu réaliste dans la mise en plan (option supplémentaire) », « Il faut pouvoir modifier aussi l'épaisseur des axes de trous », « Il faut aussi pouvoir régler l'épaisseur des lignes et lignes de rappel de cotes ».
+- **Rendu réaliste** (propriétés d'une vue, case « Rendu réaliste », `v.real`) : l'image de la vue est celle du Rendu direct — ambiance, rotation et reflets de la fenêtre RENDU, apparence de rendu de chaque pièce (matériau, couleur, relief) — sur fond transparent, arêtes par-dessus. `mepRender3dImage` (`src/98-mep-10`) passe par `vEnvRealDo` (`src/98-rendu-vue.js`) qui patche les matières le temps du rendu hors écran puis rend celles de la CAO. Ombrage, Rendu 3D et Rendu réaliste s'excluent ; « Miroir » vaut pour les deux rendus (reflet aux matières réalistes). Clé de cache : réglages RENDU et apparence des pièces. Le patch des matières de `vEnvTick` est extrait dans `vEnvApply` (même code).
+- **Épaisseurs** (Planche → Traits) : « Cotes » devient « Lignes de cote » ; nouveaux champs « Lignes de rappel » (rappels des cotes linéaires et angulaires, prolongements, attaches des cotes ordonnées : classe `mepDimX`, `--mepLwExt`) et « Axes de trous » (lignes d'axe et croix de centre : `--mepLwAxis`, `--mepLwAxisX`). Vides : comportement d'avant (rappels = lignes de cote, axes = trait fin, croix 0,62). Ils sont gardés quand on change de préréglage ; enregistrés avec les autres traits (`mep_lw`, export .mfplan).
+- **Tests** : `npm run ci`. Vérifié dans le navigateur (Support Pédale, laiton) : vues réalistes avec et sans miroir, matières de la 3D rendues ensuite, cases exclusives ; épaisseurs appliquées et gardées au changement de préréglage ; aucune erreur console.

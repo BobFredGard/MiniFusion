@@ -16,7 +16,7 @@
     const added=new Set();
     const sty=new Map();
     list.forEach(bd=>sty.set(bd,mepBodyStyleOf(bd)));
-    const shade=!!(view.shade||view.render3d)&&!view.section&&!view.detail;
+    const shade=!!(view.shade||view.render3d||view.real)&&!view.section&&!view.detail;
     const occList=shade?list.filter(bd=>bd.mesh&&!sty.get(bd).transparent):list;
     /* — formes exactes et coupe AVANT le HLR : le HLR doit voir la matière
        réellement coupée, pas la pièce entière. — */
