@@ -78,7 +78,8 @@ const SUITES = [
   'test_materiaux',
   'test_rendu_patine',
   'test_rendu_scene',
-  'test_noms_globaux'
+  'test_noms_globaux',
+  'test_import_arbre'
 ];
 let ok = 0; const ko = [];
 for (const s of SUITES) {

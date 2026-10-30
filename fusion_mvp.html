@@ -281,7 +281,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.22.4';
+const APP_VER='V0.22.5';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -9881,6 +9881,14 @@ function treePart(L){
     const estSrc=!!(repF&&(repF.base||[]).indexOf(f.id)>=0);
     const ri=repMode&&repMode.feats&&repMode.feats.includes(f.id)?'✓ ':'';
     node(ri+(estSrc?'<span class="srcmark" title="Source de la répétition sélectionnée">◀</span>':'')+featIconOf(f),f.name,'feature',f.id,f.visible,(f.type==='xfillet'||f.type==='xdraft'||f.type==='xshell'||f.type==='xdelface'||f.type==='xsplit')?()=>{sel={kind:'feature',id:f.id};treeSel=[];if(f.type==='xfillet')enterExactFilletMode(f);else if(f.type==='xdraft')enterDraftMode(f);else if(f.type==='xsplit')enterSplitMode(f);else enterCoqueMode(f);}:null);
+    // V0.22.5 : STEP multi-corps — arborescence d'assemblage repliable sous la fonction (90)
+    const IT=f.type==='import'&&typeof importTreeOf==='function'?importTreeOf(f):null;
+    if(IT){
+      const row=L[L.length-1],open=impTreeOpen.has(f.id)||!!treeQuery;
+      row.html='<span class="tri" title="Déplier / replier l’arborescence du STEP">'+(open?'▼':'▶')+'</span>'+row.html;
+      row.on.tri=()=>{if(impTreeOpen.has(f.id))impTreeOpen.delete(f.id);else impTreeOpen.add(f.id);renderTree();};
+      if(open)importTreeRows(L,f,IT,2);
+    }
   };
   const groups=(doc.bodies||[]).length?doc.bodies:[{id:'b1',name:'Corps 1'}];
   groups.forEach(be=>{
@@ -51757,7 +51765,7 @@ function importStepBuild(u8){
         return edges||undefined;
       },
       set(v){edges=v;}});
-    try{const O=importStepOcc(shape);if(O)g.userData.impOcc=O;}catch(e){} // couleurs par pièce / occurrence
+    try{const O=importStepOcc(shape);if(O){O.tree=importStepTree(u8,O.oc,O.nOcc);delete O.oc;g.userData.impOcc=O;}}catch(e){} // couleurs par pièce / occurrence, arborescence
 
     // SOLIDE EXACT CONSERVÉ : sans lui, la voie exacte n'avait RIEN à unir ni à
     // soustraire (le mesh n'est pas un solide) — « Uni » restait deux pièces et
@@ -51782,23 +51790,27 @@ function importStepOcc(shape){
   // renonçait alors et l'import restait d'une seule couleur). null si moins de 2.
   // Parcours récursif par TopoDS_Iterator : même ordre en profondeur que
   // l'explorateur de faces d'occTriPos, donc mêmes ordinaux.
+  // V0.22.5 : + oc = arbre des composés du noyau ({k:[…]} composé, {o:i} occurrence),
+  // calé ensuite sur l'arbre d'assemblage du texte STEP (importStepTree).
   const E=occt.TopAbs_ShapeEnum;
-  const owners=[],faceOcc=[];
+  const owners=[],faceOcc=[];let oc=null;
   const typ=s=>{const t=s.ShapeType();return t===E.TopAbs_SOLID?'so':t===E.TopAbs_SHELL?'sh':t===E.TopAbs_FACE?'f':t===E.TopAbs_COMPOUND||t===E.TopAbs_COMPSOLID?'c':'';};
-  const visit=(s,own)=>{
+  const visit=(s,own,par)=>{
     const t=typ(s);
     if(t==='so'||((t==='sh'||t==='f')&&own<0)){
       own=owners.length;
       // poignée neuve (Value() est une référence interne de l'itérateur)
       owners.push(t==='so'?occt.TopoDS.Solid_1(s):t==='sh'?occt.TopoDS.Shell_1(s):occt.TopoDS.Face_1(s));
-    }
+      if(par)par.k.push({o:own});
+      par=null;
+    }else if(t==='c'&&own<0){const n={k:[]};if(par)par.k.push(n);else if(!oc)oc=n;par=n;}
     if(t==='f'){faceOcc.push(own);return;}
     if(!t)return;
     const it=new occt.TopoDS_Iterator_2(s,true,true);
-    try{while(it.More()){visit(it.Value(),own);it.Next();}}finally{try{it.delete();}catch(e){}}
+    try{while(it.More()){visit(it.Value(),own,par);it.Next();}}finally{try{it.delete();}catch(e){}}
   };
   try{
-    visit(shape,-1);
+    visit(shape,-1,null);
     if(owners.length<2)return null;
     const occPart=new Int32Array(owners.length),rep=[];
     owners.forEach((s,i)=>{
@@ -51806,8 +51818,138 @@ function importStepOcc(shape){
       if(p<0){p=rep.length;rep.push(i);}
       occPart[i]=p;
     });
-    return {faceOcc:Int32Array.from(faceOcc),occPart,nOcc:owners.length,nPart:rep.length};
+    return {faceOcc:Int32Array.from(faceOcc),occPart,nOcc:owners.length,nPart:rep.length,oc};
   }finally{owners.forEach(s=>{try{s.delete();}catch(e){}});}
+}
+/* ---- V0.22.5 : arborescence d'un STEP multi-corps ----
+   Les noms ne sont pas lisibles par le noyau (chaînes XCAF non liées dans opencascade.js) :
+   on lit l'arbre d'assemblage dans le TEXTE du fichier — PRODUCT ← PRODUCT_DEFINITION_FORMATION
+   ← PRODUCT_DEFINITION, et NEXT_ASSEMBLY_USAGE_OCCURRENCE (instance nommée parent → enfant).
+   Le noyau range une définition en composé : ses instances dans l'ordre des NAUO du fichier,
+   puis ses propres solides (vérifié sur « planches 1 à 32 » : vis, vis, puis la plaquette).
+   On cale les deux arbres nœud par nœud ; au moindre écart de structure, noms génériques.
+   Nœud : {n:nom, k:[enfants], o:[occurrences du sous-arbre]}. */
+function importStepStr(s){
+  // Chaîne STEP (Part 21) → texte : '' → ', \X\hh (Latin-1), \S\c (moitié haute), \X2\…\X0\ (UTF-16).
+  if(!s||s[0]!=="'")return '';
+  s=s.slice(1,-1).replace(/''/g,"'");
+  s=s.replace(/\\X2\\([0-9A-Fa-f]+)\\X0\\/g,(_,h)=>{let o='';for(let i=0;i+3<h.length;i+=4)o+=String.fromCharCode(parseInt(h.substr(i,4),16));return o;});
+  s=s.replace(/\\X\\([0-9A-Fa-f]{2})/g,(_,h)=>String.fromCharCode(parseInt(h,16)));
+  s=s.replace(/\\S\\(.)/g,(_,c)=>String.fromCharCode(c.charCodeAt(0)+128));
+  s=s.replace(/\\\\/g,'\\');
+  if(/[Â-ô][\u0080-¿]/.test(s)){try{s=decodeURIComponent(escape(s));}catch(e){}} // UTF-8 brut écrit tel quel
+  return s.trim();
+}
+function importStepTree(u8,oc,nOcc){
+  if(!oc||!u8)return null;
+  let txt='';
+  try{txt=new TextDecoder('latin1').decode(u8);}
+  catch(e){const C=0x8000,A=[];for(let i=0;i<u8.length;i+=C)A.push(String.fromCharCode.apply(null,u8.subarray(i,i+C)));txt=A.join('');} // harnais Node
+  const WANT={PRODUCT:1,PRODUCT_DEFINITION_FORMATION:1,PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE:1,PRODUCT_DEFINITION:1,NEXT_ASSEMBLY_USAGE_OCCURRENCE:1};
+  const args=i=>{ // arguments de premier niveau à partir de i (juste après « ( »)
+    const out=[];let d=0,cur='',inS=false;
+    for(;i<txt.length;i++){const c=txt[i];
+      if(c==='\r'||c==='\n')continue; // fins de ligne ignorées partout (Part 21)
+      if(inS){cur+=c;if(c==="'"){if(txt[i+1]==="'"){cur+="'";i++;}else inS=false;}continue;}
+      if(c==="'"){inS=true;cur+=c;continue;}
+      if(c==='('){d++;cur+=c;continue;}
+      if(c===')'){if(!d){out.push(cur.trim());return out;}d--;cur+=c;continue;}
+      if(c===','&&!d){out.push(cur.trim());cur='';continue;}
+      cur+=c;}
+    return out;
+  };
+  const ent=new Map(),re=/#(\d+)\s*=\s*([A-Z_0-9]+)\s*\(/g;let m;
+  while((m=re.exec(txt)))if(WANT[m[2]])ent.set(+m[1],{t:m[2],a:args(re.lastIndex)});
+  const ref=s=>+String(s||'').replace('#','');
+  const pdName=pd=>{const P=ent.get(pd),F=P&&ent.get(ref(P.a[2])),R=F&&ent.get(ref(F.a[2]));return R?importStepStr(R.a[1])||importStepStr(R.a[0]):'';};
+  const kids=new Map(),isKid=new Set();
+  [...ent.keys()].sort((a,b)=>a-b).forEach(n=>{const e=ent.get(n);if(e.t!=='NEXT_ASSEMBLY_USAGE_OCCURRENCE')return;
+    const p=ref(e.a[3]),c=ref(e.a[4]);if(!kids.has(p))kids.set(p,[]);
+    kids.get(p).push({name:importStepStr(e.a[1])||importStepStr(e.a[0])||pdName(c),pd:c});isKid.add(c);});
+  const roots=[...ent.keys()].filter(n=>ent.get(n).t==='PRODUCT_DEFINITION'&&!isKid.has(n)).sort((a,b)=>a-b);
+  let nSub=0;
+  const gen=(c,name)=>{ // sans définition : noms génériques
+    if(c.o!==undefined)return {n:name||('Solide '+(c.o+1)),k:[],o:[c.o]};
+    const nd={n:name||('Sous-ensemble '+(++nSub)),k:[],o:[]};
+    c.k.forEach(x=>{const ch=gen(x,null);nd.k.push(ch);nd.o.push(...ch.o);});
+    return nd;
+  };
+  const build=(c,name,pd)=>{
+    const nau=kids.get(pd)||[];
+    if(c.o!==undefined){if(nau.length)throw 0;return {n:name,k:[],o:[c.o]};}
+    if(c.k.length<nau.length)throw 0;
+    const nd={n:name,k:[],o:[]},own=c.k.length-nau.length,pn=pdName(pd)||name;
+    c.k.forEach((x,i)=>{
+      const ch=i<nau.length?build(x,nau[i].name,nau[i].pd):gen(x,own>1?pn+' ('+(i-nau.length+1)+')':pn);
+      nd.k.push(ch);nd.o.push(...ch.o);
+    });
+    return nd;
+  };
+  let T=null;
+  try{
+    if(roots.length===1)T=build(oc,pdName(roots[0]),roots[0]);
+    else if(roots.length>1&&oc.k.length===roots.length){
+      T={n:'',k:[],o:[]};oc.k.forEach((x,i)=>{const ch=build(x,pdName(roots[i]),roots[i]);T.k.push(ch);T.o.push(...ch.o);});
+    }
+  }catch(e){T=null;}
+  if(!T){nSub=0;T=gen(oc,'');}
+  if(T.o.length!==nOcc)return null; // garde-fou : chaque occurrence exactement une fois
+  return T;
+}
+let impTreeOpen=new Set(); // nœuds dépliés (« idFonction » ou « idFonction/chemin ») : état de vue
+function importTreeOf(f){
+  const g=f&&f._mesh&&f._mesh.geometry,O=g&&g.userData&&g.userData.impOcc;
+  return O&&O.tree&&O.tree.k&&O.tree.k.length?O.tree:null;
+}
+function importHideSet(f,occ,hide){
+  // 👁 d'un nœud : masque / affiche toutes ses occurrences (vue seule, annulable, enregistré).
+  docPushUndo((hide?'masquer':'afficher')+' des pièces de « '+f.name+' »');
+  const H=new Set(f.hidOcc||[]);occ.forEach(o=>{if(hide)H.add(o);else H.delete(o);});
+  if(H.size)f.hidOcc=[...H].sort((a,b)=>a-b);else delete f.hidOcc;
+  try{importHideApply(f);}catch(e){}
+  markDirty();renderTree();
+}
+function importTreeRows(L,f,T,lvl){
+  // Lignes de l'arborescence d'un STEP sous sa fonction (42, featNode).
+  const H=new Set(f.hidOcc||[]),q=typeof treeQuery!=='undefined'&&!!treeQuery;
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const rows=(n,path,lv)=>n.k.forEach((c,i)=>{
+    const key=f.id+'/'+path+i,open=!!c.k.length&&(impTreeOpen.has(key)||q);
+    const nh=c.o.reduce((s,o)=>s+(H.has(o)?1:0),0),all=nh===c.o.length,some=nh>0&&!all;
+    L.push({lvl:lv,cls:'tnode'+(all?' hidden':''),
+      title:(c.k.length?'Sous-ensemble · '+c.o.length+' pièce(s)':'Pièce')+' du STEP « '+f.name+' » · 👁 = afficher / masquer dans la vue (la FAO et le solide exact ne changent pas)',
+      html:'<span class="tri">'+(c.k.length?(open?'▼':'▶'):'')+'</span><span>'+(c.k.length?'📦':'🧊')+'</span><span class="nm">'+esc(c.n)+
+        (c.k.length?' <span style="color:var(--muted)">· '+c.o.length+(nh?' · '+nh+' masquée(s)':'')+'</span>':'')+'</span>'+
+        '<span class="eye" title="Afficher / masquer"'+(some?' style="opacity:.45"':'')+'>'+(all?'🙈':'👁')+'</span>',
+      on:{
+        tri:()=>{if(!c.k.length)return;if(impTreeOpen.has(key))impTreeOpen.delete(key);else impTreeOpen.add(key);renderTree();},
+        eye:()=>importHideSet(f,c.o,!all),
+        click:()=>{if(c.k.length){if(impTreeOpen.has(key))impTreeOpen.delete(key);else impTreeOpen.add(key);}
+          treeSel=[f.id];sel={kind:'feature',id:f.id};renderTree();renderProps();}}});
+    if(open)rows(c,path+i+'/',lv+1);
+  });
+  rows(T,'',lvl);
+}
+function importHideApply(f){
+  // Pièces masquées d'un import (f.hidOcc : n° d'occurrence) : leurs triangles sont aplatis
+  // en un point dans le maillage d'AFFICHAGE (ni dessinés ni cliquables ; numéros de
+  // triangle et de face intacts). La FAO (faoGeo) et le solide exact (brep) n'y voient rien.
+  const g=f&&f._mesh&&f._mesh.geometry,O=g&&g.userData&&g.userData.impOcc;
+  if(!g||!O||!g.attributes||!g.attributes.position)return;
+  const H=Array.isArray(f.hidOcc)?f.hidOcc.filter(i=>i>=0&&i<O.nOcc):[];
+  const key=H.slice().sort((a,b)=>a-b).join(',');
+  if((g.userData.impHidKey||'')===key)return;
+  const pa=g.attributes.position,P=pa.array;
+  if(!g.userData.impPos0)g.userData.impPos0=P.slice();
+  P.set(g.userData.impPos0);
+  if(H.length){
+    const hid=new Uint8Array(O.nOcc);H.forEach(i=>{hid[i]=1;});
+    (g.userData.occGroups||[]).forEach(gr=>{
+      const o=O.faceOcc[gr.f];if(o===undefined||!hid[o])return;
+      for(let t=gr.start,z=gr.start+gr.count;t<z;t++){const b=t*9;P[b+3]=P[b+6]=P[b];P[b+4]=P[b+7]=P[b+1];P[b+5]=P[b+8]=P[b+2];}
+    });
+  }
+  pa.needsUpdate=true;g.userData.impHidKey=key;delete g.userData.impGrid;
 }
 function importCol(c,i){
   // Couleur n° i : la palette vive, puis des teintes à l'angle d'or (22 pièces dans
@@ -51824,6 +51966,7 @@ function importColorMat(f,mat){
   const g=f&&f._mesh&&f._mesh.geometry,O=g&&g.userData&&g.userData.impOcc;
   const mode=(O&&(f.colMode==='piece'||f.colMode==='occ'))?f.colMode:null;
   if(!g||!mat)return mat;
+  try{importHideApply(f);}catch(e){} // pièces masquées dans l'arborescence
   if(!mode){
     if(g.userData&&g.userData.impColKey){g.deleteAttribute('color');g.userData.impColKey=null;} // seulement si posées ici
     mat.vertexColors=false;

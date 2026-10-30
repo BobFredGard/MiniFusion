@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**454 versions**, de `2026-09-28b` à `V0.22.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**455 versions**, de `2026-09-28b` à `V0.22.5` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5705,3 +5705,11 @@ Demandes : « Il n'y a pas un moyen de faire plus vite ? » (comparé au viewer_
 - **Arêtes calculées au premier besoin** (`entry.edges`, accesseur) : masquées par défaut, elles coûtaient ~30 s à chaque import.
 - **Mesures (navigateur)** : planches 1 à 32 (18,7 Mo) ~140 s → 42 s ; Moule 73-40 (44,5 Mo) : échec → ~110 s, dont ~90 s de lecture STEP par le noyau.
 - **Tests** : `npm run ci` ; `test_aretes_import`, `test_bool_import`, `test_import_persist`, `test_import_regen`, `test_import_vie`, `test_suppression_face_step`, `test_fao_chain_step`, `test_ctx_step`.
+
+## V0.22.5 - Arborescence des STEP multi-corps : pièces nommées, masquables
+Demande : « il faut pouvoir créer une arborescence pour l'import d'un STEP multi corps » (comme le viewer_STEP.html de l'utilisateur : arbre pour cacher les pièces).
+- **Noms lus dans le texte du STEP** (`importStepTree`, `src/90`) : les chaînes XCAF ne sont pas liées dans opencascade.js (TDataStd_Name lisible, sa chaîne non convertible). L'arbre d'assemblage vient donc du fichier — PRODUCT, PRODUCT_DEFINITION, NEXT_ASSEMBLY_USAGE_OCCURRENCE (instances « Cavité v41:1 ») — avec les échappements Part 21 (`\X\`, `\X2\`, `\S\`, apostrophes, fins de ligne). 130 ms sur 18 Mo, 290 ms sur 44 Mo.
+- **Calé sur les composés du noyau** (`importStepOcc` → arbre `oc`) : instances dans l'ordre des NAUO du fichier, puis les solides propres de la pièce. Au moindre écart (nombre d'enfants), noms génériques (« Sous-ensemble n », « Solide n »). Vérifié sur planches 1 à 32, Moule 73-40 et MERLIN : aucune pièce géométrique (IsPartner) ne reçoit deux noms.
+- **Arbre** (`importTreeRows`, `src/42` sous la fonction import) : ▶ déplie, 📦 sous-ensemble (nombre de pièces, masquées), 🧊 pièce ; 👁 masque / affiche tout le nœud (annulable, enregistré dans `f.hidOcc`).
+- **Masquage = affichage seul** (`importHideApply`, appelé par `importColorMat`) : les triangles des pièces masquées sont aplatis dans le maillage d'affichage (ni dessinés ni cliquables, numéros de face intacts) ; la FAO (`faoGeo`) et le solide exact n'en voient rien. Limites : sans effet quand l'import est dans la chaîne exacte (corps avec d'autres fonctions) ; les arêtes affichées d'une pièce masquée restent.
+- **Tests** : nouveau `test_import_arbre` (suite rapide) ; `npm run ci`. Vérifié dans le navigateur sur Moule 73-40 : 111 nœuds de tête, une cavité seule affichée, annuler.

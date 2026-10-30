@@ -285,6 +285,14 @@ function treePart(L){
     const estSrc=!!(repF&&(repF.base||[]).indexOf(f.id)>=0);
     const ri=repMode&&repMode.feats&&repMode.feats.includes(f.id)?'✓ ':'';
     node(ri+(estSrc?'<span class="srcmark" title="Source de la répétition sélectionnée">◀</span>':'')+featIconOf(f),f.name,'feature',f.id,f.visible,(f.type==='xfillet'||f.type==='xdraft'||f.type==='xshell'||f.type==='xdelface'||f.type==='xsplit')?()=>{sel={kind:'feature',id:f.id};treeSel=[];if(f.type==='xfillet')enterExactFilletMode(f);else if(f.type==='xdraft')enterDraftMode(f);else if(f.type==='xsplit')enterSplitMode(f);else enterCoqueMode(f);}:null);
+    // V0.22.5 : STEP multi-corps — arborescence d'assemblage repliable sous la fonction (90)
+    const IT=f.type==='import'&&typeof importTreeOf==='function'?importTreeOf(f):null;
+    if(IT){
+      const row=L[L.length-1],open=impTreeOpen.has(f.id)||!!treeQuery;
+      row.html='<span class="tri" title="Déplier / replier l’arborescence du STEP">'+(open?'▼':'▶')+'</span>'+row.html;
+      row.on.tri=()=>{if(impTreeOpen.has(f.id))impTreeOpen.delete(f.id);else impTreeOpen.add(f.id);renderTree();};
+      if(open)importTreeRows(L,f,IT,2);
+    }
   };
   const groups=(doc.bodies||[]).length?doc.bodies:[{id:'b1',name:'Corps 1'}];
   groups.forEach(be=>{
