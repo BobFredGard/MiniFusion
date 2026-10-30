@@ -74,6 +74,7 @@ const SUITES = [
   'test_configurations',
   'test_mcp_serveur',
   'test_cartouche_modele',
+  'test_cartouche_exterieur',
   'test_composants_liaisons',
   'test_materiaux',
   'test_rendu_patine',

@@ -345,7 +345,7 @@
       titleTexts:sh=>{const t=[];const mk=(tag)=>{const o={textContent:''};if(tag==='text')t.push(o);return o;};mepDrawTitle(mk,sh,mepPage().pd,100);mepDrawRevs(mk,sh,mepPage().pd,100);mepDrawBom(mk,sh,mepPage().pd,100);return t.map(o=>o.textContent);},
       sk:{fromStd:sh=>mepTbFromStd(sh),solve:(sk,a)=>mepSkSolve(sk,80,a),residual:(sk,c)=>mepSkResidual(sk,c),
         apply:(sh,id,keys)=>{mepSt.skSel=new Set(keys);mepSkApply(sh,id);},setVal:(sh,c,v)=>mepSkSetVal(sh,c,v),
-        tbH:sh=>mepTbH(sh),tbEdit:on=>mepTbEdit(on),ctx:sh=>mepSkCtx(sh,true),addLine:(sh,a,b)=>mepSkAddLine(sh,a,b),trim:(sh,x,y)=>mepSkTrim(sh,x,y),clipDetail:(els,det)=>mepClipDetail(els,det),revIdx:(f,k)=>mepRevIdx(f,k),revNext:(f,r)=>mepRevNext(f,r),hit:(sh,x,y)=>{const h=mepSkHit(sh,{x,y});return h?h.key:null;},
+        tbH:sh=>mepTbH(sh),tbEdit:on=>mepTbEdit(on),ctx:sh=>mepSkCtx(sh,true),addLine:(sh,a,b)=>mepSkAddLine(sh,a,b),trim:(sh,x,y)=>mepSkTrim(sh,x,y),clipDetail:(els,det)=>mepClipDetail(els,det),revIdx:(f,k)=>mepRevIdx(f,k),tbApply:(sh,o)=>mepTbApply(sh,o),drawSk:(mk,sh,c,m)=>mepDrawSkCtx(mk,sh,c,m),tbValue:(sh,c)=>mepTbValue(sh,c),revRows:sh=>mepTbRevRows(sh),revNext:(f,r)=>mepRevNext(f,r),hit:(sh,x,y)=>{const h=mepSkHit(sh,{x,y});return h?h.key:null;},
         addRect:(sh,a,b)=>mepSkAddRect(sh,a,b),addText:(sh,p)=>mepSkAddText(sh,p),textValue:(sh,e)=>mepSkTextValue(sh,e,false),
         merge:(sk,a,b)=>mepSkMerge(sk,a,b),
         box:(sh,x0,y0,x1,y1,add)=>mepBoxSelect(sh,{sx:x0,sy:y0,cur:{x:x1,y:y1}},add),sel:()=>[...mepSt.skSel],

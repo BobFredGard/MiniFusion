@@ -231,11 +231,11 @@
      else if(tt.tbName&&lib[tt.tbName]&&lib[tt.tbName].kind==='std')cur='l:'+tt.tbName;
      sel.value=cur;
      sel.onchange=()=>{const v=sel.value;if(v==='cur')return;
-       mepEdit('modèle de cartouche',()=>{if(v==='std'){tt.tb=null;delete tt.tbName;}else{const o=mepTbLib()[v.slice(2)];mepTbUnpack(tt,o);if(o&&o.kind==='std')tt.tbName=o.name;else delete tt.tbName;}});mepSideShow();};
+       mepEdit('modèle de cartouche',()=>{if(v==='std'){tt.tb=null;delete tt.tbName;}else mepTbApply(sh,mepTbLib()[v.slice(2)]);});mepAfterSheetSwitch();};
      r.appendChild(sel);}
     r=rowEl();
+    rb('Charger un cartouche…',()=>mepTbImportFile(),'Charger un cartouche extérieur (fichier .mfcartouche, ex. un dossier partagé) : ajouté à la bibliothèque et appliqué à cette planche — un modèle du même nom est remplacé');
     rb('Exporter…',()=>mepTbExportFile(sh),'Enregistrer les modèles de cartouche (bibliothèque + celui de cette planche) dans un fichier .mfcartouche');
-    rb('Importer…',()=>mepTbImportFile(),'Charger des modèles de cartouche depuis un fichier .mfcartouche (ajoutés à la bibliothèque)');
     {const st=mepTbStray(sh);
      if(st.length){
        const n=document.createElement('div');n.className='note';n.style.color='#ff9f0a';
@@ -267,11 +267,11 @@
       }
     }
     /* — révisions (indice = dernière révision) — */
-    const revs=Array.isArray(tt.revs)?tt.revs:[];
+    const revs=Array.isArray(tt.revs)?tt.revs:[],revCols=mepTbRevCols(sh);
     r=rowEl();{const L=document.createElement('label');L.textContent='Révisions';L.style.fontWeight='600';r.appendChild(L);
      // indices : lettres (A, B, C…) ou chiffres (0, 1, 2… / 1, 2, 3…) ; changer renumérote les révisions existantes
      const fs=document.createElement('select');fs.id='mepRevFmt';fs.title='Indices des révisions : lettres ou chiffres (renumérote les révisions existantes)';
-     [['A','A, B, C…'],['0','0, 1, 2…'],['1','1, 2, 3…']].forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;fs.appendChild(o);});
+     [['A','A, B, C…'],['O','O, A, B…'],['0','0, 1, 2…'],['1','1, 2, 3…']].forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;fs.appendChild(o);});
      fs.value=tt.revFmt||'A';
      fs.onchange=()=>{mepEdit('indices des révisions',()=>{tt.revFmt=fs.value;(tt.revs||[]).forEach((rv,k)=>{rv.i=mepRevIdx(fs.value,k);});});mepSideShow();};
      r.appendChild(fs);}
@@ -282,6 +282,9 @@
       r=rowEl();inp('i','Ind.','34px','Indice');inp('d','Date','86px','Date');
       rb('×',()=>{mepEdit('révision',()=>{tt.revs.splice(k,1);});mepSideShow();},'Supprimer la révision');
       r=rowEl();inp('n','Nom','86px','Nom de la personne qui a modifié le plan');inp('t','Modification','','Modification');
+      // colonnes en plus prévues par le tableau dessiné du cartouche (note d'application, vérifié, approuvé)
+      const xc=Object.keys(MEP_REV_COLS).filter(c=>revCols.has(c));
+      if(xc.length){r=rowEl();xc.forEach(c=>inp(c,MEP_REV_COLS[c],c==='a'?'60px':'',MEP_REV_COLS[c]));}
     });
     r=rowEl();
     rb('+ Révision',()=>{mepEdit('révision',()=>{

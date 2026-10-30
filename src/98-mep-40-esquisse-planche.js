@@ -26,8 +26,12 @@
     etat:{lab:'ÉTAT DE SURFACE',ed:'État de surface',ph:'ex. Ra 1,6',list:'ra'},
     masse:{lab:'MASSE',ed:'Masse',ph:'ex. 0,35 kg'},
     indice:{lab:'INDICE',auto:1},
-    perso:{lab:'CHAMP PERSO',ed:''}
+    perso:{lab:'CHAMP PERSO',ed:''},
+    // case du tableau des révisions DESSINÉ dans le cartouche (V0.22.7) : e.r = rang (0 = 1re révision,
+    // en bas), e.k = colonne i|d|a|t|n|v|p (indice, date, note, modification, dessiné, vérifié, approuvé)
+    rev:{lab:'RÉV',auto:1,hide:1}
   };
+  const MEP_REV_COLS={a:'Note appl.',v:'Vérifié',p:'Approuvé'}; // colonnes en plus de i, d, n, t
   // listes de saisie : usages courants + valeurs déjà employées (mémorisées localement)
   const MEP_TB_LISTS={
     mat:['EN AW-2017 (AU4G)','EN AW-5083','EN AW-6082','EN AW-7075','S235JR','C45','42CrMo4','40CrMnMoS8-6 (40CMD8+S)','X5CrNi18-10 (304)','X2CrNiMo17-12-2 (316L)','CuZn39Pb3 (laiton)','POM-C','PA6','PEHD'],
@@ -59,6 +63,9 @@
     return Object.keys(pts).filter(k=>{const p=pts[k];return p.x<-L.w||p.y<-L.h||p.x>1||p.y>1;});
   }
   function mepTbH(sh){
+    // hRes : hauteur réservée imposée par le modèle (un trait de toute la hauteur, ex. bande de
+    // confidentialité le long du cadre, ne doit pas réserver toute la feuille)
+    if(mepTbIsSk(sh)&&+sh.title.tb.hRes>0)return Math.min(mepTbLim(sh).h*0.6,+sh.title.tb.hRes);
     if(mepTbIsSk(sh)){const L=mepTbLim(sh);return Math.min(L.h*0.6,Math.max(0,-mepTbBBox(sh.title.tb.sk,L).miny));}
     return TITLE_H;
   }
@@ -433,9 +440,9 @@
   /* ── rendu ── */
   function mepSkTextValue(sh,e,edit){
     if(e.f==='txt')return e.s||'';
-    const v=mepTbValue(sh,{f:e.f,k:e.k});
-    if(edit&&(!v||v==='—'))return'{'+(e.f==='perso'?(e.lab||'CHAMP'):(MEP_TB_FIELDS[e.f]||{}).lab||e.f)+'}';
-    return v;
+    const v=mepTbValue(sh,{f:e.f,k:e.k,r:e.r});
+    if(edit&&(!v||v==='—'))return'{'+(e.f==='perso'?(e.lab||'CHAMP'):e.f==='rev'?e.k+(+e.r+1):(MEP_TB_FIELDS[e.f]||{}).lab||e.f)+'}';
+    return e.nd&&v==='—'?'':v; // nd : case laissée vide plutôt que « — »
   }
   function mepDrawSkCtx(mk,sh,ctx,mode){
     // mode : 'sheet' (esquisse de planche), 'tb' (cartouche affiché), 'tbEdit' (cartouche en édition)
@@ -467,7 +474,12 @@
         if(+e.mw>0){const nmax=Math.max(2,Math.floor(+e.mw/((+e.h||3.5)*0.56)));if(val.length>nmax)val=val.slice(0,nmax-1)+'…';}
         const t=mk('text',{x:p.x,y:p.y,class:(e.st==='val'?'mepTitleVal':'mepTitleText')+(e.col?' mepUc':'')+(sel.has('e:'+e.id)&&editing?' mepSkSelT':''),
           style:'font-size:'+(+e.h||3.5)+'px'+(e.b?';font-weight:700':'')+(e.al&&e.al!=='start'?';text-anchor:'+e.al:'')+(e.col?';fill:'+e.col:'')});
-        t.textContent=val;}
+        if(+e.rot)t.setAttribute('transform','rotate('+(-e.rot)+' '+p.x+' '+p.y+')'); // degrés, sens trigo (Y papier vers le bas)
+        t.textContent=val;
+        // fit : largeur disponible (mm) — un texte plus long est resserré pour tenir dans sa case (cartouche
+        // repris d'un DXF dont la police est plus étroite) ; mesure du navigateur, sinon estimation
+        if(+e.fit>0){let L=0;try{L=t.getComputedTextLength();}catch(er){}if(!(L>0))L=val.length*(+e.h||3.5)*0.55;
+          if(L>+e.fit){t.setAttribute('textLength',(+e.fit).toFixed(2));t.setAttribute('lengthAdjust','spacingAndGlyphs');}}}
       else if(e.t==='logo'){const A=sk.pts[e.p1],B=sk.pts[e.p2];if(!A||!B)return;const a=S(A),b=S(B);
         const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y),w=Math.abs(b.x-a.x),h=Math.abs(b.y-a.y);
         const logo=sh.title&&sh.title.logo;

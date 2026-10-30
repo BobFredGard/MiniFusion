@@ -282,7 +282,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.22.6';
+const APP_VER='V0.22.7';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 
 /* ── Tampon des CACHES persistants (image « lastGood » + parcours FAO) ─────────
@@ -55626,11 +55626,13 @@ function viewFadeIn(){
     if(!sh.sk)sh.sk=null;
   }
   function mepNewSheet(n){
-    return{id:'sh'+Date.now().toString(36)+Math.floor(Math.random()*1e4),name:'Planche '+n,
+    const sh={id:'sh'+Date.now().toString(36)+Math.floor(Math.random()*1e4),name:'Planche '+n,
       format:'A3',orient:'landscape',views:[],dims:[],sk:null,
-      title:mepTbUnpack({projet:'MiniFusion — Plan',auteur:'—',date:new Date().toLocaleDateString('fr-FR'),tb:null},mepTbDefault()),
+      title:{projet:'MiniFusion — Plan',auteur:'—',date:new Date().toLocaleDateString('fr-FR'),tb:null},
       frame:mepFrameUserDef()||undefined,
       seq:1,dseq:1};
+    const def=mepTbDefault();if(def)mepTbApply(sh,def); // format et cadre du modèle par défaut aussi
+    return sh;
   }
   function mepSheet(){const m=mepEnsure();return m.sheets[m.cur];}
   /* cadre de la planche : marges (mm, bord de feuille → trait du cadre), épaisseur,
@@ -55642,7 +55644,7 @@ function viewFadeIn(){
   const MEP_FRAME_ISO={l:20,r:10,t:10,b:10,lw:0.7,inner:false,centre:true,zones:true,trim:true,col:'',mcol:''};
   // relevé sur SIRAP-13-001.pdf (plan maison Justet) : trait 1 mm #6B6BA1, repères fins #3E2B2C
   const MEP_FRAME_JUSTET={l:20,r:10,t:10,b:10,lw:1,inner:false,centre:true,zones:true,trim:true,col:'#6b6ba1',mcol:'#3e2b2c'};
-  const MEP_FRAME_KEYS=['l','r','t','b','lw','inner','centre','zones','trim','col','mcol'];
+  const MEP_FRAME_KEYS=['l','r','t','b','lw','inner','centre','zones','trim','col','mcol','zw','zh','zx0','zy0'];
   function mepFrameUserDef(){try{const o=JSON.parse(localStorage.getItem('mep_frame_def')||'null');return o&&typeof o==='object'?o:null;}catch(e){return null;}}
   function mepFrameOf(sh){
     const f=Object.assign({},MEP_FRAME_DEF,(sh&&sh.frame)||{});
@@ -57858,23 +57860,37 @@ function viewFadeIn(){
     if(mepTbIsSk(sh))return Math.max(0,-mepTbBBox(sh.title.tb.sk,mepTbLim(sh)).minx);
     return pd.iw;
   }
-  // indice de la k-ième révision (k = 0…) : 'A' → A…Z, AA, AB… ; '0' → 0, 1… ; '1' → 1, 2…
+  // indice de la k-ième révision (k = 0…) : 'A' → A…Z, AA, AB… ; '0' → 0, 1… ; '1' → 1, 2… ;
+  // 'O' → O (édition originale), puis A, B, C… (V0.22.7)
   function mepRevIdx(fmt,k){
     if(fmt==='0'||fmt==='1')return String(k+(fmt==='1'?1:0));
+    if(fmt==='O')return k?mepRevIdx('A',k-1):'O';
     let s='',n=k+1;while(n>0){n--;s=String.fromCharCode(65+n%26)+s;n=Math.floor(n/26);}return s;
   }
   // indice suivant : suite du dernier s'il est dans le format (indice saisi à la main respecté), sinon le rang
   function mepRevNext(fmt,revs){
     const last=revs.length?String(revs[revs.length-1].i||'').trim():'';
     if(fmt==='0'||fmt==='1'){if(/^\d+$/.test(last))return String(+last+1);}
+    else if(fmt==='O'&&last==='O')return'A';
     else if(/^[A-Z]+$/.test(last)){let n=0;for(const c of last)n=n*26+(c.charCodeAt(0)-64);return mepRevIdx('A',n);}
     return mepRevIdx(fmt,revs.length);
+  }
+  // tableau des révisions dessiné DANS le cartouche (champs « rev ») : nombre de rangs (0 = aucun)
+  // et colonnes utilisées ; au-delà de n révisions, les n dernières s'affichent
+  function mepTbRevRows(sh){
+    if(!mepTbIsSk(sh))return 0;let n=0;
+    sh.title.tb.sk.ents.forEach(e=>{if(e.t==='text'&&e.f==='rev')n=Math.max(n,(+e.r||0)+1);});
+    return n;
+  }
+  function mepTbRevCols(sh){
+    const s=new Set();if(mepTbIsSk(sh))sh.title.tb.sk.ents.forEach(e=>{if(e.t==='text'&&e.f==='rev')s.add(e.k);});
+    return s;
   }
   function mepDrawRevs(mk,sh,pd,ty){
     // tableau des révisions : en-tête IND. | DATE | NOM | MODIFICATION en bas (contre le cartouche),
     // la plus récente en haut — comme la nomenclature
     const revs=mepRevs(sh);
-    if(revs.length){
+    if(revs.length&&!mepTbRevRows(sh)){ // cartouche avec son propre tableau : rien à poser au-dessus
       const st=mepRevSt(sh),k=st.h/2.5,fs=mepFs(st.h),cw=fs*0.6; // cw ≈ largeur moyenne d'un caractère
       // IND. et DATE jamais tronqués : largeur au plus long texte de la colonne (marge 1,2 mm de chaque côté)
       const wTx=(l,f)=>revs.reduce((m,r)=>Math.max(m,String(r[f]||'').length),l.length)*cw+3;
@@ -58121,8 +58137,12 @@ function viewFadeIn(){
     etat:{lab:'ÉTAT DE SURFACE',ed:'État de surface',ph:'ex. Ra 1,6',list:'ra'},
     masse:{lab:'MASSE',ed:'Masse',ph:'ex. 0,35 kg'},
     indice:{lab:'INDICE',auto:1},
-    perso:{lab:'CHAMP PERSO',ed:''}
+    perso:{lab:'CHAMP PERSO',ed:''},
+    // case du tableau des révisions DESSINÉ dans le cartouche (V0.22.7) : e.r = rang (0 = 1re révision,
+    // en bas), e.k = colonne i|d|a|t|n|v|p (indice, date, note, modification, dessiné, vérifié, approuvé)
+    rev:{lab:'RÉV',auto:1,hide:1}
   };
+  const MEP_REV_COLS={a:'Note appl.',v:'Vérifié',p:'Approuvé'}; // colonnes en plus de i, d, n, t
   // listes de saisie : usages courants + valeurs déjà employées (mémorisées localement)
   const MEP_TB_LISTS={
     mat:['EN AW-2017 (AU4G)','EN AW-5083','EN AW-6082','EN AW-7075','S235JR','C45','42CrMo4','40CrMnMoS8-6 (40CMD8+S)','X5CrNi18-10 (304)','X2CrNiMo17-12-2 (316L)','CuZn39Pb3 (laiton)','POM-C','PA6','PEHD'],
@@ -58154,6 +58174,9 @@ function viewFadeIn(){
     return Object.keys(pts).filter(k=>{const p=pts[k];return p.x<-L.w||p.y<-L.h||p.x>1||p.y>1;});
   }
   function mepTbH(sh){
+    // hRes : hauteur réservée imposée par le modèle (un trait de toute la hauteur, ex. bande de
+    // confidentialité le long du cadre, ne doit pas réserver toute la feuille)
+    if(mepTbIsSk(sh)&&+sh.title.tb.hRes>0)return Math.min(mepTbLim(sh).h*0.6,+sh.title.tb.hRes);
     if(mepTbIsSk(sh)){const L=mepTbLim(sh);return Math.min(L.h*0.6,Math.max(0,-mepTbBBox(sh.title.tb.sk,L).miny));}
     return TITLE_H;
   }
@@ -58528,9 +58551,9 @@ function viewFadeIn(){
   /* ── rendu ── */
   function mepSkTextValue(sh,e,edit){
     if(e.f==='txt')return e.s||'';
-    const v=mepTbValue(sh,{f:e.f,k:e.k});
-    if(edit&&(!v||v==='—'))return'{'+(e.f==='perso'?(e.lab||'CHAMP'):(MEP_TB_FIELDS[e.f]||{}).lab||e.f)+'}';
-    return v;
+    const v=mepTbValue(sh,{f:e.f,k:e.k,r:e.r});
+    if(edit&&(!v||v==='—'))return'{'+(e.f==='perso'?(e.lab||'CHAMP'):e.f==='rev'?e.k+(+e.r+1):(MEP_TB_FIELDS[e.f]||{}).lab||e.f)+'}';
+    return e.nd&&v==='—'?'':v; // nd : case laissée vide plutôt que « — »
   }
   function mepDrawSkCtx(mk,sh,ctx,mode){
     // mode : 'sheet' (esquisse de planche), 'tb' (cartouche affiché), 'tbEdit' (cartouche en édition)
@@ -58562,7 +58585,12 @@ function viewFadeIn(){
         if(+e.mw>0){const nmax=Math.max(2,Math.floor(+e.mw/((+e.h||3.5)*0.56)));if(val.length>nmax)val=val.slice(0,nmax-1)+'…';}
         const t=mk('text',{x:p.x,y:p.y,class:(e.st==='val'?'mepTitleVal':'mepTitleText')+(e.col?' mepUc':'')+(sel.has('e:'+e.id)&&editing?' mepSkSelT':''),
           style:'font-size:'+(+e.h||3.5)+'px'+(e.b?';font-weight:700':'')+(e.al&&e.al!=='start'?';text-anchor:'+e.al:'')+(e.col?';fill:'+e.col:'')});
-        t.textContent=val;}
+        if(+e.rot)t.setAttribute('transform','rotate('+(-e.rot)+' '+p.x+' '+p.y+')'); // degrés, sens trigo (Y papier vers le bas)
+        t.textContent=val;
+        // fit : largeur disponible (mm) — un texte plus long est resserré pour tenir dans sa case (cartouche
+        // repris d'un DXF dont la police est plus étroite) ; mesure du navigateur, sinon estimation
+        if(+e.fit>0){let L=0;try{L=t.getComputedTextLength();}catch(er){}if(!(L>0))L=val.length*(+e.h||3.5)*0.55;
+          if(L>+e.fit){t.setAttribute('textLength',(+e.fit).toFixed(2));t.setAttribute('lengthAdjust','spacingAndGlyphs');}}}
       else if(e.t==='logo'){const A=sk.pts[e.p1],B=sk.pts[e.p2];if(!A||!B)return;const a=S(A),b=S(B);
         const x=Math.min(a.x,b.x),y=Math.min(a.y,b.y),w=Math.abs(b.x-a.x),h=Math.abs(b.y-a.y);
         const logo=sh.title&&sh.title.logo;
@@ -59175,6 +59203,20 @@ function viewFadeIn(){
     if(o.cust&&typeof o.cust==='object')tt.cust=Object.assign({},tt.cust||{},mepClone(o.cust));
     return tt;
   }
+  // modèle appliqué à une PLANCHE (V0.22.7) : cartouche, plus le format et le cadre que le modèle impose
+  // (cartouche d'entreprise : A3 paysage, cadre et zones maison) ; s'il dessine son propre tableau des
+  // révisions, la première révision (O, A ou 0 selon le modèle) est créée d'office
+  function mepTbApply(sh,o){
+    const tt=sh.title||(sh.title={});if(!mepTbOk(o))return;
+    mepTbUnpack(tt,o);
+    if(o.kind==='std')tt.tbName=o.name;else delete tt.tbName;
+    if(o.page&&FORMATS[o.page.format]){sh.format=o.page.format;sh.orient=o.page.orient==='portrait'?'portrait':'landscape';}
+    if(o.frame&&typeof o.frame==='object')sh.frame=mepClone(o.frame);
+    if(mepTbRevRows(sh)&&!(Array.isArray(tt.revs)&&tt.revs.length)){
+      let nom='';try{nom=localStorage.getItem('mep_rev_nom')||'';}catch(e){}
+      tt.revs=[{i:mepRevIdx(tt.revFmt||'A',0),d:tt.date||new Date().toLocaleDateString('fr-FR'),n:nom||(tt.auteur&&tt.auteur!=='—'?tt.auteur:''),t:''}];
+    }
+  }
   /* ── bibliothèque de modèles (locale à ce navigateur) ── */
   function mepTbLib(){try{const o=JSON.parse(localStorage.getItem('mep_tb_lib')||'{}');return o&&typeof o==='object'?o:{};}catch(e){return{};}}
   function mepTbLibSave(o){try{localStorage.setItem('mep_tb_lib',JSON.stringify(o));}catch(e){}}
@@ -59197,11 +59239,14 @@ function viewFadeIn(){
         let o;try{o=JSON.parse(rd.result);}catch(e){mepStatus('Fichier de cartouches illisible.');return;}
         const tbs=o&&o.format==='miniFusion-cartouches'&&o.tbs?o.tbs:(mepTbOk(o)?{[o.name||f.name.replace(/\.[^.]+$/,'')]:o}:null);
         if(!tbs){mepStatus('Ce fichier ne contient pas de cartouche miniFusion.');return;}
-        const L=mepTbLib();let n=0;
-        Object.keys(tbs).forEach(k=>{const tb=tbs[k];if(!mepTbOk(tb))return;
-          let nm=k;if(L[nm]&&JSON.stringify(L[nm])!==JSON.stringify(Object.assign({},tb,{name:nm}))){let i=2;while(L[k+' ('+i+')'])i++;nm=k+' ('+i+')';}
-          L[nm]=Object.assign(mepClone(tb),{name:nm});n++;});
-        mepTbLibSave(L);mepStatus(n+' cartouche(s) importé(s) dans la bibliothèque.');mepSideShow();
+        // V0.22.7 : un modèle du même nom est REMPLACÉ (le fichier extérieur fait foi : on le recharge après
+        // l'avoir corrigé) ; un fichier d'un seul modèle s'applique aussi à la planche courante
+        const L=mepTbLib(),got=[];
+        Object.keys(tbs).forEach(k=>{const tb=tbs[k];if(!mepTbOk(tb))return;L[k]=Object.assign(mepClone(tb),{name:k});got.push(k);});
+        mepTbLibSave(L);
+        if(got.length===1){const sh=mepSheet();mepEdit('cartouche extérieur',()=>mepTbApply(sh,L[got[0]]));mepAfterSheetSwitch();
+          mepStatus('Cartouche « '+got[0]+' » chargé et appliqué à la planche (ajouté à la bibliothèque).');}
+        else{mepStatus(got.length+' cartouche(s) chargé(s) dans la bibliothèque.');mepSideShow();}
       };rd.readAsText(f);};
     inp.click();
   }
@@ -59233,6 +59278,7 @@ function viewFadeIn(){
       case 'format':return sh.format===FORMAT_MANUEL?mepFmtLabel(sh)+' mm':sh.format+(sh.orient==='landscape'?'-H':'-V'); // A3-H, A4-V…
       case 'indice':{const rv=mepRevs(sh);return rv.length?rv[rv.length-1].i:(tt.indice||'—');}
       case 'perso':return(tt.cust&&c.k&&tt.cust[c.k])||'';
+      case 'rev':{const rv=mepRevs(sh),r=rv[Math.max(0,rv.length-mepTbRevRows(sh))+(+c.r||0)];return r&&r[c.k]||'';}
       default:{const v=tt[c.f];return v!=null&&v!==''?v:(c.f==='projet'||c.f==='date'||c.f==='auteur'?'':'—');}
     }
   }
@@ -59260,8 +59306,11 @@ function viewFadeIn(){
     }
     if(fr.zones){
       // bandes de 50 mm centrées sur le milieu du cadre ; traits de 5 mm vers l'extérieur
-      const cuts=(a,b,c)=>{const o=[];for(let i=-20;i<=20;i++){const v=c+i*50;if(v>a+1&&v<b-1)o.push(v);}return o;};
-      const xs=cuts(x0,x1,cx),ys=cuts(y0,y1,cy);
+      // pas zw × zh et départ zx0 (depuis la gauche) / zy0 (depuis le bas) réglables par un modèle de
+      // cartouche (cadre maison, V0.22.7) ; sinon 50 mm centrés
+      const cuts=(a,b,c,p)=>{const o=[];for(let i=-40;i<=40;i++){const v=c+i*p;if(v>a+1&&v<b-1)o.push(v);}return o;};
+      const zw=+fr.zw>0?+fr.zw:50,zh=+fr.zh>0?+fr.zh:50;
+      const xs=cuts(x0,x1,fr.zx0!=null?x0+(+fr.zx0):cx,zw),ys=cuts(y0,y1,fr.zy0!=null?y1-(+fr.zy0):cy,zh);
       xs.forEach(x=>{if(fr.centre&&Math.abs(x-cx)<1e-6)return;L(x,y0-5,x,y0,mw);L(x,y1,x,y1+5,mw);});
       ys.forEach(y=>{if(fr.centre&&Math.abs(y-cy)<1e-6)return;L(x0-5,y,x0,y,mw);L(x1,y,x1+5,y,mw);});
       const h=3,fs=mepFs(h),tf=fr.mcol?';fill:'+fr.mcol:'';
@@ -59306,7 +59355,7 @@ function viewFadeIn(){
     if(mepSt.tool==='text'){
       const r2=K.rowEl();K.lab(r2,'Champ');
       const sel=document.createElement('select');
-      Object.keys(MEP_TB_FIELDS).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=k==='txt'?'Texte libre':(MEP_TB_FIELDS[k].ed||MEP_TB_FIELDS[k].lab)+(MEP_TB_FIELDS[k].auto?' (auto)':'');sel.appendChild(o);});
+      Object.keys(MEP_TB_FIELDS).forEach(k=>{if(MEP_TB_FIELDS[k].hide)return;const o=document.createElement('option');o.value=k;o.textContent=k==='txt'?'Texte libre':(MEP_TB_FIELDS[k].ed||MEP_TB_FIELDS[k].lab)+(MEP_TB_FIELDS[k].auto?' (auto)':'');sel.appendChild(o);});
       sel.value=mepSt.skTextF||'txt';sel.onchange=()=>{mepSt.skTextF=sel.value;mepSideShow();};r2.appendChild(sel);
       if((mepSt.skTextF||'txt')==='txt'){const r3=K.rowEl();K.lab(r3,'Texte');const i=document.createElement('input');i.value=mepSt.skTextS||'TEXTE';i.oninput=()=>{mepSt.skTextS=i.value;};r3.appendChild(i);}
       const r4=K.rowEl();K.lab(r4,'Hauteur h (mm)');
@@ -59364,7 +59413,7 @@ function viewFadeIn(){
       const e=s.T[0];
       let r=K.rowEl();K.lab(r,'Champ');
       const sel=document.createElement('select');
-      Object.keys(MEP_TB_FIELDS).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=k==='txt'?'Texte libre':(MEP_TB_FIELDS[k].ed||MEP_TB_FIELDS[k].lab);sel.appendChild(o);});
+      Object.keys(MEP_TB_FIELDS).forEach(k=>{if(MEP_TB_FIELDS[k].hide&&e.f!==k)return;const o=document.createElement('option');o.value=k;o.textContent=k==='txt'?'Texte libre':(MEP_TB_FIELDS[k].ed||MEP_TB_FIELDS[k].lab);sel.appendChild(o);});
       sel.value=e.f||'txt';sel.onchange=()=>{mepEdit('texte',()=>{e.f=sel.value;if(e.f==='txt'&&!e.s)e.s='TEXTE';if(e.f==='perso'&&!e.k){e.k='c'+Date.now().toString(36);e.lab='CHAMP';}});mepSideShow();};r.appendChild(sel);
       if(e.f==='txt'){r=K.rowEl();K.lab(r,'Texte');const i=document.createElement('input');i.value=e.s||'';i.onchange=()=>mepEdit('texte',()=>{e.s=i.value;});r.appendChild(i);}
       if(e.f==='perso'){r=K.rowEl();K.lab(r,'Nom du champ');const i=document.createElement('input');i.value=e.lab||'';i.onchange=()=>{mepEdit('texte',()=>{e.lab=i.value;});mepSideShow();};r.appendChild(i);}
@@ -64686,11 +64735,11 @@ function viewFadeIn(){
      else if(tt.tbName&&lib[tt.tbName]&&lib[tt.tbName].kind==='std')cur='l:'+tt.tbName;
      sel.value=cur;
      sel.onchange=()=>{const v=sel.value;if(v==='cur')return;
-       mepEdit('modèle de cartouche',()=>{if(v==='std'){tt.tb=null;delete tt.tbName;}else{const o=mepTbLib()[v.slice(2)];mepTbUnpack(tt,o);if(o&&o.kind==='std')tt.tbName=o.name;else delete tt.tbName;}});mepSideShow();};
+       mepEdit('modèle de cartouche',()=>{if(v==='std'){tt.tb=null;delete tt.tbName;}else mepTbApply(sh,mepTbLib()[v.slice(2)]);});mepAfterSheetSwitch();};
      r.appendChild(sel);}
     r=rowEl();
+    rb('Charger un cartouche…',()=>mepTbImportFile(),'Charger un cartouche extérieur (fichier .mfcartouche, ex. un dossier partagé) : ajouté à la bibliothèque et appliqué à cette planche — un modèle du même nom est remplacé');
     rb('Exporter…',()=>mepTbExportFile(sh),'Enregistrer les modèles de cartouche (bibliothèque + celui de cette planche) dans un fichier .mfcartouche');
-    rb('Importer…',()=>mepTbImportFile(),'Charger des modèles de cartouche depuis un fichier .mfcartouche (ajoutés à la bibliothèque)');
     {const st=mepTbStray(sh);
      if(st.length){
        const n=document.createElement('div');n.className='note';n.style.color='#ff9f0a';
@@ -64722,11 +64771,11 @@ function viewFadeIn(){
       }
     }
     /* — révisions (indice = dernière révision) — */
-    const revs=Array.isArray(tt.revs)?tt.revs:[];
+    const revs=Array.isArray(tt.revs)?tt.revs:[],revCols=mepTbRevCols(sh);
     r=rowEl();{const L=document.createElement('label');L.textContent='Révisions';L.style.fontWeight='600';r.appendChild(L);
      // indices : lettres (A, B, C…) ou chiffres (0, 1, 2… / 1, 2, 3…) ; changer renumérote les révisions existantes
      const fs=document.createElement('select');fs.id='mepRevFmt';fs.title='Indices des révisions : lettres ou chiffres (renumérote les révisions existantes)';
-     [['A','A, B, C…'],['0','0, 1, 2…'],['1','1, 2, 3…']].forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;fs.appendChild(o);});
+     [['A','A, B, C…'],['O','O, A, B…'],['0','0, 1, 2…'],['1','1, 2, 3…']].forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;fs.appendChild(o);});
      fs.value=tt.revFmt||'A';
      fs.onchange=()=>{mepEdit('indices des révisions',()=>{tt.revFmt=fs.value;(tt.revs||[]).forEach((rv,k)=>{rv.i=mepRevIdx(fs.value,k);});});mepSideShow();};
      r.appendChild(fs);}
@@ -64737,6 +64786,9 @@ function viewFadeIn(){
       r=rowEl();inp('i','Ind.','34px','Indice');inp('d','Date','86px','Date');
       rb('×',()=>{mepEdit('révision',()=>{tt.revs.splice(k,1);});mepSideShow();},'Supprimer la révision');
       r=rowEl();inp('n','Nom','86px','Nom de la personne qui a modifié le plan');inp('t','Modification','','Modification');
+      // colonnes en plus prévues par le tableau dessiné du cartouche (note d'application, vérifié, approuvé)
+      const xc=Object.keys(MEP_REV_COLS).filter(c=>revCols.has(c));
+      if(xc.length){r=rowEl();xc.forEach(c=>inp(c,MEP_REV_COLS[c],c==='a'?'60px':'',MEP_REV_COLS[c]));}
     });
     r=rowEl();
     rb('+ Révision',()=>{mepEdit('révision',()=>{
@@ -65621,7 +65673,7 @@ function viewFadeIn(){
       titleTexts:sh=>{const t=[];const mk=(tag)=>{const o={textContent:''};if(tag==='text')t.push(o);return o;};mepDrawTitle(mk,sh,mepPage().pd,100);mepDrawRevs(mk,sh,mepPage().pd,100);mepDrawBom(mk,sh,mepPage().pd,100);return t.map(o=>o.textContent);},
       sk:{fromStd:sh=>mepTbFromStd(sh),solve:(sk,a)=>mepSkSolve(sk,80,a),residual:(sk,c)=>mepSkResidual(sk,c),
         apply:(sh,id,keys)=>{mepSt.skSel=new Set(keys);mepSkApply(sh,id);},setVal:(sh,c,v)=>mepSkSetVal(sh,c,v),
-        tbH:sh=>mepTbH(sh),tbEdit:on=>mepTbEdit(on),ctx:sh=>mepSkCtx(sh,true),addLine:(sh,a,b)=>mepSkAddLine(sh,a,b),trim:(sh,x,y)=>mepSkTrim(sh,x,y),clipDetail:(els,det)=>mepClipDetail(els,det),revIdx:(f,k)=>mepRevIdx(f,k),revNext:(f,r)=>mepRevNext(f,r),hit:(sh,x,y)=>{const h=mepSkHit(sh,{x,y});return h?h.key:null;},
+        tbH:sh=>mepTbH(sh),tbEdit:on=>mepTbEdit(on),ctx:sh=>mepSkCtx(sh,true),addLine:(sh,a,b)=>mepSkAddLine(sh,a,b),trim:(sh,x,y)=>mepSkTrim(sh,x,y),clipDetail:(els,det)=>mepClipDetail(els,det),revIdx:(f,k)=>mepRevIdx(f,k),tbApply:(sh,o)=>mepTbApply(sh,o),drawSk:(mk,sh,c,m)=>mepDrawSkCtx(mk,sh,c,m),tbValue:(sh,c)=>mepTbValue(sh,c),revRows:sh=>mepTbRevRows(sh),revNext:(f,r)=>mepRevNext(f,r),hit:(sh,x,y)=>{const h=mepSkHit(sh,{x,y});return h?h.key:null;},
         addRect:(sh,a,b)=>mepSkAddRect(sh,a,b),addText:(sh,p)=>mepSkAddText(sh,p),textValue:(sh,e)=>mepSkTextValue(sh,e,false),
         merge:(sk,a,b)=>mepSkMerge(sk,a,b),
         box:(sh,x0,y0,x1,y1,add)=>mepBoxSelect(sh,{sx:x0,sy:y0,cur:{x:x1,y:y1}},add),sel:()=>[...mepSt.skSel],

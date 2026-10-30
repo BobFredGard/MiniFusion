@@ -323,11 +323,13 @@
     if(!sh.sk)sh.sk=null;
   }
   function mepNewSheet(n){
-    return{id:'sh'+Date.now().toString(36)+Math.floor(Math.random()*1e4),name:'Planche '+n,
+    const sh={id:'sh'+Date.now().toString(36)+Math.floor(Math.random()*1e4),name:'Planche '+n,
       format:'A3',orient:'landscape',views:[],dims:[],sk:null,
-      title:mepTbUnpack({projet:'MiniFusion — Plan',auteur:'—',date:new Date().toLocaleDateString('fr-FR'),tb:null},mepTbDefault()),
+      title:{projet:'MiniFusion — Plan',auteur:'—',date:new Date().toLocaleDateString('fr-FR'),tb:null},
       frame:mepFrameUserDef()||undefined,
       seq:1,dseq:1};
+    const def=mepTbDefault();if(def)mepTbApply(sh,def); // format et cadre du modèle par défaut aussi
+    return sh;
   }
   function mepSheet(){const m=mepEnsure();return m.sheets[m.cur];}
   /* cadre de la planche : marges (mm, bord de feuille → trait du cadre), épaisseur,
@@ -339,7 +341,7 @@
   const MEP_FRAME_ISO={l:20,r:10,t:10,b:10,lw:0.7,inner:false,centre:true,zones:true,trim:true,col:'',mcol:''};
   // relevé sur SIRAP-13-001.pdf (plan maison Justet) : trait 1 mm #6B6BA1, repères fins #3E2B2C
   const MEP_FRAME_JUSTET={l:20,r:10,t:10,b:10,lw:1,inner:false,centre:true,zones:true,trim:true,col:'#6b6ba1',mcol:'#3e2b2c'};
-  const MEP_FRAME_KEYS=['l','r','t','b','lw','inner','centre','zones','trim','col','mcol'];
+  const MEP_FRAME_KEYS=['l','r','t','b','lw','inner','centre','zones','trim','col','mcol','zw','zh','zx0','zy0'];
   function mepFrameUserDef(){try{const o=JSON.parse(localStorage.getItem('mep_frame_def')||'null');return o&&typeof o==='object'?o:null;}catch(e){return null;}}
   function mepFrameOf(sh){
     const f=Object.assign({},MEP_FRAME_DEF,(sh&&sh.frame)||{});

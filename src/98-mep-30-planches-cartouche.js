@@ -181,23 +181,37 @@
     if(mepTbIsSk(sh))return Math.max(0,-mepTbBBox(sh.title.tb.sk,mepTbLim(sh)).minx);
     return pd.iw;
   }
-  // indice de la k-ième révision (k = 0…) : 'A' → A…Z, AA, AB… ; '0' → 0, 1… ; '1' → 1, 2…
+  // indice de la k-ième révision (k = 0…) : 'A' → A…Z, AA, AB… ; '0' → 0, 1… ; '1' → 1, 2… ;
+  // 'O' → O (édition originale), puis A, B, C… (V0.22.7)
   function mepRevIdx(fmt,k){
     if(fmt==='0'||fmt==='1')return String(k+(fmt==='1'?1:0));
+    if(fmt==='O')return k?mepRevIdx('A',k-1):'O';
     let s='',n=k+1;while(n>0){n--;s=String.fromCharCode(65+n%26)+s;n=Math.floor(n/26);}return s;
   }
   // indice suivant : suite du dernier s'il est dans le format (indice saisi à la main respecté), sinon le rang
   function mepRevNext(fmt,revs){
     const last=revs.length?String(revs[revs.length-1].i||'').trim():'';
     if(fmt==='0'||fmt==='1'){if(/^\d+$/.test(last))return String(+last+1);}
+    else if(fmt==='O'&&last==='O')return'A';
     else if(/^[A-Z]+$/.test(last)){let n=0;for(const c of last)n=n*26+(c.charCodeAt(0)-64);return mepRevIdx('A',n);}
     return mepRevIdx(fmt,revs.length);
+  }
+  // tableau des révisions dessiné DANS le cartouche (champs « rev ») : nombre de rangs (0 = aucun)
+  // et colonnes utilisées ; au-delà de n révisions, les n dernières s'affichent
+  function mepTbRevRows(sh){
+    if(!mepTbIsSk(sh))return 0;let n=0;
+    sh.title.tb.sk.ents.forEach(e=>{if(e.t==='text'&&e.f==='rev')n=Math.max(n,(+e.r||0)+1);});
+    return n;
+  }
+  function mepTbRevCols(sh){
+    const s=new Set();if(mepTbIsSk(sh))sh.title.tb.sk.ents.forEach(e=>{if(e.t==='text'&&e.f==='rev')s.add(e.k);});
+    return s;
   }
   function mepDrawRevs(mk,sh,pd,ty){
     // tableau des révisions : en-tête IND. | DATE | NOM | MODIFICATION en bas (contre le cartouche),
     // la plus récente en haut — comme la nomenclature
     const revs=mepRevs(sh);
-    if(revs.length){
+    if(revs.length&&!mepTbRevRows(sh)){ // cartouche avec son propre tableau : rien à poser au-dessus
       const st=mepRevSt(sh),k=st.h/2.5,fs=mepFs(st.h),cw=fs*0.6; // cw ≈ largeur moyenne d'un caractère
       // IND. et DATE jamais tronqués : largeur au plus long texte de la colonne (marge 1,2 mm de chaque côté)
       const wTx=(l,f)=>revs.reduce((m,r)=>Math.max(m,String(r[f]||'').length),l.length)*cw+3;

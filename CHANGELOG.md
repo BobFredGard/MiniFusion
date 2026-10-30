@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**456 versions**, de `2026-09-28b` à `V0.22.6` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**457 versions**, de `2026-09-28b` à `V0.22.7` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5722,3 +5722,13 @@ Demande : « Il y a un outil de coupe suivant X/Y/Z [dans viewer_STEP]. Il faut 
 - **Plan unique** : `clipPlane` reste l'objet lu à la création des matériaux, mais n'est plus recréé — le curseur le déplace sans recompilation. `clipTick` (à chaque image, `src/10`) lui rattache ce qui naît après coup (arêtes `edgeOverlay`, filets `holeThreads`, passes de transparence, corps reconstruits) et suit visibilité / couleur des corps.
 - Axe et remplissage enregistrés avec l'affichage du fichier (`collectView` / `applyView`).
 - **Tests** : `npm run ci`. Captures Playwright sur « Support Pédale » : coupe Z avec / sans remplissage, X avec plan affiché, Y inversée, curseur aux bornes (tout coupé / rien).
+
+## V0.22.7 - Plan : cartouche extérieur (modèle d'entreprise gardé hors dépôt)
+Demande : un cartouche dédié à un client (A3 paysage et A4 portrait, repris de ses DXF/PDF), avec sa propre gestion des indices (O, puis A, B, C…), sans remplacer l'actuel et sans le mettre en ligne : le modèle reste dans un dossier local, miniFusion offre seulement de le charger.
+- **« Charger un cartouche… »** (onglet Cartouche, à la place d'« Importer… ») : un fichier `.mfcartouche` d'un seul modèle est ajouté à la bibliothèque **et appliqué à la planche** ; un modèle du même nom est remplacé (le fichier extérieur fait foi).
+- **Le modèle impose sa planche** (`mepTbApply`, `src/98-mep-50`) : format et orientation (`page`), cadre (`frame` : marges, trait, couleur, zones). Aussi au choix dans la liste « Modèle » et pour le modèle par défaut d'une nouvelle planche.
+- **Tableau des révisions dessiné dans le cartouche** : champ `rev` (rang `r`, colonne `k` : indice, date, note d'application, modification, dessiné, vérifié, approuvé). La 1re révision est créée d'office ; au-delà du nombre de rangs, les dernières s'affichent ; le tableau posé au-dessus du cartouche n'est plus dessiné. Le panneau propose Note appl. / Vérifié / Approuvé quand le modèle a ces colonnes.
+- **Indices « O, A, B… »** : O = édition originale, puis A, B, C.
+- **Esquisse du cartouche** : texte tourné (`rot`, mention de confidentialité verticale), texte resserré à la largeur de sa case (`fit`, police plus étroite du DXF d'origine), case vide sans « — » (`nd`), hauteur réservée imposée (`hRes` : un trait de toute la hauteur de la feuille ne prend plus la planche).
+- **Zones du cadre** : pas (`zw`, `zh`) et départ (`zx0` depuis la gauche, `zy0` depuis le bas) réglables par le modèle ; sinon 50 mm centrés comme avant.
+- **Tests** : `test_cartouche_exterieur` (nouveau, 11 points) ; `npm run ci`. Vérifié dans le navigateur : les deux modèles chargés par le bouton, comparés aux PDF du client, export DXF (textes du cartouche, texte vertical à 90°).

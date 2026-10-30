@@ -386,6 +386,20 @@
     if(o.cust&&typeof o.cust==='object')tt.cust=Object.assign({},tt.cust||{},mepClone(o.cust));
     return tt;
   }
+  // modèle appliqué à une PLANCHE (V0.22.7) : cartouche, plus le format et le cadre que le modèle impose
+  // (cartouche d'entreprise : A3 paysage, cadre et zones maison) ; s'il dessine son propre tableau des
+  // révisions, la première révision (O, A ou 0 selon le modèle) est créée d'office
+  function mepTbApply(sh,o){
+    const tt=sh.title||(sh.title={});if(!mepTbOk(o))return;
+    mepTbUnpack(tt,o);
+    if(o.kind==='std')tt.tbName=o.name;else delete tt.tbName;
+    if(o.page&&FORMATS[o.page.format]){sh.format=o.page.format;sh.orient=o.page.orient==='portrait'?'portrait':'landscape';}
+    if(o.frame&&typeof o.frame==='object')sh.frame=mepClone(o.frame);
+    if(mepTbRevRows(sh)&&!(Array.isArray(tt.revs)&&tt.revs.length)){
+      let nom='';try{nom=localStorage.getItem('mep_rev_nom')||'';}catch(e){}
+      tt.revs=[{i:mepRevIdx(tt.revFmt||'A',0),d:tt.date||new Date().toLocaleDateString('fr-FR'),n:nom||(tt.auteur&&tt.auteur!=='—'?tt.auteur:''),t:''}];
+    }
+  }
   /* ── bibliothèque de modèles (locale à ce navigateur) ── */
   function mepTbLib(){try{const o=JSON.parse(localStorage.getItem('mep_tb_lib')||'{}');return o&&typeof o==='object'?o:{};}catch(e){return{};}}
   function mepTbLibSave(o){try{localStorage.setItem('mep_tb_lib',JSON.stringify(o));}catch(e){}}
@@ -408,11 +422,14 @@
         let o;try{o=JSON.parse(rd.result);}catch(e){mepStatus('Fichier de cartouches illisible.');return;}
         const tbs=o&&o.format==='miniFusion-cartouches'&&o.tbs?o.tbs:(mepTbOk(o)?{[o.name||f.name.replace(/\.[^.]+$/,'')]:o}:null);
         if(!tbs){mepStatus('Ce fichier ne contient pas de cartouche miniFusion.');return;}
-        const L=mepTbLib();let n=0;
-        Object.keys(tbs).forEach(k=>{const tb=tbs[k];if(!mepTbOk(tb))return;
-          let nm=k;if(L[nm]&&JSON.stringify(L[nm])!==JSON.stringify(Object.assign({},tb,{name:nm}))){let i=2;while(L[k+' ('+i+')'])i++;nm=k+' ('+i+')';}
-          L[nm]=Object.assign(mepClone(tb),{name:nm});n++;});
-        mepTbLibSave(L);mepStatus(n+' cartouche(s) importé(s) dans la bibliothèque.');mepSideShow();
+        // V0.22.7 : un modèle du même nom est REMPLACÉ (le fichier extérieur fait foi : on le recharge après
+        // l'avoir corrigé) ; un fichier d'un seul modèle s'applique aussi à la planche courante
+        const L=mepTbLib(),got=[];
+        Object.keys(tbs).forEach(k=>{const tb=tbs[k];if(!mepTbOk(tb))return;L[k]=Object.assign(mepClone(tb),{name:k});got.push(k);});
+        mepTbLibSave(L);
+        if(got.length===1){const sh=mepSheet();mepEdit('cartouche extérieur',()=>mepTbApply(sh,L[got[0]]));mepAfterSheetSwitch();
+          mepStatus('Cartouche « '+got[0]+' » chargé et appliqué à la planche (ajouté à la bibliothèque).');}
+        else{mepStatus(got.length+' cartouche(s) chargé(s) dans la bibliothèque.');mepSideShow();}
       };rd.readAsText(f);};
     inp.click();
   }
@@ -444,6 +461,7 @@
       case 'format':return sh.format===FORMAT_MANUEL?mepFmtLabel(sh)+' mm':sh.format+(sh.orient==='landscape'?'-H':'-V'); // A3-H, A4-V…
       case 'indice':{const rv=mepRevs(sh);return rv.length?rv[rv.length-1].i:(tt.indice||'—');}
       case 'perso':return(tt.cust&&c.k&&tt.cust[c.k])||'';
+      case 'rev':{const rv=mepRevs(sh),r=rv[Math.max(0,rv.length-mepTbRevRows(sh))+(+c.r||0)];return r&&r[c.k]||'';}
       default:{const v=tt[c.f];return v!=null&&v!==''?v:(c.f==='projet'||c.f==='date'||c.f==='auteur'?'':'—');}
     }
   }
@@ -471,8 +489,11 @@
     }
     if(fr.zones){
       // bandes de 50 mm centrées sur le milieu du cadre ; traits de 5 mm vers l'extérieur
-      const cuts=(a,b,c)=>{const o=[];for(let i=-20;i<=20;i++){const v=c+i*50;if(v>a+1&&v<b-1)o.push(v);}return o;};
-      const xs=cuts(x0,x1,cx),ys=cuts(y0,y1,cy);
+      // pas zw × zh et départ zx0 (depuis la gauche) / zy0 (depuis le bas) réglables par un modèle de
+      // cartouche (cadre maison, V0.22.7) ; sinon 50 mm centrés
+      const cuts=(a,b,c,p)=>{const o=[];for(let i=-40;i<=40;i++){const v=c+i*p;if(v>a+1&&v<b-1)o.push(v);}return o;};
+      const zw=+fr.zw>0?+fr.zw:50,zh=+fr.zh>0?+fr.zh:50;
+      const xs=cuts(x0,x1,fr.zx0!=null?x0+(+fr.zx0):cx,zw),ys=cuts(y0,y1,fr.zy0!=null?y1-(+fr.zy0):cy,zh);
       xs.forEach(x=>{if(fr.centre&&Math.abs(x-cx)<1e-6)return;L(x,y0-5,x,y0,mw);L(x,y1,x,y1+5,mw);});
       ys.forEach(y=>{if(fr.centre&&Math.abs(y-cy)<1e-6)return;L(x0-5,y,x0,y,mw);L(x1,y,x1+5,y,mw);});
       const h=3,fs=mepFs(h),tf=fr.mcol?';fill:'+fr.mcol:'';
@@ -517,7 +538,7 @@
     if(mepSt.tool==='text'){
       const r2=K.rowEl();K.lab(r2,'Champ');
       const sel=document.createElement('select');
-      Object.keys(MEP_TB_FIELDS).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=k==='txt'?'Texte libre':(MEP_TB_FIELDS[k].ed||MEP_TB_FIELDS[k].lab)+(MEP_TB_FIELDS[k].auto?' (auto)':'');sel.appendChild(o);});
+      Object.keys(MEP_TB_FIELDS).forEach(k=>{if(MEP_TB_FIELDS[k].hide)return;const o=document.createElement('option');o.value=k;o.textContent=k==='txt'?'Texte libre':(MEP_TB_FIELDS[k].ed||MEP_TB_FIELDS[k].lab)+(MEP_TB_FIELDS[k].auto?' (auto)':'');sel.appendChild(o);});
       sel.value=mepSt.skTextF||'txt';sel.onchange=()=>{mepSt.skTextF=sel.value;mepSideShow();};r2.appendChild(sel);
       if((mepSt.skTextF||'txt')==='txt'){const r3=K.rowEl();K.lab(r3,'Texte');const i=document.createElement('input');i.value=mepSt.skTextS||'TEXTE';i.oninput=()=>{mepSt.skTextS=i.value;};r3.appendChild(i);}
       const r4=K.rowEl();K.lab(r4,'Hauteur h (mm)');
@@ -575,7 +596,7 @@
       const e=s.T[0];
       let r=K.rowEl();K.lab(r,'Champ');
       const sel=document.createElement('select');
-      Object.keys(MEP_TB_FIELDS).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=k==='txt'?'Texte libre':(MEP_TB_FIELDS[k].ed||MEP_TB_FIELDS[k].lab);sel.appendChild(o);});
+      Object.keys(MEP_TB_FIELDS).forEach(k=>{if(MEP_TB_FIELDS[k].hide&&e.f!==k)return;const o=document.createElement('option');o.value=k;o.textContent=k==='txt'?'Texte libre':(MEP_TB_FIELDS[k].ed||MEP_TB_FIELDS[k].lab);sel.appendChild(o);});
       sel.value=e.f||'txt';sel.onchange=()=>{mepEdit('texte',()=>{e.f=sel.value;if(e.f==='txt'&&!e.s)e.s='TEXTE';if(e.f==='perso'&&!e.k){e.k='c'+Date.now().toString(36);e.lab='CHAMP';}});mepSideShow();};r.appendChild(sel);
       if(e.f==='txt'){r=K.rowEl();K.lab(r,'Texte');const i=document.createElement('input');i.value=e.s||'';i.onchange=()=>mepEdit('texte',()=>{e.s=i.value;});r.appendChild(i);}
       if(e.f==='perso'){r=K.rowEl();K.lab(r,'Nom du champ');const i=document.createElement('input');i.value=e.lab||'';i.onchange=()=>{mepEdit('texte',()=>{e.lab=i.value;});mepSideShow();};r.appendChild(i);}
