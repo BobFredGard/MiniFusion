@@ -237,7 +237,7 @@ function mfSyncPropsHost(){
 function mfPop(anchor,items){
   document.querySelectorAll('.mfPop.mfTmp').forEach(p=>p.remove());
   const p=document.createElement('div');p.className='mfPop mfTmp';
-  items.forEach(it=>{const b=document.createElement('button');b.innerHTML=it.html;if(it.cls)b.className=it.cls;if(it.data)Object.assign(b.dataset,it.data);b.onclick=e=>{e.stopPropagation();p.remove();it.fn();};p.appendChild(b);});
+  items.forEach(it=>{if(it.title){const t=document.createElement('div');t.className='mfPopT';t.textContent=it.title;p.appendChild(t);return;}const b=document.createElement('button');b.innerHTML=it.html;if(it.cls)b.className=it.cls;if(it.data)Object.assign(b.dataset,it.data);b.onclick=e=>{e.stopPropagation();p.remove();it.fn();};p.appendChild(b);});
   document.body.appendChild(p);
   const r=anchor.getBoundingClientRect();p.style.top=(r.bottom+6+window.scrollY)+'px';p.style.left=Math.max(6,Math.min(window.innerWidth-p.offsetWidth-8,r.right-p.offsetWidth))+'px';
   setTimeout(()=>{const off=ev=>{if(!p.contains(ev.target)){p.remove();document.removeEventListener('pointerdown',off,true);}};document.addEventListener('pointerdown',off,true);},0);
@@ -246,10 +246,12 @@ function mfPop(anchor,items){
 function mfTopButtons(){
   const top=document.querySelector('.topbar');if(!top||document.getElementById('mfThemeBtn'))return;
   const box=document.createElement('div');box.className='mfTop';box.id='mfTopBox';
-  const th=document.createElement('button');th.id='mfThemeBtn';th.innerHTML=mfI('theme',16);th.title='Couleurs de l’interface';
+  const th=document.createElement('button');th.id='mfThemeBtn';th.innerHTML=mfI('theme',16);th.title='Couleurs et icônes de l’interface';
   const SW={nuit:['#1c1c1e','#0a84ff'],graphite:['#2e2f32','#8ab4f8'],atelier:['#2a2520','#ff9f0a'],clair:['#e9ecf1','#0a6cff'],contraste:['#000','#00a8ff']};
   th.onclick=e=>{e.stopPropagation();const cur=document.body.getAttribute('data-theme')||'nuit';
-    mfPop(th,MF_THEMES.map(([k,l])=>({html:'<span class="mfSw" style="background:linear-gradient(135deg,'+SW[k][0]+' 55%,'+SW[k][1]+' 55%)"></span>'+l,cls:'mfThemeOpt'+(k===cur?' on':''),data:{t:k},fn:()=>mfTheme(k)})));};
+    const ci=document.body.getAttribute('data-icons')||'trait',IS={trait:['#9aa0a6','#9aa0a6','#9aa0a6'],couleur:['#22c55e','#3b82f6','#f59e0b'],fusion:['#a9bfd6','#f6a623','#1e88e5'],delire:['#ff5f6d','#47e891','#b06ab3']};
+    mfPop(th,[{title:'Thème'}].concat(MF_THEMES.map(([k,l])=>({html:'<span class="mfSw" style="background:linear-gradient(135deg,'+SW[k][0]+' 55%,'+SW[k][1]+' 55%)"></span>'+l,cls:'mfThemeOpt'+(k===cur?' on':''),data:{t:k},fn:()=>mfTheme(k)})),
+      [{title:'Icônes'}],MF_ICSTYLES.map(([k,l])=>({html:'<span class="mfIcSw">'+IS[k].map(c=>'<i style="background:'+c+'"></i>').join('')+'</span>'+l,cls:'mfIconOpt'+(k===ci?' on':''),data:{i:k},fn:()=>mfIcons(k)}))));};
   box.appendChild(th);
   const pv=document.getElementById('prodVer');
   if(pv&&pv.parentNode===top){top.insertBefore(box,pv.nextSibling);}else top.appendChild(box);
@@ -349,7 +351,9 @@ const MF_IC={
   asmFromBodies:'<path d="M3 14l5-3 5 3v5l-5 3-5-3z"/><path d="M14 6l4-2 4 2v4l-4 2-4-2z"/><path d="M12 12l3-3M15 9h-2.5M15 9v2.5"/>',
   pPdf:'<path d="M6 3h9l3 3v15H6z"/><text x="12" y="17.6" font-size="6.2" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">PDF</text>'
 };
-function mfI(k,size){const p=MF_IC[k];if(!p)return null;return '<svg viewBox="0 0 24 24" width="'+(size||20)+'" height="'+(size||20)+'" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+p+'</svg>';}
+function mfI(k,size){const p=MF_IC[k];if(!p)return null;const s=size||20,f=typeof MF_ICF!=='undefined'&&MF_ICF[k]; // V0.25.0 : + dessin en volume (97-interface-icones)
+  return '<svg class="mfIcT'+(f?' mfIcH':'')+'" viewBox="0 0 24 24" width="'+s+'" height="'+s+'" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+p+'</svg>'+
+    (f?'<svg class="mfIcF" viewBox="0 0 24 24" width="'+s+'" height="'+s+'" aria-hidden="true">'+f+'</svg>':'');}
 /* ---------- mode moderne ---------- */
 let mfBuilt=false;
 function mfClick(id){mfCloseMenus();const b=document.getElementById(id);if(b){b.click();return true;}try{faceEl.textContent='Commande indisponible ici ('+id+').';}catch(e){}return false;}

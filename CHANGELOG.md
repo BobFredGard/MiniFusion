@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**489 versions**, de `2026-09-28b` à `V0.24.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**490 versions**, de `2026-09-28b` à `V0.25.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5971,3 +5971,11 @@ Demande : « Perçage CAO : Alésage, l'avant trou est défini avec un gap de 0.
 - **Cause** : le Ø de perçage d'un alésé ne proposait que Ø alésage − 0,5, − 1, ou un Ø « Libre » ; aucun autre jeu ne pouvait être saisi.
 - **Correctif** (`renderHoleReamProps`, `src/76-percage.js`) : option « Autre écart » dans « Ø perçage », avec deux champs liés : « Jeu sur le Ø » (recalcule le Ø) et « Ø du perçage » (recalcule le jeu). Le jeu est conservé quand le Ø de l'alésage change. Indicateur `reamOffFree` pour garder ce mode même si le jeu saisi vaut 0,5 ou 1. Fichiers existants inchangés.
 - **Tests** : vérifié dans l'application (jeu 0,3 → Ø7,7 sur Ø8 ; Ø7,2 → jeu 0,8) ; `npm run ci` (81/81).
+
+## V0.25.0 - Style des icônes : au trait, couleurs par famille, dessinées en volume, délire
+Demande : « proposer une interface colorée : d'abord juste les icônes par thème, puis des icônes dessinées à la Fusion 360, et une un peu délire pour rigoler ; on choisirait dans les réglages. »
+- **Choix** (`src/97-interface-icones.js`) : le menu 🎨 a deux sections, Thème et **Icônes** (`mfIcons`, `body[data-icons]`, mémorisé dans `localStorage` `minifusion_icons`). Défaut : au trait, inchangé.
+- **Couleurs par famille** : une couleur par groupe du ruban (`MF_GC` : Esquisse vert, Créer bleu, Construire orange, Modifier violet, Ensembles turquoise, Composants rose, FAO et PLAN par groupe), pastille teintée derrière l'icône, titre du groupe coloré ; bandeau d'esquisse : dessin bleu, modifications orange, cotes jaunes. Les icônes FAO déjà colorées (V0.24.1) gardent leur couleur.
+- **Dessinées en volume** (`MF_ICF`, 50 icônes) : vue isométrique (`fzP`, `fzBox`, `fzPath`), faces ombrées, profil sélectionné orange, flèches bleues, construction orange, brut FAO bois clair et parcours bleus. `mfI` émet le dessin au trait ET le dessin en volume, le CSS montre le bon : rien n'est reconstruit au changement (ruban, barre rapide, timeline). Icônes sans version en volume (PLAN) : couleurs par famille.
+- **Délire** : arc-en-ciel, icônes penchées, yeux qui suivent la souris, gigue au survol, police Comic, liseré arc-en-ciel, confettis et emojis au clic ; animations coupées si « réduire les animations ».
+- **Tests** : vérifié dans l'aperçu (4 styles, menu, aucune erreur console) ; `npm run ci`.
