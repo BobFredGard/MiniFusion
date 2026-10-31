@@ -293,15 +293,18 @@ function edgeSelect(e,eh,second){
   dimPair(best.p,best.q,best.d.toFixed(2));faceEl.textContent='Distance mini entre arêtes ≈ '+best.d.toFixed(2)+' mm';
 }
 function faceSelect(e,second){
+  // V0.24.2 : Ctrl / Cmd enfoncé = MESURE seulement — rien n'est sélectionné nulle part (fonction,
+  // plan, construction : ni arbre, ni timeline, ni panneau, ni outil rouge), rien n'est désélectionné
+  const meas=!!(e&&(e.ctrlKey||e.metaKey));
   // 2026-10-16-017 : plans du repère (dessinés devant la pièce) prioritaires
-  if(!second){const tp=triadPickPlane(e);if(tp){clearMeasure();sel={kind:'plane',id:tp};renderTree();renderProps();refreshParts();faceEl.textContent=`Plan ${tp} — ${PLANES[tp].label}
+  if(!second&&!meas){const tp=triadPickPlane(e);if(tp){clearMeasure();sel={kind:'plane',id:tp};renderTree();renderProps();refreshParts();faceEl.textContent=`Plan ${tp} — ${PLANES[tp].label}
 Bouton « Esquisse » (ou double-clic dans l'arbre) pour dessiner dessus.`;return;}}
-  if(!second&&cgSelectAt(e))return; // construction (79) : plans, axes, points, repères
+  if(!second&&!meas&&cgSelectAt(e))return; // construction (79) : plans, axes, points, repères
   const h=pick(e);
   try{const eh=edgeHoverPick(e,h);if(eh){edgeSelect(e,eh,second);return;}}catch(err){}
   if(second&&selEdges.length&&!selFaces.length){selEdges=[];}
   if(!h){
-    if(!second){
+    if(!second&&!meas){
       const pl=pickPlane(e);
       if(pl){sel={kind:'plane',id:pl};renderTree();renderProps();refreshParts();faceEl.textContent=`Plan ${pl} — ${PLANES[pl].label}\nBouton « Esquisse » (ou double-clic dans l'arbre) pour dessiner dessus.`;return;}
       clearMeasure();faceEl.textContent='Aucune face — cliquez sur un corps.';
@@ -315,7 +318,7 @@ Bouton « Esquisse » (ou double-clic dans l'arbre) pour dessiner dessus.`;retur
     // V0.23.26 : la fonction créatrice est sélectionnée dans l'arbre et la timeline — différé :
     // la face s'allume tout de suite, le rejeu observé (points de contrôle) vient ensuite
     const hm=h.object,hf=h.faceIndex,hp=h.point.clone();
-    setTimeout(()=>{if(selFaces.length===1&&selFaces[0].mesh===hm&&selFaces[0].faceIndex===hf)faceSelectFeature(hm,hf,hp);},0);}
+    if(!meas)setTimeout(()=>{if(selFaces.length===1&&selFaces[0].mesh===hm&&selFaces[0].faceIndex===hf)faceSelectFeature(hm,hf,hp);},0);}
   else{
     if(!selFaces.length){faceSelect(e,false);return;}
     const NB={mesh:h.object,faceIndex:h.faceIndex,point:h.point.clone(),geom:occFaceGeom(h.object,h.faceIndex)};

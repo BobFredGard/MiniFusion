@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**486 versions**, de `2026-09-28b` à `V0.24.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**487 versions**, de `2026-09-28b` à `V0.24.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5950,3 +5950,9 @@ Demande : les actions du panneau FAO (Posage, Exécution, Export) font doublon a
 - **Panneau** (`src/88-fao-80-interface.js`) : groupes Posage / Exécution / Export et leurs boutons marqués `.fao-dup`, masqués en interface moderne (`src/97`). Ils restent dans le DOM : le bandeau les clique (`mfClick`) et le panneau classique est inchangé. Copier / Coller restent sur Ctrl+C / Ctrl+V.
 - **Bandeau** (`src/97-interface-moderne.js`) : Outils et Régénérer en rouge, Usinage en vert, G-code en bleu (`.mfIcR` / `.mfIcG` / `.mfIcB`, couleur gardée au survol).
 - **Tests** : `npm run ci` ; vérifié dans l'aperçu (7 éléments masqués, couleurs calculées).
+
+## V0.24.2 - Ctrl + clic : mesure seulement, aucune sélection
+Demande : « quand la touche Ctrl est enfoncée, cela me sert à mesurer : interdiction de sélectionner la fonction cliquée nulle part, ni arbre, ni timeline, ni 3D, ni bandeau droit. »
+- **Cause** : V0.23.26 sélectionne la fonction créatrice de la face cliquée ; avec Ctrl, le premier clic de mesure (aucune face retenue) repassait par le clic simple, qui sélectionnait donc la fonction (arbre, timeline, panneau, outil rouge). Les plans du repère et la construction se sélectionnaient aussi.
+- **Correctif** (`faceSelect`, `src/90-picking-mesure-import.js`) : Ctrl / Cmd enfoncé, la face est retenue pour la mesure, mais ni fonction, ni plan, ni construction ne sont sélectionnés, et la sélection en cours n'est ni changée ni annulée (clic dans le vide compris).
+- **Tests** : vérifié dans l'application (Ctrl+clic sur deux trous : entraxe mesuré, sélection inchangée) ; `npm run ci`.
