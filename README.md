@@ -2,6 +2,8 @@
 
 **CAO paramétrique, assemblage, FAO, mise en plan et rendu, dans un seul fichier HTML.** On ouvre la page et on travaille : ni installation, ni compte, ni connexion.
 
+[![▶ Lancer MiniFusion dans le navigateur](https://img.shields.io/badge/%E2%96%B6%20Lancer%20MiniFusion-noyau%20OCCT%20inclus-2ea44f?style=for-the-badge)](https://bobfredgard.github.io/MiniFusion/)
+
 ![Support de pédale déportée R1200RT en alu anodisé rouge sur béton, lancer de rayons de l'atelier RENDU (2048 échantillons)](docs/captures/rendu-pedale.jpg)
 
 Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. S'il n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.24.2** (voir le [journal des modifications](CHANGELOG.md)).
@@ -176,6 +178,10 @@ Une image soignée de la pièce ou de l'assemblage, en **1920×1080 ou 4K**, enr
 
 ## Démarrage
 
+**En ligne** : [bobfredgard.github.io/MiniFusion](https://bobfredgard.github.io/MiniFusion/) ouvre la dernière version publiée, noyau OCCT chargé automatiquement (≈ 65 Mo au premier lancement, puis en cache). Le site est republié à chaque tag de version par `.github/workflows/pages.yml`.
+
+**En local** :
+
 ```bat
 Server.bat
 ```
@@ -211,7 +217,7 @@ Le dépôt stocke les gros binaires (`occt/*.wasm`, `Exemples/*.miniFusion`, `Ex
 | `fusion_mvp.html` | **Livrable généré** par `node build.js`. On n'édite jamais son script à la main. |
 | `PostPro/` | Une fiche par machine (`siemens-630.js`, `siemens-1520.js`, `fagor-8065.js`). Nouvelle machine = copier une fiche, la modifier, `npm run build`. |
 | `tests/` | 210 suites Node lancées en parallèle (`node tests/run.cjs`), 81 rapides (`node tests/run-fast.cjs`), non-régression des parcours FAO (`npm run parcours`), tests de référence (`tests/oracle/`, [docs/oracle.md](docs/oracle.md)). |
-| `tests/browser/` | Playwright dans un vrai Chromium : parcours critiques et Rendu (`npm run test:browser`, seul projet lancé par la CI GitHub) et carte graphique réelle (`npm run test:gpu`, en local). |
+| `tests/browser/` | Playwright dans un vrai Chromium : parcours critiques et Rendu (`npm run test:browser`, seul projet lancé par la CI GitHub, déclenchée à la main) et carte graphique réelle (`npm run test:gpu`, en local). |
 | `tools/` | Lint du script concaténé (`npm run lint`), serveur MCP, **captures du README** (`npm run captures`). |
 | `occt/`, `threejs/` | Noyau OpenCascade WebAssembly, rendu three.js. |
 | `docs/` | Captures du README, analyses, tableaux de référence. |

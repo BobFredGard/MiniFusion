@@ -103,7 +103,7 @@ function occCacheLoad(){
   const fail=(where,err)=>{
     occtReady=false;
     const m=String((err&&(err.message||err))||err||'?').slice(0,160);
-    occBaseMsg=`OCCT : échec ${where} (${m}) — repli maillage. Vérifiez http://localhost:3000/occt/opencascade.wasm.wasm (65 Mo attendus).`;
+    occBaseMsg=`OCCT : échec ${where} (${m}) — repli maillage. Vérifiez ${occtFileUrl('occt/opencascade.wasm.wasm')} (65 Mo attendus).`;
     occStatus();
   };
   const withTimeout=(p,ms,what)=>Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error('délai dépassé '+what)),ms))]);

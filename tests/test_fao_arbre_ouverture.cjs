@@ -18,8 +18,10 @@ const vm=require('vm');
       if(n.textContent)txt+=n.textContent;
       if(n.children)for(let k=0;k<n.children.length;k++)txt+=walk(n.children[k]);
       return txt; };
-    const rows=function(){ const t=T(); return t?t.children.length:0; };
-    const row=function(i){ const t=T(); return t&&t.children?t.children[i]:null; };
+    // lignes posage + opérations : les groupes Esquisses / Corps FAO (V0.23.20) sont exclus
+    const lignes=function(){ const t=T(); return t&&t.children?[].slice.call(t.children).filter(function(r){return !/fao-(grp|sub)/.test(r.className||'');}):[]; };
+    const rows=function(){ return lignes().length; };
+    const row=function(i){ return lignes()[i]||null; };
     const last=function(i){ const r=row(i);
       return r&&r.children?r.children[r.children.length-1]:null; };
     const render=function(){ clear(); faoRenderTree(); };

@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**487 versions**, de `2026-09-28b` à `V0.24.2` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**488 versions**, de `2026-09-28b` à `V0.24.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5956,3 +5956,12 @@ Demande : « quand la touche Ctrl est enfoncée, cela me sert à mesurer : inter
 - **Cause** : V0.23.26 sélectionne la fonction créatrice de la face cliquée ; avec Ctrl, le premier clic de mesure (aucune face retenue) repassait par le clic simple, qui sélectionnait donc la fonction (arbre, timeline, panneau, outil rouge). Les plans du repère et la construction se sélectionnaient aussi.
 - **Correctif** (`faceSelect`, `src/90-picking-mesure-import.js`) : Ctrl / Cmd enfoncé, la face est retenue pour la mesure, mais ni fonction, ni plan, ni construction ne sont sélectionnés, et la sélection en cours n'est ni changée ni annulée (clic dans le vide compris).
 - **Tests** : vérifié dans l'application (Ctrl+clic sur deux trous : entraxe mesuré, sélection inchangée) ; `npm run ci`.
+
+## V0.24.3 - Lancement en ligne depuis GitHub, noyau OCCT chargé seul
+Demande : « peut-on créer un bouton pour le lancer depuis GitHub avec le chargement auto du moteur 3D OCCT ? »
+- **Publication** (`.github/workflows/pages.yml`) : à chaque tag `V*` (ou à la main), le site GitHub Pages est assemblé avec checkout LFS : `fusion_mvp.html` en `index.html`, `threejs/`, `Exemples/`, `occt/opencascade.full.js` et `occt/opencascade.wasm.wasm`. Garde-fou : la publication échoue si le .wasm est un pointeur LFS (l'app retomberait en maillage). Servie en https, l'app démarre le noyau exact sans « Noyau .wasm… ».
+- **README** : bouton « ▶ Lancer MiniFusion » vers https://bobfredgard.github.io/MiniFusion/ et section Démarrage « En ligne ».
+- **Message d'échec OCCT** (`src/96-noyau-occt-tiers-lgpl.js`) : l'adresse du .wasm à vérifier est celle réellement demandée, plus `localhost:3000` en dur.
+- **CI GitHub** (`.github/workflows/ci.yml`) : lancement manuel seulement. Les tests tournent sur le PC à chaque livraison (`npm run ci:full`, suites en parallèle sur tous les cœurs) : environ 10 min sur les machines GitHub à 2 cœurs, et un checkout LFS par push sur le quota de 1 Go par mois.
+- **4 suites rouges remises au vert** (déjà rouges sur GitHub avant cette version) : `test_fao`, `test_fao_barre3d` et `test_fao_arbre_ouverture` comptaient toutes les lignes de l'arbre FAO, y compris les groupes Esquisses / Corps ajoutés sous chaque posage en V0.23.20 ; elles ne comptent plus que posages et opérations. `test_mep_hachures_cotes` attendait l'écart « +0.035 » d'un seul texte, alors que V0.24.0 l'aligne sur la virgule en deux textes (« +0 », « .035 »). Aucun code de l'application changé.
+- **Tests** : `npm run ci:full` en local, 212/212.

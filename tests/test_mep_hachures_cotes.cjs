@@ -262,7 +262,7 @@ const A=(c,m)=>{if(!c){ko++;console.log('  ✗ '+m);}else console.log('  ✓ '+m
   console.log('  · ordonnées, suppression d’un point : '+r.ordDel);
   A(r.ordDel==='0,100,50|1|-1|true|false|0,100','ordonnées : le clic désigne la valeur la plus proche, seule elle est supprimée (l’origine reste)');
   console.log('  · ordonnées, tolérance d’un point : '+r.ordTol+' ; perçage : '+r.holeTol);
-  A(r.ordTol==='0,100 H7,+0.035,0,(,)','ordonnées : tolérance H7 sur une seule valeur (écarts entre parenthèses), l’origine reste nue');
+  A(r.ordTol==='0,100 H7,+0,.035,0,(,)','ordonnées : tolérance H7 sur une seule valeur (écarts entre parenthèses, alignés sur la virgule depuis V0.24.0 : « +0 » et « .035 »), l’origine reste nue');
   A(r.holeTol==='Ø8 H7 (+0.015 / 0) ↧12 | M10×1.25 ↧18\nØ8.5 ±0.05 ↧25 | Ø6.6 +0.1 / −0.05 déb. | Ø6.6 déb.','perçage : tolérance après le Ø (classe ISO, ±, double), rien sans tolérance');
   A(r.ordAdd==='0|1','ordonnées : groupe sélectionné + outil Ordonnées → la valeur s’AJOUTE au groupe (pas de nouveau « 0 »)');
   A(r.ordNeg==='0,65','ordonnées : jamais de valeur négative (point du côté opposé : 65, pas −65)');

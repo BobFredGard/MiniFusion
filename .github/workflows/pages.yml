@@ -1,0 +1,50 @@
+# Publication de MiniFusion sur GitHub Pages : https://bobfredgard.github.io/MiniFusion/
+# Le site sert le livrable fusion_mvp.html (en index.html) avec threejs/, le noyau OCCT
+# WebAssembly et les Exemples : en http(s), le noyau exact démarre seul, sans « Noyau .wasm… ».
+# Déclenché à chaque tag de version (V0.x.y) — le site suit donc la dernière version livrée —
+# ou à la main (onglet Actions › Pages › Run workflow). Un seul checkout LFS par version :
+# le quota de bande passante LFS gratuit est de 1 Go par mois.
+
+name: Pages
+
+on:
+  push:
+    tags: ['V*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - name: Assembler le site
+        run: |
+          mkdir -p _site/occt
+          cp fusion_mvp.html _site/index.html
+          cp -r threejs Exemples _site/
+          # seuls ces deux fichiers sont chargés par l'application (opencascade.full.wasm ne sert pas)
+          cp occt/opencascade.full.js occt/opencascade.wasm.wasm _site/occt/
+          # un pointeur LFS (≈ 130 octets) à la place du .wasm ferait retomber l'app en mode maillage
+          test "$(head -c 4 _site/occt/opencascade.wasm.wasm | od -An -c | tr -d ' ')" = '\0asm'
+          touch _site/.nojekyll
+          du -sh _site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

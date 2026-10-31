@@ -1,9 +1,11 @@
 name: CI
 
+# Lancement manuel seulement (onglet Actions › CI › Run workflow) : les tests tournent
+# sur le PC de développement à chaque livraison (npm run ci:full, toutes les suites en
+# parallèle), bien plus vite que sur les machines GitHub à 2 cœurs, et sans consommer
+# le quota de bande passante LFS (1 Go par mois) à chaque push.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   build-test:
