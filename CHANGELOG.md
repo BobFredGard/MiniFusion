@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**484 versions**, de `2026-09-28b` à `V0.23.26` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**485 versions**, de `2026-09-28b` à `V0.24.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5932,3 +5932,15 @@ Demande : un clic sur une face (un trou, par exemple) sélectionne sa fonction d
 - **Clic dans le vide** de la vue 3D : la sélection est annulée (arbre, timeline, panneau).
 - **Arbres** : 🙈 remplacé par un œil barré grisé (`EYE_OFF`, transparent aux clics) — fonctions, corps, repère, instances, construction, assemblage, arbre STEP.
 - **Tests** : Perçages (56 faces attribuées : perçages, répétition, découpes, congé, chanfrein ; clic réel sur un lamage et un taraudage, défilements arbre et timeline vérifiés) ; `tests/fixtures/arbre_reference.json` réécrit (yeux seulement) ; `npm run ci`.
+
+## V0.24.0 - Perçage alésé et tolérances ISO 286 complètes (version mineure)
+Demande : « il manque la fonction Trous Alésé : 1 - fond plat ; 2 - fond plat et trou de perçage non débouchant ; 3 - fond plat et trou de perçage débouchant. La tolérance ISO de l'alésage doit s'écrire automatiquement dans la cotation de perçage (Ø6 H7 (+…/0)). Perçage = Ø alésage − 0,5 ou − 1. En mise en plan, il me faut toutes les tolérances ISO ; pour les perçages alésés aussi, mais uniquement les trous (majuscules). »
+- **Fonction Perçage, type « Alésé »** (`src/76-percage.js`, `kind:'ream'`) : Ø et profondeur de l'alésage à fond plat, classe ISO 286 de l'alésage (écart A … ZC + qualité IT des tables ISO 286-2, écarts affichés), et **Cas** : alésage seul à fond plat / + perçage non débouchant (profondeur, pointe) / + perçage débouchant / alésage débouchant (« Ø6 H7 (+0,012 / 0) déb. »). Ø de perçage = Ø alésage − 0,5 (défaut) ou − 1, ou libre. La flèche de la vue règle la profondeur du perçage (cas 2) ou de l'alésage. La signature de cache du noyau inclut les nouveaux champs.
+- **Mise en plan** : la cotation de perçage d'un alésé écrit l'alésage en premier (« Ø6 ↧10 », puis « Ø5,5 ↧20 / déb. ») et y pose d'office la classe de la fonction, suivie en direct : « Ø6 H7 (+0,012 / 0) ↧10 ». Tolérance « Automatique » dans le panneau ; une tolérance posée ou retirée à la main l'emporte. Cotation de perçage : classes d'alésage seulement.
+- **Tolérances ISO 286 complètes** (`src/05-iso286.js`, partagé 3D / plan) : IT01 … IT18, écarts fondamentaux de toutes les lettres a … zc / A … ZC par plage intermédiaire jusqu'à Ø500, règle du Δ (K, M, N ≤ IT8 ; P … ZC ≤ IT7), cas M6 250-315, J/j tabulés. Le panneau de cote propose Type (alésage / arbre / ajustement), Écart, Qualité, et une saisie libre (« P9 », « H7/k6 »).
+- **Corrigé au passage** : la table IT11 contenait les valeurs IT10 (H11 Ø20 : +0,084 au lieu de +0,130), et les alésages K … S ignoraient le Δ (K7 Ø8 donné −1/−16 au lieu de +5/−10).
+- **Écarts de tolérance** (`mepDimDrawStack`, `src/98-mep-70-cotes.js`) : alignés sur la virgule (« 0 » sous le 0 de « −0.021 »), parenthèses recentrées sur la pile (elles descendaient sous l'écart inférieur), et la cotation de perçage empile ses écarts comme les autres cotes au lieu de les écrire en ligne. Qualités listées sans « IT » répété.
+- **FAO** : l'alésage est reconnu (rôle « alésé H7 » affiché sur le groupe de trous) ; aucun parcours modifié.
+- **Espace PLAN — transition** (`mepSetActive`, `src/98-mep-95-export-init.js`) : en entrant dans PLAN, si une vue de la planche doit être recalculée (pièce modifiée, document ouvert, planche vide à peupler), un écran « Mise à jour du plan… » apparaît en fondu par-dessus la vue 3D, la planche s'ouvre et se calcule dessous, puis l'écran disparaît en fondu sur le plan (affiché au moins 0,45 s ; anneau animé en transform, qui tourne pendant le calcul). Plan déjà à jour : affichage direct, sans animation.
+- **CAO par défaut** : l'application démarre en CAO (l'espace mémorisé n'est plus restauré), et ouvrir une pièce depuis FAO ou PLAN revient en CAO (`deserialise`).
+- **Tests** : `tests/test_percage_alese.cjs` (table ISO contre les tables ISO 286-2, 3 cas au noyau exact relus par la FAO, panneau, cotation automatique) ; `test_percage_3d`, `test_mise_en_plan`, `test_fao_percage`, `test_filet_modele` ; `npm run ci`.

@@ -250,6 +250,13 @@
       return'↧'+fr(eff||N.depth);
     };
     const lines=[];
+    // V0.24.0 : alésé — l'alésage (fond plat) d'abord : la tolérance se pose après ce 1er Ø
+    if(N.kind==='ream'){
+      if(N.pilot==='open')return 'Ø'+fr(N.reamD)+' déb.';
+      lines.push('Ø'+fr(N.reamD)+' ↧'+fr(N.reamH));
+      if(N.pilot!=='none')lines.push('Ø'+fr(N.d)+' '+holeDepth());
+      return lines.join('\n');
+    }
     if(f.thread&&f.thread.size){
       lines.push(holeThreadLabel(f.thread)+' '+threadDepth());
       lines.push('Ø'+fr(N.d)+' '+holeDepth());
@@ -260,6 +267,15 @@
     if(N.kind==='csink')lines.push('Fraisure Ø'+fr(N.csD)+' x '+fr(N.csA)+'°');
     return lines.join('\n');
   }
+  /* V0.24.0 : tolérance AUTOMATIQUE d'une cotation de perçage — celle de l'alésage de la
+     fonction (« Ø6 H7 (+0,012 / 0) »), suivie en direct ; une tolérance posée à la main
+     (ou retirée : d.tolManual) l'emporte. */
+  function mepHoleAutoTol(d){
+    if(!d||d.kind!=='hole'||!d.holeFid||typeof doc==='undefined')return null;
+    const f=(doc.features||[]).find(x=>x.id===d.holeFid);
+    return (f&&f.type==='hole'&&f.kind==='ream'&&f.reamTol)?{m:'cls',cls:String(f.reamTol)}:null;
+  }
+  function mepHoleTol(d){return d.tol||(d.tolManual?null:mepHoleAutoTol(d));}
   function mepHoleAt(sh,vid,e,i){
     if(!e||e.t!=='C')return null;
     const v=mepView(sh,vid);if(!v)return null;
@@ -275,6 +291,7 @@
       const ad=[A.dir.x,A.dir.y,A.dir.z];
       if(Math.abs(mepDot(ad,dir))<0.999)return;
       const rs=[N.d/2];
+      if(N.kind==='ream')rs.push(N.reamD/2);
       if(N.kind==='cbore')rs.push(N.cbD/2);
       if(N.kind==='csink')rs.push(N.csD/2);
       if(f.thread&&f.thread.model&&typeof isoHoleThread==='function'){
@@ -862,7 +879,8 @@
       ?mepDimSymbolParts(d,value,d.kind==='dia'?'Ø':'R')
       :mepDimTextParts(d,value);
     const main=p.sym?p.main+' '+p.sym:p.main;
-    if(d.kind==='hole'&&d.tol&&!d.txt)return mepTolMarks(mepHoleTolText(main,d.tol));
+    const ht=d.kind==='hole'&&!d.txt?mepHoleTol(d):null;
+    if(ht)return mepTolMarks(mepHoleTolText(main,ht));
     if(p.par)return main+' ('+p.up+' / '+p.lo+')'+(p.post?' '+p.post:'');
     return p.up||p.lo?main+' '+p.up+' / '+p.lo:main;
   }
@@ -898,28 +916,44 @@
     }
     if(!up&&!lo)return t;
     const th=MEP_DIM_STYLE.textHeight||7;
-    const sub=mepDimSubH(th),gap=mepDimStackGap();
-    const lh=mepDimTolLineH();
+    const gap=mepDimStackGap();
     const mw=Math.max(7,String(main).length*th*0.62);
     // calé à gauche : la pile suit la largeur MESURÉE du texte (celle du souligné des Ø/R)
     const sx=anchor==='middle'?x+mw/2+gap:(anchor==='end'?x-shiftEnd+gap:x+mepTxtW(t,main,th)+gap);
+    mepDimDrawStack(mk,T,sx,y,up,lo,transform,flip,par,post);
+    return t;
+  }
+  /* pile des écarts (supérieur au-dessus de l'inférieur), entre parenthèses pour une classe ISO,
+     à partir de sx (bord gauche) sur la ligne de base y du texte de cote */
+  function mepDimDrawStack(mk,T,sx,y,up,lo,transform,flip,par,post){
+    const th=MEP_DIM_STYLE.textHeight||7;
+    const sub=mepDimSubH(th);
+    const lh=mepDimTolLineH();
     const st=Object.assign({},T,{x:sx,'text-anchor':'start',
       style:'font-size:'+sub+'px;stroke-width:1'});
     if(transform)st.transform=transform;
     // écarts d'une classe ISO : parenthèses hautes autour de la pile (même place qu'en bilatéral)
     const pw=par?sub*0.55:0;
-    const tw=Math.max(String(up||'').length,String(lo||'').length)*sub*0.54;
-    const tu=mk('text',Object.assign({},st,{x:sx+pw,y:flip?y+lh:y-lh}));
-    tu.textContent=up||'';
-    const tl=mk('text',Object.assign({},st,{x:sx+pw,y:y}));
-    tl.textContent=lo||'';
+    // V0.24.0 : écarts alignés sur la virgule — partie entière (signe compris) calée à droite,
+    // décimales calées à gauche du même point : « 0 » sous le 0 de « −0.021 »
+    const cut=v=>{const s=String(v||''),i=s.search(/[.,]/);return i<0?[s,'']:[s.slice(0,i),s.slice(i)];};
+    const U=cut(up),L=cut(lo),cw=sub*0.58;
+    const iw=Math.max(U[0].length,L[0].length)*cw,xd=sx+pw+iw;
+    const tw=iw+Math.max(U[1].length,L[1].length)*sub*0.54;
+    const row=(P,yy)=>{
+      if(P[0]){const a=mk('text',Object.assign({},st,{x:xd,y:yy,'text-anchor':'end'}));a.textContent=P[0];}
+      if(P[1]){const b=mk('text',Object.assign({},st,{x:xd,y:yy}));b.textContent=P[1];}
+    };
+    row(U,flip?y+lh:y-lh);
+    row(L,y);
     if(par){
-      const ph=sub+lh,py=flip?y+lh*0.5+ph*0.32:y-lh*0.5+ph*0.32;
+      // parenthèses centrées sur la pile : milieu des deux lignes d'écarts (hauteur de capitale
+      // ≈ 0,7 × corps), le centre d'un « ( » est ≈ 0,26 × son corps au-dessus de la ligne de base
+      const ph=sub+lh,py=y+(flip?lh:-lh)*0.5-sub*0.35+ph*0.26;
       const sp=Object.assign({},st,{y:py,style:'font-size:'+ph.toFixed(2)+'px;stroke-width:1'});
       const p0=mk('text',Object.assign({},sp,{x:sx}));p0.textContent='(';
       const p1=mk('text',Object.assign({},sp,{x:sx+pw+tw}));p1.textContent=')'+(post?' '+post:'');
     }
-    return t;
   }
   function mepDimHasStack(d){
     return !d.txt&&d.tol&&(d.tol.m==='dbl'||(d.tol.m==='cls'&&d.tol.cls&&String(d.tol.cls).indexOf('/')<0));
@@ -1000,13 +1034,16 @@
     const nom=parseFloat(m[1].replace(',','.'));if(!(nom>0))return txt;
     const p=mepDimTextParts({kind:'dia',tol},nom);let add='';
     if(tol.m==='pm'&&tol.s>0)add='\u0001'+p.sym+'\u0002';
-    else if(tol.m==='dbl')add='\u0001'+p.up+' / '+p.lo+'\u0002';
-    else if(tol.m==='cls'&&tol.cls)add=tol.cls+(p.par?' (\u0001'+p.up+' / '+p.lo+'\u0002)':'');
+    // V0.24.0 : écarts EMPILÉS comme sur les autres cotes (\u0003 [ « ( » ] sup \u0004 inf)
+    else if(tol.m==='dbl')add='\u0001\u0003'+p.up+'\u0004'+p.lo+'\u0002';
+    else if(tol.m==='cls'&&tol.cls)add=tol.cls+(p.par?' \u0001\u0003('+p.up+'\u0004'+p.lo+'\u0002':'');
     if(!add)return txt;
     const e=m.index+m[0].length;
     return txt.slice(0,e)+' '+add+txt.slice(e);
   }
-  const mepTolMarks=s=>String(s||'').replace(/[\u0001\u0002]/g,'');
+  const MEP_TOL_STACK=/\u0001\u0003(\(?)([^\u0004]*)\u0004([^\u0002]*)\u0002/;
+  // texte seul (panneau, export texte) : pile écrite « (+0.015 / 0) »
+  const mepTolMarks=s=>String(s||'').replace(new RegExp(MEP_TOL_STACK.source,'g'),(m,p,a,b)=>p?'('+a+' / '+b+')':a+' / '+b).replace(/[\u0001\u0002]/g,'');
   function mepHoleCallout(cx,cy,rr,px,py,txt){
     let ux=px-cx,uy=py-cy,ul=Math.hypot(ux,uy);
     if(ul<1e-6){ux=1;uy=0;ul=1;}
@@ -1193,7 +1230,8 @@
           txt=d.txt||((d.holeN>1?d.holeN+'× ':'')+d.holeText);
         }
       }
-      if(d.kind==='hole'&&d.tol&&!d.txt)txt=mepHoleTolText(txt,d.tol);
+      const ht=d.kind==='hole'&&!d.txt?mepHoleTol(d):null;
+      if(ht)txt=mepHoleTolText(txt,ht);
       const e=mepEntByHint(w.v1,d.a.hint);
       let cx=w.a.x,cy=w.a.y,rr=0;
       if(e&&(e.t==='C'||e.t==='A')){
@@ -1204,7 +1242,25 @@
       draw('line',Object.assign({x1:g.tx,y1:g.lineY,x2:g.ex,y2:g.ey,'marker-end':AR},L));
       const t=draw('text',Object.assign({x:g.tx,y:g.y0,'text-anchor':g.anchor},T));
       let twM=0;
+      const th=MEP_DIM_STYLE.textHeight||7,gap=mepDimStackGap();
       g.lines.forEach((s,k)=>{
+        const sm=MEP_TOL_STACK.exec(s);
+        if(sm){
+          // ligne avec écarts empilés : texte avant, pile, texte après — éléments séparés, posés
+          // une fois les largeurs mesurées (calé à droite si le leader part à droite)
+          const yy=g.y0+k*g.lh,bef=s.slice(0,sm.index).replace(/\s+$/,''),aft=s.slice(sm.index+sm[0].length).replace(/^\s+/,'');
+          const par=!!sm[1],up=sm[2],lo=sm[3];
+          const t0=draw('text',Object.assign({x:g.tx,y:yy,'text-anchor':'start'},T));t0.textContent=bef;
+          const w0=mepTxtW(t0,bef,th),ws=mepDimStackW(up,lo,par,'');
+          let t2=null,w2=0;
+          if(aft){t2=draw('text',Object.assign({x:g.tx,y:yy,'text-anchor':'start'},T));t2.textContent=aft;w2=mepTxtW(t2,aft,th);}
+          const tot=w0+gap+ws+(aft?gap+w2:0),x0=g.anchor==='end'?g.tx-tot:g.tx;
+          t0.setAttribute('x',String(x0));
+          mepDimDrawStack(draw,T,x0+w0+gap,yy,up,lo,null,false,par,'');
+          if(t2)t2.setAttribute('x',String(x0+w0+gap+ws+gap));
+          twM=Math.max(twM,tot);
+          return;
+        }
         const ts=document.createElementNS(NS,'tspan');
         ts.setAttribute('x',String(g.tx));ts.setAttribute('y',String(g.y0+k*g.lh));
         if(s.indexOf('\u0001')<0)ts.textContent=s;

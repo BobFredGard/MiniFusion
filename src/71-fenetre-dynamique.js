@@ -137,10 +137,15 @@ function fdynHandle(f){
   // -> {kind:'lin'|'rot', …, val, label, unit, step, min, max, set(v)} ou null
   if(!f||f.visible===false)return null;
   if(f.type==='hole'){
-    if(f.end&&f.end!=='blind')return null;
+    // alésé : la flèche règle le perçage non débouchant, sinon la profondeur de l'alésage
+    if(f.kind==='ream'&&holeReamPilot(f)==='open')return null; // alésage débouchant : pas de profondeur
+    const ream=f.kind==='ream'&&holeReamPilot(f)!=='blind';
+    if(!ream&&f.kind!=='ream'&&f.end&&f.end!=='blind')return null;
     const sk=doc.sketches.find(s=>s.id===f.sketchId);if(!sk)return null;
     const A=holeAxis(f,sk);if(!A.pts.length)return null;
     const P=A.pts[0];
+    if(ream)return {kind:'lin',C:new THREE.Vector3(P.x,P.y,P.z),n:new THREE.Vector3(A.dir.x,A.dir.y,A.dir.z),val:holeNorm(f).reamH,
+      label:'Profondeur alésage',unit:'mm',step:1,min:0.1,max:2000,hk:[f,'reamH'],set:(g,v)=>{g.reamH=v;}};
     return {kind:'lin',C:new THREE.Vector3(P.x,P.y,P.z),n:new THREE.Vector3(A.dir.x,A.dir.y,A.dir.z),val:+f.depth||10,
       label:'Profondeur',unit:'mm',step:1,min:0.5,max:2000,hk:[f,'depth'],set:(g,v)=>{g.depth=v;}};
   }

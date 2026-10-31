@@ -136,6 +136,7 @@ const SUITES = [
   "test_fao_outils",
   "test_fao_percage",
   "test_percage_3d",
+  "test_percage_alese",
   "test_fao_taraudage",
   "test_esquisse_regles",
   "test_parametres",

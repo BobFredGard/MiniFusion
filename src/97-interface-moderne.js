@@ -32,7 +32,8 @@ function mfUiMode(m){
   try{document.body.classList.toggle('ui-modern',m==='moderne');}catch(e){}
   if(m!=='moderne')try{document.body.removeAttribute('data-ws');}catch(e){}
   mfLS('minifusion_ui',m);
-  if(m==='moderne'){try{mfBuildModern();mfWs(mfLS('minifusion_ws')||'cao');}catch(e){}}
+  // V0.24.0 : l'application démarre en CAO (l'espace courant est gardé si l'interface est reconstruite)
+  if(m==='moderne'){try{mfBuildModern();mfWs(mfWsCur||'cao');}catch(e){}}
   try{mfSkLayout();}catch(e){}
   try{if(typeof onResize==='function')onResize();else window.dispatchEvent(new Event('resize'));}catch(e){}
 }
@@ -485,7 +486,7 @@ function mfWs(w){
   if(w!=='fao'){try{if(typeof faoVw!=='undefined'&&faoVw&&typeof faoViewerClose==='function')faoViewerClose();}catch(e){}}
   if(w==='fao'){try{const t=document.getElementById('faoToggle');const tw=document.getElementById('faoTreeWrap');if(tw&&tw.classList.contains('folded')&&t)t.click();}catch(e){}}
   // espace PLAN (98-mep-*.js) : overlay sur la vue 3D
-  try{if(typeof mepSetActive==='function')mepSetActive(w==='plan');}catch(e){}
+  try{if(typeof mepSetActive==='function')mepSetActive(w==='plan',{anim:true});}catch(e){}
   if(changed&&w!=='plan')mfSpaceRestore(w,mfWsSel[w]);
   mfWsCur=w;
   try{mfPosTabs();}catch(e){}

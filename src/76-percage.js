@@ -13,6 +13,14 @@
           0 = fond plat), flip (sens), op:'cut'}
      Taraudé : d = Ø de perçage du taraud (M − pas) ; filet cosmétique (dessin seul)
      ou modélisé (profil ISO creusé dans le corps, V0.21.16) — l'info voyage jusqu'à la FAO.
+   • V0.24.0 — kind:'ream' (Alésé) : alésage Ø reamD à FOND PLAT sur reamH, classe ISO 286
+     reamTol (alésage, majuscule : « H7 »), et perçage pilot :
+       'none'    → alésage seul (cas 1) ;
+       'open'    → alésage débouchant, sans perçage ;
+       'blind'   → + perçage Ø d non débouchant, plein Ø à depth, pointe tip (cas 2) ;
+       'through' → + perçage Ø d débouchant (cas 3).
+     Ø de perçage = reamD − reamOff (0,5 ou 1 mm ; null = Ø d saisi librement).
+     La tolérance s'écrit d'office dans la cotation de perçage de la mise en plan.
    • Géométrie exacte : par point, un outil de révolution (lamage/fraisure + corps +
      pointe) le long de −n (ou +n si inversé), unis puis découpés du corps.
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -112,14 +120,35 @@ function holeName(f){
   const sk=doc.sketches.find(function(s){return s.id===f.sketchId;});
   const n=holePoints(sk).length;
   const fr=function(v){return String(+(+v).toFixed(2)).replace('.',',');};
+  if(f.kind==='ream'){
+    const N=holeNorm(f);
+    return 'Alésé Ø'+fr(N.reamD)+' '+(f.reamTol||'H7')+(N.pilot==='none'?' fond plat':N.pilot==='open'?' débouchant':(' + Ø'+fr(N.d)+(N.pilot==='through'?' débouchant':'')))+' ×'+n;
+  }
   let t=f.thread&&f.thread.size?('Taraudé '+holeThreadLabel(f.thread)):('Ø'+fr(f.d));
   if(f.kind==='cbore')t+=' lamé Ø'+fr(f.cbD);
   if(f.kind==='csink')t+=' fraisé Ø'+fr(f.csD);
   const fin=f.end==='through'?' débouchant tout':(f.end==='next'?' débouchant':(f.end==='upto'?' jusqu’à la face':''));
   return 'Perçage '+t+fin+' ×'+n;
 }
+function holeReamPilot(f){return (f.pilot==='blind'||f.pilot==='through'||f.pilot==='open')?f.pilot:'none';}
+// Ø de perçage d'un alésé : Ø alésage − 0,5 / − 1, ou saisi (toujours plus petit que l'alésage)
+function holeReamDrill(f){
+  const D=Math.max(0.2,+f.reamD||6),off=+f.reamOff;
+  const d=(off>0)?D-off:(+f.d||D-0.5);
+  return +Math.min(D-0.05,Math.max(0.2,d)).toFixed(3);
+}
 function holeNorm(f){
   // Valeurs bornées (jamais de géométrie dégénérée)
+  if(f.kind==='ream'){
+    // alésage = premier étage à fond plat (comme un lamage) ; sans perçage, c'est le trou lui-même
+    const D=Math.max(0.2,+f.reamD||6),H=Math.max(0.1,+f.reamH||D*1.5),pil=holeReamPilot(f);
+    const R={kind:'ream',reamD:D,reamH:H,pilot:pil,cbD:D,cbH:H,csD:D+0.2,csA:90};
+    if(pil==='none')return Object.assign(R,{d:D,r:D/2,end:'blind',through:false,depth:H,tip:0});
+    if(pil==='open')return Object.assign(R,{d:D,r:D/2,end:'through',through:true,depth:H,tip:0}); // alésage débouchant
+    const d=holeReamDrill(f);
+    return Object.assign(R,{d:d,r:d/2,end:pil==='through'?'through':'blind',through:pil==='through',
+      depth:Math.max(H+0.1,+f.depth||H+2*D),tip:(f.tip===0||f.tip==='0')?0:Math.min(170,Math.max(60,+f.tip||118))});
+  }
   const d=Math.max(0.2,+f.d||6.6);
   return {d:d,r:d/2,
     kind:f.kind==='cbore'||f.kind==='csink'?f.kind:'simple',
@@ -139,7 +168,7 @@ const HOLE_THROUGH=2000; // « débouchant » : la course traverse toute pièce 
 function holeProfileSegs(N,zEndPt){
   // Segments le long de l'axe (distance depuis le plan, rayons début/fin) pour un trou.
   const s=[];let z=0;
-  if(N.kind==='cbore'){s.push([z,N.cbH,N.cbD/2,N.cbD/2]);z=N.cbH;}
+  if(N.kind==='cbore'||(N.kind==='ream'&&(N.pilot==='blind'||N.pilot==='through'))){s.push([z,N.cbH,N.cbD/2,N.cbD/2]);z=N.cbH;}
   else if(N.kind==='csink'){const h=(N.csD-N.d)/2/Math.tan(N.csA*Math.PI/360);s.push([z,h,N.csD/2,N.r]);z=h;}
   const zEnd=Math.max(isFinite(zEndPt)?zEndPt:(N.through?(N.thruLen||HOLE_THROUGH):N.depth),z+0.05);
   s.push([z,zEnd-z,N.r,N.r]);
@@ -244,7 +273,7 @@ function occShapeOfHole(f){
   if(!sk)throw new Error('esquisse introuvable');
   const A=holeAxis(f,sk);
   if(!A.pts.length)throw new Error('aucun centre de perçage dans l’esquisse (outil ⊕)');
-  const N0=holeNorm(f),thModel=(f.thread&&f.thread.model&&f.thread.size)?isoHoleThread(f.thread.size,f.thread.p,f.thread.clear):null;
+  const N0=holeNorm(f),thModel=(f.kind!=='ream'&&f.thread&&f.thread.model&&f.thread.size)?isoHoleThread(f.thread.size,f.thread.p,f.thread.clear):null;
   // filet modélisé : le corps ne doit jamais être plus étroit que la crête du filet
   const N=thModel?Object.assign({},N0,{r:Math.max(N0.r,thModel.rCrete)}):N0;
   // Débouchant : course limitée à la PIÈCE déjà construite (+1 mm) — sinon l'outil
@@ -279,7 +308,7 @@ function occShapeOfHole(f){
   };
   // longueur filetée effective (information FAO ; le filet n'est pas modélisé)
   try{
-    if(f.thread&&f.thread.size&&A.pts.length){
+    if(f.kind!=='ream'&&f.thread&&f.thread.size&&A.pts.length){
       const m=f.thread.lenMode||'len',P0=A.pts[0];
       let L=+f.thread.len||0;
       if(m==='upto'){const t=holePlaneDist(f.thread.uptoPlane,P0,A.dir);if(t!==null)L=t;else warnings.push('longueur filetée « jusqu’à la face » : face non choisie');}
@@ -507,9 +536,25 @@ function renderHoleProps(p,f){
   pNote(nP+' centre(s) dans « '+(sk?sk.name:'?')+' »'+(nP?'':' — ajoutez-en avec l\'outil ⊕ de l\'esquisse'));
   /* type */
   // V0.8.0 : type en icônes (fenêtre dynamique)
-  const segT=extSeg([['simple','⊚','Simple','Trou cylindrique'],['cbore','⊡','Lamage','Lamage pour tête de vis'],['csink','⊽','Fraisure','Fraisure conique']],f.kind||'simple',
-    function(v){docPushUndo('perçage');f.kind=v;go();});
+  const segT=extSeg([['simple','⊚','Simple','Trou cylindrique'],['cbore','⊡','Lamage','Lamage pour tête de vis'],['csink','⊽','Fraisure','Fraisure conique'],
+    ['ream','⌀','Alésé','Trou alésé à fond plat, tolérance ISO (H7…)']],f.kind||'simple',
+    function(v){docPushUndo('perçage');
+      if(v==='ream'&&f.kind!=='ream'){
+        // valeurs de départ : l'alésage reprend le Ø et la profondeur du trou
+        f.thread=null;
+        if(!(+f.reamD>0))f.reamD=Math.max(1,Math.round(+f.d||6));
+        if(!(+f.reamH>0))f.reamH=Math.max(1,Math.min(+f.depth||15,f.reamD*1.5));
+        if(!f.reamTol)f.reamTol='H7';
+        if(f.reamOff===undefined)f.reamOff=0.5;
+        if(!f.pilot)f.pilot='none';
+        if(f.reamOff>0)f.d=holeReamDrill(f);
+      }
+      f.kind=v;go();});
   pRow('Type',segT);
+  if(f.kind==='ream'){renderHoleReamProps(f,pRow,pNote,sel,num,go);
+    pRow('Sens',sel([['0','Vers la matière (auto)'],['1','Inversé']],f.flip?'1':'0',function(v){f.flip=(v==='1');}));
+    pBtns([['🔧 Éditer l\'esquisse (centres)',function(){if(sk)openSketch(sk.id);}]]);
+    return;}
   /* taraudage */
   const thOpts=[['','Aucun (trou lisse)'],{g:'Métrique ISO'}];
   ISO_THREADS.forEach(function(t){for(let k=2;k<t.length;k++)thOpts.push([t[0]+'|'+t[k],threadOptLabel(t,k)]);});
@@ -570,6 +615,34 @@ function renderHoleProps(p,f){
   }
   pRow('Sens',sel([['0','Vers la matière (auto)'],['1','Inversé']],f.flip?'1':'0',function(v){f.flip=(v==='1');}));
   pBtns([['🔧 Éditer l\'esquisse (centres)',function(){if(sk)openSketch(sk.id);}]]);
+}
+/* ----- trou alésé (V0.24.0) : cas, Ø et tolérance ISO de l'alésage, perçage ----- */
+function renderHoleReamProps(f,pRow,pNote,sel,num,go){
+  const fr=function(v){return String(+(+v).toFixed(3)).replace('.',',');};
+  const N=holeNorm(f);
+  pRow('Cas',sel([['none','Alésage fond plat seul'],['blind','+ perçage non débouchant'],['through','+ perçage débouchant'],['open','Alésage débouchant']],N.pilot,function(v){
+    f.pilot=v;
+    if(v==='blind'&&!(+f.depth>holeNorm(f).reamH))f.depth=+(holeNorm(f).reamH+2*holeNorm(f).reamD).toFixed(2);
+    if((v==='blind'||v==='through')&&f.reamOff>0)f.d=holeReamDrill(f);}));
+  pRow('Ø alésage',num(N.reamD,function(v){f.reamD=v;if(f.reamOff>0)f.d=holeReamDrill(f);},0,f,'reamD'));
+  // tolérance : alésages seulement (majuscules A … ZC), qualités des tables ISO 286-2
+  const P=iso286Parse(f.reamTol||'H7')||{L:'H',g:'7',hole:true};
+  pRow('Tolérance (écart)',sel(ISO286_HOLE_LETTERS.map(function(L){return [L,L];}),P.L,function(L){
+    const gs=iso286Grades(L);f.reamTol=L+(gs.indexOf(P.g)>=0?P.g:(gs.indexOf('7')>=0?'7':gs[Math.floor(gs.length/2)]));}));
+  pRow('Qualité (IT)',sel(iso286Grades(P.L).map(function(g){return [g,g];}),P.g,function(g){f.reamTol=P.L+g;}));
+  const r=iso286Range(f.reamTol||'H7',N.reamD);
+  pNote(r?('Ø'+fr(N.reamD)+' '+iso286Label(f.reamTol||'H7',N.reamD)+' : '+fr(N.reamD+r.lo)+' … '+fr(N.reamD+r.hi)+' mm — écrit d’office dans la cotation de perçage (mise en plan).')
+    :('Classe '+(f.reamTol||'H7')+' non définie pour Ø'+fr(N.reamD)+' (ISO 286 : Ø ≤ 500 mm, certaines lettres seulement au-delà de 10 / 24 mm).'));
+  if(N.pilot==='open'){pNote('Alésage débouchant : traverse toute la pièce.');return;}
+  pRow('Profondeur alésage',num(N.reamH,function(v){f.reamH=v;},0,f,'reamH'));
+  if(N.pilot==='none'){pNote('Fond plat. L’avant-trou d’usinage n’est pas modélisé.');return;}
+  pRow('Ø perçage',sel([['0.5','Ø alésage − 0,5 ('+fr(N.reamD-0.5)+')'],['1','Ø alésage − 1 ('+fr(N.reamD-1)+')'],['','Libre']],f.reamOff>0?String(+f.reamOff):'',function(v){
+    f.reamOff=v?+v:null;if(f.reamOff>0)f.d=holeReamDrill(f);else f.d=N.d;}));
+  if(!(f.reamOff>0))pRow('Ø du perçage',num(N.d,function(v){f.d=v;},0,f,'d'));
+  if(N.pilot==='blind'){
+    pRow('Prof. perçage (plein Ø)',num(N.depth,function(v){f.depth=v;},0,f,'depth'));
+    pRow('Fond du perçage',sel([['118','Pointe 118°'],['135','Pointe 135°'],['140','Pointe 140°'],['90','Pointe 90°'],['0','Fond plat']],String(f.tip===0?0:(f.tip||118)),function(v){f.tip=+v;}));
+  }
 }
 /* ----- image du taraudage (filet cosmétique) — 2026-10-15-012 -----
    « Peut-on voir une image de taraudage sur les trous taraudés ? » : hélice au pas

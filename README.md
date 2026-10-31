@@ -4,7 +4,7 @@
 
 ![Support de pédale déportée R1200RT en alu anodisé rouge sur béton, lancer de rayons de l'atelier RENDU (2048 échantillons)](docs/captures/rendu-pedale.jpg)
 
-Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. S'il n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.23.25** (voir le [journal des modifications](CHANGELOG.md)).
+Le noyau géométrique exact est **OpenCascade compilé en WebAssembly**. S'il n'est pas disponible, l'application bascule seule sur un moteur maillage (CSG). Version actuelle : **V0.24.0** (voir le [journal des modifications](CHANGELOG.md)).
 
 | | |
 |---|---|
@@ -60,7 +60,7 @@ Plans (décalé, à un angle, 3 points, médian, normal), axes, points et **rep�
 Historique rejouable, timeline à icônes (vert = ajout, rouge = enlèvement), marqueur de temps glissable, réordonnancement par glisser-déposer. Une fonction ne s'appuie que sur ce qui la précède (**règle d'antériorité**).
 - **Extrusion** et **révolution** dynamiques : distance, jusqu'à une face, à travers tout, symétrique, dépouille, nouveau corps.
 - **Balayage** d'un profil le long d'une ligne, d'un arc ou d'une **spline**.
-- **Perçage** simple, lamé, fraisé ou **taraudé**, débouchant ou borgne. Le filet ISO 68-1 est **réellement creusé dans le corps**, après l'avant-trou ; il est calculé en tâche de fond.
+- **Perçage** simple, lamé, fraisé, **alésé** (fond plat avec ou sans perçage, ou débouchant ; classe ISO 286 : H7…) ou **taraudé**, débouchant ou borgne. Le filet ISO 68-1 est **réellement creusé dans le corps**, après l'avant-trou ; il est calculé en tâche de fond.
 - **Congés et chanfreins exacts** sur la chaîne tangente ou l'arête seule (un clic ajoute ou retire une arête), avec reprise NURBS quand le noyau refuse la chaîne. Chanfrein à **distance égale, deux distances ou distance + angle**, première face inversable.
 - **Répétition** linéaire, en grille, circulaire, symétrie.
 - **Modifier** : déplacer ou supprimer une face, **dépouille** (angle signé, sens inversable), coque, **scinder** par un plan, **déplacer un corps** (translation, rotation, point à point), **combiner** (union, soustraction, intersection).
@@ -140,8 +140,8 @@ Comme dans Fusion 360, **tout est composant** : le fichier est le composant raci
 
 ### Cotation et sorties
 
-- **Cote** unique (longueur, distance, Ø, rayon, angle), **tolérances ISO 286**, cotes associatives qui suivent la pièce.
-- **Perçages** cotés depuis la fonction Perçage (« Perçages auto » cote toute la planche), **ordonnées X / Y**, notes à flèche.
+- **Cote** unique (longueur, distance, Ø, rayon, angle), **tolérances ISO 286** (toutes les classes, alésages A … ZC et arbres a … zc, IT01 … IT18, ajustements), cotes associatives qui suivent la pièce.
+- **Perçages** cotés depuis la fonction Perçage (« Perçages auto » cote toute la planche ; la tolérance d'un alésé s'y écrit d'office), **ordonnées X / Y**, notes à flèche.
 - **Hauteur du texte** des cotes, avec flèches et tolérances proportionnelles ; épaisseur des lignes d'attache et des axes de trous ; **Sauvegarder par défaut** / **Appliquer les défauts**.
 - **Dessin 2D** sur la planche avec contraintes.
 - **Sorties** : SVG, **DXF R12** par calques, **PDF** au format exact, impression (dans une fenêtre dédiée), en couleur ou tout en noir.

@@ -162,19 +162,18 @@
     iso:{dir:[0.62,-0.62,0.48],u:null,v:null,lab:'ISO'}
   };
   /* ═══════════════ tolérances ISO 2768-mK + ISO 286 (µm) ═══════════════ */
-  const MEP_STEPS=[3,6,10,18,30,50,80,120,180,250,315,400,500];
-  const MEP_IT={6:[6,8,9,11,13,16,19,22,25,29,32,36,40],7:[10,12,15,18,21,25,30,35,40,46,52,57,63],
-    8:[14,18,22,27,33,39,46,54,63,72,81,89,97],9:[25,30,36,43,52,62,74,87,100,115,130,140,155],
-    11:[40,48,58,70,84,100,120,140,160,185,210,230,250]};
-  /* déviations EI/ES des arbrets (ei, µm, négatif ou positif) par lettre */
-  const MEP_DEV={g:[2,4,5,6,7,9,10,12,14,15,16,18,20],k:[0,1,1,1,2,2,2,3,3,4,4,4,5],
-    m:[2,4,6,7,8,9,11,13,15,17,20,21,23],n:[4,8,10,12,15,17,20,23,27,31,33,36,40],
-    p:[6,12,15,18,22,26,32,37,43,50,56,62,68],r:[10,19,23,28,34,41,48,58,68,79,88,98,108],
-    s:[14,24,28,33,41,48,59,71,87,102,117,132,151]};
-  const MEP_TOL_CLASSES=['','H7','H8','H9','H11','JS9','JS11','h6','h7','h8','g6','k6','m6','n6','p6','s6',
-    'H7/g6','H7/h6','H7/js6','H7/k6','H7/n6','H7/p6','H7/s6','H8/h7','H9/h9','H11/h11'];
-  function mepStepIdx(d){for(let i=0;i<MEP_STEPS.length;i++)if(d<=MEP_STEPS[i])return i;return MEP_STEPS.length-1;}
-  function mepIt(grade,d){const a=MEP_IT[grade];return a?a[mepStepIdx(d)]:0;}
+  // V0.24.0 : table ISO 286 complète (A … ZC, a … zc, IT01 … IT18) partagée — src/05-iso286.js.
+  // Liste courte du sélecteur : ajustements usuels (toutes les classes restent saisissables).
+  const MEP_TOL_FITS=['H7/g6','H7/h6','H7/js6','H7/k6','H7/m6','H7/n6','H7/p6','H7/r6','H7/s6','H8/f7','H8/h7','H8/e8',
+    'H9/d9','H9/h9','H11/c11','H11/h11','G7/h6','F8/h7','K7/h6','N7/h6','P7/h6'];
+  // classe simple (H7) ou ajustement (H7/g6) valide ? → nom normalisé, sinon ''
+  function mepTolClsNorm(cls){
+    const s=String(cls||'').replace(/\s+/g,'');
+    const q=s.split('/');
+    if(q.length===1)return iso286Parse(q[0])?q[0]:'';
+    if(q.length===2){const a=iso286Parse(q[0]),b=iso286Parse(q[1]);return (a&&b&&a.hole&&!b.hole)?q[0]+'/'+q[1]:'';}
+    return '';
+  }
   /* plage de tolérance pour une classe et un Ø nominal → {lo,hi} en mm (écart sur la cote) */
   function mepTolRange(cls,nom){
     if(!cls||!nom||nom<=0)return null;
@@ -186,20 +185,7 @@
       if(!hole||!shaft)return null;
       return{lo:hole.lo,hi:hole.hi,fit:{hole,shaft,holeCls:parts[0],shaftCls:parts[1]}};
     }
-    const m=/^([A-Za-z]+)(\d+)$/.exec(cls);if(!m)return null;
-    const L=m[1],g=+m[2],d=Math.abs(nom),i=mepStepIdx(d),IT=mepIt(g,d);
-    if(L==='H')return{lo:0,hi:IT/1000};
-    if(L==='h')return{lo:-IT/1000,hi:0};
-    if(L==='JS'||L==='js')return{lo:-IT/2000,hi:IT/2000};
-    const dev=MEP_DEV[L.toLowerCase()];
-    if(!dev)return null;
-    const dv=dev[i]/1000;
-    // g/G : la déviation fondamentale est une MAGNITUDE : arbre g → es = −dv,
-    // alésage G → EI = +dv (miroir). Les autres lettres k…s gardent ei = +dv.
-    if(L==='g')return{lo:-dv-IT/1000,hi:-dv};
-    if(L==='G')return{lo:dv,hi:dv+IT/1000};
-    if(L===L.toLowerCase())return{lo:dv,hi:dv+IT/1000}; // minuscule = arbre, ei > 0
-    return{lo:-dv-IT/1000,hi:-dv}; // majuscule K…S = alésage, ES = −ei de l'arbre
+    return iso286Range(cls,nom);
   }
   function mepFmtNum(v,dp){
     if(!isFinite(v))return '—';

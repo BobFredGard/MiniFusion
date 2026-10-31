@@ -309,25 +309,88 @@
       mepRender();
     }catch(e){try{console.warn('mepAutoViews',e);}catch(e2){}}
   }
-  function mepSetActive(on){
+  /* V0.24.0 : « quand une mise à jour du plan est nécessaire, une petite animation de transition
+     le temps que le plan se mette à jour, fondus d'ouverture et de fermeture ; sinon le plan
+     apparaît sans animation ». Mise à jour = une vue de la planche dont la projection n'est plus
+     en cache (pièce modifiée, document ouvert…) ou une planche vide qui recevra ses vues. */
+  function mepSheetStale(){
+    const sh=mepSheet(),ver=(typeof _docVersion!=='undefined')?_docVersion:0;
+    if(!sh.views.length)return typeof bodies!=='undefined'&&bodies.some(b=>b&&!b.ghost&&b.kind!=='ghost'&&b.mesh&&b.mesh.visible!==false);
+    return sh.views.some(v=>{const c=mepGeoCache.get(v.id);try{return !c||c.ver!==ver||c.sig!==mepViewSig(v);}catch(e){return true;}});
+  }
+  let mepBusyEl=null,mepBusyTok=0;
+  function mepBusyShow(){
+    if(!document.getElementById('mepBusyCss')){
+      const s=document.createElement('style');s.id='mepBusyCss';
+      // rotation et pulsation en transform / opacity : elles tournent même pendant le calcul
+      s.textContent='#mepBusy{position:absolute;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;'+
+        'background:var(--bg);color:var(--text);opacity:0;transition:opacity .18s ease;pointer-events:none}'+
+        '#mepBusy.on{opacity:1;pointer-events:auto}#mepBusy.out{opacity:0;transition:opacity .28s ease}'+
+        '#mepBusy .mbIc{position:relative;width:74px;height:74px}'+
+        '#mepBusy .mbRing{position:absolute;inset:0;border-radius:50%;border:3px solid color-mix(in srgb,var(--accent,#0a84ff) 22%,transparent);border-top-color:var(--accent,#0a84ff);animation:mbSpin .9s linear infinite}'+
+        '#mepBusy svg{position:absolute;left:19px;top:17px;width:36px;height:40px;animation:mbPulse 1.2s ease-in-out infinite}'+
+        '#mepBusy .mbTx{font-size:13px;letter-spacing:.02em;opacity:.85}'+
+        '@keyframes mbSpin{to{transform:rotate(360deg)}}@keyframes mbPulse{50%{transform:scale(.9);opacity:.6}}';
+      document.head.appendChild(s);
+    }
+    if(!mepBusyEl){
+      mepBusyEl=document.createElement('div');mepBusyEl.id='mepBusy';
+      mepBusyEl.innerHTML='<div class="mbIc"><div class="mbRing"></div><svg viewBox="0 0 36 40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+
+        '<path d="M3 2h22l8 8v28H3z"/><path d="M25 2v8h8"/><path d="M8 30h20M8 30v-12M14 24h8M18 20v8"/></svg></div><div class="mbTx">Mise à jour du plan…</div>';
+    }
+    // posé à côté de la planche (même zone), au-dessus : il couvre d'abord la vue 3D
+    const host=mepWrapEl.parentNode||mepWrapEl;
+    if(mepBusyEl.parentNode!==host)host.appendChild(mepBusyEl);
+    mepBusyEl.classList.remove('out');
+    void mepBusyEl.offsetWidth; // départ du fondu depuis 0
+    mepBusyEl.classList.add('on');
+  }
+  function mepBusyHide(){
+    if(!mepBusyEl)return;
+    mepBusyEl.classList.add('out');mepBusyEl.classList.remove('on');
+    const tok=mepBusyTok;
+    setTimeout(()=>{if(tok===mepBusyTok&&mepBusyEl&&mepBusyEl.parentNode&&!mepBusyEl.classList.contains('on'))mepBusyEl.remove();},320);
+  }
+  function mepSetActive(on,opt){
     if(on)mepEnsure();
     if(on){
       const was=mepSt.open; // les boutons du ruban repassent par ici : le zoom en cours est gardé
+      // entrée dans l'espace (onglet PLAN) avec un plan à recalculer : animation de transition
+      const anim=!was&&!!(opt&&opt.anim)&&mepSheetStale();
       mepBuildUI();
       mepSt.open=true;
-      mepWrapEl.classList.add('open');
+      // animation : la planche ne s'ouvre qu'une fois la vue 3D couverte par le fondu
+      if(!anim)mepWrapEl.classList.add('open');
       mepTabsRender();
       mepSideShow();
-      if(!was)mepFitSheet();
+      if(!was&&!anim)mepFitSheet();
       try{if(typeof mfSyncPropsHost==='function')mfSyncPropsHost();}catch(e){}
-      try{mepRender();}catch(e){console.warn(e);}
-      mepStatus('Espace PLAN — planches, vues, cotes. '+mepSheet().name);
       // masque les commandes CAO/FAO du ruban via data-ws
       try{document.body.setAttribute('data-ws','plan');}catch(e){}
-      // vues standards auto si planche vide et corps présents
-      mepAutoViews();
+      const fill=()=>{
+        try{mepRender();}catch(e){console.warn(e);}
+        mepStatus('Espace PLAN — planches, vues, cotes. '+mepSheet().name);
+        // vues standards auto si planche vide et corps présents
+        mepAutoViews();
+      };
+      if(!anim){fill();return;}
+      // fondu d'ouverture SUR LA VUE 3D, puis planche ouverte et calculée sous l'écran couvert,
+      // puis fondu de fermeture sur le plan ; affichage tenu au moins ~0,45 s
+      const tok=++mepBusyTok,t0=Date.now();
+      mepBusyShow();mepStatus('Mise à jour du plan…');
+      setTimeout(()=>{
+        if(tok!==mepBusyTok)return;
+        if(mepSt.open){
+          const fresh=!mepWrapEl.classList.contains('open'); // déjà ouverte par un autre appel : zoom gardé
+          mepWrapEl.classList.add('open');
+          if(fresh)mepFitSheet();
+          fill();
+        }
+        setTimeout(()=>{if(tok===mepBusyTok)mepBusyHide();},Math.max(0,450-(Date.now()-t0)));
+      },200);
     }else{
       mepSt.open=false;
+      if(mepBusyEl){mepBusyTok++;mepBusyEl.remove();}
       mepPrintClose();
       // La sélection PLAN est conservée : au retour dans l'espace, la vue/cote
       // active et son panneau réapparaissent tels quels.
@@ -432,7 +495,7 @@
       axisMode:()=>mepSt.axisMode,
       axisPick:()=>Array.isArray(mepSt.axisPick)?mepSt.axisPick.slice():[],
       setAxisMode:m=>{mepSetAxisMode(m);},
-      holeText:mepHoleFeatureText,
+      holeText:mepHoleFeatureText,holeTol:d=>mepHoleTol(d),
       holeCallout:mepHoleCallout,
       fmt:mepFmtNum,
       geo:view=>mepGeoOf(view),geoClear:()=>mepGeoCache.clear(),locCurve:p=>mepLocCurve(p),clipSegPoly:(a,b,c,d,P,k)=>mepClipSegPoly(a,b,c,d,P,k),dxfView:(txt,name)=>{const r=mepDxfParse(txt);const v=mepAddView({kind:'dxf',vk:'',label:'',dxf:mepDxfData(r,name||'t',1),mode:'wire'});v._dims=mepDxfDims(mepSheet(),v,r);return v;},dimMeasure:d=>mepDimMeasure(mepSheet(),d),ptRefresh:(v,q,pr)=>mepPtRefresh(mepSheet(),v,q,pr),dimPts:d=>mepDimPtsRefresh(mepSheet(),d),ordClick:(P,ax)=>mepOrdClick(mepSheet(),P,ax),ordEnd:()=>{mepSt.ord=null;},ordPick:(d,i)=>{mepSt.selDim=d?d.id:null;mepSt.ordPt=d?{id:d.id,i}:null;},selDim:id=>{mepSt.selDim=id;},holeTolText:(t,tol)=>mepTolMarks(mepHoleTolText(t,tol)),dimText:d=>mepDimText(d,mepDimMeasure(mepSheet(),d)),ordPtAt:(d,P)=>mepOrdPtAt(mepSheet(),d,P),ordDelPt:(d,i)=>mepOrdDelPt(mepSheet(),d,i),ordValue:(d,p)=>mepOrdValue(d,p),drawDim:(mk,d)=>mepDrawDim(mk,d,mepSheet()),dimPressDbl:(P,ev)=>mepDimPressDbl(mepSheet(),P,ev||{}),dimAlignTo:(ref,ids)=>mepDimAlignTo(mepSheet(),ref,ids),perspCam:v=>mepPerspCam(v),threadEls:v=>mepThreadEls(v),oblShear:(sh,v)=>mepOblShear(sh,v),

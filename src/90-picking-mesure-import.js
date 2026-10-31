@@ -2272,6 +2272,8 @@ async function deserialise(json,opts){
   // F5) — sans ce rendu, l'arbre FAO gardait celui du document precedent (posage sans
   // aucune operation, alors que sa fleche reste ▼ : « le posage est la, pas ses ops »).
   try{ if(typeof faoRefreshFaoUI==='function')faoRefreshFaoUI(); }catch(e){}
+  // V0.24.0 : une pièce ouverte s'affiche en CAO (pas dans l'espace FAO / PLAN laissé ouvert)
+  try{if(typeof mfWsCur!=='undefined'&&mfWsCur&&mfWsCur!=='cao'&&typeof mfWs==='function')mfWs('cao');}catch(e){}
   try{if(typeof viewFadeIn==='function')viewFadeIn();}catch(e){}
   try{asmAfterLoad();}catch(e){} // assemblage : instantanés, vue rétablie (47)
   try{await pImp;}catch(e){}

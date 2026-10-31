@@ -210,9 +210,13 @@ function faoHolesDetect(shapes){
           // filet modélisé : le noyau est percé au Ø mineur + jeu, pas au Ø de taraud
           let de=+f.d;
           if(f.thread&&f.thread.model){const th=(typeof isoHoleThread==='function')?isoHoleThread(f.thread.size,f.thread.p,f.thread.clear):null;if(th)de=Math.max(+f.d,th.D1+2*th.c);}
-          if(Math.abs(h.d-de)>0.02&&!(f.kind==='cbore'&&Math.abs(h.d-(+f.cbD))<0.02))return;
-          h.feat={id:f.id,name:f.name,kind:f.kind||'simple',thread:(f.thread&&f.thread.size)?{size:f.thread.size,p:+f.thread.p,len:+f._thLen||+f.thread.len||0}:null,
-            role:(f.kind==='cbore'&&Math.abs(h.d-(+f.cbD))<0.02)?'lamage':'trou'};
+          // alésé (V0.24.0) : l'alésage Ø reamD (tolérance ISO) et son perçage Ø d
+          const Nr=f.kind==='ream'?holeNorm(f):null,isReam=!!Nr&&Math.abs(h.d-Nr.reamD)<0.02;
+          if(Nr)de=Nr.d;
+          if(Math.abs(h.d-de)>0.02&&!(f.kind==='cbore'&&Math.abs(h.d-(+f.cbD))<0.02)&&!isReam)return;
+          h.feat={id:f.id,name:f.name,kind:f.kind||'simple',thread:(!Nr&&f.thread&&f.thread.size)?{size:f.thread.size,p:+f.thread.p,len:+f._thLen||+f.thread.len||0}:null,
+            role:(f.kind==='cbore'&&Math.abs(h.d-(+f.cbD))<0.02)?'lamage':(isReam?'alesage':'trou')};
+          if(isReam)h.feat.tol=f.reamTol||'H7';
         });
       });
     });
@@ -610,6 +614,8 @@ function faoDrillSections(setup,op,d){
         t.textContent='taraudé '+holeThreadLabel(fe.feat.thread)+' (fonction Perçage)';r.appendChild(t);
       }else if(fe&&fe.feat.role==='lamage'){
         const t=document.createElement('span');t.className='fao-meta';t.textContent='lamage (fonction Perçage)';r.appendChild(t);
+      }else if(fe&&fe.feat.role==='alesage'){
+        const t=document.createElement('span');t.className='fao-meta';t.style.color='#ff9f0a';t.textContent='alésé '+fe.feat.tol+' (fonction Perçage)';r.appendChild(t);
       }else if(!fe){
         const key=g.d.toFixed(2)+'@'+g.z.toFixed(2);
         const info=(setup.holeInfo&&setup.holeInfo[key])||{};

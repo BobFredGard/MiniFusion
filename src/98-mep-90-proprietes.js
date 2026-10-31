@@ -728,16 +728,19 @@
   /* éditeur de tolérance d'un objet porteur de .tol (cote, point d'ordonnée) — row(lab, el) */
   function mepTolEditor(row,d){
     const sel=document.createElement('select');
-    [['','—'],['pm','± symétrique'],['dbl','Double'],['cls','Classe ISO 286']].forEach(([k,l])=>{
+    // cotation de perçage d'un alésé : tolérance automatique de la fonction (V0.24.0)
+    const auto=d.kind==='hole'?mepHoleAutoTol(d):null,isAuto=!!auto&&!d.tol&&!d.tolManual;
+    (auto?[['auto','Automatique ('+auto.cls+')']]:[]).concat([['','—'],['pm','± symétrique'],['dbl','Double'],['cls','Classe ISO 286']]).forEach(([k,l])=>{
       const o=document.createElement('option');o.value=k;o.textContent=l;
-      if((d.tol&&d.tol.m)===k||(k===''&&!d.tol))o.selected=true;
+      if(isAuto?k==='auto':((d.tol&&d.tol.m)===k||(k===''&&!d.tol)))o.selected=true;
       sel.appendChild(o);
     });
     sel.onchange=()=>{
       mepEdit('tolérance',()=>{
         const m=sel.value;
-        if(!m){d.tol=null;return;}
-        d.tol={m,s:0.1,hi:0.1,lo:-0.1,cls:''};
+        if(d.kind==='hole'){if(m==='auto')delete d.tolManual;else d.tolManual=true;}
+        if(!m||m==='auto'){d.tol=null;return;}
+        d.tol={m,s:0.1,hi:0.1,lo:-0.1,cls:m==='cls'?((auto&&auto.cls)||'H7'):''};
       });
       mepSideShow();
     };
@@ -754,16 +757,46 @@
       lo.onchange=()=>{mepEdit('−',()=>{d.tol.lo=+lo.value||0;});};
       row('+',hi);row('−',lo);
     }
-    if(d.tol&&d.tol.m==='cls'){
-      const c=document.createElement('select');
-      MEP_TOL_CLASSES.forEach(cl=>{
-        const o=document.createElement('option');o.value=cl;o.textContent=cl||'—';
-        if(d.tol.cls===cl)o.selected=true;
-        c.appendChild(o);
-      });
-      c.onchange=()=>{mepEdit('classe',()=>{d.tol.cls=c.value;});};
-      row('Classe',c);
+    if(d.tol&&d.tol.m==='cls')mepTolClsEditor(row,d);
+  }
+  /* V0.24.0 : toutes les classes ISO 286 — alésages A … ZC, arbres a … zc (IT01 … IT18
+     selon les tables ISO 286-2) et ajustements ; saisie libre de n'importe quelle classe.
+     Cotation de perçage : alésages seulement (majuscules). */
+  function mepTolClsEditor(row,d){
+    const holeOnly=d.kind==='hole';
+    const cur=String(d.tol.cls||'');
+    const P0=cur.indexOf('/')<0?iso286Parse(cur):null;
+    const fam=holeOnly?'hole':(cur.indexOf('/')>=0?'fit':(P0&&!P0.hole?'shaft':'hole'));
+    const set=(v,lab)=>{mepEdit(lab||'classe',()=>{d.tol.cls=v;});mepSideShow();};
+    const mkSel=(opts,val,fn)=>{
+      const s=document.createElement('select');
+      opts.forEach(([k,l])=>{const o=document.createElement('option');o.value=k;o.textContent=l;s.appendChild(o);});
+      s.value=val;s.onchange=()=>fn(s.value);return s;
+    };
+    if(!holeOnly)row('Type',mkSel([['hole','Alésage (A … ZC)'],['shaft','Arbre (a … zc)'],['fit','Ajustement']],fam,
+      v=>set(v==='fit'?'H7/g6':(v==='shaft'?'h7':'H7'),'type de classe')));
+    if(fam==='fit'){
+      const fits=MEP_TOL_FITS.indexOf(cur)<0&&cur?[cur].concat(MEP_TOL_FITS):MEP_TOL_FITS;
+      row('Ajustement',mkSel(fits.map(x=>[x,x]),cur,v=>set(v,'ajustement')));
+    }else{
+      const P=P0||{L:fam==='shaft'?'h':'H',g:'7'};
+      const letters=fam==='shaft'?ISO286_SHAFT_LETTERS:ISO286_HOLE_LETTERS;
+      row('Écart',mkSel(letters.map(L=>[L,L]),P.L,L=>{
+        const gs=iso286Grades(L);set(L+(gs.indexOf(P.g)>=0?P.g:(gs.indexOf('7')>=0?'7':gs[Math.floor(gs.length/2)])),'écart');}));
+      const gs=iso286Grades(P.L);
+      row('Qualité (IT)',mkSel(gs.map(g=>[g,g]),gs.indexOf(P.g)>=0?P.g:gs[0],g=>set(P.L+g,'qualité')));
     }
+    // saisie directe : « P9 », « H7/k6 »…
+    const inp=document.createElement('input');inp.type='text';inp.value=cur;inp.placeholder=holeOnly?'ex. H7':'ex. H7 ou H7/g6';
+    inp.onchange=()=>{
+      const v=mepTolClsNorm(inp.value),p=v&&v.indexOf('/')<0?iso286Parse(v):null;
+      if(!v||(holeOnly&&!(p&&p.hole))){
+        mepStatus('Classe ISO 286 inconnue : « '+inp.value+' »'+(holeOnly?' (perçage : alésage, majuscules A … ZC)':'')+'.');
+        inp.value=cur;return;
+      }
+      set(v,'classe');
+    };
+    row('Saisie',inp);
   }
   function mepSideDim(root,d,sh){
     const h=document.createElement('h4');

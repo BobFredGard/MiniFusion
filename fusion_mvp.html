@@ -336,7 +336,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.23.26';
+const APP_VER='V0.24.0';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 try{var mfSv=document.getElementById('mfSplashVer');if(mfSv)mfSv.textContent=APP_VER;}catch(e){} // écran de démarrage
 
@@ -670,6 +670,149 @@ const PLANES={
 let originVis={XY:true,XZ:true,YZ:true};
 let originMeshes={};
 function setOriginVis(p,v){originVis[p]=v!==false;try{autosave();}catch(e){}renderTree();} // + sauvegarde : survit au Ctrl+F5
+
+/* ═══════════════ 05-iso286.js — iso286 ═══════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   ISO 286 — tolérances des alésages (A … ZC) et des arbres (a … zc) — V0.24.0
+   Demande : « en mise en plan, il me faut toutes les tolérances existantes de l'ISO ;
+   pour les perçages alésés pareil, mais uniquement pour les trous (grandes lettres) ».
+   • ISO 286-1 : qualités IT01 … IT18, écarts fondamentaux de toutes les lettres,
+     règle de Δ pour K, M, N (≤ IT8) et P … ZC (≤ IT7), cas particulier M6 250-315.
+   • Plages de Ø jusqu'à 500 mm (au-delà : pas de tolérance, plutôt qu'une valeur fausse).
+   • Qualités proposées par lettre : celles des tables ISO 286-2.
+   Partagé par la fonction 3D Perçage (76) et la mise en plan (98-mep). Valeurs en µm.
+   ═══════════════════════════════════════════════════════════════════════════ */
+// plages principales (qualités IT) et intermédiaires (écarts fondamentaux), bornes hautes incluses
+const ISO286_MAIN=[3,6,10,18,30,50,80,120,180,250,315,400,500];
+const ISO286_SUB=[3,6,10,14,18,24,30,40,50,65,80,100,120,140,160,180,200,225,250,280,315,355,400,450,500];
+const ISO286_IT={
+  '01':[0.3,0.4,0.4,0.5,0.6,0.6,0.8,1,1.2,2,2.5,3,4],
+  '0':[0.5,0.6,0.6,0.8,1,1,1.2,1.5,2,3,4,5,6],
+  1:[0.8,1,1,1.2,1.5,1.5,2,2.5,3.5,4.5,6,7,8],
+  2:[1.2,1.5,1.5,2,2.5,2.5,3,4,5,7,8,9,10],
+  3:[2,2.5,2.5,3,4,4,5,6,8,10,12,13,15],
+  4:[3,4,4,5,6,7,8,10,12,14,16,18,20],
+  5:[4,5,6,8,9,11,13,15,18,20,23,25,27],
+  6:[6,8,9,11,13,16,19,22,25,29,32,36,40],
+  7:[10,12,15,18,21,25,30,35,40,46,52,57,63],
+  8:[14,18,22,27,33,39,46,54,63,72,81,89,97],
+  9:[25,30,36,43,52,62,74,87,100,115,130,140,155],
+  10:[40,48,58,70,84,100,120,140,160,185,210,230,250],
+  11:[60,75,90,110,130,160,190,220,250,290,320,360,400],
+  12:[100,120,150,180,210,250,300,350,400,460,520,570,630],
+  13:[140,180,220,270,330,390,460,540,630,720,810,890,970],
+  14:[250,300,360,430,520,620,740,870,1000,1150,1300,1400,1550],
+  15:[400,480,580,700,840,1000,1200,1400,1600,1850,2100,2300,2500],
+  16:[600,750,900,1100,1300,1600,1900,2200,2500,2900,3200,3600,4000],
+  17:[1000,1200,1500,1800,2100,2500,3000,3500,4000,4600,5200,5700,6300],
+  18:[1400,1800,2200,2700,3300,3900,4600,5400,6300,7200,8100,8900,9700]};
+// écarts fondamentaux des ARBRES par plage intermédiaire (25 plages) :
+// a … g → es (négatif) ; k … zc → ei (positif) ; null = lettre non définie dans la plage
+const ISO286_SHAFT=(function(){
+  const N=null,r=function(a){return a;},e13=function(a){ // 13 plages principales → 25
+    const o=[];ISO286_SUB.forEach(function(b){o.push(a[ISO286_MAIN.findIndex(function(m){return b<=m;})]);});return o;};
+  return {
+    a:r([-270,-270,-280,-290,-290,-300,-300,-310,-320,-340,-360,-380,-410,-460,-520,-580,-660,-740,-820,-920,-1050,-1200,-1350,-1500,-1650]),
+    b:r([-140,-140,-150,-150,-150,-160,-160,-170,-180,-190,-200,-220,-240,-260,-280,-310,-340,-380,-420,-480,-540,-600,-680,-760,-840]),
+    c:r([-60,-70,-80,-95,-95,-110,-110,-120,-130,-140,-150,-170,-180,-200,-210,-230,-240,-260,-280,-300,-330,-360,-400,-440,-480]),
+    cd:[-34,-46,-56].concat(Array(22).fill(N)),
+    d:e13([-20,-30,-40,-50,-65,-80,-100,-120,-145,-170,-190,-210,-230]),
+    e:e13([-14,-20,-25,-32,-40,-50,-60,-72,-85,-100,-110,-125,-135]),
+    ef:[-10,-14,-18].concat(Array(22).fill(N)),
+    f:e13([-6,-10,-13,-16,-20,-25,-30,-36,-43,-50,-56,-62,-68]),
+    fg:[-4,-6,-8].concat(Array(22).fill(N)),
+    g:e13([-2,-4,-5,-6,-7,-9,-10,-12,-14,-15,-17,-18,-20]),
+    h:Array(25).fill(0),
+    k:e13([0,1,1,1,2,2,2,3,3,4,4,4,5]), // IT4 … IT7 ; 0 au-delà (et ≤ IT3)
+    m:e13([2,4,6,7,8,9,11,13,15,17,20,21,23]),
+    n:e13([4,8,10,12,15,17,20,23,27,31,34,37,40]),
+    p:e13([6,12,15,18,22,26,32,37,43,50,56,62,68]),
+    r:r([10,15,19,23,23,28,28,34,34,41,43,51,54,63,65,68,77,80,84,94,98,108,114,126,132]),
+    s:r([14,19,23,28,28,35,35,43,43,53,59,71,79,92,100,108,122,130,140,158,170,190,208,232,252]),
+    t:r([N,N,N,N,N,N,41,48,54,66,75,91,104,122,134,146,166,180,196,218,240,268,294,330,360]),
+    u:r([18,23,28,33,33,41,48,60,70,87,102,124,144,170,190,210,236,258,284,315,350,390,435,490,540]),
+    v:r([N,N,N,N,39,47,55,68,81,102,120,146,172,202,228,252,284,310,340,385,425,475,530,595,660]),
+    x:r([20,28,34,40,45,54,64,80,97,122,146,178,210,248,280,310,350,385,425,475,525,590,660,740,820]),
+    y:r([N,N,N,N,N,63,75,94,114,144,174,214,254,300,340,380,425,470,520,580,650,730,820,920,1000]),
+    z:r([26,35,42,50,60,73,88,112,136,172,210,258,310,365,415,465,520,575,640,710,790,900,1000,1100,1250]),
+    za:r([32,42,52,64,77,98,118,148,180,226,274,335,400,470,535,600,670,740,820,920,1000,1150,1300,1450,1600]),
+    zb:r([40,50,67,90,108,136,160,200,242,300,360,445,525,620,700,780,880,960,1050,1200,1300,1500,1650,1850,2100]),
+    zc:r([60,80,97,130,150,188,218,274,325,405,480,585,690,800,900,1000,1150,1250,1350,1550,1700,1900,2100,2400,2600])};
+})();
+// j (arbre, ei) et J (alésage, ES) : valeurs tabulées par qualité (13 plages principales)
+const ISO286_J={j5:[-2,-2,-2,-3,-4,-5,-7,-9,-11,-13,-16,-18,-20],j6:[-2,-2,-2,-3,-4,-5,-7,-9,-11,-13,-16,-18,-20],
+  j7:[-4,-4,-5,-6,-8,-10,-12,-15,-18,-21,-26,-28,-32],
+  J6:[2,5,5,6,8,10,13,16,18,22,25,29,33],J7:[4,6,8,10,12,14,18,22,26,30,36,39,43],J8:[6,10,12,15,20,24,28,34,41,47,55,60,66]};
+// Δ = IT(n) − IT(n−1) des alésages K … ZC (qualités 3 à 8)
+const ISO286_DELTA={3:[0,1,1,1,1.5,1.5,2,2,3,3,4,4,5],4:[0,1.5,1.5,2,2,3,3,4,4,4,4,5,5],5:[0,1,2,3,3,4,5,5,6,6,7,7,7],
+  6:[0,3,3,3,4,5,6,7,7,9,9,11,13],7:[0,4,6,7,8,9,11,13,15,17,20,21,23],8:[0,6,7,9,12,14,16,19,23,26,29,32,34]};
+// qualités ISO 286-2 proposées par lettre (minuscule = arbre) ; H/h, JS/js : IT01 … IT18
+const ISO286_GRADES=(function(){
+  const rg=function(a,b){const o=[];for(let i=a;i<=b;i++)o.push(String(i));return o;};
+  const all=['01','0'].concat(rg(1,18));
+  return {A:rg(9,13),B:rg(8,13),C:rg(8,13),CD:rg(6,10),D:rg(6,13),E:rg(5,10),EF:rg(3,10),F:rg(3,10),FG:rg(3,10),G:rg(3,10),
+    H:all,JS:all,J:rg(6,8),K:rg(3,10),M:rg(3,10),N:rg(3,11),P:rg(3,10),R:rg(3,10),S:rg(3,10),T:rg(5,8),U:rg(5,10),V:rg(5,8),
+    X:rg(5,10),Y:rg(6,10),Z:rg(6,11),ZA:rg(6,11),ZB:rg(7,11),ZC:rg(7,11),
+    a:rg(9,13),b:rg(8,13),c:rg(8,13),cd:rg(5,10),d:rg(5,13),e:rg(5,10),ef:rg(3,10),f:rg(3,10),fg:rg(3,10),g:rg(3,10),
+    h:all,js:all,j:rg(5,7),k:rg(3,13),m:rg(3,9),n:rg(3,9),p:rg(3,10),r:rg(3,10),s:rg(3,10),t:rg(5,8),u:rg(5,9),v:rg(5,8),
+    x:rg(5,10),y:rg(6,10),z:rg(6,11),za:rg(6,11),zb:rg(7,11),zc:rg(7,11)};
+})();
+const ISO286_HOLE_LETTERS=['A','B','C','CD','D','E','EF','F','FG','G','H','JS','J','K','M','N','P','R','S','T','U','V','X','Y','Z','ZA','ZB','ZC'];
+const ISO286_SHAFT_LETTERS=ISO286_HOLE_LETTERS.map(function(L){return L.toLowerCase();});
+const ISO286_UPPER=['a','b','c','cd','d','e','ef','f','fg','g'];
+function iso286Idx(bounds,d){for(let i=0;i<bounds.length;i++)if(d<=bounds[i]+1e-9)return i;return -1;}
+function iso286IT(g,d){const a=ISO286_IT[g];const i=iso286Idx(ISO286_MAIN,d);return (a&&i>=0)?a[i]:null;}
+function iso286Parse(cls){
+  const m=/^([A-Za-z]{1,2})(01|0|[1-9]|1[0-8])$/.exec(String(cls||'').trim());
+  if(!m)return null;
+  const L=m[1],up=L.toUpperCase();
+  if(L!==up&&L!==L.toLowerCase())return null; // « Js » : casse mêlée refusée
+  if(ISO286_HOLE_LETTERS.indexOf(up)<0)return null;
+  return {L:L,g:m[2],hole:L===up};
+}
+// écarts {lo,hi} en µm d'une classe pour un Ø nominal (0 < Ø ≤ 500), ou null
+function iso286DevUm(cls,nom){
+  const P=iso286Parse(cls);const d=Math.abs(+nom);
+  if(!P||!(d>0)||d>500)return null;
+  const IT=iso286IT(P.g,d);if(IT==null)return null;
+  const im=iso286Idx(ISO286_MAIN,d),is=iso286Idx(ISO286_SUB,d),gN=+P.g,l=P.L.toLowerCase();
+  if(l==='h')return P.hole?{lo:0,hi:IT}:{lo:-IT,hi:0};
+  if(l==='js')return {lo:-IT/2,hi:IT/2};
+  if(l==='j'){
+    const t=ISO286_J[P.L+P.g];if(!t)return null;
+    return P.hole?{lo:t[im]-IT,hi:t[im]}:{lo:t[im],hi:t[im]+IT};
+  }
+  const sv=ISO286_SHAFT[l]?ISO286_SHAFT[l][is]:null;if(sv==null)return null;
+  let ei=sv;
+  if(l==='k')ei=(gN>=4&&gN<=7)?sv:0;
+  const upper=ISO286_UPPER.indexOf(l)>=0; // a … g : écart supérieur es (A … G : EI = −es)
+  if(!P.hole){
+    if(upper)return {lo:sv-IT,hi:sv};
+    return {lo:ei,hi:ei+IT};
+  }
+  if(upper)return {lo:-sv,hi:-sv+IT};
+  const D=(gN>=3&&gN<=8)?ISO286_DELTA[gN][im]:0;
+  let ES;
+  if(l==='k')ES=(d<=3)?0:(gN<=8?-ISO286_SHAFT.k[is]+D:0);
+  else if(l==='m'){ES=(d<=3)?-2:(gN<=8?-sv+D:-sv);if(gN===6&&d>250&&d<=315)ES=-9;}
+  else if(l==='n')ES=(d<=3)?-4:(gN<=8?-sv+D:0);
+  else ES=-sv+(gN<=7?D:0); // P … ZC
+  return {lo:ES-IT,hi:ES};
+}
+// même chose en mm : {lo,hi}
+function iso286Range(cls,nom){const r=iso286DevUm(cls,nom);return r?{lo:+(r.lo/1000).toFixed(4),hi:+(r.hi/1000).toFixed(4)}:null;}
+function iso286Grades(L){return (ISO286_GRADES[L]||[]).slice();}
+// toutes les classes d'un type (alésage : majuscules ; arbre : minuscules), dans l'ordre des tables
+function iso286Classes(hole){
+  const o=[];(hole?ISO286_HOLE_LETTERS:ISO286_SHAFT_LETTERS).forEach(function(L){iso286Grades(L).forEach(function(g){o.push(L+g);});});
+  return o;
+}
+// « H7 (+0,012 / 0) » : écarts en mm, virgule française
+function iso286Label(cls,nom){
+  const r=iso286Range(cls,nom);if(!r)return String(cls||'');
+  const f=function(v){if(Math.abs(v)<1e-9)return '0';return (v>0?'+':'−')+String(+Math.abs(v).toFixed(4)).replace('.',',');};
+  return cls+' ('+f(r.hi)+' / '+f(r.lo)+')';
+}
 
 /* ═══════════════ 10-scene-3d.js — scene 3d ═══════════════ */
 /* ---------- scène façon viewer ---------- */
@@ -6068,7 +6211,7 @@ function featSig(f){
   if(f.type==='hole'){
     // Perçage : esquisse (centres) + tous les paramètres qui façonnent l'outil de découpe.
     const skH=doc.sketches.find(x=>x.id===f.sketchId);
-    s+='|'+f.sketchId+'|'+(skH?skSig(skH):'?')+'|'+JSON.stringify([f.kind,f.d,f.thread||null,f.cbD,f.cbH,f.csD,f.csA,f.end,f.depth,f.tip,!!f.flip,f.uptoPlane||null]);
+    s+='|'+f.sketchId+'|'+(skH?skSig(skH):'?')+'|'+JSON.stringify([f.kind,f.d,f.thread||null,f.cbD,f.cbH,f.csD,f.csA,f.end,f.depth,f.tip,!!f.flip,f.uptoPlane||null].concat(f.kind==='ream'?[f.reamD,f.reamH,f.pilot,f.reamOff]:[]));
     if(skH)(skH.entities||[]).forEach(e=>{if(e&&e.t==='cpoint'&&e.hole){const Q=skH.points[e.p];if(Q)s+=';h'+Q.x.toFixed(4)+','+Q.y.toFixed(4);}});
   }
   if(f.type==='sweep'){
@@ -7714,6 +7857,7 @@ function repCanFeatureHint(f){
   if(f.type==='extrude')return((f.op||'add')==='cut'?'Découpe':'Plot')+' · '+(+f.distance||0).toFixed(2)+' mm';
   if(f.type==='revolve')return revolveName(f);
   if(f.type==='sweep')return sweepName(f);
+  if(f.type==='hole'&&f.kind==='ream')return 'Perçage alésé · Ø'+holeNorm(f).reamD+' '+(f.reamTol||'H7');
   if(f.type==='hole')return 'Perçage · Ø'+(+f.d||0)+(f.thread&&f.thread.size?' · taraudé '+f.thread.size:'')+(f.kind&&f.kind!=='simple'?' · '+f.kind:'');
   if(f.type==='xfillet')return xLabel(xKindOf(f))+' · '+(f.edges||[]).length+' arête(s)'+xChamLabel(f);
   if(f.type==='xmove')return 'Déplacement de face · '+(+f.dist||0)+' mm';
@@ -24173,10 +24317,15 @@ function fdynHandle(f){
   // -> {kind:'lin'|'rot', …, val, label, unit, step, min, max, set(v)} ou null
   if(!f||f.visible===false)return null;
   if(f.type==='hole'){
-    if(f.end&&f.end!=='blind')return null;
+    // alésé : la flèche règle le perçage non débouchant, sinon la profondeur de l'alésage
+    if(f.kind==='ream'&&holeReamPilot(f)==='open')return null; // alésage débouchant : pas de profondeur
+    const ream=f.kind==='ream'&&holeReamPilot(f)!=='blind';
+    if(!ream&&f.kind!=='ream'&&f.end&&f.end!=='blind')return null;
     const sk=doc.sketches.find(s=>s.id===f.sketchId);if(!sk)return null;
     const A=holeAxis(f,sk);if(!A.pts.length)return null;
     const P=A.pts[0];
+    if(ream)return {kind:'lin',C:new THREE.Vector3(P.x,P.y,P.z),n:new THREE.Vector3(A.dir.x,A.dir.y,A.dir.z),val:holeNorm(f).reamH,
+      label:'Profondeur alésage',unit:'mm',step:1,min:0.1,max:2000,hk:[f,'reamH'],set:(g,v)=>{g.reamH=v;}};
     return {kind:'lin',C:new THREE.Vector3(P.x,P.y,P.z),n:new THREE.Vector3(A.dir.x,A.dir.y,A.dir.z),val:+f.depth||10,
       label:'Profondeur',unit:'mm',step:1,min:0.5,max:2000,hk:[f,'depth'],set:(g,v)=>{g.depth=v;}};
   }
@@ -25222,6 +25371,14 @@ function askRevokePanel(f){
           0 = fond plat), flip (sens), op:'cut'}
      Taraudé : d = Ø de perçage du taraud (M − pas) ; filet cosmétique (dessin seul)
      ou modélisé (profil ISO creusé dans le corps, V0.21.16) — l'info voyage jusqu'à la FAO.
+   • V0.24.0 — kind:'ream' (Alésé) : alésage Ø reamD à FOND PLAT sur reamH, classe ISO 286
+     reamTol (alésage, majuscule : « H7 »), et perçage pilot :
+       'none'    → alésage seul (cas 1) ;
+       'open'    → alésage débouchant, sans perçage ;
+       'blind'   → + perçage Ø d non débouchant, plein Ø à depth, pointe tip (cas 2) ;
+       'through' → + perçage Ø d débouchant (cas 3).
+     Ø de perçage = reamD − reamOff (0,5 ou 1 mm ; null = Ø d saisi librement).
+     La tolérance s'écrit d'office dans la cotation de perçage de la mise en plan.
    • Géométrie exacte : par point, un outil de révolution (lamage/fraisure + corps +
      pointe) le long de −n (ou +n si inversé), unis puis découpés du corps.
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -25321,14 +25478,35 @@ function holeName(f){
   const sk=doc.sketches.find(function(s){return s.id===f.sketchId;});
   const n=holePoints(sk).length;
   const fr=function(v){return String(+(+v).toFixed(2)).replace('.',',');};
+  if(f.kind==='ream'){
+    const N=holeNorm(f);
+    return 'Alésé Ø'+fr(N.reamD)+' '+(f.reamTol||'H7')+(N.pilot==='none'?' fond plat':N.pilot==='open'?' débouchant':(' + Ø'+fr(N.d)+(N.pilot==='through'?' débouchant':'')))+' ×'+n;
+  }
   let t=f.thread&&f.thread.size?('Taraudé '+holeThreadLabel(f.thread)):('Ø'+fr(f.d));
   if(f.kind==='cbore')t+=' lamé Ø'+fr(f.cbD);
   if(f.kind==='csink')t+=' fraisé Ø'+fr(f.csD);
   const fin=f.end==='through'?' débouchant tout':(f.end==='next'?' débouchant':(f.end==='upto'?' jusqu’à la face':''));
   return 'Perçage '+t+fin+' ×'+n;
 }
+function holeReamPilot(f){return (f.pilot==='blind'||f.pilot==='through'||f.pilot==='open')?f.pilot:'none';}
+// Ø de perçage d'un alésé : Ø alésage − 0,5 / − 1, ou saisi (toujours plus petit que l'alésage)
+function holeReamDrill(f){
+  const D=Math.max(0.2,+f.reamD||6),off=+f.reamOff;
+  const d=(off>0)?D-off:(+f.d||D-0.5);
+  return +Math.min(D-0.05,Math.max(0.2,d)).toFixed(3);
+}
 function holeNorm(f){
   // Valeurs bornées (jamais de géométrie dégénérée)
+  if(f.kind==='ream'){
+    // alésage = premier étage à fond plat (comme un lamage) ; sans perçage, c'est le trou lui-même
+    const D=Math.max(0.2,+f.reamD||6),H=Math.max(0.1,+f.reamH||D*1.5),pil=holeReamPilot(f);
+    const R={kind:'ream',reamD:D,reamH:H,pilot:pil,cbD:D,cbH:H,csD:D+0.2,csA:90};
+    if(pil==='none')return Object.assign(R,{d:D,r:D/2,end:'blind',through:false,depth:H,tip:0});
+    if(pil==='open')return Object.assign(R,{d:D,r:D/2,end:'through',through:true,depth:H,tip:0}); // alésage débouchant
+    const d=holeReamDrill(f);
+    return Object.assign(R,{d:d,r:d/2,end:pil==='through'?'through':'blind',through:pil==='through',
+      depth:Math.max(H+0.1,+f.depth||H+2*D),tip:(f.tip===0||f.tip==='0')?0:Math.min(170,Math.max(60,+f.tip||118))});
+  }
   const d=Math.max(0.2,+f.d||6.6);
   return {d:d,r:d/2,
     kind:f.kind==='cbore'||f.kind==='csink'?f.kind:'simple',
@@ -25348,7 +25526,7 @@ const HOLE_THROUGH=2000; // « débouchant » : la course traverse toute pièce 
 function holeProfileSegs(N,zEndPt){
   // Segments le long de l'axe (distance depuis le plan, rayons début/fin) pour un trou.
   const s=[];let z=0;
-  if(N.kind==='cbore'){s.push([z,N.cbH,N.cbD/2,N.cbD/2]);z=N.cbH;}
+  if(N.kind==='cbore'||(N.kind==='ream'&&(N.pilot==='blind'||N.pilot==='through'))){s.push([z,N.cbH,N.cbD/2,N.cbD/2]);z=N.cbH;}
   else if(N.kind==='csink'){const h=(N.csD-N.d)/2/Math.tan(N.csA*Math.PI/360);s.push([z,h,N.csD/2,N.r]);z=h;}
   const zEnd=Math.max(isFinite(zEndPt)?zEndPt:(N.through?(N.thruLen||HOLE_THROUGH):N.depth),z+0.05);
   s.push([z,zEnd-z,N.r,N.r]);
@@ -25453,7 +25631,7 @@ function occShapeOfHole(f){
   if(!sk)throw new Error('esquisse introuvable');
   const A=holeAxis(f,sk);
   if(!A.pts.length)throw new Error('aucun centre de perçage dans l’esquisse (outil ⊕)');
-  const N0=holeNorm(f),thModel=(f.thread&&f.thread.model&&f.thread.size)?isoHoleThread(f.thread.size,f.thread.p,f.thread.clear):null;
+  const N0=holeNorm(f),thModel=(f.kind!=='ream'&&f.thread&&f.thread.model&&f.thread.size)?isoHoleThread(f.thread.size,f.thread.p,f.thread.clear):null;
   // filet modélisé : le corps ne doit jamais être plus étroit que la crête du filet
   const N=thModel?Object.assign({},N0,{r:Math.max(N0.r,thModel.rCrete)}):N0;
   // Débouchant : course limitée à la PIÈCE déjà construite (+1 mm) — sinon l'outil
@@ -25488,7 +25666,7 @@ function occShapeOfHole(f){
   };
   // longueur filetée effective (information FAO ; le filet n'est pas modélisé)
   try{
-    if(f.thread&&f.thread.size&&A.pts.length){
+    if(f.kind!=='ream'&&f.thread&&f.thread.size&&A.pts.length){
       const m=f.thread.lenMode||'len',P0=A.pts[0];
       let L=+f.thread.len||0;
       if(m==='upto'){const t=holePlaneDist(f.thread.uptoPlane,P0,A.dir);if(t!==null)L=t;else warnings.push('longueur filetée « jusqu’à la face » : face non choisie');}
@@ -25716,9 +25894,25 @@ function renderHoleProps(p,f){
   pNote(nP+' centre(s) dans « '+(sk?sk.name:'?')+' »'+(nP?'':' — ajoutez-en avec l\'outil ⊕ de l\'esquisse'));
   /* type */
   // V0.8.0 : type en icônes (fenêtre dynamique)
-  const segT=extSeg([['simple','⊚','Simple','Trou cylindrique'],['cbore','⊡','Lamage','Lamage pour tête de vis'],['csink','⊽','Fraisure','Fraisure conique']],f.kind||'simple',
-    function(v){docPushUndo('perçage');f.kind=v;go();});
+  const segT=extSeg([['simple','⊚','Simple','Trou cylindrique'],['cbore','⊡','Lamage','Lamage pour tête de vis'],['csink','⊽','Fraisure','Fraisure conique'],
+    ['ream','⌀','Alésé','Trou alésé à fond plat, tolérance ISO (H7…)']],f.kind||'simple',
+    function(v){docPushUndo('perçage');
+      if(v==='ream'&&f.kind!=='ream'){
+        // valeurs de départ : l'alésage reprend le Ø et la profondeur du trou
+        f.thread=null;
+        if(!(+f.reamD>0))f.reamD=Math.max(1,Math.round(+f.d||6));
+        if(!(+f.reamH>0))f.reamH=Math.max(1,Math.min(+f.depth||15,f.reamD*1.5));
+        if(!f.reamTol)f.reamTol='H7';
+        if(f.reamOff===undefined)f.reamOff=0.5;
+        if(!f.pilot)f.pilot='none';
+        if(f.reamOff>0)f.d=holeReamDrill(f);
+      }
+      f.kind=v;go();});
   pRow('Type',segT);
+  if(f.kind==='ream'){renderHoleReamProps(f,pRow,pNote,sel,num,go);
+    pRow('Sens',sel([['0','Vers la matière (auto)'],['1','Inversé']],f.flip?'1':'0',function(v){f.flip=(v==='1');}));
+    pBtns([['🔧 Éditer l\'esquisse (centres)',function(){if(sk)openSketch(sk.id);}]]);
+    return;}
   /* taraudage */
   const thOpts=[['','Aucun (trou lisse)'],{g:'Métrique ISO'}];
   ISO_THREADS.forEach(function(t){for(let k=2;k<t.length;k++)thOpts.push([t[0]+'|'+t[k],threadOptLabel(t,k)]);});
@@ -25779,6 +25973,34 @@ function renderHoleProps(p,f){
   }
   pRow('Sens',sel([['0','Vers la matière (auto)'],['1','Inversé']],f.flip?'1':'0',function(v){f.flip=(v==='1');}));
   pBtns([['🔧 Éditer l\'esquisse (centres)',function(){if(sk)openSketch(sk.id);}]]);
+}
+/* ----- trou alésé (V0.24.0) : cas, Ø et tolérance ISO de l'alésage, perçage ----- */
+function renderHoleReamProps(f,pRow,pNote,sel,num,go){
+  const fr=function(v){return String(+(+v).toFixed(3)).replace('.',',');};
+  const N=holeNorm(f);
+  pRow('Cas',sel([['none','Alésage fond plat seul'],['blind','+ perçage non débouchant'],['through','+ perçage débouchant'],['open','Alésage débouchant']],N.pilot,function(v){
+    f.pilot=v;
+    if(v==='blind'&&!(+f.depth>holeNorm(f).reamH))f.depth=+(holeNorm(f).reamH+2*holeNorm(f).reamD).toFixed(2);
+    if((v==='blind'||v==='through')&&f.reamOff>0)f.d=holeReamDrill(f);}));
+  pRow('Ø alésage',num(N.reamD,function(v){f.reamD=v;if(f.reamOff>0)f.d=holeReamDrill(f);},0,f,'reamD'));
+  // tolérance : alésages seulement (majuscules A … ZC), qualités des tables ISO 286-2
+  const P=iso286Parse(f.reamTol||'H7')||{L:'H',g:'7',hole:true};
+  pRow('Tolérance (écart)',sel(ISO286_HOLE_LETTERS.map(function(L){return [L,L];}),P.L,function(L){
+    const gs=iso286Grades(L);f.reamTol=L+(gs.indexOf(P.g)>=0?P.g:(gs.indexOf('7')>=0?'7':gs[Math.floor(gs.length/2)]));}));
+  pRow('Qualité (IT)',sel(iso286Grades(P.L).map(function(g){return [g,g];}),P.g,function(g){f.reamTol=P.L+g;}));
+  const r=iso286Range(f.reamTol||'H7',N.reamD);
+  pNote(r?('Ø'+fr(N.reamD)+' '+iso286Label(f.reamTol||'H7',N.reamD)+' : '+fr(N.reamD+r.lo)+' … '+fr(N.reamD+r.hi)+' mm — écrit d’office dans la cotation de perçage (mise en plan).')
+    :('Classe '+(f.reamTol||'H7')+' non définie pour Ø'+fr(N.reamD)+' (ISO 286 : Ø ≤ 500 mm, certaines lettres seulement au-delà de 10 / 24 mm).'));
+  if(N.pilot==='open'){pNote('Alésage débouchant : traverse toute la pièce.');return;}
+  pRow('Profondeur alésage',num(N.reamH,function(v){f.reamH=v;},0,f,'reamH'));
+  if(N.pilot==='none'){pNote('Fond plat. L’avant-trou d’usinage n’est pas modélisé.');return;}
+  pRow('Ø perçage',sel([['0.5','Ø alésage − 0,5 ('+fr(N.reamD-0.5)+')'],['1','Ø alésage − 1 ('+fr(N.reamD-1)+')'],['','Libre']],f.reamOff>0?String(+f.reamOff):'',function(v){
+    f.reamOff=v?+v:null;if(f.reamOff>0)f.d=holeReamDrill(f);else f.d=N.d;}));
+  if(!(f.reamOff>0))pRow('Ø du perçage',num(N.d,function(v){f.d=v;},0,f,'d'));
+  if(N.pilot==='blind'){
+    pRow('Prof. perçage (plein Ø)',num(N.depth,function(v){f.depth=v;},0,f,'depth'));
+    pRow('Fond du perçage',sel([['118','Pointe 118°'],['135','Pointe 135°'],['140','Pointe 140°'],['90','Pointe 90°'],['0','Fond plat']],String(f.tip===0?0:(f.tip||118)),function(v){f.tip=+v;}));
+  }
 }
 /* ----- image du taraudage (filet cosmétique) — 2026-10-15-012 -----
    « Peut-on voir une image de taraudage sur les trous taraudés ? » : hélice au pas
@@ -50312,9 +50534,13 @@ function faoHolesDetect(shapes){
           // filet modélisé : le noyau est percé au Ø mineur + jeu, pas au Ø de taraud
           let de=+f.d;
           if(f.thread&&f.thread.model){const th=(typeof isoHoleThread==='function')?isoHoleThread(f.thread.size,f.thread.p,f.thread.clear):null;if(th)de=Math.max(+f.d,th.D1+2*th.c);}
-          if(Math.abs(h.d-de)>0.02&&!(f.kind==='cbore'&&Math.abs(h.d-(+f.cbD))<0.02))return;
-          h.feat={id:f.id,name:f.name,kind:f.kind||'simple',thread:(f.thread&&f.thread.size)?{size:f.thread.size,p:+f.thread.p,len:+f._thLen||+f.thread.len||0}:null,
-            role:(f.kind==='cbore'&&Math.abs(h.d-(+f.cbD))<0.02)?'lamage':'trou'};
+          // alésé (V0.24.0) : l'alésage Ø reamD (tolérance ISO) et son perçage Ø d
+          const Nr=f.kind==='ream'?holeNorm(f):null,isReam=!!Nr&&Math.abs(h.d-Nr.reamD)<0.02;
+          if(Nr)de=Nr.d;
+          if(Math.abs(h.d-de)>0.02&&!(f.kind==='cbore'&&Math.abs(h.d-(+f.cbD))<0.02)&&!isReam)return;
+          h.feat={id:f.id,name:f.name,kind:f.kind||'simple',thread:(!Nr&&f.thread&&f.thread.size)?{size:f.thread.size,p:+f.thread.p,len:+f._thLen||+f.thread.len||0}:null,
+            role:(f.kind==='cbore'&&Math.abs(h.d-(+f.cbD))<0.02)?'lamage':(isReam?'alesage':'trou')};
+          if(isReam)h.feat.tol=f.reamTol||'H7';
         });
       });
     });
@@ -50712,6 +50938,8 @@ function faoDrillSections(setup,op,d){
         t.textContent='taraudé '+holeThreadLabel(fe.feat.thread)+' (fonction Perçage)';r.appendChild(t);
       }else if(fe&&fe.feat.role==='lamage'){
         const t=document.createElement('span');t.className='fao-meta';t.textContent='lamage (fonction Perçage)';r.appendChild(t);
+      }else if(fe&&fe.feat.role==='alesage'){
+        const t=document.createElement('span');t.className='fao-meta';t.style.color='#ff9f0a';t.textContent='alésé '+fe.feat.tol+' (fonction Perçage)';r.appendChild(t);
       }else if(!fe){
         const key=g.d.toFixed(2)+'@'+g.z.toFixed(2);
         const info=(setup.holeInfo&&setup.holeInfo[key])||{};
@@ -54280,6 +54508,8 @@ async function deserialise(json,opts){
   // F5) — sans ce rendu, l'arbre FAO gardait celui du document precedent (posage sans
   // aucune operation, alors que sa fleche reste ▼ : « le posage est la, pas ses ops »).
   try{ if(typeof faoRefreshFaoUI==='function')faoRefreshFaoUI(); }catch(e){}
+  // V0.24.0 : une pièce ouverte s'affiche en CAO (pas dans l'espace FAO / PLAN laissé ouvert)
+  try{if(typeof mfWsCur!=='undefined'&&mfWsCur&&mfWsCur!=='cao'&&typeof mfWs==='function')mfWs('cao');}catch(e){}
   try{if(typeof viewFadeIn==='function')viewFadeIn();}catch(e){}
   try{asmAfterLoad();}catch(e){} // assemblage : instantanés, vue rétablie (47)
   try{await pImp;}catch(e){}
@@ -55936,7 +56166,8 @@ function mfUiMode(m){
   try{document.body.classList.toggle('ui-modern',m==='moderne');}catch(e){}
   if(m!=='moderne')try{document.body.removeAttribute('data-ws');}catch(e){}
   mfLS('minifusion_ui',m);
-  if(m==='moderne'){try{mfBuildModern();mfWs(mfLS('minifusion_ws')||'cao');}catch(e){}}
+  // V0.24.0 : l'application démarre en CAO (l'espace courant est gardé si l'interface est reconstruite)
+  if(m==='moderne'){try{mfBuildModern();mfWs(mfWsCur||'cao');}catch(e){}}
   try{mfSkLayout();}catch(e){}
   try{if(typeof onResize==='function')onResize();else window.dispatchEvent(new Event('resize'));}catch(e){}
 }
@@ -56389,7 +56620,7 @@ function mfWs(w){
   if(w!=='fao'){try{if(typeof faoVw!=='undefined'&&faoVw&&typeof faoViewerClose==='function')faoViewerClose();}catch(e){}}
   if(w==='fao'){try{const t=document.getElementById('faoToggle');const tw=document.getElementById('faoTreeWrap');if(tw&&tw.classList.contains('folded')&&t)t.click();}catch(e){}}
   // espace PLAN (98-mep-*.js) : overlay sur la vue 3D
-  try{if(typeof mepSetActive==='function')mepSetActive(w==='plan');}catch(e){}
+  try{if(typeof mepSetActive==='function')mepSetActive(w==='plan',{anim:true});}catch(e){}
   if(changed&&w!=='plan')mfSpaceRestore(w,mfWsSel[w]);
   mfWsCur=w;
   try{mfPosTabs();}catch(e){}
@@ -57111,19 +57342,18 @@ function viewFadeIn(){
     iso:{dir:[0.62,-0.62,0.48],u:null,v:null,lab:'ISO'}
   };
   /* ═══════════════ tolérances ISO 2768-mK + ISO 286 (µm) ═══════════════ */
-  const MEP_STEPS=[3,6,10,18,30,50,80,120,180,250,315,400,500];
-  const MEP_IT={6:[6,8,9,11,13,16,19,22,25,29,32,36,40],7:[10,12,15,18,21,25,30,35,40,46,52,57,63],
-    8:[14,18,22,27,33,39,46,54,63,72,81,89,97],9:[25,30,36,43,52,62,74,87,100,115,130,140,155],
-    11:[40,48,58,70,84,100,120,140,160,185,210,230,250]};
-  /* déviations EI/ES des arbrets (ei, µm, négatif ou positif) par lettre */
-  const MEP_DEV={g:[2,4,5,6,7,9,10,12,14,15,16,18,20],k:[0,1,1,1,2,2,2,3,3,4,4,4,5],
-    m:[2,4,6,7,8,9,11,13,15,17,20,21,23],n:[4,8,10,12,15,17,20,23,27,31,33,36,40],
-    p:[6,12,15,18,22,26,32,37,43,50,56,62,68],r:[10,19,23,28,34,41,48,58,68,79,88,98,108],
-    s:[14,24,28,33,41,48,59,71,87,102,117,132,151]};
-  const MEP_TOL_CLASSES=['','H7','H8','H9','H11','JS9','JS11','h6','h7','h8','g6','k6','m6','n6','p6','s6',
-    'H7/g6','H7/h6','H7/js6','H7/k6','H7/n6','H7/p6','H7/s6','H8/h7','H9/h9','H11/h11'];
-  function mepStepIdx(d){for(let i=0;i<MEP_STEPS.length;i++)if(d<=MEP_STEPS[i])return i;return MEP_STEPS.length-1;}
-  function mepIt(grade,d){const a=MEP_IT[grade];return a?a[mepStepIdx(d)]:0;}
+  // V0.24.0 : table ISO 286 complète (A … ZC, a … zc, IT01 … IT18) partagée — src/05-iso286.js.
+  // Liste courte du sélecteur : ajustements usuels (toutes les classes restent saisissables).
+  const MEP_TOL_FITS=['H7/g6','H7/h6','H7/js6','H7/k6','H7/m6','H7/n6','H7/p6','H7/r6','H7/s6','H8/f7','H8/h7','H8/e8',
+    'H9/d9','H9/h9','H11/c11','H11/h11','G7/h6','F8/h7','K7/h6','N7/h6','P7/h6'];
+  // classe simple (H7) ou ajustement (H7/g6) valide ? → nom normalisé, sinon ''
+  function mepTolClsNorm(cls){
+    const s=String(cls||'').replace(/\s+/g,'');
+    const q=s.split('/');
+    if(q.length===1)return iso286Parse(q[0])?q[0]:'';
+    if(q.length===2){const a=iso286Parse(q[0]),b=iso286Parse(q[1]);return (a&&b&&a.hole&&!b.hole)?q[0]+'/'+q[1]:'';}
+    return '';
+  }
   /* plage de tolérance pour une classe et un Ø nominal → {lo,hi} en mm (écart sur la cote) */
   function mepTolRange(cls,nom){
     if(!cls||!nom||nom<=0)return null;
@@ -57135,20 +57365,7 @@ function viewFadeIn(){
       if(!hole||!shaft)return null;
       return{lo:hole.lo,hi:hole.hi,fit:{hole,shaft,holeCls:parts[0],shaftCls:parts[1]}};
     }
-    const m=/^([A-Za-z]+)(\d+)$/.exec(cls);if(!m)return null;
-    const L=m[1],g=+m[2],d=Math.abs(nom),i=mepStepIdx(d),IT=mepIt(g,d);
-    if(L==='H')return{lo:0,hi:IT/1000};
-    if(L==='h')return{lo:-IT/1000,hi:0};
-    if(L==='JS'||L==='js')return{lo:-IT/2000,hi:IT/2000};
-    const dev=MEP_DEV[L.toLowerCase()];
-    if(!dev)return null;
-    const dv=dev[i]/1000;
-    // g/G : la déviation fondamentale est une MAGNITUDE : arbre g → es = −dv,
-    // alésage G → EI = +dv (miroir). Les autres lettres k…s gardent ei = +dv.
-    if(L==='g')return{lo:-dv-IT/1000,hi:-dv};
-    if(L==='G')return{lo:dv,hi:dv+IT/1000};
-    if(L===L.toLowerCase())return{lo:dv,hi:dv+IT/1000}; // minuscule = arbre, ei > 0
-    return{lo:-dv-IT/1000,hi:-dv}; // majuscule K…S = alésage, ES = −ei de l'arbre
+    return iso286Range(cls,nom);
   }
   function mepFmtNum(v,dp){
     if(!isFinite(v))return '—';
@@ -62624,6 +62841,13 @@ function viewFadeIn(){
       return'↧'+fr(eff||N.depth);
     };
     const lines=[];
+    // V0.24.0 : alésé — l'alésage (fond plat) d'abord : la tolérance se pose après ce 1er Ø
+    if(N.kind==='ream'){
+      if(N.pilot==='open')return 'Ø'+fr(N.reamD)+' déb.';
+      lines.push('Ø'+fr(N.reamD)+' ↧'+fr(N.reamH));
+      if(N.pilot!=='none')lines.push('Ø'+fr(N.d)+' '+holeDepth());
+      return lines.join('\n');
+    }
     if(f.thread&&f.thread.size){
       lines.push(holeThreadLabel(f.thread)+' '+threadDepth());
       lines.push('Ø'+fr(N.d)+' '+holeDepth());
@@ -62634,6 +62858,15 @@ function viewFadeIn(){
     if(N.kind==='csink')lines.push('Fraisure Ø'+fr(N.csD)+' x '+fr(N.csA)+'°');
     return lines.join('\n');
   }
+  /* V0.24.0 : tolérance AUTOMATIQUE d'une cotation de perçage — celle de l'alésage de la
+     fonction (« Ø6 H7 (+0,012 / 0) »), suivie en direct ; une tolérance posée à la main
+     (ou retirée : d.tolManual) l'emporte. */
+  function mepHoleAutoTol(d){
+    if(!d||d.kind!=='hole'||!d.holeFid||typeof doc==='undefined')return null;
+    const f=(doc.features||[]).find(x=>x.id===d.holeFid);
+    return (f&&f.type==='hole'&&f.kind==='ream'&&f.reamTol)?{m:'cls',cls:String(f.reamTol)}:null;
+  }
+  function mepHoleTol(d){return d.tol||(d.tolManual?null:mepHoleAutoTol(d));}
   function mepHoleAt(sh,vid,e,i){
     if(!e||e.t!=='C')return null;
     const v=mepView(sh,vid);if(!v)return null;
@@ -62649,6 +62882,7 @@ function viewFadeIn(){
       const ad=[A.dir.x,A.dir.y,A.dir.z];
       if(Math.abs(mepDot(ad,dir))<0.999)return;
       const rs=[N.d/2];
+      if(N.kind==='ream')rs.push(N.reamD/2);
       if(N.kind==='cbore')rs.push(N.cbD/2);
       if(N.kind==='csink')rs.push(N.csD/2);
       if(f.thread&&f.thread.model&&typeof isoHoleThread==='function'){
@@ -63236,7 +63470,8 @@ function viewFadeIn(){
       ?mepDimSymbolParts(d,value,d.kind==='dia'?'Ø':'R')
       :mepDimTextParts(d,value);
     const main=p.sym?p.main+' '+p.sym:p.main;
-    if(d.kind==='hole'&&d.tol&&!d.txt)return mepTolMarks(mepHoleTolText(main,d.tol));
+    const ht=d.kind==='hole'&&!d.txt?mepHoleTol(d):null;
+    if(ht)return mepTolMarks(mepHoleTolText(main,ht));
     if(p.par)return main+' ('+p.up+' / '+p.lo+')'+(p.post?' '+p.post:'');
     return p.up||p.lo?main+' '+p.up+' / '+p.lo:main;
   }
@@ -63272,28 +63507,44 @@ function viewFadeIn(){
     }
     if(!up&&!lo)return t;
     const th=MEP_DIM_STYLE.textHeight||7;
-    const sub=mepDimSubH(th),gap=mepDimStackGap();
-    const lh=mepDimTolLineH();
+    const gap=mepDimStackGap();
     const mw=Math.max(7,String(main).length*th*0.62);
     // calé à gauche : la pile suit la largeur MESURÉE du texte (celle du souligné des Ø/R)
     const sx=anchor==='middle'?x+mw/2+gap:(anchor==='end'?x-shiftEnd+gap:x+mepTxtW(t,main,th)+gap);
+    mepDimDrawStack(mk,T,sx,y,up,lo,transform,flip,par,post);
+    return t;
+  }
+  /* pile des écarts (supérieur au-dessus de l'inférieur), entre parenthèses pour une classe ISO,
+     à partir de sx (bord gauche) sur la ligne de base y du texte de cote */
+  function mepDimDrawStack(mk,T,sx,y,up,lo,transform,flip,par,post){
+    const th=MEP_DIM_STYLE.textHeight||7;
+    const sub=mepDimSubH(th);
+    const lh=mepDimTolLineH();
     const st=Object.assign({},T,{x:sx,'text-anchor':'start',
       style:'font-size:'+sub+'px;stroke-width:1'});
     if(transform)st.transform=transform;
     // écarts d'une classe ISO : parenthèses hautes autour de la pile (même place qu'en bilatéral)
     const pw=par?sub*0.55:0;
-    const tw=Math.max(String(up||'').length,String(lo||'').length)*sub*0.54;
-    const tu=mk('text',Object.assign({},st,{x:sx+pw,y:flip?y+lh:y-lh}));
-    tu.textContent=up||'';
-    const tl=mk('text',Object.assign({},st,{x:sx+pw,y:y}));
-    tl.textContent=lo||'';
+    // V0.24.0 : écarts alignés sur la virgule — partie entière (signe compris) calée à droite,
+    // décimales calées à gauche du même point : « 0 » sous le 0 de « −0.021 »
+    const cut=v=>{const s=String(v||''),i=s.search(/[.,]/);return i<0?[s,'']:[s.slice(0,i),s.slice(i)];};
+    const U=cut(up),L=cut(lo),cw=sub*0.58;
+    const iw=Math.max(U[0].length,L[0].length)*cw,xd=sx+pw+iw;
+    const tw=iw+Math.max(U[1].length,L[1].length)*sub*0.54;
+    const row=(P,yy)=>{
+      if(P[0]){const a=mk('text',Object.assign({},st,{x:xd,y:yy,'text-anchor':'end'}));a.textContent=P[0];}
+      if(P[1]){const b=mk('text',Object.assign({},st,{x:xd,y:yy}));b.textContent=P[1];}
+    };
+    row(U,flip?y+lh:y-lh);
+    row(L,y);
     if(par){
-      const ph=sub+lh,py=flip?y+lh*0.5+ph*0.32:y-lh*0.5+ph*0.32;
+      // parenthèses centrées sur la pile : milieu des deux lignes d'écarts (hauteur de capitale
+      // ≈ 0,7 × corps), le centre d'un « ( » est ≈ 0,26 × son corps au-dessus de la ligne de base
+      const ph=sub+lh,py=y+(flip?lh:-lh)*0.5-sub*0.35+ph*0.26;
       const sp=Object.assign({},st,{y:py,style:'font-size:'+ph.toFixed(2)+'px;stroke-width:1'});
       const p0=mk('text',Object.assign({},sp,{x:sx}));p0.textContent='(';
       const p1=mk('text',Object.assign({},sp,{x:sx+pw+tw}));p1.textContent=')'+(post?' '+post:'');
     }
-    return t;
   }
   function mepDimHasStack(d){
     return !d.txt&&d.tol&&(d.tol.m==='dbl'||(d.tol.m==='cls'&&d.tol.cls&&String(d.tol.cls).indexOf('/')<0));
@@ -63374,13 +63625,16 @@ function viewFadeIn(){
     const nom=parseFloat(m[1].replace(',','.'));if(!(nom>0))return txt;
     const p=mepDimTextParts({kind:'dia',tol},nom);let add='';
     if(tol.m==='pm'&&tol.s>0)add='\u0001'+p.sym+'\u0002';
-    else if(tol.m==='dbl')add='\u0001'+p.up+' / '+p.lo+'\u0002';
-    else if(tol.m==='cls'&&tol.cls)add=tol.cls+(p.par?' (\u0001'+p.up+' / '+p.lo+'\u0002)':'');
+    // V0.24.0 : écarts EMPILÉS comme sur les autres cotes (\u0003 [ « ( » ] sup \u0004 inf)
+    else if(tol.m==='dbl')add='\u0001\u0003'+p.up+'\u0004'+p.lo+'\u0002';
+    else if(tol.m==='cls'&&tol.cls)add=tol.cls+(p.par?' \u0001\u0003('+p.up+'\u0004'+p.lo+'\u0002':'');
     if(!add)return txt;
     const e=m.index+m[0].length;
     return txt.slice(0,e)+' '+add+txt.slice(e);
   }
-  const mepTolMarks=s=>String(s||'').replace(/[\u0001\u0002]/g,'');
+  const MEP_TOL_STACK=/\u0001\u0003(\(?)([^\u0004]*)\u0004([^\u0002]*)\u0002/;
+  // texte seul (panneau, export texte) : pile écrite « (+0.015 / 0) »
+  const mepTolMarks=s=>String(s||'').replace(new RegExp(MEP_TOL_STACK.source,'g'),(m,p,a,b)=>p?'('+a+' / '+b+')':a+' / '+b).replace(/[\u0001\u0002]/g,'');
   function mepHoleCallout(cx,cy,rr,px,py,txt){
     let ux=px-cx,uy=py-cy,ul=Math.hypot(ux,uy);
     if(ul<1e-6){ux=1;uy=0;ul=1;}
@@ -63567,7 +63821,8 @@ function viewFadeIn(){
           txt=d.txt||((d.holeN>1?d.holeN+'× ':'')+d.holeText);
         }
       }
-      if(d.kind==='hole'&&d.tol&&!d.txt)txt=mepHoleTolText(txt,d.tol);
+      const ht=d.kind==='hole'&&!d.txt?mepHoleTol(d):null;
+      if(ht)txt=mepHoleTolText(txt,ht);
       const e=mepEntByHint(w.v1,d.a.hint);
       let cx=w.a.x,cy=w.a.y,rr=0;
       if(e&&(e.t==='C'||e.t==='A')){
@@ -63578,7 +63833,25 @@ function viewFadeIn(){
       draw('line',Object.assign({x1:g.tx,y1:g.lineY,x2:g.ex,y2:g.ey,'marker-end':AR},L));
       const t=draw('text',Object.assign({x:g.tx,y:g.y0,'text-anchor':g.anchor},T));
       let twM=0;
+      const th=MEP_DIM_STYLE.textHeight||7,gap=mepDimStackGap();
       g.lines.forEach((s,k)=>{
+        const sm=MEP_TOL_STACK.exec(s);
+        if(sm){
+          // ligne avec écarts empilés : texte avant, pile, texte après — éléments séparés, posés
+          // une fois les largeurs mesurées (calé à droite si le leader part à droite)
+          const yy=g.y0+k*g.lh,bef=s.slice(0,sm.index).replace(/\s+$/,''),aft=s.slice(sm.index+sm[0].length).replace(/^\s+/,'');
+          const par=!!sm[1],up=sm[2],lo=sm[3];
+          const t0=draw('text',Object.assign({x:g.tx,y:yy,'text-anchor':'start'},T));t0.textContent=bef;
+          const w0=mepTxtW(t0,bef,th),ws=mepDimStackW(up,lo,par,'');
+          let t2=null,w2=0;
+          if(aft){t2=draw('text',Object.assign({x:g.tx,y:yy,'text-anchor':'start'},T));t2.textContent=aft;w2=mepTxtW(t2,aft,th);}
+          const tot=w0+gap+ws+(aft?gap+w2:0),x0=g.anchor==='end'?g.tx-tot:g.tx;
+          t0.setAttribute('x',String(x0));
+          mepDimDrawStack(draw,T,x0+w0+gap,yy,up,lo,null,false,par,'');
+          if(t2)t2.setAttribute('x',String(x0+w0+gap+ws+gap));
+          twM=Math.max(twM,tot);
+          return;
+        }
         const ts=document.createElementNS(NS,'tspan');
         ts.setAttribute('x',String(g.tx));ts.setAttribute('y',String(g.y0+k*g.lh));
         if(s.indexOf('\u0001')<0)ts.textContent=s;
@@ -67288,16 +67561,19 @@ function viewFadeIn(){
   /* éditeur de tolérance d'un objet porteur de .tol (cote, point d'ordonnée) — row(lab, el) */
   function mepTolEditor(row,d){
     const sel=document.createElement('select');
-    [['','—'],['pm','± symétrique'],['dbl','Double'],['cls','Classe ISO 286']].forEach(([k,l])=>{
+    // cotation de perçage d'un alésé : tolérance automatique de la fonction (V0.24.0)
+    const auto=d.kind==='hole'?mepHoleAutoTol(d):null,isAuto=!!auto&&!d.tol&&!d.tolManual;
+    (auto?[['auto','Automatique ('+auto.cls+')']]:[]).concat([['','—'],['pm','± symétrique'],['dbl','Double'],['cls','Classe ISO 286']]).forEach(([k,l])=>{
       const o=document.createElement('option');o.value=k;o.textContent=l;
-      if((d.tol&&d.tol.m)===k||(k===''&&!d.tol))o.selected=true;
+      if(isAuto?k==='auto':((d.tol&&d.tol.m)===k||(k===''&&!d.tol)))o.selected=true;
       sel.appendChild(o);
     });
     sel.onchange=()=>{
       mepEdit('tolérance',()=>{
         const m=sel.value;
-        if(!m){d.tol=null;return;}
-        d.tol={m,s:0.1,hi:0.1,lo:-0.1,cls:''};
+        if(d.kind==='hole'){if(m==='auto')delete d.tolManual;else d.tolManual=true;}
+        if(!m||m==='auto'){d.tol=null;return;}
+        d.tol={m,s:0.1,hi:0.1,lo:-0.1,cls:m==='cls'?((auto&&auto.cls)||'H7'):''};
       });
       mepSideShow();
     };
@@ -67314,16 +67590,46 @@ function viewFadeIn(){
       lo.onchange=()=>{mepEdit('−',()=>{d.tol.lo=+lo.value||0;});};
       row('+',hi);row('−',lo);
     }
-    if(d.tol&&d.tol.m==='cls'){
-      const c=document.createElement('select');
-      MEP_TOL_CLASSES.forEach(cl=>{
-        const o=document.createElement('option');o.value=cl;o.textContent=cl||'—';
-        if(d.tol.cls===cl)o.selected=true;
-        c.appendChild(o);
-      });
-      c.onchange=()=>{mepEdit('classe',()=>{d.tol.cls=c.value;});};
-      row('Classe',c);
+    if(d.tol&&d.tol.m==='cls')mepTolClsEditor(row,d);
+  }
+  /* V0.24.0 : toutes les classes ISO 286 — alésages A … ZC, arbres a … zc (IT01 … IT18
+     selon les tables ISO 286-2) et ajustements ; saisie libre de n'importe quelle classe.
+     Cotation de perçage : alésages seulement (majuscules). */
+  function mepTolClsEditor(row,d){
+    const holeOnly=d.kind==='hole';
+    const cur=String(d.tol.cls||'');
+    const P0=cur.indexOf('/')<0?iso286Parse(cur):null;
+    const fam=holeOnly?'hole':(cur.indexOf('/')>=0?'fit':(P0&&!P0.hole?'shaft':'hole'));
+    const set=(v,lab)=>{mepEdit(lab||'classe',()=>{d.tol.cls=v;});mepSideShow();};
+    const mkSel=(opts,val,fn)=>{
+      const s=document.createElement('select');
+      opts.forEach(([k,l])=>{const o=document.createElement('option');o.value=k;o.textContent=l;s.appendChild(o);});
+      s.value=val;s.onchange=()=>fn(s.value);return s;
+    };
+    if(!holeOnly)row('Type',mkSel([['hole','Alésage (A … ZC)'],['shaft','Arbre (a … zc)'],['fit','Ajustement']],fam,
+      v=>set(v==='fit'?'H7/g6':(v==='shaft'?'h7':'H7'),'type de classe')));
+    if(fam==='fit'){
+      const fits=MEP_TOL_FITS.indexOf(cur)<0&&cur?[cur].concat(MEP_TOL_FITS):MEP_TOL_FITS;
+      row('Ajustement',mkSel(fits.map(x=>[x,x]),cur,v=>set(v,'ajustement')));
+    }else{
+      const P=P0||{L:fam==='shaft'?'h':'H',g:'7'};
+      const letters=fam==='shaft'?ISO286_SHAFT_LETTERS:ISO286_HOLE_LETTERS;
+      row('Écart',mkSel(letters.map(L=>[L,L]),P.L,L=>{
+        const gs=iso286Grades(L);set(L+(gs.indexOf(P.g)>=0?P.g:(gs.indexOf('7')>=0?'7':gs[Math.floor(gs.length/2)])),'écart');}));
+      const gs=iso286Grades(P.L);
+      row('Qualité (IT)',mkSel(gs.map(g=>[g,g]),gs.indexOf(P.g)>=0?P.g:gs[0],g=>set(P.L+g,'qualité')));
     }
+    // saisie directe : « P9 », « H7/k6 »…
+    const inp=document.createElement('input');inp.type='text';inp.value=cur;inp.placeholder=holeOnly?'ex. H7':'ex. H7 ou H7/g6';
+    inp.onchange=()=>{
+      const v=mepTolClsNorm(inp.value),p=v&&v.indexOf('/')<0?iso286Parse(v):null;
+      if(!v||(holeOnly&&!(p&&p.hole))){
+        mepStatus('Classe ISO 286 inconnue : « '+inp.value+' »'+(holeOnly?' (perçage : alésage, majuscules A … ZC)':'')+'.');
+        inp.value=cur;return;
+      }
+      set(v,'classe');
+    };
+    row('Saisie',inp);
   }
   function mepSideDim(root,d,sh){
     const h=document.createElement('h4');
@@ -67743,25 +68049,88 @@ function viewFadeIn(){
       mepRender();
     }catch(e){try{console.warn('mepAutoViews',e);}catch(e2){}}
   }
-  function mepSetActive(on){
+  /* V0.24.0 : « quand une mise à jour du plan est nécessaire, une petite animation de transition
+     le temps que le plan se mette à jour, fondus d'ouverture et de fermeture ; sinon le plan
+     apparaît sans animation ». Mise à jour = une vue de la planche dont la projection n'est plus
+     en cache (pièce modifiée, document ouvert…) ou une planche vide qui recevra ses vues. */
+  function mepSheetStale(){
+    const sh=mepSheet(),ver=(typeof _docVersion!=='undefined')?_docVersion:0;
+    if(!sh.views.length)return typeof bodies!=='undefined'&&bodies.some(b=>b&&!b.ghost&&b.kind!=='ghost'&&b.mesh&&b.mesh.visible!==false);
+    return sh.views.some(v=>{const c=mepGeoCache.get(v.id);try{return !c||c.ver!==ver||c.sig!==mepViewSig(v);}catch(e){return true;}});
+  }
+  let mepBusyEl=null,mepBusyTok=0;
+  function mepBusyShow(){
+    if(!document.getElementById('mepBusyCss')){
+      const s=document.createElement('style');s.id='mepBusyCss';
+      // rotation et pulsation en transform / opacity : elles tournent même pendant le calcul
+      s.textContent='#mepBusy{position:absolute;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;'+
+        'background:var(--bg);color:var(--text);opacity:0;transition:opacity .18s ease;pointer-events:none}'+
+        '#mepBusy.on{opacity:1;pointer-events:auto}#mepBusy.out{opacity:0;transition:opacity .28s ease}'+
+        '#mepBusy .mbIc{position:relative;width:74px;height:74px}'+
+        '#mepBusy .mbRing{position:absolute;inset:0;border-radius:50%;border:3px solid color-mix(in srgb,var(--accent,#0a84ff) 22%,transparent);border-top-color:var(--accent,#0a84ff);animation:mbSpin .9s linear infinite}'+
+        '#mepBusy svg{position:absolute;left:19px;top:17px;width:36px;height:40px;animation:mbPulse 1.2s ease-in-out infinite}'+
+        '#mepBusy .mbTx{font-size:13px;letter-spacing:.02em;opacity:.85}'+
+        '@keyframes mbSpin{to{transform:rotate(360deg)}}@keyframes mbPulse{50%{transform:scale(.9);opacity:.6}}';
+      document.head.appendChild(s);
+    }
+    if(!mepBusyEl){
+      mepBusyEl=document.createElement('div');mepBusyEl.id='mepBusy';
+      mepBusyEl.innerHTML='<div class="mbIc"><div class="mbRing"></div><svg viewBox="0 0 36 40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+
+        '<path d="M3 2h22l8 8v28H3z"/><path d="M25 2v8h8"/><path d="M8 30h20M8 30v-12M14 24h8M18 20v8"/></svg></div><div class="mbTx">Mise à jour du plan…</div>';
+    }
+    // posé à côté de la planche (même zone), au-dessus : il couvre d'abord la vue 3D
+    const host=mepWrapEl.parentNode||mepWrapEl;
+    if(mepBusyEl.parentNode!==host)host.appendChild(mepBusyEl);
+    mepBusyEl.classList.remove('out');
+    void mepBusyEl.offsetWidth; // départ du fondu depuis 0
+    mepBusyEl.classList.add('on');
+  }
+  function mepBusyHide(){
+    if(!mepBusyEl)return;
+    mepBusyEl.classList.add('out');mepBusyEl.classList.remove('on');
+    const tok=mepBusyTok;
+    setTimeout(()=>{if(tok===mepBusyTok&&mepBusyEl&&mepBusyEl.parentNode&&!mepBusyEl.classList.contains('on'))mepBusyEl.remove();},320);
+  }
+  function mepSetActive(on,opt){
     if(on)mepEnsure();
     if(on){
       const was=mepSt.open; // les boutons du ruban repassent par ici : le zoom en cours est gardé
+      // entrée dans l'espace (onglet PLAN) avec un plan à recalculer : animation de transition
+      const anim=!was&&!!(opt&&opt.anim)&&mepSheetStale();
       mepBuildUI();
       mepSt.open=true;
-      mepWrapEl.classList.add('open');
+      // animation : la planche ne s'ouvre qu'une fois la vue 3D couverte par le fondu
+      if(!anim)mepWrapEl.classList.add('open');
       mepTabsRender();
       mepSideShow();
-      if(!was)mepFitSheet();
+      if(!was&&!anim)mepFitSheet();
       try{if(typeof mfSyncPropsHost==='function')mfSyncPropsHost();}catch(e){}
-      try{mepRender();}catch(e){console.warn(e);}
-      mepStatus('Espace PLAN — planches, vues, cotes. '+mepSheet().name);
       // masque les commandes CAO/FAO du ruban via data-ws
       try{document.body.setAttribute('data-ws','plan');}catch(e){}
-      // vues standards auto si planche vide et corps présents
-      mepAutoViews();
+      const fill=()=>{
+        try{mepRender();}catch(e){console.warn(e);}
+        mepStatus('Espace PLAN — planches, vues, cotes. '+mepSheet().name);
+        // vues standards auto si planche vide et corps présents
+        mepAutoViews();
+      };
+      if(!anim){fill();return;}
+      // fondu d'ouverture SUR LA VUE 3D, puis planche ouverte et calculée sous l'écran couvert,
+      // puis fondu de fermeture sur le plan ; affichage tenu au moins ~0,45 s
+      const tok=++mepBusyTok,t0=Date.now();
+      mepBusyShow();mepStatus('Mise à jour du plan…');
+      setTimeout(()=>{
+        if(tok!==mepBusyTok)return;
+        if(mepSt.open){
+          const fresh=!mepWrapEl.classList.contains('open'); // déjà ouverte par un autre appel : zoom gardé
+          mepWrapEl.classList.add('open');
+          if(fresh)mepFitSheet();
+          fill();
+        }
+        setTimeout(()=>{if(tok===mepBusyTok)mepBusyHide();},Math.max(0,450-(Date.now()-t0)));
+      },200);
     }else{
       mepSt.open=false;
+      if(mepBusyEl){mepBusyTok++;mepBusyEl.remove();}
       mepPrintClose();
       // La sélection PLAN est conservée : au retour dans l'espace, la vue/cote
       // active et son panneau réapparaissent tels quels.
@@ -67866,7 +68235,7 @@ function viewFadeIn(){
       axisMode:()=>mepSt.axisMode,
       axisPick:()=>Array.isArray(mepSt.axisPick)?mepSt.axisPick.slice():[],
       setAxisMode:m=>{mepSetAxisMode(m);},
-      holeText:mepHoleFeatureText,
+      holeText:mepHoleFeatureText,holeTol:d=>mepHoleTol(d),
       holeCallout:mepHoleCallout,
       fmt:mepFmtNum,
       geo:view=>mepGeoOf(view),geoClear:()=>mepGeoCache.clear(),locCurve:p=>mepLocCurve(p),clipSegPoly:(a,b,c,d,P,k)=>mepClipSegPoly(a,b,c,d,P,k),dxfView:(txt,name)=>{const r=mepDxfParse(txt);const v=mepAddView({kind:'dxf',vk:'',label:'',dxf:mepDxfData(r,name||'t',1),mode:'wire'});v._dims=mepDxfDims(mepSheet(),v,r);return v;},dimMeasure:d=>mepDimMeasure(mepSheet(),d),ptRefresh:(v,q,pr)=>mepPtRefresh(mepSheet(),v,q,pr),dimPts:d=>mepDimPtsRefresh(mepSheet(),d),ordClick:(P,ax)=>mepOrdClick(mepSheet(),P,ax),ordEnd:()=>{mepSt.ord=null;},ordPick:(d,i)=>{mepSt.selDim=d?d.id:null;mepSt.ordPt=d?{id:d.id,i}:null;},selDim:id=>{mepSt.selDim=id;},holeTolText:(t,tol)=>mepTolMarks(mepHoleTolText(t,tol)),dimText:d=>mepDimText(d,mepDimMeasure(mepSheet(),d)),ordPtAt:(d,P)=>mepOrdPtAt(mepSheet(),d,P),ordDelPt:(d,i)=>mepOrdDelPt(mepSheet(),d,i),ordValue:(d,p)=>mepOrdValue(d,p),drawDim:(mk,d)=>mepDrawDim(mk,d,mepSheet()),dimPressDbl:(P,ev)=>mepDimPressDbl(mepSheet(),P,ev||{}),dimAlignTo:(ref,ids)=>mepDimAlignTo(mepSheet(),ref,ids),perspCam:v=>mepPerspCam(v),threadEls:v=>mepThreadEls(v),oblShear:(sh,v)=>mepOblShear(sh,v),
