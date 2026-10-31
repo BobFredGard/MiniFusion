@@ -594,8 +594,11 @@ function faoInitUI(){
       const row=function(){ const d=document.createElement('div'); d.className='fao-actions'; return d; };
       // Les 7 +usinage vivent sur la vue 3D (faoAddBar) ; ici les ACTIONS du
       // posage, regroupées sous un libellé qui dit ce que le bouton fait.
-      cnt.appendChild(grp('Posage'));
-      const r1=row();
+      // V0.23.27 : en interface moderne ces actions sont dans le bandeau
+      // supérieur (qui clique ces boutons) — masquées par CSS (.fao-dup).
+      const dup=function(e){ e.className=(e.className?e.className+' ':'')+'fao-dup'; return e; };
+      cnt.appendChild(dup(grp('Posage')));
+      const r1=dup(row());
       const add=document.createElement('button'); add.textContent='+ Posage';
       add.title='Nouveau posage (machine, origine, brut propres).';
       add.onclick=function(){
@@ -622,8 +625,8 @@ function faoInitUI(){
       bv.onclick=function(){ if(!faoPaste())faoClipMsg('presse-papiers FAO vide — copiez d’abord des opérations ou un posage.'); };
       r1.appendChild(bv);
       cnt.appendChild(r1);
-      cnt.appendChild(grp('Exécution'));
-      const r2=row();
+      cnt.appendChild(dup(grp('Exécution')));
+      const r2=dup(row());
       const bvw=document.createElement('button'); bvw.id='faoVwBtn';
       bvw.textContent=faoVw?'■ Quitter l\'usinage':'▶ Usinage';
       bvw.title='Viewer d\'usinage : cache les traces, anime l\'outil le long du parcours (Échap pour sortir).';
@@ -644,7 +647,7 @@ function faoInitUI(){
       // Tout régénérer : en bas d'Exécution, toujours visible — régénère TOUTES
       // les trajectoires ; les traces masquées ligne par ligne le RESTENT masquées.
       const bg=document.createElement('button'); bg.id='faoGenBtn'; faoGenBtnEl=bg;
-      bg.className='fao-gen';
+      bg.className='fao-gen fao-dup';
       bg.textContent='Tout régénérer';
       bg.title='Régénère TOUTES les trajectoires (même celles à jour). Les traces'
         +' masquées ligne par ligne le restent — masquez-les à la main.';
@@ -666,8 +669,8 @@ function faoInitUI(){
         }catch(e){ done(); }
       };
       cnt.appendChild(bg);
-      cnt.appendChild(grp('Export'));
-      const r4=row();
+      cnt.appendChild(dup(grp('Export')));
+      const r4=dup(row());
       const be=document.createElement('button'); be.id='faoExportBtn'; faoExportBtnEl=be; be.className='primary'; be.textContent='Exporter G-code';
       be.title='Exporte le programme du posage courant : G-code Siemens 840D ou Fagor 8065 (.mpf / .nc).';
       be.onclick=function(){ faoExport(); };

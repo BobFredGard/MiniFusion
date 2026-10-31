@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**485 versions**, de `2026-09-28b` à `V0.24.0` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**486 versions**, de `2026-09-28b` à `V0.24.1` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5944,3 +5944,9 @@ Demande : « il manque la fonction Trous Alésé : 1 - fond plat ; 2 - fond plat
 - **Espace PLAN — transition** (`mepSetActive`, `src/98-mep-95-export-init.js`) : en entrant dans PLAN, si une vue de la planche doit être recalculée (pièce modifiée, document ouvert, planche vide à peupler), un écran « Mise à jour du plan… » apparaît en fondu par-dessus la vue 3D, la planche s'ouvre et se calcule dessous, puis l'écran disparaît en fondu sur le plan (affiché au moins 0,45 s ; anneau animé en transform, qui tourne pendant le calcul). Plan déjà à jour : affichage direct, sans animation.
 - **CAO par défaut** : l'application démarre en CAO (l'espace mémorisé n'est plus restauré), et ouvrir une pièce depuis FAO ou PLAN revient en CAO (`deserialise`).
 - **Tests** : `tests/test_percage_alese.cjs` (table ISO contre les tables ISO 286-2, 3 cas au noyau exact relus par la FAO, panneau, cotation automatique) ; `test_percage_3d`, `test_mise_en_plan`, `test_fao_percage`, `test_filet_modele` ; `npm run ci`.
+
+## V0.24.1 - FAO : panneau sans doublons du bandeau ; icônes FAO en couleur
+Demande : les actions du panneau FAO (Posage, Exécution, Export) font doublon avec le bandeau supérieur ; colorer Régénérer, G-code, Usinage et Outils.
+- **Panneau** (`src/88-fao-80-interface.js`) : groupes Posage / Exécution / Export et leurs boutons marqués `.fao-dup`, masqués en interface moderne (`src/97`). Ils restent dans le DOM : le bandeau les clique (`mfClick`) et le panneau classique est inchangé. Copier / Coller restent sur Ctrl+C / Ctrl+V.
+- **Bandeau** (`src/97-interface-moderne.js`) : Outils et Régénérer en rouge, Usinage en vert, G-code en bleu (`.mfIcR` / `.mfIcG` / `.mfIcB`, couleur gardée au survol).
+- **Tests** : `npm run ci` ; vérifié dans l'aperçu (7 éléments masqués, couleurs calculées).

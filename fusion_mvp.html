@@ -336,7 +336,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.24.0';
+const APP_VER='V0.24.1';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 try{var mfSv=document.getElementById('mfSplashVer');if(mfSv)mfSv.textContent=APP_VER;}catch(e){} // écran de démarrage
 
@@ -38433,8 +38433,11 @@ function faoInitUI(){
       const row=function(){ const d=document.createElement('div'); d.className='fao-actions'; return d; };
       // Les 7 +usinage vivent sur la vue 3D (faoAddBar) ; ici les ACTIONS du
       // posage, regroupées sous un libellé qui dit ce que le bouton fait.
-      cnt.appendChild(grp('Posage'));
-      const r1=row();
+      // V0.23.27 : en interface moderne ces actions sont dans le bandeau
+      // supérieur (qui clique ces boutons) — masquées par CSS (.fao-dup).
+      const dup=function(e){ e.className=(e.className?e.className+' ':'')+'fao-dup'; return e; };
+      cnt.appendChild(dup(grp('Posage')));
+      const r1=dup(row());
       const add=document.createElement('button'); add.textContent='+ Posage';
       add.title='Nouveau posage (machine, origine, brut propres).';
       add.onclick=function(){
@@ -38461,8 +38464,8 @@ function faoInitUI(){
       bv.onclick=function(){ if(!faoPaste())faoClipMsg('presse-papiers FAO vide — copiez d’abord des opérations ou un posage.'); };
       r1.appendChild(bv);
       cnt.appendChild(r1);
-      cnt.appendChild(grp('Exécution'));
-      const r2=row();
+      cnt.appendChild(dup(grp('Exécution')));
+      const r2=dup(row());
       const bvw=document.createElement('button'); bvw.id='faoVwBtn';
       bvw.textContent=faoVw?'■ Quitter l\'usinage':'▶ Usinage';
       bvw.title='Viewer d\'usinage : cache les traces, anime l\'outil le long du parcours (Échap pour sortir).';
@@ -38483,7 +38486,7 @@ function faoInitUI(){
       // Tout régénérer : en bas d'Exécution, toujours visible — régénère TOUTES
       // les trajectoires ; les traces masquées ligne par ligne le RESTENT masquées.
       const bg=document.createElement('button'); bg.id='faoGenBtn'; faoGenBtnEl=bg;
-      bg.className='fao-gen';
+      bg.className='fao-gen fao-dup';
       bg.textContent='Tout régénérer';
       bg.title='Régénère TOUTES les trajectoires (même celles à jour). Les traces'
         +' masquées ligne par ligne le restent — masquez-les à la main.';
@@ -38505,8 +38508,8 @@ function faoInitUI(){
         }catch(e){ done(); }
       };
       cnt.appendChild(bg);
-      cnt.appendChild(grp('Export'));
-      const r4=row();
+      cnt.appendChild(dup(grp('Export')));
+      const r4=dup(row());
       const be=document.createElement('button'); be.id='faoExportBtn'; faoExportBtnEl=be; be.className='primary'; be.textContent='Exporter G-code';
       be.title='Exporte le programme du posage courant : G-code Siemens 840D ou Fagor 8065 (.mpf / .nc).';
       be.onclick=function(){ faoExport(); };
@@ -56255,6 +56258,9 @@ function mfCss(){
   '.mfRb:hover i{color:var(--primary);opacity:1}',
   '.mfQuick button,#mfThemeBtn{display:inline-flex;align-items:center;justify-content:center}',
   '.mfRb:hover{background:rgba(127,127,127,.14)}',
+  // V0.23.27 : icônes FAO repérées par couleur ; doublons du panneau FAO masqués
+  '.mfRb.mfIcR i{color:#e5484d}.mfRb.mfIcB i{color:#3b82f6}.mfRb.mfIcG i{color:#22c55e}',
+  'body.ui-modern #faoTreeWrap .fao-dup{display:none!important}',
   // vue d'assemblage : seuls les groupes d'assemblage, pas de bandeau de timeline (fil de PIÈCE)
   'body.ui-modern[data-asm="1"] #mfRibbon .mfCao:not(.mfAsmG),body[data-asm="1"] #mfTl{display:none!important}'+
   'body.ui-modern[data-ws="cao"] #mfRibbon .mfFao,body.ui-modern[data-ws="cao"] #mfRibbon .mfPlan,body.ui-modern[data-ws="fao"] #mfRibbon .mfCao,body.ui-modern[data-ws="fao"] #mfRibbon .mfPlan,body.ui-modern[data-ws="plan"] #mfRibbon .mfCao,body.ui-modern[data-ws="plan"] #mfRibbon .mfFao{display:none}',
@@ -56519,15 +56525,15 @@ function mfRibbon(){
     ['asmStd','Normalisés',()=>stdDlg(),'Vis ISO / ANSI (CHC, FHC, pas au choix), bouchons gaz six pans creux, goupilles, clavettes ISO : insérés comme composants du composant actif',asmO],
     ['import','Insérer',()=>asmCmdInsert(),'Insérer un fichier .miniFusion comme composant du composant actif : lié (modifiable ici, la source suit) ou copié',asmO]],'mfCao mfAsmG');
   // FAO : posage, opérations (mêmes fiches que la barre « + Usinage »), simulation, calcul, export
-  grp('Posage',[['setup','Posage',()=>{const b=Array.from(document.querySelectorAll('#faoTreeWrap button')).find(x=>/\+ Posage/.test(x.textContent));if(b)b.click();},'Ajouter un posage'],['tools','Outils','faoToolsBtn']],'mfFao');
+  grp('Posage',[['setup','Posage',()=>{const b=Array.from(document.querySelectorAll('#faoTreeWrap button')).find(x=>/\+ Posage/.test(x.textContent));if(b)b.click();},'Ajouter un posage'],['tools','Outils','faoToolsBtn',null,'mfIcR']],'mfFao');
   // V0.23.20 : esquisses et corps FAO (murs infranchissables) — src/89-fao-murs.js
   grp('Limites',[['sketch','Esquisse',()=>faoSkNew(),'Nouvelle esquisse FAO sur le plan XY du posage (visible seulement en FAO)'],
     ['extrude','Extrusion',()=>faoWallNew(),'Corps FAO : extrusion de la dernière esquisse FAO — mur infranchissable pour toutes les opérations du posage']],'mfFao');
   let ops=[];try{ops=faoAddOpsSpec();}catch(e){}
   grp('Opérations',ops.map(a=>{const nm=String(a[1]).replace(/^\+ /,'');return [MF_FAO_ICON[a[0]]||'pocket',nm,()=>mfFaoAdd(a[0],nm),'Ajouter « '+nm+' » au posage courant'];}),'mfFao');
-  grp('Simulation',[['play','Usinage','faoVwBtn'],['rapid','Rapides','faoRapBtn']],'mfFao');
-  grp('Calcul',[['regen','Régénérer','faoGenBtn','Tout régénérer']],'mfFao');
-  grp('Export',[['gcode','G-code','faoExportBtn']],'mfFao');
+  grp('Simulation',[['play','Usinage','faoVwBtn',null,'mfIcG'],['rapid','Rapides','faoRapBtn']],'mfFao');
+  grp('Calcul',[['regen','Régénérer','faoGenBtn','Tout régénérer','mfIcR']],'mfFao');
+  grp('Export',[['gcode','G-code','faoExportBtn',null,'mfIcB']],'mfFao');
   // PLAN : ruban dédié (icônes PLAN + actions mepSetTool/mep*)
   const mepTool=t=>{try{mepSetActive(true);mepSetTool(t);}catch(e){}};
   grp('Planches',[['pSheetNew','Nouvelle',()=>{try{mepAddSheet();}catch(e){}},'Ajouter une planche'],

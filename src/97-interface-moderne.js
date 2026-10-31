@@ -121,6 +121,9 @@ function mfCss(){
   '.mfRb:hover i{color:var(--primary);opacity:1}',
   '.mfQuick button,#mfThemeBtn{display:inline-flex;align-items:center;justify-content:center}',
   '.mfRb:hover{background:rgba(127,127,127,.14)}',
+  // V0.23.27 : icônes FAO repérées par couleur ; doublons du panneau FAO masqués
+  '.mfRb.mfIcR i{color:#e5484d}.mfRb.mfIcB i{color:#3b82f6}.mfRb.mfIcG i{color:#22c55e}',
+  'body.ui-modern #faoTreeWrap .fao-dup{display:none!important}',
   // vue d'assemblage : seuls les groupes d'assemblage, pas de bandeau de timeline (fil de PIÈCE)
   'body.ui-modern[data-asm="1"] #mfRibbon .mfCao:not(.mfAsmG),body[data-asm="1"] #mfTl{display:none!important}'+
   'body.ui-modern[data-ws="cao"] #mfRibbon .mfFao,body.ui-modern[data-ws="cao"] #mfRibbon .mfPlan,body.ui-modern[data-ws="fao"] #mfRibbon .mfCao,body.ui-modern[data-ws="fao"] #mfRibbon .mfPlan,body.ui-modern[data-ws="plan"] #mfRibbon .mfCao,body.ui-modern[data-ws="plan"] #mfRibbon .mfFao{display:none}',
@@ -385,15 +388,15 @@ function mfRibbon(){
     ['asmStd','Normalisés',()=>stdDlg(),'Vis ISO / ANSI (CHC, FHC, pas au choix), bouchons gaz six pans creux, goupilles, clavettes ISO : insérés comme composants du composant actif',asmO],
     ['import','Insérer',()=>asmCmdInsert(),'Insérer un fichier .miniFusion comme composant du composant actif : lié (modifiable ici, la source suit) ou copié',asmO]],'mfCao mfAsmG');
   // FAO : posage, opérations (mêmes fiches que la barre « + Usinage »), simulation, calcul, export
-  grp('Posage',[['setup','Posage',()=>{const b=Array.from(document.querySelectorAll('#faoTreeWrap button')).find(x=>/\+ Posage/.test(x.textContent));if(b)b.click();},'Ajouter un posage'],['tools','Outils','faoToolsBtn']],'mfFao');
+  grp('Posage',[['setup','Posage',()=>{const b=Array.from(document.querySelectorAll('#faoTreeWrap button')).find(x=>/\+ Posage/.test(x.textContent));if(b)b.click();},'Ajouter un posage'],['tools','Outils','faoToolsBtn',null,'mfIcR']],'mfFao');
   // V0.23.20 : esquisses et corps FAO (murs infranchissables) — src/89-fao-murs.js
   grp('Limites',[['sketch','Esquisse',()=>faoSkNew(),'Nouvelle esquisse FAO sur le plan XY du posage (visible seulement en FAO)'],
     ['extrude','Extrusion',()=>faoWallNew(),'Corps FAO : extrusion de la dernière esquisse FAO — mur infranchissable pour toutes les opérations du posage']],'mfFao');
   let ops=[];try{ops=faoAddOpsSpec();}catch(e){}
   grp('Opérations',ops.map(a=>{const nm=String(a[1]).replace(/^\+ /,'');return [MF_FAO_ICON[a[0]]||'pocket',nm,()=>mfFaoAdd(a[0],nm),'Ajouter « '+nm+' » au posage courant'];}),'mfFao');
-  grp('Simulation',[['play','Usinage','faoVwBtn'],['rapid','Rapides','faoRapBtn']],'mfFao');
-  grp('Calcul',[['regen','Régénérer','faoGenBtn','Tout régénérer']],'mfFao');
-  grp('Export',[['gcode','G-code','faoExportBtn']],'mfFao');
+  grp('Simulation',[['play','Usinage','faoVwBtn',null,'mfIcG'],['rapid','Rapides','faoRapBtn']],'mfFao');
+  grp('Calcul',[['regen','Régénérer','faoGenBtn','Tout régénérer','mfIcR']],'mfFao');
+  grp('Export',[['gcode','G-code','faoExportBtn',null,'mfIcB']],'mfFao');
   // PLAN : ruban dédié (icônes PLAN + actions mepSetTool/mep*)
   const mepTool=t=>{try{mepSetActive(true);mepSetTool(t);}catch(e){}};
   grp('Planches',[['pSheetNew','Nouvelle',()=>{try{mepAddSheet();}catch(e){}},'Ajouter une planche'],
