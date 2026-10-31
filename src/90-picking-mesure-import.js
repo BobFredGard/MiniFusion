@@ -305,11 +305,17 @@ Bouton « Esquisse » (ou double-clic dans l'arbre) pour dessiner dessus.`;retur
       const pl=pickPlane(e);
       if(pl){sel={kind:'plane',id:pl};renderTree();renderProps();refreshParts();faceEl.textContent=`Plan ${pl} — ${PLANES[pl].label}\nBouton « Esquisse » (ou double-clic dans l'arbre) pour dessiner dessus.`;return;}
       clearMeasure();faceEl.textContent='Aucune face — cliquez sur un corps.';
+      // V0.23.26 : clic dans le vide = plus rien de sélectionné (arbre, timeline, panneau)
+      if(sel.kind||treeSel.length){sel={kind:null,id:null};treeSel=[];renderTree();renderProps();refreshParts();}
     }return;}
   clearHover();
   if(!second){clearMeasure();selFaces=[{mesh:h.object,faceIndex:h.faceIndex,point:h.point.clone(),geom:occFaceGeom(h.object,h.faceIndex)}];highlightTris(h.object,faceTrisFor(h.object,h.faceIndex),0xff9f0a,0.55);
     const G=selFaces[0].geom;
-    faceEl.textContent=`Face 1 : ${bodyName(h.object)}${G?(G.kind==='cyl'?` · CYLINDRE Ø${(G.r*2).toFixed(2)}`:' · PLAN'):''}\nAire ≈ ${faceArea(h.object,h.faceIndex)}\nCtrl+clic une 2e face (entraxe auto si cylindres) · Bouton « Esquisse » pour esquisser dessus.`;}
+    faceEl.textContent=`Face 1 : ${bodyName(h.object)}${G?(G.kind==='cyl'?` · CYLINDRE Ø${(G.r*2).toFixed(2)}`:' · PLAN'):''}\nAire ≈ ${faceArea(h.object,h.faceIndex)}\nCtrl+clic une 2e face (entraxe auto si cylindres) · Bouton « Esquisse » pour esquisser dessus.`;
+    // V0.23.26 : la fonction créatrice est sélectionnée dans l'arbre et la timeline — différé :
+    // la face s'allume tout de suite, le rejeu observé (points de contrôle) vient ensuite
+    const hm=h.object,hf=h.faceIndex,hp=h.point.clone();
+    setTimeout(()=>{if(selFaces.length===1&&selFaces[0].mesh===hm&&selFaces[0].faceIndex===hf)faceSelectFeature(hm,hf,hp);},0);}
   else{
     if(!selFaces.length){faceSelect(e,false);return;}
     const NB={mesh:h.object,faceIndex:h.faceIndex,point:h.point.clone(),geom:occFaceGeom(h.object,h.faceIndex)};
@@ -421,6 +427,98 @@ function occFaceGeom(mesh,fi){
     }catch(e){}
     return out;
   }catch(e){return null;}
+}
+/* V0.23.26 : FONCTION QUI A CRÉÉ UNE FACE (clic sur une face → même sélection dans l'arbre et la
+   timeline). Pas d'historique topologique OCCT : on rejoue le corps (points de contrôle : copies,
+   pas de booléens) en observant le solide après chaque fonction (occPrefixTap, 20). La face
+   « existe » à une étape s'il s'y trouve une face de même surface (plan : normale sortante et
+   distance ; cylindre : axe et rayon ; autre : même type) dont la boîte contient le point cliqué.
+   Créatrice = la fonction après la DERNIÈRE étape où elle n'existe pas (une face recouverte puis
+   rebâtie appartient à la seconde). Instance de répétition → la répétition. Mémorisé par solide. */
+let occCreatorMemo={live:null,m:new Map()};
+function occFaceSurf(f){
+  const out={st:occSurfKind(f),box:occFaceBox(f),n:occFaceOutNormal(f)};
+  try{
+    const ad=new occt.BRepAdaptor_Surface_2(f,true),gt=ad.GetType(),T=occt.GeomAbs_SurfaceType;
+    try{
+      if(gt===T.GeomAbs_Plane&&out.n){const l=ad.Plane().Location();out.d=out.n[0]*l.X()+out.n[1]*l.Y()+out.n[2]*l.Z();}
+      else if(gt===T.GeomAbs_Cylinder){
+        const c=ad.Cylinder(),a=c.Axis(),l=a.Location(),u=a.Direction();
+        out.cy={p:[l.X(),l.Y(),l.Z()],u:[u.X(),u.Y(),u.Z()],r:c.Radius()};
+      }
+    }catch(e){}
+    try{ad.delete();}catch(e){}
+  }catch(e){}
+  return out;
+}
+function occFaceSurfSame(a,b,p){
+  // b (candidate) porte-t-elle la face a au point p ?
+  if(!a||!b||a.st!==b.st||!b.box)return false;
+  const tb=0.05;
+  for(let k=0;k<3;k++)if(Math.abs(p[k]-b.box.pos[k])>b.box.dim[k]/2+tb)return false;
+  if(a.d!=null){
+    if(b.d==null||!b.n||a.n[0]*b.n[0]+a.n[1]*b.n[1]+a.n[2]*b.n[2]<0.999)return false;
+    return Math.abs(a.d-b.d)<0.01;
+  }
+  if(a.cy){
+    const A=a.cy,B=b.cy;if(!B||Math.abs(A.r-B.r)>0.01)return false;
+    const dot=A.u[0]*B.u[0]+A.u[1]*B.u[1]+A.u[2]*B.u[2];if(Math.abs(dot)<0.999)return false;
+    const w=[A.p[0]-B.p[0],A.p[1]-B.p[1],A.p[2]-B.p[2]],t=w[0]*B.u[0]+w[1]*B.u[1]+w[2]*B.u[2];
+    return Math.hypot(w[0]-t*B.u[0],w[1]-t*B.u[1],w[2]-t*B.u[2])<0.01;
+  }
+  return true;
+}
+function occShapeHasFace(shape,ref,p){
+  if(!shape)return false;
+  const ex=new occt.TopExp_Explorer_2(shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,occt.TopAbs_ShapeEnum.TopAbs_SHAPE);
+  let ok=false;
+  try{
+    while(!ok&&ex.More()){
+      const f=occt.TopoDS.Face_1(ex.Current());
+      try{
+        const b=occFaceBox(f);let inBox=!!b;
+        if(b)for(let k=0;k<3;k++)if(Math.abs(p[k]-b.pos[k])>b.dim[k]/2+0.05){inBox=false;break;}
+        if(inBox)ok=occFaceSurfSame(ref,occFaceSurf(f),p);
+      }catch(e){}
+      try{f.delete();}catch(e){}
+      ex.Next();
+    }
+  }finally{try{ex.delete();}catch(e){}}
+  return ok;
+}
+function occFaceCreator(mesh,fi,point){
+  // Id de la fonction (de premier niveau) qui a créé la face cliquée, ou null.
+  if(!occHas()||!occLive||!occLive.shape||!mesh||fi==null||!point)return null;
+  const hit=occFaceOfHit(mesh,fi);
+  if(!hit||!hit.bd||hit.bd.kind!=='body')return null;
+  if(occCreatorMemo.live!==occLive)occCreatorMemo={live:occLive,m:new Map()};
+  const bid=hit.bd.bodyId||hit.bd.id,key=bid+'|'+hit.ord;
+  if(occCreatorMemo.m.has(key)){try{hit.face.delete();}catch(e){}return occCreatorMemo.m.get(key);}
+  const ref=occFaceSurf(hit.face);try{hit.face.delete();}catch(e){}
+  const p=[point.x,point.y,point.z];
+  const seq=[];
+  let FR=null,id=null;
+  occPrefixTap=(b,f,sh)=>{if(b===bid)seq.push({f,on:occShapeHasFace(sh,ref,p)});};
+  try{FR=occFinalShape(tlReplayCount());}catch(e){FR=null;}
+  finally{occPrefixTap=null;}
+  try{if(FR)occCleanup(FR,null);}catch(e){}
+  // dernière étape où la face existe, puis début de cette présence ininterrompue
+  let k=seq.length-1;while(k>=0&&!seq[k].on)k--;
+  if(k>=0){while(k>0&&seq[k-1].on)k--;id=seq[k].f.id;}
+  const f=id&&(doc.features||[]).find(x=>x.id===id);
+  if(f&&f.repeatId)id=f.repeatId;
+  occCreatorMemo.m.set(key,id);
+  return id;
+}
+function faceSelectFeature(mesh,fi,point){
+  // Clic sur une face : sa fonction devient la sélection de l'arbre et de la timeline (qui
+  // défilent pour la montrer) ; la face reste en surbrillance, la vue ne bouge pas.
+  let id=null;try{id=occFaceCreator(mesh,fi,point);}catch(e){id=null;}
+  if(!id||!(doc.features||[]).some(f=>f.id===id))return false;
+  if(sel.kind==='feature'&&sel.id===id&&treeSel.length===1&&treeSel[0]===id)return true;
+  treeSel=[id];sel={kind:'feature',id};
+  renderTree();renderProps();refreshParts();
+  return true;
 }
 function closestAxisPoints(c1,a1,c2,a2){
   const w0=c1.clone().sub(c2),b=a1.dot(a2),den=1-b*b;
@@ -1452,7 +1550,7 @@ function importTreeRows(L,f,T,lvl){
       title:(c.k.length?'Sous-ensemble · '+c.o.length+' pièce(s)':'Pièce')+' du STEP « '+f.name+' » · 👁 = afficher / masquer dans la vue (la FAO et le solide exact ne changent pas)',
       html:'<span class="tri">'+(c.k.length?(open?'▼':'▶'):'')+'</span><span>'+(c.k.length?'📦':'🧊')+'</span><span class="nm">'+esc(c.n)+
         (c.k.length?' <span style="color:var(--muted)">· '+c.o.length+(nh?' · '+nh+' masquée(s)':'')+'</span>':'')+'</span>'+
-        '<span class="eye" title="Afficher / masquer"'+(some?' style="opacity:.45"':'')+'>'+(all?'🙈':'👁')+'</span>',
+        '<span class="eye" title="Afficher / masquer"'+(some?' style="opacity:.45"':'')+'>'+(all?EYE_OFF:'👁')+'</span>',
       on:{
         tri:()=>{if(!c.k.length)return;if(impTreeOpen.has(key))impTreeOpen.delete(key);else impTreeOpen.add(key);renderTree();},
         eye:()=>importHideSet(f,c.o,!all),

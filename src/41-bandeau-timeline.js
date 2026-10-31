@@ -21,7 +21,12 @@ let tlbEl=null,tlbDrag=null,tlbNoClick=false;
       '#mfTl .tlbC{display:flex;gap:1px;flex:none}'+
       '#mfTl .tlbC button{padding:2px 5px;min-width:22px;font-size:.72rem;line-height:1.2;background:none;border:1px solid transparent;border-radius:6px;color:var(--text)}'+
       '#mfTl .tlbC button:hover{border-color:var(--border);color:var(--primary)}'+
-      '#mfTl .tlbR{display:flex;align-items:center;gap:3px;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;padding:5px 4px 3px;scrollbar-width:thin}'+
+      '#mfTl .tlbR{display:flex;align-items:center;gap:3px;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;padding:5px 4px 3px;scrollbar-width:none}'+
+      '#mfTl .tlbR::-webkit-scrollbar{display:none}'+
+      // V0.23.26 : barre de défilement fondue sur le bandeau (fine, translucide, au survol), posée
+      // dans la marge sous les icônes : elle ne couvre aucune étape, les clics passent
+      '#mfTl .tlbB{position:absolute;bottom:2px;height:4px;border-radius:2px;background:var(--muted);opacity:0;transition:opacity .2s;cursor:ew-resize;display:none}'+
+      '#mfTl .tlbB.on{display:block}#mfTl:hover .tlbB.on{opacity:.35}#mfTl .tlbB.on:hover,#mfTl .tlbB.drag{opacity:.75!important}'+
       '#mfTl .tlbS{flex:none;position:relative;display:flex;align-items:center;justify-content:center;min-width:34px;height:32px;padding:0 4px;box-sizing:border-box;'+
         'border-radius:7px;border:1px solid var(--border);background:rgba(127,127,127,.1);cursor:pointer;font-size:.95rem;line-height:1;white-space:nowrap}'+
       '#mfTl .tlbS.sk{background:rgba(255,159,10,.13)}'+
@@ -216,8 +221,18 @@ function tlbHost(){
   });
   const R=document.createElement('div');R.className='tlbR';
   const N=document.createElement('span');N.className='tlbN';
-  d.appendChild(C);d.appendChild(R);d.appendChild(N);
-  d._row=R;d._cnt=N;d._steps=[];
+  const B=document.createElement('div');B.className='tlbB';
+  d.appendChild(C);d.appendChild(R);d.appendChild(N);d.appendChild(B);
+  d._row=R;d._cnt=N;d._steps=[];d._bar=B;
+  R.addEventListener('scroll',tlbBarSync);
+  window.addEventListener('resize',tlbBarSync);
+  B.onpointerdown=e=>{
+    if(e.button)return;const x0=e.clientX,s0=R.scrollLeft;B.classList.add('drag');
+    try{B.setPointerCapture(e.pointerId);}catch(_){}
+    B.onpointermove=ev=>{R.scrollLeft=s0+(ev.clientX-x0)*R.scrollWidth/Math.max(1,R.clientWidth);};
+    B.onpointerup=B.onpointercancel=()=>{B.onpointermove=null;B.classList.remove('drag');};
+    try{e.preventDefault();}catch(_){}
+  };
   // la vue 3D ne doit ni tourner ni zoomer sous le bandeau ; molette = défilement horizontal
   ['pointerdown','mousedown','dblclick'].forEach(t=>d.addEventListener(t,e=>{try{e.stopPropagation();}catch(_){}}));
   d.addEventListener('wheel',e=>{try{e.stopPropagation();if(Math.abs(e.deltaY)>Math.abs(e.deltaX)){R.scrollLeft+=e.deltaY;e.preventDefault();}}catch(_){}},{passive:false});
@@ -290,4 +305,17 @@ function renderTimeline(){
   if(!S.length){const e=document.createElement('span');e.className='tlbE';e.textContent='Fil vide — créez une esquisse puis une extrusion.';R.appendChild(e);}
   const nF=S.filter(s=>s.kind==='feature').length,nA=S.filter(s=>s.kind==='feature'&&!s.off).length;
   h._cnt.textContent=nF?(mOn?nA+' / '+nF:nF)+' fonction(s)':'';
+  // V0.23.26 : sélection changée → l'étape choisie, hors de vue, vient au centre du bandeau (42)
+  const k=selRevealKey();
+  tlbBarSync();
+  if(k!==tlbRevealLast){const el=R.querySelector('.tlbS.sel');if(!el||el.offsetParent){tlbRevealLast=k;if(el)try{selRevealIn(R,el,true);}catch(e){}}}
+}
+let tlbRevealLast='';
+function tlbBarSync(){
+  // Curseur de la barre fondue : position et longueur proportionnelles au défilement de la rangée
+  const h=tlbEl;if(!h||!h._bar)return;
+  const R=h._row,B=h._bar,sw=R.scrollWidth,cw=R.clientWidth;
+  if(!(sw>cw+1)){B.classList.remove('on');return;}
+  const w=Math.max(24,cw*cw/sw),x=R.offsetLeft+(cw-w)*R.scrollLeft/Math.max(1,sw-cw);
+  B.style.left=x+'px';B.style.width=w+'px';B.classList.add('on');
 }

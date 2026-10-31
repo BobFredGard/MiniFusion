@@ -318,8 +318,8 @@ function rebuildInner(projPass){
     }
     // Fantômes des outils de découpe (rouge translucide, exclus de l'export, masqués par défaut)
     ghosts.forEach((gh,i)=>{
-      const mat=new THREE.MeshStandardMaterial({color:0xff453a,transparent:true,opacity:0.22,depthWrite:false});
-      const mesh=new THREE.Mesh(gh.g,mat);mesh.userData.bid='ghost_'+i;mesh.raycast=()=>{};mesh.visible=false;
+      const mat=ghostMaterial(0xff453a);
+      const mesh=new THREE.Mesh(gh.g,mat);mesh.userData.bid='ghost_'+i;mesh.raycast=()=>{};mesh.visible=false;mesh.renderOrder=20;
       scene.add(mesh);
       bodies.push({id:'ghost_'+i,name:'🔧 Outil '+(gh.orphan?'(orphelin)':'(découpe)'),mesh,color:0xff453a,visible:false,kind:'ghost',ref:gh.fid||null,ghost:true});
     });

@@ -705,6 +705,13 @@ function setView(v){
 }
 
 /* ---------- couleurs / overlay pièces ---------- */
+function ghostMaterial(col){
+  // V0.23.26 : outil de la fonction sélectionnée, bien visible — dessiné PAR-DESSUS la pièce
+  // (sans test de profondeur : un perçage se voit même enfoui). Mat (Lambert : pas de reflet
+  // blanc qui le délavait en rose), rouge vif auto-éclairé, peu transparent.
+  const c=new THREE.Color(col===0xff453a?0xff1a10:col);
+  return new THREE.MeshLambertMaterial({color:c,emissive:c.clone().multiplyScalar(0.48),transparent:true,opacity:0.75,depthWrite:false,depthTest:false});
+}
 function updateGhostVis(){
   // Fantômes d'outils (la « pièce rouge translucide ») : l'aperçu au clic dans l'arbre
   // fonctionne déjà (visible quand la découpe — ou l'outil — est sélectionnée). On y ajoute
@@ -712,9 +719,15 @@ function updateGhostVis(){
   // découpe est sélectionnée (sinon l'outil s'affiche à l'instant même de l'opération).
   // Le masquage s'auto-efface dès que la sélection change.
   if(ghostHide&&!(sel.kind==='feature'&&sel.id===ghostHide))ghostHide=null;
+  // V0.23.26 : répétition sélectionnée → le motif entier en rouge (sources + instances)
+  const motif=new Set();
+  try{
+    const rp=sel.kind==='feature'?(doc.features||[]).find(f=>f.id===sel.id&&f.type==='repeat'):null;
+    if(rp)repExpandSources([rp]).forEach(f=>motif.add(f.id));
+  }catch(e){}
   bodies.forEach(b=>{
     if(!b.ghost||!b.ref)return;
-    let on=(sel.kind==='feature'&&sel.id===b.ref)||(sel.kind==='body'&&sel.id===b.id);
+    let on=(sel.kind==='feature'&&(sel.id===b.ref||motif.has(b.ref)))||(sel.kind==='body'&&sel.id===b.id);
     if(ghostHide===b.ref)on=false; // opération en cours : outil caché
     b.visible=on;b.mesh.visible=on;
   });

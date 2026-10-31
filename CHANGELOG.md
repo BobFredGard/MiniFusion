@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**483 versions**, de `2026-09-28b` à `V0.23.25` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**484 versions**, de `2026-09-28b` à `V0.23.26` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5922,3 +5922,13 @@ Suite de V0.23.24 : en Trochoïdal, MERLIN-23-001 faisait encore 296 descentes v
 - `CACHE_VER` 2026-10-30-004 : les ébauches 3D sont à régénérer.
 - **Tests** : `npm run parcours` (5 ébauches changées, rapides contrôlés sur Z-map du brut : aucun nouveau rapide en matière ; Perçages 12 / 14 en 3+2, outil selon X) ; `tests/test_fao_*.cjs` ; `npm run ci`.
 - **README** remis à jour (V0.21.10 → V0.23.25) : écran de démarrage, coupe X / Y / Z, filet creusé, balayage sur spline, STEP multi-corps, FAO en pièce active, Ébauche 3D Trochoïdal / Escargot et entrées, Contour en pente, limites FAO, copier / coller, cartouche externe, orientation et rendu des vues, coupe locale, hauteur des cotes, compteurs du développement.
+
+## V0.23.26 - Sélection synchronisée vue / arbre / timeline ; outil en rouge vif ; barre de timeline fondue ; œil barré
+Demande : un clic sur une face (un trou, par exemple) sélectionne sa fonction dans l'arbre et la timeline, qui la montrent ; tout cela dans les trois sens, sans bouger la vue 3D.
+- **Face → fonction** (`src/90-picking-mesure-import.js`, `occFaceCreator`) : pas d'historique topologique OCCT, le corps est rejoué (points de contrôle : des copies, pas de booléens) avec un observateur après chaque fonction (`occPrefixTap`, `src/20`, rejeu de premier niveau seulement, filets sautés). La face existe à une étape si une face de même surface (plan : normale sortante + distance ; cylindre : axe + rayon ; autre : type) contient le point cliqué dans sa boîte ; créatrice = la fonction qui suit la dernière étape où elle n'existe pas. Instance de répétition → la répétition. Calcul différé après la surbrillance de la face, mémorisé par solide (~70 ms la première fois sur Perçages).
+- **Défilement** (`src/42`, `src/41`) : à chaque changement de sélection, la ligne de l'arbre et l'étape de la timeline hors de vue sont amenées au centre ; le défilement manuel n'est jamais repris à chaque re-rendu ; rien quand le panneau est masqué.
+- **Timeline** : barre de défilement système remplacée par un curseur fin, translucide, visible au survol, posé sous les icônes (ne gêne pas la sélection), glissable.
+- **Outil en rouge** (`src/10`, `ghostMaterial`) : la fonction sélectionnée montre son outil rouge vif, mat, peu transparent, dessiné par-dessus la pièce (avant : rouge pâle à 22 %, caché dans la matière) ; une **répétition** sélectionnée montre tout son motif (sources + instances), elle n'affichait rien.
+- **Clic dans le vide** de la vue 3D : la sélection est annulée (arbre, timeline, panneau).
+- **Arbres** : 🙈 remplacé par un œil barré grisé (`EYE_OFF`, transparent aux clics) — fonctions, corps, repère, instances, construction, assemblage, arbre STEP.
+- **Tests** : Perçages (56 faces attribuées : perçages, répétition, découpes, congé, chanfrein ; clic réel sur un lamage et un taraudage, défilements arbre et timeline vérifiés) ; `tests/fixtures/arbre_reference.json` réécrit (yeux seulement) ; `npm run ci`.

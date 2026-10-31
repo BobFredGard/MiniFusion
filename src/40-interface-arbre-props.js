@@ -100,17 +100,21 @@ let repMode=null;
       '.tnode .pwr{cursor:pointer;user-select:none;font-size:.8rem;opacity:.34;filter:grayscale(1)}'+
       '.tnode .pwr.on{opacity:1;filter:none;color:var(--accent)}'+
       '.tnode .eye{cursor:pointer;user-select:none}'+
-      '.tnode.bh.hidden .pwr{filter:none;opacity:.6}';
+      '.tnode.bh.hidden .pwr{filter:none;opacity:.6}'+
+      // V0.23.26 : œil BARRÉ grisé (remplace 🙈) ; transparent aux clics, la cible reste .eye
+      '.eyeoff{position:relative;display:inline-block;pointer-events:none;filter:grayscale(1);opacity:.5}'+
+      '.eyeoff::after{content:"";position:absolute;left:-2px;right:-2px;top:50%;border-top:1.7px solid #8e8e93;transform:rotate(-38deg)}';
     (document.head||document.body||document.documentElement).appendChild(st);
   }catch(e){}
 })();
+const EYE_OFF='<span class="eyeoff">👁</span>'; // œil des arbres, élément masqué
 // Sélection MULTIPLE de fonctions (Ctrl+clic) + suppression au clavier (Suppr).
 // `sel` reste le modèle simple utilisé partout ailleurs (panneau, outils) : la
 // multi-sélection est un état parallèle, jamais une refonte de `sel`.
 // L'annulation, elle, est celle du DOCUMENT (voir 45-annuler-document.js) : pas
 // de pile locale ici, sinon deux historiques qui se désynchronisent.
 let treeSel=[];   // ids de fonctions, dans l'ordre de clic
-// Un glyphe par TYPE de fonction ; l'œil (👁/🙈) reste, lui, exclusivement la
+// Un glyphe par TYPE de fonction ; l'œil (👁 / barré) reste, lui, exclusivement la
 // visibilité. Fonction globale : servant aussi à la liste de sources de la
 // répétition, qui vit hors de renderTree.
 function featIconOf(f){

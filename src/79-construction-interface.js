@@ -624,7 +624,7 @@ function cgTreeModel(L){
     const on=(sel&&sel.kind==='cg'&&sel.id===el.id)||treeSel.indexOf(el.id)>=0;
     const warn=el.st==='warn'?' <span title="'+String(el.msg||'').replace(/"/g,'&quot;')+'" style="color:var(--warn)">⚠</span>':'';
     L.push({lvl:1,cls:'tnode'+(on?' sel':'')+(el.visible===false?' hidden':''),
-      html:'<span>'+CG_KINDS[el.kind].ic+'</span><span class="nm">'+cgLabel(el).replace(/</g,'&lt;')+warn+'</span><span class="eye" title="Afficher / masquer">'+(el.visible===false?'🙈':'👁')+'</span>',
+      html:'<span>'+CG_KINDS[el.kind].ic+'</span><span class="nm">'+cgLabel(el).replace(/</g,'&lt;')+warn+'</span><span class="eye" title="Afficher / masquer">'+(el.visible===false?EYE_OFF:'👁')+'</span>',
       title:'Clic = sélectionner · Ctrl / Shift+clic = lot · double-clic = '+((el.kind==='plane'||el.kind==='frame')?'esquisse dessus':'modifier')+' · clic droit = modifier, renommer, supprimer',
       on:{
         eye:()=>{el.visible=!(el.visible!==false);try{dirty=true;}catch(e){}cgDraw();renderTree();},

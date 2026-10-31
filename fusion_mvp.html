@@ -336,7 +336,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.23.25';
+const APP_VER='V0.23.26';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 try{var mfSv=document.getElementById('mfSplashVer');if(mfSv)mfSv.textContent=APP_VER;}catch(e){} // écran de démarrage
 
@@ -1379,6 +1379,13 @@ function setView(v){
 }
 
 /* ---------- couleurs / overlay pièces ---------- */
+function ghostMaterial(col){
+  // V0.23.26 : outil de la fonction sélectionnée, bien visible — dessiné PAR-DESSUS la pièce
+  // (sans test de profondeur : un perçage se voit même enfoui). Mat (Lambert : pas de reflet
+  // blanc qui le délavait en rose), rouge vif auto-éclairé, peu transparent.
+  const c=new THREE.Color(col===0xff453a?0xff1a10:col);
+  return new THREE.MeshLambertMaterial({color:c,emissive:c.clone().multiplyScalar(0.48),transparent:true,opacity:0.75,depthWrite:false,depthTest:false});
+}
 function updateGhostVis(){
   // Fantômes d'outils (la « pièce rouge translucide ») : l'aperçu au clic dans l'arbre
   // fonctionne déjà (visible quand la découpe — ou l'outil — est sélectionnée). On y ajoute
@@ -1386,9 +1393,15 @@ function updateGhostVis(){
   // découpe est sélectionnée (sinon l'outil s'affiche à l'instant même de l'opération).
   // Le masquage s'auto-efface dès que la sélection change.
   if(ghostHide&&!(sel.kind==='feature'&&sel.id===ghostHide))ghostHide=null;
+  // V0.23.26 : répétition sélectionnée → le motif entier en rouge (sources + instances)
+  const motif=new Set();
+  try{
+    const rp=sel.kind==='feature'?(doc.features||[]).find(f=>f.id===sel.id&&f.type==='repeat'):null;
+    if(rp)repExpandSources([rp]).forEach(f=>motif.add(f.id));
+  }catch(e){}
   bodies.forEach(b=>{
     if(!b.ghost||!b.ref)return;
-    let on=(sel.kind==='feature'&&sel.id===b.ref)||(sel.kind==='body'&&sel.id===b.id);
+    let on=(sel.kind==='feature'&&(sel.id===b.ref||motif.has(b.ref)))||(sel.kind==='body'&&sel.id===b.id);
     if(ghostHide===b.ref)on=false; // opération en cours : outil caché
     b.visible=on;b.mesh.visible=on;
   });
@@ -6163,7 +6176,15 @@ function occCkPut(key,mkShape){
   occCk.push({key,shape});
   while(occCk.length>occCkMax()){const old=occCk.shift();try{old.shape.delete();}catch(e){}delete occCkEdges[old.key];}
 }
+// V0.23.26 : occPrefixTap(bid,f,solide) — observateur du rejeu (occFaceCreator, 90) : appelé après
+// CHAQUE fonction du rejeu de premier niveau (pas celui d'un corps outil de combinaison), solide
+// accumulé à ce point de la timeline, prêté (ne pas le garder ni le libérer).
+let occPrefixTap=null,occReplayNest=0;
 function occReplayBody(bid,list){
+  occReplayNest++;
+  try{return occReplayBodyIn(bid,list);}finally{occReplayNest--;}
+}
+function occReplayBodyIn(bid,list){
   // Rejeu ISOLÉ d'un corps : mêmes règles que l'ancien rejeu global (ordre timeline,
   // Fuse/Cut, congés/déplacements/dépouilles/coques entrelacés, cache par points de
   // contrôle), mais l'accumulateur ne voit QUE les fonctions du corps — une découpe du
@@ -6180,7 +6201,7 @@ function occReplayBody(bid,list){
   // chaîne exacte et devient le volume à unir / soustraire.
   // Outil de face ouvert sur un STEP seul (occStepForce) : il entre aussi dans la chaîne.
   const importSeul=!occStepForce&&!list.some(f=>f&&f.type!=='import');
-  list.forEach(f=>{
+  const step=f=>{
     const ckPre=ckKey; // clé du solide d'entrée de cette fonction (worker de suppression, 21)
     ckKey+=featSig(f)+';';
     if(f.type==='xfillet'){
@@ -6385,7 +6406,9 @@ function occReplayBody(bid,list){
       result=u;
     }
     occCkPut(ckKey,()=>occShapeCopy(result)); // point de contrôle pour le rejeu suivant
-  });
+  };
+  const tap=occPrefixTap&&occReplayNest===1?occPrefixTap:null;
+  list.forEach(f=>{step(f);if(tap)try{tap(bid,f,result);}catch(e){}});
   // V0.21.19 : filets modélisés creusés EN DERNIER, en une seule découpe (src/76,
   // occShapeOfHole) : dans l'arbre, chaque perçage n'a laissé qu'un avant-trou lisse,
   // et les fonctions suivantes n'ont jamais vu les faces hélicoïdales.
@@ -6459,8 +6482,8 @@ function occFinalShape(upto){
   // rejeu partiel = la liste s'arrête avant la fin (références d'esquisse) ; le rejeu
   // complet passe aussi un upto (marqueur de la timeline) : seule la longueur compte
   const partial=list.length<feats.filter(f=>!(occSkipFeat&&f.id===occSkipFeat)).length;
-  occThreadSkip=partial; // reposé à chaque appel : jamais d'état périmé
-  if(!partial)occThrPending=false;
+  occThreadSkip=partial||!!occPrefixTap; // reposé à chaque appel : jamais d'état périmé (observateur : filets inutiles)
+  if(!partial&&!occPrefixTap)occThrPending=false;
   const preThr=[]; // {bodyId, shape} : corps SANS filets modélisés (FAO)
   order.forEach(bid=>{
     if(consumed.has(bid))return;
@@ -6759,8 +6782,8 @@ function occRebuild(){
     FR.ghostShapes.forEach((gh,i)=>{
       try{
         if(!gh.geo)return;
-        const mat=new THREE.MeshStandardMaterial({color:gh.inexact?0xff9f0a:0xff453a,transparent:true,opacity:0.22,depthWrite:false});
-        const mesh=new THREE.Mesh(gh.geo,mat);mesh.userData.bid='occghost_'+i;mesh.raycast=()=>{};mesh.visible=false;
+        const mat=ghostMaterial(gh.inexact?0xff9f0a:0xff453a);
+        const mesh=new THREE.Mesh(gh.geo,mat);mesh.userData.bid='occghost_'+i;mesh.raycast=()=>{};mesh.visible=false;mesh.renderOrder=20;
         scene.add(mesh);
         // Fantôme masqué par défaut (sinon il dépasse là où un congé a rajouté de la matière).
         // Visible quand sa découpe est sélectionnée, ou via 👁 dans Pièces.
@@ -7444,8 +7467,8 @@ function rebuildInner(projPass){
     }
     // Fantômes des outils de découpe (rouge translucide, exclus de l'export, masqués par défaut)
     ghosts.forEach((gh,i)=>{
-      const mat=new THREE.MeshStandardMaterial({color:0xff453a,transparent:true,opacity:0.22,depthWrite:false});
-      const mesh=new THREE.Mesh(gh.g,mat);mesh.userData.bid='ghost_'+i;mesh.raycast=()=>{};mesh.visible=false;
+      const mat=ghostMaterial(0xff453a);
+      const mesh=new THREE.Mesh(gh.g,mat);mesh.userData.bid='ghost_'+i;mesh.raycast=()=>{};mesh.visible=false;mesh.renderOrder=20;
       scene.add(mesh);
       bodies.push({id:'ghost_'+i,name:'🔧 Outil '+(gh.orphan?'(orphelin)':'(découpe)'),mesh,color:0xff453a,visible:false,kind:'ghost',ref:gh.fid||null,ghost:true});
     });
@@ -7618,17 +7641,21 @@ let repMode=null;
       '.tnode .pwr{cursor:pointer;user-select:none;font-size:.8rem;opacity:.34;filter:grayscale(1)}'+
       '.tnode .pwr.on{opacity:1;filter:none;color:var(--accent)}'+
       '.tnode .eye{cursor:pointer;user-select:none}'+
-      '.tnode.bh.hidden .pwr{filter:none;opacity:.6}';
+      '.tnode.bh.hidden .pwr{filter:none;opacity:.6}'+
+      // V0.23.26 : œil BARRÉ grisé (remplace 🙈) ; transparent aux clics, la cible reste .eye
+      '.eyeoff{position:relative;display:inline-block;pointer-events:none;filter:grayscale(1);opacity:.5}'+
+      '.eyeoff::after{content:"";position:absolute;left:-2px;right:-2px;top:50%;border-top:1.7px solid #8e8e93;transform:rotate(-38deg)}';
     (document.head||document.body||document.documentElement).appendChild(st);
   }catch(e){}
 })();
+const EYE_OFF='<span class="eyeoff">👁</span>'; // œil des arbres, élément masqué
 // Sélection MULTIPLE de fonctions (Ctrl+clic) + suppression au clavier (Suppr).
 // `sel` reste le modèle simple utilisé partout ailleurs (panneau, outils) : la
 // multi-sélection est un état parallèle, jamais une refonte de `sel`.
 // L'annulation, elle, est celle du DOCUMENT (voir 45-annuler-document.js) : pas
 // de pile locale ici, sinon deux historiques qui se désynchronisent.
 let treeSel=[];   // ids de fonctions, dans l'ordre de clic
-// Un glyphe par TYPE de fonction ; l'œil (👁/🙈) reste, lui, exclusivement la
+// Un glyphe par TYPE de fonction ; l'œil (👁 / barré) reste, lui, exclusivement la
 // visibilité. Fonction globale : servant aussi à la liste de sources de la
 // répétition, qui vit hors de renderTree.
 function featIconOf(f){
@@ -9446,7 +9473,12 @@ let tlbEl=null,tlbDrag=null,tlbNoClick=false;
       '#mfTl .tlbC{display:flex;gap:1px;flex:none}'+
       '#mfTl .tlbC button{padding:2px 5px;min-width:22px;font-size:.72rem;line-height:1.2;background:none;border:1px solid transparent;border-radius:6px;color:var(--text)}'+
       '#mfTl .tlbC button:hover{border-color:var(--border);color:var(--primary)}'+
-      '#mfTl .tlbR{display:flex;align-items:center;gap:3px;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;padding:5px 4px 3px;scrollbar-width:thin}'+
+      '#mfTl .tlbR{display:flex;align-items:center;gap:3px;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;padding:5px 4px 3px;scrollbar-width:none}'+
+      '#mfTl .tlbR::-webkit-scrollbar{display:none}'+
+      // V0.23.26 : barre de défilement fondue sur le bandeau (fine, translucide, au survol), posée
+      // dans la marge sous les icônes : elle ne couvre aucune étape, les clics passent
+      '#mfTl .tlbB{position:absolute;bottom:2px;height:4px;border-radius:2px;background:var(--muted);opacity:0;transition:opacity .2s;cursor:ew-resize;display:none}'+
+      '#mfTl .tlbB.on{display:block}#mfTl:hover .tlbB.on{opacity:.35}#mfTl .tlbB.on:hover,#mfTl .tlbB.drag{opacity:.75!important}'+
       '#mfTl .tlbS{flex:none;position:relative;display:flex;align-items:center;justify-content:center;min-width:34px;height:32px;padding:0 4px;box-sizing:border-box;'+
         'border-radius:7px;border:1px solid var(--border);background:rgba(127,127,127,.1);cursor:pointer;font-size:.95rem;line-height:1;white-space:nowrap}'+
       '#mfTl .tlbS.sk{background:rgba(255,159,10,.13)}'+
@@ -9641,8 +9673,18 @@ function tlbHost(){
   });
   const R=document.createElement('div');R.className='tlbR';
   const N=document.createElement('span');N.className='tlbN';
-  d.appendChild(C);d.appendChild(R);d.appendChild(N);
-  d._row=R;d._cnt=N;d._steps=[];
+  const B=document.createElement('div');B.className='tlbB';
+  d.appendChild(C);d.appendChild(R);d.appendChild(N);d.appendChild(B);
+  d._row=R;d._cnt=N;d._steps=[];d._bar=B;
+  R.addEventListener('scroll',tlbBarSync);
+  window.addEventListener('resize',tlbBarSync);
+  B.onpointerdown=e=>{
+    if(e.button)return;const x0=e.clientX,s0=R.scrollLeft;B.classList.add('drag');
+    try{B.setPointerCapture(e.pointerId);}catch(_){}
+    B.onpointermove=ev=>{R.scrollLeft=s0+(ev.clientX-x0)*R.scrollWidth/Math.max(1,R.clientWidth);};
+    B.onpointerup=B.onpointercancel=()=>{B.onpointermove=null;B.classList.remove('drag');};
+    try{e.preventDefault();}catch(_){}
+  };
   // la vue 3D ne doit ni tourner ni zoomer sous le bandeau ; molette = défilement horizontal
   ['pointerdown','mousedown','dblclick'].forEach(t=>d.addEventListener(t,e=>{try{e.stopPropagation();}catch(_){}}));
   d.addEventListener('wheel',e=>{try{e.stopPropagation();if(Math.abs(e.deltaY)>Math.abs(e.deltaX)){R.scrollLeft+=e.deltaY;e.preventDefault();}}catch(_){}},{passive:false});
@@ -9715,6 +9757,19 @@ function renderTimeline(){
   if(!S.length){const e=document.createElement('span');e.className='tlbE';e.textContent='Fil vide — créez une esquisse puis une extrusion.';R.appendChild(e);}
   const nF=S.filter(s=>s.kind==='feature').length,nA=S.filter(s=>s.kind==='feature'&&!s.off).length;
   h._cnt.textContent=nF?(mOn?nA+' / '+nF:nF)+' fonction(s)':'';
+  // V0.23.26 : sélection changée → l'étape choisie, hors de vue, vient au centre du bandeau (42)
+  const k=selRevealKey();
+  tlbBarSync();
+  if(k!==tlbRevealLast){const el=R.querySelector('.tlbS.sel');if(!el||el.offsetParent){tlbRevealLast=k;if(el)try{selRevealIn(R,el,true);}catch(e){}}}
+}
+let tlbRevealLast='';
+function tlbBarSync(){
+  // Curseur de la barre fondue : position et longueur proportionnelles au défilement de la rangée
+  const h=tlbEl;if(!h||!h._bar)return;
+  const R=h._row,B=h._bar,sw=R.scrollWidth,cw=R.clientWidth;
+  if(!(sw>cw+1)){B.classList.remove('on');return;}
+  const w=Math.max(24,cw*cw/sw),x=R.offsetLeft+(cw-w)*R.scrollLeft/Math.max(1,sw-cw);
+  B.style.left=x+'px';B.style.width=w+'px';B.classList.add('on');
 }
 
 /* ═══════════════ 42-arbre-modele.js — arbre modele ═══════════════ */
@@ -9897,7 +9952,7 @@ function treePart(L){
     if(dbl)on.dbl=dbl;
     const dd=kind==='sketch'?{drag:{kind:'sketch',id}}:(mvOk?{drag:{kind:'feature',id},drop:treeDropFeat(id)}:{});
     L.push(Object.assign(dd,{lvl:1,cls:'tnode'+(estSel?' sel':'')+(visible===false?' hidden':'')+(lk?' locked':''),
-      html:`<span>${icon}</span><span class="nm">${name}</span>${kind==='feature'?antTag(id):''}${mv}<span class="eye" title="Afficher / masquer">`+(visible===false?'🙈':'👁')+`</span>`,
+      html:`<span>${icon}</span><span class="nm">${name}</span>${kind==='feature'?antTag(id):''}${mv}<span class="eye" title="Afficher / masquer">`+(visible===false?EYE_OFF:'👁')+`</span>`,
       title:kind==='sketch'?(info?info+' — ':'')+'Clic = sélectionner · Ctrl+clic = ajouter au lot · Shift+clic = plage · Suppr = supprimer · double-clic = modifier l’esquisse · 👁 = afficher/masquer':
         kind==='feature'?'Clic = sélectionner · Ctrl+clic = ajouter au lot · Shift+clic = plage · double-clic = éditer congé/chanfrein exact · 👁 = afficher/masquer · ▲▼ = décaler dans le corps':undefined,
       on}));
@@ -9907,7 +9962,7 @@ function treePart(L){
       const on=!!(axHelper&&axHelper.visible);
       L.push({lvl:1,cls:'tnode'+(on?'':' hidden'),
         title:'Repère de l’origine : point central, axes X/Y/Z et 3 plans cliquables (un clic sur un plan le sélectionne) · 👁 = montrer/masquer',
-        html:`<span class="pdot" style="background:#fff;box-shadow:0 0 0 2px #1c1c1e inset"></span><span class="nm">Repère <span style="color:var(--muted)">· X Y Z + plans</span></span><span class="eye" title="Afficher / masquer le repère">${on?'👁':'🙈'}</span>`,
+        html:`<span class="pdot" style="background:#fff;box-shadow:0 0 0 2px #1c1c1e inset"></span><span class="nm">Repère <span style="color:var(--muted)">· X Y Z + plans</span></span><span class="eye" title="Afficher / masquer le repère">${on?'👁':EYE_OFF}</span>`,
         on:{
           eye:()=>{
             const v=!(axHelper&&axHelper.visible);
@@ -9971,7 +10026,7 @@ function treePart(L){
       L.push({drag:{kind:'feature',id:f.id},drop:treeDropFeat(f.id),lvl:1,cls:'tnode'+((sel.kind==='feature'&&sel.id===f.id)||treeSel.indexOf(f.id)>=0?' sel':'')+(f.visible===false?' hidden':'')+(tlLocked(f)?' locked':''),
         html:`<span class="tri" title="Déplier / replier les fonctions copiées">${open?'▼':'▶'}</span><span>🔁</span><span class="nm">${f.name} · ${repTypeName(f.mode,f)} · ${vkids.length} instance(s)`+(repIsNewBody(f)?' <span title="Opération Nouveau corps : un corps par exemplaire">◧</span>':'')+
           (srcs.length?` <span class="repsrc" title="Sources : ${srcNames.join(', ')}">◀ ${srcs.length}</span>`:' <span class="repsrc vide" title="Aucune source choisie">◀ 0</span>')+
-          `</span>`+antTag(f.id)+` <span class="mv" data-d="-1" title="Monter dans le corps (bloc entier)">▲</span><span class="mv" data-d="1" title="Descendre dans le corps (bloc entier)">▼</span><span class="eye" title="Afficher / masquer">`+(f.visible===false?'🙈':'👁')+`</span>`,
+          `</span>`+antTag(f.id)+` <span class="mv" data-d="-1" title="Monter dans le corps (bloc entier)">▲</span><span class="mv" data-d="1" title="Descendre dans le corps (bloc entier)">▼</span><span class="eye" title="Afficher / masquer">`+(f.visible===false?EYE_OFF:'👁')+`</span>`,
         title:'Clic = sélectionner · ▶/▼ = montrer/masquer les fonctions copiées · ▲▼ = décaler le bloc dans le corps'+
           (srcs.length?(' · sources : '+srcNames.join(', ')):' · AUCUNE source : la répétition ne produit rien'),
         on:{
@@ -9987,7 +10042,7 @@ function treePart(L){
       if(!open)return;
       vkids.forEach(k=>{
         L.push({lvl:2,cls:'tnode repchild'+((sel.kind==='feature'&&sel.id===f.id)||treeSel.indexOf(k.id)>=0?' sel':'')+(k.visible===false?' hidden':''),
-          html:`<span>${featIconOf(k)}</span><span class="nm">${k.name}</span><span class="eye" title="Afficher / masquer">`+(k.visible===false?'🙈':'👁')+`</span>`,
+          html:`<span>${featIconOf(k)}</span><span class="nm">${k.name}</span><span class="eye" title="Afficher / masquer">`+(k.visible===false?EYE_OFF:'👁')+`</span>`,
           title:'Instance n°'+k.repIndex+' de la répétition — clic = sélectionner la répétition · Ctrl+clic = ajouter au lot à supprimer',
           on:{
             eye:()=>{k.visible=!(k.visible!==false);markDirty();rebuild();renderTree();},
@@ -10032,7 +10087,7 @@ function treePart(L){
       html:'<span class="tri" title="Déplier / replier les fonctions du corps">'+(open?'▼':'▶')+'</span><span title="Corps — '+(be.name||'')+'">🧱</span>'+
         '<span class="nm"'+(bcol?(' style="color:'+bcol+'"'):'')+'>'+be.name+(estActif?' ●':'')+(pasNe?' <span title="Ce corps naît plus loin dans la timeline : il n’existe pas encore au marqueur">⏳ pas encore créé</span>':' · '+kidsVis.length+' fonction(s)')+(function(){const o=typeof repBodyOwner==='function'?repBodyOwner(be.id):null;return o?' <span class="repsrc" title="Corps créé par la répétition « '+o.name+' » (opération Nouveau corps)">🔁 '+o.name+'</span>':'';})()+'</span>'+
         '<span class="pwr'+(enRejeu?' on':'')+'" title="'+(enRejeu?'Rejeu ACTIF : toutes les fonctions de ce corps sont recalculées — cliquer pour les EXCLURE (le corps reste visible)':'Rejeu ÉTEINT : toutes les fonctions de ce corps sont exclues (grisées) — cliquer pour les inclure')+'">⏻</span>'+
-        '<span class="eye" title="'+(visVue?'Corps visible dans la 3D — cliquer pour le CACHER (il reste dans le rejeu et l\'export)':'Corps masqué dans la 3D (vue seule) — cliquer pour l\'AFFICHER. Aucune fonction n\'est touchée')+'">'+(visVue?'👁':'🙈')+'</span>',
+        '<span class="eye" title="'+(visVue?'Corps visible dans la 3D — cliquer pour le CACHER (il reste dans le rejeu et l\'export)':'Corps masqué dans la 3D (vue seule) — cliquer pour l\'AFFICHER. Aucune fonction n\'est touchée')+'">'+(visVue?'👁':EYE_OFF)+'</span>',
       title:'Clic = sélectionner et ACTIVER (les nouvelles fonctions naîtront dans « '+be.name+' ») · ▶/▼ = replier · ⏻ = rejeu (inclure/exclure ses fonctions du recalcul) · 👁 = vue 3D seule · clic droit = renommer / supprimer · ➕ additif / ➖ découpe · ● = corps actif',
       on:{
         tri:()=>{be.open=!open;try{dirty=true;}catch(e){}renderTree();},
@@ -10095,7 +10150,7 @@ function treeComps(L,P){
     L.push({drop:treeDropComp(inst.comp),lvl:lv,cls:'tnode tocc'+(self?' tactive':'')+(direct&&asmMode==='asm'&&asmLotHas(id)?' sel':'')+(o.visible===false?' hidden':''),
       style:(!mine&&!self)?{opacity:'0.55'}:{},
       html:tri+'<span>'+(self?'✏️':'📦')+'</span><span class="nm">'+asmEsc(o.name)+sub+'</span>'+badges+
-        '<span class="eye" title="Afficher / masquer">'+(o.visible===false?'🙈':'👁')+'</span>',
+        '<span class="eye" title="Afficher / masquer">'+(o.visible===false?EYE_OFF:'👁')+'</span>',
       title:direct?'Clic = sélectionner · Ctrl+clic = ajouter au lot · Shift+clic = plage · Suppr = supprimer le lot · double-clic = modéliser · ▶ = contenu · clic droit = menu':'Double-clic = modéliser ce composant · ▶ = contenu',
       on:{
         tri:togg,
@@ -10146,7 +10201,7 @@ function treeComps(L,P){
         html:'<span class="tri" title="Afficher / masquer les occurrences">'+(gopen?'▼':'▶')+'</span><span>📦</span><span class="nm">'+asmEsc(gc.name)+
           ' <span style="color:var(--muted)">×'+g.occ.length+'</span>'+(nf?' <span title="'+nf+' fixée(s)">📌'+(nf<g.occ.length?nf:'')+'</span>':'')+
           (nj?' <span title="'+nj+' liée(s) / alignée(s)">⚙'+(nj<g.occ.length?nj:'')+'</span>':'')+'</span>'+
-          '<span class="eye" title="Afficher / masquer toutes les occurrences">'+(nh===g.occ.length?'🙈':'👁')+'</span>',
+          '<span class="eye" title="Afficher / masquer toutes les occurrences">'+(nh===g.occ.length?EYE_OFF:'👁')+'</span>',
         title:g.occ.length+' occurrences de « '+(gc.name||'')+' » · ▶ = les détailler · Ctrl+clic = toutes au lot · 👁 = toutes · double-clic = modéliser le composant',
         on:{tri:gt,
           click:ev=>{
@@ -10387,9 +10442,37 @@ function treeRender(){
   const t=$('tree');t.innerHTML='';
   const L=treeModel();
   treeDraw(t,L);
+  try{treeReveal(t);}catch(e){}
   if(asmMode==='asm'&&asm){try{renderTimeline();}catch(e){}return;}
   updateOriginPlanes();
   try{renderTimeline();}catch(e){}
+}
+// V0.23.26 : sélection changée (arbre, timeline ou face cliquée dans la vue) → la ligne choisie,
+// si elle est hors de vue, est amenée au CENTRE de l'arbre. Seulement au changement : le
+// défilement manuel de l'utilisateur n'est jamais repris à chaque re-rendu.
+function selRevealKey(){return (sel.kind||'')+':'+(sel.id||'')+'|'+treeSel.join(',');}
+function selRevealIn(box,el,horiz){
+  // Centre el dans le conteneur défilant box (axe horizontal ou vertical) s'il n'est pas
+  // entièrement visible. Retourne true si box a défilé.
+  if(!box||!el)return false;
+  const B=box.getBoundingClientRect(),E=el.getBoundingClientRect();
+  if(horiz){
+    if(!(box.scrollWidth>box.clientWidth)||(E.left>=B.left&&E.right<=B.right))return false;
+    box.scrollLeft+=(E.left+E.width/2)-(B.left+B.width/2);
+  }else{
+    if(!(box.scrollHeight>box.clientHeight)||(E.top>=B.top&&E.bottom<=B.bottom))return false;
+    box.scrollTop+=(E.top+E.height/2)-(B.top+B.height/2);
+  }
+  return true;
+}
+let treeRevealLast='';
+function treeReveal(t){
+  const k=selRevealKey();if(k===treeRevealLast)return;
+  const el=t.querySelector('.tnode.sel');
+  if(el&&!el.offsetParent)return; // arbre masqué : on montrera la ligne à sa réapparition
+  treeRevealLast=k;if(!el)return;
+  let box=t;while(box&&box!==document.body&&!(box.scrollHeight>box.clientHeight&&/(auto|scroll)/.test(getComputedStyle(box).overflowY)))box=box.parentElement;
+  if(box&&box!==document.body)selRevealIn(box,el,false);
 }
 
 /* ═══════════════ 43-anteriorite.js — anteriorite ═══════════════ */
@@ -27096,7 +27179,7 @@ function cgTreeModel(L){
     const on=(sel&&sel.kind==='cg'&&sel.id===el.id)||treeSel.indexOf(el.id)>=0;
     const warn=el.st==='warn'?' <span title="'+String(el.msg||'').replace(/"/g,'&quot;')+'" style="color:var(--warn)">⚠</span>':'';
     L.push({lvl:1,cls:'tnode'+(on?' sel':'')+(el.visible===false?' hidden':''),
-      html:'<span>'+CG_KINDS[el.kind].ic+'</span><span class="nm">'+cgLabel(el).replace(/</g,'&lt;')+warn+'</span><span class="eye" title="Afficher / masquer">'+(el.visible===false?'🙈':'👁')+'</span>',
+      html:'<span>'+CG_KINDS[el.kind].ic+'</span><span class="nm">'+cgLabel(el).replace(/</g,'&lt;')+warn+'</span><span class="eye" title="Afficher / masquer">'+(el.visible===false?EYE_OFF:'👁')+'</span>',
       title:'Clic = sélectionner · Ctrl / Shift+clic = lot · double-clic = '+((el.kind==='plane'||el.kind==='frame')?'esquisse dessus':'modifier')+' · clic droit = modifier, renommer, supprimer',
       on:{
         eye:()=>{el.visible=!(el.visible!==false);try{dirty=true;}catch(e){}cgDraw();renderTree();},
@@ -52230,11 +52313,17 @@ Bouton « Esquisse » (ou double-clic dans l'arbre) pour dessiner dessus.`;retur
       const pl=pickPlane(e);
       if(pl){sel={kind:'plane',id:pl};renderTree();renderProps();refreshParts();faceEl.textContent=`Plan ${pl} — ${PLANES[pl].label}\nBouton « Esquisse » (ou double-clic dans l'arbre) pour dessiner dessus.`;return;}
       clearMeasure();faceEl.textContent='Aucune face — cliquez sur un corps.';
+      // V0.23.26 : clic dans le vide = plus rien de sélectionné (arbre, timeline, panneau)
+      if(sel.kind||treeSel.length){sel={kind:null,id:null};treeSel=[];renderTree();renderProps();refreshParts();}
     }return;}
   clearHover();
   if(!second){clearMeasure();selFaces=[{mesh:h.object,faceIndex:h.faceIndex,point:h.point.clone(),geom:occFaceGeom(h.object,h.faceIndex)}];highlightTris(h.object,faceTrisFor(h.object,h.faceIndex),0xff9f0a,0.55);
     const G=selFaces[0].geom;
-    faceEl.textContent=`Face 1 : ${bodyName(h.object)}${G?(G.kind==='cyl'?` · CYLINDRE Ø${(G.r*2).toFixed(2)}`:' · PLAN'):''}\nAire ≈ ${faceArea(h.object,h.faceIndex)}\nCtrl+clic une 2e face (entraxe auto si cylindres) · Bouton « Esquisse » pour esquisser dessus.`;}
+    faceEl.textContent=`Face 1 : ${bodyName(h.object)}${G?(G.kind==='cyl'?` · CYLINDRE Ø${(G.r*2).toFixed(2)}`:' · PLAN'):''}\nAire ≈ ${faceArea(h.object,h.faceIndex)}\nCtrl+clic une 2e face (entraxe auto si cylindres) · Bouton « Esquisse » pour esquisser dessus.`;
+    // V0.23.26 : la fonction créatrice est sélectionnée dans l'arbre et la timeline — différé :
+    // la face s'allume tout de suite, le rejeu observé (points de contrôle) vient ensuite
+    const hm=h.object,hf=h.faceIndex,hp=h.point.clone();
+    setTimeout(()=>{if(selFaces.length===1&&selFaces[0].mesh===hm&&selFaces[0].faceIndex===hf)faceSelectFeature(hm,hf,hp);},0);}
   else{
     if(!selFaces.length){faceSelect(e,false);return;}
     const NB={mesh:h.object,faceIndex:h.faceIndex,point:h.point.clone(),geom:occFaceGeom(h.object,h.faceIndex)};
@@ -52346,6 +52435,98 @@ function occFaceGeom(mesh,fi){
     }catch(e){}
     return out;
   }catch(e){return null;}
+}
+/* V0.23.26 : FONCTION QUI A CRÉÉ UNE FACE (clic sur une face → même sélection dans l'arbre et la
+   timeline). Pas d'historique topologique OCCT : on rejoue le corps (points de contrôle : copies,
+   pas de booléens) en observant le solide après chaque fonction (occPrefixTap, 20). La face
+   « existe » à une étape s'il s'y trouve une face de même surface (plan : normale sortante et
+   distance ; cylindre : axe et rayon ; autre : même type) dont la boîte contient le point cliqué.
+   Créatrice = la fonction après la DERNIÈRE étape où elle n'existe pas (une face recouverte puis
+   rebâtie appartient à la seconde). Instance de répétition → la répétition. Mémorisé par solide. */
+let occCreatorMemo={live:null,m:new Map()};
+function occFaceSurf(f){
+  const out={st:occSurfKind(f),box:occFaceBox(f),n:occFaceOutNormal(f)};
+  try{
+    const ad=new occt.BRepAdaptor_Surface_2(f,true),gt=ad.GetType(),T=occt.GeomAbs_SurfaceType;
+    try{
+      if(gt===T.GeomAbs_Plane&&out.n){const l=ad.Plane().Location();out.d=out.n[0]*l.X()+out.n[1]*l.Y()+out.n[2]*l.Z();}
+      else if(gt===T.GeomAbs_Cylinder){
+        const c=ad.Cylinder(),a=c.Axis(),l=a.Location(),u=a.Direction();
+        out.cy={p:[l.X(),l.Y(),l.Z()],u:[u.X(),u.Y(),u.Z()],r:c.Radius()};
+      }
+    }catch(e){}
+    try{ad.delete();}catch(e){}
+  }catch(e){}
+  return out;
+}
+function occFaceSurfSame(a,b,p){
+  // b (candidate) porte-t-elle la face a au point p ?
+  if(!a||!b||a.st!==b.st||!b.box)return false;
+  const tb=0.05;
+  for(let k=0;k<3;k++)if(Math.abs(p[k]-b.box.pos[k])>b.box.dim[k]/2+tb)return false;
+  if(a.d!=null){
+    if(b.d==null||!b.n||a.n[0]*b.n[0]+a.n[1]*b.n[1]+a.n[2]*b.n[2]<0.999)return false;
+    return Math.abs(a.d-b.d)<0.01;
+  }
+  if(a.cy){
+    const A=a.cy,B=b.cy;if(!B||Math.abs(A.r-B.r)>0.01)return false;
+    const dot=A.u[0]*B.u[0]+A.u[1]*B.u[1]+A.u[2]*B.u[2];if(Math.abs(dot)<0.999)return false;
+    const w=[A.p[0]-B.p[0],A.p[1]-B.p[1],A.p[2]-B.p[2]],t=w[0]*B.u[0]+w[1]*B.u[1]+w[2]*B.u[2];
+    return Math.hypot(w[0]-t*B.u[0],w[1]-t*B.u[1],w[2]-t*B.u[2])<0.01;
+  }
+  return true;
+}
+function occShapeHasFace(shape,ref,p){
+  if(!shape)return false;
+  const ex=new occt.TopExp_Explorer_2(shape,occt.TopAbs_ShapeEnum.TopAbs_FACE,occt.TopAbs_ShapeEnum.TopAbs_SHAPE);
+  let ok=false;
+  try{
+    while(!ok&&ex.More()){
+      const f=occt.TopoDS.Face_1(ex.Current());
+      try{
+        const b=occFaceBox(f);let inBox=!!b;
+        if(b)for(let k=0;k<3;k++)if(Math.abs(p[k]-b.pos[k])>b.dim[k]/2+0.05){inBox=false;break;}
+        if(inBox)ok=occFaceSurfSame(ref,occFaceSurf(f),p);
+      }catch(e){}
+      try{f.delete();}catch(e){}
+      ex.Next();
+    }
+  }finally{try{ex.delete();}catch(e){}}
+  return ok;
+}
+function occFaceCreator(mesh,fi,point){
+  // Id de la fonction (de premier niveau) qui a créé la face cliquée, ou null.
+  if(!occHas()||!occLive||!occLive.shape||!mesh||fi==null||!point)return null;
+  const hit=occFaceOfHit(mesh,fi);
+  if(!hit||!hit.bd||hit.bd.kind!=='body')return null;
+  if(occCreatorMemo.live!==occLive)occCreatorMemo={live:occLive,m:new Map()};
+  const bid=hit.bd.bodyId||hit.bd.id,key=bid+'|'+hit.ord;
+  if(occCreatorMemo.m.has(key)){try{hit.face.delete();}catch(e){}return occCreatorMemo.m.get(key);}
+  const ref=occFaceSurf(hit.face);try{hit.face.delete();}catch(e){}
+  const p=[point.x,point.y,point.z];
+  const seq=[];
+  let FR=null,id=null;
+  occPrefixTap=(b,f,sh)=>{if(b===bid)seq.push({f,on:occShapeHasFace(sh,ref,p)});};
+  try{FR=occFinalShape(tlReplayCount());}catch(e){FR=null;}
+  finally{occPrefixTap=null;}
+  try{if(FR)occCleanup(FR,null);}catch(e){}
+  // dernière étape où la face existe, puis début de cette présence ininterrompue
+  let k=seq.length-1;while(k>=0&&!seq[k].on)k--;
+  if(k>=0){while(k>0&&seq[k-1].on)k--;id=seq[k].f.id;}
+  const f=id&&(doc.features||[]).find(x=>x.id===id);
+  if(f&&f.repeatId)id=f.repeatId;
+  occCreatorMemo.m.set(key,id);
+  return id;
+}
+function faceSelectFeature(mesh,fi,point){
+  // Clic sur une face : sa fonction devient la sélection de l'arbre et de la timeline (qui
+  // défilent pour la montrer) ; la face reste en surbrillance, la vue ne bouge pas.
+  let id=null;try{id=occFaceCreator(mesh,fi,point);}catch(e){id=null;}
+  if(!id||!(doc.features||[]).some(f=>f.id===id))return false;
+  if(sel.kind==='feature'&&sel.id===id&&treeSel.length===1&&treeSel[0]===id)return true;
+  treeSel=[id];sel={kind:'feature',id};
+  renderTree();renderProps();refreshParts();
+  return true;
 }
 function closestAxisPoints(c1,a1,c2,a2){
   const w0=c1.clone().sub(c2),b=a1.dot(a2),den=1-b*b;
@@ -53377,7 +53558,7 @@ function importTreeRows(L,f,T,lvl){
       title:(c.k.length?'Sous-ensemble · '+c.o.length+' pièce(s)':'Pièce')+' du STEP « '+f.name+' » · 👁 = afficher / masquer dans la vue (la FAO et le solide exact ne changent pas)',
       html:'<span class="tri">'+(c.k.length?(open?'▼':'▶'):'')+'</span><span>'+(c.k.length?'📦':'🧊')+'</span><span class="nm">'+esc(c.n)+
         (c.k.length?' <span style="color:var(--muted)">· '+c.o.length+(nh?' · '+nh+' masquée(s)':'')+'</span>':'')+'</span>'+
-        '<span class="eye" title="Afficher / masquer"'+(some?' style="opacity:.45"':'')+'>'+(all?'🙈':'👁')+'</span>',
+        '<span class="eye" title="Afficher / masquer"'+(some?' style="opacity:.45"':'')+'>'+(all?EYE_OFF:'👁')+'</span>',
       on:{
         tri:()=>{if(!c.k.length)return;if(impTreeOpen.has(key))impTreeOpen.delete(key);else impTreeOpen.add(key);renderTree();},
         eye:()=>importHideSet(f,c.o,!all),

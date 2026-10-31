@@ -3490,7 +3490,15 @@ function occCkPut(key,mkShape){
   occCk.push({key,shape});
   while(occCk.length>occCkMax()){const old=occCk.shift();try{old.shape.delete();}catch(e){}delete occCkEdges[old.key];}
 }
+// V0.23.26 : occPrefixTap(bid,f,solide) — observateur du rejeu (occFaceCreator, 90) : appelé après
+// CHAQUE fonction du rejeu de premier niveau (pas celui d'un corps outil de combinaison), solide
+// accumulé à ce point de la timeline, prêté (ne pas le garder ni le libérer).
+let occPrefixTap=null,occReplayNest=0;
 function occReplayBody(bid,list){
+  occReplayNest++;
+  try{return occReplayBodyIn(bid,list);}finally{occReplayNest--;}
+}
+function occReplayBodyIn(bid,list){
   // Rejeu ISOLÉ d'un corps : mêmes règles que l'ancien rejeu global (ordre timeline,
   // Fuse/Cut, congés/déplacements/dépouilles/coques entrelacés, cache par points de
   // contrôle), mais l'accumulateur ne voit QUE les fonctions du corps — une découpe du
@@ -3507,7 +3515,7 @@ function occReplayBody(bid,list){
   // chaîne exacte et devient le volume à unir / soustraire.
   // Outil de face ouvert sur un STEP seul (occStepForce) : il entre aussi dans la chaîne.
   const importSeul=!occStepForce&&!list.some(f=>f&&f.type!=='import');
-  list.forEach(f=>{
+  const step=f=>{
     const ckPre=ckKey; // clé du solide d'entrée de cette fonction (worker de suppression, 21)
     ckKey+=featSig(f)+';';
     if(f.type==='xfillet'){
@@ -3712,7 +3720,9 @@ function occReplayBody(bid,list){
       result=u;
     }
     occCkPut(ckKey,()=>occShapeCopy(result)); // point de contrôle pour le rejeu suivant
-  });
+  };
+  const tap=occPrefixTap&&occReplayNest===1?occPrefixTap:null;
+  list.forEach(f=>{step(f);if(tap)try{tap(bid,f,result);}catch(e){}});
   // V0.21.19 : filets modélisés creusés EN DERNIER, en une seule découpe (src/76,
   // occShapeOfHole) : dans l'arbre, chaque perçage n'a laissé qu'un avant-trou lisse,
   // et les fonctions suivantes n'ont jamais vu les faces hélicoïdales.
@@ -3786,8 +3796,8 @@ function occFinalShape(upto){
   // rejeu partiel = la liste s'arrête avant la fin (références d'esquisse) ; le rejeu
   // complet passe aussi un upto (marqueur de la timeline) : seule la longueur compte
   const partial=list.length<feats.filter(f=>!(occSkipFeat&&f.id===occSkipFeat)).length;
-  occThreadSkip=partial; // reposé à chaque appel : jamais d'état périmé
-  if(!partial)occThrPending=false;
+  occThreadSkip=partial||!!occPrefixTap; // reposé à chaque appel : jamais d'état périmé (observateur : filets inutiles)
+  if(!partial&&!occPrefixTap)occThrPending=false;
   const preThr=[]; // {bodyId, shape} : corps SANS filets modélisés (FAO)
   order.forEach(bid=>{
     if(consumed.has(bid))return;
@@ -4086,8 +4096,8 @@ function occRebuild(){
     FR.ghostShapes.forEach((gh,i)=>{
       try{
         if(!gh.geo)return;
-        const mat=new THREE.MeshStandardMaterial({color:gh.inexact?0xff9f0a:0xff453a,transparent:true,opacity:0.22,depthWrite:false});
-        const mesh=new THREE.Mesh(gh.geo,mat);mesh.userData.bid='occghost_'+i;mesh.raycast=()=>{};mesh.visible=false;
+        const mat=ghostMaterial(gh.inexact?0xff9f0a:0xff453a);
+        const mesh=new THREE.Mesh(gh.geo,mat);mesh.userData.bid='occghost_'+i;mesh.raycast=()=>{};mesh.visible=false;mesh.renderOrder=20;
         scene.add(mesh);
         // Fantôme masqué par défaut (sinon il dépasse là où un congé a rajouté de la matière).
         // Visible quand sa découpe est sélectionnée, ou via 👁 dans Pièces.

@@ -177,7 +177,7 @@ function treePart(L){
     if(dbl)on.dbl=dbl;
     const dd=kind==='sketch'?{drag:{kind:'sketch',id}}:(mvOk?{drag:{kind:'feature',id},drop:treeDropFeat(id)}:{});
     L.push(Object.assign(dd,{lvl:1,cls:'tnode'+(estSel?' sel':'')+(visible===false?' hidden':'')+(lk?' locked':''),
-      html:`<span>${icon}</span><span class="nm">${name}</span>${kind==='feature'?antTag(id):''}${mv}<span class="eye" title="Afficher / masquer">`+(visible===false?'🙈':'👁')+`</span>`,
+      html:`<span>${icon}</span><span class="nm">${name}</span>${kind==='feature'?antTag(id):''}${mv}<span class="eye" title="Afficher / masquer">`+(visible===false?EYE_OFF:'👁')+`</span>`,
       title:kind==='sketch'?(info?info+' — ':'')+'Clic = sélectionner · Ctrl+clic = ajouter au lot · Shift+clic = plage · Suppr = supprimer · double-clic = modifier l’esquisse · 👁 = afficher/masquer':
         kind==='feature'?'Clic = sélectionner · Ctrl+clic = ajouter au lot · Shift+clic = plage · double-clic = éditer congé/chanfrein exact · 👁 = afficher/masquer · ▲▼ = décaler dans le corps':undefined,
       on}));
@@ -187,7 +187,7 @@ function treePart(L){
       const on=!!(axHelper&&axHelper.visible);
       L.push({lvl:1,cls:'tnode'+(on?'':' hidden'),
         title:'Repère de l’origine : point central, axes X/Y/Z et 3 plans cliquables (un clic sur un plan le sélectionne) · 👁 = montrer/masquer',
-        html:`<span class="pdot" style="background:#fff;box-shadow:0 0 0 2px #1c1c1e inset"></span><span class="nm">Repère <span style="color:var(--muted)">· X Y Z + plans</span></span><span class="eye" title="Afficher / masquer le repère">${on?'👁':'🙈'}</span>`,
+        html:`<span class="pdot" style="background:#fff;box-shadow:0 0 0 2px #1c1c1e inset"></span><span class="nm">Repère <span style="color:var(--muted)">· X Y Z + plans</span></span><span class="eye" title="Afficher / masquer le repère">${on?'👁':EYE_OFF}</span>`,
         on:{
           eye:()=>{
             const v=!(axHelper&&axHelper.visible);
@@ -251,7 +251,7 @@ function treePart(L){
       L.push({drag:{kind:'feature',id:f.id},drop:treeDropFeat(f.id),lvl:1,cls:'tnode'+((sel.kind==='feature'&&sel.id===f.id)||treeSel.indexOf(f.id)>=0?' sel':'')+(f.visible===false?' hidden':'')+(tlLocked(f)?' locked':''),
         html:`<span class="tri" title="Déplier / replier les fonctions copiées">${open?'▼':'▶'}</span><span>🔁</span><span class="nm">${f.name} · ${repTypeName(f.mode,f)} · ${vkids.length} instance(s)`+(repIsNewBody(f)?' <span title="Opération Nouveau corps : un corps par exemplaire">◧</span>':'')+
           (srcs.length?` <span class="repsrc" title="Sources : ${srcNames.join(', ')}">◀ ${srcs.length}</span>`:' <span class="repsrc vide" title="Aucune source choisie">◀ 0</span>')+
-          `</span>`+antTag(f.id)+` <span class="mv" data-d="-1" title="Monter dans le corps (bloc entier)">▲</span><span class="mv" data-d="1" title="Descendre dans le corps (bloc entier)">▼</span><span class="eye" title="Afficher / masquer">`+(f.visible===false?'🙈':'👁')+`</span>`,
+          `</span>`+antTag(f.id)+` <span class="mv" data-d="-1" title="Monter dans le corps (bloc entier)">▲</span><span class="mv" data-d="1" title="Descendre dans le corps (bloc entier)">▼</span><span class="eye" title="Afficher / masquer">`+(f.visible===false?EYE_OFF:'👁')+`</span>`,
         title:'Clic = sélectionner · ▶/▼ = montrer/masquer les fonctions copiées · ▲▼ = décaler le bloc dans le corps'+
           (srcs.length?(' · sources : '+srcNames.join(', ')):' · AUCUNE source : la répétition ne produit rien'),
         on:{
@@ -267,7 +267,7 @@ function treePart(L){
       if(!open)return;
       vkids.forEach(k=>{
         L.push({lvl:2,cls:'tnode repchild'+((sel.kind==='feature'&&sel.id===f.id)||treeSel.indexOf(k.id)>=0?' sel':'')+(k.visible===false?' hidden':''),
-          html:`<span>${featIconOf(k)}</span><span class="nm">${k.name}</span><span class="eye" title="Afficher / masquer">`+(k.visible===false?'🙈':'👁')+`</span>`,
+          html:`<span>${featIconOf(k)}</span><span class="nm">${k.name}</span><span class="eye" title="Afficher / masquer">`+(k.visible===false?EYE_OFF:'👁')+`</span>`,
           title:'Instance n°'+k.repIndex+' de la répétition — clic = sélectionner la répétition · Ctrl+clic = ajouter au lot à supprimer',
           on:{
             eye:()=>{k.visible=!(k.visible!==false);markDirty();rebuild();renderTree();},
@@ -312,7 +312,7 @@ function treePart(L){
       html:'<span class="tri" title="Déplier / replier les fonctions du corps">'+(open?'▼':'▶')+'</span><span title="Corps — '+(be.name||'')+'">🧱</span>'+
         '<span class="nm"'+(bcol?(' style="color:'+bcol+'"'):'')+'>'+be.name+(estActif?' ●':'')+(pasNe?' <span title="Ce corps naît plus loin dans la timeline : il n’existe pas encore au marqueur">⏳ pas encore créé</span>':' · '+kidsVis.length+' fonction(s)')+(function(){const o=typeof repBodyOwner==='function'?repBodyOwner(be.id):null;return o?' <span class="repsrc" title="Corps créé par la répétition « '+o.name+' » (opération Nouveau corps)">🔁 '+o.name+'</span>':'';})()+'</span>'+
         '<span class="pwr'+(enRejeu?' on':'')+'" title="'+(enRejeu?'Rejeu ACTIF : toutes les fonctions de ce corps sont recalculées — cliquer pour les EXCLURE (le corps reste visible)':'Rejeu ÉTEINT : toutes les fonctions de ce corps sont exclues (grisées) — cliquer pour les inclure')+'">⏻</span>'+
-        '<span class="eye" title="'+(visVue?'Corps visible dans la 3D — cliquer pour le CACHER (il reste dans le rejeu et l\'export)':'Corps masqué dans la 3D (vue seule) — cliquer pour l\'AFFICHER. Aucune fonction n\'est touchée')+'">'+(visVue?'👁':'🙈')+'</span>',
+        '<span class="eye" title="'+(visVue?'Corps visible dans la 3D — cliquer pour le CACHER (il reste dans le rejeu et l\'export)':'Corps masqué dans la 3D (vue seule) — cliquer pour l\'AFFICHER. Aucune fonction n\'est touchée')+'">'+(visVue?'👁':EYE_OFF)+'</span>',
       title:'Clic = sélectionner et ACTIVER (les nouvelles fonctions naîtront dans « '+be.name+' ») · ▶/▼ = replier · ⏻ = rejeu (inclure/exclure ses fonctions du recalcul) · 👁 = vue 3D seule · clic droit = renommer / supprimer · ➕ additif / ➖ découpe · ● = corps actif',
       on:{
         tri:()=>{be.open=!open;try{dirty=true;}catch(e){}renderTree();},
@@ -375,7 +375,7 @@ function treeComps(L,P){
     L.push({drop:treeDropComp(inst.comp),lvl:lv,cls:'tnode tocc'+(self?' tactive':'')+(direct&&asmMode==='asm'&&asmLotHas(id)?' sel':'')+(o.visible===false?' hidden':''),
       style:(!mine&&!self)?{opacity:'0.55'}:{},
       html:tri+'<span>'+(self?'✏️':'📦')+'</span><span class="nm">'+asmEsc(o.name)+sub+'</span>'+badges+
-        '<span class="eye" title="Afficher / masquer">'+(o.visible===false?'🙈':'👁')+'</span>',
+        '<span class="eye" title="Afficher / masquer">'+(o.visible===false?EYE_OFF:'👁')+'</span>',
       title:direct?'Clic = sélectionner · Ctrl+clic = ajouter au lot · Shift+clic = plage · Suppr = supprimer le lot · double-clic = modéliser · ▶ = contenu · clic droit = menu':'Double-clic = modéliser ce composant · ▶ = contenu',
       on:{
         tri:togg,
@@ -426,7 +426,7 @@ function treeComps(L,P){
         html:'<span class="tri" title="Afficher / masquer les occurrences">'+(gopen?'▼':'▶')+'</span><span>📦</span><span class="nm">'+asmEsc(gc.name)+
           ' <span style="color:var(--muted)">×'+g.occ.length+'</span>'+(nf?' <span title="'+nf+' fixée(s)">📌'+(nf<g.occ.length?nf:'')+'</span>':'')+
           (nj?' <span title="'+nj+' liée(s) / alignée(s)">⚙'+(nj<g.occ.length?nj:'')+'</span>':'')+'</span>'+
-          '<span class="eye" title="Afficher / masquer toutes les occurrences">'+(nh===g.occ.length?'🙈':'👁')+'</span>',
+          '<span class="eye" title="Afficher / masquer toutes les occurrences">'+(nh===g.occ.length?EYE_OFF:'👁')+'</span>',
         title:g.occ.length+' occurrences de « '+(gc.name||'')+' » · ▶ = les détailler · Ctrl+clic = toutes au lot · 👁 = toutes · double-clic = modéliser le composant',
         on:{tri:gt,
           click:ev=>{
@@ -667,7 +667,35 @@ function treeRender(){
   const t=$('tree');t.innerHTML='';
   const L=treeModel();
   treeDraw(t,L);
+  try{treeReveal(t);}catch(e){}
   if(asmMode==='asm'&&asm){try{renderTimeline();}catch(e){}return;}
   updateOriginPlanes();
   try{renderTimeline();}catch(e){}
+}
+// V0.23.26 : sélection changée (arbre, timeline ou face cliquée dans la vue) → la ligne choisie,
+// si elle est hors de vue, est amenée au CENTRE de l'arbre. Seulement au changement : le
+// défilement manuel de l'utilisateur n'est jamais repris à chaque re-rendu.
+function selRevealKey(){return (sel.kind||'')+':'+(sel.id||'')+'|'+treeSel.join(',');}
+function selRevealIn(box,el,horiz){
+  // Centre el dans le conteneur défilant box (axe horizontal ou vertical) s'il n'est pas
+  // entièrement visible. Retourne true si box a défilé.
+  if(!box||!el)return false;
+  const B=box.getBoundingClientRect(),E=el.getBoundingClientRect();
+  if(horiz){
+    if(!(box.scrollWidth>box.clientWidth)||(E.left>=B.left&&E.right<=B.right))return false;
+    box.scrollLeft+=(E.left+E.width/2)-(B.left+B.width/2);
+  }else{
+    if(!(box.scrollHeight>box.clientHeight)||(E.top>=B.top&&E.bottom<=B.bottom))return false;
+    box.scrollTop+=(E.top+E.height/2)-(B.top+B.height/2);
+  }
+  return true;
+}
+let treeRevealLast='';
+function treeReveal(t){
+  const k=selRevealKey();if(k===treeRevealLast)return;
+  const el=t.querySelector('.tnode.sel');
+  if(el&&!el.offsetParent)return; // arbre masqué : on montrera la ligne à sa réapparition
+  treeRevealLast=k;if(!el)return;
+  let box=t;while(box&&box!==document.body&&!(box.scrollHeight>box.clientHeight&&/(auto|scroll)/.test(getComputedStyle(box).overflowY)))box=box.parentElement;
+  if(box&&box!==document.body)selRevealIn(box,el,false);
 }
