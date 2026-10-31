@@ -8,7 +8,7 @@ sont sorties le 2026-09-30j.
 Code dans `src/` · livrable `fusion_mvp.html` (généré par `build.js`) · architecture et
 garde-fous en tête de `src/00-entete-et-outils.js`.
 
-**488 versions**, de `2026-09-28b` à `V0.24.3` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
+**489 versions**, de `2026-09-28b` à `V0.24.4` (numéro daté jusqu'à `2026-10-16-021`, puis numéro des tags) — la plus récente en bas,
 comme dans le fichier d'origine.
 
 ---
@@ -5965,3 +5965,9 @@ Demande : « peut-on créer un bouton pour le lancer depuis GitHub avec le charg
 - **CI GitHub** (`.github/workflows/ci.yml`) : lancement manuel seulement. Les tests tournent sur le PC à chaque livraison (`npm run ci:full`, suites en parallèle sur tous les cœurs) : environ 10 min sur les machines GitHub à 2 cœurs, et un checkout LFS par push sur le quota de 1 Go par mois.
 - **4 suites rouges remises au vert** (déjà rouges sur GitHub avant cette version) : `test_fao`, `test_fao_barre3d` et `test_fao_arbre_ouverture` comptaient toutes les lignes de l'arbre FAO, y compris les groupes Esquisses / Corps ajoutés sous chaque posage en V0.23.20 ; elles ne comptent plus que posages et opérations. `test_mep_hachures_cotes` attendait l'écart « +0.035 » d'un seul texte, alors que V0.24.0 l'aligne sur la virgule en deux textes (« +0 », « .035 »). Aucun code de l'application changé.
 - **Tests** : `npm run ci:full` en local, 212/212.
+
+## V0.24.4 - Alésé : jeu de l'avant-trou saisi (jeu ou Ø, l'un induit l'autre)
+Demande : « Perçage CAO : Alésage, l'avant trou est défini avec un gap de 0.5, mais je veux pouvoir entrer une autre valeur — jeu ou diamètre, les 2 ; l'un induit l'autre ».
+- **Cause** : le Ø de perçage d'un alésé ne proposait que Ø alésage − 0,5, − 1, ou un Ø « Libre » ; aucun autre jeu ne pouvait être saisi.
+- **Correctif** (`renderHoleReamProps`, `src/76-percage.js`) : option « Autre écart » dans « Ø perçage », avec deux champs liés : « Jeu sur le Ø » (recalcule le Ø) et « Ø du perçage » (recalcule le jeu). Le jeu est conservé quand le Ø de l'alésage change. Indicateur `reamOffFree` pour garder ce mode même si le jeu saisi vaut 0,5 ou 1. Fichiers existants inchangés.
+- **Tests** : vérifié dans l'application (jeu 0,3 → Ø7,7 sur Ø8 ; Ø7,2 → jeu 0,8) ; `npm run ci` (81/81).

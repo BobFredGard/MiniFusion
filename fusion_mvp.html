@@ -336,7 +336,7 @@ input[type=range]{accent-color:var(--primary);width:100%}
  * peut changer sans rien casser. CACHE_VER (parcours FAO) reste indépendant.
  */
 
-const APP_VER='V0.24.3';
+const APP_VER='V0.24.4';
 try{console.log('[MiniFusion] version '+APP_VER);}catch(e){}
 try{var mfSv=document.getElementById('mfSplashVer');if(mfSv)mfSv.textContent=APP_VER;}catch(e){} // écran de démarrage
 
@@ -25377,7 +25377,7 @@ function askRevokePanel(f){
        'open'    → alésage débouchant, sans perçage ;
        'blind'   → + perçage Ø d non débouchant, plein Ø à depth, pointe tip (cas 2) ;
        'through' → + perçage Ø d débouchant (cas 3).
-     Ø de perçage = reamD − reamOff (0,5 ou 1 mm ; null = Ø d saisi librement).
+     Ø de perçage = reamD − reamOff (0,5, 1 mm ou autre écart saisi — reamOffFree ; null = Ø d saisi librement).
      La tolérance s'écrit d'office dans la cotation de perçage de la mise en plan.
    • Géométrie exacte : par point, un outil de révolution (lamage/fraisure + corps +
      pointe) le long de −n (ou +n si inversé), unis puis découpés du corps.
@@ -25994,8 +25994,18 @@ function renderHoleReamProps(f,pRow,pNote,sel,num,go){
   if(N.pilot==='open'){pNote('Alésage débouchant : traverse toute la pièce.');return;}
   pRow('Profondeur alésage',num(N.reamH,function(v){f.reamH=v;},0,f,'reamH'));
   if(N.pilot==='none'){pNote('Fond plat. L’avant-trou d’usinage n’est pas modélisé.');return;}
-  pRow('Ø perçage',sel([['0.5','Ø alésage − 0,5 ('+fr(N.reamD-0.5)+')'],['1','Ø alésage − 1 ('+fr(N.reamD-1)+')'],['','Libre']],f.reamOff>0?String(+f.reamOff):'',function(v){
-    f.reamOff=v?+v:null;if(f.reamOff>0)f.d=holeReamDrill(f);else f.d=N.d;}));
+  // écart sur le Ø : − 0,5 / − 1, ou autre valeur saisie (reamOffFree) ; « Libre » = Ø de perçage saisi
+  const oMode=!(f.reamOff>0)?'':(f.reamOffFree||(+f.reamOff!==0.5&&+f.reamOff!==1))?'other':String(+f.reamOff);
+  pRow('Ø perçage',sel([['0.5','Ø alésage − 0,5 ('+fr(N.reamD-0.5)+')'],['1','Ø alésage − 1 ('+fr(N.reamD-1)+')'],['other','Autre écart'],['','Libre']],oMode,function(v){
+    f.reamOffFree=(v==='other')||undefined;
+    if(v==='other')f.reamOff=f.reamOff>0?+f.reamOff:+Math.max(0.05,N.reamD-N.d).toFixed(3);
+    else f.reamOff=v?+v:null;
+    if(f.reamOff>0)f.d=holeReamDrill(f);else f.d=N.d;}));
+  // « Autre écart » : jeu ou Ø, au choix — les deux champs restent liés (Ø = Ø alésage − jeu)
+  if(oMode==='other'){
+    pRow('Jeu sur le Ø',num(f.reamOff,function(v){f.reamOff=v;f.d=holeReamDrill(f);}));
+    pRow('Ø du perçage',num(N.d,function(v){f.reamOff=+Math.max(0.05,N.reamD-v).toFixed(3);f.d=holeReamDrill(f);}));
+  }
   if(!(f.reamOff>0))pRow('Ø du perçage',num(N.d,function(v){f.d=v;},0,f,'d'));
   if(N.pilot==='blind'){
     pRow('Prof. perçage (plein Ø)',num(N.depth,function(v){f.depth=v;},0,f,'depth'));
